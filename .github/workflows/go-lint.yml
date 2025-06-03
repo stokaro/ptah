@@ -1,4 +1,4 @@
-name: Ptah Go Lint
+name: Go Lint
 
 on:
   push:
@@ -27,11 +27,9 @@ jobs:
       
       - name: Install dependencies
         run: go mod download
-        working-directory: ptah
-      
+
       - name: Golint
         uses: golangci/golangci-lint-action@v8
         with:
           args: --timeout=30m
           version: v2.1.6
-          working-directory: ptah

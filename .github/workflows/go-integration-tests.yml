@@ -1,4 +1,4 @@
-name: Ptah Integration Tests
+name: Integration Tests
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   integration-tests:
-    name: ptah-integration-tests
+    name: integration-tests
     runs-on: ubuntu-latest
     
     services:
@@ -74,8 +74,7 @@ jobs:
       
       - name: Install dependencies
         run: go mod download
-        working-directory: ptah
-      
+
       - name: Wait for databases to be ready
         run: |
           echo "Waiting for PostgreSQL..."
@@ -104,38 +103,32 @@ jobs:
           POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
         run: |
           go test -v  ./integration/... -tags=integration -timeout 15m
-        working-directory: ptah
 
       - name: Run executor integration tests with MySQL
         env:
           MYSQL_TEST_DSN: "ptah_user:ptah_password@tcp(mysql:3306)/ptah_test"
         run: |
           go test -v  ./integration/... -tags=integration -timeout 15m
-        working-directory: ptah
 
       - name: Run executor integration tests with MariaDB
         env:
           MARIADB_TEST_DSN: "ptah_user:ptah_password@tcp(mariadb:3307)/ptah_test"
         run: |
           go test -v  ./integration/... -tags=integration -timeout 15m
-        working-directory: ptah
 
       - name: Build integration test binary
         run: |
           go build -o ./integration-test ./cmd/integration-test
-        working-directory: ptah
 
       - name: Test integration binary help
         run: |
           ./integration-test --help
-        working-directory: ptah
 
       - name: Run basic smoke test
         env:
           POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
         run: |
           ./integration-test --scenarios=apply_incremental_migrations,check_current_version --databases=postgres --report=txt --output=./reports
-        working-directory: ptah
 
       - name: Run all databases comprehensive test
         env:
@@ -144,8 +137,7 @@ jobs:
           MARIADB_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
         run: |
           ./integration-test --report=html --verbose --output=./reports
-        working-directory: ptah
-      
+
       - name: Upload integration test reports
         uses: actions/upload-artifact@v4
         if: always()
@@ -162,4 +154,3 @@ jobs:
           MARIADB_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
         run: |
           go test -v -race ./integration -timeout 30m
-        working-directory: ptah

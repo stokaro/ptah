@@ -21,7 +21,6 @@ jobs:
         run: |
           GO_MOD_VERSION=$(grep '^go ' go.mod | awk '{print $2}')
           echo "GO_MOD_VERSION=$GO_MOD_VERSION" >> $GITHUB_OUTPUT
-        working-directory: go
 
       - name: Extract go version from .golangci.yml
         id: golangci_version
