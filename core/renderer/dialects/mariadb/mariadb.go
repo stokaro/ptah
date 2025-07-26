@@ -121,3 +121,15 @@ func (r *Renderer) VisitExtension(node *ast.ExtensionNode) error {
 	}
 	return nil
 }
+
+// VisitDropExtension renders DROP EXTENSION statements for MariaDB (no-op)
+func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
+	// MariaDB doesn't support extensions like PostgreSQL
+	// Add a comment to indicate this feature is not supported
+	if node.Comment != "" {
+		r.w.WriteLinef("-- DROP EXTENSION %s not supported in MariaDB: %s", node.Name, node.Comment)
+	} else {
+		r.w.WriteLinef("-- DROP EXTENSION %s not supported in MariaDB", node.Name)
+	}
+	return nil
+}

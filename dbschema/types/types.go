@@ -6,6 +6,7 @@ type DBSchema struct {
 	Enums       []DBEnum       `json:"enums"`
 	Indexes     []DBIndex      `json:"indexes"`
 	Constraints []DBConstraint `json:"constraints"`
+	Extensions  []DBExtension  `json:"extensions"` // PostgreSQL extensions
 }
 
 // DBTable represents a database table
@@ -60,6 +61,17 @@ type DBConstraint struct {
 	DeleteRule    *string `json:"delete_rule"`    // CASCADE, RESTRICT, etc.
 	UpdateRule    *string `json:"update_rule"`    // CASCADE, RESTRICT, etc.
 	CheckClause   *string `json:"check_clause"`   // For CHECK constraints
+}
+
+// DBExtension represents a PostgreSQL extension installed in the database
+type DBExtension struct {
+	Name             string  `json:"name"`              // Extension name (pg_trgm, postgis, etc.)
+	Version          string  `json:"version"`           // Installed version
+	Schema           string  `json:"schema"`            // Schema where extension is installed
+	Relocatable      bool    `json:"relocatable"`       // Whether extension can be moved between schemas
+	Comment          *string `json:"comment"`           // Extension comment/description
+	DefaultVersion   *string `json:"default_version"`   // Default version available
+	InstalledVersion *string `json:"installed_version"` // Currently installed version (may differ from default)
 }
 
 // DBInfo contains connection and metadata information

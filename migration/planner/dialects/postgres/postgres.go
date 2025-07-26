@@ -227,17 +227,18 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *types.SchemaDiff
 }
 
 func (p *Planner) addNewIndexes(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	// Create a mapping from struct names to table names for proper index table resolution
+	structToTableMap := make(map[string]string)
+	for _, table := range generated.Tables {
+		structToTableMap[table.StructName] = table.Name
+	}
+
 	for _, indexName := range diff.IndexesAdded {
 		// Find the index definition
 		for _, idx := range generated.Indexes {
 			if idx.Name == indexName {
-				indexNode := ast.NewIndex(idx.Name, idx.StructName, idx.Fields...)
-				if idx.Unique {
-					indexNode.Unique = true
-				}
-				if idx.Comment != "" {
-					indexNode.Comment = idx.Comment
-				}
+				// Use enhanced index creation with PostgreSQL features
+				indexNode := fromschema.FromIndexWithTableMapping(idx, structToTableMap)
 				result = append(result, indexNode)
 				break
 			}
@@ -359,7 +360,10 @@ func (p *Planner) removeEnums(result []ast.Node, diff *types.SchemaDiff) []ast.N
 func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
 	var result []ast.Node
 
-	// 1. Add new enums first (PostgreSQL requires enum types to exist before tables use them)
+	// 0. Add new extensions first (PostgreSQL extensions should be created before other objects)
+	result = p.addNewExtensions(result, diff, generated)
+
+	// 1. Add new enums (PostgreSQL requires enum types to exist before tables use them)
 	result = p.addNewEnums(result, diff, generated)
 
 	// 2. Modify existing enums (add values only - PostgreSQL doesn't support removing enum values easily)
@@ -383,5 +387,51 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	// 8. Remove enums (dangerous!)
 	result = p.removeEnums(result, diff)
 
+	// 9. Remove extensions (dangerous!)
+	result = p.removeExtensions(result, diff)
+
+	return result
+}
+
+func (p *Planner) addNewExtensions(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, extensionName := range diff.ExtensionsAdded {
+		// Find the extension definition
+		for _, ext := range generated.Extensions {
+			if ext.Name == extensionName {
+				extensionNode := fromschema.FromExtension(ext)
+				result = append(result, extensionNode)
+				break
+			}
+		}
+	}
+	return result
+}
+
+func (p *Planner) removeExtensions(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	// Generate DROP EXTENSION statements with comprehensive safety warnings
+	// Extension removal is potentially dangerous and requires careful consideration
+	for i, extensionName := range diff.ExtensionsRemoved {
+		// Add comprehensive warning comments before each DROP EXTENSION statement
+		warningComment1 := ast.NewComment(fmt.Sprintf("WARNING: Removing extension '%s' may break existing functionality that depends on it", extensionName))
+		warningComment2 := ast.NewComment("Consider reviewing all database objects that use this extension before proceeding")
+		warningComment3 := ast.NewComment("Extension removal may cascade to dependent objects - review carefully")
+
+		result = append(result, warningComment1)
+		result = append(result, warningComment2)
+		result = append(result, warningComment3)
+
+		// Create DROP EXTENSION statement with IF EXISTS for safety
+		dropExtension := ast.NewDropExtension(extensionName).
+			SetIfExists().
+			SetComment(fmt.Sprintf("Remove extension '%s' as it's no longer required by the schema", extensionName))
+
+		result = append(result, dropExtension)
+
+		// Add blank line for readability between extension removals (not after the last one)
+		if i < len(diff.ExtensionsRemoved)-1 {
+			blankLine := ast.NewComment("")
+			result = append(result, blankLine)
+		}
+	}
 	return result
 }

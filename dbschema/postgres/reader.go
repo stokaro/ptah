@@ -57,6 +57,13 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	}
 	schema.Constraints = constraints
 
+	// Read extensions (PostgreSQL-specific)
+	extensions, err := r.readExtensions()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read extensions: %w", err)
+	}
+	schema.Extensions = extensions
+
 	// Enhance tables with constraint information
 	r.enhanceTablesWithConstraints(schema.Tables, schema.Constraints)
 
@@ -342,6 +349,57 @@ func (r *Reader) readConstraints() ([]types.DBConstraint, error) {
 	}
 
 	return constraints, nil
+}
+
+// readExtensions reads all PostgreSQL extensions installed in the database
+func (r *Reader) readExtensions() ([]types.DBExtension, error) {
+	// Use a simpler query that only relies on pg_extension and pg_namespace
+	// These are core system catalogs that are consistent across PostgreSQL versions
+	extensionsQuery := `
+		SELECT
+			e.extname AS extension_name,
+			e.extversion AS installed_version,
+			n.nspname AS schema_name,
+			e.extrelocatable AS relocatable,
+			obj_description(e.oid, 'pg_extension') AS comment
+		FROM pg_extension e
+		JOIN pg_namespace n ON n.oid = e.extnamespace
+		ORDER BY e.extname`
+
+	rows, err := r.db.Query(extensionsQuery)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query extensions: %w", err)
+	}
+	defer rows.Close()
+
+	var extensions []types.DBExtension
+	for rows.Next() {
+		var ext types.DBExtension
+		var comment sql.NullString
+
+		err := rows.Scan(
+			&ext.Name,
+			&ext.Version,
+			&ext.Schema,
+			&ext.Relocatable,
+			&comment,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan extension: %w", err)
+		}
+
+		// Set optional fields
+		if comment.Valid {
+			ext.Comment = &comment.String
+		}
+
+		// Set installed version (same as version for installed extensions)
+		ext.InstalledVersion = &ext.Version
+
+		extensions = append(extensions, ext)
+	}
+
+	return extensions, nil
 }
 
 // enhanceTablesWithConstraints adds constraint information to table columns

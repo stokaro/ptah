@@ -477,3 +477,15 @@ func (r *Renderer) VisitExtension(node *ast.ExtensionNode) error {
 	}
 	return nil
 }
+
+// VisitDropExtension renders DROP EXTENSION statements for MySQL-like databases (no-op)
+func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
+	// MySQL-like databases don't support extensions like PostgreSQL
+	// Add a comment to indicate this feature is not supported
+	if node.Comment != "" {
+		r.w.WriteLinef("-- DROP EXTENSION %s not supported in %s: %s", node.Name, r.dialect, node.Comment)
+	} else {
+		r.w.WriteLinef("-- DROP EXTENSION %s not supported in %s", node.Name, r.dialect)
+	}
+	return nil
+}
