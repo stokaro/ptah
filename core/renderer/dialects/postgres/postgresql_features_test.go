@@ -252,3 +252,65 @@ func TestPostgreSQLRenderer_CompleteSchema(t *testing.T) {
 	c.Assert(partialIndexSQL, qt.Equals, "CREATE INDEX idx_active_products ON products (status) WHERE deleted_at IS NULL;\n")
 	c.Assert(trigramIndexSQL, qt.Equals, "CREATE INDEX idx_products_name_trgm ON products USING GIN (name gin_trgm_ops);\n")
 }
+
+func TestPostgreSQLRenderer_VisitDropExtension(t *testing.T) {
+	tests := []struct {
+		name     string
+		dropExt  *ast.DropExtensionNode
+		expected string
+	}{
+		{
+			name: "basic drop extension",
+			dropExt: &ast.DropExtensionNode{
+				Name: "pg_trgm",
+			},
+			expected: "DROP EXTENSION pg_trgm;\n",
+		},
+		{
+			name: "drop extension with IF EXISTS",
+			dropExt: &ast.DropExtensionNode{
+				Name:     "pg_trgm",
+				IfExists: true,
+			},
+			expected: "DROP EXTENSION IF EXISTS pg_trgm;\n",
+		},
+		{
+			name: "drop extension with CASCADE",
+			dropExt: &ast.DropExtensionNode{
+				Name:    "postgis",
+				Cascade: true,
+			},
+			expected: "DROP EXTENSION postgis CASCADE;\n",
+		},
+		{
+			name: "drop extension with comment",
+			dropExt: &ast.DropExtensionNode{
+				Name:    "btree_gin",
+				Comment: "Remove unused extension",
+			},
+			expected: "-- Remove unused extension\nDROP EXTENSION btree_gin;\n",
+		},
+		{
+			name: "drop extension with all features",
+			dropExt: &ast.DropExtensionNode{
+				Name:     "postgis",
+				IfExists: true,
+				Cascade:  true,
+				Comment:  "Remove geographic data support",
+			},
+			expected: "-- Remove geographic data support\nDROP EXTENSION IF EXISTS postgis CASCADE;\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			renderer := postgres.New()
+			sql, err := renderer.Render(tt.dropExt)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Equals, tt.expected)
+		})
+	}
+}

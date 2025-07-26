@@ -414,6 +414,78 @@ func (n *ExtensionNode) SetComment(comment string) *ExtensionNode {
 	return n
 }
 
+// DropExtensionNode represents a DROP EXTENSION statement for PostgreSQL.
+//
+// This node is used to remove PostgreSQL extensions from the database.
+// Extension removal can be dangerous as it may break existing functionality
+// that depends on the extension's features.
+type DropExtensionNode struct {
+	// Name is the extension name to drop (pg_trgm, postgis, etc.)
+	Name string
+	// IfExists indicates whether to use IF EXISTS clause
+	IfExists bool
+	// Cascade indicates whether to use CASCADE option (removes dependent objects)
+	Cascade bool
+	// Comment is an optional comment for the drop operation
+	Comment string
+}
+
+// NewDropExtension creates a new drop extension node with the specified name.
+//
+// Example:
+//
+//	dropExt := NewDropExtension("pg_trgm")
+//	dropExt := NewDropExtension("postgis").SetIfExists().SetCascade()
+func NewDropExtension(name string) *DropExtensionNode {
+	return &DropExtensionNode{
+		Name:     name,
+		IfExists: false,
+		Cascade:  false,
+	}
+}
+
+// SetIfExists marks the drop extension to use IF EXISTS clause.
+//
+// This prevents errors if the extension doesn't exist.
+//
+// Example:
+//
+//	dropExt.SetIfExists()
+func (n *DropExtensionNode) SetIfExists() *DropExtensionNode {
+	n.IfExists = true
+	return n
+}
+
+// SetCascade marks the drop extension to use CASCADE option.
+//
+// This removes all objects that depend on the extension.
+// Use with extreme caution as it can remove user data.
+//
+// Example:
+//
+//	dropExt.SetCascade()
+func (n *DropExtensionNode) SetCascade() *DropExtensionNode {
+	n.Cascade = true
+	return n
+}
+
+// SetComment sets a comment for the DROP EXTENSION operation.
+//
+// This comment can be used for documentation or warnings.
+//
+// Example:
+//
+//	dropExt.SetComment("Remove unused extension")
+func (n *DropExtensionNode) SetComment(comment string) *DropExtensionNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for DropExtensionNode.
+func (n *DropExtensionNode) Accept(visitor Visitor) error {
+	return visitor.VisitDropExtension(n)
+}
+
 // NewIndex creates a new index node with the specified name, table, and columns.
 //
 // Example:
