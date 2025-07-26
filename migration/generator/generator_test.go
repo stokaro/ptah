@@ -169,7 +169,10 @@ func TestGenerateMigration_ExtensionHandling_WithRealDB(t *testing.T) {
 
 	// This test uses the real database to verify extension handling
 	// Skip if database is not available
-	dbURL := "postgres://inventario:inventario_password@localhost:5432/inventario?sslmode=disable"
+	dbURL := os.Getenv("TEST_DB_URL")
+	if dbURL == "" {
+		t.Skip("TEST_DB_URL environment variable is not set. Skipping test.")
+	}
 
 	// Create temporary directory with test schema
 	tempDir, err := os.MkdirTemp("", "ptah_generator_test")
