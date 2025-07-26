@@ -410,7 +410,7 @@ func (p *Planner) addNewExtensions(result []ast.Node, diff *types.SchemaDiff, ge
 func (p *Planner) removeExtensions(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 	// Generate DROP EXTENSION statements with comprehensive safety warnings
 	// Extension removal is potentially dangerous and requires careful consideration
-	for _, extensionName := range diff.ExtensionsRemoved {
+	for i, extensionName := range diff.ExtensionsRemoved {
 		// Add comprehensive warning comments before each DROP EXTENSION statement
 		warningComment1 := ast.NewComment(fmt.Sprintf("WARNING: Removing extension '%s' may break existing functionality that depends on it", extensionName))
 		warningComment2 := ast.NewComment("Consider reviewing all database objects that use this extension before proceeding")
@@ -427,8 +427,8 @@ func (p *Planner) removeExtensions(result []ast.Node, diff *types.SchemaDiff) []
 
 		result = append(result, dropExtension)
 
-		// Add blank line for readability between extension removals
-		if len(diff.ExtensionsRemoved) > 1 {
+		// Add blank line for readability between extension removals (not after the last one)
+		if i < len(diff.ExtensionsRemoved)-1 {
 			blankLine := ast.NewComment("")
 			result = append(result, blankLine)
 		}

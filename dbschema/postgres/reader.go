@@ -353,17 +353,17 @@ func (r *Reader) readConstraints() ([]types.DBConstraint, error) {
 
 // readExtensions reads all PostgreSQL extensions installed in the database
 func (r *Reader) readExtensions() ([]types.DBExtension, error) {
+	// Use a simpler query that only relies on pg_extension and pg_namespace
+	// These are core system catalogs that are consistent across PostgreSQL versions
 	extensionsQuery := `
 		SELECT
 			e.extname AS extension_name,
 			e.extversion AS installed_version,
 			n.nspname AS schema_name,
 			e.extrelocatable AS relocatable,
-			obj_description(e.oid, 'pg_extension') AS comment,
-			av.version AS default_version
+			obj_description(e.oid, 'pg_extension') AS comment
 		FROM pg_extension e
 		JOIN pg_namespace n ON n.oid = e.extnamespace
-		LEFT JOIN pg_available_extensions av ON av.name = e.extname
 		ORDER BY e.extname`
 
 	rows, err := r.db.Query(extensionsQuery)
@@ -375,7 +375,7 @@ func (r *Reader) readExtensions() ([]types.DBExtension, error) {
 	var extensions []types.DBExtension
 	for rows.Next() {
 		var ext types.DBExtension
-		var comment, defaultVersion sql.NullString
+		var comment sql.NullString
 
 		err := rows.Scan(
 			&ext.Name,
@@ -383,7 +383,6 @@ func (r *Reader) readExtensions() ([]types.DBExtension, error) {
 			&ext.Schema,
 			&ext.Relocatable,
 			&comment,
-			&defaultVersion,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan extension: %w", err)
@@ -392,9 +391,6 @@ func (r *Reader) readExtensions() ([]types.DBExtension, error) {
 		// Set optional fields
 		if comment.Valid {
 			ext.Comment = &comment.String
-		}
-		if defaultVersion.Valid {
-			ext.DefaultVersion = &defaultVersion.String
 		}
 
 		// Set installed version (same as version for installed extensions)
