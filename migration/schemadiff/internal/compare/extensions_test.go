@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"github.com/stokaro/ptah/config"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/migration/schemadiff/internal/compare"
@@ -113,7 +114,7 @@ func TestExtensions(t *testing.T) {
 			diff := &difftypes.SchemaDiff{}
 
 			// Run the comparison
-			compare.Extensions(generated, database, diff)
+			compare.Extensions(generated, database, diff, nil)
 
 			// Verify results
 			c.Assert(diff.ExtensionsAdded, qt.DeepEquals, tt.expectedAdded)
@@ -220,7 +221,7 @@ func TestExtensions_RealWorldScenarios(t *testing.T) {
 			diff := &difftypes.SchemaDiff{}
 
 			// Run the comparison
-			compare.Extensions(generated, database, diff)
+			compare.Extensions(generated, database, diff, nil)
 
 			// Verify results using custom verification function
 			tt.verify(c, diff)
@@ -290,14 +291,129 @@ func TestExtensions_EdgeCases(t *testing.T) {
 			// Run the comparison and check for panics
 			if tt.expectPanic {
 				c.Assert(func() {
-					compare.Extensions(tt.generated, tt.database, diff)
+					compare.Extensions(tt.generated, tt.database, diff, nil)
 				}, qt.PanicMatches, ".*")
 			} else {
 				// Should not panic
-				compare.Extensions(tt.generated, tt.database, diff)
+				compare.Extensions(tt.generated, tt.database, diff, nil)
 				// Basic sanity check - diff should be populated
 				c.Assert(diff, qt.IsNotNil)
 			}
+		})
+	}
+}
+
+func TestExtensions_WithIgnoreConfiguration(t *testing.T) {
+	tests := []struct {
+		name                string
+		generatedExtensions []goschema.Extension
+		databaseExtensions  []types.DBExtension
+		options             *config.CompareOptions
+		expectedAdded       []string
+		expectedRemoved     []string
+	}{
+		{
+			name: "default ignore plpgsql - plpgsql in database not removed",
+			generatedExtensions: []goschema.Extension{
+				{Name: "pg_trgm", IfNotExists: true},
+			},
+			databaseExtensions: []types.DBExtension{
+				{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
+				{Name: "pg_trgm", Version: "1.6", Schema: "public"},
+			},
+			options:         nil, // Use defaults (ignores plpgsql)
+			expectedAdded:   []string{},
+			expectedRemoved: []string{},
+		},
+		{
+			name: "default ignore plpgsql - plpgsql not in generated schema",
+			generatedExtensions: []goschema.Extension{
+				{Name: "pg_trgm", IfNotExists: true},
+			},
+			databaseExtensions: []types.DBExtension{
+				{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
+			},
+			options:         nil, // Use defaults (ignores plpgsql)
+			expectedAdded:   []string{"pg_trgm"},
+			expectedRemoved: []string{}, // plpgsql should not be removed
+		},
+		{
+			name: "custom ignore list - ignore adminpack",
+			generatedExtensions: []goschema.Extension{
+				{Name: "pg_trgm", IfNotExists: true},
+			},
+			databaseExtensions: []types.DBExtension{
+				{Name: "adminpack", Version: "2.1", Schema: "public"},
+				{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
+			},
+			options:         config.WithIgnoredExtensions("adminpack"),
+			expectedAdded:   []string{"pg_trgm"},
+			expectedRemoved: []string{"plpgsql"}, // plpgsql not ignored in custom list
+		},
+		{
+			name: "ignore multiple extensions",
+			generatedExtensions: []goschema.Extension{
+				{Name: "pg_trgm", IfNotExists: true},
+			},
+			databaseExtensions: []types.DBExtension{
+				{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
+				{Name: "adminpack", Version: "2.1", Schema: "public"},
+				{Name: "pg_stat_statements", Version: "1.9", Schema: "public"},
+			},
+			options:         config.WithIgnoredExtensions("plpgsql", "adminpack"),
+			expectedAdded:   []string{"pg_trgm"},
+			expectedRemoved: []string{"pg_stat_statements"}, // Only non-ignored extension should be removed
+		},
+		{
+			name: "no ignored extensions - manage all",
+			generatedExtensions: []goschema.Extension{
+				{Name: "pg_trgm", IfNotExists: true},
+			},
+			databaseExtensions: []types.DBExtension{
+				{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
+				{Name: "adminpack", Version: "2.1", Schema: "public"},
+			},
+			options:         config.WithIgnoredExtensions(), // Empty ignore list
+			expectedAdded:   []string{"pg_trgm"},
+			expectedRemoved: []string{"adminpack", "plpgsql"}, // All extensions should be managed
+		},
+		{
+			name: "additional ignored extensions",
+			generatedExtensions: []goschema.Extension{
+				{Name: "pg_trgm", IfNotExists: true},
+			},
+			databaseExtensions: []types.DBExtension{
+				{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
+				{Name: "adminpack", Version: "2.1", Schema: "public"},
+				{Name: "pg_stat_statements", Version: "1.9", Schema: "public"},
+			},
+			options:         config.WithAdditionalIgnoredExtensions("adminpack"),
+			expectedAdded:   []string{"pg_trgm"},
+			expectedRemoved: []string{"pg_stat_statements"}, // plpgsql and adminpack ignored
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			// Setup test data
+			generated := &goschema.Database{
+				Extensions: tt.generatedExtensions,
+			}
+			database := &types.DBSchema{
+				Extensions: tt.databaseExtensions,
+			}
+
+			// Create empty diff to populate
+			diff := &difftypes.SchemaDiff{}
+
+			// Run the comparison with options
+			compare.Extensions(generated, database, diff, tt.options)
+
+			// Verify results
+			c.Assert(diff.ExtensionsAdded, qt.DeepEquals, tt.expectedAdded)
+			c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, tt.expectedRemoved)
 		})
 	}
 }
