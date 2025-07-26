@@ -64,8 +64,8 @@ func ParseDir(rootDir string) (*Database, error) {
 			return nil
 		}
 
-		// Skip vendor directories
-		if strings.Contains(path, "vendor/") {
+		// Skip vendor directories (handle both Unix and Windows path separators)
+		if strings.Contains(path, "vendor/") || strings.Contains(path, "vendor\\") {
 			return nil
 		}
 
@@ -78,6 +78,7 @@ func ParseDir(rootDir string) (*Database, error) {
 		result.Indexes = append(result.Indexes, database.Indexes...)
 		result.Tables = append(result.Tables, database.Tables...)
 		result.Enums = append(result.Enums, database.Enums...)
+		result.Extensions = append(result.Extensions, database.Extensions...)
 
 		return nil
 	})
