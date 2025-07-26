@@ -321,6 +321,60 @@ func ToIndex(index *ast.IndexNode) goschema.Index {
 		Fields:     index.Columns,
 		Unique:     index.Unique,
 		Comment:    index.Comment,
+		// PostgreSQL-specific features
+		Type:      index.Type,
+		Condition: index.Condition,
+		Operator:  index.Operator,
+		TableName: index.Table,
+	}
+}
+
+// ToExtension converts an ast.ExtensionNode to a goschema.Extension for database extension definitions.
+//
+// This function extracts extension metadata from an AST node, including the extension name,
+// version requirements, and configuration options.
+//
+// # Parameters
+//
+//   - extension: The AST extension node containing extension metadata
+//
+// # Extension Features
+//
+//   - Extension name extraction (pg_trgm, postgis, etc.)
+//   - IF NOT EXISTS clause handling
+//   - Version specification support
+//   - Extension comments for documentation
+//
+// # Examples
+//
+// Basic extension:
+//
+//	extension := ast.NewExtension("pg_trgm").SetIfNotExists()
+//	extensionSchema := ToExtension(extension)
+//	// Results in: goschema.Extension{
+//	//   Name: "pg_trgm", IfNotExists: true
+//	// }
+//
+// Extension with version:
+//
+//	extension := ast.NewExtension("postgis").
+//		SetVersion("3.0").
+//		SetComment("Geographic data support")
+//	extensionSchema := ToExtension(extension)
+//	// Results in: goschema.Extension{
+//	//   Name: "postgis", Version: "3.0",
+//	//   Comment: "Geographic data support"
+//	// }
+//
+// # Return Value
+//
+// Returns a goschema.Extension with all extension attributes extracted from the AST node.
+func ToExtension(extension *ast.ExtensionNode) goschema.Extension {
+	return goschema.Extension{
+		Name:        extension.Name,
+		IfNotExists: extension.IfNotExists,
+		Version:     extension.Version,
+		Comment:     extension.Comment,
 	}
 }
 

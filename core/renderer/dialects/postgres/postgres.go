@@ -314,7 +314,55 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	parts = append(parts, node.Name)
 	parts = append(parts, "ON")
 	parts = append(parts, node.Table)
-	parts = append(parts, fmt.Sprintf("(%s)", strings.Join(node.Columns, ", ")))
+
+	// Add index type (USING clause) for PostgreSQL
+	if node.Type != "" && node.Type != "BTREE" {
+		parts = append(parts, "USING")
+		parts = append(parts, node.Type)
+	}
+
+	// Add columns with optional operator class
+	var columnSpecs []string
+	for _, column := range node.Columns {
+		columnSpec := column
+		if node.Operator != "" {
+			columnSpec = fmt.Sprintf("%s %s", column, node.Operator)
+		}
+		columnSpecs = append(columnSpecs, columnSpec)
+	}
+	parts = append(parts, fmt.Sprintf("(%s)", strings.Join(columnSpecs, ", ")))
+
+	// Add WHERE condition for partial indexes
+	if node.Condition != "" {
+		parts = append(parts, "WHERE")
+		parts = append(parts, node.Condition)
+	}
+
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+
+	return nil
+}
+
+func (r *Renderer) VisitExtension(node *ast.ExtensionNode) error {
+	var parts []string
+
+	parts = append(parts, "CREATE EXTENSION")
+
+	if node.IfNotExists {
+		parts = append(parts, "IF NOT EXISTS")
+	}
+
+	parts = append(parts, node.Name)
+
+	// Add version specification if provided
+	if node.Version != "" {
+		parts = append(parts, fmt.Sprintf("VERSION '%s'", node.Version))
+	}
+
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
 
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 

@@ -328,7 +328,8 @@ func (n *ConstraintNode) Accept(visitor Visitor) error {
 // IndexNode represents a CREATE INDEX statement.
 //
 // Indexes can be unique or non-unique and may specify an index type
-// depending on the database system capabilities.
+// depending on the database system capabilities. PostgreSQL-specific
+// features like partial indexes and operator classes are also supported.
 type IndexNode struct {
 	// Name is the index name
 	Name string
@@ -338,10 +339,79 @@ type IndexNode struct {
 	Columns []string
 	// Unique indicates whether this is a unique index
 	Unique bool
-	// Type specifies the index type (BTREE, HASH, etc.) - database-specific
+	// Type specifies the index type (BTREE, HASH, GIN, GIST, etc.) - database-specific
 	Type string
 	// Comment is an optional index comment
 	Comment string
+
+	// PostgreSQL-specific features
+	// Condition specifies a WHERE clause for partial indexes
+	Condition string
+	// Operator specifies the operator class (gin_trgm_ops, etc.)
+	Operator string
+}
+
+// ExtensionNode represents a CREATE EXTENSION statement for PostgreSQL.
+//
+// Extensions enable additional functionality in PostgreSQL databases,
+// such as trigram similarity search (pg_trgm) or geographic data support (PostGIS).
+type ExtensionNode struct {
+	// Name is the extension name (pg_trgm, postgis, etc.)
+	Name string
+	// IfNotExists indicates whether to use IF NOT EXISTS clause
+	IfNotExists bool
+	// Version specifies a specific version requirement (optional)
+	Version string
+	// Comment is an optional extension comment
+	Comment string
+}
+
+// NewExtension creates a new extension node with the specified name.
+//
+// Example:
+//
+//	extension := NewExtension("pg_trgm")
+//	extension := NewExtension("postgis").SetVersion("3.0").SetIfNotExists()
+func NewExtension(name string) *ExtensionNode {
+	return &ExtensionNode{
+		Name:        name,
+		IfNotExists: false,
+	}
+}
+
+// Accept implements the Node interface for ExtensionNode.
+func (n *ExtensionNode) Accept(visitor Visitor) error {
+	return visitor.VisitExtension(n)
+}
+
+// SetIfNotExists marks the extension to use IF NOT EXISTS clause.
+//
+// Example:
+//
+//	extension.SetIfNotExists()
+func (n *ExtensionNode) SetIfNotExists() *ExtensionNode {
+	n.IfNotExists = true
+	return n
+}
+
+// SetVersion sets a specific version requirement for the extension.
+//
+// Example:
+//
+//	extension.SetVersion("3.0")
+func (n *ExtensionNode) SetVersion(version string) *ExtensionNode {
+	n.Version = version
+	return n
+}
+
+// SetComment sets a comment for the extension.
+//
+// Example:
+//
+//	extension.SetComment("Enable trigram similarity search")
+func (n *ExtensionNode) SetComment(comment string) *ExtensionNode {
+	n.Comment = comment
+	return n
 }
 
 // NewIndex creates a new index node with the specified name, table, and columns.

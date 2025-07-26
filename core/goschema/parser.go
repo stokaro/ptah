@@ -92,12 +92,32 @@ func parseIndexComment(comment *ast.Comment, structName string, schemaIndexes *[
 	for i := range fields {
 		fields[i] = strings.TrimSpace(fields[i])
 	}
+
+	// Determine target table name - use 'table' attribute if specified, otherwise leave empty for later resolution
+	tableName := kv["table"]
+
 	*schemaIndexes = append(*schemaIndexes, Index{
 		StructName: structName,
 		Name:       kv["name"],
 		Fields:     fields,
 		Unique:     kv["unique"] == "true",
 		Comment:    kv["comment"],
+		// PostgreSQL-specific features
+		Type:      kv["type"],      // GIN, GIST, BTREE, HASH, etc.
+		Condition: kv["condition"], // WHERE clause for partial indexes
+		Operator:  kv["ops"],       // Operator class (gin_trgm_ops, etc.)
+		TableName: tableName,       // Target table name
+	})
+}
+
+func parseExtensionComment(comment *ast.Comment, extensions *[]Extension) {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+
+	*extensions = append(*extensions, Extension{
+		Name:        kv["name"],
+		IfNotExists: kv["if_not_exists"] == "true",
+		Version:     kv["version"],
+		Comment:     kv["comment"],
 	})
 }
 
@@ -115,7 +135,7 @@ func parseTableComment(comment *ast.Comment, structName string, tableDirectives 
 	})
 }
 
-func parseComment(comment *ast.Comment, structName string, field *ast.Field, globalEnumsMap map[string]Enum, schemaFields *[]Field, embeddedFields *[]EmbeddedField, schemaIndexes *[]Index) {
+func parseComment(comment *ast.Comment, structName string, field *ast.Field, globalEnumsMap map[string]Enum, schemaFields *[]Field, embeddedFields *[]EmbeddedField, schemaIndexes *[]Index, extensions *[]Extension) {
 	switch {
 	case strings.HasPrefix(comment.Text, "//migrator:schema:field"):
 		parseFieldComment(comment, field, structName, globalEnumsMap, schemaFields)
@@ -123,29 +143,33 @@ func parseComment(comment *ast.Comment, structName string, field *ast.Field, glo
 		parseEmbeddedComment(comment, field, structName, embeddedFields)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:index"):
 		parseIndexComment(comment, structName, schemaIndexes)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:extension"):
+		parseExtensionComment(comment, extensions)
 	}
 }
 
-func processTableComments(structName string, genDecl *ast.GenDecl, tableDirectives *[]Table) {
+func processTableComments(structName string, genDecl *ast.GenDecl, tableDirectives *[]Table, extensions *[]Extension) {
 	if genDecl.Doc == nil {
 		return
 	}
 
 	for _, comment := range genDecl.Doc.List {
-		if !strings.HasPrefix(comment.Text, "//migrator:schema:table") {
-			continue
+		switch {
+		case strings.HasPrefix(comment.Text, "//migrator:schema:table"):
+			parseTableComment(comment, structName, tableDirectives)
+		case strings.HasPrefix(comment.Text, "//migrator:schema:extension"):
+			parseExtensionComment(comment, extensions)
 		}
-		parseTableComment(comment, structName, tableDirectives)
 	}
 }
 
-func processFieldComments(structName string, structType *ast.StructType, globalEnumsMap map[string]Enum, schemaFields *[]Field, embeddedFields *[]EmbeddedField, schemaIndexes *[]Index) {
+func processFieldComments(structName string, structType *ast.StructType, globalEnumsMap map[string]Enum, schemaFields *[]Field, embeddedFields *[]EmbeddedField, schemaIndexes *[]Index, extensions *[]Extension) {
 	for _, field := range structType.Fields.List {
 		if field.Doc == nil {
 			continue
 		}
 		for _, comment := range field.Doc.List {
-			parseComment(comment, structName, field, globalEnumsMap, schemaFields, embeddedFields, schemaIndexes)
+			parseComment(comment, structName, field, globalEnumsMap, schemaFields, embeddedFields, schemaIndexes, extensions)
 		}
 	}
 }
@@ -162,6 +186,7 @@ func ParseFile(filename string) Database {
 	var schemaFields []Field
 	var schemaIndexes []Index
 	var tableDirectives []Table
+	var extensions []Extension
 	globalEnumsMap := make(map[string]Enum)
 
 	for _, decl := range f.Decls {
@@ -179,8 +204,8 @@ func ParseFile(filename string) Database {
 			if !ok {
 				continue
 			}
-			processTableComments(structName, genDecl, &tableDirectives)
-			processFieldComments(structName, structType, globalEnumsMap, &schemaFields, &embeddedFields, &schemaIndexes)
+			processTableComments(structName, genDecl, &tableDirectives, &extensions)
+			processFieldComments(structName, structType, globalEnumsMap, &schemaFields, &embeddedFields, &schemaIndexes, &extensions)
 		}
 	}
 
@@ -200,6 +225,7 @@ func ParseFile(filename string) Database {
 		Indexes:        schemaIndexes,
 		Enums:          enums,
 		EmbeddedFields: embeddedFields,
+		Extensions:     extensions,
 		Dependencies:   make(map[string][]string),
 	}
 	buildDependencyGraph(&result)

@@ -471,7 +471,13 @@ func FromTable(table goschema.Table, fields []goschema.Field, enums []goschema.E
 // Returns a fully configured *ast.IndexNode ready for SQL generation.
 // The node contains the index name, target table, column list, and all specified options.
 func FromIndex(index goschema.Index) *ast.IndexNode {
-	indexNode := ast.NewIndex(index.Name, index.StructName, index.Fields...)
+	// Use TableName if specified, otherwise fall back to StructName
+	tableName := index.TableName
+	if tableName == "" {
+		tableName = index.StructName
+	}
+
+	indexNode := ast.NewIndex(index.Name, tableName, index.Fields...)
 
 	// Set unique constraint
 	if index.Unique {
@@ -483,7 +489,82 @@ func FromIndex(index goschema.Index) *ast.IndexNode {
 		indexNode.Comment = index.Comment
 	}
 
+	// Set PostgreSQL-specific features
+	if index.Type != "" {
+		indexNode.Type = index.Type
+	}
+
+	if index.Condition != "" {
+		indexNode.Condition = index.Condition
+	}
+
+	if index.Operator != "" {
+		indexNode.Operator = index.Operator
+	}
+
 	return indexNode
+}
+
+// FromExtension converts a goschema.Extension to an ast.ExtensionNode for PostgreSQL extension creation.
+//
+// This function transforms extension metadata into an AST node that can be rendered
+// as CREATE EXTENSION statements for PostgreSQL databases.
+//
+// # Parameters
+//
+//   - extension: The schema extension definition containing extension metadata
+//
+// # Extension Features
+//
+//   - Extension name specification (pg_trgm, postgis, etc.)
+//   - IF NOT EXISTS clause support
+//   - Version specification for specific extension versions
+//   - Extension comments for documentation
+//
+// # Examples
+//
+// Basic extension:
+//
+//	extension := goschema.Extension{
+//		Name:        "pg_trgm",
+//		IfNotExists: true,
+//		Comment:     "Enable trigram similarity search",
+//	}
+//	extensionNode := FromExtension(extension)
+//
+// Extension with version:
+//
+//	extension := goschema.Extension{
+//		Name:        "postgis",
+//		Version:     "3.0",
+//		IfNotExists: true,
+//		Comment:     "Geographic data support",
+//	}
+//	extensionNode := FromExtension(extension)
+//
+// # Return Value
+//
+// Returns a fully configured *ast.ExtensionNode ready for SQL generation.
+// The node contains the extension name, version, and all specified options.
+func FromExtension(extension goschema.Extension) *ast.ExtensionNode {
+	extensionNode := ast.NewExtension(extension.Name)
+
+	// Set IF NOT EXISTS
+	if extension.IfNotExists {
+		extensionNode.SetIfNotExists()
+	}
+
+	// Set version
+	if extension.Version != "" {
+		extensionNode.SetVersion(extension.Version)
+	}
+
+	// Set comment
+	if extension.Comment != "" {
+		extensionNode.SetComment(extension.Comment)
+	}
+
+	return extensionNode
 }
 
 // FromEnum converts a goschema.Enum to an ast.EnumNode for database enum type creation.
@@ -618,13 +699,74 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 		statements.Statements = append(statements.Statements, tableNode)
 	}
 
-	// 3. Add index definitions last
+	// 3. Add extension definitions (PostgreSQL-specific)
+	for _, extension := range database.Extensions {
+		extensionNode := FromExtension(extension)
+		statements.Statements = append(statements.Statements, extensionNode)
+	}
+
+	// 4. Add index definitions last
+	// Create a mapping from struct names to table names for proper index table resolution
+	structToTableMap := createStructToTableMap(database.Tables)
 	for _, index := range database.Indexes {
-		indexNode := FromIndex(index)
+		indexNode := FromIndexWithTableMapping(index, structToTableMap)
 		statements.Statements = append(statements.Statements, indexNode)
 	}
 
 	return statements
+}
+
+// createStructToTableMap creates a mapping from struct names to table names.
+// This is used to resolve the correct table names for indexes.
+func createStructToTableMap(tables []goschema.Table) map[string]string {
+	structToTableMap := make(map[string]string)
+	for _, table := range tables {
+		structToTableMap[table.StructName] = table.Name
+	}
+	return structToTableMap
+}
+
+// FromIndexWithTableMapping converts a goschema.Index to an ast.IndexNode with proper table name resolution.
+// This function is similar to FromIndex but uses a struct-to-table mapping to resolve the correct table names.
+func FromIndexWithTableMapping(index goschema.Index, structToTableMap map[string]string) *ast.IndexNode {
+	// Determine the target table name
+	tableName := index.TableName
+	if tableName == "" {
+		// If no explicit table name, try to resolve from struct name
+		if mappedTableName, exists := structToTableMap[index.StructName]; exists {
+			tableName = mappedTableName
+		} else {
+			// Fall back to struct name if no mapping found
+			tableName = index.StructName
+		}
+	}
+
+	indexNode := ast.NewIndex(index.Name, tableName, index.Fields...)
+
+	// Set unique constraint
+	if index.Unique {
+		indexNode.Unique = true
+	}
+
+	// Set comment
+	if index.Comment != "" {
+		indexNode.Comment = index.Comment
+	}
+
+	// Set PostgreSQL-specific features
+	if index.Type != "" {
+		indexNode.Type = index.Type
+	}
+
+	if index.Condition != "" {
+		indexNode.Condition = index.Condition
+	}
+
+	if index.Operator != "" {
+		indexNode.Operator = index.Operator
+	}
+
+	return indexNode
 }
 
 // parseForeignKeyReference parses a foreign key reference string into an ast.ForeignKeyRef.

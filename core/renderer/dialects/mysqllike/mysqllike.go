@@ -465,3 +465,15 @@ func (r *Renderer) visitAlterTableWithEnums(node *ast.AlterTableNode, enums map[
 	r.w.WriteLine("")
 	return nil
 }
+
+// VisitExtension renders CREATE EXTENSION statements for MySQL-like databases (no-op)
+func (r *Renderer) VisitExtension(node *ast.ExtensionNode) error {
+	// MySQL-like databases don't support extensions like PostgreSQL
+	// Add a comment to indicate this feature is not supported
+	if node.Comment != "" {
+		r.w.WriteLinef("-- Extension %s not supported in %s: %s", node.Name, r.dialect, node.Comment)
+	} else {
+		r.w.WriteLinef("-- Extension %s not supported in %s", node.Name, r.dialect)
+	}
+	return nil
+}
