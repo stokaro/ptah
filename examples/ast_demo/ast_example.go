@@ -250,6 +250,7 @@ func (a *SchemaAnalyzer) VisitAlterType(node *ast.AlterTypeNode) error   { retur
 func (a *SchemaAnalyzer) VisitComment(node *ast.CommentNode) error       { return nil }
 func (a *SchemaAnalyzer) VisitDropTable(node *ast.DropTableNode) error   { return nil }
 func (a *SchemaAnalyzer) VisitDropType(node *ast.DropTypeNode) error     { return nil }
+func (a *SchemaAnalyzer) VisitExtension(node *ast.ExtensionNode) error   { return nil }
 
 // AuditTransformer adds audit columns to all tables
 type AuditTransformer struct{}

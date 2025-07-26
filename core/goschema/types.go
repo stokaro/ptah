@@ -27,6 +27,7 @@ type Database struct {
 	Indexes        []Index
 	Enums          []Enum
 	EmbeddedFields []EmbeddedField
+	Extensions     []Extension         // PostgreSQL extensions (pg_trgm, postgis, etc.)
 	Dependencies   map[string][]string // table -> list of tables it depends on
 }
 
@@ -140,6 +141,22 @@ type Field struct {
 //	    // Multi-column index
 //	    //migrator:schema:index name="idx_users_email_status" fields="email,status"
 //	    _ int
+//
+//	    // PostgreSQL GIN index for JSONB fields
+//	    //migrator:schema:index name="idx_users_tags" fields="tags" type="GIN"
+//	    _ int
+//
+//	    // Partial index with WHERE condition
+//	    //migrator:schema:index name="idx_active_users" fields="status" condition="deleted_at IS NULL"
+//	    _ int
+//
+//	    // Trigram similarity index
+//	    //migrator:schema:index name="idx_users_name_trgm" fields="name" type="GIN" ops="gin_trgm_ops"
+//	    _ int
+//
+//	    // Cross-table index targeting specific table
+//	    //migrator:schema:index name="idx_products_name" fields="name" table="products"
+//	    _ int
 //	}
 type Index struct {
 	StructName string   // Name of the Go struct this index belongs to
@@ -147,6 +164,31 @@ type Index struct {
 	Fields     []string // Column names included in the index
 	Unique     bool     // Whether this is a unique index
 	Comment    string   // Index comment/description
+
+	// PostgreSQL-specific features
+	Type      string // Index type: GIN, GIST, BTREE, HASH, etc.
+	Condition string // WHERE clause for partial indexes
+	Operator  string // Operator class (gin_trgm_ops, etc.)
+	TableName string // Target table name (for cross-table association)
+}
+
+// Extension represents a PostgreSQL extension definition parsed from Go struct annotations.
+// Extensions enable additional functionality in PostgreSQL databases.
+//
+// Extension is created by parsing //migrator:schema:extension annotations:
+//
+//	// Enable trigram similarity search
+//	//migrator:schema:extension name="pg_trgm" if_not_exists="true"
+//	type DatabaseExtensions struct{}
+//
+//	// Enable PostGIS for geographic data
+//	//migrator:schema:extension name="postgis" version="3.0" if_not_exists="true"
+//	type GeoExtensions struct{}
+type Extension struct {
+	Name        string // Extension name (pg_trgm, postgis, etc.)
+	IfNotExists bool   // Whether to use IF NOT EXISTS clause
+	Version     string // Specific version requirement (optional)
+	Comment     string // Extension comment/description
 }
 
 // Table represents a database table configuration parsed from Go struct annotations.

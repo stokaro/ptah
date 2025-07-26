@@ -107,3 +107,11 @@ func (m *MockVisitor) VisitDropType(node *ast.DropTypeNode) error {
 	}
 	return nil
 }
+
+func (m *MockVisitor) VisitExtension(node *ast.ExtensionNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "Extension:"+node.Name)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
