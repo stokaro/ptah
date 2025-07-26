@@ -15,6 +15,7 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 		Fields:       make([]goschema.Field, 0),
 		Indexes:      make([]goschema.Index, 0),
 		Enums:        make([]goschema.Enum, 0),
+		Extensions:   make([]goschema.Extension, 0),
 		Dependencies: make(map[string][]string),
 	}
 
@@ -74,6 +75,22 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 			Unique:     dbIndex.IsUnique,
 		}
 		database.Indexes = append(database.Indexes, index)
+	}
+
+	// Convert extensions
+	for _, dbExtension := range dbSchema.Extensions {
+		extension := goschema.Extension{
+			Name:        dbExtension.Name,
+			IfNotExists: true, // Default to true for down migrations for safety
+			Version:     dbExtension.Version,
+		}
+
+		// Set comment if available
+		if dbExtension.Comment != nil {
+			extension.Comment = *dbExtension.Comment
+		}
+
+		database.Extensions = append(database.Extensions, extension)
 	}
 
 	return database

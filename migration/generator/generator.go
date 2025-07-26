@@ -165,6 +165,10 @@ func reverseSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 		// Reverse index operations
 		IndexesAdded:   diff.IndexesRemoved, // Indexes to remove become indexes to add
 		IndexesRemoved: diff.IndexesAdded,   // Indexes to add become indexes to remove
+
+		// Reverse extension operations
+		ExtensionsAdded:   diff.ExtensionsRemoved, // Extensions to remove become extensions to add
+		ExtensionsRemoved: diff.ExtensionsAdded,   // Extensions to add become extensions to remove
 	}
 }
 
