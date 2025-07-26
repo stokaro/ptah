@@ -64,6 +64,14 @@ type SchemaDiff struct {
 	// IndexesRemoved contains names of indexes that exist in the current database
 	// but not in the target schema (safe operation - no data loss)
 	IndexesRemoved []string `json:"indexes_removed"`
+
+	// ExtensionsAdded contains names of PostgreSQL extensions that exist in the target schema
+	// but not in the current database schema
+	ExtensionsAdded []string `json:"extensions_added"`
+
+	// ExtensionsRemoved contains names of PostgreSQL extensions that exist in the current database
+	// but not in the target schema (potentially dangerous - may break existing functionality)
+	ExtensionsRemoved []string `json:"extensions_removed"`
 }
 
 // HasChanges returns true if the diff contains any schema changes requiring migration.
@@ -103,7 +111,9 @@ func (d *SchemaDiff) HasChanges() bool {
 		len(d.EnumsRemoved) > 0 ||
 		len(d.EnumsModified) > 0 ||
 		len(d.IndexesAdded) > 0 ||
-		len(d.IndexesRemoved) > 0
+		len(d.IndexesRemoved) > 0 ||
+		len(d.ExtensionsAdded) > 0 ||
+		len(d.ExtensionsRemoved) > 0
 }
 
 // TableDiff represents structural differences within a specific database table.

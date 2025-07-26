@@ -79,6 +79,20 @@ func TestSchemaDiff_HasChanges(t *testing.T) {
 			},
 			expected: true,
 		},
+		{
+			name: "extensions added",
+			diff: &types.SchemaDiff{
+				ExtensionsAdded: []string{"pg_trgm"},
+			},
+			expected: true,
+		},
+		{
+			name: "extensions removed",
+			diff: &types.SchemaDiff{
+				ExtensionsRemoved: []string{"btree_gin"},
+			},
+			expected: true,
+		},
 	}
 
 	for _, tt := range tests {

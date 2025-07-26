@@ -618,3 +618,28 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, column *ast.Co
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s;", tableName, column.Name, column.Default.Expression)
 	}
 }
+
+func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
+	var parts []string
+
+	parts = append(parts, "DROP EXTENSION")
+
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+
+	parts = append(parts, node.Name)
+
+	if node.Cascade {
+		parts = append(parts, "CASCADE")
+	}
+
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+
+	return nil
+}
