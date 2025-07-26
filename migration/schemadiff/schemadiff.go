@@ -19,5 +19,8 @@ func Compare(generated *goschema.Database, database *types.DBSchema) *difftypes.
 	// Compare database index definitions
 	compare.Indexes(generated, database, diff)
 
+	// Compare PostgreSQL extensions
+	compare.Extensions(generated, database, diff)
+
 	return diff
 }

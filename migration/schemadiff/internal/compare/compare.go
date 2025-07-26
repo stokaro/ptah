@@ -888,3 +888,91 @@ func processEmbeddedFieldsForStruct(embeddedFields []goschema.EmbeddedField, all
 
 	return generatedFields
 }
+
+// Extensions performs comprehensive extension comparison between generated and database schemas.
+//
+// This function compares PostgreSQL extensions defined in the target schema (from Go struct annotations)
+// with extensions currently installed in the database. It identifies which extensions need to be
+// added or removed to bring the database in line with the target schema.
+//
+// # Comparison Process
+//
+// The function performs comparison in two phases:
+//  1. **Extension Discovery**: Creates lookup maps for efficient extension comparison
+//  2. **Extension Diff Analysis**: Identifies added and removed extensions
+//
+// # PostgreSQL Extension Considerations
+//
+// Extensions in PostgreSQL are database-wide objects that provide additional functionality:
+//   - **pg_trgm**: Trigram similarity search and GIN operator classes
+//   - **btree_gin**: GIN indexes for btree-compatible data types
+//   - **postgis**: Geographic data types and functions
+//   - **uuid-ossp**: UUID generation functions
+//
+// # Extension Detection
+//
+// The function now fully supports extension detection from the database schema, enabling
+// accurate comparison between target and current state. This allows for proper extension
+// lifecycle management including both addition and removal operations.
+//
+// # Parameters
+//
+//   - generated: Target schema parsed from Go struct annotations
+//   - database: Current database schema from executor introspection (includes extensions)
+//   - diff: SchemaDiff structure to populate with discovered differences
+//
+// # Side Effects
+//
+// Modifies the provided diff parameter by populating:
+//   - diff.ExtensionsAdded: Extensions that need to be created
+//   - diff.ExtensionsRemoved: Extensions that exist in database but not in target schema
+//
+// # Example Usage
+//
+//	// Extensions defined in Go annotations
+//	//migrator:schema:extension name="pg_trgm" if_not_exists="true"
+//	//migrator:schema:extension name="btree_gin" if_not_exists="true"
+//	type DatabaseExtensions struct{}
+//
+//	// Database has pg_trgm installed but not btree_gin
+//	// Results in diff.ExtensionsAdded = ["btree_gin"]
+//
+// # Output Consistency
+//
+// Results are sorted alphabetically for consistent output across multiple runs,
+// ensuring deterministic migration generation and reliable testing.
+func Extensions(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+	// Initialize slices to ensure they're never nil
+	diff.ExtensionsAdded = []string{}
+	diff.ExtensionsRemoved = []string{}
+
+	// Create maps for quick lookup
+	genExtensions := make(map[string]goschema.Extension)
+	for _, extension := range generated.Extensions {
+		genExtensions[extension.Name] = extension
+	}
+
+	// Create map of database extensions for efficient lookup
+	dbExtensions := make(map[string]types.DBExtension)
+	for _, extension := range database.Extensions {
+		dbExtensions[extension.Name] = extension
+	}
+
+	// Find added extensions (exist in generated schema but not in database)
+	for extensionName := range genExtensions {
+		if _, exists := dbExtensions[extensionName]; !exists {
+			diff.ExtensionsAdded = append(diff.ExtensionsAdded, extensionName)
+		}
+	}
+
+	// Find removed extensions (exist in database but not in generated schema)
+	for extensionName := range dbExtensions {
+		if _, exists := genExtensions[extensionName]; !exists {
+			diff.ExtensionsRemoved = append(diff.ExtensionsRemoved, extensionName)
+		}
+	}
+
+	// Sort for consistent output
+	sort.Strings(diff.ExtensionsAdded)
+	sort.Strings(diff.ExtensionsRemoved)
+}

@@ -36,6 +36,8 @@ type Visitor interface {
 	VisitDropType(*DropTypeNode) error
 	// VisitExtension renders a CREATE EXTENSION statement (PostgreSQL-specific)
 	VisitExtension(*ExtensionNode) error
+	// VisitDropExtension renders a DROP EXTENSION statement (PostgreSQL-specific)
+	VisitDropExtension(*DropExtensionNode) error
 }
 
 // DefaultValue represents different types of default values for table columns.
