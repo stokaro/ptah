@@ -109,3 +109,15 @@ func (r *Renderer) VisitDropTable(node *ast.DropTableNode) error {
 func (r *Renderer) VisitDropType(node *ast.DropTypeNode) error {
 	return r.r.VisitDropType(node)
 }
+
+// VisitExtension renders CREATE EXTENSION statements for MySQL (no-op)
+func (r *Renderer) VisitExtension(node *ast.ExtensionNode) error {
+	// MySQL doesn't support extensions like PostgreSQL
+	// Add a comment to indicate this feature is not supported
+	if node.Comment != "" {
+		r.w.WriteLinef("-- Extension %s not supported in MySQL: %s", node.Name, node.Comment)
+	} else {
+		r.w.WriteLinef("-- Extension %s not supported in MySQL", node.Name)
+	}
+	return nil
+}
