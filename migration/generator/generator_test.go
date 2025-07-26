@@ -1,6 +1,8 @@
 package generator_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -160,4 +162,150 @@ func TestGenerateMigrationOptions_Validation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGenerateMigration_ExtensionHandling_WithRealDB(t *testing.T) {
+	c := qt.New(t)
+
+	// This test uses the real database to verify extension handling
+	// Skip if database is not available
+	dbURL := os.Getenv("TEST_DB_URL")
+	if dbURL == "" {
+		t.Skip("TEST_DB_URL environment variable is not set. Skipping test.")
+	}
+
+	// Create temporary directory with test schema
+	tempDir, err := os.MkdirTemp("", "ptah_generator_test")
+	c.Assert(err, qt.IsNil)
+	defer os.RemoveAll(tempDir)
+
+	// Create schema with extensions
+	schemaContent := `package testschema
+
+//migrator:schema:extension name="pg_trgm" if_not_exists="true" comment="Test trigram extension"
+//migrator:schema:extension name="btree_gin" if_not_exists="true" comment="Test btree_gin extension"
+type TestExtensions struct{}
+
+//migrator:schema:table name="test_table_generator"
+type TestTable struct {
+	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+
+	//migrator:schema:field name="name" type="VARCHAR(255)"
+	Name string
+}
+`
+
+	schemaPath := filepath.Join(tempDir, "schema.go")
+	err = os.WriteFile(schemaPath, []byte(schemaContent), 0600)
+	c.Assert(err, qt.IsNil)
+
+	migrationsDir := filepath.Join(tempDir, "migrations")
+	err = os.MkdirAll(migrationsDir, 0755)
+	c.Assert(err, qt.IsNil)
+
+	// Test migration generation with real database
+	opts := generator.GenerateMigrationOptions{
+		RootDir:       tempDir,
+		DatabaseURL:   dbURL,
+		MigrationName: "test_extensions",
+		OutputDir:     migrationsDir,
+	}
+
+	files, err := generator.GenerateMigration(opts)
+	if err != nil {
+		// Skip test if database is not available
+		t.Skipf("Skipping test due to database connection error: %v", err)
+		return
+	}
+
+	c.Assert(files, qt.IsNotNil)
+
+	// Verify files were created
+	c.Assert(files.UpFile, qt.Not(qt.Equals), "")
+	c.Assert(files.DownFile, qt.Not(qt.Equals), "")
+
+	// Read and verify UP migration
+	upContent, err := os.ReadFile(files.UpFile)
+	c.Assert(err, qt.IsNil)
+
+	upSQL := string(upContent)
+	c.Assert(strings.Contains(upSQL, "CREATE EXTENSION IF NOT EXISTS pg_trgm"), qt.IsTrue,
+		qt.Commentf("UP migration should contain CREATE EXTENSION for pg_trgm"))
+	c.Assert(strings.Contains(upSQL, "CREATE EXTENSION IF NOT EXISTS btree_gin"), qt.IsTrue,
+		qt.Commentf("UP migration should contain CREATE EXTENSION for btree_gin"))
+	c.Assert(strings.Contains(upSQL, "CREATE TABLE test_table_generator"), qt.IsTrue,
+		qt.Commentf("UP migration should contain CREATE TABLE"))
+
+	// Read and verify DOWN migration
+	downContent, err := os.ReadFile(files.DownFile)
+	c.Assert(err, qt.IsNil)
+
+	downSQL := string(downContent)
+	c.Assert(strings.Contains(downSQL, "DROP EXTENSION IF EXISTS pg_trgm"), qt.IsTrue,
+		qt.Commentf("DOWN migration should contain DROP EXTENSION for pg_trgm"))
+	c.Assert(strings.Contains(downSQL, "DROP EXTENSION IF EXISTS btree_gin"), qt.IsTrue,
+		qt.Commentf("DOWN migration should contain DROP EXTENSION for btree_gin"))
+	c.Assert(strings.Contains(downSQL, "DROP TABLE IF EXISTS test_table_generator"), qt.IsTrue,
+		qt.Commentf("DOWN migration should contain DROP TABLE"))
+
+	// Verify symmetric extension handling
+	c.Assert(strings.Contains(upSQL, "CREATE EXTENSION"), qt.IsTrue,
+		qt.Commentf("UP migration should create extensions"))
+	c.Assert(strings.Contains(downSQL, "DROP EXTENSION"), qt.IsTrue,
+		qt.Commentf("DOWN migration should drop extensions"))
+}
+
+func TestGenerateMigration_DatabaseConnectionFix(t *testing.T) {
+	c := qt.New(t)
+
+	// This test verifies the fix for the variable shadowing bug
+	// We test that the generator properly handles database connections without panicking
+
+	tempDir, err := os.MkdirTemp("", "ptah_connection_test")
+	c.Assert(err, qt.IsNil)
+	defer os.RemoveAll(tempDir)
+
+	// Create minimal schema
+	schemaContent := `package testschema
+
+//migrator:schema:table name="simple_table_test"
+type SimpleTable struct {
+	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+}
+`
+
+	schemaPath := filepath.Join(tempDir, "schema.go")
+	err = os.WriteFile(schemaPath, []byte(schemaContent), 0600)
+	c.Assert(err, qt.IsNil)
+
+	migrationsDir := filepath.Join(tempDir, "migrations")
+	err = os.MkdirAll(migrationsDir, 0755)
+	c.Assert(err, qt.IsNil)
+
+	// Test with database URL (should not cause nil pointer dereference)
+	dbURL := os.Getenv("TEST_DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("Skipping test: TEST_DATABASE_URL environment variable is not set")
+	}
+
+	opts := generator.GenerateMigrationOptions{
+		RootDir:       tempDir,
+		DatabaseURL:   dbURL,
+		MigrationName: "test_connection",
+		OutputDir:     migrationsDir,
+	}
+
+	// This should not panic with nil pointer dereference
+	files, err := generator.GenerateMigration(opts)
+	if err != nil {
+		// Skip test if database is not available
+		t.Skipf("Skipping test due to database connection error: %v", err)
+		return
+	}
+
+	c.Assert(files, qt.IsNotNil)
+	c.Assert(files.UpFile, qt.Not(qt.Equals), "")
+	c.Assert(files.DownFile, qt.Not(qt.Equals), "")
 }

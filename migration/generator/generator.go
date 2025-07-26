@@ -64,7 +64,7 @@ func GenerateMigration(opts GenerateMigrationOptions) (*MigrationFiles, error) {
 	if opts.DBConn != nil {
 		conn = opts.DBConn
 	} else {
-		conn, err := dbschema.ConnectToDatabase(opts.DatabaseURL)
+		conn, err = dbschema.ConnectToDatabase(opts.DatabaseURL)
 		if err != nil {
 			return nil, fmt.Errorf("error connecting to database: %w", err)
 		}
