@@ -194,7 +194,7 @@ type TestTable struct {
 `
 
 	schemaPath := filepath.Join(tempDir, "schema.go")
-	err = os.WriteFile(schemaPath, []byte(schemaContent), 0644)
+	err = os.WriteFile(schemaPath, []byte(schemaContent), 0600)
 	c.Assert(err, qt.IsNil)
 
 	migrationsDir := filepath.Join(tempDir, "migrations")
@@ -274,7 +274,7 @@ type SimpleTable struct {
 `
 
 	schemaPath := filepath.Join(tempDir, "schema.go")
-	err = os.WriteFile(schemaPath, []byte(schemaContent), 0644)
+	err = os.WriteFile(schemaPath, []byte(schemaContent), 0600)
 	c.Assert(err, qt.IsNil)
 
 	migrationsDir := filepath.Join(tempDir, "migrations")
