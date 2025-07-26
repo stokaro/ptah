@@ -285,7 +285,10 @@ type SimpleTable struct {
 	c.Assert(err, qt.IsNil)
 
 	// Test with database URL (should not cause nil pointer dereference)
-	dbURL := "postgres://inventario:inventario_password@localhost:5432/inventario?sslmode=disable"
+	dbURL := os.Getenv("TEST_DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("Skipping test: TEST_DATABASE_URL environment variable is not set")
+	}
 
 	opts := generator.GenerateMigrationOptions{
 		RootDir:       tempDir,
