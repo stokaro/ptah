@@ -166,10 +166,10 @@ type Index struct {
 	Comment    string   // Index comment/description
 
 	// PostgreSQL-specific features
-	Type      string   // Index type: GIN, GIST, BTREE, HASH, etc.
-	Condition string   // WHERE clause for partial indexes
-	Operator  string   // Operator class (gin_trgm_ops, etc.)
-	TableName string   // Target table name (for cross-table association)
+	Type      string // Index type: GIN, GIST, BTREE, HASH, etc.
+	Condition string // WHERE clause for partial indexes
+	Operator  string // Operator class (gin_trgm_ops, etc.)
+	TableName string // Target table name (for cross-table association)
 }
 
 // Extension represents a PostgreSQL extension definition parsed from Go struct annotations.
