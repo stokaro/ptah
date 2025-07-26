@@ -2,11 +2,54 @@
 //
 // This example shows how to use the new configuration API to control which
 // PostgreSQL extensions should be ignored during schema migrations.
+//
+// Example of integrating extension ignore functionality into a real application:
+//
+//	// Parse your Go entities
+//	generated, err := goschema.ParseDir("./models")
+//	if err != nil {
+//		log.Fatalf("Failed to parse Go entities: %v", err)
+//	}
+//
+//	// Connect to database
+//	conn, err := dbschema.ConnectToDatabase("postgres://user:pass@localhost/db")
+//	if err != nil {
+//		log.Fatalf("Failed to connect to database: %v", err)
+//	}
+//	defer conn.Close()
+//
+//	database, err := conn.ReadSchema()
+//	if err != nil {
+//		log.Fatalf("Failed to read database schema: %v", err)
+//	}
+//
+//	// Configure extension ignore strategy based on environment
+//	var opts *config.CompareOptions
+//	switch environment {
+//	case "development":
+//		opts = config.WithIgnoredExtensions("plpgsql", "adminpack")
+//	case "production":
+//		opts = config.WithAdditionalIgnoredExtensions("adminpack", "pg_stat_statements")
+//	case "testing":
+//		opts = config.WithIgnoredExtensions() // manage all extensions
+//	default:
+//		opts = nil // use Ptah defaults
+//	}
+//
+//	// Compare schemas with environment-specific configuration
+//	diff := schemadiff.CompareWithOptions(generated, database, opts)
+//
+//	// Generate migrations based on the differences
+//	files, err := generator.GenerateMigration(generator.GenerateMigrationOptions{
+//		RootDir:       "./models",
+//		DatabaseURL:   "postgres://user:pass@localhost/db",
+//		MigrationName: "update_extensions",
+//		OutputDir:     "./migrations",
+//	})
 package main
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/stokaro/ptah/config"
 	"github.com/stokaro/ptah/core/goschema"
@@ -119,73 +162,4 @@ func demonstrateManageAllExtensions(generated *goschema.Database, database *type
 	fmt.Printf("   Extensions to remove: %v\n", diff.ExtensionsRemoved)
 	fmt.Println("   Note: All extensions are managed, including 'plpgsql'")
 	fmt.Println()
-}
-
-// Example of how you might use this in a real application
-func realWorldExample() {
-	// This function demonstrates how you might integrate the extension ignore
-	// functionality into a real application
-
-	fmt.Println("Real-World Integration Example:")
-	fmt.Println("==============================")
-
-	// Parse your Go entities
-	generated, err := goschema.ParseDir("./models")
-	if err != nil {
-		log.Fatalf("Failed to parse Go entities: %v", err)
-	}
-
-	// Connect to database (this would be a real connection)
-	// conn, err := dbschema.ConnectToDatabase("postgres://user:pass@localhost/db")
-	// if err != nil {
-	//     log.Fatalf("Failed to connect to database: %v", err)
-	// }
-	// defer conn.Close()
-
-	// database, err := conn.ReadSchema()
-	// if err != nil {
-	//     log.Fatalf("Failed to read database schema: %v", err)
-	// }
-
-	// For demo purposes, create a mock database schema
-	database := &types.DBSchema{
-		Extensions: []types.DBExtension{
-			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},
-			{Name: "adminpack", Version: "2.1", Schema: "public"},
-		},
-	}
-
-	// Different environments might have different ignore strategies
-	var opts *config.CompareOptions
-
-	environment := "production" // This could come from env var or config
-	switch environment {
-	case "development":
-		// Development: ignore common pre-installed extensions
-		opts = config.WithIgnoredExtensions("plpgsql", "adminpack")
-	case "production":
-		// Production: be conservative, ignore monitoring extensions too
-		opts = config.WithAdditionalIgnoredExtensions("adminpack", "pg_stat_statements")
-	case "testing":
-		// Testing: manage all extensions for complete control
-		opts = config.WithIgnoredExtensions()
-	default:
-		// Default: use Ptah defaults
-		opts = nil
-	}
-
-	// Compare schemas with environment-specific configuration
-	diff := schemadiff.CompareWithOptions(generated, database, opts)
-
-	fmt.Printf("Environment: %s\n", environment)
-	fmt.Printf("Extensions to add: %v\n", diff.ExtensionsAdded)
-	fmt.Printf("Extensions to remove: %v\n", diff.ExtensionsRemoved)
-
-	// You could then use this diff to generate migrations
-	// files, err := generator.GenerateMigration(generator.GenerateMigrationOptions{
-	//     RootDir:       "./models",
-	//     DatabaseURL:   "postgres://user:pass@localhost/db",
-	//     MigrationName: "update_extensions",
-	//     OutputDir:     "./migrations",
-	// })
 }
