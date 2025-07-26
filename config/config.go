@@ -77,7 +77,7 @@ func (c *CompareOptions) IsExtensionIgnored(extensionName string) bool {
 // and returns a new slice containing only non-ignored extensions.
 // This is useful for filtering extension lists before comparison.
 func (c *CompareOptions) FilterIgnoredExtensions(extensions []string) []string {
-	filtered := make([]string, 0) // Initialize with zero length but non-nil slice
+	filtered := make([]string, 0)
 	for _, ext := range extensions {
 		if !c.IsExtensionIgnored(ext) {
 			filtered = append(filtered, ext)
