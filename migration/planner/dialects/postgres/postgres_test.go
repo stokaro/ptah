@@ -1,12 +1,14 @@
 package postgres_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/migration/planner/dialects/postgres"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
@@ -598,6 +600,276 @@ func TestPlanner_GenerateMigrationSQL_EdgeCases(t *testing.T) {
 			nodes := planner.GenerateMigrationAST(tt.diff, tt.generated)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
+		})
+	}
+}
+
+func TestPlanner_GenerateMigrationAST_ExtensionsAdded(t *testing.T) {
+	tests := []struct {
+		name      string
+		diff      *types.SchemaDiff
+		generated *goschema.Database
+		expected  func(nodes []ast.Node) bool
+	}{
+		{
+			name: "single extension added",
+			diff: &types.SchemaDiff{
+				ExtensionsAdded: []string{"pg_trgm"},
+			},
+			generated: &goschema.Database{
+				Extensions: []goschema.Extension{
+					{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
+				},
+			},
+			expected: func(nodes []ast.Node) bool {
+				if len(nodes) != 1 {
+					return false
+				}
+				extNode, ok := nodes[0].(*ast.ExtensionNode)
+				if !ok {
+					return false
+				}
+				return extNode.Name == "pg_trgm" &&
+					extNode.IfNotExists == true &&
+					extNode.Comment == "Enable trigram similarity search"
+			},
+		},
+		{
+			name: "multiple extensions added",
+			diff: &types.SchemaDiff{
+				ExtensionsAdded: []string{"pg_trgm", "btree_gin"},
+			},
+			generated: &goschema.Database{
+				Extensions: []goschema.Extension{
+					{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
+					{Name: "btree_gin", IfNotExists: true, Comment: "Enable GIN indexes on btree types"},
+				},
+			},
+			expected: func(nodes []ast.Node) bool {
+				if len(nodes) != 2 {
+					return false
+				}
+
+				// Check first extension
+				ext1, ok := nodes[0].(*ast.ExtensionNode)
+				if !ok || ext1.Name != "pg_trgm" {
+					return false
+				}
+
+				// Check second extension
+				ext2, ok := nodes[1].(*ast.ExtensionNode)
+				if !ok || ext2.Name != "btree_gin" {
+					return false
+				}
+
+				return true
+			},
+		},
+		{
+			name: "extension with version",
+			diff: &types.SchemaDiff{
+				ExtensionsAdded: []string{"postgis"},
+			},
+			generated: &goschema.Database{
+				Extensions: []goschema.Extension{
+					{Name: "postgis", Version: "3.0", IfNotExists: true, Comment: "Geographic data support"},
+				},
+			},
+			expected: func(nodes []ast.Node) bool {
+				if len(nodes) != 1 {
+					return false
+				}
+				extNode, ok := nodes[0].(*ast.ExtensionNode)
+				if !ok {
+					return false
+				}
+				return extNode.Name == "postgis" &&
+					extNode.Version == "3.0" &&
+					extNode.IfNotExists == true &&
+					extNode.Comment == "Geographic data support"
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			planner := &postgres.Planner{}
+			nodes := planner.GenerateMigrationAST(tt.diff, tt.generated)
+
+			c.Assert(tt.expected(nodes), qt.IsTrue)
+		})
+	}
+}
+
+func TestPlanner_GenerateMigrationAST_ExtensionsRemoved(t *testing.T) {
+	tests := []struct {
+		name      string
+		diff      *types.SchemaDiff
+		generated *goschema.Database
+		expected  func(nodes []ast.Node) bool
+	}{
+		{
+			name: "single extension removed",
+			diff: &types.SchemaDiff{
+				ExtensionsRemoved: []string{"pg_trgm"},
+			},
+			generated: &goschema.Database{},
+			expected: func(nodes []ast.Node) bool {
+				// Should have 3 warning comments + 1 drop extension statement
+				if len(nodes) != 4 {
+					return false
+				}
+
+				// Check warning comments
+				for i := 0; i < 3; i++ {
+					if _, ok := nodes[i].(*ast.CommentNode); !ok {
+						return false
+					}
+				}
+
+				// Check drop extension statement
+				dropNode, ok := nodes[3].(*ast.DropExtensionNode)
+				if !ok {
+					return false
+				}
+				return dropNode.Name == "pg_trgm" &&
+					dropNode.IfExists == true
+			},
+		},
+		{
+			name: "multiple extensions removed",
+			diff: &types.SchemaDiff{
+				ExtensionsRemoved: []string{"pg_trgm", "btree_gin"},
+			},
+			generated: &goschema.Database{},
+			expected: func(nodes []ast.Node) bool {
+				// Should have 3 warnings + 1 drop + blank line + 3 warnings + 1 drop = 9 nodes
+				if len(nodes) != 9 {
+					return false
+				}
+
+				// Check first extension removal (3 warnings + 1 drop)
+				dropNode1, ok := nodes[3].(*ast.DropExtensionNode)
+				if !ok || dropNode1.Name != "pg_trgm" {
+					return false
+				}
+
+				// Check blank line at position 4
+				blankComment, ok := nodes[4].(*ast.CommentNode)
+				if !ok {
+					return false
+				}
+
+				// Check second extension removal (3 warnings + 1 drop)
+				// Second extension drop is at position 8
+				dropNode2, ok := nodes[8].(*ast.DropExtensionNode)
+				if !ok || dropNode2.Name != "btree_gin" {
+					return false
+				}
+
+				return blankComment != nil
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			planner := &postgres.Planner{}
+			nodes := planner.GenerateMigrationAST(tt.diff, tt.generated)
+
+			c.Assert(tt.expected(nodes), qt.IsTrue)
+		})
+	}
+}
+
+func TestPlanner_ExtensionSQL_Generation(t *testing.T) {
+	tests := []struct {
+		name          string
+		diff          *types.SchemaDiff
+		generated     *goschema.Database
+		expectedSQL   []string
+		unexpectedSQL []string
+	}{
+		{
+			name: "extension creation SQL",
+			diff: &types.SchemaDiff{
+				ExtensionsAdded: []string{"pg_trgm"},
+			},
+			generated: &goschema.Database{
+				Extensions: []goschema.Extension{
+					{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
+				},
+			},
+			expectedSQL: []string{
+				"-- Enable trigram similarity search",
+				"CREATE EXTENSION IF NOT EXISTS pg_trgm;",
+			},
+			unexpectedSQL: []string{
+				"DROP EXTENSION",
+			},
+		},
+		{
+			name: "extension removal SQL",
+			diff: &types.SchemaDiff{
+				ExtensionsRemoved: []string{"pg_trgm"},
+			},
+			generated: &goschema.Database{},
+			expectedSQL: []string{
+				"WARNING: Removing extension 'pg_trgm' may break existing functionality",
+				"Consider reviewing all database objects that use this extension",
+				"Extension removal may cascade to dependent objects",
+				"DROP EXTENSION IF EXISTS pg_trgm;",
+			},
+			unexpectedSQL: []string{
+				"CREATE EXTENSION",
+			},
+		},
+		{
+			name: "extension with version SQL",
+			diff: &types.SchemaDiff{
+				ExtensionsAdded: []string{"postgis"},
+			},
+			generated: &goschema.Database{
+				Extensions: []goschema.Extension{
+					{Name: "postgis", Version: "3.0", IfNotExists: true, Comment: "Geographic data support"},
+				},
+			},
+			expectedSQL: []string{
+				"-- Geographic data support",
+				"CREATE EXTENSION IF NOT EXISTS postgis VERSION '3.0';",
+			},
+			unexpectedSQL: []string{
+				"DROP EXTENSION",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			planner := &postgres.Planner{}
+			nodes := planner.GenerateMigrationAST(tt.diff, tt.generated)
+
+			// Render nodes to SQL
+			sql, err := renderer.RenderSQL("postgres", nodes...)
+			c.Assert(err, qt.IsNil)
+
+			// Check expected SQL patterns
+			for _, expected := range tt.expectedSQL {
+				c.Assert(strings.Contains(sql, expected), qt.IsTrue,
+					qt.Commentf("Expected SQL to contain: %s\nActual SQL:\n%s", expected, sql))
+			}
+
+			// Check unexpected SQL patterns
+			for _, unexpected := range tt.unexpectedSQL {
+				c.Assert(strings.Contains(sql, unexpected), qt.IsFalse,
+					qt.Commentf("Expected SQL to NOT contain: %s\nActual SQL:\n%s", unexpected, sql))
+			}
 		})
 	}
 }
