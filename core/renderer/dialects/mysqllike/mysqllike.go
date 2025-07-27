@@ -140,31 +140,7 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 		}
 	}
 
-	// Convert column-level foreign keys to table-level constraints
-	for _, column := range node.Columns {
-		if column.ForeignKey != nil {
-			fk := column.ForeignKey
-			constraint := &ast.ConstraintNode{
-				Type:    ast.ForeignKeyConstraint,
-				Name:    fk.Name,
-				Columns: []string{column.Name},
-				Reference: &ast.ForeignKeyRef{
-					Table:    fk.Table,
-					Column:   fk.Column,
-					OnDelete: fk.OnDelete,
-					OnUpdate: fk.OnUpdate,
-					Name:     fk.Name,
-				},
-			}
-			line, err := r.renderConstraint(constraint)
-			if err != nil {
-				return fmt.Errorf("error rendering foreign key constraint: %w", err)
-			}
-			if line != "" {
-				lines = append(lines, line)
-			}
-		}
-	}
+
 
 	// Join all lines
 	for i, line := range lines {
