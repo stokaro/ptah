@@ -39,7 +39,7 @@ type BlogPost struct {
 	//migrator:embedded mode="skip"
 	*SkippedInfo // Results in: nothing (ignored, same as value SkippedInfo)
 
-	//migrator:schema:field name="published" type="BOOLEAN" not_null="true" default="false"
+	//migrator:schema:field name="published" type="BOOLEAN" not_null="true" default_expr="false"
 	Published bool
 
 	//migrator:schema:field name="view_count" type="INTEGER" not_null="true" default="0"

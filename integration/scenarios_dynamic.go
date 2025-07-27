@@ -205,9 +205,9 @@ func testDynamicBasicEvolution(ctx context.Context, conn *dbschema.DatabaseConne
 			return fmt.Errorf("failed to generate final schema: %w", err)
 		}
 
-		// Should have 5 tables: users, posts, categories, products (re-added in 013), articles (added in 013)
-		if len(schema.Tables) != 5 {
-			return fmt.Errorf("expected 5 tables, got %d", len(schema.Tables))
+		// Should have 6 tables: users, posts, categories, products (re-added in 013), articles (added in 013), blog_posts (added in 013)
+		if len(schema.Tables) != 6 {
+			return fmt.Errorf("expected 6 tables, got %d", len(schema.Tables))
 		}
 
 		// Should have 3 enums: user_status, post_status, product_status (re-added in 013)
@@ -397,8 +397,8 @@ func testDynamicPartialApply(ctx context.Context, conn *dbschema.DatabaseConnect
 		return fmt.Errorf("failed to generate final schema: %w", err)
 	}
 
-	if len(finalSchema.Tables) != 5 {
-		return fmt.Errorf("expected 5 tables at final state, got %d", len(finalSchema.Tables))
+	if len(finalSchema.Tables) != 6 {
+		return fmt.Errorf("expected 6 tables at final state, got %d", len(finalSchema.Tables))
 	}
 
 	if len(finalSchema.Enums) != 3 {
