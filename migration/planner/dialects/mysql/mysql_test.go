@@ -1,12 +1,14 @@
 package mysql_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/migration/planner/dialects/mysql"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
@@ -287,4 +289,53 @@ func TestPlanner_GenerateMigrationAST_EnumsRemoved(t *testing.T) {
 			c.Assert(tt.expected(nodes), qt.IsTrue)
 		})
 	}
+}
+
+func TestPlanner_AddNewTables_WithEmbeddedFields(t *testing.T) {
+	c := qt.New(t)
+
+	// Test data: schema with embedded fields
+	generated := &goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "TestTable", Name: "test_table"},
+		},
+		Fields: []goschema.Field{
+			// Regular field
+			{StructName: "TestTable", Name: "name", Type: "VARCHAR(255)", Nullable: false},
+			// Embedded struct fields
+			{StructName: "TestID", Name: "id", Type: "INT", Primary: true, AutoInc: true},
+		},
+		EmbeddedFields: []goschema.EmbeddedField{
+			{
+				StructName:       "TestTable",
+				Mode:             "inline",
+				EmbeddedTypeName: "TestID",
+			},
+		},
+	}
+
+	diff := &types.SchemaDiff{
+		TablesAdded: []string{"test_table"},
+	}
+
+	planner := mysql.New()
+	result := planner.GenerateMigrationAST(diff, generated)
+
+	c.Assert(len(result), qt.Equals, 1)
+
+	// Convert AST to SQL to verify content
+	sql, err := renderer.RenderSQL("mysql", result[0])
+	c.Assert(err, qt.IsNil)
+
+	// Verify table creation
+	c.Assert(strings.Contains(sql, "CREATE TABLE test_table"), qt.Equals, true)
+
+	// Verify regular field is included
+	c.Assert(strings.Contains(sql, "name VARCHAR(255)"), qt.Equals, true)
+	c.Assert(strings.Contains(sql, "NOT NULL"), qt.Equals, true)
+
+	// Verify embedded field is included (this was the bug)
+	c.Assert(strings.Contains(sql, "id INT"), qt.Equals, true)
+	c.Assert(strings.Contains(sql, "AUTO_INCREMENT"), qt.Equals, true)
+	c.Assert(strings.Contains(sql, "PRIMARY KEY"), qt.Equals, true)
 }

@@ -684,7 +684,7 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 	}
 
 	// Process embedded fields to generate additional fields for each table
-	allFields := processEmbeddedFields(database.EmbeddedFields, database.Fields)
+	allFields := ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
 
 	// 1. Add enum definitions first (they may be referenced by tables)
 	for _, enum := range database.Enums {
@@ -861,7 +861,7 @@ func validateEnumField(field goschema.Field, enums []goschema.Enum) {
 	}
 }
 
-// processEmbeddedFields processes embedded fields and generates corresponding schema fields based on embedding modes.
+// ProcessEmbeddedFields processes embedded fields and generates corresponding schema fields based on embedding modes.
 //
 // This function is the core processor for handling embedded struct fields in Go structs, transforming them
 // into appropriate database schema fields according to the specified embedding mode. It supports four
@@ -887,7 +887,7 @@ func validateEnumField(field goschema.Field, enums []goschema.Enum) {
 // Returns a combined slice of goschema.Field containing both the original fields and
 // the generated fields from embedded field processing. This combined list is ready
 // for use in table creation.
-func processEmbeddedFields(embeddedFields []goschema.EmbeddedField, originalFields []goschema.Field) []goschema.Field {
+func ProcessEmbeddedFields(embeddedFields []goschema.EmbeddedField, originalFields []goschema.Field) []goschema.Field {
 	// Start with the original fields
 	allFields := make([]goschema.Field, len(originalFields))
 	copy(allFields, originalFields)

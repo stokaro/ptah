@@ -72,12 +72,15 @@ func (p *Planner) handleEnumModifications(result []ast.Node, diff *types.SchemaD
 }
 
 func (p *Planner) addNewTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	// Process embedded fields to get the complete field list (same as FromDatabase does)
+	allFields := fromschema.ProcessEmbeddedFields(generated.EmbeddedFields, generated.Fields)
+
 	for _, tableName := range diff.TablesAdded {
 		// Find the table in generated schema and create it
 		for _, table := range generated.Tables {
 			if table.Name == tableName {
 				astNode := ast.NewCreateTable(tableName)
-				for _, field := range generated.Fields {
+				for _, field := range allFields {
 					if field.StructName == table.StructName {
 						columnNode := fromschema.FromField(field, generated.Enums, "mysql")
 						astNode.AddColumn(columnNode)
