@@ -72,21 +72,30 @@ func (p *Planner) handleEnumModifications(result []ast.Node, diff *types.SchemaD
 }
 
 func (p *Planner) addNewTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	// Process embedded fields to get the complete field list (same as FromDatabase does)
+	allFields := fromschema.ProcessEmbeddedFields(generated.EmbeddedFields, generated.Fields)
+
+	// Create a set of tables to add for quick lookup
+	tablesToAdd := make(map[string]bool)
 	for _, tableName := range diff.TablesAdded {
-		// Find the table in generated schema and create it
-		for _, table := range generated.Tables {
-			if table.Name == tableName {
-				astNode := ast.NewCreateTable(tableName)
-				for _, field := range generated.Fields {
-					if field.StructName == table.StructName {
-						columnNode := fromschema.FromField(field, generated.Enums, "mysql")
-						astNode.AddColumn(columnNode)
-					}
-				}
-				result = append(result, astNode)
-				break
+		tablesToAdd[tableName] = true
+	}
+
+	// Iterate through tables in dependency order (generated.Tables is already sorted)
+	// This ensures foreign key constraints are satisfied during table creation
+	for _, table := range generated.Tables {
+		if !tablesToAdd[table.Name] {
+			continue // Skip tables that are not being added
+		}
+
+		astNode := ast.NewCreateTable(table.Name)
+		for _, field := range allFields {
+			if field.StructName == table.StructName {
+				columnNode := fromschema.FromField(field, generated.Enums, "mysql")
+				astNode.AddColumn(columnNode)
 			}
 		}
+		result = append(result, astNode)
 	}
 	return result
 }
