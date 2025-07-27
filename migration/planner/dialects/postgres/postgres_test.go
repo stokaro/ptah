@@ -873,3 +873,51 @@ func TestPlanner_ExtensionSQL_Generation(t *testing.T) {
 		})
 	}
 }
+
+func TestPlanner_AddNewTables_WithEmbeddedFields(t *testing.T) {
+	c := qt.New(t)
+
+	// Test data: schema with embedded fields
+	generated := &goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "TestTable", Name: "test_table"},
+		},
+		Fields: []goschema.Field{
+			// Regular field
+			{StructName: "TestTable", Name: "name", Type: "TEXT", Nullable: false},
+			// Embedded struct fields
+			{StructName: "TestID", Name: "id", Type: "TEXT", Primary: true},
+		},
+		EmbeddedFields: []goschema.EmbeddedField{
+			{
+				StructName:       "TestTable",
+				Mode:             "inline",
+				EmbeddedTypeName: "TestID",
+			},
+		},
+	}
+
+	diff := &types.SchemaDiff{
+		TablesAdded: []string{"test_table"},
+	}
+
+	planner := &postgres.Planner{}
+	result := planner.GenerateMigrationAST(diff, generated)
+
+	c.Assert(len(result), qt.Equals, 1)
+
+	// Convert AST to SQL to verify content
+	sql, err := renderer.RenderSQL("postgresql", result[0])
+	c.Assert(err, qt.IsNil)
+
+	// Verify table creation
+	c.Assert(strings.Contains(sql, "CREATE TABLE test_table"), qt.Equals, true)
+
+	// Verify regular field is included
+	c.Assert(strings.Contains(sql, "name TEXT"), qt.Equals, true)
+	c.Assert(strings.Contains(sql, "NOT NULL"), qt.Equals, true)
+
+	// Verify embedded field is included (this was the bug)
+	c.Assert(strings.Contains(sql, "id TEXT"), qt.Equals, true)
+	c.Assert(strings.Contains(sql, "PRIMARY KEY"), qt.Equals, true)
+}
