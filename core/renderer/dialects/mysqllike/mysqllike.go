@@ -140,8 +140,6 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 		}
 	}
 
-
-
 	// Join all lines
 	for i, line := range lines {
 		if i == len(lines)-1 {
