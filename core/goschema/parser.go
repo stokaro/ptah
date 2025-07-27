@@ -63,8 +63,15 @@ func parseEmbeddedComment(comment *ast.Comment, field *ast.Field, structName str
 	// Handle embedded fields - get the field type name
 	var fieldTypeName string
 	if field.Type != nil {
-		if ident, ok := field.Type.(*ast.Ident); ok {
-			fieldTypeName = ident.Name
+		switch t := field.Type.(type) {
+		case *ast.Ident:
+			// Value embedded field: BaseID
+			fieldTypeName = t.Name
+		case *ast.StarExpr:
+			// Pointer embedded field: *BaseID
+			if ident, ok := t.X.(*ast.Ident); ok {
+				fieldTypeName = ident.Name
+			}
 		}
 	}
 

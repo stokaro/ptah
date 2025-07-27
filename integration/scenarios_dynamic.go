@@ -142,7 +142,7 @@ func GetDynamicScenarios() []TestScenario {
 		// Embedded fields scenarios
 		{
 			Name:             "dynamic_embedded_fields",
-			Description:      "Test embedded struct fields in CREATE TABLE migrations",
+			Description:      "Test embedded struct fields (both value and pointer types) in CREATE TABLE migrations",
 			EnhancedTestFunc: testDynamicEmbeddedFields,
 		},
 	}
@@ -205,9 +205,9 @@ func testDynamicBasicEvolution(ctx context.Context, conn *dbschema.DatabaseConne
 			return fmt.Errorf("failed to generate final schema: %w", err)
 		}
 
-		// Should have 5 tables: users, posts, categories, products (re-added in 013), articles (added in 013)
-		if len(schema.Tables) != 5 {
-			return fmt.Errorf("expected 5 tables, got %d", len(schema.Tables))
+		// Should have 6 tables: users, posts, categories, products (re-added in 013), articles (added in 013), blog_posts (added in 013)
+		if len(schema.Tables) != 6 {
+			return fmt.Errorf("expected 6 tables, got %d", len(schema.Tables))
 		}
 
 		// Should have 3 enums: user_status, post_status, product_status (re-added in 013)
@@ -397,8 +397,8 @@ func testDynamicPartialApply(ctx context.Context, conn *dbschema.DatabaseConnect
 		return fmt.Errorf("failed to generate final schema: %w", err)
 	}
 
-	if len(finalSchema.Tables) != 5 {
-		return fmt.Errorf("expected 5 tables at final state, got %d", len(finalSchema.Tables))
+	if len(finalSchema.Tables) != 6 {
+		return fmt.Errorf("expected 6 tables at final state, got %d", len(finalSchema.Tables))
 	}
 
 	if len(finalSchema.Enums) != 3 {
@@ -2043,6 +2043,7 @@ func testDynamicForeignKeyCascade(ctx context.Context, conn *dbschema.DatabaseCo
 
 // testDynamicEmbeddedFields tests that embedded struct fields are properly included in CREATE TABLE migrations
 // This test covers all embedding modes: inline, inline with prefix, json, relation, and skip
+// It tests both value embedded fields (BaseID, Timestamps) and pointer embedded fields (*BaseID, *Timestamps)
 func testDynamicEmbeddedFields(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
 	// Create versioned entity manager
 	vem, err := NewVersionedEntityManager(fixtures)
@@ -2066,7 +2067,7 @@ func testDynamicEmbeddedFields(ctx context.Context, conn *dbschema.DatabaseConne
 		}
 
 		// Check that expected tables exist
-		expectedTables := []string{"users", "products", "posts", "categories", "articles"}
+		expectedTables := []string{"users", "products", "posts", "categories", "articles", "blog_posts"}
 		tableNames := make(map[string]bool)
 		for _, table := range schema.Tables {
 			tableNames[table.Name] = true
@@ -2214,6 +2215,83 @@ func testDynamicEmbeddedFields(ctx context.Context, conn *dbschema.DatabaseConne
 		fmt.Printf("  ✓ Mode 3 (json): Metadata as meta_data JSON column\n")
 		fmt.Printf("  ✓ Mode 4 (relation): Author as author_id foreign key\n")
 		fmt.Printf("  ✓ Mode 5 (skip): SkippedInfo fields correctly omitted\n")
+
+		// Verify pointer embedded fields in blog_posts table
+		var blogPostsTable *types.DBTable
+		for i, table := range schema.Tables {
+			if table.Name == "blog_posts" {
+				blogPostsTable = &schema.Tables[i]
+				break
+			}
+		}
+		if blogPostsTable == nil {
+			return fmt.Errorf("blog_posts table not found")
+		}
+
+		blogPostColumnNames := make(map[string]bool)
+		for _, column := range blogPostsTable.Columns {
+			blogPostColumnNames[column.Name] = true
+		}
+
+		// Verify Mode 1: inline embedding with pointers (*BaseID and *Timestamps)
+		if !blogPostColumnNames["id"] {
+			return fmt.Errorf("pointer inline embedded field 'id' from *BaseID not found in blog_posts table")
+		}
+		if !blogPostColumnNames["created_at"] {
+			return fmt.Errorf("pointer inline embedded field 'created_at' from *Timestamps not found in blog_posts table")
+		}
+		if !blogPostColumnNames["updated_at"] {
+			return fmt.Errorf("pointer inline embedded field 'updated_at' from *Timestamps not found in blog_posts table")
+		}
+
+		// Verify Mode 2: inline with prefix embedding with pointer (*AuditInfo with audit_ prefix)
+		if !blogPostColumnNames["audit_by"] {
+			return fmt.Errorf("pointer prefixed embedded field 'audit_by' from *AuditInfo not found in blog_posts table")
+		}
+		if !blogPostColumnNames["audit_reason"] {
+			return fmt.Errorf("pointer prefixed embedded field 'audit_reason' from *AuditInfo not found in blog_posts table")
+		}
+
+		// Verify Mode 3: json embedding with pointer (*Metadata as meta_data column)
+		if !blogPostColumnNames["meta_data"] {
+			return fmt.Errorf("pointer json embedded field 'meta_data' from *Metadata not found in blog_posts table")
+		}
+
+		// Verify Mode 4: relation embedding with pointer (*User as author_id foreign key)
+		if !blogPostColumnNames["author_id"] {
+			return fmt.Errorf("pointer relation embedded field 'author_id' from *User not found in blog_posts table")
+		}
+
+		// Verify Mode 5: skip embedding with pointer (*SkippedInfo should NOT be present)
+		if blogPostColumnNames["internal_data"] || blogPostColumnNames["temp_field"] {
+			return fmt.Errorf("pointer skipped embedded fields from *SkippedInfo should not be present in blog_posts table")
+		}
+
+		// Verify regular fields are still present
+		if !blogPostColumnNames["title"] {
+			return fmt.Errorf("regular field 'title' not found in blog_posts table")
+		}
+		if !blogPostColumnNames["content"] {
+			return fmt.Errorf("regular field 'content' not found in blog_posts table")
+		}
+		if !blogPostColumnNames["slug"] {
+			return fmt.Errorf("regular field 'slug' not found in blog_posts table")
+		}
+		if !blogPostColumnNames["published"] {
+			return fmt.Errorf("regular field 'published' not found in blog_posts table")
+		}
+		if !blogPostColumnNames["view_count"] {
+			return fmt.Errorf("regular field 'view_count' not found in blog_posts table")
+		}
+
+		fmt.Printf("Successfully verified all pointer embedding modes in blog_posts table:\n")
+		fmt.Printf("  ✓ Mode 1 (inline): *BaseID and *Timestamps fields\n")
+		fmt.Printf("  ✓ Mode 2 (inline with prefix): *AuditInfo fields with audit_ prefix\n")
+		fmt.Printf("  ✓ Mode 3 (json): *Metadata as meta_data JSON column\n")
+		fmt.Printf("  ✓ Mode 4 (relation): *User as author_id foreign key\n")
+		fmt.Printf("  ✓ Mode 5 (skip): *SkippedInfo fields correctly omitted\n")
+		fmt.Printf("Pointer embedded fields test completed successfully\n")
+
 		fmt.Printf("Comprehensive embedded fields test completed successfully\n")
 
 		return nil
