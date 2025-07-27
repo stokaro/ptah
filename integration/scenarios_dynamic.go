@@ -18,7 +18,7 @@ func GetDynamicScenarios() []TestScenario {
 		// Basic functionality scenarios
 		{
 			Name:             "dynamic_basic_evolution",
-			Description:      "Test basic schema evolution using versioned entities: 000 → 001 → 002 → 003",
+			Description:      "Test basic schema evolution using versioned entities: 000 → 013 (all versions)",
 			EnhancedTestFunc: testDynamicBasicEvolution,
 		},
 		{
@@ -205,14 +205,14 @@ func testDynamicBasicEvolution(ctx context.Context, conn *dbschema.DatabaseConne
 			return fmt.Errorf("failed to generate final schema: %w", err)
 		}
 
-		// Should have 3 tables: users, posts, categories (products was dropped in version 012)
-		if len(schema.Tables) != 3 {
-			return fmt.Errorf("expected 3 tables, got %d", len(schema.Tables))
+		// Should have 5 tables: users, posts, categories, products (re-added in 013), articles (added in 013)
+		if len(schema.Tables) != 5 {
+			return fmt.Errorf("expected 5 tables, got %d", len(schema.Tables))
 		}
 
-		// Should have 2 enums: user_status, post_status (product_status was dropped with products table)
-		if len(schema.Enums) != 2 {
-			return fmt.Errorf("expected 2 enums, got %d", len(schema.Enums))
+		// Should have 3 enums: user_status, post_status, product_status (re-added in 013)
+		if len(schema.Enums) != 3 {
+			return fmt.Errorf("expected 3 enums, got %d", len(schema.Enums))
 		}
 
 		// Verify that field renames, type changes, and constraint changes were applied
@@ -252,10 +252,16 @@ func testDynamicBasicEvolution(ctx context.Context, conn *dbschema.DatabaseConne
 			return fmt.Errorf("categories table should exist (added in version 011)")
 		}
 
-		// Verify that products table was dropped
+		// Verify that products table was re-added
 		productsTable := findTable(schema.Tables, "products")
-		if productsTable != nil {
-			return fmt.Errorf("products table should not exist (dropped in version 012)")
+		if productsTable == nil {
+			return fmt.Errorf("products table should exist (re-added in version 013)")
+		}
+
+		// Verify that articles table was added
+		articlesTable := findTable(schema.Tables, "articles")
+		if articlesTable == nil {
+			return fmt.Errorf("articles table should exist (added in version 013)")
 		}
 
 		return nil
@@ -278,7 +284,6 @@ func testDynamicSkipVersions(ctx context.Context, conn *dbschema.DatabaseConnect
 		{"000-initial", "Create initial users and products tables"},
 		{"005-field-type-change", "Add fields, posts table, enums, renames, and type changes"},
 		{"012-drop-entity", "Apply all remaining changes including entity add/drop"},
-		{"013-embedded-fields", "Create tables with all embedding modes"},
 	}
 
 	for _, version := range versions {
@@ -392,12 +397,12 @@ func testDynamicPartialApply(ctx context.Context, conn *dbschema.DatabaseConnect
 		return fmt.Errorf("failed to generate final schema: %w", err)
 	}
 
-	if len(finalSchema.Tables) != 3 {
-		return fmt.Errorf("expected 3 tables at final state, got %d", len(finalSchema.Tables))
+	if len(finalSchema.Tables) != 5 {
+		return fmt.Errorf("expected 5 tables at final state, got %d", len(finalSchema.Tables))
 	}
 
-	if len(finalSchema.Enums) != 2 {
-		return fmt.Errorf("expected 2 enums at final state, got %d", len(finalSchema.Enums))
+	if len(finalSchema.Enums) != 3 {
+		return fmt.Errorf("expected 3 enums at final state, got %d", len(finalSchema.Enums))
 	}
 
 	return nil
