@@ -3,7 +3,7 @@ package normalize_test
 import (
 	"testing"
 
-	"github.com/frankban/quicktest"
+	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/migration/schemadiff/internal/normalize"
 )
@@ -77,9 +77,9 @@ func TestType(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := quicktest.New(t)
+			c := qt.New(t)
 			result := normalize.Type(tt.input)
-			c.Assert(result, quicktest.Equals, tt.expected)
+			c.Assert(result, qt.Equals, tt.expected)
 		})
 	}
 }
@@ -140,9 +140,9 @@ func TestDefaultValue(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := quicktest.New(t)
+			c := qt.New(t)
 			result := normalize.DefaultValue(tt.defaultValue, tt.typeName)
-			c.Assert(result, quicktest.Equals, tt.expected)
+			c.Assert(result, qt.Equals, tt.expected)
 		})
 	}
 }

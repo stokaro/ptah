@@ -8,6 +8,7 @@ import (
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
@@ -136,6 +137,13 @@ func GetDynamicScenarios() []TestScenario {
 			Name:             "dynamic_foreign_key_cascade",
 			Description:      "Test cascading effects of table/field drops",
 			EnhancedTestFunc: testDynamicForeignKeyCascade,
+		},
+
+		// Embedded fields scenarios
+		{
+			Name:             "dynamic_embedded_fields",
+			Description:      "Test embedded struct fields in CREATE TABLE migrations",
+			EnhancedTestFunc: testDynamicEmbeddedFields,
 		},
 	}
 }
@@ -2021,6 +2029,185 @@ func testDynamicForeignKeyCascade(ctx context.Context, conn *dbschema.DatabaseCo
 		if count != 0 {
 			return fmt.Errorf("expected 0 child records after cascade delete, got %d", count)
 		}
+
+		return nil
+	})
+}
+
+// testDynamicEmbeddedFields tests that embedded struct fields are properly included in CREATE TABLE migrations
+// This test covers all embedding modes: inline, inline with prefix, json, relation, and skip
+func testDynamicEmbeddedFields(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
+	// Create versioned entity manager
+	vem, err := NewVersionedEntityManager(fixtures)
+	if err != nil {
+		return fmt.Errorf("failed to create versioned entity manager: %w", err)
+	}
+	defer vem.Cleanup()
+
+	// Apply migration to version with embedded fields
+	return recorder.RecordStep("Apply Embedded Fields Migration", "Create tables with all embedding modes", func() error {
+		fmt.Printf("Applying version 013-embedded-fields: Create tables with all embedding modes\n")
+
+		if err := vem.MigrateToVersion(ctx, conn, "013-embedded-fields", "Create tables with all embedding modes"); err != nil {
+			return fmt.Errorf("failed to migrate to version 013-embedded-fields: %w", err)
+		}
+
+		// Verify that tables were created with embedded fields
+		schema, err := conn.Reader().ReadSchema()
+		if err != nil {
+			return fmt.Errorf("failed to read schema: %w", err)
+		}
+
+		// Check that expected tables exist
+		expectedTables := []string{"users", "products", "posts", "categories", "articles"}
+		tableNames := make(map[string]bool)
+		for _, table := range schema.Tables {
+			tableNames[table.Name] = true
+		}
+
+		for _, tableName := range expectedTables {
+			if !tableNames[tableName] {
+				return fmt.Errorf("expected table '%s' not found", tableName)
+			}
+		}
+
+		// Verify that embedded fields are present in the users table
+		var usersTable *types.DBTable
+		for i, table := range schema.Tables {
+			if table.Name == "users" {
+				usersTable = &schema.Tables[i]
+				break
+			}
+		}
+		if usersTable == nil {
+			return fmt.Errorf("users table not found")
+		}
+
+		// Check that embedded fields from BaseID and Timestamps are present
+		columnNames := make(map[string]bool)
+		for _, column := range usersTable.Columns {
+			columnNames[column.Name] = true
+		}
+
+		// Verify embedded BaseID fields
+		if !columnNames["id"] {
+			return fmt.Errorf("embedded field 'id' from BaseID not found in users table")
+		}
+
+		// Verify embedded Timestamps fields
+		if !columnNames["created_at"] {
+			return fmt.Errorf("embedded field 'created_at' from Timestamps not found in users table")
+		}
+		if !columnNames["updated_at"] {
+			return fmt.Errorf("embedded field 'updated_at' from Timestamps not found in users table")
+		}
+
+		// Verify regular fields
+		if !columnNames["email"] {
+			return fmt.Errorf("regular field 'email' not found in users table")
+		}
+		if !columnNames["name"] {
+			return fmt.Errorf("regular field 'name' not found in users table")
+		}
+
+		fmt.Printf("Successfully verified embedded fields in users table\n")
+
+		// Also verify products table has embedded fields
+		var productsTable *types.DBTable
+		for i, table := range schema.Tables {
+			if table.Name == "products" {
+				productsTable = &schema.Tables[i]
+				break
+			}
+		}
+		if productsTable == nil {
+			return fmt.Errorf("products table not found")
+		}
+
+		productColumnNames := make(map[string]bool)
+		for _, column := range productsTable.Columns {
+			productColumnNames[column.Name] = true
+		}
+
+		// Verify embedded fields in products table
+		if !productColumnNames["id"] {
+			return fmt.Errorf("embedded field 'id' from BaseID not found in products table")
+		}
+		if !productColumnNames["created_at"] {
+			return fmt.Errorf("embedded field 'created_at' from Timestamps not found in products table")
+		}
+		if !productColumnNames["updated_at"] {
+			return fmt.Errorf("embedded field 'updated_at' from Timestamps not found in products table")
+		}
+
+		fmt.Printf("Successfully verified embedded fields in products table\n")
+
+		// Verify comprehensive embedding modes in articles table
+		var articlesTable *types.DBTable
+		for i, table := range schema.Tables {
+			if table.Name == "articles" {
+				articlesTable = &schema.Tables[i]
+				break
+			}
+		}
+		if articlesTable == nil {
+			return fmt.Errorf("articles table not found")
+		}
+
+		articleColumnNames := make(map[string]bool)
+		for _, column := range articlesTable.Columns {
+			articleColumnNames[column.Name] = true
+		}
+
+		// Verify Mode 1: inline embedding (BaseID and Timestamps)
+		if !articleColumnNames["id"] {
+			return fmt.Errorf("inline embedded field 'id' from BaseID not found in articles table")
+		}
+		if !articleColumnNames["created_at"] {
+			return fmt.Errorf("inline embedded field 'created_at' from Timestamps not found in articles table")
+		}
+		if !articleColumnNames["updated_at"] {
+			return fmt.Errorf("inline embedded field 'updated_at' from Timestamps not found in articles table")
+		}
+
+		// Verify Mode 2: inline with prefix embedding (AuditInfo with audit_ prefix)
+		if !articleColumnNames["audit_by"] {
+			return fmt.Errorf("prefixed embedded field 'audit_by' from AuditInfo not found in articles table")
+		}
+		if !articleColumnNames["audit_reason"] {
+			return fmt.Errorf("prefixed embedded field 'audit_reason' from AuditInfo not found in articles table")
+		}
+
+		// Verify Mode 3: json embedding (Metadata as meta_data column)
+		if !articleColumnNames["meta_data"] {
+			return fmt.Errorf("json embedded field 'meta_data' from Metadata not found in articles table")
+		}
+
+		// Verify Mode 4: relation embedding (Author as author_id foreign key)
+		if !articleColumnNames["author_id"] {
+			return fmt.Errorf("relation embedded field 'author_id' from Author not found in articles table")
+		}
+
+		// Verify Mode 5: skip embedding (SkippedField should NOT be present)
+		if articleColumnNames["internal_data"] || articleColumnNames["temp_field"] {
+			return fmt.Errorf("skipped embedded fields from SkippedInfo should not be present in articles table")
+		}
+
+		// Verify regular fields are still present
+		if !articleColumnNames["title"] {
+			return fmt.Errorf("regular field 'title' not found in articles table")
+		}
+		if !articleColumnNames["content"] {
+			return fmt.Errorf("regular field 'content' not found in articles table")
+		}
+
+		fmt.Printf("Successfully verified all embedding modes in articles table:\n")
+		fmt.Printf("  ✓ Mode 1 (inline): BaseID and Timestamps fields\n")
+		fmt.Printf("  ✓ Mode 2 (inline with prefix): AuditInfo fields with audit_ prefix\n")
+		fmt.Printf("  ✓ Mode 3 (json): Metadata as meta_data JSON column\n")
+		fmt.Printf("  ✓ Mode 4 (relation): Author as author_id foreign key\n")
+		fmt.Printf("  ✓ Mode 5 (skip): SkippedInfo fields correctly omitted\n")
+		fmt.Printf("Comprehensive embedded fields test completed successfully\n")
 
 		return nil
 	})
