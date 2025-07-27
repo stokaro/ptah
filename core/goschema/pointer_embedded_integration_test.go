@@ -27,7 +27,7 @@ type BaseID struct {
 	ID int64
 }
 `
-	err := os.WriteFile(filepath.Join(tmpDir, "base_id.go"), []byte(baseIDContent), 0644)
+	err := os.WriteFile(filepath.Join(tmpDir, "base_id.go"), []byte(baseIDContent), 0600)
 	c.Assert(err, qt.IsNil)
 
 	// Create timestamps.go
@@ -68,7 +68,7 @@ type SkippedInfo struct {
 	InternalData string
 }
 `
-	err = os.WriteFile(filepath.Join(tmpDir, "timestamps.go"), []byte(timestampsContent), 0644)
+	err = os.WriteFile(filepath.Join(tmpDir, "timestamps.go"), []byte(timestampsContent), 0600)
 	c.Assert(err, qt.IsNil)
 
 	// Create user.go
@@ -86,7 +86,7 @@ type User struct {
 	Name string
 }
 `
-	err = os.WriteFile(filepath.Join(tmpDir, "user.go"), []byte(userContent), 0644)
+	err = os.WriteFile(filepath.Join(tmpDir, "user.go"), []byte(userContent), 0600)
 	c.Assert(err, qt.IsNil)
 
 	// Create blog_post.go with pointer embedded fields
@@ -129,7 +129,7 @@ type BlogPost struct {
 	Published bool
 }
 `
-	err = os.WriteFile(filepath.Join(tmpDir, "blog_post.go"), []byte(blogPostContent), 0644)
+	err = os.WriteFile(filepath.Join(tmpDir, "blog_post.go"), []byte(blogPostContent), 0600)
 	c.Assert(err, qt.IsNil)
 
 	// Parse the directory

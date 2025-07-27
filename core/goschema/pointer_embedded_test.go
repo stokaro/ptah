@@ -65,7 +65,7 @@ type RegularPost struct {
 	// Write to temporary file
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "pointer_embedded.go")
-	err := os.WriteFile(testFile, []byte(content), 0644)
+	err := os.WriteFile(testFile, []byte(content), 0600)
 	c.Assert(err, qt.IsNil)
 
 	// Parse the file
@@ -82,9 +82,10 @@ type RegularPost struct {
 	var regularPostEmbedded []goschema.EmbeddedField
 
 	for _, embedded := range database.EmbeddedFields {
-		if embedded.StructName == "BlogPost" {
+		switch embedded.StructName {
+		case "BlogPost":
 			blogPostEmbedded = append(blogPostEmbedded, embedded)
-		} else if embedded.StructName == "RegularPost" {
+		case "RegularPost":
 			regularPostEmbedded = append(regularPostEmbedded, embedded)
 		}
 	}
