@@ -175,6 +175,7 @@ func testDynamicBasicEvolution(ctx context.Context, conn *dbschema.DatabaseConne
 		{"010-drop-constraints", "Drop constraints: remove check constraint on user_age"},
 		{"011-add-entity", "Add new entity: categories table"},
 		{"012-drop-entity", "Drop entity: remove products table"},
+		{"013-embedded-fields", "Create tables with all embedding modes"},
 	}
 
 	for _, version := range versions {
@@ -277,6 +278,7 @@ func testDynamicSkipVersions(ctx context.Context, conn *dbschema.DatabaseConnect
 		{"000-initial", "Create initial users and products tables"},
 		{"005-field-type-change", "Add fields, posts table, enums, renames, and type changes"},
 		{"012-drop-entity", "Apply all remaining changes including entity add/drop"},
+		{"013-embedded-fields", "Create tables with all embedding modes"},
 	}
 
 	for _, version := range versions {
@@ -380,8 +382,8 @@ func testDynamicPartialApply(ctx context.Context, conn *dbschema.DatabaseConnect
 	}
 
 	// Continue to final version
-	if err := vem.MigrateToVersion(ctx, conn, "012-drop-entity", "Apply all remaining changes including entity add/drop"); err != nil {
-		return fmt.Errorf("failed to migrate to version 012: %w", err)
+	if err := vem.MigrateToVersion(ctx, conn, "013-embedded-fields", "Create tables with all embedding modes"); err != nil {
+		return fmt.Errorf("failed to migrate to version 013: %w", err)
 	}
 
 	// Verify final state
