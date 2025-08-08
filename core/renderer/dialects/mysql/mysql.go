@@ -169,3 +169,18 @@ func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) e
 	}
 	return nil
 }
+
+// VisitDropFunction delegates to the mysqllike renderer
+func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
+	return r.r.VisitDropFunction(node)
+}
+
+// VisitDropPolicy delegates to the mysqllike renderer
+func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
+	return r.r.VisitDropPolicy(node)
+}
+
+// VisitAlterTableDisableRLS delegates to the mysqllike renderer
+func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
+	return r.r.VisitAlterTableDisableRLS(node)
+}

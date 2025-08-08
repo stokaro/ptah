@@ -748,3 +748,69 @@ func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) e
 
 	return nil
 }
+
+// VisitDropFunction renders a DROP FUNCTION statement
+func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	// Build DROP FUNCTION statement
+	var parts []string
+	parts = append(parts, "DROP FUNCTION")
+
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+
+	// Function name with parameters for signature matching
+	functionSignature := node.Name
+	if node.Parameters != "" {
+		functionSignature += "(" + node.Parameters + ")"
+	}
+	parts = append(parts, functionSignature)
+
+	if node.Cascade {
+		parts = append(parts, "CASCADE")
+	}
+
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+
+	return nil
+}
+
+// VisitDropPolicy renders a DROP POLICY statement
+func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	// Build DROP POLICY statement
+	var parts []string
+	parts = append(parts, "DROP POLICY")
+
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+
+	parts = append(parts, node.Name, "ON", node.Table)
+
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+
+	return nil
+}
+
+// VisitAlterTableDisableRLS renders an ALTER TABLE DISABLE ROW LEVEL SECURITY statement
+func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	// Build ALTER TABLE DISABLE ROW LEVEL SECURITY statement
+	r.w.WriteLinef("ALTER TABLE %s DISABLE ROW LEVEL SECURITY;", node.Table)
+
+	return nil
+}

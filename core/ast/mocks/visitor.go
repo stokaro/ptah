@@ -147,3 +147,27 @@ func (m *MockVisitor) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode
 	}
 	return nil
 }
+
+func (m *MockVisitor) VisitDropFunction(node *ast.DropFunctionNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "DropFunction:"+node.Name)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
+func (m *MockVisitor) VisitDropPolicy(node *ast.DropPolicyNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "DropPolicy:"+node.Name)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
+func (m *MockVisitor) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "AlterTableDisableRLS:"+node.Table)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}

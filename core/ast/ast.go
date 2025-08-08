@@ -40,10 +40,16 @@ type Visitor interface {
 	VisitDropExtension(*DropExtensionNode) error
 	// VisitCreateFunction renders a CREATE FUNCTION statement (PostgreSQL-specific)
 	VisitCreateFunction(*CreateFunctionNode) error
+	// VisitDropFunction renders a DROP FUNCTION statement (PostgreSQL-specific)
+	VisitDropFunction(*DropFunctionNode) error
 	// VisitCreatePolicy renders a CREATE POLICY statement for RLS (PostgreSQL-specific)
 	VisitCreatePolicy(*CreatePolicyNode) error
+	// VisitDropPolicy renders a DROP POLICY statement for RLS (PostgreSQL-specific)
+	VisitDropPolicy(*DropPolicyNode) error
 	// VisitAlterTableEnableRLS renders an ALTER TABLE ENABLE ROW LEVEL SECURITY statement (PostgreSQL-specific)
 	VisitAlterTableEnableRLS(*AlterTableEnableRLSNode) error
+	// VisitAlterTableDisableRLS renders an ALTER TABLE DISABLE ROW LEVEL SECURITY statement (PostgreSQL-specific)
+	VisitAlterTableDisableRLS(*AlterTableDisableRLSNode) error
 }
 
 // DefaultValue represents different types of default values for table columns.

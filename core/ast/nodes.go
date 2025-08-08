@@ -1061,6 +1061,190 @@ func (n *AlterTableEnableRLSNode) Accept(visitor Visitor) error {
 	return visitor.VisitAlterTableEnableRLS(n)
 }
 
+// DropFunctionNode represents a DROP FUNCTION statement for PostgreSQL custom functions.
+//
+// This node is used to remove PostgreSQL custom functions from the database.
+// Function removal should be done carefully as other database objects may depend on the function.
+type DropFunctionNode struct {
+	// Name is the name of the function to drop
+	Name string
+	// Parameters contains the function parameter definitions for function signature matching
+	// This is needed because PostgreSQL allows function overloading
+	Parameters string
+	// IfExists indicates whether to use IF EXISTS clause
+	IfExists bool
+	// Cascade indicates whether to use CASCADE option (removes dependent objects)
+	Cascade bool
+	// Comment is an optional comment for the drop operation
+	Comment string
+}
+
+// NewDropFunction creates a new DROP FUNCTION node with the specified name.
+//
+// Example:
+//
+//	dropFunc := NewDropFunction("set_tenant_context").
+//		SetParameters("tenant_id_param TEXT").
+//		SetIfExists().
+//		SetComment("Remove tenant context function")
+func NewDropFunction(name string) *DropFunctionNode {
+	return &DropFunctionNode{
+		Name:     name,
+		IfExists: false,
+		Cascade:  false,
+	}
+}
+
+// SetParameters sets the function parameters for signature matching.
+//
+// This is important for PostgreSQL function overloading support.
+//
+// Example:
+//
+//	dropFunc.SetParameters("tenant_id_param TEXT, user_id INTEGER")
+func (n *DropFunctionNode) SetParameters(parameters string) *DropFunctionNode {
+	n.Parameters = parameters
+	return n
+}
+
+// SetIfExists marks the drop function to use IF EXISTS clause.
+//
+// This prevents errors if the function doesn't exist.
+//
+// Example:
+//
+//	dropFunc.SetIfExists()
+func (n *DropFunctionNode) SetIfExists() *DropFunctionNode {
+	n.IfExists = true
+	return n
+}
+
+// SetCascade marks the drop function to use CASCADE option.
+//
+// This automatically drops dependent objects that use this function.
+//
+// Example:
+//
+//	dropFunc.SetCascade()
+func (n *DropFunctionNode) SetCascade() *DropFunctionNode {
+	n.Cascade = true
+	return n
+}
+
+// SetComment sets a comment for the DROP FUNCTION operation.
+//
+// This comment can be used for documentation or warnings.
+//
+// Example:
+//
+//	dropFunc.SetComment("WARNING: This function is used by RLS policies")
+func (n *DropFunctionNode) SetComment(comment string) *DropFunctionNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for DropFunctionNode.
+func (n *DropFunctionNode) Accept(visitor Visitor) error {
+	return visitor.VisitDropFunction(n)
+}
+
+// DropPolicyNode represents a DROP POLICY statement for PostgreSQL Row-Level Security.
+//
+// This node is used to remove RLS policies from tables. Policy removal should be done
+// carefully as it changes the security model of the table.
+type DropPolicyNode struct {
+	// Name is the name of the policy to drop
+	Name string
+	// Table is the name of the table this policy applies to
+	Table string
+	// IfExists indicates whether to use IF EXISTS clause
+	IfExists bool
+	// Comment is an optional comment for the drop operation
+	Comment string
+}
+
+// NewDropPolicy creates a new DROP POLICY node with the specified name and table.
+//
+// Example:
+//
+//	dropPolicy := NewDropPolicy("user_tenant_isolation", "users").
+//		SetIfExists().
+//		SetComment("Remove tenant isolation policy")
+func NewDropPolicy(name, table string) *DropPolicyNode {
+	return &DropPolicyNode{
+		Name:     name,
+		Table:    table,
+		IfExists: false,
+	}
+}
+
+// SetIfExists marks the drop policy to use IF EXISTS clause.
+//
+// This prevents errors if the policy doesn't exist.
+//
+// Example:
+//
+//	dropPolicy.SetIfExists()
+func (n *DropPolicyNode) SetIfExists() *DropPolicyNode {
+	n.IfExists = true
+	return n
+}
+
+// SetComment sets a comment for the DROP POLICY operation.
+//
+// This comment can be used for documentation or warnings.
+//
+// Example:
+//
+//	dropPolicy.SetComment("WARNING: Removing this policy changes table security")
+func (n *DropPolicyNode) SetComment(comment string) *DropPolicyNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for DropPolicyNode.
+func (n *DropPolicyNode) Accept(visitor Visitor) error {
+	return visitor.VisitDropPolicy(n)
+}
+
+// AlterTableDisableRLSNode represents an ALTER TABLE ... DISABLE ROW LEVEL SECURITY statement.
+//
+// This node is used to disable Row-Level Security on a specific table.
+// RLS should only be disabled after all policies have been removed from the table.
+type AlterTableDisableRLSNode struct {
+	// Table is the name of the table to disable RLS on
+	Table string
+	// Comment is an optional comment for the operation
+	Comment string
+}
+
+// NewAlterTableDisableRLS creates a new ALTER TABLE DISABLE ROW LEVEL SECURITY node.
+//
+// Example:
+//
+//	disableRLS := NewAlterTableDisableRLS("users").
+//		SetComment("Disable RLS after removing all policies")
+func NewAlterTableDisableRLS(table string) *AlterTableDisableRLSNode {
+	return &AlterTableDisableRLSNode{
+		Table: table,
+	}
+}
+
+// SetComment sets a comment for the ALTER TABLE DISABLE RLS operation.
+//
+// Example:
+//
+//	disableRLS.SetComment("Disable RLS for rollback")
+func (n *AlterTableDisableRLSNode) SetComment(comment string) *AlterTableDisableRLSNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for AlterTableDisableRLSNode.
+func (n *AlterTableDisableRLSNode) Accept(visitor Visitor) error {
+	return visitor.VisitAlterTableDisableRLS(n)
+}
+
 // StatementList represents a collection of SQL statements that should be executed together.
 //
 // This is typically used to represent a complete schema or migration script

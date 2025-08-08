@@ -525,3 +525,18 @@ func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) e
 	}
 	return nil
 }
+
+// VisitDropFunction returns an error since PostgreSQL functions are not supported in MySQL
+func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
+	return fmt.Errorf("DROP FUNCTION is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)
+}
+
+// VisitDropPolicy returns an error since RLS policies are not supported in MySQL
+func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
+	return fmt.Errorf("DROP POLICY is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)
+}
+
+// VisitAlterTableDisableRLS returns an error since RLS is not supported in MySQL
+func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
+	return fmt.Errorf("ALTER TABLE DISABLE ROW LEVEL SECURITY is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)
+}

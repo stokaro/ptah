@@ -372,31 +372,49 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	// 0. Add new extensions first (PostgreSQL extensions should be created before other objects)
 	result = p.addNewExtensions(result, diff, generated)
 
-	// 1. Add new enums (PostgreSQL requires enum types to exist before tables use them)
+	// 1. Add new functions (functions may be used by RLS policies)
+	result = p.addNewFunctions(result, diff, generated)
+
+	// 2. Add new enums (PostgreSQL requires enum types to exist before tables use them)
 	result = p.addNewEnums(result, diff, generated)
 
-	// 2. Modify existing enums (add values only - PostgreSQL doesn't support removing enum values easily)
+	// 3. Modify existing enums (add values only - PostgreSQL doesn't support removing enum values easily)
 	result = p.modifyExistingEnums(result, diff)
 
-	// 3. Add new tables
+	// 4. Add new tables
 	result = p.addNewTables(result, diff, generated)
 
-	// 4. Modify existing tables
+	// 5. Enable RLS on tables (must be done after table creation)
+	result = p.enableRLSOnTables(result, diff, generated)
+
+	// 6. Add RLS policies (must be done after RLS is enabled)
+	result = p.addNewRLSPolicies(result, diff, generated)
+
+	// 7. Modify existing tables
 	result = p.modifyExistingTables(result, diff, generated)
 
-	// 5. Add new indexes
+	// 8. Add new indexes
 	result = p.addNewIndexes(result, diff, generated)
 
-	// 6. Remove indexes (safe operations)
+	// 9. Remove indexes (safe operations)
 	result = p.removeIndexes(result, diff)
 
-	// 7. Remove tables (dangerous!)
+	// 10. Remove RLS policies (must be done before disabling RLS)
+	result = p.removeRLSPolicies(result, diff)
+
+	// 11. Disable RLS on tables (must be done after removing policies)
+	result = p.disableRLSOnTables(result, diff)
+
+	// 12. Remove tables (dangerous!)
 	result = p.removeTables(result, diff)
 
-	// 8. Remove enums (dangerous!)
+	// 13. Remove functions (must be done after removing policies that might use them)
+	result = p.removeFunctions(result, diff)
+
+	// 14. Remove enums (dangerous!)
 	result = p.removeEnums(result, diff)
 
-	// 9. Remove extensions (dangerous!)
+	// 15. Remove extensions (dangerous!)
 	result = p.removeExtensions(result, diff)
 
 	return result
@@ -441,6 +459,100 @@ func (p *Planner) removeExtensions(result []ast.Node, diff *types.SchemaDiff) []
 			blankLine := ast.NewComment("")
 			result = append(result, blankLine)
 		}
+	}
+	return result
+}
+
+func (p *Planner) addNewFunctions(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, functionName := range diff.FunctionsAdded {
+		// Find the function definition
+		for _, fn := range generated.Functions {
+			if fn.Name == functionName {
+				functionNode := fromschema.FromFunction(fn)
+				result = append(result, functionNode)
+				break
+			}
+		}
+	}
+	return result
+}
+
+func (p *Planner) removeFunctions(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, functionName := range diff.FunctionsRemoved {
+		dropFunctionNode := ast.NewDropFunction(functionName).
+			SetIfExists().
+			SetComment("WARNING: Ensure no other objects depend on this function")
+		result = append(result, dropFunctionNode)
+	}
+	return result
+}
+
+func (p *Planner) enableRLSOnTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	// Create a set of tables that need RLS enabled
+	tablesNeedingRLS := make(map[string]bool)
+	for _, policy := range generated.RLSPolicies {
+		tablesNeedingRLS[policy.Table] = true
+	}
+
+	// Enable RLS on tables that have policies but don't have RLS enabled yet
+	for tableName := range tablesNeedingRLS {
+		// Check if this table is being added or if RLS is being enabled
+		tableIsNew := false
+		for _, addedTable := range diff.TablesAdded {
+			if addedTable == tableName {
+				tableIsNew = true
+				break
+			}
+		}
+
+		// For new tables with RLS policies, enable RLS
+		if tableIsNew {
+			enableRLSNode := ast.NewAlterTableEnableRLS(tableName).
+				SetComment(fmt.Sprintf("Enable RLS for %s table", tableName))
+			result = append(result, enableRLSNode)
+		}
+	}
+	return result
+}
+
+func (p *Planner) disableRLSOnTables(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, policyName := range diff.RLSPoliciesRemoved {
+		// We need to find which table this policy belonged to
+		// This is a limitation - we need the table name from the policy name
+		// For now, we'll add a warning comment
+		warningComment := ast.NewComment(fmt.Sprintf("WARNING: Policy %s was removed - check if RLS should be disabled on its table", policyName))
+		result = append(result, warningComment)
+	}
+	return result
+}
+
+func (p *Planner) addNewRLSPolicies(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, policyName := range diff.RLSPoliciesAdded {
+		// Find the policy definition
+		for _, policy := range generated.RLSPolicies {
+			if policy.Name == policyName {
+				policyNode := fromschema.FromRLSPolicy(policy)
+				result = append(result, policyNode)
+				break
+			}
+		}
+	}
+	return result
+}
+
+func (p *Planner) removeRLSPolicies(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, policyName := range diff.RLSPoliciesRemoved {
+		// We need the table name to drop the policy, but we don't have it in the diff
+		// This is a limitation of the current schema diff structure
+		warningComment := ast.NewComment(fmt.Sprintf("WARNING: Need to drop policy %s - table name required", policyName))
+		result = append(result, warningComment)
+
+		// For now, create a generic drop policy node (this will need table name)
+		// This should be improved to include table information in the schema diff
+		dropPolicyNode := ast.NewDropPolicy(policyName, "UNKNOWN_TABLE").
+			SetIfExists().
+			SetComment("WARNING: Update table name before executing")
+		result = append(result, dropPolicyNode)
 	}
 	return result
 }
