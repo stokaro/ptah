@@ -6,7 +6,38 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 )
+
+// Global regex cache for function dependency analysis
+var (
+	regexCache = make(map[string]*regexp.Regexp)
+	regexMutex sync.RWMutex
+)
+
+// getCachedRegex returns a cached regex pattern or creates and caches a new one
+func getCachedRegex(functionName string) *regexp.Regexp {
+	pattern := `\b` + regexp.QuoteMeta(functionName) + `\s*\(`
+
+	regexMutex.RLock()
+	if regex, exists := regexCache[pattern]; exists {
+		regexMutex.RUnlock()
+		return regex
+	}
+	regexMutex.RUnlock()
+
+	regexMutex.Lock()
+	defer regexMutex.Unlock()
+
+	// Double-check in case another goroutine added it while we were waiting
+	if regex, exists := regexCache[pattern]; exists {
+		return regex
+	}
+
+	regex := regexp.MustCompile(pattern)
+	regexCache[pattern] = regex
+	return regex
+}
 
 func sortTablesProcessQueue(queue *[]string, sorted *[]Table, dependencies map[string][]string, inDegree map[string]int, tableMap map[string]Table) {
 	for len(*queue) > 0 {
@@ -187,6 +218,187 @@ func buildDependencyGraph(r *Database) {
 	buildFunctionDependencies(r)
 }
 
+// processEmbeddedFields processes embedded fields and generates corresponding schema fields based on embedding modes.
+//
+// This function expands embedded struct fields into individual database fields according to their embedding mode.
+// It's essential to call this BEFORE buildDependencyGraph() to ensure that foreign keys from embedded fields
+// are properly included in the dependency analysis.
+//
+// Supported embedding modes:
+//   - "inline": Expands embedded struct fields as individual table columns
+//   - "json": Creates a single JSON/JSONB column for the embedded struct
+//   - "relation": Creates a foreign key field linking to another table
+//   - "skip": Completely ignores the embedded field
+//
+// Parameters:
+//   - embeddedFields: Collection of embedded field definitions to process
+//   - originalFields: Complete collection of schema fields from all parsed structs
+//
+// Returns:
+//   - Combined slice of Field containing both original fields and generated fields from embedded processing
+func processEmbeddedFields(embeddedFields []EmbeddedField, originalFields []Field) []Field {
+	// Estimate capacity: original fields + estimated embedded fields
+	// Each embedded field could potentially generate multiple fields
+	estimatedEmbeddedFields := len(embeddedFields) * 2 // Conservative estimate
+	estimatedCapacity := len(originalFields) + estimatedEmbeddedFields
+
+	// Pre-allocate slice with estimated capacity for better performance
+	allFields := make([]Field, len(originalFields), estimatedCapacity)
+	copy(allFields, originalFields)
+
+	// Process embedded fields for each struct
+	structNames := getUniqueStructNames(embeddedFields)
+	for _, structName := range structNames {
+		generatedFields := processEmbeddedFieldsForStruct(embeddedFields, originalFields, structName)
+		allFields = append(allFields, generatedFields...)
+	}
+
+	return allFields
+}
+
+// getUniqueStructNames extracts unique struct names from embedded fields.
+func getUniqueStructNames(embeddedFields []EmbeddedField) []string {
+	structNameMap := make(map[string]bool)
+	for _, embedded := range embeddedFields {
+		structNameMap[embedded.StructName] = true
+	}
+
+	var structNames []string
+	for structName := range structNameMap {
+		structNames = append(structNames, structName)
+	}
+	return structNames
+}
+
+// processEmbeddedFieldsForStruct processes embedded fields for a specific struct and generates corresponding schema fields.
+//
+// This function implements the core logic for transforming embedded fields into database schema fields
+// according to their specified embedding mode. It processes only embedded fields that belong to the
+// specified structName.
+//
+// Parameters:
+//   - embeddedFields: Collection of embedded field definitions to process
+//   - allFields: Complete collection of schema fields from all parsed structs
+//   - structName: Name of the target struct to process embedded fields for
+//
+// Returns:
+//   - Slice of Field representing the generated database fields for the specified struct
+func processEmbeddedFieldsForStruct(embeddedFields []EmbeddedField, allFields []Field, structName string) []Field {
+	var generatedFields []Field
+
+	// Process each embedded field definition
+	for _, embedded := range embeddedFields {
+		// Filter: only process embedded fields for the target struct
+		if embedded.StructName != structName {
+			continue
+		}
+
+		switch embedded.Mode {
+		case "inline":
+			// INLINE MODE: Expand embedded struct fields as individual table columns
+			generatedFields = processEmbeddedInlineMode(generatedFields, embedded, allFields, structName)
+		case "json":
+			// JSON MODE: Create a single JSON/JSONB column for the embedded struct
+			generatedFields = processEmbeddedJSONMode(generatedFields, embedded, structName)
+		case "relation":
+			// RELATION MODE: Create a foreign key field linking to another table
+			generatedFields = processEmbeddedRelationMode(generatedFields, embedded, structName)
+		case "skip":
+			// SKIP MODE: Completely ignore this embedded field
+			continue
+		default:
+			// DEFAULT MODE: Fall back to inline behavior for unrecognized modes
+			generatedFields = processEmbeddedInlineMode(generatedFields, embedded, allFields, structName)
+		}
+	}
+
+	return generatedFields
+}
+
+// processEmbeddedInlineMode handles inline mode embedded fields by expanding them as individual table columns.
+func processEmbeddedInlineMode(generatedFields []Field, embedded EmbeddedField, allFields []Field, structName string) []Field {
+	// INLINE MODE: Expand embedded struct fields as individual table columns
+	for _, field := range allFields {
+		if field.StructName != embedded.EmbeddedTypeName {
+			continue
+		}
+		// Clone the field and reassign to target struct
+		newField := field
+		newField.StructName = structName
+
+		// Apply prefix to column name if specified
+		if embedded.Prefix != "" {
+			newField.Name = embedded.Prefix + field.Name
+		}
+
+		generatedFields = append(generatedFields, newField)
+	}
+
+	return generatedFields
+}
+
+// processEmbeddedJSONMode handles JSON mode embedded fields by creating a single JSON/JSONB column.
+func processEmbeddedJSONMode(generatedFields []Field, embedded EmbeddedField, structName string) []Field {
+	// JSON MODE: Serialize embedded struct into a single JSON/JSONB column
+	columnName := embedded.Name
+	if columnName == "" {
+		// Auto-generate column name: "Meta" -> "meta_data"
+		columnName = strings.ToLower(embedded.EmbeddedTypeName) + "_data"
+	}
+
+	columnType := embedded.Type
+	if columnType == "" {
+		columnType = "JSONB" // Default to PostgreSQL JSONB for best performance
+	}
+
+	// Create the JSON field
+	generatedFields = append(generatedFields, Field{
+		StructName: structName,
+		FieldName:  embedded.EmbeddedTypeName,
+		Name:       columnName,
+		Type:       columnType,
+		Nullable:   embedded.Nullable,
+		Comment:    embedded.Comment,
+		Overrides:  embedded.Overrides,
+	})
+
+	return generatedFields
+}
+
+// processEmbeddedRelationMode handles relation mode embedded fields by creating foreign key fields.
+func processEmbeddedRelationMode(generatedFields []Field, embedded EmbeddedField, structName string) []Field {
+	// RELATION MODE: Create a foreign key field linking to another table
+	if embedded.Field == "" || embedded.Ref == "" {
+		// Skip incomplete relation definitions - both field name and reference are required
+		return generatedFields
+	}
+
+	// Intelligent type inference based on reference pattern
+	refType := "INTEGER" // Default assumption: numeric primary key
+	if strings.Contains(embedded.Ref, "VARCHAR") || strings.Contains(embedded.Ref, "TEXT") ||
+		strings.Contains(strings.ToLower(embedded.Ref), "uuid") {
+		// Reference suggests string-based key (likely UUID)
+		refType = "VARCHAR(36)" // Standard UUID length
+	}
+
+	// Generate automatic foreign key constraint name following convention
+	foreignKeyName := "fk_" + strings.ToLower(structName) + "_" + strings.ToLower(embedded.Field)
+
+	// Create the foreign key field
+	generatedFields = append(generatedFields, Field{
+		StructName:     structName,
+		FieldName:      embedded.EmbeddedTypeName,
+		Name:           embedded.Field,    // e.g., "user_id"
+		Type:           refType,           // INTEGER or VARCHAR(36)
+		Nullable:       embedded.Nullable, // Can the relationship be optional?
+		Foreign:        embedded.Ref,      // e.g., "users(id)"
+		ForeignKeyName: foreignKeyName,    // e.g., "fk_posts_user_id"
+		Comment:        embedded.Comment,  // Documentation for the relationship
+	})
+
+	return generatedFields
+}
+
 // buildFunctionDependencies analyzes function body content to identify function-to-function dependencies.
 //
 // This method examines function bodies to identify calls to other functions and builds
@@ -225,28 +437,21 @@ func buildFunctionDependencies(r *Database) {
 		r.FunctionDependencies[function.Name] = []string{}
 	}
 
-	// Pre-compile all regex patterns for better performance (avoid compilation in nested loops)
-	regexMap := make(map[string]*regexp.Regexp)
-	for otherFunctionName := range functionNames {
-		pattern := `\b` + regexp.QuoteMeta(otherFunctionName) + `\s*\(`
-		regexMap[otherFunctionName] = regexp.MustCompile(pattern)
-	}
-
 	// Analyze each function's body for calls to other functions
 	for _, function := range r.Functions {
 		body := function.Body
 		depMap := make(map[string]bool)
 
-		// Look for function calls in the body using pre-compiled regexes
+		// Look for function calls in the body using cached regexes
 		for otherFunctionName := range functionNames {
 			if otherFunctionName == function.Name {
 				continue // Skip self-references
 			}
 
-			// Use pre-compiled regex to match function calls: function_name(
+			// Use cached regex to match function calls: function_name(
 			// This matches the function name as a word, optional whitespace, then '('
 			// This avoids false positives in comments or string literals
-			re := regexMap[otherFunctionName]
+			re := getCachedRegex(otherFunctionName)
 			if re.FindStringIndex(body) != nil {
 				// Add dependency: current function depends on the called function
 				depMap[otherFunctionName] = true
