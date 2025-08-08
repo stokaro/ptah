@@ -649,22 +649,28 @@ func (r *Renderer) getDefaultValueForType(columnType string) string {
 // updateNullValuesBeforeNotNull updates existing NULL values before setting NOT NULL constraint
 // This prevents "column contains null values" errors during migrations
 func (r *Renderer) updateNullValuesBeforeNotNull(tableName string, column *ast.ColumnNode) {
+	// First check if there are any NULL values to avoid unnecessary UPDATE operations
+	r.w.WriteLinef("DO $$")
+	r.w.WriteLinef("BEGIN")
+	r.w.WriteLinef("    IF EXISTS (SELECT 1 FROM %s WHERE %s IS NULL LIMIT 1) THEN", tableName, column.Name)
+
 	if column.Default != nil {
 		if column.Default.Expression != "" {
-			r.w.WriteLinef("UPDATE %s SET %s = %s WHERE %s IS NULL;", tableName, column.Name, column.Default.Expression, column.Name)
-			return
+			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", tableName, column.Name, column.Default.Expression, column.Name)
+		} else if column.Default.Value != "" {
+			r.w.WriteLinef("        UPDATE %s SET %s = '%s' WHERE %s IS NULL;", tableName, column.Name, column.Default.Value, column.Name)
 		}
-		if column.Default.Value != "" {
-			r.w.WriteLinef("UPDATE %s SET %s = '%s' WHERE %s IS NULL;", tableName, column.Name, column.Default.Value, column.Name)
-			return
+	} else {
+		// If no default is specified, use a sensible default based on column type
+		defaultValue := r.getDefaultValueForType(column.Type)
+		if defaultValue != "" {
+			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", tableName, column.Name, defaultValue, column.Name)
 		}
 	}
 
-	// If no default is specified, use a sensible default based on column type
-	defaultValue := r.getDefaultValueForType(column.Type)
-	if defaultValue != "" {
-		r.w.WriteLinef("UPDATE %s SET %s = %s WHERE %s IS NULL;", tableName, column.Name, defaultValue, column.Name)
-	}
+	r.w.WriteLinef("    END IF;")
+	r.w.WriteLinef("END")
+	r.w.WriteLinef("$$;")
 }
 
 func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
