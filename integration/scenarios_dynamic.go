@@ -173,34 +173,32 @@ func GetDynamicScenarios() []TestScenario {
 			EnhancedTestFunc: testDynamicRLSPolicyModification,
 		},
 
-		// Down migration scenarios for RLS and functions (temporarily disabled for CI debugging)
-		/*
-			{
-				Name:             "dynamic_rls_functions_rollback",
-				Description:      "Test PostgreSQL RLS and functions rollback: complete down migration path",
-				EnhancedTestFunc: testDynamicRLSFunctionsRollback,
-			},
-			{
-				Name:             "dynamic_rls_functions_partial_rollback",
-				Description:      "Test PostgreSQL RLS and functions partial rollback: step-by-step down migrations",
-				EnhancedTestFunc: testDynamicRLSFunctionsPartialRollback,
-			},
-			{
-				Name:             "dynamic_rls_functions_dependency_order",
-				Description:      "Test PostgreSQL RLS and functions dependency order during rollback",
-				EnhancedTestFunc: testDynamicRLSFunctionsDependencyOrder,
-			},
-			{
-				Name:             "dynamic_rls_functions_data_integrity",
-				Description:      "Test data integrity during RLS and function rollbacks",
-				EnhancedTestFunc: testDynamicRLSFunctionsDataIntegrity,
-			},
-			{
-				Name:             "dynamic_rls_functions_error_handling",
-				Description:      "Test error handling during RLS and function rollbacks",
-				EnhancedTestFunc: testDynamicRLSFunctionsErrorHandling,
-			},
-		*/
+		// Down migration scenarios for RLS and functions
+		{
+			Name:             "dynamic_rls_functions_rollback",
+			Description:      "Test PostgreSQL RLS and functions rollback: complete down migration path",
+			EnhancedTestFunc: testDynamicRLSFunctionsRollback,
+		},
+		{
+			Name:             "dynamic_rls_functions_partial_rollback",
+			Description:      "Test PostgreSQL RLS and functions partial rollback: step-by-step down migrations",
+			EnhancedTestFunc: testDynamicRLSFunctionsPartialRollback,
+		},
+		{
+			Name:             "dynamic_rls_functions_dependency_order",
+			Description:      "Test PostgreSQL RLS and functions dependency order during rollback",
+			EnhancedTestFunc: testDynamicRLSFunctionsDependencyOrder,
+		},
+		{
+			Name:             "dynamic_rls_functions_data_integrity",
+			Description:      "Test data integrity during RLS and function rollbacks",
+			EnhancedTestFunc: testDynamicRLSFunctionsDataIntegrity,
+		},
+		{
+			Name:             "dynamic_rls_functions_error_handling",
+			Description:      "Test error handling during RLS and function rollbacks",
+			EnhancedTestFunc: testDynamicRLSFunctionsErrorHandling,
+		},
 	}
 }
 

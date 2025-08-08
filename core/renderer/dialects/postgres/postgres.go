@@ -670,9 +670,8 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 	// Function body with dollar quoting
 	r.w.WriteLinef("%s AS $$", strings.Join(parts, " "))
 	r.w.WriteLinef("%s", node.Body)
-	r.w.WriteLinef("$$")
 
-	// Language specification
+	// Language specification and other attributes
 	var attributes []string
 	if node.Language != "" {
 		attributes = append(attributes, fmt.Sprintf("LANGUAGE %s", node.Language))
@@ -688,11 +687,12 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 		attributes = append(attributes, node.Volatility)
 	}
 
-	// Add attributes if any
+	// Close the function with attributes
 	if len(attributes) > 0 {
+		r.w.WriteLinef("$$")
 		r.w.WriteLinef("%s;", strings.Join(attributes, " "))
 	} else {
-		r.w.WriteLinef(";")
+		r.w.WriteLinef("$$;")
 	}
 
 	return nil
