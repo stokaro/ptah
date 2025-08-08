@@ -266,6 +266,9 @@ linters:
       - path: 'integration/.*\.go$'
         linters:
           - unused
+      - path : 'integration/fixtures/entities/.*\.go$'
+        linters:
+          - lll
     paths:
       - 'drivertest/.*\.go$'
       - 'drivertest/escape/.*\.go$'

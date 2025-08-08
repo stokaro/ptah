@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -13,9 +14,10 @@ import (
 type ReportFormat string
 
 const (
-	FormatTXT  ReportFormat = "txt"
-	FormatJSON ReportFormat = "json"
-	FormatHTML ReportFormat = "html"
+	FormatTXT    ReportFormat = "txt"
+	FormatJSON   ReportFormat = "json"
+	FormatHTML   ReportFormat = "html"
+	FormatStdout ReportFormat = "stdout"
 )
 
 // Reporter handles generating reports in different formats
@@ -41,9 +43,75 @@ func (r *Reporter) GenerateReport(format ReportFormat, outputDir string) error {
 		return r.generateJSONReport(fpath)
 	case FormatHTML:
 		return r.generateHTMLReport(fpath)
+	case FormatStdout:
+		return r.generateTextStreamReport(os.Stdout)
 	default:
 		return fmt.Errorf("unsupported report format: %s", format)
 	}
+}
+
+// generateTextStreamReport generates a plain text stream report
+func (r *Reporter) generateTextStreamReport(w io.Writer) error {
+	// Header
+	fmt.Fprintf(w, "PTAH MIGRATION LIBRARY INTEGRATION TEST REPORT\n")
+	fmt.Fprintf(w, "===============================================\n\n")
+	fmt.Fprintf(w, "Generated: %s\n", time.Now().Format("2006-01-02 15:04:05"))
+	fmt.Fprintf(w, "Test Period: %s - %s\n",
+		r.report.StartTime.Format("15:04:05"),
+		r.report.EndTime.Format("15:04:05"))
+	fmt.Fprintf(w, "Duration: %v\n\n",
+		r.report.EndTime.Sub(r.report.StartTime).Round(time.Millisecond))
+
+	// Summary
+	fmt.Fprintf(w, "SUMMARY\n")
+	fmt.Fprintf(w, "-------\n")
+	fmt.Fprintf(w, "%s\n\n", r.report.Summary)
+
+	// Statistics
+	fmt.Fprintf(w, "STATISTICS\n")
+	fmt.Fprintf(w, "----------\n")
+	fmt.Fprintf(w, "Total Tests: %d\n", r.report.TotalTests)
+	fmt.Fprintf(w, "Passed: %d\n", r.report.PassedTests)
+	fmt.Fprintf(w, "Failed: %d\n", r.report.FailedTests)
+	if r.report.TotalTests > 0 {
+		successRate := float64(r.report.PassedTests) / float64(r.report.TotalTests) * 100
+		fmt.Fprintf(w, "Success Rate: %.1f%%\n", successRate)
+	}
+	fmt.Fprintf(w, "\n")
+
+	// Detailed Results
+	fmt.Fprintf(w, "DETAILED RESULTS\n")
+	fmt.Fprintf(w, "----------------\n")
+
+	for _, result := range r.report.Results {
+		status := "✅ PASS"
+		if !result.Success {
+			status = "❌ FAIL"
+		}
+
+		fmt.Fprintf(w, "%s %s (%s) - %v\n",
+			status, result.Name, result.Database, result.Duration.Round(time.Millisecond))
+		fmt.Fprintf(w, "    Description: %s\n", result.Description)
+
+		if !result.Success && result.Error != "" {
+			fmt.Fprintf(w, "    Error: %s\n", result.Error)
+		}
+		fmt.Fprintf(w, "\n")
+	}
+
+	// Failed Tests Summary
+	if r.report.FailedTests > 0 {
+		fmt.Fprintf(w, "FAILED TESTS SUMMARY\n")
+		fmt.Fprintf(w, "--------------------\n")
+		for _, result := range r.report.Results {
+			if !result.Success {
+				fmt.Fprintf(w, "❌ %s (%s)\n", result.Name, result.Database)
+				fmt.Fprintf(w, "   Error: %s\n\n", result.Error)
+			}
+		}
+	}
+
+	return nil
 }
 
 // generateTextReport generates a plain text report
@@ -54,66 +122,7 @@ func (r *Reporter) generateTextReport(fpath string) error {
 	}
 	defer file.Close()
 
-	// Header
-	fmt.Fprintf(file, "PTAH MIGRATION LIBRARY INTEGRATION TEST REPORT\n")
-	fmt.Fprintf(file, "===============================================\n\n")
-	fmt.Fprintf(file, "Generated: %s\n", time.Now().Format("2006-01-02 15:04:05"))
-	fmt.Fprintf(file, "Test Period: %s - %s\n",
-		r.report.StartTime.Format("15:04:05"),
-		r.report.EndTime.Format("15:04:05"))
-	fmt.Fprintf(file, "Duration: %v\n\n",
-		r.report.EndTime.Sub(r.report.StartTime).Round(time.Millisecond))
-
-	// Summary
-	fmt.Fprintf(file, "SUMMARY\n")
-	fmt.Fprintf(file, "-------\n")
-	fmt.Fprintf(file, "%s\n\n", r.report.Summary)
-
-	// Statistics
-	fmt.Fprintf(file, "STATISTICS\n")
-	fmt.Fprintf(file, "----------\n")
-	fmt.Fprintf(file, "Total Tests: %d\n", r.report.TotalTests)
-	fmt.Fprintf(file, "Passed: %d\n", r.report.PassedTests)
-	fmt.Fprintf(file, "Failed: %d\n", r.report.FailedTests)
-	if r.report.TotalTests > 0 {
-		successRate := float64(r.report.PassedTests) / float64(r.report.TotalTests) * 100
-		fmt.Fprintf(file, "Success Rate: %.1f%%\n", successRate)
-	}
-	fmt.Fprintf(file, "\n")
-
-	// Detailed Results
-	fmt.Fprintf(file, "DETAILED RESULTS\n")
-	fmt.Fprintf(file, "----------------\n")
-
-	for _, result := range r.report.Results {
-		status := "✅ PASS"
-		if !result.Success {
-			status = "❌ FAIL"
-		}
-
-		fmt.Fprintf(file, "%s %s (%s) - %v\n",
-			status, result.Name, result.Database, result.Duration.Round(time.Millisecond))
-		fmt.Fprintf(file, "    Description: %s\n", result.Description)
-
-		if !result.Success && result.Error != "" {
-			fmt.Fprintf(file, "    Error: %s\n", result.Error)
-		}
-		fmt.Fprintf(file, "\n")
-	}
-
-	// Failed Tests Summary
-	if r.report.FailedTests > 0 {
-		fmt.Fprintf(file, "FAILED TESTS SUMMARY\n")
-		fmt.Fprintf(file, "--------------------\n")
-		for _, result := range r.report.Results {
-			if !result.Success {
-				fmt.Fprintf(file, "❌ %s (%s)\n", result.Name, result.Database)
-				fmt.Fprintf(file, "   Error: %s\n\n", result.Error)
-			}
-		}
-	}
-
-	return nil
+	return r.generateTextStreamReport(file)
 }
 
 // generateJSONReport generates a JSON report

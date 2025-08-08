@@ -204,33 +204,49 @@ func (p *Planner) modifyExistingTableColumns(result []ast.Node, tableDiff types.
 	return result
 }
 
-func (p *Planner) removeTableColumns(result []ast.Node, tableDiff types.TableDiff) []ast.Node {
+func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, tableDiff types.TableDiff) []ast.Node {
 	for _, colName := range tableDiff.ColumnsRemoved {
-		// Generate DROP COLUMN statement using AST
+		// Generate DROP COLUMN statement using AST with CASCADE to handle dependencies
+		dropOp := &ast.DropColumnOperation{
+			ColumnName: colName,
+			Cascade:    true, // Use CASCADE to automatically drop dependent RLS policies
+		}
 		alterNode := &ast.AlterTableNode{
 			Name:       tableDiff.TableName,
-			Operations: []ast.AlterOperation{&ast.DropColumnOperation{ColumnName: colName}},
+			Operations: []ast.AlterOperation{dropOp},
 		}
 		result = append(result, alterNode)
-		astCommentNode := ast.NewComment(fmt.Sprintf("WARNING: Dropping column %s.%s - This will delete data!", tableDiff.TableName, colName))
+		astCommentNode := ast.NewComment(fmt.Sprintf("WARNING: Dropping column %s.%s with CASCADE - This will delete data and dependent objects!", tableDiff.TableName, colName))
 		result = append(result, astCommentNode)
 	}
 	return result
 }
 
-func (p *Planner) modifyExistingTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) addAndModifyTableColumns(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
 	for _, tableDiff := range diff.TablesModified {
-		astCommentNode := ast.NewComment(fmt.Sprintf("Modify table: %s", tableDiff.TableName))
-		result = append(result, astCommentNode)
+		if len(tableDiff.ColumnsAdded) > 0 || len(tableDiff.ColumnsModified) > 0 {
+			astCommentNode := ast.NewComment(fmt.Sprintf("Add/modify columns for table: %s", tableDiff.TableName))
+			result = append(result, astCommentNode)
 
-		// Add new columns
-		result = p.addNewTableColumns(result, tableDiff, generated)
+			// Add new columns
+			result = p.addNewTableColumns(result, tableDiff, generated)
 
-		// Modify existing columns
-		result = p.modifyExistingTableColumns(result, tableDiff, generated)
+			// Modify existing columns
+			result = p.modifyExistingTableColumns(result, tableDiff, generated)
+		}
+	}
+	return result
+}
 
-		// Remove columns (dangerous!)
-		result = p.removeTableColumns(result, tableDiff)
+func (p *Planner) removeTableColumns(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, tableDiff := range diff.TablesModified {
+		if len(tableDiff.ColumnsRemoved) > 0 {
+			astCommentNode := ast.NewComment(fmt.Sprintf("Remove columns from table: %s", tableDiff.TableName))
+			result = append(result, astCommentNode)
+
+			// Remove columns (dangerous!)
+			result = p.removeTableColumnsFromDiff(result, tableDiff)
+		}
 	}
 	return result
 }
@@ -372,31 +388,52 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	// 0. Add new extensions first (PostgreSQL extensions should be created before other objects)
 	result = p.addNewExtensions(result, diff, generated)
 
-	// 1. Add new enums (PostgreSQL requires enum types to exist before tables use them)
+	// 1. Add new functions (functions may be used by RLS policies)
+	result = p.addNewFunctions(result, diff, generated)
+
+	// 2. Add new enums (PostgreSQL requires enum types to exist before tables use them)
 	result = p.addNewEnums(result, diff, generated)
 
-	// 2. Modify existing enums (add values only - PostgreSQL doesn't support removing enum values easily)
+	// 3. Modify existing enums (add values only - PostgreSQL doesn't support removing enum values easily)
 	result = p.modifyExistingEnums(result, diff)
 
-	// 3. Add new tables
+	// 4. Add new tables
 	result = p.addNewTables(result, diff, generated)
 
-	// 4. Modify existing tables
-	result = p.modifyExistingTables(result, diff, generated)
+	// 5. Add and modify table columns (must be done before creating RLS policies that depend on columns)
+	result = p.addAndModifyTableColumns(result, diff, generated)
 
-	// 5. Add new indexes
+	// 6. Enable RLS on tables (must be done after table creation and modification)
+	result = p.enableRLSOnTables(result, diff, generated)
+
+	// 7. Add RLS policies (must be done after RLS is enabled and columns exist)
+	result = p.addNewRLSPolicies(result, diff, generated)
+
+	// 8. Add new indexes
 	result = p.addNewIndexes(result, diff, generated)
 
-	// 6. Remove indexes (safe operations)
+	// 9. Remove indexes (safe operations)
 	result = p.removeIndexes(result, diff)
 
-	// 7. Remove tables (dangerous!)
+	// 10. Remove RLS policies (must be done before disabling RLS and before dropping columns)
+	result = p.removeRLSPolicies(result, diff)
+
+	// 11. Disable RLS on tables (must be done after removing policies)
+	result = p.disableRLSOnTables(result, diff)
+
+	// 12. Remove table columns (must be done after removing RLS policies that depend on columns)
+	result = p.removeTableColumns(result, diff)
+
+	// 12. Remove tables (dangerous!)
 	result = p.removeTables(result, diff)
 
-	// 8. Remove enums (dangerous!)
+	// 13. Remove functions (must be done after removing policies that might use them)
+	result = p.removeFunctions(result, diff)
+
+	// 14. Remove enums (dangerous!)
 	result = p.removeEnums(result, diff)
 
-	// 9. Remove extensions (dangerous!)
+	// 15. Remove extensions (dangerous!)
 	result = p.removeExtensions(result, diff)
 
 	return result
@@ -441,6 +478,101 @@ func (p *Planner) removeExtensions(result []ast.Node, diff *types.SchemaDiff) []
 			blankLine := ast.NewComment("")
 			result = append(result, blankLine)
 		}
+	}
+	return result
+}
+
+func (p *Planner) addNewFunctions(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, functionName := range diff.FunctionsAdded {
+		// Find the function definition
+		for _, fn := range generated.Functions {
+			if fn.Name == functionName {
+				functionNode := fromschema.FromFunction(fn)
+				result = append(result, functionNode)
+				break
+			}
+		}
+	}
+	return result
+}
+
+func (p *Planner) removeFunctions(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, functionName := range diff.FunctionsRemoved {
+		dropFunctionNode := ast.NewDropFunction(functionName).
+			SetIfExists().
+			SetComment("WARNING: Ensure no other objects depend on this function")
+		result = append(result, dropFunctionNode)
+	}
+	return result
+}
+
+func (p *Planner) enableRLSOnTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	// Create a set of tables that need RLS enabled
+	tablesNeedingRLS := make(map[string]bool)
+	for _, policy := range generated.RLSPolicies {
+		tablesNeedingRLS[policy.Table] = true
+	}
+
+	// Enable RLS on tables that have policies but don't have RLS enabled yet
+	for tableName := range tablesNeedingRLS {
+		// Check if this table is being added or if RLS is being enabled
+		tableIsNew := false
+		for _, addedTable := range diff.TablesAdded {
+			if addedTable == tableName {
+				tableIsNew = true
+				break
+			}
+		}
+
+		// For new tables with RLS policies, enable RLS
+		if tableIsNew {
+			enableRLSNode := ast.NewAlterTableEnableRLS(tableName).
+				SetComment(fmt.Sprintf("Enable RLS for %s table", tableName))
+			result = append(result, enableRLSNode)
+		}
+	}
+	return result
+}
+
+func (p *Planner) disableRLSOnTables(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	// Track which tables had policies removed to potentially disable RLS
+	tablesWithRemovedPolicies := make(map[string]bool)
+	for _, policyRef := range diff.RLSPoliciesRemoved {
+		tablesWithRemovedPolicies[policyRef.TableName] = true
+	}
+
+	// For each table that had policies removed, add a comment about potentially disabling RLS
+	// Note: We don't automatically disable RLS because there might be other policies on the table
+	for tableName := range tablesWithRemovedPolicies {
+		warningComment := ast.NewComment(fmt.Sprintf("NOTE: RLS policies were removed from table %s - verify if RLS should be disabled", tableName))
+		result = append(result, warningComment)
+	}
+	return result
+}
+
+func (p *Planner) addNewRLSPolicies(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, policyName := range diff.RLSPoliciesAdded {
+		// Find the policy definition
+		for _, policy := range generated.RLSPolicies {
+			if policy.Name == policyName {
+				policyNode := fromschema.FromRLSPolicy(policy)
+				// Set Replace flag to handle conflicts gracefully during migrations
+				policyNode.Replace = true
+				result = append(result, policyNode)
+				break
+			}
+		}
+	}
+	return result
+}
+
+func (p *Planner) removeRLSPolicies(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, policyRef := range diff.RLSPoliciesRemoved {
+		// Now we have both policy name and table name, so we can generate proper DROP POLICY statements
+		dropPolicyNode := ast.NewDropPolicy(policyRef.PolicyName, policyRef.TableName).
+			SetIfExists().
+			SetComment(fmt.Sprintf("Drop RLS policy %s from table %s", policyRef.PolicyName, policyRef.TableName))
+		result = append(result, dropPolicyNode)
 	}
 	return result
 }

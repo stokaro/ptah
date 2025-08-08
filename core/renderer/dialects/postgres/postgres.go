@@ -167,6 +167,20 @@ func (r *Renderer) Render(node ast.Node) (string, error) {
 	return r.Output(), nil
 }
 
+// escapeValue properly escapes a string value for use in SQL
+func (r *Renderer) escapeValue(value string) string {
+	// Escape single quotes by doubling them (PostgreSQL standard)
+	escaped := strings.ReplaceAll(value, "'", "''")
+	return "'" + escaped + "'"
+}
+
+// escapeIdentifier safely escapes SQL identifiers (table/column names) for PostgreSQL
+func (r *Renderer) escapeIdentifier(identifier string) string {
+	// Escape double quotes by doubling them and wrap in double quotes
+	escaped := strings.ReplaceAll(identifier, `"`, `""`)
+	return `"` + escaped + `"`
+}
+
 // GetDialect returns the database dialect (alias for Dialect for compatibility)
 func (r *Renderer) GetDialect() string {
 	return r.Dialect()
@@ -275,7 +289,11 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 			line = strings.TrimPrefix(line, "  ")
 			r.w.WriteLinef("ALTER TABLE %s ADD COLUMN %s;", node.Name, line)
 		case *ast.DropColumnOperation:
-			r.w.WriteLinef("ALTER TABLE %s DROP COLUMN %s;", node.Name, op.ColumnName)
+			dropSQL := fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", node.Name, op.ColumnName)
+			if op.Cascade {
+				dropSQL += " CASCADE"
+			}
+			r.w.WriteLinef("%s;", dropSQL)
 		case *ast.ModifyColumnOperation:
 			// PostgreSQL uses different syntax for modifying columns
 			r.renderPostgreSQLModifyColumn(node.Name, op.Column)
@@ -471,7 +489,7 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	case column.Default == nil:
 		// No default value
 	case column.Default.Value != "":
-		parts = append(parts, fmt.Sprintf("DEFAULT '%s'", column.Default.Value)) // TODO: escape!
+		parts = append(parts, fmt.Sprintf("DEFAULT %s", r.escapeValue(column.Default.Value)))
 	case column.Default.Expression != "":
 		parts = append(parts, fmt.Sprintf("DEFAULT %s", column.Default.Expression))
 	}
@@ -605,6 +623,7 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, column *ast.Co
 	if column.Nullable {
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP NOT NULL;", tableName, column.Name)
 	} else {
+		r.updateNullValuesBeforeNotNull(tableName, column)
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET NOT NULL;", tableName, column.Name)
 	}
 
@@ -613,10 +632,59 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, column *ast.Co
 	case column.Default == nil:
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP DEFAULT;", tableName, column.Name)
 	case column.Default.Value != "":
-		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT '%s';", tableName, column.Name, column.Default.Value) // TODO: escape!
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s;", tableName, column.Name, r.escapeValue(column.Default.Value))
 	case column.Default.Expression != "":
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s;", tableName, column.Name, column.Default.Expression)
 	}
+}
+
+// getDefaultValueForType returns a sensible default value for a column type when setting NOT NULL
+func (r *Renderer) getDefaultValueForType(columnType string) string {
+	switch {
+	case strings.Contains(strings.ToLower(columnType), "timestamp"):
+		return "CURRENT_TIMESTAMP"
+	case strings.Contains(strings.ToLower(columnType), "date"):
+		return "CURRENT_DATE"
+	case strings.Contains(strings.ToLower(columnType), "time"):
+		return "CURRENT_TIME"
+	case strings.Contains(strings.ToLower(columnType), "text") || strings.Contains(strings.ToLower(columnType), "varchar"):
+		return "''"
+	case strings.Contains(strings.ToLower(columnType), "int") || strings.Contains(strings.ToLower(columnType), "serial"):
+		return "0"
+	case strings.Contains(strings.ToLower(columnType), "decimal") || strings.Contains(strings.ToLower(columnType), "numeric"):
+		return "0.0"
+	case strings.Contains(strings.ToLower(columnType), "bool"):
+		return "false"
+	default:
+		return "" // No default available, let the constraint fail if there are NULLs
+	}
+}
+
+// updateNullValuesBeforeNotNull updates existing NULL values before setting NOT NULL constraint
+// This prevents "column contains null values" errors during migrations
+func (r *Renderer) updateNullValuesBeforeNotNull(tableName string, column *ast.ColumnNode) {
+	// First check if there are any NULL values to avoid unnecessary UPDATE operations
+	r.w.WriteLinef("DO $$")
+	r.w.WriteLinef("BEGIN")
+	r.w.WriteLinef("    IF EXISTS (SELECT 1 FROM %s WHERE %s IS NULL LIMIT 1) THEN", r.escapeIdentifier(tableName), r.escapeIdentifier(column.Name))
+
+	if column.Default != nil {
+		if column.Default.Expression != "" {
+			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", r.escapeIdentifier(tableName), r.escapeIdentifier(column.Name), column.Default.Expression, r.escapeIdentifier(column.Name))
+		} else if column.Default.Value != "" {
+			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", r.escapeIdentifier(tableName), r.escapeIdentifier(column.Name), r.escapeValue(column.Default.Value), r.escapeIdentifier(column.Name))
+		}
+	} else {
+		// If no default is specified, use a sensible default based on column type
+		defaultValue := r.getDefaultValueForType(column.Type)
+		if defaultValue != "" {
+			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", r.escapeIdentifier(tableName), r.escapeIdentifier(column.Name), defaultValue, r.escapeIdentifier(column.Name))
+		}
+	}
+
+	r.w.WriteLinef("    END IF;")
+	r.w.WriteLinef("END")
+	r.w.WriteLinef("$$;")
 }
 
 func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
@@ -640,6 +708,182 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 	}
 
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+
+	return nil
+}
+
+// VisitCreateFunction renders a CREATE FUNCTION statement for PostgreSQL
+func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	// Build CREATE OR REPLACE FUNCTION statement
+	var parts []string
+	parts = append(parts, "CREATE OR REPLACE FUNCTION")
+
+	// Function name and parameters
+	if node.Parameters != "" {
+		parts = append(parts, fmt.Sprintf("%s(%s)", node.Name, node.Parameters))
+	} else {
+		parts = append(parts, fmt.Sprintf("%s()", node.Name))
+	}
+
+	// Return type
+	if node.Returns != "" {
+		parts = append(parts, "RETURNS", node.Returns)
+	}
+
+	// Function body with dollar quoting
+	r.w.WriteLinef("%s AS $$", strings.Join(parts, " "))
+	r.w.WriteLinef("%s", node.Body)
+
+	// Language specification and other attributes
+	var attributes []string
+	if node.Language != "" {
+		attributes = append(attributes, fmt.Sprintf("LANGUAGE %s", node.Language))
+	}
+
+	// Security attribute
+	if node.Security != "" {
+		attributes = append(attributes, fmt.Sprintf("SECURITY %s", node.Security))
+	}
+
+	// Volatility attribute
+	if node.Volatility != "" {
+		attributes = append(attributes, node.Volatility)
+	}
+
+	// Close the function with attributes
+	if len(attributes) > 0 {
+		r.w.WriteLinef("$$")
+		r.w.WriteLinef("%s;", strings.Join(attributes, " "))
+	} else {
+		r.w.WriteLinef("$$;")
+	}
+
+	return nil
+}
+
+// VisitCreatePolicy renders a CREATE POLICY statement for PostgreSQL RLS
+func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	// If Replace is true, drop the policy first to avoid conflicts
+	if node.Replace {
+		r.w.WriteLinef("DROP POLICY IF EXISTS %s ON %s;", node.Name, node.Table)
+	}
+
+	// Build CREATE POLICY statement
+	var parts []string
+	parts = append(parts, "CREATE POLICY", node.Name, "ON", node.Table)
+
+	// FOR clause
+	if node.PolicyFor != "" {
+		parts = append(parts, "FOR", node.PolicyFor)
+	}
+
+	// TO clause
+	if node.ToRoles != "" {
+		parts = append(parts, "TO", node.ToRoles)
+	}
+
+	r.w.WriteLinef("%s", strings.Join(parts, " "))
+
+	// USING clause
+	if node.UsingExpression != "" {
+		r.w.WriteLinef("    USING (%s)", node.UsingExpression)
+	}
+
+	// WITH CHECK clause
+	if node.WithCheckExpression != "" {
+		r.w.WriteLinef("    WITH CHECK (%s)", node.WithCheckExpression)
+	}
+
+	r.w.WriteLinef(";")
+
+	return nil
+}
+
+// VisitAlterTableEnableRLS renders an ALTER TABLE ENABLE ROW LEVEL SECURITY statement
+func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	// Build ALTER TABLE ENABLE ROW LEVEL SECURITY statement
+	r.w.WriteLinef("ALTER TABLE %s ENABLE ROW LEVEL SECURITY;", node.Table)
+
+	return nil
+}
+
+// VisitDropFunction renders a DROP FUNCTION statement
+func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	// Build DROP FUNCTION statement
+	var parts []string
+	parts = append(parts, "DROP FUNCTION")
+
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+
+	// Function name with parameters for signature matching
+	functionSignature := node.Name
+	if node.Parameters != "" {
+		functionSignature += "(" + node.Parameters + ")"
+	}
+	parts = append(parts, functionSignature)
+
+	if node.Cascade {
+		parts = append(parts, "CASCADE")
+	}
+
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+
+	return nil
+}
+
+// VisitDropPolicy renders a DROP POLICY statement
+func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	// Build DROP POLICY statement
+	var parts []string
+	parts = append(parts, "DROP POLICY")
+
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+
+	parts = append(parts, node.Name, "ON", node.Table)
+
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+
+	return nil
+}
+
+// VisitAlterTableDisableRLS renders an ALTER TABLE DISABLE ROW LEVEL SECURITY statement
+func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	// Build ALTER TABLE DISABLE ROW LEVEL SECURITY statement
+	r.w.WriteLinef("ALTER TABLE %s DISABLE ROW LEVEL SECURITY;", node.Table)
 
 	return nil
 }

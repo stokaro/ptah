@@ -314,3 +314,157 @@ func TestPostgreSQLRenderer_VisitDropExtension(t *testing.T) {
 		})
 	}
 }
+
+func TestPostgreSQLRenderer_VisitCreateFunction(t *testing.T) {
+	tests := []struct {
+		name     string
+		function *ast.CreateFunctionNode
+		expected string
+	}{
+		{
+			name: "basic function",
+			function: ast.NewCreateFunction("set_tenant_context").
+				SetParameters("tenant_id_param TEXT").
+				SetReturns("VOID").
+				SetLanguage("plpgsql").
+				SetBody("BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;"),
+			expected: `CREATE OR REPLACE FUNCTION set_tenant_context(tenant_id_param TEXT) RETURNS VOID AS $$
+BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;
+$$
+LANGUAGE plpgsql;
+`,
+		},
+		{
+			name: "function with security and volatility",
+			function: ast.NewCreateFunction("get_current_tenant_id").
+				SetReturns("TEXT").
+				SetLanguage("plpgsql").
+				SetSecurity("DEFINER").
+				SetVolatility("STABLE").
+				SetBody("BEGIN RETURN current_setting('app.current_tenant_id', true); END;"),
+			expected: `CREATE OR REPLACE FUNCTION get_current_tenant_id() RETURNS TEXT AS $$
+BEGIN RETURN current_setting('app.current_tenant_id', true); END;
+$$
+LANGUAGE plpgsql SECURITY DEFINER STABLE;
+`,
+		},
+		{
+			name: "function with comment",
+			function: ast.NewCreateFunction("test_function").
+				SetReturns("INTEGER").
+				SetLanguage("sql").
+				SetBody("SELECT 42").
+				SetComment("Test function for unit tests"),
+			expected: `-- Test function for unit tests
+CREATE OR REPLACE FUNCTION test_function() RETURNS INTEGER AS $$
+SELECT 42
+$$
+LANGUAGE sql;
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			renderer := postgres.New()
+			sql, err := renderer.Render(tt.function)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Equals, tt.expected)
+		})
+	}
+}
+
+func TestPostgreSQLRenderer_VisitCreatePolicy(t *testing.T) {
+	tests := []struct {
+		name     string
+		policy   *ast.CreatePolicyNode
+		expected string
+	}{
+		{
+			name: "basic RLS policy",
+			policy: ast.NewCreatePolicy("user_tenant_isolation", "users").
+				SetPolicyFor("ALL").
+				SetToRoles("inventario_app").
+				SetUsingExpression("tenant_id = get_current_tenant_id()"),
+			expected: `CREATE POLICY user_tenant_isolation ON users FOR ALL TO inventario_app
+    USING (tenant_id = get_current_tenant_id())
+;
+`,
+		},
+		{
+			name: "policy with WITH CHECK",
+			policy: ast.NewCreatePolicy("insert_policy", "products").
+				SetPolicyFor("INSERT").
+				SetToRoles("app_user").
+				SetUsingExpression("tenant_id = get_current_tenant_id()").
+				SetWithCheckExpression("tenant_id = get_current_tenant_id()"),
+			expected: `CREATE POLICY insert_policy ON products FOR INSERT TO app_user
+    USING (tenant_id = get_current_tenant_id())
+    WITH CHECK (tenant_id = get_current_tenant_id())
+;
+`,
+		},
+		{
+			name: "policy with comment",
+			policy: ast.NewCreatePolicy("select_policy", "orders").
+				SetPolicyFor("SELECT").
+				SetToRoles("PUBLIC").
+				SetUsingExpression("user_id = current_user_id()").
+				SetComment("Allow users to see only their orders"),
+			expected: `-- Allow users to see only their orders
+CREATE POLICY select_policy ON orders FOR SELECT TO PUBLIC
+    USING (user_id = current_user_id())
+;
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			renderer := postgres.New()
+			sql, err := renderer.Render(tt.policy)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Equals, tt.expected)
+		})
+	}
+}
+
+func TestPostgreSQLRenderer_VisitAlterTableEnableRLS(t *testing.T) {
+	tests := []struct {
+		name      string
+		enableRLS *ast.AlterTableEnableRLSNode
+		expected  string
+	}{
+		{
+			name:      "basic RLS enable",
+			enableRLS: ast.NewAlterTableEnableRLS("users"),
+			expected:  "ALTER TABLE users ENABLE ROW LEVEL SECURITY;\n",
+		},
+		{
+			name: "RLS enable with comment",
+			enableRLS: ast.NewAlterTableEnableRLS("products").
+				SetComment("Enable RLS for multi-tenant isolation"),
+			expected: `-- Enable RLS for multi-tenant isolation
+ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			renderer := postgres.New()
+			sql, err := renderer.Render(tt.enableRLS)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Equals, tt.expected)
+		})
+	}
+}

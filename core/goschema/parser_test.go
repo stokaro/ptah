@@ -430,3 +430,177 @@ func TestGetDependencyInfo(t *testing.T) {
 	}
 	c.Assert(orderSectionFound, qt.IsTrue, qt.Commentf("Should find Table Creation Order section"))
 }
+
+func TestParseFunctionComment(t *testing.T) {
+	tests := []struct {
+		name     string
+		comment  string
+		expected goschema.Function
+	}{
+		{
+			name:    "Basic function definition",
+			comment: `//migrator:schema:function name="set_tenant_context" params="tenant_id_param TEXT" returns="VOID" language="plpgsql" security="DEFINER" body="BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;"`,
+			expected: goschema.Function{
+				StructName: "TestStruct",
+				Name:       "set_tenant_context",
+				Parameters: "tenant_id_param TEXT",
+				Returns:    "VOID",
+				Language:   "plpgsql",
+				Security:   "DEFINER",
+				Body:       "BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;",
+			},
+		},
+		{
+			name:    "Function with volatility",
+			comment: `//migrator:schema:function name="get_current_tenant_id" returns="TEXT" language="plpgsql" volatility="STABLE" body="BEGIN RETURN current_setting('app.current_tenant_id', true); END;"`,
+			expected: goschema.Function{
+				StructName: "TestStruct",
+				Name:       "get_current_tenant_id",
+				Returns:    "TEXT",
+				Language:   "plpgsql",
+				Volatility: "STABLE",
+				Body:       "BEGIN RETURN current_setting('app.current_tenant_id', true); END;",
+			},
+		},
+		{
+			name:    "Function with comment",
+			comment: `//migrator:schema:function name="test_func" returns="INTEGER" language="sql" comment="Test function for unit tests"`,
+			expected: goschema.Function{
+				StructName: "TestStruct",
+				Name:       "test_func",
+				Returns:    "INTEGER",
+				Language:   "sql",
+				Comment:    "Test function for unit tests",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			kv := parseutils.ParseKeyValueComment(tt.comment)
+			function := goschema.Function{
+				StructName: "TestStruct",
+				Name:       kv["name"],
+				Parameters: kv["params"],
+				Returns:    kv["returns"],
+				Language:   kv["language"],
+				Security:   kv["security"],
+				Volatility: kv["volatility"],
+				Body:       kv["body"],
+				Comment:    kv["comment"],
+			}
+
+			c.Assert(function, qt.DeepEquals, tt.expected)
+		})
+	}
+}
+
+func TestParseRLSPolicyComment(t *testing.T) {
+	tests := []struct {
+		name     string
+		comment  string
+		expected goschema.RLSPolicy
+	}{
+		{
+			name:    "Basic RLS policy",
+			comment: `//migrator:schema:rls:policy name="user_tenant_isolation" table="users" for="ALL" to="inventario_app" using="tenant_id = get_current_tenant_id()"`,
+			expected: goschema.RLSPolicy{
+				StructName:      "TestStruct",
+				Name:            "user_tenant_isolation",
+				Table:           "users",
+				PolicyFor:       "ALL",
+				ToRoles:         "inventario_app",
+				UsingExpression: "tenant_id = get_current_tenant_id()",
+			},
+		},
+		{
+			name:    "RLS policy with WITH CHECK",
+			comment: `//migrator:schema:rls:policy name="insert_policy" table="products" for="INSERT" to="app_user" using="tenant_id = get_current_tenant_id()" with_check="tenant_id = get_current_tenant_id()"`,
+			expected: goschema.RLSPolicy{
+				StructName:          "TestStruct",
+				Name:                "insert_policy",
+				Table:               "products",
+				PolicyFor:           "INSERT",
+				ToRoles:             "app_user",
+				UsingExpression:     "tenant_id = get_current_tenant_id()",
+				WithCheckExpression: "tenant_id = get_current_tenant_id()",
+			},
+		},
+		{
+			name:    "RLS policy with comment",
+			comment: `//migrator:schema:rls:policy name="select_policy" table="orders" for="SELECT" to="PUBLIC" using="user_id = current_user_id()" comment="Allow users to see only their orders"`,
+			expected: goschema.RLSPolicy{
+				StructName:      "TestStruct",
+				Name:            "select_policy",
+				Table:           "orders",
+				PolicyFor:       "SELECT",
+				ToRoles:         "PUBLIC",
+				UsingExpression: "user_id = current_user_id()",
+				Comment:         "Allow users to see only their orders",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			kv := parseutils.ParseKeyValueComment(tt.comment)
+			policy := goschema.RLSPolicy{
+				StructName:          "TestStruct",
+				Name:                kv["name"],
+				Table:               kv["table"],
+				PolicyFor:           kv["for"],
+				ToRoles:             kv["to"],
+				UsingExpression:     kv["using"],
+				WithCheckExpression: kv["with_check"],
+				Comment:             kv["comment"],
+			}
+
+			c.Assert(policy, qt.DeepEquals, tt.expected)
+		})
+	}
+}
+
+func TestParseRLSEnableComment(t *testing.T) {
+	tests := []struct {
+		name     string
+		comment  string
+		expected goschema.RLSEnabledTable
+	}{
+		{
+			name:    "Basic RLS enable",
+			comment: `//migrator:schema:rls:enable table="users"`,
+			expected: goschema.RLSEnabledTable{
+				StructName: "TestStruct",
+				Table:      "users",
+			},
+		},
+		{
+			name:    "RLS enable with comment",
+			comment: `//migrator:schema:rls:enable table="products" comment="Enable RLS for multi-tenant isolation"`,
+			expected: goschema.RLSEnabledTable{
+				StructName: "TestStruct",
+				Table:      "products",
+				Comment:    "Enable RLS for multi-tenant isolation",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			kv := parseutils.ParseKeyValueComment(tt.comment)
+			rlsEnabled := goschema.RLSEnabledTable{
+				StructName: "TestStruct",
+				Table:      kv["table"],
+				Comment:    kv["comment"],
+			}
+
+			c.Assert(rlsEnabled, qt.DeepEquals, tt.expected)
+		})
+	}
+}

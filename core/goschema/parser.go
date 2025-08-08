@@ -142,7 +142,19 @@ func parseTableComment(comment *ast.Comment, structName string, tableDirectives 
 	})
 }
 
-func parseComment(comment *ast.Comment, structName string, field *ast.Field, globalEnumsMap map[string]Enum, schemaFields *[]Field, embeddedFields *[]EmbeddedField, schemaIndexes *[]Index, extensions *[]Extension) {
+func parseComment(
+	comment *ast.Comment,
+	structName string,
+	field *ast.Field,
+	globalEnumsMap map[string]Enum,
+	schemaFields *[]Field,
+	embeddedFields *[]EmbeddedField,
+	schemaIndexes *[]Index,
+	extensions *[]Extension,
+	functions *[]Function,
+	rlsPolicies *[]RLSPolicy,
+	rlsEnabledTables *[]RLSEnabledTable,
+) {
 	switch {
 	case strings.HasPrefix(comment.Text, "//migrator:schema:field"):
 		parseFieldComment(comment, field, structName, globalEnumsMap, schemaFields)
@@ -152,10 +164,16 @@ func parseComment(comment *ast.Comment, structName string, field *ast.Field, glo
 		parseIndexComment(comment, structName, schemaIndexes)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:extension"):
 		parseExtensionComment(comment, extensions)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:function"):
+		parseFunctionComment(comment, structName, functions)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:rls:policy"):
+		parseRLSPolicyComment(comment, structName, rlsPolicies)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:rls:enable"):
+		parseRLSEnableComment(comment, structName, rlsEnabledTables)
 	}
 }
 
-func processTableComments(structName string, genDecl *ast.GenDecl, tableDirectives *[]Table, extensions *[]Extension) {
+func processTableComments(structName string, genDecl *ast.GenDecl, tableDirectives *[]Table, extensions *[]Extension, functions *[]Function, rlsPolicies *[]RLSPolicy, rlsEnabledTables *[]RLSEnabledTable) {
 	if genDecl.Doc == nil {
 		return
 	}
@@ -166,17 +184,34 @@ func processTableComments(structName string, genDecl *ast.GenDecl, tableDirectiv
 			parseTableComment(comment, structName, tableDirectives)
 		case strings.HasPrefix(comment.Text, "//migrator:schema:extension"):
 			parseExtensionComment(comment, extensions)
+		case strings.HasPrefix(comment.Text, "//migrator:schema:function"):
+			parseFunctionComment(comment, structName, functions)
+		case strings.HasPrefix(comment.Text, "//migrator:schema:rls:policy"):
+			parseRLSPolicyComment(comment, structName, rlsPolicies)
+		case strings.HasPrefix(comment.Text, "//migrator:schema:rls:enable"):
+			parseRLSEnableComment(comment, structName, rlsEnabledTables)
 		}
 	}
 }
 
-func processFieldComments(structName string, structType *ast.StructType, globalEnumsMap map[string]Enum, schemaFields *[]Field, embeddedFields *[]EmbeddedField, schemaIndexes *[]Index, extensions *[]Extension) {
+func processFieldComments(
+	structName string,
+	structType *ast.StructType,
+	globalEnumsMap map[string]Enum,
+	schemaFields *[]Field,
+	embeddedFields *[]EmbeddedField,
+	schemaIndexes *[]Index,
+	extensions *[]Extension,
+	functions *[]Function,
+	rlsPolicies *[]RLSPolicy,
+	rlsEnabledTables *[]RLSEnabledTable,
+) {
 	for _, field := range structType.Fields.List {
 		if field.Doc == nil {
 			continue
 		}
 		for _, comment := range field.Doc.List {
-			parseComment(comment, structName, field, globalEnumsMap, schemaFields, embeddedFields, schemaIndexes, extensions)
+			parseComment(comment, structName, field, globalEnumsMap, schemaFields, embeddedFields, schemaIndexes, extensions, functions, rlsPolicies, rlsEnabledTables)
 		}
 	}
 }
@@ -194,6 +229,9 @@ func ParseFile(filename string) Database {
 	var schemaIndexes []Index
 	var tableDirectives []Table
 	var extensions []Extension
+	var functions []Function
+	var rlsPolicies []RLSPolicy
+	var rlsEnabledTables []RLSEnabledTable
 	globalEnumsMap := make(map[string]Enum)
 
 	for _, decl := range f.Decls {
@@ -211,8 +249,8 @@ func ParseFile(filename string) Database {
 			if !ok {
 				continue
 			}
-			processTableComments(structName, genDecl, &tableDirectives, &extensions)
-			processFieldComments(structName, structType, globalEnumsMap, &schemaFields, &embeddedFields, &schemaIndexes, &extensions)
+			processTableComments(structName, genDecl, &tableDirectives, &extensions, &functions, &rlsPolicies, &rlsEnabledTables)
+			processFieldComments(structName, structType, globalEnumsMap, &schemaFields, &embeddedFields, &schemaIndexes, &extensions, &functions, &rlsPolicies, &rlsEnabledTables)
 		}
 	}
 
@@ -226,17 +264,63 @@ func ParseFile(filename string) Database {
 		enums = append(enums, globalEnumsMap[k])
 	}
 
+	// Sort extensions alphabetically for consistent output
+	sort.Slice(extensions, func(i, j int) bool {
+		return extensions[i].Name < extensions[j].Name
+	})
+
 	result := Database{
-		Tables:         tableDirectives,
-		Fields:         schemaFields,
-		Indexes:        schemaIndexes,
-		Enums:          enums,
-		EmbeddedFields: embeddedFields,
-		Extensions:     extensions,
-		Dependencies:   make(map[string][]string),
+		Tables:           tableDirectives,
+		Fields:           schemaFields,
+		Indexes:          schemaIndexes,
+		Enums:            enums,
+		EmbeddedFields:   embeddedFields,
+		Extensions:       extensions,
+		Functions:        functions,
+		RLSPolicies:      rlsPolicies,
+		RLSEnabledTables: rlsEnabledTables,
+		Dependencies:     make(map[string][]string),
 	}
 	buildDependencyGraph(&result)
 	return result
+}
+
+func parseFunctionComment(comment *ast.Comment, structName string, functions *[]Function) {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	*functions = append(*functions, Function{
+		StructName: structName,
+		Name:       kv["name"],
+		Parameters: kv["params"],
+		Returns:    kv["returns"],
+		Language:   kv["language"],
+		Security:   kv["security"],
+		Volatility: kv["volatility"],
+		Body:       kv["body"],
+		Comment:    kv["comment"],
+	})
+}
+
+func parseRLSPolicyComment(comment *ast.Comment, structName string, rlsPolicies *[]RLSPolicy) {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	*rlsPolicies = append(*rlsPolicies, RLSPolicy{
+		StructName:          structName,
+		Name:                kv["name"],
+		Table:               kv["table"],
+		PolicyFor:           kv["for"],
+		ToRoles:             kv["to"],
+		UsingExpression:     kv["using"],
+		WithCheckExpression: kv["with_check"],
+		Comment:             kv["comment"],
+	})
+}
+
+func parseRLSEnableComment(comment *ast.Comment, structName string, rlsEnabledTables *[]RLSEnabledTable) {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	*rlsEnabledTables = append(*rlsEnabledTables, RLSEnabledTable{
+		StructName: structName,
+		Table:      kv["table"],
+		Comment:    kv["comment"],
+	})
 }
 
 // ParseFileWithDependencies parses a Go file and automatically discovers and parses

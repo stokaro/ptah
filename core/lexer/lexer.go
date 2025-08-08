@@ -142,6 +142,12 @@ func (l *Lexer) NextToken() Token {
 			return l.scanString()
 		case ch == '`':
 			return l.scanBacktickedIdentifier()
+		case ch == '$':
+			// Check for PostgreSQL dollar-quoted strings
+			if l.isDollarQuotedString() {
+				return l.scanDollarQuotedString()
+			}
+			return l.scanOperator()
 		case ch == '-' && l.peekNext() == '-':
 			return l.scanLineComment()
 		case ch == '/' && l.peekNext() == '*':
@@ -290,4 +296,80 @@ func (l *Lexer) scanNumber() Token {
 func (l *Lexer) scanOperator() Token {
 	l.advance()
 	return l.emit(TokenOperator)
+}
+
+// isDollarQuotedString checks if the current position starts a PostgreSQL dollar-quoted string
+func (l *Lexer) isDollarQuotedString() bool {
+	const maxDollarTagLength = 128 // Reasonable upper bound for tag length
+	if l.peek() != '$' {
+		return false
+	}
+
+	// Look ahead to find the closing $ of the opening tag
+	pos := l.pos + 1
+	tagLen := 0
+	for pos < len(l.input) && tagLen < maxDollarTagLength {
+		ch := rune(l.input[pos])
+		if ch == '$' {
+			// Found potential closing $ of opening tag
+			return true
+		}
+		if !unicode.IsLetter(ch) && !unicode.IsDigit(ch) && ch != '_' {
+			// Invalid character in tag name
+			return false
+		}
+		pos++
+		tagLen++
+	}
+	return false
+}
+
+// scanDollarQuotedString scans a PostgreSQL dollar-quoted string literal
+func (l *Lexer) scanDollarQuotedString() Token {
+	// Extract the opening tag (e.g., "$$" or "$tag$")
+	tagStart := l.pos
+	l.advance() // consume first $
+
+	// Scan tag name (if any)
+	for {
+		ch := l.peek()
+		if ch == '$' {
+			l.advance() // consume closing $
+			break
+		}
+		if !unicode.IsLetter(ch) && !unicode.IsDigit(ch) && ch != '_' {
+			// Invalid tag character - treat as regular operator
+			l.pos = tagStart + 1
+			return l.emit(TokenOperator)
+		}
+		l.advance()
+	}
+
+	// Extract the complete opening tag
+	openingTag := l.input[tagStart:l.pos]
+
+	// Scan until we find the matching closing tag
+	for {
+		ch := l.peek()
+		if ch == 0 {
+			// Unterminated dollar-quoted string - return what we have
+			break
+		}
+
+		if ch == '$' {
+			// Check if this might be the start of the closing tag
+			remainingInput := l.input[l.pos:]
+			if strings.HasPrefix(remainingInput, openingTag) {
+				// Found matching closing tag
+				for i := 0; i < len(openingTag); i++ {
+					l.advance()
+				}
+				break
+			}
+		}
+
+		l.advance()
+	}
+
+	return l.emit(TokenString)
 }
