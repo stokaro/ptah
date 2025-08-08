@@ -77,7 +77,7 @@ type Product struct {
 
 	// Verify functions were parsed correctly
 	c.Assert(database.Functions, qt.HasLen, 2)
-	
+
 	setTenantFunc := findFunction(database.Functions, "set_tenant_context")
 	c.Assert(setTenantFunc, qt.IsNotNil)
 	c.Assert(setTenantFunc.Parameters, qt.Equals, "tenant_id_param TEXT")
@@ -95,7 +95,7 @@ type Product struct {
 
 	// Verify RLS enabled tables were parsed correctly
 	c.Assert(database.RLSEnabledTables, qt.HasLen, 2)
-	
+
 	usersRLS := findRLSEnabledTable(database.RLSEnabledTables, "users")
 	c.Assert(usersRLS, qt.IsNotNil)
 	c.Assert(usersRLS.Comment, qt.Equals, "Enable RLS for multi-tenant isolation")
@@ -106,7 +106,7 @@ type Product struct {
 
 	// Verify RLS policies were parsed correctly
 	c.Assert(database.RLSPolicies, qt.HasLen, 2)
-	
+
 	userPolicy := findRLSPolicy(database.RLSPolicies, "user_tenant_isolation")
 	c.Assert(userPolicy, qt.IsNotNil)
 	c.Assert(userPolicy.Table, qt.Equals, "users")
@@ -129,7 +129,7 @@ type Product struct {
 	c.Assert(statements, qt.Not(qt.HasLen), 0)
 
 	sqlOutput := strings.Join(statements, "\n")
-	
+
 	// Verify function creation SQL
 	c.Assert(sqlOutput, qt.Contains, "CREATE OR REPLACE FUNCTION set_tenant_context(tenant_id_param TEXT)")
 	c.Assert(sqlOutput, qt.Contains, "RETURNS VOID")
