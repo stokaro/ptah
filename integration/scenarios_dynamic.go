@@ -3042,9 +3042,13 @@ func testDynamicRLSFunctionsDataIntegrity(ctx context.Context, conn *dbschema.Da
 		if err := conn.Writer().BeginTransaction(); err != nil {
 			return fmt.Errorf("failed to begin transaction: %w", err)
 		}
+		
+		committed := false
 		defer func() {
 			// Only rollback if transaction is still active (commit may have succeeded)
-			conn.Writer().RollbackTransaction()
+			if !committed {
+				conn.Writer().RollbackTransaction()
+			}
 		}()
 
 		for _, sql := range testData {
@@ -3056,6 +3060,7 @@ func testDynamicRLSFunctionsDataIntegrity(ctx context.Context, conn *dbschema.Da
 		if err := conn.Writer().CommitTransaction(); err != nil {
 			return fmt.Errorf("failed to commit transaction: %w", err)
 		}
+		committed = true
 
 		// Verify data was inserted
 		row := conn.QueryRow("SELECT COUNT(*) FROM users")

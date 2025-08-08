@@ -224,7 +224,8 @@ func testConcurrencyParallelMigrate(ctx context.Context, conn *dbschema.Database
 	defer conn2.Close()
 
 	// Use channels to collect results from goroutines (race-safe)
-	errChan := make(chan error, 2)
+	const numParallelMigrations = 2
+	errChan := make(chan error, numParallelMigrations)
 
 	// Launch two parallel migrations
 	go func() {

@@ -225,22 +225,28 @@ func buildFunctionDependencies(r *Database) {
 		r.FunctionDependencies[function.Name] = []string{}
 	}
 
+	// Pre-compile all regex patterns for better performance (avoid compilation in nested loops)
+	regexMap := make(map[string]*regexp.Regexp)
+	for otherFunctionName := range functionNames {
+		pattern := `\b` + regexp.QuoteMeta(otherFunctionName) + `\s*\(`
+		regexMap[otherFunctionName] = regexp.MustCompile(pattern)
+	}
+
 	// Analyze each function's body for calls to other functions
 	for _, function := range r.Functions {
 		body := function.Body
 		depMap := make(map[string]bool)
 
-		// Look for function calls in the body
+		// Look for function calls in the body using pre-compiled regexes
 		for otherFunctionName := range functionNames {
 			if otherFunctionName == function.Name {
 				continue // Skip self-references
 			}
 
-			// Use regex to match function calls: function_name(
+			// Use pre-compiled regex to match function calls: function_name(
 			// This matches the function name as a word, optional whitespace, then '('
 			// This avoids false positives in comments or string literals
-			pattern := `\b` + regexp.QuoteMeta(otherFunctionName) + `\s*\(`
-			re := regexp.MustCompile(pattern)
+			re := regexMap[otherFunctionName]
 			if re.FindStringIndex(body) != nil {
 				// Add dependency: current function depends on the called function
 				depMap[otherFunctionName] = true

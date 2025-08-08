@@ -174,6 +174,13 @@ func (r *Renderer) escapeValue(value string) string {
 	return "'" + escaped + "'"
 }
 
+// escapeIdentifier safely escapes SQL identifiers (table/column names) for PostgreSQL
+func (r *Renderer) escapeIdentifier(identifier string) string {
+	// Escape double quotes by doubling them and wrap in double quotes
+	escaped := strings.ReplaceAll(identifier, `"`, `""`)
+	return `"` + escaped + `"`
+}
+
 // GetDialect returns the database dialect (alias for Dialect for compatibility)
 func (r *Renderer) GetDialect() string {
 	return r.Dialect()
@@ -659,19 +666,19 @@ func (r *Renderer) updateNullValuesBeforeNotNull(tableName string, column *ast.C
 	// First check if there are any NULL values to avoid unnecessary UPDATE operations
 	r.w.WriteLinef("DO $$")
 	r.w.WriteLinef("BEGIN")
-	r.w.WriteLinef("    IF EXISTS (SELECT 1 FROM %s WHERE %s IS NULL LIMIT 1) THEN", tableName, column.Name)
+	r.w.WriteLinef("    IF EXISTS (SELECT 1 FROM %s WHERE %s IS NULL LIMIT 1) THEN", r.escapeIdentifier(tableName), r.escapeIdentifier(column.Name))
 
 	if column.Default != nil {
 		if column.Default.Expression != "" {
-			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", tableName, column.Name, column.Default.Expression, column.Name)
+			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", r.escapeIdentifier(tableName), r.escapeIdentifier(column.Name), column.Default.Expression, r.escapeIdentifier(column.Name))
 		} else if column.Default.Value != "" {
-			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", tableName, column.Name, r.escapeValue(column.Default.Value), column.Name)
+			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", r.escapeIdentifier(tableName), r.escapeIdentifier(column.Name), r.escapeValue(column.Default.Value), r.escapeIdentifier(column.Name))
 		}
 	} else {
 		// If no default is specified, use a sensible default based on column type
 		defaultValue := r.getDefaultValueForType(column.Type)
 		if defaultValue != "" {
-			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", tableName, column.Name, defaultValue, column.Name)
+			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", r.escapeIdentifier(tableName), r.escapeIdentifier(column.Name), defaultValue, r.escapeIdentifier(column.Name))
 		}
 	}
 
