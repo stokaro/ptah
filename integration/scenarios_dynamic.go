@@ -2523,6 +2523,11 @@ func testDynamicRLSCrossDatabase(ctx context.Context, conn *dbschema.DatabaseCon
 
 			// The fact that we reached this point means the migration succeeded,
 			// which proves that PostgreSQL-specific features were gracefully skipped
+
+			// Verify that basic schema elements are still present
+			if len(schema.Tables) == 0 {
+				return fmt.Errorf("schema should contain tables for MySQL/MariaDB")
+			}
 		}
 
 		return nil
