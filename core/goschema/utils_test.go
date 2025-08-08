@@ -40,7 +40,7 @@ func TestDeduplicatePreservesFieldOrder(t *testing.T) {
 	deduplicate(db)
 
 	// Verify field order is preserved
-	c.Assert(len(db.Fields), qt.Equals, len(originalOrder))
+	c.Assert(db.Fields, qt.HasLen, len(originalOrder))
 
 	for i, field := range db.Fields {
 		expectedKey := originalOrder[i]
@@ -95,7 +95,7 @@ func TestDeduplicateFieldOrderConsistency(t *testing.T) {
 	for run := 1; run < runs; run++ {
 		currentRunOrder := results[run]
 		
-		c.Assert(len(currentRunOrder), qt.Equals, len(firstRunOrder), 
+		c.Assert(currentRunOrder, qt.HasLen, len(firstRunOrder), 
 			qt.Commentf("Run %d produced different number of fields", run))
 
 		for i, field := range currentRunOrder {
@@ -131,7 +131,7 @@ func TestDeduplicateRemovesDuplicateFields(t *testing.T) {
 	deduplicate(db)
 
 	// Should have 3 unique fields
-	c.Assert(len(db.Fields), qt.Equals, 3)
+	c.Assert(db.Fields, qt.HasLen, 3)
 
 	// Check that we have the expected fields in order
 	expectedFields := []string{
@@ -174,7 +174,7 @@ func TestDeduplicatePreservesIndexOrder(t *testing.T) {
 
 	deduplicate(db)
 
-	c.Assert(len(db.Indexes), qt.Equals, len(originalOrder))
+	c.Assert(db.Indexes, qt.HasLen, len(originalOrder))
 
 	for i, index := range db.Indexes {
 		expectedKey := originalOrder[i]
@@ -210,7 +210,7 @@ func TestDeduplicatePreservesEnumOrder(t *testing.T) {
 
 	deduplicate(db)
 
-	c.Assert(len(db.Enums), qt.Equals, len(originalOrder))
+	c.Assert(db.Enums, qt.HasLen, len(originalOrder))
 
 	for i, enum := range db.Enums {
 		c.Assert(enum.Name, qt.Equals, originalOrder[i], qt.Commentf("Enum order not preserved at position %d", i))
@@ -244,7 +244,7 @@ func TestDeduplicatePreservesEmbeddedFieldOrder(t *testing.T) {
 
 	deduplicate(db)
 
-	c.Assert(len(db.EmbeddedFields), qt.Equals, len(originalOrder))
+	c.Assert(db.EmbeddedFields, qt.HasLen, len(originalOrder))
 
 	for i, embedded := range db.EmbeddedFields {
 		expectedKey := originalOrder[i]
