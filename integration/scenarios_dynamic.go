@@ -2356,13 +2356,78 @@ func testDynamicEmbeddedFields(ctx context.Context, conn *dbschema.DatabaseConne
 // POSTGRESQL RLS AND FUNCTIONS SCENARIOS
 // ============================================================================
 
-// testDynamicRLSFunctionsBasic tests basic PostgreSQL RLS and custom functions setup
-func testDynamicRLSFunctionsBasic(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
-	// Skip test for non-PostgreSQL databases
+// Helper functions for RLS and functions testing
+
+// skipNonPostgreSQL skips the test for non-PostgreSQL databases
+func skipNonPostgreSQL(conn *dbschema.DatabaseConnection, recorder *StepRecorder) error {
 	if conn.Info().Dialect != "postgres" {
 		return recorder.RecordStep("Skip Non-PostgreSQL", "RLS and functions are PostgreSQL-only features", func() error {
 			return nil
 		})
+	}
+	return nil
+}
+
+// verifyBasicRLSSchema verifies the basic RLS schema contains expected functions, policies, and tables
+func verifyBasicRLSSchema(schema *goschema.Database) error {
+	// Should have 2 functions
+	if len(schema.Functions) != 2 {
+		return fmt.Errorf("expected 2 functions, got %d", len(schema.Functions))
+	}
+
+	// Should have 2 RLS policies
+	if len(schema.RLSPolicies) != 2 {
+		return fmt.Errorf("expected 2 RLS policies, got %d", len(schema.RLSPolicies))
+	}
+
+	// Should have 2 RLS enabled tables
+	if len(schema.RLSEnabledTables) != 2 {
+		return fmt.Errorf("expected 2 RLS enabled tables, got %d", len(schema.RLSEnabledTables))
+	}
+
+	// Verify function names
+	functionNames := make(map[string]bool)
+	for _, function := range schema.Functions {
+		functionNames[function.Name] = true
+	}
+	if !functionNames["set_tenant_context"] {
+		return fmt.Errorf("expected set_tenant_context function")
+	}
+	if !functionNames["get_current_tenant_id"] {
+		return fmt.Errorf("expected get_current_tenant_id function")
+	}
+
+	// Verify RLS policy names
+	policyNames := make(map[string]bool)
+	for _, policy := range schema.RLSPolicies {
+		policyNames[policy.Name] = true
+	}
+	if !policyNames["user_tenant_isolation"] {
+		return fmt.Errorf("expected user_tenant_isolation policy")
+	}
+	if !policyNames["product_tenant_isolation"] {
+		return fmt.Errorf("expected product_tenant_isolation policy")
+	}
+
+	// Verify RLS enabled tables
+	rlsTableNames := make(map[string]bool)
+	for _, rlsTable := range schema.RLSEnabledTables {
+		rlsTableNames[rlsTable.Table] = true
+	}
+	if !rlsTableNames["users"] {
+		return fmt.Errorf("expected users table to have RLS enabled")
+	}
+	if !rlsTableNames["products"] {
+		return fmt.Errorf("expected products table to have RLS enabled")
+	}
+
+	return nil
+}
+
+// testDynamicRLSFunctionsBasic tests basic PostgreSQL RLS and custom functions setup
+func testDynamicRLSFunctionsBasic(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
+	if err := skipNonPostgreSQL(conn, recorder); err != nil {
+		return err
 	}
 
 	vem, err := NewVersionedEntityManager(fixtures)
@@ -2383,68 +2448,53 @@ func testDynamicRLSFunctionsBasic(ctx context.Context, conn *dbschema.DatabaseCo
 			return fmt.Errorf("failed to generate schema: %w", err)
 		}
 
-		// Should have 2 functions
-		if len(schema.Functions) != 2 {
-			return fmt.Errorf("expected 2 functions, got %d", len(schema.Functions))
-		}
-
-		// Should have 2 RLS policies
-		if len(schema.RLSPolicies) != 2 {
-			return fmt.Errorf("expected 2 RLS policies, got %d", len(schema.RLSPolicies))
-		}
-
-		// Should have 2 RLS enabled tables
-		if len(schema.RLSEnabledTables) != 2 {
-			return fmt.Errorf("expected 2 RLS enabled tables, got %d", len(schema.RLSEnabledTables))
-		}
-
-		// Verify function names
-		functionNames := make(map[string]bool)
-		for _, function := range schema.Functions {
-			functionNames[function.Name] = true
-		}
-		if !functionNames["set_tenant_context"] {
-			return fmt.Errorf("expected set_tenant_context function")
-		}
-		if !functionNames["get_current_tenant_id"] {
-			return fmt.Errorf("expected get_current_tenant_id function")
-		}
-
-		// Verify RLS policy names
-		policyNames := make(map[string]bool)
-		for _, policy := range schema.RLSPolicies {
-			policyNames[policy.Name] = true
-		}
-		if !policyNames["user_tenant_isolation"] {
-			return fmt.Errorf("expected user_tenant_isolation policy")
-		}
-		if !policyNames["product_tenant_isolation"] {
-			return fmt.Errorf("expected product_tenant_isolation policy")
-		}
-
-		// Verify RLS enabled tables
-		rlsTableNames := make(map[string]bool)
-		for _, rlsTable := range schema.RLSEnabledTables {
-			rlsTableNames[rlsTable.Table] = true
-		}
-		if !rlsTableNames["users"] {
-			return fmt.Errorf("expected users table to have RLS enabled")
-		}
-		if !rlsTableNames["products"] {
-			return fmt.Errorf("expected products table to have RLS enabled")
-		}
-
-		return nil
+		return verifyBasicRLSSchema(schema)
 	})
+}
+
+// verifyAdvancedRLSSchema verifies the advanced RLS schema contains expected functions and policies
+func verifyAdvancedRLSSchema(schema *goschema.Database) error {
+	// Should have 3 functions (including validation function)
+	if len(schema.Functions) != 3 {
+		return fmt.Errorf("expected 3 functions, got %d", len(schema.Functions))
+	}
+
+	// Should have 4 RLS policies (separate SELECT and INSERT policies + product policies)
+	if len(schema.RLSPolicies) != 4 {
+		return fmt.Errorf("expected 4 RLS policies, got %d", len(schema.RLSPolicies))
+	}
+
+	// Verify the validation function exists
+	functionNames := make(map[string]bool)
+	for _, function := range schema.Functions {
+		functionNames[function.Name] = true
+	}
+	if !functionNames["validate_user_access"] {
+		return fmt.Errorf("expected validate_user_access function")
+	}
+
+	// Verify separate SELECT and INSERT policies exist
+	policyNames := make(map[string]bool)
+	for _, policy := range schema.RLSPolicies {
+		policyNames[policy.Name] = true
+	}
+	if !policyNames["user_tenant_select"] {
+		return fmt.Errorf("expected user_tenant_select policy")
+	}
+	if !policyNames["user_tenant_insert"] {
+		return fmt.Errorf("expected user_tenant_insert policy")
+	}
+	if !policyNames["product_owner_access"] {
+		return fmt.Errorf("expected product_owner_access policy")
+	}
+
+	return nil
 }
 
 // testDynamicRLSFunctionsAdvanced tests advanced PostgreSQL RLS with role-based policies
 func testDynamicRLSFunctionsAdvanced(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
-	// Skip test for non-PostgreSQL databases
-	if conn.Info().Dialect != "postgres" {
-		return recorder.RecordStep("Skip Non-PostgreSQL", "RLS and functions are PostgreSQL-only features", func() error {
-			return nil
-		})
+	if err := skipNonPostgreSQL(conn, recorder); err != nil {
+		return err
 	}
 
 	vem, err := NewVersionedEntityManager(fixtures)
@@ -2465,41 +2515,7 @@ func testDynamicRLSFunctionsAdvanced(ctx context.Context, conn *dbschema.Databas
 			return fmt.Errorf("failed to generate schema: %w", err)
 		}
 
-		// Should have 3 functions (including validation function)
-		if len(schema.Functions) != 3 {
-			return fmt.Errorf("expected 3 functions, got %d", len(schema.Functions))
-		}
-
-		// Should have 4 RLS policies (separate SELECT and INSERT policies + product policies)
-		if len(schema.RLSPolicies) != 4 {
-			return fmt.Errorf("expected 4 RLS policies, got %d", len(schema.RLSPolicies))
-		}
-
-		// Verify the validation function exists
-		functionNames := make(map[string]bool)
-		for _, function := range schema.Functions {
-			functionNames[function.Name] = true
-		}
-		if !functionNames["validate_user_access"] {
-			return fmt.Errorf("expected validate_user_access function")
-		}
-
-		// Verify separate SELECT and INSERT policies exist
-		policyNames := make(map[string]bool)
-		for _, policy := range schema.RLSPolicies {
-			policyNames[policy.Name] = true
-		}
-		if !policyNames["user_tenant_select"] {
-			return fmt.Errorf("expected user_tenant_select policy")
-		}
-		if !policyNames["user_tenant_insert"] {
-			return fmt.Errorf("expected user_tenant_insert policy")
-		}
-		if !policyNames["product_owner_access"] {
-			return fmt.Errorf("expected product_owner_access policy")
-		}
-
-		return nil
+		return verifyAdvancedRLSSchema(schema)
 	})
 }
 

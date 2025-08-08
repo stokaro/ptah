@@ -2,6 +2,7 @@ package goschema
 
 import (
 	"log/slog"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -235,8 +236,12 @@ func buildFunctionDependencies(r *Database) {
 				continue // Skip self-references
 			}
 
-			// Simple pattern matching for function calls: function_name(
-			if strings.Contains(body, otherFunctionName+"(") {
+			// Use regex to match function calls: function_name(
+			// This matches the function name as a word, optional whitespace, then '('
+			// This avoids false positives in comments or string literals
+			pattern := `\b` + regexp.QuoteMeta(otherFunctionName) + `\s*\(`
+			re := regexp.MustCompile(pattern)
+			if re.FindStringIndex(body) != nil {
 				// Add dependency: current function depends on the called function
 				depMap[otherFunctionName] = true
 			}

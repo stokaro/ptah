@@ -167,6 +167,13 @@ func (r *Renderer) Render(node ast.Node) (string, error) {
 	return r.Output(), nil
 }
 
+// escapeValue properly escapes a string value for use in SQL
+func (r *Renderer) escapeValue(value string) string {
+	// Escape single quotes by doubling them (PostgreSQL standard)
+	escaped := strings.ReplaceAll(value, "'", "''")
+	return "'" + escaped + "'"
+}
+
 // GetDialect returns the database dialect (alias for Dialect for compatibility)
 func (r *Renderer) GetDialect() string {
 	return r.Dialect()
@@ -475,7 +482,7 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	case column.Default == nil:
 		// No default value
 	case column.Default.Value != "":
-		parts = append(parts, fmt.Sprintf("DEFAULT '%s'", column.Default.Value)) // TODO: escape!
+		parts = append(parts, fmt.Sprintf("DEFAULT %s", r.escapeValue(column.Default.Value)))
 	case column.Default.Expression != "":
 		parts = append(parts, fmt.Sprintf("DEFAULT %s", column.Default.Expression))
 	}
@@ -618,7 +625,7 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, column *ast.Co
 	case column.Default == nil:
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP DEFAULT;", tableName, column.Name)
 	case column.Default.Value != "":
-		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT '%s';", tableName, column.Name, column.Default.Value) // TODO: escape!
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s;", tableName, column.Name, r.escapeValue(column.Default.Value))
 	case column.Default.Expression != "":
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s;", tableName, column.Name, column.Default.Expression)
 	}
@@ -658,7 +665,7 @@ func (r *Renderer) updateNullValuesBeforeNotNull(tableName string, column *ast.C
 		if column.Default.Expression != "" {
 			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", tableName, column.Name, column.Default.Expression, column.Name)
 		} else if column.Default.Value != "" {
-			r.w.WriteLinef("        UPDATE %s SET %s = '%s' WHERE %s IS NULL;", tableName, column.Name, column.Default.Value, column.Name)
+			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", tableName, column.Name, r.escapeValue(column.Default.Value), column.Name)
 		}
 	} else {
 		// If no default is specified, use a sensible default based on column type

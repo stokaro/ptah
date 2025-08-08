@@ -29,6 +29,13 @@ func New(dialect string, buf *bufwriter.Writer) *Renderer {
 	}
 }
 
+// escapeValue properly escapes a string value for use in SQL
+func (r *Renderer) escapeValue(value string) string {
+	// Escape single quotes by doubling them (MySQL/MariaDB standard)
+	escaped := strings.ReplaceAll(value, "'", "''")
+	return "'" + escaped + "'"
+}
+
 func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 	// Build DROP INDEX statement for MySQL/MariaDB
 	var parts []string
@@ -286,7 +293,7 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	case column.Default == nil:
 		// No default value
 	case column.Default.Value != "":
-		parts = append(parts, fmt.Sprintf("DEFAULT '%s'", column.Default.Value)) // TODO: escape!
+		parts = append(parts, fmt.Sprintf("DEFAULT %s", r.escapeValue(column.Default.Value)))
 	case column.Default.Expression != "":
 		parts = append(parts, fmt.Sprintf("DEFAULT %s", column.Default.Expression))
 	}
