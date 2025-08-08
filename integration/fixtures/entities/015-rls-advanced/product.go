@@ -3,9 +3,8 @@ package entities
 // Enable RLS and create policies for products table with role-based access
 //
 //migrator:schema:rls:enable table="products" comment="Enable RLS for product isolation"
-//migrator:schema:rls:policy name="product_tenant_select" table="products" for="SELECT" to="PUBLIC" using="tenant_id = get_current_tenant_id()" comment="Allow selecting products from current tenant"
-//migrator:schema:rls:policy name="product_tenant_insert" table="products" for="INSERT" to="PUBLIC" with_check="tenant_id = get_current_tenant_id()" comment="Allow inserting products for current tenant"
-//migrator:schema:rls:policy name="product_owner_update" table="products" for="UPDATE" to="PUBLIC" using="user_id = (SELECT id FROM users WHERE email = current_user AND tenant_id = get_current_tenant_id())" comment="Owner can update their products"
+//migrator:schema:rls:policy name="product_tenant_isolation" table="products" for="ALL" to="PUBLIC" using="tenant_id = get_current_tenant_id()" with_check="tenant_id = get_current_tenant_id()" comment="Products isolated by tenant"
+//migrator:schema:rls:policy name="product_owner_access" table="products" for="UPDATE" to="PUBLIC" using="user_id = (SELECT id FROM users WHERE email = current_user AND tenant_id = get_current_tenant_id())" comment="Owner access only"
 //migrator:schema:table name="products" comment="Product catalog table"
 type Product struct {
 	//migrator:schema:field name="id" type="SERIAL" primary="true"

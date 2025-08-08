@@ -204,7 +204,7 @@ func (p *Planner) modifyExistingTableColumns(result []ast.Node, tableDiff types.
 	return result
 }
 
-func (p *Planner) removeTableColumns(result []ast.Node, tableDiff types.TableDiff) []ast.Node {
+func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, tableDiff types.TableDiff) []ast.Node {
 	for _, colName := range tableDiff.ColumnsRemoved {
 		// Generate DROP COLUMN statement using AST
 		alterNode := &ast.AlterTableNode{
@@ -214,6 +214,35 @@ func (p *Planner) removeTableColumns(result []ast.Node, tableDiff types.TableDif
 		result = append(result, alterNode)
 		astCommentNode := ast.NewComment(fmt.Sprintf("WARNING: Dropping column %s.%s - This will delete data!", tableDiff.TableName, colName))
 		result = append(result, astCommentNode)
+	}
+	return result
+}
+
+func (p *Planner) addAndModifyTableColumns(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, tableDiff := range diff.TablesModified {
+		if len(tableDiff.ColumnsAdded) > 0 || len(tableDiff.ColumnsModified) > 0 {
+			astCommentNode := ast.NewComment(fmt.Sprintf("Add/modify columns for table: %s", tableDiff.TableName))
+			result = append(result, astCommentNode)
+
+			// Add new columns
+			result = p.addNewTableColumns(result, tableDiff, generated)
+
+			// Modify existing columns
+			result = p.modifyExistingTableColumns(result, tableDiff, generated)
+		}
+	}
+	return result
+}
+
+func (p *Planner) removeTableColumns(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, tableDiff := range diff.TablesModified {
+		if len(tableDiff.ColumnsRemoved) > 0 {
+			astCommentNode := ast.NewComment(fmt.Sprintf("Remove columns from table: %s", tableDiff.TableName))
+			result = append(result, astCommentNode)
+
+			// Remove columns (dangerous!)
+			result = p.removeTableColumnsFromDiff(result, tableDiff)
+		}
 	}
 	return result
 }
@@ -230,7 +259,7 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *types.SchemaDiff
 		result = p.modifyExistingTableColumns(result, tableDiff, generated)
 
 		// Remove columns (dangerous!)
-		result = p.removeTableColumns(result, tableDiff)
+		result = p.removeTableColumnsFromDiff(result, tableDiff)
 	}
 	return result
 }
@@ -384,14 +413,14 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	// 4. Add new tables
 	result = p.addNewTables(result, diff, generated)
 
-	// 5. Enable RLS on tables (must be done after table creation)
+	// 5. Add and modify table columns (must be done before creating RLS policies that depend on columns)
+	result = p.addAndModifyTableColumns(result, diff, generated)
+
+	// 6. Enable RLS on tables (must be done after table creation and modification)
 	result = p.enableRLSOnTables(result, diff, generated)
 
-	// 6. Add RLS policies (must be done after RLS is enabled)
+	// 7. Add RLS policies (must be done after RLS is enabled and columns exist)
 	result = p.addNewRLSPolicies(result, diff, generated)
-
-	// 7. Modify existing tables
-	result = p.modifyExistingTables(result, diff, generated)
 
 	// 8. Add new indexes
 	result = p.addNewIndexes(result, diff, generated)
@@ -399,11 +428,14 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	// 9. Remove indexes (safe operations)
 	result = p.removeIndexes(result, diff)
 
-	// 10. Remove RLS policies (must be done before disabling RLS)
+	// 10. Remove RLS policies (must be done before disabling RLS and before dropping columns)
 	result = p.removeRLSPolicies(result, diff)
 
 	// 11. Disable RLS on tables (must be done after removing policies)
 	result = p.disableRLSOnTables(result, diff)
+
+	// 12. Remove table columns (must be done after removing RLS policies that depend on columns)
+	result = p.removeTableColumns(result, diff)
 
 	// 12. Remove tables (dangerous!)
 	result = p.removeTables(result, diff)
