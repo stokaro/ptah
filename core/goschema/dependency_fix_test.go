@@ -1,6 +1,7 @@
 package goschema_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -321,7 +322,7 @@ func buildDependencyGraph(r *goschema.Database) {
 		if field.Foreign == "" {
 			continue
 		}
-		refTable := field.Foreign[:len(field.Foreign)-4] // Remove "(id)"
+		refTable := strings.Split(field.Foreign, "(")[0]
 
 		for _, table := range r.Tables {
 			if table.StructName != field.StructName {

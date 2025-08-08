@@ -6,7 +6,38 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 )
+
+// Global regex cache for function dependency analysis
+var (
+	regexCache = make(map[string]*regexp.Regexp)
+	regexMutex sync.RWMutex
+)
+
+// getCachedRegex returns a cached regex pattern or creates and caches a new one
+func getCachedRegex(functionName string) *regexp.Regexp {
+	pattern := `\b` + regexp.QuoteMeta(functionName) + `\s*\(`
+
+	regexMutex.RLock()
+	if regex, exists := regexCache[pattern]; exists {
+		regexMutex.RUnlock()
+		return regex
+	}
+	regexMutex.RUnlock()
+
+	regexMutex.Lock()
+	defer regexMutex.Unlock()
+
+	// Double-check in case another goroutine added it while we were waiting
+	if regex, exists := regexCache[pattern]; exists {
+		return regex
+	}
+
+	regex := regexp.MustCompile(pattern)
+	regexCache[pattern] = regex
+	return regex
+}
 
 func sortTablesProcessQueue(queue *[]string, sorted *[]Table, dependencies map[string][]string, inDegree map[string]int, tableMap map[string]Table) {
 	for len(*queue) > 0 {
@@ -206,8 +237,13 @@ func buildDependencyGraph(r *Database) {
 // Returns:
 //   - Combined slice of Field containing both original fields and generated fields from embedded processing
 func processEmbeddedFields(embeddedFields []EmbeddedField, originalFields []Field) []Field {
-	// Start with the original fields
-	allFields := make([]Field, len(originalFields))
+	// Estimate capacity: original fields + estimated embedded fields
+	// Each embedded field could potentially generate multiple fields
+	estimatedEmbeddedFields := len(embeddedFields) * 2 // Conservative estimate
+	estimatedCapacity := len(originalFields) + estimatedEmbeddedFields
+
+	// Pre-allocate slice with estimated capacity for better performance
+	allFields := make([]Field, len(originalFields), estimatedCapacity)
 	copy(allFields, originalFields)
 
 	// Process embedded fields for each struct
@@ -401,28 +437,21 @@ func buildFunctionDependencies(r *Database) {
 		r.FunctionDependencies[function.Name] = []string{}
 	}
 
-	// Pre-compile all regex patterns for better performance (avoid compilation in nested loops)
-	regexMap := make(map[string]*regexp.Regexp)
-	for otherFunctionName := range functionNames {
-		pattern := `\b` + regexp.QuoteMeta(otherFunctionName) + `\s*\(`
-		regexMap[otherFunctionName] = regexp.MustCompile(pattern)
-	}
-
 	// Analyze each function's body for calls to other functions
 	for _, function := range r.Functions {
 		body := function.Body
 		depMap := make(map[string]bool)
 
-		// Look for function calls in the body using pre-compiled regexes
+		// Look for function calls in the body using cached regexes
 		for otherFunctionName := range functionNames {
 			if otherFunctionName == function.Name {
 				continue // Skip self-references
 			}
 
-			// Use pre-compiled regex to match function calls: function_name(
+			// Use cached regex to match function calls: function_name(
 			// This matches the function name as a word, optional whitespace, then '('
 			// This avoids false positives in comments or string literals
-			re := regexMap[otherFunctionName]
+			re := getCachedRegex(otherFunctionName)
 			if re.FindStringIndex(body) != nil {
 				// Add dependency: current function depends on the called function
 				depMap[otherFunctionName] = true
