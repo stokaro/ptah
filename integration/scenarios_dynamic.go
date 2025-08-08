@@ -3042,7 +3042,7 @@ func testDynamicRLSFunctionsDataIntegrity(ctx context.Context, conn *dbschema.Da
 		if err := conn.Writer().BeginTransaction(); err != nil {
 			return fmt.Errorf("failed to begin transaction: %w", err)
 		}
-		
+
 		committed := false
 		defer func() {
 			// Only rollback if transaction is still active (commit may have succeeded)
