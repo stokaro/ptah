@@ -3026,7 +3026,10 @@ func testDynamicRLSFunctionsDataIntegrity(ctx context.Context, conn *dbschema.Da
 		if err := conn.Writer().BeginTransaction(); err != nil {
 			return fmt.Errorf("failed to begin transaction: %w", err)
 		}
-		defer conn.Writer().RollbackTransaction()
+		defer func() {
+			// Only rollback if transaction is still active (commit may have succeeded)
+			conn.Writer().RollbackTransaction()
+		}()
 
 		for _, sql := range testData {
 			if err := conn.Writer().ExecuteSQL(sql); err != nil {
@@ -3144,7 +3147,10 @@ func testDynamicRLSFunctionsErrorHandling(ctx context.Context, conn *dbschema.Da
 		if err := conn.Writer().BeginTransaction(); err != nil {
 			return fmt.Errorf("failed to begin transaction: %w", err)
 		}
-		defer conn.Writer().RollbackTransaction()
+		defer func() {
+			// Rollback the transaction (safe to call even if already rolled back)
+			conn.Writer().RollbackTransaction()
+		}()
 
 		// Try to manually drop a function that policies depend on
 		err := conn.Writer().ExecuteSQL("DROP FUNCTION get_current_tenant_id()")
@@ -3152,8 +3158,7 @@ func testDynamicRLSFunctionsErrorHandling(ctx context.Context, conn *dbschema.Da
 			return fmt.Errorf("expected error when dropping function used by policies, but succeeded")
 		}
 
-		// Rollback the transaction (which should happen automatically via defer)
-		conn.Writer().RollbackTransaction()
+		// Transaction will be rolled back automatically via defer
 
 		// Verify the function still exists
 		schema, err := vem.GenerateSchemaFromEntities()
