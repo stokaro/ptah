@@ -40,12 +40,16 @@ import (
 //	statements := GetOrderedCreateStatements(result, "postgresql")
 func ParseDir(rootDir string) (*Database, error) {
 	result := &Database{
-		Tables:         []Table{},
-		Fields:         []Field{},
-		Indexes:        []Index{},
-		Enums:          []Enum{},
-		EmbeddedFields: []EmbeddedField{},
-		Dependencies:   make(map[string][]string),
+		Tables:           []Table{},
+		Fields:           []Field{},
+		Indexes:          []Index{},
+		Enums:            []Enum{},
+		EmbeddedFields:   []EmbeddedField{},
+		Extensions:       []Extension{},
+		Functions:        []Function{},
+		RLSPolicies:      []RLSPolicy{},
+		RLSEnabledTables: []RLSEnabledTable{},
+		Dependencies:     make(map[string][]string),
 	}
 
 	// Walk through all directories recursively
@@ -79,6 +83,9 @@ func ParseDir(rootDir string) (*Database, error) {
 		result.Tables = append(result.Tables, database.Tables...)
 		result.Enums = append(result.Enums, database.Enums...)
 		result.Extensions = append(result.Extensions, database.Extensions...)
+		result.Functions = append(result.Functions, database.Functions...)
+		result.RLSPolicies = append(result.RLSPolicies, database.RLSPolicies...)
+		result.RLSEnabledTables = append(result.RLSEnabledTables, database.RLSEnabledTables...)
 
 		return nil
 	})

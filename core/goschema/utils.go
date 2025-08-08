@@ -251,4 +251,44 @@ func deduplicate(r *Database) {
 	for _, embedded := range embeddedMap {
 		r.EmbeddedFields = append(r.EmbeddedFields, embedded)
 	}
+
+	// deduplicate extensions by name
+	extensionMap := make(map[string]Extension)
+	for _, extension := range r.Extensions {
+		extensionMap[extension.Name] = extension
+	}
+	r.Extensions = make([]Extension, 0, len(extensionMap))
+	for _, extension := range extensionMap {
+		r.Extensions = append(r.Extensions, extension)
+	}
+
+	// deduplicate functions by name
+	functionMap := make(map[string]Function)
+	for _, function := range r.Functions {
+		functionMap[function.Name] = function
+	}
+	r.Functions = make([]Function, 0, len(functionMap))
+	for _, function := range functionMap {
+		r.Functions = append(r.Functions, function)
+	}
+
+	// deduplicate RLS policies by name
+	rlsPolicyMap := make(map[string]RLSPolicy)
+	for _, policy := range r.RLSPolicies {
+		rlsPolicyMap[policy.Name] = policy
+	}
+	r.RLSPolicies = make([]RLSPolicy, 0, len(rlsPolicyMap))
+	for _, policy := range rlsPolicyMap {
+		r.RLSPolicies = append(r.RLSPolicies, policy)
+	}
+
+	// deduplicate RLS enabled tables by table name
+	rlsEnabledMap := make(map[string]RLSEnabledTable)
+	for _, rlsTable := range r.RLSEnabledTables {
+		rlsEnabledMap[rlsTable.Table] = rlsTable
+	}
+	r.RLSEnabledTables = make([]RLSEnabledTable, 0, len(rlsEnabledMap))
+	for _, rlsTable := range rlsEnabledMap {
+		r.RLSEnabledTables = append(r.RLSEnabledTables, rlsTable)
+	}
 }

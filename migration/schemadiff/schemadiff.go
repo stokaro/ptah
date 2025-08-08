@@ -55,5 +55,14 @@ func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, 
 	// Compare PostgreSQL extensions with configuration options
 	compare.Extensions(generated, database, diff, opts)
 
+	// Compare PostgreSQL functions (PostgreSQL-specific feature)
+	compare.Functions(generated, database, diff)
+
+	// Compare RLS policies (PostgreSQL-specific feature)
+	compare.RLSPolicies(generated, database, diff)
+
+	// Compare RLS enabled tables (PostgreSQL-specific feature)
+	compare.RLSEnabledTables(generated, database, diff)
+
 	return diff
 }

@@ -72,6 +72,37 @@ type SchemaDiff struct {
 	// ExtensionsRemoved contains names of PostgreSQL extensions that exist in the current database
 	// but not in the target schema (potentially dangerous - may break existing functionality)
 	ExtensionsRemoved []string `json:"extensions_removed"`
+
+	// FunctionsAdded contains names of PostgreSQL functions that exist in the target schema
+	// but not in the current database schema
+	FunctionsAdded []string `json:"functions_added"`
+
+	// FunctionsRemoved contains names of PostgreSQL functions that exist in the current database
+	// but not in the target schema (potentially dangerous - may break existing functionality)
+	FunctionsRemoved []string `json:"functions_removed"`
+
+	// FunctionsModified contains detailed information about functions that exist in both
+	// schemas but have different definitions (parameters, body, attributes, etc.)
+	FunctionsModified []FunctionDiff `json:"functions_modified"`
+
+	// RLSPoliciesAdded contains names of RLS policies that exist in the target schema
+	// but not in the current database schema
+	RLSPoliciesAdded []string `json:"rls_policies_added"`
+
+	// RLSPoliciesRemoved contains names of RLS policies that exist in the current database
+	// but not in the target schema (safe operation - no data loss)
+	RLSPoliciesRemoved []string `json:"rls_policies_removed"`
+
+	// RLSPoliciesModified contains detailed information about RLS policies that exist in both
+	// schemas but have different definitions (expressions, roles, etc.)
+	RLSPoliciesModified []RLSPolicyDiff `json:"rls_policies_modified"`
+
+	// RLSEnabledTablesAdded contains names of tables that need RLS enabled
+	RLSEnabledTablesAdded []string `json:"rls_enabled_tables_added"`
+
+	// RLSEnabledTablesRemoved contains names of tables that need RLS disabled
+	// (potentially dangerous - removes row-level security)
+	RLSEnabledTablesRemoved []string `json:"rls_enabled_tables_removed"`
 }
 
 // HasChanges returns true if the diff contains any schema changes requiring migration.
@@ -113,7 +144,15 @@ func (d *SchemaDiff) HasChanges() bool {
 		len(d.IndexesAdded) > 0 ||
 		len(d.IndexesRemoved) > 0 ||
 		len(d.ExtensionsAdded) > 0 ||
-		len(d.ExtensionsRemoved) > 0
+		len(d.ExtensionsRemoved) > 0 ||
+		len(d.FunctionsAdded) > 0 ||
+		len(d.FunctionsRemoved) > 0 ||
+		len(d.FunctionsModified) > 0 ||
+		len(d.RLSPoliciesAdded) > 0 ||
+		len(d.RLSPoliciesRemoved) > 0 ||
+		len(d.RLSPoliciesModified) > 0 ||
+		len(d.RLSEnabledTablesAdded) > 0 ||
+		len(d.RLSEnabledTablesRemoved) > 0
 }
 
 // TableDiff represents structural differences within a specific database table.
@@ -211,4 +250,76 @@ type EnumDiff struct {
 	// ValuesRemoved contains enum values that need to be removed from the enum type
 	// (may not be supported by all databases - see database limitations above)
 	ValuesRemoved []string `json:"values_removed"`
+}
+
+// FunctionDiff represents changes to PostgreSQL function definitions.
+//
+// This structure captures modifications to function definitions, including changes
+// to parameters, return types, function body, and function attributes like security
+// and volatility. Function modifications typically require dropping and recreating
+// the function in PostgreSQL.
+//
+// # Function Change Types
+//
+// Common function changes include:
+//   - **Parameters**: Changes to function parameter list
+//   - **Returns**: Changes to return type
+//   - **Body**: Changes to function implementation
+//   - **Language**: Changes to function language (rare)
+//   - **Security**: Changes between DEFINER and INVOKER
+//   - **Volatility**: Changes between STABLE, IMMUTABLE, and VOLATILE
+//
+// # Example Usage
+//
+//	functionDiff := FunctionDiff{
+//		FunctionName: "get_user_count",
+//		Changes: map[string]string{
+//			"parameters": "() -> (tenant_id TEXT)",
+//			"body": "SELECT COUNT(*) FROM users -> SELECT COUNT(*) FROM users WHERE tenant_id = tenant_id_param",
+//			"volatility": "VOLATILE -> STABLE",
+//		},
+//	}
+type FunctionDiff struct {
+	// FunctionName is the name of the function being modified
+	FunctionName string `json:"function_name"`
+
+	// Changes maps change types to their old->new value transitions
+	// Format: "change_type" -> "old_value -> new_value"
+	Changes map[string]string `json:"changes"`
+}
+
+// RLSPolicyDiff represents changes to Row-Level Security policy definitions.
+//
+// This structure captures modifications to RLS policies, including changes to
+// policy expressions, target roles, and policy types. RLS policy modifications
+// typically require dropping and recreating the policy in PostgreSQL.
+//
+// # Policy Change Types
+//
+// Common policy changes include:
+//   - **PolicyFor**: Changes to policy type (SELECT, INSERT, UPDATE, DELETE, ALL)
+//   - **ToRoles**: Changes to target database roles
+//   - **UsingExpression**: Changes to USING clause expression
+//   - **WithCheckExpression**: Changes to WITH CHECK clause expression
+//
+// # Example Usage
+//
+//	policyDiff := RLSPolicyDiff{
+//		PolicyName: "user_tenant_isolation",
+//		TableName: "users",
+//		Changes: map[string]string{
+//			"using_expression": "tenant_id = current_user_id() -> tenant_id = get_current_tenant_id()",
+//			"to_roles": "app_user -> app_user,admin_user",
+//		},
+//	}
+type RLSPolicyDiff struct {
+	// PolicyName is the name of the RLS policy being modified
+	PolicyName string `json:"policy_name"`
+
+	// TableName is the name of the table the policy applies to
+	TableName string `json:"table_name"`
+
+	// Changes maps change types to their old->new value transitions
+	// Format: "change_type" -> "old_value -> new_value"
+	Changes map[string]string `json:"changes"`
 }

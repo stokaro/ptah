@@ -815,6 +815,277 @@ func Indexes(generated *goschema.Database, database *types.DBSchema, diff *difft
 	sort.Strings(diff.IndexesRemoved)
 }
 
+// Functions performs PostgreSQL function comparison between generated and database schemas.
+//
+// This function handles the comparison of PostgreSQL custom functions, which are
+// PostgreSQL-specific features used for stored procedures, triggers, and custom
+// business logic. Functions are compared by name and their complete definition.
+//
+// # Function Comparison Logic
+//
+// **Generated Schema Functions**:
+//   - Includes all functions defined in Go struct annotations
+//   - These are functions the developer intentionally created
+//
+// **Database Schema Functions**:
+//   - Includes all user-defined functions from the database
+//   - Excludes system functions and built-in PostgreSQL functions
+//
+// # Function Modification Detection
+//
+// Functions are considered modified if any of the following differ:
+//   - Parameters (type, names, order)
+//   - Return type
+//   - Function body/implementation
+//   - Language (plpgsql, sql, etc.)
+//   - Security context (DEFINER vs INVOKER)
+//   - Volatility (STABLE, IMMUTABLE, VOLATILE)
+//
+// # Example Scenarios
+//
+// **Function addition**:
+//   - Generated schema defines "get_current_tenant_id()"
+//   - Database doesn't have this function
+//   - Result: "get_current_tenant_id" added to diff.FunctionsAdded
+//
+// **Function removal**:
+//   - Database has "old_helper_function()"
+//   - Generated schema doesn't define this function
+//   - Result: "old_helper_function" added to diff.FunctionsRemoved
+//
+// **Function modification**:
+//   - Both have "calculate_total()" function
+//   - Generated: different body or parameters
+//   - Result: FunctionDiff added to diff.FunctionsModified
+//
+// # Parameters
+//
+//   - generated: Target schema parsed from Go struct annotations
+//   - database: Current database schema from database introspection
+//   - diff: SchemaDiff structure to populate with discovered differences
+//
+// # Side Effects
+//
+// Modifies the provided diff parameter by populating:
+//   - diff.FunctionsAdded: Functions that need to be created
+//   - diff.FunctionsRemoved: Functions that exist in database but not in target schema
+//   - diff.FunctionsModified: Functions with definition differences
+//
+// # Output Consistency
+//
+// Results are sorted alphabetically for consistent output across multiple runs.
+func Functions(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+	// Create maps for quick lookup
+	genFunctions := make(map[string]goschema.Function)
+	for _, function := range generated.Functions {
+		genFunctions[function.Name] = function
+	}
+
+	dbFunctions := make(map[string]types.DBFunction)
+	for _, function := range database.Functions {
+		dbFunctions[function.Name] = function
+	}
+
+	// Find added and removed functions
+	for functionName := range genFunctions {
+		if _, exists := dbFunctions[functionName]; !exists {
+			diff.FunctionsAdded = append(diff.FunctionsAdded, functionName)
+		}
+	}
+
+	for functionName := range dbFunctions {
+		if _, exists := genFunctions[functionName]; !exists {
+			diff.FunctionsRemoved = append(diff.FunctionsRemoved, functionName)
+		}
+	}
+
+	// Find modified functions
+	for functionName, genFunction := range genFunctions {
+		if dbFunction, exists := dbFunctions[functionName]; exists {
+			functionDiff := FunctionDefinitions(genFunction, dbFunction)
+			if len(functionDiff.Changes) > 0 {
+				diff.FunctionsModified = append(diff.FunctionsModified, functionDiff)
+			}
+		}
+	}
+
+	// Sort for consistent output
+	sort.Strings(diff.FunctionsAdded)
+	sort.Strings(diff.FunctionsRemoved)
+}
+
+// RLSPolicies performs PostgreSQL RLS policy comparison between generated and database schemas.
+//
+// This function handles the comparison of Row-Level Security policies, which are
+// PostgreSQL-specific security features used for multi-tenant data isolation and
+// fine-grained access control. Policies are compared by name and their complete definition.
+//
+// # RLS Policy Comparison Logic
+//
+// **Generated Schema Policies**:
+//   - Includes all RLS policies defined in Go struct annotations
+//   - These are policies the developer intentionally created for data security
+//
+// **Database Schema Policies**:
+//   - Includes all user-defined RLS policies from the database
+//   - Excludes system-generated policies (if any)
+//
+// # Policy Modification Detection
+//
+// Policies are considered modified if any of the following differ:
+//   - Policy type (FOR clause: ALL, SELECT, INSERT, UPDATE, DELETE)
+//   - Target roles (TO clause)
+//   - USING expression for row filtering
+//   - WITH CHECK expression for INSERT/UPDATE validation
+//
+// # Example Scenarios
+//
+// **Policy addition**:
+//   - Generated schema defines "user_tenant_isolation" policy
+//   - Database doesn't have this policy
+//   - Result: "user_tenant_isolation" added to diff.RLSPoliciesAdded
+//
+// **Policy removal**:
+//   - Database has "old_security_policy" policy
+//   - Generated schema doesn't define this policy
+//   - Result: "old_security_policy" added to diff.RLSPoliciesRemoved
+//
+// **Policy modification**:
+//   - Both have "tenant_isolation" policy
+//   - Generated: different USING expression or target roles
+//   - Result: RLSPolicyDiff added to diff.RLSPoliciesModified
+//
+// # Parameters
+//
+//   - generated: Target schema parsed from Go struct annotations
+//   - database: Current database schema from database introspection
+//   - diff: SchemaDiff structure to populate with discovered differences
+//
+// # Side Effects
+//
+// Modifies the provided diff parameter by populating:
+//   - diff.RLSPoliciesAdded: Policies that need to be created
+//   - diff.RLSPoliciesRemoved: Policies that exist in database but not in target schema
+//   - diff.RLSPoliciesModified: Policies with definition differences
+//
+// # Output Consistency
+//
+// Results are sorted alphabetically for consistent output across multiple runs.
+func RLSPolicies(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+	// Create maps for quick lookup
+	genPolicies := make(map[string]goschema.RLSPolicy)
+	for _, policy := range generated.RLSPolicies {
+		genPolicies[policy.Name] = policy
+	}
+
+	dbPolicies := make(map[string]types.DBRLSPolicy)
+	for _, policy := range database.RLSPolicies {
+		dbPolicies[policy.Name] = policy
+	}
+
+	// Find added and removed policies
+	for policyName := range genPolicies {
+		if _, exists := dbPolicies[policyName]; !exists {
+			diff.RLSPoliciesAdded = append(diff.RLSPoliciesAdded, policyName)
+		}
+	}
+
+	for policyName := range dbPolicies {
+		if _, exists := genPolicies[policyName]; !exists {
+			diff.RLSPoliciesRemoved = append(diff.RLSPoliciesRemoved, policyName)
+		}
+	}
+
+	// Find modified policies
+	for policyName, genPolicy := range genPolicies {
+		if dbPolicy, exists := dbPolicies[policyName]; exists {
+			policyDiff := RLSPolicyDefinitions(genPolicy, dbPolicy)
+			if len(policyDiff.Changes) > 0 {
+				diff.RLSPoliciesModified = append(diff.RLSPoliciesModified, policyDiff)
+			}
+		}
+	}
+
+	// Sort for consistent output
+	sort.Strings(diff.RLSPoliciesAdded)
+	sort.Strings(diff.RLSPoliciesRemoved)
+}
+
+// RLSEnabledTables performs RLS enablement comparison between generated and database schemas.
+//
+// This function handles the comparison of RLS enablement status on tables, determining
+// which tables need RLS enabled or disabled based on the target schema definition.
+//
+// # RLS Enablement Logic
+//
+// **Generated Schema RLS Tables**:
+//   - Includes all tables that should have RLS enabled according to annotations
+//   - These are tables the developer wants to secure with row-level policies
+//
+// **Database Schema RLS Tables**:
+//   - Includes all tables that currently have RLS enabled in the database
+//   - Determined by checking pg_class.relrowsecurity for PostgreSQL
+//
+// # Example Scenarios
+//
+// **RLS enablement**:
+//   - Generated schema specifies RLS should be enabled on "users" table
+//   - Database doesn't have RLS enabled on "users"
+//   - Result: "users" added to diff.RLSEnabledTablesAdded
+//
+// **RLS disablement**:
+//   - Database has RLS enabled on "legacy_table"
+//   - Generated schema doesn't specify RLS for "legacy_table"
+//   - Result: "legacy_table" added to diff.RLSEnabledTablesRemoved
+//
+// # Parameters
+//
+//   - generated: Target schema parsed from Go struct annotations
+//   - database: Current database schema from database introspection
+//   - diff: SchemaDiff structure to populate with discovered differences
+//
+// # Side Effects
+//
+// Modifies the provided diff parameter by populating:
+//   - diff.RLSEnabledTablesAdded: Tables that need RLS enabled
+//   - diff.RLSEnabledTablesRemoved: Tables that need RLS disabled
+//
+// # Output Consistency
+//
+// Results are sorted alphabetically for consistent output across multiple runs.
+func RLSEnabledTables(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+	// Create sets for comparison
+	genRLSTables := make(map[string]bool)
+	for _, rlsTable := range generated.RLSEnabledTables {
+		genRLSTables[rlsTable.Table] = true
+	}
+
+	dbRLSTables := make(map[string]bool)
+	for _, table := range database.Tables {
+		if table.RLSEnabled {
+			dbRLSTables[table.Name] = true
+		}
+	}
+
+	// Find tables that need RLS enabled
+	for tableName := range genRLSTables {
+		if !dbRLSTables[tableName] {
+			diff.RLSEnabledTablesAdded = append(diff.RLSEnabledTablesAdded, tableName)
+		}
+	}
+
+	// Find tables that need RLS disabled
+	for tableName := range dbRLSTables {
+		if !genRLSTables[tableName] {
+			diff.RLSEnabledTablesRemoved = append(diff.RLSEnabledTablesRemoved, tableName)
+		}
+	}
+
+	// Sort for consistent output
+	sort.Strings(diff.RLSEnabledTablesAdded)
+	sort.Strings(diff.RLSEnabledTablesRemoved)
+}
+
 // processEmbeddedFieldsForStruct processes embedded fields for a specific struct and generates corresponding schema fields.
 //
 // This function implements the core logic for transforming embedded fields into database schema fields
@@ -1002,4 +1273,172 @@ func Extensions(generated *goschema.Database, database *types.DBSchema, diff *di
 	// Sort for consistent output
 	sort.Strings(diff.ExtensionsAdded)
 	sort.Strings(diff.ExtensionsRemoved)
+}
+
+// FunctionDefinitions performs detailed comparison between generated and database function definitions.
+//
+// This function compares all aspects of a PostgreSQL function definition to determine
+// if the function needs to be recreated due to changes in its definition. PostgreSQL
+// functions typically require dropping and recreating when modified.
+//
+// # Function Properties Compared
+//
+// The function compares the following properties:
+//   - **Parameters**: Function parameter list and types
+//   - **Returns**: Return type specification
+//   - **Language**: Function language (plpgsql, sql, etc.)
+//   - **Security**: Security context (DEFINER vs INVOKER)
+//   - **Volatility**: Function volatility (STABLE, IMMUTABLE, VOLATILE)
+//   - **Body**: Function implementation code
+//
+// # Example Scenarios
+//
+// **Parameter change**:
+//   - Generated: "get_user_count(tenant_id TEXT)"
+//   - Database: "get_user_count()"
+//   - Result: Changes["parameters"] = "() -> (tenant_id TEXT)"
+//
+// **Body modification**:
+//   - Generated: "SELECT COUNT(*) FROM users WHERE tenant_id = $1"
+//   - Database: "SELECT COUNT(*) FROM users"
+//   - Result: Changes["body"] = "old_body -> new_body"
+//
+// **Volatility change**:
+//   - Generated: STABLE
+//   - Database: VOLATILE
+//   - Result: Changes["volatility"] = "VOLATILE -> STABLE"
+//
+// # Parameters
+//
+//   - genFunction: Generated function definition from Go struct annotations
+//   - dbFunction: Current database function from introspection
+//
+// # Return Value
+//
+// Returns a FunctionDiff containing:
+//   - FunctionName: Name of the function being compared
+//   - Changes: Map of property changes in "old -> new" format
+//
+// # Migration Implications
+//
+// Function changes typically require:
+//   1. DROP FUNCTION (with CASCADE if dependencies exist)
+//   2. CREATE OR REPLACE FUNCTION with new definition
+func FunctionDefinitions(genFunction goschema.Function, dbFunction types.DBFunction) difftypes.FunctionDiff {
+	functionDiff := difftypes.FunctionDiff{
+		FunctionName: genFunction.Name,
+		Changes:      make(map[string]string),
+	}
+
+	// Compare parameters
+	if genFunction.Parameters != dbFunction.Parameters {
+		functionDiff.Changes["parameters"] = fmt.Sprintf("%s -> %s", dbFunction.Parameters, genFunction.Parameters)
+	}
+
+	// Compare return type
+	if genFunction.Returns != dbFunction.Returns {
+		functionDiff.Changes["returns"] = fmt.Sprintf("%s -> %s", dbFunction.Returns, genFunction.Returns)
+	}
+
+	// Compare language
+	if genFunction.Language != dbFunction.Language {
+		functionDiff.Changes["language"] = fmt.Sprintf("%s -> %s", dbFunction.Language, genFunction.Language)
+	}
+
+	// Compare security context
+	if genFunction.Security != dbFunction.Security {
+		functionDiff.Changes["security"] = fmt.Sprintf("%s -> %s", dbFunction.Security, genFunction.Security)
+	}
+
+	// Compare volatility
+	if genFunction.Volatility != dbFunction.Volatility {
+		functionDiff.Changes["volatility"] = fmt.Sprintf("%s -> %s", dbFunction.Volatility, genFunction.Volatility)
+	}
+
+	// Compare function body (normalize whitespace for comparison)
+	genBody := strings.TrimSpace(genFunction.Body)
+	dbBody := strings.TrimSpace(dbFunction.Body)
+	if genBody != dbBody {
+		functionDiff.Changes["body"] = fmt.Sprintf("%s -> %s", dbBody, genBody)
+	}
+
+	return functionDiff
+}
+
+// RLSPolicyDefinitions performs detailed comparison between generated and database RLS policy definitions.
+//
+// This function compares all aspects of a PostgreSQL RLS policy definition to determine
+// if the policy needs to be recreated due to changes in its definition. PostgreSQL
+// RLS policies typically require dropping and recreating when modified.
+//
+// # Policy Properties Compared
+//
+// The function compares the following properties:
+//   - **PolicyFor**: Policy type (ALL, SELECT, INSERT, UPDATE, DELETE)
+//   - **ToRoles**: Target database roles
+//   - **UsingExpression**: USING clause for row filtering
+//   - **WithCheckExpression**: WITH CHECK clause for INSERT/UPDATE validation
+//
+// # Example Scenarios
+//
+// **USING expression change**:
+//   - Generated: "tenant_id = get_current_tenant_id()"
+//   - Database: "tenant_id = current_user_id()"
+//   - Result: Changes["using_expression"] = "old_expr -> new_expr"
+//
+// **Role change**:
+//   - Generated: "app_user,admin_user"
+//   - Database: "app_user"
+//   - Result: Changes["to_roles"] = "app_user -> app_user,admin_user"
+//
+// **Policy type change**:
+//   - Generated: "ALL"
+//   - Database: "SELECT"
+//   - Result: Changes["policy_for"] = "SELECT -> ALL"
+//
+// # Parameters
+//
+//   - genPolicy: Generated RLS policy definition from Go struct annotations
+//   - dbPolicy: Current database RLS policy from introspection
+//
+// # Return Value
+//
+// Returns an RLSPolicyDiff containing:
+//   - PolicyName: Name of the policy being compared
+//   - TableName: Name of the table the policy applies to
+//   - Changes: Map of property changes in "old -> new" format
+//
+// # Migration Implications
+//
+// Policy changes typically require:
+//   1. DROP POLICY policy_name ON table_name
+//   2. CREATE POLICY policy_name ON table_name with new definition
+func RLSPolicyDefinitions(genPolicy goschema.RLSPolicy, dbPolicy types.DBRLSPolicy) difftypes.RLSPolicyDiff {
+	policyDiff := difftypes.RLSPolicyDiff{
+		PolicyName: genPolicy.Name,
+		TableName:  genPolicy.Table,
+		Changes:    make(map[string]string),
+	}
+
+	// Compare policy type (FOR clause)
+	if genPolicy.PolicyFor != dbPolicy.PolicyFor {
+		policyDiff.Changes["policy_for"] = fmt.Sprintf("%s -> %s", dbPolicy.PolicyFor, genPolicy.PolicyFor)
+	}
+
+	// Compare target roles (TO clause)
+	if genPolicy.ToRoles != dbPolicy.ToRoles {
+		policyDiff.Changes["to_roles"] = fmt.Sprintf("%s -> %s", dbPolicy.ToRoles, genPolicy.ToRoles)
+	}
+
+	// Compare USING expression
+	if genPolicy.UsingExpression != dbPolicy.UsingExpression {
+		policyDiff.Changes["using_expression"] = fmt.Sprintf("%s -> %s", dbPolicy.UsingExpression, genPolicy.UsingExpression)
+	}
+
+	// Compare WITH CHECK expression
+	if genPolicy.WithCheckExpression != dbPolicy.WithCheckExpression {
+		policyDiff.Changes["with_check_expression"] = fmt.Sprintf("%s -> %s", dbPolicy.WithCheckExpression, genPolicy.WithCheckExpression)
+	}
+
+	return policyDiff
 }
