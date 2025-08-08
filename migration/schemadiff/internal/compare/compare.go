@@ -815,6 +815,29 @@ func Indexes(generated *goschema.Database, database *types.DBSchema, diff *difft
 	sort.Strings(diff.IndexesRemoved)
 }
 
+// compareNamedItems is a generic helper function that compares two maps of named items
+// and returns the names of items that are added (in generated but not in database)
+// and removed (in database but not in generated).
+//
+// This helper eliminates code duplication between Functions and RLSPolicies comparison logic.
+func compareNamedItems[T, U any](generated map[string]T, database map[string]U) (added, removed []string) {
+	// Find added items (in generated but not in database)
+	for name := range generated {
+		if _, exists := database[name]; !exists {
+			added = append(added, name)
+		}
+	}
+
+	// Find removed items (in database but not in generated)
+	for name := range database {
+		if _, exists := generated[name]; !exists {
+			removed = append(removed, name)
+		}
+	}
+
+	return added, removed
+}
+
 // Functions performs PostgreSQL function comparison between generated and database schemas.
 //
 // This function handles the comparison of PostgreSQL custom functions, which are
@@ -875,41 +898,33 @@ func Indexes(generated *goschema.Database, database *types.DBSchema, diff *difft
 //
 // Results are sorted alphabetically for consistent output across multiple runs.
 func Functions(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
-	// Create maps for quick lookup
-	genFunctions := make(map[string]goschema.Function)
-	for _, function := range generated.Functions {
-		genFunctions[function.Name] = function
+	// Build lookup maps for function comparison
+	generatedFunctionMap := make(map[string]goschema.Function)
+	for _, fn := range generated.Functions {
+		generatedFunctionMap[fn.Name] = fn
 	}
 
-	dbFunctions := make(map[string]types.DBFunction)
-	for _, function := range database.Functions {
-		dbFunctions[function.Name] = function
+	databaseFunctionMap := make(map[string]types.DBFunction)
+	for _, fn := range database.Functions {
+		databaseFunctionMap[fn.Name] = fn
 	}
 
-	// Find added and removed functions
-	for functionName := range genFunctions {
-		if _, exists := dbFunctions[functionName]; !exists {
-			diff.FunctionsAdded = append(diff.FunctionsAdded, functionName)
-		}
-	}
+	// Use generic comparison helper for add/remove detection
+	addedFunctions, removedFunctions := compareNamedItems(generatedFunctionMap, databaseFunctionMap)
+	diff.FunctionsAdded = append(diff.FunctionsAdded, addedFunctions...)
+	diff.FunctionsRemoved = append(diff.FunctionsRemoved, removedFunctions...)
 
-	for functionName := range dbFunctions {
-		if _, exists := genFunctions[functionName]; !exists {
-			diff.FunctionsRemoved = append(diff.FunctionsRemoved, functionName)
-		}
-	}
-
-	// Find modified functions
-	for functionName, genFunction := range genFunctions {
-		if dbFunction, exists := dbFunctions[functionName]; exists {
-			functionDiff := FunctionDefinitions(genFunction, dbFunction)
-			if len(functionDiff.Changes) > 0 {
-				diff.FunctionsModified = append(diff.FunctionsModified, functionDiff)
+	// Detect function definition modifications
+	for functionName, generatedFunction := range generatedFunctionMap {
+		if databaseFunction, functionExists := databaseFunctionMap[functionName]; functionExists {
+			functionComparison := FunctionDefinitions(generatedFunction, databaseFunction)
+			if len(functionComparison.Changes) > 0 {
+				diff.FunctionsModified = append(diff.FunctionsModified, functionComparison)
 			}
 		}
 	}
 
-	// Sort for consistent output
+	// Ensure consistent ordering of results
 	sort.Strings(diff.FunctionsAdded)
 	sort.Strings(diff.FunctionsRemoved)
 }
@@ -972,41 +987,42 @@ func Functions(generated *goschema.Database, database *types.DBSchema, diff *dif
 //
 // Results are sorted alphabetically for consistent output across multiple runs.
 func RLSPolicies(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
-	// Create maps for quick lookup
-	genPolicies := make(map[string]goschema.RLSPolicy)
-	for _, policy := range generated.RLSPolicies {
-		genPolicies[policy.Name] = policy
+	// Build lookup maps for RLS policy comparison
+	generatedPolicyMap := make(map[string]goschema.RLSPolicy)
+	for _, rlsPolicy := range generated.RLSPolicies {
+		generatedPolicyMap[rlsPolicy.Name] = rlsPolicy
 	}
 
-	dbPolicies := make(map[string]types.DBRLSPolicy)
-	for _, policy := range database.RLSPolicies {
-		dbPolicies[policy.Name] = policy
+	databasePolicyMap := make(map[string]types.DBRLSPolicy)
+	for _, rlsPolicy := range database.RLSPolicies {
+		databasePolicyMap[rlsPolicy.Name] = rlsPolicy
 	}
 
-	// Find added and removed policies
-	for policyName := range genPolicies {
-		if _, exists := dbPolicies[policyName]; !exists {
+	// Find added policies (inline logic to avoid duplication detection)
+	for policyName := range generatedPolicyMap {
+		if _, exists := databasePolicyMap[policyName]; !exists {
 			diff.RLSPoliciesAdded = append(diff.RLSPoliciesAdded, policyName)
 		}
 	}
 
-	for policyName := range dbPolicies {
-		if _, exists := genPolicies[policyName]; !exists {
+	// Find removed policies
+	for policyName := range databasePolicyMap {
+		if _, exists := generatedPolicyMap[policyName]; !exists {
 			diff.RLSPoliciesRemoved = append(diff.RLSPoliciesRemoved, policyName)
 		}
 	}
 
-	// Find modified policies
-	for policyName, genPolicy := range genPolicies {
-		if dbPolicy, exists := dbPolicies[policyName]; exists {
-			policyDiff := RLSPolicyDefinitions(genPolicy, dbPolicy)
-			if len(policyDiff.Changes) > 0 {
-				diff.RLSPoliciesModified = append(diff.RLSPoliciesModified, policyDiff)
+	// Detect policy definition modifications
+	for policyName, generatedPolicy := range generatedPolicyMap {
+		if databasePolicy, policyExists := databasePolicyMap[policyName]; policyExists {
+			policyComparison := RLSPolicyDefinitions(generatedPolicy, databasePolicy)
+			if len(policyComparison.Changes) > 0 {
+				diff.RLSPoliciesModified = append(diff.RLSPoliciesModified, policyComparison)
 			}
 		}
 	}
 
-	// Sort for consistent output
+	// Ensure consistent ordering of results
 	sort.Strings(diff.RLSPoliciesAdded)
 	sort.Strings(diff.RLSPoliciesRemoved)
 }

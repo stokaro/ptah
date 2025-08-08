@@ -2515,7 +2515,7 @@ func testDynamicRLSCrossDatabase(ctx context.Context, conn *dbschema.DatabaseCon
 			if len(schema.RLSEnabledTables) == 0 {
 				return fmt.Errorf("PostgreSQL should have RLS enabled tables in schema")
 			}
-		} else {
+		} else if len(schema.Tables) == 0 {
 			// For MySQL/MariaDB, the schema still contains all features from entity fixtures
 			// but they should be ignored during SQL generation and migration
 			// This test verifies that the migration completed successfully without errors
@@ -2525,9 +2525,7 @@ func testDynamicRLSCrossDatabase(ctx context.Context, conn *dbschema.DatabaseCon
 			// which proves that PostgreSQL-specific features were gracefully skipped
 
 			// Verify that basic schema elements are still present
-			if len(schema.Tables) == 0 {
-				return fmt.Errorf("schema should contain tables for MySQL/MariaDB")
-			}
+			return fmt.Errorf("schema should contain tables for MySQL/MariaDB")
 		}
 
 		return nil
