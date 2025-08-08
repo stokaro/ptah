@@ -643,3 +643,108 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 
 	return nil
 }
+
+// VisitCreateFunction renders a CREATE FUNCTION statement for PostgreSQL
+func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	// Build CREATE OR REPLACE FUNCTION statement
+	var parts []string
+	parts = append(parts, "CREATE OR REPLACE FUNCTION")
+
+	// Function name and parameters
+	if node.Parameters != "" {
+		parts = append(parts, fmt.Sprintf("%s(%s)", node.Name, node.Parameters))
+	} else {
+		parts = append(parts, fmt.Sprintf("%s()", node.Name))
+	}
+
+	// Return type
+	if node.Returns != "" {
+		parts = append(parts, "RETURNS", node.Returns)
+	}
+
+	// Function body with dollar quoting
+	r.w.WriteLinef("%s AS $$", strings.Join(parts, " "))
+	r.w.WriteLinef("%s", node.Body)
+	r.w.WriteLinef("$$")
+
+	// Language specification
+	var attributes []string
+	if node.Language != "" {
+		attributes = append(attributes, fmt.Sprintf("LANGUAGE %s", node.Language))
+	}
+
+	// Security attribute
+	if node.Security != "" {
+		attributes = append(attributes, fmt.Sprintf("SECURITY %s", node.Security))
+	}
+
+	// Volatility attribute
+	if node.Volatility != "" {
+		attributes = append(attributes, node.Volatility)
+	}
+
+	// Add attributes if any
+	if len(attributes) > 0 {
+		r.w.WriteLinef("%s;", strings.Join(attributes, " "))
+	} else {
+		r.w.WriteLinef(";")
+	}
+
+	return nil
+}
+
+// VisitCreatePolicy renders a CREATE POLICY statement for PostgreSQL RLS
+func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	// Build CREATE POLICY statement
+	var parts []string
+	parts = append(parts, "CREATE POLICY", node.Name, "ON", node.Table)
+
+	// FOR clause
+	if node.PolicyFor != "" {
+		parts = append(parts, "FOR", node.PolicyFor)
+	}
+
+	// TO clause
+	if node.ToRoles != "" {
+		parts = append(parts, "TO", node.ToRoles)
+	}
+
+	r.w.WriteLinef("%s", strings.Join(parts, " "))
+
+	// USING clause
+	if node.UsingExpression != "" {
+		r.w.WriteLinef("    USING (%s)", node.UsingExpression)
+	}
+
+	// WITH CHECK clause
+	if node.WithCheckExpression != "" {
+		r.w.WriteLinef("    WITH CHECK (%s)", node.WithCheckExpression)
+	}
+
+	r.w.WriteLinef(";")
+
+	return nil
+}
+
+// VisitAlterTableEnableRLS renders an ALTER TABLE ENABLE ROW LEVEL SECURITY statement
+func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	// Build ALTER TABLE ENABLE ROW LEVEL SECURITY statement
+	r.w.WriteLinef("ALTER TABLE %s ENABLE ROW LEVEL SECURITY;", node.Table)
+
+	return nil
+}

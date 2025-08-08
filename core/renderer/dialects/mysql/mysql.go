@@ -133,3 +133,39 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 	}
 	return nil
 }
+
+// VisitCreateFunction renders CREATE FUNCTION statements for MySQL (no-op)
+func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
+	// MySQL doesn't support PostgreSQL-style functions
+	// Add a comment to indicate this feature is not supported
+	if node.Comment != "" {
+		r.w.WriteLinef("-- CREATE FUNCTION %s not supported in MySQL: %s", node.Name, node.Comment)
+	} else {
+		r.w.WriteLinef("-- CREATE FUNCTION %s not supported in MySQL", node.Name)
+	}
+	return nil
+}
+
+// VisitCreatePolicy renders CREATE POLICY statements for MySQL (no-op)
+func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
+	// MySQL doesn't support Row-Level Security policies
+	// Add a comment to indicate this feature is not supported
+	if node.Comment != "" {
+		r.w.WriteLinef("-- CREATE POLICY %s not supported in MySQL: %s", node.Name, node.Comment)
+	} else {
+		r.w.WriteLinef("-- CREATE POLICY %s not supported in MySQL", node.Name)
+	}
+	return nil
+}
+
+// VisitAlterTableEnableRLS renders ALTER TABLE ENABLE RLS statements for MySQL (no-op)
+func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
+	// MySQL doesn't support Row-Level Security
+	// Add a comment to indicate this feature is not supported
+	if node.Comment != "" {
+		r.w.WriteLinef("-- ALTER TABLE %s ENABLE ROW LEVEL SECURITY not supported in MySQL: %s", node.Table, node.Comment)
+	} else {
+		r.w.WriteLinef("-- ALTER TABLE %s ENABLE ROW LEVEL SECURITY not supported in MySQL", node.Table)
+	}
+	return nil
+}

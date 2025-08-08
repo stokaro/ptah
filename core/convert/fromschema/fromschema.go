@@ -611,6 +611,75 @@ func FromEnum(enum goschema.Enum) *ast.EnumNode {
 	return ast.NewEnum(enum.Name, enum.Values...)
 }
 
+// FromFunction converts a goschema.Function to an ast.CreateFunctionNode.
+//
+// This function creates a PostgreSQL function definition from the parsed function metadata.
+// It handles all function attributes including parameters, return type, language, security,
+// volatility, and function body.
+//
+// # Parameters
+//
+//   - function: The function definition containing all function metadata
+//
+// # Return Value
+//
+// Returns a fully configured *ast.CreateFunctionNode ready for SQL generation.
+func FromFunction(function goschema.Function) *ast.CreateFunctionNode {
+	functionNode := ast.NewCreateFunction(function.Name).
+		SetParameters(function.Parameters).
+		SetReturns(function.Returns).
+		SetLanguage(function.Language).
+		SetSecurity(function.Security).
+		SetVolatility(function.Volatility).
+		SetBody(function.Body).
+		SetComment(function.Comment)
+
+	return functionNode
+}
+
+// FromRLSPolicy converts a goschema.RLSPolicy to an ast.CreatePolicyNode.
+//
+// This function creates a PostgreSQL RLS policy definition from the parsed policy metadata.
+// It handles all policy attributes including target table, policy type, target roles,
+// and policy expressions.
+//
+// # Parameters
+//
+//   - policy: The RLS policy definition containing all policy metadata
+//
+// # Return Value
+//
+// Returns a fully configured *ast.CreatePolicyNode ready for SQL generation.
+func FromRLSPolicy(policy goschema.RLSPolicy) *ast.CreatePolicyNode {
+	policyNode := ast.NewCreatePolicy(policy.Name, policy.Table).
+		SetPolicyFor(policy.PolicyFor).
+		SetToRoles(policy.ToRoles).
+		SetUsingExpression(policy.UsingExpression).
+		SetWithCheckExpression(policy.WithCheckExpression).
+		SetComment(policy.Comment)
+
+	return policyNode
+}
+
+// FromRLSEnabledTable converts a goschema.RLSEnabledTable to an ast.AlterTableEnableRLSNode.
+//
+// This function creates a PostgreSQL ALTER TABLE ENABLE ROW LEVEL SECURITY statement
+// from the parsed RLS enablement metadata.
+//
+// # Parameters
+//
+//   - rlsEnabled: The RLS enablement definition containing table and comment metadata
+//
+// # Return Value
+//
+// Returns a fully configured *ast.AlterTableEnableRLSNode ready for SQL generation.
+func FromRLSEnabledTable(rlsEnabled goschema.RLSEnabledTable) *ast.AlterTableEnableRLSNode {
+	rlsNode := ast.NewAlterTableEnableRLS(rlsEnabled.Table).
+		SetComment(rlsEnabled.Comment)
+
+	return rlsNode
+}
+
 // FromDatabase converts a complete goschema.Database to an ast.StatementList containing all DDL statements.
 //
 // This function creates a comprehensive database schema by converting all schema elements
@@ -705,7 +774,31 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 		statements.Statements = append(statements.Statements, extensionNode)
 	}
 
-	// 4. Add index definitions last
+	// 4. Add PostgreSQL-specific features (functions and RLS)
+	// These features are only supported by PostgreSQL, so we only generate them for PostgreSQL dialects
+	isPostgreSQL := strings.ToLower(targetPlatform) == "postgresql" || strings.ToLower(targetPlatform) == "postgres"
+
+	if isPostgreSQL {
+		// Add PostgreSQL functions (they may be referenced by RLS policies)
+		for _, function := range database.Functions {
+			functionNode := FromFunction(function)
+			statements.Statements = append(statements.Statements, functionNode)
+		}
+
+		// Add RLS enablement statements (must come before policies)
+		for _, rlsEnabled := range database.RLSEnabledTables {
+			rlsNode := FromRLSEnabledTable(rlsEnabled)
+			statements.Statements = append(statements.Statements, rlsNode)
+		}
+
+		// Add RLS policies (depend on functions and RLS being enabled)
+		for _, rlsPolicy := range database.RLSPolicies {
+			policyNode := FromRLSPolicy(rlsPolicy)
+			statements.Statements = append(statements.Statements, policyNode)
+		}
+	}
+
+	// 7. Add index definitions last
 	// Create a mapping from struct names to table names for proper index table resolution
 	structToTableMap := createStructToTableMap(database.Tables)
 	for _, index := range database.Indexes {

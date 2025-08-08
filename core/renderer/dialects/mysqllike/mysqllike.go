@@ -489,3 +489,39 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 	}
 	return nil
 }
+
+// VisitCreateFunction renders CREATE FUNCTION statements for MySQL-like databases (no-op)
+func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
+	// MySQL-like databases don't support PostgreSQL-style functions
+	// Add a comment to indicate this feature is not supported
+	if node.Comment != "" {
+		r.w.WriteLinef("-- CREATE FUNCTION %s not supported in %s: %s", node.Name, r.dialect, node.Comment)
+	} else {
+		r.w.WriteLinef("-- CREATE FUNCTION %s not supported in %s", node.Name, r.dialect)
+	}
+	return nil
+}
+
+// VisitCreatePolicy renders CREATE POLICY statements for MySQL-like databases (no-op)
+func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
+	// MySQL-like databases don't support Row-Level Security policies
+	// Add a comment to indicate this feature is not supported
+	if node.Comment != "" {
+		r.w.WriteLinef("-- CREATE POLICY %s not supported in %s: %s", node.Name, r.dialect, node.Comment)
+	} else {
+		r.w.WriteLinef("-- CREATE POLICY %s not supported in %s", node.Name, r.dialect)
+	}
+	return nil
+}
+
+// VisitAlterTableEnableRLS renders ALTER TABLE ENABLE RLS statements for MySQL-like databases (no-op)
+func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
+	// MySQL-like databases don't support Row-Level Security
+	// Add a comment to indicate this feature is not supported
+	if node.Comment != "" {
+		r.w.WriteLinef("-- ALTER TABLE %s ENABLE ROW LEVEL SECURITY not supported in %s: %s", node.Table, r.dialect, node.Comment)
+	} else {
+		r.w.WriteLinef("-- ALTER TABLE %s ENABLE ROW LEVEL SECURITY not supported in %s", node.Table, r.dialect)
+	}
+	return nil
+}
