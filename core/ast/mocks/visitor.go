@@ -123,3 +123,27 @@ func (m *MockVisitor) VisitDropExtension(node *ast.DropExtensionNode) error {
 	}
 	return nil
 }
+
+func (m *MockVisitor) VisitCreateFunction(node *ast.CreateFunctionNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "CreateFunction:"+node.Name)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
+func (m *MockVisitor) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "CreatePolicy:"+node.Name)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
+func (m *MockVisitor) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "AlterTableEnableRLS:"+node.Table)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}

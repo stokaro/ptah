@@ -815,6 +815,252 @@ func (n *DropTypeNode) Accept(visitor Visitor) error {
 	return visitor.VisitDropType(n)
 }
 
+// CreateFunctionNode represents a CREATE FUNCTION statement for PostgreSQL custom functions.
+//
+// This node contains the complete definition of a PostgreSQL function including
+// parameters, return type, language, security attributes, and function body.
+// It supports various PostgreSQL function attributes like SECURITY DEFINER,
+// STABLE, IMMUTABLE, etc.
+type CreateFunctionNode struct {
+	// Name is the name of the function to create
+	Name string
+	// Parameters contains the function parameter definitions (e.g., "tenant_id_param TEXT")
+	Parameters string
+	// Returns specifies the return type (e.g., "VOID", "TEXT", "INTEGER")
+	Returns string
+	// Language specifies the function language (e.g., "plpgsql", "sql")
+	Language string
+	// Body contains the function implementation code
+	Body string
+	// Security specifies security attributes (e.g., "DEFINER", "INVOKER")
+	Security string
+	// Volatility specifies function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
+	Volatility string
+	// Comment is an optional comment for the function
+	Comment string
+}
+
+// NewCreateFunction creates a new CREATE FUNCTION node with the specified name.
+//
+// Example:
+//
+//	createFunc := NewCreateFunction("set_tenant_context").
+//		SetParameters("tenant_id_param TEXT").
+//		SetReturns("VOID").
+//		SetLanguage("plpgsql").
+//		SetSecurity("DEFINER").
+//		SetBody("BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;")
+func NewCreateFunction(name string) *CreateFunctionNode {
+	return &CreateFunctionNode{
+		Name: name,
+	}
+}
+
+// SetParameters sets the function parameters.
+//
+// Example:
+//
+//	createFunc.SetParameters("tenant_id_param TEXT, user_id INTEGER")
+func (n *CreateFunctionNode) SetParameters(parameters string) *CreateFunctionNode {
+	n.Parameters = parameters
+	return n
+}
+
+// SetReturns sets the function return type.
+//
+// Example:
+//
+//	createFunc.SetReturns("TEXT")
+func (n *CreateFunctionNode) SetReturns(returns string) *CreateFunctionNode {
+	n.Returns = returns
+	return n
+}
+
+// SetLanguage sets the function language.
+//
+// Example:
+//
+//	createFunc.SetLanguage("plpgsql")
+func (n *CreateFunctionNode) SetLanguage(language string) *CreateFunctionNode {
+	n.Language = language
+	return n
+}
+
+// SetBody sets the function body/implementation.
+//
+// Example:
+//
+//	createFunc.SetBody("BEGIN RETURN current_setting('app.current_tenant_id', true); END;")
+func (n *CreateFunctionNode) SetBody(body string) *CreateFunctionNode {
+	n.Body = body
+	return n
+}
+
+// SetSecurity sets the function security attribute.
+//
+// Example:
+//
+//	createFunc.SetSecurity("DEFINER")
+func (n *CreateFunctionNode) SetSecurity(security string) *CreateFunctionNode {
+	n.Security = security
+	return n
+}
+
+// SetVolatility sets the function volatility attribute.
+//
+// Example:
+//
+//	createFunc.SetVolatility("STABLE")
+func (n *CreateFunctionNode) SetVolatility(volatility string) *CreateFunctionNode {
+	n.Volatility = volatility
+	return n
+}
+
+// SetComment sets a comment for the CREATE FUNCTION operation.
+//
+// Example:
+//
+//	createFunc.SetComment("Sets the current tenant context for RLS")
+func (n *CreateFunctionNode) SetComment(comment string) *CreateFunctionNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for CreateFunctionNode.
+func (n *CreateFunctionNode) Accept(visitor Visitor) error {
+	return visitor.VisitCreateFunction(n)
+}
+
+// CreatePolicyNode represents a CREATE POLICY statement for PostgreSQL Row-Level Security.
+//
+// This node contains the complete definition of an RLS policy including
+// the target table, policy type (FOR clause), target roles (TO clause),
+// and the policy expression (USING clause).
+type CreatePolicyNode struct {
+	// Name is the name of the policy to create
+	Name string
+	// Table is the name of the table this policy applies to
+	Table string
+	// PolicyFor specifies what operations the policy applies to (e.g., "ALL", "SELECT", "INSERT", "UPDATE", "DELETE")
+	PolicyFor string
+	// ToRoles specifies which roles the policy applies to (e.g., "inventario_app", "PUBLIC")
+	ToRoles string
+	// UsingExpression contains the USING clause expression for the policy
+	UsingExpression string
+	// WithCheckExpression contains the WITH CHECK clause expression (for INSERT/UPDATE policies)
+	WithCheckExpression string
+	// Comment is an optional comment for the policy
+	Comment string
+}
+
+// NewCreatePolicy creates a new CREATE POLICY node with the specified name and table.
+//
+// Example:
+//
+//	createPolicy := NewCreatePolicy("user_tenant_isolation", "users").
+//		SetPolicyFor("ALL").
+//		SetToRoles("inventario_app").
+//		SetUsingExpression("tenant_id = get_current_tenant_id()")
+func NewCreatePolicy(name, table string) *CreatePolicyNode {
+	return &CreatePolicyNode{
+		Name:  name,
+		Table: table,
+	}
+}
+
+// SetPolicyFor sets the FOR clause of the policy.
+//
+// Example:
+//
+//	createPolicy.SetPolicyFor("SELECT")
+func (n *CreatePolicyNode) SetPolicyFor(policyFor string) *CreatePolicyNode {
+	n.PolicyFor = policyFor
+	return n
+}
+
+// SetToRoles sets the TO clause of the policy.
+//
+// Example:
+//
+//	createPolicy.SetToRoles("app_user, admin_user")
+func (n *CreatePolicyNode) SetToRoles(toRoles string) *CreatePolicyNode {
+	n.ToRoles = toRoles
+	return n
+}
+
+// SetUsingExpression sets the USING clause expression.
+//
+// Example:
+//
+//	createPolicy.SetUsingExpression("tenant_id = get_current_tenant_id()")
+func (n *CreatePolicyNode) SetUsingExpression(expression string) *CreatePolicyNode {
+	n.UsingExpression = expression
+	return n
+}
+
+// SetWithCheckExpression sets the WITH CHECK clause expression.
+//
+// Example:
+//
+//	createPolicy.SetWithCheckExpression("tenant_id = get_current_tenant_id()")
+func (n *CreatePolicyNode) SetWithCheckExpression(expression string) *CreatePolicyNode {
+	n.WithCheckExpression = expression
+	return n
+}
+
+// SetComment sets a comment for the CREATE POLICY operation.
+//
+// Example:
+//
+//	createPolicy.SetComment("Ensures users can only access their tenant's data")
+func (n *CreatePolicyNode) SetComment(comment string) *CreatePolicyNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for CreatePolicyNode.
+func (n *CreatePolicyNode) Accept(visitor Visitor) error {
+	return visitor.VisitCreatePolicy(n)
+}
+
+// AlterTableEnableRLSNode represents an ALTER TABLE ... ENABLE ROW LEVEL SECURITY statement.
+//
+// This node is used to enable Row-Level Security on a specific table.
+// RLS must be enabled before policies can be applied to a table.
+type AlterTableEnableRLSNode struct {
+	// Table is the name of the table to enable RLS on
+	Table string
+	// Comment is an optional comment for the operation
+	Comment string
+}
+
+// NewAlterTableEnableRLS creates a new ALTER TABLE ENABLE ROW LEVEL SECURITY node.
+//
+// Example:
+//
+//	enableRLS := NewAlterTableEnableRLS("users").
+//		SetComment("Enable RLS for multi-tenant isolation")
+func NewAlterTableEnableRLS(table string) *AlterTableEnableRLSNode {
+	return &AlterTableEnableRLSNode{
+		Table: table,
+	}
+}
+
+// SetComment sets a comment for the ALTER TABLE ENABLE RLS operation.
+//
+// Example:
+//
+//	enableRLS.SetComment("Enable RLS for tenant isolation")
+func (n *AlterTableEnableRLSNode) SetComment(comment string) *AlterTableEnableRLSNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for AlterTableEnableRLSNode.
+func (n *AlterTableEnableRLSNode) Accept(visitor Visitor) error {
+	return visitor.VisitAlterTableEnableRLS(n)
+}
+
 // StatementList represents a collection of SQL statements that should be executed together.
 //
 // This is typically used to represent a complete schema or migration script
