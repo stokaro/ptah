@@ -96,7 +96,7 @@ func ParseDir(rootDir string) (*Database, error) {
 	}
 
 	// deduplicate entities (same table/field defined in multiple files)
-	deduplicate(result)
+	Deduplicate(result)
 
 	// Process embedded fields BEFORE building dependency graph
 	// This ensures that foreign keys from embedded fields are included in dependency analysis
