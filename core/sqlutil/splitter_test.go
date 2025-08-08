@@ -114,6 +114,52 @@ func TestSplitSQLStatements_StringLiterals(t *testing.T) {
 	}
 }
 
+func TestSplitSQLStatements_PostgreSQLDollarQuoted(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{
+			name:  "simple dollar quoted function",
+			input: "CREATE FUNCTION test() RETURNS TEXT AS $$ BEGIN RETURN 'hello'; END; $$ LANGUAGE plpgsql;",
+			expected: []string{
+				"CREATE FUNCTION test() RETURNS TEXT AS $$ BEGIN RETURN 'hello'; END; $$ LANGUAGE plpgsql",
+			},
+		},
+		{
+			name:  "dollar quoted with tag",
+			input: "CREATE FUNCTION test() RETURNS TEXT AS $func$ BEGIN RETURN 'hello'; END; $func$ LANGUAGE plpgsql;",
+			expected: []string{
+				"CREATE FUNCTION test() RETURNS TEXT AS $func$ BEGIN RETURN 'hello'; END; $func$ LANGUAGE plpgsql",
+			},
+		},
+		{
+			name: "function with semicolon in body",
+			input: "CREATE OR REPLACE FUNCTION get_current_tenant_id() RETURNS TEXT AS $$ BEGIN RETURN current_setting('app.current_tenant_id', true); END; $$ LANGUAGE plpgsql STABLE;",
+			expected: []string{
+				"CREATE OR REPLACE FUNCTION get_current_tenant_id() RETURNS TEXT AS $$ BEGIN RETURN current_setting('app.current_tenant_id', true); END; $$ LANGUAGE plpgsql STABLE",
+			},
+		},
+		{
+			name:  "multiple statements with dollar quoted",
+			input: "CREATE TABLE users (id INT); CREATE FUNCTION test() AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql;",
+			expected: []string{
+				"CREATE TABLE users (id INT)",
+				"CREATE FUNCTION test() AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := sqlutil.SplitSQLStatements(tt.input)
+			c.Assert(result, qt.DeepEquals, tt.expected)
+		})
+	}
+}
+
 func TestSplitSQLStatements_Comments(t *testing.T) {
 	tests := []struct {
 		name     string
