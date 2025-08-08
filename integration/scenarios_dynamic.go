@@ -2444,9 +2444,9 @@ func testDynamicRLSFunctionsAdvanced(ctx context.Context, conn *dbschema.Databas
 			return fmt.Errorf("expected 3 functions, got %d", len(schema.Functions))
 		}
 
-		// Should have 3 RLS policies (separate SELECT and INSERT policies)
-		if len(schema.RLSPolicies) != 3 {
-			return fmt.Errorf("expected 3 RLS policies, got %d", len(schema.RLSPolicies))
+		// Should have 4 RLS policies (separate SELECT and INSERT policies + product policies)
+		if len(schema.RLSPolicies) != 4 {
+			return fmt.Errorf("expected 4 RLS policies, got %d", len(schema.RLSPolicies))
 		}
 
 		// Verify the validation function exists
@@ -2653,9 +2653,9 @@ func testDynamicRLSPolicyModification(ctx context.Context, conn *dbschema.Databa
 			return fmt.Errorf("failed to generate schema: %w", err)
 		}
 
-		// Should now have 3 RLS policies (split user policies + product policy)
-		if len(schema.RLSPolicies) != 3 {
-			return fmt.Errorf("expected 3 RLS policies after modification, got %d", len(schema.RLSPolicies))
+		// Should now have 4 RLS policies (split user policies + product policies)
+		if len(schema.RLSPolicies) != 4 {
+			return fmt.Errorf("expected 4 RLS policies after modification, got %d", len(schema.RLSPolicies))
 		}
 
 		// Verify the new policies exist
