@@ -3022,10 +3022,20 @@ func testDynamicRLSFunctionsDataIntegrity(ctx context.Context, conn *dbschema.Da
 			"INSERT INTO products (tenant_id, name, description, price, user_id) VALUES ('tenant2', 'Product B', 'Description B', 20.99, 2)",
 		}
 
+		// Use a transaction for data insertion
+		if err := conn.Writer().BeginTransaction(); err != nil {
+			return fmt.Errorf("failed to begin transaction: %w", err)
+		}
+		defer conn.Writer().RollbackTransaction()
+
 		for _, sql := range testData {
 			if err := conn.Writer().ExecuteSQL(sql); err != nil {
 				return fmt.Errorf("failed to insert test data: %w", err)
 			}
+		}
+
+		if err := conn.Writer().CommitTransaction(); err != nil {
+			return fmt.Errorf("failed to commit transaction: %w", err)
 		}
 
 		// Verify data was inserted
@@ -3130,11 +3140,20 @@ func testDynamicRLSFunctionsErrorHandling(ctx context.Context, conn *dbschema.Da
 
 	// Step 2: Test error handling for invalid rollback scenarios
 	err = recorder.RecordStep("Test Invalid Function Drop", "Attempt to drop function while policy depends on it", func() error {
+		// Use a transaction for the manual drop attempt
+		if err := conn.Writer().BeginTransaction(); err != nil {
+			return fmt.Errorf("failed to begin transaction: %w", err)
+		}
+		defer conn.Writer().RollbackTransaction()
+
 		// Try to manually drop a function that policies depend on
 		err := conn.Writer().ExecuteSQL("DROP FUNCTION get_current_tenant_id()")
 		if err == nil {
 			return fmt.Errorf("expected error when dropping function used by policies, but succeeded")
 		}
+
+		// Rollback the transaction (which should happen automatically via defer)
+		conn.Writer().RollbackTransaction()
 
 		// Verify the function still exists
 		schema, err := vem.GenerateSchemaFromEntities()
