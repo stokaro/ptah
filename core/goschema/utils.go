@@ -444,24 +444,16 @@ func deduplicate(r *Database) {
 	}
 	r.EmbeddedFields = deduplicatedEmbedded
 
-	// deduplicate extensions by name
-	extensionMap := make(map[string]Extension)
+	// deduplicate extensions by name (preserving order)
+	extensionSeen := make(map[string]bool)
+	var deduplicatedExtensions []Extension
 	for _, extension := range r.Extensions {
-		extensionMap[extension.Name] = extension
+		if !extensionSeen[extension.Name] {
+			extensionSeen[extension.Name] = true
+			deduplicatedExtensions = append(deduplicatedExtensions, extension)
+		}
 	}
-	r.Extensions = make([]Extension, 0, len(extensionMap))
-
-	// Sort extension names for consistent ordering
-	extensionNames := make([]string, 0, len(extensionMap))
-	for name := range extensionMap {
-		extensionNames = append(extensionNames, name)
-	}
-	sort.Strings(extensionNames)
-
-	// Add extensions in sorted order
-	for _, name := range extensionNames {
-		r.Extensions = append(r.Extensions, extensionMap[name])
-	}
+	r.Extensions = deduplicatedExtensions
 
 	// deduplicate functions by name (preserving order)
 	functionSeen := make(map[string]bool)
