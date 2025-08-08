@@ -294,7 +294,7 @@ func TestPlanner_GenerateMigrationAST_EnumsRemoved(t *testing.T) {
 func TestPlanner_AddNewTables_WithEmbeddedFields(t *testing.T) {
 	c := qt.New(t)
 
-	// Test data: schema with embedded fields
+	// Test data: schema with embedded fields (simulating the walker.go processing)
 	generated := &goschema.Database{
 		Tables: []goschema.Table{
 			{StructName: "TestTable", Name: "test_table"},
@@ -302,8 +302,10 @@ func TestPlanner_AddNewTables_WithEmbeddedFields(t *testing.T) {
 		Fields: []goschema.Field{
 			// Regular field
 			{StructName: "TestTable", Name: "name", Type: "VARCHAR(255)", Nullable: false},
-			// Embedded struct fields
+			// Embedded struct fields (original)
 			{StructName: "TestID", Name: "id", Type: "INT", Primary: true, AutoInc: true},
+			// Processed embedded field (what walker.go would generate)
+			{StructName: "TestTable", Name: "id", Type: "INT", Primary: true, AutoInc: true},
 		},
 		EmbeddedFields: []goschema.EmbeddedField{
 			{

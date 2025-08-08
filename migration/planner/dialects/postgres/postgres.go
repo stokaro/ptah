@@ -90,8 +90,8 @@ func (p *Planner) modifyExistingEnums(result []ast.Node, diff *types.SchemaDiff)
 }
 
 func (p *Planner) addNewTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	// Process embedded fields to get the complete field list (same as FromDatabase does)
-	allFields := fromschema.ProcessEmbeddedFields(generated.EmbeddedFields, generated.Fields)
+	// Use the already processed fields from walker.go (embedded fields are now processed earlier)
+	allFields := generated.Fields
 
 	// Create a set of tables to add for quick lookup
 	tablesToAdd := make(map[string]bool)
