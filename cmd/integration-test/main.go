@@ -33,8 +33,8 @@ const (
 var rootFlags = map[string]cobraflags.Flag{
 	reportFormatFlag: &cobraflags.StringFlag{
 		Name:  reportFormatFlag,
-		Value: "txt",
-		Usage: "Report format: txt, json, or html",
+		Value: "stdout",
+		Usage: "Report format: stdout, txt, json, or html (can be multiple separated by comma)",
 	},
 	outputDirFlag: &cobraflags.StringFlag{
 		Name:  outputDirFlag,
@@ -127,14 +127,17 @@ func runIntegrationTests(cmd *cobra.Command, args []string) error {
 	databases := rootFlags[databasesFlag].GetStringSlice()
 	scenarios := rootFlags[scenariosFlag].GetStringSlice()
 	verbose := rootFlags[verboseFlag].GetBool()
+	reportFormats := strings.Split(reportFormat, ",")
 
-	// Validate report format
-	format := integration.ReportFormat(reportFormat)
-	switch format {
-	case integration.FormatTXT, integration.FormatJSON, integration.FormatHTML:
-		// Valid formats
-	default:
-		return fmt.Errorf("invalid report format: %s (must be txt, json, or html)", reportFormat)
+	// Validate report formats
+	for _, reportFormat := range reportFormats {
+		format := integration.ReportFormat(reportFormat)
+		switch format {
+		case integration.FormatTXT, integration.FormatJSON, integration.FormatHTML:
+			// Valid formats
+		default:
+			return fmt.Errorf("invalid report format: %s (must be txt, json, or html)", reportFormat)
+		}
 	}
 
 	// Create output directory if it doesn't exist
@@ -225,8 +228,10 @@ func runIntegrationTests(cmd *cobra.Command, args []string) error {
 	report := runner.GetReport()
 	reporter := integration.NewReporter(report)
 
-	if err := reporter.GenerateReport(format, outputDir); err != nil {
-		return fmt.Errorf("failed to generate report: %w", err)
+	for _, reportFormat := range reportFormats {
+		if err := reporter.GenerateReport(integration.ReportFormat(reportFormat), outputDir); err != nil {
+			return fmt.Errorf("failed to generate report: %w", err)
+		}
 	}
 
 	// Print summary
