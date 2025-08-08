@@ -4,7 +4,6 @@ import (
 	"log/slog"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 )
 

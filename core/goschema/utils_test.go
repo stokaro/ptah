@@ -13,11 +13,11 @@ func TestDeduplicatePreservesFieldOrder(t *testing.T) {
 	// Create a database with fields in a specific order
 	db := &Database{
 		Fields: []Field{
-			{StructName: "User", Name: "id", Type: "SERIAL", Primary: "true"},
+			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "User", Name: "email", Type: "VARCHAR(255)"},
 			{StructName: "User", Name: "name", Type: "VARCHAR(255)"},
 			{StructName: "User", Name: "created_at", Type: "TIMESTAMP"},
-			{StructName: "Profile", Name: "id", Type: "SERIAL", Primary: "true"},
+			{StructName: "Profile", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Profile", Name: "bio", Type: "TEXT"},
 		},
 		Indexes:           []Index{},
@@ -56,11 +56,11 @@ func TestDeduplicateFieldOrderConsistency(t *testing.T) {
 	createDatabase := func() *Database {
 		return &Database{
 			Fields: []Field{
-				{StructName: "User", Name: "id", Type: "SERIAL", Primary: "true"},
+				{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 				{StructName: "User", Name: "email", Type: "VARCHAR(255)"},
 				{StructName: "User", Name: "name", Type: "VARCHAR(255)"},
 				{StructName: "User", Name: "created_at", Type: "TIMESTAMP"},
-				{StructName: "Profile", Name: "id", Type: "SERIAL", Primary: "true"},
+				{StructName: "Profile", Name: "id", Type: "SERIAL", Primary: true},
 				{StructName: "Profile", Name: "bio", Type: "TEXT"},
 			},
 			Indexes:           []Index{},
@@ -112,9 +112,9 @@ func TestDeduplicateRemovesDuplicateFields(t *testing.T) {
 	
 	db := &Database{
 		Fields: []Field{
-			{StructName: "User", Name: "id", Type: "SERIAL", Primary: "true"},
+			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "User", Name: "email", Type: "VARCHAR(255)"},
-			{StructName: "User", Name: "id", Type: "SERIAL", Primary: "true"}, // Duplicate
+			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true}, // Duplicate
 			{StructName: "User", Name: "name", Type: "VARCHAR(255)"},
 			{StructName: "User", Name: "email", Type: "VARCHAR(255)"}, // Duplicate
 		},
