@@ -264,6 +264,11 @@ func ParseFile(filename string) Database {
 		enums = append(enums, globalEnumsMap[k])
 	}
 
+	// Sort extensions alphabetically for consistent output
+	sort.Slice(extensions, func(i, j int) bool {
+		return extensions[i].Name < extensions[j].Name
+	})
+
 	result := Database{
 		Tables:           tableDirectives,
 		Fields:           schemaFields,
