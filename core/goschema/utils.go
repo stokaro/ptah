@@ -3,6 +3,7 @@ package goschema
 import (
 	"log/slog"
 	"slices"
+	"sort"
 	"strings"
 )
 
@@ -434,8 +435,17 @@ func deduplicate(r *Database) {
 		extensionMap[extension.Name] = extension
 	}
 	r.Extensions = make([]Extension, 0, len(extensionMap))
-	for _, extension := range extensionMap {
-		r.Extensions = append(r.Extensions, extension)
+
+	// Sort extension names for consistent ordering
+	extensionNames := make([]string, 0, len(extensionMap))
+	for name := range extensionMap {
+		extensionNames = append(extensionNames, name)
+	}
+	sort.Strings(extensionNames)
+
+	// Add extensions in sorted order
+	for _, name := range extensionNames {
+		r.Extensions = append(r.Extensions, extensionMap[name])
 	}
 
 	// deduplicate functions by name
