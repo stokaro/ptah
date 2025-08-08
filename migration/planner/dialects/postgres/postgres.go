@@ -206,38 +206,17 @@ func (p *Planner) modifyExistingTableColumns(result []ast.Node, tableDiff types.
 
 func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, tableDiff types.TableDiff) []ast.Node {
 	for _, colName := range tableDiff.ColumnsRemoved {
-		// For critical columns like tenant_id, add explicit policy cleanup
-		if colName == "tenant_id" {
-			// Add a safety DROP POLICY statement for common RLS policy patterns
-			// This provides additional safety in case the schema diff missed some policies
-			cleanupComment := ast.NewComment(fmt.Sprintf("Safety cleanup: Drop any remaining RLS policies on %s that might depend on %s", tableDiff.TableName, colName))
-			result = append(result, cleanupComment)
-
-			// Generate common policy cleanup statements
-			commonPolicyNames := []string{
-				tableDiff.TableName + "_tenant_isolation",
-				tableDiff.TableName + "_tenant_select",
-				tableDiff.TableName + "_tenant_insert",
-				tableDiff.TableName + "_owner_access",
-				"user_tenant_isolation",
-				"product_tenant_isolation",
-			}
-
-			for _, policyName := range commonPolicyNames {
-				dropPolicyNode := ast.NewDropPolicy(policyName, tableDiff.TableName).
-					SetIfExists().
-					SetComment(fmt.Sprintf("Safety cleanup: Drop %s policy if it exists", policyName))
-				result = append(result, dropPolicyNode)
-			}
+		// Generate DROP COLUMN statement using AST with CASCADE to handle dependencies
+		dropOp := &ast.DropColumnOperation{
+			ColumnName: colName,
+			Cascade:    true, // Use CASCADE to automatically drop dependent RLS policies
 		}
-
-		// Generate DROP COLUMN statement using AST
 		alterNode := &ast.AlterTableNode{
 			Name:       tableDiff.TableName,
-			Operations: []ast.AlterOperation{&ast.DropColumnOperation{ColumnName: colName}},
+			Operations: []ast.AlterOperation{dropOp},
 		}
 		result = append(result, alterNode)
-		astCommentNode := ast.NewComment(fmt.Sprintf("WARNING: Dropping column %s.%s - This will delete data!", tableDiff.TableName, colName))
+		astCommentNode := ast.NewComment(fmt.Sprintf("WARNING: Dropping column %s.%s with CASCADE - This will delete data and dependent objects!", tableDiff.TableName, colName))
 		result = append(result, astCommentNode)
 	}
 	return result

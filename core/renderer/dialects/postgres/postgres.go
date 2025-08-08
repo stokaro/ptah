@@ -275,7 +275,11 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 			line = strings.TrimPrefix(line, "  ")
 			r.w.WriteLinef("ALTER TABLE %s ADD COLUMN %s;", node.Name, line)
 		case *ast.DropColumnOperation:
-			r.w.WriteLinef("ALTER TABLE %s DROP COLUMN %s;", node.Name, op.ColumnName)
+			dropSQL := fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", node.Name, op.ColumnName)
+			if op.Cascade {
+				dropSQL += " CASCADE"
+			}
+			r.w.WriteLinef("%s;", dropSQL)
 		case *ast.ModifyColumnOperation:
 			// PostgreSQL uses different syntax for modifying columns
 			r.renderPostgreSQLModifyColumn(node.Name, op.Column)

@@ -37,6 +37,8 @@ func (op *AddColumnOperation) alterOperation() {}
 type DropColumnOperation struct {
 	// ColumnName is the name of the column to drop
 	ColumnName string
+	// Cascade indicates whether to automatically drop dependent objects
+	Cascade bool
 }
 
 // Accept implements the Node interface for DropColumnOperation.
