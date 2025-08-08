@@ -3,7 +3,7 @@ package entities
 // Enable RLS and create policies for products table with INSERT/UPDATE checks
 //
 //migrator:schema:rls:enable table="products" comment="Enable RLS for product isolation"
-//migrator:schema:rls:policy name="product_tenant_isolation" table="products" for="ALL" to="app_role" using="tenant_id = get_current_tenant_id()" with_check="tenant_id = get_current_tenant_id()" comment="Products isolated by tenant"
+//migrator:schema:rls:policy name="product_tenant_isolation" table="products" for="ALL" to="PUBLIC" using="tenant_id = get_current_tenant_id()" with_check="tenant_id = get_current_tenant_id()" comment="Products isolated by tenant"
 //migrator:schema:table name="products" comment="Product catalog table"
 type Product struct {
 	//migrator:schema:field name="id" type="SERIAL" primary="true"
