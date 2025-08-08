@@ -6,15 +6,18 @@ type DBSchema struct {
 	Enums       []DBEnum       `json:"enums"`
 	Indexes     []DBIndex      `json:"indexes"`
 	Constraints []DBConstraint `json:"constraints"`
-	Extensions  []DBExtension  `json:"extensions"` // PostgreSQL extensions
+	Extensions  []DBExtension  `json:"extensions"`   // PostgreSQL extensions
+	Functions   []DBFunction   `json:"functions"`    // PostgreSQL custom functions
+	RLSPolicies []DBRLSPolicy  `json:"rls_policies"` // PostgreSQL RLS policies
 }
 
 // DBTable represents a database table
 type DBTable struct {
-	Name    string     `json:"name"`
-	Type    string     `json:"type"` // TABLE, VIEW, etc.
-	Comment string     `json:"comment"`
-	Columns []DBColumn `json:"columns"`
+	Name       string     `json:"name"`
+	Type       string     `json:"type"` // TABLE, VIEW, etc.
+	Comment    string     `json:"comment"`
+	Columns    []DBColumn `json:"columns"`
+	RLSEnabled bool       `json:"rls_enabled"` // Whether RLS is enabled on this table (PostgreSQL)
 }
 
 // DBColumn represents a database column
@@ -96,4 +99,27 @@ type SchemaWriter interface {
 	RollbackTransaction() error
 	SetDryRun(dryRun bool)
 	IsDryRun() bool
+}
+
+// DBFunction represents a PostgreSQL custom function read from the database
+type DBFunction struct {
+	Name       string `json:"name"`       // Function name
+	Parameters string `json:"parameters"` // Function parameters (e.g., "tenant_id_param TEXT")
+	Returns    string `json:"returns"`    // Return type (e.g., "VOID", "TEXT")
+	Language   string `json:"language"`   // Function language (e.g., "plpgsql", "sql")
+	Security   string `json:"security"`   // Security context (e.g., "DEFINER", "INVOKER")
+	Volatility string `json:"volatility"` // Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
+	Body       string `json:"body"`       // Function body/implementation
+	Comment    string `json:"comment"`    // Function comment/description
+}
+
+// DBRLSPolicy represents a PostgreSQL RLS policy read from the database
+type DBRLSPolicy struct {
+	Name                string `json:"name"`                  // Policy name
+	Table               string `json:"table"`                 // Target table name
+	PolicyFor           string `json:"policy_for"`            // Operations policy applies to (e.g., "ALL", "SELECT")
+	ToRoles             string `json:"to_roles"`              // Target roles (e.g., "app_user", "PUBLIC")
+	UsingExpression     string `json:"using_expression"`      // USING clause expression
+	WithCheckExpression string `json:"with_check_expression"` // WITH CHECK clause expression
+	Comment             string `json:"comment"`               // Policy comment/description
 }

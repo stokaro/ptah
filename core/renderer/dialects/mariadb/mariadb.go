@@ -133,3 +133,54 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 	}
 	return nil
 }
+
+// VisitCreateFunction renders CREATE FUNCTION statements for MariaDB (no-op)
+func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
+	// MariaDB doesn't support PostgreSQL-style functions
+	// Add a comment to indicate this feature is not supported
+	if node.Comment != "" {
+		r.w.WriteLinef("-- CREATE FUNCTION %s not supported in MariaDB: %s", node.Name, node.Comment)
+	} else {
+		r.w.WriteLinef("-- CREATE FUNCTION %s not supported in MariaDB", node.Name)
+	}
+	return nil
+}
+
+// VisitCreatePolicy renders CREATE POLICY statements for MariaDB (no-op)
+func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
+	// MariaDB doesn't support Row-Level Security policies
+	// Add a comment to indicate this feature is not supported
+	if node.Comment != "" {
+		r.w.WriteLinef("-- CREATE POLICY %s not supported in MariaDB: %s", node.Name, node.Comment)
+	} else {
+		r.w.WriteLinef("-- CREATE POLICY %s not supported in MariaDB", node.Name)
+	}
+	return nil
+}
+
+// VisitAlterTableEnableRLS renders ALTER TABLE ENABLE RLS statements for MariaDB (no-op)
+func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
+	// MariaDB doesn't support Row-Level Security
+	// Add a comment to indicate this feature is not supported
+	if node.Comment != "" {
+		r.w.WriteLinef("-- ALTER TABLE %s ENABLE ROW LEVEL SECURITY not supported in MariaDB: %s", node.Table, node.Comment)
+	} else {
+		r.w.WriteLinef("-- ALTER TABLE %s ENABLE ROW LEVEL SECURITY not supported in MariaDB", node.Table)
+	}
+	return nil
+}
+
+// VisitDropFunction delegates to the mysqllike renderer
+func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
+	return r.r.VisitDropFunction(node)
+}
+
+// VisitDropPolicy delegates to the mysqllike renderer
+func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
+	return r.r.VisitDropPolicy(node)
+}
+
+// VisitAlterTableDisableRLS delegates to the mysqllike renderer
+func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
+	return r.r.VisitAlterTableDisableRLS(node)
+}

@@ -145,6 +145,60 @@ func GetDynamicScenarios() []TestScenario {
 			Description:      "Test embedded struct fields (both value and pointer types) in CREATE TABLE migrations",
 			EnhancedTestFunc: testDynamicEmbeddedFields,
 		},
+
+		// PostgreSQL RLS and Functions scenarios
+		{
+			Name:             "dynamic_rls_functions_basic",
+			Description:      "Test PostgreSQL RLS and custom functions: basic multi-tenant setup",
+			EnhancedTestFunc: testDynamicRLSFunctionsBasic,
+		},
+		{
+			Name:             "dynamic_rls_functions_advanced",
+			Description:      "Test PostgreSQL RLS and custom functions: advanced role-based policies",
+			EnhancedTestFunc: testDynamicRLSFunctionsAdvanced,
+		},
+		{
+			Name:             "dynamic_rls_cross_database",
+			Description:      "Test PostgreSQL RLS features are skipped gracefully on MySQL/MariaDB",
+			EnhancedTestFunc: testDynamicRLSCrossDatabase,
+		},
+		{
+			Name:             "dynamic_functions_modification",
+			Description:      "Test PostgreSQL function modification and schema diffing",
+			EnhancedTestFunc: testDynamicFunctionsModification,
+		},
+		{
+			Name:             "dynamic_rls_policy_modification",
+			Description:      "Test RLS policy modification and schema diffing",
+			EnhancedTestFunc: testDynamicRLSPolicyModification,
+		},
+
+		// Down migration scenarios for RLS and functions
+		{
+			Name:             "dynamic_rls_functions_rollback",
+			Description:      "Test PostgreSQL RLS and functions rollback: complete down migration path",
+			EnhancedTestFunc: testDynamicRLSFunctionsRollback,
+		},
+		{
+			Name:             "dynamic_rls_functions_partial_rollback",
+			Description:      "Test PostgreSQL RLS and functions partial rollback: step-by-step down migrations",
+			EnhancedTestFunc: testDynamicRLSFunctionsPartialRollback,
+		},
+		{
+			Name:             "dynamic_rls_functions_dependency_order",
+			Description:      "Test PostgreSQL RLS and functions dependency order during rollback",
+			EnhancedTestFunc: testDynamicRLSFunctionsDependencyOrder,
+		},
+		{
+			Name:             "dynamic_rls_functions_data_integrity",
+			Description:      "Test data integrity during RLS and function rollbacks",
+			EnhancedTestFunc: testDynamicRLSFunctionsDataIntegrity,
+		},
+		{
+			Name:             "dynamic_rls_functions_error_handling",
+			Description:      "Test error handling during RLS and function rollbacks",
+			EnhancedTestFunc: testDynamicRLSFunctionsErrorHandling,
+		},
 	}
 }
 
@@ -2293,6 +2347,937 @@ func testDynamicEmbeddedFields(ctx context.Context, conn *dbschema.DatabaseConne
 		fmt.Printf("Pointer embedded fields test completed successfully\n")
 
 		fmt.Printf("Comprehensive embedded fields test completed successfully\n")
+
+		return nil
+	})
+}
+
+// ============================================================================
+// POSTGRESQL RLS AND FUNCTIONS SCENARIOS
+// ============================================================================
+
+// Helper functions for RLS and functions testing
+
+// skipNonPostgreSQL skips the test for non-PostgreSQL databases
+func skipNonPostgreSQL(conn *dbschema.DatabaseConnection, recorder *StepRecorder) error {
+	if conn.Info().Dialect != "postgres" {
+		return recorder.RecordStep("Skip Non-PostgreSQL", "RLS and functions are PostgreSQL-only features", func() error {
+			return nil
+		})
+	}
+	return nil
+}
+
+// verifyBasicRLSSchema verifies the basic RLS schema contains expected functions, policies, and tables
+func verifyBasicRLSSchema(schema *goschema.Database) error {
+	// Should have 2 functions
+	if len(schema.Functions) != 2 {
+		return fmt.Errorf("expected 2 functions, got %d", len(schema.Functions))
+	}
+
+	// Should have 2 RLS policies
+	if len(schema.RLSPolicies) != 2 {
+		return fmt.Errorf("expected 2 RLS policies, got %d", len(schema.RLSPolicies))
+	}
+
+	// Should have 2 RLS enabled tables
+	if len(schema.RLSEnabledTables) != 2 {
+		return fmt.Errorf("expected 2 RLS enabled tables, got %d", len(schema.RLSEnabledTables))
+	}
+
+	// Verify function names
+	functionNames := make(map[string]bool)
+	for _, function := range schema.Functions {
+		functionNames[function.Name] = true
+	}
+	if !functionNames["set_tenant_context"] {
+		return fmt.Errorf("expected set_tenant_context function")
+	}
+	if !functionNames["get_current_tenant_id"] {
+		return fmt.Errorf("expected get_current_tenant_id function")
+	}
+
+	// Verify RLS policy names
+	policyNames := make(map[string]bool)
+	for _, policy := range schema.RLSPolicies {
+		policyNames[policy.Name] = true
+	}
+	if !policyNames["user_tenant_isolation"] {
+		return fmt.Errorf("expected user_tenant_isolation policy")
+	}
+	if !policyNames["product_tenant_isolation"] {
+		return fmt.Errorf("expected product_tenant_isolation policy")
+	}
+
+	// Verify RLS enabled tables
+	rlsTableNames := make(map[string]bool)
+	for _, rlsTable := range schema.RLSEnabledTables {
+		rlsTableNames[rlsTable.Table] = true
+	}
+	if !rlsTableNames["users"] {
+		return fmt.Errorf("expected users table to have RLS enabled")
+	}
+	if !rlsTableNames["products"] {
+		return fmt.Errorf("expected products table to have RLS enabled")
+	}
+
+	return nil
+}
+
+// testDynamicRLSFunctionsBasic tests basic PostgreSQL RLS and custom functions setup
+func testDynamicRLSFunctionsBasic(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
+	if err := skipNonPostgreSQL(conn, recorder); err != nil {
+		return err
+	}
+
+	vem, err := NewVersionedEntityManager(fixtures)
+	if err != nil {
+		return fmt.Errorf("failed to create versioned entity manager: %w", err)
+	}
+	defer vem.Cleanup()
+
+	// Test basic RLS and functions using the 014-rls-functions fixture
+	return recorder.RecordStep("Test Basic RLS and Functions", "Apply 014-rls-functions with multi-tenant setup", func() error {
+		if err := vem.MigrateToVersion(ctx, conn, "014-rls-functions", "Basic RLS and functions setup"); err != nil {
+			return fmt.Errorf("failed to migrate to 014-rls-functions: %w", err)
+		}
+
+		// Verify schema contains functions
+		schema, err := vem.GenerateSchemaFromEntities()
+		if err != nil {
+			return fmt.Errorf("failed to generate schema: %w", err)
+		}
+
+		return verifyBasicRLSSchema(schema)
+	})
+}
+
+// verifyAdvancedRLSSchema verifies the advanced RLS schema contains expected functions and policies
+func verifyAdvancedRLSSchema(schema *goschema.Database) error {
+	// Should have 3 functions (including validation function)
+	if len(schema.Functions) != 3 {
+		return fmt.Errorf("expected 3 functions, got %d", len(schema.Functions))
+	}
+
+	// Should have 4 RLS policies (separate SELECT and INSERT policies + product policies)
+	if len(schema.RLSPolicies) != 4 {
+		return fmt.Errorf("expected 4 RLS policies, got %d", len(schema.RLSPolicies))
+	}
+
+	// Verify the validation function exists
+	functionNames := make(map[string]bool)
+	for _, function := range schema.Functions {
+		functionNames[function.Name] = true
+	}
+	if !functionNames["validate_user_access"] {
+		return fmt.Errorf("expected validate_user_access function")
+	}
+
+	// Verify separate SELECT and INSERT policies exist
+	policyNames := make(map[string]bool)
+	for _, policy := range schema.RLSPolicies {
+		policyNames[policy.Name] = true
+	}
+	if !policyNames["user_tenant_select"] {
+		return fmt.Errorf("expected user_tenant_select policy")
+	}
+	if !policyNames["user_tenant_insert"] {
+		return fmt.Errorf("expected user_tenant_insert policy")
+	}
+	if !policyNames["product_owner_access"] {
+		return fmt.Errorf("expected product_owner_access policy")
+	}
+
+	return nil
+}
+
+// testDynamicRLSFunctionsAdvanced tests advanced PostgreSQL RLS with role-based policies
+func testDynamicRLSFunctionsAdvanced(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
+	if err := skipNonPostgreSQL(conn, recorder); err != nil {
+		return err
+	}
+
+	vem, err := NewVersionedEntityManager(fixtures)
+	if err != nil {
+		return fmt.Errorf("failed to create versioned entity manager: %w", err)
+	}
+	defer vem.Cleanup()
+
+	// Test advanced RLS using the 015-rls-advanced fixture
+	return recorder.RecordStep("Test Advanced RLS and Functions", "Apply 015-rls-advanced with role-based policies", func() error {
+		if err := vem.MigrateToVersion(ctx, conn, "015-rls-advanced", "Advanced RLS with role-based policies"); err != nil {
+			return fmt.Errorf("failed to migrate to 015-rls-advanced: %w", err)
+		}
+
+		// Verify schema contains advanced features
+		schema, err := vem.GenerateSchemaFromEntities()
+		if err != nil {
+			return fmt.Errorf("failed to generate schema: %w", err)
+		}
+
+		return verifyAdvancedRLSSchema(schema)
+	})
+}
+
+// testDynamicRLSCrossDatabase tests PostgreSQL RLS features are skipped gracefully on MySQL/MariaDB
+func testDynamicRLSCrossDatabase(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
+	vem, err := NewVersionedEntityManager(fixtures)
+	if err != nil {
+		return fmt.Errorf("failed to create versioned entity manager: %w", err)
+	}
+	defer vem.Cleanup()
+
+	dialect := conn.Info().Dialect
+
+	// Test cross-database compatibility using the 014-rls-functions fixture
+	return recorder.RecordStep("Test Cross-Database Compatibility", "Apply RLS fixtures on different database dialects", func() error {
+		if err := vem.MigrateToVersion(ctx, conn, "014-rls-functions", "RLS and functions cross-database test"); err != nil {
+			return fmt.Errorf("failed to migrate to 014-rls-functions: %w", err)
+		}
+
+		// Check the schema that was applied
+		schema, err := vem.GenerateSchemaFromEntities()
+		if err != nil {
+			return fmt.Errorf("failed to generate schema: %w", err)
+		}
+
+		// The schema should always contain the entity definitions regardless of database
+		// The database-specific filtering happens during SQL generation
+		if len(schema.Tables) == 0 {
+			return fmt.Errorf("schema should contain tables")
+		}
+
+		if dialect == "postgres" {
+			// PostgreSQL should have RLS and function features in the schema
+			if len(schema.Functions) == 0 {
+				return fmt.Errorf("PostgreSQL should have functions in schema")
+			}
+			if len(schema.RLSPolicies) == 0 {
+				return fmt.Errorf("PostgreSQL should have RLS policies in schema")
+			}
+			if len(schema.RLSEnabledTables) == 0 {
+				return fmt.Errorf("PostgreSQL should have RLS enabled tables in schema")
+			}
+		} else if len(schema.Tables) == 0 {
+			// For MySQL/MariaDB, the schema still contains all features from entity fixtures
+			// but they should be ignored during SQL generation and migration
+			// This test verifies that the migration completed successfully without errors
+			// which means the PostgreSQL-specific features were properly skipped
+
+			// The fact that we reached this point means the migration succeeded,
+			// which proves that PostgreSQL-specific features were gracefully skipped
+
+			// Verify that basic schema elements are still present
+			return fmt.Errorf("schema should contain tables for MySQL/MariaDB")
+		}
+
+		return nil
+	})
+}
+
+// testDynamicFunctionsModification tests PostgreSQL function modification and schema diffing
+func testDynamicFunctionsModification(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
+	// Skip test for non-PostgreSQL databases
+	if conn.Info().Dialect != "postgres" {
+		return recorder.RecordStep("Skip Non-PostgreSQL", "Function modification is PostgreSQL-only", func() error {
+			return nil
+		})
+	}
+
+	vem, err := NewVersionedEntityManager(fixtures)
+	if err != nil {
+		return fmt.Errorf("failed to create versioned entity manager: %w", err)
+	}
+	defer vem.Cleanup()
+
+	// Apply initial version with basic functions
+	err = recorder.RecordStep("Apply Initial Functions", "Apply 014-rls-functions", func() error {
+		return vem.MigrateToVersion(ctx, conn, "014-rls-functions", "Basic functions setup")
+	})
+	if err != nil {
+		return err
+	}
+
+	// Apply advanced version with modified functions
+	return recorder.RecordStep("Test Function Modification", "Apply 015-rls-advanced with modified functions", func() error {
+		if err := vem.MigrateToVersion(ctx, conn, "015-rls-advanced", "Advanced functions with modifications"); err != nil {
+			return fmt.Errorf("failed to migrate to 015-rls-advanced: %w", err)
+		}
+
+		// Verify schema contains the new validation function
+		schema, err := vem.GenerateSchemaFromEntities()
+		if err != nil {
+			return fmt.Errorf("failed to generate schema: %w", err)
+		}
+
+		// Should now have 3 functions (added validate_user_access)
+		if len(schema.Functions) != 3 {
+			return fmt.Errorf("expected 3 functions after modification, got %d", len(schema.Functions))
+		}
+
+		// Verify the new function exists
+		functionNames := make(map[string]bool)
+		for _, function := range schema.Functions {
+			functionNames[function.Name] = true
+		}
+		if !functionNames["validate_user_access"] {
+			return fmt.Errorf("expected validate_user_access function after modification")
+		}
+
+		// Verify original functions still exist
+		if !functionNames["set_tenant_context"] {
+			return fmt.Errorf("expected set_tenant_context function to still exist")
+		}
+		if !functionNames["get_current_tenant_id"] {
+			return fmt.Errorf("expected get_current_tenant_id function to still exist")
+		}
+
+		return nil
+	})
+}
+
+// testDynamicRLSPolicyModification tests RLS policy modification and schema diffing
+func testDynamicRLSPolicyModification(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
+	// Skip test for non-PostgreSQL databases
+	if conn.Info().Dialect != "postgres" {
+		return recorder.RecordStep("Skip Non-PostgreSQL", "RLS policy modification is PostgreSQL-only", func() error {
+			return nil
+		})
+	}
+
+	vem, err := NewVersionedEntityManager(fixtures)
+	if err != nil {
+		return fmt.Errorf("failed to create versioned entity manager: %w", err)
+	}
+	defer vem.Cleanup()
+
+	// Apply initial version with basic RLS policies
+	err = recorder.RecordStep("Apply Initial RLS Policies", "Apply 014-rls-functions", func() error {
+		return vem.MigrateToVersion(ctx, conn, "014-rls-functions", "Basic RLS policies setup")
+	})
+	if err != nil {
+		return err
+	}
+
+	// Apply advanced version with modified RLS policies
+	return recorder.RecordStep("Test RLS Policy Modification", "Apply 015-rls-advanced with modified policies", func() error {
+		if err := vem.MigrateToVersion(ctx, conn, "015-rls-advanced", "Advanced RLS with policy modifications"); err != nil {
+			return fmt.Errorf("failed to migrate to 015-rls-advanced: %w", err)
+		}
+
+		// Verify schema contains the modified policies
+		schema, err := vem.GenerateSchemaFromEntities()
+		if err != nil {
+			return fmt.Errorf("failed to generate schema: %w", err)
+		}
+
+		// Should now have 4 RLS policies (split user policies + product policies)
+		if len(schema.RLSPolicies) != 4 {
+			return fmt.Errorf("expected 4 RLS policies after modification, got %d", len(schema.RLSPolicies))
+		}
+
+		// Verify the new policies exist
+		policyNames := make(map[string]bool)
+		for _, policy := range schema.RLSPolicies {
+			policyNames[policy.Name] = true
+		}
+
+		// Should have separate SELECT and INSERT policies for users
+		if !policyNames["user_tenant_select"] {
+			return fmt.Errorf("expected user_tenant_select policy after modification")
+		}
+		if !policyNames["user_tenant_insert"] {
+			return fmt.Errorf("expected user_tenant_insert policy after modification")
+		}
+
+		// Should have the new product owner access policy
+		if !policyNames["product_owner_access"] {
+			return fmt.Errorf("expected product_owner_access policy after modification")
+		}
+
+		// Verify policy details
+		for _, policy := range schema.RLSPolicies {
+			switch policy.Name {
+			case "user_tenant_select":
+				if policy.PolicyFor != "SELECT" {
+					return fmt.Errorf("user_tenant_select should be FOR SELECT, got %s", policy.PolicyFor)
+				}
+			case "user_tenant_insert":
+				if policy.PolicyFor != "INSERT" {
+					return fmt.Errorf("user_tenant_insert should be FOR INSERT, got %s", policy.PolicyFor)
+				}
+			case "product_owner_access":
+				if policy.PolicyFor != "UPDATE" {
+					return fmt.Errorf("product_owner_access should be FOR UPDATE, got %s", policy.PolicyFor)
+				}
+			}
+		}
+
+		return nil
+	})
+}
+
+// ============================================================================
+// POSTGRESQL RLS AND FUNCTIONS DOWN MIGRATION SCENARIOS
+// ============================================================================
+
+// testDynamicRLSFunctionsRollback tests complete rollback of RLS and functions
+func testDynamicRLSFunctionsRollback(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
+	// Skip test for non-PostgreSQL databases
+	if conn.Info().Dialect != "postgres" {
+		return recorder.RecordStep("Skip Non-PostgreSQL", "RLS and functions are PostgreSQL-only features", func() error {
+			return nil
+		})
+	}
+
+	vem, err := NewVersionedEntityManager(fixtures)
+	if err != nil {
+		return fmt.Errorf("failed to create versioned entity manager: %w", err)
+	}
+	defer vem.Cleanup()
+
+	// Step 1: Apply basic RLS and functions first
+	err = recorder.RecordStep("Apply Basic RLS and Functions", "Apply 014-rls-functions with basic feature set", func() error {
+		if err := vem.MigrateToVersion(ctx, conn, "014-rls-functions", "Basic RLS and functions setup"); err != nil {
+			return fmt.Errorf("failed to migrate to 014-rls-functions: %w", err)
+		}
+
+		// Verify basic features are present
+		schema, err := vem.GenerateSchemaFromEntities()
+		if err != nil {
+			return fmt.Errorf("failed to generate schema: %w", err)
+		}
+
+		if len(schema.Functions) != 2 {
+			return fmt.Errorf("expected 2 functions, got %d", len(schema.Functions))
+		}
+		if len(schema.RLSPolicies) != 2 {
+			return fmt.Errorf("expected 2 RLS policies, got %d", len(schema.RLSPolicies))
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// Step 2: Complete rollback to no RLS/functions
+	return recorder.RecordStep("Complete Rollback", "Rollback to 013-embedded-fields (no RLS/functions)", func() error {
+		if err := vem.MigrateToVersion(ctx, conn, "013-embedded-fields", "Complete rollback - remove all RLS and functions"); err != nil {
+			return fmt.Errorf("failed to rollback to 013-embedded-fields: %w", err)
+		}
+
+		// Verify all RLS and function features were removed
+		schema, err := vem.GenerateSchemaFromEntities()
+		if err != nil {
+			return fmt.Errorf("failed to generate schema: %w", err)
+		}
+
+		// Should have no functions
+		if len(schema.Functions) != 0 {
+			return fmt.Errorf("expected 0 functions after complete rollback, got %d", len(schema.Functions))
+		}
+
+		// Should have no RLS policies
+		if len(schema.RLSPolicies) != 0 {
+			return fmt.Errorf("expected 0 RLS policies after complete rollback, got %d", len(schema.RLSPolicies))
+		}
+
+		return nil
+	})
+}
+
+// testDynamicRLSFunctionsPartialRollback tests step-by-step rollback of RLS and functions
+func testDynamicRLSFunctionsPartialRollback(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
+	// Skip test for non-PostgreSQL databases
+	if conn.Info().Dialect != "postgres" {
+		return recorder.RecordStep("Skip Non-PostgreSQL", "RLS and functions are PostgreSQL-only features", func() error {
+			return nil
+		})
+	}
+
+	vem, err := NewVersionedEntityManager(fixtures)
+	if err != nil {
+		return fmt.Errorf("failed to create versioned entity manager: %w", err)
+	}
+	defer vem.Cleanup()
+
+	// Step 1: Apply full evolution path
+	err = recorder.RecordStep("Apply Full Evolution", "Apply 000 → 014 → 015 evolution path", func() error {
+		// Start with basic tables
+		if err := vem.MigrateToVersion(ctx, conn, "000-initial", "Create initial tables"); err != nil {
+			return fmt.Errorf("failed to migrate to 000-initial: %w", err)
+		}
+
+		// Add RLS and functions
+		if err := vem.MigrateToVersion(ctx, conn, "014-rls-functions", "Add basic RLS and functions"); err != nil {
+			return fmt.Errorf("failed to migrate to 014-rls-functions: %w", err)
+		}
+
+		// Add advanced RLS features
+		if err := vem.MigrateToVersion(ctx, conn, "015-rls-advanced", "Add advanced RLS features"); err != nil {
+			return fmt.Errorf("failed to migrate to 015-rls-advanced: %w", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// Step 2: Partial rollback - remove advanced features but keep basic RLS
+	err = recorder.RecordStep("Partial Rollback", "Remove advanced RLS features, keep basic ones", func() error {
+		if err := vem.MigrateToVersion(ctx, conn, "014-rls-functions", "Rollback to basic RLS"); err != nil {
+			return fmt.Errorf("failed to rollback to 014-rls-functions: %w", err)
+		}
+
+		// Verify intermediate state
+		schema, err := vem.GenerateSchemaFromEntities()
+		if err != nil {
+			return fmt.Errorf("failed to generate schema: %w", err)
+		}
+
+		// Should still have basic RLS features
+		if len(schema.Functions) != 2 {
+			return fmt.Errorf("expected 2 functions after partial rollback, got %d", len(schema.Functions))
+		}
+		if len(schema.RLSPolicies) != 2 {
+			return fmt.Errorf("expected 2 RLS policies after partial rollback, got %d", len(schema.RLSPolicies))
+		}
+		if len(schema.RLSEnabledTables) != 2 {
+			return fmt.Errorf("expected 2 RLS enabled tables after partial rollback, got %d", len(schema.RLSEnabledTables))
+		}
+
+		// Verify advanced function was removed
+		functionNames := make(map[string]bool)
+		for _, function := range schema.Functions {
+			functionNames[function.Name] = true
+		}
+		if functionNames["validate_user_access"] {
+			return fmt.Errorf("validate_user_access function should have been removed in partial rollback")
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// Step 3: Complete rollback - remove all RLS and functions
+	return recorder.RecordStep("Complete Rollback", "Remove all RLS and function features", func() error {
+		if err := vem.MigrateToVersion(ctx, conn, "000-initial", "Complete rollback to basic tables"); err != nil {
+			return fmt.Errorf("failed to rollback to 000-initial: %w", err)
+		}
+
+		// Verify complete removal
+		schema, err := vem.GenerateSchemaFromEntities()
+		if err != nil {
+			return fmt.Errorf("failed to generate schema: %w", err)
+		}
+
+		// Should have no RLS or function features
+		if len(schema.Functions) != 0 {
+			return fmt.Errorf("expected 0 functions after complete rollback, got %d", len(schema.Functions))
+		}
+		if len(schema.RLSPolicies) != 0 {
+			return fmt.Errorf("expected 0 RLS policies after complete rollback, got %d", len(schema.RLSPolicies))
+		}
+		if len(schema.RLSEnabledTables) != 0 {
+			return fmt.Errorf("expected 0 RLS enabled tables after complete rollback, got %d", len(schema.RLSEnabledTables))
+		}
+
+		// Should still have basic tables
+		if len(schema.Tables) != 2 {
+			return fmt.Errorf("expected 2 basic tables after complete rollback, got %d", len(schema.Tables))
+		}
+
+		return nil
+	})
+}
+
+// testDynamicRLSFunctionsDependencyOrder tests correct dependency order during rollback
+func testDynamicRLSFunctionsDependencyOrder(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
+	// Skip test for non-PostgreSQL databases
+	if conn.Info().Dialect != "postgres" {
+		return recorder.RecordStep("Skip Non-PostgreSQL", "RLS and functions are PostgreSQL-only features", func() error {
+			return nil
+		})
+	}
+
+	vem, err := NewVersionedEntityManager(fixtures)
+	if err != nil {
+		return fmt.Errorf("failed to create versioned entity manager: %w", err)
+	}
+	defer vem.Cleanup()
+
+	// Step 1: Apply RLS and functions
+	err = recorder.RecordStep("Apply RLS and Functions", "Apply 014-rls-functions with dependencies", func() error {
+		if err := vem.MigrateToVersion(ctx, conn, "014-rls-functions", "RLS and functions with dependencies"); err != nil {
+			return fmt.Errorf("failed to migrate to 014-rls-functions: %w", err)
+		}
+
+		// Verify dependencies are in place
+		schema, err := vem.GenerateSchemaFromEntities()
+		if err != nil {
+			return fmt.Errorf("failed to generate schema: %w", err)
+		}
+
+		// Should have functions that policies depend on
+		functionNames := make(map[string]bool)
+		for _, function := range schema.Functions {
+			functionNames[function.Name] = true
+		}
+		if !functionNames["get_current_tenant_id"] {
+			return fmt.Errorf("expected get_current_tenant_id function (used by policies)")
+		}
+
+		// Should have policies that use the functions
+		policyNames := make(map[string]bool)
+		for _, policy := range schema.RLSPolicies {
+			policyNames[policy.Name] = true
+		}
+		if !policyNames["user_tenant_isolation"] {
+			return fmt.Errorf("expected user_tenant_isolation policy (uses get_current_tenant_id)")
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// Step 2: Test rollback with dependency checking
+	return recorder.RecordStep("Test Dependency Order in Rollback", "Verify policies are dropped before functions", func() error {
+		// Generate migration SQL to see the order of operations
+		if err := vem.LoadEntityVersion("000-initial"); err != nil {
+			return fmt.Errorf("failed to load 000-initial entities: %w", err)
+		}
+
+		statements, err := vem.GenerateMigrationSQL(ctx, conn)
+		if err != nil {
+			return fmt.Errorf("failed to generate migration SQL: %w", err)
+		}
+
+		// Analyze the order of DROP statements
+		var dropPolicyIndex, dropFunctionIndex, disableRLSIndex = -1, -1, -1
+
+		for i, stmt := range statements {
+			if contains(stmt, "DROP POLICY") {
+				dropPolicyIndex = i
+			}
+			if contains(stmt, "DROP FUNCTION") {
+				dropFunctionIndex = i
+			}
+			if contains(stmt, "DISABLE ROW LEVEL SECURITY") {
+				disableRLSIndex = i
+			}
+		}
+
+		// Verify correct order: DROP POLICY → DISABLE RLS → DROP FUNCTION
+		if dropPolicyIndex != -1 && disableRLSIndex != -1 && dropPolicyIndex >= disableRLSIndex {
+			return fmt.Errorf("DROP POLICY should come before DISABLE RLS (policy at %d, disable at %d)", dropPolicyIndex, disableRLSIndex)
+		}
+
+		if disableRLSIndex != -1 && dropFunctionIndex != -1 && disableRLSIndex >= dropFunctionIndex {
+			return fmt.Errorf("DISABLE RLS should come before DROP FUNCTION (disable at %d, function at %d)", disableRLSIndex, dropFunctionIndex)
+		}
+
+		if dropPolicyIndex != -1 && dropFunctionIndex != -1 && dropPolicyIndex >= dropFunctionIndex {
+			return fmt.Errorf("DROP POLICY should come before DROP FUNCTION (policy at %d, function at %d)", dropPolicyIndex, dropFunctionIndex)
+		}
+
+		// Apply the rollback to verify it works
+		if err := vem.MigrateToVersion(ctx, conn, "000-initial", "Test dependency order rollback"); err != nil {
+			return fmt.Errorf("failed to apply rollback migration: %w", err)
+		}
+
+		// Verify clean state
+		schema, err := vem.GenerateSchemaFromEntities()
+		if err != nil {
+			return fmt.Errorf("failed to generate schema after rollback: %w", err)
+		}
+
+		if len(schema.Functions) != 0 {
+			return fmt.Errorf("expected 0 functions after dependency order rollback, got %d", len(schema.Functions))
+		}
+		if len(schema.RLSPolicies) != 0 {
+			return fmt.Errorf("expected 0 RLS policies after dependency order rollback, got %d", len(schema.RLSPolicies))
+		}
+
+		return nil
+	})
+}
+
+// testDynamicRLSFunctionsDataIntegrity tests data integrity during RLS and function rollbacks
+func testDynamicRLSFunctionsDataIntegrity(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
+	// Skip test for non-PostgreSQL databases
+	if conn.Info().Dialect != "postgres" {
+		return recorder.RecordStep("Skip Non-PostgreSQL", "RLS and functions are PostgreSQL-only features", func() error {
+			return nil
+		})
+	}
+
+	vem, err := NewVersionedEntityManager(fixtures)
+	if err != nil {
+		return fmt.Errorf("failed to create versioned entity manager: %w", err)
+	}
+	defer vem.Cleanup()
+
+	// Step 1: Apply RLS and functions with test data
+	err = recorder.RecordStep("Apply RLS with Test Data", "Apply 014-rls-functions and insert test data", func() error {
+		if err := vem.MigrateToVersion(ctx, conn, "014-rls-functions", "RLS and functions setup"); err != nil {
+			return fmt.Errorf("failed to migrate to 014-rls-functions: %w", err)
+		}
+
+		// Insert test data
+		testData := []string{
+			"INSERT INTO users (tenant_id, email, name) VALUES ('tenant1', 'user1@example.com', 'User One')",
+			"INSERT INTO users (tenant_id, email, name) VALUES ('tenant2', 'user2@example.com', 'User Two')",
+			"INSERT INTO users (tenant_id, email, name) VALUES ('tenant1', 'user3@example.com', 'User Three')",
+			"INSERT INTO products (tenant_id, name, description, price, user_id) VALUES ('tenant1', 'Product A', 'Description A', 10.99, 1)",
+			"INSERT INTO products (tenant_id, name, description, price, user_id) VALUES ('tenant2', 'Product B', 'Description B', 20.99, 2)",
+		}
+
+		// Use a transaction for data insertion
+		if err := conn.Writer().BeginTransaction(); err != nil {
+			return fmt.Errorf("failed to begin transaction: %w", err)
+		}
+
+		committed := false
+		defer func() {
+			// Only rollback if transaction is still active (commit may have succeeded)
+			if !committed {
+				conn.Writer().RollbackTransaction()
+			}
+		}()
+
+		for _, sql := range testData {
+			if err := conn.Writer().ExecuteSQL(sql); err != nil {
+				return fmt.Errorf("failed to insert test data: %w", err)
+			}
+		}
+
+		if err := conn.Writer().CommitTransaction(); err != nil {
+			return fmt.Errorf("failed to commit transaction: %w", err)
+		}
+		committed = true
+
+		// Verify data was inserted
+		row := conn.QueryRow("SELECT COUNT(*) FROM users")
+		var userCount int
+		if err := row.Scan(&userCount); err != nil {
+			return fmt.Errorf("failed to count users: %w", err)
+		}
+		if userCount != 3 {
+			return fmt.Errorf("expected 3 users, got %d", userCount)
+		}
+
+		row = conn.QueryRow("SELECT COUNT(*) FROM products")
+		var productCount int
+		if err := row.Scan(&productCount); err != nil {
+			return fmt.Errorf("failed to count products: %w", err)
+		}
+		if productCount != 2 {
+			return fmt.Errorf("expected 2 products, got %d", productCount)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// Step 2: Test rollback preserves data
+	return recorder.RecordStep("Test Data Integrity During Rollback", "Rollback RLS while preserving data", func() error {
+		if err := vem.MigrateToVersion(ctx, conn, "000-initial", "Rollback to basic tables"); err != nil {
+			return fmt.Errorf("failed to rollback to 000-initial: %w", err)
+		}
+
+		// Verify data is still present after rollback
+		row := conn.QueryRow("SELECT COUNT(*) FROM users")
+		var userCount int
+		if err := row.Scan(&userCount); err != nil {
+			return fmt.Errorf("failed to count users after rollback: %w", err)
+		}
+		if userCount != 3 {
+			return fmt.Errorf("expected 3 users after rollback, got %d", userCount)
+		}
+
+		row = conn.QueryRow("SELECT COUNT(*) FROM products")
+		var productCount int
+		if err := row.Scan(&productCount); err != nil {
+			return fmt.Errorf("failed to count products after rollback: %w", err)
+		}
+		if productCount != 2 {
+			return fmt.Errorf("expected 2 products after rollback, got %d", productCount)
+		}
+
+		// Verify specific data integrity
+		row = conn.QueryRow("SELECT name FROM users WHERE email = 'user1@example.com'")
+		var userName string
+		if err := row.Scan(&userName); err != nil {
+			return fmt.Errorf("failed to get user name: %w", err)
+		}
+		if userName != "User One" {
+			return fmt.Errorf("expected 'User One', got '%s'", userName)
+		}
+
+		// Verify RLS features were removed but data remains accessible
+		schema, err := vem.GenerateSchemaFromEntities()
+		if err != nil {
+			return fmt.Errorf("failed to generate schema: %w", err)
+		}
+
+		if len(schema.Functions) != 0 {
+			return fmt.Errorf("expected 0 functions after rollback, got %d", len(schema.Functions))
+		}
+		if len(schema.RLSPolicies) != 0 {
+			return fmt.Errorf("expected 0 RLS policies after rollback, got %d", len(schema.RLSPolicies))
+		}
+
+		return nil
+	})
+}
+
+// testDynamicRLSFunctionsErrorHandling tests error handling during RLS and function rollbacks
+func testDynamicRLSFunctionsErrorHandling(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
+	// Skip test for non-PostgreSQL databases
+	if conn.Info().Dialect != "postgres" {
+		return recorder.RecordStep("Skip Non-PostgreSQL", "RLS and functions are PostgreSQL-only features", func() error {
+			return nil
+		})
+	}
+
+	vem, err := NewVersionedEntityManager(fixtures)
+	if err != nil {
+		return fmt.Errorf("failed to create versioned entity manager: %w", err)
+	}
+	defer vem.Cleanup()
+
+	// Step 1: Apply RLS and functions
+	err = recorder.RecordStep("Apply RLS and Functions", "Apply 014-rls-functions", func() error {
+		return vem.MigrateToVersion(ctx, conn, "014-rls-functions", "RLS and functions setup")
+	})
+	if err != nil {
+		return err
+	}
+
+	// Step 2: Test error handling for invalid rollback scenarios
+	err = recorder.RecordStep("Test Invalid Function Drop", "Attempt to drop function while policy depends on it", func() error {
+		// Try to manually drop a function that policies depend on
+		// This should fail because RLS policies depend on this function
+
+		// Use a transaction for the manual drop attempt
+		if err := conn.Writer().BeginTransaction(); err != nil {
+			return fmt.Errorf("failed to begin transaction: %w", err)
+		}
+
+		// Try to drop the function - this should fail
+		err := conn.Writer().ExecuteSQL("DROP FUNCTION get_current_tenant_id()")
+
+		// Always rollback the transaction (whether it succeeded or failed)
+		rollbackErr := conn.Writer().RollbackTransaction()
+		if rollbackErr != nil {
+			return fmt.Errorf("failed to rollback transaction: %w", rollbackErr)
+		}
+
+		// We expect the DROP FUNCTION to fail
+		if err == nil {
+			return fmt.Errorf("expected error when dropping function used by policies, but succeeded")
+		}
+
+		// Verify the function still exists
+		schema, err := vem.GenerateSchemaFromEntities()
+		if err != nil {
+			return fmt.Errorf("failed to generate schema: %w", err)
+		}
+
+		functionExists := false
+		for _, function := range schema.Functions {
+			if function.Name == "get_current_tenant_id" {
+				functionExists = true
+				break
+			}
+		}
+		if !functionExists {
+			return fmt.Errorf("function should still exist after failed drop")
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// Step 3: Test graceful handling of missing objects during rollback
+	err = recorder.RecordStep("Test Missing Object Handling", "Test rollback when objects are already missing", func() error {
+		// Manually drop a policy to simulate partial state
+		// Use a transaction for the manual drop
+		if err := conn.Writer().BeginTransaction(); err != nil {
+			return fmt.Errorf("failed to begin transaction: %w", err)
+		}
+
+		err := conn.Writer().ExecuteSQL("DROP POLICY IF EXISTS user_tenant_isolation ON users")
+
+		// Commit the transaction
+		commitErr := conn.Writer().CommitTransaction()
+		if commitErr != nil {
+			conn.Writer().RollbackTransaction()
+			return fmt.Errorf("failed to commit transaction: %w", commitErr)
+		}
+
+		if err != nil {
+			return fmt.Errorf("failed to manually drop policy: %w", err)
+		}
+
+		// Now try to rollback - should handle missing policy gracefully
+		if err := vem.MigrateToVersion(ctx, conn, "000-initial", "Rollback with missing policy"); err != nil {
+			return fmt.Errorf("rollback should handle missing objects gracefully: %w", err)
+		}
+
+		// Verify clean final state
+		schema, err := vem.GenerateSchemaFromEntities()
+		if err != nil {
+			return fmt.Errorf("failed to generate schema: %w", err)
+		}
+
+		if len(schema.Functions) != 0 {
+			return fmt.Errorf("expected 0 functions after rollback, got %d", len(schema.Functions))
+		}
+		if len(schema.RLSPolicies) != 0 {
+			return fmt.Errorf("expected 0 RLS policies after rollback, got %d", len(schema.RLSPolicies))
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// Step 4: Test recovery from failed rollback
+	return recorder.RecordStep("Test Recovery from Failed Rollback", "Verify system can recover from rollback failures", func() error {
+		// Apply RLS again
+		if err := vem.MigrateToVersion(ctx, conn, "014-rls-functions", "Re-apply RLS for recovery test"); err != nil {
+			return fmt.Errorf("failed to re-apply RLS: %w", err)
+		}
+
+		// Verify recovery was successful
+		schema, err := vem.GenerateSchemaFromEntities()
+		if err != nil {
+			return fmt.Errorf("failed to generate schema after recovery: %w", err)
+		}
+
+		if len(schema.Functions) != 2 {
+			return fmt.Errorf("expected 2 functions after recovery, got %d", len(schema.Functions))
+		}
+		if len(schema.RLSPolicies) != 2 {
+			return fmt.Errorf("expected 2 RLS policies after recovery, got %d", len(schema.RLSPolicies))
+		}
+
+		// Test normal rollback works after recovery
+		if err := vem.MigrateToVersion(ctx, conn, "000-initial", "Normal rollback after recovery"); err != nil {
+			return fmt.Errorf("normal rollback should work after recovery: %w", err)
+		}
 
 		return nil
 	})

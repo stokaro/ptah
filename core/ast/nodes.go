@@ -815,6 +815,450 @@ func (n *DropTypeNode) Accept(visitor Visitor) error {
 	return visitor.VisitDropType(n)
 }
 
+// CreateFunctionNode represents a CREATE FUNCTION statement for PostgreSQL custom functions.
+//
+// This node contains the complete definition of a PostgreSQL function including
+// parameters, return type, language, security attributes, and function body.
+// It supports various PostgreSQL function attributes like SECURITY DEFINER,
+// STABLE, IMMUTABLE, etc.
+type CreateFunctionNode struct {
+	// Name is the name of the function to create
+	Name string
+	// Parameters contains the function parameter definitions (e.g., "tenant_id_param TEXT")
+	Parameters string
+	// Returns specifies the return type (e.g., "VOID", "TEXT", "INTEGER")
+	Returns string
+	// Language specifies the function language (e.g., "plpgsql", "sql")
+	Language string
+	// Body contains the function implementation code
+	Body string
+	// Security specifies security attributes (e.g., "DEFINER", "INVOKER")
+	Security string
+	// Volatility specifies function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
+	Volatility string
+	// Comment is an optional comment for the function
+	Comment string
+}
+
+// NewCreateFunction creates a new CREATE FUNCTION node with the specified name.
+//
+// Example:
+//
+//	createFunc := NewCreateFunction("set_tenant_context").
+//		SetParameters("tenant_id_param TEXT").
+//		SetReturns("VOID").
+//		SetLanguage("plpgsql").
+//		SetSecurity("DEFINER").
+//		SetBody("BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;")
+func NewCreateFunction(name string) *CreateFunctionNode {
+	return &CreateFunctionNode{
+		Name: name,
+	}
+}
+
+// SetParameters sets the function parameters.
+//
+// Example:
+//
+//	createFunc.SetParameters("tenant_id_param TEXT, user_id INTEGER")
+func (n *CreateFunctionNode) SetParameters(parameters string) *CreateFunctionNode {
+	n.Parameters = parameters
+	return n
+}
+
+// SetReturns sets the function return type.
+//
+// Example:
+//
+//	createFunc.SetReturns("TEXT")
+func (n *CreateFunctionNode) SetReturns(returns string) *CreateFunctionNode {
+	n.Returns = returns
+	return n
+}
+
+// SetLanguage sets the function language.
+//
+// Example:
+//
+//	createFunc.SetLanguage("plpgsql")
+func (n *CreateFunctionNode) SetLanguage(language string) *CreateFunctionNode {
+	n.Language = language
+	return n
+}
+
+// SetBody sets the function body/implementation.
+//
+// Example:
+//
+//	createFunc.SetBody("BEGIN RETURN current_setting('app.current_tenant_id', true); END;")
+func (n *CreateFunctionNode) SetBody(body string) *CreateFunctionNode {
+	n.Body = body
+	return n
+}
+
+// SetSecurity sets the function security attribute.
+//
+// Example:
+//
+//	createFunc.SetSecurity("DEFINER")
+func (n *CreateFunctionNode) SetSecurity(security string) *CreateFunctionNode {
+	n.Security = security
+	return n
+}
+
+// SetVolatility sets the function volatility attribute.
+//
+// Example:
+//
+//	createFunc.SetVolatility("STABLE")
+func (n *CreateFunctionNode) SetVolatility(volatility string) *CreateFunctionNode {
+	n.Volatility = volatility
+	return n
+}
+
+// SetComment sets a comment for the CREATE FUNCTION operation.
+//
+// Example:
+//
+//	createFunc.SetComment("Sets the current tenant context for RLS")
+func (n *CreateFunctionNode) SetComment(comment string) *CreateFunctionNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for CreateFunctionNode.
+func (n *CreateFunctionNode) Accept(visitor Visitor) error {
+	return visitor.VisitCreateFunction(n)
+}
+
+// CreatePolicyNode represents a CREATE POLICY statement for PostgreSQL Row-Level Security.
+//
+// This node contains the complete definition of an RLS policy including
+// the target table, policy type (FOR clause), target roles (TO clause),
+// and the policy expression (USING clause).
+type CreatePolicyNode struct {
+	// Name is the name of the policy to create
+	Name string
+	// Table is the name of the table this policy applies to
+	Table string
+	// PolicyFor specifies what operations the policy applies to (e.g., "ALL", "SELECT", "INSERT", "UPDATE", "DELETE")
+	PolicyFor string
+	// ToRoles specifies which roles the policy applies to (e.g., "inventario_app", "PUBLIC")
+	ToRoles string
+	// UsingExpression contains the USING clause expression for the policy
+	UsingExpression string
+	// WithCheckExpression contains the WITH CHECK clause expression (for INSERT/UPDATE policies)
+	WithCheckExpression string
+	// Replace indicates whether to drop the policy first if it exists (for conflict resolution)
+	Replace bool
+	// Comment is an optional comment for the policy
+	Comment string
+}
+
+// NewCreatePolicy creates a new CREATE POLICY node with the specified name and table.
+//
+// Example:
+//
+//	createPolicy := NewCreatePolicy("user_tenant_isolation", "users").
+//		SetPolicyFor("ALL").
+//		SetToRoles("inventario_app").
+//		SetUsingExpression("tenant_id = get_current_tenant_id()")
+func NewCreatePolicy(name, table string) *CreatePolicyNode {
+	return &CreatePolicyNode{
+		Name:  name,
+		Table: table,
+	}
+}
+
+// SetPolicyFor sets the FOR clause of the policy.
+//
+// Example:
+//
+//	createPolicy.SetPolicyFor("SELECT")
+func (n *CreatePolicyNode) SetPolicyFor(policyFor string) *CreatePolicyNode {
+	n.PolicyFor = policyFor
+	return n
+}
+
+// SetToRoles sets the TO clause of the policy.
+//
+// Example:
+//
+//	createPolicy.SetToRoles("app_user, admin_user")
+func (n *CreatePolicyNode) SetToRoles(toRoles string) *CreatePolicyNode {
+	n.ToRoles = toRoles
+	return n
+}
+
+// SetUsingExpression sets the USING clause expression.
+//
+// Example:
+//
+//	createPolicy.SetUsingExpression("tenant_id = get_current_tenant_id()")
+func (n *CreatePolicyNode) SetUsingExpression(expression string) *CreatePolicyNode {
+	n.UsingExpression = expression
+	return n
+}
+
+// SetWithCheckExpression sets the WITH CHECK clause expression.
+//
+// Example:
+//
+//	createPolicy.SetWithCheckExpression("tenant_id = get_current_tenant_id()")
+func (n *CreatePolicyNode) SetWithCheckExpression(expression string) *CreatePolicyNode {
+	n.WithCheckExpression = expression
+	return n
+}
+
+// SetReplace marks the policy to be replaced (drop first if exists, then create).
+//
+// This is useful for handling policy conflicts during migrations.
+//
+// Example:
+//
+//	createPolicy.SetReplace()
+func (n *CreatePolicyNode) SetReplace() *CreatePolicyNode {
+	n.Replace = true
+	return n
+}
+
+// SetComment sets a comment for the CREATE POLICY operation.
+//
+// Example:
+//
+//	createPolicy.SetComment("Ensures users can only access their tenant's data")
+func (n *CreatePolicyNode) SetComment(comment string) *CreatePolicyNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for CreatePolicyNode.
+func (n *CreatePolicyNode) Accept(visitor Visitor) error {
+	return visitor.VisitCreatePolicy(n)
+}
+
+// AlterTableEnableRLSNode represents an ALTER TABLE ... ENABLE ROW LEVEL SECURITY statement.
+//
+// This node is used to enable Row-Level Security on a specific table.
+// RLS must be enabled before policies can be applied to a table.
+type AlterTableEnableRLSNode struct {
+	// Table is the name of the table to enable RLS on
+	Table string
+	// Comment is an optional comment for the operation
+	Comment string
+}
+
+// NewAlterTableEnableRLS creates a new ALTER TABLE ENABLE ROW LEVEL SECURITY node.
+//
+// Example:
+//
+//	enableRLS := NewAlterTableEnableRLS("users").
+//		SetComment("Enable RLS for multi-tenant isolation")
+func NewAlterTableEnableRLS(table string) *AlterTableEnableRLSNode {
+	return &AlterTableEnableRLSNode{
+		Table: table,
+	}
+}
+
+// SetComment sets a comment for the ALTER TABLE ENABLE RLS operation.
+//
+// Example:
+//
+//	enableRLS.SetComment("Enable RLS for tenant isolation")
+func (n *AlterTableEnableRLSNode) SetComment(comment string) *AlterTableEnableRLSNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for AlterTableEnableRLSNode.
+func (n *AlterTableEnableRLSNode) Accept(visitor Visitor) error {
+	return visitor.VisitAlterTableEnableRLS(n)
+}
+
+// DropFunctionNode represents a DROP FUNCTION statement for PostgreSQL custom functions.
+//
+// This node is used to remove PostgreSQL custom functions from the database.
+// Function removal should be done carefully as other database objects may depend on the function.
+type DropFunctionNode struct {
+	// Name is the name of the function to drop
+	Name string
+	// Parameters contains the function parameter definitions for function signature matching
+	// This is needed because PostgreSQL allows function overloading
+	Parameters string
+	// IfExists indicates whether to use IF EXISTS clause
+	IfExists bool
+	// Cascade indicates whether to use CASCADE option (removes dependent objects)
+	Cascade bool
+	// Comment is an optional comment for the drop operation
+	Comment string
+}
+
+// NewDropFunction creates a new DROP FUNCTION node with the specified name.
+//
+// Example:
+//
+//	dropFunc := NewDropFunction("set_tenant_context").
+//		SetParameters("tenant_id_param TEXT").
+//		SetIfExists().
+//		SetComment("Remove tenant context function")
+func NewDropFunction(name string) *DropFunctionNode {
+	return &DropFunctionNode{
+		Name:     name,
+		IfExists: false,
+		Cascade:  false,
+	}
+}
+
+// SetParameters sets the function parameters for signature matching.
+//
+// This is important for PostgreSQL function overloading support.
+//
+// Example:
+//
+//	dropFunc.SetParameters("tenant_id_param TEXT, user_id INTEGER")
+func (n *DropFunctionNode) SetParameters(parameters string) *DropFunctionNode {
+	n.Parameters = parameters
+	return n
+}
+
+// SetIfExists marks the drop function to use IF EXISTS clause.
+//
+// This prevents errors if the function doesn't exist.
+//
+// Example:
+//
+//	dropFunc.SetIfExists()
+func (n *DropFunctionNode) SetIfExists() *DropFunctionNode {
+	n.IfExists = true
+	return n
+}
+
+// SetCascade marks the drop function to use CASCADE option.
+//
+// This automatically drops dependent objects that use this function.
+//
+// Example:
+//
+//	dropFunc.SetCascade()
+func (n *DropFunctionNode) SetCascade() *DropFunctionNode {
+	n.Cascade = true
+	return n
+}
+
+// SetComment sets a comment for the DROP FUNCTION operation.
+//
+// This comment can be used for documentation or warnings.
+//
+// Example:
+//
+//	dropFunc.SetComment("WARNING: This function is used by RLS policies")
+func (n *DropFunctionNode) SetComment(comment string) *DropFunctionNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for DropFunctionNode.
+func (n *DropFunctionNode) Accept(visitor Visitor) error {
+	return visitor.VisitDropFunction(n)
+}
+
+// DropPolicyNode represents a DROP POLICY statement for PostgreSQL Row-Level Security.
+//
+// This node is used to remove RLS policies from tables. Policy removal should be done
+// carefully as it changes the security model of the table.
+type DropPolicyNode struct {
+	// Name is the name of the policy to drop
+	Name string
+	// Table is the name of the table this policy applies to
+	Table string
+	// IfExists indicates whether to use IF EXISTS clause
+	IfExists bool
+	// Comment is an optional comment for the drop operation
+	Comment string
+}
+
+// NewDropPolicy creates a new DROP POLICY node with the specified name and table.
+//
+// Example:
+//
+//	dropPolicy := NewDropPolicy("user_tenant_isolation", "users").
+//		SetIfExists().
+//		SetComment("Remove tenant isolation policy")
+func NewDropPolicy(name, table string) *DropPolicyNode {
+	return &DropPolicyNode{
+		Name:     name,
+		Table:    table,
+		IfExists: false,
+	}
+}
+
+// SetIfExists marks the drop policy to use IF EXISTS clause.
+//
+// This prevents errors if the policy doesn't exist.
+//
+// Example:
+//
+//	dropPolicy.SetIfExists()
+func (n *DropPolicyNode) SetIfExists() *DropPolicyNode {
+	n.IfExists = true
+	return n
+}
+
+// SetComment sets a comment for the DROP POLICY operation.
+//
+// This comment can be used for documentation or warnings.
+//
+// Example:
+//
+//	dropPolicy.SetComment("WARNING: Removing this policy changes table security")
+func (n *DropPolicyNode) SetComment(comment string) *DropPolicyNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for DropPolicyNode.
+func (n *DropPolicyNode) Accept(visitor Visitor) error {
+	return visitor.VisitDropPolicy(n)
+}
+
+// AlterTableDisableRLSNode represents an ALTER TABLE ... DISABLE ROW LEVEL SECURITY statement.
+//
+// This node is used to disable Row-Level Security on a specific table.
+// RLS should only be disabled after all policies have been removed from the table.
+type AlterTableDisableRLSNode struct {
+	// Table is the name of the table to disable RLS on
+	Table string
+	// Comment is an optional comment for the operation
+	Comment string
+}
+
+// NewAlterTableDisableRLS creates a new ALTER TABLE DISABLE ROW LEVEL SECURITY node.
+//
+// Example:
+//
+//	disableRLS := NewAlterTableDisableRLS("users").
+//		SetComment("Disable RLS after removing all policies")
+func NewAlterTableDisableRLS(table string) *AlterTableDisableRLSNode {
+	return &AlterTableDisableRLSNode{
+		Table: table,
+	}
+}
+
+// SetComment sets a comment for the ALTER TABLE DISABLE RLS operation.
+//
+// Example:
+//
+//	disableRLS.SetComment("Disable RLS for rollback")
+func (n *AlterTableDisableRLSNode) SetComment(comment string) *AlterTableDisableRLSNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for AlterTableDisableRLSNode.
+func (n *AlterTableDisableRLSNode) Accept(visitor Visitor) error {
+	return visitor.VisitAlterTableDisableRLS(n)
+}
+
 // StatementList represents a collection of SQL statements that should be executed together.
 //
 // This is typically used to represent a complete schema or migration script

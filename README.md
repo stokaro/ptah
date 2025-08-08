@@ -27,6 +27,9 @@ capabilities include:
 - 🧱 **Schema Generation (DDL)**
   Builds platform-specific `CREATE TABLE`, `CREATE INDEX`, and other DDL statements.
 
+- 🔐 **Row-Level Security (PostgreSQL)**
+  Supports PostgreSQL RLS policies and custom functions for multi-tenant data isolation.
+
 - 🔍 **Database Introspection**
   Reads the current schema directly from Postgres or MySQL for comparison and analysis.
 
@@ -191,7 +194,37 @@ CategoryID int64
 _ int
 ```
 
+### PostgreSQL Functions (PostgreSQL only)
+```go
+//migrator:schema:function name="set_tenant_context" params="tenant_id_param TEXT" returns="VOID" language="plpgsql" security="DEFINER" body="BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;" comment="Sets the current tenant context for RLS"
+//migrator:schema:function name="get_current_tenant_id" returns="TEXT" language="plpgsql" volatility="STABLE" body="BEGIN RETURN current_setting('app.current_tenant_id', true); END;" comment="Gets the current tenant ID from session"
+type User struct {
+    // fields...
+}
+```
+
+### Row-Level Security (PostgreSQL only)
+```go
+// Enable RLS on a table
+//migrator:schema:rls:enable table="users" comment="Enable RLS for multi-tenant isolation"
+
+// Create RLS policy
+//migrator:schema:rls:policy name="user_tenant_isolation" table="users" for="ALL" to="inventario_app" using="tenant_id = get_current_tenant_id()" comment="Ensures users can only access their tenant's data"
+
+// Policy with WITH CHECK clause for INSERT/UPDATE
+//migrator:schema:rls:policy name="product_tenant_isolation" table="products" for="ALL" to="inventario_app" using="tenant_id = get_current_tenant_id()" with_check="tenant_id = get_current_tenant_id()" comment="Ensures products are isolated by tenant"
+
+//migrator:schema:table name="users"
+type User struct {
+    //migrator:schema:field name="tenant_id" type="TEXT" not_null="true"
+    TenantID string
+    // other fields...
+}
+```
+
 ### Supported Attributes
+
+#### Field Attributes
 - `name` - Database column/table name
 - `type` - SQL data type
 - `primary` - Primary key constraint
@@ -204,6 +237,25 @@ _ int
 - `foreign_key_name` - Custom foreign key constraint name
 - `enum` - Enum values (comma-separated)
 - `platform.{dialect}.{attribute}` - Platform-specific overrides
+
+#### Function Attributes (PostgreSQL only)
+- `name` - Function name
+- `params` - Function parameters (e.g., "tenant_id_param TEXT, user_id INTEGER")
+- `returns` - Return type (e.g., "VOID", "TEXT", "INTEGER")
+- `language` - Function language (e.g., "plpgsql", "sql")
+- `security` - Security context ("DEFINER" or "INVOKER")
+- `volatility` - Function volatility ("STABLE", "IMMUTABLE", "VOLATILE")
+- `body` - Function implementation code
+- `comment` - Function description
+
+#### RLS Policy Attributes (PostgreSQL only)
+- `name` - Policy name
+- `table` - Target table name
+- `for` - Operations policy applies to ("ALL", "SELECT", "INSERT", "UPDATE", "DELETE")
+- `to` - Target database roles (e.g., "app_user", "PUBLIC")
+- `using` - USING clause expression for row filtering
+- `with_check` - WITH CHECK clause expression for INSERT/UPDATE validation
+- `comment` - Policy description
 
 ---
 
@@ -601,6 +653,81 @@ Status string
 ```
 
 For PostgreSQL, this creates a proper ENUM type. For MySQL/MariaDB, it uses the ENUM column type.
+
+### Multi-Tenant Row-Level Security (PostgreSQL)
+
+Ptah supports PostgreSQL's Row-Level Security (RLS) for implementing multi-tenant data isolation at the database level:
+
+```go
+package main
+
+// Define helper functions for tenant context management
+//migrator:schema:function name="set_tenant_context" params="tenant_id_param TEXT" returns="VOID" language="plpgsql" security="DEFINER" body="BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;" comment="Sets the current tenant context for RLS"
+//migrator:schema:function name="get_current_tenant_id" returns="TEXT" language="plpgsql" volatility="STABLE" body="BEGIN RETURN current_setting('app.current_tenant_id', true); END;" comment="Gets the current tenant ID from session"
+
+// Enable RLS and create policies for users table
+//migrator:schema:rls:enable table="users" comment="Enable RLS for multi-tenant isolation"
+//migrator:schema:rls:policy name="user_tenant_isolation" table="users" for="ALL" to="app_role" using="tenant_id = get_current_tenant_id()" comment="Ensures users can only access their tenant's data"
+//migrator:schema:table name="users" comment="User accounts table"
+type User struct {
+    //migrator:schema:field name="id" type="SERIAL" primary="true"
+    ID int64 `json:"id" db:"id"`
+
+    //migrator:schema:field name="tenant_id" type="TEXT" not_null="true"
+    TenantID string `json:"tenant_id" db:"tenant_id"`
+
+    //migrator:schema:field name="email" type="VARCHAR(255)" not_null="true" unique="true"
+    Email string `json:"email" db:"email"`
+
+    //migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+    Name string `json:"name" db:"name"`
+}
+
+// Enable RLS and create policies for products table with INSERT/UPDATE checks
+//migrator:schema:rls:enable table="products" comment="Enable RLS for product isolation"
+//migrator:schema:rls:policy name="product_tenant_isolation" table="products" for="ALL" to="app_role" using="tenant_id = get_current_tenant_id()" with_check="tenant_id = get_current_tenant_id()" comment="Ensures products are isolated by tenant"
+//migrator:schema:table name="products" comment="Product catalog table"
+type Product struct {
+    //migrator:schema:field name="id" type="SERIAL" primary="true"
+    ID int64 `json:"id" db:"id"`
+
+    //migrator:schema:field name="tenant_id" type="TEXT" not_null="true"
+    TenantID string `json:"tenant_id" db:"tenant_id"`
+
+    //migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+    Name string `json:"name" db:"name"`
+
+    //migrator:schema:field name="user_id" type="INTEGER" not_null="true" foreign="users(id)"
+    UserID int64 `json:"user_id" db:"user_id"`
+}
+```
+
+This generates the following PostgreSQL SQL:
+
+```sql
+-- Create helper functions
+CREATE OR REPLACE FUNCTION set_tenant_context(tenant_id_param TEXT) RETURNS VOID AS $$
+BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION get_current_tenant_id() RETURNS TEXT AS $$
+BEGIN RETURN current_setting('app.current_tenant_id', true); END;
+$$ LANGUAGE plpgsql STABLE;
+
+-- Enable RLS on tables
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+
+-- Create RLS policies
+CREATE POLICY user_tenant_isolation ON users FOR ALL TO app_role
+    USING (tenant_id = get_current_tenant_id());
+
+CREATE POLICY product_tenant_isolation ON products FOR ALL TO app_role
+    USING (tenant_id = get_current_tenant_id())
+    WITH CHECK (tenant_id = get_current_tenant_id());
+```
+
+**Note:** RLS and custom functions are PostgreSQL-specific features. For other databases, these annotations are ignored during SQL generation.
 
 ---
 

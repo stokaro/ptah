@@ -10,10 +10,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/lib/pq"
 
-	"github.com/stokaro/ptah/internal/testutils"
-
 	"github.com/stokaro/ptah/dbschema/postgres"
 	"github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/testutils"
 )
 
 // skipIfNoPostgreSQL checks if PostgreSQL is available for testing and skips the test if not.

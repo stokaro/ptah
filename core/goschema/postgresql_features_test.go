@@ -192,15 +192,17 @@ type DatabaseExtensions struct{}
 
 	c.Assert(len(database.Extensions), qt.Equals, 3)
 
-	// Check pg_trgm
-	c.Assert(database.Extensions[0].Name, qt.Equals, "pg_trgm")
+	// Extensions are sorted alphabetically: btree_gin, pg_trgm, postgis
+
+	// Check btree_gin (first alphabetically)
+	c.Assert(database.Extensions[0].Name, qt.Equals, "btree_gin")
 	c.Assert(database.Extensions[0].IfNotExists, qt.IsTrue)
 
-	// Check btree_gin
-	c.Assert(database.Extensions[1].Name, qt.Equals, "btree_gin")
+	// Check pg_trgm (second alphabetically)
+	c.Assert(database.Extensions[1].Name, qt.Equals, "pg_trgm")
 	c.Assert(database.Extensions[1].IfNotExists, qt.IsTrue)
 
-	// Check postgis
+	// Check postgis (third alphabetically)
 	c.Assert(database.Extensions[2].Name, qt.Equals, "postgis")
 	c.Assert(database.Extensions[2].Version, qt.Equals, "3.0")
 }
@@ -244,10 +246,10 @@ type Product struct {
 
 	database := parseStringAsGoFile(c, content)
 
-	// Check extensions
+	// Check extensions (sorted alphabetically)
 	c.Assert(len(database.Extensions), qt.Equals, 2)
-	c.Assert(database.Extensions[0].Name, qt.Equals, "pg_trgm")
-	c.Assert(database.Extensions[1].Name, qt.Equals, "btree_gin")
+	c.Assert(database.Extensions[0].Name, qt.Equals, "btree_gin")
+	c.Assert(database.Extensions[1].Name, qt.Equals, "pg_trgm")
 
 	// Check tables
 	c.Assert(len(database.Tables), qt.Equals, 1)

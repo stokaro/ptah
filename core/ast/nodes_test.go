@@ -527,3 +527,131 @@ func TestDropTypeNode_Accept(t *testing.T) {
 	c.Assert(visitor.VisitedNodes, qt.HasLen, 1)
 	c.Assert(visitor.VisitedNodes[0], qt.Equals, "DropType:status_enum")
 }
+
+func TestNewCreateFunction(t *testing.T) {
+	c := qt.New(t)
+
+	function := ast.NewCreateFunction("set_tenant_context")
+
+	c.Assert(function.Name, qt.Equals, "set_tenant_context")
+	c.Assert(function.Parameters, qt.Equals, "")
+	c.Assert(function.Returns, qt.Equals, "")
+	c.Assert(function.Language, qt.Equals, "")
+	c.Assert(function.Body, qt.Equals, "")
+	c.Assert(function.Security, qt.Equals, "")
+	c.Assert(function.Volatility, qt.Equals, "")
+	c.Assert(function.Comment, qt.Equals, "")
+}
+
+func TestCreateFunctionNode_FluentAPI(t *testing.T) {
+	c := qt.New(t)
+
+	function := ast.NewCreateFunction("set_tenant_context").
+		SetParameters("tenant_id_param TEXT").
+		SetReturns("VOID").
+		SetLanguage("plpgsql").
+		SetSecurity("DEFINER").
+		SetVolatility("STABLE").
+		SetBody("BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;").
+		SetComment("Sets the current tenant context for RLS")
+
+	c.Assert(function.Name, qt.Equals, "set_tenant_context")
+	c.Assert(function.Parameters, qt.Equals, "tenant_id_param TEXT")
+	c.Assert(function.Returns, qt.Equals, "VOID")
+	c.Assert(function.Language, qt.Equals, "plpgsql")
+	c.Assert(function.Security, qt.Equals, "DEFINER")
+	c.Assert(function.Volatility, qt.Equals, "STABLE")
+	c.Assert(function.Body, qt.Equals, "BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;")
+	c.Assert(function.Comment, qt.Equals, "Sets the current tenant context for RLS")
+}
+
+func TestCreateFunctionNode_Accept(t *testing.T) {
+	c := qt.New(t)
+
+	visitor := &mocks.MockVisitor{}
+	function := ast.NewCreateFunction("test_function")
+
+	err := function.Accept(visitor)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(visitor.VisitedNodes, qt.HasLen, 1)
+	c.Assert(visitor.VisitedNodes[0], qt.Equals, "CreateFunction:test_function")
+}
+
+func TestNewCreatePolicy(t *testing.T) {
+	c := qt.New(t)
+
+	policy := ast.NewCreatePolicy("user_tenant_isolation", "users")
+
+	c.Assert(policy.Name, qt.Equals, "user_tenant_isolation")
+	c.Assert(policy.Table, qt.Equals, "users")
+	c.Assert(policy.PolicyFor, qt.Equals, "")
+	c.Assert(policy.ToRoles, qt.Equals, "")
+	c.Assert(policy.UsingExpression, qt.Equals, "")
+	c.Assert(policy.WithCheckExpression, qt.Equals, "")
+	c.Assert(policy.Comment, qt.Equals, "")
+}
+
+func TestCreatePolicyNode_FluentAPI(t *testing.T) {
+	c := qt.New(t)
+
+	policy := ast.NewCreatePolicy("user_tenant_isolation", "users").
+		SetPolicyFor("ALL").
+		SetToRoles("inventario_app").
+		SetUsingExpression("tenant_id = get_current_tenant_id()").
+		SetWithCheckExpression("tenant_id = get_current_tenant_id()").
+		SetComment("Ensures users can only access their tenant's data")
+
+	c.Assert(policy.Name, qt.Equals, "user_tenant_isolation")
+	c.Assert(policy.Table, qt.Equals, "users")
+	c.Assert(policy.PolicyFor, qt.Equals, "ALL")
+	c.Assert(policy.ToRoles, qt.Equals, "inventario_app")
+	c.Assert(policy.UsingExpression, qt.Equals, "tenant_id = get_current_tenant_id()")
+	c.Assert(policy.WithCheckExpression, qt.Equals, "tenant_id = get_current_tenant_id()")
+	c.Assert(policy.Comment, qt.Equals, "Ensures users can only access their tenant's data")
+}
+
+func TestCreatePolicyNode_Accept(t *testing.T) {
+	c := qt.New(t)
+
+	visitor := &mocks.MockVisitor{}
+	policy := ast.NewCreatePolicy("test_policy", "test_table")
+
+	err := policy.Accept(visitor)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(visitor.VisitedNodes, qt.HasLen, 1)
+	c.Assert(visitor.VisitedNodes[0], qt.Equals, "CreatePolicy:test_policy")
+}
+
+func TestNewAlterTableEnableRLS(t *testing.T) {
+	c := qt.New(t)
+
+	enableRLS := ast.NewAlterTableEnableRLS("users")
+
+	c.Assert(enableRLS.Table, qt.Equals, "users")
+	c.Assert(enableRLS.Comment, qt.Equals, "")
+}
+
+func TestAlterTableEnableRLSNode_FluentAPI(t *testing.T) {
+	c := qt.New(t)
+
+	enableRLS := ast.NewAlterTableEnableRLS("users").
+		SetComment("Enable RLS for tenant isolation")
+
+	c.Assert(enableRLS.Table, qt.Equals, "users")
+	c.Assert(enableRLS.Comment, qt.Equals, "Enable RLS for tenant isolation")
+}
+
+func TestAlterTableEnableRLSNode_Accept(t *testing.T) {
+	c := qt.New(t)
+
+	visitor := &mocks.MockVisitor{}
+	enableRLS := ast.NewAlterTableEnableRLS("test_table")
+
+	err := enableRLS.Accept(visitor)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(visitor.VisitedNodes, qt.HasLen, 1)
+	c.Assert(visitor.VisitedNodes[0], qt.Equals, "AlterTableEnableRLS:test_table")
+}

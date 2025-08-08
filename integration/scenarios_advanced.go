@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"os"
 	"path"
-	"sync"
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/dbschema"
@@ -224,23 +223,24 @@ func testConcurrencyParallelMigrate(ctx context.Context, conn *dbschema.Database
 	}
 	defer conn2.Close()
 
-	var wg sync.WaitGroup
-	var err1, err2 error
+	// Use channels to collect results from goroutines (race-safe)
+	const numParallelMigrations = 2
+	errChan := make(chan error, numParallelMigrations)
 
 	// Launch two parallel migrations
-	wg.Add(2)
-
 	go func() {
-		defer wg.Done()
-		err1 = migrator.RunMigrations(ctx, conn1, migrationsFS)
+		err := migrator.RunMigrations(ctx, conn1, migrationsFS)
+		errChan <- err
 	}()
 
 	go func() {
-		defer wg.Done()
-		err2 = migrator.RunMigrations(ctx, conn2, migrationsFS)
+		err := migrator.RunMigrations(ctx, conn2, migrationsFS)
+		errChan <- err
 	}()
 
-	wg.Wait()
+	// Collect results
+	err1 := <-errChan
+	err2 := <-errChan
 
 	// At least one should succeed, and if both succeed, that's also fine (idempotent)
 	if err1 != nil && err2 != nil {

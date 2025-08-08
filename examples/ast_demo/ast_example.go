@@ -243,15 +243,29 @@ func (a *SchemaAnalyzer) VisitIndex(node *ast.IndexNode) error {
 	a.IndexCount++
 	return nil
 }
-func (a *SchemaAnalyzer) VisitDropIndex(node *ast.DropIndexNode) error         { return nil }
-func (a *SchemaAnalyzer) VisitEnum(node *ast.EnumNode) error                   { return nil }
-func (a *SchemaAnalyzer) VisitCreateType(node *ast.CreateTypeNode) error       { return nil }
-func (a *SchemaAnalyzer) VisitAlterType(node *ast.AlterTypeNode) error         { return nil }
-func (a *SchemaAnalyzer) VisitComment(node *ast.CommentNode) error             { return nil }
-func (a *SchemaAnalyzer) VisitDropTable(node *ast.DropTableNode) error         { return nil }
-func (a *SchemaAnalyzer) VisitDropType(node *ast.DropTypeNode) error           { return nil }
-func (a *SchemaAnalyzer) VisitExtension(node *ast.ExtensionNode) error         { return nil }
-func (a *SchemaAnalyzer) VisitDropExtension(node *ast.DropExtensionNode) error { return nil }
+func (a *SchemaAnalyzer) VisitDropIndex(node *ast.DropIndexNode) error           { return nil }
+func (a *SchemaAnalyzer) VisitEnum(node *ast.EnumNode) error                     { return nil }
+func (a *SchemaAnalyzer) VisitCreateType(node *ast.CreateTypeNode) error         { return nil }
+func (a *SchemaAnalyzer) VisitAlterType(node *ast.AlterTypeNode) error           { return nil }
+func (a *SchemaAnalyzer) VisitComment(node *ast.CommentNode) error               { return nil }
+func (a *SchemaAnalyzer) VisitDropTable(node *ast.DropTableNode) error           { return nil }
+func (a *SchemaAnalyzer) VisitDropType(node *ast.DropTypeNode) error             { return nil }
+func (a *SchemaAnalyzer) VisitExtension(node *ast.ExtensionNode) error           { return nil }
+func (a *SchemaAnalyzer) VisitDropExtension(node *ast.DropExtensionNode) error   { return nil }
+func (a *SchemaAnalyzer) VisitCreateFunction(node *ast.CreateFunctionNode) error { return nil }
+func (a *SchemaAnalyzer) VisitCreatePolicy(node *ast.CreatePolicyNode) error     { return nil }
+func (a *SchemaAnalyzer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
+	return nil
+}
+func (a *SchemaAnalyzer) VisitDropFunction(node *ast.DropFunctionNode) error {
+	return nil
+}
+func (a *SchemaAnalyzer) VisitDropPolicy(node *ast.DropPolicyNode) error {
+	return nil
+}
+func (a *SchemaAnalyzer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
+	return nil
+}
 
 // AuditTransformer adds audit columns to all tables
 type AuditTransformer struct{}

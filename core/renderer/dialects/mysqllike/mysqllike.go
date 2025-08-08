@@ -29,6 +29,13 @@ func New(dialect string, buf *bufwriter.Writer) *Renderer {
 	}
 }
 
+// escapeValue properly escapes a string value for use in SQL
+func (r *Renderer) escapeValue(value string) string {
+	// Escape single quotes by doubling them (MySQL/MariaDB standard)
+	escaped := strings.ReplaceAll(value, "'", "''")
+	return "'" + escaped + "'"
+}
+
 func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 	// Build DROP INDEX statement for MySQL/MariaDB
 	var parts []string
@@ -286,7 +293,7 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	case column.Default == nil:
 		// No default value
 	case column.Default.Value != "":
-		parts = append(parts, fmt.Sprintf("DEFAULT '%s'", column.Default.Value)) // TODO: escape!
+		parts = append(parts, fmt.Sprintf("DEFAULT %s", r.escapeValue(column.Default.Value)))
 	case column.Default.Expression != "":
 		parts = append(parts, fmt.Sprintf("DEFAULT %s", column.Default.Expression))
 	}
@@ -488,4 +495,55 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 		r.w.WriteLinef("-- DROP EXTENSION %s not supported in %s", node.Name, r.dialect)
 	}
 	return nil
+}
+
+// VisitCreateFunction renders CREATE FUNCTION statements for MySQL-like databases (no-op)
+func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
+	// MySQL-like databases don't support PostgreSQL-style functions
+	// Add a comment to indicate this feature is not supported
+	if node.Comment != "" {
+		r.w.WriteLinef("-- CREATE FUNCTION %s not supported in %s: %s", node.Name, r.dialect, node.Comment)
+	} else {
+		r.w.WriteLinef("-- CREATE FUNCTION %s not supported in %s", node.Name, r.dialect)
+	}
+	return nil
+}
+
+// VisitCreatePolicy renders CREATE POLICY statements for MySQL-like databases (no-op)
+func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
+	// MySQL-like databases don't support Row-Level Security policies
+	// Add a comment to indicate this feature is not supported
+	if node.Comment != "" {
+		r.w.WriteLinef("-- CREATE POLICY %s not supported in %s: %s", node.Name, r.dialect, node.Comment)
+	} else {
+		r.w.WriteLinef("-- CREATE POLICY %s not supported in %s", node.Name, r.dialect)
+	}
+	return nil
+}
+
+// VisitAlterTableEnableRLS renders ALTER TABLE ENABLE RLS statements for MySQL-like databases (no-op)
+func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
+	// MySQL-like databases don't support Row-Level Security
+	// Add a comment to indicate this feature is not supported
+	if node.Comment != "" {
+		r.w.WriteLinef("-- ALTER TABLE %s ENABLE ROW LEVEL SECURITY not supported in %s: %s", node.Table, r.dialect, node.Comment)
+	} else {
+		r.w.WriteLinef("-- ALTER TABLE %s ENABLE ROW LEVEL SECURITY not supported in %s", node.Table, r.dialect)
+	}
+	return nil
+}
+
+// VisitDropFunction returns an error since PostgreSQL functions are not supported in MySQL
+func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
+	return fmt.Errorf("DROP FUNCTION is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)
+}
+
+// VisitDropPolicy returns an error since RLS policies are not supported in MySQL
+func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
+	return fmt.Errorf("DROP POLICY is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)
+}
+
+// VisitAlterTableDisableRLS returns an error since RLS is not supported in MySQL
+func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
+	return fmt.Errorf("ALTER TABLE DISABLE ROW LEVEL SECURITY is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)
 }
