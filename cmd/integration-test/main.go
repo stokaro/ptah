@@ -133,7 +133,7 @@ func runIntegrationTests(cmd *cobra.Command, args []string) error {
 	for _, reportFormat := range reportFormats {
 		format := integration.ReportFormat(reportFormat)
 		switch format {
-		case integration.FormatTXT, integration.FormatJSON, integration.FormatHTML:
+		case integration.FormatStdout, integration.FormatTXT, integration.FormatJSON, integration.FormatHTML:
 			// Valid formats
 		default:
 			return fmt.Errorf("invalid report format: %s (must be txt, json, or html)", reportFormat)
