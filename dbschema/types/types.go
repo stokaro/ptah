@@ -6,8 +6,8 @@ type DBSchema struct {
 	Enums       []DBEnum       `json:"enums"`
 	Indexes     []DBIndex      `json:"indexes"`
 	Constraints []DBConstraint `json:"constraints"`
-	Extensions  []DBExtension  `json:"extensions"`  // PostgreSQL extensions
-	Functions   []DBFunction   `json:"functions"`   // PostgreSQL custom functions
+	Extensions  []DBExtension  `json:"extensions"`   // PostgreSQL extensions
+	Functions   []DBFunction   `json:"functions"`    // PostgreSQL custom functions
 	RLSPolicies []DBRLSPolicy  `json:"rls_policies"` // PostgreSQL RLS policies
 }
 
@@ -103,14 +103,14 @@ type SchemaWriter interface {
 
 // DBFunction represents a PostgreSQL custom function read from the database
 type DBFunction struct {
-	Name       string `json:"name"`        // Function name
-	Parameters string `json:"parameters"`  // Function parameters (e.g., "tenant_id_param TEXT")
-	Returns    string `json:"returns"`     // Return type (e.g., "VOID", "TEXT")
-	Language   string `json:"language"`    // Function language (e.g., "plpgsql", "sql")
-	Security   string `json:"security"`    // Security context (e.g., "DEFINER", "INVOKER")
-	Volatility string `json:"volatility"`  // Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
-	Body       string `json:"body"`        // Function body/implementation
-	Comment    string `json:"comment"`     // Function comment/description
+	Name       string `json:"name"`       // Function name
+	Parameters string `json:"parameters"` // Function parameters (e.g., "tenant_id_param TEXT")
+	Returns    string `json:"returns"`    // Return type (e.g., "VOID", "TEXT")
+	Language   string `json:"language"`   // Function language (e.g., "plpgsql", "sql")
+	Security   string `json:"security"`   // Security context (e.g., "DEFINER", "INVOKER")
+	Volatility string `json:"volatility"` // Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
+	Body       string `json:"body"`       // Function body/implementation
+	Comment    string `json:"comment"`    // Function comment/description
 }
 
 // DBRLSPolicy represents a PostgreSQL RLS policy read from the database

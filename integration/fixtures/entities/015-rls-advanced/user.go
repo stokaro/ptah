@@ -3,6 +3,7 @@ package entities
 // Define helper functions for tenant context management
 // Add a new function for user validation
 // Enable RLS and create policies for users table with separate policies for different operations
+//
 //migrator:schema:function name="set_tenant_context" params="tenant_id_param TEXT" returns="VOID" language="plpgsql" security="DEFINER" body="BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;" comment="Sets the current tenant context for RLS"
 //migrator:schema:function name="get_current_tenant_id" returns="TEXT" language="plpgsql" volatility="STABLE" body="BEGIN RETURN current_setting('app.current_tenant_id', true); END;" comment="Gets the current tenant ID from session"
 //migrator:schema:function name="validate_user_access" params="user_id_param INTEGER, tenant_id_param TEXT" returns="BOOLEAN" language="plpgsql" volatility="STABLE" body="BEGIN RETURN EXISTS(SELECT 1 FROM users WHERE id = user_id_param AND tenant_id = tenant_id_param); END;" comment="Validates if user belongs to tenant"

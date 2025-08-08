@@ -203,8 +203,9 @@ func buildDependencyGraph(r *Database) {
 //   - Handles both simple calls and calls within expressions
 //
 // Example:
-//   Function A calls Function B -> Function A depends on Function B
-//   Function B must be created before Function A
+//
+//	Function A calls Function B -> Function A depends on Function B
+//	Function B must be created before Function A
 func buildFunctionDependencies(r *Database) {
 	// Create a map of all function names for quick lookup
 	functionNames := make(map[string]bool)
@@ -249,66 +250,71 @@ func buildFunctionDependencies(r *Database) {
 // order for creating PostgreSQL functions. Functions with no dependencies are created first,
 // followed by functions that depend on them, ensuring that function calls can be resolved
 // during function creation.
-//
-// Algorithm steps:
-//  1. Calculate in-degrees (number of dependencies) for each function
-//  2. Initialize queue with functions that have no dependencies (in-degree 0)
-//  3. Process queue: remove function, add to sorted result, reduce in-degrees of dependent functions
-//  4. Continue until all functions are processed or circular dependency is detected
-//
-// Circular dependency handling:
-//   - If circular dependencies are detected, a warning is logged
-//   - Remaining functions are appended to the end of the sorted list
-//   - This allows migration to proceed, but manual intervention may be needed
-//
-// The method modifies the Functions slice in-place, reordering it according to dependency
-// requirements. This ensures that CREATE FUNCTION statements can be executed in the
-// returned order without function reference errors.
 func sortFunctionsByDependencies(r *Database) {
 	if len(r.Functions) == 0 {
 		return
 	}
 
-	// Create a map for quick function lookup
+	functionMap := buildFunctionMap(r.Functions)
+	sorted := performTopologicalSort(r.FunctionDependencies, functionMap)
+	handleCircularDependencies(&sorted, r.Functions)
+	r.Functions = sorted
+}
+
+// buildFunctionMap creates a map for quick function lookup by name.
+func buildFunctionMap(functions []Function) map[string]Function {
 	functionMap := make(map[string]Function)
-	for _, function := range r.Functions {
+	for _, function := range functions {
 		functionMap[function.Name] = function
 	}
+	return functionMap
+}
 
-	// Perform topological sort using Kahn's algorithm
+// performTopologicalSort implements Kahn's algorithm for function dependency sorting.
+func performTopologicalSort(dependencies map[string][]string, functionMap map[string]Function) []Function {
 	var sorted []Function
-	inDegree := make(map[string]int)
+	inDegree := calculateInDegrees(dependencies)
+	queue := findZeroDegreeNodes(inDegree)
 
-	// Calculate in-degrees (how many dependencies each function has)
-	for functionName := range r.FunctionDependencies {
-		inDegree[functionName] = len(r.FunctionDependencies[functionName])
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+
+		if function, exists := functionMap[current]; exists {
+			sorted = append(sorted, function)
+		}
+
+		queue = updateInDegreesAndQueue(current, dependencies, inDegree, queue)
 	}
 
-	// Find functions with no dependencies (in-degree 0)
+	return sorted
+}
+
+// calculateInDegrees calculates how many dependencies each function has.
+func calculateInDegrees(dependencies map[string][]string) map[string]int {
+	inDegree := make(map[string]int)
+	for functionName := range dependencies {
+		inDegree[functionName] = len(dependencies[functionName])
+	}
+	return inDegree
+}
+
+// findZeroDegreeNodes finds functions with no dependencies.
+func findZeroDegreeNodes(inDegree map[string]int) []string {
 	var queue []string
 	for functionName, degree := range inDegree {
 		if degree == 0 {
 			queue = append(queue, functionName)
 		}
 	}
+	return queue
+}
 
-	// Process queue
-	for len(queue) > 0 {
-		// Remove first element from queue
-		current := queue[0]
-		queue = queue[1:]
-
-		// Add to sorted result if function exists
-		if function, exists := functionMap[current]; exists {
-			sorted = append(sorted, function)
-		}
-
-		// Reduce in-degree of functions that depend on the current function
-		for functionName, deps := range r.FunctionDependencies {
-			for _, dep := range deps {
-				if dep != current {
-					continue
-				}
+// updateInDegreesAndQueue reduces in-degrees and updates the processing queue.
+func updateInDegreesAndQueue(current string, dependencies map[string][]string, inDegree map[string]int, queue []string) []string {
+	for functionName, deps := range dependencies {
+		for _, dep := range deps {
+			if dep == current {
 				inDegree[functionName]--
 				if inDegree[functionName] == 0 {
 					queue = append(queue, functionName)
@@ -316,27 +322,34 @@ func sortFunctionsByDependencies(r *Database) {
 			}
 		}
 	}
+	return queue
+}
 
-	// Check for circular dependencies
-	if len(sorted) != len(r.Functions) {
+// handleCircularDependencies detects and handles circular dependencies in function relationships.
+func handleCircularDependencies(sorted *[]Function, allFunctions []Function) {
+	if len(*sorted) != len(allFunctions) {
 		slog.Warn("Circular dependency detected in function relationships. Some functions may not be ordered correctly.")
-		// Add remaining functions to the end
-		for _, function := range r.Functions {
-			found := false
-			for _, sortedFunction := range sorted {
-				if sortedFunction.Name == function.Name {
-					found = true
-					break
-				}
-			}
-			if !found {
-				sorted = append(sorted, function)
-			}
+		addRemainingFunctions(sorted, allFunctions)
+	}
+}
+
+// addRemainingFunctions adds any functions not included in the sorted list to the end.
+func addRemainingFunctions(sorted *[]Function, allFunctions []Function) {
+	for _, function := range allFunctions {
+		if !isFunctionInSorted(function, *sorted) {
+			*sorted = append(*sorted, function)
 		}
 	}
+}
 
-	// Update the functions slice with sorted order
-	r.Functions = sorted
+// isFunctionInSorted checks if a function is already in the sorted list.
+func isFunctionInSorted(function Function, sorted []Function) bool {
+	for _, sortedFunction := range sorted {
+		if sortedFunction.Name == function.Name {
+			return true
+		}
+	}
+	return false
 }
 
 // deduplicate removes duplicate entities that may be defined in multiple files.

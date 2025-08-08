@@ -1322,8 +1322,8 @@ func Extensions(generated *goschema.Database, database *types.DBSchema, diff *di
 // # Migration Implications
 //
 // Function changes typically require:
-//   1. DROP FUNCTION (with CASCADE if dependencies exist)
-//   2. CREATE OR REPLACE FUNCTION with new definition
+//  1. DROP FUNCTION (with CASCADE if dependencies exist)
+//  2. CREATE OR REPLACE FUNCTION with new definition
 func FunctionDefinitions(genFunction goschema.Function, dbFunction types.DBFunction) difftypes.FunctionDiff {
 	functionDiff := difftypes.FunctionDiff{
 		FunctionName: genFunction.Name,
@@ -1411,8 +1411,8 @@ func FunctionDefinitions(genFunction goschema.Function, dbFunction types.DBFunct
 // # Migration Implications
 //
 // Policy changes typically require:
-//   1. DROP POLICY policy_name ON table_name
-//   2. CREATE POLICY policy_name ON table_name with new definition
+//  1. DROP POLICY policy_name ON table_name
+//  2. CREATE POLICY policy_name ON table_name with new definition
 func RLSPolicyDefinitions(genPolicy goschema.RLSPolicy, dbPolicy types.DBRLSPolicy) difftypes.RLSPolicyDiff {
 	policyDiff := difftypes.RLSPolicyDiff{
 		PolicyName: genPolicy.Name,

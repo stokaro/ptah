@@ -22,11 +22,11 @@ package goschema
 //   - EmbeddedFields: Fields from embedded structs with their relation modes
 //   - Dependencies: Dependency graph mapping table names to their dependencies
 type Database struct {
-	Tables           []Table
-	Fields           []Field
-	Indexes          []Index
-	Enums            []Enum
-	EmbeddedFields   []EmbeddedField
+	Tables               []Table
+	Fields               []Field
+	Indexes              []Index
+	Enums                []Enum
+	EmbeddedFields       []EmbeddedField
 	Extensions           []Extension         // PostgreSQL extensions (pg_trgm, postgis, etc.)
 	Functions            []Function          // PostgreSQL custom functions
 	RLSPolicies          []RLSPolicy         // PostgreSQL Row-Level Security policies

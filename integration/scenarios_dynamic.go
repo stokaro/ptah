@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"strings"
 	"time"
 
 	"github.com/stokaro/ptah/core/goschema"
@@ -2505,13 +2506,13 @@ func testDynamicRLSCrossDatabase(ctx context.Context, conn *dbschema.DatabaseCon
 			hasRLSPolicy := false
 
 			for _, stmt := range statements {
-				if contains(stmt, "CREATE OR REPLACE FUNCTION") {
+				if strings.Contains(stmt, "CREATE OR REPLACE FUNCTION") {
 					hasFunction = true
 				}
-				if contains(stmt, "ENABLE ROW LEVEL SECURITY") {
+				if strings.Contains(stmt, "ENABLE ROW LEVEL SECURITY") {
 					hasRLSEnable = true
 				}
-				if contains(stmt, "CREATE POLICY") {
+				if strings.Contains(stmt, "CREATE POLICY") {
 					hasRLSPolicy = true
 				}
 			}
@@ -2528,13 +2529,13 @@ func testDynamicRLSCrossDatabase(ctx context.Context, conn *dbschema.DatabaseCon
 		} else {
 			// MySQL/MariaDB should NOT have RLS and function statements
 			for _, stmt := range statements {
-				if contains(stmt, "CREATE OR REPLACE FUNCTION") {
+				if strings.Contains(stmt, "CREATE OR REPLACE FUNCTION") {
 					return fmt.Errorf("MySQL/MariaDB should not generate function statements")
 				}
-				if contains(stmt, "ENABLE ROW LEVEL SECURITY") {
+				if strings.Contains(stmt, "ENABLE ROW LEVEL SECURITY") {
 					return fmt.Errorf("MySQL/MariaDB should not generate RLS enable statements")
 				}
-				if contains(stmt, "CREATE POLICY") {
+				if strings.Contains(stmt, "CREATE POLICY") {
 					return fmt.Errorf("MySQL/MariaDB should not generate RLS policy statements")
 				}
 			}
@@ -2542,7 +2543,7 @@ func testDynamicRLSCrossDatabase(ctx context.Context, conn *dbschema.DatabaseCon
 			// Should still have table creation statements
 			hasTable := false
 			for _, stmt := range statements {
-				if contains(stmt, "CREATE TABLE") {
+				if strings.Contains(stmt, "CREATE TABLE") {
 					hasTable = true
 					break
 				}
