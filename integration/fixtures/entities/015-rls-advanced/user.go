@@ -4,9 +4,9 @@ package entities
 // Add a new function for user validation
 // Enable RLS and create policies for users table with separate policies for different operations
 //
-//migrator:schema:function name="set_tenant_context" params="tenant_id_param TEXT" returns="VOID" language="plpgsql" security="DEFINER" body="BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;" comment="Sets tenant context"
+//migrator:schema:function name="set_tenant_context" params="tenant_id_param TEXT" returns="VOID" language="plpgsql" security="DEFINER" body="BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;"
 //migrator:schema:function name="get_current_tenant_id" returns="TEXT" language="plpgsql" volatility="STABLE" body="BEGIN RETURN current_setting('app.current_tenant_id', true); END;" comment="Gets tenant ID"
-//migrator:schema:function name="validate_user_access" params="user_id_param INTEGER, tenant_id_param TEXT" returns="BOOLEAN" language="plpgsql" volatility="STABLE" body="BEGIN RETURN EXISTS(SELECT 1 FROM users WHERE id = user_id_param AND tenant_id = tenant_id_param); END;" comment="Validates user access"
+//migrator:schema:function name="validate_user_access" params="user_id_param INTEGER, tenant_id_param TEXT" returns="BOOLEAN" language="plpgsql" volatility="STABLE" body="BEGIN RETURN EXISTS(SELECT 1 FROM users WHERE id = user_id_param AND tenant_id = tenant_id_param); END;"
 //migrator:schema:rls:enable table="users" comment="Enable RLS for multi-tenant isolation"
 //migrator:schema:rls:policy name="user_tenant_select" table="users" for="SELECT" to="app_role" using="tenant_id = get_current_tenant_id()" comment="Allows users to select only their tenant's data"
 //migrator:schema:rls:policy name="user_tenant_insert" table="users" for="INSERT" to="app_role" with_check="tenant_id = get_current_tenant_id()" comment="Ensures new users are created in the correct tenant"
