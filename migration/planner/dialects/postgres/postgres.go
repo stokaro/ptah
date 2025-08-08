@@ -247,23 +247,6 @@ func (p *Planner) removeTableColumns(result []ast.Node, diff *types.SchemaDiff) 
 	return result
 }
 
-func (p *Planner) modifyExistingTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	for _, tableDiff := range diff.TablesModified {
-		astCommentNode := ast.NewComment(fmt.Sprintf("Modify table: %s", tableDiff.TableName))
-		result = append(result, astCommentNode)
-
-		// Add new columns
-		result = p.addNewTableColumns(result, tableDiff, generated)
-
-		// Modify existing columns
-		result = p.modifyExistingTableColumns(result, tableDiff, generated)
-
-		// Remove columns (dangerous!)
-		result = p.removeTableColumnsFromDiff(result, tableDiff)
-	}
-	return result
-}
-
 func (p *Planner) addNewIndexes(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
 	// Create a mapping from struct names to table names for proper index table resolution
 	structToTableMap := make(map[string]string)
