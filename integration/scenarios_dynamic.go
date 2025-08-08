@@ -3143,22 +3143,27 @@ func testDynamicRLSFunctionsErrorHandling(ctx context.Context, conn *dbschema.Da
 
 	// Step 2: Test error handling for invalid rollback scenarios
 	err = recorder.RecordStep("Test Invalid Function Drop", "Attempt to drop function while policy depends on it", func() error {
+		// Try to manually drop a function that policies depend on
+		// This should fail because RLS policies depend on this function
+
 		// Use a transaction for the manual drop attempt
 		if err := conn.Writer().BeginTransaction(); err != nil {
 			return fmt.Errorf("failed to begin transaction: %w", err)
 		}
-		defer func() {
-			// Rollback the transaction (safe to call even if already rolled back)
-			conn.Writer().RollbackTransaction()
-		}()
 
-		// Try to manually drop a function that policies depend on
+		// Try to drop the function - this should fail
 		err := conn.Writer().ExecuteSQL("DROP FUNCTION get_current_tenant_id()")
+
+		// Always rollback the transaction (whether it succeeded or failed)
+		rollbackErr := conn.Writer().RollbackTransaction()
+		if rollbackErr != nil {
+			return fmt.Errorf("failed to rollback transaction: %w", rollbackErr)
+		}
+
+		// We expect the DROP FUNCTION to fail
 		if err == nil {
 			return fmt.Errorf("expected error when dropping function used by policies, but succeeded")
 		}
-
-		// Transaction will be rolled back automatically via defer
 
 		// Verify the function still exists
 		schema, err := vem.GenerateSchemaFromEntities()
@@ -3186,7 +3191,21 @@ func testDynamicRLSFunctionsErrorHandling(ctx context.Context, conn *dbschema.Da
 	// Step 3: Test graceful handling of missing objects during rollback
 	err = recorder.RecordStep("Test Missing Object Handling", "Test rollback when objects are already missing", func() error {
 		// Manually drop a policy to simulate partial state
-		if err := conn.Writer().ExecuteSQL("DROP POLICY IF EXISTS user_tenant_isolation ON users"); err != nil {
+		// Use a transaction for the manual drop
+		if err := conn.Writer().BeginTransaction(); err != nil {
+			return fmt.Errorf("failed to begin transaction: %w", err)
+		}
+
+		err := conn.Writer().ExecuteSQL("DROP POLICY IF EXISTS user_tenant_isolation ON users")
+
+		// Commit the transaction
+		commitErr := conn.Writer().CommitTransaction()
+		if commitErr != nil {
+			conn.Writer().RollbackTransaction()
+			return fmt.Errorf("failed to commit transaction: %w", commitErr)
+		}
+
+		if err != nil {
 			return fmt.Errorf("failed to manually drop policy: %w", err)
 		}
 

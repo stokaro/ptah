@@ -609,6 +609,21 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, column *ast.Co
 	if column.Nullable {
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP NOT NULL;", tableName, column.Name)
 	} else {
+		// Before setting NOT NULL, update any existing NULL values to a default value
+		// This prevents "column contains null values" errors
+		if column.Default != nil {
+			if column.Default.Expression != "" {
+				r.w.WriteLinef("UPDATE %s SET %s = %s WHERE %s IS NULL;", tableName, column.Name, column.Default.Expression, column.Name)
+			} else if column.Default.Value != "" {
+				r.w.WriteLinef("UPDATE %s SET %s = '%s' WHERE %s IS NULL;", tableName, column.Name, column.Default.Value, column.Name)
+			}
+		} else {
+			// If no default is specified, use a sensible default based on column type
+			defaultValue := r.getDefaultValueForType(column.Type)
+			if defaultValue != "" {
+				r.w.WriteLinef("UPDATE %s SET %s = %s WHERE %s IS NULL;", tableName, column.Name, defaultValue, column.Name)
+			}
+		}
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET NOT NULL;", tableName, column.Name)
 	}
 
@@ -620,6 +635,28 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, column *ast.Co
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT '%s';", tableName, column.Name, column.Default.Value) // TODO: escape!
 	case column.Default.Expression != "":
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s;", tableName, column.Name, column.Default.Expression)
+	}
+}
+
+// getDefaultValueForType returns a sensible default value for a column type when setting NOT NULL
+func (r *Renderer) getDefaultValueForType(columnType string) string {
+	switch {
+	case strings.Contains(strings.ToLower(columnType), "timestamp"):
+		return "CURRENT_TIMESTAMP"
+	case strings.Contains(strings.ToLower(columnType), "date"):
+		return "CURRENT_DATE"
+	case strings.Contains(strings.ToLower(columnType), "time"):
+		return "CURRENT_TIME"
+	case strings.Contains(strings.ToLower(columnType), "text") || strings.Contains(strings.ToLower(columnType), "varchar"):
+		return "''"
+	case strings.Contains(strings.ToLower(columnType), "int") || strings.Contains(strings.ToLower(columnType), "serial"):
+		return "0"
+	case strings.Contains(strings.ToLower(columnType), "decimal") || strings.Contains(strings.ToLower(columnType), "numeric"):
+		return "0.0"
+	case strings.Contains(strings.ToLower(columnType), "bool"):
+		return "false"
+	default:
+		return "" // No default available, let the constraint fail if there are NULLs
 	}
 }
 
