@@ -135,7 +135,7 @@ func TestSplitSQLStatements_PostgreSQLDollarQuoted(t *testing.T) {
 			},
 		},
 		{
-			name: "function with semicolon in body",
+			name:  "function with semicolon in body",
 			input: "CREATE OR REPLACE FUNCTION get_current_tenant_id() RETURNS TEXT AS $$ BEGIN RETURN current_setting('app.current_tenant_id', true); END; $$ LANGUAGE plpgsql STABLE;",
 			expected: []string{
 				"CREATE OR REPLACE FUNCTION get_current_tenant_id() RETURNS TEXT AS $$ BEGIN RETURN current_setting('app.current_tenant_id', true); END; $$ LANGUAGE plpgsql STABLE",
