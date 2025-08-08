@@ -1006,9 +1006,13 @@ func RLSPolicies(generated *goschema.Database, database *types.DBSchema, diff *d
 	}
 
 	// Find removed policies
-	for policyName := range databasePolicyMap {
+	for policyName, dbPolicy := range databasePolicyMap {
 		if _, exists := generatedPolicyMap[policyName]; !exists {
-			diff.RLSPoliciesRemoved = append(diff.RLSPoliciesRemoved, policyName)
+			policyRef := difftypes.RLSPolicyRef{
+				PolicyName: policyName,
+				TableName:  dbPolicy.Table,
+			}
+			diff.RLSPoliciesRemoved = append(diff.RLSPoliciesRemoved, policyRef)
 		}
 	}
 
@@ -1024,7 +1028,9 @@ func RLSPolicies(generated *goschema.Database, database *types.DBSchema, diff *d
 
 	// Ensure consistent ordering of results
 	sort.Strings(diff.RLSPoliciesAdded)
-	sort.Strings(diff.RLSPoliciesRemoved)
+	sort.Slice(diff.RLSPoliciesRemoved, func(i, j int) bool {
+		return diff.RLSPoliciesRemoved[i].PolicyName < diff.RLSPoliciesRemoved[j].PolicyName
+	})
 }
 
 // RLSEnabledTables performs RLS enablement comparison between generated and database schemas.

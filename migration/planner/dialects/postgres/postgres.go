@@ -516,11 +516,16 @@ func (p *Planner) enableRLSOnTables(result []ast.Node, diff *types.SchemaDiff, g
 }
 
 func (p *Planner) disableRLSOnTables(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
-	for _, policyName := range diff.RLSPoliciesRemoved {
-		// We need to find which table this policy belonged to
-		// This is a limitation - we need the table name from the policy name
-		// For now, we'll add a warning comment
-		warningComment := ast.NewComment(fmt.Sprintf("WARNING: Policy %s was removed - check if RLS should be disabled on its table", policyName))
+	// Track which tables had policies removed to potentially disable RLS
+	tablesWithRemovedPolicies := make(map[string]bool)
+	for _, policyRef := range diff.RLSPoliciesRemoved {
+		tablesWithRemovedPolicies[policyRef.TableName] = true
+	}
+
+	// For each table that had policies removed, add a comment about potentially disabling RLS
+	// Note: We don't automatically disable RLS because there might be other policies on the table
+	for tableName := range tablesWithRemovedPolicies {
+		warningComment := ast.NewComment(fmt.Sprintf("NOTE: RLS policies were removed from table %s - verify if RLS should be disabled", tableName))
 		result = append(result, warningComment)
 	}
 	return result
@@ -541,17 +546,11 @@ func (p *Planner) addNewRLSPolicies(result []ast.Node, diff *types.SchemaDiff, g
 }
 
 func (p *Planner) removeRLSPolicies(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
-	for _, policyName := range diff.RLSPoliciesRemoved {
-		// We need the table name to drop the policy, but we don't have it in the diff
-		// This is a limitation of the current schema diff structure
-		warningComment := ast.NewComment(fmt.Sprintf("WARNING: Need to drop policy %s - table name required", policyName))
-		result = append(result, warningComment)
-
-		// For now, create a generic drop policy node (this will need table name)
-		// This should be improved to include table information in the schema diff
-		dropPolicyNode := ast.NewDropPolicy(policyName, "UNKNOWN_TABLE").
+	for _, policyRef := range diff.RLSPoliciesRemoved {
+		// Now we have both policy name and table name, so we can generate proper DROP POLICY statements
+		dropPolicyNode := ast.NewDropPolicy(policyRef.PolicyName, policyRef.TableName).
 			SetIfExists().
-			SetComment("WARNING: Update table name before executing")
+			SetComment(fmt.Sprintf("Drop RLS policy %s from table %s", policyRef.PolicyName, policyRef.TableName))
 		result = append(result, dropPolicyNode)
 	}
 	return result

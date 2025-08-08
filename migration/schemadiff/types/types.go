@@ -89,9 +89,9 @@ type SchemaDiff struct {
 	// but not in the current database schema
 	RLSPoliciesAdded []string `json:"rls_policies_added"`
 
-	// RLSPoliciesRemoved contains names of RLS policies that exist in the current database
+	// RLSPoliciesRemoved contains RLS policies that exist in the current database
 	// but not in the target schema (safe operation - no data loss)
-	RLSPoliciesRemoved []string `json:"rls_policies_removed"`
+	RLSPoliciesRemoved []RLSPolicyRef `json:"rls_policies_removed"`
 
 	// RLSPoliciesModified contains detailed information about RLS policies that exist in both
 	// schemas but have different definitions (expressions, roles, etc.)
@@ -286,6 +286,26 @@ type FunctionDiff struct {
 	// Changes maps change types to their old->new value transitions
 	// Format: "change_type" -> "old_value -> new_value"
 	Changes map[string]string `json:"changes"`
+}
+
+// RLSPolicyRef represents a reference to an RLS policy with its table information.
+//
+// This structure is used to identify RLS policies that need to be dropped,
+// providing both the policy name and the table it belongs to. This is necessary
+// because PostgreSQL requires both pieces of information for DROP POLICY statements.
+//
+// # Example Usage
+//
+//	policyRef := RLSPolicyRef{
+//		PolicyName: "user_tenant_isolation",
+//		TableName: "users",
+//	}
+type RLSPolicyRef struct {
+	// PolicyName is the name of the RLS policy
+	PolicyName string `json:"policy_name"`
+
+	// TableName is the name of the table the policy applies to
+	TableName string `json:"table_name"`
 }
 
 // RLSPolicyDiff represents changes to Row-Level Security policy definitions.
