@@ -300,13 +300,15 @@ func (l *Lexer) scanOperator() Token {
 
 // isDollarQuotedString checks if the current position starts a PostgreSQL dollar-quoted string
 func (l *Lexer) isDollarQuotedString() bool {
+	const maxDollarTagLength = 128 // Reasonable upper bound for tag length
 	if l.peek() != '$' {
 		return false
 	}
 
 	// Look ahead to find the closing $ of the opening tag
 	pos := l.pos + 1
-	for pos < len(l.input) {
+	tagLen := 0
+	for pos < len(l.input) && tagLen < maxDollarTagLength {
 		ch := rune(l.input[pos])
 		if ch == '$' {
 			// Found potential closing $ of opening tag
@@ -317,6 +319,7 @@ func (l *Lexer) isDollarQuotedString() bool {
 			return false
 		}
 		pos++
+		tagLen++
 	}
 	return false
 }
