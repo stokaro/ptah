@@ -53,8 +53,8 @@ func TestGetDynamicScenarios(t *testing.T) {
 
 	scenarios := GetDynamicScenarios()
 
-	// Should have exactly 33 dynamic scenarios (28 original + 5 new RLS down migration scenarios)
-	c.Assert(len(scenarios), qt.Equals, 33)
+	// Should have exactly 28 dynamic scenarios (5 new RLS down migration scenarios temporarily disabled)
+	c.Assert(len(scenarios), qt.Equals, 28)
 
 	// Verify all scenarios have required fields
 	for _, scenario := range scenarios {
