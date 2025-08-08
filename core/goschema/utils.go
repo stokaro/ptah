@@ -397,48 +397,52 @@ func deduplicate(r *Database) {
 		r.Tables = append(r.Tables, table)
 	}
 
-	// deduplicate fields by struct name and field name
-	fieldMap := make(map[string]Field)
+	// deduplicate fields by struct name and field name (preserving order)
+	fieldSeen := make(map[string]bool)
+	var deduplicatedFields []Field
 	for _, field := range r.Fields {
 		key := field.StructName + "." + field.Name
-		fieldMap[key] = field
+		if !fieldSeen[key] {
+			fieldSeen[key] = true
+			deduplicatedFields = append(deduplicatedFields, field)
+		}
 	}
-	r.Fields = make([]Field, 0, len(fieldMap))
-	for _, field := range fieldMap {
-		r.Fields = append(r.Fields, field)
-	}
+	r.Fields = deduplicatedFields
 
-	// deduplicate indexes by struct name and index name
-	indexMap := make(map[string]Index)
+	// deduplicate indexes by struct name and index name (preserving order)
+	indexSeen := make(map[string]bool)
+	var deduplicatedIndexes []Index
 	for _, index := range r.Indexes {
 		key := index.StructName + "." + index.Name
-		indexMap[key] = index
+		if !indexSeen[key] {
+			indexSeen[key] = true
+			deduplicatedIndexes = append(deduplicatedIndexes, index)
+		}
 	}
-	r.Indexes = make([]Index, 0, len(indexMap))
-	for _, index := range indexMap {
-		r.Indexes = append(r.Indexes, index)
-	}
+	r.Indexes = deduplicatedIndexes
 
-	// deduplicate enums by name
-	enumMap := make(map[string]Enum)
+	// deduplicate enums by name (preserving order)
+	enumSeen := make(map[string]bool)
+	var deduplicatedEnums []Enum
 	for _, enum := range r.Enums {
-		enumMap[enum.Name] = enum
+		if !enumSeen[enum.Name] {
+			enumSeen[enum.Name] = true
+			deduplicatedEnums = append(deduplicatedEnums, enum)
+		}
 	}
-	r.Enums = make([]Enum, 0, len(enumMap))
-	for _, enum := range enumMap {
-		r.Enums = append(r.Enums, enum)
-	}
+	r.Enums = deduplicatedEnums
 
-	// deduplicate embedded fields by struct name and embedded type name
-	embeddedMap := make(map[string]EmbeddedField)
+	// deduplicate embedded fields by struct name and embedded type name (preserving order)
+	embeddedSeen := make(map[string]bool)
+	var deduplicatedEmbedded []EmbeddedField
 	for _, embedded := range r.EmbeddedFields {
 		key := embedded.StructName + "." + embedded.EmbeddedTypeName
-		embeddedMap[key] = embedded
+		if !embeddedSeen[key] {
+			embeddedSeen[key] = true
+			deduplicatedEmbedded = append(deduplicatedEmbedded, embedded)
+		}
 	}
-	r.EmbeddedFields = make([]EmbeddedField, 0, len(embeddedMap))
-	for _, embedded := range embeddedMap {
-		r.EmbeddedFields = append(r.EmbeddedFields, embedded)
-	}
+	r.EmbeddedFields = deduplicatedEmbedded
 
 	// deduplicate extensions by name
 	extensionMap := make(map[string]Extension)
@@ -459,33 +463,36 @@ func deduplicate(r *Database) {
 		r.Extensions = append(r.Extensions, extensionMap[name])
 	}
 
-	// deduplicate functions by name
-	functionMap := make(map[string]Function)
+	// deduplicate functions by name (preserving order)
+	functionSeen := make(map[string]bool)
+	var deduplicatedFunctions []Function
 	for _, function := range r.Functions {
-		functionMap[function.Name] = function
+		if !functionSeen[function.Name] {
+			functionSeen[function.Name] = true
+			deduplicatedFunctions = append(deduplicatedFunctions, function)
+		}
 	}
-	r.Functions = make([]Function, 0, len(functionMap))
-	for _, function := range functionMap {
-		r.Functions = append(r.Functions, function)
-	}
+	r.Functions = deduplicatedFunctions
 
-	// deduplicate RLS policies by name
-	rlsPolicyMap := make(map[string]RLSPolicy)
+	// deduplicate RLS policies by name (preserving order)
+	rlsPolicySeen := make(map[string]bool)
+	var deduplicatedRLSPolicies []RLSPolicy
 	for _, policy := range r.RLSPolicies {
-		rlsPolicyMap[policy.Name] = policy
+		if !rlsPolicySeen[policy.Name] {
+			rlsPolicySeen[policy.Name] = true
+			deduplicatedRLSPolicies = append(deduplicatedRLSPolicies, policy)
+		}
 	}
-	r.RLSPolicies = make([]RLSPolicy, 0, len(rlsPolicyMap))
-	for _, policy := range rlsPolicyMap {
-		r.RLSPolicies = append(r.RLSPolicies, policy)
-	}
+	r.RLSPolicies = deduplicatedRLSPolicies
 
-	// deduplicate RLS enabled tables by table name
-	rlsEnabledMap := make(map[string]RLSEnabledTable)
+	// deduplicate RLS enabled tables by table name (preserving order)
+	rlsEnabledSeen := make(map[string]bool)
+	var deduplicatedRLSEnabled []RLSEnabledTable
 	for _, rlsTable := range r.RLSEnabledTables {
-		rlsEnabledMap[rlsTable.Table] = rlsTable
+		if !rlsEnabledSeen[rlsTable.Table] {
+			rlsEnabledSeen[rlsTable.Table] = true
+			deduplicatedRLSEnabled = append(deduplicatedRLSEnabled, rlsTable)
+		}
 	}
-	r.RLSEnabledTables = make([]RLSEnabledTable, 0, len(rlsEnabledMap))
-	for _, rlsTable := range rlsEnabledMap {
-		r.RLSEnabledTables = append(r.RLSEnabledTables, rlsTable)
-	}
+	r.RLSEnabledTables = deduplicatedRLSEnabled
 }
