@@ -142,7 +142,19 @@ func parseTableComment(comment *ast.Comment, structName string, tableDirectives 
 	})
 }
 
-func parseComment(comment *ast.Comment, structName string, field *ast.Field, globalEnumsMap map[string]Enum, schemaFields *[]Field, embeddedFields *[]EmbeddedField, schemaIndexes *[]Index, extensions *[]Extension, functions *[]Function, rlsPolicies *[]RLSPolicy, rlsEnabledTables *[]RLSEnabledTable) {
+func parseComment(
+	comment *ast.Comment,
+	structName string,
+	field *ast.Field,
+	globalEnumsMap map[string]Enum,
+	schemaFields *[]Field,
+	embeddedFields *[]EmbeddedField,
+	schemaIndexes *[]Index,
+	extensions *[]Extension,
+	functions *[]Function,
+	rlsPolicies *[]RLSPolicy,
+	rlsEnabledTables *[]RLSEnabledTable,
+) {
 	switch {
 	case strings.HasPrefix(comment.Text, "//migrator:schema:field"):
 		parseFieldComment(comment, field, structName, globalEnumsMap, schemaFields)
@@ -182,7 +194,18 @@ func processTableComments(structName string, genDecl *ast.GenDecl, tableDirectiv
 	}
 }
 
-func processFieldComments(structName string, structType *ast.StructType, globalEnumsMap map[string]Enum, schemaFields *[]Field, embeddedFields *[]EmbeddedField, schemaIndexes *[]Index, extensions *[]Extension, functions *[]Function, rlsPolicies *[]RLSPolicy, rlsEnabledTables *[]RLSEnabledTable) {
+func processFieldComments(
+	structName string,
+	structType *ast.StructType,
+	globalEnumsMap map[string]Enum,
+	schemaFields *[]Field,
+	embeddedFields *[]EmbeddedField,
+	schemaIndexes *[]Index,
+	extensions *[]Extension,
+	functions *[]Function,
+	rlsPolicies *[]RLSPolicy,
+	rlsEnabledTables *[]RLSEnabledTable,
+) {
 	for _, field := range structType.Fields.List {
 		if field.Doc == nil {
 			continue

@@ -13,7 +13,7 @@ import (
 
 // Helper functions for test file management
 func writeTestFile(filename, content string) error {
-	return os.WriteFile(filename, []byte(content), 0644)
+	return os.WriteFile(filename, []byte(content), 0600)
 }
 
 func cleanupTestFile(filename string) {
