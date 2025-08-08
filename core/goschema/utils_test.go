@@ -2,10 +2,14 @@ package goschema
 
 import (
 	"testing"
+
+	qt "github.com/frankban/quicktest"
 )
 
 // TestDeduplicatePreservesFieldOrder tests that the deduplicate function preserves the original order of fields
 func TestDeduplicatePreservesFieldOrder(t *testing.T) {
+	c := qt.New(t)
+	
 	// Create a database with fields in a specific order
 	db := &Database{
 		Fields: []Field{
@@ -36,21 +40,19 @@ func TestDeduplicatePreservesFieldOrder(t *testing.T) {
 	deduplicate(db)
 
 	// Verify field order is preserved
-	if len(db.Fields) != len(originalOrder) {
-		t.Fatalf("Expected %d fields after deduplication, got %d", len(originalOrder), len(db.Fields))
-	}
+	c.Assert(len(db.Fields), qt.Equals, len(originalOrder))
 
 	for i, field := range db.Fields {
 		expectedKey := originalOrder[i]
 		actualKey := field.StructName + "." + field.Name
-		if actualKey != expectedKey {
-			t.Errorf("Field order not preserved at position %d: expected %s, got %s", i, expectedKey, actualKey)
-		}
+		c.Assert(actualKey, qt.Equals, expectedKey, qt.Commentf("Field order not preserved at position %d", i))
 	}
 }
 
 // TestDeduplicateFieldOrderConsistency tests that multiple runs produce identical field order
 func TestDeduplicateFieldOrderConsistency(t *testing.T) {
+	c := qt.New(t)
+	
 	createDatabase := func() *Database {
 		return &Database{
 			Fields: []Field{
@@ -93,22 +95,21 @@ func TestDeduplicateFieldOrderConsistency(t *testing.T) {
 	for run := 1; run < runs; run++ {
 		currentRunOrder := results[run]
 		
-		if len(currentRunOrder) != len(firstRunOrder) {
-			t.Fatalf("Run %d produced different number of fields: expected %d, got %d", 
-				run, len(firstRunOrder), len(currentRunOrder))
-		}
+		c.Assert(len(currentRunOrder), qt.Equals, len(firstRunOrder), 
+			qt.Commentf("Run %d produced different number of fields", run))
 
 		for i, field := range currentRunOrder {
-			if field != firstRunOrder[i] {
-				t.Errorf("Inconsistent field order between runs: run 0 position %d = %s, run %d position %d = %s", 
-					i, firstRunOrder[i], run, i, field)
-			}
+			c.Assert(field, qt.Equals, firstRunOrder[i], 
+				qt.Commentf("Inconsistent field order between runs: run 0 position %d = %s, run %d position %d = %s", 
+					i, firstRunOrder[i], run, i, field))
 		}
 	}
 }
 
 // TestDeduplicateRemovesDuplicateFields tests that duplicate fields are properly removed
 func TestDeduplicateRemovesDuplicateFields(t *testing.T) {
+	c := qt.New(t)
+	
 	db := &Database{
 		Fields: []Field{
 			{StructName: "User", Name: "id", Type: "SERIAL", Primary: "true"},
@@ -130,9 +131,7 @@ func TestDeduplicateRemovesDuplicateFields(t *testing.T) {
 	deduplicate(db)
 
 	// Should have 3 unique fields
-	if len(db.Fields) != 3 {
-		t.Fatalf("Expected 3 unique fields after deduplication, got %d", len(db.Fields))
-	}
+	c.Assert(len(db.Fields), qt.Equals, 3)
 
 	// Check that we have the expected fields in order
 	expectedFields := []string{
@@ -144,14 +143,14 @@ func TestDeduplicateRemovesDuplicateFields(t *testing.T) {
 	for i, field := range db.Fields {
 		expectedKey := expectedFields[i]
 		actualKey := field.StructName + "." + field.Name
-		if actualKey != expectedKey {
-			t.Errorf("Unexpected field at position %d: expected %s, got %s", i, expectedKey, actualKey)
-		}
+		c.Assert(actualKey, qt.Equals, expectedKey, qt.Commentf("Unexpected field at position %d", i))
 	}
 }
 
 // TestDeduplicatePreservesIndexOrder tests that index deduplication preserves order
 func TestDeduplicatePreservesIndexOrder(t *testing.T) {
+	c := qt.New(t)
+	
 	db := &Database{
 		Fields: []Field{},
 		Indexes: []Index{
@@ -175,21 +174,19 @@ func TestDeduplicatePreservesIndexOrder(t *testing.T) {
 
 	deduplicate(db)
 
-	if len(db.Indexes) != len(originalOrder) {
-		t.Fatalf("Expected %d indexes after deduplication, got %d", len(originalOrder), len(db.Indexes))
-	}
+	c.Assert(len(db.Indexes), qt.Equals, len(originalOrder))
 
 	for i, index := range db.Indexes {
 		expectedKey := originalOrder[i]
 		actualKey := index.StructName + "." + index.Name
-		if actualKey != expectedKey {
-			t.Errorf("Index order not preserved at position %d: expected %s, got %s", i, expectedKey, actualKey)
-		}
+		c.Assert(actualKey, qt.Equals, expectedKey, qt.Commentf("Index order not preserved at position %d", i))
 	}
 }
 
 // TestDeduplicatePreservesEnumOrder tests that enum deduplication preserves order
 func TestDeduplicatePreservesEnumOrder(t *testing.T) {
+	c := qt.New(t)
+	
 	db := &Database{
 		Fields:  []Field{},
 		Indexes: []Index{},
@@ -213,19 +210,17 @@ func TestDeduplicatePreservesEnumOrder(t *testing.T) {
 
 	deduplicate(db)
 
-	if len(db.Enums) != len(originalOrder) {
-		t.Fatalf("Expected %d enums after deduplication, got %d", len(originalOrder), len(db.Enums))
-	}
+	c.Assert(len(db.Enums), qt.Equals, len(originalOrder))
 
 	for i, enum := range db.Enums {
-		if enum.Name != originalOrder[i] {
-			t.Errorf("Enum order not preserved at position %d: expected %s, got %s", i, originalOrder[i], enum.Name)
-		}
+		c.Assert(enum.Name, qt.Equals, originalOrder[i], qt.Commentf("Enum order not preserved at position %d", i))
 	}
 }
 
 // TestDeduplicatePreservesEmbeddedFieldOrder tests that embedded field deduplication preserves order
 func TestDeduplicatePreservesEmbeddedFieldOrder(t *testing.T) {
+	c := qt.New(t)
+	
 	db := &Database{
 		Fields:  []Field{},
 		Indexes: []Index{},
@@ -249,21 +244,19 @@ func TestDeduplicatePreservesEmbeddedFieldOrder(t *testing.T) {
 
 	deduplicate(db)
 
-	if len(db.EmbeddedFields) != len(originalOrder) {
-		t.Fatalf("Expected %d embedded fields after deduplication, got %d", len(originalOrder), len(db.EmbeddedFields))
-	}
+	c.Assert(len(db.EmbeddedFields), qt.Equals, len(originalOrder))
 
 	for i, embedded := range db.EmbeddedFields {
 		expectedKey := originalOrder[i]
 		actualKey := embedded.StructName + "." + embedded.EmbeddedTypeName
-		if actualKey != expectedKey {
-			t.Errorf("Embedded field order not preserved at position %d: expected %s, got %s", i, expectedKey, actualKey)
-		}
+		c.Assert(actualKey, qt.Equals, expectedKey, qt.Commentf("Embedded field order not preserved at position %d", i))
 	}
 }
 
 // TestDeduplicateAllCollections tests order preservation across all collections
 func TestDeduplicateAllCollections(t *testing.T) {
+	c := qt.New(t)
+	
 	db := &Database{
 		Fields: []Field{
 			{StructName: "User", Name: "id", Type: "SERIAL"},
@@ -317,22 +310,16 @@ func TestDeduplicateAllCollections(t *testing.T) {
 	for i, field := range db.Fields {
 		expectedKey := originalFieldOrder[i]
 		actualKey := field.StructName + "." + field.Name
-		if actualKey != expectedKey {
-			t.Errorf("Field order not preserved at position %d: expected %s, got %s", i, expectedKey, actualKey)
-		}
+		c.Assert(actualKey, qt.Equals, expectedKey, qt.Commentf("Field order not preserved at position %d", i))
 	}
 
 	for i, index := range db.Indexes {
 		expectedKey := originalIndexOrder[i]
 		actualKey := index.StructName + "." + index.Name
-		if actualKey != expectedKey {
-			t.Errorf("Index order not preserved at position %d: expected %s, got %s", i, expectedKey, actualKey)
-		}
+		c.Assert(actualKey, qt.Equals, expectedKey, qt.Commentf("Index order not preserved at position %d", i))
 	}
 
 	for i, enum := range db.Enums {
-		if enum.Name != originalEnumOrder[i] {
-			t.Errorf("Enum order not preserved at position %d: expected %s, got %s", i, originalEnumOrder[i], enum.Name)
-		}
+		c.Assert(enum.Name, qt.Equals, originalEnumOrder[i], qt.Commentf("Enum order not preserved at position %d", i))
 	}
 }
