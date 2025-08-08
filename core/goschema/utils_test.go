@@ -9,7 +9,6 @@ import (
 // TestDeduplicatePreservesFieldOrder tests that the deduplicate function preserves the original order of fields
 func TestDeduplicatePreservesFieldOrder(t *testing.T) {
 	c := qt.New(t)
-	
 	// Create a database with fields in a specific order
 	db := &Database{
 		Fields: []Field{
