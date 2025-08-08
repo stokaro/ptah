@@ -89,21 +89,19 @@ func TestDependencyOrderingWithEmbeddedFields(t *testing.T) {
 		}
 	}
 
-
-
 	// Should have: tenant_id (from TenantAwareEntityID), email (direct)
 	// Note: id field from EntityID is not included because TenantAwareEntityID doesn't directly embed EntityID in this test
 	c.Assert(len(userFields), qt.Equals, 2, qt.Commentf("User should have 2 fields after embedded processing"))
 
 	// Check that tenant_id field with foreign key is present
-	hasTenantIdWithFK := false
+	hasTenantIDWithFK := false
 	for _, field := range userFields {
 		if field.Name == "tenant_id" && field.Foreign == "tenants(id)" {
-			hasTenantIdWithFK = true
+			hasTenantIDWithFK = true
 			break
 		}
 	}
-	c.Assert(hasTenantIdWithFK, qt.IsTrue, qt.Commentf("User should have tenant_id field with foreign key"))
+	c.Assert(hasTenantIDWithFK, qt.IsTrue, qt.Commentf("User should have tenant_id field with foreign key"))
 }
 
 // TestEmbeddedFieldProcessingModes tests all embedding modes work correctly
@@ -175,8 +173,6 @@ func TestEmbeddedFieldProcessingModes(t *testing.T) {
 		}
 	}
 
-
-
 	// Should have: title (direct), created_at, updated_at (inline), audit_by, audit_reason (inline with prefix),
 	// meta_data (json), author_id (relation) = 7 fields total
 	c.Assert(len(articleFields), qt.Equals, 7, qt.Commentf("Article should have 7 fields after processing"))
@@ -219,13 +215,13 @@ func TestEmbeddedFieldProcessingModes(t *testing.T) {
 	c.Assert(hasMetaData, qt.IsTrue, qt.Commentf("Should have meta_data JSONB field from json embedding"))
 
 	// Check relation mode field
-	hasAuthorId := false
+	hasAuthorID := false
 	for _, field := range articleFields {
 		if field.Name == "author_id" && field.Foreign == "users(id)" {
-			hasAuthorId = true
+			hasAuthorID = true
 		}
 	}
-	c.Assert(hasAuthorId, qt.IsTrue, qt.Commentf("Should have author_id foreign key field from relation embedding"))
+	c.Assert(hasAuthorID, qt.IsTrue, qt.Commentf("Should have author_id foreign key field from relation embedding"))
 
 	// Check that skip mode field is NOT present
 	hasSkippedField := false
