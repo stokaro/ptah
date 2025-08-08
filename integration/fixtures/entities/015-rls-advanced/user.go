@@ -8,8 +8,8 @@ package entities
 //migrator:schema:function name="get_current_tenant_id" returns="TEXT" language="plpgsql" volatility="STABLE" body="BEGIN RETURN current_setting('app.current_tenant_id', true); END;"
 //migrator:schema:function name="validate_user_access" params="user_id_param INTEGER, tenant_id_param TEXT" returns="BOOLEAN" language="plpgsql" volatility="STABLE" body="BEGIN RETURN EXISTS(SELECT 1 FROM users WHERE id = user_id_param AND tenant_id = tenant_id_param); END;"
 //migrator:schema:rls:enable table="users" comment="Enable RLS for multi-tenant isolation"
-//migrator:schema:rls:policy name="user_tenant_select" table="users" for="SELECT" to="app_role" using="tenant_id = get_current_tenant_id()" comment="Allows users to select only their tenant's data"
-//migrator:schema:rls:policy name="user_tenant_insert" table="users" for="INSERT" to="app_role" with_check="tenant_id = get_current_tenant_id()" comment="Ensures new users are created in the correct tenant"
+//migrator:schema:rls:policy name="user_tenant_select" table="users" for="SELECT" to="PUBLIC" using="tenant_id = get_current_tenant_id()" comment="Allows users to select only their tenant's data"
+//migrator:schema:rls:policy name="user_tenant_insert" table="users" for="INSERT" to="PUBLIC" with_check="tenant_id = get_current_tenant_id()" comment="Ensures new users are created in the correct tenant"
 //migrator:schema:table name="users" comment="User accounts table"
 type User struct {
 	//migrator:schema:field name="id" type="SERIAL" primary="true"
