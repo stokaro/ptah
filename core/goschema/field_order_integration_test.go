@@ -279,7 +279,7 @@ type Post struct {
 		} else {
 			c.Assert(len(sqlStatements), qt.Equals, len(previousSQL))
 			for j, sql := range sqlStatements {
-				c.Assert(sql, qt.Equals, previousSQL[j], 
+				c.Assert(sql, qt.Equals, previousSQL[j],
 					qt.Commentf("Migration SQL for statement %d should be identical across runs (run %d)", j, i))
 			}
 		}

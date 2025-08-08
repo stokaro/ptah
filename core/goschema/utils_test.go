@@ -3,38 +3,16 @@ package goschema_test
 import (
 	"testing"
 
-	"github.com/stokaro/ptah/core/goschema"
 	qt "github.com/frankban/quicktest"
+
+	"github.com/stokaro/ptah/core/goschema"
 )
 
 func TestDeduplicate_FieldOrderPreservation(t *testing.T) {
 	c := qt.New(t)
 
-	// Create a database with fields in a specific order
-	db := &goschema.Database{
-		Tables: []goschema.Table{
-			{Name: "users", StructName: "User"},
-		},
-		Fields: []goschema.Field{
-			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
-			{StructName: "User", Name: "email", Type: "VARCHAR(255)", Nullable: false},
-			{StructName: "User", Name: "name", Type: "VARCHAR(255)", Nullable: false},
-			{StructName: "User", Name: "created_at", Type: "TIMESTAMP", Nullable: false},
-			// Add duplicate fields to test deduplication
-			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true}, // duplicate
-			{StructName: "User", Name: "email", Type: "VARCHAR(255)", Nullable: false}, // duplicate
-		},
-	}
-
-	// Call deduplicate function multiple times to test consistency
-	originalFieldOrder := make([]string, 0)
-	for _, field := range db.Fields {
-		if field.StructName == "User" {
-			originalFieldOrder = append(originalFieldOrder, field.Name)
-		}
-	}
-
 	// Test multiple runs to ensure consistent ordering
+
 	for i := 0; i < 10; i++ {
 		// Create a fresh copy for each test
 		testDB := &goschema.Database{
@@ -94,7 +72,7 @@ func TestDeduplicate_MultipleStructsFieldOrder(t *testing.T) {
 			{StructName: "User", Name: "created_at", Type: "TIMESTAMP"},
 			// Duplicates
 			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true}, // duplicate
-			{StructName: "Post", Name: "title", Type: "VARCHAR(255)"}, // duplicate
+			{StructName: "Post", Name: "title", Type: "VARCHAR(255)"},       // duplicate
 		},
 	}
 
@@ -105,9 +83,10 @@ func TestDeduplicate_MultipleStructsFieldOrder(t *testing.T) {
 	postFields := make([]string, 0)
 
 	for _, field := range db.Fields {
-		if field.StructName == "User" {
+		switch field.StructName {
+		case "User":
 			userFields = append(userFields, field.Name)
-		} else if field.StructName == "Post" {
+		case "Post":
 			postFields = append(postFields, field.Name)
 		}
 	}
