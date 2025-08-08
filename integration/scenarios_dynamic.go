@@ -145,6 +145,33 @@ func GetDynamicScenarios() []TestScenario {
 			Description:      "Test embedded struct fields (both value and pointer types) in CREATE TABLE migrations",
 			EnhancedTestFunc: testDynamicEmbeddedFields,
 		},
+
+		// PostgreSQL RLS and Functions scenarios
+		{
+			Name:             "dynamic_rls_functions_basic",
+			Description:      "Test PostgreSQL RLS and custom functions: basic multi-tenant setup",
+			EnhancedTestFunc: testDynamicRLSFunctionsBasic,
+		},
+		{
+			Name:             "dynamic_rls_functions_advanced",
+			Description:      "Test PostgreSQL RLS and custom functions: advanced role-based policies",
+			EnhancedTestFunc: testDynamicRLSFunctionsAdvanced,
+		},
+		{
+			Name:             "dynamic_rls_cross_database",
+			Description:      "Test PostgreSQL RLS features are skipped gracefully on MySQL/MariaDB",
+			EnhancedTestFunc: testDynamicRLSCrossDatabase,
+		},
+		{
+			Name:             "dynamic_functions_modification",
+			Description:      "Test PostgreSQL function modification and schema diffing",
+			EnhancedTestFunc: testDynamicFunctionsModification,
+		},
+		{
+			Name:             "dynamic_rls_policy_modification",
+			Description:      "Test RLS policy modification and schema diffing",
+			EnhancedTestFunc: testDynamicRLSPolicyModification,
+		},
 	}
 }
 
@@ -2293,6 +2320,379 @@ func testDynamicEmbeddedFields(ctx context.Context, conn *dbschema.DatabaseConne
 		fmt.Printf("Pointer embedded fields test completed successfully\n")
 
 		fmt.Printf("Comprehensive embedded fields test completed successfully\n")
+
+		return nil
+	})
+}
+
+// ============================================================================
+// POSTGRESQL RLS AND FUNCTIONS SCENARIOS
+// ============================================================================
+
+// testDynamicRLSFunctionsBasic tests basic PostgreSQL RLS and custom functions setup
+func testDynamicRLSFunctionsBasic(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
+	// Skip test for non-PostgreSQL databases
+	if conn.Info().Dialect != "postgres" {
+		return recorder.RecordStep("Skip Non-PostgreSQL", "RLS and functions are PostgreSQL-only features", func() error {
+			return nil
+		})
+	}
+
+	vem, err := NewVersionedEntityManager(fixtures)
+	if err != nil {
+		return fmt.Errorf("failed to create versioned entity manager: %w", err)
+	}
+	defer vem.Cleanup()
+
+	// Test basic RLS and functions using the 014-rls-functions fixture
+	return recorder.RecordStep("Test Basic RLS and Functions", "Apply 014-rls-functions with multi-tenant setup", func() error {
+		if err := vem.MigrateToVersion(ctx, conn, "014-rls-functions", "Basic RLS and functions setup"); err != nil {
+			return fmt.Errorf("failed to migrate to 014-rls-functions: %w", err)
+		}
+
+		// Verify schema contains functions
+		schema, err := vem.GenerateSchemaFromEntities()
+		if err != nil {
+			return fmt.Errorf("failed to generate schema: %w", err)
+		}
+
+		// Should have 2 functions
+		if len(schema.Functions) != 2 {
+			return fmt.Errorf("expected 2 functions, got %d", len(schema.Functions))
+		}
+
+		// Should have 2 RLS policies
+		if len(schema.RLSPolicies) != 2 {
+			return fmt.Errorf("expected 2 RLS policies, got %d", len(schema.RLSPolicies))
+		}
+
+		// Should have 2 RLS enabled tables
+		if len(schema.RLSEnabledTables) != 2 {
+			return fmt.Errorf("expected 2 RLS enabled tables, got %d", len(schema.RLSEnabledTables))
+		}
+
+		// Verify function names
+		functionNames := make(map[string]bool)
+		for _, function := range schema.Functions {
+			functionNames[function.Name] = true
+		}
+		if !functionNames["set_tenant_context"] {
+			return fmt.Errorf("expected set_tenant_context function")
+		}
+		if !functionNames["get_current_tenant_id"] {
+			return fmt.Errorf("expected get_current_tenant_id function")
+		}
+
+		// Verify RLS policy names
+		policyNames := make(map[string]bool)
+		for _, policy := range schema.RLSPolicies {
+			policyNames[policy.Name] = true
+		}
+		if !policyNames["user_tenant_isolation"] {
+			return fmt.Errorf("expected user_tenant_isolation policy")
+		}
+		if !policyNames["product_tenant_isolation"] {
+			return fmt.Errorf("expected product_tenant_isolation policy")
+		}
+
+		// Verify RLS enabled tables
+		rlsTableNames := make(map[string]bool)
+		for _, rlsTable := range schema.RLSEnabledTables {
+			rlsTableNames[rlsTable.Table] = true
+		}
+		if !rlsTableNames["users"] {
+			return fmt.Errorf("expected users table to have RLS enabled")
+		}
+		if !rlsTableNames["products"] {
+			return fmt.Errorf("expected products table to have RLS enabled")
+		}
+
+		return nil
+	})
+}
+
+// testDynamicRLSFunctionsAdvanced tests advanced PostgreSQL RLS with role-based policies
+func testDynamicRLSFunctionsAdvanced(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
+	// Skip test for non-PostgreSQL databases
+	if conn.Info().Dialect != "postgres" {
+		return recorder.RecordStep("Skip Non-PostgreSQL", "RLS and functions are PostgreSQL-only features", func() error {
+			return nil
+		})
+	}
+
+	vem, err := NewVersionedEntityManager(fixtures)
+	if err != nil {
+		return fmt.Errorf("failed to create versioned entity manager: %w", err)
+	}
+	defer vem.Cleanup()
+
+	// Test advanced RLS using the 015-rls-advanced fixture
+	return recorder.RecordStep("Test Advanced RLS and Functions", "Apply 015-rls-advanced with role-based policies", func() error {
+		if err := vem.MigrateToVersion(ctx, conn, "015-rls-advanced", "Advanced RLS with role-based policies"); err != nil {
+			return fmt.Errorf("failed to migrate to 015-rls-advanced: %w", err)
+		}
+
+		// Verify schema contains advanced features
+		schema, err := vem.GenerateSchemaFromEntities()
+		if err != nil {
+			return fmt.Errorf("failed to generate schema: %w", err)
+		}
+
+		// Should have 3 functions (including validation function)
+		if len(schema.Functions) != 3 {
+			return fmt.Errorf("expected 3 functions, got %d", len(schema.Functions))
+		}
+
+		// Should have 3 RLS policies (separate SELECT and INSERT policies)
+		if len(schema.RLSPolicies) != 3 {
+			return fmt.Errorf("expected 3 RLS policies, got %d", len(schema.RLSPolicies))
+		}
+
+		// Verify the validation function exists
+		functionNames := make(map[string]bool)
+		for _, function := range schema.Functions {
+			functionNames[function.Name] = true
+		}
+		if !functionNames["validate_user_access"] {
+			return fmt.Errorf("expected validate_user_access function")
+		}
+
+		// Verify separate SELECT and INSERT policies exist
+		policyNames := make(map[string]bool)
+		for _, policy := range schema.RLSPolicies {
+			policyNames[policy.Name] = true
+		}
+		if !policyNames["user_tenant_select"] {
+			return fmt.Errorf("expected user_tenant_select policy")
+		}
+		if !policyNames["user_tenant_insert"] {
+			return fmt.Errorf("expected user_tenant_insert policy")
+		}
+		if !policyNames["product_owner_access"] {
+			return fmt.Errorf("expected product_owner_access policy")
+		}
+
+		return nil
+	})
+}
+
+// testDynamicRLSCrossDatabase tests PostgreSQL RLS features are skipped gracefully on MySQL/MariaDB
+func testDynamicRLSCrossDatabase(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
+	vem, err := NewVersionedEntityManager(fixtures)
+	if err != nil {
+		return fmt.Errorf("failed to create versioned entity manager: %w", err)
+	}
+	defer vem.Cleanup()
+
+	dialect := conn.Info().Dialect
+
+	// Test cross-database compatibility using the 014-rls-functions fixture
+	return recorder.RecordStep("Test Cross-Database Compatibility", "Apply RLS fixtures on different database dialects", func() error {
+		if err := vem.MigrateToVersion(ctx, conn, "014-rls-functions", "RLS and functions cross-database test"); err != nil {
+			return fmt.Errorf("failed to migrate to 014-rls-functions: %w", err)
+		}
+
+		// Generate SQL to see what was actually created
+		statements, err := vem.GenerateMigrationSQL(ctx, conn)
+		if err != nil {
+			return fmt.Errorf("failed to generate migration SQL: %w", err)
+		}
+
+		if dialect == "postgres" {
+			// PostgreSQL should have RLS and function statements
+			hasFunction := false
+			hasRLSEnable := false
+			hasRLSPolicy := false
+
+			for _, stmt := range statements {
+				if contains(stmt, "CREATE OR REPLACE FUNCTION") {
+					hasFunction = true
+				}
+				if contains(stmt, "ENABLE ROW LEVEL SECURITY") {
+					hasRLSEnable = true
+				}
+				if contains(stmt, "CREATE POLICY") {
+					hasRLSPolicy = true
+				}
+			}
+
+			if !hasFunction {
+				return fmt.Errorf("PostgreSQL should generate function statements")
+			}
+			if !hasRLSEnable {
+				return fmt.Errorf("PostgreSQL should generate RLS enable statements")
+			}
+			if !hasRLSPolicy {
+				return fmt.Errorf("PostgreSQL should generate RLS policy statements")
+			}
+		} else {
+			// MySQL/MariaDB should NOT have RLS and function statements
+			for _, stmt := range statements {
+				if contains(stmt, "CREATE OR REPLACE FUNCTION") {
+					return fmt.Errorf("MySQL/MariaDB should not generate function statements")
+				}
+				if contains(stmt, "ENABLE ROW LEVEL SECURITY") {
+					return fmt.Errorf("MySQL/MariaDB should not generate RLS enable statements")
+				}
+				if contains(stmt, "CREATE POLICY") {
+					return fmt.Errorf("MySQL/MariaDB should not generate RLS policy statements")
+				}
+			}
+
+			// Should still have table creation statements
+			hasTable := false
+			for _, stmt := range statements {
+				if contains(stmt, "CREATE TABLE") {
+					hasTable = true
+					break
+				}
+			}
+			if !hasTable {
+				return fmt.Errorf("should still generate table creation statements for MySQL/MariaDB")
+			}
+		}
+
+		return nil
+	})
+}
+
+// testDynamicFunctionsModification tests PostgreSQL function modification and schema diffing
+func testDynamicFunctionsModification(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
+	// Skip test for non-PostgreSQL databases
+	if conn.Info().Dialect != "postgres" {
+		return recorder.RecordStep("Skip Non-PostgreSQL", "Function modification is PostgreSQL-only", func() error {
+			return nil
+		})
+	}
+
+	vem, err := NewVersionedEntityManager(fixtures)
+	if err != nil {
+		return fmt.Errorf("failed to create versioned entity manager: %w", err)
+	}
+	defer vem.Cleanup()
+
+	// Apply initial version with basic functions
+	err = recorder.RecordStep("Apply Initial Functions", "Apply 014-rls-functions", func() error {
+		return vem.MigrateToVersion(ctx, conn, "014-rls-functions", "Basic functions setup")
+	})
+	if err != nil {
+		return err
+	}
+
+	// Apply advanced version with modified functions
+	return recorder.RecordStep("Test Function Modification", "Apply 015-rls-advanced with modified functions", func() error {
+		if err := vem.MigrateToVersion(ctx, conn, "015-rls-advanced", "Advanced functions with modifications"); err != nil {
+			return fmt.Errorf("failed to migrate to 015-rls-advanced: %w", err)
+		}
+
+		// Verify schema contains the new validation function
+		schema, err := vem.GenerateSchemaFromEntities()
+		if err != nil {
+			return fmt.Errorf("failed to generate schema: %w", err)
+		}
+
+		// Should now have 3 functions (added validate_user_access)
+		if len(schema.Functions) != 3 {
+			return fmt.Errorf("expected 3 functions after modification, got %d", len(schema.Functions))
+		}
+
+		// Verify the new function exists
+		functionNames := make(map[string]bool)
+		for _, function := range schema.Functions {
+			functionNames[function.Name] = true
+		}
+		if !functionNames["validate_user_access"] {
+			return fmt.Errorf("expected validate_user_access function after modification")
+		}
+
+		// Verify original functions still exist
+		if !functionNames["set_tenant_context"] {
+			return fmt.Errorf("expected set_tenant_context function to still exist")
+		}
+		if !functionNames["get_current_tenant_id"] {
+			return fmt.Errorf("expected get_current_tenant_id function to still exist")
+		}
+
+		return nil
+	})
+}
+
+// testDynamicRLSPolicyModification tests RLS policy modification and schema diffing
+func testDynamicRLSPolicyModification(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
+	// Skip test for non-PostgreSQL databases
+	if conn.Info().Dialect != "postgres" {
+		return recorder.RecordStep("Skip Non-PostgreSQL", "RLS policy modification is PostgreSQL-only", func() error {
+			return nil
+		})
+	}
+
+	vem, err := NewVersionedEntityManager(fixtures)
+	if err != nil {
+		return fmt.Errorf("failed to create versioned entity manager: %w", err)
+	}
+	defer vem.Cleanup()
+
+	// Apply initial version with basic RLS policies
+	err = recorder.RecordStep("Apply Initial RLS Policies", "Apply 014-rls-functions", func() error {
+		return vem.MigrateToVersion(ctx, conn, "014-rls-functions", "Basic RLS policies setup")
+	})
+	if err != nil {
+		return err
+	}
+
+	// Apply advanced version with modified RLS policies
+	return recorder.RecordStep("Test RLS Policy Modification", "Apply 015-rls-advanced with modified policies", func() error {
+		if err := vem.MigrateToVersion(ctx, conn, "015-rls-advanced", "Advanced RLS with policy modifications"); err != nil {
+			return fmt.Errorf("failed to migrate to 015-rls-advanced: %w", err)
+		}
+
+		// Verify schema contains the modified policies
+		schema, err := vem.GenerateSchemaFromEntities()
+		if err != nil {
+			return fmt.Errorf("failed to generate schema: %w", err)
+		}
+
+		// Should now have 3 RLS policies (split user policies + product policy)
+		if len(schema.RLSPolicies) != 3 {
+			return fmt.Errorf("expected 3 RLS policies after modification, got %d", len(schema.RLSPolicies))
+		}
+
+		// Verify the new policies exist
+		policyNames := make(map[string]bool)
+		for _, policy := range schema.RLSPolicies {
+			policyNames[policy.Name] = true
+		}
+
+		// Should have separate SELECT and INSERT policies for users
+		if !policyNames["user_tenant_select"] {
+			return fmt.Errorf("expected user_tenant_select policy after modification")
+		}
+		if !policyNames["user_tenant_insert"] {
+			return fmt.Errorf("expected user_tenant_insert policy after modification")
+		}
+
+		// Should have the new product owner access policy
+		if !policyNames["product_owner_access"] {
+			return fmt.Errorf("expected product_owner_access policy after modification")
+		}
+
+		// Verify policy details
+		for _, policy := range schema.RLSPolicies {
+			switch policy.Name {
+			case "user_tenant_select":
+				if policy.PolicyFor != "SELECT" {
+					return fmt.Errorf("user_tenant_select should be FOR SELECT, got %s", policy.PolicyFor)
+				}
+			case "user_tenant_insert":
+				if policy.PolicyFor != "INSERT" {
+					return fmt.Errorf("user_tenant_insert should be FOR INSERT, got %s", policy.PolicyFor)
+				}
+			case "product_owner_access":
+				if policy.PolicyFor != "UPDATE" {
+					return fmt.Errorf("product_owner_access should be FOR UPDATE, got %s", policy.PolicyFor)
+				}
+			}
+		}
 
 		return nil
 	})

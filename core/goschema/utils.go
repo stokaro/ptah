@@ -180,6 +180,163 @@ func buildDependencyGraph(r *Database) {
 			break
 		}
 	}
+
+	// Analyze function dependencies (functions may call other functions)
+	buildFunctionDependencies(r)
+}
+
+// buildFunctionDependencies analyzes function body content to identify function-to-function dependencies.
+//
+// This method examines function bodies to identify calls to other functions and builds
+// dependency relationships. This ensures that functions are created in the correct order
+// when one function calls another.
+//
+// The analysis process:
+//  1. Scans each function's body for function calls
+//  2. Identifies references to other functions defined in the same schema
+//  3. Builds dependency relationships between functions
+//  4. Stores dependencies in a separate map for function ordering
+//
+// Function call detection:
+//   - Looks for function names followed by parentheses in function bodies
+//   - Only considers functions that are defined in the current schema
+//   - Handles both simple calls and calls within expressions
+//
+// Example:
+//   Function A calls Function B -> Function A depends on Function B
+//   Function B must be created before Function A
+func buildFunctionDependencies(r *Database) {
+	// Create a map of all function names for quick lookup
+	functionNames := make(map[string]bool)
+	for _, function := range r.Functions {
+		functionNames[function.Name] = true
+	}
+
+	// Initialize function dependencies map if it doesn't exist
+	if r.FunctionDependencies == nil {
+		r.FunctionDependencies = make(map[string][]string)
+	}
+
+	// Initialize dependencies for all functions
+	for _, function := range r.Functions {
+		r.FunctionDependencies[function.Name] = []string{}
+	}
+
+	// Analyze each function's body for calls to other functions
+	for _, function := range r.Functions {
+		body := function.Body
+
+		// Look for function calls in the body
+		for otherFunctionName := range functionNames {
+			if otherFunctionName == function.Name {
+				continue // Skip self-references
+			}
+
+			// Simple pattern matching for function calls: function_name(
+			if strings.Contains(body, otherFunctionName+"(") {
+				// Add dependency: current function depends on the called function
+				if !slices.Contains(r.FunctionDependencies[function.Name], otherFunctionName) {
+					r.FunctionDependencies[function.Name] = append(r.FunctionDependencies[function.Name], otherFunctionName)
+				}
+			}
+		}
+	}
+}
+
+// sortFunctionsByDependencies performs topological sort to order functions by their dependencies.
+//
+// This method implements Kahn's algorithm for topological sorting to determine the correct
+// order for creating PostgreSQL functions. Functions with no dependencies are created first,
+// followed by functions that depend on them, ensuring that function calls can be resolved
+// during function creation.
+//
+// Algorithm steps:
+//  1. Calculate in-degrees (number of dependencies) for each function
+//  2. Initialize queue with functions that have no dependencies (in-degree 0)
+//  3. Process queue: remove function, add to sorted result, reduce in-degrees of dependent functions
+//  4. Continue until all functions are processed or circular dependency is detected
+//
+// Circular dependency handling:
+//   - If circular dependencies are detected, a warning is logged
+//   - Remaining functions are appended to the end of the sorted list
+//   - This allows migration to proceed, but manual intervention may be needed
+//
+// The method modifies the Functions slice in-place, reordering it according to dependency
+// requirements. This ensures that CREATE FUNCTION statements can be executed in the
+// returned order without function reference errors.
+func sortFunctionsByDependencies(r *Database) {
+	if len(r.Functions) == 0 {
+		return
+	}
+
+	// Create a map for quick function lookup
+	functionMap := make(map[string]Function)
+	for _, function := range r.Functions {
+		functionMap[function.Name] = function
+	}
+
+	// Perform topological sort using Kahn's algorithm
+	var sorted []Function
+	inDegree := make(map[string]int)
+
+	// Calculate in-degrees (how many dependencies each function has)
+	for functionName := range r.FunctionDependencies {
+		inDegree[functionName] = len(r.FunctionDependencies[functionName])
+	}
+
+	// Find functions with no dependencies (in-degree 0)
+	var queue []string
+	for functionName, degree := range inDegree {
+		if degree == 0 {
+			queue = append(queue, functionName)
+		}
+	}
+
+	// Process queue
+	for len(queue) > 0 {
+		// Remove first element from queue
+		current := queue[0]
+		queue = queue[1:]
+
+		// Add to sorted result if function exists
+		if function, exists := functionMap[current]; exists {
+			sorted = append(sorted, function)
+		}
+
+		// Reduce in-degree of functions that depend on the current function
+		for functionName, deps := range r.FunctionDependencies {
+			for _, dep := range deps {
+				if dep != current {
+					continue
+				}
+				inDegree[functionName]--
+				if inDegree[functionName] == 0 {
+					queue = append(queue, functionName)
+				}
+			}
+		}
+	}
+
+	// Check for circular dependencies
+	if len(sorted) != len(r.Functions) {
+		slog.Warn("Circular dependency detected in function relationships. Some functions may not be ordered correctly.")
+		// Add remaining functions to the end
+		for _, function := range r.Functions {
+			found := false
+			for _, sortedFunction := range sorted {
+				if sortedFunction.Name == function.Name {
+					found = true
+					break
+				}
+			}
+			if !found {
+				sorted = append(sorted, function)
+			}
+		}
+	}
+
+	// Update the functions slice with sorted order
+	r.Functions = sorted
 }
 
 // deduplicate removes duplicate entities that may be defined in multiple files.

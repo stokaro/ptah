@@ -40,16 +40,17 @@ import (
 //	statements := GetOrderedCreateStatements(result, "postgresql")
 func ParseDir(rootDir string) (*Database, error) {
 	result := &Database{
-		Tables:           []Table{},
-		Fields:           []Field{},
-		Indexes:          []Index{},
-		Enums:            []Enum{},
-		EmbeddedFields:   []EmbeddedField{},
-		Extensions:       []Extension{},
-		Functions:        []Function{},
-		RLSPolicies:      []RLSPolicy{},
-		RLSEnabledTables: []RLSEnabledTable{},
-		Dependencies:     make(map[string][]string),
+		Tables:               []Table{},
+		Fields:               []Field{},
+		Indexes:              []Index{},
+		Enums:                []Enum{},
+		EmbeddedFields:       []EmbeddedField{},
+		Extensions:           []Extension{},
+		Functions:            []Function{},
+		RLSPolicies:          []RLSPolicy{},
+		RLSEnabledTables:     []RLSEnabledTable{},
+		Dependencies:         make(map[string][]string),
+		FunctionDependencies: make(map[string][]string),
 	}
 
 	// Walk through all directories recursively
@@ -102,6 +103,9 @@ func ParseDir(rootDir string) (*Database, error) {
 
 	// Sort tables by dependency order
 	sortTablesByDependencies(result)
+
+	// Sort functions by dependency order
+	sortFunctionsByDependencies(result)
 
 	return result, nil
 }

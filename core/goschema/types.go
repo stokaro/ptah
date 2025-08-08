@@ -27,11 +27,12 @@ type Database struct {
 	Indexes          []Index
 	Enums            []Enum
 	EmbeddedFields   []EmbeddedField
-	Extensions       []Extension         // PostgreSQL extensions (pg_trgm, postgis, etc.)
-	Functions        []Function          // PostgreSQL custom functions
-	RLSPolicies      []RLSPolicy         // PostgreSQL Row-Level Security policies
-	RLSEnabledTables []RLSEnabledTable   // Tables with RLS enabled
-	Dependencies     map[string][]string // table -> list of tables it depends on
+	Extensions           []Extension         // PostgreSQL extensions (pg_trgm, postgis, etc.)
+	Functions            []Function          // PostgreSQL custom functions
+	RLSPolicies          []RLSPolicy         // PostgreSQL Row-Level Security policies
+	RLSEnabledTables     []RLSEnabledTable   // Tables with RLS enabled
+	Dependencies         map[string][]string // table -> list of tables it depends on
+	FunctionDependencies map[string][]string // function -> list of functions it depends on
 }
 
 // EmbeddedField represents an embedded field in a Go struct that should be handled specially
