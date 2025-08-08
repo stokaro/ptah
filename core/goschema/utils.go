@@ -370,7 +370,7 @@ func isFunctionInSorted(function Function, sorted []Function) bool {
 	return false
 }
 
-// deduplicate removes duplicate entities that may be defined in multiple files.
+// Deduplicate removes duplicate entities that may be defined in multiple files.
 //
 // During recursive parsing, the same entity might be encountered multiple times
 // if it's defined in different files or referenced across packages. This method
@@ -386,8 +386,8 @@ func isFunctionInSorted(function Function, sorted []Function) bool {
 // This method modifies the PackageParseResult in-place, replacing the original
 // slices with deduplicated versions. The order of entities may change during
 // this process, but dependency ordering is handled separately.
-func deduplicate(r *Database) {
-	// deduplicate tables by name - preserve order
+func Deduplicate(r *Database) {
+	// Deduplicate tables by name - preserve order
 	tableSeen := make(map[string]bool)
 	var deduplicatedTables []Table
 	for _, table := range r.Tables {
@@ -398,7 +398,7 @@ func deduplicate(r *Database) {
 	}
 	r.Tables = deduplicatedTables
 
-	// deduplicate fields by struct name and field name - preserve order
+	// Deduplicate fields by struct name and field name - preserve order
 	fieldSeen := make(map[string]bool)
 	var deduplicatedFields []Field
 	for _, field := range r.Fields {
@@ -410,7 +410,7 @@ func deduplicate(r *Database) {
 	}
 	r.Fields = deduplicatedFields
 
-	// deduplicate indexes by struct name and index name - preserve order
+	// Deduplicate indexes by struct name and index name - preserve order
 	indexSeen := make(map[string]bool)
 	var deduplicatedIndexes []Index
 	for _, index := range r.Indexes {
@@ -422,7 +422,7 @@ func deduplicate(r *Database) {
 	}
 	r.Indexes = deduplicatedIndexes
 
-	// deduplicate enums by name - preserve order
+	// Deduplicate enums by name - preserve order
 	enumSeen := make(map[string]bool)
 	var deduplicatedEnums []Enum
 	for _, enum := range r.Enums {
@@ -433,7 +433,7 @@ func deduplicate(r *Database) {
 	}
 	r.Enums = deduplicatedEnums
 
-	// deduplicate embedded fields by struct name and embedded type name - preserve order
+	// Deduplicate embedded fields by struct name and embedded type name - preserve order
 	embeddedSeen := make(map[string]bool)
 	var deduplicatedEmbedded []EmbeddedField
 	for _, embedded := range r.EmbeddedFields {
@@ -445,7 +445,7 @@ func deduplicate(r *Database) {
 	}
 	r.EmbeddedFields = deduplicatedEmbedded
 
-	// deduplicate extensions by name
+	// Deduplicate extensions by name
 	extensionMap := make(map[string]Extension)
 	for _, extension := range r.Extensions {
 		extensionMap[extension.Name] = extension
@@ -464,7 +464,7 @@ func deduplicate(r *Database) {
 		r.Extensions = append(r.Extensions, extensionMap[name])
 	}
 
-	// deduplicate functions by name - preserve order
+	// Deduplicate functions by name - preserve order
 	functionSeen := make(map[string]bool)
 	var deduplicatedFunctions []Function
 	for _, function := range r.Functions {
@@ -475,7 +475,7 @@ func deduplicate(r *Database) {
 	}
 	r.Functions = deduplicatedFunctions
 
-	// deduplicate RLS policies by name - preserve order
+	// Deduplicate RLS policies by name - preserve order
 	rlsPolicySeen := make(map[string]bool)
 	var deduplicatedRLSPolicies []RLSPolicy
 	for _, policy := range r.RLSPolicies {
@@ -486,7 +486,7 @@ func deduplicate(r *Database) {
 	}
 	r.RLSPolicies = deduplicatedRLSPolicies
 
-	// deduplicate RLS enabled tables by table name - preserve order
+	// Deduplicate RLS enabled tables by table name - preserve order
 	rlsEnabledSeen := make(map[string]bool)
 	var deduplicatedRLSEnabled []RLSEnabledTable
 	for _, rlsTable := range r.RLSEnabledTables {
@@ -496,10 +496,4 @@ func deduplicate(r *Database) {
 		}
 	}
 	r.RLSEnabledTables = deduplicatedRLSEnabled
-}
-
-// TestDeduplicate exposes the deduplicate function for testing purposes.
-// This function is only intended for use in tests to verify the deduplication logic.
-func TestDeduplicate(db *Database) {
-	deduplicate(db)
 }

@@ -96,7 +96,7 @@ func ParseDir(rootDir string) (*Database, error) {
 	}
 
 	// deduplicate entities (same table/field defined in multiple files)
-	deduplicate(result)
+	Deduplicate(result)
 
 	// Build dependency graph for foreign key ordering
 	buildDependencyGraph(result)

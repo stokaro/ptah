@@ -31,7 +31,7 @@ func TestDeduplicate_FieldOrderPreservation(t *testing.T) {
 		}
 
 		// Apply deduplication
-		goschema.TestDeduplicate(testDB)
+		goschema.Deduplicate(testDB)
 
 		// Verify field order is preserved
 		userFields := make([]string, 0)
@@ -76,7 +76,7 @@ func TestDeduplicate_MultipleStructsFieldOrder(t *testing.T) {
 		},
 	}
 
-	goschema.TestDeduplicate(db)
+	goschema.Deduplicate(db)
 
 	// Extract fields by struct
 	userFields := make([]string, 0)
@@ -115,7 +115,7 @@ func TestDeduplicate_IndexOrderPreservation(t *testing.T) {
 		},
 	}
 
-	goschema.TestDeduplicate(db)
+	goschema.Deduplicate(db)
 
 	// Extract index names in order
 	indexNames := make([]string, 0)
@@ -143,7 +143,7 @@ func TestDeduplicate_EnumOrderPreservation(t *testing.T) {
 		},
 	}
 
-	goschema.TestDeduplicate(db)
+	goschema.Deduplicate(db)
 
 	// Extract enum names in order
 	enumNames := make([]string, 0)
@@ -172,7 +172,7 @@ func TestDeduplicate_TableOrderPreservation(t *testing.T) {
 		},
 	}
 
-	goschema.TestDeduplicate(db)
+	goschema.Deduplicate(db)
 
 	// Extract table names in order
 	tableNames := make([]string, 0)
@@ -201,7 +201,7 @@ func TestDeduplicate_EmbeddedFieldOrderPreservation(t *testing.T) {
 		},
 	}
 
-	goschema.TestDeduplicate(db)
+	goschema.Deduplicate(db)
 
 	// Extract embedded field names in order
 	embeddedKeys := make([]string, 0)
@@ -253,7 +253,7 @@ func TestDeduplicate_ComplexScenarioWithAllTypes(t *testing.T) {
 		},
 	}
 
-	goschema.TestDeduplicate(db)
+	goschema.Deduplicate(db)
 
 	// Verify all collections maintain order and remove duplicates
 
