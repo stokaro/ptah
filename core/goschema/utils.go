@@ -226,6 +226,7 @@ func buildFunctionDependencies(r *Database) {
 	// Analyze each function's body for calls to other functions
 	for _, function := range r.Functions {
 		body := function.Body
+		depMap := make(map[string]bool)
 
 		// Look for function calls in the body
 		for otherFunctionName := range functionNames {
@@ -236,11 +237,16 @@ func buildFunctionDependencies(r *Database) {
 			// Simple pattern matching for function calls: function_name(
 			if strings.Contains(body, otherFunctionName+"(") {
 				// Add dependency: current function depends on the called function
-				if !slices.Contains(r.FunctionDependencies[function.Name], otherFunctionName) {
-					r.FunctionDependencies[function.Name] = append(r.FunctionDependencies[function.Name], otherFunctionName)
-				}
+				depMap[otherFunctionName] = true
 			}
 		}
+
+		// Convert depMap keys to a slice and assign to FunctionDependencies
+		deps := make([]string, 0, len(depMap))
+		for dep := range depMap {
+			deps = append(deps, dep)
+		}
+		r.FunctionDependencies[function.Name] = deps
 	}
 }
 
