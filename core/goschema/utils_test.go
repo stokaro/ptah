@@ -1,8 +1,9 @@
-package goschema
+package goschema_test
 
 import (
 	"testing"
 
+	"github.com/stokaro/ptah/core/goschema"
 	qt "github.com/frankban/quicktest"
 )
 
@@ -10,8 +11,8 @@ import (
 func TestDeduplicatePreservesFieldOrder(t *testing.T) {
 	c := qt.New(t)
 	// Create a database with fields in a specific order
-	db := &Database{
-		Fields: []Field{
+	db := &goschema.Database{
+		Fields: []goschema.Field{
 			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "User", Name: "email", Type: "VARCHAR(255)"},
 			{StructName: "User", Name: "name", Type: "VARCHAR(255)"},
@@ -19,14 +20,14 @@ func TestDeduplicatePreservesFieldOrder(t *testing.T) {
 			{StructName: "Profile", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Profile", Name: "bio", Type: "TEXT"},
 		},
-		Indexes:           []Index{},
-		Enums:             []Enum{},
-		EmbeddedFields:    []EmbeddedField{},
-		Functions:         []Function{},
-		RLSPolicies:       []RLSPolicy{},
-		RLSEnabledTables:  []RLSEnabledTable{},
-		Extensions:        []Extension{},
-		Tables:            []Table{},
+		Indexes:           []goschema.Index{},
+		Enums:             []goschema.Enum{},
+		EmbeddedFields:    []goschema.EmbeddedField{},
+		Functions:         []goschema.Function{},
+		RLSPolicies:       []goschema.RLSPolicy{},
+		RLSEnabledTables:  []goschema.RLSEnabledTable{},
+		Extensions:        []goschema.Extension{},
+		Tables:            []goschema.Table{},
 	}
 
 	// Record original field order
@@ -36,7 +37,7 @@ func TestDeduplicatePreservesFieldOrder(t *testing.T) {
 	}
 
 	// Run deduplication
-	deduplicate(db)
+	goschema.Deduplicate(db)
 
 	// Verify field order is preserved
 	c.Assert(db.Fields, qt.HasLen, len(originalOrder))
@@ -53,8 +54,8 @@ func TestDeduplicateFieldOrderConsistency(t *testing.T) {
 	c := qt.New(t)
 	
 	createDatabase := func() *Database {
-		return &Database{
-			Fields: []Field{
+		return &goschema.Database{
+			Fields: []goschema.Field{
 				{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 				{StructName: "User", Name: "email", Type: "VARCHAR(255)"},
 				{StructName: "User", Name: "name", Type: "VARCHAR(255)"},
@@ -79,7 +80,7 @@ func TestDeduplicateFieldOrderConsistency(t *testing.T) {
 
 	for run := 0; run < runs; run++ {
 		db := createDatabase()
-		deduplicate(db)
+		goschema.Deduplicate(db)
 
 		// Record field order for this run
 		fieldOrder := make([]string, len(db.Fields))
@@ -109,25 +110,25 @@ func TestDeduplicateFieldOrderConsistency(t *testing.T) {
 func TestDeduplicateRemovesDuplicateFields(t *testing.T) {
 	c := qt.New(t)
 	
-	db := &Database{
-		Fields: []Field{
+	db := &goschema.Database{
+		Fields: []goschema.Field{
 			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "User", Name: "email", Type: "VARCHAR(255)"},
 			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true}, // Duplicate
 			{StructName: "User", Name: "name", Type: "VARCHAR(255)"},
 			{StructName: "User", Name: "email", Type: "VARCHAR(255)"}, // Duplicate
 		},
-		Indexes:           []Index{},
-		Enums:             []Enum{},
-		EmbeddedFields:    []EmbeddedField{},
-		Functions:         []Function{},
-		RLSPolicies:       []RLSPolicy{},
-		RLSEnabledTables:  []RLSEnabledTable{},
-		Extensions:        []Extension{},
-		Tables:            []Table{},
+		Indexes:           []goschema.Index{},
+		Enums:             []goschema.Enum{},
+		EmbeddedFields:    []goschema.EmbeddedField{},
+		Functions:         []goschema.Function{},
+		RLSPolicies:       []goschema.RLSPolicy{},
+		RLSEnabledTables:  []goschema.RLSEnabledTable{},
+		Extensions:        []goschema.Extension{},
+		Tables:            []goschema.Table{},
 	}
 
-	deduplicate(db)
+	goschema.Deduplicate(db)
 
 	// Should have 3 unique fields
 	c.Assert(db.Fields, qt.HasLen, 3)
@@ -150,9 +151,9 @@ func TestDeduplicateRemovesDuplicateFields(t *testing.T) {
 func TestDeduplicatePreservesIndexOrder(t *testing.T) {
 	c := qt.New(t)
 	
-	db := &Database{
-		Fields: []Field{},
-		Indexes: []Index{
+	db := &goschema.Database{
+		Fields: []goschema.Field{},
+		Indexes: []goschema.Index{
 			{StructName: "User", Name: "idx_email", Type: "btree"},
 			{StructName: "User", Name: "idx_name", Type: "btree"},
 			{StructName: "Profile", Name: "idx_bio", Type: "gin"},
@@ -171,7 +172,7 @@ func TestDeduplicatePreservesIndexOrder(t *testing.T) {
 		originalOrder[i] = index.StructName + "." + index.Name
 	}
 
-	deduplicate(db)
+	goschema.Deduplicate(db)
 
 	c.Assert(db.Indexes, qt.HasLen, len(originalOrder))
 
@@ -186,10 +187,10 @@ func TestDeduplicatePreservesIndexOrder(t *testing.T) {
 func TestDeduplicatePreservesEnumOrder(t *testing.T) {
 	c := qt.New(t)
 	
-	db := &Database{
+	db := &goschema.Database{
 		Fields:  []Field{},
-		Indexes: []Index{},
-		Enums: []Enum{
+		Indexes: []goschema.Index{},
+		Enums: []goschema.Enum{
 			{Name: "user_status", Values: []string{"active", "inactive"}},
 			{Name: "priority_level", Values: []string{"high", "medium", "low"}},
 			{Name: "permission_type", Values: []string{"read", "write", "admin"}},
@@ -207,7 +208,7 @@ func TestDeduplicatePreservesEnumOrder(t *testing.T) {
 		originalOrder[i] = enum.Name
 	}
 
-	deduplicate(db)
+	goschema.Deduplicate(db)
 
 	c.Assert(db.Enums, qt.HasLen, len(originalOrder))
 
@@ -220,11 +221,11 @@ func TestDeduplicatePreservesEnumOrder(t *testing.T) {
 func TestDeduplicatePreservesEmbeddedFieldOrder(t *testing.T) {
 	c := qt.New(t)
 	
-	db := &Database{
+	db := &goschema.Database{
 		Fields:  []Field{},
-		Indexes: []Index{},
+		Indexes: []goschema.Index{},
 		Enums:   []Enum{},
-		EmbeddedFields: []EmbeddedField{
+		EmbeddedFields: []goschema.EmbeddedField{
 			{StructName: "User", EmbeddedTypeName: "BaseModel", Mode: "inline"},
 			{StructName: "User", EmbeddedTypeName: "Timestamps", Mode: "inline"},
 			{StructName: "Profile", EmbeddedTypeName: "BaseModel", Mode: "inline"},
@@ -241,7 +242,7 @@ func TestDeduplicatePreservesEmbeddedFieldOrder(t *testing.T) {
 		originalOrder[i] = embedded.StructName + "." + embedded.EmbeddedTypeName
 	}
 
-	deduplicate(db)
+	goschema.Deduplicate(db)
 
 	c.Assert(db.EmbeddedFields, qt.HasLen, len(originalOrder))
 
@@ -256,33 +257,33 @@ func TestDeduplicatePreservesEmbeddedFieldOrder(t *testing.T) {
 func TestDeduplicateAllCollections(t *testing.T) {
 	c := qt.New(t)
 	
-	db := &Database{
-		Fields: []Field{
+	db := &goschema.Database{
+		Fields: []goschema.Field{
 			{StructName: "User", Name: "id", Type: "SERIAL"},
 			{StructName: "User", Name: "email", Type: "VARCHAR(255)"},
 		},
-		Indexes: []Index{
+		Indexes: []goschema.Index{
 			{StructName: "User", Name: "idx_email", Type: "btree"},
 		},
-		Enums: []Enum{
+		Enums: []goschema.Enum{
 			{Name: "user_status", Values: []string{"active", "inactive"}},
 		},
-		EmbeddedFields: []EmbeddedField{
+		EmbeddedFields: []goschema.EmbeddedField{
 			{StructName: "User", EmbeddedTypeName: "BaseModel", Mode: "inline"},
 		},
-		Functions: []Function{
+		Functions: []goschema.Function{
 			{Name: "get_user_count", Body: "SELECT COUNT(*) FROM users;"},
 		},
-		RLSPolicies: []RLSPolicy{
+		RLSPolicies: []goschema.RLSPolicy{
 			{Name: "user_policy", Table: "users"},
 		},
-		RLSEnabledTables: []RLSEnabledTable{
+		RLSEnabledTables: []goschema.RLSEnabledTable{
 			{Table: "users"},
 		},
-		Extensions: []Extension{
+		Extensions: []goschema.Extension{
 			{Name: "uuid-ossp"},
 		},
-		Tables: []Table{
+		Tables: []goschema.Table{
 			{Name: "users", StructName: "User"},
 		},
 	}
@@ -303,7 +304,7 @@ func TestDeduplicateAllCollections(t *testing.T) {
 		originalEnumOrder[i] = enum.Name
 	}
 
-	deduplicate(db)
+	goschema.Deduplicate(db)
 
 	// Verify all orders are preserved
 	for i, field := range db.Fields {

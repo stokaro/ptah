@@ -385,7 +385,7 @@ func isFunctionInSorted(function Function, sorted []Function) bool {
 // This method modifies the PackageParseResult in-place, replacing the original
 // slices with deduplicated versions. The order of entities may change during
 // this process, but dependency ordering is handled separately.
-func deduplicate(r *Database) {
+func Deduplicate(r *Database) {
 	// deduplicate tables by name
 	tableMap := make(map[string]Table)
 	for _, table := range r.Tables {
