@@ -28,6 +28,9 @@ type Database struct {
 	Enums          []Enum
 	EmbeddedFields []EmbeddedField
 	Extensions     []Extension         // PostgreSQL extensions (pg_trgm, postgis, etc.)
+	Functions      []Function          // PostgreSQL custom functions
+	RLSPolicies    []RLSPolicy         // PostgreSQL Row-Level Security policies
+	RLSEnabledTables []RLSEnabledTable // Tables with RLS enabled
 	Dependencies   map[string][]string // table -> list of tables it depends on
 }
 
@@ -276,4 +279,104 @@ type Table struct {
 type Enum struct {
 	Name   string   // The generated enum type name (e.g., "enum_user_status")
 	Values []string // The allowed enum values (e.g., ["active", "inactive", "suspended"])
+}
+
+// Function represents a PostgreSQL custom function definition parsed from Go struct annotations.
+//
+// Functions are defined using //migrator:schema:function annotations and are used to create
+// custom PostgreSQL functions that can be referenced by RLS policies, triggers, or application code.
+//
+// Function is created by parsing //migrator:schema:function annotations:
+//
+//	//migrator:schema:function name="set_tenant_context" params="tenant_id_param TEXT" returns="VOID" language="plpgsql" security="DEFINER" body="BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;"
+//	type User struct {
+//	    // ... fields
+//	}
+//
+// The function definition supports various PostgreSQL function attributes:
+//   - Parameters: Function parameter definitions (e.g., "tenant_id_param TEXT, user_id INTEGER")
+//   - Returns: Return type specification (e.g., "VOID", "TEXT", "INTEGER")
+//   - Language: Function language (e.g., "plpgsql", "sql")
+//   - Security: Security context (e.g., "DEFINER", "INVOKER")
+//   - Volatility: Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
+//   - Body: Function implementation code
+//
+// Example generated SQL:
+//
+//	CREATE OR REPLACE FUNCTION set_tenant_context(tenant_id_param TEXT)
+//	RETURNS VOID AS $$
+//	BEGIN
+//	    PERFORM set_config('app.current_tenant_id', tenant_id_param, false);
+//	END;
+//	$$ LANGUAGE plpgsql SECURITY DEFINER;
+type Function struct {
+	StructName string // Name of the Go struct this function is associated with
+	Name       string // Function name (e.g., "set_tenant_context")
+	Parameters string // Function parameters (e.g., "tenant_id_param TEXT")
+	Returns    string // Return type (e.g., "VOID", "TEXT")
+	Language   string // Function language (e.g., "plpgsql", "sql")
+	Security   string // Security context (e.g., "DEFINER", "INVOKER")
+	Volatility string // Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
+	Body       string // Function body/implementation
+	Comment    string // Optional comment for documentation
+}
+
+// RLSPolicy represents a PostgreSQL Row-Level Security policy definition parsed from Go struct annotations.
+//
+// RLS policies are defined using //migrator:schema:rls:policy annotations and provide database-level
+// tenant isolation by automatically filtering rows based on specified conditions.
+//
+// RLSPolicy is created by parsing //migrator:schema:rls:policy annotations:
+//
+//	//migrator:schema:rls:policy name="user_tenant_isolation" table="users" for="ALL" to="inventario_app" using="tenant_id = get_current_tenant_id()"
+//	type User struct {
+//	    //migrator:schema:field name="tenant_id" type="TEXT" not_null="true"
+//	    TenantID string
+//	    // ... other fields
+//	}
+//
+// The policy definition supports various PostgreSQL RLS policy attributes:
+//   - Name: Policy name for identification
+//   - Table: Target table name the policy applies to
+//   - PolicyFor: Operations the policy applies to (e.g., "ALL", "SELECT", "INSERT", "UPDATE", "DELETE")
+//   - ToRoles: Database roles the policy applies to (e.g., "app_user", "PUBLIC")
+//   - UsingExpression: USING clause expression for row filtering
+//   - WithCheckExpression: WITH CHECK clause expression for INSERT/UPDATE validation
+//
+// Example generated SQL:
+//
+//	CREATE POLICY user_tenant_isolation ON users
+//	    FOR ALL
+//	    TO inventario_app
+//	    USING (tenant_id = get_current_tenant_id());
+type RLSPolicy struct {
+	StructName          string // Name of the Go struct this policy is associated with
+	Name                string // Policy name (e.g., "user_tenant_isolation")
+	Table               string // Target table name (e.g., "users")
+	PolicyFor           string // Operations policy applies to (e.g., "ALL", "SELECT")
+	ToRoles             string // Target roles (e.g., "inventario_app", "PUBLIC")
+	UsingExpression     string // USING clause expression for row filtering
+	WithCheckExpression string // WITH CHECK clause expression (optional)
+	Comment             string // Optional comment for documentation
+}
+
+// RLSEnabledTable represents a table that has Row-Level Security enabled.
+//
+// RLS must be enabled on a table before policies can be applied to it.
+// This is done using //migrator:schema:rls:enable annotations.
+//
+// RLSEnabledTable is created by parsing //migrator:schema:rls:enable annotations:
+//
+//	//migrator:schema:rls:enable table="users"
+//	type User struct {
+//	    // ... fields
+//	}
+//
+// Example generated SQL:
+//
+//	ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+type RLSEnabledTable struct {
+	StructName string // Name of the Go struct this RLS enablement is associated with
+	Table      string // Table name to enable RLS on (e.g., "users")
+	Comment    string // Optional comment for documentation
 }
