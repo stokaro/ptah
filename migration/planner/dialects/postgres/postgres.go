@@ -552,6 +552,8 @@ func (p *Planner) addNewRLSPolicies(result []ast.Node, diff *types.SchemaDiff, g
 		for _, policy := range generated.RLSPolicies {
 			if policy.Name == policyName {
 				policyNode := fromschema.FromRLSPolicy(policy)
+				// Set Replace flag to handle conflicts gracefully during migrations
+				policyNode.Replace = true
 				result = append(result, policyNode)
 				break
 			}

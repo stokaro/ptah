@@ -705,6 +705,11 @@ func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
 
+	// If Replace is true, drop the policy first to avoid conflicts
+	if node.Replace {
+		r.w.WriteLinef("DROP POLICY IF EXISTS %s ON %s;", node.Name, node.Table)
+	}
+
 	// Build CREATE POLICY statement
 	var parts []string
 	parts = append(parts, "CREATE POLICY", node.Name, "ON", node.Table)

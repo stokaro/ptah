@@ -949,6 +949,8 @@ type CreatePolicyNode struct {
 	UsingExpression string
 	// WithCheckExpression contains the WITH CHECK clause expression (for INSERT/UPDATE policies)
 	WithCheckExpression string
+	// Replace indicates whether to drop the policy first if it exists (for conflict resolution)
+	Replace bool
 	// Comment is an optional comment for the policy
 	Comment string
 }
@@ -1005,6 +1007,18 @@ func (n *CreatePolicyNode) SetUsingExpression(expression string) *CreatePolicyNo
 //	createPolicy.SetWithCheckExpression("tenant_id = get_current_tenant_id()")
 func (n *CreatePolicyNode) SetWithCheckExpression(expression string) *CreatePolicyNode {
 	n.WithCheckExpression = expression
+	return n
+}
+
+// SetReplace marks the policy to be replaced (drop first if exists, then create).
+//
+// This is useful for handling policy conflicts during migrations.
+//
+// Example:
+//
+//	createPolicy.SetReplace()
+func (n *CreatePolicyNode) SetReplace() *CreatePolicyNode {
+	n.Replace = true
 	return n
 }
 
