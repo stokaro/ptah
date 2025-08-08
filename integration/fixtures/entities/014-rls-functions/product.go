@@ -21,9 +21,11 @@ type Product struct {
 	//migrator:schema:field name="price" type="DECIMAL(10,2)" not_null="true"
 	Price string `json:"price" db:"price"`
 
-	//migrator:schema:field name="user_id" type="INTEGER" not_null="true" foreign="users(id)"
+	//migrator:schema:field name="user_id" type="INTEGER" not_null="true"
 	UserID int64 `json:"user_id" db:"user_id"`
 
 	//migrator:schema:field name="created_at" type="TIMESTAMP" default_fn="NOW()"
 	CreatedAt string `json:"created_at" db:"created_at"`
 }
+
+//migrator:schema:foreign_key table="products" name="fk_products_user_id" columns="user_id" ref_table="users" ref_columns="id" on_delete="CASCADE"

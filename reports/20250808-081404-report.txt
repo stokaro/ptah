@@ -1,0 +1,23 @@
+PTAH MIGRATION LIBRARY INTEGRATION TEST REPORT
+===============================================
+
+Generated: 2025-08-08 08:14:04
+Test Period: 08:14:04 - 08:14:04
+Duration: 240ms
+
+SUMMARY
+-------
+Executed 1 tests in 240ms. 1 passed, 0 failed (100.0% success rate)
+
+STATISTICS
+----------
+Total Tests: 1
+Passed: 1
+Failed: 0
+Success Rate: 100.0%
+
+DETAILED RESULTS
+----------------
+✅ PASS dynamic_rls_functions_basic_postgres (postgres) - 240ms
+    Description: Test PostgreSQL RLS and custom functions: basic multi-tenant setup
+

@@ -25,7 +25,7 @@ type Product struct {
 	//migrator:schema:field name="status" type="VARCHAR(20)" not_null="true" default="active"
 	Status string `json:"status" db:"status"`
 
-	//migrator:schema:field name="user_id" type="INTEGER" not_null="true" foreign="users(id)"
+	//migrator:schema:field name="user_id" type="INTEGER" not_null="true"
 	UserID int64 `json:"user_id" db:"user_id"`
 
 	//migrator:schema:field name="created_at" type="TIMESTAMP" default_fn="NOW()"
@@ -34,3 +34,5 @@ type Product struct {
 	//migrator:schema:field name="updated_at" type="TIMESTAMP" default_fn="NOW()"
 	UpdatedAt string `json:"updated_at" db:"updated_at"`
 }
+
+//migrator:schema:foreign_key table="products" name="fk_products_user_id" columns="user_id" ref_table="users" ref_columns="id" on_delete="CASCADE"

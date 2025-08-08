@@ -1,0 +1,29 @@
+PTAH MIGRATION LIBRARY INTEGRATION TEST REPORT
+===============================================
+
+Generated: 2025-08-08 08:14:17
+Test Period: 08:14:16 - 08:14:17
+Duration: 445ms
+
+SUMMARY
+-------
+Executed 1 tests in 445ms. 0 passed, 1 failed (0.0% success rate)
+
+STATISTICS
+----------
+Total Tests: 1
+Passed: 0
+Failed: 1
+Success Rate: 0.0%
+
+DETAILED RESULTS
+----------------
+❌ FAIL dynamic_rls_cross_database_mysql (mysql) - 444ms
+    Description: Test PostgreSQL RLS features are skipped gracefully on MySQL/MariaDB
+    Error: should still generate table creation statements for MySQL/MariaDB
+
+FAILED TESTS SUMMARY
+--------------------
+❌ dynamic_rls_cross_database_mysql (mysql)
+   Error: should still generate table creation statements for MySQL/MariaDB
+
