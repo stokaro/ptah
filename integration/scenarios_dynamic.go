@@ -2943,7 +2943,7 @@ func testDynamicRLSFunctionsDependencyOrder(ctx context.Context, conn *dbschema.
 		}
 
 		// Analyze the order of DROP statements
-		var dropPolicyIndex, dropFunctionIndex, disableRLSIndex int = -1, -1, -1
+		var dropPolicyIndex, dropFunctionIndex, disableRLSIndex = -1, -1, -1
 
 		for i, stmt := range statements {
 			if contains(stmt, "DROP POLICY") {
