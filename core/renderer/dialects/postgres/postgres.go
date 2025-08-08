@@ -609,21 +609,7 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, column *ast.Co
 	if column.Nullable {
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP NOT NULL;", tableName, column.Name)
 	} else {
-		// Before setting NOT NULL, update any existing NULL values to a default value
-		// This prevents "column contains null values" errors
-		if column.Default != nil {
-			if column.Default.Expression != "" {
-				r.w.WriteLinef("UPDATE %s SET %s = %s WHERE %s IS NULL;", tableName, column.Name, column.Default.Expression, column.Name)
-			} else if column.Default.Value != "" {
-				r.w.WriteLinef("UPDATE %s SET %s = '%s' WHERE %s IS NULL;", tableName, column.Name, column.Default.Value, column.Name)
-			}
-		} else {
-			// If no default is specified, use a sensible default based on column type
-			defaultValue := r.getDefaultValueForType(column.Type)
-			if defaultValue != "" {
-				r.w.WriteLinef("UPDATE %s SET %s = %s WHERE %s IS NULL;", tableName, column.Name, defaultValue, column.Name)
-			}
-		}
+		r.updateNullValuesBeforeNotNull(tableName, column)
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET NOT NULL;", tableName, column.Name)
 	}
 
@@ -657,6 +643,27 @@ func (r *Renderer) getDefaultValueForType(columnType string) string {
 		return "false"
 	default:
 		return "" // No default available, let the constraint fail if there are NULLs
+	}
+}
+
+// updateNullValuesBeforeNotNull updates existing NULL values before setting NOT NULL constraint
+// This prevents "column contains null values" errors during migrations
+func (r *Renderer) updateNullValuesBeforeNotNull(tableName string, column *ast.ColumnNode) {
+	if column.Default != nil {
+		if column.Default.Expression != "" {
+			r.w.WriteLinef("UPDATE %s SET %s = %s WHERE %s IS NULL;", tableName, column.Name, column.Default.Expression, column.Name)
+			return
+		}
+		if column.Default.Value != "" {
+			r.w.WriteLinef("UPDATE %s SET %s = '%s' WHERE %s IS NULL;", tableName, column.Name, column.Default.Value, column.Name)
+			return
+		}
+	}
+
+	// If no default is specified, use a sensible default based on column type
+	defaultValue := r.getDefaultValueForType(column.Type)
+	if defaultValue != "" {
+		r.w.WriteLinef("UPDATE %s SET %s = %s WHERE %s IS NULL;", tableName, column.Name, defaultValue, column.Name)
 	}
 }
 
