@@ -195,8 +195,12 @@ func (d *SchemaDiff) hasRLSChanges() bool {
 		len(d.RLSPoliciesRemoved) > 0 ||
 		len(d.RLSPoliciesModified) > 0 ||
 		len(d.RLSEnabledTablesAdded) > 0 ||
-		len(d.RLSEnabledTablesRemoved) > 0 ||
-		len(d.RolesAdded) > 0 ||
+		len(d.RLSEnabledTablesRemoved) > 0
+}
+
+// hasRoleChanges returns true if there are any role-related changes
+func (d *SchemaDiff) hasRoleChanges() bool {
+	return len(d.RolesAdded) > 0 ||
 		len(d.RolesRemoved) > 0 ||
 		len(d.RolesModified) > 0
 }
