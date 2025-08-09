@@ -136,13 +136,13 @@ Handles all database interactions and schema operations:
 Provides command-line interface for all Ptah operations:
 
 - **`generate`** - Generate SQL schema from Go entities without touching database
-- **`readdb`** - Read and display current database schema
+- **`read-db`** - Read and display current database schema
 - **`compare`** - Compare Go entities with current database schema
 - **`migrate`** - Generate migration SQL for schema differences
-- **`migrateup`** - Apply migrations to bring database up to latest version
-- **`migratedown`** - Roll back migrations to previous versions
-- **`migratestatus`** - Show current migration status and history
-- **`dropall`** - Drop ALL tables and enums in database (VERY DANGEROUS!) (supports `--dry-run`)
+- **`migrate-up`** - Apply migrations to bring database up to latest version
+- **`migrate-down`** - Roll back migrations to previous versions
+- **`migrate-status`** - Show current migration status and history
+- **`drop-all`** - Drop ALL tables and enums in database (VERY DANGEROUS!) (supports `--dry-run`)
 - **`integration-test`** - Run comprehensive integration tests across database platforms
 
 ### Supporting Components
@@ -151,10 +151,22 @@ Provides command-line interface for all Ptah operations:
 - **`ast_demo/`** - Demonstrates AST-based SQL generation
 - **`migrator_parser/`** - Shows parsing and generation workflow
 
+#### `integration/` - Comprehensive Integration Testing Framework
+- **`framework.go`** - Core test framework with TestRunner and DatabaseHelper
+- **`reporter.go`** - Report generation in multiple formats (TXT, JSON, HTML)
+- **`scenarios.go`** - Basic test scenarios implementation
+- **`scenarios_advanced.go`** - Advanced test scenarios (concurrency, idempotency)
+- **`scenarios_misc.go`** - Miscellaneous test scenarios (timestamps, permissions)
+- **`fixtures/`** - Test data including migrations and entity definitions
+
 #### `stubs/` - Example Entity Definitions
 Contains sample Go structs with schema annotations for testing and demonstration:
 - `product.go`, `category.go` - Real-world entity examples
 - Various test files showing different annotation patterns and features
+
+#### `docs/` - Documentation and Design
+- **`system_design.md`** - Comprehensive system architecture documentation
+- **`diagrams/`** - System architecture diagrams and visual documentation
 
 ---
 
@@ -192,6 +204,14 @@ CategoryID int64
 ```go
 //migrator:schema:index name="idx_products_category" fields="category_id"
 _ int
+```
+
+### PostgreSQL Extensions (PostgreSQL only)
+```go
+//migrator:schema:extension name="pg_trgm" if_not_exists="true" comment="Trigram similarity for text search"
+//migrator:schema:extension name="btree_gin" if_not_exists="true" comment="GIN indexes for btree operations"
+//migrator:schema:extension name="postgis" version="3.0" comment="Geographic data support"
+type DatabaseExtensions struct{}
 ```
 
 ### PostgreSQL Functions (PostgreSQL only)
@@ -238,6 +258,12 @@ type User struct {
 - `enum` - Enum values (comma-separated)
 - `platform.{dialect}.{attribute}` - Platform-specific overrides
 
+#### Extension Attributes (PostgreSQL only)
+- `name` - Extension name (e.g., "pg_trgm", "postgis")
+- `version` - Specific version to install (optional)
+- `if_not_exists` - Skip if extension already exists ("true" or "false")
+- `comment` - Extension description
+
 #### Function Attributes (PostgreSQL only)
 - `name` - Function name
 - `params` - Function parameters (e.g., "tenant_id_param TEXT, user_id INTEGER")
@@ -269,7 +295,7 @@ git clone https://github.com/stokaro/ptah.git
 cd ptah
 
 # Build the CLI tool
-go build -o ptah ./cmd
+go build -o package-migrator ./cmd
 ```
 
 ### Basic Workflow
@@ -294,30 +320,23 @@ type User struct {
 
 ```bash
 # Generate for PostgreSQL
-go run ./cmd generate --root-dir ./models --dialect postgres
+./package-migrator generate --root-dir ./models --dialect postgres
 
 # Generate for MySQL
-go run ./cmd generate --root-dir ./models --dialect mysql
+./package-migrator generate --root-dir ./models --dialect mysql
 ```
 
-3. **Write schema to database**:
-
-```bash
-# Write to PostgreSQL
-go run ./cmd write-db --root-dir ./models --db-url postgres://user:pass@localhost/db
-
-# Write to MySQL
-go run ./cmd write-db --root-dir ./models --db-url mysql://user:pass@tcp(localhost:3306)/db
-```
-
-4. **Compare and migrate**:
+3. **Compare and migrate**:
 
 ```bash
 # Compare current database with Go entities
-go run ./cmd compare --root-dir ./models --db-url postgres://user:pass@localhost/db
+./package-migrator compare --root-dir ./models --db-url postgres://user:pass@localhost/db
 
 # Generate migration SQL
-go run ./cmd migrate --root-dir ./models --db-url postgres://user:pass@localhost/db
+./package-migrator migrate --root-dir ./models --db-url postgres://user:pass@localhost/db
+
+# Apply migrations to database
+./package-migrator migrate-up --db-url postgres://user:pass@localhost/db --migrations-dir ./migrations
 ```
 
 ---
@@ -329,39 +348,21 @@ Generate SQL DDL statements from Go entities without touching the database:
 
 ```bash
 # Generate for all supported dialects
-go run ./cmd generate --root-dir ./models
+./package-migrator generate --root-dir ./models
 
 # Generate for specific dialect
-go run ./cmd generate --root-dir ./models --dialect postgres
-go run ./cmd generate --root-dir ./models --dialect mysql
-go run ./cmd generate --root-dir ./models --dialect mariadb
+./package-migrator generate --root-dir ./models --dialect postgres
+./package-migrator generate --root-dir ./models --dialect mysql
+./package-migrator generate --root-dir ./models --dialect mariadb
 ```
 
 ### Database Operations
-
-#### Write Schema
-Write the generated schema directly to a database:
-
-```bash
-# PostgreSQL
-go run ./cmd write-db --root-dir ./models --db-url postgres://user:pass@localhost:5432/database
-
-# MySQL
-go run ./cmd write-db --root-dir ./models --db-url mysql://user:pass@tcp(localhost:3306)/database
-```
-
-**Features:**
-- ✅ Creates enums first (PostgreSQL requirement)
-- ✅ Creates tables in dependency order
-- ✅ Skips existing tables (safe)
-- ✅ Transaction-based (all-or-nothing)
-- ✅ Detailed progress output
 
 #### Read Schema
 Read and display the current database schema:
 
 ```bash
-go run ./cmd read-db --db-url postgres://user:pass@localhost:5432/database
+./package-migrator read-db --db-url postgres://user:pass@localhost:5432/database
 ```
 
 **Output:** Complete schema information including tables, columns, constraints, indexes, and enums
@@ -370,37 +371,154 @@ go run ./cmd read-db --db-url postgres://user:pass@localhost:5432/database
 Compare your Go entities with the current database schema:
 
 ```bash
-go run ./cmd compare --root-dir ./models --db-url postgres://user:pass@localhost:5432/database
+./package-migrator compare --root-dir ./models --db-url postgres://user:pass@localhost:5432/database
 ```
 
 **Output:** Detailed differences showing what needs to be added, removed, or modified
 
-#### Generate Migrations
+#### Generate Migration SQL
 Generate SQL migration statements to synchronize schemas:
 
 ```bash
-go run ./cmd migrate --root-dir ./models --db-url postgres://user:pass@localhost:5432/database
+./package-migrator migrate --root-dir ./models --db-url postgres://user:pass@localhost:5432/database
 ```
 
 **Output:** SQL statements to bring the database in sync with Go entities
 
+### Migration Management
+
+Ptah provides a comprehensive migration system with versioning, rollback capabilities, and transaction safety.
+
+#### Apply Migrations
+Apply all pending migrations to bring database up to latest version:
+
+```bash
+./package-migrator migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations
+
+# Dry run to preview what would be applied
+./package-migrator migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dry-run
+```
+
+**Features:**
+- ✅ Applies migrations in correct order based on version numbers
+- ✅ Each migration runs in its own transaction
+- ✅ Automatic rollback on failure
+- ✅ Tracks applied migrations in `schema_migrations` table
+- ✅ Supports dry-run mode for preview
+
+#### Roll Back Migrations
+Roll back migrations to a specific version:
+
+```bash
+./package-migrator migrate-down --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --target 5
+
+# Dry run to preview rollback
+./package-migrator migrate-down --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --target 5 --dry-run
+```
+
+**Features:**
+- ✅ Rolls back to any previous version
+- ✅ Executes down migrations in reverse order
+- ✅ Transaction safety with automatic rollback on failure
+- ✅ Updates migration tracking table
+
+#### Check Migration Status
+Show current migration status and pending migrations:
+
+```bash
+./package-migrator migrate-status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations
+
+# JSON output for automation
+./package-migrator migrate-status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --json
+```
+
+**Output includes:**
+- Current database version
+- Total available migrations
+- List of pending migrations
+- Migration history and timestamps
+
+#### Migration File Generation
+Generate timestamped migration files from schema differences using the migration generator package:
+
+```go
+// Example using the migration generator package
+package main
+
+import (
+    "fmt"
+    "log"
+    "github.com/stokaro/ptah/migration/generator"
+)
+
+func main() {
+    opts := generator.GenerateMigrationOptions{
+        RootDir:       "./models",
+        DatabaseURL:   "postgres://user:pass@localhost:5432/database",
+        MigrationName: "add_user_table",
+        OutputDir:     "./migrations",
+    }
+
+    files, err := generator.GenerateMigration(opts)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    fmt.Printf("Generated: %s and %s\n", files.UpFile, files.DownFile)
+}
+```
+
+**Generated files:**
+- `YYYYMMDDHHMMSS_add_user_table.up.sql` - Forward migration
+- `YYYYMMDDHHMMSS_add_user_table.down.sql` - Rollback migration
+
+**Features:**
+- ✅ Automatic timestamp-based versioning
+- ✅ Generates both up and down migrations
+- ✅ Compares Go entities with live database
+- ✅ Handles table, column, index, and constraint changes
+- ✅ Database-specific SQL generation
+
 ### Dangerous Operations
 
-#### Drop Schema
-Drop tables and enums defined in Go entities:
+#### Drop All Tables and Enums
+Drop ALL tables and enums in the database (VERY DANGEROUS!):
 
 ```bash
-go run ./cmd drop-schema --root-dir ./models --db-url postgres://user:pass@localhost:5432/database
+./package-migrator drop-all --db-url postgres://user:pass@localhost:5432/database
+
+# Dry run to see what would be dropped
+./package-migrator drop-all --db-url postgres://user:pass@localhost:5432/database --dry-run
 ```
 
-#### Drop All
-Drop ALL tables and enums in the database:
+**⚠️ Warning:** This command requires double confirmation - you must type 'DELETE EVERYTHING' and then 'YES I AM SURE' to confirm. This will permanently delete ALL data!
+
+### Integration Testing
+
+Run comprehensive integration tests across multiple database platforms:
 
 ```bash
-go run ./cmd drop-all --db-url postgres://user:pass@localhost:5432/database
+# Run all integration tests across all databases
+./package-migrator integration-test
+
+# Run tests for specific databases
+./package-migrator integration-test --databases postgres,mysql
+
+# Run specific test scenarios
+./package-migrator integration-test --scenarios apply_incremental_migrations,rollback_migrations
+
+# Generate detailed HTML report
+./package-migrator integration-test --report html
+
+# Verbose output with detailed logging
+./package-migrator integration-test --verbose
 ```
 
-**⚠️ Warning:** Both drop commands require confirmation - user must type 'YES' to confirm
+**Features:**
+- ✅ Tests across PostgreSQL, MySQL, and MariaDB
+- ✅ Comprehensive scenario coverage (basic, concurrency, idempotency, failure recovery)
+- ✅ Multiple report formats (TXT, JSON, HTML)
+- ✅ Automated database setup and cleanup
 
 ---
 
@@ -437,7 +555,6 @@ func main() {
         AddConstraint(ast.NewUniqueConstraint("uk_users_email", "email"))
 
     // Render for PostgreSQL
-    pgRenderer := renderer.NewRenderer("postgresql")
     pgSQL, err := renderer.RenderSQL("postgresql", table)
     if err != nil {
         panic(err)
@@ -474,10 +591,7 @@ func main() {
     }
 
     // Generate ordered CREATE TABLE statements
-    statements, err := renderer.RenderSchemaSQL("postgresql", result)
-    if err != nil {
-        panic(err)
-    }
+    statements := renderer.GetOrderedCreateStatements(result, "postgresql")
 
     for _, stmt := range statements {
         fmt.Println(stmt)
@@ -533,18 +647,84 @@ func main() {
 
 ## Testing
 
-### Running Tests
+Ptah includes a comprehensive testing framework with both unit tests and integration tests across multiple database platforms.
+
+### Running Unit Tests
 
 ```bash
-# Run all tests
+# Run all unit tests (no database required)
 go test ./...
 
 # Run tests with verbose output
 go test -v ./...
 
-# Run integration tests (requires database)
-go test -v ./executor/... -tags=integration
+# Run specific package tests
+go test -v ./core/...
+go test -v ./migration/...
 ```
+
+### Integration Testing Framework
+
+Ptah includes a comprehensive integration testing framework that validates migration functionality across PostgreSQL, MySQL, and MariaDB.
+
+#### Run Integration Tests
+
+```bash
+# Run all integration tests across all databases
+./package-migrator integration-test
+
+# Run tests for specific databases
+./package-migrator integration-test --databases postgres,mysql
+
+# Run specific test scenarios
+./package-migrator integration-test --scenarios apply_incremental_migrations,rollback_migrations
+
+# Generate detailed HTML report
+./package-migrator integration-test --report html
+
+# Verbose output with detailed logging
+./package-migrator integration-test --verbose
+```
+
+#### Test Coverage
+
+The integration test suite covers:
+
+**🧱 Basic Functionality**
+- Apply incremental migrations
+- Roll back migrations
+- Upgrade to specific version
+- Check current version
+- Generate desired schema
+- Read actual DB schema
+- Dry-run support
+- Operation planning
+- Schema diff validation
+- Failure diagnostics
+
+**🔁 Idempotency**
+- Re-apply already applied migrations
+- Run migrate up when database is already up-to-date
+
+**🔀 Concurrency**
+- Launch parallel migrate up processes
+- Ensure locking prevents double-apply
+
+**🧪 Partial Failure Recovery**
+- Handle multi-step migrations with intentional failures
+- Validate recovery and rollback capabilities
+
+**⏱ Timestamp Verification**
+- Check that `applied_at` timestamps are stored correctly
+
+**📂 Manual Patch Detection**
+- Detect manual schema changes via schema diff
+
+**🔒 Permission Restrictions**
+- Test behavior with limited database privileges
+
+**🧹 Cleanup Support**
+- Drop all tables and re-run from empty state
 
 ### Database Testing
 
@@ -562,7 +742,7 @@ docker run --name test-postgres \
 go test -v ./executor/... -tags=integration
 
 # Test with real database
-go run ./cmd read-db --db-url postgres://postgres:testpass@localhost:5432/testdb
+./package-migrator read-db --db-url postgres://postgres:testpass@localhost:5432/testdb
 ```
 
 #### MySQL Testing
@@ -574,7 +754,7 @@ docker run --name test-mysql \
   -p 3306:3306 -d mysql:8.0
 
 # Test with real database
-go run ./cmd read-db --db-url mysql://root:testpass@tcp(localhost:3306)/testdb
+./package-migrator read-db --db-url mysql://root:testpass@tcp(localhost:3306)/testdb
 ```
 
 ---
@@ -754,7 +934,7 @@ go mod download
 go test ./...
 
 # Build the CLI
-go build -o ptah ./cmd
+go build -o package-migrator ./cmd
 ```
 
 ---
@@ -767,13 +947,25 @@ This project is part of the Inventario system and follows the same licensing ter
 
 ## Roadmap
 
-- [ ] Support for more database dialects (SQLite, SQL Server)
-- [ ] Migration versioning and rollback capabilities
-- [ ] Web UI for schema visualization
-- [ ] Performance optimizations for large schemas
-- [ ] Schema validation and linting
-- [ ] Import from existing databases
-- [ ] Export to various formats (GraphQL, OpenAPI, etc.)
-- [ ] Runtime performance monitoring and optimization
+### ✅ Completed Features
+- ✅ **Migration versioning and rollback capabilities** - Full migration system with up/down migrations, version tracking, and rollback support
+- ✅ **Comprehensive integration testing** - Multi-database testing framework with PostgreSQL, MySQL, and MariaDB support
+- ✅ **PostgreSQL extensions support** - Support for PostgreSQL extensions in schema definitions
+- ✅ **Migration file generation** - Automatic generation of timestamped migration files from schema differences
+- ✅ **Dry-run capabilities** - Preview operations before execution across all commands
+- ✅ **Transaction safety** - All operations wrapped in transactions for consistency
+
+### 🚧 In Progress
+- [ ] **Enhanced schema validation** - Advanced validation and linting capabilities
+- [ ] **Performance optimizations** - Optimizations for large schemas and complex migrations
+
+### 🎯 Planned Features
+- [ ] **Additional database dialects** - SQLite, SQL Server support
+- [ ] **Web UI for schema visualization** - Interactive schema browser and migration management
+- [ ] **Import from existing databases** - Reverse engineering existing schemas to Go entities
+- [ ] **Export capabilities** - Export to GraphQL schemas, OpenAPI specs, and other formats
+- [ ] **Runtime performance monitoring** - Migration performance tracking and optimization
+- [ ] **Schema versioning** - Git-like versioning for schema definitions
+- [ ] **Advanced conflict resolution** - Smart handling of schema conflicts and merges
 
 ---
