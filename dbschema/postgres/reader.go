@@ -602,6 +602,7 @@ func (r *Reader) readRoles() ([]types.DBRole, error) {
 		FROM pg_roles
 		WHERE rolname NOT LIKE 'pg_%'  -- Exclude system roles
 		AND rolname != 'postgres'      -- Exclude postgres superuser
+		AND rolname != 'ptah_user'     -- Exclude test infrastructure user
 		ORDER BY rolname`
 
 	rows, err := r.db.Query(rolesQuery)
