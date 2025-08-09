@@ -195,7 +195,7 @@ type Planner interface {
 //   - Centralize dialect validation and error handling
 //   - Enable dependency injection and testing scenarios
 func GetPlanner(dialect string) Planner {
-	switch dialect {
+	switch platform.NormalizeDialect(dialect) {
 	case platform.Postgres:
 		return postgres.New()
 	case platform.MySQL:

@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
+	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver
 
 	"github.com/stokaro/ptah/dbschema/mysql"
 	"github.com/stokaro/ptah/dbschema/postgres"
