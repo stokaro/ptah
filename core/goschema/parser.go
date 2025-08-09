@@ -230,6 +230,10 @@ func ParseFile(filename string) Database {
 		panic("Failed to parse file")
 	}
 
+	return parseFileAST(f)
+}
+
+func parseFileAST(f *ast.File) Database {
 	var embeddedFields []EmbeddedField
 	var schemaFields []Field
 	var schemaIndexes []Index
@@ -241,25 +245,22 @@ func ParseFile(filename string) Database {
 	var roles []Role
 	globalEnumsMap := make(map[string]Enum)
 
-	for _, decl := range f.Decls {
-		genDecl, ok := decl.(*ast.GenDecl)
-		if !ok {
-			continue
-		}
-		for _, spec := range genDecl.Specs {
-			typeSpec, ok := spec.(*ast.TypeSpec)
-			if !ok {
-				continue
-			}
-			structName := typeSpec.Name.Name
-			structType, ok := typeSpec.Type.(*ast.StructType)
-			if !ok {
-				continue
-			}
-			processTableComments(structName, genDecl, &tableDirectives, &extensions, &functions, &rlsPolicies, &rlsEnabledTables, &roles)
-			processFieldComments(structName, structType, globalEnumsMap, &schemaFields, &embeddedFields, &schemaIndexes, &extensions, &functions, &rlsPolicies, &rlsEnabledTables, &roles)
-		}
-	}
+	// Single pass: collect table names and process all declarations and comments
+	tableNameToStructName := make(map[string]string)
+	processFileAST(
+		f,
+		tableNameToStructName,
+		globalEnumsMap,
+		&embeddedFields,
+		&schemaFields,
+		&schemaIndexes,
+		&tableDirectives,
+		&extensions,
+		&functions,
+		&rlsPolicies,
+		&rlsEnabledTables,
+		&roles,
+	)
 
 	enums := make([]Enum, 0, len(globalEnumsMap))
 	keys := make([]string, 0, len(globalEnumsMap))
@@ -291,6 +292,184 @@ func ParseFile(filename string) Database {
 	}
 	buildDependencyGraph(&result)
 	return result
+}
+
+// processFileAST processes the entire AST file in a single optimized pass
+func processFileAST(
+	f *ast.File,
+	tableNameToStructName map[string]string,
+	globalEnumsMap map[string]Enum,
+	embeddedFields *[]EmbeddedField,
+	schemaFields *[]Field,
+	schemaIndexes *[]Index,
+	tableDirectives *[]Table,
+	extensions *[]Extension,
+	functions *[]Function,
+	rlsPolicies *[]RLSPolicy,
+	rlsEnabledTables *[]RLSEnabledTable,
+	roles *[]Role,
+) {
+	// First, collect table names from struct declarations
+	for _, decl := range f.Decls {
+		genDecl, ok := decl.(*ast.GenDecl)
+		if !ok {
+			continue
+		}
+		for _, spec := range genDecl.Specs {
+			typeSpec, ok := spec.(*ast.TypeSpec)
+			if !ok {
+				continue
+			}
+			structName := typeSpec.Name.Name
+			_, ok = typeSpec.Type.(*ast.StructType)
+			if !ok {
+				continue
+			}
+
+			// Extract table name from table directive
+			if genDecl.Doc != nil {
+				for _, comment := range genDecl.Doc.List {
+					if strings.HasPrefix(comment.Text, "//migrator:schema:table") {
+						kv := parseutils.ParseKeyValueComment(comment.Text)
+						if tableName := kv["name"]; tableName != "" {
+							tableNameToStructName[tableName] = structName
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Process all struct declarations
+	processDeclarations(
+		f,
+		tableNameToStructName,
+		globalEnumsMap,
+		embeddedFields,
+		schemaFields,
+		schemaIndexes,
+		tableDirectives,
+		extensions,
+		functions,
+		rlsPolicies,
+		rlsEnabledTables,
+		roles,
+	)
+
+	// Process all file comments for RLS annotations that might not be associated with struct declarations
+	processAllFileComments(f, tableNameToStructName, rlsPolicies, rlsEnabledTables)
+}
+
+// processDeclarations processes all struct declarations in the file
+func processDeclarations(
+	f *ast.File,
+	tableNameToStructName map[string]string,
+	globalEnumsMap map[string]Enum,
+	embeddedFields *[]EmbeddedField,
+	schemaFields *[]Field,
+	schemaIndexes *[]Index,
+	tableDirectives *[]Table,
+	extensions *[]Extension,
+	functions *[]Function,
+	rlsPolicies *[]RLSPolicy,
+	rlsEnabledTables *[]RLSEnabledTable,
+	roles *[]Role,
+) {
+	for _, decl := range f.Decls {
+		genDecl, ok := decl.(*ast.GenDecl)
+		if !ok {
+			continue
+		}
+		for _, spec := range genDecl.Specs {
+			typeSpec, ok := spec.(*ast.TypeSpec)
+			if !ok {
+				continue
+			}
+			structName := typeSpec.Name.Name
+			structType, ok := typeSpec.Type.(*ast.StructType)
+			if !ok {
+				continue
+			}
+
+			processTableComments(structName, genDecl, tableDirectives, extensions, functions, rlsPolicies, rlsEnabledTables, roles)
+			processFieldComments(structName, structType, globalEnumsMap, schemaFields, embeddedFields, schemaIndexes, extensions, functions, rlsPolicies, rlsEnabledTables, roles)
+		}
+	}
+}
+
+// processAllFileComments scans all comments in the file for RLS annotations
+// that might not be directly associated with struct declarations due to blank lines
+func processAllFileComments(f *ast.File, tableNameToStructName map[string]string, rlsPolicies *[]RLSPolicy, rlsEnabledTables *[]RLSEnabledTable) {
+	// Create sets to track already processed RLS policies and enabled tables to avoid duplicates
+	existingPolicies := make(map[string]bool)
+	existingEnabledTables := make(map[string]bool)
+
+	for _, policy := range *rlsPolicies {
+		existingPolicies[policy.Name] = true
+	}
+
+	for _, table := range *rlsEnabledTables {
+		existingEnabledTables[table.Table] = true
+	}
+
+	// Scan all comment groups in the file
+	for _, commentGroup := range f.Comments {
+		for _, comment := range commentGroup.List {
+			switch {
+			case strings.HasPrefix(comment.Text, "//migrator:schema:rls:policy"):
+				kv := parseutils.ParseKeyValueComment(comment.Text)
+				policyName := kv["name"]
+				tableName := kv["table"]
+
+				// Skip if we already have this policy, if policy name is empty, or if we can't find the struct name
+				if existingPolicies[policyName] || policyName == "" || tableName == "" {
+					continue
+				}
+
+				structName, exists := tableNameToStructName[tableName]
+				if !exists {
+					continue
+				}
+
+				policy := RLSPolicy{
+					StructName:          structName,
+					Name:                policyName,
+					Table:               tableName,
+					PolicyFor:           kv["for"],
+					ToRoles:             kv["to"],
+					UsingExpression:     kv["using"],
+					WithCheckExpression: kv["with_check"],
+					Comment:             kv["comment"],
+				}
+
+				*rlsPolicies = append(*rlsPolicies, policy)
+				existingPolicies[policyName] = true
+
+			case strings.HasPrefix(comment.Text, "//migrator:schema:rls:enable"):
+				kv := parseutils.ParseKeyValueComment(comment.Text)
+				tableName := kv["table"]
+
+				// Skip if we already have this table enabled or if we can't find the struct name
+				if existingEnabledTables[tableName] || tableName == "" {
+					continue
+				}
+
+				structName, exists := tableNameToStructName[tableName]
+				if !exists {
+					continue
+				}
+
+				rlsEnabled := RLSEnabledTable{
+					StructName: structName,
+					Table:      tableName,
+					Comment:    kv["comment"],
+				}
+
+				*rlsEnabledTables = append(*rlsEnabledTables, rlsEnabled)
+				existingEnabledTables[tableName] = true
+			}
+		}
+	}
 }
 
 func parseFunctionComment(comment *ast.Comment, structName string, functions *[]Function) {
