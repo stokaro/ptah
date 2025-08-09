@@ -29,7 +29,7 @@ test:
 # Build Docker image for integration tests
 docker-build:
 	@echo "Building Docker image for integration tests..."
-	docker-compose build ptah-tester
+	docker-compose --profile test build ptah-tester
 
 # Run integration tests using Docker Compose
 integration-test: docker-build
