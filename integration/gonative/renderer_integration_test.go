@@ -11,7 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/renderer"
@@ -27,7 +27,7 @@ func skipIfNoPostgreSQLRenderer(t *testing.T) string {
 	}
 
 	// Test connection
-	db, err := sql.Open("postgres", dsn)
+	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		t.Skipf("Skipping PostgreSQL tests: failed to open database: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestPostgreSQLRenderer_Integration(t *testing.T) {
 	dsn := skipIfNoPostgreSQLRenderer(t)
 	c := qt.New(t)
 
-	db, err := sql.Open("postgres", dsn)
+	db, err := sql.Open("pgx", dsn)
 	c.Assert(err, qt.IsNil)
 	defer db.Close()
 
@@ -329,7 +329,7 @@ func TestRenderer_DialectSpecificSQL(t *testing.T) {
 			name:     "PostgreSQL specific features",
 			dialect:  "postgresql",
 			skipFunc: skipIfNoPostgreSQLRenderer,
-			driver:   "postgres",
+			driver:   "pgx",
 			contains: []string{"SERIAL", "POSTGRES TABLE"},
 			excludes: []string{"AUTO_INCREMENT", "ENGINE"},
 		},
@@ -438,7 +438,7 @@ func TestDropIndex_Integration(t *testing.T) {
 			name:     "PostgreSQL DROP INDEX",
 			dialect:  "postgresql",
 			skipFunc: skipIfNoPostgreSQLRenderer,
-			driver:   "postgres",
+			driver:   "pgx",
 			setupSQL: "CREATE TABLE test_drop_index (id SERIAL PRIMARY KEY, email VARCHAR(255)); CREATE INDEX idx_test_email ON test_drop_index(email);",
 			contains: []string{"DROP INDEX", "IF EXISTS", "idx_test_email"},
 		},
@@ -534,8 +534,8 @@ func TestCreateType_Integration(t *testing.T) {
 		{
 			name:     "PostgreSQL CREATE ENUM TYPE",
 			dialect:  "postgresql",
-			skipFunc: skipIfNoPostgreSQL,
-			driver:   "postgres",
+			skipFunc: skipIfNoPostgreSQLRenderer,
+			driver:   "pgx",
 			createType: func() *ast.CreateTypeNode {
 				enumDef := ast.NewEnumTypeDef("active", "inactive", "pending")
 				return ast.NewCreateType("user_status", enumDef).
@@ -548,8 +548,8 @@ func TestCreateType_Integration(t *testing.T) {
 		{
 			name:     "PostgreSQL CREATE DOMAIN TYPE",
 			dialect:  "postgresql",
-			skipFunc: skipIfNoPostgreSQL,
-			driver:   "postgres",
+			skipFunc: skipIfNoPostgreSQLRenderer,
+			driver:   "pgx",
 			createType: func() *ast.CreateTypeNode {
 				domainDef := ast.NewDomainTypeDef("VARCHAR(255)").
 					SetNotNull().
@@ -564,8 +564,8 @@ func TestCreateType_Integration(t *testing.T) {
 		{
 			name:     "PostgreSQL CREATE COMPOSITE TYPE",
 			dialect:  "postgresql",
-			skipFunc: skipIfNoPostgreSQL,
-			driver:   "postgres",
+			skipFunc: skipIfNoPostgreSQLRenderer,
+			driver:   "pgx",
 			createType: func() *ast.CreateTypeNode {
 				fields := []*ast.CompositeField{
 					{Name: "street", Type: "TEXT"},
@@ -663,7 +663,7 @@ func TestAlterType_Integration(t *testing.T) {
 			name:     "PostgreSQL ALTER TYPE ADD VALUE",
 			dialect:  "postgresql",
 			skipFunc: skipIfNoPostgreSQLRenderer,
-			driver:   "postgres",
+			driver:   "pgx",
 			setupSQL: "CREATE TYPE test_status AS ENUM ('active', 'inactive');",
 			alterType: func() *ast.AlterTypeNode {
 				return ast.NewAlterType("test_status").
@@ -677,7 +677,7 @@ func TestAlterType_Integration(t *testing.T) {
 			name:     "PostgreSQL ALTER TYPE RENAME VALUE",
 			dialect:  "postgresql",
 			skipFunc: skipIfNoPostgreSQLRenderer,
-			driver:   "postgres",
+			driver:   "pgx",
 			setupSQL: "CREATE TYPE test_priority AS ENUM ('low', 'medium', 'high');",
 			alterType: func() *ast.AlterTypeNode {
 				return ast.NewAlterType("test_priority").
@@ -691,7 +691,7 @@ func TestAlterType_Integration(t *testing.T) {
 			name:     "PostgreSQL ALTER TYPE RENAME TYPE",
 			dialect:  "postgresql",
 			skipFunc: skipIfNoPostgreSQLRenderer,
-			driver:   "postgres",
+			driver:   "pgx",
 			setupSQL: "CREATE TYPE old_type_name AS ENUM ('value1', 'value2');",
 			alterType: func() *ast.AlterTypeNode {
 				return ast.NewAlterType("old_type_name").
@@ -705,7 +705,7 @@ func TestAlterType_Integration(t *testing.T) {
 			name:     "PostgreSQL ALTER TYPE MULTIPLE OPERATIONS",
 			dialect:  "postgresql",
 			skipFunc: skipIfNoPostgreSQLRenderer,
-			driver:   "postgres",
+			driver:   "pgx",
 			setupSQL: "CREATE TYPE multi_status AS ENUM ('draft', 'published');",
 			alterType: func() *ast.AlterTypeNode {
 				return ast.NewAlterType("multi_status").
