@@ -40,21 +40,21 @@ func ConnectToDatabase(dbURL string) (*DatabaseConnection, error) {
 
 	// Determine the dialect
 	dialect := strings.ToLower(parsedURL.Scheme)
-	var dialectProtocol string
-	switch dialect {
-	case "postgres", "postgresql", "pgx":
-		dialectProtocol = "pgx"
-	case "mysql", "mariadb":
-		dialectProtocol = "mysql"
-	default:
-		return nil, fmt.Errorf("unsupported database dialect: %s", dialect)
-	}
 
 	// Connect to the database
 	// For MySQL/MariaDB, we need to convert the URL format
 	connectionString := dbURL
-	if dialectProtocol == "mysql" {
+
+	var dialectProtocol string
+	switch dialect {
+	case "postgres", "postgresql", "pgx":
+		dialectProtocol = "pgx"
+		connectionString = cleanPostgresURL(dbURL)
+	case "mysql", "mariadb":
+		dialectProtocol = "mysql"
 		connectionString = convertMySQLURL(dbURL)
+	default:
+		return nil, fmt.Errorf("unsupported database dialect: %s", dialect)
 	}
 
 	db, err := sql.Open(dialectProtocol, connectionString)
@@ -265,4 +265,18 @@ func convertMySQLURL(dbURL string) string {
 	}
 
 	return connectionString
+}
+
+func cleanPostgresURL(dbURL string) string {
+	// remove pool_max_conns=?&pool_min_conns=?
+	// parse url, remove these query params, reconstruct and return
+	parsedURL, err := url.Parse(dbURL)
+	if err != nil {
+		return dbURL
+	}
+	q := parsedURL.Query()
+	q.Del("pool_max_conns")
+	q.Del("pool_min_conns")
+	parsedURL.RawQuery = q.Encode()
+	return parsedURL.String()
 }
