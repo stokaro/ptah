@@ -24,9 +24,9 @@ func TestPgxDriverValidation(t *testing.T) {
 		t.Skip("Skipping PostgreSQL driver validation: POSTGRES_TEST_DSN environment variable not set")
 	}
 
-	c := qt.New(t)
-
 	t.Run("direct pgx driver usage", func(t *testing.T) {
+		c := qt.New(t)
+
 		// Test direct connection with pgx driver
 		db, err := sql.Open("pgx", dsn)
 		c.Assert(err, qt.IsNil)
@@ -45,6 +45,8 @@ func TestPgxDriverValidation(t *testing.T) {
 	})
 
 	t.Run("dbschema connection uses pgx", func(t *testing.T) {
+		c := qt.New(t)
+
 		// Test that dbschema.Connect uses pgx for PostgreSQL URLs
 		db, err := dbschema.Connect(dsn)
 		c.Assert(err, qt.IsNil)
@@ -63,6 +65,8 @@ func TestPgxDriverValidation(t *testing.T) {
 	})
 
 	t.Run("pgx specific features work", func(t *testing.T) {
+		c := qt.New(t)
+
 		// Test pgx-specific functionality that lib/pq doesn't have
 		db, err := sql.Open("pgx", dsn)
 		c.Assert(err, qt.IsNil)
@@ -85,6 +89,8 @@ func TestPgxDriverValidation(t *testing.T) {
 	})
 
 	t.Run("connection string compatibility", func(t *testing.T) {
+		c := qt.New(t)
+
 		// Test that various PostgreSQL connection string formats work with pgx
 		testCases := []struct {
 			name string
@@ -111,6 +117,8 @@ func TestPgxDriverValidation(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
+				c := qt.New(t)
+
 				db, err := dbschema.Connect(tc.dsn)
 				c.Assert(err, qt.IsNil)
 				defer db.Close()
@@ -136,9 +144,9 @@ func TestDriverMigrationCompleteness(t *testing.T) {
 		t.Skip("Skipping driver migration test: POSTGRES_TEST_DSN environment variable not set")
 	}
 
-	c := qt.New(t)
-
 	t.Run("no lib/pq driver registration", func(t *testing.T) {
+		c := qt.New(t)
+
 		// Attempt to open with "postgres" driver name (lib/pq)
 		// This should fail if lib/pq is not imported/registered
 		_, err := sql.Open("postgres", dsn)
@@ -156,6 +164,8 @@ func TestDriverMigrationCompleteness(t *testing.T) {
 	})
 
 	t.Run("pgx driver is available", func(t *testing.T) {
+		c := qt.New(t)
+
 		// Verify that pgx driver is properly registered
 		db, err := sql.Open("pgx", dsn)
 		c.Assert(err, qt.IsNil)
