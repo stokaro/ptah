@@ -46,6 +46,11 @@ integration-test-txt: docker-build
 	@echo "Running integration tests with text report..."
 	docker-compose --profile test run --rm ptah-tester --report=txt --verbose
 
+# Run integration tests with stdout report
+integration-test-stdout: docker-build
+	@echo "Running integration tests with text report..."
+	docker-compose --profile test run --rm ptah-tester --report=stdout --verbose
+
 # Run specific scenarios
 integration-test-basic: docker-build
 	@echo "Running basic integration tests..."

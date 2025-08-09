@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
+
 	"github.com/stokaro/ptah/dbschema/mysql"
 	"github.com/stokaro/ptah/dbschema/postgres"
 	"github.com/stokaro/ptah/dbschema/types"
@@ -38,13 +40,12 @@ func ConnectToDatabase(dbURL string) (*DatabaseConnection, error) {
 
 	// Determine the dialect
 	dialect := strings.ToLower(parsedURL.Scheme)
+	var dialectProtocol string
 	switch dialect {
-	case "postgres", "postgresql":
-		dialect = "postgres"
-	case "mysql":
-		dialect = "mysql"
-	case "mariadb":
-		dialect = "mysql" // MariaDB uses MySQL driver and protocol
+	case "postgres", "postgresql", "pgx":
+		dialectProtocol = "pgx"
+	case "mysql", "mariadb":
+		dialectProtocol = "mysql"
 	default:
 		return nil, fmt.Errorf("unsupported database dialect: %s", dialect)
 	}
@@ -52,11 +53,11 @@ func ConnectToDatabase(dbURL string) (*DatabaseConnection, error) {
 	// Connect to the database
 	// For MySQL/MariaDB, we need to convert the URL format
 	connectionString := dbURL
-	if dialect == "mysql" {
+	if dialectProtocol == "mysql" {
 		connectionString = convertMySQLURL(dbURL)
 	}
 
-	db, err := sql.Open(dialect, connectionString)
+	db, err := sql.Open(dialectProtocol, connectionString)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database connection: %w", err)
 	}
@@ -77,8 +78,8 @@ func ConnectToDatabase(dbURL string) (*DatabaseConnection, error) {
 	// Create appropriate schema reader and writer
 	var reader types.SchemaReader
 	var writer types.SchemaWriter
-	switch dialect {
-	case "postgres":
+	switch dialectProtocol {
+	case "pgx":
 		reader = postgres.NewPostgreSQLReader(db, info.Schema)
 		writer = postgres.NewPostgreSQLWriter(db, info.Schema)
 	case "mysql":
