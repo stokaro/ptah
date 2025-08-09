@@ -257,8 +257,8 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 			Password: "", // No password in target
 		}
 		database := types.DBRole{
-			Name:    "test_role",
-			Comment: "has_password", // Simulating existing password
+			Name:        "test_role",
+			HasPassword: true, // Database role has a password
 		}
 
 		diff := compare.RoleDefinitions(generated, database)

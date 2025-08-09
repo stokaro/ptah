@@ -196,6 +196,38 @@ Ptah automatically handles dependencies between roles and other database objects
 2. Role attributes are modified when changes are detected
 3. Roles are never automatically dropped (manual removal required for safety)
 
+## Password Security
+
+**Important**: Passwords in role definitions should be properly encrypted/hashed before being stored in your schema files. Ptah does not automatically encrypt passwords - this should be done at the application level or using PostgreSQL's built-in password encryption.
+
+### Password Best Practices
+
+1. **Never use plaintext passwords** in your schema definitions
+2. **Use PostgreSQL's password encryption** when creating roles:
+   ```sql
+   -- Good: Use encrypted password
+   CREATE ROLE app_user WITH LOGIN PASSWORD 'md5a1b2c3d4e5f6789012345678901234';
+
+   -- Bad: Plaintext password (security risk)
+   CREATE ROLE app_user WITH LOGIN PASSWORD 'mypassword123';
+   ```
+
+3. **Use environment variables** for sensitive passwords in development:
+   ```go
+   // Use environment variables for passwords
+   password := os.Getenv("APP_USER_PASSWORD_HASH")
+   ```
+
+4. **Password Detection**: Ptah includes heuristic checks to detect potential plaintext passwords and will add warning comments to generated SQL when suspicious passwords are detected.
+
+### Supported Password Formats
+
+Ptah recognizes these encrypted password formats:
+- MD5 hashes: `md5a1b2c3d4e5f6789012345678901234`
+- SCRAM-SHA-256: `SCRAM-SHA-256$4096:salt$hash:signature`
+- bcrypt: `$2a$10$...`, `$2b$10$...`, `$2y$10$...`
+- SHA-256/SHA-512: `$5$...`, `$6$...`
+
 ## Testing
 
 Use the integration test framework to verify role functionality:
