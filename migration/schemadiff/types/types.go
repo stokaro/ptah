@@ -205,13 +205,6 @@ func (d *SchemaDiff) hasRoleChanges() bool {
 		len(d.RolesModified) > 0
 }
 
-// hasRoleChanges returns true if there are any role-related changes
-func (d *SchemaDiff) hasRoleChanges() bool {
-	return len(d.RolesAdded) > 0 ||
-		len(d.RolesRemoved) > 0 ||
-		len(d.RolesModified) > 0
-}
-
 // TableDiff represents structural differences within a specific database table.
 //
 // This structure captures all types of changes that can occur to a table's structure,
