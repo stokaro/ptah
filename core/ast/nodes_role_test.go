@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/ast/mocks"
 )

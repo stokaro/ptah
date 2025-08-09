@@ -909,11 +909,6 @@ func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
 	}
 
 	if node.Password != "" {
-		// Validate password appears to be encrypted
-		if !looksEncrypted(node.Password) {
-			// Add a comment warning about potential plaintext password
-			r.w.WriteLinef("-- WARNING: Password may not be encrypted - ensure passwords are properly hashed")
-		}
 		attributes = append(attributes, fmt.Sprintf("PASSWORD '%s'", node.Password))
 	}
 
@@ -988,122 +983,61 @@ func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
 
 	// Process each operation
 	for _, operation := range node.Operations {
-		if err := r.renderRoleOperation(node.Name, operation); err != nil {
-			return err
+		var parts []string
+		parts = append(parts, "ALTER ROLE", node.Name)
+
+		switch op := operation.(type) {
+		case *ast.SetPasswordOperation:
+			parts = append(parts, fmt.Sprintf("PASSWORD '%s'", op.Password))
+
+		case *ast.SetLoginOperation:
+			if op.Login {
+				parts = append(parts, "LOGIN")
+			} else {
+				parts = append(parts, "NOLOGIN")
+			}
+
+		case *ast.SetSuperuserOperation:
+			if op.Superuser {
+				parts = append(parts, "SUPERUSER")
+			} else {
+				parts = append(parts, "NOSUPERUSER")
+			}
+
+		case *ast.SetCreateDBOperation:
+			if op.CreateDB {
+				parts = append(parts, "CREATEDB")
+			} else {
+				parts = append(parts, "NOCREATEDB")
+			}
+
+		case *ast.SetCreateRoleOperation:
+			if op.CreateRole {
+				parts = append(parts, "CREATEROLE")
+			} else {
+				parts = append(parts, "NOCREATEROLE")
+			}
+
+		case *ast.SetInheritOperation:
+			if op.Inherit {
+				parts = append(parts, "INHERIT")
+			} else {
+				parts = append(parts, "NOINHERIT")
+			}
+
+		case *ast.SetReplicationOperation:
+			if op.Replication {
+				parts = append(parts, "REPLICATION")
+			} else {
+				parts = append(parts, "NOREPLICATION")
+			}
+
+		default:
+			return fmt.Errorf("unsupported alter role operation: %T", operation)
 		}
+
+		r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	}
 
 	return nil
-}
-
-// renderRoleOperation renders a single role operation as an ALTER ROLE statement
-func (r *Renderer) renderRoleOperation(roleName string, operation ast.RoleOperation) error {
-	var parts []string
-	parts = append(parts, "ALTER ROLE", roleName)
-
-	switch op := operation.(type) {
-	case *ast.SetPasswordOperation:
-		// Validate password appears to be encrypted
-		if !looksEncrypted(op.Password) {
-			// Add a comment warning about potential plaintext password
-			r.w.WriteLinef("-- WARNING: Password may not be encrypted - ensure passwords are properly hashed")
-		}
-		parts = append(parts, fmt.Sprintf("PASSWORD '%s'", op.Password))
-
-	case *ast.SetLoginOperation:
-		if op.Login {
-			parts = append(parts, "LOGIN")
-		} else {
-			parts = append(parts, "NOLOGIN")
-		}
-
-	case *ast.SetSuperuserOperation:
-		if op.Superuser {
-			parts = append(parts, "SUPERUSER")
-		} else {
-			parts = append(parts, "NOSUPERUSER")
-		}
-
-	case *ast.SetCreateDBOperation:
-		if op.CreateDB {
-			parts = append(parts, "CREATEDB")
-		} else {
-			parts = append(parts, "NOCREATEDB")
-		}
-
-	case *ast.SetCreateRoleOperation:
-		if op.CreateRole {
-			parts = append(parts, "CREATEROLE")
-		} else {
-			parts = append(parts, "NOCREATEROLE")
-		}
-
-	case *ast.SetInheritOperation:
-		if op.Inherit {
-			parts = append(parts, "INHERIT")
-		} else {
-			parts = append(parts, "NOINHERIT")
-		}
-
-	case *ast.SetReplicationOperation:
-		if op.Replication {
-			parts = append(parts, "REPLICATION")
-		} else {
-			parts = append(parts, "NOREPLICATION")
-		}
-
-	default:
-		return fmt.Errorf("unsupported alter role operation: %T", operation)
-	}
-
-	r.w.WriteLinef("%s;", strings.Join(parts, " "))
-	return nil
-}
-
-// looksEncrypted checks if a password appears to be encrypted/hashed
-// This is a heuristic check to help detect potential plaintext passwords
-func looksEncrypted(password string) bool {
-	// Empty passwords are considered "encrypted" (no warning needed)
-	if password == "" {
-		return true
-	}
-
-	// Check for common PostgreSQL password hash prefixes
-	if strings.HasPrefix(password, "md5") ||
-		strings.HasPrefix(password, "SCRAM-SHA-256$") ||
-		strings.HasPrefix(password, "$2a$") || // bcrypt
-		strings.HasPrefix(password, "$2b$") || // bcrypt
-		strings.HasPrefix(password, "$2y$") || // bcrypt
-		strings.HasPrefix(password, "$5$") || // SHA-256
-		strings.HasPrefix(password, "$6$") { // SHA-512
-		return true
-	}
-
-	// Check if it looks like a hash (long, contains mix of chars/numbers)
-	if len(password) >= 32 {
-		hasLower := strings.ContainsAny(password, "abcdefghijklmnopqrstuvwxyz")
-		hasUpper := strings.ContainsAny(password, "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-		hasDigit := strings.ContainsAny(password, "0123456789")
-		hasSpecial := strings.ContainsAny(password, "!@#$%^&*()_+-=[]{}|;:,.<>?/")
-
-		// If it has a good mix of character types and is long, likely encrypted
-		charTypeCount := 0
-		if hasLower {
-			charTypeCount++
-		}
-		if hasUpper {
-			charTypeCount++
-		}
-		if hasDigit {
-			charTypeCount++
-		}
-		if hasSpecial {
-			charTypeCount++
-		}
-
-		return charTypeCount >= 3
-	}
-
-	// If none of the above, likely plaintext
-	return false
 }

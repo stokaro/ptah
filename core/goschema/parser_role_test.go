@@ -4,9 +4,10 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-
 	"github.com/stokaro/ptah/core/goschema"
 )
+
+
 
 func TestRoleAnnotationParsing(t *testing.T) {
 	t.Run("basic role annotation", func(t *testing.T) {

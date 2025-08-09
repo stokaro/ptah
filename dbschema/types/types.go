@@ -127,13 +127,12 @@ type DBRLSPolicy struct {
 
 // DBRole represents a PostgreSQL role read from the database
 type DBRole struct {
-	Name        string `json:"name"`         // Role name
-	Login       bool   `json:"login"`        // Whether role can login
-	Superuser   bool   `json:"superuser"`    // Whether role is superuser
-	CreateDB    bool   `json:"create_db"`    // Whether role can create databases
-	CreateRole  bool   `json:"create_role"`  // Whether role can create other roles
-	Inherit     bool   `json:"inherit"`      // Whether role inherits privileges
-	Replication bool   `json:"replication"`  // Whether role can initiate replication
-	HasPassword bool   `json:"has_password"` // Whether role has a password set
-	Comment     string `json:"comment"`      // Role comment/description
+	Name        string `json:"name"`        // Role name
+	Login       bool   `json:"login"`       // Whether role can login
+	Superuser   bool   `json:"superuser"`   // Whether role is superuser
+	CreateDB    bool   `json:"create_db"`   // Whether role can create databases
+	CreateRole  bool   `json:"create_role"` // Whether role can create other roles
+	Inherit     bool   `json:"inherit"`     // Whether role inherits privileges
+	Replication bool   `json:"replication"` // Whether role can initiate replication
+	Comment     string `json:"comment"`     // Role comment/description
 }

@@ -1143,9 +1143,9 @@ func RLSEnabledTables(generated *goschema.Database, database *types.DBSchema, di
 //   - Result: "app_user" added to diff.RolesAdded
 //
 // **Role removal**:
-//   - Roles are NOT automatically marked for removal for safety reasons
-//   - Existing roles not defined in schema are left untouched
-//   - Manual role removal should be done by DBAs when needed
+//   - Database has "old_service_role" role
+//   - Generated schema doesn't define this role
+//   - Result: "old_service_role" added to diff.RolesRemoved
 //
 // **Role modification**:
 //   - Both have "api_user" role
@@ -1162,7 +1162,7 @@ func RLSEnabledTables(generated *goschema.Database, database *types.DBSchema, di
 //
 // Modifies the provided diff parameter by populating:
 //   - diff.RolesAdded: Roles that need to be created
-//   - diff.RolesRemoved: Always empty (roles are not automatically removed for safety)
+//   - diff.RolesRemoved: Roles that exist in database but not in target schema
 //   - diff.RolesModified: Roles with attribute differences
 //
 // # Output Consistency
@@ -1187,11 +1187,12 @@ func Roles(generated *goschema.Database, database *types.DBSchema, diff *difftyp
 		}
 	}
 
-	// Note: We intentionally do not automatically mark roles for removal.
-	// Roles are security-sensitive objects that may be created by DBAs,
-	// other applications, or infrastructure setup. Automatic removal could
-	// be dangerous and break authentication/authorization.
-	// If role removal is needed, it should be done explicitly by the DBA.
+	// Find removed roles
+	for roleName := range databaseRoleMap {
+		if _, exists := generatedRoleMap[roleName]; !exists {
+			diff.RolesRemoved = append(diff.RolesRemoved, roleName)
+		}
+	}
 
 	// Detect role attribute modifications
 	for roleName, generatedRole := range generatedRoleMap {
@@ -1275,8 +1276,8 @@ func RoleDefinitions(generated goschema.Role, database types.DBRole) difftypes.R
 
 	// Compare password (special handling for security)
 	// We only detect if a password needs to be set, not compare actual values
-	if generated.Password != "" && !database.HasPassword {
-		// If target has password but database role doesn't, mark for update
+	if generated.Password != "" && database.Comment == "" {
+		// If target has password but we can't verify database password, assume it needs updating
 		roleDiff.Changes["password"] = "password_update_required"
 	}
 

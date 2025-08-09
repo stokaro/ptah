@@ -591,20 +591,18 @@ func (r *Reader) readRLSPolicies() ([]types.DBRLSPolicy, error) {
 func (r *Reader) readRoles() ([]types.DBRole, error) {
 	rolesQuery := `
 		SELECT
-			r.rolname AS role_name,
-			r.rolcanlogin AS login,
-			r.rolsuper AS superuser,
-			r.rolcreatedb AS create_db,
-			r.rolcreaterole AS create_role,
-			r.rolinherit AS inherit,
-			r.rolreplication AS replication,
-			COALESCE(a.rolpassword IS NOT NULL AND a.rolpassword != '', false) AS has_password,
-			COALESCE(shobj_description(r.oid, 'pg_authid'), '') AS comment
-		FROM pg_roles r
-		LEFT JOIN pg_authid a ON r.oid = a.oid
-		WHERE r.rolname NOT LIKE 'pg_%'  -- Exclude system roles
-		AND r.rolname != 'postgres'      -- Exclude postgres superuser
-		ORDER BY r.rolname`
+			rolname AS role_name,
+			rolcanlogin AS login,
+			rolsuper AS superuser,
+			rolcreatedb AS create_db,
+			rolcreaterole AS create_role,
+			rolinherit AS inherit,
+			rolreplication AS replication,
+			COALESCE(shobj_description(oid, 'pg_authid'), '') AS comment
+		FROM pg_roles
+		WHERE rolname NOT LIKE 'pg_%'  -- Exclude system roles
+		AND rolname != 'postgres'      -- Exclude postgres superuser
+		ORDER BY rolname`
 
 	rows, err := r.db.Query(rolesQuery)
 	if err != nil {
@@ -623,7 +621,6 @@ func (r *Reader) readRoles() ([]types.DBRole, error) {
 			&role.CreateRole,
 			&role.Inherit,
 			&role.Replication,
-			&role.HasPassword,
 			&role.Comment,
 		)
 		if err != nil {

@@ -464,123 +464,78 @@ func (p *Planner) addNewRoles(result []ast.Node, diff *types.SchemaDiff, generat
 
 func (p *Planner) modifyExistingRoles(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
 	for _, roleDiff := range diff.RolesModified {
-		targetRole := p.findTargetRole(roleDiff.RoleName, generated)
+		// Find the role definition to get the current state
+		var targetRole *goschema.Role
+		for _, role := range generated.Roles {
+			if role.Name == roleDiff.RoleName {
+				targetRole = &role
+				break
+			}
+		}
+
 		if targetRole == nil {
 			continue // Skip if role not found in target schema
 		}
 
-		alterRoleNode := p.buildAlterRoleNode(roleDiff, targetRole)
+		// Create ALTER ROLE node with operations based on changes
+		alterRoleNode := ast.NewAlterRole(roleDiff.RoleName)
+
+		// Process each change and add corresponding operations
+		for changeType, changeValue := range roleDiff.Changes {
+			switch changeType {
+			case "login":
+				if strings.Contains(changeValue, "-> true") {
+					alterRoleNode.AddOperation(ast.NewSetLoginOperation(true))
+				} else if strings.Contains(changeValue, "-> false") {
+					alterRoleNode.AddOperation(ast.NewSetLoginOperation(false))
+				}
+			case "password":
+				// Extract new password from "old -> new" format
+				parts := strings.Split(changeValue, " -> ")
+				if len(parts) == 2 {
+					newPassword := parts[1]
+					alterRoleNode.AddOperation(ast.NewSetPasswordOperation(newPassword))
+				}
+			case "superuser":
+				if strings.Contains(changeValue, "-> true") {
+					alterRoleNode.AddOperation(ast.NewSetSuperuserOperation(true))
+				} else if strings.Contains(changeValue, "-> false") {
+					alterRoleNode.AddOperation(ast.NewSetSuperuserOperation(false))
+				}
+			case "createdb", "create_db":
+				if strings.Contains(changeValue, "-> true") {
+					alterRoleNode.AddOperation(ast.NewSetCreateDBOperation(true))
+				} else if strings.Contains(changeValue, "-> false") {
+					alterRoleNode.AddOperation(ast.NewSetCreateDBOperation(false))
+				}
+			case "createrole", "create_role":
+				if strings.Contains(changeValue, "-> true") {
+					alterRoleNode.AddOperation(ast.NewSetCreateRoleOperation(true))
+				} else if strings.Contains(changeValue, "-> false") {
+					alterRoleNode.AddOperation(ast.NewSetCreateRoleOperation(false))
+				}
+			case "inherit":
+				if strings.Contains(changeValue, "-> true") {
+					alterRoleNode.AddOperation(ast.NewSetInheritOperation(true))
+				} else if strings.Contains(changeValue, "-> false") {
+					alterRoleNode.AddOperation(ast.NewSetInheritOperation(false))
+				}
+			case "replication":
+				if strings.Contains(changeValue, "-> true") {
+					alterRoleNode.AddOperation(ast.NewSetReplicationOperation(true))
+				} else if strings.Contains(changeValue, "-> false") {
+					alterRoleNode.AddOperation(ast.NewSetReplicationOperation(false))
+				}
+			}
+		}
+
+		// Only add the ALTER ROLE statement if there are operations to perform
 		if len(alterRoleNode.Operations) > 0 {
 			alterRoleNode.SetComment(fmt.Sprintf("Modify role %s attributes", roleDiff.RoleName))
 			result = append(result, alterRoleNode)
 		}
 	}
 	return result
-}
-
-// findTargetRole finds a role by name in the generated database schema
-func (p *Planner) findTargetRole(roleName string, generated *goschema.Database) *goschema.Role {
-	for _, role := range generated.Roles {
-		if role.Name == roleName {
-			return &role
-		}
-	}
-	return nil
-}
-
-// buildAlterRoleNode creates an ALTER ROLE node with operations based on role changes
-func (p *Planner) buildAlterRoleNode(roleDiff types.RoleDiff, targetRole *goschema.Role) *ast.AlterRoleNode {
-	alterRoleNode := ast.NewAlterRole(roleDiff.RoleName)
-
-	for changeType, changeValue := range roleDiff.Changes {
-		p.addRoleOperation(alterRoleNode, changeType, changeValue, targetRole)
-	}
-
-	return alterRoleNode
-}
-
-// addRoleOperation adds the appropriate operation to the ALTER ROLE node based on change type and value
-func (p *Planner) addRoleOperation(alterRoleNode *ast.AlterRoleNode, changeType, changeValue string, targetRole *goschema.Role) {
-	switch changeType {
-	case "login":
-		p.addLoginOperation(alterRoleNode, changeValue)
-	case "password":
-		p.addPasswordOperation(alterRoleNode, changeValue, targetRole)
-	case "superuser":
-		p.addSuperuserOperation(alterRoleNode, changeValue)
-	case "createdb", "create_db":
-		p.addCreateDBOperation(alterRoleNode, changeValue)
-	case "createrole", "create_role":
-		p.addCreateRoleOperation(alterRoleNode, changeValue)
-	case "inherit":
-		p.addInheritOperation(alterRoleNode, changeValue)
-	case "replication":
-		p.addReplicationOperation(alterRoleNode, changeValue)
-	}
-}
-
-// addLoginOperation adds a login operation to the ALTER ROLE node
-func (p *Planner) addLoginOperation(alterRoleNode *ast.AlterRoleNode, changeValue string) {
-	if strings.Contains(changeValue, "-> true") {
-		alterRoleNode.AddOperation(ast.NewSetLoginOperation(true))
-	} else if strings.Contains(changeValue, "-> false") {
-		alterRoleNode.AddOperation(ast.NewSetLoginOperation(false))
-	}
-}
-
-// addSuperuserOperation adds a superuser operation to the ALTER ROLE node
-func (p *Planner) addSuperuserOperation(alterRoleNode *ast.AlterRoleNode, changeValue string) {
-	if strings.Contains(changeValue, "-> true") {
-		alterRoleNode.AddOperation(ast.NewSetSuperuserOperation(true))
-	} else if strings.Contains(changeValue, "-> false") {
-		alterRoleNode.AddOperation(ast.NewSetSuperuserOperation(false))
-	}
-}
-
-// addCreateDBOperation adds a createdb operation to the ALTER ROLE node
-func (p *Planner) addCreateDBOperation(alterRoleNode *ast.AlterRoleNode, changeValue string) {
-	if strings.Contains(changeValue, "-> true") {
-		alterRoleNode.AddOperation(ast.NewSetCreateDBOperation(true))
-	} else if strings.Contains(changeValue, "-> false") {
-		alterRoleNode.AddOperation(ast.NewSetCreateDBOperation(false))
-	}
-}
-
-// addCreateRoleOperation adds a createrole operation to the ALTER ROLE node
-func (p *Planner) addCreateRoleOperation(alterRoleNode *ast.AlterRoleNode, changeValue string) {
-	if strings.Contains(changeValue, "-> true") {
-		alterRoleNode.AddOperation(ast.NewSetCreateRoleOperation(true))
-	} else if strings.Contains(changeValue, "-> false") {
-		alterRoleNode.AddOperation(ast.NewSetCreateRoleOperation(false))
-	}
-}
-
-// addInheritOperation adds an inherit operation to the ALTER ROLE node
-func (p *Planner) addInheritOperation(alterRoleNode *ast.AlterRoleNode, changeValue string) {
-	if strings.Contains(changeValue, "-> true") {
-		alterRoleNode.AddOperation(ast.NewSetInheritOperation(true))
-	} else if strings.Contains(changeValue, "-> false") {
-		alterRoleNode.AddOperation(ast.NewSetInheritOperation(false))
-	}
-}
-
-// addReplicationOperation adds a replication operation to the ALTER ROLE node
-func (p *Planner) addReplicationOperation(alterRoleNode *ast.AlterRoleNode, changeValue string) {
-	if strings.Contains(changeValue, "-> true") {
-		alterRoleNode.AddOperation(ast.NewSetReplicationOperation(true))
-	} else if strings.Contains(changeValue, "-> false") {
-		alterRoleNode.AddOperation(ast.NewSetReplicationOperation(false))
-	}
-}
-
-// addPasswordOperation adds a password operation to the ALTER ROLE node
-func (p *Planner) addPasswordOperation(alterRoleNode *ast.AlterRoleNode, changeValue string, targetRole *goschema.Role) {
-	if changeValue == "password_update_required" {
-		// Use the target role to get the new password
-		if targetRole != nil && targetRole.Password != "" {
-			alterRoleNode.AddOperation(ast.NewSetPasswordOperation(targetRole.Password))
-		}
-	}
 }
 
 func (p *Planner) removeRoles(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
