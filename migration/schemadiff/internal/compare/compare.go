@@ -1275,8 +1275,8 @@ func RoleDefinitions(generated goschema.Role, database types.DBRole) difftypes.R
 
 	// Compare password (special handling for security)
 	// We only detect if a password needs to be set, not compare actual values
-	if generated.Password != "" && database.Comment == "" {
-		// If target has password but we can't verify database password, assume it needs updating
+	if generated.Password != "" && !database.HasPassword {
+		// If target has password but database role doesn't, mark for update
 		roleDiff.Changes["password"] = "password_update_required"
 	}
 

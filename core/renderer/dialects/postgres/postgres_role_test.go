@@ -139,7 +139,7 @@ func TestPostgreSQLRenderer_VisitAlterRole(t *testing.T) {
 
 		alterRole := ast.NewAlterRole("test_role").
 			AddOperation(ast.NewSetLoginOperation(true)).
-			AddOperation(ast.NewSetPasswordOperation("new_password")).
+			AddOperation(ast.NewSetPasswordOperation("md5a1b2c3d4e5f6789012345678901234")).
 			AddOperation(ast.NewSetCreateDBOperation(true))
 		sql, err := renderer.Render(alterRole)
 
@@ -147,7 +147,7 @@ func TestPostgreSQLRenderer_VisitAlterRole(t *testing.T) {
 		lines := strings.Split(strings.TrimSpace(sql), "\n")
 		c.Assert(len(lines), qt.Equals, 3)
 		c.Assert(lines[0], qt.Equals, "ALTER ROLE test_role LOGIN;")
-		c.Assert(lines[1], qt.Equals, "ALTER ROLE test_role PASSWORD 'new_password';")
+		c.Assert(lines[1], qt.Equals, "ALTER ROLE test_role PASSWORD 'md5a1b2c3d4e5f6789012345678901234';")
 		c.Assert(lines[2], qt.Equals, "ALTER ROLE test_role CREATEDB;")
 	})
 
@@ -157,7 +157,7 @@ func TestPostgreSQLRenderer_VisitAlterRole(t *testing.T) {
 
 		alterRole := ast.NewAlterRole("test_role").
 			AddOperation(ast.NewSetLoginOperation(false)).
-			AddOperation(ast.NewSetPasswordOperation("secret")).
+			AddOperation(ast.NewSetPasswordOperation("SCRAM-SHA-256$4096:abcd1234$hash:signature")).
 			AddOperation(ast.NewSetSuperuserOperation(true)).
 			AddOperation(ast.NewSetCreateDBOperation(false)).
 			AddOperation(ast.NewSetCreateRoleOperation(true)).
@@ -169,7 +169,7 @@ func TestPostgreSQLRenderer_VisitAlterRole(t *testing.T) {
 		lines := strings.Split(strings.TrimSpace(sql), "\n")
 		c.Assert(len(lines), qt.Equals, 7)
 		c.Assert(lines[0], qt.Equals, "ALTER ROLE test_role NOLOGIN;")
-		c.Assert(lines[1], qt.Equals, "ALTER ROLE test_role PASSWORD 'secret';")
+		c.Assert(lines[1], qt.Equals, "ALTER ROLE test_role PASSWORD 'SCRAM-SHA-256$4096:abcd1234$hash:signature';")
 		c.Assert(lines[2], qt.Equals, "ALTER ROLE test_role SUPERUSER;")
 		c.Assert(lines[3], qt.Equals, "ALTER ROLE test_role NOCREATEDB;")
 		c.Assert(lines[4], qt.Equals, "ALTER ROLE test_role CREATEROLE;")

@@ -469,7 +469,7 @@ func (p *Planner) modifyExistingRoles(result []ast.Node, diff *types.SchemaDiff,
 			continue // Skip if role not found in target schema
 		}
 
-		alterRoleNode := p.buildAlterRoleNode(roleDiff)
+		alterRoleNode := p.buildAlterRoleNode(roleDiff, targetRole)
 		if len(alterRoleNode.Operations) > 0 {
 			alterRoleNode.SetComment(fmt.Sprintf("Modify role %s attributes", roleDiff.RoleName))
 			result = append(result, alterRoleNode)
@@ -489,23 +489,23 @@ func (p *Planner) findTargetRole(roleName string, generated *goschema.Database) 
 }
 
 // buildAlterRoleNode creates an ALTER ROLE node with operations based on role changes
-func (p *Planner) buildAlterRoleNode(roleDiff types.RoleDiff) *ast.AlterRoleNode {
+func (p *Planner) buildAlterRoleNode(roleDiff types.RoleDiff, targetRole *goschema.Role) *ast.AlterRoleNode {
 	alterRoleNode := ast.NewAlterRole(roleDiff.RoleName)
 
 	for changeType, changeValue := range roleDiff.Changes {
-		p.addRoleOperation(alterRoleNode, changeType, changeValue)
+		p.addRoleOperation(alterRoleNode, changeType, changeValue, targetRole)
 	}
 
 	return alterRoleNode
 }
 
 // addRoleOperation adds the appropriate operation to the ALTER ROLE node based on change type and value
-func (p *Planner) addRoleOperation(alterRoleNode *ast.AlterRoleNode, changeType, changeValue string) {
+func (p *Planner) addRoleOperation(alterRoleNode *ast.AlterRoleNode, changeType, changeValue string, targetRole *goschema.Role) {
 	switch changeType {
 	case "login":
 		p.addLoginOperation(alterRoleNode, changeValue)
 	case "password":
-		p.addPasswordOperation(alterRoleNode, changeValue)
+		p.addPasswordOperation(alterRoleNode, changeValue, targetRole)
 	case "superuser":
 		p.addSuperuserOperation(alterRoleNode, changeValue)
 	case "createdb", "create_db":
@@ -574,11 +574,12 @@ func (p *Planner) addReplicationOperation(alterRoleNode *ast.AlterRoleNode, chan
 }
 
 // addPasswordOperation adds a password operation to the ALTER ROLE node
-func (p *Planner) addPasswordOperation(alterRoleNode *ast.AlterRoleNode, changeValue string) {
-	parts := strings.Split(changeValue, " -> ")
-	if len(parts) == 2 {
-		newPassword := parts[1]
-		alterRoleNode.AddOperation(ast.NewSetPasswordOperation(newPassword))
+func (p *Planner) addPasswordOperation(alterRoleNode *ast.AlterRoleNode, changeValue string, targetRole *goschema.Role) {
+	if changeValue == "password_update_required" {
+		// Use the target role to get the new password
+		if targetRole != nil && targetRole.Password != "" {
+			alterRoleNode.AddOperation(ast.NewSetPasswordOperation(targetRole.Password))
+		}
 	}
 }
 
