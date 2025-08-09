@@ -49,7 +49,7 @@ func ConnectToDatabase(dbURL string) (*DatabaseConnection, error) {
 	switch dialect {
 	case "postgres", "postgresql", "pgx":
 		dialectProtocol = "pgx"
-		connectionString = cleanPostgresURL(dbURL)
+		connectionString = removePostgresPoolParams(dbURL)
 	case "mysql", "mariadb":
 		dialectProtocol = "mysql"
 		connectionString = convertMySQLURL(dbURL)
@@ -267,9 +267,12 @@ func convertMySQLURL(dbURL string) string {
 	return connectionString
 }
 
-func cleanPostgresURL(dbURL string) string {
-	// remove pool_max_conns=?&pool_min_conns=?
-	// parse url, remove these query params, reconstruct and return
+// removePostgresPoolParams removes PostgreSQL connection pool parameters from a database URL.
+// These parameters (pool_max_conns and pool_min_conns) are specific to pgx driver configuration
+// and may interfere with standard database connections. This function ensures compatibility
+// by removing them while preserving all other query parameters.
+// If the URL cannot be parsed, it returns the original URL unchanged.
+func removePostgresPoolParams(dbURL string) string {
 	parsedURL, err := url.Parse(dbURL)
 	if err != nil {
 		return dbURL
