@@ -853,6 +853,15 @@ func compareNamedItems[T, U any](generated map[string]T, database map[string]U) 
 // **Database Schema Functions**:
 //   - Includes all user-defined functions from the database
 //   - Excludes system functions and built-in PostgreSQL functions
+//   - Excludes extension-owned functions (filtered by database reader)
+//
+// # Extension Function Filtering
+//
+// Extension-owned functions are automatically excluded by the database reader to prevent
+// migration issues. Extension functions cannot be dropped independently and attempting
+// to do so will cause migration failures. Common extensions with functions include:
+//   - btree_gin: Functions like gin_btree_consistent, gin_extract_*
+//   - pg_trgm: Functions like similarity, word_similarity, gin_trgm_*
 //
 // # Function Modification Detection
 //

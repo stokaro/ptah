@@ -27,7 +27,9 @@ type CompareOptions struct {
 func DefaultCompareOptions() *CompareOptions {
 	return &CompareOptions{
 		IgnoredExtensions: []string{
-			"plpgsql", // PostgreSQL procedural language - usually pre-installed
+			"plpgsql",   // PostgreSQL procedural language - usually pre-installed
+			"btree_gin", // B-tree equivalent operators for GIN indexes - contains many functions
+			"pg_trgm",   // Trigram matching for text similarity - contains many functions
 		},
 	}
 }
