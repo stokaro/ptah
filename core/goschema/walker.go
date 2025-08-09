@@ -49,6 +49,7 @@ func ParseDir(rootDir string) (*Database, error) {
 		Functions:            []Function{},
 		RLSPolicies:          []RLSPolicy{},
 		RLSEnabledTables:     []RLSEnabledTable{},
+		Roles:                []Role{},
 		Dependencies:         make(map[string][]string),
 		FunctionDependencies: make(map[string][]string),
 	}
@@ -87,6 +88,7 @@ func ParseDir(rootDir string) (*Database, error) {
 		result.Functions = append(result.Functions, database.Functions...)
 		result.RLSPolicies = append(result.RLSPolicies, database.RLSPolicies...)
 		result.RLSEnabledTables = append(result.RLSEnabledTables, database.RLSEnabledTables...)
+		result.Roles = append(result.Roles, database.Roles...)
 
 		return nil
 	})

@@ -887,3 +887,157 @@ func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode)
 
 	return nil
 }
+
+// VisitCreateRole renders a CREATE ROLE statement for PostgreSQL
+func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	// Build CREATE ROLE statement
+	var parts []string
+	parts = append(parts, "CREATE ROLE", node.Name)
+
+	// Add role attributes
+	var attributes []string
+
+	if node.Login {
+		attributes = append(attributes, "LOGIN")
+	} else {
+		attributes = append(attributes, "NOLOGIN")
+	}
+
+	if node.Password != "" {
+		attributes = append(attributes, fmt.Sprintf("PASSWORD '%s'", node.Password))
+	}
+
+	if node.Superuser {
+		attributes = append(attributes, "SUPERUSER")
+	} else {
+		attributes = append(attributes, "NOSUPERUSER")
+	}
+
+	if node.CreateDB {
+		attributes = append(attributes, "CREATEDB")
+	} else {
+		attributes = append(attributes, "NOCREATEDB")
+	}
+
+	if node.CreateRole {
+		attributes = append(attributes, "CREATEROLE")
+	} else {
+		attributes = append(attributes, "NOCREATEROLE")
+	}
+
+	if node.Inherit {
+		attributes = append(attributes, "INHERIT")
+	} else {
+		attributes = append(attributes, "NOINHERIT")
+	}
+
+	if node.Replication {
+		attributes = append(attributes, "REPLICATION")
+	} else {
+		attributes = append(attributes, "NOREPLICATION")
+	}
+
+	// Combine role name and attributes
+	if len(attributes) > 0 {
+		parts = append(parts, "WITH", strings.Join(attributes, " "))
+	}
+
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+
+	return nil
+}
+
+// VisitDropRole renders a DROP ROLE statement for PostgreSQL
+func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	// Build DROP ROLE statement
+	var parts []string
+	parts = append(parts, "DROP ROLE")
+
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+
+	parts = append(parts, node.Name)
+
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+
+	return nil
+}
+
+// VisitAlterRole renders an ALTER ROLE statement for PostgreSQL
+func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
+	// Add comment if provided
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	// Process each operation
+	for _, operation := range node.Operations {
+		var parts []string
+		parts = append(parts, "ALTER ROLE", node.Name)
+
+		switch op := operation.(type) {
+		case *ast.SetPasswordOperation:
+			parts = append(parts, fmt.Sprintf("PASSWORD '%s'", op.Password))
+
+		case *ast.SetLoginOperation:
+			if op.Login {
+				parts = append(parts, "LOGIN")
+			} else {
+				parts = append(parts, "NOLOGIN")
+			}
+
+		case *ast.SetSuperuserOperation:
+			if op.Superuser {
+				parts = append(parts, "SUPERUSER")
+			} else {
+				parts = append(parts, "NOSUPERUSER")
+			}
+
+		case *ast.SetCreateDBOperation:
+			if op.CreateDB {
+				parts = append(parts, "CREATEDB")
+			} else {
+				parts = append(parts, "NOCREATEDB")
+			}
+
+		case *ast.SetCreateRoleOperation:
+			if op.CreateRole {
+				parts = append(parts, "CREATEROLE")
+			} else {
+				parts = append(parts, "NOCREATEROLE")
+			}
+
+		case *ast.SetInheritOperation:
+			if op.Inherit {
+				parts = append(parts, "INHERIT")
+			} else {
+				parts = append(parts, "NOINHERIT")
+			}
+
+		case *ast.SetReplicationOperation:
+			if op.Replication {
+				parts = append(parts, "REPLICATION")
+			} else {
+				parts = append(parts, "NOREPLICATION")
+			}
+
+		default:
+			return fmt.Errorf("unsupported alter role operation: %T", operation)
+		}
+
+		r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	}
+
+	return nil
+}

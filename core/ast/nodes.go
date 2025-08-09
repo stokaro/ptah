@@ -1259,6 +1259,368 @@ func (n *AlterTableDisableRLSNode) Accept(visitor Visitor) error {
 	return visitor.VisitAlterTableDisableRLS(n)
 }
 
+// CreateRoleNode represents a CREATE ROLE statement for PostgreSQL role management.
+//
+// This node contains the complete definition of a PostgreSQL role including
+// login capabilities, password, privileges, and other role attributes.
+// It supports various PostgreSQL role attributes for comprehensive role management.
+type CreateRoleNode struct {
+	// Name is the name of the role to create
+	Name string
+	// Login indicates whether the role can login (default: false)
+	Login bool
+	// Password contains the role password (optional, should be encrypted)
+	Password string
+	// Superuser indicates whether the role is a superuser (default: false)
+	Superuser bool
+	// CreateDB indicates whether the role can create databases (default: false)
+	CreateDB bool
+	// CreateRole indicates whether the role can create other roles (default: false)
+	CreateRole bool
+	// Inherit indicates whether the role inherits privileges (default: true)
+	Inherit bool
+	// Replication indicates whether the role can initiate replication (default: false)
+	Replication bool
+	// Comment is an optional comment for the role
+	Comment string
+}
+
+// NewCreateRole creates a new CREATE ROLE node with the specified name.
+//
+// The role is created with default attributes (no login, no special privileges).
+// Use the fluent API methods to configure role attributes.
+//
+// Example:
+//
+//	role := NewCreateRole("app_user").
+//		SetLogin(true).
+//		SetPassword("encrypted_password").
+//		SetComment("Application user role")
+func NewCreateRole(name string) *CreateRoleNode {
+	return &CreateRoleNode{
+		Name:    name,
+		Inherit: true, // Default to inherit privileges
+	}
+}
+
+// SetLogin sets whether the role can login.
+//
+// Example:
+//
+//	role.SetLogin(true)
+func (n *CreateRoleNode) SetLogin(login bool) *CreateRoleNode {
+	n.Login = login
+	return n
+}
+
+// SetPassword sets the role password.
+//
+// The password should be properly encrypted before setting.
+//
+// Example:
+//
+//	role.SetPassword("encrypted_password")
+func (n *CreateRoleNode) SetPassword(password string) *CreateRoleNode {
+	n.Password = password
+	return n
+}
+
+// SetSuperuser sets whether the role is a superuser.
+//
+// Example:
+//
+//	role.SetSuperuser(true)
+func (n *CreateRoleNode) SetSuperuser(superuser bool) *CreateRoleNode {
+	n.Superuser = superuser
+	return n
+}
+
+// SetCreateDB sets whether the role can create databases.
+//
+// Example:
+//
+//	role.SetCreateDB(true)
+func (n *CreateRoleNode) SetCreateDB(createDB bool) *CreateRoleNode {
+	n.CreateDB = createDB
+	return n
+}
+
+// SetCreateRole sets whether the role can create other roles.
+//
+// Example:
+//
+//	role.SetCreateRole(true)
+func (n *CreateRoleNode) SetCreateRole(createRole bool) *CreateRoleNode {
+	n.CreateRole = createRole
+	return n
+}
+
+// SetInherit sets whether the role inherits privileges.
+//
+// Example:
+//
+//	role.SetInherit(false)
+func (n *CreateRoleNode) SetInherit(inherit bool) *CreateRoleNode {
+	n.Inherit = inherit
+	return n
+}
+
+// SetReplication sets whether the role can initiate replication.
+//
+// Example:
+//
+//	role.SetReplication(true)
+func (n *CreateRoleNode) SetReplication(replication bool) *CreateRoleNode {
+	n.Replication = replication
+	return n
+}
+
+// SetComment sets a comment for the CREATE ROLE operation.
+//
+// Example:
+//
+//	role.SetComment("Application user role")
+func (n *CreateRoleNode) SetComment(comment string) *CreateRoleNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for CreateRoleNode.
+func (n *CreateRoleNode) Accept(visitor Visitor) error {
+	return visitor.VisitCreateRole(n)
+}
+
+// DropRoleNode represents a DROP ROLE statement for PostgreSQL role management.
+//
+// This node is used to remove PostgreSQL roles from the database.
+// Role removal should be done carefully as other database objects may depend on the role.
+type DropRoleNode struct {
+	// Name is the name of the role to drop
+	Name string
+	// IfExists indicates whether to use IF EXISTS clause
+	IfExists bool
+	// Comment is an optional comment for the drop operation
+	Comment string
+}
+
+// NewDropRole creates a new DROP ROLE node with the specified name.
+//
+// The node is created with IfExists=false by default.
+// Use the fluent API methods to configure options.
+//
+// Example:
+//
+//	dropRole := NewDropRole("app_user").
+//		SetIfExists().
+//		SetComment("Remove unused application role")
+func NewDropRole(name string) *DropRoleNode {
+	return &DropRoleNode{
+		Name:     name,
+		IfExists: false,
+	}
+}
+
+// SetIfExists marks the drop role to use IF EXISTS clause.
+//
+// This prevents errors if the role doesn't exist.
+//
+// Example:
+//
+//	dropRole.SetIfExists()
+func (n *DropRoleNode) SetIfExists() *DropRoleNode {
+	n.IfExists = true
+	return n
+}
+
+// SetComment sets a comment for the DROP ROLE operation.
+//
+// This comment can be used for documentation or warnings.
+//
+// Example:
+//
+//	dropRole.SetComment("WARNING: Ensure no objects depend on this role")
+func (n *DropRoleNode) SetComment(comment string) *DropRoleNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for DropRoleNode.
+func (n *DropRoleNode) Accept(visitor Visitor) error {
+	return visitor.VisitDropRole(n)
+}
+
+// AlterRoleNode represents an ALTER ROLE statement for PostgreSQL role management.
+//
+// This node is used to modify existing PostgreSQL roles, changing their attributes
+// such as login capabilities, password, privileges, and other role properties.
+// Role modifications are applied incrementally to existing roles.
+type AlterRoleNode struct {
+	// Name is the name of the role to alter
+	Name string
+	// Operations contains the list of operations to perform on the role
+	Operations []RoleOperation
+	// Comment is an optional comment for the alter operation
+	Comment string
+}
+
+// NewAlterRole creates a new ALTER ROLE node with the specified name.
+//
+// The node is created with an empty operations list.
+// Use AddOperation to add specific role modifications.
+//
+// Example:
+//
+//	alterRole := NewAlterRole("app_user").
+//		AddOperation(NewSetPasswordOperation("new_encrypted_password")).
+//		AddOperation(NewSetLoginOperation(false)).
+//		SetComment("Update application user role")
+func NewAlterRole(name string) *AlterRoleNode {
+	return &AlterRoleNode{
+		Name:       name,
+		Operations: make([]RoleOperation, 0),
+	}
+}
+
+// AddOperation adds a role operation and returns the alter role node for chaining.
+//
+// Example:
+//
+//	alterRole.AddOperation(NewSetPasswordOperation("new_password"))
+func (n *AlterRoleNode) AddOperation(operation RoleOperation) *AlterRoleNode {
+	n.Operations = append(n.Operations, operation)
+	return n
+}
+
+// SetComment sets a comment for the ALTER ROLE operation.
+//
+// Example:
+//
+//	alterRole.SetComment("Update role privileges")
+func (n *AlterRoleNode) SetComment(comment string) *AlterRoleNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for AlterRoleNode.
+func (n *AlterRoleNode) Accept(visitor Visitor) error {
+	return visitor.VisitAlterRole(n)
+}
+
+// RoleOperation represents an operation that can be performed on a role during ALTER ROLE.
+//
+// This interface allows for different types of role modifications to be represented
+// in a type-safe manner. Each operation type implements this interface to provide
+// specific role modification behavior.
+type RoleOperation interface {
+	// GetOperationType returns a string identifier for the operation type
+	GetOperationType() string
+}
+
+// SetPasswordOperation represents setting a new password for a role.
+type SetPasswordOperation struct {
+	Password string
+}
+
+// GetOperationType returns the operation type identifier.
+func (op *SetPasswordOperation) GetOperationType() string {
+	return "SET_PASSWORD"
+}
+
+// NewSetPasswordOperation creates a new password setting operation.
+func NewSetPasswordOperation(password string) *SetPasswordOperation {
+	return &SetPasswordOperation{Password: password}
+}
+
+// SetLoginOperation represents changing the login capability of a role.
+type SetLoginOperation struct {
+	Login bool
+}
+
+// GetOperationType returns the operation type identifier.
+func (op *SetLoginOperation) GetOperationType() string {
+	return "SET_LOGIN"
+}
+
+// NewSetLoginOperation creates a new login setting operation.
+func NewSetLoginOperation(login bool) *SetLoginOperation {
+	return &SetLoginOperation{Login: login}
+}
+
+// SetSuperuserOperation represents changing the superuser status of a role.
+type SetSuperuserOperation struct {
+	Superuser bool
+}
+
+// GetOperationType returns the operation type identifier.
+func (op *SetSuperuserOperation) GetOperationType() string {
+	return "SET_SUPERUSER"
+}
+
+// NewSetSuperuserOperation creates a new superuser setting operation.
+func NewSetSuperuserOperation(superuser bool) *SetSuperuserOperation {
+	return &SetSuperuserOperation{Superuser: superuser}
+}
+
+// SetCreateDBOperation represents changing the createdb capability of a role.
+type SetCreateDBOperation struct {
+	CreateDB bool
+}
+
+// GetOperationType returns the operation type identifier.
+func (op *SetCreateDBOperation) GetOperationType() string {
+	return "SET_CREATEDB"
+}
+
+// NewSetCreateDBOperation creates a new createdb setting operation.
+func NewSetCreateDBOperation(createDB bool) *SetCreateDBOperation {
+	return &SetCreateDBOperation{CreateDB: createDB}
+}
+
+// SetCreateRoleOperation represents changing the createrole capability of a role.
+type SetCreateRoleOperation struct {
+	CreateRole bool
+}
+
+// GetOperationType returns the operation type identifier.
+func (op *SetCreateRoleOperation) GetOperationType() string {
+	return "SET_CREATEROLE"
+}
+
+// NewSetCreateRoleOperation creates a new createrole setting operation.
+func NewSetCreateRoleOperation(createRole bool) *SetCreateRoleOperation {
+	return &SetCreateRoleOperation{CreateRole: createRole}
+}
+
+// SetInheritOperation represents changing the inherit capability of a role.
+type SetInheritOperation struct {
+	Inherit bool
+}
+
+// GetOperationType returns the operation type identifier.
+func (op *SetInheritOperation) GetOperationType() string {
+	return "SET_INHERIT"
+}
+
+// NewSetInheritOperation creates a new inherit setting operation.
+func NewSetInheritOperation(inherit bool) *SetInheritOperation {
+	return &SetInheritOperation{Inherit: inherit}
+}
+
+// SetReplicationOperation represents changing the replication capability of a role.
+type SetReplicationOperation struct {
+	Replication bool
+}
+
+// GetOperationType returns the operation type identifier.
+func (op *SetReplicationOperation) GetOperationType() string {
+	return "SET_REPLICATION"
+}
+
+// NewSetReplicationOperation creates a new replication setting operation.
+func NewSetReplicationOperation(replication bool) *SetReplicationOperation {
+	return &SetReplicationOperation{Replication: replication}
+}
+
 // StatementList represents a collection of SQL statements that should be executed together.
 //
 // This is typically used to represent a complete schema or migration script

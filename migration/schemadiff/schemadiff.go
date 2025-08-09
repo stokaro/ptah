@@ -64,5 +64,8 @@ func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, 
 	// Compare RLS enabled tables (PostgreSQL-specific feature)
 	compare.RLSEnabledTables(generated, database, diff)
 
+	// Compare roles (PostgreSQL-specific feature)
+	compare.Roles(generated, database, diff)
+
 	return diff
 }

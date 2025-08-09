@@ -64,6 +64,27 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	}
 	schema.Extensions = extensions
 
+	// Read functions (PostgreSQL-specific)
+	functions, err := r.readFunctions()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read functions: %w", err)
+	}
+	schema.Functions = functions
+
+	// Read RLS policies (PostgreSQL-specific)
+	rlsPolicies, err := r.readRLSPolicies()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read RLS policies: %w", err)
+	}
+	schema.RLSPolicies = rlsPolicies
+
+	// Read roles (PostgreSQL-specific)
+	roles, err := r.readRoles()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read roles: %w", err)
+	}
+	schema.Roles = roles
+
 	// Enhance tables with constraint information
 	r.enhanceTablesWithConstraints(schema.Tables, schema.Constraints)
 
@@ -455,4 +476,159 @@ func (r *Reader) enhanceTablesWithIndexes(tables []types.DBTable, indexes []type
 			}
 		}
 	}
+}
+
+// readFunctions reads all PostgreSQL custom functions from the database
+func (r *Reader) readFunctions() ([]types.DBFunction, error) {
+	functionsQuery := `
+		SELECT
+			p.proname AS function_name,
+			pg_get_function_arguments(p.oid) AS parameters,
+			pg_get_function_result(p.oid) AS returns,
+			l.lanname AS language,
+			CASE p.prosecdef WHEN true THEN 'DEFINER' ELSE 'INVOKER' END AS security,
+			CASE p.provolatile
+				WHEN 'i' THEN 'IMMUTABLE'
+				WHEN 's' THEN 'STABLE'
+				WHEN 'v' THEN 'VOLATILE'
+			END AS volatility,
+			p.prosrc AS body,
+			COALESCE(obj_description(p.oid, 'pg_proc'), '') AS comment
+		FROM pg_proc p
+		JOIN pg_namespace n ON n.oid = p.pronamespace
+		JOIN pg_language l ON l.oid = p.prolang
+		WHERE n.nspname = $1
+		AND p.prokind = 'f'  -- Only functions, not procedures
+		AND l.lanname != 'internal'  -- Exclude internal functions
+		ORDER BY p.proname`
+
+	rows, err := r.db.Query(functionsQuery, r.schema)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query functions: %w", err)
+	}
+	defer rows.Close()
+
+	var functions []types.DBFunction
+	for rows.Next() {
+		var fn types.DBFunction
+		err := rows.Scan(
+			&fn.Name,
+			&fn.Parameters,
+			&fn.Returns,
+			&fn.Language,
+			&fn.Security,
+			&fn.Volatility,
+			&fn.Body,
+			&fn.Comment,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan function: %w", err)
+		}
+
+		functions = append(functions, fn)
+	}
+
+	return functions, nil
+}
+
+// readRLSPolicies reads all PostgreSQL RLS policies from the database
+func (r *Reader) readRLSPolicies() ([]types.DBRLSPolicy, error) {
+	rlsPoliciesQuery := `
+		SELECT
+			pol.polname AS policy_name,
+			c.relname AS table_name,
+			CASE pol.polcmd
+				WHEN 'r' THEN 'SELECT'
+				WHEN 'a' THEN 'INSERT'
+				WHEN 'w' THEN 'UPDATE'
+				WHEN 'd' THEN 'DELETE'
+				WHEN '*' THEN 'ALL'
+			END AS policy_for,
+			CASE
+				WHEN pol.polroles = '{0}' THEN 'PUBLIC'
+				ELSE array_to_string(ARRAY(
+					SELECT rolname FROM pg_roles WHERE oid = ANY(pol.polroles)
+				), ',')
+			END AS to_roles,
+			COALESCE(pg_get_expr(pol.polqual, pol.polrelid), '') AS using_expression,
+			COALESCE(pg_get_expr(pol.polwithcheck, pol.polrelid), '') AS with_check_expression,
+			COALESCE(obj_description(pol.oid, 'pg_policy'), '') AS comment
+		FROM pg_policy pol
+		JOIN pg_class c ON c.oid = pol.polrelid
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = $1
+		ORDER BY c.relname, pol.polname`
+
+	rows, err := r.db.Query(rlsPoliciesQuery, r.schema)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query RLS policies: %w", err)
+	}
+	defer rows.Close()
+
+	var policies []types.DBRLSPolicy
+	for rows.Next() {
+		var policy types.DBRLSPolicy
+		err := rows.Scan(
+			&policy.Name,
+			&policy.Table,
+			&policy.PolicyFor,
+			&policy.ToRoles,
+			&policy.UsingExpression,
+			&policy.WithCheckExpression,
+			&policy.Comment,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan RLS policy: %w", err)
+		}
+
+		policies = append(policies, policy)
+	}
+
+	return policies, nil
+}
+
+// readRoles reads all PostgreSQL roles from the database
+func (r *Reader) readRoles() ([]types.DBRole, error) {
+	rolesQuery := `
+		SELECT
+			rolname AS role_name,
+			rolcanlogin AS login,
+			rolsuper AS superuser,
+			rolcreatedb AS create_db,
+			rolcreaterole AS create_role,
+			rolinherit AS inherit,
+			rolreplication AS replication,
+			COALESCE(shobj_description(oid, 'pg_authid'), '') AS comment
+		FROM pg_roles
+		WHERE rolname NOT LIKE 'pg_%'  -- Exclude system roles
+		AND rolname != 'postgres'      -- Exclude postgres superuser
+		ORDER BY rolname`
+
+	rows, err := r.db.Query(rolesQuery)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query roles: %w", err)
+	}
+	defer rows.Close()
+
+	var roles []types.DBRole
+	for rows.Next() {
+		var role types.DBRole
+		err := rows.Scan(
+			&role.Name,
+			&role.Login,
+			&role.Superuser,
+			&role.CreateDB,
+			&role.CreateRole,
+			&role.Inherit,
+			&role.Replication,
+			&role.Comment,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan role: %w", err)
+		}
+
+		roles = append(roles, role)
+	}
+
+	return roles, nil
 }

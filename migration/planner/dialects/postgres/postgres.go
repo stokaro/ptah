@@ -388,34 +388,40 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	// 0. Add new extensions first (PostgreSQL extensions should be created before other objects)
 	result = p.addNewExtensions(result, diff, generated)
 
-	// 1. Add new functions (functions may be used by RLS policies)
+	// 1. Add new roles (roles may be referenced by RLS policies and functions)
+	result = p.addNewRoles(result, diff, generated)
+
+	// 2. Add new functions (functions may be used by RLS policies)
 	result = p.addNewFunctions(result, diff, generated)
 
-	// 2. Add new enums (PostgreSQL requires enum types to exist before tables use them)
+	// 3. Add new enums (PostgreSQL requires enum types to exist before tables use them)
 	result = p.addNewEnums(result, diff, generated)
 
-	// 3. Modify existing enums (add values only - PostgreSQL doesn't support removing enum values easily)
+	// 4. Modify existing enums (add values only - PostgreSQL doesn't support removing enum values easily)
 	result = p.modifyExistingEnums(result, diff)
 
-	// 4. Add new tables
+	// 5. Add new tables
 	result = p.addNewTables(result, diff, generated)
 
-	// 5. Add and modify table columns (must be done before creating RLS policies that depend on columns)
+	// 6. Add and modify table columns (must be done before creating RLS policies that depend on columns)
 	result = p.addAndModifyTableColumns(result, diff, generated)
 
-	// 6. Enable RLS on tables (must be done after table creation and modification)
+	// 7. Modify existing roles (must be done before RLS policies that reference them)
+	result = p.modifyExistingRoles(result, diff, generated)
+
+	// 8. Enable RLS on tables (must be done after table creation and modification)
 	result = p.enableRLSOnTables(result, diff, generated)
 
-	// 7. Add RLS policies (must be done after RLS is enabled and columns exist)
+	// 9. Add RLS policies (must be done after RLS is enabled and columns exist)
 	result = p.addNewRLSPolicies(result, diff, generated)
 
-	// 8. Add new indexes
+	// 10. Add new indexes
 	result = p.addNewIndexes(result, diff, generated)
 
-	// 9. Remove indexes (safe operations)
+	// 11. Remove indexes (safe operations)
 	result = p.removeIndexes(result, diff)
 
-	// 10. Remove RLS policies (must be done before disabling RLS and before dropping columns)
+	// 12. Remove RLS policies (must be done before disabling RLS and before dropping columns)
 	result = p.removeRLSPolicies(result, diff)
 
 	// 11. Disable RLS on tables (must be done after removing policies)
@@ -430,12 +436,115 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	// 13. Remove functions (must be done after removing policies that might use them)
 	result = p.removeFunctions(result, diff)
 
-	// 14. Remove enums (dangerous!)
+	// 14. Remove roles (must be done after removing functions and policies that depend on them)
+	result = p.removeRoles(result, diff)
+
+	// 15. Remove enums (dangerous!)
 	result = p.removeEnums(result, diff)
 
-	// 15. Remove extensions (dangerous!)
+	// 16. Remove extensions (dangerous!)
 	result = p.removeExtensions(result, diff)
 
+	return result
+}
+
+func (p *Planner) addNewRoles(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, roleName := range diff.RolesAdded {
+		// Find the role definition
+		for _, role := range generated.Roles {
+			if role.Name == roleName {
+				roleNode := fromschema.FromRole(role)
+				result = append(result, roleNode)
+				break
+			}
+		}
+	}
+	return result
+}
+
+func (p *Planner) modifyExistingRoles(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, roleDiff := range diff.RolesModified {
+		// Find the role definition to get the current state
+		var targetRole *goschema.Role
+		for _, role := range generated.Roles {
+			if role.Name == roleDiff.RoleName {
+				targetRole = &role
+				break
+			}
+		}
+
+		if targetRole == nil {
+			continue // Skip if role not found in target schema
+		}
+
+		// Create ALTER ROLE node with operations based on changes
+		alterRoleNode := ast.NewAlterRole(roleDiff.RoleName)
+
+		// Process each change and add corresponding operations
+		for changeType, changeValue := range roleDiff.Changes {
+			switch changeType {
+			case "login":
+				if strings.Contains(changeValue, "-> true") {
+					alterRoleNode.AddOperation(ast.NewSetLoginOperation(true))
+				} else if strings.Contains(changeValue, "-> false") {
+					alterRoleNode.AddOperation(ast.NewSetLoginOperation(false))
+				}
+			case "password":
+				// Extract new password from "old -> new" format
+				parts := strings.Split(changeValue, " -> ")
+				if len(parts) == 2 {
+					newPassword := parts[1]
+					alterRoleNode.AddOperation(ast.NewSetPasswordOperation(newPassword))
+				}
+			case "superuser":
+				if strings.Contains(changeValue, "-> true") {
+					alterRoleNode.AddOperation(ast.NewSetSuperuserOperation(true))
+				} else if strings.Contains(changeValue, "-> false") {
+					alterRoleNode.AddOperation(ast.NewSetSuperuserOperation(false))
+				}
+			case "createdb", "create_db":
+				if strings.Contains(changeValue, "-> true") {
+					alterRoleNode.AddOperation(ast.NewSetCreateDBOperation(true))
+				} else if strings.Contains(changeValue, "-> false") {
+					alterRoleNode.AddOperation(ast.NewSetCreateDBOperation(false))
+				}
+			case "createrole", "create_role":
+				if strings.Contains(changeValue, "-> true") {
+					alterRoleNode.AddOperation(ast.NewSetCreateRoleOperation(true))
+				} else if strings.Contains(changeValue, "-> false") {
+					alterRoleNode.AddOperation(ast.NewSetCreateRoleOperation(false))
+				}
+			case "inherit":
+				if strings.Contains(changeValue, "-> true") {
+					alterRoleNode.AddOperation(ast.NewSetInheritOperation(true))
+				} else if strings.Contains(changeValue, "-> false") {
+					alterRoleNode.AddOperation(ast.NewSetInheritOperation(false))
+				}
+			case "replication":
+				if strings.Contains(changeValue, "-> true") {
+					alterRoleNode.AddOperation(ast.NewSetReplicationOperation(true))
+				} else if strings.Contains(changeValue, "-> false") {
+					alterRoleNode.AddOperation(ast.NewSetReplicationOperation(false))
+				}
+			}
+		}
+
+		// Only add the ALTER ROLE statement if there are operations to perform
+		if len(alterRoleNode.Operations) > 0 {
+			alterRoleNode.SetComment(fmt.Sprintf("Modify role %s attributes", roleDiff.RoleName))
+			result = append(result, alterRoleNode)
+		}
+	}
+	return result
+}
+
+func (p *Planner) removeRoles(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, roleName := range diff.RolesRemoved {
+		dropRoleNode := ast.NewDropRole(roleName).
+			SetIfExists().
+			SetComment("WARNING: Ensure no other objects depend on this role")
+		result = append(result, dropRoleNode)
+	}
 	return result
 }
 
