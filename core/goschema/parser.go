@@ -245,11 +245,9 @@ func parseFileAST(f *ast.File) Database {
 	var roles []Role
 	globalEnumsMap := make(map[string]Enum)
 
-	// First pass: collect all table names and their struct names
-	tableNameToStructName := collectTableNames(f)
-
-	// Process all declarations
-	processDeclarations(
+	// Single pass: collect table names and process all declarations and comments
+	tableNameToStructName := make(map[string]string)
+	processFileAST(
 		f,
 		tableNameToStructName,
 		globalEnumsMap,
@@ -263,9 +261,6 @@ func parseFileAST(f *ast.File) Database {
 		&rlsEnabledTables,
 		&roles,
 	)
-
-	// Second pass: scan all comments in the file for RLS annotations that might not be associated with struct declarations
-	processAllFileComments(f, tableNameToStructName, &rlsPolicies, &rlsEnabledTables)
 
 	enums := make([]Enum, 0, len(globalEnumsMap))
 	keys := make([]string, 0, len(globalEnumsMap))
@@ -299,10 +294,22 @@ func parseFileAST(f *ast.File) Database {
 	return result
 }
 
-// collectTableNames extracts table names and their corresponding struct names from the AST
-func collectTableNames(f *ast.File) map[string]string {
-	tableNameToStructName := make(map[string]string)
-
+// processFileAST processes the entire AST file in a single optimized pass
+func processFileAST(
+	f *ast.File,
+	tableNameToStructName map[string]string,
+	globalEnumsMap map[string]Enum,
+	embeddedFields *[]EmbeddedField,
+	schemaFields *[]Field,
+	schemaIndexes *[]Index,
+	tableDirectives *[]Table,
+	extensions *[]Extension,
+	functions *[]Function,
+	rlsPolicies *[]RLSPolicy,
+	rlsEnabledTables *[]RLSEnabledTable,
+	roles *[]Role,
+) {
+	// First, collect table names from struct declarations
 	for _, decl := range f.Decls {
 		genDecl, ok := decl.(*ast.GenDecl)
 		if !ok {
@@ -333,7 +340,24 @@ func collectTableNames(f *ast.File) map[string]string {
 		}
 	}
 
-	return tableNameToStructName
+	// Process all struct declarations
+	processDeclarations(
+		f,
+		tableNameToStructName,
+		globalEnumsMap,
+		embeddedFields,
+		schemaFields,
+		schemaIndexes,
+		tableDirectives,
+		extensions,
+		functions,
+		rlsPolicies,
+		rlsEnabledTables,
+		roles,
+	)
+
+	// Process all file comments for RLS annotations that might not be associated with struct declarations
+	processAllFileComments(f, tableNameToStructName, rlsPolicies, rlsEnabledTables)
 }
 
 // processDeclarations processes all struct declarations in the file

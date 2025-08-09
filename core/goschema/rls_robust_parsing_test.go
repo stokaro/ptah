@@ -1,13 +1,12 @@
 package goschema_test
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/goschema/testutil"
 )
 
 func TestRLSPolicyParsingRobustness(t *testing.T) {
@@ -139,8 +138,8 @@ type User struct {
 			c := qt.New(t)
 
 			// Create a temporary file with the test code
-			tempFile := createTempGoFile(t, tt.goCode)
-			defer removeTempFile(t, tempFile)
+			tempFile := testutil.CreateTempGoFile(t, tt.goCode)
+			defer testutil.RemoveTempFile(t, tempFile)
 
 			// Parse the file
 			database := goschema.ParseFile(tempFile)
@@ -178,25 +177,4 @@ type User struct {
 			}
 		})
 	}
-}
-
-// Helper functions for creating temporary files
-func createTempGoFile(t *testing.T, content string) string {
-	t.Helper()
-
-	tempDir := t.TempDir()
-	tempFile := filepath.Join(tempDir, "test.go")
-
-	err := os.WriteFile(tempFile, []byte(content), 0600)
-	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
-	}
-
-	return tempFile
-}
-
-func removeTempFile(t *testing.T, filename string) {
-	t.Helper()
-	// TempDir automatically cleans up, but we can be explicit
-	os.Remove(filename)
 }
