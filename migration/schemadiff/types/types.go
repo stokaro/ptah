@@ -103,6 +103,18 @@ type SchemaDiff struct {
 	// RLSEnabledTablesRemoved contains names of tables that need RLS disabled
 	// (potentially dangerous - removes row-level security)
 	RLSEnabledTablesRemoved []string `json:"rls_enabled_tables_removed"`
+
+	// RolesAdded contains names of PostgreSQL roles that exist in the target schema
+	// but not in the current database schema
+	RolesAdded []string `json:"roles_added"`
+
+	// RolesRemoved contains names of PostgreSQL roles that exist in the current database
+	// but not in the target schema (potentially dangerous - may break existing functionality)
+	RolesRemoved []string `json:"roles_removed"`
+
+	// RolesModified contains detailed information about roles that exist in both
+	// schemas but have different definitions (attributes, passwords, etc.)
+	RolesModified []RoleDiff `json:"roles_modified"`
 }
 
 // HasChanges returns true if the diff contains any schema changes requiring migration.
@@ -135,24 +147,62 @@ type SchemaDiff struct {
 //		log.Println("No schema changes detected")
 //	}
 func (d *SchemaDiff) HasChanges() bool {
+	return d.hasTableChanges() ||
+		d.hasEnumChanges() ||
+		d.hasIndexChanges() ||
+		d.hasExtensionChanges() ||
+		d.hasFunctionChanges() ||
+		d.hasRLSChanges() ||
+		d.hasRoleChanges()
+}
+
+// hasTableChanges returns true if there are any table-related changes
+func (d *SchemaDiff) hasTableChanges() bool {
 	return len(d.TablesAdded) > 0 ||
 		len(d.TablesRemoved) > 0 ||
-		len(d.TablesModified) > 0 ||
-		len(d.EnumsAdded) > 0 ||
+		len(d.TablesModified) > 0
+}
+
+// hasEnumChanges returns true if there are any enum-related changes
+func (d *SchemaDiff) hasEnumChanges() bool {
+	return len(d.EnumsAdded) > 0 ||
 		len(d.EnumsRemoved) > 0 ||
-		len(d.EnumsModified) > 0 ||
-		len(d.IndexesAdded) > 0 ||
-		len(d.IndexesRemoved) > 0 ||
-		len(d.ExtensionsAdded) > 0 ||
-		len(d.ExtensionsRemoved) > 0 ||
-		len(d.FunctionsAdded) > 0 ||
+		len(d.EnumsModified) > 0
+}
+
+// hasIndexChanges returns true if there are any index-related changes
+func (d *SchemaDiff) hasIndexChanges() bool {
+	return len(d.IndexesAdded) > 0 ||
+		len(d.IndexesRemoved) > 0
+}
+
+// hasExtensionChanges returns true if there are any extension-related changes
+func (d *SchemaDiff) hasExtensionChanges() bool {
+	return len(d.ExtensionsAdded) > 0 ||
+		len(d.ExtensionsRemoved) > 0
+}
+
+// hasFunctionChanges returns true if there are any function-related changes
+func (d *SchemaDiff) hasFunctionChanges() bool {
+	return len(d.FunctionsAdded) > 0 ||
 		len(d.FunctionsRemoved) > 0 ||
-		len(d.FunctionsModified) > 0 ||
-		len(d.RLSPoliciesAdded) > 0 ||
+		len(d.FunctionsModified) > 0
+}
+
+// hasRLSChanges returns true if there are any RLS-related changes
+func (d *SchemaDiff) hasRLSChanges() bool {
+	return len(d.RLSPoliciesAdded) > 0 ||
 		len(d.RLSPoliciesRemoved) > 0 ||
 		len(d.RLSPoliciesModified) > 0 ||
 		len(d.RLSEnabledTablesAdded) > 0 ||
 		len(d.RLSEnabledTablesRemoved) > 0
+}
+
+// hasRoleChanges returns true if there are any role-related changes
+func (d *SchemaDiff) hasRoleChanges() bool {
+	return len(d.RolesAdded) > 0 ||
+		len(d.RolesRemoved) > 0 ||
+		len(d.RolesModified) > 0
 }
 
 // TableDiff represents structural differences within a specific database table.
@@ -338,6 +388,42 @@ type RLSPolicyDiff struct {
 
 	// TableName is the name of the table the policy applies to
 	TableName string `json:"table_name"`
+
+	// Changes maps change types to their old->new value transitions
+	// Format: "change_type" -> "old_value -> new_value"
+	Changes map[string]string `json:"changes"`
+}
+
+// RoleDiff represents changes to PostgreSQL role definitions.
+//
+// This structure captures modifications to role definitions, including changes
+// to role attributes such as login capabilities, passwords, privileges, and other
+// role properties. Role modifications typically require ALTER ROLE statements in PostgreSQL.
+//
+// # Role Change Types
+//
+// Common role changes include:
+//   - **Login**: Changes to login capability (true -> false or false -> true)
+//   - **Password**: Changes to role password (encrypted)
+//   - **Superuser**: Changes to superuser status (true -> false or false -> true)
+//   - **CreateDB**: Changes to database creation capability
+//   - **CreateRole**: Changes to role creation capability
+//   - **Inherit**: Changes to privilege inheritance
+//   - **Replication**: Changes to replication capability
+//
+// # Example Usage
+//
+//	roleDiff := RoleDiff{
+//		RoleName: "app_user",
+//		Changes: map[string]string{
+//			"login": "false -> true",
+//			"password": "old_encrypted_password -> new_encrypted_password",
+//			"createdb": "false -> true",
+//		},
+//	}
+type RoleDiff struct {
+	// RoleName is the name of the role being modified
+	RoleName string `json:"role_name"`
 
 	// Changes maps change types to their old->new value transitions
 	// Format: "change_type" -> "old_value -> new_value"

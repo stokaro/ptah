@@ -31,6 +31,7 @@ type Database struct {
 	Functions            []Function          // PostgreSQL custom functions
 	RLSPolicies          []RLSPolicy         // PostgreSQL Row-Level Security policies
 	RLSEnabledTables     []RLSEnabledTable   // Tables with RLS enabled
+	Roles                []Role              // PostgreSQL roles
 	Dependencies         map[string][]string // table -> list of tables it depends on
 	FunctionDependencies map[string][]string // function -> list of functions it depends on
 }
@@ -380,4 +381,53 @@ type RLSEnabledTable struct {
 	StructName string // Name of the Go struct this RLS enablement is associated with
 	Table      string // Table name to enable RLS on (e.g., "users")
 	Comment    string // Optional comment for documentation
+}
+
+// Role represents a PostgreSQL role definition parsed from Go struct annotations.
+//
+// Roles are defined using //migrator:schema:role annotations and are used to create
+// PostgreSQL database roles that can be referenced by RLS policies, granted permissions,
+// or used for authentication and authorization.
+//
+// Role is created by parsing //migrator:schema:role annotations:
+//
+//	//migrator:schema:role name="app_user" login="true" password="encrypted_password" comment="Application user role"
+//	//migrator:schema:role name="admin_user" login="true" superuser="true" comment="Administrator role"
+//	//migrator:schema:role name="readonly_user" login="true" comment="Read-only user role"
+//	type UserRoles struct {
+//	    // Dummy struct to hold role annotations
+//	}
+//
+// The role definition supports various PostgreSQL role attributes:
+//   - Name: Role name (e.g., "app_user")
+//   - Login: Whether role can login (default: false)
+//   - Password: Encrypted password (optional)
+//   - Superuser: Whether role is superuser (default: false)
+//   - CreateDB: Whether role can create databases (default: false)
+//   - CreateRole: Whether role can create other roles (default: false)
+//   - Inherit: Whether role inherits privileges (default: true)
+//   - Replication: Whether role can initiate replication (default: false)
+//   - Comment: Optional comment for documentation
+//
+// Example generated SQL:
+//
+//	-- Application user role
+//	CREATE ROLE app_user WITH LOGIN PASSWORD 'encrypted_password';
+//
+//	-- Administrator role
+//	CREATE ROLE admin_user WITH LOGIN SUPERUSER;
+//
+//	-- Read-only user role
+//	CREATE ROLE readonly_user WITH LOGIN;
+type Role struct {
+	StructName  string // Name of the Go struct this role is associated with
+	Name        string // Role name (e.g., "app_user")
+	Login       bool   // Whether role can login (default: false)
+	Password    string // Encrypted password (optional)
+	Superuser   bool   // Whether role is superuser (default: false)
+	CreateDB    bool   // Whether role can create databases (default: false)
+	CreateRole  bool   // Whether role can create other roles (default: false)
+	Inherit     bool   // Whether role inherits privileges (default: true)
+	Replication bool   // Whether role can initiate replication (default: false)
+	Comment     string // Optional comment for documentation
 }

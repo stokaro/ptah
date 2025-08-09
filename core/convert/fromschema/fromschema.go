@@ -680,6 +680,33 @@ func FromRLSEnabledTable(rlsEnabled goschema.RLSEnabledTable) *ast.AlterTableEna
 	return rlsNode
 }
 
+// FromRole converts a goschema.Role to an ast.CreateRoleNode.
+//
+// This function creates a PostgreSQL role definition from the parsed role metadata.
+// It handles all role attributes including login capabilities, password, privileges,
+// and other role properties.
+//
+// # Parameters
+//
+//   - role: The role definition containing all role metadata
+//
+// # Return Value
+//
+// Returns a fully configured *ast.CreateRoleNode ready for SQL generation.
+func FromRole(role goschema.Role) *ast.CreateRoleNode {
+	roleNode := ast.NewCreateRole(role.Name).
+		SetLogin(role.Login).
+		SetPassword(role.Password).
+		SetSuperuser(role.Superuser).
+		SetCreateDB(role.CreateDB).
+		SetCreateRole(role.CreateRole).
+		SetInherit(role.Inherit).
+		SetReplication(role.Replication).
+		SetComment(role.Comment)
+
+	return roleNode
+}
+
 // FromDatabase converts a complete goschema.Database to an ast.StatementList containing all DDL statements.
 //
 // This function creates a comprehensive database schema by converting all schema elements
@@ -779,6 +806,12 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 	isPostgreSQL := strings.ToLower(targetPlatform) == "postgresql" || strings.ToLower(targetPlatform) == "postgres"
 
 	if isPostgreSQL {
+		// Add PostgreSQL roles (they may be referenced by RLS policies)
+		for _, role := range database.Roles {
+			roleNode := FromRole(role)
+			statements.Statements = append(statements.Statements, roleNode)
+		}
+
 		// Add PostgreSQL functions (they may be referenced by RLS policies)
 		for _, function := range database.Functions {
 			functionNode := FromFunction(function)

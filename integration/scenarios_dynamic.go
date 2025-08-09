@@ -199,6 +199,33 @@ func GetDynamicScenarios() []TestScenario {
 			Description:      "Test error handling during RLS and function rollbacks",
 			EnhancedTestFunc: testDynamicRLSFunctionsErrorHandling,
 		},
+
+		// PostgreSQL Roles scenarios
+		{
+			Name:             "dynamic_roles_basic",
+			Description:      "Test PostgreSQL role creation: basic role management setup",
+			EnhancedTestFunc: testDynamicRolesBasic,
+		},
+		{
+			Name:             "dynamic_roles_advanced",
+			Description:      "Test PostgreSQL role creation: advanced role configurations",
+			EnhancedTestFunc: testDynamicRolesAdvanced,
+		},
+		{
+			Name:             "dynamic_roles_cross_database",
+			Description:      "Test PostgreSQL roles are skipped gracefully on MySQL/MariaDB",
+			EnhancedTestFunc: testDynamicRolesCrossDatabase,
+		},
+		{
+			Name:             "dynamic_roles_modification",
+			Description:      "Test PostgreSQL role modification and schema diffing",
+			EnhancedTestFunc: testDynamicRolesModification,
+		},
+		{
+			Name:             "dynamic_roles_rollback",
+			Description:      "Test PostgreSQL role rollback: complete down migration path",
+			EnhancedTestFunc: testDynamicRolesRollback,
+		},
 	}
 }
 
@@ -3277,6 +3304,350 @@ func testDynamicRLSFunctionsErrorHandling(ctx context.Context, conn *dbschema.Da
 		// Test normal rollback works after recovery
 		if err := vem.MigrateToVersion(ctx, conn, "000-initial", "Normal rollback after recovery"); err != nil {
 			return fmt.Errorf("normal rollback should work after recovery: %w", err)
+		}
+
+		return nil
+	})
+}
+
+// ============================================================================
+// POSTGRESQL ROLES SCENARIOS
+// ============================================================================
+
+// Helper functions for roles testing
+
+// skipNonPostgreSQLForRoles skips the test for non-PostgreSQL databases
+func skipNonPostgreSQLForRoles(conn *dbschema.DatabaseConnection, recorder *StepRecorder) error {
+	if conn.Info().Dialect != "postgres" {
+		return recorder.RecordStep("Skip Non-PostgreSQL", "Roles are PostgreSQL-only features", func() error {
+			return nil
+		})
+	}
+	return nil
+}
+
+// verifyBasicRolesSchema verifies the basic roles schema contains expected roles
+func verifyBasicRolesSchema(schema *goschema.Database) error {
+	// Should have 3 roles
+	if len(schema.Roles) != 3 {
+		return fmt.Errorf("expected 3 roles, got %d", len(schema.Roles))
+	}
+
+	// Verify role names
+	roleNames := make(map[string]bool)
+	for _, role := range schema.Roles {
+		roleNames[role.Name] = true
+	}
+	if !roleNames["app_user"] {
+		return fmt.Errorf("expected app_user role")
+	}
+	if !roleNames["admin_user"] {
+		return fmt.Errorf("expected admin_user role")
+	}
+	if !roleNames["readonly_user"] {
+		return fmt.Errorf("expected readonly_user role")
+	}
+
+	// Verify role attributes
+	for _, role := range schema.Roles {
+		switch role.Name {
+		case "app_user":
+			if !role.Login {
+				return fmt.Errorf("app_user should have login capability")
+			}
+			if role.Superuser {
+				return fmt.Errorf("app_user should not be superuser")
+			}
+		case "admin_user":
+			if !role.Login {
+				return fmt.Errorf("admin_user should have login capability")
+			}
+			if !role.Superuser {
+				return fmt.Errorf("admin_user should be superuser")
+			}
+		case "readonly_user":
+			if !role.Login {
+				return fmt.Errorf("readonly_user should have login capability")
+			}
+			if role.Superuser {
+				return fmt.Errorf("readonly_user should not be superuser")
+			}
+		}
+	}
+
+	return nil
+}
+
+// testDynamicRolesBasic tests basic PostgreSQL role creation setup
+func testDynamicRolesBasic(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
+	if err := skipNonPostgreSQLForRoles(conn, recorder); err != nil {
+		return err
+	}
+
+	vem, err := NewVersionedEntityManager(fixtures)
+	if err != nil {
+		return fmt.Errorf("failed to create versioned entity manager: %w", err)
+	}
+	defer vem.Cleanup()
+
+	// Test basic roles using the 016-roles fixture
+	return recorder.RecordStep("Test Basic Roles", "Apply 016-roles with basic role setup", func() error {
+		if err := vem.MigrateToVersion(ctx, conn, "016-roles", "Basic roles setup"); err != nil {
+			return fmt.Errorf("failed to migrate to 016-roles: %w", err)
+		}
+
+		// Verify schema contains roles
+		schema, err := vem.GenerateSchemaFromEntities()
+		if err != nil {
+			return fmt.Errorf("failed to generate schema: %w", err)
+		}
+
+		return verifyBasicRolesSchema(schema)
+	})
+}
+
+// verifyAdvancedRolesSchema verifies the advanced roles schema contains expected roles
+func verifyAdvancedRolesSchema(schema *goschema.Database) error {
+	// Should have 6 roles (including advanced ones)
+	if len(schema.Roles) != 6 {
+		return fmt.Errorf("expected 6 roles, got %d", len(schema.Roles))
+	}
+
+	// Verify the advanced roles exist
+	roleNames := make(map[string]bool)
+	for _, role := range schema.Roles {
+		roleNames[role.Name] = true
+	}
+	if !roleNames["service_user"] {
+		return fmt.Errorf("expected service_user role")
+	}
+	if !roleNames["backup_user"] {
+		return fmt.Errorf("expected backup_user role")
+	}
+	if !roleNames["api_user"] {
+		return fmt.Errorf("expected api_user role")
+	}
+
+	// Verify advanced role attributes
+	for _, role := range schema.Roles {
+		switch role.Name {
+		case "service_user":
+			if !role.CreateDB {
+				return fmt.Errorf("service_user should have createdb capability")
+			}
+		case "backup_user":
+			if !role.Replication {
+				return fmt.Errorf("backup_user should have replication capability")
+			}
+		case "api_user":
+			if role.Inherit {
+				return fmt.Errorf("api_user should not inherit privileges")
+			}
+		}
+	}
+
+	return nil
+}
+
+// testDynamicRolesAdvanced tests advanced PostgreSQL role configurations
+func testDynamicRolesAdvanced(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
+	if err := skipNonPostgreSQLForRoles(conn, recorder); err != nil {
+		return err
+	}
+
+	vem, err := NewVersionedEntityManager(fixtures)
+	if err != nil {
+		return fmt.Errorf("failed to create versioned entity manager: %w", err)
+	}
+	defer vem.Cleanup()
+
+	// Test advanced roles using the 017-roles-advanced fixture
+	return recorder.RecordStep("Test Advanced Roles", "Apply 017-roles-advanced with advanced role configurations", func() error {
+		if err := vem.MigrateToVersion(ctx, conn, "017-roles-advanced", "Advanced roles with various configurations"); err != nil {
+			return fmt.Errorf("failed to migrate to 017-roles-advanced: %w", err)
+		}
+
+		// Verify schema contains advanced features
+		schema, err := vem.GenerateSchemaFromEntities()
+		if err != nil {
+			return fmt.Errorf("failed to generate schema: %w", err)
+		}
+
+		return verifyAdvancedRolesSchema(schema)
+	})
+}
+
+// testDynamicRolesCrossDatabase tests PostgreSQL roles are skipped gracefully on MySQL/MariaDB
+func testDynamicRolesCrossDatabase(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
+	vem, err := NewVersionedEntityManager(fixtures)
+	if err != nil {
+		return fmt.Errorf("failed to create versioned entity manager: %w", err)
+	}
+	defer vem.Cleanup()
+
+	dialect := conn.Info().Dialect
+
+	// Test cross-database compatibility using the 016-roles fixture
+	return recorder.RecordStep("Test Cross-Database Compatibility", "Apply role fixtures on different database dialects", func() error {
+		if err := vem.MigrateToVersion(ctx, conn, "016-roles", "Roles cross-database test"); err != nil {
+			return fmt.Errorf("failed to migrate to 016-roles: %w", err)
+		}
+
+		// Check the schema that was applied
+		schema, err := vem.GenerateSchemaFromEntities()
+		if err != nil {
+			return fmt.Errorf("failed to generate schema: %w", err)
+		}
+
+		// The database-specific filtering happens during SQL generation
+		if len(schema.Tables) == 0 {
+			return fmt.Errorf("schema should contain tables")
+		}
+
+		if dialect == "postgres" {
+			// PostgreSQL should have role features in the schema
+			if len(schema.Roles) == 0 {
+				return fmt.Errorf("PostgreSQL should have roles in schema")
+			}
+		} else if len(schema.Tables) == 0 {
+			// For MySQL/MariaDB, the schema still contains all features from entity fixtures
+			// but they should be ignored during SQL generation and migration
+			// This test verifies that the migration completed successfully without errors
+			// which means the PostgreSQL-specific features were properly skipped
+
+			// The fact that we reached this point means the migration succeeded,
+			// which proves that PostgreSQL-specific features were gracefully skipped
+
+			// Verify that basic schema elements are still present
+			return fmt.Errorf("schema should contain tables for MySQL/MariaDB")
+		}
+
+		return nil
+	})
+}
+
+// testDynamicRolesModification tests PostgreSQL role modification and schema diffing
+func testDynamicRolesModification(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
+	// Skip test for non-PostgreSQL databases
+	if conn.Info().Dialect != "postgres" {
+		return recorder.RecordStep("Skip Non-PostgreSQL", "Role modification is PostgreSQL-only", func() error {
+			return nil
+		})
+	}
+
+	vem, err := NewVersionedEntityManager(fixtures)
+	if err != nil {
+		return fmt.Errorf("failed to create versioned entity manager: %w", err)
+	}
+	defer vem.Cleanup()
+
+	// Apply initial version with basic roles
+	err = recorder.RecordStep("Apply Initial Roles", "Apply 016-roles", func() error {
+		return vem.MigrateToVersion(ctx, conn, "016-roles", "Basic roles setup")
+	})
+	if err != nil {
+		return err
+	}
+
+	// Apply advanced version with modified roles
+	return recorder.RecordStep("Test Role Modification", "Apply 017-roles-advanced with modified roles", func() error {
+		if err := vem.MigrateToVersion(ctx, conn, "017-roles-advanced", "Advanced roles with modifications"); err != nil {
+			return fmt.Errorf("failed to migrate to 017-roles-advanced: %w", err)
+		}
+
+		// Verify schema contains the new roles
+		schema, err := vem.GenerateSchemaFromEntities()
+		if err != nil {
+			return fmt.Errorf("failed to generate schema: %w", err)
+		}
+
+		// Should now have 6 roles (added service_user, backup_user, api_user)
+		if len(schema.Roles) != 6 {
+			return fmt.Errorf("expected 6 roles after modification, got %d", len(schema.Roles))
+		}
+
+		// Verify the new roles exist
+		roleNames := make(map[string]bool)
+		for _, role := range schema.Roles {
+			roleNames[role.Name] = true
+		}
+		if !roleNames["service_user"] {
+			return fmt.Errorf("expected service_user role after modification")
+		}
+		if !roleNames["backup_user"] {
+			return fmt.Errorf("expected backup_user role after modification")
+		}
+		if !roleNames["api_user"] {
+			return fmt.Errorf("expected api_user role after modification")
+		}
+
+		// Verify original roles still exist
+		if !roleNames["app_user"] {
+			return fmt.Errorf("expected app_user role to still exist")
+		}
+		if !roleNames["admin_user"] {
+			return fmt.Errorf("expected admin_user role to still exist")
+		}
+		if !roleNames["readonly_user"] {
+			return fmt.Errorf("expected readonly_user role to still exist")
+		}
+
+		return nil
+	})
+}
+
+// testDynamicRolesRollback tests complete rollback of roles
+func testDynamicRolesRollback(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
+	// Skip test for non-PostgreSQL databases
+	if conn.Info().Dialect != "postgres" {
+		return recorder.RecordStep("Skip Non-PostgreSQL", "Roles are PostgreSQL-only features", func() error {
+			return nil
+		})
+	}
+
+	vem, err := NewVersionedEntityManager(fixtures)
+	if err != nil {
+		return fmt.Errorf("failed to create versioned entity manager: %w", err)
+	}
+	defer vem.Cleanup()
+
+	// Step 1: Apply basic roles first
+	err = recorder.RecordStep("Apply Basic Roles", "Apply 016-roles with basic role set", func() error {
+		if err := vem.MigrateToVersion(ctx, conn, "016-roles", "Basic roles setup"); err != nil {
+			return fmt.Errorf("failed to migrate to 016-roles: %w", err)
+		}
+
+		// Verify basic features are present
+		schema, err := vem.GenerateSchemaFromEntities()
+		if err != nil {
+			return fmt.Errorf("failed to generate schema: %w", err)
+		}
+
+		if len(schema.Roles) != 3 {
+			return fmt.Errorf("expected 3 roles, got %d", len(schema.Roles))
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// Step 2: Complete rollback to no roles
+	return recorder.RecordStep("Complete Rollback", "Rollback to 013-embedded-fields (no roles)", func() error {
+		if err := vem.MigrateToVersion(ctx, conn, "013-embedded-fields", "Complete rollback - remove all roles"); err != nil {
+			return fmt.Errorf("failed to rollback to 013-embedded-fields: %w", err)
+		}
+
+		// Verify all role features were removed
+		schema, err := vem.GenerateSchemaFromEntities()
+		if err != nil {
+			return fmt.Errorf("failed to generate schema: %w", err)
+		}
+
+		// Should have no roles
+		if len(schema.Roles) != 0 {
+			return fmt.Errorf("expected 0 roles after complete rollback, got %d", len(schema.Roles))
 		}
 
 		return nil

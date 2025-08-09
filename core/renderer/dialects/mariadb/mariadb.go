@@ -184,3 +184,18 @@ func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
 func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
 	return r.r.VisitAlterTableDisableRLS(node)
 }
+
+// VisitCreateRole delegates to the mysqllike renderer
+func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
+	return r.r.VisitCreateRole(node)
+}
+
+// VisitDropRole delegates to the mysqllike renderer
+func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
+	return r.r.VisitDropRole(node)
+}
+
+// VisitAlterRole delegates to the mysqllike renderer
+func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
+	return r.r.VisitAlterRole(node)
+}

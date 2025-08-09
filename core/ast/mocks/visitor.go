@@ -171,3 +171,27 @@ func (m *MockVisitor) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNo
 	}
 	return nil
 }
+
+func (m *MockVisitor) VisitCreateRole(node *ast.CreateRoleNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "CreateRole:"+node.Name)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
+func (m *MockVisitor) VisitDropRole(node *ast.DropRoleNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "DropRole:"+node.Name)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
+func (m *MockVisitor) VisitAlterRole(node *ast.AlterRoleNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "AlterRole:"+node.Name)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
