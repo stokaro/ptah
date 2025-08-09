@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/stokaro/ptah/dbschema/postgres"
 	"github.com/stokaro/ptah/dbschema/types"
@@ -25,7 +25,7 @@ func skipIfNoPostgreSQL(t *testing.T) string {
 	}
 
 	// Test connection
-	db, err := sql.Open("postgres", dsn)
+	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		t.Skipf("Skipping PostgreSQL tests: failed to open database: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestPostgreSQLReader_ReadSchema_Integration(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
 	c := qt.New(t)
 
-	db, err := sql.Open("postgres", dsn)
+	db, err := sql.Open("pgx", dsn)
 	c.Assert(err, qt.IsNil)
 	defer db.Close()
 
@@ -129,7 +129,7 @@ func TestPostgreSQLWriter_Integration(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
 	c := qt.New(t)
 
-	db, err := sql.Open("postgres", dsn)
+	db, err := sql.Open("pgx", dsn)
 	c.Assert(err, qt.IsNil)
 	defer db.Close()
 

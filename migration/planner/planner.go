@@ -171,7 +171,6 @@ type Planner interface {
 //
 // This function panics in the following cases:
 //   - Unknown or unsupported dialect is specified
-//   - MariaDB dialect is requested (not yet implemented)
 //   - Empty or invalid dialect string is provided
 //
 // # Usage Example
@@ -195,13 +194,11 @@ type Planner interface {
 //   - Centralize dialect validation and error handling
 //   - Enable dependency injection and testing scenarios
 func GetPlanner(dialect string) Planner {
-	switch dialect {
+	switch platform.NormalizeDialect(dialect) {
 	case platform.Postgres:
 		return postgres.New()
-	case platform.MySQL:
+	case platform.MySQL, platform.MariaDB:
 		return mysql.New()
-	case platform.MariaDB:
-		panic("not implemented")
 	default:
 		// For unknown dialects, use a generic generator that doesn't apply dialect-specific transformations
 		panic("not implemented")

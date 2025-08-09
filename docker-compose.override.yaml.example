@@ -1,0 +1,107 @@
+# Docker Compose Override Configuration Example
+# 
+# This file serves as a template for local development configuration.
+# Copy this file to `docker-compose.override.yaml` and customize it for your local environment.
+# 
+# The override file allows you to:
+# - Customize database port mappings to avoid conflicts with local services
+# - Modify environment variables for local development
+# - Add additional services or volumes for development
+# - Override any service configuration from the main docker-compose.yaml
+#
+# Usage:
+#   1. Copy this file: cp docker-compose.override.yaml.example docker-compose.override.yaml
+#   2. Customize the settings below for your local environment
+#   3. Run: docker-compose up -d
+#
+# Note: docker-compose.override.yaml is ignored by git, so your local changes won't be committed.
+
+services:
+  # PostgreSQL Database Configuration
+  postgres:
+    # Customize the port mapping if 5433 conflicts with your local services
+    # Format: "host_port:container_port"
+    ports:
+      - "5433:5432"  # Default: PostgreSQL accessible on localhost:5433
+    
+    # Override environment variables if needed
+    # environment:
+    #   POSTGRES_DB: ptah_test
+    #   POSTGRES_USER: ptah_user
+    #   POSTGRES_PASSWORD: ptah_password
+    
+    # Add additional volumes for development (e.g., custom init scripts)
+    # volumes:
+    #   - postgres_data:/var/lib/postgresql/data
+    #   - ./scripts/init-postgres.sql:/docker-entrypoint-initdb.d/init.sql
+
+  # MySQL Database Configuration
+  mysql:
+    # Customize the port mapping if 3310 conflicts with your local services
+    ports:
+      - "3310:3306"  # Default: MySQL accessible on localhost:3310
+    
+    # Override environment variables if needed
+    # environment:
+    #   MYSQL_DATABASE: ptah_test
+    #   MYSQL_USER: ptah_user
+    #   MYSQL_PASSWORD: ptah_password
+    #   MYSQL_ROOT_PASSWORD: root_password
+
+  # MariaDB Database Configuration
+  mariadb:
+    # Customize the port mapping if 3307 conflicts with your local services
+    ports:
+      - "3307:3306"  # Default: MariaDB accessible on localhost:3307
+    
+    # Override environment variables if needed
+    # environment:
+    #   MARIADB_DATABASE: ptah_test
+    #   MARIADB_USER: ptah_user
+    #   MARIADB_PASSWORD: ptah_password
+    #   MARIADB_ROOT_PASSWORD: root_password
+
+  # Test Runner Service Configuration
+  ptah-tester:
+    # Override environment variables for local testing
+    # environment:
+    #   POSTGRES_URL: "postgres://ptah_user:ptah_password@postgres:5432/ptah_test?sslmode=disable"
+    #   MYSQL_URL: "mysql://ptah_user:ptah_password@tcp(mysql:3306)/ptah_test"
+    #   MARIADB_URL: "mysql://ptah_user:ptah_password@tcp(mariadb:3306)/ptah_test"
+    
+    # Add additional volumes for development
+    # volumes:
+    #   - ./integration/reports:/app/reports
+    #   - ./integration/fixtures:/app/fixtures
+    #   - ./local-fixtures:/app/local-fixtures  # Example: additional local test data
+
+# Additional services for local development
+# Uncomment and customize as needed:
+
+# Example: pgAdmin for PostgreSQL management
+# pgadmin:
+#   image: dpage/pgadmin4:latest
+#   environment:
+#     PGADMIN_DEFAULT_EMAIL: admin@example.com
+#     PGADMIN_DEFAULT_PASSWORD: admin
+#   ports:
+#     - "8080:80"
+#   depends_on:
+#     - postgres
+
+# Example: phpMyAdmin for MySQL/MariaDB management
+# phpmyadmin:
+#   image: phpmyadmin/phpmyadmin:latest
+#   environment:
+#     PMA_ARBITRARY: 1
+#   ports:
+#     - "8081:80"
+#   depends_on:
+#     - mysql
+#     - mariadb
+
+# Additional volumes for local development
+# volumes:
+#   local_postgres_data:
+#   local_mysql_data:
+#   local_mariadb_data:

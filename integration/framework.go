@@ -506,7 +506,7 @@ func GetMigrationsFS(fixtures fs.FS, conn *dbschema.DatabaseConnection, migratio
 	// Try database-specific migrations first
 	var migrationPath string
 	switch dialect {
-	case "mysql":
+	case "mysql", "mariadb":
 		migrationPath = fmt.Sprintf("migrations/%s_mysql", migrationType)
 	case "postgres":
 		migrationPath = fmt.Sprintf("migrations/%s", migrationType) // PostgreSQL uses the default
