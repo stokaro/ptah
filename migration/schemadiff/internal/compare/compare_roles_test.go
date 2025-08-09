@@ -45,7 +45,7 @@ func TestRolesComparison(t *testing.T) {
 		c.Assert(len(diff.RolesModified), qt.Equals, 0)
 	})
 
-	t.Run("roles removed", func(t *testing.T) {
+	t.Run("roles not automatically removed", func(t *testing.T) {
 		c := qt.New(t)
 		generated := &goschema.Database{Roles: []goschema.Role{}}
 		database := &types.DBSchema{
@@ -58,10 +58,9 @@ func TestRolesComparison(t *testing.T) {
 
 		compare.Roles(generated, database, diff)
 
+		// Roles should not be automatically removed for safety
 		c.Assert(len(diff.RolesAdded), qt.Equals, 0)
-		c.Assert(len(diff.RolesRemoved), qt.Equals, 2)
-		c.Assert(diff.RolesRemoved, qt.Contains, "old_role")
-		c.Assert(diff.RolesRemoved, qt.Contains, "legacy_role")
+		c.Assert(len(diff.RolesRemoved), qt.Equals, 0)
 		c.Assert(len(diff.RolesModified), qt.Equals, 0)
 	})
 
@@ -113,8 +112,8 @@ func TestRolesComparison(t *testing.T) {
 		c.Assert(len(diff.RolesAdded), qt.Equals, 1)
 		c.Assert(diff.RolesAdded[0], qt.Equals, "new_role")
 
-		c.Assert(len(diff.RolesRemoved), qt.Equals, 1)
-		c.Assert(diff.RolesRemoved[0], qt.Equals, "old_role")
+		// Roles are not automatically removed for safety
+		c.Assert(len(diff.RolesRemoved), qt.Equals, 0)
 
 		c.Assert(len(diff.RolesModified), qt.Equals, 1)
 		c.Assert(diff.RolesModified[0].RoleName, qt.Equals, "app_user")
@@ -144,8 +143,8 @@ func TestRolesComparison(t *testing.T) {
 		// Check added roles are sorted
 		c.Assert(diff.RolesAdded, qt.DeepEquals, []string{"a_role", "z_role"})
 
-		// Check removed roles are sorted
-		c.Assert(diff.RolesRemoved, qt.DeepEquals, []string{"a_old", "z_old"})
+		// Roles are not automatically removed for safety
+		c.Assert(len(diff.RolesRemoved), qt.Equals, 0)
 
 		// Check modified roles are sorted
 		c.Assert(len(diff.RolesModified), qt.Equals, 1)

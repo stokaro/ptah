@@ -1143,9 +1143,9 @@ func RLSEnabledTables(generated *goschema.Database, database *types.DBSchema, di
 //   - Result: "app_user" added to diff.RolesAdded
 //
 // **Role removal**:
-//   - Database has "old_service_role" role
-//   - Generated schema doesn't define this role
-//   - Result: "old_service_role" added to diff.RolesRemoved
+//   - Roles are NOT automatically marked for removal for safety reasons
+//   - Existing roles not defined in schema are left untouched
+//   - Manual role removal should be done by DBAs when needed
 //
 // **Role modification**:
 //   - Both have "api_user" role
@@ -1162,7 +1162,7 @@ func RLSEnabledTables(generated *goschema.Database, database *types.DBSchema, di
 //
 // Modifies the provided diff parameter by populating:
 //   - diff.RolesAdded: Roles that need to be created
-//   - diff.RolesRemoved: Roles that exist in database but not in target schema
+//   - diff.RolesRemoved: Always empty (roles are not automatically removed for safety)
 //   - diff.RolesModified: Roles with attribute differences
 //
 // # Output Consistency
@@ -1187,12 +1187,11 @@ func Roles(generated *goschema.Database, database *types.DBSchema, diff *difftyp
 		}
 	}
 
-	// Find removed roles
-	for roleName := range databaseRoleMap {
-		if _, exists := generatedRoleMap[roleName]; !exists {
-			diff.RolesRemoved = append(diff.RolesRemoved, roleName)
-		}
-	}
+	// Note: We intentionally do not automatically mark roles for removal.
+	// Roles are security-sensitive objects that may be created by DBAs,
+	// other applications, or infrastructure setup. Automatic removal could
+	// be dangerous and break authentication/authorization.
+	// If role removal is needed, it should be done explicitly by the DBA.
 
 	// Detect role attribute modifications
 	for roleName, generatedRole := range generatedRoleMap {
