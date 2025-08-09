@@ -154,6 +154,7 @@ func parseComment(
 	functions *[]Function,
 	rlsPolicies *[]RLSPolicy,
 	rlsEnabledTables *[]RLSEnabledTable,
+	roles *[]Role,
 ) {
 	switch {
 	case strings.HasPrefix(comment.Text, "//migrator:schema:field"):
@@ -170,10 +171,12 @@ func parseComment(
 		parseRLSPolicyComment(comment, structName, rlsPolicies)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:rls:enable"):
 		parseRLSEnableComment(comment, structName, rlsEnabledTables)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:role"):
+		parseRoleComment(comment, structName, roles)
 	}
 }
 
-func processTableComments(structName string, genDecl *ast.GenDecl, tableDirectives *[]Table, extensions *[]Extension, functions *[]Function, rlsPolicies *[]RLSPolicy, rlsEnabledTables *[]RLSEnabledTable) {
+func processTableComments(structName string, genDecl *ast.GenDecl, tableDirectives *[]Table, extensions *[]Extension, functions *[]Function, rlsPolicies *[]RLSPolicy, rlsEnabledTables *[]RLSEnabledTable, roles *[]Role) {
 	if genDecl.Doc == nil {
 		return
 	}
@@ -190,6 +193,8 @@ func processTableComments(structName string, genDecl *ast.GenDecl, tableDirectiv
 			parseRLSPolicyComment(comment, structName, rlsPolicies)
 		case strings.HasPrefix(comment.Text, "//migrator:schema:rls:enable"):
 			parseRLSEnableComment(comment, structName, rlsEnabledTables)
+		case strings.HasPrefix(comment.Text, "//migrator:schema:role"):
+			parseRoleComment(comment, structName, roles)
 		}
 	}
 }
@@ -205,13 +210,14 @@ func processFieldComments(
 	functions *[]Function,
 	rlsPolicies *[]RLSPolicy,
 	rlsEnabledTables *[]RLSEnabledTable,
+	roles *[]Role,
 ) {
 	for _, field := range structType.Fields.List {
 		if field.Doc == nil {
 			continue
 		}
 		for _, comment := range field.Doc.List {
-			parseComment(comment, structName, field, globalEnumsMap, schemaFields, embeddedFields, schemaIndexes, extensions, functions, rlsPolicies, rlsEnabledTables)
+			parseComment(comment, structName, field, globalEnumsMap, schemaFields, embeddedFields, schemaIndexes, extensions, functions, rlsPolicies, rlsEnabledTables, roles)
 		}
 	}
 }
@@ -232,6 +238,7 @@ func ParseFile(filename string) Database {
 	var functions []Function
 	var rlsPolicies []RLSPolicy
 	var rlsEnabledTables []RLSEnabledTable
+	var roles []Role
 	globalEnumsMap := make(map[string]Enum)
 
 	for _, decl := range f.Decls {
@@ -249,8 +256,8 @@ func ParseFile(filename string) Database {
 			if !ok {
 				continue
 			}
-			processTableComments(structName, genDecl, &tableDirectives, &extensions, &functions, &rlsPolicies, &rlsEnabledTables)
-			processFieldComments(structName, structType, globalEnumsMap, &schemaFields, &embeddedFields, &schemaIndexes, &extensions, &functions, &rlsPolicies, &rlsEnabledTables)
+			processTableComments(structName, genDecl, &tableDirectives, &extensions, &functions, &rlsPolicies, &rlsEnabledTables, &roles)
+			processFieldComments(structName, structType, globalEnumsMap, &schemaFields, &embeddedFields, &schemaIndexes, &extensions, &functions, &rlsPolicies, &rlsEnabledTables, &roles)
 		}
 	}
 
@@ -279,6 +286,7 @@ func ParseFile(filename string) Database {
 		Functions:        functions,
 		RLSPolicies:      rlsPolicies,
 		RLSEnabledTables: rlsEnabledTables,
+		Roles:            roles,
 		Dependencies:     make(map[string][]string),
 	}
 	buildDependencyGraph(&result)
@@ -320,6 +328,22 @@ func parseRLSEnableComment(comment *ast.Comment, structName string, rlsEnabledTa
 		StructName: structName,
 		Table:      kv["table"],
 		Comment:    kv["comment"],
+	})
+}
+
+func parseRoleComment(comment *ast.Comment, structName string, roles *[]Role) {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	*roles = append(*roles, Role{
+		StructName:  structName,
+		Name:        kv["name"],
+		Login:       kv["login"] == "true",
+		Password:    kv["password"],
+		Superuser:   kv["superuser"] == "true",
+		CreateDB:    kv["createdb"] == "true" || kv["create_db"] == "true",
+		CreateRole:  kv["createrole"] == "true" || kv["create_role"] == "true",
+		Inherit:     kv["inherit"] != "false", // Default to true unless explicitly set to false
+		Replication: kv["replication"] == "true",
+		Comment:     kv["comment"],
 	})
 }
 

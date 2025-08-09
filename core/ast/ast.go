@@ -50,6 +50,12 @@ type Visitor interface {
 	VisitAlterTableEnableRLS(*AlterTableEnableRLSNode) error
 	// VisitAlterTableDisableRLS renders an ALTER TABLE DISABLE ROW LEVEL SECURITY statement (PostgreSQL-specific)
 	VisitAlterTableDisableRLS(*AlterTableDisableRLSNode) error
+	// VisitCreateRole renders a CREATE ROLE statement (PostgreSQL-specific)
+	VisitCreateRole(*CreateRoleNode) error
+	// VisitDropRole renders a DROP ROLE statement (PostgreSQL-specific)
+	VisitDropRole(*DropRoleNode) error
+	// VisitAlterRole renders an ALTER ROLE statement (PostgreSQL-specific)
+	VisitAlterRole(*AlterRoleNode) error
 }
 
 // DefaultValue represents different types of default values for table columns.

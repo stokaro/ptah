@@ -9,6 +9,7 @@ type DBSchema struct {
 	Extensions  []DBExtension  `json:"extensions"`   // PostgreSQL extensions
 	Functions   []DBFunction   `json:"functions"`    // PostgreSQL custom functions
 	RLSPolicies []DBRLSPolicy  `json:"rls_policies"` // PostgreSQL RLS policies
+	Roles       []DBRole       `json:"roles"`        // PostgreSQL roles
 }
 
 // DBTable represents a database table
@@ -122,4 +123,17 @@ type DBRLSPolicy struct {
 	UsingExpression     string `json:"using_expression"`      // USING clause expression
 	WithCheckExpression string `json:"with_check_expression"` // WITH CHECK clause expression
 	Comment             string `json:"comment"`               // Policy comment/description
+}
+
+// DBRole represents a PostgreSQL role read from the database
+type DBRole struct {
+	Name        string `json:"name"`         // Role name
+	Login       bool   `json:"login"`        // Whether role can login
+	Superuser   bool   `json:"superuser"`    // Whether role is superuser
+	CreateDB    bool   `json:"create_db"`    // Whether role can create databases
+	CreateRole  bool   `json:"create_role"`  // Whether role can create other roles
+	Inherit     bool   `json:"inherit"`      // Whether role inherits privileges
+	Replication bool   `json:"replication"`  // Whether role can initiate replication
+	HasPassword bool   `json:"has_password"` // Whether role has a password set
+	Comment     string `json:"comment"`      // Role comment/description
 }

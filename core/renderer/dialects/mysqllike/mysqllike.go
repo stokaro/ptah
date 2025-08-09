@@ -547,3 +547,18 @@ func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
 func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
 	return fmt.Errorf("ALTER TABLE DISABLE ROW LEVEL SECURITY is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)
 }
+
+// VisitCreateRole returns an error since PostgreSQL roles are not supported in MySQL
+func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
+	return fmt.Errorf("CREATE ROLE is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)
+}
+
+// VisitDropRole returns an error since PostgreSQL roles are not supported in MySQL
+func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
+	return fmt.Errorf("DROP ROLE is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)
+}
+
+// VisitAlterRole returns an error since PostgreSQL roles are not supported in MySQL
+func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
+	return fmt.Errorf("ALTER ROLE is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)
+}

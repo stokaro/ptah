@@ -266,6 +266,9 @@ func (a *SchemaAnalyzer) VisitDropPolicy(node *ast.DropPolicyNode) error {
 func (a *SchemaAnalyzer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
 	return nil
 }
+func (a *SchemaAnalyzer) VisitCreateRole(node *ast.CreateRoleNode) error { return nil }
+func (a *SchemaAnalyzer) VisitDropRole(node *ast.DropRoleNode) error     { return nil }
+func (a *SchemaAnalyzer) VisitAlterRole(node *ast.AlterRoleNode) error   { return nil }
 
 // AuditTransformer adds audit columns to all tables
 type AuditTransformer struct{}
