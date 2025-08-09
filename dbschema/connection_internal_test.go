@@ -94,13 +94,13 @@ func TestRemovePostgresPoolParams_ParameterOrdering(t *testing.T) {
 	result1 := removePostgresPoolParams(input1)
 	result2 := removePostgresPoolParams(input2)
 	result3 := removePostgresPoolParams(input3)
-	
+
 	// All should result in the same cleaned URL
 	expected := "postgres://user:pass@localhost:5432/db?other=value"
 	c.Assert(result1, qt.Equals, expected)
 	c.Assert(result2, qt.Equals, expected)
 	c.Assert(result3, qt.Equals, expected)
-	
+
 	// All results should be identical
 	c.Assert(result1, qt.Equals, result2)
 	c.Assert(result2, qt.Equals, result3)
