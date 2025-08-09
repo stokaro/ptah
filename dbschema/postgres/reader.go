@@ -479,6 +479,8 @@ func (r *Reader) enhanceTablesWithIndexes(tables []types.DBTable, indexes []type
 }
 
 // readFunctions reads all PostgreSQL custom functions from the database
+// This function excludes extension-owned functions to prevent issues with
+// migration generation attempting to drop functions owned by extensions
 func (r *Reader) readFunctions() ([]types.DBFunction, error) {
 	functionsQuery := `
 		SELECT
@@ -500,6 +502,13 @@ func (r *Reader) readFunctions() ([]types.DBFunction, error) {
 		WHERE n.nspname = $1
 		AND p.prokind = 'f'  -- Only functions, not procedures
 		AND l.lanname != 'internal'  -- Exclude internal functions
+		-- Exclude extension-owned functions to prevent migration issues
+		-- Extension functions cannot be dropped independently and should be managed by the extension
+		AND NOT EXISTS (
+			SELECT 1 FROM pg_depend d
+			JOIN pg_extension e ON e.oid = d.refobjid
+			WHERE d.objid = p.oid AND d.deptype = 'e'
+		)
 		ORDER BY p.proname`
 
 	rows, err := r.db.Query(functionsQuery, r.schema)

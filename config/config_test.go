@@ -14,7 +14,7 @@ func TestDefaultCompareOptions(t *testing.T) {
 	opts := config.DefaultCompareOptions()
 
 	c.Assert(opts, qt.IsNotNil)
-	c.Assert(opts.IgnoredExtensions, qt.DeepEquals, []string{"plpgsql"})
+	c.Assert(opts.IgnoredExtensions, qt.DeepEquals, []string{"plpgsql", "btree_gin", "pg_trgm"})
 }
 
 func TestWithIgnoredExtensions(t *testing.T) {
@@ -59,17 +59,17 @@ func TestWithAdditionalIgnoredExtensions(t *testing.T) {
 		{
 			name:       "add single extension",
 			additional: []string{"adminpack"},
-			expected:   []string{"plpgsql", "adminpack"},
+			expected:   []string{"plpgsql", "btree_gin", "pg_trgm", "adminpack"},
 		},
 		{
 			name:       "add multiple extensions",
 			additional: []string{"adminpack", "pg_stat_statements"},
-			expected:   []string{"plpgsql", "adminpack", "pg_stat_statements"},
+			expected:   []string{"plpgsql", "btree_gin", "pg_trgm", "adminpack", "pg_stat_statements"},
 		},
 		{
 			name:       "add no extensions",
 			additional: []string{},
-			expected:   []string{"plpgsql"},
+			expected:   []string{"plpgsql", "btree_gin", "pg_trgm"},
 		},
 	}
 
@@ -187,10 +187,12 @@ func TestLibraryUsageExamples(t *testing.T) {
 	c := qt.New(t)
 
 	t.Run("default usage", func(t *testing.T) {
-		// User wants default behavior (ignore plpgsql)
+		// User wants default behavior (ignore plpgsql, btree_gin, pg_trgm)
 		opts := config.DefaultCompareOptions()
 		c.Assert(opts.IsExtensionIgnored("plpgsql"), qt.IsTrue)
-		c.Assert(opts.IsExtensionIgnored("pg_trgm"), qt.IsFalse)
+		c.Assert(opts.IsExtensionIgnored("btree_gin"), qt.IsTrue)
+		c.Assert(opts.IsExtensionIgnored("pg_trgm"), qt.IsTrue)
+		c.Assert(opts.IsExtensionIgnored("adminpack"), qt.IsFalse)
 	})
 
 	t.Run("custom ignore list", func(t *testing.T) {
@@ -205,9 +207,11 @@ func TestLibraryUsageExamples(t *testing.T) {
 		// User wants defaults plus additional extensions
 		opts := config.WithAdditionalIgnoredExtensions("adminpack", "pg_stat_statements")
 		c.Assert(opts.IsExtensionIgnored("plpgsql"), qt.IsTrue)            // default
+		c.Assert(opts.IsExtensionIgnored("btree_gin"), qt.IsTrue)          // default
+		c.Assert(opts.IsExtensionIgnored("pg_trgm"), qt.IsTrue)            // default
 		c.Assert(opts.IsExtensionIgnored("adminpack"), qt.IsTrue)          // additional
 		c.Assert(opts.IsExtensionIgnored("pg_stat_statements"), qt.IsTrue) // additional
-		c.Assert(opts.IsExtensionIgnored("pg_trgm"), qt.IsFalse)           // not ignored
+		c.Assert(opts.IsExtensionIgnored("uuid-ossp"), qt.IsFalse)         // not ignored
 	})
 
 	t.Run("no ignored extensions", func(t *testing.T) {
