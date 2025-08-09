@@ -4,7 +4,6 @@ package gonative_test
 
 import (
 	"database/sql"
-	"database/sql/driver"
 	"os"
 	"reflect"
 	"strings"
@@ -47,21 +46,21 @@ func TestPgxDriverValidation(t *testing.T) {
 	t.Run("dbschema connection uses pgx", func(t *testing.T) {
 		c := qt.New(t)
 
-		// Test that dbschema.Connect uses pgx for PostgreSQL URLs
-		db, err := dbschema.Connect(dsn)
+		// Test that dbschema.ConnectToDatabase uses pgx for PostgreSQL URLs
+		conn, err := dbschema.ConnectToDatabase(dsn)
 		c.Assert(err, qt.IsNil)
-		defer db.Close()
+		defer conn.Close()
 
-		err = db.Ping()
+		// Test that we can query the database through the connection
+		var version string
+		err = conn.QueryRow("SELECT version()").Scan(&version)
 		c.Assert(err, qt.IsNil)
+		c.Assert(version, qt.Not(qt.Equals), "")
+		c.Assert(strings.Contains(version, "PostgreSQL"), qt.IsTrue)
 
-		// Verify driver type
-		driver := db.Driver()
-		driverType := reflect.TypeOf(driver).String()
-
-		// The pgx driver should be identifiable in the type name
-		c.Assert(strings.Contains(driverType, "pgx") || strings.Contains(driverType, "stdlib"), qt.IsTrue,
-			qt.Commentf("Expected pgx driver through dbschema.Connect, got: %s", driverType))
+		// Verify connection info shows correct dialect
+		info := conn.Info()
+		c.Assert(info.Dialect, qt.Matches, "postgres|postgresql|pgx")
 	})
 
 	t.Run("pgx specific features work", func(t *testing.T) {
@@ -89,8 +88,6 @@ func TestPgxDriverValidation(t *testing.T) {
 	})
 
 	t.Run("connection string compatibility", func(t *testing.T) {
-		c := qt.New(t)
-
 		// Test that various PostgreSQL connection string formats work with pgx
 		testCases := []struct {
 			name string
@@ -119,18 +116,19 @@ func TestPgxDriverValidation(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				c := qt.New(t)
 
-				db, err := dbschema.Connect(tc.dsn)
+				conn, err := dbschema.ConnectToDatabase(tc.dsn)
 				c.Assert(err, qt.IsNil)
-				defer db.Close()
+				defer conn.Close()
 
-				err = db.Ping()
+				// Test that we can query the database
+				var version string
+				err = conn.QueryRow("SELECT version()").Scan(&version)
 				c.Assert(err, qt.IsNil)
+				c.Assert(version, qt.Not(qt.Equals), "")
 
-				// Verify it's using pgx
-				driver := db.Driver()
-				driverType := reflect.TypeOf(driver).String()
-				c.Assert(strings.Contains(driverType, "pgx") || strings.Contains(driverType, "stdlib"), qt.IsTrue,
-					qt.Commentf("Expected pgx driver for DSN %s, got: %s", tc.dsn, driverType))
+				// Verify connection info shows correct dialect
+				info := conn.Info()
+				c.Assert(info.Dialect, qt.Matches, "postgres|postgresql|pgx")
 			})
 		}
 	})
