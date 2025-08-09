@@ -40,21 +40,21 @@ func ConnectToDatabase(dbURL string) (*DatabaseConnection, error) {
 
 	// Determine the dialect
 	dialect := strings.ToLower(parsedURL.Scheme)
+
+	// Connect to the database
+	// For MySQL/MariaDB, we need to convert the URL format
+	var connectionString string
+
 	var dialectProtocol string
 	switch dialect {
 	case "postgres", "postgresql", "pgx":
 		dialectProtocol = "pgx"
+		connectionString = removePostgresPoolParams(dbURL)
 	case "mysql", "mariadb":
 		dialectProtocol = "mysql"
+		connectionString = convertMySQLURL(dbURL)
 	default:
 		return nil, fmt.Errorf("unsupported database dialect: %s", dialect)
-	}
-
-	// Connect to the database
-	// For MySQL/MariaDB, we need to convert the URL format
-	connectionString := dbURL
-	if dialectProtocol == "mysql" {
-		connectionString = convertMySQLURL(dbURL)
 	}
 
 	db, err := sql.Open(dialectProtocol, connectionString)
@@ -265,4 +265,21 @@ func convertMySQLURL(dbURL string) string {
 	}
 
 	return connectionString
+}
+
+// removePostgresPoolParams removes PostgreSQL connection pool parameters from a database URL.
+// These parameters (pool_max_conns and pool_min_conns) are specific to pgx driver configuration
+// and may interfere with standard database connections. This function ensures compatibility
+// by removing them while preserving all other query parameters.
+// If the URL cannot be parsed, it returns the original URL unchanged.
+func removePostgresPoolParams(dbURL string) string {
+	parsedURL, err := url.Parse(dbURL)
+	if err != nil {
+		return dbURL
+	}
+	q := parsedURL.Query()
+	q.Del("pool_max_conns")
+	q.Del("pool_min_conns")
+	parsedURL.RawQuery = q.Encode()
+	return parsedURL.String()
 }
