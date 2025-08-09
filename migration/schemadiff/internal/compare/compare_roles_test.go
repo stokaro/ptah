@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/migration/schemadiff/internal/compare"
@@ -93,16 +94,16 @@ func TestRolesComparison(t *testing.T) {
 		c := qt.New(t)
 		generated := &goschema.Database{
 			Roles: []goschema.Role{
-				{Name: "app_user", Login: true},           // Modified
-				{Name: "new_role", Login: true},           // Added
-				{Name: "unchanged_role", Login: false},    // Unchanged
+				{Name: "app_user", Login: true},        // Modified
+				{Name: "new_role", Login: true},        // Added
+				{Name: "unchanged_role", Login: false}, // Unchanged
 			},
 		}
 		database := &types.DBSchema{
 			Roles: []types.DBRole{
-				{Name: "app_user", Login: false},          // Modified
-				{Name: "old_role", Login: true},           // Removed
-				{Name: "unchanged_role", Login: false},    // Unchanged
+				{Name: "app_user", Login: false},       // Modified
+				{Name: "old_role", Login: true},        // Removed
+				{Name: "unchanged_role", Login: false}, // Unchanged
 			},
 		}
 		diff := &difftypes.SchemaDiff{}
@@ -156,21 +157,21 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 	t.Run("no differences", func(t *testing.T) {
 		c := qt.New(t)
 		generated := goschema.Role{
-			Name: "test_role",
-			Login: true,
-			Superuser: false,
-			CreateDB: true,
-			CreateRole: false,
-			Inherit: true,
+			Name:        "test_role",
+			Login:       true,
+			Superuser:   false,
+			CreateDB:    true,
+			CreateRole:  false,
+			Inherit:     true,
 			Replication: false,
 		}
 		database := types.DBRole{
-			Name: "test_role",
-			Login: true,
-			Superuser: false,
-			CreateDB: true,
-			CreateRole: false,
-			Inherit: true,
+			Name:        "test_role",
+			Login:       true,
+			Superuser:   false,
+			CreateDB:    true,
+			CreateRole:  false,
+			Inherit:     true,
 			Replication: false,
 		}
 
@@ -183,22 +184,22 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 	t.Run("all attributes different", func(t *testing.T) {
 		c := qt.New(t)
 		generated := goschema.Role{
-			Name: "test_role",
-			Login: true,
-			Password: "encrypted_password",
-			Superuser: true,
-			CreateDB: true,
-			CreateRole: true,
-			Inherit: false,
+			Name:        "test_role",
+			Login:       true,
+			Password:    "encrypted_password",
+			Superuser:   true,
+			CreateDB:    true,
+			CreateRole:  true,
+			Inherit:     false,
 			Replication: true,
 		}
 		database := types.DBRole{
-			Name: "test_role",
-			Login: false,
-			Superuser: false,
-			CreateDB: false,
-			CreateRole: false,
-			Inherit: true,
+			Name:        "test_role",
+			Login:       false,
+			Superuser:   false,
+			CreateDB:    false,
+			CreateRole:  false,
+			Inherit:     true,
 			Replication: false,
 		}
 
@@ -218,11 +219,11 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 	t.Run("only login changed", func(t *testing.T) {
 		c := qt.New(t)
 		generated := goschema.Role{
-			Name: "test_role",
+			Name:  "test_role",
 			Login: true,
 		}
 		database := types.DBRole{
-			Name: "test_role",
+			Name:  "test_role",
 			Login: false,
 		}
 
@@ -236,7 +237,7 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 	t.Run("password handling", func(t *testing.T) {
 		c := qt.New(t)
 		generated := goschema.Role{
-			Name: "test_role",
+			Name:     "test_role",
 			Password: "new_password",
 		}
 		database := types.DBRole{
@@ -253,11 +254,11 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 	t.Run("no password change when target has no password", func(t *testing.T) {
 		c := qt.New(t)
 		generated := goschema.Role{
-			Name: "test_role",
+			Name:     "test_role",
 			Password: "", // No password in target
 		}
 		database := types.DBRole{
-			Name: "test_role",
+			Name:    "test_role",
 			Comment: "has_password", // Simulating existing password
 		}
 

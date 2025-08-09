@@ -147,25 +147,60 @@ type SchemaDiff struct {
 //		log.Println("No schema changes detected")
 //	}
 func (d *SchemaDiff) HasChanges() bool {
+	return d.hasTableChanges() ||
+		d.hasEnumChanges() ||
+		d.hasIndexChanges() ||
+		d.hasExtensionChanges() ||
+		d.hasFunctionChanges() ||
+		d.hasRLSChanges() ||
+		d.hasRoleChanges()
+}
+
+// hasTableChanges returns true if there are any table-related changes
+func (d *SchemaDiff) hasTableChanges() bool {
 	return len(d.TablesAdded) > 0 ||
 		len(d.TablesRemoved) > 0 ||
-		len(d.TablesModified) > 0 ||
-		len(d.EnumsAdded) > 0 ||
+		len(d.TablesModified) > 0
+}
+
+// hasEnumChanges returns true if there are any enum-related changes
+func (d *SchemaDiff) hasEnumChanges() bool {
+	return len(d.EnumsAdded) > 0 ||
 		len(d.EnumsRemoved) > 0 ||
-		len(d.EnumsModified) > 0 ||
-		len(d.IndexesAdded) > 0 ||
-		len(d.IndexesRemoved) > 0 ||
-		len(d.ExtensionsAdded) > 0 ||
-		len(d.ExtensionsRemoved) > 0 ||
-		len(d.FunctionsAdded) > 0 ||
+		len(d.EnumsModified) > 0
+}
+
+// hasIndexChanges returns true if there are any index-related changes
+func (d *SchemaDiff) hasIndexChanges() bool {
+	return len(d.IndexesAdded) > 0 ||
+		len(d.IndexesRemoved) > 0
+}
+
+// hasExtensionChanges returns true if there are any extension-related changes
+func (d *SchemaDiff) hasExtensionChanges() bool {
+	return len(d.ExtensionsAdded) > 0 ||
+		len(d.ExtensionsRemoved) > 0
+}
+
+// hasFunctionChanges returns true if there are any function-related changes
+func (d *SchemaDiff) hasFunctionChanges() bool {
+	return len(d.FunctionsAdded) > 0 ||
 		len(d.FunctionsRemoved) > 0 ||
-		len(d.FunctionsModified) > 0 ||
-		len(d.RLSPoliciesAdded) > 0 ||
+		len(d.FunctionsModified) > 0
+}
+
+// hasRLSChanges returns true if there are any RLS-related changes
+func (d *SchemaDiff) hasRLSChanges() bool {
+	return len(d.RLSPoliciesAdded) > 0 ||
 		len(d.RLSPoliciesRemoved) > 0 ||
 		len(d.RLSPoliciesModified) > 0 ||
 		len(d.RLSEnabledTablesAdded) > 0 ||
-		len(d.RLSEnabledTablesRemoved) > 0 ||
-		len(d.RolesAdded) > 0 ||
+		len(d.RLSEnabledTablesRemoved) > 0
+}
+
+// hasRoleChanges returns true if there are any role-related changes
+func (d *SchemaDiff) hasRoleChanges() bool {
+	return len(d.RolesAdded) > 0 ||
 		len(d.RolesRemoved) > 0 ||
 		len(d.RolesModified) > 0
 }
