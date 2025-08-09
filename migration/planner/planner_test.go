@@ -30,7 +30,7 @@ func TestGetPlanner(t *testing.T) {
 		{
 			name:    "mariadb planner not implemented",
 			dialect: platform.MariaDB,
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name:    "unknown dialect",

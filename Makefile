@@ -29,7 +29,7 @@ test:
 # Build Docker image for integration tests
 docker-build:
 	@echo "Building Docker image for integration tests..."
-	docker-compose build ptah-tester
+	docker-compose --profile test build ptah-tester
 
 # Run integration tests using Docker Compose
 integration-test: docker-build
@@ -45,6 +45,11 @@ integration-test-json: docker-build
 integration-test-txt: docker-build
 	@echo "Running integration tests with text report..."
 	docker-compose --profile test run --rm ptah-tester --report=txt --verbose
+
+# Run integration tests with stdout report
+integration-test-stdout: docker-build
+	@echo "Running integration tests with stdout report..."
+	docker-compose --profile test run --rm ptah-tester --report=stdout --verbose
 
 # Run specific scenarios
 integration-test-basic: docker-build

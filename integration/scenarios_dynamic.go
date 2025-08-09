@@ -626,7 +626,7 @@ func testDynamicRollbackSingle(ctx context.Context, conn *dbschema.DatabaseConne
 	// Register migrations with database-specific SQL
 	var migrations []*migrator.Migration
 
-	if dialect == "mysql" {
+	if dialect == "mysql" || dialect == "mariadb" {
 		migrations = []*migrator.Migration{
 			migrator.CreateMigrationFromSQL(1, "Create initial tables",
 				"CREATE TABLE users (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255)); CREATE TABLE products (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255));",
@@ -642,7 +642,7 @@ func testDynamicRollbackSingle(ctx context.Context, conn *dbschema.DatabaseConne
 				"ALTER TABLE users DROP COLUMN status;"),
 		}
 	} else {
-		// PostgreSQL and MariaDB
+		// PostgreSQL
 		migrations = []*migrator.Migration{
 			migrator.CreateMigrationFromSQL(1, "Create initial tables",
 				"CREATE TABLE users (id SERIAL PRIMARY KEY, name VARCHAR(255)); CREATE TABLE products (id SERIAL PRIMARY KEY, name VARCHAR(255));",
@@ -736,7 +736,7 @@ func testDynamicRollbackMultiple(ctx context.Context, conn *dbschema.DatabaseCon
 	// Register migrations with database-specific SQL
 	var migrations []*migrator.Migration
 
-	if dialect == "mysql" {
+	if dialect == "mysql" || dialect == "mariadb" {
 		migrations = []*migrator.Migration{
 			migrator.CreateMigrationFromSQL(1, "Create initial tables",
 				"CREATE TABLE users (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255)); CREATE TABLE products (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255));",
@@ -858,7 +858,7 @@ func testDynamicRollbackToZero(ctx context.Context, conn *dbschema.DatabaseConne
 	// Register migrations with database-specific SQL
 	var migrations []*migrator.Migration
 
-	if dialect == "mysql" {
+	if dialect == "mysql" || dialect == "mariadb" {
 		migrations = []*migrator.Migration{
 			migrator.CreateMigrationFromSQL(1, "Create initial tables",
 				"CREATE TABLE users (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255)); CREATE TABLE products (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255));",
@@ -1180,7 +1180,7 @@ func testDynamicCircularDependencies(ctx context.Context, conn *dbschema.Databas
 
 		// First, create tables without foreign keys
 		var createSQL string
-		if dialect == "mysql" {
+		if dialect == "mysql" || dialect == "mariadb" {
 			createSQL = `CREATE TABLE departments (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255));
 			 CREATE TABLE employees (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255), department_id INTEGER);`
 		} else {
@@ -1596,7 +1596,7 @@ func testDynamicReservedKeywords(ctx context.Context, conn *dbschema.DatabaseCon
 
 		// Create table with reserved keyword names (properly quoted)
 		var createSQL, dropSQL string
-		if dialect == "mysql" {
+		if dialect == "mysql" || dialect == "mariadb" {
 			createSQL = "CREATE TABLE `order` (" +
 				"   `id` INT AUTO_INCREMENT PRIMARY KEY," +
 				"   `select` VARCHAR(255)," +
@@ -1697,10 +1697,10 @@ func testDynamicDialectDifferences(ctx context.Context, conn *dbschema.DatabaseC
 				 CREATE INDEX idx_dialect_test_data ON dialect_test USING GIN (data);`,
 				`DROP TABLE dialect_test;`,
 			)
-		case "mysql":
+		case "mysql", "mariadb":
 			migration = migrator.CreateMigrationFromSQL(
 				1,
-				"MySQL specific features",
+				"MySQL/MariaDB specific features",
 				`CREATE TABLE dialect_test (
 				   id INT AUTO_INCREMENT PRIMARY KEY,
 				   data JSON,
@@ -1775,7 +1775,7 @@ func testDynamicTypeMapping(ctx context.Context, conn *dbschema.DatabaseConnecti
 			   timestamp_val TIMESTAMP,
 			   uuid_val UUID
 			 );`
-		case "mysql":
+		case "mysql", "mariadb":
 			createSQL = `CREATE TABLE type_test (
 			   id INT AUTO_INCREMENT PRIMARY KEY,
 			   small_int SMALLINT,
@@ -1815,7 +1815,7 @@ func testDynamicTypeMapping(ctx context.Context, conn *dbschema.DatabaseConnecti
 		switch dialect {
 		case "postgres":
 			alterSQL = `ALTER TABLE type_test ALTER COLUMN small_int TYPE INTEGER;`
-		case "mysql":
+		case "mysql", "mariadb":
 			alterSQL = `ALTER TABLE type_test MODIFY COLUMN small_int INT;`
 		default:
 			alterSQL = `-- Type conversion not supported in generic SQL`
@@ -1943,7 +1943,7 @@ func testDynamicForeignKeyCascade(ctx context.Context, conn *dbschema.DatabaseCo
 		m := migrator.NewMigrator(conn)
 
 		var createSQL string
-		if dialect == "mysql" {
+		if dialect == "mysql" || dialect == "mariadb" {
 			createSQL = `CREATE TABLE parent_table (
 			   id INT AUTO_INCREMENT PRIMARY KEY,
 			   name VARCHAR(255)
@@ -1990,7 +1990,7 @@ func testDynamicForeignKeyCascade(ctx context.Context, conn *dbschema.DatabaseCo
 		m := migrator.NewMigrator(conn)
 
 		var downSQL string
-		if dialect == "mysql" {
+		if dialect == "mysql" || dialect == "mariadb" {
 			downSQL = `CREATE TABLE parent_table (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255));`
 		} else {
 			downSQL = `CREATE TABLE parent_table (id SERIAL PRIMARY KEY, name VARCHAR(255));`
@@ -2021,7 +2021,7 @@ func testDynamicForeignKeyCascade(ctx context.Context, conn *dbschema.DatabaseCo
 		m := migrator.NewMigrator(conn)
 
 		var recreateSQL string
-		if dialect == "mysql" {
+		if dialect == "mysql" || dialect == "mariadb" {
 			recreateSQL = `DROP TABLE child_table;
 			 DROP TABLE parent_table;
 			 CREATE TABLE parent_table (
