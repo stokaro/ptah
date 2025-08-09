@@ -38,7 +38,7 @@ func TestPgxDriverValidation(t *testing.T) {
 		// Verify driver type by checking the underlying driver
 		driver := db.Driver()
 		driverType := reflect.TypeOf(driver).String()
-		
+
 		// The pgx driver should be identifiable in the type name
 		c.Assert(strings.Contains(driverType, "pgx") || strings.Contains(driverType, "stdlib"), qt.IsTrue,
 			qt.Commentf("Expected pgx driver, got: %s", driverType))
@@ -56,7 +56,7 @@ func TestPgxDriverValidation(t *testing.T) {
 		// Verify driver type
 		driver := db.Driver()
 		driverType := reflect.TypeOf(driver).String()
-		
+
 		// The pgx driver should be identifiable in the type name
 		c.Assert(strings.Contains(driverType, "pgx") || strings.Contains(driverType, "stdlib"), qt.IsTrue,
 			qt.Commentf("Expected pgx driver through dbschema.Connect, got: %s", driverType))
@@ -142,7 +142,7 @@ func TestDriverMigrationCompleteness(t *testing.T) {
 		// Attempt to open with "postgres" driver name (lib/pq)
 		// This should fail if lib/pq is not imported/registered
 		_, err := sql.Open("postgres", dsn)
-		
+
 		// We expect this to either fail or use a different driver
 		// If it succeeds, we need to verify it's not actually lib/pq
 		if err == nil {
