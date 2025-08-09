@@ -179,15 +179,22 @@ When role attributes change, Ptah generates appropriate ALTER ROLE statements to
 
 ### Role Removal
 
-When roles are removed from the schema, Ptah generates DROP ROLE statements with IF EXISTS clauses for safety.
+**Important**: Ptah does NOT automatically remove roles that exist in the database but are not defined in your schema. This is a safety feature to prevent accidental removal of roles that may have been created by DBAs, other applications, or infrastructure setup.
+
+If you need to remove a role, you must do so manually:
+
+```sql
+-- Manual role removal (only when you're certain it's safe)
+DROP ROLE IF EXISTS old_service_role;
+```
 
 ### Dependency Management
 
 Ptah automatically handles dependencies between roles and other database objects:
 
-1. Roles are created before functions and policies
-2. Policies are dropped before roles during rollbacks
-3. Functions are dropped before roles during rollbacks
+1. Roles are created before functions and policies that reference them
+2. Role attributes are modified when changes are detected
+3. Roles are never automatically dropped (manual removal required for safety)
 
 ## Testing
 
