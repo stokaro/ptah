@@ -43,7 +43,7 @@ func ConnectToDatabase(dbURL string) (*DatabaseConnection, error) {
 
 	// Connect to the database
 	// For MySQL/MariaDB, we need to convert the URL format
-	connectionString := dbURL
+	var connectionString string
 
 	var dialectProtocol string
 	switch dialect {
