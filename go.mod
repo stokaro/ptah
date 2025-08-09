@@ -8,7 +8,6 @@ require (
 	github.com/go-extras/go-kit v1.2.0
 	github.com/go-sql-driver/mysql v1.9.2
 	github.com/jackc/pgx/v5 v5.7.5
-	github.com/lib/pq v1.10.9
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.20.1
 	golang.org/x/text v0.24.0
