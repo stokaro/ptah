@@ -82,7 +82,8 @@ func GenerateMigration(opts GenerateMigrationOptions) (*MigrationFiles, error) {
 
 	// Check if there are any changes
 	if !diff.HasChanges() {
-		return nil, fmt.Errorf("no schema changes detected")
+		// No changes detected - this is a successful no-op operation
+		return nil, nil
 	}
 
 	// 4. Generate migration version (timestamp)
@@ -93,6 +94,12 @@ func GenerateMigration(opts GenerateMigrationOptions) (*MigrationFiles, error) {
 	upSQL, err := generateUpMigrationSQL(diff, generated, conn.Info().Dialect)
 	if err != nil {
 		return nil, fmt.Errorf("error generating up migration SQL: %w", err)
+	}
+
+	// Check if no actual migration is needed (empty upSQL indicates no changes)
+	if upSQL == "" {
+		// No migration needed - this is a successful no-op operation
+		return nil, nil
 	}
 
 	// 6. Generate down migration SQL
@@ -127,7 +134,8 @@ func generateUpMigrationSQL(diff *types.SchemaDiff, generated *goschema.Database
 	statements := planner.GenerateSchemaDiffSQLStatements(diff, generated, dialect)
 
 	if len(statements) == 0 || !hasActualSQLStatements(statements) {
-		return "", fmt.Errorf("no migration statements generated")
+		// No actual SQL statements generated - this is a successful no-op operation
+		return "", nil
 	}
 
 	// Add header comment
