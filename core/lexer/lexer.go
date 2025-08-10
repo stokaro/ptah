@@ -118,8 +118,6 @@ func (l *Lexer) emit(tokenType TokenType) Token {
 	return token
 }
 
-
-
 // NextToken returns the next token from the input
 func (l *Lexer) NextToken() Token {
 	for {
