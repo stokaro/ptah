@@ -238,10 +238,21 @@ func (p *Planner) addNewIndexes(result []ast.Node, diff *types.SchemaDiff, gener
 }
 
 func (p *Planner) removeIndexes(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
-	for _, indexName := range diff.IndexesRemoved {
-		dropIndexNode := ast.NewDropIndex(indexName).
-			SetIfExists()
-		result = append(result, dropIndexNode)
+	// Use the detailed removal info if available (includes table names for MySQL/MariaDB)
+	if len(diff.IndexesRemovedWithTables) > 0 {
+		for _, indexInfo := range diff.IndexesRemovedWithTables {
+			dropIndexNode := ast.NewDropIndex(indexInfo.Name).
+				SetIfExists().
+				SetTable(indexInfo.TableName)
+			result = append(result, dropIndexNode)
+		}
+	} else {
+		// Fallback to the basic removal list (for backward compatibility)
+		for _, indexName := range diff.IndexesRemoved {
+			dropIndexNode := ast.NewDropIndex(indexName).
+				SetIfExists()
+			result = append(result, dropIndexNode)
+		}
 	}
 	return result
 }
