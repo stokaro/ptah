@@ -32,9 +32,9 @@ func TestMigrationFileGeneration_ExtensionSQL(t *testing.T) {
 			},
 			databaseSchema: &types.DBSchema{
 				Extensions: []types.DBExtension{
-					{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},    // ignored by default
-					{Name: "btree_gin", Version: "1.3", Schema: "public"},     // ignored by default
-					{Name: "pg_trgm", Version: "1.6", Schema: "public"},       // ignored by default
+					{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"}, // ignored by default
+					{Name: "btree_gin", Version: "1.3", Schema: "public"},   // ignored by default
+					{Name: "pg_trgm", Version: "1.6", Schema: "public"},     // ignored by default
 				},
 			},
 			expectedUpSQL: []string{
@@ -65,9 +65,9 @@ func TestMigrationFileGeneration_ExtensionSQL(t *testing.T) {
 			},
 			databaseSchema: &types.DBSchema{
 				Extensions: []types.DBExtension{
-					{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},    // ignored by default
-					{Name: "btree_gin", Version: "1.3", Schema: "public"},     // ignored by default
-					{Name: "pg_trgm", Version: "1.6", Schema: "public"},       // ignored by default
+					{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"}, // ignored by default
+					{Name: "btree_gin", Version: "1.3", Schema: "public"},   // ignored by default
+					{Name: "pg_trgm", Version: "1.6", Schema: "public"},     // ignored by default
 					{Name: "uuid-ossp", Version: "1.1", Schema: "public"},
 				},
 			},
@@ -162,9 +162,9 @@ func TestExtensionMigrationSQL_CompleteFlow(t *testing.T) {
 
 	databaseWithIgnoredExtensions := &types.DBSchema{
 		Extensions: []types.DBExtension{
-			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},    // ignored by default
-			{Name: "btree_gin", Version: "1.3", Schema: "public"},     // ignored by default
-			{Name: "pg_trgm", Version: "1.6", Schema: "public"},       // ignored by default
+			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"}, // ignored by default
+			{Name: "btree_gin", Version: "1.3", Schema: "public"},   // ignored by default
+			{Name: "pg_trgm", Version: "1.6", Schema: "public"},     // ignored by default
 		},
 	}
 
@@ -177,9 +177,9 @@ func TestExtensionMigrationSQL_CompleteFlow(t *testing.T) {
 	// 2. Simulate database state after up migration
 	databaseAfterUp := &types.DBSchema{
 		Extensions: []types.DBExtension{
-			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},    // ignored by default
-			{Name: "btree_gin", Version: "1.3", Schema: "public"},     // ignored by default
-			{Name: "pg_trgm", Version: "1.6", Schema: "public"},       // ignored by default
+			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"}, // ignored by default
+			{Name: "btree_gin", Version: "1.3", Schema: "public"},   // ignored by default
+			{Name: "pg_trgm", Version: "1.6", Schema: "public"},     // ignored by default
 			{Name: "uuid-ossp", Version: "1.1", Schema: "public"},
 		},
 	}
