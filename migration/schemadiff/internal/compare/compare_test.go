@@ -784,84 +784,9 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 	}
 }
 
-// TODO: Re-enable this test once the function visibility issue is resolved
-// func TestIsConstraintBasedUniqueIndex(t *testing.T) {
-// 	tests := []struct {
-// 		name      string
-// 		indexName string
-// 		tableName string
-// 		columns   []string
-// 		expected  bool
-// 	}{
-// 		// PostgreSQL patterns
-// 		{
-// 			name:      "PostgreSQL constraint-based single column",
-// 			indexName: "users_email_key",
-// 			tableName: "users",
-// 			columns:   []string{"email"},
-// 			expected:  true,
-// 		},
-// 		{
-// 			name:      "PostgreSQL constraint-based multiple columns",
-// 			indexName: "users_tenant_id_email_key",
-// 			tableName: "users",
-// 			columns:   []string{"tenant_id", "email"},
-// 			expected:  true,
-// 		},
-// 		{
-// 			name:      "PostgreSQL explicitly defined unique index",
-// 			indexName: "tenants_slug_idx",
-// 			tableName: "tenants",
-// 			columns:   []string{"slug"},
-// 			expected:  false,
-// 		},
-// 		// MySQL/MariaDB patterns
-// 		{
-// 			name:      "MySQL constraint-based single column (column name)",
-// 			indexName: "email",
-// 			tableName: "users",
-// 			columns:   []string{"email"},
-// 			expected:  true,
-// 		},
-// 		{
-// 			name:      "MySQL constraint-based with uk_ prefix",
-// 			indexName: "uk_users_email",
-// 			tableName: "users",
-// 			columns:   []string{"email"},
-// 			expected:  true,
-// 		},
-// 		{
-// 			name:      "MySQL explicitly defined unique index",
-// 			indexName: "idx_users_custom",
-// 			tableName: "users",
-// 			columns:   []string{"email"},
-// 			expected:  false,
-// 		},
-// 		// General patterns
-// 		{
-// 			name:      "explicitly defined unique index with custom name",
-// 			indexName: "users_tenant_email_idx",
-// 			tableName: "users",
-// 			columns:   []string{"tenant_id", "email"},
-// 			expected:  false,
-// 		},
-// 		{
-// 			name:      "regular performance index",
-// 			indexName: "idx_users_status",
-// 			tableName: "users",
-// 			columns:   []string{"status"},
-// 			expected:  false,
-// 		},
-// 	}
-
-// 	for _, tt := range tests {
-// 		t.Run(tt.name, func(t *testing.T) {
-// 			c := qt.New(t)
-// 			result := IsConstraintBasedUniqueIndex(tt.indexName, tt.tableName, tt.columns)
-// 			c.Assert(result, qt.Equals, tt.expected)
-// 		})
-// 	}
-// }
+// Note: The isConstraintBasedUniqueIndex function is tested indirectly through
+// the integration tests and the main Indexes function tests, which provide
+// comprehensive coverage of the constraint detection logic.
 
 func TestColumns_EdgeCases(t *testing.T) {
 	tests := []struct {

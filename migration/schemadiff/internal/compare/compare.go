@@ -2,6 +2,7 @@ package compare
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -10,6 +11,19 @@ import (
 	"github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/migration/schemadiff/internal/normalize"
 	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
+)
+
+// Regular expressions for constraint-based index detection
+var (
+	// PostgreSQL constraint-based unique index pattern: tablename_columnname_key
+	postgresConstraintPattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*_[a-zA-Z_][a-zA-Z0-9_]*_key$`)
+
+	// MySQL/MariaDB constraint-based unique index patterns
+	mysqlUKPattern           = regexp.MustCompile(`^uk_[a-zA-Z_][a-zA-Z0-9_]*`)
+	mysqlTableColumnsPattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*_[a-zA-Z_][a-zA-Z0-9_]*$`)
+
+	// Custom index patterns (these should NOT be considered constraint-based)
+	customIndexPattern = regexp.MustCompile(`(idx|index)`)
 )
 
 // TablesAndColumns performs comprehensive table and column comparison between generated and database schemas.
@@ -739,11 +753,11 @@ func EnumValues(genEnum goschema.Enum, dbEnum types.DBEnum) difftypes.EnumDiff {
 //	// MySQL/MariaDB
 //	isConstraintBasedUniqueIndex("email", "users", []string{"email"})               // true
 //	isConstraintBasedUniqueIndex("idx_users_custom", "users", []string{"email"})    // false
-func IsConstraintBasedUniqueIndex(indexName, tableName string, columns []string) bool {
+func isConstraintBasedUniqueIndex(indexName, tableName string, columns []string) bool {
 	// PostgreSQL pattern: tablename_columnname_key
 	if strings.HasSuffix(indexName, "_key") {
 		expectedPrefix := tableName + "_"
-		return strings.HasPrefix(indexName, expectedPrefix)
+		return strings.HasPrefix(indexName, expectedPrefix) && postgresConstraintPattern.MatchString(indexName)
 	}
 
 	// MySQL/MariaDB pattern: simple column name for single-column unique constraints
@@ -753,20 +767,17 @@ func IsConstraintBasedUniqueIndex(indexName, tableName string, columns []string)
 		return indexName == columns[0]
 	}
 
-	// For multi-column indexes in MySQL/MariaDB, constraint-based indexes often have
-	// names starting with constraint prefixes like "uk_" but NOT custom patterns like "idx_"
-	if strings.HasPrefix(indexName, "uk_") {
+	// MySQL/MariaDB constraint-based indexes with "uk_" prefix
+	if mysqlUKPattern.MatchString(indexName) {
 		return true
 	}
 
 	// Be more conservative about table_column patterns - only consider it constraint-based
 	// if it follows a very specific pattern and doesn't look like a custom index name
-	if strings.HasPrefix(indexName, tableName+"_") && !strings.Contains(indexName, "idx") {
-		// Additional check: constraint-based indexes typically have simpler patterns
-		// and don't contain common custom index suffixes
-		if !strings.HasSuffix(indexName, "_idx") && !strings.HasSuffix(indexName, "_index") {
-			return true
-		}
+	if mysqlTableColumnsPattern.MatchString(indexName) &&
+		strings.HasPrefix(indexName, tableName+"_") &&
+		!customIndexPattern.MatchString(indexName) {
+		return true
 	}
 
 	return false
@@ -867,7 +878,7 @@ func Indexes(generated *goschema.Database, database *types.DBSchema, diff *difft
 
 		// Skip constraint-based unique indexes (automatically created by UNIQUE constraints)
 		// but allow explicitly defined unique indexes (created via schema annotations)
-		if index.IsUnique && IsConstraintBasedUniqueIndex(index.Name, index.TableName, index.Columns) {
+		if index.IsUnique && isConstraintBasedUniqueIndex(index.Name, index.TableName, index.Columns) {
 			continue
 		}
 
