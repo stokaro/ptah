@@ -23,6 +23,7 @@ var (
 	mysqlTableColumnsPattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*_[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 	// Custom index patterns (these should NOT be considered constraint-based)
+	// Match indexes that contain common custom patterns like "idx" or "index" anywhere in the name
 	customIndexPattern = regexp.MustCompile(`(?i)(idx|index)`)
 )
 
@@ -770,8 +771,12 @@ func isConstraintBasedUniqueIndex(indexName, tableName string, columns []string)
 	// MySQL/MariaDB pattern: simple column name for single-column unique constraints
 	// MySQL automatically creates indexes with the same name as the column for UNIQUE constraints
 	if len(columns) == 1 {
-		// If the index name exactly matches the column name, it's likely a constraint-based index
-		return indexName == columns[0]
+		// Only consider it constraint-based if the index name matches the column name,
+		// and it does NOT match custom index patterns (e.g., does not start with "idx_" or "index_").
+		// We don't check mysqlTableColumnsPattern here because simple column names like "email"
+		// don't match that pattern (it requires table_column format).
+		return indexName == columns[0] &&
+			!customIndexPattern.MatchString(indexName)
 	}
 
 	// MySQL/MariaDB constraint-based indexes with "uk_" prefix
