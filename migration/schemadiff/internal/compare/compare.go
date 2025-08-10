@@ -2,6 +2,7 @@ package compare
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -10,6 +11,20 @@ import (
 	"github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/migration/schemadiff/internal/normalize"
 	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
+)
+
+// Regular expressions for constraint-based index detection
+var (
+	// PostgreSQL constraint-based unique index pattern: tablename_columnname_key
+	postgresConstraintPattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*_[a-zA-Z_][a-zA-Z0-9_]*_key$`)
+
+	// MySQL/MariaDB constraint-based unique index patterns
+	mysqlUKPattern           = regexp.MustCompile(`^uk_[a-zA-Z_][a-zA-Z0-9_]*`)
+	mysqlTableColumnsPattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*_[a-zA-Z_][a-zA-Z0-9_]*$`)
+
+	// Custom index patterns (these should NOT be considered constraint-based)
+	// Match indexes that start with "idx_" or "index_", or end with "_idx" or "_index"
+	customIndexPattern = regexp.MustCompile(`(?i)(^(idx|index)_|_(idx|index)$)`)
 )
 
 // TablesAndColumns performs comprehensive table and column comparison between generated and database schemas.
@@ -704,6 +719,89 @@ func EnumValues(genEnum goschema.Enum, dbEnum types.DBEnum) difftypes.EnumDiff {
 	return enumDiff
 }
 
+// isConstraintBasedUniqueIndex determines if a unique index was automatically created by a UNIQUE constraint.
+//
+// Different database systems create unique indexes with different naming patterns when UNIQUE
+// constraints are defined on columns:
+//
+// **PostgreSQL**:
+//   - tablename_columnname_key (single column)
+//   - tablename_columnname1_columnname2_key (multiple columns)
+//
+// **MySQL/MariaDB**:
+//   - Simple column names (e.g., "email", "username") for single-column constraints
+//   - Constraint names for multi-column constraints (e.g., "uk_users_email_name")
+//
+// This function identifies such constraint-based indexes to distinguish them from explicitly
+// defined unique indexes created via schema annotations.
+//
+// # Assumptions
+//
+// This function relies on standard naming conventions used by database systems for
+// constraint-based indexes. These patterns may vary with different database versions,
+// configurations, or custom naming schemes. The detection is based on common patterns
+// observed in PostgreSQL 12+, MySQL 8.0+, and MariaDB 10.5+.
+//
+// # Parameters
+//
+//   - indexName: The name of the index to check
+//   - tableName: The name of the table the index belongs to
+//   - columns: The columns that the index covers (used for MySQL/MariaDB detection)
+//
+// # Returns
+//
+// Returns true if the index appears to be constraint-based, false if it's explicitly defined.
+//
+// # Examples
+//
+//	// PostgreSQL
+//	isConstraintBasedUniqueIndex("users_email_key", "users", []string{"email"})     // true
+//	isConstraintBasedUniqueIndex("tenants_slug_idx", "tenants", []string{"slug"})   // false
+//
+//	// MySQL/MariaDB
+//	isConstraintBasedUniqueIndex("email", "users", []string{"email"})               // true
+//	isConstraintBasedUniqueIndex("idx_users_custom", "users", []string{"email"})    // false
+func isConstraintBasedUniqueIndex(indexName, tableName string, columns []string) bool {
+	// PostgreSQL pattern: tablename_columnname_key
+	if strings.HasSuffix(indexName, "_key") {
+		expectedPrefix := tableName + "_"
+		return strings.HasPrefix(indexName, expectedPrefix) && postgresConstraintPattern.MatchString(indexName)
+	}
+
+	// MySQL/MariaDB pattern: simple column name for single-column unique constraints
+	// MySQL automatically creates indexes with the same name as the column for UNIQUE constraints
+	if len(columns) == 1 {
+		// Only consider it constraint-based if the index name matches the column name,
+		// and it does NOT match custom index patterns (e.g., does not start with "idx_" or "index_").
+		// We don't check mysqlTableColumnsPattern here because simple column names like "email"
+		// don't match that pattern (it requires table_column format).
+		return indexName == columns[0] &&
+			!customIndexPattern.MatchString(indexName)
+	}
+
+	// MySQL/MariaDB constraint-based indexes with "uk_" prefix
+	if mysqlUKPattern.MatchString(indexName) {
+		return true
+	}
+
+	// Be more conservative about table_column patterns - only consider it constraint-based
+	// if it follows a very specific pattern and doesn't look like a custom index name
+	if isMySQLConstraintBasedUniqueIndex(indexName, tableName) {
+		return true
+	}
+
+	return false
+}
+
+// isMySQLConstraintBasedUniqueIndex checks if an index follows MySQL/MariaDB constraint-based patterns.
+// This helper function encapsulates the complex logic for detecting MySQL/MariaDB constraint-based
+// unique indexes that follow table_column naming patterns but are not custom indexes.
+func isMySQLConstraintBasedUniqueIndex(indexName, tableName string) bool {
+	return mysqlTableColumnsPattern.MatchString(indexName) &&
+		strings.HasPrefix(indexName, tableName+"_") &&
+		!customIndexPattern.MatchString(indexName)
+}
+
 // Indexes performs index comparison between generated and database schemas with intelligent filtering.
 //
 // This function handles the comparison of database indexes, which requires careful
@@ -721,11 +819,13 @@ func EnumValues(genEnum goschema.Enum, dbEnum types.DBEnum) difftypes.EnumDiff {
 //
 // **Database Schema Indexes**:
 //   - Excludes primary key indexes (automatically created with PRIMARY KEY constraints)
-//   - Excludes unique indexes (automatically created with UNIQUE constraints)
-//   - Includes only manually created performance indexes
+//   - Excludes constraint-based unique indexes (automatically created with UNIQUE constraints)
+//   - Includes explicitly defined unique indexes (created via schema annotations)
+//   - Includes manually created performance indexes
 //
 // This filtering prevents false positives where the system would suggest removing
-// automatically generated indexes that are essential for constraint enforcement.
+// automatically generated constraint indexes that are essential for constraint enforcement,
+// while still allowing comparison of explicitly defined unique indexes.
 //
 // # Example Scenarios
 //
@@ -746,9 +846,9 @@ func EnumValues(genEnum goschema.Enum, dbEnum types.DBEnum) difftypes.EnumDiff {
 //   - Result: "idx_old_search" added to diff.IndexesRemoved
 //
 // **Automatic index filtering**:
-//   - Database has "users_pkey" (primary key index)
-//   - Database has "users_email_key" (unique constraint index)
-//   - These are filtered out and not considered for removal
+//   - Database has "users_pkey" (primary key index) - filtered out
+//   - Database has "users_email_key" (constraint-based unique index) - filtered out
+//   - Database has "users_tenant_email_idx" (explicitly defined unique index) - included for comparison
 //
 // # Algorithm Details
 //
@@ -791,10 +891,17 @@ func Indexes(generated *goschema.Database, database *types.DBSchema, diff *difft
 	dbIndexes := make(map[string]bool)
 	for _, index := range database.Indexes {
 		// Skip primary key indexes as they're handled with tables
-		// Skip unique indexes as they're automatically created by UNIQUE constraints
-		if !index.IsPrimary && !index.IsUnique {
-			dbIndexes[index.Name] = true
+		if index.IsPrimary {
+			continue
 		}
+
+		// Skip constraint-based unique indexes (automatically created by UNIQUE constraints)
+		// but allow explicitly defined unique indexes (created via schema annotations)
+		if index.IsUnique && isConstraintBasedUniqueIndex(index.Name, index.TableName, index.Columns) {
+			continue
+		}
+
+		dbIndexes[index.Name] = true
 	}
 
 	// Find added and removed indexes
@@ -807,12 +914,28 @@ func Indexes(generated *goschema.Database, database *types.DBSchema, diff *difft
 	for indexName := range dbIndexes {
 		if !genIndexes[indexName] {
 			diff.IndexesRemoved = append(diff.IndexesRemoved, indexName)
+
+			// Also populate the detailed removal info with table name for MySQL/MariaDB support
+			for _, index := range database.Indexes {
+				if index.Name == indexName {
+					diff.IndexesRemovedWithTables = append(diff.IndexesRemovedWithTables, difftypes.IndexRemovalInfo{
+						Name:      indexName,
+						TableName: index.TableName,
+					})
+					break
+				}
+			}
 		}
 	}
 
 	// Sort for consistent output
 	sort.Strings(diff.IndexesAdded)
 	sort.Strings(diff.IndexesRemoved)
+
+	// Sort the detailed removal info by index name
+	sort.Slice(diff.IndexesRemovedWithTables, func(i, j int) bool {
+		return diff.IndexesRemovedWithTables[i].Name < diff.IndexesRemovedWithTables[j].Name
+	})
 }
 
 // compareNamedItems is a generic helper function that compares two maps of named items

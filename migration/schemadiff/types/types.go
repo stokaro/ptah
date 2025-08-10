@@ -1,5 +1,17 @@
 package types
 
+// IndexRemovalInfo contains information about an index that needs to be removed,
+// including both the index name and the table it belongs to.
+// This is needed for databases like MySQL/MariaDB that require the table name
+// in DROP INDEX statements.
+type IndexRemovalInfo struct {
+	// Name is the name of the index to be removed
+	Name string `json:"name"`
+
+	// TableName is the name of the table that the index belongs to
+	TableName string `json:"table_name"`
+}
+
 // SchemaDiff represents comprehensive differences between two database schemas.
 //
 // This structure captures all types of schema changes that can occur between a target
@@ -64,6 +76,11 @@ type SchemaDiff struct {
 	// IndexesRemoved contains names of indexes that exist in the current database
 	// but not in the target schema (safe operation - no data loss)
 	IndexesRemoved []string `json:"indexes_removed"`
+
+	// IndexesRemovedWithTables contains detailed information about indexes that need to be removed,
+	// including both index name and table name. This is used by database dialects that require
+	// table names in DROP INDEX statements (e.g., MySQL/MariaDB).
+	IndexesRemovedWithTables []IndexRemovalInfo `json:"indexes_removed_with_tables"`
 
 	// ExtensionsAdded contains names of PostgreSQL extensions that exist in the target schema
 	// but not in the current database schema
