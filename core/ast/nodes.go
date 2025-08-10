@@ -343,6 +343,8 @@ type IndexNode struct {
 	Type string
 	// Comment is an optional index comment
 	Comment string
+	// IfNotExists indicates whether to use IF NOT EXISTS clause for idempotent migrations
+	IfNotExists bool
 
 	// PostgreSQL-specific features
 	// Condition specifies a WHERE clause for partial indexes
@@ -514,6 +516,19 @@ func (n *IndexNode) Accept(visitor Visitor) error {
 //	index.SetUnique()
 func (n *IndexNode) SetUnique() *IndexNode {
 	n.Unique = true
+	return n
+}
+
+// SetIfNotExists marks the index to use IF NOT EXISTS clause and returns the index for chaining.
+//
+// This makes the CREATE INDEX statement idempotent, allowing it to be safely executed
+// multiple times without failing if the index already exists.
+//
+// Example:
+//
+//	index.SetIfNotExists()
+func (n *IndexNode) SetIfNotExists() *IndexNode {
+	n.IfNotExists = true
 	return n
 }
 

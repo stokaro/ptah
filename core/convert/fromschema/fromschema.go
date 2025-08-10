@@ -502,6 +502,9 @@ func FromIndex(index goschema.Index) *ast.IndexNode {
 		indexNode.Operator = index.Operator
 	}
 
+	// Set IF NOT EXISTS for idempotent migrations
+	indexNode.IfNotExists = true
+
 	return indexNode
 }
 
@@ -891,6 +894,9 @@ func FromIndexWithTableMapping(index goschema.Index, structToTableMap map[string
 	if index.Operator != "" {
 		indexNode.Operator = index.Operator
 	}
+
+	// Set IF NOT EXISTS for idempotent migrations
+	indexNode.IfNotExists = true
 
 	return indexNode
 }
