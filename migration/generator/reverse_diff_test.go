@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
@@ -312,6 +313,44 @@ func TestConvertRLSPolicyNamesToRefs(t *testing.T) {
 	input := []string{"user_policy", "tenant_policy"}
 
 	result := convertRLSPolicyNamesToRefs(input)
+
+	expected := []types.RLSPolicyRef{
+		{PolicyName: "user_policy", TableName: ""},
+		{PolicyName: "tenant_policy", TableName: ""},
+	}
+	c.Assert(result, qt.DeepEquals, expected)
+}
+
+func TestConvertRLSPolicyNamesToRefsWithSchema(t *testing.T) {
+	c := qt.New(t)
+
+	input := []string{"user_policy", "tenant_policy", "unknown_policy"}
+
+	// Create a mock schema with RLS policies
+	schema := &goschema.Database{
+		RLSPolicies: []goschema.RLSPolicy{
+			{Name: "user_policy", Table: "users"},
+			{Name: "tenant_policy", Table: "tenants"},
+			// Note: unknown_policy is not in the schema
+		},
+	}
+
+	result := convertRLSPolicyNamesToRefsWithSchema(input, schema)
+
+	expected := []types.RLSPolicyRef{
+		{PolicyName: "user_policy", TableName: "users"},
+		{PolicyName: "tenant_policy", TableName: "tenants"},
+		{PolicyName: "unknown_policy", TableName: ""}, // Table name not found, remains empty
+	}
+	c.Assert(result, qt.DeepEquals, expected)
+}
+
+func TestConvertRLSPolicyNamesToRefsWithSchema_NilSchema(t *testing.T) {
+	c := qt.New(t)
+
+	input := []string{"user_policy", "tenant_policy"}
+
+	result := convertRLSPolicyNamesToRefsWithSchema(input, nil)
 
 	expected := []types.RLSPolicyRef{
 		{PolicyName: "user_policy", TableName: ""},

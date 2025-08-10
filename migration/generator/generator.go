@@ -147,12 +147,13 @@ func generateUpMigrationSQL(diff *types.SchemaDiff, generated *goschema.Database
 
 // generateDownMigrationSQL generates the SQL for the down migration by reversing the diff
 func generateDownMigrationSQL(diff *types.SchemaDiff, dbSchema *dbschematypes.DBSchema, dialect string) (string, error) {
-	// Create a reverse diff to generate down migration
-	reverseDiff := reverseSchemaDiff(diff)
-
 	// For down migrations, we need to use the current database schema as the "generated" schema
 	// since we're reverting back to the current state
 	dbAsGoSchema := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+
+	// Create a reverse diff to generate down migration
+	// We pass the dbAsGoSchema to resolve table names for RLS policies
+	reverseDiff := reverseSchemaDiffWithSchema(diff, dbAsGoSchema)
 
 	statements := planner.GenerateSchemaDiffSQLStatements(reverseDiff, dbAsGoSchema, dialect)
 
@@ -171,7 +172,14 @@ func generateDownMigrationSQL(diff *types.SchemaDiff, dbSchema *dbschematypes.DB
 }
 
 // reverseSchemaDiff creates a reverse diff for generating down migrations
+// Deprecated: Use reverseSchemaDiffWithSchema for proper RLS policy table name resolution
 func reverseSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
+	return reverseSchemaDiffWithSchema(diff, nil)
+}
+
+// reverseSchemaDiffWithSchema creates a reverse diff for generating down migrations with schema context
+// This version can properly resolve table names for RLS policies using the provided schema
+func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Database) *types.SchemaDiff {
 	return &types.SchemaDiff{
 		// Reverse table operations
 		TablesAdded:    diff.TablesRemoved, // Tables to remove become tables to add
@@ -198,7 +206,7 @@ func reverseSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 
 		// Reverse RLS policy operations
 		RLSPoliciesAdded:    convertRLSPolicyRefsToNames(diff.RLSPoliciesRemoved), // Policies to remove become policies to add (convert RLSPolicyRef to string)
-		RLSPoliciesRemoved:  convertRLSPolicyNamesToRefs(diff.RLSPoliciesAdded),   // Policies to add become policies to remove (convert string to RLSPolicyRef)
+		RLSPoliciesRemoved:  convertRLSPolicyNamesToRefsWithSchema(diff.RLSPoliciesAdded, schema), // Policies to add become policies to remove (convert string to RLSPolicyRef with table resolution)
 		RLSPoliciesModified: reverseRLSPolicyDiffs(diff.RLSPoliciesModified),
 
 		// Reverse RLS table enablement operations
@@ -301,16 +309,35 @@ func convertRLSPolicyRefsToNames(policyRefs []types.RLSPolicyRef) []string {
 // convertRLSPolicyNamesToRefs converts policy names to RLSPolicyRef for down migrations
 // This is needed because RLSPoliciesAdded contains policy names (strings) but
 // RLSPoliciesRemoved needs RLSPolicyRef (with both policy name and table name)
+// Deprecated: Use convertRLSPolicyNamesToRefsWithSchema for proper table name resolution
 func convertRLSPolicyNamesToRefs(policyNames []string) []types.RLSPolicyRef {
-	// Note: This function cannot determine the table name from just the policy name.
-	// In practice, this reversal should be handled by the migration planner which has
-	// access to the full schema context. For now, we create refs with empty table names
-	// which will need to be resolved by the planner.
+	return convertRLSPolicyNamesToRefsWithSchema(policyNames, nil)
+}
+
+// convertRLSPolicyNamesToRefsWithSchema converts policy names to RLSPolicyRef for down migrations
+// with proper table name resolution using the provided schema context
+func convertRLSPolicyNamesToRefsWithSchema(policyNames []string, schema *goschema.Database) []types.RLSPolicyRef {
 	refs := make([]types.RLSPolicyRef, len(policyNames))
+
+	// Create a lookup map for policy name to table name if schema is provided
+	policyToTable := make(map[string]string)
+	if schema != nil {
+		for _, policy := range schema.RLSPolicies {
+			policyToTable[policy.Name] = policy.Table
+		}
+	}
+
 	for i, policyName := range policyNames {
+		tableName := ""
+		if schema != nil {
+			if table, found := policyToTable[policyName]; found {
+				tableName = table
+			}
+		}
+
 		refs[i] = types.RLSPolicyRef{
 			PolicyName: policyName,
-			TableName:  "", // Will be resolved by the planner
+			TableName:  tableName,
 		}
 	}
 	return refs
