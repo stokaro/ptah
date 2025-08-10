@@ -118,10 +118,7 @@ func (l *Lexer) emit(tokenType TokenType) Token {
 	return token
 }
 
-// ignore skips the current accumulated text
-func (l *Lexer) ignore() { //nolint:unused // TODO: not used yet
-	l.start = l.pos
-}
+
 
 // NextToken returns the next token from the input
 func (l *Lexer) NextToken() Token {
