@@ -239,7 +239,11 @@ func (p *Planner) addAndModifyTableColumns(result []ast.Node, diff *types.Schema
 				// Insert the comment at the beginning of the operations for this table
 				astCommentNode := ast.NewComment(fmt.Sprintf("Add/modify columns for table: %s", tableDiff.TableName))
 				// Insert the comment before the operations we just added
-				result = append(result[:initialLength], append([]ast.Node{astCommentNode}, result[initialLength:]...)...)
+				newResult := make([]ast.Node, 0, len(result)+1)
+				newResult = append(newResult, result[:initialLength]...)
+				newResult = append(newResult, astCommentNode)
+				newResult = append(newResult, result[initialLength:]...)
+				result = newResult
 			}
 		}
 	}
