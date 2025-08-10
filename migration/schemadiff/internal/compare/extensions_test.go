@@ -143,9 +143,9 @@ func TestExtensions_RealWorldScenarios(t *testing.T) {
 				}
 				database := &types.DBSchema{
 					Extensions: []types.DBExtension{
-						{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},    // ignored by default
-						{Name: "btree_gin", Version: "1.3", Schema: "public"},     // ignored by default
-						{Name: "pg_trgm", Version: "1.6", Schema: "public"},       // ignored by default
+						{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"}, // ignored by default
+						{Name: "btree_gin", Version: "1.3", Schema: "public"},   // ignored by default
+						{Name: "pg_trgm", Version: "1.6", Schema: "public"},     // ignored by default
 					},
 				}
 				return generated, database
@@ -169,9 +169,9 @@ func TestExtensions_RealWorldScenarios(t *testing.T) {
 				}
 				database := &types.DBSchema{
 					Extensions: []types.DBExtension{
-						{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},    // ignored by default
-						{Name: "btree_gin", Version: "1.3", Schema: "public"},     // ignored by default
-						{Name: "pg_trgm", Version: "1.6", Schema: "public"},       // ignored by default
+						{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"}, // ignored by default
+						{Name: "btree_gin", Version: "1.3", Schema: "public"},   // ignored by default
+						{Name: "pg_trgm", Version: "1.6", Schema: "public"},     // ignored by default
 						{Name: "uuid-ossp", Version: "1.1", Schema: "public"},
 						{Name: "postgis", Version: "3.0", Schema: "public"},
 						{Name: "hstore", Version: "1.8", Schema: "public"},
