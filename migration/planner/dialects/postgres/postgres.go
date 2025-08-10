@@ -225,14 +225,22 @@ func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, tableDiff types.
 func (p *Planner) addAndModifyTableColumns(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
 	for _, tableDiff := range diff.TablesModified {
 		if len(tableDiff.ColumnsAdded) > 0 || len(tableDiff.ColumnsModified) > 0 {
-			astCommentNode := ast.NewComment(fmt.Sprintf("Add/modify columns for table: %s", tableDiff.TableName))
-			result = append(result, astCommentNode)
+			// Track the initial length to see if any actual operations were added
+			initialLength := len(result)
 
 			// Add new columns
 			result = p.addNewTableColumns(result, tableDiff, generated)
 
 			// Modify existing columns
 			result = p.modifyExistingTableColumns(result, tableDiff, generated)
+
+			// Only add the comment if actual operations were performed
+			if len(result) > initialLength {
+				// Insert the comment at the beginning of the operations for this table
+				astCommentNode := ast.NewComment(fmt.Sprintf("Add/modify columns for table: %s", tableDiff.TableName))
+				// Insert the comment before the operations we just added
+				result = append(result[:initialLength], append([]ast.Node{astCommentNode}, result[initialLength:]...)...)
+			}
 		}
 	}
 	return result

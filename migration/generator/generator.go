@@ -10,6 +10,7 @@ import (
 
 	"github.com/stokaro/ptah/core/convert/dbschematogo"
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/migration/migrator"
@@ -109,11 +110,23 @@ func GenerateMigration(opts GenerateMigrationOptions) (*MigrationFiles, error) {
 	return files, nil
 }
 
+// hasActualSQLStatements checks if the statements contain actual SQL operations (not just comments)
+func hasActualSQLStatements(statements []string) bool {
+	for _, stmt := range statements {
+		// Strip comments and check if there's any actual SQL content
+		stripped := strings.TrimSpace(sqlutil.StripComments(stmt))
+		if stripped != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // generateUpMigrationSQL generates the SQL for the up migration
 func generateUpMigrationSQL(diff *types.SchemaDiff, generated *goschema.Database, dialect string) (string, error) {
 	statements := planner.GenerateSchemaDiffSQLStatements(diff, generated, dialect)
 
-	if len(statements) == 0 {
+	if len(statements) == 0 || !hasActualSQLStatements(statements) {
 		return "", fmt.Errorf("no migration statements generated")
 	}
 
