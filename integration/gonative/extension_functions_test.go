@@ -26,7 +26,7 @@ func TestPostgreSQLReader_ExtensionFunctionFiltering_Integration(t *testing.T) {
 	// Create extensions that contain functions
 	_, err = db.Exec(`CREATE EXTENSION IF NOT EXISTS btree_gin`)
 	c.Assert(err, qt.IsNil)
-	
+
 	_, err = db.Exec(`CREATE EXTENSION IF NOT EXISTS pg_trgm`)
 	c.Assert(err, qt.IsNil)
 
@@ -61,7 +61,7 @@ func TestPostgreSQLReader_ExtensionFunctionFiltering_Integration(t *testing.T) {
 	}
 
 	// Our custom function should be included
-	c.Assert(functionNames["test_user_function"], qt.IsTrue, 
+	c.Assert(functionNames["test_user_function"], qt.IsTrue,
 		qt.Commentf("User-defined function should be included in schema"))
 
 	// Extension functions should NOT be included
@@ -76,7 +76,7 @@ func TestPostgreSQLReader_ExtensionFunctionFiltering_Integration(t *testing.T) {
 	}
 
 	for _, extFunc := range extensionFunctions {
-		c.Assert(functionNames[extFunc], qt.IsFalse, 
+		c.Assert(functionNames[extFunc], qt.IsFalse,
 			qt.Commentf("Extension function %s should NOT be included in schema", extFunc))
 	}
 
@@ -95,7 +95,7 @@ func TestPostgreSQLReader_ExtensionFunctionFiltering_Integration(t *testing.T) {
 		AND e.extname IN ('btree_gin', 'pg_trgm')
 	`).Scan(&count)
 	c.Assert(err, qt.IsNil)
-	c.Assert(count, qt.Not(qt.Equals), 0, 
+	c.Assert(count, qt.Not(qt.Equals), 0,
 		qt.Commentf("Extension functions should exist in database but be filtered by reader"))
 }
 
@@ -146,6 +146,6 @@ func TestPostgreSQLReader_CustomFunctionIncluded_Integration(t *testing.T) {
 		}
 	}
 
-	c.Assert(foundFunction, qt.IsTrue, 
+	c.Assert(foundFunction, qt.IsTrue,
 		qt.Commentf("User-defined function should be included in schema"))
 }
