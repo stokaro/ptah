@@ -26,30 +26,26 @@ func TestMigrationFileGeneration_ExtensionSQL(t *testing.T) {
 			name: "extension addition generates correct up and down SQL",
 			generatedSchema: &goschema.Database{
 				Extensions: []goschema.Extension{
-					{Name: "uuid-ossp", IfNotExists: true, Comment: "Enable UUID generation"},
-					{Name: "hstore", IfNotExists: true, Comment: "Enable key-value store"},
+					{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
+					{Name: "btree_gin", IfNotExists: true, Comment: "Enable GIN indexes on btree types"},
 				},
 			},
 			databaseSchema: &types.DBSchema{
-				Extensions: []types.DBExtension{
-					{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"}, // ignored by default
-					{Name: "btree_gin", Version: "1.3", Schema: "public"},   // ignored by default
-					{Name: "pg_trgm", Version: "1.6", Schema: "public"},     // ignored by default
-				},
+				Extensions: []types.DBExtension{},
 			},
 			expectedUpSQL: []string{
 				"-- Direction: UP",
-				"-- Enable UUID generation",
-				"CREATE EXTENSION IF NOT EXISTS uuid-ossp;",
-				"-- Enable key-value store",
-				"CREATE EXTENSION IF NOT EXISTS hstore;",
+				"-- Enable trigram similarity search",
+				"CREATE EXTENSION IF NOT EXISTS pg_trgm;",
+				"-- Enable GIN indexes on btree types",
+				"CREATE EXTENSION IF NOT EXISTS btree_gin;",
 			},
 			expectedDownSQL: []string{
 				"-- Direction: DOWN",
-				"WARNING: Removing extension 'uuid-ossp' may break existing functionality",
-				"DROP EXTENSION IF EXISTS uuid-ossp;",
-				"WARNING: Removing extension 'hstore' may break existing functionality",
-				"DROP EXTENSION IF EXISTS hstore;",
+				"WARNING: Removing extension 'pg_trgm' may break existing functionality",
+				"DROP EXTENSION IF EXISTS pg_trgm;",
+				"WARNING: Removing extension 'btree_gin' may break existing functionality",
+				"DROP EXTENSION IF EXISTS btree_gin;",
 			},
 			unexpectedUpSQL: []string{
 				"DROP EXTENSION",
@@ -65,23 +61,20 @@ func TestMigrationFileGeneration_ExtensionSQL(t *testing.T) {
 			},
 			databaseSchema: &types.DBSchema{
 				Extensions: []types.DBExtension{
-					{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"}, // ignored by default
-					{Name: "btree_gin", Version: "1.3", Schema: "public"},   // ignored by default
-					{Name: "pg_trgm", Version: "1.6", Schema: "public"},     // ignored by default
-					{Name: "uuid-ossp", Version: "1.1", Schema: "public"},
+					{Name: "pg_trgm", Version: "1.6", Schema: "public"},
 				},
 			},
 			expectedUpSQL: []string{
 				"-- Direction: UP",
-				"WARNING: Removing extension 'uuid-ossp' may break existing functionality",
-				"DROP EXTENSION IF EXISTS uuid-ossp;",
+				"WARNING: Removing extension 'pg_trgm' may break existing functionality",
+				"DROP EXTENSION IF EXISTS pg_trgm;",
 			},
 			expectedDownSQL: []string{
 				"-- Direction: DOWN",
-				"CREATE EXTENSION IF NOT EXISTS uuid-ossp",
+				"CREATE EXTENSION IF NOT EXISTS pg_trgm",
 			},
 			unexpectedUpSQL: []string{
-				"CREATE EXTENSION IF NOT EXISTS uuid-ossp;",
+				"CREATE EXTENSION IF NOT EXISTS pg_trgm;",
 			},
 			unexpectedDownSQL: []string{
 				"DROP EXTENSION",
@@ -153,34 +146,27 @@ func TestReverseSchemaDiff_ExtensionFieldsPresent(t *testing.T) {
 func TestExtensionMigrationSQL_CompleteFlow(t *testing.T) {
 	c := qt.New(t)
 
-	// Test the complete flow: schema with extensions -> database with ignored extensions -> up migration -> down migration
+	// Test the complete flow: schema with extensions -> empty database -> up migration -> down migration
 	generatedSchema := &goschema.Database{
 		Extensions: []goschema.Extension{
-			{Name: "uuid-ossp", IfNotExists: true, Comment: "Enable UUID generation"},
+			{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
 		},
 	}
 
-	databaseWithIgnoredExtensions := &types.DBSchema{
-		Extensions: []types.DBExtension{
-			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"}, // ignored by default
-			{Name: "btree_gin", Version: "1.3", Schema: "public"},   // ignored by default
-			{Name: "pg_trgm", Version: "1.6", Schema: "public"},     // ignored by default
-		},
+	emptyDatabase := &types.DBSchema{
+		Extensions: []types.DBExtension{},
 	}
 
 	// 1. Generate up migration (should create extension)
-	upDiff := schemadiff.Compare(generatedSchema, databaseWithIgnoredExtensions)
+	upDiff := schemadiff.Compare(generatedSchema, emptyDatabase)
 	upSQL, err := generateUpMigrationSQL(upDiff, generatedSchema, "postgres")
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.Contains(upSQL, "CREATE EXTENSION IF NOT EXISTS uuid-ossp;"), qt.IsTrue)
+	c.Assert(strings.Contains(upSQL, "CREATE EXTENSION IF NOT EXISTS pg_trgm;"), qt.IsTrue)
 
 	// 2. Simulate database state after up migration
 	databaseAfterUp := &types.DBSchema{
 		Extensions: []types.DBExtension{
-			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"}, // ignored by default
-			{Name: "btree_gin", Version: "1.3", Schema: "public"},   // ignored by default
-			{Name: "pg_trgm", Version: "1.6", Schema: "public"},     // ignored by default
-			{Name: "uuid-ossp", Version: "1.1", Schema: "public"},
+			{Name: "pg_trgm", Version: "1.6", Schema: "public"},
 		},
 	}
 
@@ -188,9 +174,9 @@ func TestExtensionMigrationSQL_CompleteFlow(t *testing.T) {
 	// For down migration, we use the original upDiff and reverse it
 	downSQL, err := generateDownMigrationSQL(upDiff, databaseAfterUp, "postgres")
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.Contains(downSQL, "DROP EXTENSION IF EXISTS uuid-ossp;"), qt.IsTrue)
+	c.Assert(strings.Contains(downSQL, "DROP EXTENSION IF EXISTS pg_trgm;"), qt.IsTrue)
 
 	// 4. Verify the cycle is complete
-	c.Assert(upDiff.ExtensionsAdded, qt.DeepEquals, []string{"uuid-ossp"})
+	c.Assert(upDiff.ExtensionsAdded, qt.DeepEquals, []string{"pg_trgm"})
 	c.Assert(len(upDiff.ExtensionsRemoved), qt.Equals, 0)
 }
