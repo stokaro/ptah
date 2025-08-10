@@ -791,8 +791,9 @@ func Indexes(generated *goschema.Database, database *types.DBSchema, diff *difft
 	dbIndexes := make(map[string]bool)
 	for _, index := range database.Indexes {
 		// Skip primary key indexes as they're handled with tables
-		// Skip unique indexes as they're automatically created by UNIQUE constraints
-		if !index.IsPrimary && !index.IsUnique {
+		// Include unique indexes to handle explicitly defined unique indexes
+		// (constraint-generated unique indexes will be handled by IF NOT EXISTS)
+		if !index.IsPrimary {
 			dbIndexes[index.Name] = true
 		}
 	}

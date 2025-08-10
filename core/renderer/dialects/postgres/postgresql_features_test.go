@@ -90,6 +90,39 @@ func TestPostgreSQLRenderer_VisitIndex_PostgreSQLFeatures(t *testing.T) {
 			},
 			expected: "CREATE INDEX idx_complex ON products USING GIN (name gin_trgm_ops, description gin_trgm_ops) WHERE status = 'published' AND deleted_at IS NULL;\n",
 		},
+		{
+			name: "index with IF NOT EXISTS",
+			index: &ast.IndexNode{
+				Name:        "idx_users_email",
+				Table:       "users",
+				Columns:     []string{"email"},
+				IfNotExists: true,
+			},
+			expected: "CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);\n",
+		},
+		{
+			name: "unique index with IF NOT EXISTS",
+			index: &ast.IndexNode{
+				Name:        "idx_users_username",
+				Table:       "users",
+				Columns:     []string{"username"},
+				Unique:      true,
+				IfNotExists: true,
+			},
+			expected: "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users (username);\n",
+		},
+		{
+			name: "complex index with IF NOT EXISTS",
+			index: &ast.IndexNode{
+				Name:        "idx_products_search",
+				Table:       "products",
+				Columns:     []string{"name", "tags"},
+				Type:        "GIN",
+				Condition:   "status = 'active'",
+				IfNotExists: true,
+			},
+			expected: "CREATE INDEX IF NOT EXISTS idx_products_search ON products USING GIN (name, tags) WHERE status = 'active';\n",
+		},
 	}
 
 	for _, tt := range tests {
