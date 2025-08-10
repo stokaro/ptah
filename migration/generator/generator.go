@@ -190,6 +190,25 @@ func reverseSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 		// Reverse extension operations
 		ExtensionsAdded:   diff.ExtensionsRemoved, // Extensions to remove become extensions to add
 		ExtensionsRemoved: diff.ExtensionsAdded,   // Extensions to add become extensions to remove
+
+		// Reverse function operations
+		FunctionsAdded:    diff.FunctionsRemoved, // Functions to remove become functions to add
+		FunctionsRemoved:  diff.FunctionsAdded,   // Functions to add become functions to remove
+		FunctionsModified: reverseFunctionDiffs(diff.FunctionsModified),
+
+		// Reverse RLS policy operations
+		RLSPoliciesAdded:    convertRLSPolicyRefsToNames(diff.RLSPoliciesRemoved), // Policies to remove become policies to add (convert RLSPolicyRef to string)
+		RLSPoliciesRemoved:  convertRLSPolicyNamesToRefs(diff.RLSPoliciesAdded),   // Policies to add become policies to remove (convert string to RLSPolicyRef)
+		RLSPoliciesModified: reverseRLSPolicyDiffs(diff.RLSPoliciesModified),
+
+		// Reverse RLS table enablement operations
+		RLSEnabledTablesAdded:   diff.RLSEnabledTablesRemoved, // Tables to disable RLS become tables to enable RLS
+		RLSEnabledTablesRemoved: diff.RLSEnabledTablesAdded,   // Tables to enable RLS become tables to disable RLS
+
+		// Reverse role operations
+		RolesAdded:    diff.RolesRemoved, // Roles to remove become roles to add
+		RolesRemoved:  diff.RolesAdded,   // Roles to add become roles to remove
+		RolesModified: reverseRoleDiffs(diff.RolesModified),
 	}
 }
 
@@ -240,6 +259,109 @@ func reverseEnumDiffs(enumDiffs []types.EnumDiff) []types.EnumDiff {
 			EnumName:      enumDiff.EnumName,
 			ValuesAdded:   enumDiff.ValuesRemoved, // Values to remove become values to add
 			ValuesRemoved: enumDiff.ValuesAdded,   // Values to add become values to remove
+		}
+	}
+	return reversed
+}
+
+// reverseFunctionDiffs reverses function modifications for down migrations
+func reverseFunctionDiffs(functionDiffs []types.FunctionDiff) []types.FunctionDiff {
+	reversed := make([]types.FunctionDiff, len(functionDiffs))
+	for i, functionDiff := range functionDiffs {
+		// For function changes, we need to reverse the direction of changes
+		reversedChanges := make(map[string]string)
+		for key, change := range functionDiff.Changes {
+			// Split "old -> new" and reverse to "new -> old"
+			parts := strings.Split(change, " -> ")
+			if len(parts) == 2 {
+				reversedChanges[key] = parts[1] + " -> " + parts[0]
+			} else {
+				// If format is unexpected, keep as is
+				reversedChanges[key] = change
+			}
+		}
+
+		reversed[i] = types.FunctionDiff{
+			FunctionName: functionDiff.FunctionName,
+			Changes:      reversedChanges,
+		}
+	}
+	return reversed
+}
+
+// convertRLSPolicyRefsToNames converts RLSPolicyRef slice to policy names for down migrations
+func convertRLSPolicyRefsToNames(policyRefs []types.RLSPolicyRef) []string {
+	names := make([]string, len(policyRefs))
+	for i, policyRef := range policyRefs {
+		names[i] = policyRef.PolicyName
+	}
+	return names
+}
+
+// convertRLSPolicyNamesToRefs converts policy names to RLSPolicyRef for down migrations
+// This is needed because RLSPoliciesAdded contains policy names (strings) but
+// RLSPoliciesRemoved needs RLSPolicyRef (with both policy name and table name)
+func convertRLSPolicyNamesToRefs(policyNames []string) []types.RLSPolicyRef {
+	// Note: This function cannot determine the table name from just the policy name.
+	// In practice, this reversal should be handled by the migration planner which has
+	// access to the full schema context. For now, we create refs with empty table names
+	// which will need to be resolved by the planner.
+	refs := make([]types.RLSPolicyRef, len(policyNames))
+	for i, policyName := range policyNames {
+		refs[i] = types.RLSPolicyRef{
+			PolicyName: policyName,
+			TableName:  "", // Will be resolved by the planner
+		}
+	}
+	return refs
+}
+
+// reverseRLSPolicyDiffs reverses RLS policy modifications for down migrations
+func reverseRLSPolicyDiffs(policyDiffs []types.RLSPolicyDiff) []types.RLSPolicyDiff {
+	reversed := make([]types.RLSPolicyDiff, len(policyDiffs))
+	for i, policyDiff := range policyDiffs {
+		// For policy changes, we need to reverse the direction of changes
+		reversedChanges := make(map[string]string)
+		for key, change := range policyDiff.Changes {
+			// Split "old -> new" and reverse to "new -> old"
+			parts := strings.Split(change, " -> ")
+			if len(parts) == 2 {
+				reversedChanges[key] = parts[1] + " -> " + parts[0]
+			} else {
+				// If format is unexpected, keep as is
+				reversedChanges[key] = change
+			}
+		}
+
+		reversed[i] = types.RLSPolicyDiff{
+			PolicyName: policyDiff.PolicyName,
+			TableName:  policyDiff.TableName,
+			Changes:    reversedChanges,
+		}
+	}
+	return reversed
+}
+
+// reverseRoleDiffs reverses role modifications for down migrations
+func reverseRoleDiffs(roleDiffs []types.RoleDiff) []types.RoleDiff {
+	reversed := make([]types.RoleDiff, len(roleDiffs))
+	for i, roleDiff := range roleDiffs {
+		// For role changes, we need to reverse the direction of changes
+		reversedChanges := make(map[string]string)
+		for key, change := range roleDiff.Changes {
+			// Split "old -> new" and reverse to "new -> old"
+			parts := strings.Split(change, " -> ")
+			if len(parts) == 2 {
+				reversedChanges[key] = parts[1] + " -> " + parts[0]
+			} else {
+				// If format is unexpected, keep as is
+				reversedChanges[key] = change
+			}
+		}
+
+		reversed[i] = types.RoleDiff{
+			RoleName: roleDiff.RoleName,
+			Changes:  reversedChanges,
 		}
 	}
 	return reversed
