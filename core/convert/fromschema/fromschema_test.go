@@ -1741,3 +1741,56 @@ func TestFromDatabase_EmbeddedFields_ComplexScenario(t *testing.T) {
 	c.Assert(columns["author_id"].ForeignKey.Table, qt.Equals, "users")
 	c.Assert(columns["author_id"].ForeignKey.Column, qt.Equals, "id")
 }
+
+// TestFromField_EnumConversion_SQLInjectionPrevention tests that enum values are properly escaped
+func TestFromField_EnumConversion_SQLInjectionPrevention(t *testing.T) {
+	tests := []struct {
+		name         string
+		platform     string
+		enumValues   []string
+		expectedType string
+	}{
+		{
+			name:         "MySQL enum with single quotes",
+			platform:     "mysql",
+			enumValues:   []string{"active", "inactive", "it's working"},
+			expectedType: "ENUM('active', 'inactive', 'it''s working')",
+		},
+		{
+			name:         "MariaDB enum with SQL injection attempt",
+			platform:     "mariadb",
+			enumValues:   []string{"normal", "'; DROP TABLE users; --"},
+			expectedType: "ENUM('normal', '''; DROP TABLE users; --')",
+		},
+		{
+			name:         "MySQL enum with consecutive quotes",
+			platform:     "mysql",
+			enumValues:   []string{"test", "''quoted''"},
+			expectedType: "ENUM('test', '''''quoted''''')",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			// Create enum definition
+			enum := goschema.Enum{
+				Name:   "enum_test_status",
+				Values: tt.enumValues,
+			}
+
+			// Create field that uses this enum
+			field := goschema.Field{
+				Name: "status",
+				Type: "enum_test_status",
+			}
+
+			// Convert field with enum conversion
+			result := fromschema.FromField(field, []goschema.Enum{enum}, tt.platform)
+
+			// Verify the type was properly escaped
+			c.Assert(result.Type, qt.Equals, tt.expectedType)
+		})
+	}
+}

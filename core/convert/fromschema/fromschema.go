@@ -58,6 +58,15 @@ import (
 	"github.com/stokaro/ptah/core/goschema"
 )
 
+// escapeSQLStringLiteral properly escapes a string value for use in SQL string literals.
+// It escapes single quotes by doubling them according to SQL standard and wraps the result in single quotes.
+// This prevents SQL injection attacks when embedding user-provided values in SQL statements.
+func escapeSQLStringLiteral(value string) string {
+	// Escape single quotes by doubling them (SQL standard)
+	escaped := strings.ReplaceAll(value, "'", "''")
+	return "'" + escaped + "'"
+}
+
 func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschema.Field {
 	fieldType := field.Type
 	checkConstraint := field.Check
@@ -140,7 +149,7 @@ func handleEnumTypesForMySQLLike(field goschema.Field, enums []goschema.Enum, ta
 		// Convert to inline ENUM syntax for MySQL/MariaDB
 		quotedValues := make([]string, len(enum.Values))
 		for i, value := range enum.Values {
-			quotedValues[i] = fmt.Sprintf("'%s'", value) // TODO: properly escape
+			quotedValues[i] = escapeSQLStringLiteral(value)
 		}
 		fieldType = fmt.Sprintf("ENUM(%s)", strings.Join(quotedValues, ", "))
 		break

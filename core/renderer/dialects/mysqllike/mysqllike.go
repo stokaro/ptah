@@ -376,7 +376,7 @@ func (r *Renderer) renderColumnWithEnums(column *ast.ColumnNode, enumValues []st
 		// Convert to MariaDB ENUM syntax
 		quotedValues := make([]string, len(enumValues))
 		for i, value := range enumValues {
-			quotedValues[i] = fmt.Sprintf("'%s'", value)
+			quotedValues[i] = r.escapeValue(value)
 		}
 		columnType = fmt.Sprintf("ENUM(%s)", strings.Join(quotedValues, ", "))
 	}

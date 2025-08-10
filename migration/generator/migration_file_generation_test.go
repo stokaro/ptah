@@ -180,3 +180,125 @@ func TestExtensionMigrationSQL_CompleteFlow(t *testing.T) {
 	c.Assert(upDiff.ExtensionsAdded, qt.DeepEquals, []string{"pg_trgm"})
 	c.Assert(len(upDiff.ExtensionsRemoved), qt.Equals, 0)
 }
+
+// TestMigrationFileGeneration_EmptyDiffPrevention tests the fix for issue #36
+// where empty UP migrations with dangerous DOWN migrations were generated
+func TestMigrationFileGeneration_EmptyDiffPrevention(t *testing.T) {
+	tests := []struct {
+		name            string
+		generatedSchema *goschema.Database
+		databaseSchema  *types.DBSchema
+		diff            *difftypes.SchemaDiff
+		description     string
+	}{
+		{
+			name: "table modification with missing field definitions should not generate migration",
+			generatedSchema: &goschema.Database{
+				Tables: []goschema.Table{
+					{Name: "users", StructName: "User"},
+				},
+				Fields: []goschema.Field{
+					// Note: Missing the field that the diff claims to add/modify
+					// This simulates the scenario where the planner can't find field definitions
+				},
+			},
+			databaseSchema: &types.DBSchema{
+				Tables: []types.DBTable{
+					{
+						Name: "users",
+						Columns: []types.DBColumn{
+							{Name: "id", DataType: "integer", IsPrimaryKey: true},
+						},
+					},
+				},
+			},
+			diff: &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{
+					{
+						TableName:    "users",
+						ColumnsAdded: []string{"email"}, // This field doesn't exist in generated schema
+					},
+				},
+			},
+			description: "When field definitions are missing, no migration should be generated",
+		},
+		{
+			name: "completely empty diff should not generate migration",
+			generatedSchema: &goschema.Database{
+				Tables: []goschema.Table{},
+				Fields: []goschema.Field{},
+			},
+			databaseSchema: &types.DBSchema{
+				Tables: []types.DBTable{},
+			},
+			diff: &difftypes.SchemaDiff{
+				// Completely empty diff
+			},
+			description: "Empty diffs should not generate migration files",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			// Generate up migration SQL - should return error for empty/comment-only content
+			upSQL, err := generateUpMigrationSQL(tt.diff, tt.generatedSchema, "postgres")
+			c.Assert(err, qt.IsNotNil, qt.Commentf("Expected error for empty migration, but got: %s", upSQL))
+			c.Assert(err.Error(), qt.Contains, "no migration statements generated")
+		})
+	}
+}
+
+// TestHasActualSQLStatements tests the helper function that detects comment-only statements
+func TestHasActualSQLStatements(t *testing.T) {
+	tests := []struct {
+		name       string
+		statements []string
+		expected   bool
+	}{
+		{
+			name:       "empty statements",
+			statements: []string{},
+			expected:   false,
+		},
+		{
+			name:       "only comments",
+			statements: []string{"-- Add/modify columns for table: users --"},
+			expected:   false,
+		},
+		{
+			name:       "comments with whitespace",
+			statements: []string{"  -- Add/modify columns for table: users --  "},
+			expected:   false,
+		},
+		{
+			name:       "multiple comments only",
+			statements: []string{"-- Comment 1", "-- Comment 2", "/* Block comment */"},
+			expected:   false,
+		},
+		{
+			name:       "actual SQL statement",
+			statements: []string{"ALTER TABLE users ADD COLUMN email VARCHAR(255)"},
+			expected:   true,
+		},
+		{
+			name:       "mix of comments and SQL",
+			statements: []string{"-- Add column", "ALTER TABLE users ADD COLUMN email VARCHAR(255)"},
+			expected:   true,
+		},
+		{
+			name:       "SQL with inline comments",
+			statements: []string{"ALTER TABLE users ADD COLUMN email VARCHAR(255) -- Add email column"},
+			expected:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := hasActualSQLStatements(tt.statements)
+			c.Assert(result, qt.Equals, tt.expected)
+		})
+	}
+}
