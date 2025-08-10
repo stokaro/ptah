@@ -58,6 +58,17 @@ func TestIndexBuilder_Comment(t *testing.T) {
 	c.Assert(result.Comment, qt.Equals, "Index for fast email lookups")
 }
 
+func TestIndexBuilder_IfNotExists(t *testing.T) {
+	c := qt.New(t)
+
+	index := astbuilder.NewIndex("idx_users_email", "users", "email").
+		IfNotExists()
+
+	result := index.Build()
+
+	c.Assert(result.IfNotExists, qt.IsTrue)
+}
+
 func TestIndexBuilder_MultipleColumns(t *testing.T) {
 	c := qt.New(t)
 
@@ -76,6 +87,7 @@ func TestIndexBuilder_ComplexIndex(t *testing.T) {
 	index := astbuilder.NewIndex("idx_users_email_status", "users", "email", "status").
 		Unique().
 		Type("BTREE").
+		IfNotExists().
 		Comment("Unique index on email and status for fast user lookups")
 
 	result := index.Build()
@@ -85,6 +97,7 @@ func TestIndexBuilder_ComplexIndex(t *testing.T) {
 	c.Assert(result.Columns, qt.DeepEquals, []string{"email", "status"})
 	c.Assert(result.Unique, qt.IsTrue)
 	c.Assert(result.Type, qt.Equals, "BTREE")
+	c.Assert(result.IfNotExists, qt.IsTrue)
 	c.Assert(result.Comment, qt.Equals, "Unique index on email and status for fast user lookups")
 }
 

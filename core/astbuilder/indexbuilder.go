@@ -90,6 +90,24 @@ func (ib *IndexBuilder) Unique() *IndexBuilder {
 	return ib
 }
 
+// IfNotExists marks the index to use IF NOT EXISTS clause and returns the IndexBuilder for chaining.
+//
+// This makes the CREATE INDEX statement idempotent, allowing it to be safely executed
+// multiple times without failing if the index already exists. This is particularly
+// useful for migration scripts and automated deployment scenarios.
+//
+// Examples:
+//
+//	// Idempotent index creation
+//	index := astbuilder.NewIndex("idx_users_email", "users", "email").IfNotExists()
+//
+//	// Unique idempotent index
+//	index := astbuilder.NewIndex("idx_users_username", "users", "username").Unique().IfNotExists()
+func (ib *IndexBuilder) IfNotExists() *IndexBuilder {
+	ib.index.SetIfNotExists()
+	return ib
+}
+
 // Type sets the index type and returns the IndexBuilder for chaining.
 //
 // The index type determines the underlying data structure and algorithm used
@@ -210,6 +228,23 @@ type SchemaIndexBuilder struct {
 //	schema.Index("idx_user_posts_slug", "posts", "user_id", "slug").Unique()
 func (sib *SchemaIndexBuilder) Unique() *SchemaIndexBuilder {
 	sib.IndexBuilder.Unique()
+	return sib
+}
+
+// IfNotExists marks the index to use IF NOT EXISTS clause and returns the SchemaIndexBuilder for chaining.
+//
+// This makes the CREATE INDEX statement idempotent, allowing it to be safely executed
+// multiple times without failing if the index already exists. This method delegates to the embedded IndexBuilder.
+//
+// Examples:
+//
+//	// Idempotent index within schema
+//	schema.Index("idx_users_email", "users", "email").IfNotExists()
+//
+//	// Unique idempotent index within schema
+//	schema.Index("idx_users_username", "users", "username").Unique().IfNotExists()
+func (sib *SchemaIndexBuilder) IfNotExists() *SchemaIndexBuilder {
+	sib.IndexBuilder.IfNotExists()
 	return sib
 }
 

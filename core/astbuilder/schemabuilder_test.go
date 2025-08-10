@@ -109,6 +109,31 @@ func TestSchemaBuilder_Index(t *testing.T) {
 	c.Assert(indexNode.Comment, qt.Equals, "Unique index on email")
 }
 
+func TestSchemaBuilder_IndexWithIfNotExists(t *testing.T) {
+	c := qt.New(t)
+
+	schema := astbuilder.NewSchema().
+		Index("idx_users_email", "users", "email").
+		Unique().
+		IfNotExists().
+		Comment("Idempotent unique index on email").
+		End()
+
+	result := schema.Build()
+
+	c.Assert(len(result.Statements), qt.Equals, 1)
+
+	// Check that it's an index node with IfNotExists set
+	indexNode, ok := result.Statements[0].(*ast.IndexNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(indexNode.Name, qt.Equals, "idx_users_email")
+	c.Assert(indexNode.Table, qt.Equals, "users")
+	c.Assert(indexNode.Columns, qt.DeepEquals, []string{"email"})
+	c.Assert(indexNode.Unique, qt.IsTrue)
+	c.Assert(indexNode.IfNotExists, qt.IsTrue)
+	c.Assert(indexNode.Comment, qt.Equals, "Idempotent unique index on email")
+}
+
 func TestSchemaBuilder_ComplexSchema(t *testing.T) {
 	c := qt.New(t)
 

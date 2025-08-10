@@ -329,6 +329,11 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	}
 
 	parts = append(parts, "INDEX")
+
+	if node.IfNotExists {
+		parts = append(parts, "IF NOT EXISTS")
+	}
+
 	parts = append(parts, node.Name)
 	parts = append(parts, "ON")
 	parts = append(parts, node.Table)
