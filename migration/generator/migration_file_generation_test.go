@@ -182,7 +182,8 @@ func TestExtensionMigrationSQL_CompleteFlow(t *testing.T) {
 }
 
 // TestMigrationFileGeneration_EmptyDiffPrevention tests the fix for issue #36
-// where empty UP migrations with dangerous DOWN migrations were generated
+// where empty UP migrations with dangerous DOWN migrations were generated.
+// Updated to verify that empty diffs are treated as successful no-op operations.
 func TestMigrationFileGeneration_EmptyDiffPrevention(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -234,7 +235,7 @@ func TestMigrationFileGeneration_EmptyDiffPrevention(t *testing.T) {
 			diff: &difftypes.SchemaDiff{
 				// Completely empty diff
 			},
-			description: "Empty diffs should not generate migration files",
+			description: "Empty diffs should be treated as successful no-op operations",
 		},
 	}
 
@@ -242,12 +243,33 @@ func TestMigrationFileGeneration_EmptyDiffPrevention(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			// Generate up migration SQL - should return error for empty/comment-only content
+			// Generate up migration SQL - should return success with empty SQL for no changes
 			upSQL, err := generateUpMigrationSQL(tt.diff, tt.generatedSchema, "postgres")
-			c.Assert(err, qt.IsNotNil, qt.Commentf("Expected error for empty migration, but got: %s", upSQL))
-			c.Assert(err.Error(), qt.Contains, "no migration statements generated")
+			c.Assert(err, qt.IsNil, qt.Commentf("Expected success for empty migration, but got error: %v", err))
+			c.Assert(upSQL, qt.Equals, "", qt.Commentf("Expected empty SQL for no changes, but got: %s", upSQL))
 		})
 	}
+}
+
+// TestGenerateUpMigrationSQL_NoChangesSuccess tests that generateUpMigrationSQL returns success
+// with empty SQL when no actual SQL statements are generated, treating it as a successful no-op operation
+func TestGenerateUpMigrationSQL_NoChangesSuccess(t *testing.T) {
+	c := qt.New(t)
+
+	// Test case: empty diff should return success with empty SQL
+	emptyDiff := &difftypes.SchemaDiff{
+		// Completely empty diff
+	}
+
+	emptySchema := &goschema.Database{
+		Tables: []goschema.Table{},
+		Fields: []goschema.Field{},
+	}
+
+	// Generate up migration SQL - should return success with empty SQL
+	upSQL, err := generateUpMigrationSQL(emptyDiff, emptySchema, "postgres")
+	c.Assert(err, qt.IsNil, qt.Commentf("Expected success for empty diff, but got error: %v", err))
+	c.Assert(upSQL, qt.Equals, "", qt.Commentf("Expected empty SQL for no changes, but got: %s", upSQL))
 }
 
 // TestHasActualSQLStatements tests the helper function that detects comment-only statements
