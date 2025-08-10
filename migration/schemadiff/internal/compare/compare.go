@@ -23,8 +23,8 @@ var (
 	mysqlTableColumnsPattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*_[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 	// Custom index patterns (these should NOT be considered constraint-based)
-	// Match indexes that contain common custom patterns like "idx" or "index" anywhere in the name
-	customIndexPattern = regexp.MustCompile(`(?i)(idx|index)`)
+	// Match indexes that start with "idx_" or "index_", or end with "_idx" or "_index"
+	customIndexPattern = regexp.MustCompile(`(?i)(^(idx|index)_|_(idx|index)$)`)
 )
 
 // TablesAndColumns performs comprehensive table and column comparison between generated and database schemas.
