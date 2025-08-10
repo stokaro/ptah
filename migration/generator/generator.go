@@ -205,7 +205,7 @@ func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Databa
 		FunctionsModified: reverseFunctionDiffs(diff.FunctionsModified),
 
 		// Reverse RLS policy operations
-		RLSPoliciesAdded:    convertRLSPolicyRefsToNames(diff.RLSPoliciesRemoved), // Policies to remove become policies to add (convert RLSPolicyRef to string)
+		RLSPoliciesAdded:    convertRLSPolicyRefsToNames(diff.RLSPoliciesRemoved),                 // Policies to remove become policies to add (convert RLSPolicyRef to string)
 		RLSPoliciesRemoved:  convertRLSPolicyNamesToRefsWithSchema(diff.RLSPoliciesAdded, schema), // Policies to add become policies to remove (convert string to RLSPolicyRef with table resolution)
 		RLSPoliciesModified: reverseRLSPolicyDiffs(diff.RLSPoliciesModified),
 
