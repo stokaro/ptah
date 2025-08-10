@@ -612,7 +612,7 @@ func TestIndexes_HappyPath(t *testing.T) {
 			expected: &difftypes.SchemaDiff{},
 		},
 		{
-			name: "unique constraint index included",
+			name: "unique constraint index ignored",
 			generated: &goschema.Database{
 				Indexes: []goschema.Index{},
 			},
@@ -621,9 +621,7 @@ func TestIndexes_HappyPath(t *testing.T) {
 					{Name: "users_email_key", IsPrimary: false, IsUnique: true},
 				},
 			},
-			expected: &difftypes.SchemaDiff{
-				IndexesRemoved: []string{"users_email_key"},
-			},
+			expected: &difftypes.SchemaDiff{},
 		},
 		{
 			name: "multiple index changes",
@@ -698,9 +696,7 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 					{Name: "users_email_key", IsPrimary: false, IsUnique: true},
 				},
 			},
-			expected: &difftypes.SchemaDiff{
-				IndexesRemoved: []string{"users_email_key"},
-			},
+			expected: &difftypes.SchemaDiff{},
 		},
 	}
 
