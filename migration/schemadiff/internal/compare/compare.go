@@ -704,6 +704,43 @@ func EnumValues(genEnum goschema.Enum, dbEnum types.DBEnum) difftypes.EnumDiff {
 	return enumDiff
 }
 
+// isConstraintBasedUniqueIndex determines if a unique index was automatically created by a UNIQUE constraint.
+//
+// PostgreSQL automatically creates unique indexes when UNIQUE constraints are defined on columns.
+// These indexes typically follow naming patterns like:
+//   - tablename_columnname_key (single column)
+//   - tablename_columnname1_columnname2_key (multiple columns)
+//
+// This function identifies such constraint-based indexes to distinguish them from explicitly
+// defined unique indexes created via schema annotations.
+//
+// # Parameters
+//
+//   - indexName: The name of the index to check
+//   - tableName: The name of the table the index belongs to
+//
+// # Returns
+//
+// Returns true if the index appears to be constraint-based, false if it's explicitly defined.
+//
+// # Examples
+//
+//	isConstraintBasedUniqueIndex("users_email_key", "users")           // true (constraint-based)
+//	isConstraintBasedUniqueIndex("tenants_slug_idx", "tenants")        // false (explicitly defined)
+//	isConstraintBasedUniqueIndex("users_tenant_email_idx", "users")    // false (explicitly defined)
+func isConstraintBasedUniqueIndex(indexName, tableName string) bool {
+	// PostgreSQL constraint-based unique indexes typically end with "_key"
+	// and start with the table name followed by column name(s)
+	if !strings.HasSuffix(indexName, "_key") {
+		return false
+	}
+
+	// Check if the index name starts with the table name
+	// This is the standard pattern for constraint-based indexes
+	expectedPrefix := tableName + "_"
+	return strings.HasPrefix(indexName, expectedPrefix)
+}
+
 // Indexes performs index comparison between generated and database schemas with intelligent filtering.
 //
 // This function handles the comparison of database indexes, which requires careful
@@ -721,11 +758,13 @@ func EnumValues(genEnum goschema.Enum, dbEnum types.DBEnum) difftypes.EnumDiff {
 //
 // **Database Schema Indexes**:
 //   - Excludes primary key indexes (automatically created with PRIMARY KEY constraints)
-//   - Excludes unique indexes (automatically created with UNIQUE constraints)
-//   - Includes only manually created performance indexes
+//   - Excludes constraint-based unique indexes (automatically created with UNIQUE constraints)
+//   - Includes explicitly defined unique indexes (created via schema annotations)
+//   - Includes manually created performance indexes
 //
 // This filtering prevents false positives where the system would suggest removing
-// automatically generated indexes that are essential for constraint enforcement.
+// automatically generated constraint indexes that are essential for constraint enforcement,
+// while still allowing comparison of explicitly defined unique indexes.
 //
 // # Example Scenarios
 //
@@ -746,9 +785,9 @@ func EnumValues(genEnum goschema.Enum, dbEnum types.DBEnum) difftypes.EnumDiff {
 //   - Result: "idx_old_search" added to diff.IndexesRemoved
 //
 // **Automatic index filtering**:
-//   - Database has "users_pkey" (primary key index)
-//   - Database has "users_email_key" (unique constraint index)
-//   - These are filtered out and not considered for removal
+//   - Database has "users_pkey" (primary key index) - filtered out
+//   - Database has "users_email_key" (constraint-based unique index) - filtered out
+//   - Database has "users_tenant_email_idx" (explicitly defined unique index) - included for comparison
 //
 // # Algorithm Details
 //
@@ -791,10 +830,17 @@ func Indexes(generated *goschema.Database, database *types.DBSchema, diff *difft
 	dbIndexes := make(map[string]bool)
 	for _, index := range database.Indexes {
 		// Skip primary key indexes as they're handled with tables
-		// Skip unique indexes as they're automatically created by UNIQUE constraints
-		if !index.IsPrimary && !index.IsUnique {
-			dbIndexes[index.Name] = true
+		if index.IsPrimary {
+			continue
 		}
+
+		// Skip constraint-based unique indexes (automatically created by UNIQUE constraints)
+		// but allow explicitly defined unique indexes (created via schema annotations)
+		if index.IsUnique && isConstraintBasedUniqueIndex(index.Name, index.TableName) {
+			continue
+		}
+
+		dbIndexes[index.Name] = true
 	}
 
 	// Find added and removed indexes

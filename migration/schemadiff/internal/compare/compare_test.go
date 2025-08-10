@@ -618,7 +618,7 @@ func TestIndexes_HappyPath(t *testing.T) {
 			},
 			database: &types.DBSchema{
 				Indexes: []types.DBIndex{
-					{Name: "users_email_key", IsPrimary: false, IsUnique: true},
+					{Name: "users_email_key", TableName: "users", IsPrimary: false, IsUnique: true},
 				},
 			},
 			expected: &difftypes.SchemaDiff{},
@@ -692,11 +692,82 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 			},
 			database: &types.DBSchema{
 				Indexes: []types.DBIndex{
-					{Name: "users_pkey", IsPrimary: true, IsUnique: false},
-					{Name: "users_email_key", IsPrimary: false, IsUnique: true},
+					{Name: "users_pkey", TableName: "users", IsPrimary: true, IsUnique: false},
+					{Name: "users_email_key", TableName: "users", IsPrimary: false, IsUnique: true},
 				},
 			},
 			expected: &difftypes.SchemaDiff{},
+		},
+		{
+			name: "explicitly defined unique indexes should be compared",
+			generated: &goschema.Database{
+				Indexes: []goschema.Index{
+					{Name: "tenants_slug_idx"},
+					{Name: "users_tenant_email_idx"},
+				},
+			},
+			database: &types.DBSchema{
+				Indexes: []types.DBIndex{
+					{Name: "tenants_slug_idx", TableName: "tenants", IsPrimary: false, IsUnique: true},
+					{Name: "users_tenant_email_idx", TableName: "users", IsPrimary: false, IsUnique: true},
+				},
+			},
+			expected: &difftypes.SchemaDiff{},
+		},
+		{
+			name: "missing explicitly defined unique indexes should be added",
+			generated: &goschema.Database{
+				Indexes: []goschema.Index{
+					{Name: "tenants_slug_idx"},
+					{Name: "users_tenant_email_idx"},
+				},
+			},
+			database: &types.DBSchema{
+				Indexes: []types.DBIndex{
+					// Only constraint-based indexes exist, explicitly defined ones are missing
+					{Name: "tenants_pkey", TableName: "tenants", IsPrimary: true, IsUnique: false},
+					{Name: "users_email_key", TableName: "users", IsPrimary: false, IsUnique: true},
+				},
+			},
+			expected: &difftypes.SchemaDiff{
+				IndexesAdded: []string{"tenants_slug_idx", "users_tenant_email_idx"},
+			},
+		},
+		{
+			name: "constraint-based unique indexes should be ignored",
+			generated: &goschema.Database{
+				Indexes: []goschema.Index{},
+			},
+			database: &types.DBSchema{
+				Indexes: []types.DBIndex{
+					{Name: "users_email_key", TableName: "users", IsPrimary: false, IsUnique: true},
+					{Name: "tenants_name_key", TableName: "tenants", IsPrimary: false, IsUnique: true},
+					{Name: "products_sku_code_key", TableName: "products", IsPrimary: false, IsUnique: true},
+				},
+			},
+			expected: &difftypes.SchemaDiff{},
+		},
+		{
+			name: "mixed constraint-based and explicitly defined unique indexes",
+			generated: &goschema.Database{
+				Indexes: []goschema.Index{
+					{Name: "idx_users_custom_unique"},
+					{Name: "tenants_slug_idx"},
+				},
+			},
+			database: &types.DBSchema{
+				Indexes: []types.DBIndex{
+					// Constraint-based (should be ignored)
+					{Name: "users_email_key", TableName: "users", IsPrimary: false, IsUnique: true},
+					{Name: "tenants_name_key", TableName: "tenants", IsPrimary: false, IsUnique: true},
+					// Explicitly defined (should be compared)
+					{Name: "idx_users_custom_unique", TableName: "users", IsPrimary: false, IsUnique: true},
+					// Missing: tenants_slug_idx
+				},
+			},
+			expected: &difftypes.SchemaDiff{
+				IndexesAdded: []string{"tenants_slug_idx"},
+			},
 		},
 	}
 
@@ -712,6 +783,73 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 		})
 	}
 }
+
+// TODO: Add test for isConstraintBasedUniqueIndex helper function
+// func TestIsConstraintBasedUniqueIndex(t *testing.T) {
+// 	tests := []struct {
+// 		name      string
+// 		indexName string
+// 		tableName string
+// 		expected  bool
+// 	}{
+// 		{
+// 			name:      "constraint-based single column",
+// 			indexName: "users_email_key",
+// 			tableName: "users",
+// 			expected:  true,
+// 		},
+// 		{
+// 			name:      "constraint-based multiple columns",
+// 			indexName: "users_tenant_id_email_key",
+// 			tableName: "users",
+// 			expected:  true,
+// 		},
+// 		{
+// 			name:      "explicitly defined unique index",
+// 			indexName: "tenants_slug_idx",
+// 			tableName: "tenants",
+// 			expected:  false,
+// 		},
+// 		{
+// 			name:      "explicitly defined unique index with custom name",
+// 			indexName: "users_tenant_email_idx",
+// 			tableName: "users",
+// 			expected:  false,
+// 		},
+// 		{
+// 			name:      "regular performance index",
+// 			indexName: "idx_users_status",
+// 			tableName: "users",
+// 			expected:  false,
+// 		},
+// 		{
+// 			name:      "index without _key suffix",
+// 			indexName: "users_email_index",
+// 			tableName: "users",
+// 			expected:  false,
+// 		},
+// 		{
+// 			name:      "index with _key suffix but wrong table prefix",
+// 			indexName: "products_name_key",
+// 			tableName: "users",
+// 			expected:  false,
+// 		},
+// 		{
+// 			name:      "index with _key suffix but no table prefix",
+// 			indexName: "email_key",
+// 			tableName: "users",
+// 			expected:  false,
+// 		},
+// 	}
+
+// 	for _, tt := range tests {
+// 		t.Run(tt.name, func(t *testing.T) {
+// 			c := qt.New(t)
+// 			result := isConstraintBasedUniqueIndex(tt.indexName, tt.tableName)
+// 			c.Assert(result, qt.Equals, tt.expected)
+// 		})
+// 	}
+// }
 
 func TestColumns_EdgeCases(t *testing.T) {
 	tests := []struct {
