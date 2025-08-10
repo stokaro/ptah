@@ -884,12 +884,28 @@ func Indexes(generated *goschema.Database, database *types.DBSchema, diff *difft
 	for indexName := range dbIndexes {
 		if !genIndexes[indexName] {
 			diff.IndexesRemoved = append(diff.IndexesRemoved, indexName)
+
+			// Also populate the detailed removal info with table name for MySQL/MariaDB support
+			for _, index := range database.Indexes {
+				if index.Name == indexName {
+					diff.IndexesRemovedWithTables = append(diff.IndexesRemovedWithTables, difftypes.IndexRemovalInfo{
+						Name:      indexName,
+						TableName: index.TableName,
+					})
+					break
+				}
+			}
 		}
 	}
 
 	// Sort for consistent output
 	sort.Strings(diff.IndexesAdded)
 	sort.Strings(diff.IndexesRemoved)
+
+	// Sort the detailed removal info by index name
+	sort.Slice(diff.IndexesRemovedWithTables, func(i, j int) bool {
+		return diff.IndexesRemovedWithTables[i].Name < diff.IndexesRemovedWithTables[j].Name
+	})
 }
 
 // compareNamedItems is a generic helper function that compares two maps of named items
