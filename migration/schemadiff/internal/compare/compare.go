@@ -706,10 +706,16 @@ func EnumValues(genEnum goschema.Enum, dbEnum types.DBEnum) difftypes.EnumDiff {
 
 // isConstraintBasedUniqueIndex determines if a unique index was automatically created by a UNIQUE constraint.
 //
-// PostgreSQL automatically creates unique indexes when UNIQUE constraints are defined on columns.
-// These indexes typically follow naming patterns like:
+// Different database systems create unique indexes with different naming patterns when UNIQUE
+// constraints are defined on columns:
+//
+// **PostgreSQL**:
 //   - tablename_columnname_key (single column)
 //   - tablename_columnname1_columnname2_key (multiple columns)
+//
+// **MySQL/MariaDB**:
+//   - Simple column names (e.g., "email", "username") for single-column constraints
+//   - Constraint names for multi-column constraints (e.g., "uk_users_email_name")
 //
 // This function identifies such constraint-based indexes to distinguish them from explicitly
 // defined unique indexes created via schema annotations.
@@ -718,6 +724,7 @@ func EnumValues(genEnum goschema.Enum, dbEnum types.DBEnum) difftypes.EnumDiff {
 //
 //   - indexName: The name of the index to check
 //   - tableName: The name of the table the index belongs to
+//   - columns: The columns that the index covers (used for MySQL/MariaDB detection)
 //
 // # Returns
 //
@@ -725,20 +732,44 @@ func EnumValues(genEnum goschema.Enum, dbEnum types.DBEnum) difftypes.EnumDiff {
 //
 // # Examples
 //
-//	isConstraintBasedUniqueIndex("users_email_key", "users")           // true (constraint-based)
-//	isConstraintBasedUniqueIndex("tenants_slug_idx", "tenants")        // false (explicitly defined)
-//	isConstraintBasedUniqueIndex("users_tenant_email_idx", "users")    // false (explicitly defined)
-func isConstraintBasedUniqueIndex(indexName, tableName string) bool {
-	// PostgreSQL constraint-based unique indexes typically end with "_key"
-	// and start with the table name followed by column name(s)
-	if !strings.HasSuffix(indexName, "_key") {
-		return false
+//	// PostgreSQL
+//	isConstraintBasedUniqueIndex("users_email_key", "users", []string{"email"})     // true
+//	isConstraintBasedUniqueIndex("tenants_slug_idx", "tenants", []string{"slug"})   // false
+//
+//	// MySQL/MariaDB
+//	isConstraintBasedUniqueIndex("email", "users", []string{"email"})               // true
+//	isConstraintBasedUniqueIndex("idx_users_custom", "users", []string{"email"})    // false
+func IsConstraintBasedUniqueIndex(indexName, tableName string, columns []string) bool {
+	// PostgreSQL pattern: tablename_columnname_key
+	if strings.HasSuffix(indexName, "_key") {
+		expectedPrefix := tableName + "_"
+		return strings.HasPrefix(indexName, expectedPrefix)
 	}
 
-	// Check if the index name starts with the table name
-	// This is the standard pattern for constraint-based indexes
-	expectedPrefix := tableName + "_"
-	return strings.HasPrefix(indexName, expectedPrefix)
+	// MySQL/MariaDB pattern: simple column name for single-column unique constraints
+	// MySQL automatically creates indexes with the same name as the column for UNIQUE constraints
+	if len(columns) == 1 {
+		// If the index name exactly matches the column name, it's likely a constraint-based index
+		return indexName == columns[0]
+	}
+
+	// For multi-column indexes in MySQL/MariaDB, constraint-based indexes often have
+	// names starting with constraint prefixes like "uk_" but NOT custom patterns like "idx_"
+	if strings.HasPrefix(indexName, "uk_") {
+		return true
+	}
+
+	// Be more conservative about table_column patterns - only consider it constraint-based
+	// if it follows a very specific pattern and doesn't look like a custom index name
+	if strings.HasPrefix(indexName, tableName+"_") && !strings.Contains(indexName, "idx") {
+		// Additional check: constraint-based indexes typically have simpler patterns
+		// and don't contain common custom index suffixes
+		if !strings.HasSuffix(indexName, "_idx") && !strings.HasSuffix(indexName, "_index") {
+			return true
+		}
+	}
+
+	return false
 }
 
 // Indexes performs index comparison between generated and database schemas with intelligent filtering.
@@ -836,7 +867,7 @@ func Indexes(generated *goschema.Database, database *types.DBSchema, diff *difft
 
 		// Skip constraint-based unique indexes (automatically created by UNIQUE constraints)
 		// but allow explicitly defined unique indexes (created via schema annotations)
-		if index.IsUnique && isConstraintBasedUniqueIndex(index.Name, index.TableName) {
+		if index.IsUnique && IsConstraintBasedUniqueIndex(index.Name, index.TableName, index.Columns) {
 			continue
 		}
 

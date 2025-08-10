@@ -55,8 +55,8 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 		// Database now has the indexes that were created (they are unique indexes)
 		database := &types.DBSchema{
 			Indexes: []types.DBIndex{
-				{Name: "tenants_slug_idx", TableName: "tenants", IsPrimary: false, IsUnique: true},
-				{Name: "users_tenant_email_idx", TableName: "users", IsPrimary: false, IsUnique: true},
+				{Name: "tenants_slug_idx", TableName: "tenants", Columns: []string{"slug"}, IsPrimary: false, IsUnique: true},
+				{Name: "users_tenant_email_idx", TableName: "users", Columns: []string{"tenant_id", "email"}, IsPrimary: false, IsUnique: true},
 			},
 		}
 
@@ -84,12 +84,12 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 		database := &types.DBSchema{
 			Indexes: []types.DBIndex{
 				// Constraint-based indexes (should be ignored)
-				{Name: "tenants_pkey", TableName: "tenants", IsPrimary: true, IsUnique: false},
-				{Name: "users_email_key", TableName: "users", IsPrimary: false, IsUnique: true},
-				{Name: "tenants_name_key", TableName: "tenants", IsPrimary: false, IsUnique: true},
+				{Name: "tenants_pkey", TableName: "tenants", Columns: []string{"id"}, IsPrimary: true, IsUnique: false},
+				{Name: "users_email_key", TableName: "users", Columns: []string{"email"}, IsPrimary: false, IsUnique: true},
+				{Name: "tenants_name_key", TableName: "tenants", Columns: []string{"name"}, IsPrimary: false, IsUnique: true},
 				// Explicitly defined indexes (should be compared)
-				{Name: "tenants_slug_idx", TableName: "tenants", IsPrimary: false, IsUnique: true},
-				{Name: "users_tenant_email_idx", TableName: "users", IsPrimary: false, IsUnique: true},
+				{Name: "tenants_slug_idx", TableName: "tenants", Columns: []string{"slug"}, IsPrimary: false, IsUnique: true},
+				{Name: "users_tenant_email_idx", TableName: "users", Columns: []string{"tenant_id", "email"}, IsPrimary: false, IsUnique: true},
 			},
 		}
 
@@ -117,9 +117,9 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 		database := &types.DBSchema{
 			Indexes: []types.DBIndex{
 				// Constraint-based indexes (should be ignored)
-				{Name: "users_email_key", TableName: "users", IsPrimary: false, IsUnique: true},
+				{Name: "users_email_key", TableName: "users", Columns: []string{"email"}, IsPrimary: false, IsUnique: true},
 				// Only one explicitly defined index exists
-				{Name: "tenants_slug_idx", TableName: "tenants", IsPrimary: false, IsUnique: true},
+				{Name: "tenants_slug_idx", TableName: "tenants", Columns: []string{"slug"}, IsPrimary: false, IsUnique: true},
 				// users_tenant_email_idx is missing
 			},
 		}
