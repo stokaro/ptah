@@ -23,7 +23,7 @@ var (
 	mysqlTableColumnsPattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*_[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 	// Custom index patterns (these should NOT be considered constraint-based)
-	customIndexPattern = regexp.MustCompile(`(idx|index)`)
+	customIndexPattern = regexp.MustCompile(`(?i)(idx|index)`)
 )
 
 // TablesAndColumns performs comprehensive table and column comparison between generated and database schemas.
@@ -734,6 +734,13 @@ func EnumValues(genEnum goschema.Enum, dbEnum types.DBEnum) difftypes.EnumDiff {
 // This function identifies such constraint-based indexes to distinguish them from explicitly
 // defined unique indexes created via schema annotations.
 //
+// # Assumptions
+//
+// This function relies on standard naming conventions used by database systems for
+// constraint-based indexes. These patterns may vary with different database versions,
+// configurations, or custom naming schemes. The detection is based on common patterns
+// observed in PostgreSQL 12+, MySQL 8.0+, and MariaDB 10.5+.
+//
 // # Parameters
 //
 //   - indexName: The name of the index to check
@@ -774,13 +781,20 @@ func isConstraintBasedUniqueIndex(indexName, tableName string, columns []string)
 
 	// Be more conservative about table_column patterns - only consider it constraint-based
 	// if it follows a very specific pattern and doesn't look like a custom index name
-	if mysqlTableColumnsPattern.MatchString(indexName) &&
-		strings.HasPrefix(indexName, tableName+"_") &&
-		!customIndexPattern.MatchString(indexName) {
+	if isMySQLConstraintBasedUniqueIndex(indexName, tableName) {
 		return true
 	}
 
 	return false
+}
+
+// isMySQLConstraintBasedUniqueIndex checks if an index follows MySQL/MariaDB constraint-based patterns.
+// This helper function encapsulates the complex logic for detecting MySQL/MariaDB constraint-based
+// unique indexes that follow table_column naming patterns but are not custom indexes.
+func isMySQLConstraintBasedUniqueIndex(indexName, tableName string) bool {
+	return mysqlTableColumnsPattern.MatchString(indexName) &&
+		strings.HasPrefix(indexName, tableName+"_") &&
+		!customIndexPattern.MatchString(indexName)
 }
 
 // Indexes performs index comparison between generated and database schemas with intelligent filtering.
