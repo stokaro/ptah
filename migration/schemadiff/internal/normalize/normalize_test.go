@@ -136,6 +136,38 @@ func TestDefaultValue(t *testing.T) {
 		{"only double quote", "\"", "varchar", ""},
 		{"mixed quotes start", "'value\"", "varchar", "value"},
 		{"mixed quotes end", "\"value'", "varchar", "value"},
+
+		// PostgreSQL type casting scenarios (the main fix for issue #32)
+		{"text type cast", "'user'::text", "text", "user"},
+		{"text type cast uppercase", "'ACTIVE'::TEXT", "text", "ACTIVE"},
+		{"bigint type cast", "'0'::bigint", "integer", "0"},
+		{"bigint type cast uppercase", "'123'::BIGINT", "integer", "123"},
+		{"integer type cast", "'42'::integer", "integer", "42"},
+		{"varchar type cast", "'hello'::varchar", "varchar", "hello"},
+		{"boolean type cast true", "'true'::boolean", "boolean", "true"},
+		{"boolean type cast false", "'false'::boolean", "boolean", "false"},
+		{"boolean type cast one", "'1'::boolean", "boolean", "true"},
+		{"boolean type cast zero", "'0'::boolean", "boolean", "false"},
+
+		// PostgreSQL type casting with double quotes
+		{"double quoted text cast", "\"user\"::text", "text", "user"},
+		{"double quoted bigint cast", "\"0\"::bigint", "integer", "0"},
+
+		// PostgreSQL type casting without quotes (expressions)
+		{"unquoted type cast", "0::bigint", "integer", "0"},
+		{"unquoted text cast", "active::text", "text", "active"},
+
+		// Complex PostgreSQL type casting scenarios
+		{"type cast with spaces", "'hello world'::text", "text", "hello world"},
+		{"type cast with special chars", "'user@domain.com'::text", "text", "user@domain.com"},
+		{"numeric type cast", "'123.45'::numeric", "decimal", "123.45"},
+		{"timestamp type cast", "'2023-01-01'::timestamp", "timestamp", "2023-01-01"},
+
+		// Edge cases for type casting
+		{"multiple colons", "'value::with::colons'::text", "text", "value::with::colons"},
+		{"type cast without value", "::text", "text", ""},
+		{"malformed type cast", "'value':", "text", "value':"},
+		{"type cast with schema", "'value'::public.custom_type", "text", "value"},
 	}
 
 	for _, tt := range tests {

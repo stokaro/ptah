@@ -84,14 +84,16 @@ func Type(typeName string) string {
 //
 //   - Empty/NULL values: Converted to empty string for consistent comparison
 //   - Quoted values: Quotes are removed for comparison (both single and double)
+//   - PostgreSQL type casting: Removes ::type syntax (e.g., 'user'::text → 'user')
 //   - Boolean values: MySQL/MariaDB '1'/'0' normalized to 'true'/'false'
 //   - NULL literals: Database-specific NULL representations normalized to empty string
 //
 // # Database-Specific Handling
 //
 //   - **MySQL/MariaDB**: Returns 'NULL' string for columns without explicit defaults
-//   - **PostgreSQL**: Returns actual NULL for columns without defaults
+//   - **PostgreSQL**: Returns actual NULL for columns without defaults, includes type casting
 //   - **Boolean types**: Handles '1'/'0' vs 'true'/'false' variations
+//   - **PostgreSQL type casting**: Strips ::type syntax from default values
 //
 // # Example Usage
 //
@@ -103,6 +105,11 @@ func Type(typeName string) string {
 //	// Quote removal
 //	DefaultValue("'hello'", "varchar")  // → "hello"
 //	DefaultValue("\"world\"", "text")   // → "world"
+//
+//	// PostgreSQL type casting removal
+//	DefaultValue("'user'::text", "text")     // → "user"
+//	DefaultValue("'0'::bigint", "integer")   // → "0"
+//	DefaultValue("'active'::text", "text")   // → "active"
 //
 //	// NULL handling
 //	DefaultValue("NULL", "varchar")     // → ""
@@ -133,8 +140,15 @@ func DefaultValue(defaultValue, typeName string) string {
 		return ""
 	}
 
+	// Handle PostgreSQL type casting syntax (e.g., 'user'::text, '0'::bigint)
+	// Remove the ::type suffix before processing quotes
+	// We need to find the last :: to handle cases like 'value::with::colons'::text
+	if lastColonIndex := strings.LastIndex(cleanValue, "::"); lastColonIndex != -1 {
+		cleanValue = cleanValue[:lastColonIndex]
+	}
+
 	// Remove surrounding quotes for comparison (both single and double quotes)
-	cleanValue = strings.Trim(defaultValue, "'\"")
+	cleanValue = strings.Trim(cleanValue, "'\"")
 
 	// For boolean types, normalize database-specific representations
 	if typeName == "boolean" {
