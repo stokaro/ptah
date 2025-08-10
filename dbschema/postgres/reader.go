@@ -478,9 +478,21 @@ func (r *Reader) enhanceTablesWithIndexes(tables []types.DBTable, indexes []type
 	}
 }
 
-// readFunctions reads all PostgreSQL custom functions from the database
-// This function excludes extension-owned functions to prevent issues with
-// migration generation attempting to drop functions owned by extensions
+// readFunctions reads all PostgreSQL custom functions from the database.
+//
+// This function automatically excludes ALL extension-owned functions to prevent
+// migration generation from attempting to drop functions that are managed by
+// PostgreSQL extensions. This is a generic solution that works for any extension
+// (btree_gin, pg_trgm, uuid-ossp, postgis, hstore, etc.) without requiring
+// manual configuration of specific extension names.
+//
+// The exclusion is implemented using PostgreSQL system catalogs:
+// - pg_depend: tracks dependencies between database objects
+// - pg_extension: contains information about installed extensions
+// - Functions with dependency type 'e' (extension) are automatically filtered out
+//
+// This approach is more robust than maintaining a manual list of problematic
+// extensions because it automatically handles any extension that creates functions.
 func (r *Reader) readFunctions() ([]types.DBFunction, error) {
 	functionsQuery := `
 		SELECT

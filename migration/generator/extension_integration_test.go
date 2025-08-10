@@ -27,23 +27,19 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 			name: "add single extension",
 			generatedSchema: &goschema.Database{
 				Extensions: []goschema.Extension{
-					{Name: "uuid-ossp", IfNotExists: true, Comment: "Enable UUID generation"},
+					{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
 				},
 			},
 			databaseSchema: &types.DBSchema{
-				Extensions: []types.DBExtension{
-					{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"}, // ignored by default
-					{Name: "btree_gin", Version: "1.3", Schema: "public"},   // ignored by default
-					{Name: "pg_trgm", Version: "1.6", Schema: "public"},     // ignored by default
-				},
+				Extensions: []types.DBExtension{},
 			},
 			expectedUpSQL: []string{
-				"-- Enable UUID generation",
-				"CREATE EXTENSION IF NOT EXISTS uuid-ossp;",
+				"-- Enable trigram similarity search",
+				"CREATE EXTENSION IF NOT EXISTS pg_trgm;",
 			},
 			expectedDownSQL: []string{
-				"WARNING: Removing extension 'uuid-ossp' may break existing functionality",
-				"DROP EXTENSION IF EXISTS uuid-ossp;",
+				"WARNING: Removing extension 'pg_trgm' may break existing functionality",
+				"DROP EXTENSION IF EXISTS pg_trgm;",
 			},
 			unexpectedUpSQL: []string{
 				"DROP EXTENSION",
@@ -56,24 +52,20 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 			name: "add multiple extensions",
 			generatedSchema: &goschema.Database{
 				Extensions: []goschema.Extension{
-					{Name: "uuid-ossp", IfNotExists: true, Comment: "Enable UUID generation"},
-					{Name: "hstore", IfNotExists: true, Comment: "Enable key-value store"},
+					{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
+					{Name: "btree_gin", IfNotExists: true, Comment: "Enable GIN indexes on btree types"},
 				},
 			},
 			databaseSchema: &types.DBSchema{
-				Extensions: []types.DBExtension{
-					{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"}, // ignored by default
-					{Name: "btree_gin", Version: "1.3", Schema: "public"},   // ignored by default
-					{Name: "pg_trgm", Version: "1.6", Schema: "public"},     // ignored by default
-				},
+				Extensions: []types.DBExtension{},
 			},
 			expectedUpSQL: []string{
-				"CREATE EXTENSION IF NOT EXISTS uuid-ossp;",
-				"CREATE EXTENSION IF NOT EXISTS hstore;",
+				"CREATE EXTENSION IF NOT EXISTS pg_trgm;",
+				"CREATE EXTENSION IF NOT EXISTS btree_gin;",
 			},
 			expectedDownSQL: []string{
-				"DROP EXTENSION IF EXISTS uuid-ossp;",
-				"DROP EXTENSION IF EXISTS hstore;",
+				"DROP EXTENSION IF EXISTS pg_trgm;",
+				"DROP EXTENSION IF EXISTS btree_gin;",
 			},
 			unexpectedUpSQL: []string{
 				"DROP EXTENSION",
@@ -89,20 +81,17 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 			},
 			databaseSchema: &types.DBSchema{
 				Extensions: []types.DBExtension{
-					{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"}, // ignored by default
-					{Name: "btree_gin", Version: "1.3", Schema: "public"},   // ignored by default
-					{Name: "pg_trgm", Version: "1.6", Schema: "public"},     // ignored by default
-					{Name: "uuid-ossp", Version: "1.1", Schema: "public"},
+					{Name: "pg_trgm", Version: "1.6", Schema: "public"},
 				},
 			},
 			expectedUpSQL: []string{
-				"DROP EXTENSION IF EXISTS uuid-ossp;",
+				"DROP EXTENSION IF EXISTS pg_trgm;",
 			},
 			expectedDownSQL: []string{
-				"CREATE EXTENSION IF NOT EXISTS uuid-ossp;",
+				"CREATE EXTENSION IF NOT EXISTS pg_trgm;",
 			},
 			unexpectedUpSQL: []string{
-				"CREATE EXTENSION IF NOT EXISTS uuid-ossp;",
+				"CREATE EXTENSION IF NOT EXISTS pg_trgm;",
 			},
 			unexpectedDownSQL: []string{
 				"DROP EXTENSION",
@@ -195,17 +184,13 @@ func TestExtensionMigration_UpDownCycle(t *testing.T) {
 	// Test a complete up/down migration cycle
 	generatedSchema := &goschema.Database{
 		Extensions: []goschema.Extension{
-			{Name: "uuid-ossp", IfNotExists: true, Comment: "Enable UUID generation"},
-			{Name: "hstore", IfNotExists: true, Comment: "Enable key-value store"},
+			{Name: "pg_trgm", IfNotExists: true, Comment: "Enable trigram similarity search"},
+			{Name: "btree_gin", IfNotExists: true, Comment: "Enable GIN indexes on btree types"},
 		},
 	}
 
 	databaseSchema := &types.DBSchema{
-		Extensions: []types.DBExtension{
-			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"}, // ignored by default
-			{Name: "btree_gin", Version: "1.3", Schema: "public"},   // ignored by default
-			{Name: "pg_trgm", Version: "1.6", Schema: "public"},     // ignored by default
-		},
+		Extensions: []types.DBExtension{},
 	}
 
 	// 1. Calculate initial diff (should add extensions)
@@ -216,11 +201,8 @@ func TestExtensionMigration_UpDownCycle(t *testing.T) {
 	// 2. Simulate applying the up migration (database now has extensions)
 	simulatedDatabaseAfterUp := &types.DBSchema{
 		Extensions: []types.DBExtension{
-			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"}, // ignored by default
-			{Name: "btree_gin", Version: "1.3", Schema: "public"},   // ignored by default
-			{Name: "pg_trgm", Version: "1.6", Schema: "public"},     // ignored by default
-			{Name: "uuid-ossp", Version: "1.1", Schema: "public"},
-			{Name: "hstore", Version: "1.8", Schema: "public"},
+			{Name: "pg_trgm", Version: "1.6", Schema: "public"},
+			{Name: "btree_gin", Version: "1.3", Schema: "public"},
 		},
 	}
 
