@@ -32,9 +32,9 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 			},
 			databaseSchema: &types.DBSchema{
 				Extensions: []types.DBExtension{
-					{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},    // ignored by default
-					{Name: "btree_gin", Version: "1.3", Schema: "public"},     // ignored by default
-					{Name: "pg_trgm", Version: "1.6", Schema: "public"},       // ignored by default
+					{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"}, // ignored by default
+					{Name: "btree_gin", Version: "1.3", Schema: "public"},   // ignored by default
+					{Name: "pg_trgm", Version: "1.6", Schema: "public"},     // ignored by default
 				},
 			},
 			expectedUpSQL: []string{
@@ -62,9 +62,9 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 			},
 			databaseSchema: &types.DBSchema{
 				Extensions: []types.DBExtension{
-					{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},    // ignored by default
-					{Name: "btree_gin", Version: "1.3", Schema: "public"},     // ignored by default
-					{Name: "pg_trgm", Version: "1.6", Schema: "public"},       // ignored by default
+					{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"}, // ignored by default
+					{Name: "btree_gin", Version: "1.3", Schema: "public"},   // ignored by default
+					{Name: "pg_trgm", Version: "1.6", Schema: "public"},     // ignored by default
 				},
 			},
 			expectedUpSQL: []string{
@@ -89,9 +89,9 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 			},
 			databaseSchema: &types.DBSchema{
 				Extensions: []types.DBExtension{
-					{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},    // ignored by default
-					{Name: "btree_gin", Version: "1.3", Schema: "public"},     // ignored by default
-					{Name: "pg_trgm", Version: "1.6", Schema: "public"},       // ignored by default
+					{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"}, // ignored by default
+					{Name: "btree_gin", Version: "1.3", Schema: "public"},   // ignored by default
+					{Name: "pg_trgm", Version: "1.6", Schema: "public"},     // ignored by default
 					{Name: "uuid-ossp", Version: "1.1", Schema: "public"},
 				},
 			},
@@ -202,9 +202,9 @@ func TestExtensionMigration_UpDownCycle(t *testing.T) {
 
 	databaseSchema := &types.DBSchema{
 		Extensions: []types.DBExtension{
-			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},    // ignored by default
-			{Name: "btree_gin", Version: "1.3", Schema: "public"},     // ignored by default
-			{Name: "pg_trgm", Version: "1.6", Schema: "public"},       // ignored by default
+			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"}, // ignored by default
+			{Name: "btree_gin", Version: "1.3", Schema: "public"},   // ignored by default
+			{Name: "pg_trgm", Version: "1.6", Schema: "public"},     // ignored by default
 		},
 	}
 
@@ -216,9 +216,9 @@ func TestExtensionMigration_UpDownCycle(t *testing.T) {
 	// 2. Simulate applying the up migration (database now has extensions)
 	simulatedDatabaseAfterUp := &types.DBSchema{
 		Extensions: []types.DBExtension{
-			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"},    // ignored by default
-			{Name: "btree_gin", Version: "1.3", Schema: "public"},     // ignored by default
-			{Name: "pg_trgm", Version: "1.6", Schema: "public"},       // ignored by default
+			{Name: "plpgsql", Version: "1.0", Schema: "pg_catalog"}, // ignored by default
+			{Name: "btree_gin", Version: "1.3", Schema: "public"},   // ignored by default
+			{Name: "pg_trgm", Version: "1.6", Schema: "public"},     // ignored by default
 			{Name: "uuid-ossp", Version: "1.1", Schema: "public"},
 			{Name: "hstore", Version: "1.8", Schema: "public"},
 		},
