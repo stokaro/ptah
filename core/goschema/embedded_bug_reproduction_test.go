@@ -27,6 +27,7 @@ type TenantAwareEntityID struct {
 }
 
 // User table that embeds TenantAwareEntityID
+//
 //migrator:schema:table name="users"
 type User struct {
 	//migrator:embedded mode="inline"
@@ -50,6 +51,7 @@ type User struct {
 }
 
 // Tenant table for reference
+//
 //migrator:schema:table name="tenants"
 type Tenant struct {
 	//migrator:embedded mode="inline"
@@ -59,6 +61,7 @@ type Tenant struct {
 }
 
 // Area table that references users
+//
 //migrator:schema:table name="areas"
 type Area struct {
 	//migrator:embedded mode="inline"
@@ -222,17 +225,17 @@ func TestNestedEmbeddedFieldsComprehensive(t *testing.T) {
 	}
 
 	expectedUserFields := map[string]bool{
-		"id":              true, // From EntityID (nested)
-		"tenant_id":       true, // From TenantAwareEntityID
-		"user_id":         true, // From TenantAwareEntityID
-		"email":           true, // Direct field
-		"password_hash":   true, // Direct field
-		"name":            true, // Direct field
-		"role":            true, // Direct field
-		"is_active":       true, // Direct field
-		"last_login_at":   true, // Direct field
-		"created_at":      true, // Direct field
-		"updated_at":      true, // Direct field
+		"id":            true, // From EntityID (nested)
+		"tenant_id":     true, // From TenantAwareEntityID
+		"user_id":       true, // From TenantAwareEntityID
+		"email":         true, // Direct field
+		"password_hash": true, // Direct field
+		"name":          true, // Direct field
+		"role":          true, // Direct field
+		"is_active":     true, // Direct field
+		"last_login_at": true, // Direct field
+		"created_at":    true, // Direct field
+		"updated_at":    true, // Direct field
 	}
 
 	actualUserFields := make(map[string]Field)
@@ -350,9 +353,9 @@ func TestNestedEmbeddedFieldsWithPrefixes(t *testing.T) {
 
 	// Expected fields with combined prefixes
 	expectedFields := map[string]bool{
-		"main_entity_id":        true, // main_ + entity_ + id (nested prefix combination)
-		"main_tenant_id":        true, // main_ + tenant_id
-		"name":                  true, // Direct field (no prefix)
+		"main_entity_id": true, // main_ + entity_ + id (nested prefix combination)
+		"main_tenant_id": true, // main_ + tenant_id
+		"name":           true, // Direct field (no prefix)
 	}
 
 	actualFields := make(map[string]Field)
@@ -448,7 +451,7 @@ type Area struct {
 	// Write the test content to a temporary file
 	tmpDir := t.TempDir()
 	testFile := tmpDir + "/issue49_test.go"
-	err := os.WriteFile(testFile, []byte(testContent), 0644)
+	err := os.WriteFile(testFile, []byte(testContent), 0600)
 	c.Assert(err, qt.IsNil)
 
 	// Parse the test file

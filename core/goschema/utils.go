@@ -373,8 +373,6 @@ func processEmbeddedInlineModeRecursive(generatedFields []Field, embedded Embedd
 	return generatedFields
 }
 
-
-
 // processEmbeddedJSONMode handles JSON mode embedded fields by creating a single JSON/JSONB column.
 func processEmbeddedJSONMode(generatedFields []Field, embedded EmbeddedField, structName string) []Field {
 	// JSON MODE: Serialize embedded struct into a single JSON/JSONB column
