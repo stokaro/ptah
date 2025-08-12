@@ -144,34 +144,66 @@ func (p *Planner) addNewTableColumns(result []ast.Node, tableDiff types.TableDif
 		if targetField != nil {
 			columnNode := fromschema.FromField(*targetField, generated.Enums, "postgres")
 
-			// Create operations list starting with ADD COLUMN
+			// Only add the column - foreign key constraints will be added separately
+			// to ensure proper dependency ordering (columns must exist before FK constraints)
 			operations := []ast.AlterOperation{&ast.AddColumnOperation{Column: columnNode}}
 
-			// If the column has a foreign key, add a separate ADD CONSTRAINT operation
-			if targetField.Foreign != "" && targetField.ForeignKeyName != "" {
-				// Parse the foreign key reference
-				fkRef := fromschema.ParseForeignKeyReference(targetField.Foreign)
-				if fkRef != nil {
-					fkRef.Name = targetField.ForeignKeyName
-
-					// Create foreign key constraint
-					fkConstraint := ast.NewForeignKeyConstraint(
-						targetField.ForeignKeyName,
-						[]string{targetField.Name},
-						fkRef,
-					)
-
-					// Add the constraint operation
-					operations = append(operations, &ast.AddConstraintOperation{Constraint: fkConstraint})
-				}
-			}
-
-			// Generate ALTER TABLE statement with all operations
+			// Generate ALTER TABLE statement with only the ADD COLUMN operation
 			alterNode := &ast.AlterTableNode{
 				Name:       tableDiff.TableName,
 				Operations: operations,
 			}
 			result = append(result, alterNode)
+		}
+	}
+	return result
+}
+
+// addForeignKeyConstraintsForNewColumns adds foreign key constraints for newly added columns.
+// This method is called after all columns have been added to ensure that referenced columns exist.
+func (p *Planner) addForeignKeyConstraintsForNewColumns(result []ast.Node, tableDiff types.TableDiff, generated *goschema.Database) []ast.Node {
+	for _, colName := range tableDiff.ColumnsAdded {
+		// Find the field definition for this column
+		var targetField *goschema.Field
+		var targetStructName string
+
+		// First, find the struct name for this table
+		for _, table := range generated.Tables {
+			if table.Name == tableDiff.TableName {
+				targetStructName = table.StructName
+				break
+			}
+		}
+
+		// Now find the field using the correct struct name
+		for _, field := range generated.Fields {
+			if field.StructName == targetStructName && field.Name == colName {
+				targetField = &field
+				break
+			}
+		}
+
+		// Only process fields that have foreign key constraints
+		if targetField != nil && targetField.Foreign != "" && targetField.ForeignKeyName != "" {
+			// Parse the foreign key reference
+			fkRef := fromschema.ParseForeignKeyReference(targetField.Foreign)
+			if fkRef != nil {
+				fkRef.Name = targetField.ForeignKeyName
+
+				// Create foreign key constraint
+				fkConstraint := ast.NewForeignKeyConstraint(
+					targetField.ForeignKeyName,
+					[]string{targetField.Name},
+					fkRef,
+				)
+
+				// Create ALTER TABLE statement with only the ADD CONSTRAINT operation
+				alterNode := &ast.AlterTableNode{
+					Name:       tableDiff.TableName,
+					Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: fkConstraint}},
+				}
+				result = append(result, alterNode)
+			}
 		}
 	}
 	return result
@@ -261,6 +293,34 @@ func (p *Planner) addAndModifyTableColumns(result []ast.Node, diff *types.Schema
 			if len(result) > initialLength {
 				// Insert the comment at the beginning of the operations for this table
 				astCommentNode := ast.NewComment(fmt.Sprintf("Add/modify columns for table: %s", tableDiff.TableName))
+				// Insert the comment before the operations we just added
+				newResult := make([]ast.Node, 0, len(result)+1)
+				newResult = append(newResult, result[:initialLength]...)
+				newResult = append(newResult, astCommentNode)
+				newResult = append(newResult, result[initialLength:]...)
+				result = newResult
+			}
+		}
+	}
+	return result
+}
+
+// addForeignKeyConstraintsForModifiedTables adds foreign key constraints for all newly added columns
+// across all modified tables. This ensures that all columns exist before any foreign key constraints
+// are created, preventing dependency ordering issues.
+func (p *Planner) addForeignKeyConstraintsForModifiedTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, tableDiff := range diff.TablesModified {
+		if len(tableDiff.ColumnsAdded) > 0 {
+			// Track the initial length to see if any actual operations were added
+			initialLength := len(result)
+
+			// Add foreign key constraints for new columns
+			result = p.addForeignKeyConstraintsForNewColumns(result, tableDiff, generated)
+
+			// Only add the comment if actual operations were performed
+			if len(result) > initialLength {
+				// Insert the comment at the beginning of the operations for this table
+				astCommentNode := ast.NewComment(fmt.Sprintf("Add foreign key constraints for table: %s", tableDiff.TableName))
 				// Insert the comment before the operations we just added
 				newResult := make([]ast.Node, 0, len(result)+1)
 				newResult = append(newResult, result[:initialLength]...)
@@ -440,6 +500,9 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 
 	// 6. Add and modify table columns (must be done before creating RLS policies that depend on columns)
 	result = p.addAndModifyTableColumns(result, diff, generated)
+
+	// 6.5. Add foreign key constraints for newly added columns (must be done after all columns exist)
+	result = p.addForeignKeyConstraintsForModifiedTables(result, diff, generated)
 
 	// 7. Modify existing roles (must be done before RLS policies that reference them)
 	result = p.modifyExistingRoles(result, diff, generated)

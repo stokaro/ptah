@@ -255,7 +255,7 @@ func TestPlanner_GenerateMigrationSQL_TablesModified(t *testing.T) {
 			},
 		},
 		{
-			name: "column with foreign key added",
+			name: "column with foreign key added - separated operations",
 			diff: &types.SchemaDiff{
 				TablesModified: []types.TableDiff{
 					{
@@ -280,28 +280,29 @@ func TestPlanner_GenerateMigrationSQL_TablesModified(t *testing.T) {
 				},
 			},
 			expected: func(nodes []ast.Node) bool {
-				if len(nodes) != 2 {
+				// Should have 4 nodes: comment, ADD COLUMN, comment, ADD CONSTRAINT
+				if len(nodes) != 4 {
 					return false
 				}
 
-				// First should be comment
+				// First should be comment for column addition
 				_, ok := nodes[0].(*ast.CommentNode)
 				if !ok {
 					return false
 				}
 
-				// Second should be ALTER TABLE with two operations
-				alterNode, ok := nodes[1].(*ast.AlterTableNode)
+				// Second should be ALTER TABLE with ADD COLUMN operation only
+				alterNode1, ok := nodes[1].(*ast.AlterTableNode)
 				if !ok {
 					return false
 				}
 
-				if alterNode.Name != "posts" || len(alterNode.Operations) != 2 {
+				if alterNode1.Name != "posts" || len(alterNode1.Operations) != 1 {
 					return false
 				}
 
-				// First operation should be ADD COLUMN
-				addColOp, ok := alterNode.Operations[0].(*ast.AddColumnOperation)
+				// Should be ADD COLUMN operation
+				addColOp, ok := alterNode1.Operations[0].(*ast.AddColumnOperation)
 				if !ok {
 					return false
 				}
@@ -309,8 +310,24 @@ func TestPlanner_GenerateMigrationSQL_TablesModified(t *testing.T) {
 					return false
 				}
 
-				// Second operation should be ADD CONSTRAINT
-				addConstraintOp, ok := alterNode.Operations[1].(*ast.AddConstraintOperation)
+				// Third should be comment for foreign key constraint
+				_, ok = nodes[2].(*ast.CommentNode)
+				if !ok {
+					return false
+				}
+
+				// Fourth should be ALTER TABLE with ADD CONSTRAINT operation only
+				alterNode2, ok := nodes[3].(*ast.AlterTableNode)
+				if !ok {
+					return false
+				}
+
+				if alterNode2.Name != "posts" || len(alterNode2.Operations) != 1 {
+					return false
+				}
+
+				// Should be ADD CONSTRAINT operation
+				addConstraintOp, ok := alterNode2.Operations[0].(*ast.AddConstraintOperation)
 				if !ok {
 					return false
 				}
@@ -340,6 +357,219 @@ func TestPlanner_GenerateMigrationSQL_TablesModified(t *testing.T) {
 			c.Assert(tt.expected(nodes), qt.IsTrue)
 		})
 	}
+}
+
+// TestPlanner_ForeignKeyDependencyOrdering tests the fix for issue #47:
+// Foreign key constraint generation before referenced column creation causes migration failure
+func TestPlanner_ForeignKeyDependencyOrdering(t *testing.T) {
+	tests := []struct {
+		name      string
+		diff      *types.SchemaDiff
+		generated *goschema.Database
+		expected  func(nodes []ast.Node) bool
+	}{
+		{
+			name: "foreign key references newly added column - proper ordering",
+			diff: &types.SchemaDiff{
+				TablesModified: []types.TableDiff{
+					{
+						TableName:    "users",
+						ColumnsAdded: []string{"id"},
+					},
+					{
+						TableName:    "restore_steps",
+						ColumnsAdded: []string{"user_id"},
+					},
+				},
+			},
+			generated: &goschema.Database{
+				Tables: []goschema.Table{
+					{Name: "users", StructName: "User"},
+					{Name: "restore_steps", StructName: "RestoreStep"},
+				},
+				Fields: []goschema.Field{
+					{
+						Name:       "id",
+						Type:       "TEXT",
+						StructName: "User",
+						Primary:    true,
+						Nullable:   false,
+					},
+					{
+						Name:           "user_id",
+						Type:           "TEXT",
+						StructName:     "RestoreStep",
+						Nullable:       false,
+						Foreign:        "users(id)",
+						ForeignKeyName: "fk_entity_user",
+					},
+				},
+			},
+			expected: func(nodes []ast.Node) bool {
+				// Should have 6 nodes:
+				// 1. Comment for users column addition
+				// 2. ALTER TABLE users ADD COLUMN id
+				// 3. Comment for restore_steps column addition
+				// 4. ALTER TABLE restore_steps ADD COLUMN user_id
+				// 5. Comment for foreign key constraints
+				// 6. ALTER TABLE restore_steps ADD CONSTRAINT fk_entity_user
+				if len(nodes) != 6 {
+					return false
+				}
+
+				// Verify the ordering: all ADD COLUMN operations come before ADD CONSTRAINT operations
+
+				// Node 1: Comment for users column
+				_, ok := nodes[0].(*ast.CommentNode)
+				if !ok {
+					return false
+				}
+
+				// Node 2: ADD COLUMN for users.id
+				alterNode1, ok := nodes[1].(*ast.AlterTableNode)
+				if !ok || alterNode1.Name != "users" || len(alterNode1.Operations) != 1 {
+					return false
+				}
+				addColOp1, ok := alterNode1.Operations[0].(*ast.AddColumnOperation)
+				if !ok || addColOp1.Column.Name != "id" {
+					return false
+				}
+
+				// Node 3: Comment for restore_steps column
+				_, ok = nodes[2].(*ast.CommentNode)
+				if !ok {
+					return false
+				}
+
+				// Node 4: ADD COLUMN for restore_steps.user_id
+				alterNode2, ok := nodes[3].(*ast.AlterTableNode)
+				if !ok || alterNode2.Name != "restore_steps" || len(alterNode2.Operations) != 1 {
+					return false
+				}
+				addColOp2, ok := alterNode2.Operations[0].(*ast.AddColumnOperation)
+				if !ok || addColOp2.Column.Name != "user_id" {
+					return false
+				}
+
+				// Node 5: Comment for foreign key constraints
+				_, ok = nodes[4].(*ast.CommentNode)
+				if !ok {
+					return false
+				}
+
+				// Node 6: ADD CONSTRAINT for foreign key
+				alterNode3, ok := nodes[5].(*ast.AlterTableNode)
+				if !ok || alterNode3.Name != "restore_steps" || len(alterNode3.Operations) != 1 {
+					return false
+				}
+				addConstraintOp, ok := alterNode3.Operations[0].(*ast.AddConstraintOperation)
+				if !ok {
+					return false
+				}
+				constraint := addConstraintOp.Constraint
+				if constraint.Name != "fk_entity_user" ||
+					constraint.Type != ast.ForeignKeyConstraint ||
+					len(constraint.Columns) != 1 ||
+					constraint.Columns[0] != "user_id" ||
+					constraint.Reference == nil ||
+					constraint.Reference.Table != "users" ||
+					constraint.Reference.Column != "id" {
+					return false
+				}
+
+				return true
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			planner := &postgres.Planner{}
+			nodes := planner.GenerateMigrationAST(tt.diff, tt.generated)
+
+			c.Assert(tt.expected(nodes), qt.IsTrue)
+		})
+	}
+}
+
+// TestPlanner_ForeignKeyDependencyOrdering_SQLOutput tests the actual SQL output
+// to ensure the fix generates correct SQL statements in the right order
+func TestPlanner_ForeignKeyDependencyOrdering_SQLOutput(t *testing.T) {
+	c := qt.New(t)
+
+	diff := &types.SchemaDiff{
+		TablesModified: []types.TableDiff{
+			{
+				TableName:    "users",
+				ColumnsAdded: []string{"id"},
+			},
+			{
+				TableName:    "restore_steps",
+				ColumnsAdded: []string{"user_id"},
+			},
+		},
+	}
+
+	generated := &goschema.Database{
+		Tables: []goschema.Table{
+			{Name: "users", StructName: "User"},
+			{Name: "restore_steps", StructName: "RestoreStep"},
+		},
+		Fields: []goschema.Field{
+			{
+				Name:       "id",
+				Type:       "TEXT",
+				StructName: "User",
+				Primary:    true,
+				Nullable:   false,
+			},
+			{
+				Name:           "user_id",
+				Type:           "TEXT",
+				StructName:     "RestoreStep",
+				Nullable:       false,
+				Foreign:        "users(id)",
+				ForeignKeyName: "fk_entity_user",
+			},
+		},
+	}
+
+	planner := &postgres.Planner{}
+	nodes := planner.GenerateMigrationAST(diff, generated)
+
+	// Render to SQL to verify the actual output
+	sql, err := renderer.RenderSQL("postgres", nodes...)
+	c.Assert(err, qt.IsNil)
+
+	// Verify that ADD COLUMN operations come before ADD CONSTRAINT operations
+	lines := strings.Split(sql, "\n")
+	var addColumnLines []int
+	var addConstraintLines []int
+
+	for i, line := range lines {
+		if strings.Contains(line, "ADD COLUMN") {
+			addColumnLines = append(addColumnLines, i)
+		}
+		if strings.Contains(line, "ADD CONSTRAINT") {
+			addConstraintLines = append(addConstraintLines, i)
+		}
+	}
+
+	// All ADD COLUMN operations should come before all ADD CONSTRAINT operations
+	c.Assert(len(addColumnLines), qt.Equals, 2)
+	c.Assert(len(addConstraintLines), qt.Equals, 1)
+
+	// The last ADD COLUMN should come before the first ADD CONSTRAINT
+	lastAddColumn := addColumnLines[len(addColumnLines)-1]
+	firstAddConstraint := addConstraintLines[0]
+	c.Assert(lastAddColumn < firstAddConstraint, qt.IsTrue)
+
+	// Verify specific SQL content
+	c.Assert(sql, qt.Contains, "ALTER TABLE users ADD COLUMN id TEXT PRIMARY KEY")
+	c.Assert(sql, qt.Contains, "ALTER TABLE restore_steps ADD COLUMN user_id TEXT NOT NULL")
+	c.Assert(sql, qt.Contains, "ALTER TABLE restore_steps ADD CONSTRAINT fk_entity_user FOREIGN KEY (user_id) REFERENCES users(id)")
 }
 
 func TestPlanner_GenerateMigrationSQL_IndexesAdded(t *testing.T) {
