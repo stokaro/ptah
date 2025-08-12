@@ -150,7 +150,7 @@ func (p *Planner) addNewTableColumns(result []ast.Node, tableDiff types.TableDif
 			// If the column has a foreign key, add a separate ADD CONSTRAINT operation
 			if targetField.Foreign != "" && targetField.ForeignKeyName != "" {
 				// Parse the foreign key reference
-				fkRef := parseForeignKeyReference(targetField.Foreign)
+				fkRef := fromschema.ParseForeignKeyReference(targetField.Foreign)
 				if fkRef != nil {
 					fkRef.Name = targetField.ForeignKeyName
 
@@ -764,50 +764,4 @@ func (p *Planner) removeRLSPolicies(result []ast.Node, diff *types.SchemaDiff) [
 		result = append(result, dropPolicyNode)
 	}
 	return result
-}
-
-// parseForeignKeyReference parses a foreign key reference string into an ast.ForeignKeyRef.
-//
-// The foreign key reference string should be in the format "table(column)" or just "table"
-// (which defaults to referencing the "id" column).
-//
-// Examples:
-//   - "users(id)" -> references users.id
-//   - "users" -> references users.id (default)
-//   - "categories(slug)" -> references categories.slug
-//
-// Returns nil if the reference string is malformed.
-func parseForeignKeyReference(foreign string) *ast.ForeignKeyRef {
-	if foreign == "" {
-		return nil
-	}
-
-	// Check if it contains parentheses for column specification
-	if strings.Contains(foreign, "(") && strings.Contains(foreign, ")") {
-		// Parse "table(column)" format
-		parts := strings.Split(foreign, "(")
-		if len(parts) != 2 {
-			return nil
-		}
-
-		table := strings.TrimSpace(parts[0])
-		columnPart := strings.TrimSpace(parts[1])
-
-		// Remove closing parenthesis
-		if !strings.HasSuffix(columnPart, ")") {
-			return nil
-		}
-		column := strings.TrimSuffix(columnPart, ")")
-
-		return &ast.ForeignKeyRef{
-			Table:  table,
-			Column: column,
-		}
-	}
-
-	// Default to "id" column if no column specified
-	return &ast.ForeignKeyRef{
-		Table:  strings.TrimSpace(foreign),
-		Column: "id",
-	}
 }

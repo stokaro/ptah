@@ -283,7 +283,7 @@ func FromField(field goschema.Field, enums []goschema.Enum, targetPlatform strin
 	}
 
 	// Set foreign key reference
-	if fkRef := parseForeignKeyReference(field.Foreign); fkRef != nil {
+	if fkRef := ParseForeignKeyReference(field.Foreign); fkRef != nil {
 		column.SetForeignKey(fkRef.Table, fkRef.Column, field.ForeignKeyName)
 	}
 
@@ -910,7 +910,7 @@ func FromIndexWithTableMapping(index goschema.Index, structToTableMap map[string
 	return indexNode
 }
 
-// parseForeignKeyReference parses a foreign key reference string into an ast.ForeignKeyRef.
+// ParseForeignKeyReference parses a foreign key reference string into an ast.ForeignKeyRef.
 //
 // The foreign key reference string should be in the format "table(column)" or just "table"
 // (which defaults to referencing the "id" column).
@@ -921,7 +921,7 @@ func FromIndexWithTableMapping(index goschema.Index, structToTableMap map[string
 //   - "categories(slug)" -> references categories.slug
 //
 // Returns nil if the reference string is malformed.
-func parseForeignKeyReference(foreign string) *ast.ForeignKeyRef {
+func ParseForeignKeyReference(foreign string) *ast.ForeignKeyRef {
 	if foreign == "" {
 		return nil
 	}
