@@ -11,12 +11,16 @@ import (
 // This is needed for down migrations where we use the current DB state as the target
 func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Database {
 	database := &goschema.Database{
-		Tables:       make([]goschema.Table, 0),
-		Fields:       make([]goschema.Field, 0),
-		Indexes:      make([]goschema.Index, 0),
-		Enums:        make([]goschema.Enum, 0),
-		Extensions:   make([]goschema.Extension, 0),
-		Dependencies: make(map[string][]string),
+		Tables:           make([]goschema.Table, 0),
+		Fields:           make([]goschema.Field, 0),
+		Indexes:          make([]goschema.Index, 0),
+		Enums:            make([]goschema.Enum, 0),
+		Extensions:       make([]goschema.Extension, 0),
+		Functions:        make([]goschema.Function, 0),
+		RLSPolicies:      make([]goschema.RLSPolicy, 0),
+		RLSEnabledTables: make([]goschema.RLSEnabledTable, 0),
+		Roles:            make([]goschema.Role, 0),
+		Dependencies:     make(map[string][]string),
 	}
 
 	// Convert enums
@@ -91,6 +95,66 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 		}
 
 		database.Extensions = append(database.Extensions, extension)
+	}
+
+	// Convert RLS policies
+	for _, dbPolicy := range dbSchema.RLSPolicies {
+		policy := goschema.RLSPolicy{
+			StructName:          generateStructName(dbPolicy.Table),
+			Name:                dbPolicy.Name,
+			Table:               dbPolicy.Table,
+			PolicyFor:           dbPolicy.PolicyFor,
+			ToRoles:             dbPolicy.ToRoles,
+			UsingExpression:     dbPolicy.UsingExpression,
+			WithCheckExpression: dbPolicy.WithCheckExpression,
+			Comment:             dbPolicy.Comment,
+		}
+		database.RLSPolicies = append(database.RLSPolicies, policy)
+	}
+
+	// Convert functions
+	for _, dbFunction := range dbSchema.Functions {
+		function := goschema.Function{
+			StructName: "", // Functions are not associated with specific structs in DB schema
+			Name:       dbFunction.Name,
+			Parameters: dbFunction.Parameters,
+			Returns:    dbFunction.Returns,
+			Language:   dbFunction.Language,
+			Security:   dbFunction.Security,
+			Volatility: dbFunction.Volatility,
+			Body:       dbFunction.Body,
+			Comment:    dbFunction.Comment,
+		}
+		database.Functions = append(database.Functions, function)
+	}
+
+	// Convert roles
+	for _, dbRole := range dbSchema.Roles {
+		role := goschema.Role{
+			StructName:  "", // Roles are not associated with specific structs in DB schema
+			Name:        dbRole.Name,
+			Login:       dbRole.Login,
+			Password:    "", // Not available in current DBRole for security
+			Superuser:   dbRole.Superuser,
+			CreateDB:    dbRole.CreateDB,
+			CreateRole:  dbRole.CreateRole,
+			Inherit:     dbRole.Inherit,
+			Replication: dbRole.Replication,
+			Comment:     dbRole.Comment,
+		}
+		database.Roles = append(database.Roles, role)
+	}
+
+	// Convert RLS enabled tables from tables that have RLS enabled
+	for _, dbTable := range dbSchema.Tables {
+		if dbTable.RLSEnabled {
+			rlsEnabledTable := goschema.RLSEnabledTable{
+				StructName: generateStructName(dbTable.Name),
+				Table:      dbTable.Name,
+				Comment:    "", // Comment not available in DBTable for RLS enablement
+			}
+			database.RLSEnabledTables = append(database.RLSEnabledTables, rlsEnabledTable)
+		}
 	}
 
 	return database

@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/core/goschema"
+	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
@@ -82,6 +83,59 @@ func TestReverseSchemaDiff_Extensions(t *testing.T) {
 			c.Assert(result.ExtensionsRemoved, qt.DeepEquals, tt.expected.ExtensionsRemoved)
 		})
 	}
+}
+
+func TestGenerateDownMigrationSQL_Issue43_RLSPolicyTableNames(t *testing.T) {
+	c := qt.New(t)
+
+	// This test reproduces the exact bug scenario from GitHub issue #43:
+	// Missing table names in generated down migration DROP POLICY statements
+
+	// Create a schema diff that adds RLS policies (simulating an up migration)
+	upDiff := &types.SchemaDiff{
+		RLSPoliciesAdded: []string{"area_user_isolation", "commodity_user_isolation"},
+		TablesAdded:      []string{"areas", "commodities"},
+	}
+
+	// Create a database schema that includes the RLS policies with table names
+	// This simulates the database state after the up migration has been applied
+	dbSchema := &dbschematypes.DBSchema{
+		Tables: []dbschematypes.DBTable{
+			{Name: "areas", RLSEnabled: true},
+			{Name: "commodities", RLSEnabled: true},
+		},
+		RLSPolicies: []dbschematypes.DBRLSPolicy{
+			{
+				Name:            "area_user_isolation",
+				Table:           "areas",
+				PolicyFor:       "ALL",
+				ToRoles:         "inventario_app",
+				UsingExpression: "user_id = get_current_user_id()",
+			},
+			{
+				Name:            "commodity_user_isolation",
+				Table:           "commodities",
+				PolicyFor:       "ALL",
+				ToRoles:         "inventario_app",
+				UsingExpression: "user_id = get_current_user_id()",
+			},
+		},
+	}
+
+	// Generate down migration SQL
+	downSQL, err := generateDownMigrationSQL(upDiff, dbSchema, "postgres")
+	c.Assert(err, qt.IsNil)
+
+	// Verify that the down migration contains proper DROP POLICY statements with table names
+	c.Assert(downSQL, qt.Contains, "DROP POLICY IF EXISTS area_user_isolation ON areas")
+	c.Assert(downSQL, qt.Contains, "DROP POLICY IF EXISTS commodity_user_isolation ON commodities")
+
+	// Verify that the malformed statements (without table names) are NOT present
+	c.Assert(downSQL, qt.Not(qt.Contains), "DROP POLICY IF EXISTS area_user_isolation ON;")
+	c.Assert(downSQL, qt.Not(qt.Contains), "DROP POLICY IF EXISTS commodity_user_isolation ON;")
+
+	// Log the generated SQL for debugging
+	t.Logf("Generated down migration SQL:\n%s", downSQL)
 }
 
 func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
