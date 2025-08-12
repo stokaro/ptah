@@ -72,3 +72,23 @@ func (op *ModifyColumnOperation) Accept(visitor Visitor) error {
 
 // alterOperation implements the marker method for type safety.
 func (op *ModifyColumnOperation) alterOperation() {}
+
+// AddConstraintOperation represents an ADD CONSTRAINT operation in ALTER TABLE statements.
+//
+// This operation adds a new constraint to an existing table. The constraint can be
+// a primary key, unique, foreign key, or check constraint.
+type AddConstraintOperation struct {
+	// Constraint contains the complete constraint definition to add
+	Constraint *ConstraintNode
+}
+
+// Accept implements the Node interface for AddConstraintOperation.
+//
+// The visitor typically handles this by delegating to the constraint's Accept method
+// or by processing it within the VisitAlterTable method.
+func (op *AddConstraintOperation) Accept(visitor Visitor) error {
+	return op.Constraint.Accept(visitor)
+}
+
+// alterOperation implements the marker method for type safety.
+func (op *AddConstraintOperation) alterOperation() {}

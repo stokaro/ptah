@@ -254,6 +254,80 @@ func TestPlanner_GenerateMigrationSQL_TablesModified(t *testing.T) {
 				return alterNode.Name == "users" && len(alterNode.Operations) == 1
 			},
 		},
+		{
+			name: "column with foreign key added",
+			diff: &types.SchemaDiff{
+				TablesModified: []types.TableDiff{
+					{
+						TableName:    "posts",
+						ColumnsAdded: []string{"user_id"},
+					},
+				},
+			},
+			generated: &goschema.Database{
+				Tables: []goschema.Table{
+					{Name: "posts", StructName: "Post"},
+				},
+				Fields: []goschema.Field{
+					{
+						Name:           "user_id",
+						Type:           "INTEGER",
+						StructName:     "Post",
+						Nullable:       false,
+						Foreign:        "users(id)",
+						ForeignKeyName: "fk_posts_user",
+					},
+				},
+			},
+			expected: func(nodes []ast.Node) bool {
+				if len(nodes) != 2 {
+					return false
+				}
+
+				// First should be comment
+				_, ok := nodes[0].(*ast.CommentNode)
+				if !ok {
+					return false
+				}
+
+				// Second should be ALTER TABLE with two operations
+				alterNode, ok := nodes[1].(*ast.AlterTableNode)
+				if !ok {
+					return false
+				}
+
+				if alterNode.Name != "posts" || len(alterNode.Operations) != 2 {
+					return false
+				}
+
+				// First operation should be ADD COLUMN
+				addColOp, ok := alterNode.Operations[0].(*ast.AddColumnOperation)
+				if !ok {
+					return false
+				}
+				if addColOp.Column.Name != "user_id" {
+					return false
+				}
+
+				// Second operation should be ADD CONSTRAINT
+				addConstraintOp, ok := alterNode.Operations[1].(*ast.AddConstraintOperation)
+				if !ok {
+					return false
+				}
+				constraint := addConstraintOp.Constraint
+				if constraint.Name != "fk_posts_user" ||
+					constraint.Type != ast.ForeignKeyConstraint ||
+					len(constraint.Columns) != 1 ||
+					constraint.Columns[0] != "user_id" ||
+					constraint.Reference == nil ||
+					constraint.Reference.Table != "users" ||
+					constraint.Reference.Column != "id" {
+					return false
+				}
+
+				return true
+			},
+		},
 	}
 
 	for _, tt := range tests {

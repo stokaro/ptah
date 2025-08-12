@@ -445,6 +445,15 @@ func (r *Renderer) visitAlterTableWithEnums(node *ast.AlterTableNode, enums map[
 			line = strings.TrimPrefix(line, "  ")
 			r.w.WriteLinef("ALTER TABLE %s ADD COLUMN %s;", node.Name, line)
 
+		case *ast.AddConstraintOperation:
+			constraintLine, err := r.renderConstraint(op.Constraint)
+			if err != nil {
+				return fmt.Errorf("error rendering add constraint: %w", err)
+			}
+			// Remove the leading spaces from constraint rendering for ALTER
+			constraintLine = strings.TrimPrefix(constraintLine, "  ")
+			r.w.WriteLinef("ALTER TABLE %s ADD %s;", node.Name, constraintLine)
+
 		case *ast.DropColumnOperation:
 			r.w.WriteLinef("ALTER TABLE %s DROP COLUMN %s;", node.Name, op.ColumnName)
 

@@ -143,10 +143,33 @@ func (p *Planner) addNewTableColumns(result []ast.Node, tableDiff types.TableDif
 
 		if targetField != nil {
 			columnNode := fromschema.FromField(*targetField, generated.Enums, "postgres")
-			// Generate ADD COLUMN statement using AST
+
+			// Create operations list starting with ADD COLUMN
+			operations := []ast.AlterOperation{&ast.AddColumnOperation{Column: columnNode}}
+
+			// If the column has a foreign key, add a separate ADD CONSTRAINT operation
+			if targetField.Foreign != "" && targetField.ForeignKeyName != "" {
+				// Parse the foreign key reference
+				fkRef := parseForeignKeyReference(targetField.Foreign)
+				if fkRef != nil {
+					fkRef.Name = targetField.ForeignKeyName
+
+					// Create foreign key constraint
+					fkConstraint := ast.NewForeignKeyConstraint(
+						targetField.ForeignKeyName,
+						[]string{targetField.Name},
+						fkRef,
+					)
+
+					// Add the constraint operation
+					operations = append(operations, &ast.AddConstraintOperation{Constraint: fkConstraint})
+				}
+			}
+
+			// Generate ALTER TABLE statement with all operations
 			alterNode := &ast.AlterTableNode{
 				Name:       tableDiff.TableName,
-				Operations: []ast.AlterOperation{&ast.AddColumnOperation{Column: columnNode}},
+				Operations: operations,
 			}
 			result = append(result, alterNode)
 		}
@@ -741,4 +764,50 @@ func (p *Planner) removeRLSPolicies(result []ast.Node, diff *types.SchemaDiff) [
 		result = append(result, dropPolicyNode)
 	}
 	return result
+}
+
+// parseForeignKeyReference parses a foreign key reference string into an ast.ForeignKeyRef.
+//
+// The foreign key reference string should be in the format "table(column)" or just "table"
+// (which defaults to referencing the "id" column).
+//
+// Examples:
+//   - "users(id)" -> references users.id
+//   - "users" -> references users.id (default)
+//   - "categories(slug)" -> references categories.slug
+//
+// Returns nil if the reference string is malformed.
+func parseForeignKeyReference(foreign string) *ast.ForeignKeyRef {
+	if foreign == "" {
+		return nil
+	}
+
+	// Check if it contains parentheses for column specification
+	if strings.Contains(foreign, "(") && strings.Contains(foreign, ")") {
+		// Parse "table(column)" format
+		parts := strings.Split(foreign, "(")
+		if len(parts) != 2 {
+			return nil
+		}
+
+		table := strings.TrimSpace(parts[0])
+		columnPart := strings.TrimSpace(parts[1])
+
+		// Remove closing parenthesis
+		if !strings.HasSuffix(columnPart, ")") {
+			return nil
+		}
+		column := strings.TrimSuffix(columnPart, ")")
+
+		return &ast.ForeignKeyRef{
+			Table:  table,
+			Column: column,
+		}
+	}
+
+	// Default to "id" column if no column specified
+	return &ast.ForeignKeyRef{
+		Table:  strings.TrimSpace(foreign),
+		Column: "id",
+	}
 }
