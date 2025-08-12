@@ -1057,8 +1057,16 @@ func getUniqueStructNames(embeddedFields []goschema.EmbeddedField) []string {
 	return structNames
 }
 
-func processEmbeddedInlineMode(generatedFields []goschema.Field, embedded goschema.EmbeddedField, allFields []goschema.Field, structName string) []goschema.Field {
+func processEmbeddedInlineMode(generatedFields []goschema.Field, embedded goschema.EmbeddedField, allFields []goschema.Field, allEmbeddedFields []goschema.EmbeddedField, structName string) []goschema.Field {
 	// INLINE MODE: Expand embedded struct fields as individual table columns
+	generatedFields = processEmbeddedInlineModeRecursive(generatedFields, embedded, allFields, allEmbeddedFields, structName)
+	return generatedFields
+}
+
+// processEmbeddedInlineModeRecursive recursively processes embedded fields in inline mode.
+// This handles nested embedded structs by recursively expanding embedded fields within embedded types.
+func processEmbeddedInlineModeRecursive(generatedFields []goschema.Field, embedded goschema.EmbeddedField, allFields []goschema.Field, allEmbeddedFields []goschema.EmbeddedField, structName string) []goschema.Field {
+	// Step 1: Add direct fields from the embedded type
 	for _, field := range allFields {
 		if field.StructName != embedded.EmbeddedTypeName {
 			continue
@@ -1073,6 +1081,32 @@ func processEmbeddedInlineMode(generatedFields []goschema.Field, embedded gosche
 		}
 
 		generatedFields = append(generatedFields, newField)
+	}
+
+	// Step 2: Recursively process embedded fields within the embedded type
+	for _, nestedEmbedded := range allEmbeddedFields {
+		if nestedEmbedded.StructName != embedded.EmbeddedTypeName {
+			continue
+		}
+
+		// Only process inline mode embedded fields recursively
+		if nestedEmbedded.Mode == "inline" {
+			// Create a new embedded field with the target struct name and combined prefix
+			recursiveEmbedded := nestedEmbedded
+			recursiveEmbedded.StructName = structName
+
+			// Combine prefixes: if the parent has a prefix, prepend it to the nested prefix
+			if embedded.Prefix != "" {
+				if recursiveEmbedded.Prefix != "" {
+					recursiveEmbedded.Prefix = embedded.Prefix + recursiveEmbedded.Prefix
+				} else {
+					recursiveEmbedded.Prefix = embedded.Prefix
+				}
+			}
+
+			// Recursively process the nested embedded field
+			generatedFields = processEmbeddedInlineModeRecursive(generatedFields, recursiveEmbedded, allFields, allEmbeddedFields, structName)
+		}
 	}
 
 	return generatedFields
@@ -1167,7 +1201,7 @@ func processEmbeddedFieldsForStruct(embeddedFields []goschema.EmbeddedField, all
 		switch embedded.Mode {
 		case "inline":
 			// INLINE MODE: Expand embedded struct fields as individual table columns
-			generatedFields = processEmbeddedInlineMode(generatedFields, embedded, allFields, structName)
+			generatedFields = processEmbeddedInlineMode(generatedFields, embedded, allFields, embeddedFields, structName)
 		case "json":
 			// JSON MODE: Serialize embedded struct into a single JSON/JSONB column
 			generatedFields = processEmbeddedJSONMode(generatedFields, embedded, structName)
@@ -1180,7 +1214,7 @@ func processEmbeddedFieldsForStruct(embeddedFields []goschema.EmbeddedField, all
 		default:
 			// DEFAULT MODE: Fall back to inline behavior for unrecognized modes
 			slog.Warn("Unrecognized embedding mode for struct - defaulting to inline mode", "mode", embedded.Mode, "struct", structName)
-			generatedFields = processEmbeddedInlineMode(generatedFields, embedded, allFields, structName)
+			generatedFields = processEmbeddedInlineMode(generatedFields, embedded, allFields, embeddedFields, structName)
 		}
 	}
 
