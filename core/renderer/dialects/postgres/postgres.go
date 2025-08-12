@@ -288,6 +288,14 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 			// Remove the leading spaces from column rendering for ALTER
 			line = strings.TrimPrefix(line, "  ")
 			r.w.WriteLinef("ALTER TABLE %s ADD COLUMN %s;", node.Name, line)
+		case *ast.AddConstraintOperation:
+			constraintLine, err := r.renderConstraint(op.Constraint)
+			if err != nil {
+				return fmt.Errorf("error rendering add constraint: %w", err)
+			}
+			// Remove the leading spaces from constraint rendering for ALTER
+			constraintLine = strings.TrimPrefix(constraintLine, "  ")
+			r.w.WriteLinef("ALTER TABLE %s ADD %s;", node.Name, constraintLine)
 		case *ast.DropColumnOperation:
 			dropSQL := fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", node.Name, op.ColumnName)
 			if op.Cascade {

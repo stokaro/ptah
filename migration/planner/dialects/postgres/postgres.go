@@ -143,10 +143,33 @@ func (p *Planner) addNewTableColumns(result []ast.Node, tableDiff types.TableDif
 
 		if targetField != nil {
 			columnNode := fromschema.FromField(*targetField, generated.Enums, "postgres")
-			// Generate ADD COLUMN statement using AST
+
+			// Create operations list starting with ADD COLUMN
+			operations := []ast.AlterOperation{&ast.AddColumnOperation{Column: columnNode}}
+
+			// If the column has a foreign key, add a separate ADD CONSTRAINT operation
+			if targetField.Foreign != "" && targetField.ForeignKeyName != "" {
+				// Parse the foreign key reference
+				fkRef := fromschema.ParseForeignKeyReference(targetField.Foreign)
+				if fkRef != nil {
+					fkRef.Name = targetField.ForeignKeyName
+
+					// Create foreign key constraint
+					fkConstraint := ast.NewForeignKeyConstraint(
+						targetField.ForeignKeyName,
+						[]string{targetField.Name},
+						fkRef,
+					)
+
+					// Add the constraint operation
+					operations = append(operations, &ast.AddConstraintOperation{Constraint: fkConstraint})
+				}
+			}
+
+			// Generate ALTER TABLE statement with all operations
 			alterNode := &ast.AlterTableNode{
 				Name:       tableDiff.TableName,
-				Operations: []ast.AlterOperation{&ast.AddColumnOperation{Column: columnNode}},
+				Operations: operations,
 			}
 			result = append(result, alterNode)
 		}
