@@ -96,8 +96,9 @@ func TestAlterOperations_ImplementInterface(t *testing.T) {
 	ops = append(ops, &ast.AddColumnOperation{Column: ast.NewColumn("test", "INTEGER")})
 	ops = append(ops, &ast.DropColumnOperation{ColumnName: "test"})
 	ops = append(ops, &ast.ModifyColumnOperation{Column: ast.NewColumn("test", "INTEGER")})
+	ops = append(ops, &ast.AddConstraintOperation{Constraint: ast.NewUniqueConstraint("uk_test", "test")})
 
-	c.Assert(ops, qt.HasLen, 3)
+	c.Assert(ops, qt.HasLen, 4)
 
 	// Test that they all implement the Node interface as well (since AlterOperation embeds Node)
 	for _, op := range ops {
@@ -116,14 +117,41 @@ func TestAlterOperations_InterfaceCompliance(t *testing.T) {
 	var _ ast.AlterOperation = &ast.AddColumnOperation{}
 	var _ ast.AlterOperation = &ast.DropColumnOperation{}
 	var _ ast.AlterOperation = &ast.ModifyColumnOperation{}
+	var _ ast.AlterOperation = &ast.AddConstraintOperation{}
 
 	// Test that they also implement Node interface
 	var _ ast.Node = &ast.AddColumnOperation{}
 	var _ ast.Node = &ast.DropColumnOperation{}
 	var _ ast.Node = &ast.ModifyColumnOperation{}
+	var _ ast.Node = &ast.AddConstraintOperation{}
 
 	// If we get here, all interfaces are implemented correctly
 	c.Assert(true, qt.IsTrue)
+}
+
+// Test AddConstraintOperation with foreign key constraint
+func TestAddConstraintOperation_ForeignKey(t *testing.T) {
+	c := qt.New(t)
+
+	visitor := &mocks.MockVisitor{}
+	fkRef := &ast.ForeignKeyRef{
+		Table:  "users",
+		Column: "id",
+		Name:   "fk_posts_user",
+	}
+	constraint := ast.NewForeignKeyConstraint("fk_posts_user", []string{"user_id"}, fkRef)
+	op := &ast.AddConstraintOperation{Constraint: constraint}
+
+	err := op.Accept(visitor)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"Constraint:fk_posts_user"})
+
+	// Verify the constraint properties are preserved
+	c.Assert(op.Constraint.Name, qt.Equals, "fk_posts_user")
+	c.Assert(op.Constraint.Type, qt.Equals, ast.ForeignKeyConstraint)
+	c.Assert(op.Constraint.Columns, qt.DeepEquals, []string{"user_id"})
+	c.Assert(op.Constraint.Reference, qt.Equals, fkRef)
 }
 
 // Test AddColumnOperation with complex column
