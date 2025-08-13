@@ -4,7 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/frankban/quicktest"
+	qt "github.com/frankban/quicktest"
+
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/migration/planner/dialects/postgres"
@@ -14,7 +15,7 @@ import (
 // TestTwoPhaseTableCreationWithSelfReference tests that the PostgreSQL planner
 // generates separate CREATE TABLE and ALTER TABLE statements for self-referencing foreign keys
 func TestTwoPhaseTableCreationWithSelfReference(t *testing.T) {
-	c := quicktest.New(t)
+	c := qt.New(t)
 
 	// Create a schema with self-referencing foreign key (like the issue #51 scenario)
 	generated := &goschema.Database{
@@ -51,34 +52,34 @@ func TestTwoPhaseTableCreationWithSelfReference(t *testing.T) {
 	var sqlStatements []string
 	for _, node := range nodes {
 		sql, err := r.Render(node)
-		c.Assert(err, quicktest.IsNil)
+		c.Assert(err, qt.IsNil)
 		sqlStatements = append(sqlStatements, sql)
 	}
 
 	// Verify we have exactly 2 statements: CREATE TABLE and ALTER TABLE
-	c.Assert(sqlStatements, quicktest.HasLen, 2)
+	c.Assert(sqlStatements, qt.HasLen, 2)
 
 	// First statement should be CREATE TABLE without foreign key constraint
 	createTableSQL := sqlStatements[0]
-	c.Assert(createTableSQL, quicktest.Contains, "CREATE TABLE users")
-	c.Assert(createTableSQL, quicktest.Contains, "id TEXT")
-	c.Assert(createTableSQL, quicktest.Contains, "parent_id TEXT")
-	c.Assert(createTableSQL, quicktest.Contains, "email TEXT")
+	c.Assert(createTableSQL, qt.Contains, "CREATE TABLE users")
+	c.Assert(createTableSQL, qt.Contains, "id TEXT")
+	c.Assert(createTableSQL, qt.Contains, "parent_id TEXT")
+	c.Assert(createTableSQL, qt.Contains, "email TEXT")
 	// Should NOT contain foreign key constraint in CREATE TABLE
-	c.Assert(createTableSQL, quicktest.Not(quicktest.Contains), "FOREIGN KEY")
-	c.Assert(createTableSQL, quicktest.Not(quicktest.Contains), "REFERENCES")
+	c.Assert(createTableSQL, qt.Not(qt.Contains), "FOREIGN KEY")
+	c.Assert(createTableSQL, qt.Not(qt.Contains), "REFERENCES")
 
 	// Second statement should be ALTER TABLE ADD CONSTRAINT for the self-referencing FK
 	alterTableSQL := sqlStatements[1]
-	c.Assert(alterTableSQL, quicktest.Contains, "ALTER TABLE users")
-	c.Assert(alterTableSQL, quicktest.Contains, "ADD CONSTRAINT fk_users_parent")
-	c.Assert(alterTableSQL, quicktest.Contains, "FOREIGN KEY (parent_id)")
-	c.Assert(alterTableSQL, quicktest.Contains, "REFERENCES users(id)")
+	c.Assert(alterTableSQL, qt.Contains, "ALTER TABLE users")
+	c.Assert(alterTableSQL, qt.Contains, "ADD CONSTRAINT fk_users_parent")
+	c.Assert(alterTableSQL, qt.Contains, "FOREIGN KEY (parent_id)")
+	c.Assert(alterTableSQL, qt.Contains, "REFERENCES users(id)")
 }
 
 // TestComplexDependencyChainTwoPhase tests the complex scenario from issue #51
 func TestComplexDependencyChainTwoPhase(t *testing.T) {
-	c := quicktest.New(t)
+	c := qt.New(t)
 
 	// Recreate the scenario from issue #51
 	generated := &goschema.Database{
@@ -137,7 +138,7 @@ func TestComplexDependencyChainTwoPhase(t *testing.T) {
 	var sqlStatements []string
 	for _, node := range nodes {
 		sql, err := r.Render(node)
-		c.Assert(err, quicktest.IsNil)
+		c.Assert(err, qt.IsNil)
 		sqlStatements = append(sqlStatements, sql)
 	}
 
@@ -154,14 +155,14 @@ func TestComplexDependencyChainTwoPhase(t *testing.T) {
 		}
 	}
 
-	c.Assert(createTableCount, quicktest.Equals, 4) // 4 tables
-	c.Assert(alterTableCount, quicktest.Equals, 7)  // 7 foreign key constraints total
+	c.Assert(createTableCount, qt.Equals, 4) // 4 tables
+	c.Assert(alterTableCount, qt.Equals, 7)  // 7 foreign key constraints total
 
 	// Verify that CREATE TABLE statements don't contain foreign key constraints
 	for _, sql := range sqlStatements {
 		if strings.Contains(sql, "CREATE TABLE") {
-			c.Assert(sql, quicktest.Not(quicktest.Contains), "FOREIGN KEY")
-			c.Assert(sql, quicktest.Not(quicktest.Contains), "REFERENCES")
+			c.Assert(sql, qt.Not(qt.Contains), "FOREIGN KEY")
+			c.Assert(sql, qt.Not(qt.Contains), "REFERENCES")
 		}
 	}
 
@@ -179,13 +180,13 @@ func TestComplexDependencyChainTwoPhase(t *testing.T) {
 				break
 			}
 		}
-		c.Assert(found, quicktest.IsTrue, quicktest.Commentf("Foreign key constraint %s not found in ALTER TABLE statements", fkName))
+		c.Assert(found, qt.IsTrue, qt.Commentf("Foreign key constraint %s not found in ALTER TABLE statements", fkName))
 	}
 }
 
 // TestNoForeignKeysInCreateTable tests that CREATE TABLE statements never contain foreign key constraints
 func TestNoForeignKeysInCreateTable(t *testing.T) {
-	c := quicktest.New(t)
+	c := qt.New(t)
 
 	// Create a simple schema with regular foreign keys
 	generated := &goschema.Database{
@@ -217,15 +218,15 @@ func TestNoForeignKeysInCreateTable(t *testing.T) {
 	var sqlStatements []string
 	for _, node := range nodes {
 		sql, err := r.Render(node)
-		c.Assert(err, quicktest.IsNil)
+		c.Assert(err, qt.IsNil)
 		sqlStatements = append(sqlStatements, sql)
 	}
 
 	// Verify that CREATE TABLE statements don't contain foreign key constraints
 	for _, sql := range sqlStatements {
 		if strings.Contains(sql, "CREATE TABLE") {
-			c.Assert(sql, quicktest.Not(quicktest.Contains), "FOREIGN KEY")
-			c.Assert(sql, quicktest.Not(quicktest.Contains), "REFERENCES")
+			c.Assert(sql, qt.Not(qt.Contains), "FOREIGN KEY")
+			c.Assert(sql, qt.Not(qt.Contains), "REFERENCES")
 		}
 	}
 
@@ -237,5 +238,5 @@ func TestNoForeignKeysInCreateTable(t *testing.T) {
 			break
 		}
 	}
-	c.Assert(found, quicktest.IsTrue, quicktest.Commentf("Foreign key constraint fk_posts_user not found in ALTER TABLE statements"))
+	c.Assert(found, qt.IsTrue, qt.Commentf("Foreign key constraint fk_posts_user not found in ALTER TABLE statements"))
 }

@@ -4,7 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/frankban/quicktest"
+	qt "github.com/frankban/quicktest"
+
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/migration/planner/dialects/postgres"
@@ -15,7 +16,7 @@ import (
 // This test verifies that the circular dependency issue has been fixed and that
 // migrations are generated correctly for complex dependency chains with self-referencing foreign keys
 func TestIssue51ExactReproduction(t *testing.T) {
-	c := quicktest.New(t)
+	c := qt.New(t)
 
 	// Recreate the exact scenario from issue #51
 	// This represents the TenantAwareEntityID embedded struct pattern
@@ -59,17 +60,17 @@ func TestIssue51ExactReproduction(t *testing.T) {
 	buildDependencyGraphIssue51(db)
 
 	// Verify that self-referencing FK is tracked separately
-	c.Assert(db.SelfReferencingForeignKeys["users"], quicktest.HasLen, 1)
+	c.Assert(db.SelfReferencingForeignKeys["users"], qt.HasLen, 1)
 	selfRefFK := db.SelfReferencingForeignKeys["users"][0]
-	c.Assert(selfRefFK.FieldName, quicktest.Equals, "user_id")
-	c.Assert(selfRefFK.Foreign, quicktest.Equals, "users(id)")
-	c.Assert(selfRefFK.ForeignKeyName, quicktest.Equals, "fk_entity_user")
+	c.Assert(selfRefFK.FieldName, qt.Equals, "user_id")
+	c.Assert(selfRefFK.Foreign, qt.Equals, "users(id)")
+	c.Assert(selfRefFK.ForeignKeyName, qt.Equals, "fk_entity_user")
 
 	// Verify regular dependencies (without self-references)
-	c.Assert(db.Dependencies["tenants"], quicktest.HasLen, 0)
-	c.Assert(db.Dependencies["users"], quicktest.DeepEquals, []string{"tenants"})
-	c.Assert(db.Dependencies["locations"], quicktest.DeepEquals, []string{"tenants", "users"})
-	c.Assert(db.Dependencies["areas"], quicktest.DeepEquals, []string{"tenants", "users", "locations"})
+	c.Assert(db.Dependencies["tenants"], qt.HasLen, 0)
+	c.Assert(db.Dependencies["users"], qt.DeepEquals, []string{"tenants"})
+	c.Assert(db.Dependencies["locations"], qt.DeepEquals, []string{"tenants", "users"})
+	c.Assert(db.Dependencies["areas"], qt.DeepEquals, []string{"tenants", "users", "locations"})
 
 	// Sort tables by dependencies - this should work without circular dependency warnings
 	sortTablesByDependenciesIssue51(db)
@@ -80,7 +81,7 @@ func TestIssue51ExactReproduction(t *testing.T) {
 	for i, table := range db.Tables {
 		actualOrder[i] = table.Name
 	}
-	c.Assert(actualOrder, quicktest.DeepEquals, expectedOrder)
+	c.Assert(actualOrder, qt.DeepEquals, expectedOrder)
 
 	// Now test the migration generation
 	diff := &types.SchemaDiff{
@@ -96,13 +97,13 @@ func TestIssue51ExactReproduction(t *testing.T) {
 	var sqlStatements []string
 	for _, node := range nodes {
 		sql, err := r.Render(node)
-		c.Assert(err, quicktest.IsNil)
+		c.Assert(err, qt.IsNil)
 		sqlStatements = append(sqlStatements, sql)
 	}
 
 	// Verify we have the correct number of statements:
 	// 4 CREATE TABLE + 7 ALTER TABLE (6 regular FKs + 1 self-referencing FK)
-	c.Assert(sqlStatements, quicktest.HasLen, 11)
+	c.Assert(sqlStatements, qt.HasLen, 11)
 
 	// Verify CREATE TABLE statements don't contain foreign key constraints
 	createTableCount := 0
@@ -111,16 +112,16 @@ func TestIssue51ExactReproduction(t *testing.T) {
 		if strings.Contains(sql, "CREATE TABLE") {
 			createTableCount++
 			// Verify no foreign key constraints in CREATE TABLE
-			c.Assert(sql, quicktest.Not(quicktest.Contains), "FOREIGN KEY")
-			c.Assert(sql, quicktest.Not(quicktest.Contains), "REFERENCES")
+			c.Assert(sql, qt.Not(qt.Contains), "FOREIGN KEY")
+			c.Assert(sql, qt.Not(qt.Contains), "REFERENCES")
 		}
 		if strings.Contains(sql, "ALTER TABLE") && strings.Contains(sql, "ADD CONSTRAINT") {
 			alterTableCount++
 		}
 	}
 
-	c.Assert(createTableCount, quicktest.Equals, 4) // 4 tables
-	c.Assert(alterTableCount, quicktest.Equals, 7)  // 7 foreign key constraints
+	c.Assert(createTableCount, qt.Equals, 4) // 4 tables
+	c.Assert(alterTableCount, qt.Equals, 7)  // 7 foreign key constraints
 
 	// Verify that all expected foreign key constraints are present
 	expectedConstraints := []string{
@@ -141,7 +142,7 @@ func TestIssue51ExactReproduction(t *testing.T) {
 				break
 			}
 		}
-		c.Assert(found, quicktest.IsTrue, quicktest.Commentf("Foreign key constraint %s not found", constraint))
+		c.Assert(found, qt.IsTrue, qt.Commentf("Foreign key constraint %s not found", constraint))
 	}
 
 	// Verify that the self-referencing constraint is handled correctly
@@ -154,7 +155,7 @@ func TestIssue51ExactReproduction(t *testing.T) {
 			break
 		}
 	}
-	c.Assert(selfRefConstraintFound, quicktest.IsTrue, quicktest.Commentf("Self-referencing constraint not found"))
+	c.Assert(selfRefConstraintFound, qt.IsTrue, qt.Commentf("Self-referencing constraint not found"))
 
 	// Verify table creation order in the SQL statements
 	tableCreationOrder := []string{}
@@ -168,7 +169,7 @@ func TestIssue51ExactReproduction(t *testing.T) {
 			}
 		}
 	}
-	c.Assert(tableCreationOrder, quicktest.DeepEquals, expectedOrder)
+	c.Assert(tableCreationOrder, qt.DeepEquals, expectedOrder)
 }
 
 // Helper functions for the test (simplified versions of the actual implementation)

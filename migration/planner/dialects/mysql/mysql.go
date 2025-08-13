@@ -72,26 +72,38 @@ func (p *Planner) handleEnumModifications(result []ast.Node, diff *types.SchemaD
 }
 
 func (p *Planner) addNewTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	// Use the already processed fields from walker.go (embedded fields are now processed earlier)
-	allFields := generated.Fields
-
-	// Create a set of tables to add for quick lookup
-	tablesToAdd := make(map[string]bool)
-	for _, tableName := range diff.TablesAdded {
-		tablesToAdd[tableName] = true
-	}
+	tablesToAdd := createTableLookupMap(diff.TablesAdded)
 
 	// Phase 1: Create tables without foreign key constraints
-	// This avoids circular dependency issues, especially with self-referencing foreign keys
+	result = p.createTablesWithoutForeignKeys(result, generated, tablesToAdd)
+
+	// Phase 2: Add foreign key constraints via ALTER TABLE statements
+	result = p.addForeignKeyConstraints(result, generated, tablesToAdd)
+
+	return result
+}
+
+// createTableLookupMap creates a map for quick table lookup
+func createTableLookupMap(tableNames []string) map[string]bool {
+	tablesToAdd := make(map[string]bool)
+	for _, tableName := range tableNames {
+		tablesToAdd[tableName] = true
+	}
+	return tablesToAdd
+}
+
+// createTablesWithoutForeignKeys creates all tables without foreign key constraints
+func (p *Planner) createTablesWithoutForeignKeys(result []ast.Node, generated *goschema.Database, tablesToAdd map[string]bool) []ast.Node {
+	allFields := generated.Fields
+
 	for _, table := range generated.Tables {
 		if !tablesToAdd[table.Name] {
-			continue // Skip tables that are not being added
+			continue
 		}
 
 		astNode := ast.NewCreateTable(table.Name)
 		for _, field := range allFields {
 			if field.StructName == table.StructName {
-				// Use FromFieldWithoutForeignKeys to exclude foreign key constraints
 				columnNode := fromschema.FromFieldWithoutForeignKeys(field, generated.Enums, "mysql")
 				astNode.AddColumn(columnNode)
 			}
@@ -99,66 +111,70 @@ func (p *Planner) addNewTables(result []ast.Node, diff *types.SchemaDiff, genera
 		result = append(result, astNode)
 	}
 
-	// Phase 2: Add foreign key constraints via ALTER TABLE statements
-	// This ensures all tables exist before any foreign key constraints are created
+	return result
+}
+
+// addForeignKeyConstraints adds foreign key constraints via ALTER TABLE statements
+func (p *Planner) addForeignKeyConstraints(result []ast.Node, generated *goschema.Database, tablesToAdd map[string]bool) []ast.Node {
 	for _, table := range generated.Tables {
 		if !tablesToAdd[table.Name] {
-			continue // Skip tables that are not being added
+			continue
 		}
 
-		// Add regular foreign key constraints (excluding self-referencing ones)
-		for _, field := range allFields {
-			if field.StructName == table.StructName && field.Foreign != "" && field.ForeignKeyName != "" {
-				// Parse the foreign key reference to check if it's self-referencing
-				fkRef := fromschema.ParseForeignKeyReference(field.Foreign)
-				if fkRef != nil && fkRef.Table != table.Name {
-					// Only add non-self-referencing foreign keys here
-					fkRef.Name = field.ForeignKeyName
+		result = p.addRegularForeignKeys(result, generated, table)
+		result = p.addSelfReferencingForeignKeys(result, generated, table)
+	}
 
-					// Create foreign key constraint
-					fkConstraint := ast.NewForeignKeyConstraint(
-						field.ForeignKeyName,
-						[]string{field.Name},
-						fkRef,
-					)
+	return result
+}
 
-					// Create ALTER TABLE statement with ADD CONSTRAINT operation
-					alterNode := &ast.AlterTableNode{
-						Name:       table.Name,
-						Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: fkConstraint}},
-					}
-					result = append(result, alterNode)
-				}
-			}
+// addRegularForeignKeys adds regular (non-self-referencing) foreign key constraints
+func (p *Planner) addRegularForeignKeys(result []ast.Node, generated *goschema.Database, table goschema.Table) []ast.Node {
+	for _, field := range generated.Fields {
+		if !isRegularForeignKeyField(field, table) {
+			continue
 		}
 
-		// Add self-referencing foreign key constraints (if any)
-		if selfRefFKs, exists := generated.SelfReferencingForeignKeys[table.Name]; exists {
-			for _, selfRefFK := range selfRefFKs {
-				// Parse the foreign key reference
-				fkRef := fromschema.ParseForeignKeyReference(selfRefFK.Foreign)
-				if fkRef != nil {
-					fkRef.Name = selfRefFK.ForeignKeyName
+		fkRef := fromschema.ParseForeignKeyReference(field.Foreign)
+		if fkRef != nil && fkRef.Table != table.Name {
+			result = append(result, p.createForeignKeyAlterStatement(table.Name, field.ForeignKeyName, []string{field.Name}, fkRef))
+		}
+	}
+	return result
+}
 
-					// Create foreign key constraint
-					fkConstraint := ast.NewForeignKeyConstraint(
-						selfRefFK.ForeignKeyName,
-						[]string{selfRefFK.FieldName},
-						fkRef,
-					)
+// addSelfReferencingForeignKeys adds self-referencing foreign key constraints
+func (p *Planner) addSelfReferencingForeignKeys(result []ast.Node, generated *goschema.Database, table goschema.Table) []ast.Node {
+	selfRefFKs, exists := generated.SelfReferencingForeignKeys[table.Name]
+	if !exists {
+		return result
+	}
 
-					// Create ALTER TABLE statement with ADD CONSTRAINT operation
-					alterNode := &ast.AlterTableNode{
-						Name:       table.Name,
-						Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: fkConstraint}},
-					}
-					result = append(result, alterNode)
-				}
-			}
+	for _, selfRefFK := range selfRefFKs {
+		fkRef := fromschema.ParseForeignKeyReference(selfRefFK.Foreign)
+		if fkRef != nil {
+			fkRef.Name = selfRefFK.ForeignKeyName
+			result = append(result, p.createForeignKeyAlterStatement(table.Name, selfRefFK.ForeignKeyName, []string{selfRefFK.FieldName}, fkRef))
 		}
 	}
 
 	return result
+}
+
+// isRegularForeignKeyField checks if a field is a regular foreign key field for the given table
+func isRegularForeignKeyField(field goschema.Field, table goschema.Table) bool {
+	return field.StructName == table.StructName && field.Foreign != "" && field.ForeignKeyName != ""
+}
+
+// createForeignKeyAlterStatement creates an ALTER TABLE statement for adding a foreign key constraint
+func (p *Planner) createForeignKeyAlterStatement(tableName, constraintName string, columns []string, fkRef *ast.ForeignKeyRef) *ast.AlterTableNode {
+	fkRef.Name = constraintName
+	fkConstraint := ast.NewForeignKeyConstraint(constraintName, columns, fkRef)
+
+	return &ast.AlterTableNode{
+		Name:       tableName,
+		Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: fkConstraint}},
+	}
 }
 
 func (p *Planner) addNewTableColumns(result []ast.Node, tableDiff *types.TableDiff, generated *goschema.Database) []ast.Node {

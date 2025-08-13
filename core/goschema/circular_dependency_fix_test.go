@@ -5,14 +5,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/frankban/quicktest"
+	qt "github.com/frankban/quicktest"
+
 	"github.com/stokaro/ptah/core/goschema"
 )
 
 // TestSelfReferencingForeignKeyDetection tests that self-referencing foreign keys
 // are properly detected and tracked separately from regular dependencies
 func TestSelfReferencingForeignKeyDetection(t *testing.T) {
-	c := quicktest.New(t)
+	c := qt.New(t)
 
 	// Create a database with a self-referencing table
 	db := &goschema.Database{
@@ -46,22 +47,22 @@ func TestSelfReferencingForeignKeyDetection(t *testing.T) {
 	buildDependencyGraphTest(db)
 
 	// Verify that self-referencing FK is tracked separately
-	c.Assert(db.SelfReferencingForeignKeys, quicktest.HasLen, 1)
-	c.Assert(db.SelfReferencingForeignKeys["users"], quicktest.HasLen, 1)
+	c.Assert(db.SelfReferencingForeignKeys, qt.HasLen, 1)
+	c.Assert(db.SelfReferencingForeignKeys["users"], qt.HasLen, 1)
 
 	selfRefFK := db.SelfReferencingForeignKeys["users"][0]
-	c.Assert(selfRefFK.FieldName, quicktest.Equals, "parent_id")
-	c.Assert(selfRefFK.Foreign, quicktest.Equals, "users(id)")
-	c.Assert(selfRefFK.ForeignKeyName, quicktest.Equals, "fk_users_parent")
+	c.Assert(selfRefFK.FieldName, qt.Equals, "parent_id")
+	c.Assert(selfRefFK.Foreign, qt.Equals, "users(id)")
+	c.Assert(selfRefFK.ForeignKeyName, qt.Equals, "fk_users_parent")
 
 	// Verify that no circular dependency is created in regular dependencies
-	c.Assert(db.Dependencies["users"], quicktest.HasLen, 0)
+	c.Assert(db.Dependencies["users"], qt.HasLen, 0)
 }
 
 // TestComplexDependencyChainWithSelfReference tests the scenario from issue #51
 // where we have a complex dependency chain with self-referencing foreign keys
 func TestComplexDependencyChainWithSelfReference(t *testing.T) {
-	c := quicktest.New(t)
+	c := qt.New(t)
 
 	// Recreate the scenario from issue #51
 	db := &goschema.Database{
@@ -103,16 +104,16 @@ func TestComplexDependencyChainWithSelfReference(t *testing.T) {
 	buildDependencyGraphTest(db)
 
 	// Verify self-referencing FK is tracked separately
-	c.Assert(db.SelfReferencingForeignKeys["users"], quicktest.HasLen, 1)
+	c.Assert(db.SelfReferencingForeignKeys["users"], qt.HasLen, 1)
 	selfRefFK := db.SelfReferencingForeignKeys["users"][0]
-	c.Assert(selfRefFK.FieldName, quicktest.Equals, "user_id")
-	c.Assert(selfRefFK.Foreign, quicktest.Equals, "users(id)")
+	c.Assert(selfRefFK.FieldName, qt.Equals, "user_id")
+	c.Assert(selfRefFK.Foreign, qt.Equals, "users(id)")
 
 	// Verify regular dependencies (without self-references)
-	c.Assert(db.Dependencies["tenants"], quicktest.HasLen, 0)
-	c.Assert(db.Dependencies["users"], quicktest.DeepEquals, []string{"tenants"})
-	c.Assert(db.Dependencies["locations"], quicktest.DeepEquals, []string{"tenants", "users"})
-	c.Assert(db.Dependencies["areas"], quicktest.DeepEquals, []string{"tenants", "users", "locations"})
+	c.Assert(db.Dependencies["tenants"], qt.HasLen, 0)
+	c.Assert(db.Dependencies["users"], qt.DeepEquals, []string{"tenants"})
+	c.Assert(db.Dependencies["locations"], qt.DeepEquals, []string{"tenants", "users"})
+	c.Assert(db.Dependencies["areas"], qt.DeepEquals, []string{"tenants", "users", "locations"})
 
 	// Sort tables by dependencies
 	sortTablesByDependenciesTest(db)
@@ -123,12 +124,12 @@ func TestComplexDependencyChainWithSelfReference(t *testing.T) {
 	for i, table := range db.Tables {
 		actualOrder[i] = table.Name
 	}
-	c.Assert(actualOrder, quicktest.DeepEquals, expectedOrder)
+	c.Assert(actualOrder, qt.DeepEquals, expectedOrder)
 }
 
 // TestEmbeddedFieldSelfReference tests self-referencing foreign keys from embedded fields
 func TestEmbeddedFieldSelfReference(t *testing.T) {
-	c := quicktest.New(t)
+	c := qt.New(t)
 
 	db := &goschema.Database{
 		Tables: []goschema.Table{
@@ -156,19 +157,19 @@ func TestEmbeddedFieldSelfReference(t *testing.T) {
 	buildDependencyGraphTest(db)
 
 	// Verify self-referencing FK from embedded field is tracked
-	c.Assert(db.SelfReferencingForeignKeys["categories"], quicktest.HasLen, 1)
+	c.Assert(db.SelfReferencingForeignKeys["categories"], qt.HasLen, 1)
 	selfRefFK := db.SelfReferencingForeignKeys["categories"][0]
-	c.Assert(selfRefFK.FieldName, quicktest.Equals, "parent_id")
-	c.Assert(selfRefFK.Foreign, quicktest.Equals, "categories(id)")
-	c.Assert(selfRefFK.ForeignKeyName, quicktest.Equals, "fk_categories_parent_id")
+	c.Assert(selfRefFK.FieldName, qt.Equals, "parent_id")
+	c.Assert(selfRefFK.Foreign, qt.Equals, "categories(id)")
+	c.Assert(selfRefFK.ForeignKeyName, qt.Equals, "fk_categories_parent_id")
 
 	// Verify no circular dependency in regular dependencies
-	c.Assert(db.Dependencies["categories"], quicktest.HasLen, 0)
+	c.Assert(db.Dependencies["categories"], qt.HasLen, 0)
 }
 
 // TestMultipleSelfReferencesInSameTable tests a table with multiple self-referencing foreign keys
 func TestMultipleSelfReferencesInSameTable(t *testing.T) {
-	c := quicktest.New(t)
+	c := qt.New(t)
 
 	db := &goschema.Database{
 		Tables: []goschema.Table{
@@ -188,18 +189,18 @@ func TestMultipleSelfReferencesInSameTable(t *testing.T) {
 	buildDependencyGraphTest(db)
 
 	// Verify both self-referencing FKs are tracked
-	c.Assert(db.SelfReferencingForeignKeys["nodes"], quicktest.HasLen, 2)
+	c.Assert(db.SelfReferencingForeignKeys["nodes"], qt.HasLen, 2)
 
 	// Check that both self-references are captured
 	fieldNames := make([]string, 2)
 	for i, selfRefFK := range db.SelfReferencingForeignKeys["nodes"] {
 		fieldNames[i] = selfRefFK.FieldName
 	}
-	c.Assert(fieldNames, quicktest.Contains, "parent_id")
-	c.Assert(fieldNames, quicktest.Contains, "next_sibling_id")
+	c.Assert(fieldNames, qt.Contains, "parent_id")
+	c.Assert(fieldNames, qt.Contains, "next_sibling_id")
 
 	// Verify no circular dependency in regular dependencies
-	c.Assert(db.Dependencies["nodes"], quicktest.HasLen, 0)
+	c.Assert(db.Dependencies["nodes"], qt.HasLen, 0)
 }
 
 // Helper functions (copied from utils.go for testing)
