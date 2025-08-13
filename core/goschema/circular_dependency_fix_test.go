@@ -24,10 +24,10 @@ func TestSelfReferencingForeignKeyDetection(t *testing.T) {
 		},
 		Fields: []goschema.Field{
 			{
-				StructName:     "User",
-				Name:           "id",
-				Type:           "TEXT",
-				Primary:        true,
+				StructName: "User",
+				Name:       "id",
+				Type:       "TEXT",
+				Primary:    true,
 			},
 			{
 				StructName:     "User",
@@ -48,7 +48,7 @@ func TestSelfReferencingForeignKeyDetection(t *testing.T) {
 	// Verify that self-referencing FK is tracked separately
 	c.Assert(db.SelfReferencingForeignKeys, quicktest.HasLen, 1)
 	c.Assert(db.SelfReferencingForeignKeys["users"], quicktest.HasLen, 1)
-	
+
 	selfRefFK := db.SelfReferencingForeignKeys["users"][0]
 	c.Assert(selfRefFK.FieldName, quicktest.Equals, "parent_id")
 	c.Assert(selfRefFK.Foreign, quicktest.Equals, "users(id)")
@@ -189,7 +189,7 @@ func TestMultipleSelfReferencesInSameTable(t *testing.T) {
 
 	// Verify both self-referencing FKs are tracked
 	c.Assert(db.SelfReferencingForeignKeys["nodes"], quicktest.HasLen, 2)
-	
+
 	// Check that both self-references are captured
 	fieldNames := make([]string, 2)
 	for i, selfRefFK := range db.SelfReferencingForeignKeys["nodes"] {
@@ -227,7 +227,7 @@ func buildDependencyGraphTest(r *goschema.Database) {
 			if table.StructName != field.StructName {
 				continue
 			}
-			
+
 			// Check if this is a self-referencing foreign key
 			if table.Name == refTable {
 				// Track self-referencing foreign key for deferred constraint creation
@@ -260,7 +260,7 @@ func buildDependencyGraphTest(r *goschema.Database) {
 			if table.StructName != embedded.StructName {
 				continue
 			}
-			
+
 			// Check if this is a self-referencing foreign key
 			if table.Name == refTable {
 				// Track self-referencing foreign key for deferred constraint creation

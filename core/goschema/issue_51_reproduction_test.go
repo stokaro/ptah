@@ -6,9 +6,9 @@ import (
 
 	"github.com/frankban/quicktest"
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/migration/planner/dialects/postgres"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
-	"github.com/stokaro/ptah/core/renderer"
 )
 
 // TestIssue51ExactReproduction reproduces the exact scenario described in GitHub issue #51
@@ -147,9 +147,9 @@ func TestIssue51ExactReproduction(t *testing.T) {
 	// Verify that the self-referencing constraint is handled correctly
 	selfRefConstraintFound := false
 	for _, sql := range sqlStatements {
-		if strings.Contains(sql, "ALTER TABLE users") && 
-		   strings.Contains(sql, "fk_entity_user") && 
-		   strings.Contains(sql, "REFERENCES users(id)") {
+		if strings.Contains(sql, "ALTER TABLE users") &&
+			strings.Contains(sql, "fk_entity_user") &&
+			strings.Contains(sql, "REFERENCES users(id)") {
 			selfRefConstraintFound = true
 			break
 		}
@@ -196,7 +196,7 @@ func buildDependencyGraphIssue51(r *goschema.Database) {
 			if table.StructName != field.StructName {
 				continue
 			}
-			
+
 			// Check if this is a self-referencing foreign key
 			if table.Name == refTable {
 				// Track self-referencing foreign key for deferred constraint creation
