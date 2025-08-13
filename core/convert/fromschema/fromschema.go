@@ -67,6 +67,12 @@ func escapeSQLStringLiteral(value string) string {
 	return "'" + escaped + "'"
 }
 
+// generateForeignKeyName generates a consistent foreign key constraint name
+// following the convention: fk_{table_name}_{field_name}
+func generateForeignKeyName(tableName, fieldName string) string {
+	return "fk_" + strings.ToLower(tableName) + "_" + strings.ToLower(fieldName)
+}
+
 func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschema.Field {
 	fieldType := field.Type
 	checkConstraint := field.Check
@@ -1242,7 +1248,7 @@ func processEmbeddedRelationMode(generatedFields []goschema.Field, embedded gosc
 	}
 
 	// Generate automatic foreign key constraint name following convention
-	foreignKeyName := "fk_" + strings.ToLower(structName) + "_" + strings.ToLower(embedded.Field)
+	foreignKeyName := generateForeignKeyName(structName, embedded.Field)
 
 	// Create platform-specific overrides for MySQL/MariaDB compatibility
 	// MySQL/MariaDB use INT for SERIAL types, so foreign keys should also use INT

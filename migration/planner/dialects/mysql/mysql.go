@@ -10,6 +10,11 @@ import (
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
+const (
+	// DialectName is the MySQL dialect identifier
+	DialectName = "mysql"
+)
+
 // Planner implements MySQL-specific migration planning functionality.
 //
 // The Planner is responsible for converting schema differences into MySQL-compatible
@@ -104,7 +109,7 @@ func (p *Planner) createTablesWithoutForeignKeys(result []ast.Node, generated *g
 		astNode := ast.NewCreateTable(table.Name)
 		for _, field := range allFields {
 			if field.StructName == table.StructName {
-				columnNode := fromschema.FromFieldWithoutForeignKeys(field, generated.Enums, "mysql")
+				columnNode := fromschema.FromFieldWithoutForeignKeys(field, generated.Enums, DialectName)
 				astNode.AddColumn(columnNode)
 			}
 		}
@@ -153,7 +158,6 @@ func (p *Planner) addSelfReferencingForeignKeys(result []ast.Node, generated *go
 	for _, selfRefFK := range selfRefFKs {
 		fkRef := fromschema.ParseForeignKeyReference(selfRefFK.Foreign)
 		if fkRef != nil {
-			fkRef.Name = selfRefFK.ForeignKeyName
 			result = append(result, p.createForeignKeyAlterStatement(table.Name, selfRefFK.ForeignKeyName, []string{selfRefFK.FieldName}, fkRef))
 		}
 	}

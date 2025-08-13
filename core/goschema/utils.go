@@ -222,7 +222,7 @@ func analyzeEmbeddedFieldRelations(r *Database) {
 		processForeignKeyDependency(r, table.Name, refTable, SelfReferencingFK{
 			FieldName:      embedded.Field,
 			Foreign:        embedded.Ref,
-			ForeignKeyName: "fk_" + strings.ToLower(table.Name) + "_" + strings.ToLower(embedded.Field),
+			ForeignKeyName: generateForeignKeyName(table.Name, embedded.Field),
 		})
 	}
 }
@@ -246,6 +246,12 @@ func processForeignKeyDependency(r *Database, tableName, refTable string, selfRe
 		// Add dependency: table depends on refTable (only for non-self-referencing FKs)
 		r.Dependencies[tableName] = append(r.Dependencies[tableName], refTable)
 	}
+}
+
+// generateForeignKeyName generates a consistent foreign key constraint name
+// following the convention: fk_{table_name}_{field_name}
+func generateForeignKeyName(tableName, fieldName string) string {
+	return "fk_" + strings.ToLower(tableName) + "_" + strings.ToLower(fieldName)
 }
 
 // processEmbeddedFields processes embedded fields and generates corresponding schema fields based on embedding modes.
@@ -448,7 +454,7 @@ func processEmbeddedRelationMode(generatedFields []Field, embedded EmbeddedField
 	}
 
 	// Generate automatic foreign key constraint name following convention
-	foreignKeyName := "fk_" + strings.ToLower(structName) + "_" + strings.ToLower(embedded.Field)
+	foreignKeyName := generateForeignKeyName(structName, embedded.Field)
 
 	// Create platform-specific overrides for MySQL/MariaDB compatibility
 	// MySQL/MariaDB use INT for SERIAL types, so foreign keys should also use INT
