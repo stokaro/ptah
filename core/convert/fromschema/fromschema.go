@@ -67,6 +67,12 @@ func escapeSQLStringLiteral(value string) string {
 	return "'" + escaped + "'"
 }
 
+// generateForeignKeyName generates a consistent foreign key constraint name
+// following the convention: fk_{table_name}_{field_name}
+func generateForeignKeyName(tableName, fieldName string) string {
+	return "fk_" + strings.ToLower(tableName) + "_" + strings.ToLower(fieldName)
+}
+
 func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschema.Field {
 	fieldType := field.Type
 	checkConstraint := field.Check
@@ -74,18 +80,38 @@ func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschem
 	defaultValue := field.Default
 	defaultExpr := field.DefaultExpr
 
-	// Apply platform-specific overrides if available
-	if targetPlatform == "" {
-		return field
+	// Apply built-in platform-specific type conversions for MySQL/MariaDB
+	if targetPlatform == "mysql" || targetPlatform == "mariadb" {
+		switch fieldType {
+		case "SERIAL":
+			fieldType = "INT"
+			// Note: AutoInc flag should already be set for SERIAL fields
+		case "BIGSERIAL":
+			fieldType = "BIGINT"
+			// Note: AutoInc flag should already be set for BIGSERIAL fields
+		}
 	}
 
-	if field.Overrides == nil {
-		return field
+	// Apply platform-specific overrides if available
+	if targetPlatform == "" || field.Overrides == nil {
+		newField := field // Shallow copy to avoid modifying original field
+		newField.Type = fieldType
+		newField.Check = checkConstraint
+		newField.Comment = comment
+		newField.Default = defaultValue
+		newField.DefaultExpr = defaultExpr
+		return newField
 	}
 
 	platformOverrides, exists := field.Overrides[targetPlatform]
 	if !exists {
-		return field
+		newField := field // Shallow copy to avoid modifying original field
+		newField.Type = fieldType
+		newField.Check = checkConstraint
+		newField.Comment = comment
+		newField.Default = defaultValue
+		newField.DefaultExpr = defaultExpr
+		return newField
 	}
 
 	// Override type if specified
@@ -286,6 +312,73 @@ func FromField(field goschema.Field, enums []goschema.Enum, targetPlatform strin
 	if fkRef := ParseForeignKeyReference(field.Foreign); fkRef != nil {
 		column.SetForeignKey(fkRef.Table, fkRef.Column, field.ForeignKeyName)
 	}
+
+	return column
+}
+
+// FromFieldWithoutForeignKeys converts a goschema.Field to an AST ColumnNode without foreign key constraints.
+//
+// This function is identical to FromField but excludes foreign key constraints from the column definition.
+// It's used during two-phase table creation where foreign key constraints are added separately
+// via ALTER TABLE statements to avoid circular dependency issues.
+//
+// Parameters:
+//   - field: The field definition from the parsed Go schema
+//   - enums: Available enum definitions for type validation
+//   - targetPlatform: Target database platform for platform-specific handling
+//
+// Returns:
+//   - *ast.ColumnNode: Column definition without foreign key constraints
+func FromFieldWithoutForeignKeys(field goschema.Field, enums []goschema.Enum, targetPlatform string) *ast.ColumnNode {
+	// Apply platform-specific overrides if available
+	field = applyPlatformOverrides(field, targetPlatform)
+	field = handleEnumTypesForMySQLLike(field, enums, targetPlatform)
+
+	// Create column with basic properties
+	column := ast.NewColumn(field.Name, field.Type)
+
+	// Set nullable (default is true, so only set if false)
+	if !field.Nullable {
+		column.SetNotNull()
+	}
+
+	// Set primary key
+	if field.Primary {
+		column.SetPrimary()
+	}
+
+	// Set unique constraint
+	if field.Unique {
+		column.SetUnique()
+	}
+
+	// Set auto increment
+	if field.AutoInc {
+		column.SetAutoIncrement()
+	}
+
+	// Set default value (using potentially overridden value)
+	if field.Default != "" {
+		column.SetDefault(field.Default)
+	}
+
+	// Set default expression (using potentially overridden value)
+	if field.DefaultExpr != "" {
+		column.SetDefaultExpression(field.DefaultExpr)
+	}
+
+	// Set check constraint (using potentially overridden value)
+	if field.Check != "" {
+		column.SetCheck(field.Check)
+	}
+
+	// Set comment (using potentially overridden value)
+	if field.Comment != "" {
+		column.SetComment(field.Comment)
+	}
+
+	// NOTE: Foreign key constraints are intentionally excluded in this function
+	// They should be added separately via ALTER TABLE statements
 
 	return column
 }
@@ -1155,7 +1248,15 @@ func processEmbeddedRelationMode(generatedFields []goschema.Field, embedded gosc
 	}
 
 	// Generate automatic foreign key constraint name following convention
-	foreignKeyName := "fk_" + strings.ToLower(structName) + "_" + strings.ToLower(embedded.Field)
+	foreignKeyName := generateForeignKeyName(structName, embedded.Field)
+
+	// Create platform-specific overrides for MySQL/MariaDB compatibility
+	// MySQL/MariaDB use INT for SERIAL types, so foreign keys should also use INT
+	overrides := make(map[string]map[string]string)
+	if refType == "INTEGER" {
+		overrides["mysql"] = map[string]string{"type": "INT"}
+		overrides["mariadb"] = map[string]string{"type": "INT"}
+	}
 
 	// Create the foreign key field
 	generatedFields = append(generatedFields, goschema.Field{
@@ -1167,6 +1268,7 @@ func processEmbeddedRelationMode(generatedFields []goschema.Field, embedded gosc
 		Foreign:        embedded.Ref,      // e.g., "users(id)"
 		ForeignKeyName: foreignKeyName,    // e.g., "fk_posts_user_id"
 		Comment:        embedded.Comment,  // Documentation for the relationship
+		Overrides:      overrides,         // Platform-specific type overrides
 	})
 
 	return generatedFields

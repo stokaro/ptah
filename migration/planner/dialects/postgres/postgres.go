@@ -10,6 +10,11 @@ import (
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
+const (
+	// DialectName is the PostgreSQL dialect identifier
+	DialectName = "postgres"
+)
+
 // Planner implements PostgreSQL-specific migration planning functionality.
 //
 // The Planner is responsible for converting schema differences into PostgreSQL-compatible
@@ -90,32 +95,108 @@ func (p *Planner) modifyExistingEnums(result []ast.Node, diff *types.SchemaDiff)
 }
 
 func (p *Planner) addNewTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	// Use the already processed fields from walker.go (embedded fields are now processed earlier)
-	allFields := generated.Fields
+	tablesToAdd := createTableLookupMap(diff.TablesAdded)
 
-	// Create a set of tables to add for quick lookup
+	// Phase 1: Create tables without foreign key constraints
+	result = p.createTablesWithoutForeignKeys(result, generated, tablesToAdd)
+
+	// Phase 2: Add foreign key constraints via ALTER TABLE statements
+	result = p.addForeignKeyConstraints(result, generated, tablesToAdd)
+
+	return result
+}
+
+// createTableLookupMap creates a map for quick table lookup
+func createTableLookupMap(tableNames []string) map[string]bool {
 	tablesToAdd := make(map[string]bool)
-	for _, tableName := range diff.TablesAdded {
+	for _, tableName := range tableNames {
 		tablesToAdd[tableName] = true
 	}
+	return tablesToAdd
+}
 
-	// Iterate through tables in dependency order (generated.Tables is already sorted)
-	// This ensures foreign key constraints are satisfied during table creation
+// createTablesWithoutForeignKeys creates all tables without foreign key constraints
+func (p *Planner) createTablesWithoutForeignKeys(result []ast.Node, generated *goschema.Database, tablesToAdd map[string]bool) []ast.Node {
+	allFields := generated.Fields
+
 	for _, table := range generated.Tables {
 		if !tablesToAdd[table.Name] {
-			continue // Skip tables that are not being added
+			continue
 		}
 
 		astNode := ast.NewCreateTable(table.Name)
 		for _, field := range allFields {
 			if field.StructName == table.StructName {
-				columnNode := fromschema.FromField(field, generated.Enums, "postgres")
+				columnNode := fromschema.FromFieldWithoutForeignKeys(field, generated.Enums, DialectName)
 				astNode.AddColumn(columnNode)
 			}
 		}
 		result = append(result, astNode)
 	}
+
 	return result
+}
+
+// addForeignKeyConstraints adds foreign key constraints via ALTER TABLE statements
+func (p *Planner) addForeignKeyConstraints(result []ast.Node, generated *goschema.Database, tablesToAdd map[string]bool) []ast.Node {
+	for _, table := range generated.Tables {
+		if !tablesToAdd[table.Name] {
+			continue
+		}
+
+		result = p.addRegularForeignKeys(result, generated, table)
+		result = p.addSelfReferencingForeignKeys(result, generated, table)
+	}
+
+	return result
+}
+
+// addRegularForeignKeys adds regular (non-self-referencing) foreign key constraints
+func (p *Planner) addRegularForeignKeys(result []ast.Node, generated *goschema.Database, table goschema.Table) []ast.Node {
+	for _, field := range generated.Fields {
+		if !isRegularForeignKeyField(field, table) {
+			continue
+		}
+
+		fkRef := fromschema.ParseForeignKeyReference(field.Foreign)
+		if fkRef != nil && fkRef.Table != table.Name {
+			result = append(result, p.createForeignKeyAlterStatement(table.Name, field.ForeignKeyName, []string{field.Name}, fkRef))
+		}
+	}
+	return result
+}
+
+// addSelfReferencingForeignKeys adds self-referencing foreign key constraints
+func (p *Planner) addSelfReferencingForeignKeys(result []ast.Node, generated *goschema.Database, table goschema.Table) []ast.Node {
+	selfRefFKs, exists := generated.SelfReferencingForeignKeys[table.Name]
+	if !exists {
+		return result
+	}
+
+	for _, selfRefFK := range selfRefFKs {
+		fkRef := fromschema.ParseForeignKeyReference(selfRefFK.Foreign)
+		if fkRef != nil {
+			result = append(result, p.createForeignKeyAlterStatement(table.Name, selfRefFK.ForeignKeyName, []string{selfRefFK.FieldName}, fkRef))
+		}
+	}
+
+	return result
+}
+
+// isRegularForeignKeyField checks if a field is a regular foreign key field for the given table
+func isRegularForeignKeyField(field goschema.Field, table goschema.Table) bool {
+	return field.StructName == table.StructName && field.Foreign != "" && field.ForeignKeyName != ""
+}
+
+// createForeignKeyAlterStatement creates an ALTER TABLE statement for adding a foreign key constraint
+func (p *Planner) createForeignKeyAlterStatement(tableName, constraintName string, columns []string, fkRef *ast.ForeignKeyRef) *ast.AlterTableNode {
+	fkRef.Name = constraintName
+	fkConstraint := ast.NewForeignKeyConstraint(constraintName, columns, fkRef)
+
+	return &ast.AlterTableNode{
+		Name:       tableName,
+		Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: fkConstraint}},
+	}
 }
 
 func (p *Planner) addNewTableColumns(result []ast.Node, tableDiff types.TableDiff, generated *goschema.Database) []ast.Node {

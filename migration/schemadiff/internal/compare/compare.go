@@ -1474,6 +1474,11 @@ func processEmbeddedFieldsForStruct(embeddedFields []goschema.EmbeddedField, all
 			generatedFields = append(generatedFields, jsonField)
 		case "relation":
 			// RELATION MODE: Create a foreign key field
+			// Create platform-specific overrides for MySQL/MariaDB compatibility
+			overrides := make(map[string]map[string]string)
+			overrides["mysql"] = map[string]string{"type": "INT"}
+			overrides["mariadb"] = map[string]string{"type": "INT"}
+
 			relationField := goschema.Field{
 				StructName: structName,
 				FieldName:  embedded.EmbeddedTypeName + "ID",
@@ -1481,6 +1486,7 @@ func processEmbeddedFieldsForStruct(embeddedFields []goschema.EmbeddedField, all
 				Type:       "INTEGER", // Default to INTEGER for foreign keys
 				Foreign:    embedded.Ref,
 				Comment:    embedded.Comment,
+				Overrides:  overrides, // Platform-specific type overrides
 			}
 			generatedFields = append(generatedFields, relationField)
 		case "skip":
