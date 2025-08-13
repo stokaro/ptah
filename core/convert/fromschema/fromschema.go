@@ -87,36 +87,48 @@ func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschem
 	}
 
 	// Apply platform-specific overrides if available
-	if targetPlatform == "" {
-		return field
+	if targetPlatform == "" || field.Overrides == nil {
+		newField := field // Shallow copy to avoid modifying original field
+		newField.Type = fieldType
+		newField.Check = checkConstraint
+		newField.Comment = comment
+		newField.Default = defaultValue
+		newField.DefaultExpr = defaultExpr
+		return newField
 	}
 
-	if field.Overrides != nil {
-		platformOverrides, exists := field.Overrides[targetPlatform]
-		if exists {
-			// Override type if specified
-			if typeOverride, ok := platformOverrides["type"]; ok {
-				fieldType = typeOverride
-			}
-			// Override check constraint if specified
-			if checkOverride, ok := platformOverrides["check"]; ok {
-				checkConstraint = checkOverride
-			}
-			// Override comment if specified
-			if commentOverride, ok := platformOverrides["comment"]; ok {
-				comment = commentOverride
-			}
-			// Override default value if specified
-			if defaultOverride, ok := platformOverrides["default"]; ok {
-				defaultValue = defaultOverride
-				defaultExpr = "" // Clear expression if literal default is overridden
-			}
-			// Override default expression if specified
-			if defaultExprOverride, ok := platformOverrides["default_expr"]; ok {
-				defaultExpr = defaultExprOverride
-				defaultValue = "" // Clear literal if expression default is overridden
-			}
-		}
+	platformOverrides, exists := field.Overrides[targetPlatform]
+	if !exists {
+		newField := field // Shallow copy to avoid modifying original field
+		newField.Type = fieldType
+		newField.Check = checkConstraint
+		newField.Comment = comment
+		newField.Default = defaultValue
+		newField.DefaultExpr = defaultExpr
+		return newField
+	}
+
+	// Override type if specified
+	if typeOverride, ok := platformOverrides["type"]; ok {
+		fieldType = typeOverride
+	}
+	// Override check constraint if specified
+	if checkOverride, ok := platformOverrides["check"]; ok {
+		checkConstraint = checkOverride
+	}
+	// Override comment if specified
+	if commentOverride, ok := platformOverrides["comment"]; ok {
+		comment = commentOverride
+	}
+	// Override default value if specified
+	if defaultOverride, ok := platformOverrides["default"]; ok {
+		defaultValue = defaultOverride
+		defaultExpr = "" // Clear expression if literal default is overridden
+	}
+	// Override default expression if specified
+	if defaultExprOverride, ok := platformOverrides["default_expr"]; ok {
+		defaultExpr = defaultExprOverride
+		defaultValue = "" // Clear literal if expression default is overridden
 	}
 
 	newField := field // Shallow copy to avoid modifying original field
