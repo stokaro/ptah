@@ -450,6 +450,14 @@ func processEmbeddedRelationMode(generatedFields []Field, embedded EmbeddedField
 	// Generate automatic foreign key constraint name following convention
 	foreignKeyName := "fk_" + strings.ToLower(structName) + "_" + strings.ToLower(embedded.Field)
 
+	// Create platform-specific overrides for MySQL/MariaDB compatibility
+	// MySQL/MariaDB use INT for SERIAL types, so foreign keys should also use INT
+	overrides := make(map[string]map[string]string)
+	if refType == "INTEGER" {
+		overrides["mysql"] = map[string]string{"type": "INT"}
+		overrides["mariadb"] = map[string]string{"type": "INT"}
+	}
+
 	// Create the foreign key field
 	generatedFields = append(generatedFields, Field{
 		StructName:     structName,
@@ -460,6 +468,7 @@ func processEmbeddedRelationMode(generatedFields []Field, embedded EmbeddedField
 		Foreign:        embedded.Ref,      // e.g., "users(id)"
 		ForeignKeyName: foreignKeyName,    // e.g., "fk_posts_user_id"
 		Comment:        embedded.Comment,  // Documentation for the relationship
+		Overrides:      overrides,         // Platform-specific type overrides
 	})
 
 	return generatedFields

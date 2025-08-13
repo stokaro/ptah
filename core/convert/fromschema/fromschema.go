@@ -74,41 +74,49 @@ func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschem
 	defaultValue := field.Default
 	defaultExpr := field.DefaultExpr
 
+	// Apply built-in platform-specific type conversions for MySQL/MariaDB
+	if targetPlatform == "mysql" || targetPlatform == "mariadb" {
+		switch fieldType {
+		case "SERIAL":
+			fieldType = "INT"
+			// Note: AutoInc flag should already be set for SERIAL fields
+		case "BIGSERIAL":
+			fieldType = "BIGINT"
+			// Note: AutoInc flag should already be set for BIGSERIAL fields
+		}
+	}
+
 	// Apply platform-specific overrides if available
 	if targetPlatform == "" {
 		return field
 	}
 
-	if field.Overrides == nil {
-		return field
-	}
-
-	platformOverrides, exists := field.Overrides[targetPlatform]
-	if !exists {
-		return field
-	}
-
-	// Override type if specified
-	if typeOverride, ok := platformOverrides["type"]; ok {
-		fieldType = typeOverride
-	}
-	// Override check constraint if specified
-	if checkOverride, ok := platformOverrides["check"]; ok {
-		checkConstraint = checkOverride
-	}
-	// Override comment if specified
-	if commentOverride, ok := platformOverrides["comment"]; ok {
-		comment = commentOverride
-	}
-	// Override default value if specified
-	if defaultOverride, ok := platformOverrides["default"]; ok {
-		defaultValue = defaultOverride
-		defaultExpr = "" // Clear expression if literal default is overridden
-	}
-	// Override default expression if specified
-	if defaultExprOverride, ok := platformOverrides["default_expr"]; ok {
-		defaultExpr = defaultExprOverride
-		defaultValue = "" // Clear literal if expression default is overridden
+	if field.Overrides != nil {
+		platformOverrides, exists := field.Overrides[targetPlatform]
+		if exists {
+			// Override type if specified
+			if typeOverride, ok := platformOverrides["type"]; ok {
+				fieldType = typeOverride
+			}
+			// Override check constraint if specified
+			if checkOverride, ok := platformOverrides["check"]; ok {
+				checkConstraint = checkOverride
+			}
+			// Override comment if specified
+			if commentOverride, ok := platformOverrides["comment"]; ok {
+				comment = commentOverride
+			}
+			// Override default value if specified
+			if defaultOverride, ok := platformOverrides["default"]; ok {
+				defaultValue = defaultOverride
+				defaultExpr = "" // Clear expression if literal default is overridden
+			}
+			// Override default expression if specified
+			if defaultExprOverride, ok := platformOverrides["default_expr"]; ok {
+				defaultExpr = defaultExprOverride
+				defaultValue = "" // Clear literal if expression default is overridden
+			}
+		}
 	}
 
 	newField := field // Shallow copy to avoid modifying original field
@@ -1224,6 +1232,14 @@ func processEmbeddedRelationMode(generatedFields []goschema.Field, embedded gosc
 	// Generate automatic foreign key constraint name following convention
 	foreignKeyName := "fk_" + strings.ToLower(structName) + "_" + strings.ToLower(embedded.Field)
 
+	// Create platform-specific overrides for MySQL/MariaDB compatibility
+	// MySQL/MariaDB use INT for SERIAL types, so foreign keys should also use INT
+	overrides := make(map[string]map[string]string)
+	if refType == "INTEGER" {
+		overrides["mysql"] = map[string]string{"type": "INT"}
+		overrides["mariadb"] = map[string]string{"type": "INT"}
+	}
+
 	// Create the foreign key field
 	generatedFields = append(generatedFields, goschema.Field{
 		StructName:     structName,
@@ -1234,6 +1250,7 @@ func processEmbeddedRelationMode(generatedFields []goschema.Field, embedded gosc
 		Foreign:        embedded.Ref,      // e.g., "users(id)"
 		ForeignKeyName: foreignKeyName,    // e.g., "fk_posts_user_id"
 		Comment:        embedded.Comment,  // Documentation for the relationship
+		Overrides:      overrides,         // Platform-specific type overrides
 	})
 
 	return generatedFields
