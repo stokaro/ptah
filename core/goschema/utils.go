@@ -166,56 +166,92 @@ func sortTablesByDependencies(r *Database) {
 // The resulting dependency graph is stored in the Dependencies field and used by
 // sortTablesByDependencies() to perform topological sorting.
 func buildDependencyGraph(r *Database) {
+	initializeDependencyMaps(r)
+	analyzeFieldForeignKeys(r)
+	analyzeEmbeddedFieldRelations(r)
+	buildFunctionDependencies(r)
+}
+
+// initializeDependencyMaps initializes the dependency tracking maps
+func initializeDependencyMaps(r *Database) {
 	// Initialize dependencies map for all tables
 	for _, table := range r.Tables {
 		r.Dependencies[table.Name] = []string{}
 	}
 
-	// Analyze foreign key relationships
+	// Initialize self-referencing foreign keys tracking
+	if r.SelfReferencingForeignKeys == nil {
+		r.SelfReferencingForeignKeys = make(map[string][]SelfReferencingFK)
+	}
+}
+
+// analyzeFieldForeignKeys analyzes foreign key relationships from regular fields
+func analyzeFieldForeignKeys(r *Database) {
 	for _, field := range r.Fields {
 		if field.Foreign == "" {
 			continue
 		}
-		// Parse foreign key reference (e.g., "users(id)" -> "users")
+
 		refTable := strings.Split(field.Foreign, "(")[0]
-
-		// Find the table that contains this field
-		for _, table := range r.Tables {
-			if table.StructName != field.StructName {
-				continue
-			}
-			// Add dependency: table depends on refTable
-			if !slices.Contains(r.Dependencies[table.Name], refTable) {
-				r.Dependencies[table.Name] = append(r.Dependencies[table.Name], refTable)
-			}
-			break
+		table := findTableByStructName(r.Tables, field.StructName)
+		if table == nil {
+			continue
 		}
-	}
 
-	// Analyze embedded field relationships (relation mode)
+		processForeignKeyDependency(r, table.Name, refTable, SelfReferencingFK{
+			FieldName:      field.Name,
+			Foreign:        field.Foreign,
+			ForeignKeyName: field.ForeignKeyName,
+		})
+	}
+}
+
+// analyzeEmbeddedFieldRelations analyzes foreign key relationships from embedded fields
+func analyzeEmbeddedFieldRelations(r *Database) {
 	for _, embedded := range r.EmbeddedFields {
 		if embedded.Mode != "relation" || embedded.Ref == "" {
 			continue
 		}
 
-		// Parse embedded relation reference (e.g., "users(id)" -> "users")
 		refTable := strings.Split(embedded.Ref, "(")[0]
+		table := findTableByStructName(r.Tables, embedded.StructName)
+		if table == nil {
+			continue
+		}
 
-		// Find the table that contains this embedded field
-		for _, table := range r.Tables {
-			if table.StructName != embedded.StructName {
-				continue
-			}
-			// Add dependency: table depends on refTable
-			if !slices.Contains(r.Dependencies[table.Name], refTable) {
-				r.Dependencies[table.Name] = append(r.Dependencies[table.Name], refTable)
-			}
-			break
+		processForeignKeyDependency(r, table.Name, refTable, SelfReferencingFK{
+			FieldName:      embedded.Field,
+			Foreign:        embedded.Ref,
+			ForeignKeyName: generateForeignKeyName(table.Name, embedded.Field),
+		})
+	}
+}
+
+// findTableByStructName finds a table by its struct name
+func findTableByStructName(tables []Table, structName string) *Table {
+	for _, table := range tables {
+		if table.StructName == structName {
+			return &table
 		}
 	}
+	return nil
+}
 
-	// Analyze function dependencies (functions may call other functions)
-	buildFunctionDependencies(r)
+// processForeignKeyDependency processes a foreign key dependency, handling self-references appropriately
+func processForeignKeyDependency(r *Database, tableName, refTable string, selfRefFK SelfReferencingFK) {
+	if tableName == refTable {
+		// Track self-referencing foreign key for deferred constraint creation
+		r.SelfReferencingForeignKeys[tableName] = append(r.SelfReferencingForeignKeys[tableName], selfRefFK)
+	} else if !slices.Contains(r.Dependencies[tableName], refTable) {
+		// Add dependency: table depends on refTable (only for non-self-referencing FKs)
+		r.Dependencies[tableName] = append(r.Dependencies[tableName], refTable)
+	}
+}
+
+// generateForeignKeyName generates a consistent foreign key constraint name
+// following the convention: fk_{table_name}_{field_name}
+func generateForeignKeyName(tableName, fieldName string) string {
+	return "fk_" + strings.ToLower(tableName) + "_" + strings.ToLower(fieldName)
 }
 
 // processEmbeddedFields processes embedded fields and generates corresponding schema fields based on embedding modes.
@@ -418,7 +454,15 @@ func processEmbeddedRelationMode(generatedFields []Field, embedded EmbeddedField
 	}
 
 	// Generate automatic foreign key constraint name following convention
-	foreignKeyName := "fk_" + strings.ToLower(structName) + "_" + strings.ToLower(embedded.Field)
+	foreignKeyName := generateForeignKeyName(structName, embedded.Field)
+
+	// Create platform-specific overrides for MySQL/MariaDB compatibility
+	// MySQL/MariaDB use INT for SERIAL types, so foreign keys should also use INT
+	overrides := make(map[string]map[string]string)
+	if refType == "INTEGER" {
+		overrides["mysql"] = map[string]string{"type": "INT"}
+		overrides["mariadb"] = map[string]string{"type": "INT"}
+	}
 
 	// Create the foreign key field
 	generatedFields = append(generatedFields, Field{
@@ -430,6 +474,7 @@ func processEmbeddedRelationMode(generatedFields []Field, embedded EmbeddedField
 		Foreign:        embedded.Ref,      // e.g., "users(id)"
 		ForeignKeyName: foreignKeyName,    // e.g., "fk_posts_user_id"
 		Comment:        embedded.Comment,  // Documentation for the relationship
+		Overrides:      overrides,         // Platform-specific type overrides
 	})
 
 	return generatedFields

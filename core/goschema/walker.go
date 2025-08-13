@@ -40,18 +40,19 @@ import (
 //	statements := GetOrderedCreateStatements(result, "postgresql")
 func ParseDir(rootDir string) (*Database, error) {
 	result := &Database{
-		Tables:               []Table{},
-		Fields:               []Field{},
-		Indexes:              []Index{},
-		Enums:                []Enum{},
-		EmbeddedFields:       []EmbeddedField{},
-		Extensions:           []Extension{},
-		Functions:            []Function{},
-		RLSPolicies:          []RLSPolicy{},
-		RLSEnabledTables:     []RLSEnabledTable{},
-		Roles:                []Role{},
-		Dependencies:         make(map[string][]string),
-		FunctionDependencies: make(map[string][]string),
+		Tables:                     []Table{},
+		Fields:                     []Field{},
+		Indexes:                    []Index{},
+		Enums:                      []Enum{},
+		EmbeddedFields:             []EmbeddedField{},
+		Extensions:                 []Extension{},
+		Functions:                  []Function{},
+		RLSPolicies:                []RLSPolicy{},
+		RLSEnabledTables:           []RLSEnabledTable{},
+		Roles:                      []Role{},
+		Dependencies:               make(map[string][]string),
+		FunctionDependencies:       make(map[string][]string),
+		SelfReferencingForeignKeys: make(map[string][]SelfReferencingFK),
 	}
 
 	// Walk through all directories recursively

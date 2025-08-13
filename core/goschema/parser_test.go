@@ -312,7 +312,12 @@ func TestDependencyResolution(t *testing.T) {
 	// Check that dependencies are correctly identified
 	c.Assert(result.Dependencies["articles"], qt.DeepEquals, []string{"users"})
 	c.Assert(result.Dependencies["products"], qt.DeepEquals, []string{"categories"})
-	c.Assert(result.Dependencies["categories"], qt.DeepEquals, []string{"categories"}) // self-reference
+	c.Assert(result.Dependencies["categories"], qt.DeepEquals, []string{}) // self-reference moved to SelfReferencingForeignKeys
+
+	// Check that self-referencing foreign keys are tracked separately
+	c.Assert(result.SelfReferencingForeignKeys["categories"], qt.HasLen, 1)
+	selfRefFK := result.SelfReferencingForeignKeys["categories"][0]
+	c.Assert(selfRefFK.Foreign, qt.Equals, "categories(id)")
 }
 
 func TestDeduplication(t *testing.T) {
@@ -409,7 +414,7 @@ func TestGetDependencyInfo(t *testing.T) {
 	// Verify specific dependency information
 	c.Assert(info, qt.Contains, "articles: depends on [users]")
 	c.Assert(info, qt.Contains, "products: depends on [categories]")
-	c.Assert(info, qt.Contains, "categories: depends on [categories]") // self-reference
+	c.Assert(info, qt.Contains, "categories: (no dependencies)") // self-reference moved to SelfReferencingForeignKeys
 
 	// Verify tables with no dependencies are marked correctly
 	c.Assert(info, qt.Contains, "users: (no dependencies)")
