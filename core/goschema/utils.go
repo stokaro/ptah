@@ -171,6 +171,11 @@ func buildDependencyGraph(r *Database) {
 		r.Dependencies[table.Name] = []string{}
 	}
 
+	// Initialize self-referencing foreign keys tracking
+	if r.SelfReferencingForeignKeys == nil {
+		r.SelfReferencingForeignKeys = make(map[string][]SelfReferencingFK)
+	}
+
 	// Analyze foreign key relationships
 	for _, field := range r.Fields {
 		if field.Foreign == "" {
@@ -184,9 +189,20 @@ func buildDependencyGraph(r *Database) {
 			if table.StructName != field.StructName {
 				continue
 			}
-			// Add dependency: table depends on refTable
-			if !slices.Contains(r.Dependencies[table.Name], refTable) {
-				r.Dependencies[table.Name] = append(r.Dependencies[table.Name], refTable)
+
+			// Check if this is a self-referencing foreign key
+			if table.Name == refTable {
+				// Track self-referencing foreign key for deferred constraint creation
+				r.SelfReferencingForeignKeys[table.Name] = append(r.SelfReferencingForeignKeys[table.Name], SelfReferencingFK{
+					FieldName:      field.Name,
+					Foreign:        field.Foreign,
+					ForeignKeyName: field.ForeignKeyName,
+				})
+			} else {
+				// Add dependency: table depends on refTable (only for non-self-referencing FKs)
+				if !slices.Contains(r.Dependencies[table.Name], refTable) {
+					r.Dependencies[table.Name] = append(r.Dependencies[table.Name], refTable)
+				}
 			}
 			break
 		}
@@ -206,9 +222,20 @@ func buildDependencyGraph(r *Database) {
 			if table.StructName != embedded.StructName {
 				continue
 			}
-			// Add dependency: table depends on refTable
-			if !slices.Contains(r.Dependencies[table.Name], refTable) {
-				r.Dependencies[table.Name] = append(r.Dependencies[table.Name], refTable)
+
+			// Check if this is a self-referencing foreign key
+			if table.Name == refTable {
+				// Track self-referencing foreign key for deferred constraint creation
+				r.SelfReferencingForeignKeys[table.Name] = append(r.SelfReferencingForeignKeys[table.Name], SelfReferencingFK{
+					FieldName:      embedded.Field,
+					Foreign:        embedded.Ref,
+					ForeignKeyName: "fk_" + strings.ToLower(table.Name) + "_" + strings.ToLower(embedded.Field),
+				})
+			} else {
+				// Add dependency: table depends on refTable (only for non-self-referencing FKs)
+				if !slices.Contains(r.Dependencies[table.Name], refTable) {
+					r.Dependencies[table.Name] = append(r.Dependencies[table.Name], refTable)
+				}
 			}
 			break
 		}

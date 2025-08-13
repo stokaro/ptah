@@ -290,6 +290,73 @@ func FromField(field goschema.Field, enums []goschema.Enum, targetPlatform strin
 	return column
 }
 
+// FromFieldWithoutForeignKeys converts a goschema.Field to an AST ColumnNode without foreign key constraints.
+//
+// This function is identical to FromField but excludes foreign key constraints from the column definition.
+// It's used during two-phase table creation where foreign key constraints are added separately
+// via ALTER TABLE statements to avoid circular dependency issues.
+//
+// Parameters:
+//   - field: The field definition from the parsed Go schema
+//   - enums: Available enum definitions for type validation
+//   - targetPlatform: Target database platform for platform-specific handling
+//
+// Returns:
+//   - *ast.ColumnNode: Column definition without foreign key constraints
+func FromFieldWithoutForeignKeys(field goschema.Field, enums []goschema.Enum, targetPlatform string) *ast.ColumnNode {
+	// Apply platform-specific overrides if available
+	field = applyPlatformOverrides(field, targetPlatform)
+	field = handleEnumTypesForMySQLLike(field, enums, targetPlatform)
+
+	// Create column with basic properties
+	column := ast.NewColumn(field.Name, field.Type)
+
+	// Set nullable (default is true, so only set if false)
+	if !field.Nullable {
+		column.SetNotNull()
+	}
+
+	// Set primary key
+	if field.Primary {
+		column.SetPrimary()
+	}
+
+	// Set unique constraint
+	if field.Unique {
+		column.SetUnique()
+	}
+
+	// Set auto increment
+	if field.AutoInc {
+		column.SetAutoIncrement()
+	}
+
+	// Set default value (using potentially overridden value)
+	if field.Default != "" {
+		column.SetDefault(field.Default)
+	}
+
+	// Set default expression (using potentially overridden value)
+	if field.DefaultExpr != "" {
+		column.SetDefaultExpression(field.DefaultExpr)
+	}
+
+	// Set check constraint (using potentially overridden value)
+	if field.Check != "" {
+		column.SetCheck(field.Check)
+	}
+
+	// Set comment (using potentially overridden value)
+	if field.Comment != "" {
+		column.SetComment(field.Comment)
+	}
+
+	// NOTE: Foreign key constraints are intentionally excluded in this function
+	// They should be added separately via ALTER TABLE statements
+
+	return column
+}
+
 func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table goschema.Table, targetPlatform string) goschema.Table {
 	// Apply platform-specific overrides if available
 	if targetPlatform == "" || table.Overrides == nil {

@@ -99,8 +99,8 @@ func (p *Planner) addNewTables(result []ast.Node, diff *types.SchemaDiff, genera
 		tablesToAdd[tableName] = true
 	}
 
-	// Iterate through tables in dependency order (generated.Tables is already sorted)
-	// This ensures foreign key constraints are satisfied during table creation
+	// Phase 1: Create tables without foreign key constraints
+	// This avoids circular dependency issues, especially with self-referencing foreign keys
 	for _, table := range generated.Tables {
 		if !tablesToAdd[table.Name] {
 			continue // Skip tables that are not being added
@@ -109,12 +109,73 @@ func (p *Planner) addNewTables(result []ast.Node, diff *types.SchemaDiff, genera
 		astNode := ast.NewCreateTable(table.Name)
 		for _, field := range allFields {
 			if field.StructName == table.StructName {
-				columnNode := fromschema.FromField(field, generated.Enums, "postgres")
+				// Use FromFieldWithoutForeignKeys to exclude foreign key constraints
+				columnNode := fromschema.FromFieldWithoutForeignKeys(field, generated.Enums, "postgres")
 				astNode.AddColumn(columnNode)
 			}
 		}
 		result = append(result, astNode)
 	}
+
+	// Phase 2: Add foreign key constraints via ALTER TABLE statements
+	// This ensures all tables exist before any foreign key constraints are created
+	for _, table := range generated.Tables {
+		if !tablesToAdd[table.Name] {
+			continue // Skip tables that are not being added
+		}
+
+		// Add regular foreign key constraints (excluding self-referencing ones)
+		for _, field := range allFields {
+			if field.StructName == table.StructName && field.Foreign != "" && field.ForeignKeyName != "" {
+				// Parse the foreign key reference to check if it's self-referencing
+				fkRef := fromschema.ParseForeignKeyReference(field.Foreign)
+				if fkRef != nil && fkRef.Table != table.Name {
+					// Only add non-self-referencing foreign keys here
+					fkRef.Name = field.ForeignKeyName
+
+					// Create foreign key constraint
+					fkConstraint := ast.NewForeignKeyConstraint(
+						field.ForeignKeyName,
+						[]string{field.Name},
+						fkRef,
+					)
+
+					// Create ALTER TABLE statement with ADD CONSTRAINT operation
+					alterNode := &ast.AlterTableNode{
+						Name:       table.Name,
+						Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: fkConstraint}},
+					}
+					result = append(result, alterNode)
+				}
+			}
+		}
+
+		// Add self-referencing foreign key constraints (if any)
+		if selfRefFKs, exists := generated.SelfReferencingForeignKeys[table.Name]; exists {
+			for _, selfRefFK := range selfRefFKs {
+				// Parse the foreign key reference
+				fkRef := fromschema.ParseForeignKeyReference(selfRefFK.Foreign)
+				if fkRef != nil {
+					fkRef.Name = selfRefFK.ForeignKeyName
+
+					// Create foreign key constraint
+					fkConstraint := ast.NewForeignKeyConstraint(
+						selfRefFK.ForeignKeyName,
+						[]string{selfRefFK.FieldName},
+						fkRef,
+					)
+
+					// Create ALTER TABLE statement with ADD CONSTRAINT operation
+					alterNode := &ast.AlterTableNode{
+						Name:       table.Name,
+						Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: fkConstraint}},
+					}
+					result = append(result, alterNode)
+				}
+			}
+		}
+	}
+
 	return result
 }
 

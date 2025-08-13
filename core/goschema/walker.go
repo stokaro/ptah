@@ -50,8 +50,9 @@ func ParseDir(rootDir string) (*Database, error) {
 		RLSPolicies:          []RLSPolicy{},
 		RLSEnabledTables:     []RLSEnabledTable{},
 		Roles:                []Role{},
-		Dependencies:         make(map[string][]string),
-		FunctionDependencies: make(map[string][]string),
+		Dependencies:               make(map[string][]string),
+		FunctionDependencies:       make(map[string][]string),
+		SelfReferencingForeignKeys: make(map[string][]SelfReferencingFK),
 	}
 
 	// Walk through all directories recursively

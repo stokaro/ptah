@@ -22,18 +22,19 @@ package goschema
 //   - EmbeddedFields: Fields from embedded structs with their relation modes
 //   - Dependencies: Dependency graph mapping table names to their dependencies
 type Database struct {
-	Tables               []Table
-	Fields               []Field
-	Indexes              []Index
-	Enums                []Enum
-	EmbeddedFields       []EmbeddedField
-	Extensions           []Extension         // PostgreSQL extensions (pg_trgm, postgis, etc.)
-	Functions            []Function          // PostgreSQL custom functions
-	RLSPolicies          []RLSPolicy         // PostgreSQL Row-Level Security policies
-	RLSEnabledTables     []RLSEnabledTable   // Tables with RLS enabled
-	Roles                []Role              // PostgreSQL roles
-	Dependencies         map[string][]string // table -> list of tables it depends on
-	FunctionDependencies map[string][]string // function -> list of functions it depends on
+	Tables                     []Table
+	Fields                     []Field
+	Indexes                    []Index
+	Enums                      []Enum
+	EmbeddedFields             []EmbeddedField
+	Extensions                 []Extension                    // PostgreSQL extensions (pg_trgm, postgis, etc.)
+	Functions                  []Function                     // PostgreSQL custom functions
+	RLSPolicies                []RLSPolicy                    // PostgreSQL Row-Level Security policies
+	RLSEnabledTables           []RLSEnabledTable              // Tables with RLS enabled
+	Roles                      []Role                         // PostgreSQL roles
+	Dependencies               map[string][]string            // table -> list of tables it depends on
+	FunctionDependencies       map[string][]string            // function -> list of functions it depends on
+	SelfReferencingForeignKeys map[string][]SelfReferencingFK // table -> list of self-referencing foreign keys
 }
 
 // EmbeddedField represents an embedded field in a Go struct that should be handled specially
@@ -430,4 +431,39 @@ type Role struct {
 	Inherit     bool   // Whether role inherits privileges (default: true)
 	Replication bool   // Whether role can initiate replication (default: false)
 	Comment     string // Optional comment for documentation
+}
+
+// SelfReferencingFK represents a self-referencing foreign key that needs to be
+// handled separately from regular foreign keys to avoid circular dependencies.
+//
+// Self-referencing foreign keys occur when a table has a foreign key that references
+// its own primary key, such as a "parent_id" field in a hierarchical structure.
+// These cannot be created as part of the initial CREATE TABLE statement because
+// the table doesn't exist yet when the constraint is being defined.
+//
+// Instead, these foreign keys are tracked separately and added as ALTER TABLE
+// ADD CONSTRAINT statements after the table has been created.
+//
+// Example:
+//
+//	type User struct {
+//	    ID       int64  `db:"id"`
+//	    ParentID *int64 `db:"parent_id" foreign:"users(id)"`
+//	    Name     string `db:"name"`
+//	}
+//
+// This would generate:
+//
+//	CREATE TABLE users (
+//	    id SERIAL PRIMARY KEY,
+//	    parent_id INTEGER,
+//	    name VARCHAR(255)
+//	);
+//
+//	ALTER TABLE users ADD CONSTRAINT fk_users_parent
+//	    FOREIGN KEY (parent_id) REFERENCES users(id);
+type SelfReferencingFK struct {
+	FieldName      string // Name of the field (e.g., "parent_id")
+	Foreign        string // Foreign key reference (e.g., "users(id)")
+	ForeignKeyName string // Name of the foreign key constraint (e.g., "fk_users_parent")
 }
