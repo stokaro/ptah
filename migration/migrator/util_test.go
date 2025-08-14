@@ -296,3 +296,66 @@ func TestFindMigrationGaps(t *testing.T) {
 	gaps4 := FindMigrationGaps(versions4)
 	c.Assert(gaps4, qt.HasLen, 0)
 }
+
+func TestFormatTimestampForDatabase(t *testing.T) {
+	tests := []struct {
+		name     string
+		dialect  string
+		expected string // We'll check the format, not exact value
+	}{
+		{
+			name:     "PostgreSQL dialect",
+			dialect:  "postgres",
+			expected: "RFC3339", // Will check format pattern
+		},
+		{
+			name:     "MySQL dialect",
+			dialect:  "mysql",
+			expected: "2006-01-02 15:04:05", // Will check format pattern
+		},
+		{
+			name:     "MariaDB dialect",
+			dialect:  "mariadb",
+			expected: "2006-01-02 15:04:05", // Will check format pattern
+		},
+		{
+			name:     "Unknown dialect defaults to RFC3339",
+			dialect:  "unknown",
+			expected: "RFC3339", // Will check format pattern
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			result := FormatTimestampForDatabase(tt.dialect)
+			c.Assert(result, qt.IsNotNil)
+			c.Assert(len(result), qt.Not(qt.Equals), 0)
+
+			// Check format patterns
+			switch tt.expected {
+			case "RFC3339":
+				// RFC3339 format should contain 'T' and timezone info
+				c.Assert(result, qt.Contains, "T")
+			case "2006-01-02 15:04:05":
+				// MySQL format should contain space and no 'T'
+				c.Assert(result, qt.Not(qt.Contains), "T")
+				c.Assert(result, qt.Contains, " ")
+			}
+		})
+	}
+}
+
+func TestGetNextMigrationVersion(t *testing.T) {
+	c := qt.New(t)
+
+	version1 := GetNextMigrationVersion()
+	c.Assert(version1, qt.Not(qt.Equals), 0)
+
+	// Get another version and ensure it's different (or at least not less)
+	version2 := GetNextMigrationVersion()
+	c.Assert(version2, qt.Not(qt.Equals), 0)
+	// Version2 should be >= version1 (timestamps should be monotonic or equal)
+	c.Assert(version2 >= version1, qt.IsTrue)
+}

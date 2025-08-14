@@ -27,7 +27,7 @@ func TestInitializeDebug(t *testing.T) {
 	_, _ = conn.Exec("DROP TABLE IF EXISTS schema_migrations")
 
 	// Create a migrator
-	m := NewMigrator(conn)
+	m := NewMigrator(conn, NewRegisteredMigrationProvider())
 
 	// Test Initialize method directly
 	err = m.Initialize(ctx)

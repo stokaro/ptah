@@ -87,8 +87,13 @@ func migrateStatusCommand(_ *cobra.Command, _ []string) error {
 	// Create filesystem from migrations directory
 	migrationsFS := os.DirFS(migrationsDir)
 
+	mig, err := migrator.NewFSMigrator(conn, migrationsFS)
+	if err != nil {
+		return fmt.Errorf("error registering migrations: %w", err)
+	}
+
 	// Get migration status
-	status, err := migrator.GetMigrationStatus(context.Background(), conn, migrationsFS)
+	status, err := mig.GetMigrationStatus(context.Background())
 	if err != nil {
 		return fmt.Errorf("error getting migration status: %w", err)
 	}

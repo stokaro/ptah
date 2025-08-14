@@ -364,11 +364,10 @@ func (vem *VersionedEntityManager) ApplyMigrationFromEntities(ctx context.Contex
 
 	migration := migrator.CreateMigrationFromSQL(vem.version, description, upSQL, downSQL)
 
-	// Apply the migration
-	migratr := migrator.NewMigrator(conn)
-	migratr.Register(migration)
+	p := migrator.NewRegisteredMigrationProvider(migration)
+	m := migrator.NewMigrator(conn, p)
 
-	return migratr.MigrateUp(ctx)
+	return m.MigrateUp(ctx)
 }
 
 // MigrateToVersion loads entities from a version and applies the migration
@@ -414,22 +413,26 @@ func NewDatabaseHelper(conn *dbschema.DatabaseConnection) *DatabaseHelper {
 
 // ApplyMigrations applies migrations from the given filesystem
 func (dh *DatabaseHelper) ApplyMigrations(ctx context.Context, migrationsFS fs.FS) error {
-	return migrator.RunMigrations(ctx, dh.conn, migrationsFS)
+	m, err := migrator.NewFSMigrator(dh.conn, migrationsFS)
+	if err != nil {
+		return err
+	}
+	return m.MigrateUp(ctx)
 }
 
 // GetCurrentVersion returns the current migration version
 func (dh *DatabaseHelper) GetCurrentVersion(ctx context.Context, migrationsFS fs.FS) (int, error) {
-	status, err := migrator.GetMigrationStatus(ctx, dh.conn, migrationsFS)
+	m, err := migrator.NewFSMigrator(dh.conn, migrationsFS)
 	if err != nil {
 		return 0, err
 	}
-	return status.CurrentVersion, nil
+	return m.GetCurrentVersion(ctx)
 }
 
 // RollbackToVersion rolls back migrations to a specific version
 func (dh *DatabaseHelper) RollbackToVersion(ctx context.Context, migrationsFS fs.FS, targetVersion int) error {
-	m := migrator.NewMigrator(dh.conn)
-	if err := migrator.RegisterMigrations(m, migrationsFS); err != nil {
+	m, err := migrator.NewFSMigrator(dh.conn, migrationsFS)
+	if err != nil {
 		return err
 	}
 	return m.MigrateDownTo(ctx, targetVersion)
@@ -437,8 +440,8 @@ func (dh *DatabaseHelper) RollbackToVersion(ctx context.Context, migrationsFS fs
 
 // MigrateUp migrates the database up to the latest version
 func (dh *DatabaseHelper) MigrateUp(ctx context.Context, migrationsFS fs.FS) error {
-	m := migrator.NewMigrator(dh.conn)
-	if err := migrator.RegisterMigrations(m, migrationsFS); err != nil {
+	m, err := migrator.NewFSMigrator(dh.conn, migrationsFS)
+	if err != nil {
 		return err
 	}
 	return m.MigrateUp(ctx)
@@ -446,8 +449,8 @@ func (dh *DatabaseHelper) MigrateUp(ctx context.Context, migrationsFS fs.FS) err
 
 // MigrateDown migrates down to the previous version
 func (dh *DatabaseHelper) MigrateDown(ctx context.Context, migrationsFS fs.FS) error {
-	m := migrator.NewMigrator(dh.conn)
-	if err := migrator.RegisterMigrations(m, migrationsFS); err != nil {
+	m, err := migrator.NewFSMigrator(dh.conn, migrationsFS)
+	if err != nil {
 		return err
 	}
 	return m.MigrateDown(ctx)
