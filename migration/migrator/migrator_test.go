@@ -7,7 +7,6 @@ import (
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
-
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
@@ -96,25 +95,25 @@ type mockDatabaseConnection struct {
 	writerMock       *mockWriter
 }
 
-func (m *mockDatabaseConnection) ExecContext(ctx context.Context, query string, args ...interface{}) (interface{}, error) {
+func (m *mockDatabaseConnection) ExecContext(ctx context.Context, query string, args ...any) (any, error) {
 	m.execContextCalls = append(m.execContextCalls, query)
 	return nil, m.execContextError
 }
 
-func (m *mockDatabaseConnection) QueryRowContext(ctx context.Context, query string, args ...interface{}) interface{} {
+func (m *mockDatabaseConnection) QueryRowContext(ctx context.Context, query string, args ...any) any {
 	return m.queryRowResult
 }
 
-func (m *mockDatabaseConnection) Query(query string, args ...interface{}) (interface{}, error) {
+func (m *mockDatabaseConnection) Query(query string, args ...any) (any, error) {
 	m.queryCalls = append(m.queryCalls, query)
 	return m.queryResult, m.queryError
 }
 
-func (m *mockDatabaseConnection) Writer() interface{} {
+func (m *mockDatabaseConnection) Writer() any {
 	return m.writerMock
 }
 
-func (m *mockDatabaseConnection) Info() interface{} {
+func (m *mockDatabaseConnection) Info() any {
 	return &mockInfo{dialect: "postgres"}
 }
 
@@ -122,16 +121,16 @@ func (m *mockDatabaseConnection) Close() error {
 	return nil
 }
 
-func (m *mockDatabaseConnection) Exec(query string, args ...interface{}) (interface{}, error) {
+func (m *mockDatabaseConnection) Exec(query string, args ...any) (any, error) {
 	return nil, nil
 }
 
 type mockRow struct {
-	scanResult interface{}
+	scanResult any
 	scanError  error
 }
 
-func (m *mockRow) Scan(dest ...interface{}) error {
+func (m *mockRow) Scan(dest ...any) error {
 	if m.scanError != nil {
 		return m.scanError
 	}
@@ -146,9 +145,9 @@ func (m *mockRow) Scan(dest ...interface{}) error {
 }
 
 type mockRows struct {
-	rows     []interface{}
+	rows     []any
 	current  int
-	scanFunc func(...interface{}) error
+	scanFunc func(...any) error
 	errFunc  func() error
 }
 
@@ -179,11 +178,11 @@ func (m *mockRows) Err() error {
 }
 
 type mockWriter struct {
-	beginTransactionError  error
-	commitTransactionError error
+	beginTransactionError    error
+	commitTransactionError   error
 	rollbackTransactionError error
-	executeSQLError        error
-	executeSQLCalls        []string
+	executeSQLError          error
+	executeSQLCalls          []string
 }
 
 func (m *mockWriter) BeginTransaction() error {
