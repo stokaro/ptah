@@ -51,20 +51,23 @@ func GenerateMigration(opts GenerateMigrationOptions) (*MigrationFiles, error) {
 		opts.MigrationName = "migration"
 	}
 
+	var entitiesDir string
+
 	if opts.GoEntitiesFS == nil {
-		opts.GoEntitiesFS = os.DirFS("/")
-	}
-
-	entitiesDir := opts.GoEntitiesDir
-
-	typeName := fmt.Sprintf("%T", opts.GoEntitiesFS)
-	if typeName == "*os.dirFS" {
-		// If we're using the default os.DirFS, resolve the path to absolute
-		var err error
-		entitiesDir, err = filepath.Abs(opts.GoEntitiesDir)
+		// Default to using the real filesystem
+		// We need to set up the filesystem root and relative path correctly
+		absPath, err := filepath.Abs(opts.GoEntitiesDir)
 		if err != nil {
 			return nil, fmt.Errorf("error resolving root directory path: %w", err)
 		}
+
+		// Use the parent directory as filesystem root and the basename as the path
+		fsRoot := filepath.Dir(absPath)
+		entitiesDir = filepath.Base(absPath)
+		opts.GoEntitiesFS = os.DirFS(fsRoot)
+	} else {
+		// For custom filesystems, use the path as-is
+		entitiesDir = opts.GoEntitiesDir
 	}
 
 	// 1. Parse Go entities to get desired schema
