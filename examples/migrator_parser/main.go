@@ -25,6 +25,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/stokaro/ptah/core/goschema"
@@ -44,8 +45,13 @@ func main() {
 	fmt.Printf("Parsing Go file: %s\n", filename)
 	fmt.Println("Discovering embedded type dependencies...")
 
-	// Build the complete database schema
-	database := goschema.ParseFileWithDependencies(filename)
+	// Build the complete database schema by parsing the directory
+	dir := filepath.Dir(filename)
+	database, err := goschema.ParseDir(dir)
+	if err != nil {
+		fmt.Printf("Error parsing directory %s: %v\n", dir, err)
+		return
+	}
 
 	// Generate DDL statements for all supported database dialects
 	fmt.Printf("\nFound %d tables, %d fields, %d indexes, %d enums\n",
@@ -53,7 +59,7 @@ func main() {
 	fmt.Println("\nGenerating DDL statements for supported dialects:")
 	fmt.Println(strings.Repeat("=", 60))
 
-	generateDDLForDialects(&database)
+	generateDDLForDialects(database)
 
 	// Display detailed schema information if requested
 	if shouldShowDetails() {

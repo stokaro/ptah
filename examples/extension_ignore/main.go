@@ -41,7 +41,7 @@
 //
 //	// Generate migrations based on the differences
 //	files, err := generator.GenerateMigration(generator.GenerateMigrationOptions{
-//		RootDir:       "./models",
+//		GoEntitiesDir: "./models",
 //		DatabaseURL:   "postgres://user:pass@localhost/db",
 //		MigrationName: "update_extensions",
 //		OutputDir:     "./migrations",
