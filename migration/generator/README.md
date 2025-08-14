@@ -26,17 +26,23 @@ import (
 
 func main() {
     opts := generator.GenerateMigrationOptions{
-        RootDir:       "./entities",           // Directory containing Go entities
+        GoEntitiesDir: "./entities",           // Directory containing Go entities
         DatabaseURL:   "postgres://user:pass@localhost/db", // Database connection
         MigrationName: "add_user_table",       // Optional: defaults to "migration"
         OutputDir:     "./migrations",         // Directory to save migration files
     }
-    
+
     files, err := generator.GenerateMigration(opts)
     if err != nil {
         log.Fatal(err)
     }
-    
+
+    // Check if any migration was generated (nil means no changes detected)
+    if files == nil {
+        fmt.Println("No schema changes detected - no migration needed")
+        return
+    }
+
     fmt.Printf("Generated migration files:\n")
     fmt.Printf("UP:   %s\n", files.UpFile)
     fmt.Printf("DOWN: %s\n", files.DownFile)
@@ -108,10 +114,12 @@ DROP TABLE IF EXISTS users;
 
 The generator will return an error if:
 
-- No schema changes are detected
 - Database connection fails
 - Go entity parsing fails
 - File system operations fail
+- SQL generation fails
+
+**Note:** When no schema changes are detected, the generator returns `nil, nil` (not an error). This is considered a successful no-op operation.
 
 ### Integration with Migration System
 
@@ -124,6 +132,34 @@ go run ./cmd migrate-up --db-url postgres://user:pass@localhost/db --migrations-
 ## Configuration Options
 
 ### GenerateMigrationOptions
+
+The `GenerateMigrationOptions` struct provides comprehensive configuration for migration generation:
+
+```go
+type GenerateMigrationOptions struct {
+    // GoEntitiesDir is the directory to scan for Go entities
+    GoEntitiesDir string
+
+    // GoEntitiesFS is the filesystem to use for reading entities (optional, defaults to os.DirFS)
+    // Useful for embedded filesystems or testing with virtual filesystems
+    GoEntitiesFS fs.FS
+
+    // DatabaseURL is the connection string for the database
+    DatabaseURL string
+
+    // DBConn is the database connection (optional, if not provided, a new connection will be created)
+    // Useful for reusing existing connections or custom connection management
+    DBConn *dbschema.DatabaseConnection
+
+    // MigrationName is the name for the migration (optional, defaults to "migration")
+    MigrationName string
+
+    // OutputDir is the directory where migration files will be saved (always real filesystem)
+    OutputDir string
+}
+```
+
+### Field Details
 
 - `RootDir`: Directory to scan for Go entities (required)
 - `DatabaseURL`: Database connection string (required)
