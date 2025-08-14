@@ -51,11 +51,13 @@ func TestMigrateDownCommand_Integration(t *testing.T) {
 
 	// Apply migration first
 	migrationsFS := os.DirFS(tempDir)
-	err = migrator.RunMigrations(context.Background(), conn, migrationsFS)
+	mig, err := migrator.NewFSMigrator(conn, migrationsFS)
+	c.Assert(err, qt.IsNil)
+	err = mig.MigrateUp(context.Background())
 	c.Assert(err, qt.IsNil)
 
 	// Verify migration was applied
-	status, err := migrator.GetMigrationStatus(context.Background(), conn, migrationsFS)
+	status, err := mig.GetMigrationStatus(context.Background())
 	c.Assert(err, qt.IsNil)
 	c.Assert(status.CurrentVersion, qt.Equals, 1)
 
@@ -72,7 +74,7 @@ func TestMigrateDownCommand_Integration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	// Verify migration was rolled back
-	finalStatus, err := migrator.GetMigrationStatus(context.Background(), conn, migrationsFS)
+	finalStatus, err := mig.GetMigrationStatus(context.Background())
 	c.Assert(err, qt.IsNil)
 	c.Assert(finalStatus.CurrentVersion, qt.Equals, 0)
 }

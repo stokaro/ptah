@@ -646,8 +646,6 @@ func testDynamicRollbackSingle(ctx context.Context, conn *dbschema.DatabaseConne
 	}
 	defer vem.Cleanup()
 
-	// Create a migrator and register all migrations with both up and down
-	m := migrator.NewMigrator(conn)
 	dialect := conn.Info().Dialect
 
 	// Register migrations with database-specific SQL
@@ -686,9 +684,8 @@ func testDynamicRollbackSingle(ctx context.Context, conn *dbschema.DatabaseConne
 		}
 	}
 
-	for _, migration := range migrations {
-		m.Register(migration)
-	}
+	// Create a migrator and register all migrations with both up and down
+	m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migrations...))
 
 	// Apply migrations up to version 4
 	err = recorder.RecordStep("Apply All Migrations", "Apply migrations 1-4", func() error {
@@ -756,8 +753,6 @@ func testDynamicRollbackMultiple(ctx context.Context, conn *dbschema.DatabaseCon
 	}
 	defer vem.Cleanup()
 
-	// Create a migrator and register all migrations with both up and down
-	m := migrator.NewMigrator(conn)
 	dialect := conn.Info().Dialect
 
 	// Register migrations with database-specific SQL
@@ -808,9 +803,8 @@ func testDynamicRollbackMultiple(ctx context.Context, conn *dbschema.DatabaseCon
 		}
 	}
 
-	for _, migration := range migrations {
-		m.Register(migration)
-	}
+	// Create a migrator and register all migrations with both up and down
+	m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migrations...))
 
 	// Apply migrations up to version 6
 	err = recorder.RecordStep("Apply All Migrations", "Apply migrations 1-6", func() error {
@@ -878,8 +872,6 @@ func testDynamicRollbackToZero(ctx context.Context, conn *dbschema.DatabaseConne
 	}
 	defer vem.Cleanup()
 
-	// Create a migrator and register all migrations with both up and down
-	m := migrator.NewMigrator(conn)
 	dialect := conn.Info().Dialect
 
 	// Register migrations with database-specific SQL
@@ -912,9 +904,8 @@ func testDynamicRollbackToZero(ctx context.Context, conn *dbschema.DatabaseConne
 		}
 	}
 
-	for _, migration := range migrations {
-		m.Register(migration)
-	}
+	// Create a migrator and register all migrations with both up and down
+	m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migrations...))
 
 	// Apply all migrations
 	err = recorder.RecordStep("Apply All Migrations", "Apply migrations 1-3", func() error {
@@ -1000,14 +991,14 @@ func testDynamicPartialFailureRecovery(ctx context.Context, conn *dbschema.Datab
 	// Simulate a failure by trying to apply an invalid migration
 	err = recorder.RecordStep("Simulate Migration Failure", "Attempt to apply invalid SQL", func() error {
 		// Create a migration with invalid SQL that will fail
-		m := migrator.NewMigrator(conn)
 		invalidMigration := migrator.CreateMigrationFromSQL(
 			999,
 			"Invalid migration for testing",
 			"CREATE TABLE invalid_table (invalid_column INVALID_TYPE);", // Invalid SQL
 			"DROP TABLE invalid_table;",
 		)
-		m.Register(invalidMigration)
+		// Create a migrator and register all migrations with both up and down
+		m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(invalidMigration))
 
 		// This should fail
 		err := m.MigrateUp(ctx)
@@ -1055,14 +1046,14 @@ func testDynamicInvalidMigration(ctx context.Context, conn *dbschema.DatabaseCon
 	// Test various invalid migration scenarios
 	return recorder.RecordStep("Test Invalid Migration Scenarios", "Test handling of various invalid migrations", func() error {
 		// Test 1: Migration with empty SQL (should succeed)
-		m1 := migrator.NewMigrator(conn)
 		emptyMigration := migrator.CreateMigrationFromSQL(
 			2,
 			"Empty migration",
 			"", // Empty SQL
 			"",
 		)
-		m1.Register(emptyMigration)
+		// Create a migrator and register all migrations with both up and down
+		m1 := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(emptyMigration))
 
 		// This should succeed (empty migrations are valid)
 		if err := m1.MigrateUp(ctx); err != nil {
@@ -1070,14 +1061,14 @@ func testDynamicInvalidMigration(ctx context.Context, conn *dbschema.DatabaseCon
 		}
 
 		// Test 2: Migration with syntax error - use clearly invalid SQL
-		m2 := migrator.NewMigrator(conn)
 		syntaxErrorMigration := migrator.CreateMigrationFromSQL(
 			3,
 			"Syntax error migration",
 			"THIS IS NOT VALID SQL AT ALL!!!;", // Clearly invalid syntax
 			"",
 		)
-		m2.Register(syntaxErrorMigration)
+		// Create a migrator and register all migrations with both up and down
+		m2 := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(syntaxErrorMigration))
 
 		// This should fail
 		if err := m2.MigrateUp(ctx); err == nil {
@@ -1085,14 +1076,14 @@ func testDynamicInvalidMigration(ctx context.Context, conn *dbschema.DatabaseCon
 		}
 
 		// Test 3: Migration with conflicting table name
-		m3 := migrator.NewMigrator(conn)
 		conflictMigration := migrator.CreateMigrationFromSQL(
 			4,
 			"Conflicting table migration",
 			"CREATE TABLE users (id INTEGER);", // Table already exists
 			"DROP TABLE users;",
 		)
-		m3.Register(conflictMigration)
+		// Create a migrator and register all migrations with both up and down
+		m3 := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(conflictMigration))
 
 		// This should fail due to table already existing
 		if err := m3.MigrateUp(ctx); err == nil {
@@ -1135,28 +1126,28 @@ func testDynamicConcurrentMigrations(ctx context.Context, conn *dbschema.Databas
 		// Start first migration in goroutine
 		go func() {
 			<-startCh
-			m1 := migrator.NewMigrator(conn)
 			migration1 := migrator.CreateMigrationFromSQL(
 				995,
 				"Concurrent migration 1",
 				"CREATE TABLE concurrent_test1 (id INTEGER);",
 				"DROP TABLE concurrent_test1;",
 			)
-			m1.Register(migration1)
+			// Create a migrator and register all migrations with both up and down
+			m1 := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration1))
 			result1Ch <- m1.MigrateUp(ctx)
 		}()
 
 		// Start second migration in goroutine
 		go func() {
 			<-startCh
-			m2 := migrator.NewMigrator(conn2)
 			migration2 := migrator.CreateMigrationFromSQL(
 				994,
 				"Concurrent migration 2",
 				"CREATE TABLE concurrent_test2 (id INTEGER);",
 				"DROP TABLE concurrent_test2;",
 			)
-			m2.Register(migration2)
+			// Create a migrator and register all migrations with both up and down
+			m2 := migrator.NewMigrator(conn2, migrator.NewRegisteredMigrationProvider(migration2))
 			result2Ch <- m2.MigrateUp(ctx)
 		}()
 
@@ -1203,7 +1194,6 @@ func testDynamicCircularDependencies(ctx context.Context, conn *dbschema.Databas
 	return recorder.RecordStep("Test Circular Dependencies", "Create tables with circular foreign key references", func() error {
 		dialect := conn.Info().Dialect
 		// Create migrations that establish circular dependencies
-		m := migrator.NewMigrator(conn)
 
 		// First, create tables without foreign keys
 		var createSQL string
@@ -1221,14 +1211,14 @@ func testDynamicCircularDependencies(ctx context.Context, conn *dbschema.Databas
 			createSQL,
 			`DROP TABLE employees; DROP TABLE departments;`,
 		)
-		m.Register(migration1)
+		// Create a migrator and register all migrations with both up and down
+		m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration1))
 
 		if err := m.MigrateUp(ctx); err != nil {
 			return fmt.Errorf("failed to create initial tables: %w", err)
 		}
 
 		// Then add foreign keys that create circular dependency
-		m2 := migrator.NewMigrator(conn)
 		migration2 := migrator.CreateMigrationFromSQL(
 			2,
 			"Add circular foreign keys",
@@ -1239,7 +1229,8 @@ func testDynamicCircularDependencies(ctx context.Context, conn *dbschema.Databas
 			 ALTER TABLE employees DROP CONSTRAINT fk_emp_dept;
 			 ALTER TABLE departments DROP COLUMN manager_id;`,
 		)
-		m2.Register(migration2)
+		// Create a migrator and register all migrations with both up and down
+		m2 := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration2))
 
 		// This should succeed - most databases handle circular FKs if created properly
 		if err := m2.MigrateUp(ctx); err != nil {
@@ -1272,7 +1263,6 @@ func testDynamicDataMigration(ctx context.Context, conn *dbschema.DatabaseConnec
 	// Create initial table with data
 	err = recorder.RecordStep("Create Table with Data", "Create users table and insert test data", func() error {
 		dialect := conn.Info().Dialect
-		m := migrator.NewMigrator(conn)
 
 		var createSQL string
 		if dialect == "mysql" {
@@ -1295,7 +1285,8 @@ func testDynamicDataMigration(ctx context.Context, conn *dbschema.DatabaseConnec
 			createSQL,
 			`DROP TABLE users;`,
 		)
-		m.Register(migration)
+		// Create a migrator and register all migrations with both up and down
+		m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration))
 		return m.MigrateUp(ctx)
 	})
 	if err != nil {
@@ -1310,8 +1301,6 @@ func testDynamicDataMigration(ctx context.Context, conn *dbschema.DatabaseConnec
 		// Try to drop columns if they exist (ignore errors if they don't exist)
 		_ = conn.Writer().ExecuteSQL("ALTER TABLE users DROP COLUMN first_name")
 		_ = conn.Writer().ExecuteSQL("ALTER TABLE users DROP COLUMN last_name")
-
-		m := migrator.NewMigrator(conn)
 
 		// Use database-specific SQL for better compatibility
 		var migrationSQL string
@@ -1344,7 +1333,8 @@ func testDynamicDataMigration(ctx context.Context, conn *dbschema.DatabaseConnec
 			 ALTER TABLE users DROP COLUMN first_name;
 			 ALTER TABLE users DROP COLUMN last_name;`,
 		)
-		m.Register(migration)
+		// Create a migrator and register all migrations with both up and down
+		m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration))
 
 		if err := m.MigrateUp(ctx); err != nil {
 			return fmt.Errorf("data migration failed: %w", err)
@@ -1375,7 +1365,6 @@ func testDynamicLargeTableMigration(ctx context.Context, conn *dbschema.Database
 	// Create table with moderate amount of data (not too large for CI)
 	err = recorder.RecordStep("Create Large Table", "Create table with test data", func() error {
 		dialect := conn.Info().Dialect
-		m := migrator.NewMigrator(conn)
 
 		var createSQL string
 		if dialect == "mysql" {
@@ -1398,7 +1387,8 @@ func testDynamicLargeTableMigration(ctx context.Context, conn *dbschema.Database
 			createSQL,
 			`DROP TABLE large_table;`,
 		)
-		m.Register(migration)
+		// Create a migrator and register all migrations with both up and down
+		m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration))
 		return m.MigrateUp(ctx)
 	})
 	if err != nil {
@@ -1430,7 +1420,6 @@ func testDynamicLargeTableMigration(ctx context.Context, conn *dbschema.Database
 	return recorder.RecordStep("Migrate Large Table", "Add index and new column to large table", func() error {
 		start := time.Now()
 
-		m := migrator.NewMigrator(conn)
 		migration := migrator.CreateMigrationFromSQL(
 			2,
 			"Add index and column to large table",
@@ -1441,7 +1430,8 @@ func testDynamicLargeTableMigration(ctx context.Context, conn *dbschema.Database
 			 DROP INDEX idx_large_table_status;
 			 ALTER TABLE large_table DROP COLUMN status;`,
 		)
-		m.Register(migration)
+		// Create a migrator and register all migrations with both up and down
+		m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration))
 
 		if err := m.MigrateUp(ctx); err != nil {
 			return fmt.Errorf("failed to migrate large table: %w", err)
@@ -1486,8 +1476,6 @@ func testDynamicEmptyMigrations(ctx context.Context, conn *dbschema.DatabaseConn
 
 	// Test empty migrations
 	return recorder.RecordStep("Test Empty Migrations", "Apply migrations with no schema changes", func() error {
-		m := migrator.NewMigrator(conn)
-
 		// Empty migration 1
 		emptyMigration1 := migrator.CreateMigrationFromSQL(
 			990,
@@ -1495,7 +1483,6 @@ func testDynamicEmptyMigrations(ctx context.Context, conn *dbschema.DatabaseConn
 			"", // No SQL
 			"",
 		)
-		m.Register(emptyMigration1)
 
 		// Empty migration 2 with comments only
 		emptyMigration2 := migrator.CreateMigrationFromSQL(
@@ -1504,7 +1491,6 @@ func testDynamicEmptyMigrations(ctx context.Context, conn *dbschema.DatabaseConn
 			"-- This is just a comment\n-- No actual schema changes",
 			"-- Rollback comment",
 		)
-		m.Register(emptyMigration2)
 
 		// Empty migration 3 with whitespace
 		emptyMigration3 := migrator.CreateMigrationFromSQL(
@@ -1513,7 +1499,9 @@ func testDynamicEmptyMigrations(ctx context.Context, conn *dbschema.DatabaseConn
 			"   \n\t  \n   ", // Just whitespace
 			"",
 		)
-		m.Register(emptyMigration3)
+
+		// Create a migrator and register all migrations with both up and down
+		m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(emptyMigration1, emptyMigration2, emptyMigration3))
 
 		if err := m.MigrateUp(ctx); err != nil {
 			return fmt.Errorf("empty migrations should succeed: %w", err)
@@ -1544,7 +1532,6 @@ func testDynamicDuplicateNames(ctx context.Context, conn *dbschema.DatabaseConne
 
 	return recorder.RecordStep("Test Duplicate Names", "Test handling of duplicate table/field names", func() error {
 		dialect := conn.Info().Dialect
-		m := migrator.NewMigrator(conn)
 
 		// Create initial table with database-specific SQL
 		var createSQL string
@@ -1560,21 +1547,22 @@ func testDynamicDuplicateNames(ctx context.Context, conn *dbschema.DatabaseConne
 			createSQL,
 			"DROP TABLE test_table;",
 		)
-		m.Register(migration1)
+		// Create a migrator and register all migrations with both up and down
+		m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration1))
 
 		if err := m.MigrateUp(ctx); err != nil {
 			return fmt.Errorf("failed to create initial table: %w", err)
 		}
 
 		// Try to create table with same name (should fail)
-		m2 := migrator.NewMigrator(conn)
 		duplicateMigration := migrator.CreateMigrationFromSQL(
 			2,
 			"Duplicate table name",
 			"CREATE TABLE test_table (id INTEGER, data TEXT);", // Same table name
 			"DROP TABLE test_table;",
 		)
-		m2.Register(duplicateMigration)
+		// Create a migrator and register all migrations with both up and down
+		m2 := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(duplicateMigration))
 
 		// This should fail
 		if err := m2.MigrateUp(ctx); err == nil {
@@ -1582,14 +1570,14 @@ func testDynamicDuplicateNames(ctx context.Context, conn *dbschema.DatabaseConne
 		}
 
 		// Try to add column with same name (should fail)
-		m3 := migrator.NewMigrator(conn)
 		duplicateColumnMigration := migrator.CreateMigrationFromSQL(
 			3,
 			"Duplicate column name",
 			"ALTER TABLE test_table ADD COLUMN id VARCHAR(255);", // Column 'id' already exists
 			"ALTER TABLE test_table DROP COLUMN id;",
 		)
-		m3.Register(duplicateColumnMigration)
+		// Create a migrator and register all migrations with both up and down
+		m3 := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(duplicateColumnMigration))
 
 		// This should fail
 		if err := m3.MigrateUp(ctx); err == nil {
@@ -1619,7 +1607,6 @@ func testDynamicReservedKeywords(ctx context.Context, conn *dbschema.DatabaseCon
 
 	return recorder.RecordStep("Test Reserved Keywords", "Test migrations with SQL reserved keywords", func() error {
 		dialect := conn.Info().Dialect
-		m := migrator.NewMigrator(conn)
 
 		// Create table with reserved keyword names (properly quoted)
 		var createSQL, dropSQL string
@@ -1651,7 +1638,8 @@ func testDynamicReservedKeywords(ctx context.Context, conn *dbschema.DatabaseCon
 			createSQL,
 			dropSQL,
 		)
-		m.Register(migration)
+		// Create a migrator and register all migrations with both up and down
+		m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration))
 
 		if err := m.MigrateUp(ctx); err != nil {
 			return fmt.Errorf("reserved keywords migration should succeed with proper quoting: %w", err)
@@ -1676,14 +1664,14 @@ func testDynamicReservedKeywords(ctx context.Context, conn *dbschema.DatabaseCon
 		}
 
 		// Test unquoted reserved keywords (should fail)
-		m2 := migrator.NewMigrator(conn)
 		badMigration := migrator.CreateMigrationFromSQL(
 			2,
 			"Bad reserved keywords",
 			"CREATE TABLE select (id INTEGER, from VARCHAR(255));", // Unquoted reserved keywords
 			"DROP TABLE select;",
 		)
-		m2.Register(badMigration)
+		// Create a migrator and register all migrations with both up and down
+		m2 := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(badMigration))
 
 		// This should fail
 		if err := m2.MigrateUp(ctx); err == nil {
@@ -1708,7 +1696,6 @@ func testDynamicDialectDifferences(ctx context.Context, conn *dbschema.DatabaseC
 
 	return recorder.RecordStep("Test Dialect Differences", "Test migrations with dialect-specific features", func() error {
 		dialect := conn.Info().Dialect
-		m := migrator.NewMigrator(conn)
 
 		var migration *migrator.Migration
 		switch dialect {
@@ -1749,7 +1736,8 @@ func testDynamicDialectDifferences(ctx context.Context, conn *dbschema.DatabaseC
 			)
 		}
 
-		m.Register(migration)
+		// Create a migrator and register all migrations with both up and down
+		m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration))
 		if err := m.MigrateUp(ctx); err != nil {
 			return fmt.Errorf("dialect-specific migration failed for %s: %w", dialect, err)
 		}
@@ -1785,7 +1773,6 @@ func testDynamicTypeMapping(ctx context.Context, conn *dbschema.DatabaseConnecti
 
 	return recorder.RecordStep("Test Type Mapping", "Test database-specific type conversions", func() error {
 		dialect := conn.Info().Dialect
-		m := migrator.NewMigrator(conn)
 
 		// Create table with various data types
 		var createSQL, dropSQL string
@@ -1830,14 +1817,14 @@ func testDynamicTypeMapping(ctx context.Context, conn *dbschema.DatabaseConnecti
 		dropSQL = `DROP TABLE type_test;`
 
 		migration := migrator.CreateMigrationFromSQL(1, "Type mapping test", createSQL, dropSQL)
-		m.Register(migration)
+		// Create a migrator and register all migrations with both up and down
+		m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration))
 
 		if err := m.MigrateUp(ctx); err != nil {
 			return fmt.Errorf("type mapping migration failed for %s: %w", dialect, err)
 		}
 
 		// Test type conversion migration
-		m2 := migrator.NewMigrator(conn)
 		var alterSQL string
 		switch dialect {
 		case "postgres":
@@ -1850,7 +1837,8 @@ func testDynamicTypeMapping(ctx context.Context, conn *dbschema.DatabaseConnecti
 
 		if alterSQL != "-- Type conversion not supported in generic SQL" {
 			migration2 := migrator.CreateMigrationFromSQL(2, "Type conversion test", alterSQL, "")
-			m2.Register(migration2)
+			// Create a migrator and register all migrations with both up and down
+			m2 := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration2))
 
 			if err := m2.MigrateUp(ctx); err != nil {
 				return fmt.Errorf("type conversion migration failed for %s: %w", dialect, err)
@@ -1876,7 +1864,6 @@ func testDynamicConstraintValidation(ctx context.Context, conn *dbschema.Databas
 	// Create table with data that will violate constraints
 	err = recorder.RecordStep("Create Table with Data", "Create table and insert data", func() error {
 		dialect := conn.Info().Dialect
-		m := migrator.NewMigrator(conn)
 
 		var createSQL string
 		if dialect == "mysql" {
@@ -1909,7 +1896,8 @@ func testDynamicConstraintValidation(ctx context.Context, conn *dbschema.Databas
 			createSQL,
 			`DROP TABLE constraint_test;`,
 		)
-		m.Register(migration)
+		// Create a migrator and register all migrations with both up and down
+		m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration))
 		return m.MigrateUp(ctx)
 	})
 	if err != nil {
@@ -1918,14 +1906,14 @@ func testDynamicConstraintValidation(ctx context.Context, conn *dbschema.Databas
 
 	// Try to add unique constraint (should fail due to duplicate emails)
 	err = recorder.RecordStep("Test Unique Constraint Violation", "Try to add unique constraint on email", func() error {
-		m := migrator.NewMigrator(conn)
 		migration := migrator.CreateMigrationFromSQL(
 			2,
 			"Add unique constraint",
 			`ALTER TABLE constraint_test ADD CONSTRAINT uk_constraint_test_email UNIQUE (email);`,
 			`ALTER TABLE constraint_test DROP CONSTRAINT uk_constraint_test_email;`,
 		)
-		m.Register(migration)
+		// Create a migrator and register all migrations with both up and down
+		m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration))
 
 		// This should fail due to duplicate emails
 		if err := m.MigrateUp(ctx); err == nil {
@@ -1939,14 +1927,14 @@ func testDynamicConstraintValidation(ctx context.Context, conn *dbschema.Databas
 
 	// Try to add check constraint (should fail due to negative age)
 	return recorder.RecordStep("Test Check Constraint Violation", "Try to add check constraint on age", func() error {
-		m := migrator.NewMigrator(conn)
 		migration := migrator.CreateMigrationFromSQL(
 			3,
 			"Add check constraint",
 			`ALTER TABLE constraint_test ADD CONSTRAINT ck_constraint_test_age CHECK (age >= 0);`,
 			`ALTER TABLE constraint_test DROP CONSTRAINT ck_constraint_test_age;`,
 		)
-		m.Register(migration)
+		// Create a migrator and register all migrations with both up and down
+		m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration))
 
 		// This should fail due to negative age
 		if err := m.MigrateUp(ctx); err == nil {
@@ -1967,7 +1955,6 @@ func testDynamicForeignKeyCascade(ctx context.Context, conn *dbschema.DatabaseCo
 	// Create tables with foreign key relationships
 	err = recorder.RecordStep("Create Tables with FK", "Create parent and child tables with foreign key", func() error {
 		dialect := conn.Info().Dialect
-		m := migrator.NewMigrator(conn)
 
 		var createSQL string
 		if dialect == "mysql" || dialect == "mariadb" {
@@ -2004,7 +1991,8 @@ func testDynamicForeignKeyCascade(ctx context.Context, conn *dbschema.DatabaseCo
 			createSQL,
 			`DROP TABLE child_table; DROP TABLE parent_table;`,
 		)
-		m.Register(migration)
+		// Create a migrator and register all migrations with both up and down
+		m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration))
 		return m.MigrateUp(ctx)
 	})
 	if err != nil {
@@ -2014,7 +2002,6 @@ func testDynamicForeignKeyCascade(ctx context.Context, conn *dbschema.DatabaseCo
 	// Try to drop parent table (should fail due to FK constraint)
 	err = recorder.RecordStep("Test FK Constraint on Drop", "Try to drop parent table with FK references", func() error {
 		dialect := conn.Info().Dialect
-		m := migrator.NewMigrator(conn)
 
 		var downSQL string
 		if dialect == "mysql" || dialect == "mariadb" {
@@ -2029,7 +2016,8 @@ func testDynamicForeignKeyCascade(ctx context.Context, conn *dbschema.DatabaseCo
 			`DROP TABLE parent_table;`,
 			downSQL,
 		)
-		m.Register(migration)
+		// Create a migrator and register all migrations with both up and down
+		m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration))
 
 		// This should fail due to foreign key constraint
 		if err := m.MigrateUp(ctx); err == nil {
@@ -2045,7 +2033,6 @@ func testDynamicForeignKeyCascade(ctx context.Context, conn *dbschema.DatabaseCo
 	return recorder.RecordStep("Test Cascade Operations", "Test foreign key cascade behavior", func() error {
 		dialect := conn.Info().Dialect
 		// Recreate tables with cascade constraint from the start
-		m := migrator.NewMigrator(conn)
 
 		var recreateSQL string
 		if dialect == "mysql" || dialect == "mariadb" {
@@ -2086,7 +2073,8 @@ func testDynamicForeignKeyCascade(ctx context.Context, conn *dbschema.DatabaseCo
 			recreateSQL,
 			`DROP TABLE child_table; DROP TABLE parent_table;`,
 		)
-		m.Register(migration)
+		// Create a migrator and register all migrations with both up and down
+		m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration))
 
 		if err := m.MigrateUp(ctx); err != nil {
 			return fmt.Errorf("failed to recreate tables with cascade: %w", err)

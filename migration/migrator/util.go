@@ -97,13 +97,6 @@ func FormatTimestampForDatabase(dialect string) string {
 	}
 }
 
-// SortMigrationFiles sorts migration files by version number
-func SortMigrationFiles(files []MigrationFile) {
-	sort.Slice(files, func(i, j int) bool {
-		return files[i].Version < files[j].Version
-	})
-}
-
 // GroupMigrationFiles groups migration files by version, returning a map
 // where each version maps to a struct containing up and down migration files
 func GroupMigrationFiles(files []MigrationFile) map[int]MigrationPair {

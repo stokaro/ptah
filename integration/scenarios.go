@@ -233,10 +233,10 @@ func testUpgradeToSpecificVersion(ctx context.Context, conn *dbschema.DatabaseCo
 		return fmt.Errorf("failed to get migrations filesystem: %w", err)
 	}
 
-	// Create migrator and register migrations
-	m := migrator.NewMigrator(conn)
-	if err := migrator.RegisterMigrations(m, migrationsFS); err != nil {
-		return fmt.Errorf("failed to register migrations: %w", err)
+	// Create migrator from filesystem
+	m, err := migrator.NewFSMigrator(conn, migrationsFS)
+	if err != nil {
+		return fmt.Errorf("failed to create migrator: %w", err)
 	}
 
 	// Migrate to version 2 only
@@ -294,9 +294,9 @@ func testCheckCurrentVersion(ctx context.Context, conn *dbschema.DatabaseConnect
 	}
 
 	// Apply first migration
-	m := migrator.NewMigrator(conn)
-	if err := migrator.RegisterMigrations(m, migrationsFS); err != nil {
-		return fmt.Errorf("failed to register migrations: %w", err)
+	m, err := migrator.NewFSMigrator(conn, migrationsFS)
+	if err != nil {
+		return fmt.Errorf("failed to create migrator: %w", err)
 	}
 
 	if err := m.MigrateTo(ctx, 1); err != nil {

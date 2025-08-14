@@ -105,6 +105,29 @@ JSON output:
 go run ./cmd migrate-status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --json
 ```
 
+## API Overview
+
+The migrator package provides a clean, modular API with the following key components:
+
+### Core Types
+
+- **`Migrator`**: Main migration engine that executes migrations
+- **`Migration`**: Represents a single database migration with up/down functions
+- **`MigrationProvider`**: Interface for providing migrations to the migrator
+- **`MigrationFunc`**: Function type for migration operations
+- **`MigrationStatus`**: Represents the current state of migrations
+
+### Migration Providers
+
+- **`RegisteredMigrationProvider`**: In-memory provider for programmatically registered migrations
+- **`FSMigrationProvider`**: Filesystem-based provider that loads migrations from SQL files
+
+### Factory Functions
+
+- **`NewMigrator(conn, provider)`**: Creates a migrator with a custom provider
+- **`NewFSMigrator(conn, fsys)`**: Creates a migrator that loads migrations from a filesystem
+- **`NewRegisteredMigrationProvider(migrations...)`**: Creates an in-memory migration provider
+
 ## Programmatic Usage
 
 ### Basic Migration Execution
@@ -114,13 +137,14 @@ package main
 
 import (
     "context"
-    "github.com/stokaro/ptah/executor"
-    "github.com/stokaro/ptah/migrator"
+    "os"
+    "github.com/stokaro/ptah/dbschema"
+    "github.com/stokaro/ptah/migration/migrator"
 )
 
 func main() {
     // Connect to database
-    conn, err := executor.ConnectToDatabase("postgres://user:pass@localhost/db")
+    conn, err := dbschema.ConnectToDatabase("postgres://user:pass@localhost/db")
     if err != nil {
         panic(err)
     }
@@ -129,8 +153,14 @@ func main() {
     // Create filesystem from migrations directory
     migrationsFS := os.DirFS("/path/to/migrations")
 
+    // Create migrator from filesystem
+    m, err := migrator.NewFSMigrator(conn, migrationsFS)
+    if err != nil {
+        panic(err)
+    }
+
     // Run all pending migrations
-    err = migrator.RunMigrations(context.Background(), conn, migrationsFS)
+    err = m.MigrateUp(context.Background())
     if err != nil {
         panic(err)
     }
@@ -140,40 +170,59 @@ func main() {
 ### Custom Migration Registration
 
 ```go
-// Register migrations from a custom filesystem
-m := migrator.NewMigrator(conn)
+import (
+    "context"
+    "os"
+    "github.com/stokaro/ptah/dbschema"
+    "github.com/stokaro/ptah/migration/migrator"
+)
 
-// Option 1: Register from a directory on disk
-err := migrator.RegisterMigrationsFromDirectory(m, "/path/to/migrations")
+// Option 1: Create migrator with registered migrations
+provider := migrator.NewRegisteredMigrationProvider()
+m := migrator.NewMigrator(conn, provider)
 
-// Option 2: Register from a custom filesystem
-customFS := os.DirFS("/custom/path")
-err := migrator.RegisterMigrations(m, customFS)
-
-// Option 3: Register from example migrations
-exampleFS := migrator_examples.GetExampleMigrations()
-migrationsFS := must.Must(fs.Sub(exampleFS, "migrations"))
-err := migrator.RegisterMigrations(m, migrationsFS)
-
-// Option 4: Register a Go-based migration
-upFunc := func(ctx context.Context, conn *executor.DatabaseConnection) error {
+// Register a Go-based migration
+upFunc := func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
     return conn.Writer().ExecuteSQL("CREATE TABLE test (id SERIAL PRIMARY KEY)")
 }
 
-downFunc := func(ctx context.Context, conn *executor.DatabaseConnection) error {
+downFunc := func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
     return conn.Writer().ExecuteSQL("DROP TABLE test")
 }
 
-migrator.RegisterGoMigration(m, 1001, "Create test table", upFunc, downFunc)
+migration := &migrator.Migration{
+    Version:     1001,
+    Description: "Create test table",
+    Up:          upFunc,
+    Down:        downFunc,
+}
+provider.Register(migration)
+
+// Option 2: Create migrator from filesystem
+customFS := os.DirFS("/custom/path")
+m, err := migrator.NewFSMigrator(conn, customFS)
+
+// Option 3: Create migration from SQL strings
+sqlMigration := migrator.CreateMigrationFromSQL(
+    1002,
+    "Add users table",
+    "CREATE TABLE users (id SERIAL PRIMARY KEY, name VARCHAR(255));",
+    "DROP TABLE users;",
+)
+provider.Register(sqlMigration)
 ```
 
 ### Migration Status Checking
 
 ```go
-// Create filesystem from migrations directory
+// Create migrator from filesystem
 migrationsFS := os.DirFS("/path/to/migrations")
+m, err := migrator.NewFSMigrator(conn, migrationsFS)
+if err != nil {
+    panic(err)
+}
 
-status, err := migrator.GetMigrationStatus(context.Background(), conn, migrationsFS)
+status, err := m.GetMigrationStatus(context.Background())
 if err != nil {
     panic(err)
 }
@@ -225,10 +274,10 @@ CREATE TABLE schema_migrations (
 
 The migrator integrates seamlessly with Ptah's existing infrastructure:
 
-- Uses Ptah's executor package for database connections
-- Supports the same databases as Ptah (PostgreSQL, MySQL)
+- Uses Ptah's dbschema package for database connections
+- Supports the same databases as Ptah (PostgreSQL, MySQL, MariaDB)
 - Follows Ptah's transaction and error handling patterns
-- Compatible with Ptah's dry-run functionality
+- Uses Ptah's SQL parsing utilities for statement splitting
 
 ## Future Enhancements
 

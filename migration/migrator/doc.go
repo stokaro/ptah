@@ -27,6 +27,10 @@
 //   - Migrator: Main migration engine that manages migration execution
 //   - Migration: Represents a single database migration with up/down functions
 //   - MigrationFunc: Function type for programmatic migrations
+//   - MigrationProvider: Interface for providing migrations to the migrator
+//   - RegisteredMigrationProvider: In-memory provider for programmatic migrations
+//   - FSMigrationProvider: Filesystem-based provider that loads migrations from SQL files
+//   - MigrationStatus: Represents the current state of migrations
 //
 // # Migration Structure
 //
@@ -48,16 +52,21 @@
 //	}
 //	defer conn.Close()
 //
-//	// Create migrator
-//	m := migrator.NewMigrator(conn)
+//	// Option 1: Create migrator from filesystem
+//	m, err := migrator.NewFSMigrator(conn, os.DirFS("/path/to/migrations"))
+//	if err != nil {
+//		log.Fatal(err)
+//	}
 //
-//	// Register migrations
-//	m.Register(&migrator.Migration{
+//	// Option 2: Create migrator with registered migrations
+//	provider := migrator.NewRegisteredMigrationProvider()
+//	provider.Register(&migrator.Migration{
 //		Version:     20240101120000,
 //		Description: "Create users table",
 //		Up:          migrator.MigrationFuncFromSQLFilename("001_create_users.up.sql", fsys),
 //		Down:        migrator.MigrationFuncFromSQLFilename("001_create_users.down.sql", fsys),
 //	})
+//	m := migrator.NewMigrator(conn, provider)
 //
 //	// Apply all pending migrations
 //	if err := m.MigrateUp(context.Background()); err != nil {
@@ -86,6 +95,16 @@
 //   - GetCurrentVersion(): Get the current migration version
 //   - GetAppliedMigrations(): List all applied migration versions
 //   - GetPendingMigrations(): List all pending migration versions
+//   - GetMigrationStatus(): Get comprehensive migration status information
+//
+// # Migration Providers
+//
+// The migrator uses a provider pattern to supply migrations:
+//
+//   - NewFSMigrator(conn, fsys): Creates a migrator that loads migrations from a filesystem
+//   - NewMigrator(conn, provider): Creates a migrator with a custom migration provider
+//   - NewRegisteredMigrationProvider(): Creates an in-memory provider for programmatic migrations
+//   - NewFSMigrationProvider(fsys): Creates a filesystem-based migration provider
 //
 // # Transaction Safety
 //

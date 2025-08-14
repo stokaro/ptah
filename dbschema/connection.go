@@ -1,6 +1,7 @@
 package dbschema
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"net/url"
@@ -131,9 +132,19 @@ func (dc *DatabaseConnection) QueryRow(query string, args ...any) *sql.Row {
 	return dc.db.QueryRow(query, args...)
 }
 
+// QueryRowContext executes a query that returns a single row using a context
+func (dc *DatabaseConnection) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	return dc.db.QueryRowContext(ctx, query, args...)
+}
+
 // Exec executes a query without returning any rows
 func (dc *DatabaseConnection) Exec(query string, args ...any) (sql.Result, error) {
 	return dc.db.Exec(query, args...)
+}
+
+// ExecContext executes a query without returning any rows using a context
+func (dc *DatabaseConnection) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return dc.db.ExecContext(ctx, query, args...)
 }
 
 // Close closes the database connection

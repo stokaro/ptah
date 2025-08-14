@@ -2,9 +2,8 @@ package migrator
 
 import (
 	"context"
-	"io/fs"
-	"os"
 	"testing"
+	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
 )
@@ -24,28 +23,6 @@ func TestMigration_Basic(t *testing.T) {
 	c.Assert(migration.Description, qt.Equals, "Test migration")
 	c.Assert(migration.Up, qt.IsNotNil)
 	c.Assert(migration.Down, qt.IsNotNil)
-}
-
-func TestMigrator_Register(t *testing.T) {
-	c := qt.New(t)
-
-	// Create a migrator with nil connection (for testing)
-	m := NewMigrator(nil)
-	c.Assert(m, qt.IsNotNil)
-
-	// Register a migration
-	migration := &Migration{
-		Version:     1,
-		Description: "Test migration",
-		Up:          NoopMigrationFunc,
-		Down:        NoopMigrationFunc,
-	}
-
-	m.Register(migration)
-
-	// Note: We can't easily test the internal state without exposing it
-	// In a real implementation, you might want to add a GetMigrations() method
-	// for testing purposes
 }
 
 func TestNoopMigrationFunc(t *testing.T) {
@@ -106,57 +83,85 @@ func TestMigrationStatus_NoPending(t *testing.T) {
 	c.Assert(status.HasPendingChanges, qt.IsFalse)
 }
 
-func TestMigrationVersionTracking(t *testing.T) {
-	c := qt.New(t)
-
-	// This test verifies that the migration version tracking logic works
-	// even though we can't test with a real database connection
-
-	// Create a migrator with nil connection (for testing)
-	m := NewMigrator(nil)
-	c.Assert(m, qt.IsNotNil)
-
-	// Register some test migrations
-	migration1 := &Migration{
-		Version:     1,
-		Description: "First migration",
-		Up:          NoopMigrationFunc,
-		Down:        NoopMigrationFunc,
+func TestSplitSQLStatements(t *testing.T) {
+	tests := []struct {
+		name     string
+		sql      string
+		expected []string
+	}{
+		{
+			name: "single statement",
+			sql:  "CREATE TABLE users (id SERIAL PRIMARY KEY);",
+			expected: []string{
+				"CREATE TABLE users (id SERIAL PRIMARY KEY)",
+			},
+		},
+		{
+			name: "multiple statements",
+			sql:  "CREATE TABLE users (id SERIAL PRIMARY KEY); CREATE INDEX idx_users_id ON users(id);",
+			expected: []string{
+				"CREATE TABLE users (id SERIAL PRIMARY KEY)",
+				"CREATE INDEX idx_users_id ON users(id)",
+			},
+		},
+		{
+			name: "statements with comments",
+			sql:  "-- Create users table\nCREATE TABLE users (id SERIAL PRIMARY KEY);\n-- Create index\nCREATE INDEX idx_users_id ON users(id);",
+			expected: []string{
+				"CREATE TABLE users (id SERIAL PRIMARY KEY)",
+				"CREATE INDEX idx_users_id ON users(id)",
+			},
+		},
+		{
+			name:     "empty SQL",
+			sql:      "",
+			expected: []string{},
+		},
+		{
+			name:     "only comments",
+			sql:      "-- This is a comment\n/* Another comment */",
+			expected: []string{},
+		},
 	}
-	migration2 := &Migration{
-		Version:     2,
-		Description: "Second migration",
-		Up:          NoopMigrationFunc,
-		Down:        NoopMigrationFunc,
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			result := SplitSQLStatements(tt.sql)
+			c.Assert(result, qt.DeepEquals, tt.expected)
+		})
 	}
-
-	m.Register(migration1)
-	m.Register(migration2)
-
-	// Test that migrations are sorted properly
-	m.sortMigrations()
-	c.Assert(len(m.migrations), qt.Equals, 2)
-	c.Assert(m.migrations[0].Version, qt.Equals, 1)
-	c.Assert(m.migrations[1].Version, qt.Equals, 2)
 }
 
-func TestRegisterMigrations_WithFilesystem(t *testing.T) {
+func TestMigrationFuncFromSQLFilename_Success(t *testing.T) {
 	c := qt.New(t)
 
-	// Create a migrator with nil connection (for testing)
-	m := NewMigrator(nil)
-	c.Assert(m, qt.IsNotNil)
+	// Create a test filesystem with SQL content
+	fsys := fstest.MapFS{
+		"test.sql": &fstest.MapFile{
+			Data: []byte("CREATE TABLE test (id SERIAL PRIMARY KEY);"),
+		},
+	}
 
-	// Create a simple test filesystem using the example migrations
-	// Import the examples package to get the test migrations
-	// For now, we'll just test with an empty filesystem to verify the function works
-	testFS := fs.FS(os.DirFS("."))
+	migrationFunc := MigrationFuncFromSQLFilename("test.sql", fsys)
+	c.Assert(migrationFunc, qt.IsNotNil)
 
-	// Register migrations from the test filesystem (will be empty, but should not error)
-	err := RegisterMigrations(m, testFS)
-	c.Assert(err, qt.IsNil)
+	// We can't easily test execution without a real database connection,
+	// but we can test that the function was created successfully
+}
 
-	// Note: We can't easily test the internal state without exposing it
-	// In a real implementation, you might want to add a GetMigrations() method
-	// for testing purposes
+func TestMigrationFuncFromSQLFilename_FileNotFound(t *testing.T) {
+	c := qt.New(t)
+
+	// Create an empty filesystem
+	fsys := fstest.MapFS{}
+
+	migrationFunc := MigrationFuncFromSQLFilename("nonexistent.sql", fsys)
+	c.Assert(migrationFunc, qt.IsNotNil)
+
+	// Test that the function returns an error when executed
+	err := migrationFunc(context.Background(), nil)
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "failed to read migration file")
 }
