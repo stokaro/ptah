@@ -6,6 +6,7 @@ import (
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
+
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
