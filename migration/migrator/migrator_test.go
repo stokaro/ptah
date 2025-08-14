@@ -52,12 +52,10 @@ func TestNewFSMigrator_InvalidFilesystem(t *testing.T) {
 		// Missing down file
 	}
 
-	// Note: The current implementation doesn't actually validate incomplete migrations
-	// because it sets both Up and Down to NoopMigrationFunc initially, and the validation
-	// only checks for nil. This is a design issue that should be addressed.
 	m, err := migrator.NewFSMigrator(nil, fsys)
-	c.Assert(err, qt.IsNil) // Currently passes because validation logic has a bug
-	c.Assert(m, qt.IsNotNil)
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(m, qt.IsNil)
+	c.Assert(err.Error(), qt.Contains, "incomplete migrations found")
 }
 
 func TestMigrator_WithLogger(t *testing.T) {

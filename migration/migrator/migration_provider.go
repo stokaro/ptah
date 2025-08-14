@@ -22,9 +22,9 @@ type RegisteredMigrationProvider struct {
 
 // NewRegisteredMigrationProvider creates a new in-memory migration provider with the given migrations.
 // The migrations will be sorted by version when accessed through the Migrations() method.
-func NewRegisteredMigrationProvider(mirations ...*Migration) *RegisteredMigrationProvider {
+func NewRegisteredMigrationProvider(migrations ...*Migration) *RegisteredMigrationProvider {
 	return &RegisteredMigrationProvider{
-		migrations: mirations,
+		migrations: migrations,
 	}
 }
 
@@ -76,6 +76,8 @@ func (p *FSMigrationProvider) Migrations() []*Migration {
 
 func (p *FSMigrationProvider) load() error {
 	migrationsMap := make(map[int]*Migration) // version -> migration
+	// Track which files were found for validation
+	foundFiles := make(map[int]map[string]bool) // version -> direction -> found
 
 	err := fs.WalkDir(p.fsys, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -101,7 +103,11 @@ func (p *FSMigrationProvider) load() error {
 				Up:          NoopMigrationFunc,
 				Down:        NoopMigrationFunc,
 			}
+			foundFiles[migrationFile.Version] = make(map[string]bool)
 		}
+
+		// Track that we found this file
+		foundFiles[migrationFile.Version][migrationFile.Direction] = true
 
 		// Set the appropriate migration function based on direction
 		switch migrationFile.Direction {
@@ -120,11 +126,11 @@ func (p *FSMigrationProvider) load() error {
 		return fmt.Errorf("failed to scan migrations directory: %w", err)
 	}
 
-	// Validate that all migrations have both up and down functions
+	// Validate that all migrations have both up and down files
 	var incompleteMigrations []int
-	for version, migration := range migrationsMap {
-		// Check if both up and down are still noop (meaning files weren't found)
-		if migration.Up == nil || migration.Down == nil {
+	for version := range migrationsMap {
+		files := foundFiles[version]
+		if !files["up"] || !files["down"] {
 			incompleteMigrations = append(incompleteMigrations, version)
 		}
 	}

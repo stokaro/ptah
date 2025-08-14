@@ -437,7 +437,7 @@ func ExampleNewFSMigrator_errorHandling() {
 		"0000000001_create_users.up.sql": &fstest.MapFile{
 			Data: []byte("CREATE TABLE users (id SERIAL PRIMARY KEY);"),
 		},
-		// Missing down file - this will cause the migration to use NoopMigrationFunc
+		// Missing down file - this will cause validation to fail
 	}
 
 	m, err := migrator.NewFSMigrator(nil, incompleteFS)
@@ -446,14 +446,11 @@ func ExampleNewFSMigrator_errorHandling() {
 		return
 	}
 
-	// The migrator will be created but the migration will have NoopMigrationFunc for down
-	migrations := m.MigrationProvider().Migrations()
-	fmt.Printf("Created migrator with %d migrations\n", len(migrations))
-	fmt.Printf("Migration: v%d - %s\n", migrations[0].Version, migrations[0].Description)
+	// This won't be reached due to validation error
+	fmt.Printf("Migrator created successfully: %v\n", m != nil)
 
 	// Output:
-	// Created migrator with 1 migrations
-	// Migration: v1 - Create Users
+	// Failed to create migrator: incomplete migrations found (missing up or down files): [1]
 }
 
 // Example demonstrates a complete migration workflow with status checking
