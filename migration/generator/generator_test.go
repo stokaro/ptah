@@ -19,7 +19,7 @@ func TestGenerateMigration_HappyPath(t *testing.T) {
 
 	// Test options
 	opts := generator.GenerateMigrationOptions{
-		RootDir:       "./testdata",
+		GoEntitiesDir: "./testdata",
 		DatabaseURL:   "memory://test",
 		MigrationName: "test_migration",
 		OutputDir:     tempDir,
@@ -94,7 +94,7 @@ func TestCreateMigrationFiles_FileCreation(t *testing.T) {
 	// In a real scenario, you might want to export this function for testing
 
 	opts := generator.GenerateMigrationOptions{
-		RootDir:       "./testdata",
+		GoEntitiesDir: "./testdata",
 		DatabaseURL:   "memory://test",
 		MigrationName: "test_migration",
 		OutputDir:     tempDir,
@@ -130,7 +130,7 @@ func TestGenerateMigrationOptions_Validation(t *testing.T) {
 		{
 			name: "valid options",
 			opts: generator.GenerateMigrationOptions{
-				RootDir:       "./testdata",
+				GoEntitiesDir: "./testdata",
 				DatabaseURL:   "memory://test",
 				MigrationName: "test_migration",
 				OutputDir:     "/tmp/migrations",
@@ -140,9 +140,9 @@ func TestGenerateMigrationOptions_Validation(t *testing.T) {
 		{
 			name: "empty migration name defaults to 'migration'",
 			opts: generator.GenerateMigrationOptions{
-				RootDir:     "./testdata",
-				DatabaseURL: "memory://test",
-				OutputDir:   "/tmp/migrations",
+				GoEntitiesDir: "./testdata",
+				DatabaseURL:   "memory://test",
+				OutputDir:     "/tmp/migrations",
 				// MigrationName is empty - should default to "migration"
 			},
 			expectError: true, // Will fail due to missing testdata
@@ -175,9 +175,7 @@ func TestGenerateMigration_ExtensionHandling_WithRealDB(t *testing.T) {
 	}
 
 	// Create temporary directory with test schema
-	tempDir, err := os.MkdirTemp("", "ptah_generator_test")
-	c.Assert(err, qt.IsNil)
-	defer os.RemoveAll(tempDir)
+	tempDir := c.TempDir()
 
 	// Create schema with extensions
 	schemaContent := `package testschema
@@ -197,7 +195,7 @@ type TestTable struct {
 `
 
 	schemaPath := filepath.Join(tempDir, "schema.go")
-	err = os.WriteFile(schemaPath, []byte(schemaContent), 0600)
+	err := os.WriteFile(schemaPath, []byte(schemaContent), 0600)
 	c.Assert(err, qt.IsNil)
 
 	migrationsDir := filepath.Join(tempDir, "migrations")
@@ -206,7 +204,7 @@ type TestTable struct {
 
 	// Test migration generation with real database
 	opts := generator.GenerateMigrationOptions{
-		RootDir:       tempDir,
+		GoEntitiesDir: tempDir,
 		DatabaseURL:   dbURL,
 		MigrationName: "test_extensions",
 		OutputDir:     migrationsDir,
@@ -262,9 +260,7 @@ func TestGenerateMigration_DatabaseConnectionFix(t *testing.T) {
 	// This test verifies the fix for the variable shadowing bug
 	// We test that the generator properly handles database connections without panicking
 
-	tempDir, err := os.MkdirTemp("", "ptah_connection_test")
-	c.Assert(err, qt.IsNil)
-	defer os.RemoveAll(tempDir)
+	tempDir := c.TempDir()
 
 	// Create minimal schema
 	schemaContent := `package testschema
@@ -277,7 +273,7 @@ type SimpleTable struct {
 `
 
 	schemaPath := filepath.Join(tempDir, "schema.go")
-	err = os.WriteFile(schemaPath, []byte(schemaContent), 0600)
+	err := os.WriteFile(schemaPath, []byte(schemaContent), 0600)
 	c.Assert(err, qt.IsNil)
 
 	migrationsDir := filepath.Join(tempDir, "migrations")
@@ -291,7 +287,7 @@ type SimpleTable struct {
 	}
 
 	opts := generator.GenerateMigrationOptions{
-		RootDir:       tempDir,
+		GoEntitiesDir: tempDir,
 		DatabaseURL:   dbURL,
 		MigrationName: "test_connection",
 		OutputDir:     migrationsDir,
