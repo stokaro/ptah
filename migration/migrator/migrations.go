@@ -99,9 +99,8 @@ func executeSQLStatements(conn *dbschema.DatabaseConnection, sql string) error {
 			continue // Skip empty statements and comments
 		}
 
-		_, err := conn.Exec(stmt)
-		if err != nil {
-			return fmt.Errorf("failed to execute SQL statement: %w\nSQL: %s", err, stmt)
+		if err := conn.Writer().ExecuteSQL(stmt); err != nil {
+			return fmt.Errorf("failed to execute SQL statement: %w", err)
 		}
 	}
 
