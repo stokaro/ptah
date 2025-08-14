@@ -437,3 +437,52 @@ func createMigrationFiles(outputDir string, version int, migrationName, upSQL, d
 		Version:  version,
 	}, nil
 }
+
+// GenerateEmptyMigrationOptions contains options for empty migration generation
+type GenerateEmptyMigrationOptions struct {
+	// MigrationName is the name for the migration (required)
+	MigrationName string
+	// OutputDir is the directory where migration files will be saved (defaults to "./migrations")
+	OutputDir string
+}
+
+// GenerateEmptyMigration generates empty skeleton migration files for manual editing
+func GenerateEmptyMigration(opts GenerateEmptyMigrationOptions) (*MigrationFiles, error) {
+	// Validate migration name
+	if opts.MigrationName == "" {
+		return nil, fmt.Errorf("migration name is required")
+	}
+
+	// Set default output directory
+	if opts.OutputDir == "" {
+		opts.OutputDir = "./migrations"
+	}
+
+	// Generate migration version (timestamp)
+	version := migrator.GetNextMigrationVersion()
+	slog.Debug("Generated migration version", "version", version)
+
+	// Generate template SQL content
+	timestamp := time.Now().Format(time.RFC3339)
+	upSQL := fmt.Sprintf(`-- Migration: %s
+-- Generated on: %s
+-- Direction: UP
+
+-- Add your migration SQL here
+`, opts.MigrationName, timestamp)
+
+	downSQL := fmt.Sprintf(`-- Migration: %s
+-- Generated on: %s
+-- Direction: DOWN
+
+-- Add your rollback SQL here
+`, opts.MigrationName, timestamp)
+
+	// Create migration files
+	files, err := createMigrationFiles(opts.OutputDir, version, opts.MigrationName, upSQL, downSQL)
+	if err != nil {
+		return nil, fmt.Errorf("error creating empty migration files: %w", err)
+	}
+
+	return files, nil
+}
