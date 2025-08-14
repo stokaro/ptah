@@ -161,7 +161,7 @@ type GenerateMigrationOptions struct {
 
 ### Field Details
 
-- `RootDir`: Directory to scan for Go entities (required)
+- `GoEntitiesDir`: Directory to scan for Go entities (required)
 - `DatabaseURL`: Database connection string (required)
 - `MigrationName`: Name for the migration (optional, defaults to "migration")
 - `OutputDir`: Directory where migration files will be saved (required)
