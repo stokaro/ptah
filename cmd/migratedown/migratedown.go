@@ -127,13 +127,13 @@ func migrateDownCommand(_ *cobra.Command, _ []string) error {
 	migrationsFS := os.DirFS(migrationsDir)
 
 	// Create migrator to access applied migrations
-	mig := migrator.NewMigrator(conn)
-	if err := migrator.RegisterMigrations(mig, migrationsFS); err != nil {
+	mig, err := migrator.NewFSMigrator(conn, migrationsFS)
+	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
 
 	// Get migration status before running
-	status, err := migrator.GetMigrationStatus(context.Background(), conn, migrationsFS)
+	status, err := mig.GetMigrationStatus(context.Background())
 	if err != nil {
 		return fmt.Errorf("error getting migration status: %w", err)
 	}
@@ -191,13 +191,13 @@ func migrateDownCommand(_ *cobra.Command, _ []string) error {
 	}
 
 	// Run down migrations
-	err = migrator.RunMigrationsDown(context.Background(), conn, targetVersion, migrationsFS)
+	err = mig.MigrateDownTo(context.Background(), targetVersion)
 	if err != nil {
 		return fmt.Errorf("error running down migrations: %w", err)
 	}
 
 	// Get final status
-	finalStatus, err := migrator.GetMigrationStatus(context.Background(), conn, migrationsFS)
+	finalStatus, err := mig.GetMigrationStatus(context.Background())
 	if err != nil {
 		return fmt.Errorf("error getting final migration status: %w", err)
 	}

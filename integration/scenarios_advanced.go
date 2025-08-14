@@ -22,8 +22,13 @@ func testOperationPlanning(ctx context.Context, conn *dbschema.DatabaseConnectio
 		return fmt.Errorf("failed to get migrations filesystem: %w", err)
 	}
 
+	mig, err := migrator.NewFSMigrator(conn, migrationsFS)
+	if err != nil {
+		return fmt.Errorf("failed to create migrator: %w", err)
+	}
+
 	// Get migration status to see the plan
-	status, err := migrator.GetMigrationStatus(ctx, conn, migrationsFS)
+	status, err := mig.GetMigrationStatus(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get migration status: %w", err)
 	}
@@ -181,8 +186,13 @@ func testIdempotencyUpToDate(ctx context.Context, conn *dbschema.DatabaseConnect
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
+	mig, err := migrator.NewFSMigrator(conn, migrationsFS)
+	if err != nil {
+		return fmt.Errorf("failed to create migrator: %w", err)
+	}
+
 	// Check status - should have no pending changes
-	status, err := migrator.GetMigrationStatus(ctx, conn, migrationsFS)
+	status, err := mig.GetMigrationStatus(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get migration status: %w", err)
 	}
@@ -229,13 +239,23 @@ func testConcurrencyParallelMigrate(ctx context.Context, conn *dbschema.Database
 
 	// Launch two parallel migrations
 	go func() {
-		err := migrator.RunMigrations(ctx, conn1, migrationsFS)
-		errChan <- err
+		m, err := migrator.NewFSMigrator(conn1, migrationsFS)
+		if err != nil {
+			errChan <- err
+			return
+		}
+
+		errChan <- m.MigrateUp(ctx)
 	}()
 
 	go func() {
-		err := migrator.RunMigrations(ctx, conn2, migrationsFS)
-		errChan <- err
+		m, err := migrator.NewFSMigrator(conn2, migrationsFS)
+		if err != nil {
+			errChan <- err
+			return
+		}
+
+		errChan <- m.MigrateUp(ctx)
 	}()
 
 	// Collect results

@@ -103,8 +103,13 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 	// Create filesystem from migrations directory
 	migrationsFS := os.DirFS(migrationsDir)
 
+	mig, err := migrator.NewFSMigrator(conn, migrationsFS)
+	if err != nil {
+		return fmt.Errorf("error registering migrations: %w", err)
+	}
+
 	// Get migration status before running
-	status, err := migrator.GetMigrationStatus(context.Background(), conn, migrationsFS)
+	status, err := mig.GetMigrationStatus(context.Background())
 	if err != nil {
 		return fmt.Errorf("error getting migration status: %w", err)
 	}
@@ -125,13 +130,13 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 	fmt.Println()
 
 	// Run migrations
-	err = migrator.RunMigrations(context.Background(), conn, migrationsFS)
+	err = mig.MigrateUp(context.Background())
 	if err != nil {
 		return fmt.Errorf("error running migrations: %w", err)
 	}
 
 	// Get final status
-	finalStatus, err := migrator.GetMigrationStatus(context.Background(), conn, migrationsFS)
+	finalStatus, err := mig.GetMigrationStatus(context.Background())
 	if err != nil {
 		return fmt.Errorf("error getting final migration status: %w", err)
 	}
