@@ -305,3 +305,129 @@ type SimpleTable struct {
 	c.Assert(files.UpFile, qt.Not(qt.Equals), "")
 	c.Assert(files.DownFile, qt.Not(qt.Equals), "")
 }
+
+func TestGenerateMigration_FilesystemPathResolution(t *testing.T) {
+	c := qt.New(t)
+
+	// This test verifies the fix for the filesystem path resolution bug
+	// that was causing integration tests to fail with "invalid argument" errors
+	// when using absolute paths in temporary directories
+
+	// Create a temporary directory structure similar to integration tests
+	tempDir := c.TempDir()
+	entitiesDir := filepath.Join(tempDir, "entities")
+	err := os.MkdirAll(entitiesDir, 0755)
+	c.Assert(err, qt.IsNil)
+
+	// Create minimal schema file in the entities directory
+	schemaContent := `package entities
+
+//migrator:schema:table name="test_table_filesystem"
+type TestTable struct {
+	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+
+	//migrator:schema:field name="name" type="VARCHAR(255)"
+	Name string
+}
+`
+
+	schemaPath := filepath.Join(entitiesDir, "schema.go")
+	err = os.WriteFile(schemaPath, []byte(schemaContent), 0600)
+	c.Assert(err, qt.IsNil)
+
+	migrationsDir := filepath.Join(tempDir, "migrations")
+	err = os.MkdirAll(migrationsDir, 0755)
+	c.Assert(err, qt.IsNil)
+
+	// Test with absolute path (like integration tests use)
+	// This should NOT fail with "invalid argument" error
+	opts := generator.GenerateMigrationOptions{
+		GoEntitiesDir: entitiesDir, // Absolute path like /tmp/ptah_integration_test_*/entities
+		GoEntitiesFS:  nil,         // This should trigger the default filesystem setup
+		DatabaseURL:   "memory://test",
+		MigrationName: "test_filesystem_path",
+		OutputDir:     migrationsDir,
+	}
+
+	// This should not fail with filesystem path resolution errors
+	_, err = generator.GenerateMigration(opts)
+
+	// We expect this to fail due to memory database limitations, but NOT due to filesystem path issues
+	c.Assert(err, qt.IsNotNil)
+
+	// The error should be about database connection or parsing, NOT about filesystem paths
+	errMsg := err.Error()
+	c.Assert(strings.Contains(errMsg, "invalid argument"), qt.IsFalse,
+		qt.Commentf("Should not have filesystem path resolution errors, got: %s", errMsg))
+	c.Assert(strings.Contains(errMsg, "stat"), qt.IsFalse,
+		qt.Commentf("Should not have stat errors, got: %s", errMsg))
+
+	// The error should be about database or parsing issues instead
+	c.Assert(strings.Contains(errMsg, "database") || strings.Contains(errMsg, "parsing") || strings.Contains(errMsg, "memory"), qt.IsTrue,
+		qt.Commentf("Expected database or parsing error, got: %s", errMsg))
+}
+
+func TestGenerateMigration_FilesystemPathResolution_RelativePath(t *testing.T) {
+	c := qt.New(t)
+
+	// Test the filesystem path resolution with relative paths as well
+	// to ensure both absolute and relative paths work correctly
+
+	// Create a temporary directory and change to it
+	tempDir := c.TempDir()
+	originalWd, err := os.Getwd()
+	c.Assert(err, qt.IsNil)
+	defer func() {
+		err := os.Chdir(originalWd)
+		c.Assert(err, qt.IsNil)
+	}()
+
+	err = os.Chdir(tempDir)
+	c.Assert(err, qt.IsNil)
+
+	// Create entities directory
+	entitiesDir := "entities"
+	err = os.MkdirAll(entitiesDir, 0755)
+	c.Assert(err, qt.IsNil)
+
+	// Create minimal schema file
+	schemaContent := `package entities
+
+//migrator:schema:table name="test_table_relative"
+type TestTable struct {
+	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+}
+`
+
+	schemaPath := filepath.Join(entitiesDir, "schema.go")
+	err = os.WriteFile(schemaPath, []byte(schemaContent), 0600)
+	c.Assert(err, qt.IsNil)
+
+	migrationsDir := "migrations"
+	err = os.MkdirAll(migrationsDir, 0755)
+	c.Assert(err, qt.IsNil)
+
+	// Test with relative path
+	opts := generator.GenerateMigrationOptions{
+		GoEntitiesDir: entitiesDir, // Relative path like "./entities"
+		GoEntitiesFS:  nil,         // This should trigger the default filesystem setup
+		DatabaseURL:   "memory://test",
+		MigrationName: "test_relative_path",
+		OutputDir:     migrationsDir,
+	}
+
+	// This should not fail with filesystem path resolution errors
+	_, err = generator.GenerateMigration(opts)
+
+	// We expect this to fail due to memory database limitations, but NOT due to filesystem path issues
+	c.Assert(err, qt.IsNotNil)
+
+	// The error should be about database connection or parsing, NOT about filesystem paths
+	errMsg := err.Error()
+	c.Assert(strings.Contains(errMsg, "invalid argument"), qt.IsFalse,
+		qt.Commentf("Should not have filesystem path resolution errors, got: %s", errMsg))
+	c.Assert(strings.Contains(errMsg, "stat"), qt.IsFalse,
+		qt.Commentf("Should not have stat errors, got: %s", errMsg))
+}
