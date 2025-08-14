@@ -233,6 +233,19 @@ func ParseFile(filename string) Database {
 	return parseFileAST(f)
 }
 
+// ParseSource parses a Go source string and returns the database schema
+// source can be a string, []byte, or io.Reader
+func ParseSource(filename string, source any) Database {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, filename, source, parser.ParseComments)
+	if err != nil {
+		slog.Error("Failed to parse file", "error", err)
+		panic("Failed to parse file")
+	}
+
+	return parseFileAST(f)
+}
+
 func parseFileAST(f *ast.File) Database {
 	var embeddedFields []EmbeddedField
 	var schemaFields []Field

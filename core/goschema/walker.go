@@ -1,8 +1,9 @@
 package goschema
 
 import (
+	"bufio"
+	"io/fs"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -39,6 +40,35 @@ import (
 //	// Generate migration statements in proper order
 //	statements := GetOrderedCreateStatements(result, "postgresql")
 func ParseDir(rootDir string) (*Database, error) {
+	return ParseFS(os.DirFS(rootDir), ".")
+}
+
+// ParseFS parses all Go files in the given root directory and its subdirectories within the provided filesystem.
+//
+// This function is similar to ParseDir, but it operates on a provided filesystem rather than the host filesystem.
+// It's useful for parsing entities within an embedded filesystem, such as a Go module or a virtual filesystem.
+//
+// Parameters:
+//   - fsys: The filesystem to search for Go files
+//   - rootDir: The root directory within the filesystem to start parsing from
+//
+// Returns:
+//   - *PackageParseResult: Complete schema information with dependency ordering
+//   - error: Any error encountered during parsing or file system operations
+//
+// Example:
+//
+//	//go:embed entities
+//	var entities embed.FS
+//
+//	result, err := ParseFS(entities, ".")
+//	if err != nil {
+//		return fmt.Errorf("failed to parse entities: %w", err)
+//	}
+//
+//	// Generate migration statements in proper order
+//	statements := GetOrderedCreateStatements(result, "postgresql")
+func ParseFS(fsys fs.FS, rootDir string) (*Database, error) {
 	result := &Database{
 		Tables:                     []Table{},
 		Fields:                     []Field{},
@@ -56,7 +86,7 @@ func ParseDir(rootDir string) (*Database, error) {
 	}
 
 	// Walk through all directories recursively
-	err := filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
+	err := fs.WalkDir(fsys, rootDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -76,8 +106,15 @@ func ParseDir(rootDir string) (*Database, error) {
 			return nil
 		}
 
+		file, err := fsys.Open(path)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		reader := bufio.NewReader(file)
+
 		// Parse the file
-		database := ParseFile(path)
+		database := ParseSource(path, reader)
 
 		// Add to result
 		result.EmbeddedFields = append(result.EmbeddedFields, database.EmbeddedFields...)
