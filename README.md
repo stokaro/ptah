@@ -453,7 +453,7 @@ import (
 
 func main() {
     opts := generator.GenerateMigrationOptions{
-        RootDir:       "./models",
+        GoEntitiesDir: "./models",
         DatabaseURL:   "postgres://user:pass@localhost:5432/database",
         MigrationName: "add_user_table",
         OutputDir:     "./migrations",
@@ -464,6 +464,12 @@ func main() {
         log.Fatal(err)
     }
 
+    // Check if any migration was generated (nil means no changes detected)
+    if files == nil {
+        fmt.Println("No schema changes detected - no migration needed")
+        return
+    }
+
     fmt.Printf("Generated: %s and %s\n", files.UpFile, files.DownFile)
 }
 ```
@@ -472,12 +478,50 @@ func main() {
 - `YYYYMMDDHHMMSS_add_user_table.up.sql` - Forward migration
 - `YYYYMMDDHHMMSS_add_user_table.down.sql` - Rollback migration
 
+**Advanced Usage with Embedded Filesystem:**
+
+```go
+//go:embed entities
+var entitiesFS embed.FS
+
+opts := generator.GenerateMigrationOptions{
+    GoEntitiesDir: ".",
+    GoEntitiesFS:  entitiesFS,  // Use embedded filesystem
+    DatabaseURL:   "postgres://user:pass@localhost:5432/database",
+    MigrationName: "add_user_table",
+    OutputDir:     "./migrations",
+}
+
+files, err := generator.GenerateMigration(opts)
+```
+
+**Using Existing Database Connection:**
+
+```go
+// Reuse existing connection
+conn, err := dbschema.ConnectToDatabase(dbURL)
+if err != nil {
+    log.Fatal(err)
+}
+defer conn.Close()
+
+opts := generator.GenerateMigrationOptions{
+    GoEntitiesDir: "./models",
+    DBConn:        conn,  // Reuse connection instead of creating new one
+    MigrationName: "add_user_table",
+    OutputDir:     "./migrations",
+}
+```
+
 **Features:**
 - ✅ Automatic timestamp-based versioning
 - ✅ Generates both up and down migrations
 - ✅ Compares Go entities with live database
 - ✅ Handles table, column, index, and constraint changes
 - ✅ Database-specific SQL generation
+- ✅ Embedded filesystem support for Go modules
+- ✅ Connection reuse for better performance
+- ✅ No-op detection (returns nil when no changes needed)
 
 ### Dangerous Operations
 

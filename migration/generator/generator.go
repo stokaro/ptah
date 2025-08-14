@@ -2,6 +2,7 @@ package generator
 
 import (
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -21,15 +22,17 @@ import (
 
 // GenerateMigrationOptions contains options for migration generation
 type GenerateMigrationOptions struct {
-	// RootDir is the directory to scan for Go entities
-	RootDir string
+	// GoEntitiesDir is the directory to scan for Go entities
+	GoEntitiesDir string
+	// GoEntitiesFS is the filesystem to use for reading entities (optional, defaults to os.DirFS)
+	GoEntitiesFS fs.FS
 	// DatabaseURL is the connection string for the database
 	DatabaseURL string
 	// DBConn is the database connection (optional, if not provided, a new connection will be created)
 	DBConn *dbschema.DatabaseConnection
 	// MigrationName is the name for the migration (optional, defaults to "migration")
 	MigrationName string
-	// OutputDir is the directory where migration files will be saved
+	// OutputDir is the directory where migration files will be saved (always real filesystem)
 	OutputDir string
 }
 
@@ -48,13 +51,27 @@ func GenerateMigration(opts GenerateMigrationOptions) (*MigrationFiles, error) {
 		opts.MigrationName = "migration"
 	}
 
-	// 1. Parse Go entities to get desired schema
-	absPath, err := filepath.Abs(opts.RootDir)
-	if err != nil {
-		return nil, fmt.Errorf("error resolving root directory path: %w", err)
+	var entitiesDir string
+
+	if opts.GoEntitiesFS == nil {
+		// Default to using the real filesystem
+		// We need to set up the filesystem root and relative path correctly
+		absPath, err := filepath.Abs(opts.GoEntitiesDir)
+		if err != nil {
+			return nil, fmt.Errorf("error resolving root directory path: %w", err)
+		}
+
+		// Use the parent directory as filesystem root and the basename as the path
+		fsRoot := filepath.Dir(absPath)
+		entitiesDir = filepath.Base(absPath)
+		opts.GoEntitiesFS = os.DirFS(fsRoot)
+	} else {
+		// For custom filesystems, use the path as-is
+		entitiesDir = opts.GoEntitiesDir
 	}
 
-	generated, err := goschema.ParseDir(absPath)
+	// 1. Parse Go entities to get desired schema
+	generated, err := goschema.ParseFS(opts.GoEntitiesFS, entitiesDir)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing Go entities: %w", err)
 	}

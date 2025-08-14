@@ -35,7 +35,7 @@ func main() {
 
 	// Configure migration generation options
 	opts := generator.GenerateMigrationOptions{
-		RootDir:       entitiesDir,
+		GoEntitiesDir: entitiesDir,
 		DatabaseURL:   databaseURL,
 		MigrationName: migrationName,
 		OutputDir:     outputDir,
@@ -52,6 +52,13 @@ func main() {
 	files, err := generator.GenerateMigration(opts)
 	if err != nil {
 		log.Fatalf("Error generating migration: %v", err)
+	}
+
+	// Check if any migration was generated (nil means no changes detected)
+	if files == nil {
+		fmt.Printf("✅ No schema changes detected - no migration needed!\n")
+		fmt.Println("The database schema is already in sync with your Go entities.")
+		return
 	}
 
 	// Display results

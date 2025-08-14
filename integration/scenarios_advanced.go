@@ -346,9 +346,9 @@ func testMigrationGeneratorValidation(ctx context.Context, conn *dbschema.Databa
 		}
 
 		_, err := generator.GenerateMigration(generator.GenerateMigrationOptions{
-			RootDir:   vem.GetEntitiesDir(),
-			DBConn:    conn,
-			OutputDir: migrationsDir,
+			GoEntitiesDir: vem.GetEntitiesDir(),
+			DBConn:        conn,
+			OutputDir:     migrationsDir,
 		})
 		if err != nil {
 			return err
@@ -380,9 +380,9 @@ func testMigrationGeneratorValidation(ctx context.Context, conn *dbschema.Databa
 		}
 
 		_, err = generator.GenerateMigration(generator.GenerateMigrationOptions{
-			RootDir:   vem.GetEntitiesDir(),
-			DBConn:    conn,
-			OutputDir: migrationsDir,
+			GoEntitiesDir: vem.GetEntitiesDir(),
+			DBConn:        conn,
+			OutputDir:     migrationsDir,
 		})
 		if err != nil {
 			return err
@@ -413,9 +413,9 @@ func testMigrationGeneratorValidation(ctx context.Context, conn *dbschema.Databa
 			return err
 		}
 		_, err = generator.GenerateMigration(generator.GenerateMigrationOptions{
-			RootDir:   vem.GetEntitiesDir(),
-			DBConn:    conn,
-			OutputDir: migrationsDir,
+			GoEntitiesDir: vem.GetEntitiesDir(),
+			DBConn:        conn,
+			OutputDir:     migrationsDir,
 		})
 		if err != nil {
 			return err

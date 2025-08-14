@@ -163,7 +163,7 @@ import "github.com/stokaro/ptah/migration/generator"
 
 // Generate migration with custom extension ignore options
 opts := generator.GenerateMigrationOptions{
-    RootDir:       "./models",
+    GoEntitiesDir: "./models",
     DatabaseURL:   "postgres://user:pass@localhost/db",
     MigrationName: "update_schema",
     OutputDir:     "./migrations",

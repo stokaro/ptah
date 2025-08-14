@@ -19,7 +19,7 @@ func TestGenerateMigration_HappyPath(t *testing.T) {
 
 	// Test options
 	opts := generator.GenerateMigrationOptions{
-		RootDir:       "./testdata",
+		GoEntitiesDir: "./testdata",
 		DatabaseURL:   "memory://test",
 		MigrationName: "test_migration",
 		OutputDir:     tempDir,
@@ -94,7 +94,7 @@ func TestCreateMigrationFiles_FileCreation(t *testing.T) {
 	// In a real scenario, you might want to export this function for testing
 
 	opts := generator.GenerateMigrationOptions{
-		RootDir:       "./testdata",
+		GoEntitiesDir: "./testdata",
 		DatabaseURL:   "memory://test",
 		MigrationName: "test_migration",
 		OutputDir:     tempDir,
@@ -130,7 +130,7 @@ func TestGenerateMigrationOptions_Validation(t *testing.T) {
 		{
 			name: "valid options",
 			opts: generator.GenerateMigrationOptions{
-				RootDir:       "./testdata",
+				GoEntitiesDir: "./testdata",
 				DatabaseURL:   "memory://test",
 				MigrationName: "test_migration",
 				OutputDir:     "/tmp/migrations",
@@ -140,9 +140,9 @@ func TestGenerateMigrationOptions_Validation(t *testing.T) {
 		{
 			name: "empty migration name defaults to 'migration'",
 			opts: generator.GenerateMigrationOptions{
-				RootDir:     "./testdata",
-				DatabaseURL: "memory://test",
-				OutputDir:   "/tmp/migrations",
+				GoEntitiesDir: "./testdata",
+				DatabaseURL:   "memory://test",
+				OutputDir:     "/tmp/migrations",
 				// MigrationName is empty - should default to "migration"
 			},
 			expectError: true, // Will fail due to missing testdata
@@ -175,9 +175,7 @@ func TestGenerateMigration_ExtensionHandling_WithRealDB(t *testing.T) {
 	}
 
 	// Create temporary directory with test schema
-	tempDir, err := os.MkdirTemp("", "ptah_generator_test")
-	c.Assert(err, qt.IsNil)
-	defer os.RemoveAll(tempDir)
+	tempDir := c.TempDir()
 
 	// Create schema with extensions
 	schemaContent := `package testschema
@@ -197,7 +195,7 @@ type TestTable struct {
 `
 
 	schemaPath := filepath.Join(tempDir, "schema.go")
-	err = os.WriteFile(schemaPath, []byte(schemaContent), 0600)
+	err := os.WriteFile(schemaPath, []byte(schemaContent), 0600)
 	c.Assert(err, qt.IsNil)
 
 	migrationsDir := filepath.Join(tempDir, "migrations")
@@ -206,7 +204,7 @@ type TestTable struct {
 
 	// Test migration generation with real database
 	opts := generator.GenerateMigrationOptions{
-		RootDir:       tempDir,
+		GoEntitiesDir: tempDir,
 		DatabaseURL:   dbURL,
 		MigrationName: "test_extensions",
 		OutputDir:     migrationsDir,
@@ -262,9 +260,7 @@ func TestGenerateMigration_DatabaseConnectionFix(t *testing.T) {
 	// This test verifies the fix for the variable shadowing bug
 	// We test that the generator properly handles database connections without panicking
 
-	tempDir, err := os.MkdirTemp("", "ptah_connection_test")
-	c.Assert(err, qt.IsNil)
-	defer os.RemoveAll(tempDir)
+	tempDir := c.TempDir()
 
 	// Create minimal schema
 	schemaContent := `package testschema
@@ -277,7 +273,7 @@ type SimpleTable struct {
 `
 
 	schemaPath := filepath.Join(tempDir, "schema.go")
-	err = os.WriteFile(schemaPath, []byte(schemaContent), 0600)
+	err := os.WriteFile(schemaPath, []byte(schemaContent), 0600)
 	c.Assert(err, qt.IsNil)
 
 	migrationsDir := filepath.Join(tempDir, "migrations")
@@ -291,7 +287,7 @@ type SimpleTable struct {
 	}
 
 	opts := generator.GenerateMigrationOptions{
-		RootDir:       tempDir,
+		GoEntitiesDir: tempDir,
 		DatabaseURL:   dbURL,
 		MigrationName: "test_connection",
 		OutputDir:     migrationsDir,
@@ -308,4 +304,130 @@ type SimpleTable struct {
 	c.Assert(files, qt.IsNotNil)
 	c.Assert(files.UpFile, qt.Not(qt.Equals), "")
 	c.Assert(files.DownFile, qt.Not(qt.Equals), "")
+}
+
+func TestGenerateMigration_FilesystemPathResolution(t *testing.T) {
+	c := qt.New(t)
+
+	// This test verifies the fix for the filesystem path resolution bug
+	// that was causing integration tests to fail with "invalid argument" errors
+	// when using absolute paths in temporary directories
+
+	// Create a temporary directory structure similar to integration tests
+	tempDir := c.TempDir()
+	entitiesDir := filepath.Join(tempDir, "entities")
+	err := os.MkdirAll(entitiesDir, 0755)
+	c.Assert(err, qt.IsNil)
+
+	// Create minimal schema file in the entities directory
+	schemaContent := `package entities
+
+//migrator:schema:table name="test_table_filesystem"
+type TestTable struct {
+	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+
+	//migrator:schema:field name="name" type="VARCHAR(255)"
+	Name string
+}
+`
+
+	schemaPath := filepath.Join(entitiesDir, "schema.go")
+	err = os.WriteFile(schemaPath, []byte(schemaContent), 0600)
+	c.Assert(err, qt.IsNil)
+
+	migrationsDir := filepath.Join(tempDir, "migrations")
+	err = os.MkdirAll(migrationsDir, 0755)
+	c.Assert(err, qt.IsNil)
+
+	// Test with absolute path (like integration tests use)
+	// This should NOT fail with "invalid argument" error
+	opts := generator.GenerateMigrationOptions{
+		GoEntitiesDir: entitiesDir, // Absolute path like /tmp/ptah_integration_test_*/entities
+		GoEntitiesFS:  nil,         // This should trigger the default filesystem setup
+		DatabaseURL:   "memory://test",
+		MigrationName: "test_filesystem_path",
+		OutputDir:     migrationsDir,
+	}
+
+	// This should not fail with filesystem path resolution errors
+	_, err = generator.GenerateMigration(opts)
+
+	// We expect this to fail due to memory database limitations, but NOT due to filesystem path issues
+	c.Assert(err, qt.IsNotNil)
+
+	// The error should be about database connection or parsing, NOT about filesystem paths
+	errMsg := err.Error()
+	c.Assert(strings.Contains(errMsg, "invalid argument"), qt.IsFalse,
+		qt.Commentf("Should not have filesystem path resolution errors, got: %s", errMsg))
+	c.Assert(strings.Contains(errMsg, "stat"), qt.IsFalse,
+		qt.Commentf("Should not have stat errors, got: %s", errMsg))
+
+	// The error should be about database or parsing issues instead
+	c.Assert(strings.Contains(errMsg, "database") || strings.Contains(errMsg, "parsing") || strings.Contains(errMsg, "memory"), qt.IsTrue,
+		qt.Commentf("Expected database or parsing error, got: %s", errMsg))
+}
+
+func TestGenerateMigration_FilesystemPathResolution_RelativePath(t *testing.T) {
+	c := qt.New(t)
+
+	// Test the filesystem path resolution with relative paths as well
+	// to ensure both absolute and relative paths work correctly
+
+	// Create a temporary directory and change to it
+	tempDir := c.TempDir()
+	originalWd, err := os.Getwd()
+	c.Assert(err, qt.IsNil)
+	defer func() {
+		err := os.Chdir(originalWd)
+		c.Assert(err, qt.IsNil)
+	}()
+
+	err = os.Chdir(tempDir)
+	c.Assert(err, qt.IsNil)
+
+	// Create entities directory
+	entitiesDir := "entities"
+	err = os.MkdirAll(entitiesDir, 0755)
+	c.Assert(err, qt.IsNil)
+
+	// Create minimal schema file
+	schemaContent := `package entities
+
+//migrator:schema:table name="test_table_relative"
+type TestTable struct {
+	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+}
+`
+
+	schemaPath := filepath.Join(entitiesDir, "schema.go")
+	err = os.WriteFile(schemaPath, []byte(schemaContent), 0600)
+	c.Assert(err, qt.IsNil)
+
+	migrationsDir := "migrations"
+	err = os.MkdirAll(migrationsDir, 0755)
+	c.Assert(err, qt.IsNil)
+
+	// Test with relative path
+	opts := generator.GenerateMigrationOptions{
+		GoEntitiesDir: entitiesDir, // Relative path like "./entities"
+		GoEntitiesFS:  nil,         // This should trigger the default filesystem setup
+		DatabaseURL:   "memory://test",
+		MigrationName: "test_relative_path",
+		OutputDir:     migrationsDir,
+	}
+
+	// This should not fail with filesystem path resolution errors
+	_, err = generator.GenerateMigration(opts)
+
+	// We expect this to fail due to memory database limitations, but NOT due to filesystem path issues
+	c.Assert(err, qt.IsNotNil)
+
+	// The error should be about database connection or parsing, NOT about filesystem paths
+	errMsg := err.Error()
+	c.Assert(strings.Contains(errMsg, "invalid argument"), qt.IsFalse,
+		qt.Commentf("Should not have filesystem path resolution errors, got: %s", errMsg))
+	c.Assert(strings.Contains(errMsg, "stat"), qt.IsFalse,
+		qt.Commentf("Should not have stat errors, got: %s", errMsg))
 }

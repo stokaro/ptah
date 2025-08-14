@@ -43,7 +43,7 @@
 // Basic migration generation:
 //
 //	opts := generator.GenerateMigrationOptions{
-//		RootDir:       "./entities",
+//		GoEntitiesDir: "./entities",
 //		DatabaseURL:   "postgres://user:pass@localhost:5432/db",
 //		MigrationName: "add_user_table",
 //		OutputDir:     "./migrations",
