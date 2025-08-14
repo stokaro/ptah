@@ -99,6 +99,12 @@ func executeSQLStatements(conn *dbschema.DatabaseConnection, sql string) error {
 			continue // Skip empty statements and comments
 		}
 
+		// Use conn.Exec() instead of conn.Writer().ExecuteSQL() to execute each statement
+		// in its own transaction. This is critical for PostgreSQL enum safety - PostgreSQL
+		// prevents using newly added enum values within the same transaction where they
+		// were added. By using separate transactions, enum modifications and subsequent
+		// usage (like setting defaults) work correctly.
+		// See: https://www.postgresql.org/docs/current/sql-altertype.html
 		_, err := conn.Exec(stmt)
 		if err != nil {
 			return fmt.Errorf("failed to execute SQL statement: %w\nSQL: %s", err, stmt)
