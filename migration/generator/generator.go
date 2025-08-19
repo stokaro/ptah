@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stokaro/ptah/config"
 	"github.com/stokaro/ptah/core/convert/dbschematogo"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/sqlutil"
@@ -34,6 +35,8 @@ type GenerateMigrationOptions struct {
 	MigrationName string
 	// OutputDir is the directory where migration files will be saved (always real filesystem)
 	OutputDir string
+	// CompareOptions are the options to use when comparing schemas
+	CompareOptions *config.CompareOptions
 }
 
 // MigrationFiles represents the generated migration files
@@ -95,7 +98,7 @@ func GenerateMigration(opts GenerateMigrationOptions) (*MigrationFiles, error) {
 	}
 
 	// 3. Calculate the diff between desired and current schema
-	diff := schemadiff.Compare(generated, dbSchema)
+	diff := schemadiff.CompareWithOptions(generated, dbSchema, opts.CompareOptions)
 
 	// Check if there are any changes
 	if !diff.HasChanges() {
