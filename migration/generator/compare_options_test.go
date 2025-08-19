@@ -244,10 +244,7 @@ func TestGenerateMigration_CompareOptions_Integration_NilOptions(t *testing.T) {
 
 	// Create database connection and set up test extensions
 	conn, err := dbschema.ConnectToDatabase(dbURL)
-	if err != nil {
-		t.Skipf("Skipping test due to database connection error: %v", err)
-		return
-	}
+	c.Assert(err, qt.IsNil, qt.Commentf("Failed to connect to database: %v", err))
 	defer conn.Close()
 
 	// Clean up any existing test extensions
@@ -306,10 +303,7 @@ func TestGenerateMigration_CompareOptions_Integration_CustomIgnoreList(t *testin
 
 	// Create database connection
 	conn, err := dbschema.ConnectToDatabase(dbURL)
-	if err != nil {
-		t.Skipf("Skipping test due to database connection error: %v", err)
-		return
-	}
+	c.Assert(err, qt.IsNil, qt.Commentf("Failed to connect to database: %v", err))
 	defer conn.Close()
 
 	// Clean up any existing test extensions
@@ -363,10 +357,7 @@ func TestGenerateMigration_CompareOptions_Integration_NoIgnoredExtensions(t *tes
 
 	// Create database connection and set up test extensions
 	conn, err := dbschema.ConnectToDatabase(dbURL)
-	if err != nil {
-		t.Skipf("Skipping test due to database connection error: %v", err)
-		return
-	}
+	c.Assert(err, qt.IsNil, qt.Commentf("Failed to connect to database: %v", err))
 	defer conn.Close()
 
 	// Clean up any existing test extensions
@@ -436,10 +427,7 @@ func TestGenerateMigration_CompareOptions_Integration_AddExtension(t *testing.T)
 
 	// Create database connection and set up test extensions
 	conn, err := dbschema.ConnectToDatabase(dbURL)
-	if err != nil {
-		t.Skipf("Skipping test due to database connection error: %v", err)
-		return
-	}
+	c.Assert(err, qt.IsNil, qt.Commentf("Failed to connect to database: %v", err))
 	defer conn.Close()
 
 	// Clean up any existing test extensions
