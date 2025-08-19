@@ -95,7 +95,7 @@ func TestMigrationFileGeneration_ExtensionSQL(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 
 			// 3. Generate down migration SQL using the fixed reverseSchemaDiff function
-			downSQL, err := generateDownMigrationSQL(diff, tt.databaseSchema, "postgres")
+			downSQL, err := generateDownMigrationSQL(diff, tt.generatedSchema, tt.databaseSchema, "postgres")
 			c.Assert(err, qt.IsNil)
 
 			// 4. Verify up migration SQL contains expected patterns
@@ -172,7 +172,7 @@ func TestExtensionMigrationSQL_CompleteFlow(t *testing.T) {
 
 	// 3. Generate down migration (should drop extension)
 	// For down migration, we use the original upDiff and reverse it
-	downSQL, err := generateDownMigrationSQL(upDiff, databaseAfterUp, "postgres")
+	downSQL, err := generateDownMigrationSQL(upDiff, generatedSchema, databaseAfterUp, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Contains(downSQL, "DROP EXTENSION IF EXISTS pg_trgm;"), qt.IsTrue)
 
