@@ -122,8 +122,37 @@ func TestGenerateDownMigrationSQL_Issue43_RLSPolicyTableNames(t *testing.T) {
 		},
 	}
 
+	// Create a generated schema that includes the RLS policies with table names
+	// This simulates the original generated schema that was used to create the up migration
+	generatedSchema := &goschema.Database{
+		Tables: []goschema.Table{
+			{Name: "areas"},
+			{Name: "commodities"},
+		},
+		RLSEnabledTables: []goschema.RLSEnabledTable{
+			{Table: "areas"},
+			{Table: "commodities"},
+		},
+		RLSPolicies: []goschema.RLSPolicy{
+			{
+				Name:            "area_user_isolation",
+				Table:           "areas",
+				PolicyFor:       "ALL",
+				ToRoles:         "inventario_app",
+				UsingExpression: "user_id = get_current_user_id()",
+			},
+			{
+				Name:            "commodity_user_isolation",
+				Table:           "commodities",
+				PolicyFor:       "ALL",
+				ToRoles:         "inventario_app",
+				UsingExpression: "user_id = get_current_user_id()",
+			},
+		},
+	}
+
 	// Generate down migration SQL
-	downSQL, err := generateDownMigrationSQL(upDiff, dbSchema, "postgres")
+	downSQL, err := generateDownMigrationSQL(upDiff, generatedSchema, dbSchema, "postgres")
 	c.Assert(err, qt.IsNil)
 
 	// Verify that the down migration contains proper DROP POLICY statements with table names
@@ -133,6 +162,83 @@ func TestGenerateDownMigrationSQL_Issue43_RLSPolicyTableNames(t *testing.T) {
 	// Verify that the malformed statements (without table names) are NOT present
 	c.Assert(downSQL, qt.Not(qt.Contains), "DROP POLICY IF EXISTS area_user_isolation ON;")
 	c.Assert(downSQL, qt.Not(qt.Contains), "DROP POLICY IF EXISTS commodity_user_isolation ON;")
+
+	// Log the generated SQL for debugging
+	t.Logf("Generated down migration SQL:\n%s", downSQL)
+}
+
+func TestGenerateDownMigrationSQL_Issue57_MissingTableNames(t *testing.T) {
+	c := qt.New(t)
+
+	// This test reproduces the exact bug scenario from GitHub issue #57:
+	// Missing table names in generated down migration DROP POLICY statements
+	// when the schema context doesn't contain the policy information
+
+	// Create a schema diff that adds RLS policies (simulating an up migration)
+	upDiff := &types.SchemaDiff{
+		RLSPoliciesAdded: []string{"area_tenant_isolation", "area_user_isolation", "commodity_tenant_isolation"},
+		TablesAdded:      []string{"areas", "commodities"},
+	}
+
+	// Create a database schema that includes the tables but NOT the RLS policies
+	// This simulates the scenario where the schema context is incomplete
+	dbSchema := &dbschematypes.DBSchema{
+		Tables: []dbschematypes.DBTable{
+			{Name: "areas", RLSEnabled: true},
+			{Name: "commodities", RLSEnabled: true},
+		},
+		RLSPolicies: []dbschematypes.DBRLSPolicy{}, // Empty - this is the key to reproducing the bug
+	}
+
+	// Create a generated schema that includes the RLS policies with table names
+	// This simulates the original generated schema that was used to create the up migration
+	generatedSchema := &goschema.Database{
+		Tables: []goschema.Table{
+			{Name: "areas"},
+			{Name: "commodities"},
+		},
+		RLSEnabledTables: []goschema.RLSEnabledTable{
+			{Table: "areas"},
+			{Table: "commodities"},
+		},
+		RLSPolicies: []goschema.RLSPolicy{
+			{
+				Name:            "area_tenant_isolation",
+				Table:           "areas",
+				PolicyFor:       "ALL",
+				ToRoles:         "inventario_app",
+				UsingExpression: "tenant_id = get_current_tenant_id()",
+			},
+			{
+				Name:            "area_user_isolation",
+				Table:           "areas",
+				PolicyFor:       "ALL",
+				ToRoles:         "inventario_app",
+				UsingExpression: "user_id = get_current_user_id()",
+			},
+			{
+				Name:            "commodity_tenant_isolation",
+				Table:           "commodities",
+				PolicyFor:       "ALL",
+				ToRoles:         "inventario_app",
+				UsingExpression: "tenant_id = get_current_tenant_id()",
+			},
+		},
+	}
+
+	// Generate down migration SQL
+	downSQL, err := generateDownMigrationSQL(upDiff, generatedSchema, dbSchema, "postgres")
+	c.Assert(err, qt.IsNil)
+
+	// After the fix, these assertions should pass - the table names should be present
+	c.Assert(downSQL, qt.Contains, "DROP POLICY IF EXISTS area_tenant_isolation ON areas")
+	c.Assert(downSQL, qt.Contains, "DROP POLICY IF EXISTS area_user_isolation ON areas")
+	c.Assert(downSQL, qt.Contains, "DROP POLICY IF EXISTS commodity_tenant_isolation ON commodities")
+
+	// Verify that the malformed statements (without table names) are NOT present
+	c.Assert(downSQL, qt.Not(qt.Contains), "DROP POLICY IF EXISTS area_tenant_isolation ON;")
+	c.Assert(downSQL, qt.Not(qt.Contains), "DROP POLICY IF EXISTS area_user_isolation ON;")
+	c.Assert(downSQL, qt.Not(qt.Contains), "DROP POLICY IF EXISTS commodity_tenant_isolation ON;")
 
 	// Log the generated SQL for debugging
 	t.Logf("Generated down migration SQL:\n%s", downSQL)

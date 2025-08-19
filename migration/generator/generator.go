@@ -123,7 +123,7 @@ func GenerateMigration(opts GenerateMigrationOptions) (*MigrationFiles, error) {
 	}
 
 	// 6. Generate down migration SQL
-	downSQL, err := generateDownMigrationSQL(diff, dbSchema, conn.Info().Dialect)
+	downSQL, err := generateDownMigrationSQL(diff, generated, dbSchema, conn.Info().Dialect)
 	if err != nil {
 		return nil, fmt.Errorf("error generating down migration SQL: %w", err)
 	}
@@ -166,14 +166,14 @@ func generateUpMigrationSQL(diff *types.SchemaDiff, generated *goschema.Database
 }
 
 // generateDownMigrationSQL generates the SQL for the down migration by reversing the diff
-func generateDownMigrationSQL(diff *types.SchemaDiff, dbSchema *dbschematypes.DBSchema, dialect string) (string, error) {
+func generateDownMigrationSQL(diff *types.SchemaDiff, generated *goschema.Database, dbSchema *dbschematypes.DBSchema, dialect string) (string, error) {
 	// For down migrations, we need to use the current database schema as the "generated" schema
 	// since we're reverting back to the current state
 	dbAsGoSchema := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
 
 	// Create a reverse diff to generate down migration
-	// We pass the dbAsGoSchema to resolve table names for RLS policies
-	reverseDiff := reverseSchemaDiffWithSchema(diff, dbAsGoSchema)
+	// We pass the original generated schema to resolve table names for RLS policies
+	reverseDiff := reverseSchemaDiffWithSchema(diff, generated)
 
 	statements := planner.GenerateSchemaDiffSQLStatements(reverseDiff, dbAsGoSchema, dialect)
 
