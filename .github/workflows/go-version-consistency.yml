@@ -14,7 +14,7 @@ jobs:
     name: Check Go Version Consistency
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Extract Go version from go.mod
         id: go_mod_version
