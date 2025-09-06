@@ -1,4 +1,6 @@
-package gonative_test_test
+//go:build integration
+
+package gonative_test
 
 import (
 	"strings"
