@@ -1063,21 +1063,39 @@ func getConstraintColumn(constraint types.DBConstraint) string {
 	// For single-column constraints, try to extract column name from constraint name
 	// This is database-specific and may need refinement
 
+	// Use the ColumnName field if available (MySQL/MariaDB provide this directly)
+	if constraint.ColumnName != "" {
+		return constraint.ColumnName
+	}
+
 	// PostgreSQL NOT NULL constraints often follow pattern: schema_table_column_not_null
 	if constraint.Type == "NOT NULL" && strings.Contains(constraint.Name, "_not_null") {
 		return extractPostgreSQLNotNullColumn(constraint)
 	}
 
-	// For PRIMARY KEY constraints: table_pkey
-	if constraint.Type == "PRIMARY KEY" && strings.HasSuffix(constraint.Name, "_pkey") {
-		// This is a table-level primary key, we need to check if it's single-column
-		// For now, assume single-column primary keys are field-level
-		return "id" // common convention, but this is a limitation
+	// For PRIMARY KEY constraints: table_pkey (PostgreSQL) or PRIMARY (MySQL/MariaDB)
+	if constraint.Type == "PRIMARY KEY" {
+		if strings.HasSuffix(constraint.Name, "_pkey") {
+			// PostgreSQL pattern: table_pkey
+			// This is a table-level primary key, we need to check if it's single-column
+			// For now, assume single-column primary keys are field-level
+			return "id" // common convention, but this is a limitation
+		} else if constraint.Name == "PRIMARY" {
+			// MySQL/MariaDB pattern: PRIMARY
+			// For single-column primary keys, assume it's the id field
+			return "id" // common convention, but this is a limitation
+		}
 	}
 
-	// For UNIQUE constraints: table_column_key
-	if constraint.Type == "UNIQUE" && strings.HasSuffix(constraint.Name, "_key") {
-		return extractPostgreSQLUniqueColumn(constraint)
+	// For UNIQUE constraints: table_column_key (PostgreSQL) or column name (MySQL/MariaDB)
+	if constraint.Type == "UNIQUE" {
+		if strings.HasSuffix(constraint.Name, "_key") {
+			// PostgreSQL pattern
+			return extractPostgreSQLUniqueColumn(constraint)
+		} else {
+			// MySQL/MariaDB often use the column name as the constraint name for single-column unique constraints
+			return constraint.Name
+		}
 	}
 
 	// For other constraints, return empty string (will not match any field)
