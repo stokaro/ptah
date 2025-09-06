@@ -307,9 +307,9 @@ func (r *Reader) readConstraints() ([]types.DBConstraint, error) {
 	}
 
 	// Combine both sets of constraints
-	allConstraints := append(basicConstraints, pgConstraints...)
+	basicConstraints = append(basicConstraints, pgConstraints...)
 
-	return allConstraints, nil
+	return basicConstraints, nil
 }
 
 // readBasicConstraints reads basic constraint information from information_schema
@@ -462,8 +462,6 @@ func (r *Reader) readPostgreSQLConstraints() ([]types.DBConstraint, error) {
 
 	return constraints, nil
 }
-
-
 
 // ExcludeConstraintDefinition represents the parsed components of an EXCLUDE constraint
 type ExcludeConstraintDefinition struct {

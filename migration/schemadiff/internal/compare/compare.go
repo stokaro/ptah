@@ -980,8 +980,6 @@ func getStringValue(ptr *string) string {
 	return *ptr
 }
 
-
-
 // isFieldLevelConstraint determines if a database constraint represents a field-level constraint
 // that is already represented in the field definitions (NOT NULL, PRIMARY KEY, UNIQUE, FOREIGN KEY)
 func isFieldLevelConstraint(dbConstraint types.DBConstraint, generated *goschema.Database) bool {
@@ -1029,29 +1027,33 @@ func isFieldLevelConstraint(dbConstraint types.DBConstraint, generated *goschema
 	case "CHECK":
 		// PostgreSQL represents NOT NULL constraints as CHECK constraints with specific naming pattern
 		if strings.Contains(dbConstraint.Name, "_not_null") {
-			// This is a NOT NULL constraint disguised as a CHECK constraint
-			// Check if there's a field with nullable=false for this table
-			for _, field := range generated.Fields {
-				tableName := field.StructName
-				for _, table := range generated.Tables {
-					if table.StructName == field.StructName {
-						tableName = table.Name
-						break
-					}
-				}
-				if tableName == dbConstraint.TableName && !field.Nullable {
-					return true
-				}
-			}
-		} else {
-			// Regular CHECK constraint - check if there's a field with check constraint for this column
-			key := dbConstraint.TableName + "." + getConstraintColumn(dbConstraint)
-			if field, exists := fieldMap[key]; exists && field.Check != "" {
-				return true
-			}
+			return hasNonNullableFieldInTable(dbConstraint.TableName, generated)
+		}
+		// Regular CHECK constraint - check if there's a field with check constraint for this column
+		key := dbConstraint.TableName + "." + getConstraintColumn(dbConstraint)
+		if field, exists := fieldMap[key]; exists && field.Check != "" {
+			return true
 		}
 	}
 
+	return false
+}
+
+// hasNonNullableFieldInTable checks if there's any non-nullable field in the table
+func hasNonNullableFieldInTable(tableName string, generated *goschema.Database) bool {
+	for _, field := range generated.Fields {
+		// Get table name for this field
+		fieldTableName := field.StructName
+		for _, table := range generated.Tables {
+			if table.StructName == field.StructName {
+				fieldTableName = table.Name
+				break
+			}
+		}
+		if fieldTableName == tableName && !field.Nullable {
+			return true
+		}
+	}
 	return false
 }
 
@@ -1063,22 +1065,7 @@ func getConstraintColumn(constraint types.DBConstraint) string {
 
 	// PostgreSQL NOT NULL constraints often follow pattern: schema_table_column_not_null
 	if constraint.Type == "NOT NULL" && strings.Contains(constraint.Name, "_not_null") {
-		parts := strings.Split(constraint.Name, "_")
-		if len(parts) >= 3 {
-			// Remove schema prefix (2200_) and suffix (_not_null)
-			if strings.HasPrefix(constraint.Name, "2200_") {
-				// Format: 2200_table_column_not_null -> extract column
-				tableParts := strings.Split(constraint.Name[5:], "_not_null")
-				if len(tableParts) > 0 {
-					remaining := tableParts[0]
-					// Remove table name prefix to get column
-					tablePrefix := constraint.TableName + "_"
-					if strings.HasPrefix(remaining, tablePrefix) {
-						return remaining[len(tablePrefix):]
-					}
-				}
-			}
-		}
+		return extractPostgreSQLNotNullColumn(constraint)
 	}
 
 	// For PRIMARY KEY constraints: table_pkey
@@ -1090,21 +1077,60 @@ func getConstraintColumn(constraint types.DBConstraint) string {
 
 	// For UNIQUE constraints: table_column_key
 	if constraint.Type == "UNIQUE" && strings.HasSuffix(constraint.Name, "_key") {
-		parts := strings.Split(constraint.Name, "_")
-		if len(parts) >= 3 {
-			// Remove table prefix and _key suffix
-			tablePrefix := constraint.TableName + "_"
-			if strings.HasPrefix(constraint.Name, tablePrefix) {
-				remaining := constraint.Name[len(tablePrefix):]
-				if strings.HasSuffix(remaining, "_key") {
-					return remaining[:len(remaining)-4] // remove "_key"
-				}
-			}
-		}
+		return extractPostgreSQLUniqueColumn(constraint)
 	}
 
 	// For other constraints, return empty string (will not match any field)
 	return ""
+}
+
+// extractPostgreSQLNotNullColumn extracts column name from PostgreSQL NOT NULL constraint
+func extractPostgreSQLNotNullColumn(constraint types.DBConstraint) string {
+	parts := strings.Split(constraint.Name, "_")
+	if len(parts) < 3 {
+		return ""
+	}
+
+	// Remove schema prefix (2200_) and suffix (_not_null)
+	if !strings.HasPrefix(constraint.Name, "2200_") {
+		return ""
+	}
+
+	// Format: 2200_table_column_not_null -> extract column
+	tableParts := strings.Split(constraint.Name[5:], "_not_null")
+	if len(tableParts) == 0 {
+		return ""
+	}
+
+	remaining := tableParts[0]
+	// Remove table name prefix to get column
+	tablePrefix := constraint.TableName + "_"
+	if strings.HasPrefix(remaining, tablePrefix) {
+		return remaining[len(tablePrefix):]
+	}
+
+	return ""
+}
+
+// extractPostgreSQLUniqueColumn extracts column name from PostgreSQL UNIQUE constraint
+func extractPostgreSQLUniqueColumn(constraint types.DBConstraint) string {
+	parts := strings.Split(constraint.Name, "_")
+	if len(parts) < 3 {
+		return ""
+	}
+
+	// Remove table prefix and _key suffix
+	tablePrefix := constraint.TableName + "_"
+	if !strings.HasPrefix(constraint.Name, tablePrefix) {
+		return ""
+	}
+
+	remaining := constraint.Name[len(tablePrefix):]
+	if !strings.HasSuffix(remaining, "_key") {
+		return ""
+	}
+
+	return remaining[:len(remaining)-4] // remove "_key"
 }
 
 // isMySQLConstraintBasedUniqueIndex checks if an index follows MySQL/MariaDB constraint-based patterns.
