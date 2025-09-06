@@ -1347,42 +1347,50 @@ func (p *Parser) handleTableExcludeWhere(constraint *ast.ConstraintNode) error {
 
 	// Check for optional WHERE clause
 	if p.current.Type == lexer.TokenIdentifier && strings.ToUpper(p.current.Value) == "WHERE" {
-		p.advance()
-		p.skipWhitespace()
-
-		// Expect opening parenthesis for WHERE condition
-		if err := p.expect(lexer.TokenOperator, "("); err != nil {
-			return fmt.Errorf("expected '(' after WHERE: %w", err)
+		whereCondition, err := p.parseExcludeWhereCondition()
+		if err != nil {
+			return err
 		}
-
-		// Parse WHERE condition until closing parenthesis
-		var condition strings.Builder
-		parenCount := 1
-		for parenCount > 0 && !p.isAtEnd() {
-			if p.current.Type == lexer.TokenOperator {
-				switch p.current.Value {
-				case "(":
-					parenCount++
-				case ")":
-					parenCount--
-				}
-			}
-			if parenCount > 0 {
-				// Skip whitespace tokens but preserve structure
-				if p.current.Type != lexer.TokenWhitespace {
-					if condition.Len() > 0 {
-						condition.WriteString(" ")
-					}
-					condition.WriteString(p.current.Value)
-				}
-			}
-			p.advance()
-		}
-
-		constraint.WhereCondition = strings.TrimSpace(condition.String())
+		constraint.WhereCondition = whereCondition
 	}
 
 	return nil
+}
+
+func (p *Parser) parseExcludeWhereCondition() (string, error) {
+	p.advance()
+	p.skipWhitespace()
+
+	// Expect opening parenthesis for WHERE condition
+	if err := p.expect(lexer.TokenOperator, "("); err != nil {
+		return "", fmt.Errorf("expected '(' after WHERE: %w", err)
+	}
+
+	// Parse WHERE condition until closing parenthesis
+	var condition strings.Builder
+	parenCount := 1
+	for parenCount > 0 && !p.isAtEnd() {
+		if p.current.Type == lexer.TokenOperator {
+			switch p.current.Value {
+			case "(":
+				parenCount++
+			case ")":
+				parenCount--
+			}
+		}
+		if parenCount > 0 {
+			// Skip whitespace tokens but preserve structure
+			if p.current.Type != lexer.TokenWhitespace {
+				if condition.Len() > 0 {
+					condition.WriteString(" ")
+				}
+				condition.WriteString(p.current.Value)
+			}
+		}
+		p.advance()
+	}
+
+	return strings.TrimSpace(condition.String()), nil
 }
 
 // parseTableConstraint parses table-level constraints.

@@ -25,7 +25,7 @@ type Database struct {
 	Tables                     []Table
 	Fields                     []Field
 	Indexes                    []Index
-	Constraints                []Constraint                   // Table-level constraints (EXCLUDE, CHECK, etc.)
+	Constraints                []Constraint // Table-level constraints (EXCLUDE, CHECK, etc.)
 	Enums                      []Enum
 	EmbeddedFields             []EmbeddedField
 	Extensions                 []Extension                    // PostgreSQL extensions (pg_trgm, postgis, etc.)

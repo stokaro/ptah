@@ -214,8 +214,8 @@ func TestConstraints_HasChanges(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "empty diff",
-			diff: &difftypes.SchemaDiff{},
+			name:     "empty diff",
+			diff:     &difftypes.SchemaDiff{},
 			expected: false,
 		},
 	}

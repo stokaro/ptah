@@ -5,10 +5,10 @@ import (
 	"log"
 
 	"github.com/stokaro/ptah/core/goschema"
-	"github.com/stokaro/ptah/core/renderer"
 )
 
 // Example 1: Room booking system with EXCLUDE constraint to prevent overlapping bookings
+//
 //migrator:schema:table name="bookings"
 //migrator:schema:constraint name="no_overlapping_bookings" type="EXCLUDE" table="bookings" using="gist" elements="room_id WITH =, during WITH &&"
 type Booking struct {
@@ -26,6 +26,7 @@ type Booking struct {
 }
 
 // Example 2: User session management with conditional EXCLUDE constraint
+//
 //migrator:schema:table name="user_sessions"
 //migrator:schema:constraint name="one_active_session_per_user" type="EXCLUDE" table="user_sessions" using="gist" elements="user_id WITH =" condition="is_active = true"
 type UserSession struct {
@@ -43,6 +44,7 @@ type UserSession struct {
 }
 
 // Example 3: Spatial data with EXCLUDE constraint to prevent overlapping regions
+//
 //migrator:schema:table name="territories"
 //migrator:schema:constraint name="no_overlapping_territories" type="EXCLUDE" table="territories" using="gist" elements="region WITH &&"
 type Territory struct {
@@ -60,6 +62,7 @@ type Territory struct {
 }
 
 // Example 4: Multiple constraint types including EXCLUDE
+//
 //migrator:schema:table name="events"
 //migrator:schema:constraint name="no_overlapping_events" type="EXCLUDE" table="events" using="gist" elements="venue_id WITH =, event_time WITH &&" condition="status = 'confirmed'"
 //migrator:schema:constraint name="unique_event_code" type="UNIQUE" table="events" columns="event_code"
@@ -84,7 +87,7 @@ type Event struct {
 	Status string
 }
 
-func main() {
+func runExcludeConstraintsExample() {
 	fmt.Println("PostgreSQL EXCLUDE Constraints Example")
 	fmt.Println("=====================================")
 
@@ -102,15 +105,16 @@ func main() {
 		fmt.Printf("  Type: %s\n", constraint.Type)
 		fmt.Printf("  Table: %s\n", constraint.Table)
 
-		if constraint.Type == "EXCLUDE" {
+		switch constraint.Type {
+		case "EXCLUDE":
 			fmt.Printf("  Using Method: %s\n", constraint.UsingMethod)
 			fmt.Printf("  Elements: %s\n", constraint.ExcludeElements)
 			if constraint.WhereCondition != "" {
 				fmt.Printf("  WHERE: %s\n", constraint.WhereCondition)
 			}
-		} else if constraint.Type == "UNIQUE" {
+		case "UNIQUE":
 			fmt.Printf("  Columns: %v\n", constraint.Columns)
-		} else if constraint.Type == "CHECK" {
+		case "CHECK":
 			fmt.Printf("  Expression: %s\n", constraint.CheckExpression)
 		}
 		fmt.Println()

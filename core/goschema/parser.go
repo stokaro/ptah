@@ -223,7 +223,17 @@ func parseComment(
 	}
 }
 
-func processTableComments(structName string, genDecl *ast.GenDecl, tableDirectives *[]Table, schemaConstraints *[]Constraint, extensions *[]Extension, functions *[]Function, rlsPolicies *[]RLSPolicy, rlsEnabledTables *[]RLSEnabledTable, roles *[]Role) {
+func processTableComments(
+	structName string,
+	genDecl *ast.GenDecl,
+	tableDirectives *[]Table,
+	schemaConstraints *[]Constraint,
+	extensions *[]Extension,
+	functions *[]Function,
+	rlsPolicies *[]RLSPolicy,
+	rlsEnabledTables *[]RLSEnabledTable,
+	roles *[]Role,
+) {
 	if genDecl.Doc == nil {
 		return
 	}
