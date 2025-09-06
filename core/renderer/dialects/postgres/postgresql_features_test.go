@@ -501,3 +501,147 @@ ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 		})
 	}
 }
+
+func TestPostgreSQLRenderer_ExcludeConstraints(t *testing.T) {
+	tests := []struct {
+		name     string
+		table    *ast.CreateTableNode
+		expected string
+	}{
+		{
+			name: "basic EXCLUDE constraint with GIST",
+			table: ast.NewCreateTable("user_sessions").
+				AddColumn(ast.NewColumn("user_id", "BIGINT").SetNotNull()).
+				AddColumn(ast.NewColumn("is_active", "BOOLEAN").SetNotNull()).
+				AddConstraint(ast.NewExcludeConstraint("one_active_session_per_user", "gist", "user_id WITH =").
+					SetWhereCondition("is_active = true")),
+			expected: `-- POSTGRES TABLE: user_sessions --
+CREATE TABLE user_sessions (
+  user_id BIGINT NOT NULL,
+  is_active BOOLEAN NOT NULL,
+  CONSTRAINT one_active_session_per_user EXCLUDE USING gist (user_id WITH =) WHERE (is_active = true)
+);
+
+`,
+		},
+		{
+			name: "EXCLUDE constraint without WHERE clause",
+			table: ast.NewCreateTable("bookings").
+				AddColumn(ast.NewColumn("room_id", "INTEGER").SetNotNull()).
+				AddColumn(ast.NewColumn("during", "TSRANGE").SetNotNull()).
+				AddConstraint(ast.NewExcludeConstraint("no_overlapping_bookings", "gist", "room_id WITH =, during WITH &&")),
+			expected: `-- POSTGRES TABLE: bookings --
+CREATE TABLE bookings (
+  room_id INTEGER NOT NULL,
+  during TSRANGE NOT NULL,
+  CONSTRAINT no_overlapping_bookings EXCLUDE USING gist (room_id WITH =, during WITH &&)
+);
+
+`,
+		},
+		{
+			name: "EXCLUDE constraint with BTREE method",
+			table: ast.NewCreateTable("unique_values").
+				AddColumn(ast.NewColumn("value", "INTEGER").SetNotNull()).
+				AddConstraint(ast.NewExcludeConstraint("unique_values_constraint", "btree", "value WITH =")),
+			expected: `-- POSTGRES TABLE: unique_values --
+CREATE TABLE unique_values (
+  value INTEGER NOT NULL,
+  CONSTRAINT unique_values_constraint EXCLUDE USING btree (value WITH =)
+);
+
+`,
+		},
+		{
+			name: "EXCLUDE constraint without name",
+			table: ast.NewCreateTable("spatial_data").
+				AddColumn(ast.NewColumn("location", "GEOMETRY").SetNotNull()).
+				AddConstraint(&ast.ConstraintNode{
+					Type:            ast.ExcludeConstraint,
+					UsingMethod:     "gist",
+					ExcludeElements: "location WITH &&",
+				}),
+			expected: `-- POSTGRES TABLE: spatial_data --
+CREATE TABLE spatial_data (
+  location GEOMETRY NOT NULL,
+  EXCLUDE USING gist (location WITH &&)
+);
+
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			renderer := postgres.New()
+			result, err := renderer.Render(tt.table)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result, qt.Equals, tt.expected)
+		})
+	}
+}
+
+func TestPostgreSQLRenderer_ExcludeConstraint_InCreateTable(t *testing.T) {
+	c := qt.New(t)
+
+	table := ast.NewCreateTable("user_sessions").
+		AddColumn(ast.NewColumn("user_id", "BIGINT").SetNotNull()).
+		AddColumn(ast.NewColumn("is_active", "BOOLEAN").SetNotNull().SetDefault("false")).
+		AddConstraint(ast.NewExcludeConstraint("one_active_session_per_user", "gist", "user_id WITH =").
+			SetWhereCondition("is_active = true"))
+
+	renderer := postgres.New()
+	result, err := renderer.Render(table)
+
+	c.Assert(err, qt.IsNil)
+	expected := `-- POSTGRES TABLE: user_sessions --
+CREATE TABLE user_sessions (
+  user_id BIGINT NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT 'false',
+  CONSTRAINT one_active_session_per_user EXCLUDE USING gist (user_id WITH =) WHERE (is_active = true)
+);
+
+`
+	c.Assert(result, qt.Equals, expected)
+}
+
+func TestPostgreSQLRenderer_ExcludeConstraint_Errors(t *testing.T) {
+	tests := []struct {
+		name  string
+		table *ast.CreateTableNode
+	}{
+		{
+			name: "missing using method",
+			table: ast.NewCreateTable("test_table").
+				AddColumn(ast.NewColumn("id", "INTEGER")).
+				AddConstraint(&ast.ConstraintNode{
+					Type:            ast.ExcludeConstraint,
+					Name:            "test_exclude",
+					ExcludeElements: "user_id WITH =",
+				}),
+		},
+		{
+			name: "missing exclude elements",
+			table: ast.NewCreateTable("test_table").
+				AddColumn(ast.NewColumn("id", "INTEGER")).
+				AddConstraint(&ast.ConstraintNode{
+					Type:        ast.ExcludeConstraint,
+					Name:        "test_exclude",
+					UsingMethod: "gist",
+				}),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			renderer := postgres.New()
+			_, err := renderer.Render(tt.table)
+			c.Assert(err, qt.IsNotNil)
+		})
+	}
+}

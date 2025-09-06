@@ -793,6 +793,364 @@ func isConstraintBasedUniqueIndex(indexName, tableName string, columns []string)
 	return false
 }
 
+// Constraints compares constraint definitions between generated and database schemas.
+//
+// This function identifies differences in table-level constraints such as EXCLUDE,
+// CHECK, UNIQUE, PRIMARY KEY, and FOREIGN KEY constraints. It compares constraints
+// defined through Go struct annotations with constraints that exist in the database.
+//
+// # Constraint Types Supported
+//
+//   - EXCLUDE: PostgreSQL EXCLUDE constraints for preventing conflicts
+//   - CHECK: Table-level CHECK constraints for data validation
+//   - UNIQUE: Table-level UNIQUE constraints spanning multiple columns
+//   - PRIMARY KEY: Composite primary key constraints
+//   - FOREIGN KEY: Table-level foreign key constraints
+//
+// # Comparison Logic
+//
+// The function performs constraint comparison by:
+//  1. **Constraint Discovery**: Creates lookup maps for efficient constraint comparison
+//  2. **Addition Detection**: Identifies constraints in generated schema but not in database
+//  3. **Removal Detection**: Identifies constraints in database but not in generated schema
+//
+// # Database Schema Constraints
+//
+// The function currently focuses on constraints defined through schema annotations.
+// Database-introspected constraints are not yet fully supported, so this function
+// primarily detects constraint additions from the generated schema.
+//
+// # Example Usage
+//
+//	// Compare constraints between schemas
+//	compare.Constraints(generated, database, diff)
+//
+//	// Check for constraint changes
+//	if len(diff.ConstraintsAdded) > 0 {
+//		log.Printf("Found %d new constraints to add", len(diff.ConstraintsAdded))
+//	}
+//
+// # Parameters
+//
+//   - generated: Target schema parsed from Go struct annotations
+//   - database: Current database schema from database introspection
+//   - diff: Schema difference structure to populate with constraint changes
+//
+// # Limitations
+//
+//   - Database constraint introspection is not yet fully implemented
+//   - Currently focuses on constraint additions from generated schema
+//   - Constraint modifications are not yet detected
+func Constraints(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+	// Create maps for detailed constraint comparison
+	genConstraints := make(map[string]goschema.Constraint)
+	for _, constraint := range generated.Constraints {
+		// Use table.constraint_name as the key for comparison to handle constraints with same names in different tables
+		key := constraint.Table + "." + constraint.Name
+		genConstraints[key] = constraint
+	}
+
+	// Create map of existing database constraints, filtering out field-level constraints
+	dbConstraints := make(map[string]types.DBConstraint)
+	for _, constraint := range database.Constraints {
+		// Skip field-level constraints that are represented in field definitions
+		if isFieldLevelConstraint(constraint, generated) {
+			continue
+		}
+
+		// Use table.constraint_name as the key for comparison
+		key := constraint.TableName + "." + constraint.Name
+		dbConstraints[key] = constraint
+	}
+
+	// Find added constraints (constraints in generated schema but not in database)
+	for constraintKey, genConstraint := range genConstraints {
+		if _, exists := dbConstraints[constraintKey]; !exists {
+			diff.ConstraintsAdded = append(diff.ConstraintsAdded, genConstraint.Name)
+		}
+	}
+
+	// Find removed constraints (constraints in database but not in generated schema)
+	for constraintKey, dbConstraint := range dbConstraints {
+		if _, exists := genConstraints[constraintKey]; !exists {
+			diff.ConstraintsRemoved = append(diff.ConstraintsRemoved, dbConstraint.Name)
+		}
+	}
+
+	// Find modified constraints (constraints that exist in both but have different definitions)
+	for constraintKey, genConstraint := range genConstraints {
+		if dbConstraint, exists := dbConstraints[constraintKey]; exists {
+			if constraintDefinitionsChanged(genConstraint, dbConstraint) {
+				// For now, treat modified constraints as removed + added
+				// In the future, we could add a ConstraintsModified field to SchemaDiff
+				diff.ConstraintsRemoved = append(diff.ConstraintsRemoved, dbConstraint.Name)
+				diff.ConstraintsAdded = append(diff.ConstraintsAdded, genConstraint.Name)
+			}
+		}
+	}
+}
+
+// constraintDefinitionsChanged compares constraint definitions between generated and database schemas
+// to detect if a constraint needs to be recreated due to definition changes.
+func constraintDefinitionsChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint) bool {
+	// Basic constraint type comparison
+	if genConstraint.Type != dbConstraint.Type {
+		return true
+	}
+
+	// Type-specific comparisons
+	switch genConstraint.Type {
+	case "EXCLUDE":
+		return excludeConstraintChanged(genConstraint, dbConstraint)
+	case "CHECK":
+		return checkConstraintChanged(genConstraint, dbConstraint)
+	case "UNIQUE":
+		return uniqueConstraintChanged(genConstraint, dbConstraint)
+	case "FOREIGN KEY":
+		return foreignKeyConstraintChanged(genConstraint, dbConstraint)
+	default:
+		// For unknown constraint types, assume no change
+		return false
+	}
+}
+
+// excludeConstraintChanged compares EXCLUDE constraint definitions
+func excludeConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint) bool {
+	// Compare using method
+	if genConstraint.UsingMethod != getStringValue(dbConstraint.UsingMethod) {
+		return true
+	}
+
+	// Compare exclude elements
+	if genConstraint.ExcludeElements != getStringValue(dbConstraint.ExcludeElements) {
+		return true
+	}
+
+	// Compare WHERE condition
+	if genConstraint.WhereCondition != getStringValue(dbConstraint.WhereCondition) {
+		return true
+	}
+
+	return false
+}
+
+// checkConstraintChanged compares CHECK constraint definitions
+func checkConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint) bool {
+	return genConstraint.CheckExpression != getStringValue(dbConstraint.CheckClause)
+}
+
+// uniqueConstraintChanged compares UNIQUE constraint definitions
+func uniqueConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint) bool {
+	// For UNIQUE constraints, we primarily compare the columns involved
+	// This is a simplified comparison - in practice, we might need to compare
+	// the actual column lists from the database constraint
+	return false // For now, assume UNIQUE constraints don't change
+}
+
+// foreignKeyConstraintChanged compares FOREIGN KEY constraint definitions
+func foreignKeyConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint) bool {
+	// Compare referenced table
+	if genConstraint.ForeignTable != getStringValue(dbConstraint.ForeignTable) {
+		return true
+	}
+
+	// Compare referenced column
+	if genConstraint.ForeignColumn != getStringValue(dbConstraint.ForeignColumn) {
+		return true
+	}
+
+	// Compare delete rule
+	if genConstraint.OnDelete != getStringValue(dbConstraint.DeleteRule) {
+		return true
+	}
+
+	// Compare update rule
+	if genConstraint.OnUpdate != getStringValue(dbConstraint.UpdateRule) {
+		return true
+	}
+
+	return false
+}
+
+// getStringValue safely extracts string value from a pointer, returning empty string if nil
+func getStringValue(ptr *string) string {
+	if ptr == nil {
+		return ""
+	}
+	return *ptr
+}
+
+// isFieldLevelConstraint determines if a database constraint represents a field-level constraint
+// that is already represented in the field definitions (NOT NULL, PRIMARY KEY, UNIQUE, FOREIGN KEY)
+func isFieldLevelConstraint(dbConstraint types.DBConstraint, generated *goschema.Database) bool {
+	// Create a map of table.column -> field for quick lookup
+	fieldMap := make(map[string]goschema.Field)
+	for _, field := range generated.Fields {
+		// Get table name for this field
+		tableName := field.StructName // default to struct name
+		for _, table := range generated.Tables {
+			if table.StructName == field.StructName {
+				tableName = table.Name
+				break
+			}
+		}
+		key := tableName + "." + field.Name
+		fieldMap[key] = field
+	}
+
+	// Check if this constraint corresponds to a field-level constraint
+	switch dbConstraint.Type {
+	case "NOT NULL":
+		// Check if there's a field with not_null=true for this column
+		key := dbConstraint.TableName + "." + getConstraintColumn(dbConstraint)
+		if field, exists := fieldMap[key]; exists && !field.Nullable {
+			return true
+		}
+	case "PRIMARY KEY":
+		// Check if there's a field with primary=true for this column
+		key := dbConstraint.TableName + "." + getConstraintColumn(dbConstraint)
+		if field, exists := fieldMap[key]; exists && field.Primary {
+			return true
+		}
+	case "UNIQUE":
+		// Check if there's a field with unique=true for this column
+		key := dbConstraint.TableName + "." + getConstraintColumn(dbConstraint)
+		if field, exists := fieldMap[key]; exists && field.Unique {
+			return true
+		}
+	case "FOREIGN KEY":
+		// Check if there's a field with foreign key reference for this column
+		key := dbConstraint.TableName + "." + getConstraintColumn(dbConstraint)
+		if field, exists := fieldMap[key]; exists && field.Foreign != "" {
+			return true
+		}
+	case "CHECK":
+		// PostgreSQL represents NOT NULL constraints as CHECK constraints with specific naming pattern
+		if strings.Contains(dbConstraint.Name, "_not_null") {
+			return hasNonNullableFieldInTable(dbConstraint.TableName, generated)
+		}
+		// Regular CHECK constraint - check if there's a field with check constraint for this column
+		key := dbConstraint.TableName + "." + getConstraintColumn(dbConstraint)
+		if field, exists := fieldMap[key]; exists && field.Check != "" {
+			return true
+		}
+	}
+
+	return false
+}
+
+// hasNonNullableFieldInTable checks if there's any non-nullable field in the table
+func hasNonNullableFieldInTable(tableName string, generated *goschema.Database) bool {
+	for _, field := range generated.Fields {
+		// Get table name for this field
+		fieldTableName := field.StructName
+		for _, table := range generated.Tables {
+			if table.StructName == field.StructName {
+				fieldTableName = table.Name
+				break
+			}
+		}
+		if fieldTableName == tableName && !field.Nullable {
+			return true
+		}
+	}
+	return false
+}
+
+// getConstraintColumn extracts the column name from a constraint
+// This is a simplified implementation - in practice, constraints can span multiple columns
+func getConstraintColumn(constraint types.DBConstraint) string {
+	// For single-column constraints, try to extract column name from constraint name
+	// This is database-specific and may need refinement
+
+	// Use the ColumnName field if available (MySQL/MariaDB provide this directly)
+	if constraint.ColumnName != "" {
+		return constraint.ColumnName
+	}
+
+	// PostgreSQL NOT NULL constraints often follow pattern: schema_table_column_not_null
+	if constraint.Type == "NOT NULL" && strings.Contains(constraint.Name, "_not_null") {
+		return extractPostgreSQLNotNullColumn(constraint)
+	}
+
+	// For PRIMARY KEY constraints: table_pkey (PostgreSQL) or PRIMARY (MySQL/MariaDB)
+	if constraint.Type == "PRIMARY KEY" {
+		if strings.HasSuffix(constraint.Name, "_pkey") {
+			// PostgreSQL pattern: table_pkey
+			// This is a table-level primary key, we need to check if it's single-column
+			// For now, assume single-column primary keys are field-level
+			return "id" // common convention, but this is a limitation
+		} else if constraint.Name == "PRIMARY" {
+			// MySQL/MariaDB pattern: PRIMARY
+			// For single-column primary keys, assume it's the id field
+			return "id" // common convention, but this is a limitation
+		}
+	}
+
+	// For UNIQUE constraints: table_column_key (PostgreSQL) or column name (MySQL/MariaDB)
+	if constraint.Type == "UNIQUE" {
+		if strings.HasSuffix(constraint.Name, "_key") {
+			// PostgreSQL pattern
+			return extractPostgreSQLUniqueColumn(constraint)
+		}
+
+		// MySQL/MariaDB often use the column name as the constraint name for single-column unique constraints
+		return constraint.Name
+	}
+
+	// For other constraints, return empty string (will not match any field)
+	return ""
+}
+
+// extractPostgreSQLNotNullColumn extracts column name from PostgreSQL NOT NULL constraint
+func extractPostgreSQLNotNullColumn(constraint types.DBConstraint) string {
+	parts := strings.Split(constraint.Name, "_")
+	if len(parts) < 3 {
+		return ""
+	}
+
+	// Remove schema prefix (2200_) and suffix (_not_null)
+	if !strings.HasPrefix(constraint.Name, "2200_") {
+		return ""
+	}
+
+	// Format: 2200_table_column_not_null -> extract column
+	tableParts := strings.Split(constraint.Name[5:], "_not_null")
+	if len(tableParts) == 0 {
+		return ""
+	}
+
+	remaining := tableParts[0]
+	// Remove table name prefix to get column
+	tablePrefix := constraint.TableName + "_"
+	if strings.HasPrefix(remaining, tablePrefix) {
+		return remaining[len(tablePrefix):]
+	}
+
+	return ""
+}
+
+// extractPostgreSQLUniqueColumn extracts column name from PostgreSQL UNIQUE constraint
+func extractPostgreSQLUniqueColumn(constraint types.DBConstraint) string {
+	parts := strings.Split(constraint.Name, "_")
+	if len(parts) < 3 {
+		return ""
+	}
+
+	// Remove table prefix and _key suffix
+	tablePrefix := constraint.TableName + "_"
+	if !strings.HasPrefix(constraint.Name, tablePrefix) {
+		return ""
+	}
+
+	remaining := constraint.Name[len(tablePrefix):]
+	if !strings.HasSuffix(remaining, "_key") {
+		return ""
+	}
+
+	return remaining[:len(remaining)-4] // remove "_key"
+}
+
 // isMySQLConstraintBasedUniqueIndex checks if an index follows MySQL/MariaDB constraint-based patterns.
 // This helper function encapsulates the complex logic for detecting MySQL/MariaDB constraint-based
 // unique indexes that follow table_column naming patterns but are not custom indexes.

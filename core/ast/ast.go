@@ -104,6 +104,8 @@ const (
 	ForeignKeyConstraint
 	// CheckConstraint represents a CHECK constraint
 	CheckConstraint
+	// ExcludeConstraint represents an EXCLUDE constraint (PostgreSQL-specific)
+	ExcludeConstraint
 )
 
 // String returns the SQL representation of the constraint type.

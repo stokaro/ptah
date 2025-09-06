@@ -326,3 +326,43 @@ func TestForeignKeyConstraint_ReferenceVariations(t *testing.T) {
 		})
 	}
 }
+
+func TestNewExcludeConstraint(t *testing.T) {
+	c := qt.New(t)
+
+	constraint := ast.NewExcludeConstraint("one_active_session_per_user", "gist", "user_id WITH =")
+
+	c.Assert(constraint.Type, qt.Equals, ast.ExcludeConstraint)
+	c.Assert(constraint.Name, qt.Equals, "one_active_session_per_user")
+	c.Assert(constraint.UsingMethod, qt.Equals, "gist")
+	c.Assert(constraint.ExcludeElements, qt.Equals, "user_id WITH =")
+	c.Assert(constraint.WhereCondition, qt.Equals, "")
+	c.Assert(constraint.Columns, qt.IsNil)
+	c.Assert(constraint.Reference, qt.IsNil)
+	c.Assert(constraint.Expression, qt.Equals, "")
+}
+
+func TestExcludeConstraint_WithWhereCondition(t *testing.T) {
+	c := qt.New(t)
+
+	constraint := ast.NewExcludeConstraint("one_active_session_per_user", "gist", "user_id WITH =").
+		SetWhereCondition("is_active = true")
+
+	c.Assert(constraint.Type, qt.Equals, ast.ExcludeConstraint)
+	c.Assert(constraint.Name, qt.Equals, "one_active_session_per_user")
+	c.Assert(constraint.UsingMethod, qt.Equals, "gist")
+	c.Assert(constraint.ExcludeElements, qt.Equals, "user_id WITH =")
+	c.Assert(constraint.WhereCondition, qt.Equals, "is_active = true")
+}
+
+func TestExcludeConstraint_ComplexElements(t *testing.T) {
+	c := qt.New(t)
+
+	constraint := ast.NewExcludeConstraint("no_overlapping_bookings", "gist", "room_id WITH =, during WITH &&")
+
+	c.Assert(constraint.Type, qt.Equals, ast.ExcludeConstraint)
+	c.Assert(constraint.Name, qt.Equals, "no_overlapping_bookings")
+	c.Assert(constraint.UsingMethod, qt.Equals, "gist")
+	c.Assert(constraint.ExcludeElements, qt.Equals, "room_id WITH =, during WITH &&")
+	c.Assert(constraint.WhereCondition, qt.Equals, "")
+}

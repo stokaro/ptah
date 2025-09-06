@@ -343,6 +343,7 @@ func TestConstraintType_Constants(t *testing.T) {
 	c.Assert(int(ast.UniqueConstraint), qt.Equals, 1)
 	c.Assert(int(ast.ForeignKeyConstraint), qt.Equals, 2)
 	c.Assert(int(ast.CheckConstraint), qt.Equals, 3)
+	c.Assert(int(ast.ExcludeConstraint), qt.Equals, 4)
 }
 
 // Test that constraint types are distinct
@@ -354,6 +355,7 @@ func TestConstraintType_Distinct(t *testing.T) {
 		ast.UniqueConstraint,
 		ast.ForeignKeyConstraint,
 		ast.CheckConstraint,
+		ast.ExcludeConstraint,
 	}
 
 	// Verify all types are different

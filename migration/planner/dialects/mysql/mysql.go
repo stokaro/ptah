@@ -471,8 +471,14 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	// 5. Add new indexes
 	result = p.addNewIndexes(result, diff, generated)
 
+	// 5.5. Add new constraints (must be done after tables and columns exist)
+	result = p.addNewConstraints(result, diff, generated)
+
 	// 6. Remove indexes (safe operations)
 	result = p.removeIndexes(result, diff)
+
+	// 6.5. Remove constraints (must be done before removing tables)
+	result = p.removeConstraints(result, diff)
 
 	// 7. Remove tables (dangerous!)
 	result = p.removeTables(result, diff)
@@ -481,4 +487,131 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	result = p.handleEnumRemovals(result, diff)
 
 	return result
+}
+
+// addNewConstraints adds new table-level constraints via ALTER TABLE statements.
+//
+// This method processes constraints defined through Go struct annotations and creates
+// appropriate ALTER TABLE ADD CONSTRAINT statements. Note that MySQL has different
+// constraint support compared to PostgreSQL:
+//
+// # MySQL Constraint Limitations
+//
+//   - EXCLUDE constraints are not supported (PostgreSQL-specific)
+//   - CHECK constraints have limited support in older MySQL versions
+//   - Some constraint features may behave differently
+//
+// # Supported Constraint Types
+//
+//   - CHECK: Table-level CHECK constraints (MySQL 8.0.16+)
+//   - UNIQUE: Table-level UNIQUE constraints spanning multiple columns
+//   - PRIMARY KEY: Composite primary key constraints
+//   - FOREIGN KEY: Table-level foreign key constraints
+//
+// # Example Generated SQL
+//
+//	ALTER TABLE products ADD CONSTRAINT positive_price CHECK (price > 0);
+//	ALTER TABLE users ADD CONSTRAINT uk_users_email_name UNIQUE (email, name);
+func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, constraintName := range diff.ConstraintsAdded {
+		// Find the constraint definition in the generated schema
+		for _, constraint := range generated.Constraints {
+			if constraint.Name == constraintName {
+				// Convert goschema.Constraint to ast.ConstraintNode
+				astConstraint := p.convertConstraintToAST(constraint)
+				if astConstraint != nil {
+					// Create ALTER TABLE statement with ADD CONSTRAINT operation
+					alterNode := &ast.AlterTableNode{
+						Name:       constraint.Table,
+						Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: astConstraint}},
+					}
+					result = append(result, alterNode)
+				} else if constraint.Type == "EXCLUDE" {
+					// Add warning for unsupported EXCLUDE constraints
+					commentNode := ast.NewComment(fmt.Sprintf("WARNING: EXCLUDE constraint %s not supported in MySQL (PostgreSQL-specific feature)", constraint.Name))
+					result = append(result, commentNode)
+				}
+				break
+			}
+		}
+	}
+	return result
+}
+
+// removeConstraints removes table-level constraints via ALTER TABLE statements.
+//
+// This method generates ALTER TABLE DROP CONSTRAINT statements for constraints
+// that exist in the database but not in the generated schema.
+//
+// # MySQL Constraint Removal
+//
+// MySQL uses different syntax for dropping different constraint types:
+//   - DROP CONSTRAINT for named constraints (MySQL 8.0.19+)
+//   - DROP INDEX for unique constraints in older versions
+//   - DROP FOREIGN KEY for foreign key constraints
+//
+// # Example Generated SQL
+//
+//	ALTER TABLE products DROP CONSTRAINT positive_price;
+//	ALTER TABLE users DROP CONSTRAINT uk_users_email_name;
+func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, constraintName := range diff.ConstraintsRemoved {
+		// For constraint removal, we need to determine which table the constraint belongs to
+		// This is a limitation of the current approach - we don't track table names for removed constraints
+		// For now, we'll add a comment indicating manual intervention may be needed
+		commentNode := ast.NewComment(fmt.Sprintf("TODO: Remove constraint %s (table name unknown - manual intervention required)", constraintName))
+		result = append(result, commentNode)
+	}
+	return result
+}
+
+// convertConstraintToAST converts a goschema.Constraint to an ast.ConstraintNode for MySQL.
+//
+// This helper method handles the conversion between the schema annotation representation
+// and the AST representation used for SQL generation, taking into account MySQL-specific
+// limitations and syntax differences.
+func (p *Planner) convertConstraintToAST(constraint goschema.Constraint) *ast.ConstraintNode {
+	switch constraint.Type {
+	case "EXCLUDE":
+		// EXCLUDE constraints are not supported in MySQL
+		return nil
+
+	case "CHECK":
+		if constraint.CheckExpression == "" {
+			return nil // Invalid CHECK constraint
+		}
+		return &ast.ConstraintNode{
+			Type:       ast.CheckConstraint,
+			Name:       constraint.Name,
+			Expression: constraint.CheckExpression,
+		}
+
+	case "UNIQUE":
+		if len(constraint.Columns) == 0 {
+			return nil // Invalid UNIQUE constraint
+		}
+		return ast.NewUniqueConstraint(constraint.Name, constraint.Columns...)
+
+	case "PRIMARY KEY":
+		if len(constraint.Columns) == 0 {
+			return nil // Invalid PRIMARY KEY constraint
+		}
+		return ast.NewPrimaryKeyConstraint(constraint.Columns...)
+
+	case "FOREIGN KEY":
+		if len(constraint.Columns) == 0 || constraint.ForeignTable == "" || constraint.ForeignColumn == "" {
+			return nil // Invalid FOREIGN KEY constraint
+		}
+		ref := &ast.ForeignKeyRef{
+			Table:    constraint.ForeignTable,
+			Column:   constraint.ForeignColumn,
+			OnDelete: constraint.OnDelete,
+			OnUpdate: constraint.OnUpdate,
+			Name:     constraint.Name,
+		}
+		return ast.NewForeignKeyConstraint(constraint.Name, constraint.Columns, ref)
+
+	default:
+		return nil // Unsupported constraint type
+	}
 }

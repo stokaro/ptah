@@ -372,7 +372,7 @@ func (r *Reader) readConstraints(dbName string) ([]types.DBConstraint, error) {
 			tc.TABLE_SCHEMA = rc.CONSTRAINT_SCHEMA
 		WHERE tc.TABLE_SCHEMA = ?
 		AND tc.TABLE_NAME NOT IN ('schema_migrations')
-		ORDER BY tc.TABLE_NAME, tc.CONSTRAINT_NAME`
+		ORDER BY tc.TABLE_NAME, tc.CONSTRAINT_NAME, kcu.ORDINAL_POSITION`
 
 	rows, err := r.db.Query(query, dbName)
 	if err != nil {
@@ -380,15 +380,17 @@ func (r *Reader) readConstraints(dbName string) ([]types.DBConstraint, error) {
 	}
 	defer rows.Close()
 
-	var constraints []types.DBConstraint
+	// Use a map to group constraints by their unique identifier
+	constraintMap := make(map[string]*types.DBConstraint)
+
 	for rows.Next() {
-		var constraint types.DBConstraint
+		var constraintName, tableName, constraintType, columnName string
 		var referencedTable, referencedColumn, deleteRule, updateRule string
 		err := rows.Scan(
-			&constraint.Name,
-			&constraint.TableName,
-			&constraint.Type,
-			&constraint.ColumnName,
+			&constraintName,
+			&tableName,
+			&constraintType,
+			&columnName,
 			&referencedTable,
 			&referencedColumn,
 			&deleteRule,
@@ -398,21 +400,46 @@ func (r *Reader) readConstraints(dbName string) ([]types.DBConstraint, error) {
 			return nil, err
 		}
 
-		// Set foreign key references if they exist
-		if referencedTable != "" {
-			constraint.ForeignTable = &referencedTable
-		}
-		if referencedColumn != "" {
-			constraint.ForeignColumn = &referencedColumn
-		}
-		if deleteRule != "" {
-			constraint.DeleteRule = &deleteRule
-		}
-		if updateRule != "" {
-			constraint.UpdateRule = &updateRule
+		// Create a unique key for this constraint
+		key := tableName + "." + constraintName
+
+		// Get or create the constraint
+		constraint, exists := constraintMap[key]
+		if !exists {
+			constraint = &types.DBConstraint{
+				Name:      constraintName,
+				TableName: tableName,
+				Type:      constraintType,
+			}
+
+			// Set foreign key references if they exist
+			if referencedTable != "" {
+				constraint.ForeignTable = &referencedTable
+			}
+			if referencedColumn != "" {
+				constraint.ForeignColumn = &referencedColumn
+			}
+			if deleteRule != "" {
+				constraint.DeleteRule = &deleteRule
+			}
+			if updateRule != "" {
+				constraint.UpdateRule = &updateRule
+			}
+
+			constraintMap[key] = constraint
 		}
 
-		constraints = append(constraints, constraint)
+		// For multi-column constraints, we only store the first column name
+		// This matches the existing behavior and avoids duplicates
+		if constraint.ColumnName == "" && columnName != "" {
+			constraint.ColumnName = columnName
+		}
+	}
+
+	// Convert map to slice
+	var constraints []types.DBConstraint
+	for _, constraint := range constraintMap {
+		constraints = append(constraints, *constraint)
 	}
 
 	return constraints, nil

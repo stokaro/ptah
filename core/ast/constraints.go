@@ -62,3 +62,39 @@ func NewForeignKeyConstraint(name string, columns []string, ref *ForeignKeyRef) 
 		Reference: ref,
 	}
 }
+
+// NewExcludeConstraint creates a table-level exclude constraint with a name, using method, and elements.
+//
+// This function creates a named exclude constraint that prevents conflicts based on
+// specified operators and conditions. EXCLUDE constraints are PostgreSQL-specific
+// and are particularly useful for temporal data, spatial relationships, or complex
+// business rules.
+//
+// Example:
+//
+//	// Prevent overlapping active sessions per user
+//	exclude := NewExcludeConstraint("one_active_session_per_user", "gist", "user_id WITH =").
+//		SetWhereCondition("is_active = true")
+//	// Prevent overlapping time ranges
+//	exclude := NewExcludeConstraint("no_overlapping_bookings", "gist", "room_id WITH =, during WITH &&")
+func NewExcludeConstraint(name, usingMethod, elements string) *ConstraintNode {
+	return &ConstraintNode{
+		Type:            ExcludeConstraint,
+		Name:            name,
+		UsingMethod:     usingMethod,
+		ExcludeElements: elements,
+	}
+}
+
+// SetWhereCondition sets the optional WHERE clause for an EXCLUDE constraint and returns the constraint for chaining.
+//
+// The WHERE clause allows the constraint to apply only to rows that satisfy the condition.
+//
+// Example:
+//
+//	exclude := NewExcludeConstraint("one_active_session_per_user", "gist", "user_id WITH =").
+//		SetWhereCondition("is_active = true")
+func (c *ConstraintNode) SetWhereCondition(condition string) *ConstraintNode {
+	c.WhereCondition = condition
+	return c
+}

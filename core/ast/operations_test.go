@@ -97,8 +97,9 @@ func TestAlterOperations_ImplementInterface(t *testing.T) {
 	ops = append(ops, &ast.DropColumnOperation{ColumnName: "test"})
 	ops = append(ops, &ast.ModifyColumnOperation{Column: ast.NewColumn("test", "INTEGER")})
 	ops = append(ops, &ast.AddConstraintOperation{Constraint: ast.NewUniqueConstraint("uk_test", "test")})
+	ops = append(ops, &ast.DropConstraintOperation{ConstraintName: "test_constraint"})
 
-	c.Assert(ops, qt.HasLen, 4)
+	c.Assert(ops, qt.HasLen, 5)
 
 	// Test that they all implement the Node interface as well (since AlterOperation embeds Node)
 	for _, op := range ops {
@@ -118,12 +119,14 @@ func TestAlterOperations_InterfaceCompliance(t *testing.T) {
 	var _ ast.AlterOperation = &ast.DropColumnOperation{}
 	var _ ast.AlterOperation = &ast.ModifyColumnOperation{}
 	var _ ast.AlterOperation = &ast.AddConstraintOperation{}
+	var _ ast.AlterOperation = &ast.DropConstraintOperation{}
 
 	// Test that they also implement Node interface
 	var _ ast.Node = &ast.AddColumnOperation{}
 	var _ ast.Node = &ast.DropColumnOperation{}
 	var _ ast.Node = &ast.ModifyColumnOperation{}
 	var _ ast.Node = &ast.AddConstraintOperation{}
+	var _ ast.Node = &ast.DropConstraintOperation{}
 
 	// If we get here, all interfaces are implemented correctly
 	c.Assert(true, qt.IsTrue)
@@ -152,6 +155,27 @@ func TestAddConstraintOperation_ForeignKey(t *testing.T) {
 	c.Assert(op.Constraint.Type, qt.Equals, ast.ForeignKeyConstraint)
 	c.Assert(op.Constraint.Columns, qt.DeepEquals, []string{"user_id"})
 	c.Assert(op.Constraint.Reference, qt.Equals, fkRef)
+}
+
+func TestDropConstraintOperation_Accept(t *testing.T) {
+	c := qt.New(t)
+
+	visitor := &mocks.MockVisitor{}
+	op := &ast.DropConstraintOperation{
+		ConstraintName: "test_constraint",
+		IfExists:       true,
+	}
+
+	err := op.Accept(visitor)
+
+	c.Assert(err, qt.IsNil)
+	// DropConstraintOperation doesn't call any visitor methods directly
+	// It's handled by the parent AlterTableNode's visitor
+	c.Assert(visitor.VisitedNodes, qt.HasLen, 0)
+
+	// Verify the operation properties are preserved
+	c.Assert(op.ConstraintName, qt.Equals, "test_constraint")
+	c.Assert(op.IfExists, qt.IsTrue)
 }
 
 // Test AddColumnOperation with complex column

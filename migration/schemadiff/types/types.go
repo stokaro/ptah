@@ -132,6 +132,14 @@ type SchemaDiff struct {
 	// RolesModified contains detailed information about roles that exist in both
 	// schemas but have different definitions (attributes, passwords, etc.)
 	RolesModified []RoleDiff `json:"roles_modified"`
+
+	// ConstraintsAdded contains names of constraints that exist in the target schema
+	// but not in the current database schema
+	ConstraintsAdded []string `json:"constraints_added"`
+
+	// ConstraintsRemoved contains names of constraints that exist in the current database
+	// but not in the target schema (potentially dangerous - may affect data integrity)
+	ConstraintsRemoved []string `json:"constraints_removed"`
 }
 
 // HasChanges returns true if the diff contains any schema changes requiring migration.
@@ -170,7 +178,8 @@ func (d *SchemaDiff) HasChanges() bool {
 		d.hasExtensionChanges() ||
 		d.hasFunctionChanges() ||
 		d.hasRLSChanges() ||
-		d.hasRoleChanges()
+		d.hasRoleChanges() ||
+		d.hasConstraintChanges()
 }
 
 // hasTableChanges returns true if there are any table-related changes
@@ -222,6 +231,12 @@ func (d *SchemaDiff) hasRoleChanges() bool {
 		len(d.RolesModified) > 0
 }
 
+// hasConstraintChanges returns true if there are any constraint-related changes
+func (d *SchemaDiff) hasConstraintChanges() bool {
+	return len(d.ConstraintsAdded) > 0 ||
+		len(d.ConstraintsRemoved) > 0
+}
+
 // TableDiff represents structural differences within a specific database table.
 //
 // This structure captures all types of changes that can occur to a table's structure,
@@ -252,6 +267,13 @@ type TableDiff struct {
 	// ColumnsModified contains detailed information about columns that exist in both
 	// schemas but have different properties (type, constraints, defaults, etc.)
 	ColumnsModified []ColumnDiff `json:"columns_modified"`
+
+	// ConstraintsAdded contains names of constraints that need to be added to the table
+	ConstraintsAdded []string `json:"constraints_added"`
+
+	// ConstraintsRemoved contains names of constraints that need to be removed from the table
+	// (potentially dangerous - may affect data integrity)
+	ConstraintsRemoved []string `json:"constraints_removed"`
 }
 
 // ColumnDiff represents specific property changes within a database column.

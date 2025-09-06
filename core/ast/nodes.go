@@ -302,7 +302,7 @@ func (n *ColumnNode) SetForeignKey(table, column, name string) *ColumnNode {
 	return n
 }
 
-// ConstraintNode represents table-level constraints (PRIMARY KEY, UNIQUE, FOREIGN KEY, CHECK).
+// ConstraintNode represents table-level constraints (PRIMARY KEY, UNIQUE, FOREIGN KEY, CHECK, EXCLUDE).
 //
 // Table-level constraints can span multiple columns and are defined separately
 // from column definitions. This is different from column-level constraints
@@ -318,6 +318,12 @@ type ConstraintNode struct {
 	Reference *ForeignKeyRef
 	// Expression contains the check expression (only for CHECK constraints)
 	Expression string
+	// UsingMethod specifies the index method for EXCLUDE constraints (e.g., "gist", "btree")
+	UsingMethod string
+	// ExcludeElements contains the exclude elements specification (e.g., "user_id WITH =", "during WITH &&")
+	ExcludeElements string
+	// WhereCondition contains the optional WHERE clause for EXCLUDE constraints
+	WhereCondition string
 }
 
 // Accept implements the Node interface for ConstraintNode.

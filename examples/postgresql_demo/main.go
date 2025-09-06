@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/parser"
@@ -161,4 +162,9 @@ func main() {
 	fmt.Println("- Named table constraints")
 	fmt.Println("- COMMENT ON statements")
 	fmt.Println("- Foreign keys with CASCADE and SET NULL actions")
+
+	fmt.Println("\n" + strings.Repeat("=", 50))
+
+	// Run the EXCLUDE constraints example
+	runExcludeConstraintsExample()
 }

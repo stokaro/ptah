@@ -1,6 +1,7 @@
 package goschema_test
 
 import (
+	"go/ast"
 	"os"
 	"path/filepath"
 	"slices"
@@ -606,6 +607,98 @@ func TestParseRLSEnableComment(t *testing.T) {
 			}
 
 			c.Assert(rlsEnabled, qt.DeepEquals, tt.expected)
+		})
+	}
+}
+
+func TestParseConstraintComment(t *testing.T) {
+	tests := []struct {
+		name     string
+		comment  string
+		expected goschema.Constraint
+	}{
+		{
+			name:    "EXCLUDE constraint with all fields",
+			comment: `//migrator:schema:constraint name="no_overlapping_bookings" type="EXCLUDE" using="gist" elements="room_id WITH =, during WITH &&" condition="is_active = true" comment="Prevent overlapping bookings"`,
+			expected: goschema.Constraint{
+				StructName:      "TestStruct",
+				Name:            "no_overlapping_bookings",
+				Type:            "EXCLUDE",
+				UsingMethod:     "gist",
+				ExcludeElements: "room_id WITH =, during WITH &&",
+				WhereCondition:  "is_active = true",
+				Comment:         "Prevent overlapping bookings",
+			},
+		},
+		{
+			name:    "EXCLUDE constraint without WHERE clause",
+			comment: `//migrator:schema:constraint name="unique_locations" type="EXCLUDE" using="gist" elements="location WITH &&"`,
+			expected: goschema.Constraint{
+				StructName:      "TestStruct",
+				Name:            "unique_locations",
+				Type:            "EXCLUDE",
+				UsingMethod:     "gist",
+				ExcludeElements: "location WITH &&",
+			},
+		},
+		{
+			name:    "CHECK constraint",
+			comment: `//migrator:schema:constraint name="positive_price" type="CHECK" check="price > 0"`,
+			expected: goschema.Constraint{
+				StructName:      "TestStruct",
+				Name:            "positive_price",
+				Type:            "CHECK",
+				CheckExpression: "price > 0",
+			},
+		},
+		{
+			name:    "UNIQUE constraint with multiple columns",
+			comment: `//migrator:schema:constraint name="unique_user_email" type="UNIQUE" columns="user_id, email"`,
+			expected: goschema.Constraint{
+				StructName: "TestStruct",
+				Name:       "unique_user_email",
+				Type:       "UNIQUE",
+				Columns:    []string{"user_id", "email"},
+			},
+		},
+		{
+			name:    "FOREIGN KEY constraint",
+			comment: `//migrator:schema:constraint name="fk_user" type="FOREIGN KEY" columns="user_id" foreign_table="users" foreign_column="id" on_delete="CASCADE"`,
+			expected: goschema.Constraint{
+				StructName:    "TestStruct",
+				Name:          "fk_user",
+				Type:          "FOREIGN KEY",
+				Columns:       []string{"user_id"},
+				ForeignTable:  "users",
+				ForeignColumn: "id",
+				OnDelete:      "CASCADE",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			var constraints []goschema.Constraint
+			comment := &ast.Comment{Text: tt.comment}
+			goschema.ParseConstraintComment(comment, "TestStruct", &constraints)
+
+			c.Assert(len(constraints), qt.Equals, 1)
+			constraint := constraints[0]
+
+			c.Assert(constraint.StructName, qt.Equals, tt.expected.StructName)
+			c.Assert(constraint.Name, qt.Equals, tt.expected.Name)
+			c.Assert(constraint.Type, qt.Equals, tt.expected.Type)
+			c.Assert(constraint.UsingMethod, qt.Equals, tt.expected.UsingMethod)
+			c.Assert(constraint.ExcludeElements, qt.Equals, tt.expected.ExcludeElements)
+			c.Assert(constraint.WhereCondition, qt.Equals, tt.expected.WhereCondition)
+			c.Assert(constraint.CheckExpression, qt.Equals, tt.expected.CheckExpression)
+			c.Assert(constraint.Columns, qt.DeepEquals, tt.expected.Columns)
+			c.Assert(constraint.ForeignTable, qt.Equals, tt.expected.ForeignTable)
+			c.Assert(constraint.ForeignColumn, qt.Equals, tt.expected.ForeignColumn)
+			c.Assert(constraint.OnDelete, qt.Equals, tt.expected.OnDelete)
+			c.Assert(constraint.Comment, qt.Equals, tt.expected.Comment)
 		})
 	}
 }

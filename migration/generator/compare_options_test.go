@@ -60,17 +60,6 @@ func TestGenerateMigrationOptions_CompareOptions_Initialization(t *testing.T) {
 
 			// Verify that CompareOptions field is properly set
 			c.Assert(opts.CompareOptions, qt.DeepEquals, tt.expected)
-
-			// If both are nil, they should be equal
-			if tt.compareOptions == nil && tt.expected == nil {
-				c.Assert(opts.CompareOptions, qt.IsNil)
-				return
-			}
-
-			// If not nil, verify the IgnoredExtensions field
-			if tt.expected != nil {
-				c.Assert(opts.CompareOptions.IgnoredExtensions, qt.DeepEquals, tt.expected.IgnoredExtensions)
-			}
 		})
 	}
 }

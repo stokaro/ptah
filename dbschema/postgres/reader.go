@@ -294,6 +294,26 @@ func (r *Reader) readIndexes() ([]types.DBIndex, error) {
 
 // readConstraints reads all constraints
 func (r *Reader) readConstraints() ([]types.DBConstraint, error) {
+	// First, read basic constraint information from information_schema
+	basicConstraints, err := r.readBasicConstraints()
+	if err != nil {
+		return nil, err
+	}
+
+	// Then, read PostgreSQL-specific constraints (like EXCLUDE) from pg_constraint
+	pgConstraints, err := r.readPostgreSQLConstraints()
+	if err != nil {
+		return nil, err
+	}
+
+	// Combine both sets of constraints
+	basicConstraints = append(basicConstraints, pgConstraints...)
+
+	return basicConstraints, nil
+}
+
+// readBasicConstraints reads basic constraint information from information_schema
+func (r *Reader) readBasicConstraints() ([]types.DBConstraint, error) {
 	constraintsQuery := `
 		SELECT
 			tc.table_name,
@@ -372,7 +392,153 @@ func (r *Reader) readConstraints() ([]types.DBConstraint, error) {
 	return constraints, nil
 }
 
-// readExtensions reads all PostgreSQL extensions installed in the database
+// readPostgreSQLConstraints reads PostgreSQL-specific constraints from pg_constraint
+func (r *Reader) readPostgreSQLConstraints() ([]types.DBConstraint, error) {
+	// Query PostgreSQL system catalogs for PostgreSQL-specific constraints
+	pgQuery := `
+		SELECT
+			c.conname AS constraint_name,
+			cl.relname AS table_name,
+			c.contype AS constraint_type,
+			pg_get_constraintdef(c.oid) AS constraint_definition
+		FROM pg_constraint c
+		JOIN pg_class cl ON c.conrelid = cl.oid
+		JOIN pg_namespace n ON cl.relnamespace = n.oid
+		WHERE c.contype IN ('x')  -- 'x' = exclusion constraint (add more types as needed)
+		AND n.nspname = $1
+		AND cl.relname NOT IN ('schema_migrations')
+		ORDER BY cl.relname, c.conname`
+
+	rows, err := r.db.Query(pgQuery, r.schema)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query PostgreSQL constraints: %w", err)
+	}
+	defer rows.Close()
+
+	var constraints []types.DBConstraint
+	for rows.Next() {
+		var constraintName, tableName, constraintType, definition string
+		err := rows.Scan(&constraintName, &tableName, &constraintType, &definition)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan PostgreSQL constraint: %w", err)
+		}
+
+		// Convert PostgreSQL constraint type to standard type
+		var stdType string
+		switch constraintType {
+		case "x":
+			stdType = "EXCLUDE"
+		default:
+			continue // Skip unknown types
+		}
+
+		constraint := types.DBConstraint{
+			Name:      constraintName,
+			TableName: tableName,
+			Type:      stdType,
+		}
+
+		// Parse constraint definition for EXCLUDE constraints
+		if stdType == "EXCLUDE" {
+			parsed, err := r.ParseExcludeConstraintDefinition(definition)
+			if err != nil {
+				// Log the error but continue processing other constraints
+				continue
+			}
+
+			if parsed.UsingMethod != "" {
+				constraint.UsingMethod = &parsed.UsingMethod
+			}
+			if parsed.Elements != "" {
+				constraint.ExcludeElements = &parsed.Elements
+			}
+			if parsed.WhereCondition != "" {
+				constraint.WhereCondition = &parsed.WhereCondition
+			}
+		}
+
+		constraints = append(constraints, constraint)
+	}
+
+	return constraints, nil
+}
+
+// ExcludeConstraintDefinition represents the parsed components of an EXCLUDE constraint
+type ExcludeConstraintDefinition struct {
+	UsingMethod    string
+	Elements       string
+	WhereCondition string
+}
+
+// ParseExcludeConstraintDefinition parses an EXCLUDE constraint definition from pg_get_constraintdef
+// Example input: "EXCLUDE USING gist (room_id WITH =, during WITH &&) WHERE (is_active = true)"
+func (r *Reader) ParseExcludeConstraintDefinition(definition string) (*ExcludeConstraintDefinition, error) {
+	// Remove leading/trailing whitespace
+	definition = strings.TrimSpace(definition)
+
+	// Check if it starts with "EXCLUDE USING"
+	if !strings.HasPrefix(strings.ToUpper(definition), "EXCLUDE USING") {
+		return nil, fmt.Errorf("invalid EXCLUDE constraint definition: %s", definition)
+	}
+
+	// Remove "EXCLUDE USING " prefix
+	remaining := strings.TrimSpace(definition[13:]) // len("EXCLUDE USING") = 13
+
+	// Find the using method (first word)
+	parts := strings.Fields(remaining)
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("missing using method in EXCLUDE constraint: %s", definition)
+	}
+	usingMethod := parts[0]
+
+	// Find the opening parenthesis for elements
+	openParenIdx := strings.Index(remaining, "(")
+	if openParenIdx == -1 {
+		return nil, fmt.Errorf("missing opening parenthesis in EXCLUDE constraint: %s", definition)
+	}
+
+	// Find the matching closing parenthesis for elements
+	parenCount := 0
+	elementsEndIdx := -1
+	for i := openParenIdx; i < len(remaining); i++ {
+		if remaining[i] == '(' {
+			parenCount++
+		} else if remaining[i] == ')' {
+			parenCount--
+			if parenCount == 0 {
+				elementsEndIdx = i
+				break
+			}
+		}
+	}
+
+	if elementsEndIdx == -1 {
+		return nil, fmt.Errorf("missing closing parenthesis in EXCLUDE constraint: %s", definition)
+	}
+
+	// Extract elements (content between parentheses)
+	elements := strings.TrimSpace(remaining[openParenIdx+1 : elementsEndIdx])
+
+	// Check for WHERE clause
+	whereCondition := ""
+	afterElements := strings.TrimSpace(remaining[elementsEndIdx+1:])
+	if strings.HasPrefix(strings.ToUpper(afterElements), "WHERE") {
+		whereClause := strings.TrimSpace(afterElements[5:]) // len("WHERE") = 5
+		// Remove outer parentheses if present
+		if strings.HasPrefix(whereClause, "(") && strings.HasSuffix(whereClause, ")") {
+			whereCondition = strings.TrimSpace(whereClause[1 : len(whereClause)-1])
+		} else {
+			whereCondition = whereClause
+		}
+	}
+
+	return &ExcludeConstraintDefinition{
+		UsingMethod:    usingMethod,
+		Elements:       elements,
+		WhereCondition: whereCondition,
+	}, nil
+}
+
 func (r *Reader) readExtensions() ([]types.DBExtension, error) {
 	// Use a simpler query that only relies on pg_extension and pg_namespace
 	// These are core system catalogs that are consistent across PostgreSQL versions
