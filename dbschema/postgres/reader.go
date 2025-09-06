@@ -300,13 +300,16 @@ func (r *Reader) readConstraints() ([]types.DBConstraint, error) {
 		return nil, err
 	}
 
-	// Then, enhance EXCLUDE constraints with detailed information from system catalogs
-	constraints, err := r.enhanceExcludeConstraints(basicConstraints)
+	// Then, read PostgreSQL-specific constraints (like EXCLUDE) from pg_constraint
+	pgConstraints, err := r.readPostgreSQLConstraints()
 	if err != nil {
 		return nil, err
 	}
 
-	return constraints, nil
+	// Combine both sets of constraints
+	allConstraints := append(basicConstraints, pgConstraints...)
+
+	return allConstraints, nil
 }
 
 // readBasicConstraints reads basic constraint information from information_schema
@@ -389,74 +392,78 @@ func (r *Reader) readBasicConstraints() ([]types.DBConstraint, error) {
 	return constraints, nil
 }
 
-// enhanceExcludeConstraints enhances EXCLUDE constraints with detailed information from PostgreSQL system catalogs
-func (r *Reader) enhanceExcludeConstraints(constraints []types.DBConstraint) ([]types.DBConstraint, error) {
-	// Query PostgreSQL system catalogs for EXCLUDE constraint details
-	excludeQuery := `
+// readPostgreSQLConstraints reads PostgreSQL-specific constraints from pg_constraint
+func (r *Reader) readPostgreSQLConstraints() ([]types.DBConstraint, error) {
+	// Query PostgreSQL system catalogs for PostgreSQL-specific constraints
+	pgQuery := `
 		SELECT
 			c.conname AS constraint_name,
 			cl.relname AS table_name,
+			c.contype AS constraint_type,
 			pg_get_constraintdef(c.oid) AS constraint_definition
 		FROM pg_constraint c
 		JOIN pg_class cl ON c.conrelid = cl.oid
 		JOIN pg_namespace n ON cl.relnamespace = n.oid
-		WHERE c.contype = 'x'  -- 'x' = exclusion constraint
+		WHERE c.contype IN ('x')  -- 'x' = exclusion constraint (add more types as needed)
 		AND n.nspname = $1
 		AND cl.relname NOT IN ('schema_migrations')
 		ORDER BY cl.relname, c.conname`
 
-	rows, err := r.db.Query(excludeQuery, r.schema)
+	rows, err := r.db.Query(pgQuery, r.schema)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query EXCLUDE constraints: %w", err)
+		return nil, fmt.Errorf("failed to query PostgreSQL constraints: %w", err)
 	}
 	defer rows.Close()
 
-	// Create a map of EXCLUDE constraint definitions for quick lookup
-	excludeDefinitions := make(map[string]string)
+	var constraints []types.DBConstraint
 	for rows.Next() {
-		var constraintName, tableName, definition string
-		err := rows.Scan(&constraintName, &tableName, &definition)
+		var constraintName, tableName, constraintType, definition string
+		err := rows.Scan(&constraintName, &tableName, &constraintType, &definition)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan EXCLUDE constraint: %w", err)
+			return nil, fmt.Errorf("failed to scan PostgreSQL constraint: %w", err)
 		}
-		key := tableName + "." + constraintName
-		excludeDefinitions[key] = definition
-	}
 
-	// Enhance EXCLUDE constraints with parsed details
-	for i, constraint := range constraints {
-		if constraint.Type == "EXCLUDE" {
-			r.enhanceExcludeConstraint(&constraints[i], excludeDefinitions)
+		// Convert PostgreSQL constraint type to standard type
+		var stdType string
+		switch constraintType {
+		case "x":
+			stdType = "EXCLUDE"
+		default:
+			continue // Skip unknown types
 		}
+
+		constraint := types.DBConstraint{
+			Name:      constraintName,
+			TableName: tableName,
+			Type:      stdType,
+		}
+
+		// Parse constraint definition for EXCLUDE constraints
+		if stdType == "EXCLUDE" {
+			parsed, err := r.ParseExcludeConstraintDefinition(definition)
+			if err != nil {
+				// Log the error but continue processing other constraints
+				continue
+			}
+
+			if parsed.UsingMethod != "" {
+				constraint.UsingMethod = &parsed.UsingMethod
+			}
+			if parsed.Elements != "" {
+				constraint.ExcludeElements = &parsed.Elements
+			}
+			if parsed.WhereCondition != "" {
+				constraint.WhereCondition = &parsed.WhereCondition
+			}
+		}
+
+		constraints = append(constraints, constraint)
 	}
 
 	return constraints, nil
 }
 
-// enhanceExcludeConstraint enhances a single EXCLUDE constraint with detailed information
-func (r *Reader) enhanceExcludeConstraint(constraint *types.DBConstraint, excludeDefinitions map[string]string) {
-	key := constraint.TableName + "." + constraint.Name
-	definition, exists := excludeDefinitions[key]
-	if !exists {
-		return
-	}
 
-	parsed, err := r.ParseExcludeConstraintDefinition(definition)
-	if err != nil {
-		// Log the error but continue processing other constraints
-		return
-	}
-
-	if parsed.UsingMethod != "" {
-		constraint.UsingMethod = &parsed.UsingMethod
-	}
-	if parsed.Elements != "" {
-		constraint.ExcludeElements = &parsed.Elements
-	}
-	if parsed.WhereCondition != "" {
-		constraint.WhereCondition = &parsed.WhereCondition
-	}
-}
 
 // ExcludeConstraintDefinition represents the parsed components of an EXCLUDE constraint
 type ExcludeConstraintDefinition struct {

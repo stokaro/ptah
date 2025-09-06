@@ -850,9 +850,14 @@ func Constraints(generated *goschema.Database, database *types.DBSchema, diff *d
 		genConstraints[key] = constraint
 	}
 
-	// Create map of existing database constraints
+	// Create map of existing database constraints, filtering out field-level constraints
 	dbConstraints := make(map[string]types.DBConstraint)
 	for _, constraint := range database.Constraints {
+		// Skip field-level constraints that are represented in field definitions
+		if isFieldLevelConstraint(constraint, generated) {
+			continue
+		}
+
 		// Use table.constraint_name as the key for comparison
 		key := constraint.TableName + "." + constraint.Name
 		dbConstraints[key] = constraint
@@ -973,6 +978,133 @@ func getStringValue(ptr *string) string {
 		return ""
 	}
 	return *ptr
+}
+
+
+
+// isFieldLevelConstraint determines if a database constraint represents a field-level constraint
+// that is already represented in the field definitions (NOT NULL, PRIMARY KEY, UNIQUE, FOREIGN KEY)
+func isFieldLevelConstraint(dbConstraint types.DBConstraint, generated *goschema.Database) bool {
+	// Create a map of table.column -> field for quick lookup
+	fieldMap := make(map[string]goschema.Field)
+	for _, field := range generated.Fields {
+		// Get table name for this field
+		tableName := field.StructName // default to struct name
+		for _, table := range generated.Tables {
+			if table.StructName == field.StructName {
+				tableName = table.Name
+				break
+			}
+		}
+		key := tableName + "." + field.Name
+		fieldMap[key] = field
+	}
+
+	// Check if this constraint corresponds to a field-level constraint
+	switch dbConstraint.Type {
+	case "NOT NULL":
+		// Check if there's a field with not_null=true for this column
+		key := dbConstraint.TableName + "." + getConstraintColumn(dbConstraint)
+		if field, exists := fieldMap[key]; exists && !field.Nullable {
+			return true
+		}
+	case "PRIMARY KEY":
+		// Check if there's a field with primary=true for this column
+		key := dbConstraint.TableName + "." + getConstraintColumn(dbConstraint)
+		if field, exists := fieldMap[key]; exists && field.Primary {
+			return true
+		}
+	case "UNIQUE":
+		// Check if there's a field with unique=true for this column
+		key := dbConstraint.TableName + "." + getConstraintColumn(dbConstraint)
+		if field, exists := fieldMap[key]; exists && field.Unique {
+			return true
+		}
+	case "FOREIGN KEY":
+		// Check if there's a field with foreign key reference for this column
+		key := dbConstraint.TableName + "." + getConstraintColumn(dbConstraint)
+		if field, exists := fieldMap[key]; exists && field.Foreign != "" {
+			return true
+		}
+	case "CHECK":
+		// PostgreSQL represents NOT NULL constraints as CHECK constraints with specific naming pattern
+		if strings.Contains(dbConstraint.Name, "_not_null") {
+			// This is a NOT NULL constraint disguised as a CHECK constraint
+			// Check if there's a field with nullable=false for this table
+			for _, field := range generated.Fields {
+				tableName := field.StructName
+				for _, table := range generated.Tables {
+					if table.StructName == field.StructName {
+						tableName = table.Name
+						break
+					}
+				}
+				if tableName == dbConstraint.TableName && !field.Nullable {
+					return true
+				}
+			}
+		} else {
+			// Regular CHECK constraint - check if there's a field with check constraint for this column
+			key := dbConstraint.TableName + "." + getConstraintColumn(dbConstraint)
+			if field, exists := fieldMap[key]; exists && field.Check != "" {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// getConstraintColumn extracts the column name from a constraint
+// This is a simplified implementation - in practice, constraints can span multiple columns
+func getConstraintColumn(constraint types.DBConstraint) string {
+	// For single-column constraints, try to extract column name from constraint name
+	// This is database-specific and may need refinement
+
+	// PostgreSQL NOT NULL constraints often follow pattern: schema_table_column_not_null
+	if constraint.Type == "NOT NULL" && strings.Contains(constraint.Name, "_not_null") {
+		parts := strings.Split(constraint.Name, "_")
+		if len(parts) >= 3 {
+			// Remove schema prefix (2200_) and suffix (_not_null)
+			if strings.HasPrefix(constraint.Name, "2200_") {
+				// Format: 2200_table_column_not_null -> extract column
+				tableParts := strings.Split(constraint.Name[5:], "_not_null")
+				if len(tableParts) > 0 {
+					remaining := tableParts[0]
+					// Remove table name prefix to get column
+					tablePrefix := constraint.TableName + "_"
+					if strings.HasPrefix(remaining, tablePrefix) {
+						return remaining[len(tablePrefix):]
+					}
+				}
+			}
+		}
+	}
+
+	// For PRIMARY KEY constraints: table_pkey
+	if constraint.Type == "PRIMARY KEY" && strings.HasSuffix(constraint.Name, "_pkey") {
+		// This is a table-level primary key, we need to check if it's single-column
+		// For now, assume single-column primary keys are field-level
+		return "id" // common convention, but this is a limitation
+	}
+
+	// For UNIQUE constraints: table_column_key
+	if constraint.Type == "UNIQUE" && strings.HasSuffix(constraint.Name, "_key") {
+		parts := strings.Split(constraint.Name, "_")
+		if len(parts) >= 3 {
+			// Remove table prefix and _key suffix
+			tablePrefix := constraint.TableName + "_"
+			if strings.HasPrefix(constraint.Name, tablePrefix) {
+				remaining := constraint.Name[len(tablePrefix):]
+				if strings.HasSuffix(remaining, "_key") {
+					return remaining[:len(remaining)-4] // remove "_key"
+				}
+			}
+		}
+	}
+
+	// For other constraints, return empty string (will not match any field)
+	return ""
 }
 
 // isMySQLConstraintBasedUniqueIndex checks if an index follows MySQL/MariaDB constraint-based patterns.
