@@ -25,6 +25,7 @@ type Database struct {
 	Tables                     []Table
 	Fields                     []Field
 	Indexes                    []Index
+	Constraints                []Constraint                   // Table-level constraints (EXCLUDE, CHECK, etc.)
 	Enums                      []Enum
 	EmbeddedFields             []EmbeddedField
 	Extensions                 []Extension                    // PostgreSQL extensions (pg_trgm, postgis, etc.)
@@ -176,6 +177,54 @@ type Index struct {
 	Condition string // WHERE clause for partial indexes
 	Operator  string // Operator class (gin_trgm_ops, etc.)
 	TableName string // Target table name (for cross-table association)
+}
+
+// Constraint represents a table-level constraint definition parsed from Go struct annotations.
+// Constraints are used to enforce data integrity rules at the table level, such as EXCLUDE
+// constraints for preventing overlapping data, CHECK constraints for data validation, etc.
+//
+// Constraint is created by parsing //migrator:schema:constraint annotations:
+//
+//	type Booking struct {
+//	    //migrator:schema:constraint name="no_overlapping_bookings" type="EXCLUDE" using="gist" elements="room_id WITH =, during WITH &&"
+//	    RoomID int64
+//	    During string // TSRANGE type
+//
+//	    //migrator:schema:constraint name="one_active_session_per_user" type="EXCLUDE" using="gist" elements="user_id WITH =" condition="is_active = true"
+//	    UserID   int64
+//	    IsActive bool
+//	}
+//
+// The Constraint supports different constraint types:
+//   - EXCLUDE: PostgreSQL EXCLUDE constraints for preventing conflicts
+//   - CHECK: Table-level CHECK constraints for data validation
+//   - UNIQUE: Table-level UNIQUE constraints spanning multiple columns
+//   - PRIMARY KEY: Composite primary key constraints
+//   - FOREIGN KEY: Table-level foreign key constraints
+type Constraint struct {
+	StructName string // Name of the Go struct this constraint belongs to
+	Name       string // Constraint name (e.g., "no_overlapping_bookings")
+	Type       string // Constraint type: EXCLUDE, CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY
+	Table      string // Table name (if different from struct name)
+
+	// EXCLUDE constraint specific fields
+	UsingMethod     string // Index method for EXCLUDE constraints (e.g., "gist", "btree")
+	ExcludeElements string // Elements specification (e.g., "room_id WITH =, during WITH &&")
+	WhereCondition  string // Optional WHERE clause for EXCLUDE constraints
+
+	// CHECK constraint specific fields
+	CheckExpression string // Check expression for CHECK constraints
+
+	// UNIQUE/PRIMARY KEY constraint specific fields
+	Columns []string // Column names for UNIQUE/PRIMARY KEY constraints
+
+	// FOREIGN KEY constraint specific fields
+	ForeignTable  string // Referenced table name
+	ForeignColumn string // Referenced column name
+	OnDelete      string // ON DELETE action
+	OnUpdate      string // ON UPDATE action
+
+	Comment string // Constraint comment/description
 }
 
 // Extension represents a PostgreSQL extension definition parsed from Go struct annotations.

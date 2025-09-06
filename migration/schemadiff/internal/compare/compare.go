@@ -793,6 +793,83 @@ func isConstraintBasedUniqueIndex(indexName, tableName string, columns []string)
 	return false
 }
 
+// Constraints compares constraint definitions between generated and database schemas.
+//
+// This function identifies differences in table-level constraints such as EXCLUDE,
+// CHECK, UNIQUE, PRIMARY KEY, and FOREIGN KEY constraints. It compares constraints
+// defined through Go struct annotations with constraints that exist in the database.
+//
+// # Constraint Types Supported
+//
+//   - EXCLUDE: PostgreSQL EXCLUDE constraints for preventing conflicts
+//   - CHECK: Table-level CHECK constraints for data validation
+//   - UNIQUE: Table-level UNIQUE constraints spanning multiple columns
+//   - PRIMARY KEY: Composite primary key constraints
+//   - FOREIGN KEY: Table-level foreign key constraints
+//
+// # Comparison Logic
+//
+// The function performs constraint comparison by:
+//  1. **Constraint Discovery**: Creates lookup maps for efficient constraint comparison
+//  2. **Addition Detection**: Identifies constraints in generated schema but not in database
+//  3. **Removal Detection**: Identifies constraints in database but not in generated schema
+//
+// # Database Schema Constraints
+//
+// The function currently focuses on constraints defined through schema annotations.
+// Database-introspected constraints are not yet fully supported, so this function
+// primarily detects constraint additions from the generated schema.
+//
+// # Example Usage
+//
+//	// Compare constraints between schemas
+//	compare.Constraints(generated, database, diff)
+//
+//	// Check for constraint changes
+//	if len(diff.ConstraintsAdded) > 0 {
+//		log.Printf("Found %d new constraints to add", len(diff.ConstraintsAdded))
+//	}
+//
+// # Parameters
+//
+//   - generated: Target schema parsed from Go struct annotations
+//   - database: Current database schema from database introspection
+//   - diff: Schema difference structure to populate with constraint changes
+//
+// # Limitations
+//
+//   - Database constraint introspection is not yet fully implemented
+//   - Currently focuses on constraint additions from generated schema
+//   - Constraint modifications are not yet detected
+func Constraints(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+	// Create sets for comparison
+	genConstraints := make(map[string]bool)
+	for _, constraint := range generated.Constraints {
+		// Use constraint name as the key for comparison
+		// In the future, we might want to use a more complex key that includes table name
+		genConstraints[constraint.Name] = true
+	}
+
+	// Create set of existing database constraints
+	dbConstraints := make(map[string]bool)
+	// Note: Database constraint introspection would be implemented here
+	// when the database schema includes constraint information
+
+	// Find added constraints (constraints in generated schema but not in database)
+	for constraintName := range genConstraints {
+		if !dbConstraints[constraintName] {
+			diff.ConstraintsAdded = append(diff.ConstraintsAdded, constraintName)
+		}
+	}
+
+	// Find removed constraints (constraints in database but not in generated schema)
+	for constraintName := range dbConstraints {
+		if !genConstraints[constraintName] {
+			diff.ConstraintsRemoved = append(diff.ConstraintsRemoved, constraintName)
+		}
+	}
+}
+
 // isMySQLConstraintBasedUniqueIndex checks if an index follows MySQL/MariaDB constraint-based patterns.
 // This helper function encapsulates the complex logic for detecting MySQL/MariaDB constraint-based
 // unique indexes that follow table_column naming patterns but are not custom indexes.

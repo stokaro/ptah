@@ -92,3 +92,26 @@ func (op *AddConstraintOperation) Accept(visitor Visitor) error {
 
 // alterOperation implements the marker method for type safety.
 func (op *AddConstraintOperation) alterOperation() {}
+
+// DropConstraintOperation represents a DROP CONSTRAINT operation in ALTER TABLE statements.
+//
+// This operation removes an existing constraint from a table. The constraint can be
+// a primary key, unique, foreign key, check, or exclude constraint.
+type DropConstraintOperation struct {
+	// ConstraintName is the name of the constraint to drop
+	ConstraintName string
+	// IfExists indicates whether to use IF EXISTS clause to avoid errors if constraint doesn't exist
+	IfExists bool
+}
+
+// Accept implements the Node interface for DropConstraintOperation.
+//
+// The actual rendering is typically handled by the visitor's VisitAlterTable method
+// rather than delegating to a separate visitor method.
+func (op *DropConstraintOperation) Accept(_visitor Visitor) error {
+	// This would be handled by the visitor's VisitAlterTable method
+	return nil
+}
+
+// alterOperation implements the marker method for type safety.
+func (op *DropConstraintOperation) alterOperation() {}

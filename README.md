@@ -283,6 +283,20 @@ type User struct {
 - `with_check` - WITH CHECK clause expression for INSERT/UPDATE validation
 - `comment` - Policy description
 
+#### Constraint Attributes
+- `name` - Constraint name
+- `table` - Target table name
+- `type` - Constraint type ("CHECK", "UNIQUE", "FOREIGN KEY", "EXCLUDE")
+- `columns` - Column names for UNIQUE and FOREIGN KEY constraints (comma-separated)
+- `expression` - CHECK constraint expression
+- `foreign_table` - Referenced table for FOREIGN KEY constraints
+- `foreign_column` - Referenced column for FOREIGN KEY constraints
+- `on_delete` - Foreign key ON DELETE action ("CASCADE", "SET NULL", "RESTRICT", "NO ACTION")
+- `on_update` - Foreign key ON UPDATE action ("CASCADE", "SET NULL", "RESTRICT", "NO ACTION")
+- `using` - Index method for EXCLUDE constraints (e.g., "gist", "btree")
+- `elements` - EXCLUDE constraint elements (e.g., "room_id WITH =, during WITH &&")
+- `condition` - WHERE condition for EXCLUDE constraints
+
 ---
 
 ## Quick Start
@@ -313,6 +327,20 @@ type User struct {
 
     //migrator:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_fn="NOW()"
     CreatedAt time.Time
+}
+
+// Example with EXCLUDE constraint (PostgreSQL only)
+//migrator:schema:table name="bookings"
+//migrator:schema:constraint name="no_overlapping_bookings" type="EXCLUDE" table="bookings" using="gist" elements="room_id WITH =, during WITH &&"
+type Booking struct {
+    //migrator:schema:field name="id" type="SERIAL" primary="true"
+    ID int64
+
+    //migrator:schema:field name="room_id" type="INTEGER" not_null="true"
+    RoomID int
+
+    //migrator:schema:field name="during" type="TSRANGE" not_null="true"
+    During string // PostgreSQL range type
 }
 ```
 
@@ -823,7 +851,7 @@ docker run --name test-mysql \
 
 ### Supported Databases
 
-- **PostgreSQL** - Full support including enums, constraints, and indexes
+- **PostgreSQL** - Full support including enums, constraints (CHECK, UNIQUE, FOREIGN KEY, EXCLUDE), indexes, RLS policies, and extensions
 - **MySQL** - Full support with MySQL-specific optimizations
 - **MariaDB** - Full support with MariaDB-specific features
 
@@ -953,6 +981,67 @@ CREATE POLICY product_tenant_isolation ON products FOR ALL TO app_role
 
 **Note:** RLS and custom functions are PostgreSQL-specific features. For other databases, these annotations are ignored during SQL generation.
 
+### EXCLUDE Constraints (PostgreSQL)
+
+Ptah supports PostgreSQL's EXCLUDE constraints for preventing overlapping or conflicting data:
+
+```go
+package main
+
+// Prevent overlapping room bookings
+//migrator:schema:table name="bookings"
+//migrator:schema:constraint name="no_overlapping_bookings" type="EXCLUDE" table="bookings" using="gist" elements="room_id WITH =, during WITH &&"
+type Booking struct {
+    //migrator:schema:field name="id" type="SERIAL" primary="true"
+    ID int64
+
+    //migrator:schema:field name="room_id" type="INTEGER" not_null="true"
+    RoomID int
+
+    //migrator:schema:field name="during" type="TSRANGE" not_null="true"
+    During string // PostgreSQL range type
+}
+
+// EXCLUDE constraint with WHERE condition
+//migrator:schema:table name="user_sessions"
+//migrator:schema:constraint name="one_active_session_per_user" type="EXCLUDE" table="user_sessions" using="gist" elements="user_id WITH =" condition="is_active = true"
+type UserSession struct {
+    //migrator:schema:field name="id" type="SERIAL" primary="true"
+    ID int64
+
+    //migrator:schema:field name="user_id" type="INTEGER" not_null="true"
+    UserID int
+
+    //migrator:schema:field name="is_active" type="BOOLEAN" not_null="true" default="false"
+    IsActive bool
+}
+```
+
+**Generated SQL:**
+```sql
+-- For bookings table
+ALTER TABLE bookings ADD CONSTRAINT no_overlapping_bookings
+    EXCLUDE USING gist (room_id WITH =, during WITH &&);
+
+-- For user_sessions table
+ALTER TABLE user_sessions ADD CONSTRAINT one_active_session_per_user
+    EXCLUDE USING gist (user_id WITH =) WHERE (is_active = true);
+```
+
+**EXCLUDE Constraint Features:**
+- **Index Methods**: Supports `gist`, `btree`, and other PostgreSQL index methods
+- **Multiple Elements**: Can exclude on multiple columns with different operators
+- **WHERE Conditions**: Optional WHERE clause for conditional exclusion
+- **Operator Classes**: Supports PostgreSQL operator classes (=, &&, <>, etc.)
+
+**Common Use Cases:**
+- **Room Booking Systems**: Prevent overlapping time slots for the same resource
+- **Session Management**: Ensure only one active session per user
+- **Spatial Data**: Prevent overlapping geographic regions
+- **Scheduling**: Avoid conflicting appointments or events
+
+**Note:** EXCLUDE constraints are PostgreSQL-specific. For other databases, these annotations generate warnings during migration planning.
+
 ---
 
 ## Contributing
@@ -995,6 +1084,7 @@ This project is part of the Inventario system and follows the same licensing ter
 - ✅ **Migration versioning and rollback capabilities** - Full migration system with up/down migrations, version tracking, and rollback support
 - ✅ **Comprehensive integration testing** - Multi-database testing framework with PostgreSQL, MySQL, and MariaDB support
 - ✅ **PostgreSQL extensions support** - Support for PostgreSQL extensions in schema definitions
+- ✅ **PostgreSQL EXCLUDE constraints** - Full support for EXCLUDE constraints with USING methods, elements, and WHERE conditions
 - ✅ **Migration file generation** - Automatic generation of timestamped migration files from schema differences
 - ✅ **Dry-run capabilities** - Preview operations before execution across all commands
 - ✅ **Transaction safety** - All operations wrapped in transactions for consistency

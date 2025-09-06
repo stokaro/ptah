@@ -117,6 +117,50 @@ func parseIndexComment(comment *ast.Comment, structName string, schemaIndexes *[
 	})
 }
 
+// ParseConstraintComment parses a constraint comment and adds it to the constraints slice.
+// This function is exported for testing purposes.
+func ParseConstraintComment(comment *ast.Comment, structName string, schemaConstraints *[]Constraint) {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+
+	// Parse columns for UNIQUE/PRIMARY KEY constraints
+	var columns []string
+	if kv["columns"] != "" {
+		columns = strings.Split(kv["columns"], ",")
+		for i := range columns {
+			columns[i] = strings.TrimSpace(columns[i])
+		}
+	}
+
+	// Determine target table name - use 'table' attribute if specified, otherwise leave empty for later resolution
+	tableName := kv["table"]
+
+	*schemaConstraints = append(*schemaConstraints, Constraint{
+		StructName: structName,
+		Name:       kv["name"],
+		Type:       strings.ToUpper(kv["type"]), // EXCLUDE, CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY
+		Table:      tableName,
+
+		// EXCLUDE constraint specific fields
+		UsingMethod:     kv["using"],     // Index method (gist, btree, etc.)
+		ExcludeElements: kv["elements"],  // Elements specification
+		WhereCondition:  kv["condition"], // WHERE clause
+
+		// CHECK constraint specific fields
+		CheckExpression: kv["check"], // Check expression
+
+		// UNIQUE/PRIMARY KEY constraint specific fields
+		Columns: columns, // Column names
+
+		// FOREIGN KEY constraint specific fields
+		ForeignTable:  kv["foreign_table"],  // Referenced table
+		ForeignColumn: kv["foreign_column"], // Referenced column
+		OnDelete:      kv["on_delete"],      // ON DELETE action
+		OnUpdate:      kv["on_update"],      // ON UPDATE action
+
+		Comment: kv["comment"], // Constraint comment
+	})
+}
+
 func parseExtensionComment(comment *ast.Comment, extensions *[]Extension) {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 
@@ -150,6 +194,7 @@ func parseComment(
 	schemaFields *[]Field,
 	embeddedFields *[]EmbeddedField,
 	schemaIndexes *[]Index,
+	schemaConstraints *[]Constraint,
 	extensions *[]Extension,
 	functions *[]Function,
 	rlsPolicies *[]RLSPolicy,
@@ -163,6 +208,8 @@ func parseComment(
 		parseEmbeddedComment(comment, field, structName, embeddedFields)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:index"):
 		parseIndexComment(comment, structName, schemaIndexes)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:constraint"):
+		ParseConstraintComment(comment, structName, schemaConstraints)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:extension"):
 		parseExtensionComment(comment, extensions)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:function"):
@@ -176,7 +223,7 @@ func parseComment(
 	}
 }
 
-func processTableComments(structName string, genDecl *ast.GenDecl, tableDirectives *[]Table, extensions *[]Extension, functions *[]Function, rlsPolicies *[]RLSPolicy, rlsEnabledTables *[]RLSEnabledTable, roles *[]Role) {
+func processTableComments(structName string, genDecl *ast.GenDecl, tableDirectives *[]Table, schemaConstraints *[]Constraint, extensions *[]Extension, functions *[]Function, rlsPolicies *[]RLSPolicy, rlsEnabledTables *[]RLSEnabledTable, roles *[]Role) {
 	if genDecl.Doc == nil {
 		return
 	}
@@ -185,6 +232,8 @@ func processTableComments(structName string, genDecl *ast.GenDecl, tableDirectiv
 		switch {
 		case strings.HasPrefix(comment.Text, "//migrator:schema:table"):
 			parseTableComment(comment, structName, tableDirectives)
+		case strings.HasPrefix(comment.Text, "//migrator:schema:constraint"):
+			ParseConstraintComment(comment, structName, schemaConstraints)
 		case strings.HasPrefix(comment.Text, "//migrator:schema:extension"):
 			parseExtensionComment(comment, extensions)
 		case strings.HasPrefix(comment.Text, "//migrator:schema:function"):
@@ -206,6 +255,7 @@ func processFieldComments(
 	schemaFields *[]Field,
 	embeddedFields *[]EmbeddedField,
 	schemaIndexes *[]Index,
+	schemaConstraints *[]Constraint,
 	extensions *[]Extension,
 	functions *[]Function,
 	rlsPolicies *[]RLSPolicy,
@@ -217,7 +267,7 @@ func processFieldComments(
 			continue
 		}
 		for _, comment := range field.Doc.List {
-			parseComment(comment, structName, field, globalEnumsMap, schemaFields, embeddedFields, schemaIndexes, extensions, functions, rlsPolicies, rlsEnabledTables, roles)
+			parseComment(comment, structName, field, globalEnumsMap, schemaFields, embeddedFields, schemaIndexes, schemaConstraints, extensions, functions, rlsPolicies, rlsEnabledTables, roles)
 		}
 	}
 }
@@ -250,6 +300,7 @@ func parseFileAST(f *ast.File) Database {
 	var embeddedFields []EmbeddedField
 	var schemaFields []Field
 	var schemaIndexes []Index
+	var schemaConstraints []Constraint
 	var tableDirectives []Table
 	var extensions []Extension
 	var functions []Function
@@ -267,6 +318,7 @@ func parseFileAST(f *ast.File) Database {
 		&embeddedFields,
 		&schemaFields,
 		&schemaIndexes,
+		&schemaConstraints,
 		&tableDirectives,
 		&extensions,
 		&functions,
@@ -294,6 +346,7 @@ func parseFileAST(f *ast.File) Database {
 		Tables:           tableDirectives,
 		Fields:           schemaFields,
 		Indexes:          schemaIndexes,
+		Constraints:      schemaConstraints,
 		Enums:            enums,
 		EmbeddedFields:   embeddedFields,
 		Extensions:       extensions,
@@ -315,6 +368,7 @@ func processFileAST(
 	embeddedFields *[]EmbeddedField,
 	schemaFields *[]Field,
 	schemaIndexes *[]Index,
+	schemaConstraints *[]Constraint,
 	tableDirectives *[]Table,
 	extensions *[]Extension,
 	functions *[]Function,
@@ -361,6 +415,7 @@ func processFileAST(
 		embeddedFields,
 		schemaFields,
 		schemaIndexes,
+		schemaConstraints,
 		tableDirectives,
 		extensions,
 		functions,
@@ -381,6 +436,7 @@ func processDeclarations(
 	embeddedFields *[]EmbeddedField,
 	schemaFields *[]Field,
 	schemaIndexes *[]Index,
+	schemaConstraints *[]Constraint,
 	tableDirectives *[]Table,
 	extensions *[]Extension,
 	functions *[]Function,
@@ -404,8 +460,8 @@ func processDeclarations(
 				continue
 			}
 
-			processTableComments(structName, genDecl, tableDirectives, extensions, functions, rlsPolicies, rlsEnabledTables, roles)
-			processFieldComments(structName, structType, globalEnumsMap, schemaFields, embeddedFields, schemaIndexes, extensions, functions, rlsPolicies, rlsEnabledTables, roles)
+			processTableComments(structName, genDecl, tableDirectives, schemaConstraints, extensions, functions, rlsPolicies, rlsEnabledTables, roles)
+			processFieldComments(structName, structType, globalEnumsMap, schemaFields, embeddedFields, schemaIndexes, schemaConstraints, extensions, functions, rlsPolicies, rlsEnabledTables, roles)
 		}
 	}
 }

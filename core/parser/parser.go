@@ -317,11 +317,11 @@ func (p *Parser) parseCreateTable() (*ast.CreateTableNode, error) {
 func (p *Parser) parseTableElement(table *ast.CreateTableNode) error {
 	p.skipWhitespace()
 
-	// Check if this is a constraint (starts with CONSTRAINT, PRIMARY, UNIQUE, FOREIGN, CHECK, SPATIAL, INDEX, KEY)
+	// Check if this is a constraint (starts with CONSTRAINT, PRIMARY, UNIQUE, FOREIGN, CHECK, EXCLUDE, SPATIAL, INDEX, KEY)
 	if p.current.Type == lexer.TokenIdentifier {
 		keyword := strings.ToUpper(p.current.Value)
 		switch keyword {
-		case "CONSTRAINT", "PRIMARY", "UNIQUE", "FOREIGN", "CHECK", "SPATIAL", "INDEX", "KEY":
+		case "CONSTRAINT", "PRIMARY", "UNIQUE", "FOREIGN", "CHECK", "EXCLUDE", "SPATIAL", "INDEX", "KEY":
 			constraint, err := p.parseTableConstraint()
 			if err != nil {
 				return err
@@ -1181,6 +1181,66 @@ func (p *Parser) handleTableConstraintCheck(constraint *ast.ConstraintNode) {
 	constraint.Type = ast.CheckConstraint
 }
 
+func (p *Parser) handleTableConstraintExclude(constraint *ast.ConstraintNode) error {
+	p.advance()
+	p.skipWhitespace()
+
+	// Expect USING keyword
+	if err := p.expect(lexer.TokenIdentifier, "USING"); err != nil {
+		return fmt.Errorf("expected USING after EXCLUDE: %w", err)
+	}
+
+	p.skipWhitespace()
+
+	// Get the index method (e.g., "gist", "btree")
+	usingMethod, err := p.expectIdentifier()
+	if err != nil {
+		return fmt.Errorf("expected index method after USING: %w", err)
+	}
+
+	p.skipWhitespace()
+
+	// Expect opening parenthesis for elements
+	if err := p.expect(lexer.TokenOperator, "("); err != nil {
+		return fmt.Errorf("expected '(' after USING method: %w", err)
+	}
+
+	// Parse exclude elements until closing parenthesis
+	var elements strings.Builder
+	parenCount := 1
+	lastWasSpace := false
+
+	for parenCount > 0 && !p.isAtEnd() {
+		if p.current.Type == lexer.TokenOperator {
+			switch p.current.Value {
+			case "(":
+				parenCount++
+			case ")":
+				parenCount--
+			}
+		}
+		if parenCount > 0 {
+			if p.current.Type == lexer.TokenWhitespace {
+				// Only add one space if we haven't just added one
+				if !lastWasSpace && elements.Len() > 0 {
+					elements.WriteString(" ")
+					lastWasSpace = true
+				}
+			} else {
+				elements.WriteString(p.current.Value)
+				lastWasSpace = false
+			}
+		}
+		p.advance()
+	}
+
+	constraint.Type = ast.ExcludeConstraint
+	constraint.UsingMethod = usingMethod
+	constraint.ExcludeElements = strings.TrimSpace(elements.String())
+
+	return nil
+}
+
 func (p *Parser) handleTableConstraintSpatial(constraint *ast.ConstraintNode) error {
 	p.advance()
 	p.skipWhitespace()
@@ -1209,7 +1269,8 @@ func (p *Parser) handleTableConstraintIndex(constraint *ast.ConstraintNode) {
 
 func (p *Parser) parseTableColumnList(constraint *ast.ConstraintNode) error {
 	// Parse column list for PRIMARY KEY, UNIQUE, FOREIGN KEY
-	if constraint.Type == ast.CheckConstraint {
+	// Skip for CHECK and EXCLUDE constraints as they have different syntax
+	if constraint.Type == ast.CheckConstraint || constraint.Type == ast.ExcludeConstraint {
 		return nil
 	}
 	if err := p.expect(lexer.TokenOperator, "("); err != nil {
@@ -1277,6 +1338,53 @@ func (p *Parser) handleTableCheck(constraint *ast.ConstraintNode) error {
 	return nil
 }
 
+func (p *Parser) handleTableExcludeWhere(constraint *ast.ConstraintNode) error {
+	if constraint.Type != ast.ExcludeConstraint {
+		return nil
+	}
+
+	p.skipWhitespace()
+
+	// Check for optional WHERE clause
+	if p.current.Type == lexer.TokenIdentifier && strings.ToUpper(p.current.Value) == "WHERE" {
+		p.advance()
+		p.skipWhitespace()
+
+		// Expect opening parenthesis for WHERE condition
+		if err := p.expect(lexer.TokenOperator, "("); err != nil {
+			return fmt.Errorf("expected '(' after WHERE: %w", err)
+		}
+
+		// Parse WHERE condition until closing parenthesis
+		var condition strings.Builder
+		parenCount := 1
+		for parenCount > 0 && !p.isAtEnd() {
+			if p.current.Type == lexer.TokenOperator {
+				switch p.current.Value {
+				case "(":
+					parenCount++
+				case ")":
+					parenCount--
+				}
+			}
+			if parenCount > 0 {
+				// Skip whitespace tokens but preserve structure
+				if p.current.Type != lexer.TokenWhitespace {
+					if condition.Len() > 0 {
+						condition.WriteString(" ")
+					}
+					condition.WriteString(p.current.Value)
+				}
+			}
+			p.advance()
+		}
+
+		constraint.WhereCondition = strings.TrimSpace(condition.String())
+	}
+
+	return nil
+}
+
 // parseTableConstraint parses table-level constraints.
 func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, error) {
 	p.skipWhitespace()
@@ -1304,6 +1412,8 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, error) {
 		err = p.handleTableConstraintForeignKey(constraint)
 	case "CHECK":
 		p.handleTableConstraintCheck(constraint)
+	case "EXCLUDE":
+		err = p.handleTableConstraintExclude(constraint)
 	case "SPATIAL":
 		err = p.handleTableConstraintSpatial(constraint)
 	case "INDEX", "KEY":
@@ -1332,6 +1442,12 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, error) {
 
 	// Handle CHECK expression
 	err = p.handleTableCheck(constraint)
+	if err != nil {
+		return nil, err
+	}
+
+	// Handle EXCLUDE WHERE clause
+	err = p.handleTableExcludeWhere(constraint)
 	if err != nil {
 		return nil, err
 	}
