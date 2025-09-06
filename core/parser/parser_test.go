@@ -2108,3 +2108,284 @@ func TestParser_ErrorHandling(t *testing.T) {
 		})
 	}
 }
+
+func TestParser_ParseExcludeConstraint_Basic(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE TABLE user_sessions (
+		user_id BIGINT NOT NULL,
+		is_active BOOLEAN NOT NULL DEFAULT false,
+		EXCLUDE USING gist (user_id WITH =) WHERE (is_active = true)
+	);`
+
+	p := parser.NewParser(sql)
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(len(statements.Statements), qt.Equals, 1)
+
+	createTable := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(createTable.Name, qt.Equals, "user_sessions")
+	c.Assert(len(createTable.Columns), qt.Equals, 2)
+	c.Assert(len(createTable.Constraints), qt.Equals, 1)
+
+	// Check EXCLUDE constraint
+	excludeConstraint := createTable.Constraints[0]
+	c.Assert(excludeConstraint.Type, qt.Equals, ast.ExcludeConstraint)
+	c.Assert(excludeConstraint.UsingMethod, qt.Equals, "gist")
+	c.Assert(excludeConstraint.ExcludeElements, qt.Equals, "user_id WITH =")
+	c.Assert(excludeConstraint.WhereCondition, qt.Equals, "is_active = true")
+	c.Assert(excludeConstraint.Name, qt.Equals, "")
+}
+
+func TestParser_ParseExcludeConstraint_WithName(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE TABLE user_sessions (
+		user_id BIGINT NOT NULL,
+		is_active BOOLEAN NOT NULL DEFAULT false,
+		CONSTRAINT one_active_session_per_user EXCLUDE USING gist (user_id WITH =) WHERE (is_active = true)
+	);`
+
+	p := parser.NewParser(sql)
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(len(statements.Statements), qt.Equals, 1)
+
+	createTable := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(len(createTable.Constraints), qt.Equals, 1)
+
+	// Check named EXCLUDE constraint
+	excludeConstraint := createTable.Constraints[0]
+	c.Assert(excludeConstraint.Type, qt.Equals, ast.ExcludeConstraint)
+	c.Assert(excludeConstraint.Name, qt.Equals, "one_active_session_per_user")
+	c.Assert(excludeConstraint.UsingMethod, qt.Equals, "gist")
+	c.Assert(excludeConstraint.ExcludeElements, qt.Equals, "user_id WITH =")
+	c.Assert(excludeConstraint.WhereCondition, qt.Equals, "is_active = true")
+}
+
+func TestParser_ParseExcludeConstraint_ComplexElements(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE TABLE bookings (
+		room_id INTEGER NOT NULL,
+		during TSRANGE NOT NULL,
+		EXCLUDE USING gist (room_id WITH =, during WITH &&)
+	);`
+
+	p := parser.NewParser(sql)
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(len(statements.Statements), qt.Equals, 1)
+
+	createTable := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(len(createTable.Constraints), qt.Equals, 1)
+
+	// Check EXCLUDE constraint with complex elements
+	excludeConstraint := createTable.Constraints[0]
+	c.Assert(excludeConstraint.Type, qt.Equals, ast.ExcludeConstraint)
+	c.Assert(excludeConstraint.UsingMethod, qt.Equals, "gist")
+	c.Assert(excludeConstraint.ExcludeElements, qt.Equals, "room_id WITH =, during WITH &&")
+	c.Assert(excludeConstraint.WhereCondition, qt.Equals, "")
+}
+
+func TestParser_ParseExcludeConstraint_WithoutWhere(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE TABLE spatial_data (
+		location GEOMETRY NOT NULL,
+		EXCLUDE USING gist (location WITH &&)
+	);`
+
+	p := parser.NewParser(sql)
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(len(statements.Statements), qt.Equals, 1)
+
+	createTable := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(len(createTable.Constraints), qt.Equals, 1)
+
+	// Check EXCLUDE constraint without WHERE clause
+	excludeConstraint := createTable.Constraints[0]
+	c.Assert(excludeConstraint.Type, qt.Equals, ast.ExcludeConstraint)
+	c.Assert(excludeConstraint.UsingMethod, qt.Equals, "gist")
+	c.Assert(excludeConstraint.ExcludeElements, qt.Equals, "location WITH &&")
+	c.Assert(excludeConstraint.WhereCondition, qt.Equals, "")
+}
+
+func TestParser_ParseExcludeConstraint_BtreeMethod(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE TABLE unique_values (
+		value INTEGER NOT NULL,
+		EXCLUDE USING btree (value WITH =)
+	);`
+
+	p := parser.NewParser(sql)
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(len(statements.Statements), qt.Equals, 1)
+
+	createTable := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(len(createTable.Constraints), qt.Equals, 1)
+
+	// Check EXCLUDE constraint with btree method
+	excludeConstraint := createTable.Constraints[0]
+	c.Assert(excludeConstraint.Type, qt.Equals, ast.ExcludeConstraint)
+	c.Assert(excludeConstraint.UsingMethod, qt.Equals, "btree")
+	c.Assert(excludeConstraint.ExcludeElements, qt.Equals, "value WITH =")
+	c.Assert(excludeConstraint.WhereCondition, qt.Equals, "")
+}
+
+func TestParser_ParseExcludeConstraint_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name     string
+		sql      string
+		expected struct {
+			name            string
+			usingMethod     string
+			excludeElements string
+			whereCondition  string
+		}
+	}{
+		{
+			name: "extra spaces around keywords",
+			sql: `CREATE TABLE test_table (
+				id INTEGER,
+				EXCLUDE   USING   gist   (  id  WITH  =  )
+			);`,
+			expected: struct {
+				name            string
+				usingMethod     string
+				excludeElements string
+				whereCondition  string
+			}{
+				name:            "",
+				usingMethod:     "gist",
+				excludeElements: "id WITH =",
+				whereCondition:  "",
+			},
+		},
+		{
+			name: "newlines in constraint definition",
+			sql: `CREATE TABLE test_table (
+				id INTEGER,
+				EXCLUDE
+				USING gist
+				(id WITH =)
+			);`,
+			expected: struct {
+				name            string
+				usingMethod     string
+				excludeElements string
+				whereCondition  string
+			}{
+				name:            "",
+				usingMethod:     "gist",
+				excludeElements: "id WITH =",
+				whereCondition:  "",
+			},
+		},
+		{
+			name: "constraint name with extra spaces",
+			sql: `CREATE TABLE test_table (
+				id INTEGER,
+				CONSTRAINT   test_constraint   EXCLUDE   USING   gist   (  id  WITH  =  )
+			);`,
+			expected: struct {
+				name            string
+				usingMethod     string
+				excludeElements string
+				whereCondition  string
+			}{
+				name:            "test_constraint",
+				usingMethod:     "gist",
+				excludeElements: "id WITH =",
+				whereCondition:  "",
+			},
+		},
+		{
+			name: "WHERE clause with extra spaces and newlines",
+			sql: `CREATE TABLE test_table (
+				id INTEGER,
+				is_active BOOLEAN,
+				EXCLUDE   USING   gist   (  id  WITH  =  )
+				WHERE   (  is_active  =  true  )
+			);`,
+			expected: struct {
+				name            string
+				usingMethod     string
+				excludeElements string
+				whereCondition  string
+			}{
+				name:            "",
+				usingMethod:     "gist",
+				excludeElements: "id WITH =",
+				whereCondition:  "is_active = true",
+			},
+		},
+		{
+			name: "complex elements with extra spacing",
+			sql: `CREATE TABLE test_table (
+				room_id INTEGER,
+				during TSRANGE,
+				EXCLUDE   USING   gist   (  room_id  WITH  =  ,  during  WITH  &&  )
+			);`,
+			expected: struct {
+				name            string
+				usingMethod     string
+				excludeElements string
+				whereCondition  string
+			}{
+				name:            "",
+				usingMethod:     "gist",
+				excludeElements: "room_id WITH = , during WITH &&",
+				whereCondition:  "",
+			},
+		},
+		{
+			name: "mixed spacing and newlines",
+			sql: `CREATE TABLE test_table (
+				user_id INTEGER,
+				is_active BOOLEAN,
+				CONSTRAINT   one_active_per_user
+				EXCLUDE
+				USING   gist
+				(  user_id  WITH  =  )
+				WHERE
+				(  is_active  =  true  )
+			);`,
+			expected: struct {
+				name            string
+				usingMethod     string
+				excludeElements string
+				whereCondition  string
+			}{
+				name:            "one_active_per_user",
+				usingMethod:     "gist",
+				excludeElements: "user_id WITH =",
+				whereCondition:  "is_active = true",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			p := parser.NewParser(tt.sql)
+			statements, err := p.Parse()
+			c.Assert(err, qt.IsNil)
+			c.Assert(len(statements.Statements), qt.Equals, 1)
+
+			createTable := statements.Statements[0].(*ast.CreateTableNode)
+			c.Assert(len(createTable.Constraints), qt.Equals, 1)
+
+			constraint := createTable.Constraints[0]
+			c.Assert(constraint.Type, qt.Equals, ast.ExcludeConstraint)
+			c.Assert(constraint.Name, qt.Equals, tt.expected.name)
+			c.Assert(constraint.UsingMethod, qt.Equals, tt.expected.usingMethod)
+			c.Assert(constraint.ExcludeElements, qt.Equals, tt.expected.excludeElements)
+			c.Assert(constraint.WhereCondition, qt.Equals, tt.expected.whereCondition)
+		})
+	}
+}

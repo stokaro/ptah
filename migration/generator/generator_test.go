@@ -121,31 +121,28 @@ func TestMigrationFileNaming(t *testing.T) {
 	c.Assert(strings.HasPrefix(expectedDownFile, "1234567890"), qt.IsTrue)
 }
 
-func TestGenerateMigrationOptions_Validation(t *testing.T) {
+func TestGenerateMigrationOptions_ErrorCases(t *testing.T) {
 	tests := []struct {
-		name        string
-		opts        generator.GenerateMigrationOptions
-		expectError bool
+		name string
+		opts generator.GenerateMigrationOptions
 	}{
 		{
-			name: "valid options",
+			name: "missing testdata directory",
 			opts: generator.GenerateMigrationOptions{
 				GoEntitiesDir: "./testdata",
 				DatabaseURL:   "memory://test",
 				MigrationName: "test_migration",
 				OutputDir:     "/tmp/migrations",
 			},
-			expectError: true, // Will fail due to missing testdata
 		},
 		{
-			name: "empty migration name defaults to 'migration'",
+			name: "empty migration name with missing testdata",
 			opts: generator.GenerateMigrationOptions{
 				GoEntitiesDir: "./testdata",
 				DatabaseURL:   "memory://test",
 				OutputDir:     "/tmp/migrations",
 				// MigrationName is empty - should default to "migration"
 			},
-			expectError: true, // Will fail due to missing testdata
 		},
 	}
 
@@ -154,12 +151,7 @@ func TestGenerateMigrationOptions_Validation(t *testing.T) {
 			c := qt.New(t)
 
 			_, err := generator.GenerateMigration(tt.opts)
-
-			if tt.expectError {
-				c.Assert(err, qt.IsNotNil)
-			} else {
-				c.Assert(err, qt.IsNil)
-			}
+			c.Assert(err, qt.IsNotNil)
 		})
 	}
 }

@@ -58,13 +58,17 @@ type DBIndex struct {
 type DBConstraint struct {
 	Name          string  `json:"name"`
 	TableName     string  `json:"table_name"`
-	Type          string  `json:"type"` // PRIMARY KEY, FOREIGN KEY, UNIQUE, CHECK
+	Type          string  `json:"type"` // PRIMARY KEY, FOREIGN KEY, UNIQUE, CHECK, EXCLUDE
 	ColumnName    string  `json:"column_name"`
 	ForeignTable  *string `json:"foreign_table"`  // For foreign keys
 	ForeignColumn *string `json:"foreign_column"` // For foreign keys
 	DeleteRule    *string `json:"delete_rule"`    // CASCADE, RESTRICT, etc.
 	UpdateRule    *string `json:"update_rule"`    // CASCADE, RESTRICT, etc.
 	CheckClause   *string `json:"check_clause"`   // For CHECK constraints
+	// EXCLUDE constraint specific fields (PostgreSQL only)
+	UsingMethod     *string `json:"using_method"`     // Index method: gist, btree, etc.
+	ExcludeElements *string `json:"exclude_elements"` // Elements with operators: "room_id WITH =, during WITH &&"
+	WhereCondition  *string `json:"where_condition"`  // Optional WHERE clause for EXCLUDE constraints
 }
 
 // DBExtension represents a PostgreSQL extension installed in the database

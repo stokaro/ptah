@@ -296,6 +296,13 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 			// Remove the leading spaces from constraint rendering for ALTER
 			constraintLine = strings.TrimPrefix(constraintLine, "  ")
 			r.w.WriteLinef("ALTER TABLE %s ADD %s;", node.Name, constraintLine)
+		case *ast.DropConstraintOperation:
+			dropSQL := fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT", node.Name)
+			if op.IfExists {
+				dropSQL += " IF EXISTS"
+			}
+			dropSQL += fmt.Sprintf(" %s", op.ConstraintName)
+			r.w.WriteLinef("%s;", dropSQL)
 		case *ast.DropColumnOperation:
 			dropSQL := fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", node.Name, op.ColumnName)
 			if op.Cascade {
@@ -561,6 +568,8 @@ func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, err
 			return fmt.Sprintf("  CONSTRAINT %s CHECK (%s)", constraint.Name, constraint.Expression), nil
 		}
 		return fmt.Sprintf("  CHECK (%s)", constraint.Expression), nil
+	case ast.ExcludeConstraint:
+		return r.renderExcludeConstraint(constraint)
 	default:
 		return "", fmt.Errorf("unknown constraint type: %v", constraint.Type)
 	}
@@ -585,6 +594,28 @@ func (r *Renderer) renderForeignKeyConstraint(constraint *ast.ConstraintNode) (s
 
 	if ref.OnUpdate != "" {
 		result += fmt.Sprintf(" ON UPDATE %s", ref.OnUpdate)
+	}
+
+	return result, nil
+}
+
+// renderExcludeConstraint renders an EXCLUDE constraint
+func (r *Renderer) renderExcludeConstraint(constraint *ast.ConstraintNode) (string, error) {
+	if constraint.UsingMethod == "" || constraint.ExcludeElements == "" {
+		return "", fmt.Errorf("exclude constraint missing using method or elements")
+	}
+
+	// Build the constraint string
+	var result string
+	if constraint.Name != "" {
+		result = fmt.Sprintf("  CONSTRAINT %s EXCLUDE USING %s (%s)", constraint.Name, constraint.UsingMethod, constraint.ExcludeElements)
+	} else {
+		result = fmt.Sprintf("  EXCLUDE USING %s (%s)", constraint.UsingMethod, constraint.ExcludeElements)
+	}
+
+	// Add optional WHERE clause
+	if constraint.WhereCondition != "" {
+		result += fmt.Sprintf(" WHERE (%s)", constraint.WhereCondition)
 	}
 
 	return result, nil

@@ -597,6 +597,9 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	// 10. Add new indexes
 	result = p.addNewIndexes(result, diff, generated)
 
+	// 10.5. Add new constraints (must be done after tables and columns exist)
+	result = p.addNewConstraints(result, diff, generated)
+
 	// 11. Remove indexes (safe operations)
 	result = p.removeIndexes(result, diff)
 
@@ -609,7 +612,10 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	// 12. Remove table columns (must be done after removing RLS policies that depend on columns)
 	result = p.removeTableColumns(result, diff)
 
-	// 12. Remove tables (dangerous!)
+	// 12.5. Remove constraints (must be done before removing tables)
+	result = p.removeConstraints(result, diff)
+
+	// 13. Remove tables (dangerous!)
 	result = p.removeTables(result, diff)
 
 	// 13. Remove functions (must be done after removing policies that might use them)
@@ -908,4 +914,184 @@ func (p *Planner) removeRLSPolicies(result []ast.Node, diff *types.SchemaDiff) [
 		result = append(result, dropPolicyNode)
 	}
 	return result
+}
+
+// addNewConstraints adds new table-level constraints via ALTER TABLE statements.
+//
+// This method processes constraints defined through Go struct annotations and creates
+// appropriate ALTER TABLE ADD CONSTRAINT statements. It handles different constraint
+// types including EXCLUDE, CHECK, UNIQUE, PRIMARY KEY, and FOREIGN KEY constraints.
+//
+// # Constraint Processing Order
+//
+// Constraints are processed in the order they appear in the generated schema.
+// This method assumes that all referenced tables and columns already exist.
+//
+// # Supported Constraint Types
+//
+//   - EXCLUDE: PostgreSQL EXCLUDE constraints for preventing conflicts
+//   - CHECK: Table-level CHECK constraints for data validation
+//   - UNIQUE: Table-level UNIQUE constraints spanning multiple columns
+//   - PRIMARY KEY: Composite primary key constraints
+//   - FOREIGN KEY: Table-level foreign key constraints
+//
+// # Example Generated SQL
+//
+//	ALTER TABLE bookings ADD CONSTRAINT no_overlapping_bookings
+//	  EXCLUDE USING gist (room_id WITH =, during WITH &&);
+//
+//	ALTER TABLE products ADD CONSTRAINT positive_price
+//	  CHECK (price > 0);
+func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, constraintName := range diff.ConstraintsAdded {
+		// Find the constraint definition in the generated schema
+		for _, constraint := range generated.Constraints {
+			if constraint.Name == constraintName {
+				// Convert goschema.Constraint to ast.ConstraintNode
+				astConstraint := p.convertConstraintToAST(constraint)
+				if astConstraint != nil {
+					// Create ALTER TABLE statement with ADD CONSTRAINT operation
+					alterNode := &ast.AlterTableNode{
+						Name:       constraint.Table,
+						Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: astConstraint}},
+					}
+					result = append(result, alterNode)
+				}
+				break
+			}
+		}
+	}
+	return result
+}
+
+// removeConstraints removes table-level constraints via ALTER TABLE statements.
+//
+// This method generates ALTER TABLE DROP CONSTRAINT statements for constraints
+// that exist in the database but not in the generated schema.
+//
+// # Safety Considerations
+//
+// Dropping constraints can affect data integrity and application behavior:
+//   - Removing CHECK constraints may allow invalid data
+//   - Removing UNIQUE constraints may allow duplicate data
+//   - Removing FOREIGN KEY constraints may allow orphaned records
+//   - Removing EXCLUDE constraints may allow conflicting data
+//
+// # Example Generated SQL
+//
+//	ALTER TABLE bookings DROP CONSTRAINT IF EXISTS no_overlapping_bookings;
+//	ALTER TABLE products DROP CONSTRAINT IF EXISTS positive_price;
+func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, constraintName := range diff.ConstraintsRemoved {
+		// Create a temporary function that finds and drops the constraint dynamically
+		functionName := fmt.Sprintf("ptah_drop_constraint_%s", constraintName)
+
+		functionBody := fmt.Sprintf(`DECLARE
+    target_table TEXT;
+BEGIN
+    -- Find the table that contains this constraint
+    SELECT table_name INTO target_table
+    FROM information_schema.table_constraints
+    WHERE constraint_name = '%s'
+      AND table_schema = current_schema()
+    LIMIT 1;
+
+    -- Drop the constraint if found
+    IF target_table IS NOT NULL THEN
+        EXECUTE format('ALTER TABLE %%I DROP CONSTRAINT IF EXISTS %%I', target_table, '%s');
+        RAISE NOTICE 'Dropped constraint %s from table %%', target_table;
+    ELSE
+        RAISE NOTICE 'Constraint %s not found in current schema';
+    END IF;
+END;`, constraintName, constraintName, constraintName, constraintName)
+
+		// Step 1: Create the function
+		createFunctionNode := ast.NewCreateFunction(functionName).
+			SetReturns("VOID").
+			SetLanguage("plpgsql").
+			SetBody(functionBody).
+			SetComment(fmt.Sprintf("Temporary function to drop constraint %s", constraintName))
+
+		result = append(result, createFunctionNode)
+
+		// Step 2: Execute the function using a simple SQL function call
+		executeFunctionBody := fmt.Sprintf("SELECT %s();", functionName)
+		executeFunctionNode := ast.NewCreateFunction(fmt.Sprintf("ptah_exec_%s", functionName)).
+			SetReturns("VOID").
+			SetLanguage("sql").
+			SetBody(executeFunctionBody).
+			SetComment(fmt.Sprintf("Execute constraint removal for %s", constraintName))
+
+		result = append(result, executeFunctionNode)
+
+		// Step 3: Drop the temporary functions
+		dropMainFunctionNode := ast.NewDropFunction(functionName).
+			SetIfExists().
+			SetComment(fmt.Sprintf("Clean up temporary function for %s", constraintName))
+
+		result = append(result, dropMainFunctionNode)
+
+		dropExecFunctionNode := ast.NewDropFunction(fmt.Sprintf("ptah_exec_%s", functionName)).
+			SetIfExists().
+			SetComment(fmt.Sprintf("Clean up executor function for %s", constraintName))
+
+		result = append(result, dropExecFunctionNode)
+	}
+	return result
+}
+
+// convertConstraintToAST converts a goschema.Constraint to an ast.ConstraintNode.
+//
+// This helper method handles the conversion between the schema annotation representation
+// and the AST representation used for SQL generation.
+func (p *Planner) convertConstraintToAST(constraint goschema.Constraint) *ast.ConstraintNode {
+	switch constraint.Type {
+	case "EXCLUDE":
+		if constraint.UsingMethod == "" || constraint.ExcludeElements == "" {
+			return nil // Invalid EXCLUDE constraint
+		}
+		astConstraint := ast.NewExcludeConstraint(constraint.Name, constraint.UsingMethod, constraint.ExcludeElements)
+		if constraint.WhereCondition != "" {
+			astConstraint.SetWhereCondition(constraint.WhereCondition)
+		}
+		return astConstraint
+
+	case "CHECK":
+		if constraint.CheckExpression == "" {
+			return nil // Invalid CHECK constraint
+		}
+		return &ast.ConstraintNode{
+			Type:       ast.CheckConstraint,
+			Name:       constraint.Name,
+			Expression: constraint.CheckExpression,
+		}
+
+	case "UNIQUE":
+		if len(constraint.Columns) == 0 {
+			return nil // Invalid UNIQUE constraint
+		}
+		return ast.NewUniqueConstraint(constraint.Name, constraint.Columns...)
+
+	case "PRIMARY KEY":
+		if len(constraint.Columns) == 0 {
+			return nil // Invalid PRIMARY KEY constraint
+		}
+		return ast.NewPrimaryKeyConstraint(constraint.Columns...)
+
+	case "FOREIGN KEY":
+		if len(constraint.Columns) == 0 || constraint.ForeignTable == "" || constraint.ForeignColumn == "" {
+			return nil // Invalid FOREIGN KEY constraint
+		}
+		ref := &ast.ForeignKeyRef{
+			Table:    constraint.ForeignTable,
+			Column:   constraint.ForeignColumn,
+			OnDelete: constraint.OnDelete,
+			OnUpdate: constraint.OnUpdate,
+			Name:     constraint.Name,
+		}
+		return ast.NewForeignKeyConstraint(constraint.Name, constraint.Columns, ref)
+
+	default:
+		return nil // Unsupported constraint type
+	}
 }

@@ -454,6 +454,18 @@ func (r *Renderer) visitAlterTableWithEnums(node *ast.AlterTableNode, enums map[
 			constraintLine = strings.TrimPrefix(constraintLine, "  ")
 			r.w.WriteLinef("ALTER TABLE %s ADD %s;", node.Name, constraintLine)
 
+		case *ast.DropConstraintOperation:
+			dropSQL := fmt.Sprintf("ALTER TABLE %s DROP", node.Name)
+			// MySQL uses different syntax for different constraint types
+			// For now, we'll use the generic DROP CONSTRAINT syntax
+			if op.IfExists {
+				dropSQL += " CONSTRAINT IF EXISTS"
+			} else {
+				dropSQL += " CONSTRAINT"
+			}
+			dropSQL += fmt.Sprintf(" %s", op.ConstraintName)
+			r.w.WriteLinef("%s;", dropSQL)
+
 		case *ast.DropColumnOperation:
 			r.w.WriteLinef("ALTER TABLE %s DROP COLUMN %s;", node.Name, op.ColumnName)
 

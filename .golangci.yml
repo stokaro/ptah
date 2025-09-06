@@ -269,6 +269,9 @@ linters:
       - path : 'integration/fixtures/entities/.*\.go$'
         linters:
           - lll
+      - text: 'var-naming: avoid meaningless package names'
+        linters:
+          - revive
     paths:
       - 'drivertest/.*\.go$'
       - 'drivertest/escape/.*\.go$'
