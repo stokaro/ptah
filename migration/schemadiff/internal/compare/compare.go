@@ -842,32 +842,137 @@ func isConstraintBasedUniqueIndex(indexName, tableName string, columns []string)
 //   - Currently focuses on constraint additions from generated schema
 //   - Constraint modifications are not yet detected
 func Constraints(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
-	// Create sets for comparison
-	genConstraints := make(map[string]bool)
+	// Create maps for detailed constraint comparison
+	genConstraints := make(map[string]goschema.Constraint)
 	for _, constraint := range generated.Constraints {
-		// Use constraint name as the key for comparison
-		// In the future, we might want to use a more complex key that includes table name
-		genConstraints[constraint.Name] = true
+		// Use table.constraint_name as the key for comparison to handle constraints with same names in different tables
+		key := constraint.Table + "." + constraint.Name
+		genConstraints[key] = constraint
 	}
 
-	// Create set of existing database constraints
-	dbConstraints := make(map[string]bool)
-	// Note: Database constraint introspection would be implemented here
-	// when the database schema includes constraint information
+	// Create map of existing database constraints
+	dbConstraints := make(map[string]types.DBConstraint)
+	for _, constraint := range database.Constraints {
+		// Use table.constraint_name as the key for comparison
+		key := constraint.TableName + "." + constraint.Name
+		dbConstraints[key] = constraint
+	}
 
 	// Find added constraints (constraints in generated schema but not in database)
-	for constraintName := range genConstraints {
-		if !dbConstraints[constraintName] {
-			diff.ConstraintsAdded = append(diff.ConstraintsAdded, constraintName)
+	for constraintKey, genConstraint := range genConstraints {
+		if _, exists := dbConstraints[constraintKey]; !exists {
+			diff.ConstraintsAdded = append(diff.ConstraintsAdded, genConstraint.Name)
 		}
 	}
 
 	// Find removed constraints (constraints in database but not in generated schema)
-	for constraintName := range dbConstraints {
-		if !genConstraints[constraintName] {
-			diff.ConstraintsRemoved = append(diff.ConstraintsRemoved, constraintName)
+	for constraintKey, dbConstraint := range dbConstraints {
+		if _, exists := genConstraints[constraintKey]; !exists {
+			diff.ConstraintsRemoved = append(diff.ConstraintsRemoved, dbConstraint.Name)
 		}
 	}
+
+	// Find modified constraints (constraints that exist in both but have different definitions)
+	for constraintKey, genConstraint := range genConstraints {
+		if dbConstraint, exists := dbConstraints[constraintKey]; exists {
+			if constraintDefinitionsChanged(genConstraint, dbConstraint) {
+				// For now, treat modified constraints as removed + added
+				// In the future, we could add a ConstraintsModified field to SchemaDiff
+				diff.ConstraintsRemoved = append(diff.ConstraintsRemoved, dbConstraint.Name)
+				diff.ConstraintsAdded = append(diff.ConstraintsAdded, genConstraint.Name)
+			}
+		}
+	}
+}
+
+// constraintDefinitionsChanged compares constraint definitions between generated and database schemas
+// to detect if a constraint needs to be recreated due to definition changes.
+func constraintDefinitionsChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint) bool {
+	// Basic constraint type comparison
+	if genConstraint.Type != dbConstraint.Type {
+		return true
+	}
+
+	// Type-specific comparisons
+	switch genConstraint.Type {
+	case "EXCLUDE":
+		return excludeConstraintChanged(genConstraint, dbConstraint)
+	case "CHECK":
+		return checkConstraintChanged(genConstraint, dbConstraint)
+	case "UNIQUE":
+		return uniqueConstraintChanged(genConstraint, dbConstraint)
+	case "FOREIGN KEY":
+		return foreignKeyConstraintChanged(genConstraint, dbConstraint)
+	default:
+		// For unknown constraint types, assume no change
+		return false
+	}
+}
+
+// excludeConstraintChanged compares EXCLUDE constraint definitions
+func excludeConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint) bool {
+	// Compare using method
+	if genConstraint.UsingMethod != getStringValue(dbConstraint.UsingMethod) {
+		return true
+	}
+
+	// Compare exclude elements
+	if genConstraint.ExcludeElements != getStringValue(dbConstraint.ExcludeElements) {
+		return true
+	}
+
+	// Compare WHERE condition
+	if genConstraint.WhereCondition != getStringValue(dbConstraint.WhereCondition) {
+		return true
+	}
+
+	return false
+}
+
+// checkConstraintChanged compares CHECK constraint definitions
+func checkConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint) bool {
+	return genConstraint.CheckExpression != getStringValue(dbConstraint.CheckClause)
+}
+
+// uniqueConstraintChanged compares UNIQUE constraint definitions
+func uniqueConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint) bool {
+	// For UNIQUE constraints, we primarily compare the columns involved
+	// This is a simplified comparison - in practice, we might need to compare
+	// the actual column lists from the database constraint
+	return false // For now, assume UNIQUE constraints don't change
+}
+
+// foreignKeyConstraintChanged compares FOREIGN KEY constraint definitions
+func foreignKeyConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint) bool {
+	// Compare referenced table
+	if genConstraint.ForeignTable != getStringValue(dbConstraint.ForeignTable) {
+		return true
+	}
+
+	// Compare referenced column
+	if genConstraint.ForeignColumn != getStringValue(dbConstraint.ForeignColumn) {
+		return true
+	}
+
+	// Compare delete rule
+	if genConstraint.OnDelete != getStringValue(dbConstraint.DeleteRule) {
+		return true
+	}
+
+	// Compare update rule
+	if genConstraint.OnUpdate != getStringValue(dbConstraint.UpdateRule) {
+		return true
+	}
+
+	return false
+}
+
+// getStringValue safely extracts string value from a pointer, returning empty string if nil
+func getStringValue(ptr *string) string {
+	if ptr == nil {
+		return ""
+	}
+	return *ptr
 }
 
 // isMySQLConstraintBasedUniqueIndex checks if an index follows MySQL/MariaDB constraint-based patterns.

@@ -245,3 +245,204 @@ func TestConstraints_EdgeCases(t *testing.T) {
 	c.Assert(len(diff.ConstraintsAdded), qt.Equals, 0)
 	c.Assert(len(diff.ConstraintsRemoved), qt.Equals, 0)
 }
+
+func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
+	tests := []struct {
+		name      string
+		generated *goschema.Database
+		database  *types.DBSchema
+		expected  *difftypes.SchemaDiff
+	}{
+		{
+			name: "EXCLUDE constraint added",
+			generated: &goschema.Database{
+				Constraints: []goschema.Constraint{
+					{
+						Name:            "no_overlapping_bookings",
+						Type:            "EXCLUDE",
+						Table:           "bookings",
+						UsingMethod:     "gist",
+						ExcludeElements: "room_id WITH =, during WITH &&",
+						WhereCondition:  "is_active = true",
+					},
+				},
+			},
+			database: &types.DBSchema{
+				Constraints: []types.DBConstraint{},
+			},
+			expected: &difftypes.SchemaDiff{
+				ConstraintsAdded: []string{"no_overlapping_bookings"},
+			},
+		},
+		{
+			name: "EXCLUDE constraint removed",
+			generated: &goschema.Database{
+				Constraints: []goschema.Constraint{},
+			},
+			database: &types.DBSchema{
+				Constraints: []types.DBConstraint{
+					{
+						Name:            "no_overlapping_bookings",
+						TableName:       "bookings",
+						Type:            "EXCLUDE",
+						UsingMethod:     stringPtr("gist"),
+						ExcludeElements: stringPtr("room_id WITH =, during WITH &&"),
+						WhereCondition:  stringPtr("is_active = true"),
+					},
+				},
+			},
+			expected: &difftypes.SchemaDiff{
+				ConstraintsRemoved: []string{"no_overlapping_bookings"},
+			},
+		},
+		{
+			name: "EXCLUDE constraint modified - using method changed",
+			generated: &goschema.Database{
+				Constraints: []goschema.Constraint{
+					{
+						Name:            "no_overlapping_bookings",
+						Type:            "EXCLUDE",
+						Table:           "bookings",
+						UsingMethod:     "btree",
+						ExcludeElements: "room_id WITH =, during WITH &&",
+						WhereCondition:  "is_active = true",
+					},
+				},
+			},
+			database: &types.DBSchema{
+				Constraints: []types.DBConstraint{
+					{
+						Name:            "no_overlapping_bookings",
+						TableName:       "bookings",
+						Type:            "EXCLUDE",
+						UsingMethod:     stringPtr("gist"),
+						ExcludeElements: stringPtr("room_id WITH =, during WITH &&"),
+						WhereCondition:  stringPtr("is_active = true"),
+					},
+				},
+			},
+			expected: &difftypes.SchemaDiff{
+				ConstraintsRemoved: []string{"no_overlapping_bookings"},
+				ConstraintsAdded:   []string{"no_overlapping_bookings"},
+			},
+		},
+		{
+			name: "EXCLUDE constraint modified - elements changed",
+			generated: &goschema.Database{
+				Constraints: []goschema.Constraint{
+					{
+						Name:            "no_overlapping_bookings",
+						Type:            "EXCLUDE",
+						Table:           "bookings",
+						UsingMethod:     "gist",
+						ExcludeElements: "room_id WITH =, time_range WITH &&",
+						WhereCondition:  "is_active = true",
+					},
+				},
+			},
+			database: &types.DBSchema{
+				Constraints: []types.DBConstraint{
+					{
+						Name:            "no_overlapping_bookings",
+						TableName:       "bookings",
+						Type:            "EXCLUDE",
+						UsingMethod:     stringPtr("gist"),
+						ExcludeElements: stringPtr("room_id WITH =, during WITH &&"),
+						WhereCondition:  stringPtr("is_active = true"),
+					},
+				},
+			},
+			expected: &difftypes.SchemaDiff{
+				ConstraintsRemoved: []string{"no_overlapping_bookings"},
+				ConstraintsAdded:   []string{"no_overlapping_bookings"},
+			},
+		},
+		{
+			name: "EXCLUDE constraint modified - WHERE condition changed",
+			generated: &goschema.Database{
+				Constraints: []goschema.Constraint{
+					{
+						Name:            "no_overlapping_bookings",
+						Type:            "EXCLUDE",
+						Table:           "bookings",
+						UsingMethod:     "gist",
+						ExcludeElements: "room_id WITH =, during WITH &&",
+						WhereCondition:  "status = 'confirmed'",
+					},
+				},
+			},
+			database: &types.DBSchema{
+				Constraints: []types.DBConstraint{
+					{
+						Name:            "no_overlapping_bookings",
+						TableName:       "bookings",
+						Type:            "EXCLUDE",
+						UsingMethod:     stringPtr("gist"),
+						ExcludeElements: stringPtr("room_id WITH =, during WITH &&"),
+						WhereCondition:  stringPtr("is_active = true"),
+					},
+				},
+			},
+			expected: &difftypes.SchemaDiff{
+				ConstraintsRemoved: []string{"no_overlapping_bookings"},
+				ConstraintsAdded:   []string{"no_overlapping_bookings"},
+			},
+		},
+		{
+			name: "EXCLUDE constraint unchanged",
+			generated: &goschema.Database{
+				Constraints: []goschema.Constraint{
+					{
+						Name:            "no_overlapping_bookings",
+						Type:            "EXCLUDE",
+						Table:           "bookings",
+						UsingMethod:     "gist",
+						ExcludeElements: "room_id WITH =, during WITH &&",
+						WhereCondition:  "is_active = true",
+					},
+				},
+			},
+			database: &types.DBSchema{
+				Constraints: []types.DBConstraint{
+					{
+						Name:            "no_overlapping_bookings",
+						TableName:       "bookings",
+						Type:            "EXCLUDE",
+						UsingMethod:     stringPtr("gist"),
+						ExcludeElements: stringPtr("room_id WITH =, during WITH &&"),
+						WhereCondition:  stringPtr("is_active = true"),
+					},
+				},
+			},
+			expected: &difftypes.SchemaDiff{
+				ConstraintsAdded:   []string{},
+				ConstraintsRemoved: []string{},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff := &difftypes.SchemaDiff{}
+			compare.Constraints(tt.generated, tt.database, diff)
+
+			// Check constraints added
+			c.Assert(len(diff.ConstraintsAdded), qt.Equals, len(tt.expected.ConstraintsAdded))
+			for _, expected := range tt.expected.ConstraintsAdded {
+				c.Assert(diff.ConstraintsAdded, qt.Contains, expected)
+			}
+
+			// Check constraints removed
+			c.Assert(len(diff.ConstraintsRemoved), qt.Equals, len(tt.expected.ConstraintsRemoved))
+			for _, expected := range tt.expected.ConstraintsRemoved {
+				c.Assert(diff.ConstraintsRemoved, qt.Contains, expected)
+			}
+		})
+	}
+}
+
+func stringPtr(s string) *string {
+	return &s
+}
