@@ -1092,10 +1092,10 @@ func getConstraintColumn(constraint types.DBConstraint) string {
 		if strings.HasSuffix(constraint.Name, "_key") {
 			// PostgreSQL pattern
 			return extractPostgreSQLUniqueColumn(constraint)
-		} else {
-			// MySQL/MariaDB often use the column name as the constraint name for single-column unique constraints
-			return constraint.Name
 		}
+
+		// MySQL/MariaDB often use the column name as the constraint name for single-column unique constraints
+		return constraint.Name
 	}
 
 	// For other constraints, return empty string (will not match any field)
