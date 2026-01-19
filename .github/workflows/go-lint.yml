@@ -29,7 +29,7 @@ jobs:
         run: go mod download
 
       - name: Golint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m
           version: v2.1.6
