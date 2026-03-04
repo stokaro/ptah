@@ -139,7 +139,7 @@ jobs:
           ./integration-test --report=stdout,txt,json,html --verbose --output=./reports
 
       - name: Upload integration test reports
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ptah-integration-test-reports
