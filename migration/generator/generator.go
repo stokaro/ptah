@@ -192,6 +192,7 @@ func generateDownMigrationSQL(diff *types.SchemaDiff, generated *goschema.Databa
 }
 
 // reverseSchemaDiff creates a reverse diff for generating down migrations
+//
 // Deprecated: Use reverseSchemaDiffWithSchema for proper RLS policy table name resolution
 func reverseSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 	return reverseSchemaDiffWithSchema(diff, nil)
@@ -329,6 +330,7 @@ func convertRLSPolicyRefsToNames(policyRefs []types.RLSPolicyRef) []string {
 // convertRLSPolicyNamesToRefs converts policy names to RLSPolicyRef for down migrations
 // This is needed because RLSPoliciesAdded contains policy names (strings) but
 // RLSPoliciesRemoved needs RLSPolicyRef (with both policy name and table name)
+//
 // Deprecated: Use convertRLSPolicyNamesToRefsWithSchema for proper table name resolution
 func convertRLSPolicyNamesToRefs(policyNames []string) []types.RLSPolicyRef {
 	return convertRLSPolicyNamesToRefsWithSchema(policyNames, nil)

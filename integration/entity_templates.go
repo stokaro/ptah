@@ -225,11 +225,11 @@ func (et *EntityTemplate) CustomEntity(tableName, structName string, fields []En
 
 	sb.WriteString("package entities\n\n")
 	sb.WriteString("import \"time\"\n\n")
-	sb.WriteString(fmt.Sprintf("//migrator:schema:table name=\"%s\"\n", tableName))
-	sb.WriteString(fmt.Sprintf("type %s struct {\n", structName))
+	fmt.Fprintf(&sb, "//migrator:schema:table name=\"%s\"\n", tableName)
+	fmt.Fprintf(&sb, "type %s struct {\n", structName)
 
 	for _, field := range fields {
-		sb.WriteString(fmt.Sprintf("\t//migrator:schema:field name=\"%s\" type=\"%s\"", field.Name, field.Type))
+		fmt.Fprintf(&sb, "\t//migrator:schema:field name=\"%s\" type=\"%s\"", field.Name, field.Type)
 
 		if field.Primary {
 			sb.WriteString(" primary=\"true\"")
@@ -241,17 +241,17 @@ func (et *EntityTemplate) CustomEntity(tableName, structName string, fields []En
 			sb.WriteString(" unique=\"true\"")
 		}
 		if field.Default != "" {
-			sb.WriteString(fmt.Sprintf(" default=\"%s\"", field.Default))
+			fmt.Fprintf(&sb, " default=\"%s\"", field.Default)
 		}
 		if field.DefaultFn != "" {
-			sb.WriteString(fmt.Sprintf(" default_expr=\"%s\"", field.DefaultFn))
+			fmt.Fprintf(&sb, " default_expr=\"%s\"", field.DefaultFn)
 		}
 		if field.ForeignKey != "" {
-			sb.WriteString(fmt.Sprintf(" foreign_key=\"%s\"", field.ForeignKey))
+			fmt.Fprintf(&sb, " foreign_key=\"%s\"", field.ForeignKey)
 		}
 
 		sb.WriteString("\n")
-		sb.WriteString(fmt.Sprintf("\t%s %s\n\n", field.GoName, field.GoType))
+		fmt.Fprintf(&sb, "\t%s %s\n\n", field.GoName, field.GoType)
 	}
 
 	sb.WriteString("}\n")

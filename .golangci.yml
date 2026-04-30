@@ -231,6 +231,16 @@ linters:
           - nestif
           - dupl
         path: '_test\.go$'
+      # gosec G101 false positives: cobra flag Usage strings contain "Example: postgres://user:pass@..."
+      # which gosec mistakes for hardcoded credentials. Test fixtures contain intentional example URLs.
+      - linters:
+          - gosec
+        text: 'G101:'
+        path: '(_test\.go$|cmd/.*\.go$)'
+      # gosec G602 false positives on slice access inside `for range` loops where bounds are guaranteed.
+      - linters:
+          - gosec
+        text: 'G602:'
       # bmd exception rule (we currently use testify there)
       - path: '_test\.go$'
         text: 'function-result-limit:'
