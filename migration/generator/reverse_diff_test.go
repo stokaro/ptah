@@ -431,7 +431,7 @@ func TestReverseSchemaDiff_RoleModifications(t *testing.T) {
 		RolesModified: []types.RoleDiff{
 			{
 				RoleName: "app_user",
-				Changes: map[string]string{
+				Changes: map[string]string{ //nolint:gosec // G101: "password" is a map key naming a field, not a credential
 					"login":     "false -> true",
 					"superuser": "false -> true",
 					"createdb":  "false -> true",
