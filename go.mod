@@ -6,7 +6,7 @@ require (
 	github.com/frankban/quicktest v1.14.6
 	github.com/go-extras/cobraflags v0.0.0-20260116100222-f76efc9500d4
 	github.com/go-extras/go-kit v1.2.0
-	github.com/go-sql-driver/mysql v1.9.3
+	github.com/go-sql-driver/mysql v1.10.0
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
