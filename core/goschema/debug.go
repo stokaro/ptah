@@ -45,16 +45,16 @@ func GetDependencyInfo(r *Database) string {
 	for _, table := range r.Tables {
 		deps := r.Dependencies[table.Name]
 		if len(deps) == 0 {
-			info.WriteString(fmt.Sprintf("%s: (no dependencies)\n", table.Name))
+			fmt.Fprintf(&info, "%s: (no dependencies)\n", table.Name)
 		} else {
-			info.WriteString(fmt.Sprintf("%s: depends on %v\n", table.Name, deps))
+			fmt.Fprintf(&info, "%s: depends on %v\n", table.Name, deps)
 		}
 	}
 
 	info.WriteString("\nTable Creation Order:\n")
 	info.WriteString("====================\n")
 	for i, table := range r.Tables {
-		info.WriteString(fmt.Sprintf("%d. %s\n", i+1, table.Name))
+		fmt.Fprintf(&info, "%d. %s\n", i+1, table.Name)
 	}
 
 	return info.String()

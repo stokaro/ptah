@@ -42,7 +42,7 @@ var migrateDownFlags = map[string]cobraflags.Flag{
 	dbURLFlag: &cobraflags.StringFlag{
 		Name:  dbURLFlag,
 		Value: "",
-		Usage: "Database URL (required). Example: postgres://user:pass@localhost/db",
+		Usage: "Database URL (required). Example: postgres://localhost:5432/dbname",
 	},
 	migrationsFlag: &cobraflags.StringFlag{
 		Name:  migrationsFlag,

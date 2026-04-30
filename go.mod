@@ -1,6 +1,6 @@
 module github.com/stokaro/ptah
 
-go 1.24.3
+go 1.26.2
 
 require (
 	github.com/frankban/quicktest v1.14.6
