@@ -13,8 +13,8 @@ github.com/go-extras/cobraflags v0.0.0-20260116100222-f76efc9500d4 h1:V+pPX/Arkw
 github.com/go-extras/cobraflags v0.0.0-20260116100222-f76efc9500d4/go.mod h1:7/Lp0Dpz9+tTeHOat9fTxQxrLPuBJva/eSs/o76wGco=
 github.com/go-extras/go-kit v1.2.0 h1:Q0v8TIq8uEqTfAiE6VstKUhaiVrpiRLssQZA0qFE62o=
 github.com/go-extras/go-kit v1.2.0/go.mod h1:Fy+eKjteQ6nP6R3raMRXG9SuXQ67egS75OIMn0LgLUk=
-github.com/go-sql-driver/mysql v1.9.3 h1:U/N249h2WzJ3Ukj8SowVFjdtZKfu9vlLZxjPXV1aweo=
-github.com/go-sql-driver/mysql v1.9.3/go.mod h1:qn46aNg1333BRMNU69Lq93t8du/dwxI64Gl8i5p1WMU=
+github.com/go-sql-driver/mysql v1.10.0 h1:Q+1LV8DkHJvSYAdR83XzuhDaTykuDx0l6fkXxoWCWfw=
+github.com/go-sql-driver/mysql v1.10.0/go.mod h1:M+cqaI7+xxXGG9swrdeUIoPG3Y3KCkF0pZej+SK+nWk=
 github.com/go-viper/mapstructure/v2 v2.5.0 h1:vM5IJoUAy3d7zRSVtIwQgBj7BiWtMPfmPEgAXnvj1Ro=
 github.com/go-viper/mapstructure/v2 v2.5.0/go.mod h1:oJDH3BJKyqBA2TXFhDsKDGDTlndYOZ6rGS0BRZIxGhM=
 github.com/google/go-cmp v0.5.9/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
