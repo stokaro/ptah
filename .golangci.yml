@@ -231,6 +231,19 @@ linters:
           - nestif
           - dupl
         path: '_test\.go$'
+      # gosec G101 false positives in URL-parsing/migration test fixtures that
+      # intentionally embed `user:pass@` example DSNs. Limited to the specific
+      # test files known to trigger these — other tests still get scanned.
+      - linters:
+          - gosec
+        text: 'G101:'
+        path: '(dbschema/connection.*_test\.go|migration/migrator/(debug|example)_test\.go)$'
+      # gosec G602 false positives on `j-1` slice access inside guarded test loops
+      # (`for j := 1; j < len(...); j++`). Limited to the field-order tests.
+      - linters:
+          - gosec
+        text: 'G602:'
+        path: 'core/goschema/.*_test\.go$'
       # bmd exception rule (we currently use testify there)
       - path: '_test\.go$'
         text: 'function-result-limit:'
