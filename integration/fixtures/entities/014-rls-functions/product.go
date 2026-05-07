@@ -24,7 +24,7 @@ type Product struct {
 	//migrator:schema:field name="user_id" type="INTEGER" not_null="true"
 	UserID int64 `json:"user_id" db:"user_id"`
 
-	//migrator:schema:field name="created_at" type="TIMESTAMP" default_fn="NOW()"
+	//migrator:schema:field name="created_at" type="TIMESTAMP" default_expr="NOW()"
 	CreatedAt string `json:"created_at" db:"created_at"`
 }
 

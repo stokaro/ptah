@@ -702,3 +702,85 @@ func TestParseConstraintComment(t *testing.T) {
 		})
 	}
 }
+
+// TestParseField_UnknownAttributePanics verifies that field annotations
+// containing an unrecognized attribute key cause the parser to panic with a
+// clear message. This is the safety net that surfaces typos like
+// `default_fn`-vs-`default_expr` at parse time instead of silently dropping
+// them and producing wrong SQL.
+func TestParseField_UnknownAttributePanics(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name        string
+		annotation  string
+		mustContain string
+	}{
+		{
+			name:        "removed default_fn key",
+			annotation:  `name="created_at" type="TIMESTAMP" default_fn="NOW()"`,
+			mustContain: "default_fn",
+		},
+		{
+			name:        "arbitrary typo",
+			annotation:  `name="id" type="SERIAL" primary="true" totally_made_up_attr="oops"`,
+			mustContain: "totally_made_up_attr",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := `package entities
+
+//migrator:schema:table name="widgets"
+type Widget struct {
+	//migrator:schema:field ` + tt.annotation + `
+	ID int64
+}
+`
+			tmpDir := t.TempDir()
+			testFile := filepath.Join(tmpDir, "widget.go")
+			err := os.WriteFile(testFile, []byte(content), 0644) //nolint:gosec // 0644 is fine for tests
+			c.Assert(err, qt.IsNil)
+
+			defer func() {
+				r := recover()
+				c.Assert(r, qt.Not(qt.IsNil), qt.Commentf("expected panic for unknown attribute"))
+				msg, _ := r.(string)
+				c.Assert(msg, qt.Contains, "unknown annotation attribute")
+				c.Assert(msg, qt.Contains, tt.mustContain)
+			}()
+
+			_ = goschema.ParseFile(testFile)
+		})
+	}
+}
+
+// TestParseField_KnownAttributesDoNotPanic verifies that the canonical
+// attribute set, including platform.* overrides, parses cleanly without
+// triggering the unknown-attribute panic.
+func TestParseField_KnownAttributesDoNotPanic(t *testing.T) {
+	c := qt.New(t)
+
+	content := `package entities
+
+//migrator:schema:table name="widgets"
+type Widget struct {
+	//migrator:schema:field name="id" type="SERIAL" primary="true" auto_increment="true"
+	ID int64
+
+	//migrator:schema:field name="name" type="VARCHAR(255)" not_null="true" unique="true" default="x" comment="widget name" platform.mysql.type="VARCHAR(191)"
+	Name string
+
+	//migrator:schema:field name="created_at" type="TIMESTAMP" default_expr="NOW()"
+	CreatedAt string
+}
+`
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "widget.go")
+	err := os.WriteFile(testFile, []byte(content), 0644) //nolint:gosec // 0644 is fine for tests
+	c.Assert(err, qt.IsNil)
+
+	database := goschema.ParseFile(testFile)
+	c.Assert(database.Fields, qt.HasLen, 3)
+}

@@ -14,6 +14,6 @@ type Product struct {
 	//migrator:schema:field name="created_by_role" type="VARCHAR(50)" default="'app_user'"
 	CreatedByRole string `json:"created_by_role" db:"created_by_role"`
 
-	//migrator:schema:field name="created_at" type="TIMESTAMP" default_fn="NOW()"
+	//migrator:schema:field name="created_at" type="TIMESTAMP" default_expr="NOW()"
 	CreatedAt string `json:"created_at" db:"created_at"`
 }

@@ -251,7 +251,7 @@ type User struct {
 - `not_null` - NOT NULL constraint
 - `unique` - UNIQUE constraint
 - `default` - Default value
-- `default_fn` - Default function (e.g., "NOW()")
+- `default_expr` - Default expression or function call (e.g., `"NOW()"`, `"CURRENT_TIMESTAMP"`, `"gen_random_uuid()"`)
 - `check` - CHECK constraint
 - `foreign` - Foreign key reference (table(column))
 - `foreign_key_name` - Custom foreign key constraint name
@@ -325,7 +325,7 @@ type User struct {
     //migrator:schema:field name="email" type="VARCHAR(255)" not_null="true" unique="true"
     Email string
 
-    //migrator:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_fn="NOW()"
+    //migrator:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_expr="NOW()"
     CreatedAt time.Time
 }
 
