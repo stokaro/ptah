@@ -67,9 +67,17 @@ func validateAttributes(kv map[string]string, known map[string]bool, directive, 
 
 func parseFieldComment(comment *ast.Comment, field *ast.Field, structName string, globalEnumsMap map[string]Enum, schemaFields *[]Field) {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	for _, name := range field.Names {
-		validateAttributes(kv, knownFieldAttributes, "//migrator:schema:field", structName+"."+name.Name)
 
+	// Validate the directive itself, not each named carrier. For anonymous /
+	// embedded fields field.Names is nil and the loop below would never run,
+	// so doing this inside the loop would let unknown keys slip through.
+	location := structName
+	if len(field.Names) > 0 {
+		location = structName + "." + field.Names[0].Name
+	}
+	validateAttributes(kv, knownFieldAttributes, "//migrator:schema:field", location)
+
+	for _, name := range field.Names {
 		enumRaw := kv["enum"]
 		var enum []string
 		if enumRaw != "" {
