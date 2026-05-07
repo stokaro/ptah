@@ -11,6 +11,6 @@ type Product struct {
 	//migrator:schema:field name="price" type="DECIMAL(10,2)" not_null="true"
 	Price float64 `json:"price" db:"price"`
 
-	//migrator:schema:field name="created_at" type="TIMESTAMP" default_fn="NOW()"
+	//migrator:schema:field name="created_at" type="TIMESTAMP" default_expr="NOW()"
 	CreatedAt string `json:"created_at" db:"created_at"`
 }

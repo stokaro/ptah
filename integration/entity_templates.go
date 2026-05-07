@@ -50,7 +50,7 @@ type Post struct {
 	//migrator:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="user_id" type="INTEGER" not_null="true" foreign_key="users(id)"
+	//migrator:schema:field name="user_id" type="INTEGER" not_null="true" foreign="users(id)"
 	UserID int64
 
 	//migrator:schema:field name="title" type="VARCHAR(255)" not_null="true"
@@ -85,10 +85,10 @@ type Comment struct {
 	//migrator:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="post_id" type="INTEGER" not_null="true" foreign_key="posts(id)"
+	//migrator:schema:field name="post_id" type="INTEGER" not_null="true" foreign="posts(id)"
 	PostID int64
 
-	//migrator:schema:field name="user_id" type="INTEGER" not_null="true" foreign_key="users(id)"
+	//migrator:schema:field name="user_id" type="INTEGER" not_null="true" foreign="users(id)"
 	UserID int64
 
 	//migrator:schema:field name="content" type="TEXT" not_null="true"
@@ -247,7 +247,7 @@ func (et *EntityTemplate) CustomEntity(tableName, structName string, fields []En
 			fmt.Fprintf(&sb, " default_expr=\"%s\"", field.DefaultFn)
 		}
 		if field.ForeignKey != "" {
-			fmt.Fprintf(&sb, " foreign_key=\"%s\"", field.ForeignKey)
+			fmt.Fprintf(&sb, " foreign=\"%s\"", field.ForeignKey)
 		}
 
 		sb.WriteString("\n")

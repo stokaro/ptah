@@ -7,7 +7,7 @@ type Post struct {
 	//migrator:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="user_id" type="INTEGER" not_null="true" foreign_key="users(id)"
+	//migrator:schema:field name="user_id" type="INTEGER" not_null="true" foreign="users(id)"
 	UserID int64
 
 	//migrator:schema:field name="title" type="VARCHAR(255)" not_null="true"

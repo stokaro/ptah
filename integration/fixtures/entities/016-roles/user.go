@@ -16,6 +16,6 @@ type User struct {
 	//migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
 	Name string `json:"name" db:"name"`
 
-	//migrator:schema:field name="created_at" type="TIMESTAMP" default_fn="NOW()"
+	//migrator:schema:field name="created_at" type="TIMESTAMP" default_expr="NOW()"
 	CreatedAt string `json:"created_at" db:"created_at"`
 }
