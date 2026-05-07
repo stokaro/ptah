@@ -1,6 +1,7 @@
 package goschema
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -12,8 +13,70 @@ import (
 	"github.com/stokaro/ptah/core/goschema/internal/parseutils"
 )
 
+// knownFieldAttributes lists every attribute key recognized on a
+// //migrator:schema:field annotation. Keys with the "platform." prefix are
+// also accepted (handled separately).
+//
+// Some entries are accepted but not currently consumed by parseFieldComment;
+// they are whitelisted to keep the strict validator focused on real typos:
+//   - "nullable", "index", "autoincrement": parseutils auto-promotes these to
+//     booleans when written as bare words.
+//   - "on_delete", "on_update": documented FK-action keys consumed by
+//     EmbeddedField and Constraint parsers. Field-level propagation to the
+//     emitted SQL is not implemented yet — projects in the wild work around
+//     this with manual ALTER TABLE statements. Tracked separately.
+var knownFieldAttributes = map[string]bool{
+	"name":             true,
+	"type":             true,
+	"not_null":         true,
+	"nullable":         true,
+	"primary":          true,
+	"auto_increment":   true,
+	"autoincrement":    true,
+	"unique":           true,
+	"unique_expr":      true,
+	"index":            true,
+	"default":          true,
+	"default_expr":     true,
+	"foreign":          true,
+	"foreign_key_name": true,
+	"on_delete":        true,
+	"on_update":        true,
+	"enum":             true,
+	"check":            true,
+	"comment":          true,
+}
+
+// validateAttributes panics if kv contains any key the directive does not
+// recognize. Platform-specific overrides (platform.*) are always allowed.
+// This catches typos like default_fn-vs-default_expr at parse time instead of
+// silently dropping them and producing wrong SQL.
+func validateAttributes(kv map[string]string, known map[string]bool, directive, location string) {
+	for k := range kv {
+		if known[k] || strings.HasPrefix(k, "platform.") {
+			continue
+		}
+		slog.Error("unknown annotation attribute",
+			"directive", directive,
+			"attribute", k,
+			"location", location,
+		)
+		panic(fmt.Sprintf("unknown annotation attribute %q on %s at %s", k, directive, location))
+	}
+}
+
 func parseFieldComment(comment *ast.Comment, field *ast.Field, structName string, globalEnumsMap map[string]Enum, schemaFields *[]Field) {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
+
+	// Validate the directive itself, not each named carrier. For anonymous /
+	// embedded fields field.Names is nil and the loop below would never run,
+	// so doing this inside the loop would let unknown keys slip through.
+	location := structName
+	if len(field.Names) > 0 {
+		location = structName + "." + field.Names[0].Name
+	}
+	validateAttributes(kv, knownFieldAttributes, "//migrator:schema:field", location)
+
 	for _, name := range field.Names {
 		enumRaw := kv["enum"]
 		var enum []string

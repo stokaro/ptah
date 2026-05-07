@@ -50,7 +50,7 @@ type Post struct {
 	//migrator:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="user_id" type="INTEGER" not_null="true" foreign_key="users(id)"
+	//migrator:schema:field name="user_id" type="INTEGER" not_null="true" foreign="users(id)"
 	UserID int64
 
 	//migrator:schema:field name="title" type="VARCHAR(255)" not_null="true"
@@ -85,10 +85,10 @@ type Comment struct {
 	//migrator:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
 
-	//migrator:schema:field name="post_id" type="INTEGER" not_null="true" foreign_key="posts(id)"
+	//migrator:schema:field name="post_id" type="INTEGER" not_null="true" foreign="posts(id)"
 	PostID int64
 
-	//migrator:schema:field name="user_id" type="INTEGER" not_null="true" foreign_key="users(id)"
+	//migrator:schema:field name="user_id" type="INTEGER" not_null="true" foreign="users(id)"
 	UserID int64
 
 	//migrator:schema:field name="content" type="TEXT" not_null="true"
@@ -243,11 +243,11 @@ func (et *EntityTemplate) CustomEntity(tableName, structName string, fields []En
 		if field.Default != "" {
 			fmt.Fprintf(&sb, " default=\"%s\"", field.Default)
 		}
-		if field.DefaultFn != "" {
-			fmt.Fprintf(&sb, " default_expr=\"%s\"", field.DefaultFn)
+		if field.DefaultExpr != "" {
+			fmt.Fprintf(&sb, " default_expr=\"%s\"", field.DefaultExpr)
 		}
-		if field.ForeignKey != "" {
-			fmt.Fprintf(&sb, " foreign_key=\"%s\"", field.ForeignKey)
+		if field.Foreign != "" {
+			fmt.Fprintf(&sb, " foreign=\"%s\"", field.Foreign)
 		}
 
 		sb.WriteString("\n")
@@ -260,14 +260,14 @@ func (et *EntityTemplate) CustomEntity(tableName, structName string, fields []En
 
 // EntityField represents a field in a custom entity
 type EntityField struct {
-	Name       string // Database column name
-	GoName     string // Go field name
-	Type       string // Database type
-	GoType     string // Go type
-	Primary    bool
-	NotNull    bool
-	Unique     bool
-	Default    string
-	DefaultFn  string
-	ForeignKey string
+	Name        string // Database column name
+	GoName      string // Go field name
+	Type        string // Database type
+	GoType      string // Go type
+	Primary     bool
+	NotNull     bool
+	Unique      bool
+	Default     string
+	DefaultExpr string // Default expression / function call (rendered as default_expr=...)
+	Foreign     string // Foreign-key target, e.g. "users(id)" (rendered as foreign=...)
 }

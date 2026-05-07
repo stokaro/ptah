@@ -21,7 +21,7 @@ type Booking struct {
 	//migrator:schema:field name="during" type="TSRANGE" not_null="true"
 	During string // PostgreSQL range type for time periods
 
-	//migrator:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_fn="NOW()"
+	//migrator:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_expr="NOW()"
 	CreatedAt string
 }
 
@@ -39,7 +39,7 @@ type UserSession struct {
 	//migrator:schema:field name="is_active" type="BOOLEAN" not_null="true" default="false"
 	IsActive bool
 
-	//migrator:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_fn="NOW()"
+	//migrator:schema:field name="created_at" type="TIMESTAMP" not_null="true" default_expr="NOW()"
 	CreatedAt string
 }
 
