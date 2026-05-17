@@ -61,14 +61,17 @@ func (w *PostgreSQLWriter) writeEnums(enums []goschema.Enum) error { //nolint:un
 			}
 		}
 
-		// Create enum
+		// CREATE TYPE cannot use bind parameters: identifiers and enum-value
+		// literals must be substituted into the SQL text directly. Route the
+		// enum name through quoteIdent and escape the literal values by
+		// doubling any embedded single quote, per the SQL standard.
 		values := make([]string, len(enum.Values))
 		for i, v := range enum.Values {
-			values[i] = "'" + v + "'"
+			values[i] = "'" + strings.ReplaceAll(v, "'", "''") + "'"
 		}
 
-		createEnumSQL := fmt.Sprintf("CREATE TYPE %s AS ENUM (%s)",
-			enum.Name, strings.Join(values, ", "))
+		createEnumSQL := "CREATE TYPE " + quoteIdent(enum.Name) +
+			" AS ENUM (" + strings.Join(values, ", ") + ")"
 
 		slog.Info("Creating enum...", "enumName", enum.Name)
 		if err := w.ExecuteSQL(context.Background(), createEnumSQL); err != nil {

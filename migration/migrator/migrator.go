@@ -206,6 +206,11 @@ func (m *Migrator) MigrateUp(ctx context.Context) error {
 
 	m.logger.Info("Migrating up", "currentVersion", currentVersion, "totalMigrations", len(migrations))
 
+	// Rebind once: the template and dialect are loop-invariant. Values are
+	// still bound as native driver parameters via these placeholders so we
+	// never interpolate user-controlled strings into the SQL text.
+	recordSQL := sqlutil.Rebind(m.conn.Info().Dialect, recordMigrationSQL)
+
 	// Apply migrations that are newer than current version
 	for _, migration := range migrations {
 		if migration.Version <= currentVersion {
@@ -226,10 +231,7 @@ func (m *Migrator) MigrateUp(ctx context.Context) error {
 			return fmt.Errorf("failed to apply migration %d: %w", migration.Version, err)
 		}
 
-		// Record migration. Values are bound as native driver parameters via
-		// the dialect-appropriate placeholders so we never interpolate
-		// user-controlled strings into the SQL text.
-		recordSQL := sqlutil.Rebind(m.conn.Info().Dialect, recordMigrationSQL)
+		// Record migration via parameter binding.
 		if err := m.conn.Writer().ExecuteSQL(ctx, recordSQL, migration.Version, migration.Description, time.Now()); err != nil {
 			_ = m.conn.Writer().RollbackTransaction()
 			return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)
@@ -290,6 +292,10 @@ func (m *Migrator) MigrateDownTo(ctx context.Context, targetVersion int) error {
 		return migrations[i].Version > migrations[j].Version
 	})
 
+	// Rebind once: template + dialect are loop-invariant. Migration version
+	// is bound as a parameter via the dialect-native placeholder.
+	deleteSQL := sqlutil.Rebind(m.conn.Info().Dialect, deleteMigrationSQL)
+
 	// Apply down migrations for versions greater than target
 	for _, migration := range migrations {
 		if migration.Version <= targetVersion || migration.Version > currentVersion {
@@ -309,9 +315,7 @@ func (m *Migrator) MigrateDownTo(ctx context.Context, targetVersion int) error {
 			return fmt.Errorf("failed to revert migration %d: %w", migration.Version, err)
 		}
 
-		// Remove migration record. Version is bound as a parameter via the
-		// dialect-appropriate placeholder.
-		deleteSQL := sqlutil.Rebind(m.conn.Info().Dialect, deleteMigrationSQL)
+		// Remove migration record.
 		if err := m.conn.Writer().ExecuteSQL(ctx, deleteSQL, migration.Version); err != nil {
 			_ = m.conn.Writer().RollbackTransaction()
 			return fmt.Errorf("failed to record migration reversion %d: %w", migration.Version, err)
@@ -373,6 +377,9 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int) error {
 
 	m.logger.Info("Migrating up", "currentVersion", currentVersion, "targetVersion", targetVersion, "totalMigrations", len(migrations))
 
+	// Rebind once; see MigrateUp for the rationale on parameter binding.
+	recordSQL := sqlutil.Rebind(m.conn.Info().Dialect, recordMigrationSQL)
+
 	// Apply migrations up to target version
 	for _, migration := range migrations {
 		if migration.Version <= currentVersion || migration.Version > targetVersion {
@@ -392,9 +399,7 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int) error {
 			return fmt.Errorf("failed to apply migration %d: %w", migration.Version, err)
 		}
 
-		// Record migration. See MigrateUp for the rationale on parameter
-		// binding.
-		recordSQL := sqlutil.Rebind(m.conn.Info().Dialect, recordMigrationSQL)
+		// Record migration via parameter binding.
 		if err := m.conn.Writer().ExecuteSQL(ctx, recordSQL, migration.Version, migration.Description, time.Now()); err != nil {
 			_ = m.conn.Writer().RollbackTransaction()
 			return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)

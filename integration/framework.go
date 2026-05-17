@@ -473,15 +473,16 @@ func (dh *DatabaseHelper) TableExists(tableName string) (bool, error) {
 
 // ExecuteSQL executes raw SQL with proper transaction management. Pass values
 // via args and reference them through `?` (or dialect-native) placeholders
-// rather than interpolating them into the SQL text.
-func (dh *DatabaseHelper) ExecuteSQL(sql string, args ...any) error {
+// rather than interpolating them into the SQL text. The provided context is
+// forwarded to the underlying driver so cancellation/timeouts propagate.
+func (dh *DatabaseHelper) ExecuteSQL(ctx context.Context, sql string, args ...any) error {
 	// Start transaction
 	if err := dh.conn.Writer().BeginTransaction(); err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 
 	// Execute SQL
-	if err := dh.conn.Writer().ExecuteSQL(context.Background(), sql, args...); err != nil {
+	if err := dh.conn.Writer().ExecuteSQL(ctx, sql, args...); err != nil {
 		_ = dh.conn.Writer().RollbackTransaction()
 		return fmt.Errorf("failed to execute SQL: %w", err)
 	}
