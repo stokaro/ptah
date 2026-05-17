@@ -53,7 +53,7 @@
 //	if err != nil {
 //		log.Fatal(err)
 //	}
-//	defer conn.Close()
+//	defer dbschema.CloseAndWarn(conn)
 //
 //	database, err := conn.Reader().ReadSchema()
 //	if err != nil {

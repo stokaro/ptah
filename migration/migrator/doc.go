@@ -50,7 +50,7 @@
 //	if err != nil {
 //		log.Fatal(err)
 //	}
-//	defer conn.Close()
+//	defer dbschema.CloseAndWarn(conn)
 //
 //	// Option 1: Create migrator from filesystem
 //	m, err := migrator.NewFSMigrator(conn, os.DirFS("/path/to/migrations"))
