@@ -8,6 +8,7 @@ import (
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/renderer"
+	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/planner/dialects/postgres"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
@@ -193,31 +194,120 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved(t *testing.T) {
 	}
 	generated := &goschema.Database{}
 
-	planner := postgres.New()
-	nodes := planner.GenerateMigrationAST(diff, generated)
+	pl := postgres.New()
+	nodes := pl.GenerateMigrationAST(diff, generated)
 
-	// Should generate 4 nodes: create function, execute function, drop main function, drop exec function
-	c.Assert(len(nodes), qt.Equals, 4)
+	// One DO block per removed constraint. The previous implementation emitted
+	// four nodes (create/exec/drop/drop) but none of them actually invoked the
+	// drop logic, leaving the constraint in place — see commit message for the
+	// full incident report. The DO block executes immediately on parse and
+	// leaves no temporary functions behind.
+	c.Assert(len(nodes), qt.Equals, 1)
 
-	// Check the first node (create function)
-	sql1, err := renderer.RenderSQL("postgres", nodes[0])
+	sql, err := renderer.RenderSQL("postgres", nodes[0])
 	c.Assert(err, qt.IsNil)
-	c.Assert(sql1, qt.Contains, "CREATE OR REPLACE FUNCTION ptah_drop_constraint_old_constraint()")
-	c.Assert(sql1, qt.Contains, "information_schema.table_constraints")
-	c.Assert(sql1, qt.Contains, "WHERE constraint_name = 'old_constraint'")
+	c.Assert(sql, qt.Contains, "DO $ptah$")
+	c.Assert(sql, qt.Contains, "information_schema.table_constraints")
+	c.Assert(sql, qt.Contains, "constraint_name = 'old_constraint'")
+	c.Assert(sql, qt.Contains, "ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I")
+	c.Assert(sql, qt.Contains, "$ptah$")
+	// The DO block MUST end with a semicolon. SplitSQLStatements is what the
+	// migrator uses to chop a migration into individual db.Exec calls, and it
+	// tokenizes on `;`. A DO block whose dollar-quoted body ends at `$tag$`
+	// without a trailing `;` merges with the following statement and Postgres
+	// rejects the merged chunk with `syntax error at or near "DO"`.
+	c.Assert(strings.HasSuffix(strings.TrimRight(sql, " \t\r\n"), ";"), qt.IsTrue,
+		qt.Commentf("rendered DO block must end with a semicolon; got: %s", sql))
+}
 
-	// Check the second node (execute function)
-	sql2, err := renderer.RenderSQL("postgres", nodes[1])
-	c.Assert(err, qt.IsNil)
-	c.Assert(sql2, qt.Contains, "SELECT ptah_drop_constraint_old_constraint();")
+func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_MultipleSplitCleanly(t *testing.T) {
+	c := qt.New(t)
 
-	// Check the third node (drop main function)
-	sql3, err := renderer.RenderSQL("postgres", nodes[2])
-	c.Assert(err, qt.IsNil)
-	c.Assert(sql3, qt.Contains, "DROP FUNCTION IF EXISTS ptah_drop_constraint_old_constraint")
+	// Two consecutive constraint drops must split into two statements through
+	// the SQL statement splitter. The regression this guards against is the
+	// missing `;` in VisitRawSQL: without it, two DO blocks merge into one
+	// chunk and Postgres rejects the second `DO`.
+	diff := &types.SchemaDiff{
+		ConstraintsRemoved: []string{"first_constraint", "second_constraint"},
+	}
+	statements := planner.GenerateSchemaDiffSQLStatements(diff, &goschema.Database{}, "postgres")
+	c.Assert(len(statements), qt.Equals, 2,
+		qt.Commentf("each DO block must end up as its own statement after SQL splitting; got %d statements:\n%s",
+			len(statements), strings.Join(statements, "\n---\n")))
+	c.Assert(strings.Contains(statements[0], "first_constraint"), qt.IsTrue)
+	c.Assert(strings.Contains(statements[1], "second_constraint"), qt.IsTrue)
+}
 
-	// Check the fourth node (drop exec function)
-	sql4, err := renderer.RenderSQL("postgres", nodes[3])
+func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_EscapesSingleQuoteInName(t *testing.T) {
+	c := qt.New(t)
+
+	// PostgreSQL allows quoted identifiers with embedded apostrophes; the
+	// DO block interpolates the constraint name into five distinct contexts
+	// (one SQL literal, one EXECUTE format() argument, two RAISE NOTICE
+	// strings, one SQL comment) and every literal substitution must escape.
+	diff := &types.SchemaDiff{
+		ConstraintsRemoved: []string{"don't_drop"},
+	}
+
+	nodes := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
+	c.Assert(len(nodes), qt.Equals, 1)
+
+	sql, err := renderer.RenderSQL("postgres", nodes[0])
 	c.Assert(err, qt.IsNil)
-	c.Assert(sql4, qt.Contains, "DROP FUNCTION IF EXISTS ptah_exec_ptah_drop_constraint_old_constraint")
+	c.Assert(sql, qt.Contains, "'don''t_drop'", qt.Commentf("single quote in constraint name must be SQL-escaped"))
+	// The bare unescaped form must NOT appear in any SQL string literal.
+	c.Assert(strings.Contains(sql, "'don't_drop'"), qt.IsFalse,
+		qt.Commentf("unescaped name in a literal would break parsing; got: %s", sql))
+}
+
+func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_RejectsUnsafeName(t *testing.T) {
+	// Names containing $ or newlines would either break the surrounding
+	// `$ptah$` dollar-quote tag or terminate the leading SQL comment line.
+	// Rather than emit a malformed drop (or a silent warning comment that
+	// would loop on every subsequent generate run), the planner emits a DO
+	// block whose only action is RAISE EXCEPTION — so the migration fails
+	// loudly and the operator has to rename the constraint.
+	cases := []struct {
+		input          string
+		expectVisible  string // the escaped name as it should appear in the SQL literal
+		mustNotContain []string
+	}{
+		{
+			input:          "foo$ptah$bar",
+			expectVisible:  `foo\$ptah\$bar`, // `$` rendered as `\$` so it can't collapse $ptah$
+			mustNotContain: []string{"$ptah$bar"},
+		},
+		{
+			input:         "two\nlines",
+			expectVisible: `two\nlines`,
+		},
+		{
+			input:         "carriage\rreturn",
+			expectVisible: `carriage\rreturn`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.input, func(t *testing.T) {
+			c := qt.New(t)
+			diff := &types.SchemaDiff{ConstraintsRemoved: []string{tc.input}}
+			nodes := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
+			c.Assert(len(nodes), qt.Equals, 1)
+
+			sql, err := renderer.RenderSQL("postgres", nodes[0])
+			c.Assert(err, qt.IsNil)
+			c.Assert(strings.Contains(sql, "RAISE EXCEPTION"), qt.IsTrue,
+				qt.Commentf("planner must emit RAISE EXCEPTION for unsafe names; got: %s", sql))
+			c.Assert(strings.Contains(sql, "ALTER TABLE %I DROP CONSTRAINT"), qt.IsFalse,
+				qt.Commentf("unsafe name must NOT produce a drop statement; got: %s", sql))
+			// The rejected name must appear inside an embedded SQL single-
+			// quoted literal (not as a Postgres identifier), so the operator
+			// sees a clean exception message.
+			c.Assert(strings.Contains(sql, "''"+tc.expectVisible+"''"), qt.IsTrue,
+				qt.Commentf("rejected name must appear escaped inside the exception message; got: %s", sql))
+			for _, forbidden := range tc.mustNotContain {
+				c.Assert(strings.Contains(sql, forbidden), qt.IsFalse,
+					qt.Commentf("escaped output must not contain raw substring %q; got: %s", forbidden, sql))
+			}
+		})
+	}
 }

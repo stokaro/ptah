@@ -195,3 +195,11 @@ func (m *MockVisitor) VisitAlterRole(node *ast.AlterRoleNode) error {
 	}
 	return nil
 }
+
+func (m *MockVisitor) VisitRawSQL(node *ast.RawSQLNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "RawSQL:"+node.SQL)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}

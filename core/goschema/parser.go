@@ -614,7 +614,8 @@ func processAllFileComments(f *ast.File, tableNameToStructName map[string]string
 
 func parseFunctionComment(comment *ast.Comment, structName string, functions *[]Function) {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	*functions = append(*functions, Function{
+
+	fn := Function{
 		StructName: structName,
 		Name:       kv["name"],
 		Parameters: kv["params"],
@@ -624,7 +625,12 @@ func parseFunctionComment(comment *ast.Comment, structName string, functions *[]
 		Volatility: kv["volatility"],
 		Body:       kv["body"],
 		Comment:    kv["comment"],
-	})
+	}
+	// Canonicalize so every downstream consumer (planner, renderer,
+	// comparator) sees the same values regardless of how the annotation was
+	// typed. See Function.Canonicalize for the per-field rules.
+	fn.Canonicalize()
+	*functions = append(*functions, fn)
 }
 
 func parseRLSPolicyComment(comment *ast.Comment, structName string, rlsPolicies *[]RLSPolicy) {

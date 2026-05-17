@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/stokaro/ptah/core/ast"
@@ -576,6 +577,11 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	// 2. Add new functions (functions may be used by RLS policies)
 	result = p.addNewFunctions(result, diff, generated)
 
+	// 2b. Modify existing function definitions (body, volatility, security, language).
+	// PostgreSQL CREATE OR REPLACE FUNCTION updates the live definition in place
+	// without affecting policies or triggers that reference the function.
+	result = p.modifyExistingFunctions(result, diff, generated)
+
 	// 3. Add new enums (PostgreSQL requires enum types to exist before tables use them)
 	result = p.addNewEnums(result, diff, generated)
 
@@ -841,6 +847,40 @@ func (p *Planner) addNewFunctions(result []ast.Node, diff *types.SchemaDiff, gen
 	return result
 }
 
+func (p *Planner) modifyExistingFunctions(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, fnDiff := range diff.FunctionsModified {
+		// Find the target function definition. Without it we can't emit a
+		// faithful CREATE OR REPLACE, so skip silently (the diff alone would
+		// not tell us the new body/attributes).
+		var target *goschema.Function
+		for i := range generated.Functions {
+			if generated.Functions[i].Name == fnDiff.FunctionName {
+				target = &generated.Functions[i]
+				break
+			}
+		}
+		if target == nil {
+			continue
+		}
+
+		functionNode := fromschema.FromFunction(*target)
+		functionNode.SetComment(fmt.Sprintf("Modify function %s: %s", target.Name, summarizeFunctionChanges(fnDiff)))
+		result = append(result, functionNode)
+	}
+	return result
+}
+
+// summarizeFunctionChanges produces a deterministic one-line summary of the
+// changed attributes for use as a SQL comment.
+func summarizeFunctionChanges(fnDiff types.FunctionDiff) string {
+	keys := make([]string, 0, len(fnDiff.Changes))
+	for k := range fnDiff.Changes {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ", ")
+}
+
 func (p *Planner) removeFunctions(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 	for _, functionName := range diff.FunctionsRemoved {
 		dropFunctionNode := ast.NewDropFunction(functionName).
@@ -988,60 +1028,84 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 //	ALTER TABLE bookings DROP CONSTRAINT IF EXISTS no_overlapping_bookings;
 //	ALTER TABLE products DROP CONSTRAINT IF EXISTS positive_price;
 func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	// Drop each constraint via a DO block. Two reasons we use a DO block
+	// rather than a literal ALTER TABLE DROP CONSTRAINT:
+	//
+	//  1. ConstraintsRemoved is just a slice of constraint names — the table
+	//     name has been thrown away by the diff layer (the comparator
+	//     synthesizes field-level CHECKs and presents them by name alone).
+	//     The DO block resolves the table at execution time from
+	//     information_schema, which works regardless of whether the
+	//     constraint is column-scoped or table-scoped.
+	//
+	//  2. A DO block executes immediately. The previous implementation
+	//     defined a plpgsql function plus a sql wrapper, then dropped both
+	//     without ever invoking either — so constraint removals were a
+	//     silent no-op.
+	//
+	// The block resolves `current_schema()` only: constraints in a different
+	// schema reachable via search_path are not handled — Ptah's introspection
+	// is also single-schema, so the two ends are consistent.
+	//
+	// Constraint-name safety. Postgres constraint names should be plain
+	// ASCII alnum + underscore; we reject only the chars that would actually
+	// break our specific DO-block template:
+	//   - `$` would collide with the `$ptah$` dollar-quote tag and terminate
+	//     the body early.
+	//   - newline / carriage return would terminate the leading `--` comment
+	//     line and dump whatever follows as bare SQL.
+	// Anything else (apostrophe) is handled by SQL-literal escaping.
+	// Unsafe names trigger a DO block whose only action is RAISE EXCEPTION,
+	// so the migration fails loudly with the operator's attention — better
+	// than a silent comment that would loop forever on subsequent runs.
 	for _, constraintName := range diff.ConstraintsRemoved {
-		// Create a temporary function that finds and drops the constraint dynamically
-		functionName := fmt.Sprintf("ptah_drop_constraint_%s", constraintName)
+		escaped := strings.ReplaceAll(constraintName, "'", "''")
+		if strings.ContainsAny(constraintName, "$\n\r") {
+			// Build a printable, single-quoted SQL string literal of the
+			// rejected name so the operator's error output shows what was
+			// rejected. `$` is rendered as `\$` so the surrounding `$ptah$`
+			// dollar quoting can't be prematurely terminated; `\n` / `\r` /
+			// `\t` are rendered as their printable escapes; apostrophes are
+			// SQL-escaped via `''`. The result is plain ASCII inside `'…'`.
+			visible := strings.NewReplacer(
+				"\n", `\n`,
+				"\r", `\r`,
+				"\t", `\t`,
+				"$", `\$`,
+			).Replace(constraintName)
+			visible = strings.ReplaceAll(visible, "'", "''")
 
-		functionBody := fmt.Sprintf(`DECLARE
+			failBlock := fmt.Sprintf(`-- Unsafe constraint name rejected by the migration generator; the
+-- following DO block raises an exception so the migration fails loudly.
+DO $ptah$
+BEGIN
+    RAISE EXCEPTION 'refusing to drop constraint with unsafe name ''%s''; rename the constraint and regenerate the migration';
+END
+$ptah$`, visible)
+			result = append(result, ast.NewRawSQL(failBlock))
+			continue
+		}
+		doBlock := fmt.Sprintf(`-- Drop constraint %s (table resolved at runtime from information_schema)
+DO $ptah$
+DECLARE
     target_table TEXT;
 BEGIN
-    -- Find the table that contains this constraint
     SELECT table_name INTO target_table
     FROM information_schema.table_constraints
     WHERE constraint_name = '%s'
       AND table_schema = current_schema()
     LIMIT 1;
 
-    -- Drop the constraint if found
     IF target_table IS NOT NULL THEN
         EXECUTE format('ALTER TABLE %%I DROP CONSTRAINT IF EXISTS %%I', target_table, '%s');
         RAISE NOTICE 'Dropped constraint %s from table %%', target_table;
     ELSE
         RAISE NOTICE 'Constraint %s not found in current schema';
     END IF;
-END;`, constraintName, constraintName, constraintName, constraintName)
+END
+$ptah$`, constraintName, escaped, escaped, escaped, escaped)
 
-		// Step 1: Create the function
-		createFunctionNode := ast.NewCreateFunction(functionName).
-			SetReturns("VOID").
-			SetLanguage("plpgsql").
-			SetBody(functionBody).
-			SetComment(fmt.Sprintf("Temporary function to drop constraint %s", constraintName))
-
-		result = append(result, createFunctionNode)
-
-		// Step 2: Execute the function using a simple SQL function call
-		executeFunctionBody := fmt.Sprintf("SELECT %s();", functionName)
-		executeFunctionNode := ast.NewCreateFunction(fmt.Sprintf("ptah_exec_%s", functionName)).
-			SetReturns("VOID").
-			SetLanguage("sql").
-			SetBody(executeFunctionBody).
-			SetComment(fmt.Sprintf("Execute constraint removal for %s", constraintName))
-
-		result = append(result, executeFunctionNode)
-
-		// Step 3: Drop the temporary functions
-		dropMainFunctionNode := ast.NewDropFunction(functionName).
-			SetIfExists().
-			SetComment(fmt.Sprintf("Clean up temporary function for %s", constraintName))
-
-		result = append(result, dropMainFunctionNode)
-
-		dropExecFunctionNode := ast.NewDropFunction(fmt.Sprintf("ptah_exec_%s", functionName)).
-			SetIfExists().
-			SetComment(fmt.Sprintf("Clean up executor function for %s", constraintName))
-
-		result = append(result, dropExecFunctionNode)
+		result = append(result, ast.NewRawSQL(doBlock))
 	}
 	return result
 }

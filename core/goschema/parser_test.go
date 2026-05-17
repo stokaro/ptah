@@ -453,6 +453,7 @@ func TestParseFunctionComment(t *testing.T) {
 				Returns:    "VOID",
 				Language:   "plpgsql",
 				Security:   "DEFINER",
+				Volatility: "VOLATILE", // default
 				Body:       "BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;",
 			},
 		},
@@ -464,6 +465,7 @@ func TestParseFunctionComment(t *testing.T) {
 				Name:       "get_current_tenant_id",
 				Returns:    "TEXT",
 				Language:   "plpgsql",
+				Security:   "INVOKER", // default
 				Volatility: "STABLE",
 				Body:       "BEGIN RETURN current_setting('app.current_tenant_id', true); END;",
 			},
@@ -476,7 +478,35 @@ func TestParseFunctionComment(t *testing.T) {
 				Name:       "test_func",
 				Returns:    "INTEGER",
 				Language:   "sql",
+				Security:   "INVOKER",  // default
+				Volatility: "VOLATILE", // default
 				Comment:    "Test function for unit tests",
+			},
+		},
+		{
+			name:    "Empty language defaults to plpgsql",
+			comment: `//migrator:schema:function name="no_lang" returns="VOID" body="BEGIN END;"`,
+			expected: goschema.Function{
+				StructName: "TestStruct",
+				Name:       "no_lang",
+				Returns:    "VOID",
+				Language:   "plpgsql", // defaulted
+				Security:   "INVOKER",
+				Volatility: "VOLATILE",
+				Body:       "BEGIN END;",
+			},
+		},
+		{
+			name:    "Mixed-case attributes are normalized",
+			comment: `//migrator:schema:function name="mixed_case" returns="VOID" language="PLPGSQL" security="Definer" volatility="Stable" body="BEGIN END;"`,
+			expected: goschema.Function{
+				StructName: "TestStruct",
+				Name:       "mixed_case",
+				Returns:    "VOID",
+				Language:   "plpgsql", // ToLower
+				Security:   "DEFINER", // ToUpper
+				Volatility: "STABLE",  // ToUpper
+				Body:       "BEGIN END;",
 			},
 		},
 	}
@@ -485,20 +515,17 @@ func TestParseFunctionComment(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			kv := parseutils.ParseKeyValueComment(tt.comment)
-			function := goschema.Function{
-				StructName: "TestStruct",
-				Name:       kv["name"],
-				Parameters: kv["params"],
-				Returns:    kv["returns"],
-				Language:   kv["language"],
-				Security:   kv["security"],
-				Volatility: kv["volatility"],
-				Body:       kv["body"],
-				Comment:    kv["comment"],
-			}
+			// Drive the real parseFunctionComment through ParseFile so the
+			// canonicalization runs end-to-end. Embedding the annotation in
+			// a synthetic Go source file is the path real-world annotations
+			// take and is what TestParseRLSPolicyComment also does.
+			src := "package p\n" + tt.comment + "\ntype TestStruct struct {}\n"
+			tmp := t.TempDir() + "/fn.go"
+			c.Assert(os.WriteFile(tmp, []byte(src), 0o644), qt.IsNil) //nolint:gosec // 0644 is fine for a test fixture
 
-			c.Assert(function, qt.DeepEquals, tt.expected)
+			db := goschema.ParseFile(tmp)
+			c.Assert(db.Functions, qt.HasLen, 1)
+			c.Assert(db.Functions[0], qt.DeepEquals, tt.expected)
 		})
 	}
 }

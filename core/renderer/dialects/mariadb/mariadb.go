@@ -199,3 +199,8 @@ func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
 func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
 	return r.r.VisitAlterRole(node)
 }
+
+// VisitRawSQL delegates to the mysqllike renderer
+func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
+	return r.r.VisitRawSQL(node)
+}

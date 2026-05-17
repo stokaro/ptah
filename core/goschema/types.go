@@ -3,6 +3,8 @@
 // Go struct annotations and used for generating database-specific migration SQL.
 package goschema
 
+import "strings"
+
 // Database represents the complete database schema derived from Go struct annotations.
 //
 // This struct aggregates all database schema information discovered during the recursive
@@ -374,6 +376,42 @@ type Function struct {
 	Volatility string // Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
 	Body       string // Function body/implementation
 	Comment    string // Optional comment for documentation
+}
+
+// Canonicalize fills in PostgreSQL's implicit defaults and case-folds the
+// attributes that pg_proc/pg_language always report in canonical form. Apply
+// this immediately after constructing or mutating a Function so every
+// downstream consumer — parser, planner, renderer, comparator — sees the same
+// values.
+//
+//   - Language: empty → "plpgsql"; otherwise lowercased. pg_language.lanname
+//     is stored lowercase, and the postgres renderer omits the LANGUAGE
+//     clause if this field is empty, which the server rejects with
+//     "ERROR: no language specified". Defaulting to plpgsql is what
+//     `CREATE FUNCTION` would assume in handwritten SQL too.
+//   - Security: empty → "INVOKER"; otherwise uppercased. pg_proc surfaces
+//     this as either "DEFINER" or "INVOKER".
+//   - Volatility: empty → "VOLATILE"; otherwise uppercased. pg_proc surfaces
+//     this as "IMMUTABLE", "STABLE", or "VOLATILE".
+//
+// The DB-side read path (dbschema/postgres/reader.go) returns canonical case
+// by construction, so it does not need to call this. The motivating callers
+// are the annotation parser (which sees raw user-typed text) and any
+// programmatic constructor — test fixtures, downstream API consumers — that
+// builds Function values without going through the parser.
+func (f *Function) Canonicalize() {
+	f.Language = strings.ToLower(f.Language)
+	if f.Language == "" {
+		f.Language = "plpgsql"
+	}
+	f.Security = strings.ToUpper(f.Security)
+	if f.Security == "" {
+		f.Security = "INVOKER"
+	}
+	f.Volatility = strings.ToUpper(f.Volatility)
+	if f.Volatility == "" {
+		f.Volatility = "VOLATILE"
+	}
 }
 
 // RLSPolicy represents a PostgreSQL Row-Level Security policy definition parsed from Go struct annotations.

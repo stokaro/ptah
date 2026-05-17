@@ -1031,6 +1031,22 @@ func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
 	return nil
 }
 
+// VisitRawSQL renders a literal SQL fragment verbatim and appends a trailing
+// semicolon if the fragment doesn't already end with one. The caller owns
+// correctness of the embedded SQL. The trailing `;` is essential — downstream
+// SplitSQLStatements (used by the migrator to apply each statement separately
+// for MySQL compatibility) tokenizes on semicolons, and a dollar-quoted body
+// that ends with `$tag$\n` would otherwise merge with the following statement
+// into one chunk that Postgres rejects with `syntax error at or near "DO"`.
+func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
+	sql := node.SQL
+	if !strings.HasSuffix(strings.TrimRight(sql, "\r\n\t "), ";") {
+		sql += ";"
+	}
+	r.w.WriteLine(sql)
+	return nil
+}
+
 // VisitAlterRole renders an ALTER ROLE statement for PostgreSQL
 func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
 	// Add comment if provided
