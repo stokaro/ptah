@@ -989,22 +989,69 @@ func (p *Planner) removeRLSPolicies(result []ast.Node, diff *types.SchemaDiff) [
 //	ALTER TABLE products ADD CONSTRAINT positive_price
 //	  CHECK (price > 0);
 func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	// Resolve struct → table name once for the field-level synthesis fallback.
+	structToTable := make(map[string]string, len(generated.Tables))
+	for _, t := range generated.Tables {
+		structToTable[t.StructName] = t.Name
+	}
+
 	for _, constraintName := range diff.ConstraintsAdded {
-		// Find the constraint definition in the generated schema
+		// First, try the explicit table-level constraints declared via
+		// `//migrator:schema:constraint` annotations.
+		emitted := false
 		for _, constraint := range generated.Constraints {
 			if constraint.Name == constraintName {
-				// Convert goschema.Constraint to ast.ConstraintNode
-				astConstraint := p.convertConstraintToAST(constraint)
-				if astConstraint != nil {
-					// Create ALTER TABLE statement with ADD CONSTRAINT operation
-					alterNode := &ast.AlterTableNode{
+				if astConstraint := p.convertConstraintToAST(constraint); astConstraint != nil {
+					result = append(result, &ast.AlterTableNode{
 						Name:       constraint.Table,
 						Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: astConstraint}},
-					}
-					result = append(result, alterNode)
+					})
 				}
+				emitted = true
 				break
 			}
+		}
+		if emitted {
+			continue
+		}
+
+		// Fall back to field-level `check=` annotations. The schemadiff
+		// comparator synthesizes these names into diff.ConstraintsAdded when
+		// `check=` lands on a column that already exists in the database, but
+		// the synthesized Constraint never reaches generated.Constraints — so
+		// without this fallback an ADD CONSTRAINT for an existing column was
+		// silently dropped. PR #123 introduced the synthesis but left this
+		// emission gap; we close it here.
+		//
+		// New columns are handled by the inline CHECK in ALTER TABLE ADD
+		// COLUMN and the comparator deliberately skips synthesizing them, so
+		// only existing-column field-level CHECKs end up routed through this
+		// path.
+		for _, f := range generated.Fields {
+			if f.Check == "" {
+				continue
+			}
+			tableName := structToTable[f.StructName]
+			if tableName == "" {
+				tableName = f.StructName
+			}
+			name := f.CheckName
+			if name == "" {
+				name = tableName + "_" + f.Name + "_check"
+			}
+			if name != constraintName {
+				continue
+			}
+			astConstraint := &ast.ConstraintNode{
+				Type:       ast.CheckConstraint,
+				Name:       name,
+				Expression: f.Check,
+			}
+			result = append(result, &ast.AlterTableNode{
+				Name:       tableName,
+				Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: astConstraint}},
+			})
+			break
 		}
 	}
 	return result

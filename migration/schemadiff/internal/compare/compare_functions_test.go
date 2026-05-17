@@ -16,8 +16,8 @@ func TestFunctionDefinitions_DetectsBodyChange(t *testing.T) {
 
 	gen := goschema.Function{
 		Name:       "set_tenant_context",
-		Parameters: "tenant_id_param TEXT",
-		Returns:    "VOID",
+		Parameters: "tenant_id_param text",
+		Returns:    "void",
 		Language:   "plpgsql",
 		Security:   "DEFINER",
 		Volatility: "VOLATILE",
@@ -25,8 +25,8 @@ func TestFunctionDefinitions_DetectsBodyChange(t *testing.T) {
 	}
 	db := dbtypes.DBFunction{
 		Name:       "set_tenant_context",
-		Parameters: "tenant_id_param TEXT",
-		Returns:    "VOID",
+		Parameters: "tenant_id_param text",
+		Returns:    "void",
 		Language:   "plpgsql",
 		Security:   "DEFINER",
 		Volatility: "VOLATILE",
@@ -46,7 +46,7 @@ func TestFunctionDefinitions_DetectsSecurityVolatilityLanguageChanges(t *testing
 
 	gen := goschema.Function{
 		Name:       "f",
-		Returns:    "INTEGER",
+		Returns:    "integer",
 		Language:   "sql",
 		Security:   "INVOKER",
 		Volatility: "IMMUTABLE",
@@ -54,7 +54,7 @@ func TestFunctionDefinitions_DetectsSecurityVolatilityLanguageChanges(t *testing
 	}
 	db := dbtypes.DBFunction{
 		Name:       "f",
-		Returns:    "INTEGER",
+		Returns:    "integer",
 		Language:   "plpgsql",
 		Security:   "DEFINER",
 		Volatility: "STABLE",
@@ -78,11 +78,11 @@ func TestFunctionDefinitions_NoChangeWhenIdentical(t *testing.T) {
 		db  dbtypes.DBFunction
 	}{
 		gen: goschema.Function{
-			Name: "f", Returns: "VOID", Language: "plpgsql",
+			Name: "f", Returns: "void", Language: "plpgsql",
 			Security: "INVOKER", Volatility: "VOLATILE", Body: "BEGIN END;",
 		},
 		db: dbtypes.DBFunction{
-			Name: "f", Returns: "VOID", Language: "plpgsql",
+			Name: "f", Returns: "void", Language: "plpgsql",
 			Security: "INVOKER", Volatility: "VOLATILE", Body: "BEGIN END;",
 		},
 	}
@@ -100,12 +100,12 @@ func TestFunctionDefinitions_EmptyAnnotationDefaultsMatchPostgresDefaults(t *tes
 	// spurious diff is reported.
 	gen := goschema.Function{
 		Name:    "f",
-		Returns: "INTEGER",
+		Returns: "integer",
 		Body:    "BEGIN RETURN 1; END;",
 	}
 	db := dbtypes.DBFunction{
 		Name:       "f",
-		Returns:    "INTEGER",
+		Returns:    "integer",
 		Language:   "plpgsql",
 		Security:   "INVOKER",
 		Volatility: "VOLATILE",
@@ -124,27 +124,27 @@ func TestFunctionDefinitions_LowercaseAnnotationDoesNotDiff(t *testing.T) {
 		{
 			name: "lowercase security/volatility",
 			gen: goschema.Function{
-				Name: "f", Returns: "VOID", Language: "plpgsql",
+				Name: "f", Returns: "void", Language: "plpgsql",
 				Security: "definer", Volatility: "stable", Body: "BEGIN END;",
 			},
 		},
 		{
 			name: "mixed-case security/volatility",
 			gen: goschema.Function{
-				Name: "f", Returns: "VOID", Language: "plpgsql",
+				Name: "f", Returns: "void", Language: "plpgsql",
 				Security: "Definer", Volatility: "Stable", Body: "BEGIN END;",
 			},
 		},
 		{
 			name: "uppercase language",
 			gen: goschema.Function{
-				Name: "f", Returns: "VOID", Language: "PLPGSQL",
+				Name: "f", Returns: "void", Language: "PLPGSQL",
 				Security: "DEFINER", Volatility: "STABLE", Body: "BEGIN END;",
 			},
 		},
 	}
 	db := dbtypes.DBFunction{
-		Name: "f", Returns: "VOID", Language: "plpgsql",
+		Name: "f", Returns: "void", Language: "plpgsql",
 		Security: "DEFINER", Volatility: "STABLE", Body: "BEGIN END;",
 	}
 
@@ -173,7 +173,7 @@ func TestFunctionDefinitions_ExplicitNonDefaultLanguage(t *testing.T) {
 	}
 	db := dbtypes.DBFunction{
 		Name:       "f",
-		Returns:    "INTEGER",
+		Returns:    "integer",
 		Language:   "sql",
 		Security:   "INVOKER",
 		Volatility: "VOLATILE",
@@ -191,7 +191,7 @@ func TestFunctions_PopulatesModifiedList(t *testing.T) {
 		Functions: []goschema.Function{
 			{
 				Name:       "f",
-				Returns:    "VOID",
+				Returns:    "void",
 				Language:   "plpgsql",
 				Security:   "INVOKER",
 				Volatility: "VOLATILE",
@@ -203,7 +203,7 @@ func TestFunctions_PopulatesModifiedList(t *testing.T) {
 		Functions: []dbtypes.DBFunction{
 			{
 				Name:       "f",
-				Returns:    "VOID",
+				Returns:    "void",
 				Language:   "plpgsql",
 				Security:   "INVOKER",
 				Volatility: "VOLATILE",
