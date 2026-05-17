@@ -23,8 +23,14 @@ import (
 // the rewrites silently never reached the database. This scenario is what the
 // natural-migration fixture suite was missing to catch that class of bug.
 func testDynamicFunctionAttributeModification(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
-	if err := skipNonPostgreSQL(conn, recorder); err != nil {
-		return err
+	// Reads pg_proc directly, so explicitly hard-skip on non-PostgreSQL
+	// rather than going through skipNonPostgreSQL — that helper only
+	// records the skip step but lets the caller keep running, which would
+	// crash here with "Table 'pg_proc' doesn't exist" on MySQL/MariaDB.
+	if conn.Info().Dialect != "postgres" {
+		return recorder.RecordStep("Skip Non-PostgreSQL", "Function attribute modification reads pg_proc; PostgreSQL-only", func() error {
+			return nil
+		})
 	}
 
 	vem, err := NewVersionedEntityManager(fixtures)
@@ -152,8 +158,12 @@ func testDynamicFunctionAttributeModification(ctx context.Context, conn *dbschem
 // in master before PR #129's planner fix. With the DO-block drop in place,
 // this test verifies the natural-migration flow round-trips correctly.
 func testDynamicFieldCheckConstraintEvolution(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error {
-	if err := skipNonPostgreSQL(conn, recorder); err != nil {
-		return err
+	// Reads pg_constraint directly, so explicitly hard-skip on non-PostgreSQL.
+	// (See the matching comment on testDynamicFunctionAttributeModification.)
+	if conn.Info().Dialect != "postgres" {
+		return recorder.RecordStep("Skip Non-PostgreSQL", "Field-level CHECK lifecycle reads pg_constraint; PostgreSQL-only", func() error {
+			return nil
+		})
 	}
 
 	vem, err := NewVersionedEntityManager(fixtures)
