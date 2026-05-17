@@ -42,7 +42,7 @@ func testClickHouseMergeTreeEngine(ctx context.Context, conn *dbschema.DatabaseC
 
 	// Clean any leftover state from a previous run so the scenario is idempotent.
 	if err := recorder.RecordStep("Reset Table", "Drop the scenario table if it exists", func() error {
-		_, err := conn.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s SYNC", tableName))
+		_, err := conn.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS `%s` SYNC", tableName))
 		return err
 	}); err != nil {
 		return err
@@ -90,7 +90,7 @@ func testClickHouseMergeTreeEngine(ctx context.Context, conn *dbschema.DatabaseC
 	// via t.Cleanup-like ordering: schedule the drop before doing the
 	// assertions, then rely on the recorder's deferred error semantics.
 	defer func() {
-		_, _ = conn.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s SYNC", tableName))
+		_, _ = conn.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS `%s` SYNC", tableName))
 	}()
 
 	return recorder.RecordStep("Verify Engine + ORDER BY", "Read system.tables and assert MergeTree + ORDER BY (id, created_at)", func() error {
@@ -107,8 +107,9 @@ func testClickHouseMergeTreeEngine(ctx context.Context, conn *dbschema.DatabaseC
 			return fmt.Errorf("expected engine MergeTree, got %q", engine)
 		}
 		// ClickHouse reports the sorting key as a comma-separated list with
-		// inconsistent whitespace across versions; normalise before comparing.
-		got := strings.Join(strings.Fields(strings.ReplaceAll(orderBy, ",", " ")), ",")
+		// inconsistent whitespace across versions; strip whitespace before
+		// comparing.
+		got := strings.ReplaceAll(strings.ReplaceAll(orderBy, " ", ""), "\t", "")
 		want := "id,created_at"
 		if got != want {
 			return fmt.Errorf("expected ORDER BY %q, got %q (raw %q)", want, got, orderBy)

@@ -8,6 +8,16 @@ import (
 	"github.com/stokaro/ptah/dbschema/types"
 )
 
+// Engines we consider "real data tables" for schema introspection. The
+// MergeTree family covers production workloads; Memory/Log/TinyLog/StripeLog
+// cover the common non-replicated developer/test workloads. Materialised
+// views and Distributed engines are intentionally excluded because they are
+// not part of the schema-as-data-shape Ptah's diff layer reasons about.
+//
+// We use a positive allowlist and ALSO keep `NOT LIKE '%View'` as a guard so
+// that any unanticipated view-style engine still gets filtered out even if it
+// somehow matches a MergeTree pattern.
+
 // Reader reads schema information from a ClickHouse server.
 //
 // It only queries system tables; it never holds an explicit transaction
@@ -64,7 +74,16 @@ func (r *Reader) readTables(dbName string) ([]types.DBTable, error) {
 	rows, err := r.db.Query(`
 		SELECT name, comment
 		FROM system.tables
-		WHERE database = ? AND engine NOT LIKE '%View'
+		WHERE database = ?
+		  AND is_temporary = 0
+		  AND (
+		    engine LIKE '%MergeTree'
+		    OR engine = 'Memory'
+		    OR engine = 'Log'
+		    OR engine = 'TinyLog'
+		    OR engine = 'StripeLog'
+		  )
+		  AND engine NOT LIKE '%View'
 		ORDER BY name
 	`, dbName)
 	if err != nil {
@@ -124,7 +143,13 @@ func (r *Reader) readColumns(dbName, table string) ([]types.DBColumn, error) {
 			IsNullable:      nullable,
 			OrdinalPosition: position,
 		}
-		if defaultKind != "" && defaultExpr != "" {
+		// ClickHouse columns can have several flavours of default
+		// (DEFAULT, MATERIALIZED, ALIAS, EPHEMERAL). Only the plain DEFAULT
+		// flavour is a schema-level default value comparable to the other
+		// dialects' notion of ColumnDefault. Treat the rest as no-default
+		// for now — round-trip support for MATERIALIZED/ALIAS/EPHEMERAL is
+		// tracked as a follow-up.
+		if defaultKind == "DEFAULT" && defaultExpr != "" {
 			expr := defaultExpr
 			col.ColumnDefault = &expr
 		}
@@ -136,7 +161,33 @@ func (r *Reader) readColumns(dbName, table string) ([]types.DBColumn, error) {
 	return cols, nil
 }
 
+// skippingIndexTablePresent reports whether system.data_skipping_indices is
+// available on the connected server.
+func (r *Reader) skippingIndexTablePresent() (bool, error) {
+	var n uint64
+	err := r.db.QueryRow(`
+		SELECT count()
+		FROM system.tables
+		WHERE database = 'system' AND name = 'data_skipping_indices'
+	`).Scan(&n)
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
 func (r *Reader) readSkippingIndexes(dbName string) ([]types.DBIndex, error) {
+	// system.data_skipping_indices was added in 21.x; on very old servers it
+	// is absent. Feature-detect by probing system.tables before querying so
+	// real failures aren't swallowed by an error-substring sniff.
+	present, err := r.skippingIndexTablePresent()
+	if err != nil {
+		return nil, fmt.Errorf("clickhouse: detect system.data_skipping_indices: %w", err)
+	}
+	if !present {
+		return nil, nil
+	}
+
 	rows, err := r.db.Query(`
 		SELECT table, name, expr, type
 		FROM system.data_skipping_indices
@@ -144,12 +195,6 @@ func (r *Reader) readSkippingIndexes(dbName string) ([]types.DBIndex, error) {
 		ORDER BY table, name
 	`, dbName)
 	if err != nil {
-		// system.data_skipping_indices was added in 21.x; if a very old
-		// server doesn't expose it, return no indexes rather than failing
-		// the entire schema read.
-		if strings.Contains(err.Error(), "data_skipping_indices") {
-			return nil, nil
-		}
 		return nil, err
 	}
 	defer rows.Close()

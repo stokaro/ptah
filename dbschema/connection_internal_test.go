@@ -33,18 +33,36 @@ func TestConvertClickHouseURL(t *testing.T) {
 			input:    "::not-a-url::",
 			expected: "::not-a-url::",
 		},
+		{
+			name:     "preserves secure=true on native port",
+			input:    "clickhouse://default@localhost:9000/analytics?secure=true",
+			expected: "clickhouse://default@localhost:9000/analytics?secure=true",
+		},
+		{
+			name:     "native TLS port 9440 round-trips",
+			input:    "clickhouse://default@localhost:9440/analytics",
+			expected: "clickhouse://default@localhost:9440/analytics",
+		},
+		{
+			name:     "HTTP-SSL port 8443 with secure flag round-trips",
+			input:    "clickhouse://default@localhost:8443/db?secure=true",
+			expected: "clickhouse://default@localhost:8443/db?secure=true",
+		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
 			got := convertClickHouseURL(tc.input)
-			// url.Parse() doesn't always preserve raw query ordering, so compare with
-			// a small amount of flexibility for the query-bearing case.
-			if strings.Contains(tc.expected, "?") {
-				c.Assert(got, qt.Contains, "clickhouse://default:secret@localhost:9000/analytics")
-				c.Assert(got, qt.Contains, "secure=true")
-				c.Assert(got, qt.Contains, "dial_timeout=10s")
+			// url.Parse() doesn't always preserve raw query ordering. For the
+			// expected URLs that carry multiple parameters we assert by
+			// fragments; single-param and no-param URLs round-trip exactly.
+			if strings.Count(tc.expected, "&") > 0 {
+				prefix, _, _ := strings.Cut(tc.expected, "?")
+				c.Assert(got, qt.Contains, prefix)
+				for _, kv := range strings.Split(tc.expected[strings.Index(tc.expected, "?")+1:], "&") {
+					c.Assert(got, qt.Contains, kv)
+				}
 				return
 			}
 			c.Assert(got, qt.Equals, tc.expected)

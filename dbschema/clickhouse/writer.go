@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"strings"
 )
 
 // Writer applies schema changes to a ClickHouse server.
@@ -67,16 +68,32 @@ func (w *Writer) RollbackTransaction() error {
 // DropAllTables drops every base table in the configured database.
 // Uses DROP TABLE … SYNC so subsequent CREATE TABLE statements don't race
 // against the async drop.
+//
+// Table names are interpolated into the DDL with backtick-quoting; names
+// containing backticks are rejected to keep the interpolation safe. In a
+// real ClickHouse deployment this is just defence-in-depth (system.tables
+// will not contain such names) but it avoids any risk of accidentally
+// executing malformed/maliciously-shaped DDL.
 func (w *Writer) DropAllTables() error {
 	slog.Info("WARNING: This will drop ALL tables in the ClickHouse database")
 
 	var tables []string
 	if w.dryRun {
-		tables = []string{"example_table_a", "example_table_b"}
+		tables = []string{"<dry-run stub>"}
+		slog.Info("[DRY RUN] DropAllTables using stub table list", "tables", tables)
 	} else {
 		rows, err := w.db.Query(`
 			SELECT name FROM system.tables
-			WHERE database = currentDatabase() AND engine NOT LIKE '%View'
+			WHERE database = currentDatabase()
+			  AND is_temporary = 0
+			  AND (
+			    engine LIKE '%MergeTree'
+			    OR engine = 'Memory'
+			    OR engine = 'Log'
+			    OR engine = 'TinyLog'
+			    OR engine = 'StripeLog'
+			  )
+			  AND engine NOT LIKE '%View'
 			ORDER BY name
 		`)
 		if err != nil {
@@ -96,8 +113,15 @@ func (w *Writer) DropAllTables() error {
 	}
 
 	for _, name := range tables {
+		if w.dryRun {
+			slog.Info("[DRY RUN] Would drop table", "tableName", name)
+			continue
+		}
+		if strings.Contains(name, "`") {
+			return fmt.Errorf("clickhouse: refusing to drop table %q: name contains a backtick", name)
+		}
 		slog.Info("Dropping table", "tableName", name)
-		if err := w.ExecuteSQL(fmt.Sprintf("DROP TABLE IF EXISTS %s SYNC", name)); err != nil {
+		if err := w.ExecuteSQL(fmt.Sprintf("DROP TABLE IF EXISTS `%s` SYNC", name)); err != nil {
 			return err
 		}
 	}

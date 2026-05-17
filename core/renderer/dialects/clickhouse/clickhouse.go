@@ -38,6 +38,14 @@ var _ types.RenderVisitor = (*Renderer)(nil)
 // Renderer renders an AST node tree to ClickHouse SQL.
 type Renderer struct {
 	w *bufwriter.Writer
+
+	// forceNotNullSet, when non-nil, lists the set of column names that must
+	// not be wrapped in Nullable(...) regardless of their declared nullability.
+	// It is set by VisitCreateTable for the duration of a single table
+	// rendering and cleared on return; it captures the columns that appear in
+	// the MergeTree sorting key and/or PRIMARY KEY, which ClickHouse rejects
+	// when wrapped in Nullable(...).
+	forceNotNullSet map[string]struct{}
 }
 
 // New constructs a ClickHouse renderer with an empty output buffer.
@@ -85,6 +93,35 @@ func escapeStringLiteral(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
 
+// typeMapping is the result of mapping a generic SQL column type to its
+// ClickHouse equivalent. `notice`, when non-empty, is a one-line warning the
+// caller should emit as a leading `-- CLICKHOUSE: ...` comment so users are
+// not surprised by silent conversions.
+type typeMapping struct {
+	mapped string
+	notice string
+}
+
+// directTypeMap is a lookup table of base SQL type names (UPPER, parameter
+// stripped) to their direct ClickHouse equivalents. Types whose mapping
+// depends on parameters or warrants a notice are handled in mapColumnType
+// rather than going through this table.
+var directTypeMap = map[string]string{
+	"TEXT": "String", "VARCHAR": "String", "CHAR": "String",
+	"CHARACTER": "String", "STRING": "String",
+	"CHARACTER VARYING": "String", "CITEXT": "String",
+	"BYTEA": "String", "BLOB": "String",
+	"BOOLEAN": "Bool", "BOOL": "Bool",
+	"SMALLINT": "Int16", "INT2": "Int16",
+	"INTEGER": "Int32", "INT": "Int32", "INT4": "Int32",
+	"BIGINT": "Int64", "INT8": "Int64",
+	"REAL": "Float32", "FLOAT4": "Float32",
+	"DOUBLE": "Float64", "DOUBLE PRECISION": "Float64",
+	"FLOAT": "Float64", "FLOAT8": "Float64",
+	"DATE": "Date",
+	"UUID": "UUID",
+}
+
 // mapColumnType translates a generic SQL column type spelling into the
 // ClickHouse equivalent. Type names not recognised are returned verbatim;
 // callers may legitimately write native ClickHouse type names in their
@@ -94,10 +131,10 @@ func escapeStringLiteral(s string) string {
 // The matcher is intentionally narrow: it splits the type on '(' so a
 // `VARCHAR(255)` still maps to `String`, but anything that doesn't look like
 // a known SQL type is passed through untouched.
-func mapColumnType(t string) (string, error) {
+func mapColumnType(t string) (typeMapping, error) {
 	upper := strings.ToUpper(strings.TrimSpace(t))
 	if upper == "" {
-		return "", fmt.Errorf("clickhouse: column type is empty")
+		return typeMapping{}, fmt.Errorf("clickhouse: column type is empty")
 	}
 
 	// Strip parametrisation for the base lookup, keeping it around for the
@@ -109,75 +146,115 @@ func mapColumnType(t string) (string, error) {
 		params = strings.TrimSpace(upper[idx:])
 	}
 
+	if direct, ok := directTypeMap[base]; ok {
+		return typeMapping{mapped: direct}, nil
+	}
+
 	switch base {
 	case "SERIAL", "BIGSERIAL", "SMALLSERIAL":
-		return "", fmt.Errorf("clickhouse: %s has no auto-increment equivalent; use UUID/Int64 + an explicit value or use a ReplacingMergeTree pattern", upper)
-	case "TEXT", "VARCHAR", "CHAR", "CHARACTER", "STRING", "CHARACTER VARYING", "CITEXT":
-		return "String", nil
-	case "BYTEA", "BLOB":
-		return "String", nil
-	case "BOOLEAN", "BOOL":
-		return "Bool", nil
-	case "SMALLINT", "INT2":
-		return "Int16", nil
-	case "INTEGER", "INT", "INT4":
-		return "Int32", nil
-	case "BIGINT", "INT8":
-		return "Int64", nil
-	case "REAL", "FLOAT4":
-		return "Float32", nil
-	case "DOUBLE", "DOUBLE PRECISION", "FLOAT", "FLOAT8":
-		return "Float64", nil
+		return typeMapping{}, fmt.Errorf("clickhouse: %s has no auto-increment equivalent; use UUID/Int64 + an explicit value or use a ReplacingMergeTree pattern", upper)
 	case "NUMERIC", "DECIMAL":
 		if params == "" {
-			return "Decimal(38, 10)", nil
+			return typeMapping{mapped: "Decimal(38, 10)"}, nil
 		}
-		return "Decimal" + params, nil
-	case "DATE":
-		return "Date", nil
-	case "TIMESTAMP", "TIMESTAMPTZ", "DATETIME", "TIMESTAMP WITH TIME ZONE", "TIMESTAMP WITHOUT TIME ZONE":
-		return "DateTime64(3)", nil
+		return typeMapping{mapped: "Decimal" + params}, nil
+	case "TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE":
+		// Pin TZ-aware columns to UTC so the round-trip with a TZ-naive
+		// DateTime64 doesn't silently drop time-zone information.
+		return typeMapping{mapped: "DateTime64(3, 'UTC')"}, nil
+	case "TIMESTAMP", "DATETIME", "TIMESTAMP WITHOUT TIME ZONE":
+		return typeMapping{mapped: "DateTime64(3)"}, nil
 	case "TIME":
 		// ClickHouse has no plain TIME type; surface this rather than silently
 		// pick something lossy.
-		return "", fmt.Errorf("clickhouse: TIME has no direct equivalent; map to String or DateTime64 explicitly via platform.clickhouse.type")
-	case "UUID":
-		return "UUID", nil
+		return typeMapping{}, fmt.Errorf("clickhouse: TIME has no direct equivalent; map to String or DateTime64 explicitly via platform.clickhouse.type")
 	case "JSON", "JSONB":
 		// Treat JSON as a String; ClickHouse's native JSON type is still
 		// experimental. Users who want it can override via platform.clickhouse.type.
-		return "String", nil
+		return typeMapping{
+			mapped: "String",
+			notice: "mapped JSON → String; override via platform.clickhouse.type=JSON if you want experimental native JSON",
+		}, nil
 	}
 
-	// Pass through native ClickHouse types untouched.
-	return t, nil
+	// Pass through native ClickHouse types untouched. Flag pass-throughs that
+	// don't look like a CH-native composite type so users see when an unknown
+	// spelling has been forwarded as-is.
+	mapping := typeMapping{mapped: t}
+	if !looksLikeClickHouseNativeType(t) {
+		mapping.notice = fmt.Sprintf("unrecognised SQL type %q passed through verbatim; verify it is a native ClickHouse type", t)
+	}
+	return mapping, nil
+}
+
+// looksLikeClickHouseNativeType is a heuristic that recognises common
+// ClickHouse-native type spellings (LowCardinality, Array, Map, Nullable,
+// Enum8/16, FixedString, Tuple, Nested, ...). It only needs to avoid
+// false-positively warning on legitimate native types; precise validation is
+// the database's job.
+func looksLikeClickHouseNativeType(t string) bool {
+	t = strings.TrimSpace(t)
+	if t == "" {
+		return false
+	}
+	// Native CH types are conventionally PascalCase; treat the presence of an
+	// uppercase letter followed by lowercase as a strong hint.
+	for i := 0; i < len(t)-1; i++ {
+		if t[i] >= 'A' && t[i] <= 'Z' && t[i+1] >= 'a' && t[i+1] <= 'z' {
+			return true
+		}
+	}
+	return false
+}
+
+// columnTypeOptions controls renderColumnType's behaviour.
+type columnTypeOptions struct {
+	// forceNotNull disables Nullable(...) wrapping regardless of the
+	// column's declared nullability — used for columns that participate in
+	// the sorting key / PRIMARY KEY where ClickHouse rejects Nullable(...).
+	forceNotNull bool
 }
 
 // renderColumnType produces the final type expression for a column,
-// applying Nullable() wrapping for nullable columns.
-func renderColumnType(col *ast.ColumnNode) (string, error) {
-	mapped, err := mapColumnType(col.Type)
+// applying Nullable() wrapping for nullable columns subject to opts.
+func renderColumnType(col *ast.ColumnNode, opts columnTypeOptions) (typeMapping, error) {
+	mapping, err := mapColumnType(col.Type)
 	if err != nil {
-		return "", fmt.Errorf("column %q: %w", col.Name, err)
+		return typeMapping{}, fmt.Errorf("column %q: %w", col.Name, err)
 	}
-	if col.Nullable && !col.Primary {
+	if col.Nullable && !col.Primary && !opts.forceNotNull {
 		// Don't wrap if already wrapped (e.g. user supplied native CH type).
-		if !strings.HasPrefix(mapped, "Nullable(") {
-			mapped = "Nullable(" + mapped + ")"
+		if !strings.HasPrefix(mapping.mapped, "Nullable(") {
+			mapping.mapped = "Nullable(" + mapping.mapped + ")"
 		}
 	}
-	return mapped, nil
+	return mapping, nil
 }
 
 // renderColumn renders a single column definition for use inside a
-// CREATE TABLE column list.
+// CREATE TABLE column list. If the column appears in the active table's sort
+// key / PRIMARY KEY (via r.forceNotNullSet) AND the user declared it
+// nullable, an error is returned — ClickHouse rejects Nullable(T) sort-key
+// columns and silently stripping Nullable would be a data-shape change.
+//
+// When the type mapping carries an advisory notice (e.g. JSON→String),
+// renderColumn emits a leading `-- CLICKHOUSE: ...` line BEFORE returning the
+// column DDL so users see why a column was rewritten.
 func (r *Renderer) renderColumn(col *ast.ColumnNode) (string, error) {
-	chType, err := renderColumnType(col)
+	_, forceNotNull := r.forceNotNullSet[col.Name]
+	if forceNotNull && col.Nullable && !col.Primary {
+		return "", fmt.Errorf("clickhouse: column %q is part of the sorting/primary key and must be NOT NULL (add not_null=\"true\" or remove it from order_by/primary_key)", col.Name)
+	}
+
+	mapping, err := renderColumnType(col, columnTypeOptions{forceNotNull: forceNotNull})
 	if err != nil {
 		return "", err
 	}
+	if mapping.notice != "" {
+		r.w.WriteLinef("-- CLICKHOUSE: column %q %s", col.Name, mapping.notice)
+	}
 
-	parts := []string{fmt.Sprintf("  %s %s", col.Name, chType)}
+	parts := []string{fmt.Sprintf("  %s %s", col.Name, mapping.mapped)}
 
 	if col.Default != nil {
 		switch {
@@ -281,22 +358,69 @@ func parenList(expr string) string {
 	return "(" + expr + ")"
 }
 
-// splitColumns parses a comma-separated column list (with or without
-// surrounding parentheses) into individual trimmed column names. It does
-// not attempt to parse arbitrary ORDER BY expressions — when the user
-// supplies an expression rather than a plain column list the prefix-of
-// check is best-effort and only succeeds for the obvious case.
+// splitColumns parses a comma-separated column/expression list into
+// individual trimmed entries. It is paren-aware: commas inside parentheses
+// (e.g. `tuple(a, b)`, `intDiv(ts, 86400)`, `toYYYYMM(created_at)`) do NOT
+// split the list. A single layer of outer parentheses wrapping the whole
+// expression is stripped before splitting, so `(a, b, c)` parses identically
+// to `a, b, c`.
+//
+// This is sufficient for ClickHouse ORDER BY / PRIMARY KEY expression lists,
+// which are comma-separated function calls and identifiers, not arbitrary
+// SQL.
 func splitColumns(expr string) []string {
 	expr = strings.TrimSpace(expr)
-	expr = strings.TrimPrefix(expr, "(")
-	expr = strings.TrimSuffix(expr, ")")
 	if expr == "" {
 		return nil
 	}
-	parts := strings.Split(expr, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		out = append(out, strings.TrimSpace(p))
+	// Strip a single layer of outer parens, but only if they wrap the entire
+	// expression (i.e. the matching close paren is the final character).
+	if strings.HasPrefix(expr, "(") {
+		depth := 0
+		matchEnd := -1
+		for i, r := range expr {
+			switch r {
+			case '(':
+				depth++
+			case ')':
+				depth--
+				if depth == 0 {
+					matchEnd = i
+				}
+			}
+			if matchEnd >= 0 && matchEnd < len(expr)-1 {
+				// The outer `(` is closed before the end of the string, so it
+				// is not a wrapping paren — e.g. `(a, b), c`. Don't strip.
+				matchEnd = -2
+				break
+			}
+		}
+		if matchEnd == len(expr)-1 {
+			expr = strings.TrimSpace(expr[1 : len(expr)-1])
+		}
+	}
+
+	var (
+		out   []string
+		depth int
+		start int
+	)
+	for i, r := range expr {
+		switch r {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		case ',':
+			if depth == 0 {
+				out = append(out, strings.TrimSpace(expr[start:i]))
+				start = i + 1
+			}
+		}
+	}
+	tail := strings.TrimSpace(expr[start:])
+	if tail != "" {
+		out = append(out, tail)
 	}
 	return out
 }
@@ -306,17 +430,19 @@ func splitColumns(expr string) []string {
 // MergeTree-family engines require an ORDER BY; if the annotation does not
 // supply one we fall back to the table's primary key columns and otherwise
 // return an error. PRIMARY KEY must be a prefix of ORDER BY.
+//
+// Columns referenced by ORDER BY / PRIMARY KEY must be NOT NULL — ClickHouse
+// rejects Nullable(T) for sort-key columns. We compute the set up front and
+// thread it through r.forceNotNullSet so the per-column renderer can return
+// a precise error rather than silently stripping Nullable.
 func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 	spec, err := r.resolveAndValidateTableEngine(node)
 	if err != nil {
 		return err
 	}
 
-	if node.Comment != "" {
-		r.w.WriteLinef("-- CLICKHOUSE TABLE: %s (%s) --", node.Name, node.Comment)
-	} else {
-		r.w.WriteLinef("-- CLICKHOUSE TABLE: %s --", node.Name)
-	}
+	r.forceNotNullSet = sortKeyColumnSet(spec)
+	defer func() { r.forceNotNullSet = nil }()
 
 	r.w.WriteLinef("CREATE TABLE %s (", node.Name)
 	lines, err := r.renderTableBody(node)
@@ -331,9 +457,31 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 		}
 	}
 	r.writeEngineClause(spec)
+	if node.Comment != "" {
+		r.w.Writef(" COMMENT %s", escapeStringLiteral(node.Comment))
+	}
 	r.w.WriteLine(";")
 	r.w.WriteLine("")
 	return nil
+}
+
+// sortKeyColumnSet returns the set of plain column names that appear in the
+// MergeTree sorting key (ORDER BY) and/or PRIMARY KEY. Expression entries
+// (e.g. `toYYYYMM(created_at)`, `intDiv(ts, 86400)`) are skipped because the
+// referenced column may not itself be in the key; ClickHouse only requires
+// columns that appear bare to be NOT NULL.
+func sortKeyColumnSet(spec tableEngineSpec) map[string]struct{} {
+	set := make(map[string]struct{})
+	for _, src := range []string{spec.orderBy, spec.primaryKey} {
+		for _, c := range splitColumns(src) {
+			c = strings.TrimSpace(c)
+			if c == "" || strings.ContainsAny(c, "()") {
+				continue
+			}
+			set[c] = struct{}{}
+		}
+	}
+	return set
 }
 
 // resolveAndValidateTableEngine extracts the engine spec from the node and
@@ -359,7 +507,7 @@ func (r *Renderer) resolveAndValidateTableEngine(node *ast.CreateTableNode) (tab
 		return spec, fmt.Errorf("clickhouse: table %q PRIMARY KEY must be a prefix of ORDER BY", node.Name)
 	}
 	for i, pkCol := range pkCols {
-		if pkCol != obCols[i] {
+		if !strings.EqualFold(strings.TrimSpace(pkCol), strings.TrimSpace(obCols[i])) {
 			return spec, fmt.Errorf("clickhouse: table %q PRIMARY KEY must be a prefix of ORDER BY (got PK=%v, ORDER BY=%v)", node.Name, pkCols, obCols)
 		}
 	}
@@ -434,11 +582,14 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 		case *ast.DropColumnOperation:
 			r.w.WriteLinef("ALTER TABLE %s DROP COLUMN %s;", node.Name, op.ColumnName)
 		case *ast.ModifyColumnOperation:
-			chType, err := renderColumnType(op.Column)
+			mapping, err := renderColumnType(op.Column, columnTypeOptions{})
 			if err != nil {
 				return fmt.Errorf("clickhouse: modify column on %q: %w", node.Name, err)
 			}
-			r.w.WriteLinef("ALTER TABLE %s MODIFY COLUMN %s %s;", node.Name, op.Column.Name, chType)
+			if mapping.notice != "" {
+				r.w.WriteLinef("-- CLICKHOUSE: column %q %s", op.Column.Name, mapping.notice)
+			}
+			r.w.WriteLinef("ALTER TABLE %s MODIFY COLUMN %s %s;", node.Name, op.Column.Name, mapping.mapped)
 		case *ast.AddConstraintOperation:
 			if op.Constraint.Type != ast.CheckConstraint {
 				r.notSupported(fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT (non-CHECK)", node.Name), op.Constraint.Name)
@@ -481,6 +632,12 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 		r.w.WriteLinef("-- CLICKHOUSE: secondary index %q skipped (no columns)", node.Name)
 		return nil
 	}
+	if node.Unique {
+		r.w.WriteLinef("-- CLICKHOUSE: UNIQUE index %q downgraded to a minmax skipping index; uniqueness is not enforced by ClickHouse", node.Name)
+	}
+	// TODO(#169-followup): the planner falls back to StructName when no
+	// matching table is found in the diff. The behaviour is consistent with
+	// other dialects but should be re-evaluated.
 	idxType := node.Type
 	if idxType == "" {
 		idxType = "minmax"
