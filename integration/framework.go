@@ -182,24 +182,14 @@ func (tr *TestRunner) runSingleTest(ctx context.Context, scenario TestScenario, 
 	}
 	defer conn.Close()
 
-	// Clean database before test
-	if err := tr.cleanDatabase(ctx, conn); err != nil {
-		result.Success = false
-		result.Error = fmt.Sprintf("Failed to clean database: %v", err)
-		result.Duration = time.Since(start)
-		return result
-	}
-
-	// Create step recorder
-	recorder := &StepRecorder{}
-
-	// Gate ClickHouse runs to scenarios that have explicitly opted in.
-	// Most existing scenarios exercise features ClickHouse cannot support
-	// (functions, RLS, policies, roles, global enums, foreign keys, UNIQUE
-	// constraints, ALTER COLUMN TYPE round-trips), so running them against
-	// a live ClickHouse server produces confusing failures rather than
-	// signal. Record a single Skip step so the report still has a row.
+	// Gate ClickHouse runs BEFORE touching the database. Most existing
+	// scenarios exercise features ClickHouse cannot support (functions, RLS,
+	// policies, roles, global enums, foreign keys, UNIQUE constraints,
+	// ALTER COLUMN TYPE round-trips), so running them against a live
+	// ClickHouse server produces confusing failures rather than signal.
+	// Skipping before cleanDatabase avoids issuing a DropAllTables per skip.
 	if conn.Info().Dialect == "clickhouse" && !scenario.ClickHouseCompatible {
+		recorder := &StepRecorder{}
 		_ = recorder.RecordStep(
 			"Skip Non-ClickHouse-Compatible Scenario",
 			"Scenario has not opted in via ClickHouseCompatible; skipping on ClickHouse",
@@ -210,6 +200,17 @@ func (tr *TestRunner) runSingleTest(ctx context.Context, scenario TestScenario, 
 		result.Duration = time.Since(start)
 		return result
 	}
+
+	// Clean database before test
+	if err := tr.cleanDatabase(ctx, conn); err != nil {
+		result.Success = false
+		result.Error = fmt.Sprintf("Failed to clean database: %v", err)
+		result.Duration = time.Since(start)
+		return result
+	}
+
+	// Create step recorder
+	recorder := &StepRecorder{}
 
 	// Run the test scenario - use enhanced function if available, otherwise use regular function
 	if scenario.EnhancedTestFunc != nil {
