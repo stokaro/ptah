@@ -1,6 +1,7 @@
 package generator_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -491,7 +492,7 @@ func setupTestExtensions(c *qt.C, conn *dbschema.DatabaseConnection, extensions 
 		// Only create extensions that are commonly available
 		if ext.Name == "plpgsql" {
 			// plpgsql is usually already installed, just ensure it exists
-			err := conn.Writer().ExecuteSQL("CREATE EXTENSION IF NOT EXISTS plpgsql")
+			err := conn.Writer().ExecuteSQL(context.Background(), "CREATE EXTENSION IF NOT EXISTS plpgsql")
 			c.Assert(err, qt.IsNil, qt.Commentf("Failed to ensure plpgsql extension exists"))
 		}
 		// Skip other extensions as they may not be available in test environment
@@ -502,7 +503,7 @@ func setupTestExtensions(c *qt.C, conn *dbschema.DatabaseConnection, extensions 
 // This helper function ensures a clean state before and after each test.
 func cleanupTestExtensions(c *qt.C, conn *dbschema.DatabaseConnection) {
 	// Clean up any test tables first
-	_ = conn.Writer().ExecuteSQL("DROP TABLE IF EXISTS test_table_compare_options")
+	_ = conn.Writer().ExecuteSQL(context.Background(), "DROP TABLE IF EXISTS test_table_compare_options")
 
 	// Note: We don't drop plpgsql as it's a core extension and may be needed by other tests
 }

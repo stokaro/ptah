@@ -47,7 +47,7 @@ func MigrationFuncFromSQLFilename(filename string, fsys fs.FS) MigrationFunc {
 
 		// Execute each statement separately
 		for _, stmt := range statements {
-			if err := conn.Writer().ExecuteSQL(stmt); err != nil {
+			if err := conn.Writer().ExecuteSQL(ctx, stmt); err != nil {
 				return fmt.Errorf("failed to execute migration SQL: %w", err)
 			}
 		}
@@ -73,11 +73,11 @@ type Migration struct {
 // This is useful for programmatically creating migrations
 func CreateMigrationFromSQL(version int, description, upSQL, downSQL string) *Migration {
 	upFunc := func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-		return executeSQLStatements(conn, upSQL)
+		return executeSQLStatements(ctx, conn, upSQL)
 	}
 
 	downFunc := func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-		return executeSQLStatements(conn, downSQL)
+		return executeSQLStatements(ctx, conn, downSQL)
 	}
 
 	return &Migration{
@@ -89,7 +89,7 @@ func CreateMigrationFromSQL(version int, description, upSQL, downSQL string) *Mi
 }
 
 // executeSQLStatements splits SQL into individual statements and executes them
-func executeSQLStatements(conn *dbschema.DatabaseConnection, sql string) error {
+func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection, sql string) error {
 	// Split SQL by semicolons and execute each statement
 	statements := SplitSQLStatements(sql)
 
@@ -99,13 +99,14 @@ func executeSQLStatements(conn *dbschema.DatabaseConnection, sql string) error {
 			continue // Skip empty statements and comments
 		}
 
-		// Use conn.Exec() instead of conn.Writer().ExecuteSQL() to execute each statement
-		// in its own transaction. This is critical for PostgreSQL enum safety - PostgreSQL
-		// prevents using newly added enum values within the same transaction where they
-		// were added. By using separate transactions, enum modifications and subsequent
-		// usage (like setting defaults) work correctly.
+		// Use conn.ExecContext() instead of conn.Writer().ExecuteSQL() to execute
+		// each statement in its own transaction. This is critical for PostgreSQL
+		// enum safety — PostgreSQL prevents using newly added enum values within
+		// the same transaction where they were added. By using separate
+		// transactions, enum modifications and subsequent usage (like setting
+		// defaults) work correctly.
 		// See: https://www.postgresql.org/docs/current/sql-altertype.html
-		_, err := conn.Exec(stmt)
+		_, err := conn.ExecContext(ctx, stmt)
 		if err != nil {
 			return fmt.Errorf("failed to execute SQL statement: %w\nSQL: %s", err, stmt)
 		}

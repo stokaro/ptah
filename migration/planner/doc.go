@@ -49,7 +49,7 @@
 //
 //	// Execute statements
 //	for _, stmt := range statements {
-//		if err := conn.Writer().ExecuteSQL(stmt); err != nil {
+//		if err := conn.Writer().ExecuteSQL(ctx, stmt); err != nil {
 //			log.Fatal(err)
 //		}
 //	}

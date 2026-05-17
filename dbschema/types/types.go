@@ -1,5 +1,7 @@
 package types
 
+import "context"
+
 // DBSchema represents the complete schema read from a database
 type DBSchema struct {
 	Tables      []DBTable      `json:"tables"`
@@ -95,10 +97,18 @@ type SchemaReader interface {
 	ReadSchema() (*DBSchema, error)
 }
 
-// SchemaWriter interface for writing schemas to databases
+// SchemaWriter interface for writing schemas to databases.
+//
+// ExecuteSQL accepts a context and an optional slice of arguments that are
+// bound as native driver parameters, mirroring database/sql's ExecContext.
+// Use placeholders (`?` or the dialect-native form such as `$1`/`$2` for
+// PostgreSQL) instead of interpolating values into the SQL string; this
+// prevents the SQL injection class of bugs that the no-args signature used
+// to invite (see issue #130). Identifiers (table/column names) cannot be
+// parameterized — route them through a validated escape helper instead.
 type SchemaWriter interface {
 	DropAllTables() error
-	ExecuteSQL(sql string) error
+	ExecuteSQL(ctx context.Context, sql string, args ...any) error
 	BeginTransaction() error
 	CommitTransaction() error
 	RollbackTransaction() error

@@ -79,7 +79,7 @@
 //	}
 //
 //	// Execute schema changes
-//	if err := writer.ExecuteSQL("CREATE TABLE users (id SERIAL PRIMARY KEY)"); err != nil {
+//	if err := writer.ExecuteSQL(ctx, "CREATE TABLE users (id SERIAL PRIMARY KEY)"); err != nil {
 //		writer.RollbackTransaction()
 //		log.Fatal(err)
 //	}

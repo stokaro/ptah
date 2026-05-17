@@ -33,7 +33,7 @@ func ExampleMigrator() {
 		Version:     1,
 		Description: "Create users table",
 		Up: func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-			return conn.Writer().ExecuteSQL(`
+			return conn.Writer().ExecuteSQL(ctx, `
 				CREATE TABLE users (
 					id SERIAL PRIMARY KEY,
 					email VARCHAR(255) NOT NULL UNIQUE,
@@ -42,7 +42,7 @@ func ExampleMigrator() {
 			`)
 		},
 		Down: func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-			return conn.Writer().ExecuteSQL("DROP TABLE users")
+			return conn.Writer().ExecuteSQL(ctx, "DROP TABLE users")
 		},
 	}
 
@@ -202,7 +202,7 @@ func ExampleNewRegisteredMigrationProvider() {
 		Version:     20240101120000,
 		Description: "Create users table",
 		Up: func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-			return conn.Writer().ExecuteSQL(`
+			return conn.Writer().ExecuteSQL(ctx, `
 				CREATE TABLE users (
 					id SERIAL PRIMARY KEY,
 					email VARCHAR(255) NOT NULL UNIQUE,
@@ -212,7 +212,7 @@ func ExampleNewRegisteredMigrationProvider() {
 			`)
 		},
 		Down: func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-			return conn.Writer().ExecuteSQL("DROP TABLE users")
+			return conn.Writer().ExecuteSQL(ctx, "DROP TABLE users")
 		},
 	}
 	provider.Register(migration1)

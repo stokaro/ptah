@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/migration/migrator"
@@ -1318,8 +1319,8 @@ func testDynamicDataMigration(ctx context.Context, conn *dbschema.DatabaseConnec
 		dialect := conn.Info().Dialect
 
 		// Try to drop columns if they exist (ignore errors if they don't exist)
-		_ = conn.Writer().ExecuteSQL("ALTER TABLE users DROP COLUMN first_name")
-		_ = conn.Writer().ExecuteSQL("ALTER TABLE users DROP COLUMN last_name")
+		_ = conn.Writer().ExecuteSQL(ctx, "ALTER TABLE users DROP COLUMN first_name")
+		_ = conn.Writer().ExecuteSQL(ctx, "ALTER TABLE users DROP COLUMN last_name")
 
 		// Use database-specific SQL for better compatibility
 		var migrationSQL string
@@ -1422,9 +1423,9 @@ func testDynamicLargeTableMigration(ctx context.Context, conn *dbschema.Database
 		}
 		defer conn.Writer().RollbackTransaction()
 
+		insertSQL := sqlutil.Rebind(conn.Info().Dialect, "INSERT INTO large_table (data) VALUES (?)")
 		for i := 0; i < 1000; i++ {
-			sql := fmt.Sprintf("INSERT INTO large_table (data) VALUES ('test_data_%d')", i)
-			if err := conn.Writer().ExecuteSQL(sql); err != nil {
+			if err := conn.Writer().ExecuteSQL(ctx, insertSQL, fmt.Sprintf("test_data_%d", i)); err != nil {
 				return fmt.Errorf("failed to insert row %d: %w", i, err)
 			}
 		}
@@ -2105,7 +2106,7 @@ func testDynamicForeignKeyCascade(ctx context.Context, conn *dbschema.DatabaseCo
 		}
 
 		// Delete parent record
-		if err := conn.Writer().ExecuteSQL("DELETE FROM parent_table WHERE id = 1"); err != nil {
+		if err := conn.Writer().ExecuteSQL(ctx, "DELETE FROM parent_table WHERE id = 1"); err != nil {
 			_ = conn.Writer().RollbackTransaction()
 			return fmt.Errorf("failed to delete parent record: %w", err)
 		}
@@ -3086,7 +3087,7 @@ func testDynamicRLSFunctionsDataIntegrity(ctx context.Context, conn *dbschema.Da
 		}()
 
 		for _, sql := range testData {
-			if err := conn.Writer().ExecuteSQL(sql); err != nil {
+			if err := conn.Writer().ExecuteSQL(ctx, sql); err != nil {
 				return fmt.Errorf("failed to insert test data: %w", err)
 			}
 		}
@@ -3207,7 +3208,7 @@ func testDynamicRLSFunctionsErrorHandling(ctx context.Context, conn *dbschema.Da
 		}
 
 		// Try to drop the function - this should fail
-		err := conn.Writer().ExecuteSQL("DROP FUNCTION get_current_tenant_id()")
+		err := conn.Writer().ExecuteSQL(ctx, "DROP FUNCTION get_current_tenant_id()")
 
 		// Always rollback the transaction (whether it succeeded or failed)
 		rollbackErr := conn.Writer().RollbackTransaction()
@@ -3251,7 +3252,7 @@ func testDynamicRLSFunctionsErrorHandling(ctx context.Context, conn *dbschema.Da
 			return fmt.Errorf("failed to begin transaction: %w", err)
 		}
 
-		err := conn.Writer().ExecuteSQL("DROP POLICY IF EXISTS user_tenant_isolation ON users")
+		err := conn.Writer().ExecuteSQL(ctx, "DROP POLICY IF EXISTS user_tenant_isolation ON users")
 
 		// Commit the transaction
 		commitErr := conn.Writer().CommitTransaction()
