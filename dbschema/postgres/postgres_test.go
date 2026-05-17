@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -147,7 +148,7 @@ func TestPostgreSQLWriter_TransactionMethods_NoConnection(t *testing.T) {
 	writer := NewPostgreSQLWriter(nil, "public")
 
 	t.Run("ExecuteSQL with no transaction", func(t *testing.T) {
-		err := writer.ExecuteSQL("SELECT 1")
+		err := writer.ExecuteSQL(context.Background(), "SELECT 1")
 		c.Assert(err, qt.IsNotNil)
 		c.Assert(err.Error(), qt.Equals, "no active transaction")
 	})
@@ -169,4 +170,26 @@ func TestPostgreSQLWriter_SchemaWriterInterface(t *testing.T) {
 	writer := NewPostgreSQLWriter(nil, "public")
 	var _ types.SchemaWriter = writer
 	c.Assert(writer, qt.IsNotNil)
+}
+
+func TestQuoteIdent(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "simple identifier", in: "users", want: `"users"`},
+		{name: "empty", in: "", want: `""`},
+		{name: "mixed case preserved", in: "MyTable", want: `"MyTable"`},
+		{name: "embedded double quote doubled", in: `weird"name`, want: `"weird""name"`},
+		{name: "multiple embedded double quotes", in: `a"b"c`, want: `"a""b""c"`},
+		{name: "name with space and semicolon", in: `t; DROP TABLE x; --`, want: `"t; DROP TABLE x; --"`},
+		{name: "injection attempt via quote", in: `t" CASCADE; DROP TABLE y; --`, want: `"t"" CASCADE; DROP TABLE y; --"`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(quoteIdent(tc.in), qt.Equals, tc.want)
+		})
+	}
 }

@@ -47,7 +47,7 @@ func MigrationFuncFromSQLFilename(filename string, fsys fs.FS) MigrationFunc {
 
 		// Execute each statement separately
 		for _, stmt := range statements {
-			if err := conn.Writer().ExecuteSQL(stmt); err != nil {
+			if err := conn.Writer().ExecuteSQL(ctx, stmt); err != nil {
 				return fmt.Errorf("failed to execute migration SQL: %w", err)
 			}
 		}

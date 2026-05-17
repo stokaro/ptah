@@ -3,6 +3,7 @@
 package gonative_test
 
 import (
+	"context"
 	"database/sql"
 	"os"
 	"testing"
@@ -138,7 +139,7 @@ func TestMySQLWriter_Integration(t *testing.T) {
 		err := writer.BeginTransaction()
 		c.Assert(err, qt.IsNil)
 
-		err = writer.ExecuteSQL("SELECT 1")
+		err = writer.ExecuteSQL(context.Background(), "SELECT 1")
 		c.Assert(err, qt.IsNil)
 
 		err = writer.CommitTransaction()

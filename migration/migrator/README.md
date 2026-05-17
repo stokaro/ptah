@@ -183,11 +183,11 @@ m := migrator.NewMigrator(conn, provider)
 
 // Register a Go-based migration
 upFunc := func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-    return conn.Writer().ExecuteSQL("CREATE TABLE test (id SERIAL PRIMARY KEY)")
+    return conn.Writer().ExecuteSQL(ctx, "CREATE TABLE test (id SERIAL PRIMARY KEY)")
 }
 
 downFunc := func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-    return conn.Writer().ExecuteSQL("DROP TABLE test")
+    return conn.Writer().ExecuteSQL(ctx, "DROP TABLE test")
 }
 
 migration := &migrator.Migration{

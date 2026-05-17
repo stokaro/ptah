@@ -1,11 +1,20 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log/slog"
 	"strings"
 )
+
+// quoteIdent returns a safely-backtick-quoted MySQL/MariaDB identifier.
+// Embedded backticks are doubled so that values coming from
+// information_schema (or any other untrusted-shaped string) cannot terminate
+// the quoted identifier and inject DDL.
+func quoteIdent(name string) string {
+	return "`" + strings.ReplaceAll(name, "`", "``") + "`"
+}
 
 // Writer writes schemas to MySQL/MariaDB databases
 type Writer struct {
@@ -23,10 +32,14 @@ func NewMySQLWriter(db *sql.DB, schema string) *Writer {
 	}
 }
 
-// ExecuteSQL executes a SQL statement
-func (w *Writer) ExecuteSQL(sqlExpr string) error {
+// ExecuteSQL executes a SQL statement against the active transaction. Values
+// must be passed via args and referenced through `?` placeholders; the SQL
+// string itself should never be assembled with fmt.Sprintf for value
+// interpolation. Identifiers (table/column names) cannot be parameterized
+// and must be escaped via quoteIdent before being substituted in.
+func (w *Writer) ExecuteSQL(ctx context.Context, sqlExpr string, args ...any) error {
 	if w.dryRun {
-		slog.Info("[DRY RUN] Would execute SQL", "sql", sqlExpr)
+		slog.Info("[DRY RUN] Would execute SQL", "sql", sqlExpr, "args", args)
 		return nil
 	}
 
@@ -34,7 +47,7 @@ func (w *Writer) ExecuteSQL(sqlExpr string) error {
 		return fmt.Errorf("no active transaction")
 	}
 
-	_, err := w.tx.Exec(sqlExpr)
+	_, err := w.tx.ExecContext(ctx, sqlExpr, args...)
 	if err != nil {
 		return fmt.Errorf("SQL execution failed: %w\nSQL: %s", err, sqlExpr)
 	}
@@ -108,8 +121,10 @@ func (w *Writer) DropAllTables() error {
 		}
 	}()
 
+	ctx := context.Background()
+
 	// Disable foreign key checks to avoid dependency issues
-	if err := w.ExecuteSQL("SET FOREIGN_KEY_CHECKS = 0"); err != nil {
+	if err := w.ExecuteSQL(ctx, "SET FOREIGN_KEY_CHECKS = 0"); err != nil {
 		return fmt.Errorf("failed to disable foreign key checks: %w", err)
 	}
 
@@ -141,17 +156,19 @@ func (w *Writer) DropAllTables() error {
 		}
 	}
 
-	// Drop all tables
+	// Drop all tables. Identifiers cannot be bound as parameters; quoteIdent
+	// doubles any embedded backtick so that a name harvested from
+	// information_schema cannot break out of the quoted identifier.
 	for _, tableName := range tables {
-		dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS `%s`", tableName)
+		dropSQL := "DROP TABLE IF EXISTS " + quoteIdent(tableName)
 		slog.Info("Dropping table", "tableName", tableName)
-		if err := w.ExecuteSQL(dropSQL); err != nil {
+		if err := w.ExecuteSQL(ctx, dropSQL); err != nil {
 			return fmt.Errorf("failed to drop table %s: %w", tableName, err)
 		}
 	}
 
 	// Re-enable foreign key checks
-	if err := w.ExecuteSQL("SET FOREIGN_KEY_CHECKS = 1"); err != nil {
+	if err := w.ExecuteSQL(ctx, "SET FOREIGN_KEY_CHECKS = 1"); err != nil {
 		return fmt.Errorf("failed to re-enable foreign key checks: %w", err)
 	}
 

@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log/slog"
@@ -8,6 +9,14 @@ import (
 
 	"github.com/stokaro/ptah/core/goschema"
 )
+
+// quoteIdent returns a safely-quoted PostgreSQL identifier. Embedded double
+// quotes are doubled per the SQL standard so that values coming from
+// information_schema (or any other untrusted-shaped string) cannot terminate
+// the quoted identifier and inject DDL.
+func quoteIdent(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+}
 
 // PostgreSQLWriter writes schemas to PostgreSQL databases
 type PostgreSQLWriter struct {
@@ -62,17 +71,21 @@ func (w *PostgreSQLWriter) writeEnums(enums []goschema.Enum) error { //nolint:un
 			enum.Name, strings.Join(values, ", "))
 
 		slog.Info("Creating enum...", "enumName", enum.Name)
-		if err := w.ExecuteSQL(createEnumSQL); err != nil {
+		if err := w.ExecuteSQL(context.Background(), createEnumSQL); err != nil {
 			return fmt.Errorf("failed to create enum %s: %w", enum.Name, err)
 		}
 	}
 	return nil
 }
 
-// ExecuteSQL executes a SQL statement
-func (w *PostgreSQLWriter) ExecuteSQL(sqlExpr string) error {
+// ExecuteSQL executes a SQL statement against the active transaction. Values
+// must be passed via args and referenced through `$N` placeholders; the SQL
+// string itself should never be assembled with fmt.Sprintf for value
+// interpolation. Identifiers (table/column names) cannot be parameterized
+// and must be escaped via quoteIdent before being substituted in.
+func (w *PostgreSQLWriter) ExecuteSQL(ctx context.Context, sqlExpr string, args ...any) error {
 	if w.dryRun {
-		slog.Info("[DRY RUN] Would execute SQL", "sql", sqlExpr)
+		slog.Info("[DRY RUN] Would execute SQL", "sql", sqlExpr, "args", args)
 		return nil
 	}
 
@@ -80,7 +93,7 @@ func (w *PostgreSQLWriter) ExecuteSQL(sqlExpr string) error {
 		return fmt.Errorf("no active transaction")
 	}
 
-	_, err := w.tx.Exec(sqlExpr)
+	_, err := w.tx.ExecContext(ctx, sqlExpr, args...)
 	if err != nil {
 		return fmt.Errorf("SQL execution failed: %w\nSQL: %s", err, sqlExpr)
 	}
@@ -235,29 +248,34 @@ func (w *PostgreSQLWriter) DropAllTables() error {
 		return err
 	}
 
-	// Drop all tables with CASCADE to handle dependencies
+	ctx := context.Background()
+
+	// Drop all tables with CASCADE to handle dependencies. Identifiers cannot
+	// be bound as parameters; quoteIdent doubles any embedded `"` so a hostile
+	// name coming back from information_schema cannot break out of the quoted
+	// identifier.
 	for _, tableName := range tables {
-		dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS \"%s\" CASCADE", tableName)
+		dropSQL := "DROP TABLE IF EXISTS " + quoteIdent(tableName) + " CASCADE"
 		slog.Info("Dropping table...", "tableName", tableName)
-		if err := w.ExecuteSQL(dropSQL); err != nil {
+		if err := w.ExecuteSQL(ctx, dropSQL); err != nil {
 			return fmt.Errorf("failed to drop table %s: %w", tableName, err)
 		}
 	}
 
 	// Drop all enums
 	for _, enumName := range enums {
-		dropSQL := fmt.Sprintf("DROP TYPE IF EXISTS \"%s\" CASCADE", enumName)
+		dropSQL := "DROP TYPE IF EXISTS " + quoteIdent(enumName) + " CASCADE"
 		slog.Info("Dropping enum...", "enumName", enumName)
-		if err := w.ExecuteSQL(dropSQL); err != nil {
+		if err := w.ExecuteSQL(ctx, dropSQL); err != nil {
 			return fmt.Errorf("failed to drop enum %s: %w", enumName, err)
 		}
 	}
 
 	// Drop all sequences
 	for _, sequenceName := range sequences {
-		dropSQL := fmt.Sprintf("DROP SEQUENCE IF EXISTS \"%s\" CASCADE", sequenceName)
+		dropSQL := "DROP SEQUENCE IF EXISTS " + quoteIdent(sequenceName) + " CASCADE"
 		slog.Info("Dropping sequence...", "sequenceName", sequenceName)
-		if err := w.ExecuteSQL(dropSQL); err != nil {
+		if err := w.ExecuteSQL(ctx, dropSQL); err != nil {
 			return fmt.Errorf("failed to drop sequence %s: %w", sequenceName, err)
 		}
 	}

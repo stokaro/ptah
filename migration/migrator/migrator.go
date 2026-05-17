@@ -6,7 +6,9 @@ import (
 	"io/fs"
 	"log/slog"
 	"sort"
+	"time"
 
+	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
 )
 
@@ -224,10 +226,11 @@ func (m *Migrator) MigrateUp(ctx context.Context) error {
 			return fmt.Errorf("failed to apply migration %d: %w", migration.Version, err)
 		}
 
-		// Record migration
-		timestamp := FormatTimestampForDatabase(m.conn.Info().Dialect)
-		recordSQL := fmt.Sprintf(recordMigrationSQL, migration.Version, migration.Description, timestamp)
-		if err := m.conn.Writer().ExecuteSQL(recordSQL); err != nil {
+		// Record migration. Values are bound as native driver parameters via
+		// the dialect-appropriate placeholders so we never interpolate
+		// user-controlled strings into the SQL text.
+		recordSQL := sqlutil.Rebind(m.conn.Info().Dialect, recordMigrationSQL)
+		if err := m.conn.Writer().ExecuteSQL(ctx, recordSQL, migration.Version, migration.Description, time.Now()); err != nil {
 			_ = m.conn.Writer().RollbackTransaction()
 			return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)
 		}
@@ -306,9 +309,10 @@ func (m *Migrator) MigrateDownTo(ctx context.Context, targetVersion int) error {
 			return fmt.Errorf("failed to revert migration %d: %w", migration.Version, err)
 		}
 
-		// Remove migration record
-		deleteSQL := fmt.Sprintf(deleteMigrationSQL, migration.Version)
-		if err := m.conn.Writer().ExecuteSQL(deleteSQL); err != nil {
+		// Remove migration record. Version is bound as a parameter via the
+		// dialect-appropriate placeholder.
+		deleteSQL := sqlutil.Rebind(m.conn.Info().Dialect, deleteMigrationSQL)
+		if err := m.conn.Writer().ExecuteSQL(ctx, deleteSQL, migration.Version); err != nil {
 			_ = m.conn.Writer().RollbackTransaction()
 			return fmt.Errorf("failed to record migration reversion %d: %w", migration.Version, err)
 		}
@@ -388,10 +392,10 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int) error {
 			return fmt.Errorf("failed to apply migration %d: %w", migration.Version, err)
 		}
 
-		// Record migration
-		timestamp := FormatTimestampForDatabase(m.conn.Info().Dialect)
-		recordSQL := fmt.Sprintf(recordMigrationSQL, migration.Version, migration.Description, timestamp)
-		if err := m.conn.Writer().ExecuteSQL(recordSQL); err != nil {
+		// Record migration. See MigrateUp for the rationale on parameter
+		// binding.
+		recordSQL := sqlutil.Rebind(m.conn.Info().Dialect, recordMigrationSQL)
+		if err := m.conn.Writer().ExecuteSQL(ctx, recordSQL, migration.Version, migration.Description, time.Now()); err != nil {
 			_ = m.conn.Writer().RollbackTransaction()
 			return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)
 		}
