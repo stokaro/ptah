@@ -953,12 +953,13 @@ func excludeConstraintChanged(genConstraint goschema.Constraint, dbConstraint ty
 // checkConstraintChanged compares CHECK constraint definitions.
 //
 // In practice, we cannot rely on a literal string compare here: PostgreSQL
-// rewrites the clause when it stores the constraint — adding outer parens,
-// inserting `::type` casts, converting `IN (...)` to `= ANY (ARRAY[...])`,
-// requalifying identifiers — so `pg_get_constraintdef` / `check_clause`
-// never round-trips byte-equal to what the user wrote in `check=`. Doing
-// the naive compare would mark every CHECK as drifted on the very next
-// run, producing a perpetual drop+add loop (see issue #112 discussion).
+// stores the parsed/analyzed node tree (`pg_constraint.conbin`) and
+// `information_schema.check_constraints.check_clause` is `pg_get_expr`
+// decompiling it — which normalizes parens, injects `::type` casts, and
+// rewrites `IN (...)` to `= ANY (ARRAY[...])`. So `check_clause` never
+// round-trips byte-equal to what the user wrote in `check=`. Doing the
+// naive compare would mark every CHECK as drifted on the very next run,
+// producing a perpetual drop+add loop (see issue #112 discussion).
 //
 // For v1 the contract is "spelling-equivalence + a stable generated name
 // is enough as long as users don't author the same CHECK two different
@@ -1112,6 +1113,11 @@ func hasNonNullableFieldInTable(tableName string, generated *goschema.Database) 
 // those CHECKs ship inline as part of CREATE TABLE / ALTER TABLE ADD COLUMN,
 // and emitting an ADD CONSTRAINT alongside would attempt to create the same
 // constraint twice in the same migration.
+//
+// Precedence: an explicit table-level constraint declared via
+// `//migrator:schema:constraint` that happens to share the synthesized
+// name wins — synthesis never clobbers it. See the guard in
+// Constraints() where genConstraints is populated.
 func synthesizeFieldLevelCheckConstraints(generated *goschema.Database, database *types.DBSchema) []goschema.Constraint {
 	if generated == nil || database == nil {
 		return nil
