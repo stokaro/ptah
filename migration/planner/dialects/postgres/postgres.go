@@ -1043,10 +1043,23 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 	//     without ever invoking either — so constraint removals were a
 	//     silent no-op.
 	//
-	// Each DO block is emitted as a separate top-level statement so the
-	// surrounding migration-statement splitter (";\n" join) treats it as a
-	// single unit.
+	// The block resolves `current_schema()` only: constraints in a different
+	// schema reachable via search_path are not handled — Ptah's introspection
+	// is also single-schema, so the two ends are consistent.
+	//
+	// Constraint-name safety: the name is interpolated into a single-quoted
+	// SQL literal, into an EXECUTE format() argument, into a SQL comment, and
+	// into two RAISE NOTICE messages. We escape single quotes for the literal
+	// substitutions and reject names containing `$` or newline characters at
+	// planner time — both would break the surrounding `$ptah$` dollar quoting
+	// or the `--` comment terminator and there is no legitimate annotation
+	// case that needs them.
 	for _, constraintName := range diff.ConstraintsRemoved {
+		if strings.ContainsAny(constraintName, "$\n\r") {
+			warning := fmt.Sprintf("WARNING: constraint name %q contains $ or newline; skipping DROP to avoid SQL injection in the DO block", constraintName)
+			result = append(result, ast.NewComment(warning))
+			continue
+		}
 		escaped := strings.ReplaceAll(constraintName, "'", "''")
 		doBlock := fmt.Sprintf(`-- Drop constraint %s (table resolved at runtime from information_schema)
 DO $ptah$
@@ -1066,7 +1079,7 @@ BEGIN
         RAISE NOTICE 'Constraint %s not found in current schema';
     END IF;
 END
-$ptah$`, constraintName, escaped, escaped, constraintName, constraintName)
+$ptah$`, escaped, escaped, escaped, escaped, escaped)
 
 		result = append(result, ast.NewRawSQL(doBlock))
 	}

@@ -94,22 +94,49 @@ func TestFunctionDefinitions_NoChangeWhenIdentical(t *testing.T) {
 func TestFunctionDefinitions_EmptyAnnotationDefaultsMatchPostgresDefaults(t *testing.T) {
 	c := qt.New(t)
 
-	// The annotation omits security and volatility; PostgreSQL reports the
-	// implicit defaults (INVOKER, VOLATILE). The comparator must normalize
-	// the Go side so no spurious diff is reported.
+	// The annotation omits security, volatility, AND language; PostgreSQL
+	// reports the implicit defaults (INVOKER, VOLATILE, plpgsql for a typical
+	// trigger/RLS helper). The comparator must normalize the Go side so no
+	// spurious diff is reported.
 	gen := goschema.Function{
-		Name:     "f",
-		Returns:  "INTEGER",
-		Language: "sql",
-		Body:     "SELECT 1;",
+		Name:    "f",
+		Returns: "INTEGER",
+		Body:    "BEGIN RETURN 1; END;",
 	}
 	db := dbtypes.DBFunction{
 		Name:       "f",
 		Returns:    "INTEGER",
-		Language:   "sql",
+		Language:   "plpgsql",
 		Security:   "INVOKER",
 		Volatility: "VOLATILE",
-		Body:       "SELECT 1;",
+		Body:       "BEGIN RETURN 1; END;",
+	}
+
+	diff := compare.FunctionDefinitions(gen, db)
+	c.Assert(diff.Changes, qt.HasLen, 0)
+}
+
+func TestFunctionDefinitions_LowercaseAnnotationDoesNotDiff(t *testing.T) {
+	c := qt.New(t)
+
+	// Users sometimes write `security="definer"` / `volatility="stable"`.
+	// PostgreSQL only ever reports the uppercase form, so the comparator
+	// case-folds the Go side before comparing.
+	gen := goschema.Function{
+		Name:       "f",
+		Returns:    "VOID",
+		Language:   "plpgsql",
+		Security:   "definer",
+		Volatility: "stable",
+		Body:       "BEGIN END;",
+	}
+	db := dbtypes.DBFunction{
+		Name:       "f",
+		Returns:    "VOID",
+		Language:   "plpgsql",
+		Security:   "DEFINER",
+		Volatility: "STABLE",
+		Body:       "BEGIN END;",
 	}
 
 	diff := compare.FunctionDefinitions(gen, db)

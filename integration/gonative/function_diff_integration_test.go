@@ -177,9 +177,19 @@ func TestFunctionDiff_VolatilityChange_Integration(t *testing.T) {
 
 	after, err := reader.ReadSchema()
 	c.Assert(err, qt.IsNil)
+	var afterFn *struct{ Volatility string }
 	for _, fn := range after.Functions {
 		if fn.Name == "ptah_test_get_current_group_id" {
-			c.Assert(fn.Volatility, qt.Equals, "STABLE")
+			afterFn = &struct{ Volatility string }{Volatility: fn.Volatility}
+			break
 		}
 	}
+	c.Assert(afterFn, qt.IsNotNil, qt.Commentf("function must still exist after the modify migration"))
+	c.Assert(afterFn.Volatility, qt.Equals, "STABLE")
+
+	// Idempotency: re-diffing the freshly-updated DB against the same target
+	// must report no changes.
+	idempDiff := schemadiff.Compare(target, after)
+	c.Assert(idempDiff.HasChanges(), qt.IsFalse,
+		qt.Commentf("post-migration diff must be clean"))
 }

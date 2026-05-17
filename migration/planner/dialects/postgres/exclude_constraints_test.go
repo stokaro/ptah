@@ -211,3 +211,48 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved(t *testing.T) {
 	c.Assert(sql, qt.Contains, "ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I")
 	c.Assert(sql, qt.Contains, "$ptah$")
 }
+
+func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_EscapesSingleQuoteInName(t *testing.T) {
+	c := qt.New(t)
+
+	// PostgreSQL allows quoted identifiers with embedded apostrophes; the
+	// DO block interpolates the constraint name into five distinct contexts
+	// (one SQL literal, one EXECUTE format() argument, two RAISE NOTICE
+	// strings, one SQL comment) and every literal substitution must escape.
+	diff := &types.SchemaDiff{
+		ConstraintsRemoved: []string{"don't_drop"},
+	}
+
+	nodes := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
+	c.Assert(len(nodes), qt.Equals, 1)
+
+	sql, err := renderer.RenderSQL("postgres", nodes[0])
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "'don''t_drop'", qt.Commentf("single quote in constraint name must be SQL-escaped"))
+	// The bare unescaped form must NOT appear in any SQL string literal.
+	c.Assert(strings.Contains(sql, "'don't_drop'"), qt.IsFalse,
+		qt.Commentf("unescaped name in a literal would break parsing; got: %s", sql))
+}
+
+func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_RejectsUnsafeName(t *testing.T) {
+	c := qt.New(t)
+
+	// Names containing $ or newlines would either break the surrounding
+	// `$ptah$` dollar-quote tag or terminate the leading SQL comment line.
+	// The planner emits a warning comment instead of a malformed DO block.
+	cases := []string{"foo$ptah$bar", "two\nlines", "carriage\rreturn"}
+	for _, name := range cases {
+		c.Run(name, func(c *qt.C) {
+			diff := &types.SchemaDiff{ConstraintsRemoved: []string{name}}
+			nodes := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
+			c.Assert(len(nodes), qt.Equals, 1)
+
+			sql, err := renderer.RenderSQL("postgres", nodes[0])
+			c.Assert(err, qt.IsNil)
+			c.Assert(strings.Contains(sql, "DO $ptah$"), qt.IsFalse,
+				qt.Commentf("unsafe name must NOT produce a DO block"))
+			c.Assert(strings.Contains(sql, "WARNING"), qt.IsTrue,
+				qt.Commentf("planner must emit a warning comment for unsafe names; got: %s", sql))
+		})
+	}
+}

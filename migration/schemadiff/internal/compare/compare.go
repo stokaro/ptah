@@ -2186,13 +2186,28 @@ func FunctionDefinitions(genFunction goschema.Function, dbFunction types.DBFunct
 
 	// Normalize parsed-but-omitted attributes to PostgreSQL defaults so an
 	// unspecified annotation field doesn't appear as a change against the DB.
-	genSecurity := genFunction.Security
+	// `security` and `volatility` are also case-folded: the parser stores the
+	// annotation text verbatim, but pg_proc always reports the canonical
+	// uppercase form (DEFINER/INVOKER, VOLATILE/STABLE/IMMUTABLE) — comparing
+	// `definer` against `DEFINER` would otherwise flag every run as drift.
+	//
+	// For `language` an empty annotation is treated as `plpgsql`. The renderer
+	// at core/renderer/dialects/postgres/postgres.go omits the LANGUAGE clause
+	// entirely when this is empty, which Postgres rejects with
+	// "ERROR: no language specified" — defaulting to plpgsql matches both the
+	// most common case and what `CREATE FUNCTION` would assume if we hand-
+	// wrote the SQL.
+	genSecurity := strings.ToUpper(genFunction.Security)
 	if genSecurity == "" {
 		genSecurity = "INVOKER"
 	}
-	genVolatility := genFunction.Volatility
+	genVolatility := strings.ToUpper(genFunction.Volatility)
 	if genVolatility == "" {
 		genVolatility = "VOLATILE"
+	}
+	genLanguage := genFunction.Language
+	if genLanguage == "" {
+		genLanguage = "plpgsql"
 	}
 
 	// Compare parameters
@@ -2205,9 +2220,9 @@ func FunctionDefinitions(genFunction goschema.Function, dbFunction types.DBFunct
 		functionDiff.Changes["returns"] = fmt.Sprintf("%s -> %s", dbFunction.Returns, genFunction.Returns)
 	}
 
-	// Compare language
-	if genFunction.Language != dbFunction.Language {
-		functionDiff.Changes["language"] = fmt.Sprintf("%s -> %s", dbFunction.Language, genFunction.Language)
+	// Compare language (empty Go-side means plpgsql).
+	if genLanguage != dbFunction.Language {
+		functionDiff.Changes["language"] = fmt.Sprintf("%s -> %s", dbFunction.Language, genLanguage)
 	}
 
 	// Compare security context (DEFINER vs INVOKER); empty Go-side means INVOKER.
