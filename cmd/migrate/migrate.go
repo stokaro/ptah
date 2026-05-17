@@ -85,7 +85,7 @@ func migrateCommand(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("error connecting to database: %w", err)
 	}
-	defer dbcli.WarnOnClose("database connection", conn)
+	defer dbschema.CloseAndWarn(conn)
 
 	dbSchema, err := conn.Reader().ReadSchema()
 	if err != nil {

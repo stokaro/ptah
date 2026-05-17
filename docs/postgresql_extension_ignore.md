@@ -39,12 +39,15 @@ func main() {
         panic(err)
     }
 
-    // Connect to database and read current schema
-    conn, err := dbschema.ConnectToDatabase("postgres://user:pass@localhost/db")
+    // Connect to database and read current schema. Supply a context so the
+    // initial Ping cannot block indefinitely on a stuck host.
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+    conn, err := dbschema.ConnectToDatabase(ctx, "postgres://user:pass@localhost/db")
     if err != nil {
         panic(err)
     }
-    defer conn.Close()
+    defer dbschema.CloseAndWarn(conn)
 
     database, err := conn.ReadSchema()
     if err != nil {
@@ -170,7 +173,10 @@ opts := generator.GenerateMigrationOptions{
     // Extension ignore options will be supported in future versions
 }
 
-files, err := generator.GenerateMigration(opts)
+ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+defer cancel()
+
+files, err := generator.GenerateMigration(ctx, opts)
 ```
 
 ## Common Extensions to Ignore

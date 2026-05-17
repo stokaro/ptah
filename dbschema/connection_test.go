@@ -3,6 +3,8 @@ package dbschema_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
 	"testing"
 	"time"
 
@@ -121,25 +123,61 @@ func TestPostgreSQLConnection_NoServer(t *testing.T) {
 	c.Assert(err.Error(), qt.Not(qt.Contains), "invalid database URL")
 }
 
+// stuckPostgresURL spins up a local TCP listener that completes the TCP
+// handshake but never reads from the socket, so the PostgreSQL protocol
+// handshake stalls indefinitely. This is the most portable way to simulate
+// "host accepts but never answers" without depending on routing tables or
+// reserved IP blocks (those behave differently on offline/restricted hosts).
+//
+// The listener and a sentinel "drainer" goroutine are wired to a cancellable
+// context so the test can guarantee the goroutine exits even if the call
+// under test races ahead.
+func stuckPostgresURL(t *testing.T) string {
+	t.Helper()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+
+	stop := make(chan struct{})
+	go func() {
+		// Accept and hold connections until the test ends. Holding the conn
+		// stops the kernel from sending an RST, so the Postgres handshake
+		// hangs waiting for server bytes instead of failing fast.
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				<-stop
+				_ = c.Close()
+			}(conn)
+		}
+	}()
+
+	t.Cleanup(func() {
+		close(stop)
+		_ = ln.Close()
+	})
+
+	return fmt.Sprintf("postgres://user:pass@%s/db", ln.Addr())
+}
+
 // TestConnectToDatabase_CancelledContext is the acceptance test for issue #139.
-// It points ConnectToDatabase at a routable but quiet TCP endpoint, which would
-// otherwise block on the initial Ping indefinitely. A pre-cancelled context
-// must short-circuit the call so that ConnectToDatabase returns promptly with
-// context.Canceled.
+// A pre-cancelled context must short-circuit the call so that
+// ConnectToDatabase returns promptly with context.Canceled.
 func TestConnectToDatabase_CancelledContext(t *testing.T) {
 	c := qt.New(t)
 
-	// The TEST-NET-1 block (192.0.2.0/24) is reserved for documentation and
-	// never routes anywhere — connections sit until the TCP timeout. Pairing
-	// it with a port the kernel will silently drop makes for a reliable "slow
-	// host" surrogate that doesn't depend on the local environment.
-	const stuckURL = "postgres://user:pass@192.0.2.1:65535/db"
+	dbURL := stuckPostgresURL(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel before the call to guarantee the ping never starts.
 
 	start := time.Now()
-	conn, err := dbschema.ConnectToDatabase(ctx, stuckURL)
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	elapsed := time.Since(start)
 
 	c.Assert(conn, qt.IsNil)
@@ -148,7 +186,7 @@ func TestConnectToDatabase_CancelledContext(t *testing.T) {
 		qt.Commentf("expected context.Canceled in error chain, got: %v", err))
 
 	// "Promptly" is intentionally loose to avoid flakiness on slow CI runners,
-	// but well below the 30-60s TCP timeout that the bug describes.
+	// but well below the multi-second TCP timeout the bug describes.
 	c.Assert(elapsed < 2*time.Second, qt.IsTrue,
 		qt.Commentf("ConnectToDatabase took %s with a cancelled context, want <2s", elapsed))
 }
@@ -159,13 +197,13 @@ func TestConnectToDatabase_CancelledContext(t *testing.T) {
 func TestConnectToDatabase_DeadlineExceeded(t *testing.T) {
 	c := qt.New(t)
 
-	const stuckURL = "postgres://user:pass@192.0.2.1:65535/db"
+	dbURL := stuckPostgresURL(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 
 	start := time.Now()
-	conn, err := dbschema.ConnectToDatabase(ctx, stuckURL)
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	elapsed := time.Since(start)
 
 	c.Assert(conn, qt.IsNil)
@@ -173,6 +211,8 @@ func TestConnectToDatabase_DeadlineExceeded(t *testing.T) {
 	c.Assert(errors.Is(err, context.DeadlineExceeded), qt.IsTrue,
 		qt.Commentf("expected context.DeadlineExceeded in error chain, got: %v", err))
 
+	// Generous upper bound — the deadline is 200ms; allow for handshake +
+	// scheduling slack without flaking on slow CI runners.
 	c.Assert(elapsed < 5*time.Second, qt.IsTrue,
-		qt.Commentf("ConnectToDatabase took %s with a 100ms deadline, want <5s", elapsed))
+		qt.Commentf("ConnectToDatabase took %s with a 200ms deadline, want <5s", elapsed))
 }

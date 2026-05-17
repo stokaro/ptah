@@ -2,7 +2,6 @@ package dbcli_test
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -46,12 +45,23 @@ func TestParseConnectTimeout(t *testing.T) {
 func TestConnectContext_PositiveTimeout(t *testing.T) {
 	c := qt.New(t)
 	parent := context.Background()
-	ctx, cancel := dbcli.ConnectContext(parent, 50*time.Millisecond)
+
+	const timeout = 250 * time.Millisecond
+	before := time.Now()
+	ctx, cancel := dbcli.ConnectContext(parent, timeout)
 	defer cancel()
 
 	deadline, ok := ctx.Deadline()
 	c.Assert(ok, qt.IsTrue, qt.Commentf("expected a deadline when timeout > 0"))
-	c.Assert(time.Until(deadline) <= 50*time.Millisecond, qt.IsTrue)
+
+	remaining := time.Until(deadline)
+	c.Assert(remaining > 0, qt.IsTrue, qt.Commentf("deadline must be in the future, got %s", remaining))
+	// Deadline = before + timeout (within scheduling jitter). Allow a generous
+	// upper bound so CI's noisy clocks don't flake.
+	c.Assert(deadline.Sub(before) <= timeout+50*time.Millisecond, qt.IsTrue,
+		qt.Commentf("deadline %s exceeds expected %s + slack", deadline.Sub(before), timeout))
+	c.Assert(remaining <= timeout, qt.IsTrue,
+		qt.Commentf("remaining %s exceeds requested timeout %s", remaining, timeout))
 }
 
 func TestConnectContext_ZeroTimeout(t *testing.T) {
@@ -66,25 +76,14 @@ func TestConnectContext_ZeroTimeout(t *testing.T) {
 	c.Assert(ctx, qt.Equals, parent)
 }
 
-// nopCloser is a stub that returns a fixed error from Close so the helper's
-// log path is exercised. We can't easily assert on slog output without a custom
-// handler, so we just verify the helper doesn't panic on either branch.
-type nopCloser struct{ err error }
-
-func (n nopCloser) Close() error { return n.err }
-
-func TestWarnOnClose(t *testing.T) {
+func TestConnectContext_NegativeTimeout(t *testing.T) {
 	c := qt.New(t)
+	parent := context.Background()
+	ctx, cancel := dbcli.ConnectContext(parent, -1*time.Second)
+	defer cancel()
 
-	// Nil closer is a no-op.
-	dbcli.WarnOnClose("nothing", nil)
-
-	// Successful close is silent.
-	dbcli.WarnOnClose("ok", nopCloser{})
-
-	// Failing close logs (and must not panic).
-	dbcli.WarnOnClose("fail", nopCloser{err: errors.New("boom")})
-
-	// If we got here without panicking, the helper behaved correctly.
-	c.Assert(true, qt.IsTrue)
+	// Negative timeouts are treated the same as zero — no deadline imposed.
+	_, ok := ctx.Deadline()
+	c.Assert(ok, qt.IsFalse)
+	c.Assert(ctx, qt.Equals, parent)
 }

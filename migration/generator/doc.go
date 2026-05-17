@@ -49,7 +49,10 @@
 //		OutputDir:     "./migrations",
 //	}
 //
-//	files, err := generator.GenerateMigration(opts)
+//	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+//	defer cancel()
+//
+//	files, err := generator.GenerateMigration(ctx, opts)
 //	if err != nil {
 //		log.Fatal(err)
 //	}

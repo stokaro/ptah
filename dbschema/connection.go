@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"regexp"
 	"strings"
@@ -161,6 +162,28 @@ func (dc *DatabaseConnection) Close() error {
 		return dc.db.Close()
 	}
 	return nil
+}
+
+// CloseAndWarn closes the connection and logs a warning at slog.LevelWarn if
+// Close returns an error. It is intended for `defer` use in CLI handlers and
+// library code that does not have a natural error channel for cleanup
+// failures, so that close errors are surfaced rather than silently dropped.
+//
+// Calling CloseAndWarn on a nil *DatabaseConnection is a no-op, allowing the
+// idiom:
+//
+//	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+//	if err != nil {
+//	    return err
+//	}
+//	defer dbschema.CloseAndWarn(conn)
+func CloseAndWarn(conn *DatabaseConnection) {
+	if conn == nil {
+		return
+	}
+	if err := conn.Close(); err != nil {
+		slog.Warn("failed to close database connection", "error", err)
+	}
 }
 
 // FormatDatabaseURL formats a database URL for display (hiding password)

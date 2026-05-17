@@ -1,12 +1,16 @@
 // Package dbcli holds small helpers shared by the CLI subcommands that connect
-// to a database. Centralising the connect-timeout flag, context construction
-// and the close-error log avoids inconsistent behaviour across commands.
+// to a database. Centralising the connect-timeout flag and context
+// construction keeps behaviour consistent across commands.
+//
+// For the close-with-warning idiom used after a successful Connect, prefer
+// [github.com/stokaro/ptah/dbschema.CloseAndWarn] — it lives next to the
+// DatabaseConnection type so non-CLI consumers (for example the migration
+// generator) can also use it.
 package dbcli
 
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/go-extras/cobraflags"
@@ -46,25 +50,13 @@ func ParseConnectTimeout(raw string) (time.Duration, error) {
 }
 
 // ConnectContext derives a context for the initial database connection from
-// the supplied parent. When timeout is zero, the parent is returned along with
-// a no-op cancel so callers can defer cancel unconditionally.
+// the supplied parent. When timeout is zero or negative, the parent is
+// returned unchanged together with a no-op CancelFunc so callers can `defer
+// cancel()` unconditionally; cancelling the returned function in that case
+// does not affect the parent context.
 func ConnectContext(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
 	if timeout <= 0 {
 		return parent, func() {}
 	}
 	return context.WithTimeout(parent, timeout)
-}
-
-// WarnOnClose closes the given resource and logs a warning if Close returns an
-// error. It is intended to be used inside a deferred call so that CLI handlers
-// no longer silently discard errors from database connections.
-//
-//	defer dbcli.WarnOnClose("database connection", conn)
-func WarnOnClose(resource string, closer interface{ Close() error }) {
-	if closer == nil {
-		return
-	}
-	if err := closer.Close(); err != nil {
-		slog.Warn("failed to close "+resource, "error", err)
-	}
 }

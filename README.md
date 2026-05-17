@@ -489,7 +489,10 @@ func main() {
         OutputDir:     "./migrations",
     }
 
-    files, err := generator.GenerateMigration(opts)
+    ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+    defer cancel()
+
+    files, err := generator.GenerateMigration(ctx, opts)
     if err != nil {
         log.Fatal(err)
     }
@@ -522,18 +525,24 @@ opts := generator.GenerateMigrationOptions{
     OutputDir:     "./migrations",
 }
 
-files, err := generator.GenerateMigration(opts)
+ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+defer cancel()
+
+files, err := generator.GenerateMigration(ctx, opts)
 ```
 
 **Using Existing Database Connection:**
 
 ```go
-// Reuse existing connection
-conn, err := dbschema.ConnectToDatabase(dbURL)
+// Reuse existing connection. Supply a context so a stuck host cannot block
+// the initial Ping; defer dbschema.CloseAndWarn so close errors are surfaced.
+ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+defer cancel()
+conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 if err != nil {
     log.Fatal(err)
 }
-defer conn.Close()
+defer dbschema.CloseAndWarn(conn)
 
 opts := generator.GenerateMigrationOptions{
     GoEntitiesDir: "./models",
@@ -693,13 +702,16 @@ func main() {
         panic(err)
     }
 
-    // Connect to database and read schema
+    // Connect to database and read schema. Supply a context so the initial
+    // Ping cannot block indefinitely on a stuck host.
     dbURL := "postgres://user:pass@localhost:5432/database"
-    conn, err := dbschema.ConnectToDatabase(dbURL)
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+    conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
     if err != nil {
         panic(err)
     }
-    defer conn.Close()
+    defer dbschema.CloseAndWarn(conn)
 
     database, err := conn.Reader().ReadSchema()
     if err != nil {

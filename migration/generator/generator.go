@@ -50,10 +50,11 @@ type MigrationFiles struct {
 // GenerateMigration generates both up and down migration files by comparing
 // the desired schema (from Go entities) with the current database state.
 //
-// The provided context is used when opening a new database connection (so a
-// stuck host cannot block the call indefinitely). When opts.DBConn is already
-// set, the caller controls connection lifetime and the context only governs
-// the work performed inside this function.
+// The context bounds only the initial database connection attempt performed
+// when opts.DBConn is nil (so a stuck host cannot block the call
+// indefinitely). The schema-reading and migration-writing work below does not
+// yet propagate the context; future work may thread it through there too.
+// When opts.DBConn is supplied the context is currently unused.
 func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*MigrationFiles, error) {
 	// Set default migration name if not provided
 	if opts.MigrationName == "" {
@@ -95,11 +96,7 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 		if err != nil {
 			return nil, fmt.Errorf("error connecting to database: %w", err)
 		}
-		defer func() {
-			if cerr := conn.Close(); cerr != nil {
-				slog.Warn("failed to close database connection", "error", cerr)
-			}
-		}()
+		defer dbschema.CloseAndWarn(conn)
 	}
 
 	dbSchema, err := conn.Reader().ReadSchema()

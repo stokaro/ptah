@@ -70,10 +70,14 @@ func readDBCommand(_ *cobra.Command, _ []string) error {
 		fmt.Println("2. The database server is running")
 		fmt.Println("3. You have the correct permissions")
 		fmt.Println("4. The database exists")
-		fmt.Println("5. The connection completes within --connect-timeout (currently " + connectTimeout.String() + ")")
+		if connectTimeout > 0 {
+			fmt.Printf("5. The connection completes within --connect-timeout (currently %s)\n", connectTimeout)
+		} else {
+			fmt.Println("5. --connect-timeout is disabled; the call will not time out at the application layer")
+		}
 		return err
 	}
-	defer dbcli.WarnOnClose("database connection", conn)
+	defer dbschema.CloseAndWarn(conn)
 
 	fmt.Printf("Connected to %s database successfully!\n", conn.Info().Dialect)
 	fmt.Println()

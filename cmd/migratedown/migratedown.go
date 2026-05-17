@@ -113,7 +113,7 @@ func migrateDownCommand(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("error connecting to database: %w", err)
 	}
-	defer dbcli.WarnOnClose("database connection", conn)
+	defer dbschema.CloseAndWarn(conn)
 
 	// Set dry run mode if requested
 	conn.Writer().SetDryRun(dryRun)

@@ -78,7 +78,7 @@ func dropAllCommand(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("error connecting to database: %w", err)
 	}
-	defer dbcli.WarnOnClose("database connection", conn)
+	defer dbschema.CloseAndWarn(conn)
 
 	fmt.Printf("Connected to %s database successfully!\n", conn.Info().Dialect)
 	fmt.Println()
