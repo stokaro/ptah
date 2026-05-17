@@ -486,7 +486,15 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 			},
 		},
 		{
-			name: "field-level CHECK matches existing — no diff (idempotency)",
+			// Realistic introspection shape: PostgreSQL stores the clause
+			// as the parser/rewriter produced it, NOT as the user wrote
+			// it. The user authored `category IN ('a','b')`; what comes
+			// back is roughly `((category)::text = ANY ((ARRAY['a'::text,
+			// 'b'::text])::text[]))`. The diff must STILL be empty —
+			// that's the whole point of the trust-name v1 contract. If a
+			// future regression reintroduces an expression compare here,
+			// this case will start failing.
+			name: "field-level CHECK matches existing — no diff (idempotency, Postgres-normalized clause)",
 			generated: &goschema.Database{
 				Tables: []goschema.Table{{StructName: "File", Name: "files"}},
 				Fields: []goschema.Field{
@@ -505,7 +513,7 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 						Name:        "files_category_check",
 						TableName:   "files",
 						Type:        "CHECK",
-						CheckClause: stringPtr("category IN ('a','b')"),
+						CheckClause: stringPtr("((category)::text = ANY ((ARRAY['a'::text, 'b'::text])::text[]))"),
 					},
 				},
 			},
