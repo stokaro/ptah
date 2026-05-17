@@ -202,6 +202,8 @@ func analyzeFieldForeignKeys(r *Database) {
 			FieldName:      field.Name,
 			Foreign:        field.Foreign,
 			ForeignKeyName: field.ForeignKeyName,
+			OnDelete:       field.OnDelete,
+			OnUpdate:       field.OnUpdate,
 		})
 	}
 }
@@ -223,6 +225,8 @@ func analyzeEmbeddedFieldRelations(r *Database) {
 			FieldName:      embedded.Field,
 			Foreign:        embedded.Ref,
 			ForeignKeyName: generateForeignKeyName(table.Name, embedded.Field),
+			OnDelete:       embedded.OnDelete,
+			OnUpdate:       embedded.OnUpdate,
 		})
 	}
 }

@@ -188,6 +188,37 @@ func TestFromField_ForeignKeys(t *testing.T) {
 				return col.ForeignKey == nil
 			},
 		},
+		{
+			name: "foreign key with ON DELETE CASCADE (issue #117)",
+			field: goschema.Field{
+				Name:           "commodity_id",
+				Type:           "TEXT",
+				Foreign:        "commodities(id)",
+				ForeignKeyName: "fk_cs_commodity",
+				OnDelete:       "CASCADE",
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.ForeignKey != nil &&
+					col.ForeignKey.OnDelete == "CASCADE" &&
+					col.ForeignKey.OnUpdate == ""
+			},
+		},
+		{
+			name: "foreign key with ON DELETE SET NULL and ON UPDATE CASCADE",
+			field: goschema.Field{
+				Name:           "owner_id",
+				Type:           "INTEGER",
+				Foreign:        "users(id)",
+				ForeignKeyName: "fk_owner",
+				OnDelete:       "SET NULL",
+				OnUpdate:       "CASCADE",
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.ForeignKey != nil &&
+					col.ForeignKey.OnDelete == "SET NULL" &&
+					col.ForeignKey.OnUpdate == "CASCADE"
+			},
+		},
 	}
 
 	for _, test := range tests {

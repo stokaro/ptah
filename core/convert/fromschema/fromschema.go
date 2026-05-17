@@ -311,6 +311,8 @@ func FromField(field goschema.Field, enums []goschema.Enum, targetPlatform strin
 	// Set foreign key reference
 	if fkRef := ParseForeignKeyReference(field.Foreign); fkRef != nil {
 		column.SetForeignKey(fkRef.Table, fkRef.Column, field.ForeignKeyName)
+		column.ForeignKey.OnDelete = field.OnDelete
+		column.ForeignKey.OnUpdate = field.OnUpdate
 	}
 
 	return column

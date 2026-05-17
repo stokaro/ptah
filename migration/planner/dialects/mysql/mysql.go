@@ -142,6 +142,8 @@ func (p *Planner) addRegularForeignKeys(result []ast.Node, generated *goschema.D
 
 		fkRef := fromschema.ParseForeignKeyReference(field.Foreign)
 		if fkRef != nil && fkRef.Table != table.Name {
+			fkRef.OnDelete = field.OnDelete
+			fkRef.OnUpdate = field.OnUpdate
 			result = append(result, p.createForeignKeyAlterStatement(table.Name, field.ForeignKeyName, []string{field.Name}, fkRef))
 		}
 	}
@@ -158,6 +160,8 @@ func (p *Planner) addSelfReferencingForeignKeys(result []ast.Node, generated *go
 	for _, selfRefFK := range selfRefFKs {
 		fkRef := fromschema.ParseForeignKeyReference(selfRefFK.Foreign)
 		if fkRef != nil {
+			fkRef.OnDelete = selfRefFK.OnDelete
+			fkRef.OnUpdate = selfRefFK.OnUpdate
 			result = append(result, p.createForeignKeyAlterStatement(table.Name, selfRefFK.ForeignKeyName, []string{selfRefFK.FieldName}, fkRef))
 		}
 	}
@@ -216,6 +220,8 @@ func (p *Planner) addNewTableColumns(result []ast.Node, tableDiff *types.TableDi
 				fkRef := fromschema.ParseForeignKeyReference(targetField.Foreign)
 				if fkRef != nil {
 					fkRef.Name = targetField.ForeignKeyName
+					fkRef.OnDelete = targetField.OnDelete
+					fkRef.OnUpdate = targetField.OnUpdate
 
 					// Create foreign key constraint
 					fkConstraint := ast.NewForeignKeyConstraint(
