@@ -312,6 +312,17 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 		case *ast.ModifyColumnOperation:
 			// PostgreSQL uses different syntax for modifying columns
 			r.renderPostgreSQLModifyColumn(node.Name, op.Column)
+		case *ast.RenameColumnOperation:
+			// PostgreSQL has supported `ALTER TABLE x RENAME COLUMN old TO new`
+			// for a long time; emit it unconditionally.
+			r.w.WriteLinef("ALTER TABLE %s RENAME COLUMN %s TO %s;", node.Name, op.OldName, op.NewName)
+		case *ast.AddSkippingIndexOperation:
+			// Data-skipping indexes are a ClickHouse-specific construct; no
+			// PostgreSQL equivalent exists. Emit a self-explanatory comment.
+			r.w.WriteLinef("-- %s: data-skipping indexes are ClickHouse-specific; ignored.", r.dialectUpper)
+		case *ast.ModifyTTLOperation:
+			// Table TTL (row expiration) is a ClickHouse-only feature.
+			r.w.WriteLinef("-- %s: table TTL is ClickHouse-specific; ignored.", r.dialectUpper)
 		default:
 			return fmt.Errorf("unknown alter operation type: %T", operation)
 		}

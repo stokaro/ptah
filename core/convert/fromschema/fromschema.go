@@ -607,7 +607,8 @@ func FromIndex(index goschema.Index) *ast.IndexNode {
 		indexNode.Comment = index.Comment
 	}
 
-	// Set PostgreSQL-specific features
+	// Set dialect-specific features. Type covers both PG (GIN/GIST/BTREE/HASH)
+	// and CH (minmax/set/bloom_filter/...) — the renderer interprets it.
 	if index.Type != "" {
 		indexNode.Type = index.Type
 	}
@@ -619,6 +620,10 @@ func FromIndex(index goschema.Index) *ast.IndexNode {
 	if index.Operator != "" {
 		indexNode.Operator = index.Operator
 	}
+
+	// Granularity is ClickHouse-only; non-ClickHouse renderers ignore it.
+	// Zero propagates unchanged and signals "use renderer default".
+	indexNode.Granularity = index.Granularity
 
 	// Set IF NOT EXISTS for idempotent migrations
 	indexNode.IfNotExists = true
@@ -1000,7 +1005,8 @@ func FromIndexWithTableMapping(index goschema.Index, structToTableMap map[string
 		indexNode.Comment = index.Comment
 	}
 
-	// Set PostgreSQL-specific features
+	// Set dialect-specific features. Type covers both PG (GIN/GIST/BTREE/HASH)
+	// and CH (minmax/set/bloom_filter/...) — the renderer interprets it.
 	if index.Type != "" {
 		indexNode.Type = index.Type
 	}
@@ -1012,6 +1018,9 @@ func FromIndexWithTableMapping(index goschema.Index, structToTableMap map[string
 	if index.Operator != "" {
 		indexNode.Operator = index.Operator
 	}
+
+	// Granularity is ClickHouse-only; non-ClickHouse renderers ignore it.
+	indexNode.Granularity = index.Granularity
 
 	// Set IF NOT EXISTS for idempotent migrations
 	indexNode.IfNotExists = true

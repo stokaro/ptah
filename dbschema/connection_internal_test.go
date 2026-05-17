@@ -1,10 +1,74 @@
 package dbschema
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 )
+
+func TestConvertClickHouseURL(t *testing.T) {
+	cases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "passthrough canonical URL",
+			input:    "clickhouse://default:secret@localhost:9000/analytics",
+			expected: "clickhouse://default:secret@localhost:9000/analytics",
+		},
+		{
+			name:     "preserves query parameters",
+			input:    "clickhouse://default:secret@localhost:9000/analytics?secure=true&dial_timeout=10s",
+			expected: "clickhouse://default:secret@localhost:9000/analytics?secure=true&dial_timeout=10s",
+		},
+		{
+			name:     "rewrites uppercase scheme",
+			input:    "CLICKHOUSE://default@localhost:9000/db",
+			expected: "clickhouse://default@localhost:9000/db",
+		},
+		{
+			name:     "returns input on malformed URL",
+			input:    "::not-a-url::",
+			expected: "::not-a-url::",
+		},
+		{
+			name:     "preserves secure=true on native port",
+			input:    "clickhouse://default@localhost:9000/analytics?secure=true",
+			expected: "clickhouse://default@localhost:9000/analytics?secure=true",
+		},
+		{
+			name:     "native TLS port 9440 round-trips",
+			input:    "clickhouse://default@localhost:9440/analytics",
+			expected: "clickhouse://default@localhost:9440/analytics",
+		},
+		{
+			name:     "HTTP-SSL port 8443 with secure flag round-trips",
+			input:    "clickhouse://default@localhost:8443/db?secure=true",
+			expected: "clickhouse://default@localhost:8443/db?secure=true",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			got := convertClickHouseURL(tc.input)
+			// url.Parse() doesn't always preserve raw query ordering. For the
+			// expected URLs that carry multiple parameters we assert by
+			// fragments; single-param and no-param URLs round-trip exactly.
+			if strings.Count(tc.expected, "&") > 0 {
+				prefix, _, _ := strings.Cut(tc.expected, "?")
+				c.Assert(got, qt.Contains, prefix)
+				for _, kv := range strings.Split(tc.expected[strings.Index(tc.expected, "?")+1:], "&") {
+					c.Assert(got, qt.Contains, kv)
+				}
+				return
+			}
+			c.Assert(got, qt.Equals, tc.expected)
+		})
+	}
+}
 
 func TestRemovePostgresPoolParams(t *testing.T) {
 	tests := []struct {

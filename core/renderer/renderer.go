@@ -37,6 +37,7 @@ import (
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/convert/fromschema"
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/renderer/dialects/clickhouse"
 	"github.com/stokaro/ptah/core/renderer/dialects/mariadb"
 	"github.com/stokaro/ptah/core/renderer/dialects/mysql"
 	"github.com/stokaro/ptah/core/renderer/dialects/postgres"
@@ -45,7 +46,7 @@ import (
 
 // SupportedDialects returns a list of all supported database dialects.
 func SupportedDialects() []string {
-	return []string{"postgresql", "postgres", "mysql", "mariadb"}
+	return []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse"}
 }
 
 // NewRenderer creates a new renderer for the specified database dialect.
@@ -65,6 +66,8 @@ func NewRenderer(dialect string) types.RenderVisitor {
 		return mysql.New()
 	case "mariadb":
 		return mariadb.New()
+	case "clickhouse":
+		return clickhouse.New()
 	default:
 		panic(fmt.Sprintf("unsupported database dialect: %s", dialect))
 	}

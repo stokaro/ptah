@@ -67,6 +67,7 @@ import (
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/core/sqlutil"
+	"github.com/stokaro/ptah/migration/planner/dialects/clickhouse"
 	"github.com/stokaro/ptah/migration/planner/dialects/mysql"
 	"github.com/stokaro/ptah/migration/planner/dialects/postgres"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
@@ -199,6 +200,8 @@ func GetPlanner(dialect string) Planner {
 		return postgres.New()
 	case platform.MySQL, platform.MariaDB:
 		return mysql.New()
+	case platform.ClickHouse:
+		return clickhouse.New()
 	default:
 		// For unknown dialects, use a generic generator that doesn't apply dialect-specific transformations
 		panic("not implemented")
