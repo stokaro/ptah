@@ -360,7 +360,9 @@ type IndexNode struct {
 	Columns []string
 	// Unique indicates whether this is a unique index
 	Unique bool
-	// Type specifies the index type (BTREE, HASH, GIN, GIST, etc.) - database-specific
+	// Type specifies the index type (BTREE, HASH, GIN, GIST, etc. for
+	// PostgreSQL; "minmax", "set(N)", "bloom_filter(p)", "tokenbf_v1(...)"
+	// etc. for ClickHouse data-skipping indexes) - database-specific.
 	Type string
 	// Comment is an optional index comment
 	Comment string
@@ -372,6 +374,12 @@ type IndexNode struct {
 	Condition string
 	// Operator specifies the operator class (gin_trgm_ops, etc.)
 	Operator string
+
+	// ClickHouse-specific features
+	// Granularity is the GRANULARITY value for data-skipping indexes. Zero
+	// instructs the ClickHouse renderer to fall back to its documented
+	// default (8192). Ignored by non-ClickHouse renderers.
+	Granularity int
 }
 
 // ExtensionNode represents a CREATE EXTENSION statement for PostgreSQL.

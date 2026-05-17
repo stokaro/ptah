@@ -147,9 +147,20 @@ func (p *Planner) addNewIndexes(result []ast.Node, diff *types.SchemaDiff, gener
 			if idx.Name != name {
 				continue
 			}
-			tableName := structToTable[idx.StructName]
+			// Prefer the explicit cross-table association if the user set
+			// `table=` on the annotation; otherwise resolve the struct
+			// name to its declared table. If neither resolves, the index
+			// is unattached and we cannot emit a correct ALTER TABLE —
+			// emitting one against the struct name would invariably
+			// reference a non-existent table on ClickHouse, so warn and
+			// skip instead.
+			tableName := idx.TableName
 			if tableName == "" {
-				tableName = idx.StructName
+				tableName = structToTable[idx.StructName]
+			}
+			if tableName == "" {
+				result = append(result, ast.NewComment(fmt.Sprintf("WARNING: skipping index %q — could not resolve target table for struct %q", idx.Name, idx.StructName)))
+				break
 			}
 			node := ast.NewIndex(idx.Name, tableName, idx.Fields...)
 			if idx.Unique {
@@ -158,6 +169,10 @@ func (p *Planner) addNewIndexes(result []ast.Node, diff *types.SchemaDiff, gener
 			if idx.Comment != "" {
 				node.Comment = idx.Comment
 			}
+			if idx.Type != "" {
+				node.Type = idx.Type
+			}
+			node.Granularity = idx.Granularity
 			result = append(result, node)
 			break
 		}

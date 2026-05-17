@@ -23,7 +23,15 @@ type DBTable struct {
 	RLSEnabled bool       `json:"rls_enabled"` // Whether RLS is enabled on this table (PostgreSQL)
 }
 
-// DBColumn represents a database column
+// DBColumn represents a database column.
+//
+// GeneratedKind / GeneratedExpression are populated only by the ClickHouse
+// reader and capture columns declared with non-DEFAULT default kinds
+// (MATERIALIZED, ALIAS, EPHEMERAL). The planner currently ignores these
+// fields — round-trip support for generated columns is not yet wired through
+// the goschema-side annotation surface — but capturing the data here means
+// the schema read is lossless. See the renderer/planner comments for the
+// follow-up boundary.
 type DBColumn struct {
 	Name               string  `json:"name"`
 	DataType           string  `json:"data_type"`
@@ -38,6 +46,15 @@ type DBColumn struct {
 	IsAutoIncrement    bool    `json:"is_auto_increment"` // Derived field
 	IsPrimaryKey       bool    `json:"is_primary_key"`    // Derived field
 	IsUnique           bool    `json:"is_unique"`         // Derived field
+
+	// GeneratedExpression holds the MATERIALIZED / ALIAS / EPHEMERAL
+	// expression for ClickHouse columns. Nil for plain columns. Other
+	// dialects always leave this nil.
+	GeneratedExpression *string `json:"generated_expression,omitempty"`
+	// GeneratedKind names the ClickHouse default-kind: "MATERIALIZED",
+	// "ALIAS" or "EPHEMERAL". Empty for plain columns. Other dialects always
+	// leave this empty.
+	GeneratedKind string `json:"generated_kind,omitempty"`
 }
 
 // DBEnum represents a database enum type (PostgreSQL)
@@ -46,7 +63,13 @@ type DBEnum struct {
 	Values []string `json:"values"`
 }
 
-// DBIndex represents a database index
+// DBIndex represents a database index.
+//
+// Most fields are dialect-neutral. The Type/Expression/Granularity trio is
+// populated only by the ClickHouse reader for data-skipping indexes; other
+// readers leave them at their zero values so the diff layer does not start
+// emitting spurious type/granularity changes for PostgreSQL or MySQL
+// indexes.
 type DBIndex struct {
 	Name       string   `json:"name"`
 	TableName  string   `json:"table_name"`
@@ -54,6 +77,21 @@ type DBIndex struct {
 	IsUnique   bool     `json:"is_unique"`
 	IsPrimary  bool     `json:"is_primary"`
 	Definition string   `json:"definition"` // Full index definition
+
+	// Type is the ClickHouse data-skipping-index type. One of
+	// "minmax" / "set(N)" / "bloom_filter" / "bloom_filter(p)" /
+	// "tokenbf_v1(...)" / "ngrambf_v1(...)" etc. Empty on non-ClickHouse
+	// readers.
+	Type string `json:"type,omitempty"`
+	// Expression is the full ClickHouse skipping-index expression
+	// (column reference, function call, tuple, etc.). The reader also writes
+	// the expression into Columns[0] for back-compat with the existing diff
+	// layer; Expression is the canonical field for richer diffing once
+	// that's wired up. Empty on non-ClickHouse readers.
+	Expression string `json:"expression,omitempty"`
+	// Granularity is the GRANULARITY value the index was declared with.
+	// Non-zero only on ClickHouse skipping indexes.
+	Granularity int `json:"granularity,omitempty"`
 }
 
 // DBConstraint represents a database constraint

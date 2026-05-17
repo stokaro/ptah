@@ -235,7 +235,7 @@ func (tr *TestRunner) runSingleTest(ctx context.Context, scenario TestScenario, 
 }
 
 // cleanDatabase drops all tables and resets the database to a clean state
-func (tr *TestRunner) cleanDatabase(_ctx context.Context, conn *dbschema.DatabaseConnection) error {
+func (tr *TestRunner) cleanDatabase(_ context.Context, conn *dbschema.DatabaseConnection) error {
 	// Drop all tables to ensure clean state
 	return conn.Writer().DropAllTables()
 }

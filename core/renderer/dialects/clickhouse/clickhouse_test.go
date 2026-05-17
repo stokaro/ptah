@@ -565,6 +565,141 @@ func TestVisitIndex_UniqueEmitsDowngradeComment(t *testing.T) {
 	c.Assert(out, qt.Contains, "ALTER TABLE events ADD INDEX uq_e_src source TYPE minmax GRANULARITY 8192;")
 }
 
+func TestAlterTable_RenameColumn(t *testing.T) {
+	c := qt.New(t)
+	alter := &ast.AlterTableNode{
+		Name: "events",
+		Operations: []ast.AlterOperation{
+			&ast.RenameColumnOperation{OldName: "payload_old", NewName: "payload"},
+		},
+	}
+	out := render(t, alter)
+	c.Assert(out, qt.Contains, "ALTER TABLE events RENAME COLUMN payload_old TO payload;")
+}
+
+func TestAlterTable_AddSkippingIndex(t *testing.T) {
+	cases := []struct {
+		name string
+		op   *ast.AddSkippingIndexOperation
+		want string
+	}{
+		{
+			name: "explicit type and granularity",
+			op: &ast.AddSkippingIndexOperation{
+				Name:        "idx_e_src",
+				Expression:  "source",
+				IndexType:   "bloom_filter(0.01)",
+				Granularity: 64,
+			},
+			want: "ALTER TABLE events ADD INDEX idx_e_src source TYPE bloom_filter(0.01) GRANULARITY 64;",
+		},
+		{
+			name: "default granularity falls back to 8192",
+			op: &ast.AddSkippingIndexOperation{
+				Name:       "idx_e_src",
+				Expression: "source",
+				IndexType:  "minmax",
+			},
+			want: "ALTER TABLE events ADD INDEX idx_e_src source TYPE minmax GRANULARITY 8192;",
+		},
+		{
+			name: "default type falls back to minmax",
+			op: &ast.AddSkippingIndexOperation{
+				Name:        "idx_e_src",
+				Expression:  "source",
+				Granularity: 16,
+			},
+			want: "ALTER TABLE events ADD INDEX idx_e_src source TYPE minmax GRANULARITY 16;",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			alter := &ast.AlterTableNode{
+				Name:       "events",
+				Operations: []ast.AlterOperation{tc.op},
+			}
+			out := render(t, alter)
+			c.Assert(out, qt.Contains, tc.want)
+		})
+	}
+}
+
+func TestAlterTable_AddSkippingIndex_MissingExpressionErrors(t *testing.T) {
+	c := qt.New(t)
+	alter := &ast.AlterTableNode{
+		Name: "events",
+		Operations: []ast.AlterOperation{
+			&ast.AddSkippingIndexOperation{Name: "idx_bad", IndexType: "minmax"},
+		},
+	}
+	err := renderErr(alter)
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "ADD INDEX")
+	c.Assert(err.Error(), qt.Contains, "expression")
+}
+
+func TestAlterTable_ModifyTTL(t *testing.T) {
+	c := qt.New(t)
+	setTTL := &ast.AlterTableNode{
+		Name: "events",
+		Operations: []ast.AlterOperation{
+			&ast.ModifyTTLOperation{Expression: "created_at + INTERVAL 30 DAY"},
+		},
+	}
+	out := render(t, setTTL)
+	c.Assert(out, qt.Contains, "ALTER TABLE events MODIFY TTL created_at + INTERVAL 30 DAY;")
+
+	clearTTL := &ast.AlterTableNode{
+		Name: "events",
+		Operations: []ast.AlterOperation{
+			&ast.ModifyTTLOperation{},
+		},
+	}
+	out = render(t, clearTTL)
+	c.Assert(out, qt.Contains, "ALTER TABLE events REMOVE TTL;")
+}
+
+// TestVisitIndex_AnnotationDrivenTypeAndGranularity exercises the end-to-end
+// path from a goschema.Index annotation (with type= and granularity=) through
+// fromschema.FromIndex into the ClickHouse renderer. Two type spellings are
+// covered: bloom_filter(0.01) carries a parenthesised parameter (which would
+// confuse a naïve paren-aware splitter if one were ever added to VisitIndex),
+// and set(100) tests the most common alternative type spelling.
+func TestVisitIndex_AnnotationDrivenTypeAndGranularity(t *testing.T) {
+	cases := []struct {
+		name string
+		typ  string
+		gran int
+		want string
+	}{
+		{
+			name: "bloom_filter with float parameter and custom granularity",
+			typ:  "bloom_filter(0.01)",
+			gran: 64,
+			want: "ALTER TABLE events ADD INDEX idx_e_payload payload TYPE bloom_filter(0.01) GRANULARITY 64;",
+		},
+		{
+			name: "set with explicit max size and default granularity",
+			typ:  "set(100)",
+			gran: 0,
+			want: "ALTER TABLE events ADD INDEX idx_e_payload payload TYPE set(100) GRANULARITY 8192;",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			idx := ast.NewIndex("idx_e_payload", "events", "payload")
+			idx.Type = tc.typ
+			idx.Granularity = tc.gran
+			out := render(t, idx)
+			c.Assert(out, qt.Contains, tc.want)
+		})
+	}
+}
+
 func TestDialectAndOutputHelpers(t *testing.T) {
 	c := qt.New(t)
 	r := clickhouse.New()

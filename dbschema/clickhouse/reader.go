@@ -146,12 +146,23 @@ func (r *Reader) readColumns(dbName, table string) ([]types.DBColumn, error) {
 		// ClickHouse columns can have several flavours of default
 		// (DEFAULT, MATERIALIZED, ALIAS, EPHEMERAL). Only the plain DEFAULT
 		// flavour is a schema-level default value comparable to the other
-		// dialects' notion of ColumnDefault. Treat the rest as no-default
-		// for now — round-trip support for MATERIALIZED/ALIAS/EPHEMERAL is
-		// tracked as a follow-up.
-		if defaultKind == "DEFAULT" && defaultExpr != "" {
-			expr := defaultExpr
-			col.ColumnDefault = &expr
+		// dialects' notion of ColumnDefault. The MATERIALIZED / ALIAS /
+		// EPHEMERAL kinds round-trip through GeneratedKind +
+		// GeneratedExpression so the schema read is lossless; the planner
+		// currently ignores those columns until the annotation-side surface
+		// for declaring them is wired through goschema.
+		switch defaultKind {
+		case "DEFAULT":
+			if defaultExpr != "" {
+				expr := defaultExpr
+				col.ColumnDefault = &expr
+			}
+		case "MATERIALIZED", "ALIAS", "EPHEMERAL":
+			if defaultExpr != "" {
+				expr := defaultExpr
+				col.GeneratedExpression = &expr
+			}
+			col.GeneratedKind = defaultKind
 		}
 		cols = append(cols, col)
 	}
@@ -188,8 +199,11 @@ func (r *Reader) readSkippingIndexes(dbName string) ([]types.DBIndex, error) {
 		return nil, nil
 	}
 
+	// system.data_skipping_indices exposes `granularity` as UInt64. The
+	// driver decodes that into uint64 by default, so scan into that type
+	// explicitly and cast on the way out.
 	rows, err := r.db.Query(`
-		SELECT table, name, expr, type
+		SELECT table, name, expr, type, granularity
 		FROM system.data_skipping_indices
 		WHERE database = ?
 		ORDER BY table, name
@@ -201,15 +215,25 @@ func (r *Reader) readSkippingIndexes(dbName string) ([]types.DBIndex, error) {
 
 	var indexes []types.DBIndex
 	for rows.Next() {
-		var table, name, expr, idxType string
-		if err := rows.Scan(&table, &name, &expr, &idxType); err != nil {
+		var (
+			table, name, expr, idxType string
+			granularity                uint64
+		)
+		if err := rows.Scan(&table, &name, &expr, &idxType, &granularity); err != nil {
 			return nil, err
 		}
+		// Populate Columns[0] = expression for back-compat with the
+		// existing diff layer (which compares Columns), AND set Expression
+		// for richer downstream diffing once that's wired up. The duality
+		// is intentional and documented on types.DBIndex.
 		indexes = append(indexes, types.DBIndex{
-			Name:       name,
-			TableName:  table,
-			Columns:    []string{expr},
-			Definition: fmt.Sprintf("INDEX %s %s TYPE %s", name, expr, idxType),
+			Name:        name,
+			TableName:   table,
+			Columns:     []string{expr},
+			Definition:  fmt.Sprintf("INDEX %s %s TYPE %s GRANULARITY %d", name, expr, idxType, granularity),
+			Type:        idxType,
+			Expression:  expr,
+			Granularity: int(granularity),
 		})
 	}
 	if err := rows.Err(); err != nil {

@@ -8,10 +8,32 @@ import (
 	"log/slog"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/stokaro/ptah/core/goschema/internal/parseutils"
 )
+
+// knownIndexAttributes lists every attribute key recognized on a
+// //migrator:schema:index annotation. Keys with the "platform." prefix are
+// also accepted. The strict-unknown-key rejection mechanism (see
+// validateAttributes) is reused so typos like "granluarity" surface at parse
+// time rather than being silently dropped.
+//
+// "columns" is accepted as a legacy synonym for "fields"; several integration
+// fixtures use it. parseIndexComment falls back to it when "fields" is empty.
+var knownIndexAttributes = map[string]bool{
+	"name":        true,
+	"fields":      true,
+	"columns":     true,
+	"unique":      true,
+	"comment":     true,
+	"type":        true,
+	"condition":   true,
+	"ops":         true,
+	"table":       true,
+	"granularity": true,
+}
 
 // knownFieldAttributes lists every attribute key recognized on a
 // //migrator:schema:field annotation. Keys with the "platform." prefix are
@@ -156,7 +178,16 @@ func parseEmbeddedComment(comment *ast.Comment, field *ast.Field, structName str
 
 func parseIndexComment(comment *ast.Comment, structName string, schemaIndexes *[]Index) {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	fields := strings.Split(kv["fields"], ",")
+	validateAttributes(kv, knownIndexAttributes, "//migrator:schema:index", structName)
+
+	// "columns=" is a legacy synonym for "fields=" (several integration
+	// fixtures still spell it that way); prefer the modern name and fall
+	// back to the legacy form so neither is silently dropped.
+	fieldsRaw := kv["fields"]
+	if fieldsRaw == "" {
+		fieldsRaw = kv["columns"]
+	}
+	fields := strings.Split(fieldsRaw, ",")
 	for i := range fields {
 		fields[i] = strings.TrimSpace(fields[i])
 	}
@@ -164,17 +195,30 @@ func parseIndexComment(comment *ast.Comment, structName string, schemaIndexes *[
 	// Determine target table name - use 'table' attribute if specified, otherwise leave empty for later resolution
 	tableName := kv["table"]
 
+	// Granularity is optional and only meaningful for ClickHouse data-skipping
+	// indexes. Empty / unset => 0, which the ClickHouse renderer interprets as
+	// "use the documented default". Invalid integers panic at parse time so
+	// users see the typo immediately rather than getting a wrong default.
+	var granularity int
+	if g := strings.TrimSpace(kv["granularity"]); g != "" {
+		n, err := strconv.Atoi(g)
+		if err != nil || n < 0 {
+			panic(fmt.Sprintf("invalid granularity %q on //migrator:schema:index at %s (must be a non-negative integer)", g, structName))
+		}
+		granularity = n
+	}
+
 	*schemaIndexes = append(*schemaIndexes, Index{
-		StructName: structName,
-		Name:       kv["name"],
-		Fields:     fields,
-		Unique:     kv["unique"] == "true",
-		Comment:    kv["comment"],
-		// PostgreSQL-specific features
-		Type:      kv["type"],      // GIN, GIST, BTREE, HASH, etc.
-		Condition: kv["condition"], // WHERE clause for partial indexes
-		Operator:  kv["ops"],       // Operator class (gin_trgm_ops, etc.)
-		TableName: tableName,       // Target table name
+		StructName:  structName,
+		Name:        kv["name"],
+		Fields:      fields,
+		Unique:      kv["unique"] == "true",
+		Comment:     kv["comment"],
+		Type:        kv["type"],      // PG: GIN/GIST/BTREE/HASH; CH: minmax/set(N)/bloom_filter/...
+		Condition:   kv["condition"], // PG only: WHERE clause for partial indexes
+		Operator:    kv["ops"],       // PG only: operator class (gin_trgm_ops, etc.)
+		TableName:   tableName,       // Target table name
+		Granularity: granularity,     // CH only: GRANULARITY n for data-skipping indexes
 	})
 }
 

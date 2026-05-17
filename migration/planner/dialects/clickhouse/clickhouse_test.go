@@ -129,6 +129,77 @@ func TestGenerateMigrationAST_EnumChangesAreSurfacedAsComment(t *testing.T) {
 	c.Assert(comment.Text, qt.Contains, "enum changes")
 }
 
+// TestGenerateMigrationAST_IndexUnresolvedStructEmitsWarning covers the
+// planner's index-fallback fix: when the struct→table map can't resolve the
+// owning struct AND the annotation didn't carry an explicit `table=`, the
+// planner must NOT silently emit `ALTER TABLE <struct-name> ADD INDEX ...`
+// (which would reference a non-existent table). It must instead emit a
+// CommentNode warning and skip the index.
+func TestGenerateMigrationAST_IndexUnresolvedStructEmitsWarning(t *testing.T) {
+	c := qt.New(t)
+	gen := mkDB()
+	gen.Indexes = []goschema.Index{
+		{StructName: "GhostStruct", Name: "idx_orphan", Fields: []string{"x"}},
+	}
+	diff := &types.SchemaDiff{IndexesAdded: []string{"idx_orphan"}}
+
+	p := clickhouse.New()
+	nodes := p.GenerateMigrationAST(diff, gen)
+
+	c.Assert(nodes, qt.HasLen, 1)
+	comment, ok := nodes[0].(*ast.CommentNode)
+	c.Assert(ok, qt.IsTrue, qt.Commentf("expected CommentNode, got %T", nodes[0]))
+	c.Assert(comment.Text, qt.Contains, "WARNING")
+	c.Assert(comment.Text, qt.Contains, "idx_orphan")
+	c.Assert(comment.Text, qt.Contains, "GhostStruct")
+}
+
+// TestGenerateMigrationAST_IndexExplicitTableNameWins verifies that when an
+// index annotation carries `table=` we honour it without consulting the
+// struct→table map. This is the supported escape hatch for cross-struct
+// indexes.
+func TestGenerateMigrationAST_IndexExplicitTableNameWins(t *testing.T) {
+	c := qt.New(t)
+	gen := mkDB()
+	gen.Indexes = []goschema.Index{
+		{StructName: "DoesNotMatter", Name: "idx_cross", Fields: []string{"x"}, TableName: "events"},
+	}
+	diff := &types.SchemaDiff{IndexesAdded: []string{"idx_cross"}}
+
+	p := clickhouse.New()
+	nodes := p.GenerateMigrationAST(diff, gen)
+	c.Assert(nodes, qt.HasLen, 1)
+	idx, ok := nodes[0].(*ast.IndexNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(idx.Table, qt.Equals, "events")
+}
+
+// TestGenerateMigrationAST_IndexTypeAndGranularityPropagate guards the
+// annotation-driven CH skipping-index path: type= and granularity= must
+// reach the AST node so the renderer can emit the right SQL.
+func TestGenerateMigrationAST_IndexTypeAndGranularityPropagate(t *testing.T) {
+	c := qt.New(t)
+	gen := mkDB()
+	gen.Indexes = []goschema.Index{
+		{
+			StructName:  "Event",
+			Name:        "idx_e_payload",
+			Fields:      []string{"payload"},
+			Type:        "bloom_filter(0.01)",
+			Granularity: 64,
+		},
+	}
+	diff := &types.SchemaDiff{IndexesAdded: []string{"idx_e_payload"}}
+
+	p := clickhouse.New()
+	nodes := p.GenerateMigrationAST(diff, gen)
+	c.Assert(nodes, qt.HasLen, 1)
+	idx, ok := nodes[0].(*ast.IndexNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(idx.Type, qt.Equals, "bloom_filter(0.01)")
+	c.Assert(idx.Granularity, qt.Equals, 64)
+}
+
 func TestGenerateMigrationAST_NilDiffOrSchemaReturnsEmpty(t *testing.T) {
 	c := qt.New(t)
 	p := clickhouse.New()

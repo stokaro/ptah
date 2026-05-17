@@ -618,10 +618,47 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 			r.w.WriteLinef("ALTER TABLE %s ADD CONSTRAINT %s CHECK %s;", node.Name, op.Constraint.Name, parenList(op.Constraint.Expression))
 		case *ast.DropConstraintOperation:
 			r.w.WriteLinef("ALTER TABLE %s DROP CONSTRAINT %s;", node.Name, op.ConstraintName)
+		case *ast.RenameColumnOperation:
+			// ClickHouse 22.6+ supports `ALTER TABLE x RENAME COLUMN old TO new`
+			// on MergeTree-family engines. The runtime DB version is the
+			// user's problem; we emit the canonical spelling unconditionally.
+			r.w.WriteLinef("ALTER TABLE %s RENAME COLUMN %s TO %s;", node.Name, op.OldName, op.NewName)
+		case *ast.AddSkippingIndexOperation:
+			if err := r.renderAddSkippingIndex(node.Name, op); err != nil {
+				return err
+			}
+		case *ast.ModifyTTLOperation:
+			if op.Expression == "" {
+				r.w.WriteLinef("ALTER TABLE %s REMOVE TTL;", node.Name)
+			} else {
+				r.w.WriteLinef("ALTER TABLE %s MODIFY TTL %s;", node.Name, op.Expression)
+			}
 		default:
 			return fmt.Errorf("clickhouse: unknown ALTER TABLE operation %T", op)
 		}
 	}
+	return nil
+}
+
+// renderAddSkippingIndex emits the ClickHouse-native
+// `ALTER TABLE x ADD INDEX name expression TYPE indexType GRANULARITY n;`
+// statement. IndexType defaults to "minmax" when blank, and Granularity
+// defaults to 8192 when zero — both matching the documented ClickHouse
+// defaults. An empty Expression is rejected because there is no sensible
+// fallback for it.
+func (r *Renderer) renderAddSkippingIndex(tableName string, op *ast.AddSkippingIndexOperation) error {
+	if strings.TrimSpace(op.Expression) == "" {
+		return fmt.Errorf("clickhouse: ADD INDEX %q on table %q requires a non-empty expression", op.Name, tableName)
+	}
+	idxType := op.IndexType
+	if idxType == "" {
+		idxType = "minmax"
+	}
+	granularity := op.Granularity
+	if granularity == 0 {
+		granularity = 8192
+	}
+	r.w.WriteLinef("ALTER TABLE %s ADD INDEX %s %s TYPE %s GRANULARITY %d;", tableName, op.Name, op.Expression, idxType, granularity)
 	return nil
 }
 
@@ -636,9 +673,9 @@ func (r *Renderer) VisitConstraint(*ast.ConstraintNode) error { return nil }
 
 // VisitIndex emits a ClickHouse data-skipping index. Without an explicit
 // type annotation we emit a `minmax` index with GRANULARITY 8192, which is
-// the most generally-useful default. Users wanting `set` / `bloom_filter`
-// can override via platform-specific annotations once those are exposed at
-// the goschema level.
+// the most generally-useful default. Users wanting `set(N)` /
+// `bloom_filter(p)` / `tokenbf_v1(...)` etc. override via the `type=` and
+// `granularity=` keys on //migrator:schema:index.
 func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	if node.Table == "" {
 		r.w.WriteLinef("-- CLICKHOUSE: secondary index %q skipped (no target table)", node.Name)
@@ -651,18 +688,19 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	if node.Unique {
 		r.w.WriteLinef("-- CLICKHOUSE: UNIQUE index %q downgraded to a minmax skipping index; uniqueness is not enforced by ClickHouse", node.Name)
 	}
-	// TODO(#169-followup): the planner falls back to StructName when no
-	// matching table is found in the diff. The behaviour is consistent with
-	// other dialects but should be re-evaluated.
 	idxType := node.Type
 	if idxType == "" {
 		idxType = "minmax"
+	}
+	granularity := node.Granularity
+	if granularity == 0 {
+		granularity = 8192
 	}
 	expr := strings.Join(node.Columns, ", ")
 	if len(node.Columns) > 1 {
 		expr = "(" + expr + ")"
 	}
-	r.w.WriteLinef("ALTER TABLE %s ADD INDEX %s %s TYPE %s GRANULARITY 8192;", node.Table, node.Name, expr, idxType)
+	r.w.WriteLinef("ALTER TABLE %s ADD INDEX %s %s TYPE %s GRANULARITY %d;", node.Table, node.Name, expr, idxType, granularity)
 	return nil
 }
 

@@ -170,6 +170,23 @@ type Field struct {
 //	    //migrator:schema:index name="idx_products_name" fields="name" table="products"
 //	    _ int
 //	}
+//
+// # ClickHouse data-skipping indexes
+//
+// On ClickHouse, the `type=` and `granularity=` keys configure a
+// data-skipping index. `type=` accepts any spelling ClickHouse understands —
+// `minmax`, `set(N)`, `bloom_filter`, `bloom_filter(p)`, `tokenbf_v1(...)`,
+// `ngrambf_v1(...)`, etc. `granularity=` is the number of marks per index
+// block; omitting it falls back to ClickHouse's documented default (8192).
+// Both keys are silently ignored by non-ClickHouse renderers.
+//
+//	type Event struct {
+//	    //migrator:schema:field name="payload" type="String"
+//	    Payload string
+//
+//	    //migrator:schema:index name="idx_e_payload" fields="payload" type="bloom_filter(0.01)" granularity="64"
+//	    _ int
+//	}
 type Index struct {
 	StructName string   // Name of the Go struct this index belongs to
 	Name       string   // Index name (e.g., "idx_users_email")
@@ -177,11 +194,23 @@ type Index struct {
 	Unique     bool     // Whether this is a unique index
 	Comment    string   // Index comment/description
 
-	// PostgreSQL-specific features
-	Type      string // Index type: GIN, GIST, BTREE, HASH, etc.
-	Condition string // WHERE clause for partial indexes
-	Operator  string // Operator class (gin_trgm_ops, etc.)
-	TableName string // Target table name (for cross-table association)
+	// Type carries the dialect-specific index type. For PostgreSQL this is
+	// GIN/GIST/BTREE/HASH; for ClickHouse data-skipping indexes it is
+	// "minmax"/"set(N)"/"bloom_filter(p)"/"tokenbf_v1(...)"/etc.
+	Type string
+	// Condition is the WHERE clause for partial indexes (PostgreSQL only).
+	Condition string
+	// Operator is the operator class (PostgreSQL only, e.g. "gin_trgm_ops").
+	Operator string
+	// TableName is the cross-table association (overrides StructName-based
+	// resolution when set).
+	TableName string
+
+	// Granularity is the ClickHouse data-skipping-index GRANULARITY value.
+	// Zero means "use the dialect default" (8192 for ClickHouse, which is
+	// what the renderer falls back to when this field is unset). Ignored by
+	// all non-ClickHouse renderers.
+	Granularity int
 }
 
 // Constraint represents a table-level constraint definition parsed from Go struct annotations.
