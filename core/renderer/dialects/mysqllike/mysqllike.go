@@ -591,3 +591,10 @@ func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
 func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
 	return fmt.Errorf("ALTER ROLE is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)
 }
+
+// VisitRawSQL renders a literal SQL fragment verbatim. The caller owns
+// correctness of the embedded SQL for this dialect.
+func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
+	r.w.WriteLine(node.SQL)
+	return nil
+}

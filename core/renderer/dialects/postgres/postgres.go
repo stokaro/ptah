@@ -1031,6 +1031,14 @@ func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
 	return nil
 }
 
+// VisitRawSQL renders a literal SQL fragment verbatim, with no quoting,
+// escaping, or trailing semicolon handling. The caller owns correctness of
+// the embedded SQL.
+func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
+	r.w.WriteLine(node.SQL)
+	return nil
+}
+
 // VisitAlterRole renders an ALTER ROLE statement for PostgreSQL
 func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
 	// Add comment if provided

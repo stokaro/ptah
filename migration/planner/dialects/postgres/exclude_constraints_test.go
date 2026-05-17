@@ -196,28 +196,18 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved(t *testing.T) {
 	planner := postgres.New()
 	nodes := planner.GenerateMigrationAST(diff, generated)
 
-	// Should generate 4 nodes: create function, execute function, drop main function, drop exec function
-	c.Assert(len(nodes), qt.Equals, 4)
+	// One DO block per removed constraint. The previous implementation emitted
+	// four nodes (create/exec/drop/drop) but none of them actually invoked the
+	// drop logic, leaving the constraint in place — see commit message for the
+	// full incident report. The DO block executes immediately on parse and
+	// leaves no temporary functions behind.
+	c.Assert(len(nodes), qt.Equals, 1)
 
-	// Check the first node (create function)
-	sql1, err := renderer.RenderSQL("postgres", nodes[0])
+	sql, err := renderer.RenderSQL("postgres", nodes[0])
 	c.Assert(err, qt.IsNil)
-	c.Assert(sql1, qt.Contains, "CREATE OR REPLACE FUNCTION ptah_drop_constraint_old_constraint()")
-	c.Assert(sql1, qt.Contains, "information_schema.table_constraints")
-	c.Assert(sql1, qt.Contains, "WHERE constraint_name = 'old_constraint'")
-
-	// Check the second node (execute function)
-	sql2, err := renderer.RenderSQL("postgres", nodes[1])
-	c.Assert(err, qt.IsNil)
-	c.Assert(sql2, qt.Contains, "SELECT ptah_drop_constraint_old_constraint();")
-
-	// Check the third node (drop main function)
-	sql3, err := renderer.RenderSQL("postgres", nodes[2])
-	c.Assert(err, qt.IsNil)
-	c.Assert(sql3, qt.Contains, "DROP FUNCTION IF EXISTS ptah_drop_constraint_old_constraint")
-
-	// Check the fourth node (drop exec function)
-	sql4, err := renderer.RenderSQL("postgres", nodes[3])
-	c.Assert(err, qt.IsNil)
-	c.Assert(sql4, qt.Contains, "DROP FUNCTION IF EXISTS ptah_exec_ptah_drop_constraint_old_constraint")
+	c.Assert(sql, qt.Contains, "DO $ptah$")
+	c.Assert(sql, qt.Contains, "information_schema.table_constraints")
+	c.Assert(sql, qt.Contains, "constraint_name = 'old_constraint'")
+	c.Assert(sql, qt.Contains, "ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I")
+	c.Assert(sql, qt.Contains, "$ptah$")
 }

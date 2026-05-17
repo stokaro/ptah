@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/stokaro/ptah/core/ast"
@@ -576,6 +577,11 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	// 2. Add new functions (functions may be used by RLS policies)
 	result = p.addNewFunctions(result, diff, generated)
 
+	// 2b. Modify existing function definitions (body, volatility, security, language).
+	// PostgreSQL CREATE OR REPLACE FUNCTION updates the live definition in place
+	// without affecting policies or triggers that reference the function.
+	result = p.modifyExistingFunctions(result, diff, generated)
+
 	// 3. Add new enums (PostgreSQL requires enum types to exist before tables use them)
 	result = p.addNewEnums(result, diff, generated)
 
@@ -841,6 +847,40 @@ func (p *Planner) addNewFunctions(result []ast.Node, diff *types.SchemaDiff, gen
 	return result
 }
 
+func (p *Planner) modifyExistingFunctions(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, fnDiff := range diff.FunctionsModified {
+		// Find the target function definition. Without it we can't emit a
+		// faithful CREATE OR REPLACE, so skip silently (the diff alone would
+		// not tell us the new body/attributes).
+		var target *goschema.Function
+		for i := range generated.Functions {
+			if generated.Functions[i].Name == fnDiff.FunctionName {
+				target = &generated.Functions[i]
+				break
+			}
+		}
+		if target == nil {
+			continue
+		}
+
+		functionNode := fromschema.FromFunction(*target)
+		functionNode.SetComment(fmt.Sprintf("Modify function %s: %s", target.Name, summarizeFunctionChanges(fnDiff)))
+		result = append(result, functionNode)
+	}
+	return result
+}
+
+// summarizeFunctionChanges produces a deterministic one-line summary of the
+// changed attributes for use as a SQL comment.
+func summarizeFunctionChanges(fnDiff types.FunctionDiff) string {
+	keys := make([]string, 0, len(fnDiff.Changes))
+	for k := range fnDiff.Changes {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ", ")
+}
+
 func (p *Planner) removeFunctions(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 	for _, functionName := range diff.FunctionsRemoved {
 		dropFunctionNode := ast.NewDropFunction(functionName).
@@ -988,60 +1028,47 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 //	ALTER TABLE bookings DROP CONSTRAINT IF EXISTS no_overlapping_bookings;
 //	ALTER TABLE products DROP CONSTRAINT IF EXISTS positive_price;
 func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	// Drop each constraint via a DO block. Two reasons we use a DO block
+	// rather than a literal ALTER TABLE DROP CONSTRAINT:
+	//
+	//  1. ConstraintsRemoved is just a slice of constraint names — the table
+	//     name has been thrown away by the diff layer (the comparator
+	//     synthesizes field-level CHECKs and presents them by name alone).
+	//     The DO block resolves the table at execution time from
+	//     information_schema, which works regardless of whether the
+	//     constraint is column-scoped or table-scoped.
+	//
+	//  2. A DO block executes immediately. The previous implementation
+	//     defined a plpgsql function plus a sql wrapper, then dropped both
+	//     without ever invoking either — so constraint removals were a
+	//     silent no-op.
+	//
+	// Each DO block is emitted as a separate top-level statement so the
+	// surrounding migration-statement splitter (";\n" join) treats it as a
+	// single unit.
 	for _, constraintName := range diff.ConstraintsRemoved {
-		// Create a temporary function that finds and drops the constraint dynamically
-		functionName := fmt.Sprintf("ptah_drop_constraint_%s", constraintName)
-
-		functionBody := fmt.Sprintf(`DECLARE
+		escaped := strings.ReplaceAll(constraintName, "'", "''")
+		doBlock := fmt.Sprintf(`-- Drop constraint %s (table resolved at runtime from information_schema)
+DO $ptah$
+DECLARE
     target_table TEXT;
 BEGIN
-    -- Find the table that contains this constraint
     SELECT table_name INTO target_table
     FROM information_schema.table_constraints
     WHERE constraint_name = '%s'
       AND table_schema = current_schema()
     LIMIT 1;
 
-    -- Drop the constraint if found
     IF target_table IS NOT NULL THEN
         EXECUTE format('ALTER TABLE %%I DROP CONSTRAINT IF EXISTS %%I', target_table, '%s');
         RAISE NOTICE 'Dropped constraint %s from table %%', target_table;
     ELSE
         RAISE NOTICE 'Constraint %s not found in current schema';
     END IF;
-END;`, constraintName, constraintName, constraintName, constraintName)
+END
+$ptah$`, constraintName, escaped, escaped, constraintName, constraintName)
 
-		// Step 1: Create the function
-		createFunctionNode := ast.NewCreateFunction(functionName).
-			SetReturns("VOID").
-			SetLanguage("plpgsql").
-			SetBody(functionBody).
-			SetComment(fmt.Sprintf("Temporary function to drop constraint %s", constraintName))
-
-		result = append(result, createFunctionNode)
-
-		// Step 2: Execute the function using a simple SQL function call
-		executeFunctionBody := fmt.Sprintf("SELECT %s();", functionName)
-		executeFunctionNode := ast.NewCreateFunction(fmt.Sprintf("ptah_exec_%s", functionName)).
-			SetReturns("VOID").
-			SetLanguage("sql").
-			SetBody(executeFunctionBody).
-			SetComment(fmt.Sprintf("Execute constraint removal for %s", constraintName))
-
-		result = append(result, executeFunctionNode)
-
-		// Step 3: Drop the temporary functions
-		dropMainFunctionNode := ast.NewDropFunction(functionName).
-			SetIfExists().
-			SetComment(fmt.Sprintf("Clean up temporary function for %s", constraintName))
-
-		result = append(result, dropMainFunctionNode)
-
-		dropExecFunctionNode := ast.NewDropFunction(fmt.Sprintf("ptah_exec_%s", functionName)).
-			SetIfExists().
-			SetComment(fmt.Sprintf("Clean up executor function for %s", constraintName))
-
-		result = append(result, dropExecFunctionNode)
+		result = append(result, ast.NewRawSQL(doBlock))
 	}
 	return result
 }

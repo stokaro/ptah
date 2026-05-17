@@ -2184,6 +2184,17 @@ func FunctionDefinitions(genFunction goschema.Function, dbFunction types.DBFunct
 		Changes:      make(map[string]string),
 	}
 
+	// Normalize parsed-but-omitted attributes to PostgreSQL defaults so an
+	// unspecified annotation field doesn't appear as a change against the DB.
+	genSecurity := genFunction.Security
+	if genSecurity == "" {
+		genSecurity = "INVOKER"
+	}
+	genVolatility := genFunction.Volatility
+	if genVolatility == "" {
+		genVolatility = "VOLATILE"
+	}
+
 	// Compare parameters
 	if genFunction.Parameters != dbFunction.Parameters {
 		functionDiff.Changes["parameters"] = fmt.Sprintf("%s -> %s", dbFunction.Parameters, genFunction.Parameters)
@@ -2199,14 +2210,14 @@ func FunctionDefinitions(genFunction goschema.Function, dbFunction types.DBFunct
 		functionDiff.Changes["language"] = fmt.Sprintf("%s -> %s", dbFunction.Language, genFunction.Language)
 	}
 
-	// Compare security context
-	if genFunction.Security != dbFunction.Security {
-		functionDiff.Changes["security"] = fmt.Sprintf("%s -> %s", dbFunction.Security, genFunction.Security)
+	// Compare security context (DEFINER vs INVOKER); empty Go-side means INVOKER.
+	if genSecurity != dbFunction.Security {
+		functionDiff.Changes["security"] = fmt.Sprintf("%s -> %s", dbFunction.Security, genSecurity)
 	}
 
-	// Compare volatility
-	if genFunction.Volatility != dbFunction.Volatility {
-		functionDiff.Changes["volatility"] = fmt.Sprintf("%s -> %s", dbFunction.Volatility, genFunction.Volatility)
+	// Compare volatility (VOLATILE/STABLE/IMMUTABLE); empty Go-side means VOLATILE.
+	if genVolatility != dbFunction.Volatility {
+		functionDiff.Changes["volatility"] = fmt.Sprintf("%s -> %s", dbFunction.Volatility, genVolatility)
 	}
 
 	// Compare function body (normalize whitespace for comparison)
