@@ -94,6 +94,16 @@ type TestScenario struct {
 	TestFunc    func(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS) error
 	// Optional enhanced test function that supports step recording
 	EnhancedTestFunc func(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error
+	// ClickHouseCompatible opts a scenario in to running against a live
+	// ClickHouse connection. Default false because most existing scenarios
+	// exercise features ClickHouse cannot meaningfully support (functions,
+	// RLS, policies, roles, global enums, foreign keys, UNIQUE constraints,
+	// ALTER COLUMN TYPE round-trips, etc.). Setting this to true is an
+	// explicit opt-in that the scenario authors have verified works on
+	// ClickHouse end-to-end. The runner skips non-opted-in scenarios on
+	// ClickHouse with a single recorded "Skip" step rather than running
+	// them and producing confusing failures.
+	ClickHouseCompatible bool
 }
 
 // TestRunner manages and executes integration tests
@@ -182,6 +192,24 @@ func (tr *TestRunner) runSingleTest(ctx context.Context, scenario TestScenario, 
 
 	// Create step recorder
 	recorder := &StepRecorder{}
+
+	// Gate ClickHouse runs to scenarios that have explicitly opted in.
+	// Most existing scenarios exercise features ClickHouse cannot support
+	// (functions, RLS, policies, roles, global enums, foreign keys, UNIQUE
+	// constraints, ALTER COLUMN TYPE round-trips), so running them against
+	// a live ClickHouse server produces confusing failures rather than
+	// signal. Record a single Skip step so the report still has a row.
+	if conn.Info().Dialect == "clickhouse" && !scenario.ClickHouseCompatible {
+		_ = recorder.RecordStep(
+			"Skip Non-ClickHouse-Compatible Scenario",
+			"Scenario has not opted in via ClickHouseCompatible; skipping on ClickHouse",
+			func() error { return nil },
+		)
+		result.Success = true
+		result.Steps = recorder.GetSteps()
+		result.Duration = time.Since(start)
+		return result
+	}
 
 	// Run the test scenario - use enhanced function if available, otherwise use regular function
 	if scenario.EnhancedTestFunc != nil {
