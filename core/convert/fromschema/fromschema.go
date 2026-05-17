@@ -1269,6 +1269,8 @@ func processEmbeddedRelationMode(generatedFields []goschema.Field, embedded gosc
 		Nullable:       embedded.Nullable, // Can the relationship be optional?
 		Foreign:        embedded.Ref,      // e.g., "users(id)"
 		ForeignKeyName: foreignKeyName,    // e.g., "fk_posts_user_id"
+		OnDelete:       embedded.OnDelete, // ON DELETE action (CASCADE, SET NULL, etc.)
+		OnUpdate:       embedded.OnUpdate, // ON UPDATE action (CASCADE, SET NULL, etc.)
 		Comment:        embedded.Comment,  // Documentation for the relationship
 		Overrides:      overrides,         // Platform-specific type overrides
 	})
