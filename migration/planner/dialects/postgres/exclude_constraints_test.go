@@ -8,6 +8,7 @@ import (
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/renderer"
+	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/planner/dialects/postgres"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
@@ -193,8 +194,8 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved(t *testing.T) {
 	}
 	generated := &goschema.Database{}
 
-	planner := postgres.New()
-	nodes := planner.GenerateMigrationAST(diff, generated)
+	pl := postgres.New()
+	nodes := pl.GenerateMigrationAST(diff, generated)
 
 	// One DO block per removed constraint. The previous implementation emitted
 	// four nodes (create/exec/drop/drop) but none of them actually invoked the
@@ -210,6 +211,31 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved(t *testing.T) {
 	c.Assert(sql, qt.Contains, "constraint_name = 'old_constraint'")
 	c.Assert(sql, qt.Contains, "ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I")
 	c.Assert(sql, qt.Contains, "$ptah$")
+	// The DO block MUST end with a semicolon. SplitSQLStatements is what the
+	// migrator uses to chop a migration into individual db.Exec calls, and it
+	// tokenizes on `;`. A DO block whose dollar-quoted body ends at `$tag$`
+	// without a trailing `;` merges with the following statement and Postgres
+	// rejects the merged chunk with `syntax error at or near "DO"`.
+	c.Assert(strings.HasSuffix(strings.TrimRight(sql, " \t\r\n"), ";"), qt.IsTrue,
+		qt.Commentf("rendered DO block must end with a semicolon; got: %s", sql))
+}
+
+func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_MultipleSplitCleanly(t *testing.T) {
+	c := qt.New(t)
+
+	// Two consecutive constraint drops must split into two statements through
+	// the SQL statement splitter. The regression this guards against is the
+	// missing `;` in VisitRawSQL: without it, two DO blocks merge into one
+	// chunk and Postgres rejects the second `DO`.
+	diff := &types.SchemaDiff{
+		ConstraintsRemoved: []string{"first_constraint", "second_constraint"},
+	}
+	statements := planner.GenerateSchemaDiffSQLStatements(diff, &goschema.Database{}, "postgres")
+	c.Assert(len(statements), qt.Equals, 2,
+		qt.Commentf("each DO block must end up as its own statement after SQL splitting; got %d statements:\n%s",
+			len(statements), strings.Join(statements, "\n---\n")))
+	c.Assert(strings.Contains(statements[0], "first_constraint"), qt.IsTrue)
+	c.Assert(strings.Contains(statements[1], "second_constraint"), qt.IsTrue)
 }
 
 func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_EscapesSingleQuoteInName(t *testing.T) {
