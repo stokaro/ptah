@@ -1065,9 +1065,24 @@ func isFieldLevelConstraint(dbConstraint types.DBConstraint, generated *goschema
 			return true
 		}
 	case "CHECK":
-		// PostgreSQL represents NOT NULL constraints as CHECK constraints with specific naming pattern
+		// PostgreSQL exposes NOT NULL declarations as synthetic CHECK rows in
+		// information_schema with a `<table>_<column>_not_null` naming
+		// convention (and, in PG18, as named NOT NULL constraints in
+		// pg_constraint). Ptah never emits these directly — they are owned by
+		// the column's NOT NULL clause, which the table/column lifecycle
+		// already handles:
+		//   - field exists in target with NOT NULL → covered by the CREATE
+		//     TABLE / ALTER COLUMN SET NOT NULL emitted elsewhere.
+		//   - field exists in target as nullable → an ALTER COLUMN DROP
+		//     NOT NULL handles it.
+		//   - field has been dropped → the column drop cascades.
+		//   - table has been dropped → the table drop cascades.
+		// In every case an explicit ALTER TABLE … DROP CONSTRAINT for the
+		// synthetic name would be redundant at best and illegal at worst (PG
+		// rejects with 42P16 "column X is in a primary key" when the column
+		// is part of a PK). Treat these as field-level always; skip the diff.
 		if strings.Contains(dbConstraint.Name, "_not_null") {
-			return hasNonNullableFieldInTable(dbConstraint.TableName, generated)
+			return true
 		}
 		// Regular CHECK constraints from `check=` annotations are surfaced
 		// to the diff via synthesized goschema.Constraint entries (see
@@ -1077,24 +1092,6 @@ func isFieldLevelConstraint(dbConstraint types.DBConstraint, generated *goschema
 		// all flow through the standard Constraints() comparison path.
 	}
 
-	return false
-}
-
-// hasNonNullableFieldInTable checks if there's any non-nullable field in the table
-func hasNonNullableFieldInTable(tableName string, generated *goschema.Database) bool {
-	for _, field := range generated.Fields {
-		// Get table name for this field
-		fieldTableName := field.StructName
-		for _, table := range generated.Tables {
-			if table.StructName == field.StructName {
-				fieldTableName = table.Name
-				break
-			}
-		}
-		if fieldTableName == tableName && !field.Nullable {
-			return true
-		}
-	}
 	return false
 }
 
