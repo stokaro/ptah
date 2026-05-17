@@ -135,6 +135,14 @@ func ToField(column *ast.ColumnNode, structName, sourcePlatform string) goschema
 		Comment:    column.Comment,
 	}
 
+	// Mirror the fromschema guarding: only surface CheckName when there's
+	// actually a CHECK expression. Otherwise a stale name from a partly-
+	// populated AST node would leak back into a generated Go annotation
+	// suggestion as a phantom `check_name=` with no `check=` to back it.
+	if column.Check != "" {
+		field.CheckName = column.CheckName
+	}
+
 	// Extract default values
 	if column.Default != nil {
 		if column.Default.Value != "" {
