@@ -446,22 +446,24 @@ func TestCreateTable_TableCommentEscapesQuotes(t *testing.T) {
 }
 
 func TestSplitColumns_ParenAware(t *testing.T) {
-	cases := []struct {
-		in   string
-		want []string
-	}{
-		{"id", []string{"id"}},
-		{"id, created_at", []string{"id", "created_at"}},
-		{"(id, created_at)", []string{"id", "created_at"}},
-		{"tuple(a, b), c", []string{"tuple(a, b)", "c"}},
-		{"intDiv(ts, 86400), user_id", []string{"intDiv(ts, 86400)", "user_id"}},
-		{"toYYYYMM(ts), id", []string{"toYYYYMM(ts)", "id"}},
-		{"cityHash64(user_id), event_time", []string{"cityHash64(user_id)", "event_time"}},
+	cases := []string{
+		"id",
+		"id, created_at",
+		"(id, created_at)",
+		"tuple(a, b), c",
+		"intDiv(ts, 86400), user_id",
+		"toYYYYMM(ts), id",
+		"cityHash64(user_id), event_time",
 		// Outer wrap that is NOT a wrap-of-the-whole-expression: must stay split.
-		{"(a, b), c", []string{"(a, b)", "c"}},
+		"(a, b), c",
 	}
-	for _, tc := range cases {
-		t.Run(tc.in, func(t *testing.T) {
+	// Direct assertions on splitColumns' return value live in the white-box
+	// test file (clickhouse_internal_test.go); here we only confirm that the
+	// renderer end-to-end accepts each of these expressions, which it would
+	// not if splitColumns mis-identified a function-call sort key as a bare
+	// nullable column.
+	for _, in := range cases {
+		t.Run(in, func(t *testing.T) {
 			c := qt.New(t)
 			tbl := ast.NewCreateTable("split_t").
 				AddColumn(ast.NewColumn("id", "BIGINT").SetPrimary()).
@@ -473,15 +475,9 @@ func TestSplitColumns_ParenAware(t *testing.T) {
 				AddColumn(ast.NewColumn("b", "BIGINT").SetNotNull())
 			tbl.AddColumn(ast.NewColumn("c", "BIGINT").SetNotNull())
 			tbl.SetOption("ENGINE", "MergeTree")
-			tbl.SetOption("ORDER_BY", tc.in)
-			// We can't import splitColumns from the test package — instead we
-			// indirectly assert correctness by confirming the renderer accepts
-			// the expression (which it would not if splitColumns mis-identified
-			// a function-call sort key as a bare nullable column).
+			tbl.SetOption("ORDER_BY", in)
 			err := renderErr(tbl)
 			c.Assert(err, qt.IsNil)
-			// And length matches.
-			_ = tc.want
 		})
 	}
 }
@@ -517,8 +513,47 @@ func TestColumnTypeMapping_JSONEmitsNotice(t *testing.T) {
 		AddColumn(ast.NewColumn("id", "BIGINT").SetPrimary()).
 		AddColumn(ast.NewColumn("body", "JSONB").SetNotNull())
 	out := render(t, tbl)
+	// NOT-NULL JSON column: rendered as String, notice must match.
 	c.Assert(out, qt.Contains, "-- CLICKHOUSE: column \"body\" mapped JSON → String")
 	c.Assert(out, qt.Contains, "body String")
+	// Notice must reflect the final emitted type, not the unwrapped form.
+	c.Assert(out, qt.Not(qt.Contains), "mapped JSON → Nullable(String)")
+}
+
+// Nullable counterpart: a nullable JSON column ends up as Nullable(String);
+// the advisory notice must reflect that final emitted type, not the
+// pre-Nullable-wrap form.
+func TestColumnTypeMapping_JSONEmitsNotice_Nullable(t *testing.T) {
+	c := qt.New(t)
+	tbl := ast.NewCreateTable("json_n_t").
+		AddColumn(ast.NewColumn("id", "BIGINT").SetPrimary()).
+		AddColumn(ast.NewColumn("body", "JSONB")) // nullable by default
+	out := render(t, tbl)
+	c.Assert(out, qt.Contains, "-- CLICKHOUSE: column \"body\" mapped JSON → Nullable(String)")
+	c.Assert(out, qt.Contains, "body Nullable(String)")
+}
+
+// ALTER TABLE MODIFY COLUMN of a JSON column should likewise carry a notice
+// that names the post-Nullable-wrap final type.
+func TestAlterTable_ModifyColumnJSONNoticeMatchesFinalType(t *testing.T) {
+	c := qt.New(t)
+	modNotNull := &ast.AlterTableNode{
+		Name: "events",
+		Operations: []ast.AlterOperation{
+			&ast.ModifyColumnOperation{Column: ast.NewColumn("payload", "JSONB").SetNotNull()},
+		},
+	}
+	modNullable := &ast.AlterTableNode{
+		Name: "events",
+		Operations: []ast.AlterOperation{
+			&ast.ModifyColumnOperation{Column: ast.NewColumn("payload", "JSONB")},
+		},
+	}
+	out := render(t, modNotNull, modNullable)
+	c.Assert(out, qt.Contains, "-- CLICKHOUSE: column \"payload\" mapped JSON → String")
+	c.Assert(out, qt.Contains, "ALTER TABLE events MODIFY COLUMN payload String;")
+	c.Assert(out, qt.Contains, "-- CLICKHOUSE: column \"payload\" mapped JSON → Nullable(String)")
+	c.Assert(out, qt.Contains, "ALTER TABLE events MODIFY COLUMN payload Nullable(String);")
 }
 
 func TestVisitIndex_UniqueEmitsDowngradeComment(t *testing.T) {

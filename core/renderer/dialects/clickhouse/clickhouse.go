@@ -97,9 +97,14 @@ func escapeStringLiteral(s string) string {
 // ClickHouse equivalent. `notice`, when non-empty, is a one-line warning the
 // caller should emit as a leading `-- CLICKHOUSE: ...` comment so users are
 // not surprised by silent conversions.
+//
+// `jsonMapped` is set when the original SQL type was JSON/JSONB and was
+// rewritten to a String-based type; the notice for this case is finalised
+// in renderColumnType so it reflects the post-Nullable-wrap final type.
 type typeMapping struct {
-	mapped string
-	notice string
+	mapped     string
+	notice     string
+	jsonMapped bool
 }
 
 // directTypeMap is a lookup table of base SQL type names (UPPER, parameter
@@ -171,9 +176,11 @@ func mapColumnType(t string) (typeMapping, error) {
 	case "JSON", "JSONB":
 		// Treat JSON as a String; ClickHouse's native JSON type is still
 		// experimental. Users who want it can override via platform.clickhouse.type.
+		// The notice is finalised in renderColumnType so it reflects the
+		// post-Nullable-wrap final type (e.g. Nullable(String)).
 		return typeMapping{
-			mapped: "String",
-			notice: "mapped JSON → String; override via platform.clickhouse.type=JSON if you want experimental native JSON",
+			mapped:     "String",
+			jsonMapped: true,
 		}, nil
 	}
 
@@ -217,6 +224,11 @@ type columnTypeOptions struct {
 
 // renderColumnType produces the final type expression for a column,
 // applying Nullable() wrapping for nullable columns subject to opts.
+//
+// If the underlying type mapping was a JSON/JSONB → String rewrite, the
+// advisory notice is finalised here so it mentions the *final* rendered type
+// (e.g. `Nullable(String)` when the column ends up nullable) rather than the
+// pre-wrap form.
 func renderColumnType(col *ast.ColumnNode, opts columnTypeOptions) (typeMapping, error) {
 	mapping, err := mapColumnType(col.Type)
 	if err != nil {
@@ -227,6 +239,9 @@ func renderColumnType(col *ast.ColumnNode, opts columnTypeOptions) (typeMapping,
 		if !strings.HasPrefix(mapping.mapped, "Nullable(") {
 			mapping.mapped = "Nullable(" + mapping.mapped + ")"
 		}
+	}
+	if mapping.jsonMapped {
+		mapping.notice = fmt.Sprintf("mapped JSON → %s; override via platform.clickhouse.type=JSON if you want experimental native JSON", mapping.mapped)
 	}
 	return mapping, nil
 }
@@ -413,13 +428,14 @@ func splitColumns(expr string) []string {
 			depth--
 		case ',':
 			if depth == 0 {
-				out = append(out, strings.TrimSpace(expr[start:i]))
+				if s := strings.TrimSpace(expr[start:i]); s != "" {
+					out = append(out, s)
+				}
 				start = i + 1
 			}
 		}
 	}
-	tail := strings.TrimSpace(expr[start:])
-	if tail != "" {
+	if tail := strings.TrimSpace(expr[start:]); tail != "" {
 		out = append(out, tail)
 	}
 	return out
