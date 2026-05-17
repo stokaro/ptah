@@ -5,9 +5,10 @@ import (
 )
 
 const (
-	Postgres = "postgres"
-	MySQL    = "mysql"
-	MariaDB  = "mariadb"
+	Postgres   = "postgres"
+	MySQL      = "mysql"
+	MariaDB    = "mariadb"
+	ClickHouse = "clickhouse"
 )
 
 func NormalizeDialect(dialect string) string {
@@ -18,6 +19,8 @@ func NormalizeDialect(dialect string) string {
 		return MySQL
 	case "mariadb":
 		return MariaDB
+	case "clickhouse", "ch":
+		return ClickHouse
 	default:
 		return ""
 	}

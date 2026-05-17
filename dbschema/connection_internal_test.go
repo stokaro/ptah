@@ -1,10 +1,56 @@
 package dbschema
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 )
+
+func TestConvertClickHouseURL(t *testing.T) {
+	cases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "passthrough canonical URL",
+			input:    "clickhouse://default:secret@localhost:9000/analytics",
+			expected: "clickhouse://default:secret@localhost:9000/analytics",
+		},
+		{
+			name:     "preserves query parameters",
+			input:    "clickhouse://default:secret@localhost:9000/analytics?secure=true&dial_timeout=10s",
+			expected: "clickhouse://default:secret@localhost:9000/analytics?secure=true&dial_timeout=10s",
+		},
+		{
+			name:     "rewrites uppercase scheme",
+			input:    "CLICKHOUSE://default@localhost:9000/db",
+			expected: "clickhouse://default@localhost:9000/db",
+		},
+		{
+			name:     "returns input on malformed URL",
+			input:    "::not-a-url::",
+			expected: "::not-a-url::",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			got := convertClickHouseURL(tc.input)
+			// url.Parse() doesn't always preserve raw query ordering, so compare with
+			// a small amount of flexibility for the query-bearing case.
+			if strings.Contains(tc.expected, "?") {
+				c.Assert(got, qt.Contains, "clickhouse://default:secret@localhost:9000/analytics")
+				c.Assert(got, qt.Contains, "secure=true")
+				c.Assert(got, qt.Contains, "dial_timeout=10s")
+				return
+			}
+			c.Assert(got, qt.Equals, tc.expected)
+		})
+	}
+}
 
 func TestRemovePostgresPoolParams(t *testing.T) {
 	tests := []struct {
