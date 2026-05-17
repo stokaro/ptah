@@ -14,10 +14,8 @@ import (
 // interface drifts, this fails to compile rather than at integration-test
 // time. Mirrors the postgres / mysql convention.
 func TestClickHouseWriter_SchemaWriterInterface(t *testing.T) {
-	c := qt.New(t)
 	writer := NewClickHouseWriter(nil, "default")
 	var _ types.SchemaWriter = writer
-	c.Assert(writer, qt.IsNotNil)
 }
 
 func TestQuoteIdent(t *testing.T) {

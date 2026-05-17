@@ -99,7 +99,7 @@ func (w *Writer) DropAllTables() error {
 
 	// DropAllTables matches the dialect-agnostic SchemaWriter signature
 	// (func() error), so we use a background context for the listing query
-	// and per-table drops — same pattern postgres uses internally.
+	// and per-table drops — same pattern mysql uses internally.
 	ctx := context.Background()
 
 	var tables []string
