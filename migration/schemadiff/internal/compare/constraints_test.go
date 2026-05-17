@@ -512,7 +512,15 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 			expected: &difftypes.SchemaDiff{},
 		},
 		{
-			name: "field-level CHECK expression changed → drop + add",
+			// v1 trade-off documented on checkConstraintChanged: an
+			// expression-only change with the same constraint name does
+			// NOT trigger a migration, because PostgreSQL normalizes the
+			// stored clause (parens / casts / `IN (...)` → `= ANY
+			// (ARRAY[...])`) and a literal string compare would otherwise
+			// produce a permanent drift loop on every run. Users who need
+			// to force a regen should change `check_name=` alongside the
+			// expression — covered by the next case below.
+			name: "field-level CHECK expression-only change is intentionally not surfaced (v1)",
 			generated: &goschema.Database{
 				Tables: []goschema.Table{{StructName: "File", Name: "files"}},
 				Fields: []goschema.Field{
@@ -535,8 +543,39 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 					},
 				},
 			},
+			expected: &difftypes.SchemaDiff{},
+		},
+		{
+			// Renaming the constraint via `check_name=` while keeping the
+			// expression IS observable: the diff drops the old-named DB
+			// constraint and adds the renamed synthesized one. This is
+			// the documented escape hatch for forcing an expression change.
+			name: "field-level CHECK rename via check_name → drop + add",
+			generated: &goschema.Database{
+				Tables: []goschema.Table{{StructName: "File", Name: "files"}},
+				Fields: []goschema.Field{
+					{
+						StructName: "File",
+						Name:       "category",
+						Type:       "TEXT",
+						Check:      "category IN ('a','b','c')",
+						CheckName:  "files_category_v2",
+					},
+				},
+			},
+			database: &types.DBSchema{
+				Tables: []types.DBTable{filesTable},
+				Constraints: []types.DBConstraint{
+					{
+						Name:        "files_category_check",
+						TableName:   "files",
+						Type:        "CHECK",
+						CheckClause: stringPtr("category IN ('a','b')"),
+					},
+				},
+			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded:   []string{"files_category_check"},
+				ConstraintsAdded:   []string{"files_category_v2"},
 				ConstraintsRemoved: []string{"files_category_check"},
 			},
 		},

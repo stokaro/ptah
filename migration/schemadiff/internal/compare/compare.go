@@ -950,9 +950,32 @@ func excludeConstraintChanged(genConstraint goschema.Constraint, dbConstraint ty
 	return false
 }
 
-// checkConstraintChanged compares CHECK constraint definitions
-func checkConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint) bool {
-	return genConstraint.CheckExpression != getStringValue(dbConstraint.CheckClause)
+// checkConstraintChanged compares CHECK constraint definitions.
+//
+// In practice, we cannot rely on a literal string compare here: PostgreSQL
+// rewrites the clause when it stores the constraint — adding outer parens,
+// inserting `::type` casts, converting `IN (...)` to `= ANY (ARRAY[...])`,
+// requalifying identifiers — so `pg_get_constraintdef` / `check_clause`
+// never round-trips byte-equal to what the user wrote in `check=`. Doing
+// the naive compare would mark every CHECK as drifted on the very next
+// run, producing a perpetual drop+add loop (see issue #112 discussion).
+//
+// For v1 the contract is "spelling-equivalence + a stable generated name
+// is enough as long as users don't author the same CHECK two different
+// ways" (verbatim from the issue body). Trusting the constraint name
+// gives us:
+//   - Adding `check=` → ConstraintsAdded (name not in DB).
+//   - Removing `check=` → ConstraintsRemoved (name not in generated).
+//   - Renaming via `check_name=` → drop + add (different name).
+//   - Idempotency after apply → no diff (same name).
+//
+// The known limitation is that changing only the expression while keeping
+// the constraint name will not trigger a migration. Users who need that
+// today should change `check_name=` alongside the expression; an
+// expression-normalization pass (and possibly AST-level compare) is a
+// follow-up tracked against future work.
+func checkConstraintChanged(_ goschema.Constraint, _ types.DBConstraint) bool {
+	return false
 }
 
 // uniqueConstraintChanged compares UNIQUE constraint definitions
