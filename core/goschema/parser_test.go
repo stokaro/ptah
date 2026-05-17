@@ -830,3 +830,52 @@ type CommodityService struct {
 	c.Assert(fkField.OnDelete, qt.Equals, "CASCADE")
 	c.Assert(fkField.OnUpdate, qt.Equals, "RESTRICT")
 }
+
+// TestParseDir_EmbeddedRelationFKActions exercises the ParseDir/walker path
+// (which expands embedded fields via the internal processEmbeddedFields), to
+// pin that on_delete / on_update declared on a //migrator:embedded mode="relation"
+// annotation reach the planner-visible Field — a third copy of the embedded
+// expansion lives in core/goschema/utils.go and used to drop the actions
+// before the fix for #117 landed.
+func TestParseDir_EmbeddedRelationFKActions(t *testing.T) {
+	c := qt.New(t)
+
+	content := `package entities
+
+//migrator:schema:table name="users"
+type User struct {
+	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+}
+
+//migrator:schema:table name="posts"
+type Post struct {
+	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+
+	//migrator:embedded mode="relation" field="author_id" ref="users(id)" on_delete="CASCADE" on_update="RESTRICT"
+	Author User
+}
+`
+
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "entities.go")
+	err := os.WriteFile(testFile, []byte(content), 0644) //nolint:gosec // 0644 is fine for tests
+	c.Assert(err, qt.IsNil)
+
+	database, err := goschema.ParseDir(tmpDir)
+	c.Assert(err, qt.IsNil)
+
+	var authorField *goschema.Field
+	for i, f := range database.Fields {
+		if f.StructName == "Post" && f.Name == "author_id" {
+			authorField = &database.Fields[i]
+			break
+		}
+	}
+	c.Assert(authorField, qt.Not(qt.IsNil),
+		qt.Commentf("expected synthesized author_id field on Post; got fields: %+v", database.Fields))
+	c.Assert(authorField.Foreign, qt.Equals, "users(id)")
+	c.Assert(authorField.OnDelete, qt.Equals, "CASCADE")
+	c.Assert(authorField.OnUpdate, qt.Equals, "RESTRICT")
+}

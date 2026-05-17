@@ -477,8 +477,10 @@ func processEmbeddedRelationMode(generatedFields []Field, embedded EmbeddedField
 		Nullable:       embedded.Nullable, // Can the relationship be optional?
 		Foreign:        embedded.Ref,      // e.g., "users(id)"
 		ForeignKeyName: foreignKeyName,    // e.g., "fk_posts_user_id"
-		Comment:        embedded.Comment,  // Documentation for the relationship
-		Overrides:      overrides,         // Platform-specific type overrides
+		OnDelete:       embedded.OnDelete, // ON DELETE action (CASCADE, SET NULL, etc.) — keeps the walker/planner path in sync with fromschema (#117).
+		OnUpdate:       embedded.OnUpdate,
+		Comment:        embedded.Comment, // Documentation for the relationship
+		Overrides:      overrides,        // Platform-specific type overrides
 	})
 
 	return generatedFields
