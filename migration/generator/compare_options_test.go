@@ -233,7 +233,7 @@ func TestGenerateMigration_CompareOptions_Integration_NilOptions(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	// Create database connection and set up test extensions
-	conn, err := dbschema.ConnectToDatabase(dbURL)
+	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	c.Assert(err, qt.IsNil, qt.Commentf("Failed to connect to database: %v", err))
 	defer conn.Close()
 
@@ -254,7 +254,7 @@ func TestGenerateMigration_CompareOptions_Integration_NilOptions(t *testing.T) {
 		CompareOptions: nil,
 	}
 
-	files, err := generator.GenerateMigration(opts)
+	files, err := generator.GenerateMigration(context.Background(), opts)
 	c.Assert(err, qt.IsNil, qt.Commentf("Migration generation failed: %v", err))
 
 	// With nil options, plpgsql should be ignored, so no migration should be generated
@@ -292,7 +292,7 @@ func TestGenerateMigration_CompareOptions_Integration_CustomIgnoreList(t *testin
 	c.Assert(err, qt.IsNil)
 
 	// Create database connection
-	conn, err := dbschema.ConnectToDatabase(dbURL)
+	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	c.Assert(err, qt.IsNil, qt.Commentf("Failed to connect to database: %v", err))
 	defer conn.Close()
 
@@ -308,7 +308,7 @@ func TestGenerateMigration_CompareOptions_Integration_CustomIgnoreList(t *testin
 		CompareOptions: config.WithIgnoredExtensions("plpgsql", "adminpack"),
 	}
 
-	files, err := generator.GenerateMigration(opts)
+	files, err := generator.GenerateMigration(context.Background(), opts)
 	c.Assert(err, qt.IsNil, qt.Commentf("Migration generation failed: %v", err))
 
 	// With custom options ignoring adminpack, no migration should be generated
@@ -346,7 +346,7 @@ func TestGenerateMigration_CompareOptions_Integration_NoIgnoredExtensions(t *tes
 	c.Assert(err, qt.IsNil)
 
 	// Create database connection and set up test extensions
-	conn, err := dbschema.ConnectToDatabase(dbURL)
+	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	c.Assert(err, qt.IsNil, qt.Commentf("Failed to connect to database: %v", err))
 	defer conn.Close()
 
@@ -367,7 +367,7 @@ func TestGenerateMigration_CompareOptions_Integration_NoIgnoredExtensions(t *tes
 		CompareOptions: config.WithIgnoredExtensions(),
 	}
 
-	files, err := generator.GenerateMigration(opts)
+	files, err := generator.GenerateMigration(context.Background(), opts)
 	c.Assert(err, qt.IsNil, qt.Commentf("Migration generation failed: %v", err))
 
 	// With no ignored extensions, plpgsql should be managed and migration should be generated
@@ -416,7 +416,7 @@ func TestGenerateMigration_CompareOptions_Integration_AddExtension(t *testing.T)
 	c.Assert(err, qt.IsNil)
 
 	// Create database connection and set up test extensions
-	conn, err := dbschema.ConnectToDatabase(dbURL)
+	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	c.Assert(err, qt.IsNil, qt.Commentf("Failed to connect to database: %v", err))
 	defer conn.Close()
 
@@ -437,7 +437,7 @@ func TestGenerateMigration_CompareOptions_Integration_AddExtension(t *testing.T)
 		CompareOptions: config.WithIgnoredExtensions("plpgsql"),
 	}
 
-	files, err := generator.GenerateMigration(opts)
+	files, err := generator.GenerateMigration(context.Background(), opts)
 	c.Assert(err, qt.IsNil, qt.Commentf("Migration generation failed: %v", err))
 
 	// Migration should be generated to add pg_trgm
@@ -546,7 +546,7 @@ type TestTable struct {
 	}
 
 	// This should fail due to memory database limitations, but not due to CompareOptions
-	_, err = generator.GenerateMigration(opts)
+	_, err = generator.GenerateMigration(context.Background(), opts)
 	c.Assert(err, qt.IsNotNil)
 
 	// Verify that the error is not related to CompareOptions
@@ -593,7 +593,7 @@ type TestTable struct {
 	}
 
 	// This should fail due to memory database limitations, but not due to CompareOptions
-	_, err = generator.GenerateMigration(opts)
+	_, err = generator.GenerateMigration(context.Background(), opts)
 	c.Assert(err, qt.IsNotNil)
 
 	// Verify that the error is not related to CompareOptions

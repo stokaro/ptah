@@ -8,6 +8,7 @@ import (
 	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -56,6 +57,7 @@ var migrateStatusFlags = map[string]cobraflags.Flag{
 		Value: false,
 		Usage: "Output status in JSON format",
 	},
+	dbcli.ConnectTimeoutFlagName: dbcli.NewConnectTimeoutFlag(),
 }
 
 func NewMigrateStatusCommand() *cobra.Command {
@@ -77,12 +79,18 @@ func migrateStatusCommand(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("migrations directory is required")
 	}
 
-	// Connect to database
-	conn, err := dbschema.ConnectToDatabase(dbURL)
+	connectTimeout, err := dbcli.ParseConnectTimeout(migrateStatusFlags[dbcli.ConnectTimeoutFlagName].GetString())
+	if err != nil {
+		return err
+	}
+
+	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
+	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
+	cancelConnect()
 	if err != nil {
 		return fmt.Errorf("error connecting to database: %w", err)
 	}
-	defer conn.Close()
+	defer dbcli.WarnOnClose("database connection", conn)
 
 	// Create filesystem from migrations directory
 	migrationsFS := os.DirFS(migrationsDir)

@@ -20,16 +20,16 @@ func TestMigrationGeneratorValidation(t *testing.T) {
 	}
 
 	// Connect to database
-	conn, err := dbschema.ConnectToDatabase(dbURL)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Clean database before test
 	err = conn.Writer().DropAllTables()
 	c.Assert(err, qt.IsNil)
 
 	// Run the migration generator validation test
-	ctx := context.Background()
 	recorder := &StepRecorder{}
 	err = testMigrationGeneratorValidation(ctx, conn, testFixtures, recorder)
 	c.Assert(err, qt.IsNil)
@@ -46,9 +46,10 @@ func TestValidateSchemaConsistency(t *testing.T) {
 	}
 
 	// Connect to database
-	conn, err := dbschema.ConnectToDatabase(dbURL)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Clean database before test
 	err = conn.Writer().DropAllTables()
@@ -60,7 +61,6 @@ func TestValidateSchemaConsistency(t *testing.T) {
 	defer vem.Cleanup()
 
 	// Apply initial migration
-	ctx := context.Background()
 	err = vem.MigrateToVersion(ctx, conn, "000-initial", "Create initial tables")
 	c.Assert(err, qt.IsNil)
 
@@ -80,16 +80,16 @@ func TestValidateEmptySchema(t *testing.T) {
 	}
 
 	// Connect to database
-	conn, err := dbschema.ConnectToDatabase(dbURL)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Clean database before test
 	err = conn.Writer().DropAllTables()
 	c.Assert(err, qt.IsNil)
 
 	// Validate empty schema - should pass
-	ctx := context.Background()
 	err = validateEmptySchema(ctx, conn)
 	c.Assert(err, qt.IsNil)
 

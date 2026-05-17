@@ -1,12 +1,14 @@
 package readdb
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/core/convert/dbschematogo"
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/dbschema"
@@ -32,6 +34,7 @@ var readDBFlags = map[string]cobraflags.Flag{
 		Value: "",
 		Usage: "Database URL (required). Example: postgres://localhost:5432/dbname",
 	},
+	dbcli.ConnectTimeoutFlagName: dbcli.NewConnectTimeoutFlag(),
 }
 
 func NewReadDBCommand() *cobra.Command {
@@ -50,8 +53,15 @@ func readDBCommand(_ *cobra.Command, _ []string) error {
 	fmt.Println("=== DATABASE SCHEMA ===")
 	fmt.Println()
 
+	connectTimeout, err := dbcli.ParseConnectTimeout(readDBFlags[dbcli.ConnectTimeoutFlagName].GetString())
+	if err != nil {
+		return err
+	}
+
 	// Connect to the database
-	conn, err := dbschema.ConnectToDatabase(dbURL)
+	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
+	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
+	cancelConnect()
 	if err != nil {
 		fmt.Printf("Error connecting to database: %v\n", err)
 		fmt.Println()
@@ -60,9 +70,10 @@ func readDBCommand(_ *cobra.Command, _ []string) error {
 		fmt.Println("2. The database server is running")
 		fmt.Println("3. You have the correct permissions")
 		fmt.Println("4. The database exists")
+		fmt.Println("5. The connection completes within --connect-timeout (currently " + connectTimeout.String() + ")")
 		return err
 	}
-	defer conn.Close()
+	defer dbcli.WarnOnClose("database connection", conn)
 
 	fmt.Printf("Connected to %s database successfully!\n", conn.Info().Dialect)
 	fmt.Println()

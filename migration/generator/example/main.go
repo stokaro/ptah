@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/stokaro/ptah/migration/generator"
 )
@@ -48,8 +50,11 @@ func main() {
 	fmt.Printf("  Migration name: %s\n", migrationName)
 	fmt.Println()
 
-	// Generate the migration
-	files, err := generator.GenerateMigration(opts)
+	// Generate the migration. Wrap with a generous timeout so a stuck DB
+	// fails fast instead of hanging the CLI.
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	files, err := generator.GenerateMigration(ctx, opts)
+	cancel()
 	if err != nil {
 		log.Fatalf("Error generating migration: %v", err)
 	}

@@ -45,8 +45,8 @@
 //
 // Basic migration setup and execution:
 //
-//	// Create database connection
-//	conn, err := dbschema.ConnectToDatabase("postgres://user:pass@localhost/db")
+//	// Create database connection (supply a context to bound the initial Ping)
+//	conn, err := dbschema.ConnectToDatabase(ctx, "postgres://user:pass@localhost/db")
 //	if err != nil {
 //		log.Fatal(err)
 //	}

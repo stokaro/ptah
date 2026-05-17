@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"time"
 
 	"github.com/stokaro/ptah/core/goschema"
@@ -1132,11 +1133,15 @@ func testDynamicConcurrentMigrations(ctx context.Context, conn *dbschema.Databas
 
 	return recorder.RecordStep("Test Concurrent Migration Attempts", "Simulate concurrent migration attempts", func() error {
 		// Create two separate database connections to simulate concurrency
-		conn2, err := dbschema.ConnectToDatabase(conn.Info().URL)
+		conn2, err := dbschema.ConnectToDatabase(ctx, conn.Info().URL)
 		if err != nil {
 			return fmt.Errorf("failed to create second connection: %w", err)
 		}
-		defer conn2.Close()
+		defer func() {
+			if cerr := conn2.Close(); cerr != nil {
+				slog.Warn("failed to close concurrent migration connection", "error", cerr)
+			}
+		}()
 
 		// Create channels for synchronization
 		startCh := make(chan struct{})

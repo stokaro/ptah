@@ -48,8 +48,8 @@
 //		log.Fatal(err)
 //	}
 //
-//	// Connect to database and read current schema
-//	conn, err := dbschema.ConnectToDatabase("postgres://user:pass@localhost/db")
+//	// Connect to database and read current schema (supply a context)
+//	conn, err := dbschema.ConnectToDatabase(ctx, "postgres://user:pass@localhost/db")
 //	if err != nil {
 //		log.Fatal(err)
 //	}

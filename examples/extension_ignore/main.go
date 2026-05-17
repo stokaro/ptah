@@ -11,8 +11,8 @@
 //		log.Fatalf("Failed to parse Go entities: %v", err)
 //	}
 //
-//	// Connect to database
-//	conn, err := dbschema.ConnectToDatabase("postgres://user:pass@localhost/db")
+//	// Connect to database (supply a context so the call can be cancelled)
+//	conn, err := dbschema.ConnectToDatabase(ctx, "postgres://user:pass@localhost/db")
 //	if err != nil {
 //		log.Fatalf("Failed to connect to database: %v", err)
 //	}
@@ -40,7 +40,7 @@
 //	diff := schemadiff.CompareWithOptions(generated, database, opts)
 //
 //	// Generate migrations based on the differences
-//	files, err := generator.GenerateMigration(generator.GenerateMigrationOptions{
+//	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
 //		GoEntitiesDir: "./models",
 //		DatabaseURL:   "postgres://user:pass@localhost/db",
 //		MigrationName: "update_extensions",

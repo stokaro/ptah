@@ -163,14 +163,23 @@ func (tr *TestRunner) runSingleTest(ctx context.Context, scenario TestScenario, 
 	}
 
 	// Connect to database
-	conn, err := dbschema.ConnectToDatabase(dbURL)
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	if err != nil {
 		result.Success = false
 		result.Error = fmt.Sprintf("Failed to connect to database: %v", err)
 		result.Duration = time.Since(start)
 		return result
 	}
-	defer conn.Close()
+	defer func() {
+		if cerr := conn.Close(); cerr != nil {
+			// Surface close failures in the test result so a leaked connection
+			// doesn't pass silently. The scenario error (if any) takes priority.
+			if result.Success {
+				result.Success = false
+				result.Error = fmt.Sprintf("Failed to close database connection: %v", cerr)
+			}
+		}
+	}()
 
 	// Clean database before test
 	if err := tr.cleanDatabase(ctx, conn); err != nil {

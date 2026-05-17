@@ -41,14 +41,17 @@
 //
 // Database connections are established using standard database URLs:
 //
+//	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+//	defer cancel()
+//
 //	// PostgreSQL
-//	conn, err := dbschema.ConnectToDatabase("postgres://user:pass@localhost:5432/database")
+//	conn, err := dbschema.ConnectToDatabase(ctx, "postgres://user:pass@localhost:5432/database")
 //
 //	// MySQL
-//	conn, err := dbschema.ConnectToDatabase("mysql://user:pass@tcp(localhost:3306)/database")
+//	conn, err := dbschema.ConnectToDatabase(ctx, "mysql://user:pass@tcp(localhost:3306)/database")
 //
 //	// MariaDB
-//	conn, err := dbschema.ConnectToDatabase("mariadb://user:pass@tcp(localhost:3307)/database")
+//	conn, err := dbschema.ConnectToDatabase(ctx, "mariadb://user:pass@tcp(localhost:3307)/database")
 //
 // # Schema Reading
 //

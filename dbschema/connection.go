@@ -15,8 +15,15 @@ import (
 	"github.com/stokaro/ptah/dbschema/types"
 )
 
-// ConnectToDatabase creates a database connection from a URL
-func ConnectToDatabase(dbURL string) (*DatabaseConnection, error) {
+// ConnectToDatabase creates a database connection from a URL.
+//
+// The provided context governs the initial Ping used to verify the connection
+// and the metadata queries issued to populate [DBInfo]. Cancelling the context
+// before or during the call causes ConnectToDatabase to return promptly with
+// the context error wrapped in a descriptive message. The context does not
+// affect the lifetime of the returned *DatabaseConnection; callers are
+// responsible for closing it.
+func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, error) {
 	// Handle MySQL URLs specially since they have a different format
 	var parsedURL *url.URL
 	var err error
@@ -63,16 +70,17 @@ func ConnectToDatabase(dbURL string) (*DatabaseConnection, error) {
 		return nil, fmt.Errorf("failed to open database connection: %w", err)
 	}
 
-	// Test the connection
-	if err := db.Ping(); err != nil {
-		db.Close()
+	// Test the connection — honour the caller-supplied context so a stuck or
+	// slow host cannot block ConnectToDatabase indefinitely.
+	if err := db.PingContext(ctx); err != nil {
+		_ = db.Close()
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
 	// Get database info
-	info, err := getDatabaseInfo(db, dialect, parsedURL, dbURL)
+	info, err := getDatabaseInfo(ctx, db, dialect, parsedURL, dbURL)
 	if err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("failed to get database info: %w", err)
 	}
 
@@ -87,7 +95,7 @@ func ConnectToDatabase(dbURL string) (*DatabaseConnection, error) {
 		reader = mysql.NewMySQLReader(db, info.Schema)
 		writer = mysql.NewMySQLWriter(db, info.Schema)
 	default:
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("no schema reader available for dialect: %s", dialect)
 	}
 
@@ -191,7 +199,7 @@ func FormatDatabaseURL(dbURL string) string {
 }
 
 // getDatabaseInfo retrieves database metadata
-func getDatabaseInfo(db *sql.DB, dialect string, parsedURL *url.URL, originalURL string) (types.DBInfo, error) {
+func getDatabaseInfo(ctx context.Context, db *sql.DB, dialect string, parsedURL *url.URL, originalURL string) (types.DBInfo, error) {
 	info := types.DBInfo{
 		Dialect: dialect,
 		URL:     originalURL,
@@ -201,7 +209,7 @@ func getDatabaseInfo(db *sql.DB, dialect string, parsedURL *url.URL, originalURL
 	case "postgres":
 		// Get PostgreSQL version
 		var version string
-		err := db.QueryRow("SELECT version()").Scan(&version)
+		err := db.QueryRowContext(ctx, "SELECT version()").Scan(&version)
 		if err != nil {
 			return info, fmt.Errorf("failed to get PostgreSQL version: %w", err)
 		}
@@ -219,7 +227,7 @@ func getDatabaseInfo(db *sql.DB, dialect string, parsedURL *url.URL, originalURL
 	case "mysql", "mariadb":
 		// Get MySQL/MariaDB version
 		var version string
-		err := db.QueryRow("SELECT VERSION()").Scan(&version)
+		err := db.QueryRowContext(ctx, "SELECT VERSION()").Scan(&version)
 		if err != nil {
 			return info, fmt.Errorf("failed to get MySQL/MariaDB version: %w", err)
 		}
@@ -231,7 +239,7 @@ func getDatabaseInfo(db *sql.DB, dialect string, parsedURL *url.URL, originalURL
 		} else {
 			// Get current database
 			var dbName string
-			err := db.QueryRow("SELECT DATABASE()").Scan(&dbName)
+			err := db.QueryRowContext(ctx, "SELECT DATABASE()").Scan(&dbName)
 			if err != nil {
 				return info, fmt.Errorf("failed to get current database name: %w", err)
 			}
