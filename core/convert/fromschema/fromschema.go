@@ -76,6 +76,7 @@ func generateForeignKeyName(tableName, fieldName string) string {
 func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschema.Field {
 	fieldType := field.Type
 	checkConstraint := field.Check
+	checkName := field.CheckName
 	comment := field.Comment
 	defaultValue := field.Default
 	defaultExpr := field.DefaultExpr
@@ -97,6 +98,7 @@ func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschem
 		newField := field // Shallow copy to avoid modifying original field
 		newField.Type = fieldType
 		newField.Check = checkConstraint
+		newField.CheckName = checkName
 		newField.Comment = comment
 		newField.Default = defaultValue
 		newField.DefaultExpr = defaultExpr
@@ -108,6 +110,7 @@ func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschem
 		newField := field // Shallow copy to avoid modifying original field
 		newField.Type = fieldType
 		newField.Check = checkConstraint
+		newField.CheckName = checkName
 		newField.Comment = comment
 		newField.Default = defaultValue
 		newField.DefaultExpr = defaultExpr
@@ -121,6 +124,10 @@ func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschem
 	// Override check constraint if specified
 	if checkOverride, ok := platformOverrides["check"]; ok {
 		checkConstraint = checkOverride
+	}
+	// Override check constraint name if specified
+	if checkNameOverride, ok := platformOverrides["check_name"]; ok {
+		checkName = checkNameOverride
 	}
 	// Override comment if specified
 	if commentOverride, ok := platformOverrides["comment"]; ok {
@@ -140,6 +147,7 @@ func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschem
 	newField := field // Shallow copy to avoid modifying original field
 	newField.Type = fieldType
 	newField.Check = checkConstraint
+	newField.CheckName = checkName
 	newField.Comment = comment
 	newField.Default = defaultValue
 	newField.DefaultExpr = defaultExpr
@@ -301,6 +309,9 @@ func FromField(field goschema.Field, enums []goschema.Enum, targetPlatform strin
 	// Set check constraint (using potentially overridden value)
 	if field.Check != "" {
 		column.SetCheck(field.Check)
+		if field.CheckName != "" {
+			column.SetCheckName(field.CheckName)
+		}
 	}
 
 	// Set comment (using potentially overridden value)
@@ -372,6 +383,9 @@ func FromFieldWithoutForeignKeys(field goschema.Field, enums []goschema.Enum, ta
 	// Set check constraint (using potentially overridden value)
 	if field.Check != "" {
 		column.SetCheck(field.Check)
+		if field.CheckName != "" {
+			column.SetCheckName(field.CheckName)
+		}
 	}
 
 	// Set comment (using potentially overridden value)

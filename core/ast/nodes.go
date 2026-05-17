@@ -155,6 +155,12 @@ type ColumnNode struct {
 	Default *DefaultValue
 	// Check contains a check constraint expression for this column
 	Check string
+	// CheckName is an optional explicit constraint name for the column-level
+	// CHECK. When empty, dialect renderers either emit an unnamed `CHECK (...)`
+	// (relying on the engine's auto-generated name) or, in the planner path
+	// when matching against introspected constraints, a deterministic
+	// "<table>_<column>_check" identifier.
+	CheckName string
 	// Comment is an optional column comment
 	Comment string
 	// ForeignKey contains foreign key reference information if this column references another table
@@ -272,6 +278,15 @@ func (n *ColumnNode) SetDefaultExpression(fn string) *ColumnNode {
 //	column.SetCheck("price > 0")
 func (n *ColumnNode) SetCheck(expression string) *ColumnNode {
 	n.Check = expression
+	return n
+}
+
+// SetCheckName sets the constraint name used to emit
+// `CONSTRAINT <name> CHECK (...)` instead of the unnamed inline form.
+// Use this when round-trip stability with database introspection is
+// required (e.g. for drift detection on field-level CHECKs).
+func (n *ColumnNode) SetCheckName(name string) *ColumnNode {
+	n.CheckName = name
 	return n
 }
 

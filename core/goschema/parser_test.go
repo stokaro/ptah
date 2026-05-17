@@ -879,3 +879,50 @@ type Post struct {
 	c.Assert(authorField.OnDelete, qt.Equals, "CASCADE")
 	c.Assert(authorField.OnUpdate, qt.Equals, "RESTRICT")
 }
+
+// TestParseField_CheckConstraint verifies that the column-level `check=` and
+// optional `check_name=` attributes (issue #112) are accepted by the parser
+// and propagated onto goschema.Field. The expression is passed through
+// verbatim — the parser does not parse or validate the SQL.
+func TestParseField_CheckConstraint(t *testing.T) {
+	c := qt.New(t)
+
+	content := `package entities
+
+//migrator:schema:table name="files"
+type File struct {
+	//migrator:schema:field name="id" type="TEXT" primary="true"
+	ID string
+
+	//migrator:schema:field name="category" type="TEXT" not_null="true" default="other" check="category IN ('photos','invoices','documents','other')"
+	Category string
+
+	//migrator:schema:field name="type" type="TEXT" not_null="true" check="type IN ('image','document','video','audio','archive','other')" check_name="files_type_valid"
+	Type string
+}
+`
+
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "file.go")
+	err := os.WriteFile(testFile, []byte(content), 0644) //nolint:gosec // 0644 is fine for tests
+	c.Assert(err, qt.IsNil)
+
+	database := goschema.ParseFile(testFile)
+
+	var category, typ *goschema.Field
+	for i, f := range database.Fields {
+		switch f.Name {
+		case "category":
+			category = &database.Fields[i]
+		case "type":
+			typ = &database.Fields[i]
+		}
+	}
+	c.Assert(category, qt.Not(qt.IsNil))
+	c.Assert(category.Check, qt.Equals, "category IN ('photos','invoices','documents','other')")
+	c.Assert(category.CheckName, qt.Equals, "")
+
+	c.Assert(typ, qt.Not(qt.IsNil))
+	c.Assert(typ.Check, qt.Equals, "type IN ('image','document','video','audio','archive','other')")
+	c.Assert(typ.CheckName, qt.Equals, "files_type_valid")
+}

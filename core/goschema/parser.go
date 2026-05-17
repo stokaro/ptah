@@ -38,6 +38,7 @@ var knownFieldAttributes = map[string]bool{
 	"on_update":        true,
 	"enum":             true,
 	"check":            true,
+	"check_name":       true,
 	"comment":          true,
 }
 
@@ -111,6 +112,7 @@ func parseFieldComment(comment *ast.Comment, field *ast.Field, structName string
 			OnUpdate:       kv["on_update"],
 			Enum:           enum,
 			Check:          kv["check"],
+			CheckName:      kv["check_name"],
 			Comment:        kv["comment"],
 			Overrides:      parseutils.ParsePlatformSpecific(kv),
 		})

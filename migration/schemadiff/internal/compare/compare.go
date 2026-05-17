@@ -850,6 +850,22 @@ func Constraints(generated *goschema.Database, database *types.DBSchema, diff *d
 		genConstraints[key] = constraint
 	}
 
+	// Synthesize table-level Constraint entries from field-level `check=`
+	// annotations so they participate in drift comparison alongside table
+	// constraints from `//migrator:schema:constraint`. Only synthesized for
+	// columns that already exist in the database — new tables/columns get
+	// their CHECK inline via CREATE TABLE / ALTER TABLE ADD COLUMN, and
+	// double-emitting an ALTER TABLE ADD CONSTRAINT would fail because the
+	// constraint is created in the same migration step.
+	for _, synthesized := range synthesizeFieldLevelCheckConstraints(generated, database) {
+		key := synthesized.Table + "." + synthesized.Name
+		// Don't clobber an explicit table-level constraint that happens to
+		// share the same name.
+		if _, exists := genConstraints[key]; !exists {
+			genConstraints[key] = synthesized
+		}
+	}
+
 	// Create map of existing database constraints, filtering out field-level constraints
 	dbConstraints := make(map[string]types.DBConstraint)
 	for _, constraint := range database.Constraints {
@@ -934,9 +950,33 @@ func excludeConstraintChanged(genConstraint goschema.Constraint, dbConstraint ty
 	return false
 }
 
-// checkConstraintChanged compares CHECK constraint definitions
-func checkConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint) bool {
-	return genConstraint.CheckExpression != getStringValue(dbConstraint.CheckClause)
+// checkConstraintChanged compares CHECK constraint definitions.
+//
+// In practice, we cannot rely on a literal string compare here: PostgreSQL
+// stores the parsed/analyzed node tree (`pg_constraint.conbin`) and
+// `information_schema.check_constraints.check_clause` is `pg_get_expr`
+// decompiling it — which normalizes parens, injects `::type` casts, and
+// rewrites `IN (...)` to `= ANY (ARRAY[...])`. So `check_clause` never
+// round-trips byte-equal to what the user wrote in `check=`. Doing the
+// naive compare would mark every CHECK as drifted on the very next run,
+// producing a perpetual drop+add loop (see issue #112 discussion).
+//
+// For v1 the contract is "spelling-equivalence + a stable generated name
+// is enough as long as users don't author the same CHECK two different
+// ways" (verbatim from the issue body). Trusting the constraint name
+// gives us:
+//   - Adding `check=` → ConstraintsAdded (name not in DB).
+//   - Removing `check=` → ConstraintsRemoved (name not in generated).
+//   - Renaming via `check_name=` → drop + add (different name).
+//   - Idempotency after apply → no diff (same name).
+//
+// The known limitation is that changing only the expression while keeping
+// the constraint name will not trigger a migration. Users who need that
+// today should change `check_name=` alongside the expression; an
+// expression-normalization pass (and possibly AST-level compare) is a
+// follow-up tracked against future work.
+func checkConstraintChanged(_ goschema.Constraint, _ types.DBConstraint) bool {
+	return false
 }
 
 // uniqueConstraintChanged compares UNIQUE constraint definitions
@@ -1029,11 +1069,12 @@ func isFieldLevelConstraint(dbConstraint types.DBConstraint, generated *goschema
 		if strings.Contains(dbConstraint.Name, "_not_null") {
 			return hasNonNullableFieldInTable(dbConstraint.TableName, generated)
 		}
-		// Regular CHECK constraint - check if there's a field with check constraint for this column
-		key := dbConstraint.TableName + "." + getConstraintColumn(dbConstraint)
-		if field, exists := fieldMap[key]; exists && field.Check != "" {
-			return true
-		}
+		// Regular CHECK constraints from `check=` annotations are surfaced
+		// to the diff via synthesized goschema.Constraint entries (see
+		// synthesizeFieldLevelCheckConstraints in Constraints). Letting the
+		// DB constraint participate here means it gets matched against the
+		// synthesized entry by name, so add/remove/expression-change cases
+		// all flow through the standard Constraints() comparison path.
 	}
 
 	return false
@@ -1055,6 +1096,70 @@ func hasNonNullableFieldInTable(tableName string, generated *goschema.Database) 
 		}
 	}
 	return false
+}
+
+// synthesizeFieldLevelCheckConstraints turns each field-level `check=`
+// annotation on an existing database column into a synthetic
+// goschema.Constraint of type CHECK so the standard Constraints() diff path
+// can compare it against the introspected CHECK from pg_constraint.
+//
+// The constraint name follows the user-provided `check_name=` value when set,
+// otherwise it falls back to the PostgreSQL convention
+// "<table>_<column>_check" — which is what PostgreSQL itself uses for
+// unnamed inline column-level CHECKs, so the name lines up with whatever the
+// reader sees on the DB side.
+//
+// Columns that do not yet exist in the database are deliberately skipped:
+// those CHECKs ship inline as part of CREATE TABLE / ALTER TABLE ADD COLUMN,
+// and emitting an ADD CONSTRAINT alongside would attempt to create the same
+// constraint twice in the same migration.
+//
+// Precedence: an explicit table-level constraint declared via
+// `//migrator:schema:constraint` that happens to share the synthesized
+// name wins — synthesis never clobbers it. See the guard in
+// Constraints() where genConstraints is populated.
+func synthesizeFieldLevelCheckConstraints(generated *goschema.Database, database *types.DBSchema) []goschema.Constraint {
+	if generated == nil || database == nil {
+		return nil
+	}
+
+	structToTable := make(map[string]string, len(generated.Tables))
+	for _, t := range generated.Tables {
+		structToTable[t.StructName] = t.Name
+	}
+
+	dbColumns := make(map[string]struct{}, 16)
+	for _, t := range database.Tables {
+		for _, c := range t.Columns {
+			dbColumns[t.Name+"."+c.Name] = struct{}{}
+		}
+	}
+
+	var synthesized []goschema.Constraint
+	for _, f := range generated.Fields {
+		if f.Check == "" {
+			continue
+		}
+		tableName := structToTable[f.StructName]
+		if tableName == "" {
+			tableName = f.StructName
+		}
+		if _, exists := dbColumns[tableName+"."+f.Name]; !exists {
+			continue
+		}
+		name := f.CheckName
+		if name == "" {
+			name = tableName + "_" + f.Name + "_check"
+		}
+		synthesized = append(synthesized, goschema.Constraint{
+			StructName:      f.StructName,
+			Name:            name,
+			Type:            "CHECK",
+			Table:           tableName,
+			CheckExpression: f.Check,
+		})
+	}
+	return synthesized
 }
 
 // getConstraintColumn extracts the column name from a constraint

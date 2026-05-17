@@ -514,9 +514,17 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 		parts = append(parts, fmt.Sprintf("DEFAULT %s", column.Default.Expression))
 	}
 
-	// Check constraint
+	// Check constraint. Emit `CONSTRAINT <name> CHECK (...)` only when an
+	// explicit name was provided via `check_name=` on the field annotation —
+	// for the default (unnamed) form, PostgreSQL auto-generates the canonical
+	// "<table>_<column>_check" name, which is exactly what the drift detector
+	// expects, so we don't burn a constraint name on every column needlessly.
 	if column.Check != "" {
-		parts = append(parts, fmt.Sprintf("CHECK (%s)", column.Check))
+		if column.CheckName != "" {
+			parts = append(parts, fmt.Sprintf("CONSTRAINT %s CHECK (%s)", column.CheckName, column.Check))
+		} else {
+			parts = append(parts, fmt.Sprintf("CHECK (%s)", column.Check))
+		}
 	}
 
 	return strings.Join(parts, " "), nil
