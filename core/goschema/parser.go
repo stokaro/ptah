@@ -17,14 +17,8 @@ import (
 // //migrator:schema:field annotation. Keys with the "platform." prefix are
 // also accepted (handled separately).
 //
-// Some entries are accepted but not currently consumed by parseFieldComment;
-// they are whitelisted to keep the strict validator focused on real typos:
-//   - "nullable", "index", "autoincrement": parseutils auto-promotes these to
-//     booleans when written as bare words.
-//   - "on_delete", "on_update": documented FK-action keys consumed by
-//     EmbeddedField and Constraint parsers. Field-level propagation to the
-//     emitted SQL is not implemented yet — projects in the wild work around
-//     this with manual ALTER TABLE statements. Tracked separately.
+// "nullable", "index", and "autoincrement" are whitelisted because parseutils
+// auto-promotes them to booleans when written as bare words.
 var knownFieldAttributes = map[string]bool{
 	"name":             true,
 	"type":             true,
@@ -113,6 +107,8 @@ func parseFieldComment(comment *ast.Comment, field *ast.Field, structName string
 			DefaultExpr:    kv["default_expr"],
 			Foreign:        kv["foreign"],
 			ForeignKeyName: kv["foreign_key_name"],
+			OnDelete:       kv["on_delete"],
+			OnUpdate:       kv["on_update"],
 			Enum:           enum,
 			Check:          kv["check"],
 			Comment:        kv["comment"],

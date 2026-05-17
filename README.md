@@ -255,6 +255,8 @@ type User struct {
 - `check` - CHECK constraint
 - `foreign` - Foreign key reference (table(column))
 - `foreign_key_name` - Custom foreign key constraint name
+- `on_delete` - Foreign key ON DELETE action ("CASCADE", "SET NULL", "RESTRICT", "NO ACTION")
+- `on_update` - Foreign key ON UPDATE action ("CASCADE", "SET NULL", "RESTRICT", "NO ACTION")
 - `enum` - Enum values (comma-separated)
 - `platform.{dialect}.{attribute}` - Platform-specific overrides
 

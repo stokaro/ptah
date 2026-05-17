@@ -311,6 +311,8 @@ func FromField(field goschema.Field, enums []goschema.Enum, targetPlatform strin
 	// Set foreign key reference
 	if fkRef := ParseForeignKeyReference(field.Foreign); fkRef != nil {
 		column.SetForeignKey(fkRef.Table, fkRef.Column, field.ForeignKeyName)
+		column.ForeignKey.OnDelete = field.OnDelete
+		column.ForeignKey.OnUpdate = field.OnUpdate
 	}
 
 	return column
@@ -1267,6 +1269,8 @@ func processEmbeddedRelationMode(generatedFields []goschema.Field, embedded gosc
 		Nullable:       embedded.Nullable, // Can the relationship be optional?
 		Foreign:        embedded.Ref,      // e.g., "users(id)"
 		ForeignKeyName: foreignKeyName,    // e.g., "fk_posts_user_id"
+		OnDelete:       embedded.OnDelete, // ON DELETE action (CASCADE, SET NULL, etc.)
+		OnUpdate:       embedded.OnUpdate, // ON UPDATE action (CASCADE, SET NULL, etc.)
 		Comment:        embedded.Comment,  // Documentation for the relationship
 		Overrides:      overrides,         // Platform-specific type overrides
 	})

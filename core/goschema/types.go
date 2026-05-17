@@ -119,6 +119,8 @@ type Field struct {
 	DefaultExpr    string                       // Default expression (e.g., "NOW()", "UUID()", "CURRENT_TIMESTAMP", "1", "true")
 	Foreign        string                       // Foreign key reference (e.g., "users(id)")
 	ForeignKeyName string                       // Custom foreign key constraint name
+	OnDelete       string                       // Foreign key ON DELETE action (CASCADE, SET NULL, RESTRICT, NO ACTION)
+	OnUpdate       string                       // Foreign key ON UPDATE action (CASCADE, SET NULL, RESTRICT, NO ACTION)
 	Enum           []string                     // Enum values for ENUM type fields
 	Check          string                       // Check constraint expression
 	Comment        string                       // Column comment
@@ -515,4 +517,6 @@ type SelfReferencingFK struct {
 	FieldName      string // Name of the field (e.g., "parent_id")
 	Foreign        string // Foreign key reference (e.g., "users(id)")
 	ForeignKeyName string // Name of the foreign key constraint (e.g., "fk_users_parent")
+	OnDelete       string // ON DELETE action (CASCADE, SET NULL, RESTRICT, NO ACTION)
+	OnUpdate       string // ON UPDATE action (CASCADE, SET NULL, RESTRICT, NO ACTION)
 }

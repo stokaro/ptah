@@ -152,6 +152,8 @@ func ToField(column *ast.ColumnNode, structName, sourcePlatform string) goschema
 			field.Foreign = column.ForeignKey.Table
 		}
 		field.ForeignKeyName = column.ForeignKey.Name
+		field.OnDelete = column.ForeignKey.OnDelete
+		field.OnUpdate = column.ForeignKey.OnUpdate
 	}
 
 	// Initialize overrides map if we have a source platform

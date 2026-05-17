@@ -188,6 +188,37 @@ func TestFromField_ForeignKeys(t *testing.T) {
 				return col.ForeignKey == nil
 			},
 		},
+		{
+			name: "foreign key with ON DELETE CASCADE (issue #117)",
+			field: goschema.Field{
+				Name:           "commodity_id",
+				Type:           "TEXT",
+				Foreign:        "commodities(id)",
+				ForeignKeyName: "fk_cs_commodity",
+				OnDelete:       "CASCADE",
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.ForeignKey != nil &&
+					col.ForeignKey.OnDelete == "CASCADE" &&
+					col.ForeignKey.OnUpdate == ""
+			},
+		},
+		{
+			name: "foreign key with ON DELETE SET NULL and ON UPDATE CASCADE",
+			field: goschema.Field{
+				Name:           "owner_id",
+				Type:           "INTEGER",
+				Foreign:        "users(id)",
+				ForeignKeyName: "fk_owner",
+				OnDelete:       "SET NULL",
+				OnUpdate:       "CASCADE",
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.ForeignKey != nil &&
+					col.ForeignKey.OnDelete == "SET NULL" &&
+					col.ForeignKey.OnUpdate == "CASCADE"
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -1793,4 +1824,63 @@ func TestFromField_EnumConversion_SQLInjectionPrevention(t *testing.T) {
 			c.Assert(result.Type, qt.Equals, tt.expectedType)
 		})
 	}
+}
+
+// TestFromDatabase_EmbeddedRelationFKActions verifies that on_delete /
+// on_update declared on a //migrator:embedded mode="relation" annotation
+// flow through to the column-level ForeignKey on the generated table.
+//
+// Regression coverage for the embedded path of issue #117 — the field-level
+// fix wired the regular Field path, and this test pins the parallel wiring
+// in processEmbeddedRelationMode so embedded-relation FKs don't silently
+// drop their actions on the generate path.
+func TestFromDatabase_EmbeddedRelationFKActions(t *testing.T) {
+	c := qt.New(t)
+
+	db := goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "User", Name: "users"},
+			{StructName: "Post", Name: "posts"},
+		},
+		Fields: []goschema.Field{
+			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
+			{StructName: "Post", Name: "id", Type: "SERIAL", Primary: true},
+		},
+		EmbeddedFields: []goschema.EmbeddedField{
+			{
+				StructName:       "Post",
+				EmbeddedTypeName: "User",
+				Mode:             "relation",
+				Field:            "author_id",
+				Ref:              "users(id)",
+				OnDelete:         "CASCADE",
+				OnUpdate:         "RESTRICT",
+			},
+		},
+	}
+
+	statements := fromschema.FromDatabase(db, "postgres")
+	c.Assert(statements, qt.IsNotNil)
+
+	var postsTable *ast.CreateTableNode
+	for _, stmt := range statements.Statements {
+		if t, ok := stmt.(*ast.CreateTableNode); ok && t.Name == "posts" {
+			postsTable = t
+			break
+		}
+	}
+	c.Assert(postsTable, qt.IsNotNil)
+
+	var authorCol *ast.ColumnNode
+	for _, col := range postsTable.Columns {
+		if col.Name == "author_id" {
+			authorCol = col
+			break
+		}
+	}
+	c.Assert(authorCol, qt.IsNotNil)
+	c.Assert(authorCol.ForeignKey, qt.IsNotNil)
+	c.Assert(authorCol.ForeignKey.Table, qt.Equals, "users")
+	c.Assert(authorCol.ForeignKey.OnDelete, qt.Equals, "CASCADE")
+	c.Assert(authorCol.ForeignKey.OnUpdate, qt.Equals, "RESTRICT")
 }

@@ -784,3 +784,98 @@ type Widget struct {
 	database := goschema.ParseFile(testFile)
 	c.Assert(database.Fields, qt.HasLen, 3)
 }
+
+// TestParseField_ForeignKeyActions verifies that on_delete and on_update
+// attributes declared on a //migrator:schema:field annotation are captured on
+// the resulting Field (regression test for #117 — these keys were previously
+// whitelisted but silently dropped).
+func TestParseField_ForeignKeyActions(t *testing.T) {
+	c := qt.New(t)
+
+	content := `package entities
+
+//migrator:schema:table name="commodities"
+type Commodity struct {
+	//migrator:schema:field name="id" type="TEXT" primary="true"
+	ID string
+}
+
+//migrator:schema:table name="commodity_services"
+type CommodityService struct {
+	//migrator:schema:field name="id" type="TEXT" primary="true"
+	ID string
+
+	//migrator:schema:field name="commodity_id" type="TEXT" not_null="true" foreign="commodities(id)" foreign_key_name="fk_cs_commodity" on_delete="CASCADE" on_update="RESTRICT"
+	CommodityID string
+}
+`
+
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "service.go")
+	err := os.WriteFile(testFile, []byte(content), 0644) //nolint:gosec // 0644 is fine for tests
+	c.Assert(err, qt.IsNil)
+
+	database := goschema.ParseFile(testFile)
+
+	var fkField *goschema.Field
+	for i, f := range database.Fields {
+		if f.Name == "commodity_id" {
+			fkField = &database.Fields[i]
+			break
+		}
+	}
+	c.Assert(fkField, qt.Not(qt.IsNil))
+	c.Assert(fkField.Foreign, qt.Equals, "commodities(id)")
+	c.Assert(fkField.ForeignKeyName, qt.Equals, "fk_cs_commodity")
+	c.Assert(fkField.OnDelete, qt.Equals, "CASCADE")
+	c.Assert(fkField.OnUpdate, qt.Equals, "RESTRICT")
+}
+
+// TestParseDir_EmbeddedRelationFKActions exercises the ParseDir/walker path
+// (which expands embedded fields via the internal processEmbeddedFields), to
+// pin that on_delete / on_update declared on a //migrator:embedded mode="relation"
+// annotation reach the planner-visible Field — a third copy of the embedded
+// expansion lives in core/goschema/utils.go and used to drop the actions
+// before the fix for #117 landed.
+func TestParseDir_EmbeddedRelationFKActions(t *testing.T) {
+	c := qt.New(t)
+
+	content := `package entities
+
+//migrator:schema:table name="users"
+type User struct {
+	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+}
+
+//migrator:schema:table name="posts"
+type Post struct {
+	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+
+	//migrator:embedded mode="relation" field="author_id" ref="users(id)" on_delete="CASCADE" on_update="RESTRICT"
+	Author User
+}
+`
+
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "entities.go")
+	err := os.WriteFile(testFile, []byte(content), 0644) //nolint:gosec // 0644 is fine for tests
+	c.Assert(err, qt.IsNil)
+
+	database, err := goschema.ParseDir(tmpDir)
+	c.Assert(err, qt.IsNil)
+
+	var authorField *goschema.Field
+	for i, f := range database.Fields {
+		if f.StructName == "Post" && f.Name == "author_id" {
+			authorField = &database.Fields[i]
+			break
+		}
+	}
+	c.Assert(authorField, qt.Not(qt.IsNil),
+		qt.Commentf("expected synthesized author_id field on Post; got fields: %+v", database.Fields))
+	c.Assert(authorField.Foreign, qt.Equals, "users(id)")
+	c.Assert(authorField.OnDelete, qt.Equals, "CASCADE")
+	c.Assert(authorField.OnUpdate, qt.Equals, "RESTRICT")
+}
