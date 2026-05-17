@@ -117,26 +117,67 @@ func TestFunctionDefinitions_EmptyAnnotationDefaultsMatchPostgresDefaults(t *tes
 }
 
 func TestFunctionDefinitions_LowercaseAnnotationDoesNotDiff(t *testing.T) {
+	cases := []struct {
+		name string
+		gen  goschema.Function
+	}{
+		{
+			name: "lowercase security/volatility",
+			gen: goschema.Function{
+				Name: "f", Returns: "VOID", Language: "plpgsql",
+				Security: "definer", Volatility: "stable", Body: "BEGIN END;",
+			},
+		},
+		{
+			name: "mixed-case security/volatility",
+			gen: goschema.Function{
+				Name: "f", Returns: "VOID", Language: "plpgsql",
+				Security: "Definer", Volatility: "Stable", Body: "BEGIN END;",
+			},
+		},
+		{
+			name: "uppercase language",
+			gen: goschema.Function{
+				Name: "f", Returns: "VOID", Language: "PLPGSQL",
+				Security: "DEFINER", Volatility: "STABLE", Body: "BEGIN END;",
+			},
+		},
+	}
+	db := dbtypes.DBFunction{
+		Name: "f", Returns: "VOID", Language: "plpgsql",
+		Security: "DEFINER", Volatility: "STABLE", Body: "BEGIN END;",
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := compare.FunctionDefinitions(tc.gen, db)
+			c.Assert(diff.Changes, qt.HasLen, 0,
+				qt.Commentf("normalization should produce a clean diff; got: %v", diff.Changes))
+		})
+	}
+}
+
+// TestFunctionDefinitions_ExplicitNonDefaultLanguage covers the pre-iteration-1
+// case that was overwritten when the empty-language default was introduced: a
+// function annotation that legitimately uses LANGUAGE sql (a pure-SQL helper,
+// not plpgsql) must still produce a clean diff when both sides agree.
+func TestFunctionDefinitions_ExplicitNonDefaultLanguage(t *testing.T) {
 	c := qt.New(t)
 
-	// Users sometimes write `security="definer"` / `volatility="stable"`.
-	// PostgreSQL only ever reports the uppercase form, so the comparator
-	// case-folds the Go side before comparing.
 	gen := goschema.Function{
-		Name:       "f",
-		Returns:    "VOID",
-		Language:   "plpgsql",
-		Security:   "definer",
-		Volatility: "stable",
-		Body:       "BEGIN END;",
+		Name:     "f",
+		Returns:  "INTEGER",
+		Language: "sql",
+		Body:     "SELECT 1;",
 	}
 	db := dbtypes.DBFunction{
 		Name:       "f",
-		Returns:    "VOID",
-		Language:   "plpgsql",
-		Security:   "DEFINER",
-		Volatility: "STABLE",
-		Body:       "BEGIN END;",
+		Returns:    "INTEGER",
+		Language:   "sql",
+		Security:   "INVOKER",
+		Volatility: "VOLATILE",
+		Body:       "SELECT 1;",
 	}
 
 	diff := compare.FunctionDefinitions(gen, db)

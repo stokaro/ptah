@@ -235,24 +235,26 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_EscapesSingleQuoteInNam
 }
 
 func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_RejectsUnsafeName(t *testing.T) {
-	c := qt.New(t)
-
 	// Names containing $ or newlines would either break the surrounding
 	// `$ptah$` dollar-quote tag or terminate the leading SQL comment line.
-	// The planner emits a warning comment instead of a malformed DO block.
+	// Rather than emit a malformed drop (or a silent warning comment that
+	// would loop on every subsequent generate run), the planner emits a DO
+	// block whose only action is RAISE EXCEPTION — so the migration fails
+	// loudly and the operator has to rename the constraint.
 	cases := []string{"foo$ptah$bar", "two\nlines", "carriage\rreturn"}
 	for _, name := range cases {
-		c.Run(name, func(c *qt.C) {
+		t.Run(name, func(t *testing.T) {
+			c := qt.New(t)
 			diff := &types.SchemaDiff{ConstraintsRemoved: []string{name}}
 			nodes := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
 			c.Assert(len(nodes), qt.Equals, 1)
 
 			sql, err := renderer.RenderSQL("postgres", nodes[0])
 			c.Assert(err, qt.IsNil)
-			c.Assert(strings.Contains(sql, "DO $ptah$"), qt.IsFalse,
-				qt.Commentf("unsafe name must NOT produce a DO block"))
-			c.Assert(strings.Contains(sql, "WARNING"), qt.IsTrue,
-				qt.Commentf("planner must emit a warning comment for unsafe names; got: %s", sql))
+			c.Assert(strings.Contains(sql, "RAISE EXCEPTION"), qt.IsTrue,
+				qt.Commentf("planner must emit RAISE EXCEPTION for unsafe names; got: %s", sql))
+			c.Assert(strings.Contains(sql, "ALTER TABLE %I DROP CONSTRAINT"), qt.IsFalse,
+				qt.Commentf("unsafe name must NOT produce a drop statement"))
 		})
 	}
 }

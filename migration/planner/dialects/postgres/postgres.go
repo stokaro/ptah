@@ -1047,20 +1047,35 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 	// schema reachable via search_path are not handled — Ptah's introspection
 	// is also single-schema, so the two ends are consistent.
 	//
-	// Constraint-name safety: the name is interpolated into a single-quoted
-	// SQL literal, into an EXECUTE format() argument, into a SQL comment, and
-	// into two RAISE NOTICE messages. We escape single quotes for the literal
-	// substitutions and reject names containing `$` or newline characters at
-	// planner time — both would break the surrounding `$ptah$` dollar quoting
-	// or the `--` comment terminator and there is no legitimate annotation
-	// case that needs them.
+	// Constraint-name safety. Postgres constraint names should be plain
+	// ASCII alnum + underscore; we reject only the chars that would actually
+	// break our specific DO-block template:
+	//   - `$` would collide with the `$ptah$` dollar-quote tag and terminate
+	//     the body early.
+	//   - newline / carriage return would terminate the leading `--` comment
+	//     line and dump whatever follows as bare SQL.
+	// Anything else (apostrophe) is handled by SQL-literal escaping.
+	// Unsafe names trigger a DO block whose only action is RAISE EXCEPTION,
+	// so the migration fails loudly with the operator's attention — better
+	// than a silent comment that would loop forever on subsequent runs.
 	for _, constraintName := range diff.ConstraintsRemoved {
+		escaped := strings.ReplaceAll(constraintName, "'", "''")
 		if strings.ContainsAny(constraintName, "$\n\r") {
-			warning := fmt.Sprintf("WARNING: constraint name %q contains $ or newline; skipping DROP to avoid SQL injection in the DO block", constraintName)
-			result = append(result, ast.NewComment(warning))
+			// The unsafe-name DO block hard-codes a literal string that
+			// describes the rejected name. We render the name with %q so any
+			// control character is visible in the operator's error output;
+			// any apostrophes in that quoted form are then SQL-escaped.
+			rendered := strings.ReplaceAll(fmt.Sprintf("%q", constraintName), "'", "''")
+			failBlock := fmt.Sprintf(`-- Unsafe constraint name rejected by the migration generator; the
+-- following DO block raises an exception so the migration fails loudly.
+DO $ptah$
+BEGIN
+    RAISE EXCEPTION 'refusing to drop constraint with unsafe name %%; rename the constraint and regenerate the migration', %s;
+END
+$ptah$`, rendered)
+			result = append(result, ast.NewRawSQL(failBlock))
 			continue
 		}
-		escaped := strings.ReplaceAll(constraintName, "'", "''")
 		doBlock := fmt.Sprintf(`-- Drop constraint %s (table resolved at runtime from information_schema)
 DO $ptah$
 DECLARE
@@ -1079,7 +1094,7 @@ BEGIN
         RAISE NOTICE 'Constraint %s not found in current schema';
     END IF;
 END
-$ptah$`, escaped, escaped, escaped, escaped, escaped)
+$ptah$`, constraintName, escaped, escaped, escaped, escaped)
 
 		result = append(result, ast.NewRawSQL(doBlock))
 	}

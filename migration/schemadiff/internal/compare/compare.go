@@ -2184,19 +2184,17 @@ func FunctionDefinitions(genFunction goschema.Function, dbFunction types.DBFunct
 		Changes:      make(map[string]string),
 	}
 
-	// Normalize parsed-but-omitted attributes to PostgreSQL defaults so an
-	// unspecified annotation field doesn't appear as a change against the DB.
-	// `security` and `volatility` are also case-folded: the parser stores the
-	// annotation text verbatim, but pg_proc always reports the canonical
-	// uppercase form (DEFINER/INVOKER, VOLATILE/STABLE/IMMUTABLE) — comparing
-	// `definer` against `DEFINER` would otherwise flag every run as drift.
-	//
-	// For `language` an empty annotation is treated as `plpgsql`. The renderer
-	// at core/renderer/dialects/postgres/postgres.go omits the LANGUAGE clause
-	// entirely when this is empty, which Postgres rejects with
-	// "ERROR: no language specified" — defaulting to plpgsql matches both the
-	// most common case and what `CREATE FUNCTION` would assume if we hand-
-	// wrote the SQL.
+	// Defense-in-depth: the parser at core/goschema/parser.go already
+	// canonicalizes these attributes (lowercase plpgsql default for Language,
+	// uppercase for Security/Volatility), but callers constructing
+	// goschema.Function programmatically — including the down-migration path's
+	// ConvertDBSchemaToGoSchema and any future API consumer — may not. We
+	// re-apply the same normalization here so the diff is stable regardless
+	// of how the Go-side struct was produced.
+	genLanguage := strings.ToLower(genFunction.Language)
+	if genLanguage == "" {
+		genLanguage = "plpgsql"
+	}
 	genSecurity := strings.ToUpper(genFunction.Security)
 	if genSecurity == "" {
 		genSecurity = "INVOKER"
@@ -2204,10 +2202,6 @@ func FunctionDefinitions(genFunction goschema.Function, dbFunction types.DBFunct
 	genVolatility := strings.ToUpper(genFunction.Volatility)
 	if genVolatility == "" {
 		genVolatility = "VOLATILE"
-	}
-	genLanguage := genFunction.Language
-	if genLanguage == "" {
-		genLanguage = "plpgsql"
 	}
 
 	// Compare parameters
@@ -2220,7 +2214,7 @@ func FunctionDefinitions(genFunction goschema.Function, dbFunction types.DBFunct
 		functionDiff.Changes["returns"] = fmt.Sprintf("%s -> %s", dbFunction.Returns, genFunction.Returns)
 	}
 
-	// Compare language (empty Go-side means plpgsql).
+	// Compare language (empty/mixed-case Go-side normalized to lowercase plpgsql).
 	if genLanguage != dbFunction.Language {
 		functionDiff.Changes["language"] = fmt.Sprintf("%s -> %s", dbFunction.Language, genLanguage)
 	}
