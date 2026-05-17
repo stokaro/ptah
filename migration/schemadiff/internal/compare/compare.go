@@ -2184,25 +2184,13 @@ func FunctionDefinitions(genFunction goschema.Function, dbFunction types.DBFunct
 		Changes:      make(map[string]string),
 	}
 
-	// Defense-in-depth: the parser at core/goschema/parser.go already
-	// canonicalizes these attributes (lowercase plpgsql default for Language,
-	// uppercase for Security/Volatility), but callers constructing
-	// goschema.Function programmatically — including the down-migration path's
-	// ConvertDBSchemaToGoSchema and any future API consumer — may not. We
-	// re-apply the same normalization here so the diff is stable regardless
-	// of how the Go-side struct was produced.
-	genLanguage := strings.ToLower(genFunction.Language)
-	if genLanguage == "" {
-		genLanguage = "plpgsql"
-	}
-	genSecurity := strings.ToUpper(genFunction.Security)
-	if genSecurity == "" {
-		genSecurity = "INVOKER"
-	}
-	genVolatility := strings.ToUpper(genFunction.Volatility)
-	if genVolatility == "" {
-		genVolatility = "VOLATILE"
-	}
+	// Defense-in-depth: canonicalize a local copy. The annotation parser at
+	// core/goschema/parser.go already calls Canonicalize, but test code (this
+	// package, integration tests) constructs goschema.Function directly with
+	// non-canonical case, and a future programmatic API consumer might too.
+	// The DB-side read path already returns canonical case by construction,
+	// so we only normalize the gen side.
+	genFunction.Canonicalize()
 
 	// Compare parameters
 	if genFunction.Parameters != dbFunction.Parameters {
@@ -2214,19 +2202,19 @@ func FunctionDefinitions(genFunction goschema.Function, dbFunction types.DBFunct
 		functionDiff.Changes["returns"] = fmt.Sprintf("%s -> %s", dbFunction.Returns, genFunction.Returns)
 	}
 
-	// Compare language (empty/mixed-case Go-side normalized to lowercase plpgsql).
-	if genLanguage != dbFunction.Language {
-		functionDiff.Changes["language"] = fmt.Sprintf("%s -> %s", dbFunction.Language, genLanguage)
+	// Compare language
+	if genFunction.Language != dbFunction.Language {
+		functionDiff.Changes["language"] = fmt.Sprintf("%s -> %s", dbFunction.Language, genFunction.Language)
 	}
 
-	// Compare security context (DEFINER vs INVOKER); empty Go-side means INVOKER.
-	if genSecurity != dbFunction.Security {
-		functionDiff.Changes["security"] = fmt.Sprintf("%s -> %s", dbFunction.Security, genSecurity)
+	// Compare security context (DEFINER vs INVOKER)
+	if genFunction.Security != dbFunction.Security {
+		functionDiff.Changes["security"] = fmt.Sprintf("%s -> %s", dbFunction.Security, genFunction.Security)
 	}
 
-	// Compare volatility (VOLATILE/STABLE/IMMUTABLE); empty Go-side means VOLATILE.
-	if genVolatility != dbFunction.Volatility {
-		functionDiff.Changes["volatility"] = fmt.Sprintf("%s -> %s", dbFunction.Volatility, genVolatility)
+	// Compare volatility (VOLATILE/STABLE/IMMUTABLE)
+	if genFunction.Volatility != dbFunction.Volatility {
+		functionDiff.Changes["volatility"] = fmt.Sprintf("%s -> %s", dbFunction.Volatility, genFunction.Volatility)
 	}
 
 	// Compare function body (normalize whitespace for comparison)

@@ -615,33 +615,22 @@ func processAllFileComments(f *ast.File, tableNameToStructName map[string]string
 func parseFunctionComment(comment *ast.Comment, structName string, functions *[]Function) {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 
-	// Canonicalize annotation attributes at parse time so every downstream
-	// consumer (planner, renderer, comparator) sees the same values:
-	//
-	//   - Language: defaults to "plpgsql" when omitted. The renderer drops
-	//     the LANGUAGE clause entirely if this field is empty, and Postgres
-	//     rejects `CREATE FUNCTION ... AS $$...$$;` without a language. Also
-	//     lower-cased — pg_language.lanname is always lowercase, so
-	//     `language="PLPGSQL"` would otherwise false-diff forever.
-	//   - Security / Volatility: upper-cased — pg_proc reports DEFINER/INVOKER
-	//     and VOLATILE/STABLE/IMMUTABLE in canonical uppercase, so accepting
-	//     mixed-case annotations without normalizing would false-diff.
-	language := strings.ToLower(kv["language"])
-	if language == "" {
-		language = "plpgsql"
-	}
-
-	*functions = append(*functions, Function{
+	fn := Function{
 		StructName: structName,
 		Name:       kv["name"],
 		Parameters: kv["params"],
 		Returns:    kv["returns"],
-		Language:   language,
-		Security:   strings.ToUpper(kv["security"]),
-		Volatility: strings.ToUpper(kv["volatility"]),
+		Language:   kv["language"],
+		Security:   kv["security"],
+		Volatility: kv["volatility"],
 		Body:       kv["body"],
 		Comment:    kv["comment"],
-	})
+	}
+	// Canonicalize so every downstream consumer (planner, renderer,
+	// comparator) sees the same values regardless of how the annotation was
+	// typed. See Function.Canonicalize for the per-field rules.
+	fn.Canonicalize()
+	*functions = append(*functions, fn)
 }
 
 func parseRLSPolicyComment(comment *ast.Comment, structName string, rlsPolicies *[]RLSPolicy) {

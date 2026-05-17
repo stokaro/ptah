@@ -1061,18 +1061,27 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 	for _, constraintName := range diff.ConstraintsRemoved {
 		escaped := strings.ReplaceAll(constraintName, "'", "''")
 		if strings.ContainsAny(constraintName, "$\n\r") {
-			// The unsafe-name DO block hard-codes a literal string that
-			// describes the rejected name. We render the name with %q so any
-			// control character is visible in the operator's error output;
-			// any apostrophes in that quoted form are then SQL-escaped.
-			rendered := strings.ReplaceAll(fmt.Sprintf("%q", constraintName), "'", "''")
+			// Build a printable, single-quoted SQL string literal of the
+			// rejected name so the operator's error output shows what was
+			// rejected. `$` is rendered as `\$` so the surrounding `$ptah$`
+			// dollar quoting can't be prematurely terminated; `\n` / `\r` /
+			// `\t` are rendered as their printable escapes; apostrophes are
+			// SQL-escaped via `''`. The result is plain ASCII inside `'…'`.
+			visible := strings.NewReplacer(
+				"\n", `\n`,
+				"\r", `\r`,
+				"\t", `\t`,
+				"$", `\$`,
+			).Replace(constraintName)
+			visible = strings.ReplaceAll(visible, "'", "''")
+
 			failBlock := fmt.Sprintf(`-- Unsafe constraint name rejected by the migration generator; the
 -- following DO block raises an exception so the migration fails loudly.
 DO $ptah$
 BEGIN
-    RAISE EXCEPTION 'refusing to drop constraint with unsafe name %%; rename the constraint and regenerate the migration', %s;
+    RAISE EXCEPTION 'refusing to drop constraint with unsafe name ''%s''; rename the constraint and regenerate the migration';
 END
-$ptah$`, rendered)
+$ptah$`, visible)
 			result = append(result, ast.NewRawSQL(failBlock))
 			continue
 		}

@@ -241,11 +241,29 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_RejectsUnsafeName(t *te
 	// would loop on every subsequent generate run), the planner emits a DO
 	// block whose only action is RAISE EXCEPTION — so the migration fails
 	// loudly and the operator has to rename the constraint.
-	cases := []string{"foo$ptah$bar", "two\nlines", "carriage\rreturn"}
-	for _, name := range cases {
-		t.Run(name, func(t *testing.T) {
+	cases := []struct {
+		input          string
+		expectVisible  string // the escaped name as it should appear in the SQL literal
+		mustNotContain []string
+	}{
+		{
+			input:          "foo$ptah$bar",
+			expectVisible:  `foo\$ptah\$bar`, // `$` rendered as `\$` so it can't collapse $ptah$
+			mustNotContain: []string{"$ptah$bar"},
+		},
+		{
+			input:         "two\nlines",
+			expectVisible: `two\nlines`,
+		},
+		{
+			input:         "carriage\rreturn",
+			expectVisible: `carriage\rreturn`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.input, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &types.SchemaDiff{ConstraintsRemoved: []string{name}}
+			diff := &types.SchemaDiff{ConstraintsRemoved: []string{tc.input}}
 			nodes := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
 			c.Assert(len(nodes), qt.Equals, 1)
 
@@ -254,7 +272,16 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_RejectsUnsafeName(t *te
 			c.Assert(strings.Contains(sql, "RAISE EXCEPTION"), qt.IsTrue,
 				qt.Commentf("planner must emit RAISE EXCEPTION for unsafe names; got: %s", sql))
 			c.Assert(strings.Contains(sql, "ALTER TABLE %I DROP CONSTRAINT"), qt.IsFalse,
-				qt.Commentf("unsafe name must NOT produce a drop statement"))
+				qt.Commentf("unsafe name must NOT produce a drop statement; got: %s", sql))
+			// The rejected name must appear inside an embedded SQL single-
+			// quoted literal (not as a Postgres identifier), so the operator
+			// sees a clean exception message.
+			c.Assert(strings.Contains(sql, "''"+tc.expectVisible+"''"), qt.IsTrue,
+				qt.Commentf("rejected name must appear escaped inside the exception message; got: %s", sql))
+			for _, forbidden := range tc.mustNotContain {
+				c.Assert(strings.Contains(sql, forbidden), qt.IsFalse,
+					qt.Commentf("escaped output must not contain raw substring %q; got: %s", forbidden, sql))
+			}
 		})
 	}
 }
