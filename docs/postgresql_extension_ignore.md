@@ -166,7 +166,12 @@ diff := schemadiff.CompareWithOptions(generated, database, opts)
 The ignore functionality automatically integrates with migration generation:
 
 ```go
-import "github.com/stokaro/ptah/migration/generator"
+import (
+    "context"
+    "time"
+
+    "github.com/stokaro/ptah/migration/generator"
+)
 
 // Generate migration with custom extension ignore options
 opts := generator.GenerateMigrationOptions{
