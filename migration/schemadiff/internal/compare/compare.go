@@ -1843,6 +1843,8 @@ func processEmbeddedFieldsForStruct(embeddedFields []goschema.EmbeddedField, all
 				Name:       embedded.Field,
 				Type:       "INTEGER", // Default to INTEGER for foreign keys
 				Foreign:    embedded.Ref,
+				OnDelete:   embedded.OnDelete, // Mirror of fromschema.processEmbeddedRelationMode — keeps the diff path in agreement with the generate path on FK actions (#117).
+				OnUpdate:   embedded.OnUpdate,
 				Comment:    embedded.Comment,
 				Overrides:  overrides, // Platform-specific type overrides
 			}
