@@ -168,6 +168,25 @@ func GetDynamicScenarios() []TestScenario {
 			EnhancedTestFunc: testDynamicFunctionsModification,
 		},
 		{
+			// Closes the "modify-existing-function" gap that issue #89 was
+			// originally about: changing a function's body, SECURITY qualifier,
+			// or volatility on a same-named function — the case the previous
+			// dynamic_functions_modification scenario didn't exercise.
+			Name:             "dynamic_function_attribute_modification",
+			Description:      "Test PostgreSQL function body/SECURITY/volatility modification round-trips through the live DB (issue #89 / PR #129)",
+			EnhancedTestFunc: testDynamicFunctionAttributeModification,
+		},
+		{
+			// Natural-migration coverage for PR #123 / issue #112: field-level
+			// `check=` / `check_name=` annotations across add → rename → drop →
+			// same-name-no-op transitions, with idempotency re-diff at each
+			// step. This is the path that surfaced the silent constraint-drop
+			// no-op bug fixed by PR #129.
+			Name:             "dynamic_field_check_constraint_evolution",
+			Description:      "Test field-level CHECK constraint lifecycle (add, rename, drop, same-name no-op) via natural migrations (PR #123)",
+			EnhancedTestFunc: testDynamicFieldCheckConstraintEvolution,
+		},
+		{
 			Name:             "dynamic_rls_policy_modification",
 			Description:      "Test RLS policy modification and schema diffing",
 			EnhancedTestFunc: testDynamicRLSPolicyModification,

@@ -80,15 +80,17 @@ type Product struct {
 
 	setTenantFunc := findFunction(database.Functions, "set_tenant_context")
 	c.Assert(setTenantFunc, qt.IsNotNil)
-	c.Assert(setTenantFunc.Parameters, qt.Equals, "tenant_id_param TEXT")
-	c.Assert(setTenantFunc.Returns, qt.Equals, "VOID")
+	// Parameters and Returns are canonicalized to lowercase so they line up
+	// with what pg_get_function_arguments / pg_get_function_result emit.
+	c.Assert(setTenantFunc.Parameters, qt.Equals, "tenant_id_param text")
+	c.Assert(setTenantFunc.Returns, qt.Equals, "void")
 	c.Assert(setTenantFunc.Language, qt.Equals, "plpgsql")
 	c.Assert(setTenantFunc.Security, qt.Equals, "DEFINER")
 	c.Assert(setTenantFunc.Comment, qt.Equals, "Sets the current tenant context for RLS")
 
 	getTenantFunc := findFunction(database.Functions, "get_current_tenant_id")
 	c.Assert(getTenantFunc, qt.IsNotNil)
-	c.Assert(getTenantFunc.Returns, qt.Equals, "TEXT")
+	c.Assert(getTenantFunc.Returns, qt.Equals, "text")
 	c.Assert(getTenantFunc.Language, qt.Equals, "plpgsql")
 	c.Assert(getTenantFunc.Volatility, qt.Equals, "STABLE")
 	c.Assert(getTenantFunc.Comment, qt.Equals, "Gets the current tenant ID from session")
@@ -131,8 +133,9 @@ type Product struct {
 	sqlOutput := strings.Join(statements, "\n")
 
 	// Verify function creation SQL
-	c.Assert(sqlOutput, qt.Contains, "CREATE OR REPLACE FUNCTION set_tenant_context(tenant_id_param TEXT)")
-	c.Assert(sqlOutput, qt.Contains, "RETURNS VOID")
+	// Types lowercased by Function.Canonicalize to match Postgres' canonical form.
+	c.Assert(sqlOutput, qt.Contains, "CREATE OR REPLACE FUNCTION set_tenant_context(tenant_id_param text)")
+	c.Assert(sqlOutput, qt.Contains, "RETURNS void")
 	c.Assert(sqlOutput, qt.Contains, "LANGUAGE plpgsql SECURITY DEFINER")
 	c.Assert(sqlOutput, qt.Contains, "PERFORM set_config('app.current_tenant_id', tenant_id_param, false)")
 

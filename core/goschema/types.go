@@ -412,6 +412,13 @@ func (f *Function) Canonicalize() {
 	if f.Volatility == "" {
 		f.Volatility = "VOLATILE"
 	}
+	// Returns and Parameters: PostgreSQL stores types in canonical lowercase
+	// (`pg_get_function_result`, `pg_get_function_arguments`) and lowercases
+	// unquoted parameter names too. Mirror that on the Go side so an
+	// annotation written as `returns="VOID"` or `params="x TEXT"` doesn't
+	// false-diff on every run against pg_proc.
+	f.Returns = strings.ToLower(f.Returns)
+	f.Parameters = strings.ToLower(f.Parameters)
 }
 
 // RLSPolicy represents a PostgreSQL Row-Level Security policy definition parsed from Go struct annotations.

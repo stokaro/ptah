@@ -449,8 +449,8 @@ func TestParseFunctionComment(t *testing.T) {
 			expected: goschema.Function{
 				StructName: "TestStruct",
 				Name:       "set_tenant_context",
-				Parameters: "tenant_id_param TEXT",
-				Returns:    "VOID",
+				Parameters: "tenant_id_param text", // lowercased to match pg_get_function_arguments
+				Returns:    "void",                 // lowercased to match pg_get_function_result
 				Language:   "plpgsql",
 				Security:   "DEFINER",
 				Volatility: "VOLATILE", // default
@@ -463,7 +463,7 @@ func TestParseFunctionComment(t *testing.T) {
 			expected: goschema.Function{
 				StructName: "TestStruct",
 				Name:       "get_current_tenant_id",
-				Returns:    "TEXT",
+				Returns:    "text", // lowercased
 				Language:   "plpgsql",
 				Security:   "INVOKER", // default
 				Volatility: "STABLE",
@@ -476,7 +476,7 @@ func TestParseFunctionComment(t *testing.T) {
 			expected: goschema.Function{
 				StructName: "TestStruct",
 				Name:       "test_func",
-				Returns:    "INTEGER",
+				Returns:    "integer", // lowercased
 				Language:   "sql",
 				Security:   "INVOKER",  // default
 				Volatility: "VOLATILE", // default
@@ -489,7 +489,7 @@ func TestParseFunctionComment(t *testing.T) {
 			expected: goschema.Function{
 				StructName: "TestStruct",
 				Name:       "no_lang",
-				Returns:    "VOID",
+				Returns:    "void",    // lowercased
 				Language:   "plpgsql", // defaulted
 				Security:   "INVOKER",
 				Volatility: "VOLATILE",
@@ -502,7 +502,7 @@ func TestParseFunctionComment(t *testing.T) {
 			expected: goschema.Function{
 				StructName: "TestStruct",
 				Name:       "mixed_case",
-				Returns:    "VOID",
+				Returns:    "void",    // ToLower
 				Language:   "plpgsql", // ToLower
 				Security:   "DEFINER", // ToUpper
 				Volatility: "STABLE",  // ToUpper
