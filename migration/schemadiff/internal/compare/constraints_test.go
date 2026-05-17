@@ -446,3 +446,202 @@ func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
 func stringPtr(s string) *string {
 	return &s
 }
+
+// TestConstraints_FieldLevelCheck covers issue #112 — column-level `check=`
+// annotations need to participate in drift detection. The compare layer
+// synthesizes goschema.Constraint entries from field.Check for columns that
+// already exist in the introspected database, so add/remove/modify all run
+// through the standard Constraints() diff path.
+func TestConstraints_FieldLevelCheck(t *testing.T) {
+	// Shared setup: a "files" table with one existing column "category".
+	filesTable := types.DBTable{
+		Name:    "files",
+		Columns: []types.DBColumn{{Name: "category"}},
+	}
+
+	tests := []struct {
+		name      string
+		generated *goschema.Database
+		database  *types.DBSchema
+		expected  *difftypes.SchemaDiff
+	}{
+		{
+			name: "field-level CHECK added on existing column",
+			generated: &goschema.Database{
+				Tables: []goschema.Table{{StructName: "File", Name: "files"}},
+				Fields: []goschema.Field{
+					{
+						StructName: "File",
+						Name:       "category",
+						Type:       "TEXT",
+						Check:      "category IN ('a','b')",
+					},
+				},
+			},
+			database: &types.DBSchema{
+				Tables: []types.DBTable{filesTable},
+			},
+			expected: &difftypes.SchemaDiff{
+				ConstraintsAdded: []string{"files_category_check"},
+			},
+		},
+		{
+			name: "field-level CHECK matches existing — no diff (idempotency)",
+			generated: &goschema.Database{
+				Tables: []goschema.Table{{StructName: "File", Name: "files"}},
+				Fields: []goschema.Field{
+					{
+						StructName: "File",
+						Name:       "category",
+						Type:       "TEXT",
+						Check:      "category IN ('a','b')",
+					},
+				},
+			},
+			database: &types.DBSchema{
+				Tables: []types.DBTable{filesTable},
+				Constraints: []types.DBConstraint{
+					{
+						Name:        "files_category_check",
+						TableName:   "files",
+						Type:        "CHECK",
+						CheckClause: stringPtr("category IN ('a','b')"),
+					},
+				},
+			},
+			expected: &difftypes.SchemaDiff{},
+		},
+		{
+			name: "field-level CHECK expression changed → drop + add",
+			generated: &goschema.Database{
+				Tables: []goschema.Table{{StructName: "File", Name: "files"}},
+				Fields: []goschema.Field{
+					{
+						StructName: "File",
+						Name:       "category",
+						Type:       "TEXT",
+						Check:      "category IN ('a','b','c')",
+					},
+				},
+			},
+			database: &types.DBSchema{
+				Tables: []types.DBTable{filesTable},
+				Constraints: []types.DBConstraint{
+					{
+						Name:        "files_category_check",
+						TableName:   "files",
+						Type:        "CHECK",
+						CheckClause: stringPtr("category IN ('a','b')"),
+					},
+				},
+			},
+			expected: &difftypes.SchemaDiff{
+				ConstraintsAdded:   []string{"files_category_check"},
+				ConstraintsRemoved: []string{"files_category_check"},
+			},
+		},
+		{
+			name: "field-level CHECK removed from annotation → drop existing",
+			generated: &goschema.Database{
+				Tables: []goschema.Table{{StructName: "File", Name: "files"}},
+				Fields: []goschema.Field{
+					{StructName: "File", Name: "category", Type: "TEXT"},
+				},
+			},
+			database: &types.DBSchema{
+				Tables: []types.DBTable{filesTable},
+				Constraints: []types.DBConstraint{
+					{
+						Name:        "files_category_check",
+						TableName:   "files",
+						Type:        "CHECK",
+						CheckClause: stringPtr("category IN ('a','b')"),
+					},
+				},
+			},
+			expected: &difftypes.SchemaDiff{
+				ConstraintsRemoved: []string{"files_category_check"},
+			},
+		},
+		{
+			name: "explicit check_name overrides deterministic name",
+			generated: &goschema.Database{
+				Tables: []goschema.Table{{StructName: "File", Name: "files"}},
+				Fields: []goschema.Field{
+					{
+						StructName: "File",
+						Name:       "category",
+						Type:       "TEXT",
+						Check:      "category IN ('a','b')",
+						CheckName:  "files_category_valid",
+					},
+				},
+			},
+			database: &types.DBSchema{
+				Tables: []types.DBTable{filesTable},
+			},
+			expected: &difftypes.SchemaDiff{
+				ConstraintsAdded: []string{"files_category_valid"},
+			},
+		},
+		{
+			name: "field-level CHECK on column not yet in DB → no synthesized constraint (handled inline by CREATE/ADD COLUMN)",
+			generated: &goschema.Database{
+				Tables: []goschema.Table{{StructName: "File", Name: "files"}},
+				Fields: []goschema.Field{
+					{
+						StructName: "File",
+						Name:       "new_column",
+						Type:       "TEXT",
+						Check:      "new_column IN ('x','y')",
+					},
+				},
+			},
+			database: &types.DBSchema{
+				Tables: []types.DBTable{filesTable},
+			},
+			expected: &difftypes.SchemaDiff{},
+		},
+		{
+			name: "NOT NULL CHECK (internal Postgres representation) is not touched by field-level CHECK synthesis",
+			generated: &goschema.Database{
+				Tables: []goschema.Table{{StructName: "File", Name: "files"}},
+				Fields: []goschema.Field{
+					{StructName: "File", Name: "category", Type: "TEXT", Nullable: false},
+				},
+			},
+			database: &types.DBSchema{
+				Tables: []types.DBTable{filesTable},
+				Constraints: []types.DBConstraint{
+					{
+						Name:      "2200_files_category_not_null",
+						TableName: "files",
+						Type:      "CHECK",
+					},
+				},
+			},
+			expected: &difftypes.SchemaDiff{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff := &difftypes.SchemaDiff{}
+			compare.Constraints(tt.generated, tt.database, diff)
+
+			c.Assert(len(diff.ConstraintsAdded), qt.Equals, len(tt.expected.ConstraintsAdded),
+				qt.Commentf("ConstraintsAdded=%v", diff.ConstraintsAdded))
+			for _, expected := range tt.expected.ConstraintsAdded {
+				c.Assert(diff.ConstraintsAdded, qt.Contains, expected)
+			}
+
+			c.Assert(len(diff.ConstraintsRemoved), qt.Equals, len(tt.expected.ConstraintsRemoved),
+				qt.Commentf("ConstraintsRemoved=%v", diff.ConstraintsRemoved))
+			for _, expected := range tt.expected.ConstraintsRemoved {
+				c.Assert(diff.ConstraintsRemoved, qt.Contains, expected)
+			}
+		})
+	}
+}

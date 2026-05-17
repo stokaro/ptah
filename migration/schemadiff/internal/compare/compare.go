@@ -850,6 +850,22 @@ func Constraints(generated *goschema.Database, database *types.DBSchema, diff *d
 		genConstraints[key] = constraint
 	}
 
+	// Synthesize table-level Constraint entries from field-level `check=`
+	// annotations so they participate in drift comparison alongside table
+	// constraints from `//migrator:schema:constraint`. Only synthesized for
+	// columns that already exist in the database — new tables/columns get
+	// their CHECK inline via CREATE TABLE / ALTER TABLE ADD COLUMN, and
+	// double-emitting an ALTER TABLE ADD CONSTRAINT would fail because the
+	// constraint is created in the same migration step.
+	for _, synthesized := range synthesizeFieldLevelCheckConstraints(generated, database) {
+		key := synthesized.Table + "." + synthesized.Name
+		// Don't clobber an explicit table-level constraint that happens to
+		// share the same name.
+		if _, exists := genConstraints[key]; !exists {
+			genConstraints[key] = synthesized
+		}
+	}
+
 	// Create map of existing database constraints, filtering out field-level constraints
 	dbConstraints := make(map[string]types.DBConstraint)
 	for _, constraint := range database.Constraints {
@@ -1029,11 +1045,12 @@ func isFieldLevelConstraint(dbConstraint types.DBConstraint, generated *goschema
 		if strings.Contains(dbConstraint.Name, "_not_null") {
 			return hasNonNullableFieldInTable(dbConstraint.TableName, generated)
 		}
-		// Regular CHECK constraint - check if there's a field with check constraint for this column
-		key := dbConstraint.TableName + "." + getConstraintColumn(dbConstraint)
-		if field, exists := fieldMap[key]; exists && field.Check != "" {
-			return true
-		}
+		// Regular CHECK constraints from `check=` annotations are surfaced
+		// to the diff via synthesized goschema.Constraint entries (see
+		// synthesizeFieldLevelCheckConstraints in Constraints). Letting the
+		// DB constraint participate here means it gets matched against the
+		// synthesized entry by name, so add/remove/expression-change cases
+		// all flow through the standard Constraints() comparison path.
 	}
 
 	return false
@@ -1055,6 +1072,65 @@ func hasNonNullableFieldInTable(tableName string, generated *goschema.Database) 
 		}
 	}
 	return false
+}
+
+// synthesizeFieldLevelCheckConstraints turns each field-level `check=`
+// annotation on an existing database column into a synthetic
+// goschema.Constraint of type CHECK so the standard Constraints() diff path
+// can compare it against the introspected CHECK from pg_constraint.
+//
+// The constraint name follows the user-provided `check_name=` value when set,
+// otherwise it falls back to the PostgreSQL convention
+// "<table>_<column>_check" — which is what PostgreSQL itself uses for
+// unnamed inline column-level CHECKs, so the name lines up with whatever the
+// reader sees on the DB side.
+//
+// Columns that do not yet exist in the database are deliberately skipped:
+// those CHECKs ship inline as part of CREATE TABLE / ALTER TABLE ADD COLUMN,
+// and emitting an ADD CONSTRAINT alongside would attempt to create the same
+// constraint twice in the same migration.
+func synthesizeFieldLevelCheckConstraints(generated *goschema.Database, database *types.DBSchema) []goschema.Constraint {
+	if generated == nil || database == nil {
+		return nil
+	}
+
+	structToTable := make(map[string]string, len(generated.Tables))
+	for _, t := range generated.Tables {
+		structToTable[t.StructName] = t.Name
+	}
+
+	dbColumns := make(map[string]struct{}, 16)
+	for _, t := range database.Tables {
+		for _, c := range t.Columns {
+			dbColumns[t.Name+"."+c.Name] = struct{}{}
+		}
+	}
+
+	var synthesized []goschema.Constraint
+	for _, f := range generated.Fields {
+		if f.Check == "" {
+			continue
+		}
+		tableName := structToTable[f.StructName]
+		if tableName == "" {
+			tableName = f.StructName
+		}
+		if _, exists := dbColumns[tableName+"."+f.Name]; !exists {
+			continue
+		}
+		name := f.CheckName
+		if name == "" {
+			name = tableName + "_" + f.Name + "_check"
+		}
+		synthesized = append(synthesized, goschema.Constraint{
+			StructName:      f.StructName,
+			Name:            name,
+			Type:            "CHECK",
+			Table:           tableName,
+			CheckExpression: f.Check,
+		})
+	}
+	return synthesized
 }
 
 // getConstraintColumn extracts the column name from a constraint

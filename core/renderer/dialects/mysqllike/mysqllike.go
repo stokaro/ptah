@@ -298,9 +298,17 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 		parts = append(parts, fmt.Sprintf("DEFAULT %s", column.Default.Expression))
 	}
 
-	// Check constraint
+	// Check constraint. When `check_name=` is provided, emit the explicit
+	// `CONSTRAINT <name> CHECK (...)` form so the constraint round-trips
+	// stably through MySQL/MariaDB introspection (which otherwise auto-names
+	// CHECKs as `<table>_chk_N` and would not match the drift detector's
+	// expected name).
 	if column.Check != "" {
-		parts = append(parts, fmt.Sprintf("CHECK (%s)", column.Check))
+		if column.CheckName != "" {
+			parts = append(parts, fmt.Sprintf("CONSTRAINT %s CHECK (%s)", column.CheckName, column.Check))
+		} else {
+			parts = append(parts, fmt.Sprintf("CHECK (%s)", column.Check))
+		}
 	}
 
 	return strings.Join(parts, " "), nil

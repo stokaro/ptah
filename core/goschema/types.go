@@ -123,6 +123,7 @@ type Field struct {
 	OnUpdate       string                       // Foreign key ON UPDATE action (CASCADE, SET NULL, RESTRICT, NO ACTION)
 	Enum           []string                     // Enum values for ENUM type fields
 	Check          string                       // Check constraint expression
+	CheckName      string                       // Optional constraint name for the column-level CHECK; defaults to "<table>_<column>_check"
 	Comment        string                       // Column comment
 	Overrides      map[string]map[string]string // Platform-specific overrides (e.g., platform.mysql.type)
 }

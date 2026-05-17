@@ -132,6 +132,7 @@ func ToField(column *ast.ColumnNode, structName, sourcePlatform string) goschema
 		AutoInc:    column.AutoInc,
 		Unique:     column.Unique,
 		Check:      column.Check,
+		CheckName:  column.CheckName,
 		Comment:    column.Comment,
 	}
 
