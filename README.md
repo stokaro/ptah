@@ -31,7 +31,7 @@ capabilities include:
   Supports PostgreSQL RLS policies and custom functions for multi-tenant data isolation.
 
 - 🔍 **Database Introspection**
-  Reads the current schema directly from Postgres or MySQL for comparison and analysis.
+  Reads the current schema directly from PostgreSQL, MySQL, MariaDB, or ClickHouse for comparison and analysis.
 
 - 🧮 **Schema Diffing**
   Compares code-based schema with the live database schema using AST representations.
@@ -83,7 +83,7 @@ The core package contains all fundamental components for parsing, transforming, 
 
 - **`renderer/`** - Dialect-specific SQL generation from AST
   - Converts AST nodes to database-specific SQL statements
-  - Supports PostgreSQL, MySQL, MariaDB dialects
+  - Supports PostgreSQL, MySQL, MariaDB, and ClickHouse dialects
   - Implements visitor pattern for extensible rendering
 
 - **`platform/`** - Database platform constants and identifiers
@@ -113,7 +113,7 @@ Provides comprehensive database migration functionality:
 
 - **`planner/`** - Migration planning and SQL generation
   - Converts schema differences into executable SQL statements
-  - Dialect-specific planners for PostgreSQL, MySQL, MariaDB
+  - Dialect-specific planners for PostgreSQL, MySQL, MariaDB, and ClickHouse
   - Handles dependency ordering and safety checks
 
 - **`schemadiff/`** - Schema comparison and difference analysis
@@ -124,9 +124,9 @@ Provides comprehensive database migration functionality:
 #### `dbschema/` - Database Schema Operations
 Handles all database interactions and schema operations:
 
-- **Connection management** for PostgreSQL, MySQL, MariaDB
-- **Schema reading and introspection** from live databases
-- **Schema writing and migration execution** with transaction support
+- **Connection management** for PostgreSQL, MySQL, MariaDB, and ClickHouse
+- **Schema reading and introspection** from live databases (including ClickHouse `system.tables` / `system.columns` / `system.data_skipping_indices`)
+- **Schema writing and migration execution** with transaction support (transactions are no-ops on ClickHouse — see the package godoc)
 - **Database cleaning and schema dropping** capabilities
 - **Type definitions** for database schema representation
 
@@ -204,7 +204,33 @@ CategoryID int64
 ```go
 //migrator:schema:index name="idx_products_category" fields="category_id"
 _ int
+
+// ClickHouse data-skipping index: opt-in type + granularity
+//migrator:schema:index name="idx_events_payload" fields="payload" type="bloom_filter(0.01)" granularity="64"
+_ int
 ```
+
+`type` and `granularity` are honoured only by the ClickHouse renderer (which falls back to `minmax` / `GRANULARITY 8192` when unset). Other dialects ignore them.
+
+### ClickHouse Engine Configuration (ClickHouse only)
+
+ClickHouse tables must declare a storage engine, sorting key, and (optionally) a partition expression. These travel through the existing `platform.<dialect>.*` override syntax:
+
+```go
+//migrator:schema:table name="events" platform.clickhouse.engine="MergeTree" platform.clickhouse.order_by="id, created_at" platform.clickhouse.partition_by="toYYYYMM(created_at)" platform.clickhouse.settings="index_granularity=8192"
+type Event struct {
+    //migrator:schema:field name="id" type="BIGINT" not_null="true"
+    ID int64
+
+    //migrator:schema:field name="created_at" type="TIMESTAMP" not_null="true"
+    CreatedAt time.Time
+
+    //migrator:schema:field name="payload" type="TEXT"
+    Payload string
+}
+```
+
+Recognised keys: `engine`, `order_by`, `partition_by`, `primary_key`, `sample_by`, `settings`, `ttl`, `comment`. MergeTree-family engines require `order_by`; the renderer rejects a Nullable column that appears in the sorting key.
 
 ### PostgreSQL Extensions (PostgreSQL only)
 ```go
@@ -384,6 +410,7 @@ Generate SQL DDL statements from Go entities without touching the database:
 ./package-migrator generate --root-dir ./models --dialect postgres
 ./package-migrator generate --root-dir ./models --dialect mysql
 ./package-migrator generate --root-dir ./models --dialect mariadb
+./package-migrator generate --root-dir ./models --dialect clickhouse
 ```
 
 ### Database Operations
@@ -589,10 +616,11 @@ Run comprehensive integration tests across multiple database platforms:
 ```
 
 **Features:**
-- ✅ Tests across PostgreSQL, MySQL, and MariaDB
+- ✅ Tests across PostgreSQL, MySQL, MariaDB, and ClickHouse
 - ✅ Comprehensive scenario coverage (basic, concurrency, idempotency, failure recovery)
 - ✅ Multiple report formats (TXT, JSON, HTML)
 - ✅ Automated database setup and cleanup
+- ✅ ClickHouse scenarios are opt-in per scenario (`ClickHouseCompatible`); incompatible scenarios skip cleanly against a ClickHouse connection
 
 ---
 
@@ -739,7 +767,7 @@ go test -v ./migration/...
 
 ### Integration Testing Framework
 
-Ptah includes a comprehensive integration testing framework that validates migration functionality across PostgreSQL, MySQL, and MariaDB.
+Ptah includes a comprehensive integration testing framework that validates migration functionality across PostgreSQL, MySQL, MariaDB, and ClickHouse.
 
 #### Run Integration Tests
 
@@ -906,7 +934,7 @@ Define enums for type safety:
 Status string
 ```
 
-For PostgreSQL, this creates a proper ENUM type. For MySQL/MariaDB, it uses the ENUM column type.
+For PostgreSQL, this creates a proper ENUM type. For MySQL/MariaDB, it uses the ENUM column type. ClickHouse maps `ENUM` fields to inline `Enum8`/`Enum16` column types based on the declared values.
 
 ### Multi-Tenant Row-Level Security (PostgreSQL)
 
@@ -1084,7 +1112,8 @@ This project is part of the Inventario system and follows the same licensing ter
 
 ### ✅ Completed Features
 - ✅ **Migration versioning and rollback capabilities** - Full migration system with up/down migrations, version tracking, and rollback support
-- ✅ **Comprehensive integration testing** - Multi-database testing framework with PostgreSQL, MySQL, and MariaDB support
+- ✅ **Comprehensive integration testing** - Multi-database testing framework with PostgreSQL, MySQL, MariaDB, and ClickHouse support
+- ✅ **ClickHouse dialect** - MergeTree-family engine annotations, data-skipping indexes, and live introspection via `system.tables`
 - ✅ **PostgreSQL extensions support** - Support for PostgreSQL extensions in schema definitions
 - ✅ **PostgreSQL EXCLUDE constraints** - Full support for EXCLUDE constraints with USING methods, elements, and WHERE conditions
 - ✅ **Migration file generation** - Automatic generation of timestamped migration files from schema differences

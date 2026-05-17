@@ -62,6 +62,22 @@ jobs:
         ports:
           - 3307:3306
 
+      clickhouse:
+        image: clickhouse/clickhouse-server:24
+        env:
+          CLICKHOUSE_DB: ptah_test
+          CLICKHOUSE_USER: ptah_user
+          CLICKHOUSE_PASSWORD: ptah_password
+          CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+        options: >-
+          --health-cmd "wget --no-verbose --tries=1 --spider http://localhost:8123/ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 8123:8123
+          - 9000:9000
+
     steps:
       - uses: actions/checkout@v6
       
@@ -97,6 +113,13 @@ jobs:
             sleep 2
           done
           echo "MariaDB is ready!"
+
+          echo "Waiting for ClickHouse..."
+          until curl --silent --fail http://127.0.0.1:8123/ping; do
+            echo "ClickHouse is unavailable - sleeping"
+            sleep 2
+          done
+          echo "ClickHouse is ready!"
       
       - name: Run executor integration tests with PostgreSQL
         env:
@@ -135,8 +158,9 @@ jobs:
           POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           MYSQL_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
           MARIADB_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
+          CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
         run: |
-          ./integration-test --report=stdout,txt,json,html --verbose --output=./reports
+          ./integration-test --databases=postgres,mysql,mariadb,clickhouse --report=stdout,txt,json,html --verbose --output=./reports
 
       - name: Upload integration test reports
         uses: actions/upload-artifact@v7
@@ -152,5 +176,6 @@ jobs:
           POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           MYSQL_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
           MARIADB_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
+          CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
         run: |
           go test -v -race ./integration -timeout 30m

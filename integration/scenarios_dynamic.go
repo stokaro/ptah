@@ -246,6 +246,21 @@ func GetDynamicScenarios() []TestScenario {
 			Description:      "Test PostgreSQL role rollback: complete down migration path",
 			EnhancedTestFunc: testDynamicRolesRollback,
 		},
+
+		// ClickHouse engine annotation scenario (issue #169). Opts in via
+		// ClickHouseCompatible so the framework actually runs it against a
+		// live ClickHouse connection; all other scenarios are gated off on
+		// ClickHouse to avoid exercising features the engine cannot support.
+		// The scenario itself still no-ops on non-ClickHouse dialects (its
+		// body uses system.tables, which is ClickHouse-only). Keep the
+		// `dynamic_` prefix to match the convention enforced by
+		// cmd/integration-test/main_test.go:TestDynamicScenarioIdentification.
+		{
+			Name:                 "dynamic_clickhouse_mergetree_engine",
+			Description:          "Test ClickHouse MergeTree engine + ORDER BY + PARTITION BY annotations apply and read back from system.tables",
+			EnhancedTestFunc:     testClickHouseMergeTreeEngine,
+			ClickHouseCompatible: true,
+		},
 	}
 }
 

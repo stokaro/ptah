@@ -56,6 +56,16 @@ func TestRebind(t *testing.T) {
 			want:    "SELECT ?",
 		},
 		{
+			// clickhouse-go/v2 binds `?` placeholders natively, so Rebind
+			// must pass them through unchanged. Locks in the regression
+			// class where someone might later add a wrong `$N` mapping
+			// for clickhouse.
+			name:    "clickhouse untouched",
+			dialect: "clickhouse",
+			query:   "SELECT ?,?,?",
+			want:    "SELECT ?,?,?",
+		},
+		{
 			name:    "postgres preserves single-quoted ?",
 			dialect: "postgres",
 			query:   "SELECT 'a?b' WHERE x = ?",

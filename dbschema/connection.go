@@ -10,6 +10,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver
 
+	"github.com/stokaro/ptah/dbschema/clickhouse"
 	"github.com/stokaro/ptah/dbschema/mysql"
 	"github.com/stokaro/ptah/dbschema/postgres"
 	"github.com/stokaro/ptah/dbschema/types"
@@ -54,6 +55,9 @@ func ConnectToDatabase(dbURL string) (*DatabaseConnection, error) {
 	case "mysql", "mariadb":
 		dialectProtocol = "mysql"
 		connectionString = convertMySQLURL(dbURL)
+	case "clickhouse":
+		dialectProtocol = "clickhouse"
+		connectionString = convertClickHouseURL(dbURL)
 	default:
 		return nil, fmt.Errorf("unsupported database dialect: %s", dialect)
 	}
@@ -86,6 +90,9 @@ func ConnectToDatabase(dbURL string) (*DatabaseConnection, error) {
 	case "mysql":
 		reader = mysql.NewMySQLReader(db, info.Schema)
 		writer = mysql.NewMySQLWriter(db, info.Schema)
+	case "clickhouse":
+		reader = clickhouse.NewClickHouseReader(db, info.Schema)
+		writer = clickhouse.NewClickHouseWriter(db, info.Schema)
 	default:
 		db.Close()
 		return nil, fmt.Errorf("no schema reader available for dialect: %s", dialect)
@@ -237,6 +244,22 @@ func getDatabaseInfo(db *sql.DB, dialect string, parsedURL *url.URL, originalURL
 			}
 			info.Schema = dbName
 		}
+	case "clickhouse":
+		var version string
+		if err := db.QueryRow("SELECT version()").Scan(&version); err != nil {
+			return info, fmt.Errorf("failed to get ClickHouse version: %w", err)
+		}
+		info.Version = version
+
+		if parsedURL.Path != "" && len(parsedURL.Path) > 1 {
+			info.Schema = parsedURL.Path[1:]
+		} else {
+			var dbName string
+			if err := db.QueryRow("SELECT currentDatabase()").Scan(&dbName); err != nil {
+				return info, fmt.Errorf("failed to get current ClickHouse database name: %w", err)
+			}
+			info.Schema = dbName
+		}
 	}
 
 	return info, nil
@@ -276,6 +299,27 @@ func convertMySQLURL(dbURL string) string {
 	}
 
 	return connectionString
+}
+
+// convertClickHouseURL normalises a ClickHouse connection URL into the form
+// expected by the clickhouse-go/v2 driver's database/sql registration.
+//
+// The driver accepts either the canonical `clickhouse://user:pass@host:port/db`
+// URL form or the legacy DSN form. We canonicalise to the URL form and pass
+// the query parameters through unchanged. If the input cannot be parsed as a
+// URL we return it as-is so the driver can produce its own (likely better)
+// error message.
+func convertClickHouseURL(dbURL string) string {
+	parsed, err := url.Parse(dbURL)
+	if err != nil {
+		return dbURL
+	}
+	if parsed.Scheme == "" {
+		return dbURL
+	}
+	// The driver registers as the lowercase scheme "clickhouse". Normalise.
+	parsed.Scheme = "clickhouse"
+	return parsed.String()
 }
 
 // removePostgresPoolParams removes PostgreSQL connection pool parameters from a database URL.

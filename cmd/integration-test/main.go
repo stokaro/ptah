@@ -159,9 +159,10 @@ func runIntegrationTests(cmd *cobra.Command, args []string) error {
 
 	// Add database connections from environment variables
 	dbConnections := map[string]string{
-		"postgres": os.Getenv("POSTGRES_URL"),
-		"mysql":    os.Getenv("MYSQL_URL"),
-		"mariadb":  os.Getenv("MARIADB_URL"),
+		"postgres":   os.Getenv("POSTGRES_URL"),
+		"mysql":      os.Getenv("MYSQL_URL"),
+		"mariadb":    os.Getenv("MARIADB_URL"),
+		"clickhouse": os.Getenv("CLICKHOUSE_URL"),
 	}
 
 	// Filter databases based on command line arguments

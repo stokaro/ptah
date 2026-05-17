@@ -8,12 +8,42 @@ import (
 var keyValuePairRe = regexp.MustCompile(`(\w+(?:\.\w+)*)=(?:"([^"]*)"|([^\s]+))`)
 var boolRe = regexp.MustCompile(`\b(\w+(?:\.\w+)*)\b`)
 
+// directiveTokens is the set of bareword tokens that appear in a
+// `//migrator:schema:<kind>` annotation header. They are never user-supplied
+// boolean attributes, so we never auto-promote them to `kv[token]="true"`.
+var directiveTokens = map[string]bool{
+	"migrator":   true,
+	"schema":     true,
+	"field":      true,
+	"table":      true,
+	"embed":      true,
+	"embedded":   true,
+	"constraint": true,
+	"extension":  true,
+	"function":   true,
+	"rls":        true,
+	"policy":     true,
+	"enable":     true,
+	"role":       true,
+}
+
+// booleanAttrs is the set of bareword keys that, when written without `=`,
+// are auto-promoted to `kv[name]="true"`. See ParseKeyValueComment.
+var booleanAttrs = map[string]bool{
+	"not_null":       true,
+	"nullable":       true,
+	"primary":        true,
+	"unique":         true,
+	"auto_increment": true,
+	"index":          true,
+	"autoincrement":  true,
+}
+
 func ParseKeyValueComment(comment string) map[string]string {
 	result := make(map[string]string)
 
 	// First, handle key=value pairs (quoted and unquoted)
-	matches := keyValuePairRe.FindAllStringSubmatch(comment, -1)
-	for _, match := range matches {
+	for _, match := range keyValuePairRe.FindAllStringSubmatch(comment, -1) {
 		key := match[1]
 		// match[2] is the quoted value (if quoted), match[3] is the unquoted value
 		if match[2] != "" {
@@ -23,37 +53,72 @@ func ParseKeyValueComment(comment string) map[string]string {
 		}
 	}
 
-	// Then, handle standalone boolean attributes (no =value)
-	// Remove all key=value pairs from the comment first
-	cleanComment := keyValuePairRe.ReplaceAllString(comment, "")
-
-	// Find standalone words that could be boolean flags
-	boolMatches := boolRe.FindAllStringSubmatch(cleanComment, -1)
-
-	// Known boolean attributes that can be standalone
-	booleanAttrs := map[string]bool{
-		"not_null": true, "nullable": true, "primary": true, "unique": true,
-		"auto_increment": true, "index": true, "autoincrement": true,
+	// Build the set of barewords to skip for this specific directive line.
+	// All directive tokens are always skipped; "index" is additionally
+	// skipped when this line IS the //migrator:schema:index header, because
+	// otherwise the directive token itself would be auto-promoted to
+	// kv["index"]="true" and trip the strict-unknown-key validator.
+	skip := directiveTokens
+	if isIndexDirectiveHeader(comment) {
+		skip = indexDirectiveSkip
 	}
 
-	for _, match := range boolMatches {
+	// Then, handle standalone boolean attributes (no =value)
+	cleanComment := keyValuePairRe.ReplaceAllString(comment, "")
+	for _, match := range boolRe.FindAllStringSubmatch(cleanComment, -1) {
 		attr := match[1]
-		// Skip directive names and other non-boolean words
-		if attr == "migrator" || attr == "schema" || attr == "field" ||
-			attr == "table" || attr == "embed" || attr == "embedded" {
+		if !isAutoPromotedBoolean(attr, skip) {
 			continue
 		}
-		// Only treat as boolean if it's a known boolean attribute or follows boolean naming pattern
-		if booleanAttrs[attr] || strings.HasSuffix(attr, "_null") ||
-			strings.HasPrefix(attr, "is_") || strings.HasPrefix(attr, "has_") {
-			// Only set if not already set by key=value parsing
-			if _, exists := result[attr]; !exists {
-				result[attr] = "true"
-			}
+		// Only set if not already set by key=value parsing
+		if _, exists := result[attr]; !exists {
+			result[attr] = "true"
 		}
 	}
 
 	return result
+}
+
+// isIndexDirectiveHeader reports whether `comment` is the
+// //migrator:schema:index directive header (as opposed to e.g. a field line
+// that happens to contain that substring). The check tolerates leading
+// whitespace inside the comment but anchors on the `//migrator:schema:index`
+// prefix followed by either end-of-string or a space — so substrings like
+// `//migrator:schema:indexed` (hypothetical) would not match.
+func isIndexDirectiveHeader(comment string) bool {
+	c := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(comment), "//"))
+	const prefix = "migrator:schema:index"
+	if !strings.HasPrefix(c, prefix) {
+		return false
+	}
+	rest := c[len(prefix):]
+	return rest == "" || rest[0] == ' ' || rest[0] == '\t'
+}
+
+// indexDirectiveSkip is directiveTokens plus the bareword "index" — used
+// when the comment line is a //migrator:schema:index header so the
+// directive token "index" isn't auto-promoted to kv["index"]="true".
+var indexDirectiveSkip = func() map[string]bool {
+	s := make(map[string]bool, len(directiveTokens)+1)
+	for k, v := range directiveTokens {
+		s[k] = v
+	}
+	s["index"] = true
+	return s
+}()
+
+// isAutoPromotedBoolean reports whether a bareword `attr` (a word appearing
+// in a directive line without an `=value`) should be promoted to
+// `kv[attr]="true"`. Tokens in `skip` are excluded; everything else has to
+// be a known boolean attribute or follow a naming convention.
+func isAutoPromotedBoolean(attr string, skip map[string]bool) bool {
+	if skip[attr] {
+		return false
+	}
+	return booleanAttrs[attr] ||
+		strings.HasSuffix(attr, "_null") ||
+		strings.HasPrefix(attr, "is_") ||
+		strings.HasPrefix(attr, "has_")
 }
 
 func ParsePlatformSpecific(kv map[string]string) map[string]map[string]string {

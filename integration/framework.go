@@ -94,6 +94,16 @@ type TestScenario struct {
 	TestFunc    func(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS) error
 	// Optional enhanced test function that supports step recording
 	EnhancedTestFunc func(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS, recorder *StepRecorder) error
+	// ClickHouseCompatible opts a scenario in to running against a live
+	// ClickHouse connection. Default false because most existing scenarios
+	// exercise features ClickHouse cannot meaningfully support (functions,
+	// RLS, policies, roles, global enums, foreign keys, UNIQUE constraints,
+	// ALTER COLUMN TYPE round-trips, etc.). Setting this to true is an
+	// explicit opt-in that the scenario authors have verified works on
+	// ClickHouse end-to-end. The runner skips non-opted-in scenarios on
+	// ClickHouse with a single recorded "Skip" step rather than running
+	// them and producing confusing failures.
+	ClickHouseCompatible bool
 }
 
 // TestRunner manages and executes integration tests
@@ -172,6 +182,25 @@ func (tr *TestRunner) runSingleTest(ctx context.Context, scenario TestScenario, 
 	}
 	defer conn.Close()
 
+	// Gate ClickHouse runs BEFORE touching the database. Most existing
+	// scenarios exercise features ClickHouse cannot support (functions, RLS,
+	// policies, roles, global enums, foreign keys, UNIQUE constraints,
+	// ALTER COLUMN TYPE round-trips), so running them against a live
+	// ClickHouse server produces confusing failures rather than signal.
+	// Skipping before cleanDatabase avoids issuing a DropAllTables per skip.
+	if conn.Info().Dialect == "clickhouse" && !scenario.ClickHouseCompatible {
+		recorder := &StepRecorder{}
+		_ = recorder.RecordStep(
+			"Skip Non-ClickHouse-Compatible Scenario",
+			"Scenario has not opted in via ClickHouseCompatible; skipping on ClickHouse",
+			func() error { return nil },
+		)
+		result.Success = true
+		result.Steps = recorder.GetSteps()
+		result.Duration = time.Since(start)
+		return result
+	}
+
 	// Clean database before test
 	if err := tr.cleanDatabase(ctx, conn); err != nil {
 		result.Success = false
@@ -207,7 +236,7 @@ func (tr *TestRunner) runSingleTest(ctx context.Context, scenario TestScenario, 
 }
 
 // cleanDatabase drops all tables and resets the database to a clean state
-func (tr *TestRunner) cleanDatabase(_ctx context.Context, conn *dbschema.DatabaseConnection) error {
+func (tr *TestRunner) cleanDatabase(_ context.Context, conn *dbschema.DatabaseConnection) error {
 	// Drop all tables to ensure clean state
 	return conn.Writer().DropAllTables()
 }

@@ -493,6 +493,23 @@ func (r *Renderer) visitAlterTableWithEnums(node *ast.AlterTableNode, enums map[
 			line = strings.TrimPrefix(line, "  ")
 			r.w.WriteLinef("ALTER TABLE %s MODIFY COLUMN %s;", node.Name, line)
 
+		case *ast.RenameColumnOperation:
+			// MySQL 8.0+ and MariaDB 10.5.2+ both support the canonical
+			// `ALTER TABLE x RENAME COLUMN old TO new` form. The runtime
+			// version is the caller's concern; older servers will fail at
+			// migration apply time rather than at SQL generation time.
+			r.w.WriteLinef("ALTER TABLE %s RENAME COLUMN %s TO %s;", node.Name, op.OldName, op.NewName)
+
+		case *ast.AddSkippingIndexOperation:
+			// Data-skipping indexes are a ClickHouse-specific construct; no
+			// MySQL/MariaDB equivalent exists. Emit a self-explanatory
+			// comment so the migration is still readable and diffable.
+			r.w.WriteLinef("-- %s: data-skipping indexes are ClickHouse-specific; ignored.", r.dialectUpper)
+
+		case *ast.ModifyTTLOperation:
+			// Table TTL (row expiration) is a ClickHouse-only feature.
+			r.w.WriteLinef("-- %s: table TTL is ClickHouse-specific; ignored.", r.dialectUpper)
+
 		default:
 			return fmt.Errorf("unknown alter operation type: %T", operation)
 		}

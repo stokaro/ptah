@@ -336,6 +336,19 @@ func Columns(genCol goschema.Field, dbCol types.DBColumn) difftypes.ColumnDiff {
 		Changes:    make(map[string]string),
 	}
 
+	// ClickHouse-only: when the database side declares a MATERIALIZED /
+	// ALIAS / EPHEMERAL column there is currently no goschema-side
+	// annotation to express that, so the diff layer cannot tell whether a
+	// plain DEFAULT in the entity should become MATERIALIZED on the
+	// database (or vice-versa). Suppress per-column diffing entirely for
+	// generated columns so we don't emit a no-op ALTER on every migration.
+	// Round-trip support is tracked alongside the goschema annotation
+	// work; once that lands this guard can be tightened to compare
+	// GeneratedKind/Expression directly.
+	if dbCol.GeneratedKind != "" {
+		return colDiff
+	}
+
 	// Compare data types (simplified)
 	genType := normalize.Type(genCol.Type)
 	dbType := normalize.Type(dbCol.DataType)
