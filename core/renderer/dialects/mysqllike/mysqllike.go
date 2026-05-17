@@ -591,3 +591,13 @@ func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
 func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
 	return fmt.Errorf("ALTER ROLE is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)
 }
+
+// VisitRawSQL refuses to emit raw SQL. The only emitter of RawSQLNode today
+// is the PostgreSQL planner's constraint-drop path, which produces a PG-
+// specific DO block; routing that through a MySQL-family renderer would
+// produce a migration the target server can't execute. If a future caller
+// genuinely needs dialect-neutral raw SQL it should add a typed escape hatch
+// rather than relying on this method.
+func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
+	return fmt.Errorf("RawSQLNode is not supported in %s: %q was emitted by a Postgres-specific planner path", r.dialectUpper, node.SQL)
+}

@@ -56,6 +56,9 @@ type Visitor interface {
 	VisitDropRole(*DropRoleNode) error
 	// VisitAlterRole renders an ALTER ROLE statement (PostgreSQL-specific)
 	VisitAlterRole(*AlterRoleNode) error
+	// VisitRawSQL renders a literal SQL fragment verbatim. Use sparingly —
+	// reach for structured nodes first.
+	VisitRawSQL(*RawSQLNode) error
 }
 
 // DefaultValue represents different types of default values for table columns.

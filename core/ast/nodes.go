@@ -1667,6 +1667,30 @@ type StatementList struct {
 	Statements []Node
 }
 
+// RawSQLNode wraps a literal SQL fragment that should be emitted verbatim
+// during rendering, including its trailing semicolon if any. It exists for
+// the rare case where the renderer's structured nodes can't express what we
+// need — currently the postgres planner uses it to wrap a DO block that
+// dynamically resolves and drops a constraint by name.
+//
+// Use sparingly: dialect-agnostic structured nodes are still preferred when
+// they exist.
+type RawSQLNode struct {
+	// SQL is the literal SQL text to emit. The renderer writes it as a single
+	// line; if multi-line output is needed include the newlines yourself.
+	SQL string
+}
+
+// NewRawSQL creates a new RawSQLNode wrapping the given literal SQL.
+func NewRawSQL(sql string) *RawSQLNode {
+	return &RawSQLNode{SQL: sql}
+}
+
+// Accept implements the Node interface for RawSQLNode.
+func (n *RawSQLNode) Accept(visitor Visitor) error {
+	return visitor.VisitRawSQL(n)
+}
+
 // Accept implements the Node interface for StatementList.
 //
 // This method visits each statement in the list in order. If any statement
