@@ -81,22 +81,6 @@ func GetNextMigrationVersion() int {
 	return int(time.Now().Unix())
 }
 
-// FormatTimestampForDatabase formats a timestamp for the specific database dialect
-func FormatTimestampForDatabase(dialect string) string {
-	now := time.Now()
-	switch dialect {
-	case "mysql", "mariadb":
-		// MySQL/MariaDB expects format: 'YYYY-MM-DD HH:MM:SS'
-		return now.Format("2006-01-02 15:04:05")
-	case "postgres":
-		// PostgreSQL accepts ISO 8601 format
-		return now.Format(time.RFC3339)
-	default:
-		// Default to ISO 8601
-		return now.Format(time.RFC3339)
-	}
-}
-
 // GroupMigrationFiles groups migration files by version, returning a map
 // where each version maps to a struct containing up and down migration files
 func GroupMigrationFiles(files []MigrationFile) map[int]MigrationPair {

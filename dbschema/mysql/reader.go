@@ -125,9 +125,13 @@ func (r *Reader) getTableNames(dbName string) ([]string, error) {
 	return tableNames, nil
 }
 
-// getTableDDL gets the DDL for a specific table using SHOW CREATE TABLE
+// getTableDDL gets the DDL for a specific table using SHOW CREATE TABLE.
+// The table name comes from information_schema and cannot be passed as a
+// bind parameter to SHOW CREATE TABLE, so it is routed through quoteIdent
+// (doubling embedded backticks per MySQL conventions) before being
+// interpolated.
 func (r *Reader) getTableDDL(tableName string) (string, error) {
-	query := fmt.Sprintf("SHOW CREATE TABLE `%s`", tableName)
+	query := "SHOW CREATE TABLE " + quoteIdent(tableName)
 
 	var name, ddl string
 	err := r.db.QueryRow(query).Scan(&name, &ddl)

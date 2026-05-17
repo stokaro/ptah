@@ -74,7 +74,7 @@ func testManualPatchDetection(ctx context.Context, conn *dbschema.DatabaseConnec
 
 	// Make a manual change to the database
 	manualSQL := "ALTER TABLE users ADD COLUMN manual_column VARCHAR(255)"
-	if err := helper.ExecuteSQL(manualSQL); err != nil {
+	if err := helper.ExecuteSQL(ctx, manualSQL); err != nil {
 		return fmt.Errorf("failed to execute manual SQL: %w", err)
 	}
 
@@ -141,7 +141,7 @@ func testPermissionRestrictions(ctx context.Context, conn *dbschema.DatabaseConn
 	// Try to execute a statement that might fail due to permissions
 	// This is a simplified test - in a real scenario, you'd connect with a restricted user
 	restrictedSQL := "CREATE DATABASE test_restricted_db"
-	err := helper.ExecuteSQL(restrictedSQL)
+	err := helper.ExecuteSQL(ctx, restrictedSQL)
 
 	// We expect this might fail, and that's okay for this test
 	// The important thing is that we handle the error gracefully
@@ -163,7 +163,7 @@ func testPermissionRestrictions(ctx context.Context, conn *dbschema.DatabaseConn
 
 	// Clean up if the statement succeeded
 	if err == nil {
-		_ = helper.ExecuteSQL("DROP DATABASE IF EXISTS test_restricted_db")
+		_ = helper.ExecuteSQL(ctx, "DROP DATABASE IF EXISTS test_restricted_db")
 	}
 
 	return nil
