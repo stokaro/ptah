@@ -18,9 +18,11 @@ The migration generator package provides functionality to automatically generate
 package main
 
 import (
+    "context"
     "fmt"
     "log"
-    
+    "time"
+
     "github.com/stokaro/ptah/migration/generator"
 )
 
@@ -32,7 +34,11 @@ func main() {
         OutputDir:     "./migrations",         // Directory to save migration files
     }
 
-    files, err := generator.GenerateMigration(opts)
+    // Bound the initial database connection so a stuck host fails fast.
+    ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+    defer cancel()
+
+    files, err := generator.GenerateMigration(ctx, opts)
     if err != nil {
         log.Fatal(err)
     }

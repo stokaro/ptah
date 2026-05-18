@@ -45,9 +45,9 @@ func TestMigrateDownCommand_Integration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	// Connect to database
-	conn, err := dbschema.ConnectToDatabase(dbURL)
+	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	c.Assert(err, qt.IsNil)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Apply migration first
 	migrationsFS := os.DirFS(tempDir)

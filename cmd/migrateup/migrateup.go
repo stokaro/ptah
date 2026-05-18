@@ -8,6 +8,7 @@ import (
 	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -53,6 +54,7 @@ var migrateUpFlags = map[string]cobraflags.Flag{
 		Value: false,
 		Usage: "Enable verbose output",
 	},
+	dbcli.ConnectTimeoutFlagName: dbcli.NewConnectTimeoutFlag(),
 }
 
 func NewMigrateUpCommand() *cobra.Command {
@@ -78,12 +80,18 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 		fmt.Printf("Connecting to database: %s\n", dbschema.FormatDatabaseURL(dbURL))
 	}
 
-	// Connect to database
-	conn, err := dbschema.ConnectToDatabase(dbURL)
+	connectTimeout, err := dbcli.ParseConnectTimeout(migrateUpFlags[dbcli.ConnectTimeoutFlagName].GetString())
+	if err != nil {
+		return err
+	}
+
+	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
+	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
+	cancelConnect()
 	if err != nil {
 		return fmt.Errorf("error connecting to database: %w", err)
 	}
-	defer conn.Close()
+	defer dbschema.CloseAndWarn(conn)
 
 	// Set dry run mode if requested
 	conn.Writer().SetDryRun(dryRun)

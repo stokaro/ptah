@@ -162,25 +162,34 @@ func (tr *TestRunner) RunAll(ctx context.Context) error {
 	return nil
 }
 
-// runSingleTest executes a single test scenario against a specific database
-func (tr *TestRunner) runSingleTest(ctx context.Context, scenario TestScenario, dbName, dbURL string) TestResult {
+// runSingleTest executes a single test scenario against a specific database.
+//
+// The return value is named so the deferred Close handler can promote a
+// connection-close failure into a test failure when the scenario itself
+// succeeded — otherwise the close error would be silently lost.
+func (tr *TestRunner) runSingleTest(ctx context.Context, scenario TestScenario, dbName, dbURL string) (result TestResult) {
 	start := time.Now()
 
-	result := TestResult{
+	result = TestResult{
 		Name:        fmt.Sprintf("%s_%s", scenario.Name, dbName),
 		Database:    dbName,
 		Description: scenario.Description,
 	}
 
 	// Connect to database
-	conn, err := dbschema.ConnectToDatabase(dbURL)
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	if err != nil {
 		result.Success = false
 		result.Error = fmt.Sprintf("Failed to connect to database: %v", err)
 		result.Duration = time.Since(start)
 		return result
 	}
-	defer conn.Close()
+	defer func() {
+		if cerr := conn.Close(); cerr != nil && result.Success {
+			result.Success = false
+			result.Error = fmt.Sprintf("Failed to close database connection: %v", cerr)
+		}
+	}()
 
 	// Gate ClickHouse runs BEFORE touching the database. Most existing
 	// scenarios exercise features ClickHouse cannot support (functions, RLS,

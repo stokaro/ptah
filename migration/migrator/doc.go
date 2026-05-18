@@ -45,12 +45,12 @@
 //
 // Basic migration setup and execution:
 //
-//	// Create database connection
-//	conn, err := dbschema.ConnectToDatabase("postgres://user:pass@localhost/db")
+//	// Create database connection (supply a context to bound the initial Ping)
+//	conn, err := dbschema.ConnectToDatabase(ctx, "postgres://user:pass@localhost/db")
 //	if err != nil {
 //		log.Fatal(err)
 //	}
-//	defer conn.Close()
+//	defer dbschema.CloseAndWarn(conn)
 //
 //	// Option 1: Create migrator from filesystem
 //	m, err := migrator.NewFSMigrator(conn, os.DirFS("/path/to/migrations"))

@@ -2,6 +2,7 @@ package dropall
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
 )
 
@@ -39,6 +41,7 @@ var dropAllFlags = map[string]cobraflags.Flag{
 		Value: false,
 		Usage: "Show what would be executed without making actual changes",
 	},
+	dbcli.ConnectTimeoutFlagName: dbcli.NewConnectTimeoutFlag(),
 }
 
 func NewDropAllCommand() *cobra.Command {
@@ -64,11 +67,18 @@ func dropAllCommand(_ *cobra.Command, _ []string) error {
 	fmt.Println()
 
 	// 1. Connect to database
-	conn, err := dbschema.ConnectToDatabase(dbURL)
+	connectTimeout, err := dbcli.ParseConnectTimeout(dropAllFlags[dbcli.ConnectTimeoutFlagName].GetString())
+	if err != nil {
+		return err
+	}
+
+	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
+	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
+	cancelConnect()
 	if err != nil {
 		return fmt.Errorf("error connecting to database: %w", err)
 	}
-	defer conn.Close()
+	defer dbschema.CloseAndWarn(conn)
 
 	fmt.Printf("Connected to %s database successfully!\n", conn.Info().Dialect)
 	fmt.Println()

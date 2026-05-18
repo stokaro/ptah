@@ -138,17 +138,22 @@ package main
 import (
     "context"
     "os"
+    "time"
+
     "github.com/stokaro/ptah/dbschema"
     "github.com/stokaro/ptah/migration/migrator"
 )
 
 func main() {
-    // Connect to database
-    conn, err := dbschema.ConnectToDatabase("postgres://user:pass@localhost/db")
+    // Connect to database. Supply a context so the initial Ping cannot block
+    // indefinitely on a stuck host.
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+    conn, err := dbschema.ConnectToDatabase(ctx, "postgres://user:pass@localhost/db")
     if err != nil {
         panic(err)
     }
-    defer conn.Close()
+    defer dbschema.CloseAndWarn(conn)
 
     // Create filesystem from migrations directory
     migrationsFS := os.DirFS("/path/to/migrations")
