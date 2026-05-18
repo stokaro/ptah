@@ -1,6 +1,7 @@
 package generator_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,7 +28,7 @@ func TestGenerateMigration_HappyPath(t *testing.T) {
 
 	// This test will fail if there's no testdata directory with Go entities
 	// and no memory database connection, but it tests the basic structure
-	_, err := generator.GenerateMigration(opts)
+	_, err := generator.GenerateMigration(context.Background(), opts)
 
 	// We expect this to fail because we don't have test data set up
 	// but we can verify the error is reasonable
@@ -101,7 +102,7 @@ func TestCreateMigrationFiles_FileCreation(t *testing.T) {
 	}
 
 	// This will fail due to missing testdata, but we can check the structure
-	_, err := generator.GenerateMigration(opts)
+	_, err := generator.GenerateMigration(context.Background(), opts)
 	c.Assert(err, qt.IsNotNil) // Expected to fail without proper setup
 }
 
@@ -150,7 +151,7 @@ func TestGenerateMigrationOptions_ErrorCases(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := generator.GenerateMigration(tt.opts)
+			_, err := generator.GenerateMigration(context.Background(), tt.opts)
 			c.Assert(err, qt.IsNotNil)
 		})
 	}
@@ -202,7 +203,7 @@ type TestTable struct {
 		OutputDir:     migrationsDir,
 	}
 
-	files, err := generator.GenerateMigration(opts)
+	files, err := generator.GenerateMigration(context.Background(), opts)
 	if err != nil {
 		// Skip test if database is not available
 		t.Skipf("Skipping test due to database connection error: %v", err)
@@ -286,7 +287,7 @@ type SimpleTable struct {
 	}
 
 	// This should not panic with nil pointer dereference
-	files, err := generator.GenerateMigration(opts)
+	files, err := generator.GenerateMigration(context.Background(), opts)
 	if err != nil {
 		// Skip test if database is not available
 		t.Skipf("Skipping test due to database connection error: %v", err)
@@ -343,7 +344,7 @@ type TestTable struct {
 	}
 
 	// This should not fail with filesystem path resolution errors
-	_, err = generator.GenerateMigration(opts)
+	_, err = generator.GenerateMigration(context.Background(), opts)
 
 	// We expect this to fail due to memory database limitations, but NOT due to filesystem path issues
 	c.Assert(err, qt.IsNotNil)
@@ -411,7 +412,7 @@ type TestTable struct {
 	}
 
 	// This should not fail with filesystem path resolution errors
-	_, err = generator.GenerateMigration(opts)
+	_, err = generator.GenerateMigration(context.Background(), opts)
 
 	// We expect this to fail due to memory database limitations, but NOT due to filesystem path issues
 	c.Assert(err, qt.IsNotNil)

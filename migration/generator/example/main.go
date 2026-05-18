@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/stokaro/ptah/migration/generator"
 )
@@ -48,8 +50,16 @@ func main() {
 	fmt.Printf("  Migration name: %s\n", migrationName)
 	fmt.Println()
 
-	// Generate the migration
-	files, err := generator.GenerateMigration(opts)
+	// Bound the initial database connection so a stuck host fails fast.
+	// The schema-reading work inside GenerateMigration is not yet
+	// context-aware — see its docstring.
+	//
+	// We cancel synchronously rather than via `defer` because the failure
+	// path below uses log.Fatalf, which calls os.Exit and skips deferreds.
+	// The OS reclaims the timer when the process exits, so this is safe.
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	files, err := generator.GenerateMigration(ctx, opts)
+	cancel()
 	if err != nil {
 		log.Fatalf("Error generating migration: %v", err)
 	}

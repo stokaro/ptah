@@ -1,6 +1,7 @@
 package generator
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -47,8 +48,14 @@ type MigrationFiles struct {
 }
 
 // GenerateMigration generates both up and down migration files by comparing
-// the desired schema (from Go entities) with the current database state
-func GenerateMigration(opts GenerateMigrationOptions) (*MigrationFiles, error) {
+// the desired schema (from Go entities) with the current database state.
+//
+// The context bounds only the initial database connection attempt performed
+// when opts.DBConn is nil (so a stuck host cannot block the call
+// indefinitely). The schema-reading and migration-writing work below does not
+// yet propagate the context; future work may thread it through there too.
+// When opts.DBConn is supplied the context is currently unused.
+func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*MigrationFiles, error) {
 	// Set default migration name if not provided
 	if opts.MigrationName == "" {
 		opts.MigrationName = "migration"
@@ -85,11 +92,11 @@ func GenerateMigration(opts GenerateMigrationOptions) (*MigrationFiles, error) {
 	if opts.DBConn != nil {
 		conn = opts.DBConn
 	} else {
-		conn, err = dbschema.ConnectToDatabase(opts.DatabaseURL)
+		conn, err = dbschema.ConnectToDatabase(ctx, opts.DatabaseURL)
 		if err != nil {
 			return nil, fmt.Errorf("error connecting to database: %w", err)
 		}
-		defer conn.Close()
+		defer dbschema.CloseAndWarn(conn)
 	}
 
 	dbSchema, err := conn.Reader().ReadSchema()

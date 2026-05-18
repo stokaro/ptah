@@ -21,7 +21,7 @@ func ExampleMigrator() {
 	dbURL := "postgres://user:pass@localhost/db"
 
 	// Connect to database
-	conn, err := dbschema.ConnectToDatabase(dbURL)
+	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	if err != nil {
 		fmt.Printf("Failed to connect: %v\n", err)
 		return
@@ -65,7 +65,7 @@ func ExampleNewFSMigrator() {
 	dbURL := "postgres://user:pass@localhost/db"
 
 	// Connect to database
-	conn, err := dbschema.ConnectToDatabase(dbURL)
+	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	if err != nil {
 		fmt.Printf("Failed to connect: %v\n", err)
 		return
@@ -98,7 +98,7 @@ func ExampleMigrator_GetMigrationStatus() {
 	dbURL := "postgres://user:pass@localhost/db"
 
 	// Connect to database
-	conn, err := dbschema.ConnectToDatabase(dbURL)
+	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	if err != nil {
 		fmt.Printf("Failed to connect: %v\n", err)
 		return
@@ -165,7 +165,7 @@ func Example_registerMigrationsCustomFilesystem() {
 	dbURL := "postgres://user:pass@localhost/db"
 
 	// Connect to database
-	conn, err := dbschema.ConnectToDatabase(dbURL)
+	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	if err != nil {
 		fmt.Printf("Failed to connect: %v\n", err)
 		return
@@ -241,7 +241,7 @@ func ExampleMigrator_MigrateDown() {
 	// This is a demonstration - in real usage you would have a valid database URL
 	dbURL := "postgres://user:pass@localhost/db"
 
-	conn, err := dbschema.ConnectToDatabase(dbURL)
+	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	if err != nil {
 		fmt.Printf("Failed to connect: %v\n", err)
 		return
@@ -278,7 +278,7 @@ func ExampleMigrator_MigrateTo() {
 	// This is a demonstration - in real usage you would have a valid database URL
 	dbURL := "postgres://user:pass@localhost/db"
 
-	conn, err := dbschema.ConnectToDatabase(dbURL)
+	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	if err != nil {
 		fmt.Printf("Failed to connect: %v\n", err)
 		return
@@ -345,7 +345,7 @@ func ExampleMigrator_GetPendingMigrations() {
 	// This is a demonstration - in real usage you would have a valid database URL
 	dbURL := "postgres://user:pass@localhost/db"
 
-	conn, err := dbschema.ConnectToDatabase(dbURL)
+	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	if err != nil {
 		fmt.Printf("Failed to connect: %v\n", err)
 		return
@@ -458,7 +458,7 @@ func Example_completeWorkflow() {
 	// This is a demonstration - in real usage you would have a valid database URL
 	dbURL := "postgres://user:pass@localhost/db"
 
-	conn, err := dbschema.ConnectToDatabase(dbURL)
+	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	if err != nil {
 		fmt.Printf("Failed to connect: %v\n", err)
 		return

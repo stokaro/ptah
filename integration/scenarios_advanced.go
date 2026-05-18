@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path"
 
@@ -221,17 +222,25 @@ func testConcurrencyParallelMigrate(ctx context.Context, conn *dbschema.Database
 	}
 
 	// Create two separate connections for parallel execution
-	conn1, err := dbschema.ConnectToDatabase(conn.Info().URL)
+	conn1, err := dbschema.ConnectToDatabase(ctx, conn.Info().URL)
 	if err != nil {
 		return fmt.Errorf("failed to create first connection: %w", err)
 	}
-	defer conn1.Close()
+	defer func() {
+		if cerr := conn1.Close(); cerr != nil {
+			slog.Warn("failed to close first parallel connection", "error", cerr)
+		}
+	}()
 
-	conn2, err := dbschema.ConnectToDatabase(conn.Info().URL)
+	conn2, err := dbschema.ConnectToDatabase(ctx, conn.Info().URL)
 	if err != nil {
 		return fmt.Errorf("failed to create second connection: %w", err)
 	}
-	defer conn2.Close()
+	defer func() {
+		if cerr := conn2.Close(); cerr != nil {
+			slog.Warn("failed to close second parallel connection", "error", cerr)
+		}
+	}()
 
 	// Use channels to collect results from goroutines (race-safe)
 	const numParallelMigrations = 2
@@ -345,7 +354,7 @@ func testMigrationGeneratorValidation(ctx context.Context, conn *dbschema.Databa
 			return err
 		}
 
-		_, err := generator.GenerateMigration(generator.GenerateMigrationOptions{
+		_, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
 			GoEntitiesDir: vem.GetEntitiesDir(),
 			DBConn:        conn,
 			OutputDir:     migrationsDir,
@@ -379,7 +388,7 @@ func testMigrationGeneratorValidation(ctx context.Context, conn *dbschema.Databa
 			return err
 		}
 
-		_, err = generator.GenerateMigration(generator.GenerateMigrationOptions{
+		_, err = generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
 			GoEntitiesDir: vem.GetEntitiesDir(),
 			DBConn:        conn,
 			OutputDir:     migrationsDir,
@@ -412,7 +421,7 @@ func testMigrationGeneratorValidation(ctx context.Context, conn *dbschema.Databa
 		if err := vem.LoadEntityVersion("002-add-posts"); err != nil {
 			return err
 		}
-		_, err = generator.GenerateMigration(generator.GenerateMigrationOptions{
+		_, err = generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
 			GoEntitiesDir: vem.GetEntitiesDir(),
 			DBConn:        conn,
 			OutputDir:     migrationsDir,

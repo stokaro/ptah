@@ -1,12 +1,14 @@
 package compare
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 
 	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/migration/planner"
@@ -39,6 +41,7 @@ var compareFlags = map[string]cobraflags.Flag{
 		Value: "",
 		Usage: "Database URL (required). Example: postgres://localhost:5432/dbname",
 	},
+	dbcli.ConnectTimeoutFlagName: dbcli.NewConnectTimeoutFlag(),
 }
 
 func NewCompareCommand() *cobra.Command {
@@ -70,11 +73,18 @@ func compareCommand(_ *cobra.Command, _ []string) error {
 	}
 
 	// 2. Connect to database and read schema
-	conn, err := dbschema.ConnectToDatabase(dbURL)
+	connectTimeout, err := dbcli.ParseConnectTimeout(compareFlags[dbcli.ConnectTimeoutFlagName].GetString())
+	if err != nil {
+		return err
+	}
+
+	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
+	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
+	cancelConnect()
 	if err != nil {
 		return fmt.Errorf("error connecting to database: %w", err)
 	}
-	defer conn.Close()
+	defer dbschema.CloseAndWarn(conn)
 
 	dbSchema, err := conn.Reader().ReadSchema()
 	if err != nil {

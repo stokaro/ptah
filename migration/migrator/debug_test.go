@@ -16,14 +16,14 @@ func TestInitializeDebug(t *testing.T) {
 	dbURL := "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
 
 	// Connect to database
-	conn, err := dbschema.ConnectToDatabase(dbURL)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	if err != nil {
 		t.Skipf("Skipping test: failed to connect to database: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Clean up any existing schema_migrations table to ensure a clean test
-	ctx := context.Background()
 	_, _ = conn.Exec("DROP TABLE IF EXISTS schema_migrations")
 
 	// Create a migrator

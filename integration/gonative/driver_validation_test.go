@@ -47,9 +47,9 @@ func TestPgxDriverValidation(t *testing.T) {
 		c := qt.New(t)
 
 		// Test that dbschema.ConnectToDatabase uses pgx for PostgreSQL URLs
-		conn, err := dbschema.ConnectToDatabase(dsn)
+		conn, err := dbschema.ConnectToDatabase(t.Context(), dsn)
 		c.Assert(err, qt.IsNil)
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		// Test that we can query the database through the connection
 		var version string
@@ -116,9 +116,9 @@ func TestPgxDriverValidation(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				c := qt.New(t)
 
-				conn, err := dbschema.ConnectToDatabase(tc.dsn)
+				conn, err := dbschema.ConnectToDatabase(t.Context(), tc.dsn)
 				c.Assert(err, qt.IsNil)
-				defer conn.Close()
+				defer func() { _ = conn.Close() }()
 
 				// Test that we can query the database
 				var version string

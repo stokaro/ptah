@@ -89,9 +89,9 @@ func TestDynamicScenariosBasic(t *testing.T) {
 	ctx := context.Background()
 
 	// Connect to database
-	conn, err := dbschema.ConnectToDatabase(dbURL)
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Clean database
 	err = conn.Writer().DropAllTables()
