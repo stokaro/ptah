@@ -12,6 +12,26 @@ type IndexRemovalInfo struct {
 	TableName string `json:"table_name"`
 }
 
+// ConstraintRemovalInfo contains information about a constraint that needs to be
+// removed, including the constraint name, the table it belongs to, and its type.
+//
+// This is needed for databases like MySQL/MariaDB that require both the table
+// name and a type-specific drop syntax — e.g. FOREIGN KEY constraints are
+// dropped with `ALTER TABLE <table> DROP FOREIGN KEY <name>` rather than
+// `DROP CONSTRAINT`. The plain ConstraintsRemoved name list discards the table
+// name, which the comparator does know at diff time, so it is preserved here in
+// parallel (mirroring IndexesRemovedWithTables).
+type ConstraintRemovalInfo struct {
+	// Name is the name of the constraint to be removed
+	Name string `json:"name"`
+
+	// TableName is the name of the table that the constraint belongs to
+	TableName string `json:"table_name"`
+
+	// Type is the constraint type (FOREIGN KEY, CHECK, UNIQUE, PRIMARY KEY, ...)
+	Type string `json:"type"`
+}
+
 // SchemaDiff represents comprehensive differences between two database schemas.
 //
 // This structure captures all types of schema changes that can occur between a target
@@ -140,6 +160,13 @@ type SchemaDiff struct {
 	// ConstraintsRemoved contains names of constraints that exist in the current database
 	// but not in the target schema (potentially dangerous - may affect data integrity)
 	ConstraintsRemoved []string `json:"constraints_removed"`
+
+	// ConstraintsRemovedWithTables contains detailed information about constraints that
+	// need to be removed, including the constraint name, owning table, and type. This is
+	// used by database dialects that require the table name and a type-specific drop
+	// syntax (e.g. MySQL/MariaDB FOREIGN KEY constraints use DROP FOREIGN KEY). It runs
+	// in parallel to ConstraintsRemoved (mirroring IndexesRemovedWithTables).
+	ConstraintsRemovedWithTables []ConstraintRemovalInfo `json:"constraints_removed_with_tables"`
 }
 
 // HasChanges returns true if the diff contains any schema changes requiring migration.

@@ -31,6 +31,14 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 		})
 	}
 
+	// Index single-column FOREIGN KEY constraints by table.column so the
+	// reconstructed fields can carry the foreign reference and its referential
+	// actions. This is what lets a down migration restore the prior ON DELETE /
+	// ON UPDATE action of a field-level FK (issue #189): the down path treats
+	// the introspected (pre-change) database as the target, so the old action
+	// must survive the round-trip into goschema.
+	fkByColumn := indexForeignKeysByColumn(dbSchema)
+
 	// Convert tables and their columns
 	for _, dbTable := range dbSchema.Tables {
 		// Generate struct name from table name (simple conversion)
@@ -59,6 +67,15 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 			// Set default value if present
 			if dbColumn.ColumnDefault != nil {
 				field.Default = *dbColumn.ColumnDefault
+			}
+
+			// Carry the field-level foreign key (reference + referential actions)
+			// so down migrations can reconstruct it with the prior action.
+			if fk, ok := fkByColumn[dbTable.Name+"."+dbColumn.Name]; ok {
+				field.Foreign = fk.foreign
+				field.ForeignKeyName = fk.name
+				field.OnDelete = fk.onDelete
+				field.OnUpdate = fk.onUpdate
 			}
 
 			database.Fields = append(database.Fields, field)
@@ -158,6 +175,52 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 	}
 
 	return database
+}
+
+// foreignKeyInfo holds the field-level pieces reconstructed from a database
+// FOREIGN KEY constraint.
+type foreignKeyInfo struct {
+	name     string // constraint name
+	foreign  string // "table(column)" reference
+	onDelete string // ON DELETE action (NO ACTION normalized away later)
+	onUpdate string // ON UPDATE action
+}
+
+// indexForeignKeysByColumn maps table.column -> reconstructed FK info for every
+// single-column FOREIGN KEY constraint in the database schema. Multi-column FKs
+// are not field-level and are skipped (they are represented as table-level
+// constraints, which this converter does not yet round-trip).
+func indexForeignKeysByColumn(dbSchema *dbschematypes.DBSchema) map[string]foreignKeyInfo {
+	result := make(map[string]foreignKeyInfo)
+	for _, c := range dbSchema.Constraints {
+		if c.Type != "FOREIGN KEY" || c.ColumnName == "" || c.ForeignTable == nil {
+			continue
+		}
+		foreignTable := *c.ForeignTable
+		foreignColumn := ""
+		if c.ForeignColumn != nil {
+			foreignColumn = *c.ForeignColumn
+		}
+		foreign := foreignTable
+		if foreignColumn != "" {
+			foreign = foreignTable + "(" + foreignColumn + ")"
+		}
+		result[c.TableName+"."+c.ColumnName] = foreignKeyInfo{
+			name:     c.Name,
+			foreign:  foreign,
+			onDelete: derefString(c.DeleteRule),
+			onUpdate: derefString(c.UpdateRule),
+		}
+	}
+	return result
+}
+
+// derefString returns the pointed-to string or "" when nil.
+func derefString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // generateStructName converts a table name to a Go struct name

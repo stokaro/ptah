@@ -91,8 +91,8 @@ func compareCommand(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("error reading database schema: %w", err)
 	}
 
-	// 3. Compare schemas
-	diff := schemadiff.Compare(result, dbSchema)
+	// 3. Compare schemas (dialect-aware: MySQL/MariaDB RESTRICT == NO ACTION)
+	diff := schemadiff.CompareWithDialect(result, dbSchema, conn.Info().Dialect)
 
 	// 4. Display differences
 	output := planner.GenerateSchemaDiffSQLStatements(diff, result, conn.Info().Dialect)

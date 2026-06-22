@@ -144,7 +144,7 @@ func (p *Planner) addRegularForeignKeys(result []ast.Node, generated *goschema.D
 		if fkRef != nil && fkRef.Table != table.Name {
 			fkRef.OnDelete = field.OnDelete
 			fkRef.OnUpdate = field.OnUpdate
-			result = append(result, p.createForeignKeyAlterStatement(table.Name, field.ForeignKeyName, []string{field.Name}, fkRef))
+			result = append(result, p.createForeignKeyAlterStatement(table.Name, foreignKeyName(table.Name, field), []string{field.Name}, fkRef))
 		}
 	}
 	return result
@@ -162,16 +162,44 @@ func (p *Planner) addSelfReferencingForeignKeys(result []ast.Node, generated *go
 		if fkRef != nil {
 			fkRef.OnDelete = selfRefFK.OnDelete
 			fkRef.OnUpdate = selfRefFK.OnUpdate
-			result = append(result, p.createForeignKeyAlterStatement(table.Name, selfRefFK.ForeignKeyName, []string{selfRefFK.FieldName}, fkRef))
+			result = append(result, p.createForeignKeyAlterStatement(table.Name, selfReferencingForeignKeyName(table.Name, selfRefFK), []string{selfRefFK.FieldName}, fkRef))
 		}
 	}
 
 	return result
 }
 
-// isRegularForeignKeyField checks if a field is a regular foreign key field for the given table
+// isRegularForeignKeyField checks if a field is a regular foreign key field for the given table.
+//
+// A field-level foreign= annotation is a foreign key whether or not an explicit
+// foreign_key_name= was supplied; when omitted the planner derives the
+// conventional fk_<table>_<column> name (see foreignKeyName) so the constraint
+// is actually created with a stable, named identity. MySQL in particular needs
+// a known name to later emit ALTER TABLE ... DROP FOREIGN KEY for action drift
+// (issue #189).
 func isRegularForeignKeyField(field goschema.Field, table goschema.Table) bool {
-	return field.StructName == table.StructName && field.Foreign != "" && field.ForeignKeyName != ""
+	return field.StructName == table.StructName && field.Foreign != ""
+}
+
+// foreignKeyName returns the constraint name to use for a field-level foreign
+// key: the explicit foreign_key_name= when set, otherwise the conventional
+// fk_<table>_<column> name shared with the schemadiff comparator and the down
+// path via fromschema.GenerateForeignKeyName.
+func foreignKeyName(tableName string, field goschema.Field) string {
+	if field.ForeignKeyName != "" {
+		return field.ForeignKeyName
+	}
+	return fromschema.GenerateForeignKeyName(tableName, field.Name)
+}
+
+// selfReferencingForeignKeyName returns the constraint name for a
+// self-referencing field-level foreign key, deriving the conventional
+// fk_<table>_<field> name when foreign_key_name= was omitted.
+func selfReferencingForeignKeyName(tableName string, fk goschema.SelfReferencingFK) string {
+	if fk.ForeignKeyName != "" {
+		return fk.ForeignKeyName
+	}
+	return fromschema.GenerateForeignKeyName(tableName, fk.FieldName)
 }
 
 // createForeignKeyAlterStatement creates an ALTER TABLE statement for adding a foreign key constraint
@@ -215,17 +243,18 @@ func (p *Planner) addNewTableColumns(result []ast.Node, tableDiff *types.TableDi
 			operations := []ast.AlterOperation{&ast.AddColumnOperation{Column: columnNode}}
 
 			// If the column has a foreign key, add a separate ADD CONSTRAINT operation
-			if targetField.Foreign != "" && targetField.ForeignKeyName != "" {
+			if targetField.Foreign != "" {
 				// Parse the foreign key reference
 				fkRef := fromschema.ParseForeignKeyReference(targetField.Foreign)
 				if fkRef != nil {
-					fkRef.Name = targetField.ForeignKeyName
+					fkName := foreignKeyName(tableDiff.TableName, *targetField)
+					fkRef.Name = fkName
 					fkRef.OnDelete = targetField.OnDelete
 					fkRef.OnUpdate = targetField.OnUpdate
 
 					// Create foreign key constraint
 					fkConstraint := ast.NewForeignKeyConstraint(
-						targetField.ForeignKeyName,
+						fkName,
 						[]string{targetField.Name},
 						fkRef,
 					)
@@ -514,61 +543,220 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 //   - PRIMARY KEY: Composite primary key constraints
 //   - FOREIGN KEY: Table-level foreign key constraints
 //
+// # Field-Level Fallbacks
+//
+// The schemadiff comparator synthesizes field-level check= and foreign= drift
+// into diff.ConstraintsAdded by name only — those constraints never reach
+// generated.Constraints. addNewConstraints therefore falls back to resolving
+// the constraint from the field annotations (mirroring the PostgreSQL planner)
+// so an existing-column CHECK/FK drift is actually re-emitted instead of being
+// silently dropped.
+//
+// # Modifications (DROP-before-ADD)
+//
+// A constraint name present in BOTH ConstraintsAdded and ConstraintsRemoved is
+// a modification (the comparator expresses a changed constraint as remove + add
+// of the same name — e.g. an on_delete change on a field-level FK, issue #189).
+// The DROP is emitted here, immediately before the re-ADD, so it precedes the
+// re-add and removeConstraints (which runs later) skips it.
+//
 // # Example Generated SQL
 //
 //	ALTER TABLE products ADD CONSTRAINT positive_price CHECK (price > 0);
 //	ALTER TABLE users ADD CONSTRAINT uk_users_email_name UNIQUE (email, name);
+//	ALTER TABLE posts DROP FOREIGN KEY fk_posts_user_id;
+//	ALTER TABLE posts ADD CONSTRAINT fk_posts_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	// Resolve struct → table name once for the field-level synthesis fallbacks.
+	structToTable := make(map[string]string, len(generated.Tables))
+	for _, t := range generated.Tables {
+		structToTable[t.StructName] = t.Name
+	}
+
+	// Removal info keyed by name so a same-name modification can be dropped with
+	// the correct table + FK-aware syntax before being re-added.
+	removalByName := make(map[string]types.ConstraintRemovalInfo, len(diff.ConstraintsRemovedWithTables))
+	for _, info := range diff.ConstraintsRemovedWithTables {
+		removalByName[info.Name] = info
+	}
+
 	for _, constraintName := range diff.ConstraintsAdded {
-		// Find the constraint definition in the generated schema
-		for _, constraint := range generated.Constraints {
-			if constraint.Name == constraintName {
-				// Convert goschema.Constraint to ast.ConstraintNode
-				astConstraint := p.convertConstraintToAST(constraint)
-				if astConstraint != nil {
-					// Create ALTER TABLE statement with ADD CONSTRAINT operation
-					alterNode := &ast.AlterTableNode{
-						Name:       constraint.Table,
-						Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: astConstraint}},
-					}
-					result = append(result, alterNode)
-				} else if constraint.Type == "EXCLUDE" {
-					// Add warning for unsupported EXCLUDE constraints
-					commentNode := ast.NewComment(fmt.Sprintf("WARNING: EXCLUDE constraint %s not supported in MySQL (PostgreSQL-specific feature)", constraint.Name))
-					result = append(result, commentNode)
-				}
-				break
-			}
+		// For a modification, emit the DROP first so it precedes the re-add.
+		if info, modified := removalByName[constraintName]; modified {
+			result = append(result, dropConstraintNode(info))
+		}
+
+		result = p.appendAddConstraint(result, constraintName, generated, structToTable)
+	}
+	return result
+}
+
+// appendAddConstraint resolves the ADD CONSTRAINT node for a constraint known
+// only by name, trying the explicit table-level constraints first and then the
+// synthesized field-level check= / foreign= fallbacks, mirroring the PostgreSQL
+// planner.
+func (p *Planner) appendAddConstraint(result []ast.Node, constraintName string, generated *goschema.Database, structToTable map[string]string) []ast.Node {
+	for _, constraint := range generated.Constraints {
+		if constraint.Name != constraintName {
+			continue
+		}
+		if astConstraint := p.convertConstraintToAST(constraint); astConstraint != nil {
+			return append(result, &ast.AlterTableNode{
+				Name:       constraint.Table,
+				Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: astConstraint}},
+			})
+		}
+		if constraint.Type == "EXCLUDE" {
+			return append(result, ast.NewComment(fmt.Sprintf("WARNING: EXCLUDE constraint %s not supported in MySQL (PostgreSQL-specific feature)", constraint.Name)))
+		}
+		return result
+	}
+
+	if node, ok := p.fieldLevelCheckConstraintNode(constraintName, generated, structToTable); ok {
+		if node != nil {
+			result = append(result, node)
+		}
+		return result
+	}
+
+	if node, ok := p.fieldLevelForeignKeyConstraintNode(constraintName, generated, structToTable); ok {
+		if node != nil {
+			result = append(result, node)
 		}
 	}
 	return result
 }
 
+// fieldLevelCheckConstraintNode builds the ADD CONSTRAINT node for a synthesized
+// field-level check= constraint. Mirrors the PostgreSQL planner. New columns are
+// handled by the inline CHECK in ALTER TABLE ADD COLUMN and the comparator
+// deliberately skips synthesizing those, so only existing-column field-level
+// CHECKs reach here.
+func (p *Planner) fieldLevelCheckConstraintNode(constraintName string, generated *goschema.Database, structToTable map[string]string) (ast.Node, bool) {
+	for _, f := range generated.Fields {
+		if f.Check == "" {
+			continue
+		}
+		tableName := structToTable[f.StructName]
+		if tableName == "" {
+			tableName = f.StructName
+		}
+		name := f.CheckName
+		if name == "" {
+			name = tableName + "_" + f.Name + "_check"
+		}
+		if name != constraintName {
+			continue
+		}
+		return &ast.AlterTableNode{
+			Name: tableName,
+			Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: &ast.ConstraintNode{
+				Type:       ast.CheckConstraint,
+				Name:       name,
+				Expression: f.Check,
+			}}},
+		}, true
+	}
+	return nil, false
+}
+
+// fieldLevelForeignKeyConstraintNode builds the ADD CONSTRAINT node for a
+// synthesized field-level foreign= constraint whose on_delete / on_update action
+// changed (issue #189). Without this the FK would be dropped (via
+// removeConstraints) but never re-added with the new action — a destructive,
+// silently-broken migration. New columns/tables are handled by the inline FK in
+// CREATE TABLE / ALTER TABLE ADD COLUMN and the comparator deliberately skips
+// synthesizing those, so only existing-column FK action changes reach here.
+func (p *Planner) fieldLevelForeignKeyConstraintNode(constraintName string, generated *goschema.Database, structToTable map[string]string) (ast.Node, bool) {
+	for _, f := range generated.Fields {
+		if f.Foreign == "" {
+			continue
+		}
+		tableName := structToTable[f.StructName]
+		if tableName == "" {
+			tableName = f.StructName
+		}
+		name := foreignKeyName(tableName, f)
+		if name != constraintName {
+			continue
+		}
+		fkRef := fromschema.ParseForeignKeyReference(f.Foreign)
+		if fkRef == nil {
+			continue
+		}
+		fkRef.OnDelete = f.OnDelete
+		fkRef.OnUpdate = f.OnUpdate
+		return p.createForeignKeyAlterStatement(tableName, name, []string{f.Name}, fkRef), true
+	}
+	return nil, false
+}
+
 // removeConstraints removes table-level constraints via ALTER TABLE statements.
 //
-// This method generates ALTER TABLE DROP CONSTRAINT statements for constraints
-// that exist in the database but not in the generated schema.
+// This method generates ALTER TABLE DROP statements for constraints that exist
+// in the database but not in the generated schema.
 //
 // # MySQL Constraint Removal
 //
-// MySQL uses different syntax for dropping different constraint types:
-//   - DROP CONSTRAINT for named constraints (MySQL 8.0.19+)
-//   - DROP INDEX for unique constraints in older versions
-//   - DROP FOREIGN KEY for foreign key constraints
+// MySQL/MariaDB use a type-specific drop syntax:
+//   - DROP FOREIGN KEY <name> for foreign key constraints (DROP CONSTRAINT is
+//     not accepted for FKs on MySQL/MariaDB)
+//   - DROP CONSTRAINT <name> for CHECK constraints (MySQL 8.0.16+ / MariaDB)
+//   - DROP INDEX <name> for UNIQUE constraints
 //
-// # Example Generated SQL
-//
-//	ALTER TABLE products DROP CONSTRAINT positive_price;
-//	ALTER TABLE users DROP CONSTRAINT uk_users_email_name;
+// The owning table is carried on diff.ConstraintsRemovedWithTables (the bare
+// ConstraintsRemoved name list does not retain it). Constraints that appear in
+// BOTH ConstraintsAdded and ConstraintsRemoved are modifications (the
+// comparator expresses a changed constraint as remove + add of the same name —
+// e.g. an on_delete change on a field-level FK, issue #189). Those are emitted
+// as DROP-then-ADD by addNewConstraints, which runs earlier in the pipeline so
+// the drop precedes the re-add; dropping them again here would remove the
+// freshly added constraint, so they are skipped.
 func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
-	for _, constraintName := range diff.ConstraintsRemoved {
-		// For constraint removal, we need to determine which table the constraint belongs to
-		// This is a limitation of the current approach - we don't track table names for removed constraints
-		// For now, we'll add a comment indicating manual intervention may be needed
-		commentNode := ast.NewComment(fmt.Sprintf("TODO: Remove constraint %s (table name unknown - manual intervention required)", constraintName))
-		result = append(result, commentNode)
+	addedNames := make(map[string]struct{}, len(diff.ConstraintsAdded))
+	for _, name := range diff.ConstraintsAdded {
+		addedNames[name] = struct{}{}
+	}
+
+	// Constraints owned by a table that is itself being dropped do not need an
+	// explicit drop — the DROP TABLE cascades them. Emitting one is at best
+	// redundant and at worst invalid (MySQL/MariaDB reject DROP CONSTRAINT for a
+	// PRIMARY KEY; PRIMARY KEY uses DROP PRIMARY KEY), so skip them.
+	droppedTables := make(map[string]struct{}, len(diff.TablesRemoved))
+	for _, t := range diff.TablesRemoved {
+		droppedTables[t] = struct{}{}
+	}
+
+	for _, info := range diff.ConstraintsRemovedWithTables {
+		if _, modified := addedNames[info.Name]; modified {
+			continue
+		}
+		if _, dropped := droppedTables[info.TableName]; dropped {
+			continue
+		}
+		// PRIMARY KEY uses a dedicated syntax and is owned by the column/table
+		// lifecycle; ptah never emits a standalone PK drop here.
+		if strings.EqualFold(info.Type, "PRIMARY KEY") {
+			continue
+		}
+		result = append(result, dropConstraintNode(info))
 	}
 	return result
+}
+
+// dropConstraintNode builds the ALTER TABLE drop statement for a single removed
+// constraint, choosing the MySQL/MariaDB type-specific syntax. FOREIGN KEY uses
+// DROP FOREIGN KEY; everything else falls back to DROP CONSTRAINT (MySQL
+// 8.0.19+ / MariaDB) which covers CHECK and named constraints.
+func dropConstraintNode(info types.ConstraintRemovalInfo) ast.Node {
+	op := &ast.DropConstraintOperation{
+		ConstraintName: info.Name,
+		ForeignKey:     strings.EqualFold(info.Type, "FOREIGN KEY"),
+	}
+	return &ast.AlterTableNode{
+		Name:       info.TableName,
+		Operations: []ast.AlterOperation{op},
+	}
 }
 
 // convertConstraintToAST converts a goschema.Constraint to an ast.ConstraintNode for MySQL.

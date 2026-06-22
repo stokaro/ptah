@@ -1,6 +1,7 @@
 package generator
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -572,4 +573,114 @@ func TestReverseSchemaDiff_Issue39_Integration(t *testing.T) {
 	// Tables should be removed in down migration (existing behavior)
 	c.Assert(downDiff.TablesRemoved, qt.DeepEquals, []string{"users"})
 	c.Assert(len(downDiff.TablesAdded), qt.Equals, 0)
+}
+
+// TestReverseSchemaDiff_ConstraintReversal verifies that a modified constraint
+// (expressed by the comparator as remove + add of the same name) is reversed so
+// the down migration drops the new definition and re-adds the old one. This is
+// the field-level FK on_delete/on_update drift case from issue #189: without the
+// reversal the down migration was empty and could not restore the prior action.
+func TestReverseSchemaDiff_ConstraintReversal(t *testing.T) {
+	c := qt.New(t)
+
+	input := &types.SchemaDiff{
+		// Up: change fk_export_file's action -> remove(old) + add(new) of the
+		// same name.
+		ConstraintsRemoved: []string{"fk_export_file"},
+		ConstraintsAdded:   []string{"fk_export_file"},
+	}
+
+	result := reverseSchemaDiff(input)
+
+	// Down: the slices swap, so the down re-adds the old and drops the new.
+	c.Assert(result.ConstraintsAdded, qt.DeepEquals, []string{"fk_export_file"})
+	c.Assert(result.ConstraintsRemoved, qt.DeepEquals, []string{"fk_export_file"})
+}
+
+// TestGenerateDownMigrationSQL_Issue189_RestoresPriorForeignKeyAction is the
+// acceptance test for the down half of issue #189: when an up migration changes
+// a field-level FK's ON DELETE action, the generated down migration must DROP
+// the new constraint and re-ADD it with the PRIOR action read back from the
+// (pre-change) database state. Previously the down migration was empty.
+func TestGenerateDownMigrationSQL_Issue189_RestoresPriorForeignKeyAction(t *testing.T) {
+	noAction := "NO ACTION"
+	filesTable := "files"
+	idCol := "id"
+
+	// Generated (target) schema: file_id FK now uses ON DELETE SET NULL.
+	generatedSchema := &goschema.Database{
+		Tables: []goschema.Table{{StructName: "Export", Name: "exports"}},
+		Fields: []goschema.Field{
+			{StructName: "Export", Name: "id", Type: "TEXT", Primary: true},
+			{
+				StructName:     "Export",
+				Name:           "file_id",
+				Type:           "TEXT",
+				Nullable:       true,
+				Foreign:        "files(id)",
+				ForeignKeyName: "fk_export_file",
+				OnDelete:       "SET NULL",
+			},
+		},
+	}
+
+	// Database (current, pre-change) schema: the FK still has the prior default
+	// NO ACTION. This is what the down migration must restore.
+	dbSchema := &dbschematypes.DBSchema{
+		Tables: []dbschematypes.DBTable{
+			{
+				Name: "exports",
+				Columns: []dbschematypes.DBColumn{
+					{Name: "id", DataType: "text", IsNullable: "NO", IsPrimaryKey: true},
+					{Name: "file_id", DataType: "text", IsNullable: "YES"},
+				},
+			},
+		},
+		Constraints: []dbschematypes.DBConstraint{
+			{
+				Name:          "fk_export_file",
+				TableName:     "exports",
+				Type:          "FOREIGN KEY",
+				ColumnName:    "file_id",
+				ForeignTable:  &filesTable,
+				ForeignColumn: &idCol,
+				DeleteRule:    &noAction,
+				UpdateRule:    &noAction,
+			},
+		},
+	}
+
+	// Up diff for the action change: remove(old) + add(new) of the same name.
+	upDiff := &types.SchemaDiff{
+		ConstraintsRemoved: []string{"fk_export_file"},
+		ConstraintsAdded:   []string{"fk_export_file"},
+	}
+
+	t.Run("postgres", func(t *testing.T) {
+		c := qt.New(t)
+		downSQL, err := generateDownMigrationSQL(upDiff, generatedSchema, dbSchema, "postgres")
+		c.Assert(err, qt.IsNil)
+
+		// The down must be non-empty and re-add the FK (restoring the prior
+		// action) plus drop the new definition first.
+		c.Assert(downSQL, qt.Contains, "ADD CONSTRAINT fk_export_file FOREIGN KEY (file_id) REFERENCES files(id)")
+		c.Assert(downSQL, qt.Contains, "DROP CONSTRAINT IF EXISTS")
+		// The restored action must NOT be SET NULL (that was the new action).
+		c.Assert(strings.Contains(downSQL, "ON DELETE SET NULL"), qt.IsFalse,
+			qt.Commentf("down must restore the prior action, not SET NULL:\n%s", downSQL))
+	})
+
+	t.Run("mysql", func(t *testing.T) {
+		c := qt.New(t)
+		downSQL, err := generateDownMigrationSQL(upDiff, generatedSchema, dbSchema, "mysql")
+		c.Assert(err, qt.IsNil)
+
+		// Real DROP FOREIGN KEY + re-ADD with the prior action; never a TODO.
+		c.Assert(downSQL, qt.Contains, "ALTER TABLE exports DROP FOREIGN KEY fk_export_file;")
+		c.Assert(downSQL, qt.Contains, "ADD CONSTRAINT fk_export_file FOREIGN KEY (file_id) REFERENCES files(id)")
+		c.Assert(strings.Contains(downSQL, "TODO"), qt.IsFalse,
+			qt.Commentf("down must not emit a TODO placeholder:\n%s", downSQL))
+		c.Assert(strings.Contains(downSQL, "ON DELETE SET NULL"), qt.IsFalse,
+			qt.Commentf("down must restore the prior action, not SET NULL:\n%s", downSQL))
+	})
 }

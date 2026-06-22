@@ -67,9 +67,16 @@ func escapeSQLStringLiteral(value string) string {
 	return "'" + escaped + "'"
 }
 
-// generateForeignKeyName generates a consistent foreign key constraint name
-// following the convention: fk_{table_name}_{field_name}
-func generateForeignKeyName(tableName, fieldName string) string {
+// GenerateForeignKeyName generates a consistent foreign key constraint name
+// following the convention: fk_{table_name}_{field_name}.
+//
+// This is the single source of truth for the conventional FK name used when a
+// field-level foreign= annotation omits an explicit foreign_key_name. The
+// schemadiff comparator (when synthesizing a field-level FK for drift
+// comparison) and the dialect planners (when emitting the CREATE/ALTER) both
+// derive the name from here so the synthesized name always lines up with the
+// name actually written to the database.
+func GenerateForeignKeyName(tableName, fieldName string) string {
 	return "fk_" + strings.ToLower(tableName) + "_" + strings.ToLower(fieldName)
 }
 
@@ -1273,7 +1280,7 @@ func processEmbeddedRelationMode(generatedFields []goschema.Field, embedded gosc
 	}
 
 	// Generate automatic foreign key constraint name following convention
-	foreignKeyName := generateForeignKeyName(structName, embedded.Field)
+	foreignKeyName := GenerateForeignKeyName(structName, embedded.Field)
 
 	// Create platform-specific overrides for MySQL/MariaDB compatibility
 	// MySQL/MariaDB use INT for SERIAL types, so foreign keys should also use INT
