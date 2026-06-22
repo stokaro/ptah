@@ -989,72 +989,141 @@ func (p *Planner) removeRLSPolicies(result []ast.Node, diff *types.SchemaDiff) [
 //	ALTER TABLE products ADD CONSTRAINT positive_price
 //	  CHECK (price > 0);
 func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	// Resolve struct → table name once for the field-level synthesis fallback.
+	// Resolve struct → table name once for the field-level synthesis fallbacks.
 	structToTable := make(map[string]string, len(generated.Tables))
 	for _, t := range generated.Tables {
 		structToTable[t.StructName] = t.Name
 	}
 
+	// A constraint name present in BOTH ConstraintsAdded and ConstraintsRemoved
+	// is a modification (the comparator expresses a changed constraint as
+	// remove + add of the same name — e.g. an on_delete change on a field-level
+	// FK, issue #189). For those we must DROP the old definition before adding
+	// the new one, otherwise the ADD CONSTRAINT collides with the still-present
+	// constraint of the same name. removeConstraints runs later in the pipeline
+	// and deliberately skips these names, so the drop+add is owned here and
+	// ordered correctly.
+	removedNames := make(map[string]struct{}, len(diff.ConstraintsRemoved))
+	for _, name := range diff.ConstraintsRemoved {
+		removedNames[name] = struct{}{}
+	}
+
 	for _, constraintName := range diff.ConstraintsAdded {
-		// First, try the explicit table-level constraints declared via
-		// `//migrator:schema:constraint` annotations.
-		emitted := false
-		for _, constraint := range generated.Constraints {
-			if constraint.Name == constraintName {
-				if astConstraint := p.convertConstraintToAST(constraint); astConstraint != nil {
-					result = append(result, &ast.AlterTableNode{
-						Name:       constraint.Table,
-						Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: astConstraint}},
-					})
-				}
-				emitted = true
-				break
-			}
-		}
-		if emitted {
-			continue
+		// For a modification, emit the DROP first so it precedes the re-add.
+		if _, modified := removedNames[constraintName]; modified {
+			result = append(result, p.dropConstraintNode(constraintName))
 		}
 
-		// Fall back to field-level `check=` annotations. The schemadiff
-		// comparator synthesizes these names into diff.ConstraintsAdded when
-		// `check=` lands on a column that already exists in the database, but
-		// the synthesized Constraint never reaches generated.Constraints — so
-		// without this fallback an ADD CONSTRAINT for an existing column was
-		// silently dropped. PR #123 introduced the synthesis but left this
-		// emission gap; we close it here.
-		//
-		// New columns are handled by the inline CHECK in ALTER TABLE ADD
-		// COLUMN and the comparator deliberately skips synthesizing them, so
-		// only existing-column field-level CHECKs end up routed through this
-		// path.
-		for _, f := range generated.Fields {
-			if f.Check == "" {
-				continue
+		// Resolve the ADD CONSTRAINT node, in precedence order:
+		//  1. explicit table-level //migrator:schema:constraint
+		//  2. synthesized field-level check= (issue #112 / PR #123)
+		//  3. synthesized field-level foreign= action drift (issue #189)
+		// The two field-level fallbacks exist because the comparator
+		// synthesizes those constraints into diff.ConstraintsAdded by name only
+		// — they never reach generated.Constraints, so without the fallbacks an
+		// ADD CONSTRAINT for an existing column would be silently dropped.
+		if node, ok := p.addConstraintNodeFor(constraintName, generated, structToTable); ok {
+			if node != nil {
+				result = append(result, node)
 			}
-			tableName := structToTable[f.StructName]
-			if tableName == "" {
-				tableName = f.StructName
-			}
-			name := f.CheckName
-			if name == "" {
-				name = tableName + "_" + f.Name + "_check"
-			}
-			if name != constraintName {
-				continue
-			}
-			astConstraint := &ast.ConstraintNode{
-				Type:       ast.CheckConstraint,
-				Name:       name,
-				Expression: f.Check,
-			}
-			result = append(result, &ast.AlterTableNode{
-				Name:       tableName,
-				Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: astConstraint}},
-			})
-			break
+			continue
 		}
 	}
 	return result
+}
+
+// addConstraintNodeFor resolves the ADD CONSTRAINT node for a constraint known
+// only by name, trying the explicit table-level constraints first and then the
+// synthesized field-level check= / foreign= fallbacks (see addNewConstraints).
+// The returned bool reports whether a matching definition was found; the node
+// may still be nil when a match exists but produces no valid AST (e.g. an
+// EXCLUDE constraint, which convertConstraintToAST cannot represent).
+func (p *Planner) addConstraintNodeFor(constraintName string, generated *goschema.Database, structToTable map[string]string) (ast.Node, bool) {
+	for _, constraint := range generated.Constraints {
+		if constraint.Name != constraintName {
+			continue
+		}
+		if astConstraint := p.convertConstraintToAST(constraint); astConstraint != nil {
+			return &ast.AlterTableNode{
+				Name:       constraint.Table,
+				Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: astConstraint}},
+			}, true
+		}
+		return nil, true
+	}
+
+	if node, ok := p.fieldLevelCheckConstraintNode(constraintName, generated, structToTable); ok {
+		return node, true
+	}
+
+	return p.fieldLevelForeignKeyConstraintNode(constraintName, generated, structToTable)
+}
+
+// fieldLevelCheckConstraintNode builds the ADD CONSTRAINT node for a synthesized
+// field-level check= constraint (issue #112 / PR #123). New columns are handled
+// by the inline CHECK in ALTER TABLE ADD COLUMN, and the comparator deliberately
+// skips synthesizing those, so only existing-column field-level CHECKs reach
+// here.
+func (p *Planner) fieldLevelCheckConstraintNode(constraintName string, generated *goschema.Database, structToTable map[string]string) (ast.Node, bool) {
+	for _, f := range generated.Fields {
+		if f.Check == "" {
+			continue
+		}
+		tableName := structToTable[f.StructName]
+		if tableName == "" {
+			tableName = f.StructName
+		}
+		name := f.CheckName
+		if name == "" {
+			name = tableName + "_" + f.Name + "_check"
+		}
+		if name != constraintName {
+			continue
+		}
+		return &ast.AlterTableNode{
+			Name: tableName,
+			Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: &ast.ConstraintNode{
+				Type:       ast.CheckConstraint,
+				Name:       name,
+				Expression: f.Check,
+			}}},
+		}, true
+	}
+	return nil, false
+}
+
+// fieldLevelForeignKeyConstraintNode builds the ADD CONSTRAINT node for a
+// synthesized field-level foreign= constraint whose on_delete / on_update action
+// changed (issue #189). Without this the FK would be dropped (via
+// removeConstraints) but never re-added with the new action — a destructive,
+// silently-broken migration. New columns/tables are handled by the inline FK in
+// CREATE TABLE / ALTER TABLE ADD COLUMN and the comparator deliberately skips
+// synthesizing those, so only existing-column FK action changes reach here.
+func (p *Planner) fieldLevelForeignKeyConstraintNode(constraintName string, generated *goschema.Database, structToTable map[string]string) (ast.Node, bool) {
+	for _, f := range generated.Fields {
+		if f.Foreign == "" {
+			continue
+		}
+		tableName := structToTable[f.StructName]
+		if tableName == "" {
+			tableName = f.StructName
+		}
+		name := f.ForeignKeyName
+		if name == "" {
+			name = "fk_" + strings.ToLower(tableName) + "_" + strings.ToLower(f.Name)
+		}
+		if name != constraintName {
+			continue
+		}
+		fkRef := fromschema.ParseForeignKeyReference(f.Foreign)
+		if fkRef == nil {
+			continue
+		}
+		fkRef.OnDelete = f.OnDelete
+		fkRef.OnUpdate = f.OnUpdate
+		return p.createForeignKeyAlterStatement(tableName, name, []string{f.Name}, fkRef), true
+	}
+	return nil, false
 }
 
 // removeConstraints removes table-level constraints via ALTER TABLE statements.
@@ -1105,34 +1174,70 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 	// Unsafe names trigger a DO block whose only action is RAISE EXCEPTION,
 	// so the migration fails loudly with the operator's attention — better
 	// than a silent comment that would loop forever on subsequent runs.
-	for _, constraintName := range diff.ConstraintsRemoved {
-		escaped := strings.ReplaceAll(constraintName, "'", "''")
-		if strings.ContainsAny(constraintName, "$\n\r") {
-			// Build a printable, single-quoted SQL string literal of the
-			// rejected name so the operator's error output shows what was
-			// rejected. `$` is rendered as `\$` so the surrounding `$ptah$`
-			// dollar quoting can't be prematurely terminated; `\n` / `\r` /
-			// `\t` are rendered as their printable escapes; apostrophes are
-			// SQL-escaped via `''`. The result is plain ASCII inside `'…'`.
-			visible := strings.NewReplacer(
-				"\n", `\n`,
-				"\r", `\r`,
-				"\t", `\t`,
-				"$", `\$`,
-			).Replace(constraintName)
-			visible = strings.ReplaceAll(visible, "'", "''")
+	// Constraints that appear in BOTH ConstraintsAdded and ConstraintsRemoved
+	// are modifications (the comparator expresses a changed constraint as
+	// remove + add of the same name). Those are emitted as DROP-then-ADD by
+	// addNewConstraints, which runs earlier in the pipeline so the drop
+	// precedes the re-add. Dropping them again here would remove the freshly
+	// added constraint, so skip them.
+	addedNames := make(map[string]struct{}, len(diff.ConstraintsAdded))
+	for _, name := range diff.ConstraintsAdded {
+		addedNames[name] = struct{}{}
+	}
 
-			failBlock := fmt.Sprintf(`-- Unsafe constraint name rejected by the migration generator; the
+	for _, constraintName := range diff.ConstraintsRemoved {
+		if _, modified := addedNames[constraintName]; modified {
+			continue
+		}
+		result = append(result, p.dropConstraintNode(constraintName))
+	}
+	return result
+}
+
+// dropConstraintNode builds a self-contained DROP CONSTRAINT statement for a
+// constraint known only by name. The diff layer discards the table name for
+// removed constraints (field-level CHECK / FK constraints are synthesized and
+// presented by name alone), so the table is resolved at execution time from
+// information_schema via a DO block.
+//
+// Constraint-name safety. Postgres constraint names should be plain ASCII
+// alnum + underscore; we reject only the chars that would actually break our
+// specific DO-block template:
+//   - `$` would collide with the `$ptah$` dollar-quote tag and terminate the
+//     body early.
+//   - newline / carriage return would terminate the leading `--` comment line
+//     and dump whatever follows as bare SQL.
+//
+// Anything else (apostrophe) is handled by SQL-literal escaping. Unsafe names
+// produce a DO block whose only action is RAISE EXCEPTION, so the migration
+// fails loudly rather than silently looping forever on subsequent runs.
+func (p *Planner) dropConstraintNode(constraintName string) ast.Node {
+	escaped := strings.ReplaceAll(constraintName, "'", "''")
+	if strings.ContainsAny(constraintName, "$\n\r") {
+		// Build a printable, single-quoted SQL string literal of the
+		// rejected name so the operator's error output shows what was
+		// rejected. `$` is rendered as `\$` so the surrounding `$ptah$`
+		// dollar quoting can't be prematurely terminated; `\n` / `\r` /
+		// `\t` are rendered as their printable escapes; apostrophes are
+		// SQL-escaped via `''`. The result is plain ASCII inside `'…'`.
+		visible := strings.NewReplacer(
+			"\n", `\n`,
+			"\r", `\r`,
+			"\t", `\t`,
+			"$", `\$`,
+		).Replace(constraintName)
+		visible = strings.ReplaceAll(visible, "'", "''")
+
+		failBlock := fmt.Sprintf(`-- Unsafe constraint name rejected by the migration generator; the
 -- following DO block raises an exception so the migration fails loudly.
 DO $ptah$
 BEGIN
     RAISE EXCEPTION 'refusing to drop constraint with unsafe name ''%s''; rename the constraint and regenerate the migration';
 END
 $ptah$`, visible)
-			result = append(result, ast.NewRawSQL(failBlock))
-			continue
-		}
-		doBlock := fmt.Sprintf(`-- Drop constraint %s (table resolved at runtime from information_schema)
+		return ast.NewRawSQL(failBlock)
+	}
+	doBlock := fmt.Sprintf(`-- Drop constraint %s (table resolved at runtime from information_schema)
 DO $ptah$
 DECLARE
     target_table TEXT;
@@ -1152,9 +1257,7 @@ BEGIN
 END
 $ptah$`, constraintName, escaped, escaped, escaped, escaped)
 
-		result = append(result, ast.NewRawSQL(doBlock))
-	}
-	return result
+	return ast.NewRawSQL(doBlock)
 }
 
 // convertConstraintToAST converts a goschema.Constraint to an ast.ConstraintNode.
