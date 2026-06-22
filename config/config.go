@@ -19,6 +19,17 @@ type CompareOptions struct {
 	// - plpgsql: Default procedural language, usually pre-installed
 	// - adminpack: Administrative functions, often pre-installed
 	IgnoredExtensions []string
+
+	// Dialect is the target database dialect ("postgres", "mysql", "mariadb",
+	// "clickhouse"). It is optional; when empty the comparison uses
+	// dialect-neutral rules. It is currently consulted only to fold
+	// referential-action reporting quirks: MariaDB reports an unspecified
+	// ON DELETE/ON UPDATE as RESTRICT (MySQL and PostgreSQL report NO ACTION),
+	// and InnoDB treats RESTRICT and NO ACTION identically, so for MySQL/MariaDB
+	// RESTRICT is folded to NO ACTION to avoid a perpetual drop+add loop on an
+	// unchanged foreign key. PostgreSQL distinguishes the two at DDL, so the
+	// fold is deliberately NOT applied there.
+	Dialect string
 }
 
 // DefaultCompareOptions returns the default comparison options with sensible defaults.

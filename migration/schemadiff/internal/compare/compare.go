@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/stokaro/ptah/config"
+	"github.com/stokaro/ptah/core/convert/fromschema"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/migration/schemadiff/internal/normalize"
@@ -854,7 +855,12 @@ func isConstraintBasedUniqueIndex(indexName, tableName string, columns []string)
 //   - Database constraint introspection is not yet fully implemented
 //   - Currently focuses on constraint additions from generated schema
 //   - Constraint modifications are not yet detected
-func Constraints(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+func Constraints(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff, opts *config.CompareOptions) {
+	dialect := ""
+	if opts != nil {
+		dialect = opts.Dialect
+	}
+
 	// Create maps for detailed constraint comparison
 	genConstraints := make(map[string]goschema.Constraint)
 	for _, constraint := range generated.Constraints {
@@ -879,11 +885,34 @@ func Constraints(generated *goschema.Database, database *types.DBSchema, diff *d
 		}
 	}
 
+	// Synthesize table-level Constraint entries from field-level `foreign=`
+	// annotations so on_delete / on_update drift on an existing field-level
+	// FK participates in comparison (issue #189), mirroring the field-level
+	// CHECK synthesis above. Only synthesized for columns that already exist
+	// in the database — new tables/columns get their FK inline via CREATE
+	// TABLE / ALTER TABLE ADD CONSTRAINT, so emitting an ADD CONSTRAINT here
+	// would double-create it in the same migration step.
+	//
+	// synthesizedFKKeys records the table.constraint_name of every synthesized
+	// field-level FK so isFieldLevelConstraint can let the matching DB-side FK
+	// through to the comparison instead of filtering it out — otherwise
+	// foreignKeyConstraintChanged would never run for field-level FKs.
+	synthesizedFKKeys := make(map[string]struct{})
+	for _, synthesized := range synthesizeFieldLevelForeignKeyConstraints(generated, database) {
+		key := synthesized.Table + "." + synthesized.Name
+		synthesizedFKKeys[key] = struct{}{}
+		// Don't clobber an explicit table-level constraint that happens to
+		// share the same name.
+		if _, exists := genConstraints[key]; !exists {
+			genConstraints[key] = synthesized
+		}
+	}
+
 	// Create map of existing database constraints, filtering out field-level constraints
 	dbConstraints := make(map[string]types.DBConstraint)
 	for _, constraint := range database.Constraints {
 		// Skip field-level constraints that are represented in field definitions
-		if isFieldLevelConstraint(constraint, generated) {
+		if isFieldLevelConstraint(constraint, generated, synthesizedFKKeys) {
 			continue
 		}
 
@@ -903,25 +932,40 @@ func Constraints(generated *goschema.Database, database *types.DBSchema, diff *d
 	for constraintKey, dbConstraint := range dbConstraints {
 		if _, exists := genConstraints[constraintKey]; !exists {
 			diff.ConstraintsRemoved = append(diff.ConstraintsRemoved, dbConstraint.Name)
+			diff.ConstraintsRemovedWithTables = appendConstraintRemoval(diff.ConstraintsRemovedWithTables, dbConstraint)
 		}
 	}
 
 	// Find modified constraints (constraints that exist in both but have different definitions)
 	for constraintKey, genConstraint := range genConstraints {
 		if dbConstraint, exists := dbConstraints[constraintKey]; exists {
-			if constraintDefinitionsChanged(genConstraint, dbConstraint) {
+			if constraintDefinitionsChanged(genConstraint, dbConstraint, dialect) {
 				// For now, treat modified constraints as removed + added
 				// In the future, we could add a ConstraintsModified field to SchemaDiff
 				diff.ConstraintsRemoved = append(diff.ConstraintsRemoved, dbConstraint.Name)
+				diff.ConstraintsRemovedWithTables = appendConstraintRemoval(diff.ConstraintsRemovedWithTables, dbConstraint)
 				diff.ConstraintsAdded = append(diff.ConstraintsAdded, genConstraint.Name)
 			}
 		}
 	}
 }
 
+// appendConstraintRemoval records the table-qualified removal info for a
+// database constraint that is being dropped (or modified, which is expressed as
+// remove + add). Dialects that need the owning table and a type-specific drop
+// syntax — MySQL/MariaDB FOREIGN KEY uses DROP FOREIGN KEY rather than DROP
+// CONSTRAINT — read this parallel slice instead of the bare name list.
+func appendConstraintRemoval(infos []difftypes.ConstraintRemovalInfo, dbConstraint types.DBConstraint) []difftypes.ConstraintRemovalInfo {
+	return append(infos, difftypes.ConstraintRemovalInfo{
+		Name:      dbConstraint.Name,
+		TableName: dbConstraint.TableName,
+		Type:      dbConstraint.Type,
+	})
+}
+
 // constraintDefinitionsChanged compares constraint definitions between generated and database schemas
 // to detect if a constraint needs to be recreated due to definition changes.
-func constraintDefinitionsChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint) bool {
+func constraintDefinitionsChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint, dialect string) bool {
 	// Basic constraint type comparison
 	if genConstraint.Type != dbConstraint.Type {
 		return true
@@ -936,7 +980,7 @@ func constraintDefinitionsChanged(genConstraint goschema.Constraint, dbConstrain
 	case "UNIQUE":
 		return uniqueConstraintChanged(genConstraint, dbConstraint)
 	case "FOREIGN KEY":
-		return foreignKeyConstraintChanged(genConstraint, dbConstraint)
+		return foreignKeyConstraintChanged(genConstraint, dbConstraint, dialect)
 	default:
 		// For unknown constraint types, assume no change
 		return false
@@ -1000,8 +1044,16 @@ func uniqueConstraintChanged(genConstraint goschema.Constraint, dbConstraint typ
 	return false // For now, assume UNIQUE constraints don't change
 }
 
-// foreignKeyConstraintChanged compares FOREIGN KEY constraint definitions
-func foreignKeyConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint) bool {
+// foreignKeyConstraintChanged compares FOREIGN KEY constraint definitions.
+//
+// Referential actions are normalized before comparison (see
+// normalizeReferentialAction): databases report the default action as
+// "NO ACTION" via information_schema.referential_constraints, whereas a Go
+// annotation that omits on_delete/on_update leaves the value empty. Without
+// the normalization the two would never match for FKs declared without an
+// explicit action, producing a perpetual drop+add loop on every `generate`
+// (the same hazard checkConstraintChanged guards against for CHECK clauses).
+func foreignKeyConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint, dialect string) bool {
 	// Compare referenced table
 	if genConstraint.ForeignTable != getStringValue(dbConstraint.ForeignTable) {
 		return true
@@ -1013,16 +1065,56 @@ func foreignKeyConstraintChanged(genConstraint goschema.Constraint, dbConstraint
 	}
 
 	// Compare delete rule
-	if genConstraint.OnDelete != getStringValue(dbConstraint.DeleteRule) {
+	if normalizeReferentialAction(genConstraint.OnDelete, dialect) != normalizeReferentialAction(getStringValue(dbConstraint.DeleteRule), dialect) {
 		return true
 	}
 
 	// Compare update rule
-	if genConstraint.OnUpdate != getStringValue(dbConstraint.UpdateRule) {
+	if normalizeReferentialAction(genConstraint.OnUpdate, dialect) != normalizeReferentialAction(getStringValue(dbConstraint.UpdateRule), dialect) {
 		return true
 	}
 
 	return false
+}
+
+// normalizeReferentialAction canonicalizes an ON DELETE / ON UPDATE action so
+// that semantically identical values compare equal across the generated and
+// introspected sides.
+//
+// SQL treats an omitted referential action as NO ACTION. PostgreSQL, MySQL and
+// MariaDB all report the default through
+// information_schema.referential_constraints, while a Go field annotation that
+// simply omits on_delete/on_update yields an empty string. Trimming,
+// upper-casing, and folding "" into "NO ACTION" makes those equivalent and
+// keeps an unchanged FK a no-op on repeated runs.
+//
+// Dialect-specific RESTRICT handling: MariaDB reports an unspecified action as
+// RESTRICT (PostgreSQL and MySQL report NO ACTION), and InnoDB treats RESTRICT
+// and NO ACTION identically. For the MySQL family RESTRICT is therefore folded
+// to NO ACTION so an unchanged FK does not loop drop+add forever. PostgreSQL
+// distinguishes RESTRICT (checked immediately) from NO ACTION (deferrable) at
+// DDL level, so the fold is NOT applied there — doing so would mask a genuine
+// RESTRICT <-> NO ACTION change the user intended.
+func normalizeReferentialAction(action, dialect string) string {
+	normalized := strings.ToUpper(strings.TrimSpace(action))
+	if normalized == "" {
+		return "NO ACTION"
+	}
+	if normalized == "RESTRICT" && isMySQLFamily(dialect) {
+		return "NO ACTION"
+	}
+	return normalized
+}
+
+// isMySQLFamily reports whether the dialect is MySQL or MariaDB, which share the
+// InnoDB referential-action semantics (RESTRICT == NO ACTION).
+func isMySQLFamily(dialect string) bool {
+	switch strings.ToLower(strings.TrimSpace(dialect)) {
+	case "mysql", "mariadb":
+		return true
+	default:
+		return false
+	}
 }
 
 // getStringValue safely extracts string value from a pointer, returning empty string if nil
@@ -1034,8 +1126,17 @@ func getStringValue(ptr *string) string {
 }
 
 // isFieldLevelConstraint determines if a database constraint represents a field-level constraint
-// that is already represented in the field definitions (NOT NULL, PRIMARY KEY, UNIQUE, FOREIGN KEY)
-func isFieldLevelConstraint(dbConstraint types.DBConstraint, generated *goschema.Database) bool {
+// that is already represented in the field definitions (NOT NULL, PRIMARY KEY, UNIQUE, FOREIGN KEY).
+//
+// synthesizedFKKeys holds the table.constraint_name of every field-level FK that
+// Constraints() synthesized into the generated set (see
+// synthesizeFieldLevelForeignKeyConstraints). When a DB-side FK has a synthesized
+// counterpart it is NOT treated as field-level here, so it stays in the
+// comparison and on_delete / on_update drift flows through
+// foreignKeyConstraintChanged (issue #189). FKs without a synthesized
+// counterpart (e.g. a column that is not yet in the database, which never gets
+// synthesized) keep the previous filter-out behavior.
+func isFieldLevelConstraint(dbConstraint types.DBConstraint, generated *goschema.Database, synthesizedFKKeys map[string]struct{}) bool {
 	// Create a map of table.column -> field for quick lookup
 	fieldMap := make(map[string]goschema.Field)
 	for _, field := range generated.Fields {
@@ -1072,7 +1173,22 @@ func isFieldLevelConstraint(dbConstraint types.DBConstraint, generated *goschema
 			return true
 		}
 	case "FOREIGN KEY":
-		// Check if there's a field with foreign key reference for this column
+		// A field-level FK that was synthesized into the generated set (see
+		// synthesizeFieldLevelForeignKeyConstraints) must participate in the
+		// comparison so on_delete / on_update drift is detected (issue #189).
+		// Letting the DB-side FK through means it gets matched by name against
+		// the synthesized entry, so add / remove / action-change cases all
+		// flow through the standard Constraints() comparison path. Match on
+		// the constraint name rather than the column, because the synthesized
+		// name is keyed on table.constraint_name and getConstraintColumn does
+		// not always resolve the FK column.
+		if _, synthesized := synthesizedFKKeys[dbConstraint.TableName+"."+dbConstraint.Name]; synthesized {
+			return false
+		}
+		// Check if there's a field with foreign key reference for this column.
+		// No synthesized counterpart (e.g. the column is not yet in the
+		// database): keep the historical behavior and treat it as field-level
+		// so it is owned by the column/table lifecycle.
 		key := dbConstraint.TableName + "." + getConstraintColumn(dbConstraint)
 		if field, exists := fieldMap[key]; exists && field.Foreign != "" {
 			return true
@@ -1167,6 +1283,85 @@ func synthesizeFieldLevelCheckConstraints(generated *goschema.Database, database
 			Type:            "CHECK",
 			Table:           tableName,
 			CheckExpression: f.Check,
+		})
+	}
+	return synthesized
+}
+
+// synthesizeFieldLevelForeignKeyConstraints turns each field-level `foreign=`
+// annotation on an existing database column into a synthetic
+// goschema.Constraint of type FOREIGN KEY so the standard Constraints() diff
+// path can compare it against the introspected FK from
+// information_schema.referential_constraints. This is what makes on_delete /
+// on_update drift on a pre-existing field-level FK observable (issue #189).
+//
+// The constraint name follows the user-provided `foreign_key_name=` value when
+// set, otherwise it falls back to the conventional generated name from
+// fromschema.GenerateForeignKeyName ("fk_<table>_<column>"), which is the name
+// the planner emits when it creates the FK, so the synthesized name lines up
+// with whatever the reader sees on the DB side.
+//
+// Columns that do not yet exist in the database are deliberately skipped: those
+// FKs ship inline as part of CREATE TABLE / ALTER TABLE ADD COLUMN, and emitting
+// an ADD CONSTRAINT alongside would attempt to create the same constraint twice
+// in the same migration. This mirrors synthesizeFieldLevelCheckConstraints
+// exactly and is what keeps added-table generation untouched.
+//
+// Precedence: an explicit table-level constraint declared via
+// `//migrator:schema:constraint` that happens to share the synthesized name
+// wins — synthesis never clobbers it (see the guard in Constraints()).
+func synthesizeFieldLevelForeignKeyConstraints(generated *goschema.Database, database *types.DBSchema) []goschema.Constraint {
+	if generated == nil || database == nil {
+		return nil
+	}
+
+	structToTable := make(map[string]string, len(generated.Tables))
+	for _, t := range generated.Tables {
+		structToTable[t.StructName] = t.Name
+	}
+
+	dbColumns := make(map[string]struct{}, 16)
+	for _, t := range database.Tables {
+		for _, c := range t.Columns {
+			dbColumns[t.Name+"."+c.Name] = struct{}{}
+		}
+	}
+
+	var synthesized []goschema.Constraint
+	for _, f := range generated.Fields {
+		if f.Foreign == "" {
+			continue
+		}
+		tableName := structToTable[f.StructName]
+		if tableName == "" {
+			tableName = f.StructName
+		}
+		if _, exists := dbColumns[tableName+"."+f.Name]; !exists {
+			continue
+		}
+		name := f.ForeignKeyName
+		if name == "" {
+			name = fromschema.GenerateForeignKeyName(tableName, f.Name)
+		}
+		// Reuse the canonical generate-path parser so the synthesized table /
+		// column always match exactly what the planner emits (issue #189
+		// follow-up: a single source of truth removes the latent two-parser
+		// divergence). A malformed foreign= reference yields nil and is skipped
+		// rather than synthesizing a garbage constraint.
+		fkRef := fromschema.ParseForeignKeyReference(f.Foreign)
+		if fkRef == nil {
+			continue
+		}
+		synthesized = append(synthesized, goschema.Constraint{
+			StructName:    f.StructName,
+			Name:          name,
+			Type:          "FOREIGN KEY",
+			Table:         tableName,
+			Columns:       []string{f.Name},
+			ForeignTable:  fkRef.Table,
+			ForeignColumn: fkRef.Column,
+			OnDelete:      f.OnDelete,
+			OnUpdate:      f.OnUpdate,
 		})
 	}
 	return synthesized
@@ -1361,6 +1556,21 @@ func Indexes(generated *goschema.Database, database *types.DBSchema, diff *difft
 		genIndexes[index.Name] = true
 	}
 
+	// MySQL/MariaDB transparently create a backing index for every FOREIGN KEY,
+	// named after the constraint, when no usable index already exists on the
+	// referencing column. That index is owned by the FK, not by the user's
+	// schema, so it must not be reported as a removable index — otherwise an
+	// unchanged field-level FK round-trips to a spurious DROP INDEX (issue #189
+	// follow-up). PostgreSQL does not auto-create FK indexes, so this set is
+	// naturally empty there and the filter is a no-op. Keyed by table.index so a
+	// constraint name only suppresses the index on its own table.
+	fkBackedIndexes := make(map[string]struct{}, len(database.Constraints))
+	for _, c := range database.Constraints {
+		if c.Type == "FOREIGN KEY" {
+			fkBackedIndexes[c.TableName+"."+c.Name] = struct{}{}
+		}
+	}
+
 	dbIndexes := make(map[string]bool)
 	for _, index := range database.Indexes {
 		// Skip primary key indexes as they're handled with tables
@@ -1371,6 +1581,12 @@ func Indexes(generated *goschema.Database, database *types.DBSchema, diff *difft
 		// Skip constraint-based unique indexes (automatically created by UNIQUE constraints)
 		// but allow explicitly defined unique indexes (created via schema annotations)
 		if index.IsUnique && isConstraintBasedUniqueIndex(index.Name, index.TableName, index.Columns) {
+			continue
+		}
+
+		// Skip MySQL/MariaDB FK-backing indexes (named after the FK constraint
+		// on the same table). They are auto-managed by the foreign key.
+		if _, ok := fkBackedIndexes[index.TableName+"."+index.Name]; ok {
 			continue
 		}
 

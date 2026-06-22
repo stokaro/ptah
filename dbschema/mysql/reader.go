@@ -66,6 +66,17 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	}
 	schema.Constraints = constraints
 
+	// Reconcile per-column uniqueness against the authoritative index metadata.
+	// The DDL parser collapses every table-level KEY/INDEX clause to a UNIQUE
+	// constraint (it has no dedicated non-unique-index node), so a non-unique
+	// backing index — e.g. the index MySQL/MariaDB auto-creates for a FOREIGN
+	// KEY (`KEY fk_posts_user_id (user_id)`) — would otherwise mark its column
+	// as unique and produce a spurious `unique: true -> false` diff on an
+	// unchanged schema (issue #189 follow-up). information_schema.STATISTICS
+	// (NON_UNIQUE) is authoritative, so a column is unique only when a
+	// single-column unique index actually covers it.
+	reconcileColumnUniqueness(schema)
+
 	return schema, nil
 }
 
@@ -189,6 +200,33 @@ func (r *Reader) applyColumnConstraint(table *types.DBTable, constraint *ast.Con
 					}
 				}
 			}
+		}
+	}
+}
+
+// reconcileColumnUniqueness recomputes each column's IsUnique flag from the
+// authoritative index metadata (information_schema.STATISTICS, captured in
+// schema.Indexes with a correct NON_UNIQUE bit). A column is unique only when a
+// non-primary, single-column unique index covers exactly that column. This
+// overrides the DDL-parser heuristic, which cannot tell a plain non-unique
+// KEY/INDEX from a UNIQUE one and would over-report uniqueness for FK-backing
+// and other non-unique indexes.
+func reconcileColumnUniqueness(schema *types.DBSchema) {
+	// Set of table.column covered by a single-column unique (non-primary) index.
+	uniqueColumns := make(map[string]struct{})
+	for _, idx := range schema.Indexes {
+		if idx.IsPrimary || !idx.IsUnique || len(idx.Columns) != 1 {
+			continue
+		}
+		uniqueColumns[idx.TableName+"."+idx.Columns[0]] = struct{}{}
+	}
+
+	for ti := range schema.Tables {
+		table := &schema.Tables[ti]
+		for ci := range table.Columns {
+			col := &table.Columns[ci]
+			_, unique := uniqueColumns[table.Name+"."+col.Name]
+			col.IsUnique = unique
 		}
 	}
 }

@@ -589,8 +589,11 @@ func validateSchemaConsistency(ctx context.Context, conn *dbschema.DatabaseConne
 		return fmt.Errorf("failed to read database schema: %w", err)
 	}
 
-	// Compare schemas using schemadiff
-	diff := schemadiff.Compare(expectedSchema, actualSchema)
+	// Compare schemas using schemadiff. Thread the dialect so dialect-specific
+	// referential-action normalization (MySQL/MariaDB RESTRICT == NO ACTION) is
+	// applied — otherwise MariaDB reports a spurious FK action diff on an
+	// unchanged foreign key.
+	diff := schemadiff.CompareWithOptions(expectedSchema, actualSchema, dialectCompareOptions(conn))
 
 	// Check if there are any differences
 	if hasSchemaChanges(diff) {

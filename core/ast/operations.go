@@ -102,6 +102,12 @@ type DropConstraintOperation struct {
 	ConstraintName string
 	// IfExists indicates whether to use IF EXISTS clause to avoid errors if constraint doesn't exist
 	IfExists bool
+	// ForeignKey marks the constraint as a FOREIGN KEY. MySQL/MariaDB require
+	// the dedicated `DROP FOREIGN KEY <name>` syntax for foreign keys rather
+	// than the generic `DROP CONSTRAINT <name>`; renderers that distinguish the
+	// two read this flag. Renderers where DROP CONSTRAINT already covers foreign
+	// keys (PostgreSQL) may ignore it.
+	ForeignKey bool
 }
 
 // Accept implements the Node interface for DropConstraintOperation.

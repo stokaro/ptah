@@ -15,6 +15,17 @@ func Compare(generated *goschema.Database, database *types.DBSchema) *difftypes.
 	return CompareWithOptions(generated, database, nil)
 }
 
+// CompareWithDialect performs schema comparison using default options plus the
+// supplied target dialect. The dialect drives dialect-specific normalization —
+// currently the MySQL/MariaDB RESTRICT == NO ACTION fold for foreign-key
+// referential actions (see config.CompareOptions.Dialect). Pass an empty
+// dialect for dialect-neutral comparison (equivalent to Compare).
+func CompareWithDialect(generated *goschema.Database, database *types.DBSchema, dialect string) *difftypes.SchemaDiff {
+	opts := config.DefaultCompareOptions()
+	opts.Dialect = dialect
+	return CompareWithOptions(generated, database, opts)
+}
+
 // CompareWithOptions performs schema comparison between generated and database schemas
 // with custom configuration options.
 //
@@ -68,7 +79,7 @@ func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, 
 	compare.Roles(generated, database, diff)
 
 	// Compare table-level constraints (EXCLUDE, CHECK, UNIQUE, etc.)
-	compare.Constraints(generated, database, diff)
+	compare.Constraints(generated, database, diff, opts)
 
 	return diff
 }

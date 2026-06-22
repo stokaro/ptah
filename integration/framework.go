@@ -11,12 +11,23 @@ import (
 	"sync"
 	"time"
 
+	"github.com/stokaro/ptah/config"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/schemadiff"
 )
+
+// dialectCompareOptions builds schemadiff comparison options carrying the
+// connection's dialect, so dialect-specific normalization (e.g. MySQL/MariaDB
+// RESTRICT == NO ACTION for foreign-key referential actions) is applied during
+// integration validation.
+func dialectCompareOptions(conn *dbschema.DatabaseConnection) *config.CompareOptions {
+	opts := config.DefaultCompareOptions()
+	opts.Dialect = conn.Info().Dialect
+	return opts
+}
 
 // TestStep represents a single step within a test scenario
 type TestStep struct {
@@ -364,8 +375,8 @@ func (vem *VersionedEntityManager) GenerateMigrationSQL(_ctx context.Context, co
 		return nil, fmt.Errorf("failed to read database schema: %w", err)
 	}
 
-	// Compare schemas
-	diff := schemadiff.Compare(generated, dbSchema)
+	// Compare schemas (dialect-aware so MySQL/MariaDB RESTRICT == NO ACTION)
+	diff := schemadiff.CompareWithOptions(generated, dbSchema, dialectCompareOptions(conn))
 
 	// Generate migration SQL
 	statements := planner.GenerateSchemaDiffSQLStatements(diff, generated, conn.Info().Dialect)

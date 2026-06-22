@@ -158,7 +158,7 @@ func TestConstraints(t *testing.T) {
 			c := qt.New(t)
 
 			diff := &difftypes.SchemaDiff{}
-			compare.Constraints(tt.generated, tt.database, diff)
+			compare.Constraints(tt.generated, tt.database, diff, nil)
 
 			// Check constraints added
 			c.Assert(len(diff.ConstraintsAdded), qt.Equals, len(tt.expected.ConstraintsAdded))
@@ -240,7 +240,7 @@ func TestConstraints_EdgeCases(t *testing.T) {
 	database := &types.DBSchema{}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.Constraints(generated, database, diff)
+	compare.Constraints(generated, database, diff, nil)
 
 	c.Assert(len(diff.ConstraintsAdded), qt.Equals, 0)
 	c.Assert(len(diff.ConstraintsRemoved), qt.Equals, 0)
@@ -426,7 +426,7 @@ func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
 			c := qt.New(t)
 
 			diff := &difftypes.SchemaDiff{}
-			compare.Constraints(tt.generated, tt.database, diff)
+			compare.Constraints(tt.generated, tt.database, diff, nil)
 
 			// Check constraints added
 			c.Assert(len(diff.ConstraintsAdded), qt.Equals, len(tt.expected.ConstraintsAdded))
@@ -676,7 +676,7 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 			c := qt.New(t)
 
 			diff := &difftypes.SchemaDiff{}
-			compare.Constraints(tt.generated, tt.database, diff)
+			compare.Constraints(tt.generated, tt.database, diff, nil)
 
 			c.Assert(len(diff.ConstraintsAdded), qt.Equals, len(tt.expected.ConstraintsAdded),
 				qt.Commentf("ConstraintsAdded=%v", diff.ConstraintsAdded))
