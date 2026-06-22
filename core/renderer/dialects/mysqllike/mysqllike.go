@@ -464,11 +464,19 @@ func (r *Renderer) visitAlterTableWithEnums(node *ast.AlterTableNode, enums map[
 
 		case *ast.DropConstraintOperation:
 			dropSQL := fmt.Sprintf("ALTER TABLE %s DROP", node.Name)
-			// MySQL uses different syntax for different constraint types
-			// For now, we'll use the generic DROP CONSTRAINT syntax
-			if op.IfExists {
+			// MySQL/MariaDB require a type-specific drop clause. Foreign keys
+			// must use DROP FOREIGN KEY (DROP CONSTRAINT is rejected for FKs on
+			// MySQL and on MariaDB <10.5); everything else uses DROP CONSTRAINT
+			// (CHECK and named constraints on MySQL 8.0.19+ / MariaDB).
+			switch {
+			case op.ForeignKey:
+				dropSQL += " FOREIGN KEY"
+				if op.IfExists {
+					dropSQL += " IF EXISTS"
+				}
+			case op.IfExists:
 				dropSQL += " CONSTRAINT IF EXISTS"
-			} else {
+			default:
 				dropSQL += " CONSTRAINT"
 			}
 			dropSQL += fmt.Sprintf(" %s", op.ConstraintName)

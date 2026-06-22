@@ -321,7 +321,7 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 			c := qt.New(t)
 
 			diff := &difftypes.SchemaDiff{}
-			compare.Constraints(tt.generated, tt.database, diff)
+			compare.Constraints(tt.generated, tt.database, diff, nil)
 
 			c.Assert(len(diff.ConstraintsAdded), qt.Equals, len(tt.expected.ConstraintsAdded),
 				qt.Commentf("ConstraintsAdded=%v", diff.ConstraintsAdded))

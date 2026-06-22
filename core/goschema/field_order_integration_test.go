@@ -264,7 +264,12 @@ type Post struct {
 		// Generate migration AST
 		planner := postgres.New()
 		astNodes := planner.GenerateMigrationAST(diff, database)
-		c.Assert(len(astNodes), qt.Equals, 2) // Should have 2 CREATE TABLE statements
+		// 2 CREATE TABLE statements plus 1 ALTER TABLE ADD CONSTRAINT for the
+		// posts.user_id field-level foreign key. The FK has no explicit
+		// foreign_key_name, so the planner derives the conventional
+		// fk_posts_user_id name and emits the constraint (previously an
+		// anonymous field-level FK was silently dropped from the migration).
+		c.Assert(len(astNodes), qt.Equals, 3)
 
 		// Render to SQL
 		var sqlStatements []string

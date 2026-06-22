@@ -163,7 +163,7 @@ func (p *Planner) addRegularForeignKeys(result []ast.Node, generated *goschema.D
 		if fkRef != nil && fkRef.Table != table.Name {
 			fkRef.OnDelete = field.OnDelete
 			fkRef.OnUpdate = field.OnUpdate
-			result = append(result, p.createForeignKeyAlterStatement(table.Name, field.ForeignKeyName, []string{field.Name}, fkRef))
+			result = append(result, p.createForeignKeyAlterStatement(table.Name, foreignKeyName(table.Name, field), []string{field.Name}, fkRef))
 		}
 	}
 	return result
@@ -181,16 +181,47 @@ func (p *Planner) addSelfReferencingForeignKeys(result []ast.Node, generated *go
 		if fkRef != nil {
 			fkRef.OnDelete = selfRefFK.OnDelete
 			fkRef.OnUpdate = selfRefFK.OnUpdate
-			result = append(result, p.createForeignKeyAlterStatement(table.Name, selfRefFK.ForeignKeyName, []string{selfRefFK.FieldName}, fkRef))
+			result = append(result, p.createForeignKeyAlterStatement(table.Name, selfReferencingForeignKeyName(table.Name, selfRefFK), []string{selfRefFK.FieldName}, fkRef))
 		}
 	}
 
 	return result
 }
 
-// isRegularForeignKeyField checks if a field is a regular foreign key field for the given table
+// selfReferencingForeignKeyName returns the constraint name for a
+// self-referencing field-level foreign key, deriving the conventional
+// fk_<table>_<field> name when foreign_key_name= was omitted (same rule as the
+// regular field path in foreignKeyName).
+func selfReferencingForeignKeyName(tableName string, fk goschema.SelfReferencingFK) string {
+	if fk.ForeignKeyName != "" {
+		return fk.ForeignKeyName
+	}
+	return fromschema.GenerateForeignKeyName(tableName, fk.FieldName)
+}
+
+// isRegularForeignKeyField checks if a field is a regular foreign key field for the given table.
+//
+// A field-level foreign= annotation is a foreign key regardless of whether the
+// author supplied an explicit foreign_key_name=. When the name is omitted the
+// planner derives the conventional fk_<table>_<column> name (see
+// foreignKeyName) so the constraint is actually created in the database with a
+// stable, named identity. Without this an anonymous field-level FK on a newly
+// created table was silently dropped from the migration, which made the
+// schemadiff comparator (which synthesizes the FK under the conventional name)
+// re-report it as missing forever (issue #189 round-trip failure).
 func isRegularForeignKeyField(field goschema.Field, table goschema.Table) bool {
-	return field.StructName == table.StructName && field.Foreign != "" && field.ForeignKeyName != ""
+	return field.StructName == table.StructName && field.Foreign != ""
+}
+
+// foreignKeyName returns the constraint name to use for a field-level foreign
+// key: the explicit foreign_key_name= when set, otherwise the conventional
+// fk_<table>_<column> name shared with the schemadiff comparator and the down
+// path via fromschema.GenerateForeignKeyName.
+func foreignKeyName(tableName string, field goschema.Field) string {
+	if field.ForeignKeyName != "" {
+		return field.ForeignKeyName
+	}
+	return fromschema.GenerateForeignKeyName(tableName, field.Name)
 }
 
 // createForeignKeyAlterStatement creates an ALTER TABLE statement for adding a foreign key constraint
@@ -270,17 +301,18 @@ func (p *Planner) addForeignKeyConstraintsForNewColumns(result []ast.Node, table
 		}
 
 		// Only process fields that have foreign key constraints
-		if targetField != nil && targetField.Foreign != "" && targetField.ForeignKeyName != "" {
+		if targetField != nil && targetField.Foreign != "" {
 			// Parse the foreign key reference
 			fkRef := fromschema.ParseForeignKeyReference(targetField.Foreign)
 			if fkRef != nil {
-				fkRef.Name = targetField.ForeignKeyName
+				fkName := foreignKeyName(tableDiff.TableName, *targetField)
+				fkRef.Name = fkName
 				fkRef.OnDelete = targetField.OnDelete
 				fkRef.OnUpdate = targetField.OnUpdate
 
 				// Create foreign key constraint
 				fkConstraint := ast.NewForeignKeyConstraint(
-					targetField.ForeignKeyName,
+					fkName,
 					[]string{targetField.Name},
 					fkRef,
 				)
@@ -1108,10 +1140,7 @@ func (p *Planner) fieldLevelForeignKeyConstraintNode(constraintName string, gene
 		if tableName == "" {
 			tableName = f.StructName
 		}
-		name := f.ForeignKeyName
-		if name == "" {
-			name = "fk_" + strings.ToLower(tableName) + "_" + strings.ToLower(f.Name)
-		}
+		name := foreignKeyName(tableName, f)
 		if name != constraintName {
 			continue
 		}
