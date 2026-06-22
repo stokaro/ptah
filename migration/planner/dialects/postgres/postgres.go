@@ -1048,31 +1048,40 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 	// (issue #197). ConstraintsAddedWithTables carries the concrete table and
 	// the full FK definition, so each host gets its own correct ALTER. Names
 	// handled here are recorded so the legacy name loop below skips them.
-	// A modified FK name (dropped + added) must be dropped before its re-add.
-	// Count the distinct host tables each such name spans so we can pick the
-	// right drop form: a mixin-shared FK name with on_delete/on_update drift on
-	// >=2 host tables yields one ConstraintsAddedWithTables entry per host
-	// (same Name, distinct TableName). The legacy name-only DO block resolves a
-	// single table via information_schema LIMIT 1, so it drops the constraint
-	// from only ONE host and the 2nd+ host's ADD CONSTRAINT then collides with
-	// the still-present old constraint of the same name ("constraint ...
-	// already exists", SQLSTATE 42710). For those multi-host names we instead
-	// emit a table-qualified ALTER TABLE <host> DROP CONSTRAINT IF EXISTS
-	// <name> per host, mirroring the per-table approach removeConstraints
-	// already uses for the pure-removal multi-host case. A single-host name
-	// keeps the unchanged name-only DO block so #189 stays byte-identical.
-	modifyHostsByName := make(map[string]map[string]struct{})
+	//
+	// A modified FK (dropped + re-added) must be dropped before its re-add. The
+	// authoritative "is this host a modification" signal is whether the exact
+	// (table, name) pair appears in the removal set — NOT whether the name alone
+	// was removed somewhere. In the MIXED case a shared FK name can be a modify
+	// on host A and a pure ADD on host B (B has no removal entry); keying the
+	// modify decision on the name alone would emit a phantom
+	// `ALTER TABLE B DROP CONSTRAINT IF EXISTS <name>` for the pure-add host.
+	// Keying the drop decision on (table, name) — mirroring MySQL's
+	// removalByTableName — gives the pure-add host no drop.
+	removalByTableName := make(map[string]types.ConstraintRemovalInfo, len(diff.ConstraintsRemovedWithTables))
+	for _, info := range diff.ConstraintsRemovedWithTables {
+		removalByTableName[info.TableName+"."+info.Name] = info
+	}
+
+	// Count the distinct host tables each FK name lands on across ALL additions
+	// (modifies and pure-adds alike). This selects the drop FORM for a modify
+	// host: when a name is shared by >1 host the name-only information_schema
+	// `LIMIT 1` DO block is unsafe — it could resolve to the wrong host (it would
+	// drop from only one host for a pure multi-host modify → the others collide
+	// on re-add with SQLSTATE 42710; and in the MIXED case a pure-add host's
+	// freshly added FK could be the one it resolves). So any shared name uses a
+	// table-qualified `ALTER TABLE <host> DROP CONSTRAINT IF EXISTS <name>` per
+	// modify host. A name on a single host keeps the unchanged name-only DO block
+	// so #189 stays byte-identical.
+	sharedNameHosts := make(map[string]map[string]struct{})
 	for _, add := range diff.ConstraintsAddedWithTables {
 		if add.Type != "FOREIGN KEY" || add.TableName == "" {
 			continue
 		}
-		if _, modified := removedNames[add.Name]; !modified {
-			continue
-		}
-		hosts := modifyHostsByName[add.Name]
+		hosts := sharedNameHosts[add.Name]
 		if hosts == nil {
 			hosts = make(map[string]struct{})
-			modifyHostsByName[add.Name] = hosts
+			sharedNameHosts[add.Name] = hosts
 		}
 		hosts[add.TableName] = struct{}{}
 	}
@@ -1083,8 +1092,11 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 		if add.Type != "FOREIGN KEY" || add.TableName == "" {
 			continue
 		}
-		if _, modified := removedNames[add.Name]; modified {
-			result = p.emitModifyDrop(result, add, modifyHostsByName, droppedForModify)
+		// Only emit the DROP-before-ADD when this exact host's FK is being
+		// modified (its (table, name) is in the removal set). A pure-add host
+		// gets no phantom drop.
+		if _, modified := removalByTableName[add.TableName+"."+add.Name]; modified {
+			result = p.emitModifyDrop(result, add, sharedNameHosts, droppedForModify)
 		}
 		result = append(result, p.foreignKeyAdditionNode(add))
 		handled[add.Name] = struct{}{}
@@ -1120,20 +1132,21 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 }
 
 // emitModifyDrop appends the DROP that must precede the re-ADD of a modified
-// field-level FK (a constraint present in both ConstraintsAdded and
-// ConstraintsRemoved). For a name spanning >=2 host tables it emits a
-// table-qualified ALTER TABLE <host> DROP CONSTRAINT IF EXISTS <name>, deduped
-// per (host, name), so every host's old constraint is dropped before its ADD;
-// the name-only information_schema LIMIT 1 DO block would drop only one host
-// and let the others collide (issue #197 MODIFY path). A single-host name keeps
-// the unchanged name-only DO block so #189 stays byte-identical.
+// field-level FK (a constraint whose (table, name) is in both the additions and
+// the removals). When the FK name lands on >=2 host tables across the additions
+// (sharedNameHosts) it emits a table-qualified ALTER TABLE <host> DROP
+// CONSTRAINT IF EXISTS <name>, deduped per (host, name), so each modify host's
+// old constraint is dropped before its ADD without the name-only
+// information_schema LIMIT 1 DO block resolving the wrong host (issue #197
+// MODIFY path). A name on a single host keeps the unchanged name-only DO block
+// so #189 stays byte-identical.
 func (p *Planner) emitModifyDrop(
 	result []ast.Node,
 	add types.ConstraintAdditionInfo,
-	modifyHostsByName map[string]map[string]struct{},
+	sharedNameHosts map[string]map[string]struct{},
 	droppedForModify map[string]struct{},
 ) []ast.Node {
-	if len(modifyHostsByName[add.Name]) > 1 {
+	if len(sharedNameHosts[add.Name]) > 1 {
 		dedupKey := add.TableName + "." + add.Name
 		if _, done := droppedForModify[dedupKey]; done {
 			return result

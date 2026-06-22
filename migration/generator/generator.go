@@ -198,9 +198,12 @@ func generateDownMigrationSQL(diff *types.SchemaDiff, generated *goschema.Databa
 	// since we're reverting back to the current state
 	dbAsGoSchema := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
 
-	// Create a reverse diff to generate down migration
-	// We pass the original generated schema to resolve table names for RLS policies
-	reverseDiff := reverseSchemaDiffWithSchema(diff, generated)
+	// Create a reverse diff to generate down migration. We pass the original
+	// generated schema to resolve table names for RLS policies, and the
+	// introspected database schema so the reversed constraint additions can
+	// rebuild the FULL prior FK body (columns, target, on_delete/on_update) from
+	// the pre-change DB state — that is exactly the action the down must restore.
+	reverseDiff := reverseSchemaDiffWithSchema(diff, generated, dbSchema)
 
 	statements := planner.GenerateSchemaDiffSQLStatements(reverseDiff, dbAsGoSchema, dialect)
 
@@ -222,12 +225,17 @@ func generateDownMigrationSQL(diff *types.SchemaDiff, generated *goschema.Databa
 //
 // Deprecated: Use reverseSchemaDiffWithSchema for proper RLS policy table name resolution
 func reverseSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
-	return reverseSchemaDiffWithSchema(diff, nil)
+	return reverseSchemaDiffWithSchema(diff, nil, nil)
 }
 
-// reverseSchemaDiffWithSchema creates a reverse diff for generating down migrations with schema context
-// This version can properly resolve table names for RLS policies using the provided schema
-func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Database) *types.SchemaDiff {
+// reverseSchemaDiffWithSchema creates a reverse diff for generating down migrations with schema context.
+//
+// schema is the generated (target) Go schema, used to resolve table names for
+// RLS policies. dbSchema is the introspected (pre-change) database schema, used
+// to rebuild the prior FK definition for the reversed constraint additions; it
+// may be nil for legacy callers that only have the generated schema (the
+// reversed additions then fall back to the name-only path).
+func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Database, dbSchema *dbschematypes.DBSchema) *types.SchemaDiff {
 	return &types.SchemaDiff{
 		// Reverse table operations
 		TablesAdded:    diff.TablesRemoved, // Tables to remove become tables to add
@@ -273,10 +281,100 @@ func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Databa
 		// down planner resolves the old definition from the introspected schema
 		// (see dbschematogo.ConvertDBSchemaToGoSchema, which now carries the
 		// FK action), so the prior action is faithfully restored.
+		//
+		// ConstraintsAddedWithTables carries the table-qualified prior FK body so
+		// the down add-path can fan a mixin-shared FK name out to every host
+		// table. Without it the down add-path falls back to the name-only field
+		// scan, which emits one ADD for a single host while the per-host DROP also
+		// resolves only one host — so the 2nd host's re-add collides with its
+		// still-present old constraint (Postgres 42710, MySQL 1826) and the
+		// rollback aborts half-applied. This is the DOWN mirror of the UP
+		// multi-host fix (issue #197).
 		ConstraintsAdded:             diff.ConstraintsRemoved,
 		ConstraintsRemoved:           diff.ConstraintsAdded,
 		ConstraintsRemovedWithTables: reverseConstraintRemovals(diff, schema),
+		ConstraintsAddedWithTables:   reverseConstraintAdditions(diff, dbSchema),
 	}
+}
+
+// reverseConstraintAdditions builds the table-qualified additions for the down
+// migration. In the down direction the constraints to add back are the ones the
+// up migration REMOVED (diff.ConstraintsRemovedWithTables) — restoring their
+// prior definition. The prior FK body (columns, foreign table/column,
+// on_delete/on_update) is read from the introspected (pre-change) database
+// schema, which is the authoritative source for what the down must restore.
+//
+// Carrying the full per-host body here lets both dialect planners' add-paths
+// (which already prefer ConstraintsAddedWithTables) emit one correct ALTER TABLE
+// per real host table. This is what makes the down of a multi-host mixin FK
+// modify apply cleanly: a name-only down re-adds only one host (and drops only
+// one host), so the others collide on re-add (issue #197 DOWN path). When
+// dbSchema is nil (legacy callers) the names still flow through ConstraintsAdded
+// and the planners fall back to the name-only field scan.
+func reverseConstraintAdditions(diff *types.SchemaDiff, dbSchema *dbschematypes.DBSchema) []types.ConstraintAdditionInfo {
+	if dbSchema == nil || len(diff.ConstraintsRemovedWithTables) == 0 {
+		return nil
+	}
+
+	// Index the introspected FOREIGN KEY constraints by (table, name) so each
+	// reversed addition restores the body from the exact host it was removed
+	// from. A mixin-shared FK name legitimately repeats across host tables, so a
+	// name-only key would collapse them onto one host.
+	dbFKByTableName := make(map[string]dbschematypes.DBConstraint)
+	for _, c := range dbSchema.Constraints {
+		if c.Type != "FOREIGN KEY" {
+			continue
+		}
+		dbFKByTableName[c.TableName+"."+c.Name] = c
+	}
+
+	var infos []types.ConstraintAdditionInfo
+	for _, removed := range diff.ConstraintsRemovedWithTables {
+		if removed.Type != "FOREIGN KEY" || removed.TableName == "" {
+			continue
+		}
+		dbFK, ok := dbFKByTableName[removed.TableName+"."+removed.Name]
+		if !ok {
+			// No introspected body to restore (e.g. the constraint was a
+			// pure-removal not present pre-change, or a non-FK). The name still
+			// rides in ConstraintsAdded for the name-only fallback.
+			continue
+		}
+		infos = append(infos, foreignKeyAdditionFromDBConstraint(removed.Name, removed.TableName, dbFK))
+	}
+	return infos
+}
+
+// foreignKeyAdditionFromDBConstraint builds a ConstraintAdditionInfo carrying the
+// full FK body from an introspected database FOREIGN KEY constraint. The
+// referential actions come straight from the pre-change DB, so the down
+// migration restores exactly the prior ON DELETE / ON UPDATE behavior.
+func foreignKeyAdditionFromDBConstraint(name, table string, dbFK dbschematypes.DBConstraint) types.ConstraintAdditionInfo {
+	info := types.ConstraintAdditionInfo{
+		Name:      name,
+		TableName: table,
+		Type:      "FOREIGN KEY",
+		OnDelete:  derefString(dbFK.DeleteRule),
+		OnUpdate:  derefString(dbFK.UpdateRule),
+	}
+	if dbFK.ColumnName != "" {
+		info.Columns = []string{dbFK.ColumnName}
+	}
+	if dbFK.ForeignTable != nil {
+		info.ForeignTable = *dbFK.ForeignTable
+	}
+	if dbFK.ForeignColumn != nil {
+		info.ForeignColumn = *dbFK.ForeignColumn
+	}
+	return info
+}
+
+// derefString returns the pointed-to string or "" when nil.
+func derefString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // reverseConstraintRemovals builds the table-qualified removal info for the

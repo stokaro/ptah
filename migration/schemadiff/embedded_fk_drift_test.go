@@ -266,6 +266,56 @@ func TestEmbeddedInlineMixinFK_MultiHostActionDrift(t *testing.T) {
 	})
 }
 
+// TestEmbeddedInlineMixinFK_MixedModifyAndAdd_NoPhantomDrop covers the MIXED
+// case for the same mixin-shared FK name: on some host tables the FK already
+// exists with a different action (a MODIFY → drop-before-add) while on another
+// host the FK is missing entirely (a pure ADD). The pure-add host must NOT get a
+// DROP — there is nothing to drop there. Postgres' multi-host drop decision is
+// keyed on the actual (table, name) removal set, so a host that contributes only
+// an addition (no removal) emits no `ALTER TABLE <host> DROP CONSTRAINT IF EXISTS`
+// noise.
+func TestEmbeddedInlineMixinFK_MixedModifyAndAdd_NoPhantomDrop(t *testing.T) {
+	c := qt.New(t)
+
+	modifyHosts := []string{"locations", "areas"}
+	addHost := "commodities"
+	allHosts := append(append([]string(nil), modifyHosts...), addHost)
+
+	// DB: locations+areas have the tenant FK at NO ACTION (so CASCADE = modify);
+	// commodities has the column but NO FK (so CASCADE = pure add).
+	dbSchema := ownableMixinColumnsOnlyDB(allHosts...)
+	for _, h := range modifyHosts {
+		dbSchema.Constraints = append(dbSchema.Constraints,
+			types.DBConstraint{Name: "fk_entity_tenant", TableName: h, Type: "FOREIGN KEY", ColumnName: "tenant_id", ForeignTable: strPtr("tenants"), ForeignColumn: strPtr("id"), DeleteRule: strPtr("NO ACTION"), UpdateRule: strPtr("NO ACTION")},
+			types.DBConstraint{Name: "fk_entity_created_by", TableName: h, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: strPtr("users"), ForeignColumn: strPtr("id"), DeleteRule: strPtr("NO ACTION"), UpdateRule: strPtr("NO ACTION")},
+		)
+	}
+	// commodities also needs the created_by FK present so only tenant differs;
+	// otherwise created_by would surface as an extra pure-add and muddy the test.
+	dbSchema.Constraints = append(dbSchema.Constraints,
+		types.DBConstraint{Name: "fk_entity_created_by", TableName: addHost, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: strPtr("users"), ForeignColumn: strPtr("id"), DeleteRule: strPtr("NO ACTION"), UpdateRule: strPtr("NO ACTION")},
+	)
+
+	gen := ownableMixinSchemaWithTenantOnDelete("CASCADE", allHosts...)
+	diff := schemadiff.Compare(gen, dbSchema)
+	c.Assert(diff.HasChanges(), qt.IsTrue)
+
+	nodes := postgres.New().GenerateMigrationAST(diff, gen)
+	sql, err := renderer.RenderSQL("postgres", nodes...)
+	c.Assert(err, qt.IsNil)
+
+	// Each modify host gets a table-qualified DROP before its re-ADD.
+	for _, h := range modifyHosts {
+		c.Assert(strings.Count(sql, "ALTER TABLE "+h+" DROP CONSTRAINT IF EXISTS fk_entity_tenant;"), qt.Equals, 1,
+			qt.Commentf("modify host %s must drop the old tenant FK once, got:\n%s", h, sql))
+	}
+	// The pure-add host gets the ADD but NO phantom DROP.
+	c.Assert(strings.Contains(sql, "ALTER TABLE "+addHost+" ADD CONSTRAINT fk_entity_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE"), qt.IsTrue,
+		qt.Commentf("pure-add host %s must add the tenant FK, got:\n%s", addHost, sql))
+	c.Assert(strings.Contains(sql, "ALTER TABLE "+addHost+" DROP CONSTRAINT IF EXISTS fk_entity_tenant"), qt.IsFalse,
+		qt.Commentf("pure-add host %s must NOT emit a phantom DROP, got:\n%s", addHost, sql))
+}
+
 // ownableMixinConvergedTenantOnDelete is ownableMixinConvergedDB but with the
 // tenant FK already carrying the given delete rule, used to prove idempotency
 // of the multi-host modify (after apply, the database agrees with generated).
