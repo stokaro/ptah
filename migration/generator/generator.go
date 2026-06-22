@@ -12,6 +12,7 @@ import (
 
 	"github.com/stokaro/ptah/config"
 	"github.com/stokaro/ptah/core/convert/dbschematogo"
+	"github.com/stokaro/ptah/core/convert/fromschema"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
@@ -104,8 +105,12 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 		return nil, fmt.Errorf("error reading database schema: %w", err)
 	}
 
-	// 3. Calculate the diff between desired and current schema
-	diff := schemadiff.CompareWithOptions(generated, dbSchema, opts.CompareOptions)
+	// 3. Calculate the diff between desired and current schema.
+	// Thread the connection dialect into the compare options so dialect-specific
+	// normalization (e.g. MySQL/MariaDB RESTRICT == NO ACTION on foreign keys)
+	// is applied; without it MariaDB would loop drop+add on an unchanged FK.
+	compareOpts := withDialect(opts.CompareOptions, conn.Info().Dialect)
+	diff := schemadiff.CompareWithOptions(generated, dbSchema, compareOpts)
 
 	// Check if there are any changes
 	if !diff.HasChanges() {
@@ -142,6 +147,21 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 	}
 
 	return files, nil
+}
+
+// withDialect returns a copy of opts with the Dialect set, allocating a default
+// options value when opts is nil. An explicit Dialect already present on opts is
+// preserved. The comparator consults Dialect only for dialect-specific
+// referential-action normalization (see config.CompareOptions.Dialect).
+func withDialect(opts *config.CompareOptions, dialect string) *config.CompareOptions {
+	if opts == nil {
+		opts = config.DefaultCompareOptions()
+	}
+	clone := *opts
+	if clone.Dialect == "" {
+		clone.Dialect = dialect
+	}
+	return &clone
 }
 
 // hasActualSQLStatements checks if the statements contain actual SQL operations (not just comments)
@@ -245,7 +265,73 @@ func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Databa
 		RolesAdded:    diff.RolesRemoved, // Roles to remove become roles to add
 		RolesRemoved:  diff.RolesAdded,   // Roles to add become roles to remove
 		RolesModified: reverseRoleDiffs(diff.RolesModified),
+
+		// Reverse constraint operations. A modified constraint is expressed by
+		// the comparator as remove + add of the SAME name (e.g. an on_delete
+		// change on a field-level FK, issue #189). Swapping the two slices makes
+		// the down migration drop the new definition and re-add the old one — the
+		// down planner resolves the old definition from the introspected schema
+		// (see dbschematogo.ConvertDBSchemaToGoSchema, which now carries the
+		// FK action), so the prior action is faithfully restored.
+		ConstraintsAdded:             diff.ConstraintsRemoved,
+		ConstraintsRemoved:           diff.ConstraintsAdded,
+		ConstraintsRemovedWithTables: reverseConstraintRemovals(diff, schema),
 	}
+}
+
+// reverseConstraintRemovals builds the table-qualified removal info for the
+// down migration. In the down direction the constraints to remove are the ones
+// the up migration ADDED (diff.ConstraintsAdded); their owning table and type
+// are resolved from the generated schema, which is the source the up side
+// synthesized them from. This lets dialect planners that need the table and a
+// type-specific drop syntax (MySQL/MariaDB DROP FOREIGN KEY) emit a real drop in
+// the down migration. When the schema is unavailable (legacy callers) the names
+// still flow through ConstraintsRemoved; only the richer per-table info is
+// omitted.
+func reverseConstraintRemovals(diff *types.SchemaDiff, schema *goschema.Database) []types.ConstraintRemovalInfo {
+	if schema == nil || len(diff.ConstraintsAdded) == 0 {
+		return nil
+	}
+
+	// Index explicit table-level constraints by name.
+	tableConstraints := make(map[string]goschema.Constraint, len(schema.Constraints))
+	for _, c := range schema.Constraints {
+		tableConstraints[c.Name] = c
+	}
+
+	// Index field-level FK constraint names (foreign_key_name or the
+	// conventional fk_<table>_<column>) to their owning table.
+	structToTable := make(map[string]string, len(schema.Tables))
+	for _, t := range schema.Tables {
+		structToTable[t.StructName] = t.Name
+	}
+	fkTables := make(map[string]string, len(schema.Fields))
+	for _, f := range schema.Fields {
+		if f.Foreign == "" {
+			continue
+		}
+		tableName := structToTable[f.StructName]
+		if tableName == "" {
+			tableName = f.StructName
+		}
+		name := f.ForeignKeyName
+		if name == "" {
+			name = fromschema.GenerateForeignKeyName(tableName, f.Name)
+		}
+		fkTables[name] = tableName
+	}
+
+	var infos []types.ConstraintRemovalInfo
+	for _, name := range diff.ConstraintsAdded {
+		switch {
+		case tableConstraints[name].Name != "":
+			c := tableConstraints[name]
+			infos = append(infos, types.ConstraintRemovalInfo{Name: name, TableName: c.Table, Type: c.Type})
+		case fkTables[name] != "":
+			infos = append(infos, types.ConstraintRemovalInfo{Name: name, TableName: fkTables[name], Type: "FOREIGN KEY"})
+		}
+	}
+	return infos
 }
 
 // reverseTableDiffs reverses table modifications for down migrations
