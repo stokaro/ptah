@@ -1048,19 +1048,43 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 	// (issue #197). ConstraintsAddedWithTables carries the concrete table and
 	// the full FK definition, so each host gets its own correct ALTER. Names
 	// handled here are recorded so the legacy name loop below skips them.
+	// A modified FK name (dropped + added) must be dropped before its re-add.
+	// Count the distinct host tables each such name spans so we can pick the
+	// right drop form: a mixin-shared FK name with on_delete/on_update drift on
+	// >=2 host tables yields one ConstraintsAddedWithTables entry per host
+	// (same Name, distinct TableName). The legacy name-only DO block resolves a
+	// single table via information_schema LIMIT 1, so it drops the constraint
+	// from only ONE host and the 2nd+ host's ADD CONSTRAINT then collides with
+	// the still-present old constraint of the same name ("constraint ...
+	// already exists", SQLSTATE 42710). For those multi-host names we instead
+	// emit a table-qualified ALTER TABLE <host> DROP CONSTRAINT IF EXISTS
+	// <name> per host, mirroring the per-table approach removeConstraints
+	// already uses for the pure-removal multi-host case. A single-host name
+	// keeps the unchanged name-only DO block so #189 stays byte-identical.
+	modifyHostsByName := make(map[string]map[string]struct{})
+	for _, add := range diff.ConstraintsAddedWithTables {
+		if add.Type != "FOREIGN KEY" || add.TableName == "" {
+			continue
+		}
+		if _, modified := removedNames[add.Name]; !modified {
+			continue
+		}
+		hosts := modifyHostsByName[add.Name]
+		if hosts == nil {
+			hosts = make(map[string]struct{})
+			modifyHostsByName[add.Name] = hosts
+		}
+		hosts[add.TableName] = struct{}{}
+	}
+
 	handled := make(map[string]struct{})
 	droppedForModify := make(map[string]struct{})
 	for _, add := range diff.ConstraintsAddedWithTables {
 		if add.Type != "FOREIGN KEY" || add.TableName == "" {
 			continue
 		}
-		// For a modification (same name dropped + added) emit the DROP once
-		// before the first re-add so it precedes every re-add of that name.
 		if _, modified := removedNames[add.Name]; modified {
-			if _, done := droppedForModify[add.Name]; !done {
-				result = append(result, p.dropConstraintNode(add.Name))
-				droppedForModify[add.Name] = struct{}{}
-			}
+			result = p.emitModifyDrop(result, add, modifyHostsByName, droppedForModify)
 		}
 		result = append(result, p.foreignKeyAdditionNode(add))
 		handled[add.Name] = struct{}{}
@@ -1093,6 +1117,41 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 		}
 	}
 	return result
+}
+
+// emitModifyDrop appends the DROP that must precede the re-ADD of a modified
+// field-level FK (a constraint present in both ConstraintsAdded and
+// ConstraintsRemoved). For a name spanning >=2 host tables it emits a
+// table-qualified ALTER TABLE <host> DROP CONSTRAINT IF EXISTS <name>, deduped
+// per (host, name), so every host's old constraint is dropped before its ADD;
+// the name-only information_schema LIMIT 1 DO block would drop only one host
+// and let the others collide (issue #197 MODIFY path). A single-host name keeps
+// the unchanged name-only DO block so #189 stays byte-identical.
+func (p *Planner) emitModifyDrop(
+	result []ast.Node,
+	add types.ConstraintAdditionInfo,
+	modifyHostsByName map[string]map[string]struct{},
+	droppedForModify map[string]struct{},
+) []ast.Node {
+	if len(modifyHostsByName[add.Name]) > 1 {
+		dedupKey := add.TableName + "." + add.Name
+		if _, done := droppedForModify[dedupKey]; done {
+			return result
+		}
+		droppedForModify[dedupKey] = struct{}{}
+		return append(result, &ast.AlterTableNode{
+			Name: add.TableName,
+			Operations: []ast.AlterOperation{&ast.DropConstraintOperation{
+				ConstraintName: add.Name,
+				IfExists:       true,
+			}},
+		})
+	}
+	if _, done := droppedForModify[add.Name]; done {
+		return result
+	}
+	droppedForModify[add.Name] = struct{}{}
+	return append(result, p.dropConstraintNode(add.Name))
 }
 
 // foreignKeyAdditionNode builds the ALTER TABLE ADD CONSTRAINT node for a

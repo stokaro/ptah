@@ -573,11 +573,20 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 		structToTable[t.StructName] = t.Name
 	}
 
-	// Removal info keyed by name so a same-name modification can be dropped with
-	// the correct table + FK-aware syntax before being re-added.
-	removalByName := make(map[string]types.ConstraintRemovalInfo, len(diff.ConstraintsRemovedWithTables))
+	// Removal info keyed by (table, name) so a same-name modification can be
+	// dropped from each owning table with the correct FK-aware syntax before
+	// being re-added. A mixin-shared FK name with on_delete/on_update drift on
+	// >=2 host tables produces one ConstraintsRemovedWithTables entry per host
+	// (same Name, distinct TableName); keying the map on the name alone would
+	// collapse them to the last host, so only that host's old FK would be
+	// dropped and the other hosts' ADD CONSTRAINT would collide with the
+	// still-present same-named constraint ("Duplicate foreign key constraint
+	// name", errno 1826). Keying on (table, name) keeps one removal per host so
+	// each host gets its own DROP FOREIGN KEY. A single-host name still resolves
+	// to exactly one entry, so #189 stays byte-identical (one DROP + one ADD).
+	removalByTableName := make(map[string]types.ConstraintRemovalInfo, len(diff.ConstraintsRemovedWithTables))
 	for _, info := range diff.ConstraintsRemovedWithTables {
-		removalByName[info.Name] = info
+		removalByTableName[info.TableName+"."+info.Name] = info
 	}
 
 	// Prefer the table-qualified additions when present. A field-level FK from an
@@ -592,16 +601,28 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 		if add.Type != "FOREIGN KEY" || add.TableName == "" {
 			continue
 		}
-		if info, modified := removalByName[add.Name]; modified {
-			if _, done := droppedForModify[add.Name]; !done {
+		// For a modification, emit the DROP FOREIGN KEY from this exact host
+		// table before its re-add. Dedup on (table, name) so each host is
+		// dropped once even if the comparator lists it more than once.
+		dropKey := add.TableName + "." + add.Name
+		if info, modified := removalByTableName[dropKey]; modified {
+			if _, done := droppedForModify[dropKey]; !done {
 				result = append(result, dropConstraintNode(info))
-				droppedForModify[add.Name] = struct{}{}
+				droppedForModify[dropKey] = struct{}{}
 			}
 		}
 		result = append(result, p.foreignKeyAdditionNode(add))
 		handled[add.Name] = struct{}{}
 	}
 
+	// Fallback for added constraints with no table-qualified entry above
+	// (table-level CHECK/UNIQUE, or field-level synthesis resolved by name).
+	// These names are unique per table, so a name-keyed removal lookup is
+	// sufficient and there is no multi-host collapse hazard here.
+	removalByName := make(map[string]types.ConstraintRemovalInfo, len(diff.ConstraintsRemovedWithTables))
+	for _, info := range diff.ConstraintsRemovedWithTables {
+		removalByName[info.Name] = info
+	}
 	for _, constraintName := range diff.ConstraintsAdded {
 		if _, done := handled[constraintName]; done {
 			continue

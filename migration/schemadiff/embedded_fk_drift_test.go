@@ -9,6 +9,7 @@ import (
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/migration/planner/dialects/mysql"
 	"github.com/stokaro/ptah/migration/planner/dialects/postgres"
 	"github.com/stokaro/ptah/migration/schemadiff"
 	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
@@ -94,6 +95,22 @@ func ownableMixinConvergedDB(hostTables ...string) *types.DBSchema {
 	return db
 }
 
+// ownableMixinSchemaWithTenantOnDelete builds the same Ownable mixin schema as
+// ownableMixinSchema but stamps the given ON DELETE action onto the shared
+// tenant FK (fk_entity_tenant) on every host. Used to drive a multi-host FK
+// action change (issue #197 MODIFY path): the generated action differs from the
+// converged NO ACTION database, so the comparator routes fk_entity_tenant into
+// ConstraintsAdded + ConstraintsRemoved for each host table at once.
+func ownableMixinSchemaWithTenantOnDelete(onDelete string, hostTables ...string) *goschema.Database {
+	db := ownableMixinSchema(hostTables...)
+	for i := range db.Fields {
+		if db.Fields[i].StructName == "Ownable" && db.Fields[i].Name == "tenant_id" {
+			db.Fields[i].OnDelete = onDelete
+		}
+	}
+	return db
+}
+
 func ownableHostTable(name string) types.DBTable {
 	return types.DBTable{
 		Name: name,
@@ -166,4 +183,109 @@ func TestEmbeddedInlineMixinFK_NeverTargetsStructName(t *testing.T) {
 		diff := schemadiff.Compare(gen, ownableMixinConvergedDB(hosts...))
 		c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("added=%v removed=%v", diff.ConstraintsAdded, diff.ConstraintsRemoved))
 	})
+}
+
+// TestEmbeddedInlineMixinFK_MultiHostActionDrift is the regression test for the
+// MODIFY (drop-before-add) half of issue #197. When a mixin-shared FK name
+// (fk_entity_tenant) has an on_delete change on >=2 host tables in the same
+// diff, the planner must emit a DROP of the OLD constraint for EACH host paired
+// with each re-ADD. A single name-keyed drop (Postgres: the information_schema
+// LIMIT 1 DO block; MySQL: the last-host-wins collapse) drops the constraint
+// from only one host, so the 2nd+ host's ADD CONSTRAINT collides with the
+// still-present same-named constraint ("already exists" / "Duplicate foreign
+// key constraint name"). This pins one DROP per host, ordered before its ADD.
+func TestEmbeddedInlineMixinFK_MultiHostActionDrift(t *testing.T) {
+	hosts := []string{"locations", "areas", "commodities"}
+
+	t.Run("postgres emits a table-qualified DROP per host before each ADD", func(t *testing.T) {
+		c := qt.New(t)
+
+		// Generated tenant FK = ON DELETE CASCADE; DB = converged NO ACTION.
+		gen := ownableMixinSchemaWithTenantOnDelete("CASCADE", hosts...)
+		diff := schemadiff.Compare(gen, ownableMixinConvergedDB(hosts...))
+		c.Assert(diff.HasChanges(), qt.IsTrue)
+		// The same FK name is added + removed once per host (a modification).
+		c.Assert(countName(diff.ConstraintsAdded, "fk_entity_tenant"), qt.Equals, len(hosts))
+		c.Assert(countName(diff.ConstraintsRemoved, "fk_entity_tenant"), qt.Equals, len(hosts))
+
+		nodes := postgres.New().GenerateMigrationAST(diff, gen)
+		sql, err := renderer.RenderSQL("postgres", nodes...)
+		c.Assert(err, qt.IsNil)
+
+		for _, h := range hosts {
+			dropStmt := "ALTER TABLE " + h + " DROP CONSTRAINT IF EXISTS fk_entity_tenant;"
+			addStmt := "ALTER TABLE " + h + " ADD CONSTRAINT fk_entity_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;"
+
+			// Exactly one table-qualified DROP and one ADD for this host.
+			c.Assert(strings.Count(sql, dropStmt), qt.Equals, 1,
+				qt.Commentf("host %s: expected one table-qualified DROP, got:\n%s", h, sql))
+			c.Assert(strings.Count(sql, addStmt), qt.Equals, 1,
+				qt.Commentf("host %s: expected one ADD with ON DELETE CASCADE, got:\n%s", h, sql))
+
+			// The DROP must precede the matching ADD so the re-add can't collide.
+			dropIdx := strings.Index(sql, dropStmt)
+			addIdx := strings.Index(sql, addStmt)
+			c.Assert(dropIdx >= 0 && addIdx >= 0 && dropIdx < addIdx, qt.IsTrue,
+				qt.Commentf("host %s: DROP must precede ADD; drop@%d add@%d\n%s", h, dropIdx, addIdx, sql))
+		}
+
+		// Idempotency: once the database carries CASCADE, regenerating is empty.
+		converged := schemadiff.Compare(gen, ownableMixinConvergedTenantOnDelete("CASCADE", hosts...))
+		noopNodes := postgres.New().GenerateMigrationAST(converged, gen)
+		noopSQL, err := renderer.RenderSQL("postgres", noopNodes...)
+		c.Assert(err, qt.IsNil)
+		c.Assert(strings.Contains(noopSQL, "fk_entity_tenant"), qt.IsFalse,
+			qt.Commentf("converged tenant FK must produce no churn, got:\n%s", noopSQL))
+	})
+
+	t.Run("mysql emits a DROP FOREIGN KEY per host before each ADD", func(t *testing.T) {
+		c := qt.New(t)
+
+		gen := ownableMixinSchemaWithTenantOnDelete("CASCADE", hosts...)
+		diff := schemadiff.CompareWithDialect(gen, ownableMixinConvergedDB(hosts...), "mysql")
+		c.Assert(diff.HasChanges(), qt.IsTrue)
+
+		nodes := mysql.New().GenerateMigrationAST(diff, gen)
+		sql, err := renderer.RenderSQL("mysql", nodes...)
+		c.Assert(err, qt.IsNil)
+
+		for _, h := range hosts {
+			dropStmt := "ALTER TABLE " + h + " DROP FOREIGN KEY fk_entity_tenant;"
+			addStmt := "ALTER TABLE " + h + " ADD CONSTRAINT fk_entity_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;"
+
+			c.Assert(strings.Count(sql, dropStmt), qt.Equals, 1,
+				qt.Commentf("host %s: expected one DROP FOREIGN KEY, got:\n%s", h, sql))
+			c.Assert(strings.Count(sql, addStmt), qt.Equals, 1,
+				qt.Commentf("host %s: expected one ADD with ON DELETE CASCADE, got:\n%s", h, sql))
+
+			dropIdx := strings.Index(sql, dropStmt)
+			addIdx := strings.Index(sql, addStmt)
+			c.Assert(dropIdx >= 0 && addIdx >= 0 && dropIdx < addIdx, qt.IsTrue,
+				qt.Commentf("host %s: DROP must precede ADD; drop@%d add@%d\n%s", h, dropIdx, addIdx, sql))
+		}
+	})
+}
+
+// ownableMixinConvergedTenantOnDelete is ownableMixinConvergedDB but with the
+// tenant FK already carrying the given delete rule, used to prove idempotency
+// of the multi-host modify (after apply, the database agrees with generated).
+func ownableMixinConvergedTenantOnDelete(deleteRule string, hostTables ...string) *types.DBSchema {
+	db := ownableMixinColumnsOnlyDB(hostTables...)
+	for _, ht := range hostTables {
+		db.Constraints = append(db.Constraints,
+			types.DBConstraint{Name: "fk_entity_tenant", TableName: ht, Type: "FOREIGN KEY", ColumnName: "tenant_id", ForeignTable: strPtr("tenants"), ForeignColumn: strPtr("id"), DeleteRule: strPtr(deleteRule), UpdateRule: strPtr("NO ACTION")},
+			types.DBConstraint{Name: "fk_entity_created_by", TableName: ht, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: strPtr("users"), ForeignColumn: strPtr("id"), DeleteRule: strPtr("NO ACTION"), UpdateRule: strPtr("NO ACTION")},
+		)
+	}
+	return db
+}
+
+func countName(names []string, want string) int {
+	n := 0
+	for _, name := range names {
+		if name == want {
+			n++
+		}
+	}
+	return n
 }
