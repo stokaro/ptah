@@ -299,8 +299,29 @@ func reverseConstraintRemovals(diff *types.SchemaDiff, schema *goschema.Database
 		tableConstraints[c.Name] = c
 	}
 
+	// Prefer the table-qualified additions the comparator recorded. A
+	// field-level FK contributed by an embedded inline-relation mixin shares one
+	// name across every host table, so resolving the table from a field's Go
+	// struct name collapses every host onto the same (often non-table) name —
+	// the down migration would then drop the constraint from the wrong table or
+	// from a struct name that does not exist (issue #197). ConstraintsAddedWithTables
+	// carries the concrete table for each addition, so the down side drops the
+	// FK from exactly the table the up side added it to. Names present here are
+	// recorded so the legacy field-scan fallback below does not double-emit them.
+	var infos []types.ConstraintRemovalInfo
+	handled := make(map[string]struct{})
+	for _, add := range diff.ConstraintsAddedWithTables {
+		if add.TableName == "" {
+			continue
+		}
+		infos = append(infos, types.ConstraintRemovalInfo{Name: add.Name, TableName: add.TableName, Type: add.Type})
+		handled[add.Name] = struct{}{}
+	}
+
 	// Index field-level FK constraint names (foreign_key_name or the
-	// conventional fk_<table>_<column>) to their owning table.
+	// conventional fk_<table>_<column>) to their owning table for the names that
+	// did not arrive with table-qualified info (legacy callers / explicit
+	// table-level constraints).
 	structToTable := make(map[string]string, len(schema.Tables))
 	for _, t := range schema.Tables {
 		structToTable[t.StructName] = t.Name
@@ -321,8 +342,10 @@ func reverseConstraintRemovals(diff *types.SchemaDiff, schema *goschema.Database
 		fkTables[name] = tableName
 	}
 
-	var infos []types.ConstraintRemovalInfo
 	for _, name := range diff.ConstraintsAdded {
+		if _, done := handled[name]; done {
+			continue
+		}
 		switch {
 		case tableConstraints[name].Name != "":
 			c := tableConstraints[name]

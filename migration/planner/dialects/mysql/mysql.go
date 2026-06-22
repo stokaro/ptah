@@ -580,7 +580,33 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 		removalByName[info.Name] = info
 	}
 
+	// Prefer the table-qualified additions when present. A field-level FK from an
+	// embedded inline-relation mixin shares one name across every host table, so
+	// resolving the table from the field's Go struct name targets the mixin
+	// struct rather than the real tables (issue #197). ConstraintsAddedWithTables
+	// carries the concrete table + full FK definition. Names handled here are
+	// recorded so the legacy name loop skips them.
+	handled := make(map[string]struct{})
+	droppedForModify := make(map[string]struct{})
+	for _, add := range diff.ConstraintsAddedWithTables {
+		if add.Type != "FOREIGN KEY" || add.TableName == "" {
+			continue
+		}
+		if info, modified := removalByName[add.Name]; modified {
+			if _, done := droppedForModify[add.Name]; !done {
+				result = append(result, dropConstraintNode(info))
+				droppedForModify[add.Name] = struct{}{}
+			}
+		}
+		result = append(result, p.foreignKeyAdditionNode(add))
+		handled[add.Name] = struct{}{}
+	}
+
 	for _, constraintName := range diff.ConstraintsAdded {
+		if _, done := handled[constraintName]; done {
+			continue
+		}
+
 		// For a modification, emit the DROP first so it precedes the re-add.
 		if info, modified := removalByName[constraintName]; modified {
 			result = append(result, dropConstraintNode(info))
@@ -589,6 +615,21 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 		result = p.appendAddConstraint(result, constraintName, generated, structToTable)
 	}
 	return result
+}
+
+// foreignKeyAdditionNode builds the ALTER TABLE ADD CONSTRAINT node for a
+// table-qualified field-level FK addition (ConstraintsAddedWithTables). The
+// concrete table comes from the comparator, so this is correct for FK names
+// that repeat across the many tables embedding an inline-relation mixin
+// (issue #197), unlike the legacy field scan keyed on a Go struct name.
+func (p *Planner) foreignKeyAdditionNode(add types.ConstraintAdditionInfo) *ast.AlterTableNode {
+	fkRef := &ast.ForeignKeyRef{
+		Table:    add.ForeignTable,
+		Column:   add.ForeignColumn,
+		OnDelete: add.OnDelete,
+		OnUpdate: add.OnUpdate,
+	}
+	return p.createForeignKeyAlterStatement(add.TableName, add.Name, add.Columns, fkRef)
 }
 
 // appendAddConstraint resolves the ADD CONSTRAINT node for a constraint known

@@ -32,6 +32,42 @@ type ConstraintRemovalInfo struct {
 	Type string `json:"type"`
 }
 
+// ConstraintAdditionInfo contains the table-qualified definition of a
+// constraint that needs to be added, in parallel to the bare ConstraintsAdded
+// name list (mirroring ConstraintsRemovedWithTables).
+//
+// This exists because a field-level FOREIGN KEY whose constraint name repeats
+// across several tables cannot be resolved from the name alone. The canonical
+// case is an embedded inline-relation mixin: a shared base struct that carries
+// `foreign=` fields (e.g. tenant_id with foreign_key_name="fk_entity_tenant")
+// and is embedded into many concrete tables, so the same FK name legitimately
+// lands on every host table. The mixin's Go struct name is not a table, so a
+// planner that re-derives the table from the field's StructName emits
+// `ALTER TABLE <MixinStruct> ...` once per host, all collapsed onto the bogus
+// name (issue #197). Carrying the concrete table (and the full FK definition)
+// here lets the planner emit one correct ALTER TABLE per real host table.
+type ConstraintAdditionInfo struct {
+	// Name is the name of the constraint to be added.
+	Name string `json:"name"`
+
+	// TableName is the concrete database table the constraint is added to.
+	TableName string `json:"table_name"`
+
+	// Type is the constraint type (FOREIGN KEY, CHECK, UNIQUE, ...).
+	Type string `json:"type"`
+
+	// Columns are the local columns the constraint covers (FK source columns).
+	Columns []string `json:"columns,omitempty"`
+
+	// ForeignTable / ForeignColumn describe the FK target (FOREIGN KEY only).
+	ForeignTable  string `json:"foreign_table,omitempty"`
+	ForeignColumn string `json:"foreign_column,omitempty"`
+
+	// OnDelete / OnUpdate are the referential actions (FOREIGN KEY only).
+	OnDelete string `json:"on_delete,omitempty"`
+	OnUpdate string `json:"on_update,omitempty"`
+}
+
 // SchemaDiff represents comprehensive differences between two database schemas.
 //
 // This structure captures all types of schema changes that can occur between a target
@@ -156,6 +192,14 @@ type SchemaDiff struct {
 	// ConstraintsAdded contains names of constraints that exist in the target schema
 	// but not in the current database schema
 	ConstraintsAdded []string `json:"constraints_added"`
+
+	// ConstraintsAddedWithTables contains the table-qualified definitions of the
+	// constraints in ConstraintsAdded, in parallel (mirroring
+	// ConstraintsRemovedWithTables). Planners read this to add a field-level FK
+	// to its concrete host table rather than re-deriving the table from a Go
+	// struct name — which breaks for FK names shared across the many tables that
+	// embed an inline-relation mixin (issue #197).
+	ConstraintsAddedWithTables []ConstraintAdditionInfo `json:"constraints_added_with_tables"`
 
 	// ConstraintsRemoved contains names of constraints that exist in the current database
 	// but not in the target schema (potentially dangerous - may affect data integrity)

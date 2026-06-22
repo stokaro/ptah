@@ -925,6 +925,7 @@ func Constraints(generated *goschema.Database, database *types.DBSchema, diff *d
 	for constraintKey, genConstraint := range genConstraints {
 		if _, exists := dbConstraints[constraintKey]; !exists {
 			diff.ConstraintsAdded = append(diff.ConstraintsAdded, genConstraint.Name)
+			diff.ConstraintsAddedWithTables = appendConstraintAddition(diff.ConstraintsAddedWithTables, genConstraint)
 		}
 	}
 
@@ -945,6 +946,7 @@ func Constraints(generated *goschema.Database, database *types.DBSchema, diff *d
 				diff.ConstraintsRemoved = append(diff.ConstraintsRemoved, dbConstraint.Name)
 				diff.ConstraintsRemovedWithTables = appendConstraintRemoval(diff.ConstraintsRemovedWithTables, dbConstraint)
 				diff.ConstraintsAdded = append(diff.ConstraintsAdded, genConstraint.Name)
+				diff.ConstraintsAddedWithTables = appendConstraintAddition(diff.ConstraintsAddedWithTables, genConstraint)
 			}
 		}
 	}
@@ -960,6 +962,29 @@ func appendConstraintRemoval(infos []difftypes.ConstraintRemovalInfo, dbConstrai
 		Name:      dbConstraint.Name,
 		TableName: dbConstraint.TableName,
 		Type:      dbConstraint.Type,
+	})
+}
+
+// appendConstraintAddition records the table-qualified definition of a
+// constraint that is being added (or modified, which is expressed as remove +
+// add). The bare ConstraintsAdded name list cannot disambiguate a field-level
+// FK whose name repeats across several tables — the canonical case being an
+// embedded inline-relation mixin (e.g. fk_entity_tenant on every table that
+// embeds a tenant-aware base struct, issue #197). Planners read this parallel
+// slice to emit one correctly-targeted ALTER TABLE per real host table instead
+// of re-deriving the table from a field's Go struct name (which, for a mixin,
+// is not a table at all). For a unique-named constraint this carries exactly
+// one entry and matches the legacy field-scan behavior.
+func appendConstraintAddition(infos []difftypes.ConstraintAdditionInfo, genConstraint goschema.Constraint) []difftypes.ConstraintAdditionInfo {
+	return append(infos, difftypes.ConstraintAdditionInfo{
+		Name:          genConstraint.Name,
+		TableName:     genConstraint.Table,
+		Type:          genConstraint.Type,
+		Columns:       append([]string(nil), genConstraint.Columns...),
+		ForeignTable:  genConstraint.ForeignTable,
+		ForeignColumn: genConstraint.ForeignColumn,
+		OnDelete:      genConstraint.OnDelete,
+		OnUpdate:      genConstraint.OnUpdate,
 	})
 }
 
@@ -1315,11 +1340,6 @@ func synthesizeFieldLevelForeignKeyConstraints(generated *goschema.Database, dat
 		return nil
 	}
 
-	structToTable := make(map[string]string, len(generated.Tables))
-	for _, t := range generated.Tables {
-		structToTable[t.StructName] = t.Name
-	}
-
 	dbColumns := make(map[string]struct{}, 16)
 	for _, t := range database.Tables {
 		for _, c := range t.Columns {
@@ -1327,14 +1347,33 @@ func synthesizeFieldLevelForeignKeyConstraints(generated *goschema.Database, dat
 		}
 	}
 
+	// Iterate the fields that actually materialize on each concrete table,
+	// not the raw parse result. A `foreign=` annotation declared on an
+	// embedded inline-relation mixin (e.g. a TenantGroupAwareEntityID base
+	// struct carrying tenant_id/group_id/created_by_user_id FKs) lives on the
+	// mixin's StructName, which is NOT a table. Synthesizing against
+	// f.StructName therefore produced a constraint targeting the Go struct
+	// name (ALTER TABLE TenantGroupAwareEntityID ...) once per embedding host,
+	// all collapsed onto the same bogus name (issue #197). Resolving via the
+	// same CREATE-path embedded expansion that TableColumns uses gives one
+	// field per real host table with the host's StructName, so each embedding
+	// table gets its own correctly-targeted FK.
+	//
+	// dedupe guards against a host that both declares a field directly and
+	// inherits one of the same (table, constraint name) from a mixin.
+	dedupe := make(map[string]struct{})
 	var synthesized []goschema.Constraint
-	for _, f := range generated.Fields {
+	for _, f := range resolveTableFields(generated) {
 		if f.Foreign == "" {
 			continue
 		}
-		tableName := structToTable[f.StructName]
+		// resolveTableFields only returns fields that belong to a real table,
+		// tagged with that table's name. An empty tableName would mean the
+		// field is not part of any table, so skip it rather than synthesize
+		// against a struct name.
+		tableName := f.tableName
 		if tableName == "" {
-			tableName = f.StructName
+			continue
 		}
 		if _, exists := dbColumns[tableName+"."+f.Name]; !exists {
 			continue
@@ -1352,6 +1391,11 @@ func synthesizeFieldLevelForeignKeyConstraints(generated *goschema.Database, dat
 		if fkRef == nil {
 			continue
 		}
+		dedupeKey := tableName + "." + name
+		if _, seen := dedupe[dedupeKey]; seen {
+			continue
+		}
+		dedupe[dedupeKey] = struct{}{}
 		synthesized = append(synthesized, goschema.Constraint{
 			StructName:    f.StructName,
 			Name:          name,
@@ -1365,6 +1409,48 @@ func synthesizeFieldLevelForeignKeyConstraints(generated *goschema.Database, dat
 		})
 	}
 	return synthesized
+}
+
+// resolvedField is a goschema.Field paired with the concrete database table it
+// materializes on. Fields declared directly on a table struct carry that
+// table's name; fields contributed by an embedded inline / inline-relation
+// mixin are expanded once per embedding host and carry the host table's name.
+type resolvedField struct {
+	goschema.Field
+	tableName string
+}
+
+// resolveTableFields expands every table's field set the same way the CREATE
+// and column-diff paths do (processEmbeddedFieldsForStruct), tagging each
+// resulting field with its concrete host table name. This is the single source
+// of truth for "which fields end up as columns on which real table", so any
+// field-level synthesis (FK drift, and any future field-level constraint
+// synthesis) targets host tables rather than mixin struct names (issue #197).
+//
+// Only fields whose owning struct is a declared table are returned: a
+// `foreign=` annotation on a mixin that is never embedded, or on a struct that
+// is not a //migrator:schema:table, has no concrete table and must not be
+// synthesized.
+func resolveTableFields(generated *goschema.Database) []resolvedField {
+	if generated == nil {
+		return nil
+	}
+
+	var resolved []resolvedField
+	for _, table := range generated.Tables {
+		// Direct fields declared on the table struct itself.
+		for _, f := range generated.Fields {
+			if f.StructName == table.StructName {
+				resolved = append(resolved, resolvedField{Field: f, tableName: table.Name})
+			}
+		}
+		// Fields contributed by embedded mixins (inline + inline-relation),
+		// each already rewritten to the host struct name by the expansion.
+		for _, f := range processEmbeddedFieldsForStruct(generated.EmbeddedFields, generated.Fields, table.StructName) {
+			resolved = append(resolved, resolvedField{Field: f, tableName: table.Name})
+		}
+	}
+	return resolved
 }
 
 // getConstraintColumn extracts the column name from a constraint
