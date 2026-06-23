@@ -1063,6 +1063,17 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 		removalByTableName[info.TableName+"."+info.Name] = info
 	}
 
+	// Index removals by bare name as well, so the legacy ConstraintsAdded loop
+	// below can scope a modified non-FK constraint's DROP to its concrete host
+	// table(s). The comparator records every removal in
+	// ConstraintsRemovedWithTables in lockstep with the bare ConstraintsRemoved
+	// list, so a modified constraint's host is normally known here even though
+	// the bare loop iterates names alone.
+	removalsByName := make(map[string][]types.ConstraintRemovalInfo, len(diff.ConstraintsRemovedWithTables))
+	for _, info := range diff.ConstraintsRemovedWithTables {
+		removalsByName[info.Name] = append(removalsByName[info.Name], info)
+	}
+
 	handled := make(map[string]struct{})
 	droppedForModify := make(map[string]struct{})
 	for _, add := range diff.ConstraintsAddedWithTables {
@@ -1085,9 +1096,12 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 			continue
 		}
 
-		// For a modification, emit the DROP first so it precedes the re-add.
+		// For a modification, emit the DROP first so it precedes the re-add,
+		// scoped to the constraint's concrete host table when the comparator
+		// recorded it (issue #199) — never a name-only resolution that could drop
+		// a same-named constraint on the wrong table.
 		if _, modified := removedNames[constraintName]; modified {
-			result = append(result, p.dropConstraintNode(constraintName))
+			result = p.emitModifyDropForName(result, constraintName, removalsByName, droppedForModify)
 		}
 
 		// Resolve the ADD CONSTRAINT node, in precedence order:
@@ -1128,24 +1142,72 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 //     drop a same-named constraint on the WRONG table (issue #199). Emitting the
 //     direct table-qualified drop eliminates the ambiguity.
 //
-// The name-only DO block (dropConstraintNode) is retained only for the genuinely
-// unknown-host paths (removeConstraints over diff.ConstraintsRemoved and the
-// legacy ConstraintsAdded modify path), where the diff layer has discarded the
-// owning table and there is nothing to scope by.
+// The name-only DO block (dropConstraintNode) is no longer used for a modify
+// whose host the comparator recorded: the legacy ConstraintsAdded modify path
+// scopes its DROP via emitModifyDropForName too. It remains in use only by
+// removeConstraints' bare ConstraintsRemoved loop (pure removals — tracked for
+// the same table-scoping in a follow-up) and as a defensive fallback for a
+// synthetic diff that carries no ConstraintsRemovedWithTables entry.
 func (p *Planner) emitModifyDrop(
 	result []ast.Node,
 	add types.ConstraintAdditionInfo,
 	droppedForModify map[string]struct{},
 ) []ast.Node {
-	dedupKey := add.TableName + "." + add.Name
+	return p.appendScopedDrop(result, add.TableName, add.Name, droppedForModify)
+}
+
+// emitModifyDropForName appends the DROP(s) that must precede the re-ADD of a
+// modified constraint reached via the bare ConstraintsAdded name list (the
+// non-FK and field-level synthesis paths; FK modifies are handled per-host in
+// the ConstraintsAddedWithTables loop). The comparator records every removal in
+// ConstraintsRemovedWithTables in lockstep with the bare list, so the owning
+// table is normally known: each host gets a direct, table-qualified
+// ALTER TABLE <host> DROP CONSTRAINT IF EXISTS <name>, deduped per (host, name).
+// This scopes the drop to the exact host instead of the name-only
+// information_schema LIMIT 1 lookup, which — because constraint names are unique
+// per table, not per schema — could drop a same-named constraint on the wrong
+// table (issue #199). Only a diff that carries no host for the name (a synthetic
+// diff with no ConstraintsRemovedWithTables entry) falls back to the name-only
+// DO block.
+func (p *Planner) emitModifyDropForName(
+	result []ast.Node,
+	name string,
+	removalsByName map[string][]types.ConstraintRemovalInfo,
+	droppedForModify map[string]struct{},
+) []ast.Node {
+	scoped := false
+	for _, info := range removalsByName[name] {
+		if info.TableName == "" {
+			continue
+		}
+		result = p.appendScopedDrop(result, info.TableName, info.Name, droppedForModify)
+		scoped = true
+	}
+	if scoped {
+		return result
+	}
+	// No host recorded for this name — fall back to the runtime DO block.
+	if _, done := droppedForModify[name]; done {
+		return result
+	}
+	droppedForModify[name] = struct{}{}
+	return append(result, p.dropConstraintNode(name))
+}
+
+// appendScopedDrop appends a single direct, table-qualified
+// ALTER TABLE <table> DROP CONSTRAINT IF EXISTS <name>, deduped per (table, name)
+// via droppedForModify so a constraint name shared across host tables is dropped
+// once per host and never twice for the same host.
+func (p *Planner) appendScopedDrop(result []ast.Node, table, name string, droppedForModify map[string]struct{}) []ast.Node {
+	dedupKey := table + "." + name
 	if _, done := droppedForModify[dedupKey]; done {
 		return result
 	}
 	droppedForModify[dedupKey] = struct{}{}
 	return append(result, &ast.AlterTableNode{
-		Name: add.TableName,
+		Name: table,
 		Operations: []ast.AlterOperation{&ast.DropConstraintOperation{
-			ConstraintName: add.Name,
+			ConstraintName: name,
 			IfExists:       true,
 		}},
 	})
