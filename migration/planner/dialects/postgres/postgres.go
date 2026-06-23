@@ -1063,29 +1063,6 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 		removalByTableName[info.TableName+"."+info.Name] = info
 	}
 
-	// Count the distinct host tables each FK name lands on across ALL additions
-	// (modifies and pure-adds alike). This selects the drop FORM for a modify
-	// host: when a name is shared by >1 host the name-only information_schema
-	// `LIMIT 1` DO block is unsafe — it could resolve to the wrong host (it would
-	// drop from only one host for a pure multi-host modify → the others collide
-	// on re-add with SQLSTATE 42710; and in the MIXED case a pure-add host's
-	// freshly added FK could be the one it resolves). So any shared name uses a
-	// table-qualified `ALTER TABLE <host> DROP CONSTRAINT IF EXISTS <name>` per
-	// modify host. A name on a single host keeps the unchanged name-only DO block
-	// so #189 stays byte-identical.
-	sharedNameHosts := make(map[string]map[string]struct{})
-	for _, add := range diff.ConstraintsAddedWithTables {
-		if add.Type != "FOREIGN KEY" || add.TableName == "" {
-			continue
-		}
-		hosts := sharedNameHosts[add.Name]
-		if hosts == nil {
-			hosts = make(map[string]struct{})
-			sharedNameHosts[add.Name] = hosts
-		}
-		hosts[add.TableName] = struct{}{}
-	}
-
 	handled := make(map[string]struct{})
 	droppedForModify := make(map[string]struct{})
 	for _, add := range diff.ConstraintsAddedWithTables {
@@ -1096,7 +1073,7 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 		// modified (its (table, name) is in the removal set). A pure-add host
 		// gets no phantom drop.
 		if _, modified := removalByTableName[add.TableName+"."+add.Name]; modified {
-			result = p.emitModifyDrop(result, add, sharedNameHosts, droppedForModify)
+			result = p.emitModifyDrop(result, add, droppedForModify)
 		}
 		result = append(result, p.foreignKeyAdditionNode(add))
 		handled[add.Name] = struct{}{}
@@ -1133,38 +1110,45 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 
 // emitModifyDrop appends the DROP that must precede the re-ADD of a modified
 // field-level FK (a constraint whose (table, name) is in both the additions and
-// the removals). When the FK name lands on >=2 host tables across the additions
-// (sharedNameHosts) it emits a table-qualified ALTER TABLE <host> DROP
-// CONSTRAINT IF EXISTS <name>, deduped per (host, name), so each modify host's
-// old constraint is dropped before its ADD without the name-only
-// information_schema LIMIT 1 DO block resolving the wrong host (issue #197
-// MODIFY path). A name on a single host keeps the unchanged name-only DO block
-// so #189 stays byte-identical.
+// the removals). It always emits a table-qualified
+// ALTER TABLE <host> DROP CONSTRAINT IF EXISTS <name>, deduped per (host, name),
+// because the concrete host is carried on ConstraintAdditionInfo.TableName and
+// is therefore always known at emit time.
+//
+// This is unconditional regardless of how many hosts share the FK name:
+//   - When the name lands on >=2 host tables (an inline-relation mixin embedded
+//     into many tables, issue #197), each modify host's old constraint must be
+//     dropped before its own ADD; a name-only resolution would only reach one.
+//   - When the name lands on a single host (the #189 on_delete/on_update action
+//     drift case), the table is equally known, so scoping the drop directly is
+//     both simpler and safe. The earlier single-host branch fell back to the
+//     name-only information_schema DO block (p.dropConstraintNode), which resolves
+//     the owning table with LIMIT 1 and no table_name filter. PostgreSQL
+//     constraint names are unique per table, not per schema, so that lookup could
+//     drop a same-named constraint on the WRONG table (issue #199). Emitting the
+//     direct table-qualified drop eliminates the ambiguity.
+//
+// The name-only DO block (dropConstraintNode) is retained only for the genuinely
+// unknown-host paths (removeConstraints over diff.ConstraintsRemoved and the
+// legacy ConstraintsAdded modify path), where the diff layer has discarded the
+// owning table and there is nothing to scope by.
 func (p *Planner) emitModifyDrop(
 	result []ast.Node,
 	add types.ConstraintAdditionInfo,
-	sharedNameHosts map[string]map[string]struct{},
 	droppedForModify map[string]struct{},
 ) []ast.Node {
-	if len(sharedNameHosts[add.Name]) > 1 {
-		dedupKey := add.TableName + "." + add.Name
-		if _, done := droppedForModify[dedupKey]; done {
-			return result
-		}
-		droppedForModify[dedupKey] = struct{}{}
-		return append(result, &ast.AlterTableNode{
-			Name: add.TableName,
-			Operations: []ast.AlterOperation{&ast.DropConstraintOperation{
-				ConstraintName: add.Name,
-				IfExists:       true,
-			}},
-		})
-	}
-	if _, done := droppedForModify[add.Name]; done {
+	dedupKey := add.TableName + "." + add.Name
+	if _, done := droppedForModify[dedupKey]; done {
 		return result
 	}
-	droppedForModify[add.Name] = struct{}{}
-	return append(result, p.dropConstraintNode(add.Name))
+	droppedForModify[dedupKey] = struct{}{}
+	return append(result, &ast.AlterTableNode{
+		Name: add.TableName,
+		Operations: []ast.AlterOperation{&ast.DropConstraintOperation{
+			ConstraintName: add.Name,
+			IfExists:       true,
+		}},
+	})
 }
 
 // foreignKeyAdditionNode builds the ALTER TABLE ADD CONSTRAINT node for a
