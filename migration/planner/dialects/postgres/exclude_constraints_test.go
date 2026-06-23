@@ -386,27 +386,139 @@ func TestPlanner_GenerateMigrationAST_ModifiedNonFKConstraint_ScopesDropToHostTa
 // addNewConstraints and skipped — leaving the stale constraint on B. The fix
 // keys the skip on (table, name), so B is dropped table-qualified, A is dropped
 // and re-added, and no name-only DO block is used.
+//
+// The bug only reproduces for the FOREIGN KEY shape: an FK modify on A is dropped
+// by the ConstraintsAddedWithTables loop (which never touches B), so a buggy
+// bare-name skip in removeConstraints drops B zero times. The CHECK shape is a
+// weaker guard — the old add-side modify-drop already dropped B as a phantom
+// pre-drop, so the bug is masked there except for statement ordering. We cover
+// both: the FK subtest is the load-bearing #206 regression guard.
 func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePurelyRemovedOnAnother(t *testing.T) {
+	t.Run("foreign key (the load-bearing #206 guard)", func(t *testing.T) {
+		c := qt.New(t)
+
+		// `shared_fk` exists on both `articles` and `pages`. It drifted on
+		// `articles` (a modify: present in both additions and removals) and was
+		// removed outright on `pages` (removal only). The FK modify on articles is
+		// owned by the ConstraintsAddedWithTables loop, so removeConstraints alone
+		// is responsible for dropping pages — which the bare-name skip got wrong.
+		diff := &types.SchemaDiff{
+			ConstraintsAdded:   []string{"shared_fk"},
+			ConstraintsRemoved: []string{"shared_fk"},
+			ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+				{Name: "shared_fk", TableName: "articles", Type: "FOREIGN KEY", Columns: []string{"author_id"}, ForeignTable: "users", ForeignColumn: "id", OnDelete: "CASCADE"},
+			},
+			ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+				{Name: "shared_fk", TableName: "articles", Type: "FOREIGN KEY"},
+				{Name: "shared_fk", TableName: "pages", Type: "FOREIGN KEY"},
+			},
+		}
+
+		nodes := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
+		sql, err := renderer.RenderSQL("postgres", nodes...)
+		c.Assert(err, qt.IsNil)
+
+		// The pure removal on B (pages) is dropped table-qualified and NOT skipped.
+		// This is the assertion that fails against the pre-fix bare-name skip.
+		c.Assert(strings.Contains(sql, "ALTER TABLE pages DROP CONSTRAINT IF EXISTS shared_fk;"), qt.IsTrue,
+			qt.Commentf("purely-removed host must be dropped table-qualified, not skipped; got:\n%s", sql))
+		// The modify on A (articles) is dropped table-qualified and re-added once.
+		c.Assert(strings.Contains(sql, "ALTER TABLE articles DROP CONSTRAINT IF EXISTS shared_fk;"), qt.IsTrue,
+			qt.Commentf("modified host must be dropped from its known table; got:\n%s", sql))
+		c.Assert(strings.Contains(sql, "ALTER TABLE articles ADD CONSTRAINT shared_fk FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE CASCADE;"), qt.IsTrue,
+			qt.Commentf("modified FK must be re-added on its host; got:\n%s", sql))
+		c.Assert(strings.Count(sql, "ADD CONSTRAINT shared_fk"), qt.Equals, 1,
+			qt.Commentf("only the modified host may be re-added; got:\n%s", sql))
+		c.Assert(strings.Contains(sql, "information_schema.table_constraints"), qt.IsFalse,
+			qt.Commentf("must not use the name-only DO block when hosts are known; got:\n%s", sql))
+		c.Assert(strings.Count(sql, "ALTER TABLE articles DROP CONSTRAINT IF EXISTS shared_fk;"), qt.Equals, 1)
+		c.Assert(strings.Count(sql, "ALTER TABLE pages DROP CONSTRAINT IF EXISTS shared_fk;"), qt.Equals, 1)
+
+		dropIdx := strings.Index(sql, "ALTER TABLE articles DROP CONSTRAINT IF EXISTS shared_fk")
+		addIdx := strings.Index(sql, "ALTER TABLE articles ADD CONSTRAINT shared_fk")
+		c.Assert(dropIdx >= 0 && addIdx >= 0 && dropIdx < addIdx, qt.IsTrue,
+			qt.Commentf("the modified host's drop must precede its re-add; drop=%d add=%d; got:\n%s", dropIdx, addIdx, sql))
+	})
+
+	t.Run("check constraint", func(t *testing.T) {
+		c := qt.New(t)
+
+		// Same mixed shape with a CHECK. The non-FK modify routes through the bare
+		// ConstraintsAdded loop / emitModifyDropForName, which now drops ONLY the
+		// re-added host (articles); pages is left to removeConstraints. The
+		// discriminating assertion is the ORDER: the fix emits the pages-drop AFTER
+		// the articles re-add (removeConstraints runs later), whereas the pre-fix
+		// add-side phantom pre-drop emitted pages BEFORE the re-add.
+		diff := &types.SchemaDiff{
+			ConstraintsAdded:   []string{"shared_check"},
+			ConstraintsRemoved: []string{"shared_check"},
+			ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+				{Name: "shared_check", TableName: "articles", Type: "CHECK"},
+			},
+			ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+				{Name: "shared_check", TableName: "articles", Type: "CHECK"},
+				{Name: "shared_check", TableName: "pages", Type: "CHECK"},
+			},
+		}
+		generated := &goschema.Database{
+			Constraints: []goschema.Constraint{
+				{StructName: "Article", Name: "shared_check", Type: "CHECK", Table: "articles", CheckExpression: "status IN ('draft', 'published')"},
+			},
+		}
+
+		nodes := postgres.New().GenerateMigrationAST(diff, generated)
+		sql, err := renderer.RenderSQL("postgres", nodes...)
+		c.Assert(err, qt.IsNil)
+
+		c.Assert(strings.Contains(sql, "ALTER TABLE pages DROP CONSTRAINT IF EXISTS shared_check;"), qt.IsTrue,
+			qt.Commentf("purely-removed host must be dropped table-qualified; got:\n%s", sql))
+		c.Assert(strings.Contains(sql, "ALTER TABLE articles DROP CONSTRAINT IF EXISTS shared_check;"), qt.IsTrue,
+			qt.Commentf("modified host must be dropped from its known table; got:\n%s", sql))
+		c.Assert(strings.Contains(sql, "ALTER TABLE articles ADD CONSTRAINT shared_check CHECK (status IN ('draft', 'published'));"), qt.IsTrue,
+			qt.Commentf("modified constraint must be re-added on its host; got:\n%s", sql))
+		c.Assert(strings.Count(sql, "ADD CONSTRAINT shared_check"), qt.Equals, 1,
+			qt.Commentf("only the modified host may be re-added; got:\n%s", sql))
+		c.Assert(strings.Contains(sql, "information_schema.table_constraints"), qt.IsFalse,
+			qt.Commentf("must not use the name-only DO block when hosts are known; got:\n%s", sql))
+		c.Assert(strings.Count(sql, "ALTER TABLE pages DROP CONSTRAINT IF EXISTS shared_check;"), qt.Equals, 1)
+
+		articlesDropIdx := strings.Index(sql, "ALTER TABLE articles DROP CONSTRAINT IF EXISTS shared_check")
+		articlesAddIdx := strings.Index(sql, "ALTER TABLE articles ADD CONSTRAINT shared_check")
+		pagesDropIdx := strings.Index(sql, "ALTER TABLE pages DROP CONSTRAINT IF EXISTS shared_check")
+		c.Assert(articlesDropIdx >= 0 && articlesAddIdx >= 0 && pagesDropIdx >= 0, qt.IsTrue)
+		c.Assert(articlesDropIdx < articlesAddIdx, qt.IsTrue,
+			qt.Commentf("modified host drop must precede its re-add; got:\n%s", sql))
+		// The pure-removal host's drop is owned by removeConstraints and lands after
+		// the add-side re-add — the pre-fix add-side phantom pre-drop placed it before.
+		c.Assert(pagesDropIdx > articlesAddIdx, qt.IsTrue,
+			qt.Commentf("pure-removal drop must come from removeConstraints (after the re-add), not the add-side; got:\n%s", sql))
+	})
+}
+
+// TestPlanner_GenerateMigrationAST_ModifyDrop_ScopesToHostWhenAddedHostsAbsent
+// guards the reverse/down direction. reverseConstraintAdditions only restores
+// FOREIGN KEY additions (and nothing when the schema context is absent), so a
+// non-FK modify in a down migration carries ConstraintsRemovedWithTables but an
+// EMPTY ConstraintsAddedWithTables. emitModifyDropForName must still scope the
+// pre-drop to the recorded removal host — NOT fall back to the name-only
+// information_schema DO block, which would regress the table-scoped drop #205
+// already emitted and contradict #206's own acceptance criterion.
+func TestPlanner_GenerateMigrationAST_ModifyDrop_ScopesToHostWhenAddedHostsAbsent(t *testing.T) {
 	c := qt.New(t)
 
-	// Both `articles` and `pages` carry a CHECK constraint literally named
-	// `shared_check`. On `articles` it drifted (new expression) → a modify:
-	// articles appears in both the additions and the removals. On `pages` it was
-	// removed outright → pages appears only in the removals.
+	// A non-FK modify shaped like a reverse/down diff: the removal host is known
+	// (ConstraintsRemovedWithTables) but ConstraintsAddedWithTables is empty.
 	diff := &types.SchemaDiff{
-		ConstraintsAdded:   []string{"shared_check"},
-		ConstraintsRemoved: []string{"shared_check"},
-		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
-			{Name: "shared_check", TableName: "articles", Type: "CHECK"},
-		},
+		ConstraintsAdded:           []string{"chk_down"},
+		ConstraintsRemoved:         []string{"chk_down"},
+		ConstraintsAddedWithTables: nil,
 		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
-			{Name: "shared_check", TableName: "articles", Type: "CHECK"},
-			{Name: "shared_check", TableName: "pages", Type: "CHECK"},
+			{Name: "chk_down", TableName: "things", Type: "CHECK"},
 		},
 	}
 	generated := &goschema.Database{
 		Constraints: []goschema.Constraint{
-			{StructName: "Article", Name: "shared_check", Type: "CHECK", Table: "articles", CheckExpression: "status IN ('draft', 'published')"},
+			{StructName: "Thing", Name: "chk_down", Type: "CHECK", Table: "things", CheckExpression: "qty >= 0"},
 		},
 	}
 
@@ -414,39 +526,17 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 
-	// The pure removal on B (pages) is dropped table-qualified and is NOT skipped.
-	c.Assert(strings.Contains(sql, "ALTER TABLE pages DROP CONSTRAINT IF EXISTS shared_check;"), qt.IsTrue,
-		qt.Commentf("purely-removed host must be dropped table-qualified, not skipped; got:\n%s", sql))
-	// The modify on A (articles) is dropped table-qualified and re-added.
-	c.Assert(strings.Contains(sql, "ALTER TABLE articles DROP CONSTRAINT IF EXISTS shared_check;"), qt.IsTrue,
-		qt.Commentf("modified host must be dropped from its known table; got:\n%s", sql))
-	c.Assert(strings.Contains(sql, "ALTER TABLE articles ADD CONSTRAINT shared_check CHECK (status IN ('draft', 'published'));"), qt.IsTrue,
-		qt.Commentf("modified constraint must be re-added on its host; got:\n%s", sql))
-
-	// Only A is re-added — B is not (it was purely removed).
-	c.Assert(strings.Count(sql, "ADD CONSTRAINT shared_check"), qt.Equals, 1,
-		qt.Commentf("only the modified host may be re-added; got:\n%s", sql))
-
-	// No name-only DO block: every removal carried a host.
+	// Table-scoped drop, not the name-only DO block.
+	c.Assert(strings.Contains(sql, "ALTER TABLE things DROP CONSTRAINT IF EXISTS chk_down;"), qt.IsTrue,
+		qt.Commentf("modify drop must be scoped to the known removal host even with no addedHosts; got:\n%s", sql))
 	c.Assert(strings.Contains(sql, "information_schema.table_constraints"), qt.IsFalse,
-		qt.Commentf("must not use the name-only DO block when hosts are known; got:\n%s", sql))
-
-	// Each host is dropped exactly once (deduped per (table, name)).
-	c.Assert(strings.Count(sql, "ALTER TABLE articles DROP CONSTRAINT IF EXISTS shared_check;"), qt.Equals, 1)
-	c.Assert(strings.Count(sql, "ALTER TABLE pages DROP CONSTRAINT IF EXISTS shared_check;"), qt.Equals, 1)
-
-	// The modified host's own DROP must precede its re-ADD (DROP-then-ADD on A).
-	// The pure-removal host (B = pages) is dropped by removeConstraints, which
-	// runs after addNewConstraints in the pipeline, so its drop legitimately lands
-	// after A's re-add — B is a different table, so there is no ordering
-	// dependency between A's re-add and B's drop. We only require that B is in
-	// fact dropped (asserted above).
-	articlesDropIdx := strings.Index(sql, "ALTER TABLE articles DROP CONSTRAINT IF EXISTS shared_check")
-	addIdx := strings.Index(sql, "ALTER TABLE articles ADD CONSTRAINT shared_check")
-	c.Assert(articlesDropIdx >= 0 && addIdx >= 0, qt.IsTrue)
-	c.Assert(articlesDropIdx < addIdx, qt.IsTrue,
-		qt.Commentf("the modified host's drop must precede its re-add; articles_drop=%d add=%d; got:\n%s",
-			articlesDropIdx, addIdx, sql))
+		qt.Commentf("must not regress to the name-only DO block when the removal host is known; got:\n%s", sql))
+	c.Assert(strings.Contains(sql, "ALTER TABLE things ADD CONSTRAINT chk_down CHECK (qty >= 0);"), qt.IsTrue,
+		qt.Commentf("modified constraint must be re-added; got:\n%s", sql))
+	dropIdx := strings.Index(sql, "ALTER TABLE things DROP CONSTRAINT IF EXISTS chk_down")
+	addIdx := strings.Index(sql, "ALTER TABLE things ADD CONSTRAINT chk_down")
+	c.Assert(dropIdx >= 0 && addIdx >= 0 && dropIdx < addIdx, qt.IsTrue,
+		qt.Commentf("DROP must precede the re-ADD; drop=%d add=%d; got:\n%s", dropIdx, addIdx, sql))
 }
 
 func TestPlanner_GenerateMigrationAST_ConstraintsRemoved(t *testing.T) {

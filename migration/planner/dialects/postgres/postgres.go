@@ -1192,9 +1192,14 @@ func (p *Planner) emitModifyDrop(
 // it here too would emit the drop twice. Restricting to addedHosts leaves B to
 // removeConstraints. A removal host absent from addedHosts is therefore skipped.
 //
-// Only a synthetic diff that carries no host for the name (no
-// ConstraintsAddedWithTables entry — the real comparator always fills it in
-// lockstep) falls back to the name-only DO block.
+// When addedHosts is empty the re-added hosts are unknown — e.g. a down/reverse
+// diff fills ConstraintsRemovedWithTables but not ConstraintsAddedWithTables
+// (reverseConstraintAdditions restores only FOREIGN KEYs, and nothing at all
+// when the schema context is absent). In that case the drop is still scoped to
+// every recorded removal host (the pre-#206 behavior), NOT the name-only DO
+// block — otherwise the reverse direction would regress a known-host drop back
+// to the information_schema LIMIT 1 lookup. Only a name with no recorded removal
+// host at all falls back to the DO block.
 func (p *Planner) emitModifyDropForName(
 	result []ast.Node,
 	name string,
@@ -1203,16 +1208,32 @@ func (p *Planner) emitModifyDropForName(
 	droppedForModify map[string]struct{},
 ) []ast.Node {
 	if len(addedHosts) > 0 {
+		// Re-added hosts are known: drop ONLY those. A removal host that is not
+		// being re-added is a pure removal owned by removeConstraints, so dropping
+		// it here too would emit the drop twice (issue #206).
 		for _, info := range removalsByName[name] {
 			if info.TableName == "" {
 				continue
 			}
 			if _, reAdded := addedHosts[info.TableName]; !reAdded {
-				// Pure-removal host for this name; removeConstraints owns its drop.
 				continue
 			}
 			result = p.appendScopedDrop(result, info.TableName, info.Name, droppedForModify)
 		}
+		return result
+	}
+	// addedHosts unknown: scope by every recorded removal host before resorting to
+	// the name-only DO block, so the reverse/down direction keeps the table-scoped
+	// drop it had before issue #206.
+	scoped := false
+	for _, info := range removalsByName[name] {
+		if info.TableName == "" {
+			continue
+		}
+		result = p.appendScopedDrop(result, info.TableName, info.Name, droppedForModify)
+		scoped = true
+	}
+	if scoped {
 		return result
 	}
 	// No host recorded for this name — fall back to the runtime DO block.
