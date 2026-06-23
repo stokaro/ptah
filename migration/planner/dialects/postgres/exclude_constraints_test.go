@@ -186,6 +186,198 @@ func TestPlanner_GenerateMigrationAST_ConstraintsAdded(t *testing.T) {
 	}
 }
 
+// TestPlanner_GenerateMigrationAST_ModifiedFK_ScopesDropToHostTable guards the
+// issue #199 fix: a MODIFIED field-level FK (dropped + re-added) must have its
+// DROP scoped to the concrete host table that the comparator recorded, never the
+// name-only information_schema DO block. PostgreSQL constraint names are unique
+// per table, so when the same name exists on two tables and only one is modified,
+// the name-only `... WHERE constraint_name = X ... LIMIT 1` lookup could resolve
+// and drop the constraint on the WRONG table. The planner already knows the host
+// (ConstraintAdditionInfo.TableName), so it emits a direct table-qualified drop.
+func TestPlanner_GenerateMigrationAST_ModifiedFK_ScopesDropToHostTable(t *testing.T) {
+	t.Run("same constraint name on two tables, only one modified, drops only the intended host", func(t *testing.T) {
+		c := qt.New(t)
+
+		// Both `orders` and `invoices` carry an FK literally named `fk_customer`
+		// (e.g. via an embedded inline-relation mixin). Only the one on `orders`
+		// drifted (its on_delete changed), so the comparator reports a modify for
+		// orders alone: orders appears in BOTH the additions and removals, while
+		// invoices appears nowhere.
+		diff := &types.SchemaDiff{
+			ConstraintsAdded:   []string{"fk_customer"},
+			ConstraintsRemoved: []string{"fk_customer"},
+			ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+				{
+					Name:          "fk_customer",
+					TableName:     "orders",
+					Type:          "FOREIGN KEY",
+					Columns:       []string{"customer_id"},
+					ForeignTable:  "customers",
+					ForeignColumn: "id",
+					OnDelete:      "CASCADE",
+				},
+			},
+			ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+				{Name: "fk_customer", TableName: "orders", Type: "FOREIGN KEY"},
+			},
+		}
+
+		nodes := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
+		sql, err := renderer.RenderSQL("postgres", nodes...)
+		c.Assert(err, qt.IsNil)
+
+		// The DROP is scoped to the intended host with a direct ALTER TABLE.
+		c.Assert(strings.Contains(sql, "ALTER TABLE orders DROP CONSTRAINT IF EXISTS fk_customer;"), qt.IsTrue,
+			qt.Commentf("modified FK must be dropped from its known host table; got:\n%s", sql))
+
+		// The unsafe name-only DO block resolution must NOT be used for a
+		// known-host modify — that is what could hit the wrong table.
+		c.Assert(strings.Contains(sql, "information_schema.table_constraints"), qt.IsFalse,
+			qt.Commentf("known-host modify must not use the name-only DO block; got:\n%s", sql))
+
+		// The unrelated host (invoices) must be left completely alone: no drop,
+		// no add.
+		c.Assert(strings.Contains(sql, "invoices"), qt.IsFalse,
+			qt.Commentf("the unmodified host with the same constraint name must not be touched; got:\n%s", sql))
+
+		// The re-ADD targets the same host, and the DROP precedes it.
+		c.Assert(strings.Contains(sql, "ALTER TABLE orders ADD CONSTRAINT fk_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE;"), qt.IsTrue,
+			qt.Commentf("modified FK must be re-added on its host; got:\n%s", sql))
+		dropIdx := strings.Index(sql, "DROP CONSTRAINT IF EXISTS fk_customer")
+		addIdx := strings.Index(sql, "ADD CONSTRAINT fk_customer")
+		c.Assert(dropIdx >= 0 && addIdx >= 0 && dropIdx < addIdx, qt.IsTrue,
+			qt.Commentf("DROP must precede the re-ADD; drop=%d add=%d sql:\n%s", dropIdx, addIdx, sql))
+	})
+
+	t.Run("both hosts modified each get their own table-qualified drop and add", func(t *testing.T) {
+		c := qt.New(t)
+
+		// Both hosts drifted: each must be dropped from its own table and
+		// re-added with its own (distinct) action. Neither may rely on a
+		// name-only resolution that can only reach one table.
+		diff := &types.SchemaDiff{
+			ConstraintsAdded:   []string{"fk_customer"},
+			ConstraintsRemoved: []string{"fk_customer"},
+			ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+				{
+					Name: "fk_customer", TableName: "orders", Type: "FOREIGN KEY",
+					Columns: []string{"customer_id"}, ForeignTable: "customers", ForeignColumn: "id", OnDelete: "CASCADE",
+				},
+				{
+					Name: "fk_customer", TableName: "invoices", Type: "FOREIGN KEY",
+					Columns: []string{"customer_id"}, ForeignTable: "customers", ForeignColumn: "id", OnDelete: "SET NULL",
+				},
+			},
+			ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+				{Name: "fk_customer", TableName: "orders", Type: "FOREIGN KEY"},
+				{Name: "fk_customer", TableName: "invoices", Type: "FOREIGN KEY"},
+			},
+		}
+
+		nodes := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
+		sql, err := renderer.RenderSQL("postgres", nodes...)
+		c.Assert(err, qt.IsNil)
+
+		c.Assert(strings.Count(sql, "ALTER TABLE orders DROP CONSTRAINT IF EXISTS fk_customer;"), qt.Equals, 1,
+			qt.Commentf("orders host dropped exactly once; got:\n%s", sql))
+		c.Assert(strings.Count(sql, "ALTER TABLE invoices DROP CONSTRAINT IF EXISTS fk_customer;"), qt.Equals, 1,
+			qt.Commentf("invoices host dropped exactly once; got:\n%s", sql))
+		c.Assert(strings.Contains(sql, "information_schema.table_constraints"), qt.IsFalse,
+			qt.Commentf("multi-host modify must not use the name-only DO block; got:\n%s", sql))
+		c.Assert(strings.Contains(sql, "ON DELETE CASCADE"), qt.IsTrue)
+		c.Assert(strings.Contains(sql, "ON DELETE SET NULL"), qt.IsTrue)
+	})
+}
+
+// TestPlanner_GenerateMigrationAST_ModifiedNonFKConstraint_ScopesDropToHostTable
+// extends the issue #199 fix to the NON-FK modify path. A modified table-level
+// UNIQUE / CHECK constraint is reached via the bare ConstraintsAdded loop (FK
+// modifies go through the ConstraintsAddedWithTables loop instead), which used
+// to emit the name-only information_schema DO block for the DROP. Because the
+// comparator records the host in ConstraintsRemovedWithTables in lockstep, the
+// planner now scopes that DROP to the concrete host table — so a constraint name
+// reused across two tables can no longer be dropped from the wrong one.
+func TestPlanner_GenerateMigrationAST_ModifiedNonFKConstraint_ScopesDropToHostTable(t *testing.T) {
+	t.Run("UNIQUE constraint name reused on two tables, only one modified, drops only that host", func(t *testing.T) {
+		c := qt.New(t)
+
+		// Both `articles` and `pages` carry a UNIQUE constraint literally named
+		// `uq_slug`. Only the one on `articles` drifted (a column was added), so
+		// the comparator reports a modify for articles alone.
+		diff := &types.SchemaDiff{
+			ConstraintsAdded:   []string{"uq_slug"},
+			ConstraintsRemoved: []string{"uq_slug"},
+			ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+				{Name: "uq_slug", TableName: "articles", Type: "UNIQUE", Columns: []string{"slug", "locale"}},
+			},
+			ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+				{Name: "uq_slug", TableName: "articles", Type: "UNIQUE"},
+			},
+		}
+		generated := &goschema.Database{
+			Constraints: []goschema.Constraint{
+				{StructName: "Article", Name: "uq_slug", Type: "UNIQUE", Table: "articles", Columns: []string{"slug", "locale"}},
+			},
+		}
+
+		nodes := postgres.New().GenerateMigrationAST(diff, generated)
+		sql, err := renderer.RenderSQL("postgres", nodes...)
+		c.Assert(err, qt.IsNil)
+
+		// The DROP is scoped to the intended host with a direct ALTER TABLE.
+		c.Assert(strings.Contains(sql, "ALTER TABLE articles DROP CONSTRAINT IF EXISTS uq_slug;"), qt.IsTrue,
+			qt.Commentf("modified non-FK constraint must be dropped from its known host table; got:\n%s", sql))
+		// The unsafe name-only DO block must NOT be used when the host is known.
+		c.Assert(strings.Contains(sql, "information_schema.table_constraints"), qt.IsFalse,
+			qt.Commentf("known-host non-FK modify must not use the name-only DO block; got:\n%s", sql))
+		// The unrelated host (pages) with the same constraint name is untouched.
+		c.Assert(strings.Contains(sql, "pages"), qt.IsFalse,
+			qt.Commentf("the unmodified host with the same constraint name must not be touched; got:\n%s", sql))
+		// The re-ADD targets the same host, and the DROP precedes it.
+		c.Assert(strings.Contains(sql, "ALTER TABLE articles ADD CONSTRAINT uq_slug UNIQUE (slug, locale);"), qt.IsTrue,
+			qt.Commentf("modified constraint must be re-added on its host; got:\n%s", sql))
+		dropIdx := strings.Index(sql, "DROP CONSTRAINT IF EXISTS uq_slug")
+		addIdx := strings.Index(sql, "ADD CONSTRAINT uq_slug")
+		c.Assert(dropIdx >= 0 && addIdx >= 0 && dropIdx < addIdx, qt.IsTrue,
+			qt.Commentf("DROP must precede the re-ADD; drop=%d add=%d sql:\n%s", dropIdx, addIdx, sql))
+	})
+
+	t.Run("synthetic diff without a recorded host falls back to the name-only DO block", func(t *testing.T) {
+		c := qt.New(t)
+
+		// Defensive fallback: a hand-built diff that names a modified constraint
+		// but carries no ConstraintsRemovedWithTables entry has genuinely no host
+		// to scope by, so the runtime information_schema DO block remains the
+		// only option. The real comparator never produces this shape (it fills
+		// the WithTables lists in lockstep), but the planner must not panic or
+		// silently drop the work.
+		diff := &types.SchemaDiff{
+			ConstraintsAdded:   []string{"legacy_check"},
+			ConstraintsRemoved: []string{"legacy_check"},
+		}
+		generated := &goschema.Database{
+			Constraints: []goschema.Constraint{
+				{StructName: "Thing", Name: "legacy_check", Type: "CHECK", Table: "things", CheckExpression: "x > 0"},
+			},
+		}
+
+		nodes := postgres.New().GenerateMigrationAST(diff, generated)
+		sql, err := renderer.RenderSQL("postgres", nodes...)
+		c.Assert(err, qt.IsNil)
+
+		c.Assert(strings.Contains(sql, "information_schema.table_constraints"), qt.IsTrue,
+			qt.Commentf("with no recorded host the planner must fall back to the DO block; got:\n%s", sql))
+		c.Assert(strings.Contains(sql, "constraint_name = 'legacy_check'"), qt.IsTrue,
+			qt.Commentf("fallback DO block must target the constraint by name; got:\n%s", sql))
+		c.Assert(strings.Contains(sql, "ALTER TABLE things ADD CONSTRAINT legacy_check CHECK (x > 0);"), qt.IsTrue,
+			qt.Commentf("modified constraint must still be re-added; got:\n%s", sql))
+		dropIdx := strings.Index(sql, "DO $ptah$")
+		addIdx := strings.Index(sql, "ADD CONSTRAINT legacy_check")
+		c.Assert(dropIdx >= 0 && addIdx >= 0 && dropIdx < addIdx, qt.IsTrue,
+			qt.Commentf("DROP must precede the re-ADD; drop=%d add=%d sql:\n%s", dropIdx, addIdx, sql))
+	})
+}
+
 func TestPlanner_GenerateMigrationAST_ConstraintsRemoved(t *testing.T) {
 	c := qt.New(t)
 

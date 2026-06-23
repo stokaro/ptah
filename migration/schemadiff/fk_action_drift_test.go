@@ -153,12 +153,19 @@ func TestCompare_FieldLevelForeignKeyActionMigrationSQL(t *testing.T) {
 	c.Assert(strings.Contains(sql, addStmt), qt.IsTrue,
 		qt.Commentf("expected migration to ADD the FK with ON DELETE SET NULL, got:\n%s", sql))
 
-	// The old constraint is dropped first (resolved at runtime via a DO block).
-	c.Assert(strings.Contains(sql, "DROP CONSTRAINT IF EXISTS"), qt.IsTrue,
-		qt.Commentf("expected migration to DROP the old FK, got:\n%s", sql))
+	// The old constraint is dropped first. The comparator records the concrete
+	// host table (exports) for this modify, so the planner emits a direct
+	// table-qualified ALTER TABLE drop rather than the name-only information_schema
+	// DO block — the latter resolves the owning table with LIMIT 1 and could drop a
+	// same-named constraint on the wrong table (issue #199).
+	const dropStmt = "ALTER TABLE exports DROP CONSTRAINT IF EXISTS fk_export_file;"
+	c.Assert(strings.Contains(sql, dropStmt), qt.IsTrue,
+		qt.Commentf("expected migration to DROP the old FK from its known host table, got:\n%s", sql))
+	c.Assert(strings.Contains(sql, "information_schema.table_constraints"), qt.IsFalse,
+		qt.Commentf("a known-host modify must not fall back to the name-only DO block, got:\n%s", sql))
 
 	// Ordering: the DROP must precede the ADD so the re-add does not collide.
-	dropIdx := strings.Index(sql, "Drop constraint fk_export_file")
+	dropIdx := strings.Index(sql, dropStmt)
 	addIdx := strings.Index(sql, addStmt)
 	c.Assert(dropIdx >= 0, qt.IsTrue)
 	c.Assert(addIdx >= 0, qt.IsTrue)
