@@ -1074,6 +1074,23 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 		removalsByName[info.Name] = append(removalsByName[info.Name], info)
 	}
 
+	// Index the hosts that are actually being re-ADDED under each name. A modified
+	// constraint's pre-drop must hit only the hosts whose constraint is being
+	// re-added — NOT every host that merely has a removal entry for the name. In
+	// the MIXED case (issue #206) a shared name is a modify on host A (re-added)
+	// and a PURE removal on host B (not re-added): B's drop is owned by
+	// removeConstraints, so the add-side modify-drop must leave B alone or it
+	// would be dropped twice.
+	addedHostsByName := make(map[string]map[string]struct{}, len(diff.ConstraintsAddedWithTables))
+	for _, add := range diff.ConstraintsAddedWithTables {
+		hosts := addedHostsByName[add.Name]
+		if hosts == nil {
+			hosts = make(map[string]struct{})
+			addedHostsByName[add.Name] = hosts
+		}
+		hosts[add.TableName] = struct{}{}
+	}
+
 	handled := make(map[string]struct{})
 	droppedForModify := make(map[string]struct{})
 	for _, add := range diff.ConstraintsAddedWithTables {
@@ -1101,7 +1118,7 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 		// recorded it (issue #199) — never a name-only resolution that could drop
 		// a same-named constraint on the wrong table.
 		if _, modified := removedNames[constraintName]; modified {
-			result = p.emitModifyDropForName(result, constraintName, removalsByName, droppedForModify)
+			result = p.emitModifyDropForName(result, constraintName, removalsByName, addedHostsByName[constraintName], droppedForModify)
 		}
 
 		// Resolve the ADD CONSTRAINT node, in precedence order:
@@ -1144,10 +1161,10 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 //
 // The name-only DO block (dropConstraintNode) is no longer used for a modify
 // whose host the comparator recorded: the legacy ConstraintsAdded modify path
-// scopes its DROP via emitModifyDropForName too. It remains in use only by
-// removeConstraints' bare ConstraintsRemoved loop (pure removals — tracked for
-// the same table-scoping in a follow-up) and as a defensive fallback for a
-// synthetic diff that carries no ConstraintsRemovedWithTables entry.
+// scopes its DROP via emitModifyDropForName too, and removeConstraints scopes
+// pure removals table-qualified as well. It remains in use only as a defensive
+// fallback for a synthetic diff that carries no ConstraintsRemovedWithTables
+// entry.
 func (p *Planner) emitModifyDrop(
 	result []ast.Node,
 	add types.ConstraintAdditionInfo,
@@ -1161,29 +1178,41 @@ func (p *Planner) emitModifyDrop(
 // non-FK and field-level synthesis paths; FK modifies are handled per-host in
 // the ConstraintsAddedWithTables loop). The comparator records every removal in
 // ConstraintsRemovedWithTables in lockstep with the bare list, so the owning
-// table is normally known: each host gets a direct, table-qualified
+// table is normally known: the modified host gets a direct, table-qualified
 // ALTER TABLE <host> DROP CONSTRAINT IF EXISTS <name>, deduped per (host, name).
 // This scopes the drop to the exact host instead of the name-only
 // information_schema LIMIT 1 lookup, which — because constraint names are unique
 // per table, not per schema — could drop a same-named constraint on the wrong
-// table (issue #199). Only a diff that carries no host for the name (a synthetic
-// diff with no ConstraintsRemovedWithTables entry) falls back to the name-only
-// DO block.
+// table (issue #199).
+//
+// The drop is restricted to addedHosts: the hosts whose constraint is actually
+// being re-added under this name (ConstraintsAddedWithTables). In the MIXED case
+// (issue #206) a shared name is a modify on host A (re-added) and a PURE removal
+// on host B (not re-added); B's drop is owned by removeConstraints, so dropping
+// it here too would emit the drop twice. Restricting to addedHosts leaves B to
+// removeConstraints. A removal host absent from addedHosts is therefore skipped.
+//
+// Only a synthetic diff that carries no host for the name (no
+// ConstraintsAddedWithTables entry — the real comparator always fills it in
+// lockstep) falls back to the name-only DO block.
 func (p *Planner) emitModifyDropForName(
 	result []ast.Node,
 	name string,
 	removalsByName map[string][]types.ConstraintRemovalInfo,
+	addedHosts map[string]struct{},
 	droppedForModify map[string]struct{},
 ) []ast.Node {
-	scoped := false
-	for _, info := range removalsByName[name] {
-		if info.TableName == "" {
-			continue
+	if len(addedHosts) > 0 {
+		for _, info := range removalsByName[name] {
+			if info.TableName == "" {
+				continue
+			}
+			if _, reAdded := addedHosts[info.TableName]; !reAdded {
+				// Pure-removal host for this name; removeConstraints owns its drop.
+				continue
+			}
+			result = p.appendScopedDrop(result, info.TableName, info.Name, droppedForModify)
 		}
-		result = p.appendScopedDrop(result, info.TableName, info.Name, droppedForModify)
-		scoped = true
-	}
-	if scoped {
 		return result
 	}
 	// No host recorded for this name — fall back to the runtime DO block.
@@ -1338,79 +1367,83 @@ func (p *Planner) fieldLevelForeignKeyConstraintNode(constraintName string, gene
 //	ALTER TABLE bookings DROP CONSTRAINT IF EXISTS no_overlapping_bookings;
 //	ALTER TABLE products DROP CONSTRAINT IF EXISTS positive_price;
 func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
-	// Drop each constraint via a DO block. Two reasons we use a DO block
-	// rather than a literal ALTER TABLE DROP CONSTRAINT:
+	// A removed constraint is dropped from its exact owning table with a direct,
+	// table-qualified ALTER TABLE <host> DROP CONSTRAINT IF EXISTS <name>. The
+	// comparator records that host in ConstraintsRemovedWithTables in lockstep
+	// with the bare ConstraintsRemoved name list, so real diff output always
+	// carries it.
 	//
-	//  1. ConstraintsRemoved is just a slice of constraint names — the table
-	//     name has been thrown away by the diff layer (the comparator
-	//     synthesizes field-level CHECKs and presents them by name alone).
-	//     The DO block resolves the table at execution time from
-	//     information_schema, which works regardless of whether the
-	//     constraint is column-scoped or table-scoped.
+	// The name-only information_schema DO block (dropConstraintNode) is used ONLY
+	// as a defensive fallback for a synthetic, hand-built diff that lists a
+	// removed constraint by name with no ConstraintsRemovedWithTables host — it
+	// resolves the owning table at execution time via information_schema LIMIT 1.
+	// That LIMIT 1 lookup is unsafe for real removals because PostgreSQL
+	// constraint names are unique per table, not per schema, so a same-named
+	// constraint could be dropped from the WRONG table (issue #199), and a name
+	// that lands on multiple host tables would be dropped from only one of them
+	// (issue #197). The table-qualified drop avoids both.
 	//
-	//  2. A DO block executes immediately. The previous implementation
-	//     defined a plpgsql function plus a sql wrapper, then dropped both
-	//     without ever invoking either — so constraint removals were a
-	//     silent no-op.
+	// A constraint that appears in BOTH the additions and the removals for the
+	// SAME (table, name) is a modification (the comparator expresses a changed
+	// constraint as remove + add of the same name). Those are emitted as
+	// DROP-then-ADD by addNewConstraints, which runs earlier in the pipeline so
+	// the drop precedes the re-add; dropping them again here would remove the
+	// freshly added constraint, so they are skipped.
 	//
-	// The block resolves `current_schema()` only: constraints in a different
-	// schema reachable via search_path are not handled — Ptah's introspection
-	// is also single-schema, so the two ends are consistent.
-	//
-	// Constraint-name safety. Postgres constraint names should be plain
-	// ASCII alnum + underscore; we reject only the chars that would actually
-	// break our specific DO-block template:
-	//   - `$` would collide with the `$ptah$` dollar-quote tag and terminate
-	//     the body early.
-	//   - newline / carriage return would terminate the leading `--` comment
-	//     line and dump whatever follows as bare SQL.
-	// Anything else (apostrophe) is handled by SQL-literal escaping.
-	// Unsafe names trigger a DO block whose only action is RAISE EXCEPTION,
-	// so the migration fails loudly with the operator's attention — better
-	// than a silent comment that would loop forever on subsequent runs.
-	// Constraints that appear in BOTH ConstraintsAdded and ConstraintsRemoved
-	// are modifications (the comparator expresses a changed constraint as
-	// remove + add of the same name). Those are emitted as DROP-then-ADD by
-	// addNewConstraints, which runs earlier in the pipeline so the drop
-	// precedes the re-add. Dropping them again here would remove the freshly
-	// added constraint, so skip them.
-	addedNames := make(map[string]struct{}, len(diff.ConstraintsAdded))
-	for _, name := range diff.ConstraintsAdded {
-		addedNames[name] = struct{}{}
+	// The skip MUST be keyed on (table, name), not the bare name. A shared
+	// constraint name can be a modify on host A (its name lands in
+	// ConstraintsAdded) and a PURE removal on host B (B has no addition). Keying
+	// the skip on the name alone would treat B's removal as a modify owned by
+	// addNewConstraints and skip it, leaving the stale constraint on B forever
+	// (issue #206). The comparator records every addition's host in
+	// ConstraintsAddedWithTables in lockstep with the bare list, so the modify
+	// owner is always known per host.
+	modifySet := make(map[string]struct{}, len(diff.ConstraintsAddedWithTables))
+	for _, add := range diff.ConstraintsAddedWithTables {
+		modifySet[add.TableName+"."+add.Name] = struct{}{}
 	}
 
 	// When the comparator supplied the owning table (ConstraintsRemovedWithTables),
 	// drop the constraint from that exact table with a direct ALTER TABLE … DROP
-	// CONSTRAINT IF EXISTS. This is required for a field-level FK whose name
-	// repeats across the many tables embedding an inline-relation mixin
-	// (issue #197): the name-only DO block below resolves a single table via
-	// information_schema LIMIT 1, so it would drop the constraint from only one
-	// of the host tables and silently leave the rest. Names handled here are
-	// recorded so the name-only fallback does not double-drop them.
-	handled := make(map[string]struct{})
+	// CONSTRAINT IF EXISTS, deduped per (table, name) via appendScopedDrop. This
+	// is required for a field-level FK whose name repeats across the many tables
+	// embedding an inline-relation mixin (issue #197): the name-only DO block
+	// below resolves a single table via information_schema LIMIT 1, so it would
+	// drop the constraint from only one of the host tables and silently leave the
+	// rest. Names that carried at least one host are recorded so the bare
+	// fallback below — which exists only for synthetic diffs — does not re-emit
+	// the name-only DO block for them.
+	dropped := make(map[string]struct{})
+	namesWithHost := make(map[string]struct{})
 	for _, info := range diff.ConstraintsRemovedWithTables {
 		if info.TableName == "" {
+			// No host recorded for this entry; defer to the bare fallback.
 			continue
 		}
-		if _, modified := addedNames[info.Name]; modified {
-			handled[info.Name] = struct{}{}
+		namesWithHost[info.Name] = struct{}{}
+		if _, modified := modifySet[info.TableName+"."+info.Name]; modified {
+			// addNewConstraints owns this host's DROP-then-ADD; do not re-drop.
 			continue
 		}
-		result = append(result, &ast.AlterTableNode{
-			Name: info.TableName,
-			Operations: []ast.AlterOperation{&ast.DropConstraintOperation{
-				ConstraintName: info.Name,
-				IfExists:       true,
-			}},
-		})
-		handled[info.Name] = struct{}{}
+		result = p.appendScopedDrop(result, info.TableName, info.Name, dropped)
 	}
 
+	// Bare fallback for synthetic diffs only: a hand-built diff may list a
+	// removed constraint by name with no ConstraintsRemovedWithTables host. Such
+	// names have genuinely no table to scope by, so the runtime information_schema
+	// DO block (dropConstraintNode) remains the only option. Real comparator
+	// output always carries the host, so it is fully handled above and skipped
+	// here. A bare modify (name in ConstraintsAdded with no recorded host) is
+	// owned by addNewConstraints and skipped.
+	addedBareNames := make(map[string]struct{}, len(diff.ConstraintsAdded))
+	for _, name := range diff.ConstraintsAdded {
+		addedBareNames[name] = struct{}{}
+	}
 	for _, constraintName := range diff.ConstraintsRemoved {
-		if _, modified := addedNames[constraintName]; modified {
+		if _, hadHost := namesWithHost[constraintName]; hadHost {
 			continue
 		}
-		if _, done := handled[constraintName]; done {
+		if _, modified := addedBareNames[constraintName]; modified {
 			continue
 		}
 		result = append(result, p.dropConstraintNode(constraintName))
