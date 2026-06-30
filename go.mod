@@ -3,7 +3,7 @@ module github.com/stokaro/ptah
 go 1.26.4
 
 require (
-	github.com/ClickHouse/clickhouse-go/v2 v2.46.0
+	github.com/ClickHouse/clickhouse-go/v2 v2.47.0
 	github.com/frankban/quicktest v1.14.6
 	github.com/go-extras/cobraflags v0.0.0-20260116100222-f76efc9500d4
 	github.com/go-extras/go-kit v1.2.0
