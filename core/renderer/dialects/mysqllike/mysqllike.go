@@ -81,8 +81,14 @@ func (r *Renderer) dropConstraintSQL(table string, op *ast.DropConstraintOperati
 	case op.Unique:
 		// ALTER TABLE ... DROP INDEX drops a UNIQUE constraint's backing
 		// index and is valid across the entire MySQL/MariaDB family, so the
-		// planner-requested spelling needs no capability gate here.
+		// planner-requested spelling needs no capability gate here. The
+		// IF EXISTS guard on this spelling is MariaDB-only (verified live:
+		// MariaDB 10.11 accepts it, incl. on an absent index; MySQL 9.7
+		// rejects it), so it is gated on the index-drop guard capability.
 		dropSQL += " INDEX"
+		if op.IfExists && r.caps.Has(capability.DropIndexIfExists) {
+			dropSQL += " IF EXISTS"
+		}
 	case guarded:
 		dropSQL += " CONSTRAINT IF EXISTS"
 	default:

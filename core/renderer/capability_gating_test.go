@@ -85,9 +85,10 @@ func TestMySQLFamilyRenderers_DropCheckSpelling(t *testing.T) {
 }
 
 // TestMySQLFamilyRenderers_DropUniqueIndexSpelling pins the DROP INDEX
-// spelling requested via DropConstraintOperation.Unique (UNIQUE removals on
-// targets without the generic clause). ALTER TABLE ... DROP INDEX is valid
-// across the entire family, so both renderers honor it as-is.
+// spelling requested via DropConstraintOperation.Unique (every UNIQUE
+// removal, issue #195). ALTER TABLE ... DROP INDEX is valid across the entire
+// family, so both renderers honor it as-is; the IF EXISTS guard on the
+// spelling is MariaDB-only (verified live), so the mysql renderer strips it.
 func TestMySQLFamilyRenderers_DropUniqueIndexSpelling(t *testing.T) {
 	c := qt.New(t)
 
@@ -104,6 +105,25 @@ func TestMySQLFamilyRenderers_DropUniqueIndexSpelling(t *testing.T) {
 		c.Assert(sql, qt.Contains, "ALTER TABLE users DROP INDEX uq_email;",
 			qt.Commentf("%s: got:\n%s", dialect, sql))
 	}
+
+	guardedNode := &ast.AlterTableNode{
+		Name: "users",
+		Operations: []ast.AlterOperation{&ast.DropConstraintOperation{
+			ConstraintName: "uq_email",
+			Unique:         true,
+			IfExists:       true,
+		}},
+	}
+	sql, err := renderer.RenderSQL("mariadb", guardedNode)
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "ALTER TABLE users DROP INDEX IF EXISTS uq_email;",
+		qt.Commentf("mariadb honors the guard on the DROP INDEX spelling; got:\n%s", sql))
+
+	sql, err = renderer.RenderSQL("mysql", guardedNode)
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "ALTER TABLE users DROP INDEX uq_email;",
+		qt.Commentf("mysql strips the guard it cannot parse; got:\n%s", sql))
+	c.Assert(sql, qt.Not(qt.Contains), "IF EXISTS", qt.Commentf("got:\n%s", sql))
 }
 
 // TestMySQLFamilyRenderers_DropIndexGuardValidity pins the DROP INDEX guard
