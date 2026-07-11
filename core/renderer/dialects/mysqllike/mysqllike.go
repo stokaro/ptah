@@ -78,6 +78,11 @@ func (r *Renderer) dropConstraintSQL(table string, op *ast.DropConstraintOperati
 		}
 	case op.Check && r.caps.Has(capability.DropCheckClause):
 		dropSQL += " CHECK"
+	case op.Unique:
+		// ALTER TABLE ... DROP INDEX drops a UNIQUE constraint's backing
+		// index and is valid across the entire MySQL/MariaDB family, so the
+		// planner-requested spelling needs no capability gate here.
+		dropSQL += " INDEX"
 	case guarded:
 		dropSQL += " CONSTRAINT IF EXISTS"
 	default:
@@ -92,9 +97,10 @@ func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 	parts = append(parts, "DROP INDEX")
 
 	// The IF EXISTS guard on DROP INDEX is MariaDB-only (10.1.4+); MySQL has
-	// no such form and rejects it. The planner sets the intent flag
-	// unconditionally, so the renderer honors it only when the target's
-	// capability set allows (capability.DropIndexIfExists, issue #226).
+	// no such form and rejects it. Planners record the guard intent per THEIR
+	// capability set (capability.DropIndexIfExists); the renderer validates
+	// it again against its own target set, so the guard reaches the SQL only
+	// when both layers agree (issue #226).
 	if node.IfExists && r.caps.Has(capability.DropIndexIfExists) {
 		parts = append(parts, "IF EXISTS")
 	}

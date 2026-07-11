@@ -128,6 +128,60 @@ func TestPlanner_CapabilityGating_DropCheckSpellingWithoutGenericClause(t *testi
 		qt.Commentf("modern MySQL keeps DROP CONSTRAINT; got:\n%s", sql))
 }
 
+// TestPlanner_CapabilityGating_NoGenericClauseFallbacks covers the remaining
+// constraint types on targets without the generic DROP CONSTRAINT clause
+// (MySQL before 8.0.19): a UNIQUE removal must use DROP INDEX (dropping the
+// backing index — valid across the whole family), and a CHECK removal on a
+// target with NEITHER spelling (MySQLLegacy) must degrade to a loud WARNING
+// instead of emitting SQL the server rejects.
+func TestPlanner_CapabilityGating_NoGenericClauseFallbacks(t *testing.T) {
+	t.Run("unique removal uses DROP INDEX", func(t *testing.T) {
+		c := qt.New(t)
+
+		diff := &types.SchemaDiff{
+			ConstraintsRemoved: []string{"uq_email"},
+			ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+				{Name: "uq_email", TableName: "users", Type: "UNIQUE"},
+			},
+		}
+		nodes := mysql.NewWithCapabilities(capability.MySQL8016()).GenerateMigrationAST(diff, &goschema.Database{})
+		sql, err := renderer.RenderSQL("mysql", nodes...)
+		c.Assert(err, qt.IsNil)
+		c.Assert(strings.Count(sql, "ALTER TABLE users DROP INDEX uq_email;"), qt.Equals, 1,
+			qt.Commentf("without the generic clause a UNIQUE drop must use DROP INDEX; got:\n%s", sql))
+		c.Assert(strings.Contains(sql, "DROP CONSTRAINT"), qt.IsFalse,
+			qt.Commentf("got:\n%s", sql))
+
+		// Modern targets keep the generic clause (the universal DROP INDEX
+		// branching for every version is issue #195).
+		nodes = mysql.New().GenerateMigrationAST(diff, &goschema.Database{})
+		sql, err = renderer.RenderSQL("mysql", nodes...)
+		c.Assert(err, qt.IsNil)
+		c.Assert(strings.Count(sql, "ALTER TABLE users DROP CONSTRAINT uq_email;"), qt.Equals, 1,
+			qt.Commentf("got:\n%s", sql))
+	})
+
+	t.Run("check removal without any valid spelling warns", func(t *testing.T) {
+		c := qt.New(t)
+
+		diff := &types.SchemaDiff{
+			ConstraintsRemoved: []string{"chk_qty"},
+			ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+				{Name: "chk_qty", TableName: "things", Type: "CHECK"},
+			},
+		}
+		nodes := mysql.NewWithCapabilities(capability.MySQLLegacy()).GenerateMigrationAST(diff, &goschema.Database{})
+		sql, err := renderer.RenderSQL("mysql", nodes...)
+		c.Assert(err, qt.IsNil)
+		// No statement may be emitted at all — only the warning comment
+		// (asserting on statement shape, not bare keywords, because the
+		// warning text itself names the missing clauses).
+		c.Assert(strings.Contains(sql, "ALTER TABLE"), qt.IsFalse, qt.Commentf("got:\n%s", sql))
+		c.Assert(strings.Contains(sql, "WARNING: cannot drop CHECK constraint chk_qty"), qt.IsTrue,
+			qt.Commentf("the impossibility must be loud; got:\n%s", sql))
+	})
+}
+
 // TestPlanner_CapabilityGating_CheckAddSkippedWhenUnenforced covers the
 // capability.MySQLLegacy window (before 8.0.16): the server parses CHECK
 // constraints and silently ignores them, so emitting ADD CONSTRAINT ... CHECK

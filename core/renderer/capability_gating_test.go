@@ -85,6 +85,28 @@ func TestMySQLFamilyRenderers_DropCheckSpelling(t *testing.T) {
 		qt.Commentf("got:\n%s", sql))
 }
 
+// TestMySQLFamilyRenderers_DropUniqueIndexSpelling pins the DROP INDEX
+// spelling requested via DropConstraintOperation.Unique (UNIQUE removals on
+// targets without the generic clause). ALTER TABLE ... DROP INDEX is valid
+// across the entire family, so both renderers honor it as-is.
+func TestMySQLFamilyRenderers_DropUniqueIndexSpelling(t *testing.T) {
+	c := qt.New(t)
+
+	node := &ast.AlterTableNode{
+		Name: "users",
+		Operations: []ast.AlterOperation{&ast.DropConstraintOperation{
+			ConstraintName: "uq_email",
+			Unique:         true,
+		}},
+	}
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		sql, err := renderer.RenderSQL(dialect, node)
+		c.Assert(err, qt.IsNil)
+		c.Assert(strings.Contains(sql, "ALTER TABLE users DROP INDEX uq_email;"), qt.IsTrue,
+			qt.Commentf("%s: got:\n%s", dialect, sql))
+	}
+}
+
 // TestMySQLFamilyRenderers_DropIndexGuardValidity pins the DROP INDEX guard
 // gating: same node, mysql strips IF EXISTS (no such form), mariadb renders
 // it (10.1.4+ syntax).

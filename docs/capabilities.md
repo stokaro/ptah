@@ -120,6 +120,11 @@ planner := mysql.NewWithCapabilities(caps)
   `ALTER TABLE … DROP CHECK <name>` for CHECK removals; the renderer resolves
   the spelling against **its** target too, so the request degrades to the
   generic clause on MariaDB, which has no `DROP CHECK` at all (verified live).
+  On the same no-generic targets a UNIQUE removal uses
+  `ALTER TABLE … DROP INDEX <name>` (valid family-wide — verified live), and a
+  CHECK removal with no valid spelling at all (`MySQLLegacy`) degrades to a
+  loud WARNING comment. Universal `DROP INDEX` branching for modern versions
+  stays with #195.
 - **CHECK adds on non-enforcing targets.** A target without
   `check_constraints_enforced` gets a loud `WARNING` comment instead of an
   `ADD CONSTRAINT … CHECK` the server would silently ignore. This covers the
