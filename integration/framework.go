@@ -404,7 +404,8 @@ func (vem *VersionedEntityManager) ApplyMigrationFromEntities(ctx context.Contex
 	vem.version++
 	var upSQL strings.Builder
 	for _, stmt := range statements {
-		upSQL.WriteString(stmt + ";\n")
+		upSQL.WriteString(stmt)
+		upSQL.WriteString(";\n")
 	}
 
 	// For simplicity, we'll create a basic down migration that drops everything
