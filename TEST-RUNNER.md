@@ -116,7 +116,7 @@ Timeout: 10 minutes
 
 [STEP] Checking prerequisites...
 [OK] Go found: go version go1.24.3 windows/amd64
-[OK] Docker and docker-compose found
+[OK] Docker and Docker Compose found
 
 [STEP] Starting databases (PostgreSQL, MySQL, MariaDB)...
 [STEP] Waiting for databases to be healthy...
@@ -163,7 +163,7 @@ Total duration: 02:30
    ```bash
    # Check Docker status
    docker --version
-   docker-compose --version
+   docker compose --version
    ```
 
 2. **Permission issues (Linux/macOS):**

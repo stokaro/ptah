@@ -12,7 +12,7 @@
 # Usage:
 #   1. Copy this file: cp docker-compose.override.yaml.example docker-compose.override.yaml
 #   2. Customize the settings below for your local environment
-#   3. Run: docker-compose up -d
+#   3. Run: docker compose up -d
 #
 # Note: docker-compose.override.yaml is ignored by git, so your local changes won't be committed.
 

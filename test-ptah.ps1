@@ -550,10 +550,10 @@ function Test-Prerequisites {
     if (-not $UnitOnly) {
         try {
             docker --version | Out-Null
-            docker-compose --version | Out-Null
-            Write-Success "Docker and docker-compose found"
+            docker compose --version | Out-Null
+            Write-Success "Docker and Docker Compose found"
         } catch {
-            Write-Error "Docker or docker-compose not found. Please install Docker Desktop."
+            Write-Error "Docker or Docker Compose not found. Please install Docker Desktop."
             exit 1
         }
     }
@@ -566,7 +566,7 @@ function Start-Databases {
     }
 
     Write-Step "Starting databases (PostgreSQL, MySQL, MariaDB)..."
-    docker-compose up -d postgres mysql mariadb
+    docker compose up -d postgres mysql mariadb
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to start databases"
         exit 1
@@ -582,7 +582,7 @@ function Start-Databases {
         $waited += $interval
         
         try {
-            $status = docker-compose ps --format json | ConvertFrom-Json
+            $status = docker compose ps --format json | ConvertFrom-Json
             $healthy = $true
             
             foreach ($service in $status) {
@@ -608,7 +608,7 @@ function Start-Databases {
             Write-Host ""
             Write-Error "Timeout waiting for databases to be healthy"
             Write-Warning "Database logs:"
-            docker-compose logs --tail=20 postgres mysql mariadb
+            docker compose logs --tail=20 postgres mysql mariadb
             exit 1
         }
     } while ($true)
@@ -630,7 +630,7 @@ function Set-TestEnvironment {
 function Stop-Databases {
     if ($UnitOnly -or $KeepDatabases) {
         if ($KeepDatabases) {
-            Write-Warning "Keeping databases running (use 'docker-compose down' to stop them)"
+            Write-Warning "Keeping databases running (use 'docker compose down' to stop them)"
             Write-Host "Database connections:" -ForegroundColor Yellow
             foreach ($key in $DatabaseConnections.Keys) {
                 Write-Host "  $key = $($DatabaseConnections[$key])" -ForegroundColor Gray
@@ -640,7 +640,7 @@ function Stop-Databases {
     }
 
     Write-Step "Stopping and removing databases..."
-    docker-compose down
+    docker compose down
     if ($LASTEXITCODE -eq 0) {
         Write-Success "Databases stopped and removed"
     } else {

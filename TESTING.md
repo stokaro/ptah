@@ -154,13 +154,13 @@ Connection details:
 ```powershell
 # Check Docker status
 docker --version
-docker-compose --version
+docker compose --version
 
 # View database logs
-docker-compose logs postgres mysql mariadb
+docker compose logs postgres mysql mariadb
 
 # Clean up containers
-docker-compose down -v
+docker compose down -v
 ```
 
 ### Test Failures
