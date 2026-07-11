@@ -35,7 +35,9 @@
 // Currently supported database platforms:
 //   - PostgreSQL: Full support with ENUM types, SERIAL columns, and advanced constraints
 //   - MySQL: Complete support with AUTO_INCREMENT, ENGINE specifications, and charset handling
-//   - MariaDB: Planned support (currently panics with "not implemented")
+//   - MariaDB: Served by the MySQL planner configured with the MariaDB
+//     capability preset (capability.MariaDB1011), which unlocks
+//     MariaDB-only SQL such as IF EXISTS guards on constraint drops
 //
 // # Usage Patterns
 //
@@ -65,6 +67,7 @@ import (
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/migration/planner/dialects/clickhouse"
@@ -157,8 +160,11 @@ type Planner interface {
 //   - "postgres": Returns a PostgreSQL-specific planner with support for ENUM types,
 //     SERIAL columns, and PostgreSQL-specific constraints
 //   - "mysql": Returns a MySQL-specific planner with support for AUTO_INCREMENT,
-//     ENGINE specifications, and MySQL-specific features
-//   - "mariadb": Currently not implemented (panics with "not implemented")
+//     ENGINE specifications, and MySQL-specific features, configured with the
+//     capability.MySQL80 preset (no IF EXISTS guards — exactly-once drops)
+//   - "mariadb": Returns the same MySQL planner configured with the
+//     capability.MariaDB1011 preset, which additionally requests IF EXISTS
+//     guards on constraint drops (issue #226)
 //
 // # Parameters
 //
@@ -198,8 +204,10 @@ func GetPlanner(dialect string) Planner {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.Postgres:
 		return postgres.New()
-	case platform.MySQL, platform.MariaDB:
+	case platform.MySQL:
 		return mysql.New()
+	case platform.MariaDB:
+		return mysql.NewWithCapabilities(capability.MariaDB1011())
 	case platform.ClickHouse:
 		return clickhouse.New()
 	default:
