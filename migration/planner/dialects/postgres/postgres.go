@@ -1145,6 +1145,17 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 	// would be dropped twice.
 	addedHostsByName := make(map[string]map[string]struct{}, len(diff.ConstraintsAddedWithTables))
 	for _, add := range diff.ConstraintsAddedWithTables {
+		if add.TableName == "" {
+			// An addition entry with no recorded host is hostless: a "" host
+			// would match no removal entry, so keeping it here would make
+			// emitModifyDropForName filter out every REAL removal host and
+			// skip a required pre-drop — the re-ADD then collides with the
+			// still-present constraint (42710; IF EXISTS on the drop cannot
+			// help because the drop was never emitted). Treat the name as if
+			// it had no recorded addition hosts at all (issue #229, mirroring
+			// the MySQL planner).
+			continue
+		}
 		hosts := addedHostsByName[add.Name]
 		if hosts == nil {
 			hosts = make(map[string]struct{})
@@ -1482,8 +1493,31 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 	// ConstraintsAddedWithTables in lockstep with the bare list, so the modify
 	// owner is always known per host.
 	modifySet := make(map[string]struct{}, len(diff.ConstraintsAddedWithTables))
+	addedHostCounts := make(map[string]int, len(diff.ConstraintsAddedWithTables))
 	for _, add := range diff.ConstraintsAddedWithTables {
+		if add.TableName == "" {
+			// Hostless addition entries do not count as recorded hosts —
+			// mirroring addedHostsByName in addNewConstraints — so the
+			// hostless-re-add rule below still engages (issue #229).
+			continue
+		}
 		modifySet[add.TableName+"."+add.Name] = struct{}{}
+		addedHostCounts[add.Name]++
+	}
+
+	// Bare added names, for re-adds whose hosts were NOT recorded
+	// (ConstraintsAdded carries the name but ConstraintsAddedWithTables has no
+	// entry for it — reverse/down diffs of non-FK modifies, legacy callers
+	// without an introspected schema, and hand-built diffs). For those,
+	// emitModifyDropForName cannot restrict its pre-drop to the re-added
+	// hosts, so it drops EVERY recorded removal host BEFORE the re-add;
+	// dropping any of them again here would land AFTER the re-add and delete
+	// the freshly restored constraint — IF EXISTS is no protection against
+	// dropping a constraint that now exists again. This silently destroyed
+	// the constraint on every non-FK down migration (issue #229).
+	addedBareNamesHosted := make(map[string]struct{}, len(diff.ConstraintsAdded))
+	for _, name := range diff.ConstraintsAdded {
+		addedBareNamesHosted[name] = struct{}{}
 	}
 
 	// When the comparator supplied the owning table (ConstraintsRemovedWithTables),
@@ -1506,6 +1540,14 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 		namesWithHost[info.Name] = struct{}{}
 		if _, modified := modifySet[info.TableName+"."+info.Name]; modified {
 			// addNewConstraints owns this host's DROP-then-ADD; do not re-drop.
+			continue
+		}
+		if _, added := addedBareNamesHosted[info.Name]; added && addedHostCounts[info.Name] == 0 {
+			// Hostless re-add: addNewConstraints already dropped every
+			// recorded removal host for this name before the re-add
+			// (emitModifyDropForName with unknown addedHosts). A second drop
+			// here would follow the re-add and delete the fresh constraint
+			// (issue #229).
 			continue
 		}
 		result = p.appendScopedDrop(result, info.TableName, info.Name, dropped)
