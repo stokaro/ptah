@@ -1059,6 +1059,12 @@ func (p *Planner) dropConstraintNode(info types.ConstraintRemovalInfo) ast.Node 
 		// DROP FOREIGN KEY carries the type information already.
 	case strings.EqualFold(info.Type, "UNIQUE"):
 		op.Unique = true
+		// The UNIQUE spelling is an index drop, so its guard intent follows
+		// the index-drop guard capability rather than the constraint-drop
+		// one. Identical on the shipped presets (MariaDB has both, MySQL
+		// neither), but a composed set may enable them independently and the
+		// intent must match the chosen spelling.
+		op.IfExists = caps.Has(capability.DropIndexIfExists)
 	case strings.EqualFold(info.Type, "CHECK") && !caps.Has(capability.DropConstraintGeneric):
 		if !caps.Has(capability.DropCheckClause) {
 			// No generic clause and no DROP CHECK either (MySQLLegacy):

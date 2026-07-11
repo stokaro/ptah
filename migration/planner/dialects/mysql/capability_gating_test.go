@@ -384,7 +384,7 @@ func TestPlanner_UniqueConstraintRemoval_UsesDropIndex(t *testing.T) {
 			qt.Commentf("PK removals stay skipped; got:\n%s", sql))
 	})
 
-	t.Run("mariadb via GetPlanner preset", func(t *testing.T) {
+	t.Run("mariadb preset", func(t *testing.T) {
 		c := qt.New(t)
 
 		nodes := mysql.NewWithCapabilities(capability.MariaDB1011()).GenerateMigrationAST(diff, &goschema.Database{})
@@ -403,4 +403,48 @@ func TestPlanner_UniqueConstraintRemoval_UsesDropIndex(t *testing.T) {
 		c.Assert(sqlMySQL, qt.Contains, "ALTER TABLE users DROP INDEX uq_email;",
 			qt.Commentf("got:\n%s", sqlMySQL))
 	})
+}
+
+// TestPlanner_UniqueDropGuard_FollowsIndexCapability pins the guard-source
+// decoupling: the UNIQUE removal spelling is an index drop, so its IF EXISTS
+// intent follows capability.DropIndexIfExists — independently of the
+// constraint-drop guard capability. Identical on shipped presets; a composed
+// set enabling the guards separately must guard each spelling per its own
+// capability.
+func TestPlanner_UniqueDropGuard_FollowsIndexCapability(t *testing.T) {
+	c := qt.New(t)
+
+	diff := &types.SchemaDiff{
+		ConstraintsRemoved: []string{"uq_email", "fk_posts_user"},
+		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+			{Name: "uq_email", TableName: "users", Type: "UNIQUE"},
+			{Name: "fk_posts_user", TableName: "posts", Type: "FOREIGN KEY"},
+		},
+	}
+
+	// Index guards off, constraint guards on: FK guarded, UNIQUE not.
+	caps := capability.MariaDB1011().With(capability.DropIndexIfExists, false)
+	c.Assert(caps.Validate(), qt.IsNil)
+	nodes := mysql.NewWithCapabilities(caps).GenerateMigrationAST(diff, &goschema.Database{})
+	sql, err := renderer.RenderSQL("mariadb", nodes...)
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "ALTER TABLE users DROP INDEX uq_email;",
+		qt.Commentf("got:\n%s", sql))
+	c.Assert(sql, qt.Not(qt.Contains), "DROP INDEX IF EXISTS",
+		qt.Commentf("UNIQUE guard must follow the index-drop capability; got:\n%s", sql))
+	c.Assert(sql, qt.Contains, "ALTER TABLE posts DROP FOREIGN KEY IF EXISTS fk_posts_user;",
+		qt.Commentf("got:\n%s", sql))
+
+	// Constraint guards off, index guards on: UNIQUE guarded, FK not.
+	caps = capability.MariaDB1011().With(capability.DropConstraintIfExists, false)
+	c.Assert(caps.Validate(), qt.IsNil)
+	nodes = mysql.NewWithCapabilities(caps).GenerateMigrationAST(diff, &goschema.Database{})
+	sql, err = renderer.RenderSQL("mariadb", nodes...)
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "ALTER TABLE users DROP INDEX IF EXISTS uq_email;",
+		qt.Commentf("got:\n%s", sql))
+	c.Assert(sql, qt.Contains, "ALTER TABLE posts DROP FOREIGN KEY fk_posts_user;",
+		qt.Commentf("got:\n%s", sql))
+	c.Assert(sql, qt.Not(qt.Contains), "DROP FOREIGN KEY IF EXISTS",
+		qt.Commentf("FK guard must follow the constraint-drop capability; got:\n%s", sql))
 }
