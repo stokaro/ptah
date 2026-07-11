@@ -398,6 +398,50 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 		}
 	})
 
+	t.Run("empty-TableName addition entry is treated as hostless", func(t *testing.T) {
+		// A ConstraintsAddedWithTables entry with no recorded host must not
+		// count as a recorded addition host on either side. If it did, the
+		// add side would see a non-empty addedHosts set containing only ""
+		// (matching no real removal host) and skip the required pre-drop,
+		// while removeConstraints would see addedHostCounts > 0, disengage
+		// its hostless-re-add rule, and emit the drop AFTER the re-add —
+		// killing the freshly added constraint. With the guard, the name
+		// behaves exactly like a hostless re-add: one pre-drop from the add
+		// side, then the re-add, nothing from removeConstraints.
+		for _, dialect := range mysqlFamilyDialects {
+			t.Run(dialect, func(t *testing.T) {
+				c := qt.New(t)
+
+				diff := &types.SchemaDiff{
+					ConstraintsAdded:   []string{"chk_ghost"},
+					ConstraintsRemoved: []string{"chk_ghost"},
+					ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+						{Name: "chk_ghost", TableName: "", Type: "CHECK"},
+					},
+					ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+						{Name: "chk_ghost", TableName: "things", Type: "CHECK"},
+					},
+				}
+				generated := &goschema.Database{
+					Constraints: []goschema.Constraint{
+						{StructName: "Thing", Name: "chk_ghost", Type: "CHECK", Table: "things", CheckExpression: "qty >= 0"},
+					},
+				}
+
+				sql := renderMySQLFamily(c, dialect, diff, generated)
+
+				c.Assert(strings.Count(sql, "ALTER TABLE things DROP CONSTRAINT chk_ghost;"), qt.Equals, 1,
+					qt.Commentf("the recorded removal host must be dropped exactly once; got:\n%s", sql))
+				c.Assert(strings.Count(sql, "ALTER TABLE things ADD CONSTRAINT chk_ghost CHECK (qty >= 0);"), qt.Equals, 1,
+					qt.Commentf("the re-add must still be emitted; got:\n%s", sql))
+				dropIdx := strings.Index(sql, "ALTER TABLE things DROP CONSTRAINT chk_ghost")
+				addIdx := strings.Index(sql, "ALTER TABLE things ADD CONSTRAINT chk_ghost")
+				c.Assert(dropIdx >= 0 && addIdx >= 0 && dropIdx < addIdx, qt.IsTrue,
+					qt.Commentf("the drop must be the add-side pre-drop (before the re-add), not a removeConstraints drop after it; got:\n%s", sql))
+			})
+		}
+	})
+
 	t.Run("field-level foreign key", func(t *testing.T) {
 		for _, dialect := range mysqlFamilyDialects {
 			t.Run(dialect, func(t *testing.T) {

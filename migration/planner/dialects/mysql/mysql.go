@@ -624,6 +624,14 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 	// dropping B here as well would abort the migration on the second drop.
 	addedHostsByName := make(map[string]map[string]struct{}, len(diff.ConstraintsAddedWithTables))
 	for _, add := range diff.ConstraintsAddedWithTables {
+		if add.TableName == "" {
+			// An addition entry with no recorded host is hostless: a "" host
+			// would match no removal entry, so keeping it here would make
+			// emitModifyDropForName filter out every REAL removal host and
+			// skip a required pre-drop. Treat the name as if it had no
+			// recorded addition hosts at all.
+			continue
+		}
 		hosts := addedHostsByName[add.Name]
 		if hosts == nil {
 			hosts = make(map[string]struct{})
@@ -902,6 +910,13 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 	modifyHosts := make(map[string]struct{}, len(diff.ConstraintsAddedWithTables))
 	addedHostCounts := make(map[string]int, len(diff.ConstraintsAddedWithTables))
 	for _, add := range diff.ConstraintsAddedWithTables {
+		if add.TableName == "" {
+			// Hostless addition entries do not count as recorded hosts —
+			// mirroring addedHostsByName in addNewConstraints — so the
+			// hostless-re-add rule below still engages and this side keeps
+			// skipping the hosts the add side already dropped.
+			continue
+		}
 		modifyHosts[add.TableName+"."+add.Name] = struct{}{}
 		addedHostCounts[add.Name]++
 	}
