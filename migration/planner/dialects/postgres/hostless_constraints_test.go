@@ -141,6 +141,6 @@ func TestPlanner_GenerateMigrationAST_EmptyTableNameAdditionTreatedAsHostless(t 
 	lastDrop := strings.LastIndex(sql, "ALTER TABLE things DROP CONSTRAINT IF EXISTS chk_ghost")
 	c.Assert(lastDrop < addIdx, qt.IsTrue,
 		qt.Commentf("no drop may follow the re-add; got:\n%s", sql))
-	c.Assert(strings.Contains(sql, "information_schema.table_constraints"), qt.IsFalse,
-		qt.Commentf("the name-only DO block must not be used when removal hosts are known; got:\n%s", sql))
+	c.Assert(sql, qt.Not(qt.Contains), "information_schema.table_constraints",
+		qt.Commentf("the name-only DO block must not be used when removal hosts are known"))
 }
