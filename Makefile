@@ -29,73 +29,73 @@ test:
 # Build Docker image for integration tests
 docker-build:
 	@echo "Building Docker image for integration tests..."
-	docker-compose --profile test build ptah-tester
+	docker compose --profile test build ptah-tester
 
 # Run integration tests using Docker Compose
 integration-test: docker-build
 	@echo "Starting databases and running integration tests..."
-	docker-compose --profile test run --rm ptah-tester --report=html --verbose
+	docker compose --profile test run --rm ptah-tester --report=html --verbose
 
 # Run integration tests with specific format
 integration-test-json: docker-build
 	@echo "Running integration tests with JSON report..."
-	docker-compose --profile test run --rm ptah-tester --report=json --verbose
+	docker compose --profile test run --rm ptah-tester --report=json --verbose
 
 # Run integration tests with text report
 integration-test-txt: docker-build
 	@echo "Running integration tests with text report..."
-	docker-compose --profile test run --rm ptah-tester --report=txt --verbose
+	docker compose --profile test run --rm ptah-tester --report=txt --verbose
 
 # Run integration tests with stdout report
 integration-test-stdout: docker-build
 	@echo "Running integration tests with stdout report..."
-	docker-compose --profile test run --rm ptah-tester --report=stdout --verbose
+	docker compose --profile test run --rm ptah-tester --report=stdout --verbose
 
 # Run specific scenarios
 integration-test-basic: docker-build
 	@echo "Running basic integration tests..."
-	docker-compose --profile test run --rm ptah-tester \
+	docker compose --profile test run --rm ptah-tester \
 		--scenarios=apply_incremental_migrations,rollback_migrations,upgrade_to_specific_version \
 		--report=html --verbose
 
 # Run integration tests against specific database
 integration-test-postgres: docker-build
 	@echo "Running integration tests against PostgreSQL only..."
-	docker-compose --profile test run --rm ptah-tester --databases=postgres --report=html --verbose
+	docker compose --profile test run --rm ptah-tester --databases=postgres --report=html --verbose
 
 integration-test-mysql: docker-build
 	@echo "Running integration tests against MySQL only..."
-	docker-compose --profile test run --rm ptah-tester --databases=mysql --report=html --verbose
+	docker compose --profile test run --rm ptah-tester --databases=mysql --report=html --verbose
 
 integration-test-mariadb: docker-build
 	@echo "Running integration tests against MariaDB only..."
-	docker-compose --profile test run --rm ptah-tester --databases=mariadb --report=html --verbose
+	docker compose --profile test run --rm ptah-tester --databases=mariadb --report=html --verbose
 
 # Run integration tests using Docker Compose with custom arguments
 integration-test-custom: docker-build
 	@echo "Running integration tests with custom arguments..."
 	@echo "Usage: make integration-test-custom ARGS='--report=json --databases=postgres'"
-	docker-compose --profile test run --rm ptah-tester $(ARGS)
+	docker compose --profile test run --rm ptah-tester $(ARGS)
 
 # Start databases only (for development)
 db-start:
 	@echo "Starting databases..."
-	docker-compose up -d postgres mysql mariadb
+	docker compose up -d postgres mysql mariadb
 
 # Stop databases
 db-stop:
 	@echo "Stopping databases..."
-	docker-compose down
+	docker compose down
 
 # View database logs
 db-logs:
 	@echo "Showing database logs..."
-	docker-compose logs -f postgres mysql mariadb
+	docker compose logs -f postgres mysql mariadb
 
 # Clean up Docker resources
 docker-clean:
 	@echo "Cleaning up Docker resources..."
-	docker-compose down -v
+	docker compose down -v
 	docker system prune -f
 
 # Clean build artifacts
@@ -115,7 +115,7 @@ dev-setup: db-start
 # Run a quick smoke test
 smoke-test: docker-build
 	@echo "Running smoke test..."
-	docker-compose --profile test run --rm ptah-tester \
+	docker compose --profile test run --rm ptah-tester \
 		--scenarios=apply_incremental_migrations,check_current_version \
 		--databases=postgres --report=txt
 
@@ -150,23 +150,23 @@ docker-help:
 	@echo "============================================="
 	@echo ""
 	@echo "Basic usage:"
-	@echo "  docker-compose --profile test run --rm ptah-tester [OPTIONS]"
+	@echo "  docker compose --profile test run --rm ptah-tester [OPTIONS]"
 	@echo ""
 	@echo "Examples:"
 	@echo "  # Run all tests with HTML report"
-	@echo "  docker-compose --profile test run --rm ptah-tester --report=html"
+	@echo "  docker compose --profile test run --rm ptah-tester --report=html"
 	@echo ""
 	@echo "  # Run specific scenarios"
-	@echo "  docker-compose --profile test run --rm ptah-tester --scenarios=apply_incremental_migrations,rollback_migrations"
+	@echo "  docker compose --profile test run --rm ptah-tester --scenarios=apply_incremental_migrations,rollback_migrations"
 	@echo ""
 	@echo "  # Test specific database"
-	@echo "  docker-compose --profile test run --rm ptah-tester --databases=postgres"
+	@echo "  docker compose --profile test run --rm ptah-tester --databases=postgres"
 	@echo ""
 	@echo "  # Generate JSON report"
-	@echo "  docker-compose --profile test run --rm ptah-tester --report=json"
+	@echo "  docker compose --profile test run --rm ptah-tester --report=json"
 	@echo ""
 	@echo "  # Verbose output"
-	@echo "  docker-compose --profile test run --rm ptah-tester --verbose"
+	@echo "  docker compose --profile test run --rm ptah-tester --verbose"
 	@echo ""
 	@echo "Available options:"
 	@echo "  --report FORMAT     Report format: txt, json, html (default: txt)"

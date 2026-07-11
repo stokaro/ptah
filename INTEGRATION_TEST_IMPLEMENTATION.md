@@ -154,28 +154,28 @@ The integration test suite covers:
 make integration-test
 
 # Or directly with Docker Compose
-docker-compose --profile test run --rm ptah-tester --report=html
+docker compose --profile test run --rm ptah-tester --report=html
 ```
 
 ### Docker Compose Commands
 ```bash
 # Run all tests with default text report
-docker-compose --profile test run --rm ptah-tester
+docker compose --profile test run --rm ptah-tester
 
 # Run with HTML report (recommended)
-docker-compose --profile test run --rm ptah-tester --report=html --verbose
+docker compose --profile test run --rm ptah-tester --report=html --verbose
 
 # Run specific scenarios
-docker-compose --profile test run --rm ptah-tester --scenarios=apply_incremental_migrations,rollback_migrations
+docker compose --profile test run --rm ptah-tester --scenarios=apply_incremental_migrations,rollback_migrations
 
 # Test specific database
-docker-compose --profile test run --rm ptah-tester --databases=postgres
+docker compose --profile test run --rm ptah-tester --databases=postgres
 
 # Generate JSON report for CI/CD
-docker-compose --profile test run --rm ptah-tester --report=json
+docker compose --profile test run --rm ptah-tester --report=json
 
 # Quick smoke test
-docker-compose --profile test run --rm ptah-tester --scenarios=apply_incremental_migrations --databases=postgres
+docker compose --profile test run --rm ptah-tester --scenarios=apply_incremental_migrations --databases=postgres
 ```
 
 ### Makefile Shortcuts
@@ -252,8 +252,8 @@ Reports are automatically saved to `./integration/reports/` on the host system.
 The integration test suite is now complete and ready for use. To get started:
 
 1. **Review the documentation** in `integration/README.md`
-2. **Run a quick test**: `docker-compose --profile test run --rm ptah-tester --scenarios=apply_incremental_migrations --databases=postgres`
-3. **Execute the full suite**: `docker-compose --profile test run --rm ptah-tester --report=html --verbose`
+2. **Run a quick test**: `docker compose --profile test run --rm ptah-tester --scenarios=apply_incremental_migrations --databases=postgres`
+3. **Execute the full suite**: `docker compose --profile test run --rm ptah-tester --report=html --verbose`
 4. **Examine the reports** in `integration/reports/`
 5. **Integrate into CI/CD** using Docker Compose commands
 6. **Get help**: `make docker-help` for all available commands

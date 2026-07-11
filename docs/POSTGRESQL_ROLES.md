@@ -234,10 +234,10 @@ Use the integration test framework to verify role functionality:
 
 ```bash
 # Test PostgreSQL role scenarios
-docker-compose --profile test run --rm ptah-tester --scenarios=dynamic_roles_basic,dynamic_roles_advanced --databases=postgres
+docker compose --profile test run --rm ptah-tester --scenarios=dynamic_roles_basic,dynamic_roles_advanced --databases=postgres
 
 # Test cross-database compatibility
-docker-compose --profile test run --rm ptah-tester --scenarios=dynamic_roles_cross_database
+docker compose --profile test run --rm ptah-tester --scenarios=dynamic_roles_cross_database
 ```
 
 ## Troubleshooting
@@ -254,7 +254,7 @@ Enable verbose logging to see generated SQL statements:
 
 ```bash
 # Run with verbose output to see role creation SQL
-docker-compose --profile test run --rm ptah-tester --verbose --scenarios=dynamic_roles_basic
+docker compose --profile test run --rm ptah-tester --verbose --scenarios=dynamic_roles_basic
 ```
 
 ## Examples

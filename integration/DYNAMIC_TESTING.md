@@ -123,13 +123,13 @@ The dynamic scenarios are automatically included in all test runs:
 
 ```bash
 # Run all tests (includes dynamic scenarios)
-docker-compose --profile test run --rm ptah-tester
+docker compose --profile test run --rm ptah-tester
 
 # Run only dynamic scenarios
-docker-compose --profile test run --rm ptah-tester --scenarios=dynamic_basic_evolution,dynamic_idempotency
+docker compose --profile test run --rm ptah-tester --scenarios=dynamic_basic_evolution,dynamic_idempotency
 
 # Run specific dynamic scenario
-docker-compose --profile test run --rm ptah-tester --scenarios=dynamic_basic_evolution --databases=postgres
+docker compose --profile test run --rm ptah-tester --scenarios=dynamic_basic_evolution --databases=postgres
 ```
 
 ## Benefits Over Static Migrations

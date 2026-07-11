@@ -73,7 +73,7 @@ go test -C core/renderer -run "TestNewVisitorMethods_UnitTests" -v
    ```powershell
    # Check Docker status
    docker --version
-   docker-compose --version
+   docker compose --version
    ```
 
 2. **Tests not showing detailed output:**
@@ -88,10 +88,10 @@ go test -C core/renderer -run "TestNewVisitorMethods_UnitTests" -v
 3. **Database connection issues:**
    ```powershell
    # Check database health
-   docker-compose ps
+   docker compose ps
    
    # View database logs
-   docker-compose logs postgres mysql mariadb
+   docker compose logs postgres mysql mariadb
    ```
 
 4. **PowerShell coloring issues:**
