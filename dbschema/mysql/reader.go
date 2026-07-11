@@ -499,8 +499,8 @@ func parseEnumValues(columnType string) []string {
 
 	// Split by comma and clean up quotes
 	var values []string
-	parts := strings.Split(valuesPart, ",")
-	for _, part := range parts {
+	parts := strings.SplitSeq(valuesPart, ",")
+	for part := range parts {
 		part = strings.TrimSpace(part)
 		part = strings.Trim(part, "'\"")
 		if part != "" {

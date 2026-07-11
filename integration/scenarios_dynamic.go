@@ -1444,7 +1444,7 @@ func testDynamicLargeTableMigration(ctx context.Context, conn *dbschema.Database
 		defer conn.Writer().RollbackTransaction()
 
 		insertSQL := sqlutil.Rebind(conn.Info().Dialect, "INSERT INTO large_table (data) VALUES (?)")
-		for i := 0; i < 1000; i++ {
+		for i := range 1000 {
 			if err := conn.Writer().ExecuteSQL(ctx, insertSQL, fmt.Sprintf("test_data_%d", i)); err != nil {
 				return fmt.Errorf("failed to insert row %d: %w", i, err)
 			}

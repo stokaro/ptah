@@ -301,11 +301,11 @@ func convertMySQLURL(dbURL string) string {
 	// If the URL is already in the correct format (contains @tcp), return as-is
 	if strings.Contains(dbURL, "@tcp(") {
 		// Remove the mysql:// or mariadb:// prefix if present
-		if strings.HasPrefix(dbURL, "mysql://") {
-			return strings.TrimPrefix(dbURL, "mysql://")
+		if after, ok := strings.CutPrefix(dbURL, "mysql://"); ok {
+			return after
 		}
-		if strings.HasPrefix(dbURL, "mariadb://") {
-			return strings.TrimPrefix(dbURL, "mariadb://")
+		if after, ok := strings.CutPrefix(dbURL, "mariadb://"); ok {
+			return after
 		}
 		return dbURL
 	}

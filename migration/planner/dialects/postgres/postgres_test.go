@@ -1027,7 +1027,7 @@ func TestPlanner_GenerateMigrationAST_ExtensionsRemoved(t *testing.T) {
 				}
 
 				// Check warning comments
-				for i := 0; i < 3; i++ {
+				for i := range 3 {
 					if _, ok := nodes[i].(*ast.CommentNode); !ok {
 						return false
 					}

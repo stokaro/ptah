@@ -1,6 +1,7 @@
 package parseutils
 
 import (
+	"maps"
 	"regexp"
 	"strings"
 )
@@ -100,9 +101,7 @@ func isIndexDirectiveHeader(comment string) bool {
 // directive token "index" isn't auto-promoted to kv["index"]="true".
 var indexDirectiveSkip = func() map[string]bool {
 	s := make(map[string]bool, len(directiveTokens)+1)
-	for k, v := range directiveTokens {
-		s[k] = v
-	}
+	maps.Copy(s, directiveTokens)
 	s["index"] = true
 	return s
 }()

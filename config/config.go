@@ -5,6 +5,8 @@
 // clean Go APIs rather than external configuration file management.
 package config
 
+import "slices"
+
 // CompareOptions contains configuration options for schema comparison operations.
 // These options control how schema differences are calculated and what elements
 // should be ignored during comparison.
@@ -76,12 +78,7 @@ func WithAdditionalIgnoredExtensions(extensions ...string) *CompareOptions {
 // IsExtensionIgnored checks if the given extension name should be ignored
 // during schema migrations based on the current configuration.
 func (c *CompareOptions) IsExtensionIgnored(extensionName string) bool {
-	for _, ignored := range c.IgnoredExtensions {
-		if ignored == extensionName {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.IgnoredExtensions, extensionName)
 }
 
 // FilterIgnoredExtensions removes ignored extensions from the provided slice
