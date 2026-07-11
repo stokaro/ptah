@@ -557,8 +557,12 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 // A constraint name present in BOTH ConstraintsAdded and ConstraintsRemoved is
 // a modification (the comparator expresses a changed constraint as remove + add
 // of the same name — e.g. an on_delete change on a field-level FK, issue #189).
-// The DROP is emitted here, immediately before the re-ADD, so it precedes the
-// re-add and removeConstraints (which runs later) skips it.
+// The DROP is emitted here, immediately before the re-ADD, scoped to the exact
+// host table(s) being re-added (issue #207); removeConstraints (which runs
+// later) skips those (table, name) pairs and owns every remaining pure
+// removal. MySQL accepts no IF EXISTS on constraint drops, so this
+// exactly-once split between the two functions is what keeps a migration from
+// aborting on a duplicate drop or colliding on a missing one.
 //
 // # Example Generated SQL
 //
@@ -571,6 +575,17 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 	structToTable := make(map[string]string, len(generated.Tables))
 	for _, t := range generated.Tables {
 		structToTable[t.StructName] = t.Name
+	}
+
+	// A constraint name present in BOTH ConstraintsAdded and ConstraintsRemoved
+	// is a modification (the comparator expresses a changed constraint as
+	// remove + add of the same name — e.g. an on_delete change on a field-level
+	// FK, issue #189). Its old definition must be dropped before the re-add or
+	// the ADD CONSTRAINT collides with the still-present constraint of the same
+	// name (errno 1826 for FKs / 3822 for CHECKs).
+	removedNames := make(map[string]struct{}, len(diff.ConstraintsRemoved))
+	for _, name := range diff.ConstraintsRemoved {
+		removedNames[name] = struct{}{}
 	}
 
 	// Removal info keyed by (table, name) so a same-name modification can be
@@ -589,6 +604,42 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 		removalByTableName[info.TableName+"."+info.Name] = info
 	}
 
+	// Removal info grouped by bare name, so the legacy ConstraintsAdded loop
+	// below can scope a modified non-FK constraint's DROP to its concrete host
+	// table(s). The comparator records every removal in
+	// ConstraintsRemovedWithTables in lockstep with the bare ConstraintsRemoved
+	// list, so a modified constraint's host is normally known here even though
+	// the bare loop iterates names alone.
+	removalsByName := make(map[string][]types.ConstraintRemovalInfo, len(diff.ConstraintsRemovedWithTables))
+	for _, info := range diff.ConstraintsRemovedWithTables {
+		removalsByName[info.Name] = append(removalsByName[info.Name], info)
+	}
+
+	// Hosts actually being re-ADDED under each name. A modified constraint's
+	// pre-drop must hit only those hosts — NOT every host that merely has a
+	// removal entry for the name. In the MIXED case (issue #207; postgres
+	// sibling #206) a shared name is a modify on host A (re-added) and a PURE
+	// removal on host B (not re-added): B's drop is owned by removeConstraints,
+	// and MySQL has no IF EXISTS on constraint drops to absorb a duplicate, so
+	// dropping B here as well would abort the migration on the second drop.
+	addedHostsByName := make(map[string]map[string]struct{}, len(diff.ConstraintsAddedWithTables))
+	for _, add := range diff.ConstraintsAddedWithTables {
+		if add.TableName == "" {
+			// An addition entry with no recorded host is hostless: a "" host
+			// would match no removal entry, so keeping it here would make
+			// emitModifyDropForName filter out every REAL removal host and
+			// skip a required pre-drop. Treat the name as if it had no
+			// recorded addition hosts at all.
+			continue
+		}
+		hosts := addedHostsByName[add.Name]
+		if hosts == nil {
+			hosts = make(map[string]struct{})
+			addedHostsByName[add.Name] = hosts
+		}
+		hosts[add.TableName] = struct{}{}
+	}
+
 	// Prefer the table-qualified additions when present. A field-level FK from an
 	// embedded inline-relation mixin shares one name across every host table, so
 	// resolving the table from the field's Go struct name targets the mixin
@@ -602,40 +653,100 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 			continue
 		}
 		// For a modification, emit the DROP FOREIGN KEY from this exact host
-		// table before its re-add. Dedup on (table, name) so each host is
-		// dropped once even if the comparator lists it more than once.
-		dropKey := add.TableName + "." + add.Name
-		if info, modified := removalByTableName[dropKey]; modified {
-			if _, done := droppedForModify[dropKey]; !done {
-				result = append(result, dropConstraintNode(info))
-				droppedForModify[dropKey] = struct{}{}
-			}
+		// table before its re-add — only when this host's (table, name) is in
+		// the removal set; a pure-add host gets no phantom drop.
+		if info, modified := removalByTableName[add.TableName+"."+add.Name]; modified {
+			result = p.appendScopedDrop(result, info, droppedForModify)
 		}
 		result = append(result, p.foreignKeyAdditionNode(add))
 		handled[add.Name] = struct{}{}
 	}
 
-	// Fallback for added constraints with no table-qualified entry above
+	// Fallback for added constraints with no table-qualified FK entry above
 	// (table-level CHECK/UNIQUE, or field-level synthesis resolved by name).
-	// These names are unique per table, so a name-keyed removal lookup is
-	// sufficient and there is no multi-host collapse hazard here.
-	removalByName := make(map[string]types.ConstraintRemovalInfo, len(diff.ConstraintsRemovedWithTables))
-	for _, info := range diff.ConstraintsRemovedWithTables {
-		removalByName[info.Name] = info
-	}
 	for _, constraintName := range diff.ConstraintsAdded {
 		if _, done := handled[constraintName]; done {
 			continue
 		}
 
-		// For a modification, emit the DROP first so it precedes the re-add.
-		if info, modified := removalByName[constraintName]; modified {
-			result = append(result, dropConstraintNode(info))
+		// For a modification, emit the DROP(s) first so they precede the
+		// re-add, scoped to the constraint's concrete host table(s) — never a
+		// name-keyed single-winner lookup, which collapses multiple removal
+		// hosts onto one arbitrary table (issue #207).
+		if _, modified := removedNames[constraintName]; modified {
+			result = p.emitModifyDropForName(result, constraintName, removalsByName, addedHostsByName[constraintName], droppedForModify)
 		}
 
 		result = p.appendAddConstraint(result, constraintName, generated, structToTable)
 	}
 	return result
+}
+
+// emitModifyDropForName appends the DROP(s) that must precede the re-ADD of a
+// modified constraint reached via the bare ConstraintsAdded name list (the
+// non-FK and field-level synthesis paths; FK modifies are handled per-host in
+// the ConstraintsAddedWithTables loop). The comparator records every removal
+// in ConstraintsRemovedWithTables in lockstep with the bare list, so the
+// owning table and constraint type are normally known: each re-added host gets
+// a direct, table-qualified, type-aware drop (DROP FOREIGN KEY /
+// DROP CONSTRAINT), deduped per (host, name). A name-keyed single-winner
+// lookup must never be used here: with >=2 removal hosts it collapses onto one
+// arbitrary host, so the wrong table's constraint is dropped while the
+// re-added host's ADD collides with its still-present old constraint
+// (errno 1826/3822, issue #207).
+//
+// The drop is restricted to addedHosts — the hosts actually being re-added
+// under this name (ConstraintsAddedWithTables). In the MIXED case a shared
+// name is a modify on host A (re-added) and a PURE removal on host B (not
+// re-added); B's drop is owned by removeConstraints. MySQL accepts no
+// IF EXISTS on constraint drops (only MariaDB does), so — unlike postgres,
+// where a duplicate guarded drop degrades to a no-op — dropping B here as well
+// would abort the migration on removeConstraints' second drop.
+//
+// When addedHosts is empty the re-added hosts are unknown — e.g. a
+// reverse/down diff fills ConstraintsRemovedWithTables but not
+// ConstraintsAddedWithTables (reverseConstraintAdditions restores only
+// FOREIGN KEYs, and nothing at all when the introspected schema is absent). In
+// that case every recorded removal host is dropped here and removeConstraints
+// skips the name entirely (its hostless-re-add rule), so each host is still
+// dropped exactly once. A name with no recorded removal host at all emits no
+// drop: MySQL has no anonymous-block equivalent of the postgres
+// information_schema DO fallback to resolve the owner at runtime, so the
+// re-add proceeds alone (pre-existing behavior for hand-built diffs).
+func (p *Planner) emitModifyDropForName(
+	result []ast.Node,
+	name string,
+	removalsByName map[string][]types.ConstraintRemovalInfo,
+	addedHosts map[string]struct{},
+	droppedForModify map[string]struct{},
+) []ast.Node {
+	for _, info := range removalsByName[name] {
+		if info.TableName == "" {
+			continue
+		}
+		if len(addedHosts) > 0 {
+			if _, reAdded := addedHosts[info.TableName]; !reAdded {
+				continue
+			}
+		}
+		result = p.appendScopedDrop(result, info, droppedForModify)
+	}
+	return result
+}
+
+// appendScopedDrop appends a single table-qualified, type-aware constraint
+// drop (ALTER TABLE <host> DROP FOREIGN KEY <name> / DROP CONSTRAINT <name>),
+// deduped per (table, name) via dropped so a constraint name shared across
+// host tables is dropped once per host and never twice for the same host.
+// MySQL accepts no IF EXISTS on these drops, so exactly-once emission is what
+// keeps a duplicate drop from aborting the migration.
+func (p *Planner) appendScopedDrop(result []ast.Node, info types.ConstraintRemovalInfo, dropped map[string]struct{}) []ast.Node {
+	dedupKey := info.TableName + "." + info.Name
+	if _, done := dropped[dedupKey]; done {
+		return result
+	}
+	dropped[dedupKey] = struct{}{}
+	return append(result, dropConstraintNode(info))
 }
 
 // foreignKeyAdditionNode builds the ALTER TABLE ADD CONSTRAINT node for a
@@ -763,21 +874,55 @@ func (p *Planner) fieldLevelForeignKeyConstraintNode(constraintName string, gene
 // MySQL/MariaDB use a type-specific drop syntax:
 //   - DROP FOREIGN KEY <name> for foreign key constraints (DROP CONSTRAINT is
 //     not accepted for FKs on MySQL/MariaDB)
-//   - DROP CONSTRAINT <name> for CHECK constraints (MySQL 8.0.16+ / MariaDB)
+//   - DROP CONSTRAINT <name> for CHECK constraints (MySQL 8.0.19+ / MariaDB)
 //   - DROP INDEX <name> for UNIQUE constraints
 //
 // The owning table is carried on diff.ConstraintsRemovedWithTables (the bare
-// ConstraintsRemoved name list does not retain it). Constraints that appear in
-// BOTH ConstraintsAdded and ConstraintsRemoved are modifications (the
-// comparator expresses a changed constraint as remove + add of the same name —
-// e.g. an on_delete change on a field-level FK, issue #189). Those are emitted
-// as DROP-then-ADD by addNewConstraints, which runs earlier in the pipeline so
-// the drop precedes the re-add; dropping them again here would remove the
-// freshly added constraint, so they are skipped.
+// ConstraintsRemoved name list does not retain it, and MySQL has no runtime
+// name-only fallback like the postgres information_schema DO block).
+//
+// # Modification skip — keyed on (table, name), not the bare name
+//
+// A constraint whose (table, name) appears in BOTH the additions
+// (ConstraintsAddedWithTables) and the removals is a modification: the
+// comparator expresses a changed constraint as remove + add of the same name
+// (e.g. an on_delete change on a field-level FK, issue #189). Those hosts are
+// emitted as DROP-then-ADD by addNewConstraints, which runs earlier in the
+// pipeline so the drop precedes the re-add; dropping them again here would
+// remove the freshly added constraint.
+//
+// The skip MUST be keyed on (table, name): a shared constraint name can be a
+// modify on host A and a PURE removal on host B. A bare-name skip treats B's
+// removal as a modify owned by addNewConstraints and skips it, leaving B's
+// stale constraint in place forever (issue #207; postgres sibling #206).
+//
+// A name that is re-added with NO recorded host (ConstraintsAdded carries the
+// name but ConstraintsAddedWithTables has no entry — reverse/down and
+// hand-built diffs) is skipped entirely: addNewConstraints already dropped
+// every recorded removal host for it (see emitModifyDropForName), and MySQL
+// accepts no DROP ... IF EXISTS to absorb a duplicate drop, so a second drop
+// here would abort the migration. Exactly-once emission per (table, name) —
+// split between the two functions and deduped inside each — is what stands in
+// for postgres's IF EXISTS idempotency guard.
 func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
-	addedNames := make(map[string]struct{}, len(diff.ConstraintsAdded))
+	// (table, name) pairs being re-added — modifications owned by
+	// addNewConstraints — plus, per name, how many hosts were recorded at all.
+	modifyHosts := make(map[string]struct{}, len(diff.ConstraintsAddedWithTables))
+	addedHostCounts := make(map[string]int, len(diff.ConstraintsAddedWithTables))
+	for _, add := range diff.ConstraintsAddedWithTables {
+		if add.TableName == "" {
+			// Hostless addition entries do not count as recorded hosts —
+			// mirroring addedHostsByName in addNewConstraints — so the
+			// hostless-re-add rule below still engages and this side keeps
+			// skipping the hosts the add side already dropped.
+			continue
+		}
+		modifyHosts[add.TableName+"."+add.Name] = struct{}{}
+		addedHostCounts[add.Name]++
+	}
+	addedBareNames := make(map[string]struct{}, len(diff.ConstraintsAdded))
 	for _, name := range diff.ConstraintsAdded {
-		addedNames[name] = struct{}{}
+		addedBareNames[name] = struct{}{}
 	}
 
 	// Constraints owned by a table that is itself being dropped do not need an
@@ -789,11 +934,24 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 		droppedTables[t] = struct{}{}
 	}
 
+	dropped := make(map[string]struct{})
 	for _, info := range diff.ConstraintsRemovedWithTables {
-		if _, modified := addedNames[info.Name]; modified {
+		if info.TableName == "" {
+			// No host recorded: there is no valid table-qualified ALTER TABLE
+			// to emit and no runtime fallback on MySQL. Real comparator output
+			// always carries the host.
 			continue
 		}
-		if _, dropped := droppedTables[info.TableName]; dropped {
+		if _, modified := modifyHosts[info.TableName+"."+info.Name]; modified {
+			// addNewConstraints owns this host's DROP-then-ADD; do not re-drop.
+			continue
+		}
+		if _, added := addedBareNames[info.Name]; added && addedHostCounts[info.Name] == 0 {
+			// Hostless re-add: addNewConstraints already dropped every
+			// recorded removal host for this name.
+			continue
+		}
+		if _, droppedTable := droppedTables[info.TableName]; droppedTable {
 			continue
 		}
 		// PRIMARY KEY uses a dedicated syntax and is owned by the column/table
@@ -801,7 +959,7 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 		if strings.EqualFold(info.Type, "PRIMARY KEY") {
 			continue
 		}
-		result = append(result, dropConstraintNode(info))
+		result = p.appendScopedDrop(result, info, dropped)
 	}
 	return result
 }
