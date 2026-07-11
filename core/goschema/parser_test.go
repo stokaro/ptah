@@ -280,7 +280,7 @@ func TestParsePackageRecursively(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	// Verify we found entities (includes all test files in stubs directory)
-	c.Assert(len(result.Tables), qt.Equals, 16) // All test tables from various test files
+	c.Assert(result.Tables, qt.HasLen, 16) // All test tables from various test files
 	c.Assert(len(result.Fields) > 0, qt.IsTrue)
 	c.Assert(len(result.EmbeddedFields) > 0, qt.IsTrue)
 
@@ -711,7 +711,7 @@ func TestParseConstraintComment(t *testing.T) {
 			comment := &ast.Comment{Text: tt.comment}
 			goschema.ParseConstraintComment(comment, "TestStruct", &constraints)
 
-			c.Assert(len(constraints), qt.Equals, 1)
+			c.Assert(constraints, qt.HasLen, 1)
 			constraint := constraints[0]
 
 			c.Assert(constraint.StructName, qt.Equals, tt.expected.StructName)
@@ -772,7 +772,7 @@ type Widget struct {
 
 			defer func() {
 				r := recover()
-				c.Assert(r, qt.Not(qt.IsNil), qt.Commentf("expected panic for unknown attribute"))
+				c.Assert(r, qt.IsNotNil, qt.Commentf("expected panic for unknown attribute"))
 				msg, _ := r.(string)
 				c.Assert(msg, qt.Contains, "unknown annotation attribute")
 				c.Assert(msg, qt.Contains, tt.mustContain)
@@ -851,7 +851,7 @@ type CommodityService struct {
 			break
 		}
 	}
-	c.Assert(fkField, qt.Not(qt.IsNil))
+	c.Assert(fkField, qt.IsNotNil)
 	c.Assert(fkField.Foreign, qt.Equals, "commodities(id)")
 	c.Assert(fkField.ForeignKeyName, qt.Equals, "fk_cs_commodity")
 	c.Assert(fkField.OnDelete, qt.Equals, "CASCADE")
@@ -900,7 +900,7 @@ type Post struct {
 			break
 		}
 	}
-	c.Assert(authorField, qt.Not(qt.IsNil),
+	c.Assert(authorField, qt.IsNotNil,
 		qt.Commentf("expected synthesized author_id field on Post; got fields: %+v", database.Fields))
 	c.Assert(authorField.Foreign, qt.Equals, "users(id)")
 	c.Assert(authorField.OnDelete, qt.Equals, "CASCADE")
@@ -945,11 +945,11 @@ type File struct {
 			typ = &database.Fields[i]
 		}
 	}
-	c.Assert(category, qt.Not(qt.IsNil))
+	c.Assert(category, qt.IsNotNil)
 	c.Assert(category.Check, qt.Equals, "category IN ('photos','invoices','documents','other')")
 	c.Assert(category.CheckName, qt.Equals, "")
 
-	c.Assert(typ, qt.Not(qt.IsNil))
+	c.Assert(typ, qt.IsNotNil)
 	c.Assert(typ.Check, qt.Equals, "type IN ('image','document','video','audio','archive','other')")
 	c.Assert(typ.CheckName, qt.Equals, "files_type_valid")
 }

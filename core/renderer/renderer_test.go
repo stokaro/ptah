@@ -407,7 +407,7 @@ func TestGetOrderedCreateStatements(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	statements := renderer.GetOrderedCreateStatements(result, "postgres")
-	c.Assert(len(statements), qt.Equals, len(result.Tables)+3) // 1 type + 2 indexes
+	c.Assert(statements, qt.HasLen, len(result.Tables)+3) // 1 type + 2 indexes
 
 	c.Assert(statements[0], qt.Contains, "CREATE TYPE")
 	c.Assert(statements[17], qt.Contains, "CREATE INDEX")

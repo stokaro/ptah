@@ -1,7 +1,6 @@
 package mysql_test
 
 import (
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -50,6 +49,6 @@ func TestMySQL_AlterTable_ClickHouseOnlyOpsEmitComment(t *testing.T) {
 
 	c.Assert(out, qt.Contains, "-- MYSQL: data-skipping indexes are ClickHouse-specific; ignored.")
 	c.Assert(out, qt.Contains, "-- MYSQL: table TTL is ClickHouse-specific; ignored.")
-	c.Assert(strings.Contains(out, "ADD INDEX"), qt.IsFalse)
-	c.Assert(strings.Contains(out, "MODIFY TTL"), qt.IsFalse)
+	c.Assert(out, qt.Not(qt.Contains), "ADD INDEX")
+	c.Assert(out, qt.Not(qt.Contains), "MODIFY TTL")
 }

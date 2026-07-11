@@ -40,7 +40,7 @@ func TestRLSPolicyGenerationInventarioReproduction(t *testing.T) {
 		"location_tenant_isolation",
 	}
 
-	c.Assert(len(database.RLSPolicies), qt.Equals, len(expectedPolicies), qt.Commentf("Expected %d RLS policies, got %d", len(expectedPolicies), len(database.RLSPolicies)))
+	c.Assert(database.RLSPolicies, qt.HasLen, len(expectedPolicies), qt.Commentf("Expected %d RLS policies, got %d", len(expectedPolicies), len(database.RLSPolicies)))
 
 	// Check that all expected policies are present
 	policyNames := make(map[string]bool)
@@ -61,7 +61,7 @@ func TestRLSPolicyGenerationInventarioReproduction(t *testing.T) {
 		"locations",
 	}
 
-	c.Assert(len(database.RLSEnabledTables), qt.Equals, len(expectedTables), qt.Commentf("Expected %d RLS enabled tables, got %d", len(expectedTables), len(database.RLSEnabledTables)))
+	c.Assert(database.RLSEnabledTables, qt.HasLen, len(expectedTables), qt.Commentf("Expected %d RLS enabled tables, got %d", len(expectedTables), len(database.RLSEnabledTables)))
 
 	// Check that all expected tables are present
 	tableNames := make(map[string]bool)

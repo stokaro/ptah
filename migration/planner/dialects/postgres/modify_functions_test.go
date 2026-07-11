@@ -1,7 +1,6 @@
 package postgres_test
 
 import (
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -42,7 +41,7 @@ func TestPlanner_GenerateMigrationAST_FunctionsModified_EmitsCreateOrReplace(t *
 
 	planner := postgres.New()
 	nodes := planner.GenerateMigrationAST(diff, generated)
-	c.Assert(len(nodes), qt.Not(qt.Equals), 0)
+	c.Assert(nodes, qt.Not(qt.HasLen), 0)
 
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -77,6 +76,6 @@ func TestPlanner_GenerateMigrationAST_FunctionsModified_SkippedWhenTargetMissing
 
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.Contains(sql, "ghost"), qt.IsFalse,
+	c.Assert(sql, qt.Not(qt.Contains), "ghost",
 		qt.Commentf("planner must not emit SQL for a modified function whose target definition is missing"))
 }

@@ -116,8 +116,8 @@ func TestMigrationFileNaming(t *testing.T) {
 	expectedDownFile := "1234567890_create_users_table.down.sql"
 
 	// Verify the expected naming pattern
-	c.Assert(strings.Contains(expectedUpFile, "up.sql"), qt.IsTrue)
-	c.Assert(strings.Contains(expectedDownFile, "down.sql"), qt.IsTrue)
+	c.Assert(expectedUpFile, qt.Contains, "up.sql")
+	c.Assert(expectedDownFile, qt.Contains, "down.sql")
 	c.Assert(strings.HasPrefix(expectedUpFile, "1234567890"), qt.IsTrue)
 	c.Assert(strings.HasPrefix(expectedDownFile, "1234567890"), qt.IsTrue)
 }
@@ -221,11 +221,11 @@ type TestTable struct {
 	c.Assert(err, qt.IsNil)
 
 	upSQL := string(upContent)
-	c.Assert(strings.Contains(upSQL, "CREATE EXTENSION IF NOT EXISTS pg_trgm"), qt.IsTrue,
+	c.Assert(upSQL, qt.Contains, "CREATE EXTENSION IF NOT EXISTS pg_trgm",
 		qt.Commentf("UP migration should contain CREATE EXTENSION for pg_trgm"))
-	c.Assert(strings.Contains(upSQL, "CREATE EXTENSION IF NOT EXISTS btree_gin"), qt.IsTrue,
+	c.Assert(upSQL, qt.Contains, "CREATE EXTENSION IF NOT EXISTS btree_gin",
 		qt.Commentf("UP migration should contain CREATE EXTENSION for btree_gin"))
-	c.Assert(strings.Contains(upSQL, "CREATE TABLE test_table_generator"), qt.IsTrue,
+	c.Assert(upSQL, qt.Contains, "CREATE TABLE test_table_generator",
 		qt.Commentf("UP migration should contain CREATE TABLE"))
 
 	// Read and verify DOWN migration
@@ -233,17 +233,17 @@ type TestTable struct {
 	c.Assert(err, qt.IsNil)
 
 	downSQL := string(downContent)
-	c.Assert(strings.Contains(downSQL, "DROP EXTENSION IF EXISTS pg_trgm"), qt.IsTrue,
+	c.Assert(downSQL, qt.Contains, "DROP EXTENSION IF EXISTS pg_trgm",
 		qt.Commentf("DOWN migration should contain DROP EXTENSION for pg_trgm"))
-	c.Assert(strings.Contains(downSQL, "DROP EXTENSION IF EXISTS btree_gin"), qt.IsTrue,
+	c.Assert(downSQL, qt.Contains, "DROP EXTENSION IF EXISTS btree_gin",
 		qt.Commentf("DOWN migration should contain DROP EXTENSION for btree_gin"))
-	c.Assert(strings.Contains(downSQL, "DROP TABLE IF EXISTS test_table_generator"), qt.IsTrue,
+	c.Assert(downSQL, qt.Contains, "DROP TABLE IF EXISTS test_table_generator",
 		qt.Commentf("DOWN migration should contain DROP TABLE"))
 
 	// Verify symmetric extension handling
-	c.Assert(strings.Contains(upSQL, "CREATE EXTENSION"), qt.IsTrue,
+	c.Assert(upSQL, qt.Contains, "CREATE EXTENSION",
 		qt.Commentf("UP migration should create extensions"))
-	c.Assert(strings.Contains(downSQL, "DROP EXTENSION"), qt.IsTrue,
+	c.Assert(downSQL, qt.Contains, "DROP EXTENSION",
 		qt.Commentf("DOWN migration should drop extensions"))
 }
 
@@ -351,9 +351,9 @@ type TestTable struct {
 
 	// The error should be about database connection or parsing, NOT about filesystem paths
 	errMsg := err.Error()
-	c.Assert(strings.Contains(errMsg, "invalid argument"), qt.IsFalse,
+	c.Assert(errMsg, qt.Not(qt.Contains), "invalid argument",
 		qt.Commentf("Should not have filesystem path resolution errors, got: %s", errMsg))
-	c.Assert(strings.Contains(errMsg, "stat"), qt.IsFalse,
+	c.Assert(errMsg, qt.Not(qt.Contains), "stat",
 		qt.Commentf("Should not have stat errors, got: %s", errMsg))
 
 	// The error should be about database or parsing issues instead
@@ -419,8 +419,8 @@ type TestTable struct {
 
 	// The error should be about database connection or parsing, NOT about filesystem paths
 	errMsg := err.Error()
-	c.Assert(strings.Contains(errMsg, "invalid argument"), qt.IsFalse,
+	c.Assert(errMsg, qt.Not(qt.Contains), "invalid argument",
 		qt.Commentf("Should not have filesystem path resolution errors, got: %s", errMsg))
-	c.Assert(strings.Contains(errMsg, "stat"), qt.IsFalse,
+	c.Assert(errMsg, qt.Not(qt.Contains), "stat",
 		qt.Commentf("Should not have stat errors, got: %s", errMsg))
 }

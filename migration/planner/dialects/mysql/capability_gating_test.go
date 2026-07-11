@@ -76,7 +76,7 @@ func TestPlanner_CapabilityGating_RendererStripsGuardsForMySQL(t *testing.T) {
 	sql, err := renderer.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
 
-	c.Assert(strings.Contains(sql, "IF EXISTS"), qt.IsFalse,
+	c.Assert(sql, qt.Not(qt.Contains), "IF EXISTS",
 		qt.Commentf("the mysql renderer must strip guards the target rejects; got:\n%s", sql))
 	c.Assert(strings.Count(sql, "ALTER TABLE articles DROP FOREIGN KEY shared_fk;"), qt.Equals, 1)
 	c.Assert(strings.Count(sql, "ALTER TABLE pages DROP FOREIGN KEY shared_fk;"), qt.Equals, 1)
@@ -92,7 +92,7 @@ func TestPlanner_CapabilityGating_MySQLPlannerEmitsNoGuardIntent(t *testing.T) {
 	sql, err := renderer.RenderSQL("mariadb", nodes...)
 	c.Assert(err, qt.IsNil)
 
-	c.Assert(strings.Contains(sql, "DROP FOREIGN KEY IF EXISTS"), qt.IsFalse,
+	c.Assert(sql, qt.Not(qt.Contains), "DROP FOREIGN KEY IF EXISTS",
 		qt.Commentf("a MySQL-preset planner must not request guards; got:\n%s", sql))
 	c.Assert(strings.Count(sql, "ALTER TABLE articles DROP FOREIGN KEY shared_fk;"), qt.Equals, 1)
 }
@@ -117,7 +117,7 @@ func TestPlanner_CapabilityGating_DropCheckSpellingWithoutGenericClause(t *testi
 
 	c.Assert(strings.Count(sql, "ALTER TABLE things DROP CHECK chk_qty;"), qt.Equals, 1,
 		qt.Commentf("without drop_constraint_generic a CHECK drop must use DROP CHECK; got:\n%s", sql))
-	c.Assert(strings.Contains(sql, "DROP CONSTRAINT"), qt.IsFalse,
+	c.Assert(sql, qt.Not(qt.Contains), "DROP CONSTRAINT",
 		qt.Commentf("the generic clause must not be emitted for this target; got:\n%s", sql))
 
 	// The current MySQL line keeps the generic clause.
@@ -149,7 +149,7 @@ func TestPlanner_CapabilityGating_NoGenericClauseFallbacks(t *testing.T) {
 		c.Assert(err, qt.IsNil)
 		c.Assert(strings.Count(sql, "ALTER TABLE users DROP INDEX uq_email;"), qt.Equals, 1,
 			qt.Commentf("without the generic clause a UNIQUE drop must use DROP INDEX; got:\n%s", sql))
-		c.Assert(strings.Contains(sql, "DROP CONSTRAINT"), qt.IsFalse,
+		c.Assert(sql, qt.Not(qt.Contains), "DROP CONSTRAINT",
 			qt.Commentf("got:\n%s", sql))
 
 		// Modern targets keep the generic clause (the universal DROP INDEX
@@ -176,8 +176,8 @@ func TestPlanner_CapabilityGating_NoGenericClauseFallbacks(t *testing.T) {
 		// No statement may be emitted at all — only the warning comment
 		// (asserting on statement shape, not bare keywords, because the
 		// warning text itself names the missing clauses).
-		c.Assert(strings.Contains(sql, "ALTER TABLE"), qt.IsFalse, qt.Commentf("got:\n%s", sql))
-		c.Assert(strings.Contains(sql, "WARNING: cannot drop CHECK constraint chk_qty"), qt.IsTrue,
+		c.Assert(sql, qt.Not(qt.Contains), "ALTER TABLE", qt.Commentf("got:\n%s", sql))
+		c.Assert(sql, qt.Contains, "WARNING: cannot drop CHECK constraint chk_qty",
 			qt.Commentf("the impossibility must be loud; got:\n%s", sql))
 	})
 }
@@ -203,16 +203,16 @@ func TestPlanner_CapabilityGating_CheckAddSkippedWhenUnenforced(t *testing.T) {
 		sql, err := renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
 
-		c.Assert(strings.Contains(sql, "ADD CONSTRAINT"), qt.IsFalse,
+		c.Assert(sql, qt.Not(qt.Contains), "ADD CONSTRAINT",
 			qt.Commentf("an unenforced CHECK must not be emitted; got:\n%s", sql))
-		c.Assert(strings.Contains(sql, "WARNING: CHECK constraint positive_price skipped"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "WARNING: CHECK constraint positive_price skipped",
 			qt.Commentf("the skip must be loud; got:\n%s", sql))
 
 		// The enforcing window (8.0.16+) emits the constraint as usual.
 		nodes = mysql.NewWithCapabilities(capability.MySQL8016()).GenerateMigrationAST(diff, generated)
 		sql, err = renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
-		c.Assert(strings.Contains(sql, "ALTER TABLE products ADD CONSTRAINT positive_price CHECK (price > 0);"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "ALTER TABLE products ADD CONSTRAINT positive_price CHECK (price > 0);",
 			qt.Commentf("enforcing targets keep the ADD; got:\n%s", sql))
 	})
 
@@ -234,9 +234,9 @@ func TestPlanner_CapabilityGating_CheckAddSkippedWhenUnenforced(t *testing.T) {
 		sql, err := renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
 
-		c.Assert(strings.Contains(sql, "ADD CONSTRAINT"), qt.IsFalse,
+		c.Assert(sql, qt.Not(qt.Contains), "ADD CONSTRAINT",
 			qt.Commentf("an unenforced field-level CHECK must not be emitted; got:\n%s", sql))
-		c.Assert(strings.Contains(sql, "WARNING: CHECK constraint things_qty_check skipped"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "WARNING: CHECK constraint things_qty_check skipped",
 			qt.Commentf("the skip must be loud; got:\n%s", sql))
 
 		// Positive control at the unit level: an enforcing target emits the
@@ -244,9 +244,9 @@ func TestPlanner_CapabilityGating_CheckAddSkippedWhenUnenforced(t *testing.T) {
 		nodes = mysql.New().GenerateMigrationAST(diff, generated)
 		sql, err = renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
-		c.Assert(strings.Contains(sql, "ALTER TABLE things ADD CONSTRAINT things_qty_check CHECK (qty >= 0);"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "ALTER TABLE things ADD CONSTRAINT things_qty_check CHECK (qty >= 0);",
 			qt.Commentf("enforcing targets keep the field-level ADD; got:\n%s", sql))
-		c.Assert(strings.Contains(sql, "WARNING"), qt.IsFalse)
+		c.Assert(sql, qt.Not(qt.Contains), "WARNING")
 	})
 }
 
@@ -280,9 +280,9 @@ func TestPlanner_CapabilityGating_ZeroValuePlannerBehavesLikeNew(t *testing.T) {
 
 	c.Assert(zeroSQL, qt.Equals, newSQL,
 		qt.Commentf("a zero-value planner must be byte-identical to New()"))
-	c.Assert(strings.Contains(zeroSQL, "ALTER TABLE products ADD CONSTRAINT positive_price CHECK (price > 0);"), qt.IsTrue,
+	c.Assert(zeroSQL, qt.Contains, "ALTER TABLE products ADD CONSTRAINT positive_price CHECK (price > 0);",
 		qt.Commentf("the CHECK addition must be emitted, not downgraded to a warning; got:\n%s", zeroSQL))
-	c.Assert(strings.Contains(zeroSQL, "ALTER TABLE things DROP CONSTRAINT chk_old;"), qt.IsTrue,
+	c.Assert(zeroSQL, qt.Contains, "ALTER TABLE things DROP CONSTRAINT chk_old;",
 		qt.Commentf("the CHECK removal must use the generic clause, not DROP CHECK; got:\n%s", zeroSQL))
 }
 
@@ -304,9 +304,9 @@ func TestPlanner_CapabilityGating_DropCheckDegradesOnMariaDBRenderer(t *testing.
 
 	sql, err := renderer.RenderSQL("mariadb", nodes...)
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.Contains(sql, "ALTER TABLE things DROP CONSTRAINT chk_qty;"), qt.IsTrue,
+	c.Assert(sql, qt.Contains, "ALTER TABLE things DROP CONSTRAINT chk_qty;",
 		qt.Commentf("the mariadb renderer must degrade DROP CHECK to the generic clause; got:\n%s", sql))
-	c.Assert(strings.Contains(sql, "DROP CHECK"), qt.IsFalse,
+	c.Assert(sql, qt.Not(qt.Contains), "DROP CHECK",
 		qt.Commentf("MariaDB has no DROP CHECK clause; got:\n%s", sql))
 }
 
@@ -332,22 +332,22 @@ func TestPlanner_CapabilityGating_DropIndexGuard(t *testing.T) {
 
 	sqlMariaDB, err := renderer.RenderSQL("mariadb", nodes...)
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.Contains(sqlMariaDB, "DROP INDEX IF EXISTS idx_things_qty ON things;"), qt.IsTrue,
+	c.Assert(sqlMariaDB, qt.Contains, "DROP INDEX IF EXISTS idx_things_qty ON things;",
 		qt.Commentf("mariadb honors the guard intent; got:\n%s", sqlMariaDB))
 
 	sqlMySQL, err := renderer.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.Contains(sqlMySQL, "DROP INDEX idx_things_qty ON things;"), qt.IsTrue,
+	c.Assert(sqlMySQL, qt.Contains, "DROP INDEX idx_things_qty ON things;",
 		qt.Commentf("the mysql renderer strips the guard it cannot parse; got:\n%s", sqlMySQL))
-	c.Assert(strings.Contains(sqlMySQL, "IF EXISTS"), qt.IsFalse)
+	c.Assert(sqlMySQL, qt.Not(qt.Contains), "IF EXISTS")
 
 	// MySQL-preset planner: no intent, so even the guard-capable mariadb
 	// renderer emits the plain form — the capability is a real knob.
 	nodes = mysql.New().GenerateMigrationAST(diff, &goschema.Database{})
 	sqlMariaDB, err = renderer.RenderSQL("mariadb", nodes...)
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.Contains(sqlMariaDB, "DROP INDEX idx_things_qty ON things;"), qt.IsTrue,
+	c.Assert(sqlMariaDB, qt.Contains, "DROP INDEX idx_things_qty ON things;",
 		qt.Commentf("got:\n%s", sqlMariaDB))
-	c.Assert(strings.Contains(sqlMariaDB, "IF EXISTS"), qt.IsFalse,
+	c.Assert(sqlMariaDB, qt.Not(qt.Contains), "IF EXISTS",
 		qt.Commentf("a MySQL-preset planner must not request the index-drop guard; got:\n%s", sqlMariaDB))
 }

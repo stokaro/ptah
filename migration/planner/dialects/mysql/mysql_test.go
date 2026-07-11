@@ -397,7 +397,7 @@ func TestPlanner_AddNewTables_WithEmbeddedFields(t *testing.T) {
 	planner := mysql.New()
 	result := planner.GenerateMigrationAST(diff, generated)
 
-	c.Assert(len(result), qt.Equals, 1)
+	c.Assert(result, qt.HasLen, 1)
 
 	// Convert AST to SQL to verify content
 	sql, err := renderer.RenderSQL("mysql", result[0])

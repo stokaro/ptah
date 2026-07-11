@@ -62,7 +62,7 @@ func TestGenerateMigrationAST_AddTableDropTableAndAlter(t *testing.T) {
 
 	// Expected order: CREATE events, ALTER existing (add), ALTER existing (modify),
 	// ALTER existing (drop), DROP legacy.
-	c.Assert(len(nodes), qt.Equals, 5)
+	c.Assert(nodes, qt.HasLen, 5)
 
 	ct, ok := nodes[0].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue, qt.Commentf("first node should be CREATE TABLE, got %T", nodes[0]))
@@ -105,7 +105,7 @@ func TestGenerateMigrationAST_IndexAddRemove(t *testing.T) {
 
 	p := clickhouse.New()
 	nodes := p.GenerateMigrationAST(diff, gen)
-	c.Assert(len(nodes), qt.Equals, 2)
+	c.Assert(nodes, qt.HasLen, 2)
 	idx, ok := nodes[0].(*ast.IndexNode)
 	c.Assert(ok, qt.IsTrue, qt.Commentf("expected IndexNode, got %T", nodes[0]))
 	c.Assert(idx.Table, qt.Equals, "events")
@@ -123,7 +123,7 @@ func TestGenerateMigrationAST_EnumChangesAreSurfacedAsComment(t *testing.T) {
 	}
 	p := clickhouse.New()
 	nodes := p.GenerateMigrationAST(diff, mkDB())
-	c.Assert(len(nodes), qt.Equals, 1)
+	c.Assert(nodes, qt.HasLen, 1)
 	comment, ok := nodes[0].(*ast.CommentNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(comment.Text, qt.Contains, "enum changes")

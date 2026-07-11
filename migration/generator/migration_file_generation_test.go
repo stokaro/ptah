@@ -1,7 +1,6 @@
 package generator
 
 import (
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -100,23 +99,23 @@ func TestMigrationFileGeneration_ExtensionSQL(t *testing.T) {
 
 			// 4. Verify up migration SQL contains expected patterns
 			for _, expected := range tt.expectedUpSQL {
-				c.Assert(strings.Contains(upSQL, expected), qt.IsTrue,
+				c.Assert(upSQL, qt.Contains, expected,
 					qt.Commentf("Expected up SQL to contain: %s\nActual up SQL:\n%s", expected, upSQL))
 			}
 
 			for _, unexpected := range tt.unexpectedUpSQL {
-				c.Assert(strings.Contains(upSQL, unexpected), qt.IsFalse,
+				c.Assert(upSQL, qt.Not(qt.Contains), unexpected,
 					qt.Commentf("Expected up SQL to NOT contain: %s\nActual up SQL:\n%s", unexpected, upSQL))
 			}
 
 			// 5. Verify down migration SQL contains expected patterns
 			for _, expected := range tt.expectedDownSQL {
-				c.Assert(strings.Contains(downSQL, expected), qt.IsTrue,
+				c.Assert(downSQL, qt.Contains, expected,
 					qt.Commentf("Expected down SQL to contain: %s\nActual down SQL:\n%s", expected, downSQL))
 			}
 
 			for _, unexpected := range tt.unexpectedDownSQL {
-				c.Assert(strings.Contains(downSQL, unexpected), qt.IsFalse,
+				c.Assert(downSQL, qt.Not(qt.Contains), unexpected,
 					qt.Commentf("Expected down SQL to NOT contain: %s\nActual down SQL:\n%s", unexpected, downSQL))
 			}
 		})
@@ -161,7 +160,7 @@ func TestExtensionMigrationSQL_CompleteFlow(t *testing.T) {
 	upDiff := schemadiff.Compare(generatedSchema, emptyDatabase)
 	upSQL, err := generateUpMigrationSQL(upDiff, generatedSchema, "postgres")
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.Contains(upSQL, "CREATE EXTENSION IF NOT EXISTS pg_trgm;"), qt.IsTrue)
+	c.Assert(upSQL, qt.Contains, "CREATE EXTENSION IF NOT EXISTS pg_trgm;")
 
 	// 2. Simulate database state after up migration
 	databaseAfterUp := &types.DBSchema{
@@ -174,11 +173,11 @@ func TestExtensionMigrationSQL_CompleteFlow(t *testing.T) {
 	// For down migration, we use the original upDiff and reverse it
 	downSQL, err := generateDownMigrationSQL(upDiff, generatedSchema, databaseAfterUp, "postgres")
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.Contains(downSQL, "DROP EXTENSION IF EXISTS pg_trgm;"), qt.IsTrue)
+	c.Assert(downSQL, qt.Contains, "DROP EXTENSION IF EXISTS pg_trgm;")
 
 	// 4. Verify the cycle is complete
 	c.Assert(upDiff.ExtensionsAdded, qt.DeepEquals, []string{"pg_trgm"})
-	c.Assert(len(upDiff.ExtensionsRemoved), qt.Equals, 0)
+	c.Assert(upDiff.ExtensionsRemoved, qt.HasLen, 0)
 }
 
 // TestMigrationFileGeneration_EmptyDiffPrevention tests the fix for issue #36

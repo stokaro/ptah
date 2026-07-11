@@ -121,7 +121,7 @@ func TestAlterRoleNode(t *testing.T) {
 		alterRole := ast.NewAlterRole("test_role")
 
 		c.Assert(alterRole.Name, qt.Equals, "test_role")
-		c.Assert(len(alterRole.Operations), qt.Equals, 0)
+		c.Assert(alterRole.Operations, qt.HasLen, 0)
 		c.Assert(alterRole.Comment, qt.Equals, "")
 	})
 
@@ -133,7 +133,7 @@ func TestAlterRoleNode(t *testing.T) {
 			SetComment("Update role attributes")
 
 		c.Assert(alterRole.Name, qt.Equals, "test_role")
-		c.Assert(len(alterRole.Operations), qt.Equals, 2)
+		c.Assert(alterRole.Operations, qt.HasLen, 2)
 		c.Assert(alterRole.Comment, qt.Equals, "Update role attributes")
 
 		// Check operation types

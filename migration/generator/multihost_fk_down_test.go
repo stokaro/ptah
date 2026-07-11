@@ -121,10 +121,10 @@ func TestGenerateDownMigration_MultiHostMixinFKModify_RestoresPriorActionPerHost
 			}
 
 			// The DOWN restores the PRIOR action (NO ACTION), never the new CASCADE.
-			c.Assert(strings.Contains(downSQL, "ON DELETE CASCADE"), qt.IsFalse,
+			c.Assert(downSQL, qt.Not(qt.Contains), "ON DELETE CASCADE",
 				qt.Commentf("DOWN must restore the prior action, not re-apply CASCADE:\n%s", downSQL))
 			// Never the mixin struct name.
-			c.Assert(strings.Contains(downSQL, "Ownable"), qt.IsFalse,
+			c.Assert(downSQL, qt.Not(qt.Contains), "Ownable",
 				qt.Commentf("DOWN must not reference the mixin struct name:\n%s", downSQL))
 		})
 	}
@@ -168,7 +168,7 @@ func TestReverseConstraintAdditions_RestoresPerHostBody(t *testing.T) {
 	}
 
 	additions := reverseConstraintAdditions(upDiff, dbSchema)
-	c.Assert(len(additions), qt.Equals, len(hosts))
+	c.Assert(additions, qt.HasLen, len(hosts))
 
 	byTable := map[string]types.ConstraintAdditionInfo{}
 	for _, a := range additions {

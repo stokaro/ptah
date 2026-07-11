@@ -368,7 +368,7 @@ func TestUnsupportedFeaturesEmitCommentAndReturnNil(t *testing.T) {
 			err := renderErr(tc.node)
 			c.Assert(err, qt.IsNil)
 			out := render(t, tc.node)
-			c.Assert(strings.Contains(out, "-- CLICKHOUSE:"), qt.IsTrue, qt.Commentf("expected '-- CLICKHOUSE:' marker, got: %q", out))
+			c.Assert(out, qt.Contains, "-- CLICKHOUSE:", qt.Commentf("expected '-- CLICKHOUSE:' marker, got: %q", out))
 		})
 	}
 }

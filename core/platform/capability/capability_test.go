@@ -105,7 +105,7 @@ func TestPresets_AllValid_AndCoverEveryRegisteredCapability(t *testing.T) {
 			_, present := preset[key]
 			c.Assert(present, qt.IsTrue, qt.Commentf("preset %s is missing registry key %q", name, key))
 		}
-		c.Assert(len(preset), qt.Equals, len(capability.All()), qt.Commentf("preset %s carries an extra key", name))
+		c.Assert(preset, qt.HasLen, len(capability.All()), qt.Commentf("preset %s carries an extra key", name))
 	}
 }
 
@@ -244,7 +244,7 @@ func TestDoc(t *testing.T) {
 	c := qt.New(t)
 
 	for _, key := range capability.All() {
-		c.Assert(capability.Doc(key) != "", qt.IsTrue, qt.Commentf("registry entry %q must carry documentation", key))
+		c.Assert(capability.Doc(key), qt.Not(qt.Equals), "", qt.Commentf("registry entry %q must carry documentation", key))
 	}
 	c.Assert(capability.Doc("nope"), qt.Equals, "")
 }

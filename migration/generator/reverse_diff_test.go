@@ -1,7 +1,6 @@
 package generator
 
 import (
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -328,14 +327,14 @@ func TestReverseSchemaDiff_TableModifications(t *testing.T) {
 
 	result := reverseSchemaDiff(input)
 
-	c.Assert(len(result.TablesModified), qt.Equals, 1)
+	c.Assert(result.TablesModified, qt.HasLen, 1)
 
 	reversedTable := result.TablesModified[0]
 	c.Assert(reversedTable.TableName, qt.Equals, "users")
 	c.Assert(reversedTable.ColumnsAdded, qt.DeepEquals, []string{"legacy_field"})
 	c.Assert(reversedTable.ColumnsRemoved, qt.DeepEquals, []string{"email", "created_at"})
 
-	c.Assert(len(reversedTable.ColumnsModified), qt.Equals, 1)
+	c.Assert(reversedTable.ColumnsModified, qt.HasLen, 1)
 	reversedColumn := reversedTable.ColumnsModified[0]
 	c.Assert(reversedColumn.ColumnName, qt.Equals, "name")
 	c.Assert(reversedColumn.Changes["type"], qt.Equals, "VARCHAR(255) -> VARCHAR(100)")
@@ -357,7 +356,7 @@ func TestReverseSchemaDiff_EnumModifications(t *testing.T) {
 
 	result := reverseSchemaDiff(input)
 
-	c.Assert(len(result.EnumsModified), qt.Equals, 1)
+	c.Assert(result.EnumsModified, qt.HasLen, 1)
 
 	reversedEnum := result.EnumsModified[0]
 	c.Assert(reversedEnum.EnumName, qt.Equals, "status_type")
@@ -384,7 +383,7 @@ func TestReverseSchemaDiff_FunctionModifications(t *testing.T) {
 
 	result := reverseSchemaDiff(input)
 
-	c.Assert(len(result.FunctionsModified), qt.Equals, 1)
+	c.Assert(result.FunctionsModified, qt.HasLen, 1)
 
 	reversedFunction := result.FunctionsModified[0]
 	c.Assert(reversedFunction.FunctionName, qt.Equals, "get_tenant_id")
@@ -414,7 +413,7 @@ func TestReverseSchemaDiff_RLSPolicyModifications(t *testing.T) {
 
 	result := reverseSchemaDiff(input)
 
-	c.Assert(len(result.RLSPoliciesModified), qt.Equals, 1)
+	c.Assert(result.RLSPoliciesModified, qt.HasLen, 1)
 
 	reversedPolicy := result.RLSPoliciesModified[0]
 	c.Assert(reversedPolicy.PolicyName, qt.Equals, "user_tenant_isolation")
@@ -445,7 +444,7 @@ func TestReverseSchemaDiff_RoleModifications(t *testing.T) {
 
 	result := reverseSchemaDiff(input)
 
-	c.Assert(len(result.RolesModified), qt.Equals, 1)
+	c.Assert(result.RolesModified, qt.HasLen, 1)
 
 	reversedRole := result.RolesModified[0]
 	c.Assert(reversedRole.RoleName, qt.Equals, "app_user")
@@ -553,7 +552,7 @@ func TestReverseSchemaDiff_Issue39_Integration(t *testing.T) {
 
 	// Functions should be removed in down migration
 	c.Assert(downDiff.FunctionsRemoved, qt.DeepEquals, []string{"get_current_tenant_id", "set_tenant_context"})
-	c.Assert(len(downDiff.FunctionsAdded), qt.Equals, 0)
+	c.Assert(downDiff.FunctionsAdded, qt.HasLen, 0)
 
 	// RLS policies should be removed in down migration
 	expectedPolicyRefs := []types.RLSPolicyRef{
@@ -561,19 +560,19 @@ func TestReverseSchemaDiff_Issue39_Integration(t *testing.T) {
 		{PolicyName: "area_tenant_isolation", TableName: ""},
 	}
 	c.Assert(downDiff.RLSPoliciesRemoved, qt.DeepEquals, expectedPolicyRefs)
-	c.Assert(len(downDiff.RLSPoliciesAdded), qt.Equals, 0)
+	c.Assert(downDiff.RLSPoliciesAdded, qt.HasLen, 0)
 
 	// RLS should be disabled on tables in down migration
 	c.Assert(downDiff.RLSEnabledTablesRemoved, qt.DeepEquals, []string{"users", "areas"})
-	c.Assert(len(downDiff.RLSEnabledTablesAdded), qt.Equals, 0)
+	c.Assert(downDiff.RLSEnabledTablesAdded, qt.HasLen, 0)
 
 	// Roles should be removed in down migration
 	c.Assert(downDiff.RolesRemoved, qt.DeepEquals, []string{"inventario_app"})
-	c.Assert(len(downDiff.RolesAdded), qt.Equals, 0)
+	c.Assert(downDiff.RolesAdded, qt.HasLen, 0)
 
 	// Tables should be removed in down migration (existing behavior)
 	c.Assert(downDiff.TablesRemoved, qt.DeepEquals, []string{"users"})
-	c.Assert(len(downDiff.TablesAdded), qt.Equals, 0)
+	c.Assert(downDiff.TablesAdded, qt.HasLen, 0)
 }
 
 // TestReverseSchemaDiff_ConstraintReversal verifies that a modified constraint
@@ -705,7 +704,7 @@ func TestGenerateDownMigrationSQL_Issue189_RestoresPriorForeignKeyAction(t *test
 		c.Assert(downSQL, qt.Contains, "ADD CONSTRAINT fk_export_file FOREIGN KEY (file_id) REFERENCES files(id)")
 		c.Assert(downSQL, qt.Contains, "DROP CONSTRAINT IF EXISTS")
 		// The restored action must NOT be SET NULL (that was the new action).
-		c.Assert(strings.Contains(downSQL, "ON DELETE SET NULL"), qt.IsFalse,
+		c.Assert(downSQL, qt.Not(qt.Contains), "ON DELETE SET NULL",
 			qt.Commentf("down must restore the prior action, not SET NULL:\n%s", downSQL))
 	})
 
@@ -717,9 +716,9 @@ func TestGenerateDownMigrationSQL_Issue189_RestoresPriorForeignKeyAction(t *test
 		// Real DROP FOREIGN KEY + re-ADD with the prior action; never a TODO.
 		c.Assert(downSQL, qt.Contains, "ALTER TABLE exports DROP FOREIGN KEY fk_export_file;")
 		c.Assert(downSQL, qt.Contains, "ADD CONSTRAINT fk_export_file FOREIGN KEY (file_id) REFERENCES files(id)")
-		c.Assert(strings.Contains(downSQL, "TODO"), qt.IsFalse,
+		c.Assert(downSQL, qt.Not(qt.Contains), "TODO",
 			qt.Commentf("down must not emit a TODO placeholder:\n%s", downSQL))
-		c.Assert(strings.Contains(downSQL, "ON DELETE SET NULL"), qt.IsFalse,
+		c.Assert(downSQL, qt.Not(qt.Contains), "ON DELETE SET NULL",
 			qt.Commentf("down must restore the prior action, not SET NULL:\n%s", downSQL))
 	})
 }
@@ -765,9 +764,9 @@ func TestGenerateDownMigrationSQL_Issue194_DropsFieldLevelCheckMySQLFamily(t *te
 				wantDrop = "ALTER TABLE files DROP CONSTRAINT IF EXISTS files_category_check;"
 			}
 			c.Assert(downSQL, qt.Contains, wantDrop)
-			c.Assert(strings.Contains(downSQL, "No rollback operations needed"), qt.IsFalse,
+			c.Assert(downSQL, qt.Not(qt.Contains), "No rollback operations needed",
 				qt.Commentf("field-level CHECK down migration must not be empty:\n%s", downSQL))
-			c.Assert(strings.Contains(downSQL, "TODO"), qt.IsFalse,
+			c.Assert(downSQL, qt.Not(qt.Contains), "TODO",
 				qt.Commentf("down must emit real SQL, not a TODO placeholder:\n%s", downSQL))
 		})
 	}

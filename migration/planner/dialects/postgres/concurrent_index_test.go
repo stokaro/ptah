@@ -1,7 +1,6 @@
 package postgres_test
 
 import (
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -41,9 +40,9 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 
-		c.Assert(strings.Contains(sql, "CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);",
 			qt.Commentf("default output must be byte-identical to the pre-capability planner; got:\n%s", sql))
-		c.Assert(strings.Contains(sql, "CONCURRENTLY"), qt.IsFalse)
+		c.Assert(sql, qt.Not(qt.Contains), "CONCURRENTLY")
 	})
 
 	t.Run("policy plus capability emits CONCURRENTLY", func(t *testing.T) {
@@ -53,7 +52,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 
-		c.Assert(strings.Contains(sql, "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_email ON users (email);"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_email ON users (email);",
 			qt.Commentf("CONCURRENTLY must precede IF NOT EXISTS per the PostgreSQL grammar; got:\n%s", sql))
 	})
 
@@ -65,9 +64,9 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 
-		c.Assert(strings.Contains(sql, "CONCURRENTLY"), qt.IsFalse,
+		c.Assert(sql, qt.Not(qt.Contains), "CONCURRENTLY",
 			qt.Commentf("the capability gate must win over the policy; got:\n%s", sql))
-		c.Assert(strings.Contains(sql, "CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);"), qt.IsTrue)
+		c.Assert(sql, qt.Contains, "CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);")
 	})
 
 	t.Run("unique concurrent index", func(t *testing.T) {
@@ -84,7 +83,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 
-		c.Assert(strings.Contains(sql, "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_users_email ON users (email);"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_users_email ON users (email);",
 			qt.Commentf("UNIQUE and CONCURRENTLY must compose; got:\n%s", sql))
 	})
 
@@ -97,7 +96,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 		nodes := base.GenerateMigrationAST(diff, generated)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
-		c.Assert(strings.Contains(sql, "CONCURRENTLY"), qt.IsFalse,
+		c.Assert(sql, qt.Not(qt.Contains), "CONCURRENTLY",
 			qt.Commentf("the original planner must keep the default policy; got:\n%s", sql))
 	})
 }

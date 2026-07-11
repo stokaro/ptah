@@ -128,7 +128,7 @@ func TestMySQLReader_parseTableFromDDL(t *testing.T) {
 			validate: func(c *qt.C, table types.DBTable) {
 				c.Assert(table.Name, qt.Equals, "users")
 				c.Assert(table.Type, qt.Equals, "BASE TABLE")
-				c.Assert(len(table.Columns), qt.Equals, 3)
+				c.Assert(table.Columns, qt.HasLen, 3)
 
 				// Check id column
 				idCol := table.Columns[0]
@@ -166,7 +166,7 @@ func TestMySQLReader_parseTableFromDDL(t *testing.T) {
 			expectError: false,
 			validate: func(c *qt.C, table types.DBTable) {
 				c.Assert(table.Name, qt.Equals, "products")
-				c.Assert(len(table.Columns), qt.Equals, 2)
+				c.Assert(table.Columns, qt.HasLen, 2)
 
 				// Check sku column should be marked as unique
 				skuCol := table.Columns[1]
@@ -187,7 +187,7 @@ func TestMySQLReader_parseTableFromDDL(t *testing.T) {
 			expectError: false,
 			validate: func(c *qt.C, table types.DBTable) {
 				c.Assert(table.Name, qt.Equals, "test_table")
-				c.Assert(len(table.Columns), qt.Equals, 4)
+				c.Assert(table.Columns, qt.HasLen, 4)
 
 				// Check id column
 				idCol := table.Columns[0]

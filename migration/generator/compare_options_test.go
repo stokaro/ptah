@@ -89,7 +89,7 @@ func TestGenerateMigrationOptions_CompareOptions_NilHandling_DefaultBehavior(t *
 
 	// With nil options, should use defaults (ignore plpgsql)
 	c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"pg_trgm"})
-	c.Assert(len(diff.ExtensionsRemoved), qt.Equals, 1) // adminpack should be removed
+	c.Assert(diff.ExtensionsRemoved, qt.HasLen, 1) // adminpack should be removed
 	c.Assert(diff.ExtensionsRemoved, qt.Contains, "adminpack")
 }
 
@@ -118,7 +118,7 @@ func TestGenerateMigrationOptions_CompareOptions_NilHandling_CustomOptions(t *te
 
 	// With custom options ignoring both plpgsql and adminpack
 	c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"pg_trgm"})
-	c.Assert(len(diff.ExtensionsRemoved), qt.Equals, 0) // both should be ignored
+	c.Assert(diff.ExtensionsRemoved, qt.HasLen, 0) // both should be ignored
 }
 
 // TestGenerateMigrationOptions_CompareOptions_ConfigurationValidation tests that
@@ -197,9 +197,9 @@ func TestGenerateMigrationOptions_CompareOptions_ConfigurationValidation(t *test
 
 			diff := schemadiff.CompareWithOptions(generated, database, tt.compareOptions)
 
-			c.Assert(len(diff.ExtensionsAdded), qt.Equals, tt.expectedAddedCount,
+			c.Assert(diff.ExtensionsAdded, qt.HasLen, tt.expectedAddedCount,
 				qt.Commentf("Expected %d extensions to be added", tt.expectedAddedCount))
-			c.Assert(len(diff.ExtensionsRemoved), qt.Equals, tt.expectedRemovedCount,
+			c.Assert(diff.ExtensionsRemoved, qt.HasLen, tt.expectedRemovedCount,
 				qt.Commentf("Expected %d extensions to be removed", tt.expectedRemovedCount))
 		})
 	}
@@ -379,7 +379,7 @@ func TestGenerateMigration_CompareOptions_Integration_NoIgnoredExtensions(t *tes
 	upContent, err := os.ReadFile(files.UpFile)
 	c.Assert(err, qt.IsNil)
 	upSQL := string(upContent)
-	c.Assert(strings.Contains(upSQL, "CREATE EXTENSION"), qt.IsFalse,
+	c.Assert(upSQL, qt.Not(qt.Contains), "CREATE EXTENSION",
 		qt.Commentf("UP SQL should not contain CREATE EXTENSION when removing extensions"))
 
 	// Clean up test extensions
@@ -449,9 +449,9 @@ func TestGenerateMigration_CompareOptions_Integration_AddExtension(t *testing.T)
 	upContent, err := os.ReadFile(files.UpFile)
 	c.Assert(err, qt.IsNil)
 	upSQL := string(upContent)
-	c.Assert(strings.Contains(upSQL, "CREATE EXTENSION IF NOT EXISTS pg_trgm"), qt.IsTrue,
+	c.Assert(upSQL, qt.Contains, "CREATE EXTENSION IF NOT EXISTS pg_trgm",
 		qt.Commentf("UP SQL should contain CREATE EXTENSION for pg_trgm"))
-	c.Assert(strings.Contains(upSQL, "DROP EXTENSION"), qt.IsFalse,
+	c.Assert(upSQL, qt.Not(qt.Contains), "DROP EXTENSION",
 		qt.Commentf("UP SQL should not contain DROP EXTENSION"))
 
 	// Clean up test extensions
@@ -551,7 +551,7 @@ type TestTable struct {
 
 	// Verify that the error is not related to CompareOptions
 	errMsg := err.Error()
-	c.Assert(strings.Contains(errMsg, "CompareOptions"), qt.IsFalse,
+	c.Assert(errMsg, qt.Not(qt.Contains), "CompareOptions",
 		qt.Commentf("Error should not be related to CompareOptions: %s", errMsg))
 }
 
@@ -598,7 +598,7 @@ type TestTable struct {
 
 	// Verify that the error is not related to CompareOptions
 	errMsg := err.Error()
-	c.Assert(strings.Contains(errMsg, "CompareOptions"), qt.IsFalse,
+	c.Assert(errMsg, qt.Not(qt.Contains), "CompareOptions",
 		qt.Commentf("Error should not be related to CompareOptions: %s", errMsg))
 }
 

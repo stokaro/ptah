@@ -35,10 +35,10 @@ func TestVersionedEntityManager(t *testing.T) {
 		c.Assert(err, qt.IsNil)
 
 		// Should have 2 tables: users, products
-		c.Assert(len(schema.Tables), qt.Equals, 2)
+		c.Assert(schema.Tables, qt.HasLen, 2)
 
 		// Should have no enums in initial version
-		c.Assert(len(schema.Enums), qt.Equals, 0)
+		c.Assert(schema.Enums, qt.HasLen, 0)
 
 		// Check table names
 		tableNames := make(map[string]bool)
@@ -61,10 +61,10 @@ func TestVersionedEntityManager(t *testing.T) {
 		c.Assert(err, qt.IsNil)
 
 		// Should have 3 tables: users, products, posts
-		c.Assert(len(schema.Tables), qt.Equals, 3)
+		c.Assert(schema.Tables, qt.HasLen, 3)
 
 		// Should have 3 enums
-		c.Assert(len(schema.Enums), qt.Equals, 3)
+		c.Assert(schema.Enums, qt.HasLen, 3)
 
 		// Check enum names (parser adds "enum_" prefix)
 		enumNames := make(map[string]bool)

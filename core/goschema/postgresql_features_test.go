@@ -71,7 +71,7 @@ type TestExtensions struct{}
 			// Write to a temporary file and parse it
 			database := parseStringAsGoFile(c, content)
 
-			c.Assert(len(database.Extensions), qt.Equals, 1)
+			c.Assert(database.Extensions, qt.HasLen, 1)
 			ext := database.Extensions[0]
 			c.Assert(ext.Name, qt.Equals, tt.expected.Name)
 			c.Assert(ext.IfNotExists, qt.Equals, tt.expected.IfNotExists)
@@ -165,7 +165,7 @@ type TestEntity struct {
 			// Write to a temporary file and parse it
 			database := parseStringAsGoFile(c, content)
 
-			c.Assert(len(database.Indexes), qt.Equals, 1)
+			c.Assert(database.Indexes, qt.HasLen, 1)
 			idx := database.Indexes[0]
 			c.Assert(idx.Name, qt.Equals, tt.expected.Name)
 			c.Assert(idx.Fields, qt.DeepEquals, tt.expected.Fields)
@@ -190,7 +190,7 @@ type DatabaseExtensions struct{}
 
 	database := parseStringAsGoFile(c, content)
 
-	c.Assert(len(database.Extensions), qt.Equals, 3)
+	c.Assert(database.Extensions, qt.HasLen, 3)
 
 	// Extensions are sorted alphabetically: btree_gin, pg_trgm, postgis
 
@@ -247,20 +247,20 @@ type Product struct {
 	database := parseStringAsGoFile(c, content)
 
 	// Check extensions (sorted alphabetically)
-	c.Assert(len(database.Extensions), qt.Equals, 2)
+	c.Assert(database.Extensions, qt.HasLen, 2)
 	c.Assert(database.Extensions[0].Name, qt.Equals, "btree_gin")
 	c.Assert(database.Extensions[1].Name, qt.Equals, "pg_trgm")
 
 	// Check tables
-	c.Assert(len(database.Tables), qt.Equals, 1)
+	c.Assert(database.Tables, qt.HasLen, 1)
 	c.Assert(database.Tables[0].Name, qt.Equals, "products")
 	c.Assert(database.Tables[0].StructName, qt.Equals, "Product")
 
 	// Check fields
-	c.Assert(len(database.Fields), qt.Equals, 4)
+	c.Assert(database.Fields, qt.HasLen, 4)
 
 	// Check indexes
-	c.Assert(len(database.Indexes), qt.Equals, 3)
+	c.Assert(database.Indexes, qt.HasLen, 3)
 
 	// Check GIN index
 	ginIndex := database.Indexes[0]

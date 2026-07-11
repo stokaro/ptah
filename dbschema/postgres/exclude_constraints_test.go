@@ -221,7 +221,7 @@ func TestEnhanceExcludeConstraints(t *testing.T) {
 			// For now, we'll test the parsing logic separately
 			// In a full implementation, you would use a test database or mock the SQL queries
 
-			c.Assert(len(tt.expectedConstraints), qt.Equals, len(tt.basicConstraints))
+			c.Assert(tt.expectedConstraints, qt.HasLen, len(tt.basicConstraints))
 		})
 	}
 }

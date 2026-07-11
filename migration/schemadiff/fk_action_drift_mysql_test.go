@@ -39,9 +39,9 @@ func TestCompare_FieldLevelForeignKeyActionDrift_MySQL(t *testing.T) {
 	const dropStmt = "ALTER TABLE exports DROP FOREIGN KEY fk_export_file;"
 	const addStmt = "ALTER TABLE exports ADD CONSTRAINT fk_export_file FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE SET NULL;"
 
-	c.Assert(strings.Contains(sql, dropStmt), qt.IsTrue,
+	c.Assert(sql, qt.Contains, dropStmt,
 		qt.Commentf("expected a real DROP FOREIGN KEY (not a TODO comment), got:\n%s", sql))
-	c.Assert(strings.Contains(sql, "TODO"), qt.IsFalse,
+	c.Assert(sql, qt.Not(qt.Contains), "TODO",
 		qt.Commentf("must not emit a TODO placeholder, got:\n%s", sql))
 
 	// Ordering: the DROP must precede the ADD so the re-add does not collide
@@ -54,7 +54,7 @@ func TestCompare_FieldLevelForeignKeyActionDrift_MySQL(t *testing.T) {
 		qt.Commentf("DROP must come before ADD; drop@%d add@%d\n%s", dropIdx, addIdx, sql))
 
 	// The re-added FK carries the new ON DELETE action.
-	c.Assert(strings.Contains(sql, addStmt), qt.IsTrue,
+	c.Assert(sql, qt.Contains, addStmt,
 		qt.Commentf("expected the FK to be re-added with ON DELETE SET NULL, got:\n%s", sql))
 }
 

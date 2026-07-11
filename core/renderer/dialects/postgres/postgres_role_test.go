@@ -145,7 +145,7 @@ func TestPostgreSQLRenderer_VisitAlterRole(t *testing.T) {
 
 		c.Assert(err, qt.IsNil)
 		lines := strings.Split(strings.TrimSpace(sql), "\n")
-		c.Assert(len(lines), qt.Equals, 3)
+		c.Assert(lines, qt.HasLen, 3)
 		c.Assert(lines[0], qt.Equals, "ALTER ROLE test_role LOGIN;")
 		c.Assert(lines[1], qt.Equals, "ALTER ROLE test_role PASSWORD 'md5a1b2c3d4e5f6789012345678901234';")
 		c.Assert(lines[2], qt.Equals, "ALTER ROLE test_role CREATEDB;")
@@ -167,7 +167,7 @@ func TestPostgreSQLRenderer_VisitAlterRole(t *testing.T) {
 
 		c.Assert(err, qt.IsNil)
 		lines := strings.Split(strings.TrimSpace(sql), "\n")
-		c.Assert(len(lines), qt.Equals, 7)
+		c.Assert(lines, qt.HasLen, 7)
 		c.Assert(lines[0], qt.Equals, "ALTER ROLE test_role NOLOGIN;")
 		c.Assert(lines[1], qt.Equals, "ALTER ROLE test_role PASSWORD 'SCRAM-SHA-256$4096:abcd1234$hash:signature';")
 		c.Assert(lines[2], qt.Equals, "ALTER ROLE test_role SUPERUSER;")

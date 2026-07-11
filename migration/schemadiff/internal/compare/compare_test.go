@@ -201,7 +201,7 @@ func TestColumns_HappyPath(t *testing.T) {
 			result := compare.Columns(tt.genCol, tt.dbCol)
 
 			c.Assert(result.ColumnName, qt.Equals, tt.expected.ColumnName)
-			c.Assert(len(result.Changes), qt.Equals, len(tt.expected.Changes))
+			c.Assert(result.Changes, qt.HasLen, len(tt.expected.Changes))
 			for key, expectedValue := range tt.expected.Changes {
 				c.Assert(result.Changes[key], qt.Equals, expectedValue)
 			}
@@ -283,7 +283,7 @@ func TestColumns_UnhappyPath(t *testing.T) {
 			result := compare.Columns(tt.genCol, tt.dbCol)
 
 			c.Assert(result.ColumnName, qt.Equals, tt.expected.ColumnName)
-			c.Assert(len(result.Changes), qt.Equals, len(tt.expected.Changes))
+			c.Assert(result.Changes, qt.HasLen, len(tt.expected.Changes))
 			for key, expectedValue := range tt.expected.Changes {
 				c.Assert(result.Changes[key], qt.Equals, expectedValue)
 			}
@@ -385,7 +385,7 @@ func TestEnums_HappyPath(t *testing.T) {
 
 			c.Assert(diff.EnumsAdded, qt.DeepEquals, tt.expected.EnumsAdded)
 			c.Assert(diff.EnumsRemoved, qt.DeepEquals, tt.expected.EnumsRemoved)
-			c.Assert(len(diff.EnumsModified), qt.Equals, len(tt.expected.EnumsModified))
+			c.Assert(diff.EnumsModified, qt.HasLen, len(tt.expected.EnumsModified))
 
 			for i, expectedEnumDiff := range tt.expected.EnumsModified {
 				c.Assert(diff.EnumsModified[i].EnumName, qt.Equals, expectedEnumDiff.EnumName)
@@ -434,7 +434,7 @@ func TestEnums_UnhappyPath(t *testing.T) {
 
 			c.Assert(diff.EnumsAdded, qt.DeepEquals, tt.expected.EnumsAdded)
 			c.Assert(diff.EnumsRemoved, qt.DeepEquals, tt.expected.EnumsRemoved)
-			c.Assert(len(diff.EnumsModified), qt.Equals, len(tt.expected.EnumsModified))
+			c.Assert(diff.EnumsModified, qt.HasLen, len(tt.expected.EnumsModified))
 		})
 	}
 }
@@ -856,7 +856,7 @@ func TestColumns_EdgeCases(t *testing.T) {
 			result := compare.Columns(tt.genCol, tt.dbCol)
 
 			c.Assert(result.ColumnName, qt.Equals, tt.expected.ColumnName)
-			c.Assert(len(result.Changes), qt.Equals, len(tt.expected.Changes))
+			c.Assert(result.Changes, qt.HasLen, len(tt.expected.Changes))
 			for key, expectedValue := range tt.expected.Changes {
 				c.Assert(result.Changes[key], qt.Equals, expectedValue)
 			}
@@ -888,9 +888,9 @@ func TestTableColumns_EdgeCases(t *testing.T) {
 	result := compare.TableColumns(genTable, dbTable, generated)
 
 	c.Assert(result.TableName, qt.Equals, "users")
-	c.Assert(len(result.ColumnsModified), qt.Equals, 1)
+	c.Assert(result.ColumnsModified, qt.HasLen, 1)
 	c.Assert(result.ColumnsModified[0].ColumnName, qt.Equals, "name")
-	c.Assert(len(result.ColumnsModified[0].Changes), qt.Equals, 1) // Only nullable should change (types are both varchar)
+	c.Assert(result.ColumnsModified[0].Changes, qt.HasLen, 1) // Only nullable should change (types are both varchar)
 	c.Assert(result.ColumnsModified[0].Changes["nullable"], qt.Equals, "true -> false")
 }
 
@@ -1050,7 +1050,7 @@ func TestColumnByName_HappyPath(t *testing.T) {
 
 			c.Assert(result, qt.IsNotNil)
 			c.Assert(result.ColumnName, qt.Equals, tt.expectedDiff.ColumnName)
-			c.Assert(len(result.Changes), qt.Equals, len(tt.expectedDiff.Changes))
+			c.Assert(result.Changes, qt.HasLen, len(tt.expectedDiff.Changes))
 			for key, expectedValue := range tt.expectedDiff.Changes {
 				c.Assert(result.Changes[key], qt.Equals, expectedValue)
 			}
@@ -1263,7 +1263,7 @@ func TestColumnByName_EdgeCases(t *testing.T) {
 			} else {
 				c.Assert(result, qt.IsNotNil)
 				c.Assert(result.ColumnName, qt.Equals, tt.expectedDiff.ColumnName)
-				c.Assert(len(result.Changes), qt.Equals, len(tt.expectedDiff.Changes))
+				c.Assert(result.Changes, qt.HasLen, len(tt.expectedDiff.Changes))
 				for key, expectedValue := range tt.expectedDiff.Changes {
 					c.Assert(result.Changes[key], qt.Equals, expectedValue)
 				}
@@ -1294,7 +1294,7 @@ func TestColumnByName_PointerBehavior(t *testing.T) {
 	result.Changes["new_change"] = "old -> new"
 
 	c.Assert(originalDiffs[0].Changes["new_change"], qt.Equals, "old -> new")
-	c.Assert(len(originalDiffs[0].Changes), qt.Equals, 2)
+	c.Assert(originalDiffs[0].Changes, qt.HasLen, 2)
 }
 
 func TestTablesAndColumns_HappyPath(t *testing.T) {
@@ -1416,7 +1416,7 @@ func TestTablesAndColumns_HappyPath(t *testing.T) {
 
 			c.Assert(diff.TablesAdded, qt.DeepEquals, tt.expected.TablesAdded)
 			c.Assert(diff.TablesRemoved, qt.DeepEquals, tt.expected.TablesRemoved)
-			c.Assert(len(diff.TablesModified), qt.Equals, len(tt.expected.TablesModified))
+			c.Assert(diff.TablesModified, qt.HasLen, len(tt.expected.TablesModified))
 
 			for i, expectedTableDiff := range tt.expected.TablesModified {
 				c.Assert(diff.TablesModified[i].TableName, qt.Equals, expectedTableDiff.TableName)
@@ -1475,7 +1475,7 @@ func TestTablesAndColumns_UnhappyPath(t *testing.T) {
 
 			c.Assert(diff.TablesAdded, qt.DeepEquals, tt.expected.TablesAdded)
 			c.Assert(diff.TablesRemoved, qt.DeepEquals, tt.expected.TablesRemoved)
-			c.Assert(len(diff.TablesModified), qt.Equals, len(tt.expected.TablesModified))
+			c.Assert(diff.TablesModified, qt.HasLen, len(tt.expected.TablesModified))
 		})
 	}
 }

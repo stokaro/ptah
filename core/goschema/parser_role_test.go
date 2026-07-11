@@ -20,7 +20,7 @@ type UserRoles struct {
 `
 		database := parseStringAsGoFile(c, goCode)
 
-		c.Assert(len(database.Roles), qt.Equals, 1)
+		c.Assert(database.Roles, qt.HasLen, 1)
 		role := database.Roles[0]
 		c.Assert(role.StructName, qt.Equals, "UserRoles")
 		c.Assert(role.Name, qt.Equals, "app_user")
@@ -45,7 +45,7 @@ type AdminRoles struct {
 `
 		database := parseStringAsGoFile(c, goCode)
 
-		c.Assert(len(database.Roles), qt.Equals, 1)
+		c.Assert(database.Roles, qt.HasLen, 1)
 		role := database.Roles[0]
 		c.Assert(role.StructName, qt.Equals, "AdminRoles")
 		c.Assert(role.Name, qt.Equals, "admin_user")
@@ -70,7 +70,7 @@ type ServiceRoles struct {
 `
 		database := parseStringAsGoFile(c, goCode)
 
-		c.Assert(len(database.Roles), qt.Equals, 1)
+		c.Assert(database.Roles, qt.HasLen, 1)
 		role := database.Roles[0]
 		c.Assert(role.Name, qt.Equals, "service_user")
 		c.Assert(role.CreateDB, qt.Equals, true)
@@ -90,7 +90,7 @@ type UserRoles struct {
 `
 		database := parseStringAsGoFile(c, goCode)
 
-		c.Assert(len(database.Roles), qt.Equals, 3)
+		c.Assert(database.Roles, qt.HasLen, 3)
 
 		// Check app_user
 		appUser := findRoleByName(database.Roles, "app_user")
@@ -129,7 +129,7 @@ type AdminRoles struct {
 `
 		database := parseStringAsGoFile(c, goCode)
 
-		c.Assert(len(database.Roles), qt.Equals, 2)
+		c.Assert(database.Roles, qt.HasLen, 2)
 
 		appUser := findRoleByName(database.Roles, "app_user")
 		c.Assert(appUser, qt.IsNotNil)
@@ -151,7 +151,7 @@ type MinimalRoles struct {
 `
 		database := parseStringAsGoFile(c, goCode)
 
-		c.Assert(len(database.Roles), qt.Equals, 1)
+		c.Assert(database.Roles, qt.HasLen, 1)
 		role := database.Roles[0]
 		c.Assert(role.Name, qt.Equals, "minimal_role")
 		c.Assert(role.Login, qt.Equals, false)
@@ -177,7 +177,7 @@ type InheritRoles struct {
 `
 		database := parseStringAsGoFile(c, goCode)
 
-		c.Assert(len(database.Roles), qt.Equals, 3)
+		c.Assert(database.Roles, qt.HasLen, 3)
 
 		defaultRole := findRoleByName(database.Roles, "inherit_default")
 		c.Assert(defaultRole.Inherit, qt.Equals, true)

@@ -128,7 +128,7 @@ func TestIndexBuilder_SingleColumn(t *testing.T) {
 
 	c.Assert(result.Name, qt.Equals, "idx_users_username")
 	c.Assert(result.Table, qt.Equals, "users")
-	c.Assert(len(result.Columns), qt.Equals, 1)
+	c.Assert(result.Columns, qt.HasLen, 1)
 	c.Assert(result.Columns[0], qt.Equals, "username")
 	c.Assert(result.Unique, qt.IsTrue)
 	c.Assert(result.Comment, qt.Equals, "Unique username index")
@@ -143,7 +143,7 @@ func TestIndexBuilder_NoColumns(t *testing.T) {
 
 	c.Assert(result.Name, qt.Equals, "idx_empty")
 	c.Assert(result.Table, qt.Equals, "test_table")
-	c.Assert(len(result.Columns), qt.Equals, 0)
+	c.Assert(result.Columns, qt.HasLen, 0)
 }
 
 func TestIndexBuilder_HashIndex(t *testing.T) {

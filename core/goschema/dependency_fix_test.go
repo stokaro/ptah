@@ -59,7 +59,7 @@ func TestDependencyOrderingWithEmbeddedFields(t *testing.T) {
 
 	// Verify that the dependency was correctly detected
 	usersDeps := database.Dependencies["users"]
-	c.Assert(len(usersDeps), qt.Equals, 1, qt.Commentf("Users table should have exactly one dependency"))
+	c.Assert(usersDeps, qt.HasLen, 1, qt.Commentf("Users table should have exactly one dependency"))
 	c.Assert(usersDeps[0], qt.Equals, "tenants", qt.Commentf("Users table should depend on tenants table"))
 
 	// Verify that tables are sorted in correct order
@@ -93,7 +93,7 @@ func TestDependencyOrderingWithEmbeddedFields(t *testing.T) {
 
 	// Should have: tenant_id (from TenantAwareEntityID), email (direct)
 	// Note: id field from EntityID is not included because TenantAwareEntityID doesn't directly embed EntityID in this test
-	c.Assert(len(userFields), qt.Equals, 2, qt.Commentf("User should have 2 fields after embedded processing"))
+	c.Assert(userFields, qt.HasLen, 2, qt.Commentf("User should have 2 fields after embedded processing"))
 
 	// Check that tenant_id field with foreign key is present
 	hasTenantIDWithFK := false
@@ -177,7 +177,7 @@ func TestEmbeddedFieldProcessingModes(t *testing.T) {
 
 	// Should have: title (direct), created_at, updated_at (inline), audit_by, audit_reason (inline with prefix),
 	// meta_data (json), author_id (relation) = 7 fields total
-	c.Assert(len(articleFields), qt.Equals, 7, qt.Commentf("Article should have 7 fields after processing"))
+	c.Assert(articleFields, qt.HasLen, 7, qt.Commentf("Article should have 7 fields after processing"))
 
 	// Check inline mode fields
 	hasCreatedAt := false

@@ -147,11 +147,11 @@ func TestExtensions_RealWorldScenarios(t *testing.T) {
 				return generated, database
 			},
 			verify: func(c *qt.C, diff *difftypes.SchemaDiff) {
-				c.Assert(len(diff.ExtensionsAdded), qt.Equals, 3)
+				c.Assert(diff.ExtensionsAdded, qt.HasLen, 3)
 				c.Assert(diff.ExtensionsAdded, qt.Contains, "pg_trgm")
 				c.Assert(diff.ExtensionsAdded, qt.Contains, "btree_gin")
 				c.Assert(diff.ExtensionsAdded, qt.Contains, "postgis")
-				c.Assert(len(diff.ExtensionsRemoved), qt.Equals, 0)
+				c.Assert(diff.ExtensionsRemoved, qt.HasLen, 0)
 			},
 		},
 		{
@@ -174,8 +174,8 @@ func TestExtensions_RealWorldScenarios(t *testing.T) {
 				return generated, database
 			},
 			verify: func(c *qt.C, diff *difftypes.SchemaDiff) {
-				c.Assert(len(diff.ExtensionsAdded), qt.Equals, 0)
-				c.Assert(len(diff.ExtensionsRemoved), qt.Equals, 3)
+				c.Assert(diff.ExtensionsAdded, qt.HasLen, 0)
+				c.Assert(diff.ExtensionsRemoved, qt.HasLen, 3)
 				c.Assert(diff.ExtensionsRemoved, qt.Contains, "uuid-ossp")
 				c.Assert(diff.ExtensionsRemoved, qt.Contains, "postgis")
 				c.Assert(diff.ExtensionsRemoved, qt.Contains, "btree_gin")
@@ -202,10 +202,10 @@ func TestExtensions_RealWorldScenarios(t *testing.T) {
 				return generated, database
 			},
 			verify: func(c *qt.C, diff *difftypes.SchemaDiff) {
-				c.Assert(len(diff.ExtensionsAdded), qt.Equals, 2)
+				c.Assert(diff.ExtensionsAdded, qt.HasLen, 2)
 				c.Assert(diff.ExtensionsAdded, qt.Contains, "postgis")
 				c.Assert(diff.ExtensionsAdded, qt.Contains, "uuid-ossp")
-				c.Assert(len(diff.ExtensionsRemoved), qt.Equals, 0)
+				c.Assert(diff.ExtensionsRemoved, qt.HasLen, 0)
 			},
 		},
 	}

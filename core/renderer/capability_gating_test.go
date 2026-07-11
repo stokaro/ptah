@@ -1,7 +1,6 @@
 package renderer_test
 
 import (
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -37,11 +36,11 @@ func TestMySQLFamilyRenderers_ConstraintDropGuardValidity(t *testing.T) {
 
 		sql, err := renderer.RenderSQL("mysql", dropFK, dropCheck)
 		c.Assert(err, qt.IsNil)
-		c.Assert(strings.Contains(sql, "ALTER TABLE posts DROP FOREIGN KEY fk_posts_user;"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "ALTER TABLE posts DROP FOREIGN KEY fk_posts_user;",
 			qt.Commentf("got:\n%s", sql))
-		c.Assert(strings.Contains(sql, "ALTER TABLE things DROP CONSTRAINT chk_qty;"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "ALTER TABLE things DROP CONSTRAINT chk_qty;",
 			qt.Commentf("got:\n%s", sql))
-		c.Assert(strings.Contains(sql, "IF EXISTS"), qt.IsFalse,
+		c.Assert(sql, qt.Not(qt.Contains), "IF EXISTS",
 			qt.Commentf("MySQL accepts no IF EXISTS on constraint drops; got:\n%s", sql))
 	})
 
@@ -50,9 +49,9 @@ func TestMySQLFamilyRenderers_ConstraintDropGuardValidity(t *testing.T) {
 
 		sql, err := renderer.RenderSQL("mariadb", dropFK, dropCheck)
 		c.Assert(err, qt.IsNil)
-		c.Assert(strings.Contains(sql, "ALTER TABLE posts DROP FOREIGN KEY IF EXISTS fk_posts_user;"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "ALTER TABLE posts DROP FOREIGN KEY IF EXISTS fk_posts_user;",
 			qt.Commentf("got:\n%s", sql))
-		c.Assert(strings.Contains(sql, "ALTER TABLE things DROP CONSTRAINT IF EXISTS chk_qty;"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "ALTER TABLE things DROP CONSTRAINT IF EXISTS chk_qty;",
 			qt.Commentf("got:\n%s", sql))
 	})
 }
@@ -74,14 +73,14 @@ func TestMySQLFamilyRenderers_DropCheckSpelling(t *testing.T) {
 	}
 	sql, err := renderer.RenderSQL("mysql", node)
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.Contains(sql, "ALTER TABLE things DROP CHECK chk_qty;"), qt.IsTrue,
+	c.Assert(sql, qt.Contains, "ALTER TABLE things DROP CHECK chk_qty;",
 		qt.Commentf("got:\n%s", sql))
 
 	sql, err = renderer.RenderSQL("mariadb", node)
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.Contains(sql, "ALTER TABLE things DROP CONSTRAINT chk_qty;"), qt.IsTrue,
+	c.Assert(sql, qt.Contains, "ALTER TABLE things DROP CONSTRAINT chk_qty;",
 		qt.Commentf("mariadb must degrade DROP CHECK to the generic clause; got:\n%s", sql))
-	c.Assert(strings.Contains(sql, "DROP CHECK"), qt.IsFalse,
+	c.Assert(sql, qt.Not(qt.Contains), "DROP CHECK",
 		qt.Commentf("got:\n%s", sql))
 }
 
@@ -102,7 +101,7 @@ func TestMySQLFamilyRenderers_DropUniqueIndexSpelling(t *testing.T) {
 	for _, dialect := range []string{"mysql", "mariadb"} {
 		sql, err := renderer.RenderSQL(dialect, node)
 		c.Assert(err, qt.IsNil)
-		c.Assert(strings.Contains(sql, "ALTER TABLE users DROP INDEX uq_email;"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "ALTER TABLE users DROP INDEX uq_email;",
 			qt.Commentf("%s: got:\n%s", dialect, sql))
 	}
 }
@@ -117,12 +116,12 @@ func TestMySQLFamilyRenderers_DropIndexGuardValidity(t *testing.T) {
 
 	sqlMySQL, err := renderer.RenderSQL("mysql", node)
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.Contains(sqlMySQL, "DROP INDEX idx_users_email ON users;"), qt.IsTrue,
+	c.Assert(sqlMySQL, qt.Contains, "DROP INDEX idx_users_email ON users;",
 		qt.Commentf("got:\n%s", sqlMySQL))
-	c.Assert(strings.Contains(sqlMySQL, "IF EXISTS"), qt.IsFalse)
+	c.Assert(sqlMySQL, qt.Not(qt.Contains), "IF EXISTS")
 
 	sqlMariaDB, err := renderer.RenderSQL("mariadb", node)
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.Contains(sqlMariaDB, "DROP INDEX IF EXISTS idx_users_email ON users;"), qt.IsTrue,
+	c.Assert(sqlMariaDB, qt.Contains, "DROP INDEX IF EXISTS idx_users_email ON users;",
 		qt.Commentf("got:\n%s", sqlMariaDB))
 }

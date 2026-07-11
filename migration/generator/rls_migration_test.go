@@ -1,7 +1,6 @@
 package generator_test
 
 import (
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -35,20 +34,20 @@ func TestRLSMigrationGeneration(t *testing.T) {
 	t.Logf("Generated SQL:\n%s", sql)
 
 	// Check that RLS enable statements are generated
-	c.Assert(strings.Contains(sql, "ALTER TABLE areas ENABLE ROW LEVEL SECURITY"), qt.IsTrue, qt.Commentf("Missing RLS enable for areas table"))
-	c.Assert(strings.Contains(sql, "ALTER TABLE commodities ENABLE ROW LEVEL SECURITY"), qt.IsTrue, qt.Commentf("Missing RLS enable for commodities table"))
-	c.Assert(strings.Contains(sql, "ALTER TABLE users ENABLE ROW LEVEL SECURITY"), qt.IsTrue, qt.Commentf("Missing RLS enable for users table"))
-	c.Assert(strings.Contains(sql, "ALTER TABLE files ENABLE ROW LEVEL SECURITY"), qt.IsTrue, qt.Commentf("Missing RLS enable for files table"))
-	c.Assert(strings.Contains(sql, "ALTER TABLE locations ENABLE ROW LEVEL SECURITY"), qt.IsTrue, qt.Commentf("Missing RLS enable for locations table"))
+	c.Assert(sql, qt.Contains, "ALTER TABLE areas ENABLE ROW LEVEL SECURITY", qt.Commentf("Missing RLS enable for areas table"))
+	c.Assert(sql, qt.Contains, "ALTER TABLE commodities ENABLE ROW LEVEL SECURITY", qt.Commentf("Missing RLS enable for commodities table"))
+	c.Assert(sql, qt.Contains, "ALTER TABLE users ENABLE ROW LEVEL SECURITY", qt.Commentf("Missing RLS enable for users table"))
+	c.Assert(sql, qt.Contains, "ALTER TABLE files ENABLE ROW LEVEL SECURITY", qt.Commentf("Missing RLS enable for files table"))
+	c.Assert(sql, qt.Contains, "ALTER TABLE locations ENABLE ROW LEVEL SECURITY", qt.Commentf("Missing RLS enable for locations table"))
 
 	// Check that RLS policies are generated
-	c.Assert(strings.Contains(sql, "CREATE POLICY area_tenant_isolation ON areas"), qt.IsTrue, qt.Commentf("Missing area RLS policy"))
-	c.Assert(strings.Contains(sql, "CREATE POLICY commodity_tenant_isolation ON commodities"), qt.IsTrue, qt.Commentf("Missing commodity RLS policy"))
-	c.Assert(strings.Contains(sql, "CREATE POLICY user_tenant_isolation ON users"), qt.IsTrue, qt.Commentf("Missing user RLS policy"))
-	c.Assert(strings.Contains(sql, "CREATE POLICY file_tenant_isolation ON files"), qt.IsTrue, qt.Commentf("Missing file RLS policy"))
-	c.Assert(strings.Contains(sql, "CREATE POLICY location_tenant_isolation ON locations"), qt.IsTrue, qt.Commentf("Missing location RLS policy"))
+	c.Assert(sql, qt.Contains, "CREATE POLICY area_tenant_isolation ON areas", qt.Commentf("Missing area RLS policy"))
+	c.Assert(sql, qt.Contains, "CREATE POLICY commodity_tenant_isolation ON commodities", qt.Commentf("Missing commodity RLS policy"))
+	c.Assert(sql, qt.Contains, "CREATE POLICY user_tenant_isolation ON users", qt.Commentf("Missing user RLS policy"))
+	c.Assert(sql, qt.Contains, "CREATE POLICY file_tenant_isolation ON files", qt.Commentf("Missing file RLS policy"))
+	c.Assert(sql, qt.Contains, "CREATE POLICY location_tenant_isolation ON locations", qt.Commentf("Missing location RLS policy"))
 
 	// Check that policies have correct attributes
-	c.Assert(strings.Contains(sql, "FOR ALL TO inventario_app"), qt.IsTrue, qt.Commentf("Missing policy attributes"))
-	c.Assert(strings.Contains(sql, "USING (tenant_id = get_current_tenant_id())"), qt.IsTrue, qt.Commentf("Missing USING clause"))
+	c.Assert(sql, qt.Contains, "FOR ALL TO inventario_app", qt.Commentf("Missing policy attributes"))
+	c.Assert(sql, qt.Contains, "USING (tenant_id = get_current_tenant_id())", qt.Commentf("Missing USING clause"))
 }

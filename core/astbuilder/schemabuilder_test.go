@@ -19,7 +19,7 @@ func TestNewSchema(t *testing.T) {
 	// Build should return empty statement list
 	result := schema.Build()
 	c.Assert(result, qt.IsNotNil)
-	c.Assert(len(result.Statements), qt.Equals, 0)
+	c.Assert(result.Statements, qt.HasLen, 0)
 }
 
 func TestSchemaBuilder_Comment(t *testing.T) {
@@ -30,7 +30,7 @@ func TestSchemaBuilder_Comment(t *testing.T) {
 
 	result := schema.Build()
 
-	c.Assert(len(result.Statements), qt.Equals, 1)
+	c.Assert(result.Statements, qt.HasLen, 1)
 
 	// Check that it's a comment node
 	commentNode, ok := result.Statements[0].(*ast.CommentNode)
@@ -46,7 +46,7 @@ func TestSchemaBuilder_Enum(t *testing.T) {
 
 	result := schema.Build()
 
-	c.Assert(len(result.Statements), qt.Equals, 1)
+	c.Assert(result.Statements, qt.HasLen, 1)
 
 	// Check that it's an enum node
 	enumNode, ok := result.Statements[0].(*ast.EnumNode)
@@ -66,13 +66,13 @@ func TestSchemaBuilder_Table(t *testing.T) {
 
 	result := schema.Build()
 
-	c.Assert(len(result.Statements), qt.Equals, 1)
+	c.Assert(result.Statements, qt.HasLen, 1)
 
 	// Check that it's a create table node
 	tableNode, ok := result.Statements[0].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(tableNode.Name, qt.Equals, "users")
-	c.Assert(len(tableNode.Columns), qt.Equals, 2)
+	c.Assert(tableNode.Columns, qt.HasLen, 2)
 
 	// Check first column
 	c.Assert(tableNode.Columns[0].Name, qt.Equals, "id")
@@ -97,7 +97,7 @@ func TestSchemaBuilder_Index(t *testing.T) {
 
 	result := schema.Build()
 
-	c.Assert(len(result.Statements), qt.Equals, 1)
+	c.Assert(result.Statements, qt.HasLen, 1)
 
 	// Check that it's an index node
 	indexNode, ok := result.Statements[0].(*ast.IndexNode)
@@ -121,7 +121,7 @@ func TestSchemaBuilder_IndexWithIfNotExists(t *testing.T) {
 
 	result := schema.Build()
 
-	c.Assert(len(result.Statements), qt.Equals, 1)
+	c.Assert(result.Statements, qt.HasLen, 1)
 
 	// Check that it's an index node with IfNotExists set
 	indexNode, ok := result.Statements[0].(*ast.IndexNode)
@@ -156,7 +156,7 @@ func TestSchemaBuilder_ComplexSchema(t *testing.T) {
 
 	result := schema.Build()
 
-	c.Assert(len(result.Statements), qt.Equals, 5) // comment + enum + 2 tables + 1 index
+	c.Assert(result.Statements, qt.HasLen, 5) // comment + enum + 2 tables + 1 index
 
 	// Check comment
 	commentNode, ok := result.Statements[0].(*ast.CommentNode)
@@ -172,7 +172,7 @@ func TestSchemaBuilder_ComplexSchema(t *testing.T) {
 	usersTable, ok := result.Statements[2].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(usersTable.Name, qt.Equals, "users")
-	c.Assert(len(usersTable.Columns), qt.Equals, 4)
+	c.Assert(usersTable.Columns, qt.HasLen, 4)
 
 	// Check index
 	indexNode, ok := result.Statements[3].(*ast.IndexNode)
@@ -183,7 +183,7 @@ func TestSchemaBuilder_ComplexSchema(t *testing.T) {
 	postsTable, ok := result.Statements[4].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(postsTable.Name, qt.Equals, "posts")
-	c.Assert(len(postsTable.Columns), qt.Equals, 4)
+	c.Assert(postsTable.Columns, qt.HasLen, 4)
 
 	// Check foreign key on user_id column
 	userIDColumn := postsTable.Columns[1]
@@ -229,7 +229,7 @@ func TestSchemaBuilder_MultipleComments(t *testing.T) {
 
 	result := schema.Build()
 
-	c.Assert(len(result.Statements), qt.Equals, 2)
+	c.Assert(result.Statements, qt.HasLen, 2)
 
 	comment1, ok := result.Statements[0].(*ast.CommentNode)
 	c.Assert(ok, qt.IsTrue)
@@ -249,7 +249,7 @@ func TestSchemaBuilder_MultipleEnums(t *testing.T) {
 
 	result := schema.Build()
 
-	c.Assert(len(result.Statements), qt.Equals, 2)
+	c.Assert(result.Statements, qt.HasLen, 2)
 
 	enum1, ok := result.Statements[0].(*ast.EnumNode)
 	c.Assert(ok, qt.IsTrue)

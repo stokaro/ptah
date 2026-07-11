@@ -558,8 +558,8 @@ func TestPlanner_ForeignKeyDependencyOrdering_SQLOutput(t *testing.T) {
 	}
 
 	// All ADD COLUMN operations should come before all ADD CONSTRAINT operations
-	c.Assert(len(addColumnLines), qt.Equals, 2)
-	c.Assert(len(addConstraintLines), qt.Equals, 1)
+	c.Assert(addColumnLines, qt.HasLen, 2)
+	c.Assert(addConstraintLines, qt.HasLen, 1)
 
 	// The last ADD COLUMN should come before the first ADD CONSTRAINT
 	lastAddColumn := addColumnLines[len(addColumnLines)-1]
@@ -1165,13 +1165,13 @@ func TestPlanner_ExtensionSQL_Generation(t *testing.T) {
 
 			// Check expected SQL patterns
 			for _, expected := range tt.expectedSQL {
-				c.Assert(strings.Contains(sql, expected), qt.IsTrue,
+				c.Assert(sql, qt.Contains, expected,
 					qt.Commentf("Expected SQL to contain: %s\nActual SQL:\n%s", expected, sql))
 			}
 
 			// Check unexpected SQL patterns
 			for _, unexpected := range tt.unexpectedSQL {
-				c.Assert(strings.Contains(sql, unexpected), qt.IsFalse,
+				c.Assert(sql, qt.Not(qt.Contains), unexpected,
 					qt.Commentf("Expected SQL to NOT contain: %s\nActual SQL:\n%s", unexpected, sql))
 			}
 		})
@@ -1210,7 +1210,7 @@ func TestPlanner_AddNewTables_WithEmbeddedFields(t *testing.T) {
 	planner := &postgres.Planner{}
 	result := planner.GenerateMigrationAST(diff, generated)
 
-	c.Assert(len(result), qt.Equals, 1)
+	c.Assert(result, qt.HasLen, 1)
 
 	// Convert AST to SQL to verify content
 	sql, err := renderer.RenderSQL("postgresql", result[0])

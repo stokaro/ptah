@@ -25,13 +25,13 @@ func TestParser_ParseCreateTable_Basic(t *testing.T) {
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.IsNotNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	// Check that it's a CREATE TABLE statement
 	createTable, ok := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(createTable.Name, qt.Equals, "users")
-	c.Assert(len(createTable.Columns), qt.Equals, 2)
+	c.Assert(createTable.Columns, qt.HasLen, 2)
 
 	// Check first column (id)
 	idColumn := createTable.Columns[0]
@@ -57,12 +57,12 @@ func TestParser_ParseCreateTable_WithConstraints(t *testing.T) {
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(createTable.Name, qt.Equals, "orders")
-	c.Assert(len(createTable.Columns), qt.Equals, 1)
-	c.Assert(len(createTable.Constraints), qt.Equals, 1)
+	c.Assert(createTable.Columns, qt.HasLen, 1)
+	c.Assert(createTable.Constraints, qt.HasLen, 1)
 
 	// Check id column
 	idColumn := createTable.Columns[0]
@@ -90,7 +90,7 @@ func TestParser_ParseCreateTable_WithTableOptions(t *testing.T) {
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(createTable.Name, qt.Equals, "products")
@@ -107,12 +107,12 @@ func TestParser_ParseAlterTable(t *testing.T) {
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	alterTable, ok := statements.Statements[0].(*ast.AlterTableNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(alterTable.Name, qt.Equals, "users")
-	c.Assert(len(alterTable.Operations), qt.Equals, 1)
+	c.Assert(alterTable.Operations, qt.HasLen, 1)
 
 	addOp, ok := alterTable.Operations[0].(*ast.AddColumnOperation)
 	c.Assert(ok, qt.IsTrue)
@@ -129,7 +129,7 @@ func TestParser_ParseCreateIndex(t *testing.T) {
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	index, ok := statements.Statements[0].(*ast.IndexNode)
 	c.Assert(ok, qt.IsTrue)
@@ -147,7 +147,7 @@ func TestParser_ParseCreateUniqueIndex(t *testing.T) {
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	index, ok := statements.Statements[0].(*ast.IndexNode)
 	c.Assert(ok, qt.IsTrue)
@@ -165,7 +165,7 @@ func TestParser_ParseCreateEnum(t *testing.T) {
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	enum, ok := statements.Statements[0].(*ast.EnumNode)
 	c.Assert(ok, qt.IsTrue)
@@ -185,7 +185,7 @@ func TestParser_ParseMultipleStatements(t *testing.T) {
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 3)
+	c.Assert(statements.Statements, qt.HasLen, 3)
 
 	// Check first statement
 	createTable, ok := statements.Statements[0].(*ast.CreateTableNode)
@@ -211,10 +211,10 @@ func TestParser_ParseColumnWithForeignKey(t *testing.T) {
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
-	c.Assert(len(createTable.Columns), qt.Equals, 1)
+	c.Assert(createTable.Columns, qt.HasLen, 1)
 
 	column := createTable.Columns[0]
 	c.Assert(column.Name, qt.Equals, "user_id")
@@ -232,7 +232,7 @@ func TestParser_ParseColumnWithDefaultFunction(t *testing.T) {
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 	column := createTable.Columns[0]
@@ -259,12 +259,12 @@ func TestParser_ParseComplexTable(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(createTable.Name, qt.Equals, "complex_table")
-	c.Assert(len(createTable.Columns), qt.Equals, 7)
-	c.Assert(len(createTable.Constraints), qt.Equals, 2)
+	c.Assert(createTable.Columns, qt.HasLen, 7)
+	c.Assert(createTable.Constraints, qt.HasLen, 2)
 
 	// Check id column
 	idCol := createTable.Columns[0]
@@ -315,11 +315,11 @@ func TestParser_ParseAlterTableMultipleOperations(t *testing.T) {
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	alterTable := statements.Statements[0].(*ast.AlterTableNode)
 	c.Assert(alterTable.Name, qt.Equals, "users")
-	c.Assert(len(alterTable.Operations), qt.Equals, 3)
+	c.Assert(alterTable.Operations, qt.HasLen, 3)
 
 	// Check ADD operation
 	addOp, ok := alterTable.Operations[0].(*ast.AddColumnOperation)
@@ -355,12 +355,12 @@ func TestParser_ParseMySQLStyleTable(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(createTable.Name, qt.Equals, "`sample`")
-	c.Assert(len(createTable.Columns), qt.Equals, 5)
-	c.Assert(len(createTable.Constraints), qt.Equals, 1)
+	c.Assert(createTable.Columns, qt.HasLen, 5)
+	c.Assert(createTable.Constraints, qt.HasLen, 1)
 
 	// Check id column
 	idColumn := createTable.Columns[0]
@@ -417,11 +417,11 @@ func TestParser_ParseBacktickedIdentifiers(t *testing.T) {
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(createTable.Name, qt.Equals, "`users`")
-	c.Assert(len(createTable.Columns), qt.Equals, 2)
+	c.Assert(createTable.Columns, qt.HasLen, 2)
 
 	// Check first column
 	userIDColumn := createTable.Columns[0]
@@ -444,12 +444,12 @@ func TestParser_ParseSimpleMySQLTable(t *testing.T) {
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(createTable.Name, qt.Equals, "`sample`")
-	c.Assert(len(createTable.Columns), qt.Equals, 1)
-	c.Assert(len(createTable.Constraints), qt.Equals, 1)
+	c.Assert(createTable.Columns, qt.HasLen, 1)
+	c.Assert(createTable.Constraints, qt.HasLen, 1)
 
 	// Check id column
 	idColumn := createTable.Columns[0]
@@ -467,10 +467,10 @@ func TestParser_ParseCurrentTimestamp(t *testing.T) {
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
-	c.Assert(len(createTable.Columns), qt.Equals, 1)
+	c.Assert(createTable.Columns, qt.HasLen, 1)
 
 	column := createTable.Columns[0]
 	c.Assert(column.Name, qt.Equals, "`created_at`")
@@ -492,11 +492,11 @@ func TestParser_ParseMySQLTableStepByStep(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(createTable.Name, qt.Equals, "`sample`")
-	c.Assert(len(createTable.Columns), qt.Equals, 2)
+	c.Assert(createTable.Columns, qt.HasLen, 2)
 }
 
 func TestParser_ParseNumericDefault(t *testing.T) {
@@ -507,10 +507,10 @@ func TestParser_ParseNumericDefault(t *testing.T) {
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
-	c.Assert(len(createTable.Columns), qt.Equals, 1)
+	c.Assert(createTable.Columns, qt.HasLen, 1)
 
 	column := createTable.Columns[0]
 	c.Assert(column.Name, qt.Equals, "`age`")
@@ -532,11 +532,11 @@ func TestParser_ParseMySQLTableWithTimestamp(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(createTable.Name, qt.Equals, "`sample`")
-	c.Assert(len(createTable.Columns), qt.Equals, 3)
+	c.Assert(createTable.Columns, qt.HasLen, 3)
 
 	// Check created_at column
 	createdColumn := createTable.Columns[1]
@@ -634,10 +634,10 @@ func TestParser_ParseMySQLDataTypes(t *testing.T) {
 			p := parser.NewParser(tt.sql)
 			statements, err := p.Parse()
 			c.Assert(err, qt.IsNil)
-			c.Assert(len(statements.Statements), qt.Equals, 1)
+			c.Assert(statements.Statements, qt.HasLen, 1)
 
 			createTable := statements.Statements[0].(*ast.CreateTableNode)
-			c.Assert(len(createTable.Columns), qt.Equals, 1)
+			c.Assert(createTable.Columns, qt.HasLen, 1)
 			c.Assert(createTable.Columns[0].Type, qt.Equals, tt.expectedType)
 		})
 	}
@@ -656,7 +656,7 @@ func TestParser_ParseMySQLTableOptions(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(createTable.Options["ENGINE"], qt.Equals, "MyISAM")
@@ -673,7 +673,7 @@ func TestParser_ParsePostgreSQLEnum(t *testing.T) {
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	enum, ok := statements.Statements[0].(*ast.EnumNode)
 	c.Assert(ok, qt.IsTrue)
@@ -690,7 +690,7 @@ func TestParser_ParsePostgreSQLDomain(t *testing.T) {
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	comment, ok := statements.Statements[0].(*ast.CommentNode)
 	c.Assert(ok, qt.IsTrue)
@@ -709,11 +709,11 @@ func TestParser_ParsePostgreSQLSerialTypes(t *testing.T) {
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(createTable.Name, qt.Equals, "test")
-	c.Assert(len(createTable.Columns), qt.Equals, 2)
+	c.Assert(createTable.Columns, qt.HasLen, 2)
 
 	// Check SERIAL column
 	serialCol := createTable.Columns[0]
@@ -739,10 +739,10 @@ func TestParser_ParsePostgreSQLArrayTypes(t *testing.T) {
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
-	c.Assert(len(createTable.Columns), qt.Equals, 2)
+	c.Assert(createTable.Columns, qt.HasLen, 2)
 
 	// Check TEXT[] column with array default
 	tagsCol := createTable.Columns[0]
@@ -765,10 +765,10 @@ func TestParser_ParsePostgreSQLUUIDWithFunction(t *testing.T) {
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
-	c.Assert(len(createTable.Columns), qt.Equals, 1)
+	c.Assert(createTable.Columns, qt.HasLen, 1)
 
 	uuidCol := createTable.Columns[0]
 	c.Assert(uuidCol.Name, qt.Equals, "uuid_id")
@@ -786,10 +786,10 @@ func TestParser_ParsePostgreSQLGeneratedColumn(t *testing.T) {
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
-	c.Assert(len(createTable.Columns), qt.Equals, 3)
+	c.Assert(createTable.Columns, qt.HasLen, 3)
 
 	// Check generated column
 	fullNameCol := createTable.Columns[2]
@@ -810,10 +810,10 @@ func TestParser_ParsePostgreSQLJSONTypes(t *testing.T) {
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
-	c.Assert(len(createTable.Columns), qt.Equals, 2)
+	c.Assert(createTable.Columns, qt.HasLen, 2)
 
 	// Check JSON column
 	jsonCol := createTable.Columns[0]
@@ -837,7 +837,7 @@ func TestParser_ParsePostgreSQLCommentStatements(t *testing.T) {
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	comment, ok := statements.Statements[0].(*ast.CommentNode)
 	c.Assert(ok, qt.IsTrue)
@@ -853,11 +853,11 @@ func TestParser_ParsePostgreSQLSchemaTable(t *testing.T) {
 
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(createTable.Name, qt.Equals, "public.test")
-	c.Assert(len(createTable.Columns), qt.Equals, 1)
+	c.Assert(createTable.Columns, qt.HasLen, 1)
 }
 
 func TestParser_ParsePostgreSQLFullDemo(t *testing.T) {
@@ -876,11 +876,11 @@ func TestParser_ParsePostgreSQLFullDemo(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(createTable.Name, qt.Equals, "public.full_demo")
-	c.Assert(len(createTable.Columns), qt.Equals, 6)
+	c.Assert(createTable.Columns, qt.HasLen, 6)
 
 	// Test some key columns
 	serialCol := createTable.Columns[0]
@@ -925,7 +925,7 @@ func TestParser_ParsePostgreSQLMultipleStatements(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 4)
+	c.Assert(statements.Statements, qt.HasLen, 4)
 
 	// Check enum
 	enum, ok := statements.Statements[0].(*ast.EnumNode)
@@ -941,7 +941,7 @@ func TestParser_ParsePostgreSQLMultipleStatements(t *testing.T) {
 	table, ok := statements.Statements[2].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(table.Name, qt.Equals, "test")
-	c.Assert(len(table.Columns), qt.Equals, 3)
+	c.Assert(table.Columns, qt.HasLen, 3)
 
 	// Check comment
 	comment, ok := statements.Statements[3].(*ast.CommentNode)
@@ -983,13 +983,13 @@ func TestParser_ParsePostgreSQLComprehensiveDemo(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(createTable.Name, qt.Equals, "public.full_demo")
 
 	// Test that we have the expected number of columns (now includes DOUBLE PRECISION)
-	c.Assert(len(createTable.Columns), qt.Equals, 20)
+	c.Assert(createTable.Columns, qt.HasLen, 20)
 
 	// Test key PostgreSQL features
 
@@ -1098,7 +1098,7 @@ func TestParser_ParsePostgreSQLComprehensiveDemo(t *testing.T) {
 	c.Assert(userIDCol.ForeignKey.OnUpdate, qt.Equals, "SET NULL")
 
 	// Test table-level constraints
-	c.Assert(len(createTable.Constraints), qt.Equals, 3)
+	c.Assert(createTable.Constraints, qt.HasLen, 3)
 
 	// Unique constraint
 	uniqueConstraint := createTable.Constraints[0]
@@ -1163,10 +1163,10 @@ func TestParser_ParseMultiWordTypes(t *testing.T) {
 			p := parser.NewParser(tt.sql)
 			statements, err := p.Parse()
 			c.Assert(err, qt.IsNil)
-			c.Assert(len(statements.Statements), qt.Equals, 1)
+			c.Assert(statements.Statements, qt.HasLen, 1)
 
 			createTable := statements.Statements[0].(*ast.CreateTableNode)
-			c.Assert(len(createTable.Columns), qt.Equals, 1)
+			c.Assert(createTable.Columns, qt.HasLen, 1)
 
 			column := createTable.Columns[0]
 			c.Assert(column.Type, qt.Equals, tt.expectedType)
@@ -1209,10 +1209,10 @@ func TestParser_ParseParameterizedArrayTypes(t *testing.T) {
 			p := parser.NewParser(tt.sql)
 			statements, err := p.Parse()
 			c.Assert(err, qt.IsNil)
-			c.Assert(len(statements.Statements), qt.Equals, 1)
+			c.Assert(statements.Statements, qt.HasLen, 1)
 
 			createTable := statements.Statements[0].(*ast.CreateTableNode)
-			c.Assert(len(createTable.Columns), qt.Equals, 1)
+			c.Assert(createTable.Columns, qt.HasLen, 1)
 
 			column := createTable.Columns[0]
 			c.Assert(column.Type, qt.Equals, tt.expectedType)
@@ -1233,11 +1233,11 @@ func TestParser_ParseOriginalProblematicSQL(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(createTable.Name, qt.Equals, "public.full_demo")
-	c.Assert(len(createTable.Columns), qt.Equals, 3)
+	c.Assert(createTable.Columns, qt.HasLen, 3)
 
 	// Verify DOUBLE PRECISION column is parsed correctly
 	doubleCol := createTable.Columns[1]
@@ -1309,10 +1309,10 @@ func TestParser_ParsePostgreSQLTableOptions(t *testing.T) {
 			p := parser.NewParser(tt.sql)
 			statements, err := p.Parse()
 			c.Assert(err, qt.IsNil)
-			c.Assert(len(statements.Statements), qt.Equals, 1)
+			c.Assert(statements.Statements, qt.HasLen, 1)
 
 			createTable := statements.Statements[0].(*ast.CreateTableNode)
-			c.Assert(len(createTable.Columns), qt.Equals, 1)
+			c.Assert(createTable.Columns, qt.HasLen, 1)
 
 			// Verify all expected options are present
 			for key, expectedValue := range tt.expectedOptions {
@@ -1461,7 +1461,7 @@ func TestParser_ParseExtendedPostgreSQLDemo(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(createTable.Name, qt.Equals, "public.extended_demo")
@@ -1587,7 +1587,7 @@ func TestParser_ParseMariaDBComprehensiveDemo(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(createTable.Name, qt.Equals, "`full_demo`")
@@ -1603,7 +1603,7 @@ func TestParser_ParseMariaDBComprehensiveDemo(t *testing.T) {
 	}
 
 	// Test that we have the expected number of columns (14 total)
-	c.Assert(len(createTable.Columns), qt.Equals, 14)
+	c.Assert(createTable.Columns, qt.HasLen, 14)
 
 	// Test auto-increment unsigned primary key
 	idCol := createTable.Columns[0]
@@ -1714,7 +1714,7 @@ func TestParser_TimeoutProtection(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 }
 
 func TestParser_MariaDBMinimal(t *testing.T) {
@@ -1725,11 +1725,11 @@ func TestParser_MariaDBMinimal(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(createTable.Name, qt.Equals, "`test`")
-	c.Assert(len(createTable.Columns), qt.Equals, 1)
+	c.Assert(createTable.Columns, qt.HasLen, 1)
 
 	// Test the id column
 	idCol := createTable.Columns[0]
@@ -1775,10 +1775,10 @@ func TestParser_MariaDBTypeModifiers(t *testing.T) {
 			p := parser.NewParser(tt.sql)
 			statements, err := p.Parse()
 			c.Assert(err, qt.IsNil)
-			c.Assert(len(statements.Statements), qt.Equals, 1)
+			c.Assert(statements.Statements, qt.HasLen, 1)
 
 			createTable := statements.Statements[0].(*ast.CreateTableNode)
-			c.Assert(len(createTable.Columns), qt.Equals, 1)
+			c.Assert(createTable.Columns, qt.HasLen, 1)
 			c.Assert(createTable.Columns[0].Type, qt.Equals, tt.expectedType)
 		})
 	}
@@ -1792,10 +1792,10 @@ func TestParser_MariaDBCharacterSet(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
-	c.Assert(len(createTable.Columns), qt.Equals, 1)
+	c.Assert(createTable.Columns, qt.HasLen, 1)
 	c.Assert(createTable.Columns[0].Type, qt.Equals, "VARCHAR(50)")
 }
 
@@ -1824,10 +1824,10 @@ func TestParser_MariaDBEnumAndSet(t *testing.T) {
 			p := parser.NewParser(tt.sql)
 			statements, err := p.Parse()
 			c.Assert(err, qt.IsNil)
-			c.Assert(len(statements.Statements), qt.Equals, 1)
+			c.Assert(statements.Statements, qt.HasLen, 1)
 
 			createTable := statements.Statements[0].(*ast.CreateTableNode)
-			c.Assert(len(createTable.Columns), qt.Equals, 1)
+			c.Assert(createTable.Columns, qt.HasLen, 1)
 			c.Assert(createTable.Columns[0].Type, qt.Equals, tt.expectedType)
 		})
 	}
@@ -1841,10 +1841,10 @@ func TestParser_MariaDBVirtualColumn(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
-	c.Assert(len(createTable.Columns), qt.Equals, 2)
+	c.Assert(createTable.Columns, qt.HasLen, 2)
 	c.Assert(createTable.Columns[1].Type, qt.Equals, "VARCHAR(100)")
 }
 
@@ -1862,10 +1862,10 @@ func TestParser_MariaDBTableOptions(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
-	c.Assert(len(createTable.Columns), qt.Equals, 1)
+	c.Assert(createTable.Columns, qt.HasLen, 1)
 }
 
 func TestParser_MariaDBFirstFewColumns(t *testing.T) {
@@ -1880,7 +1880,7 @@ func TestParser_MariaDBFirstFewColumns(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 
@@ -1890,7 +1890,7 @@ func TestParser_MariaDBFirstFewColumns(t *testing.T) {
 		t.Logf("  %d: %s %s", i, col.Name, col.Type)
 	}
 
-	c.Assert(len(createTable.Columns), qt.Equals, 3)
+	c.Assert(createTable.Columns, qt.HasLen, 3)
 }
 
 func TestParser_MariaDBWithCheckConstraint(t *testing.T) {
@@ -1903,7 +1903,7 @@ func TestParser_MariaDBWithCheckConstraint(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 
@@ -1913,7 +1913,7 @@ func TestParser_MariaDBWithCheckConstraint(t *testing.T) {
 		t.Logf("  %d: %s %s", i, col.Name, col.Type)
 	}
 
-	c.Assert(len(createTable.Columns), qt.Equals, 1)
+	c.Assert(createTable.Columns, qt.HasLen, 1)
 }
 
 func TestParser_MariaDBOnUpdateTimestamp(t *testing.T) {
@@ -1926,7 +1926,7 @@ func TestParser_MariaDBOnUpdateTimestamp(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 
@@ -1936,7 +1936,7 @@ func TestParser_MariaDBOnUpdateTimestamp(t *testing.T) {
 		t.Logf("  %d: %s %s", i, col.Name, col.Type)
 	}
 
-	c.Assert(len(createTable.Columns), qt.Equals, 1)
+	c.Assert(createTable.Columns, qt.HasLen, 1)
 }
 
 func TestParser_MariaDBFirst5Columns(t *testing.T) {
@@ -1958,7 +1958,7 @@ func TestParser_MariaDBFirst5Columns(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 
@@ -1972,7 +1972,7 @@ func TestParser_MariaDBFirst5Columns(t *testing.T) {
 		t.Logf("  %d: %s %v", i, constraint.Type, constraint.Columns)
 	}
 
-	c.Assert(len(createTable.Columns), qt.Equals, 5)
+	c.Assert(createTable.Columns, qt.HasLen, 5)
 }
 
 func TestParser_MariaDBFirst7Columns(t *testing.T) {
@@ -1993,7 +1993,7 @@ func TestParser_MariaDBFirst7Columns(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 
@@ -2003,7 +2003,7 @@ func TestParser_MariaDBFirst7Columns(t *testing.T) {
 		t.Logf("  %d: %s %s", i, col.Name, col.Type)
 	}
 
-	c.Assert(len(createTable.Columns), qt.Equals, 7)
+	c.Assert(createTable.Columns, qt.HasLen, 7)
 }
 
 func TestParser_MariaDBFirst10Columns(t *testing.T) {
@@ -2029,7 +2029,7 @@ func TestParser_MariaDBFirst10Columns(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 
@@ -2039,7 +2039,7 @@ func TestParser_MariaDBFirst10Columns(t *testing.T) {
 		t.Logf("  %d: %s %s", i, col.Name, col.Type)
 	}
 
-	c.Assert(len(createTable.Columns), qt.Equals, 10)
+	c.Assert(createTable.Columns, qt.HasLen, 10)
 }
 
 func TestParser_ErrorHandling(t *testing.T) {
@@ -2121,12 +2121,12 @@ func TestParser_ParseExcludeConstraint_Basic(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(createTable.Name, qt.Equals, "user_sessions")
-	c.Assert(len(createTable.Columns), qt.Equals, 2)
-	c.Assert(len(createTable.Constraints), qt.Equals, 1)
+	c.Assert(createTable.Columns, qt.HasLen, 2)
+	c.Assert(createTable.Constraints, qt.HasLen, 1)
 
 	// Check EXCLUDE constraint
 	excludeConstraint := createTable.Constraints[0]
@@ -2149,10 +2149,10 @@ func TestParser_ParseExcludeConstraint_WithName(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
-	c.Assert(len(createTable.Constraints), qt.Equals, 1)
+	c.Assert(createTable.Constraints, qt.HasLen, 1)
 
 	// Check named EXCLUDE constraint
 	excludeConstraint := createTable.Constraints[0]
@@ -2175,10 +2175,10 @@ func TestParser_ParseExcludeConstraint_ComplexElements(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
-	c.Assert(len(createTable.Constraints), qt.Equals, 1)
+	c.Assert(createTable.Constraints, qt.HasLen, 1)
 
 	// Check EXCLUDE constraint with complex elements
 	excludeConstraint := createTable.Constraints[0]
@@ -2199,10 +2199,10 @@ func TestParser_ParseExcludeConstraint_WithoutWhere(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
-	c.Assert(len(createTable.Constraints), qt.Equals, 1)
+	c.Assert(createTable.Constraints, qt.HasLen, 1)
 
 	// Check EXCLUDE constraint without WHERE clause
 	excludeConstraint := createTable.Constraints[0]
@@ -2223,10 +2223,10 @@ func TestParser_ParseExcludeConstraint_BtreeMethod(t *testing.T) {
 	p := parser.NewParser(sql)
 	statements, err := p.Parse()
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(statements.Statements), qt.Equals, 1)
+	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
-	c.Assert(len(createTable.Constraints), qt.Equals, 1)
+	c.Assert(createTable.Constraints, qt.HasLen, 1)
 
 	// Check EXCLUDE constraint with btree method
 	excludeConstraint := createTable.Constraints[0]
@@ -2375,10 +2375,10 @@ func TestParser_ParseExcludeConstraint_EdgeCases(t *testing.T) {
 			p := parser.NewParser(tt.sql)
 			statements, err := p.Parse()
 			c.Assert(err, qt.IsNil)
-			c.Assert(len(statements.Statements), qt.Equals, 1)
+			c.Assert(statements.Statements, qt.HasLen, 1)
 
 			createTable := statements.Statements[0].(*ast.CreateTableNode)
-			c.Assert(len(createTable.Constraints), qt.Equals, 1)
+			c.Assert(createTable.Constraints, qt.HasLen, 1)
 
 			constraint := createTable.Constraints[0]
 			c.Assert(constraint.Type, qt.Equals, ast.ExcludeConstraint)

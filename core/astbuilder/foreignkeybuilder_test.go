@@ -18,7 +18,7 @@ func TestForeignKeyBuilder_OnDelete(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Columns), qt.Equals, 1)
+	c.Assert(result.Columns, qt.HasLen, 1)
 	column := result.Columns[0]
 	c.Assert(column.ForeignKey, qt.IsNotNil)
 	c.Assert(column.ForeignKey.OnDelete, qt.Equals, "CASCADE")
@@ -34,7 +34,7 @@ func TestForeignKeyBuilder_OnUpdate(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Columns), qt.Equals, 1)
+	c.Assert(result.Columns, qt.HasLen, 1)
 	column := result.Columns[0]
 	c.Assert(column.ForeignKey, qt.IsNotNil)
 	c.Assert(column.ForeignKey.OnUpdate, qt.Equals, "RESTRICT")
@@ -51,7 +51,7 @@ func TestForeignKeyBuilder_OnDeleteAndUpdate(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Columns), qt.Equals, 1)
+	c.Assert(result.Columns, qt.HasLen, 1)
 	column := result.Columns[0]
 	c.Assert(column.ForeignKey, qt.IsNotNil)
 	c.Assert(column.ForeignKey.OnDelete, qt.Equals, "CASCADE")
@@ -88,7 +88,7 @@ func TestForeignKeyBuilder_SetNoAction(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Columns), qt.Equals, 1)
+	c.Assert(result.Columns, qt.HasLen, 1)
 	column := result.Columns[0]
 	c.Assert(column.ForeignKey, qt.IsNotNil)
 	c.Assert(column.ForeignKey.OnDelete, qt.Equals, "NO ACTION")
@@ -106,7 +106,7 @@ func TestForeignKeyBuilder_SetNull(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Columns), qt.Equals, 1)
+	c.Assert(result.Columns, qt.HasLen, 1)
 	column := result.Columns[0]
 	c.Assert(column.ForeignKey, qt.IsNotNil)
 	c.Assert(column.ForeignKey.OnDelete, qt.Equals, "SET NULL")
@@ -124,7 +124,7 @@ func TestForeignKeyBuilder_SetDefault(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Columns), qt.Equals, 1)
+	c.Assert(result.Columns, qt.HasLen, 1)
 	column := result.Columns[0]
 	c.Assert(column.ForeignKey, qt.IsNotNil)
 	c.Assert(column.ForeignKey.OnDelete, qt.Equals, "SET DEFAULT")
@@ -143,7 +143,7 @@ func TestForeignKeyBuilder_TableLevelConstraint(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Constraints), qt.Equals, 1)
+	c.Assert(result.Constraints, qt.HasLen, 1)
 	constraint := result.Constraints[0]
 	c.Assert(constraint.Reference, qt.IsNotNil)
 	c.Assert(constraint.Reference.OnDelete, qt.Equals, "CASCADE")
@@ -164,7 +164,7 @@ func TestForeignKeyBuilder_MultipleForeignKeys(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Columns), qt.Equals, 2)
+	c.Assert(result.Columns, qt.HasLen, 2)
 
 	// Check first foreign key
 	userIDColumn := result.Columns[0]
@@ -195,7 +195,7 @@ func TestForeignKeyBuilder_ComplexForeignKey(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Columns), qt.Equals, 2)
+	c.Assert(result.Columns, qt.HasLen, 2)
 
 	// Check order foreign key
 	orderColumn := result.Columns[0]
@@ -231,7 +231,7 @@ func TestForeignKeyBuilder_SelfReferencing(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Columns), qt.Equals, 2)
+	c.Assert(result.Columns, qt.HasLen, 2)
 
 	parentColumn := result.Columns[1]
 	c.Assert(parentColumn.Name, qt.Equals, "parent_id")
@@ -250,7 +250,7 @@ func TestForeignKeyBuilder_NoActions(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Columns), qt.Equals, 1)
+	c.Assert(result.Columns, qt.HasLen, 1)
 	column := result.Columns[0]
 	c.Assert(column.ForeignKey, qt.IsNotNil)
 	c.Assert(column.ForeignKey.OnDelete, qt.Equals, "") // Default empty

@@ -68,7 +68,7 @@ type ProductIndexes struct {
 	c.Assert(err, qt.IsNil)
 
 	// Verify extensions are merged correctly (sorted alphabetically)
-	c.Assert(len(result.Extensions), qt.Equals, 2)
+	c.Assert(result.Extensions, qt.HasLen, 2)
 	c.Assert(result.Extensions[0].Name, qt.Equals, "btree_gin")
 	c.Assert(result.Extensions[0].IfNotExists, qt.Equals, true)
 	c.Assert(result.Extensions[0].Comment, qt.Equals, "Enable GIN indexes on btree types")
@@ -77,10 +77,10 @@ type ProductIndexes struct {
 	c.Assert(result.Extensions[1].Comment, qt.Equals, "Enable trigram similarity search")
 
 	// Verify other entities are also merged
-	c.Assert(len(result.Tables), qt.Equals, 1)
+	c.Assert(result.Tables, qt.HasLen, 1)
 	c.Assert(result.Tables[0].Name, qt.Equals, "products")
-	c.Assert(len(result.Indexes), qt.Equals, 2)
-	c.Assert(len(result.Fields), qt.Equals, 4)
+	c.Assert(result.Indexes, qt.HasLen, 2)
+	c.Assert(result.Fields, qt.HasLen, 4)
 }
 
 func TestParseDir_FileFiltering(t *testing.T) {
@@ -168,8 +168,8 @@ type User struct {
 			c.Assert(err, qt.IsNil)
 
 			// Verify filtering worked correctly
-			c.Assert(len(result.Tables), qt.Equals, tt.expectedTables)
-			c.Assert(len(result.Fields), qt.Equals, tt.expectedFields)
+			c.Assert(result.Tables, qt.HasLen, tt.expectedTables)
+			c.Assert(result.Fields, qt.HasLen, tt.expectedFields)
 		})
 	}
 }
@@ -224,21 +224,21 @@ type Product struct {
 	c.Assert(err, qt.IsNil)
 
 	// Verify all entity types are merged correctly
-	c.Assert(len(result.Extensions), qt.Equals, 1)
+	c.Assert(result.Extensions, qt.HasLen, 1)
 	c.Assert(result.Extensions[0].Name, qt.Equals, "pg_trgm")
 
-	c.Assert(len(result.Enums), qt.Equals, 1)
+	c.Assert(result.Enums, qt.HasLen, 1)
 	c.Assert(result.Enums[0].Name, qt.Equals, "enum_user_status") // Auto-generated enum name
 
-	c.Assert(len(result.Tables), qt.Equals, 2)
+	c.Assert(result.Tables, qt.HasLen, 2)
 	tableNames := []string{result.Tables[0].Name, result.Tables[1].Name}
 	c.Assert(tableNames, qt.Contains, "users")
 	c.Assert(tableNames, qt.Contains, "products")
 
-	c.Assert(len(result.Indexes), qt.Equals, 1)
+	c.Assert(result.Indexes, qt.HasLen, 1)
 	c.Assert(result.Indexes[0].Name, qt.Equals, "idx_users_name")
 
-	c.Assert(len(result.Fields), qt.Equals, 4) // 3 from users, 1 from products
+	c.Assert(result.Fields, qt.HasLen, 4) // 3 from users, 1 from products
 }
 
 func TestParseDir_ErrorHandling(t *testing.T) {
@@ -277,8 +277,8 @@ func TestParseDir_ErrorHandling(t *testing.T) {
 				c.Assert(err, qt.IsNil)
 				c.Assert(result, qt.IsNotNil)
 				// Empty directory should return empty but valid result
-				c.Assert(len(result.Tables), qt.Equals, 0)
-				c.Assert(len(result.Extensions), qt.Equals, 0)
+				c.Assert(result.Tables, qt.HasLen, 0)
+				c.Assert(result.Extensions, qt.HasLen, 0)
 				c.Assert(result.Dependencies, qt.IsNotNil)
 			}
 		})
@@ -320,7 +320,7 @@ type User struct {
 	c.Assert(err, qt.IsNil)
 
 	// Verify deduplication worked
-	c.Assert(len(result.Tables), qt.Equals, 1) // Should have only one "users" table
+	c.Assert(result.Tables, qt.HasLen, 1) // Should have only one "users" table
 
 	// Verify all fields are merged (should have id, name, email)
 	userFields := []goschema.Field{}
@@ -329,7 +329,7 @@ type User struct {
 			userFields = append(userFields, field)
 		}
 	}
-	c.Assert(len(userFields), qt.Equals, 3)
+	c.Assert(userFields, qt.HasLen, 3)
 
 	fieldNames := []string{}
 	for _, field := range userFields {
@@ -508,9 +508,9 @@ type Product struct {
 			c.Assert(result, qt.IsNotNil)
 
 			// Check counts
-			c.Assert(len(result.Tables), qt.Equals, tt.expectedTables)
-			c.Assert(len(result.Fields), qt.Equals, tt.expectedFields)
-			c.Assert(len(result.Enums), qt.Equals, tt.expectedEnums)
+			c.Assert(result.Tables, qt.HasLen, tt.expectedTables)
+			c.Assert(result.Fields, qt.HasLen, tt.expectedFields)
+			c.Assert(result.Enums, qt.HasLen, tt.expectedEnums)
 
 			// Check specific tables exist
 			tableNames := make(map[string]bool)
@@ -620,8 +620,8 @@ type User struct {
 			c.Assert(result, qt.IsNotNil)
 
 			// Check counts
-			c.Assert(len(result.Tables), qt.Equals, tt.expectedTables)
-			c.Assert(len(result.Fields), qt.Equals, tt.expectedFields)
+			c.Assert(result.Tables, qt.HasLen, tt.expectedTables)
+			c.Assert(result.Fields, qt.HasLen, tt.expectedFields)
 		})
 	}
 }
@@ -819,7 +819,7 @@ type Order struct {
 			// Check self-referencing foreign keys
 			for table, expectedCount := range tt.expectedSelfReferencing {
 				actualSelfRefs := result.SelfReferencingForeignKeys[table]
-				c.Assert(len(actualSelfRefs), qt.Equals, expectedCount, qt.Commentf("Self-referencing FKs for table %s", table))
+				c.Assert(actualSelfRefs, qt.HasLen, expectedCount, qt.Commentf("Self-referencing FKs for table %s", table))
 			}
 		})
 	}
@@ -874,8 +874,8 @@ type User struct {
 			c.Assert(result, qt.IsNotNil)
 
 			// Check counts after deduplication
-			c.Assert(len(result.Tables), qt.Equals, tt.expectedTables)
-			c.Assert(len(result.Fields), qt.Equals, tt.expectedFields)
+			c.Assert(result.Tables, qt.HasLen, tt.expectedTables)
+			c.Assert(result.Fields, qt.HasLen, tt.expectedFields)
 
 			// Verify no duplicate table names
 			tableNames := make(map[string]int)
@@ -940,10 +940,10 @@ type User struct {
 			c.Assert(result, qt.IsNotNil)
 
 			// Check embedded fields
-			c.Assert(len(result.EmbeddedFields), qt.Equals, tt.expectedEmbeddedFields)
+			c.Assert(result.EmbeddedFields, qt.HasLen, tt.expectedEmbeddedFields)
 
 			// Check that embedded fields are processed into regular fields
-			c.Assert(len(result.Fields), qt.Equals, tt.expectedProcessedFields)
+			c.Assert(result.Fields, qt.HasLen, tt.expectedProcessedFields)
 		})
 	}
 }
@@ -1015,10 +1015,10 @@ type User struct {
 			c.Assert(result, qt.IsNotNil)
 
 			// Check PostgreSQL features
-			c.Assert(len(result.Extensions), qt.Equals, tt.expectedExtensions)
-			c.Assert(len(result.Functions), qt.Equals, tt.expectedFunctions)
-			c.Assert(len(result.RLSPolicies), qt.Equals, tt.expectedRLSPolicies)
-			c.Assert(len(result.Roles), qt.Equals, tt.expectedRoles)
+			c.Assert(result.Extensions, qt.HasLen, tt.expectedExtensions)
+			c.Assert(result.Functions, qt.HasLen, tt.expectedFunctions)
+			c.Assert(result.RLSPolicies, qt.HasLen, tt.expectedRLSPolicies)
+			c.Assert(result.Roles, qt.HasLen, tt.expectedRoles)
 
 			// Verify specific content
 			if tt.expectedExtensions > 0 {
@@ -1156,8 +1156,8 @@ type OtherTable struct {
 			c.Assert(result, qt.IsNotNil)
 
 			// Check counts
-			c.Assert(len(result.Tables), qt.Equals, tt.expectedTables)
-			c.Assert(len(result.Fields), qt.Equals, tt.expectedFields)
+			c.Assert(result.Tables, qt.HasLen, tt.expectedTables)
+			c.Assert(result.Fields, qt.HasLen, tt.expectedFields)
 		})
 	}
 }
@@ -1175,11 +1175,11 @@ func TestParseFS_CompareWithParseDir(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	// Results should be identical
-	c.Assert(len(resultFS.Tables), qt.Equals, len(resultDir.Tables))
-	c.Assert(len(resultFS.Fields), qt.Equals, len(resultDir.Fields))
-	c.Assert(len(resultFS.Indexes), qt.Equals, len(resultDir.Indexes))
-	c.Assert(len(resultFS.Enums), qt.Equals, len(resultDir.Enums))
-	c.Assert(len(resultFS.EmbeddedFields), qt.Equals, len(resultDir.EmbeddedFields))
+	c.Assert(resultFS.Tables, qt.HasLen, len(resultDir.Tables))
+	c.Assert(resultFS.Fields, qt.HasLen, len(resultDir.Fields))
+	c.Assert(resultFS.Indexes, qt.HasLen, len(resultDir.Indexes))
+	c.Assert(resultFS.Enums, qt.HasLen, len(resultDir.Enums))
+	c.Assert(resultFS.EmbeddedFields, qt.HasLen, len(resultDir.EmbeddedFields))
 
 	// Compare table names
 	tableDirNames := make(map[string]bool)

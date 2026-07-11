@@ -64,7 +64,7 @@ type User struct {
 		// Generate migration AST
 		planner := postgres.New()
 		astNodes := planner.GenerateMigrationAST(diff, database)
-		c.Assert(len(astNodes), qt.Equals, 1)
+		c.Assert(astNodes, qt.HasLen, 1)
 
 		// Render to SQL
 		sql, err := renderer.RenderSQL("postgresql", astNodes[0])
@@ -171,7 +171,7 @@ type Post struct {
 		// Generate migration AST
 		planner := postgres.New()
 		astNodes := planner.GenerateMigrationAST(diff, database)
-		c.Assert(len(astNodes), qt.Equals, 1)
+		c.Assert(astNodes, qt.HasLen, 1)
 
 		// Render to SQL
 		sql, err := renderer.RenderSQL("postgresql", astNodes[0])
@@ -269,7 +269,7 @@ type Post struct {
 		// foreign_key_name, so the planner derives the conventional
 		// fk_posts_user_id name and emits the constraint (previously an
 		// anonymous field-level FK was silently dropped from the migration).
-		c.Assert(len(astNodes), qt.Equals, 3)
+		c.Assert(astNodes, qt.HasLen, 3)
 
 		// Render to SQL
 		var sqlStatements []string
@@ -282,7 +282,7 @@ type Post struct {
 		if i == 0 {
 			previousSQL = sqlStatements
 		} else {
-			c.Assert(len(sqlStatements), qt.Equals, len(previousSQL))
+			c.Assert(sqlStatements, qt.HasLen, len(previousSQL))
 			for j, sql := range sqlStatements {
 				c.Assert(sql, qt.Equals, previousSQL[j],
 					qt.Commentf("Migration SQL for statement %d should be identical across runs (run %d)", j, i))

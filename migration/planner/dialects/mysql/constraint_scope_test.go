@@ -100,7 +100,7 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 
 					// MySQL 8 accepts no IF EXISTS on constraint drops — the plan
 					// must be valid without it.
-					c.Assert(strings.Contains(sql, "IF EXISTS"), qt.IsFalse,
+					c.Assert(sql, qt.Not(qt.Contains), "IF EXISTS",
 						qt.Commentf("MySQL-family constraint scoping must not lean on IF EXISTS; got:\n%s", sql))
 
 					// Ordering: the modified host's drop precedes its re-add; the
@@ -165,7 +165,7 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 						qt.Commentf("purely-removed host must be dropped exactly once; got:\n%s", sql))
 					c.Assert(strings.Count(sql, "DROP CONSTRAINT shared_check;"), qt.Equals, 2,
 						qt.Commentf("exactly one drop per host, no more; got:\n%s", sql))
-					c.Assert(strings.Contains(sql, "IF EXISTS"), qt.IsFalse,
+					c.Assert(sql, qt.Not(qt.Contains), "IF EXISTS",
 						qt.Commentf("MySQL-family constraint scoping must not lean on IF EXISTS; got:\n%s", sql))
 
 					articlesDrop := strings.Index(sql, "ALTER TABLE articles DROP CONSTRAINT shared_check")
@@ -218,11 +218,11 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_EveryHostDroppedAndReadded(t *t
 					qt.Commentf("orders host dropped exactly once; got:\n%s", sql))
 				c.Assert(strings.Count(sql, "ALTER TABLE invoices DROP FOREIGN KEY fk_customer;"), qt.Equals, 1,
 					qt.Commentf("invoices host dropped exactly once; got:\n%s", sql))
-				c.Assert(strings.Contains(sql, "ALTER TABLE orders ADD CONSTRAINT fk_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE;"), qt.IsTrue,
+				c.Assert(sql, qt.Contains, "ALTER TABLE orders ADD CONSTRAINT fk_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE;",
 					qt.Commentf("orders re-added with its own action; got:\n%s", sql))
-				c.Assert(strings.Contains(sql, "ALTER TABLE invoices ADD CONSTRAINT fk_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL;"), qt.IsTrue,
+				c.Assert(sql, qt.Contains, "ALTER TABLE invoices ADD CONSTRAINT fk_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL;",
 					qt.Commentf("invoices re-added with its own action; got:\n%s", sql))
-				c.Assert(strings.Contains(sql, "IF EXISTS"), qt.IsFalse)
+				c.Assert(sql, qt.Not(qt.Contains), "IF EXISTS")
 
 				for _, host := range []string{"orders", "invoices"} {
 					dropIdx := strings.Index(sql, "ALTER TABLE "+host+" DROP FOREIGN KEY fk_customer")
@@ -302,7 +302,7 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 				// removeConstraints must not emit a second, unguarded one.
 				c.Assert(strings.Count(sql, "ALTER TABLE things DROP CONSTRAINT chk_down;"), qt.Equals, 1,
 					qt.Commentf("the drop must be emitted exactly once across both planner phases; got:\n%s", sql))
-				c.Assert(strings.Contains(sql, "ALTER TABLE things ADD CONSTRAINT chk_down CHECK (qty >= 0);"), qt.IsTrue,
+				c.Assert(sql, qt.Contains, "ALTER TABLE things ADD CONSTRAINT chk_down CHECK (qty >= 0);",
 					qt.Commentf("modified constraint must still be re-added; got:\n%s", sql))
 				dropIdx := strings.Index(sql, "ALTER TABLE things DROP CONSTRAINT chk_down")
 				addIdx := strings.Index(sql, "ALTER TABLE things ADD CONSTRAINT chk_down")
@@ -354,7 +354,7 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 					qt.Commentf("second removal host must be dropped exactly once, not skipped and not doubled; got:\n%s", sql))
 				c.Assert(strings.Count(sql, "DROP CONSTRAINT shared_check;"), qt.Equals, 2,
 					qt.Commentf("exactly one drop per recorded host across BOTH planner phases; got:\n%s", sql))
-				c.Assert(strings.Contains(sql, "IF EXISTS"), qt.IsFalse)
+				c.Assert(sql, qt.Not(qt.Contains), "IF EXISTS")
 
 				articlesDrop := strings.Index(sql, "ALTER TABLE articles DROP CONSTRAINT shared_check")
 				pagesDrop := strings.Index(sql, "ALTER TABLE pages DROP CONSTRAINT shared_check")
@@ -393,9 +393,9 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 
 				sql := renderMySQLFamily(c, dialect, diff, generated)
 
-				c.Assert(strings.Contains(sql, "DROP CONSTRAINT chk_hostless"), qt.IsFalse,
+				c.Assert(sql, qt.Not(qt.Contains), "DROP CONSTRAINT chk_hostless",
 					qt.Commentf("a hostless removal entry must be skipped, not dropped; got:\n%s", sql))
-				c.Assert(strings.Contains(sql, "ALTER TABLE  DROP"), qt.IsFalse,
+				c.Assert(sql, qt.Not(qt.Contains), "ALTER TABLE  DROP",
 					qt.Commentf("no malformed empty-table ALTER may be emitted; got:\n%s", sql))
 				c.Assert(strings.Count(sql, "ALTER TABLE things ADD CONSTRAINT chk_hostless CHECK (qty >= 0);"), qt.Equals, 1,
 					qt.Commentf("the re-add still proceeds alone; got:\n%s", sql))
@@ -527,15 +527,15 @@ func TestPlanner_GenerateMigrationAST_PureConstraintRemovals_TableQualified(t *t
 				qt.Commentf("FK removal must be dropped exactly once (deduped) with FK syntax; got:\n%s", sql))
 			c.Assert(strings.Count(sql, "ALTER TABLE things DROP CONSTRAINT chk_qty;"), qt.Equals, 1,
 				qt.Commentf("CHECK removal must be dropped exactly once; got:\n%s", sql))
-			c.Assert(strings.Contains(sql, "pk_legacy"), qt.IsFalse,
+			c.Assert(sql, qt.Not(qt.Contains), "pk_legacy",
 				qt.Commentf("PRIMARY KEY removals must be skipped; got:\n%s", sql))
-			c.Assert(strings.Contains(sql, "DROP CONSTRAINT chk_on_obsolete"), qt.IsFalse,
+			c.Assert(sql, qt.Not(qt.Contains), "DROP CONSTRAINT chk_on_obsolete",
 				qt.Commentf("constraints on dropped tables are cascaded by DROP TABLE, not dropped explicitly; got:\n%s", sql))
-			c.Assert(strings.Contains(sql, "DROP TABLE IF EXISTS obsolete"), qt.IsTrue,
+			c.Assert(sql, qt.Contains, "DROP TABLE IF EXISTS obsolete",
 				qt.Commentf("the dropped table itself is still removed; got:\n%s", sql))
-			c.Assert(strings.Contains(sql, "chk_orphan"), qt.IsFalse,
+			c.Assert(sql, qt.Not(qt.Contains), "chk_orphan",
 				qt.Commentf("a removal entry with no recorded host must be skipped silently; got:\n%s", sql))
-			c.Assert(strings.Contains(sql, "ALTER TABLE  DROP"), qt.IsFalse,
+			c.Assert(sql, qt.Not(qt.Contains), "ALTER TABLE  DROP",
 				qt.Commentf("no malformed empty-table ALTER may be emitted; got:\n%s", sql))
 		})
 	}
