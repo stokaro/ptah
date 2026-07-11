@@ -8,6 +8,7 @@ import (
 
 	"github.com/stokaro/ptah/core/goschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/migration/schemadiff"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
@@ -597,6 +598,44 @@ func TestReverseSchemaDiff_ConstraintReversal(t *testing.T) {
 	c.Assert(result.ConstraintsRemoved, qt.DeepEquals, []string{"fk_export_file"})
 }
 
+// TestReverseSchemaDiff_FieldLevelCheckRemovalsWithTables verifies that field-level
+// CHECK constraints added by an up migration are reversed into table-qualified
+// removals for the down migration. MySQL/MariaDB need the owning table to emit a
+// real DROP CONSTRAINT; the bare ConstraintsRemoved name list is not enough.
+func TestReverseSchemaDiff_FieldLevelCheckRemovalsWithTables(t *testing.T) {
+	c := qt.New(t)
+
+	generatedSchema := &goschema.Database{
+		Tables: []goschema.Table{{StructName: "File", Name: "files"}},
+		Fields: []goschema.Field{
+			{
+				StructName: "File",
+				Name:       "category",
+				Type:       "TEXT",
+				Check:      "category IN ('a','b')",
+			},
+			{
+				StructName: "File",
+				Name:       "status",
+				Type:       "TEXT",
+				Check:      "status IN ('new','done')",
+				CheckName:  "files_status_valid",
+			},
+		},
+	}
+	upDiff := &types.SchemaDiff{
+		ConstraintsAdded: []string{"files_category_check", "files_status_valid"},
+	}
+
+	result := reverseSchemaDiffWithSchema(upDiff, generatedSchema, nil)
+
+	c.Assert(result.ConstraintsRemoved, qt.DeepEquals, []string{"files_category_check", "files_status_valid"})
+	c.Assert(result.ConstraintsRemovedWithTables, qt.DeepEquals, []types.ConstraintRemovalInfo{
+		{Name: "files_category_check", TableName: "files", Type: "CHECK"},
+		{Name: "files_status_valid", TableName: "files", Type: "CHECK"},
+	})
+}
+
 // TestGenerateDownMigrationSQL_Issue189_RestoresPriorForeignKeyAction is the
 // acceptance test for the down half of issue #189: when an up migration changes
 // a field-level FK's ON DELETE action, the generated down migration must DROP
@@ -683,4 +722,53 @@ func TestGenerateDownMigrationSQL_Issue189_RestoresPriorForeignKeyAction(t *test
 		c.Assert(strings.Contains(downSQL, "ON DELETE SET NULL"), qt.IsFalse,
 			qt.Commentf("down must restore the prior action, not SET NULL:\n%s", downSQL))
 	})
+}
+
+// TestGenerateDownMigrationSQL_Issue194_DropsFieldLevelCheckMySQLFamily is the
+// acceptance test for issue #194: adding a field-level CHECK on an existing
+// column must generate a non-empty MySQL/MariaDB DOWN that drops the CHECK.
+func TestGenerateDownMigrationSQL_Issue194_DropsFieldLevelCheckMySQLFamily(t *testing.T) {
+	generatedSchema := &goschema.Database{
+		Tables: []goschema.Table{{StructName: "File", Name: "files"}},
+		Fields: []goschema.Field{
+			{
+				StructName: "File",
+				Name:       "category",
+				Type:       "TEXT",
+				Check:      "category IN ('a','b')",
+			},
+		},
+	}
+	dbSchema := &dbschematypes.DBSchema{
+		Tables: []dbschematypes.DBTable{
+			{
+				Name: "files",
+				Columns: []dbschematypes.DBColumn{
+					{Name: "category", DataType: "text", IsNullable: "YES"},
+				},
+			},
+		},
+	}
+	upDiff := schemadiff.Compare(generatedSchema, dbSchema)
+	c := qt.New(t)
+	c.Assert(upDiff.ConstraintsAdded, qt.DeepEquals, []string{"files_category_check"})
+
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			downSQL, err := generateDownMigrationSQL(upDiff, generatedSchema, dbSchema, dialect)
+			c.Assert(err, qt.IsNil)
+
+			wantDrop := "ALTER TABLE files DROP CONSTRAINT files_category_check;"
+			if dialect == "mariadb" {
+				wantDrop = "ALTER TABLE files DROP CONSTRAINT IF EXISTS files_category_check;"
+			}
+			c.Assert(downSQL, qt.Contains, wantDrop)
+			c.Assert(strings.Contains(downSQL, "No rollback operations needed"), qt.IsFalse,
+				qt.Commentf("field-level CHECK down migration must not be empty:\n%s", downSQL))
+			c.Assert(strings.Contains(downSQL, "TODO"), qt.IsFalse,
+				qt.Commentf("down must emit real SQL, not a TODO placeholder:\n%s", downSQL))
+		})
+	}
 }
