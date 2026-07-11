@@ -416,28 +416,36 @@ func reverseConstraintRemovals(diff *types.SchemaDiff, schema *goschema.Database
 		handled[add.Name] = struct{}{}
 	}
 
-	// Index field-level FK constraint names (foreign_key_name or the
-	// conventional fk_<table>_<column>) to their owning table for the names that
-	// did not arrive with table-qualified info (legacy callers / explicit
+	// Index field-level constraint names to their owning table for the names
+	// that did not arrive with table-qualified info (legacy callers / explicit
 	// table-level constraints).
 	structToTable := make(map[string]string, len(schema.Tables))
 	for _, t := range schema.Tables {
 		structToTable[t.StructName] = t.Name
 	}
 	fkTables := make(map[string]string, len(schema.Fields))
+	checkTables := make(map[string]string, len(schema.Fields))
 	for _, f := range schema.Fields {
-		if f.Foreign == "" {
-			continue
-		}
 		tableName := structToTable[f.StructName]
 		if tableName == "" {
 			tableName = f.StructName
 		}
-		name := f.ForeignKeyName
-		if name == "" {
-			name = fromschema.GenerateForeignKeyName(tableName, f.Name)
+
+		if f.Foreign != "" {
+			name := f.ForeignKeyName
+			if name == "" {
+				name = fromschema.GenerateForeignKeyName(tableName, f.Name)
+			}
+			fkTables[name] = tableName
 		}
-		fkTables[name] = tableName
+
+		if f.Check != "" {
+			name := f.CheckName
+			if name == "" {
+				name = tableName + "_" + f.Name + "_check"
+			}
+			checkTables[name] = tableName
+		}
 	}
 
 	for _, name := range diff.ConstraintsAdded {
@@ -450,6 +458,8 @@ func reverseConstraintRemovals(diff *types.SchemaDiff, schema *goschema.Database
 			infos = append(infos, types.ConstraintRemovalInfo{Name: name, TableName: c.Table, Type: c.Type})
 		case fkTables[name] != "":
 			infos = append(infos, types.ConstraintRemovalInfo{Name: name, TableName: fkTables[name], Type: "FOREIGN KEY"})
+		case checkTables[name] != "":
+			infos = append(infos, types.ConstraintRemovalInfo{Name: name, TableName: checkTables[name], Type: "CHECK"})
 		}
 	}
 	return infos
