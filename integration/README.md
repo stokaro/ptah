@@ -67,16 +67,16 @@ All integration tests are designed to run using Docker Compose, which provides i
 
 ```bash
 # Run all tests with default settings (text report)
-docker-compose --profile test run --rm ptah-tester
+docker compose --profile test run --rm ptah-tester
 
 # Run with HTML report (recommended for detailed analysis)
-docker-compose --profile test run --rm ptah-tester --report=html
+docker compose --profile test run --rm ptah-tester --report=html
 
 # Run with JSON report (good for CI/CD integration)
-docker-compose --profile test run --rm ptah-tester --report=json
+docker compose --profile test run --rm ptah-tester --report=json
 
 # Enable verbose output for debugging
-docker-compose --profile test run --rm ptah-tester --verbose
+docker compose --profile test run --rm ptah-tester --verbose
 ```
 
 ### Listing Available Scenarios
@@ -85,16 +85,16 @@ Before running tests, you can list all available scenarios to see what's availab
 
 ```bash
 # List all scenarios (both static and dynamic)
-docker-compose --profile test run --rm ptah-tester list
+docker compose --profile test run --rm ptah-tester list
 
 # List only static scenarios (basic functionality tests)
-docker-compose --profile test run --rm ptah-tester list --static
+docker compose --profile test run --rm ptah-tester list --static
 
 # List only dynamic scenarios (versioned entity evolution tests)
-docker-compose --profile test run --rm ptah-tester list --dynamic
+docker compose --profile test run --rm ptah-tester list --dynamic
 
 # Show help for the list command
-docker-compose --profile test run --rm ptah-tester list --help
+docker compose --profile test run --rm ptah-tester list --help
 ```
 
 The list command displays:
@@ -106,48 +106,48 @@ The list command displays:
 
 ```bash
 # Run specific scenarios only
-docker-compose --profile test run --rm ptah-tester --scenarios=apply_incremental_migrations,rollback_migrations
+docker compose --profile test run --rm ptah-tester --scenarios=apply_incremental_migrations,rollback_migrations
 
 # Run basic functionality tests
-docker-compose --profile test run --rm ptah-tester --scenarios=apply_incremental_migrations,upgrade_to_specific_version,check_current_version
+docker compose --profile test run --rm ptah-tester --scenarios=apply_incremental_migrations,upgrade_to_specific_version,check_current_version
 
 # Run idempotency tests
-docker-compose --profile test run --rm ptah-tester --scenarios=idempotency_reapply,idempotency_up_to_date
+docker compose --profile test run --rm ptah-tester --scenarios=idempotency_reapply,idempotency_up_to_date
 
 # Run failure recovery tests
-docker-compose --profile test run --rm ptah-tester --scenarios=failure_diagnostics,partial_failure_recovery
+docker compose --profile test run --rm ptah-tester --scenarios=failure_diagnostics,partial_failure_recovery
 
 # Run dynamic scenarios for schema evolution testing
-docker-compose --profile test run --rm ptah-tester --scenarios=dynamic_basic_evolution,dynamic_rollback_single
+docker compose --profile test run --rm ptah-tester --scenarios=dynamic_basic_evolution,dynamic_rollback_single
 ```
 
 ### Database Selection
 
 ```bash
 # Test against PostgreSQL only
-docker-compose --profile test run --rm ptah-tester --databases=postgres
+docker compose --profile test run --rm ptah-tester --databases=postgres
 
 # Test against MySQL only
-docker-compose --profile test run --rm ptah-tester --databases=mysql
+docker compose --profile test run --rm ptah-tester --databases=mysql
 
 # Test against MariaDB only
-docker-compose --profile test run --rm ptah-tester --databases=mariadb
+docker compose --profile test run --rm ptah-tester --databases=mariadb
 
 # Test against specific combination
-docker-compose --profile test run --rm ptah-tester --databases=postgres,mysql
+docker compose --profile test run --rm ptah-tester --databases=postgres,mysql
 ```
 
 ### Combined Options
 
 ```bash
 # Comprehensive test with detailed reporting
-docker-compose --profile test run --rm ptah-tester --report=html --verbose
+docker compose --profile test run --rm ptah-tester --report=html --verbose
 
 # Quick smoke test
-docker-compose --profile test run --rm ptah-tester --scenarios=apply_incremental_migrations --databases=postgres --report=txt
+docker compose --profile test run --rm ptah-tester --scenarios=apply_incremental_migrations --databases=postgres --report=txt
 
 # CI/CD friendly execution
-docker-compose --profile test run --rm ptah-tester --report=json --databases=postgres,mysql,mariadb
+docker compose --profile test run --rm ptah-tester --report=json --databases=postgres,mysql,mariadb
 ```
 
 ## Command Line Options
@@ -195,7 +195,7 @@ Rich, interactive report with:
 ### MySQL
 - Version: 8+
 - Required permissions: CREATE, DROP, SELECT, INSERT, UPDATE, DELETE
-- Authentication: `mysql_native_password`
+- Authentication: default MySQL authentication (`caching_sha2_password` on current MySQL images)
 
 ### MariaDB
 - Version: 10.11+
@@ -226,12 +226,12 @@ The integration tests are designed to run in CI/CD environments using Docker Com
 # Example GitHub Actions workflow
 - name: Run Integration Tests
   run: |
-    docker-compose --profile test run --rm ptah-tester --report=json
+    docker compose --profile test run --rm ptah-tester --report=json
 
 # Example GitLab CI
 test:integration:
   script:
-    - docker-compose --profile test run --rm ptah-tester --report=json
+    - docker compose --profile test run --rm ptah-tester --report=json
   artifacts:
     reports:
       junit: integration/reports/*.json
@@ -239,7 +239,7 @@ test:integration:
 # Example with specific database testing
 test:postgres:
   script:
-    - docker-compose --profile test run --rm ptah-tester --databases=postgres --report=json
+    - docker compose --profile test run --rm ptah-tester --databases=postgres --report=json
 ```
 
 ## Troubleshooting

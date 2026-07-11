@@ -233,11 +233,11 @@ function check_prerequisites() {
     
     # Check Docker (only if not unit-only)
     if [ "$UNIT_ONLY" != "true" ]; then
-        if ! command -v docker &> /dev/null || ! command -v docker-compose &> /dev/null; then
-            print_error "Docker or docker-compose not found. Please install Docker."
+        if ! command -v docker &> /dev/null || ! docker compose version &> /dev/null; then
+            print_error "Docker or Docker Compose not found. Please install Docker."
             exit 1
         fi
-        print_success "Docker and docker-compose found"
+        print_success "Docker and Docker Compose found"
     fi
 }
 
@@ -248,7 +248,7 @@ function start_databases() {
     fi
     
     print_step "Starting databases (PostgreSQL, MySQL, MariaDB)..."
-    docker-compose up -d postgres mysql mariadb
+    docker compose up -d postgres mysql mariadb
     
     print_step "Waiting for databases to be healthy..."
     local max_wait=60
@@ -260,7 +260,7 @@ function start_databases() {
         waited=$((waited + interval))
         
         # Check if all databases are healthy
-        local status=$(docker-compose ps --format json 2>/dev/null || echo "[]")
+        local status=$(docker compose ps --format json 2>/dev/null || echo "[]")
         
         if [ "$status" != "[]" ]; then
             # Simple check - if containers are running, assume healthy after initial wait
@@ -284,7 +284,7 @@ function start_databases() {
 function stop_databases() {
     if [ "$UNIT_ONLY" = "true" ] || [ "$KEEP_DATABASES" = "true" ]; then
         if [ "$KEEP_DATABASES" = "true" ]; then
-            print_warning "Keeping databases running (use 'docker-compose down' to stop them)"
+            print_warning "Keeping databases running (use 'docker compose down' to stop them)"
             echo -e "${YELLOW}Database connections:${NC}"
             echo "  POSTGRES_TEST_DSN = $POSTGRES_TEST_DSN"
             echo "  MYSQL_TEST_DSN = $MYSQL_TEST_DSN"
@@ -294,7 +294,7 @@ function stop_databases() {
     fi
     
     print_step "Stopping and removing databases..."
-    docker-compose down
+    docker compose down
     if [ $? -eq 0 ]; then
         print_success "Databases stopped and removed"
     else

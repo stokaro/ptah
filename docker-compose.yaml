@@ -8,7 +8,7 @@ services:
     ports:
       - "5433:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ptah_user -d ptah_test"]
       interval: 5s
@@ -26,7 +26,6 @@ services:
       - "3310:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-    command: --default-authentication-plugin=mysql_native_password
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "ptah_user", "-pptah_password"]
       interval: 5s
@@ -57,9 +56,6 @@ services:
       CLICKHOUSE_USER: ptah_user
       CLICKHOUSE_PASSWORD: ptah_password
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
-    ports:
-      - "8123:8123"
-      - "9000:9000"
     ulimits:
       nofile:
         soft: 262144
