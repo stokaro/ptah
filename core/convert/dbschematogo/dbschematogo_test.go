@@ -111,7 +111,7 @@ func TestConvertDBSchemaToGoSchema_Extensions(t *testing.T) {
 
 			result := dbschematogo.ConvertDBSchemaToGoSchema(tt.dbSchema)
 
-			c.Assert(len(result.Extensions), qt.Equals, len(tt.expected))
+			c.Assert(result.Extensions, qt.HasLen, len(tt.expected))
 			for i, expectedExt := range tt.expected {
 				actualExt := result.Extensions[i]
 				c.Assert(actualExt.Name, qt.Equals, expectedExt.Name)
@@ -157,15 +157,15 @@ func TestConvertDBSchemaToGoSchema_ExtensionsWithOtherElements(t *testing.T) {
 	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
 
 	// Verify extensions are converted
-	c.Assert(len(result.Extensions), qt.Equals, 1)
+	c.Assert(result.Extensions, qt.HasLen, 1)
 	c.Assert(result.Extensions[0].Name, qt.Equals, "pg_trgm")
 	c.Assert(result.Extensions[0].IfNotExists, qt.Equals, true)
 	c.Assert(result.Extensions[0].Version, qt.Equals, "1.6")
 
 	// Verify other elements are also converted
-	c.Assert(len(result.Tables), qt.Equals, 1)
+	c.Assert(result.Tables, qt.HasLen, 1)
 	c.Assert(result.Tables[0].Name, qt.Equals, "users")
-	c.Assert(len(result.Enums), qt.Equals, 1)
+	c.Assert(result.Enums, qt.HasLen, 1)
 	c.Assert(result.Enums[0].Name, qt.Equals, "status_type")
 }
 
@@ -186,7 +186,7 @@ func TestConvertDBSchemaToGoSchema_ExtensionDefaultValues(t *testing.T) {
 
 	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
 
-	c.Assert(len(result.Extensions), qt.Equals, 1)
+	c.Assert(result.Extensions, qt.HasLen, 1)
 	ext := result.Extensions[0]
 
 	// Verify default values

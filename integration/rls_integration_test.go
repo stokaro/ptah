@@ -59,11 +59,11 @@ func TestRLSIntegrationFixtures(t *testing.T) {
 			c.Assert(err, qt.IsNil, qt.Commentf("Failed to parse fixture directory: %s", tc.fixtureDir))
 
 			// Check that the expected number of RLS policies are parsed
-			c.Assert(len(generated.RLSPolicies), qt.Equals, tc.expectedPolicies,
+			c.Assert(generated.RLSPolicies, qt.HasLen, tc.expectedPolicies,
 				qt.Commentf("Expected %d RLS policies, got %d. %s", tc.expectedPolicies, len(generated.RLSPolicies), tc.description))
 
 			// Check that the expected number of RLS enabled tables are parsed
-			c.Assert(len(generated.RLSEnabledTables), qt.Equals, tc.expectedEnabledTables,
+			c.Assert(generated.RLSEnabledTables, qt.HasLen, tc.expectedEnabledTables,
 				qt.Commentf("Expected %d RLS enabled tables, got %d. %s", tc.expectedEnabledTables, len(generated.RLSEnabledTables), tc.description))
 
 			// Test migration generation

@@ -20,9 +20,9 @@ func TestRolesComparison(t *testing.T) {
 
 		compare.Roles(generated, database, diff)
 
-		c.Assert(len(diff.RolesAdded), qt.Equals, 0)
-		c.Assert(len(diff.RolesRemoved), qt.Equals, 0)
-		c.Assert(len(diff.RolesModified), qt.Equals, 0)
+		c.Assert(diff.RolesAdded, qt.HasLen, 0)
+		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
+		c.Assert(diff.RolesModified, qt.HasLen, 0)
 	})
 
 	t.Run("roles added", func(t *testing.T) {
@@ -38,11 +38,11 @@ func TestRolesComparison(t *testing.T) {
 
 		compare.Roles(generated, database, diff)
 
-		c.Assert(len(diff.RolesAdded), qt.Equals, 2)
+		c.Assert(diff.RolesAdded, qt.HasLen, 2)
 		c.Assert(diff.RolesAdded, qt.Contains, "app_user")
 		c.Assert(diff.RolesAdded, qt.Contains, "admin_user")
-		c.Assert(len(diff.RolesRemoved), qt.Equals, 0)
-		c.Assert(len(diff.RolesModified), qt.Equals, 0)
+		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
+		c.Assert(diff.RolesModified, qt.HasLen, 0)
 	})
 
 	t.Run("roles not automatically removed", func(t *testing.T) {
@@ -59,9 +59,9 @@ func TestRolesComparison(t *testing.T) {
 		compare.Roles(generated, database, diff)
 
 		// Roles should not be automatically removed for safety
-		c.Assert(len(diff.RolesAdded), qt.Equals, 0)
-		c.Assert(len(diff.RolesRemoved), qt.Equals, 0)
-		c.Assert(len(diff.RolesModified), qt.Equals, 0)
+		c.Assert(diff.RolesAdded, qt.HasLen, 0)
+		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
+		c.Assert(diff.RolesModified, qt.HasLen, 0)
 	})
 
 	t.Run("roles modified", func(t *testing.T) {
@@ -80,11 +80,11 @@ func TestRolesComparison(t *testing.T) {
 
 		compare.Roles(generated, database, diff)
 
-		c.Assert(len(diff.RolesAdded), qt.Equals, 0)
-		c.Assert(len(diff.RolesRemoved), qt.Equals, 0)
-		c.Assert(len(diff.RolesModified), qt.Equals, 1)
+		c.Assert(diff.RolesAdded, qt.HasLen, 0)
+		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
+		c.Assert(diff.RolesModified, qt.HasLen, 1)
 		c.Assert(diff.RolesModified[0].RoleName, qt.Equals, "app_user")
-		c.Assert(len(diff.RolesModified[0].Changes), qt.Equals, 2)
+		c.Assert(diff.RolesModified[0].Changes, qt.HasLen, 2)
 		c.Assert(diff.RolesModified[0].Changes["login"], qt.Equals, "false -> true")
 		c.Assert(diff.RolesModified[0].Changes["createdb"], qt.Equals, "false -> true")
 	})
@@ -109,13 +109,13 @@ func TestRolesComparison(t *testing.T) {
 
 		compare.Roles(generated, database, diff)
 
-		c.Assert(len(diff.RolesAdded), qt.Equals, 1)
+		c.Assert(diff.RolesAdded, qt.HasLen, 1)
 		c.Assert(diff.RolesAdded[0], qt.Equals, "new_role")
 
 		// Roles are not automatically removed for safety
-		c.Assert(len(diff.RolesRemoved), qt.Equals, 0)
+		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
 
-		c.Assert(len(diff.RolesModified), qt.Equals, 1)
+		c.Assert(diff.RolesModified, qt.HasLen, 1)
 		c.Assert(diff.RolesModified[0].RoleName, qt.Equals, "app_user")
 		c.Assert(diff.RolesModified[0].Changes["login"], qt.Equals, "false -> true")
 	})
@@ -144,10 +144,10 @@ func TestRolesComparison(t *testing.T) {
 		c.Assert(diff.RolesAdded, qt.DeepEquals, []string{"a_role", "z_role"})
 
 		// Roles are not automatically removed for safety
-		c.Assert(len(diff.RolesRemoved), qt.Equals, 0)
+		c.Assert(diff.RolesRemoved, qt.HasLen, 0)
 
 		// Check modified roles are sorted
-		c.Assert(len(diff.RolesModified), qt.Equals, 1)
+		c.Assert(diff.RolesModified, qt.HasLen, 1)
 		c.Assert(diff.RolesModified[0].RoleName, qt.Equals, "m_role")
 	})
 }
@@ -177,7 +177,7 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 		diff := compare.RoleDefinitions(generated, database)
 
 		c.Assert(diff.RoleName, qt.Equals, "test_role")
-		c.Assert(len(diff.Changes), qt.Equals, 0)
+		c.Assert(diff.Changes, qt.HasLen, 0)
 	})
 
 	t.Run("all attributes different", func(t *testing.T) {
@@ -205,7 +205,7 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 		diff := compare.RoleDefinitions(generated, database)
 
 		c.Assert(diff.RoleName, qt.Equals, "test_role")
-		c.Assert(len(diff.Changes), qt.Equals, 7)
+		c.Assert(diff.Changes, qt.HasLen, 7)
 		c.Assert(diff.Changes["login"], qt.Equals, "false -> true")
 		c.Assert(diff.Changes["password"], qt.Equals, "password_update_required")
 		c.Assert(diff.Changes["superuser"], qt.Equals, "false -> true")
@@ -229,7 +229,7 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 		diff := compare.RoleDefinitions(generated, database)
 
 		c.Assert(diff.RoleName, qt.Equals, "test_role")
-		c.Assert(len(diff.Changes), qt.Equals, 1)
+		c.Assert(diff.Changes, qt.HasLen, 1)
 		c.Assert(diff.Changes["login"], qt.Equals, "false -> true")
 	})
 
@@ -246,7 +246,7 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 		diff := compare.RoleDefinitions(generated, database)
 
 		c.Assert(diff.RoleName, qt.Equals, "test_role")
-		c.Assert(len(diff.Changes), qt.Equals, 1)
+		c.Assert(diff.Changes, qt.HasLen, 1)
 		c.Assert(diff.Changes["password"], qt.Equals, "password_update_required")
 	})
 
@@ -264,6 +264,6 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 		diff := compare.RoleDefinitions(generated, database)
 
 		c.Assert(diff.RoleName, qt.Equals, "test_role")
-		c.Assert(len(diff.Changes), qt.Equals, 0) // No password change detected
+		c.Assert(diff.Changes, qt.HasLen, 0) // No password change detected
 	})
 }

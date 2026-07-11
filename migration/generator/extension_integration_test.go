@@ -1,7 +1,6 @@
 package generator_test
 
 import (
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -155,23 +154,23 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 
 			// 4. Verify up migration SQL
 			for _, expected := range tt.expectedUpSQL {
-				c.Assert(strings.Contains(upSQL, expected), qt.IsTrue,
+				c.Assert(upSQL, qt.Contains, expected,
 					qt.Commentf("Expected up SQL to contain: %s\nActual up SQL:\n%s", expected, upSQL))
 			}
 
 			for _, unexpected := range tt.unexpectedUpSQL {
-				c.Assert(strings.Contains(upSQL, unexpected), qt.IsFalse,
+				c.Assert(upSQL, qt.Not(qt.Contains), unexpected,
 					qt.Commentf("Expected up SQL to NOT contain: %s\nActual up SQL:\n%s", unexpected, upSQL))
 			}
 
 			// 5. Verify down migration SQL
 			for _, expected := range tt.expectedDownSQL {
-				c.Assert(strings.Contains(downSQL, expected), qt.IsTrue,
+				c.Assert(downSQL, qt.Contains, expected,
 					qt.Commentf("Expected down SQL to contain: %s\nActual down SQL:\n%s", expected, downSQL))
 			}
 
 			for _, unexpected := range tt.unexpectedDownSQL {
-				c.Assert(strings.Contains(downSQL, unexpected), qt.IsFalse,
+				c.Assert(downSQL, qt.Not(qt.Contains), unexpected,
 					qt.Commentf("Expected down SQL to NOT contain: %s\nActual down SQL:\n%s", unexpected, downSQL))
 			}
 		})
@@ -195,8 +194,8 @@ func TestExtensionMigration_UpDownCycle(t *testing.T) {
 
 	// 1. Calculate initial diff (should add extensions)
 	upDiff := schemadiff.Compare(generatedSchema, databaseSchema)
-	c.Assert(len(upDiff.ExtensionsAdded), qt.Equals, 2)
-	c.Assert(len(upDiff.ExtensionsRemoved), qt.Equals, 0)
+	c.Assert(upDiff.ExtensionsAdded, qt.HasLen, 2)
+	c.Assert(upDiff.ExtensionsRemoved, qt.HasLen, 0)
 
 	// 2. Simulate applying the up migration (database now has extensions)
 	simulatedDatabaseAfterUp := &types.DBSchema{
@@ -208,8 +207,8 @@ func TestExtensionMigration_UpDownCycle(t *testing.T) {
 
 	// 3. Calculate down diff (should remove extensions)
 	downDiff := schemadiff.Compare(&goschema.Database{Extensions: []goschema.Extension{}}, simulatedDatabaseAfterUp)
-	c.Assert(len(downDiff.ExtensionsAdded), qt.Equals, 0)
-	c.Assert(len(downDiff.ExtensionsRemoved), qt.Equals, 2)
+	c.Assert(downDiff.ExtensionsAdded, qt.HasLen, 0)
+	c.Assert(downDiff.ExtensionsRemoved, qt.HasLen, 2)
 
 	// 4. Verify the cycle is complete
 	c.Assert(upDiff.ExtensionsAdded, qt.DeepEquals, downDiff.ExtensionsRemoved)

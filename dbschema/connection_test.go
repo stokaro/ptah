@@ -2,7 +2,6 @@ package dbschema_test
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"testing"
@@ -182,7 +181,7 @@ func TestConnectToDatabase_CancelledContext(t *testing.T) {
 
 	c.Assert(conn, qt.IsNil)
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(errors.Is(err, context.Canceled), qt.IsTrue,
+	c.Assert(err, qt.ErrorIs, context.Canceled,
 		qt.Commentf("expected context.Canceled in error chain, got: %v", err))
 
 	// "Promptly" is intentionally loose to avoid flakiness on slow CI runners,
@@ -208,7 +207,7 @@ func TestConnectToDatabase_DeadlineExceeded(t *testing.T) {
 
 	c.Assert(conn, qt.IsNil)
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(errors.Is(err, context.DeadlineExceeded), qt.IsTrue,
+	c.Assert(err, qt.ErrorIs, context.DeadlineExceeded,
 		qt.Commentf("expected context.DeadlineExceeded in error chain, got: %v", err))
 
 	// Generous upper bound — the deadline is 200ms; allow for handshake +

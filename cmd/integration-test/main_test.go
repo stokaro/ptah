@@ -49,7 +49,7 @@ func TestStaticScenarioNaming(t *testing.T) {
 
 	// Verify that static scenarios don't have "dynamic_" prefix
 	for _, scenario := range staticScenarios {
-		c.Assert(scenario.Name[:8] != "dynamic_", qt.IsTrue, qt.Commentf("Static scenario %s should not have 'dynamic_' prefix", scenario.Name))
+		c.Assert(scenario.Name[:8], qt.Not(qt.Equals), "dynamic_", qt.Commentf("Static scenario %s should not have 'dynamic_' prefix", scenario.Name))
 	}
 }
 

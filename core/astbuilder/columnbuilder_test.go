@@ -16,7 +16,7 @@ func TestColumnBuilder_Primary(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Columns), qt.Equals, 1)
+	c.Assert(result.Columns, qt.HasLen, 1)
 	column := result.Columns[0]
 	c.Assert(column.Primary, qt.IsTrue)
 	c.Assert(column.Nullable, qt.IsFalse) // Primary keys are automatically NOT NULL
@@ -30,7 +30,7 @@ func TestColumnBuilder_NotNull(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Columns), qt.Equals, 1)
+	c.Assert(result.Columns, qt.HasLen, 1)
 	column := result.Columns[0]
 	c.Assert(column.Nullable, qt.IsFalse)
 }
@@ -43,7 +43,7 @@ func TestColumnBuilder_Nullable(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Columns), qt.Equals, 1)
+	c.Assert(result.Columns, qt.HasLen, 1)
 	column := result.Columns[0]
 	c.Assert(column.Nullable, qt.IsTrue)
 }
@@ -56,7 +56,7 @@ func TestColumnBuilder_Unique(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Columns), qt.Equals, 1)
+	c.Assert(result.Columns, qt.HasLen, 1)
 	column := result.Columns[0]
 	c.Assert(column.Unique, qt.IsTrue)
 }
@@ -69,7 +69,7 @@ func TestColumnBuilder_AutoIncrement(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Columns), qt.Equals, 1)
+	c.Assert(result.Columns, qt.HasLen, 1)
 	column := result.Columns[0]
 	c.Assert(column.AutoInc, qt.IsTrue)
 }
@@ -82,7 +82,7 @@ func TestColumnBuilder_Default(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Columns), qt.Equals, 1)
+	c.Assert(result.Columns, qt.HasLen, 1)
 	column := result.Columns[0]
 	c.Assert(column.Default, qt.IsNotNil)
 	c.Assert(column.Default.Value, qt.Equals, "'active'")
@@ -97,7 +97,7 @@ func TestColumnBuilder_DefaultFunction(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Columns), qt.Equals, 1)
+	c.Assert(result.Columns, qt.HasLen, 1)
 	column := result.Columns[0]
 	c.Assert(column.Default, qt.IsNotNil)
 	c.Assert(column.Default.Expression, qt.Equals, "NOW()")
@@ -112,7 +112,7 @@ func TestColumnBuilder_Check(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Columns), qt.Equals, 1)
+	c.Assert(result.Columns, qt.HasLen, 1)
 	column := result.Columns[0]
 	c.Assert(column.Check, qt.Equals, "age >= 0 AND age <= 150")
 }
@@ -125,7 +125,7 @@ func TestColumnBuilder_Comment(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Columns), qt.Equals, 1)
+	c.Assert(result.Columns, qt.HasLen, 1)
 	column := result.Columns[0]
 	c.Assert(column.Comment, qt.Equals, "Auto-incrementing primary key")
 }
@@ -141,7 +141,7 @@ func TestColumnBuilder_ForeignKey(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Columns), qt.Equals, 1)
+	c.Assert(result.Columns, qt.HasLen, 1)
 	column := result.Columns[0]
 	c.Assert(column.ForeignKey, qt.IsNotNil)
 	c.Assert(column.ForeignKey.Table, qt.Equals, "users")
@@ -165,7 +165,7 @@ func TestColumnBuilder_ComplexColumn(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Columns), qt.Equals, 1)
+	c.Assert(result.Columns, qt.HasLen, 1)
 	column := result.Columns[0]
 
 	c.Assert(column.Name, qt.Equals, "user_id")
@@ -237,7 +237,7 @@ func TestColumnBuilder_MultipleColumns(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Columns), qt.Equals, 6)
+	c.Assert(result.Columns, qt.HasLen, 6)
 
 	// Check id column
 	idCol := result.Columns[0]
@@ -269,7 +269,7 @@ func TestColumnBuilder_PrimaryKeyOverridesNullable(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Columns), qt.Equals, 1)
+	c.Assert(result.Columns, qt.HasLen, 1)
 	column := result.Columns[0]
 
 	// Primary key should override nullable setting

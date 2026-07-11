@@ -42,7 +42,7 @@ func TestDeduplicate_FieldOrderPreservation(t *testing.T) {
 		}
 
 		// Should have exactly 4 unique fields
-		c.Assert(len(userFields), qt.Equals, 4)
+		c.Assert(userFields, qt.HasLen, 4)
 
 		// Order should be preserved: id, email, name, created_at
 		expectedOrder := []string{"id", "email", "name", "created_at"}
@@ -126,7 +126,7 @@ func TestDeduplicate_IndexOrderPreservation(t *testing.T) {
 	// Should preserve original order and remove duplicates
 	expectedOrder := []string{"idx_email", "idx_name", "idx_title", "idx_created_at"}
 	c.Assert(indexNames, qt.DeepEquals, expectedOrder)
-	c.Assert(len(db.Indexes), qt.Equals, 4) // Should have 4 unique indexes
+	c.Assert(db.Indexes, qt.HasLen, 4) // Should have 4 unique indexes
 }
 
 func TestDeduplicate_EnumOrderPreservation(t *testing.T) {
@@ -154,7 +154,7 @@ func TestDeduplicate_EnumOrderPreservation(t *testing.T) {
 	// Should preserve original order and remove duplicates
 	expectedOrder := []string{"user_status", "post_status", "priority"}
 	c.Assert(enumNames, qt.DeepEquals, expectedOrder)
-	c.Assert(len(db.Enums), qt.Equals, 3) // Should have 3 unique enums
+	c.Assert(db.Enums, qt.HasLen, 3) // Should have 3 unique enums
 }
 
 func TestDeduplicate_TableOrderPreservation(t *testing.T) {
@@ -183,7 +183,7 @@ func TestDeduplicate_TableOrderPreservation(t *testing.T) {
 	// Should preserve original order and remove duplicates
 	expectedOrder := []string{"users", "posts", "comments", "categories"}
 	c.Assert(tableNames, qt.DeepEquals, expectedOrder)
-	c.Assert(len(db.Tables), qt.Equals, 4) // Should have 4 unique tables
+	c.Assert(db.Tables, qt.HasLen, 4) // Should have 4 unique tables
 }
 
 func TestDeduplicate_EmbeddedFieldOrderPreservation(t *testing.T) {
@@ -213,7 +213,7 @@ func TestDeduplicate_EmbeddedFieldOrderPreservation(t *testing.T) {
 	// Should preserve original order and remove duplicates
 	expectedOrder := []string{"User.BaseEntity", "User.Timestamps", "Post.BaseEntity", "User.SoftDelete"}
 	c.Assert(embeddedKeys, qt.DeepEquals, expectedOrder)
-	c.Assert(len(db.EmbeddedFields), qt.Equals, 4) // Should have 4 unique embedded fields
+	c.Assert(db.EmbeddedFields, qt.HasLen, 4) // Should have 4 unique embedded fields
 }
 
 func TestDeduplicate_ComplexScenarioWithAllTypes(t *testing.T) {
@@ -263,7 +263,7 @@ func TestDeduplicate_ComplexScenarioWithAllTypes(t *testing.T) {
 		tableNames = append(tableNames, table.Name)
 	}
 	c.Assert(tableNames, qt.DeepEquals, []string{"users", "posts"})
-	c.Assert(len(db.Tables), qt.Equals, 2)
+	c.Assert(db.Tables, qt.HasLen, 2)
 
 	// Fields - should maintain interleaved order
 	fieldKeys := make([]string, 0)
@@ -273,7 +273,7 @@ func TestDeduplicate_ComplexScenarioWithAllTypes(t *testing.T) {
 	}
 	expectedFieldOrder := []string{"User.id", "Post.id", "User.email", "Post.title", "User.name", "Post.content"}
 	c.Assert(fieldKeys, qt.DeepEquals, expectedFieldOrder)
-	c.Assert(len(db.Fields), qt.Equals, 6)
+	c.Assert(db.Fields, qt.HasLen, 6)
 
 	// Indexes
 	indexNames := make([]string, 0)
@@ -281,7 +281,7 @@ func TestDeduplicate_ComplexScenarioWithAllTypes(t *testing.T) {
 		indexNames = append(indexNames, index.Name)
 	}
 	c.Assert(indexNames, qt.DeepEquals, []string{"idx_email", "idx_title", "idx_name"})
-	c.Assert(len(db.Indexes), qt.Equals, 3)
+	c.Assert(db.Indexes, qt.HasLen, 3)
 
 	// Enums
 	enumNames := make([]string, 0)
@@ -289,7 +289,7 @@ func TestDeduplicate_ComplexScenarioWithAllTypes(t *testing.T) {
 		enumNames = append(enumNames, enum.Name)
 	}
 	c.Assert(enumNames, qt.DeepEquals, []string{"status", "priority"})
-	c.Assert(len(db.Enums), qt.Equals, 2)
+	c.Assert(db.Enums, qt.HasLen, 2)
 
 	// Embedded Fields
 	embeddedKeys := make([]string, 0)
@@ -298,5 +298,5 @@ func TestDeduplicate_ComplexScenarioWithAllTypes(t *testing.T) {
 		embeddedKeys = append(embeddedKeys, key)
 	}
 	c.Assert(embeddedKeys, qt.DeepEquals, []string{"User.BaseEntity", "Post.BaseEntity"})
-	c.Assert(len(db.EmbeddedFields), qt.Equals, 2)
+	c.Assert(db.EmbeddedFields, qt.HasLen, 2)
 }

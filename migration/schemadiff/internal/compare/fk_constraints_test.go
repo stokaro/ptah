@@ -323,13 +323,13 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 			diff := &difftypes.SchemaDiff{}
 			compare.Constraints(tt.generated, tt.database, diff, nil)
 
-			c.Assert(len(diff.ConstraintsAdded), qt.Equals, len(tt.expected.ConstraintsAdded),
+			c.Assert(diff.ConstraintsAdded, qt.HasLen, len(tt.expected.ConstraintsAdded),
 				qt.Commentf("ConstraintsAdded=%v", diff.ConstraintsAdded))
 			for _, expected := range tt.expected.ConstraintsAdded {
 				c.Assert(diff.ConstraintsAdded, qt.Contains, expected)
 			}
 
-			c.Assert(len(diff.ConstraintsRemoved), qt.Equals, len(tt.expected.ConstraintsRemoved),
+			c.Assert(diff.ConstraintsRemoved, qt.HasLen, len(tt.expected.ConstraintsRemoved),
 				qt.Commentf("ConstraintsRemoved=%v", diff.ConstraintsRemoved))
 			for _, expected := range tt.expected.ConstraintsRemoved {
 				c.Assert(diff.ConstraintsRemoved, qt.Contains, expected)

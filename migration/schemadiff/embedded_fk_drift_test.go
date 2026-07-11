@@ -142,7 +142,7 @@ func TestEmbeddedInlineMixinFK_NeverTargetsStructName(t *testing.T) {
 		c.Assert(err, qt.IsNil)
 
 		// Never the mixin struct name.
-		c.Assert(strings.Contains(sql, "ALTER TABLE Ownable"), qt.IsFalse,
+		c.Assert(sql, qt.Not(qt.Contains), "ALTER TABLE Ownable",
 			qt.Commentf("must not target the mixin struct name, got:\n%s", sql))
 
 		// One correctly-targeted ADD per host table per FK, no duplication.
@@ -166,12 +166,12 @@ func TestEmbeddedInlineMixinFK_NeverTargetsStructName(t *testing.T) {
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 
-		c.Assert(strings.Contains(sql, "Ownable"), qt.IsFalse,
+		c.Assert(sql, qt.Not(qt.Contains), "Ownable",
 			qt.Commentf("down must not reference the mixin struct, got:\n%s", sql))
 		for _, h := range hosts {
-			c.Assert(strings.Contains(sql, "ALTER TABLE "+h+" DROP CONSTRAINT IF EXISTS fk_entity_tenant"), qt.IsTrue,
+			c.Assert(sql, qt.Contains, "ALTER TABLE "+h+" DROP CONSTRAINT IF EXISTS fk_entity_tenant",
 				qt.Commentf("down must drop tenant FK from %s, got:\n%s", h, sql))
-			c.Assert(strings.Contains(sql, "ALTER TABLE "+h+" DROP CONSTRAINT IF EXISTS fk_entity_created_by"), qt.IsTrue,
+			c.Assert(sql, qt.Contains, "ALTER TABLE "+h+" DROP CONSTRAINT IF EXISTS fk_entity_created_by",
 				qt.Commentf("down must drop created_by FK from %s, got:\n%s", h, sql))
 		}
 	})
@@ -234,7 +234,7 @@ func TestEmbeddedInlineMixinFK_MultiHostActionDrift(t *testing.T) {
 		noopNodes := postgres.New().GenerateMigrationAST(converged, gen)
 		noopSQL, err := renderer.RenderSQL("postgres", noopNodes...)
 		c.Assert(err, qt.IsNil)
-		c.Assert(strings.Contains(noopSQL, "fk_entity_tenant"), qt.IsFalse,
+		c.Assert(noopSQL, qt.Not(qt.Contains), "fk_entity_tenant",
 			qt.Commentf("converged tenant FK must produce no churn, got:\n%s", noopSQL))
 	})
 
@@ -310,9 +310,9 @@ func TestEmbeddedInlineMixinFK_MixedModifyAndAdd_NoPhantomDrop(t *testing.T) {
 			qt.Commentf("modify host %s must drop the old tenant FK once, got:\n%s", h, sql))
 	}
 	// The pure-add host gets the ADD but NO phantom DROP.
-	c.Assert(strings.Contains(sql, "ALTER TABLE "+addHost+" ADD CONSTRAINT fk_entity_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE"), qt.IsTrue,
+	c.Assert(sql, qt.Contains, "ALTER TABLE "+addHost+" ADD CONSTRAINT fk_entity_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE",
 		qt.Commentf("pure-add host %s must add the tenant FK, got:\n%s", addHost, sql))
-	c.Assert(strings.Contains(sql, "ALTER TABLE "+addHost+" DROP CONSTRAINT IF EXISTS fk_entity_tenant"), qt.IsFalse,
+	c.Assert(sql, qt.Not(qt.Contains), "ALTER TABLE "+addHost+" DROP CONSTRAINT IF EXISTS fk_entity_tenant",
 		qt.Commentf("pure-add host %s must NOT emit a phantom DROP, got:\n%s", addHost, sql))
 }
 

@@ -19,8 +19,8 @@ func TestNewTable(t *testing.T) {
 	result := table.Build()
 	c.Assert(result, qt.IsNotNil)
 	c.Assert(result.Name, qt.Equals, "users")
-	c.Assert(len(result.Columns), qt.Equals, 0)
-	c.Assert(len(result.Constraints), qt.Equals, 0)
+	c.Assert(result.Columns, qt.HasLen, 0)
+	c.Assert(result.Constraints, qt.HasLen, 0)
 }
 
 func TestTableBuilder_Comment(t *testing.T) {
@@ -67,7 +67,7 @@ func TestTableBuilder_Column(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Columns), qt.Equals, 2)
+	c.Assert(result.Columns, qt.HasLen, 2)
 
 	// Check first column
 	c.Assert(result.Columns[0].Name, qt.Equals, "id")
@@ -91,7 +91,7 @@ func TestTableBuilder_PrimaryKey(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Constraints), qt.Equals, 1)
+	c.Assert(result.Constraints, qt.HasLen, 1)
 	c.Assert(result.Constraints[0].Type, qt.Equals, ast.PrimaryKeyConstraint)
 	c.Assert(result.Constraints[0].Columns, qt.DeepEquals, []string{"user_id", "role_id"})
 }
@@ -106,7 +106,7 @@ func TestTableBuilder_Unique(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Constraints), qt.Equals, 1)
+	c.Assert(result.Constraints, qt.HasLen, 1)
 	c.Assert(result.Constraints[0].Type, qt.Equals, ast.UniqueConstraint)
 	c.Assert(result.Constraints[0].Name, qt.Equals, "uk_users_email_username")
 	c.Assert(result.Constraints[0].Columns, qt.DeepEquals, []string{"email", "username"})
@@ -124,7 +124,7 @@ func TestTableBuilder_ForeignKey(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Constraints), qt.Equals, 1)
+	c.Assert(result.Constraints, qt.HasLen, 1)
 	c.Assert(result.Constraints[0].Type, qt.Equals, ast.ForeignKeyConstraint)
 	c.Assert(result.Constraints[0].Name, qt.Equals, "fk_posts_user")
 	c.Assert(result.Constraints[0].Columns, qt.DeepEquals, []string{"user_id"})
@@ -161,10 +161,10 @@ func TestTableBuilder_ComplexTable(t *testing.T) {
 	c.Assert(result.Options["CHARSET"], qt.Equals, "utf8mb4")
 
 	// Check columns
-	c.Assert(len(result.Columns), qt.Equals, 7)
+	c.Assert(result.Columns, qt.HasLen, 7)
 
 	// Check constraints
-	c.Assert(len(result.Constraints), qt.Equals, 2) // unique + primary key
+	c.Assert(result.Constraints, qt.HasLen, 2) // unique + primary key
 
 	// Check unique constraint
 	uniqueConstraint := result.Constraints[0]
@@ -226,7 +226,7 @@ func TestTableBuilder_MultipleConstraints(t *testing.T) {
 
 	result := table.Build()
 
-	c.Assert(len(result.Constraints), qt.Equals, 3)
+	c.Assert(result.Constraints, qt.HasLen, 3)
 
 	// Check primary key
 	c.Assert(result.Constraints[0].Type, qt.Equals, ast.PrimaryKeyConstraint)

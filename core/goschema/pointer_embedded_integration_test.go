@@ -137,7 +137,7 @@ type BlogPost struct {
 	c.Assert(err, qt.IsNil)
 
 	// Should have 2 tables: users and blog_posts
-	c.Assert(len(database.Tables), qt.Equals, 2)
+	c.Assert(database.Tables, qt.HasLen, 2)
 
 	// Find the BlogPost table
 	var blogPostTable *goschema.Table

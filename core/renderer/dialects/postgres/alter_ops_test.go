@@ -1,7 +1,6 @@
 package postgres_test
 
 import (
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -53,8 +52,8 @@ func TestPostgres_AlterTable_ClickHouseOnlyOpsEmitComment(t *testing.T) {
 	c.Assert(out, qt.Contains, "-- POSTGRES: data-skipping indexes are ClickHouse-specific; ignored.")
 	c.Assert(out, qt.Contains, "-- POSTGRES: table TTL is ClickHouse-specific; ignored.")
 	// No executable ALTER statement should have been emitted by these branches.
-	c.Assert(strings.Contains(out, "ADD INDEX"), qt.IsFalse,
+	c.Assert(out, qt.Not(qt.Contains), "ADD INDEX",
 		qt.Commentf("postgres must not emit ADD INDEX for an AddSkippingIndexOperation; got: %q", out))
-	c.Assert(strings.Contains(out, "MODIFY TTL"), qt.IsFalse,
+	c.Assert(out, qt.Not(qt.Contains), "MODIFY TTL",
 		qt.Commentf("postgres must not emit MODIFY TTL for a ModifyTTLOperation; got: %q", out))
 }

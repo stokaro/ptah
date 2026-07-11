@@ -56,7 +56,7 @@ func TestGetDynamicScenarios(t *testing.T) {
 	scenarios := GetDynamicScenarios()
 
 	// Should have exactly 41 dynamic scenarios (28 original + 5 RLS down migration scenarios + 5 role scenarios + 2 fixture-coverage scenarios for PR #123 / issue #89 + 1 ClickHouse MergeTree scenario for issue #169)
-	c.Assert(len(scenarios), qt.Equals, 41)
+	c.Assert(scenarios, qt.HasLen, 41)
 
 	// Verify all scenarios have required fields
 	for _, scenario := range scenarios {

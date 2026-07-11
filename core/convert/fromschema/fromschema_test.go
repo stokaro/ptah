@@ -477,8 +477,8 @@ func TestFromTable_CompositePrimaryKey(t *testing.T) {
 
 	c.Assert(result, qt.IsNotNil)
 	c.Assert(result.Name, qt.Equals, "user_roles")
-	c.Assert(len(result.Columns), qt.Equals, 2)
-	c.Assert(len(result.Constraints), qt.Equals, 1)
+	c.Assert(result.Columns, qt.HasLen, 2)
+	c.Assert(result.Constraints, qt.HasLen, 1)
 	c.Assert(result.Constraints[0].Type, qt.Equals, ast.PrimaryKeyConstraint)
 	c.Assert(result.Constraints[0].Columns, qt.DeepEquals, []string{"user_id", "role_id"})
 }
@@ -513,7 +513,7 @@ func TestFromTable_FiltersByStructName(t *testing.T) {
 
 	c.Assert(result, qt.IsNotNil)
 	c.Assert(result.Name, qt.Equals, "users")
-	c.Assert(len(result.Columns), qt.Equals, 2) // Only User fields
+	c.Assert(result.Columns, qt.HasLen, 2) // Only User fields
 	c.Assert(result.Columns[0].Name, qt.Equals, "id")
 	c.Assert(result.Columns[1].Name, qt.Equals, "email")
 }
@@ -713,7 +713,7 @@ func TestFromDatabase_CompleteSchema(t *testing.T) {
 	result := fromschema.FromDatabase(database, "")
 
 	c.Assert(result, qt.IsNotNil)
-	c.Assert(len(result.Statements), qt.Equals, 5) // 1 enum + 2 tables + 2 indexes
+	c.Assert(result.Statements, qt.HasLen, 5) // 1 enum + 2 tables + 2 indexes
 
 	// Check statement ordering: enums first, then tables, then indexes
 	enumNode, ok := result.Statements[0].(*ast.EnumNode)
@@ -750,7 +750,7 @@ func TestFromDatabase_EmptySchema(t *testing.T) {
 	result := fromschema.FromDatabase(database, "")
 
 	c.Assert(result, qt.IsNotNil)
-	c.Assert(len(result.Statements), qt.Equals, 0)
+	c.Assert(result.Statements, qt.HasLen, 0)
 }
 
 func TestFromField_PlatformOverrides(t *testing.T) {
@@ -1012,25 +1012,25 @@ func TestFromDatabase_PlatformOverrides(t *testing.T) {
 	// Test MySQL platform
 	mysqlResult := fromschema.FromDatabase(database, "mysql")
 	c.Assert(mysqlResult, qt.IsNotNil)
-	c.Assert(len(mysqlResult.Statements), qt.Equals, 1)
+	c.Assert(mysqlResult.Statements, qt.HasLen, 1)
 
 	tableNode, ok := mysqlResult.Statements[0].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(tableNode.Name, qt.Equals, "products")
 	c.Assert(tableNode.Options["ENGINE"], qt.Equals, "InnoDB")
-	c.Assert(len(tableNode.Columns), qt.Equals, 1)
+	c.Assert(tableNode.Columns, qt.HasLen, 1)
 	c.Assert(tableNode.Columns[0].Type, qt.Equals, "JSON") // Overridden type
 
 	// Test PostgreSQL platform (no overrides)
 	postgresResult := fromschema.FromDatabase(database, "postgres")
 	c.Assert(postgresResult, qt.IsNotNil)
-	c.Assert(len(postgresResult.Statements), qt.Equals, 1)
+	c.Assert(postgresResult.Statements, qt.HasLen, 1)
 
 	tableNode2, ok := postgresResult.Statements[0].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(tableNode2.Name, qt.Equals, "products")
 	c.Assert(tableNode2.Options["ENGINE"], qt.Equals, "") // No engine for PostgreSQL
-	c.Assert(len(tableNode2.Columns), qt.Equals, 1)
+	c.Assert(tableNode2.Columns, qt.HasLen, 1)
 	c.Assert(tableNode2.Columns[0].Type, qt.Equals, "JSONB") // Default type
 }
 
@@ -1711,7 +1711,7 @@ func TestFromDatabase_EmbeddedFields_ComplexScenario(t *testing.T) {
 	result := fromschema.FromDatabase(database, "")
 
 	c.Assert(result, qt.IsNotNil)
-	c.Assert(len(result.Statements), qt.Equals, 1)
+	c.Assert(result.Statements, qt.HasLen, 1)
 
 	tableNode, ok := result.Statements[0].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue)
@@ -1728,7 +1728,7 @@ func TestFromDatabase_EmbeddedFields_ComplexScenario(t *testing.T) {
 	// 7. meta_data (from Meta json mode)
 	// 8. author_id (from User relation mode)
 	// Note: Internal fields are skipped
-	c.Assert(len(tableNode.Columns), qt.Equals, 8)
+	c.Assert(tableNode.Columns, qt.HasLen, 8)
 
 	// Verify each column
 	columns := make(map[string]*ast.ColumnNode)
