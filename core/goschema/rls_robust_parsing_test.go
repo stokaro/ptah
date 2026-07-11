@@ -145,11 +145,11 @@ type User struct {
 			database := goschema.ParseFile(tempFile)
 
 			// Check RLS policies
-			c.Assert(len(database.RLSPolicies), qt.Equals, tt.expectedPolicies,
+			c.Assert(database.RLSPolicies, qt.HasLen, tt.expectedPolicies,
 				qt.Commentf("Expected %d RLS policies, got %d", tt.expectedPolicies, len(database.RLSPolicies)))
 
 			// Check RLS enabled tables
-			c.Assert(len(database.RLSEnabledTables), qt.Equals, tt.expectedEnabledTables,
+			c.Assert(database.RLSEnabledTables, qt.HasLen, tt.expectedEnabledTables,
 				qt.Commentf("Expected %d RLS enabled tables, got %d", tt.expectedEnabledTables, len(database.RLSEnabledTables)))
 
 			// Check policy names

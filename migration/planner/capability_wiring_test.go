@@ -1,7 +1,6 @@
 package planner_test
 
 import (
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -31,7 +30,7 @@ func TestGetPlanner_CapabilityWiring(t *testing.T) {
 		nodes := planner.GenerateSchemaDiffAST(diff, generated, "mariadb")
 		sql, err := renderer.RenderSQL("mariadb", nodes...)
 		c.Assert(err, qt.IsNil)
-		c.Assert(strings.Contains(sql, "ALTER TABLE posts DROP FOREIGN KEY IF EXISTS fk_posts_user;"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "ALTER TABLE posts DROP FOREIGN KEY IF EXISTS fk_posts_user;",
 			qt.Commentf("GetPlanner(mariadb) must carry the MariaDB capability preset; got:\n%s", sql))
 	})
 
@@ -41,9 +40,9 @@ func TestGetPlanner_CapabilityWiring(t *testing.T) {
 		nodes := planner.GenerateSchemaDiffAST(diff, generated, "mysql")
 		sql, err := renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
-		c.Assert(strings.Contains(sql, "ALTER TABLE posts DROP FOREIGN KEY fk_posts_user;"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "ALTER TABLE posts DROP FOREIGN KEY fk_posts_user;",
 			qt.Commentf("got:\n%s", sql))
-		c.Assert(strings.Contains(sql, "IF EXISTS"), qt.IsFalse,
+		c.Assert(sql, qt.Not(qt.Contains), "IF EXISTS",
 			qt.Commentf("MySQL output must be byte-identical to the pre-capability planner; got:\n%s", sql))
 	})
 }

@@ -81,7 +81,7 @@ func TestEmbeddedEntityIDBugReproduction(t *testing.T) {
 	allFields := processEmbeddedFields(database.EmbeddedFields, database.Fields)
 
 	// Check that we have the expected tables (users, tenants, areas, prefixed_test)
-	c.Assert(len(database.Tables), qt.Equals, 4)
+	c.Assert(database.Tables, qt.HasLen, 4)
 
 	// Find the users table
 	var usersTable Table
@@ -199,7 +199,7 @@ func TestEmbeddedFieldProcessingDebug(t *testing.T) {
 	}
 
 	// This test is just for debugging - we expect it to show the missing id field
-	c.Assert(len(userFields), qt.Not(qt.Equals), 0)
+	c.Assert(userFields, qt.Not(qt.HasLen), 0)
 }
 
 func TestNestedEmbeddedFieldsComprehensive(t *testing.T) {
@@ -369,7 +369,7 @@ func TestNestedEmbeddedFieldsWithPrefixes(t *testing.T) {
 	}
 
 	// Verify no unexpected fields
-	c.Assert(len(prefixedTestFields), qt.Equals, len(expectedFields), qt.Commentf("Expected %d fields, got %d. Actual fields: %v", len(expectedFields), len(prefixedTestFields), getFieldNames(prefixedTestFields)))
+	c.Assert(prefixedTestFields, qt.HasLen, len(expectedFields), qt.Commentf("Expected %d fields, got %d. Actual fields: %v", len(expectedFields), len(prefixedTestFields), getFieldNames(prefixedTestFields)))
 }
 
 // Helper function to get field names for debugging

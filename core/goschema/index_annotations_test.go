@@ -56,7 +56,7 @@ type Event struct {
 	c := qt.New(t)
 	defer func() {
 		r := recover()
-		c.Assert(r, qt.Not(qt.IsNil), qt.Commentf("expected parser to panic on unknown index attribute"))
+		c.Assert(r, qt.IsNotNil, qt.Commentf("expected parser to panic on unknown index attribute"))
 	}()
 	_ = goschema.ParseSource("fixture.go", src)
 }

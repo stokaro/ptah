@@ -114,7 +114,7 @@ func TestGenerateMigrationAST(t *testing.T) {
 			} else {
 				nodes := planner.GenerateSchemaDiffAST(tt.diff, tt.generated, tt.dialect)
 				c.Assert(nodes, qt.IsNotNil)
-				c.Assert(len(nodes), qt.Equals, 1) // Should have one CREATE TABLE statement
+				c.Assert(nodes, qt.HasLen, 1) // Should have one CREATE TABLE statement
 			}
 		})
 	}

@@ -1,6 +1,6 @@
 # Ptah Migration Library Makefile
 
-.PHONY: help build test integration-test clean docker-build
+.PHONY: help build test integration-test clean docker-build lint lint-qtlint lint-fix install-hooks
 
 # Default target
 help:
@@ -11,6 +11,9 @@ help:
 	@echo "  build              Build all binaries"
 	@echo "  test               Run unit tests"
 	@echo "  integration-test   Run integration tests using Docker Compose"
+	@echo "  lint               Run golangci-lint and qtlint"
+	@echo "  lint-fix           Run auto-fixable linters"
+	@echo "  install-hooks      Install local Git hooks"
 	@echo "  docker-build       Build Docker images"
 	@echo "  clean              Clean build artifacts"
 	@echo "  help               Show this help message"
@@ -127,14 +130,29 @@ coverage:
 	@echo "Coverage report generated: coverage.html"
 
 # Lint code
-lint:
-	@echo "Running linters..."
+lint: lint-qtlint
+	@echo "Running golangci-lint..."
 	golangci-lint run ./...
+
+lint-qtlint:
+	@echo "Running qtlint..."
+	go tool qtlint ./...
+
+lint-fix:
+	@echo "Running auto-fixable linters..."
+	go tool qtlint -fix ./...
+	golangci-lint run --fix ./...
+	$(MAKE) lint
 
 # Format code
 fmt:
 	@echo "Formatting code..."
 	go fmt ./...
+
+# Install local Git hooks
+install-hooks:
+	@echo "Installing Git hooks..."
+	./scripts/install-hooks.sh
 
 # Run all checks (format, lint, test)
 check: fmt lint test

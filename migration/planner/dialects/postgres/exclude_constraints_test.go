@@ -178,7 +178,7 @@ func TestPlanner_GenerateMigrationAST_ConstraintsAdded(t *testing.T) {
 				}
 			}
 
-			c.Assert(len(sqlStatements), qt.Equals, len(tt.expectedSQL))
+			c.Assert(sqlStatements, qt.HasLen, len(tt.expectedSQL))
 			for i, expected := range tt.expectedSQL {
 				c.Assert(sqlStatements[i], qt.Equals, expected)
 			}
@@ -227,21 +227,21 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_ScopesDropToHostTable(t *testin
 		c.Assert(err, qt.IsNil)
 
 		// The DROP is scoped to the intended host with a direct ALTER TABLE.
-		c.Assert(strings.Contains(sql, "ALTER TABLE orders DROP CONSTRAINT IF EXISTS fk_customer;"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "ALTER TABLE orders DROP CONSTRAINT IF EXISTS fk_customer;",
 			qt.Commentf("modified FK must be dropped from its known host table; got:\n%s", sql))
 
 		// The unsafe name-only DO block resolution must NOT be used for a
 		// known-host modify — that is what could hit the wrong table.
-		c.Assert(strings.Contains(sql, "information_schema.table_constraints"), qt.IsFalse,
+		c.Assert(sql, qt.Not(qt.Contains), "information_schema.table_constraints",
 			qt.Commentf("known-host modify must not use the name-only DO block; got:\n%s", sql))
 
 		// The unrelated host (invoices) must be left completely alone: no drop,
 		// no add.
-		c.Assert(strings.Contains(sql, "invoices"), qt.IsFalse,
+		c.Assert(sql, qt.Not(qt.Contains), "invoices",
 			qt.Commentf("the unmodified host with the same constraint name must not be touched; got:\n%s", sql))
 
 		// The re-ADD targets the same host, and the DROP precedes it.
-		c.Assert(strings.Contains(sql, "ALTER TABLE orders ADD CONSTRAINT fk_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE;"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "ALTER TABLE orders ADD CONSTRAINT fk_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE;",
 			qt.Commentf("modified FK must be re-added on its host; got:\n%s", sql))
 		dropIdx := strings.Index(sql, "DROP CONSTRAINT IF EXISTS fk_customer")
 		addIdx := strings.Index(sql, "ADD CONSTRAINT fk_customer")
@@ -282,10 +282,10 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_ScopesDropToHostTable(t *testin
 			qt.Commentf("orders host dropped exactly once; got:\n%s", sql))
 		c.Assert(strings.Count(sql, "ALTER TABLE invoices DROP CONSTRAINT IF EXISTS fk_customer;"), qt.Equals, 1,
 			qt.Commentf("invoices host dropped exactly once; got:\n%s", sql))
-		c.Assert(strings.Contains(sql, "information_schema.table_constraints"), qt.IsFalse,
+		c.Assert(sql, qt.Not(qt.Contains), "information_schema.table_constraints",
 			qt.Commentf("multi-host modify must not use the name-only DO block; got:\n%s", sql))
-		c.Assert(strings.Contains(sql, "ON DELETE CASCADE"), qt.IsTrue)
-		c.Assert(strings.Contains(sql, "ON DELETE SET NULL"), qt.IsTrue)
+		c.Assert(sql, qt.Contains, "ON DELETE CASCADE")
+		c.Assert(sql, qt.Contains, "ON DELETE SET NULL")
 	})
 }
 
@@ -325,16 +325,16 @@ func TestPlanner_GenerateMigrationAST_ModifiedNonFKConstraint_ScopesDropToHostTa
 		c.Assert(err, qt.IsNil)
 
 		// The DROP is scoped to the intended host with a direct ALTER TABLE.
-		c.Assert(strings.Contains(sql, "ALTER TABLE articles DROP CONSTRAINT IF EXISTS uq_slug;"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "ALTER TABLE articles DROP CONSTRAINT IF EXISTS uq_slug;",
 			qt.Commentf("modified non-FK constraint must be dropped from its known host table; got:\n%s", sql))
 		// The unsafe name-only DO block must NOT be used when the host is known.
-		c.Assert(strings.Contains(sql, "information_schema.table_constraints"), qt.IsFalse,
+		c.Assert(sql, qt.Not(qt.Contains), "information_schema.table_constraints",
 			qt.Commentf("known-host non-FK modify must not use the name-only DO block; got:\n%s", sql))
 		// The unrelated host (pages) with the same constraint name is untouched.
-		c.Assert(strings.Contains(sql, "pages"), qt.IsFalse,
+		c.Assert(sql, qt.Not(qt.Contains), "pages",
 			qt.Commentf("the unmodified host with the same constraint name must not be touched; got:\n%s", sql))
 		// The re-ADD targets the same host, and the DROP precedes it.
-		c.Assert(strings.Contains(sql, "ALTER TABLE articles ADD CONSTRAINT uq_slug UNIQUE (slug, locale);"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "ALTER TABLE articles ADD CONSTRAINT uq_slug UNIQUE (slug, locale);",
 			qt.Commentf("modified constraint must be re-added on its host; got:\n%s", sql))
 		dropIdx := strings.Index(sql, "DROP CONSTRAINT IF EXISTS uq_slug")
 		addIdx := strings.Index(sql, "ADD CONSTRAINT uq_slug")
@@ -365,11 +365,11 @@ func TestPlanner_GenerateMigrationAST_ModifiedNonFKConstraint_ScopesDropToHostTa
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 
-		c.Assert(strings.Contains(sql, "information_schema.table_constraints"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "information_schema.table_constraints",
 			qt.Commentf("with no recorded host the planner must fall back to the DO block; got:\n%s", sql))
-		c.Assert(strings.Contains(sql, "constraint_name = 'legacy_check'"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "constraint_name = 'legacy_check'",
 			qt.Commentf("fallback DO block must target the constraint by name; got:\n%s", sql))
-		c.Assert(strings.Contains(sql, "ALTER TABLE things ADD CONSTRAINT legacy_check CHECK (x > 0);"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "ALTER TABLE things ADD CONSTRAINT legacy_check CHECK (x > 0);",
 			qt.Commentf("modified constraint must still be re-added; got:\n%s", sql))
 		dropIdx := strings.Index(sql, "DO $ptah$")
 		addIdx := strings.Index(sql, "ADD CONSTRAINT legacy_check")
@@ -420,16 +420,16 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 
 		// The pure removal on B (pages) is dropped table-qualified and NOT skipped.
 		// This is the assertion that fails against the pre-fix bare-name skip.
-		c.Assert(strings.Contains(sql, "ALTER TABLE pages DROP CONSTRAINT IF EXISTS shared_fk;"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "ALTER TABLE pages DROP CONSTRAINT IF EXISTS shared_fk;",
 			qt.Commentf("purely-removed host must be dropped table-qualified, not skipped; got:\n%s", sql))
 		// The modify on A (articles) is dropped table-qualified and re-added once.
-		c.Assert(strings.Contains(sql, "ALTER TABLE articles DROP CONSTRAINT IF EXISTS shared_fk;"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "ALTER TABLE articles DROP CONSTRAINT IF EXISTS shared_fk;",
 			qt.Commentf("modified host must be dropped from its known table; got:\n%s", sql))
-		c.Assert(strings.Contains(sql, "ALTER TABLE articles ADD CONSTRAINT shared_fk FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE CASCADE;"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "ALTER TABLE articles ADD CONSTRAINT shared_fk FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE CASCADE;",
 			qt.Commentf("modified FK must be re-added on its host; got:\n%s", sql))
 		c.Assert(strings.Count(sql, "ADD CONSTRAINT shared_fk"), qt.Equals, 1,
 			qt.Commentf("only the modified host may be re-added; got:\n%s", sql))
-		c.Assert(strings.Contains(sql, "information_schema.table_constraints"), qt.IsFalse,
+		c.Assert(sql, qt.Not(qt.Contains), "information_schema.table_constraints",
 			qt.Commentf("must not use the name-only DO block when hosts are known; got:\n%s", sql))
 		c.Assert(strings.Count(sql, "ALTER TABLE articles DROP CONSTRAINT IF EXISTS shared_fk;"), qt.Equals, 1)
 		c.Assert(strings.Count(sql, "ALTER TABLE pages DROP CONSTRAINT IF EXISTS shared_fk;"), qt.Equals, 1)
@@ -470,15 +470,15 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 
-		c.Assert(strings.Contains(sql, "ALTER TABLE pages DROP CONSTRAINT IF EXISTS shared_check;"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "ALTER TABLE pages DROP CONSTRAINT IF EXISTS shared_check;",
 			qt.Commentf("purely-removed host must be dropped table-qualified; got:\n%s", sql))
-		c.Assert(strings.Contains(sql, "ALTER TABLE articles DROP CONSTRAINT IF EXISTS shared_check;"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "ALTER TABLE articles DROP CONSTRAINT IF EXISTS shared_check;",
 			qt.Commentf("modified host must be dropped from its known table; got:\n%s", sql))
-		c.Assert(strings.Contains(sql, "ALTER TABLE articles ADD CONSTRAINT shared_check CHECK (status IN ('draft', 'published'));"), qt.IsTrue,
+		c.Assert(sql, qt.Contains, "ALTER TABLE articles ADD CONSTRAINT shared_check CHECK (status IN ('draft', 'published'));",
 			qt.Commentf("modified constraint must be re-added on its host; got:\n%s", sql))
 		c.Assert(strings.Count(sql, "ADD CONSTRAINT shared_check"), qt.Equals, 1,
 			qt.Commentf("only the modified host may be re-added; got:\n%s", sql))
-		c.Assert(strings.Contains(sql, "information_schema.table_constraints"), qt.IsFalse,
+		c.Assert(sql, qt.Not(qt.Contains), "information_schema.table_constraints",
 			qt.Commentf("must not use the name-only DO block when hosts are known; got:\n%s", sql))
 		c.Assert(strings.Count(sql, "ALTER TABLE pages DROP CONSTRAINT IF EXISTS shared_check;"), qt.Equals, 1)
 
@@ -527,11 +527,11 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_ScopesToHostWhenAddedHostsAbsen
 	c.Assert(err, qt.IsNil)
 
 	// Table-scoped drop, not the name-only DO block.
-	c.Assert(strings.Contains(sql, "ALTER TABLE things DROP CONSTRAINT IF EXISTS chk_down;"), qt.IsTrue,
+	c.Assert(sql, qt.Contains, "ALTER TABLE things DROP CONSTRAINT IF EXISTS chk_down;",
 		qt.Commentf("modify drop must be scoped to the known removal host even with no addedHosts; got:\n%s", sql))
-	c.Assert(strings.Contains(sql, "information_schema.table_constraints"), qt.IsFalse,
+	c.Assert(sql, qt.Not(qt.Contains), "information_schema.table_constraints",
 		qt.Commentf("must not regress to the name-only DO block when the removal host is known; got:\n%s", sql))
-	c.Assert(strings.Contains(sql, "ALTER TABLE things ADD CONSTRAINT chk_down CHECK (qty >= 0);"), qt.IsTrue,
+	c.Assert(sql, qt.Contains, "ALTER TABLE things ADD CONSTRAINT chk_down CHECK (qty >= 0);",
 		qt.Commentf("modified constraint must be re-added; got:\n%s", sql))
 	dropIdx := strings.Index(sql, "ALTER TABLE things DROP CONSTRAINT IF EXISTS chk_down")
 	addIdx := strings.Index(sql, "ALTER TABLE things ADD CONSTRAINT chk_down")
@@ -555,7 +555,7 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved(t *testing.T) {
 	// drop logic, leaving the constraint in place — see commit message for the
 	// full incident report. The DO block executes immediately on parse and
 	// leaves no temporary functions behind.
-	c.Assert(len(nodes), qt.Equals, 1)
+	c.Assert(nodes, qt.HasLen, 1)
 
 	sql, err := renderer.RenderSQL("postgres", nodes[0])
 	c.Assert(err, qt.IsNil)
@@ -584,11 +584,11 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_MultipleSplitCleanly(t 
 		ConstraintsRemoved: []string{"first_constraint", "second_constraint"},
 	}
 	statements := planner.GenerateSchemaDiffSQLStatements(diff, &goschema.Database{}, "postgres")
-	c.Assert(len(statements), qt.Equals, 2,
+	c.Assert(statements, qt.HasLen, 2,
 		qt.Commentf("each DO block must end up as its own statement after SQL splitting; got %d statements:\n%s",
 			len(statements), strings.Join(statements, "\n---\n")))
-	c.Assert(strings.Contains(statements[0], "first_constraint"), qt.IsTrue)
-	c.Assert(strings.Contains(statements[1], "second_constraint"), qt.IsTrue)
+	c.Assert(statements[0], qt.Contains, "first_constraint")
+	c.Assert(statements[1], qt.Contains, "second_constraint")
 }
 
 func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_EscapesSingleQuoteInName(t *testing.T) {
@@ -603,13 +603,13 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_EscapesSingleQuoteInNam
 	}
 
 	nodes := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
-	c.Assert(len(nodes), qt.Equals, 1)
+	c.Assert(nodes, qt.HasLen, 1)
 
 	sql, err := renderer.RenderSQL("postgres", nodes[0])
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "'don''t_drop'", qt.Commentf("single quote in constraint name must be SQL-escaped"))
 	// The bare unescaped form must NOT appear in any SQL string literal.
-	c.Assert(strings.Contains(sql, "'don't_drop'"), qt.IsFalse,
+	c.Assert(sql, qt.Not(qt.Contains), "'don't_drop'",
 		qt.Commentf("unescaped name in a literal would break parsing; got: %s", sql))
 }
 
@@ -644,21 +644,21 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_RejectsUnsafeName(t *te
 			c := qt.New(t)
 			diff := &types.SchemaDiff{ConstraintsRemoved: []string{tc.input}}
 			nodes := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
-			c.Assert(len(nodes), qt.Equals, 1)
+			c.Assert(nodes, qt.HasLen, 1)
 
 			sql, err := renderer.RenderSQL("postgres", nodes[0])
 			c.Assert(err, qt.IsNil)
-			c.Assert(strings.Contains(sql, "RAISE EXCEPTION"), qt.IsTrue,
+			c.Assert(sql, qt.Contains, "RAISE EXCEPTION",
 				qt.Commentf("planner must emit RAISE EXCEPTION for unsafe names; got: %s", sql))
-			c.Assert(strings.Contains(sql, "ALTER TABLE %I DROP CONSTRAINT"), qt.IsFalse,
+			c.Assert(sql, qt.Not(qt.Contains), "ALTER TABLE %I DROP CONSTRAINT",
 				qt.Commentf("unsafe name must NOT produce a drop statement; got: %s", sql))
 			// The rejected name must appear inside an embedded SQL single-
 			// quoted literal (not as a Postgres identifier), so the operator
 			// sees a clean exception message.
-			c.Assert(strings.Contains(sql, "''"+tc.expectVisible+"''"), qt.IsTrue,
+			c.Assert(sql, qt.Contains, "''"+tc.expectVisible+"''",
 				qt.Commentf("rejected name must appear escaped inside the exception message; got: %s", sql))
 			for _, forbidden := range tc.mustNotContain {
-				c.Assert(strings.Contains(sql, forbidden), qt.IsFalse,
+				c.Assert(sql, qt.Not(qt.Contains), forbidden,
 					qt.Commentf("escaped output must not contain raw substring %q; got: %s", forbidden, sql))
 			}
 		})

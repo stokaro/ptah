@@ -222,7 +222,7 @@ func TestToField_PlatformSource(t *testing.T) {
 	c.Assert(result.Type, qt.Equals, "JSON")
 	c.Assert(result.StructName, qt.Equals, "Product")
 	c.Assert(result.Overrides, qt.IsNotNil)
-	c.Assert(len(result.Overrides), qt.Equals, 0) // Empty until merged
+	c.Assert(result.Overrides, qt.HasLen, 0) // Empty until merged
 }
 
 func TestToTable_BasicTable(t *testing.T) {
@@ -299,7 +299,7 @@ func TestToTable_CompositePrimaryKey(t *testing.T) {
 
 	c.Assert(result.Name, qt.Equals, "user_roles")
 	c.Assert(result.StructName, qt.Equals, "UserRole")
-	c.Assert(len(result.PrimaryKey), qt.Equals, 2)
+	c.Assert(result.PrimaryKey, qt.HasLen, 2)
 	c.Assert(result.PrimaryKey[0], qt.Equals, "user_id")
 	c.Assert(result.PrimaryKey[1], qt.Equals, "role_id")
 }
@@ -318,7 +318,7 @@ func TestToTable_PlatformSource(t *testing.T) {
 	c.Assert(result.Engine, qt.Equals, "InnoDB")
 	c.Assert(result.Comment, qt.Equals, "Product catalog")
 	c.Assert(result.Overrides, qt.IsNotNil)
-	c.Assert(len(result.Overrides), qt.Equals, 1)
+	c.Assert(result.Overrides, qt.HasLen, 1)
 	c.Assert(result.Overrides["mysql"]["engine"], qt.Equals, "InnoDB")
 	c.Assert(result.Overrides["mysql"]["charset"], qt.Equals, "utf8mb4")
 	c.Assert(result.Overrides["mysql"]["comment"], qt.Equals, "Product catalog")
@@ -451,17 +451,17 @@ func TestToDatabase_CompleteSchema(t *testing.T) {
 
 	result := toschema.ToDatabase(statements)
 
-	c.Assert(len(result.Enums), qt.Equals, 1)
+	c.Assert(result.Enums, qt.HasLen, 1)
 	c.Assert(result.Enums[0].Name, qt.Equals, "user_status")
-	c.Assert(len(result.Enums[0].Values), qt.Equals, 2)
+	c.Assert(result.Enums[0].Values, qt.HasLen, 2)
 
-	c.Assert(len(result.Tables), qt.Equals, 2)
+	c.Assert(result.Tables, qt.HasLen, 2)
 	c.Assert(result.Tables[0].Name, qt.Equals, "users")
 	c.Assert(result.Tables[0].StructName, qt.Equals, "User")
 	c.Assert(result.Tables[1].Name, qt.Equals, "posts")
 	c.Assert(result.Tables[1].StructName, qt.Equals, "Post")
 
-	c.Assert(len(result.Fields), qt.Equals, 4) // 2 fields per table
+	c.Assert(result.Fields, qt.HasLen, 4) // 2 fields per table
 	c.Assert(result.Fields[0].Name, qt.Equals, "id")
 	c.Assert(result.Fields[0].StructName, qt.Equals, "User")
 	c.Assert(result.Fields[1].Name, qt.Equals, "status")
@@ -472,7 +472,7 @@ func TestToDatabase_CompleteSchema(t *testing.T) {
 	c.Assert(result.Fields[3].StructName, qt.Equals, "Post")
 	c.Assert(result.Fields[3].Foreign, qt.Equals, "users(id)")
 
-	c.Assert(len(result.Indexes), qt.Equals, 2)
+	c.Assert(result.Indexes, qt.HasLen, 2)
 	c.Assert(result.Indexes[0].Name, qt.Equals, "idx_users_status")
 	c.Assert(result.Indexes[1].Name, qt.Equals, "idx_posts_user")
 }
@@ -486,10 +486,10 @@ func TestToDatabase_EmptySchema(t *testing.T) {
 
 	result := toschema.ToDatabase(statements)
 
-	c.Assert(len(result.Enums), qt.Equals, 0)
-	c.Assert(len(result.Tables), qt.Equals, 0)
-	c.Assert(len(result.Fields), qt.Equals, 0)
-	c.Assert(len(result.Indexes), qt.Equals, 0)
+	c.Assert(result.Enums, qt.HasLen, 0)
+	c.Assert(result.Tables, qt.HasLen, 0)
+	c.Assert(result.Fields, qt.HasLen, 0)
+	c.Assert(result.Indexes, qt.HasLen, 0)
 }
 
 func TestMergeFieldOverrides_BasicMerging(t *testing.T) {
@@ -520,7 +520,7 @@ func TestMergeFieldOverrides_BasicMerging(t *testing.T) {
 	c.Assert(result.Name, qt.Equals, "data")
 	c.Assert(result.Type, qt.Equals, "JSONB") // Base type unchanged
 	c.Assert(result.Overrides, qt.IsNotNil)
-	c.Assert(len(result.Overrides), qt.Equals, 2)
+	c.Assert(result.Overrides, qt.HasLen, 2)
 
 	// Check MySQL overrides
 	c.Assert(result.Overrides["mysql"]["type"], qt.Equals, "JSON")
@@ -602,7 +602,7 @@ func TestMergeTableOverrides_BasicMerging(t *testing.T) {
 	c.Assert(result.Name, qt.Equals, "products")
 	c.Assert(result.Engine, qt.Equals, "InnoDB") // Base engine unchanged
 	c.Assert(result.Overrides, qt.IsNotNil)
-	c.Assert(len(result.Overrides), qt.Equals, 2)
+	c.Assert(result.Overrides, qt.HasLen, 2)
 
 	// Check MariaDB overrides
 	c.Assert(result.Overrides["mariadb"]["comment"], qt.Equals, "MariaDB product catalog")

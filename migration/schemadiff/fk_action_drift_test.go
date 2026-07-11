@@ -148,7 +148,7 @@ func TestCompare_FieldLevelForeignKeyActionMigrationSQL(t *testing.T) {
 
 	// The new FK with the action clause is emitted.
 	const addStmt = "ALTER TABLE exports ADD CONSTRAINT fk_export_file FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE SET NULL;"
-	c.Assert(strings.Contains(sql, addStmt), qt.IsTrue,
+	c.Assert(sql, qt.Contains, addStmt,
 		qt.Commentf("expected migration to ADD the FK with ON DELETE SET NULL, got:\n%s", sql))
 
 	// The old constraint is dropped first. The comparator records the concrete
@@ -157,9 +157,9 @@ func TestCompare_FieldLevelForeignKeyActionMigrationSQL(t *testing.T) {
 	// DO block — the latter resolves the owning table with LIMIT 1 and could drop a
 	// same-named constraint on the wrong table (issue #199).
 	const dropStmt = "ALTER TABLE exports DROP CONSTRAINT IF EXISTS fk_export_file;"
-	c.Assert(strings.Contains(sql, dropStmt), qt.IsTrue,
+	c.Assert(sql, qt.Contains, dropStmt,
 		qt.Commentf("expected migration to DROP the old FK from its known host table, got:\n%s", sql))
-	c.Assert(strings.Contains(sql, "information_schema.table_constraints"), qt.IsFalse,
+	c.Assert(sql, qt.Not(qt.Contains), "information_schema.table_constraints",
 		qt.Commentf("a known-host modify must not fall back to the name-only DO block, got:\n%s", sql))
 
 	// Ordering: the DROP must precede the ADD so the re-add does not collide.

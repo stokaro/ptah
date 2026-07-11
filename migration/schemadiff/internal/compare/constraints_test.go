@@ -161,14 +161,14 @@ func TestConstraints(t *testing.T) {
 			compare.Constraints(tt.generated, tt.database, diff, nil)
 
 			// Check constraints added
-			c.Assert(len(diff.ConstraintsAdded), qt.Equals, len(tt.expected.ConstraintsAdded))
+			c.Assert(diff.ConstraintsAdded, qt.HasLen, len(tt.expected.ConstraintsAdded))
 			// Check that all expected constraints are present (order doesn't matter)
 			for _, expected := range tt.expected.ConstraintsAdded {
 				c.Assert(diff.ConstraintsAdded, qt.Contains, expected)
 			}
 
 			// Check constraints removed
-			c.Assert(len(diff.ConstraintsRemoved), qt.Equals, len(tt.expected.ConstraintsRemoved))
+			c.Assert(diff.ConstraintsRemoved, qt.HasLen, len(tt.expected.ConstraintsRemoved))
 			// Check that all expected constraints are present (order doesn't matter)
 			for _, expected := range tt.expected.ConstraintsRemoved {
 				c.Assert(diff.ConstraintsRemoved, qt.Contains, expected)
@@ -242,8 +242,8 @@ func TestConstraints_EdgeCases(t *testing.T) {
 
 	compare.Constraints(generated, database, diff, nil)
 
-	c.Assert(len(diff.ConstraintsAdded), qt.Equals, 0)
-	c.Assert(len(diff.ConstraintsRemoved), qt.Equals, 0)
+	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
+	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
 }
 
 func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
@@ -429,13 +429,13 @@ func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
 			compare.Constraints(tt.generated, tt.database, diff, nil)
 
 			// Check constraints added
-			c.Assert(len(diff.ConstraintsAdded), qt.Equals, len(tt.expected.ConstraintsAdded))
+			c.Assert(diff.ConstraintsAdded, qt.HasLen, len(tt.expected.ConstraintsAdded))
 			for _, expected := range tt.expected.ConstraintsAdded {
 				c.Assert(diff.ConstraintsAdded, qt.Contains, expected)
 			}
 
 			// Check constraints removed
-			c.Assert(len(diff.ConstraintsRemoved), qt.Equals, len(tt.expected.ConstraintsRemoved))
+			c.Assert(diff.ConstraintsRemoved, qt.HasLen, len(tt.expected.ConstraintsRemoved))
 			for _, expected := range tt.expected.ConstraintsRemoved {
 				c.Assert(diff.ConstraintsRemoved, qt.Contains, expected)
 			}
@@ -674,13 +674,13 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 			diff := &difftypes.SchemaDiff{}
 			compare.Constraints(tt.generated, tt.database, diff, nil)
 
-			c.Assert(len(diff.ConstraintsAdded), qt.Equals, len(tt.expected.ConstraintsAdded),
+			c.Assert(diff.ConstraintsAdded, qt.HasLen, len(tt.expected.ConstraintsAdded),
 				qt.Commentf("ConstraintsAdded=%v", diff.ConstraintsAdded))
 			for _, expected := range tt.expected.ConstraintsAdded {
 				c.Assert(diff.ConstraintsAdded, qt.Contains, expected)
 			}
 
-			c.Assert(len(diff.ConstraintsRemoved), qt.Equals, len(tt.expected.ConstraintsRemoved),
+			c.Assert(diff.ConstraintsRemoved, qt.HasLen, len(tt.expected.ConstraintsRemoved),
 				qt.Commentf("ConstraintsRemoved=%v", diff.ConstraintsRemoved))
 			for _, expected := range tt.expected.ConstraintsRemoved {
 				c.Assert(diff.ConstraintsRemoved, qt.Contains, expected)

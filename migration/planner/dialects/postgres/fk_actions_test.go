@@ -172,7 +172,7 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 			sql, err := renderer.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
 
-			c.Assert(strings.Contains(sql, tt.mustEmit), qt.IsTrue,
+			c.Assert(sql, qt.Contains, tt.mustEmit,
 				qt.Commentf("expected SQL to contain:\n  %s\ngot:\n%s", tt.mustEmit, sql))
 
 			if tt.mustNotHit != "" {
@@ -180,7 +180,7 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 				// constraint so we don't accidentally match unrelated noise.
 				for line := range strings.SplitSeq(sql, "\n") {
 					if strings.Contains(line, tt.constraintMarker) {
-						c.Assert(strings.Contains(line, tt.mustNotHit), qt.IsFalse,
+						c.Assert(line, qt.Not(qt.Contains), tt.mustNotHit,
 							qt.Commentf("FK line should not mention %q: %s", tt.mustNotHit, line))
 					}
 				}
