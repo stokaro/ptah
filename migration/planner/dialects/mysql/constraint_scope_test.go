@@ -13,8 +13,13 @@ import (
 )
 
 // mysqlFamilyDialects renders the same planner output through both renderers
-// that consume the MySQL planner (GetPlanner maps mysql AND mariadb to it), so
-// every scenario is asserted for the full MySQL family.
+// that consume the MySQL planner, so every scenario is asserted for the full
+// MySQL family. The suite deliberately uses the strict MySQL capability
+// preset (mysql.New()) for BOTH renderers: the (table,name) ownership
+// discipline it pins (issue #207) is capability-independent and must hold
+// even without IF EXISTS guards. The production mariadb configuration —
+// GetPlanner("mariadb"), which adds guard intent via the MariaDB preset — is
+// covered in capability_gating_test.go and the planner-level wiring test.
 var mysqlFamilyDialects = []string{"mysql", "mariadb"}
 
 // renderMySQLFamily generates the migration AST once per invocation and

@@ -9,6 +9,7 @@ import (
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/convert/fromschema"
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
@@ -51,13 +52,65 @@ const (
 //
 // # Thread Safety
 //
-// The Planner is stateless and safe for concurrent use across multiple goroutines.
-// Each call to GenerateMigrationSQL operates independently without shared state.
+// The Planner carries only immutable configuration (a capability set and
+// emission policy flags) and is safe for concurrent use across multiple
+// goroutines. Each call to GenerateMigrationSQL operates independently
+// without shared state.
 type Planner struct {
+	// caps describes what the concrete target accepts (issue #225/#226); the
+	// nil zero value defaults to the current PostgreSQL line preset
+	// (capability.Postgres16) via the capabilities accessor, so a bare
+	// &Planner{} behaves exactly like New(). Version presets live in the
+	// capability package — capability.Postgres16 for PostgreSQL 14+,
+	// capability.Postgres13 for 12–13.
+	caps capability.Capabilities
+	// concurrentIndexes requests CREATE INDEX CONCURRENTLY for new indexes.
+	// It is a POLICY choice (concurrent builds cannot run inside a
+	// transaction, so callers must arrange no-transaction execution — issue
+	// #152), and it only takes effect when the target also has the
+	// capability.CreateIndexConcurrently capability — a future
+	// postgres-compatible preset without it (CockroachDB, issue #171) keeps
+	// plain CREATE INDEX no matter the policy.
+	concurrentIndexes bool
 }
 
+// New returns a planner configured with the current PostgreSQL line preset
+// (capability.Postgres16: PostgreSQL 14+).
 func New() *Planner {
-	return &Planner{}
+	return NewWithCapabilities(capability.Postgres16())
+}
+
+// NewWithCapabilities returns a planner for a specific capability set — e.g.
+// capability.Postgres13() for a PostgreSQL 12/13 target, or a set resolved
+// from a live server via capability.ForServerVersion. The set is expected to
+// be valid (capability.Capabilities.Validate); presets always are. The set is
+// cloned, so later mutations by the caller cannot affect the planner. A nil
+// set defaults to the capability.Postgres16 preset.
+func NewWithCapabilities(caps capability.Capabilities) *Planner {
+	return &Planner{caps: caps.Clone()}
+}
+
+// capabilities returns the planner's capability set, defaulting the nil zero
+// value to the current PostgreSQL line preset so a bare &Planner{} behaves
+// exactly like New(). Restriction must be an explicit choice, never a
+// zero-value surprise.
+func (p *Planner) capabilities() capability.Capabilities {
+	if p.caps == nil {
+		return capability.Postgres16()
+	}
+	return p.caps
+}
+
+// WithConcurrentIndexes returns a copy of the planner that emits
+// CREATE [UNIQUE] INDEX CONCURRENTLY for newly added indexes, provided the
+// target capability set includes capability.CreateIndexConcurrently. The
+// receiver is not modified. Concurrent index builds cannot run inside a
+// transaction block; the caller owns arranging no-transaction execution for
+// such statements (issue #152 tracks first-class support in the migrator).
+func (p *Planner) WithConcurrentIndexes() *Planner {
+	cp := *p
+	cp.concurrentIndexes = true
+	return &cp
 }
 
 func (p *Planner) addNewEnums(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
@@ -480,6 +533,13 @@ func (p *Planner) addNewIndexes(result []ast.Node, diff *types.SchemaDiff, gener
 			if idx.Name == indexName {
 				// Use enhanced index creation with PostgreSQL features
 				indexNode := fromschema.FromIndexWithTableMapping(idx, structToTableMap)
+				// CONCURRENTLY is opt-in policy AND capability-gated: the
+				// planner never emits it for a target that rejects it
+				// (issue #226; CockroachDB-style presets keep plain
+				// CREATE INDEX even when the policy is on).
+				if p.concurrentIndexes && p.capabilities().Has(capability.CreateIndexConcurrently) {
+					indexNode.Concurrently = true
+				}
 				result = append(result, indexNode)
 				break
 			}
@@ -489,9 +549,16 @@ func (p *Planner) addNewIndexes(result []ast.Node, diff *types.SchemaDiff, gener
 }
 
 func (p *Planner) removeIndexes(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	// IF EXISTS on DROP INDEX is capability-gated intent, mirroring the MySQL
+	// planner (issue #226). Every supported PostgreSQL line has the guard, so
+	// the default preset keeps today's output; a preset without it (or a
+	// composed set) actually changes the plan.
+	guarded := p.capabilities().Has(capability.DropIndexIfExists)
 	for _, indexName := range diff.IndexesRemoved {
-		dropIndexNode := ast.NewDropIndex(indexName).
-			SetIfExists()
+		dropIndexNode := ast.NewDropIndex(indexName)
+		if guarded {
+			dropIndexNode.SetIfExists()
+		}
 		result = append(result, dropIndexNode)
 	}
 	return result

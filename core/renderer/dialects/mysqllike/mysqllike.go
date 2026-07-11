@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/stokaro/ptah/core/ast"
+	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/core/renderer/dialects/internal/bufwriter"
 	"github.com/stokaro/ptah/core/renderer/types"
 )
@@ -18,14 +19,23 @@ type Renderer struct {
 	dialect      string
 	dialectUpper string
 	w            *bufwriter.Writer
+	// caps describes what the target dialect line actually accepts. The
+	// renderer is the VALIDITY layer of the capability model (issue #226): a
+	// planner records intent on AST nodes (e.g. IfExists), and the renderer
+	// drops any modifier the concrete target would reject — MySQL 8/9 reject
+	// IF EXISTS on constraint and index drops, MariaDB accepts both.
+	caps capability.Capabilities
 }
 
-// New creates a new MySQL-like renderer
+// New creates a new MySQL-like renderer. The target capabilities are resolved
+// from the dialect name (capability.ForDialect), so "mysql" gets the strict
+// MySQL preset and "mariadb" the MariaDB one.
 func New(dialect string, buf *bufwriter.Writer) *Renderer {
 	return &Renderer{
 		w:            buf,
 		dialect:      dialect,
 		dialectUpper: strings.ToUpper(dialect),
+		caps:         capability.ForDialect(dialect),
 	}
 }
 
@@ -36,16 +46,64 @@ func (r *Renderer) escapeValue(value string) string {
 	return "'" + escaped + "'"
 }
 
+// dropConstraintSQL renders a single ALTER TABLE constraint drop.
+//
+// MySQL/MariaDB constraint drops are type-specific. Foreign keys use the
+// dedicated DROP FOREIGN KEY spelling — the one form valid across the entire
+// family, including servers that predate the generic DROP CONSTRAINT clause
+// (current lines happen to accept the generic clause for FKs too — verified
+// live on MySQL 9.7 and MariaDB 10.11 — but there is no reason to give up the
+// universal spelling). CHECK constraints on a target without the generic
+// clause use DROP CHECK; everything else uses DROP CONSTRAINT.
+//
+// This is the VALIDITY half of the capability model (issue #226): the planner
+// records intent, and the renderer resolves modifiers and spellings against
+// ITS target set —
+//   - the IF EXISTS guard is MariaDB-only within this family (MySQL rejects
+//     it on every constraint-drop spelling), so it renders only when
+//     capability.DropConstraintIfExists is present;
+//   - the DROP CHECK spelling (op.Check, requested by planners for MySQL
+//     8.0.16–8.0.18) exists only on MySQL (capability.DropCheckClause) —
+//     MariaDB rejects it (verified live on 10.11), so a stray Check flag
+//     reaching a MariaDB renderer degrades to the generic clause, which every
+//     CHECK-capable MariaDB accepts.
+func (r *Renderer) dropConstraintSQL(table string, op *ast.DropConstraintOperation) string {
+	dropSQL := fmt.Sprintf("ALTER TABLE %s DROP", table)
+	guarded := op.IfExists && r.caps.Has(capability.DropConstraintIfExists)
+	switch {
+	case op.ForeignKey:
+		dropSQL += " FOREIGN KEY"
+		if guarded {
+			dropSQL += " IF EXISTS"
+		}
+	case op.Check && r.caps.Has(capability.DropCheckClause):
+		dropSQL += " CHECK"
+	case op.Unique:
+		// ALTER TABLE ... DROP INDEX drops a UNIQUE constraint's backing
+		// index and is valid across the entire MySQL/MariaDB family, so the
+		// planner-requested spelling needs no capability gate here.
+		dropSQL += " INDEX"
+	case guarded:
+		dropSQL += " CONSTRAINT IF EXISTS"
+	default:
+		dropSQL += " CONSTRAINT"
+	}
+	return dropSQL + " " + op.ConstraintName
+}
+
 func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 	// Build DROP INDEX statement for MySQL/MariaDB
 	var parts []string
 	parts = append(parts, "DROP INDEX")
 
-	// Note: MySQL 8.0.1+ and MariaDB 10.1.4+ support IF EXISTS with DROP INDEX
-	// For compatibility with older versions, we'll skip IF EXISTS for now
-	// if node.IfExists {
-	//     parts = append(parts, "IF EXISTS")
-	// }
+	// The IF EXISTS guard on DROP INDEX is MariaDB-only (10.1.4+); MySQL has
+	// no such form and rejects it. Planners record the guard intent per THEIR
+	// capability set (capability.DropIndexIfExists); the renderer validates
+	// it again against its own target set, so the guard reaches the SQL only
+	// when both layers agree (issue #226).
+	if node.IfExists && r.caps.Has(capability.DropIndexIfExists) {
+		parts = append(parts, "IF EXISTS")
+	}
 
 	parts = append(parts, node.Name)
 
@@ -463,24 +521,7 @@ func (r *Renderer) visitAlterTableWithEnums(node *ast.AlterTableNode, enums map[
 			r.w.WriteLinef("ALTER TABLE %s ADD %s;", node.Name, constraintLine)
 
 		case *ast.DropConstraintOperation:
-			dropSQL := fmt.Sprintf("ALTER TABLE %s DROP", node.Name)
-			// MySQL/MariaDB require a type-specific drop clause. Foreign keys
-			// must use DROP FOREIGN KEY (DROP CONSTRAINT is rejected for FKs on
-			// MySQL and on MariaDB <10.5); everything else uses DROP CONSTRAINT
-			// (CHECK and named constraints on MySQL 8.0.19+ / MariaDB).
-			switch {
-			case op.ForeignKey:
-				dropSQL += " FOREIGN KEY"
-				if op.IfExists {
-					dropSQL += " IF EXISTS"
-				}
-			case op.IfExists:
-				dropSQL += " CONSTRAINT IF EXISTS"
-			default:
-				dropSQL += " CONSTRAINT"
-			}
-			dropSQL += fmt.Sprintf(" %s", op.ConstraintName)
-			r.w.WriteLinef("%s;", dropSQL)
+			r.w.WriteLinef("%s;", r.dropConstraintSQL(node.Name, op))
 
 		case *ast.DropColumnOperation:
 			r.w.WriteLinef("ALTER TABLE %s DROP COLUMN %s;", node.Name, op.ColumnName)
