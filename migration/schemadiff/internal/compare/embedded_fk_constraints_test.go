@@ -38,10 +38,10 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 			TableName:     table,
 			Type:          "FOREIGN KEY",
 			ColumnName:    col,
-			ForeignTable:  stringPtr(refTable),
-			ForeignColumn: stringPtr("id"),
+			ForeignTable:  new(refTable),
+			ForeignColumn: new("id"),
 			DeleteRule:    deleteRule,
-			UpdateRule:    stringPtr("NO ACTION"),
+			UpdateRule:    new("NO ACTION"),
 		}
 	}
 
@@ -104,11 +104,11 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 			Tables: []types.DBTable{dbTable("locations"), dbTable("areas")},
 			Constraints: []types.DBConstraint{
 				// CASCADE matches the mixin annotation on both hosts.
-				dbFK("fk_entity_tenant", "locations", "tenant_id", "tenants", stringPtr("CASCADE")),
-				dbFK("fk_entity_tenant", "areas", "tenant_id", "tenants", stringPtr("CASCADE")),
+				dbFK("fk_entity_tenant", "locations", "tenant_id", "tenants", new("CASCADE")),
+				dbFK("fk_entity_tenant", "areas", "tenant_id", "tenants", new("CASCADE")),
 				// NO ACTION matches the action-less created_by FK on both hosts.
-				dbFK("fk_entity_created_by", "locations", "created_by_user_id", "users", stringPtr("NO ACTION")),
-				dbFK("fk_entity_created_by", "areas", "created_by_user_id", "users", stringPtr("NO ACTION")),
+				dbFK("fk_entity_created_by", "locations", "created_by_user_id", "users", new("NO ACTION")),
+				dbFK("fk_entity_created_by", "areas", "created_by_user_id", "users", new("NO ACTION")),
 			},
 		}
 
@@ -131,10 +131,10 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 			// No matching DB constraints -> all synthesized FKs are additions,
 			// but crucially against real tables.
 			Constraints: []types.DBConstraint{
-				dbFK("fk_entity_tenant", "locations", "tenant_id", "tenants", stringPtr("CASCADE")),
-				dbFK("fk_entity_tenant", "areas", "tenant_id", "tenants", stringPtr("CASCADE")),
-				dbFK("fk_entity_created_by", "locations", "created_by_user_id", "users", stringPtr("NO ACTION")),
-				dbFK("fk_entity_created_by", "areas", "created_by_user_id", "users", stringPtr("NO ACTION")),
+				dbFK("fk_entity_tenant", "locations", "tenant_id", "tenants", new("CASCADE")),
+				dbFK("fk_entity_tenant", "areas", "tenant_id", "tenants", new("CASCADE")),
+				dbFK("fk_entity_created_by", "locations", "created_by_user_id", "users", new("NO ACTION")),
+				dbFK("fk_entity_created_by", "areas", "created_by_user_id", "users", new("NO ACTION")),
 			},
 		}
 
@@ -159,10 +159,10 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 		database := &types.DBSchema{
 			Tables: []types.DBTable{dbTable("locations"), dbTable("areas")},
 			Constraints: []types.DBConstraint{
-				dbFK("fk_entity_tenant", "locations", "tenant_id", "tenants", stringPtr("NO ACTION")), // drifted
-				dbFK("fk_entity_tenant", "areas", "tenant_id", "tenants", stringPtr("CASCADE")),       // unchanged
-				dbFK("fk_entity_created_by", "locations", "created_by_user_id", "users", stringPtr("NO ACTION")),
-				dbFK("fk_entity_created_by", "areas", "created_by_user_id", "users", stringPtr("NO ACTION")),
+				dbFK("fk_entity_tenant", "locations", "tenant_id", "tenants", new("NO ACTION")), // drifted
+				dbFK("fk_entity_tenant", "areas", "tenant_id", "tenants", new("CASCADE")),       // unchanged
+				dbFK("fk_entity_created_by", "locations", "created_by_user_id", "users", new("NO ACTION")),
+				dbFK("fk_entity_created_by", "areas", "created_by_user_id", "users", new("NO ACTION")),
 			},
 		}
 
@@ -210,8 +210,8 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 		for _, h := range hosts {
 			dbTables = append(dbTables, dbTable(h))
 			dbConstraints = append(dbConstraints,
-				dbFK("fk_entity_tenant", h, "tenant_id", "tenants", stringPtr("CASCADE")),
-				dbFK("fk_entity_created_by", h, "created_by_user_id", "users", stringPtr("NO ACTION")),
+				dbFK("fk_entity_tenant", h, "tenant_id", "tenants", new("CASCADE")),
+				dbFK("fk_entity_created_by", h, "created_by_user_id", "users", new("NO ACTION")),
 			)
 		}
 
@@ -234,8 +234,8 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 				{Name: "areas", Columns: []types.DBColumn{{Name: "id"}}}, // mixin cols absent
 			},
 			Constraints: []types.DBConstraint{
-				dbFK("fk_entity_tenant", "locations", "tenant_id", "tenants", stringPtr("CASCADE")),
-				dbFK("fk_entity_created_by", "locations", "created_by_user_id", "users", stringPtr("NO ACTION")),
+				dbFK("fk_entity_tenant", "locations", "tenant_id", "tenants", new("CASCADE")),
+				dbFK("fk_entity_created_by", "locations", "created_by_user_id", "users", new("NO ACTION")),
 			},
 		}
 
@@ -281,10 +281,10 @@ func TestConstraints_FieldLevelForeignKeyOnDeleteNotStripped(t *testing.T) {
 				TableName:     "audit_rows",
 				Type:          "FOREIGN KEY",
 				ColumnName:    "migration_id",
-				ForeignTable:  stringPtr("migrations"),
-				ForeignColumn: stringPtr("id"),
-				DeleteRule:    stringPtr("CASCADE"),
-				UpdateRule:    stringPtr("NO ACTION"),
+				ForeignTable:  new("migrations"),
+				ForeignColumn: new("id"),
+				DeleteRule:    new("CASCADE"),
+				UpdateRule:    new("NO ACTION"),
 			},
 		},
 	}

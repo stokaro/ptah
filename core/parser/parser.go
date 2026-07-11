@@ -6,8 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-extras/go-kit/ptr"
-
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/lexer"
 )
@@ -884,35 +882,33 @@ func (p *Parser) parseArrayLiteral(value string) (*string, error) {
 	// Handle type cast like ::TEXT[]
 	if !p.current.MatchOperatorValue(":") {
 		// No type cast, return array literal
-		return ptr.To(arrayLiteral), nil
+		return new(arrayLiteral), nil
 	}
 	p.advance()
 	if !p.current.MatchOperatorValue(":") {
-		// return ptr.To(arrayLiteral), nil
 		return result, fmt.Errorf("expected '::' for type cast, got %s at position %d", p.current.Type, p.current.Start)
 	}
 	p.advance()
 	// Get the cast type
 	if p.current.Type != lexer.TokenIdentifier {
-		return ptr.To(arrayLiteral), nil
+		return new(arrayLiteral), nil
 	}
 
 	arrayLiteral += "::" + p.current.Value
 	p.advance()
 	// Handle array brackets in cast
 	if !p.current.MatchOperatorValue("[") {
-		return ptr.To(arrayLiteral), nil
+		return new(arrayLiteral), nil
 	}
 	arrayLiteral += "["
 	p.advance()
 	if !p.current.MatchOperatorValue("]") {
-		// return ptr.To(arrayLiteral), nil
 		return result, fmt.Errorf("expected ']' for array cast, got %s at position %d", p.current.Type, p.current.Start)
 	}
 	arrayLiteral += "]"
 	p.advance()
 
-	return ptr.To(arrayLiteral), nil
+	return new(arrayLiteral), nil
 }
 
 func (p *Parser) handleFunctionCallOrKeyword() (*ast.DefaultValue, error) {
@@ -2132,7 +2128,8 @@ func (p *Parser) parseCreateDomain() (*ast.CommentNode, error) {
 
 	// For now, we'll represent domains as comments since they're not in the AST
 	// In a full implementation, you'd want to add a DomainNode to the AST
-	domainText := fmt.Sprintf("CREATE DOMAIN %s AS %s", domainName, baseType)
+	var domainText strings.Builder
+	fmt.Fprintf(&domainText, "CREATE DOMAIN %s AS %s", domainName, baseType)
 
 	// Parse optional constraints (CHECK, etc.)
 	for {
@@ -2153,10 +2150,10 @@ func (p *Parser) parseCreateDomain() (*ast.CommentNode, error) {
 		if err != nil {
 			return nil, fmt.Errorf("expected check expression: %w", err)
 		}
-		domainText += fmt.Sprintf(" CHECK (%s)", checkExpr)
+		fmt.Fprintf(&domainText, " CHECK (%s)", checkExpr)
 	}
 
-	return ast.NewComment(domainText), nil
+	return ast.NewComment(domainText.String()), nil
 }
 
 // parseCommentStatement parses COMMENT ON statements (PostgreSQL).

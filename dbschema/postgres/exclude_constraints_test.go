@@ -141,9 +141,9 @@ func TestEnhanceExcludeConstraints(t *testing.T) {
 					Name:            "no_overlapping_bookings",
 					TableName:       "bookings",
 					Type:            "EXCLUDE",
-					UsingMethod:     stringPtr("gist"),
-					ExcludeElements: stringPtr("room_id WITH =, during WITH &&"),
-					WhereCondition:  stringPtr("is_active = true"),
+					UsingMethod:     new("gist"),
+					ExcludeElements: new("room_id WITH =, during WITH &&"),
+					WhereCondition:  new("is_active = true"),
 				},
 			},
 		},
@@ -168,8 +168,8 @@ func TestEnhanceExcludeConstraints(t *testing.T) {
 					Name:            "unique_locations",
 					TableName:       "locations",
 					Type:            "EXCLUDE",
-					UsingMethod:     stringPtr("gist"),
-					ExcludeElements: stringPtr("location WITH &&"),
+					UsingMethod:     new("gist"),
+					ExcludeElements: new("location WITH &&"),
 					WhereCondition:  nil,
 				},
 			},
@@ -200,8 +200,8 @@ func TestEnhanceExcludeConstraints(t *testing.T) {
 					Name:            "no_overlapping_bookings",
 					TableName:       "bookings",
 					Type:            "EXCLUDE",
-					UsingMethod:     stringPtr("gist"),
-					ExcludeElements: stringPtr("room_id WITH ="),
+					UsingMethod:     new("gist"),
+					ExcludeElements: new("room_id WITH ="),
 					WhereCondition:  nil,
 				},
 				{
@@ -230,8 +230,4 @@ type mockExcludeConstraint struct {
 	constraintName string
 	tableName      string
 	definition     string
-}
-
-func stringPtr(s string) *string {
-	return &s
 }

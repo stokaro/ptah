@@ -25,8 +25,6 @@ import (
 // reverseSchemaDiffWithSchema -> reverseConstraintAdditions), not a hand-rolled
 // reversal, which is the gap that let the original bug ship.
 
-func strPtr(s string) *string { return &s }
-
 // multiHostMixinGenerated builds a generated schema with an "Ownable" inline
 // mixin carrying a shared tenant FK (fk_entity_tenant, ON DELETE = onDelete)
 // embedded into each host table.
@@ -70,8 +68,8 @@ func multiHostMixinDB(deleteRule string, hosts ...string) *dbschematypes.DBSchem
 		})
 		db.Constraints = append(db.Constraints, dbschematypes.DBConstraint{
 			Name: "fk_entity_tenant", TableName: h, Type: "FOREIGN KEY", ColumnName: "tenant_id",
-			ForeignTable: strPtr("tenants"), ForeignColumn: strPtr("id"),
-			DeleteRule: strPtr(deleteRule), UpdateRule: strPtr("NO ACTION"),
+			ForeignTable: new("tenants"), ForeignColumn: new("id"),
+			DeleteRule: new(deleteRule), UpdateRule: new("NO ACTION"),
 		})
 	}
 	return db

@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/stokaro/ptah/core/ast"
@@ -562,12 +563,7 @@ func (r *Renderer) processFieldType(fieldType string, enums []string) string {
 
 // Helper method to check if a type is an enum
 func (r *Renderer) isEnumType(fieldType string, enums []string) bool {
-	for _, enumName := range enums {
-		if fieldType == enumName {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(enums, fieldType)
 }
 
 // RenderConstraint renders a table-level constraint

@@ -402,16 +402,16 @@ func (vem *VersionedEntityManager) ApplyMigrationFromEntities(ctx context.Contex
 
 	// Only increment version if there are actual changes to apply
 	vem.version++
-	upSQL := ""
+	var upSQL strings.Builder
 	for _, stmt := range statements {
-		upSQL += stmt + ";\n"
+		upSQL.WriteString(stmt + ";\n")
 	}
 
 	// For simplicity, we'll create a basic down migration that drops everything
 	// In a real scenario, you'd want more sophisticated down migrations
 	downSQL := "-- Auto-generated down migration\n-- Manual review required\n"
 
-	migration := migrator.CreateMigrationFromSQL(vem.version, description, upSQL, downSQL)
+	migration := migrator.CreateMigrationFromSQL(vem.version, description, upSQL.String(), downSQL)
 
 	p := migrator.NewRegisteredMigrationProvider(migration)
 	m := migrator.NewMigrator(conn, p)

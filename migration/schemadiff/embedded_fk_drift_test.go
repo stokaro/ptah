@@ -88,8 +88,8 @@ func ownableMixinConvergedDB(hostTables ...string) *types.DBSchema {
 	db := ownableMixinColumnsOnlyDB(hostTables...)
 	for _, ht := range hostTables {
 		db.Constraints = append(db.Constraints,
-			types.DBConstraint{Name: "fk_entity_tenant", TableName: ht, Type: "FOREIGN KEY", ColumnName: "tenant_id", ForeignTable: strPtr("tenants"), ForeignColumn: strPtr("id"), DeleteRule: strPtr("NO ACTION"), UpdateRule: strPtr("NO ACTION")},
-			types.DBConstraint{Name: "fk_entity_created_by", TableName: ht, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: strPtr("users"), ForeignColumn: strPtr("id"), DeleteRule: strPtr("NO ACTION"), UpdateRule: strPtr("NO ACTION")},
+			types.DBConstraint{Name: "fk_entity_tenant", TableName: ht, Type: "FOREIGN KEY", ColumnName: "tenant_id", ForeignTable: new("tenants"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
+			types.DBConstraint{Name: "fk_entity_created_by", TableName: ht, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: new("users"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
 		)
 	}
 	return db
@@ -286,14 +286,14 @@ func TestEmbeddedInlineMixinFK_MixedModifyAndAdd_NoPhantomDrop(t *testing.T) {
 	dbSchema := ownableMixinColumnsOnlyDB(allHosts...)
 	for _, h := range modifyHosts {
 		dbSchema.Constraints = append(dbSchema.Constraints,
-			types.DBConstraint{Name: "fk_entity_tenant", TableName: h, Type: "FOREIGN KEY", ColumnName: "tenant_id", ForeignTable: strPtr("tenants"), ForeignColumn: strPtr("id"), DeleteRule: strPtr("NO ACTION"), UpdateRule: strPtr("NO ACTION")},
-			types.DBConstraint{Name: "fk_entity_created_by", TableName: h, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: strPtr("users"), ForeignColumn: strPtr("id"), DeleteRule: strPtr("NO ACTION"), UpdateRule: strPtr("NO ACTION")},
+			types.DBConstraint{Name: "fk_entity_tenant", TableName: h, Type: "FOREIGN KEY", ColumnName: "tenant_id", ForeignTable: new("tenants"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
+			types.DBConstraint{Name: "fk_entity_created_by", TableName: h, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: new("users"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
 		)
 	}
 	// commodities also needs the created_by FK present so only tenant differs;
 	// otherwise created_by would surface as an extra pure-add and muddy the test.
 	dbSchema.Constraints = append(dbSchema.Constraints,
-		types.DBConstraint{Name: "fk_entity_created_by", TableName: addHost, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: strPtr("users"), ForeignColumn: strPtr("id"), DeleteRule: strPtr("NO ACTION"), UpdateRule: strPtr("NO ACTION")},
+		types.DBConstraint{Name: "fk_entity_created_by", TableName: addHost, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: new("users"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
 	)
 
 	gen := ownableMixinSchemaWithTenantOnDelete("CASCADE", allHosts...)
@@ -323,8 +323,8 @@ func ownableMixinConvergedTenantOnDelete(deleteRule string, hostTables ...string
 	db := ownableMixinColumnsOnlyDB(hostTables...)
 	for _, ht := range hostTables {
 		db.Constraints = append(db.Constraints,
-			types.DBConstraint{Name: "fk_entity_tenant", TableName: ht, Type: "FOREIGN KEY", ColumnName: "tenant_id", ForeignTable: strPtr("tenants"), ForeignColumn: strPtr("id"), DeleteRule: strPtr(deleteRule), UpdateRule: strPtr("NO ACTION")},
-			types.DBConstraint{Name: "fk_entity_created_by", TableName: ht, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: strPtr("users"), ForeignColumn: strPtr("id"), DeleteRule: strPtr("NO ACTION"), UpdateRule: strPtr("NO ACTION")},
+			types.DBConstraint{Name: "fk_entity_tenant", TableName: ht, Type: "FOREIGN KEY", ColumnName: "tenant_id", ForeignTable: new("tenants"), ForeignColumn: new("id"), DeleteRule: new(deleteRule), UpdateRule: new("NO ACTION")},
+			types.DBConstraint{Name: "fk_entity_created_by", TableName: ht, Type: "FOREIGN KEY", ColumnName: "created_by_user_id", ForeignTable: new("users"), ForeignColumn: new("id"), DeleteRule: new("NO ACTION"), UpdateRule: new("NO ACTION")},
 		)
 	}
 	return db

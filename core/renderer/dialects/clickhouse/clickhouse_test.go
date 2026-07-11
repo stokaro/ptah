@@ -325,7 +325,7 @@ func TestVisitDropIndex_RequiresTable(t *testing.T) {
 	// `ALTER TABLE ... DROP INDEX` as the required form, so to assert the
 	// absence of a real statement we look for a non-comment line.
 	c.Assert(out, qt.Contains, "-- CLICKHOUSE:")
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(out), "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "--") {
 			continue

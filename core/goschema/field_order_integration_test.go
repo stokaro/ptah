@@ -51,7 +51,7 @@ type User struct {
 
 	// Generate migration SQL multiple times and verify consistency
 	var previousSQL string
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		// Parse the directory
 		database, err := goschema.ParseDir(tmpDir)
 		c.Assert(err, qt.IsNil)
@@ -158,7 +158,7 @@ type Post struct {
 
 	// Test multiple runs for consistency
 	var previousSQL string
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		// Parse the directory
 		database, err := goschema.ParseDir(tmpDir)
 		c.Assert(err, qt.IsNil)
@@ -251,7 +251,7 @@ type Post struct {
 
 	// Test multiple runs for consistency
 	var previousSQL []string
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		// Parse the directory
 		database, err := goschema.ParseDir(tmpDir)
 		c.Assert(err, qt.IsNil)

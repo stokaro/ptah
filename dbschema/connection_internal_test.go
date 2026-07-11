@@ -60,7 +60,7 @@ func TestConvertClickHouseURL(t *testing.T) {
 			if strings.Count(tc.expected, "&") > 0 {
 				prefix, _, _ := strings.Cut(tc.expected, "?")
 				c.Assert(got, qt.Contains, prefix)
-				for _, kv := range strings.Split(tc.expected[strings.Index(tc.expected, "?")+1:], "&") {
+				for kv := range strings.SplitSeq(tc.expected[strings.Index(tc.expected, "?")+1:], "&") {
 					c.Assert(got, qt.Contains, kv)
 				}
 				return

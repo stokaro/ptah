@@ -44,7 +44,7 @@ func TestConvertDBSchemaToGoSchema_Extensions(t *testing.T) {
 						Name:    "postgis",
 						Version: "3.0",
 						Schema:  "public",
-						Comment: stringPtr("Geographic data support"),
+						Comment: new("Geographic data support"),
 					},
 				},
 			},
@@ -70,7 +70,7 @@ func TestConvertDBSchemaToGoSchema_Extensions(t *testing.T) {
 						Name:    "btree_gin",
 						Version: "1.3",
 						Schema:  "public",
-						Comment: stringPtr("Enable GIN indexes on btree types"),
+						Comment: new("Enable GIN indexes on btree types"),
 					},
 				},
 			},
@@ -194,9 +194,4 @@ func TestConvertDBSchemaToGoSchema_ExtensionDefaultValues(t *testing.T) {
 	c.Assert(ext.IfNotExists, qt.Equals, true) // Should default to true for safety
 	c.Assert(ext.Version, qt.Equals, "1.0")
 	c.Assert(ext.Comment, qt.Equals, "") // Should be empty string when nil
-}
-
-// Helper function to create string pointers
-func stringPtr(s string) *string {
-	return &s
 }

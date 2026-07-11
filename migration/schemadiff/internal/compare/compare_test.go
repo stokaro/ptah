@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/go-extras/go-kit/ptr"
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/dbschema/types"
@@ -161,7 +160,7 @@ func TestColumns_HappyPath(t *testing.T) {
 			dbCol: types.DBColumn{
 				Name:          "status",
 				DataType:      "VARCHAR(50)",
-				ColumnDefault: ptr.To("'inactive'"),
+				ColumnDefault: new("'inactive'"),
 			},
 			expected: difftypes.ColumnDiff{
 				ColumnName: "status",
@@ -249,7 +248,7 @@ func TestColumns_UnhappyPath(t *testing.T) {
 				DataType:        "integer",
 				IsPrimaryKey:    true,
 				IsAutoIncrement: true,
-				ColumnDefault:   ptr.To("nextval('users_id_seq'::regclass)"),
+				ColumnDefault:   new("nextval('users_id_seq'::regclass)"),
 			},
 			expected: difftypes.ColumnDiff{
 				ColumnName: "id",
@@ -824,7 +823,7 @@ func TestColumns_EdgeCases(t *testing.T) {
 				DataType:        "integer",
 				IsPrimaryKey:    true,
 				IsAutoIncrement: false, // Not detected as auto increment
-				ColumnDefault:   ptr.To("nextval('seq'::regclass)"),
+				ColumnDefault:   new("nextval('seq'::regclass)"),
 			},
 			expected: difftypes.ColumnDiff{
 				ColumnName: "id",

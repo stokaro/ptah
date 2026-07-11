@@ -13,8 +13,6 @@ import (
 	"github.com/stokaro/ptah/migration/schemadiff"
 )
 
-func strPtr(s string) *string { return &s }
-
 // exportsSchema returns a generated schema with an exports.file_id field-level
 // FK whose ON DELETE action is set to onDelete (empty string == no action).
 func exportsSchema(onDelete string) *goschema.Database {
@@ -60,10 +58,10 @@ func exportsDBSchema(deleteRule string) *types.DBSchema {
 				TableName:     "exports",
 				Type:          "FOREIGN KEY",
 				ColumnName:    "file_id",
-				ForeignTable:  strPtr("files"),
-				ForeignColumn: strPtr("id"),
-				DeleteRule:    strPtr(deleteRule),
-				UpdateRule:    strPtr("NO ACTION"),
+				ForeignTable:  new("files"),
+				ForeignColumn: new("id"),
+				DeleteRule:    new(deleteRule),
+				UpdateRule:    new("NO ACTION"),
 			},
 		},
 	}

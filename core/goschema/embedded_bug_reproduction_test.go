@@ -2,6 +2,7 @@ package goschema
 
 import (
 	"os"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -124,13 +125,7 @@ func TestEmbeddedEntityIDBugReproduction(t *testing.T) {
 	}
 
 	for _, expectedField := range expectedFields {
-		found := false
-		for _, actualField := range actualFieldNames {
-			if actualField == expectedField {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(actualFieldNames, expectedField)
 		c.Assert(found, qt.IsTrue, qt.Commentf("Expected field '%s' not found in users table. Actual fields: %v", expectedField, actualFieldNames))
 	}
 
