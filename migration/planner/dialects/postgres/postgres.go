@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -933,13 +934,7 @@ func (p *Planner) enableRLSOnTables(result []ast.Node, diff *types.SchemaDiff, g
 	// Enable RLS on tables that have policies but don't have RLS enabled yet
 	for tableName := range tablesNeedingRLS {
 		// Check if this table is being added or if RLS is being enabled
-		tableIsNew := false
-		for _, addedTable := range diff.TablesAdded {
-			if addedTable == tableName {
-				tableIsNew = true
-				break
-			}
-		}
+		tableIsNew := slices.Contains(diff.TablesAdded, tableName)
 
 		// For new tables with RLS policies, enable RLS
 		if tableIsNew {

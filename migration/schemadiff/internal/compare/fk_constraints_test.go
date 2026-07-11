@@ -39,8 +39,8 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 			TableName:     "exports",
 			Type:          "FOREIGN KEY",
 			ColumnName:    "file_id",
-			ForeignTable:  stringPtr("files"),
-			ForeignColumn: stringPtr("id"),
+			ForeignTable:  new("files"),
+			ForeignColumn: new("id"),
 			DeleteRule:    deleteRule,
 			UpdateRule:    updateRule,
 		}
@@ -72,7 +72,7 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 			},
 			database: &types.DBSchema{
 				Tables:      []types.DBTable{exportsTable},
-				Constraints: []types.DBConstraint{dbFK(stringPtr("NO ACTION"), stringPtr("NO ACTION"))},
+				Constraints: []types.DBConstraint{dbFK(new("NO ACTION"), new("NO ACTION"))},
 			},
 			expected: &difftypes.SchemaDiff{
 				ConstraintsAdded:   []string{"fk_export_file"},
@@ -98,7 +98,7 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 			},
 			database: &types.DBSchema{
 				Tables:      []types.DBTable{exportsTable},
-				Constraints: []types.DBConstraint{dbFK(stringPtr("SET NULL"), stringPtr("NO ACTION"))},
+				Constraints: []types.DBConstraint{dbFK(new("SET NULL"), new("NO ACTION"))},
 			},
 			expected: &difftypes.SchemaDiff{},
 		},
@@ -124,7 +124,7 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 			},
 			database: &types.DBSchema{
 				Tables:      []types.DBTable{exportsTable},
-				Constraints: []types.DBConstraint{dbFK(stringPtr("NO ACTION"), stringPtr("NO ACTION"))},
+				Constraints: []types.DBConstraint{dbFK(new("NO ACTION"), new("NO ACTION"))},
 			},
 			expected: &difftypes.SchemaDiff{},
 		},
@@ -148,7 +148,7 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 			},
 			database: &types.DBSchema{
 				Tables:      []types.DBTable{exportsTable},
-				Constraints: []types.DBConstraint{dbFK(stringPtr("CASCADE"), stringPtr("NO ACTION"))},
+				Constraints: []types.DBConstraint{dbFK(new("CASCADE"), new("NO ACTION"))},
 			},
 			expected: &difftypes.SchemaDiff{},
 		},
@@ -171,7 +171,7 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 			},
 			database: &types.DBSchema{
 				Tables:      []types.DBTable{exportsTable},
-				Constraints: []types.DBConstraint{dbFK(stringPtr("NO ACTION"), stringPtr("NO ACTION"))},
+				Constraints: []types.DBConstraint{dbFK(new("NO ACTION"), new("NO ACTION"))},
 			},
 			expected: &difftypes.SchemaDiff{
 				ConstraintsAdded:   []string{"fk_export_file"},
@@ -205,10 +205,10 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 						TableName:     "exports",
 						Type:          "FOREIGN KEY",
 						ColumnName:    "file_id",
-						ForeignTable:  stringPtr("files"),
-						ForeignColumn: stringPtr("id"),
-						DeleteRule:    stringPtr("NO ACTION"),
-						UpdateRule:    stringPtr("NO ACTION"),
+						ForeignTable:  new("files"),
+						ForeignColumn: new("id"),
+						DeleteRule:    new("NO ACTION"),
+						UpdateRule:    new("NO ACTION"),
 					},
 				},
 			},
@@ -250,10 +250,10 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 						TableName:     "categories",
 						Type:          "FOREIGN KEY",
 						ColumnName:    "parent_id",
-						ForeignTable:  stringPtr("categories"),
-						ForeignColumn: stringPtr("id"),
-						DeleteRule:    stringPtr("NO ACTION"),
-						UpdateRule:    stringPtr("NO ACTION"),
+						ForeignTable:  new("categories"),
+						ForeignColumn: new("id"),
+						DeleteRule:    new("NO ACTION"),
+						UpdateRule:    new("NO ACTION"),
 					},
 				},
 			},
@@ -307,7 +307,7 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 			},
 			database: &types.DBSchema{
 				Tables:      []types.DBTable{exportsTable},
-				Constraints: []types.DBConstraint{dbFK(stringPtr("NO ACTION"), stringPtr("NO ACTION"))},
+				Constraints: []types.DBConstraint{dbFK(new("NO ACTION"), new("NO ACTION"))},
 			},
 			expected: &difftypes.SchemaDiff{
 				ConstraintsAdded:   []string{"fk_export_file"},

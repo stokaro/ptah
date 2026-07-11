@@ -1,6 +1,7 @@
 package goschema_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -328,13 +329,7 @@ func buildDependencyGraph(r *goschema.Database) {
 			if table.StructName != field.StructName {
 				continue
 			}
-			found := false
-			for _, dep := range r.Dependencies[table.Name] {
-				if dep == refTable {
-					found = true
-					break
-				}
-			}
+			found := slices.Contains(r.Dependencies[table.Name], refTable)
 			if !found {
 				r.Dependencies[table.Name] = append(r.Dependencies[table.Name], refTable)
 			}

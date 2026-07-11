@@ -1,6 +1,7 @@
 package goschema_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -208,13 +209,7 @@ func buildDependencyGraphIssue51(r *goschema.Database) {
 				})
 			} else {
 				// Add dependency: table depends on refTable (only for non-self-referencing FKs)
-				found := false
-				for _, dep := range r.Dependencies[table.Name] {
-					if dep == refTable {
-						found = true
-						break
-					}
-				}
+				found := slices.Contains(r.Dependencies[table.Name], refTable)
 				if !found {
 					r.Dependencies[table.Name] = append(r.Dependencies[table.Name], refTable)
 				}

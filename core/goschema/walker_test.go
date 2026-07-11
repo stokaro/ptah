@@ -1239,7 +1239,7 @@ func BenchmarkParseFS_LargeProject(b *testing.B) {
 	files := make(map[string]string)
 
 	// Generate 50 model files with dependencies
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		filename := fmt.Sprintf("model%d.go", i)
 		tableName := fmt.Sprintf("table%d", i)
 

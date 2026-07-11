@@ -13,7 +13,7 @@ func TestDeduplicate_FieldOrderPreservation(t *testing.T) {
 
 	// Test multiple runs to ensure consistent ordering
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		// Create a fresh copy for each test
 		testDB := &goschema.Database{
 			Tables: []goschema.Table{

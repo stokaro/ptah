@@ -1,6 +1,7 @@
 package lexer_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -551,18 +552,19 @@ func BenchmarkLexer_ComplexSQL(b *testing.B) {
 
 func BenchmarkLexer_LargeSQL(b *testing.B) {
 	// Generate a large SQL statement
-	input := "CREATE TABLE large_table ("
-	for i := 0; i < 100; i++ {
+	var input strings.Builder
+	input.WriteString("CREATE TABLE large_table (")
+	for i := range 100 {
 		if i > 0 {
-			input += ", "
+			input.WriteString(", ")
 		}
-		input += "column_" + string(rune('0'+i%10)) + " VARCHAR(255)"
+		input.WriteString("column_" + string(rune('0'+i%10)) + " VARCHAR(255)")
 	}
-	input += ");"
+	input.WriteString(");")
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		l := lexer.NewLexer(input)
+		l := lexer.NewLexer(input.String())
 		for {
 			token := l.NextToken()
 			if token.Type == lexer.TokenEOF {
