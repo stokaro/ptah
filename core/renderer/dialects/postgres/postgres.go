@@ -356,6 +356,12 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 
 	parts = append(parts, "INDEX")
 
+	// CONCURRENTLY precedes IF NOT EXISTS in the PostgreSQL grammar:
+	// CREATE [UNIQUE] INDEX [CONCURRENTLY] [IF NOT EXISTS] name ...
+	if node.Concurrently {
+		parts = append(parts, "CONCURRENTLY")
+	}
+
 	if node.IfNotExists {
 		parts = append(parts, "IF NOT EXISTS")
 	}

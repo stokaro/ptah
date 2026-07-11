@@ -7,6 +7,7 @@ import (
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/convert/fromschema"
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
@@ -45,13 +46,48 @@ const (
 //
 // # Thread Safety
 //
-// The Planner is stateless and safe for concurrent use across multiple goroutines.
-// Each call to GenerateMigrationSQL operates independently without shared state.
+// The Planner carries only an immutable capability set and is safe for
+// concurrent use across multiple goroutines. Each call to
+// GenerateMigrationSQL operates independently without shared state.
 type Planner struct {
+	// caps describes what the concrete target accepts (issue #225/#226). The
+	// MySQL planner serves both MySQL and MariaDB (GetPlanner maps both here);
+	// the capability set is what tells them apart — e.g. MariaDB accepts the
+	// IF EXISTS guard on constraint drops, MySQL does not. The nil zero value
+	// defaults to the current MySQL line preset (capability.MySQL80) via the
+	// capabilities accessor, so a bare &Planner{} — the construction shown in
+	// this type's own example — behaves exactly like New(). Pass an explicit
+	// preset (e.g. capability.MySQLLegacy()) to restrict emissions.
+	caps capability.Capabilities
 }
 
+// New returns a planner configured with the current MySQL line preset
+// (capability.MySQL80: 8.0.19+ and 9.x).
 func New() *Planner {
-	return &Planner{}
+	return NewWithCapabilities(capability.MySQL80())
+}
+
+// NewWithCapabilities returns a planner for a specific capability set — e.g.
+// capability.MariaDB1011() for MariaDB targets, or a preset composed with
+// Capabilities.With for a concrete server version (capability.ForServerVersion).
+// The set is expected to be valid (capability.Capabilities.Validate); presets
+// from the capability package always are. The set is cloned, so later
+// mutations by the caller cannot affect the planner. A nil set defaults to
+// the capability.MySQL80 preset.
+func NewWithCapabilities(caps capability.Capabilities) *Planner {
+	return &Planner{caps: caps.Clone()}
+}
+
+// capabilities returns the planner's capability set, defaulting the nil zero
+// value to the current MySQL line preset. nil deliberately does NOT mean
+// "assume nothing": an assume-nothing set would silently downgrade CHECK
+// additions to warnings and re-spell CHECK drops as DROP CHECK — destructive
+// surprises for a zero-value planner. Restriction must be an explicit choice.
+func (p *Planner) capabilities() capability.Capabilities {
+	if p.caps == nil {
+		return capability.MySQL80()
+	}
+	return p.caps
 }
 
 func (p *Planner) addEnumChangeWarnings(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
@@ -377,19 +413,31 @@ func (p *Planner) addNewIndexes(result []ast.Node, diff *types.SchemaDiff, gener
 }
 
 func (p *Planner) removeIndexes(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	// The IF EXISTS guard on DROP INDEX is capability-gated INTENT (issue
+	// #226): MariaDB accepts it, MySQL has no such form. The renderer
+	// additionally validates the flag against its own target set, so the
+	// guard is emitted only when both layers agree. Gating here (rather than
+	// always setting the flag) keeps the capability composable — disabling
+	// capability.DropIndexIfExists on a planner actually changes the plan.
+	guarded := p.capabilities().Has(capability.DropIndexIfExists)
+
 	// Use the detailed removal info if available (includes table names for MySQL/MariaDB)
 	if len(diff.IndexesRemovedWithTables) > 0 {
 		for _, indexInfo := range diff.IndexesRemovedWithTables {
 			dropIndexNode := ast.NewDropIndex(indexInfo.Name).
-				SetIfExists().
 				SetTable(indexInfo.TableName)
+			if guarded {
+				dropIndexNode.SetIfExists()
+			}
 			result = append(result, dropIndexNode)
 		}
 	} else {
 		// Fallback to the basic removal list (for backward compatibility)
 		for _, indexName := range diff.IndexesRemoved {
-			dropIndexNode := ast.NewDropIndex(indexName).
-				SetIfExists()
+			dropIndexNode := ast.NewDropIndex(indexName)
+			if guarded {
+				dropIndexNode.SetIfExists()
+			}
 			result = append(result, dropIndexNode)
 		}
 	}
@@ -746,7 +794,7 @@ func (p *Planner) appendScopedDrop(result []ast.Node, info types.ConstraintRemov
 		return result
 	}
 	dropped[dedupKey] = struct{}{}
-	return append(result, dropConstraintNode(info))
+	return append(result, p.dropConstraintNode(info))
 }
 
 // foreignKeyAdditionNode builds the ALTER TABLE ADD CONSTRAINT node for a
@@ -772,6 +820,14 @@ func (p *Planner) appendAddConstraint(result []ast.Node, constraintName string, 
 	for _, constraint := range generated.Constraints {
 		if constraint.Name != constraintName {
 			continue
+		}
+		// A CHECK constraint on a target that parses but does not enforce
+		// CHECK (capability.CheckConstraintsEnforced absent — MySQL before
+		// 8.0.16) would be a silent no-op in the live schema while ptah
+		// believes it applied; surface that loudly instead of emitting it
+		// (issue #226).
+		if constraint.Type == "CHECK" && !p.capabilities().Has(capability.CheckConstraintsEnforced) {
+			return append(result, ast.NewComment(fmt.Sprintf("WARNING: CHECK constraint %s skipped - the target parses but does not enforce CHECK constraints (MySQL < 8.0.16)", constraint.Name)))
 		}
 		if astConstraint := p.convertConstraintToAST(constraint); astConstraint != nil {
 			return append(result, &ast.AlterTableNode{
@@ -820,6 +876,12 @@ func (p *Planner) fieldLevelCheckConstraintNode(constraintName string, generated
 		}
 		if name != constraintName {
 			continue
+		}
+		// Same enforcement gate as the table-level path in
+		// appendAddConstraint: never emit a CHECK the target would silently
+		// ignore (issue #226).
+		if !p.capabilities().Has(capability.CheckConstraintsEnforced) {
+			return ast.NewComment(fmt.Sprintf("WARNING: CHECK constraint %s skipped - the target parses but does not enforce CHECK constraints (MySQL < 8.0.16)", name)), true
 		}
 		return &ast.AlterTableNode{
 			Name: tableName,
@@ -965,13 +1027,29 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 }
 
 // dropConstraintNode builds the ALTER TABLE drop statement for a single removed
-// constraint, choosing the MySQL/MariaDB type-specific syntax. FOREIGN KEY uses
-// DROP FOREIGN KEY; everything else falls back to DROP CONSTRAINT (MySQL
-// 8.0.19+ / MariaDB) which covers CHECK and named constraints.
-func dropConstraintNode(info types.ConstraintRemovalInfo) ast.Node {
+// constraint, choosing the MySQL/MariaDB type-specific syntax and recording the
+// planner's capability-derived intent (issue #226):
+//
+//   - FOREIGN KEY uses DROP FOREIGN KEY (never the generic clause);
+//   - CHECK uses DROP CHECK when the target lacks the generic DROP CONSTRAINT
+//     clause (capability.DropConstraintGeneric absent — MySQL 8.0.16–8.0.18);
+//   - everything else uses DROP CONSTRAINT (MySQL 8.0.19+ / MariaDB). A
+//     UNIQUE removal keeps the generic clause for now — the DROP INDEX
+//     branching for old targets is tracked separately (issue #195);
+//   - the IF EXISTS guard is requested when the target accepts guarded drops
+//     (capability.DropConstraintIfExists — MariaDB; MySQL rejects it). The
+//     renderer validates the flag against its own capability set too, so a
+//     stray intent flag can never reach a MySQL server. The exactly-once drop
+//     discipline from issue #207 therefore stays load-bearing on MySQL, where
+//     no guard exists; on MariaDB the guard is belt-and-braces on top of it.
+func (p *Planner) dropConstraintNode(info types.ConstraintRemovalInfo) ast.Node {
 	op := &ast.DropConstraintOperation{
 		ConstraintName: info.Name,
 		ForeignKey:     strings.EqualFold(info.Type, "FOREIGN KEY"),
+		IfExists:       p.capabilities().Has(capability.DropConstraintIfExists),
+	}
+	if !op.ForeignKey && strings.EqualFold(info.Type, "CHECK") && !p.capabilities().Has(capability.DropConstraintGeneric) {
+		op.Check = true
 	}
 	return &ast.AlterTableNode{
 		Name:       info.TableName,

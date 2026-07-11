@@ -108,6 +108,13 @@ type DropConstraintOperation struct {
 	// two read this flag. Renderers where DROP CONSTRAINT already covers foreign
 	// keys (PostgreSQL) may ignore it.
 	ForeignKey bool
+	// Check requests the dedicated `DROP CHECK <name>` spelling instead of the
+	// generic `DROP CONSTRAINT <name>`. MySQL 8.0.16–8.0.18 accept only the
+	// former (the generic clause arrived in 8.0.19), so planners targeting a
+	// capability set without drop_constraint_generic set this for CHECK
+	// constraints. Ignored when ForeignKey is set; renderers where the generic
+	// clause always exists (PostgreSQL) may ignore it entirely.
+	Check bool
 }
 
 // Accept implements the Node interface for DropConstraintOperation.
