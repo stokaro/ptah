@@ -71,6 +71,25 @@ ALTER TYPE mood ADD VALUE 'ambivalent';
 	c.Assert(byRule["PG101"].Severity, qt.Equals, lint.SeverityWarning)
 }
 
+func TestLintFS_VersionsRestrictsFindings(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fixture(map[string]string{
+		"0000000001_old.up.sql":    "DROP TABLE old_data;\n",
+		"0000000001_old.down.sql":  "CREATE TABLE old_data (id INT);\n",
+		"0000000002_next.up.sql":   "ALTER TABLE users DROP COLUMN legacy;\n",
+		"0000000002_next.down.sql": "ALTER TABLE users ADD COLUMN legacy TEXT;\n",
+	})
+
+	findings, err := lint.LintFS(fsys, lint.Options{
+		Disabled: []string{"MF", "BC", "PG", "MY"},
+		Versions: []int{2},
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DS102"})
+	c.Assert(findings[0].File, qt.Equals, "0000000002_next.up.sql")
+}
+
 func TestLintFS_CleanMigrationHasNoFindings(t *testing.T) {
 	c := qt.New(t)
 
@@ -183,14 +202,14 @@ func TestLintFS_OptionalKeywordForms(t *testing.T) {
 		{"convert to character set", "ALTER TABLE users CONVERT TO CHARACTER SET utf8mb4;", []string{"MY101"}},
 		{"convert to charset synonym", "ALTER TABLE users CONVERT TO CHARSET utf8mb4;", []string{"MY101"}},
 
-		// Non-column DROP clauses and column attributes must stay silent.
-		{"drop constraint", "ALTER TABLE users DROP CONSTRAINT uq_users_email;", nil},
-		{"drop foreign key", "ALTER TABLE orders DROP FOREIGN KEY fk_orders_user;", nil},
-		{"drop primary key", "ALTER TABLE users DROP PRIMARY KEY;", nil},
+		// Data-protection drops are destructive; storage-only drops stay silent.
+		{"drop constraint", "ALTER TABLE users DROP CONSTRAINT uq_users_email;", []string{"DS105"}},
+		{"drop foreign key", "ALTER TABLE orders DROP FOREIGN KEY fk_orders_user;", []string{"DS105"}},
+		{"drop primary key", "ALTER TABLE users DROP PRIMARY KEY;", []string{"DS105"}},
 		{"drop index", "ALTER TABLE users DROP INDEX idx_users_email;", nil},
-		{"drop check", "ALTER TABLE users DROP CHECK chk_age;", nil},
+		{"drop check", "ALTER TABLE users DROP CHECK chk_age;", []string{"DS105"}},
 		{"drop default attribute", "ALTER TABLE users ALTER COLUMN a DROP DEFAULT;", nil},
-		{"drop not null attribute", "ALTER TABLE users ALTER COLUMN a DROP NOT NULL;", nil},
+		{"drop not null attribute", "ALTER TABLE users ALTER COLUMN a DROP NOT NULL;", []string{"DS104"}},
 		{"drop identity attribute", "ALTER TABLE users ALTER COLUMN a DROP IDENTITY IF EXISTS;", nil},
 		{"drop key", "ALTER TABLE users DROP KEY idx_email;", nil},
 		{"drop partition", "ALTER TABLE metrics DROP PARTITION p2024;", nil},
@@ -199,12 +218,23 @@ func TestLintFS_OptionalKeywordForms(t *testing.T) {
 		// Columns that happen to be named like keywords are not hazards.
 		{"column named type set not null", "ALTER TABLE users ALTER COLUMN type SET NOT NULL;", nil},
 		{"quoted column named type", `ALTER TABLE users ALTER COLUMN "type" SET NOT NULL;`, nil},
+		{"column named not drop default", "ALTER TABLE users ALTER COLUMN not DROP DEFAULT;", nil},
 		{"added column named modify", "ALTER TABLE users ADD COLUMN modify TEXT;", nil},
 		{"added column named rename", "ALTER TABLE users ADD COLUMN rename TEXT;", nil},
 
 		// Renames invisible to application code are not BC breaks.
 		{"rename index", "ALTER TABLE users RENAME INDEX i1 TO i2;", nil},
 		{"rename constraint", "ALTER TABLE users RENAME CONSTRAINT c1 TO c2;", nil},
+		{"enum value catalog delete", "DELETE FROM pg_enum WHERE enumlabel = 'archived';", []string{"DS106"}},
+		{"enum value drop syntax", "ALTER TYPE status DROP VALUE 'archived';", []string{"DS106"}},
+		{"drop type", "DROP TYPE IF EXISTS status;", []string{"DS107"}},
+		{"drop extension", "DROP EXTENSION IF EXISTS hstore;", []string{"DS107"}},
+		{"drop function", "DROP FUNCTION IF EXISTS refresh_user();", []string{"DS107"}},
+		{"drop role", "DROP ROLE old_role;", []string{"DS107"}},
+		{"drop policy", "DROP POLICY IF EXISTS tenant_isolation ON accounts;", []string{"DS107"}},
+		{"truncate table keyword", "TRUNCATE TABLE audit_log;", []string{"DS108"}},
+		{"truncate without table keyword", "TRUNCATE audit_log;", []string{"DS108"}},
+		{"disable row level security", "ALTER TABLE accounts DISABLE ROW LEVEL SECURITY;", []string{"DS109"}},
 
 		// Top-level commas separate clauses; commas in parens do not.
 		{"comma-adjacent drop clause", "ALTER TABLE t ADD COLUMN a NUMERIC(10,2),DROP COLUMN b;", []string{"DS102"}},

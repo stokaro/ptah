@@ -23,64 +23,166 @@ func Rules() []Rule {
 // dataSafetyRules covers the DS family: statements that destroy data.
 func dataSafetyRules() []Rule {
 	return []Rule{
-		{
-			Code:     "DS101",
-			Title:    "table dropped",
-			Severity: SeverityError,
-			// File-level: dropping a table this same migration created (the
-			// create-staging/backfill/drop pattern) destroys no pre-existing
-			// data and is exempt.
-			CheckFile: func(file *File) []Finding {
-				if !file.IsUp {
-					return nil
+		tableDroppedRule(),
+		columnDroppedRule(),
+		columnTypeChangedRule(),
+		notNullDroppedRule(),
+		constraintDroppedRule(),
+		enumValueRemovedRule(),
+		databaseObjectDroppedRule(),
+		tableTruncatedRule(),
+		rlsDisabledRule(),
+	}
+}
+
+func tableDroppedRule() Rule {
+	return Rule{
+		Code:     "DS101",
+		Title:    "table dropped",
+		Severity: SeverityError,
+		// File-level: dropping a table this same migration created (the
+		// create-staging/backfill/drop pattern) destroys no pre-existing
+		// data and is exempt.
+		CheckFile: func(file *File) []Finding {
+			if !file.IsUp {
+				return nil
+			}
+			var findings []Finding
+			created := map[string]bool{}
+			for i := range file.Statements {
+				stmt := &file.Statements[i]
+				if ref := createdTableRef(stmt.Words); ref != "" {
+					created[ref] = true
+					continue
 				}
-				var findings []Finding
-				created := map[string]bool{}
-				for i := range file.Statements {
-					stmt := &file.Statements[i]
-					if ref := createdTableRef(stmt.Words); ref != "" {
-						created[ref] = true
-						continue
-					}
-					if !hasWordPrefix(stmt.Words, "DROP", "TABLE") || dropsOnlyCreatedTables(stmt.Words, created) {
-						continue
-					}
-					findings = append(findings, Finding{
-						Rule:     "DS101",
-						Title:    "table dropped",
-						Severity: SeverityError,
-						File:     file.Path,
-						Line:     stmt.Line,
-						Message:  "DROP TABLE permanently deletes the table and every row in it; take a verified backup first and consider a rename-and-retire window instead",
-					})
+				if !hasWordPrefix(stmt.Words, "DROP", "TABLE") || dropsOnlyCreatedTables(stmt.Words, created) {
+					continue
 				}
-				return findings
-			},
+				findings = append(findings, Finding{
+					Rule:     "DS101",
+					Title:    "table dropped",
+					Severity: SeverityError,
+					File:     file.Path,
+					Line:     stmt.Line,
+					Message:  "DROP TABLE permanently deletes the table and every row in it; take a verified backup first and consider a rename-and-retire window instead",
+				})
+			}
+			return findings
 		},
-		{
-			Code:     "DS102",
-			Title:    "column dropped",
-			Severity: SeverityError,
-			CheckStatement: func(stmt *Statement) (bool, string) {
-				if !isAlterTable(stmt.Words) || !scanDropColumn(stmt.Words) {
-					return false, ""
-				}
-				return true, "DROP COLUMN permanently deletes the column's data; deploy readers that no longer use the column first, then drop it in a later release"
-			},
+	}
+}
+
+func columnDroppedRule() Rule {
+	return Rule{
+		Code:     "DS102",
+		Title:    "column dropped",
+		Severity: SeverityError,
+		CheckStatement: func(stmt *Statement) (bool, string) {
+			if !isAlterTable(stmt.Words) || !scanDropColumn(stmt.Words) {
+				return false, ""
+			}
+			return true, "DROP COLUMN permanently deletes the column's data; deploy readers that no longer use the column first, then drop it in a later release"
 		},
-		{
-			Code:     "DS103",
-			Title:    "column type changed",
-			Severity: SeverityWarning,
-			CheckStatement: func(stmt *Statement) (bool, string) {
-				if !isAlterTable(stmt.Words) {
-					return false, ""
-				}
-				if !scanModifyChange(stmt.Words) && !scanAlterColumnType(stmt.Words) {
-					return false, ""
-				}
-				return true, "changing a column type can truncate or reject existing values and may rewrite the table under a lock; verify the old-to-new value mapping on production data first"
-			},
+	}
+}
+
+func columnTypeChangedRule() Rule {
+	return Rule{
+		Code:     "DS103",
+		Title:    "column type changed",
+		Severity: SeverityWarning,
+		CheckStatement: func(stmt *Statement) (bool, string) {
+			if !isAlterTable(stmt.Words) {
+				return false, ""
+			}
+			if !scanModifyChange(stmt.Words) && !scanAlterColumnType(stmt.Words) {
+				return false, ""
+			}
+			return true, "changing a column type can truncate or reject existing values and may rewrite the table under a lock; verify the old-to-new value mapping on production data first"
+		},
+	}
+}
+
+func notNullDroppedRule() Rule {
+	return Rule{
+		Code:     "DS104",
+		Title:    "not-null constraint dropped",
+		Severity: SeverityError,
+		CheckStatement: func(stmt *Statement) (bool, string) {
+			if !isAlterTable(stmt.Words) || !scanDropNotNull(stmt.Words) {
+				return false, ""
+			}
+			return true, "DROP NOT NULL removes a column-level data protection; verify nullable values are accepted by every deployed reader and writer first"
+		},
+	}
+}
+
+func constraintDroppedRule() Rule {
+	return Rule{
+		Code:     "DS105",
+		Title:    "constraint dropped",
+		Severity: SeverityError,
+		CheckStatement: func(stmt *Statement) (bool, string) {
+			if !isAlterTable(stmt.Words) || !scanDropConstraint(stmt.Words) {
+				return false, ""
+			}
+			return true, "dropping a constraint removes an existing data protection; verify the replacement safety invariant before applying"
+		},
+	}
+}
+
+func enumValueRemovedRule() Rule {
+	return Rule{
+		Code:     "DS106",
+		Title:    "enum value removed",
+		Severity: SeverityError,
+		CheckStatement: func(stmt *Statement) (bool, string) {
+			if !scanEnumValueRemoval(stmt.Words) {
+				return false, ""
+			}
+			return true, "removing an enum value can invalidate existing rows; backfill rows away from the value before changing the enum"
+		},
+	}
+}
+
+func databaseObjectDroppedRule() Rule {
+	return Rule{
+		Code:     "DS107",
+		Title:    "database object dropped",
+		Severity: SeverityError,
+		CheckStatement: func(stmt *Statement) (bool, string) {
+			if !scanDestructiveObjectDrop(stmt.Words) {
+				return false, ""
+			}
+			return true, "dropping a database object removes existing schema behavior or principals; verify all dependent code and data paths are retired first"
+		},
+	}
+}
+
+func tableTruncatedRule() Rule {
+	return Rule{
+		Code:     "DS108",
+		Title:    "table truncated",
+		Severity: SeverityError,
+		CheckStatement: func(stmt *Statement) (bool, string) {
+			if !hasWordPrefix(stmt.Words, "TRUNCATE") {
+				return false, ""
+			}
+			return true, "TRUNCATE deletes all rows from the table; take a verified backup first and require an explicit destructive apply"
+		},
+	}
+}
+
+func rlsDisabledRule() Rule {
+	return Rule{
+		Code:     "DS109",
+		Title:    "row-level security disabled",
+		Severity: SeverityError,
+		CheckStatement: func(stmt *Statement) (bool, string) {
+			if !isAlterTable(stmt.Words) || !hasWordSeq(stmt.Words, "DISABLE", "ROW", "LEVEL", "SECURITY") {
+				return false, ""
+			}
+			return true, "DISABLE ROW LEVEL SECURITY removes an access-control protection; verify replacement authorization before applying"
 		},
 	}
 }
@@ -457,6 +559,66 @@ func scanAlterColumnType(w []string) bool {
 		}
 	}
 	return false
+}
+
+// scanDropNotNull reports whether an ALTER TABLE statement removes a column's
+// NOT NULL attribute via ALTER [COLUMN] name DROP NOT NULL.
+func scanDropNotNull(w []string) bool {
+	for _, i := range clauseStarts(w) {
+		if i >= len(w) || w[i] != "ALTER" {
+			continue
+		}
+		j := i + 1
+		if j < len(w) && w[j] == "COLUMN" {
+			j++
+		}
+		j = skipIfExists(w, j)
+		if j >= len(w) || !identLike(w[j]) {
+			continue
+		}
+		if hasWordPrefix(w[j+1:], "DROP", "NOT", "NULL") {
+			return true
+		}
+	}
+	return false
+}
+
+// scanDropConstraint reports whether an ALTER TABLE statement removes a data
+// protection constraint. Index/key/partition drops stay out of this rule.
+func scanDropConstraint(w []string) bool {
+	for _, i := range clauseStarts(w) {
+		if i >= len(w) || w[i] != "DROP" {
+			continue
+		}
+		switch {
+		case hasWordPrefix(w[i:], "DROP", "CONSTRAINT"):
+			return true
+		case hasWordPrefix(w[i:], "DROP", "FOREIGN", "KEY"):
+			return true
+		case hasWordPrefix(w[i:], "DROP", "PRIMARY", "KEY"):
+			return true
+		case hasWordPrefix(w[i:], "DROP", "CHECK"):
+			return true
+		}
+	}
+	return false
+}
+
+func scanEnumValueRemoval(w []string) bool {
+	return hasWordSeq(w, "DELETE", "FROM", "PG_ENUM") ||
+		hasWordSeq(w, "DROP", "VALUE")
+}
+
+func scanDestructiveObjectDrop(w []string) bool {
+	if len(w) < 2 || w[0] != "DROP" {
+		return false
+	}
+	switch w[1] {
+	case "TYPE", "EXTENSION", "FUNCTION", "ROLE", "POLICY":
+		return true
+	default:
+		return false
+	}
 }
 
 // scanConvertCharset reports whether an ALTER TABLE statement converts the

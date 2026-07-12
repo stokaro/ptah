@@ -16,6 +16,7 @@ package clickhouse
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/convert/fromschema"
@@ -119,8 +120,13 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *types.SchemaDiff
 			}
 			col := fromschema.FromField(*field, generated.Enums, platform.ClickHouse)
 			result = append(result, &ast.AlterTableNode{
-				Name:       td.TableName,
-				Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{Column: col}},
+				Name: td.TableName,
+				Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{
+					Column:              col,
+					PreviousType:        previousColumnType(colDiff.Changes["type"]),
+					PreviousNullable:    previousColumnNullable(colDiff.Changes["nullable"]),
+					HasPreviousNullable: colDiff.Changes["nullable"] != "",
+				}},
 			})
 		}
 
@@ -216,4 +222,17 @@ func lookupField(generated *goschema.Database, structName, columnName string) *g
 		}
 	}
 	return nil
+}
+
+func previousColumnType(change string) string {
+	before, _, ok := strings.Cut(change, " -> ")
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(before)
+}
+
+func previousColumnNullable(change string) bool {
+	before, _, ok := strings.Cut(change, " -> ")
+	return ok && strings.TrimSpace(before) == "true"
 }

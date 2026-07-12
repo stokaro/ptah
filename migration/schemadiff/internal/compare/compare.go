@@ -12,6 +12,7 @@ import (
 	"github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/migration/schemadiff/internal/normalize"
 	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
+	"github.com/stokaro/ptah/migration/typechange"
 )
 
 // Regular expressions for constraint-based index detection
@@ -352,13 +353,13 @@ func Columns(genCol goschema.Field, dbCol types.DBColumn) difftypes.ColumnDiff {
 
 	// Compare data types (simplified)
 	genType := normalize.Type(genCol.Type)
-	dbType := normalize.Type(dbCol.DataType)
-	if dbCol.UDTName != "" {
-		dbType = normalize.Type(dbCol.UDTName)
-	}
+	dbRawType := rawDBColumnType(dbCol)
+	dbType := normalize.Type(dbRawType)
 
 	if genType != dbType {
 		colDiff.Changes["type"] = fmt.Sprintf("%s -> %s", dbType, genType)
+	} else if typechange.IsNarrowing(dbRawType, genCol.Type) {
+		colDiff.Changes["type"] = fmt.Sprintf("%s -> %s", dbRawType, genCol.Type)
 	}
 
 	// Compare nullable (primary keys are always NOT NULL regardless of the field definition)
@@ -414,6 +415,35 @@ func Columns(genCol goschema.Field, dbCol types.DBColumn) difftypes.ColumnDiff {
 	}
 
 	return colDiff
+}
+
+func rawDBColumnType(dbCol types.DBColumn) string {
+	rawType := strings.TrimSpace(dbCol.ColumnType)
+	if rawType == "" && dbCol.UDTName != "" {
+		rawType = strings.TrimSpace(dbCol.UDTName)
+	}
+	if rawType == "" {
+		rawType = strings.TrimSpace(dbCol.DataType)
+	}
+
+	if strings.Contains(rawType, "(") {
+		return rawType
+	}
+	switch normalize.Type(rawType) {
+	case "varchar":
+		if dbCol.CharacterMaxLength != nil {
+			return fmt.Sprintf("%s(%d)", rawType, *dbCol.CharacterMaxLength)
+		}
+	case "decimal":
+		if dbCol.NumericPrecision == nil {
+			return rawType
+		}
+		if dbCol.NumericScale != nil {
+			return fmt.Sprintf("%s(%d,%d)", rawType, *dbCol.NumericPrecision, *dbCol.NumericScale)
+		}
+		return fmt.Sprintf("%s(%d)", rawType, *dbCol.NumericPrecision)
+	}
+	return rawType
 }
 
 // SearchColumnByName searches for a specific column difference by name within a slice of column diffs.

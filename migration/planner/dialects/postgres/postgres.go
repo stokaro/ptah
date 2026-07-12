@@ -465,8 +465,13 @@ func (p *Planner) modifyExistingTableColumns(result []ast.Node, tableDiff types.
 
 		// Generate ALTER COLUMN statements using AST
 		alterNode := &ast.AlterTableNode{
-			Name:       tableDiff.TableName,
-			Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{Column: columnNode}},
+			Name: tableDiff.TableName,
+			Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{
+				Column:              columnNode,
+				PreviousType:        previousColumnType(colDiff.Changes["type"]),
+				PreviousNullable:    previousColumnNullable(colDiff.Changes["nullable"]),
+				HasPreviousNullable: colDiff.Changes["nullable"] != "",
+			}},
 		}
 		result = append(result, alterNode)
 
@@ -489,6 +494,19 @@ func findGeneratedTableByDiffName(generated *goschema.Database, tableName string
 		}
 	}
 	return nil
+}
+
+func previousColumnType(change string) string {
+	before, _, ok := strings.Cut(change, " -> ")
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(before)
+}
+
+func previousColumnNullable(change string) bool {
+	before, _, ok := strings.Cut(change, " -> ")
+	return ok && strings.TrimSpace(before) == "true"
 }
 
 func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, tableDiff types.TableDiff) []ast.Node {
