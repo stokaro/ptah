@@ -7,6 +7,7 @@ The migration generator package provides functionality to automatically generate
 - **Automatic Schema Comparison**: Compares Go entity definitions with current database schema
 - **Bidirectional Migrations**: Generates both UP and DOWN migration files
 - **Multiple Database Support**: Works with PostgreSQL, MySQL, and MariaDB
+- **Schema-Scoped Introspection**: Restricts PostgreSQL reads to selected schemas
 - **Proper File Naming**: Uses timestamp-based naming convention for migration files
 - **Embedded Field Support**: Handles embedded structs in Go entities
 
@@ -32,6 +33,7 @@ func main() {
         DatabaseURL:   "postgres://user:pass@localhost/db", // Database connection
         MigrationName: "add_user_table",       // Optional: defaults to "migration"
         OutputDir:     "./migrations",         // Directory to save migration files
+        Schemas:       []string{"auth", "billing", "public"}, // Optional PostgreSQL schema allow-list
     }
 
     // Bound the initial database connection so a stuck host fails fast.
@@ -171,6 +173,13 @@ type GenerateMigrationOptions struct {
 
     // OutputDir is the directory where migration files will be saved (always real filesystem)
     OutputDir string
+
+    // CompareOptions are the options to use when comparing schemas
+    CompareOptions *config.CompareOptions
+
+    // Schemas restricts database introspection to the listed schemas when the
+    // connected dialect supports schema scoping.
+    Schemas []string
 }
 ```
 
@@ -178,8 +187,11 @@ type GenerateMigrationOptions struct {
 
 - `GoEntitiesDir`: Directory to scan for Go entities (required)
 - `DatabaseURL`: Database connection string (required)
+- `DBConn`: Existing database connection (optional; used instead of `DatabaseURL` when set)
 - `MigrationName`: Name for the migration (optional, defaults to "migration")
 - `OutputDir`: Directory where migration files will be saved (required)
+- `CompareOptions`: Schema comparison options (optional)
+- `Schemas`: PostgreSQL schema allow-list for database introspection (optional)
 
 ### Database URL Examples
 

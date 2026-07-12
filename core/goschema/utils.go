@@ -76,7 +76,7 @@ func checkForCircularDependencies(r *Database, sorted *[]Table) {
 	for _, table := range r.Tables {
 		found := false
 		for _, sortedTable := range *sorted {
-			if sortedTable.Name == table.Name {
+			if sortedTable.QualifiedName() == table.QualifiedName() {
 				found = true
 				break
 			}
@@ -112,7 +112,7 @@ func sortTablesByDependencies(r *Database) {
 	// Create a map for quick table lookup
 	tableMap := make(map[string]Table)
 	for _, table := range r.Tables {
-		tableMap[table.Name] = table
+		tableMap[table.QualifiedName()] = table
 	}
 
 	// Perform topological sort using Kahn's algorithm
@@ -190,16 +190,80 @@ func Finalize(r *Database) {
 	}
 
 	Deduplicate(r)
+	normalizeTableScopedNames(r)
 	buildDependencyGraph(r)
 	sortTablesByDependencies(r)
 	sortFunctionsByDependencies(r)
+}
+
+func normalizeTableScopedNames(r *Database) {
+	if r == nil {
+		return
+	}
+	for i := range r.Constraints {
+		constraint := &r.Constraints[i]
+		table := resolveTableReference(r.Tables, constraint.StructName, constraint.Table)
+		if table == nil {
+			continue
+		}
+		constraint.Table = table.QualifiedName()
+		if constraint.ForeignTable != "" {
+			constraint.ForeignTable = resolveReferenceTableName(r.Tables, *table, constraint.ForeignTable)
+		}
+	}
+	for i := range r.Indexes {
+		index := &r.Indexes[i]
+		if table := resolveTableReference(r.Tables, index.StructName, index.TableName); table != nil {
+			index.TableName = table.QualifiedName()
+		}
+	}
+	for i := range r.RLSPolicies {
+		policy := &r.RLSPolicies[i]
+		if table := resolveTableReference(r.Tables, policy.StructName, policy.Table); table != nil {
+			policy.Table = table.QualifiedName()
+		}
+	}
+	for i := range r.RLSEnabledTables {
+		rlsEnabled := &r.RLSEnabledTables[i]
+		if table := resolveTableReference(r.Tables, rlsEnabled.StructName, rlsEnabled.Table); table != nil {
+			rlsEnabled.Table = table.QualifiedName()
+		}
+	}
+}
+
+func resolveTableReference(tables []Table, structName, tableName string) *Table {
+	tableName = strings.TrimSpace(tableName)
+	for i := range tables {
+		table := &tables[i]
+		if tableName == "" && table.StructName == structName {
+			return table
+		}
+		if tableName != "" && table.StructName == structName && (table.Name == tableName || table.QualifiedName() == tableName) {
+			return table
+		}
+	}
+	if tableName == "" || strings.Contains(tableName, ".") {
+		return nil
+	}
+	var match *Table
+	for i := range tables {
+		table := &tables[i]
+		if table.Name != tableName {
+			continue
+		}
+		if match != nil {
+			return nil
+		}
+		match = table
+	}
+	return match
 }
 
 // initializeDependencyMaps initializes the dependency tracking maps
 func initializeDependencyMaps(r *Database) {
 	// Initialize dependencies map for all tables
 	for _, table := range r.Tables {
-		r.Dependencies[table.Name] = []string{}
+		r.Dependencies[table.QualifiedName()] = []string{}
 	}
 
 	// Initialize self-referencing foreign keys tracking
@@ -221,7 +285,7 @@ func analyzeFieldForeignKeys(r *Database) {
 			continue
 		}
 
-		processForeignKeyDependency(r, table.Name, refTable, SelfReferencingFK{
+		processForeignKeyDependency(r, *table, refTable, SelfReferencingFK{
 			FieldName:      field.Name,
 			Foreign:        field.Foreign,
 			ForeignKeyName: field.ForeignKeyName,
@@ -244,7 +308,7 @@ func analyzeEmbeddedFieldRelations(r *Database) {
 			continue
 		}
 
-		processForeignKeyDependency(r, table.Name, refTable, SelfReferencingFK{
+		processForeignKeyDependency(r, *table, refTable, SelfReferencingFK{
 			FieldName:      embedded.Field,
 			Foreign:        embedded.Ref,
 			ForeignKeyName: generateForeignKeyName(table.Name, embedded.Field),
@@ -265,7 +329,9 @@ func findTableByStructName(tables []Table, structName string) *Table {
 }
 
 // processForeignKeyDependency processes a foreign key dependency, handling self-references appropriately
-func processForeignKeyDependency(r *Database, tableName, refTable string, selfRefFK SelfReferencingFK) {
+func processForeignKeyDependency(r *Database, table Table, refTable string, selfRefFK SelfReferencingFK) {
+	tableName := table.QualifiedName()
+	refTable = resolveReferenceTableName(r.Tables, table, refTable)
 	if tableName == refTable {
 		// Track self-referencing foreign key for deferred constraint creation
 		r.SelfReferencingForeignKeys[tableName] = append(r.SelfReferencingForeignKeys[tableName], selfRefFK)
@@ -273,6 +339,31 @@ func processForeignKeyDependency(r *Database, tableName, refTable string, selfRe
 		// Add dependency: table depends on refTable (only for non-self-referencing FKs)
 		r.Dependencies[tableName] = append(r.Dependencies[tableName], refTable)
 	}
+}
+
+func resolveReferenceTableName(tables []Table, current Table, refTable string) string {
+	if strings.Contains(refTable, ".") {
+		return refTable
+	}
+	for _, table := range tables {
+		if table.Schema == current.Schema && table.Name == refTable {
+			return table.QualifiedName()
+		}
+	}
+	var match string
+	for _, table := range tables {
+		if table.Name != refTable {
+			continue
+		}
+		if match != "" {
+			return refTable
+		}
+		match = table.QualifiedName()
+	}
+	if match != "" {
+		return match
+	}
+	return refTable
 }
 
 // generateForeignKeyName generates a consistent foreign key constraint name
@@ -711,12 +802,12 @@ func isFunctionInSorted(function Function, sorted []Function) bool {
 // slices with deduplicated versions. The order of entities may change during
 // this process, but dependency ordering is handled separately.
 func Deduplicate(r *Database) {
-	// Deduplicate tables by name - preserve order
+	// Deduplicate tables by schema-qualified name - preserve order
 	tableSeen := make(map[string]bool)
 	var deduplicatedTables []Table
 	for _, table := range r.Tables {
-		if !tableSeen[table.Name] {
-			tableSeen[table.Name] = true
+		if !tableSeen[table.QualifiedName()] {
+			tableSeen[table.QualifiedName()] = true
 			deduplicatedTables = append(deduplicatedTables, table)
 		}
 	}
