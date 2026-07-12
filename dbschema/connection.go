@@ -11,6 +11,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver
 
+	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/dbschema/clickhouse"
 	"github.com/stokaro/ptah/dbschema/mysql"
 	"github.com/stokaro/ptah/dbschema/postgres"
@@ -49,7 +50,11 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 	}
 
 	// Determine the dialect
-	dialect := strings.ToLower(parsedURL.Scheme)
+	rawDialect := strings.ToLower(parsedURL.Scheme)
+	dialect := platform.NormalizeDialect(rawDialect)
+	if dialect == "" {
+		return nil, fmt.Errorf("unsupported database dialect: %s", rawDialect)
+	}
 
 	// Connect to the database
 	// For MySQL/MariaDB, we need to convert the URL format
@@ -57,17 +62,15 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 
 	var dialectProtocol string
 	switch dialect {
-	case "postgres", "postgresql", "pgx":
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
 		dialectProtocol = "pgx"
-		connectionString = removePostgresPoolParams(dbURL)
-	case "mysql", "mariadb":
+		connectionString = convertPostgresWireURL(dbURL)
+	case platform.MySQL, platform.MariaDB:
 		dialectProtocol = "mysql"
 		connectionString = convertMySQLURL(dbURL)
-	case "clickhouse":
+	case platform.ClickHouse:
 		dialectProtocol = "clickhouse"
 		connectionString = convertClickHouseURL(dbURL)
-	default:
-		return nil, fmt.Errorf("unsupported database dialect: %s", dialect)
 	}
 
 	db, err := sql.Open(dialectProtocol, connectionString)
@@ -236,7 +239,7 @@ func getDatabaseInfo(ctx context.Context, db *sql.DB, dialect string, parsedURL 
 	}
 
 	switch dialect {
-	case "postgres":
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
 		// Get PostgreSQL version
 		var version string
 		err := db.QueryRowContext(ctx, "SELECT version()").Scan(&version)
@@ -244,6 +247,7 @@ func getDatabaseInfo(ctx context.Context, db *sql.DB, dialect string, parsedURL 
 			return info, fmt.Errorf("failed to get PostgreSQL version: %w", err)
 		}
 		info.Version = version
+		info.Dialect = detectPostgresWireDialect(dialect, version)
 
 		// Get schema name (default to 'public' if not specified in URL)
 		schema := "public"
@@ -254,7 +258,7 @@ func getDatabaseInfo(ctx context.Context, db *sql.DB, dialect string, parsedURL 
 		}
 		info.Schema = schema
 
-	case "mysql", "mariadb":
+	case platform.MySQL, platform.MariaDB:
 		// Get MySQL/MariaDB version
 		var version string
 		err := db.QueryRowContext(ctx, "SELECT VERSION()").Scan(&version)
@@ -275,7 +279,7 @@ func getDatabaseInfo(ctx context.Context, db *sql.DB, dialect string, parsedURL 
 			}
 			info.Schema = dbName
 		}
-	case "clickhouse":
+	case platform.ClickHouse:
 		var version string
 		if err := db.QueryRow("SELECT version()").Scan(&version); err != nil {
 			return info, fmt.Errorf("failed to get ClickHouse version: %w", err)
@@ -294,6 +298,20 @@ func getDatabaseInfo(ctx context.Context, db *sql.DB, dialect string, parsedURL 
 	}
 
 	return info, nil
+}
+
+func detectPostgresWireDialect(declaredDialect, version string) string {
+	versionLower := strings.ToLower(version)
+	switch {
+	case strings.Contains(versionLower, "cockroachdb"):
+		return platform.CockroachDB
+	case strings.Contains(versionLower, "yugabytedb") || strings.Contains(versionLower, "yugabyte") || strings.Contains(versionLower, "-yb-"):
+		return platform.YugabyteDB
+	case strings.Contains(versionLower, "spanner"):
+		return platform.Spanner
+	default:
+		return platform.NormalizeDialect(declaredDialect)
+	}
 }
 
 // convertMySQLURL converts a MySQL/MariaDB URL from standard format to Go driver format
@@ -330,6 +348,22 @@ func convertMySQLURL(dbURL string) string {
 	}
 
 	return connectionString
+}
+
+func convertPostgresWireURL(dbURL string) string {
+	cleaned := removePostgresPoolParams(dbURL)
+	parsedURL, err := url.Parse(cleaned)
+	if err != nil {
+		return cleaned
+	}
+
+	switch platform.NormalizeDialect(parsedURL.Scheme) {
+	case platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+		parsedURL.Scheme = platform.Postgres
+		return parsedURL.String()
+	default:
+		return cleaned
+	}
 }
 
 // convertClickHouseURL normalises a ClickHouse connection URL into the form

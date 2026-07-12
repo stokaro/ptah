@@ -13,6 +13,7 @@ import (
 
 	"github.com/stokaro/ptah/config"
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/planner"
@@ -115,6 +116,12 @@ type TestScenario struct {
 	// ClickHouse with a single recorded "Skip" step rather than running
 	// them and producing confusing failures.
 	ClickHouseCompatible bool
+	// PostgresDistributedCompatible opts a scenario in to running against
+	// PostgreSQL-family distributed-SQL targets. Default false because many
+	// existing scenarios exercise PostgreSQL features outside the common
+	// distributed-SQL subset (functions, RLS, roles, XML, and concurrent
+	// index policy).
+	PostgresDistributedCompatible bool
 }
 
 // TestRunner manages and executes integration tests
@@ -220,6 +227,18 @@ func (tr *TestRunner) runSingleTest(ctx context.Context, scenario TestScenario, 
 		result.Duration = time.Since(start)
 		return result
 	}
+	if isPostgresDistributedSQL(conn.Info().Dialect) && !scenario.PostgresDistributedCompatible {
+		recorder := &StepRecorder{}
+		_ = recorder.RecordStep(
+			"Skip Non-Distributed-SQL-Compatible Scenario",
+			"Scenario has not opted in via PostgresDistributedCompatible; skipping on PostgreSQL-family distributed SQL",
+			func() error { return nil },
+		)
+		result.Success = true
+		result.Steps = recorder.GetSteps()
+		result.Duration = time.Since(start)
+		return result
+	}
 
 	// Clean database before test
 	if err := tr.cleanDatabase(ctx, conn); err != nil {
@@ -253,6 +272,15 @@ func (tr *TestRunner) runSingleTest(ctx context.Context, scenario TestScenario, 
 
 	result.Duration = time.Since(start)
 	return result
+}
+
+func isPostgresDistributedSQL(dialect string) bool {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+		return true
+	default:
+		return false
+	}
 }
 
 // cleanDatabase drops all tables and resets the database to a clean state
@@ -562,9 +590,9 @@ func GetMigrationsFS(fixtures fs.FS, conn *dbschema.DatabaseConnection, migratio
 	// Try database-specific migrations first
 	var migrationPath string
 	switch dialect {
-	case "mysql", "mariadb":
+	case platform.MySQL, platform.MariaDB:
 		migrationPath = fmt.Sprintf("migrations/%s_mysql", migrationType)
-	case "postgres":
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
 		migrationPath = fmt.Sprintf("migrations/%s", migrationType) // PostgreSQL uses the default
 	default:
 		migrationPath = fmt.Sprintf("migrations/%s", migrationType) // Fallback to default

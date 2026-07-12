@@ -272,6 +272,12 @@ func GetDynamicScenarios() []TestScenario {
 			EnhancedTestFunc:     testClickHouseMergeTreeEngine,
 			ClickHouseCompatible: true,
 		},
+		{
+			Name:                          "dynamic_cockroachdb_common_subset",
+			Description:                   "Test CockroachDB common PostgreSQL-compatible subset without SERIAL, XML, foreign keys, or concurrent indexes",
+			EnhancedTestFunc:              testCockroachDBCommonSubset,
+			PostgresDistributedCompatible: true,
+		},
 	}
 }
 

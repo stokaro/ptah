@@ -1,6 +1,6 @@
 # Ptah Migration Library Integration Tests
 
-This directory contains comprehensive integration tests for the Ptah migration library. The tests validate migration functionality across multiple database backends including PostgreSQL, MySQL, and MariaDB.
+This directory contains comprehensive integration tests for the Ptah migration library. The tests validate migration functionality across multiple database backends including PostgreSQL, MySQL, MariaDB, ClickHouse, and opt-in PostgreSQL-family distributed SQL targets.
 
 ## Overview
 
@@ -135,6 +135,9 @@ docker compose --profile test run --rm ptah-tester --databases=mariadb
 
 # Test against specific combination
 docker compose --profile test run --rm ptah-tester --databases=postgres,mysql
+
+# Test the CockroachDB common-subset scenario when a CockroachDB URL is configured
+docker compose --profile test run --rm ptah-tester --databases=cockroachdb --scenarios=dynamic_cockroachdb_common_subset
 ```
 
 ### Combined Options
@@ -191,6 +194,12 @@ Rich, interactive report with:
 - Version: 16+
 - Required permissions: CREATE, DROP, SELECT, INSERT, UPDATE, DELETE
 - Default schema: `public`
+
+### CockroachDB
+- Version: 23+
+- Required permissions: CREATE, DROP, SELECT, INSERT, UPDATE, DELETE
+- Coverage: opt-in common subset only (`dynamic_cockroachdb_common_subset`)
+- Limitations: no `CREATE INDEX CONCURRENTLY`, XML columns, advisory locks, RLS, or sequence-dependent schema in the CockroachDB scenario
 
 ### MySQL
 - Version: 8+

@@ -1,11 +1,13 @@
 # Dialect capabilities
 
 Ptah maps several real database targets onto shared implementations: MySQL and
-MariaDB share one planner and one renderer family, and versions within a single
-dialect differ in which DDL they accept. Instead of forking a new dialect for
-every variant, planners and renderers consult a **capability set** — a
-validated `map[Capability]bool` describing what the concrete target accepts —
-and restrict or enable individual emissions accordingly (issues #225/#226).
+MariaDB share one planner and one renderer family; CockroachDB, YugabyteDB, and
+Spanner share the PostgreSQL family with target-specific capability presets;
+and versions within a single dialect differ in which DDL they accept. Instead
+of forking a new dialect for every variant, planners and renderers consult a
+**capability set** — a validated `map[Capability]bool` describing what the
+concrete target accepts — and restrict or enable individual emissions
+accordingly (issues #225/#226/#171).
 
 Package: `core/platform/capability`.
 
@@ -48,6 +50,10 @@ so typos fail fast. Current registry:
 | `create_index_concurrently` | `CREATE [UNIQUE] INDEX CONCURRENTLY` (PostgreSQL; a compatibility no-op on CockroachDB) |
 | `create_or_replace_trigger` | `CREATE OR REPLACE TRIGGER` (PostgreSQL 14+, MariaDB; not MySQL). Reserved for the trigger work (#158) |
 | `row_level_security` | Row-level security policies (PostgreSQL) |
+| `foreign_keys` | Declarative `FOREIGN KEY` constraints |
+| `sequences` | Database sequence objects (`SERIAL`/`BIGSERIAL` or explicit `CREATE SEQUENCE` support) |
+| `xml_type` | PostgreSQL `XML` column type |
+| `advisory_locks` | PostgreSQL advisory lock functions such as `pg_advisory_lock` |
 
 ### Validation rules
 
@@ -67,24 +73,31 @@ composed sets yourself.
 
 ## Presets
 
-| Capability | MySQL80 | MySQL8016 | MySQLLegacy | MariaDB1011 | MariaDBLegacy | Postgres16 | Postgres13 | ClickHouse24 |
-|---|---|---|---|---|---|---|---|---|
-| `drop_constraint_generic` | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ |
-| `drop_constraint_if_exists` | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ |
-| `drop_index_if_exists` | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ |
-| `check_constraints_enforced` | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ |
-| `drop_check_clause` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `enum_inline_column` | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ |
-| `enum_custom_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
-| `create_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
-| `create_or_replace_trigger` | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ |
-| `row_level_security` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
+| Capability | MySQL80 | MySQL8016 | MySQLLegacy | MariaDB1011 | MariaDBLegacy | Postgres16 | Postgres13 | ClickHouse24 | CockroachDB23 | YugabyteDB25 | SpannerPG |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `drop_constraint_generic` | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ |
+| `drop_constraint_if_exists` | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ |
+| `drop_index_if_exists` | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ |
+| `check_constraints_enforced` | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ |
+| `drop_check_clause` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `enum_inline_column` | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| `enum_custom_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ |
+| `create_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `create_or_replace_trigger` | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ |
+| `row_level_security` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `foreign_keys` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ |
+| `sequences` | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ |
+| `xml_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
+| `advisory_locks` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
 
 Version lines: `MySQL80()` covers MySQL 8.0.19+ and 9.x; `MySQL8016()` covers
 8.0.16–8.0.18; `MySQLLegacy()` anything older. `MariaDB1011()` covers the
 supported MariaDB lines (10.6+/11.x); `MariaDBLegacy()` is the conservative
 floor `ForServerVersion` assigns to pre-10.2 servers. `Postgres16()` covers
 PostgreSQL 14+; `Postgres13()` covers 12–13 (no `CREATE OR REPLACE TRIGGER`).
+`CockroachDB23()` and `YugabyteDB25()` are PostgreSQL-family presets for the
+common distributed-SQL subset; `SpannerPostgres()` is deliberately conservative
+because Spanner's PostgreSQL interface is not a drop-in PostgreSQL server.
 
 ### Composition
 
@@ -99,14 +112,17 @@ planner := mysql.NewWithCapabilities(caps)
 ### Resolving a preset
 
 - `capability.ForDialect("mariadb")` — default preset for a dialect name
-  (aliases like `pgx`/`postgresql` normalize first). Used by `GetPlanner` and
-  the renderers.
+  (aliases like `pgx`/`postgresql`, `crdb`/`cockroachdb`,
+  `ysql`/`yugabytedb`, and `cloudspanner`/`spanner` normalize first). Used by
+  `GetPlanner` and the renderers.
 - `capability.ForServerVersion("mysql", version)` — refine using a live
   `SELECT version()` string. Recognizes shapes like `8.0.42-log`,
   `10.11.6-MariaDB-…`, the `5.5.5-10.11.6-MariaDB` replication-protocol prefix
   (MariaDB over the mysql driver resolves to the MariaDB preset), and
-  `PostgreSQL 16.3 (…)`. Wiring this into live connections at `read-db` /
-  `migrate` time is a follow-up.
+  `PostgreSQL 16.3 (…)`. PostgreSQL-wire banners containing `CockroachDB`,
+  `YugabyteDB`/`Yugabyte`, or `Spanner` resolve to their distributed-SQL
+  presets. `dbschema.ConnectToDatabase` uses this when populating
+  `conn.Info().Dialect`.
 
 ## Current consumers
 
@@ -144,10 +160,20 @@ planner := mysql.NewWithCapabilities(caps)
   because concurrent builds cannot run inside a transaction block (#152 tracks
   migrator support); a capability-less target (CockroachDB-style preset, #171)
   keeps plain `CREATE INDEX` regardless of policy.
+- **Distributed-SQL PostgreSQL-family adapters (#171).**
+  `platform.CockroachDB`, `platform.YugabyteDB`, and `platform.Spanner`
+  normalize as distinct dialects but reuse the PostgreSQL planner, renderer,
+  reader, and writer with capability presets:
+  CockroachDB disables `CREATE INDEX CONCURRENTLY`, `XML`, advisory locks, and
+  RLS; YugabyteDB disables `CREATE INDEX CONCURRENTLY` because regular
+  `CREATE INDEX` is already asynchronous in YSQL; Spanner disables enums,
+  foreign keys, sequences, RLS, XML, advisory locks, and concurrent indexes.
+  CockroachDB integration coverage is an opt-in common-subset scenario that
+  avoids SERIAL, XML, foreign keys, and concurrent indexes.
 
 ## Follow-ups
 
-- `SELECT version()` → preset wiring at connect time (`ForServerVersion` is
-  ready; the dbschema plumbing is tracked with #163/#152 work).
 - `create_or_replace_trigger` consumer lands with triggers (#158).
-- Distributed-SQL presets (CockroachDB / Yugabyte / Spanner) — #171.
+- Spanner remains lowest priority: the preset exists so callers get explicit
+  routing and conservative rendering, but full Spanner-specific DDL such as
+  interleaved tables is outside the PostgreSQL-family adapter.

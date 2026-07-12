@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/stokaro/ptah/core/ast"
+	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/core/renderer/dialects/internal/bufwriter"
 	"github.com/stokaro/ptah/core/renderer/types"
 )
@@ -20,6 +22,7 @@ type Renderer struct {
 	currentEnums []string
 	dialect      string
 	dialectUpper string
+	caps         capability.Capabilities
 	w            bufwriter.Writer
 }
 
@@ -28,7 +31,7 @@ func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 	var parts []string
 	parts = append(parts, "DROP INDEX")
 
-	if node.IfExists {
+	if node.IfExists && r.capabilities().Has(capability.DropIndexIfExists) {
 		parts = append(parts, "IF EXISTS")
 	}
 
@@ -140,15 +143,34 @@ func (r *Renderer) VisitAlterType(node *ast.AlterTypeNode) error {
 
 // New creates a new PostgreSQL renderer
 func New() *Renderer {
+	return NewWithCapabilities(capability.Postgres16(), platform.Postgres)
+}
+
+// NewWithCapabilities creates a PostgreSQL-family renderer configured for a
+// concrete target capability set. The dialect label controls diagnostics and
+// GetDialect output; SQL emission is controlled by caps.
+func NewWithCapabilities(caps capability.Capabilities, dialect string) *Renderer {
+	normalized := platform.NormalizeDialect(dialect)
+	if normalized == "" {
+		normalized = platform.Postgres
+	}
 	return &Renderer{
 		currentEnums: nil,
-		dialect:      "postgres",
-		dialectUpper: "POSTGRES",
+		dialect:      normalized,
+		dialectUpper: strings.ToUpper(normalized),
+		caps:         caps.Clone(),
 	}
 }
 
 func (r *Renderer) Dialect() string {
 	return r.dialect
+}
+
+func (r *Renderer) capabilities() capability.Capabilities {
+	if r.caps == nil {
+		return capability.Postgres16()
+	}
+	return r.caps
 }
 
 func (r *Renderer) Reset() {
@@ -294,6 +316,10 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 			if err != nil {
 				return fmt.Errorf("error rendering add constraint: %w", err)
 			}
+			if constraintLine == "" {
+				r.w.WriteLinef("-- %s: constraint %q is not supported by this target; skipped.", r.dialectUpper, op.Constraint.Name)
+				continue
+			}
 			// Remove the leading spaces from constraint rendering for ALTER
 			constraintLine = strings.TrimPrefix(constraintLine, "  ")
 			r.w.WriteLinef("ALTER TABLE %s ADD %s;", node.Name, constraintLine)
@@ -359,7 +385,7 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 
 	// CONCURRENTLY precedes IF NOT EXISTS in the PostgreSQL grammar:
 	// CREATE [UNIQUE] INDEX [CONCURRENTLY] [IF NOT EXISTS] name ...
-	if node.Concurrently {
+	if node.Concurrently && r.capabilities().Has(capability.CreateIndexConcurrently) {
 		parts = append(parts, "CONCURRENTLY")
 	}
 
@@ -427,6 +453,11 @@ func (r *Renderer) VisitExtension(node *ast.ExtensionNode) error {
 
 // VisitEnum renders CREATE TYPE ... AS ENUM for PostgreSQL
 func (r *Renderer) VisitEnum(node *ast.EnumNode) error {
+	if !r.capabilities().Has(capability.EnumCustomType) {
+		r.w.WriteLinef("-- %s: enum type %s is not supported by this target; skipped.", r.dialectUpper, node.Name)
+		return nil
+	}
+
 	values := make([]string, len(node.Values))
 	for i, value := range node.Values {
 		values[i] = fmt.Sprintf("'%s'", value)
@@ -500,7 +531,10 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	var parts []string
 
 	// Handle PostgreSQL-specific type conversions using current enum context
-	columnType := r.processFieldType(column.Type, r.currentEnums)
+	columnType, err := r.processFieldType(column.Type, r.currentEnums)
+	if err != nil {
+		return "", err
+	}
 
 	// Column name and type
 	parts = append(parts, fmt.Sprintf("  %s %s", column.Name, columnType))
@@ -549,21 +583,25 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 }
 
 // processFieldType processes field type for PostgreSQL, handling enums appropriately
-func (r *Renderer) processFieldType(fieldType string, enums []string) string {
+func (r *Renderer) processFieldType(fieldType string, enums []string) (string, error) {
 	// For PostgreSQL, enum types are used directly (they're defined separately)
 	// Check if this type is an enum using the helper method
 	if r.isEnumType(fieldType, enums) {
-		return fieldType // Use enum type directly
+		return fieldType, nil // Use enum type directly
+	}
+
+	if strings.EqualFold(fieldType, "XML") && !r.capabilities().Has(capability.XMLType) {
+		return "", fmt.Errorf("%s does not support XML columns; use a platform-specific type override", r.dialect)
 	}
 
 	// Handle other PostgreSQL-specific type mappings if needed
 	switch fieldType {
 	case "AUTO_INCREMENT":
-		return "SERIAL"
+		return "SERIAL", nil
 	case "BIGINT AUTO_INCREMENT":
-		return "BIGSERIAL"
+		return "BIGSERIAL", nil
 	default:
-		return fieldType
+		return fieldType, nil
 	}
 }
 
@@ -583,6 +621,9 @@ func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, err
 		}
 		return fmt.Sprintf("  UNIQUE (%s)", strings.Join(constraint.Columns, ", ")), nil
 	case ast.ForeignKeyConstraint:
+		if !r.capabilities().Has(capability.ForeignKeys) {
+			return "", nil
+		}
 		return r.renderForeignKeyConstraint(constraint)
 	case ast.CheckConstraint:
 		if constraint.Name != "" {
@@ -664,7 +705,11 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, column *ast.Co
 	// PostgreSQL requires separate ALTER statements for different column properties
 
 	// Process the column type with enum support
-	columnType := r.processFieldType(column.Type, r.currentEnums)
+	columnType, err := r.processFieldType(column.Type, r.currentEnums)
+	if err != nil {
+		r.w.WriteLinef("-- %s: %s", r.dialectUpper, err.Error())
+		return
+	}
 
 	// Change column type (with USING clause for complex conversions if needed)
 	if columnType != column.Type {

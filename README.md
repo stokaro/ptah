@@ -83,7 +83,7 @@ The core package contains all fundamental components for parsing, transforming, 
 
 - **`renderer/`** - Dialect-specific SQL generation from AST
   - Converts AST nodes to database-specific SQL statements
-  - Supports PostgreSQL, MySQL, MariaDB, and ClickHouse dialects
+  - Supports PostgreSQL, MySQL, MariaDB, ClickHouse, CockroachDB, YugabyteDB, and Spanner dialects
   - Implements visitor pattern for extensible rendering
 
 - **`platform/`** - Database platform constants and identifiers
@@ -113,7 +113,7 @@ Provides comprehensive database migration functionality:
 
 - **`planner/`** - Migration planning and SQL generation
   - Converts schema differences into executable SQL statements
-  - Dialect-specific planners for PostgreSQL, MySQL, MariaDB, and ClickHouse
+  - Dialect-specific planners for PostgreSQL, MySQL, MariaDB, ClickHouse, and PostgreSQL-family distributed SQL targets
   - Handles dependency ordering and safety checks
 
 - **`schemadiff/`** - Schema comparison and difference analysis
@@ -124,7 +124,7 @@ Provides comprehensive database migration functionality:
 #### `dbschema/` - Database Schema Operations
 Handles all database interactions and schema operations:
 
-- **Connection management** for PostgreSQL, MySQL, MariaDB, and ClickHouse
+- **Connection management** for PostgreSQL, MySQL, MariaDB, ClickHouse, CockroachDB, YugabyteDB, and Spanner
 - **Schema reading and introspection** from live databases (including ClickHouse `system.tables` / `system.columns` / `system.data_skipping_indices`)
 - **Schema writing and migration execution** with transaction support (transactions are no-ops on ClickHouse — see the package godoc)
 - **Database cleaning and schema dropping** capabilities
@@ -842,7 +842,7 @@ go test -v ./migration/...
 
 ### Integration Testing Framework
 
-Ptah includes a comprehensive integration testing framework that validates migration functionality across PostgreSQL, MySQL, MariaDB, and ClickHouse.
+Ptah includes a comprehensive integration testing framework that validates migration functionality across PostgreSQL, MySQL, MariaDB, ClickHouse, and opt-in PostgreSQL-family distributed SQL targets.
 
 #### Run Integration Tests
 
@@ -959,6 +959,10 @@ docker run --name test-mysql \
 - **PostgreSQL** - Full support including enums, constraints (CHECK, UNIQUE, FOREIGN KEY, EXCLUDE), indexes, RLS policies, and extensions
 - **MySQL** - Full support with MySQL-specific optimizations
 - **MariaDB** - Full support with MariaDB-specific features
+- **ClickHouse** - Opt-in MergeTree-oriented support for compatible scenarios
+- **CockroachDB** - PostgreSQL-family common subset via `platform.CockroachDB`; no `CREATE INDEX CONCURRENTLY`, XML, advisory locks, or RLS
+- **YugabyteDB** - PostgreSQL-family common subset via `platform.YugabyteDB`; regular `CREATE INDEX` is used instead of PostgreSQL `CONCURRENTLY`
+- **Spanner** - Conservative PostgreSQL-interface routing via `platform.Spanner`; full Spanner-specific DDL is not yet implemented
 
 ---
 
