@@ -32,11 +32,12 @@ package renderer
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/convert/fromschema"
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/core/renderer/dialects/clickhouse"
 	"github.com/stokaro/ptah/core/renderer/dialects/mariadb"
 	"github.com/stokaro/ptah/core/renderer/dialects/mysql"
@@ -46,7 +47,7 @@ import (
 
 // SupportedDialects returns a list of all supported database dialects.
 func SupportedDialects() []string {
-	return []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse"}
+	return []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse", "cockroachdb", "yugabytedb", "spanner"}
 }
 
 // NewRenderer creates a new renderer for the specified database dialect.
@@ -57,17 +58,19 @@ func SupportedDialects() []string {
 //
 // Returns an error if the dialect is not supported.
 func NewRenderer(dialect string) types.RenderVisitor {
-	normalizedDialect := strings.ToLower(strings.TrimSpace(dialect))
+	normalizedDialect := platform.NormalizeDialect(dialect)
 
 	switch normalizedDialect {
-	case "postgresql", "postgres":
+	case platform.Postgres:
 		return postgres.New()
-	case "mysql":
+	case platform.MySQL:
 		return mysql.New()
-	case "mariadb":
+	case platform.MariaDB:
 		return mariadb.New()
-	case "clickhouse":
+	case platform.ClickHouse:
 		return clickhouse.New()
+	case platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+		return postgres.NewWithCapabilities(capability.ForDialect(normalizedDialect), normalizedDialect)
 	default:
 		panic(fmt.Sprintf("unsupported database dialect: %s", dialect))
 	}

@@ -61,6 +61,18 @@ services:
     #   MARIADB_PASSWORD: ptah_password
     #   MARIADB_ROOT_PASSWORD: root_password
 
+  # CockroachDB Database Configuration
+  cockroachdb:
+    # Customize the port mapping if 26257 conflicts with your local services
+    ports:
+      - "26257:26257"  # Default: CockroachDB SQL on localhost:26257
+
+  # YugabyteDB Database Configuration
+  yugabytedb:
+    # Customize the port mapping if 5434 conflicts with your local services
+    ports:
+      - "5434:5433"  # Default: YugabyteDB YSQL on localhost:5434
+
   # Test Runner Service Configuration
   ptah-tester:
     # Override environment variables for local testing
@@ -68,6 +80,8 @@ services:
     #   POSTGRES_URL: "postgres://ptah_user:ptah_password@postgres:5432/ptah_test?sslmode=disable"
     #   MYSQL_URL: "mysql://ptah_user:ptah_password@tcp(mysql:3306)/ptah_test"
     #   MARIADB_URL: "mysql://ptah_user:ptah_password@tcp(mariadb:3306)/ptah_test"
+    #   COCKROACHDB_URL: "cockroachdb://root@cockroachdb:26257/defaultdb?sslmode=disable"
+    #   YUGABYTEDB_URL: "yugabytedb://yugabyte@yugabytedb:5433/yugabyte?sslmode=disable"
     
     # Add additional volumes for development
     # volumes:
@@ -105,3 +119,4 @@ services:
 #   local_postgres_data:
 #   local_mysql_data:
 #   local_mariadb_data:
+#   local_cockroachdb_data:

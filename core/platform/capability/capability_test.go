@@ -96,6 +96,9 @@ func TestPresets_AllValid_AndCoverEveryRegisteredCapability(t *testing.T) {
 		"Postgres16":    capability.Postgres16(),
 		"Postgres13":    capability.Postgres13(),
 		"ClickHouse24":  capability.ClickHouse24(),
+		"CockroachDB23": capability.CockroachDB23(),
+		"YugabyteDB25":  capability.YugabyteDB25(),
+		"Spanner":       capability.SpannerPostgres(),
 	}
 	for name, preset := range presets {
 		c.Assert(preset.Validate(), qt.IsNil, qt.Commentf("preset %s must validate", name))
@@ -150,6 +153,26 @@ func TestPresets_KeyDifferences(t *testing.T) {
 	c.Assert(legacy.Has(capability.DropIndexIfExists), qt.IsFalse)
 	c.Assert(legacy.Has(capability.CheckConstraintsEnforced), qt.IsFalse)
 	c.Assert(legacy.Has(capability.EnumInlineColumn), qt.IsTrue)
+
+	// Distributed-SQL targets share the PostgreSQL family but not every
+	// PostgreSQL feature.
+	cockroach := capability.CockroachDB23()
+	c.Assert(cockroach.Has(capability.EnumCustomType), qt.IsTrue)
+	c.Assert(cockroach.Has(capability.ForeignKeys), qt.IsTrue)
+	c.Assert(cockroach.Has(capability.CreateIndexConcurrently), qt.IsFalse)
+	c.Assert(cockroach.Has(capability.XMLType), qt.IsFalse)
+	c.Assert(cockroach.Has(capability.AdvisoryLocks), qt.IsFalse)
+
+	yugabyte := capability.YugabyteDB25()
+	c.Assert(yugabyte.Has(capability.EnumCustomType), qt.IsTrue)
+	c.Assert(yugabyte.Has(capability.ForeignKeys), qt.IsTrue)
+	c.Assert(yugabyte.Has(capability.CreateIndexConcurrently), qt.IsFalse)
+
+	spanner := capability.SpannerPostgres()
+	c.Assert(spanner.Has(capability.EnumCustomType), qt.IsFalse)
+	c.Assert(spanner.Has(capability.ForeignKeys), qt.IsFalse)
+	c.Assert(spanner.Has(capability.Sequences), qt.IsFalse)
+	c.Assert(spanner.Has(capability.XMLType), qt.IsFalse)
 }
 
 func TestCapabilities_With_DoesNotMutateReceiver(t *testing.T) {
@@ -191,6 +214,9 @@ func TestForDialect(t *testing.T) {
 	c.Assert(capability.ForDialect("postgresql").Has(capability.EnumCustomType), qt.IsTrue)
 	c.Assert(capability.ForDialect("pgx").Has(capability.EnumCustomType), qt.IsTrue)
 	c.Assert(capability.ForDialect("ch").Has(capability.EnumInlineColumn), qt.IsTrue)
+	c.Assert(capability.ForDialect("crdb").Has(capability.CreateIndexConcurrently), qt.IsFalse)
+	c.Assert(capability.ForDialect("yugabyte").Has(capability.CreateIndexConcurrently), qt.IsFalse)
+	c.Assert(capability.ForDialect("spanner").Has(capability.ForeignKeys), qt.IsFalse)
 	// Unknown dialects get the conservative nil set.
 	c.Assert(capability.ForDialect("oracle"), qt.IsNil)
 }
@@ -227,6 +253,10 @@ func TestForServerVersion(t *testing.T) {
 		{"postgres 14 exact boundary", "postgres", "PostgreSQL 14.0", capability.CreateOrReplaceTrigger, true},
 		{"postgres 13 plain", "postgres", "13.14", capability.CreateOrReplaceTrigger, false},
 		{"postgres 13 still concurrent-capable", "postgres", "13.14", capability.CreateIndexConcurrently, true},
+		{"cockroach banner disables concurrent indexes", "postgres", "CockroachDB CCL v23.2.5 (x86_64-pc-linux-gnu)", capability.CreateIndexConcurrently, false},
+		{"cockroach banner disables XML", "postgres", "CockroachDB CCL v23.2.5 (x86_64-pc-linux-gnu)", capability.XMLType, false},
+		{"yugabytedb banner disables concurrent indexes", "postgres", "PostgreSQL 11.2-YB-2.25.1.0-b0 on x86_64-pc-linux-gnu, compiled by clang", capability.CreateIndexConcurrently, false},
+		{"spanner banner disables foreign keys", "postgres", "Cloud Spanner PostgreSQL interface", capability.ForeignKeys, false},
 		{"unparseable falls back to dialect default", "mysql", "who knows", capability.DropConstraintGeneric, true},
 	}
 	for _, tt := range tests {

@@ -43,7 +43,7 @@ var rootFlags = map[string]cobraflags.Flag{
 	},
 	databasesFlag: &cobraflags.StringSliceFlag{
 		Name:  databasesFlag,
-		Value: []string{"postgres", "mysql", "mariadb"},
+		Value: []string{"postgres", "mysql", "mariadb", "cockroachdb", "yugabytedb"},
 		Usage: "Databases to test against",
 	},
 	scenariosFlag: &cobraflags.StringSliceFlag{
@@ -158,12 +158,7 @@ func runIntegrationTests(cmd *cobra.Command, args []string) error {
 	runner := integration.NewTestRunner(fixturesFS)
 
 	// Add database connections from environment variables
-	dbConnections := map[string]string{
-		"postgres":   os.Getenv("POSTGRES_URL"),
-		"mysql":      os.Getenv("MYSQL_URL"),
-		"mariadb":    os.Getenv("MARIADB_URL"),
-		"clickhouse": os.Getenv("CLICKHOUSE_URL"),
-	}
+	dbConnections := configuredDatabaseConnections()
 
 	// Filter databases based on command line arguments
 	for _, dbName := range databases {
@@ -256,6 +251,17 @@ func runIntegrationTests(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("\n🎉 All tests passed!\n")
 	return nil
+}
+
+func configuredDatabaseConnections() map[string]string {
+	return map[string]string{
+		"postgres":    os.Getenv("POSTGRES_URL"),
+		"mysql":       os.Getenv("MYSQL_URL"),
+		"mariadb":     os.Getenv("MARIADB_URL"),
+		"clickhouse":  os.Getenv("CLICKHOUSE_URL"),
+		"cockroachdb": os.Getenv("COCKROACHDB_URL"),
+		"yugabytedb":  os.Getenv("YUGABYTEDB_URL"),
+	}
 }
 
 func listScenarios(cmd *cobra.Command, args []string) error {

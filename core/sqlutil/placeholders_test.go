@@ -32,6 +32,24 @@ func TestRebind(t *testing.T) {
 			want:    "DELETE FROM t WHERE id = $1",
 		},
 		{
+			name:    "cockroachdb postgres-family placeholders",
+			dialect: "cockroachdb",
+			query:   "INSERT INTO t (a, b) VALUES (?, ?)",
+			want:    "INSERT INTO t (a, b) VALUES ($1, $2)",
+		},
+		{
+			name:    "yugabytedb postgres-family placeholders",
+			dialect: "yugabytedb",
+			query:   "SELECT ?",
+			want:    "SELECT $1",
+		},
+		{
+			name:    "spanner postgres-family placeholders",
+			dialect: "spanner",
+			query:   "DELETE FROM t WHERE id = ?",
+			want:    "DELETE FROM t WHERE id = $1",
+		},
+		{
 			name:    "case-insensitive dialect",
 			dialect: "PostgreSQL",
 			query:   "SELECT ?",

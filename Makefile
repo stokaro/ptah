@@ -74,6 +74,14 @@ integration-test-mariadb: docker-build
 	@echo "Running integration tests against MariaDB only..."
 	docker compose --profile test run --rm ptah-tester --databases=mariadb --report=html --verbose
 
+integration-test-cockroachdb: docker-build
+	@echo "Running integration tests against CockroachDB only..."
+	docker compose --profile test run --rm ptah-tester --databases=cockroachdb --scenarios=dynamic_cockroachdb_common_subset --report=html --verbose
+
+integration-test-yugabytedb: docker-build
+	@echo "Running integration tests against YugabyteDB only..."
+	docker compose --profile test run --rm ptah-tester --databases=yugabytedb --scenarios=dynamic_yugabytedb_common_subset --report=html --verbose
+
 # Run integration tests using Docker Compose with custom arguments
 integration-test-custom: docker-build
 	@echo "Running integration tests with custom arguments..."
@@ -83,7 +91,7 @@ integration-test-custom: docker-build
 # Start databases only (for development)
 db-start:
 	@echo "Starting databases..."
-	docker compose up -d postgres mysql mariadb
+	docker compose up -d postgres mysql mariadb cockroachdb yugabytedb
 
 # Stop databases
 db-stop:
@@ -93,7 +101,7 @@ db-stop:
 # View database logs
 db-logs:
 	@echo "Showing database logs..."
-	docker compose logs -f postgres mysql mariadb
+	docker compose logs -f postgres mysql mariadb cockroachdb yugabytedb
 
 # Clean up Docker resources
 docker-clean:

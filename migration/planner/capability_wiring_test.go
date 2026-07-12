@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
@@ -45,4 +46,24 @@ func TestGetPlanner_CapabilityWiring(t *testing.T) {
 		c.Assert(sql, qt.Not(qt.Contains), "IF EXISTS",
 			qt.Commentf("MySQL output must be byte-identical to the pre-capability planner; got:\n%s", sql))
 	})
+}
+
+func TestGetPlanner_DistributedSQLCapabilityWiring(t *testing.T) {
+	c := qt.New(t)
+
+	diff := &types.SchemaDiff{IndexesAdded: []string{"idx_users_email"}}
+	generated := &goschema.Database{
+		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
+		Indexes: []goschema.Index{
+			{Name: "idx_users_email", StructName: "User", Fields: []string{"email"}},
+		},
+	}
+
+	nodes := planner.GenerateSchemaDiffAST(diff, generated, platform.CockroachDB)
+	sql, err := renderer.RenderSQL(platform.CockroachDB, nodes...)
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);",
+		qt.Commentf("got:\n%s", sql))
+	c.Assert(sql, qt.Not(qt.Contains), "CONCURRENTLY",
+		qt.Commentf("CockroachDB must stay on plain CREATE INDEX; got:\n%s", sql))
 }

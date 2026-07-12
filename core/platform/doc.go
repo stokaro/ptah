@@ -11,6 +11,10 @@
 //   - Postgres: PostgreSQL database platform identifier
 //   - MySQL: MySQL database platform identifier
 //   - MariaDB: MariaDB database platform identifier
+//   - ClickHouse: ClickHouse database platform identifier
+//   - CockroachDB: CockroachDB PostgreSQL-family platform identifier
+//   - YugabyteDB: YugabyteDB YSQL PostgreSQL-family platform identifier
+//   - Spanner: Cloud Spanner PostgreSQL-interface platform identifier
 //
 // # Usage
 //
@@ -33,6 +37,8 @@
 //			return generateMySQLSchema()
 //		case platform.MariaDB:
 //			return generateMariaDBSchema()
+//		case platform.CockroachDB:
+//			return generateCockroachDBSchema()
 //		default:
 //			return generateGenericSchema()
 //		}

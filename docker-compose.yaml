@@ -68,6 +68,36 @@ services:
       timeout: 5s
       retries: 10
 
+  cockroachdb:
+    image: cockroachdb/cockroach:v23.2.5
+    command:
+      - start-single-node
+      - --insecure
+      - --advertise-addr=localhost:26257
+    ports:
+      - "26257:26257"
+    volumes:
+      - cockroachdb_data:/cockroach/cockroach-data
+    healthcheck:
+      test: ["CMD", "/cockroach/cockroach", "sql", "--insecure", "--host=localhost:26257", "--execute=SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  yugabytedb:
+    image: yugabytedb/yugabyte:2026.1.0.0-b118
+    command:
+      - bash
+      - -lc
+      - ip=$$(hostname -i); ip=$${ip%% *}; exec bin/yugabyted start --daemon=false --advertise_address=$$ip --ui=false
+    ports:
+      - "5434:5433"
+    healthcheck:
+      test: ["CMD-SHELL", "ip=$$(hostname -i); ip=$${ip%% *}; bin/ysqlsh -h $$ip -p 5433 -U yugabyte -d yugabyte -c 'SELECT 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+
   # Test runner service
   ptah-tester:
     build:
@@ -82,11 +112,17 @@ services:
         condition: service_healthy
       clickhouse:
         condition: service_healthy
+      cockroachdb:
+        condition: service_healthy
+      yugabytedb:
+        condition: service_healthy
     environment:
       POSTGRES_URL: "postgres://ptah_user:ptah_password@postgres:5432/ptah_test?sslmode=disable"
       MYSQL_URL: "mysql://ptah_user:ptah_password@tcp(mysql:3306)/ptah_test"
       MARIADB_URL: "mariadb://ptah_user:ptah_password@tcp(mariadb:3306)/ptah_test"
       CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@clickhouse:9000/ptah_test"
+      COCKROACHDB_URL: "cockroachdb://root@cockroachdb:26257/defaultdb?sslmode=disable"
+      YUGABYTEDB_URL: "yugabytedb://yugabyte@yugabytedb:5433/yugabyte?sslmode=disable"
     volumes:
       - ./integration/reports:/app/reports
       - ./integration/fixtures:/app/fixtures
@@ -98,3 +134,4 @@ volumes:
   mysql_data:
   mariadb_data:
   clickhouse_data:
+  cockroachdb_data:

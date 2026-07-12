@@ -91,6 +91,18 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
+      - name: Start distributed SQL databases
+        run: |
+          docker run --detach --name ptah-cockroachdb \
+            --publish 26257:26257 \
+            cockroachdb/cockroach:v23.2.5 \
+            start-single-node --insecure --advertise-addr=localhost:26257
+
+          docker run --detach --name ptah-yugabytedb \
+            --publish 5433:5433 \
+            yugabytedb/yugabyte:2026.1.0.0-b118 \
+            bash -lc 'ip=$(hostname -i); ip=${ip%% *}; exec bin/yugabyted start --daemon=false --advertise_address=$ip --ui=false'
+
       - name: Wait for databases to be ready
         run: |
           echo "Waiting for PostgreSQL..."
@@ -120,6 +132,20 @@ jobs:
             sleep 2
           done
           echo "ClickHouse is ready!"
+
+          echo "Waiting for CockroachDB..."
+          until docker exec ptah-cockroachdb /cockroach/cockroach sql --insecure --host=127.0.0.1:26257 --execute="SELECT 1"; do
+            echo "CockroachDB is unavailable - sleeping"
+            sleep 2
+          done
+          echo "CockroachDB is ready!"
+
+          echo "Waiting for YugabyteDB..."
+          until docker exec ptah-yugabytedb bash -lc 'ip=$(hostname -i); ip=${ip%% *}; bin/ysqlsh -h "$ip" -p 5433 -U yugabyte -d yugabyte -c "SELECT 1"'; do
+            echo "YugabyteDB is unavailable - sleeping"
+            sleep 5
+          done
+          echo "YugabyteDB is ready!"
       
       - name: Run executor integration tests with PostgreSQL
         env:
@@ -159,8 +185,18 @@ jobs:
           MYSQL_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
           MARIADB_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
           CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
+          COCKROACHDB_URL: "cockroachdb://root@localhost:26257/defaultdb?sslmode=disable"
+          YUGABYTEDB_URL: "yugabytedb://yugabyte@localhost:5433/yugabyte?sslmode=disable"
         run: |
-          ./integration-test --databases=postgres,mysql,mariadb,clickhouse --report=stdout,txt,json,html --verbose --output=./reports
+          ./integration-test --databases=postgres,mysql,mariadb,clickhouse,cockroachdb,yugabytedb --report=stdout,txt,json,html --verbose --output=./reports
+
+      - name: Run distributed SQL live smoke tests
+        env:
+          COCKROACHDB_URL: "cockroachdb://root@localhost:26257/defaultdb?sslmode=disable"
+          YUGABYTEDB_URL: "yugabytedb://yugabyte@localhost:5433/yugabyte?sslmode=disable"
+        run: |
+          ./integration-test --databases=cockroachdb --scenarios=dynamic_cockroachdb_common_subset --report=stdout,txt,json,html --verbose --output=./reports
+          ./integration-test --databases=yugabytedb --scenarios=dynamic_yugabytedb_common_subset --report=stdout,txt,json,html --verbose --output=./reports
 
       - name: Upload integration test reports
         uses: actions/upload-artifact@v7
@@ -177,5 +213,7 @@ jobs:
           MYSQL_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
           MARIADB_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
           CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
+          COCKROACHDB_URL: "cockroachdb://root@localhost:26257/defaultdb?sslmode=disable"
+          YUGABYTEDB_URL: "yugabytedb://yugabyte@localhost:5433/yugabyte?sslmode=disable"
         run: |
           go test -v -race ./integration -timeout 30m

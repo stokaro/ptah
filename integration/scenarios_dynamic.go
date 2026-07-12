@@ -272,6 +272,18 @@ func GetDynamicScenarios() []TestScenario {
 			EnhancedTestFunc:     testClickHouseMergeTreeEngine,
 			ClickHouseCompatible: true,
 		},
+		{
+			Name:                          "dynamic_cockroachdb_common_subset",
+			Description:                   "Test CockroachDB common PostgreSQL-compatible subset without SERIAL, XML, foreign keys, or concurrent indexes",
+			EnhancedTestFunc:              testCockroachDBCommonSubset,
+			PostgresDistributedCompatible: true,
+		},
+		{
+			Name:                          "dynamic_yugabytedb_common_subset",
+			Description:                   "Test YugabyteDB common PostgreSQL-compatible subset without SERIAL, XML, or concurrent indexes",
+			EnhancedTestFunc:              testYugabyteDBCommonSubset,
+			PostgresDistributedCompatible: true,
+		},
 	}
 }
 

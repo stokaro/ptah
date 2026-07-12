@@ -68,3 +68,28 @@ func TestDynamicScenarioIdentification(t *testing.T) {
 		c.Assert(scenario.EnhancedTestFunc, qt.IsNotNil, qt.Commentf("Dynamic scenario %s should have EnhancedTestFunc", scenario.Name))
 	}
 }
+
+func TestConfiguredDatabaseConnectionsIncludesDistributedSQL(t *testing.T) {
+	c := qt.New(t)
+
+	t.Setenv("POSTGRES_URL", "postgres://postgres.example/db")
+	t.Setenv("MYSQL_URL", "mysql://mysql.example/db")
+	t.Setenv("MARIADB_URL", "mariadb://mariadb.example/db")
+	t.Setenv("CLICKHOUSE_URL", "clickhouse://clickhouse.example/db")
+	t.Setenv("COCKROACHDB_URL", "cockroachdb://cockroach.example/defaultdb")
+	t.Setenv("YUGABYTEDB_URL", "yugabytedb://yugabyte.example/yugabyte")
+
+	connections := configuredDatabaseConnections()
+
+	c.Assert(connections["cockroachdb"], qt.Equals, "cockroachdb://cockroach.example/defaultdb")
+	c.Assert(connections["yugabytedb"], qt.Equals, "yugabytedb://yugabyte.example/yugabyte")
+}
+
+func TestDefaultDatabasesIncludeOSSDistributedSQL(t *testing.T) {
+	c := qt.New(t)
+
+	defaultDatabases := rootFlags[databasesFlag].GetStringSlice()
+
+	c.Assert(defaultDatabases, qt.Contains, "cockroachdb")
+	c.Assert(defaultDatabases, qt.Contains, "yugabytedb")
+}

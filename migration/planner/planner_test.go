@@ -33,6 +33,21 @@ func TestGetPlanner(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:    "cockroachdb planner",
+			dialect: platform.CockroachDB,
+			wantErr: false,
+		},
+		{
+			name:    "yugabytedb planner",
+			dialect: platform.YugabyteDB,
+			wantErr: false,
+		},
+		{
+			name:    "spanner planner",
+			dialect: platform.Spanner,
+			wantErr: false,
+		},
+		{
 			name:    "unknown dialect",
 			dialect: "unknown",
 			wantErr: true,

@@ -2,13 +2,14 @@
 // a version line) can accept, as a validated set of feature flags.
 //
 // Ptah maps several real targets onto one implementation: MySQL and MariaDB
-// share a planner and a renderer, and versions within one dialect differ in
-// what DDL they accept (MySQL gained generic DROP CONSTRAINT in 8.0.19,
-// enforced CHECK constraints in 8.0.16; IF EXISTS on constraint drops is
-// MariaDB-only; and so on). Encoding each variant as a separate dialect would
-// multiply planners and renderers; instead, planners and renderers consult a
-// capability set and restrict or enable individual emissions per target
-// (issues #225/#226).
+// share a planner and a renderer; CockroachDB, YugabyteDB, and Spanner use the
+// PostgreSQL family with target-specific restrictions; and versions within one
+// dialect differ in what DDL they accept (MySQL gained generic DROP CONSTRAINT
+// in 8.0.19, enforced CHECK constraints in 8.0.16; IF EXISTS on constraint
+// drops is MariaDB-only; and so on). Encoding each variant as a separate
+// dialect would multiply planners and renderers; instead, planners and
+// renderers consult a capability set and restrict or enable individual
+// emissions per target (issues #225/#226/#171).
 //
 // # Model
 //
@@ -114,6 +115,27 @@ const (
 	// RowLevelSecurity marks support for row-level security policies
 	// (PostgreSQL ALTER TABLE ... ENABLE ROW LEVEL SECURITY + CREATE POLICY).
 	RowLevelSecurity Capability = "row_level_security"
+
+	// ForeignKeys marks support for declarative FOREIGN KEY constraints.
+	// PostgreSQL, CockroachDB, YugabyteDB, MySQL, and MariaDB support them;
+	// Spanner's PostgreSQL interface has historically not supported the
+	// PostgreSQL FOREIGN KEY surface, so its conservative preset disables it.
+	ForeignKeys Capability = "foreign_keys"
+
+	// Sequences marks support for database sequence objects used by
+	// PostgreSQL SERIAL/BIGSERIAL or explicit CREATE SEQUENCE support.
+	Sequences Capability = "sequences"
+
+	// XMLType marks support for the PostgreSQL XML column type. CockroachDB
+	// and Spanner PostgreSQL disable it; callers should use platform-specific
+	// type overrides for those targets.
+	XMLType Capability = "xml_type"
+
+	// AdvisoryLocks marks support for PostgreSQL advisory locks such as
+	// pg_advisory_lock. Migration-level lock selection is outside this
+	// package, but the flag lets callers avoid assuming PostgreSQL lock
+	// functions exist on every PostgreSQL-wire engine.
+	AdvisoryLocks Capability = "advisory_locks"
 )
 
 // spec documents a registry entry and its implication edges.
@@ -159,6 +181,18 @@ var registry = map[Capability]spec{
 	},
 	RowLevelSecurity: {
 		doc: "row-level security policies (PostgreSQL)",
+	},
+	ForeignKeys: {
+		doc: "declarative FOREIGN KEY constraints",
+	},
+	Sequences: {
+		doc: "database sequence objects (SERIAL/BIGSERIAL or explicit CREATE SEQUENCE support)",
+	},
+	XMLType: {
+		doc: "PostgreSQL XML column type",
+	},
+	AdvisoryLocks: {
+		doc: "PostgreSQL advisory lock functions",
 	},
 }
 
@@ -275,6 +309,10 @@ func MySQL80() Capabilities {
 		CreateIndexConcurrently:  false,
 		CreateOrReplaceTrigger:   false,
 		RowLevelSecurity:         false,
+		ForeignKeys:              true,
+		Sequences:                false,
+		XMLType:                  false,
+		AdvisoryLocks:            false,
 	}
 }
 
@@ -309,6 +347,10 @@ func MariaDB1011() Capabilities {
 		CreateIndexConcurrently:  false,
 		CreateOrReplaceTrigger:   true,
 		RowLevelSecurity:         false,
+		ForeignKeys:              true,
+		Sequences:                true,
+		XMLType:                  false,
+		AdvisoryLocks:            false,
 	}
 }
 
@@ -339,6 +381,10 @@ func Postgres16() Capabilities {
 		CreateIndexConcurrently:  true,
 		CreateOrReplaceTrigger:   true,
 		RowLevelSecurity:         true,
+		ForeignKeys:              true,
+		Sequences:                true,
+		XMLType:                  true,
+		AdvisoryLocks:            true,
 	}
 }
 
@@ -364,7 +410,54 @@ func ClickHouse24() Capabilities {
 		CreateIndexConcurrently:  false,
 		CreateOrReplaceTrigger:   false,
 		RowLevelSecurity:         false,
+		ForeignKeys:              false,
+		Sequences:                false,
+		XMLType:                  false,
+		AdvisoryLocks:            false,
 	}
+}
+
+// CockroachDB23 is the preset for CockroachDB's PostgreSQL-compatible surface.
+// CockroachDB runs schema changes online by design, so PostgreSQL's
+// CONCURRENTLY keyword is not a meaningful or portable emission target. It
+// also lacks PostgreSQL's XML type and advisory-lock functions.
+func CockroachDB23() Capabilities {
+	return Postgres16().
+		With(CreateIndexConcurrently, false).
+		With(XMLType, false).
+		With(AdvisoryLocks, false).
+		With(RowLevelSecurity, false)
+}
+
+// YugabyteDB25 is the preset for YugabyteDB YSQL. It stays close to
+// PostgreSQL for the common DDL subset, but regular CREATE INDEX is already
+// asynchronous in YugabyteDB, so the PostgreSQL CONCURRENTLY keyword is not
+// emitted.
+func YugabyteDB25() Capabilities {
+	return Postgres16().
+		With(CreateIndexConcurrently, false).
+		With(AdvisoryLocks, false).
+		With(RowLevelSecurity, false)
+}
+
+// SpannerPostgres is the conservative preset for Cloud Spanner's PostgreSQL
+// interface. Spanner's SQL surface is sufficiently different that Ptah only
+// routes the simplest PostgreSQL-family statements through this preset; enums,
+// sequences, RLS, advisory locks, XML, and foreign keys are disabled.
+func SpannerPostgres() Capabilities {
+	return Postgres16().
+		With(DropConstraintGeneric, false).
+		With(DropConstraintIfExists, false).
+		With(DropIndexIfExists, false).
+		With(CheckConstraintsEnforced, false).
+		With(EnumCustomType, false).
+		With(CreateIndexConcurrently, false).
+		With(CreateOrReplaceTrigger, false).
+		With(RowLevelSecurity, false).
+		With(ForeignKeys, false).
+		With(Sequences, false).
+		With(XMLType, false).
+		With(AdvisoryLocks, false)
 }
 
 // ForDialect returns the default preset for a dialect name (normalized via
@@ -380,6 +473,12 @@ func ForDialect(dialect string) Capabilities {
 		return MariaDB1011()
 	case platform.ClickHouse:
 		return ClickHouse24()
+	case platform.CockroachDB:
+		return CockroachDB23()
+	case platform.YugabyteDB:
+		return YugabyteDB25()
+	case platform.Spanner:
+		return SpannerPostgres()
 	default:
 		return nil
 	}
@@ -394,10 +493,20 @@ func ForDialect(dialect string) Capabilities {
 // version cannot be parsed, the dialect's default preset is returned.
 func ForServerVersion(dialect, version string) Capabilities {
 	normalized := platform.NormalizeDialect(dialect)
+	versionLower := strings.ToLower(version)
+
+	switch {
+	case strings.Contains(versionLower, "cockroachdb"):
+		return CockroachDB23()
+	case strings.Contains(versionLower, "yugabytedb") || strings.Contains(versionLower, "yugabyte") || strings.Contains(versionLower, "-yb-"):
+		return YugabyteDB25()
+	case strings.Contains(versionLower, "spanner"):
+		return SpannerPostgres()
+	}
 
 	// MariaDB announces itself in the version string even when connected via
 	// the mysql dialect/driver; trust the string over the declared dialect.
-	if strings.Contains(strings.ToLower(version), "mariadb") {
+	if strings.Contains(versionLower, "mariadb") {
 		return mariaDBForVersion(version)
 	}
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/dbschema/types"
 )
 
@@ -12,16 +13,24 @@ import (
 type Reader struct {
 	db     *sql.DB
 	schema string
+	caps   capability.Capabilities
 }
 
 // NewPostgreSQLReader creates a new PostgreSQL schema reader
 func NewPostgreSQLReader(db *sql.DB, schema string) *Reader {
+	return NewPostgreSQLReaderWithCapabilities(db, schema, capability.Postgres16())
+}
+
+// NewPostgreSQLReaderWithCapabilities creates a PostgreSQL-family schema reader
+// whose PostgreSQL-specific catalog reads are gated by target capabilities.
+func NewPostgreSQLReaderWithCapabilities(db *sql.DB, schema string, caps capability.Capabilities) *Reader {
 	if schema == "" {
 		schema = "public"
 	}
 	return &Reader{
 		db:     db,
 		schema: schema,
+		caps:   caps,
 	}
 }
 
@@ -71,12 +80,14 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	}
 	schema.Functions = functions
 
-	// Read RLS policies (PostgreSQL-specific)
-	rlsPolicies, err := r.readRLSPolicies()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read RLS policies: %w", err)
+	if r.caps.Has(capability.RowLevelSecurity) {
+		// Read RLS policies (PostgreSQL-specific)
+		rlsPolicies, err := r.readRLSPolicies()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read RLS policies: %w", err)
+		}
+		schema.RLSPolicies = rlsPolicies
 	}
-	schema.RLSPolicies = rlsPolicies
 
 	// Read roles (PostgreSQL-specific)
 	roles, err := r.readRoles()

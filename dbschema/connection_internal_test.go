@@ -70,6 +70,94 @@ func TestConvertClickHouseURL(t *testing.T) {
 	}
 }
 
+func TestConvertPostgresWireURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "postgres passthrough with pool params removed",
+			input:    "postgres://user:pass@localhost:5432/app?pool_max_conns=10&sslmode=disable",
+			expected: "postgres://user:pass@localhost:5432/app?sslmode=disable",
+		},
+		{
+			name:     "cockroachdb scheme rewrites to postgres for pgx",
+			input:    "cockroachdb://root@localhost:26257/defaultdb?sslmode=disable",
+			expected: "postgres://root@localhost:26257/defaultdb?sslmode=disable",
+		},
+		{
+			name:     "yugabytedb scheme rewrites to postgres for pgx",
+			input:    "yugabytedb://yugabyte@localhost:5433/yugabyte",
+			expected: "postgres://yugabyte@localhost:5433/yugabyte",
+		},
+		{
+			name:     "spanner scheme rewrites to postgres for pgx",
+			input:    "spanner://user@localhost:5432/db",
+			expected: "postgres://user@localhost:5432/db",
+		},
+		{
+			name:     "malformed URL falls back to cleaned input",
+			input:    "::not-a-url::",
+			expected: "::not-a-url::",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(convertPostgresWireURL(tt.input), qt.Equals, tt.expected)
+		})
+	}
+}
+
+func TestDetectPostgresWireDialect(t *testing.T) {
+	tests := []struct {
+		name     string
+		declared string
+		version  string
+		expected string
+	}{
+		{
+			name:     "plain postgres",
+			declared: "postgres",
+			version:  "PostgreSQL 16.3 (Debian 16.3-1.pgdg120+1)",
+			expected: "postgres",
+		},
+		{
+			name:     "cockroach detected from postgres URL",
+			declared: "postgres",
+			version:  "CockroachDB CCL v23.2.5 (x86_64-pc-linux-gnu)",
+			expected: "cockroachdb",
+		},
+		{
+			name:     "yugabyte detected from postgres URL",
+			declared: "postgres",
+			version:  "PostgreSQL 11.2-YB-2.25.1.0-b0 on x86_64-pc-linux-gnu, compiled by clang, YugabyteDB",
+			expected: "yugabytedb",
+		},
+		{
+			name:     "spanner detected from postgres URL",
+			declared: "postgres",
+			version:  "Cloud Spanner PostgreSQL interface",
+			expected: "spanner",
+		},
+		{
+			name:     "explicit cockroach survives generic banner",
+			declared: "cockroachdb",
+			version:  "PostgreSQL-compatible server",
+			expected: "cockroachdb",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(detectPostgresWireDialect(tt.declared, tt.version), qt.Equals, tt.expected)
+		})
+	}
+}
+
 func TestRemovePostgresPoolParams(t *testing.T) {
 	tests := []struct {
 		name     string

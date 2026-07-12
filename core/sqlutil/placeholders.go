@@ -3,6 +3,8 @@ package sqlutil
 import (
 	"strconv"
 	"strings"
+
+	"github.com/stokaro/ptah/core/platform"
 )
 
 // Rebind converts portable `?` placeholders in query to the dialect's
@@ -22,8 +24,8 @@ import (
 // single-quoted literals and double-quoted identifiers. Apply Rebind to
 // known templates — never to user-supplied SQL.
 func Rebind(dialect, query string) string {
-	switch strings.ToLower(dialect) {
-	case "postgres", "postgresql", "pgx":
+	switch platform.NormalizeDialect(strings.ToLower(dialect)) {
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
 		return rebindToDollar(query)
 	default:
 		return query

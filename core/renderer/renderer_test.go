@@ -15,7 +15,7 @@ func TestSupportedDialects(t *testing.T) {
 	c := qt.New(t)
 
 	dialects := renderer.SupportedDialects()
-	expected := []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse"}
+	expected := []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse", "cockroachdb", "yugabytedb", "spanner"}
 
 	c.Assert(dialects, qt.DeepEquals, expected)
 }
@@ -50,6 +50,26 @@ func TestNewRenderer_SupportedDialects(t *testing.T) {
 			name:     "ClickHouse",
 			dialect:  "clickhouse",
 			expected: "clickhouse",
+		},
+		{
+			name:     "CockroachDB",
+			dialect:  "cockroachdb",
+			expected: "cockroachdb",
+		},
+		{
+			name:     "CockroachDB alias",
+			dialect:  "crdb",
+			expected: "cockroachdb",
+		},
+		{
+			name:     "YugabyteDB",
+			dialect:  "yugabytedb",
+			expected: "yugabytedb",
+		},
+		{
+			name:     "Spanner",
+			dialect:  "spanner",
+			expected: "spanner",
 		},
 		{
 			name:     "Case insensitive PostgreSQL",
@@ -115,6 +135,25 @@ func TestNewRenderer_UnsupportedDialects(t *testing.T) {
 			}, qt.PanicMatches, "unsupported database dialect: "+tt.dialect)
 		})
 	}
+}
+
+func TestPostgresFamilyRenderer_CapabilityGates(t *testing.T) {
+	c := qt.New(t)
+
+	idx := ast.NewIndex("idx_users_email", "users", "email").SetIfNotExists()
+	idx.Concurrently = true
+
+	sql, err := renderer.RenderSQL("cockroachdb", idx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);")
+	c.Assert(sql, qt.Not(qt.Contains), "CONCURRENTLY",
+		qt.Commentf("CockroachDB renderer must strip a stray CONCURRENTLY flag; got:\n%s", sql))
+
+	xmlTable := ast.NewCreateTable("documents").
+		AddColumn(ast.NewColumn("id", "INT8").SetPrimary()).
+		AddColumn(ast.NewColumn("payload", "XML"))
+	_, err = renderer.RenderSQL("cockroachdb", xmlTable)
+	c.Assert(err, qt.ErrorMatches, `error rendering column payload: cockroachdb does not support XML columns; use a platform-specific type override`)
 }
 
 func TestRenderSQL_Success(t *testing.T) {
