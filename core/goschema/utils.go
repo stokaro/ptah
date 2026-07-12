@@ -58,7 +58,7 @@ func sortTablesProcessQueue(queue *[]string, sorted *[]Table, dependencies map[s
 				}
 				inDegree[tableName]--
 				if inDegree[tableName] == 0 {
-					*queue = append(*queue, tableName)
+					*queue = insertSortedString(*queue, tableName)
 				}
 			}
 		}
@@ -134,6 +134,7 @@ func sortTablesByDependencies(r *Database) {
 			queue = append(queue, tableName)
 		}
 	}
+	sort.Strings(queue)
 
 	// Process queue
 	sortTablesProcessQueue(&queue, &sorted, r.Dependencies, inDegree, tableMap)
@@ -170,6 +171,28 @@ func buildDependencyGraph(r *Database) {
 	analyzeFieldForeignKeys(r)
 	analyzeEmbeddedFieldRelations(r)
 	buildFunctionDependencies(r)
+}
+
+// Finalize prepares a programmatically constructed Database for rendering.
+//
+// Parsers that do not go through ParseDir still need the same derived metadata
+// as Go annotations: deduplicated declarations, dependency maps, self-referencing
+// foreign keys, and dependency-ordered tables/functions.
+func Finalize(r *Database) {
+	if r.Dependencies == nil {
+		r.Dependencies = make(map[string][]string)
+	}
+	if r.FunctionDependencies == nil {
+		r.FunctionDependencies = make(map[string][]string)
+	}
+	if r.SelfReferencingForeignKeys == nil {
+		r.SelfReferencingForeignKeys = make(map[string][]SelfReferencingFK)
+	}
+
+	Deduplicate(r)
+	buildDependencyGraph(r)
+	sortTablesByDependencies(r)
+	sortFunctionsByDependencies(r)
 }
 
 // initializeDependencyMaps initializes the dependency tracking maps
@@ -617,6 +640,7 @@ func findZeroDegreeNodes(inDegree map[string]int) []string {
 			queue = append(queue, functionName)
 		}
 	}
+	sort.Strings(queue)
 	return queue
 }
 
@@ -627,12 +651,20 @@ func updateInDegreesAndQueue(current string, dependencies map[string][]string, i
 			if dep == current {
 				inDegree[functionName]--
 				if inDegree[functionName] == 0 {
-					queue = append(queue, functionName)
+					queue = insertSortedString(queue, functionName)
 				}
 			}
 		}
 	}
 	return queue
+}
+
+func insertSortedString(values []string, value string) []string {
+	index, _ := slices.BinarySearch(values, value)
+	values = append(values, "")
+	copy(values[index+1:], values[index:])
+	values[index] = value
+	return values
 }
 
 // handleCircularDependencies detects and handles circular dependencies in function relationships.
