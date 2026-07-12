@@ -1,0 +1,4 @@
+dialect: postgres
+disabled-rules:
+  - MF
+  - BC101

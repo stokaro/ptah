@@ -11,6 +11,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/migration/migrator"
+	"github.com/stokaro/ptah/migration/onlineddl"
 )
 
 var migrateDownCmd = &cobra.Command{
@@ -83,6 +84,7 @@ var migrateDownFlags = map[string]cobraflags.Flag{
 		Usage: "Default per-migration statement timeout, such as 30s or 2m",
 	},
 	dbcli.ConnectTimeoutFlagName: dbcli.NewConnectTimeoutFlag(),
+	dbcli.ConfigFlagName:         dbcli.NewConfigFlag(),
 }
 
 func NewMigrateDownCommand() *cobra.Command {
@@ -153,8 +155,19 @@ func migrateDownCommand(_ *cobra.Command, _ []string) error {
 	// Create filesystem from migrations directory
 	migrationsFS := os.DirFS(migrationsDir)
 
+	// Online-DDL routing works for down migrations too: a rollback ALTER on
+	// a large table is just as lock-heavy as the forward one.
+	onlineCfg, err := dbcli.LoadOnlineDDLConfig(migrateDownFlags[dbcli.ConfigFlagName].GetString())
+	if err != nil {
+		return err
+	}
+	if onlineCfg.Enabled() {
+		fmt.Printf("Online DDL: tool=%s threshold_rows=%d\n", onlineCfg.Tool, onlineCfg.ThresholdRows)
+	}
+	interceptor := onlineddl.New(*onlineCfg).WithDryRun(dryRun)
+
 	// Create migrator to access applied migrations
-	mig, err := migrator.NewFSMigrator(conn, migrationsFS)
+	mig, err := migrator.NewFSMigrator(conn, migrationsFS, migrator.WithStatementInterceptor(interceptor))
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}

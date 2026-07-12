@@ -53,16 +53,32 @@ func (p *RegisteredMigrationProvider) maybeSort() {
 // It scans the filesystem for migration files following the naming convention and
 // automatically creates Migration instances from the SQL files.
 type FSMigrationProvider struct {
-	fsys       fs.FS
-	migrations []*Migration
+	fsys        fs.FS
+	migrations  []*Migration
+	interceptor StatementInterceptor
+}
+
+// FSProviderOption configures a FSMigrationProvider before it loads
+// migrations.
+type FSProviderOption func(*FSMigrationProvider)
+
+// WithStatementInterceptor makes every loaded migration consult the given
+// interceptor for each statement (see StatementInterceptor).
+func WithStatementInterceptor(interceptor StatementInterceptor) FSProviderOption {
+	return func(p *FSMigrationProvider) {
+		p.interceptor = interceptor
+	}
 }
 
 // NewFSMigrationProvider creates a new filesystem-based migration provider.
 // It scans the provided filesystem for migration files and validates that all migrations
 // have both up and down files. Returns an error if the filesystem cannot be scanned
 // or if any migrations are incomplete.
-func NewFSMigrationProvider(fsys fs.FS) (*FSMigrationProvider, error) {
+func NewFSMigrationProvider(fsys fs.FS, opts ...FSProviderOption) (*FSMigrationProvider, error) {
 	p := &FSMigrationProvider{fsys: fsys}
+	for _, opt := range opts {
+		opt(p)
+	}
 	if err := p.load(); err != nil {
 		return nil, err
 	}
@@ -112,14 +128,14 @@ func (p *FSMigrationProvider) load() error {
 		// Set the appropriate migration function based on direction
 		switch migrationFile.Direction {
 		case "up":
-			up, timeouts, err := MigrationFuncFromSQLFilenameWithTimeouts(path, p.fsys)
+			up, timeouts, err := MigrationFuncFromSQLFilenameWithTimeoutsAndInterceptor(path, p.fsys, p.interceptor)
 			if err != nil {
 				return fmt.Errorf("failed to load up migration %s: %w", path, err)
 			}
 			migrationsMap[migrationFile.Version].Up = up
 			migrationsMap[migrationFile.Version].UpTimeouts = timeouts
 		case "down":
-			down, timeouts, err := MigrationFuncFromSQLFilenameWithTimeouts(path, p.fsys)
+			down, timeouts, err := MigrationFuncFromSQLFilenameWithTimeoutsAndInterceptor(path, p.fsys, p.interceptor)
 			if err != nil {
 				return fmt.Errorf("failed to load down migration %s: %w", path, err)
 			}

@@ -24,6 +24,9 @@ capabilities include:
 - 📘 **Go Struct Parsing**
   Extracts tables, columns, indexes, foreign keys, and constraints from structured comments in Go code.
 
+- 🧾 **YAML Schema Input**
+  Generates SQL from language-agnostic `.yaml` / `.yml` schema files using the same internal schema model as Go annotations.
+
 - 🧱 **Schema Generation (DDL)**
   Builds platform-specific `CREATE TABLE`, `CREATE INDEX`, and other DDL statements.
 
@@ -70,6 +73,11 @@ The core package contains all fundamental components for parsing, transforming, 
   - Recursively parses Go source files to discover entity definitions
   - Extracts table directives, field mappings, indexes, enums, and embedded fields
   - Handles dependency analysis and topological sorting for proper table creation order
+
+- **`yamlschema/`** - Language-agnostic YAML schema frontend
+  - Parses `.yaml` / `.yml` schema files into the same `goschema.Database` IR used by Go annotations
+  - Supports tables, columns, indexes, constraints, enums, extensions, functions, RLS, roles, and dialect overrides
+  - Uses strict validation for unknown fields, duplicate ordered keys, unsupported objects, and invalid constraints
 
 - **`parser/`** - SQL DDL token-to-AST parser
   - Converts SQL DDL tokens into Abstract Syntax Tree nodes
@@ -139,10 +147,12 @@ Provides command-line interface for all Ptah operations:
 - **`read-db`** - Read and display current database schema
 - **`compare`** - Compare Go entities with current database schema
 - **`drift`** - Check live database drift with CI-friendly exit codes
+- **`lint`** - Lint migration files for production-unsafe patterns (rule-coded, CI-friendly)
 - **`migrate`** - Generate migration SQL for schema differences
 - **`migrate-up`** - Apply migrations to bring database up to latest version
 - **`migrate-down`** - Roll back migrations to previous versions
 - **`migrate-status`** - Show current migration status and history
+- **`seed`** - Apply environment-scoped SQL seed files with replay tracking
 - **`drop-all`** - Drop ALL tables and enums in database (VERY DANGEROUS!) (supports `--dry-run`)
 - **`integration-test`** - Run comprehensive integration tests across database platforms
 
@@ -383,6 +393,15 @@ type Booking struct {
 ./package-migrator generate --root-dir ./models --dialect mysql
 ```
 
+You can also generate from a language-agnostic YAML schema file:
+
+```bash
+./package-migrator generate --schema-file schema.yaml --dialect postgres
+```
+
+See [YAML Schema Input](docs/yaml_schema.md) for the supported file format,
+validation rules, and examples.
+
 3. **Compare and migrate**:
 
 ```bash
@@ -412,6 +431,9 @@ Generate SQL DDL statements from Go entities without touching the database:
 ./package-migrator generate --root-dir ./models --dialect mysql
 ./package-migrator generate --root-dir ./models --dialect mariadb
 ./package-migrator generate --root-dir ./models --dialect clickhouse
+
+# Generate from a YAML schema file instead of Go annotations
+./package-migrator generate --schema-file schema.yaml --dialect postgres
 ```
 
 ### Database Operations
@@ -490,6 +512,32 @@ jobs:
         run: exit 1
 ```
 
+#### Lint Migration Files
+Inspect a migrations directory for production-unsafe patterns, sqlcheck-style:
+
+```bash
+./package-migrator lint --dir ./migrations --dialect postgres
+```
+
+Findings carry stable rule codes grouped into families:
+
+- `DS` - data safety: `DS101` dropped table, `DS102` dropped column, `DS103` lossy column type change
+- `MF` - migration form: `MF101` missing down file, `MF102` empty migration, `MF103` non-conventional file name
+- `BC` - backwards compatibility: `BC101` rename breaking deployed code
+- `PG` - PostgreSQL: `PG101` `CREATE INDEX` without `CONCURRENTLY`, `PG102` `ALTER TYPE ... ADD VALUE` in a transaction
+- `MY` - MySQL/MariaDB: `MY101` lock-heavy `ALTER TABLE` forms
+
+`--dialect` both gates the dialect-specific rule families and selects the dialect's SQL syntax for scanning (MySQL `#` comments, `/*!...*/` executable comments and backslash string escapes; PostgreSQL dollar quotes and nested block comments). With no dialect set, every rule runs under a hybrid scanner.
+
+Exit codes mirror `drift`: `0` clean (for the selected threshold), `1` findings above `--fail-on` (`error` by default; `any`, `none`), `2` command error. `--format text|json|github-actions` selects the output; the GitHub format annotates PR files inline. Disable rules per code or family with `--disable DS101 --disable MY`, or persistently via `.ptah-lint.yaml` in the migrations directory:
+
+```yaml
+dialect: postgres
+disabled-rules:
+  - MF103
+  - MY
+```
+
 #### Generate Migration SQL
 Generate SQL migration statements to synchronize schemas:
 
@@ -498,6 +546,33 @@ Generate SQL migration statements to synchronize schemas:
 ```
 
 **Output:** SQL statements to bring the database in sync with Go entities
+
+#### Apply Seed Data
+Apply environment-scoped SQL seeds from a `seeds/` directory:
+
+```bash
+./package-migrator seed --db-url postgres://user:pass@localhost:5432/database --env test
+```
+
+Seed files use `NNN_description.env.sql` names. Files matching `--env` and
+`.all.sql` files are applied in version order:
+
+```text
+seeds/
+  010_countries.all.sql
+  020_demo_users.dev.sql
+  020_test_users.test.sql
+```
+
+Successful files are recorded in `schema_seeds`, so re-running `seed --env test`
+is a no-op unless `--force` is set. `--idempotent` uses a per-file savepoint to
+treat duplicate-key conflicts as already-applied data; it is rejected on
+ClickHouse because ClickHouse does not provide the transactions/savepoints this
+mode depends on. Production-like environments (`prod`, `production` by default)
+require `--allow-prod`; use `--protected-env name` to configure additional
+protected environment names. Use `--protected-table name` to refuse seeding when
+the target database already contains production-marker tables unless
+`--allow-prod` is explicit.
 
 ### Migration Management
 
@@ -532,6 +607,24 @@ PostgreSQL uses `SET LOCAL lock_timeout` and `SET LOCAL statement_timeout` insid
 - ✅ Tracks applied migrations in `schema_migrations` table
 - ✅ Supports dry-run mode for preview
 - ✅ Supports per-migration lock and statement timeout directives
+- ✅ Online DDL for large MySQL/MariaDB tables via gh-ost / pt-online-schema-change
+
+**Online DDL (MySQL/MariaDB):** route lock-heavy `ALTER TABLE` statements through
+[gh-ost](https://github.com/github/gh-ost) or
+[pt-online-schema-change](https://docs.percona.com/percona-toolkit/pt-online-schema-change.html) —
+either per migration with a `-- +ptah online_ddl_tool=ghost` directive, or automatically for
+tables above a row threshold via `ptah.yaml` (`--config`):
+
+```yaml
+online_ddl:
+  tool: ghost            # or pt-osc
+  threshold_rows: 1000000
+  args: ["--allow-on-master"]
+```
+
+If the tool is not on PATH, ptah warns and falls back to a plain `ALTER TABLE`.
+See [docs/online-ddl.md](docs/online-ddl.md) for prerequisites (binlog ROW format,
+privileges, topology flags) and invocation details.
 
 #### Roll Back Migrations
 Roll back migrations to a specific version:

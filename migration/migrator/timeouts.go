@@ -78,20 +78,24 @@ func parseMigrationTimeoutDirectives(sql string) (MigrationTimeouts, error) {
 			if !ok {
 				return MigrationTimeouts{}, fmt.Errorf("invalid +ptah directive %q", field)
 			}
-			duration, err := parsePositiveDuration(value)
-			if err != nil {
-				return MigrationTimeouts{}, fmt.Errorf("invalid +ptah %s value: %w", key, err)
-			}
 
 			switch key {
 			case "lock_timeout", "lock-timeout":
+				duration, err := parsePositiveDuration(value)
+				if err != nil {
+					return MigrationTimeouts{}, fmt.Errorf("invalid +ptah %s value: %w", key, err)
+				}
 				timeouts.LockTimeout = duration
 				timeouts.HasLockTimeout = true
 			case "statement_timeout", "statement-timeout":
+				duration, err := parsePositiveDuration(value)
+				if err != nil {
+					return MigrationTimeouts{}, fmt.Errorf("invalid +ptah %s value: %w", key, err)
+				}
 				timeouts.StatementTimeout = duration
 				timeouts.HasStatementTimeout = true
 			default:
-				return MigrationTimeouts{}, fmt.Errorf("unknown +ptah directive %q", key)
+				continue
 			}
 		}
 	}

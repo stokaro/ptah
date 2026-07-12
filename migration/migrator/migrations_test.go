@@ -204,9 +204,12 @@ ALTER TABLE users ADD COLUMN email TEXT;`,
 -- +ptah lock_timeout=3s`,
 		},
 		{
-			name:    "unknown directive fails",
-			sql:     "-- +ptah unknown_timeout=3s\nALTER TABLE users ADD COLUMN email TEXT;",
-			wantErr: `unknown +ptah directive "unknown_timeout"`,
+			name: "other ptah directive is ignored",
+			sql:  "-- +ptah unknown_timeout=3s\nALTER TABLE users ADD COLUMN email TEXT;",
+		},
+		{
+			name: "online ddl directive is ignored by timeout parser",
+			sql:  "-- +ptah online_ddl_tool=ghost\nALTER TABLE users ADD COLUMN email TEXT;",
 		},
 		{
 			name:    "invalid duration fails",
