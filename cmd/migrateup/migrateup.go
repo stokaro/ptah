@@ -10,6 +10,7 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/migration/migratesum"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/onlineddl"
 )
@@ -32,6 +33,7 @@ const (
 	migrationsFlag       = "migrations-dir"
 	dryRunFlag           = "dry-run"
 	verboseFlag          = "verbose"
+	verifySumFlag        = "verify-sum"
 	lockTimeoutFlag      = "lock-timeout"
 	statementTimeoutFlag = "statement-timeout"
 )
@@ -57,6 +59,11 @@ var migrateUpFlags = map[string]cobraflags.Flag{
 		Value: false,
 		Usage: "Enable verbose output",
 	},
+	verifySumFlag: &cobraflags.BoolFlag{
+		Name:  verifySumFlag,
+		Value: false,
+		Usage: "Verify the migrations directory against its committed ptah.sum before applying; abort on drift",
+	},
 	lockTimeoutFlag: &cobraflags.StringFlag{
 		Name:  lockTimeoutFlag,
 		Value: "",
@@ -81,6 +88,7 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 	migrationsDir := migrateUpFlags[migrationsFlag].GetString()
 	dryRun := migrateUpFlags[dryRunFlag].GetBool()
 	verbose := migrateUpFlags[verboseFlag].GetBool()
+	verifySum := migrateUpFlags[verifySumFlag].GetBool()
 	lockTimeout := migrateUpFlags[lockTimeoutFlag].GetString()
 	statementTimeout := migrateUpFlags[statementTimeoutFlag].GetString()
 
@@ -90,6 +98,21 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 
 	if migrationsDir == "" {
 		return fmt.Errorf("migrations directory is required")
+	}
+
+	// Integrity gate: refuse to apply if a committed migration was edited
+	// out of band. Runs before connecting so a tampered directory fails fast.
+	if verifySum {
+		result, err := migratesum.VerifyDir(migrationsDir)
+		if err != nil {
+			return fmt.Errorf("ptah.sum verification failed: %w", err)
+		}
+		if !result.OK() {
+			return fmt.Errorf("ptah.sum verification failed:\n%s", result.Describe())
+		}
+		if verbose {
+			fmt.Printf("ptah.sum verified: migrations directory is intact\n")
+		}
 	}
 
 	if verbose {
