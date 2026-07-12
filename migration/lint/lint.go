@@ -12,14 +12,17 @@
 //
 // # How statements are matched
 //
-// Each *.up.sql file is split into statements with ptah's SQL lexer (so
-// dollar-quoted bodies and comments never confuse the splitter) and every
-// statement is checked in two complementary forms:
+// Each *.up.sql file is split into statements by a dialect-aware scanner:
+// string literals, quoted identifiers, comments (including the MySQL-family
+// # line comments and /*!...*/ executable comments) and PostgreSQL
+// dollar-quoted bodies never confuse the splitter, and Options.Dialect
+// selects which of those syntaxes apply. Every statement is then checked in
+// two complementary forms:
 //
-//   - a canonical text form — comments stripped, whitespace collapsed,
-//     keywords uppercased — that pattern rules match against, which keeps the
-//     rules robust for statements outside the DDL subset ptah's parser
-//     understands (DROP TABLE, ALTER TYPE, ...);
+//   - Statement.Words — the token-word sequence the built-in rules scan,
+//     anchored at ALTER TABLE clause boundaries; string literals and quoted
+//     identifiers stay opaque single words, so data or a column named like a
+//     keyword can neither trigger nor mask a rule;
 //   - a best-effort AST (Statement.Node) parsed with core/parser for the
 //     statements it supports, available to rules that want structural
 //     precision.
@@ -33,12 +36,12 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
 
 	"github.com/stokaro/ptah/core/ast"
-	"github.com/stokaro/ptah/core/lexer"
 	"github.com/stokaro/ptah/core/parser"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -93,15 +96,24 @@ type File struct {
 	// Path is the file path as it should appear in findings (reporting
 	// prefix included).
 	Path string
-	// Name is the bare file name inside the linted directory.
+	// Name is the slash-separated path of the file relative to the linted
+	// directory (bare file name for root-level files).
 	Name string
-	// IsUp reports whether this is an up migration (*.up.sql).
+	// Direction is the migration direction ("up"/"down") exactly as the
+	// migrator's name parser classifies this file; empty when the migrator
+	// cannot parse the name at all.
+	Direction string
+	// IsUp reports whether statement rules treat this as an up migration:
+	// the migrator parses it as up, or its name carries the .up.sql suffix.
 	IsUp bool
 	// HasPair reports whether the matching counterpart file (down for up,
 	// up for down) exists in the same directory.
 	HasPair bool
-	// WellFormedName reports whether the name matches the migrator's
-	// NNNNNNNNNN_description.(up|down).sql convention.
+	// WellFormedName reports whether the name matches the documented
+	// NNNNNNNNNN_description.(up|down).sql convention. The migrator's own
+	// parser is more lenient (see Direction), so a name can be parseable
+	// yet not well-formed — 0000000001_cleanup.sql parses as an up
+	// migration with a truncated description.
 	WellFormedName bool
 	// Statements holds the parsed statements of up migrations. Empty for
 	// down migrations (statement rules do not run there).
@@ -128,9 +140,11 @@ type Rule struct {
 
 // Options configures a lint run.
 type Options struct {
-	// Dialect gates dialect-specific rules: "postgres" enables PG rules,
-	// "mysql"/"mariadb" enable MY rules. Empty runs every rule — maximum
-	// visibility when the target is unknown.
+	// Dialect gates dialect-specific rules — "postgres" enables PG rules,
+	// "mysql"/"mariadb" enable MY rules — and selects the dialect's lexing
+	// behavior (comment forms, string escape rules, dollar quotes). Empty
+	// runs every rule under a hybrid lexer — maximum visibility when the
+	// target is unknown.
 	Dialect string
 	// Disabled lists rule codes or code prefixes to skip: "DS101" disables
 	// one rule, "DS" the whole data-safety family.
@@ -140,10 +154,22 @@ type Options struct {
 	PathPrefix string
 }
 
-// LintFS lints every *.sql file at the root of fsys and returns the findings
-// ordered by file, line and rule code.
+// LintFS lints every *.sql file under fsys — recursively, because the
+// migrator's FSMigrationProvider discovers migrations in subdirectories too —
+// and returns the findings ordered by file, line and rule code. The .sql
+// suffix is matched case-insensitively so that stray case variants (x.UP.SQL)
+// at least earn a naming warning instead of vanishing.
 func LintFS(fsys fs.FS, opts Options) ([]Finding, error) {
-	names, err := fs.Glob(fsys, "*.sql")
+	var names []string
+	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !d.IsDir() && strings.EqualFold(path.Ext(p), ".sql") {
+			names = append(names, p)
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list migration files: %w", err)
 	}
@@ -157,9 +183,10 @@ func LintFS(fsys fs.FS, opts Options) ([]Finding, error) {
 		present[name] = struct{}{}
 	}
 
+	mode := modeForDialect(opts.Dialect)
 	var findings []Finding
 	for _, name := range names {
-		file, err := prepareFile(fsys, name, present, opts.PathPrefix)
+		file, err := prepareFile(fsys, name, present, opts.PathPrefix, mode)
 		if err != nil {
 			return nil, err
 		}
@@ -179,17 +206,26 @@ func LintFS(fsys fs.FS, opts Options) ([]Finding, error) {
 }
 
 // prepareFile loads one migration file into the forms rules consume.
-func prepareFile(fsys fs.FS, name string, present map[string]struct{}, pathPrefix string) (*File, error) {
+func prepareFile(fsys fs.FS, name string, present map[string]struct{}, pathPrefix string, mode scanMode) (*File, error) {
 	raw, err := fs.ReadFile(fsys, name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %s: %w", name, err)
 	}
 
+	base := path.Base(name)
+	direction := ""
+	if parsed, parseErr := migrator.ParseMigrationFileName(base); parseErr == nil {
+		direction = parsed.Direction
+	}
 	file := &File{
-		Path:           path.Join(pathPrefix, name),
-		Name:           name,
-		IsUp:           strings.HasSuffix(name, ".up.sql"),
-		WellFormedName: migrator.ValidateMigrationFileName(name),
+		Path:      path.Join(pathPrefix, name),
+		Name:      name,
+		Direction: direction,
+		// The migrator executes whatever its parser classifies as up, so
+		// lint must follow it; the suffix check keeps hazard scanning for
+		// .up.sql files whose version prefix is malformed.
+		IsUp:           direction == "up" || strings.HasSuffix(base, ".up.sql"),
+		WellFormedName: strictNameRe.MatchString(base),
 	}
 	switch {
 	case file.IsUp:
@@ -200,11 +236,11 @@ func prepareFile(fsys fs.FS, name string, present map[string]struct{}, pathPrefi
 
 	// Statement rules apply to up migrations only.
 	if file.IsUp {
-		for _, rawStmt := range splitStatementsWithLines(string(raw)) {
+		for _, rawStmt := range splitStatementsWithLines(string(raw), mode) {
 			file.Statements = append(file.Statements, Statement{
 				SQL:       rawStmt.text,
-				Canonical: canonicalize(rawStmt.text),
-				Words:     tokenizeWords(rawStmt.text),
+				Canonical: canonicalize(rawStmt.text, mode),
+				Words:     tokenizeWords(rawStmt.text, mode),
 				Node:      parseBestEffort(rawStmt.text),
 				Line:      rawStmt.line,
 			})
@@ -261,110 +297,94 @@ func ruleAppliesToDialect(rule Rule, dialect string) bool {
 	return slices.Contains(rule.Dialects, dialect)
 }
 
+// strictNameRe is the documented migration naming convention. The migrator's
+// own parser is more lenient — its regexp has an unescaped dot before the
+// direction, so 0000000001_cleanup.sql parses as an up migration — which is
+// why WellFormedName checks the strict form while Direction follows the
+// migrator.
+var strictNameRe = regexp.MustCompile(`^\d{10}_.+\.(up|down)\.sql$`)
+
 // rawStatement is one raw SQL statement plus the line it starts on.
 type rawStatement struct {
 	text string
 	line int
 }
 
-// splitStatementsWithLines splits SQL into statements using the lexer (so
-// semicolons inside strings, comments and dollar-quoted bodies do not
-// terminate statements) while tracking each statement's starting line.
-func splitStatementsWithLines(raw string) []rawStatement {
-	lexr := lexer.NewLexer(raw)
+// splitStatementsWithLines splits SQL into statements using the dialect-aware
+// scanner (so semicolons inside strings, comments, executable comments and
+// dollar-quoted bodies do not terminate statements) while tracking each
+// statement's starting line.
+func splitStatementsWithLines(raw string, mode scanMode) []rawStatement {
 	var statements []rawStatement
 	start := -1
 	end := 0
-	for {
-		tok := lexr.NextToken()
-		if tok.Type == lexer.TokenEOF {
-			break
-		}
-		switch tok.Type {
-		case lexer.TokenSemicolon:
+	startLine := 0
+	for _, tok := range scanSQL(raw, mode) {
+		switch tok.kind {
+		case tokSemicolon:
 			if start >= 0 {
-				statements = append(statements, rawStatement{
-					text: raw[start:end],
-					line: 1 + strings.Count(raw[:start], "\n"),
-				})
+				statements = append(statements, rawStatement{text: raw[start:end], line: startLine})
 				start = -1
 			}
-		case lexer.TokenWhitespace, lexer.TokenComment:
+		case tokWhitespace, tokComment:
 			// Never starts a statement; keep end untouched so trailing
 			// comments/whitespace are not included in the statement text.
 		default:
 			if start < 0 {
-				start = tok.Start
+				start = tok.start
+				startLine = tok.line
 			}
-			end = tok.End
+			end = tok.end
 		}
 	}
 	if start >= 0 {
-		statements = append(statements, rawStatement{
-			text: raw[start:end],
-			line: 1 + strings.Count(raw[:start], "\n"),
-		})
+		statements = append(statements, rawStatement{text: raw[start:end], line: startLine})
 	}
 	return statements
 }
 
-// canonicalize renders a statement in the form pattern rules match against:
-// comments removed, every whitespace run collapsed to one space, everything
-// except string literals uppercased.
-func canonicalize(sql string) string {
-	lexr := lexer.NewLexer(sql)
+// canonicalize renders a statement in its display form: comments removed,
+// every whitespace run collapsed to one space, everything except string
+// literals and quoted identifiers uppercased.
+func canonicalize(sql string, mode scanMode) string {
 	var b strings.Builder
 	pendingSpace := false
-	for {
-		tok := lexr.NextToken()
-		if tok.Type == lexer.TokenEOF {
-			break
-		}
-		switch tok.Type {
-		case lexer.TokenComment, lexer.TokenWhitespace:
+	for _, tok := range scanSQL(sql, mode) {
+		switch tok.kind {
+		case tokComment, tokWhitespace:
 			// A comment separates tokens exactly like whitespace does
 			// (DROP/*x*/TABLE must not canonicalize to DROPTABLE).
 			pendingSpace = b.Len() > 0
-		case lexer.TokenString:
+		case tokString, tokQuotedIdent:
 			if pendingSpace {
 				b.WriteByte(' ')
 				pendingSpace = false
 			}
-			b.WriteString(tok.Value)
+			b.WriteString(tok.text)
 		default:
 			if pendingSpace {
 				b.WriteByte(' ')
 				pendingSpace = false
 			}
-			b.WriteString(strings.ToUpper(tok.Value))
+			b.WriteString(strings.ToUpper(tok.text))
 		}
 	}
 	return b.String()
 }
 
 // tokenizeWords renders a statement as the word sequence rules scan (see
-// Statement.Words). Double-quoted identifiers arrive from the lexer as string
-// tokens and backtick-quoted ones as identifiers; both keep their quotes and
-// case, so quoted names never collide with SQL keywords in the scans.
-func tokenizeWords(sql string) []string {
-	lexr := lexer.NewLexer(sql)
+// Statement.Words). String literals and quoted identifiers keep their quotes
+// and case, so quoted names never collide with SQL keywords in the scans.
+func tokenizeWords(sql string, mode scanMode) []string {
 	var words []string
-	for {
-		tok := lexr.NextToken()
-		if tok.Type == lexer.TokenEOF {
-			break
-		}
-		switch tok.Type {
-		case lexer.TokenComment, lexer.TokenWhitespace:
+	for _, tok := range scanSQL(sql, mode) {
+		switch tok.kind {
+		case tokComment, tokWhitespace:
 			continue
-		case lexer.TokenString:
-			words = append(words, tok.Value)
+		case tokString, tokQuotedIdent:
+			words = append(words, tok.text)
 		default:
-			if strings.HasPrefix(tok.Value, "`") || strings.HasPrefix(tok.Value, `"`) {
-				words = append(words, tok.Value)
-				continue
-			}
-			words = append(words, strings.ToUpper(tok.Value))
+			words = append(words, strings.ToUpper(tok.text))
 		}
 	}
 	return words

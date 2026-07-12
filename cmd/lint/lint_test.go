@@ -143,6 +143,12 @@ func TestRunLint_InvalidFlagValuesExitCode2(t *testing.T) {
 	_, stderr, err = execute("--dir", "testdata/bad", "--no-such-flag")
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 	c.Assert(stderr, qt.Contains, "unknown flag")
+
+	// Positional arguments would silently lint the default --dir instead of
+	// what the user pointed at — a silent false negative in CI.
+	_, stderr, err = execute("testdata/bad")
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+	c.Assert(stderr, qt.Contains, "unexpected positional arguments")
 }
 
 func TestRunLint_ExplicitEmptyDialectOverridesConfig(t *testing.T) {
@@ -190,13 +196,13 @@ func TestWriteGitHubActions_EscapesWorkflowCommandCharacters(t *testing.T) {
 			Severity: lint.SeverityError,
 			File:     "dir/evil,file::name.sql",
 			Line:     3,
-			Message:  "50% data loss\nsecond line",
+			Message:  "50% data loss\r\nsecond line",
 		}},
 	})
 
 	out := buf.String()
 	c.Assert(out, qt.Contains, "::error file=dir/evil%2Cfile%3A%3Aname.sql,line=3::")
-	c.Assert(out, qt.Contains, "DS101: 50%25 data loss%0Asecond line")
+	c.Assert(out, qt.Contains, "DS101: 50%25 data loss%0D%0Asecond line")
 	c.Assert(out, qt.Not(qt.Contains), "evil,file::name")
 
 	buf.Reset()

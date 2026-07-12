@@ -506,6 +506,8 @@ Findings carry stable rule codes grouped into families:
 - `PG` - PostgreSQL: `PG101` `CREATE INDEX` without `CONCURRENTLY`, `PG102` `ALTER TYPE ... ADD VALUE` in a transaction
 - `MY` - MySQL/MariaDB: `MY101` lock-heavy `ALTER TABLE` forms
 
+`--dialect` both gates the dialect-specific rule families and selects the dialect's SQL syntax for scanning (MySQL `#` comments, `/*!...*/` executable comments and backslash string escapes; PostgreSQL dollar quotes and nested block comments). With no dialect set, every rule runs under a hybrid scanner.
+
 Exit codes mirror `drift`: `0` clean (for the selected threshold), `1` findings above `--fail-on` (`error` by default; `any`, `none`), `2` command error. `--format text|json|github-actions` selects the output; the GitHub format annotates PR files inline. Disable rules per code or family with `--disable DS101 --disable MY`, or persistently via `.ptah-lint.yaml` in the migrations directory:
 
 ```yaml

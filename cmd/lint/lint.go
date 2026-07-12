@@ -54,7 +54,7 @@ Statement rules run against up migrations; file-form rules cover every file.
 Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			return runLint(cmd, runOptions{
 				dir:        dir,
 				dialect:    dialect,
@@ -62,6 +62,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 				configPath: configPath,
 				disabled:   disabled,
 				failOn:     failOn,
+				positional: args,
 			})
 		},
 	}
@@ -90,6 +91,7 @@ type runOptions struct {
 	configPath string
 	disabled   []string
 	failOn     string
+	positional []string
 }
 
 type lintReport struct {
@@ -111,6 +113,12 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	}
 	if err := validateDialect(opts.dialect); err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+	}
+	if len(opts.positional) > 0 {
+		// Silently linting the default --dir while the user pointed at
+		// another directory would be a silent false negative in CI.
+		msg := fmt.Sprintf("unexpected positional arguments %q: pass the migrations directory via --dir", opts.positional)
+		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, msg)
 	}
 	if err := validateDir(opts.dir); err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
