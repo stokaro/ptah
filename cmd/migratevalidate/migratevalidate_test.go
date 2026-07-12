@@ -84,6 +84,17 @@ func TestValidate_MissingDirectoryExitsTwo(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, ".*does-not-exist.*")
 }
 
+func TestValidate_PositionalArgExitsTwoWithMessage(t *testing.T) {
+	c := qt.New(t)
+
+	// A stray positional (e.g. the path typed without --dir) is a usage
+	// error (exit 2 with a message), not a silent exit 1 that would look
+	// like drift.
+	_, stderr, err := execute(migrationsDir(t), "stray")
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+	c.Assert(stderr, qt.Contains, "unexpected positional arguments")
+}
+
 func TestValidate_CorruptSumFileExitsTwoNotOne(t *testing.T) {
 	c := qt.New(t)
 

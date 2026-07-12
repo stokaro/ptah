@@ -24,7 +24,7 @@ intentionally edit a migration file, and commit the updated ptah.sum.
 
 CI can then run 'ptah migrate-validate' to fail on any out-of-band change to
 an already-committed migration.`,
-		Args:          cobra.NoArgs,
+		Args:          cmdutil.NoPositionalArgs,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {

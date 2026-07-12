@@ -29,7 +29,7 @@ and compares them against the committed ptah.sum. It exits:
   2  ptah.sum is missing or unreadable, or the directory is inaccessible
 
 Run it in CI to guarantee already-committed migrations are never changed.`,
-		Args:          cobra.NoArgs,
+		Args:          cmdutil.NoPositionalArgs,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {

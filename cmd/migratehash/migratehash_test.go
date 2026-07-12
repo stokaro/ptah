@@ -74,3 +74,19 @@ func TestHash_MissingDirectoryExitsTwo(t *testing.T) {
 	_, err := execute("--dir", filepath.Join(t.TempDir(), "nope"))
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 }
+
+func TestHash_PositionalArgExitsTwoWithoutWriting(t *testing.T) {
+	c := qt.New(t)
+
+	dir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(dir, "0000000001_init.up.sql"),
+		[]byte("CREATE TABLE t (id INT);\n"), 0o600), qt.IsNil)
+
+	// A stray positional must fail (exit 2) with a message, not silently
+	// skip writing ptah.sum.
+	stdout, err := execute(dir, "stray")
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+	c.Assert(stdout, qt.Contains, "unexpected positional arguments")
+	_, statErr := os.Stat(filepath.Join(dir, migratesum.FileName))
+	c.Assert(os.IsNotExist(statErr), qt.IsTrue, qt.Commentf("ptah.sum must not be written on a usage error"))
+}
