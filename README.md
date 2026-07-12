@@ -138,6 +138,7 @@ Provides command-line interface for all Ptah operations:
 - **`generate`** - Generate SQL schema from Go entities without touching database
 - **`read-db`** - Read and display current database schema
 - **`compare`** - Compare Go entities with current database schema
+- **`drift`** - Check live database drift with CI-friendly exit codes
 - **`migrate`** - Generate migration SQL for schema differences
 - **`migrate-up`** - Apply migrations to bring database up to latest version
 - **`migrate-down`** - Roll back migrations to previous versions
@@ -432,6 +433,62 @@ Compare your Go entities with the current database schema:
 ```
 
 **Output:** Detailed differences showing what needs to be added, removed, or modified
+
+#### Check Schema Drift
+Check whether the live database still matches the schema declared by Go entities:
+
+```bash
+./package-migrator drift --root-dir ./models --db-url postgres://user:pass@localhost:5432/database
+```
+
+Exit codes are designed for scheduled CI checks:
+
+- `0` - no failing drift for the selected threshold
+- `1` - drift detected
+- `2` - command error, such as a connection or parse failure
+
+Use `--format text|json|github-actions` to choose output, and `--ignore tables=audit_log,sessions` to suppress intentionally unmanaged tables. By default any drift returns `1`; use `--severity destructive` to return `1` only for destructive drift such as dropped tables, dropped columns, removed constraints, disabled RLS, or removed database objects.
+
+Nightly GitHub Actions example with Slack notification on drift:
+
+```yaml
+name: Nightly schema drift
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build package-migrator
+        run: go build -o package-migrator ./cmd
+      - name: Check schema drift
+        id: drift
+        continue-on-error: true
+        run: |
+          ./package-migrator drift \
+            --root-dir ./models \
+            --db-url "${{ secrets.STAGING_DATABASE_URL }}" \
+            --format github-actions
+      - name: Alert Slack on drift
+        if: steps.drift.outcome == 'failure'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+            --data '{"text":"Ptah schema drift detected on staging. Check the nightly drift workflow."}' \
+            "$SLACK_WEBHOOK_URL"
+      - name: Fail workflow on drift
+        if: steps.drift.outcome == 'failure'
+        run: exit 1
+```
 
 #### Generate Migration SQL
 Generate SQL migration statements to synchronize schemas:
