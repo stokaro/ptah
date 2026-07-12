@@ -131,8 +131,10 @@ func (e *Executor) executeStatement(ctx context.Context, conn Conn, stmt string,
 
 	binary := binaryFor(tool)
 	if _, err := e.lookPath(binary); err != nil {
-		e.logger.Warn("online-DDL tool not found on PATH; falling back to a plain ALTER TABLE",
-			"tool", tool, "binary", binary, "table", target.Table)
+		// Not just ErrNotFound: a non-executable binary or a permission
+		// error also lands here, so surface the underlying cause.
+		e.logger.Warn("online-DDL tool unavailable on PATH; falling back to a plain ALTER TABLE",
+			"tool", tool, "binary", binary, "table", target.Table, "error", err)
 		return false, nil
 	}
 

@@ -191,7 +191,8 @@ func TestExecuteStatement_FallbackPathsWarn(t *testing.T) {
 		"ALTER TABLE users ADD COLUMN a INT", map[string]string{DirectiveTool: ToolGhost})
 	c.Assert(err, qt.IsNil)
 	c.Assert(handled, qt.IsFalse)
-	c.Assert(buf.String(), qt.Contains, "not found on PATH")
+	c.Assert(buf.String(), qt.Contains, "unavailable on PATH")
+	c.Assert(buf.String(), qt.Contains, "not found", qt.Commentf("the underlying lookPath error is surfaced"))
 
 	// Row-count estimate failure warns then falls through.
 	buf.Reset()
@@ -394,7 +395,8 @@ func TestExecuteStatement_RunsRealFakeBinary(t *testing.T) {
 
 	dir := t.TempDir()
 	argsFile := filepath.Join(dir, "args.txt")
-	script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$@\" > %s\n", argsFile)
+	// Quote the redirection target: t.TempDir() paths can contain spaces.
+	script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$@\" > \"%s\"\n", argsFile)
 	binPath := filepath.Join(dir, "gh-ost")
 	c.Assert(os.WriteFile(binPath, []byte(script), 0o600), qt.IsNil)
 	c.Assert(os.Chmod(binPath, 0o700), qt.IsNil)
