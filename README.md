@@ -139,6 +139,7 @@ Provides command-line interface for all Ptah operations:
 - **`read-db`** - Read and display current database schema
 - **`compare`** - Compare Go entities with current database schema
 - **`drift`** - Check live database drift with CI-friendly exit codes
+- **`lint`** - Lint migration files for production-unsafe patterns (rule-coded, CI-friendly)
 - **`migrate`** - Generate migration SQL for schema differences
 - **`migrate-up`** - Apply migrations to bring database up to latest version
 - **`migrate-down`** - Roll back migrations to previous versions
@@ -488,6 +489,30 @@ jobs:
       - name: Fail workflow on drift
         if: steps.drift.outcome == 'failure'
         run: exit 1
+```
+
+#### Lint Migration Files
+Inspect a migrations directory for production-unsafe patterns, sqlcheck-style:
+
+```bash
+./package-migrator lint --dir ./migrations --dialect postgres
+```
+
+Findings carry stable rule codes grouped into families:
+
+- `DS` - data safety: `DS101` dropped table, `DS102` dropped column, `DS103` lossy column type change
+- `MF` - migration form: `MF101` missing down file, `MF102` empty migration, `MF103` non-conventional file name
+- `BC` - backwards compatibility: `BC101` rename breaking deployed code
+- `PG` - PostgreSQL: `PG101` `CREATE INDEX` without `CONCURRENTLY`, `PG102` `ALTER TYPE ... ADD VALUE` in a transaction
+- `MY` - MySQL/MariaDB: `MY101` lock-heavy `ALTER TABLE` forms
+
+Exit codes mirror `drift`: `0` clean (for the selected threshold), `1` findings above `--fail-on` (`error` by default; `any`, `none`), `2` command error. `--format text|json|github-actions` selects the output; the GitHub format annotates PR files inline. Disable rules per code or family with `--disable DS101 --disable MY`, or persistently via `.ptah-lint.yaml` in the migrations directory:
+
+```yaml
+dialect: postgres
+disabled-rules:
+  - MF103
+  - MY
 ```
 
 #### Generate Migration SQL
