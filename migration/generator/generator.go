@@ -41,6 +41,9 @@ type GenerateMigrationOptions struct {
 	OutputDir string
 	// CompareOptions are the options to use when comparing schemas
 	CompareOptions *config.CompareOptions
+	// Schemas restricts database introspection to the listed schemas when the
+	// connected dialect supports schema scoping.
+	Schemas []string
 }
 
 // MigrationFiles represents the generated migration files
@@ -102,7 +105,7 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 		defer dbschema.CloseAndWarn(conn)
 	}
 
-	dbSchema, err := conn.Reader().ReadSchema()
+	dbSchema, err := dbschema.ReadSchemaWithSchemas(conn, opts.Schemas)
 	if err != nil {
 		return nil, fmt.Errorf("error reading database schema: %w", err)
 	}

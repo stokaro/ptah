@@ -282,6 +282,7 @@ func parseTableComment(comment *ast.Comment, structName string, tableDirectives 
 	*tableDirectives = append(*tableDirectives, Table{
 		StructName: structName,
 		Name:       kv["name"],
+		Schema:     kv["schema"],
 		Engine:     kv["engine"],
 		Comment:    kv["comment"],
 		PrimaryKey: strings.Split(kv["primary_key"], ","),
@@ -471,6 +472,7 @@ func parseFileAST(f *ast.File) Database {
 		Roles:            roles,
 		Dependencies:     make(map[string][]string),
 	}
+	normalizeTableScopedNames(&result)
 	buildDependencyGraph(&result)
 	return result
 }
@@ -508,17 +510,7 @@ func processFileAST(
 				continue
 			}
 
-			// Extract table name from table directive
-			if genDecl.Doc != nil {
-				for _, comment := range genDecl.Doc.List {
-					if strings.HasPrefix(comment.Text, "//migrator:schema:table") {
-						kv := parseutils.ParseKeyValueComment(comment.Text)
-						if tableName := kv["name"]; tableName != "" {
-							tableNameToStructName[tableName] = structName
-						}
-					}
-				}
-			}
+			mapTableDirectiveStructNames(genDecl.Doc, structName, tableNameToStructName)
 		}
 	}
 
@@ -541,6 +533,26 @@ func processFileAST(
 
 	// Process all file comments for RLS annotations that might not be associated with struct declarations
 	processAllFileComments(f, tableNameToStructName, rlsPolicies, rlsEnabledTables)
+}
+
+func mapTableDirectiveStructNames(doc *ast.CommentGroup, structName string, tableNameToStructName map[string]string) {
+	if doc == nil {
+		return
+	}
+	for _, comment := range doc.List {
+		if !strings.HasPrefix(comment.Text, "//migrator:schema:table") {
+			continue
+		}
+		kv := parseutils.ParseKeyValueComment(comment.Text)
+		tableName := kv["name"]
+		if tableName == "" {
+			continue
+		}
+		tableNameToStructName[tableName] = structName
+		if schemaName := kv["schema"]; schemaName != "" {
+			tableNameToStructName[QualifyTableName(schemaName, tableName)] = structName
+		}
+	}
 }
 
 // processDeclarations processes all struct declarations in the file

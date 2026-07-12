@@ -177,3 +177,56 @@ func IsDefaultExpr(value string) bool {
 	}
 	return true
 }
+
+// Expression normalizes SQL expressions for schema comparison.
+func Expression(value string) string {
+	cleanValue := strings.TrimSpace(value)
+	for hasRedundantOuterParentheses(cleanValue) {
+		cleanValue = strings.TrimSpace(cleanValue[1 : len(cleanValue)-1])
+	}
+	return cleanValue
+}
+
+func hasRedundantOuterParentheses(value string) bool {
+	if len(value) < 2 || value[0] != '(' || value[len(value)-1] != ')' {
+		return false
+	}
+
+	depth := 0
+	for i := 0; i < len(value); i++ {
+		switch value[i] {
+		case '\'', '"':
+			next, ok := skipQuotedSQL(value, i, value[i])
+			if !ok {
+				return false
+			}
+			i = next
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth < 0 {
+				return false
+			}
+			if depth == 0 && i != len(value)-1 {
+				return false
+			}
+		}
+	}
+
+	return depth == 0
+}
+
+func skipQuotedSQL(value string, start int, quote byte) (int, bool) {
+	for i := start + 1; i < len(value); i++ {
+		if value[i] != quote {
+			continue
+		}
+		if i+1 < len(value) && value[i+1] == quote {
+			i++
+			continue
+		}
+		return i, true
+	}
+	return 0, false
+}

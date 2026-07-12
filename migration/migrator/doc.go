@@ -83,7 +83,9 @@
 //		applied_at TIMESTAMP NOT NULL
 //	);
 //
-// This table tracks which migrations have been applied and when.
+// This table tracks which migrations have been applied and when. Use
+// WithMigrationsTable(schema, table) to store migration history in a custom
+// schema or table, for example an `infra.ptah_migrations` table in PostgreSQL.
 //
 // # Migration Operations
 //

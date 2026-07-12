@@ -195,6 +195,17 @@ type Product struct {
 }
 ```
 
+PostgreSQL-family schemas can be set per table:
+
+```go
+//migrator:schema:table name="users" schema="auth"
+type User struct {
+    // fields...
+}
+```
+
+Migration generation emits `CREATE SCHEMA IF NOT EXISTS auth` before creating schema-qualified tables and renders references such as `auth.users`.
+
 ### Field Definition
 ```go
 //migrator:schema:field name="id" type="SERIAL" primary="true" platform.mysql.type="INT AUTO_INCREMENT"
@@ -413,6 +424,9 @@ validation rules, and examples.
 # Generate migration SQL
 ./package-migrator migrate --root-dir ./models --db-url postgres://user:pass@localhost/db
 
+# Generate migration SQL while introspecting specific PostgreSQL schemas
+./package-migrator migrate --root-dir ./models --db-url postgres://user:pass@localhost/db --schemas auth,billing,public
+
 # Apply migrations to database
 ./package-migrator migrate-up --db-url postgres://user:pass@localhost/db --migrations-dir ./migrations
 ```
@@ -445,6 +459,9 @@ Read and display the current database schema:
 
 ```bash
 ./package-migrator read-db --db-url postgres://user:pass@localhost:5432/database
+
+# Restrict PostgreSQL introspection to specific schemas
+./package-migrator read-db --db-url postgres://user:pass@localhost:5432/database --schemas auth,billing,public
 ```
 
 **Output:** Complete schema information including tables, columns, constraints, indexes, and enums
@@ -454,6 +471,7 @@ Compare your Go entities with the current database schema:
 
 ```bash
 ./package-migrator compare --root-dir ./models --db-url postgres://user:pass@localhost:5432/database
+./package-migrator compare --root-dir ./models --db-url postgres://user:pass@localhost:5432/database --schemas auth,billing,public
 ```
 
 **Output:** Detailed differences showing what needs to be added, removed, or modified
@@ -463,6 +481,7 @@ Check whether the live database still matches the schema declared by Go entities
 
 ```bash
 ./package-migrator drift --root-dir ./models --db-url postgres://user:pass@localhost:5432/database
+./package-migrator drift --root-dir ./models --db-url postgres://user:pass@localhost:5432/database --schemas auth,billing,public
 ```
 
 Exit codes are designed for scheduled CI checks:
@@ -545,6 +564,7 @@ Generate SQL migration statements to synchronize schemas:
 
 ```bash
 ./package-migrator migrate --root-dir ./models --db-url postgres://user:pass@localhost:5432/database
+./package-migrator migrate --root-dir ./models --db-url postgres://user:pass@localhost:5432/database --schemas auth,billing,public
 ```
 
 **Output:** SQL statements to bring the database in sync with Go entities
@@ -591,6 +611,9 @@ Apply all pending migrations to bring database up to latest version:
 
 # Dry run to preview what would be applied
 ./package-migrator migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dry-run
+
+# Store migration state in a dedicated schema/table
+./package-migrator migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --migrations-schema infra --migrations-table ptah_migrations
 ```
 
 Migration files can override the CLI defaults with top-of-file directives:
@@ -606,7 +629,7 @@ PostgreSQL uses `SET LOCAL lock_timeout` and `SET LOCAL statement_timeout` insid
 - ✅ Applies migrations in correct order based on version numbers
 - ✅ Each migration runs in its own transaction
 - ✅ Automatic rollback on failure
-- ✅ Tracks applied migrations in `schema_migrations` table
+- ✅ Tracks applied migrations in `schema_migrations` table, or a custom `--migrations-schema`/`--migrations-table`
 - ✅ Supports dry-run mode for preview
 - ✅ Supports per-migration lock and statement timeout directives
 - ✅ Online DDL for large MySQL/MariaDB tables via gh-ost / pt-online-schema-change
@@ -639,6 +662,9 @@ Roll back migrations to a specific version:
 
 # Dry run to preview rollback
 ./package-migrator migrate-down --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --target 5 --dry-run
+
+# Roll back using the same custom migration state table
+./package-migrator migrate-down --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --target 5 --migrations-schema infra --migrations-table ptah_migrations
 ```
 
 **Features:**
@@ -655,6 +681,9 @@ Show current migration status and pending migrations:
 
 # JSON output for automation
 ./package-migrator migrate-status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --json
+
+# Check status from a custom migration state table
+./package-migrator migrate-status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --migrations-schema infra --migrations-table ptah_migrations
 ```
 
 **Output includes:**
@@ -714,6 +743,7 @@ func main() {
         DatabaseURL:   "postgres://user:pass@localhost:5432/database",
         MigrationName: "add_user_table",
         OutputDir:     "./migrations",
+        Schemas:       []string{"auth", "billing", "public"},
     }
 
     ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

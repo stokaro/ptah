@@ -11,13 +11,22 @@ package dbcli
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-extras/cobraflags"
 )
 
-// ConnectTimeoutFlagName is the CLI flag name exposed by [NewConnectTimeoutFlag].
-const ConnectTimeoutFlagName = "connect-timeout"
+const (
+	// ConnectTimeoutFlagName is the CLI flag name exposed by [NewConnectTimeoutFlag].
+	ConnectTimeoutFlagName = "connect-timeout"
+	// SchemasFlagName is the CLI flag name exposed by [NewSchemasFlag].
+	SchemasFlagName = "schemas"
+	// MigrationsSchemaFlagName is the CLI flag name for the schema_migrations schema.
+	MigrationsSchemaFlagName = "migrations-schema"
+	// MigrationsTableFlagName is the CLI flag name for the schema_migrations table name.
+	MigrationsTableFlagName = "migrations-table"
+)
 
 // DefaultConnectTimeout is the default value for [ConnectTimeoutFlagName]. It
 // matches the value suggested by issue #139.
@@ -33,6 +42,52 @@ func NewConnectTimeoutFlag() cobraflags.Flag {
 		Value: DefaultConnectTimeout.String(),
 		Usage: "Maximum time to wait when establishing the initial database connection (for example 5s or 1m). Use 0 to disable the timeout.",
 	}
+}
+
+// NewSchemasFlag returns a comma-separated schema allow-list flag.
+func NewSchemasFlag() cobraflags.Flag {
+	return &cobraflags.StringFlag{
+		Name:  SchemasFlagName,
+		Value: "",
+		Usage: "Comma-separated database schemas to introspect (PostgreSQL-family only). Empty uses the connection default schema.",
+	}
+}
+
+// NewMigrationsSchemaFlag returns the migration tracking table schema flag.
+func NewMigrationsSchemaFlag() cobraflags.Flag {
+	return &cobraflags.StringFlag{
+		Name:  MigrationsSchemaFlagName,
+		Value: "",
+		Usage: "Schema for Ptah's migration tracking table. Empty uses the connection default schema.",
+	}
+}
+
+// NewMigrationsTableFlag returns the migration tracking table name flag.
+func NewMigrationsTableFlag() cobraflags.Flag {
+	return &cobraflags.StringFlag{
+		Name:  MigrationsTableFlagName,
+		Value: "schema_migrations",
+		Usage: "Table name for Ptah's migration tracking table.",
+	}
+}
+
+// ParseSchemas parses a comma-separated schema allow-list.
+func ParseSchemas(raw string) []string {
+	parts := strings.Split(raw, ",")
+	schemas := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		schema := strings.TrimSpace(part)
+		if schema == "" {
+			continue
+		}
+		if _, ok := seen[schema]; ok {
+			continue
+		}
+		seen[schema] = struct{}{}
+		schemas = append(schemas, schema)
+	}
+	return schemas
 }
 
 // ParseConnectTimeout parses the raw string value returned by the
