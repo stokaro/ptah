@@ -125,6 +125,9 @@ func TablesAndColumns(generated *goschema.Database, database *types.DBSchema, di
 	// Sort for consistent output
 	sort.Strings(diff.TablesAdded)
 	sort.Strings(diff.TablesRemoved)
+	sort.Slice(diff.TablesModified, func(i, j int) bool {
+		return diff.TablesModified[i].TableName < diff.TablesModified[j].TableName
+	})
 }
 
 // TableColumns performs detailed column-level comparison within a specific table.
@@ -244,6 +247,9 @@ func TableColumns(genTable goschema.Table, dbTable types.DBTable, generated *gos
 	// Sort for consistent output
 	sort.Strings(tableDiff.ColumnsAdded)
 	sort.Strings(tableDiff.ColumnsRemoved)
+	sort.Slice(tableDiff.ColumnsModified, func(i, j int) bool {
+		return tableDiff.ColumnsModified[i].ColumnName < tableDiff.ColumnsModified[j].ColumnName
+	})
 
 	return tableDiff
 }
@@ -627,6 +633,9 @@ func Enums(generated *goschema.Database, database *types.DBSchema, diff *difftyp
 	// Sort for consistent output
 	sort.Strings(diff.EnumsAdded)
 	sort.Strings(diff.EnumsRemoved)
+	sort.Slice(diff.EnumsModified, func(i, j int) bool {
+		return diff.EnumsModified[i].EnumName < diff.EnumsModified[j].EnumName
+	})
 }
 
 // EnumValues performs detailed value-level comparison between generated and database enum types.
@@ -950,6 +959,26 @@ func Constraints(generated *goschema.Database, database *types.DBSchema, diff *d
 			}
 		}
 	}
+
+	// Sort for consistent output. Planners pair the bare name lists with the
+	// *WithTables slices through name-keyed maps, not by index, so each list
+	// can be sorted independently.
+	sort.Strings(diff.ConstraintsAdded)
+	sort.Strings(diff.ConstraintsRemoved)
+	sort.Slice(diff.ConstraintsAddedWithTables, func(i, j int) bool {
+		a, b := diff.ConstraintsAddedWithTables[i], diff.ConstraintsAddedWithTables[j]
+		if a.TableName != b.TableName {
+			return a.TableName < b.TableName
+		}
+		return a.Name < b.Name
+	})
+	sort.Slice(diff.ConstraintsRemovedWithTables, func(i, j int) bool {
+		a, b := diff.ConstraintsRemovedWithTables[i], diff.ConstraintsRemovedWithTables[j]
+		if a.TableName != b.TableName {
+			return a.TableName < b.TableName
+		}
+		return a.Name < b.Name
+	})
 }
 
 // appendConstraintRemoval records the table-qualified removal info for a
@@ -1849,6 +1878,9 @@ func Functions(generated *goschema.Database, database *types.DBSchema, diff *dif
 	// Ensure consistent ordering of results
 	sort.Strings(diff.FunctionsAdded)
 	sort.Strings(diff.FunctionsRemoved)
+	sort.Slice(diff.FunctionsModified, func(i, j int) bool {
+		return diff.FunctionsModified[i].FunctionName < diff.FunctionsModified[j].FunctionName
+	})
 }
 
 // RLSPolicies performs PostgreSQL RLS policy comparison between generated and database schemas.
@@ -1952,6 +1984,9 @@ func RLSPolicies(generated *goschema.Database, database *types.DBSchema, diff *d
 	sort.Strings(diff.RLSPoliciesAdded)
 	sort.Slice(diff.RLSPoliciesRemoved, func(i, j int) bool {
 		return diff.RLSPoliciesRemoved[i].PolicyName < diff.RLSPoliciesRemoved[j].PolicyName
+	})
+	sort.Slice(diff.RLSPoliciesModified, func(i, j int) bool {
+		return diff.RLSPoliciesModified[i].PolicyName < diff.RLSPoliciesModified[j].PolicyName
 	})
 }
 

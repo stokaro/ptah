@@ -2,6 +2,8 @@ package mysql
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/stokaro/ptah/core/ast"
@@ -350,10 +352,12 @@ func (p *Planner) modifyExistingColumns(result []ast.Node, tableDiff *types.Tabl
 		}
 		result = append(result, alterNode)
 
-		// Add a comment showing what changes are being made
+		// Add a comment showing what changes are being made. Iterate the
+		// changes in sorted key order so migration output is deterministic
+		// (issue #59).
 		changesList := make([]string, 0, len(colDiff.Changes))
-		for changeType, change := range colDiff.Changes {
-			changesList = append(changesList, fmt.Sprintf("%s: %s", changeType, change))
+		for _, changeType := range slices.Sorted(maps.Keys(colDiff.Changes)) {
+			changesList = append(changesList, fmt.Sprintf("%s: %s", changeType, colDiff.Changes[changeType]))
 		}
 		astCommentNode := ast.NewComment(fmt.Sprintf("Modify column %s.%s: %s", tableDiff.TableName, colDiff.ColumnName, strings.Join(changesList, ", ")))
 		result = append(result, astCommentNode)
