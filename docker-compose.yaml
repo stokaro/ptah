@@ -69,7 +69,7 @@ services:
       retries: 10
 
   cockroachdb:
-    image: cockroachdb/cockroach:v23.2.5
+    image: cockroachdb/cockroach:v23.2.31
     command:
       - start-single-node
       - --insecure
