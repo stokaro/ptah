@@ -77,7 +77,23 @@ func TestValidate_MissingSumFileExitsTwo(t *testing.T) {
 func TestValidate_MissingDirectoryExitsTwo(t *testing.T) {
 	c := qt.New(t)
 
-	_, _, err := execute("--dir", filepath.Join(t.TempDir(), "does-not-exist"))
+	_, stderr, err := execute("--dir", filepath.Join(t.TempDir(), "does-not-exist"))
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
-	c.Assert(err, qt.ErrorMatches, ".*not accessible.*")
+	// The message surfaces the directory and the underlying stat error.
+	c.Assert(stderr, qt.Contains, "migrations directory")
+	c.Assert(err, qt.ErrorMatches, ".*does-not-exist.*")
+}
+
+func TestValidate_CorruptSumFileExitsTwoNotOne(t *testing.T) {
+	c := qt.New(t)
+
+	dir := migrationsDir(t)
+	// A structurally broken ptah.sum (an h1: hash that is not valid base64)
+	// is a usage failure (exit 2), not content drift (exit 1).
+	c.Assert(os.WriteFile(filepath.Join(dir, "ptah.sum"),
+		[]byte("h1:not-valid-base64!!\n"), 0o600), qt.IsNil)
+
+	_, stderr, err := execute("--dir", dir)
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+	c.Assert(stderr, qt.Contains, "malformed directory hash line")
 }

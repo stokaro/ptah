@@ -6,10 +6,10 @@ package migratevalidate
 import (
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/migration/migratesum"
 )
@@ -37,12 +37,13 @@ Run it in CI to guarantee already-committed migrations are never changed.`,
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "./migrations", "Directory containing migration files")
+	cmd.SetFlagErrorFunc(cmdutil.FlagErrorFunc)
 	return cmd
 }
 
 func runValidate(cmd *cobra.Command, dir string) error {
-	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
-		return fail(cmd, fmt.Errorf("migrations directory %s is not accessible", dir))
+	if err := cmdutil.StatDir(dir); err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
 
 	// A missing or unreadable ptah.sum, and any other verify error, is a
@@ -52,7 +53,7 @@ func runValidate(cmd *cobra.Command, dir string) error {
 	// silences cobra's own error output).
 	result, err := migratesum.VerifyDir(dir)
 	if err != nil {
-		return fail(cmd, err)
+		return cmdutil.Fail(cmd, err)
 	}
 
 	if !result.OK() {
@@ -62,10 +63,4 @@ func runValidate(cmd *cobra.Command, dir string) error {
 
 	fmt.Fprintf(cmd.OutOrStdout(), "OK: migrations directory matches %s\n", migratesum.FileName)
 	return nil
-}
-
-// fail prints an error to stderr and returns it as an exit-2 error.
-func fail(cmd *cobra.Command, err error) error {
-	fmt.Fprintf(cmd.ErrOrStderr(), "error: %s\n", err)
-	return exitcode.New(2, err)
 }

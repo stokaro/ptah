@@ -86,8 +86,11 @@ func diff(recorded, current *SumFile) *Result {
 	sort.Strings(res.Removed)
 	sort.Strings(res.Changed)
 
-	// A directory-hash mismatch with no per-file diff means the sum file's
-	// own dir line was tampered with (or an entry was reordered/edited).
+	// Per-file entries match, yet the recorded directory-hash line does not
+	// equal the hash recomputed over those entries: the dir line was
+	// hand-edited (or the sum file was assembled inconsistently). Reordering
+	// entry lines is not flagged here and need not be — the diff is
+	// name-keyed and Compute always re-sorts, so order carries no meaning.
 	if res.OK() && recorded.DirHash != current.DirHash {
 		res.DirHashMismatch = true
 	}

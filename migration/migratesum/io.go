@@ -14,7 +14,10 @@ func Write(dir string) (*SumFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(filepath.Join(dir, FileName), sum.Bytes(), 0o600); err != nil {
+	// ptah.sum is committed alongside the migrations and read by everyone who
+	// checks out the repo, so it uses the same 0644 as generated migration
+	// files rather than a private 0600.
+	if err := os.WriteFile(filepath.Join(dir, FileName), sum.Bytes(), 0644); err != nil { //nolint:gosec // 0644 is fine
 		return nil, fmt.Errorf("failed to write %s: %w", FileName, err)
 	}
 	return sum, nil

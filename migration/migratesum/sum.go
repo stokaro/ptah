@@ -105,7 +105,7 @@ func Parse(data []byte) (*SumFile, error) {
 	if dirLine == "" {
 		return nil, fmt.Errorf("empty or missing directory hash line")
 	}
-	if !strings.HasPrefix(dirLine, hashPrefix) {
+	if !validHash(dirLine) {
 		return nil, fmt.Errorf("malformed directory hash line: %q", dirLine)
 	}
 	sum := &SumFile{DirHash: dirLine}
@@ -123,12 +123,25 @@ func Parse(data []byte) (*SumFile, error) {
 			return nil, fmt.Errorf("malformed entry line: %q", line)
 		}
 		name, hash := line[:idx], line[idx+1:]
-		if !strings.HasPrefix(hash, hashPrefix) {
+		if !validHash(hash) {
 			return nil, fmt.Errorf("malformed entry line: %q", line)
 		}
 		sum.Entries = append(sum.Entries, Entry{Name: name, Hash: hash})
 	}
 	return sum, nil
+}
+
+// validHash reports whether s is a well-formed h1: hash: the prefix plus a
+// standard-base64 SHA-256 digest. Rejecting a syntactically broken hash at
+// parse time keeps a corrupt ptah.sum a usage error (exit 2) rather than
+// masquerading as content drift (exit 1).
+func validHash(s string) bool {
+	rest, ok := strings.CutPrefix(s, hashPrefix)
+	if !ok {
+		return false
+	}
+	decoded, err := base64.StdEncoding.DecodeString(rest)
+	return err == nil && len(decoded) == sha256.Size
 }
 
 // hashContent returns the h1: content hash of a migration file.

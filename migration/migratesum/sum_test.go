@@ -1,6 +1,8 @@
 package migratesum_test
 
 import (
+	"bytes"
+	"encoding/base64"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -93,19 +95,34 @@ func TestBytesParseRoundTrip(t *testing.T) {
 func TestParse_Malformed(t *testing.T) {
 	c := qt.New(t)
 
+	// A syntactically valid h1: hash (prefix + base64 of 32 bytes) for the
+	// directory line, so the entry-line cases below are not short-circuited
+	// by a bad dir line.
+	validH := "h1:" + base64.StdEncoding.EncodeToString(make([]byte, 32))
+
 	_, err := migratesum.Parse([]byte(""))
 	c.Assert(err, qt.ErrorMatches, "empty or missing directory hash line")
 
-	_, err = migratesum.Parse([]byte("not-a-hash\n0000000001_x.up.sql h1:abc\n"))
+	// Directory line without the h1: prefix.
+	_, err = migratesum.Parse([]byte("not-a-hash\n0000000001_x.up.sql " + validH + "\n"))
+	c.Assert(err, qt.ErrorMatches, "malformed directory hash line.*")
+
+	// Directory line with the h1: prefix but a non-base64 / wrong-length
+	// digest — a corrupt sum must be a usage error, not silent drift.
+	_, err = migratesum.Parse([]byte("h1:not-valid-base64!!\n"))
 	c.Assert(err, qt.ErrorMatches, "malformed directory hash line.*")
 
 	// No space between name and hash.
-	_, err = migratesum.Parse([]byte("h1:dir\nnohashhere\n"))
+	_, err = migratesum.Parse([]byte(validH + "\nnohashhere\n"))
 	c.Assert(err, qt.ErrorMatches, "malformed entry line.*")
 
 	// A space is present (so the field split succeeds) but the trailing
-	// token is not an h1: hash — this pins the hash-prefix validation.
-	_, err = migratesum.Parse([]byte("h1:dir\n0000000001_x.up.sql garbagehash\n"))
+	// token is not an h1: hash.
+	_, err = migratesum.Parse([]byte(validH + "\n0000000001_x.up.sql garbagehash\n"))
+	c.Assert(err, qt.ErrorMatches, "malformed entry line.*")
+
+	// h1: prefix present but the digest is not valid base64/32 bytes.
+	_, err = migratesum.Parse([]byte(validH + "\n0000000001_x.up.sql h1:short\n"))
 	c.Assert(err, qt.ErrorMatches, "malformed entry line.*")
 }
 
@@ -215,9 +232,12 @@ func TestVerify_HandEditedSumFileDirHashMismatch(t *testing.T) {
 	sum, err := migratesum.Compute(fsys)
 	c.Assert(err, qt.IsNil)
 
-	// Corrupt only the directory-hash line; the per-file entries still match
-	// their files, so this is detectable only via the dir hash.
-	tampered := append([]byte("h1:AAAAtampered\n"), sum.Bytes()[len(sum.DirHash)+1:]...)
+	// Replace only the directory-hash line with a different but still
+	// well-formed h1 hash; the per-file entries still match their files, so
+	// this is detectable only via the dir hash. (A syntactically broken hash
+	// would instead be rejected at parse time — see TestParse_Malformed.)
+	wrongDirHash := "h1:" + base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0xFF}, 32))
+	tampered := append([]byte(wrongDirHash+"\n"), sum.Bytes()[len(sum.DirHash)+1:]...)
 	fsys["ptah.sum"] = &fstest.MapFile{Data: tampered}
 
 	res, err := migratesum.Verify(fsys)
