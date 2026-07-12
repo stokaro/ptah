@@ -152,6 +152,8 @@ Provides command-line interface for all Ptah operations:
 - **`migrate-up`** - Apply migrations to bring database up to latest version
 - **`migrate-down`** - Roll back migrations to previous versions
 - **`migrate-status`** - Show current migration status and history
+- **`migrate-hash`** - Write/update the `ptah.sum` migration-directory integrity file
+- **`migrate-validate`** - Verify a migrations directory against its committed `ptah.sum`
 - **`seed`** - Apply environment-scoped SQL seed files with replay tracking
 - **`drop-all`** - Drop ALL tables and enums in database (VERY DANGEROUS!) (supports `--dry-run`)
 - **`integration-test`** - Run comprehensive integration tests across database platforms
@@ -660,6 +662,35 @@ Show current migration status and pending migrations:
 - Total available migrations
 - List of pending migrations
 - Migration history and timestamps
+
+#### Migration Directory Integrity (`ptah.sum`)
+
+Once a migration is committed and applied somewhere, its content must never change.
+`ptah.sum` records the SHA-256 (`h1:`, base64) of every migration file plus a
+directory-level hash, so an out-of-band edit to an already-applied migration is
+caught in CI instead of silently breaking reproducibility.
+
+```bash
+# Write/update ptah.sum after adding or intentionally editing a migration
+./package-migrator migrate-hash --dir ./migrations
+
+# Verify the directory matches its committed ptah.sum (CI gate)
+./package-migrator migrate-validate --dir ./migrations
+```
+
+`migrate-validate` exits `0` when clean, `1` on drift (a file added, removed, or
+edited out of band — with a diff on stderr), and `2` when `ptah.sum` is missing or
+unreadable. `migrate-up --verify-sum` runs the same check before applying and
+aborts on drift.
+
+```yaml
+# CI (GitHub Actions)
+- name: Verify migration integrity
+  run: ./package-migrator migrate-validate --dir ./migrations
+```
+
+The file layout and `h1:` scheme mirror Atlas's `atlas.sum`; convergence on the
+exact Atlas format is tracked as part of the Atlas-compatibility research (#250).
 
 #### Migration File Generation
 Generate timestamped migration files from schema differences using the migration generator package:
