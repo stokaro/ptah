@@ -685,11 +685,12 @@ Run comprehensive integration tests across multiple database platforms:
 ```
 
 **Features:**
-- ✅ Tests across PostgreSQL, MySQL, MariaDB, and ClickHouse
+- ✅ Tests across PostgreSQL, MySQL, MariaDB, ClickHouse, CockroachDB, and YugabyteDB
 - ✅ Comprehensive scenario coverage (basic, concurrency, idempotency, failure recovery)
 - ✅ Multiple report formats (TXT, JSON, HTML)
 - ✅ Automated database setup and cleanup
 - ✅ ClickHouse scenarios are opt-in per scenario (`ClickHouseCompatible`); incompatible scenarios skip cleanly against a ClickHouse connection
+- ✅ PostgreSQL-family distributed SQL scenarios are opt-in per scenario (`PostgresDistributedCompatible`), with live common-subset coverage for CockroachDB and YugabyteDB
 
 ---
 
@@ -842,7 +843,7 @@ go test -v ./migration/...
 
 ### Integration Testing Framework
 
-Ptah includes a comprehensive integration testing framework that validates migration functionality across PostgreSQL, MySQL, MariaDB, ClickHouse, and opt-in PostgreSQL-family distributed SQL targets.
+Ptah includes a comprehensive integration testing framework that validates migration functionality across PostgreSQL, MySQL, MariaDB, ClickHouse, and opt-in PostgreSQL-family distributed SQL targets. CockroachDB and YugabyteDB have live common-subset scenarios in CI; Spanner uses capability, planning, and rendering coverage only.
 
 #### Run Integration Tests
 
@@ -960,8 +961,8 @@ docker run --name test-mysql \
 - **MySQL** - Full support with MySQL-specific optimizations
 - **MariaDB** - Full support with MariaDB-specific features
 - **ClickHouse** - Opt-in MergeTree-oriented support for compatible scenarios
-- **CockroachDB** - PostgreSQL-family common subset via `platform.CockroachDB`; no `CREATE INDEX CONCURRENTLY`, XML, advisory locks, or RLS
-- **YugabyteDB** - PostgreSQL-family common subset via `platform.YugabyteDB`; regular `CREATE INDEX` is used instead of PostgreSQL `CONCURRENTLY`
+- **CockroachDB** - PostgreSQL-family common subset via `platform.CockroachDB`; no `CREATE INDEX CONCURRENTLY`, XML, advisory locks, or RLS; covered by a live common-subset integration scenario
+- **YugabyteDB** - PostgreSQL-family common subset via `platform.YugabyteDB`; regular `CREATE INDEX` is used instead of PostgreSQL `CONCURRENTLY`; covered by a live common-subset integration scenario
 - **Spanner** - Conservative PostgreSQL-interface routing via `platform.Spanner`; full Spanner-specific DDL is not yet implemented
 
 ---

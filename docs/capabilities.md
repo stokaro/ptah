@@ -168,8 +168,10 @@ planner := mysql.NewWithCapabilities(caps)
   RLS; YugabyteDB disables `CREATE INDEX CONCURRENTLY` because regular
   `CREATE INDEX` is already asynchronous in YSQL; Spanner disables enums,
   foreign keys, sequences, RLS, XML, advisory locks, and concurrent indexes.
-  CockroachDB integration coverage is an opt-in common-subset scenario that
-  avoids SERIAL, XML, foreign keys, and concurrent indexes.
+  CockroachDB and YugabyteDB integration coverage uses opt-in common-subset
+  scenarios that run against live OSS containers in CI. Spanner currently has
+  capability, planning, rendering, URL, and detection coverage only; there is
+  no OSS Spanner PostgreSQL-interface container in the integration suite.
 
 ## Follow-ups
 

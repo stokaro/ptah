@@ -12,6 +12,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver
 
 	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/dbschema/clickhouse"
 	"github.com/stokaro/ptah/dbschema/mysql"
 	"github.com/stokaro/ptah/dbschema/postgres"
@@ -97,7 +98,7 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 	var writer types.SchemaWriter
 	switch dialectProtocol {
 	case "pgx":
-		reader = postgres.NewPostgreSQLReader(db, info.Schema)
+		reader = postgres.NewPostgreSQLReaderWithCapabilities(db, info.Schema, capability.ForDialect(info.Dialect))
 		writer = postgres.NewPostgreSQLWriter(db, info.Schema)
 	case "mysql":
 		reader = mysql.NewMySQLReader(db, info.Schema)

@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/testutils"
 )
@@ -36,9 +37,20 @@ func TestNewPostgreSQLReader(t *testing.T) {
 				c.Assert(reader, qt.IsNotNil)
 				c.Assert(reader.schema, qt.Equals, test.expectedSchema)
 				c.Assert(reader.db, qt.IsNil) // We passed nil for testing
+				c.Assert(reader.caps.Has(capability.RowLevelSecurity), qt.IsTrue)
 			})
 		}
 	})
+}
+
+func TestNewPostgreSQLReaderWithCapabilities(t *testing.T) {
+	c := qt.New(t)
+
+	reader := NewPostgreSQLReaderWithCapabilities(nil, "", capability.CockroachDB23())
+
+	c.Assert(reader.schema, qt.Equals, "public")
+	c.Assert(reader.caps.Has(capability.RowLevelSecurity), qt.IsFalse)
+	c.Assert(reader.caps.Has(capability.XMLType), qt.IsFalse)
 }
 
 func TestPostgreSQLReader_ReadSchema_NoConnection(t *testing.T) {
