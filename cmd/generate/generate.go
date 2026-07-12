@@ -12,21 +12,23 @@ import (
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/renderer"
+	"github.com/stokaro/ptah/core/yamlschema"
 )
 
 var generateCmd = &cobra.Command{
 	Use:   "generate",
-	Short: "Generate schema from Go entities",
-	Long: `Generate database schema from Go entities in the specified directory.
+	Short: "Generate schema from Go entities or YAML schema files",
+	Long: `Generate database schema from Go entities in the specified directory or from a schema file.
 	
-This command scans the directory recursively for Go files with migrator directives
-and generates SQL schema for the specified database dialect(s).`,
+By default, this command scans the directory recursively for Go files with migrator directives.
+When --schema-file is set, it reads a language-agnostic YAML schema instead.`,
 	RunE: generateCommand,
 }
 
 const (
-	rootDirFlag = "root-dir"
-	dialectFlag = "dialect"
+	rootDirFlag    = "root-dir"
+	schemaFileFlag = "schema-file"
+	dialectFlag    = "dialect"
 )
 
 var generateFlags = map[string]cobraflags.Flag{
@@ -34,6 +36,11 @@ var generateFlags = map[string]cobraflags.Flag{
 		Name:  rootDirFlag,
 		Value: "./",
 		Usage: "Root directory to scan for Go entities",
+	},
+	schemaFileFlag: &cobraflags.StringFlag{
+		Name:  schemaFileFlag,
+		Value: "",
+		Usage: "YAML schema file to generate from instead of scanning Go entities",
 	},
 	dialectFlag: &cobraflags.StringFlag{
 		Name:  dialectFlag,
@@ -49,27 +56,12 @@ func NewGenerateCommand() *cobra.Command {
 
 func generateCommand(_ *cobra.Command, _ []string) error {
 	rootDir := generateFlags[rootDirFlag].GetString()
+	schemaFile := generateFlags[schemaFileFlag].GetString()
 	dialect := generateFlags[dialectFlag].GetString()
 
-	// Convert to absolute path
-	absPath, err := filepath.Abs(rootDir)
+	result, err := loadSchema(rootDir, schemaFile)
 	if err != nil {
-		return fmt.Errorf("error resolving path: %w", err)
-	}
-
-	// Check if directory exists
-	if _, err := os.Stat(absPath); os.IsNotExist(err) {
-		return fmt.Errorf("directory does not exist: %s", absPath)
-	}
-
-	fmt.Printf("Scanning directory: %s\n", absPath)
-	fmt.Println("=" + strings.Repeat("=", len(absPath)+19))
-	fmt.Println()
-
-	// Parse the entire package recursively
-	result, err := goschema.ParseDir(absPath)
-	if err != nil {
-		return fmt.Errorf("error parsing package: %w", err)
+		return err
 	}
 
 	// Print summary
@@ -117,7 +109,7 @@ func generateCommand(_ *cobra.Command, _ []string) error {
 		statements := renderer.GetOrderedCreateStatements(result, d)
 
 		for i, statement := range statements {
-			fmt.Printf("-- Table %d/%d\n", i+1, len(result.Tables))
+			fmt.Printf("-- Statement %d/%d\n", i+1, len(statements))
 			fmt.Println(statement)
 			fmt.Println()
 		}
@@ -126,4 +118,66 @@ func generateCommand(_ *cobra.Command, _ []string) error {
 	}
 
 	return nil
+}
+
+func loadSchema(rootDir, schemaFile string) (*goschema.Database, error) {
+	if schemaFile != "" {
+		return loadSchemaFile(schemaFile)
+	}
+
+	// Convert to absolute path
+	absPath, err := filepath.Abs(rootDir)
+	if err != nil {
+		return nil, fmt.Errorf("error resolving path: %w", err)
+	}
+
+	// Check if directory exists
+	if _, err := os.Stat(absPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("directory does not exist: %s", absPath)
+	}
+
+	fmt.Printf("Scanning directory: %s\n", absPath)
+	fmt.Println("=" + strings.Repeat("=", len(absPath)+19))
+	fmt.Println()
+
+	// Parse the entire package recursively
+	result, err := goschema.ParseDir(absPath)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing package: %w", err)
+	}
+	return result, nil
+}
+
+func loadSchemaFile(schemaFile string) (*goschema.Database, error) {
+	absPath, err := filepath.Abs(schemaFile)
+	if err != nil {
+		return nil, fmt.Errorf("error resolving schema file: %w", err)
+	}
+
+	info, err := os.Stat(absPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("schema file does not exist: %s", absPath)
+		}
+		return nil, fmt.Errorf("stat schema file: %w", err)
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("schema file is a directory: %s", absPath)
+	}
+
+	switch strings.ToLower(filepath.Ext(absPath)) {
+	case ".yaml", ".yml":
+	default:
+		return nil, fmt.Errorf("unsupported schema file extension %q: only .yaml and .yml are supported", filepath.Ext(absPath))
+	}
+
+	fmt.Printf("Reading schema file: %s\n", absPath)
+	fmt.Println("=" + strings.Repeat("=", len(absPath)+21))
+	fmt.Println()
+
+	result, err := yamlschema.ParseFile(absPath)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing schema file: %w", err)
+	}
+	return result, nil
 }

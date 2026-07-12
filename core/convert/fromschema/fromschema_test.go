@@ -483,6 +483,38 @@ func TestFromTable_CompositePrimaryKey(t *testing.T) {
 	c.Assert(result.Constraints[0].Columns, qt.DeepEquals, []string{"user_id", "role_id"})
 }
 
+func TestFromDatabase_TableLevelConstraints(t *testing.T) {
+	c := qt.New(t)
+
+	db := goschema.Database{
+		Tables: []goschema.Table{{
+			StructName: "User",
+			Name:       "users",
+		}},
+		Fields: []goschema.Field{{
+			StructName: "User",
+			Name:       "email",
+			Type:       "VARCHAR(255)",
+		}},
+		Constraints: []goschema.Constraint{{
+			StructName:      "User",
+			Name:            "chk_users_email",
+			Type:            "CHECK",
+			CheckExpression: "position('@' in email) > 1",
+		}},
+	}
+
+	result := fromschema.FromDatabase(db, "postgres")
+
+	c.Assert(result.Statements, qt.HasLen, 1)
+	table, ok := result.Statements[0].(*ast.CreateTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(table.Constraints, qt.HasLen, 1)
+	c.Assert(table.Constraints[0].Type, qt.Equals, ast.CheckConstraint)
+	c.Assert(table.Constraints[0].Name, qt.Equals, "chk_users_email")
+	c.Assert(table.Constraints[0].Expression, qt.Equals, "position('@' in email) > 1")
+}
+
 func TestFromTable_FiltersByStructName(t *testing.T) {
 	c := qt.New(t)
 

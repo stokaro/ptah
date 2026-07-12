@@ -551,6 +551,54 @@ func FromTable(table goschema.Table, fields []goschema.Field, enums []goschema.E
 	return createTable
 }
 
+// FromConstraint converts a goschema.Constraint to an AST table constraint.
+func FromConstraint(constraint goschema.Constraint) *ast.ConstraintNode {
+	switch strings.ToUpper(constraint.Type) {
+	case "PRIMARY KEY":
+		return ast.NewPrimaryKeyConstraint(constraint.Columns...)
+	case "UNIQUE":
+		return ast.NewUniqueConstraint(constraint.Name, constraint.Columns...)
+	case "FOREIGN KEY":
+		return ast.NewForeignKeyConstraint(constraint.Name, constraint.Columns, &ast.ForeignKeyRef{
+			Table:    constraint.ForeignTable,
+			Column:   constraint.ForeignColumn,
+			OnDelete: constraint.OnDelete,
+			OnUpdate: constraint.OnUpdate,
+		})
+	case "CHECK":
+		return &ast.ConstraintNode{
+			Type:       ast.CheckConstraint,
+			Name:       constraint.Name,
+			Expression: constraint.CheckExpression,
+		}
+	case "EXCLUDE":
+		return ast.NewExcludeConstraint(constraint.Name, constraint.UsingMethod, constraint.ExcludeElements).
+			SetWhereCondition(constraint.WhereCondition)
+	default:
+		return nil
+	}
+}
+
+func addTableConstraints(createTable *ast.CreateTableNode, table goschema.Table, constraints []goschema.Constraint) {
+	for _, constraint := range constraints {
+		if !constraintBelongsToTable(constraint, table) {
+			continue
+		}
+
+		node := FromConstraint(constraint)
+		if node != nil {
+			createTable.AddConstraint(node)
+		}
+	}
+}
+
+func constraintBelongsToTable(constraint goschema.Constraint, table goschema.Table) bool {
+	if constraint.Table != "" {
+		return constraint.Table == table.Name
+	}
+	return constraint.StructName == table.StructName
+}
+
 // FromIndex converts a goschema.Index to an ast.IndexNode for database index creation.
 //
 // This function transforms index metadata into an AST node that can be rendered
@@ -925,6 +973,7 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 	// Use the combined field list that includes embedded field expansions
 	for _, table := range database.Tables {
 		tableNode := FromTable(table, allFields, database.Enums, targetPlatform)
+		addTableConstraints(tableNode, table, database.Constraints)
 		statements.Statements = append(statements.Statements, tableNode)
 	}
 

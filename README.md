@@ -24,6 +24,9 @@ capabilities include:
 - 📘 **Go Struct Parsing**
   Extracts tables, columns, indexes, foreign keys, and constraints from structured comments in Go code.
 
+- 🧾 **YAML Schema Input**
+  Generates SQL from language-agnostic `.yaml` / `.yml` schema files using the same internal schema model as Go annotations.
+
 - 🧱 **Schema Generation (DDL)**
   Builds platform-specific `CREATE TABLE`, `CREATE INDEX`, and other DDL statements.
 
@@ -70,6 +73,11 @@ The core package contains all fundamental components for parsing, transforming, 
   - Recursively parses Go source files to discover entity definitions
   - Extracts table directives, field mappings, indexes, enums, and embedded fields
   - Handles dependency analysis and topological sorting for proper table creation order
+
+- **`yamlschema/`** - Language-agnostic YAML schema frontend
+  - Parses `.yaml` / `.yml` schema files into the same `goschema.Database` IR used by Go annotations
+  - Supports tables, columns, indexes, constraints, enums, extensions, functions, RLS, roles, and dialect overrides
+  - Uses strict validation for unknown fields, duplicate ordered keys, unsupported objects, and invalid constraints
 
 - **`parser/`** - SQL DDL token-to-AST parser
   - Converts SQL DDL tokens into Abstract Syntax Tree nodes
@@ -384,6 +392,15 @@ type Booking struct {
 ./package-migrator generate --root-dir ./models --dialect mysql
 ```
 
+You can also generate from a language-agnostic YAML schema file:
+
+```bash
+./package-migrator generate --schema-file schema.yaml --dialect postgres
+```
+
+See [YAML Schema Input](docs/yaml_schema.md) for the supported file format,
+validation rules, and examples.
+
 3. **Compare and migrate**:
 
 ```bash
@@ -413,6 +430,9 @@ Generate SQL DDL statements from Go entities without touching the database:
 ./package-migrator generate --root-dir ./models --dialect mysql
 ./package-migrator generate --root-dir ./models --dialect mariadb
 ./package-migrator generate --root-dir ./models --dialect clickhouse
+
+# Generate from a YAML schema file instead of Go annotations
+./package-migrator generate --schema-file schema.yaml --dialect postgres
 ```
 
 ### Database Operations
