@@ -991,6 +991,18 @@ func (p *Planner) removeFunctions(result []ast.Node, diff *types.SchemaDiff) []a
 	return result
 }
 
+// sortedKeys returns the keys of a string-keyed set in sorted order. Map
+// iteration order is randomized in Go, so any SQL emitted while ranging over a
+// map must go through this to keep migration output deterministic (issue #59).
+func sortedKeys(set map[string]bool) []string {
+	keys := make([]string, 0, len(set))
+	for k := range set {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 func (p *Planner) enableRLSOnTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
 	// Create a set of tables that need RLS enabled
 	tablesNeedingRLS := make(map[string]bool)
@@ -998,8 +1010,9 @@ func (p *Planner) enableRLSOnTables(result []ast.Node, diff *types.SchemaDiff, g
 		tablesNeedingRLS[policy.Table] = true
 	}
 
-	// Enable RLS on tables that have policies but don't have RLS enabled yet
-	for tableName := range tablesNeedingRLS {
+	// Enable RLS on tables that have policies but don't have RLS enabled yet.
+	// Iterate in sorted order so migration output is deterministic (issue #59).
+	for _, tableName := range sortedKeys(tablesNeedingRLS) {
 		// Check if this table is being added or if RLS is being enabled
 		tableIsNew := slices.Contains(diff.TablesAdded, tableName)
 
@@ -1022,7 +1035,7 @@ func (p *Planner) disableRLSOnTables(result []ast.Node, diff *types.SchemaDiff) 
 
 	// For each table that had policies removed, add a comment about potentially disabling RLS
 	// Note: We don't automatically disable RLS because there might be other policies on the table
-	for tableName := range tablesWithRemovedPolicies {
+	for _, tableName := range sortedKeys(tablesWithRemovedPolicies) {
 		warningComment := ast.NewComment(fmt.Sprintf("NOTE: RLS policies were removed from table %s - verify if RLS should be disabled", tableName))
 		result = append(result, warningComment)
 	}

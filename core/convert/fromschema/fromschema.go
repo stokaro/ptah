@@ -52,6 +52,7 @@ package fromschema
 import (
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 
 	"github.com/stokaro/ptah/core/ast"
@@ -1228,6 +1229,7 @@ func getUniqueStructNames(embeddedFields []goschema.EmbeddedField) []string {
 	for structName := range structNameMap {
 		structNames = append(structNames, structName)
 	}
+	sort.Strings(structNames)
 	return structNames
 }
 

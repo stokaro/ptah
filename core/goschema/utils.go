@@ -330,6 +330,7 @@ func getUniqueStructNames(embeddedFields []EmbeddedField) []string {
 	for structName := range structNameMap {
 		structNames = append(structNames, structName)
 	}
+	sort.Strings(structNames)
 	return structNames
 }
 
@@ -568,11 +569,12 @@ func buildFunctionDependencies(r *Database) {
 			}
 		}
 
-		// Convert depMap keys to a slice and assign to FunctionDependencies
+		// Convert depMap keys to a sorted slice and assign to FunctionDependencies
 		deps := make([]string, 0, len(depMap))
 		for dep := range depMap {
 			deps = append(deps, dep)
 		}
+		sort.Strings(deps)
 		r.FunctionDependencies[function.Name] = deps
 	}
 }
