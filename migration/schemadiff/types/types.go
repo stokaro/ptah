@@ -194,11 +194,13 @@ type SchemaDiff struct {
 	ConstraintsAdded []string `json:"constraints_added"`
 
 	// ConstraintsAddedWithTables contains the table-qualified definitions of the
-	// constraints in ConstraintsAdded, in parallel (mirroring
-	// ConstraintsRemovedWithTables). Planners read this to add a field-level FK
-	// to its concrete host table rather than re-deriving the table from a Go
-	// struct name — which breaks for FK names shared across the many tables that
-	// embed an inline-relation mixin (issue #197).
+	// constraints in ConstraintsAdded. It is NOT index-aligned with
+	// ConstraintsAdded — each list is sorted independently (ConstraintsAdded by
+	// name, this one by table then name), so consumers must correlate entries
+	// by constraint name, never by position. Planners read this to add a
+	// field-level FK to its concrete host table rather than re-deriving the
+	// table from a Go struct name — which breaks for FK names shared across
+	// the many tables that embed an inline-relation mixin (issue #197).
 	ConstraintsAddedWithTables []ConstraintAdditionInfo `json:"constraints_added_with_tables"`
 
 	// ConstraintsRemoved contains names of constraints that exist in the current database
@@ -208,8 +210,10 @@ type SchemaDiff struct {
 	// ConstraintsRemovedWithTables contains detailed information about constraints that
 	// need to be removed, including the constraint name, owning table, and type. This is
 	// used by database dialects that require the table name and a type-specific drop
-	// syntax (e.g. MySQL/MariaDB FOREIGN KEY constraints use DROP FOREIGN KEY). It runs
-	// in parallel to ConstraintsRemoved (mirroring IndexesRemovedWithTables).
+	// syntax (e.g. MySQL/MariaDB FOREIGN KEY constraints use DROP FOREIGN KEY). It is
+	// NOT index-aligned with ConstraintsRemoved — each list is sorted independently
+	// (ConstraintsRemoved by name, this one by table then name), so consumers must
+	// correlate entries by constraint name, never by position.
 	ConstraintsRemovedWithTables []ConstraintRemovalInfo `json:"constraints_removed_with_tables"`
 }
 
