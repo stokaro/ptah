@@ -739,11 +739,12 @@ import (
 
 func main() {
     opts := generator.GenerateMigrationOptions{
-        GoEntitiesDir: "./models",
-        DatabaseURL:   "postgres://user:pass@localhost:5432/database",
-        MigrationName: "add_user_table",
-        OutputDir:     "./migrations",
-        Schemas:       []string{"auth", "billing", "public"},
+        GoEntitiesDir:      "./models",
+        DatabaseURL:        "postgres://user:pass@localhost:5432/database",
+        MigrationName:      "add_user_table",
+        OutputDir:          "./migrations",
+        Schemas:            []string{"auth", "billing", "public"},
+        ShadowDatabaseURL:  "postgres://user:pass@localhost:5432/shadow_database",
     }
 
     ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -788,6 +789,23 @@ defer cancel()
 files, err := generator.GenerateMigration(ctx, opts)
 ```
 
+**CLI generation with shadow verification:**
+
+```bash
+package-migrator migrate generate \
+  --root-dir ./models \
+  --db-url postgres://user:pass@localhost:5432/database \
+  --migrations-dir ./migrations \
+  --name add_user_table \
+  --shadow-db postgres://user:pass@localhost:5432/shadow_database
+```
+
+`--shadow-db` is destructive for the shadow database: Ptah drops all objects in
+that database, replays existing migrations, applies the candidate migration,
+re-introspects the schema, and only writes files when the replayed schema
+matches the Go source. A mismatch aborts before writing files with a diagnostic
+such as `shadow check failed: missing column users.email`.
+
 **Using Existing Database Connection:**
 
 ```go
@@ -818,6 +836,7 @@ opts := generator.GenerateMigrationOptions{
 - ✅ Embedded filesystem support for Go modules
 - ✅ Connection reuse for better performance
 - ✅ No-op detection (returns nil when no changes needed)
+- ✅ Optional shadow database replay before files are written
 
 ### Dangerous Operations
 

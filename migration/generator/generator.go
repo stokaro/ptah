@@ -53,6 +53,11 @@ type GenerateMigrationOptions struct {
 	// ReportFormat optionally writes a safety report next to generated files.
 	// Supported values: "", "html".
 	ReportFormat string
+	// ShadowDatabaseURL enables pre-write verification on an ephemeral database.
+	// The generator drops all objects in this database, replays existing
+	// migrations from OutputDir, applies the candidate migration, re-introspects
+	// the result, and aborts if it differs from the Go schema.
+	ShadowDatabaseURL string
 }
 
 // MigrationFiles represents the generated migration files
@@ -135,6 +140,7 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 
 	// 4. Generate migration version (timestamp)
 	version := migrator.GetNextMigrationVersion()
+	version = nextAvailableMigrationVersion(opts.OutputDir, version, opts.MigrationName)
 	slog.Debug("Generated migration version", "version", version)
 
 	upNodes := planner.GenerateSchemaDiffAST(diff, generated, conn.Info().Dialect)
@@ -162,6 +168,23 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 	downSQL, err := generateDownMigrationSQL(diff, generated, dbSchema, conn.Info().Dialect)
 	if err != nil {
 		return nil, fmt.Errorf("error generating down migration SQL: %w", err)
+	}
+
+	if opts.ShadowDatabaseURL != "" {
+		if err := verifyShadowMigration(ctx, shadowMigrationOptions{
+			DatabaseURL:   opts.ShadowDatabaseURL,
+			MigrationsDir: opts.OutputDir,
+			Dialect:       conn.Info().Dialect,
+			Version:       version,
+			Name:          opts.MigrationName,
+			UpSQL:         upSQL,
+			DownSQL:       downSQL,
+			Generated:     generated,
+			CompareOpts:   compareOpts,
+			Schemas:       opts.Schemas,
+		}); err != nil {
+			return nil, err
+		}
 	}
 
 	// 7. Create migration files
@@ -721,6 +744,46 @@ func reverseRoleDiffs(roleDiffs []types.RoleDiff) []types.RoleDiff {
 	return reversed
 }
 
+func nextAvailableMigrationVersion(outputDir string, version int, migrationName string) int {
+	if latest := latestExistingMigrationVersion(outputDir); latest >= version {
+		version = latest + 1
+	}
+	for {
+		upFilePath := filepath.Join(outputDir, migrator.GenerateMigrationFileName(version, migrationName, "up"))
+		downFilePath := filepath.Join(outputDir, migrator.GenerateMigrationFileName(version, migrationName, "down"))
+		if !nonEmptyFileExists(upFilePath) && !nonEmptyFileExists(downFilePath) {
+			return version
+		}
+		version++
+	}
+}
+
+func latestExistingMigrationVersion(outputDir string) int {
+	entries, err := os.ReadDir(outputDir)
+	if err != nil {
+		return 0
+	}
+	latest := 0
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		migrationFile, err := migrator.ParseMigrationFileName(entry.Name())
+		if err != nil {
+			continue
+		}
+		if migrationFile.Version > latest {
+			latest = migrationFile.Version
+		}
+	}
+	return latest
+}
+
+func nonEmptyFileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Size() > 0
+}
+
 // createMigrationFiles creates the up and down migration files
 func createMigrationFiles(outputDir string, version int, migrationName, upSQL, downSQL string) (*MigrationFiles, error) {
 	// Ensure output directory exists
@@ -734,19 +797,6 @@ func createMigrationFiles(outputDir string, version int, migrationName, upSQL, d
 
 	upFilePath := filepath.Join(outputDir, upFileName)
 	downFilePath := filepath.Join(outputDir, downFileName)
-
-	for {
-		info, err := os.Stat(upFilePath)
-		if err != nil || info.Size() == 0 {
-			break
-		}
-
-		version++
-		upFileName = migrator.GenerateMigrationFileName(version, migrationName, "up")
-		downFileName = migrator.GenerateMigrationFileName(version, migrationName, "down")
-		upFilePath = filepath.Join(outputDir, upFileName)
-		downFilePath = filepath.Join(outputDir, downFileName)
-	}
 
 	// Write up migration file
 	if err := os.WriteFile(upFilePath, []byte(upSQL), 0644); err != nil { //nolint:gosec // 0644 is fine

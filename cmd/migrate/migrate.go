@@ -28,6 +28,8 @@ the SQL statements needed to update the database to match your entities.`,
 	RunE: migrateCommand,
 }
 
+var migrateFlagsRegistered bool
+
 const (
 	rootDirFlag          = "root-dir"
 	dbURLFlag            = "db-url"
@@ -67,8 +69,21 @@ var migrateFlags = map[string]cobraflags.Flag{
 }
 
 func NewMigrateCommand() *cobra.Command {
-	cobraflags.RegisterMap(migrateCmd, migrateFlags)
+	if !migrateFlagsRegistered {
+		cobraflags.RegisterMap(migrateCmd, migrateFlags)
+		migrateFlagsRegistered = true
+	}
+	addMigrateGenerateCommand(migrateCmd)
 	return migrateCmd
+}
+
+func addMigrateGenerateCommand(cmd *cobra.Command) {
+	for _, child := range cmd.Commands() {
+		if child.Name() == "generate" {
+			return
+		}
+	}
+	cmd.AddCommand(newMigrateGenerateCommand())
 }
 
 func migrateCommand(cmd *cobra.Command, _ []string) error {
