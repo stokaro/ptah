@@ -42,18 +42,26 @@ func MigrationFuncFromSQLFilename(filename string, fsys fs.FS) MigrationFunc {
 			return fmt.Errorf("failed to read migration file: %w", err)
 		}
 
-		// Split SQL into individual statements for better MySQL compatibility
-		statements := SplitSQLStatements(string(sql))
-
-		// Execute each statement separately
-		for _, stmt := range statements {
-			if err := conn.Writer().ExecuteSQL(ctx, stmt); err != nil {
-				return fmt.Errorf("failed to execute migration SQL: %w", err)
-			}
-		}
-
-		return nil
+		return executeMigrationFileSQL(ctx, conn, string(sql))
 	}
+}
+
+// MigrationFuncFromSQLFilenameWithTimeouts returns a migration function and any
+// file-level +ptah timeout directives parsed from the top of the SQL file.
+func MigrationFuncFromSQLFilenameWithTimeouts(filename string, fsys fs.FS) (MigrationFunc, MigrationTimeouts, error) {
+	sql, err := fs.ReadFile(fsys, filename)
+	if err != nil {
+		return nil, MigrationTimeouts{}, fmt.Errorf("failed to read migration file: %w", err)
+	}
+
+	timeouts, err := parseMigrationTimeoutDirectives(string(sql))
+	if err != nil {
+		return nil, MigrationTimeouts{}, err
+	}
+
+	return func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+		return executeMigrationFileSQL(ctx, conn, string(sql))
+	}, timeouts, nil
 }
 
 // NoopMigrationFunc is a no-op migration function
@@ -63,10 +71,12 @@ func NoopMigrationFunc(_ctx context.Context, _conn *dbschema.DatabaseConnection)
 
 // Migration represents a database migration
 type Migration struct {
-	Version     int
-	Description string
-	Up          MigrationFunc
-	Down        MigrationFunc
+	Version      int
+	Description  string
+	Up           MigrationFunc
+	Down         MigrationFunc
+	UpTimeouts   MigrationTimeouts
+	DownTimeouts MigrationTimeouts
 }
 
 // CreateMigrationFromSQL creates a migration from SQL strings
@@ -112,5 +122,20 @@ func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection
 		}
 	}
 
+	return nil
+}
+
+func executeMigrationFileSQL(ctx context.Context, conn *dbschema.DatabaseConnection, sql string) error {
+	statements := SplitSQLStatements(sql)
+	for _, stmt := range statements {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			continue
+		}
+
+		if err := conn.Writer().ExecuteSQL(ctx, stmt); err != nil {
+			return fmt.Errorf("failed to execute migration SQL: %w", err)
+		}
+	}
 	return nil
 }

@@ -31,12 +31,14 @@ before running down migrations in production.`,
 }
 
 const (
-	dbURLFlag      = "db-url"
-	migrationsFlag = "migrations-dir"
-	targetFlag     = "target"
-	dryRunFlag     = "dry-run"
-	verboseFlag    = "verbose"
-	confirmFlag    = "confirm"
+	dbURLFlag            = "db-url"
+	migrationsFlag       = "migrations-dir"
+	targetFlag           = "target"
+	dryRunFlag           = "dry-run"
+	verboseFlag          = "verbose"
+	confirmFlag          = "confirm"
+	lockTimeoutFlag      = "lock-timeout"
+	statementTimeoutFlag = "statement-timeout"
 )
 
 var migrateDownFlags = map[string]cobraflags.Flag{
@@ -70,6 +72,16 @@ var migrateDownFlags = map[string]cobraflags.Flag{
 		Value: false,
 		Usage: "Skip confirmation prompt (use with caution!)",
 	},
+	lockTimeoutFlag: &cobraflags.StringFlag{
+		Name:  lockTimeoutFlag,
+		Value: "",
+		Usage: "Default per-migration lock timeout, such as 3s or 500ms",
+	},
+	statementTimeoutFlag: &cobraflags.StringFlag{
+		Name:  statementTimeoutFlag,
+		Value: "",
+		Usage: "Default per-migration statement timeout, such as 30s or 2m",
+	},
 	dbcli.ConnectTimeoutFlagName: dbcli.NewConnectTimeoutFlag(),
 }
 
@@ -85,6 +97,8 @@ func migrateDownCommand(_ *cobra.Command, _ []string) error {
 	dryRun := migrateDownFlags[dryRunFlag].GetBool()
 	verbose := migrateDownFlags[verboseFlag].GetBool()
 	skipConfirm := migrateDownFlags[confirmFlag].GetBool()
+	lockTimeout := migrateDownFlags[lockTimeoutFlag].GetString()
+	statementTimeout := migrateDownFlags[statementTimeoutFlag].GetString()
 
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
@@ -100,6 +114,11 @@ func migrateDownCommand(_ *cobra.Command, _ []string) error {
 
 	if verbose {
 		fmt.Printf("Connecting to database: %s\n", dbschema.FormatDatabaseURL(dbURL))
+	}
+
+	timeouts, err := migrator.ParseMigrationTimeouts(lockTimeout, statementTimeout)
+	if err != nil {
+		return err
 	}
 
 	connectTimeout, err := dbcli.ParseConnectTimeout(migrateDownFlags[dbcli.ConnectTimeoutFlagName].GetString())
@@ -139,6 +158,7 @@ func migrateDownCommand(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
+	mig = mig.WithDefaultTimeouts(timeouts)
 
 	// Get migration status before running
 	status, err := mig.GetMigrationStatus(context.Background())

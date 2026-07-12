@@ -27,10 +27,12 @@ be rolled back and the migration process will stop.`,
 }
 
 const (
-	dbURLFlag      = "db-url"
-	migrationsFlag = "migrations-dir"
-	dryRunFlag     = "dry-run"
-	verboseFlag    = "verbose"
+	dbURLFlag            = "db-url"
+	migrationsFlag       = "migrations-dir"
+	dryRunFlag           = "dry-run"
+	verboseFlag          = "verbose"
+	lockTimeoutFlag      = "lock-timeout"
+	statementTimeoutFlag = "statement-timeout"
 )
 
 var migrateUpFlags = map[string]cobraflags.Flag{
@@ -54,6 +56,16 @@ var migrateUpFlags = map[string]cobraflags.Flag{
 		Value: false,
 		Usage: "Enable verbose output",
 	},
+	lockTimeoutFlag: &cobraflags.StringFlag{
+		Name:  lockTimeoutFlag,
+		Value: "",
+		Usage: "Default per-migration lock timeout, such as 3s or 500ms",
+	},
+	statementTimeoutFlag: &cobraflags.StringFlag{
+		Name:  statementTimeoutFlag,
+		Value: "",
+		Usage: "Default per-migration statement timeout, such as 30s or 2m",
+	},
 	dbcli.ConnectTimeoutFlagName: dbcli.NewConnectTimeoutFlag(),
 }
 
@@ -67,6 +79,8 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 	migrationsDir := migrateUpFlags[migrationsFlag].GetString()
 	dryRun := migrateUpFlags[dryRunFlag].GetBool()
 	verbose := migrateUpFlags[verboseFlag].GetBool()
+	lockTimeout := migrateUpFlags[lockTimeoutFlag].GetString()
+	statementTimeout := migrateUpFlags[statementTimeoutFlag].GetString()
 
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
@@ -78,6 +92,11 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 
 	if verbose {
 		fmt.Printf("Connecting to database: %s\n", dbschema.FormatDatabaseURL(dbURL))
+	}
+
+	timeouts, err := migrator.ParseMigrationTimeouts(lockTimeout, statementTimeout)
+	if err != nil {
+		return err
 	}
 
 	connectTimeout, err := dbcli.ParseConnectTimeout(migrateUpFlags[dbcli.ConnectTimeoutFlagName].GetString())
@@ -115,6 +134,7 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
+	mig = mig.WithDefaultTimeouts(timeouts)
 
 	// Get migration status before running
 	status, err := mig.GetMigrationStatus(context.Background())

@@ -39,6 +39,43 @@ func TestNewFSMigrator_Success(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(m, qt.IsNotNil)
 	c.Assert(m.MigrationProvider().Migrations(), qt.HasLen, 1)
+	c.Assert(m.MigrationProvider().Migrations()[0].UpTimeouts.IsZero(), qt.IsTrue)
+}
+
+func TestNewFSMigrator_LoadsTimeoutDirectives(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"0000000001_create_users.up.sql": &fstest.MapFile{
+			Data: []byte("-- +ptah lock_timeout=3s\nCREATE TABLE users (id SERIAL PRIMARY KEY);"),
+		},
+		"0000000001_create_users.down.sql": &fstest.MapFile{
+			Data: []byte("-- +ptah statement_timeout=30s\nDROP TABLE users;"),
+		},
+	}
+
+	m, err := migrator.NewFSMigrator(nil, fsys)
+	c.Assert(err, qt.IsNil)
+	migration := m.MigrationProvider().Migrations()[0]
+	c.Assert(migration.UpTimeouts.HasLockTimeout, qt.IsTrue)
+	c.Assert(migration.DownTimeouts.HasStatementTimeout, qt.IsTrue)
+}
+
+func TestNewFSMigrator_InvalidTimeoutDirective(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"0000000001_create_users.up.sql": &fstest.MapFile{
+			Data: []byte("-- +ptah lock_timeout=0s\nCREATE TABLE users (id SERIAL PRIMARY KEY);"),
+		},
+		"0000000001_create_users.down.sql": &fstest.MapFile{
+			Data: []byte("DROP TABLE users;"),
+		},
+	}
+
+	m, err := migrator.NewFSMigrator(nil, fsys)
+	c.Assert(err, qt.ErrorMatches, ".*failed to load up migration.*must be greater than zero.*")
+	c.Assert(m, qt.IsNil)
 }
 
 func TestNewFSMigrator_InvalidFilesystem(t *testing.T) {
