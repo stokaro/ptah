@@ -25,10 +25,17 @@ type scanMode struct {
 }
 
 // modeForDialect maps a lint target dialect to its lexing behavior. An empty
-// or unknown dialect gets a hybrid that keeps hazards visible for every
-// supported dialect: the MySQL comment forms are honored, but backslash
-// escapes stay off because a trailing backslash in a standard-conforming
-// literal would otherwise hide every statement after it.
+// or unknown dialect gets a hybrid whose overriding goal is to never HIDE a
+// hazard: it recognizes strings and dollar-quoted bodies (so literal content
+// is not mis-scanned as code) but deliberately omits the dialect-specific
+// lexing rules that would swallow a statement — backslash escapes (a trailing
+// backslash in a standard-conforming literal would hide everything after it)
+// and, critically, MySQL '#' line comments. '#' is a PostgreSQL operator
+// (bitwise XOR, and the ubiquitous jsonb '#>' / '#>>'); treating it as a
+// comment in the dialect-agnostic mode would eat the rest of the line
+// including its terminating ';', merging statements and hiding a following
+// DROP TABLE. MySQL '#' line comments therefore require an explicit
+// --dialect mysql/mariadb.
 func modeForDialect(dialect string) scanMode {
 	switch dialect {
 	case "mysql", "mariadb":
@@ -36,7 +43,7 @@ func modeForDialect(dialect string) scanMode {
 	case "postgres":
 		return scanMode{dollarQuotes: true, nestedComments: true}
 	default:
-		return scanMode{hashComments: true, execComments: true, dollarQuotes: true, nestedComments: true}
+		return scanMode{execComments: true, dollarQuotes: true, nestedComments: true}
 	}
 }
 

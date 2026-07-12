@@ -182,10 +182,23 @@ func LintFS(fsys fs.FS, opts Options) ([]Finding, error) {
 		present[name] = struct{}{}
 	}
 
+	// Directions present per version, so pairing matches the migrator, which
+	// pairs an up and a down by their shared version prefix regardless of
+	// description — not by an identical file-name stem.
+	versionDirs := map[int]map[string]bool{}
+	for _, name := range names {
+		if parsed, err := migrator.ParseMigrationFileName(path.Base(name)); err == nil {
+			if versionDirs[parsed.Version] == nil {
+				versionDirs[parsed.Version] = map[string]bool{}
+			}
+			versionDirs[parsed.Version][parsed.Direction] = true
+		}
+	}
+
 	mode := modeForDialect(opts.Dialect)
 	var findings []Finding
 	for _, name := range names {
-		file, err := prepareFile(fsys, name, present, opts.PathPrefix, mode)
+		file, err := prepareFile(fsys, name, present, versionDirs, opts.PathPrefix, mode)
 		if err != nil {
 			return nil, err
 		}
@@ -205,7 +218,7 @@ func LintFS(fsys fs.FS, opts Options) ([]Finding, error) {
 }
 
 // prepareFile loads one migration file into the forms rules consume.
-func prepareFile(fsys fs.FS, name string, present map[string]struct{}, pathPrefix string, mode scanMode) (*File, error) {
+func prepareFile(fsys fs.FS, name string, present map[string]struct{}, versionDirs map[int]map[string]bool, pathPrefix string, mode scanMode) (*File, error) {
 	raw, err := fs.ReadFile(fsys, name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %s: %w", name, err)
@@ -213,8 +226,10 @@ func prepareFile(fsys fs.FS, name string, present map[string]struct{}, pathPrefi
 
 	base := path.Base(name)
 	direction := ""
+	version := -1
 	if parsed, parseErr := migrator.ParseMigrationFileName(base); parseErr == nil {
 		direction = parsed.Direction
+		version = parsed.Version
 	}
 	file := &File{
 		Path:      path.Join(pathPrefix, name),
@@ -227,6 +242,14 @@ func prepareFile(fsys fs.FS, name string, present map[string]struct{}, pathPrefi
 		WellFormedName: strictNameRe.MatchString(base),
 	}
 	switch {
+	case version >= 0:
+		// Pair by version, matching the migrator: the counterpart is any
+		// file of the same version in the opposite direction.
+		counterpart := "down"
+		if direction == "down" {
+			counterpart = "up"
+		}
+		file.HasPair = versionDirs[version][counterpart]
 	case file.IsUp:
 		_, file.HasPair = present[strings.TrimSuffix(name, ".up.sql")+".down.sql"]
 	case strings.HasSuffix(name, ".down.sql"):
