@@ -272,6 +272,78 @@ type Product struct {
 	c.Assert(database.Enums[0].Values, qt.DeepEquals, []string{"draft", "active", "discontinued"})
 }
 
+func TestParseFile_TableSchemaAttribute(t *testing.T) {
+	c := qt.New(t)
+
+	content := `package entities
+
+//migrator:schema:table name="users" schema="auth"
+type User struct {
+	//migrator:schema:field name="id" type="SERIAL" primary
+	ID int64
+}
+`
+
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "user.go")
+	err := os.WriteFile(testFile, []byte(content), 0o600)
+	c.Assert(err, qt.IsNil)
+
+	database := goschema.ParseFile(testFile)
+	c.Assert(database.Tables, qt.HasLen, 1)
+	c.Assert(database.Tables[0].Name, qt.Equals, "users")
+	c.Assert(database.Tables[0].Schema, qt.Equals, "auth")
+	c.Assert(database.Tables[0].QualifiedName(), qt.Equals, "auth.users")
+}
+
+func TestParseFile_TableLevelConstraintsUseSchemaQualifiedTables(t *testing.T) {
+	c := qt.New(t)
+
+	content := `package entities
+
+//migrator:schema:table name="accounts" schema="auth"
+type Account struct {
+	//migrator:schema:field name="id" type="SERIAL" primary
+	ID int64
+}
+
+//migrator:schema:table name="users" schema="auth"
+//migrator:schema:constraint name="users_status_check" type="CHECK" table="users" check="status <> ''"
+//migrator:schema:constraint name="users_account_fk" type="FOREIGN KEY" table="users" columns="account_id" foreign_table="accounts" foreign_column="id"
+//migrator:schema:rls:enable table="users"
+type User struct {
+	//migrator:schema:field name="id" type="SERIAL" primary
+	ID int64
+	//migrator:schema:field name="account_id" type="INTEGER"
+	AccountID int64
+	//migrator:schema:field name="status" type="TEXT"
+	//migrator:schema:index name="idx_users_status" fields="status" table="users"
+	Status string
+}
+
+//migrator:schema:rls:policy name="users_rls" table="auth.users" for="ALL" using="account_id IS NOT NULL"
+`
+
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "user.go")
+	err := os.WriteFile(testFile, []byte(content), 0o600)
+	c.Assert(err, qt.IsNil)
+
+	database := goschema.ParseFile(testFile)
+	c.Assert(database.Constraints, qt.HasLen, 2)
+	c.Assert(database.Constraints[0].Table, qt.Equals, "auth.users")
+	c.Assert(database.Constraints[1].Table, qt.Equals, "auth.users")
+	c.Assert(database.Constraints[1].ForeignTable, qt.Equals, "auth.accounts")
+	c.Assert(database.Indexes, qt.HasLen, 1)
+	c.Assert(database.Indexes[0].TableName, qt.Equals, "auth.users")
+	c.Assert(database.RLSEnabledTables, qt.DeepEquals, []goschema.RLSEnabledTable{
+		{StructName: "User", Table: "auth.users"},
+	})
+	c.Assert(database.RLSPolicies, qt.DeepEquals, []goschema.RLSPolicy{
+		{StructName: "User", Name: "users_rls", Table: "auth.users", PolicyFor: "ALL", UsingExpression: "account_id IS NOT NULL"},
+	})
+}
+
 func TestParsePackageRecursively(t *testing.T) {
 	c := qt.New(t)
 

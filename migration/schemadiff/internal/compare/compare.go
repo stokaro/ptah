@@ -91,12 +91,12 @@ func TablesAndColumns(generated *goschema.Database, database *types.DBSchema, di
 	// Create maps for quick lookup
 	genTables := make(map[string]goschema.Table)
 	for _, table := range generated.Tables {
-		genTables[table.Name] = table
+		genTables[table.QualifiedName()] = table
 	}
 
 	dbTables := make(map[string]types.DBTable)
 	for _, table := range database.Tables {
-		dbTables[table.Name] = table
+		dbTables[table.QualifiedName()] = table
 	}
 
 	// Find added and removed tables
@@ -196,7 +196,7 @@ func TablesAndColumns(generated *goschema.Database, database *types.DBSchema, di
 //
 // Column lists are sorted alphabetically for deterministic output and reliable testing.
 func TableColumns(genTable goschema.Table, dbTable types.DBTable, generated *goschema.Database) difftypes.TableDiff {
-	tableDiff := difftypes.TableDiff{TableName: genTable.Name}
+	tableDiff := difftypes.TableDiff{TableName: genTable.QualifiedName()}
 
 	// Process embedded fields to get the complete field list (same as generators do)
 	embeddedGeneratedFields := processEmbeddedFieldsForStruct(generated.EmbeddedFields, generated.Fields, genTable.StructName)
@@ -917,7 +917,7 @@ func Constraints(generated *goschema.Database, database *types.DBSchema, diff *d
 		}
 
 		// Use table.constraint_name as the key for comparison
-		key := constraint.TableName + "." + constraint.Name
+		key := constraint.QualifiedTableName() + "." + constraint.Name
 		dbConstraints[key] = constraint
 	}
 
@@ -960,7 +960,7 @@ func Constraints(generated *goschema.Database, database *types.DBSchema, diff *d
 func appendConstraintRemoval(infos []difftypes.ConstraintRemovalInfo, dbConstraint types.DBConstraint) []difftypes.ConstraintRemovalInfo {
 	return append(infos, difftypes.ConstraintRemovalInfo{
 		Name:      dbConstraint.Name,
-		TableName: dbConstraint.TableName,
+		TableName: dbConstraint.QualifiedTableName(),
 		Type:      dbConstraint.Type,
 	})
 }
@@ -1080,7 +1080,7 @@ func uniqueConstraintChanged(genConstraint goschema.Constraint, dbConstraint typ
 // (the same hazard checkConstraintChanged guards against for CHECK clauses).
 func foreignKeyConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint, dialect string) bool {
 	// Compare referenced table
-	if genConstraint.ForeignTable != getStringValue(dbConstraint.ForeignTable) {
+	if !foreignTableRefMatches(genConstraint.ForeignTable, dbConstraint) {
 		return true
 	}
 
@@ -1100,6 +1100,17 @@ func foreignKeyConstraintChanged(genConstraint goschema.Constraint, dbConstraint
 	}
 
 	return false
+}
+
+func foreignTableRefMatches(generated string, dbConstraint types.DBConstraint) bool {
+	generated = strings.TrimSpace(generated)
+	if generated == "" {
+		return dbConstraint.ForeignTable == nil
+	}
+	if strings.Contains(generated, ".") {
+		return generated == dbConstraint.QualifiedForeignTableName()
+	}
+	return generated == getStringValue(dbConstraint.ForeignTable)
 }
 
 // normalizeReferentialAction canonicalizes an ON DELETE / ON UPDATE action so
@@ -1169,7 +1180,7 @@ func isFieldLevelConstraint(dbConstraint types.DBConstraint, generated *goschema
 		tableName := field.StructName // default to struct name
 		for _, table := range generated.Tables {
 			if table.StructName == field.StructName {
-				tableName = table.Name
+				tableName = table.QualifiedName()
 				break
 			}
 		}
@@ -1181,19 +1192,19 @@ func isFieldLevelConstraint(dbConstraint types.DBConstraint, generated *goschema
 	switch dbConstraint.Type {
 	case "NOT NULL":
 		// Check if there's a field with not_null=true for this column
-		key := dbConstraint.TableName + "." + getConstraintColumn(dbConstraint)
+		key := dbConstraint.QualifiedTableName() + "." + getConstraintColumn(dbConstraint)
 		if field, exists := fieldMap[key]; exists && !field.Nullable {
 			return true
 		}
 	case "PRIMARY KEY":
 		// Check if there's a field with primary=true for this column
-		key := dbConstraint.TableName + "." + getConstraintColumn(dbConstraint)
+		key := dbConstraint.QualifiedTableName() + "." + getConstraintColumn(dbConstraint)
 		if field, exists := fieldMap[key]; exists && field.Primary {
 			return true
 		}
 	case "UNIQUE":
 		// Check if there's a field with unique=true for this column
-		key := dbConstraint.TableName + "." + getConstraintColumn(dbConstraint)
+		key := dbConstraint.QualifiedTableName() + "." + getConstraintColumn(dbConstraint)
 		if field, exists := fieldMap[key]; exists && field.Unique {
 			return true
 		}
@@ -1207,14 +1218,14 @@ func isFieldLevelConstraint(dbConstraint types.DBConstraint, generated *goschema
 		// the constraint name rather than the column, because the synthesized
 		// name is keyed on table.constraint_name and getConstraintColumn does
 		// not always resolve the FK column.
-		if _, synthesized := synthesizedFKKeys[dbConstraint.TableName+"."+dbConstraint.Name]; synthesized {
+		if _, synthesized := synthesizedFKKeys[dbConstraint.QualifiedTableName()+"."+dbConstraint.Name]; synthesized {
 			return false
 		}
 		// Check if there's a field with foreign key reference for this column.
 		// No synthesized counterpart (e.g. the column is not yet in the
 		// database): keep the historical behavior and treat it as field-level
 		// so it is owned by the column/table lifecycle.
-		key := dbConstraint.TableName + "." + getConstraintColumn(dbConstraint)
+		key := dbConstraint.QualifiedTableName() + "." + getConstraintColumn(dbConstraint)
 		if field, exists := fieldMap[key]; exists && field.Foreign != "" {
 			return true
 		}
@@ -1274,15 +1285,15 @@ func synthesizeFieldLevelCheckConstraints(generated *goschema.Database, database
 		return nil
 	}
 
-	structToTable := make(map[string]string, len(generated.Tables))
+	structToTable := make(map[string]goschema.Table, len(generated.Tables))
 	for _, t := range generated.Tables {
-		structToTable[t.StructName] = t.Name
+		structToTable[t.StructName] = t
 	}
 
 	dbColumns := make(map[string]struct{}, 16)
 	for _, t := range database.Tables {
 		for _, c := range t.Columns {
-			dbColumns[t.Name+"."+c.Name] = struct{}{}
+			dbColumns[t.QualifiedName()+"."+c.Name] = struct{}{}
 		}
 	}
 
@@ -1291,16 +1302,19 @@ func synthesizeFieldLevelCheckConstraints(generated *goschema.Database, database
 		if f.Check == "" {
 			continue
 		}
-		tableName := structToTable[f.StructName]
-		if tableName == "" {
+		table, ok := structToTable[f.StructName]
+		tableName := table.QualifiedName()
+		tableLeafName := table.Name
+		if !ok || tableName == "" {
 			tableName = f.StructName
+			tableLeafName = f.StructName
 		}
 		if _, exists := dbColumns[tableName+"."+f.Name]; !exists {
 			continue
 		}
 		name := f.CheckName
 		if name == "" {
-			name = tableName + "_" + f.Name + "_check"
+			name = tableLeafName + "_" + f.Name + "_check"
 		}
 		synthesized = append(synthesized, goschema.Constraint{
 			StructName:      f.StructName,
@@ -1343,7 +1357,7 @@ func synthesizeFieldLevelForeignKeyConstraints(generated *goschema.Database, dat
 	dbColumns := make(map[string]struct{}, 16)
 	for _, t := range database.Tables {
 		for _, c := range t.Columns {
-			dbColumns[t.Name+"."+c.Name] = struct{}{}
+			dbColumns[t.QualifiedName()+"."+c.Name] = struct{}{}
 		}
 	}
 
@@ -1371,7 +1385,7 @@ func synthesizeFieldLevelForeignKeyConstraints(generated *goschema.Database, dat
 		// tagged with that table's name. An empty tableName would mean the
 		// field is not part of any table, so skip it rather than synthesize
 		// against a struct name.
-		tableName := f.tableName
+		tableName := f.qualifiedTableName
 		if tableName == "" {
 			continue
 		}
@@ -1380,7 +1394,7 @@ func synthesizeFieldLevelForeignKeyConstraints(generated *goschema.Database, dat
 		}
 		name := f.ForeignKeyName
 		if name == "" {
-			name = fromschema.GenerateForeignKeyName(tableName, f.Name)
+			name = fromschema.GenerateForeignKeyName(f.tableName, f.Name)
 		}
 		// Reuse the canonical generate-path parser so the synthesized table /
 		// column always match exactly what the planner emits (issue #189
@@ -1417,7 +1431,8 @@ func synthesizeFieldLevelForeignKeyConstraints(generated *goschema.Database, dat
 // mixin are expanded once per embedding host and carry the host table's name.
 type resolvedField struct {
 	goschema.Field
-	tableName string
+	tableName          string
+	qualifiedTableName string
 }
 
 // resolveTableFields expands every table's field set the same way the CREATE
@@ -1441,13 +1456,13 @@ func resolveTableFields(generated *goschema.Database) []resolvedField {
 		// Direct fields declared on the table struct itself.
 		for _, f := range generated.Fields {
 			if f.StructName == table.StructName {
-				resolved = append(resolved, resolvedField{Field: f, tableName: table.Name})
+				resolved = append(resolved, resolvedField{Field: f, tableName: table.Name, qualifiedTableName: table.QualifiedName()})
 			}
 		}
 		// Fields contributed by embedded mixins (inline + inline-relation),
 		// each already rewritten to the host struct name by the expansion.
 		for _, f := range processEmbeddedFieldsForStruct(generated.EmbeddedFields, generated.Fields, table.StructName) {
-			resolved = append(resolved, resolvedField{Field: f, tableName: table.Name})
+			resolved = append(resolved, resolvedField{Field: f, tableName: table.Name, qualifiedTableName: table.QualifiedName()})
 		}
 	}
 	return resolved
@@ -1653,7 +1668,7 @@ func Indexes(generated *goschema.Database, database *types.DBSchema, diff *difft
 	fkBackedIndexes := make(map[string]struct{}, len(database.Constraints))
 	for _, c := range database.Constraints {
 		if c.Type == "FOREIGN KEY" {
-			fkBackedIndexes[c.TableName+"."+c.Name] = struct{}{}
+			fkBackedIndexes[c.QualifiedTableName()+"."+c.Name] = struct{}{}
 		}
 	}
 
@@ -1672,7 +1687,7 @@ func Indexes(generated *goschema.Database, database *types.DBSchema, diff *difft
 
 		// Skip MySQL/MariaDB FK-backing indexes (named after the FK constraint
 		// on the same table). They are auto-managed by the foreign key.
-		if _, ok := fkBackedIndexes[index.TableName+"."+index.Name]; ok {
+		if _, ok := fkBackedIndexes[index.QualifiedTableName()+"."+index.Name]; ok {
 			continue
 		}
 
@@ -1695,7 +1710,7 @@ func Indexes(generated *goschema.Database, database *types.DBSchema, diff *difft
 				if index.Name == indexName {
 					diff.IndexesRemovedWithTables = append(diff.IndexesRemovedWithTables, difftypes.IndexRemovalInfo{
 						Name:      indexName,
-						TableName: index.TableName,
+						TableName: index.QualifiedTableName(),
 					})
 					break
 				}
@@ -2605,12 +2620,12 @@ func RLSPolicyDefinitions(genPolicy goschema.RLSPolicy, dbPolicy types.DBRLSPoli
 	}
 
 	// Compare USING expression
-	if genPolicy.UsingExpression != dbPolicy.UsingExpression {
+	if normalize.Expression(genPolicy.UsingExpression) != normalize.Expression(dbPolicy.UsingExpression) {
 		policyDiff.Changes["using_expression"] = fmt.Sprintf("%s -> %s", dbPolicy.UsingExpression, genPolicy.UsingExpression)
 	}
 
 	// Compare WITH CHECK expression
-	if genPolicy.WithCheckExpression != dbPolicy.WithCheckExpression {
+	if normalize.Expression(genPolicy.WithCheckExpression) != normalize.Expression(dbPolicy.WithCheckExpression) {
 		policyDiff.Changes["with_check_expression"] = fmt.Sprintf("%s -> %s", dbPolicy.WithCheckExpression, genPolicy.WithCheckExpression)
 	}
 

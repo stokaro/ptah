@@ -12,6 +12,7 @@ The Ptah Migrator provides versioned database migration capabilities with up/dow
 - **Multiple Database Support**: Works with PostgreSQL and MySQL through Ptah's executor package
 - **Dry Run Mode**: Preview what migrations would do without actually applying them
 - **Migration Status**: Check current migration state and pending migrations
+- **Configurable Migration State**: Store migration history in a custom schema/table
 
 ## Migration File Structure
 
@@ -78,6 +79,11 @@ With dry run:
 go run ./cmd migrate-up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dry-run
 ```
 
+With a custom migration state table:
+```bash
+go run ./cmd migrate-up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --migrations-schema infra --migrations-table ptah_migrations
+```
+
 ### Migrate Down
 Roll back to a specific version:
 ```bash
@@ -87,6 +93,11 @@ go run ./cmd migrate-down --db-url postgres://user:pass@localhost/db --migration
 With confirmation skip (dangerous!):
 ```bash
 go run ./cmd migrate-down --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --target 5 --confirm
+```
+
+With a custom migration state table:
+```bash
+go run ./cmd migrate-down --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --target 5 --migrations-schema infra --migrations-table ptah_migrations
 ```
 
 ### Migration Status
@@ -103,6 +114,11 @@ go run ./cmd migrate-status --db-url postgres://user:pass@localhost/db --migrati
 JSON output:
 ```bash
 go run ./cmd migrate-status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --json
+```
+
+With a custom migration state table:
+```bash
+go run ./cmd migrate-status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --migrations-schema infra --migrations-table ptah_migrations
 ```
 
 ## API Overview
@@ -127,6 +143,7 @@ The migrator package provides a clean, modular API with the following key compon
 - **`NewMigrator(conn, provider)`**: Creates a migrator with a custom provider
 - **`NewFSMigrator(conn, fsys)`**: Creates a migrator that loads migrations from a filesystem
 - **`NewRegisteredMigrationProvider(migrations...)`**: Creates an in-memory migration provider
+- **`WithMigrationsTable(schema, table)`**: Configures the migration history table
 
 ## Programmatic Usage
 

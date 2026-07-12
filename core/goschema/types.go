@@ -315,12 +315,30 @@ type Extension struct {
 type Table struct {
 	StructName string                       // Name of the Go struct this table represents
 	Name       string                       // Database table name
+	Schema     string                       // Optional database schema/namespace (PostgreSQL-style)
 	Engine     string                       // Storage engine (MySQL/MariaDB specific, e.g., "InnoDB")
 	Comment    string                       // Table comment/description
 	PrimaryKey []string                     // Composite primary key column names
 	Checks     []string                     // Table-level check constraints
 	CustomSQL  string                       // Custom SQL to append to CREATE TABLE
 	Overrides  map[string]map[string]string // Platform-specific overrides
+}
+
+// QualifiedName returns the schema-qualified database table name when a schema
+// is configured, or the plain table name otherwise.
+func (t Table) QualifiedName() string {
+	return QualifyTableName(t.Schema, t.Name)
+}
+
+// QualifyTableName joins schema and table without quoting. Renderers remain
+// responsible for dialect-specific identifier escaping.
+func QualifyTableName(schema, table string) string {
+	schema = strings.TrimSpace(schema)
+	table = strings.TrimSpace(table)
+	if schema == "" {
+		return table
+	}
+	return schema + "." + table
 }
 
 // Enum represents a global enumeration type definition that can be shared across

@@ -127,6 +127,22 @@ type DatabaseConnection struct {
 	writer types.SchemaWriter
 }
 
+type schemaScopedReader interface {
+	SetSchemas([]string)
+}
+
+// ReadSchemaWithSchemas reads a database schema, applying a schema allow-list
+// when the underlying dialect reader supports schema scoping.
+func ReadSchemaWithSchemas(conn *DatabaseConnection, schemas []string) (*types.DBSchema, error) {
+	reader := conn.Reader()
+	scoped, ok := reader.(schemaScopedReader)
+	if ok {
+		scoped.SetSchemas(schemas)
+		defer scoped.SetSchemas(nil)
+	}
+	return reader.ReadSchema()
+}
+
 // Info returns the database connection information
 func (dc *DatabaseConnection) Info() types.DBInfo {
 	return dc.info

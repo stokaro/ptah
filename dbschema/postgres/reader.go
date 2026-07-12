@@ -11,9 +11,11 @@ import (
 
 // Reader reads schema from PostgreSQL databases
 type Reader struct {
-	db     *sql.DB
-	schema string
-	caps   capability.Capabilities
+	db      *sql.DB
+	schema  string
+	schemas []string
+	scoped  bool
+	caps    capability.Capabilities
 }
 
 // NewPostgreSQLReader creates a new PostgreSQL schema reader
@@ -28,10 +30,51 @@ func NewPostgreSQLReaderWithCapabilities(db *sql.DB, schema string, caps capabil
 		schema = "public"
 	}
 	return &Reader{
-		db:     db,
-		schema: schema,
-		caps:   caps,
+		db:      db,
+		schema:  schema,
+		schemas: []string{schema},
+		caps:    caps,
 	}
+}
+
+// SetSchemas restricts schema introspection to the provided allow-list.
+func (r *Reader) SetSchemas(schemas []string) {
+	r.schemas = normalizeSchemas(schemas, r.schema)
+	r.scoped = len(schemas) > 0
+}
+
+func (r *Reader) schemasToRead() []string {
+	return normalizeSchemas(r.schemas, r.schema)
+}
+
+func normalizeSchemas(schemas []string, fallback string) []string {
+	seen := make(map[string]struct{}, len(schemas)+1)
+	out := make([]string, 0, len(schemas)+1)
+	for _, schema := range schemas {
+		schema = strings.TrimSpace(schema)
+		if schema == "" {
+			continue
+		}
+		if _, ok := seen[schema]; ok {
+			continue
+		}
+		seen[schema] = struct{}{}
+		out = append(out, schema)
+	}
+	if len(out) > 0 {
+		return out
+	}
+	if fallback == "" {
+		fallback = "public"
+	}
+	return []string{fallback}
+}
+
+func (r *Reader) outputSchema(schemaName string) string {
+	if r.scoped && schemaName != r.schema {
+		return schemaName
+	}
+	return ""
 }
 
 // ReadSchema reads the complete database schema
@@ -107,18 +150,30 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 
 // readTables reads all tables and their columns
 func (r *Reader) readTables() ([]types.DBTable, error) {
+	var tables []types.DBTable
+	for _, schemaName := range r.schemasToRead() {
+		schemaTables, err := r.readTablesForSchema(schemaName)
+		if err != nil {
+			return nil, err
+		}
+		tables = append(tables, schemaTables...)
+	}
+	return tables, nil
+}
+
+func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error) {
 	// Read tables, excluding system tables like schema_migrations
 	tablesQuery := `
-		SELECT table_name, table_type,
-		       COALESCE(obj_description(c.oid), '') as table_comment
-		FROM information_schema.tables t
-		LEFT JOIN pg_class c ON c.relname = t.table_name
+			SELECT table_schema, table_name, table_type,
+			       COALESCE(obj_description(c.oid), '') as table_comment
+			FROM information_schema.tables t
+			LEFT JOIN pg_class c ON c.relname = t.table_name
 		LEFT JOIN pg_namespace n ON n.oid = c.relnamespace
-		WHERE t.table_schema = $1 AND (n.nspname = $1 OR n.nspname IS NULL)
-		AND t.table_name NOT IN ('schema_migrations')
-		ORDER BY table_name`
+			WHERE t.table_schema = $1 AND (n.nspname = $1 OR n.nspname IS NULL)
+			AND t.table_name NOT IN ('schema_migrations')
+			ORDER BY table_schema, table_name`
 
-	rows, err := r.db.Query(tablesQuery, r.schema)
+	rows, err := r.db.Query(tablesQuery, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query tables: %w", err)
 	}
@@ -127,15 +182,16 @@ func (r *Reader) readTables() ([]types.DBTable, error) {
 	var tables []types.DBTable
 	for rows.Next() {
 		var table types.DBTable
-		err := rows.Scan(&table.Name, &table.Type, &table.Comment)
+		err := rows.Scan(&table.Schema, &table.Name, &table.Type, &table.Comment)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan table: %w", err)
 		}
+		table.Schema = r.outputSchema(table.Schema)
 
 		// Read columns for this table
-		columns, err := r.readColumns(table.Name)
+		columns, err := r.readColumns(schemaName, table.Name)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read columns for table %s: %w", table.Name, err)
+			return nil, fmt.Errorf("failed to read columns for table %s: %w", table.QualifiedName(), err)
 		}
 		table.Columns = columns
 
@@ -146,7 +202,7 @@ func (r *Reader) readTables() ([]types.DBTable, error) {
 }
 
 // readColumns reads all columns for a specific table
-func (r *Reader) readColumns(tableName string) ([]types.DBColumn, error) {
+func (r *Reader) readColumns(schemaName, tableName string) ([]types.DBColumn, error) {
 	columnsQuery := `
 		SELECT
 			column_name,
@@ -162,7 +218,7 @@ func (r *Reader) readColumns(tableName string) ([]types.DBColumn, error) {
 		WHERE table_schema = $1 AND table_name = $2
 		ORDER BY ordinal_position`
 
-	rows, err := r.db.Query(columnsQuery, r.schema, tableName)
+	rows, err := r.db.Query(columnsQuery, schemaName, tableName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query columns: %w", err)
 	}
@@ -201,6 +257,18 @@ func (r *Reader) readColumns(tableName string) ([]types.DBColumn, error) {
 
 // readEnums reads all enum types
 func (r *Reader) readEnums() ([]types.DBEnum, error) {
+	var enums []types.DBEnum
+	for _, schemaName := range r.schemasToRead() {
+		schemaEnums, err := r.readEnumsForSchema(schemaName)
+		if err != nil {
+			return nil, err
+		}
+		enums = append(enums, schemaEnums...)
+	}
+	return enums, nil
+}
+
+func (r *Reader) readEnumsForSchema(schemaName string) ([]types.DBEnum, error) {
 	enumsQuery := `
 		SELECT
 			t.typname AS enum_name,
@@ -212,7 +280,7 @@ func (r *Reader) readEnums() ([]types.DBEnum, error) {
 		WHERE n.nspname = $1
 		ORDER BY t.typname, e.enumsortorder`
 
-	rows, err := r.db.Query(enumsQuery, r.schema)
+	rows, err := r.db.Query(enumsQuery, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query enums: %w", err)
 	}
@@ -243,6 +311,18 @@ func (r *Reader) readEnums() ([]types.DBEnum, error) {
 
 // readIndexes reads all indexes
 func (r *Reader) readIndexes() ([]types.DBIndex, error) {
+	var indexes []types.DBIndex
+	for _, schemaName := range r.schemasToRead() {
+		schemaIndexes, err := r.readIndexesForSchema(schemaName)
+		if err != nil {
+			return nil, err
+		}
+		indexes = append(indexes, schemaIndexes...)
+	}
+	return indexes, nil
+}
+
+func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error) {
 	indexesQuery := `
 		SELECT
 			n.nspname as schemaname,
@@ -259,7 +339,7 @@ func (r *Reader) readIndexes() ([]types.DBIndex, error) {
 		AND t.relname NOT IN ('schema_migrations')
 		ORDER BY t.relname, i.relname`
 
-	rows, err := r.db.Query(indexesQuery, r.schema)
+	rows, err := r.db.Query(indexesQuery, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query indexes: %w", err)
 	}
@@ -278,6 +358,7 @@ func (r *Reader) readIndexes() ([]types.DBIndex, error) {
 		index := types.DBIndex{
 			Name:       indexName,
 			TableName:  tableName,
+			Schema:     r.outputSchema(schemaName),
 			Definition: indexDef,
 			IsUnique:   isUnique,
 			IsPrimary:  isPrimary,
@@ -325,15 +406,29 @@ func (r *Reader) readConstraints() ([]types.DBConstraint, error) {
 
 // readBasicConstraints reads basic constraint information from information_schema
 func (r *Reader) readBasicConstraints() ([]types.DBConstraint, error) {
+	var constraints []types.DBConstraint
+	for _, schemaName := range r.schemasToRead() {
+		schemaConstraints, err := r.readBasicConstraintsForSchema(schemaName)
+		if err != nil {
+			return nil, err
+		}
+		constraints = append(constraints, schemaConstraints...)
+	}
+	return constraints, nil
+}
+
+func (r *Reader) readBasicConstraintsForSchema(schemaName string) ([]types.DBConstraint, error) {
 	constraintsQuery := `
-		SELECT
-			tc.table_name,
-			tc.constraint_name,
-			tc.constraint_type,
-			COALESCE(kcu.column_name, ''),
-			COALESCE(ccu.table_name, ''),
-			COALESCE(ccu.column_name, ''),
-			COALESCE(rc.delete_rule, ''),
+			SELECT
+				tc.table_schema,
+				tc.table_name,
+				tc.constraint_name,
+				tc.constraint_type,
+				COALESCE(kcu.column_name, ''),
+				COALESCE(ccu.table_schema, ''),
+				COALESCE(ccu.table_name, ''),
+				COALESCE(ccu.column_name, ''),
+				COALESCE(rc.delete_rule, ''),
 			COALESCE(rc.update_rule, ''),
 			COALESCE(cc.check_clause, '')
 		FROM information_schema.table_constraints AS tc
@@ -341,9 +436,9 @@ func (r *Reader) readBasicConstraints() ([]types.DBConstraint, error) {
 			ON tc.constraint_name = kcu.constraint_name
 			AND tc.table_schema = kcu.table_schema
 			AND tc.table_name = kcu.table_name
-		LEFT JOIN information_schema.constraint_column_usage AS ccu
-			ON ccu.constraint_name = tc.constraint_name
-			AND ccu.table_schema = tc.table_schema
+			LEFT JOIN information_schema.constraint_column_usage AS ccu
+				ON ccu.constraint_name = tc.constraint_name
+				AND ccu.constraint_schema = tc.constraint_schema
 		LEFT JOIN information_schema.referential_constraints AS rc
 			ON tc.constraint_name = rc.constraint_name
 			AND tc.table_schema = rc.constraint_schema
@@ -354,7 +449,7 @@ func (r *Reader) readBasicConstraints() ([]types.DBConstraint, error) {
 		AND tc.table_name NOT IN ('schema_migrations')
 		ORDER BY tc.table_name, tc.constraint_type, tc.constraint_name`
 
-	rows, err := r.db.Query(constraintsQuery, r.schema)
+	rows, err := r.db.Query(constraintsQuery, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query constraints: %w", err)
 	}
@@ -363,13 +458,15 @@ func (r *Reader) readBasicConstraints() ([]types.DBConstraint, error) {
 	var constraints []types.DBConstraint
 	for rows.Next() {
 		var constraint types.DBConstraint
-		var foreignTable, foreignColumn, deleteRule, updateRule, checkClause string
+		var foreignSchema, foreignTable, foreignColumn, deleteRule, updateRule, checkClause string
 
 		err := rows.Scan(
+			&constraint.Schema,
 			&constraint.TableName,
 			&constraint.Name,
 			&constraint.Type,
 			&constraint.ColumnName,
+			&foreignSchema,
 			&foreignTable,
 			&foreignColumn,
 			&deleteRule,
@@ -384,6 +481,8 @@ func (r *Reader) readBasicConstraints() ([]types.DBConstraint, error) {
 		if foreignTable != "" {
 			constraint.ForeignTable = &foreignTable
 		}
+		constraint.Schema = r.outputSchema(constraint.Schema)
+		constraint.ForeignSchema = r.outputSchema(foreignSchema)
 		if foreignColumn != "" {
 			constraint.ForeignColumn = &foreignColumn
 		}
@@ -405,12 +504,25 @@ func (r *Reader) readBasicConstraints() ([]types.DBConstraint, error) {
 
 // readPostgreSQLConstraints reads PostgreSQL-specific constraints from pg_constraint
 func (r *Reader) readPostgreSQLConstraints() ([]types.DBConstraint, error) {
+	var constraints []types.DBConstraint
+	for _, schemaName := range r.schemasToRead() {
+		schemaConstraints, err := r.readPostgreSQLConstraintsForSchema(schemaName)
+		if err != nil {
+			return nil, err
+		}
+		constraints = append(constraints, schemaConstraints...)
+	}
+	return constraints, nil
+}
+
+func (r *Reader) readPostgreSQLConstraintsForSchema(schemaName string) ([]types.DBConstraint, error) {
 	// Query PostgreSQL system catalogs for PostgreSQL-specific constraints
 	pgQuery := `
-		SELECT
-			c.conname AS constraint_name,
-			cl.relname AS table_name,
-			c.contype AS constraint_type,
+			SELECT
+				n.nspname AS schema_name,
+				c.conname AS constraint_name,
+				cl.relname AS table_name,
+				c.contype AS constraint_type,
 			pg_get_constraintdef(c.oid) AS constraint_definition
 		FROM pg_constraint c
 		JOIN pg_class cl ON c.conrelid = cl.oid
@@ -420,7 +532,7 @@ func (r *Reader) readPostgreSQLConstraints() ([]types.DBConstraint, error) {
 		AND cl.relname NOT IN ('schema_migrations')
 		ORDER BY cl.relname, c.conname`
 
-	rows, err := r.db.Query(pgQuery, r.schema)
+	rows, err := r.db.Query(pgQuery, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query PostgreSQL constraints: %w", err)
 	}
@@ -428,8 +540,8 @@ func (r *Reader) readPostgreSQLConstraints() ([]types.DBConstraint, error) {
 
 	var constraints []types.DBConstraint
 	for rows.Next() {
-		var constraintName, tableName, constraintType, definition string
-		err := rows.Scan(&constraintName, &tableName, &constraintType, &definition)
+		var schemaName, constraintName, tableName, constraintType, definition string
+		err := rows.Scan(&schemaName, &constraintName, &tableName, &constraintType, &definition)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan PostgreSQL constraint: %w", err)
 		}
@@ -446,6 +558,7 @@ func (r *Reader) readPostgreSQLConstraints() ([]types.DBConstraint, error) {
 		constraint := types.DBConstraint{
 			Name:      constraintName,
 			TableName: tableName,
+			Schema:    r.outputSchema(schemaName),
 			Type:      stdType,
 		}
 
@@ -607,25 +720,26 @@ func (r *Reader) enhanceTablesWithConstraints(tables []types.DBTable, constraint
 	uniqueKeys := make(map[string]map[string]bool)
 
 	for _, constraint := range constraints {
+		tableName := constraint.QualifiedTableName()
 		if constraint.Type == "PRIMARY KEY" {
-			if primaryKeys[constraint.TableName] == nil {
-				primaryKeys[constraint.TableName] = make(map[string]bool)
+			if primaryKeys[tableName] == nil {
+				primaryKeys[tableName] = make(map[string]bool)
 			}
-			primaryKeys[constraint.TableName][constraint.ColumnName] = true
+			primaryKeys[tableName][constraint.ColumnName] = true
 		}
 		if constraint.Type == "UNIQUE" {
-			if uniqueKeys[constraint.TableName] == nil {
-				uniqueKeys[constraint.TableName] = make(map[string]bool)
+			if uniqueKeys[tableName] == nil {
+				uniqueKeys[tableName] = make(map[string]bool)
 			}
-			uniqueKeys[constraint.TableName][constraint.ColumnName] = true
+			uniqueKeys[tableName][constraint.ColumnName] = true
 		}
 	}
 
 	// Update table columns with constraint information
 	for i := range tables {
 		for j := range tables[i].Columns {
-			col := &tables[i].Columns[j] //nolint:gosec // G602: index bounded by `range tables[i].Columns`
-			tableName := tables[i].Name  //nolint:gosec // G602: index bounded by `range tables`
+			col := &tables[i].Columns[j]           //nolint:gosec // G602: index bounded by `range tables[i].Columns`
+			tableName := tables[i].QualifiedName() //nolint:gosec // G602: index bounded by `range tables`
 
 			if primaryKeys[tableName] != nil && primaryKeys[tableName][col.Name] {
 				col.IsPrimaryKey = true
@@ -671,6 +785,18 @@ func (r *Reader) enhanceTablesWithIndexes(tables []types.DBTable, indexes []type
 // This approach is more robust than maintaining a manual list of problematic
 // extensions because it automatically handles any extension that creates functions.
 func (r *Reader) readFunctions() ([]types.DBFunction, error) {
+	var functions []types.DBFunction
+	for _, schemaName := range r.schemasToRead() {
+		schemaFunctions, err := r.readFunctionsForSchema(schemaName)
+		if err != nil {
+			return nil, err
+		}
+		functions = append(functions, schemaFunctions...)
+	}
+	return functions, nil
+}
+
+func (r *Reader) readFunctionsForSchema(schemaName string) ([]types.DBFunction, error) {
 	functionsQuery := `
 		SELECT
 			p.proname AS function_name,
@@ -700,7 +826,7 @@ func (r *Reader) readFunctions() ([]types.DBFunction, error) {
 		)
 		ORDER BY p.proname`
 
-	rows, err := r.db.Query(functionsQuery, r.schema)
+	rows, err := r.db.Query(functionsQuery, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query functions: %w", err)
 	}
@@ -731,8 +857,21 @@ func (r *Reader) readFunctions() ([]types.DBFunction, error) {
 
 // readRLSPolicies reads all PostgreSQL RLS policies from the database
 func (r *Reader) readRLSPolicies() ([]types.DBRLSPolicy, error) {
+	var policies []types.DBRLSPolicy
+	for _, schemaName := range r.schemasToRead() {
+		schemaPolicies, err := r.readRLSPoliciesForSchema(schemaName)
+		if err != nil {
+			return nil, err
+		}
+		policies = append(policies, schemaPolicies...)
+	}
+	return policies, nil
+}
+
+func (r *Reader) readRLSPoliciesForSchema(schemaName string) ([]types.DBRLSPolicy, error) {
 	rlsPoliciesQuery := `
 		SELECT
+			n.nspname AS schema_name,
 			pol.polname AS policy_name,
 			c.relname AS table_name,
 			CASE pol.polcmd
@@ -757,7 +896,7 @@ func (r *Reader) readRLSPolicies() ([]types.DBRLSPolicy, error) {
 		WHERE n.nspname = $1
 		ORDER BY c.relname, pol.polname`
 
-	rows, err := r.db.Query(rlsPoliciesQuery, r.schema)
+	rows, err := r.db.Query(rlsPoliciesQuery, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query RLS policies: %w", err)
 	}
@@ -766,7 +905,9 @@ func (r *Reader) readRLSPolicies() ([]types.DBRLSPolicy, error) {
 	var policies []types.DBRLSPolicy
 	for rows.Next() {
 		var policy types.DBRLSPolicy
+		var schemaName string
 		err := rows.Scan(
+			&schemaName,
 			&policy.Name,
 			&policy.Table,
 			&policy.PolicyFor,
@@ -778,6 +919,7 @@ func (r *Reader) readRLSPolicies() ([]types.DBRLSPolicy, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan RLS policy: %w", err)
 		}
+		policy.Table = types.QualifyTableName(r.outputSchema(schemaName), policy.Table)
 
 		policies = append(policies, policy)
 	}

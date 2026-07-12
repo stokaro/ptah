@@ -2,7 +2,6 @@ package migrator
 
 import (
 	"context"
-	_ "embed"
 	"fmt"
 	"io/fs"
 	"strings"
@@ -10,18 +9,6 @@ import (
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
 )
-
-//go:embed base/schema.sql
-var migrationsSchemaSQL string
-
-//go:embed base/get_version.sql
-var getVersionSQL string
-
-//go:embed base/record_migration.sql
-var recordMigrationSQL string
-
-//go:embed base/delete_migration.sql
-var deleteMigrationSQL string
 
 // MigrationFunc represents a migration function that operates on a database connection
 type MigrationFunc func(context.Context, *dbschema.DatabaseConnection) error

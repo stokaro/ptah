@@ -47,6 +47,7 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 		table := goschema.Table{
 			StructName: structName,
 			Name:       dbTable.Name,
+			Schema:     dbTable.Schema,
 			Comment:    dbTable.Comment,
 		}
 		database.Tables = append(database.Tables, table)
@@ -71,7 +72,7 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 
 			// Carry the field-level foreign key (reference + referential actions)
 			// so down migrations can reconstruct it with the prior action.
-			if fk, ok := fkByColumn[dbTable.Name+"."+dbColumn.Name]; ok {
+			if fk, ok := fkByColumn[dbTable.QualifiedName()+"."+dbColumn.Name]; ok {
 				field.Foreign = fk.foreign
 				field.ForeignKeyName = fk.name
 				field.OnDelete = fk.onDelete
@@ -92,6 +93,7 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 		index := goschema.Index{
 			StructName: generateStructName(dbIndex.TableName),
 			Name:       dbIndex.Name,
+			TableName:  dbIndex.QualifiedTableName(),
 			Fields:     dbIndex.Columns,
 			Unique:     dbIndex.IsUnique,
 		}
@@ -196,7 +198,7 @@ func indexForeignKeysByColumn(dbSchema *dbschematypes.DBSchema) map[string]forei
 		if c.Type != "FOREIGN KEY" || c.ColumnName == "" || c.ForeignTable == nil {
 			continue
 		}
-		foreignTable := *c.ForeignTable
+		foreignTable := c.QualifiedForeignTableName()
 		foreignColumn := ""
 		if c.ForeignColumn != nil {
 			foreignColumn = *c.ForeignColumn
@@ -205,7 +207,7 @@ func indexForeignKeysByColumn(dbSchema *dbschematypes.DBSchema) map[string]forei
 		if foreignColumn != "" {
 			foreign = foreignTable + "(" + foreignColumn + ")"
 		}
-		result[c.TableName+"."+c.ColumnName] = foreignKeyInfo{
+		result[c.QualifiedTableName()+"."+c.ColumnName] = foreignKeyInfo{
 			name:     c.Name,
 			foreign:  foreign,
 			onDelete: derefString(c.DeleteRule),

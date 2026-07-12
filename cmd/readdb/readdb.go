@@ -35,6 +35,7 @@ var readDBFlags = map[string]cobraflags.Flag{
 		Usage: "Database URL (required). Example: postgres://localhost:5432/dbname",
 	},
 	dbcli.ConnectTimeoutFlagName: dbcli.NewConnectTimeoutFlag(),
+	dbcli.SchemasFlagName:        dbcli.NewSchemasFlag(),
 }
 
 func NewReadDBCommand() *cobra.Command {
@@ -83,7 +84,8 @@ func readDBCommand(_ *cobra.Command, _ []string) error {
 	fmt.Println()
 
 	// Read the schema
-	schema, err := conn.Reader().ReadSchema()
+	schemas := dbcli.ParseSchemas(readDBFlags[dbcli.SchemasFlagName].GetString())
+	schema, err := dbschema.ReadSchemaWithSchemas(conn, schemas)
 	if err != nil {
 		return fmt.Errorf("error reading schema: %w", err)
 	}

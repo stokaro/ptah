@@ -516,7 +516,7 @@ func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table goschem
 // Returns a fully configured *ast.CreateTableNode ready for SQL generation.
 // The node contains the table definition with all columns, constraints, and platform-specific options.
 func FromTable(table goschema.Table, fields []goschema.Field, enums []goschema.Enum, targetPlatform string) *ast.CreateTableNode {
-	createTable := ast.NewCreateTable(table.Name)
+	createTable := ast.NewCreateTable(table.QualifiedName())
 
 	newTable := applyTablePlatformOverrides(createTable, table, targetPlatform)
 
@@ -594,7 +594,7 @@ func addTableConstraints(createTable *ast.CreateTableNode, table goschema.Table,
 
 func constraintBelongsToTable(constraint goschema.Constraint, table goschema.Table) bool {
 	if constraint.Table != "" {
-		return constraint.Table == table.Name
+		return constraint.Table == table.Name || constraint.Table == table.QualifiedName()
 	}
 	return constraint.StructName == table.StructName
 }
@@ -1029,7 +1029,7 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 func createStructToTableMap(tables []goschema.Table) map[string]string {
 	structToTableMap := make(map[string]string)
 	for _, table := range tables {
-		structToTableMap[table.StructName] = table.Name
+		structToTableMap[table.StructName] = table.QualifiedName()
 	}
 	return structToTableMap
 }

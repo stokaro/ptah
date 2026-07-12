@@ -37,6 +37,7 @@ func NewDriftCommand() *cobra.Command {
 	var ignored []string
 	var useExitCode bool
 	var connectTimeoutRaw string
+	var schemasRaw string
 
 	cmd := &cobra.Command{
 		Use:           "drift",
@@ -52,6 +53,7 @@ func NewDriftCommand() *cobra.Command {
 				ignored:           ignored,
 				useExitCode:       useExitCode,
 				connectTimeoutRaw: connectTimeoutRaw,
+				schemasRaw:        schemasRaw,
 			})
 		},
 	}
@@ -60,7 +62,8 @@ func NewDriftCommand() *cobra.Command {
 	cmd.Flags().StringVar(&dbURL, "db-url", "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	cmd.Flags().StringVar(&format, "format", formatText, "Output format: text, json, github-actions")
 	cmd.Flags().StringVar(&severity, "severity", severityAll, "Failing drift threshold: all or destructive")
-	cmd.Flags().StringArrayVar(&ignored, "ignore", nil, "Ignore drift for a scope, for example tables=audit_log,sessions")
+	cmd.Flags().StringArrayVar(&ignored, "ignore", nil, "Ignore drift for a scope, for example tables=audit_log,auth.users")
+	cmd.Flags().StringVar(&schemasRaw, dbcli.SchemasFlagName, "", "Comma-separated database schemas to introspect (PostgreSQL-family only). Empty uses the connection default schema.")
 	cmd.Flags().BoolVar(&useExitCode, "exit-code", true, "Return 1 when drift exceeds --severity; errors still return 2")
 	cmd.Flags().StringVar(
 		&connectTimeoutRaw,
@@ -80,6 +83,7 @@ type runOptions struct {
 	ignored           []string
 	useExitCode       bool
 	connectTimeoutRaw string
+	schemasRaw        string
 }
 
 type driftReport struct {
@@ -115,12 +119,14 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
 	}
+	schemas := dbcli.ParseSchemas(opts.schemasRaw)
 
 	result, err := schemaops.Compare(cmd.Context(), schemaops.CompareOptions{
 		RootDir:        opts.rootDir,
 		DatabaseURL:    opts.dbURL,
 		ConnectTimeout: connectTimeout,
 		IgnoredTables:  ignoredTables,
+		Schemas:        schemas,
 	})
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())

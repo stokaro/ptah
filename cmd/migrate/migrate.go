@@ -43,6 +43,7 @@ var migrateFlags = map[string]cobraflags.Flag{
 		Usage: "Database URL (required). Example: postgres://localhost:5432/dbname",
 	},
 	dbcli.ConnectTimeoutFlagName: dbcli.NewConnectTimeoutFlag(),
+	dbcli.SchemasFlagName:        dbcli.NewSchemasFlag(),
 }
 
 func NewMigrateCommand() *cobra.Command {
@@ -87,7 +88,8 @@ func migrateCommand(_ *cobra.Command, _ []string) error {
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	dbSchema, err := conn.Reader().ReadSchema()
+	schemas := dbcli.ParseSchemas(migrateFlags[dbcli.SchemasFlagName].GetString())
+	dbSchema, err := dbschema.ReadSchemaWithSchemas(conn, schemas)
 	if err != nil {
 		return fmt.Errorf("error reading database schema: %w", err)
 	}

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/stokaro/ptah/core/sqlutil"
@@ -25,6 +26,8 @@ type Migrator struct {
 	conn              *dbschema.DatabaseConnection
 	migrationProvider MigrationProvider
 	defaultTimeouts   MigrationTimeouts
+	migrationsTable   string
+	migrationsSchema  string
 	initialized       bool
 	logger            *slog.Logger
 }
@@ -47,6 +50,7 @@ func NewMigrator(conn *dbschema.DatabaseConnection, provider MigrationProvider) 
 	return &Migrator{
 		conn:              conn,
 		migrationProvider: provider,
+		migrationsTable:   "schema_migrations",
 		logger:            slog.Default(),
 	}
 }
@@ -58,6 +62,72 @@ func (m *Migrator) WithLogger(l *slog.Logger) *Migrator {
 	return &tmp
 }
 
+// WithMigrationsTable sets the table used to record applied migrations.
+func (m *Migrator) WithMigrationsTable(schema, table string) *Migrator {
+	tmp := *m
+	tmp.migrationsSchema = strings.TrimSpace(schema)
+	tmp.migrationsTable = strings.TrimSpace(table)
+	if tmp.migrationsTable == "" {
+		tmp.migrationsTable = "schema_migrations"
+	}
+	tmp.initialized = false
+	return &tmp
+}
+
+func (m *Migrator) qualifiedMigrationsTable() string {
+	table := m.migrationsTable
+	if table == "" {
+		table = "schema_migrations"
+	}
+	if m.migrationsSchema == "" {
+		return m.quoteIdentifier(table)
+	}
+	return m.quoteIdentifier(m.migrationsSchema) + "." + m.quoteIdentifier(table)
+}
+
+func (m *Migrator) migrationsSchemaStatement() string {
+	if m.migrationsSchema == "" {
+		return ""
+	}
+	return "CREATE SCHEMA IF NOT EXISTS " + m.quoteIdentifier(m.migrationsSchema)
+}
+
+func (m *Migrator) quoteIdentifier(identifier string) string {
+	if m.conn == nil {
+		return `"` + strings.ReplaceAll(identifier, `"`, `""`) + `"`
+	}
+	switch m.conn.Info().Dialect {
+	case "mysql", "mariadb", "clickhouse":
+		return "`" + strings.ReplaceAll(identifier, "`", "``") + "`"
+	default:
+		return `"` + strings.ReplaceAll(identifier, `"`, `""`) + `"`
+	}
+}
+
+func (m *Migrator) createMigrationsTableSQL() string {
+	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+    version INTEGER PRIMARY KEY,
+    description TEXT NOT NULL,
+    applied_at TIMESTAMP NOT NULL
+)`, m.qualifiedMigrationsTable())
+}
+
+func (m *Migrator) getVersionSQL() string {
+	return fmt.Sprintf("SELECT COALESCE(MAX(version), 0) FROM %s", m.qualifiedMigrationsTable())
+}
+
+func (m *Migrator) getAppliedMigrationsSQL() string {
+	return fmt.Sprintf("SELECT version FROM %s ORDER BY version", m.qualifiedMigrationsTable())
+}
+
+func (m *Migrator) recordMigrationSQL() string {
+	return fmt.Sprintf("INSERT INTO %s (version, description, applied_at) VALUES (?, ?, ?)", m.qualifiedMigrationsTable())
+}
+
+func (m *Migrator) deleteMigrationSQL() string {
+	return fmt.Sprintf("DELETE FROM %s WHERE version = ?", m.qualifiedMigrationsTable())
+}
+
 // Initialize creates the migrations table if it doesn't exist
 func (m *Migrator) Initialize(ctx context.Context) error {
 	// Skip if already initialized
@@ -65,9 +135,15 @@ func (m *Migrator) Initialize(ctx context.Context) error {
 		return nil
 	}
 
+	if schemaSQL := m.migrationsSchemaStatement(); schemaSQL != "" {
+		if _, err := m.conn.ExecContext(ctx, schemaSQL); err != nil {
+			return fmt.Errorf("failed to create migrations schema: %w", err)
+		}
+	}
+
 	// Execute the schema creation SQL directly on the database connection
 	// This avoids transaction conflicts with the PostgreSQL writer
-	_, err := m.conn.ExecContext(ctx, migrationsSchemaSQL)
+	_, err := m.conn.ExecContext(ctx, m.createMigrationsTableSQL())
 	if err != nil {
 		return fmt.Errorf("failed to create migrations table: %w", err)
 	}
@@ -86,7 +162,7 @@ func (m *Migrator) GetCurrentVersion(ctx context.Context) (int, error) {
 
 	// Query the current version
 	var version int
-	row := m.conn.QueryRowContext(ctx, getVersionSQL)
+	row := m.conn.QueryRowContext(ctx, m.getVersionSQL())
 	if err := row.Scan(&version); err != nil {
 		return 0, fmt.Errorf("failed to get current version: %w", err)
 	}
@@ -102,7 +178,7 @@ func (m *Migrator) GetAppliedMigrations(ctx context.Context) ([]int, error) {
 	}
 
 	// Query all applied migration versions
-	rows, err := m.conn.Query("SELECT version FROM schema_migrations ORDER BY version")
+	rows, err := m.conn.Query(m.getAppliedMigrationsSQL())
 	if err != nil {
 		return nil, fmt.Errorf("failed to query applied migrations: %w", err)
 	}
@@ -210,7 +286,7 @@ func (m *Migrator) MigrateUp(ctx context.Context) error {
 	// Rebind once: the template and dialect are loop-invariant. Values are
 	// still bound as native driver parameters via these placeholders so we
 	// never interpolate user-controlled strings into the SQL text.
-	recordSQL := sqlutil.Rebind(m.conn.Info().Dialect, recordMigrationSQL)
+	recordSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.recordMigrationSQL())
 
 	// Apply migrations that are newer than current version
 	for _, migration := range migrations {
@@ -307,7 +383,7 @@ func (m *Migrator) MigrateDownTo(ctx context.Context, targetVersion int) error {
 
 	// Rebind once: template + dialect are loop-invariant. Migration version
 	// is bound as a parameter via the dialect-native placeholder.
-	deleteSQL := sqlutil.Rebind(m.conn.Info().Dialect, deleteMigrationSQL)
+	deleteSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteMigrationSQL())
 
 	// Apply down migrations for versions greater than target
 	for _, migration := range migrations {
@@ -403,7 +479,7 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int) error {
 	m.logger.Info("Migrating up", "currentVersion", currentVersion, "targetVersion", targetVersion, "totalMigrations", len(migrations))
 
 	// Rebind once; see MigrateUp for the rationale on parameter binding.
-	recordSQL := sqlutil.Rebind(m.conn.Info().Dialect, recordMigrationSQL)
+	recordSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.recordMigrationSQL())
 
 	// Apply migrations up to target version
 	for _, migration := range migrations {

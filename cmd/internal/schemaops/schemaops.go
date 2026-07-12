@@ -23,6 +23,7 @@ type CompareOptions struct {
 	DatabaseURL    string
 	ConnectTimeout time.Duration
 	IgnoredTables  []string
+	Schemas        []string
 }
 
 // CompareResult is the output of a live schema comparison.
@@ -63,7 +64,7 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	dbSchema, err := conn.Reader().ReadSchema()
+	dbSchema, err := dbschema.ReadSchemaWithSchemas(conn, opts.Schemas)
 	if err != nil {
 		return nil, fmt.Errorf("error reading database schema: %w", err)
 	}
@@ -101,7 +102,7 @@ func FilterGeneratedTables(db *goschema.Database, ignoredTables []string) *gosch
 	filtered := *db
 	ignoredStructs := make(map[string]struct{})
 	filtered.Tables = keep(db.Tables, func(table goschema.Table) bool {
-		if _, ignore := ignored[table.Name]; ignore {
+		if isIgnoredTable(ignored, table.QualifiedName(), table.Name) {
 			ignoredStructs[table.StructName] = struct{}{}
 			return false
 		}
@@ -120,8 +121,7 @@ func FilterGeneratedTables(db *goschema.Database, ignoredTables []string) *gosch
 			return false
 		}
 		if index.TableName != "" {
-			_, ignore := ignored[index.TableName]
-			return !ignore
+			return !isIgnoredTable(ignored, index.TableName)
 		}
 		return true
 	})
@@ -130,8 +130,7 @@ func FilterGeneratedTables(db *goschema.Database, ignoredTables []string) *gosch
 			return false
 		}
 		if constraint.Table != "" {
-			_, ignore := ignored[constraint.Table]
-			return !ignore
+			return !isIgnoredTable(ignored, constraint.Table)
 		}
 		return true
 	})
@@ -140,12 +139,10 @@ func FilterGeneratedTables(db *goschema.Database, ignoredTables []string) *gosch
 		return !ignore
 	})
 	filtered.RLSPolicies = keep(db.RLSPolicies, func(policy goschema.RLSPolicy) bool {
-		_, ignore := ignored[policy.Table]
-		return !ignore
+		return !isIgnoredTable(ignored, policy.Table)
 	})
 	filtered.RLSEnabledTables = keep(db.RLSEnabledTables, func(table goschema.RLSEnabledTable) bool {
-		_, ignore := ignored[table.Table]
-		return !ignore
+		return !isIgnoredTable(ignored, table.Table)
 	})
 	filtered.Dependencies = filterDependencies(db.Dependencies, ignored)
 	filtered.SelfReferencingForeignKeys = filterSelfReferencingForeignKeys(db.SelfReferencingForeignKeys, ignored)
@@ -168,23 +165,20 @@ func FilterDatabaseTables(db *dbschematypes.DBSchema, ignoredTables []string) *d
 	filtered := *db
 	ignoredEnumRefs := make(map[string]struct{})
 	filtered.Tables = keep(db.Tables, func(table dbschematypes.DBTable) bool {
-		_, ignore := ignored[table.Name]
+		ignore := isIgnoredTable(ignored, table.QualifiedName(), table.Name)
 		if ignore {
 			addDatabaseEnumRefs(ignoredEnumRefs, table.Columns)
 		}
 		return !ignore
 	})
 	filtered.Indexes = keep(db.Indexes, func(index dbschematypes.DBIndex) bool {
-		_, ignore := ignored[index.TableName]
-		return !ignore
+		return !isIgnoredTable(ignored, index.QualifiedTableName(), index.TableName)
 	})
 	filtered.Constraints = keep(db.Constraints, func(constraint dbschematypes.DBConstraint) bool {
-		_, ignore := ignored[constraint.TableName]
-		return !ignore
+		return !isIgnoredTable(ignored, constraint.QualifiedTableName(), constraint.TableName)
 	})
 	filtered.RLSPolicies = keep(db.RLSPolicies, func(policy dbschematypes.DBRLSPolicy) bool {
-		_, ignore := ignored[policy.Table]
-		return !ignore
+		return !isIgnoredTable(ignored, policy.Table)
 	})
 	filtered.Enums = keepDatabaseEnums(db.Enums, filtered.Tables, ignoredEnumRefs)
 
@@ -200,6 +194,24 @@ func tableSet(names []string) map[string]struct{} {
 		}
 	}
 	return set
+}
+
+func isIgnoredTable(ignored map[string]struct{}, names ...string) bool {
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if _, ok := ignored[name]; ok {
+			return true
+		}
+		if idx := strings.LastIndex(name, "."); idx >= 0 {
+			if _, ok := ignored[name[idx+1:]]; ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func keep[T any](items []T, shouldKeep func(T) bool) []T {
@@ -218,12 +230,11 @@ func filterDependencies(in map[string][]string, ignored map[string]struct{}) map
 	}
 	out := make(map[string][]string, len(in))
 	for table, deps := range in {
-		if _, ignore := ignored[table]; ignore {
+		if isIgnoredTable(ignored, table) {
 			continue
 		}
 		out[table] = keep(deps, func(dep string) bool {
-			_, ignore := ignored[dep]
-			return !ignore
+			return !isIgnoredTable(ignored, dep)
 		})
 	}
 	return out
@@ -238,7 +249,7 @@ func filterSelfReferencingForeignKeys(
 	}
 	out := make(map[string][]goschema.SelfReferencingFK, len(in))
 	for table, refs := range in {
-		if _, ignore := ignored[table]; ignore {
+		if isIgnoredTable(ignored, table) {
 			continue
 		}
 		out[table] = refs

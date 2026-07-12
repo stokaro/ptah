@@ -57,7 +57,9 @@ var migrateStatusFlags = map[string]cobraflags.Flag{
 		Value: false,
 		Usage: "Output status in JSON format",
 	},
-	dbcli.ConnectTimeoutFlagName: dbcli.NewConnectTimeoutFlag(),
+	dbcli.ConnectTimeoutFlagName:   dbcli.NewConnectTimeoutFlag(),
+	dbcli.MigrationsSchemaFlagName: dbcli.NewMigrationsSchemaFlag(),
+	dbcli.MigrationsTableFlagName:  dbcli.NewMigrationsTableFlag(),
 }
 
 func NewMigrateStatusCommand() *cobra.Command {
@@ -70,6 +72,8 @@ func migrateStatusCommand(_ *cobra.Command, _ []string) error {
 	migrationsDir := migrateStatusFlags[migrationsFlag].GetString()
 	verbose := migrateStatusFlags[verboseFlag].GetBool()
 	jsonOutput := migrateStatusFlags[jsonFlag].GetBool()
+	migrationsSchema := migrateStatusFlags[dbcli.MigrationsSchemaFlagName].GetString()
+	migrationsTable := migrateStatusFlags[dbcli.MigrationsTableFlagName].GetString()
 
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
@@ -99,6 +103,7 @@ func migrateStatusCommand(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
+	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable)
 
 	// Get migration status
 	status, err := mig.GetMigrationStatus(context.Background())

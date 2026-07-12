@@ -83,8 +83,10 @@ var migrateDownFlags = map[string]cobraflags.Flag{
 		Value: "",
 		Usage: "Default per-migration statement timeout, such as 30s or 2m",
 	},
-	dbcli.ConnectTimeoutFlagName: dbcli.NewConnectTimeoutFlag(),
-	dbcli.ConfigFlagName:         dbcli.NewConfigFlag(),
+	dbcli.ConnectTimeoutFlagName:   dbcli.NewConnectTimeoutFlag(),
+	dbcli.ConfigFlagName:           dbcli.NewConfigFlag(),
+	dbcli.MigrationsSchemaFlagName: dbcli.NewMigrationsSchemaFlag(),
+	dbcli.MigrationsTableFlagName:  dbcli.NewMigrationsTableFlag(),
 }
 
 func NewMigrateDownCommand() *cobra.Command {
@@ -101,6 +103,8 @@ func migrateDownCommand(_ *cobra.Command, _ []string) error {
 	skipConfirm := migrateDownFlags[confirmFlag].GetBool()
 	lockTimeout := migrateDownFlags[lockTimeoutFlag].GetString()
 	statementTimeout := migrateDownFlags[statementTimeoutFlag].GetString()
+	migrationsSchema := migrateDownFlags[dbcli.MigrationsSchemaFlagName].GetString()
+	migrationsTable := migrateDownFlags[dbcli.MigrationsTableFlagName].GetString()
 
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
@@ -171,7 +175,7 @@ func migrateDownCommand(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
-	mig = mig.WithDefaultTimeouts(timeouts)
+	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable).WithDefaultTimeouts(timeouts)
 
 	// Get migration status before running
 	status, err := mig.GetMigrationStatus(context.Background())

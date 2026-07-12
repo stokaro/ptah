@@ -1,6 +1,9 @@
 package types
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 // DBSchema represents the complete schema read from a database
 type DBSchema struct {
@@ -17,10 +20,27 @@ type DBSchema struct {
 // DBTable represents a database table
 type DBTable struct {
 	Name       string     `json:"name"`
+	Schema     string     `json:"schema,omitempty"`
 	Type       string     `json:"type"` // TABLE, VIEW, etc.
 	Comment    string     `json:"comment"`
 	Columns    []DBColumn `json:"columns"`
 	RLSEnabled bool       `json:"rls_enabled"` // Whether RLS is enabled on this table (PostgreSQL)
+}
+
+// QualifiedName returns schema.table when Schema is set, or Name otherwise.
+func (t DBTable) QualifiedName() string {
+	return QualifyTableName(t.Schema, t.Name)
+}
+
+// QualifyTableName joins schema and table without quoting. Dialect renderers
+// remain responsible for escaping identifiers.
+func QualifyTableName(schema, table string) string {
+	schema = strings.TrimSpace(schema)
+	table = strings.TrimSpace(table)
+	if schema == "" {
+		return table
+	}
+	return schema + "." + table
 }
 
 // DBColumn represents a database column.
@@ -73,6 +93,7 @@ type DBEnum struct {
 type DBIndex struct {
 	Name       string   `json:"name"`
 	TableName  string   `json:"table_name"`
+	Schema     string   `json:"schema,omitempty"`
 	Columns    []string `json:"columns"`
 	IsUnique   bool     `json:"is_unique"`
 	IsPrimary  bool     `json:"is_primary"`
@@ -94,13 +115,20 @@ type DBIndex struct {
 	Granularity int `json:"granularity,omitempty"`
 }
 
+// QualifiedTableName returns schema.table when Schema is set, or TableName otherwise.
+func (i DBIndex) QualifiedTableName() string {
+	return QualifyTableName(i.Schema, i.TableName)
+}
+
 // DBConstraint represents a database constraint
 type DBConstraint struct {
 	Name          string  `json:"name"`
 	TableName     string  `json:"table_name"`
+	Schema        string  `json:"schema,omitempty"`
 	Type          string  `json:"type"` // PRIMARY KEY, FOREIGN KEY, UNIQUE, CHECK, EXCLUDE
 	ColumnName    string  `json:"column_name"`
-	ForeignTable  *string `json:"foreign_table"`  // For foreign keys
+	ForeignTable  *string `json:"foreign_table"` // For foreign keys
+	ForeignSchema string  `json:"foreign_schema,omitempty"`
 	ForeignColumn *string `json:"foreign_column"` // For foreign keys
 	DeleteRule    *string `json:"delete_rule"`    // CASCADE, RESTRICT, etc.
 	UpdateRule    *string `json:"update_rule"`    // CASCADE, RESTRICT, etc.
@@ -109,6 +137,19 @@ type DBConstraint struct {
 	UsingMethod     *string `json:"using_method"`     // Index method: gist, btree, etc.
 	ExcludeElements *string `json:"exclude_elements"` // Elements with operators: "room_id WITH =, during WITH &&"
 	WhereCondition  *string `json:"where_condition"`  // Optional WHERE clause for EXCLUDE constraints
+}
+
+// QualifiedTableName returns schema.table when Schema is set, or TableName otherwise.
+func (c DBConstraint) QualifiedTableName() string {
+	return QualifyTableName(c.Schema, c.TableName)
+}
+
+// QualifiedForeignTableName returns schema.table for a foreign key target.
+func (c DBConstraint) QualifiedForeignTableName() string {
+	if c.ForeignTable == nil {
+		return ""
+	}
+	return QualifyTableName(c.ForeignSchema, *c.ForeignTable)
 }
 
 // DBExtension represents a PostgreSQL extension installed in the database

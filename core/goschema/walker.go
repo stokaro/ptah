@@ -137,6 +137,7 @@ func ParseFS(fsys fs.FS, rootDir string) (*Database, error) {
 
 	// deduplicate entities (same table/field defined in multiple files)
 	Deduplicate(result)
+	normalizeTableScopedNames(result)
 
 	// Process embedded fields BEFORE building dependency graph
 	// This ensures that foreign keys from embedded fields are included in dependency analysis

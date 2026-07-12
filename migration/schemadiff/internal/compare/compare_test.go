@@ -921,6 +921,40 @@ func TestTablesAndColumns_SortingConsistency(t *testing.T) {
 	c.Assert(diff.TablesRemoved, qt.DeepEquals, []string{"alpha_old_table", "zebra_old_table"})
 }
 
+func TestTablesAndColumns_UsesSchemaQualifiedTableIdentity(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "AuthUser", Name: "users", Schema: "auth"},
+			{StructName: "BillingUser", Name: "users", Schema: "billing"},
+		},
+		Fields: []goschema.Field{
+			{StructName: "AuthUser", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "BillingUser", Name: "id", Type: "INTEGER", Primary: true},
+		},
+		EmbeddedFields: []goschema.EmbeddedField{},
+	}
+	database := &types.DBSchema{
+		Tables: []types.DBTable{
+			{
+				Name:   "users",
+				Schema: "auth",
+				Columns: []types.DBColumn{
+					{Name: "id", DataType: "integer", UDTName: "int4", IsNullable: "NO", IsPrimaryKey: true},
+				},
+			},
+		},
+	}
+
+	diff := &difftypes.SchemaDiff{}
+	compare.TablesAndColumns(generated, database, diff)
+
+	c.Assert(diff.TablesAdded, qt.DeepEquals, []string{"billing.users"})
+	c.Assert(diff.TablesRemoved, qt.HasLen, 0)
+	c.Assert(diff.TablesModified, qt.HasLen, 0)
+}
+
 func TestColumnByName_HappyPath(t *testing.T) {
 	tests := []struct {
 		name         string

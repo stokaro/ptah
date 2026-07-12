@@ -152,12 +152,30 @@ func (p *Planner) modifyExistingEnums(result []ast.Node, diff *types.SchemaDiff)
 func (p *Planner) addNewTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
 	tablesToAdd := createTableLookupMap(diff.TablesAdded)
 
+	result = p.addSchemaPreconditions(result, generated, tablesToAdd)
+
 	// Phase 1: Create tables without foreign key constraints
 	result = p.createTablesWithoutForeignKeys(result, generated, tablesToAdd)
 
 	// Phase 2: Add foreign key constraints via ALTER TABLE statements
 	result = p.addForeignKeyConstraints(result, generated, tablesToAdd)
 
+	return result
+}
+
+func (p *Planner) addSchemaPreconditions(result []ast.Node, generated *goschema.Database, tablesToAdd map[string]bool) []ast.Node {
+	seen := make(map[string]struct{})
+	for _, table := range generated.Tables {
+		schema := strings.TrimSpace(table.Schema)
+		if schema == "" || !tablesToAdd[table.QualifiedName()] {
+			continue
+		}
+		if _, ok := seen[schema]; ok {
+			continue
+		}
+		seen[schema] = struct{}{}
+		result = append(result, ast.NewRawSQL("CREATE SCHEMA IF NOT EXISTS "+schema))
+	}
 	return result
 }
 
@@ -175,11 +193,11 @@ func (p *Planner) createTablesWithoutForeignKeys(result []ast.Node, generated *g
 	allFields := generated.Fields
 
 	for _, table := range generated.Tables {
-		if !tablesToAdd[table.Name] {
+		if !tablesToAdd[table.QualifiedName()] {
 			continue
 		}
 
-		astNode := ast.NewCreateTable(table.Name)
+		astNode := ast.NewCreateTable(table.QualifiedName())
 		for _, field := range allFields {
 			if field.StructName == table.StructName {
 				columnNode := fromschema.FromFieldWithoutForeignKeys(field, generated.Enums, DialectName)
@@ -195,7 +213,7 @@ func (p *Planner) createTablesWithoutForeignKeys(result []ast.Node, generated *g
 // addForeignKeyConstraints adds foreign key constraints via ALTER TABLE statements
 func (p *Planner) addForeignKeyConstraints(result []ast.Node, generated *goschema.Database, tablesToAdd map[string]bool) []ast.Node {
 	for _, table := range generated.Tables {
-		if !tablesToAdd[table.Name] {
+		if !tablesToAdd[table.QualifiedName()] {
 			continue
 		}
 
@@ -214,18 +232,49 @@ func (p *Planner) addRegularForeignKeys(result []ast.Node, generated *goschema.D
 		}
 
 		fkRef := fromschema.ParseForeignKeyReference(field.Foreign)
-		if fkRef != nil && fkRef.Table != table.Name {
+		if fkRef != nil && !foreignKeyTargetsTable(fkRef, table) {
+			qualifyForeignKeyRef(generated, table, fkRef)
 			fkRef.OnDelete = field.OnDelete
 			fkRef.OnUpdate = field.OnUpdate
-			result = append(result, p.createForeignKeyAlterStatement(table.Name, foreignKeyName(table.Name, field), []string{field.Name}, fkRef))
+			result = append(result, p.createForeignKeyAlterStatement(table.QualifiedName(), foreignKeyName(table.Name, field), []string{field.Name}, fkRef))
 		}
 	}
 	return result
 }
 
+func foreignKeyTargetsTable(fkRef *ast.ForeignKeyRef, table goschema.Table) bool {
+	return fkRef.Table == table.Name || fkRef.Table == table.QualifiedName()
+}
+
+func qualifyForeignKeyRef(generated *goschema.Database, current goschema.Table, fkRef *ast.ForeignKeyRef) {
+	if strings.Contains(fkRef.Table, ".") {
+		return
+	}
+	currentSchema := strings.TrimSpace(current.Schema)
+	for _, table := range generated.Tables {
+		if strings.TrimSpace(table.Schema) == currentSchema && table.Name == fkRef.Table {
+			fkRef.Table = table.QualifiedName()
+			return
+		}
+	}
+	matchedName := ""
+	for _, table := range generated.Tables {
+		if table.Name != fkRef.Table {
+			continue
+		}
+		if matchedName != "" {
+			return
+		}
+		matchedName = table.QualifiedName()
+	}
+	if matchedName != "" {
+		fkRef.Table = matchedName
+	}
+}
+
 // addSelfReferencingForeignKeys adds self-referencing foreign key constraints
 func (p *Planner) addSelfReferencingForeignKeys(result []ast.Node, generated *goschema.Database, table goschema.Table) []ast.Node {
-	selfRefFKs, exists := generated.SelfReferencingForeignKeys[table.Name]
+	selfRefFKs, exists := generated.SelfReferencingForeignKeys[table.QualifiedName()]
 	if !exists {
 		return result
 	}
@@ -233,9 +282,10 @@ func (p *Planner) addSelfReferencingForeignKeys(result []ast.Node, generated *go
 	for _, selfRefFK := range selfRefFKs {
 		fkRef := fromschema.ParseForeignKeyReference(selfRefFK.Foreign)
 		if fkRef != nil {
+			qualifyForeignKeyRef(generated, table, fkRef)
 			fkRef.OnDelete = selfRefFK.OnDelete
 			fkRef.OnUpdate = selfRefFK.OnUpdate
-			result = append(result, p.createForeignKeyAlterStatement(table.Name, selfReferencingForeignKeyName(table.Name, selfRefFK), []string{selfRefFK.FieldName}, fkRef))
+			result = append(result, p.createForeignKeyAlterStatement(table.QualifiedName(), selfReferencingForeignKeyName(table.Name, selfRefFK), []string{selfRefFK.FieldName}, fkRef))
 		}
 	}
 
@@ -297,11 +347,8 @@ func (p *Planner) addNewTableColumns(result []ast.Node, tableDiff types.TableDif
 		var targetStructName string
 
 		// First, find the struct name for this table
-		for _, table := range generated.Tables {
-			if table.Name == tableDiff.TableName {
-				targetStructName = table.StructName
-				break
-			}
+		if table := findGeneratedTableByDiffName(generated, tableDiff.TableName); table != nil {
+			targetStructName = table.StructName
 		}
 
 		// Now find the field using the correct struct name
@@ -313,7 +360,7 @@ func (p *Planner) addNewTableColumns(result []ast.Node, tableDiff types.TableDif
 		}
 
 		if targetField != nil {
-			columnNode := fromschema.FromField(*targetField, generated.Enums, "postgres")
+			columnNode := fromschema.FromFieldWithoutForeignKeys(*targetField, generated.Enums, "postgres")
 
 			// Only add the column - foreign key constraints will be added separately
 			// to ensure proper dependency ordering (columns must exist before FK constraints)
@@ -337,13 +384,14 @@ func (p *Planner) addForeignKeyConstraintsForNewColumns(result []ast.Node, table
 		// Find the field definition for this column
 		var targetField *goschema.Field
 		var targetStructName string
+		var targetTableName string
+		var targetTable *goschema.Table
 
 		// First, find the struct name for this table
-		for _, table := range generated.Tables {
-			if table.Name == tableDiff.TableName {
-				targetStructName = table.StructName
-				break
-			}
+		if table := findGeneratedTableByDiffName(generated, tableDiff.TableName); table != nil {
+			targetTable = table
+			targetStructName = table.StructName
+			targetTableName = table.Name
 		}
 
 		// Now find the field using the correct struct name
@@ -359,7 +407,10 @@ func (p *Planner) addForeignKeyConstraintsForNewColumns(result []ast.Node, table
 			// Parse the foreign key reference
 			fkRef := fromschema.ParseForeignKeyReference(targetField.Foreign)
 			if fkRef != nil {
-				fkName := foreignKeyName(tableDiff.TableName, *targetField)
+				if targetTable != nil {
+					qualifyForeignKeyRef(generated, *targetTable, fkRef)
+				}
+				fkName := foreignKeyName(targetTableName, *targetField)
 				fkRef.Name = fkName
 				fkRef.OnDelete = targetField.OnDelete
 				fkRef.OnUpdate = targetField.OnUpdate
@@ -391,11 +442,8 @@ func (p *Planner) modifyExistingTableColumns(result []ast.Node, tableDiff types.
 		var targetStructName string
 
 		// First, find the struct name for this table
-		for _, table := range generated.Tables {
-			if table.Name == tableDiff.TableName {
-				targetStructName = table.StructName
-				break
-			}
+		if table := findGeneratedTableByDiffName(generated, tableDiff.TableName); table != nil {
+			targetStructName = table.StructName
 		}
 
 		// Now find the field using the correct struct name
@@ -431,6 +479,16 @@ func (p *Planner) modifyExistingTableColumns(result []ast.Node, tableDiff types.
 		result = append(result, astCommentNode)
 	}
 	return result
+}
+
+func findGeneratedTableByDiffName(generated *goschema.Database, tableName string) *goschema.Table {
+	for i := range generated.Tables {
+		table := &generated.Tables[i]
+		if table.Name == tableName || table.QualifiedName() == tableName {
+			return table
+		}
+	}
+	return nil
 }
 
 func (p *Planner) removeTableColumnsFromDiff(result []ast.Node, tableDiff types.TableDiff) []ast.Node {
@@ -524,7 +582,7 @@ func (p *Planner) addNewIndexes(result []ast.Node, diff *types.SchemaDiff, gener
 	// Create a mapping from struct names to table names for proper index table resolution
 	structToTableMap := make(map[string]string)
 	for _, table := range generated.Tables {
-		structToTableMap[table.StructName] = table.Name
+		structToTableMap[table.StructName] = table.QualifiedName()
 	}
 
 	for _, indexName := range diff.IndexesAdded {
@@ -1086,7 +1144,7 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 	// Resolve struct → table name once for the field-level synthesis fallbacks.
 	structToTable := make(map[string]string, len(generated.Tables))
 	for _, t := range generated.Tables {
-		structToTable[t.StructName] = t.Name
+		structToTable[t.StructName] = t.QualifiedName()
 	}
 
 	// A constraint name present in BOTH ConstraintsAdded and ConstraintsRemoved
@@ -1395,7 +1453,7 @@ func (p *Planner) fieldLevelCheckConstraintNode(constraintName string, generated
 		}
 		name := f.CheckName
 		if name == "" {
-			name = tableName + "_" + f.Name + "_check"
+			name = unqualifiedTableName(tableName) + "_" + f.Name + "_check"
 		}
 		if name != constraintName {
 			continue
@@ -1428,7 +1486,7 @@ func (p *Planner) fieldLevelForeignKeyConstraintNode(constraintName string, gene
 		if tableName == "" {
 			tableName = f.StructName
 		}
-		name := foreignKeyName(tableName, f)
+		name := foreignKeyName(unqualifiedTableName(tableName), f)
 		if name != constraintName {
 			continue
 		}
@@ -1436,11 +1494,21 @@ func (p *Planner) fieldLevelForeignKeyConstraintNode(constraintName string, gene
 		if fkRef == nil {
 			continue
 		}
+		if table := findGeneratedTableByDiffName(generated, tableName); table != nil {
+			qualifyForeignKeyRef(generated, *table, fkRef)
+		}
 		fkRef.OnDelete = f.OnDelete
 		fkRef.OnUpdate = f.OnUpdate
 		return p.createForeignKeyAlterStatement(tableName, name, []string{f.Name}, fkRef), true
 	}
 	return nil, false
+}
+
+func unqualifiedTableName(tableName string) string {
+	if idx := strings.LastIndex(tableName, "."); idx >= 0 {
+		return tableName[idx+1:]
+	}
+	return tableName
 }
 
 // removeConstraints removes table-level constraints via ALTER TABLE statements.

@@ -42,6 +42,7 @@ var compareFlags = map[string]cobraflags.Flag{
 		Usage: "Database URL (required). Example: postgres://localhost:5432/dbname",
 	},
 	dbcli.ConnectTimeoutFlagName: dbcli.NewConnectTimeoutFlag(),
+	dbcli.SchemasFlagName:        dbcli.NewSchemasFlag(),
 }
 
 func NewCompareCommand() *cobra.Command {
@@ -86,7 +87,8 @@ func compareCommand(_ *cobra.Command, _ []string) error {
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	dbSchema, err := conn.Reader().ReadSchema()
+	schemas := dbcli.ParseSchemas(compareFlags[dbcli.SchemasFlagName].GetString())
+	dbSchema, err := dbschema.ReadSchemaWithSchemas(conn, schemas)
 	if err != nil {
 		return fmt.Errorf("error reading database schema: %w", err)
 	}
