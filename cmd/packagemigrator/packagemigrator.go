@@ -7,8 +7,10 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/stokaro/ptah/cmd/compare"
+	"github.com/stokaro/ptah/cmd/drift"
 	"github.com/stokaro/ptah/cmd/dropall"
 	"github.com/stokaro/ptah/cmd/generate"
+	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/migrate"
 	"github.com/stokaro/ptah/cmd/migratedown"
 	"github.com/stokaro/ptah/cmd/migratestatus"
@@ -44,6 +46,7 @@ func Execute(args ...string) {
 	rootCmd.AddCommand(generate.NewGenerateCommand())
 	rootCmd.AddCommand(readdb.NewReadDBCommand())
 	rootCmd.AddCommand(compare.NewCompareCommand())
+	rootCmd.AddCommand(drift.NewDriftCommand())
 	rootCmd.AddCommand(migrate.NewMigrateCommand())
 	rootCmd.AddCommand(migrateup.NewMigrateUpCommand())
 	rootCmd.AddCommand(migratedown.NewMigrateDownCommand())
@@ -52,6 +55,6 @@ func Execute(args ...string) {
 
 	err := rootCmd.Execute()
 	if err != nil {
-		os.Exit(1) //revive:disable-line:deep-exit
+		os.Exit(exitcode.Code(err, 1)) //revive:disable-line:deep-exit
 	}
 }
