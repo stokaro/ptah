@@ -167,9 +167,6 @@ func (r *Renderer) Dialect() string {
 }
 
 func (r *Renderer) capabilities() capability.Capabilities {
-	if r.caps == nil {
-		return capability.Postgres16()
-	}
 	return r.caps
 }
 
