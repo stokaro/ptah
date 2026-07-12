@@ -3,6 +3,7 @@ package migrator
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -64,11 +65,12 @@ func parseMigrationTimeoutDirectives(sql string) (MigrationTimeouts, error) {
 		if !strings.HasPrefix(trimmed, "--") {
 			break
 		}
-		if !strings.HasPrefix(trimmed, ptahDirectivePrefix) {
+		directive, ok := strings.CutPrefix(trimmed, ptahDirectivePrefix)
+		if !ok {
 			continue
 		}
 
-		directive := strings.TrimSpace(strings.TrimPrefix(trimmed, ptahDirectivePrefix))
+		directive = strings.TrimSpace(directive)
 		if directive == "" {
 			return MigrationTimeouts{}, fmt.Errorf("empty +ptah directive")
 		}
@@ -252,10 +254,8 @@ func mariaDBTimeoutStatements(timeouts MigrationTimeouts) (setupStatements, rest
 }
 
 func reverseStrings(values []string) []string {
-	reversed := make([]string, len(values))
-	for i, value := range values {
-		reversed[len(values)-1-i] = value
-	}
+	reversed := slices.Clone(values)
+	slices.Reverse(reversed)
 	return reversed
 }
 

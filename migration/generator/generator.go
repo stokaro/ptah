@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -242,7 +243,7 @@ func containsAlterTable(sql string) bool {
 
 func supportsGeneratedTimeoutDirectives(dialect string) bool {
 	normalized := platform.NormalizeDialect(dialect)
-	return normalized == platform.Postgres || normalized == platform.MySQL || normalized == platform.MariaDB
+	return slices.Contains([]string{platform.Postgres, platform.MySQL, platform.MariaDB}, normalized)
 }
 
 // reverseSchemaDiff creates a reverse diff for generating down migrations
