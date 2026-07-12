@@ -467,13 +467,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: Build ptah
-        run: go build -o ptah ./cmd
+      - name: Build package-migrator
+        run: go build -o package-migrator ./cmd
       - name: Check schema drift
         id: drift
         continue-on-error: true
         run: |
-          ./ptah drift \
+          ./package-migrator drift \
             --root-dir ./models \
             --db-url "${{ secrets.STAGING_DATABASE_URL }}" \
             --format github-actions

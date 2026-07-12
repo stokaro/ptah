@@ -282,8 +282,27 @@ func keepDatabaseEnums(
 
 func addDatabaseEnumRefs(out map[string]struct{}, columns []dbschematypes.DBColumn) {
 	for _, column := range columns {
-		if column.UDTName != "" {
-			out[column.UDTName] = struct{}{}
+		ref, ok := databaseEnumRef(column)
+		if ok {
+			out[ref] = struct{}{}
 		}
+	}
+}
+
+func databaseEnumRef(column dbschematypes.DBColumn) (string, bool) {
+	if column.UDTName == "" {
+		return "", false
+	}
+
+	switch strings.ToUpper(column.DataType) {
+	case "USER-DEFINED":
+		return column.UDTName, true
+	case "ARRAY":
+		ref := strings.TrimPrefix(column.UDTName, "_")
+		return ref, ref != ""
+	case "":
+		return column.UDTName, true
+	default:
+		return "", false
 	}
 }

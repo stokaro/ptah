@@ -60,13 +60,13 @@ func TestFilterDatabaseTables_RemovesOnlyIgnoredTableEnums(t *testing.T) {
 			{
 				Name: "users",
 				Columns: []dbschematypes.DBColumn{
-					{Name: "status", UDTName: "enum_user_status"},
+					{Name: "status", DataType: "USER-DEFINED", UDTName: "enum_user_status"},
 				},
 			},
 			{
 				Name: "audit_log",
 				Columns: []dbschematypes.DBColumn{
-					{Name: "status", UDTName: "enum_auditlog_status"},
+					{Name: "statuses", DataType: "ARRAY", UDTName: "_enum_auditlog_status"},
 				},
 			},
 		},
@@ -97,4 +97,26 @@ func TestFilterDatabaseTables_RemovesOnlyIgnoredTableEnums(t *testing.T) {
 		{Name: "enum_user_status", Values: []string{"active"}},
 		{Name: "orphan_enum", Values: []string{"kept"}},
 	})
+}
+
+func TestFilterDatabaseTables_IgnoresNonEnumUDTNames(t *testing.T) {
+	c := qt.New(t)
+
+	db := &dbschematypes.DBSchema{
+		Tables: []dbschematypes.DBTable{
+			{
+				Name: "audit_log",
+				Columns: []dbschematypes.DBColumn{
+					{Name: "status_text", DataType: "text", UDTName: "enum_auditlog_status"},
+				},
+			},
+		},
+		Enums: []dbschematypes.DBEnum{
+			{Name: "enum_auditlog_status", Values: []string{"kept"}},
+		},
+	}
+
+	filtered := schemaops.FilterDatabaseTables(db, []string{"audit_log"})
+
+	c.Assert(filtered.Enums, qt.DeepEquals, db.Enums)
 }

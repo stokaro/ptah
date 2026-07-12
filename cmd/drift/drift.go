@@ -1,7 +1,6 @@
 package drift
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -117,7 +116,7 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
 	}
 
-	result, err := schemaops.Compare(context.Background(), schemaops.CompareOptions{
+	result, err := schemaops.Compare(cmd.Context(), schemaops.CompareOptions{
 		RootDir:        opts.rootDir,
 		DatabaseURL:    opts.dbURL,
 		ConnectTimeout: connectTimeout,
