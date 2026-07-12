@@ -11,6 +11,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/migration/migrator"
+	"github.com/stokaro/ptah/migration/onlineddl"
 )
 
 var migrateUpCmd = &cobra.Command{
@@ -55,6 +56,7 @@ var migrateUpFlags = map[string]cobraflags.Flag{
 		Usage: "Enable verbose output",
 	},
 	dbcli.ConnectTimeoutFlagName: dbcli.NewConnectTimeoutFlag(),
+	dbcli.ConfigFlagName:         dbcli.NewConfigFlag(),
 }
 
 func NewMigrateUpCommand() *cobra.Command {
@@ -111,7 +113,19 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 	// Create filesystem from migrations directory
 	migrationsFS := os.DirFS(migrationsDir)
 
-	mig, err := migrator.NewFSMigrator(conn, migrationsFS)
+	// Online-DDL routing: `-- +ptah online_ddl_tool=...` directives always
+	// work; the ptah.yaml online_ddl section adds automatic routing of
+	// ALTERs on tables above the configured row threshold.
+	onlineCfg, err := dbcli.LoadOnlineDDLConfig(migrateUpFlags[dbcli.ConfigFlagName].GetString())
+	if err != nil {
+		return err
+	}
+	if onlineCfg.Enabled() {
+		fmt.Printf("Online DDL: tool=%s threshold_rows=%d\n", onlineCfg.Tool, onlineCfg.ThresholdRows)
+	}
+	interceptor := onlineddl.New(*onlineCfg).WithDryRun(dryRun)
+
+	mig, err := migrator.NewFSMigrator(conn, migrationsFS, migrator.WithStatementInterceptor(interceptor))
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
