@@ -152,6 +152,7 @@ Provides command-line interface for all Ptah operations:
 - **`migrate-up`** - Apply migrations to bring database up to latest version
 - **`migrate-down`** - Roll back migrations to previous versions
 - **`migrate-status`** - Show current migration status and history
+- **`seed`** - Apply environment-scoped SQL seed files with replay tracking
 - **`drop-all`** - Drop ALL tables and enums in database (VERY DANGEROUS!) (supports `--dry-run`)
 - **`integration-test`** - Run comprehensive integration tests across database platforms
 
@@ -545,6 +546,33 @@ Generate SQL migration statements to synchronize schemas:
 ```
 
 **Output:** SQL statements to bring the database in sync with Go entities
+
+#### Apply Seed Data
+Apply environment-scoped SQL seeds from a `seeds/` directory:
+
+```bash
+./package-migrator seed --db-url postgres://user:pass@localhost:5432/database --env test
+```
+
+Seed files use `NNN_description.env.sql` names. Files matching `--env` and
+`.all.sql` files are applied in version order:
+
+```text
+seeds/
+  010_countries.all.sql
+  020_demo_users.dev.sql
+  020_test_users.test.sql
+```
+
+Successful files are recorded in `schema_seeds`, so re-running `seed --env test`
+is a no-op unless `--force` is set. `--idempotent` uses a per-file savepoint to
+treat duplicate-key conflicts as already-applied data; it is rejected on
+ClickHouse because ClickHouse does not provide the transactions/savepoints this
+mode depends on. Production-like environments (`prod`, `production` by default)
+require `--allow-prod`; use `--protected-env name` to configure additional
+protected environment names. Use `--protected-table name` to refuse seeding when
+the target database already contains production-marker tables unless
+`--allow-prod` is explicit.
 
 ### Migration Management
 

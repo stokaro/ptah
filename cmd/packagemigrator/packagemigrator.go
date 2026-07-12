@@ -17,6 +17,7 @@ import (
 	"github.com/stokaro/ptah/cmd/migratestatus"
 	"github.com/stokaro/ptah/cmd/migrateup"
 	"github.com/stokaro/ptah/cmd/readdb"
+	"github.com/stokaro/ptah/cmd/seed"
 )
 
 const (
@@ -52,6 +53,7 @@ func Execute(args ...string) {
 	rootCmd.AddCommand(migrateup.NewMigrateUpCommand())
 	rootCmd.AddCommand(migratedown.NewMigrateDownCommand())
 	rootCmd.AddCommand(migratestatus.NewMigrateStatusCommand())
+	rootCmd.AddCommand(seed.NewSeedCommand())
 	rootCmd.AddCommand(dropall.NewDropAllCommand())
 	rootCmd.AddCommand(lint.NewLintCommand())
 
