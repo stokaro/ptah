@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/stokaro/ptah/core/convert/dbschematogo"
 	"github.com/stokaro/ptah/core/convert/fromschema"
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
@@ -189,7 +191,7 @@ func generateUpMigrationSQL(diff *types.SchemaDiff, generated *goschema.Database
 	header := fmt.Sprintf("-- Migration generated from schema differences\n-- Generated on: %s\n-- Direction: UP\n\n",
 		time.Now().Format(time.RFC3339))
 
-	return header + strings.Join(statements, ";\n") + ";", nil
+	return withGeneratedTimeoutDirectives(header+strings.Join(statements, ";\n")+";", dialect), nil
 }
 
 // generateDownMigrationSQL generates the SQL for the down migration by reversing the diff
@@ -218,7 +220,30 @@ func generateDownMigrationSQL(diff *types.SchemaDiff, generated *goschema.Databa
 	header := fmt.Sprintf("-- Migration rollback\n-- Generated on: %s\n-- Direction: DOWN\n\n",
 		time.Now().Format(time.RFC3339))
 
-	return header + strings.Join(statements, ";\n") + ";", nil
+	return withGeneratedTimeoutDirectives(header+strings.Join(statements, ";\n")+";", dialect), nil
+}
+
+func withGeneratedTimeoutDirectives(sql, dialect string) string {
+	if !containsAlterTable(sql) || !supportsGeneratedTimeoutDirectives(dialect) {
+		return sql
+	}
+
+	directives := "-- +ptah lock_timeout=3s\n-- +ptah statement_timeout=30s\n"
+	separator := "\n\n"
+	if before, after, ok := strings.Cut(sql, separator); ok {
+		return before + "\n" + directives + "\n" + after
+	}
+	return directives + sql
+}
+
+func containsAlterTable(sql string) bool {
+	stripped := sqlutil.StripComments(sql)
+	return strings.Contains(strings.ToUpper(stripped), "ALTER TABLE")
+}
+
+func supportsGeneratedTimeoutDirectives(dialect string) bool {
+	normalized := platform.NormalizeDialect(dialect)
+	return slices.Contains([]string{platform.Postgres, platform.MySQL, platform.MariaDB}, normalized)
 }
 
 // reverseSchemaDiff creates a reverse diff for generating down migrations

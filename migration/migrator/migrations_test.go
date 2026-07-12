@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 )
@@ -164,4 +165,96 @@ func TestMigrationFuncFromSQLFilename_FileNotFound(t *testing.T) {
 	err := migrationFunc(context.Background(), nil)
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "failed to read migration file")
+}
+
+func TestParseMigrationTimeoutDirectives(t *testing.T) {
+	tests := []struct {
+		name                    string
+		sql                     string
+		wantLockTimeout         time.Duration
+		wantStatementTimeout    time.Duration
+		wantHasLockTimeout      bool
+		wantHasStatementTimeout bool
+		wantErr                 string
+	}{
+		{
+			name: "directives at top of file",
+			sql: `-- Migration header
+-- +ptah lock_timeout=3s
+-- +ptah statement_timeout=30s
+
+ALTER TABLE users ADD COLUMN email TEXT;`,
+			wantLockTimeout:         3 * time.Second,
+			wantStatementTimeout:    30 * time.Second,
+			wantHasLockTimeout:      true,
+			wantHasStatementTimeout: true,
+		},
+		{
+			name: "multiple directives on one line",
+			sql: `-- +ptah lock_timeout=500ms statement_timeout=2m
+ALTER TABLE users ADD COLUMN email TEXT;`,
+			wantLockTimeout:         500 * time.Millisecond,
+			wantStatementTimeout:    2 * time.Minute,
+			wantHasLockTimeout:      true,
+			wantHasStatementTimeout: true,
+		},
+		{
+			name: "directive after SQL is ignored",
+			sql: `ALTER TABLE users ADD COLUMN email TEXT;
+-- +ptah lock_timeout=3s`,
+		},
+		{
+			name: "other ptah directive is ignored",
+			sql:  "-- +ptah unknown_timeout=3s\nALTER TABLE users ADD COLUMN email TEXT;",
+		},
+		{
+			name: "online ddl directive is ignored by timeout parser",
+			sql:  "-- +ptah online_ddl_tool=ghost\nALTER TABLE users ADD COLUMN email TEXT;",
+		},
+		{
+			name:    "invalid duration fails",
+			sql:     "-- +ptah lock_timeout=soon\nALTER TABLE users ADD COLUMN email TEXT;",
+			wantErr: "invalid +ptah lock_timeout value",
+		},
+		{
+			name:    "zero duration fails",
+			sql:     "-- +ptah statement_timeout=0s\nALTER TABLE users ADD COLUMN email TEXT;",
+			wantErr: "must be greater than zero",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := parseMigrationTimeoutDirectives(tt.sql)
+			if tt.wantErr != "" {
+				c.Assert(err, qt.IsNotNil)
+				c.Assert(err.Error(), qt.Contains, tt.wantErr)
+				return
+			}
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got.HasLockTimeout, qt.Equals, tt.wantHasLockTimeout)
+			c.Assert(got.HasStatementTimeout, qt.Equals, tt.wantHasStatementTimeout)
+			c.Assert(got.LockTimeout, qt.Equals, tt.wantLockTimeout)
+			c.Assert(got.StatementTimeout, qt.Equals, tt.wantStatementTimeout)
+		})
+	}
+}
+
+func TestMigrationFuncFromSQLFilenameWithTimeouts(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"test.sql": &fstest.MapFile{
+			Data: []byte("-- +ptah lock_timeout=3s\nCREATE TABLE test (id SERIAL PRIMARY KEY);"),
+		},
+	}
+
+	migrationFunc, timeouts, err := MigrationFuncFromSQLFilenameWithTimeouts("test.sql", fsys)
+	c.Assert(err, qt.IsNil)
+	c.Assert(migrationFunc, qt.IsNotNil)
+	c.Assert(timeouts.HasLockTimeout, qt.IsTrue)
+	c.Assert(timeouts.LockTimeout, qt.Equals, 3*time.Second)
 }

@@ -128,9 +128,19 @@ func (p *FSMigrationProvider) load() error {
 		// Set the appropriate migration function based on direction
 		switch migrationFile.Direction {
 		case "up":
-			migrationsMap[migrationFile.Version].Up = MigrationFuncFromSQLFilenameWithInterceptor(path, p.fsys, p.interceptor)
+			up, timeouts, err := MigrationFuncFromSQLFilenameWithTimeoutsAndInterceptor(path, p.fsys, p.interceptor)
+			if err != nil {
+				return fmt.Errorf("failed to load up migration %s: %w", path, err)
+			}
+			migrationsMap[migrationFile.Version].Up = up
+			migrationsMap[migrationFile.Version].UpTimeouts = timeouts
 		case "down":
-			migrationsMap[migrationFile.Version].Down = MigrationFuncFromSQLFilenameWithInterceptor(path, p.fsys, p.interceptor)
+			down, timeouts, err := MigrationFuncFromSQLFilenameWithTimeoutsAndInterceptor(path, p.fsys, p.interceptor)
+			if err != nil {
+				return fmt.Errorf("failed to load down migration %s: %w", path, err)
+			}
+			migrationsMap[migrationFile.Version].Down = down
+			migrationsMap[migrationFile.Version].DownTimeouts = timeouts
 		default:
 			return fmt.Errorf("invalid migration direction: %s", migrationFile.Direction)
 		}
