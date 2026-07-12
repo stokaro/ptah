@@ -33,13 +33,50 @@ func SplitSQLStatements(sql string) []string {
 	return sqlutil.SplitSQLStatements(sqlutil.StripComments(sql))
 }
 
+// StatementInterceptor lets an external executor take over individual
+// migration statements — for example, routing ALTER TABLE statements through
+// an online-DDL tool (gh-ost, pt-online-schema-change) instead of executing
+// them on the migration connection.
+//
+// ValidateDirectives is called once per migration, before any statement runs,
+// so a bad directive fails the migration cleanly with nothing applied instead
+// of surfacing only when the first affected statement is reached.
+//
+// ExecuteStatement receives one statement (comments stripped) together with
+// the file-level directives of the migration it came from (see
+// ParseFileDirectives). It returns handled=true when it fully executed the
+// statement itself; on handled=false the migrator executes the statement
+// normally. A non-nil error aborts the migration.
+type StatementInterceptor interface {
+	ValidateDirectives(directives map[string]string) error
+	ExecuteStatement(ctx context.Context, conn *dbschema.DatabaseConnection, stmt string, directives map[string]string) (handled bool, err error)
+}
+
 // MigrationFuncFromSQLFilename returns a migration function that reads SQL from a file
 // in the provided filesystem and executes it using the database connection
 func MigrationFuncFromSQLFilename(filename string, fsys fs.FS) MigrationFunc {
+	return MigrationFuncFromSQLFilenameWithInterceptor(filename, fsys, nil)
+}
+
+// MigrationFuncFromSQLFilenameWithInterceptor is MigrationFuncFromSQLFilename
+// with an optional StatementInterceptor consulted for every statement; nil
+// behaves exactly like MigrationFuncFromSQLFilename.
+func MigrationFuncFromSQLFilenameWithInterceptor(filename string, fsys fs.FS, interceptor StatementInterceptor) MigrationFunc {
 	return func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 		sql, err := fs.ReadFile(fsys, filename)
 		if err != nil {
 			return fmt.Errorf("failed to read migration file: %w", err)
+		}
+
+		// Directives live in comments, so they must be read from the raw
+		// file before comment stripping, and validated before any statement
+		// runs so an invalid directive leaves nothing half-applied.
+		var directives map[string]string
+		if interceptor != nil {
+			directives = ParseFileDirectives(string(sql))
+			if err := interceptor.ValidateDirectives(directives); err != nil {
+				return fmt.Errorf("invalid migration directives in %s: %w", filename, err)
+			}
 		}
 
 		// Split SQL into individual statements for better MySQL compatibility
@@ -47,6 +84,15 @@ func MigrationFuncFromSQLFilename(filename string, fsys fs.FS) MigrationFunc {
 
 		// Execute each statement separately
 		for _, stmt := range statements {
+			if interceptor != nil {
+				handled, err := interceptor.ExecuteStatement(ctx, conn, stmt, directives)
+				if err != nil {
+					return fmt.Errorf("failed to execute migration SQL: %w", err)
+				}
+				if handled {
+					continue
+				}
+			}
 			if err := conn.Writer().ExecuteSQL(ctx, stmt); err != nil {
 				return fmt.Errorf("failed to execute migration SQL: %w", err)
 			}
