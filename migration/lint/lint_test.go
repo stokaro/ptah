@@ -117,6 +117,24 @@ func TestLintFS_MigrationFormRules(t *testing.T) {
 	}
 }
 
+func TestLintFS_PairsByVersionLikeMigrator(t *testing.T) {
+	c := qt.New(t)
+
+	// The migrator pairs an up and a down by their shared version prefix,
+	// regardless of description, so lint must not raise MF101 (missing down)
+	// when the counterpart down exists for the same version under a
+	// different description.
+	fsys := fixture(map[string]string{
+		"0000000001_create_users.up.sql":         "CREATE TABLE users (id INT);\n",
+		"0000000001_create_users_table.down.sql": "DROP TABLE users;\n",
+	})
+
+	findings, err := lint.LintFS(fsys, lint.Options{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(findings, qt.HasLen, 0,
+		qt.Commentf("version 1 has both an up and a down; no MF101 expected; got %v", findings))
+}
+
 // lintOne lints a single-statement up migration (with a paired down file)
 // and returns the rule codes that fired.
 func lintOne(c *qt.C, sql string) []string {
@@ -258,6 +276,27 @@ func TestLintFS_DialectAwareScanning(t *testing.T) {
 		// In PostgreSQL # is an operator, not a comment starter.
 		{"postgres hash operator in index expression", "postgres",
 			"CREATE INDEX idx ON t ((data #>> '{a}'));", []string{"PG101"}},
+		// The default (no --dialect) hybrid must NOT treat # as a comment:
+		// # is a PostgreSQL operator (jsonb #>>, bitwise XOR), and swallowing
+		// the rest of the line would merge statements and hide the following
+		// DROP TABLE (a DS101 false negative in the default CI invocation).
+		{"default dialect jsonb operator does not hide drop table", "",
+			"UPDATE cfg SET v = data #>> '{key}';\nDROP TABLE legacy_audit;", []string{"DS101"}},
+		{"default dialect xor operator does not hide drop table", "",
+			"UPDATE flags SET mask = mask # 1;\nDROP TABLE audit_log;", []string{"DS101"}},
+		// Mirror false positive: the # merge used to bury a same-file CREATE,
+		// so the later DROP of that created table wrongly fired DS101.
+		{"default dialect xor does not manufacture same-file drop false positive", "",
+			"UPDATE flags SET mask = mask # 1;\nCREATE TABLE tmp_backfill (id INT);\nDROP TABLE tmp_backfill;", nil},
+		// Block comments do not nest in MySQL/MariaDB, so the default hybrid
+		// must close at the first '*/' — otherwise it keeps scanning for a
+		// second '*/' and swallows the DROP that MySQL would execute.
+		{"default dialect non-nesting comment does not hide drop table", "",
+			"/* note /* inner */\nDROP TABLE t;", []string{"DS101"}},
+		// Under an explicit postgres dialect, block comments DO nest, so the
+		// same input is one comment and nothing fires.
+		{"postgres nesting comment hides nothing real", "postgres",
+			"/* note /* inner */ still comment */\nSELECT 1;", nil},
 
 		// MySQL executable comments are real SQL to the server.
 		{"mysql executable comment hides real ddl", "mysql",

@@ -25,10 +25,26 @@ type scanMode struct {
 }
 
 // modeForDialect maps a lint target dialect to its lexing behavior. An empty
-// or unknown dialect gets a hybrid that keeps hazards visible for every
-// supported dialect: the MySQL comment forms are honored, but backslash
-// escapes stay off because a trailing backslash in a standard-conforming
-// literal would otherwise hide every statement after it.
+// or unknown dialect gets a hybrid whose overriding goal is to never HIDE a
+// hazard: every lexing rule it omits is one that could swallow a statement in
+// one of the supported dialects. It recognizes strings and PostgreSQL
+// dollar-quoted bodies (so literal / function-body content is not mis-scanned
+// as code), and it scans the content of MySQL executable comments (which only
+// makes more visible), but it deliberately omits:
+//
+//   - backslash escapes — a trailing backslash in a standard-conforming
+//     PostgreSQL literal would hide everything after it;
+//   - MySQL '#' line comments — '#' is a PostgreSQL operator (bitwise XOR,
+//     and the ubiquitous jsonb '#>' / '#>>'), so treating it as a comment
+//     would eat the rest of the line including its ';' and hide a following
+//     DROP TABLE;
+//   - nested block comments — PostgreSQL nests them but MySQL/MariaDB do
+//     not, so a '*/' must always close a comment; otherwise
+//     "/* a /* b */ DROP TABLE t;" would keep scanning for a second '*/'
+//     and swallow the DROP that MySQL would actually execute.
+//
+// The dialect-specific behaviors (MySQL '#' comments, PostgreSQL nested
+// comments) require an explicit --dialect.
 func modeForDialect(dialect string) scanMode {
 	switch dialect {
 	case "mysql", "mariadb":
@@ -36,7 +52,7 @@ func modeForDialect(dialect string) scanMode {
 	case "postgres":
 		return scanMode{dollarQuotes: true, nestedComments: true}
 	default:
-		return scanMode{hashComments: true, execComments: true, dollarQuotes: true, nestedComments: true}
+		return scanMode{execComments: true, dollarQuotes: true}
 	}
 }
 
