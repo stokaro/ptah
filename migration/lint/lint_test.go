@@ -288,6 +288,15 @@ func TestLintFS_DialectAwareScanning(t *testing.T) {
 		// so the later DROP of that created table wrongly fired DS101.
 		{"default dialect xor does not manufacture same-file drop false positive", "",
 			"UPDATE flags SET mask = mask # 1;\nCREATE TABLE tmp_backfill (id INT);\nDROP TABLE tmp_backfill;", nil},
+		// Block comments do not nest in MySQL/MariaDB, so the default hybrid
+		// must close at the first '*/' — otherwise it keeps scanning for a
+		// second '*/' and swallows the DROP that MySQL would execute.
+		{"default dialect non-nesting comment does not hide drop table", "",
+			"/* note /* inner */\nDROP TABLE t;", []string{"DS101"}},
+		// Under an explicit postgres dialect, block comments DO nest, so the
+		// same input is one comment and nothing fires.
+		{"postgres nesting comment hides nothing real", "postgres",
+			"/* note /* inner */ still comment */\nSELECT 1;", nil},
 
 		// MySQL executable comments are real SQL to the server.
 		{"mysql executable comment hides real ddl", "mysql",
