@@ -33,8 +33,8 @@ type Migrator struct {
 // NNNNNNNNNN_description.up.sql and NNNNNNNNNN_description.down.sql and automatically
 // registers them with the migrator. Returns an error if the filesystem cannot be scanned
 // or if any migrations are incomplete (missing up or down files).
-func NewFSMigrator(conn *dbschema.DatabaseConnection, fsys fs.FS) (*Migrator, error) {
-	provider, err := NewFSMigrationProvider(fsys)
+func NewFSMigrator(conn *dbschema.DatabaseConnection, fsys fs.FS, opts ...FSProviderOption) (*Migrator, error) {
+	provider, err := NewFSMigrationProvider(fsys, opts...)
 	if err != nil {
 		return nil, err
 	}

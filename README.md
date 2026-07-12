@@ -546,6 +546,24 @@ Apply all pending migrations to bring database up to latest version:
 - ✅ Automatic rollback on failure
 - ✅ Tracks applied migrations in `schema_migrations` table
 - ✅ Supports dry-run mode for preview
+- ✅ Online DDL for large MySQL/MariaDB tables via gh-ost / pt-online-schema-change
+
+**Online DDL (MySQL/MariaDB):** route lock-heavy `ALTER TABLE` statements through
+[gh-ost](https://github.com/github/gh-ost) or
+[pt-online-schema-change](https://docs.percona.com/percona-toolkit/pt-online-schema-change.html) —
+either per migration with a `-- +ptah online_ddl_tool=ghost` directive, or automatically for
+tables above a row threshold via `ptah.yaml` (`--config`):
+
+```yaml
+online_ddl:
+  tool: ghost            # or pt-osc
+  threshold_rows: 1000000
+  args: ["--allow-on-master"]
+```
+
+If the tool is not on PATH, ptah warns and falls back to a plain `ALTER TABLE`.
+See [docs/online-ddl.md](docs/online-ddl.md) for prerequisites (binlog ROW format,
+privileges, topology flags) and invocation details.
 
 #### Roll Back Migrations
 Roll back migrations to a specific version:
