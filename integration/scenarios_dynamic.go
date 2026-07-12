@@ -189,6 +189,16 @@ func GetDynamicScenarios() []TestScenario {
 			EnhancedTestFunc: testDynamicFieldCheckConstraintEvolution,
 		},
 		{
+			// Live coverage for issue #196: a field-level FK referential-action
+			// CHANGE (issue #189 / PR #190) round-trips through REAL generated
+			// up+down migration files on PG, MySQL and MariaDB, asserting the
+			// APPLIED actions via information_schema introspection — not just
+			// that a migration was emitted.
+			Name:             "dynamic_fk_action_evolution",
+			Description:      "Test FK on_delete/on_update change round-trip (real up + generated down) with live introspection (issue #196)",
+			EnhancedTestFunc: testDynamicFKActionEvolution,
+		},
+		{
 			Name:             "dynamic_rls_policy_modification",
 			Description:      "Test RLS policy modification and schema diffing",
 			EnhancedTestFunc: testDynamicRLSPolicyModification,
