@@ -384,12 +384,30 @@ func TestLintFS_NestedDirectoriesAreLinted(t *testing.T) {
 	c.Assert(findings[0].Line, qt.Equals, 1)
 }
 
-func TestLintFS_MigratorLenientNamesAreLinted(t *testing.T) {
+func TestLintFS_UpSuffixFallbackScansMalformedVersions(t *testing.T) {
 	c := qt.New(t)
 
-	// The migrator's lenient name parser runs 0000000001_cleanup.sql as an
-	// UP migration and 0000000002_teardown.sql as a DOWN one; lint must
-	// classify them the same way instead of skipping their statements.
+	// A .up.sql file whose version prefix the migrator rejects still gets
+	// hazard scanning via the IsUp suffix fallback — the author clearly
+	// meant it as an up migration, and MF103 explains why it will not run.
+	fsys := fixture(map[string]string{
+		"001_bad_version.up.sql":   "DROP TABLE users;\n",
+		"001_bad_version.down.sql": "-- restore\n",
+	})
+
+	findings, err := lint.LintFS(fsys, lint.Options{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"MF103", "MF103", "DS101"},
+		qt.Commentf("naming warnings for both files plus the hazard in the up file; got %v", findings))
+}
+
+func TestLintFS_SuffixlessNamesFollowTheMigrator(t *testing.T) {
+	c := qt.New(t)
+
+	// Since the migrator's name regexp was fixed (#245), a description
+	// merely ending in up/down is not a migration: the migrator skips the
+	// file, so lint reports the naming problem instead of scanning
+	// statements that will never run.
 	fsys := fixture(map[string]string{
 		"0000000001_cleanup.sql":  "DROP TABLE users;\n",
 		"0000000002_teardown.sql": "DROP TABLE audit;\n",
@@ -398,12 +416,10 @@ func TestLintFS_MigratorLenientNamesAreLinted(t *testing.T) {
 	findings, err := lint.LintFS(fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
 
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"MF101", "MF103", "DS101", "MF103"},
-		qt.Commentf("cleanup.sql is an up migration to the migrator: DS101 + missing down + ambiguous name; teardown.sql is a down migration: ambiguous name only; got %v", findings))
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"MF103", "MF103"},
+		qt.Commentf("both files are invisible to the migrator: naming warnings only; got %v", findings))
 	for _, f := range findings {
-		if f.Rule == "MF103" {
-			c.Assert(f.Message, qt.Contains, "ambiguous file name")
-		}
+		c.Assert(f.Message, qt.Contains, "the migrator will not pick it up")
 	}
 }
 

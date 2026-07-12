@@ -13,8 +13,10 @@ import (
 	"golang.org/x/text/language"
 )
 
-// Migration file naming pattern: NNNNNNNNNN_description.up.sql or NNNNNNNNNN_description.down.sql
-var fileNameRe = regexp.MustCompile(`^(\d{10})_(.*).(down|up)(\.sql)$`)
+// Migration file naming pattern: NNNNNNNNNN_description.up.sql or NNNNNNNNNN_description.down.sql.
+// The dot before the direction is literal: a description merely ending in
+// "up"/"down" (cleanup, setup, teardown, ...) is not a migration file.
+var fileNameRe = regexp.MustCompile(`^(\d{10})_(.*)\.(down|up)(\.sql)$`)
 
 // MigrationFile represents the parsed components of a migration file name
 type MigrationFile struct {

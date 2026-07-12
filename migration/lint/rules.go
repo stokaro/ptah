@@ -132,9 +132,11 @@ func migrationFormRules() []Rule {
 				}
 				message := "file name does not match NNNNNNNNNN_description.(up|down).sql; the migrator will not pick it up"
 				if file.Direction != "" {
-					// The migrator's lenient parser accepts this name — e.g.
-					// 0000000001_cleanup.sql runs as an UP migration — which
-					// is more surprising than being skipped.
+					// Defense in depth: unreachable while the migrator's
+					// parser matches the strict convention (#245 fixed its
+					// lenient regexp), but if they ever diverge again a name
+					// the migrator would RUN despite its odd spelling is more
+					// surprising than one it skips, so say so.
 					message = fmt.Sprintf("ambiguous file name: the migrator runs this as a %s migration even though it does not end in .%s.sql; rename it to NNNNNNNNNN_description.%s.sql", file.Direction, file.Direction, file.Direction)
 				}
 				return []Finding{{

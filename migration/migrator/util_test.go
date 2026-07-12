@@ -42,6 +42,90 @@ func TestParseMigrationFileName(t *testing.T) {
 			expectError: true,
 		},
 		{
+			// Regression for issue #245: the unescaped dot in fileNameRe used
+			// to make any description ending in "up"/"down" parse as a
+			// migration (cleanup.sql ran as UP with description "Clea").
+			name:        "description ending in up is not a direction",
+			filename:    "0000000001_cleanup.sql",
+			expected:    nil,
+			expectError: true,
+		},
+		{
+			name:        "description ending in down is not a direction",
+			filename:    "0000000001_teardown.sql",
+			expected:    nil,
+			expectError: true,
+		},
+		{
+			name:        "setup without direction suffix",
+			filename:    "0000000001_setup.sql",
+			expected:    nil,
+			expectError: true,
+		},
+		{
+			name:     "description ending in up with a proper direction suffix",
+			filename: "0000000003_cleanup.up.sql",
+			expected: &MigrationFile{
+				Version:   3,
+				Name:      "Cleanup",
+				Direction: "up",
+				Extension: ".sql",
+			},
+			expectError: false,
+		},
+		{
+			name:     "description ending in down with a proper direction suffix",
+			filename: "0000000004_teardown.down.sql",
+			expected: &MigrationFile{
+				Version:   4,
+				Name:      "Teardown",
+				Direction: "down",
+				Extension: ".sql",
+			},
+			expectError: false,
+		},
+		{
+			// Pins the other half of the naming language: descriptions may
+			// contain dots, so an over-tightened pattern ((.*) -> ([^.]*))
+			// must fail here instead of silently skipping such migrations.
+			name:     "description containing dots",
+			filename: "0000000001_v2.0_schema.up.sql",
+			expected: &MigrationFile{
+				Version:   1,
+				Name:      "V2.0 Schema",
+				Direction: "up",
+				Extension: ".sql",
+			},
+			expectError: false,
+		},
+		{
+			// The LAST direction token wins; everything before it is
+			// description (greedy match).
+			name:     "multiple direction tokens",
+			filename: "0000000001_foo.up.down.sql",
+			expected: &MigrationFile{
+				Version:   1,
+				Name:      "Foo.up",
+				Direction: "down",
+				Extension: ".sql",
+			},
+			expectError: false,
+		},
+		{
+			// Only a literal dot separates description from direction: a
+			// lenient-separator pattern ([._]) must not sneak back in.
+			name:        "underscore before direction is not a separator",
+			filename:    "0000000001_add_users_up.sql",
+			expected:    nil,
+			expectError: true,
+		},
+		{
+			name:        "dash before direction is not a separator",
+			filename:    "0000000001_migrate-up.sql",
+			expected:    nil,
+			expectError: true,
+		},
+		{
 			name:        "invalid format - wrong extension",
 			filename:    "0000000001_create_users_table.up.txt",
 			expected:    nil,
@@ -101,6 +185,11 @@ func TestValidateMigrationFileName(t *testing.T) {
 		{
 			name:     "invalid format",
 			filename: "invalid_filename.sql",
+			expected: false,
+		},
+		{
+			name:     "description ending in up without direction suffix",
+			filename: "0000000001_cleanup.sql",
 			expected: false,
 		},
 	}
