@@ -169,6 +169,36 @@ func TestNewFSMigrationProvider_EmptyFilesystem(t *testing.T) {
 	c.Assert(migrations, qt.HasLen, 0)
 }
 
+func TestNewFSMigrationProvider_DescriptionEndingInUpIsNotAMigration(t *testing.T) {
+	c := qt.New(t)
+
+	// Regression for issue #245: with the unescaped dot in fileNameRe,
+	// 0000000003_cleanup.sql used to register as version 3's UP migration
+	// (description "Clea") and its SQL would run on migrate-up.
+	fsys := fstest.MapFS{
+		"0000000001_create_users.up.sql": &fstest.MapFile{
+			Data: []byte("CREATE TABLE users (id SERIAL PRIMARY KEY);"),
+		},
+		"0000000001_create_users.down.sql": &fstest.MapFile{
+			Data: []byte("DROP TABLE users;"),
+		},
+		"0000000003_cleanup.sql": &fstest.MapFile{
+			Data: []byte("DROP TABLE users;"),
+		},
+		"0000000004_teardown.sql": &fstest.MapFile{
+			Data: []byte("DROP TABLE audit;"),
+		},
+	}
+
+	provider, err := migrator.NewFSMigrationProvider(fsys)
+	c.Assert(err, qt.IsNil, qt.Commentf("suffix-less files are skipped, not incomplete migrations"))
+	c.Assert(provider, qt.IsNotNil)
+
+	migrations := provider.Migrations()
+	c.Assert(migrations, qt.HasLen, 1)
+	c.Assert(migrations[0].Version, qt.Equals, 1)
+}
+
 func TestNewFSMigrationProvider_InvalidFiles(t *testing.T) {
 	c := qt.New(t)
 

@@ -110,10 +110,9 @@ type File struct {
 	// up for down) exists in the same directory.
 	HasPair bool
 	// WellFormedName reports whether the name matches the documented
-	// NNNNNNNNNN_description.(up|down).sql convention. The migrator's own
-	// parser is more lenient (see Direction), so a name can be parseable
-	// yet not well-formed — 0000000001_cleanup.sql parses as an up
-	// migration with a truncated description.
+	// NNNNNNNNNN_description.(up|down).sql convention, checked
+	// independently of the migrator's parser as defense in depth (see the
+	// strictNameRe comment).
 	WellFormedName bool
 	// Statements holds the parsed statements of up migrations. Empty for
 	// down migrations (statement rules do not run there).
@@ -297,11 +296,12 @@ func ruleAppliesToDialect(rule Rule, dialect string) bool {
 	return slices.Contains(rule.Dialects, dialect)
 }
 
-// strictNameRe is the documented migration naming convention. The migrator's
-// own parser is more lenient — its regexp has an unescaped dot before the
-// direction, so 0000000001_cleanup.sql parses as an up migration — which is
-// why WellFormedName checks the strict form while Direction follows the
-// migrator.
+// strictNameRe is the documented migration naming convention, encoded
+// independently of the migrator's parser: WellFormedName checks this strict
+// form while Direction follows the migrator, so if the two ever diverge
+// again (as they did before #245, when the migrator's unescaped dot made
+// 0000000001_cleanup.sql run as an up migration) lint keeps scanning
+// whatever the migrator would execute and MF103 explains the ambiguity.
 var strictNameRe = regexp.MustCompile(`^\d{10}_.+\.(up|down)\.sql$`)
 
 // rawStatement is one raw SQL statement plus the line it starts on.
