@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
@@ -13,6 +14,7 @@ import (
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/migration/planner"
+	"github.com/stokaro/ptah/migration/safety"
 	"github.com/stokaro/ptah/migration/schemadiff"
 )
 
@@ -27,8 +29,11 @@ the SQL statements needed to update the database to match your entities.`,
 }
 
 const (
-	rootDirFlag = "root-dir"
-	dbURLFlag   = "db-url"
+	rootDirFlag          = "root-dir"
+	dbURLFlag            = "db-url"
+	checkDestructiveFlag = "check-destructive"
+	allowDestructiveFlag = "allow-destructive"
+	reportFormatFlag     = "report"
 )
 
 var migrateFlags = map[string]cobraflags.Flag{
@@ -42,6 +47,21 @@ var migrateFlags = map[string]cobraflags.Flag{
 		Value: "",
 		Usage: "Database URL (required). Example: postgres://localhost:5432/dbname",
 	},
+	checkDestructiveFlag: &cobraflags.BoolFlag{
+		Name:  checkDestructiveFlag,
+		Value: false,
+		Usage: "Fail when generated migration SQL contains destructive statements",
+	},
+	allowDestructiveFlag: &cobraflags.BoolFlag{
+		Name:  allowDestructiveFlag,
+		Value: false,
+		Usage: "Allow destructive statements when --check-destructive is set",
+	},
+	reportFormatFlag: &cobraflags.StringFlag{
+		Name:  reportFormatFlag,
+		Value: "text",
+		Usage: "Safety report format: text or html",
+	},
 	dbcli.ConnectTimeoutFlagName: dbcli.NewConnectTimeoutFlag(),
 	dbcli.SchemasFlagName:        dbcli.NewSchemasFlag(),
 }
@@ -51,17 +71,25 @@ func NewMigrateCommand() *cobra.Command {
 	return migrateCmd
 }
 
-func migrateCommand(_ *cobra.Command, _ []string) error {
+func migrateCommand(cmd *cobra.Command, _ []string) error {
+	out := cmd.OutOrStdout()
 	rootDir := migrateFlags[rootDirFlag].GetString()
 	dbURL := migrateFlags[dbURLFlag].GetString()
+	checkDestructive := migrateFlags[checkDestructiveFlag].GetBool()
+	allowDestructive := migrateFlags[allowDestructiveFlag].GetBool()
+	reportFormat := strings.ToLower(strings.TrimSpace(migrateFlags[reportFormatFlag].GetString()))
 
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
 	}
-
-	fmt.Printf("Generating migration from %s to database %s\n", rootDir, dbschema.FormatDatabaseURL(dbURL))
-	fmt.Println("=== GENERATE MIGRATION SQL ===")
-	fmt.Println()
+	if reportFormat != "text" && reportFormat != "html" {
+		return fmt.Errorf("unsupported report format %q", reportFormat)
+	}
+	if reportFormat != "html" {
+		fmt.Fprintf(out, "Generating migration from %s to database %s\n", rootDir, dbschema.FormatDatabaseURL(dbURL))
+		fmt.Fprintln(out, "=== GENERATE MIGRATION SQL ===")
+		fmt.Fprintln(out)
+	}
 
 	// 1. Parse Go entities
 	absPath, err := filepath.Abs(rootDir)
@@ -99,34 +127,53 @@ func migrateCommand(_ *cobra.Command, _ []string) error {
 
 	// 4. Display differences summary
 	astNodes := planner.GenerateSchemaDiffAST(diff, result, conn.Info().Dialect)
-	fmt.Print(astNodes)
+	assessments, err := safety.AssessRendered(astNodes, conn.Info().Dialect)
+	if err != nil {
+		return fmt.Errorf("error assessing migration safety: %w", err)
+	}
+	if reportFormat == "html" {
+		if err := safety.RenderHTML(out, assessments); err != nil {
+			return fmt.Errorf("error rendering safety report: %w", err)
+		}
+		if checkDestructive && safety.HasDestructiveAssessment(assessments) && !allowDestructive {
+			return fmt.Errorf("destructive migration statements require --allow-destructive")
+		}
+		return nil
+	}
+	fmt.Fprint(out, astNodes)
+	if err := safety.RenderText(out, assessments); err != nil {
+		return fmt.Errorf("error rendering safety report: %w", err)
+	}
+	if checkDestructive && safety.HasDestructiveAssessment(assessments) && !allowDestructive {
+		return fmt.Errorf("destructive migration statements require --allow-destructive")
+	}
 
 	if !diff.HasChanges() {
 		return nil
 	}
 
 	// 5. Generate migration SQL
-	fmt.Println("=== MIGRATION SQL ===")
-	fmt.Println()
+	fmt.Fprintln(out, "=== MIGRATION SQL ===")
+	fmt.Fprintln(out)
 
 	statements, err := renderer.RenderSQL(conn.Info().Dialect, astNodes...)
 	if err != nil {
 		return fmt.Errorf("error rendering SQL: %w", err)
 	}
 
-	fmt.Println("-- Migration generated from schema differences")
-	fmt.Printf("-- Generated on: %s\n", "now") // You could add actual timestamp
-	fmt.Printf("-- Source: %s\n", rootDir)
-	fmt.Printf("-- Target: %s\n", dbschema.FormatDatabaseURL(dbURL))
-	fmt.Println()
+	fmt.Fprintln(out, "-- Migration generated from schema differences")
+	fmt.Fprintf(out, "-- Generated on: %s\n", "now") // You could add actual timestamp
+	fmt.Fprintf(out, "-- Source: %s\n", rootDir)
+	fmt.Fprintf(out, "-- Target: %s\n", dbschema.FormatDatabaseURL(dbURL))
+	fmt.Fprintln(out)
 
 	for _, statement := range statements {
-		fmt.Println(statement)
+		fmt.Fprintln(out, statement)
 	}
 
-	fmt.Println()
-	fmt.Printf("Generated %d migration statements.\n", len(statements))
-	fmt.Println("⚠️  Review the SQL carefully before executing!")
+	fmt.Fprintln(out)
+	fmt.Fprintf(out, "Generated %d migration statements.\n", len(statements))
+	fmt.Fprintln(out, "⚠️  Review the SQL carefully before executing!")
 
 	return nil
 }

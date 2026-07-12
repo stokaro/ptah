@@ -113,6 +113,76 @@ func TestColumns_HappyPath(t *testing.T) {
 			},
 		},
 		{
+			name: "varchar narrowing preserves raw type",
+			genCol: goschema.Field{
+				Name: "name",
+				Type: "VARCHAR(100)",
+			},
+			dbCol: types.DBColumn{
+				Name:     "name",
+				DataType: "VARCHAR(255)",
+			},
+			expected: difftypes.ColumnDiff{
+				ColumnName: "name",
+				Changes: map[string]string{
+					"type": "VARCHAR(255) -> VARCHAR(100)",
+				},
+			},
+		},
+		{
+			name: "postgres varchar narrowing uses length metadata",
+			genCol: goschema.Field{
+				Name: "name",
+				Type: "VARCHAR(100)",
+			},
+			dbCol: types.DBColumn{
+				Name:               "name",
+				DataType:           "character varying",
+				UDTName:            "varchar",
+				CharacterMaxLength: func() *int { value := 255; return &value }(),
+			},
+			expected: difftypes.ColumnDiff{
+				ColumnName: "name",
+				Changes: map[string]string{
+					"type": "varchar(255) -> VARCHAR(100)",
+				},
+			},
+		},
+		{
+			name: "integer narrowing preserves raw type",
+			genCol: goschema.Field{
+				Name: "count",
+				Type: "integer",
+			},
+			dbCol: types.DBColumn{
+				Name:     "count",
+				DataType: "bigint",
+			},
+			expected: difftypes.ColumnDiff{
+				ColumnName: "count",
+				Changes: map[string]string{
+					"type": "bigint -> integer",
+				},
+			},
+		},
+		{
+			name: "decimal narrowing preserves raw type",
+			genCol: goschema.Field{
+				Name: "price",
+				Type: "NUMERIC(10,2)",
+			},
+			dbCol: types.DBColumn{
+				Name:     "price",
+				DataType: "NUMERIC(12,2)",
+			},
+			expected: difftypes.ColumnDiff{
+				ColumnName: "price",
+				Changes: map[string]string{
+					"type": "NUMERIC(12,2) -> NUMERIC(10,2)",
+				},
+			},
+		},
+		{
 			name: "primary key change",
 			genCol: goschema.Field{
 				Name:    "id",

@@ -151,6 +151,9 @@ type Options struct {
 	// PathPrefix is prepended (with /) to file names in findings so they
 	// point at real repository paths in CI annotations.
 	PathPrefix string
+	// Versions restricts linting to parsed migration versions. Empty means
+	// every migration file is linted.
+	Versions []int
 }
 
 // LintFS lints every *.sql file under fsys — recursively, because the
@@ -176,6 +179,10 @@ func LintFS(fsys fs.FS, opts Options) ([]Finding, error) {
 		return nil, fmt.Errorf("no *.sql migration files found")
 	}
 	sort.Strings(names)
+	names = filterNamesByVersion(names, opts.Versions)
+	if len(names) == 0 {
+		return nil, nil
+	}
 
 	present := make(map[string]struct{}, len(names))
 	for _, name := range names {
@@ -215,6 +222,27 @@ func LintFS(fsys fs.FS, opts Options) ([]Finding, error) {
 		return findings[i].Rule < findings[j].Rule
 	})
 	return findings, nil
+}
+
+func filterNamesByVersion(names []string, versions []int) []string {
+	if len(versions) == 0 {
+		return names
+	}
+	allowed := make(map[int]struct{}, len(versions))
+	for _, version := range versions {
+		allowed[version] = struct{}{}
+	}
+	var filtered []string
+	for _, name := range names {
+		parsed, err := migrator.ParseMigrationFileName(path.Base(name))
+		if err != nil {
+			continue
+		}
+		if _, ok := allowed[parsed.Version]; ok {
+			filtered = append(filtered, name)
+		}
+	}
+	return filtered
 }
 
 // prepareFile loads one migration file into the forms rules consume.

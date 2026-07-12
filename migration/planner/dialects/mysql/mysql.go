@@ -347,8 +347,13 @@ func (p *Planner) modifyExistingColumns(result []ast.Node, tableDiff *types.Tabl
 
 		// Generate ALTER COLUMN statements using AST
 		alterNode := &ast.AlterTableNode{
-			Name:       tableDiff.TableName,
-			Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{Column: columnNode}},
+			Name: tableDiff.TableName,
+			Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{
+				Column:              columnNode,
+				PreviousType:        previousColumnType(colDiff.Changes["type"]),
+				PreviousNullable:    previousColumnNullable(colDiff.Changes["nullable"]),
+				HasPreviousNullable: colDiff.Changes["nullable"] != "",
+			}},
 		}
 		result = append(result, alterNode)
 
@@ -1133,4 +1138,17 @@ func (p *Planner) convertConstraintToAST(constraint goschema.Constraint) *ast.Co
 	default:
 		return nil // Unsupported constraint type
 	}
+}
+
+func previousColumnType(change string) string {
+	before, _, ok := strings.Cut(change, " -> ")
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(before)
+}
+
+func previousColumnNullable(change string) bool {
+	before, _, ok := strings.Cut(change, " -> ")
+	return ok && strings.TrimSpace(before) == "true"
 }

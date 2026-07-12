@@ -3,13 +3,16 @@ package migrateup
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
+	"strings"
 
 	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/migration/lint"
 	"github.com/stokaro/ptah/migration/migratesum"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/onlineddl"
@@ -36,6 +39,7 @@ const (
 	verifySumFlag        = "verify-sum"
 	lockTimeoutFlag      = "lock-timeout"
 	statementTimeoutFlag = "statement-timeout"
+	allowDestructiveFlag = "allow-destructive"
 )
 
 var migrateUpFlags = map[string]cobraflags.Flag{
@@ -74,6 +78,11 @@ var migrateUpFlags = map[string]cobraflags.Flag{
 		Value: "",
 		Usage: "Default per-migration statement timeout, such as 30s or 2m",
 	},
+	allowDestructiveFlag: &cobraflags.BoolFlag{
+		Name:  allowDestructiveFlag,
+		Value: false,
+		Usage: "Allow pending migrations that contain destructive statements",
+	},
 	dbcli.ConnectTimeoutFlagName:   dbcli.NewConnectTimeoutFlag(),
 	dbcli.ConfigFlagName:           dbcli.NewConfigFlag(),
 	dbcli.MigrationsSchemaFlagName: dbcli.NewMigrationsSchemaFlag(),
@@ -93,6 +102,7 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 	verifySum := migrateUpFlags[verifySumFlag].GetBool()
 	lockTimeout := migrateUpFlags[lockTimeoutFlag].GetString()
 	statementTimeout := migrateUpFlags[statementTimeoutFlag].GetString()
+	allowDestructive := migrateUpFlags[allowDestructiveFlag].GetBool()
 	migrationsSchema := migrateUpFlags[dbcli.MigrationsSchemaFlagName].GetString()
 	migrationsTable := migrateUpFlags[dbcli.MigrationsTableFlagName].GetString()
 
@@ -196,6 +206,16 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 		fmt.Printf("Pending migration versions: %v\n", status.PendingMigrations)
 	}
 
+	if !allowDestructive {
+		findings, err := lintPendingDestructive(migrationsFS, status.PendingMigrations, conn.Info().Dialect)
+		if err != nil {
+			return fmt.Errorf("error checking pending migration safety: %w", err)
+		}
+		if len(findings) > 0 {
+			return fmt.Errorf("pending migrations contain destructive statements; rerun with --allow-destructive after review:\n%s", formatDestructiveFindings(findings))
+		}
+	}
+
 	fmt.Println()
 
 	// Run migrations
@@ -220,4 +240,34 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 	}
 
 	return nil
+}
+
+func lintPendingDestructive(fsys fs.FS, pending []int, dialect string) ([]lint.Finding, error) {
+	findings, err := lint.LintFS(fsys, lint.Options{
+		Dialect:  dialect,
+		Disabled: []string{"MF", "BC", "PG", "MY"},
+		Versions: pending,
+	})
+	if err != nil {
+		return nil, err
+	}
+	var destructive []lint.Finding
+	for _, finding := range findings {
+		if strings.HasPrefix(finding.Rule, "DS") {
+			destructive = append(destructive, finding)
+		}
+	}
+	return destructive, nil
+}
+
+func formatDestructiveFindings(findings []lint.Finding) string {
+	var b strings.Builder
+	for _, finding := range findings {
+		if finding.Line > 0 {
+			fmt.Fprintf(&b, "- %s:%d %s %s: %s\n", finding.File, finding.Line, finding.Rule, finding.Severity, finding.Message)
+			continue
+		}
+		fmt.Fprintf(&b, "- %s %s %s: %s\n", finding.File, finding.Rule, finding.Severity, finding.Message)
+	}
+	return strings.TrimRight(b.String(), "\n")
 }

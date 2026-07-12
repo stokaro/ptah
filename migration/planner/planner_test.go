@@ -7,7 +7,10 @@ import (
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
+	dbtypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/migration/planner"
+	"github.com/stokaro/ptah/migration/safety"
+	"github.com/stokaro/ptah/migration/schemadiff"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
@@ -71,6 +74,56 @@ func TestGetPlanner(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGeneratedNarrowingTypeChangeIsDestructive(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Tables: []goschema.Table{
+			{Name: "users", StructName: "User"},
+		},
+		Fields: []goschema.Field{
+			{Name: "name", Type: "VARCHAR(100)", StructName: "User"},
+		},
+	}
+	database := &dbtypes.DBSchema{
+		Tables: []dbtypes.DBTable{
+			{
+				Name: "users",
+				Columns: []dbtypes.DBColumn{
+					{Name: "name", DataType: "VARCHAR(255)", IsNullable: "NO"},
+				},
+			},
+		},
+	}
+
+	diff := schemadiff.Compare(generated, database)
+	c.Assert(diff.TablesModified, qt.HasLen, 1)
+	c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
+	c.Assert(diff.TablesModified[0].ColumnsModified[0].Changes["type"], qt.Equals, "VARCHAR(255) -> VARCHAR(100)")
+
+	nodes := planner.GenerateSchemaDiffAST(diff, generated, platform.Postgres)
+	assessments, err := safety.AssessRendered(nodes, platform.Postgres)
+	c.Assert(err, qt.IsNil)
+	c.Assert(safety.HasDestructiveAssessment(assessments), qt.IsTrue)
+}
+
+func TestGeneratedRLSPolicyRemovalIsDestructive(t *testing.T) {
+	c := qt.New(t)
+
+	diff := &types.SchemaDiff{
+		RLSPoliciesRemoved: []types.RLSPolicyRef{
+			{PolicyName: "tenant_isolation", TableName: "accounts"},
+		},
+	}
+
+	nodes := planner.GenerateSchemaDiffAST(diff, &goschema.Database{}, platform.Postgres)
+	assessments, err := safety.AssessRendered(nodes, platform.Postgres)
+	c.Assert(err, qt.IsNil)
+	c.Assert(safety.HasDestructiveAssessment(assessments), qt.IsTrue)
+	c.Assert(assessments[0].Severity, qt.Equals, safety.Destructive)
+	c.Assert(assessments[0].Statement, qt.Contains, "DROP POLICY IF EXISTS tenant_isolation ON accounts")
 }
 
 func TestGenerateMigrationAST(t *testing.T) {

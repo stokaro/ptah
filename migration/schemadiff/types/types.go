@@ -130,7 +130,7 @@ type SchemaDiff struct {
 	IndexesAdded []string `json:"indexes_added"`
 
 	// IndexesRemoved contains names of indexes that exist in the current database
-	// but not in the target schema (safe operation - no data loss)
+	// but not in the target schema (may affect query plans or uniqueness protections)
 	IndexesRemoved []string `json:"indexes_removed"`
 
 	// IndexesRemovedWithTables contains detailed information about indexes that need to be removed,
@@ -163,7 +163,7 @@ type SchemaDiff struct {
 	RLSPoliciesAdded []string `json:"rls_policies_added"`
 
 	// RLSPoliciesRemoved contains RLS policies that exist in the current database
-	// but not in the target schema (safe operation - no data loss)
+	// but not in the target schema (may remove an access-control protection)
 	RLSPoliciesRemoved []RLSPolicyRef `json:"rls_policies_removed"`
 
 	// RLSPoliciesModified contains detailed information about RLS policies that exist in both

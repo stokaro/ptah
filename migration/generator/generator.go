@@ -21,6 +21,7 @@ import (
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/planner"
+	"github.com/stokaro/ptah/migration/safety"
 	"github.com/stokaro/ptah/migration/schemadiff"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
@@ -44,13 +45,22 @@ type GenerateMigrationOptions struct {
 	// Schemas restricts database introspection to the listed schemas when the
 	// connected dialect supports schema scoping.
 	Schemas []string
+	// CheckDestructive refuses to generate destructive up migrations unless
+	// AllowDestructive is set.
+	CheckDestructive bool
+	// AllowDestructive permits destructive up migrations when CheckDestructive is set.
+	AllowDestructive bool
+	// ReportFormat optionally writes a safety report next to generated files.
+	// Supported values: "", "html".
+	ReportFormat string
 }
 
 // MigrationFiles represents the generated migration files
 type MigrationFiles struct {
-	UpFile   string // Path to the up migration file
-	DownFile string // Path to the down migration file
-	Version  int    // Migration version (timestamp)
+	UpFile     string // Path to the up migration file
+	DownFile   string // Path to the down migration file
+	ReportFile string // Path to the safety report file, when requested
+	Version    int    // Migration version (timestamp)
 }
 
 // GenerateMigration generates both up and down migration files by comparing
@@ -127,6 +137,15 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 	version := migrator.GetNextMigrationVersion()
 	slog.Debug("Generated migration version", "version", version)
 
+	upNodes := planner.GenerateSchemaDiffAST(diff, generated, conn.Info().Dialect)
+	assessments, err := safety.AssessRendered(upNodes, conn.Info().Dialect)
+	if err != nil {
+		return nil, fmt.Errorf("error assessing migration safety: %w", err)
+	}
+	if err := checkDestructiveAllowed(opts, assessments); err != nil {
+		return nil, err
+	}
+
 	// 5. Generate up migration SQL
 	upSQL, err := generateUpMigrationSQL(diff, generated, conn.Info().Dialect)
 	if err != nil {
@@ -150,6 +169,13 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 	if err != nil {
 		return nil, fmt.Errorf("error creating migration files: %w", err)
 	}
+	if opts.ReportFormat != "" {
+		reportFile, err := createSafetyReportFile(files.UpFile, opts.ReportFormat, assessments)
+		if err != nil {
+			return nil, fmt.Errorf("error creating safety report: %w", err)
+		}
+		files.ReportFile = reportFile
+	}
 
 	return files, nil
 }
@@ -167,6 +193,33 @@ func withDialect(opts *config.CompareOptions, dialect string) *config.CompareOpt
 		clone.Dialect = dialect
 	}
 	return &clone
+}
+
+func checkDestructiveAllowed(opts GenerateMigrationOptions, assessments []safety.StatementAssessment) error {
+	if opts.CheckDestructive && safety.HasDestructiveAssessment(assessments) && !opts.AllowDestructive {
+		return fmt.Errorf("destructive migration statements require AllowDestructive")
+	}
+	return nil
+}
+
+func createSafetyReportFile(upFile, format string, assessments []safety.StatementAssessment) (string, error) {
+	if !strings.EqualFold(format, "html") {
+		return "", fmt.Errorf("unsupported safety report format %q", format)
+	}
+	reportFile := strings.TrimSuffix(upFile, ".up.sql") + ".safety.html"
+	file, err := os.Create(reportFile)
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			slog.Warn("failed to close safety report", "path", reportFile, "error", closeErr)
+		}
+	}()
+	if err := safety.RenderHTML(file, assessments); err != nil {
+		return "", err
+	}
+	return reportFile, nil
 }
 
 // hasActualSQLStatements checks if the statements contain actual SQL operations (not just comments)

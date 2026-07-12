@@ -60,6 +60,16 @@ func (op *DropColumnOperation) alterOperation() {}
 type ModifyColumnOperation struct {
 	// Column contains the new column definition
 	Column *ColumnNode
+	// PreviousType is the best-known existing database type before the
+	// modification. Renderers ignore this metadata; safety analysis uses it to
+	// distinguish narrowing changes from other column modifications.
+	PreviousType string
+	// PreviousNullable is the best-known existing database nullability before
+	// the modification. Renderers ignore this metadata; safety analysis uses it
+	// to distinguish DROP NOT NULL from SET NOT NULL.
+	PreviousNullable bool
+	// HasPreviousNullable reports whether PreviousNullable was populated.
+	HasPreviousNullable bool
 }
 
 // Accept implements the Node interface for ModifyColumnOperation.
