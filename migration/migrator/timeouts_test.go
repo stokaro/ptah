@@ -145,3 +145,14 @@ func TestTimeoutStatements(t *testing.T) {
 		})
 	}
 }
+
+func TestDurationUnitCeilUsesIntegerMath(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(durationMillis(1500*time.Microsecond), qt.Equals, int64(2))
+	c.Assert(durationSeconds(1500*time.Millisecond), qt.Equals, int64(2))
+
+	maxDuration := time.Duration(1<<63 - 1)
+	c.Assert(durationMillis(maxDuration), qt.Equals, int64(maxDuration/time.Millisecond)+1)
+	c.Assert(durationSeconds(maxDuration), qt.Equals, int64(maxDuration/time.Second)+1)
+}

@@ -3,7 +3,6 @@ package migrator
 import (
 	"context"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -261,9 +260,13 @@ func durationMillisLiteral(duration time.Duration) string {
 }
 
 func durationMillis(duration time.Duration) int64 {
-	return int64(math.Ceil(float64(duration) / float64(time.Millisecond)))
+	return ceilDurationUnits(duration, time.Millisecond)
 }
 
 func durationSeconds(duration time.Duration) int64 {
-	return int64(math.Ceil(duration.Seconds()))
+	return ceilDurationUnits(duration, time.Second)
+}
+
+func ceilDurationUnits(duration, unit time.Duration) int64 {
+	return int64((duration-1)/unit) + 1
 }
