@@ -260,7 +260,27 @@ CREATE TABLE schema_migrations (
 4. **Test migrations**: Always test both up and down migrations before deploying
 5. **Use transactions**: The migrator automatically wraps migrations in transactions
 6. **Backup before rollbacks**: Down migrations can cause data loss
-7. **Version numbers**: Use sequential version numbers or timestamps
+7. **Use production timeouts**: Run production DDL with `--lock-timeout 3s --statement-timeout 30s` so hot-table locks and runaway statements fail fast
+8. **Version numbers**: Use sequential version numbers or timestamps
+
+### Per-Migration Timeouts
+
+Set CLI defaults for every pending migration:
+
+```bash
+go run ./cmd migrate-up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --lock-timeout 3s --statement-timeout 30s
+```
+
+Override those defaults in a specific migration file with top-of-file directives:
+
+```sql
+-- +ptah lock_timeout=3s
+-- +ptah statement_timeout=30s
+
+ALTER TABLE users ADD COLUMN email TEXT;
+```
+
+PostgreSQL runs `SET LOCAL lock_timeout` and `SET LOCAL statement_timeout` inside the migration transaction. MySQL and MariaDB run `SET SESSION innodb_lock_wait_timeout`; statement timeouts use MySQL `max_execution_time` and MariaDB `max_statement_time`.
 
 ## Safety Features
 
@@ -268,6 +288,7 @@ CREATE TABLE schema_migrations (
 - **Rollback on Failure**: If a migration fails, the transaction is rolled back
 - **Confirmation Prompts**: Down migrations require confirmation (unless `--confirm` is used)
 - **Dry Run Mode**: Preview migrations without applying them
+- **Migration Timeouts**: File-level directives and CLI defaults can cap lock waits and statement runtime for safer production rollouts
 - **Validation**: Migrations are validated before execution
 
 ## Limitations

@@ -24,6 +24,7 @@ type MigrationStatus struct {
 type Migrator struct {
 	conn              *dbschema.DatabaseConnection
 	migrationProvider MigrationProvider
+	defaultTimeouts   MigrationTimeouts
 	initialized       bool
 	logger            *slog.Logger
 }
@@ -225,10 +226,22 @@ func (m *Migrator) MigrateUp(ctx context.Context) error {
 			return fmt.Errorf("failed to begin transaction for migration %d: %w", migration.Version, err)
 		}
 
+		restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts))
+		if err != nil {
+			_ = m.conn.Writer().RollbackTransaction()
+			return fmt.Errorf("failed to apply timeouts for migration %d: %w", migration.Version, err)
+		}
+
 		// Apply migration
 		if err := migration.Up(ctx, m.conn); err != nil {
+			err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
 			_ = m.conn.Writer().RollbackTransaction()
 			return fmt.Errorf("failed to apply migration %d: %w", migration.Version, err)
+		}
+
+		if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
+			_ = m.conn.Writer().RollbackTransaction()
+			return err
 		}
 
 		// Record migration via parameter binding.
@@ -309,10 +322,22 @@ func (m *Migrator) MigrateDownTo(ctx context.Context, targetVersion int) error {
 			return fmt.Errorf("failed to begin transaction for migration %d: %w", migration.Version, err)
 		}
 
+		restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, mergeMigrationTimeouts(m.defaultTimeouts, migration.DownTimeouts))
+		if err != nil {
+			_ = m.conn.Writer().RollbackTransaction()
+			return fmt.Errorf("failed to apply timeouts for migration %d: %w", migration.Version, err)
+		}
+
 		// Apply down migration
 		if err := migration.Down(ctx, m.conn); err != nil {
+			err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
 			_ = m.conn.Writer().RollbackTransaction()
 			return fmt.Errorf("failed to revert migration %d: %w", migration.Version, err)
+		}
+
+		if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
+			_ = m.conn.Writer().RollbackTransaction()
+			return err
 		}
 
 		// Remove migration record.
@@ -393,10 +418,22 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int) error {
 			return fmt.Errorf("failed to begin transaction for migration %d: %w", migration.Version, err)
 		}
 
+		restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts))
+		if err != nil {
+			_ = m.conn.Writer().RollbackTransaction()
+			return fmt.Errorf("failed to apply timeouts for migration %d: %w", migration.Version, err)
+		}
+
 		// Apply migration
 		if err := migration.Up(ctx, m.conn); err != nil {
+			err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
 			_ = m.conn.Writer().RollbackTransaction()
 			return fmt.Errorf("failed to apply migration %d: %w", migration.Version, err)
+		}
+
+		if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
+			_ = m.conn.Writer().RollbackTransaction()
+			return err
 		}
 
 		// Record migration via parameter binding.

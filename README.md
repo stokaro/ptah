@@ -584,9 +584,21 @@ Apply all pending migrations to bring database up to latest version:
 ```bash
 ./package-migrator migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations
 
+# Production rollout defaults: fail fast on hot-table locks and runaway statements
+./package-migrator migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --lock-timeout 3s --statement-timeout 30s
+
 # Dry run to preview what would be applied
 ./package-migrator migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dry-run
 ```
+
+Migration files can override the CLI defaults with top-of-file directives:
+
+```sql
+-- +ptah lock_timeout=3s
+-- +ptah statement_timeout=30s
+```
+
+PostgreSQL uses `SET LOCAL lock_timeout` and `SET LOCAL statement_timeout` inside the migration transaction. MySQL and MariaDB use `SET SESSION innodb_lock_wait_timeout`; statement timeouts use `max_execution_time` on MySQL and `max_statement_time` on MariaDB. Generated migrations that contain `ALTER TABLE` include the recommended `3s` lock timeout and `30s` statement timeout directives for supported dialects.
 
 **Features:**
 - ✅ Applies migrations in correct order based on version numbers
@@ -594,6 +606,7 @@ Apply all pending migrations to bring database up to latest version:
 - ✅ Automatic rollback on failure
 - ✅ Tracks applied migrations in `schema_migrations` table
 - ✅ Supports dry-run mode for preview
+- ✅ Supports per-migration lock and statement timeout directives
 - ✅ Online DDL for large MySQL/MariaDB tables via gh-ost / pt-online-schema-change
 
 **Online DDL (MySQL/MariaDB):** route lock-heavy `ALTER TABLE` statements through
@@ -618,6 +631,9 @@ Roll back migrations to a specific version:
 
 ```bash
 ./package-migrator migrate-down --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --target 5
+
+# Use the same production safety defaults for rollback DDL
+./package-migrator migrate-down --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --target 5 --lock-timeout 3s --statement-timeout 30s
 
 # Dry run to preview rollback
 ./package-migrator migrate-down --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --target 5 --dry-run

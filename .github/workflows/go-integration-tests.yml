@@ -179,6 +179,12 @@ jobs:
         run: |
           ./integration-test --scenarios=apply_incremental_migrations,check_current_version --databases=postgres --report=stdout,txt,json,html --output=./reports
 
+      - name: Run migrator safety integration tests
+        env:
+          POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
+        run: |
+          go test -v ./migration/migrator -run TestMigrateUp_PostgresLockTimeoutIntegration -timeout 2m
+
       - name: Run all databases comprehensive test
         env:
           POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"

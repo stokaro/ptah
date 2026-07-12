@@ -323,3 +323,35 @@ func TestHasActualSQLStatements(t *testing.T) {
 		})
 	}
 }
+
+func TestWithGeneratedTimeoutDirectives(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "-- Migration generated from schema differences\n-- Direction: UP\n\nALTER TABLE users ADD COLUMN email TEXT;"
+	got := withGeneratedTimeoutDirectives(sql, "postgres")
+
+	c.Assert(got, qt.Contains, "-- +ptah lock_timeout=3s")
+	c.Assert(got, qt.Contains, "-- +ptah statement_timeout=30s")
+	c.Assert(got, qt.Matches, "(?s).*-- Direction: UP\n-- \\+ptah lock_timeout=3s\n-- \\+ptah statement_timeout=30s\n\nALTER TABLE.*")
+}
+
+func TestWithGeneratedTimeoutDirectives_NoAlterTable(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "-- Direction: UP\n\nCREATE TABLE users (id INTEGER PRIMARY KEY);"
+	got := withGeneratedTimeoutDirectives(sql, "postgres")
+
+	c.Assert(got, qt.Equals, sql)
+}
+
+func TestWithGeneratedTimeoutDirectives_UnsupportedDialect(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "-- Direction: UP\n\nALTER TABLE events ADD COLUMN payload String;"
+	got := withGeneratedTimeoutDirectives(sql, "clickhouse")
+
+	c.Assert(got, qt.Equals, sql)
+
+	got = withGeneratedTimeoutDirectives(sql, "spanner")
+	c.Assert(got, qt.Equals, sql)
+}
