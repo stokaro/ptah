@@ -2,6 +2,7 @@ package goschema
 
 import (
 	"log/slog"
+	"maps"
 	"regexp"
 	"slices"
 	"sort"
@@ -401,7 +402,7 @@ func processEmbeddedFields(embeddedFields []EmbeddedField, originalFields []Fiel
 	copy(allFields, originalFields)
 
 	// Process embedded fields for each struct
-	structNames := getUniqueStructNames(embeddedFields)
+	structNames := UniqueStructNames(embeddedFields)
 	for _, structName := range structNames {
 		generatedFields := processEmbeddedFieldsForStruct(embeddedFields, originalFields, structName)
 		allFields = append(allFields, generatedFields...)
@@ -410,18 +411,15 @@ func processEmbeddedFields(embeddedFields []EmbeddedField, originalFields []Fiel
 	return allFields
 }
 
-// getUniqueStructNames extracts unique struct names from embedded fields.
-func getUniqueStructNames(embeddedFields []EmbeddedField) []string {
+// UniqueStructNames extracts the distinct StructName values from the given
+// embedded fields, sorted alphabetically so callers process embedded structs
+// in a deterministic order (issue #59).
+func UniqueStructNames(embeddedFields []EmbeddedField) []string {
 	structNameMap := make(map[string]bool)
 	for _, embedded := range embeddedFields {
 		structNameMap[embedded.StructName] = true
 	}
-
-	var structNames []string
-	for structName := range structNameMap {
-		structNames = append(structNames, structName)
-	}
-	return structNames
+	return slices.Sorted(maps.Keys(structNameMap))
 }
 
 // processEmbeddedFieldsForStruct processes embedded fields for a specific struct and generates corresponding schema fields.
@@ -659,12 +657,8 @@ func buildFunctionDependencies(r *Database) {
 			}
 		}
 
-		// Convert depMap keys to a slice and assign to FunctionDependencies
-		deps := make([]string, 0, len(depMap))
-		for dep := range depMap {
-			deps = append(deps, dep)
-		}
-		r.FunctionDependencies[function.Name] = deps
+		// Convert depMap keys to a sorted slice and assign to FunctionDependencies
+		r.FunctionDependencies[function.Name] = slices.Sorted(maps.Keys(depMap))
 	}
 }
 

@@ -241,26 +241,13 @@ func processEmbeddedFields(embeddedFields []goschema.EmbeddedField, originalFiel
 	copy(allFields, originalFields)
 
 	// Process embedded fields for each struct
-	structNames := getUniqueStructNames(embeddedFields)
+	structNames := goschema.UniqueStructNames(embeddedFields)
 	for _, structName := range structNames {
 		generatedFields := processEmbeddedFieldsForStruct(embeddedFields, originalFields, structName)
 		allFields = append(allFields, generatedFields...)
 	}
 
 	return allFields
-}
-
-func getUniqueStructNames(embeddedFields []goschema.EmbeddedField) []string {
-	structNameMap := make(map[string]bool)
-	for _, embedded := range embeddedFields {
-		structNameMap[embedded.StructName] = true
-	}
-
-	var structNames []string
-	for structName := range structNameMap {
-		structNames = append(structNames, structName)
-	}
-	return structNames
 }
 
 func processEmbeddedFieldsForStruct(embeddedFields []goschema.EmbeddedField, allFields []goschema.Field, structName string) []goschema.Field {

@@ -2,8 +2,8 @@ package postgres
 
 import (
 	"fmt"
+	"maps"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/stokaro/ptah/core/ast"
@@ -470,10 +470,12 @@ func (p *Planner) modifyExistingTableColumns(result []ast.Node, tableDiff types.
 		}
 		result = append(result, alterNode)
 
-		// Add a comment showing what changes are being made
+		// Add a comment showing what changes are being made. Iterate the
+		// changes in sorted key order so migration output is deterministic
+		// (issue #59).
 		changesList := make([]string, 0, len(colDiff.Changes))
-		for changeType, change := range colDiff.Changes {
-			changesList = append(changesList, fmt.Sprintf("%s: %s", changeType, change))
+		for _, changeType := range slices.Sorted(maps.Keys(colDiff.Changes)) {
+			changesList = append(changesList, fmt.Sprintf("%s: %s", changeType, colDiff.Changes[changeType]))
 		}
 		astCommentNode := ast.NewComment(fmt.Sprintf("Modify column %s.%s: %s", tableDiff.TableName, colDiff.ColumnName, strings.Join(changesList, ", ")))
 		result = append(result, astCommentNode)
@@ -847,8 +849,10 @@ func (p *Planner) findTargetRole(roleName string, generated *goschema.Database) 
 func (p *Planner) buildAlterRoleNode(roleDiff types.RoleDiff, targetRole *goschema.Role) *ast.AlterRoleNode {
 	alterRoleNode := ast.NewAlterRole(roleDiff.RoleName)
 
-	for changeType, changeValue := range roleDiff.Changes {
-		p.addRoleOperation(alterRoleNode, changeType, changeValue, targetRole)
+	// Sorted key order keeps the ALTER ROLE operation order deterministic
+	// across runs (issue #59).
+	for _, changeType := range slices.Sorted(maps.Keys(roleDiff.Changes)) {
+		p.addRoleOperation(alterRoleNode, changeType, roleDiff.Changes[changeType], targetRole)
 	}
 
 	return alterRoleNode
@@ -1031,12 +1035,7 @@ func (p *Planner) modifyExistingFunctions(result []ast.Node, diff *types.SchemaD
 // summarizeFunctionChanges produces a deterministic one-line summary of the
 // changed attributes for use as a SQL comment.
 func summarizeFunctionChanges(fnDiff types.FunctionDiff) string {
-	keys := make([]string, 0, len(fnDiff.Changes))
-	for k := range fnDiff.Changes {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return strings.Join(keys, ", ")
+	return strings.Join(slices.Sorted(maps.Keys(fnDiff.Changes)), ", ")
 }
 
 func (p *Planner) removeFunctions(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
@@ -1056,8 +1055,9 @@ func (p *Planner) enableRLSOnTables(result []ast.Node, diff *types.SchemaDiff, g
 		tablesNeedingRLS[policy.Table] = true
 	}
 
-	// Enable RLS on tables that have policies but don't have RLS enabled yet
-	for tableName := range tablesNeedingRLS {
+	// Enable RLS on tables that have policies but don't have RLS enabled yet.
+	// Iterate in sorted order so migration output is deterministic (issue #59).
+	for _, tableName := range slices.Sorted(maps.Keys(tablesNeedingRLS)) {
 		// Check if this table is being added or if RLS is being enabled
 		tableIsNew := slices.Contains(diff.TablesAdded, tableName)
 
@@ -1080,7 +1080,7 @@ func (p *Planner) disableRLSOnTables(result []ast.Node, diff *types.SchemaDiff) 
 
 	// For each table that had policies removed, add a comment about potentially disabling RLS
 	// Note: We don't automatically disable RLS because there might be other policies on the table
-	for tableName := range tablesWithRemovedPolicies {
+	for _, tableName := range slices.Sorted(maps.Keys(tablesWithRemovedPolicies)) {
 		warningComment := ast.NewComment(fmt.Sprintf("NOTE: RLS policies were removed from table %s - verify if RLS should be disabled", tableName))
 		result = append(result, warningComment)
 	}
