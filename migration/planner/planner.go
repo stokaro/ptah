@@ -204,6 +204,8 @@ func GetPlanner(dialect string) Planner {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.Postgres:
 		return postgres.New()
+	case platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+		return postgres.NewWithCapabilities(capability.ForDialect(dialect))
 	case platform.MySQL:
 		return mysql.New()
 	case platform.MariaDB:

@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/renderer"
 )
 
@@ -37,7 +38,7 @@ var generateFlags = map[string]cobraflags.Flag{
 	dialectFlag: &cobraflags.StringFlag{
 		Name:  dialectFlag,
 		Value: "",
-		Usage: "Database dialect (postgres, mysql, mariadb, clickhouse). If empty, generates for all dialects",
+		Usage: "Database dialect (postgres, mysql, mariadb, clickhouse, cockroachdb, yugabytedb, spanner). If empty, generates for all dialects",
 	},
 }
 
@@ -81,7 +82,7 @@ func generateCommand(_ *cobra.Command, _ []string) error {
 	fmt.Println()
 
 	// Determine which dialects to generate
-	dialects := []string{"postgres", "mysql", "mariadb", "clickhouse"}
+	dialects := []string{"postgres", "mysql", "mariadb", "clickhouse", "cockroachdb", "yugabytedb", "spanner"}
 	if dialect != "" {
 		dialects = []string{dialect}
 	}
@@ -95,7 +96,8 @@ func generateCommand(_ *cobra.Command, _ []string) error {
 		if len(result.Enums) > 0 {
 			fmt.Println("-- ENUMS --")
 			for _, enum := range result.Enums {
-				if d == "postgres" {
+				switch platform.NormalizeDialect(d) {
+				case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
 					fmt.Printf("CREATE TYPE %s AS ENUM (%s);\n", enum.Name,
 						strings.Join(func() []string {
 							quoted := make([]string, len(enum.Values))
@@ -104,7 +106,7 @@ func generateCommand(_ *cobra.Command, _ []string) error {
 							}
 							return quoted
 						}(), ", "))
-				} else {
+				default:
 					fmt.Printf("-- Enum %s: %v (handled in table definitions)\n", enum.Name, enum.Values)
 				}
 			}
