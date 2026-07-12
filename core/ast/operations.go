@@ -117,10 +117,10 @@ type DropConstraintOperation struct {
 	Check bool
 	// Unique requests the `DROP INDEX <name>` spelling for a UNIQUE
 	// constraint (dropping its backing index), which is valid across the
-	// entire MySQL/MariaDB family. Planners set it for UNIQUE removals on
-	// targets without the generic DROP CONSTRAINT clause (MySQL < 8.0.19),
-	// where the generic spelling would be invalid SQL. Ignored when
-	// ForeignKey or Check is set; PostgreSQL-style renderers may ignore it.
+	// entire MySQL/MariaDB family — unlike the generic DROP CONSTRAINT
+	// clause, which only exists from MySQL 8.0.19. The MySQL-family planner
+	// sets it for every UNIQUE removal (issue #195). Ignored when ForeignKey
+	// or Check is set; PostgreSQL-style renderers may ignore it.
 	Unique bool
 }
 

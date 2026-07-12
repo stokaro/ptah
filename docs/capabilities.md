@@ -120,11 +120,14 @@ planner := mysql.NewWithCapabilities(caps)
   `ALTER TABLE … DROP CHECK <name>` for CHECK removals; the renderer resolves
   the spelling against **its** target too, so the request degrades to the
   generic clause on MariaDB, which has no `DROP CHECK` at all (verified live).
-  On the same no-generic targets a UNIQUE removal uses
-  `ALTER TABLE … DROP INDEX <name>` (valid family-wide — verified live), and a
-  CHECK removal with no valid spelling at all (`MySQLLegacy`) degrades to a
-  loud WARNING comment. Universal `DROP INDEX` branching for modern versions
-  stays with #195.
+  A CHECK removal with no valid spelling at all (`MySQLLegacy`) degrades to a
+  loud WARNING comment.
+- **UNIQUE removals use `DROP INDEX`** (#195). Every MySQL-family preset
+  renders `ALTER TABLE … DROP INDEX <name>` for a UNIQUE constraint removal —
+  the one spelling valid on every version (verified live on MySQL 9.7 and
+  MariaDB 10.11), unlike the generic clause (8.0.19+ only). MariaDB guards it
+  with `IF EXISTS` (also verified live, idempotent on absent indexes); the
+  mysql renderer strips the guard.
 - **CHECK adds on non-enforcing targets.** A target without
   `check_constraints_enforced` gets a loud `WARNING` comment instead of an
   `ADD CONSTRAINT … CHECK` the server would silently ignore. This covers the
@@ -147,5 +150,4 @@ planner := mysql.NewWithCapabilities(caps)
 - `SELECT version()` → preset wiring at connect time (`ForServerVersion` is
   ready; the dbschema plumbing is tracked with #163/#152 work).
 - `create_or_replace_trigger` consumer lands with triggers (#158).
-- UNIQUE drop syntax selection (`DROP INDEX` vs generic clause) — #195.
 - Distributed-SQL presets (CockroachDB / Yugabyte / Spanner) — #171.

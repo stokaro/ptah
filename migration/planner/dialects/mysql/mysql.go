@@ -1031,14 +1031,15 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 // planner's capability-derived intent (issue #226):
 //
 //   - FOREIGN KEY uses DROP FOREIGN KEY (never the generic clause);
+//   - UNIQUE uses DROP INDEX on EVERY target (issue #195): a UNIQUE
+//     constraint is backed by an index, and ALTER TABLE ... DROP INDEX is the
+//     one spelling valid across the entire MySQL/MariaDB family (verified
+//     live on MySQL 9.7 and MariaDB 10.11) — the generic clause would be
+//     invalid SQL before MySQL 8.0.19;
 //   - CHECK uses DROP CHECK when the target lacks the generic DROP CONSTRAINT
 //     clause (capability.DropConstraintGeneric absent — MySQL 8.0.16–8.0.18);
 //     a target with NEITHER spelling (capability.MySQLLegacy) gets a loud
 //     WARNING comment instead of invalid SQL;
-//   - UNIQUE uses DROP INDEX (dropping the backing index — valid across the
-//     whole family) when the generic clause is absent; on modern targets it
-//     keeps the generic clause for now, and the universal DROP INDEX
-//     branching for every version is tracked separately (issue #195);
 //   - everything else uses DROP CONSTRAINT (MySQL 8.0.19+ / MariaDB);
 //   - the IF EXISTS guard is requested when the target accepts guarded drops
 //     (capability.DropConstraintIfExists — MariaDB; MySQL rejects it). The
@@ -1053,19 +1054,25 @@ func (p *Planner) dropConstraintNode(info types.ConstraintRemovalInfo) ast.Node 
 		ForeignKey:     strings.EqualFold(info.Type, "FOREIGN KEY"),
 		IfExists:       caps.Has(capability.DropConstraintIfExists),
 	}
-	if !op.ForeignKey && !caps.Has(capability.DropConstraintGeneric) {
-		switch {
-		case strings.EqualFold(info.Type, "CHECK"):
-			if !caps.Has(capability.DropCheckClause) {
-				// No generic clause and no DROP CHECK either (MySQLLegacy):
-				// there is no valid spelling, so fail loudly instead of
-				// emitting SQL the server rejects.
-				return ast.NewComment(fmt.Sprintf("WARNING: cannot drop CHECK constraint %s on %s - the target supports neither DROP CONSTRAINT nor DROP CHECK", info.Name, info.TableName))
-			}
-			op.Check = true
-		case strings.EqualFold(info.Type, "UNIQUE"):
-			op.Unique = true
+	switch {
+	case op.ForeignKey:
+		// DROP FOREIGN KEY carries the type information already.
+	case strings.EqualFold(info.Type, "UNIQUE"):
+		op.Unique = true
+		// The UNIQUE spelling is an index drop, so its guard intent follows
+		// the index-drop guard capability rather than the constraint-drop
+		// one. Identical on the shipped presets (MariaDB has both, MySQL
+		// neither), but a composed set may enable them independently and the
+		// intent must match the chosen spelling.
+		op.IfExists = caps.Has(capability.DropIndexIfExists)
+	case strings.EqualFold(info.Type, "CHECK") && !caps.Has(capability.DropConstraintGeneric):
+		if !caps.Has(capability.DropCheckClause) {
+			// No generic clause and no DROP CHECK either (MySQLLegacy):
+			// there is no valid spelling, so fail loudly instead of
+			// emitting SQL the server rejects.
+			return ast.NewComment(fmt.Sprintf("WARNING: cannot drop CHECK constraint %s on %s - the target supports neither DROP CONSTRAINT nor DROP CHECK", info.Name, info.TableName))
 		}
+		op.Check = true
 	}
 	return &ast.AlterTableNode{
 		Name:       info.TableName,
