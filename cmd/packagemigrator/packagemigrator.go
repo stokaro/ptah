@@ -11,6 +11,7 @@ import (
 	"github.com/stokaro/ptah/cmd/dropall"
 	"github.com/stokaro/ptah/cmd/generate"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
+	"github.com/stokaro/ptah/cmd/lint"
 	"github.com/stokaro/ptah/cmd/migrate"
 	"github.com/stokaro/ptah/cmd/migratedown"
 	"github.com/stokaro/ptah/cmd/migratestatus"
@@ -52,6 +53,7 @@ func Execute(args ...string) {
 	rootCmd.AddCommand(migratedown.NewMigrateDownCommand())
 	rootCmd.AddCommand(migratestatus.NewMigrateStatusCommand())
 	rootCmd.AddCommand(dropall.NewDropAllCommand())
+	rootCmd.AddCommand(lint.NewLintCommand())
 
 	err := rootCmd.Execute()
 	if err != nil {

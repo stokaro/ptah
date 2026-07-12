@@ -1,0 +1,330 @@
+// Package lint implements the `ptah lint` command: a sqlcheck-style linter
+// for migration directories with rule-coded findings (issue #151).
+package lint
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/spf13/cobra"
+
+	"github.com/stokaro/ptah/cmd/internal/exitcode"
+	"github.com/stokaro/ptah/migration/lint"
+)
+
+const (
+	formatText          = "text"
+	formatJSON          = "json"
+	formatGitHubActions = "github-actions"
+
+	failOnError = "error"
+	failOnAny   = "any"
+	failOnNone  = "none"
+)
+
+var errLintFindings = errors.New("lint findings exceed the failure threshold")
+
+// NewLintCommand returns the migration-linter command.
+func NewLintCommand() *cobra.Command {
+	var dir string
+	var dialect string
+	var format string
+	var configPath string
+	var disabled []string
+	var failOn string
+
+	cmd := &cobra.Command{
+		Use:   "lint",
+		Short: "Lint migration files for production-unsafe patterns",
+		Long: `Lint inspects every *.sql file in a migrations directory and reports
+rule-coded findings, sqlcheck-style:
+
+  DS  data safety (dropped tables/columns, lossy type changes)
+  MF  migration form (missing down file, empty migration, naming)
+  BC  backwards compatibility (renames breaking deployed code)
+  PG  PostgreSQL-specific hazards (CREATE INDEX without CONCURRENTLY, ...)
+  MY  MySQL/MariaDB-specific hazards (lock-heavy ALTER TABLE forms)
+
+Statement rules run against up migrations; file-form rules cover every file.
+Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runLint(cmd, runOptions{
+				dir:        dir,
+				dialect:    dialect,
+				format:     format,
+				configPath: configPath,
+				disabled:   disabled,
+				failOn:     failOn,
+				positional: args,
+			})
+		},
+	}
+
+	cmd.Flags().StringVar(&dir, "dir", "./migrations", "Directory containing migration files")
+	cmd.Flags().StringVar(&dialect, "dialect", "", "Target dialect gating dialect-specific rules: postgres, mysql or mariadb (empty runs every rule)")
+	cmd.Flags().StringVar(&format, "format", formatText, "Output format: text, json, github-actions")
+	cmd.Flags().StringVar(&configPath, "config", "", "Path to a lint config file (default: <dir>/"+lint.ConfigFileName+" when present)")
+	cmd.Flags().StringArrayVar(&disabled, "disable", nil, "Disable a rule code or family, for example DS101 or MY (repeatable)")
+	cmd.Flags().StringVar(&failOn, "fail-on", failOnError, "Failure threshold controlling the exit code: error, any or none")
+
+	// Flag-parse errors (unknown flags and the like) must surface a message
+	// and exit 2 like every other usage error, not vanish under SilenceErrors.
+	cmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
+		fmt.Fprintf(c.ErrOrStderr(), "error: %s\n", err)
+		return exitcode.New(2, err)
+	})
+
+	return cmd
+}
+
+type runOptions struct {
+	dir        string
+	dialect    string
+	format     string
+	configPath string
+	disabled   []string
+	failOn     string
+	positional []string
+}
+
+type lintReport struct {
+	Failed           bool           `json:"failed"`
+	FailureThreshold string         `json:"failure_threshold"`
+	Dialect          string         `json:"dialect,omitempty"`
+	Dir              string         `json:"dir,omitempty"`
+	DisabledRules    []string       `json:"disabled_rules,omitempty"`
+	Findings         []lint.Finding `json:"findings"`
+	Error            string         `json:"error,omitempty"`
+}
+
+func runLint(cmd *cobra.Command, opts runOptions) error {
+	if err := validateFormat(opts.format); err != nil {
+		return writeError(cmd.ErrOrStderr(), formatText, opts.failOn, err.Error())
+	}
+	if err := validateFailOn(opts.failOn); err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, failOnError, err.Error())
+	}
+	if err := validateDialect(opts.dialect); err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+	}
+	if len(opts.positional) > 0 {
+		// Silently linting the default --dir while the user pointed at
+		// another directory would be a silent false negative in CI.
+		msg := fmt.Sprintf("unexpected positional arguments %q: pass the migrations directory via --dir", opts.positional)
+		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, msg)
+	}
+	if err := validateDir(opts.dir); err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+	}
+
+	cfg, err := loadConfig(opts)
+	if err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+	}
+	if !isValidDialect(cfg.Dialect) {
+		msg := fmt.Sprintf("invalid dialect %q in lint config: expected postgres, mysql, or mariadb", cfg.Dialect)
+		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, msg)
+	}
+	// An explicitly passed --dialect wins even when set to "" (run every
+	// rule); an untouched flag defers to the config.
+	dialect := cfg.Dialect
+	if cmd.Flags().Changed("dialect") {
+		dialect = opts.dialect
+	}
+	disabled := append(append([]string{}, cfg.DisabledRules...), opts.disabled...)
+
+	findings, err := lint.LintFS(os.DirFS(opts.dir), lint.Options{
+		Dialect:    dialect,
+		Disabled:   disabled,
+		PathPrefix: filepath.ToSlash(opts.dir),
+	})
+	if err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+	}
+	if findings == nil {
+		findings = []lint.Finding{}
+	}
+
+	failed := shouldFail(findings, opts.failOn)
+	report := lintReport{
+		Failed:           failed,
+		FailureThreshold: opts.failOn,
+		Dialect:          dialect,
+		Dir:              opts.dir,
+		DisabledRules:    disabled,
+		Findings:         findings,
+	}
+
+	writer := cmd.OutOrStdout()
+	if failed {
+		writer = cmd.ErrOrStderr()
+	}
+	if err := writeReport(writer, opts.format, report); err != nil {
+		return writeError(cmd.ErrOrStderr(), formatText, opts.failOn, err.Error())
+	}
+	if failed {
+		return exitcode.New(1, errLintFindings)
+	}
+	return nil
+}
+
+// loadConfig reads the explicit --config file, or the conventional
+// .ptah-lint.yaml inside the linted directory when present.
+func loadConfig(opts runOptions) (*lint.Config, error) {
+	if opts.configPath != "" {
+		if _, err := os.Stat(opts.configPath); err != nil {
+			return nil, fmt.Errorf("lint config %s: %w", opts.configPath, err)
+		}
+		return lint.LoadConfig(opts.configPath)
+	}
+	return lint.LoadConfig(filepath.Join(opts.dir, lint.ConfigFileName))
+}
+
+// shouldFail applies the --fail-on threshold to the findings.
+func shouldFail(findings []lint.Finding, failOn string) bool {
+	switch failOn {
+	case failOnNone:
+		return false
+	case failOnAny:
+		return len(findings) > 0
+	default: // failOnError
+		for _, f := range findings {
+			if f.Severity == lint.SeverityError {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+func writeReport(w io.Writer, format string, report lintReport) error {
+	switch format {
+	case formatJSON:
+		encoder := json.NewEncoder(w)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(report)
+	case formatGitHubActions:
+		writeGitHubActions(w, report)
+		return nil
+	default:
+		writeText(w, report)
+		return nil
+	}
+}
+
+func writeText(w io.Writer, report lintReport) {
+	if report.Error != "" {
+		fmt.Fprintf(w, "error: %s\n", report.Error)
+		return
+	}
+	if len(report.Findings) == 0 {
+		fmt.Fprintln(w, "No lint findings.")
+		return
+	}
+	for _, f := range report.Findings {
+		fmt.Fprintln(w, lint.Describe(f))
+	}
+	fmt.Fprintf(w, "\n%d finding(s).\n", len(report.Findings))
+}
+
+func writeGitHubActions(w io.Writer, report lintReport) {
+	if report.Error != "" {
+		fmt.Fprintf(w, "::error::%s\n", escapeGHData(report.Error))
+		return
+	}
+	for _, f := range report.Findings {
+		level := "warning"
+		if f.Severity == lint.SeverityError {
+			level = "error"
+		}
+		file := escapeGHProperty(f.File)
+		message := escapeGHData(fmt.Sprintf("%s: %s", f.Rule, f.Message))
+		if f.Line > 0 {
+			fmt.Fprintf(w, "::%s file=%s,line=%d::%s\n", level, file, f.Line, message)
+			continue
+		}
+		fmt.Fprintf(w, "::%s file=%s::%s\n", level, file, message)
+	}
+}
+
+// escapeGHData escapes message text for GitHub Actions workflow commands.
+func escapeGHData(s string) string {
+	s = strings.ReplaceAll(s, "%", "%25")
+	s = strings.ReplaceAll(s, "\r", "%0D")
+	s = strings.ReplaceAll(s, "\n", "%0A")
+	return s
+}
+
+// escapeGHProperty escapes property values (file=...) for workflow commands,
+// which additionally reserve the separator characters.
+func escapeGHProperty(s string) string {
+	s = escapeGHData(s)
+	s = strings.ReplaceAll(s, ":", "%3A")
+	s = strings.ReplaceAll(s, ",", "%2C")
+	return s
+}
+
+func writeError(w io.Writer, format, failOn, msg string) error {
+	report := lintReport{
+		Failed:           true,
+		FailureThreshold: failOn,
+		Findings:         []lint.Finding{},
+		Error:            msg,
+	}
+	_ = writeReport(w, format, report)
+	return exitcode.New(2, errors.New(msg))
+}
+
+func validateFormat(format string) error {
+	switch format {
+	case formatText, formatJSON, formatGitHubActions:
+		return nil
+	default:
+		return fmt.Errorf("invalid --format value %q: expected text, json, or github-actions", format)
+	}
+}
+
+func validateFailOn(failOn string) error {
+	switch failOn {
+	case failOnError, failOnAny, failOnNone:
+		return nil
+	default:
+		return fmt.Errorf("invalid --fail-on value %q: expected error, any, or none", failOn)
+	}
+}
+
+func validateDialect(dialect string) error {
+	if isValidDialect(dialect) {
+		return nil
+	}
+	return fmt.Errorf("invalid --dialect value %q: expected postgres, mysql, or mariadb", dialect)
+}
+
+func isValidDialect(dialect string) bool {
+	switch dialect {
+	case "", "postgres", "mysql", "mariadb":
+		return true
+	default:
+		return false
+	}
+}
+
+// validateDir reports a usable error when the migrations directory itself is
+// missing, instead of the misleading "no *.sql migration files found".
+func validateDir(dir string) error {
+	info, err := os.Stat(dir)
+	if err != nil {
+		return fmt.Errorf("migrations directory %s: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("migrations directory %s: not a directory", dir)
+	}
+	return nil
+}
