@@ -18,6 +18,7 @@ For a detailed visual representation of the system architecture, see the [Top-Le
 
 ```
 Go Code (Annotations) ──┐
+YAML Schema Files ──────┤
                         ├─► Parsing Layer ──► Core Processing ──► Migration System ──► Database
 SQL Statements ─────────┘                                                                  │
                                                                                            │
@@ -26,7 +27,7 @@ Live Database ──────────────────────
 
 The system operates through four main layers:
 
-1. **Input Sources**: Go code with annotations, SQL statements, and live database connections
+1. **Input Sources**: Go code with annotations, YAML schema files, SQL statements, and live database connections
 2. **Parsing Layer**: Tokenization, AST construction, and entity extraction
 3. **Core Processing**: Schema representation, comparison, and SQL generation
 4. **Migration System**: Planning, generation, and execution of database changes
@@ -50,6 +51,14 @@ The system operates through four main layers:
   - Recursively parses Go source files
   - Discovers entity definitions and dependencies
   - Handles embedded structs and topological sorting
+
+#### yamlschema Package
+- **Purpose**: Parses language-agnostic YAML schema files into the same `goschema.Database` IR used by Go annotations
+- **Input**: `.yaml` and `.yml` files passed to `ptah generate --schema-file`
+- **Functionality**:
+  - Supports tables, columns, indexes, constraints, enums, extensions, functions, row-level security, roles, and dialect overrides
+  - Preserves author order for table-local columns, indexes, and constraints while keeping top-level maps deterministic
+  - Applies strict validation for unknown fields, duplicate ordered keys, invalid indexes and constraints, multiple YAML documents, and currently unsupported views/triggers
 
 #### lexer Package
 - **Purpose**: Tokenizes SQL statements into structured tokens
