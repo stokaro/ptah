@@ -883,3 +883,15 @@ func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
 	r.notSupported("ALTER ROLE", node.Name)
 	return nil
 }
+
+// VisitGrantPrivilege mirrors VisitCreateRole.
+func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
+	r.notSupported("GRANT", node.Role)
+	return nil
+}
+
+// VisitRevokePrivilege mirrors VisitCreateRole.
+func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
+	r.notSupported("REVOKE", node.Role)
+	return nil
+}

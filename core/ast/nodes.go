@@ -1805,6 +1805,92 @@ func (n *AlterRoleNode) Accept(visitor Visitor) error {
 	return visitor.VisitAlterRole(n)
 }
 
+// GrantPrivilegeNode represents a PostgreSQL GRANT statement.
+type GrantPrivilegeNode struct {
+	// Role is the role receiving the privilege.
+	Role string
+	// Privileges contains one or more privileges, e.g. SELECT, INSERT, USAGE.
+	Privileges []string
+	// ObjectType is the target kind, currently TABLE or SCHEMA.
+	ObjectType string
+	// ObjectName is the target table or schema name.
+	ObjectName string
+	// WithOption controls WITH GRANT OPTION.
+	WithOption bool
+	// Comment is an optional comment for the grant operation.
+	Comment string
+}
+
+// NewGrantPrivilege creates a new GRANT node.
+func NewGrantPrivilege(role, objectType, objectName string, privileges []string) *GrantPrivilegeNode {
+	return &GrantPrivilegeNode{
+		Role:       role,
+		Privileges: privileges,
+		ObjectType: objectType,
+		ObjectName: objectName,
+	}
+}
+
+// SetWithOption enables or disables WITH GRANT OPTION.
+func (n *GrantPrivilegeNode) SetWithOption(withOption bool) *GrantPrivilegeNode {
+	n.WithOption = withOption
+	return n
+}
+
+// SetComment sets a comment for the GRANT operation.
+func (n *GrantPrivilegeNode) SetComment(comment string) *GrantPrivilegeNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for GrantPrivilegeNode.
+func (n *GrantPrivilegeNode) Accept(visitor Visitor) error {
+	return visitor.VisitGrantPrivilege(n)
+}
+
+// RevokePrivilegeNode represents a PostgreSQL REVOKE statement.
+type RevokePrivilegeNode struct {
+	// Role is the role losing the privilege.
+	Role string
+	// Privileges contains one or more privileges, e.g. SELECT, INSERT, USAGE.
+	Privileges []string
+	// ObjectType is the target kind, currently TABLE or SCHEMA.
+	ObjectType string
+	// ObjectName is the target table or schema name.
+	ObjectName string
+	// GrantOptionFor controls REVOKE GRANT OPTION FOR.
+	GrantOptionFor bool
+	// Comment is an optional comment for the revoke operation.
+	Comment string
+}
+
+// NewRevokePrivilege creates a new REVOKE node.
+func NewRevokePrivilege(role, objectType, objectName string, privileges []string) *RevokePrivilegeNode {
+	return &RevokePrivilegeNode{
+		Role:       role,
+		Privileges: privileges,
+		ObjectType: objectType,
+		ObjectName: objectName,
+	}
+}
+
+// SetGrantOptionFor enables or disables REVOKE GRANT OPTION FOR.
+func (n *RevokePrivilegeNode) SetGrantOptionFor(grantOptionFor bool) *RevokePrivilegeNode {
+	n.GrantOptionFor = grantOptionFor
+	return n
+}
+
+// SetComment sets a comment for the REVOKE operation.
+func (n *RevokePrivilegeNode) SetComment(comment string) *RevokePrivilegeNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for RevokePrivilegeNode.
+func (n *RevokePrivilegeNode) Accept(visitor Visitor) error {
+	return visitor.VisitRevokePrivilege(n)
+}
+
 // RoleOperation represents an operation that can be performed on a role during ALTER ROLE.
 //
 // This interface allows for different types of role modifications to be represented

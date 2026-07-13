@@ -83,6 +83,9 @@ func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, 
 	// Compare roles (PostgreSQL-specific feature)
 	compare.Roles(generated, database, diff)
 
+	// Compare role privilege grants (PostgreSQL-specific feature)
+	compare.Grants(generated, database, diff)
+
 	// Compare table-level constraints (EXCLUDE, CHECK, UNIQUE, etc.)
 	compare.Constraints(generated, database, diff, opts)
 

@@ -222,6 +222,22 @@ type SchemaDiff struct {
 	// schemas but have different definitions (attributes, passwords, etc.)
 	RolesModified []RoleDiff `json:"roles_modified"`
 
+	// GrantsAdded contains PostgreSQL privilege grants that exist in the target
+	// schema but not in the current database schema.
+	GrantsAdded []GrantRef `json:"grants_added"`
+
+	// GrantsRemoved contains PostgreSQL privilege grants that exist in the current
+	// database schema for managed roles but not in the target schema.
+	GrantsRemoved []GrantRef `json:"grants_removed"`
+
+	// GrantOptionsAdded contains PostgreSQL privileges whose WITH GRANT OPTION
+	// flag exists in the target schema but not in the current database schema.
+	GrantOptionsAdded []GrantRef `json:"grant_options_added"`
+
+	// GrantOptionsRevoked contains PostgreSQL privileges whose WITH GRANT OPTION
+	// flag exists in the database but not in the target schema.
+	GrantOptionsRevoked []GrantRef `json:"grant_options_revoked"`
+
 	// ConstraintsAdded contains names of constraints that exist in the target schema
 	// but not in the current database schema
 	ConstraintsAdded []string `json:"constraints_added"`
@@ -357,7 +373,11 @@ func (d *SchemaDiff) hasRLSChanges() bool {
 func (d *SchemaDiff) hasRoleChanges() bool {
 	return len(d.RolesAdded) > 0 ||
 		len(d.RolesRemoved) > 0 ||
-		len(d.RolesModified) > 0
+		len(d.RolesModified) > 0 ||
+		len(d.GrantsAdded) > 0 ||
+		len(d.GrantsRemoved) > 0 ||
+		len(d.GrantOptionsAdded) > 0 ||
+		len(d.GrantOptionsRevoked) > 0
 }
 
 // hasConstraintChanges returns true if there are any constraint-related changes
@@ -621,4 +641,22 @@ type RoleDiff struct {
 	// Changes maps change types to their old->new value transitions
 	// Format: "change_type" -> "old_value -> new_value"
 	Changes map[string]string `json:"changes"`
+}
+
+// GrantRef identifies one PostgreSQL privilege grant.
+type GrantRef struct {
+	// Role is the role receiving or losing the privilege.
+	Role string `json:"role"`
+
+	// Privilege is the individual privilege, e.g. SELECT, INSERT, or USAGE.
+	Privilege string `json:"privilege"`
+
+	// ObjectType is the target kind, currently TABLE or SCHEMA.
+	ObjectType string `json:"object_type"`
+
+	// ObjectName is the target table or schema name.
+	ObjectName string `json:"object_name"`
+
+	// WithOption records whether the grant has WITH GRANT OPTION.
+	WithOption bool `json:"with_option"`
 }

@@ -164,6 +164,82 @@ func TestAlterRoleNode(t *testing.T) {
 	})
 }
 
+func TestGrantPrivilegeNode(t *testing.T) {
+	t.Run("fluent API methods work correctly", func(t *testing.T) {
+		c := qt.New(t)
+		grant := ast.NewGrantPrivilege("app_role", "TABLE", "users", []string{"SELECT"}).
+			SetWithOption(true).
+			SetComment("Grant read access")
+
+		c.Assert(grant.Role, qt.Equals, "app_role")
+		c.Assert(grant.ObjectType, qt.Equals, "TABLE")
+		c.Assert(grant.ObjectName, qt.Equals, "users")
+		c.Assert(grant.Privileges, qt.DeepEquals, []string{"SELECT"})
+		c.Assert(grant.WithOption, qt.IsTrue)
+		c.Assert(grant.Comment, qt.Equals, "Grant read access")
+	})
+
+	t.Run("Accept calls visitor correctly", func(t *testing.T) {
+		c := qt.New(t)
+		grant := ast.NewGrantPrivilege("app_role", "TABLE", "users", []string{"SELECT"})
+		visitor := &mocks.MockVisitor{}
+
+		err := grant.Accept(visitor)
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(visitor.VisitedNodes, qt.Contains, "GrantPrivilege:app_role")
+	})
+
+	t.Run("Accept propagates visitor errors", func(t *testing.T) {
+		c := qt.New(t)
+		grant := ast.NewGrantPrivilege("app_role", "TABLE", "users", []string{"SELECT"})
+		visitor := &mocks.MockVisitor{ReturnError: true}
+
+		err := grant.Accept(visitor)
+
+		c.Assert(err, qt.IsNotNil)
+		c.Assert(err.Error(), qt.Equals, "mock error")
+	})
+}
+
+func TestRevokePrivilegeNode(t *testing.T) {
+	t.Run("fluent API methods work correctly", func(t *testing.T) {
+		c := qt.New(t)
+		revoke := ast.NewRevokePrivilege("app_role", "SCHEMA", "public", []string{"USAGE"}).
+			SetGrantOptionFor(true).
+			SetComment("Remove schema access")
+
+		c.Assert(revoke.Role, qt.Equals, "app_role")
+		c.Assert(revoke.ObjectType, qt.Equals, "SCHEMA")
+		c.Assert(revoke.ObjectName, qt.Equals, "public")
+		c.Assert(revoke.Privileges, qt.DeepEquals, []string{"USAGE"})
+		c.Assert(revoke.GrantOptionFor, qt.IsTrue)
+		c.Assert(revoke.Comment, qt.Equals, "Remove schema access")
+	})
+
+	t.Run("Accept calls visitor correctly", func(t *testing.T) {
+		c := qt.New(t)
+		revoke := ast.NewRevokePrivilege("app_role", "SCHEMA", "public", []string{"USAGE"})
+		visitor := &mocks.MockVisitor{}
+
+		err := revoke.Accept(visitor)
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(visitor.VisitedNodes, qt.Contains, "RevokePrivilege:app_role")
+	})
+
+	t.Run("Accept propagates visitor errors", func(t *testing.T) {
+		c := qt.New(t)
+		revoke := ast.NewRevokePrivilege("app_role", "SCHEMA", "public", []string{"USAGE"})
+		visitor := &mocks.MockVisitor{ReturnError: true}
+
+		err := revoke.Accept(visitor)
+
+		c.Assert(err, qt.IsNotNil)
+		c.Assert(err.Error(), qt.Equals, "mock error")
+	})
+}
+
 func TestRoleOperations(t *testing.T) {
 	t.Run("SetPasswordOperation", func(t *testing.T) {
 		c := qt.New(t)
