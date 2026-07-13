@@ -246,6 +246,19 @@ func normalizeTableScopedNames(r *Database) {
 			trigger.Table = table.QualifiedName()
 		}
 	}
+	// Views and MaterializedViews: no table-scoped normalization applied here.
+	// Decision: unlike Triggers/Constraints/Grants/Indexes/RLS which reference a .Table,
+	// Views/MaterializedViews declare a standalone .Name (which may include schema prefix
+	// e.g. "public.foo" or be unqualified). They are not "table scoped" from a host table
+	// struct in the same manner. If view names need struct-to-name resolution or schema
+	// inference in future (e.g. schema-scoped Go files), extend this loop similarly.
+	// Current behavior preserved for compatibility with YAML and existing parser paths.
+	for i := range r.Views {
+		_ = &r.Views[i] // name left as-parsed
+	}
+	for i := range r.MaterializedViews {
+		_ = &r.MaterializedViews[i]
+	}
 }
 
 func resolveTableReference(tables []Table, structName, tableName string) *Table {
@@ -809,8 +822,16 @@ func isFunctionInSorted(function Function, sorted []Function) bool {
 //   - Embedded Fields: Deduplicated by struct name + embedded type name combination
 //   - Views and materialized views: Deduplicated by name
 //   - Triggers: Deduplicated by table name + trigger name combination
+//   - Constraints: Deduplicated by table + constraint name
+//   - Grants: Deduplicated by role + privileges + (table or schema) target
+//   - Roles: Deduplicated by role name
 //
-// This method modifies the PackageParseResult in-place, replacing the original
+// All 15 Database slice collections are now covered (previously only a subset
+// of appended collections were deduplicated, and the five dropped by ParseFS
+// were never reached). This prevents duplicate emits when objects are declared
+// across files.
+//
+// This method modifies the Database in-place, replacing the original
 // slices with deduplicated versions. The order of entities may change during
 // this process, but dependency ordering is handled separately.
 func Deduplicate(r *Database) {
@@ -931,6 +952,9 @@ func deduplicateSchemaObjects(r *Database) {
 	r.Views = deduplicateViews(r.Views)
 	r.MaterializedViews = deduplicateMaterializedViews(r.MaterializedViews)
 	r.Triggers = deduplicateTriggers(r.Triggers)
+	r.Constraints = deduplicateConstraints(r.Constraints)
+	r.Grants = deduplicateGrants(r.Grants)
+	r.Roles = deduplicateRoles(r.Roles)
 }
 
 func deduplicateViews(views []View) []View {
@@ -967,6 +991,53 @@ func deduplicateTriggers(triggers []Trigger) []Trigger {
 		if !seen[key] {
 			seen[key] = true
 			deduplicated = append(deduplicated, trigger)
+		}
+	}
+	return deduplicated
+}
+
+// deduplicateConstraints dedups table-level constraints by (StructName + name).
+// Uses StructName (the declaring Go type) so dedup happens before normalizeTableScopedNames
+// qualifies .Table (which may be empty when annotation omits `table=` and relies on struct assoc).
+// This matches the pattern used for indexes (StructName + Name).
+func deduplicateConstraints(constraints []Constraint) []Constraint {
+	seen := make(map[string]bool)
+	deduplicated := make([]Constraint, 0, len(constraints))
+	for _, c := range constraints {
+		key := c.StructName + "." + c.Name
+		if !seen[key] {
+			seen[key] = true
+			deduplicated = append(deduplicated, c)
+		}
+	}
+	return deduplicated
+}
+
+// deduplicateGrants dedups by role + privileges + target (table or schema).
+// Uses Canonicalize for stable privilege list.
+func deduplicateGrants(grants []Grant) []Grant {
+	seen := make(map[string]bool)
+	deduplicated := make([]Grant, 0, len(grants))
+	for _, g := range grants {
+		g.Canonicalize()
+		privs := strings.Join(g.Privileges, ",")
+		key := g.Role + "|" + privs + "|t:" + g.OnTable + "|s:" + g.OnSchema
+		if !seen[key] {
+			seen[key] = true
+			deduplicated = append(deduplicated, g)
+		}
+	}
+	return deduplicated
+}
+
+// deduplicateRoles dedups roles by name (roles are global per DB).
+func deduplicateRoles(roles []Role) []Role {
+	seen := make(map[string]bool)
+	deduplicated := make([]Role, 0, len(roles))
+	for _, r := range roles {
+		if !seen[r.Name] {
+			seen[r.Name] = true
+			deduplicated = append(deduplicated, r)
 		}
 	}
 	return deduplicated

@@ -73,13 +73,18 @@ func ParseFS(fsys fs.FS, rootDir string) (*Database, error) {
 		Tables:                     []Table{},
 		Fields:                     []Field{},
 		Indexes:                    []Index{},
+		Constraints:                []Constraint{},
 		Enums:                      []Enum{},
 		EmbeddedFields:             []EmbeddedField{},
 		Extensions:                 []Extension{},
 		Functions:                  []Function{},
+		Views:                      []View{},
+		MaterializedViews:          []MaterializedView{},
+		Triggers:                   []Trigger{},
 		RLSPolicies:                []RLSPolicy{},
 		RLSEnabledTables:           []RLSEnabledTable{},
 		Roles:                      []Role{},
+		Grants:                     []Grant{},
 		Dependencies:               make(map[string][]string),
 		FunctionDependencies:       make(map[string][]string),
 		SelfReferencingForeignKeys: make(map[string][]SelfReferencingFK),
@@ -127,6 +132,11 @@ func ParseFS(fsys fs.FS, rootDir string) (*Database, error) {
 		result.RLSPolicies = append(result.RLSPolicies, database.RLSPolicies...)
 		result.RLSEnabledTables = append(result.RLSEnabledTables, database.RLSEnabledTables...)
 		result.Roles = append(result.Roles, database.Roles...)
+		result.Constraints = append(result.Constraints, database.Constraints...)
+		result.Views = append(result.Views, database.Views...)
+		result.MaterializedViews = append(result.MaterializedViews, database.MaterializedViews...)
+		result.Triggers = append(result.Triggers, database.Triggers...)
+		result.Grants = append(result.Grants, database.Grants...)
 
 		return nil
 	})
