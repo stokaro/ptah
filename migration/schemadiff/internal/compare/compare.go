@@ -27,6 +27,8 @@ var (
 	// Custom index patterns (these should NOT be considered constraint-based)
 	// Match indexes that start with "idx_" or "index_", or end with "_idx" or "_index"
 	customIndexPattern = regexp.MustCompile(`(?i)(^(idx|index)_|_(idx|index)$)`)
+
+	defaultAggregateAliasPattern = regexp.MustCompile(`\b(count|sum|avg|min|max)\(([^)]*)\)\s+as\s+([a-z_][a-z0-9_]*)\b`)
 )
 
 // TablesAndColumns performs comprehensive table and column comparison between generated and database schemas.
@@ -703,9 +705,9 @@ func Enums(generated *goschema.Database, database *types.DBSchema, diff *difftyp
 // **Mixed changes**:
 //
 //	```
-//	Generated: ["pending", "approved", "rejected", "cancelled"]
+//	Generated: ["pending", "approved", "rejected", "canceled"]
 //	Database:  ["pending", "approved", "denied"]
-//	Result:    ValuesAdded=["rejected", "cancelled"], ValuesRemoved=["denied"]
+//	Result:    ValuesAdded=["rejected", "canceled"], ValuesRemoved=["denied"]
 //	```
 //
 // # Performance Characteristics
@@ -1913,6 +1915,133 @@ func Functions(generated *goschema.Database, database *types.DBSchema, diff *dif
 	})
 }
 
+// Views compares view definitions between generated and database schemas.
+func Views(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+	generatedViews := make(map[string]goschema.View)
+	for _, view := range generated.Views {
+		generatedViews[view.Name] = view
+	}
+
+	databaseViews := make(map[string]types.DBView)
+	for _, view := range database.Views {
+		databaseViews[view.QualifiedName()] = view
+	}
+
+	addedViews, removedViews := compareNamedItems(generatedViews, databaseViews)
+	diff.ViewsAdded = append(diff.ViewsAdded, addedViews...)
+	diff.ViewsRemoved = append(diff.ViewsRemoved, removedViews...)
+
+	for viewName, generatedView := range generatedViews {
+		if databaseView, exists := databaseViews[viewName]; exists {
+			viewDiff := ViewDefinitions(generatedView, databaseView)
+			if len(viewDiff.Changes) > 0 {
+				diff.ViewsModified = append(diff.ViewsModified, viewDiff)
+			}
+		}
+	}
+
+	sort.Strings(diff.ViewsAdded)
+	sort.Strings(diff.ViewsRemoved)
+	sort.Slice(diff.ViewsModified, func(i, j int) bool {
+		return diff.ViewsModified[i].ViewName < diff.ViewsModified[j].ViewName
+	})
+}
+
+// MaterializedViews compares materialized view definitions between generated
+// and database schemas.
+func MaterializedViews(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+	generatedViews := make(map[string]goschema.MaterializedView)
+	for _, view := range generated.MaterializedViews {
+		view.Canonicalize()
+		generatedViews[view.Name] = view
+	}
+
+	databaseViews := make(map[string]types.DBMatView)
+	for _, view := range database.MatViews {
+		databaseViews[view.QualifiedName()] = view
+	}
+
+	addedViews, removedViews := compareNamedItems(generatedViews, databaseViews)
+	diff.MaterializedViewsAdded = append(diff.MaterializedViewsAdded, addedViews...)
+	diff.MaterializedViewsRemoved = append(diff.MaterializedViewsRemoved, removedViews...)
+
+	for viewName, generatedView := range generatedViews {
+		if databaseView, exists := databaseViews[viewName]; exists {
+			viewDiff := MaterializedViewDefinitions(generatedView, databaseView)
+			if len(viewDiff.Changes) > 0 {
+				diff.MaterializedViewsModified = append(diff.MaterializedViewsModified, viewDiff)
+			}
+		}
+	}
+
+	sort.Strings(diff.MaterializedViewsAdded)
+	sort.Strings(diff.MaterializedViewsRemoved)
+	sort.Slice(diff.MaterializedViewsModified, func(i, j int) bool {
+		return diff.MaterializedViewsModified[i].ViewName < diff.MaterializedViewsModified[j].ViewName
+	})
+}
+
+// Triggers compares trigger definitions between generated and database schemas.
+func Triggers(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+	generatedTriggers := make(map[string]goschema.Trigger)
+	for _, trigger := range generated.Triggers {
+		trigger.Canonicalize()
+		generatedTriggers[triggerKey(trigger.Table, trigger.Name)] = trigger
+	}
+
+	databaseTriggers := make(map[string]types.DBTrigger)
+	for _, trigger := range database.Triggers {
+		databaseTriggers[triggerKey(trigger.QualifiedTable(), trigger.Name)] = trigger
+	}
+
+	for key, trigger := range generatedTriggers {
+		if _, exists := databaseTriggers[key]; !exists {
+			diff.TriggersAdded = append(diff.TriggersAdded, difftypes.TriggerRef{
+				TriggerName: trigger.Name,
+				TableName:   trigger.Table,
+			})
+		}
+	}
+	for key, trigger := range databaseTriggers {
+		if _, exists := generatedTriggers[key]; !exists {
+			diff.TriggersRemoved = append(diff.TriggersRemoved, difftypes.TriggerRef{
+				TriggerName: trigger.Name,
+				TableName:   trigger.QualifiedTable(),
+			})
+		}
+	}
+	for key, generatedTrigger := range generatedTriggers {
+		if databaseTrigger, exists := databaseTriggers[key]; exists {
+			triggerDiff := TriggerDefinitions(generatedTrigger, databaseTrigger)
+			if len(triggerDiff.Changes) > 0 {
+				diff.TriggersModified = append(diff.TriggersModified, triggerDiff)
+			}
+		}
+	}
+
+	sortTriggerRefs(diff.TriggersAdded)
+	sortTriggerRefs(diff.TriggersRemoved)
+	sort.Slice(diff.TriggersModified, func(i, j int) bool {
+		if diff.TriggersModified[i].TableName == diff.TriggersModified[j].TableName {
+			return diff.TriggersModified[i].TriggerName < diff.TriggersModified[j].TriggerName
+		}
+		return diff.TriggersModified[i].TableName < diff.TriggersModified[j].TableName
+	})
+}
+
+func triggerKey(tableName, triggerName string) string {
+	return tableName + "." + triggerName
+}
+
+func sortTriggerRefs(refs []difftypes.TriggerRef) {
+	sort.Slice(refs, func(i, j int) bool {
+		if refs[i].TableName == refs[j].TableName {
+			return refs[i].TriggerName < refs[j].TriggerName
+		}
+		return refs[i].TableName < refs[j].TableName
+	})
+}
+
 // RLSPolicies performs PostgreSQL RLS policy comparison between generated and database schemas.
 //
 // This function handles the comparison of Row-Level Security policies, which are
@@ -2617,6 +2746,121 @@ func FunctionDefinitions(genFunction goschema.Function, dbFunction types.DBFunct
 	}
 
 	return functionDiff
+}
+
+// ViewDefinitions performs detailed comparison between generated and database view definitions.
+func ViewDefinitions(genView goschema.View, dbView types.DBView) difftypes.ViewDiff {
+	viewDiff := difftypes.ViewDiff{
+		ViewName: genView.Name,
+		Changes:  make(map[string]string),
+	}
+
+	genBody := normalizeSchemaObjectBody(genView.Body)
+	dbBody := normalizeSchemaObjectBody(dbView.Body)
+	if genBody != dbBody {
+		viewDiff.Changes["body"] = fmt.Sprintf("%s -> %s", strings.TrimSpace(dbView.Body), strings.TrimSpace(genView.Body))
+	}
+
+	dbWithCheck := !strings.EqualFold(dbView.CheckOption, "") && !strings.EqualFold(dbView.CheckOption, "NONE")
+	if genView.WithCheck != dbWithCheck {
+		viewDiff.Changes["with_check"] = fmt.Sprintf("%t -> %t", dbWithCheck, genView.WithCheck)
+	}
+
+	return viewDiff
+}
+
+// MaterializedViewDefinitions performs detailed comparison between generated
+// and database materialized view definitions.
+func MaterializedViewDefinitions(genView goschema.MaterializedView, dbView types.DBMatView) difftypes.MaterializedViewDiff {
+	genView.Canonicalize()
+	if dbView.RefreshStrategy == "" {
+		dbView.RefreshStrategy = "manual"
+	}
+	dbView.RefreshStrategy = strings.ToLower(strings.TrimSpace(dbView.RefreshStrategy))
+
+	viewDiff := difftypes.MaterializedViewDiff{
+		ViewName: genView.Name,
+		Changes:  make(map[string]string),
+	}
+
+	genBody := normalizeSchemaObjectBody(genView.Body)
+	dbBody := normalizeSchemaObjectBody(dbView.Body)
+	if genBody != dbBody {
+		viewDiff.Changes["body"] = fmt.Sprintf("%s -> %s", strings.TrimSpace(dbView.Body), strings.TrimSpace(genView.Body))
+	}
+	if genView.RefreshStrategy != dbView.RefreshStrategy {
+		viewDiff.Changes["refresh_strategy"] = fmt.Sprintf("%s -> %s", dbView.RefreshStrategy, genView.RefreshStrategy)
+	}
+
+	return viewDiff
+}
+
+// TriggerDefinitions performs detailed comparison between generated and database trigger definitions.
+func TriggerDefinitions(genTrigger goschema.Trigger, dbTrigger types.DBTrigger) difftypes.TriggerDiff {
+	genTrigger.Canonicalize()
+
+	triggerDiff := difftypes.TriggerDiff{
+		TriggerName: genTrigger.Name,
+		TableName:   genTrigger.Table,
+		Changes:     make(map[string]string),
+	}
+
+	if genTrigger.Timing != strings.ToUpper(dbTrigger.Timing) {
+		triggerDiff.Changes["timing"] = fmt.Sprintf("%s -> %s", dbTrigger.Timing, genTrigger.Timing)
+	}
+	if genTrigger.Event != strings.ToUpper(dbTrigger.Event) {
+		triggerDiff.Changes["event"] = fmt.Sprintf("%s -> %s", dbTrigger.Event, genTrigger.Event)
+	}
+	dbForEach := strings.ToUpper(strings.TrimSpace(dbTrigger.ForEach))
+	if dbForEach == "" {
+		dbForEach = "ROW"
+	}
+	if genTrigger.ForEach != dbForEach {
+		triggerDiff.Changes["for"] = fmt.Sprintf("%s -> %s", dbForEach, genTrigger.ForEach)
+	}
+
+	genBody := normalizeTriggerBody(genTrigger.Body)
+	dbBody := normalizeTriggerBody(dbTrigger.Body)
+	if genBody != dbBody {
+		triggerDiff.Changes["body"] = fmt.Sprintf("%s -> %s", strings.TrimSpace(dbTrigger.Body), strings.TrimSpace(genTrigger.Body))
+	}
+
+	return triggerDiff
+}
+
+func normalizeSchemaObjectBody(body string) string {
+	body = strings.TrimSpace(body)
+	body = strings.TrimSuffix(body, ";")
+	body = strings.TrimSpace(body)
+	body = strings.ReplaceAll(body, "\"", "")
+	body = strings.ReplaceAll(body, "`", "")
+	body = strings.ToLower(body)
+	body = stripDefaultAggregateAliases(body)
+	body = regexp.MustCompile(`\b[a-z_][a-z0-9_]*\.`).ReplaceAllString(body, "")
+	body = regexp.MustCompile(`\s+`).ReplaceAllString(body, " ")
+	return strings.TrimSpace(body)
+}
+
+func stripDefaultAggregateAliases(body string) string {
+	return defaultAggregateAliasPattern.ReplaceAllStringFunc(body, func(match string) string {
+		parts := defaultAggregateAliasPattern.FindStringSubmatch(match)
+		if len(parts) != 4 || parts[1] != parts[3] {
+			return match
+		}
+		return parts[1] + "(" + parts[2] + ")"
+	})
+}
+
+func normalizeTriggerBody(body string) string {
+	body = normalizeSchemaObjectBody(body)
+	body = strings.TrimPrefix(body, "begin ")
+	body = strings.TrimPrefix(body, "begin")
+	body = strings.TrimSpace(body)
+	body = strings.TrimSuffix(body, " end")
+	body = strings.TrimSuffix(body, "end")
+	body = strings.TrimSpace(body)
+	body = strings.TrimSuffix(body, ";")
+	return strings.TrimSpace(body)
 }
 
 // RLSPolicyDefinitions performs detailed comparison between generated and database RLS policy definitions.

@@ -220,20 +220,84 @@ tables:
 	c.Assert(err, qt.ErrorMatches, `parse YAML schema: multiple YAML documents are not supported`)
 }
 
-func TestParse_RejectsUnsupportedViewsAndTriggers(t *testing.T) {
+func TestParse_ViewsMaterializedViewsAndTriggers(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := yamlschema.Parse([]byte(`
+	db, err := yamlschema.Parse([]byte(`
+tables:
+  users:
+    columns:
+      id: { type: SERIAL, primary: true }
+views:
+  active_users:
+    body: SELECT id FROM users WHERE deleted_at IS NULL
+    with_check: true
+matviews:
+  user_stats:
+    body: SELECT id, COUNT(*) FROM users GROUP BY id
+    refresh_strategy: concurrently
+triggers:
+  set_updated_at:
+    table: users
+    timing: before
+    event: update
+    body: NEW.updated_at = NOW(); RETURN NEW;
+`))
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Views, qt.HasLen, 1)
+	c.Assert(db.Views[0].Name, qt.Equals, "active_users")
+	c.Assert(db.Views[0].WithCheck, qt.IsTrue)
+	c.Assert(db.MaterializedViews, qt.HasLen, 1)
+	c.Assert(db.MaterializedViews[0].RefreshStrategy, qt.Equals, "concurrently")
+	c.Assert(db.Triggers, qt.HasLen, 1)
+	c.Assert(db.Triggers[0].Table, qt.Equals, "users")
+	c.Assert(db.Triggers[0].Timing, qt.Equals, "BEFORE")
+	c.Assert(db.Triggers[0].Event, qt.Equals, "UPDATE")
+	c.Assert(db.Triggers[0].ForEach, qt.Equals, "ROW")
+}
+
+func TestParse_RejectsIncompleteSchemaObjects(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+		want string
+	}{
+		{
+			name: "view missing body",
+			yaml: `
 views:
   active_users: {}
-`))
-	c.Assert(err, qt.ErrorMatches, `yaml views are not supported by the current goschema IR`)
-
-	_, err = yamlschema.Parse([]byte(`
+`,
+			want: `view "active_users" requires body`,
+		},
+		{
+			name: "materialized view missing body",
+			yaml: `
+matviews:
+  user_stats: {}
+`,
+			want: `materialized view "user_stats" requires body`,
+		},
+		{
+			name: "trigger missing table",
+			yaml: `
 triggers:
-  update_timestamp: {}
-`))
-	c.Assert(err, qt.ErrorMatches, `yaml triggers are not supported by the current goschema IR`)
+  set_updated_at:
+    timing: before
+    event: update
+    body: RETURN NEW;
+`,
+			want: `trigger "set_updated_at" requires table`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			_, err := yamlschema.Parse([]byte(tt.yaml))
+			c.Assert(err, qt.ErrorMatches, tt.want)
+		})
+	}
 }
 
 func TestParse_RejectsUnknownColumnAttributes(t *testing.T) {

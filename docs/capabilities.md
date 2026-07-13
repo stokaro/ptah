@@ -48,7 +48,7 @@ so typos fail fast. Current registry:
 | `enum_inline_column` | Enums are inline column types (MySQL/MariaDB `ENUM`, ClickHouse `Enum8/16`) |
 | `enum_custom_type` | Enums are separate named types (PostgreSQL `CREATE TYPE … AS ENUM`) |
 | `create_index_concurrently` | `CREATE [UNIQUE] INDEX CONCURRENTLY` (PostgreSQL; a compatibility no-op on CockroachDB) |
-| `create_or_replace_trigger` | `CREATE OR REPLACE TRIGGER` (PostgreSQL 14+, MariaDB; not MySQL). Reserved for the trigger work (#158) |
+| `create_or_replace_trigger` | `CREATE OR REPLACE TRIGGER` (PostgreSQL 14+, MariaDB; not MySQL). Trigger renderers use this to choose replace vs. drop/create |
 | `row_level_security` | Row-level security policies (PostgreSQL) |
 | `foreign_keys` | Declarative `FOREIGN KEY` constraints |
 | `sequences` | Database sequence objects (`SERIAL`/`BIGSERIAL` or explicit `CREATE SEQUENCE` support) |
@@ -172,10 +172,13 @@ planner := mysql.NewWithCapabilities(caps)
   scenarios that run against live OSS containers in CI. Spanner currently has
   capability, planning, rendering, URL, and detection coverage only; there is
   no OSS Spanner PostgreSQL-interface container in the integration suite.
+- **Trigger replacement (#158).** Planners mark modified triggers as replacement
+  intent. Renderers emit `CREATE OR REPLACE TRIGGER` only when
+  `create_or_replace_trigger` is present (PostgreSQL 14+ and MariaDB); targets
+  without it use an explicit drop/create sequence.
 
 ## Follow-ups
 
-- `create_or_replace_trigger` consumer lands with triggers (#158).
 - Spanner remains lowest priority: the preset exists so callers get explicit
   routing and conservative rendering, but full Spanner-specific DDL such as
   interleaved tables is outside the PostgreSQL-family adapter.

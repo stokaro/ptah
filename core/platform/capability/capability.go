@@ -108,8 +108,8 @@ const (
 
 	// CreateOrReplaceTrigger marks support for CREATE OR REPLACE TRIGGER
 	// (PostgreSQL 14+, MariaDB 10.1.4+; MySQL has no OR REPLACE for
-	// triggers). No in-tree consumer yet — reserved for the trigger work in
-	// issue #158; version presets already gate it.
+	// triggers). Trigger renderers use this to choose between
+	// CREATE OR REPLACE TRIGGER and an explicit drop/create sequence.
 	CreateOrReplaceTrigger Capability = "create_or_replace_trigger"
 
 	// RowLevelSecurity marks support for row-level security policies

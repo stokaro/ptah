@@ -228,13 +228,18 @@ and `EXCLUDE`.
 Top-level constraints also require `table`. `condition` is supported for
 `EXCLUDE` constraints.
 
-## PostgreSQL Objects
+## Schema Objects
 
-YAML input supports the current PostgreSQL-specific goschema objects:
+YAML input supports these schema objects. Extensions, functions, materialized
+views, RLS, and roles are PostgreSQL-specific; views and triggers are also
+rendered for MySQL/MariaDB with dialect-specific trigger bodies.
 
 - `extensions`: `name`, `if_not_exists`, `version`, `comment`
 - `functions`: `name`, `params` or `parameters`, `returns`, `language`,
   `security`, `volatility`, `body`, `comment`
+- `views`: `name`, `body`, `with_check`, `comment`
+- `matviews`: `name`, `body`, `refresh_strategy`, `comment`
+- `triggers`: `name`, `table`, `timing`, `event`, `for`, `body`, `comment`
 - `rls_enabled_tables` or `rls_enabled`: map of tables with optional `table`,
   `struct_name`, and `comment`
 - `rls_policies`: `name`, `table`, `for`, `to`, `using`, `with_check`,
@@ -252,7 +257,3 @@ The parser is intentionally strict:
 - Top-level indexes and constraints must name their target table.
 - Constraint types and required semantic fields are validated before SQL
   generation.
-
-`views` and `triggers` are explicitly rejected for now because the current
-`goschema` IR and renderers do not model them yet. They can be added later on
-the same frontend path when backend support exists.
