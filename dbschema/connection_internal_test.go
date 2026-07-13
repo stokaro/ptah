@@ -5,6 +5,9 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"github.com/stokaro/ptah/core/platform/capability"
+	"github.com/stokaro/ptah/dbschema/types"
 )
 
 func TestConvertClickHouseURL(t *testing.T) {
@@ -156,6 +159,22 @@ func TestDetectPostgresWireDialect(t *testing.T) {
 			c.Assert(detectPostgresWireDialect(tt.declared, tt.version), qt.Equals, tt.expected)
 		})
 	}
+}
+
+func TestDatabaseConnectionInfoClonesCapabilities(t *testing.T) {
+	c := qt.New(t)
+
+	conn := &DatabaseConnection{
+		info: types.DBInfo{
+			Dialect:      "cockroachdb",
+			Capabilities: capability.CockroachDB23(),
+		},
+	}
+
+	info := conn.Info()
+	info.Capabilities[capability.RowLevelSecurity] = true
+
+	c.Assert(conn.Info().Capabilities.Has(capability.RowLevelSecurity), qt.IsFalse)
 }
 
 func TestRemovePostgresPoolParams(t *testing.T) {

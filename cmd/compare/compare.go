@@ -94,10 +94,11 @@ func compareCommand(_ *cobra.Command, _ []string) error {
 	}
 
 	// 3. Compare schemas (dialect-aware: MySQL/MariaDB RESTRICT == NO ACTION)
-	diff := schemadiff.CompareWithDialect(result, dbSchema, conn.Info().Dialect)
+	info := conn.Info()
+	diff := schemadiff.CompareWithDialect(result, dbSchema, info.Dialect)
 
 	// 4. Display differences
-	output := planner.GenerateSchemaDiffSQLStatements(diff, result, conn.Info().Dialect)
+	output := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(diff, result, info.Dialect, info.Capabilities)
 	fmt.Print(output)
 
 	return nil

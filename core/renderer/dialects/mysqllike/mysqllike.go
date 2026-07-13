@@ -31,11 +31,18 @@ type Renderer struct {
 // from the dialect name (capability.ForDialect), so "mysql" gets the strict
 // MySQL preset and "mariadb" the MariaDB one.
 func New(dialect string, buf *bufwriter.Writer) *Renderer {
+	return NewWithCapabilities(dialect, buf, capability.ForDialect(dialect))
+}
+
+// NewWithCapabilities creates a new MySQL-like renderer for a concrete target
+// capability set. Live database paths should pass the set resolved from the
+// server version; offline paths use New and therefore the dialect default.
+func NewWithCapabilities(dialect string, buf *bufwriter.Writer, caps capability.Capabilities) *Renderer {
 	return &Renderer{
 		w:            buf,
 		dialect:      dialect,
 		dialectUpper: strings.ToUpper(dialect),
-		caps:         capability.ForDialect(dialect),
+		caps:         caps.Clone(),
 	}
 }
 

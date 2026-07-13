@@ -750,7 +750,9 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	result = p.addNewExtensions(result, diff, generated)
 
 	// 1. Add new roles (roles may be referenced by RLS policies and functions)
-	result = p.addNewRoles(result, diff, generated)
+	if p.capabilities().Has(capability.RoleManagement) {
+		result = p.addNewRoles(result, diff, generated)
+	}
 
 	// 2. Add new functions (functions may be used by RLS policies)
 	result = p.addNewFunctions(result, diff, generated)
@@ -784,20 +786,30 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	result = p.modifyExistingTriggers(result, diff, generated)
 
 	// 7. Modify existing roles (must be done before RLS policies that reference them)
-	result = p.modifyExistingRoles(result, diff, generated)
+	if p.capabilities().Has(capability.RoleManagement) {
+		result = p.modifyExistingRoles(result, diff, generated)
+	}
 
 	// 7.5. Revoke removed grants before adding replacement grants.
-	result = p.removeGrants(result, diff)
-	result = p.revokeGrantOptions(result, diff)
+	if p.capabilities().Has(capability.RoleManagement) {
+		result = p.removeGrants(result, diff)
+		result = p.revokeGrantOptions(result, diff)
+	}
 
 	// 8. Enable RLS on tables (must be done after table creation and modification)
-	result = p.enableRLSOnTables(result, diff, generated)
+	if p.capabilities().Has(capability.RowLevelSecurity) {
+		result = p.enableRLSOnTables(result, diff, generated)
+	}
 
 	// 9. Add RLS policies (must be done after RLS is enabled and columns exist)
-	result = p.addNewRLSPolicies(result, diff, generated)
+	if p.capabilities().Has(capability.RowLevelSecurity) {
+		result = p.addNewRLSPolicies(result, diff, generated)
+	}
 
 	// 9.5. Add role privilege grants after roles and target objects exist.
-	result = p.addNewGrants(result, diff)
+	if p.capabilities().Has(capability.RoleManagement) {
+		result = p.addNewGrants(result, diff)
+	}
 
 	// 10. Add new indexes
 	result = p.addNewIndexes(result, diff, generated)
@@ -809,10 +821,14 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	result = p.removeIndexes(result, diff)
 
 	// 12. Remove RLS policies (must be done before disabling RLS and before dropping columns)
-	result = p.removeRLSPolicies(result, diff)
+	if p.capabilities().Has(capability.RowLevelSecurity) {
+		result = p.removeRLSPolicies(result, diff)
+	}
 
 	// 11. Disable RLS on tables (must be done after removing policies)
-	result = p.disableRLSOnTables(result, diff)
+	if p.capabilities().Has(capability.RowLevelSecurity) {
+		result = p.disableRLSOnTables(result, diff)
+	}
 
 	// 12. Remove table columns (must be done after removing RLS policies that depend on columns)
 	result = p.removeTableColumns(result, diff)
@@ -832,7 +848,9 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	result = p.removeFunctions(result, diff)
 
 	// 14. Remove roles (must be done after removing functions and policies that depend on them)
-	result = p.removeRoles(result, diff)
+	if p.capabilities().Has(capability.RoleManagement) {
+		result = p.removeRoles(result, diff)
+	}
 
 	// 15. Remove enums (dangerous!)
 	result = p.removeEnums(result, diff)

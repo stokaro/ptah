@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/stokaro/ptah/core/ast"
+	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
@@ -131,10 +132,21 @@ func Assess(nodes []ast.Node) []StatementAssessment {
 // AssessRendered returns per-rendered-SQL-statement risk classifications for
 // generated AST nodes.
 func AssessRendered(nodes []ast.Node, dialect string) ([]StatementAssessment, error) {
+	return AssessRenderedWithCapabilities(nodes, dialect, capability.ForDialect(dialect))
+}
+
+// AssessRenderedWithCapabilities returns per-rendered-SQL-statement risk
+// classifications using the same server-version capability set as planning and
+// rendering on live database paths.
+func AssessRenderedWithCapabilities(
+	nodes []ast.Node,
+	dialect string,
+	caps capability.Capabilities,
+) ([]StatementAssessment, error) {
 	var assessments []StatementAssessment
 	for _, node := range nodes {
 		nodeAssessment := assessNode(node)
-		rendered, err := renderer.RenderSQL(dialect, node)
+		rendered, err := renderer.RenderSQLWithCapabilities(dialect, caps, node)
 		if err != nil {
 			return nil, err
 		}

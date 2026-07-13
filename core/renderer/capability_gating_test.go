@@ -6,7 +6,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/core/ast"
+	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/core/renderer"
+	"github.com/stokaro/ptah/core/renderer/dialects/mysql"
 )
 
 // TestMySQLFamilyRenderers_ConstraintDropGuardValidity pins the renderer-side
@@ -82,6 +84,36 @@ func TestMySQLFamilyRenderers_DropCheckSpelling(t *testing.T) {
 		qt.Commentf("mariadb must degrade DROP CHECK to the generic clause; got:\n%s", sql))
 	c.Assert(sql, qt.Not(qt.Contains), "DROP CHECK",
 		qt.Commentf("got:\n%s", sql))
+}
+
+func TestMySQLRendererWithCapabilities_UsesPassedCapabilitySet(t *testing.T) {
+	c := qt.New(t)
+
+	node := ast.NewDropIndex("idx_users_email").SetIfExists().SetTable("users")
+
+	sql, err := renderer.RenderSQLWithCapabilities("mysql", capability.MySQL80(), node)
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "DROP INDEX idx_users_email ON users;")
+	c.Assert(sql, qt.Not(qt.Contains), "IF EXISTS")
+
+	sql, err = renderer.RenderSQLWithCapabilities("mysql", capability.MariaDB1011(), node)
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "DROP INDEX IF EXISTS idx_users_email ON users;")
+}
+
+func TestMySQLRendererWithCapabilities_ClonesCapabilitySet(t *testing.T) {
+	c := qt.New(t)
+
+	caps := capability.MySQL80()
+	mysqlRenderer := mysql.NewWithCapabilities(caps)
+	caps[capability.DropIndexIfExists] = true
+
+	node := ast.NewDropIndex("idx_users_email").SetIfExists().SetTable("users")
+	sql, err := mysqlRenderer.Render(node)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "DROP INDEX idx_users_email ON users;")
+	c.Assert(sql, qt.Not(qt.Contains), "IF EXISTS")
 }
 
 // TestMySQLFamilyRenderers_DropUniqueIndexSpelling pins the DROP INDEX
