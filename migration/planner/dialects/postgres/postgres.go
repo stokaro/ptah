@@ -786,11 +786,18 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	// 7. Modify existing roles (must be done before RLS policies that reference them)
 	result = p.modifyExistingRoles(result, diff, generated)
 
+	// 7.5. Revoke removed grants before adding replacement grants.
+	result = p.removeGrants(result, diff)
+	result = p.revokeGrantOptions(result, diff)
+
 	// 8. Enable RLS on tables (must be done after table creation and modification)
 	result = p.enableRLSOnTables(result, diff, generated)
 
 	// 9. Add RLS policies (must be done after RLS is enabled and columns exist)
 	result = p.addNewRLSPolicies(result, diff, generated)
+
+	// 9.5. Add role privilege grants after roles and target objects exist.
+	result = p.addNewGrants(result, diff)
 
 	// 10. Add new indexes
 	result = p.addNewIndexes(result, diff, generated)
@@ -979,6 +986,37 @@ func (p *Planner) removeRoles(result []ast.Node, diff *types.SchemaDiff) []ast.N
 			SetIfExists().
 			SetComment("WARNING: Ensure no other objects depend on this role")
 		result = append(result, dropRoleNode)
+	}
+	return result
+}
+
+func (p *Planner) addNewGrants(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, grant := range diff.GrantsAdded {
+		node := ast.NewGrantPrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
+			SetWithOption(grant.WithOption)
+		result = append(result, node)
+	}
+	for _, grant := range diff.GrantOptionsAdded {
+		node := ast.NewGrantPrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
+			SetWithOption(true)
+		result = append(result, node)
+	}
+	return result
+}
+
+func (p *Planner) removeGrants(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, grant := range diff.GrantsRemoved {
+		node := ast.NewRevokePrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege})
+		result = append(result, node)
+	}
+	return result
+}
+
+func (p *Planner) revokeGrantOptions(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, grant := range diff.GrantOptionsRevoked {
+		node := ast.NewRevokePrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}).
+			SetGrantOptionFor(true)
+		result = append(result, node)
 	}
 	return result
 }

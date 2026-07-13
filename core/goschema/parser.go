@@ -347,6 +347,7 @@ func parseComment(
 	rlsPolicies *[]RLSPolicy,
 	rlsEnabledTables *[]RLSEnabledTable,
 	roles *[]Role,
+	grants *[]Grant,
 ) {
 	switch {
 	case strings.HasPrefix(comment.Text, "//migrator:schema:field"):
@@ -373,6 +374,8 @@ func parseComment(
 		parseRLSEnableComment(comment, structName, rlsEnabledTables)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:role"):
 		parseRoleComment(comment, structName, roles)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:grant"):
+		parseGrantComment(comment, structName, grants)
 	}
 }
 
@@ -389,6 +392,7 @@ func processTableComments(
 	rlsPolicies *[]RLSPolicy,
 	rlsEnabledTables *[]RLSEnabledTable,
 	roles *[]Role,
+	grants *[]Grant,
 ) {
 	if genDecl.Doc == nil {
 		return
@@ -416,6 +420,8 @@ func processTableComments(
 			parseRLSEnableComment(comment, structName, rlsEnabledTables)
 		case strings.HasPrefix(comment.Text, "//migrator:schema:role"):
 			parseRoleComment(comment, structName, roles)
+		case strings.HasPrefix(comment.Text, "//migrator:schema:grant"):
+			parseGrantComment(comment, structName, grants)
 		}
 	}
 }
@@ -436,13 +442,14 @@ func processFieldComments(
 	rlsPolicies *[]RLSPolicy,
 	rlsEnabledTables *[]RLSEnabledTable,
 	roles *[]Role,
+	grants *[]Grant,
 ) {
 	for _, field := range structType.Fields.List {
 		if field.Doc == nil {
 			continue
 		}
 		for _, comment := range field.Doc.List {
-			parseComment(comment, structName, field, globalEnumsMap, schemaFields, embeddedFields, schemaIndexes, schemaConstraints, extensions, functions, views, materializedViews, triggers, rlsPolicies, rlsEnabledTables, roles)
+			parseComment(comment, structName, field, globalEnumsMap, schemaFields, embeddedFields, schemaIndexes, schemaConstraints, extensions, functions, views, materializedViews, triggers, rlsPolicies, rlsEnabledTables, roles, grants)
 		}
 	}
 }
@@ -485,6 +492,7 @@ func parseFileAST(f *ast.File) Database {
 	var rlsPolicies []RLSPolicy
 	var rlsEnabledTables []RLSEnabledTable
 	var roles []Role
+	var grants []Grant
 	globalEnumsMap := make(map[string]Enum)
 
 	// Single pass: collect table names and process all declarations and comments
@@ -506,6 +514,7 @@ func parseFileAST(f *ast.File) Database {
 		&rlsPolicies,
 		&rlsEnabledTables,
 		&roles,
+		&grants,
 	)
 
 	enums := make([]Enum, 0, len(globalEnumsMap))
@@ -538,6 +547,7 @@ func parseFileAST(f *ast.File) Database {
 		RLSPolicies:       rlsPolicies,
 		RLSEnabledTables:  rlsEnabledTables,
 		Roles:             roles,
+		Grants:            grants,
 		Dependencies:      make(map[string][]string),
 	}
 	normalizeTableScopedNames(&result)
@@ -563,6 +573,7 @@ func processFileAST(
 	rlsPolicies *[]RLSPolicy,
 	rlsEnabledTables *[]RLSEnabledTable,
 	roles *[]Role,
+	grants *[]Grant,
 ) {
 	// First, collect table names from struct declarations
 	for _, decl := range f.Decls {
@@ -603,6 +614,7 @@ func processFileAST(
 		rlsPolicies,
 		rlsEnabledTables,
 		roles,
+		grants,
 	)
 
 	// Process all file comments for RLS annotations that might not be associated with struct declarations
@@ -647,6 +659,7 @@ func processDeclarations(
 	rlsPolicies *[]RLSPolicy,
 	rlsEnabledTables *[]RLSEnabledTable,
 	roles *[]Role,
+	grants *[]Grant,
 ) {
 	for _, decl := range f.Decls {
 		genDecl, ok := decl.(*ast.GenDecl)
@@ -664,8 +677,8 @@ func processDeclarations(
 				continue
 			}
 
-			processTableComments(structName, genDecl, tableDirectives, schemaConstraints, extensions, functions, views, materializedViews, triggers, rlsPolicies, rlsEnabledTables, roles)
-			processFieldComments(structName, structType, globalEnumsMap, schemaFields, embeddedFields, schemaIndexes, schemaConstraints, extensions, functions, views, materializedViews, triggers, rlsPolicies, rlsEnabledTables, roles)
+			processTableComments(structName, genDecl, tableDirectives, schemaConstraints, extensions, functions, views, materializedViews, triggers, rlsPolicies, rlsEnabledTables, roles, grants)
+			processFieldComments(structName, structType, globalEnumsMap, schemaFields, embeddedFields, schemaIndexes, schemaConstraints, extensions, functions, views, materializedViews, triggers, rlsPolicies, rlsEnabledTables, roles, grants)
 		}
 	}
 }
@@ -853,6 +866,40 @@ func parseRoleComment(comment *ast.Comment, structName string, roles *[]Role) {
 		Replication: kv["replication"] == "true",
 		Comment:     kv["comment"],
 	})
+}
+
+func parseGrantComment(comment *ast.Comment, structName string, grants *[]Grant) {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	privileges := splitCommaList(kv["privilege"])
+	if len(privileges) == 0 {
+		privileges = splitCommaList(kv["privileges"])
+	}
+	grant := Grant{
+		StructName: structName,
+		Role:       kv["role"],
+		Privileges: privileges,
+		OnTable:    kv["on_table"],
+		OnSchema:   kv["on_schema"],
+		WithOption: kv["with_option"] == "true" || kv["grant_option"] == "true",
+		Comment:    kv["comment"],
+	}
+	grant.Canonicalize()
+	*grants = append(*grants, grant)
+}
+
+func splitCommaList(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }
 
 // ParseFileWithDependencies parses a Go file and automatically discovers and parses

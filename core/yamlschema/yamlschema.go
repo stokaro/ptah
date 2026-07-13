@@ -53,6 +53,7 @@ type document struct {
 	RLSEnabledTables  map[string]rlsEnableSpec  `yaml:"rls_enabled_tables"`
 	RLSEnabled        map[string]rlsEnableSpec  `yaml:"rls_enabled"`
 	Roles             map[string]roleSpec       `yaml:"roles"`
+	Grants            map[string]grantSpec      `yaml:"grants"`
 	Views             map[string]viewSpec       `yaml:"views"`
 	MaterializedViews map[string]matViewSpec    `yaml:"matviews"`
 	Triggers          map[string]triggerSpec    `yaml:"triggers"`
@@ -230,6 +231,17 @@ type roleSpec struct {
 	Comment     stringScalar `yaml:"comment"`
 }
 
+type grantSpec struct {
+	StructName stringScalar `yaml:"struct_name"`
+	Role       stringScalar `yaml:"role"`
+	Privilege  stringList   `yaml:"privilege"`
+	Privileges stringList   `yaml:"privileges"`
+	OnTable    stringScalar `yaml:"on_table"`
+	OnSchema   stringScalar `yaml:"on_schema"`
+	WithOption bool         `yaml:"with_option"`
+	Comment    stringScalar `yaml:"comment"`
+}
+
 type platformSpec map[string]map[string]stringScalar
 
 func (d document) toDatabase() (*goschema.Database, error) {
@@ -262,6 +274,7 @@ func (d document) toDatabase() (*goschema.Database, error) {
 	}
 	d.addRLS(db)
 	d.addRoles(db)
+	d.addGrants(db)
 
 	goschema.Finalize(db)
 	return db, nil
@@ -658,6 +671,27 @@ func (d document) addRoles(db *goschema.Database) {
 			Replication: spec.Replication,
 			Comment:     string(spec.Comment),
 		})
+	}
+}
+
+func (d document) addGrants(db *goschema.Database) {
+	for _, key := range sortedKeys(d.Grants) {
+		spec := d.Grants[key]
+		privileges := cleanStrings(spec.Privilege)
+		if len(privileges) == 0 {
+			privileges = cleanStrings(spec.Privileges)
+		}
+		grant := goschema.Grant{
+			StructName: string(spec.StructName),
+			Role:       string(spec.Role),
+			Privileges: privileges,
+			OnTable:    string(spec.OnTable),
+			OnSchema:   string(spec.OnSchema),
+			WithOption: spec.WithOption,
+			Comment:    string(spec.Comment),
+		}
+		grant.Canonicalize()
+		db.Grants = append(db.Grants, grant)
 	}
 }
 

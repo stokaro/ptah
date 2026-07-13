@@ -228,6 +228,16 @@ func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
 	return r.r.VisitAlterRole(node)
 }
 
+// VisitGrantPrivilege delegates to the mysqllike renderer
+func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
+	return r.r.VisitGrantPrivilege(node)
+}
+
+// VisitRevokePrivilege delegates to the mysqllike renderer
+func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
+	return r.r.VisitRevokePrivilege(node)
+}
+
 // VisitRawSQL delegates to the mysqllike renderer
 func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
 	return r.r.VisitRawSQL(node)

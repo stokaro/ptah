@@ -45,12 +45,16 @@ func TestPostgreSQLMultiSchemaGenerateApplyReadDiffIntegration(t *testing.T) {
 		RLSPolicies: []goschema.RLSPolicy{
 			{Name: "ptah_ms_users_visible", Table: "ptah_ms_auth.ptah_ms_users", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "id IS NOT NULL"},
 		},
+		RLSEnabledTables: []goschema.RLSEnabledTable{
+			{Table: "ptah_ms_auth.ptah_ms_users"},
+		},
 		SelfReferencingForeignKeys: map[string][]goschema.SelfReferencingFK{},
 	}
 
 	diff := &difftypes.SchemaDiff{
-		TablesAdded:      []string{"ptah_ms_accounts", "ptah_ms_auth.ptah_ms_users", "ptah_ms_billing.ptah_ms_invoices"},
-		RLSPoliciesAdded: []string{"ptah_ms_users_visible"},
+		TablesAdded:           []string{"ptah_ms_accounts", "ptah_ms_auth.ptah_ms_users", "ptah_ms_billing.ptah_ms_invoices"},
+		RLSPoliciesAdded:      []string{"ptah_ms_users_visible"},
+		RLSEnabledTablesAdded: []string{"ptah_ms_auth.ptah_ms_users"},
 	}
 	nodes := planner.GenerateSchemaDiffAST(diff, generated, "postgres")
 	migrationSQL, err := renderer.RenderSQL("postgres", nodes...)
