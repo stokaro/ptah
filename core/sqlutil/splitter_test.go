@@ -160,6 +160,66 @@ func TestSplitSQLStatements_PostgreSQLDollarQuoted(t *testing.T) {
 	}
 }
 
+func TestSplitSQLStatements_MySQLCompoundTrigger(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{
+			name: "trigger compound body",
+			input: `DROP TRIGGER IF EXISTS set_updated_at;
+CREATE TRIGGER set_updated_at BEFORE UPDATE ON users FOR EACH ROW BEGIN
+  SET NEW.updated_at = NOW();
+  SET NEW.name = TRIM(NEW.name);
+END;
+CREATE VIEW active_users AS SELECT id FROM users;`,
+			expected: []string{
+				"DROP TRIGGER IF EXISTS set_updated_at",
+				`CREATE TRIGGER set_updated_at BEFORE UPDATE ON users FOR EACH ROW BEGIN
+  SET NEW.updated_at = NOW();
+  SET NEW.name = TRIM(NEW.name);
+END`,
+				"CREATE VIEW active_users AS SELECT id FROM users",
+			},
+		},
+		{
+			name: "trigger compound body with nested if",
+			input: `CREATE TRIGGER set_updated_at BEFORE UPDATE ON users FOR EACH ROW BEGIN
+  IF NEW.name <> OLD.name THEN
+    SET NEW.updated_at = NOW();
+  END IF;
+  SET NEW.touched = 1;
+END;`,
+			expected: []string{
+				`CREATE TRIGGER set_updated_at BEFORE UPDATE ON users FOR EACH ROW BEGIN
+  IF NEW.name <> OLD.name THEN
+    SET NEW.updated_at = NOW();
+  END IF;
+  SET NEW.touched = 1;
+END`,
+			},
+		},
+		{
+			name:  "transaction begin still splits normally",
+			input: "BEGIN; INSERT INTO users (id) VALUES (1); COMMIT;",
+			expected: []string{
+				"BEGIN",
+				"INSERT INTO users (id) VALUES (1)",
+				"COMMIT",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := sqlutil.SplitSQLStatements(tt.input)
+			c.Assert(result, qt.DeepEquals, tt.expected)
+		})
+	}
+}
+
 func TestSplitSQLStatements_Comments(t *testing.T) {
 	tests := []struct {
 		name     string
