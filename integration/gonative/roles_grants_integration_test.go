@@ -4,6 +4,9 @@ package gonative_test
 
 import (
 	"database/sql"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -212,9 +215,13 @@ func filterGrants(in []dbschematypes.DBGrant, keepRoles map[string]struct{}) []d
 func TestGoFixtures_ParseDirForSchemaObjects(t *testing.T) {
 	c := qt.New(t)
 
-	// Robust relative path from this test file location (integration/gonative -> integration/fixtures)
-	fixture := "../fixtures/entities/023-go-annotations-objects"
-	result, err := goschema.ParseDir(fixture)
+	// Compute root and abs fixture from this source file's location (robust to test cwd)
+	_, filename, _, _ := runtime.Caller(0)
+	srcDir := filepath.Dir(filename)                 // .../integration/gonative
+	integrationDir := filepath.Dir(srcDir)           // .../integration
+	rootDir := filepath.Dir(integrationDir)          // module root
+	absFixture := filepath.Join(rootDir, "integration/fixtures/entities/023-go-annotations-objects")
+	result, err := goschema.ParseDir(absFixture)
 	c.Assert(err, qt.IsNil, qt.Commentf("ParseDir on new objects fixture must succeed"))
 
 	c.Assert(result.Views, qt.HasLen, 1)
@@ -231,4 +238,17 @@ func TestGoFixtures_ParseDirForSchemaObjects(t *testing.T) {
 	c.Assert(result.Constraints[0].Name, qt.Equals, "users_email_check")
 
 	c.Assert(result.Roles, qt.HasLen, 1)
+
+	// Exercise CLI generate entry point against the fixture (drives real ParseDir path in cmd/generate, per AC3)
+	goMain := filepath.Join(rootDir, "cmd/main.go")
+	genCmd := exec.Command("go", "run", goMain, "generate", "--root-dir", absFixture, "--dialect", "postgres")
+	genOut, err := genCmd.CombinedOutput()
+	c.Assert(err, qt.IsNil)
+	outStr := string(genOut)
+	c.Assert(outStr, qt.Contains, "CREATE VIEW active_users")
+	c.Assert(outStr, qt.Contains, "CREATE MATERIALIZED VIEW user_stats")
+	c.Assert(outStr, qt.Contains, "CREATE TRIGGER")
+	c.Assert(outStr, qt.Contains, "GRANT ")
+	c.Assert(outStr, qt.Contains, "CREATE ROLE")
+	c.Assert(outStr, qt.Contains, "CONSTRAINT users_email_check")
 }

@@ -1294,13 +1294,14 @@ func TestParseDir_AllCollectionsCoveredByReflectionGuard(t *testing.T) {
 // (which populates all) on a comprehensive source, then ParseFS on equivalent FS,
 // and asserts that any collection populated by ParseSource is also non-empty after ParseFS.
 // This catches if a future 16th collection is added without wiring the append in walker.
+// Merge uses general reflection over all slice fields from ParseSource results (no hard-coded list).
 func TestParseFS_ReflectionGuard(t *testing.T) {
 	c := qt.New(t)
 
-	// Canonical on-disk fixture only. Read each .go, use ParseSource (or ParseFile) per file and merge.
-	// Then ParseDir on the dir. Reflect-assert that any slice populated by the per-file parse
+	// Canonical on-disk fixture only. Read each .go, use ParseSource per file and general-reflect merge all slices.
+	// Then ParseDir on the dir. Reflect-assert that any slice populated (>0) by the per-file parse
 	// is also populated (>0) after ParseDir/ParseFS. This exercises the real shipped append paths
-	// and would fail if any of the five appends in walker.go were missing.
+	// and would fail if any append in walker.go is missing.
 	fixtureDir := "../../integration/fixtures/entities/023-go-annotations-objects"
 
 	merged := goschema.Database{}
@@ -1314,12 +1315,15 @@ func TestParseFS_ReflectionGuard(t *testing.T) {
 		content, err := os.ReadFile(full)
 		c.Assert(err, qt.IsNil)
 		db := goschema.ParseSource(e.Name(), string(content))
-		merged.Constraints = append(merged.Constraints, db.Constraints...)
-		merged.Views = append(merged.Views, db.Views...)
-		merged.MaterializedViews = append(merged.MaterializedViews, db.MaterializedViews...)
-		merged.Triggers = append(merged.Triggers, db.Triggers...)
-		merged.Grants = append(merged.Grants, db.Grants...)
-		merged.Roles = append(merged.Roles, db.Roles...)
+		// General reflection merge over ALL slice fields from ParseSource (future-proof, no hard-coded list of 6)
+		fvSrc := reflect.ValueOf(db)
+		fvDst := reflect.ValueOf(&merged).Elem()
+		for j := 0; j < fvSrc.NumField(); j++ {
+			if fvSrc.Field(j).Kind() == reflect.Slice {
+				dstField := fvDst.Field(j)
+				dstField.Set(reflect.AppendSlice(dstField, fvSrc.Field(j)))
+			}
+		}
 	}
 
 	dirDb, err := goschema.ParseDir(fixtureDir)
