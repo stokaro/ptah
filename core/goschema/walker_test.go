@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -1296,77 +1297,49 @@ func TestParseDir_AllCollectionsCoveredByReflectionGuard(t *testing.T) {
 func TestParseFS_ReflectionGuard(t *testing.T) {
 	c := qt.New(t)
 
-	// Comprehensive source that exercises table + the five + roles + more.
-	// Uses ParseSource directly (bypasses FS merge).
-	src := `package test
+	// Canonical on-disk fixture only. Read each .go, use ParseSource (or ParseFile) per file and merge.
+	// Then ParseDir on the dir. Reflect-assert that any slice populated by the per-file parse
+	// is also populated (>0) after ParseDir/ParseFS. This exercises the real shipped append paths
+	// and would fail if any of the five appends in walker.go were missing.
+	fixtureDir := "../../integration/fixtures/entities/023-go-annotations-objects"
 
-//migrator:schema:role name="g_role" login="false"
-
-//migrator:schema:table name="g_users"
-type GUser struct {
-	//migrator:schema:field name="id" type="SERIAL" primary="true"
-	ID int64
-	//migrator:schema:field name="email" type="TEXT" not_null="true"
-	Email string
-}
-
-// Table constraint
-//migrator:schema:constraint name="g_users_email_nn" type="CHECK" check="email <> ''" table="g_users"
-
-// View
-type GActiveView struct{}
-//migrator:schema:view name="g_active_users" body="SELECT id FROM g_users"
-
-// Mat view
-type GStatsView struct{}
-//migrator:schema:matview name="g_user_stats" body="SELECT COUNT(*) FROM g_users"
-
-// Trigger
-type GTrig struct{}
-//migrator:schema:trigger name="g_set_ts" table="g_users" timing="BEFORE" event="UPDATE" for="ROW" body="RETURN NEW;"
-
-// Grants
-type GPerm struct{}
-//migrator:schema:grant role="g_role" privilege="SELECT" on_table="g_users"
-//migrator:schema:grant role="g_role" privilege="USAGE" on_schema="public"
-`
-
-	dbSource := goschema.ParseSource("guard.go", src)
-
-	// Reflect to find all slice fields that were populated (>0 len) by ParseSource
-	populated := map[string]int{}
-	v := reflect.ValueOf(dbSource)
-	typ := v.Type()
-	for i := 0; i < v.NumField(); i++ {
-		f := v.Field(i)
-		sf := typ.Field(i)
-		if f.Kind() == reflect.Slice {
-			n := f.Len()
-			if n > 0 {
-				populated[sf.Name] = n
-			}
+	merged := goschema.Database{}
+	entries, err := os.ReadDir(fixtureDir)
+	c.Assert(err, qt.IsNil)
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
+			continue
 		}
+		full := filepath.Join(fixtureDir, e.Name())
+		content, err := os.ReadFile(full)
+		c.Assert(err, qt.IsNil)
+		db := goschema.ParseSource(e.Name(), string(content))
+		merged.Constraints = append(merged.Constraints, db.Constraints...)
+		merged.Views = append(merged.Views, db.Views...)
+		merged.MaterializedViews = append(merged.MaterializedViews, db.MaterializedViews...)
+		merged.Triggers = append(merged.Triggers, db.Triggers...)
+		merged.Grants = append(merged.Grants, db.Grants...)
+		merged.Roles = append(merged.Roles, db.Roles...)
 	}
-	c.Assert(len(populated) > 0, qt.IsTrue, qt.Commentf("source must populate some slices for guard to be meaningful"))
 
-	// Now write equivalent to a temp dir and use ParseFS (the path under test)
-	tmpDir := c.TempDir()
-	err := os.WriteFile(filepath.Join(tmpDir, "guard.go"), []byte(src), 0600)
+	dirDb, err := goschema.ParseDir(fixtureDir)
 	c.Assert(err, qt.IsNil)
 
-	dbFS, err := goschema.ParseDir(tmpDir)
-	c.Assert(err, qt.IsNil)
-
-	// For every populated collection name, assert ParseFS also has >0
-	fv := reflect.ValueOf(*dbFS) // value of the struct
-	for name, want := range populated {
-		f := fv.FieldByName(name)
-		c.Assert(f.IsValid(), qt.IsTrue, qt.Commentf("field %s must exist on Database", name))
-		c.Assert(f.Kind(), qt.Equals, reflect.Slice)
-		got := f.Len()
-		c.Assert(got > 0, qt.IsTrue, qt.Commentf("ParseFS/ParseDir must populate %s (source had %d); this is the drift guard for #279", name, want))
-		// loose >= to allow multiples but we dedup later
-		_ = want
+	// Reflect: for every slice that merged (per-file ParseSource) populated, ParseDir must too.
+	fvMerged := reflect.ValueOf(merged)
+	fvDir := reflect.ValueOf(*dirDb)
+	typ := fvMerged.Type()
+	for i := 0; i < fvMerged.NumField(); i++ {
+		if fvMerged.Field(i).Kind() != reflect.Slice {
+			continue
+		}
+		name := typ.Field(i).Name
+		mLen := fvMerged.Field(i).Len()
+		if mLen == 0 {
+			continue
+		}
+		dLen := fvDir.Field(i).Len()
+		c.Assert(dLen > 0, qt.IsTrue, qt.Commentf("%s populated by per-file parse (%d) but ParseDir/ParseFS gave %d — missing append in walker.go?", name, mLen, dLen))
 	}
 }
 
