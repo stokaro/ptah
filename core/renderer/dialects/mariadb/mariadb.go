@@ -175,6 +175,34 @@ func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
 	return r.r.VisitDropFunction(node)
 }
 
+func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
+	return r.r.VisitCreateView(node)
+}
+
+func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
+	return r.r.VisitDropView(node)
+}
+
+func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
+	return r.r.VisitCreateMaterializedView(node)
+}
+
+func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode) error {
+	return r.r.VisitDropMaterializedView(node)
+}
+
+func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
+	return r.r.VisitRefreshMaterializedView(node)
+}
+
+func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
+	return r.r.VisitCreateTrigger(node)
+}
+
+func (r *Renderer) VisitDropTrigger(node *ast.DropTriggerNode) error {
+	return r.r.VisitDropTrigger(node)
+}
+
 // VisitDropPolicy delegates to the mysqllike renderer
 func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
 	return r.r.VisitDropPolicy(node)

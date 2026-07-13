@@ -156,6 +156,62 @@ func (m *MockVisitor) VisitDropFunction(node *ast.DropFunctionNode) error {
 	return nil
 }
 
+func (m *MockVisitor) VisitCreateView(node *ast.CreateViewNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "CreateView:"+node.Name)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
+func (m *MockVisitor) VisitDropView(node *ast.DropViewNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "DropView:"+node.Name)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
+func (m *MockVisitor) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "CreateMaterializedView:"+node.Name)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
+func (m *MockVisitor) VisitDropMaterializedView(node *ast.DropMaterializedViewNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "DropMaterializedView:"+node.Name)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
+func (m *MockVisitor) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "RefreshMaterializedView:"+node.Name)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
+func (m *MockVisitor) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "CreateTrigger:"+node.Name)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
+func (m *MockVisitor) VisitDropTrigger(node *ast.DropTriggerNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "DropTrigger:"+node.Name)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
 func (m *MockVisitor) VisitDropPolicy(node *ast.DropPolicyNode) error {
 	m.VisitedNodes = append(m.VisitedNodes, "DropPolicy:"+node.Name)
 	if m.ReturnError {

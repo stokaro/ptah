@@ -56,9 +56,9 @@ The system operates through four main layers:
 - **Purpose**: Parses language-agnostic YAML schema files into the same `goschema.Database` IR used by Go annotations
 - **Input**: `.yaml` and `.yml` files passed to `ptah generate --schema-file`
 - **Functionality**:
-  - Supports tables, columns, indexes, constraints, enums, extensions, functions, row-level security, roles, and dialect overrides
+  - Supports tables, columns, indexes, constraints, enums, extensions, functions, views, materialized views, triggers, row-level security, roles, and dialect overrides
   - Preserves author order for table-local columns, indexes, and constraints while keeping top-level maps deterministic
-  - Applies strict validation for unknown fields, duplicate ordered keys, invalid indexes and constraints, multiple YAML documents, and currently unsupported views/triggers
+  - Applies strict validation for unknown fields, duplicate ordered keys, invalid indexes and constraints, and multiple YAML documents
 
 #### lexer Package
 - **Purpose**: Tokenizes SQL statements into structured tokens

@@ -122,6 +122,85 @@ func TestParseKeyValueComment_SimplifiedSyntax(t *testing.T) {
 	}
 }
 
+func TestParseSchemaObjectAnnotations(t *testing.T) {
+	c := qt.New(t)
+
+	db := goschema.ParseSource("schema_objects.go", `
+package test
+
+//migrator:schema:view name="active_users" body="SELECT id FROM users WHERE deleted_at IS NULL" with_check="true" comment="Active users"
+//migrator:schema:matview name="user_stats" body="SELECT id, COUNT(*) FROM users GROUP BY id"
+//migrator:schema:trigger name="set_updated_at" table="users" timing="before" event="update" body="NEW.updated_at = NOW(); RETURN NEW;"
+//migrator:schema:table name="users"
+type User struct {
+	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+}
+`)
+
+	c.Assert(db.Views, qt.HasLen, 1)
+	c.Assert(db.Views[0].Name, qt.Equals, "active_users")
+	c.Assert(db.Views[0].WithCheck, qt.IsTrue)
+	c.Assert(db.MaterializedViews, qt.HasLen, 1)
+	c.Assert(db.MaterializedViews[0].Name, qt.Equals, "user_stats")
+	c.Assert(db.MaterializedViews[0].RefreshStrategy, qt.Equals, "manual")
+	c.Assert(db.Triggers, qt.HasLen, 1)
+	c.Assert(db.Triggers[0].Name, qt.Equals, "set_updated_at")
+	c.Assert(db.Triggers[0].Table, qt.Equals, "users")
+	c.Assert(db.Triggers[0].Timing, qt.Equals, "BEFORE")
+	c.Assert(db.Triggers[0].Event, qt.Equals, "UPDATE")
+	c.Assert(db.Triggers[0].ForEach, qt.Equals, "ROW")
+}
+
+func TestParseSchemaObjectAnnotations_RejectsInvalidAttributes(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name       string
+		annotation string
+		want       string
+	}{
+		{
+			name:       "unknown view attribute",
+			annotation: `//migrator:schema:view name="active_users" body="SELECT id FROM users" boddy="typo"`,
+			want:       "boddy",
+		},
+		{
+			name:       "missing materialized view body",
+			annotation: `//migrator:schema:matview name="user_stats"`,
+			want:       `missing required annotation attribute "body"`,
+		},
+		{
+			name:       "missing trigger table",
+			annotation: `//migrator:schema:trigger name="set_updated_at" timing="before" event="update" body="RETURN NEW;"`,
+			want:       `missing required annotation attribute "table"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c.Assert(func() {
+				goschema.ParseSource("schema_object_invalid.go", `
+package test
+`+tt.annotation+`
+type User struct{}
+`)
+			}, qt.PanicMatches, ".*"+tt.want+".*")
+		})
+	}
+}
+
+func TestTrigger_FunctionNameIsTableScoped(t *testing.T) {
+	c := qt.New(t)
+
+	userTrigger := goschema.Trigger{Name: "set_updated_at", Table: "public.users"}
+	postTrigger := goschema.Trigger{Name: "set_updated_at", Table: "public.posts"}
+
+	c.Assert(userTrigger.FunctionName(), qt.Equals, "ptah_trigger_public_users_set_updated_at")
+	c.Assert(postTrigger.FunctionName(), qt.Equals, "ptah_trigger_public_posts_set_updated_at")
+	c.Assert(userTrigger.FunctionName(), qt.Not(qt.Equals), postTrigger.FunctionName())
+}
+
 func TestParseKeyValueComment_BooleanPatterns(t *testing.T) {
 	c := qt.New(t)
 

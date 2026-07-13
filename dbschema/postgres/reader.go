@@ -123,6 +123,24 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	}
 	schema.Functions = functions
 
+	views, err := r.readViews()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read views: %w", err)
+	}
+	schema.Views = views
+
+	matViews, err := r.readMaterializedViews()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read materialized views: %w", err)
+	}
+	schema.MatViews = matViews
+
+	triggers, err := r.readTriggers()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read triggers: %w", err)
+	}
+	schema.Triggers = triggers
+
 	if r.caps.Has(capability.RowLevelSecurity) {
 		// Read RLS policies (PostgreSQL-specific)
 		rlsPolicies, err := r.readRLSPolicies()
@@ -170,6 +188,7 @@ func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error)
 			LEFT JOIN pg_class c ON c.relname = t.table_name
 		LEFT JOIN pg_namespace n ON n.oid = c.relnamespace
 			WHERE t.table_schema = $1 AND (n.nspname = $1 OR n.nspname IS NULL)
+			AND t.table_type = 'BASE TABLE'
 			AND t.table_name NOT IN ('schema_migrations')
 			ORDER BY table_schema, table_name`
 
@@ -796,6 +815,167 @@ func (r *Reader) readFunctions() ([]types.DBFunction, error) {
 	return functions, nil
 }
 
+func (r *Reader) readViews() ([]types.DBView, error) {
+	var views []types.DBView
+	for _, schemaName := range r.schemasToRead() {
+		schemaViews, err := r.readViewsForSchema(schemaName)
+		if err != nil {
+			return nil, err
+		}
+		views = append(views, schemaViews...)
+	}
+	return views, nil
+}
+
+func (r *Reader) readViewsForSchema(schemaName string) ([]types.DBView, error) {
+	viewsQuery := `
+		SELECT
+			n.nspname AS schema_name,
+			c.relname AS view_name,
+			pg_get_viewdef(c.oid, true) AS view_definition,
+			COALESCE(v.check_option, 'NONE') AS check_option,
+			COALESCE(obj_description(c.oid, 'pg_class'), '') AS comment
+		FROM pg_class c
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		LEFT JOIN information_schema.views v
+			ON v.table_schema = n.nspname AND v.table_name = c.relname
+		WHERE n.nspname = $1
+		AND c.relkind = 'v'
+		AND c.relname NOT IN ('schema_migrations')
+		ORDER BY c.relname`
+
+	rows, err := r.db.Query(viewsQuery, schemaName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query views: %w", err)
+	}
+	defer rows.Close()
+
+	var views []types.DBView
+	for rows.Next() {
+		var view types.DBView
+		err := rows.Scan(&view.Schema, &view.Name, &view.Body, &view.CheckOption, &view.Comment)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan view: %w", err)
+		}
+		view.Schema = r.outputSchema(view.Schema)
+		views = append(views, view)
+	}
+	return views, nil
+}
+
+func (r *Reader) readMaterializedViews() ([]types.DBMatView, error) {
+	var views []types.DBMatView
+	for _, schemaName := range r.schemasToRead() {
+		schemaViews, err := r.readMaterializedViewsForSchema(schemaName)
+		if err != nil {
+			return nil, err
+		}
+		views = append(views, schemaViews...)
+	}
+	return views, nil
+}
+
+func (r *Reader) readMaterializedViewsForSchema(schemaName string) ([]types.DBMatView, error) {
+	viewsQuery := `
+		SELECT
+			n.nspname AS schema_name,
+			c.relname AS view_name,
+			pg_get_viewdef(c.oid, true) AS view_definition,
+			COALESCE(obj_description(c.oid, 'pg_class'), '') AS comment
+		FROM pg_class c
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = $1
+		AND c.relkind = 'm'
+		ORDER BY c.relname`
+
+	rows, err := r.db.Query(viewsQuery, schemaName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query materialized views: %w", err)
+	}
+	defer rows.Close()
+
+	var views []types.DBMatView
+	for rows.Next() {
+		var view types.DBMatView
+		err := rows.Scan(&view.Schema, &view.Name, &view.Body, &view.Comment)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan materialized view: %w", err)
+		}
+		view.Schema = r.outputSchema(view.Schema)
+		view.RefreshStrategy = "manual"
+		views = append(views, view)
+	}
+	return views, nil
+}
+
+func (r *Reader) readTriggers() ([]types.DBTrigger, error) {
+	var triggers []types.DBTrigger
+	for _, schemaName := range r.schemasToRead() {
+		schemaTriggers, err := r.readTriggersForSchema(schemaName)
+		if err != nil {
+			return nil, err
+		}
+		triggers = append(triggers, schemaTriggers...)
+	}
+	return triggers, nil
+}
+
+func (r *Reader) readTriggersForSchema(schemaName string) ([]types.DBTrigger, error) {
+	triggersQuery := `
+		SELECT
+			n.nspname AS schema_name,
+			tbl.relname AS table_name,
+			trg.tgname AS trigger_name,
+			CASE
+				WHEN (trg.tgtype & 2) <> 0 THEN 'BEFORE'
+				WHEN (trg.tgtype & 64) <> 0 THEN 'INSTEAD OF'
+				ELSE 'AFTER'
+			END AS timing,
+			concat_ws(' OR ',
+				CASE WHEN (trg.tgtype & 4) <> 0 THEN 'INSERT' END,
+				CASE WHEN (trg.tgtype & 8) <> 0 THEN 'DELETE' END,
+				CASE WHEN (trg.tgtype & 16) <> 0 THEN 'UPDATE' END,
+				CASE WHEN (trg.tgtype & 32) <> 0 THEN 'TRUNCATE' END
+			) AS event,
+			CASE WHEN (trg.tgtype & 1) <> 0 THEN 'ROW' ELSE 'STATEMENT' END AS for_each,
+			p.prosrc AS body,
+			COALESCE(obj_description(trg.oid, 'pg_trigger'), '') AS comment
+		FROM pg_trigger trg
+		JOIN pg_class tbl ON tbl.oid = trg.tgrelid
+		JOIN pg_namespace n ON n.oid = tbl.relnamespace
+		JOIN pg_proc p ON p.oid = trg.tgfoid
+		WHERE n.nspname = $1
+		AND NOT trg.tgisinternal
+		ORDER BY tbl.relname, trg.tgname`
+
+	rows, err := r.db.Query(triggersQuery, schemaName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query triggers: %w", err)
+	}
+	defer rows.Close()
+
+	var triggers []types.DBTrigger
+	for rows.Next() {
+		var trigger types.DBTrigger
+		err := rows.Scan(
+			&trigger.Schema,
+			&trigger.Table,
+			&trigger.Name,
+			&trigger.Timing,
+			&trigger.Event,
+			&trigger.ForEach,
+			&trigger.Body,
+			&trigger.Comment,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan trigger: %w", err)
+		}
+		trigger.Schema = r.outputSchema(trigger.Schema)
+		triggers = append(triggers, trigger)
+	}
+	return triggers, nil
+}
+
 func (r *Reader) readFunctionsForSchema(schemaName string) ([]types.DBFunction, error) {
 	functionsQuery := `
 		SELECT
@@ -817,6 +997,7 @@ func (r *Reader) readFunctionsForSchema(schemaName string) ([]types.DBFunction, 
 		WHERE n.nspname = $1
 		AND p.prokind = 'f'  -- Only functions, not procedures
 		AND l.lanname != 'internal'  -- Exclude internal functions
+		AND p.proname NOT LIKE 'ptah_trigger_%'
 		-- Exclude extension-owned functions to prevent migration issues
 		-- Extension functions cannot be dropped independently and should be managed by the extension
 		AND NOT EXISTS (

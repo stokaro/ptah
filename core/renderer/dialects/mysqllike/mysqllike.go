@@ -328,6 +328,96 @@ func (r *Renderer) VisitDropType(node *ast.DropTypeNode) error {
 	return nil
 }
 
+// VisitCreateView renders a CREATE VIEW statement for MySQL/MariaDB.
+func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	create := "CREATE VIEW"
+	if node.Replace {
+		create = "CREATE OR REPLACE VIEW"
+	}
+	r.w.WriteLinef("%s %s AS", create, node.Name)
+	r.w.WriteLine(strings.TrimSpace(node.Body))
+	if node.WithCheck {
+		r.w.WriteLine("WITH CHECK OPTION")
+	}
+	r.w.WriteLine(";")
+	return nil
+}
+
+// VisitDropView renders a DROP VIEW statement for MySQL/MariaDB.
+func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	parts := []string{"DROP VIEW"}
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+	parts = append(parts, node.Name)
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	return nil
+}
+
+// VisitCreateMaterializedView renders an explicit unsupported warning.
+func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	r.w.WriteLinef("-- %s does not support CREATE MATERIALIZED VIEW %s", r.dialectUpper, node.Name)
+	return nil
+}
+
+// VisitDropMaterializedView renders an explicit unsupported warning.
+func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	r.w.WriteLinef("-- %s does not support DROP MATERIALIZED VIEW %s", r.dialectUpper, node.Name)
+	return nil
+}
+
+// VisitRefreshMaterializedView renders an explicit unsupported warning.
+func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	r.w.WriteLinef("-- %s does not support REFRESH MATERIALIZED VIEW %s", r.dialectUpper, node.Name)
+	return nil
+}
+
+// VisitCreateTrigger renders a CREATE TRIGGER statement for MySQL/MariaDB.
+func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	if node.Replace && !r.caps.Has(capability.CreateOrReplaceTrigger) {
+		r.w.WriteLinef("DROP TRIGGER IF EXISTS %s;", node.Name)
+	}
+	create := "CREATE TRIGGER"
+	if node.Replace && r.caps.Has(capability.CreateOrReplaceTrigger) {
+		create = "CREATE OR REPLACE TRIGGER"
+	}
+	r.w.WriteLinef("%s %s %s %s ON %s FOR EACH ROW %s;",
+		create, node.Name, node.Timing, node.Event, node.Table, strings.TrimSpace(node.Body))
+	return nil
+}
+
+// VisitDropTrigger renders a DROP TRIGGER statement for MySQL/MariaDB.
+func (r *Renderer) VisitDropTrigger(node *ast.DropTriggerNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	parts := []string{"DROP TRIGGER"}
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+	parts = append(parts, node.Name)
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	return nil
+}
+
 // RenderColumn renders a column definition
 func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	var parts []string

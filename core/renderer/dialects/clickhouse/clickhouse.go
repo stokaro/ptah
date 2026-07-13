@@ -805,6 +805,41 @@ func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
 	return nil
 }
 
+func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
+	r.notSupported("CREATE VIEW", node.Name)
+	return nil
+}
+
+func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
+	r.notSupported("DROP VIEW", node.Name)
+	return nil
+}
+
+func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
+	r.notSupported("CREATE MATERIALIZED VIEW", node.Name)
+	return nil
+}
+
+func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode) error {
+	r.notSupported("DROP MATERIALIZED VIEW", node.Name)
+	return nil
+}
+
+func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
+	r.notSupported("REFRESH MATERIALIZED VIEW", node.Name)
+	return nil
+}
+
+func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
+	r.notSupported("CREATE TRIGGER", node.Name)
+	return nil
+}
+
+func (r *Renderer) VisitDropTrigger(node *ast.DropTriggerNode) error {
+	r.notSupported("DROP TRIGGER", node.Name)
+	return nil
+}
+
 // VisitCreatePolicy is a no-op for ClickHouse. ClickHouse has row policies
 // but with a different syntax that the PG-shaped node cannot describe.
 func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {

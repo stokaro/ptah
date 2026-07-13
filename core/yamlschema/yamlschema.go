@@ -39,29 +39,23 @@ func Parse(data []byte) (*goschema.Database, error) {
 		return nil, fmt.Errorf("parse YAML schema: %w", err)
 	}
 
-	if len(doc.Views) > 0 {
-		return nil, fmt.Errorf("yaml views are not supported by the current goschema IR")
-	}
-	if len(doc.Triggers) > 0 {
-		return nil, fmt.Errorf("yaml triggers are not supported by the current goschema IR")
-	}
-
 	return doc.toDatabase()
 }
 
 type document struct {
-	Tables           map[string]tableSpec      `yaml:"tables"`
-	Indexes          map[string]indexSpec      `yaml:"indexes"`
-	Constraints      map[string]constraintSpec `yaml:"constraints"`
-	Enums            map[string]enumSpec       `yaml:"enums"`
-	Extensions       map[string]extensionSpec  `yaml:"extensions"`
-	Functions        map[string]functionSpec   `yaml:"functions"`
-	RLSPolicies      map[string]rlsPolicySpec  `yaml:"rls_policies"`
-	RLSEnabledTables map[string]rlsEnableSpec  `yaml:"rls_enabled_tables"`
-	RLSEnabled       map[string]rlsEnableSpec  `yaml:"rls_enabled"`
-	Roles            map[string]roleSpec       `yaml:"roles"`
-	Views            map[string]any            `yaml:"views"`
-	Triggers         map[string]any            `yaml:"triggers"`
+	Tables            map[string]tableSpec      `yaml:"tables"`
+	Indexes           map[string]indexSpec      `yaml:"indexes"`
+	Constraints       map[string]constraintSpec `yaml:"constraints"`
+	Enums             map[string]enumSpec       `yaml:"enums"`
+	Extensions        map[string]extensionSpec  `yaml:"extensions"`
+	Functions         map[string]functionSpec   `yaml:"functions"`
+	RLSPolicies       map[string]rlsPolicySpec  `yaml:"rls_policies"`
+	RLSEnabledTables  map[string]rlsEnableSpec  `yaml:"rls_enabled_tables"`
+	RLSEnabled        map[string]rlsEnableSpec  `yaml:"rls_enabled"`
+	Roles             map[string]roleSpec       `yaml:"roles"`
+	Views             map[string]viewSpec       `yaml:"views"`
+	MaterializedViews map[string]matViewSpec    `yaml:"matviews"`
+	Triggers          map[string]triggerSpec    `yaml:"triggers"`
 }
 
 type tableSpec struct {
@@ -179,6 +173,33 @@ type functionSpec struct {
 	Comment    stringScalar `yaml:"comment"`
 }
 
+type viewSpec struct {
+	StructName stringScalar `yaml:"struct_name"`
+	Name       stringScalar `yaml:"name"`
+	Body       stringScalar `yaml:"body"`
+	WithCheck  bool         `yaml:"with_check"`
+	Comment    stringScalar `yaml:"comment"`
+}
+
+type matViewSpec struct {
+	StructName      stringScalar `yaml:"struct_name"`
+	Name            stringScalar `yaml:"name"`
+	Body            stringScalar `yaml:"body"`
+	RefreshStrategy stringScalar `yaml:"refresh_strategy"`
+	Comment         stringScalar `yaml:"comment"`
+}
+
+type triggerSpec struct {
+	StructName stringScalar `yaml:"struct_name"`
+	Name       stringScalar `yaml:"name"`
+	Table      stringScalar `yaml:"table"`
+	Timing     stringScalar `yaml:"timing"`
+	Event      stringScalar `yaml:"event"`
+	ForEach    stringScalar `yaml:"for"`
+	Body       stringScalar `yaml:"body"`
+	Comment    stringScalar `yaml:"comment"`
+}
+
 type rlsPolicySpec struct {
 	StructName          stringScalar `yaml:"struct_name"`
 	Name                stringScalar `yaml:"name"`
@@ -230,6 +251,15 @@ func (d document) toDatabase() (*goschema.Database, error) {
 	}
 	d.addExtensions(db)
 	d.addFunctions(db)
+	if err := d.addViews(db); err != nil {
+		return nil, err
+	}
+	if err := d.addMaterializedViews(db); err != nil {
+		return nil, err
+	}
+	if err := d.addTriggers(db); err != nil {
+		return nil, err
+	}
 	d.addRLS(db)
 	d.addRoles(db)
 
@@ -509,6 +539,73 @@ func (d document) addFunctions(db *goschema.Database) {
 		fn.Canonicalize()
 		db.Functions = append(db.Functions, fn)
 	}
+}
+
+func (d document) addViews(db *goschema.Database) error {
+	for _, key := range sortedKeys(d.Views) {
+		spec := d.Views[key]
+		if string(spec.Body) == "" {
+			return fmt.Errorf("view %q requires body", key)
+		}
+		db.Views = append(db.Views, goschema.View{
+			StructName: string(spec.StructName),
+			Name:       valueOrDefault(spec.Name, key),
+			Body:       string(spec.Body),
+			WithCheck:  spec.WithCheck,
+			Comment:    string(spec.Comment),
+		})
+	}
+	return nil
+}
+
+func (d document) addMaterializedViews(db *goschema.Database) error {
+	for _, key := range sortedKeys(d.MaterializedViews) {
+		spec := d.MaterializedViews[key]
+		if string(spec.Body) == "" {
+			return fmt.Errorf("materialized view %q requires body", key)
+		}
+		view := goschema.MaterializedView{
+			StructName:      string(spec.StructName),
+			Name:            valueOrDefault(spec.Name, key),
+			Body:            string(spec.Body),
+			RefreshStrategy: string(spec.RefreshStrategy),
+			Comment:         string(spec.Comment),
+		}
+		view.Canonicalize()
+		db.MaterializedViews = append(db.MaterializedViews, view)
+	}
+	return nil
+}
+
+func (d document) addTriggers(db *goschema.Database) error {
+	for _, key := range sortedKeys(d.Triggers) {
+		spec := d.Triggers[key]
+		if string(spec.Table) == "" {
+			return fmt.Errorf("trigger %q requires table", key)
+		}
+		if string(spec.Timing) == "" {
+			return fmt.Errorf("trigger %q requires timing", key)
+		}
+		if string(spec.Event) == "" {
+			return fmt.Errorf("trigger %q requires event", key)
+		}
+		if string(spec.Body) == "" {
+			return fmt.Errorf("trigger %q requires body", key)
+		}
+		trigger := goschema.Trigger{
+			StructName: string(spec.StructName),
+			Name:       valueOrDefault(spec.Name, key),
+			Table:      string(spec.Table),
+			Timing:     string(spec.Timing),
+			Event:      string(spec.Event),
+			ForEach:    string(spec.ForEach),
+			Body:       string(spec.Body),
+			Comment:    string(spec.Comment),
+		}
+		trigger.Canonicalize()
+		db.Triggers = append(db.Triggers, trigger)
+	}
+	return nil
 }
 
 func (d document) addRLS(db *goschema.Database) {

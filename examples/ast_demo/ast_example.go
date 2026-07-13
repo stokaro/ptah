@@ -51,7 +51,7 @@ func DemonstrateASTApproach() {
 
 	schema := astbuilder.NewSchema().
 		Comment("E-commerce database schema").
-		Enum("order_status", "pending", "processing", "shipped", "delivered", "cancelled").
+		Enum("order_status", "pending", "processing", "shipped", "delivered", "canceled").
 		Table("categories").
 		Column("id", "SERIAL").Primary().End().
 		Column("name", "VARCHAR(100)").NotNull().Unique().End().
@@ -260,6 +260,19 @@ func (a *SchemaAnalyzer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSN
 func (a *SchemaAnalyzer) VisitDropFunction(node *ast.DropFunctionNode) error {
 	return nil
 }
+func (a *SchemaAnalyzer) VisitCreateView(node *ast.CreateViewNode) error { return nil }
+func (a *SchemaAnalyzer) VisitDropView(node *ast.DropViewNode) error     { return nil }
+func (a *SchemaAnalyzer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
+	return nil
+}
+func (a *SchemaAnalyzer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode) error {
+	return nil
+}
+func (a *SchemaAnalyzer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
+	return nil
+}
+func (a *SchemaAnalyzer) VisitCreateTrigger(node *ast.CreateTriggerNode) error { return nil }
+func (a *SchemaAnalyzer) VisitDropTrigger(node *ast.DropTriggerNode) error     { return nil }
 func (a *SchemaAnalyzer) VisitDropPolicy(node *ast.DropPolicyNode) error {
 	return nil
 }

@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"fmt"
+	"hash/fnv"
 	"slices"
 	"strings"
 
@@ -958,6 +959,207 @@ func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 
 	return nil
+}
+
+// VisitCreateView renders a CREATE VIEW statement.
+func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	create := "CREATE VIEW"
+	if node.Replace {
+		create = "CREATE OR REPLACE VIEW"
+	}
+	r.w.WriteLinef("%s %s AS", create, node.Name)
+	r.w.WriteLine(strings.TrimSpace(node.Body))
+	if node.WithCheck {
+		r.w.WriteLine("WITH CHECK OPTION")
+	}
+	r.w.WriteLine(";")
+	return nil
+}
+
+// VisitDropView renders a DROP VIEW statement.
+func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	parts := []string{"DROP VIEW"}
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+	parts = append(parts, node.Name)
+	if node.Cascade {
+		parts = append(parts, "CASCADE")
+	}
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	return nil
+}
+
+// VisitCreateMaterializedView renders a CREATE MATERIALIZED VIEW statement.
+func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	r.w.WriteLinef("CREATE MATERIALIZED VIEW %s AS", node.Name)
+	r.w.WriteLine(strings.TrimSpace(node.Body))
+	r.w.WriteLine(";")
+	return nil
+}
+
+// VisitDropMaterializedView renders a DROP MATERIALIZED VIEW statement.
+func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	parts := []string{"DROP MATERIALIZED VIEW"}
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+	parts = append(parts, node.Name)
+	if node.Cascade {
+		parts = append(parts, "CASCADE")
+	}
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	return nil
+}
+
+// VisitRefreshMaterializedView renders a REFRESH MATERIALIZED VIEW statement.
+func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	parts := []string{"REFRESH MATERIALIZED VIEW"}
+	if node.Concurrently {
+		parts = append(parts, "CONCURRENTLY")
+	}
+	parts = append(parts, node.Name)
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	return nil
+}
+
+// VisitCreateTrigger renders PostgreSQL trigger creation plus its linked
+// trigger function.
+func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	functionName := node.FunctionName
+	if functionName == "" {
+		functionName = postgresTriggerFunctionName(node.Table, node.Name)
+	}
+
+	r.w.WriteLinef("CREATE OR REPLACE FUNCTION %s()", functionName)
+	r.w.WriteLine("RETURNS trigger AS $$")
+	r.w.WriteLine(renderPostgreSQLTriggerFunctionBody(node.Body))
+	r.w.WriteLine("$$ LANGUAGE plpgsql;")
+
+	if node.Replace && !r.capabilities().Has(capability.CreateOrReplaceTrigger) {
+		r.w.WriteLinef("DROP TRIGGER IF EXISTS %s ON %s;", node.Name, node.Table)
+	}
+
+	create := "CREATE TRIGGER"
+	if node.Replace && r.capabilities().Has(capability.CreateOrReplaceTrigger) {
+		create = "CREATE OR REPLACE TRIGGER"
+	}
+
+	forEach := node.ForEach
+	if forEach == "" {
+		forEach = "ROW"
+	}
+	r.w.WriteLinef("%s %s %s %s ON %s FOR EACH %s EXECUTE FUNCTION %s();",
+		create, node.Name, node.Timing, node.Event, node.Table, forEach, functionName)
+	return nil
+}
+
+func renderPostgreSQLTriggerFunctionBody(body string) string {
+	body = strings.TrimSpace(body)
+	upperBody := strings.ToUpper(body)
+	if strings.HasPrefix(upperBody, "BEGIN") {
+		return body
+	}
+	return "BEGIN\n" + body + "\nEND;"
+}
+
+// VisitDropTrigger renders a DROP TRIGGER statement and drops the linked Ptah
+// trigger function when its deterministic name is known.
+func (r *Renderer) VisitDropTrigger(node *ast.DropTriggerNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	parts := []string{"DROP TRIGGER"}
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+	parts = append(parts, node.Name, "ON", node.Table)
+	if node.Cascade {
+		parts = append(parts, "CASCADE")
+	}
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+
+	functionName := node.FunctionName
+	if functionName == "" {
+		functionName = postgresTriggerFunctionName(node.Table, node.Name)
+	}
+	r.w.WriteLinef("DROP FUNCTION IF EXISTS %s();", functionName)
+	return nil
+}
+
+func postgresTriggerFunctionName(tableName, triggerName string) string {
+	name := "ptah_trigger_" + sanitizeTriggerFunctionPart(tableName) + "_" + sanitizeTriggerFunctionPart(triggerName)
+	if len(name) <= maxPostgreSQLIdentifierLength {
+		return name
+	}
+
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(tableName))
+	_, _ = hash.Write([]byte{0})
+	_, _ = hash.Write([]byte(triggerName))
+	suffix := fmt.Sprintf("_%08x", hash.Sum32())
+	return name[:maxPostgreSQLIdentifierLength-len(suffix)] + suffix
+}
+
+const maxPostgreSQLIdentifierLength = 63
+
+func sanitizeTriggerFunctionPart(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	var builder strings.Builder
+	builder.Grow(len(value))
+	lastUnderscore := false
+	for i := range len(value) {
+		character := value[i]
+		if isIdentifierPart(character) {
+			builder.WriteByte(character)
+			lastUnderscore = false
+			continue
+		}
+		if !lastUnderscore {
+			builder.WriteByte('_')
+			lastUnderscore = true
+		}
+	}
+
+	result := strings.Trim(builder.String(), "_")
+	if result == "" {
+		return "object"
+	}
+	if result[0] >= '0' && result[0] <= '9' {
+		return "_" + result
+	}
+	return result
+}
+
+func isIdentifierPart(character byte) bool {
+	return character >= 'a' && character <= 'z' ||
+		character >= '0' && character <= '9' ||
+		character == '_'
 }
 
 // VisitDropPolicy renders a DROP POLICY statement

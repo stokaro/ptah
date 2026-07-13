@@ -11,16 +11,19 @@ import (
 // This is needed for down migrations where we use the current DB state as the target
 func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Database {
 	database := &goschema.Database{
-		Tables:           make([]goschema.Table, 0),
-		Fields:           make([]goschema.Field, 0),
-		Indexes:          make([]goschema.Index, 0),
-		Enums:            make([]goschema.Enum, 0),
-		Extensions:       make([]goschema.Extension, 0),
-		Functions:        make([]goschema.Function, 0),
-		RLSPolicies:      make([]goschema.RLSPolicy, 0),
-		RLSEnabledTables: make([]goschema.RLSEnabledTable, 0),
-		Roles:            make([]goschema.Role, 0),
-		Dependencies:     make(map[string][]string),
+		Tables:            make([]goschema.Table, 0),
+		Fields:            make([]goschema.Field, 0),
+		Indexes:           make([]goschema.Index, 0),
+		Enums:             make([]goschema.Enum, 0),
+		Extensions:        make([]goschema.Extension, 0),
+		Functions:         make([]goschema.Function, 0),
+		Views:             make([]goschema.View, 0),
+		MaterializedViews: make([]goschema.MaterializedView, 0),
+		Triggers:          make([]goschema.Trigger, 0),
+		RLSPolicies:       make([]goschema.RLSPolicy, 0),
+		RLSEnabledTables:  make([]goschema.RLSEnabledTable, 0),
+		Roles:             make([]goschema.Role, 0),
+		Dependencies:      make(map[string][]string),
 	}
 
 	// Convert enums
@@ -145,6 +148,40 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 			Comment:    dbFunction.Comment,
 		}
 		database.Functions = append(database.Functions, function)
+	}
+
+	for _, dbView := range dbSchema.Views {
+		database.Views = append(database.Views, goschema.View{
+			Name:      dbView.QualifiedName(),
+			Body:      dbView.Body,
+			WithCheck: strings.EqualFold(dbView.CheckOption, "LOCAL") || strings.EqualFold(dbView.CheckOption, "CASCADED"),
+			Comment:   dbView.Comment,
+		})
+	}
+
+	for _, dbView := range dbSchema.MatViews {
+		materializedView := goschema.MaterializedView{
+			Name:            dbView.QualifiedName(),
+			Body:            dbView.Body,
+			RefreshStrategy: dbView.RefreshStrategy,
+			Comment:         dbView.Comment,
+		}
+		materializedView.Canonicalize()
+		database.MaterializedViews = append(database.MaterializedViews, materializedView)
+	}
+
+	for _, dbTrigger := range dbSchema.Triggers {
+		trigger := goschema.Trigger{
+			Name:    dbTrigger.Name,
+			Table:   dbTrigger.QualifiedTable(),
+			Timing:  dbTrigger.Timing,
+			Event:   dbTrigger.Event,
+			ForEach: dbTrigger.ForEach,
+			Body:    dbTrigger.Body,
+			Comment: dbTrigger.Comment,
+		}
+		trigger.Canonicalize()
+		database.Triggers = append(database.Triggers, trigger)
 	}
 
 	// Convert roles

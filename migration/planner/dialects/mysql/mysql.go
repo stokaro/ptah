@@ -560,6 +560,13 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	// 4. Modify existing tables
 	result = p.modifyExistingTables(result, diff, generated)
 
+	// 4.5. Add and modify views/triggers after tables exist.
+	result = p.addNewViews(result, diff, generated)
+	result = p.modifyExistingViews(result, diff, generated)
+	p.rejectMaterializedViews(diff)
+	result = p.addNewTriggers(result, diff, generated)
+	result = p.modifyExistingTriggers(result, diff, generated)
+
 	// 5. Add new indexes
 	result = p.addNewIndexes(result, diff, generated)
 
@@ -572,6 +579,10 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	// 6.5. Remove constraints (must be done before removing tables)
 	result = p.removeConstraints(result, diff)
 
+	// 6.6. Remove triggers and view-like objects before dependent tables.
+	result = p.removeTriggers(result, diff)
+	result = p.removeViews(result, diff)
+
 	// 7. Remove tables (dangerous!)
 	result = p.removeTables(result, diff)
 
@@ -579,6 +590,83 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	result = p.handleEnumRemovals(result, diff)
 
 	return result
+}
+
+func (p *Planner) rejectMaterializedViews(diff *types.SchemaDiff) {
+	if len(diff.MaterializedViewsAdded) == 0 &&
+		len(diff.MaterializedViewsModified) == 0 &&
+		len(diff.MaterializedViewsRemoved) == 0 {
+		return
+	}
+	panic("materialized views are not supported by MySQL or MariaDB; remove matview definitions for this target")
+}
+
+func (p *Planner) addNewViews(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, viewName := range diff.ViewsAdded {
+		if view := findView(generated.Views, viewName); view != nil {
+			result = append(result, fromschema.FromView(*view))
+		}
+	}
+	return result
+}
+
+func (p *Planner) modifyExistingViews(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, viewDiff := range diff.ViewsModified {
+		if view := findView(generated.Views, viewDiff.ViewName); view != nil {
+			result = append(result, fromschema.FromView(*view).SetReplace())
+		}
+	}
+	return result
+}
+
+func (p *Planner) removeViews(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, viewName := range diff.ViewsRemoved {
+		result = append(result, ast.NewDropView(viewName).SetIfExists())
+	}
+	return result
+}
+
+func (p *Planner) addNewTriggers(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, triggerRef := range diff.TriggersAdded {
+		if trigger := findTrigger(generated.Triggers, triggerRef.TableName, triggerRef.TriggerName); trigger != nil {
+			result = append(result, fromschema.FromTrigger(*trigger))
+		}
+	}
+	return result
+}
+
+func (p *Planner) modifyExistingTriggers(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, triggerDiff := range diff.TriggersModified {
+		if trigger := findTrigger(generated.Triggers, triggerDiff.TableName, triggerDiff.TriggerName); trigger != nil {
+			result = append(result, fromschema.FromTrigger(*trigger).SetReplace())
+		}
+	}
+	return result
+}
+
+func (p *Planner) removeTriggers(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, triggerRef := range diff.TriggersRemoved {
+		result = append(result, ast.NewDropTrigger(triggerRef.TriggerName, triggerRef.TableName).SetIfExists())
+	}
+	return result
+}
+
+func findView(views []goschema.View, name string) *goschema.View {
+	for i := range views {
+		if views[i].Name == name {
+			return &views[i]
+		}
+	}
+	return nil
+}
+
+func findTrigger(triggers []goschema.Trigger, tableName, triggerName string) *goschema.Trigger {
+	for i := range triggers {
+		if triggers[i].Table == tableName && triggers[i].Name == triggerName {
+			return &triggers[i]
+		}
+	}
+	return nil
 }
 
 // addNewConstraints adds new table-level constraints via ALTER TABLE statements.

@@ -158,6 +158,39 @@ type SchemaDiff struct {
 	// schemas but have different definitions (parameters, body, attributes, etc.)
 	FunctionsModified []FunctionDiff `json:"functions_modified"`
 
+	// ViewsAdded contains names of views that exist in the target schema
+	// but not in the current database schema.
+	ViewsAdded []string `json:"views_added"`
+
+	// ViewsRemoved contains names of views that exist in the current database
+	// but not in the target schema.
+	ViewsRemoved []string `json:"views_removed"`
+
+	// ViewsModified contains detailed information about views with changed definitions.
+	ViewsModified []ViewDiff `json:"views_modified"`
+
+	// MaterializedViewsAdded contains names of materialized views that exist in the target schema
+	// but not in the current database schema.
+	MaterializedViewsAdded []string `json:"materialized_views_added"`
+
+	// MaterializedViewsRemoved contains names of materialized views that exist in the current database
+	// but not in the target schema.
+	MaterializedViewsRemoved []string `json:"materialized_views_removed"`
+
+	// MaterializedViewsModified contains detailed information about changed materialized views.
+	MaterializedViewsModified []MaterializedViewDiff `json:"materialized_views_modified"`
+
+	// TriggersAdded contains table-qualified trigger refs that exist in the target schema
+	// but not in the current database schema.
+	TriggersAdded []TriggerRef `json:"triggers_added"`
+
+	// TriggersRemoved contains table-qualified trigger refs that exist in the current database
+	// but not in the target schema.
+	TriggersRemoved []TriggerRef `json:"triggers_removed"`
+
+	// TriggersModified contains detailed information about changed triggers.
+	TriggersModified []TriggerDiff `json:"triggers_modified"`
+
 	// RLSPoliciesAdded contains names of RLS policies that exist in the target schema
 	// but not in the current database schema
 	RLSPoliciesAdded []string `json:"rls_policies_added"`
@@ -252,6 +285,9 @@ func (d *SchemaDiff) HasChanges() bool {
 		d.hasIndexChanges() ||
 		d.hasExtensionChanges() ||
 		d.hasFunctionChanges() ||
+		d.hasViewChanges() ||
+		d.hasMaterializedViewChanges() ||
+		d.hasTriggerChanges() ||
 		d.hasRLSChanges() ||
 		d.hasRoleChanges() ||
 		d.hasConstraintChanges()
@@ -288,6 +324,24 @@ func (d *SchemaDiff) hasFunctionChanges() bool {
 	return len(d.FunctionsAdded) > 0 ||
 		len(d.FunctionsRemoved) > 0 ||
 		len(d.FunctionsModified) > 0
+}
+
+func (d *SchemaDiff) hasViewChanges() bool {
+	return len(d.ViewsAdded) > 0 ||
+		len(d.ViewsRemoved) > 0 ||
+		len(d.ViewsModified) > 0
+}
+
+func (d *SchemaDiff) hasMaterializedViewChanges() bool {
+	return len(d.MaterializedViewsAdded) > 0 ||
+		len(d.MaterializedViewsRemoved) > 0 ||
+		len(d.MaterializedViewsModified) > 0
+}
+
+func (d *SchemaDiff) hasTriggerChanges() bool {
+	return len(d.TriggersAdded) > 0 ||
+		len(d.TriggersRemoved) > 0 ||
+		len(d.TriggersModified) > 0
 }
 
 // hasRLSChanges returns true if there are any RLS-related changes
@@ -450,6 +504,31 @@ type FunctionDiff struct {
 	// Changes maps change types to their old->new value transitions
 	// Format: "change_type" -> "old_value -> new_value"
 	Changes map[string]string `json:"changes"`
+}
+
+// ViewDiff represents changes to a view definition.
+type ViewDiff struct {
+	ViewName string            `json:"view_name"`
+	Changes  map[string]string `json:"changes"`
+}
+
+// MaterializedViewDiff represents changes to a materialized view definition.
+type MaterializedViewDiff struct {
+	ViewName string            `json:"view_name"`
+	Changes  map[string]string `json:"changes"`
+}
+
+// TriggerRef identifies a trigger by table and trigger name.
+type TriggerRef struct {
+	TriggerName string `json:"trigger_name"`
+	TableName   string `json:"table_name"`
+}
+
+// TriggerDiff represents changes to a trigger definition.
+type TriggerDiff struct {
+	TriggerName string            `json:"trigger_name"`
+	TableName   string            `json:"table_name"`
+	Changes     map[string]string `json:"changes"`
 }
 
 // RLSPolicyRef represents a reference to an RLS policy with its table information.

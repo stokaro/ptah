@@ -230,6 +230,12 @@ func normalizeTableScopedNames(r *Database) {
 			rlsEnabled.Table = table.QualifiedName()
 		}
 	}
+	for i := range r.Triggers {
+		trigger := &r.Triggers[i]
+		if table := resolveTableReference(r.Tables, trigger.StructName, trigger.Table); table != nil {
+			trigger.Table = table.QualifiedName()
+		}
+	}
 }
 
 func resolveTableReference(tables []Table, structName, tableName string) *Table {
@@ -791,6 +797,8 @@ func isFunctionInSorted(function Function, sorted []Function) bool {
 //   - Indexes: Deduplicated by struct name + index name combination
 //   - Enums: Deduplicated by enum name
 //   - Embedded Fields: Deduplicated by struct name + embedded type name combination
+//   - Views and materialized views: Deduplicated by name
+//   - Triggers: Deduplicated by table name + trigger name combination
 //
 // This method modifies the PackageParseResult in-place, replacing the original
 // slices with deduplicated versions. The order of entities may change during
@@ -884,6 +892,8 @@ func Deduplicate(r *Database) {
 	}
 	r.Functions = deduplicatedFunctions
 
+	deduplicateSchemaObjects(r)
+
 	// Deduplicate RLS policies by name - preserve order
 	rlsPolicySeen := make(map[string]bool)
 	var deduplicatedRLSPolicies []RLSPolicy
@@ -905,4 +915,49 @@ func Deduplicate(r *Database) {
 		}
 	}
 	r.RLSEnabledTables = deduplicatedRLSEnabled
+}
+
+func deduplicateSchemaObjects(r *Database) {
+	r.Views = deduplicateViews(r.Views)
+	r.MaterializedViews = deduplicateMaterializedViews(r.MaterializedViews)
+	r.Triggers = deduplicateTriggers(r.Triggers)
+}
+
+func deduplicateViews(views []View) []View {
+	seen := make(map[string]bool)
+	deduplicated := make([]View, 0, len(views))
+	for _, view := range views {
+		if !seen[view.Name] {
+			seen[view.Name] = true
+			deduplicated = append(deduplicated, view)
+		}
+	}
+	return deduplicated
+}
+
+func deduplicateMaterializedViews(views []MaterializedView) []MaterializedView {
+	seen := make(map[string]bool)
+	deduplicated := make([]MaterializedView, 0, len(views))
+	for _, view := range views {
+		view.Canonicalize()
+		if !seen[view.Name] {
+			seen[view.Name] = true
+			deduplicated = append(deduplicated, view)
+		}
+	}
+	return deduplicated
+}
+
+func deduplicateTriggers(triggers []Trigger) []Trigger {
+	seen := make(map[string]bool)
+	deduplicated := make([]Trigger, 0, len(triggers))
+	for _, trigger := range triggers {
+		trigger.Canonicalize()
+		key := trigger.Table + "." + trigger.Name
+		if !seen[key] {
+			seen[key] = true
+			deduplicated = append(deduplicated, trigger)
+		}
+	}
+	return deduplicated
 }

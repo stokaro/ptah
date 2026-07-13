@@ -785,6 +785,35 @@ func TestFromDatabase_EmptySchema(t *testing.T) {
 	c.Assert(result.Statements, qt.HasLen, 0)
 }
 
+func TestFromDatabase_MySQLIncludesViewsAndTriggers(t *testing.T) {
+	c := qt.New(t)
+
+	database := goschema.Database{
+		Views: []goschema.View{{
+			Name: "active_users",
+			Body: "SELECT id FROM users WHERE deleted_at IS NULL",
+		}},
+		Triggers: []goschema.Trigger{{
+			Name:   "set_updated_at",
+			Table:  "users",
+			Timing: "BEFORE",
+			Event:  "UPDATE",
+			Body:   "SET NEW.updated_at = NOW()",
+		}},
+	}
+
+	result := fromschema.FromDatabase(database, "mysql")
+
+	c.Assert(result.Statements, qt.HasLen, 2)
+	viewNode, ok := result.Statements[0].(*ast.CreateViewNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(viewNode.Name, qt.Equals, "active_users")
+	triggerNode, ok := result.Statements[1].(*ast.CreateTriggerNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(triggerNode.Name, qt.Equals, "set_updated_at")
+	c.Assert(triggerNode.Table, qt.Equals, "users")
+}
+
 func TestFromField_PlatformOverrides(t *testing.T) {
 	tests := []struct {
 		name           string

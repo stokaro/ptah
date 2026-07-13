@@ -69,6 +69,11 @@ func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, 
 	// Compare PostgreSQL functions (PostgreSQL-specific feature)
 	compare.Functions(generated, database, diff)
 
+	// Compare views, materialized views, and triggers
+	compare.Views(generated, database, diff)
+	compare.MaterializedViews(generated, database, diff)
+	compare.Triggers(generated, database, diff)
+
 	// Compare RLS policies (PostgreSQL-specific feature)
 	compare.RLSPolicies(generated, database, diff)
 
