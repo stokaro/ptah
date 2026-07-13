@@ -204,3 +204,31 @@ func filterGrants(in []dbschematypes.DBGrant, keepRoles map[string]struct{}) []d
 	}
 	return out
 }
+
+// TestGoFixtures_ParseDirForSchemaObjects exercises ParseDir on the Go annotation
+// fixtures added for #279 (views, grants, constraints, triggers, matviews).
+// This drives the real ParseDir path used by CLI in an integration-tagged test file.
+// Does not require live DB.
+func TestGoFixtures_ParseDirForSchemaObjects(t *testing.T) {
+	c := qt.New(t)
+
+	// Robust relative path from this test file location (integration/gonative -> integration/fixtures)
+	fixture := "../fixtures/entities/023-go-annotations-objects"
+	result, err := goschema.ParseDir(fixture)
+	c.Assert(err, qt.IsNil, qt.Commentf("ParseDir on new objects fixture must succeed"))
+
+	c.Assert(result.Views, qt.HasLen, 1)
+	c.Assert(result.Views[0].Name, qt.Equals, "active_users")
+
+	c.Assert(result.MaterializedViews, qt.HasLen, 1)
+	c.Assert(result.MaterializedViews[0].Name, qt.Equals, "user_stats")
+
+	c.Assert(result.Triggers, qt.HasLen, 1)
+	c.Assert(result.Triggers[0].Name, qt.Equals, "users_set_updated_at")
+
+	c.Assert(result.Grants, qt.HasLen, 2)
+	c.Assert(result.Constraints, qt.HasLen, 1)
+	c.Assert(result.Constraints[0].Name, qt.Equals, "users_email_check")
+
+	c.Assert(result.Roles, qt.HasLen, 1)
+}

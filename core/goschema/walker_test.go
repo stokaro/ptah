@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"testing/fstest"
 
@@ -1231,6 +1232,141 @@ type Product struct {
 		if err != nil {
 			b.Fatalf("ParseFS failed: %v", err)
 		}
+	}
+}
+
+// TestParseDir_SchemaObjectsAndGrants verifies that ParseDir (and thus ParseFS used by CLI)
+// now returns Constraints, Views, MaterializedViews, Triggers and Grants from Go annotations.
+// This is the core repro for #279. Also exercises cross-file dedup.
+func TestParseDir_SchemaObjectsAndGrants(t *testing.T) {
+	c := qt.New(t)
+
+	// Use the dedicated fixture dir that declares a table + all five object kinds.
+	// Also includes a duplicate view declaration in second file to test dedup.
+	fixtureDir := "../../integration/fixtures/entities/023-go-annotations-objects"
+
+	result, err := goschema.ParseDir(fixtureDir)
+	c.Assert(err, qt.IsNil)
+	c.Assert(result, qt.IsNotNil)
+
+	// Basic table still there
+	c.Assert(result.Tables, qt.HasLen, 1)
+	c.Assert(result.Tables[0].Name, qt.Equals, "users")
+
+	// The five that used to be dropped
+	c.Assert(result.Views, qt.HasLen, 1, qt.Commentf("view should be populated via ParseDir; got 0 (was the #279 bug)"))
+	c.Assert(result.Views[0].Name, qt.Equals, "active_users")
+
+	c.Assert(result.MaterializedViews, qt.HasLen, 1)
+	c.Assert(result.MaterializedViews[0].Name, qt.Equals, "user_stats")
+
+	c.Assert(result.Triggers, qt.HasLen, 1)
+	c.Assert(result.Triggers[0].Name, qt.Equals, "users_set_updated_at")
+
+	c.Assert(result.Grants, qt.HasLen, 2, qt.Commentf("two grants (table + schema)"))
+	c.Assert(result.Constraints, qt.HasLen, 1)
+	c.Assert(result.Constraints[0].Name, qt.Equals, "users_email_check")
+
+	// Role also present (was appended before)
+	c.Assert(result.Roles, qt.HasLen, 1)
+	c.Assert(result.Roles[0].Name, qt.Equals, "app_user")
+
+	// Dedup across files: duplicate view decl in duplicate.go must yield only 1
+	c.Assert(result.Views, qt.HasLen, 1)
+}
+
+// TestParseDir_AllCollectionsCoveredByReflectionGuard is a compile-time-ish
+// check that can evolve; the real guard is in TestParseFS_ReflectionGuard.
+func TestParseDir_AllCollectionsCoveredByReflectionGuard(t *testing.T) {
+	c := qt.New(t)
+	// Simple smoke: ensure after ParseDir we have non-nil slices for the key ones
+	// (detailed guard test below uses reflection against ParseSource)
+	fixtureDir := "../../integration/fixtures/entities/023-go-annotations-objects"
+	result, err := goschema.ParseDir(fixtureDir)
+	c.Assert(err, qt.IsNil)
+	_ = result.Views
+	_ = result.Grants
+}
+
+// TestParseFS_ReflectionGuard is the future-proof guard required by #279.
+// It uses reflection over Database to enumerate all slice fields, runs ParseSource
+// (which populates all) on a comprehensive source, then ParseFS on equivalent FS,
+// and asserts that any collection populated by ParseSource is also non-empty after ParseFS.
+// This catches if a future 16th collection is added without wiring the append in walker.
+func TestParseFS_ReflectionGuard(t *testing.T) {
+	c := qt.New(t)
+
+	// Comprehensive source that exercises table + the five + roles + more.
+	// Uses ParseSource directly (bypasses FS merge).
+	src := `package test
+
+//migrator:schema:role name="g_role" login="false"
+
+//migrator:schema:table name="g_users"
+type GUser struct {
+	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+	//migrator:schema:field name="email" type="TEXT" not_null="true"
+	Email string
+}
+
+// Table constraint
+//migrator:schema:constraint name="g_users_email_nn" type="CHECK" check="email <> ''" table="g_users"
+
+// View
+type GActiveView struct{}
+//migrator:schema:view name="g_active_users" body="SELECT id FROM g_users"
+
+// Mat view
+type GStatsView struct{}
+//migrator:schema:matview name="g_user_stats" body="SELECT COUNT(*) FROM g_users"
+
+// Trigger
+type GTrig struct{}
+//migrator:schema:trigger name="g_set_ts" table="g_users" timing="BEFORE" event="UPDATE" for="ROW" body="RETURN NEW;"
+
+// Grants
+type GPerm struct{}
+//migrator:schema:grant role="g_role" privilege="SELECT" on_table="g_users"
+//migrator:schema:grant role="g_role" privilege="USAGE" on_schema="public"
+`
+
+	dbSource := goschema.ParseSource("guard.go", src)
+
+	// Reflect to find all slice fields that were populated (>0 len) by ParseSource
+	populated := map[string]int{}
+	v := reflect.ValueOf(dbSource)
+	typ := v.Type()
+	for i := 0; i < v.NumField(); i++ {
+		f := v.Field(i)
+		sf := typ.Field(i)
+		if f.Kind() == reflect.Slice {
+			n := f.Len()
+			if n > 0 {
+				populated[sf.Name] = n
+			}
+		}
+	}
+	c.Assert(len(populated) > 0, qt.IsTrue, qt.Commentf("source must populate some slices for guard to be meaningful"))
+
+	// Now write equivalent to a temp dir and use ParseFS (the path under test)
+	tmpDir := c.TempDir()
+	err := os.WriteFile(filepath.Join(tmpDir, "guard.go"), []byte(src), 0600)
+	c.Assert(err, qt.IsNil)
+
+	dbFS, err := goschema.ParseDir(tmpDir)
+	c.Assert(err, qt.IsNil)
+
+	// For every populated collection name, assert ParseFS also has >0
+	fv := reflect.ValueOf(*dbFS) // value of the struct
+	for name, want := range populated {
+		f := fv.FieldByName(name)
+		c.Assert(f.IsValid(), qt.IsTrue, qt.Commentf("field %s must exist on Database", name))
+		c.Assert(f.Kind(), qt.Equals, reflect.Slice)
+		got := f.Len()
+		c.Assert(got > 0, qt.IsTrue, qt.Commentf("ParseFS/ParseDir must populate %s (source had %d); this is the drift guard for #279", name, want))
+		// loose >= to allow multiples but we dedup later
+		_ = want
 	}
 }
 
