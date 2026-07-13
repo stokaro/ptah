@@ -42,6 +42,20 @@ type Visitor interface {
 	VisitCreateFunction(*CreateFunctionNode) error
 	// VisitDropFunction renders a DROP FUNCTION statement (PostgreSQL-specific)
 	VisitDropFunction(*DropFunctionNode) error
+	// VisitCreateView renders a CREATE VIEW statement
+	VisitCreateView(*CreateViewNode) error
+	// VisitDropView renders a DROP VIEW statement
+	VisitDropView(*DropViewNode) error
+	// VisitCreateMaterializedView renders a CREATE MATERIALIZED VIEW statement
+	VisitCreateMaterializedView(*CreateMaterializedViewNode) error
+	// VisitDropMaterializedView renders a DROP MATERIALIZED VIEW statement
+	VisitDropMaterializedView(*DropMaterializedViewNode) error
+	// VisitRefreshMaterializedView renders a REFRESH MATERIALIZED VIEW statement
+	VisitRefreshMaterializedView(*RefreshMaterializedViewNode) error
+	// VisitCreateTrigger renders a CREATE TRIGGER statement
+	VisitCreateTrigger(*CreateTriggerNode) error
+	// VisitDropTrigger renders a DROP TRIGGER statement
+	VisitDropTrigger(*DropTriggerNode) error
 	// VisitCreatePolicy renders a CREATE POLICY statement for RLS (PostgreSQL-specific)
 	VisitCreatePolicy(*CreatePolicyNode) error
 	// VisitDropPolicy renders a DROP POLICY statement for RLS (PostgreSQL-specific)

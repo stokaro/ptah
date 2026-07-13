@@ -775,6 +775,14 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	// 6.5. Add foreign key constraints for newly added columns (must be done after all columns exist)
 	result = p.addForeignKeyConstraintsForModifiedTables(result, diff, generated)
 
+	// 6.6. Add and modify views, materialized views, and triggers after their tables/functions exist.
+	result = p.addNewViews(result, diff, generated)
+	result = p.modifyExistingViews(result, diff, generated)
+	result = p.addNewMaterializedViews(result, diff, generated)
+	result = p.modifyExistingMaterializedViews(result, diff, generated)
+	result = p.addNewTriggers(result, diff, generated)
+	result = p.modifyExistingTriggers(result, diff, generated)
+
 	// 7. Modify existing roles (must be done before RLS policies that reference them)
 	result = p.modifyExistingRoles(result, diff, generated)
 
@@ -804,6 +812,11 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 
 	// 12.5. Remove constraints (must be done before removing tables)
 	result = p.removeConstraints(result, diff)
+
+	// 12.6. Remove triggers and view-like objects before dropping tables/functions they depend on.
+	result = p.removeTriggers(result, diff)
+	result = p.removeMaterializedViews(result, diff)
+	result = p.removeViews(result, diff)
 
 	// 13. Remove tables (dangerous!)
 	result = p.removeTables(result, diff)
@@ -1064,6 +1077,116 @@ func (p *Planner) removeFunctions(result []ast.Node, diff *types.SchemaDiff) []a
 		result = append(result, dropFunctionNode)
 	}
 	return result
+}
+
+func (p *Planner) addNewViews(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, viewName := range diff.ViewsAdded {
+		if view := findView(generated.Views, viewName); view != nil {
+			result = append(result, fromschema.FromView(*view))
+		}
+	}
+	return result
+}
+
+func (p *Planner) modifyExistingViews(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, viewDiff := range diff.ViewsModified {
+		if view := findView(generated.Views, viewDiff.ViewName); view != nil {
+			result = append(result, fromschema.FromView(*view).SetReplace())
+		}
+	}
+	return result
+}
+
+func (p *Planner) removeViews(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, viewName := range diff.ViewsRemoved {
+		result = append(result, ast.NewDropView(viewName).SetIfExists().SetCascade())
+	}
+	return result
+}
+
+func (p *Planner) addNewMaterializedViews(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, viewName := range diff.MaterializedViewsAdded {
+		if view := findMaterializedView(generated.MaterializedViews, viewName); view != nil {
+			result = append(result, fromschema.FromMaterializedView(*view))
+			if strings.EqualFold(view.RefreshStrategy, "concurrently") {
+				result = append(result, ast.NewRefreshMaterializedView(view.Name).SetConcurrently())
+			}
+		}
+	}
+	return result
+}
+
+func (p *Planner) modifyExistingMaterializedViews(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, viewDiff := range diff.MaterializedViewsModified {
+		if view := findMaterializedView(generated.MaterializedViews, viewDiff.ViewName); view != nil {
+			result = append(result, ast.NewDropMaterializedView(view.Name).SetIfExists().SetCascade())
+			result = append(result, fromschema.FromMaterializedView(*view))
+		}
+	}
+	return result
+}
+
+func (p *Planner) removeMaterializedViews(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, viewName := range diff.MaterializedViewsRemoved {
+		result = append(result, ast.NewDropMaterializedView(viewName).SetIfExists().SetCascade())
+	}
+	return result
+}
+
+func (p *Planner) addNewTriggers(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, triggerRef := range diff.TriggersAdded {
+		if trigger := findTrigger(generated.Triggers, triggerRef.TableName, triggerRef.TriggerName); trigger != nil {
+			result = append(result, fromschema.FromTrigger(*trigger))
+		}
+	}
+	return result
+}
+
+func (p *Planner) modifyExistingTriggers(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, triggerDiff := range diff.TriggersModified {
+		if trigger := findTrigger(generated.Triggers, triggerDiff.TableName, triggerDiff.TriggerName); trigger != nil {
+			result = append(result, fromschema.FromTrigger(*trigger).SetReplace())
+		}
+	}
+	return result
+}
+
+func (p *Planner) removeTriggers(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, triggerRef := range diff.TriggersRemoved {
+		functionName := goschema.Trigger{Name: triggerRef.TriggerName, Table: triggerRef.TableName}.FunctionName()
+		result = append(result, ast.NewDropTrigger(triggerRef.TriggerName, triggerRef.TableName).
+			SetIfExists().
+			SetCascade().
+			SetFunctionName(functionName))
+	}
+	return result
+}
+
+func findView(views []goschema.View, name string) *goschema.View {
+	for i := range views {
+		if views[i].Name == name {
+			return &views[i]
+		}
+	}
+	return nil
+}
+
+func findMaterializedView(views []goschema.MaterializedView, name string) *goschema.MaterializedView {
+	for i := range views {
+		if views[i].Name == name {
+			return &views[i]
+		}
+	}
+	return nil
+}
+
+func findTrigger(triggers []goschema.Trigger, tableName, triggerName string) *goschema.Trigger {
+	for i := range triggers {
+		if triggers[i].Table == tableName && triggers[i].Name == triggerName {
+			return &triggers[i]
+		}
+	}
+	return nil
 }
 
 func (p *Planner) enableRLSOnTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {

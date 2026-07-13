@@ -865,6 +865,255 @@ func (n *DropTypeNode) Accept(visitor Visitor) error {
 	return visitor.VisitDropType(n)
 }
 
+// CreateViewNode represents a CREATE VIEW statement.
+type CreateViewNode struct {
+	Name      string
+	Body      string
+	Replace   bool
+	WithCheck bool
+	Comment   string
+}
+
+func NewCreateView(name string) *CreateViewNode {
+	return &CreateViewNode{Name: name}
+}
+
+func (n *CreateViewNode) SetBody(body string) *CreateViewNode {
+	n.Body = body
+	return n
+}
+
+func (n *CreateViewNode) SetReplace() *CreateViewNode {
+	n.Replace = true
+	return n
+}
+
+func (n *CreateViewNode) SetWithCheck(withCheck bool) *CreateViewNode {
+	n.WithCheck = withCheck
+	return n
+}
+
+func (n *CreateViewNode) SetComment(comment string) *CreateViewNode {
+	n.Comment = comment
+	return n
+}
+
+func (n *CreateViewNode) Accept(visitor Visitor) error {
+	return visitor.VisitCreateView(n)
+}
+
+// DropViewNode represents a DROP VIEW statement.
+type DropViewNode struct {
+	Name     string
+	IfExists bool
+	Cascade  bool
+	Comment  string
+}
+
+func NewDropView(name string) *DropViewNode {
+	return &DropViewNode{Name: name}
+}
+
+func (n *DropViewNode) SetIfExists() *DropViewNode {
+	n.IfExists = true
+	return n
+}
+
+func (n *DropViewNode) SetCascade() *DropViewNode {
+	n.Cascade = true
+	return n
+}
+
+func (n *DropViewNode) SetComment(comment string) *DropViewNode {
+	n.Comment = comment
+	return n
+}
+
+func (n *DropViewNode) Accept(visitor Visitor) error {
+	return visitor.VisitDropView(n)
+}
+
+// CreateMaterializedViewNode represents a CREATE MATERIALIZED VIEW statement.
+type CreateMaterializedViewNode struct {
+	Name            string
+	Body            string
+	RefreshStrategy string
+	Comment         string
+}
+
+func NewCreateMaterializedView(name string) *CreateMaterializedViewNode {
+	return &CreateMaterializedViewNode{Name: name, RefreshStrategy: "manual"}
+}
+
+func (n *CreateMaterializedViewNode) SetBody(body string) *CreateMaterializedViewNode {
+	n.Body = body
+	return n
+}
+
+func (n *CreateMaterializedViewNode) SetRefreshStrategy(refreshStrategy string) *CreateMaterializedViewNode {
+	n.RefreshStrategy = refreshStrategy
+	return n
+}
+
+func (n *CreateMaterializedViewNode) SetComment(comment string) *CreateMaterializedViewNode {
+	n.Comment = comment
+	return n
+}
+
+func (n *CreateMaterializedViewNode) Accept(visitor Visitor) error {
+	return visitor.VisitCreateMaterializedView(n)
+}
+
+// DropMaterializedViewNode represents a DROP MATERIALIZED VIEW statement.
+type DropMaterializedViewNode struct {
+	Name     string
+	IfExists bool
+	Cascade  bool
+	Comment  string
+}
+
+func NewDropMaterializedView(name string) *DropMaterializedViewNode {
+	return &DropMaterializedViewNode{Name: name}
+}
+
+func (n *DropMaterializedViewNode) SetIfExists() *DropMaterializedViewNode {
+	n.IfExists = true
+	return n
+}
+
+func (n *DropMaterializedViewNode) SetCascade() *DropMaterializedViewNode {
+	n.Cascade = true
+	return n
+}
+
+func (n *DropMaterializedViewNode) SetComment(comment string) *DropMaterializedViewNode {
+	n.Comment = comment
+	return n
+}
+
+func (n *DropMaterializedViewNode) Accept(visitor Visitor) error {
+	return visitor.VisitDropMaterializedView(n)
+}
+
+// RefreshMaterializedViewNode represents a REFRESH MATERIALIZED VIEW statement.
+type RefreshMaterializedViewNode struct {
+	Name         string
+	Concurrently bool
+	Comment      string
+}
+
+func NewRefreshMaterializedView(name string) *RefreshMaterializedViewNode {
+	return &RefreshMaterializedViewNode{Name: name}
+}
+
+func (n *RefreshMaterializedViewNode) SetConcurrently() *RefreshMaterializedViewNode {
+	n.Concurrently = true
+	return n
+}
+
+func (n *RefreshMaterializedViewNode) SetComment(comment string) *RefreshMaterializedViewNode {
+	n.Comment = comment
+	return n
+}
+
+func (n *RefreshMaterializedViewNode) Accept(visitor Visitor) error {
+	return visitor.VisitRefreshMaterializedView(n)
+}
+
+// CreateTriggerNode represents a CREATE TRIGGER statement.
+type CreateTriggerNode struct {
+	Name         string
+	Table        string
+	Timing       string
+	Event        string
+	ForEach      string
+	Body         string
+	FunctionName string
+	Replace      bool
+	Comment      string
+}
+
+func NewCreateTrigger(name, table string) *CreateTriggerNode {
+	return &CreateTriggerNode{Name: name, Table: table, ForEach: "ROW"}
+}
+
+func (n *CreateTriggerNode) SetTiming(timing string) *CreateTriggerNode {
+	n.Timing = timing
+	return n
+}
+
+func (n *CreateTriggerNode) SetEvent(event string) *CreateTriggerNode {
+	n.Event = event
+	return n
+}
+
+func (n *CreateTriggerNode) SetForEach(forEach string) *CreateTriggerNode {
+	n.ForEach = forEach
+	return n
+}
+
+func (n *CreateTriggerNode) SetBody(body string) *CreateTriggerNode {
+	n.Body = body
+	return n
+}
+
+func (n *CreateTriggerNode) SetFunctionName(functionName string) *CreateTriggerNode {
+	n.FunctionName = functionName
+	return n
+}
+
+func (n *CreateTriggerNode) SetReplace() *CreateTriggerNode {
+	n.Replace = true
+	return n
+}
+
+func (n *CreateTriggerNode) SetComment(comment string) *CreateTriggerNode {
+	n.Comment = comment
+	return n
+}
+
+func (n *CreateTriggerNode) Accept(visitor Visitor) error {
+	return visitor.VisitCreateTrigger(n)
+}
+
+// DropTriggerNode represents a DROP TRIGGER statement.
+type DropTriggerNode struct {
+	Name         string
+	Table        string
+	FunctionName string
+	IfExists     bool
+	Cascade      bool
+	Comment      string
+}
+
+func NewDropTrigger(name, table string) *DropTriggerNode {
+	return &DropTriggerNode{Name: name, Table: table}
+}
+
+func (n *DropTriggerNode) SetIfExists() *DropTriggerNode {
+	n.IfExists = true
+	return n
+}
+
+func (n *DropTriggerNode) SetCascade() *DropTriggerNode {
+	n.Cascade = true
+	return n
+}
+
+func (n *DropTriggerNode) SetFunctionName(functionName string) *DropTriggerNode {
+	n.FunctionName = functionName
+	return n
+}
+
+func (n *DropTriggerNode) SetComment(comment string) *DropTriggerNode {
+	n.Comment = comment
+	return n
+}
+
+func (n *DropTriggerNode) Accept(visitor Visitor) error {
+	return visitor.VisitDropTrigger(n)
+}
+
 // CreateFunctionNode represents a CREATE FUNCTION statement for PostgreSQL custom functions.
 //
 // This node contains the complete definition of a PostgreSQL function including

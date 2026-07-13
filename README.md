@@ -76,8 +76,8 @@ The core package contains all fundamental components for parsing, transforming, 
 
 - **`yamlschema/`** - Language-agnostic YAML schema frontend
   - Parses `.yaml` / `.yml` schema files into the same `goschema.Database` IR used by Go annotations
-  - Supports tables, columns, indexes, constraints, enums, extensions, functions, RLS, roles, and dialect overrides
-  - Uses strict validation for unknown fields, duplicate ordered keys, unsupported objects, and invalid constraints
+  - Supports tables, columns, indexes, constraints, enums, extensions, functions, views, materialized views, triggers, RLS, roles, and dialect overrides
+  - Uses strict validation for unknown fields, duplicate ordered keys, and invalid constraints
 
 - **`parser/`** - SQL DDL token-to-AST parser
   - Converts SQL DDL tokens into Abstract Syntax Tree nodes
@@ -254,7 +254,7 @@ type Event struct {
 }
 ```
 
-Recognised keys: `engine`, `order_by`, `partition_by`, `primary_key`, `sample_by`, `settings`, `ttl`, `comment`. MergeTree-family engines require `order_by`; the renderer rejects a Nullable column that appears in the sorting key.
+Recognized keys: `engine`, `order_by`, `partition_by`, `primary_key`, `sample_by`, `settings`, `ttl`, `comment`. MergeTree-family engines require `order_by`; the renderer rejects a Nullable column that appears in the sorting key.
 
 ### PostgreSQL Extensions (PostgreSQL only)
 ```go
@@ -272,6 +272,19 @@ type User struct {
     // fields...
 }
 ```
+
+### Views, Materialized Views, And Triggers
+```go
+//migrator:schema:view name="active_users" body="SELECT id, email FROM users WHERE deleted_at IS NULL" with_check="false"
+//migrator:schema:matview name="user_stats" body="SELECT id, COUNT(*) FROM users GROUP BY id" refresh_strategy="manual"
+//migrator:schema:trigger name="set_updated_at" table="users" timing="BEFORE" event="UPDATE" for="ROW" body="NEW.updated_at = NOW(); RETURN NEW;"
+//migrator:schema:table name="users"
+type User struct {
+    // fields...
+}
+```
+
+Views are supported on PostgreSQL, MySQL, and MariaDB. Materialized views are PostgreSQL-only. Trigger bodies are dialect-specific: PostgreSQL trigger annotations provide the function body that returns `NEW`/`OLD`, while MySQL/MariaDB trigger bodies are emitted inline.
 
 ### Row-Level Security (PostgreSQL only)
 ```go

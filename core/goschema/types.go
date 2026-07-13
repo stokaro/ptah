@@ -3,7 +3,11 @@
 // Go struct annotations and used for generating database-specific migration SQL.
 package goschema
 
-import "strings"
+import (
+	"fmt"
+	"hash/fnv"
+	"strings"
+)
 
 // Database represents the complete database schema derived from Go struct annotations.
 //
@@ -32,6 +36,9 @@ type Database struct {
 	EmbeddedFields             []EmbeddedField
 	Extensions                 []Extension                    // PostgreSQL extensions (pg_trgm, postgis, etc.)
 	Functions                  []Function                     // PostgreSQL custom functions
+	Views                      []View                         // Database views
+	MaterializedViews          []MaterializedView             // Database materialized views
+	Triggers                   []Trigger                      // Database triggers
 	RLSPolicies                []RLSPolicy                    // PostgreSQL Row-Level Security policies
 	RLSEnabledTables           []RLSEnabledTable              // Tables with RLS enabled
 	Roles                      []Role                         // PostgreSQL roles
@@ -423,6 +430,125 @@ type Function struct {
 	Volatility string // Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
 	Body       string // Function body/implementation
 	Comment    string // Optional comment for documentation
+}
+
+// View represents a database view definition parsed from Go annotations.
+//
+// View is created by parsing //migrator:schema:view annotations:
+//
+//	//migrator:schema:view name="active_users" body="SELECT * FROM users WHERE deleted_at IS NULL" with_check="false"
+//	type User struct{}
+type View struct {
+	StructName string // Name of the Go struct this view is associated with
+	Name       string // View name
+	Body       string // SELECT query used as the view body
+	WithCheck  bool   // Whether to add WITH CHECK OPTION where supported
+	Comment    string // Optional comment for documentation
+}
+
+// MaterializedView represents a database materialized view definition parsed
+// from Go annotations.
+//
+// MaterializedView is created by parsing //migrator:schema:matview annotations:
+//
+//	//migrator:schema:matview name="user_stats" body="SELECT user_id, COUNT(*) FROM users GROUP BY user_id" refresh_strategy="manual"
+//	type UserStats struct{}
+type MaterializedView struct {
+	StructName      string // Name of the Go struct this materialized view is associated with
+	Name            string // Materialized view name
+	Body            string // SELECT query used as the materialized view body
+	RefreshStrategy string // manual, concurrently, or future scheduled variants
+	Comment         string // Optional comment for documentation
+}
+
+// Canonicalize fills in materialized-view defaults used by the planner and
+// comparator.
+func (v *MaterializedView) Canonicalize() {
+	v.RefreshStrategy = strings.ToLower(strings.TrimSpace(v.RefreshStrategy))
+	if v.RefreshStrategy == "" {
+		v.RefreshStrategy = "manual"
+	}
+}
+
+// Trigger represents a database trigger definition parsed from Go annotations.
+//
+// Trigger is created by parsing //migrator:schema:trigger annotations:
+//
+//	//migrator:schema:trigger name="set_updated_at" table="users" timing="BEFORE" event="UPDATE" for="ROW" body="NEW.updated_at = NOW(); RETURN NEW;"
+//	type User struct{}
+type Trigger struct {
+	StructName string // Name of the Go struct this trigger is associated with
+	Name       string // Trigger name
+	Table      string // Target table
+	Timing     string // BEFORE, AFTER, or INSTEAD OF
+	Event      string // INSERT, UPDATE, DELETE, or TRUNCATE
+	ForEach    string // ROW or STATEMENT
+	Body       string // Trigger body
+	Comment    string // Optional comment for documentation
+}
+
+// Canonicalize fills in trigger defaults and case-folds attributes reported in
+// canonical uppercase by database catalogs.
+func (t *Trigger) Canonicalize() {
+	t.Timing = strings.ToUpper(strings.TrimSpace(t.Timing))
+	t.Event = strings.ToUpper(strings.TrimSpace(t.Event))
+	t.ForEach = strings.ToUpper(strings.TrimSpace(t.ForEach))
+	if t.ForEach == "" {
+		t.ForEach = "ROW"
+	}
+}
+
+// FunctionName returns the deterministic PostgreSQL trigger function name used
+// for this trigger. PostgreSQL stores executable trigger code in a function, so
+// Ptah manages that linked function as part of the trigger definition.
+func (t Trigger) FunctionName() string {
+	name := "ptah_trigger_" + sanitizeTriggerFunctionPart(t.Table) + "_" + sanitizeTriggerFunctionPart(t.Name)
+	if len(name) <= maxPostgreSQLIdentifierLength {
+		return name
+	}
+
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(t.Table))
+	_, _ = hash.Write([]byte{0})
+	_, _ = hash.Write([]byte(t.Name))
+	suffix := fmt.Sprintf("_%08x", hash.Sum32())
+	return name[:maxPostgreSQLIdentifierLength-len(suffix)] + suffix
+}
+
+const maxPostgreSQLIdentifierLength = 63
+
+func sanitizeTriggerFunctionPart(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	var builder strings.Builder
+	builder.Grow(len(value))
+	lastUnderscore := false
+	for i := range len(value) {
+		character := value[i]
+		if isIdentifierPart(character) {
+			builder.WriteByte(character)
+			lastUnderscore = false
+			continue
+		}
+		if !lastUnderscore {
+			builder.WriteByte('_')
+			lastUnderscore = true
+		}
+	}
+
+	result := strings.Trim(builder.String(), "_")
+	if result == "" {
+		return "object"
+	}
+	if result[0] >= '0' && result[0] <= '9' {
+		return "_" + result
+	}
+	return result
+}
+
+func isIdentifierPart(character byte) bool {
+	return character >= 'a' && character <= 'z' ||
+		character >= '0' && character <= '9' ||
+		character == '_'
 }
 
 // Canonicalize fills in PostgreSQL's implicit defaults and case-folds the

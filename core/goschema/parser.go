@@ -64,6 +64,30 @@ var knownFieldAttributes = map[string]bool{
 	"comment":          true,
 }
 
+var knownViewAttributes = map[string]bool{
+	"name":       true,
+	"body":       true,
+	"with_check": true,
+	"comment":    true,
+}
+
+var knownMaterializedViewAttributes = map[string]bool{
+	"name":             true,
+	"body":             true,
+	"refresh_strategy": true,
+	"comment":          true,
+}
+
+var knownTriggerAttributes = map[string]bool{
+	"name":    true,
+	"table":   true,
+	"timing":  true,
+	"event":   true,
+	"for":     true,
+	"body":    true,
+	"comment": true,
+}
+
 // validateAttributes panics if kv contains any key the directive does not
 // recognize. Platform-specific overrides (platform.*) are always allowed.
 // This catches typos like default_fn-vs-default_expr at parse time instead of
@@ -79,6 +103,20 @@ func validateAttributes(kv map[string]string, known map[string]bool, directive, 
 			"location", location,
 		)
 		panic(fmt.Sprintf("unknown annotation attribute %q on %s at %s", k, directive, location))
+	}
+}
+
+func requireAttributes(kv map[string]string, required []string, directive, location string) {
+	for _, key := range required {
+		if strings.TrimSpace(kv[key]) != "" {
+			continue
+		}
+		slog.Error("missing required annotation attribute",
+			"directive", directive,
+			"attribute", key,
+			"location", location,
+		)
+		panic(fmt.Sprintf("missing required annotation attribute %q on %s at %s", key, directive, location))
 	}
 }
 
@@ -303,6 +341,9 @@ func parseComment(
 	schemaConstraints *[]Constraint,
 	extensions *[]Extension,
 	functions *[]Function,
+	views *[]View,
+	materializedViews *[]MaterializedView,
+	triggers *[]Trigger,
 	rlsPolicies *[]RLSPolicy,
 	rlsEnabledTables *[]RLSEnabledTable,
 	roles *[]Role,
@@ -320,6 +361,12 @@ func parseComment(
 		parseExtensionComment(comment, extensions)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:function"):
 		parseFunctionComment(comment, structName, functions)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:view"):
+		parseViewComment(comment, structName, views)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:matview"):
+		parseMaterializedViewComment(comment, structName, materializedViews)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:trigger"):
+		parseTriggerComment(comment, structName, triggers)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:rls:policy"):
 		parseRLSPolicyComment(comment, structName, rlsPolicies)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:rls:enable"):
@@ -336,6 +383,9 @@ func processTableComments(
 	schemaConstraints *[]Constraint,
 	extensions *[]Extension,
 	functions *[]Function,
+	views *[]View,
+	materializedViews *[]MaterializedView,
+	triggers *[]Trigger,
 	rlsPolicies *[]RLSPolicy,
 	rlsEnabledTables *[]RLSEnabledTable,
 	roles *[]Role,
@@ -354,6 +404,12 @@ func processTableComments(
 			parseExtensionComment(comment, extensions)
 		case strings.HasPrefix(comment.Text, "//migrator:schema:function"):
 			parseFunctionComment(comment, structName, functions)
+		case strings.HasPrefix(comment.Text, "//migrator:schema:view"):
+			parseViewComment(comment, structName, views)
+		case strings.HasPrefix(comment.Text, "//migrator:schema:matview"):
+			parseMaterializedViewComment(comment, structName, materializedViews)
+		case strings.HasPrefix(comment.Text, "//migrator:schema:trigger"):
+			parseTriggerComment(comment, structName, triggers)
 		case strings.HasPrefix(comment.Text, "//migrator:schema:rls:policy"):
 			parseRLSPolicyComment(comment, structName, rlsPolicies)
 		case strings.HasPrefix(comment.Text, "//migrator:schema:rls:enable"):
@@ -374,6 +430,9 @@ func processFieldComments(
 	schemaConstraints *[]Constraint,
 	extensions *[]Extension,
 	functions *[]Function,
+	views *[]View,
+	materializedViews *[]MaterializedView,
+	triggers *[]Trigger,
 	rlsPolicies *[]RLSPolicy,
 	rlsEnabledTables *[]RLSEnabledTable,
 	roles *[]Role,
@@ -383,7 +442,7 @@ func processFieldComments(
 			continue
 		}
 		for _, comment := range field.Doc.List {
-			parseComment(comment, structName, field, globalEnumsMap, schemaFields, embeddedFields, schemaIndexes, schemaConstraints, extensions, functions, rlsPolicies, rlsEnabledTables, roles)
+			parseComment(comment, structName, field, globalEnumsMap, schemaFields, embeddedFields, schemaIndexes, schemaConstraints, extensions, functions, views, materializedViews, triggers, rlsPolicies, rlsEnabledTables, roles)
 		}
 	}
 }
@@ -420,6 +479,9 @@ func parseFileAST(f *ast.File) Database {
 	var tableDirectives []Table
 	var extensions []Extension
 	var functions []Function
+	var views []View
+	var materializedViews []MaterializedView
+	var triggers []Trigger
 	var rlsPolicies []RLSPolicy
 	var rlsEnabledTables []RLSEnabledTable
 	var roles []Role
@@ -438,6 +500,9 @@ func parseFileAST(f *ast.File) Database {
 		&tableDirectives,
 		&extensions,
 		&functions,
+		&views,
+		&materializedViews,
+		&triggers,
 		&rlsPolicies,
 		&rlsEnabledTables,
 		&roles,
@@ -459,18 +524,21 @@ func parseFileAST(f *ast.File) Database {
 	})
 
 	result := Database{
-		Tables:           tableDirectives,
-		Fields:           schemaFields,
-		Indexes:          schemaIndexes,
-		Constraints:      schemaConstraints,
-		Enums:            enums,
-		EmbeddedFields:   embeddedFields,
-		Extensions:       extensions,
-		Functions:        functions,
-		RLSPolicies:      rlsPolicies,
-		RLSEnabledTables: rlsEnabledTables,
-		Roles:            roles,
-		Dependencies:     make(map[string][]string),
+		Tables:            tableDirectives,
+		Fields:            schemaFields,
+		Indexes:           schemaIndexes,
+		Constraints:       schemaConstraints,
+		Enums:             enums,
+		EmbeddedFields:    embeddedFields,
+		Extensions:        extensions,
+		Functions:         functions,
+		Views:             views,
+		MaterializedViews: materializedViews,
+		Triggers:          triggers,
+		RLSPolicies:       rlsPolicies,
+		RLSEnabledTables:  rlsEnabledTables,
+		Roles:             roles,
+		Dependencies:      make(map[string][]string),
 	}
 	normalizeTableScopedNames(&result)
 	buildDependencyGraph(&result)
@@ -489,6 +557,9 @@ func processFileAST(
 	tableDirectives *[]Table,
 	extensions *[]Extension,
 	functions *[]Function,
+	views *[]View,
+	materializedViews *[]MaterializedView,
+	triggers *[]Trigger,
 	rlsPolicies *[]RLSPolicy,
 	rlsEnabledTables *[]RLSEnabledTable,
 	roles *[]Role,
@@ -526,6 +597,9 @@ func processFileAST(
 		tableDirectives,
 		extensions,
 		functions,
+		views,
+		materializedViews,
+		triggers,
 		rlsPolicies,
 		rlsEnabledTables,
 		roles,
@@ -567,6 +641,9 @@ func processDeclarations(
 	tableDirectives *[]Table,
 	extensions *[]Extension,
 	functions *[]Function,
+	views *[]View,
+	materializedViews *[]MaterializedView,
+	triggers *[]Trigger,
 	rlsPolicies *[]RLSPolicy,
 	rlsEnabledTables *[]RLSEnabledTable,
 	roles *[]Role,
@@ -587,8 +664,8 @@ func processDeclarations(
 				continue
 			}
 
-			processTableComments(structName, genDecl, tableDirectives, schemaConstraints, extensions, functions, rlsPolicies, rlsEnabledTables, roles)
-			processFieldComments(structName, structType, globalEnumsMap, schemaFields, embeddedFields, schemaIndexes, schemaConstraints, extensions, functions, rlsPolicies, rlsEnabledTables, roles)
+			processTableComments(structName, genDecl, tableDirectives, schemaConstraints, extensions, functions, views, materializedViews, triggers, rlsPolicies, rlsEnabledTables, roles)
+			processFieldComments(structName, structType, globalEnumsMap, schemaFields, embeddedFields, schemaIndexes, schemaConstraints, extensions, functions, views, materializedViews, triggers, rlsPolicies, rlsEnabledTables, roles)
 		}
 	}
 }
@@ -687,6 +764,56 @@ func parseFunctionComment(comment *ast.Comment, structName string, functions *[]
 	// typed. See Function.Canonicalize for the per-field rules.
 	fn.Canonicalize()
 	*functions = append(*functions, fn)
+}
+
+func parseViewComment(comment *ast.Comment, structName string, views *[]View) {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	validateAttributes(kv, knownViewAttributes, "//migrator:schema:view", structName)
+	requireAttributes(kv, []string{"name", "body"}, "//migrator:schema:view", structName)
+	*views = append(*views, View{
+		StructName: structName,
+		Name:       kv["name"],
+		Body:       kv["body"],
+		WithCheck:  kv["with_check"] == "true",
+		Comment:    kv["comment"],
+	})
+}
+
+func parseMaterializedViewComment(comment *ast.Comment, structName string, materializedViews *[]MaterializedView) {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	validateAttributes(kv, knownMaterializedViewAttributes, "//migrator:schema:matview", structName)
+	requireAttributes(kv, []string{"name", "body"}, "//migrator:schema:matview", structName)
+	refreshStrategy := kv["refresh_strategy"]
+	if refreshStrategy == "" {
+		refreshStrategy = "manual"
+	}
+	matView := MaterializedView{
+		StructName:      structName,
+		Name:            kv["name"],
+		Body:            kv["body"],
+		RefreshStrategy: strings.ToLower(refreshStrategy),
+		Comment:         kv["comment"],
+	}
+	matView.Canonicalize()
+	*materializedViews = append(*materializedViews, matView)
+}
+
+func parseTriggerComment(comment *ast.Comment, structName string, triggers *[]Trigger) {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	validateAttributes(kv, knownTriggerAttributes, "//migrator:schema:trigger", structName)
+	requireAttributes(kv, []string{"name", "table", "timing", "event", "body"}, "//migrator:schema:trigger", structName)
+	trigger := Trigger{
+		StructName: structName,
+		Name:       kv["name"],
+		Table:      kv["table"],
+		Timing:     kv["timing"],
+		Event:      kv["event"],
+		ForEach:    kv["for"],
+		Body:       kv["body"],
+		Comment:    kv["comment"],
+	}
+	trigger.Canonicalize()
+	*triggers = append(*triggers, trigger)
 }
 
 func parseRLSPolicyComment(comment *ast.Comment, structName string, rlsPolicies *[]RLSPolicy) {

@@ -818,6 +818,39 @@ func FromFunction(function goschema.Function) *ast.CreateFunctionNode {
 	return functionNode
 }
 
+// FromView converts a goschema.View to an ast.CreateViewNode.
+func FromView(view goschema.View) *ast.CreateViewNode {
+	viewNode := ast.NewCreateView(view.Name).
+		SetBody(view.Body).
+		SetWithCheck(view.WithCheck).
+		SetComment(view.Comment)
+	return viewNode
+}
+
+// FromMaterializedView converts a goschema.MaterializedView to an
+// ast.CreateMaterializedViewNode.
+func FromMaterializedView(view goschema.MaterializedView) *ast.CreateMaterializedViewNode {
+	view.Canonicalize()
+	viewNode := ast.NewCreateMaterializedView(view.Name).
+		SetBody(view.Body).
+		SetRefreshStrategy(view.RefreshStrategy).
+		SetComment(view.Comment)
+	return viewNode
+}
+
+// FromTrigger converts a goschema.Trigger to an ast.CreateTriggerNode.
+func FromTrigger(trigger goschema.Trigger) *ast.CreateTriggerNode {
+	trigger.Canonicalize()
+	triggerNode := ast.NewCreateTrigger(trigger.Name, trigger.Table).
+		SetTiming(trigger.Timing).
+		SetEvent(trigger.Event).
+		SetForEach(trigger.ForEach).
+		SetBody(trigger.Body).
+		SetFunctionName(trigger.FunctionName()).
+		SetComment(trigger.Comment)
+	return triggerNode
+}
+
 // FromRLSPolicy converts a goschema.RLSPolicy to an ast.CreatePolicyNode.
 //
 // This function creates a PostgreSQL RLS policy definition from the parsed policy metadata.
@@ -1000,6 +1033,16 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 			statements.Statements = append(statements.Statements, functionNode)
 		}
 
+		for _, view := range database.Views {
+			viewNode := FromView(view)
+			statements.Statements = append(statements.Statements, viewNode)
+		}
+
+		for _, view := range database.MaterializedViews {
+			viewNode := FromMaterializedView(view)
+			statements.Statements = append(statements.Statements, viewNode)
+		}
+
 		// Add RLS enablement statements (must come before policies)
 		for _, rlsEnabled := range database.RLSEnabledTables {
 			rlsNode := FromRLSEnabledTable(rlsEnabled)
@@ -1010,6 +1053,22 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 		for _, rlsPolicy := range database.RLSPolicies {
 			policyNode := FromRLSPolicy(rlsPolicy)
 			statements.Statements = append(statements.Statements, policyNode)
+		}
+
+		for _, trigger := range database.Triggers {
+			triggerNode := FromTrigger(trigger)
+			statements.Statements = append(statements.Statements, triggerNode)
+		}
+	}
+
+	if !isPostgreSQL && (strings.EqualFold(targetPlatform, "mysql") || strings.EqualFold(targetPlatform, "mariadb")) {
+		for _, view := range database.Views {
+			viewNode := FromView(view)
+			statements.Statements = append(statements.Statements, viewNode)
+		}
+		for _, trigger := range database.Triggers {
+			triggerNode := FromTrigger(trigger)
+			statements.Statements = append(statements.Statements, triggerNode)
 		}
 	}
 

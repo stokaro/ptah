@@ -66,6 +66,18 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	}
 	schema.Constraints = constraints
 
+	views, err := r.readViews(dbName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read views: %w", err)
+	}
+	schema.Views = views
+
+	triggers, err := r.readTriggers(dbName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read triggers: %w", err)
+	}
+	schema.Triggers = triggers
+
 	// Reconcile per-column uniqueness against the authoritative index metadata.
 	// The DDL parser collapses every table-level KEY/INDEX clause to a UNIQUE
 	// constraint (it has no dedicated non-unique-index node), so a non-unique
@@ -114,7 +126,7 @@ func (r *Reader) getTableNames(dbName string) ([]string, error) {
 		SELECT TABLE_NAME
 		FROM information_schema.TABLES
 		WHERE TABLE_SCHEMA = ?
-		AND TABLE_TYPE IN ('BASE TABLE', 'VIEW')
+		AND TABLE_TYPE = 'BASE TABLE'
 		AND TABLE_NAME NOT IN ('schema_migrations')
 		ORDER BY TABLE_NAME`
 
@@ -301,6 +313,70 @@ func (r *Reader) convertASTToTable(node *ast.CreateTableNode) types.DBTable {
 	}
 
 	return table
+}
+
+func (r *Reader) readViews(dbName string) ([]types.DBView, error) {
+	query := `
+		SELECT TABLE_NAME, VIEW_DEFINITION, CHECK_OPTION
+		FROM information_schema.VIEWS
+		WHERE TABLE_SCHEMA = ?
+		AND TABLE_NAME NOT IN ('schema_migrations')
+		ORDER BY TABLE_NAME`
+
+	rows, err := r.db.Query(query, dbName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var views []types.DBView
+	for rows.Next() {
+		var view types.DBView
+		err := rows.Scan(&view.Name, &view.Body, &view.CheckOption)
+		if err != nil {
+			return nil, err
+		}
+		views = append(views, view)
+	}
+	return views, nil
+}
+
+func (r *Reader) readTriggers(dbName string) ([]types.DBTrigger, error) {
+	query := `
+		SELECT
+			TRIGGER_NAME,
+			EVENT_OBJECT_TABLE,
+			ACTION_TIMING,
+			EVENT_MANIPULATION,
+			ACTION_ORIENTATION,
+			ACTION_STATEMENT
+		FROM information_schema.TRIGGERS
+		WHERE TRIGGER_SCHEMA = ?
+		ORDER BY EVENT_OBJECT_TABLE, TRIGGER_NAME`
+
+	rows, err := r.db.Query(query, dbName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var triggers []types.DBTrigger
+	for rows.Next() {
+		var trigger types.DBTrigger
+		err := rows.Scan(
+			&trigger.Name,
+			&trigger.Table,
+			&trigger.Timing,
+			&trigger.Event,
+			&trigger.ForEach,
+			&trigger.Body,
+		)
+		if err != nil {
+			return nil, err
+		}
+		triggers = append(triggers, trigger)
+	}
+	return triggers, nil
 }
 
 // readEnums reads enum types from MySQL (stored as column types)

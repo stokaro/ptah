@@ -13,6 +13,9 @@ type DBSchema struct {
 	Constraints []DBConstraint `json:"constraints"`
 	Extensions  []DBExtension  `json:"extensions"`   // PostgreSQL extensions
 	Functions   []DBFunction   `json:"functions"`    // PostgreSQL custom functions
+	Views       []DBView       `json:"views"`        // Database views
+	MatViews    []DBMatView    `json:"matviews"`     // Database materialized views
+	Triggers    []DBTrigger    `json:"triggers"`     // Database triggers
 	RLSPolicies []DBRLSPolicy  `json:"rls_policies"` // PostgreSQL RLS policies
 	Roles       []DBRole       `json:"roles"`        // PostgreSQL roles
 }
@@ -205,6 +208,51 @@ type DBFunction struct {
 	Volatility string `json:"volatility"` // Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
 	Body       string `json:"body"`       // Function body/implementation
 	Comment    string `json:"comment"`    // Function comment/description
+}
+
+// DBView represents a database view read from the database.
+type DBView struct {
+	Name        string `json:"name"`         // View name
+	Schema      string `json:"schema"`       // Schema where the view is defined
+	Body        string `json:"body"`         // SELECT query used as the view definition
+	CheckOption string `json:"check_option"` // NONE, LOCAL, CASCADED, or dialect equivalent
+	Comment     string `json:"comment"`      // View comment/description
+}
+
+// QualifiedName returns schema.view when Schema is set, or Name otherwise.
+func (v DBView) QualifiedName() string {
+	return QualifyTableName(v.Schema, v.Name)
+}
+
+// DBMatView represents a PostgreSQL materialized view read from the database.
+type DBMatView struct {
+	Name            string `json:"name"`             // Materialized view name
+	Schema          string `json:"schema"`           // Schema where the materialized view is defined
+	Body            string `json:"body"`             // SELECT query used as the materialized view definition
+	RefreshStrategy string `json:"refresh_strategy"` // Ptah-managed refresh policy; database introspection defaults to manual
+	Comment         string `json:"comment"`          // Materialized view comment/description
+}
+
+// QualifiedName returns schema.materialized_view when Schema is set, or Name otherwise.
+func (v DBMatView) QualifiedName() string {
+	return QualifyTableName(v.Schema, v.Name)
+}
+
+// DBTrigger represents a database trigger read from the database.
+type DBTrigger struct {
+	Name    string `json:"name"`    // Trigger name
+	Schema  string `json:"schema"`  // Schema where the trigger is defined
+	Table   string `json:"table"`   // Target table
+	Timing  string `json:"timing"`  // BEFORE, AFTER, or INSTEAD OF
+	Event   string `json:"event"`   // INSERT, UPDATE, DELETE, or TRUNCATE
+	ForEach string `json:"for"`     // ROW or STATEMENT
+	Body    string `json:"body"`    // Trigger body
+	Comment string `json:"comment"` // Trigger comment/description
+}
+
+// QualifiedTable returns schema.table when Schema is set, or Table otherwise.
+func (t DBTrigger) QualifiedTable() string {
+	return QualifyTableName(t.Schema, t.Table)
 }
 
 // DBRLSPolicy represents a PostgreSQL RLS policy read from the database
