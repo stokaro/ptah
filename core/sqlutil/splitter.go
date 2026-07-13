@@ -43,6 +43,7 @@ func SplitSQLStatements(sql string) []string {
 	lexr := lexer.NewLexer(sql)
 	var statements []string
 	var currentStatement strings.Builder
+	var state statementSplitState
 
 	for {
 		token := lexr.NextToken()
@@ -52,13 +53,20 @@ func SplitSQLStatements(sql string) []string {
 		}
 
 		if token.Type == lexer.TokenSemicolon {
+			if state.keepSemicolonInsideStatement() {
+				currentStatement.WriteString(token.Value)
+				continue
+			}
+
 			// Found a statement terminator - add current statement if not empty
 			stmt := strings.TrimSpace(currentStatement.String())
 			if stmt != "" {
 				statements = append(statements, stmt)
 			}
 			currentStatement.Reset()
+			state.reset()
 		} else {
+			state.observe(token)
 			// Add token to current statement
 			currentStatement.WriteString(token.Value)
 		}
@@ -76,4 +84,56 @@ func SplitSQLStatements(sql string) []string {
 	}
 
 	return statements
+}
+
+type statementSplitState struct {
+	afterCreate       bool
+	inCreateTrigger   bool
+	triggerCompound   bool
+	pendingTriggerEnd bool
+}
+
+func (s *statementSplitState) reset() {
+	*s = statementSplitState{}
+}
+
+func (s *statementSplitState) observe(token lexer.Token) {
+	if token.Type != lexer.TokenIdentifier {
+		return
+	}
+
+	value := strings.ToUpper(token.Value)
+	if !s.inCreateTrigger {
+		s.observeCreateTriggerPrefix(value)
+		return
+	}
+
+	if !s.triggerCompound {
+		s.triggerCompound = value == "BEGIN"
+		return
+	}
+
+	switch value {
+	case "END":
+		s.pendingTriggerEnd = true
+	default:
+		if s.pendingTriggerEnd {
+			s.pendingTriggerEnd = false
+		}
+	}
+}
+
+func (s *statementSplitState) observeCreateTriggerPrefix(value string) {
+	if value == "CREATE" {
+		s.afterCreate = true
+		return
+	}
+	if s.afterCreate && value == "TRIGGER" {
+		s.inCreateTrigger = true
+		return
+	}
+}
+
+func (s statementSplitState) keepSemicolonInsideStatement() bool {
+	return s.inCreateTrigger && s.triggerCompound && !s.pendingTriggerEnd
 }

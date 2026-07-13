@@ -1108,9 +1108,6 @@ func (p *Planner) addNewMaterializedViews(result []ast.Node, diff *types.SchemaD
 	for _, viewName := range diff.MaterializedViewsAdded {
 		if view := findMaterializedView(generated.MaterializedViews, viewName); view != nil {
 			result = append(result, fromschema.FromMaterializedView(*view))
-			if strings.EqualFold(view.RefreshStrategy, "concurrently") {
-				result = append(result, ast.NewRefreshMaterializedView(view.Name).SetConcurrently())
-			}
 		}
 	}
 	return result

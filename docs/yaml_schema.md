@@ -247,6 +247,10 @@ rendered for MySQL/MariaDB with dialect-specific trigger bodies.
 - `roles`: `name`, `login`, `password`, `superuser`, `create_db`,
   `create_role`, `inherit`, `replication`, `comment`
 
+`matviews.refresh_strategy` is retained as authoring metadata for future
+refresh workflows. It is not drift-compared because PostgreSQL does not persist
+that policy in `pg_class`/`information_schema`.
+
 ## Validation
 
 The parser is intentionally strict:

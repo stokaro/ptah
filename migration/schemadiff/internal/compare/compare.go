@@ -29,6 +29,7 @@ var (
 	customIndexPattern = regexp.MustCompile(`(?i)(^(idx|index)_|_(idx|index)$)`)
 
 	defaultAggregateAliasPattern = regexp.MustCompile(`\b(count|sum|avg|min|max)\(([^)]*)\)\s+as\s+([a-z_][a-z0-9_]*)\b`)
+	schemaQualifierPattern       = regexp.MustCompile(`\b[a-z_][a-z0-9_]*\.`)
 )
 
 // TablesAndColumns performs comprehensive table and column comparison between generated and database schemas.
@@ -2755,9 +2756,7 @@ func ViewDefinitions(genView goschema.View, dbView types.DBView) difftypes.ViewD
 		Changes:  make(map[string]string),
 	}
 
-	genBody := normalizeSchemaObjectBody(genView.Body)
-	dbBody := normalizeSchemaObjectBody(dbView.Body)
-	if genBody != dbBody {
+	if !schemaObjectBodiesEqual(genView.Body, dbView.Body) {
 		viewDiff.Changes["body"] = fmt.Sprintf("%s -> %s", strings.TrimSpace(dbView.Body), strings.TrimSpace(genView.Body))
 	}
 
@@ -2772,24 +2771,13 @@ func ViewDefinitions(genView goschema.View, dbView types.DBView) difftypes.ViewD
 // MaterializedViewDefinitions performs detailed comparison between generated
 // and database materialized view definitions.
 func MaterializedViewDefinitions(genView goschema.MaterializedView, dbView types.DBMatView) difftypes.MaterializedViewDiff {
-	genView.Canonicalize()
-	if dbView.RefreshStrategy == "" {
-		dbView.RefreshStrategy = "manual"
-	}
-	dbView.RefreshStrategy = strings.ToLower(strings.TrimSpace(dbView.RefreshStrategy))
-
 	viewDiff := difftypes.MaterializedViewDiff{
 		ViewName: genView.Name,
 		Changes:  make(map[string]string),
 	}
 
-	genBody := normalizeSchemaObjectBody(genView.Body)
-	dbBody := normalizeSchemaObjectBody(dbView.Body)
-	if genBody != dbBody {
+	if !schemaObjectBodiesEqual(genView.Body, dbView.Body) {
 		viewDiff.Changes["body"] = fmt.Sprintf("%s -> %s", strings.TrimSpace(dbView.Body), strings.TrimSpace(genView.Body))
-	}
-	if genView.RefreshStrategy != dbView.RefreshStrategy {
-		viewDiff.Changes["refresh_strategy"] = fmt.Sprintf("%s -> %s", dbView.RefreshStrategy, genView.RefreshStrategy)
 	}
 
 	return viewDiff
@@ -2828,7 +2816,38 @@ func TriggerDefinitions(genTrigger goschema.Trigger, dbTrigger types.DBTrigger) 
 	return triggerDiff
 }
 
-func normalizeSchemaObjectBody(body string) string {
+func schemaObjectBodiesEqual(generatedBody, databaseBody string) bool {
+	if normalizeSQLBodyPreservingQualifiers(generatedBody) == normalizeSQLBodyPreservingQualifiers(databaseBody) {
+		return true
+	}
+
+	if schemaQualifierPattern.MatchString(strings.ToLower(generatedBody)) {
+		return false
+	}
+	return normalizeSQLBodyPreservingQualifiers(generatedBody) == normalizeSQLBodyStrippingQualifiers(databaseBody)
+}
+
+func normalizeTriggerBody(body string) string {
+	body = normalizeSQLBodyPreservingQualifiers(body)
+	body = strings.TrimPrefix(body, "begin ")
+	body = strings.TrimPrefix(body, "begin")
+	body = strings.TrimSpace(body)
+	body = strings.TrimSuffix(body, " end")
+	body = strings.TrimSuffix(body, "end")
+	body = strings.TrimSpace(body)
+	body = strings.TrimSuffix(body, ";")
+	return strings.TrimSpace(body)
+}
+
+func normalizeSQLBodyPreservingQualifiers(body string) string {
+	return normalizeSQLBody(body)
+}
+
+func normalizeSQLBodyStrippingQualifiers(body string) string {
+	return schemaQualifierPattern.ReplaceAllString(normalizeSQLBody(body), "")
+}
+
+func normalizeSQLBody(body string) string {
 	body = strings.TrimSpace(body)
 	body = strings.TrimSuffix(body, ";")
 	body = strings.TrimSpace(body)
@@ -2836,7 +2855,6 @@ func normalizeSchemaObjectBody(body string) string {
 	body = strings.ReplaceAll(body, "`", "")
 	body = strings.ToLower(body)
 	body = stripDefaultAggregateAliases(body)
-	body = regexp.MustCompile(`\b[a-z_][a-z0-9_]*\.`).ReplaceAllString(body, "")
 	body = regexp.MustCompile(`\s+`).ReplaceAllString(body, " ")
 	return strings.TrimSpace(body)
 }
@@ -2849,18 +2867,6 @@ func stripDefaultAggregateAliases(body string) string {
 		}
 		return parts[1] + "(" + parts[2] + ")"
 	})
-}
-
-func normalizeTriggerBody(body string) string {
-	body = normalizeSchemaObjectBody(body)
-	body = strings.TrimPrefix(body, "begin ")
-	body = strings.TrimPrefix(body, "begin")
-	body = strings.TrimSpace(body)
-	body = strings.TrimSuffix(body, " end")
-	body = strings.TrimSuffix(body, "end")
-	body = strings.TrimSpace(body)
-	body = strings.TrimSuffix(body, ";")
-	return strings.TrimSpace(body)
 }
 
 // RLSPolicyDefinitions performs detailed comparison between generated and database RLS policy definitions.

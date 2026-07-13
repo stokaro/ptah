@@ -284,7 +284,7 @@ type User struct {
 }
 ```
 
-Views are supported on PostgreSQL, MySQL, and MariaDB. Materialized views are PostgreSQL-only. Trigger bodies are dialect-specific: PostgreSQL trigger annotations provide the function body that returns `NEW`/`OLD`, while MySQL/MariaDB trigger bodies are emitted inline.
+Views are supported on PostgreSQL, MySQL, and MariaDB. Materialized views are PostgreSQL-only; `refresh_strategy` is authoring metadata for future refresh workflows and is not drift-compared because PostgreSQL does not persist that policy in the catalog. Trigger bodies are dialect-specific: PostgreSQL trigger annotations provide the function body that returns `NEW`/`OLD`, while MySQL/MariaDB trigger bodies are emitted inline.
 
 ### Row-Level Security (PostgreSQL only)
 ```go
