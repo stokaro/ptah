@@ -374,9 +374,13 @@ func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Databa
 		RLSEnabledTablesRemoved: diff.RLSEnabledTablesAdded,   // Tables to enable RLS become tables to disable RLS
 
 		// Reverse role operations
-		RolesAdded:    diff.RolesRemoved, // Roles to remove become roles to add
-		RolesRemoved:  diff.RolesAdded,   // Roles to add become roles to remove
-		RolesModified: reverseRoleDiffs(diff.RolesModified),
+		RolesAdded:          diff.RolesRemoved, // Roles to remove become roles to add
+		RolesRemoved:        diff.RolesAdded,   // Roles to add become roles to remove
+		RolesModified:       reverseRoleDiffs(diff.RolesModified),
+		GrantsAdded:         diff.GrantsRemoved,       // Grants to remove become grants to add
+		GrantsRemoved:       diff.GrantsAdded,         // Grants to add become grants to revoke
+		GrantOptionsAdded:   diff.GrantOptionsRevoked, // Revoked grant options become grant-option additions
+		GrantOptionsRevoked: diff.GrantOptionsAdded,   // Grant-option additions become grant-option revocations
 
 		// Reverse constraint operations. A modified constraint is expressed by
 		// the comparator as remove + add of the SAME name (e.g. an on_delete

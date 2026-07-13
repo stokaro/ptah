@@ -203,3 +203,54 @@ func TestPostgreSQLRenderer_VisitAlterRole(t *testing.T) {
 		c.Assert(sql, qt.Equals, "")
 	})
 }
+
+func TestPostgreSQLRenderer_VisitGrantPrivilege(t *testing.T) {
+	t.Run("table grant with multiple privileges", func(t *testing.T) {
+		c := qt.New(t)
+		renderer := postgres.New()
+
+		grant := ast.NewGrantPrivilege("app_role", "TABLE", "users", []string{"SELECT", "INSERT"}).
+			SetComment("Grant application DML")
+		sql, err := renderer.Render(grant)
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(sql, qt.Equals, "-- Grant application DML\nGRANT SELECT, INSERT ON TABLE users TO app_role;\n")
+	})
+
+	t.Run("schema grant with grant option", func(t *testing.T) {
+		c := qt.New(t)
+		renderer := postgres.New()
+
+		grant := ast.NewGrantPrivilege("app_role", "SCHEMA", "public", []string{"USAGE"}).
+			SetWithOption(true)
+		sql, err := renderer.Render(grant)
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(sql, qt.Equals, "GRANT USAGE ON SCHEMA public TO app_role WITH GRANT OPTION;\n")
+	})
+}
+
+func TestPostgreSQLRenderer_VisitRevokePrivilege(t *testing.T) {
+	t.Run("table revoke", func(t *testing.T) {
+		c := qt.New(t)
+		renderer := postgres.New()
+
+		revoke := ast.NewRevokePrivilege("app_role", "TABLE", "users", []string{"DELETE"})
+		sql, err := renderer.Render(revoke)
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(sql, qt.Equals, "REVOKE DELETE ON TABLE users FROM app_role;\n")
+	})
+
+	t.Run("grant option revoke", func(t *testing.T) {
+		c := qt.New(t)
+		renderer := postgres.New()
+
+		revoke := ast.NewRevokePrivilege("app_role", "SCHEMA", "public", []string{"USAGE"}).
+			SetGrantOptionFor(true)
+		sql, err := renderer.Render(revoke)
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(sql, qt.Equals, "REVOKE GRANT OPTION FOR USAGE ON SCHEMA public FROM app_role;\n")
+	})
+}

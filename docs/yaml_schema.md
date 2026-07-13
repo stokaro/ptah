@@ -78,6 +78,16 @@ roles:
     login: true
     inherit: false
 
+grants:
+  app_user_schema:
+    role: app_user
+    privilege: USAGE
+    on_schema: public
+  app_user_users:
+    role: app_user
+    privileges: [SELECT, INSERT, UPDATE, DELETE]
+    on_table: users
+
 tables:
   tenants:
     columns:
@@ -231,8 +241,8 @@ Top-level constraints also require `table`. `condition` is supported for
 ## Schema Objects
 
 YAML input supports these schema objects. Extensions, functions, materialized
-views, RLS, and roles are PostgreSQL-specific; views and triggers are also
-rendered for MySQL/MariaDB with dialect-specific trigger bodies.
+views, RLS, roles, and grants are PostgreSQL-specific; views and triggers are
+also rendered for MySQL/MariaDB with dialect-specific trigger bodies.
 
 - `extensions`: `name`, `if_not_exists`, `version`, `comment`
 - `functions`: `name`, `params` or `parameters`, `returns`, `language`,
@@ -246,6 +256,8 @@ rendered for MySQL/MariaDB with dialect-specific trigger bodies.
   `comment`
 - `roles`: `name`, `login`, `password`, `superuser`, `create_db`,
   `create_role`, `inherit`, `replication`, `comment`
+- `grants`: `role`, `privilege` or `privileges`, `on_table`, `on_schema`,
+  `with_option`, `comment`
 
 `matviews.refresh_strategy` is retained as authoring metadata for future
 refresh workflows. It is not drift-compared because PostgreSQL does not persist

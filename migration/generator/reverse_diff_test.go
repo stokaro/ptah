@@ -1,12 +1,15 @@
 package generator
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/renderer"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/migration/planner/dialects/postgres"
 	"github.com/stokaro/ptah/migration/schemadiff"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
@@ -268,6 +271,18 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 		RLSEnabledTablesRemoved: []string{"old_table"},
 		RolesAdded:              []string{"app_user", "admin_user"},
 		RolesRemoved:            []string{"old_role"},
+		GrantsAdded: []types.GrantRef{
+			{Role: "app_user", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users"},
+		},
+		GrantsRemoved: []types.GrantRef{
+			{Role: "old_role", Privilege: "DELETE", ObjectType: "TABLE", ObjectName: "users"},
+		},
+		GrantOptionsAdded: []types.GrantRef{
+			{Role: "app_user", Privilege: "UPDATE", ObjectType: "TABLE", ObjectName: "users", WithOption: true},
+		},
+		GrantOptionsRevoked: []types.GrantRef{
+			{Role: "old_role", Privilege: "INSERT", ObjectType: "TABLE", ObjectName: "users", WithOption: true},
+		},
 	}
 
 	result := reverseSchemaDiff(input)
@@ -303,6 +318,26 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 	// Verify role reversals
 	c.Assert(result.RolesAdded, qt.DeepEquals, input.RolesRemoved)
 	c.Assert(result.RolesRemoved, qt.DeepEquals, input.RolesAdded)
+	c.Assert(result.GrantsAdded, qt.DeepEquals, input.GrantsRemoved)
+	c.Assert(result.GrantsRemoved, qt.DeepEquals, input.GrantsAdded)
+	c.Assert(result.GrantOptionsAdded, qt.DeepEquals, input.GrantOptionsRevoked)
+	c.Assert(result.GrantOptionsRevoked, qt.DeepEquals, input.GrantOptionsAdded)
+}
+
+func TestReverseSchemaDiff_GrantOptionUpgradeDownRevokesOnlyOption(t *testing.T) {
+	c := qt.New(t)
+	upDiff := &types.SchemaDiff{
+		GrantOptionsAdded: []types.GrantRef{
+			{Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users", WithOption: true},
+		},
+	}
+
+	downDiff := reverseSchemaDiff(upDiff)
+	downSQL, err := renderer.RenderSQL("postgres", postgres.New().GenerateMigrationAST(downDiff, &goschema.Database{})...)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(downSQL, qt.Contains, "REVOKE GRANT OPTION FOR SELECT ON TABLE users FROM app_role;")
+	c.Assert(strings.Contains(downSQL, "REVOKE SELECT ON TABLE users FROM app_role;"), qt.Equals, false)
 }
 
 func TestReverseSchemaDiff_TableModifications(t *testing.T) {

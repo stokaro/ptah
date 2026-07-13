@@ -282,7 +282,13 @@ func (a *SchemaAnalyzer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRL
 func (a *SchemaAnalyzer) VisitCreateRole(node *ast.CreateRoleNode) error { return nil }
 func (a *SchemaAnalyzer) VisitDropRole(node *ast.DropRoleNode) error     { return nil }
 func (a *SchemaAnalyzer) VisitAlterRole(node *ast.AlterRoleNode) error   { return nil }
-func (a *SchemaAnalyzer) VisitRawSQL(node *ast.RawSQLNode) error         { return nil }
+func (a *SchemaAnalyzer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
+	return nil
+}
+func (a *SchemaAnalyzer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
+	return nil
+}
+func (a *SchemaAnalyzer) VisitRawSQL(node *ast.RawSQLNode) error { return nil }
 
 // AuditTransformer adds audit columns to all tables
 type AuditTransformer struct{}

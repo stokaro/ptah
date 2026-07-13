@@ -1,10 +1,10 @@
 # PostgreSQL Role Management with Ptah
 
-This document describes how to use Ptah's PostgreSQL role management features to create and manage database roles through Go struct annotations.
+This document describes how to use Ptah's PostgreSQL role and privilege management features to create roles and manage object grants through Go struct annotations.
 
 ## Overview
 
-Ptah supports PostgreSQL role creation and management through the `//migrator:schema:role` annotation. This allows you to define database roles alongside your entity definitions, ensuring that roles are created and managed as part of your schema migrations.
+Ptah supports PostgreSQL role creation and privilege management through the `//migrator:schema:role` and `//migrator:schema:grant` annotations. This allows you to define database roles and the privileges they need alongside your entity definitions, ensuring that access control is managed as part of your schema migrations.
 
 ## Basic Role Definition
 
@@ -40,6 +40,33 @@ The following attributes are supported for PostgreSQL roles:
 - `inherit`: Whether the role inherits privileges from granted roles (default: `true`)
 - `replication`: Whether the role can initiate streaming replication (default: `false`)
 - `comment`: Optional comment describing the role
+
+## Grant Definition
+
+Define table and schema privileges using the `//migrator:schema:grant` annotation:
+
+```go
+package entities
+
+//migrator:schema:role name="app_reader" inherit="true" comment="Application read-only role"
+//migrator:schema:role name="app_writer" inherit="true" comment="Application write role"
+//migrator:schema:grant role="app_reader" privilege="USAGE" on_schema="public"
+//migrator:schema:grant role="app_writer" privilege="USAGE" on_schema="public"
+//migrator:schema:grant role="app_reader" privilege="SELECT" on_table="users"
+//migrator:schema:grant role="app_writer" privilege="SELECT,INSERT,UPDATE,DELETE" on_table="users"
+type AccessControl struct{}
+```
+
+### Grant Attributes
+
+- `role`: Role receiving the privilege
+- `privilege` or `privileges`: One privilege or a comma-separated privilege list
+- `on_table`: Target table for table privileges
+- `on_schema`: Target schema for schema privileges such as `USAGE`
+- `with_option`: Whether to emit `WITH GRANT OPTION` (default: `false`)
+- `comment`: Optional comment describing the grant
+
+`on_table` and `on_schema` are mutually exclusive. Table grants are compared at the individual privilege level, so `privilege="SELECT,INSERT"` round-trips with PostgreSQL introspection, which reports one row per privilege.
 
 ## Advanced Role Configurations
 
@@ -98,14 +125,21 @@ ALTER ROLE api_user NOLOGIN;
 ALTER ROLE app_user PASSWORD 'new_encrypted_password';
 ```
 
-### Role Removal
+### GRANT and REVOKE Statements
 
-When roles are removed from the schema, Ptah generates DROP ROLE statements:
+When grants are added or removed for managed roles, Ptah generates `GRANT` and `REVOKE` statements:
 
 ```sql
--- Remove unused role (with safety check)
-DROP ROLE IF EXISTS old_service_role;
+GRANT USAGE ON SCHEMA public TO app_reader;
+GRANT SELECT ON TABLE users TO app_reader;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE users TO app_writer;
+
+REVOKE DELETE ON TABLE users FROM app_writer;
 ```
+
+### Role Removal
+
+Roles are not automatically dropped when they disappear from the target schema. Role removal is deliberately manual because roles may be shared with DBAs, infrastructure, or other applications. Grant removal is narrower: Ptah only emits `REVOKE` for privileges attached to roles that are still declared in the target schema.
 
 ## Integration with RLS Policies
 
@@ -115,6 +149,8 @@ Roles can be referenced in Row-Level Security policies:
 // Define roles first
 //migrator:schema:role name="tenant_user" login="true" comment="Multi-tenant user role"
 //migrator:schema:role name="admin_user" login="true" superuser="true" comment="Administrator role"
+//migrator:schema:grant role="tenant_user" privilege="USAGE" on_schema="public"
+//migrator:schema:grant role="tenant_user" privilege="SELECT,INSERT,UPDATE,DELETE" on_table="users"
 
 // Use roles in RLS policies
 //migrator:schema:rls:policy name="tenant_isolation" table="users" for="ALL" to="tenant_user" using="tenant_id = current_user_tenant_id()" comment="Tenant isolation policy"
@@ -140,6 +176,7 @@ Grant only the minimum privileges required:
 ```go
 // Good: Specific privileges for specific purposes
 //migrator:schema:role name="backup_service" login="true" replication="true" comment="Backup service role"
+//migrator:schema:grant role="analytics_reader" privilege="SELECT" on_table="events"
 
 // Avoid: Unnecessary superuser privileges
 //migrator:schema:role name="backup_service" login="true" superuser="true" comment="Backup service role"
@@ -194,7 +231,9 @@ Ptah automatically handles dependencies between roles and other database objects
 
 1. Roles are created before functions and policies that reference them
 2. Role attributes are modified when changes are detected
-3. Roles are never automatically dropped (manual removal required for safety)
+3. Grants are emitted after roles and target objects exist
+4. Removed grants for managed roles are revoked before replacement grants are added
+5. Roles are never automatically dropped (manual removal required for safety)
 
 ## Password Security
 

@@ -18,6 +18,7 @@ type DBSchema struct {
 	Triggers    []DBTrigger    `json:"triggers"`     // Database triggers
 	RLSPolicies []DBRLSPolicy  `json:"rls_policies"` // PostgreSQL RLS policies
 	Roles       []DBRole       `json:"roles"`        // PostgreSQL roles
+	Grants      []DBGrant      `json:"grants"`       // PostgreSQL privilege grants
 }
 
 // DBTable represents a database table
@@ -277,4 +278,24 @@ type DBRole struct {
 	Replication bool   `json:"replication"`  // Whether role can initiate replication
 	HasPassword bool   `json:"has_password"` // Whether role has a password set
 	Comment     string `json:"comment"`      // Role comment/description
+}
+
+// DBGrant represents a PostgreSQL privilege grant read from the database.
+type DBGrant struct {
+	Role       string `json:"role"`                 // Role receiving the privilege
+	Privilege  string `json:"privilege"`            // Granted privilege, e.g. SELECT or USAGE
+	ObjectType string `json:"object_type"`          // TABLE or SCHEMA
+	Schema     string `json:"schema,omitempty"`     // Schema containing the target object
+	ObjectName string `json:"object_name"`          // Target table or schema name
+	WithOption bool   `json:"with_option"`          // Whether the grant has WITH GRANT OPTION
+	GrantedBy  string `json:"granted_by,omitempty"` // Grantor role
+}
+
+// QualifiedTarget returns schema.object for table grants and the schema name
+// itself for schema grants.
+func (g DBGrant) QualifiedTarget() string {
+	if strings.EqualFold(g.ObjectType, "SCHEMA") {
+		return g.ObjectName
+	}
+	return QualifyTableName(g.Schema, g.ObjectName)
 }

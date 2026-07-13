@@ -754,6 +754,16 @@ func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
 	return fmt.Errorf("ALTER ROLE is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)
 }
 
+// VisitGrantPrivilege returns an error since PostgreSQL grants are not supported in MySQL
+func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
+	return fmt.Errorf("GRANT privilege management is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)
+}
+
+// VisitRevokePrivilege returns an error since PostgreSQL grants are not supported in MySQL
+func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
+	return fmt.Errorf("REVOKE privilege management is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)
+}
+
 // VisitRawSQL refuses to emit raw SQL. The only emitter of RawSQLNode today
 // is the PostgreSQL planner's constraint-drop path, which produces a PG-
 // specific DO block; routing that through a MySQL-family renderer would

@@ -70,6 +70,10 @@ type Visitor interface {
 	VisitDropRole(*DropRoleNode) error
 	// VisitAlterRole renders an ALTER ROLE statement (PostgreSQL-specific)
 	VisitAlterRole(*AlterRoleNode) error
+	// VisitGrantPrivilege renders a GRANT statement (PostgreSQL-specific)
+	VisitGrantPrivilege(*GrantPrivilegeNode) error
+	// VisitRevokePrivilege renders a REVOKE statement (PostgreSQL-specific)
+	VisitRevokePrivilege(*RevokePrivilegeNode) error
 	// VisitRawSQL renders a literal SQL fragment verbatim. Use sparingly —
 	// reach for structured nodes first.
 	VisitRawSQL(*RawSQLNode) error

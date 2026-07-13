@@ -921,6 +921,20 @@ func FromRole(role goschema.Role) *ast.CreateRoleNode {
 	return roleNode
 }
 
+// FromGrant converts a goschema.Grant to an ast.GrantPrivilegeNode.
+func FromGrant(grant goschema.Grant) *ast.GrantPrivilegeNode {
+	grant.Canonicalize()
+	objectType := "TABLE"
+	objectName := grant.OnTable
+	if grant.OnSchema != "" {
+		objectType = "SCHEMA"
+		objectName = grant.OnSchema
+	}
+	return ast.NewGrantPrivilege(grant.Role, objectType, objectName, grant.Privileges).
+		SetWithOption(grant.WithOption).
+		SetComment(grant.Comment)
+}
+
 // FromDatabase converts a complete goschema.Database to an ast.StatementList containing all DDL statements.
 //
 // This function creates a comprehensive database schema by converting all schema elements
@@ -1053,6 +1067,11 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 		for _, rlsPolicy := range database.RLSPolicies {
 			policyNode := FromRLSPolicy(rlsPolicy)
 			statements.Statements = append(statements.Statements, policyNode)
+		}
+
+		for _, grant := range database.Grants {
+			grantNode := FromGrant(grant)
+			statements.Statements = append(statements.Statements, grantNode)
 		}
 
 		for _, trigger := range database.Triggers {

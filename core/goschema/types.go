@@ -42,6 +42,7 @@ type Database struct {
 	RLSPolicies                []RLSPolicy                    // PostgreSQL Row-Level Security policies
 	RLSEnabledTables           []RLSEnabledTable              // Tables with RLS enabled
 	Roles                      []Role                         // PostgreSQL roles
+	Grants                     []Grant                        // PostgreSQL privilege grants
 	Dependencies               map[string][]string            // table -> list of tables it depends on
 	FunctionDependencies       map[string][]string            // function -> list of functions it depends on
 	SelfReferencingForeignKeys map[string][]SelfReferencingFK // table -> list of self-referencing foreign keys
@@ -701,6 +702,50 @@ type Role struct {
 	Inherit     bool   // Whether role inherits privileges (default: true)
 	Replication bool   // Whether role can initiate replication (default: false)
 	Comment     string // Optional comment for documentation
+}
+
+// Grant represents a PostgreSQL privilege grant parsed from Go annotations.
+//
+// Grants are defined using //migrator:schema:grant annotations and are used to
+// manage access-control privileges for roles that Ptah manages as first-class
+// schema objects.
+//
+// Example:
+//
+//	//migrator:schema:grant role="app_user" privilege="USAGE" on_schema="public"
+//	//migrator:schema:grant role="app_user" privilege="SELECT,INSERT" on_table="users"
+//	type AccessControl struct{}
+type Grant struct {
+	StructName string   // Name of the Go struct this grant is associated with
+	Role       string   // Role receiving the privilege
+	Privileges []string // Privileges to grant, e.g. SELECT, INSERT, USAGE
+	OnTable    string   // Target table, mutually exclusive with OnSchema
+	OnSchema   string   // Target schema, mutually exclusive with OnTable
+	WithOption bool     // Whether the grant includes WITH GRANT OPTION
+	GrantedBy  string   // Grantor reported by database introspection, if available
+	Comment    string   // Optional comment for documentation
+}
+
+// Canonicalize fills in normalized privilege and object names used by renderers
+// and comparators.
+func (g *Grant) Canonicalize() {
+	seen := make(map[string]bool)
+	privileges := make([]string, 0, len(g.Privileges))
+	for _, privilege := range g.Privileges {
+		trimmed := strings.TrimSpace(privilege)
+		if trimmed == "" {
+			continue
+		}
+		normalized := strings.ToUpper(trimmed)
+		if !seen[normalized] {
+			seen[normalized] = true
+			privileges = append(privileges, normalized)
+		}
+	}
+	g.Privileges = privileges
+	g.Role = strings.TrimSpace(g.Role)
+	g.OnTable = strings.TrimSpace(g.OnTable)
+	g.OnSchema = strings.TrimSpace(g.OnSchema)
 }
 
 // SelfReferencingFK represents a self-referencing foreign key that needs to be

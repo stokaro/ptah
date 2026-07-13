@@ -252,6 +252,22 @@ func (m *MockVisitor) VisitAlterRole(node *ast.AlterRoleNode) error {
 	return nil
 }
 
+func (m *MockVisitor) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "GrantPrivilege:"+node.Role)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
+func (m *MockVisitor) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "RevokePrivilege:"+node.Role)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
 func (m *MockVisitor) VisitRawSQL(node *ast.RawSQLNode) error {
 	m.VisitedNodes = append(m.VisitedNodes, "RawSQL:"+node.SQL)
 	if m.ReturnError {

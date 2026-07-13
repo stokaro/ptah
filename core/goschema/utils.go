@@ -230,6 +230,16 @@ func normalizeTableScopedNames(r *Database) {
 			rlsEnabled.Table = table.QualifiedName()
 		}
 	}
+	for i := range r.Grants {
+		grant := &r.Grants[i]
+		grant.Canonicalize()
+		if grant.OnTable == "" {
+			continue
+		}
+		if table := resolveTableReference(r.Tables, grant.StructName, grant.OnTable); table != nil {
+			grant.OnTable = table.QualifiedName()
+		}
+	}
 	for i := range r.Triggers {
 		trigger := &r.Triggers[i]
 		if table := resolveTableReference(r.Tables, trigger.StructName, trigger.Table); table != nil {

@@ -30,8 +30,8 @@ capabilities include:
 - 🧱 **Schema Generation (DDL)**
   Builds platform-specific `CREATE TABLE`, `CREATE INDEX`, and other DDL statements.
 
-- 🔐 **Row-Level Security (PostgreSQL)**
-  Supports PostgreSQL RLS policies and custom functions for multi-tenant data isolation.
+- 🔐 **Row-Level Security And Access Control (PostgreSQL)**
+  Supports PostgreSQL RLS policies, roles, grants, and custom functions for multi-tenant data isolation.
 
 - 🔍 **Database Introspection**
   Reads the current schema directly from PostgreSQL, MySQL, MariaDB, or ClickHouse for comparison and analysis.
@@ -347,6 +347,25 @@ type User struct {
 - `using` - USING clause expression for row filtering
 - `with_check` - WITH CHECK clause expression for INSERT/UPDATE validation
 - `comment` - Policy description
+
+#### Role Attributes (PostgreSQL only)
+- `name` - Role name
+- `login` - Whether the role can login
+- `password` - Encrypted password hash
+- `superuser` - Whether the role has superuser privileges
+- `createdb` or `create_db` - Whether the role can create databases
+- `createrole` or `create_role` - Whether the role can create roles
+- `inherit` - Whether the role inherits privileges
+- `replication` - Whether the role can initiate replication
+- `comment` - Role description
+
+#### Grant Attributes (PostgreSQL only)
+- `role` - Role receiving the privilege
+- `privilege` or `privileges` - One privilege or a comma-separated list such as `SELECT,INSERT,UPDATE,DELETE`
+- `on_table` - Target table for table privileges
+- `on_schema` - Target schema for schema privileges such as `USAGE`
+- `with_option` - Whether to emit `WITH GRANT OPTION`
+- `comment` - Grant description
 
 #### Constraint Attributes
 - `name` - Constraint name
@@ -1229,6 +1248,13 @@ package main
 //migrator:schema:function name="set_tenant_context" params="tenant_id_param TEXT" returns="VOID" language="plpgsql" security="DEFINER" body="BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;" comment="Sets the current tenant context for RLS"
 //migrator:schema:function name="get_current_tenant_id" returns="TEXT" language="plpgsql" volatility="STABLE" body="BEGIN RETURN current_setting('app.current_tenant_id', true); END;" comment="Gets the current tenant ID from session"
 
+// Define the application role and the privileges it needs.
+//migrator:schema:role name="app_role" inherit="true" comment="Application runtime role"
+//migrator:schema:grant role="app_role" privilege="USAGE" on_schema="public" comment="Allow app role to resolve public schema objects"
+//migrator:schema:grant role="app_role" privilege="SELECT,INSERT,UPDATE,DELETE" on_table="users" comment="Allow app role to use tenant-scoped users"
+//migrator:schema:grant role="app_role" privilege="SELECT,INSERT,UPDATE,DELETE" on_table="products" comment="Allow app role to use tenant-scoped products"
+type AccessControl struct{}
+
 // Enable RLS and create policies for users table
 //migrator:schema:rls:enable table="users" comment="Enable RLS for multi-tenant isolation"
 //migrator:schema:rls:policy name="user_tenant_isolation" table="users" for="ALL" to="app_role" using="tenant_id = get_current_tenant_id()" comment="Ensures users can only access their tenant's data"
@@ -1269,6 +1295,12 @@ type Product struct {
 This generates the following PostgreSQL SQL:
 
 ```sql
+-- Create the runtime role and grant object privileges
+CREATE ROLE app_role WITH NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOREPLICATION;
+GRANT USAGE ON SCHEMA public TO app_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE users TO app_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE products TO app_role;
+
 -- Create helper functions
 CREATE OR REPLACE FUNCTION set_tenant_context(tenant_id_param TEXT) RETURNS VOID AS $$
 BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;
@@ -1291,7 +1323,7 @@ CREATE POLICY product_tenant_isolation ON products FOR ALL TO app_role
     WITH CHECK (tenant_id = get_current_tenant_id());
 ```
 
-**Note:** RLS and custom functions are PostgreSQL-specific features. For other databases, these annotations are ignored during SQL generation.
+**Note:** RLS, roles, grants, and custom functions are PostgreSQL-specific features. For other databases, these annotations are ignored during SQL generation.
 
 ### EXCLUDE Constraints (PostgreSQL)
 

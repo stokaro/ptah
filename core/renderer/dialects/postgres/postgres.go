@@ -1288,6 +1288,54 @@ func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
 	return nil
 }
 
+// VisitGrantPrivilege renders a GRANT statement for PostgreSQL.
+func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	privileges := strings.Join(node.Privileges, ", ")
+	if privileges == "" {
+		return fmt.Errorf("GRANT requires at least one privilege")
+	}
+	if node.Role == "" {
+		return fmt.Errorf("GRANT requires a role")
+	}
+	if node.ObjectType == "" || node.ObjectName == "" {
+		return fmt.Errorf("GRANT requires an object type and object name")
+	}
+
+	grantOption := ""
+	if node.WithOption {
+		grantOption = " WITH GRANT OPTION"
+	}
+	r.w.WriteLinef("GRANT %s ON %s %s TO %s%s;", privileges, node.ObjectType, node.ObjectName, node.Role, grantOption)
+	return nil
+}
+
+// VisitRevokePrivilege renders a REVOKE statement for PostgreSQL.
+func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	privileges := strings.Join(node.Privileges, ", ")
+	if privileges == "" {
+		return fmt.Errorf("REVOKE requires at least one privilege")
+	}
+	if node.Role == "" {
+		return fmt.Errorf("REVOKE requires a role")
+	}
+	if node.ObjectType == "" || node.ObjectName == "" {
+		return fmt.Errorf("REVOKE requires an object type and object name")
+	}
+
+	prefix := "REVOKE"
+	if node.GrantOptionFor {
+		prefix = "REVOKE GRANT OPTION FOR"
+	}
+	r.w.WriteLinef("%s %s ON %s %s FROM %s;", prefix, privileges, node.ObjectType, node.ObjectName, node.Role)
+	return nil
+}
+
 // VisitRawSQL renders a literal SQL fragment verbatim and appends a trailing
 // semicolon if the fragment doesn't already end with one. The caller owns
 // correctness of the embedded SQL. The trailing `;` is essential — downstream

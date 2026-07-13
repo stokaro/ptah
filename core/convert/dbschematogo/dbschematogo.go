@@ -23,6 +23,7 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 		RLSPolicies:       make([]goschema.RLSPolicy, 0),
 		RLSEnabledTables:  make([]goschema.RLSEnabledTable, 0),
 		Roles:             make([]goschema.Role, 0),
+		Grants:            make([]goschema.Grant, 0),
 		Dependencies:      make(map[string][]string),
 	}
 
@@ -201,6 +202,8 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 		database.Roles = append(database.Roles, role)
 	}
 
+	database.Grants = convertGrants(dbSchema.Grants)
+
 	// Convert RLS enabled tables from tables that have RLS enabled
 	for _, dbTable := range dbSchema.Tables {
 		if dbTable.RLSEnabled {
@@ -214,6 +217,26 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 	}
 
 	return database
+}
+
+func convertGrants(dbGrants []dbschematypes.DBGrant) []goschema.Grant {
+	grants := make([]goschema.Grant, 0, len(dbGrants))
+	for _, dbGrant := range dbGrants {
+		grant := goschema.Grant{
+			Role:       dbGrant.Role,
+			Privileges: []string{dbGrant.Privilege},
+			WithOption: dbGrant.WithOption,
+			GrantedBy:  dbGrant.GrantedBy,
+		}
+		if strings.EqualFold(dbGrant.ObjectType, "SCHEMA") {
+			grant.OnSchema = dbGrant.ObjectName
+		} else {
+			grant.OnTable = dbGrant.QualifiedTarget()
+		}
+		grant.Canonicalize()
+		grants = append(grants, grant)
+	}
+	return grants
 }
 
 // foreignKeyInfo holds the field-level pieces reconstructed from a database

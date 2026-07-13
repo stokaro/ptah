@@ -190,6 +190,67 @@ type InheritRoles struct {
 	})
 }
 
+func TestGrantAnnotationParsing(t *testing.T) {
+	t.Run("table grant with comma privileges", func(t *testing.T) {
+		c := qt.New(t)
+		goCode := `
+package test
+
+//migrator:schema:grant role="app_role" privilege="SELECT,INSERT, UPDATE,DELETE" on_table="users" comment="Application DML"
+type AccessControl struct {
+}
+`
+		database := parseStringAsGoFile(c, goCode)
+
+		c.Assert(database.Grants, qt.HasLen, 1)
+		grant := database.Grants[0]
+		c.Assert(grant.StructName, qt.Equals, "AccessControl")
+		c.Assert(grant.Role, qt.Equals, "app_role")
+		c.Assert(grant.Privileges, qt.DeepEquals, []string{"SELECT", "INSERT", "UPDATE", "DELETE"})
+		c.Assert(grant.OnTable, qt.Equals, "users")
+		c.Assert(grant.OnSchema, qt.Equals, "")
+		c.Assert(grant.Comment, qt.Equals, "Application DML")
+	})
+
+	t.Run("schema grant with privileges alias and grant option", func(t *testing.T) {
+		c := qt.New(t)
+		goCode := `
+package test
+
+//migrator:schema:grant role="app_role" privileges="usage" on_schema="public" with_option="true"
+type AccessControl struct {
+}
+`
+		database := parseStringAsGoFile(c, goCode)
+
+		c.Assert(database.Grants, qt.HasLen, 1)
+		grant := database.Grants[0]
+		c.Assert(grant.Role, qt.Equals, "app_role")
+		c.Assert(grant.Privileges, qt.DeepEquals, []string{"USAGE"})
+		c.Assert(grant.OnTable, qt.Equals, "")
+		c.Assert(grant.OnSchema, qt.Equals, "public")
+		c.Assert(grant.WithOption, qt.IsTrue)
+	})
+
+	t.Run("grant table reference is schema qualified by finalize", func(t *testing.T) {
+		c := qt.New(t)
+		goCode := `
+package test
+
+//migrator:schema:table name="app.users"
+//migrator:schema:grant role="app_role" privilege="SELECT" on_table="app.users"
+type User struct {
+	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+}
+`
+		database := parseStringAsGoFile(c, goCode)
+
+		c.Assert(database.Grants, qt.HasLen, 1)
+		c.Assert(database.Grants[0].OnTable, qt.Equals, "app.users")
+	})
+}
+
 // Helper function to find a role by name in a slice of roles
 func findRoleByName(roles []goschema.Role, name string) *goschema.Role {
 	for _, role := range roles {

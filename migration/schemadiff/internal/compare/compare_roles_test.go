@@ -267,3 +267,156 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 		c.Assert(diff.Changes, qt.HasLen, 0) // No password change detected
 	})
 }
+
+func TestGrantsComparison(t *testing.T) {
+	t.Run("adds table and schema grants", func(t *testing.T) {
+		c := qt.New(t)
+		generated := &goschema.Database{
+			Roles: []goschema.Role{{Name: "app_role"}},
+			Grants: []goschema.Grant{
+				{Role: "app_role", Privileges: []string{"SELECT", "INSERT"}, OnTable: "users"},
+				{Role: "app_role", Privileges: []string{"USAGE"}, OnSchema: "public"},
+			},
+		}
+		database := &types.DBSchema{}
+		diff := &difftypes.SchemaDiff{}
+
+		compare.Grants(generated, database, diff)
+
+		c.Assert(diff.GrantsAdded, qt.DeepEquals, []difftypes.GrantRef{
+			{Role: "app_role", Privilege: "USAGE", ObjectType: "SCHEMA", ObjectName: "public"},
+			{Role: "app_role", Privilege: "INSERT", ObjectType: "TABLE", ObjectName: "users"},
+			{Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users"},
+		})
+		c.Assert(diff.GrantsRemoved, qt.HasLen, 0)
+	})
+
+	t.Run("matches PostgreSQL row per privilege introspection", func(t *testing.T) {
+		c := qt.New(t)
+		generated := &goschema.Database{
+			Roles: []goschema.Role{{Name: "app_role"}},
+			Grants: []goschema.Grant{
+				{Role: "app_role", Privileges: []string{"select", "insert"}, OnTable: "public.users"},
+			},
+		}
+		database := &types.DBSchema{
+			Grants: []types.DBGrant{
+				{Role: "app_role", Privilege: "INSERT", ObjectType: "TABLE", Schema: "public", ObjectName: "users"},
+				{Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", Schema: "public", ObjectName: "users"},
+			},
+		}
+		diff := &difftypes.SchemaDiff{}
+
+		compare.Grants(generated, database, diff)
+
+		c.Assert(diff.GrantsAdded, qt.HasLen, 0)
+		c.Assert(diff.GrantsRemoved, qt.HasLen, 0)
+	})
+
+	t.Run("removes grants only for managed roles", func(t *testing.T) {
+		c := qt.New(t)
+		generated := &goschema.Database{
+			Roles:  []goschema.Role{{Name: "app_role"}},
+			Grants: []goschema.Grant{{Role: "app_role", Privileges: []string{"SELECT"}, OnTable: "users"}},
+		}
+		database := &types.DBSchema{
+			Grants: []types.DBGrant{
+				{Role: "app_role", Privilege: "DELETE", ObjectType: "TABLE", ObjectName: "users"},
+				{Role: "external_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users"},
+			},
+		}
+		diff := &difftypes.SchemaDiff{}
+
+		compare.Grants(generated, database, diff)
+
+		c.Assert(diff.GrantsRemoved, qt.DeepEquals, []difftypes.GrantRef{
+			{Role: "app_role", Privilege: "DELETE", ObjectType: "TABLE", ObjectName: "users"},
+		})
+		c.Assert(diff.GrantOptionsRevoked, qt.HasLen, 0)
+	})
+
+	t.Run("matches explicit grants to external roles without revoking their other privileges", func(t *testing.T) {
+		c := qt.New(t)
+		generated := &goschema.Database{
+			Grants: []goschema.Grant{{Role: "external_role", Privileges: []string{"SELECT"}, OnTable: "users"}},
+		}
+		database := &types.DBSchema{
+			Grants: []types.DBGrant{
+				{Role: "external_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users"},
+				{Role: "external_role", Privilege: "DELETE", ObjectType: "TABLE", ObjectName: "users"},
+			},
+		}
+		diff := &difftypes.SchemaDiff{}
+
+		compare.Grants(generated, database, diff)
+
+		c.Assert(diff.GrantsAdded, qt.HasLen, 0)
+		c.Assert(diff.GrantsRemoved, qt.HasLen, 0)
+	})
+
+	t.Run("downgrades grant option without revoking the privilege", func(t *testing.T) {
+		c := qt.New(t)
+		generated := &goschema.Database{
+			Roles:  []goschema.Role{{Name: "app_role"}},
+			Grants: []goschema.Grant{{Role: "app_role", Privileges: []string{"SELECT"}, OnTable: "users"}},
+		}
+		database := &types.DBSchema{
+			Grants: []types.DBGrant{
+				{Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users", WithOption: true},
+			},
+		}
+		diff := &difftypes.SchemaDiff{}
+
+		compare.Grants(generated, database, diff)
+
+		c.Assert(diff.GrantsAdded, qt.HasLen, 0)
+		c.Assert(diff.GrantsRemoved, qt.HasLen, 0)
+		c.Assert(diff.GrantOptionsRevoked, qt.DeepEquals, []difftypes.GrantRef{
+			{Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users", WithOption: true},
+		})
+	})
+
+	t.Run("upgrades grant option without re-adding the privilege", func(t *testing.T) {
+		c := qt.New(t)
+		generated := &goschema.Database{
+			Roles: []goschema.Role{{Name: "app_role"}},
+			Grants: []goschema.Grant{
+				{Role: "app_role", Privileges: []string{"SELECT"}, OnTable: "users", WithOption: true},
+			},
+		}
+		database := &types.DBSchema{
+			Grants: []types.DBGrant{
+				{Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users"},
+			},
+		}
+		diff := &difftypes.SchemaDiff{}
+
+		compare.Grants(generated, database, diff)
+
+		c.Assert(diff.GrantsAdded, qt.HasLen, 0)
+		c.Assert(diff.GrantsRemoved, qt.HasLen, 0)
+		c.Assert(diff.GrantOptionsAdded, qt.DeepEquals, []difftypes.GrantRef{
+			{Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users", WithOption: true},
+		})
+		c.Assert(diff.GrantOptionsRevoked, qt.HasLen, 0)
+	})
+
+	t.Run("removing a grant with grant option still revokes the full privilege", func(t *testing.T) {
+		c := qt.New(t)
+		generated := &goschema.Database{Roles: []goschema.Role{{Name: "app_role"}}}
+		database := &types.DBSchema{
+			Grants: []types.DBGrant{
+				{Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users", WithOption: true},
+			},
+		}
+		diff := &difftypes.SchemaDiff{}
+
+		compare.Grants(generated, database, diff)
+
+		c.Assert(diff.GrantsAdded, qt.HasLen, 0)
+		c.Assert(diff.GrantsRemoved, qt.DeepEquals, []difftypes.GrantRef{
+			{Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "users", WithOption: true},
+		})
+		c.Assert(diff.GrantOptionsRevoked, qt.HasLen, 0)
+	})
+}

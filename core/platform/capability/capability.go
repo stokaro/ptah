@@ -116,6 +116,10 @@ const (
 	// (PostgreSQL ALTER TABLE ... ENABLE ROW LEVEL SECURITY + CREATE POLICY).
 	RowLevelSecurity Capability = "row_level_security"
 
+	// RoleManagement marks support for PostgreSQL role and object privilege
+	// management (CREATE/ALTER ROLE plus GRANT/REVOKE).
+	RoleManagement Capability = "role_management"
+
 	// ForeignKeys marks support for declarative FOREIGN KEY constraints.
 	// PostgreSQL, CockroachDB, YugabyteDB, MySQL, and MariaDB support them;
 	// Spanner's PostgreSQL interface has historically not supported the
@@ -181,6 +185,9 @@ var registry = map[Capability]spec{
 	},
 	RowLevelSecurity: {
 		doc: "row-level security policies (PostgreSQL)",
+	},
+	RoleManagement: {
+		doc: "PostgreSQL role and object privilege management",
 	},
 	ForeignKeys: {
 		doc: "declarative FOREIGN KEY constraints",
@@ -309,6 +316,7 @@ func MySQL80() Capabilities {
 		CreateIndexConcurrently:  false,
 		CreateOrReplaceTrigger:   false,
 		RowLevelSecurity:         false,
+		RoleManagement:           false,
 		ForeignKeys:              true,
 		Sequences:                false,
 		XMLType:                  false,
@@ -347,6 +355,7 @@ func MariaDB1011() Capabilities {
 		CreateIndexConcurrently:  false,
 		CreateOrReplaceTrigger:   true,
 		RowLevelSecurity:         false,
+		RoleManagement:           false,
 		ForeignKeys:              true,
 		Sequences:                true,
 		XMLType:                  false,
@@ -381,6 +390,7 @@ func Postgres16() Capabilities {
 		CreateIndexConcurrently:  true,
 		CreateOrReplaceTrigger:   true,
 		RowLevelSecurity:         true,
+		RoleManagement:           true,
 		ForeignKeys:              true,
 		Sequences:                true,
 		XMLType:                  true,
@@ -410,6 +420,7 @@ func ClickHouse24() Capabilities {
 		CreateIndexConcurrently:  false,
 		CreateOrReplaceTrigger:   false,
 		RowLevelSecurity:         false,
+		RoleManagement:           false,
 		ForeignKeys:              false,
 		Sequences:                false,
 		XMLType:                  false,
@@ -426,7 +437,8 @@ func CockroachDB23() Capabilities {
 		With(CreateIndexConcurrently, false).
 		With(XMLType, false).
 		With(AdvisoryLocks, false).
-		With(RowLevelSecurity, false)
+		With(RowLevelSecurity, false).
+		With(RoleManagement, false)
 }
 
 // YugabyteDB25 is the preset for YugabyteDB YSQL. It stays close to
@@ -454,6 +466,7 @@ func SpannerPostgres() Capabilities {
 		With(CreateIndexConcurrently, false).
 		With(CreateOrReplaceTrigger, false).
 		With(RowLevelSecurity, false).
+		With(RoleManagement, false).
 		With(ForeignKeys, false).
 		With(Sequences, false).
 		With(XMLType, false).

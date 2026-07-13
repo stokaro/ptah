@@ -67,6 +67,15 @@ roles:
   app_user:
     login: true
     inherit: false
+grants:
+  app_user_schema:
+    role: app_user
+    privilege: USAGE
+    on_schema: public
+  app_user_users:
+    role: app_user
+    privileges: [SELECT, INSERT]
+    on_table: users
 tables:
   tenants:
     columns:
@@ -120,6 +129,10 @@ rls_policies:
 	c.Assert(db.Functions[0].Language, qt.Equals, "sql")
 	c.Assert(db.Roles, qt.HasLen, 1)
 	c.Assert(db.Roles[0].Inherit, qt.IsFalse)
+	c.Assert(db.Grants, qt.HasLen, 2)
+	c.Assert(db.Grants[0].Privileges, qt.DeepEquals, []string{"USAGE"})
+	c.Assert(db.Grants[1].Privileges, qt.DeepEquals, []string{"SELECT", "INSERT"})
+	c.Assert(db.Grants[1].OnTable, qt.Equals, "users")
 	c.Assert(db.RLSEnabledTables, qt.HasLen, 1)
 	c.Assert(db.RLSPolicies, qt.HasLen, 1)
 	c.Assert(db.Constraints, qt.HasLen, 1)
@@ -129,6 +142,8 @@ rls_policies:
 	c.Assert(sql, qt.Contains, `CONSTRAINT chk_users_email CHECK (position('@' in email) > 1)`)
 	c.Assert(sql, qt.Contains, `ALTER TABLE users ENABLE ROW LEVEL SECURITY;`)
 	c.Assert(sql, qt.Contains, `CREATE POLICY users_tenant_isolation ON users`)
+	c.Assert(sql, qt.Contains, `GRANT USAGE ON SCHEMA public TO app_user;`)
+	c.Assert(sql, qt.Contains, `GRANT SELECT, INSERT ON TABLE users TO app_user;`)
 }
 
 func TestParse_TrimsScalarEnumValues(t *testing.T) {

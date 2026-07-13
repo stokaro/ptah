@@ -131,10 +131,12 @@ func TestPresets_KeyDifferences(t *testing.T) {
 	c.Assert(capability.Postgres16().Has(capability.CreateOrReplaceTrigger), qt.IsTrue)
 	c.Assert(capability.Postgres13().Has(capability.CreateOrReplaceTrigger), qt.IsFalse)
 	c.Assert(capability.Postgres13().Has(capability.CreateIndexConcurrently), qt.IsTrue)
+	c.Assert(capability.Postgres16().Has(capability.RoleManagement), qt.IsTrue)
 
 	// Enum modeling is mutually exclusive and dialect-appropriate.
 	c.Assert(capability.MySQL80().Has(capability.EnumInlineColumn), qt.IsTrue)
 	c.Assert(capability.MySQL80().Has(capability.EnumCustomType), qt.IsFalse)
+	c.Assert(capability.MySQL80().Has(capability.RoleManagement), qt.IsFalse)
 	c.Assert(capability.Postgres16().Has(capability.EnumCustomType), qt.IsTrue)
 	c.Assert(capability.Postgres16().Has(capability.EnumInlineColumn), qt.IsFalse)
 
@@ -162,17 +164,20 @@ func TestPresets_KeyDifferences(t *testing.T) {
 	c.Assert(cockroach.Has(capability.CreateIndexConcurrently), qt.IsFalse)
 	c.Assert(cockroach.Has(capability.XMLType), qt.IsFalse)
 	c.Assert(cockroach.Has(capability.AdvisoryLocks), qt.IsFalse)
+	c.Assert(cockroach.Has(capability.RoleManagement), qt.IsFalse)
 
 	yugabyte := capability.YugabyteDB25()
 	c.Assert(yugabyte.Has(capability.EnumCustomType), qt.IsTrue)
 	c.Assert(yugabyte.Has(capability.ForeignKeys), qt.IsTrue)
 	c.Assert(yugabyte.Has(capability.CreateIndexConcurrently), qt.IsFalse)
+	c.Assert(yugabyte.Has(capability.RoleManagement), qt.IsTrue)
 
 	spanner := capability.SpannerPostgres()
 	c.Assert(spanner.Has(capability.EnumCustomType), qt.IsFalse)
 	c.Assert(spanner.Has(capability.ForeignKeys), qt.IsFalse)
 	c.Assert(spanner.Has(capability.Sequences), qt.IsFalse)
 	c.Assert(spanner.Has(capability.XMLType), qt.IsFalse)
+	c.Assert(spanner.Has(capability.RoleManagement), qt.IsFalse)
 }
 
 func TestCapabilities_With_DoesNotMutateReceiver(t *testing.T) {

@@ -150,12 +150,20 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 		schema.RLSPolicies = rlsPolicies
 	}
 
-	// Read roles (PostgreSQL-specific)
-	roles, err := r.readRoles()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read roles: %w", err)
+	if r.caps.Has(capability.RoleManagement) {
+		// Read roles and grants (PostgreSQL-specific)
+		roles, err := r.readRoles()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read roles: %w", err)
+		}
+		schema.Roles = roles
+
+		grants, err := r.readGrants()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read grants: %w", err)
+		}
+		schema.Grants = grants
 	}
-	schema.Roles = roles
 
 	// Enhance tables with constraint information
 	r.enhanceTablesWithConstraints(schema.Tables, schema.Constraints)
@@ -182,8 +190,9 @@ func (r *Reader) readTables() ([]types.DBTable, error) {
 func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error) {
 	// Read tables, excluding system tables like schema_migrations
 	tablesQuery := `
-			SELECT table_schema, table_name, table_type,
-			       COALESCE(obj_description(c.oid), '') as table_comment
+		SELECT table_schema, table_name, table_type,
+		       COALESCE(obj_description(c.oid), '') as table_comment,
+		       COALESCE(c.relrowsecurity, false) AS rls_enabled
 			FROM information_schema.tables t
 			LEFT JOIN pg_class c ON c.relname = t.table_name
 		LEFT JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -201,7 +210,7 @@ func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error)
 	var tables []types.DBTable
 	for rows.Next() {
 		var table types.DBTable
-		err := rows.Scan(&table.Schema, &table.Name, &table.Type, &table.Comment)
+		err := rows.Scan(&table.Schema, &table.Name, &table.Type, &table.Comment, &table.RLSEnabled)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan table: %w", err)
 		}
@@ -1155,4 +1164,95 @@ func (r *Reader) readRoles() ([]types.DBRole, error) {
 	}
 
 	return roles, nil
+}
+
+func (r *Reader) readGrants() ([]types.DBGrant, error) {
+	var grants []types.DBGrant
+	for _, schemaName := range r.schemasToRead() {
+		tableGrants, err := r.readTableGrantsForSchema(schemaName)
+		if err != nil {
+			return nil, err
+		}
+		grants = append(grants, tableGrants...)
+
+		schemaGrants, err := r.readSchemaGrantsForSchema(schemaName)
+		if err != nil {
+			return nil, err
+		}
+		grants = append(grants, schemaGrants...)
+	}
+	return grants, nil
+}
+
+func (r *Reader) readTableGrantsForSchema(schemaName string) ([]types.DBGrant, error) {
+	const query = `
+		SELECT
+			grantee,
+			privilege_type,
+			table_schema,
+			table_name,
+			is_grantable = 'YES' AS with_option,
+			grantor
+		FROM information_schema.role_table_grants
+		WHERE table_schema = $1
+		AND grantee NOT LIKE 'pg_%'
+		AND grantee != 'postgres'
+		ORDER BY table_schema, table_name, grantee, privilege_type`
+
+	rows, err := r.db.Query(query, schemaName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query table grants for schema %s: %w", schemaName, err)
+	}
+	defer rows.Close()
+
+	var grants []types.DBGrant
+	for rows.Next() {
+		grant := types.DBGrant{ObjectType: "TABLE"}
+		if err := rows.Scan(&grant.Role, &grant.Privilege, &grant.Schema, &grant.ObjectName, &grant.WithOption, &grant.GrantedBy); err != nil {
+			return nil, fmt.Errorf("failed to scan table grant for schema %s: %w", schemaName, err)
+		}
+		grant.Schema = r.outputSchema(grant.Schema)
+		grants = append(grants, grant)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read table grants for schema %s: %w", schemaName, err)
+	}
+	return grants, nil
+}
+
+func (r *Reader) readSchemaGrantsForSchema(schemaName string) ([]types.DBGrant, error) {
+	const query = `
+		SELECT
+			COALESCE(grantee.rolname, 'PUBLIC') AS grantee,
+			acl.privilege_type,
+			n.nspname AS schema_name,
+			acl.is_grantable AS with_option,
+			grantor.rolname AS grantor
+		FROM pg_namespace n
+		CROSS JOIN LATERAL aclexplode(n.nspacl) acl
+		LEFT JOIN pg_roles grantee ON grantee.oid = acl.grantee
+		JOIN pg_roles grantor ON grantor.oid = acl.grantor
+		WHERE n.nspname = $1
+		AND COALESCE(grantee.rolname, 'PUBLIC') NOT LIKE 'pg_%'
+		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
+		ORDER BY n.nspname, COALESCE(grantee.rolname, 'PUBLIC'), acl.privilege_type`
+
+	rows, err := r.db.Query(query, schemaName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query schema grants for schema %s: %w", schemaName, err)
+	}
+	defer rows.Close()
+
+	var grants []types.DBGrant
+	for rows.Next() {
+		grant := types.DBGrant{ObjectType: "SCHEMA"}
+		if err := rows.Scan(&grant.Role, &grant.Privilege, &grant.ObjectName, &grant.WithOption, &grant.GrantedBy); err != nil {
+			return nil, fmt.Errorf("failed to scan schema grant for schema %s: %w", schemaName, err)
+		}
+		grants = append(grants, grant)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read schema grants for schema %s: %w", schemaName, err)
+	}
+	return grants, nil
 }
