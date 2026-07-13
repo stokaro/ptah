@@ -84,3 +84,25 @@ func TestPlanner_GenerateMigrationAST_DuplicateTriggerNamesUseDistinctFunctions(
 	c.Assert(sql, qt.Contains, "CREATE TRIGGER set_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION ptah_trigger_users_set_updated_at();")
 	c.Assert(sql, qt.Contains, "CREATE TRIGGER set_updated_at BEFORE UPDATE ON posts FOR EACH ROW EXECUTE FUNCTION ptah_trigger_posts_set_updated_at();")
 }
+
+func TestPlanner_GenerateMigrationAST_MaterializedViewRefreshStrategyDoesNotAutoRefresh(t *testing.T) {
+	c := qt.New(t)
+	planner := postgres.New()
+
+	generated := &goschema.Database{
+		MaterializedViews: []goschema.MaterializedView{{
+			Name:            "user_stats",
+			Body:            "SELECT id, COUNT(*) FROM users GROUP BY id",
+			RefreshStrategy: "concurrently",
+		}},
+	}
+	diff := &difftypes.SchemaDiff{
+		MaterializedViewsAdded: []string{"user_stats"},
+	}
+
+	nodes := planner.GenerateMigrationAST(diff, generated)
+	sql, err := renderer.RenderSQL("postgres", nodes...)
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "CREATE MATERIALIZED VIEW user_stats AS")
+	c.Assert(sql, qt.Not(qt.Contains), "REFRESH MATERIALIZED VIEW CONCURRENTLY")
+}
