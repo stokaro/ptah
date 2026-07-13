@@ -34,6 +34,7 @@ func main() {
         MigrationName: "add_user_table",       // Optional: defaults to "migration"
         OutputDir:     "./migrations",         // Directory to save migration files
         Schemas:       []string{"auth", "billing", "public"}, // Optional PostgreSQL schema allow-list
+        ShadowDatabaseURL: "postgres://user:pass@localhost/shadow", // Optional pre-write verification DB
     }
 
     // Bound the initial database connection so a stuck host fails fast.
@@ -67,7 +68,34 @@ The generator follows this process:
 3. **Calculate Differences**: Compares the desired schema with the current database state
 4. **Generate UP Migration**: Creates SQL statements to transform current schema to desired schema
 5. **Generate DOWN Migration**: Creates SQL statements to reverse the changes (rollback)
-6. **Save Files**: Writes both migration files with proper naming convention
+6. **Shadow Verification (Optional)**: Replays prior migrations plus the candidate on a disposable database before files are written
+7. **Save Files**: Writes both migration files with proper naming convention
+
+### Shadow Database Verification
+
+Set `ShadowDatabaseURL` to verify generated migrations before they are written:
+
+```go
+opts := generator.GenerateMigrationOptions{
+    GoEntitiesDir:      "./entities",
+    DatabaseURL:        "postgres://localhost:5432/app_dev",
+    MigrationName:      "add_user_table",
+    OutputDir:          "./migrations",
+    ShadowDatabaseURL:  "postgres://localhost:5432/app_shadow",
+}
+```
+
+The shadow database is treated as disposable. The generator drops all objects in
+it, applies every existing migration from `OutputDir`, applies the candidate
+migration, re-introspects the database, and compares the result against the Go
+schema. If the replayed schema differs, generation aborts before writing files:
+
+```text
+shadow check failed: missing column users.email
+```
+
+Ptah also runs an `up -> down -> up` round-trip on the candidate migration and
+aborts if either direction fails.
 
 ### File Naming Convention
 
@@ -180,6 +208,9 @@ type GenerateMigrationOptions struct {
     // Schemas restricts database introspection to the listed schemas when the
     // connected dialect supports schema scoping.
     Schemas []string
+
+    // ShadowDatabaseURL enables pre-write verification on a disposable database.
+    ShadowDatabaseURL string
 }
 ```
 
@@ -192,6 +223,7 @@ type GenerateMigrationOptions struct {
 - `OutputDir`: Directory where migration files will be saved (required)
 - `CompareOptions`: Schema comparison options (optional)
 - `Schemas`: PostgreSQL schema allow-list for database introspection (optional)
+- `ShadowDatabaseURL`: Disposable database URL for pre-write migration replay and round-trip checks (optional)
 
 ### Database URL Examples
 
