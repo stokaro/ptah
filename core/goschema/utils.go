@@ -1,11 +1,13 @@
 package goschema
 
 import (
+	"fmt"
 	"log/slog"
 	"maps"
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -246,6 +248,12 @@ func normalizeTableScopedNames(r *Database) {
 			trigger.Table = table.QualifiedName()
 		}
 	}
+	// Views and MaterializedViews: no table-scoped normalization applied here.
+	// Unlike Triggers/Constraints/Grants/Indexes/RLS, which reference a .Table,
+	// Views/MaterializedViews declare a standalone .Name (which may include a
+	// schema prefix, e.g. "public.foo", or be unqualified). They are not table
+	// scoped from a host table struct in the same manner. Current behavior is
+	// preserved for compatibility with YAML and existing parser paths.
 }
 
 func resolveTableReference(tables []Table, structName, tableName string) *Table {
@@ -809,8 +817,16 @@ func isFunctionInSorted(function Function, sorted []Function) bool {
 //   - Embedded Fields: Deduplicated by struct name + embedded type name combination
 //   - Views and materialized views: Deduplicated by name
 //   - Triggers: Deduplicated by table name + trigger name combination
+//   - Constraints: Deduplicated by explicit table + name, or declaring struct + name when table is omitted
+//   - Grants: Deduplicated by role + privileges + grant option + (table or schema) target
+//   - Roles: Deduplicated by role name
 //
-// This method modifies the PackageParseResult in-place, replacing the original
+// All 15 Database slice collections are now covered (previously only a subset
+// of appended collections were deduplicated, and the five dropped by ParseFS
+// were never reached). This prevents duplicate emits when objects are declared
+// across files.
+//
+// This method modifies the Database in-place, replacing the original
 // slices with deduplicated versions. The order of entities may change during
 // this process, but dependency ordering is handled separately.
 func Deduplicate(r *Database) {
@@ -931,6 +947,9 @@ func deduplicateSchemaObjects(r *Database) {
 	r.Views = deduplicateViews(r.Views)
 	r.MaterializedViews = deduplicateMaterializedViews(r.MaterializedViews)
 	r.Triggers = deduplicateTriggers(r.Triggers)
+	r.Constraints = deduplicateConstraints(r.Constraints)
+	r.Grants = deduplicateGrants(r.Grants)
+	r.Roles = deduplicateRoles(r.Roles)
 }
 
 func deduplicateViews(views []View) []View {
@@ -967,6 +986,176 @@ func deduplicateTriggers(triggers []Trigger) []Trigger {
 		if !seen[key] {
 			seen[key] = true
 			deduplicated = append(deduplicated, trigger)
+		}
+	}
+	return deduplicated
+}
+
+// deduplicateConstraints dedups table-level constraints by their declared
+// table scope when table= is explicit, otherwise by the declaring Go type.
+// The fallback is needed before normalizeTableScopedNames fills .Table for
+// annotations that rely on struct association.
+func deduplicateConstraints(constraints []Constraint) []Constraint {
+	seen := make(map[string]bool)
+	deduplicated := make([]Constraint, 0, len(constraints))
+	for _, c := range constraints {
+		key := constraintDedupKey(c)
+		if !seen[key] {
+			seen[key] = true
+			deduplicated = append(deduplicated, c)
+		}
+	}
+	return deduplicated
+}
+
+func constraintDedupKey(c Constraint) string {
+	scope := c.StructName
+	if strings.TrimSpace(c.Table) != "" {
+		scope = strings.TrimSpace(c.Table)
+	}
+	return scope + "." + c.Name
+}
+
+// deduplicateGrants dedups by role + privileges + target (table or schema).
+// The grant option is part of identity: a plain grant and a grant WITH GRANT
+// OPTION must both survive. Privilege order is normalized only for the key, so
+// logically identical grants deduplicate even when annotations list privileges
+// in a different order.
+func deduplicateGrants(grants []Grant) []Grant {
+	seen := make(map[string]bool)
+	deduplicated := make([]Grant, 0, len(grants))
+	for _, g := range grants {
+		g.Canonicalize()
+		privileges := append([]string(nil), g.Privileges...)
+		sort.Strings(privileges)
+		privs := strings.Join(privileges, ",")
+		key := g.Role + "|" + privs + "|t:" + g.OnTable + "|s:" + g.OnSchema + "|o:" + strconv.FormatBool(g.WithOption)
+		if !seen[key] {
+			seen[key] = true
+			deduplicated = append(deduplicated, g)
+		}
+	}
+	return deduplicated
+}
+
+func validateDuplicateSchemaObjectDefinitions(r *Database) error {
+	if err := validateDuplicateViews(r.Views); err != nil {
+		return err
+	}
+	if err := validateDuplicateMaterializedViews(r.MaterializedViews); err != nil {
+		return err
+	}
+	if err := validateDuplicateTriggers(r.Triggers); err != nil {
+		return err
+	}
+	if err := validateDuplicateConstraints(r.Constraints); err != nil {
+		return err
+	}
+	if err := validateDuplicateRoles(r.Roles); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateDuplicateViews(views []View) error {
+	seen := make(map[string]string)
+	for _, view := range views {
+		signature := strings.Join([]string{view.Body, strconv.FormatBool(view.WithCheck)}, "\x00")
+		if previous, ok := seen[view.Name]; ok && previous != signature {
+			return fmt.Errorf("conflicting view %q definitions", view.Name)
+		}
+		seen[view.Name] = signature
+	}
+	return nil
+}
+
+func validateDuplicateMaterializedViews(views []MaterializedView) error {
+	seen := make(map[string]string)
+	for _, view := range views {
+		view.Canonicalize()
+		signature := strings.Join([]string{view.Body, view.RefreshStrategy}, "\x00")
+		if previous, ok := seen[view.Name]; ok && previous != signature {
+			return fmt.Errorf("conflicting materialized view %q definitions", view.Name)
+		}
+		seen[view.Name] = signature
+	}
+	return nil
+}
+
+func validateDuplicateTriggers(triggers []Trigger) error {
+	seen := make(map[string]string)
+	for _, trigger := range triggers {
+		trigger.Canonicalize()
+		key := trigger.Table + "." + trigger.Name
+		signature := strings.Join([]string{trigger.Timing, trigger.Event, trigger.ForEach, trigger.Body}, "\x00")
+		if previous, ok := seen[key]; ok && previous != signature {
+			return fmt.Errorf("conflicting trigger %q definitions on table %q", trigger.Name, trigger.Table)
+		}
+		seen[key] = signature
+	}
+	return nil
+}
+
+func validateDuplicateConstraints(constraints []Constraint) error {
+	seen := make(map[string]string)
+	for _, constraint := range constraints {
+		key := constraintDedupKey(constraint)
+		signature := strings.Join([]string{
+			constraint.Type,
+			constraint.Table,
+			constraint.UsingMethod,
+			constraint.ExcludeElements,
+			constraint.WhereCondition,
+			constraint.CheckExpression,
+			strings.Join(constraint.Columns, ","),
+			constraint.ForeignTable,
+			constraint.ForeignColumn,
+			constraint.OnDelete,
+			constraint.OnUpdate,
+		}, "\x00")
+		if previous, ok := seen[key]; ok && previous != signature {
+			return fmt.Errorf("conflicting constraint %q definitions in scope %q", constraint.Name, constraintDedupScope(constraint))
+		}
+		seen[key] = signature
+	}
+	return nil
+}
+
+func constraintDedupScope(c Constraint) string {
+	if strings.TrimSpace(c.Table) != "" {
+		return strings.TrimSpace(c.Table)
+	}
+	return c.StructName
+}
+
+func validateDuplicateRoles(roles []Role) error {
+	seen := make(map[string]string)
+	for _, role := range roles {
+		signature := strings.Join([]string{
+			strconv.FormatBool(role.Login),
+			role.Password,
+			strconv.FormatBool(role.Superuser),
+			strconv.FormatBool(role.CreateDB),
+			strconv.FormatBool(role.CreateRole),
+			strconv.FormatBool(role.Inherit),
+			strconv.FormatBool(role.Replication),
+		}, "\x00")
+		if previous, ok := seen[role.Name]; ok && previous != signature {
+			return fmt.Errorf("conflicting role %q definitions", role.Name)
+		}
+		seen[role.Name] = signature
+	}
+	return nil
+}
+
+// deduplicateRoles dedups roles by name (roles are global per DB).
+func deduplicateRoles(roles []Role) []Role {
+	seen := make(map[string]bool)
+	deduplicated := make([]Role, 0, len(roles))
+	for _, r := range roles {
+		if !seen[r.Name] {
+			seen[r.Name] = true
+			deduplicated = append(deduplicated, r)
 		}
 	}
 	return deduplicated
