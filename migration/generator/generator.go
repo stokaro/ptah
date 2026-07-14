@@ -16,6 +16,7 @@ import (
 	"github.com/stokaro/ptah/core/convert/fromschema"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
@@ -143,8 +144,9 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 	version = nextAvailableMigrationVersion(opts.OutputDir, version, opts.MigrationName)
 	slog.Debug("Generated migration version", "version", version)
 
-	upNodes := planner.GenerateSchemaDiffAST(diff, generated, conn.Info().Dialect)
-	assessments, err := safety.AssessRendered(upNodes, conn.Info().Dialect)
+	info := conn.Info()
+	upNodes := planner.GenerateSchemaDiffASTWithCapabilities(diff, generated, info.Dialect, info.Capabilities)
+	assessments, err := safety.AssessRenderedWithCapabilities(upNodes, info.Dialect, info.Capabilities)
 	if err != nil {
 		return nil, fmt.Errorf("error assessing migration safety: %w", err)
 	}
@@ -153,7 +155,7 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 	}
 
 	// 5. Generate up migration SQL
-	upSQL, err := generateUpMigrationSQL(diff, generated, conn.Info().Dialect)
+	upSQL, err := generateUpMigrationSQL(diff, generated, info.Dialect, info.Capabilities)
 	if err != nil {
 		return nil, fmt.Errorf("error generating up migration SQL: %w", err)
 	}
@@ -165,7 +167,7 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 	}
 
 	// 6. Generate down migration SQL
-	downSQL, err := generateDownMigrationSQL(diff, generated, dbSchema, conn.Info().Dialect)
+	downSQL, err := generateDownMigrationSQL(diff, generated, dbSchema, info.Dialect, info.Capabilities)
 	if err != nil {
 		return nil, fmt.Errorf("error generating down migration SQL: %w", err)
 	}
@@ -174,7 +176,8 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 		if err := verifyShadowMigration(ctx, shadowMigrationOptions{
 			DatabaseURL:   opts.ShadowDatabaseURL,
 			MigrationsDir: opts.OutputDir,
-			Dialect:       conn.Info().Dialect,
+			Dialect:       info.Dialect,
+			Capabilities:  info.Capabilities,
 			Version:       version,
 			Name:          opts.MigrationName,
 			UpSQL:         upSQL,
@@ -257,9 +260,18 @@ func hasActualSQLStatements(statements []string) bool {
 	return false
 }
 
-// generateUpMigrationSQL generates the SQL for the up migration
-func generateUpMigrationSQL(diff *types.SchemaDiff, generated *goschema.Database, dialect string) (string, error) {
-	statements := planner.GenerateSchemaDiffSQLStatements(diff, generated, dialect)
+// generateUpMigrationSQL generates the SQL for the up migration.
+func generateUpMigrationSQL(
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+	dialect string,
+	capsOverride ...capability.Capabilities,
+) (string, error) {
+	caps := capability.ForDialect(dialect)
+	if len(capsOverride) > 0 {
+		caps = capsOverride[0]
+	}
+	statements := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(diff, generated, dialect, caps)
 
 	if len(statements) == 0 || !hasActualSQLStatements(statements) {
 		// No actual SQL statements generated - this is a successful no-op operation
@@ -273,8 +285,14 @@ func generateUpMigrationSQL(diff *types.SchemaDiff, generated *goschema.Database
 	return withGeneratedTimeoutDirectives(header+strings.Join(statements, ";\n")+";", dialect), nil
 }
 
-// generateDownMigrationSQL generates the SQL for the down migration by reversing the diff
-func generateDownMigrationSQL(diff *types.SchemaDiff, generated *goschema.Database, dbSchema *dbschematypes.DBSchema, dialect string) (string, error) {
+// generateDownMigrationSQL generates the SQL for the down migration by reversing the diff.
+func generateDownMigrationSQL(
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+	dbSchema *dbschematypes.DBSchema,
+	dialect string,
+	capsOverride ...capability.Capabilities,
+) (string, error) {
 	// For down migrations, we need to use the current database schema as the "generated" schema
 	// since we're reverting back to the current state
 	dbAsGoSchema := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
@@ -286,7 +304,11 @@ func generateDownMigrationSQL(diff *types.SchemaDiff, generated *goschema.Databa
 	// the pre-change DB state — that is exactly the action the down must restore.
 	reverseDiff := reverseSchemaDiffWithSchema(diff, generated, dbSchema)
 
-	statements := planner.GenerateSchemaDiffSQLStatements(reverseDiff, dbAsGoSchema, dialect)
+	caps := capability.ForDialect(dialect)
+	if len(capsOverride) > 0 {
+		caps = capsOverride[0]
+	}
+	statements := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(reverseDiff, dbAsGoSchema, dialect, caps)
 
 	if len(statements) == 0 {
 		// If no statements generated, create a simple comment

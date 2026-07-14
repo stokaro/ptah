@@ -2,6 +2,7 @@ package mariadb
 
 import (
 	"github.com/stokaro/ptah/core/ast"
+	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/core/renderer/dialects/internal/bufwriter"
 	"github.com/stokaro/ptah/core/renderer/dialects/mysqllike"
 	"github.com/stokaro/ptah/core/renderer/types"
@@ -19,9 +20,15 @@ type Renderer struct {
 
 // New creates a new MariaDB renderer
 func New() *Renderer {
+	return NewWithCapabilities(capability.MariaDB1011())
+}
+
+// NewWithCapabilities creates a MariaDB renderer for a concrete server
+// capability set. Use New for offline/default rendering.
+func NewWithCapabilities(caps capability.Capabilities) *Renderer {
 	var w bufwriter.Writer
 	return &Renderer{
-		r: mysqllike.New("mariadb", &w),
+		r: mysqllike.NewWithCapabilities("mariadb", &w, caps),
 		w: w,
 	}
 }

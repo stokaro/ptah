@@ -58,19 +58,26 @@ func SupportedDialects() []string {
 //
 // Returns an error if the dialect is not supported.
 func NewRenderer(dialect string) types.RenderVisitor {
+	return NewRendererWithCapabilities(dialect, capability.ForDialect(dialect))
+}
+
+// NewRendererWithCapabilities creates a renderer for a concrete server
+// capability set. Use this on live database paths where capabilities were
+// resolved from DBInfo.Version; NewRenderer remains the offline default.
+func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) types.RenderVisitor {
 	normalizedDialect := platform.NormalizeDialect(dialect)
 
 	switch normalizedDialect {
 	case platform.Postgres:
-		return postgres.New()
+		return postgres.NewWithCapabilities(caps, normalizedDialect)
 	case platform.MySQL:
-		return mysql.New()
+		return mysql.NewWithCapabilities(caps)
 	case platform.MariaDB:
-		return mariadb.New()
+		return mariadb.NewWithCapabilities(caps)
 	case platform.ClickHouse:
 		return clickhouse.New()
 	case platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		return postgres.NewWithCapabilities(capability.ForDialect(normalizedDialect), normalizedDialect)
+		return postgres.NewWithCapabilities(caps, normalizedDialect)
 	default:
 		panic(fmt.Sprintf("unsupported database dialect: %s", dialect))
 	}
@@ -85,6 +92,12 @@ func RenderSQL(dialect string, nodes ...ast.Node) (string, error) {
 	return VisitorRenderSQL(r, nodes...)
 }
 
+// RenderSQLWithCapabilities renders SQL for a concrete server capability set.
+func RenderSQLWithCapabilities(dialect string, caps capability.Capabilities, nodes ...ast.Node) (string, error) {
+	r := NewRendererWithCapabilities(dialect, caps)
+	return VisitorRenderSQL(r, nodes...)
+}
+
 func VisitorRenderSQL(r types.RenderVisitor, nodes ...ast.Node) (string, error) {
 	r.Reset()
 	for _, node := range nodes {
@@ -96,11 +109,21 @@ func VisitorRenderSQL(r types.RenderVisitor, nodes ...ast.Node) (string, error) 
 }
 
 func GetOrderedCreateStatements(r *goschema.Database, dialect string) []string {
+	return GetOrderedCreateStatementsWithCapabilities(r, dialect, capability.ForDialect(dialect))
+}
+
+// GetOrderedCreateStatementsWithCapabilities renders ordered create statements
+// for a concrete server capability set.
+func GetOrderedCreateStatementsWithCapabilities(
+	r *goschema.Database,
+	dialect string,
+	caps capability.Capabilities,
+) []string {
 	var statements []string
 
 	astNodes := fromschema.FromDatabase(*r, dialect)
 	for _, node := range astNodes.Statements {
-		sql, err := RenderSQL(dialect, node)
+		sql, err := RenderSQLWithCapabilities(dialect, caps, node)
 		if err != nil {
 			panic(err)
 		}

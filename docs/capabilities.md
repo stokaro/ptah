@@ -50,6 +50,7 @@ so typos fail fast. Current registry:
 | `create_index_concurrently` | `CREATE [UNIQUE] INDEX CONCURRENTLY` (PostgreSQL; a compatibility no-op on CockroachDB) |
 | `create_or_replace_trigger` | `CREATE OR REPLACE TRIGGER` (PostgreSQL 14+, MariaDB; not MySQL). Trigger renderers use this to choose replace vs. drop/create |
 | `row_level_security` | Row-level security policies (PostgreSQL) |
+| `role_management` | PostgreSQL role and object privilege management (`CREATE/ALTER ROLE`, `GRANT`, `REVOKE`) |
 | `foreign_keys` | Declarative `FOREIGN KEY` constraints |
 | `sequences` | Database sequence objects (`SERIAL`/`BIGSERIAL` or explicit `CREATE SEQUENCE` support) |
 | `xml_type` | PostgreSQL `XML` column type |
@@ -85,8 +86,9 @@ composed sets yourself.
 | `create_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
 | `create_or_replace_trigger` | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ |
 | `row_level_security` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `role_management` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | `foreign_keys` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ |
-| `sequences` | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ |
+| `sequences` | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | `xml_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | `advisory_locks` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
 
@@ -121,8 +123,16 @@ planner := mysql.NewWithCapabilities(caps)
   (MariaDB over the mysql driver resolves to the MariaDB preset), and
   `PostgreSQL 16.3 (…)`. PostgreSQL-wire banners containing `CockroachDB`,
   `YugabyteDB`/`Yugabyte`, or `Spanner` resolve to their distributed-SQL
-  presets. `dbschema.ConnectToDatabase` uses this when populating
-  `conn.Info().Dialect`.
+  presets. `dbschema.ConnectToDatabase` stores this resolved set in
+  `conn.Info().Capabilities`, and live migration generation passes that same
+  set through planning, rendering, and safety assessment.
+
+Offline SQL generation has no server banner to inspect. Factories such as
+`planner.GetPlanner`, `renderer.NewRenderer`, and
+`planner.GenerateSchemaDiffSQLStatements` therefore use `ForDialect`, which is
+the current-version default for the normalized dialect. Use the
+`...WithCapabilities` variants when a caller has a live `DBInfo.Capabilities`
+value or wants to pin a specific server version in tests/CI.
 
 ## Current consumers
 
@@ -164,10 +174,11 @@ planner := mysql.NewWithCapabilities(caps)
   `platform.CockroachDB`, `platform.YugabyteDB`, and `platform.Spanner`
   normalize as distinct dialects but reuse the PostgreSQL planner, renderer,
   reader, and writer with capability presets:
-  CockroachDB disables `CREATE INDEX CONCURRENTLY`, `XML`, advisory locks, and
-  RLS; YugabyteDB disables `CREATE INDEX CONCURRENTLY` because regular
-  `CREATE INDEX` is already asynchronous in YSQL; Spanner disables enums,
-  foreign keys, sequences, RLS, XML, advisory locks, and concurrent indexes.
+  CockroachDB disables `CREATE INDEX CONCURRENTLY`, sequences, `XML`,
+  advisory locks, role management, and RLS; YugabyteDB disables
+  `CREATE INDEX CONCURRENTLY` because regular `CREATE INDEX` is already
+  asynchronous in YSQL; Spanner disables enums, foreign keys, sequences, RLS,
+  XML, advisory locks, and concurrent indexes.
   CockroachDB and YugabyteDB integration coverage uses opt-in common-subset
   scenarios that run against live OSS containers in CI. Spanner currently has
   capability, planning, rendering, URL, and detection coverage only; there is

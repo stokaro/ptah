@@ -201,15 +201,23 @@ type Planner interface {
 //   - Centralize dialect validation and error handling
 //   - Enable dependency injection and testing scenarios
 func GetPlanner(dialect string) Planner {
+	return GetPlannerWithCapabilities(dialect, capability.ForDialect(dialect))
+}
+
+// GetPlannerWithCapabilities returns a dialect-specific migration planner for
+// a concrete target capability set. Live database paths should pass
+// DBInfo.Capabilities so planning uses the same server-version preset as
+// readers and renderers. Offline callers should use GetPlanner.
+func GetPlannerWithCapabilities(dialect string, caps capability.Capabilities) Planner {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.Postgres:
-		return postgres.New()
+		return postgres.NewWithCapabilities(caps)
 	case platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		return postgres.NewWithCapabilities(capability.ForDialect(dialect))
+		return postgres.NewWithCapabilities(caps)
 	case platform.MySQL:
-		return mysql.New()
+		return mysql.NewWithCapabilities(caps)
 	case platform.MariaDB:
-		return mysql.NewWithCapabilities(capability.MariaDB1011())
+		return mysql.NewWithCapabilities(caps)
 	case platform.ClickHouse:
 		return clickhouse.New()
 	default:
@@ -259,7 +267,19 @@ func GetPlanner(dialect string) Planner {
 //   - GenerateSchemaDiffSQLStatements: For individual SQL statements
 //   - GetPlanner: For direct planner access
 func GenerateSchemaDiffAST(diff *types.SchemaDiff, generated *goschema.Database, dialect string) []ast.Node {
-	planner := GetPlanner(dialect)
+	planner := GetPlannerWithCapabilities(dialect, capability.ForDialect(dialect))
+	return planner.GenerateMigrationAST(diff, generated)
+}
+
+// GenerateSchemaDiffASTWithCapabilities generates AST nodes for a concrete
+// target capability set resolved from a live server version.
+func GenerateSchemaDiffASTWithCapabilities(
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+	dialect string,
+	caps capability.Capabilities,
+) []ast.Node {
+	planner := GetPlannerWithCapabilities(dialect, caps)
 	return planner.GenerateMigrationAST(diff, generated)
 }
 
@@ -316,7 +336,20 @@ func GenerateSchemaDiffAST(diff *types.SchemaDiff, generated *goschema.Database,
 //   - GenerateSchemaDiffSQL: For complete SQL string without splitting
 //   - GenerateSchemaDiffAST: For AST nodes without rendering
 func GenerateSchemaDiffSQLStatements(diff *types.SchemaDiff, generated *goschema.Database, dialect string) []string {
-	output := GenerateSchemaDiffSQL(diff, generated, dialect)
+	output := GenerateSchemaDiffSQLWithCapabilities(diff, generated, dialect, capability.ForDialect(dialect))
+	statements := sqlutil.SplitSQLStatements(output)
+	return statements
+}
+
+// GenerateSchemaDiffSQLStatementsWithCapabilities generates individual SQL
+// statements using a concrete server capability set.
+func GenerateSchemaDiffSQLStatementsWithCapabilities(
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+	dialect string,
+	caps capability.Capabilities,
+) []string {
+	output := GenerateSchemaDiffSQLWithCapabilities(diff, generated, dialect, caps)
 	statements := sqlutil.SplitSQLStatements(output)
 	return statements
 }
@@ -382,8 +415,19 @@ func GenerateSchemaDiffSQLStatements(diff *types.SchemaDiff, generated *goschema
 //   - GenerateSchemaDiffSQLStatements: For individual SQL statements
 //   - GenerateSchemaDiffAST: For AST nodes without rendering
 func GenerateSchemaDiffSQL(diff *types.SchemaDiff, generated *goschema.Database, dialect string) string {
-	astNodes := GenerateSchemaDiffAST(diff, generated, dialect)
-	output, err := renderer.RenderSQL(dialect, astNodes...)
+	return GenerateSchemaDiffSQLWithCapabilities(diff, generated, dialect, capability.ForDialect(dialect))
+}
+
+// GenerateSchemaDiffSQLWithCapabilities generates complete SQL using a
+// concrete server capability set.
+func GenerateSchemaDiffSQLWithCapabilities(
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+	dialect string,
+	caps capability.Capabilities,
+) string {
+	astNodes := GenerateSchemaDiffASTWithCapabilities(diff, generated, dialect, caps)
+	output, err := renderer.RenderSQLWithCapabilities(dialect, caps, astNodes...)
 	if err != nil {
 		panic(err)
 	}

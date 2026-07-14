@@ -165,12 +165,14 @@ func TestPresets_KeyDifferences(t *testing.T) {
 	c.Assert(cockroach.Has(capability.XMLType), qt.IsFalse)
 	c.Assert(cockroach.Has(capability.AdvisoryLocks), qt.IsFalse)
 	c.Assert(cockroach.Has(capability.RoleManagement), qt.IsFalse)
+	c.Assert(cockroach.Has(capability.Sequences), qt.IsFalse)
 
 	yugabyte := capability.YugabyteDB25()
 	c.Assert(yugabyte.Has(capability.EnumCustomType), qt.IsTrue)
 	c.Assert(yugabyte.Has(capability.ForeignKeys), qt.IsTrue)
 	c.Assert(yugabyte.Has(capability.CreateIndexConcurrently), qt.IsFalse)
 	c.Assert(yugabyte.Has(capability.RoleManagement), qt.IsTrue)
+	c.Assert(yugabyte.Has(capability.Sequences), qt.IsTrue)
 
 	spanner := capability.SpannerPostgres()
 	c.Assert(spanner.Has(capability.EnumCustomType), qt.IsFalse)
@@ -273,6 +275,23 @@ func TestForServerVersion(t *testing.T) {
 				qt.Commentf("dialect=%s version=%q probe=%s", tt.dialect, tt.version, tt.probe))
 		})
 	}
+}
+
+func TestForServerVersionResultReportsFallback(t *testing.T) {
+	c := qt.New(t)
+
+	caps, versionSpecific := capability.ForServerVersionResult("mysql", "8.0.17")
+	c.Assert(versionSpecific, qt.Equals, true)
+	c.Assert(caps.Has(capability.DropCheckClause), qt.Equals, true)
+	c.Assert(caps.Has(capability.DropConstraintGeneric), qt.Equals, false)
+
+	caps, versionSpecific = capability.ForServerVersionResult("mysql", "who knows")
+	c.Assert(versionSpecific, qt.Equals, false)
+	c.Assert(caps.Has(capability.DropConstraintGeneric), qt.Equals, true)
+
+	caps, versionSpecific = capability.ForServerVersionResult("mariadb", "MariaDB something")
+	c.Assert(versionSpecific, qt.Equals, false)
+	c.Assert(caps.Has(capability.DropConstraintIfExists), qt.Equals, true)
 }
 
 func TestDoc(t *testing.T) {
