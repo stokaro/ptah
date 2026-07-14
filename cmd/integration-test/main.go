@@ -161,14 +161,14 @@ func runIntegrationTests(cmd *cobra.Command, args []string) error {
 	dbConnections := configuredDatabaseConnections()
 
 	// Filter databases based on command line arguments
-	for _, dbName := range databases {
-		if url, exists := dbConnections[dbName]; exists && url != "" {
-			runner.AddDatabase(dbName, url)
-			if verbose {
-				fmt.Printf("Added database: %s\n", dbName)
-			}
-		} else {
-			fmt.Printf("Warning: Database %s not available (missing URL)\n", dbName)
+	selectedConnections, err := requestedDatabaseConnections(databases, dbConnections)
+	if err != nil {
+		return err
+	}
+	for dbName, url := range selectedConnections {
+		runner.AddDatabase(dbName, url)
+		if verbose {
+			fmt.Printf("Added database: %s\n", dbName)
 		}
 	}
 
@@ -235,9 +235,11 @@ func runIntegrationTests(cmd *cobra.Command, args []string) error {
 	fmt.Printf("   Total Tests: %d\n", report.TotalTests)
 	fmt.Printf("   Passed: %d\n", report.PassedTests)
 	fmt.Printf("   Failed: %d\n", report.FailedTests)
+	fmt.Printf("   Skipped: %d\n", report.SkippedTests)
 
-	if report.TotalTests > 0 {
-		successRate := float64(report.PassedTests) / float64(report.TotalTests) * 100
+	executedTests := report.PassedTests + report.FailedTests
+	if executedTests > 0 {
+		successRate := float64(report.PassedTests) / float64(executedTests) * 100
 		fmt.Printf("   Success Rate: %.1f%%\n", successRate)
 	}
 
@@ -249,7 +251,14 @@ func runIntegrationTests(cmd *cobra.Command, args []string) error {
 		os.Exit(1)
 	}
 
-	fmt.Printf("\n🎉 All tests passed!\n")
+	switch {
+	case executedTests == 0 && report.SkippedTests > 0:
+		fmt.Printf("\n⏭️  All requested tests were skipped.\n")
+	case report.SkippedTests > 0:
+		fmt.Printf("\n🎉 All executed tests passed; %d skipped.\n", report.SkippedTests)
+	default:
+		fmt.Printf("\n🎉 All tests passed!\n")
+	}
 	return nil
 }
 
@@ -262,6 +271,23 @@ func configuredDatabaseConnections() map[string]string {
 		"cockroachdb": os.Getenv("COCKROACHDB_URL"),
 		"yugabytedb":  os.Getenv("YUGABYTEDB_URL"),
 	}
+}
+
+func requestedDatabaseConnections(databases []string, dbConnections map[string]string) (map[string]string, error) {
+	selected := make(map[string]string, len(databases))
+	var missing []string
+	for _, dbName := range databases {
+		url, exists := dbConnections[dbName]
+		if !exists || url == "" {
+			missing = append(missing, dbName)
+			continue
+		}
+		selected[dbName] = url
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("missing database URL for requested database(s): %s", strings.Join(missing, ", "))
+	}
+	return selected, nil
 }
 
 func listScenarios(cmd *cobra.Command, args []string) error {

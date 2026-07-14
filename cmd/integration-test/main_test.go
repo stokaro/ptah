@@ -85,6 +85,35 @@ func TestConfiguredDatabaseConnectionsIncludesDistributedSQL(t *testing.T) {
 	c.Assert(connections["yugabytedb"], qt.Equals, "yugabytedb://yugabyte.example/yugabyte")
 }
 
+func TestRequestedDatabaseConnectionsRejectsMissingRequestedURL(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := requestedDatabaseConnections(
+		[]string{"postgres", "mysql"},
+		map[string]string{"postgres": "postgres://postgres.example/db"},
+	)
+
+	c.Assert(err, qt.ErrorMatches, `missing database URL for requested database\(s\): mysql`)
+}
+
+func TestRequestedDatabaseConnectionsKeepsConfiguredURLs(t *testing.T) {
+	c := qt.New(t)
+
+	selected, err := requestedDatabaseConnections(
+		[]string{"postgres", "mysql"},
+		map[string]string{
+			"postgres": "postgres://postgres.example/db",
+			"mysql":    "mysql://mysql.example/db",
+		},
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(selected, qt.DeepEquals, map[string]string{
+		"postgres": "postgres://postgres.example/db",
+		"mysql":    "mysql://mysql.example/db",
+	})
+}
+
 func TestDefaultDatabasesIncludeOSSDistributedSQL(t *testing.T) {
 	c := qt.New(t)
 

@@ -5,7 +5,6 @@ package gonative_test
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -15,27 +14,10 @@ import (
 	"github.com/stokaro/ptah/dbschema/types"
 )
 
-// skipIfNoMySQL checks if MySQL is available for testing and skips the test if not.
+// skipIfNoMySQL skips only when MYSQL_TEST_DSN is absent; a bad configured DSN fails.
 func skipIfNoMySQL(t *testing.T) string {
 	t.Helper()
-
-	dsn := os.Getenv("MYSQL_TEST_DSN")
-	if dsn == "" {
-		t.Skip("Skipping MySQL tests: MYSQL_TEST_DSN environment variable not set")
-	}
-
-	// Test connection
-	db, err := sql.Open("mysql", dsn)
-	if err != nil {
-		t.Skipf("Skipping MySQL tests: failed to open database: %v", err)
-	}
-	defer db.Close()
-
-	if err := db.Ping(); err != nil {
-		t.Skipf("Skipping MySQL tests: failed to connect to database: %v", err)
-	}
-
-	return dsn
+	return requireReachableTestDSN(t, "MYSQL_TEST_DSN", "mysql", "MySQL")
 }
 
 // Helper function to find a column by name

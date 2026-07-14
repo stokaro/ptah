@@ -5,7 +5,6 @@ package gonative_test
 import (
 	"database/sql"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 
@@ -17,73 +16,22 @@ import (
 	"github.com/stokaro/ptah/core/renderer"
 )
 
-// skipIfNoPostgreSQLRenderer checks if PostgreSQL is available for testing and skips the test if not.
+// skipIfNoPostgreSQLRenderer skips only when POSTGRES_TEST_DSN is absent; a bad configured DSN fails.
 func skipIfNoPostgreSQLRenderer(t *testing.T) string {
 	t.Helper()
-
-	dsn := os.Getenv("POSTGRES_TEST_DSN")
-	if dsn == "" {
-		t.Skip("Skipping PostgreSQL tests: POSTGRES_TEST_DSN environment variable not set")
-	}
-
-	// Test connection
-	db, err := sql.Open("pgx", dsn)
-	if err != nil {
-		t.Skipf("Skipping PostgreSQL tests: failed to open database: %v", err)
-	}
-	defer db.Close()
-
-	if err := db.Ping(); err != nil {
-		t.Skipf("Skipping PostgreSQL tests: failed to connect to database: %v", err)
-	}
-
-	return dsn
+	return requireReachableTestDSN(t, "POSTGRES_TEST_DSN", "pgx", "PostgreSQL")
 }
 
-// skipIfNoMySQLRenderer checks if MySQL is available for testing and skips the test if not.
+// skipIfNoMySQLRenderer skips only when MYSQL_TEST_DSN is absent; a bad configured DSN fails.
 func skipIfNoMySQLRenderer(t *testing.T) string {
 	t.Helper()
-
-	dsn := os.Getenv("MYSQL_TEST_DSN")
-	if dsn == "" {
-		t.Skip("Skipping MySQL tests: MYSQL_TEST_DSN environment variable not set")
-	}
-
-	// Test connection
-	db, err := sql.Open("mysql", dsn)
-	if err != nil {
-		t.Skipf("Skipping MySQL tests: failed to open database: %v", err)
-	}
-	defer db.Close()
-
-	if err := db.Ping(); err != nil {
-		t.Skipf("Skipping MySQL tests: failed to connect to database: %v", err)
-	}
-
-	return dsn
+	return requireReachableTestDSN(t, "MYSQL_TEST_DSN", "mysql", "MySQL")
 }
 
-// skipIfNoMariaDBRenderer checks if MariaDB is available for testing and skips the test if not.
+// skipIfNoMariaDBRenderer skips only when MARIADB_TEST_DSN is absent; a bad configured DSN fails.
 func skipIfNoMariaDBRenderer(t *testing.T) string {
 	t.Helper()
-
-	dsn := os.Getenv("MARIADB_TEST_DSN")
-	if dsn == "" {
-		t.Skip("Skipping MariaDB tests: MARIADB_TEST_DSN environment variable not set")
-	}
-
-	// Test connection
-	db, err := sql.Open("mysql", dsn)
-	if err != nil {
-		t.Skipf("Skipping MariaDB tests: failed to open database: %v", err)
-	}
-	defer db.Close()
-
-	if err := db.Ping(); err != nil {
-		t.Skipf("Skipping MariaDB tests: failed to connect to database: %v", err)
-	}
-
-	return dsn
+	return requireReachableTestDSN(t, "MARIADB_TEST_DSN", "mysql", "MariaDB")
 }
 
 func TestPostgreSQLRenderer_Integration(t *testing.T) {

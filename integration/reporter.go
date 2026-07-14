@@ -73,8 +73,9 @@ func (r *Reporter) generateTextStreamReport(w io.Writer) error {
 	fmt.Fprintf(w, "Total Tests: %d\n", r.report.TotalTests)
 	fmt.Fprintf(w, "Passed: %d\n", r.report.PassedTests)
 	fmt.Fprintf(w, "Failed: %d\n", r.report.FailedTests)
-	if r.report.TotalTests > 0 {
-		successRate := float64(r.report.PassedTests) / float64(r.report.TotalTests) * 100
+	fmt.Fprintf(w, "Skipped: %d\n", r.report.SkippedTests)
+	if executedTests := r.report.PassedTests + r.report.FailedTests; executedTests > 0 {
+		successRate := float64(r.report.PassedTests) / float64(executedTests) * 100
 		fmt.Fprintf(w, "Success Rate: %.1f%%\n", successRate)
 	}
 	fmt.Fprintf(w, "\n")
@@ -85,7 +86,10 @@ func (r *Reporter) generateTextStreamReport(w io.Writer) error {
 
 	for _, result := range r.report.Results {
 		status := "✅ PASS"
-		if !result.Success {
+		switch {
+		case result.Skipped:
+			status = "⏭️ SKIP"
+		case !result.Success:
 			status = "❌ FAIL"
 		}
 
@@ -96,6 +100,9 @@ func (r *Reporter) generateTextStreamReport(w io.Writer) error {
 		if !result.Success && result.Error != "" {
 			fmt.Fprintf(w, "    Error: %s\n", result.Error)
 		}
+		if result.Skipped && result.SkipReason != "" {
+			fmt.Fprintf(w, "    Skip: %s\n", result.SkipReason)
+		}
 		fmt.Fprintf(w, "\n")
 	}
 
@@ -104,7 +111,7 @@ func (r *Reporter) generateTextStreamReport(w io.Writer) error {
 		fmt.Fprintf(w, "FAILED TESTS SUMMARY\n")
 		fmt.Fprintf(w, "--------------------\n")
 		for _, result := range r.report.Results {
-			if !result.Success {
+			if !result.Success && !result.Skipped {
 				fmt.Fprintf(w, "❌ %s (%s)\n", result.Name, result.Database)
 				fmt.Fprintf(w, "   Error: %s\n\n", result.Error)
 			}
@@ -154,19 +161,26 @@ func (r *Reporter) generateHTMLReport(fpath string) error {
 			return t.Format("2006-01-02 15:04:05")
 		},
 		"successRate": func() float64 {
-			if r.report.TotalTests == 0 {
+			executedTests := r.report.PassedTests + r.report.FailedTests
+			if executedTests == 0 {
 				return 0
 			}
-			return float64(r.report.PassedTests) / float64(r.report.TotalTests) * 100
+			return float64(r.report.PassedTests) / float64(executedTests) * 100
 		},
-		"statusIcon": func(success bool) string {
-			if success {
+		"statusIcon": func(result TestResult) string {
+			if result.Skipped {
+				return "⏭️"
+			}
+			if result.Success {
 				return "✅"
 			}
 			return "❌"
 		},
-		"statusClass": func(success bool) string {
-			if success {
+		"statusClass": func(result TestResult) string {
+			if result.Skipped {
+				return "skipped"
+			}
+			if result.Success {
 				return "success"
 			}
 			return "failure"
@@ -197,6 +211,7 @@ const htmlTemplate = `<!DOCTYPE html>
         th { background-color: #f8f9fa; font-weight: bold; }
         .success { color: #28a745; }
         .failure { color: #dc3545; }
+        .skipped { color: #6c757d; }
         .error-details { background: #f8d7da; padding: 10px; border-radius: 3px; margin-top: 5px; font-family: monospace; font-size: 0.9em; }
         .duration { color: #666; font-size: 0.9em; }
         .database-badge { background: #007acc; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.8em; }
@@ -240,6 +255,10 @@ const htmlTemplate = `<!DOCTYPE html>
                 <div class="stat-label">Failed</div>
             </div>
             <div class="stat-card">
+                <div class="stat-value skipped">{{.SkippedTests}}</div>
+                <div class="stat-label">Skipped</div>
+            </div>
+            <div class="stat-card">
                 <div class="stat-value">{{printf "%.1f%%" successRate}}</div>
                 <div class="stat-label">Success Rate</div>
             </div>
@@ -263,17 +282,20 @@ const htmlTemplate = `<!DOCTYPE html>
             <tbody>
                 {{range .Results}}
                 <tr class="{{if .Steps}}expandable{{end}}" onclick="{{if .Steps}}toggleSteps('{{.Name}}_{{.Database}}'){{end}}">
-                    <td class="{{statusClass .Success}}">
+                    <td class="{{statusClass .}}">
                         {{if .Steps}}<span class="expand-icon">▶</span>{{end}}
-                        {{statusIcon .Success}}
+                        {{statusIcon .}}
                     </td>
                     <td>{{.Name}}</td>
                     <td><span class="database-badge">{{.Database}}</span></td>
                     <td class="duration">{{formatDuration .Duration}}</td>
                     <td>
                         {{.Description}}
-                        {{if not .Success}}
-                            <div class="error-details">{{.Error}}</div>
+						{{if and (not .Success) (not .Skipped)}}
+							<div class="error-details">{{.Error}}</div>
+						{{end}}
+                        {{if .Skipped}}
+                            <div class="step-description">{{.SkipReason}}</div>
                         {{end}}
                     </td>
                 </tr>
