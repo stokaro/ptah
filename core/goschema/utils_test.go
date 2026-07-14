@@ -216,6 +216,44 @@ func TestDeduplicate_EmbeddedFieldOrderPreservation(t *testing.T) {
 	c.Assert(db.EmbeddedFields, qt.HasLen, 4) // Should have 4 unique embedded fields
 }
 
+func TestDeduplicate_GrantsKeepGrantOptionAndIgnorePrivilegeOrder(t *testing.T) {
+	c := qt.New(t)
+
+	db := &goschema.Database{
+		Grants: []goschema.Grant{
+			{Role: "app", Privileges: []string{"SELECT", "INSERT"}, OnTable: "users"},
+			{Role: "app", Privileges: []string{"INSERT", "SELECT"}, OnTable: "users"},
+			{Role: "app", Privileges: []string{"SELECT", "INSERT"}, OnTable: "users", WithOption: true},
+		},
+	}
+
+	goschema.Deduplicate(db)
+
+	c.Assert(db.Grants, qt.HasLen, 2)
+	c.Assert(db.Grants[0].WithOption, qt.IsFalse)
+	c.Assert(db.Grants[0].Privileges, qt.DeepEquals, []string{"SELECT", "INSERT"})
+	c.Assert(db.Grants[1].WithOption, qt.IsTrue)
+	c.Assert(db.Grants[1].Privileges, qt.DeepEquals, []string{"SELECT", "INSERT"})
+}
+
+func TestDeduplicate_ConstraintsUseExplicitTableScope(t *testing.T) {
+	c := qt.New(t)
+
+	db := &goschema.Database{
+		Constraints: []goschema.Constraint{
+			{StructName: "User", Table: "users", Name: "users_email_check", Type: "CHECK", CheckExpression: "email <> ''"},
+			{StructName: "UserMixin", Table: "users", Name: "users_email_check", Type: "CHECK", CheckExpression: "email <> ''"},
+			{StructName: "Account", Table: "accounts", Name: "users_email_check", Type: "CHECK", CheckExpression: "email <> ''"},
+		},
+	}
+
+	goschema.Deduplicate(db)
+
+	c.Assert(db.Constraints, qt.HasLen, 2)
+	c.Assert(db.Constraints[0].StructName, qt.Equals, "User")
+	c.Assert(db.Constraints[1].StructName, qt.Equals, "Account")
+}
+
 func TestDeduplicate_ComplexScenarioWithAllTypes(t *testing.T) {
 	c := qt.New(t)
 

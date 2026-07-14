@@ -5,6 +5,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -1232,6 +1234,211 @@ type Product struct {
 			b.Fatalf("ParseFS failed: %v", err)
 		}
 	}
+}
+
+// TestParseDir_SchemaObjectsAndGrants verifies that ParseDir (and thus ParseFS
+// used by CLI) returns every Database slice collection populated by Go
+// annotations. This is the core repro for #279 and also exercises cross-file
+// duplicate no-ops.
+func TestParseDir_SchemaObjectsAndGrants(t *testing.T) {
+	c := qt.New(t)
+
+	fixtureDir := "../../integration/fixtures/entities/023-go-annotations-objects"
+
+	result, err := goschema.ParseDir(fixtureDir)
+	c.Assert(err, qt.IsNil)
+	c.Assert(result, qt.IsNotNil)
+
+	c.Assert(result.Tables, qt.HasLen, 1)
+	c.Assert(result.Tables[0].Name, qt.Equals, "users")
+
+	c.Assert(len(result.Fields) > 0, qt.IsTrue)
+	c.Assert(result.Indexes, qt.HasLen, 1)
+	c.Assert(result.Indexes[0].Name, qt.Equals, "idx_users_email")
+	c.Assert(result.Enums, qt.HasLen, 1)
+	c.Assert(result.Enums[0].Name, qt.Equals, "enum_user_status")
+	c.Assert(result.EmbeddedFields, qt.HasLen, 1)
+	c.Assert(result.EmbeddedFields[0].EmbeddedTypeName, qt.Equals, "UserMetadata")
+	c.Assert(result.Extensions, qt.HasLen, 1)
+	c.Assert(result.Extensions[0].Name, qt.Equals, "pg_trgm")
+	c.Assert(result.Functions, qt.HasLen, 1)
+	c.Assert(result.Functions[0].Name, qt.Equals, "get_fixture_tenant_id")
+
+	c.Assert(result.Views, qt.HasLen, 1, qt.Commentf("view should be populated via ParseDir; got 0 (was the #279 bug)"))
+	c.Assert(result.Views[0].Name, qt.Equals, "active_users")
+	c.Assert(result.Views[0].Comment, qt.Equals, "Active users view")
+
+	c.Assert(result.MaterializedViews, qt.HasLen, 1)
+	c.Assert(result.MaterializedViews[0].Name, qt.Equals, "user_stats")
+
+	c.Assert(result.Triggers, qt.HasLen, 1)
+	c.Assert(result.Triggers[0].Name, qt.Equals, "users_set_updated_at")
+
+	c.Assert(result.RLSPolicies, qt.HasLen, 1)
+	c.Assert(result.RLSPolicies[0].Name, qt.Equals, "users_tenant_policy")
+	c.Assert(result.RLSEnabledTables, qt.HasLen, 1)
+	c.Assert(result.RLSEnabledTables[0].Table, qt.Equals, "users")
+
+	c.Assert(result.Grants, qt.HasLen, 3, qt.Commentf("table grant, grant-option table grant, and schema grant"))
+	c.Assert(result.Constraints, qt.HasLen, 1)
+	c.Assert(result.Constraints[0].Name, qt.Equals, "users_email_check")
+
+	c.Assert(result.Roles, qt.HasLen, 1)
+	c.Assert(result.Roles[0].Name, qt.Equals, "fixture_app_user")
+}
+
+func TestParseDir_AllIntegrationFixturesRemainParsable(t *testing.T) {
+	c := qt.New(t)
+
+	result, err := goschema.ParseDir("../../integration/fixtures/entities")
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Tables, qt.Not(qt.HasLen), 0)
+	c.Assert(result.Roles, qt.Not(qt.HasLen), 0)
+}
+
+// TestParseDir_ReflectionGuard is the future-proof guard required by #279.
+// It uses reflection over Database to enumerate all slice fields, runs ParseSource
+// on the comprehensive fixture, then ParseDir on the same fixture, and asserts
+// that every Database slice is both covered by the fixture and survives the
+// ParseFS append path used by ParseDir.
+// Merge uses general reflection over all slice fields from ParseSource results (no hard-coded list).
+func TestParseDir_ReflectionGuard(t *testing.T) {
+	c := qt.New(t)
+
+	fixtureDir := "../../integration/fixtures/entities/023-go-annotations-objects"
+
+	merged := goschema.Database{}
+	entries, err := os.ReadDir(fixtureDir)
+	c.Assert(err, qt.IsNil)
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
+			continue
+		}
+		full := filepath.Join(fixtureDir, e.Name())
+		content, err := os.ReadFile(full)
+		c.Assert(err, qt.IsNil)
+		db := goschema.ParseSource(e.Name(), string(content))
+		// General reflection merge over ALL slice fields from ParseSource (future-proof, no hard-coded list of 6)
+		fvSrc := reflect.ValueOf(db)
+		fvDst := reflect.ValueOf(&merged).Elem()
+		for j := 0; j < fvSrc.NumField(); j++ {
+			if fvSrc.Field(j).Kind() == reflect.Slice {
+				dstField := fvDst.Field(j)
+				dstField.Set(reflect.AppendSlice(dstField, fvSrc.Field(j)))
+			}
+		}
+	}
+
+	dirDb, err := goschema.ParseDir(fixtureDir)
+	c.Assert(err, qt.IsNil)
+
+	fvMerged := reflect.ValueOf(merged)
+	fvDir := reflect.ValueOf(*dirDb)
+	typ := fvMerged.Type()
+	for i := 0; i < fvMerged.NumField(); i++ {
+		if fvMerged.Field(i).Kind() != reflect.Slice {
+			continue
+		}
+		name := typ.Field(i).Name
+		mLen := fvMerged.Field(i).Len()
+		if mLen == 0 {
+			c.Fatalf("%s is not exercised by the fixture; add it to 023-go-annotations-objects so the walker append stays covered", name)
+		}
+		dLen := fvDir.Field(i).Len()
+		c.Assert(dLen > 0, qt.IsTrue, qt.Commentf("%s populated by per-file parse (%d) but ParseDir/ParseFS gave %d — missing append in walker.go?", name, mLen, dLen))
+	}
+}
+
+func TestParseFS_ConflictingDuplicateSchemaObjectsFail(t *testing.T) {
+	tests := []struct {
+		name     string
+		sourceA  string
+		sourceB  string
+		err      string
+		sameHost bool
+	}{
+		{
+			name:    "view body",
+			sourceA: `//migrator:schema:view name="active_users" body="SELECT id FROM users"`,
+			sourceB: `//migrator:schema:view name="active_users" body="SELECT email FROM users"`,
+			err:     `conflicting view "active_users" definitions`,
+		},
+		{
+			name:    "materialized view body",
+			sourceA: `//migrator:schema:matview name="user_stats" body="SELECT count(*) FROM users"`,
+			sourceB: `//migrator:schema:matview name="user_stats" body="SELECT count(id) FROM users"`,
+			err:     `conflicting materialized view "user_stats" definitions`,
+		},
+		{
+			name:    "trigger body",
+			sourceA: `//migrator:schema:trigger name="set_updated_at" table="users" timing="BEFORE" event="UPDATE" body="RETURN NEW;"`,
+			sourceB: `//migrator:schema:trigger name="set_updated_at" table="users" timing="BEFORE" event="UPDATE" body="NEW.updated_at = NOW(); RETURN NEW;"`,
+			err:     `conflicting trigger "set_updated_at" definitions on table "users"`,
+		},
+		{
+			name:     "constraint expression",
+			sourceA:  `//migrator:schema:constraint name="users_email_check" type="CHECK" check="email <> ''"`,
+			sourceB:  `//migrator:schema:constraint name="users_email_check" type="CHECK" check="length(email) > 3"`,
+			err:      `conflicting constraint "users_email_check" definitions in scope "DuplicateHost"`,
+			sameHost: true,
+		},
+		{
+			name:    "explicit table constraint expression",
+			sourceA: `//migrator:schema:constraint name="users_email_check" type="CHECK" table="users" check="email <> ''"`,
+			sourceB: `//migrator:schema:constraint name="users_email_check" type="CHECK" table="users" check="length(email) > 3"`,
+			err:     `conflicting constraint "users_email_check" definitions in scope "users"`,
+		},
+		{
+			name:    "role attributes",
+			sourceA: `//migrator:schema:role name="app_user" inherit="true"`,
+			sourceB: `//migrator:schema:role name="app_user" login="true" inherit="true"`,
+			err:     `conflicting role "app_user" definitions`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			firstHost := "FirstHost"
+			secondHost := "SecondHost"
+			if tt.sameHost {
+				firstHost = "DuplicateHost"
+				secondHost = "DuplicateHost"
+			}
+			fsys := fstest.MapFS{
+				"a.go": {Data: []byte("package fixtures\n\n" + tt.sourceA + "\ntype " + firstHost + " struct{}\n")},
+				"b.go": {Data: []byte("package fixtures\n\n" + tt.sourceB + "\ntype " + secondHost + " struct{}\n")},
+			}
+
+			_, err := goschema.ParseFS(fsys, ".")
+
+			c.Assert(err, qt.ErrorMatches, tt.err)
+		})
+	}
+}
+
+func TestParseFS_IdenticalDuplicateSchemaObjectsAreNoOp(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"a.go": {Data: []byte(`package fixtures
+
+//migrator:schema:view name="active_users" body="SELECT id FROM users" comment="first"
+type First struct{}
+`)},
+		"b.go": {Data: []byte(`package fixtures
+
+//migrator:schema:view name="active_users" body="SELECT id FROM users" comment="second"
+type Second struct{}
+`)},
+	}
+
+	result, err := goschema.ParseFS(fsys, ".")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Views, qt.HasLen, 1)
+	c.Assert(result.Views[0].Comment, qt.Equals, "first")
 }
 
 // BenchmarkParseFS_LargeProject benchmarks ParseFS performance on a larger project

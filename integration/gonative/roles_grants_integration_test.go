@@ -4,6 +4,9 @@ package gonative_test
 
 import (
 	"database/sql"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -203,4 +206,51 @@ func filterGrants(in []dbschematypes.DBGrant, keepRoles map[string]struct{}) []d
 		}
 	}
 	return out
+}
+
+// TestGoFixtures_ParseDirForSchemaObjects exercises ParseDir on the Go annotation
+// fixtures added for #279 (views, grants, constraints, triggers, matviews).
+// This drives the real ParseDir path used by CLI in an integration-tagged test file.
+// Does not require live DB.
+func TestGoFixtures_ParseDirForSchemaObjects(t *testing.T) {
+	c := qt.New(t)
+
+	// Compute root and abs fixture from this source file's location (robust to test cwd)
+	_, filename, _, _ := runtime.Caller(0)
+	srcDir := filepath.Dir(filename)        // .../integration/gonative
+	integrationDir := filepath.Dir(srcDir)  // .../integration
+	rootDir := filepath.Dir(integrationDir) // module root
+	absFixture := filepath.Join(rootDir, "integration/fixtures/entities/023-go-annotations-objects")
+	result, err := goschema.ParseDir(absFixture)
+	c.Assert(err, qt.IsNil, qt.Commentf("ParseDir on new objects fixture must succeed"))
+
+	c.Assert(result.Views, qt.HasLen, 1)
+	c.Assert(result.Views[0].Name, qt.Equals, "active_users")
+
+	c.Assert(result.MaterializedViews, qt.HasLen, 1)
+	c.Assert(result.MaterializedViews[0].Name, qt.Equals, "user_stats")
+
+	c.Assert(result.Triggers, qt.HasLen, 1)
+	c.Assert(result.Triggers[0].Name, qt.Equals, "users_set_updated_at")
+
+	c.Assert(result.Grants, qt.HasLen, 3)
+	c.Assert(result.Constraints, qt.HasLen, 1)
+	c.Assert(result.Constraints[0].Name, qt.Equals, "users_email_check")
+
+	c.Assert(result.Roles, qt.HasLen, 1)
+	c.Assert(result.Roles[0].Name, qt.Equals, "fixture_app_user")
+
+	// Exercise CLI generate entry point against the fixture (drives real ParseDir path in cmd/generate, per AC3)
+	goMain := filepath.Join(rootDir, "cmd/main.go")
+	genCmd := exec.Command("go", "run", goMain, "generate", "--root-dir", absFixture, "--dialect", "postgres")
+	genOut, err := genCmd.CombinedOutput()
+	c.Assert(err, qt.IsNil)
+	outStr := string(genOut)
+	c.Assert(outStr, qt.Contains, "CREATE VIEW active_users")
+	c.Assert(outStr, qt.Contains, "CREATE MATERIALIZED VIEW user_stats")
+	c.Assert(outStr, qt.Contains, "CREATE TRIGGER")
+	c.Assert(outStr, qt.Contains, "GRANT ")
+	c.Assert(outStr, qt.Contains, "WITH GRANT OPTION")
+	c.Assert(outStr, qt.Contains, "CREATE ROLE fixture_app_user")
+	c.Assert(outStr, qt.Contains, "CONSTRAINT users_email_check")
 }
