@@ -6,7 +6,7 @@ The Ptah Migrator provides versioned database migration capabilities with up/dow
 
 - **Versioned Migrations**: Each migration has a unique version number and description
 - **Up/Down Migrations**: Support for both applying and rolling back migrations
-- **Transaction Safety**: Each migration runs in its own transaction
+- **Transaction Safety**: Each migration runs in its own transaction unless it explicitly opts out with `no_transaction`
 - **SQL File Support**: Migrations can be defined as SQL files
 - **Go Function Support**: Migrations can also be defined as Go functions for complex logic
 - **Multiple Database Support**: Works with PostgreSQL and MySQL through Ptah's executor package
@@ -320,9 +320,27 @@ ALTER TABLE users ADD COLUMN email TEXT;
 
 PostgreSQL runs `SET LOCAL lock_timeout` and `SET LOCAL statement_timeout` inside the migration transaction. MySQL and MariaDB run `SET SESSION innodb_lock_wait_timeout`; statement timeouts use MySQL `max_execution_time` and MariaDB `max_statement_time`.
 
+### Non-Transactional Migrations
+
+Most migrations should stay transactional. When the database rejects
+transactional execution, mark the migration explicitly:
+
+```sql
+-- +ptah no_transaction
+ALTER TYPE status ADD VALUE 'archived';
+ALTER TABLE users ALTER COLUMN status SET DEFAULT 'archived';
+```
+
+`no_transaction` executes the migration body and metadata update outside the
+normal per-migration transaction. This is intended for narrow database
+requirements such as PostgreSQL enum value additions that must be used by a
+later statement in the same migration. Migration timeouts are rejected for
+`no_transaction` migrations because Ptah cannot safely apply writer/session
+timeouts to raw autocommit statements.
+
 ## Safety Features
 
-- **Transaction Wrapping**: Each migration runs in its own transaction
+- **Transaction Wrapping**: Each migration runs in its own transaction unless marked `no_transaction`
 - **Rollback on Failure**: If a migration fails, the transaction is rolled back
 - **Confirmation Prompts**: Down migrations require confirmation (unless `--confirm` is used)
 - **Dry Run Mode**: Preview migrations without applying them

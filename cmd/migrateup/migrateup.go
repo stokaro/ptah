@@ -26,8 +26,9 @@ var migrateUpCmd = &cobra.Command{
 This command applies all migrations that haven't been applied yet, bringing
 the database schema up to the latest version defined in the migration files.
 
-Each migration is run in a transaction, so if any migration fails, it will
-be rolled back and the migration process will stop.`,
+Each migration is run in a transaction unless its file explicitly opts out with
+-- +ptah no_transaction, so ordinary migration failures are rolled back and the
+migration process stops.`,
 	RunE: migrateUpCommand,
 }
 

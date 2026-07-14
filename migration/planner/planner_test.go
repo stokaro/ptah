@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
 	dbtypes "github.com/stokaro/ptah/dbschema/types"
@@ -74,6 +75,19 @@ func TestGetPlanner(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRequiresNoTransaction(t *testing.T) {
+	c := qt.New(t)
+
+	enumAdd := ast.NewAlterType("status").AddOperation(ast.NewAddEnumValueOperation("archived"))
+	enumRename := ast.NewAlterType("status").AddOperation(ast.NewRenameEnumValueOperation("old", "new"))
+
+	c.Assert(planner.RequiresNoTransaction(platform.Postgres, []ast.Node{enumAdd}), qt.IsTrue)
+	c.Assert(planner.RequiresNoTransaction(platform.YugabyteDB, []ast.Node{enumAdd}), qt.IsTrue)
+	c.Assert(planner.RequiresNoTransaction(platform.MySQL, []ast.Node{enumAdd}), qt.IsFalse)
+	c.Assert(planner.RequiresNoTransaction(platform.Postgres, []ast.Node{enumRename}), qt.IsFalse)
+	c.Assert(planner.RequiresNoTransaction(platform.Postgres, []ast.Node{ast.NewComment("noop")}), qt.IsFalse)
 }
 
 func TestGeneratedNarrowingTypeChangeIsDestructive(t *testing.T) {

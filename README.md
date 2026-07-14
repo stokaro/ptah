@@ -660,6 +660,20 @@ Migration files can override the CLI defaults with top-of-file directives:
 
 PostgreSQL uses `SET LOCAL lock_timeout` and `SET LOCAL statement_timeout` inside the migration transaction. MySQL and MariaDB use `SET SESSION innodb_lock_wait_timeout`; statement timeouts use `max_execution_time` on MySQL and `max_statement_time` on MariaDB. Generated migrations that contain `ALTER TABLE` include the recommended `3s` lock timeout and `30s` statement timeout directives for supported dialects.
 
+Most migrations run inside the normal per-migration transaction. If the database
+rejects transactional execution, use an explicit file directive:
+
+```sql
+-- +ptah no_transaction
+ALTER TYPE status ADD VALUE 'archived';
+ALTER TABLE users ALTER COLUMN status SET DEFAULT 'archived';
+```
+
+Use this only for narrow database requirements such as PostgreSQL enum value
+additions that must be used later in the same migration. Ptah rejects migration
+timeouts on `no_transaction` migrations because those statements run as raw
+autocommit SQL instead of through the transaction-bound writer.
+
 Ptah detects out-of-order migrations from the applied version set. By default,
 `migrate-up` uses `--exec-order=linear` and fails if a pending migration version is
 below the current high-water mark, which catches ordinary branch merge races instead
@@ -670,7 +684,7 @@ a warning.
 **Features:**
 - ✅ Applies migrations in correct order based on version numbers
 - ✅ Detects out-of-order pending migrations below the current version
-- ✅ Each migration runs in its own transaction
+- ✅ Each migration runs in its own transaction unless explicitly marked `no_transaction`
 - ✅ Automatic rollback on failure
 - ✅ Tracks applied migrations in `schema_migrations` table, or a custom `--migrations-schema`/`--migrations-table`
 - ✅ Supports dry-run mode for preview

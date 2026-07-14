@@ -46,10 +46,34 @@ func TestCreateMigrationFromSQL(t *testing.T) {
 	c.Assert(migration.Description, qt.Equals, "Create test table")
 	c.Assert(migration.Up, qt.IsNotNil)
 	c.Assert(migration.Down, qt.IsNotNil)
+	c.Assert(migration.NoTransaction, qt.IsFalse)
 
 	// Test that the functions don't panic (we can't test execution without a real DB)
 	c.Assert(migration.Up, qt.IsNotNil)
 	c.Assert(migration.Down, qt.IsNotNil)
+}
+
+func TestCreateMigrationFromSQL_NoTransactionDirective(t *testing.T) {
+	c := qt.New(t)
+
+	migration := CreateMigrationFromSQL(1, "Add enum value",
+		"-- +ptah no_transaction\nALTER TYPE mood ADD VALUE 'ok';",
+		"-- manual down migration required",
+	)
+
+	c.Assert(migration.NoTransaction, qt.IsTrue)
+}
+
+func TestCreateMigrationFromSQL_InvalidNoTransactionDirective(t *testing.T) {
+	c := qt.New(t)
+
+	migration := CreateMigrationFromSQL(1, "Invalid directive",
+		"-- +ptah no_transaction=maybe\nSELECT 1;",
+		"",
+	)
+
+	err := migration.Up(context.Background(), nil)
+	c.Assert(err, qt.ErrorMatches, `invalid up migration directives: invalid \+ptah no_transaction value "maybe": expected true or false`)
 }
 
 func TestMigrationStatus(t *testing.T) {
@@ -210,6 +234,10 @@ ALTER TABLE users ADD COLUMN email TEXT;`,
 		{
 			name: "online ddl directive is ignored by timeout parser",
 			sql:  "-- +ptah online_ddl_tool=ghost\nALTER TABLE users ADD COLUMN email TEXT;",
+		},
+		{
+			name: "no transaction directive is ignored by timeout parser",
+			sql:  "-- +ptah no_transaction\nALTER TABLE users ADD COLUMN email TEXT;",
 		},
 		{
 			name:    "invalid duration fails",
