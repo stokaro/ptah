@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/migration/migratesum"
+	"github.com/stokaro/ptah/migration/migrator"
 )
 
 // TestMigrateUp_VerifySumAbortsOnDriftBeforeConnecting exercises the
@@ -73,4 +74,29 @@ ALTER TABLE accounts DISABLE ROW LEVEL SECURITY;
 	c.Assert(findings, qt.HasLen, 5)
 	c.Assert([]string{findings[0].Rule, findings[1].Rule, findings[2].Rule, findings[3].Rule, findings[4].Rule}, qt.DeepEquals, []string{"DS102", "DS107", "DS107", "DS108", "DS109"})
 	c.Assert(findings[0].File, qt.Equals, "0000000002_next.up.sql")
+}
+
+func TestPendingMigrationsForSafetyCheckSkipsOutOfOrderWhenLinearSkip(t *testing.T) {
+	c := qt.New(t)
+
+	status := &migrator.MigrationStatus{
+		PendingMigrations:    []int{3, 6},
+		OutOfOrderMigrations: []int{3},
+	}
+
+	c.Assert(
+		pendingMigrationsForSafetyCheck(status, migrator.ExecOrderLinear),
+		qt.DeepEquals,
+		[]int{3, 6},
+	)
+	c.Assert(
+		pendingMigrationsForSafetyCheck(status, migrator.ExecOrderNonLinear),
+		qt.DeepEquals,
+		[]int{3, 6},
+	)
+	c.Assert(
+		pendingMigrationsForSafetyCheck(status, migrator.ExecOrderLinearSkip),
+		qt.DeepEquals,
+		[]int{6},
+	)
 }
