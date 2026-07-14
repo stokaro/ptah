@@ -217,9 +217,9 @@ func TestGoFixtures_ParseDirForSchemaObjects(t *testing.T) {
 
 	// Compute root and abs fixture from this source file's location (robust to test cwd)
 	_, filename, _, _ := runtime.Caller(0)
-	srcDir := filepath.Dir(filename)                 // .../integration/gonative
-	integrationDir := filepath.Dir(srcDir)           // .../integration
-	rootDir := filepath.Dir(integrationDir)          // module root
+	srcDir := filepath.Dir(filename)        // .../integration/gonative
+	integrationDir := filepath.Dir(srcDir)  // .../integration
+	rootDir := filepath.Dir(integrationDir) // module root
 	absFixture := filepath.Join(rootDir, "integration/fixtures/entities/023-go-annotations-objects")
 	result, err := goschema.ParseDir(absFixture)
 	c.Assert(err, qt.IsNil, qt.Commentf("ParseDir on new objects fixture must succeed"))
@@ -233,11 +233,12 @@ func TestGoFixtures_ParseDirForSchemaObjects(t *testing.T) {
 	c.Assert(result.Triggers, qt.HasLen, 1)
 	c.Assert(result.Triggers[0].Name, qt.Equals, "users_set_updated_at")
 
-	c.Assert(result.Grants, qt.HasLen, 2)
+	c.Assert(result.Grants, qt.HasLen, 3)
 	c.Assert(result.Constraints, qt.HasLen, 1)
 	c.Assert(result.Constraints[0].Name, qt.Equals, "users_email_check")
 
 	c.Assert(result.Roles, qt.HasLen, 1)
+	c.Assert(result.Roles[0].Name, qt.Equals, "fixture_app_user")
 
 	// Exercise CLI generate entry point against the fixture (drives real ParseDir path in cmd/generate, per AC3)
 	goMain := filepath.Join(rootDir, "cmd/main.go")
@@ -249,6 +250,7 @@ func TestGoFixtures_ParseDirForSchemaObjects(t *testing.T) {
 	c.Assert(outStr, qt.Contains, "CREATE MATERIALIZED VIEW user_stats")
 	c.Assert(outStr, qt.Contains, "CREATE TRIGGER")
 	c.Assert(outStr, qt.Contains, "GRANT ")
-	c.Assert(outStr, qt.Contains, "CREATE ROLE")
+	c.Assert(outStr, qt.Contains, "WITH GRANT OPTION")
+	c.Assert(outStr, qt.Contains, "CREATE ROLE fixture_app_user")
 	c.Assert(outStr, qt.Contains, "CONSTRAINT users_email_check")
 }

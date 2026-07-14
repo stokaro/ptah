@@ -145,6 +145,10 @@ func ParseFS(fsys fs.FS, rootDir string) (*Database, error) {
 		return nil, err
 	}
 
+	if err := validateDuplicateSchemaObjectDefinitions(result); err != nil {
+		return nil, err
+	}
+
 	// deduplicate entities (same table/field defined in multiple files)
 	Deduplicate(result)
 	normalizeTableScopedNames(result)
