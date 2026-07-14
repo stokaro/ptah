@@ -14,6 +14,7 @@ import (
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/dbschema/postgres"
+	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/schemadiff"
 )
@@ -77,9 +78,10 @@ func TestFieldLevelCheckConstraint_RoundTrip_Integration(t *testing.T) {
 	reader := postgres.NewPostgreSQLReader(db, "public")
 	dbSchema, err := reader.ReadSchema()
 	c.Assert(err, qt.IsNil)
+	filteredSchema := filterCheckConstraintSchema(dbSchema, "ptah_test_files")
 
 	checks := map[string]bool{}
-	for _, cs := range dbSchema.Constraints {
+	for _, cs := range filteredSchema.Constraints {
 		if cs.Type == "CHECK" && cs.TableName == "ptah_test_files" {
 			checks[cs.Name] = true
 		}
@@ -94,7 +96,7 @@ func TestFieldLevelCheckConstraint_RoundTrip_Integration(t *testing.T) {
 	// off — Postgres rewrites the stored CHECK clause (parens, type casts,
 	// `IN (...)` → `= ANY (ARRAY[...])`) and a naive text compare would
 	// regen a migration on every run.
-	diff := schemadiff.Compare(target, dbSchema)
+	diff := schemadiff.Compare(target, filteredSchema)
 	c.Assert(diff.HasChanges(), qt.IsFalse,
 		qt.Commentf("round-trip diff must be clean; got added=%v removed=%v",
 			diff.ConstraintsAdded, diff.ConstraintsRemoved))
@@ -146,8 +148,9 @@ func TestFieldLevelCheckConstraint_Removal_Integration(t *testing.T) {
 	reader := postgres.NewPostgreSQLReader(db, "public")
 	dbSchema, err := reader.ReadSchema()
 	c.Assert(err, qt.IsNil)
+	filteredSchema := filterCheckConstraintSchema(dbSchema, "ptah_test_check_drop")
 
-	diff := schemadiff.Compare(withoutCheck, dbSchema)
+	diff := schemadiff.Compare(withoutCheck, filteredSchema)
 	c.Assert(diff.HasChanges(), qt.IsTrue)
 	c.Assert(diff.ConstraintsRemoved, qt.Contains, "ptah_test_check_drop_score_check")
 
@@ -167,7 +170,8 @@ func TestFieldLevelCheckConstraint_Removal_Integration(t *testing.T) {
 	// part of this assertion.
 	afterSchema, err := reader.ReadSchema()
 	c.Assert(err, qt.IsNil)
-	for _, cs := range afterSchema.Constraints {
+	filteredAfterSchema := filterCheckConstraintSchema(afterSchema, "ptah_test_check_drop")
+	for _, cs := range filteredAfterSchema.Constraints {
 		if cs.TableName != "ptah_test_check_drop" || cs.Type != "CHECK" {
 			continue
 		}
@@ -177,7 +181,17 @@ func TestFieldLevelCheckConstraint_Removal_Integration(t *testing.T) {
 		c.Errorf("CHECK constraint should have been dropped, still found: %s", cs.Name)
 	}
 
-	idempDiff := schemadiff.Compare(withoutCheck, afterSchema)
+	idempDiff := schemadiff.Compare(withoutCheck, filteredAfterSchema)
 	c.Assert(idempDiff.HasChanges(), qt.IsFalse,
 		qt.Commentf("post-drop diff must be clean"))
+}
+
+func filterCheckConstraintSchema(in *dbschematypes.DBSchema, tableName string) *dbschematypes.DBSchema {
+	keepTables := map[string]struct{}{tableName: {}}
+	out := *in
+	out.Tables = filterTables(in.Tables, keepTables)
+	out.Indexes = filterIndexes(in.Indexes, keepTables)
+	out.Constraints = filterConstraints(in.Constraints, keepTables)
+	out.RLSPolicies = filterRLSPolicies(in.RLSPolicies, keepTables)
+	return &out
 }

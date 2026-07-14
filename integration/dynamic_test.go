@@ -135,9 +135,15 @@ func getTestDatabaseURL() string {
 	if url := getEnvVar("POSTGRES_TEST_URL"); url != "" {
 		return url
 	}
+	if url := getEnvVar("POSTGRES_URL"); url != "" {
+		return url
+	}
 
 	// Try MySQL
 	if url := getEnvVar("MYSQL_TEST_URL"); url != "" {
+		return url
+	}
+	if url := getEnvVar("MYSQL_URL"); url != "" {
 		return url
 	}
 
