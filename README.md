@@ -644,6 +644,9 @@ Apply all pending migrations to bring database up to latest version:
 # Dry run to preview what would be applied
 ./package-migrator migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dry-run
 
+# Apply a migration that was merged below the current high-water mark
+./package-migrator migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --exec-order non-linear
+
 # Store migration state in a dedicated schema/table
 ./package-migrator migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --migrations-schema infra --migrations-table ptah_migrations
 ```
@@ -657,8 +660,16 @@ Migration files can override the CLI defaults with top-of-file directives:
 
 PostgreSQL uses `SET LOCAL lock_timeout` and `SET LOCAL statement_timeout` inside the migration transaction. MySQL and MariaDB use `SET SESSION innodb_lock_wait_timeout`; statement timeouts use `max_execution_time` on MySQL and `max_statement_time` on MariaDB. Generated migrations that contain `ALTER TABLE` include the recommended `3s` lock timeout and `30s` statement timeout directives for supported dialects.
 
+Ptah detects out-of-order migrations from the applied version set. By default,
+`migrate-up` uses `--exec-order=linear` and fails if a pending migration version is
+below the current high-water mark, which catches ordinary branch merge races instead
+of silently reporting "up to date". Use `--exec-order=non-linear` to apply those
+pending lower versions, or `--exec-order=linear-skip` to leave them unapplied with
+a warning.
+
 **Features:**
 - ✅ Applies migrations in correct order based on version numbers
+- ✅ Detects out-of-order pending migrations below the current version
 - ✅ Each migration runs in its own transaction
 - ✅ Automatic rollback on failure
 - ✅ Tracks applied migrations in `schema_migrations` table, or a custom `--migrations-schema`/`--migrations-table`
@@ -720,8 +731,10 @@ Show current migration status and pending migrations:
 
 **Output includes:**
 - Current database version
+- Applied migration versions
 - Total available migrations
 - List of pending migrations
+- Out-of-order pending migrations
 - Migration history and timestamps
 
 #### Migration Directory Integrity (`ptah.sum`)

@@ -79,6 +79,11 @@ With dry run:
 go run ./cmd migrate-up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dry-run
 ```
 
+Allow applying a migration whose version is below the current high-water mark:
+```bash
+go run ./cmd migrate-up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --exec-order non-linear
+```
+
 With a custom migration state table:
 ```bash
 go run ./cmd migrate-up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --migrations-schema infra --migrations-table ptah_migrations
@@ -133,6 +138,19 @@ The migrator package provides a clean, modular API with the following key compon
 - **`MigrationFunc`**: Function type for migration operations
 - **`MigrationStatus`**: Represents the current state of migrations
 
+### Execution Order Policy
+
+Ptah derives pending migrations from the applied version set, not from `MAX(version)`.
+This catches an ordinary branch merge race: migration `5` may already be applied while
+a later-merged migration `3` is present on disk but missing from the database.
+
+The default policy is `linear`, which fails loudly when a pending version is below the
+current high-water mark. Use `WithExecOrder(migrator.ExecOrderNonLinear)` or
+`--exec-order=non-linear` to apply the missing migration in version order. Use
+`linear-skip` only when you intentionally want to leave those versions unapplied; Ptah
+logs a warning for each skipped version and `migrate-status` continues to report it as
+pending and out of order.
+
 ### Migration Providers
 
 - **`RegisteredMigrationProvider`**: In-memory provider for programmatically registered migrations
@@ -144,6 +162,7 @@ The migrator package provides a clean, modular API with the following key compon
 - **`NewFSMigrator(conn, fsys)`**: Creates a migrator that loads migrations from a filesystem
 - **`NewRegisteredMigrationProvider(migrations...)`**: Creates an in-memory migration provider
 - **`WithMigrationsTable(schema, table)`**: Configures the migration history table
+- **`WithExecOrder(policy)`**: Configures out-of-order migration handling
 
 ## Programmatic Usage
 
@@ -277,8 +296,10 @@ CREATE TABLE schema_migrations (
 4. **Test migrations**: Always test both up and down migrations before deploying
 5. **Use transactions**: The migrator automatically wraps migrations in transactions
 6. **Backup before rollbacks**: Down migrations can cause data loss
-7. **Use production timeouts**: Run production DDL with `--lock-timeout 3s --statement-timeout 30s` so hot-table locks and runaway statements fail fast
-8. **Version numbers**: Use sequential version numbers or timestamps
+7. **Handle out-of-order files deliberately**: Use the default `linear` policy in CI so
+   a migration merged below the current version cannot be skipped silently
+8. **Use production timeouts**: Run production DDL with `--lock-timeout 3s --statement-timeout 30s` so hot-table locks and runaway statements fail fast
+9. **Version numbers**: Use sequential version numbers or timestamps
 
 ### Per-Migration Timeouts
 

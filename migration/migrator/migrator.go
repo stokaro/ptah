@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -15,10 +16,12 @@ import (
 
 // MigrationStatus represents the current state of migrations
 type MigrationStatus struct {
-	CurrentVersion    int   `json:"current_version"`
-	PendingMigrations []int `json:"pending_migrations"`
-	TotalMigrations   int   `json:"total_migrations"`
-	HasPendingChanges bool  `json:"has_pending_changes"`
+	CurrentVersion       int   `json:"current_version"`
+	AppliedMigrations    []int `json:"applied_migrations"`
+	PendingMigrations    []int `json:"pending_migrations"`
+	OutOfOrderMigrations []int `json:"out_of_order_migrations"`
+	TotalMigrations      int   `json:"total_migrations"`
+	HasPendingChanges    bool  `json:"has_pending_changes"`
 }
 
 // Migrator handles database migrations for ptah
@@ -28,6 +31,7 @@ type Migrator struct {
 	defaultTimeouts   MigrationTimeouts
 	migrationsTable   string
 	migrationsSchema  string
+	execOrder         ExecOrder
 	initialized       bool
 	logger            *slog.Logger
 }
@@ -51,6 +55,7 @@ func NewMigrator(conn *dbschema.DatabaseConnection, provider MigrationProvider) 
 		conn:              conn,
 		migrationProvider: provider,
 		migrationsTable:   "schema_migrations",
+		execOrder:         ExecOrderLinear,
 		logger:            slog.Default(),
 	}
 }
@@ -59,6 +64,14 @@ func NewMigrator(conn *dbschema.DatabaseConnection, provider MigrationProvider) 
 func (m *Migrator) WithLogger(l *slog.Logger) *Migrator {
 	tmp := *m
 	tmp.logger = l
+	return &tmp
+}
+
+// WithExecOrder sets how this migrator handles pending migrations whose
+// version is below the current high-water mark.
+func (m *Migrator) WithExecOrder(execOrder ExecOrder) *Migrator {
+	tmp := *m
+	tmp.execOrder = normalizeExecOrder(execOrder)
 	return &tmp
 }
 
@@ -184,7 +197,7 @@ func (m *Migrator) GetAppliedMigrations(ctx context.Context) ([]int, error) {
 	}
 	defer rows.Close()
 
-	var applied []int
+	applied := make([]int, 0)
 	for rows.Next() {
 		var version int
 		if err := rows.Scan(&version); err != nil {
@@ -202,67 +215,48 @@ func (m *Migrator) GetAppliedMigrations(ctx context.Context) ([]int, error) {
 
 // GetPendingMigrations returns a list of pending migration versions
 func (m *Migrator) GetPendingMigrations(ctx context.Context) ([]int, error) {
-	currentVersion, err := m.GetCurrentVersion(ctx)
+	applied, err := m.GetAppliedMigrations(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	migrations := m.migrationProvider.Migrations()
-
-	var pending []int
-	for _, migration := range migrations {
-		if migration.Version > currentVersion {
-			pending = append(pending, migration.Version)
-		}
-	}
-
-	sort.Ints(pending)
-	return pending, nil
+	return pendingMigrationVersions(m.migrationProvider.Migrations(), applied), nil
 }
 
 // GetPreviousMigrationVersion finds the previous migration version compared to the current one.
 // Returns an error and -1 if no previous migrations exist.
 func (m *Migrator) GetPreviousMigrationVersion(ctx context.Context) (int, error) {
-	currentVersion, err := m.GetCurrentVersion(ctx)
+	applied, err := m.GetAppliedMigrations(ctx)
 	if err != nil {
-		return -1, fmt.Errorf("failed to get current version: %w", err)
+		return -1, fmt.Errorf("failed to get applied migrations: %w", err)
 	}
-
-	// If current version is 0, there are no previous migrations
-	if currentVersion == 0 {
+	if len(applied) == 0 {
 		return -1, fmt.Errorf("no previous migrations exist")
 	}
-
-	migrations := m.migrationProvider.Migrations()
-
-	previousVersion := -1
-	for _, migration := range migrations {
-		if migration.Version >= currentVersion {
-			break
-		}
-		previousVersion = migration.Version
+	if len(applied) == 1 {
+		return 0, nil
 	}
 
-	return previousVersion, nil
+	return applied[len(applied)-2], nil
 }
 
 // GetMigrationStatus returns information about the current migration status using the provided filesystem
 func (m *Migrator) GetMigrationStatus(ctx context.Context) (*MigrationStatus, error) {
-	currentVersion, err := m.GetCurrentVersion(ctx)
+	appliedMigrations, err := m.GetAppliedMigrations(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get current version: %w", err)
+		return nil, fmt.Errorf("failed to get applied migrations: %w", err)
 	}
-
-	pendingMigrations, err := m.GetPendingMigrations(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get pending migrations: %w", err)
-	}
+	currentVersion := maxAppliedVersion(appliedMigrations)
+	pendingMigrations := pendingMigrationVersions(m.MigrationProvider().Migrations(), appliedMigrations)
+	outOfOrderMigrations := outOfOrderMigrationVersions(pendingMigrations, currentVersion)
 
 	return &MigrationStatus{
-		CurrentVersion:    currentVersion,
-		PendingMigrations: pendingMigrations,
-		TotalMigrations:   len(m.MigrationProvider().Migrations()),
-		HasPendingChanges: len(pendingMigrations) > 0,
+		CurrentVersion:       currentVersion,
+		AppliedMigrations:    appliedMigrations,
+		PendingMigrations:    pendingMigrations,
+		OutOfOrderMigrations: outOfOrderMigrations,
+		TotalMigrations:      len(m.MigrationProvider().Migrations()),
+		HasPendingChanges:    len(pendingMigrations) > 0,
 	}, nil
 }
 
@@ -273,65 +267,21 @@ func (m *Migrator) MigrateUp(ctx context.Context) error {
 		return fmt.Errorf("failed to initialize migrations table: %w", err)
 	}
 
-	// Get the current version
-	currentVersion, err := m.GetCurrentVersion(ctx)
+	appliedMigrations, err := m.GetAppliedMigrations(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get current version: %w", err)
+		return fmt.Errorf("failed to get applied migrations: %w", err)
 	}
+	currentVersion := maxAppliedVersion(appliedMigrations)
 
 	migrations := m.migrationProvider.Migrations()
+	migrationsToApply, err := m.migrationsToApply(migrations, appliedMigrations, 0)
+	if err != nil {
+		return err
+	}
 
 	m.logger.Info("Migrating up", "currentVersion", currentVersion, "totalMigrations", len(migrations))
-
-	// Rebind once: the template and dialect are loop-invariant. Values are
-	// still bound as native driver parameters via these placeholders so we
-	// never interpolate user-controlled strings into the SQL text.
-	recordSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.recordMigrationSQL())
-
-	// Apply migrations that are newer than current version
-	for _, migration := range migrations {
-		if migration.Version <= currentVersion {
-			m.logger.Info("Skipping migration", "version", migration.Version, "description", migration.Description)
-			continue
-		}
-
-		m.logger.Info("Applying migration", "version", migration.Version, "description", migration.Description)
-
-		// Begin transaction for this migration
-		if err := m.conn.Writer().BeginTransaction(); err != nil {
-			return fmt.Errorf("failed to begin transaction for migration %d: %w", migration.Version, err)
-		}
-
-		restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts))
-		if err != nil {
-			_ = m.conn.Writer().RollbackTransaction()
-			return fmt.Errorf("failed to apply timeouts for migration %d: %w", migration.Version, err)
-		}
-
-		// Apply migration
-		if err := migration.Up(ctx, m.conn); err != nil {
-			err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
-			_ = m.conn.Writer().RollbackTransaction()
-			return fmt.Errorf("failed to apply migration %d: %w", migration.Version, err)
-		}
-
-		if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
-			_ = m.conn.Writer().RollbackTransaction()
-			return err
-		}
-
-		// Record migration via parameter binding.
-		if err := m.conn.Writer().ExecuteSQL(ctx, recordSQL, migration.Version, migration.Description, time.Now()); err != nil {
-			_ = m.conn.Writer().RollbackTransaction()
-			return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)
-		}
-
-		// Commit transaction
-		if err := m.conn.Writer().CommitTransaction(); err != nil {
-			return fmt.Errorf("failed to commit transaction for migration %d: %w", migration.Version, err)
-		}
-
-		m.logger.Info("Applied migration", "version", migration.Version, "description", migration.Description)
+	if err := m.applyUpMigrations(ctx, migrationsToApply); err != nil {
+		return err
 	}
 
 	m.logger.Info("All migrations applied successfully")
@@ -360,11 +310,11 @@ func (m *Migrator) MigrateDownTo(ctx context.Context, targetVersion int) error {
 		return fmt.Errorf("failed to initialize migrations table: %w", err)
 	}
 
-	// Get the current version
-	currentVersion, err := m.GetCurrentVersion(ctx)
+	appliedMigrations, err := m.GetAppliedMigrations(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get current version: %w", err)
+		return fmt.Errorf("failed to get applied migrations: %w", err)
 	}
+	currentVersion := maxAppliedVersion(appliedMigrations)
 
 	// Skip if already at or below target version (shouldn't happen)
 	if targetVersion >= currentVersion {
@@ -372,25 +322,19 @@ func (m *Migrator) MigrateDownTo(ctx context.Context, targetVersion int) error {
 		return nil
 	}
 
-	migrations := m.migrationProvider.Migrations()
+	migrationMap := migrationsByVersion(m.migrationProvider.Migrations())
+	migrationsToRollback, err := migrationsToRollback(migrationMap, appliedMigrations, targetVersion)
+	if err != nil {
+		return err
+	}
 
-	m.logger.Info("Migrating down", "targetVersion", targetVersion, "currentVersion", currentVersion, "totalMigrations", len(migrations))
-
-	// Sort migrations by version in descending order for rollback
-	sort.Slice(migrations, func(i, j int) bool {
-		return migrations[i].Version > migrations[j].Version
-	})
+	m.logger.Info("Migrating down", "targetVersion", targetVersion, "currentVersion", currentVersion, "totalMigrations", len(m.migrationProvider.Migrations()))
 
 	// Rebind once: template + dialect are loop-invariant. Migration version
 	// is bound as a parameter via the dialect-native placeholder.
 	deleteSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteMigrationSQL())
 
-	// Apply down migrations for versions greater than target
-	for _, migration := range migrations {
-		if migration.Version <= targetVersion || migration.Version > currentVersion {
-			continue
-		}
-
+	for _, migration := range migrationsToRollback {
 		m.logger.Info("Rolling back migration", "version", migration.Version, "description", migration.Description)
 
 		// Begin transaction for this migration rollback
@@ -441,11 +385,11 @@ func (m *Migrator) MigrateTo(ctx context.Context, targetVersion int) error {
 		return fmt.Errorf("failed to initialize migrations table: %w", err)
 	}
 
-	// Get the current version
-	currentVersion, err := m.GetCurrentVersion(ctx)
+	appliedMigrations, err := m.GetAppliedMigrations(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get current version: %w", err)
+		return fmt.Errorf("failed to get applied migrations: %w", err)
 	}
+	currentVersion := maxAppliedVersion(appliedMigrations)
 
 	if targetVersion == currentVersion {
 		m.logger.Info("Already at target version", "version", targetVersion)
@@ -455,6 +399,10 @@ func (m *Migrator) MigrateTo(ctx context.Context, targetVersion int) error {
 	if targetVersion > currentVersion {
 		// Migrate up to target version
 		return m.migrateUpTo(ctx, targetVersion)
+	}
+
+	if targetVersion > 0 && !slices.Contains(appliedMigrations, targetVersion) {
+		return fmt.Errorf("target version %d is below current version %d but is not applied", targetVersion, currentVersion)
 	}
 
 	// Migrate down to target version
@@ -468,25 +416,34 @@ func (m *Migrator) MigrationProvider() MigrationProvider {
 
 // migrateUpTo migrates the database up to a specific version
 func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int) error {
-	// Get the current version
-	currentVersion, err := m.GetCurrentVersion(ctx)
+	appliedMigrations, err := m.GetAppliedMigrations(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get current version: %w", err)
+		return fmt.Errorf("failed to get applied migrations: %w", err)
 	}
+	currentVersion := maxAppliedVersion(appliedMigrations)
 
 	migrations := m.migrationProvider.Migrations()
+	migrationsToApply, err := m.migrationsToApply(migrations, appliedMigrations, targetVersion)
+	if err != nil {
+		return err
+	}
 
 	m.logger.Info("Migrating up", "currentVersion", currentVersion, "targetVersion", targetVersion, "totalMigrations", len(migrations))
+	if err := m.applyUpMigrations(ctx, migrationsToApply); err != nil {
+		return err
+	}
 
-	// Rebind once; see MigrateUp for the rationale on parameter binding.
+	m.logger.Info("Migrated successfully", "targetVersion", targetVersion)
+	return nil
+}
+
+func (m *Migrator) applyUpMigrations(ctx context.Context, migrations []*Migration) error {
+	// Rebind once: the template and dialect are loop-invariant. Values are
+	// still bound as native driver parameters via these placeholders so we
+	// never interpolate user-controlled strings into the SQL text.
 	recordSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.recordMigrationSQL())
 
-	// Apply migrations up to target version
 	for _, migration := range migrations {
-		if migration.Version <= currentVersion || migration.Version > targetVersion {
-			continue
-		}
-
 		m.logger.Info("Applying migration", "version", migration.Version, "description", migration.Description)
 
 		// Begin transaction for this migration
@@ -526,6 +483,100 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int) error {
 		m.logger.Info("Applied migration", "version", migration.Version, "description", migration.Description)
 	}
 
-	m.logger.Info("Migrated successfully", "targetVersion", targetVersion)
 	return nil
+}
+
+func (m *Migrator) migrationsToApply(migrations []*Migration, applied []int, targetVersion int) ([]*Migration, error) {
+	currentVersion := maxAppliedVersion(applied)
+	pendingVersions := pendingMigrationVersions(migrations, applied)
+	outOfOrderVersions := outOfOrderMigrationVersions(pendingVersions, currentVersion)
+	execOrder := normalizeExecOrder(m.execOrder)
+
+	if execOrder == ExecOrderLinear && len(outOfOrderVersions) > 0 {
+		return nil, NewOutOfOrderError(currentVersion, outOfOrderVersions)
+	}
+
+	appliedSet := versionSet(applied)
+	migrationsToApply := make([]*Migration, 0, len(pendingVersions))
+	for _, migration := range migrations {
+		if _, ok := appliedSet[migration.Version]; ok {
+			continue
+		}
+		if targetVersion > 0 && migration.Version > targetVersion {
+			continue
+		}
+		if execOrder == ExecOrderLinearSkip && migration.Version < currentVersion {
+			m.logger.Warn("Skipping out-of-order migration", "version", migration.Version, "currentVersion", currentVersion)
+			continue
+		}
+		migrationsToApply = append(migrationsToApply, migration)
+	}
+
+	return migrationsToApply, nil
+}
+
+func pendingMigrationVersions(migrations []*Migration, applied []int) []int {
+	appliedSet := versionSet(applied)
+	pending := make([]int, 0, len(migrations))
+	for _, migration := range migrations {
+		if _, ok := appliedSet[migration.Version]; ok {
+			continue
+		}
+		pending = append(pending, migration.Version)
+	}
+	sort.Ints(pending)
+	return pending
+}
+
+func outOfOrderMigrationVersions(pending []int, currentVersion int) []int {
+	outOfOrder := make([]int, 0)
+	for _, version := range pending {
+		if version < currentVersion {
+			outOfOrder = append(outOfOrder, version)
+		}
+	}
+	return outOfOrder
+}
+
+func maxAppliedVersion(applied []int) int {
+	if len(applied) == 0 {
+		return 0
+	}
+	return slices.Max(applied)
+}
+
+func versionSet(versions []int) map[int]struct{} {
+	set := make(map[int]struct{}, len(versions))
+	for _, version := range versions {
+		set[version] = struct{}{}
+	}
+	return set
+}
+
+func migrationsByVersion(migrations []*Migration) map[int]*Migration {
+	result := make(map[int]*Migration, len(migrations))
+	for _, migration := range migrations {
+		result[migration.Version] = migration
+	}
+	return result
+}
+
+func migrationsToRollback(migrationsByVersion map[int]*Migration, applied []int, targetVersion int) ([]*Migration, error) {
+	rollbackVersions := make([]int, 0, len(applied))
+	for _, version := range applied {
+		if version > targetVersion {
+			rollbackVersions = append(rollbackVersions, version)
+		}
+	}
+	sort.Sort(sort.Reverse(sort.IntSlice(rollbackVersions)))
+
+	rollbackMigrations := make([]*Migration, 0, len(rollbackVersions))
+	for _, version := range rollbackVersions {
+		migration, ok := migrationsByVersion[version]
+		if !ok {
+			return nil, fmt.Errorf("applied migration %d is above target version %d but is missing from the migration provider", version, targetVersion)
+		}
+		rollbackMigrations = append(rollbackMigrations, migration)
+	}
+	return rollbackMigrations, nil
 }

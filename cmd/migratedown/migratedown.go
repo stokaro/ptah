@@ -38,6 +38,7 @@ const (
 	dryRunFlag           = "dry-run"
 	verboseFlag          = "verbose"
 	confirmFlag          = "confirm"
+	execOrderFlag        = "exec-order"
 	lockTimeoutFlag      = "lock-timeout"
 	statementTimeoutFlag = "statement-timeout"
 )
@@ -73,6 +74,11 @@ var migrateDownFlags = map[string]cobraflags.Flag{
 		Value: false,
 		Usage: "Skip confirmation prompt (use with caution!)",
 	},
+	execOrderFlag: &cobraflags.StringFlag{
+		Name:  execOrderFlag,
+		Value: string(migrator.ExecOrderLinear),
+		Usage: "Execution order policy for pending migrations below the current version: linear, linear-skip, or non-linear",
+	},
 	lockTimeoutFlag: &cobraflags.StringFlag{
 		Name:  lockTimeoutFlag,
 		Value: "",
@@ -101,6 +107,7 @@ func migrateDownCommand(_ *cobra.Command, _ []string) error {
 	dryRun := migrateDownFlags[dryRunFlag].GetBool()
 	verbose := migrateDownFlags[verboseFlag].GetBool()
 	skipConfirm := migrateDownFlags[confirmFlag].GetBool()
+	execOrderValue := migrateDownFlags[execOrderFlag].GetString()
 	lockTimeout := migrateDownFlags[lockTimeoutFlag].GetString()
 	statementTimeout := migrateDownFlags[statementTimeoutFlag].GetString()
 	migrationsSchema := migrateDownFlags[dbcli.MigrationsSchemaFlagName].GetString()
@@ -123,6 +130,10 @@ func migrateDownCommand(_ *cobra.Command, _ []string) error {
 	}
 
 	timeouts, err := migrator.ParseMigrationTimeouts(lockTimeout, statementTimeout)
+	if err != nil {
+		return err
+	}
+	execOrder, err := migrator.ParseExecOrder(execOrderValue)
 	if err != nil {
 		return err
 	}
@@ -175,7 +186,7 @@ func migrateDownCommand(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
-	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable).WithDefaultTimeouts(timeouts)
+	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable).WithDefaultTimeouts(timeouts).WithExecOrder(execOrder)
 
 	// Get migration status before running
 	status, err := mig.GetMigrationStatus(context.Background())
