@@ -431,14 +431,16 @@ func ClickHouse24() Capabilities {
 // CockroachDB23 is the preset for CockroachDB's PostgreSQL-compatible surface.
 // CockroachDB runs schema changes online by design, so PostgreSQL's
 // CONCURRENTLY keyword is not a meaningful or portable emission target. It
-// also lacks PostgreSQL's XML type and advisory-lock functions.
+// also lacks PostgreSQL's SERIAL/sequence surface, XML type, and advisory-lock
+// functions in Ptah's portable subset.
 func CockroachDB23() Capabilities {
 	return Postgres16().
 		With(CreateIndexConcurrently, false).
 		With(XMLType, false).
 		With(AdvisoryLocks, false).
 		With(RowLevelSecurity, false).
-		With(RoleManagement, false)
+		With(RoleManagement, false).
+		With(Sequences, false)
 }
 
 // YugabyteDB25 is the preset for YugabyteDB YSQL. It stays close to
@@ -505,48 +507,57 @@ func ForDialect(dialect string) Capabilities {
 // over the MySQL protocol) and "PostgreSQL 16.3 (Debian ...)". When the
 // version cannot be parsed, the dialect's default preset is returned.
 func ForServerVersion(dialect, version string) Capabilities {
+	caps, _ := ForServerVersionResult(dialect, version)
+	return caps
+}
+
+// ForServerVersionResult is ForServerVersion plus an explicit fallback signal.
+// The boolean is false when no version-specific preset could be selected and
+// the dialect default was used instead. Callers with a live connection can log
+// that degradation while offline callers can keep using ForDialect.
+func ForServerVersionResult(dialect, version string) (Capabilities, bool) {
 	normalized := platform.NormalizeDialect(dialect)
 	versionLower := strings.ToLower(version)
 
 	switch {
 	case strings.Contains(versionLower, "cockroachdb"):
-		return CockroachDB23()
+		return CockroachDB23(), true
 	case strings.Contains(versionLower, "yugabytedb") || strings.Contains(versionLower, "yugabyte") || strings.Contains(versionLower, "-yb-"):
-		return YugabyteDB25()
+		return YugabyteDB25(), true
 	case strings.Contains(versionLower, "spanner"):
-		return SpannerPostgres()
+		return SpannerPostgres(), true
 	}
 
 	// MariaDB announces itself in the version string even when connected via
 	// the mysql dialect/driver; trust the string over the declared dialect.
 	if strings.Contains(versionLower, "mariadb") {
-		return mariaDBForVersion(version)
+		return mariaDBForVersion(version), parseableMariaDBVersion(version)
 	}
 
 	v, ok := parseVersion(version)
 	if !ok {
-		return ForDialect(dialect)
+		return ForDialect(dialect), false
 	}
 
 	switch normalized {
 	case platform.MySQL:
 		switch {
 		case v.major > 8 || (v.major == 8 && (v.minor > 0 || v.patch >= 19)):
-			return MySQL80()
+			return MySQL80(), true
 		case v.major == 8 && v.patch >= 16:
-			return MySQL8016()
+			return MySQL8016(), true
 		default:
-			return MySQLLegacy()
+			return MySQLLegacy(), true
 		}
 	case platform.MariaDB:
-		return mariaDBForVersion(version)
+		return mariaDBForVersion(version), parseableMariaDBVersion(version)
 	case platform.Postgres:
 		if v.major >= 14 {
-			return Postgres16()
+			return Postgres16(), true
 		}
-		return Postgres13()
+		return Postgres13(), true
 	default:
-		return ForDialect(dialect)
+		return ForDialect(dialect), false
 	}
 }
 
@@ -567,6 +578,11 @@ func mariaDBForVersion(version string) Capabilities {
 		return MariaDB1011()
 	}
 	return MariaDBLegacy()
+}
+
+func parseableMariaDBVersion(version string) bool {
+	_, ok := parseVersion(strings.TrimPrefix(version, "5.5.5-"))
+	return ok
 }
 
 // serverVersion is a parsed dotted server version.

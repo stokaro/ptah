@@ -2,6 +2,7 @@ package mysql
 
 import (
 	"github.com/stokaro/ptah/core/ast"
+	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/core/renderer/dialects/internal/bufwriter"
 	"github.com/stokaro/ptah/core/renderer/dialects/mysqllike"
 	"github.com/stokaro/ptah/core/renderer/types"
@@ -19,9 +20,15 @@ type Renderer struct {
 
 // New creates a new MySQL renderer
 func New() *Renderer {
+	return NewWithCapabilities(capability.MySQL80())
+}
+
+// NewWithCapabilities creates a MySQL renderer for a concrete server
+// capability set. Use New for offline/default rendering.
+func NewWithCapabilities(caps capability.Capabilities) *Renderer {
 	var w bufwriter.Writer
 	return &Renderer{
-		r: mysqllike.New("mysql", &w),
+		r: mysqllike.NewWithCapabilities("mysql", &w, caps),
 		w: w,
 	}
 }

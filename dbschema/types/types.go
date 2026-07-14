@@ -3,6 +3,8 @@ package types
 import (
 	"context"
 	"strings"
+
+	"github.com/stokaro/ptah/core/platform/capability"
 )
 
 // DBSchema represents the complete schema read from a database
@@ -169,10 +171,11 @@ type DBExtension struct {
 
 // DBInfo contains connection and metadata information
 type DBInfo struct {
-	Dialect string `json:"dialect"` // postgres, mysql, mariadb
-	Version string `json:"version"`
-	Schema  string `json:"schema"` // public, database name, etc.
-	URL     string `json:"url"`    // database connection URL (for reference)
+	Dialect      string                  `json:"dialect"` // postgres, mysql, mariadb
+	Version      string                  `json:"version"`
+	Schema       string                  `json:"schema"`       // public, database name, etc.
+	URL          string                  `json:"url"`          // database connection URL (for reference)
+	Capabilities capability.Capabilities `json:"capabilities"` // resolved from Dialect + Version for live connections
 }
 
 // SchemaReader interface for reading database schemas

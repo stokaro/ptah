@@ -141,8 +141,9 @@ func migrateCommand(cmd *cobra.Command, _ []string) error {
 	diff := schemadiff.CompareWithDialect(result, dbSchema, conn.Info().Dialect)
 
 	// 4. Display differences summary
-	astNodes := planner.GenerateSchemaDiffAST(diff, result, conn.Info().Dialect)
-	assessments, err := safety.AssessRendered(astNodes, conn.Info().Dialect)
+	info := conn.Info()
+	astNodes := planner.GenerateSchemaDiffASTWithCapabilities(diff, result, info.Dialect, info.Capabilities)
+	assessments, err := safety.AssessRenderedWithCapabilities(astNodes, info.Dialect, info.Capabilities)
 	if err != nil {
 		return fmt.Errorf("error assessing migration safety: %w", err)
 	}
@@ -171,7 +172,7 @@ func migrateCommand(cmd *cobra.Command, _ []string) error {
 	fmt.Fprintln(out, "=== MIGRATION SQL ===")
 	fmt.Fprintln(out)
 
-	statements, err := renderer.RenderSQL(conn.Info().Dialect, astNodes...)
+	statements, err := renderer.RenderSQLWithCapabilities(info.Dialect, info.Capabilities, astNodes...)
 	if err != nil {
 		return fmt.Errorf("error rendering SQL: %w", err)
 	}

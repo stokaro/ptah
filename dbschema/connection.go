@@ -92,13 +92,22 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 		_ = db.Close()
 		return nil, fmt.Errorf("failed to get database info: %w", err)
 	}
+	caps, versionSpecific := capability.ForServerVersionResult(info.Dialect, info.Version)
+	info.Capabilities = caps
+	if !versionSpecific {
+		slog.Debug(
+			"falling back to dialect default capabilities",
+			"dialect", info.Dialect,
+			"version", info.Version,
+		)
+	}
 
 	// Create appropriate schema reader and writer
 	var reader types.SchemaReader
 	var writer types.SchemaWriter
 	switch dialectProtocol {
 	case "pgx":
-		reader = postgres.NewPostgreSQLReaderWithCapabilities(db, info.Schema, capability.ForDialect(info.Dialect))
+		reader = postgres.NewPostgreSQLReaderWithCapabilities(db, info.Schema, info.Capabilities)
 		writer = postgres.NewPostgreSQLWriter(db, info.Schema)
 	case "mysql":
 		reader = mysql.NewMySQLReader(db, info.Schema)
@@ -145,7 +154,9 @@ func ReadSchemaWithSchemas(conn *DatabaseConnection, schemas []string) (*types.D
 
 // Info returns the database connection information
 func (dc *DatabaseConnection) Info() types.DBInfo {
-	return dc.info
+	info := dc.info
+	info.Capabilities = info.Capabilities.Clone()
+	return info
 }
 
 // Reader returns the schema reader

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"regexp"
 	"sort"
@@ -12,6 +13,7 @@ import (
 	"github.com/stokaro/ptah/config"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/schemadiff"
@@ -24,6 +26,7 @@ type shadowMigrationOptions struct {
 	DatabaseURL   string
 	MigrationsDir string
 	Dialect       string
+	Capabilities  capability.Capabilities
 	Version       int
 	Name          string
 	UpSQL         string
@@ -42,6 +45,9 @@ func verifyShadowMigration(ctx context.Context, opts shadowMigrationOptions) err
 
 	if !sameDialect(opts.Dialect, conn.Info().Dialect) {
 		return fmt.Errorf("shadow check failed: shadow database dialect %q does not match target dialect %q", conn.Info().Dialect, opts.Dialect)
+	}
+	if opts.Capabilities != nil && !maps.Equal(opts.Capabilities, conn.Info().Capabilities) {
+		return fmt.Errorf("shadow check failed: shadow database capabilities do not match target %s capabilities", opts.Dialect)
 	}
 
 	if err := conn.Writer().DropAllTables(); err != nil {

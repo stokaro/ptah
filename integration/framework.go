@@ -407,7 +407,8 @@ func (vem *VersionedEntityManager) GenerateMigrationSQL(_ctx context.Context, co
 	diff := schemadiff.CompareWithOptions(generated, dbSchema, dialectCompareOptions(conn))
 
 	// Generate migration SQL
-	statements := planner.GenerateSchemaDiffSQLStatements(diff, generated, conn.Info().Dialect)
+	info := conn.Info()
+	statements := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(diff, generated, info.Dialect, info.Capabilities)
 
 	return statements, nil
 }

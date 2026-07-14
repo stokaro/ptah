@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"maps"
 	"strings"
 
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/dbschema"
 )
@@ -22,7 +24,14 @@ func testCockroachDBCommonSubset(ctx context.Context, conn *dbschema.DatabaseCon
 		})
 	}
 
-	return testPostgresDistributedCommonSubset(ctx, conn, recorder, "CockroachDB", "crdb_common_users")
+	return testPostgresDistributedCommonSubset(
+		ctx,
+		conn,
+		recorder,
+		"CockroachDB",
+		"crdb_common_users",
+		capability.CockroachDB23(),
+	)
 }
 
 // testYugabyteDBCommonSubset validates the same conservative PostgreSQL-family
@@ -34,10 +43,24 @@ func testYugabyteDBCommonSubset(ctx context.Context, conn *dbschema.DatabaseConn
 		})
 	}
 
-	return testPostgresDistributedCommonSubset(ctx, conn, recorder, "YugabyteDB", "yb_common_users")
+	return testPostgresDistributedCommonSubset(
+		ctx,
+		conn,
+		recorder,
+		"YugabyteDB",
+		"yb_common_users",
+		capability.YugabyteDB25(),
+	)
 }
 
-func testPostgresDistributedCommonSubset(ctx context.Context, conn *dbschema.DatabaseConnection, recorder *StepRecorder, label, tableName string) error {
+func testPostgresDistributedCommonSubset(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	recorder *StepRecorder,
+	label string,
+	tableName string,
+	expectedCapabilities capability.Capabilities,
+) error {
 	createUsers := ast.NewCreateTable(tableName).
 		AddColumn(ast.NewColumn("id", "BIGINT").SetPrimary()).
 		AddColumn(ast.NewColumn("email", "TEXT").SetNotNull()).
@@ -47,7 +70,20 @@ func testPostgresDistributedCommonSubset(ctx context.Context, conn *dbschema.Dat
 	var sqlText string
 	if err := recorder.RecordStep("Render "+label+" DDL", "Render common-subset table and index through the distributed-SQL renderer", func() error {
 		var err error
-		sqlText, err = renderer.RenderSQL(conn.Info().Dialect, createUsers, createEmailIndex)
+		info := conn.Info()
+		if !maps.Equal(info.Capabilities, expectedCapabilities) {
+			return fmt.Errorf("%s connection capabilities must match the expected preset", label)
+		}
+		if info.Capabilities.Has(capability.RowLevelSecurity) {
+			return fmt.Errorf("%s connection capabilities must disable RLS", label)
+		}
+		if !expectedCapabilities.Has(capability.Sequences) && info.Capabilities.Has(capability.Sequences) {
+			return fmt.Errorf("%s connection capabilities must disable sequences", label)
+		}
+		if info.Capabilities.Has(capability.CreateIndexConcurrently) {
+			return fmt.Errorf("%s connection capabilities must disable concurrent indexes", label)
+		}
+		sqlText, err = renderer.RenderSQLWithCapabilities(info.Dialect, info.Capabilities, createUsers, createEmailIndex)
 		if err != nil {
 			return fmt.Errorf("render %s SQL: %w", label, err)
 		}

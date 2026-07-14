@@ -591,6 +591,9 @@ func (r *Renderer) processFieldType(fieldType string, enums []string) (string, e
 	if strings.EqualFold(fieldType, "XML") && !r.capabilities().Has(capability.XMLType) {
 		return "", fmt.Errorf("%s does not support XML columns; use a platform-specific type override", r.dialect)
 	}
+	if sequenceBackedType(fieldType) && !r.capabilities().Has(capability.Sequences) {
+		return "", fmt.Errorf("%s does not support sequence-backed type %s; use a platform-specific type override", r.dialect, fieldType)
+	}
 
 	// Handle other PostgreSQL-specific type mappings if needed
 	switch fieldType {
@@ -600,6 +603,15 @@ func (r *Renderer) processFieldType(fieldType string, enums []string) (string, e
 		return "BIGSERIAL", nil
 	default:
 		return fieldType, nil
+	}
+}
+
+func sequenceBackedType(fieldType string) bool {
+	switch strings.ToUpper(strings.TrimSpace(fieldType)) {
+	case "SMALLSERIAL", "SERIAL", "BIGSERIAL", "AUTO_INCREMENT", "BIGINT AUTO_INCREMENT":
+		return true
+	default:
+		return strings.Contains(strings.ToUpper(fieldType), "AUTO_INCREMENT")
 	}
 }
 
@@ -876,6 +888,10 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 
 // VisitCreatePolicy renders a CREATE POLICY statement for PostgreSQL RLS
 func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
+	if err := r.requireRowLevelSecurityCapability(); err != nil {
+		return err
+	}
+
 	// Add comment if provided
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
@@ -919,6 +935,10 @@ func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
 
 // VisitAlterTableEnableRLS renders an ALTER TABLE ENABLE ROW LEVEL SECURITY statement
 func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
+	if err := r.requireRowLevelSecurityCapability(); err != nil {
+		return err
+	}
+
 	// Add comment if provided
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
@@ -1164,6 +1184,10 @@ func isIdentifierPart(character byte) bool {
 
 // VisitDropPolicy renders a DROP POLICY statement
 func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
+	if err := r.requireRowLevelSecurityCapability(); err != nil {
+		return err
+	}
+
 	// Add comment if provided
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
@@ -1186,6 +1210,10 @@ func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
 
 // VisitAlterTableDisableRLS renders an ALTER TABLE DISABLE ROW LEVEL SECURITY statement
 func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
+	if err := r.requireRowLevelSecurityCapability(); err != nil {
+		return err
+	}
+
 	// Add comment if provided
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
@@ -1199,6 +1227,10 @@ func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode)
 
 // VisitCreateRole renders a CREATE ROLE statement for PostgreSQL
 func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
+	if err := r.requireRoleManagementCapability(); err != nil {
+		return err
+	}
+
 	// Add comment if provided
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
@@ -1268,6 +1300,10 @@ func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
 
 // VisitDropRole renders a DROP ROLE statement for PostgreSQL
 func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
+	if err := r.requireRoleManagementCapability(); err != nil {
+		return err
+	}
+
 	// Add comment if provided
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
@@ -1290,6 +1326,10 @@ func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
 
 // VisitGrantPrivilege renders a GRANT statement for PostgreSQL.
 func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
+	if err := r.requireRoleManagementCapability(); err != nil {
+		return err
+	}
+
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -1314,6 +1354,10 @@ func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 
 // VisitRevokePrivilege renders a REVOKE statement for PostgreSQL.
 func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
+	if err := r.requireRoleManagementCapability(); err != nil {
+		return err
+	}
+
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -1354,6 +1398,10 @@ func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
 
 // VisitAlterRole renders an ALTER ROLE statement for PostgreSQL
 func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
+	if err := r.requireRoleManagementCapability(); err != nil {
+		return err
+	}
+
 	// Add comment if provided
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
@@ -1367,6 +1415,20 @@ func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
 	}
 
 	return nil
+}
+
+func (r *Renderer) requireRowLevelSecurityCapability() error {
+	if r.capabilities().Has(capability.RowLevelSecurity) {
+		return nil
+	}
+	return fmt.Errorf("%s does not support row-level security", r.dialect)
+}
+
+func (r *Renderer) requireRoleManagementCapability() error {
+	if r.capabilities().Has(capability.RoleManagement) {
+		return nil
+	}
+	return fmt.Errorf("%s does not support role management", r.dialect)
 }
 
 // renderRoleOperation renders a single role operation as an ALTER ROLE statement

@@ -12,6 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/dbschema"
 )
 
@@ -61,6 +62,9 @@ func TestPgxDriverValidation(t *testing.T) {
 		// Verify connection info shows correct dialect
 		info := conn.Info()
 		c.Assert(info.Dialect, qt.Matches, "postgres|postgresql|pgx")
+		c.Assert(info.Capabilities, qt.Not(qt.IsNil))
+		c.Assert(info.Capabilities.Validate(), qt.IsNil)
+		c.Assert(info.Capabilities.Has(capability.EnumCustomType), qt.IsTrue)
 	})
 
 	t.Run("pgx specific features work", func(t *testing.T) {
@@ -129,6 +133,9 @@ func TestPgxDriverValidation(t *testing.T) {
 				// Verify connection info shows correct dialect
 				info := conn.Info()
 				c.Assert(info.Dialect, qt.Matches, "postgres|postgresql|pgx")
+				c.Assert(info.Capabilities, qt.Not(qt.IsNil))
+				c.Assert(info.Capabilities.Validate(), qt.IsNil)
+				c.Assert(info.Capabilities.Has(capability.EnumCustomType), qt.IsTrue)
 			})
 		}
 	})
