@@ -5,7 +5,6 @@ package gonative_test
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -16,27 +15,10 @@ import (
 	"github.com/stokaro/ptah/internal/testutils"
 )
 
-// skipIfNoPostgreSQL checks if PostgreSQL is available for testing and skips the test if not.
+// skipIfNoPostgreSQL skips only when POSTGRES_TEST_DSN is absent; a bad configured DSN fails.
 func skipIfNoPostgreSQL(t *testing.T) string {
 	t.Helper()
-
-	dsn := os.Getenv("POSTGRES_TEST_DSN")
-	if dsn == "" {
-		t.Skip("Skipping PostgreSQL tests: POSTGRES_TEST_DSN environment variable not set")
-	}
-
-	// Test connection
-	db, err := sql.Open("pgx", dsn)
-	if err != nil {
-		t.Skipf("Skipping PostgreSQL tests: failed to open database: %v", err)
-	}
-	defer db.Close()
-
-	if err := db.Ping(); err != nil {
-		t.Skipf("Skipping PostgreSQL tests: failed to connect to database: %v", err)
-	}
-
-	return dsn
+	return requireReachableTestDSN(t, "POSTGRES_TEST_DSN", "pgx", "PostgreSQL")
 }
 
 func TestPostgreSQLReader_ReadSchema_Integration(t *testing.T) {

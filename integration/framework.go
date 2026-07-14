@@ -44,21 +44,24 @@ type TestResult struct {
 	Name        string        `json:"name"`
 	Database    string        `json:"database"`
 	Success     bool          `json:"success"`
+	Skipped     bool          `json:"skipped"`
 	Duration    time.Duration `json:"duration"`
 	Error       string        `json:"error,omitempty"`
+	SkipReason  string        `json:"skip_reason,omitempty"`
 	Description string        `json:"description"`
 	Steps       []TestStep    `json:"steps,omitempty"`
 }
 
 // TestReport represents the complete test report
 type TestReport struct {
-	StartTime   time.Time    `json:"start_time"`
-	EndTime     time.Time    `json:"end_time"`
-	TotalTests  int          `json:"total_tests"`
-	PassedTests int          `json:"passed_tests"`
-	FailedTests int          `json:"failed_tests"`
-	Results     []TestResult `json:"results"`
-	Summary     string       `json:"summary"`
+	StartTime    time.Time    `json:"start_time"`
+	EndTime      time.Time    `json:"end_time"`
+	TotalTests   int          `json:"total_tests"`
+	PassedTests  int          `json:"passed_tests"`
+	FailedTests  int          `json:"failed_tests"`
+	SkippedTests int          `json:"skipped_tests"`
+	Results      []TestResult `json:"results"`
+	Summary      string       `json:"summary"`
 }
 
 // StepRecorder allows test functions to record individual steps
@@ -165,9 +168,12 @@ func (tr *TestRunner) RunAll(ctx context.Context) error {
 			tr.mu.Lock()
 			tr.report.Results = append(tr.report.Results, result)
 			tr.report.TotalTests++
-			if result.Success {
+			switch {
+			case result.Skipped:
+				tr.report.SkippedTests++
+			case result.Success:
 				tr.report.PassedTests++
-			} else {
+			default:
 				tr.report.FailedTests++
 			}
 			tr.mu.Unlock()
@@ -222,7 +228,8 @@ func (tr *TestRunner) runSingleTest(ctx context.Context, scenario TestScenario, 
 			"Scenario has not opted in via ClickHouseCompatible; skipping on ClickHouse",
 			func() error { return nil },
 		)
-		result.Success = true
+		result.Skipped = true
+		result.SkipReason = "Scenario has not opted in via ClickHouseCompatible; skipping on ClickHouse"
 		result.Steps = recorder.GetSteps()
 		result.Duration = time.Since(start)
 		return result
@@ -234,7 +241,8 @@ func (tr *TestRunner) runSingleTest(ctx context.Context, scenario TestScenario, 
 			"Scenario has not opted in via PostgresDistributedCompatible; skipping on PostgreSQL-family distributed SQL",
 			func() error { return nil },
 		)
-		result.Success = true
+		result.Skipped = true
+		result.SkipReason = "Scenario has not opted in via PostgresDistributedCompatible; skipping on PostgreSQL-family distributed SQL"
 		result.Steps = recorder.GetSteps()
 		result.Duration = time.Since(start)
 		return result
@@ -463,14 +471,19 @@ func (vem *VersionedEntityManager) MigrateToVersion(ctx context.Context, conn *d
 // generateSummary creates a summary of the test results
 func (tr *TestRunner) generateSummary() {
 	duration := tr.report.EndTime.Sub(tr.report.StartTime)
-	successRate := float64(tr.report.PassedTests) / float64(tr.report.TotalTests) * 100
+	executedTests := tr.report.PassedTests + tr.report.FailedTests
+	successRate := 0.0
+	if executedTests > 0 {
+		successRate = float64(tr.report.PassedTests) / float64(executedTests) * 100
+	}
 
 	tr.report.Summary = fmt.Sprintf(
-		"Executed %d tests in %v. %d passed, %d failed (%.1f%% success rate)",
-		tr.report.TotalTests,
+		"Executed %d tests in %v. %d passed, %d failed, %d skipped (%.1f%% success rate)",
+		executedTests,
 		duration.Round(time.Millisecond),
 		tr.report.PassedTests,
 		tr.report.FailedTests,
+		tr.report.SkippedTests,
 		successRate,
 	)
 }

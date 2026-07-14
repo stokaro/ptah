@@ -147,27 +147,23 @@ jobs:
           done
           echo "YugabyteDB is ready!"
       
-      - name: Run executor integration tests with PostgreSQL
+      - name: Run executor integration tests with live databases
         env:
           POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
+          MYSQL_TEST_DSN: "ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
+          MARIADB_TEST_DSN: "ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
+          POSTGRES_TEST_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
+          MYSQL_TEST_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
+          POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
+          MYSQL_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
+          MARIADB_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
         run: |
-          go test -v  ./integration/... -tags=integration -timeout 15m
-
-      - name: Run executor integration tests with MySQL
-        env:
-          MYSQL_TEST_DSN: "ptah_user:ptah_password@tcp(mysql:3306)/ptah_test"
-        run: |
-          go test -v  ./integration/... -tags=integration -timeout 15m
-
-      - name: Run executor integration tests with MariaDB
-        env:
-          MARIADB_TEST_DSN: "ptah_user:ptah_password@tcp(mariadb:3307)/ptah_test"
-        run: |
-          go test -v  ./integration/... -tags=integration -timeout 15m
+          go test -v ./integration -tags=integration -timeout 15m
+          go test -v ./integration/gonative -tags=integration -timeout 15m
 
       - name: Build integration test binary
         run: |
-          go build -o ./integration-test ./cmd/integration-test
+          go build -race -o ./integration-test ./cmd/integration-test
 
       - name: Test integration binary help
         run: |
@@ -215,6 +211,11 @@ jobs:
       
       - name: Run dynamic integration tests
         env:
+          POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
+          MYSQL_TEST_DSN: "ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
+          MARIADB_TEST_DSN: "ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
+          POSTGRES_TEST_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
+          MYSQL_TEST_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
           POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           MYSQL_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
           MARIADB_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
@@ -222,4 +223,4 @@ jobs:
           COCKROACHDB_URL: "cockroachdb://root@localhost:26257/defaultdb?sslmode=disable"
           YUGABYTEDB_URL: "yugabytedb://yugabyte@localhost:5433/yugabyte?sslmode=disable"
         run: |
-          go test -v -race ./integration -timeout 30m
+          go test -v -race ./integration -tags=integration -timeout 30m
