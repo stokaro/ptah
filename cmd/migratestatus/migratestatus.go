@@ -2,6 +2,7 @@ package migratestatus
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -119,16 +120,9 @@ func migrateStatusCommand(_ *cobra.Command, _ []string) error {
 }
 
 func outputJSON(status *migrator.MigrationStatus) error {
-	// Simple JSON output - in a real implementation you might want to use
-	// a proper JSON marshaling library
-	fmt.Printf(`{
-  "current_version": %d,
-  "total_migrations": %d,
-  "pending_migrations": %v,
-  "has_pending_changes": %t
-}
-`, status.CurrentVersion, status.TotalMigrations, status.PendingMigrations, status.HasPendingChanges)
-	return nil
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(status)
 }
 
 func outputHuman(status *migrator.MigrationStatus, conn *dbschema.DatabaseConnection, verbose bool) error { //revive:disable-line:flag-parameter // it's ok here
@@ -140,7 +134,9 @@ func outputHuman(status *migrator.MigrationStatus, conn *dbschema.DatabaseConnec
 
 	fmt.Printf("Current Version: %d\n", status.CurrentVersion)
 	fmt.Printf("Total Migrations: %d\n", status.TotalMigrations)
+	fmt.Printf("Applied Migrations: %d\n", len(status.AppliedMigrations))
 	fmt.Printf("Pending Migrations: %d\n", len(status.PendingMigrations))
+	fmt.Printf("Out-of-order Migrations: %d\n", len(status.OutOfOrderMigrations))
 
 	if status.HasPendingChanges {
 		fmt.Println("Status: ⚠️  Pending migrations available")
@@ -148,6 +144,12 @@ func outputHuman(status *migrator.MigrationStatus, conn *dbschema.DatabaseConnec
 		if verbose && len(status.PendingMigrations) > 0 {
 			fmt.Println("\nPending migration versions:")
 			for _, version := range status.PendingMigrations {
+				fmt.Printf("  - %d\n", version)
+			}
+		}
+		if verbose && len(status.OutOfOrderMigrations) > 0 {
+			fmt.Println("\nOut-of-order migration versions:")
+			for _, version := range status.OutOfOrderMigrations {
 				fmt.Printf("  - %d\n", version)
 			}
 		}
@@ -163,8 +165,7 @@ func outputHuman(status *migrator.MigrationStatus, conn *dbschema.DatabaseConnec
 		if status.TotalMigrations == 0 {
 			fmt.Println("No migrations found in the migrations directory.")
 		} else {
-			appliedCount := status.TotalMigrations - len(status.PendingMigrations)
-			fmt.Printf("Applied migrations: %d\n", appliedCount)
+			fmt.Printf("Applied migrations: %d\n", len(status.AppliedMigrations))
 
 			if len(status.PendingMigrations) > 0 {
 				fmt.Printf("Next migration to apply: %d\n", status.PendingMigrations[0])

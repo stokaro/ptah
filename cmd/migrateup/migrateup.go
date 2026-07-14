@@ -37,6 +37,7 @@ const (
 	dryRunFlag           = "dry-run"
 	verboseFlag          = "verbose"
 	verifySumFlag        = "verify-sum"
+	execOrderFlag        = "exec-order"
 	lockTimeoutFlag      = "lock-timeout"
 	statementTimeoutFlag = "statement-timeout"
 	allowDestructiveFlag = "allow-destructive"
@@ -67,6 +68,11 @@ var migrateUpFlags = map[string]cobraflags.Flag{
 		Name:  verifySumFlag,
 		Value: false,
 		Usage: "Verify the migrations directory against its committed ptah.sum before applying; abort on drift",
+	},
+	execOrderFlag: &cobraflags.StringFlag{
+		Name:  execOrderFlag,
+		Value: string(migrator.ExecOrderLinear),
+		Usage: "Execution order policy for pending migrations below the current version: linear, linear-skip, or non-linear",
 	},
 	lockTimeoutFlag: &cobraflags.StringFlag{
 		Name:  lockTimeoutFlag,
@@ -100,6 +106,7 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 	dryRun := migrateUpFlags[dryRunFlag].GetBool()
 	verbose := migrateUpFlags[verboseFlag].GetBool()
 	verifySum := migrateUpFlags[verifySumFlag].GetBool()
+	execOrderValue := migrateUpFlags[execOrderFlag].GetString()
 	lockTimeout := migrateUpFlags[lockTimeoutFlag].GetString()
 	statementTimeout := migrateUpFlags[statementTimeoutFlag].GetString()
 	allowDestructive := migrateUpFlags[allowDestructiveFlag].GetBool()
@@ -134,6 +141,10 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 	}
 
 	timeouts, err := migrator.ParseMigrationTimeouts(lockTimeout, statementTimeout)
+	if err != nil {
+		return err
+	}
+	execOrder, err := migrator.ParseExecOrder(execOrderValue)
 	if err != nil {
 		return err
 	}
@@ -185,7 +196,7 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
-	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable).WithDefaultTimeouts(timeouts)
+	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable).WithDefaultTimeouts(timeouts).WithExecOrder(execOrder)
 
 	// Get migration status before running
 	status, err := mig.GetMigrationStatus(context.Background())
@@ -196,6 +207,9 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 	fmt.Printf("Current version: %d\n", status.CurrentVersion)
 	fmt.Printf("Total migrations: %d\n", status.TotalMigrations)
 	fmt.Printf("Pending migrations: %d\n", len(status.PendingMigrations))
+	if len(status.OutOfOrderMigrations) > 0 {
+		fmt.Printf("Out-of-order migrations: %v\n", status.OutOfOrderMigrations)
+	}
 
 	if !status.HasPendingChanges {
 		fmt.Println("✅ Database is already up to date!")
@@ -204,10 +218,16 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 
 	if verbose {
 		fmt.Printf("Pending migration versions: %v\n", status.PendingMigrations)
+		if len(status.OutOfOrderMigrations) > 0 {
+			fmt.Printf("Out-of-order migration versions: %v\n", status.OutOfOrderMigrations)
+		}
+	}
+	if execOrder == migrator.ExecOrderLinear && len(status.OutOfOrderMigrations) > 0 {
+		return migrator.NewOutOfOrderError(status.CurrentVersion, status.OutOfOrderMigrations)
 	}
 
 	if !allowDestructive {
-		findings, err := lintPendingDestructive(migrationsFS, status.PendingMigrations, conn.Info().Dialect)
+		findings, err := lintPendingDestructive(migrationsFS, pendingMigrationsForSafetyCheck(status, execOrder), conn.Info().Dialect)
 		if err != nil {
 			return fmt.Errorf("error checking pending migration safety: %w", err)
 		}
@@ -240,6 +260,26 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 	}
 
 	return nil
+}
+
+func pendingMigrationsForSafetyCheck(status *migrator.MigrationStatus, execOrder migrator.ExecOrder) []int {
+	if execOrder != migrator.ExecOrderLinearSkip {
+		return status.PendingMigrations
+	}
+
+	outOfOrder := make(map[int]struct{}, len(status.OutOfOrderMigrations))
+	for _, version := range status.OutOfOrderMigrations {
+		outOfOrder[version] = struct{}{}
+	}
+
+	pending := make([]int, 0, len(status.PendingMigrations))
+	for _, version := range status.PendingMigrations {
+		if _, ok := outOfOrder[version]; ok {
+			continue
+		}
+		pending = append(pending, version)
+	}
+	return pending
 }
 
 func lintPendingDestructive(fsys fs.FS, pending []int, dialect string) ([]lint.Finding, error) {
