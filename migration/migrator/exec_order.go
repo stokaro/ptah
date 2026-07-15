@@ -47,8 +47,8 @@ func normalizeExecOrder(value ExecOrder) ExecOrder {
 // OutOfOrderError reports pending migrations that are below the current
 // high-water mark while linear execution is required.
 type OutOfOrderError struct {
-	CurrentVersion int
-	Versions       []int
+	CurrentVersion int64
+	Versions       []int64
 }
 
 func (e *OutOfOrderError) Error() string {
@@ -61,7 +61,7 @@ func (e *OutOfOrderError) Error() string {
 
 // NewOutOfOrderError builds the typed error returned for linear execution when
 // lower-version pending migrations are present.
-func NewOutOfOrderError(currentVersion int, versions []int) *OutOfOrderError {
+func NewOutOfOrderError(currentVersion int64, versions []int64) *OutOfOrderError {
 	return &OutOfOrderError{
 		CurrentVersion: currentVersion,
 		Versions:       slices.Clone(versions),

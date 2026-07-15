@@ -69,7 +69,7 @@ ALTER TABLE accounts DISABLE ROW LEVEL SECURITY;
 		},
 	}
 
-	findings, err := lintPendingDestructive(fsys, []int{2}, "postgres")
+	findings, err := lintPendingDestructive(fsys, []int64{2}, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 5)
 	c.Assert([]string{findings[0].Rule, findings[1].Rule, findings[2].Rule, findings[3].Rule, findings[4].Rule}, qt.DeepEquals, []string{"DS102", "DS107", "DS107", "DS108", "DS109"})
@@ -80,23 +80,23 @@ func TestPendingMigrationsForSafetyCheckSkipsOutOfOrderWhenLinearSkip(t *testing
 	c := qt.New(t)
 
 	status := &migrator.MigrationStatus{
-		PendingMigrations:    []int{3, 6},
-		OutOfOrderMigrations: []int{3},
+		PendingMigrations:    []int64{3, 6},
+		OutOfOrderMigrations: []int64{3},
 	}
 
 	c.Assert(
 		pendingMigrationsForSafetyCheck(status, migrator.ExecOrderLinear),
 		qt.DeepEquals,
-		[]int{3, 6},
+		[]int64{3, 6},
 	)
 	c.Assert(
 		pendingMigrationsForSafetyCheck(status, migrator.ExecOrderNonLinear),
 		qt.DeepEquals,
-		[]int{3, 6},
+		[]int64{3, 6},
 	)
 	c.Assert(
 		pendingMigrationsForSafetyCheck(status, migrator.ExecOrderLinearSkip),
 		qt.DeepEquals,
-		[]int{6},
+		[]int64{6},
 	)
 }

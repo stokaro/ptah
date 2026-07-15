@@ -28,10 +28,10 @@ func TestOutOfOrderMigrationsPostgresIntegration(t *testing.T) {
 	mig := issue261Migrator(conn, issue261AllMigrations()...)
 	status, err := mig.GetMigrationStatus(ctx)
 	c.Assert(err, qt.IsNil)
-	c.Assert(status.CurrentVersion, qt.Equals, 5)
-	c.Assert(status.AppliedMigrations, qt.DeepEquals, []int{1, 2, 5})
-	c.Assert(status.PendingMigrations, qt.DeepEquals, []int{3})
-	c.Assert(status.OutOfOrderMigrations, qt.DeepEquals, []int{3})
+	c.Assert(status.CurrentVersion, qt.Equals, int64(5))
+	c.Assert(status.AppliedMigrations, qt.DeepEquals, []int64{1, 2, 5})
+	c.Assert(status.PendingMigrations, qt.DeepEquals, []int64{3})
+	c.Assert(status.OutOfOrderMigrations, qt.DeepEquals, []int64{3})
 
 	err = mig.MigrateUp(ctx)
 	c.Assert(err, qt.IsNotNil)
@@ -64,7 +64,7 @@ func TestOutOfOrderMigrationsPostgresIntegration(t *testing.T) {
 
 	finalStatus, err := issue261Migrator(conn, issue261AllMigrations()...).GetMigrationStatus(ctx)
 	c.Assert(err, qt.IsNil)
-	c.Assert(finalStatus.AppliedMigrations, qt.DeepEquals, []int{1, 2, 3, 5})
+	c.Assert(finalStatus.AppliedMigrations, qt.DeepEquals, []int64{1, 2, 3, 5})
 	c.Assert(finalStatus.PendingMigrations, qt.HasLen, 0)
 }
 
@@ -113,7 +113,7 @@ func issue261AllMigrations() []*migrator.Migration {
 	}
 }
 
-func issue261Migration(version int, description, upSQL, downSQL string) *migrator.Migration {
+func issue261Migration(version int64, description, upSQL, downSQL string) *migrator.Migration {
 	return migrator.CreateMigrationFromSQL(version, description, upSQL, downSQL)
 }
 

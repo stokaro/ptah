@@ -12,11 +12,13 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/migration/migratesum"
+	"github.com/stokaro/ptah/migration/migrator"
 )
 
 // NewMigrateValidateCommand returns the migrate-validate command.
 func NewMigrateValidateCommand() *cobra.Command {
 	var dir string
+	var dirFormatValue string
 
 	cmd := &cobra.Command{
 		Use:   "migrate-validate",
@@ -33,16 +35,22 @@ Run it in CI to guarantee already-committed migrations are never changed.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runValidate(cmd, dir)
+			return runValidate(cmd, dir, dirFormatValue)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "./migrations", "Directory containing migration files")
+	cmd.Flags().StringVar(&dirFormatValue, "dir-format", string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	cmd.SetFlagErrorFunc(cmdutil.FlagErrorFunc)
 	return cmd
 }
 
-func runValidate(cmd *cobra.Command, dir string) error {
+func runValidate(cmd *cobra.Command, dir, dirFormatValue string) error {
 	if err := cmdutil.StatDir(dir); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+
+	dirFormat, err := migrator.ParseMigrationDirFormat(dirFormatValue)
+	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 
@@ -51,7 +59,7 @@ func runValidate(cmd *cobra.Command, dir string) error {
 	// message — including the actionable "run ptah migrate-hash" for a
 	// missing sum — must reach the user, so print it here (the command
 	// silences cobra's own error output).
-	result, err := migratesum.VerifyDir(dir)
+	result, err := migratesum.VerifyDirWithFormat(dir, dirFormat)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

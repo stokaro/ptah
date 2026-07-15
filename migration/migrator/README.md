@@ -68,6 +68,15 @@ DROP TABLE IF EXISTS users;
 
 ## Command Line Interface
 
+Migration directory commands use `--dir-format=auto` by default. Auto mode
+prefers Ptah paired files (`NNNNNNNNNN_description.up.sql` and
+`NNNNNNNNNN_description.down.sql`) when they are present, and otherwise accepts
+Atlas-style versioned files such as `20220318104614_team_A.sql`. Use
+`--dir-format=ptah` or `--dir-format=atlas` on `migrate-up`, `migrate-down`,
+`migrate-status`, `migrate-hash`, and `migrate-validate` when detection should be
+explicit. Atlas-style files are forward migrations only; `migrate-down` returns a
+clear no-down-migration error for them.
+
 ### Migrate Up
 Apply all pending migrations:
 ```bash
@@ -87,6 +96,11 @@ go run ./cmd migrate-up --db-url postgres://user:pass@localhost/db --migrations-
 With a custom migration state table:
 ```bash
 go run ./cmd migrate-up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --migrations-schema infra --migrations-table ptah_migrations
+```
+
+With an Atlas-style versioned migration directory:
+```bash
+go run ./cmd migrate-up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dir-format atlas
 ```
 
 ### Migrate Down
@@ -126,6 +140,11 @@ With a custom migration state table:
 go run ./cmd migrate-status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --migrations-schema infra --migrations-table ptah_migrations
 ```
 
+With an Atlas-style versioned migration directory:
+```bash
+go run ./cmd migrate-status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dir-format atlas
+```
+
 ## API Overview
 
 The migrator package provides a clean, modular API with the following key components:
@@ -163,6 +182,7 @@ pending and out of order.
 - **`NewRegisteredMigrationProvider(migrations...)`**: Creates an in-memory migration provider
 - **`WithMigrationsTable(schema, table)`**: Configures the migration history table
 - **`WithExecOrder(policy)`**: Configures out-of-order migration handling
+- **`WithMigrationDirFormat(format)`**: Selects `auto`, `ptah`, or `atlas` filesystem discovery
 
 ## Programmatic Usage
 

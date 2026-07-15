@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"sort"
 	"strings"
+
+	"github.com/stokaro/ptah/migration/migrator"
 )
 
 // ErrSumFileMissing is returned when the migrations directory has no ptah.sum.
@@ -36,6 +38,13 @@ func (r *Result) OK() bool {
 // ErrSumFileMissing; a read/parse failure returns a wrapped error. A drift is
 // reported in the Result (not as an error) so callers choose the exit code.
 func Verify(fsys fs.FS) (*Result, error) {
+	return VerifyWithFormat(fsys, migrator.MigrationDirFormatAuto)
+}
+
+// VerifyWithFormat recomputes the sum of fsys using the selected migration
+// directory format and compares it against the ptah.sum recorded in the same
+// directory.
+func VerifyWithFormat(fsys fs.FS, format migrator.MigrationDirFormat) (*Result, error) {
 	recordedRaw, err := fs.ReadFile(fsys, FileName)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, ErrSumFileMissing
@@ -48,7 +57,7 @@ func Verify(fsys fs.FS) (*Result, error) {
 		return nil, fmt.Errorf("failed to parse %s: %w", FileName, err)
 	}
 
-	current, err := Compute(fsys)
+	current, err := ComputeWithFormat(fsys, format)
 	if err != nil {
 		return nil, err
 	}

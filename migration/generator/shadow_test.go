@@ -49,7 +49,7 @@ func TestNextAvailableMigrationVersionChecksUpAndDownFiles(t *testing.T) {
 	err = os.WriteFile(filepath.Join(dir, migrator.GenerateMigrationFileName(105, "future", "up")), []byte("SELECT 1;"), 0600)
 	c.Assert(err, qt.IsNil)
 
-	c.Assert(nextAvailableMigrationVersion(dir, 100, "add_email"), qt.Equals, 106)
+	c.Assert(nextAvailableMigrationVersion(dir, 100, "add_email"), qt.Equals, int64(106))
 }
 
 func TestLoadPriorMigrationsMissingDir(t *testing.T) {

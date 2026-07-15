@@ -16,12 +16,12 @@ import (
 
 // MigrationStatus represents the current state of migrations
 type MigrationStatus struct {
-	CurrentVersion       int   `json:"current_version"`
-	AppliedMigrations    []int `json:"applied_migrations"`
-	PendingMigrations    []int `json:"pending_migrations"`
-	OutOfOrderMigrations []int `json:"out_of_order_migrations"`
-	TotalMigrations      int   `json:"total_migrations"`
-	HasPendingChanges    bool  `json:"has_pending_changes"`
+	CurrentVersion       int64   `json:"current_version"`
+	AppliedMigrations    []int64 `json:"applied_migrations"`
+	PendingMigrations    []int64 `json:"pending_migrations"`
+	OutOfOrderMigrations []int64 `json:"out_of_order_migrations"`
+	TotalMigrations      int     `json:"total_migrations"`
+	HasPendingChanges    bool    `json:"has_pending_changes"`
 }
 
 // Migrator handles database migrations for ptah
@@ -119,7 +119,7 @@ func (m *Migrator) quoteIdentifier(identifier string) string {
 
 func (m *Migrator) createMigrationsTableSQL() string {
 	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-    version INTEGER PRIMARY KEY,
+    version BIGINT PRIMARY KEY,
     description TEXT NOT NULL,
     applied_at TIMESTAMP NOT NULL
 )`, m.qualifiedMigrationsTable())
@@ -168,14 +168,108 @@ func (m *Migrator) Initialize(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create migrations table: %w", err)
 	}
+	if err := m.ensureMigrationsVersionColumn(ctx); err != nil {
+		return fmt.Errorf("failed to prepare migrations version column: %w", err)
+	}
 
 	// Mark as initialized
 	m.initialized = true
 	return nil
 }
 
+func (m *Migrator) ensureMigrationsVersionColumn(ctx context.Context) error {
+	switch m.conn.Info().Dialect {
+	case "postgres", "cockroachdb", "yugabytedb":
+		return m.ensurePostgresMigrationsVersionColumn(ctx)
+	case "mysql", "mariadb":
+		return m.ensureMySQLMigrationsVersionColumn(ctx)
+	default:
+		return nil
+	}
+}
+
+func (m *Migrator) ensurePostgresMigrationsVersionColumn(ctx context.Context) error {
+	dataType, err := m.migrationsVersionColumnType(
+		ctx,
+		sqlutil.Rebind(m.conn.Info().Dialect, `
+SELECT data_type
+FROM information_schema.columns
+WHERE table_schema = ? AND table_name = ? AND column_name = 'version'`),
+	)
+	if err != nil {
+		return err
+	}
+	if dataType == "bigint" {
+		return nil
+	}
+	_, err = m.conn.ExecContext(ctx, fmt.Sprintf(
+		"ALTER TABLE %s ALTER COLUMN %s TYPE BIGINT",
+		m.qualifiedMigrationsTable(),
+		m.quoteIdentifier("version"),
+	))
+	if err != nil {
+		return fmt.Errorf("failed to widen version column from %s to BIGINT: %w", dataType, err)
+	}
+	return nil
+}
+
+func (m *Migrator) ensureMySQLMigrationsVersionColumn(ctx context.Context) error {
+	dataType, err := m.migrationsVersionColumnType(
+		ctx,
+		`SELECT data_type
+FROM information_schema.columns
+WHERE table_schema = ? AND table_name = ? AND column_name = 'version'`,
+	)
+	if err != nil {
+		return err
+	}
+	if dataType == "bigint" {
+		return nil
+	}
+	_, err = m.conn.ExecContext(ctx, fmt.Sprintf(
+		"ALTER TABLE %s MODIFY COLUMN %s BIGINT NOT NULL",
+		m.qualifiedMigrationsTable(),
+		m.quoteIdentifier("version"),
+	))
+	if err != nil {
+		return fmt.Errorf("failed to widen version column from %s to BIGINT: %w", dataType, err)
+	}
+	return nil
+}
+
+func (m *Migrator) migrationsVersionColumnType(ctx context.Context, query string) (string, error) {
+	var dataType string
+	err := m.conn.QueryRowContext(ctx, query, m.metadataSchemaName(), m.migrationsTableName()).Scan(&dataType)
+	if err != nil {
+		return "", fmt.Errorf("failed to inspect migrations version column: %w", err)
+	}
+	return strings.ToLower(dataType), nil
+}
+
+func (m *Migrator) metadataSchemaName() string {
+	if m.migrationsSchema != "" {
+		return m.migrationsSchema
+	}
+	if m.conn != nil {
+		if schema := strings.TrimSpace(m.conn.Info().Schema); schema != "" {
+			return schema
+		}
+	}
+	if m.conn != nil && m.conn.Info().Dialect == "postgres" {
+		return "public"
+	}
+	return ""
+}
+
+func (m *Migrator) migrationsTableName() string {
+	if m.migrationsTable == "" {
+		return "schema_migrations"
+	}
+	return m.migrationsTable
+}
+
 // GetCurrentVersion returns the current migration version from the database
-func (m *Migrator) GetCurrentVersion(ctx context.Context) (int, error) {
+func (m *Migrator) GetCurrentVersion(ctx context.Context) (int64, error) {
 	// First ensure the migrations table exists
 	if err := m.Initialize(ctx); err != nil {
 		return 0, fmt.Errorf("failed to initialize migrations table: %w", err)
@@ -185,7 +279,7 @@ func (m *Migrator) GetCurrentVersion(ctx context.Context) (int, error) {
 	}
 
 	// Query the current version
-	var version int
+	var version int64
 	row := m.conn.QueryRowContext(ctx, m.getVersionSQL())
 	if err := row.Scan(&version); err != nil {
 		return 0, fmt.Errorf("failed to get current version: %w", err)
@@ -195,13 +289,13 @@ func (m *Migrator) GetCurrentVersion(ctx context.Context) (int, error) {
 }
 
 // GetAppliedMigrations returns a list of applied migration versions
-func (m *Migrator) GetAppliedMigrations(ctx context.Context) ([]int, error) {
+func (m *Migrator) GetAppliedMigrations(ctx context.Context) ([]int64, error) {
 	// First ensure the migrations table exists
 	if err := m.Initialize(ctx); err != nil {
 		return nil, fmt.Errorf("failed to initialize migrations table: %w", err)
 	}
 	if m.conn.Writer().IsDryRun() {
-		return []int{}, nil
+		return []int64{}, nil
 	}
 
 	// Query all applied migration versions
@@ -211,9 +305,9 @@ func (m *Migrator) GetAppliedMigrations(ctx context.Context) ([]int, error) {
 	}
 	defer rows.Close()
 
-	applied := make([]int, 0)
+	applied := make([]int64, 0)
 	for rows.Next() {
-		var version int
+		var version int64
 		if err := rows.Scan(&version); err != nil {
 			return nil, fmt.Errorf("failed to scan migration version: %w", err)
 		}
@@ -228,7 +322,7 @@ func (m *Migrator) GetAppliedMigrations(ctx context.Context) ([]int, error) {
 }
 
 // GetPendingMigrations returns a list of pending migration versions
-func (m *Migrator) GetPendingMigrations(ctx context.Context) ([]int, error) {
+func (m *Migrator) GetPendingMigrations(ctx context.Context) ([]int64, error) {
 	applied, err := m.GetAppliedMigrations(ctx)
 	if err != nil {
 		return nil, err
@@ -239,7 +333,7 @@ func (m *Migrator) GetPendingMigrations(ctx context.Context) ([]int, error) {
 
 // GetPreviousMigrationVersion finds the previous migration version compared to the current one.
 // Returns an error and -1 if no previous migrations exist.
-func (m *Migrator) GetPreviousMigrationVersion(ctx context.Context) (int, error) {
+func (m *Migrator) GetPreviousMigrationVersion(ctx context.Context) (int64, error) {
 	applied, err := m.GetAppliedMigrations(ctx)
 	if err != nil {
 		return -1, fmt.Errorf("failed to get applied migrations: %w", err)
@@ -318,7 +412,7 @@ func (m *Migrator) MigrateDown(ctx context.Context) error {
 }
 
 // MigrateDownTo migrates the database down to the specified target version
-func (m *Migrator) MigrateDownTo(ctx context.Context, targetVersion int) error {
+func (m *Migrator) MigrateDownTo(ctx context.Context, targetVersion int64) error {
 	// Initialize the migrations table
 	if err := m.Initialize(ctx); err != nil {
 		return fmt.Errorf("failed to initialize migrations table: %w", err)
@@ -399,7 +493,7 @@ func (m *Migrator) MigrateDownTo(ctx context.Context, targetVersion int) error {
 }
 
 // MigrateTo migrates the database to a specific version (up or down)
-func (m *Migrator) MigrateTo(ctx context.Context, targetVersion int) error {
+func (m *Migrator) MigrateTo(ctx context.Context, targetVersion int64) error {
 	// Initialize the migrations table
 	if err := m.Initialize(ctx); err != nil {
 		return fmt.Errorf("failed to initialize migrations table: %w", err)
@@ -435,7 +529,7 @@ func (m *Migrator) MigrationProvider() MigrationProvider {
 }
 
 // migrateUpTo migrates the database up to a specific version
-func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int) error {
+func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int64) error {
 	appliedMigrations, err := m.GetAppliedMigrations(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get applied migrations: %w", err)
@@ -540,14 +634,14 @@ func (m *Migrator) rollbackMigrationNoTransaction(ctx context.Context, migration
 	return nil
 }
 
-func ensureNoTransactionHasNoTimeouts(version int, timeouts MigrationTimeouts) error {
+func ensureNoTransactionHasNoTimeouts(version int64, timeouts MigrationTimeouts) error {
 	if timeouts.IsZero() {
 		return nil
 	}
 	return fmt.Errorf("migration %d is marked no_transaction, so migration timeouts cannot be applied safely", version)
 }
 
-func (m *Migrator) migrationsToApply(migrations []*Migration, applied []int, targetVersion int) ([]*Migration, error) {
+func (m *Migrator) migrationsToApply(migrations []*Migration, applied []int64, targetVersion int64) ([]*Migration, error) {
 	currentVersion := maxAppliedVersion(applied)
 	pendingVersions := pendingMigrationVersions(migrations, applied)
 	outOfOrderVersions := outOfOrderMigrationVersions(pendingVersions, currentVersion)
@@ -576,21 +670,21 @@ func (m *Migrator) migrationsToApply(migrations []*Migration, applied []int, tar
 	return migrationsToApply, nil
 }
 
-func pendingMigrationVersions(migrations []*Migration, applied []int) []int {
+func pendingMigrationVersions(migrations []*Migration, applied []int64) []int64 {
 	appliedSet := versionSet(applied)
-	pending := make([]int, 0, len(migrations))
+	pending := make([]int64, 0, len(migrations))
 	for _, migration := range migrations {
 		if _, ok := appliedSet[migration.Version]; ok {
 			continue
 		}
 		pending = append(pending, migration.Version)
 	}
-	sort.Ints(pending)
+	slices.Sort(pending)
 	return pending
 }
 
-func outOfOrderMigrationVersions(pending []int, currentVersion int) []int {
-	outOfOrder := make([]int, 0)
+func outOfOrderMigrationVersions(pending []int64, currentVersion int64) []int64 {
+	outOfOrder := make([]int64, 0)
 	for _, version := range pending {
 		if version < currentVersion {
 			outOfOrder = append(outOfOrder, version)
@@ -599,37 +693,37 @@ func outOfOrderMigrationVersions(pending []int, currentVersion int) []int {
 	return outOfOrder
 }
 
-func maxAppliedVersion(applied []int) int {
+func maxAppliedVersion(applied []int64) int64 {
 	if len(applied) == 0 {
 		return 0
 	}
 	return slices.Max(applied)
 }
 
-func versionSet(versions []int) map[int]struct{} {
-	set := make(map[int]struct{}, len(versions))
+func versionSet(versions []int64) map[int64]struct{} {
+	set := make(map[int64]struct{}, len(versions))
 	for _, version := range versions {
 		set[version] = struct{}{}
 	}
 	return set
 }
 
-func migrationsByVersion(migrations []*Migration) map[int]*Migration {
-	result := make(map[int]*Migration, len(migrations))
+func migrationsByVersion(migrations []*Migration) map[int64]*Migration {
+	result := make(map[int64]*Migration, len(migrations))
 	for _, migration := range migrations {
 		result[migration.Version] = migration
 	}
 	return result
 }
 
-func migrationsToRollback(migrationsByVersion map[int]*Migration, applied []int, targetVersion int) ([]*Migration, error) {
-	rollbackVersions := make([]int, 0, len(applied))
+func migrationsToRollback(migrationsByVersion map[int64]*Migration, applied []int64, targetVersion int64) ([]*Migration, error) {
+	rollbackVersions := make([]int64, 0, len(applied))
 	for _, version := range applied {
 		if version > targetVersion {
 			rollbackVersions = append(rollbackVersions, version)
 		}
 	}
-	sort.Sort(sort.Reverse(sort.IntSlice(rollbackVersions)))
+	sort.Slice(rollbackVersions, func(i, j int) bool { return rollbackVersions[i] > rollbackVersions[j] })
 
 	rollbackMigrations := make([]*Migration, 0, len(rollbackVersions))
 	for _, version := range rollbackVersions {

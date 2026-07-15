@@ -153,7 +153,7 @@ type Options struct {
 	PathPrefix string
 	// Versions restricts linting to parsed migration versions. Empty means
 	// every migration file is linted.
-	Versions []int
+	Versions []int64
 }
 
 // LintFS lints every *.sql file under fsys — recursively, because the
@@ -192,9 +192,9 @@ func LintFS(fsys fs.FS, opts Options) ([]Finding, error) {
 	// Directions present per version, so pairing matches the migrator, which
 	// pairs an up and a down by their shared version prefix regardless of
 	// description — not by an identical file-name stem.
-	versionDirs := map[int]map[string]bool{}
+	versionDirs := map[int64]map[string]bool{}
 	for _, name := range names {
-		if parsed, err := migrator.ParseMigrationFileName(path.Base(name)); err == nil {
+		if parsed, err := parseKnownMigrationName(path.Base(name)); err == nil {
 			if versionDirs[parsed.Version] == nil {
 				versionDirs[parsed.Version] = map[string]bool{}
 			}
@@ -224,17 +224,17 @@ func LintFS(fsys fs.FS, opts Options) ([]Finding, error) {
 	return findings, nil
 }
 
-func filterNamesByVersion(names []string, versions []int) []string {
+func filterNamesByVersion(names []string, versions []int64) []string {
 	if len(versions) == 0 {
 		return names
 	}
-	allowed := make(map[int]struct{}, len(versions))
+	allowed := make(map[int64]struct{}, len(versions))
 	for _, version := range versions {
 		allowed[version] = struct{}{}
 	}
 	var filtered []string
 	for _, name := range names {
-		parsed, err := migrator.ParseMigrationFileName(path.Base(name))
+		parsed, err := parseKnownMigrationName(path.Base(name))
 		if err != nil {
 			continue
 		}
@@ -246,7 +246,7 @@ func filterNamesByVersion(names []string, versions []int) []string {
 }
 
 // prepareFile loads one migration file into the forms rules consume.
-func prepareFile(fsys fs.FS, name string, present map[string]struct{}, versionDirs map[int]map[string]bool, pathPrefix string, mode scanMode) (*File, error) {
+func prepareFile(fsys fs.FS, name string, present map[string]struct{}, versionDirs map[int64]map[string]bool, pathPrefix string, mode scanMode) (*File, error) {
 	raw, err := fs.ReadFile(fsys, name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %s: %w", name, err)
@@ -254,10 +254,14 @@ func prepareFile(fsys fs.FS, name string, present map[string]struct{}, versionDi
 
 	base := path.Base(name)
 	direction := ""
-	version := -1
-	if parsed, parseErr := migrator.ParseMigrationFileName(base); parseErr == nil {
+	var version int64
+	hasVersion := false
+	atlasFormat := false
+	if parsed, parseErr := parseKnownMigrationName(base); parseErr == nil {
 		direction = parsed.Direction
 		version = parsed.Version
+		hasVersion = true
+		atlasFormat = parsed.Format == migrator.MigrationDirFormatAtlas
 	}
 	file := &File{
 		Path:      path.Join(pathPrefix, name),
@@ -267,10 +271,12 @@ func prepareFile(fsys fs.FS, name string, present map[string]struct{}, versionDi
 		// lint must follow it; the suffix check keeps hazard scanning for
 		// .up.sql files whose version prefix is malformed.
 		IsUp:           direction == "up" || strings.HasSuffix(base, ".up.sql"),
-		WellFormedName: strictNameRe.MatchString(base),
+		WellFormedName: strictNameRe.MatchString(base) || atlasFormat,
 	}
 	switch {
-	case version >= 0:
+	case atlasFormat:
+		file.HasPair = true
+	case hasVersion:
 		// Pair by version, matching the migrator: the counterpart is any
 		// file of the same version in the opposite direction.
 		counterpart := "down"
@@ -297,6 +303,13 @@ func prepareFile(fsys fs.FS, name string, present map[string]struct{}, versionDi
 		}
 	}
 	return file, nil
+}
+
+func parseKnownMigrationName(name string) (*migrator.MigrationFile, error) {
+	if parsed, err := migrator.ParseMigrationFileName(name); err == nil {
+		return parsed, nil
+	}
+	return migrator.ParseAtlasMigrationFileNameForAutoDetection(name)
 }
 
 // runRules applies every enabled rule to one prepared file.

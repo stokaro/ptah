@@ -33,6 +33,7 @@ migrations or for debugging migration issues.`,
 const (
 	dbURLFlag      = "db-url"
 	migrationsFlag = "migrations-dir"
+	dirFormatFlag  = "dir-format"
 	verboseFlag    = "verbose"
 	jsonFlag       = "json"
 )
@@ -47,6 +48,11 @@ var migrateStatusFlags = map[string]cobraflags.Flag{
 		Name:  migrationsFlag,
 		Value: "",
 		Usage: "Directory containing migration files (required)",
+	},
+	dirFormatFlag: &cobraflags.StringFlag{
+		Name:  dirFormatFlag,
+		Value: string(migrator.MigrationDirFormatAuto),
+		Usage: "Migration directory format: auto, ptah, or atlas",
 	},
 	verboseFlag: &cobraflags.BoolFlag{
 		Name:  verboseFlag,
@@ -71,6 +77,7 @@ func NewMigrateStatusCommand() *cobra.Command {
 func migrateStatusCommand(_ *cobra.Command, _ []string) error {
 	dbURL := migrateStatusFlags[dbURLFlag].GetString()
 	migrationsDir := migrateStatusFlags[migrationsFlag].GetString()
+	dirFormatValue := migrateStatusFlags[dirFormatFlag].GetString()
 	verbose := migrateStatusFlags[verboseFlag].GetBool()
 	jsonOutput := migrateStatusFlags[jsonFlag].GetBool()
 	migrationsSchema := migrateStatusFlags[dbcli.MigrationsSchemaFlagName].GetString()
@@ -82,6 +89,11 @@ func migrateStatusCommand(_ *cobra.Command, _ []string) error {
 
 	if migrationsDir == "" {
 		return fmt.Errorf("migrations directory is required")
+	}
+
+	dirFormat, err := migrator.ParseMigrationDirFormat(dirFormatValue)
+	if err != nil {
+		return err
 	}
 
 	connectTimeout, err := dbcli.ParseConnectTimeout(migrateStatusFlags[dbcli.ConnectTimeoutFlagName].GetString())
@@ -100,7 +112,7 @@ func migrateStatusCommand(_ *cobra.Command, _ []string) error {
 	// Create filesystem from migrations directory
 	migrationsFS := os.DirFS(migrationsDir)
 
-	mig, err := migrator.NewFSMigrator(conn, migrationsFS)
+	mig, err := migrator.NewFSMigrator(conn, migrationsFS, migrator.WithMigrationDirFormat(dirFormat))
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
