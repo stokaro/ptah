@@ -652,12 +652,24 @@ INSERT INTO users (id, name) VALUES (1, 'Alice');
 DELETE FROM users WHERE id = 1;
 ```
 
+For Atlas txtar migrations, Ptah executes only the `migration.sql` section for
+`migrate-up` and only the `down.sql` section for `migrate-down`. Other embedded
+txtar files, such as `schema.sql`, are ignored by the migrator; ordinary SQL
+comments that look like `-- keep this comment --` remain comments, not txtar
+section boundaries. Ptah's txtar support is intentionally limited to Atlas SQL
+migration containers and is not a general-purpose txtar parser.
+
 If an Atlas migration has no embedded `down.sql`, `migrate-down` fails with a
 typed error explaining that Atlas dynamic down-plan synthesis is not implemented
 yet. This is different from transaction rollback: transaction rollback undoes a
 failed in-progress migration automatically, while `migrate-down` reverts an
 already-recorded migration using an explicit Ptah `.down.sql` file or an Atlas
 txtar `down.sql` section.
+
+`-- +ptah` directives inside `migration.sql` and `down.sql` are parsed per
+section for timeout and validation purposes. The current `no_transaction` model
+is still migration-level: if either direction opts out of transactions, Ptah
+treats the migration as non-transactional.
 
 #### Apply Migrations
 Apply all pending migrations to bring database up to latest version:
