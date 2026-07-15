@@ -66,7 +66,7 @@ type MigrationFiles struct {
 	UpFile     string // Path to the up migration file
 	DownFile   string // Path to the down migration file
 	ReportFile string // Path to the safety report file, when requested
-	Version    int    // Migration version (timestamp)
+	Version    int64  // Migration version (timestamp)
 }
 
 // GenerateMigration generates both up and down migration files by comparing
@@ -773,7 +773,7 @@ func reverseRoleDiffs(roleDiffs []types.RoleDiff) []types.RoleDiff {
 	return reversed
 }
 
-func nextAvailableMigrationVersion(outputDir string, version int, migrationName string) int {
+func nextAvailableMigrationVersion(outputDir string, version int64, migrationName string) int64 {
 	if latest := latestExistingMigrationVersion(outputDir); latest >= version {
 		version = latest + 1
 	}
@@ -787,12 +787,12 @@ func nextAvailableMigrationVersion(outputDir string, version int, migrationName 
 	}
 }
 
-func latestExistingMigrationVersion(outputDir string) int {
+func latestExistingMigrationVersion(outputDir string) int64 {
 	entries, err := os.ReadDir(outputDir)
 	if err != nil {
 		return 0
 	}
-	latest := 0
+	var latest int64
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -824,7 +824,7 @@ func withNoTransactionDirective(sql string) string {
 }
 
 // createMigrationFiles creates the up and down migration files
-func createMigrationFiles(outputDir string, version int, migrationName, upSQL, downSQL string) (*MigrationFiles, error) {
+func createMigrationFiles(outputDir string, version int64, migrationName, upSQL, downSQL string) (*MigrationFiles, error) {
 	// Ensure output directory exists
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create output directory: %w", err)

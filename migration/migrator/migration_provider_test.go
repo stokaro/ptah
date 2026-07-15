@@ -1,6 +1,7 @@
 package migrator_test
 
 import (
+	"context"
 	"io/fs"
 	"testing"
 	"testing/fstest"
@@ -53,7 +54,7 @@ func TestRegisteredMigrationProvider_Register(t *testing.T) {
 	provider.Register(migration1)
 	migrations := provider.Migrations()
 	c.Assert(migrations, qt.HasLen, 1)
-	c.Assert(migrations[0].Version, qt.Equals, 1)
+	c.Assert(migrations[0].Version, qt.Equals, int64(1))
 
 	migration2 := &migrator.Migration{
 		Version:     2,
@@ -66,8 +67,8 @@ func TestRegisteredMigrationProvider_Register(t *testing.T) {
 	provider.Register(migration2)
 	migrations = provider.Migrations()
 	c.Assert(migrations, qt.HasLen, 2)
-	c.Assert(migrations[0].Version, qt.Equals, 1)
-	c.Assert(migrations[1].Version, qt.Equals, 2)
+	c.Assert(migrations[0].Version, qt.Equals, int64(1))
+	c.Assert(migrations[1].Version, qt.Equals, int64(2))
 }
 
 func TestRegisteredMigrationProvider_Sorting(t *testing.T) {
@@ -102,9 +103,9 @@ func TestRegisteredMigrationProvider_Sorting(t *testing.T) {
 	// Should be sorted by version
 	migrations := provider.Migrations()
 	c.Assert(migrations, qt.HasLen, 3)
-	c.Assert(migrations[0].Version, qt.Equals, 1)
-	c.Assert(migrations[1].Version, qt.Equals, 2)
-	c.Assert(migrations[2].Version, qt.Equals, 3)
+	c.Assert(migrations[0].Version, qt.Equals, int64(1))
+	c.Assert(migrations[1].Version, qt.Equals, int64(2))
+	c.Assert(migrations[2].Version, qt.Equals, int64(3))
 }
 
 func TestNewFSMigrationProvider_Success(t *testing.T) {
@@ -132,9 +133,9 @@ func TestNewFSMigrationProvider_Success(t *testing.T) {
 
 	migrations := provider.Migrations()
 	c.Assert(migrations, qt.HasLen, 2)
-	c.Assert(migrations[0].Version, qt.Equals, 1)
+	c.Assert(migrations[0].Version, qt.Equals, int64(1))
 	c.Assert(migrations[0].Description, qt.Equals, "Create Users")
-	c.Assert(migrations[1].Version, qt.Equals, 2)
+	c.Assert(migrations[1].Version, qt.Equals, int64(2))
 	c.Assert(migrations[1].Description, qt.Equals, "Add Index")
 }
 
@@ -153,6 +154,40 @@ func TestNewFSMigrationProvider_IncompleteMigrations(t *testing.T) {
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(provider, qt.IsNil)
 	c.Assert(err.Error(), qt.Contains, "incomplete migrations found")
+}
+
+func TestNewFSMigrationProvider_AtlasFormat(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"20220318104615_add_users.sql": &fstest.MapFile{Data: []byte("CREATE TABLE users (id INT);\n")},
+		"20220318104614_team_A.sql":    &fstest.MapFile{Data: []byte("CREATE TABLE teams (id INT);\n")},
+	}
+
+	provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
+	c.Assert(err, qt.IsNil)
+
+	migrations := provider.Migrations()
+	c.Assert(migrations, qt.HasLen, 2)
+	c.Assert(migrations[0].Version, qt.Equals, int64(20220318104614))
+	c.Assert(migrations[0].Description, qt.Equals, "Team A")
+	c.Assert(migrations[1].Version, qt.Equals, int64(20220318104615))
+	c.Assert(migrations[1].Description, qt.Equals, "Add Users")
+
+	err = migrations[0].Down(context.Background(), nil)
+	c.Assert(err, qt.ErrorMatches, `migration 20220318104614 has no down migration; directory format atlas does not support down migrations.*`)
+}
+
+func TestNewFSMigrationProvider_UnknownOnlySQLFilesError(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"cleanup.sql": &fstest.MapFile{Data: []byte("DROP TABLE users;\n")},
+	}
+
+	provider, err := migrator.NewFSMigrationProvider(fsys)
+	c.Assert(provider, qt.IsNil)
+	c.Assert(err, qt.ErrorMatches, `no migration files matched format "auto"; unrecognized SQL files: cleanup.sql`)
 }
 
 func TestNewFSMigrationProvider_EmptyFilesystem(t *testing.T) {
@@ -196,7 +231,7 @@ func TestNewFSMigrationProvider_DescriptionEndingInUpIsNotAMigration(t *testing.
 
 	migrations := provider.Migrations()
 	c.Assert(migrations, qt.HasLen, 1)
-	c.Assert(migrations[0].Version, qt.Equals, 1)
+	c.Assert(migrations[0].Version, qt.Equals, int64(1))
 }
 
 func TestNewFSMigrationProvider_InvalidFiles(t *testing.T) {
@@ -224,7 +259,7 @@ func TestNewFSMigrationProvider_InvalidFiles(t *testing.T) {
 
 	migrations := provider.Migrations()
 	c.Assert(migrations, qt.HasLen, 1) // Only the valid migration should be loaded
-	c.Assert(migrations[0].Version, qt.Equals, 1)
+	c.Assert(migrations[0].Version, qt.Equals, int64(1))
 }
 
 func TestFSMigrationProvider_FilesystemError(t *testing.T) {

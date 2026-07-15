@@ -20,7 +20,7 @@ func TestMigration_Basic(t *testing.T) {
 		Down:        NoopMigrationFunc,
 	}
 
-	c.Assert(migration.Version, qt.Equals, 1)
+	c.Assert(migration.Version, qt.Equals, int64(1))
 	c.Assert(migration.Description, qt.Equals, "Test migration")
 	c.Assert(migration.Up, qt.IsNotNil)
 	c.Assert(migration.Down, qt.IsNotNil)
@@ -42,7 +42,7 @@ func TestCreateMigrationFromSQL(t *testing.T) {
 
 	migration := CreateMigrationFromSQL(1, "Create test table", upSQL, downSQL)
 
-	c.Assert(migration.Version, qt.Equals, 1)
+	c.Assert(migration.Version, qt.Equals, int64(1))
 	c.Assert(migration.Description, qt.Equals, "Create test table")
 	c.Assert(migration.Up, qt.IsNotNil)
 	c.Assert(migration.Down, qt.IsNotNil)
@@ -81,12 +81,12 @@ func TestMigrationStatus(t *testing.T) {
 
 	status := &MigrationStatus{
 		CurrentVersion:    5,
-		PendingMigrations: []int{6, 7, 8},
+		PendingMigrations: []int64{6, 7, 8},
 		TotalMigrations:   8,
 		HasPendingChanges: true,
 	}
 
-	c.Assert(status.CurrentVersion, qt.Equals, 5)
+	c.Assert(status.CurrentVersion, qt.Equals, int64(5))
 	c.Assert(status.PendingMigrations, qt.HasLen, 3)
 	c.Assert(status.TotalMigrations, qt.Equals, 8)
 	c.Assert(status.HasPendingChanges, qt.IsTrue)
@@ -97,12 +97,12 @@ func TestMigrationStatus_NoPending(t *testing.T) {
 
 	status := &MigrationStatus{
 		CurrentVersion:    5,
-		PendingMigrations: []int{},
+		PendingMigrations: []int64{},
 		TotalMigrations:   5,
 		HasPendingChanges: false,
 	}
 
-	c.Assert(status.CurrentVersion, qt.Equals, 5)
+	c.Assert(status.CurrentVersion, qt.Equals, int64(5))
 	c.Assert(status.PendingMigrations, qt.HasLen, 0)
 	c.Assert(status.TotalMigrations, qt.Equals, 5)
 	c.Assert(status.HasPendingChanges, qt.IsFalse)

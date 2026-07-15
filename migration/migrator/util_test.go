@@ -2,6 +2,7 @@ package migrator
 
 import (
 	"testing"
+	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
 )
@@ -166,6 +167,73 @@ func TestParseMigrationFileName(t *testing.T) {
 	}
 }
 
+func TestParseAtlasMigrationFileName(t *testing.T) {
+	c := qt.New(t)
+
+	migrationFile, err := ParseAtlasMigrationFileName("20220318104614_team_A.sql")
+	c.Assert(err, qt.IsNil)
+	c.Assert(migrationFile.Version, qt.Equals, int64(20220318104614))
+	c.Assert(migrationFile.Name, qt.Equals, "Team A")
+	c.Assert(migrationFile.Direction, qt.Equals, "up")
+	c.Assert(migrationFile.Extension, qt.Equals, ".sql")
+	c.Assert(migrationFile.Format, qt.Equals, MigrationDirFormatAtlas)
+
+	_, err = ParseAtlasMigrationFileName("0000000001_cleanup.sql")
+	c.Assert(err, qt.ErrorMatches, "invalid Atlas migration file name format")
+	_, err = ParseAtlasMigrationFileName("20220318104614_team_A.up.sql")
+	c.Assert(err, qt.ErrorMatches, "Atlas migration file name must not use Ptah direction suffixes")
+}
+
+func TestDiscoverMigrationFilesAtlasAuto(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"20220318104615_add_users.sql": &fstest.MapFile{Data: []byte("CREATE TABLE users (id INT);\n")},
+		"20220318104614_team_A.sql":    &fstest.MapFile{Data: []byte("CREATE TABLE teams (id INT);\n")},
+		"atlas.sum":                    &fstest.MapFile{Data: []byte("ignored\n")},
+	}
+
+	files, err := DiscoverMigrationFiles(fsys, MigrationDirFormatAuto)
+	c.Assert(err, qt.IsNil)
+	c.Assert(files, qt.HasLen, 2)
+	c.Assert(files[0].Path, qt.Equals, "20220318104614_team_A.sql")
+	c.Assert(files[0].Version, qt.Equals, int64(20220318104614))
+	c.Assert(files[0].Format, qt.Equals, MigrationDirFormatAtlas)
+	c.Assert(files[1].Path, qt.Equals, "20220318104615_add_users.sql")
+}
+
+func TestDiscoverMigrationFilesAutoPrefersPtahWhenPresent(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"0000000001_init.up.sql":       &fstest.MapFile{Data: []byte("CREATE TABLE t (id INT);\n")},
+		"0000000001_init.down.sql":     &fstest.MapFile{Data: []byte("DROP TABLE t;\n")},
+		"20220318104614_atlas_way.sql": &fstest.MapFile{Data: []byte("CREATE TABLE atlas_t (id INT);\n")},
+	}
+
+	files, err := DiscoverMigrationFiles(fsys, MigrationDirFormatAuto)
+	c.Assert(err, qt.IsNil)
+	c.Assert(files, qt.HasLen, 2)
+	for _, file := range files {
+		c.Assert(file.Format, qt.Equals, MigrationDirFormatPtah)
+	}
+}
+
+func TestDiscoverMigrationFilesUnknownOnlySQLErrors(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"cleanup.sql":           &fstest.MapFile{Data: []byte("DROP TABLE users;\n")},
+		"0000000001_legacy.sql": &fstest.MapFile{Data: []byte("DROP TABLE audit;\n")},
+	}
+
+	files, err := DiscoverMigrationFiles(fsys, MigrationDirFormatAuto)
+	c.Assert(files, qt.IsNil)
+	c.Assert(err, qt.ErrorMatches, `no migration files matched format "auto"; unrecognized SQL files: .*`)
+	c.Assert(err.Error(), qt.Contains, "cleanup.sql")
+	c.Assert(err.Error(), qt.Contains, "0000000001_legacy.sql")
+}
+
 func TestValidateMigrationFileName(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -207,7 +275,7 @@ func TestValidateMigrationFileName(t *testing.T) {
 func TestGenerateMigrationFileName(t *testing.T) {
 	tests := []struct {
 		name        string
-		version     int
+		version     int64
 		description string
 		direction   string
 		expected    string
@@ -264,7 +332,7 @@ func TestMigrationPair(t *testing.T) {
 	c.Assert(completePair.IsComplete(), qt.IsTrue)
 	c.Assert(completePair.HasUp(), qt.IsTrue)
 	c.Assert(completePair.HasDown(), qt.IsTrue)
-	c.Assert(completePair.GetVersion(), qt.Equals, 1)
+	c.Assert(completePair.GetVersion(), qt.Equals, int64(1))
 	c.Assert(completePair.GetDescription(), qt.Equals, "Create Users Table")
 
 	// Test incomplete pair (only up)
@@ -276,7 +344,7 @@ func TestMigrationPair(t *testing.T) {
 	c.Assert(upOnlyPair.IsComplete(), qt.IsFalse)
 	c.Assert(upOnlyPair.HasUp(), qt.IsTrue)
 	c.Assert(upOnlyPair.HasDown(), qt.IsFalse)
-	c.Assert(upOnlyPair.GetVersion(), qt.Equals, 1)
+	c.Assert(upOnlyPair.GetVersion(), qt.Equals, int64(1))
 	c.Assert(upOnlyPair.GetDescription(), qt.Equals, "Create Users Table")
 
 	// Test incomplete pair (only down)
@@ -288,7 +356,7 @@ func TestMigrationPair(t *testing.T) {
 	c.Assert(downOnlyPair.IsComplete(), qt.IsFalse)
 	c.Assert(downOnlyPair.HasUp(), qt.IsFalse)
 	c.Assert(downOnlyPair.HasDown(), qt.IsTrue)
-	c.Assert(downOnlyPair.GetVersion(), qt.Equals, 1)
+	c.Assert(downOnlyPair.GetVersion(), qt.Equals, int64(1))
 	c.Assert(downOnlyPair.GetDescription(), qt.Equals, "Create Users Table")
 
 	// Test empty pair
@@ -297,7 +365,7 @@ func TestMigrationPair(t *testing.T) {
 	c.Assert(emptyPair.IsComplete(), qt.IsFalse)
 	c.Assert(emptyPair.HasUp(), qt.IsFalse)
 	c.Assert(emptyPair.HasDown(), qt.IsFalse)
-	c.Assert(emptyPair.GetVersion(), qt.Equals, 0)
+	c.Assert(emptyPair.GetVersion(), qt.Equals, int64(0))
 	c.Assert(emptyPair.GetDescription(), qt.Equals, "")
 }
 
@@ -318,7 +386,7 @@ func TestGroupMigrationFiles(t *testing.T) {
 	// Check version 1 (complete pair)
 	pair1 := groups[1]
 	c.Assert(pair1.IsComplete(), qt.IsTrue)
-	c.Assert(pair1.GetVersion(), qt.Equals, 1)
+	c.Assert(pair1.GetVersion(), qt.Equals, int64(1))
 
 	// Check version 2 (only up)
 	pair2 := groups[2]
@@ -336,7 +404,7 @@ func TestGroupMigrationFiles(t *testing.T) {
 func TestValidateMigrationPairs(t *testing.T) {
 	c := qt.New(t)
 
-	pairs := map[int]MigrationPair{
+	pairs := map[int64]MigrationPair{
 		1: {
 			Up:   &MigrationFile{Version: 1, Direction: "up"},
 			Down: &MigrationFile{Version: 1, Direction: "down"},
@@ -354,34 +422,34 @@ func TestValidateMigrationPairs(t *testing.T) {
 	incomplete := ValidateMigrationPairs(pairs)
 
 	c.Assert(incomplete, qt.HasLen, 2)
-	c.Assert(incomplete, qt.Contains, 2)
-	c.Assert(incomplete, qt.Contains, 3)
+	c.Assert(incomplete, qt.Contains, int64(2))
+	c.Assert(incomplete, qt.Contains, int64(3))
 }
 
 func TestFindMigrationGaps(t *testing.T) {
 	c := qt.New(t)
 
 	// Test with no gaps
-	versions1 := []int{1, 2, 3, 4, 5}
+	versions1 := []int64{1, 2, 3, 4, 5}
 	gaps1 := FindMigrationGaps(versions1)
 	c.Assert(gaps1, qt.HasLen, 0)
 
 	// Test with gaps
-	versions2 := []int{1, 3, 6, 8}
+	versions2 := []int64{1, 3, 6, 8}
 	gaps2 := FindMigrationGaps(versions2)
 	c.Assert(gaps2, qt.HasLen, 4) // Should be 4: gaps at 2, 4, 5, 7
-	c.Assert(gaps2, qt.Contains, 2)
-	c.Assert(gaps2, qt.Contains, 4)
-	c.Assert(gaps2, qt.Contains, 5)
-	c.Assert(gaps2, qt.Contains, 7)
+	c.Assert(gaps2, qt.Contains, int64(2))
+	c.Assert(gaps2, qt.Contains, int64(4))
+	c.Assert(gaps2, qt.Contains, int64(5))
+	c.Assert(gaps2, qt.Contains, int64(7))
 
 	// Test with empty slice
-	versions3 := []int{}
+	versions3 := []int64{}
 	gaps3 := FindMigrationGaps(versions3)
 	c.Assert(gaps3, qt.IsNil)
 
 	// Test with single version
-	versions4 := []int{1}
+	versions4 := []int64{1}
 	gaps4 := FindMigrationGaps(versions4)
 	c.Assert(gaps4, qt.HasLen, 0)
 }

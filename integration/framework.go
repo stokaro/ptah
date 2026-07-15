@@ -450,7 +450,7 @@ func (vem *VersionedEntityManager) ApplyMigrationFromEntities(ctx context.Contex
 	// In a real scenario, you'd want more sophisticated down migrations
 	downSQL := "-- Auto-generated down migration\n-- Manual review required\n"
 
-	migration := migrator.CreateMigrationFromSQL(vem.version, description, upSQL.String(), downSQL)
+	migration := migrator.CreateMigrationFromSQL(int64(vem.version), description, upSQL.String(), downSQL)
 	migration.NoTransaction = noTransaction
 
 	p := migrator.NewRegisteredMigrationProvider(migration)
@@ -515,7 +515,7 @@ func (dh *DatabaseHelper) ApplyMigrations(ctx context.Context, migrationsFS fs.F
 }
 
 // GetCurrentVersion returns the current migration version
-func (dh *DatabaseHelper) GetCurrentVersion(ctx context.Context, migrationsFS fs.FS) (int, error) {
+func (dh *DatabaseHelper) GetCurrentVersion(ctx context.Context, migrationsFS fs.FS) (int64, error) {
 	m, err := migrator.NewFSMigrator(dh.conn, migrationsFS)
 	if err != nil {
 		return 0, err
@@ -524,7 +524,7 @@ func (dh *DatabaseHelper) GetCurrentVersion(ctx context.Context, migrationsFS fs
 }
 
 // RollbackToVersion rolls back migrations to a specific version
-func (dh *DatabaseHelper) RollbackToVersion(ctx context.Context, migrationsFS fs.FS, targetVersion int) error {
+func (dh *DatabaseHelper) RollbackToVersion(ctx context.Context, migrationsFS fs.FS, targetVersion int64) error {
 	m, err := migrator.NewFSMigrator(dh.conn, migrationsFS)
 	if err != nil {
 		return err

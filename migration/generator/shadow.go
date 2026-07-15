@@ -27,7 +27,7 @@ type shadowMigrationOptions struct {
 	MigrationsDir string
 	Dialect       string
 	Capabilities  capability.Capabilities
-	Version       int
+	Version       int64
 	Name          string
 	UpSQL         string
 	DownSQL       string
@@ -119,8 +119,8 @@ func loadPriorMigrations(dir string) ([]*migrator.Migration, error) {
 	return out, nil
 }
 
-func latestMigrationVersion(migrations []*migrator.Migration) int {
-	latest := 0
+func latestMigrationVersion(migrations []*migrator.Migration) int64 {
+	var latest int64
 	for _, migration := range migrations {
 		if migration.Version > latest {
 			latest = migration.Version

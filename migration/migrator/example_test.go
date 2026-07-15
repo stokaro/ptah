@@ -416,7 +416,7 @@ func ExampleParseMigrationFileName() {
 // Example demonstrates generating migration filenames
 func ExampleGenerateMigrationFileName() {
 	// Generate filenames for a new migration
-	version := 20240101120000
+	var version int64 = 20240101120000
 	description := "Add User Preferences Table"
 
 	upFilename := migrator.GenerateMigrationFileName(version, description, "up")
