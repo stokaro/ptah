@@ -170,7 +170,7 @@ func noopRestoreTimeouts(_ context.Context) error {
 	return nil
 }
 
-func (m *Migrator) restoreTimeouts(ctx context.Context, version int, restore restoreTimeoutsFunc) error {
+func (m *Migrator) restoreTimeouts(ctx context.Context, version int64, restore restoreTimeoutsFunc) error {
 	if restore == nil {
 		return nil
 	}
@@ -180,7 +180,7 @@ func (m *Migrator) restoreTimeouts(ctx context.Context, version int, restore res
 	return nil
 }
 
-func (m *Migrator) restoreTimeoutsAfterFailure(ctx context.Context, version int, restore restoreTimeoutsFunc, failure error) error {
+func (m *Migrator) restoreTimeoutsAfterFailure(ctx context.Context, version int64, restore restoreTimeoutsFunc, failure error) error {
 	if restore == nil {
 		return failure
 	}

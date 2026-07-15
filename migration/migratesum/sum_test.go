@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/migration/migratesum"
+	"github.com/stokaro/ptah/migration/migrator"
 )
 
 func fixture(files map[string]string) fstest.MapFS {
@@ -50,6 +51,26 @@ func TestCompute_HashesOnlyMigrationFilesSortedByName(t *testing.T) {
 		"nested/0000000004_x.up.sql",
 	}, qt.Commentf("only recognized migration files, sorted; README/ptah.sum/.txt excluded"))
 	c.Assert(sum.DirHash, qt.Matches, "h1:.+")
+}
+
+func TestComputeWithFormat_HashesAtlasMigrationFiles(t *testing.T) {
+	c := qt.New(t)
+
+	sum, err := migratesum.ComputeWithFormat(fixture(map[string]string{
+		"20220318104615_add_users.sql": "CREATE TABLE users (id INT);\n",
+		"20220318104614_team_A.sql":    "CREATE TABLE teams (id INT);\n",
+		"atlas.sum":                    "ignored\n",
+	}), migrator.MigrationDirFormatAtlas)
+	c.Assert(err, qt.IsNil)
+
+	var names []string
+	for _, entry := range sum.Entries {
+		names = append(names, entry.Name)
+	}
+	c.Assert(names, qt.DeepEquals, []string{
+		"20220318104614_team_A.sql",
+		"20220318104615_add_users.sql",
+	})
 }
 
 func TestCompute_IsDeterministicAndContentSensitive(t *testing.T) {

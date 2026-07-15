@@ -4,13 +4,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/stokaro/ptah/migration/migrator"
 )
 
 // Write computes the sum of the migrations directory at dir and writes it to
 // dir/ptah.sum, returning the computed sum. The ptah.sum file is excluded
 // from its own hash because it is not a migration file.
 func Write(dir string) (*SumFile, error) {
-	sum, err := Compute(os.DirFS(dir))
+	return WriteWithFormat(dir, migrator.MigrationDirFormatAuto)
+}
+
+// WriteWithFormat computes the sum of the migrations directory at dir using
+// format and writes it to dir/ptah.sum.
+func WriteWithFormat(dir string, format migrator.MigrationDirFormat) (*SumFile, error) {
+	sum, err := ComputeWithFormat(os.DirFS(dir), format)
 	if err != nil {
 		return nil, err
 	}
@@ -25,5 +33,11 @@ func Write(dir string) (*SumFile, error) {
 
 // VerifyDir verifies the migrations directory at dir against its ptah.sum.
 func VerifyDir(dir string) (*Result, error) {
-	return Verify(os.DirFS(dir))
+	return VerifyDirWithFormat(dir, migrator.MigrationDirFormatAuto)
+}
+
+// VerifyDirWithFormat verifies the migrations directory at dir against its
+// ptah.sum using the selected migration directory format.
+func VerifyDirWithFormat(dir string, format migrator.MigrationDirFormat) (*Result, error) {
+	return VerifyWithFormat(os.DirFS(dir), format)
 }

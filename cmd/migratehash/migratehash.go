@@ -9,11 +9,13 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/migration/migratesum"
+	"github.com/stokaro/ptah/migration/migrator"
 )
 
 // NewMigrateHashCommand returns the migrate-hash command.
 func NewMigrateHashCommand() *cobra.Command {
 	var dir string
+	var dirFormatValue string
 
 	cmd := &cobra.Command{
 		Use:   "migrate-hash",
@@ -28,20 +30,26 @@ an already-committed migration.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runHash(cmd, dir)
+			return runHash(cmd, dir, dirFormatValue)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "./migrations", "Directory containing migration files")
+	cmd.Flags().StringVar(&dirFormatValue, "dir-format", string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	cmd.SetFlagErrorFunc(cmdutil.FlagErrorFunc)
 	return cmd
 }
 
-func runHash(cmd *cobra.Command, dir string) error {
+func runHash(cmd *cobra.Command, dir, dirFormatValue string) error {
 	if err := cmdutil.StatDir(dir); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 
-	sum, err := migratesum.Write(dir)
+	dirFormat, err := migrator.ParseMigrationDirFormat(dirFormatValue)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+
+	sum, err := migratesum.WriteWithFormat(dir, dirFormat)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

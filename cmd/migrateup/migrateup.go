@@ -38,6 +38,7 @@ const (
 	dryRunFlag           = "dry-run"
 	verboseFlag          = "verbose"
 	verifySumFlag        = "verify-sum"
+	dirFormatFlag        = "dir-format"
 	execOrderFlag        = "exec-order"
 	lockTimeoutFlag      = "lock-timeout"
 	statementTimeoutFlag = "statement-timeout"
@@ -69,6 +70,11 @@ var migrateUpFlags = map[string]cobraflags.Flag{
 		Name:  verifySumFlag,
 		Value: false,
 		Usage: "Verify the migrations directory against its committed ptah.sum before applying; abort on drift",
+	},
+	dirFormatFlag: &cobraflags.StringFlag{
+		Name:  dirFormatFlag,
+		Value: string(migrator.MigrationDirFormatAuto),
+		Usage: "Migration directory format: auto, ptah, or atlas",
 	},
 	execOrderFlag: &cobraflags.StringFlag{
 		Name:  execOrderFlag,
@@ -107,6 +113,7 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 	dryRun := migrateUpFlags[dryRunFlag].GetBool()
 	verbose := migrateUpFlags[verboseFlag].GetBool()
 	verifySum := migrateUpFlags[verifySumFlag].GetBool()
+	dirFormatValue := migrateUpFlags[dirFormatFlag].GetString()
 	execOrderValue := migrateUpFlags[execOrderFlag].GetString()
 	lockTimeout := migrateUpFlags[lockTimeoutFlag].GetString()
 	statementTimeout := migrateUpFlags[statementTimeoutFlag].GetString()
@@ -122,10 +129,15 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("migrations directory is required")
 	}
 
+	dirFormat, err := migrator.ParseMigrationDirFormat(dirFormatValue)
+	if err != nil {
+		return err
+	}
+
 	// Integrity gate: refuse to apply if a committed migration was edited
 	// out of band. Runs before connecting so a tampered directory fails fast.
 	if verifySum {
-		result, err := migratesum.VerifyDir(migrationsDir)
+		result, err := migratesum.VerifyDirWithFormat(migrationsDir, dirFormat)
 		if err != nil {
 			return fmt.Errorf("ptah.sum verification failed: %w", err)
 		}
@@ -176,6 +188,7 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 	fmt.Printf("Database: %s\n", dbschema.FormatDatabaseURL(dbURL))
 	fmt.Printf("Dialect: %s\n", conn.Info().Dialect)
 	fmt.Printf("Migrations directory: %s\n", migrationsDir)
+	fmt.Printf("Migration directory format: %s\n", dirFormat)
 	fmt.Println()
 
 	// Create filesystem from migrations directory
@@ -193,7 +206,7 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 	}
 	interceptor := onlineddl.New(*onlineCfg).WithDryRun(dryRun)
 
-	mig, err := migrator.NewFSMigrator(conn, migrationsFS, migrator.WithStatementInterceptor(interceptor))
+	mig, err := migrator.NewFSMigrator(conn, migrationsFS, migrator.WithStatementInterceptor(interceptor), migrator.WithMigrationDirFormat(dirFormat))
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
@@ -263,17 +276,17 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-func pendingMigrationsForSafetyCheck(status *migrator.MigrationStatus, execOrder migrator.ExecOrder) []int {
+func pendingMigrationsForSafetyCheck(status *migrator.MigrationStatus, execOrder migrator.ExecOrder) []int64 {
 	if execOrder != migrator.ExecOrderLinearSkip {
 		return status.PendingMigrations
 	}
 
-	outOfOrder := make(map[int]struct{}, len(status.OutOfOrderMigrations))
+	outOfOrder := make(map[int64]struct{}, len(status.OutOfOrderMigrations))
 	for _, version := range status.OutOfOrderMigrations {
 		outOfOrder[version] = struct{}{}
 	}
 
-	pending := make([]int, 0, len(status.PendingMigrations))
+	pending := make([]int64, 0, len(status.PendingMigrations))
 	for _, version := range status.PendingMigrations {
 		if _, ok := outOfOrder[version]; ok {
 			continue
@@ -283,7 +296,7 @@ func pendingMigrationsForSafetyCheck(status *migrator.MigrationStatus, execOrder
 	return pending
 }
 
-func lintPendingDestructive(fsys fs.FS, pending []int, dialect string) ([]lint.Finding, error) {
+func lintPendingDestructive(fsys fs.FS, pending []int64, dialect string) ([]lint.Finding, error) {
 	findings, err := lint.LintFS(fsys, lint.Options{
 		Dialect:  dialect,
 		Disabled: []string{"MF", "BC", "PG", "MY"},

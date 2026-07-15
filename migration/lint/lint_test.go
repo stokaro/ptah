@@ -83,7 +83,7 @@ func TestLintFS_VersionsRestrictsFindings(t *testing.T) {
 
 	findings, err := lint.LintFS(fsys, lint.Options{
 		Disabled: []string{"MF", "BC", "PG", "MY"},
-		Versions: []int{2},
+		Versions: []int64{2},
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DS102"})
@@ -490,6 +490,20 @@ func TestLintFS_SuffixlessNamesFollowTheMigrator(t *testing.T) {
 	for _, f := range findings {
 		c.Assert(f.Message, qt.Contains, "the migrator will not pick it up")
 	}
+}
+
+func TestLintFS_AtlasMigrationNamesAreScanned(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fixture(map[string]string{
+		"20220318104614_team_A.sql": "DROP TABLE users;\n",
+	})
+
+	findings, err := lint.LintFS(fsys, lint.Options{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DS101"},
+		qt.Commentf("Atlas files should be treated as runnable up migrations, not MF103-only noise; got %v", findings))
+	c.Assert(findings[0].File, qt.Equals, "20220318104614_team_A.sql")
 }
 
 func TestLintFS_CaseVariantSQLFilesGetNamingWarning(t *testing.T) {

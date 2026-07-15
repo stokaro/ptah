@@ -632,6 +632,15 @@ the target database already contains production-marker tables unless
 
 Ptah provides a comprehensive migration system with versioning, rollback capabilities, and transaction safety.
 
+Ptah migration directories use `--dir-format=auto` by default. Auto mode prefers
+Ptah's paired files (`NNNNNNNNNN_description.up.sql` and
+`NNNNNNNNNN_description.down.sql`) when they are present, and otherwise accepts
+Atlas-style versioned files such as `20220318104614_team_A.sql`. Use
+`--dir-format=ptah` or `--dir-format=atlas` on `migrate-up`, `migrate-down`,
+`migrate-status`, `migrate-hash`, and `migrate-validate` when a directory should
+be interpreted explicitly. Atlas-style files are forward migrations only;
+`migrate-down` reports a clear "no down migration" error for them.
+
 #### Apply Migrations
 Apply all pending migrations to bring database up to latest version:
 
@@ -649,6 +658,9 @@ Apply all pending migrations to bring database up to latest version:
 
 # Store migration state in a dedicated schema/table
 ./package-migrator migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --migrations-schema infra --migrations-table ptah_migrations
+
+# Apply an Atlas-style versioned migration directory
+./package-migrator migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dir-format atlas
 ```
 
 Migration files can override the CLI defaults with top-of-file directives:
@@ -741,6 +753,9 @@ Show current migration status and pending migrations:
 
 # Check status from a custom migration state table
 ./package-migrator migrate-status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --migrations-schema infra --migrations-table ptah_migrations
+
+# Check an Atlas-style versioned migration directory
+./package-migrator migrate-status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dir-format atlas
 ```
 
 **Output includes:**
@@ -764,6 +779,10 @@ caught in CI instead of silently breaking reproducibility.
 
 # Verify the directory matches its committed ptah.sum (CI gate)
 ./package-migrator migrate-validate --dir ./migrations
+
+# Hash or validate an Atlas-style migration directory
+./package-migrator migrate-hash --dir ./migrations --dir-format atlas
+./package-migrator migrate-validate --dir ./migrations --dir-format atlas
 ```
 
 `migrate-validate` exits `0` when clean, `1` on drift (a file added, removed, or

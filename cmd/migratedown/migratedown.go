@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
@@ -35,6 +36,7 @@ const (
 	dbURLFlag            = "db-url"
 	migrationsFlag       = "migrations-dir"
 	targetFlag           = "target"
+	dirFormatFlag        = "dir-format"
 	dryRunFlag           = "dry-run"
 	verboseFlag          = "verbose"
 	confirmFlag          = "confirm"
@@ -54,10 +56,15 @@ var migrateDownFlags = map[string]cobraflags.Flag{
 		Value: "",
 		Usage: "Directory containing migration files (required)",
 	},
-	targetFlag: &cobraflags.IntFlag{
+	targetFlag: &cobraflags.StringFlag{
 		Name:  targetFlag,
-		Value: 0,
+		Value: "0",
 		Usage: "Target version to migrate down to (required)",
+	},
+	dirFormatFlag: &cobraflags.StringFlag{
+		Name:  dirFormatFlag,
+		Value: string(migrator.MigrationDirFormatAuto),
+		Usage: "Migration directory format: auto, ptah, or atlas",
 	},
 	dryRunFlag: &cobraflags.BoolFlag{
 		Name:  dryRunFlag,
@@ -103,7 +110,8 @@ func NewMigrateDownCommand() *cobra.Command {
 func migrateDownCommand(_ *cobra.Command, _ []string) error {
 	dbURL := migrateDownFlags[dbURLFlag].GetString()
 	migrationsDir := migrateDownFlags[migrationsFlag].GetString()
-	targetVersion := migrateDownFlags[targetFlag].GetInt()
+	targetVersionValue := migrateDownFlags[targetFlag].GetString()
+	dirFormatValue := migrateDownFlags[dirFormatFlag].GetString()
 	dryRun := migrateDownFlags[dryRunFlag].GetBool()
 	verbose := migrateDownFlags[verboseFlag].GetBool()
 	skipConfirm := migrateDownFlags[confirmFlag].GetBool()
@@ -121,8 +129,17 @@ func migrateDownCommand(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("migrations directory is required")
 	}
 
+	targetVersion, err := strconv.ParseInt(targetVersionValue, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid target version %q: %w", targetVersionValue, err)
+	}
 	if targetVersion < 0 {
 		return fmt.Errorf("target version must be >= 0")
+	}
+
+	dirFormat, err := migrator.ParseMigrationDirFormat(dirFormatValue)
+	if err != nil {
+		return err
 	}
 
 	if verbose {
@@ -164,6 +181,7 @@ func migrateDownCommand(_ *cobra.Command, _ []string) error {
 	fmt.Printf("Database: %s\n", dbschema.FormatDatabaseURL(dbURL))
 	fmt.Printf("Dialect: %s\n", conn.Info().Dialect)
 	fmt.Printf("Migrations directory: %s\n", migrationsDir)
+	fmt.Printf("Migration directory format: %s\n", dirFormat)
 	fmt.Printf("Target version: %d\n", targetVersion)
 	fmt.Println()
 
@@ -182,7 +200,7 @@ func migrateDownCommand(_ *cobra.Command, _ []string) error {
 	interceptor := onlineddl.New(*onlineCfg).WithDryRun(dryRun)
 
 	// Create migrator to access applied migrations
-	mig, err := migrator.NewFSMigrator(conn, migrationsFS, migrator.WithStatementInterceptor(interceptor))
+	mig, err := migrator.NewFSMigrator(conn, migrationsFS, migrator.WithStatementInterceptor(interceptor), migrator.WithMigrationDirFormat(dirFormat))
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
@@ -209,7 +227,7 @@ func migrateDownCommand(_ *cobra.Command, _ []string) error {
 	}
 
 	// Calculate which migrations will be rolled back
-	var migrationsToRollback []int
+	var migrationsToRollback []int64
 	for _, version := range appliedMigrations {
 		if version > targetVersion {
 			migrationsToRollback = append(migrationsToRollback, version)

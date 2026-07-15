@@ -59,6 +59,7 @@ type FSMigrationProvider struct {
 	fsys        fs.FS
 	migrations  []*Migration
 	interceptor StatementInterceptor
+	format      MigrationDirFormat
 }
 
 // FSProviderOption configures a FSMigrationProvider before it loads
@@ -70,6 +71,15 @@ type FSProviderOption func(*FSMigrationProvider)
 func WithStatementInterceptor(interceptor StatementInterceptor) FSProviderOption {
 	return func(p *FSMigrationProvider) {
 		p.interceptor = interceptor
+	}
+}
+
+// WithMigrationDirFormat selects how filesystem migrations are discovered.
+// The default auto mode keeps existing Ptah-pair behavior when Ptah files are
+// present and otherwise accepts Atlas single-file migrations.
+func WithMigrationDirFormat(format MigrationDirFormat) FSProviderOption {
+	return func(p *FSMigrationProvider) {
+		p.format = format
 	}
 }
 
@@ -94,27 +104,26 @@ func (p *FSMigrationProvider) Migrations() []*Migration {
 }
 
 func (p *FSMigrationProvider) load() error {
-	migrationsMap := make(map[int]*Migration) // version -> migration
-	// Track which files were found for validation
-	foundFiles := make(map[int]map[string]bool) // version -> direction -> found
+	files, err := DiscoverMigrationFiles(p.fsys, p.format)
+	if err != nil {
+		return err
+	}
+	if len(files) == 0 {
+		p.migrations = []*Migration{}
+		return nil
+	}
+	if files[0].Format == MigrationDirFormatAtlas {
+		return p.loadAtlas(files)
+	}
+	return p.loadPtah(files)
+}
 
-	err := fs.WalkDir(p.fsys, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
+func (p *FSMigrationProvider) loadPtah(files []MigrationFile) error {
+	migrationsMap := make(map[int64]*Migration)
+	foundFiles := make(map[int64]map[string]bool)
 
-		if d.IsDir() {
-			return nil
-		}
-
-		// Parse migration filename
-		migrationFile, err := ParseMigrationFileName(d.Name())
-		if err != nil {
-			// Skip files that don't match migration pattern
-			return nil
-		}
-
-		// Initialize migration if it doesn't exist
+	for i := range files {
+		migrationFile := files[i]
 		if _, exists := migrationsMap[migrationFile.Version]; !exists {
 			migrationsMap[migrationFile.Version] = &Migration{
 				Version:     migrationFile.Version,
@@ -125,16 +134,14 @@ func (p *FSMigrationProvider) load() error {
 			foundFiles[migrationFile.Version] = make(map[string]bool)
 		}
 
-		// Track that we found this file
 		foundFiles[migrationFile.Version][migrationFile.Direction] = true
 
-		// Set the appropriate migration function based on direction
 		migration := migrationsMap[migrationFile.Version]
 		switch migrationFile.Direction {
 		case "up":
-			up, err := migrationFuncFromSQLFilenameWithMetadata(path, p.fsys, p.interceptor)
+			up, err := migrationFuncFromSQLFilenameWithMetadata(migrationFile.Path, p.fsys, p.interceptor)
 			if err != nil {
-				return fmt.Errorf("failed to load up migration %s: %w", path, err)
+				return fmt.Errorf("failed to load up migration %s: %w", migrationFile.Path, err)
 			}
 			migration.Up = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 				return up.fn(ctx, conn, migration.executionMode())
@@ -142,9 +149,9 @@ func (p *FSMigrationProvider) load() error {
 			migration.UpTimeouts = up.timeouts
 			migration.NoTransaction = migration.NoTransaction || up.noTransaction
 		case "down":
-			down, err := migrationFuncFromSQLFilenameWithMetadata(path, p.fsys, p.interceptor)
+			down, err := migrationFuncFromSQLFilenameWithMetadata(migrationFile.Path, p.fsys, p.interceptor)
 			if err != nil {
-				return fmt.Errorf("failed to load down migration %s: %w", path, err)
+				return fmt.Errorf("failed to load down migration %s: %w", migrationFile.Path, err)
 			}
 			migration.Down = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 				return down.fn(ctx, conn, migration.executionMode())
@@ -154,16 +161,10 @@ func (p *FSMigrationProvider) load() error {
 		default:
 			return fmt.Errorf("invalid migration direction: %s", migrationFile.Direction)
 		}
-
-		return nil
-	})
-
-	if err != nil {
-		return fmt.Errorf("failed to scan migrations directory: %w", err)
 	}
 
 	// Validate that all migrations have both up and down files
-	var incompleteMigrations []int
+	var incompleteMigrations []int64
 	for version := range migrationsMap {
 		files := foundFiles[version]
 		if !files["up"] || !files["down"] {
@@ -179,6 +180,35 @@ func (p *FSMigrationProvider) load() error {
 
 	sortMigrations(p.migrations)
 
+	return nil
+}
+
+func (p *FSMigrationProvider) loadAtlas(files []MigrationFile) error {
+	migrations := make([]*Migration, 0, len(files))
+	for i := range files {
+		migrationFile := files[i]
+		up, err := migrationFuncFromSQLFilenameWithMetadata(migrationFile.Path, p.fsys, p.interceptor)
+		if err != nil {
+			return fmt.Errorf("failed to load Atlas migration %s: %w", migrationFile.Path, err)
+		}
+
+		migration := &Migration{
+			Version:       migrationFile.Version,
+			Description:   migrationFile.Name,
+			UpTimeouts:    up.timeouts,
+			NoTransaction: up.noTransaction,
+		}
+		migration.Up = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+			return up.fn(ctx, conn, migration.executionMode())
+		}
+		migration.Down = func(_ context.Context, _ *dbschema.DatabaseConnection) error {
+			return fmt.Errorf("migration %d has no down migration; directory format atlas does not support down migrations without %s", migration.Version, "atlas txtar down.sql")
+		}
+		migrations = append(migrations, migration)
+	}
+
+	p.migrations = migrations
+	sortMigrations(p.migrations)
 	return nil
 }
 

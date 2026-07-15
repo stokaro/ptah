@@ -40,55 +40,55 @@ func TestPendingMigrationVersionsUsesAppliedSet(t *testing.T) {
 	c := qt.New(t)
 
 	migrations := testMigrations(1, 2, 3, 5)
-	pending := pendingMigrationVersions(migrations, []int{1, 2, 5})
+	pending := pendingMigrationVersions(migrations, []int64{1, 2, 5})
 
-	c.Assert(pending, qt.DeepEquals, []int{3})
-	c.Assert(outOfOrderMigrationVersions(pending, 5), qt.DeepEquals, []int{3})
+	c.Assert(pending, qt.DeepEquals, []int64{3})
+	c.Assert(outOfOrderMigrationVersions(pending, 5), qt.DeepEquals, []int64{3})
 }
 
 func TestMigrationsToApplyExecOrderPolicies(t *testing.T) {
 	c := qt.New(t)
 
 	migrations := testMigrations(1, 2, 3, 5)
-	applied := []int{1, 2, 5}
+	applied := []int64{1, 2, 5}
 
 	linear := NewMigrator(nil, NewRegisteredMigrationProvider(migrations...))
 	_, err := linear.migrationsToApply(migrations, applied, 0)
 	c.Assert(err, qt.IsNotNil)
 	var outOfOrderErr *OutOfOrderError
 	c.Assert(err, qt.ErrorAs, &outOfOrderErr)
-	c.Assert(outOfOrderErr.CurrentVersion, qt.Equals, 5)
-	c.Assert(outOfOrderErr.Versions, qt.DeepEquals, []int{3})
+	c.Assert(outOfOrderErr.CurrentVersion, qt.Equals, int64(5))
+	c.Assert(outOfOrderErr.Versions, qt.DeepEquals, []int64{3})
 
 	linearSkip := linear.WithExecOrder(ExecOrderLinearSkip)
 	got, err := linearSkip.migrationsToApply(migrations, applied, 0)
 	c.Assert(err, qt.IsNil)
-	c.Assert(migrationVersions(got), qt.DeepEquals, []int{})
+	c.Assert(migrationVersions(got), qt.DeepEquals, []int64{})
 
 	nonLinear := linear.WithExecOrder(ExecOrderNonLinear)
 	got, err = nonLinear.migrationsToApply(migrations, applied, 0)
 	c.Assert(err, qt.IsNil)
-	c.Assert(migrationVersions(got), qt.DeepEquals, []int{3})
+	c.Assert(migrationVersions(got), qt.DeepEquals, []int64{3})
 }
 
 func TestMigrationsToRollbackUsesAppliedSet(t *testing.T) {
 	c := qt.New(t)
 
 	migrationMap := migrationsByVersion(testMigrations(1, 2, 3, 5))
-	got, err := migrationsToRollback(migrationMap, []int{1, 2, 5}, 2)
+	got, err := migrationsToRollback(migrationMap, []int64{1, 2, 5}, 2)
 	c.Assert(err, qt.IsNil)
-	c.Assert(migrationVersions(got), qt.DeepEquals, []int{5})
+	c.Assert(migrationVersions(got), qt.DeepEquals, []int64{5})
 }
 
 func TestMigrationsToRollbackRequiresAppliedMigrationFile(t *testing.T) {
 	c := qt.New(t)
 
 	migrationMap := migrationsByVersion(testMigrations(1, 2))
-	_, err := migrationsToRollback(migrationMap, []int{1, 2, 5}, 2)
+	_, err := migrationsToRollback(migrationMap, []int64{1, 2, 5}, 2)
 	c.Assert(err, qt.ErrorMatches, `applied migration 5 is above target version 2 but is missing from the migration provider`)
 }
 
-func testMigrations(versions ...int) []*Migration {
+func testMigrations(versions ...int64) []*Migration {
 	migrations := make([]*Migration, 0, len(versions))
 	for _, version := range versions {
 		migrations = append(migrations, &Migration{
@@ -101,8 +101,8 @@ func testMigrations(versions ...int) []*Migration {
 	return migrations
 }
 
-func migrationVersions(migrations []*Migration) []int {
-	versions := make([]int, 0, len(migrations))
+func migrationVersions(migrations []*Migration) []int64 {
+	versions := make([]int64, 0, len(migrations))
 	for _, migration := range migrations {
 		versions = append(versions, migration.Version)
 	}

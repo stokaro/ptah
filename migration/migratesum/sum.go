@@ -24,7 +24,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io/fs"
-	"path"
 	"sort"
 	"strings"
 
@@ -58,23 +57,24 @@ type SumFile struct {
 // covers exactly what migrate-up/down would execute. The ptah.sum file itself
 // and any non-migration file are excluded.
 func Compute(fsys fs.FS) (*SumFile, error) {
-	var entries []Entry
-	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.IsDir() || !migrator.ValidateMigrationFileName(path.Base(p)) {
-			return nil
-		}
-		data, err := fs.ReadFile(fsys, p)
-		if err != nil {
-			return fmt.Errorf("failed to read %s: %w", p, err)
-		}
-		entries = append(entries, Entry{Name: p, Hash: hashContent(data)})
-		return nil
-	})
+	return ComputeWithFormat(fsys, migrator.MigrationDirFormatAuto)
+}
+
+// ComputeWithFormat walks fsys and builds the sum over every migration file
+// recognized by the selected directory format.
+func ComputeWithFormat(fsys fs.FS, format migrator.MigrationDirFormat) (*SumFile, error) {
+	files, err := migrator.DiscoverMigrationFiles(fsys, format)
 	if err != nil {
-		return nil, fmt.Errorf("failed to scan migrations directory: %w", err)
+		return nil, err
+	}
+
+	entries := make([]Entry, 0, len(files))
+	for _, file := range files {
+		data, err := fs.ReadFile(fsys, file.Path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read %s: %w", file.Path, err)
+		}
+		entries = append(entries, Entry{Name: file.Path, Hash: hashContent(data)})
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
 

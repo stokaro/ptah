@@ -34,7 +34,7 @@ func TestCreateMigrationFromSQL_PostgresFailureRollsBackStatements(t *testing.T)
 	err = mig.MigrateUp(ctx)
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(columnExists(t, conn, "ptah_issue_262_users", "status"), qt.IsFalse)
-	c.Assert(issue262MigrationRecordCount(t, conn), qt.Equals, 0)
+	c.Assert(issue262MigrationRecordCount(t, conn), qt.Equals, int64(0))
 
 	fixedMigration := migrator.CreateMigrationFromSQL(1, "add status",
 		`ALTER TABLE ptah_issue_262_users ADD COLUMN status TEXT;
@@ -43,7 +43,7 @@ func TestCreateMigrationFromSQL_PostgresFailureRollsBackStatements(t *testing.T)
 	err = issue262Migrator(conn, fixedMigration).MigrateUp(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(columnExists(t, conn, "ptah_issue_262_users", "status"), qt.IsTrue)
-	c.Assert(issue262MigrationRecordCount(t, conn), qt.Equals, 1)
+	c.Assert(issue262MigrationRecordCount(t, conn), qt.Equals, int64(1))
 }
 
 func TestMigratorDryRun_PostgresDoesNotCreateMetadataOrMigrationObjects(t *testing.T) {
@@ -65,8 +65,8 @@ func TestMigratorDryRun_PostgresDoesNotCreateMetadataOrMigrationObjects(t *testi
 
 	status, err := mig.GetMigrationStatus(ctx)
 	c.Assert(err, qt.IsNil)
-	c.Assert(status.CurrentVersion, qt.Equals, 0)
-	c.Assert(status.PendingMigrations, qt.DeepEquals, []int{1})
+	c.Assert(status.CurrentVersion, qt.Equals, int64(0))
+	c.Assert(status.PendingMigrations, qt.DeepEquals, []int64{1})
 
 	err = mig.MigrateUp(ctx)
 	c.Assert(err, qt.IsNil)
@@ -117,7 +117,7 @@ ALTER TABLE ptah_issue_262_enum_items DROP COLUMN mood;`),
 	err = mig.MigrateUp(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(columnExists(t, conn, "ptah_issue_262_enum_items", "mood"), qt.IsTrue)
-	c.Assert(issue262MigrationRecordCount(t, conn), qt.Equals, 2)
+	c.Assert(issue262MigrationRecordCount(t, conn), qt.Equals, int64(2))
 }
 
 func issue262Migrator(conn *dbschema.DatabaseConnection, migrations ...*migrator.Migration) *migrator.Migrator {

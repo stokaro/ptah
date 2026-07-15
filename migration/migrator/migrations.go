@@ -156,7 +156,7 @@ func NoopMigrationFunc(_ctx context.Context, _conn *dbschema.DatabaseConnection)
 
 // Migration represents a database migration
 type Migration struct {
-	Version      int
+	Version      int64
 	Description  string
 	Up           MigrationFunc
 	Down         MigrationFunc
@@ -178,7 +178,7 @@ func (m *Migration) executionMode() migrationExecutionMode {
 
 // CreateMigrationFromSQL creates a migration from SQL strings
 // This is useful for programmatically creating migrations
-func CreateMigrationFromSQL(version int, description, upSQL, downSQL string) *Migration {
+func CreateMigrationFromSQL(version int64, description, upSQL, downSQL string) *Migration {
 	upNoTransaction, upDirectiveErr := parseNoTransactionDirective(ParseFileDirectives(upSQL))
 	downNoTransaction, downDirectiveErr := parseNoTransactionDirective(ParseFileDirectives(downSQL))
 

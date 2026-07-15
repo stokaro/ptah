@@ -640,12 +640,12 @@ func testDynamicMigrationSQLGeneration(ctx context.Context, conn *dbschema.Datab
 }
 
 // getCurrentMigrationVersion gets the current migration version from the database
-func getCurrentMigrationVersion(ctx context.Context, conn *dbschema.DatabaseConnection) (int, error) {
+func getCurrentMigrationVersion(ctx context.Context, conn *dbschema.DatabaseConnection) (int64, error) {
 	// Query the schema_migrations table to get the highest version
 	query := "SELECT COALESCE(MAX(version), 0) FROM schema_migrations"
 	row := conn.QueryRow(query)
 
-	var version int
+	var version int64
 	if err := row.Scan(&version); err != nil {
 		return 0, fmt.Errorf("failed to scan migration version: %w", err)
 	}
