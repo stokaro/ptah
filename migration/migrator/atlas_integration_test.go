@@ -45,6 +45,7 @@ func runAtlasFormatIntegration(t *testing.T, dbURL string) {
 
 	cleanupIssue273(t, conn)
 	defer cleanupIssue273(t, conn)
+	createLegacyIssue273MetadataTable(t, conn)
 
 	fsys := fstest.MapFS{
 		"20220318104614_team_A.sql": &fstest.MapFile{Data: []byte("CREATE TABLE ptah_issue_273_teams (id INT PRIMARY KEY);\n")},
@@ -85,6 +86,20 @@ func cleanupIssue273(t *testing.T, conn *dbschema.DatabaseConnection) {
 	} {
 		_, _ = conn.ExecContext(context.Background(), statement)
 	}
+}
+
+func createLegacyIssue273MetadataTable(t *testing.T, conn *dbschema.DatabaseConnection) {
+	t.Helper()
+
+	_, err := conn.ExecContext(
+		context.Background(),
+		`CREATE TABLE schema_migrations_issue_273 (
+			version INTEGER PRIMARY KEY,
+			description TEXT NOT NULL,
+			applied_at TIMESTAMP NOT NULL
+		)`,
+	)
+	qt.Assert(t, err, qt.IsNil)
 }
 
 func issue273UsersCount(t *testing.T, conn *dbschema.DatabaseConnection) int {

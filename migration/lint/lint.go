@@ -309,7 +309,7 @@ func parseKnownMigrationName(name string) (*migrator.MigrationFile, error) {
 	if parsed, err := migrator.ParseMigrationFileName(name); err == nil {
 		return parsed, nil
 	}
-	return migrator.ParseAtlasMigrationFileName(name)
+	return migrator.ParseAtlasMigrationFileNameForAutoDetection(name)
 }
 
 // runRules applies every enabled rule to one prepared file.

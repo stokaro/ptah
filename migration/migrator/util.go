@@ -21,11 +21,14 @@ import (
 // "up"/"down" (cleanup, setup, teardown, ...) is not a migration file.
 var fileNameRe = regexp.MustCompile(`^(\d{10})_(.*)\.(down|up)(\.sql)$`)
 
-// Atlas migration file naming pattern: version_description.sql. Atlas
-// versioned directories commonly use 14-digit timestamp versions. Requiring
-// more than Ptah's 10-digit version width keeps legacy suffixless Ptah-looking
-// files from being auto-classified as Atlas migrations.
-var atlasFileNameRe = regexp.MustCompile(`^(\d{11,})_(.+)(\.sql)$`)
+// Atlas migration file naming pattern: version_description.sql.
+var atlasFileNameRe = regexp.MustCompile(`^(\d+)_(.+)(\.sql)$`)
+
+// Auto-detection stays stricter than explicit Atlas mode: Atlas versioned
+// directories commonly use 14-digit timestamp versions, and requiring more than
+// Ptah's 10-digit version width keeps legacy suffixless Ptah-looking files from
+// being auto-classified as Atlas migrations.
+var atlasAutoFileNameRe = regexp.MustCompile(`^(\d{11,})_(.+)(\.sql)$`)
 
 // MigrationDirFormat selects how a filesystem migration directory is parsed.
 type MigrationDirFormat string
@@ -104,7 +107,18 @@ func ParseMigrationFileName(filename string) (*MigrationFile, error) {
 // Expected format: version_description.sql. Atlas does not use paired .up.sql
 // and .down.sql files; these files are forward migrations.
 func ParseAtlasMigrationFileName(filename string) (*MigrationFile, error) {
-	matches := atlasFileNameRe.FindStringSubmatch(filename)
+	return parseAtlasMigrationFileName(filename, atlasFileNameRe)
+}
+
+// ParseAtlasMigrationFileNameForAutoDetection parses Atlas names accepted by
+// auto-detection. It is stricter than explicit Atlas parsing so legacy
+// suffixless Ptah-looking files keep surfacing as unrecognized in auto mode.
+func ParseAtlasMigrationFileNameForAutoDetection(filename string) (*MigrationFile, error) {
+	return parseAtlasMigrationFileName(filename, atlasAutoFileNameRe)
+}
+
+func parseAtlasMigrationFileName(filename string, pattern *regexp.Regexp) (*MigrationFile, error) {
+	matches := pattern.FindStringSubmatch(filename)
 	if matches == nil || len(matches) != 4 {
 		return nil, errors.New("invalid Atlas migration file name format")
 	}
@@ -284,7 +298,7 @@ func DiscoverMigrationFiles(fsys fs.FS, format MigrationDirFormat) ([]MigrationF
 			migrationFile.Path = p
 			ptahFiles = append(ptahFiles, *migrationFile)
 		}
-		if migrationFile, err := ParseAtlasMigrationFileName(base); err == nil {
+		if migrationFile, err := parseAtlasMigrationFileNameForFormat(base, format); err == nil {
 			migrationFile.Path = p
 			atlasFiles = append(atlasFiles, *migrationFile)
 		}
@@ -305,6 +319,13 @@ func DiscoverMigrationFiles(fsys fs.FS, format MigrationDirFormat) ([]MigrationF
 		return files[i].Path < files[j].Path
 	})
 	return files, nil
+}
+
+func parseAtlasMigrationFileNameForFormat(filename string, format MigrationDirFormat) (*MigrationFile, error) {
+	if format == MigrationDirFormatAtlas {
+		return ParseAtlasMigrationFileName(filename)
+	}
+	return ParseAtlasMigrationFileNameForAutoDetection(filename)
 }
 
 func normalizeMigrationDirFormat(format MigrationDirFormat) (MigrationDirFormat, error) {

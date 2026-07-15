@@ -178,8 +178,10 @@ func TestParseAtlasMigrationFileName(t *testing.T) {
 	c.Assert(migrationFile.Extension, qt.Equals, ".sql")
 	c.Assert(migrationFile.Format, qt.Equals, MigrationDirFormatAtlas)
 
-	_, err = ParseAtlasMigrationFileName("0000000001_cleanup.sql")
-	c.Assert(err, qt.ErrorMatches, "invalid Atlas migration file name format")
+	migrationFile, err = ParseAtlasMigrationFileName("1_initial.sql")
+	c.Assert(err, qt.IsNil)
+	c.Assert(migrationFile.Version, qt.Equals, int64(1))
+	c.Assert(migrationFile.Name, qt.Equals, "Initial")
 	_, err = ParseAtlasMigrationFileName("20220318104614_team_A.up.sql")
 	c.Assert(err, qt.ErrorMatches, "Atlas migration file name must not use Ptah direction suffixes")
 }
@@ -200,6 +202,25 @@ func TestDiscoverMigrationFilesAtlasAuto(t *testing.T) {
 	c.Assert(files[0].Version, qt.Equals, int64(20220318104614))
 	c.Assert(files[0].Format, qt.Equals, MigrationDirFormatAtlas)
 	c.Assert(files[1].Path, qt.Equals, "20220318104615_add_users.sql")
+}
+
+func TestDiscoverMigrationFilesAtlasExplicitAllowsShortVersions(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"1_initial.sql": &fstest.MapFile{Data: []byte("CREATE TABLE users (id INT);\n")},
+	}
+
+	files, err := DiscoverMigrationFiles(fsys, MigrationDirFormatAtlas)
+	c.Assert(err, qt.IsNil)
+	c.Assert(files, qt.HasLen, 1)
+	c.Assert(files[0].Path, qt.Equals, "1_initial.sql")
+	c.Assert(files[0].Version, qt.Equals, int64(1))
+	c.Assert(files[0].Format, qt.Equals, MigrationDirFormatAtlas)
+
+	files, err = DiscoverMigrationFiles(fsys, MigrationDirFormatAuto)
+	c.Assert(files, qt.IsNil)
+	c.Assert(err, qt.ErrorMatches, `no migration files matched format "auto"; unrecognized SQL files: 1_initial.sql`)
 }
 
 func TestDiscoverMigrationFilesAutoPrefersPtahWhenPresent(t *testing.T) {

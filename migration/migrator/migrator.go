@@ -168,10 +168,104 @@ func (m *Migrator) Initialize(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create migrations table: %w", err)
 	}
+	if err := m.ensureMigrationsVersionColumn(ctx); err != nil {
+		return fmt.Errorf("failed to prepare migrations version column: %w", err)
+	}
 
 	// Mark as initialized
 	m.initialized = true
 	return nil
+}
+
+func (m *Migrator) ensureMigrationsVersionColumn(ctx context.Context) error {
+	switch m.conn.Info().Dialect {
+	case "postgres", "cockroachdb", "yugabytedb":
+		return m.ensurePostgresMigrationsVersionColumn(ctx)
+	case "mysql", "mariadb":
+		return m.ensureMySQLMigrationsVersionColumn(ctx)
+	default:
+		return nil
+	}
+}
+
+func (m *Migrator) ensurePostgresMigrationsVersionColumn(ctx context.Context) error {
+	dataType, err := m.migrationsVersionColumnType(
+		ctx,
+		sqlutil.Rebind(m.conn.Info().Dialect, `
+SELECT data_type
+FROM information_schema.columns
+WHERE table_schema = ? AND table_name = ? AND column_name = 'version'`),
+	)
+	if err != nil {
+		return err
+	}
+	if dataType == "bigint" {
+		return nil
+	}
+	_, err = m.conn.ExecContext(ctx, fmt.Sprintf(
+		"ALTER TABLE %s ALTER COLUMN %s TYPE BIGINT",
+		m.qualifiedMigrationsTable(),
+		m.quoteIdentifier("version"),
+	))
+	if err != nil {
+		return fmt.Errorf("failed to widen version column from %s to BIGINT: %w", dataType, err)
+	}
+	return nil
+}
+
+func (m *Migrator) ensureMySQLMigrationsVersionColumn(ctx context.Context) error {
+	dataType, err := m.migrationsVersionColumnType(
+		ctx,
+		`SELECT data_type
+FROM information_schema.columns
+WHERE table_schema = ? AND table_name = ? AND column_name = 'version'`,
+	)
+	if err != nil {
+		return err
+	}
+	if dataType == "bigint" {
+		return nil
+	}
+	_, err = m.conn.ExecContext(ctx, fmt.Sprintf(
+		"ALTER TABLE %s MODIFY COLUMN %s BIGINT NOT NULL",
+		m.qualifiedMigrationsTable(),
+		m.quoteIdentifier("version"),
+	))
+	if err != nil {
+		return fmt.Errorf("failed to widen version column from %s to BIGINT: %w", dataType, err)
+	}
+	return nil
+}
+
+func (m *Migrator) migrationsVersionColumnType(ctx context.Context, query string) (string, error) {
+	var dataType string
+	err := m.conn.QueryRowContext(ctx, query, m.metadataSchemaName(), m.migrationsTableName()).Scan(&dataType)
+	if err != nil {
+		return "", fmt.Errorf("failed to inspect migrations version column: %w", err)
+	}
+	return strings.ToLower(dataType), nil
+}
+
+func (m *Migrator) metadataSchemaName() string {
+	if m.migrationsSchema != "" {
+		return m.migrationsSchema
+	}
+	if m.conn != nil {
+		if schema := strings.TrimSpace(m.conn.Info().Schema); schema != "" {
+			return schema
+		}
+	}
+	if m.conn != nil && m.conn.Info().Dialect == "postgres" {
+		return "public"
+	}
+	return ""
+}
+
+func (m *Migrator) migrationsTableName() string {
+	if m.migrationsTable == "" {
+		return "schema_migrations"
+	}
+	return m.migrationsTable
 }
 
 // GetCurrentVersion returns the current migration version from the database
