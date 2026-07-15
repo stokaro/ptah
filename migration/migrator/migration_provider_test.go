@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
@@ -180,6 +181,106 @@ func TestNewFSMigrationProvider_AtlasFormat(t *testing.T) {
 	c.Assert(err, qt.ErrorAs, &noDown)
 	c.Assert(noDown.Version, qt.Equals, int64(20220318104614))
 	c.Assert(noDown.Description, qt.Equals, "Team A")
+}
+
+func TestNewFSMigrationProvider_AtlasTxtarSectionsAndDirectives(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"20240305171147_section_boundary.sql": &fstest.MapFile{Data: []byte(`-- atlas:txtar
+
+-- migration.sql --
+-- +ptah lock_timeout=3s
+-- keep this marker-like SQL comment --
+CREATE TABLE users (id INT PRIMARY KEY);
+
+-- schema.sql --
+SELECT 'ptah_extra_section_sentinel';
+
+-- down.sql --
+-- +ptah statement_timeout=30s
+SELECT 'ptah_down_section_sentinel';
+DROP TABLE users;
+`)},
+	}
+	interceptor := &recordingInterceptor{}
+	provider, err := migrator.NewFSMigrationProvider(
+		fsys,
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithStatementInterceptor(interceptor),
+	)
+	c.Assert(err, qt.IsNil)
+
+	migrations := provider.Migrations()
+	c.Assert(migrations, qt.HasLen, 1)
+	migration := migrations[0]
+	c.Assert(migration.UpTimeouts.HasLockTimeout, qt.IsTrue)
+	c.Assert(migration.UpTimeouts.LockTimeout, qt.Equals, 3*time.Second)
+	c.Assert(migration.DownTimeouts.HasStatementTimeout, qt.IsTrue)
+	c.Assert(migration.DownTimeouts.StatementTimeout, qt.Equals, 30*time.Second)
+
+	err = migration.Up(context.Background(), nil)
+	c.Assert(err, qt.IsNil)
+	c.Assert(interceptor.statements, qt.DeepEquals, []string{
+		"CREATE TABLE users (id INT PRIMARY KEY)",
+	})
+	c.Assert(interceptor.directives, qt.DeepEquals, []map[string]string{
+		{"lock_timeout": "3s"},
+	})
+
+	interceptor.statements = nil
+	interceptor.directives = nil
+	err = migration.Down(context.Background(), nil)
+	c.Assert(err, qt.IsNil)
+	c.Assert(interceptor.statements, qt.DeepEquals, []string{
+		"SELECT 'ptah_down_section_sentinel'",
+		"DROP TABLE users",
+	})
+	c.Assert(interceptor.directives, qt.DeepEquals, []map[string]string{
+		{"statement_timeout": "30s"},
+		{"statement_timeout": "30s"},
+	})
+}
+
+func TestNewFSMigrationProvider_AtlasTxtarDownInvalidDirective(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"20240305171147_invalid_down_directive.sql": &fstest.MapFile{Data: []byte(`-- atlas:txtar
+
+-- migration.sql --
+CREATE TABLE users (id INT PRIMARY KEY);
+
+-- down.sql --
+-- +ptah no_transaction=maybe
+DROP TABLE users;
+`)},
+	}
+	provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
+	c.Assert(provider, qt.IsNil)
+	c.Assert(err, qt.ErrorMatches, `failed to load Atlas migration 20240305171147_invalid_down_directive.sql: invalid migration directives in 20240305171147_invalid_down_directive.sql#down.sql: invalid \+ptah no_transaction value "maybe": expected true or false`)
+}
+
+func TestNewFSMigrationProvider_AtlasTxtarDownNoTransactionIsMigrationLevel(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"20240305171147_down_no_transaction.sql": &fstest.MapFile{Data: []byte(`-- atlas:txtar
+
+-- migration.sql --
+CREATE TABLE users (id INT PRIMARY KEY);
+
+-- down.sql --
+-- +ptah no_transaction
+DROP TABLE users;
+`)},
+	}
+	provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
+	c.Assert(err, qt.IsNil)
+
+	migrations := provider.Migrations()
+	c.Assert(migrations, qt.HasLen, 1)
+	c.Assert(migrations[0].NoTransaction, qt.IsTrue)
 }
 
 func TestNewFSMigrationProvider_UnknownOnlySQLFilesError(t *testing.T) {
