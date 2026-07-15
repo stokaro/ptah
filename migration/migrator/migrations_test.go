@@ -191,6 +191,64 @@ func TestMigrationFuncFromSQLFilename_FileNotFound(t *testing.T) {
 	c.Assert(err.Error(), qt.Contains, "failed to read migration file")
 }
 
+func TestParseAtlasTxtarSQL(t *testing.T) {
+	c := qt.New(t)
+
+	parsed, ok, err := parseAtlasTxtarSQL("20240305171146_seed.sql", `-- atlas:txtar
+
+-- migration.sql --
+INSERT INTO users (id, name) VALUES (1, 'Alice');
+
+-- down.sql --
+DELETE FROM users WHERE id = 1;
+`)
+	c.Assert(err, qt.IsNil)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(parsed.hasDown, qt.IsTrue)
+	c.Assert(parsed.migrationSQL, qt.Contains, "INSERT INTO users")
+	c.Assert(parsed.downSQL, qt.Contains, "DELETE FROM users")
+}
+
+func TestParseAtlasTxtarSQLWithoutDown(t *testing.T) {
+	c := qt.New(t)
+
+	parsed, ok, err := parseAtlasTxtarSQL("20240305171146_seed.sql", `-- atlas:txtar
+
+-- migration.sql --
+INSERT INTO users (id, name) VALUES (1, 'Alice');
+`)
+	c.Assert(err, qt.IsNil)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(parsed.hasDown, qt.IsFalse)
+	c.Assert(parsed.migrationSQL, qt.Contains, "INSERT INTO users")
+	c.Assert(parsed.downSQL, qt.Equals, "")
+}
+
+func TestParseAtlasTxtarSQLRequiresMigrationSection(t *testing.T) {
+	c := qt.New(t)
+
+	_, ok, err := parseAtlasTxtarSQL("20240305171146_seed.sql", `-- atlas:txtar
+
+-- down.sql --
+DELETE FROM users WHERE id = 1;
+`)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(err, qt.ErrorMatches, `invalid Atlas txtar migration 20240305171146_seed.sql: missing migration.sql section`)
+}
+
+func TestParseAtlasTxtarSQLRejectsSQLBeforeSection(t *testing.T) {
+	c := qt.New(t)
+
+	_, ok, err := parseAtlasTxtarSQL("20240305171146_seed.sql", `-- atlas:txtar
+INSERT INTO users (id, name) VALUES (1, 'Alice');
+
+-- migration.sql --
+SELECT 1;
+`)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(err, qt.ErrorMatches, `invalid Atlas txtar migration 20240305171146_seed.sql: SQL appears before the first txtar section`)
+}
+
 func TestParseMigrationTimeoutDirectives(t *testing.T) {
 	tests := []struct {
 		name                    string

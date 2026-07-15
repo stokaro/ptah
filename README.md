@@ -638,8 +638,26 @@ Ptah's paired files (`NNNNNNNNNN_description.up.sql` and
 Atlas-style versioned files such as `20220318104614_team_A.sql`. Use
 `--dir-format=ptah` or `--dir-format=atlas` on `migrate-up`, `migrate-down`,
 `migrate-status`, `migrate-hash`, and `migrate-validate` when a directory should
-be interpreted explicitly. Atlas-style files are forward migrations only;
-`migrate-down` reports a clear "no down migration" error for them.
+be interpreted explicitly. Ordinary Atlas files are forward migrations. Atlas
+txtar files can also carry an embedded `down.sql` section that Ptah executes on
+rollback.
+
+```sql
+-- atlas:txtar
+
+-- migration.sql --
+INSERT INTO users (id, name) VALUES (1, 'Alice');
+
+-- down.sql --
+DELETE FROM users WHERE id = 1;
+```
+
+If an Atlas migration has no embedded `down.sql`, `migrate-down` fails with a
+typed error explaining that Atlas dynamic down-plan synthesis is not implemented
+yet. This is different from transaction rollback: transaction rollback undoes a
+failed in-progress migration automatically, while `migrate-down` reverts an
+already-recorded migration using an explicit Ptah `.down.sql` file or an Atlas
+txtar `down.sql` section.
 
 #### Apply Migrations
 Apply all pending migrations to bring database up to latest version:
@@ -698,6 +716,7 @@ a warning.
 - ✅ Detects out-of-order pending migrations below the current version
 - ✅ Each migration runs in its own transaction unless explicitly marked `no_transaction`
 - ✅ Automatic rollback on failure
+- ✅ Executes Ptah paired down files and Atlas txtar `down.sql` sections
 - ✅ Tracks applied migrations in `schema_migrations` table, or a custom `--migrations-schema`/`--migrations-table`
 - ✅ Supports dry-run mode for preview
 - ✅ Supports per-migration lock and statement timeout directives

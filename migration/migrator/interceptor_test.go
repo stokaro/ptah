@@ -88,6 +88,29 @@ func TestMigrationFuncFromSQLFilenameWithInterceptor_ErrorAbortsMigration(t *tes
 	c.Assert(err, qt.ErrorMatches, "failed to execute migration SQL: .*")
 }
 
+func TestMigrationFuncFromSQLFilenameWithInterceptor_AtlasTxtarExecutesMigrationSectionOnly(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"20240305171146_seed.sql": &fstest.MapFile{Data: []byte(`-- atlas:txtar
+
+-- migration.sql --
+INSERT INTO users (id, name) VALUES (1, 'Alice');
+
+-- down.sql --
+DELETE FROM users WHERE id = 1;
+`)},
+	}
+	interceptor := &recordingInterceptor{}
+
+	fn := migrator.MigrationFuncFromSQLFilenameWithInterceptor("20240305171146_seed.sql", fsys, interceptor)
+	err := fn(context.Background(), nil)
+	c.Assert(err, qt.IsNil)
+	c.Assert(interceptor.statements, qt.DeepEquals, []string{
+		"INSERT INTO users (id, name) VALUES (1, 'Alice')",
+	})
+}
+
 func TestMigrationFuncFromSQLFilenameWithInterceptor_ValidateDirectivesRunsBeforeAnyStatement(t *testing.T) {
 	c := qt.New(t)
 

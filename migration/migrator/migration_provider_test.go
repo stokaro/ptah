@@ -175,7 +175,11 @@ func TestNewFSMigrationProvider_AtlasFormat(t *testing.T) {
 	c.Assert(migrations[1].Description, qt.Equals, "Add Users")
 
 	err = migrations[0].Down(context.Background(), nil)
-	c.Assert(err, qt.ErrorMatches, `migration 20220318104614 has no down migration; directory format atlas does not support down migrations.*`)
+	c.Assert(err, qt.ErrorMatches, `migration 20220318104614 has no Atlas down migration; dynamic Atlas-style down migrations are not implemented yet; add an atlas txtar down.sql section or migrate down manually`)
+	var noDown *migrator.AtlasDownNotImplementedError
+	c.Assert(err, qt.ErrorAs, &noDown)
+	c.Assert(noDown.Version, qt.Equals, int64(20220318104614))
+	c.Assert(noDown.Description, qt.Equals, "Team A")
 }
 
 func TestNewFSMigrationProvider_UnknownOnlySQLFilesError(t *testing.T) {

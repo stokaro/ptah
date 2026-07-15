@@ -187,7 +187,7 @@ func (p *FSMigrationProvider) loadAtlas(files []MigrationFile) error {
 	migrations := make([]*Migration, 0, len(files))
 	for i := range files {
 		migrationFile := files[i]
-		up, err := migrationFuncFromSQLFilenameWithMetadata(migrationFile.Path, p.fsys, p.interceptor)
+		atlasFile, err := atlasSQLMigrationFileFromSQLFilenameWithMetadata(migrationFile.Path, p.fsys, p.interceptor)
 		if err != nil {
 			return fmt.Errorf("failed to load Atlas migration %s: %w", migrationFile.Path, err)
 		}
@@ -195,14 +195,26 @@ func (p *FSMigrationProvider) loadAtlas(files []MigrationFile) error {
 		migration := &Migration{
 			Version:       migrationFile.Version,
 			Description:   migrationFile.Name,
-			UpTimeouts:    up.timeouts,
-			NoTransaction: up.noTransaction,
+			UpTimeouts:    atlasFile.up.timeouts,
+			NoTransaction: atlasFile.up.noTransaction,
 		}
 		migration.Up = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-			return up.fn(ctx, conn, migration.executionMode())
+			return atlasFile.up.fn(ctx, conn, migration.executionMode())
 		}
-		migration.Down = func(_ context.Context, _ *dbschema.DatabaseConnection) error {
-			return fmt.Errorf("migration %d has no down migration; directory format atlas does not support down migrations without %s", migration.Version, "atlas txtar down.sql")
+		if atlasFile.hasDown {
+			migration.DownTimeouts = atlasFile.down.timeouts
+			migration.NoTransaction = migration.NoTransaction || atlasFile.down.noTransaction
+			migration.Down = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+				return atlasFile.down.fn(ctx, conn, migration.executionMode())
+			}
+		} else {
+			migration.downUnavailable = true
+			migration.Down = func(_ context.Context, _ *dbschema.DatabaseConnection) error {
+				return &AtlasDownNotImplementedError{
+					Version:     migration.Version,
+					Description: migration.Description,
+				}
+			}
 		}
 		migrations = append(migrations, migration)
 	}

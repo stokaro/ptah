@@ -55,6 +55,18 @@ type sqlMigrationFile struct {
 	noTransaction bool
 }
 
+type atlasSQLMigrationFile struct {
+	up      sqlMigrationFile
+	down    sqlMigrationFile
+	hasDown bool
+}
+
+type atlasTxtarSQL struct {
+	migrationSQL string
+	downSQL      string
+	hasDown      bool
+}
+
 func (f sqlMigrationFile) executionMode() migrationExecutionMode {
 	if f.noTransaction {
 		return migrationExecutionNoTransaction
@@ -68,6 +80,27 @@ func (f sqlMigrationFile) executionMode() migrationExecutionMode {
 // statements in the same migration.
 const DirectiveNoTransaction = "no_transaction"
 
+const (
+	atlasTxtarDirective        = "-- atlas:txtar"
+	atlasTxtarMigrationSection = "migration.sql"
+	atlasTxtarDownSection      = "down.sql"
+)
+
+// AtlasDownNotImplementedError reports an Atlas migration that lacks an
+// embedded down.sql section. Ptah does not yet synthesize Atlas dynamic down
+// plans from the current database state and a dev database.
+type AtlasDownNotImplementedError struct {
+	Version     int64
+	Description string
+}
+
+func (e *AtlasDownNotImplementedError) Error() string {
+	return fmt.Sprintf(
+		"migration %d has no Atlas down migration; dynamic Atlas-style down migrations are not implemented yet; add an atlas txtar down.sql section or migrate down manually",
+		e.Version,
+	)
+}
+
 // MigrationFuncFromSQLFilename returns a migration function that reads SQL from a file
 // in the provided filesystem and executes it using the database connection
 func MigrationFuncFromSQLFilename(filename string, fsys fs.FS) MigrationFunc {
@@ -79,21 +112,11 @@ func MigrationFuncFromSQLFilename(filename string, fsys fs.FS) MigrationFunc {
 // behaves exactly like MigrationFuncFromSQLFilename.
 func MigrationFuncFromSQLFilenameWithInterceptor(filename string, fsys fs.FS, interceptor StatementInterceptor) MigrationFunc {
 	return func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-		sql, err := fs.ReadFile(fsys, filename)
+		migrationFile, err := migrationFuncFromSQLFilenameWithMetadata(filename, fsys, interceptor)
 		if err != nil {
-			return fmt.Errorf("failed to read migration file: %w", err)
+			return err
 		}
-
-		noTransaction, err := parseNoTransactionDirective(ParseFileDirectives(string(sql)))
-		if err != nil {
-			return fmt.Errorf("invalid migration directives in %s: %w", filename, err)
-		}
-
-		mode := migrationExecutionTransactional
-		if noTransaction {
-			mode = migrationExecutionNoTransaction
-		}
-		return executeMigrationFileSQL(ctx, conn, filename, string(sql), interceptor, mode)
+		return migrationFile.fn(ctx, conn, migrationFile.executionMode())
 	}
 }
 
@@ -130,23 +153,149 @@ func migrationFuncFromSQLFilenameWithMetadata(
 		return sqlMigrationFile{}, fmt.Errorf("failed to read migration file: %w", err)
 	}
 
-	timeouts, err := parseMigrationTimeoutDirectives(string(sql))
+	atlasMigrationFile, ok, err := atlasSQLMigrationFileFromSQL(filename, string(sql), interceptor)
+	if err != nil {
+		return sqlMigrationFile{}, err
+	}
+	if ok {
+		return atlasMigrationFile.up, nil
+	}
+
+	return migrationFuncFromSQLStringWithMetadata(filename, string(sql), interceptor)
+}
+
+func atlasSQLMigrationFileFromSQLFilenameWithMetadata(
+	filename string,
+	fsys fs.FS,
+	interceptor StatementInterceptor,
+) (atlasSQLMigrationFile, error) {
+	sql, err := fs.ReadFile(fsys, filename)
+	if err != nil {
+		return atlasSQLMigrationFile{}, fmt.Errorf("failed to read migration file: %w", err)
+	}
+
+	atlasMigrationFile, ok, err := atlasSQLMigrationFileFromSQL(filename, string(sql), interceptor)
+	if err != nil {
+		return atlasSQLMigrationFile{}, err
+	}
+	if ok {
+		return atlasMigrationFile, nil
+	}
+
+	up, err := migrationFuncFromSQLStringWithMetadata(filename, string(sql), interceptor)
+	if err != nil {
+		return atlasSQLMigrationFile{}, err
+	}
+	return atlasSQLMigrationFile{up: up}, nil
+}
+
+func atlasSQLMigrationFileFromSQL(filename, sql string, interceptor StatementInterceptor) (atlasSQLMigrationFile, bool, error) {
+	parsed, ok, err := parseAtlasTxtarSQL(filename, sql)
+	if err != nil || !ok {
+		return atlasSQLMigrationFile{}, ok, err
+	}
+
+	up, err := migrationFuncFromSQLStringWithMetadata(filename+"#"+atlasTxtarMigrationSection, parsed.migrationSQL, interceptor)
+	if err != nil {
+		return atlasSQLMigrationFile{}, true, err
+	}
+	atlasMigrationFile := atlasSQLMigrationFile{up: up}
+	if parsed.hasDown {
+		down, err := migrationFuncFromSQLStringWithMetadata(filename+"#"+atlasTxtarDownSection, parsed.downSQL, interceptor)
+		if err != nil {
+			return atlasSQLMigrationFile{}, true, err
+		}
+		atlasMigrationFile.down = down
+		atlasMigrationFile.hasDown = true
+	}
+	return atlasMigrationFile, true, nil
+}
+
+func migrationFuncFromSQLStringWithMetadata(filename, sql string, interceptor StatementInterceptor) (sqlMigrationFile, error) {
+	timeouts, err := parseMigrationTimeoutDirectives(sql)
 	if err != nil {
 		return sqlMigrationFile{}, err
 	}
 
-	noTransaction, err := parseNoTransactionDirective(ParseFileDirectives(string(sql)))
+	noTransaction, err := parseNoTransactionDirective(ParseFileDirectives(sql))
 	if err != nil {
 		return sqlMigrationFile{}, fmt.Errorf("invalid migration directives in %s: %w", filename, err)
 	}
-
 	return sqlMigrationFile{
 		fn: func(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrationExecutionMode) error {
-			return executeMigrationFileSQL(ctx, conn, filename, string(sql), interceptor, mode)
+			return executeMigrationFileSQL(ctx, conn, filename, sql, interceptor, mode)
 		},
 		timeouts:      timeouts,
 		noTransaction: noTransaction,
 	}, nil
+}
+
+func parseAtlasTxtarSQL(filename, sql string) (atlasTxtarSQL, bool, error) {
+	if !hasAtlasTxtarDirective(sql) {
+		return atlasTxtarSQL{}, false, nil
+	}
+
+	sections := make(map[string]*strings.Builder)
+	var currentSection string
+	sawSection := false
+	for _, line := range strings.SplitAfter(sql, "\n") {
+		section, isMarker := parseAtlasTxtarSectionMarker(line)
+		if isMarker {
+			if _, exists := sections[section]; exists {
+				return atlasTxtarSQL{}, true, fmt.Errorf("invalid Atlas txtar migration %s: duplicate %s section", filename, section)
+			}
+			sections[section] = &strings.Builder{}
+			currentSection = section
+			sawSection = true
+			continue
+		}
+
+		if !sawSection {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" || strings.HasPrefix(trimmed, "--") {
+				continue
+			}
+			return atlasTxtarSQL{}, true, fmt.Errorf("invalid Atlas txtar migration %s: SQL appears before the first txtar section", filename)
+		}
+
+		if builder := sections[currentSection]; builder != nil {
+			builder.WriteString(line)
+		}
+	}
+
+	migrationSection := sections[atlasTxtarMigrationSection]
+	if migrationSection == nil {
+		return atlasTxtarSQL{}, true, fmt.Errorf("invalid Atlas txtar migration %s: missing migration.sql section", filename)
+	}
+	downSection := sections[atlasTxtarDownSection]
+	if downSection == nil {
+		return atlasTxtarSQL{migrationSQL: migrationSection.String()}, true, nil
+	}
+	return atlasTxtarSQL{
+		migrationSQL: migrationSection.String(),
+		downSQL:      downSection.String(),
+		hasDown:      true,
+	}, true, nil
+}
+
+func hasAtlasTxtarDirective(sql string) bool {
+	for line := range strings.SplitSeq(sql, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		return trimmed == atlasTxtarDirective
+	}
+	return false
+}
+
+func parseAtlasTxtarSectionMarker(line string) (string, bool) {
+	trimmed := strings.TrimSpace(line)
+	if !strings.HasPrefix(trimmed, "-- ") || !strings.HasSuffix(trimmed, " --") {
+		return "", false
+	}
+	section := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(trimmed, "-- "), " --"))
+	return section, section != ""
 }
 
 // NoopMigrationFunc is a no-op migration function
@@ -156,12 +305,13 @@ func NoopMigrationFunc(_ctx context.Context, _conn *dbschema.DatabaseConnection)
 
 // Migration represents a database migration
 type Migration struct {
-	Version      int64
-	Description  string
-	Up           MigrationFunc
-	Down         MigrationFunc
-	UpTimeouts   MigrationTimeouts
-	DownTimeouts MigrationTimeouts
+	Version         int64
+	Description     string
+	Up              MigrationFunc
+	Down            MigrationFunc
+	UpTimeouts      MigrationTimeouts
+	DownTimeouts    MigrationTimeouts
+	downUnavailable bool
 	// NoTransaction runs the migration body and metadata update outside the
 	// normal per-migration transaction. Use this only for statements that cannot
 	// run transactionally; ordinary migrations should leave it false so dry-run,
