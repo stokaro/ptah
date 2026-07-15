@@ -249,6 +249,46 @@ SELECT 1;
 	c.Assert(err, qt.ErrorMatches, `invalid Atlas txtar migration 20240305171146_seed.sql: SQL appears before the first txtar section`)
 }
 
+func TestParseAtlasTxtarSQLIgnoresUnknownCommentMarkers(t *testing.T) {
+	c := qt.New(t)
+
+	parsed, ok, err := parseAtlasTxtarSQL("20240305171146_seed.sql", `-- atlas:txtar
+
+-- migration.sql --
+-- keep this comment --
+INSERT INTO users (id, name) VALUES (1, 'Alice');
+
+-- down.sql --
+DELETE FROM users WHERE id = 1;
+`)
+	c.Assert(err, qt.IsNil)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(parsed.migrationSQL, qt.Contains, "-- keep this comment --")
+	c.Assert(parsed.migrationSQL, qt.Contains, "INSERT INTO users")
+	c.Assert(parsed.hasDown, qt.IsTrue)
+}
+
+func TestParseAtlasTxtarSQLIgnoresUnknownFileSections(t *testing.T) {
+	c := qt.New(t)
+
+	parsed, ok, err := parseAtlasTxtarSQL("20240305171146_seed.sql", `-- atlas:txtar
+
+-- migration.sql --
+INSERT INTO users (id, name) VALUES (1, 'Alice');
+
+-- schema.sql --
+THIS IS NOT MIGRATION SQL;
+
+-- down.sql --
+DELETE FROM users WHERE id = 1;
+`)
+	c.Assert(err, qt.IsNil)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(parsed.migrationSQL, qt.Contains, "INSERT INTO users")
+	c.Assert(parsed.migrationSQL, qt.Not(qt.Contains), "THIS IS NOT MIGRATION SQL")
+	c.Assert(parsed.downSQL, qt.Contains, "DELETE FROM users")
+}
+
 func TestParseMigrationTimeoutDirectives(t *testing.T) {
 	tests := []struct {
 		name                    string

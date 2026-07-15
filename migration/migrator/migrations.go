@@ -241,11 +241,15 @@ func parseAtlasTxtarSQL(filename, sql string) (atlasTxtarSQL, bool, error) {
 	for _, line := range strings.SplitAfter(sql, "\n") {
 		section, isMarker := parseAtlasTxtarSectionMarker(line)
 		if isMarker {
-			if _, exists := sections[section]; exists {
-				return atlasTxtarSQL{}, true, fmt.Errorf("invalid Atlas txtar migration %s: duplicate %s section", filename, section)
+			if isAtlasTxtarSQLSection(section) {
+				if _, exists := sections[section]; exists {
+					return atlasTxtarSQL{}, true, fmt.Errorf("invalid Atlas txtar migration %s: duplicate %s section", filename, section)
+				}
+				sections[section] = &strings.Builder{}
+				currentSection = section
+			} else {
+				currentSection = ""
 			}
-			sections[section] = &strings.Builder{}
-			currentSection = section
 			sawSection = true
 			continue
 		}
@@ -295,7 +299,21 @@ func parseAtlasTxtarSectionMarker(line string) (string, bool) {
 		return "", false
 	}
 	section := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(trimmed, "-- "), " --"))
-	return section, section != ""
+	if isAtlasTxtarSQLSection(section) || looksAtlasTxtarFileSection(section) {
+		return section, true
+	}
+	return "", false
+}
+
+func isAtlasTxtarSQLSection(section string) bool {
+	return section == atlasTxtarMigrationSection || section == atlasTxtarDownSection
+}
+
+func looksAtlasTxtarFileSection(section string) bool {
+	if len(strings.Fields(section)) != 1 {
+		return false
+	}
+	return strings.ContainsAny(section, `./\`)
 }
 
 // NoopMigrationFunc is a no-op migration function
