@@ -47,7 +47,7 @@ func TestMigrateUp_VerifySumAbortsOnDriftBeforeConnecting(t *testing.T) {
 
 	err = cmd.Execute()
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(err, qt.ErrorMatches, "(?s).*ptah.sum verification failed.*")
+	c.Assert(err, qt.ErrorMatches, "(?s).*migration sum verification failed.*")
 	c.Assert(err, qt.ErrorMatches, "(?s).*changed: 0000000001_init.up.sql.*",
 		qt.Commentf("the drift diagnostic identifies the tampered file"))
 }
