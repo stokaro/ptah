@@ -103,6 +103,8 @@ func (p *Parser) parseStatement() (ast.Node, error) {
 		return p.parseAlterStatement()
 	case "COMMENT":
 		return p.parseCommentStatement()
+	case "DROP":
+		return p.parseDropStatement()
 	default:
 		return nil, fmt.Errorf("unsupported SQL statement: %s at position %d", keyword, p.current.Start)
 	}
@@ -185,6 +187,27 @@ func (p *Parser) expectIdentifier() (string, error) {
 	return value, nil
 }
 
+func (p *Parser) parseQualifiedIdentifier(label string) (string, error) {
+	first, err := p.expectIdentifier()
+	if err != nil {
+		return "", fmt.Errorf("expected %s: %w", label, err)
+	}
+
+	var name strings.Builder
+	name.WriteString(first)
+	for p.current.Type == lexer.TokenOperator && p.current.Value == "." {
+		name.WriteString(".")
+		p.advance()
+		p.skipWhitespace()
+		part, err := p.expectIdentifier()
+		if err != nil {
+			return "", fmt.Errorf("expected identifier after '.' in %s: %w", label, err)
+		}
+		name.WriteString(part)
+	}
+	return name.String(), nil
+}
+
 // skipWhitespace skips whitespace and comment tokens.
 func (p *Parser) skipWhitespace() {
 	for p.current.Type == lexer.TokenWhitespace || p.current.Type == lexer.TokenComment {
@@ -221,20 +244,9 @@ func (p *Parser) parseCreateTable() (*ast.CreateTableNode, error) {
 	p.skipWhitespace()
 
 	// Get table name (could be schema.table)
-	var tableName strings.Builder
-	tableName.WriteString(p.current.Value)
-	p.advance()
-
-	// Check for schema.table notation
-	if p.current.Type == lexer.TokenOperator && p.current.Value == "." {
-		tableName.WriteString(".")
-		p.advance()
-		p.skipWhitespace()
-		if p.current.Type != lexer.TokenIdentifier {
-			return nil, fmt.Errorf("expected table name after schema: got %s at position %d", p.current.Type, p.current.Start)
-		}
-		tableName.WriteString(p.current.Value)
-		p.advance()
+	tableName, err := p.parseQualifiedIdentifier("table name")
+	if err != nil {
+		return nil, err
 	}
 
 	p.skipWhitespace()
@@ -244,7 +256,7 @@ func (p *Parser) parseCreateTable() (*ast.CreateTableNode, error) {
 		return nil, fmt.Errorf("expected '(' after table name: %w", err)
 	}
 
-	table := ast.NewCreateTable(tableName.String())
+	table := ast.NewCreateTable(tableName)
 
 	// Parse column definitions and constraints
 	for {
@@ -1791,6 +1803,66 @@ func (p *Parser) parseAlterStatement() (*ast.AlterTableNode, error) {
 	}
 
 	return alterNode, nil
+}
+
+func (p *Parser) parseDropStatement() (ast.Node, error) {
+	if err := p.expect(lexer.TokenIdentifier, "DROP"); err != nil {
+		return nil, err
+	}
+
+	p.skipWhitespace()
+
+	if p.current.Type != lexer.TokenIdentifier {
+		return nil, fmt.Errorf("expected DROP target, got %s at position %d", p.current.Type, p.current.Start)
+	}
+
+	target := strings.ToUpper(p.current.Value)
+	switch target {
+	case "TABLE":
+		return p.parseDropTable()
+	default:
+		return nil, fmt.Errorf("unsupported DROP target: %s at position %d", target, p.current.Start)
+	}
+}
+
+func (p *Parser) parseDropTable() (*ast.DropTableNode, error) {
+	if err := p.expect(lexer.TokenIdentifier, "TABLE"); err != nil {
+		return nil, err
+	}
+
+	p.skipWhitespace()
+
+	ifExists := false
+	if p.current.MatchIdentifierValue("IF") {
+		p.advance()
+		p.skipWhitespace()
+		if err := p.expect(lexer.TokenIdentifier, "EXISTS"); err != nil {
+			return nil, fmt.Errorf("expected EXISTS after DROP TABLE IF: %w", err)
+		}
+		p.skipWhitespace()
+		ifExists = true
+	}
+
+	tableName, err := p.parseQualifiedIdentifier("table name")
+	if err != nil {
+		return nil, err
+	}
+
+	dropTable := ast.NewDropTable(tableName)
+	if ifExists {
+		dropTable.SetIfExists()
+	}
+
+	p.skipWhitespace()
+	if p.current.MatchIdentifierValue("CASCADE") {
+		dropTable.SetCascade()
+		p.advance()
+		return dropTable, nil
+	}
+	if p.current.MatchIdentifierValue("RESTRICT") {
+		p.advance()
+	}
+	return dropTable, nil
 }
 
 // parseAlterOperation parses individual ALTER TABLE operations.

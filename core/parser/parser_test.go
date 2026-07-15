@@ -7,6 +7,7 @@ import (
 
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/parser"
+	"github.com/stokaro/ptah/core/renderer"
 )
 
 func TestNewParser(t *testing.T) {
@@ -119,6 +120,71 @@ func TestParser_ParseAlterTable(t *testing.T) {
 	c.Assert(addOp.Column.Name, qt.Equals, "email")
 	c.Assert(addOp.Column.Type, qt.Equals, "VARCHAR(255)")
 	c.Assert(addOp.Column.Unique, qt.IsTrue)
+}
+
+func TestParser_ParseDropTable(t *testing.T) {
+	tests := []struct {
+		name     string
+		sql      string
+		table    string
+		ifExists bool
+		cascade  bool
+		rendered string
+	}{
+		{
+			name:     "basic",
+			sql:      "DROP TABLE users;",
+			table:    "users",
+			rendered: "DROP TABLE users;\n",
+		},
+		{
+			name:     "if exists",
+			sql:      "DROP TABLE IF EXISTS users;",
+			table:    "users",
+			ifExists: true,
+			rendered: "DROP TABLE IF EXISTS users;\n",
+		},
+		{
+			name:     "qualified cascade",
+			sql:      "DROP TABLE public.users CASCADE;",
+			table:    "public.users",
+			cascade:  true,
+			rendered: "DROP TABLE public.users CASCADE;\n",
+		},
+		{
+			name:     "restrict",
+			sql:      "DROP TABLE users RESTRICT;",
+			table:    "users",
+			rendered: "DROP TABLE users;\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := parser.NewParser(tt.sql).Parse()
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements.Statements, qt.HasLen, 1)
+
+			dropTable, ok := statements.Statements[0].(*ast.DropTableNode)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(dropTable.Name, qt.Equals, tt.table)
+			c.Assert(dropTable.IfExists, qt.Equals, tt.ifExists)
+			c.Assert(dropTable.Cascade, qt.Equals, tt.cascade)
+
+			rendered, err := renderer.RenderSQL("postgres", dropTable)
+			c.Assert(err, qt.IsNil)
+			c.Assert(rendered, qt.Equals, tt.rendered)
+		})
+	}
+}
+
+func TestParser_ParseDropTableRejectsUnsupportedTargets(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := parser.NewParser("DROP VIEW users;").Parse()
+	c.Assert(err, qt.ErrorMatches, "unsupported DROP target: VIEW at position 5")
 }
 
 func TestParser_ParseCreateIndex(t *testing.T) {
