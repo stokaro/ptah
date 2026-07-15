@@ -10,8 +10,9 @@ import (
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
-// ErrSumFileMissing is returned when the migrations directory has no ptah.sum.
-// It is distinct so callers can tell "never hashed" apart from "tampered".
+// ErrSumFileMissing is returned when the migrations directory has no expected
+// integrity file. It is distinct so callers can tell "never hashed" apart from
+// "tampered".
 var ErrSumFileMissing = errors.New("ptah.sum not found; run `ptah migrate-hash` to create it")
 
 // Result is the outcome of Verify: the lists are empty when the directory
@@ -26,6 +27,8 @@ type Result struct {
 	// DirHashMismatch is set when the directory hash differs even though the
 	// per-file diff is empty (a corrupted or hand-edited sum file).
 	DirHashMismatch bool
+	// SumFileName is the integrity file this result was compared against.
+	SumFileName string
 }
 
 // OK reports whether the directory matches its recorded sum exactly.
@@ -42,27 +45,90 @@ func Verify(fsys fs.FS) (*Result, error) {
 }
 
 // VerifyWithFormat recomputes the sum of fsys using the selected migration
-// directory format and compares it against the ptah.sum recorded in the same
-// directory.
+// directory format and compares it against the selected integrity file.
 func VerifyWithFormat(fsys fs.FS, format migrator.MigrationDirFormat) (*Result, error) {
-	recordedRaw, err := fs.ReadFile(fsys, FileName)
+	name, err := fileNameForVerify(fsys, format)
+	if err != nil {
+		return nil, err
+	}
+	recordedRaw, err := fs.ReadFile(fsys, name)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, ErrSumFileMissing
+		return nil, missingSumFileError(name, format)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to read %s: %w", FileName, err)
+		return nil, fmt.Errorf("failed to read %s: %w", name, err)
 	}
 	recorded, err := Parse(recordedRaw)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse %s: %w", FileName, err)
+		return nil, fmt.Errorf("failed to parse %s: %w", name, err)
 	}
 
-	current, err := ComputeWithFormat(fsys, format)
+	computeFormat := formatForSumFile(format, name)
+	current, err := ComputeWithFormat(fsys, computeFormat)
 	if err != nil {
 		return nil, err
 	}
 
-	return diff(recorded, current), nil
+	result := diff(recorded, current)
+	result.SumFileName = name
+	return result, nil
+}
+
+func formatForSumFile(format migrator.MigrationDirFormat, name string) migrator.MigrationDirFormat {
+	if format != migrator.MigrationDirFormatAuto && format != "" {
+		return format
+	}
+	if name == AtlasFileName {
+		return migrator.MigrationDirFormatAtlas
+	}
+	return migrator.MigrationDirFormatPtah
+}
+
+func fileNameForVerify(fsys fs.FS, format migrator.MigrationDirFormat) (string, error) {
+	normalized, err := migrator.ParseMigrationDirFormat(string(format))
+	if err != nil {
+		return "", err
+	}
+	if normalized != migrator.MigrationDirFormatAuto {
+		return FileNameForFormat(normalized)
+	}
+
+	hasPtahSum, err := hasFile(fsys, FileName)
+	if err != nil {
+		return "", err
+	}
+	hasAtlasSum, err := hasFile(fsys, AtlasFileName)
+	if err != nil {
+		return "", err
+	}
+	switch {
+	case hasPtahSum && hasAtlasSum:
+		return "", fmt.Errorf("both %s and %s exist; choose --dir-format ptah or --dir-format atlas", FileName, AtlasFileName)
+	case hasAtlasSum:
+		return AtlasFileName, nil
+	default:
+		return FileName, nil
+	}
+}
+
+func missingSumFileError(name string, format migrator.MigrationDirFormat) error {
+	if name == FileName {
+		return ErrSumFileMissing
+	}
+	return sumFileMissingError{name: name, format: format}
+}
+
+type sumFileMissingError struct {
+	name   string
+	format migrator.MigrationDirFormat
+}
+
+func (e sumFileMissingError) Error() string {
+	return fmt.Sprintf("%s not found; run `ptah migrate-hash --dir-format %s` to create it", e.name, e.format)
+}
+
+func (e sumFileMissingError) Is(target error) bool {
+	return target == ErrSumFileMissing
 }
 
 // diff compares the recorded sum against the freshly computed one.
@@ -112,18 +178,22 @@ func (r *Result) Describe() string {
 	if r.OK() {
 		return ""
 	}
-	lines := []string{"migration directory does not match ptah.sum:"}
+	name := r.SumFileName
+	if name == "" {
+		name = FileName
+	}
+	lines := []string{"migration directory does not match " + name + ":"}
 	for _, n := range r.Changed {
 		lines = append(lines, "  changed: "+n)
 	}
 	for _, n := range r.Added {
-		lines = append(lines, "  added (not in ptah.sum): "+n)
+		lines = append(lines, "  added (not in "+name+"): "+n)
 	}
 	for _, n := range r.Removed {
-		lines = append(lines, "  removed (still in ptah.sum): "+n)
+		lines = append(lines, "  removed (still in "+name+"): "+n)
 	}
 	if r.DirHashMismatch {
-		lines = append(lines, "  directory hash mismatch (ptah.sum was hand-edited)")
+		lines = append(lines, "  directory hash mismatch ("+name+" was hand-edited)")
 	}
 	return strings.Join(lines, "\n")
 }

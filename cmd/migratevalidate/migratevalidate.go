@@ -69,6 +69,6 @@ func runValidate(cmd *cobra.Command, dir, dirFormatValue string) error {
 		return exitcode.New(1, errors.New("migration directory integrity check failed"))
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "OK: migrations directory matches %s\n", migratesum.FileName)
+	fmt.Fprintf(cmd.OutOrStdout(), "OK: migrations directory matches %s\n", result.SumFileName)
 	return nil
 }

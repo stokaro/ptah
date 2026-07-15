@@ -139,13 +139,13 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 	if verifySum {
 		result, err := migratesum.VerifyDirWithFormat(migrationsDir, dirFormat)
 		if err != nil {
-			return fmt.Errorf("ptah.sum verification failed: %w", err)
+			return fmt.Errorf("migration sum verification failed: %w", err)
 		}
 		if !result.OK() {
-			return fmt.Errorf("ptah.sum verification failed:\n%s", result.Describe())
+			return fmt.Errorf("migration sum verification failed:\n%s", result.Describe())
 		}
 		if verbose {
-			fmt.Printf("ptah.sum verified: migrations directory is intact\n")
+			fmt.Printf("%s verified: migrations directory is intact\n", result.SumFileName)
 		}
 	}
 

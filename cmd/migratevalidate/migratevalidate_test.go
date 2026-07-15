@@ -10,6 +10,7 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/migration/migratesum"
+	"github.com/stokaro/ptah/migration/migrator"
 )
 
 func execute(args ...string) (stdout, stderr string, err error) {
@@ -45,6 +46,20 @@ func TestValidate_CleanDirectoryExitsZero(t *testing.T) {
 	stdout, _, err := execute("--dir", migrationsDir(t))
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Contains, "OK: migrations directory matches ptah.sum")
+}
+
+func TestValidate_AutoReadsAtlasSum(t *testing.T) {
+	c := qt.New(t)
+
+	dir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(dir, "1_initial.sql"),
+		[]byte("CREATE TABLE t (id INT);\n"), 0o600), qt.IsNil)
+	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	c.Assert(err, qt.IsNil)
+
+	stdout, _, err := execute("--dir", dir)
+	c.Assert(err, qt.IsNil)
+	c.Assert(stdout, qt.Contains, "OK: migrations directory matches atlas.sum")
 }
 
 func TestValidate_EditedMigrationExitsOneWithDiff(t *testing.T) {

@@ -53,9 +53,13 @@ func runHash(cmd *cobra.Command, dir, dirFormatValue string) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	sumFileName, err := migratesum.FileNameForFormat(dirFormat)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 
 	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "Wrote %s/%s\n", dir, migratesum.FileName)
+	fmt.Fprintf(out, "Wrote %s/%s\n", dir, sumFileName)
 	fmt.Fprintf(out, "%d migration file(s) hashed\n", len(sum.Entries))
 	return nil
 }

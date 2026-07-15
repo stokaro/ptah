@@ -73,6 +73,76 @@ func TestComputeWithFormat_HashesAtlasMigrationFiles(t *testing.T) {
 	})
 }
 
+func TestComputeWithFormat_AtlasGoldenBytes(t *testing.T) {
+	c := qt.New(t)
+
+	sum, err := migratesum.ComputeWithFormat(fixture(map[string]string{
+		"0000000001_init.up.sql":   "CREATE TABLE users (id SERIAL PRIMARY KEY);\n",
+		"0000000001_init.down.sql": "DROP TABLE users;\n",
+	}), migrator.MigrationDirFormatAtlas)
+	c.Assert(err, qt.IsNil)
+
+	const expected = `h1:dV4b2tjr5jLyPdgrKp+m/NTaWTKMVgV80o5ps0Ew/GE=
+0000000001_init.down.sql h1:b4afj7upDcaQPh2KA7KdMZl7PEqNfrt1lEui6Gw5lHA=
+0000000001_init.up.sql h1:5pdFXxDzI9YASZoApjzSlatn7yMRKqTZ/pSe714fz0w=
+`
+	c.Assert(string(sum.Bytes()), qt.Equals, expected)
+}
+
+func TestComputeWithFormat_AtlasHashIsChained(t *testing.T) {
+	c := qt.New(t)
+
+	base := fixture(map[string]string{
+		"1_first.sql":  "SELECT 1;\n",
+		"2_second.sql": "SELECT 2;\n",
+	})
+	changedFirst := fixture(map[string]string{
+		"1_first.sql":  "SELECT 10;\n",
+		"2_second.sql": "SELECT 2;\n",
+	})
+	baseSum, err := migratesum.ComputeWithFormat(base, migrator.MigrationDirFormatAtlas)
+	c.Assert(err, qt.IsNil)
+	changedSum, err := migratesum.ComputeWithFormat(changedFirst, migrator.MigrationDirFormatAtlas)
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(changedSum.Entries[0].Hash, qt.Not(qt.Equals), baseSum.Entries[0].Hash)
+	c.Assert(changedSum.Entries[1].Hash, qt.Not(qt.Equals), baseSum.Entries[1].Hash,
+		qt.Commentf("Atlas hashes are chained: editing the first file changes later entry hashes too"))
+}
+
+func TestComputeWithFormat_AtlasSumIgnore(t *testing.T) {
+	c := qt.New(t)
+
+	withIgnored, err := migratesum.ComputeWithFormat(fixture(map[string]string{
+		"1_ignore.sql": "-- atlas:sum ignore\nSELECT ignored;\n",
+		"2_keep.sql":   "SELECT kept;\n",
+	}), migrator.MigrationDirFormatAtlas)
+	c.Assert(err, qt.IsNil)
+	withoutIgnored, err := migratesum.ComputeWithFormat(fixture(map[string]string{
+		"2_keep.sql": "SELECT kept;\n",
+	}), migrator.MigrationDirFormatAtlas)
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(withIgnored.Entries, qt.HasLen, 1)
+	c.Assert(withIgnored.Entries[0].Name, qt.Equals, "2_keep.sql")
+	c.Assert(withIgnored.Entries[0].Hash, qt.Not(qt.Equals), withoutIgnored.Entries[0].Hash,
+		qt.Commentf("ignored Atlas files are omitted from atlas.sum but their names still feed the chain"))
+}
+
+func TestCompute_AutoUsesAtlasHashWhenAtlasSumPresent(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fixture(map[string]string{
+		"1_initial.sql": "CREATE TABLE users (id INT);\n",
+		"atlas.sum":     "stale\n",
+	})
+	autoSum, err := migratesum.Compute(fsys)
+	c.Assert(err, qt.IsNil)
+	atlasSum, err := migratesum.ComputeWithFormat(fsys, migrator.MigrationDirFormatAtlas)
+	c.Assert(err, qt.IsNil)
+	c.Assert(autoSum.Bytes(), qt.DeepEquals, atlasSum.Bytes())
+}
+
 func TestCompute_IsDeterministicAndContentSensitive(t *testing.T) {
 	c := qt.New(t)
 
@@ -240,6 +310,43 @@ func TestVerify_MissingSumFile(t *testing.T) {
 		"0000000001_init.down.sql": "DROP TABLE t;\n",
 	}))
 	c.Assert(err, qt.ErrorIs, migratesum.ErrSumFileMissing)
+}
+
+func TestVerify_MissingAtlasSumFile(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := migratesum.VerifyWithFormat(fixture(map[string]string{
+		"1_initial.sql": "CREATE TABLE users (id INT);\n",
+	}), migrator.MigrationDirFormatAtlas)
+	c.Assert(err, qt.ErrorIs, migratesum.ErrSumFileMissing)
+	c.Assert(err, qt.ErrorMatches, "atlas.sum not found; run `ptah migrate-hash --dir-format atlas` to create it")
+}
+
+func TestVerify_AutoReadsAtlasSum(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fixture(map[string]string{
+		"1_initial.sql": "CREATE TABLE users (id INT);\n",
+	})
+	sum, err := migratesum.ComputeWithFormat(fsys, migrator.MigrationDirFormatAtlas)
+	c.Assert(err, qt.IsNil)
+	fsys[migratesum.AtlasFileName] = &fstest.MapFile{Data: sum.Bytes()}
+
+	res, err := migratesum.Verify(fsys)
+	c.Assert(err, qt.IsNil)
+	c.Assert(res.OK(), qt.IsTrue)
+	c.Assert(res.SumFileName, qt.Equals, migratesum.AtlasFileName)
+}
+
+func TestVerify_AutoRejectsAmbiguousSumFiles(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := migratesum.Verify(fixture(map[string]string{
+		"1_initial.sql": "CREATE TABLE users (id INT);\n",
+		"atlas.sum":     "h1:fake\n",
+		"ptah.sum":      "h1:fake\n",
+	}))
+	c.Assert(err, qt.ErrorMatches, "both ptah.sum and atlas.sum exist.*")
 }
 
 func TestVerify_HandEditedSumFileDirHashMismatch(t *testing.T) {
