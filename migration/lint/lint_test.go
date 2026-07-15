@@ -460,8 +460,8 @@ func TestLintFS_UpSuffixFallbackScansMalformedVersions(t *testing.T) {
 	// hazard scanning via the IsUp suffix fallback — the author clearly
 	// meant it as an up migration, and MF103 explains why it will not run.
 	fsys := fixture(map[string]string{
-		"001_bad_version.up.sql":   "DROP TABLE users;\n",
-		"001_bad_version.down.sql": "-- restore\n",
+		"bad_version.up.sql":   "DROP TABLE users;\n",
+		"bad_version.down.sql": "-- restore\n",
 	})
 
 	findings, err := lint.LintFS(fsys, lint.Options{})
@@ -504,6 +504,22 @@ func TestLintFS_AtlasMigrationNamesAreScanned(t *testing.T) {
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DS101"},
 		qt.Commentf("Atlas files should be treated as runnable up migrations, not MF103-only noise; got %v", findings))
 	c.Assert(findings[0].File, qt.Equals, "20220318104614_team_A.sql")
+}
+
+func TestLintFS_AtlasImportedMigrationNamesAreScanned(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fixture(map[string]string{
+		"1_initial.up.sql":   "DROP TABLE users;\n",
+		"1_initial.down.sql": "DROP TABLE users;\n",
+		"2.10.x-20_next.sql": "CREATE TABLE next_step (id INT);\n",
+	})
+
+	findings, err := lint.LintFS(fsys, lint.Options{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DS101"},
+		qt.Commentf("Atlas-imported files should be treated as runnable migrations, not MF-only noise; got %v", findings))
+	c.Assert(findings[0].File, qt.Equals, "1_initial.up.sql")
 }
 
 func TestLintFS_CaseVariantSQLFilesGetNamingWarning(t *testing.T) {
