@@ -44,6 +44,24 @@ func TestHash_WritesSumFileForMigrations(t *testing.T) {
 	c.Assert(res.OK(), qt.IsTrue)
 }
 
+func TestHash_AtlasFormatWritesAtlasSum(t *testing.T) {
+	c := qt.New(t)
+
+	dir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(dir, "1_initial.sql"),
+		[]byte("CREATE TABLE t (id INT);\n"), 0o600), qt.IsNil)
+
+	stdout, err := execute("--dir", dir, "--dir-format", "atlas")
+	c.Assert(err, qt.IsNil)
+	c.Assert(stdout, qt.Contains, "atlas.sum")
+	c.Assert(stdout, qt.Contains, "1 migration file(s) hashed")
+
+	_, err = os.Stat(filepath.Join(dir, migratesum.AtlasFileName))
+	c.Assert(err, qt.IsNil)
+	_, err = os.Stat(filepath.Join(dir, migratesum.FileName))
+	c.Assert(os.IsNotExist(err), qt.IsTrue)
+}
+
 func TestHash_UpdatesSumFileAfterAddingAMigration(t *testing.T) {
 	c := qt.New(t)
 

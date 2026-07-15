@@ -801,7 +801,7 @@ Show current migration status and pending migrations:
 - Out-of-order pending migrations
 - Migration history and timestamps
 
-#### Migration Directory Integrity (`ptah.sum`)
+#### Migration Directory Integrity (`ptah.sum` / `atlas.sum`)
 
 Once a migration is committed and applied somewhere, its content must never change.
 `ptah.sum` records the SHA-256 (`h1:`, base64) of every migration file plus a
@@ -820,10 +820,18 @@ caught in CI instead of silently breaking reproducibility.
 ./package-migrator migrate-validate --dir ./migrations --dir-format atlas
 ```
 
+Ptah-format integrity writes `ptah.sum` and hashes the Ptah migration files that
+would be executed. Atlas-format integrity writes `atlas.sum` and uses Atlas's
+byte-compatible checksum algorithm: top-level `*.sql` files sorted
+lexicographically, chained per-file hashes, directory hashes without separators,
+and `-- atlas:sum ignore` support. Auto validation reads `atlas.sum` when it is
+the only integrity file present, reads `ptah.sum` otherwise, and errors if both
+files exist so CI does not silently choose the wrong format.
+
 `migrate-validate` exits `0` when clean, `1` on drift (a file added, removed, or
-edited out of band — with a diff on stderr), and `2` when `ptah.sum` is missing or
-unreadable. `migrate-up --verify-sum` runs the same check before applying and
-aborts on drift.
+edited out of band — with a diff on stderr), and `2` when the expected integrity
+file is missing or unreadable. `migrate-up --verify-sum` runs the same check
+before applying and aborts on drift.
 
 ```yaml
 # CI (GitHub Actions)
@@ -831,8 +839,9 @@ aborts on drift.
   run: ./package-migrator migrate-validate --dir ./migrations
 ```
 
-The file layout and `h1:` scheme mirror Atlas's `atlas.sum`; convergence on the
-exact Atlas format is tracked as part of the Atlas-compatibility research (#250).
+The line-oriented file layout and `h1:` scheme are shared by both formats, but
+the hash algorithm differs. Recompute the integrity file with the selected
+format instead of renaming or hand-editing an existing sum file.
 
 #### Migration File Generation
 Generate timestamped migration files from schema differences using the migration generator package:
