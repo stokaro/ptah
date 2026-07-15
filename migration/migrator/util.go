@@ -21,14 +21,12 @@ import (
 // "up"/"down" (cleanup, setup, teardown, ...) is not a migration file.
 var fileNameRe = regexp.MustCompile(`^(\d{10})_(.*)\.(down|up)(\.sql)$`)
 
-// Atlas migration file naming pattern: version.sql or version_description.sql.
-var atlasFileNameRe = regexp.MustCompile(`^(\d+)(?:_(.+))?(\.sql)$`)
+type atlasParseMode int
 
-// Auto-detection without atlas.sum stays stricter than explicit Atlas mode:
-// Atlas versioned directories commonly use 14-digit timestamp versions, and
-// requiring more than Ptah's 10-digit version width keeps legacy suffixless
-// Ptah-looking files from being auto-classified as Atlas migrations.
-var atlasAutoFileNameRe = regexp.MustCompile(`^(\d{11,})(?:_(.+))?(\.sql)$`)
+const (
+	atlasParseExplicit atlasParseMode = iota
+	atlasParseAuto
+)
 
 // MigrationDirFormat selects how a filesystem migration directory is parsed.
 type MigrationDirFormat string
@@ -104,31 +102,45 @@ func ParseMigrationFileName(filename string) (*MigrationFile, error) {
 }
 
 // ParseAtlasMigrationFileName parses an Atlas versioned migration file name.
-// Expected format: version.sql or version_description.sql. Atlas does not use
-// paired .up.sql and .down.sql files; these files are forward migrations.
+// Expected format: version.sql, version_description.sql, or numeric migration
+// names emitted by Atlas importers such as version_description.up.sql,
+// version_description.down.sql, and version.tool.sql.
 func ParseAtlasMigrationFileName(filename string) (*MigrationFile, error) {
-	return parseAtlasMigrationFileName(filename, atlasFileNameRe)
+	return parseAtlasMigrationFileName(filename, atlasParseExplicit)
 }
 
 // ParseAtlasMigrationFileNameForAutoDetection parses Atlas names accepted by
 // auto-detection. It is stricter than explicit Atlas parsing so legacy
-// suffixless Ptah-looking files keep surfacing as unrecognized in auto mode.
+// suffixless Ptah-looking files keep surfacing as unrecognized in auto mode,
+// while accepting short numeric names used by Atlas-imported migration tools.
 func ParseAtlasMigrationFileNameForAutoDetection(filename string) (*MigrationFile, error) {
-	return parseAtlasMigrationFileName(filename, atlasAutoFileNameRe)
+	return parseAtlasMigrationFileName(filename, atlasParseAuto)
 }
 
-func parseAtlasMigrationFileName(filename string, pattern *regexp.Regexp) (*MigrationFile, error) {
-	matches := pattern.FindStringSubmatch(filename)
-	if matches == nil || len(matches) != 4 {
+func parseAtlasMigrationFileName(filename string, mode atlasParseMode) (*MigrationFile, error) {
+	stem, ok := strings.CutSuffix(filename, ".sql")
+	if !ok {
 		return nil, errors.New("invalid Atlas migration file name format")
 	}
 
-	rawName := matches[2]
-	if strings.HasSuffix(rawName, ".up") || strings.HasSuffix(rawName, ".down") {
-		return nil, errors.New("Atlas migration file name must not use Ptah direction suffixes")
+	direction := "up"
+	for _, suffix := range []string{".up", ".down"} {
+		if strings.HasSuffix(stem, suffix) {
+			direction = strings.TrimPrefix(suffix, ".")
+			stem = strings.TrimSuffix(stem, suffix)
+			break
+		}
 	}
 
-	version, err := strconv.ParseInt(matches[1], 10, 64)
+	versionDigits, rawName, ok := splitAtlasMigrationStem(stem)
+	if !ok {
+		return nil, errors.New("invalid Atlas migration file name format")
+	}
+	if mode == atlasParseAuto && len(versionDigits) == 10 && direction == "up" {
+		return nil, errors.New("Atlas auto-detection rejects Ptah-width suffixless migration names")
+	}
+
+	version, err := strconv.ParseInt(versionDigits, 10, 64)
 	if err != nil {
 		return nil, err
 	}
@@ -138,18 +150,35 @@ func parseAtlasMigrationFileName(filename string, pattern *regexp.Regexp) (*Migr
 
 	name := rawName
 	if name == "" {
-		name = matches[1]
+		name = versionDigits
 	}
-	name = strings.ReplaceAll(name, "_", " ")
+	name = strings.NewReplacer("_", " ", ".", " ").Replace(name)
 	name = cases.Title(language.English).String(name)
 
 	return &MigrationFile{
 		Version:   version,
 		Name:      name,
-		Direction: "up",
-		Extension: matches[3],
+		Direction: direction,
+		Extension: ".sql",
 		Format:    MigrationDirFormatAtlas,
 	}, nil
+}
+
+func splitAtlasMigrationStem(stem string) (versionDigits, rawName string, ok bool) {
+	i := 0
+	for i < len(stem) && stem[i] >= '0' && stem[i] <= '9' {
+		i++
+	}
+	if i == 0 {
+		return "", "", false
+	}
+	if i == len(stem) {
+		return stem, "", true
+	}
+	if stem[i] != '_' && stem[i] != '.' {
+		return "", "", false
+	}
+	return stem[:i], strings.TrimLeft(stem[i:], "_."), true
 }
 
 // ValidateMigrationFileName validates that a filename follows the expected migration pattern

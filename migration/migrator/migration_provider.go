@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"path"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/stokaro/ptah/dbschema"
 )
@@ -65,6 +67,12 @@ type FSMigrationProvider struct {
 // FSProviderOption configures a FSMigrationProvider before it loads
 // migrations.
 type FSProviderOption func(*FSMigrationProvider)
+
+type atlasParts struct {
+	migration *Migration
+	hasUp     bool
+	hasDown   bool
+}
 
 // WithStatementInterceptor makes every loaded migration consult the given
 // interceptor for each statement (see StatementInterceptor).
@@ -184,44 +192,119 @@ func (p *FSMigrationProvider) loadPtah(files []MigrationFile) error {
 }
 
 func (p *FSMigrationProvider) loadAtlas(files []MigrationFile) error {
-	migrations := make([]*Migration, 0, len(files))
+	partsByVersion := make(map[int64]*atlasParts)
 	for i := range files {
 		migrationFile := files[i]
-		atlasFile, err := atlasSQLMigrationFileFromSQLFilenameWithMetadata(migrationFile.Path, p.fsys, p.interceptor)
-		if err != nil {
-			return fmt.Errorf("failed to load Atlas migration %s: %w", migrationFile.Path, err)
-		}
-
-		migration := &Migration{
-			Version:       migrationFile.Version,
-			Description:   migrationFile.Name,
-			UpTimeouts:    atlasFile.up.timeouts,
-			NoTransaction: atlasFile.up.noTransaction,
-		}
-		migration.Up = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-			return atlasFile.up.fn(ctx, conn, migration.executionMode())
-		}
-		if atlasFile.hasDown {
-			migration.DownTimeouts = atlasFile.down.timeouts
-			migration.NoTransaction = migration.NoTransaction || atlasFile.down.noTransaction
-			migration.Down = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-				return atlasFile.down.fn(ctx, conn, migration.executionMode())
+		parts := partsByVersion[migrationFile.Version]
+		if parts == nil {
+			parts = &atlasParts{
+				migration: &Migration{
+					Version:     migrationFile.Version,
+					Description: migrationFile.Name,
+				},
 			}
-		} else {
-			migration.downUnavailable = true
-			migration.Down = func(_ context.Context, _ *dbschema.DatabaseConnection) error {
+			partsByVersion[migrationFile.Version] = parts
+		}
+		if err := p.loadAtlasFile(parts, migrationFile); err != nil {
+			return err
+		}
+	}
+
+	migrations := make([]*Migration, 0, len(partsByVersion))
+	for _, parts := range partsByVersion {
+		if !parts.hasUp {
+			return fmt.Errorf("Atlas migration version %d has down migration but no up migration", parts.migration.Version)
+		}
+		if !parts.hasDown {
+			parts.migration.downUnavailable = true
+			parts.migration.Down = func(_ context.Context, _ *dbschema.DatabaseConnection) error {
 				return &AtlasDownNotImplementedError{
-					Version:     migration.Version,
-					Description: migration.Description,
+					Version:     parts.migration.Version,
+					Description: parts.migration.Description,
 				}
 			}
 		}
-		migrations = append(migrations, migration)
+		migrations = append(migrations, parts.migration)
 	}
 
 	p.migrations = migrations
 	sortMigrations(p.migrations)
 	return nil
+}
+
+func (p *FSMigrationProvider) loadAtlasFile(parts *atlasParts, migrationFile MigrationFile) error {
+	switch migrationFile.Direction {
+	case "up":
+		if parts.hasUp {
+			return fmt.Errorf("duplicate Atlas up migration for version %d", migrationFile.Version)
+		}
+		return p.loadAtlasUp(parts, migrationFile)
+	case "down":
+		if parts.hasDown {
+			return fmt.Errorf("duplicate Atlas down migration for version %d", migrationFile.Version)
+		}
+		return p.loadAtlasDown(parts, migrationFile)
+	default:
+		return fmt.Errorf("invalid Atlas migration direction: %s", migrationFile.Direction)
+	}
+}
+
+func (p *FSMigrationProvider) loadAtlasUp(parts *atlasParts, migrationFile MigrationFile) error {
+	if isAtlasDirectionalMigrationFile(migrationFile) {
+		up, err := migrationFuncFromSQLFilenameWithMetadata(migrationFile.Path, p.fsys, p.interceptor)
+		if err != nil {
+			return fmt.Errorf("failed to load Atlas migration %s: %w", migrationFile.Path, err)
+		}
+		setAtlasUp(parts, up)
+		return nil
+	}
+
+	atlasFile, err := atlasSQLMigrationFileFromSQLFilenameWithMetadata(migrationFile.Path, p.fsys, p.interceptor)
+	if err != nil {
+		return fmt.Errorf("failed to load Atlas migration %s: %w", migrationFile.Path, err)
+	}
+	setAtlasUp(parts, atlasFile.up)
+	if atlasFile.hasDown {
+		if parts.hasDown {
+			return fmt.Errorf("duplicate Atlas down migration for version %d", migrationFile.Version)
+		}
+		setAtlasDown(parts, atlasFile.down)
+	}
+	return nil
+}
+
+func (p *FSMigrationProvider) loadAtlasDown(parts *atlasParts, migrationFile MigrationFile) error {
+	down, err := migrationFuncFromSQLFilenameWithMetadata(migrationFile.Path, p.fsys, p.interceptor)
+	if err != nil {
+		return fmt.Errorf("failed to load Atlas migration %s: %w", migrationFile.Path, err)
+	}
+	setAtlasDown(parts, down)
+	return nil
+}
+
+func setAtlasUp(parts *atlasParts, up sqlMigrationFile) {
+	migration := parts.migration
+	migration.Up = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+		return up.fn(ctx, conn, migration.executionMode())
+	}
+	migration.UpTimeouts = up.timeouts
+	migration.NoTransaction = migration.NoTransaction || up.noTransaction
+	parts.hasUp = true
+}
+
+func setAtlasDown(parts *atlasParts, down sqlMigrationFile) {
+	migration := parts.migration
+	migration.Down = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+		return down.fn(ctx, conn, migration.executionMode())
+	}
+	migration.DownTimeouts = down.timeouts
+	migration.NoTransaction = migration.NoTransaction || down.noTransaction
+	parts.hasDown = true
+}
+
+func isAtlasDirectionalMigrationFile(file MigrationFile) bool {
+	base := path.Base(file.Path)
+	return strings.HasSuffix(base, ".up.sql") || strings.HasSuffix(base, ".down.sql")
 }
 
 func sortMigrations(migrations []*Migration) {

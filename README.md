@@ -636,15 +636,15 @@ Ptah migration directories use `--dir-format=auto` by default. Auto mode prefers
 Ptah's paired files (`NNNNNNNNNN_description.up.sql` and
 `NNNNNNNNNN_description.down.sql`) when they are present, and otherwise accepts
 Atlas-style timestamp files such as `20220318104614_team_A.sql` or
-`20240112070806.sql`. Short Atlas versions such as `1_initial.sql` and `2.sql`
-are auto-detected when the directory contains `atlas.sum`; use
-`--dir-format=atlas` when you want to force Atlas parsing without an integrity
-file. Use
+`20240112070806.sql`, plus numeric migration names produced by Atlas importers
+such as `1_initial.sql`, `2.sql`, `1_initial.up.sql`, `1_initial.down.sql`, and
+`1.my.sql`. Use
 `--dir-format=ptah` or `--dir-format=atlas` on `migrate-up`, `migrate-down`,
 `migrate-status`, `migrate-hash`, and `migrate-validate` when a directory should
-be interpreted explicitly. Ordinary Atlas files are forward migrations. Atlas
-txtar files can also carry an embedded `down.sql` section that Ptah executes on
-rollback.
+be interpreted explicitly. Ordinary Atlas and imported single SQL files are
+forward migrations. Imported `.down.sql` files are paired with their matching
+`.up.sql` version for rollback. Atlas txtar files can also carry an embedded
+`down.sql` section that Ptah executes on rollback.
 
 ```sql
 -- atlas:txtar

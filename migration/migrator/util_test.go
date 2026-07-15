@@ -187,8 +187,26 @@ func TestParseAtlasMigrationFileName(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(migrationFile.Version, qt.Equals, int64(20240112070806))
 	c.Assert(migrationFile.Name, qt.Equals, "20240112070806")
-	_, err = ParseAtlasMigrationFileName("20220318104614_team_A.up.sql")
-	c.Assert(err, qt.ErrorMatches, "Atlas migration file name must not use Ptah direction suffixes")
+
+	migrationFile, err = ParseAtlasMigrationFileName("1_initial.up.sql")
+	c.Assert(err, qt.IsNil)
+	c.Assert(migrationFile.Version, qt.Equals, int64(1))
+	c.Assert(migrationFile.Name, qt.Equals, "Initial")
+	c.Assert(migrationFile.Direction, qt.Equals, "up")
+
+	migrationFile, err = ParseAtlasMigrationFileName("1_initial.down.sql")
+	c.Assert(err, qt.IsNil)
+	c.Assert(migrationFile.Version, qt.Equals, int64(1))
+	c.Assert(migrationFile.Name, qt.Equals, "Initial")
+	c.Assert(migrationFile.Direction, qt.Equals, "down")
+
+	migrationFile, err = ParseAtlasMigrationFileName("2.10.x-20_description.sql")
+	c.Assert(err, qt.IsNil)
+	c.Assert(migrationFile.Version, qt.Equals, int64(2))
+	c.Assert(migrationFile.Name, qt.Equals, "10 X-20 Description")
+
+	_, err = ParseAtlasMigrationFileName("3R_views.sql")
+	c.Assert(err, qt.ErrorMatches, "invalid Atlas migration file name format")
 }
 
 func TestDiscoverMigrationFilesAtlasAuto(t *testing.T) {
@@ -242,11 +260,13 @@ func TestDiscoverMigrationFilesAtlasExplicitAllowsShortVersions(t *testing.T) {
 	c.Assert(files[0].Format, qt.Equals, MigrationDirFormatAtlas)
 
 	files, err = DiscoverMigrationFiles(fsys, MigrationDirFormatAuto)
-	c.Assert(files, qt.IsNil)
-	c.Assert(err, qt.ErrorMatches, `no migration files matched format "auto"; unrecognized SQL files: 1_initial.sql`)
+	c.Assert(err, qt.IsNil)
+	c.Assert(files, qt.HasLen, 1)
+	c.Assert(files[0].Path, qt.Equals, "1_initial.sql")
+	c.Assert(files[0].Version, qt.Equals, int64(1))
 }
 
-func TestDiscoverMigrationFilesAutoRejectsShortBareVersionWithoutSum(t *testing.T) {
+func TestDiscoverMigrationFilesAutoDetectsShortBareVersionWithoutSum(t *testing.T) {
 	c := qt.New(t)
 
 	fsys := fstest.MapFS{
@@ -254,8 +274,11 @@ func TestDiscoverMigrationFilesAutoRejectsShortBareVersionWithoutSum(t *testing.
 	}
 
 	files, err := DiscoverMigrationFiles(fsys, MigrationDirFormatAuto)
-	c.Assert(files, qt.IsNil)
-	c.Assert(err, qt.ErrorMatches, `no migration files matched format "auto"; unrecognized SQL files: 1.sql`)
+	c.Assert(err, qt.IsNil)
+	c.Assert(files, qt.HasLen, 1)
+	c.Assert(files[0].Path, qt.Equals, "1.sql")
+	c.Assert(files[0].Version, qt.Equals, int64(1))
+	c.Assert(files[0].Format, qt.Equals, MigrationDirFormatAtlas)
 }
 
 func TestDiscoverMigrationFilesAutoDetectsShortAtlasVersionsWithSum(t *testing.T) {
@@ -277,6 +300,31 @@ func TestDiscoverMigrationFilesAutoDetectsShortAtlasVersionsWithSum(t *testing.T
 	c.Assert(files[1].Version, qt.Equals, int64(2))
 	c.Assert(files[1].Name, qt.Equals, "2")
 	c.Assert(files[1].Format, qt.Equals, MigrationDirFormatAtlas)
+}
+
+func TestDiscoverMigrationFilesAutoDetectsAtlasImportedNames(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"1_initial.down.sql":               &fstest.MapFile{Data: []byte("DROP TABLE users;\n")},
+		"1_initial.up.sql":                 &fstest.MapFile{Data: []byte("CREATE TABLE users (id INT);\n")},
+		"2.10.x-20_description.sql":        &fstest.MapFile{Data: []byte("CREATE TABLE audit (id INT);\n")},
+		"sub/3_partly.sql":                 &fstest.MapFile{Data: []byte("CREATE TABLE logs (id INT);\n")},
+		"sub/4.a_sub.up.sql":               &fstest.MapFile{Data: []byte("CREATE TABLE nested (id INT);\n")},
+		"sub/4.a_sub.down.sql":             &fstest.MapFile{Data: []byte("DROP TABLE nested;\n")},
+		"0000000001_ptah_width_legacy.sql": &fstest.MapFile{Data: []byte("DROP TABLE legacy;\n")},
+	}
+
+	files, err := DiscoverMigrationFiles(fsys, MigrationDirFormatAuto)
+	c.Assert(err, qt.IsNil)
+	c.Assert(files, qt.HasLen, 6)
+	c.Assert(files[0].Path, qt.Equals, "1_initial.down.sql")
+	c.Assert(files[0].Direction, qt.Equals, "down")
+	c.Assert(files[1].Path, qt.Equals, "1_initial.up.sql")
+	c.Assert(files[1].Direction, qt.Equals, "up")
+	c.Assert(files[2].Path, qt.Equals, "2.10.x-20_description.sql")
+	c.Assert(files[2].Name, qt.Equals, "10 X-20 Description")
+	c.Assert(files[5].Path, qt.Equals, "sub/4.a_sub.up.sql")
 }
 
 func TestDiscoverMigrationFilesAutoPrefersPtahWhenPresent(t *testing.T) {

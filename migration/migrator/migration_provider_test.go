@@ -183,6 +183,50 @@ func TestNewFSMigrationProvider_AtlasFormat(t *testing.T) {
 	c.Assert(noDown.Description, qt.Equals, "Team A")
 }
 
+func TestNewFSMigrationProvider_AtlasImportedDirectionalFiles(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"1_initial.up.sql": &fstest.MapFile{Data: []byte(
+			"-- +ptah statement_timeout=7s\n" +
+				"CREATE TABLE users (id INT);\n",
+		)},
+		"1_initial.down.sql": &fstest.MapFile{Data: []byte(
+			"-- +ptah lock_timeout=2s\n" +
+				"DROP TABLE users;\n",
+		)},
+		"2_second.sql": &fstest.MapFile{Data: []byte("CREATE TABLE teams (id INT);\n")},
+	}
+	interceptor := &recordingInterceptor{}
+	provider, err := migrator.NewFSMigrationProvider(
+		fsys,
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithStatementInterceptor(interceptor),
+	)
+	c.Assert(err, qt.IsNil)
+
+	migrations := provider.Migrations()
+	c.Assert(migrations, qt.HasLen, 2)
+	c.Assert(migrations[0].Version, qt.Equals, int64(1))
+	c.Assert(migrations[0].Description, qt.Equals, "Initial")
+	c.Assert(migrations[0].UpTimeouts.HasStatementTimeout, qt.IsTrue)
+	c.Assert(migrations[0].UpTimeouts.StatementTimeout, qt.Equals, 7*time.Second)
+	c.Assert(migrations[0].DownTimeouts.HasLockTimeout, qt.IsTrue)
+	c.Assert(migrations[0].DownTimeouts.LockTimeout, qt.Equals, 2*time.Second)
+
+	err = migrations[0].Up(context.Background(), nil)
+	c.Assert(err, qt.IsNil)
+	c.Assert(interceptor.statements, qt.DeepEquals, []string{"CREATE TABLE users (id INT)"})
+
+	interceptor.statements = nil
+	err = migrations[0].Down(context.Background(), nil)
+	c.Assert(err, qt.IsNil)
+	c.Assert(interceptor.statements, qt.DeepEquals, []string{"DROP TABLE users"})
+
+	err = migrations[1].Down(context.Background(), nil)
+	c.Assert(err, qt.ErrorMatches, `migration 2 has no Atlas down migration; dynamic Atlas-style down migrations are not implemented yet; add an atlas txtar down.sql section or migrate down manually`)
+}
+
 func TestNewFSMigrationProvider_AtlasTxtarSectionsAndDirectives(t *testing.T) {
 	c := qt.New(t)
 
