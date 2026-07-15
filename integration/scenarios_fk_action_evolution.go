@@ -122,7 +122,7 @@ func testDynamicFKActionEvolution(ctx context.Context, conn *dbschema.DatabaseCo
 // assertNoPendingChanges re-diffs the currently loaded fixture version against
 // the live database and fails on any non-comment statement.
 func assertNoPendingChanges(ctx context.Context, conn *dbschema.DatabaseConnection, vem *VersionedEntityManager, when string) error {
-	statements, err := vem.GenerateMigrationSQL(ctx, conn)
+	statements, _, err := vem.GenerateMigrationSQL(ctx, conn)
 	if err != nil {
 		return fmt.Errorf("failed to regenerate migration SQL %s: %w", when, err)
 	}

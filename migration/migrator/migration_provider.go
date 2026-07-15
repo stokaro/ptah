@@ -1,11 +1,14 @@
 package migrator
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"maps"
 	"slices"
 	"sort"
+
+	"github.com/stokaro/ptah/dbschema"
 )
 
 // MigrationProvider provides a list of migrations
@@ -126,21 +129,28 @@ func (p *FSMigrationProvider) load() error {
 		foundFiles[migrationFile.Version][migrationFile.Direction] = true
 
 		// Set the appropriate migration function based on direction
+		migration := migrationsMap[migrationFile.Version]
 		switch migrationFile.Direction {
 		case "up":
-			up, timeouts, err := MigrationFuncFromSQLFilenameWithTimeoutsAndInterceptor(path, p.fsys, p.interceptor)
+			up, err := migrationFuncFromSQLFilenameWithMetadata(path, p.fsys, p.interceptor)
 			if err != nil {
 				return fmt.Errorf("failed to load up migration %s: %w", path, err)
 			}
-			migrationsMap[migrationFile.Version].Up = up
-			migrationsMap[migrationFile.Version].UpTimeouts = timeouts
+			migration.Up = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+				return up.fn(ctx, conn, migration.executionMode())
+			}
+			migration.UpTimeouts = up.timeouts
+			migration.NoTransaction = migration.NoTransaction || up.noTransaction
 		case "down":
-			down, timeouts, err := MigrationFuncFromSQLFilenameWithTimeoutsAndInterceptor(path, p.fsys, p.interceptor)
+			down, err := migrationFuncFromSQLFilenameWithMetadata(path, p.fsys, p.interceptor)
 			if err != nil {
 				return fmt.Errorf("failed to load down migration %s: %w", path, err)
 			}
-			migrationsMap[migrationFile.Version].Down = down
-			migrationsMap[migrationFile.Version].DownTimeouts = timeouts
+			migration.Down = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+				return down.fn(ctx, conn, migration.executionMode())
+			}
+			migration.DownTimeouts = down.timeouts
+			migration.NoTransaction = migration.NoTransaction || down.noTransaction
 		default:
 			return fmt.Errorf("invalid migration direction: %s", migrationFile.Direction)
 		}

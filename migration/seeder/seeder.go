@@ -274,6 +274,9 @@ func executeStatements(ctx context.Context, conn *dbschema.DatabaseConnection, s
 }
 
 func ensureTracker(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+	// Deliberately outside the seed writer: the tracker table is metadata that
+	// must exist before either transactional or no-transaction seed execution
+	// starts, and this statement is not user-provided SQL.
 	_, err := conn.ExecContext(ctx, trackerDDL(conn.Info().Dialect))
 	if err != nil {
 		return fmt.Errorf("create %s table: %w", trackerName, err)

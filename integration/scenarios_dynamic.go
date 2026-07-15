@@ -566,7 +566,7 @@ func testDynamicSchemaDiff(ctx context.Context, conn *dbschema.DatabaseConnectio
 	}
 
 	// Generate migration SQL to see the diff
-	statements, err := vem.GenerateMigrationSQL(ctx, conn)
+	statements, _, err := vem.GenerateMigrationSQL(ctx, conn)
 	if err != nil {
 		return fmt.Errorf("failed to generate migration SQL: %w", err)
 	}
@@ -606,7 +606,7 @@ func testDynamicMigrationSQLGeneration(ctx context.Context, conn *dbschema.Datab
 	}
 
 	// Generate SQL for creating everything from scratch
-	statements, err := vem.GenerateMigrationSQL(ctx, conn)
+	statements, _, err := vem.GenerateMigrationSQL(ctx, conn)
 	if err != nil {
 		return fmt.Errorf("failed to generate migration SQL: %w", err)
 	}
@@ -3030,7 +3030,7 @@ func testDynamicRLSFunctionsDependencyOrder(ctx context.Context, conn *dbschema.
 			return fmt.Errorf("failed to load 000-initial entities: %w", err)
 		}
 
-		statements, err := vem.GenerateMigrationSQL(ctx, conn)
+		statements, _, err := vem.GenerateMigrationSQL(ctx, conn)
 		if err != nil {
 			return fmt.Errorf("failed to generate migration SQL: %w", err)
 		}

@@ -200,7 +200,7 @@ func testDynamicFieldCheckConstraintEvolution(ctx context.Context, conn *dbschem
 	}
 
 	if err := recorder.RecordStep("Idempotency After Add", "Re-diff against 019 — no further changes expected", func() error {
-		statements, err := vem.GenerateMigrationSQL(ctx, conn)
+		statements, _, err := vem.GenerateMigrationSQL(ctx, conn)
 		if err != nil {
 			return fmt.Errorf("failed to regenerate migration SQL: %w", err)
 		}
@@ -241,7 +241,7 @@ func testDynamicFieldCheckConstraintEvolution(ctx context.Context, conn *dbschem
 	}
 
 	return recorder.RecordStep("Idempotency After Modify", "Re-diff against 020 — no further changes expected", func() error {
-		statements, err := vem.GenerateMigrationSQL(ctx, conn)
+		statements, _, err := vem.GenerateMigrationSQL(ctx, conn)
 		if err != nil {
 			return fmt.Errorf("failed to regenerate migration SQL: %w", err)
 		}

@@ -78,6 +78,9 @@ func parseMigrationTimeoutDirectives(sql string) (MigrationTimeouts, error) {
 		for field := range strings.FieldsSeq(directive) {
 			key, value, ok := strings.Cut(field, "=")
 			if !ok {
+				if field == DirectiveNoTransaction {
+					continue
+				}
 				return MigrationTimeouts{}, fmt.Errorf("invalid +ptah directive %q", field)
 			}
 

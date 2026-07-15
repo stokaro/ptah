@@ -9,13 +9,15 @@ import (
 // directivePrefix marks a ptah directive inside a SQL line comment:
 //
 //	-- +ptah key=value [key=value ...]
+//	-- +ptah no_transaction
 const directivePrefix = "+ptah"
 
 // ParseFileDirectives extracts `-- +ptah key=value` annotations from migration
 // SQL. Directives are file-scoped: every annotated line contributes to one
-// merged map (later lines win on duplicate keys). Tokens without an equals
-// sign and malformed lines are ignored — directives must never make a
-// migration file unreadable.
+// merged map (later lines win on duplicate keys). Bare no_transaction is a
+// boolean shorthand for no_transaction=true; other tokens without an equals
+// sign and malformed lines are ignored so directives never make a migration
+// file unreadable.
 //
 // The scan is lexer-driven, the same lexer SplitSQLStatements uses, so a
 // `-- +ptah` sequence inside a string literal or a block comment is never
@@ -47,8 +49,11 @@ func ParseFileDirectives(sql string) map[string]string {
 		}
 		for token := range strings.FieldsSeq(body) {
 			key, value, found := strings.Cut(token, "=")
-			if found && key != "" {
+			switch {
+			case found && key != "":
 				directives[key] = value
+			case token == DirectiveNoTransaction:
+				directives[token] = "true"
 			}
 		}
 	}
