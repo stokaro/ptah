@@ -444,6 +444,12 @@ func (m *Migrator) MigrateDownTo(ctx context.Context, targetVersion int64) error
 
 	for _, migration := range migrationsToRollback {
 		m.logger.Info("Rolling back migration", "version", migration.Version, "description", migration.Description)
+		if migration.downUnavailable {
+			if err := migration.Down(ctx, m.conn); err != nil {
+				return fmt.Errorf("failed to revert migration %d: %w", migration.Version, err)
+			}
+			continue
+		}
 		if migration.NoTransaction {
 			if err := m.rollbackMigrationNoTransaction(ctx, migration, deleteSQL); err != nil {
 				return err
