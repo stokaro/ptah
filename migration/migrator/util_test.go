@@ -223,6 +223,26 @@ func TestDiscoverMigrationFilesAtlasExplicitAllowsShortVersions(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `no migration files matched format "auto"; unrecognized SQL files: 1_initial.sql`)
 }
 
+func TestDiscoverMigrationFilesAutoDetectsShortAtlasVersionsWithSum(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"1_initial.sql": &fstest.MapFile{Data: []byte("CREATE TABLE users (id INT);\n")},
+		"2_second.sql":  &fstest.MapFile{Data: []byte("ALTER TABLE users ADD COLUMN name TEXT;\n")},
+		"atlas.sum":     &fstest.MapFile{Data: []byte("h1:fake\n1_initial.sql h1:fake\n2_second.sql h1:fake\n")},
+	}
+
+	files, err := DiscoverMigrationFiles(fsys, MigrationDirFormatAuto)
+	c.Assert(err, qt.IsNil)
+	c.Assert(files, qt.HasLen, 2)
+	c.Assert(files[0].Path, qt.Equals, "1_initial.sql")
+	c.Assert(files[0].Version, qt.Equals, int64(1))
+	c.Assert(files[0].Format, qt.Equals, MigrationDirFormatAtlas)
+	c.Assert(files[1].Path, qt.Equals, "2_second.sql")
+	c.Assert(files[1].Version, qt.Equals, int64(2))
+	c.Assert(files[1].Format, qt.Equals, MigrationDirFormatAtlas)
+}
+
 func TestDiscoverMigrationFilesAutoPrefersPtahWhenPresent(t *testing.T) {
 	c := qt.New(t)
 
