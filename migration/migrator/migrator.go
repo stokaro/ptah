@@ -148,14 +148,22 @@ func (m *Migrator) Initialize(ctx context.Context) error {
 		return nil
 	}
 
+	if m.conn.Writer().IsDryRun() {
+		m.logger.Info("[DRY RUN] Would initialize migrations metadata", "table", m.qualifiedMigrationsTable())
+		return nil
+	}
+
 	if schemaSQL := m.migrationsSchemaStatement(); schemaSQL != "" {
+		// Deliberately outside the migration writer: Initialize runs before any
+		// per-migration transaction exists. Dry-run returns above so metadata DDL
+		// is never written when callers asked for a simulation.
 		if _, err := m.conn.ExecContext(ctx, schemaSQL); err != nil {
 			return fmt.Errorf("failed to create migrations schema: %w", err)
 		}
 	}
 
-	// Execute the schema creation SQL directly on the database connection
-	// This avoids transaction conflicts with the PostgreSQL writer
+	// Deliberately outside the migration writer for the same reason as schema
+	// creation: there is no active migration transaction yet.
 	_, err := m.conn.ExecContext(ctx, m.createMigrationsTableSQL())
 	if err != nil {
 		return fmt.Errorf("failed to create migrations table: %w", err)
@@ -171,6 +179,9 @@ func (m *Migrator) GetCurrentVersion(ctx context.Context) (int, error) {
 	// First ensure the migrations table exists
 	if err := m.Initialize(ctx); err != nil {
 		return 0, fmt.Errorf("failed to initialize migrations table: %w", err)
+	}
+	if m.conn.Writer().IsDryRun() {
+		return 0, nil
 	}
 
 	// Query the current version
@@ -188,6 +199,9 @@ func (m *Migrator) GetAppliedMigrations(ctx context.Context) ([]int, error) {
 	// First ensure the migrations table exists
 	if err := m.Initialize(ctx); err != nil {
 		return nil, fmt.Errorf("failed to initialize migrations table: %w", err)
+	}
+	if m.conn.Writer().IsDryRun() {
+		return []int{}, nil
 	}
 
 	// Query all applied migration versions
@@ -336,6 +350,12 @@ func (m *Migrator) MigrateDownTo(ctx context.Context, targetVersion int) error {
 
 	for _, migration := range migrationsToRollback {
 		m.logger.Info("Rolling back migration", "version", migration.Version, "description", migration.Description)
+		if migration.NoTransaction {
+			if err := m.rollbackMigrationNoTransaction(ctx, migration, deleteSQL); err != nil {
+				return err
+			}
+			continue
+		}
 
 		// Begin transaction for this migration rollback
 		if err := m.conn.Writer().BeginTransaction(); err != nil {
@@ -445,6 +465,12 @@ func (m *Migrator) applyUpMigrations(ctx context.Context, migrations []*Migratio
 
 	for _, migration := range migrations {
 		m.logger.Info("Applying migration", "version", migration.Version, "description", migration.Description)
+		if migration.NoTransaction {
+			if err := m.applyUpMigrationNoTransaction(ctx, migration, recordSQL); err != nil {
+				return err
+			}
+			continue
+		}
 
 		// Begin transaction for this migration
 		if err := m.conn.Writer().BeginTransaction(); err != nil {
@@ -484,6 +510,41 @@ func (m *Migrator) applyUpMigrations(ctx context.Context, migrations []*Migratio
 	}
 
 	return nil
+}
+
+func (m *Migrator) applyUpMigrationNoTransaction(ctx context.Context, migration *Migration, recordSQL string) error {
+	if err := ensureNoTransactionHasNoTimeouts(migration.Version, mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts)); err != nil {
+		return err
+	}
+	if err := migration.Up(ctx, m.conn); err != nil {
+		return fmt.Errorf("failed to apply migration %d: %w", migration.Version, err)
+	}
+	if err := executeSQLOutsideTransaction(ctx, m.conn, recordSQL, migration.Version, migration.Description, time.Now()); err != nil {
+		return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)
+	}
+	m.logger.Info("Applied non-transactional migration", "version", migration.Version, "description", migration.Description)
+	return nil
+}
+
+func (m *Migrator) rollbackMigrationNoTransaction(ctx context.Context, migration *Migration, deleteSQL string) error {
+	if err := ensureNoTransactionHasNoTimeouts(migration.Version, mergeMigrationTimeouts(m.defaultTimeouts, migration.DownTimeouts)); err != nil {
+		return err
+	}
+	if err := migration.Down(ctx, m.conn); err != nil {
+		return fmt.Errorf("failed to revert migration %d: %w", migration.Version, err)
+	}
+	if err := executeSQLOutsideTransaction(ctx, m.conn, deleteSQL, migration.Version); err != nil {
+		return fmt.Errorf("failed to record migration reversion %d: %w", migration.Version, err)
+	}
+	m.logger.Info("Rolled back non-transactional migration", "version", migration.Version, "description", migration.Description)
+	return nil
+}
+
+func ensureNoTransactionHasNoTimeouts(version int, timeouts MigrationTimeouts) error {
+	if timeouts.IsZero() {
+		return nil
+	}
+	return fmt.Errorf("migration %d is marked no_transaction, so migration timeouts cannot be applied safely", version)
 }
 
 func (m *Migrator) migrationsToApply(migrations []*Migration, applied []int, targetVersion int) ([]*Migration, error) {

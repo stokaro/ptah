@@ -397,18 +397,18 @@ func (vem *VersionedEntityManager) GenerateSchemaFromEntities() (*goschema.Datab
 	return goschema.ParseDir(vem.entitiesDir)
 }
 
-// GenerateMigrationSQL compares current entities with database and generates migration SQL
-func (vem *VersionedEntityManager) GenerateMigrationSQL(_ctx context.Context, conn *dbschema.DatabaseConnection) ([]string, error) {
+// GenerateMigrationSQL compares current entities with database and generates migration SQL.
+func (vem *VersionedEntityManager) GenerateMigrationSQL(_ctx context.Context, conn *dbschema.DatabaseConnection) ([]string, bool, error) {
 	// Parse current entities
 	generated, err := vem.GenerateSchemaFromEntities()
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse entities: %w", err)
+		return nil, false, fmt.Errorf("failed to parse entities: %w", err)
 	}
 
 	// Read current database schema
 	dbSchema, err := conn.Reader().ReadSchema()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read database schema: %w", err)
+		return nil, false, fmt.Errorf("failed to read database schema: %w", err)
 	}
 
 	// Compare schemas (dialect-aware so MySQL/MariaDB RESTRICT == NO ACTION)
@@ -416,15 +416,16 @@ func (vem *VersionedEntityManager) GenerateMigrationSQL(_ctx context.Context, co
 
 	// Generate migration SQL
 	info := conn.Info()
+	nodes := planner.GenerateSchemaDiffASTWithCapabilities(diff, generated, info.Dialect, info.Capabilities)
 	statements := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(diff, generated, info.Dialect, info.Capabilities)
 
-	return statements, nil
+	return statements, planner.RequiresNoTransaction(info.Dialect, nodes), nil
 }
 
 // ApplyMigrationFromEntities generates and applies a migration from current entities
 func (vem *VersionedEntityManager) ApplyMigrationFromEntities(ctx context.Context, conn *dbschema.DatabaseConnection, description string) error {
 	// Generate migration SQL
-	statements, err := vem.GenerateMigrationSQL(ctx, conn)
+	statements, noTransaction, err := vem.GenerateMigrationSQL(ctx, conn)
 	if err != nil {
 		return fmt.Errorf("failed to generate migration SQL: %w", err)
 	}
@@ -450,6 +451,7 @@ func (vem *VersionedEntityManager) ApplyMigrationFromEntities(ctx context.Contex
 	downSQL := "-- Auto-generated down migration\n-- Manual review required\n"
 
 	migration := migrator.CreateMigrationFromSQL(vem.version, description, upSQL.String(), downSQL)
+	migration.NoTransaction = noTransaction
 
 	p := migrator.NewRegisteredMigrationProvider(migration)
 	m := migrator.NewMigrator(conn, p)

@@ -283,6 +283,28 @@ func GenerateSchemaDiffASTWithCapabilities(
 	return planner.GenerateMigrationAST(diff, generated)
 }
 
+// RequiresNoTransaction reports whether the planned migration contains
+// statements that must be applied outside the migrator's per-migration
+// transaction. Keep this conservative: it should only return true for DDL that
+// is known to be rejected or unusable in a PostgreSQL-family transaction.
+func RequiresNoTransaction(dialect string, nodes []ast.Node) bool {
+	if !platform.IsPostgresFamily(dialect) {
+		return false
+	}
+	for _, node := range nodes {
+		alterType, ok := node.(*ast.AlterTypeNode)
+		if !ok {
+			continue
+		}
+		for _, op := range alterType.Operations {
+			if _, ok := op.(*ast.AddEnumValueOperation); ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // GenerateSchemaDiffSQLStatements generates individual SQL statements for schema differences.
 //
 // This high-level convenience function provides the most commonly used output format:

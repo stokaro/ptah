@@ -165,6 +165,9 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 		// No migration needed - this is a successful no-op operation
 		return nil, nil
 	}
+	if planner.RequiresNoTransaction(info.Dialect, upNodes) {
+		upSQL = withNoTransactionDirective(upSQL)
+	}
 
 	// 6. Generate down migration SQL
 	downSQL, err := generateDownMigrationSQL(diff, generated, dbSchema, info.Dialect, info.Capabilities)
@@ -808,6 +811,16 @@ func latestExistingMigrationVersion(outputDir string) int {
 func nonEmptyFileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.Size() > 0
+}
+
+func withNoTransactionDirective(sql string) string {
+	if strings.TrimSpace(sql) == "" {
+		return sql
+	}
+	if directive, ok := migrator.ParseFileDirectives(sql)[migrator.DirectiveNoTransaction]; ok && directive == "true" {
+		return sql
+	}
+	return "-- +ptah " + migrator.DirectiveNoTransaction + "\n" + sql
 }
 
 // createMigrationFiles creates the up and down migration files

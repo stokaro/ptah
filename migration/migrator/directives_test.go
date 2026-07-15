@@ -53,6 +53,11 @@ func TestParseFileDirectives(t *testing.T) {
 			want: map[string]string{"online_ddl_tool": "ghost"},
 		},
 		{
+			name: "bare no transaction shorthand",
+			sql:  "-- +ptah no_transaction online_ddl_tool=ghost\n",
+			want: map[string]string{"no_transaction": "true", "online_ddl_tool": "ghost"},
+		},
+		{
 			name: "directive prefix must be a whole word",
 			sql:  "-- +ptahx key=value\n",
 			want: map[string]string{},

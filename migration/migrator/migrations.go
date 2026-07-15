@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"strconv"
 	"strings"
 
 	"github.com/stokaro/ptah/core/sqlutil"
@@ -39,6 +40,34 @@ type StatementInterceptor interface {
 	ExecuteStatement(ctx context.Context, conn *dbschema.DatabaseConnection, stmt string, directives map[string]string) (handled bool, err error)
 }
 
+type migrationExecutionMode int
+
+const (
+	migrationExecutionTransactional migrationExecutionMode = iota
+	migrationExecutionNoTransaction
+)
+
+type sqlMigrationFunc func(context.Context, *dbschema.DatabaseConnection, migrationExecutionMode) error
+
+type sqlMigrationFile struct {
+	fn            sqlMigrationFunc
+	timeouts      MigrationTimeouts
+	noTransaction bool
+}
+
+func (f sqlMigrationFile) executionMode() migrationExecutionMode {
+	if f.noTransaction {
+		return migrationExecutionNoTransaction
+	}
+	return migrationExecutionTransactional
+}
+
+// DirectiveNoTransaction opts a SQL migration file out of the per-migration
+// transaction. It is intended for database operations that cannot run inside a
+// transaction, such as PostgreSQL enum value additions that are used by later
+// statements in the same migration.
+const DirectiveNoTransaction = "no_transaction"
+
 // MigrationFuncFromSQLFilename returns a migration function that reads SQL from a file
 // in the provided filesystem and executes it using the database connection
 func MigrationFuncFromSQLFilename(filename string, fsys fs.FS) MigrationFunc {
@@ -55,7 +84,16 @@ func MigrationFuncFromSQLFilenameWithInterceptor(filename string, fsys fs.FS, in
 			return fmt.Errorf("failed to read migration file: %w", err)
 		}
 
-		return executeMigrationFileSQL(ctx, conn, filename, string(sql), interceptor)
+		noTransaction, err := parseNoTransactionDirective(ParseFileDirectives(string(sql)))
+		if err != nil {
+			return fmt.Errorf("invalid migration directives in %s: %w", filename, err)
+		}
+
+		mode := migrationExecutionTransactional
+		if noTransaction {
+			mode = migrationExecutionNoTransaction
+		}
+		return executeMigrationFileSQL(ctx, conn, filename, string(sql), interceptor, mode)
 	}
 }
 
@@ -73,19 +111,42 @@ func MigrationFuncFromSQLFilenameWithTimeoutsAndInterceptor(
 	fsys fs.FS,
 	interceptor StatementInterceptor,
 ) (MigrationFunc, MigrationTimeouts, error) {
+	migrationFile, err := migrationFuncFromSQLFilenameWithMetadata(filename, fsys, interceptor)
+	if err != nil {
+		return nil, MigrationTimeouts{}, err
+	}
+	return func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+		return migrationFile.fn(ctx, conn, migrationFile.executionMode())
+	}, migrationFile.timeouts, nil
+}
+
+func migrationFuncFromSQLFilenameWithMetadata(
+	filename string,
+	fsys fs.FS,
+	interceptor StatementInterceptor,
+) (sqlMigrationFile, error) {
 	sql, err := fs.ReadFile(fsys, filename)
 	if err != nil {
-		return nil, MigrationTimeouts{}, fmt.Errorf("failed to read migration file: %w", err)
+		return sqlMigrationFile{}, fmt.Errorf("failed to read migration file: %w", err)
 	}
 
 	timeouts, err := parseMigrationTimeoutDirectives(string(sql))
 	if err != nil {
-		return nil, MigrationTimeouts{}, err
+		return sqlMigrationFile{}, err
 	}
 
-	return func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-		return executeMigrationFileSQL(ctx, conn, filename, string(sql), interceptor)
-	}, timeouts, nil
+	noTransaction, err := parseNoTransactionDirective(ParseFileDirectives(string(sql)))
+	if err != nil {
+		return sqlMigrationFile{}, fmt.Errorf("invalid migration directives in %s: %w", filename, err)
+	}
+
+	return sqlMigrationFile{
+		fn: func(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrationExecutionMode) error {
+			return executeMigrationFileSQL(ctx, conn, filename, string(sql), interceptor, mode)
+		},
+		timeouts:      timeouts,
+		noTransaction: noTransaction,
+	}, nil
 }
 
 // NoopMigrationFunc is a no-op migration function
@@ -101,29 +162,53 @@ type Migration struct {
 	Down         MigrationFunc
 	UpTimeouts   MigrationTimeouts
 	DownTimeouts MigrationTimeouts
+	// NoTransaction runs the migration body and metadata update outside the
+	// normal per-migration transaction. Use this only for statements that cannot
+	// run transactionally; ordinary migrations should leave it false so dry-run,
+	// timeout, and rollback behavior all go through the dialect writer.
+	NoTransaction bool
+}
+
+func (m *Migration) executionMode() migrationExecutionMode {
+	if m.NoTransaction {
+		return migrationExecutionNoTransaction
+	}
+	return migrationExecutionTransactional
 }
 
 // CreateMigrationFromSQL creates a migration from SQL strings
 // This is useful for programmatically creating migrations
 func CreateMigrationFromSQL(version int, description, upSQL, downSQL string) *Migration {
+	upNoTransaction, upDirectiveErr := parseNoTransactionDirective(ParseFileDirectives(upSQL))
+	downNoTransaction, downDirectiveErr := parseNoTransactionDirective(ParseFileDirectives(downSQL))
+
+	migration := &Migration{
+		Version:       version,
+		Description:   description,
+		NoTransaction: upNoTransaction || downNoTransaction,
+	}
+
 	upFunc := func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-		return executeSQLStatements(ctx, conn, upSQL)
+		if upDirectiveErr != nil {
+			return fmt.Errorf("invalid up migration directives: %w", upDirectiveErr)
+		}
+		return executeSQLStatements(ctx, conn, upSQL, migration.executionMode())
 	}
 
 	downFunc := func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-		return executeSQLStatements(ctx, conn, downSQL)
+		if downDirectiveErr != nil {
+			return fmt.Errorf("invalid down migration directives: %w", downDirectiveErr)
+		}
+		return executeSQLStatements(ctx, conn, downSQL, migration.executionMode())
 	}
 
-	return &Migration{
-		Version:     version,
-		Description: description,
-		Up:          upFunc,
-		Down:        downFunc,
-	}
+	migration.Up = upFunc
+	migration.Down = downFunc
+	return migration
 }
 
 // executeSQLStatements splits SQL into individual statements and executes them
-func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection, sql string) error {
+func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection, sql string, mode migrationExecutionMode) error {
 	// Split SQL by semicolons and execute each statement
 	statements := SplitSQLStatements(sql)
 
@@ -133,15 +218,7 @@ func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection
 			continue // Skip empty statements and comments
 		}
 
-		// Use conn.ExecContext() instead of conn.Writer().ExecuteSQL() to execute
-		// each statement in its own transaction. This is critical for PostgreSQL
-		// enum safety — PostgreSQL prevents using newly added enum values within
-		// the same transaction where they were added. By using separate
-		// transactions, enum modifications and subsequent usage (like setting
-		// defaults) work correctly.
-		// See: https://www.postgresql.org/docs/current/sql-altertype.html
-		_, err := conn.ExecContext(ctx, stmt)
-		if err != nil {
+		if err := executeMigrationStatement(ctx, conn, stmt, mode); err != nil {
 			return fmt.Errorf("failed to execute SQL statement: %w\nSQL: %s", err, stmt)
 		}
 	}
@@ -155,6 +232,7 @@ func executeMigrationFileSQL(
 	filename string,
 	sql string,
 	interceptor StatementInterceptor,
+	mode migrationExecutionMode,
 ) error {
 	// Directives live in comments, so they must be read from the raw file
 	// before comment stripping, and validated before any statement runs so an
@@ -184,9 +262,40 @@ func executeMigrationFileSQL(
 			}
 		}
 
-		if err := conn.Writer().ExecuteSQL(ctx, stmt); err != nil {
+		if err := executeMigrationStatement(ctx, conn, stmt, mode); err != nil {
 			return fmt.Errorf("failed to execute migration SQL: %w", err)
 		}
 	}
 	return nil
+}
+
+func executeMigrationStatement(ctx context.Context, conn *dbschema.DatabaseConnection, stmt string, mode migrationExecutionMode) error {
+	if mode == migrationExecutionTransactional {
+		return conn.Writer().ExecuteSQL(ctx, stmt)
+	}
+	return executeSQLOutsideTransaction(ctx, conn, stmt)
+}
+
+func executeSQLOutsideTransaction(ctx context.Context, conn *dbschema.DatabaseConnection, sql string, args ...any) error {
+	if conn.Writer().IsDryRun() {
+		return conn.Writer().ExecuteSQL(ctx, sql, args...)
+	}
+
+	// Deliberate transaction escape hatch. This is used only for migrations
+	// marked no_transaction, where the database rejects transactional execution
+	// (for example PostgreSQL ALTER TYPE ADD VALUE followed by using that value).
+	_, err := conn.ExecContext(ctx, sql, args...)
+	return err
+}
+
+func parseNoTransactionDirective(directives map[string]string) (bool, error) {
+	value, ok := directives[DirectiveNoTransaction]
+	if !ok {
+		return false, nil
+	}
+	noTransaction, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("invalid +ptah %s value %q: expected true or false", DirectiveNoTransaction, value)
+	}
+	return noTransaction, nil
 }

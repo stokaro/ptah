@@ -61,6 +61,41 @@ func TestNewFSMigrator_LoadsTimeoutDirectives(t *testing.T) {
 	c.Assert(migration.DownTimeouts.HasStatementTimeout, qt.IsTrue)
 }
 
+func TestNewFSMigrator_LoadsNoTransactionDirective(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"0000000001_add_enum_value.up.sql": &fstest.MapFile{
+			Data: []byte("-- +ptah no_transaction\nALTER TYPE mood ADD VALUE 'ok';"),
+		},
+		"0000000001_add_enum_value.down.sql": &fstest.MapFile{
+			Data: []byte("-- no-op"),
+		},
+	}
+
+	m, err := migrator.NewFSMigrator(nil, fsys)
+	c.Assert(err, qt.IsNil)
+	migration := m.MigrationProvider().Migrations()[0]
+	c.Assert(migration.NoTransaction, qt.IsTrue)
+}
+
+func TestNewFSMigrator_InvalidNoTransactionDirective(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"0000000001_create_users.up.sql": &fstest.MapFile{
+			Data: []byte("-- +ptah no_transaction=maybe\nCREATE TABLE users (id SERIAL PRIMARY KEY);"),
+		},
+		"0000000001_create_users.down.sql": &fstest.MapFile{
+			Data: []byte("DROP TABLE users;"),
+		},
+	}
+
+	m, err := migrator.NewFSMigrator(nil, fsys)
+	c.Assert(err, qt.ErrorMatches, `.*failed to load up migration.*invalid \+ptah no_transaction value "maybe".*`)
+	c.Assert(m, qt.IsNil)
+}
+
 func TestNewFSMigrator_InvalidTimeoutDirective(t *testing.T) {
 	c := qt.New(t)
 
