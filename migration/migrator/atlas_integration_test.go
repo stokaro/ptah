@@ -73,6 +73,9 @@ func runAtlasFormatIntegration(t *testing.T, dbURL string) {
 		"20220318104615_add_users.sql": &fstest.MapFile{Data: []byte(
 			"CREATE TABLE ptah_issue_273_users (id INT PRIMARY KEY, team_id INT);\n",
 		)},
+		"20220318104616.sql": &fstest.MapFile{Data: []byte(
+			"CREATE TABLE ptah_issue_273_audit (id INT PRIMARY KEY);\n",
+		)},
 	}
 	mig, err := migrator.NewFSMigrator(conn, fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
 	c.Assert(err, qt.IsNil)
@@ -80,24 +83,24 @@ func runAtlasFormatIntegration(t *testing.T, dbURL string) {
 
 	status, err := mig.GetMigrationStatus(ctx)
 	c.Assert(err, qt.IsNil)
-	c.Assert(status.TotalMigrations, qt.Equals, 2)
-	c.Assert(status.PendingMigrations, qt.DeepEquals, []int64{20220318104614, 20220318104615})
+	c.Assert(status.TotalMigrations, qt.Equals, 3)
+	c.Assert(status.PendingMigrations, qt.DeepEquals, []int64{20220318104614, 20220318104615, 20220318104616})
 
 	err = mig.MigrateUp(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(issue273UsersCount(t, conn), qt.Equals, 0)
-	c.Assert(issue273Versions(t, conn), qt.DeepEquals, []int64{20220318104614, 20220318104615})
+	c.Assert(issue273Versions(t, conn), qt.DeepEquals, []int64{20220318104614, 20220318104615, 20220318104616})
 
 	status, err = mig.GetMigrationStatus(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(status.PendingMigrations, qt.HasLen, 0)
 	c.Assert(status.HasPendingChanges, qt.IsFalse)
 
-	err = mig.MigrateDownTo(ctx, 20220318104614)
-	c.Assert(err, qt.ErrorMatches, `.*migration 20220318104615 has no Atlas down migration; dynamic Atlas-style down migrations are not implemented yet.*`)
+	err = mig.MigrateDownTo(ctx, 20220318104615)
+	c.Assert(err, qt.ErrorMatches, `.*migration 20220318104616 has no Atlas down migration; dynamic Atlas-style down migrations are not implemented yet.*`)
 	var noDown *migrator.AtlasDownNotImplementedError
 	c.Assert(err, qt.ErrorAs, &noDown)
-	c.Assert(noDown.Version, qt.Equals, int64(20220318104615))
+	c.Assert(noDown.Version, qt.Equals, int64(20220318104616))
 }
 
 func runAtlasTxtarDownIntegration(t *testing.T, dbURL string) {
@@ -142,6 +145,7 @@ func cleanupIssue273(t *testing.T, conn *dbschema.DatabaseConnection) {
 	t.Helper()
 
 	for _, statement := range []string{
+		"DROP TABLE IF EXISTS ptah_issue_273_audit",
 		"DROP TABLE IF EXISTS ptah_issue_273_users",
 		"DROP TABLE IF EXISTS ptah_issue_273_teams",
 		"DROP TABLE IF EXISTS schema_migrations_issue_273",
