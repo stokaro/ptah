@@ -71,7 +71,10 @@ DROP TABLE IF EXISTS users;
 Migration directory commands use `--dir-format=auto` by default. Auto mode
 prefers Ptah paired files (`NNNNNNNNNN_description.up.sql` and
 `NNNNNNNNNN_description.down.sql`) when they are present, and otherwise accepts
-Atlas-style versioned files such as `20220318104614_team_A.sql`. Use
+Atlas-style timestamp files such as `20220318104614_team_A.sql`. Short Atlas
+versions such as `1_initial.sql` are auto-detected when the directory contains
+`atlas.sum`; use `--dir-format=atlas` when you want to force Atlas parsing
+without an integrity file. Use
 `--dir-format=ptah` or `--dir-format=atlas` on `migrate-up`, `migrate-down`,
 `migrate-status`, `migrate-hash`, and `migrate-validate` when detection should be
 explicit. Ordinary Atlas files are forward migrations. Atlas txtar files can also

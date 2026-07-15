@@ -24,10 +24,10 @@ var fileNameRe = regexp.MustCompile(`^(\d{10})_(.*)\.(down|up)(\.sql)$`)
 // Atlas migration file naming pattern: version_description.sql.
 var atlasFileNameRe = regexp.MustCompile(`^(\d+)_(.+)(\.sql)$`)
 
-// Auto-detection stays stricter than explicit Atlas mode: Atlas versioned
-// directories commonly use 14-digit timestamp versions, and requiring more than
-// Ptah's 10-digit version width keeps legacy suffixless Ptah-looking files from
-// being auto-classified as Atlas migrations.
+// Auto-detection without atlas.sum stays stricter than explicit Atlas mode:
+// Atlas versioned directories commonly use 14-digit timestamp versions, and
+// requiring more than Ptah's 10-digit version width keeps legacy suffixless
+// Ptah-looking files from being auto-classified as Atlas migrations.
 var atlasAutoFileNameRe = regexp.MustCompile(`^(\d{11,})_(.+)(\.sql)$`)
 
 // MigrationDirFormat selects how a filesystem migration directory is parsed.
@@ -282,30 +282,51 @@ func DiscoverMigrationFiles(fsys fs.FS, format MigrationDirFormat) ([]MigrationF
 	}
 
 	var sqlFiles []string
-	var ptahFiles []MigrationFile
-	var atlasFiles []MigrationFile
+	hasAtlasSum := false
 	err = fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		if d.IsDir() || !strings.EqualFold(path.Ext(p), ".sql") {
+		if d.IsDir() {
 			return nil
 		}
 
+		if path.Base(p) == "atlas.sum" {
+			hasAtlasSum = true
+			return nil
+		}
+		if !strings.EqualFold(path.Ext(p), ".sql") {
+			return nil
+		}
 		sqlFiles = append(sqlFiles, p)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan migrations directory: %w", err)
+	}
+
+	var ptahFiles []MigrationFile
+	var atlasFiles []MigrationFile
+	for _, p := range sqlFiles {
 		base := path.Base(p)
 		if migrationFile, err := ParseMigrationFileName(base); err == nil {
 			migrationFile.Path = p
 			ptahFiles = append(ptahFiles, *migrationFile)
 		}
-		if migrationFile, err := parseAtlasMigrationFileNameForFormat(base, format); err == nil {
+		if format == MigrationDirFormatPtah {
+			continue
+		}
+		if format == MigrationDirFormatAtlas || hasAtlasSum {
+			if migrationFile, err := ParseAtlasMigrationFileName(base); err == nil {
+				migrationFile.Path = p
+				atlasFiles = append(atlasFiles, *migrationFile)
+			}
+			continue
+		}
+		if migrationFile, err := ParseAtlasMigrationFileNameForAutoDetection(base); err == nil {
 			migrationFile.Path = p
 			atlasFiles = append(atlasFiles, *migrationFile)
 		}
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to scan migrations directory: %w", err)
 	}
 
 	files := selectMigrationFiles(format, ptahFiles, atlasFiles)
@@ -319,13 +340,6 @@ func DiscoverMigrationFiles(fsys fs.FS, format MigrationDirFormat) ([]MigrationF
 		return files[i].Path < files[j].Path
 	})
 	return files, nil
-}
-
-func parseAtlasMigrationFileNameForFormat(filename string, format MigrationDirFormat) (*MigrationFile, error) {
-	if format == MigrationDirFormatAtlas {
-		return ParseAtlasMigrationFileName(filename)
-	}
-	return ParseAtlasMigrationFileNameForAutoDetection(filename)
 }
 
 func normalizeMigrationDirFormat(format MigrationDirFormat) (MigrationDirFormat, error) {
