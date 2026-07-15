@@ -34,6 +34,27 @@ func TestAtlasFormat_MySQLIntegration(t *testing.T) {
 	runAtlasFormatIntegration(t, dbURL)
 }
 
+func TestAtlasTxtarDown_PostgresIntegration(t *testing.T) {
+	runAtlasTxtarDownIntegration(t, postgresTestURL(t))
+}
+
+func TestAtlasTxtarDown_MySQLIntegration(t *testing.T) {
+	dbURL := os.Getenv("MYSQL_TEST_DSN")
+	if dbURL == "" {
+		dbURL = os.Getenv("MYSQL_TEST_URL")
+	}
+	if dbURL == "" {
+		t.Skip("MYSQL_TEST_DSN or MYSQL_TEST_URL not set")
+	}
+	if strings.Contains(dbURL, "@tcp(") && !strings.HasPrefix(dbURL, "mysql://") {
+		dbURL = "mysql://" + dbURL
+	}
+	if !strings.HasPrefix(dbURL, "mysql://") {
+		t.Skip("MySQL URL required for Atlas migration integration test")
+	}
+	runAtlasTxtarDownIntegration(t, dbURL)
+}
+
 func runAtlasFormatIntegration(t *testing.T, dbURL string) {
 	t.Helper()
 
@@ -73,7 +94,48 @@ func runAtlasFormatIntegration(t *testing.T, dbURL string) {
 	c.Assert(status.HasPendingChanges, qt.IsFalse)
 
 	err = mig.MigrateDownTo(ctx, 20220318104614)
-	c.Assert(err, qt.ErrorMatches, `.*migration 20220318104615 has no down migration; directory format atlas does not support down migrations.*`)
+	c.Assert(err, qt.ErrorMatches, `.*migration 20220318104615 has no Atlas down migration; dynamic Atlas-style down migrations are not implemented yet.*`)
+	var noDown *migrator.AtlasDownNotImplementedError
+	c.Assert(err, qt.ErrorAs, &noDown)
+	c.Assert(noDown.Version, qt.Equals, int64(20220318104615))
+}
+
+func runAtlasTxtarDownIntegration(t *testing.T, dbURL string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = conn.Close() }()
+
+	cleanupIssue290(t, conn)
+	defer cleanupIssue290(t, conn)
+
+	fsys := fstest.MapFS{
+		"20240305171146_seed_widget.sql": &fstest.MapFile{Data: []byte(`-- atlas:txtar
+
+-- migration.sql --
+CREATE TABLE ptah_issue_290_widgets (id INT PRIMARY KEY, name VARCHAR(64) NOT NULL);
+INSERT INTO ptah_issue_290_widgets (id, name) VALUES (1, 'Alice');
+
+-- down.sql --
+DROP TABLE ptah_issue_290_widgets;
+`)},
+	}
+	mig, err := migrator.NewFSMigrator(conn, fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithMigrationsTable("", "schema_migrations_issue_290")
+
+	err = mig.MigrateUp(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(issue290WidgetsCount(t, conn), qt.Equals, 1)
+	c.Assert(issue290Versions(t, conn), qt.DeepEquals, []int64{20240305171146})
+
+	err = mig.MigrateDownTo(ctx, 0)
+	c.Assert(err, qt.IsNil)
+	c.Assert(issue290Versions(t, conn), qt.HasLen, 0)
+	c.Assert(issue290WidgetTableExists(t, conn), qt.IsFalse)
 }
 
 func cleanupIssue273(t *testing.T, conn *dbschema.DatabaseConnection) {
@@ -83,6 +145,17 @@ func cleanupIssue273(t *testing.T, conn *dbschema.DatabaseConnection) {
 		"DROP TABLE IF EXISTS ptah_issue_273_users",
 		"DROP TABLE IF EXISTS ptah_issue_273_teams",
 		"DROP TABLE IF EXISTS schema_migrations_issue_273",
+	} {
+		_, _ = conn.ExecContext(context.Background(), statement)
+	}
+}
+
+func cleanupIssue290(t *testing.T, conn *dbschema.DatabaseConnection) {
+	t.Helper()
+
+	for _, statement := range []string{
+		"DROP TABLE IF EXISTS ptah_issue_290_widgets",
+		"DROP TABLE IF EXISTS schema_migrations_issue_290",
 	} {
 		_, _ = conn.ExecContext(context.Background(), statement)
 	}
@@ -126,4 +199,38 @@ func issue273Versions(t *testing.T, conn *dbschema.DatabaseConnection) []int64 {
 	}
 	qt.Assert(t, rows.Err(), qt.IsNil)
 	return versions
+}
+
+func issue290WidgetsCount(t *testing.T, conn *dbschema.DatabaseConnection) int {
+	t.Helper()
+
+	var count int
+	err := conn.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM ptah_issue_290_widgets").Scan(&count)
+	qt.Assert(t, err, qt.IsNil)
+	return count
+}
+
+func issue290Versions(t *testing.T, conn *dbschema.DatabaseConnection) []int64 {
+	t.Helper()
+
+	rows, err := conn.Query("SELECT version FROM schema_migrations_issue_290 ORDER BY version")
+	qt.Assert(t, err, qt.IsNil)
+	defer rows.Close()
+
+	var versions []int64
+	for rows.Next() {
+		var version int64
+		qt.Assert(t, rows.Scan(&version), qt.IsNil)
+		versions = append(versions, version)
+	}
+	qt.Assert(t, rows.Err(), qt.IsNil)
+	return versions
+}
+
+func issue290WidgetTableExists(t *testing.T, conn *dbschema.DatabaseConnection) bool {
+	t.Helper()
+
+	var count int
+	err := conn.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM ptah_issue_290_widgets").Scan(&count)
+	return err == nil
 }

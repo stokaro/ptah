@@ -74,8 +74,25 @@ prefers Ptah paired files (`NNNNNNNNNN_description.up.sql` and
 Atlas-style versioned files such as `20220318104614_team_A.sql`. Use
 `--dir-format=ptah` or `--dir-format=atlas` on `migrate-up`, `migrate-down`,
 `migrate-status`, `migrate-hash`, and `migrate-validate` when detection should be
-explicit. Atlas-style files are forward migrations only; `migrate-down` returns a
-clear no-down-migration error for them.
+explicit. Ordinary Atlas files are forward migrations. Atlas txtar files can also
+embed a `down.sql` section that Ptah executes during rollback:
+
+```sql
+-- atlas:txtar
+
+-- migration.sql --
+INSERT INTO users (id, name) VALUES (1, 'Alice');
+
+-- down.sql --
+DELETE FROM users WHERE id = 1;
+```
+
+If an Atlas migration does not provide `down.sql`, `migrate-down` returns a typed
+error explaining that Atlas dynamic down-plan synthesis is not implemented yet.
+This is distinct from transaction rollback on a failed migration: transaction
+rollback undoes an in-progress failure, Ptah paired `.down.sql` files and Atlas
+txtar `down.sql` sections revert already-applied migrations, and Atlas dynamic
+`migrate down` would synthesize a downgrade plan from database/dev state.
 
 ### Migrate Up
 Apply all pending migrations:
