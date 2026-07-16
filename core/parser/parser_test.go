@@ -216,6 +216,57 @@ func TestParser_ParseDoesNotTreatGotoAsGoBatchSeparator(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `unsupported SQL statement: GOTO at position 0`)
 }
 
+func TestParser_ParsePostgresDoBlockAsRawSQL(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `DO $$
+BEGIN
+    CREATE TYPE some_type AS ENUM ('one', 'two');
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END;
+$$;
+CREATE INDEX idx_users_name ON users (name);`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 2)
+
+	raw, ok := statements.Statements[0].(*ast.RawSQLNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(raw.SQL, qt.Contains, "DO $$")
+	c.Assert(raw.SQL, qt.Contains, "CREATE TYPE some_type AS ENUM ('one', 'two');")
+	c.Assert(raw.SQL, qt.Contains, "END;")
+
+	index, ok := statements.Statements[1].(*ast.IndexNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(index.Name, qt.Equals, "idx_users_name")
+	c.Assert(index.Table, qt.Equals, "users")
+	c.Assert(index.Columns, qt.DeepEquals, []string{"name"})
+}
+
+func TestParser_ParsePostgresExecuteFunctionTriggerAsRawSQL(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE TRIGGER set_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION touch_updated_at('updated_at');
+CREATE TABLE audit_log (id INTEGER);`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 2)
+
+	raw, ok := statements.Statements[0].(*ast.RawSQLNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(raw.SQL, qt.Contains, "CREATE TRIGGER set_updated_at")
+	c.Assert(raw.SQL, qt.Contains, "EXECUTE FUNCTION touch_updated_at('updated_at')")
+
+	table, ok := statements.Statements[1].(*ast.CreateTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(table.Name, qt.Equals, "audit_log")
+}
+
 func TestParser_ParseCreateTable_TablePrimaryKeyWithoutComma(t *testing.T) {
 	c := qt.New(t)
 
