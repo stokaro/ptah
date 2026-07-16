@@ -487,6 +487,7 @@ func TestDropTableNode_Constructor(t *testing.T) {
 	dropTable := ast.NewDropTable("users")
 
 	c.Assert(dropTable.Name, qt.Equals, "users")
+	c.Assert(dropTable.TableNames(), qt.DeepEquals, []string{"users"})
 	c.Assert(dropTable.IfExists, qt.IsFalse)
 	c.Assert(dropTable.Cascade, qt.IsFalse)
 	c.Assert(dropTable.Comment, qt.Equals, "")
@@ -501,9 +502,19 @@ func TestDropTableNode_FluentAPI(t *testing.T) {
 		SetComment("Dangerous operation")
 
 	c.Assert(dropTable.Name, qt.Equals, "users")
+	c.Assert(dropTable.TableNames(), qt.DeepEquals, []string{"users"})
 	c.Assert(dropTable.IfExists, qt.IsTrue)
 	c.Assert(dropTable.Cascade, qt.IsTrue)
 	c.Assert(dropTable.Comment, qt.Equals, "Dangerous operation")
+}
+
+func TestDropTableNode_SetNames(t *testing.T) {
+	c := qt.New(t)
+
+	dropTable := ast.NewDropTable("users").SetNames([]string{"users", "archived_users"})
+
+	c.Assert(dropTable.Name, qt.Equals, "users")
+	c.Assert(dropTable.TableNames(), qt.DeepEquals, []string{"users", "archived_users"})
 }
 
 func TestDropTableNode_Accept(t *testing.T) {

@@ -154,6 +154,60 @@ CREATE TABLE t2(id int);`
 	c.Assert(statements.Statements[1].(*ast.CreateTableNode).Name, qt.Equals, "t2")
 }
 
+func TestParser_ParseMySQLClientDelimiters(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `delimiter //
+CREATE TABLE t2 (a int) //
+delimiter 'DONE'
+CREATE TABLE t3 (a int) DONE
+delimiter //
+CREATE TABLE t4 (a text DEFAULT 'a//b')//
+delimiter \n\n
+CREATE TABLE t5 (a int)
+
+delimiter ;
+SHOW TABLES;
+DROP TABLE t2, t3;`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 5)
+	c.Assert(statements.Statements[0].(*ast.CreateTableNode).Name, qt.Equals, "t2")
+	c.Assert(statements.Statements[1].(*ast.CreateTableNode).Name, qt.Equals, "t3")
+	createWithDefault := statements.Statements[2].(*ast.CreateTableNode)
+	c.Assert(createWithDefault.Name, qt.Equals, "t4")
+	c.Assert(createWithDefault.Columns[0].Default.Value, qt.Equals, "'a//b'")
+	c.Assert(statements.Statements[3].(*ast.CreateTableNode).Name, qt.Equals, "t5")
+	c.Assert(statements.Statements[4].(*ast.DropTableNode).Name, qt.Equals, "t2")
+	c.Assert(statements.Statements[4].(*ast.DropTableNode).TableNames(), qt.DeepEquals, []string{"t2", "t3"})
+}
+
+func TestParser_ParseMySQLClientDelimiterVariants(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `delimiter delimiter
+SELECT * FROM t1delimiter
+delimiter @@
+ALTER TABLE t ADD COLUMN c@@
+delimiter ;`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	alterTable, ok := statements.Statements[0].(*ast.AlterTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(alterTable.Name, qt.Equals, "t")
+
+	addOp, ok := alterTable.Operations[0].(*ast.AddColumnOperation)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(addOp.Column.Name, qt.Equals, "c")
+	c.Assert(addOp.Column.Type, qt.Equals, "")
+}
+
 func TestParser_ParseDoesNotTreatGotoAsGoBatchSeparator(t *testing.T) {
 	c := qt.New(t)
 
@@ -670,6 +724,23 @@ func TestParser_ParseAlterTableQualifiedName(t *testing.T) {
 	c.Assert(addOp.Column.Type, qt.Equals, "TEXT")
 }
 
+func TestParser_ParseAlterTableAddTypelessColumn(t *testing.T) {
+	c := qt.New(t)
+
+	statements, err := parser.NewParser("ALTER TABLE t ADD COLUMN c;").Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	alterTable, ok := statements.Statements[0].(*ast.AlterTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(alterTable.Operations, qt.HasLen, 1)
+
+	addOp, ok := alterTable.Operations[0].(*ast.AddColumnOperation)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(addOp.Column.Name, qt.Equals, "c")
+	c.Assert(addOp.Column.Type, qt.Equals, "")
+}
+
 func TestParser_ParseAlterTableRenameTable(t *testing.T) {
 	c := qt.New(t)
 
@@ -736,6 +807,7 @@ func TestParser_ParseDropTable(t *testing.T) {
 		name     string
 		sql      string
 		table    string
+		tables   []string
 		ifExists bool
 		cascade  bool
 		rendered string
@@ -745,6 +817,13 @@ func TestParser_ParseDropTable(t *testing.T) {
 			sql:      "DROP TABLE users;",
 			table:    "users",
 			rendered: "DROP TABLE users;\n",
+		},
+		{
+			name:     "multiple tables",
+			sql:      "DROP TABLE users, archived_users;",
+			table:    "users",
+			tables:   []string{"users", "archived_users"},
+			rendered: "DROP TABLE users, archived_users;\n",
 		},
 		{
 			name:     "if exists",
@@ -779,6 +858,9 @@ func TestParser_ParseDropTable(t *testing.T) {
 			dropTable, ok := statements.Statements[0].(*ast.DropTableNode)
 			c.Assert(ok, qt.IsTrue)
 			c.Assert(dropTable.Name, qt.Equals, tt.table)
+			if tt.tables != nil {
+				c.Assert(dropTable.TableNames(), qt.DeepEquals, tt.tables)
+			}
 			c.Assert(dropTable.IfExists, qt.Equals, tt.ifExists)
 			c.Assert(dropTable.Cascade, qt.Equals, tt.cascade)
 
