@@ -205,7 +205,23 @@ func TestParseAtlasMigrationFileName(t *testing.T) {
 	c.Assert(migrationFile.Version, qt.Equals, int64(2))
 	c.Assert(migrationFile.Name, qt.Equals, "10 X-20 Description")
 
-	_, err = ParseAtlasMigrationFileName("3R_views.sql")
+	migrationFile, err = ParseAtlasMigrationFileName("3R_views.sql")
+	c.Assert(err, qt.IsNil)
+	c.Assert(migrationFile.Version, qt.Equals, int64(0))
+	c.Assert(migrationFile.Name, qt.Equals, "Views")
+	c.Assert(migrationFile.Direction, qt.Equals, "up")
+	c.Assert(migrationFile.Format, qt.Equals, MigrationDirFormatAtlas)
+	c.Assert(migrationFile.Repeatable, qt.IsTrue)
+
+	migrationFile, err = ParseAtlasMigrationFileName("R__refresh_views.sql")
+	c.Assert(err, qt.IsNil)
+	c.Assert(migrationFile.Name, qt.Equals, "Refresh Views")
+	c.Assert(migrationFile.Repeatable, qt.IsTrue)
+
+	_, err = ParseAtlasMigrationFileName("R__.sql")
+	c.Assert(err, qt.ErrorMatches, "invalid Atlas migration file name format")
+
+	_, err = ParseAtlasMigrationFileName("3R_views.down.sql")
 	c.Assert(err, qt.ErrorMatches, "invalid Atlas migration file name format")
 }
 
@@ -300,6 +316,30 @@ func TestDiscoverMigrationFilesAutoDetectsShortAtlasVersionsWithSum(t *testing.T
 	c.Assert(files[1].Version, qt.Equals, int64(2))
 	c.Assert(files[1].Name, qt.Equals, "2")
 	c.Assert(files[1].Format, qt.Equals, MigrationDirFormatAtlas)
+}
+
+func TestDiscoverMigrationFilesRecognizesAtlasImportedFlywayRepeatables(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"2_baseline.sql":        &fstest.MapFile{Data: []byte("CREATE TABLE post (id INT);\n")},
+		"3R_views.sql":          &fstest.MapFile{Data: []byte("CREATE VIEW my_view AS SELECT * FROM post;\n")},
+		"3_third_migration.sql": &fstest.MapFile{Data: []byte("ALTER TABLE post ADD COLUMN title TEXT;\n")},
+		"not_a_repeatable.sql":  &fstest.MapFile{Data: []byte("SELECT 1;\n")},
+		"also_not_R_views.sql":  &fstest.MapFile{Data: []byte("SELECT 2;\n")},
+		"atlas.sum":             &fstest.MapFile{Data: []byte("ignored\n")},
+	}
+
+	files, err := DiscoverMigrationFiles(fsys, MigrationDirFormatAuto)
+	c.Assert(err, qt.IsNil)
+	c.Assert(files, qt.HasLen, 3)
+	c.Assert(files[0].Path, qt.Equals, "3R_views.sql")
+	c.Assert(files[0].Repeatable, qt.IsTrue)
+	c.Assert(files[0].Version, qt.Equals, int64(0))
+	c.Assert(files[1].Path, qt.Equals, "2_baseline.sql")
+	c.Assert(files[1].Version, qt.Equals, int64(2))
+	c.Assert(files[2].Path, qt.Equals, "3_third_migration.sql")
+	c.Assert(files[2].Version, qt.Equals, int64(3))
 }
 
 func TestDiscoverMigrationFilesAutoDetectsAtlasImportedNames(t *testing.T) {

@@ -154,6 +154,21 @@ func TestLintFS_PairsByVersionLikeMigrator(t *testing.T) {
 		qt.Commentf("version 1 has both an up and a down; no MF101 expected; got %v", findings))
 }
 
+func TestLintFS_AtlasImportedFlywayRepeatableIsContentLinted(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fixture(map[string]string{
+		"2_baseline.sql": "CREATE TABLE users (id INT);\n",
+		"3R_views.sql":   "DROP TABLE users;\n",
+	})
+
+	findings, err := lint.LintFS(fsys, lint.Options{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DS101"})
+	c.Assert(findings[0].File, qt.Equals, "3R_views.sql")
+	c.Assert(findings[0].Line, qt.Equals, 1)
+}
+
 // lintOne lints a single-statement up migration (with a paired down file)
 // and returns the rule codes that fired.
 func lintOne(c *qt.C, sql string) []string {

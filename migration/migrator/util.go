@@ -63,6 +63,10 @@ type MigrationFile struct {
 	Direction string
 	Extension string
 	Format    MigrationDirFormat
+	// Repeatable marks Flyway-style repeatable migrations imported by Atlas.
+	// They are visible to discovery and linting, but they are not part of
+	// Ptah's ordered versioned execution model.
+	Repeatable bool
 }
 
 // ParseMigrationFileName parses a migration filename into its components
@@ -123,6 +127,10 @@ func parseAtlasMigrationFileName(filename string, mode atlasParseMode) (*Migrati
 		return nil, errors.New("invalid Atlas migration file name format")
 	}
 
+	if migrationFile, ok := parseAtlasRepeatableMigrationStem(stem); ok {
+		return migrationFile, nil
+	}
+
 	direction := "up"
 	for _, suffix := range []string{".up", ".down"} {
 		if strings.HasSuffix(stem, suffix) {
@@ -162,6 +170,56 @@ func parseAtlasMigrationFileName(filename string, mode atlasParseMode) (*Migrati
 		Extension: ".sql",
 		Format:    MigrationDirFormatAtlas,
 	}, nil
+}
+
+func parseAtlasRepeatableMigrationStem(stem string) (*MigrationFile, bool) {
+	repeatableName, ok := atlasRepeatableName(stem)
+	if !ok {
+		return nil, false
+	}
+	return &MigrationFile{
+		Name:       repeatableName,
+		Direction:  "up",
+		Extension:  ".sql",
+		Format:     MigrationDirFormatAtlas,
+		Repeatable: true,
+	}, true
+}
+
+func atlasRepeatableName(stem string) (string, bool) {
+	if strings.HasSuffix(stem, ".up") || strings.HasSuffix(stem, ".down") {
+		return "", false
+	}
+	switch {
+	case strings.HasPrefix(stem, "R__"):
+		rawName := strings.TrimPrefix(stem, "R__")
+		if rawName == "" {
+			return "", false
+		}
+		return titleAtlasName(rawName), true
+	case strings.Contains(stem, "R_"):
+		prefix, rawName, _ := strings.Cut(stem, "R_")
+		if prefix == "" || !allDigits(prefix) || rawName == "" {
+			return "", false
+		}
+		return titleAtlasName(rawName), true
+	default:
+		return "", false
+	}
+}
+
+func titleAtlasName(name string) string {
+	name = strings.NewReplacer("_", " ", ".", " ").Replace(name)
+	return cases.Title(language.English).String(name)
+}
+
+func allDigits(value string) bool {
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return value != ""
 }
 
 func splitAtlasMigrationStem(stem string) (versionDigits, rawName string, ok bool) {
