@@ -100,6 +100,47 @@ func TestParser_ParseCreateTable_WithTableOptions(t *testing.T) {
 	c.Assert(createTable.Comment, qt.Equals, "'Product catalog'")
 }
 
+func TestParser_ParseCreateView(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "CREATE VIEW active_users AS SELECT id, name FROM users WHERE active = true;"
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	createView, ok := statements.Statements[0].(*ast.CreateViewNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(createView.Name, qt.Equals, "active_users")
+	c.Assert(createView.Replace, qt.IsFalse)
+	c.Assert(createView.Body, qt.Equals, "SELECT id, name FROM users WHERE active = true")
+}
+
+func TestParser_ParseCreateOrReplaceView(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "CREATE OR REPLACE VIEW public.active_users AS SELECT * FROM users;"
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	createView, ok := statements.Statements[0].(*ast.CreateViewNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(createView.Name, qt.Equals, "public.active_users")
+	c.Assert(createView.Replace, qt.IsTrue)
+	c.Assert(createView.Body, qt.Equals, "SELECT * FROM users")
+}
+
+func TestParser_ParseRejectsUnsupportedCreateOrReplaceTarget(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := parser.NewParser("CREATE OR REPLACE FUNCTION f() RETURNS int AS $$ SELECT 1 $$;").Parse()
+	c.Assert(err, qt.ErrorMatches, `unsupported CREATE OR REPLACE target: FUNCTION at position 18`)
+}
+
 func TestParser_ParseSkipsSchemaNeutralStatements(t *testing.T) {
 	c := qt.New(t)
 
