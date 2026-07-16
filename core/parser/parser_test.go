@@ -639,6 +639,53 @@ func TestParser_ParseCreateUniqueIndex(t *testing.T) {
 	c.Assert(index.Unique, qt.IsTrue)
 }
 
+func TestParser_ParseCreateTypedIndex(t *testing.T) {
+	tests := []struct {
+		name      string
+		sql       string
+		indexName string
+		tableName string
+		columns   []string
+		indexType string
+	}{
+		{
+			name:      "fulltext",
+			sql:       "CREATE FULLTEXT INDEX idx_users_bio ON users (bio);",
+			indexName: "idx_users_bio",
+			tableName: "users",
+			columns:   []string{"bio"},
+			indexType: "FULLTEXT",
+		},
+		{
+			name:      "spatial",
+			sql:       "CREATE SPATIAL INDEX idx_geom_g ON geom (g);",
+			indexName: "idx_geom_g",
+			tableName: "geom",
+			columns:   []string{"g"},
+			indexType: "SPATIAL",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			p := parser.NewParser(tt.sql)
+			statements, err := p.Parse()
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements.Statements, qt.HasLen, 1)
+
+			index, ok := statements.Statements[0].(*ast.IndexNode)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(index.Name, qt.Equals, tt.indexName)
+			c.Assert(index.Table, qt.Equals, tt.tableName)
+			c.Assert(index.Columns, qt.DeepEquals, tt.columns)
+			c.Assert(index.Type, qt.Equals, tt.indexType)
+			c.Assert(index.Unique, qt.IsFalse)
+		})
+	}
+}
+
 func TestParser_ParseCreateEnum(t *testing.T) {
 	c := qt.New(t)
 

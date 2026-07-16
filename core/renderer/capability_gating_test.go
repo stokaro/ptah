@@ -116,6 +116,35 @@ func TestMySQLRendererWithCapabilities_ClonesCapabilitySet(t *testing.T) {
 	c.Assert(sql, qt.Not(qt.Contains), "IF EXISTS")
 }
 
+func TestMySQLFamilyRenderers_IndexPrefixTypes(t *testing.T) {
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			sql, err := renderer.RenderSQL(dialect,
+				&ast.IndexNode{
+					Name:    "idx_users_bio",
+					Table:   "users",
+					Columns: []string{"bio"},
+					Type:    "FULLTEXT",
+				},
+				&ast.IndexNode{
+					Name:    "idx_geom_g",
+					Table:   "geom",
+					Columns: []string{"g"},
+					Type:    "SPATIAL",
+				},
+			)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Contains, "CREATE FULLTEXT INDEX idx_users_bio ON users (bio);",
+				qt.Commentf("got:\n%s", sql))
+			c.Assert(sql, qt.Contains, "CREATE SPATIAL INDEX idx_geom_g ON geom (g);",
+				qt.Commentf("got:\n%s", sql))
+		})
+	}
+}
+
 // TestMySQLFamilyRenderers_DropUniqueIndexSpelling pins the DROP INDEX
 // spelling requested via DropConstraintOperation.Unique (every UNIQUE
 // removal, issue #195). ALTER TABLE ... DROP INDEX is valid across the entire
