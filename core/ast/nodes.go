@@ -67,12 +67,16 @@ func (n *EnumNode) Accept(visitor Visitor) error {
 type CreateTableNode struct {
 	// Name is the name of the table to create
 	Name string
+	// IfNotExists preserves an IF NOT EXISTS guard when present.
+	IfNotExists bool
 	// Columns contains all column definitions for the table
 	Columns []*ColumnNode
 	// Constraints contains table-level constraints (PRIMARY KEY, UNIQUE, FOREIGN KEY, CHECK)
 	Constraints []*ConstraintNode
 	// Options contains dialect-specific table options like ENGINE for MySQL
 	Options map[string]string
+	// SelectBody stores the SELECT tail for CREATE TABLE ... SELECT statements.
+	SelectBody string
 	// Comment is an optional table comment
 	Comment string
 }
@@ -142,6 +146,18 @@ func (n *CreateDatabaseNode) Accept(visitor Visitor) error {
 //	table.AddColumn(NewColumn("id", "INTEGER").SetPrimary())
 func (n *CreateTableNode) AddColumn(column *ColumnNode) *CreateTableNode {
 	n.Columns = append(n.Columns, column)
+	return n
+}
+
+// SetIfNotExists marks the CREATE TABLE statement as conditional.
+func (n *CreateTableNode) SetIfNotExists() *CreateTableNode {
+	n.IfNotExists = true
+	return n
+}
+
+// SetSelectBody stores the SELECT tail for CREATE TABLE ... SELECT statements.
+func (n *CreateTableNode) SetSelectBody(body string) *CreateTableNode {
+	n.SelectBody = body
 	return n
 }
 

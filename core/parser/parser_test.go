@@ -100,6 +100,138 @@ func TestParser_ParseCreateTable_WithTableOptions(t *testing.T) {
 	c.Assert(createTable.Comment, qt.Equals, "'Product catalog'")
 }
 
+func TestParser_ParseCreateTable_IfNotExists(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY);"
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	createTable := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(createTable.Name, qt.Equals, "users")
+	c.Assert(createTable.IfNotExists, qt.IsTrue)
+	c.Assert(createTable.Columns, qt.HasLen, 1)
+	c.Assert(createTable.Columns[0].Primary, qt.IsTrue)
+}
+
+func TestParser_ParseCreateTable_TablePrimaryKeyWithoutComma(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE TABLE post
+(
+    id int NOT NULL,
+    created_at TIMESTAMP NOT NULL
+    PRIMARY KEY (id)
+);
+
+INSERT INTO post (id, created_at) VALUES (1, NOW());`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	createTable := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(createTable.Columns, qt.HasLen, 2)
+	c.Assert(createTable.Columns[1].Name, qt.Equals, "created_at")
+	c.Assert(createTable.Columns[1].Nullable, qt.IsFalse)
+	c.Assert(createTable.Columns[1].Primary, qt.IsFalse)
+	c.Assert(createTable.Constraints, qt.HasLen, 1)
+	c.Assert(createTable.Constraints[0].Type, qt.Equals, ast.PrimaryKeyConstraint)
+	c.Assert(createTable.Constraints[0].Columns, qt.DeepEquals, []string{"id"})
+}
+
+func TestParser_ParseCreateTable_SelectTail(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE TABLE t2 ENGINE=heap SELECT * FROM t1;
+CREATE TABLE t3 (b int) SELECT a AS b FROM t1;`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 2)
+
+	noColumns := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(noColumns.Name, qt.Equals, "t2")
+	c.Assert(noColumns.Columns, qt.HasLen, 0)
+	c.Assert(noColumns.Options["ENGINE"], qt.Equals, "heap")
+	c.Assert(noColumns.SelectBody, qt.Equals, "SELECT * FROM t1")
+
+	withColumns := statements.Statements[1].(*ast.CreateTableNode)
+	c.Assert(withColumns.Name, qt.Equals, "t3")
+	c.Assert(withColumns.Columns, qt.HasLen, 1)
+	c.Assert(withColumns.SelectBody, qt.Equals, "SELECT a AS b FROM t1")
+}
+
+func TestParser_ParseCreateTable_MySQLColumnModifiers(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE TABLE t1(
+    c1 INT DEFAULT 12 COMMENT 'column1',
+    c2 VARCHAR(255) CHARACTER SET utf8 NOT NULL DEFAULT 'a',
+    c3 VARCHAR(255) CHARSET utf8 COLLATE utf8_unicode_ci NULL DEFAULT 'b'
+);`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	createTable := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(createTable.Columns, qt.HasLen, 3)
+	c.Assert(createTable.Columns[0].Comment, qt.Equals, "COMMENT 'column1'")
+	c.Assert(createTable.Columns[1].Comment, qt.Equals, "CHARACTER SET utf8")
+	c.Assert(createTable.Columns[1].Nullable, qt.IsFalse)
+	c.Assert(createTable.Columns[2].Comment, qt.Equals, "CHARSET utf8; COLLATE utf8_unicode_ci")
+	c.Assert(createTable.Columns[2].Nullable, qt.IsTrue)
+}
+
+func TestParser_ParseCreateTable_UnicodeIdentifiers(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE TABLE טבלה_של_אריאל (כמות int);`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	createTable := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(createTable.Name, qt.Equals, "טבלה_של_אריאל")
+	c.Assert(createTable.Columns, qt.HasLen, 1)
+	c.Assert(createTable.Columns[0].Name, qt.Equals, "כמות")
+	c.Assert(createTable.Columns[0].Type, qt.Equals, "int")
+}
+
+func TestParser_ParseCreateTable_EscapedDefaultStrings(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE TABLE mysql_defaults (c text default "\"" + '\'');
+CREATE TABLE pg_plain_defaults (c text default '\');
+CREATE TABLE pg_escaped_defaults (c text default E'\\A\\');`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 3)
+
+	mysqlTable := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(mysqlTable.Columns, qt.HasLen, 1)
+	c.Assert(mysqlTable.Columns[0].Default.Expression, qt.Equals, `"\""+ '\''`)
+
+	pgPlainTable := statements.Statements[1].(*ast.CreateTableNode)
+	c.Assert(pgPlainTable.Columns, qt.HasLen, 1)
+	c.Assert(pgPlainTable.Columns[0].Default.Value, qt.Equals, "'\\'")
+
+	pgEscapedTable := statements.Statements[2].(*ast.CreateTableNode)
+	c.Assert(pgEscapedTable.Columns, qt.HasLen, 1)
+	c.Assert(pgEscapedTable.Columns[0].Default.Value, qt.Equals, `E'\\A\\'`)
+}
+
 func TestParser_ParseCreateView(t *testing.T) {
 	c := qt.New(t)
 
