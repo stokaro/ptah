@@ -538,6 +538,134 @@ END;`
 	c.Assert(createFunction.Body, qt.Contains, "END")
 }
 
+func TestParser_ParseMySQLCreateFunctionWithReturnBody(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "CREATE FUNCTION `add2` (a int, b int) RETURNS int DETERMINISTIC NO SQL RETURN a + b;"
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	createFunction, ok := statements.Statements[0].(*ast.CreateFunctionNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(createFunction.Name, qt.Equals, "`add2`")
+	c.Assert(createFunction.Parameters, qt.Equals, "a int, b int")
+	c.Assert(createFunction.Returns, qt.Equals, "int")
+	c.Assert(createFunction.BodyKind, qt.Equals, ast.FunctionBodyReturn)
+	c.Assert(createFunction.Body, qt.Equals, "a + b")
+}
+
+func TestParser_ParseMySQLCreateFunctionWithCompoundBody(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `DELIMITER |
+CREATE FUNCTION fn1(x int) RETURNS int DETERMINISTIC
+BEGIN
+       INSERT INTO t1 VALUES (x);
+       RETURN x+2;
+END|
+DELIMITER ;`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	raw, ok := statements.Statements[0].(*ast.RawSQLNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(raw.SQL, qt.Contains, "CREATE FUNCTION fn1(x int) RETURNS int DETERMINISTIC")
+	c.Assert(raw.SQL, qt.Contains, "INSERT INTO t1 VALUES (x);")
+	c.Assert(raw.SQL, qt.Contains, "RETURN x+2;")
+}
+
+func TestParser_ParseMySQLCreateFunctionWithNestedCompoundBody(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE FUNCTION CompFunc(eID INT) RETURNS INT
+BEGIN
+    DECLARE ts INT;
+    DECLARE b INT;
+
+    BEGIN
+        SELECT SUM(s) INTO ts FROM sales WHERE e = eID;
+    END;
+
+    BEGIN
+        IF ts > 10000 THEN
+            SET b = 500;
+        ELSEIF ts BETWEEN 5000 AND 10000 THEN
+            SET b = 300;
+        ELSE
+            SET b = 0;
+        END IF;
+    END;
+
+    RETURN b;
+END;`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	raw, ok := statements.Statements[0].(*ast.RawSQLNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(raw.SQL, qt.Contains, "CREATE FUNCTION CompFunc(eID INT) RETURNS INT")
+	c.Assert(raw.SQL, qt.Contains, "END IF;")
+	c.Assert(raw.SQL, qt.Contains, "RETURN b;")
+}
+
+func TestParser_ParseMySQLCreateFunctionWithDollarDelimiter(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `DELIMITER $$
+CREATE OR REPLACE FUNCTION gen_uuid() RETURNS VARCHAR(22)
+BEGIN
+    RETURN concat(
+        date_format(NOW(6), '%Y%m%d%i%s%f'),
+        ROUND(1 + RAND() * (100 - 2))
+    );
+END;$$
+DELIMITER ;
+CALL gen_uuid();`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	raw, ok := statements.Statements[0].(*ast.RawSQLNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(raw.SQL, qt.Contains, "CREATE OR REPLACE FUNCTION gen_uuid() RETURNS VARCHAR(22)")
+	c.Assert(raw.SQL, qt.Contains, "date_format(NOW(6), '%Y%m%d%i%s%f')")
+}
+
+func TestParser_ParseCreateProcedureAsRawSQL(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `DELIMITER //
+CREATE PROCEDURE dorepeat(p1 INT)
+BEGIN
+    SET @x = 0;
+    REPEAT SET @x = @x + 1; UNTIL @x > p1 END REPEAT;
+END
+//
+DELIMITER ;
+CALL dorepeat(100);`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	raw, ok := statements.Statements[0].(*ast.RawSQLNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(raw.SQL, qt.Contains, "CREATE PROCEDURE dorepeat(p1 INT)")
+	c.Assert(raw.SQL, qt.Contains, "REPEAT SET @x = @x + 1; UNTIL @x > p1 END REPEAT;")
+}
+
 func TestParser_ParseCreateTrigger(t *testing.T) {
 	c := qt.New(t)
 
@@ -609,11 +737,16 @@ func TestParser_ParseCreateOrReplaceTrigger(t *testing.T) {
 	c.Assert(createTrigger.Table, qt.Equals, "users")
 }
 
-func TestParser_ParseRejectsUnsupportedCreateOrReplaceTarget(t *testing.T) {
+func TestParser_ParseCreateOrReplaceProcedureAsRawSQL(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := parser.NewParser("CREATE OR REPLACE PROCEDURE p() AS $$ SELECT 1 $$;").Parse()
-	c.Assert(err, qt.ErrorMatches, `unsupported CREATE OR REPLACE target: PROCEDURE at position 18`)
+	statements, err := parser.NewParser("CREATE OR REPLACE PROCEDURE p() AS BEGIN SELECT 1; END;").Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	raw, ok := statements.Statements[0].(*ast.RawSQLNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(raw.SQL, qt.Contains, "CREATE OR REPLACE PROCEDURE p()")
 }
 
 func TestParser_ParseSkipsSchemaNeutralStatements(t *testing.T) {

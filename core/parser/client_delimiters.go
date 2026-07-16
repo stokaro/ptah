@@ -79,6 +79,9 @@ func rewriteClientDelimitedStatements(input, delimiter string) string {
 			pos = writeUntilLineEnd(&output, input, pos)
 		case input[pos] == '\'' || input[pos] == '"' || input[pos] == '`':
 			pos = writeQuotedSQL(&output, input, pos, input[pos])
+		case strings.HasPrefix(input[pos:], delimiter):
+			output.WriteString(replacement)
+			pos += len(delimiter)
 		case input[pos] == '$':
 			if nextPos, ok := writeDollarQuotedSQL(&output, input, pos); ok {
 				pos = nextPos
@@ -86,9 +89,6 @@ func rewriteClientDelimitedStatements(input, delimiter string) string {
 			}
 			output.WriteByte(input[pos])
 			pos++
-		case strings.HasPrefix(input[pos:], delimiter):
-			output.WriteString(replacement)
-			pos += len(delimiter)
 		default:
 			output.WriteByte(input[pos])
 			pos++

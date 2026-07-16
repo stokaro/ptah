@@ -18,6 +18,7 @@ import (
 // and other DDL operations.
 type Parser struct {
 	lexer     *lexer.Lexer
+	input     string
 	current   lexer.Token
 	previous  lexer.Token
 	startTime time.Time
@@ -32,9 +33,11 @@ type Parser struct {
 //
 //	parser := NewParser("CREATE TABLE users (id INTEGER PRIMARY KEY);")
 func NewParser(input string) *Parser {
-	l := lexer.NewLexer(normalizeClientDelimiters(input))
+	normalized := normalizeClientDelimiters(input)
+	l := lexer.NewLexer(normalized)
 	p := &Parser{
 		lexer:     l,
+		input:     normalized,
 		startTime: time.Now(),
 		timeout:   30 * time.Second, // 30 second timeout to prevent infinite loops
 	}
@@ -120,6 +123,7 @@ func (p *Parser) parseStatement() (ast.Node, error) {
 
 // parseCreateStatement parses CREATE statements (TABLE, INDEX, TYPE).
 func (p *Parser) parseCreateStatement() (ast.Node, error) {
+	statementStart := p.current.Start
 	if err := p.expect(lexer.TokenIdentifier, "CREATE"); err != nil {
 		return nil, err
 	}
@@ -142,8 +146,8 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 		return p.parseCreateTable()
 	case "VIEW":
 		return p.parseCreateView()
-	case "FUNCTION":
-		return p.parseCreateFunction()
+	case "FUNCTION", "PROCEDURE":
+		return p.parseCreateRoutine(target, statementStart)
 	case "TRIGGER":
 		return p.parseCreateTrigger()
 	case "INDEX":
@@ -156,14 +160,9 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 		}
 		return p.parseCreateIndexAfterKeyword(target)
 	case "OR":
-		return p.parseCreateOrReplaceStatement()
+		return p.parseCreateOrReplaceStatement(statementStart)
 	case "TEMP", "TEMPORARY":
-		p.advance()
-		p.skipWhitespace()
-		if p.current.MatchIdentifierValue("TRIGGER") {
-			return p.parseCreateTrigger()
-		}
-		return nil, fmt.Errorf("unsupported CREATE %s target: %s at position %d", target, p.current.Value, p.current.Start)
+		return p.parseCreateTemporary(target)
 	case "UNIQUE":
 		// Handle CREATE UNIQUE INDEX
 		p.advance()
@@ -179,6 +178,22 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 	default:
 		return nil, fmt.Errorf("unsupported CREATE target: %s at position %d", target, p.current.Start)
 	}
+}
+
+func (p *Parser) parseCreateRoutine(target string, statementStart int) (ast.Node, error) {
+	if target == "PROCEDURE" {
+		return p.parseCreateRawRoutine("CREATE ")
+	}
+	return p.parseCreateFunction(statementStart)
+}
+
+func (p *Parser) parseCreateTemporary(target string) (ast.Node, error) {
+	p.advance()
+	p.skipWhitespace()
+	if p.current.MatchIdentifierValue("TRIGGER") {
+		return p.parseCreateTrigger()
+	}
+	return nil, fmt.Errorf("unsupported CREATE %s target: %s at position %d", target, p.current.Value, p.current.Start)
 }
 
 func (p *Parser) parseCreateSchema() (*ast.CreateSchemaNode, error) {
@@ -280,7 +295,7 @@ func (p *Parser) parseOptionalIfNotExists() (bool, error) {
 	return true, nil
 }
 
-func (p *Parser) parseCreateOrReplaceStatement() (ast.Node, error) {
+func (p *Parser) parseCreateOrReplaceStatement(statementStart int) (ast.Node, error) {
 	if err := p.expect(lexer.TokenIdentifier, "OR"); err != nil {
 		return nil, err
 	}
@@ -293,7 +308,10 @@ func (p *Parser) parseCreateOrReplaceStatement() (ast.Node, error) {
 		return p.parseCreateOrReplaceView()
 	}
 	if p.current.MatchIdentifierValue("FUNCTION") {
-		return p.parseCreateOrReplaceFunction()
+		return p.parseCreateFunction(statementStart)
+	}
+	if p.current.MatchIdentifierValue("PROCEDURE") {
+		return p.parseCreateRawRoutine("CREATE OR REPLACE ")
 	}
 	if p.current.MatchIdentifierValue("TRIGGER") {
 		trigger, err := p.parseCreateTrigger()
@@ -430,15 +448,7 @@ func (p *Parser) parseCreateOrReplaceView() (*ast.CreateViewNode, error) {
 	return view, nil
 }
 
-func (p *Parser) parseCreateFunction() (*ast.CreateFunctionNode, error) {
-	return p.parseCreateFunctionNode()
-}
-
-func (p *Parser) parseCreateOrReplaceFunction() (*ast.CreateFunctionNode, error) {
-	return p.parseCreateFunctionNode()
-}
-
-func (p *Parser) parseCreateFunctionNode() (*ast.CreateFunctionNode, error) {
+func (p *Parser) parseCreateFunction(statementStart int) (ast.Node, error) {
 	if err := p.expect(lexer.TokenIdentifier, "FUNCTION"); err != nil {
 		return nil, err
 	}
@@ -456,10 +466,56 @@ func (p *Parser) parseCreateFunctionNode() (*ast.CreateFunctionNode, error) {
 	}
 
 	function := ast.NewCreateFunction(functionName).SetParameters(parameters)
-	if err := p.parseFunctionClauses(function); err != nil {
+	raw, err := p.parseFunctionClauses(function)
+	if err != nil {
 		return nil, err
 	}
+	if raw {
+		return ast.NewRawSQL(p.rawStatement(statementStart)), nil
+	}
 	return function, nil
+}
+
+func (p *Parser) parseCreateRawRoutine(prefix string) (ast.Node, error) {
+	sql, err := p.collectRawRoutine(prefix)
+	if err != nil {
+		return nil, err
+	}
+	return ast.NewRawSQL(sql), nil
+}
+
+func (p *Parser) collectRawRoutine(prefix string) (string, error) {
+	var sql strings.Builder
+	sql.WriteString(prefix)
+
+	blockDepth := 0
+	caseDepth := 0
+	pendingEndTrailer := false
+	for !p.isAtEnd() {
+		if err := p.checkTimeout(); err != nil {
+			return "", err
+		}
+
+		if p.current.Type == lexer.TokenSemicolon && blockDepth == 0 {
+			p.advance()
+			return strings.TrimSpace(sql.String()), nil
+		}
+
+		if p.current.Type == lexer.TokenIdentifier {
+			trackRoutineCompoundKeyword(strings.ToUpper(p.current.Value), &blockDepth, &caseDepth, &pendingEndTrailer)
+		}
+		if p.current.Type == lexer.TokenSemicolon {
+			pendingEndTrailer = false
+		}
+
+		sql.WriteString(p.current.Value)
+		p.advance()
+	}
+
+	if blockDepth > 0 {
+		return "", fmt.Errorf("unterminated CREATE routine body at position %d", p.current.Start)
+	}
+	return strings.TrimSpace(sql.String()), nil
 }
 
 func (p *Parser) collectParenthesizedBody(label string) (string, error) {
@@ -494,53 +550,93 @@ func (p *Parser) collectParenthesizedBody(label string) (string, error) {
 	return "", fmt.Errorf("unterminated %s at position %d", label, p.current.Start)
 }
 
-func (p *Parser) parseFunctionClauses(function *ast.CreateFunctionNode) error {
+func (p *Parser) parseFunctionClauses(function *ast.CreateFunctionNode) (bool, error) {
 	for !p.isAtEnd() && p.current.Type != lexer.TokenSemicolon {
 		if err := p.checkTimeout(); err != nil {
-			return err
+			return false, err
 		}
 
 		p.skipWhitespace()
 		if p.isAtEnd() || p.current.Type == lexer.TokenSemicolon {
-			return nil
+			return false, nil
 		}
 		if p.current.Type != lexer.TokenIdentifier {
-			return fmt.Errorf("unsupported CREATE FUNCTION syntax: expected function clause, got %s at position %d", p.current.Type, p.current.Start)
+			return false, fmt.Errorf("unsupported CREATE FUNCTION syntax: expected function clause, got %s at position %d", p.current.Type, p.current.Start)
 		}
 
-		switch strings.ToUpper(p.current.Value) {
-		case "RETURNS":
-			if err := p.parseFunctionReturns(function); err != nil {
-				return err
-			}
-		case "RETURN":
-			if err := p.parseFunctionReturnBody(function); err != nil {
-				return err
-			}
-		case "BEGIN":
-			if err := p.parseFunctionAtomicBody(function); err != nil {
-				return err
-			}
-		case "AS":
-			if err := p.parseFunctionBody(function); err != nil {
-				return err
-			}
-		case "LANGUAGE":
-			if err := p.parseFunctionLanguage(function); err != nil {
-				return err
-			}
-		case "SECURITY":
-			if err := p.parseFunctionSecurity(function); err != nil {
-				return err
-			}
-		case "IMMUTABLE", "STABLE", "VOLATILE":
-			function.SetVolatility(strings.ToUpper(p.current.Value))
-			p.advance()
-		default:
-			return fmt.Errorf("unsupported CREATE FUNCTION clause: %s at position %d", p.current.Value, p.current.Start)
+		raw, err := p.parseFunctionClause(function)
+		if err != nil {
+			return false, err
+		}
+		if raw {
+			return true, nil
 		}
 	}
-	return nil
+	return false, nil
+}
+
+func (p *Parser) parseFunctionClause(function *ast.CreateFunctionNode) (bool, error) {
+	keyword := strings.ToUpper(p.current.Value)
+	switch keyword {
+	case "RETURNS":
+		return false, p.parseFunctionReturns(function)
+	case "RETURN":
+		return false, p.parseFunctionReturnBody(function)
+	case "BEGIN":
+		return p.parseFunctionBeginBody(function)
+	case "AS":
+		return false, p.parseFunctionBody(function)
+	case "LANGUAGE":
+		return false, p.parseFunctionLanguage(function)
+	case "SECURITY":
+		return false, p.parseFunctionSecurity(function)
+	case "IMMUTABLE", "STABLE", "VOLATILE":
+		function.SetVolatility(keyword)
+		p.advance()
+		return false, nil
+	default:
+		if p.skipMySQLFunctionAttribute(keyword) {
+			return false, nil
+		}
+		return false, fmt.Errorf("unsupported CREATE FUNCTION clause: %s at position %d", p.current.Value, p.current.Start)
+	}
+}
+
+func (p *Parser) skipMySQLFunctionAttribute(keyword string) bool {
+	switch keyword {
+	case "DETERMINISTIC":
+		p.advance()
+		return true
+	case "NOT":
+		return p.skipOptionalFollowingKeyword("DETERMINISTIC")
+	case "NO", "CONTAINS":
+		return p.skipOptionalFollowingKeyword("SQL")
+	case "READS", "MODIFIES":
+		p.advance()
+		p.skipWhitespace()
+		if p.current.MatchIdentifierValue("SQL") {
+			p.advance()
+			p.skipWhitespace()
+		}
+		if p.current.MatchIdentifierValue("DATA") {
+			p.advance()
+		}
+		return true
+	case "SQL":
+		p.advance()
+		return true
+	default:
+		return false
+	}
+}
+
+func (p *Parser) skipOptionalFollowingKeyword(keyword string) bool {
+	p.advance()
+	p.skipWhitespace()
+	if p.current.MatchIdentifierValue(keyword) {
+		p.advance()
+	}
+	return true
 }
 
 func (p *Parser) parseFunctionReturns(function *ast.CreateFunctionNode) error {
@@ -553,7 +649,7 @@ func (p *Parser) parseFunctionReturns(function *ast.CreateFunctionNode) error {
 	for !p.isAtEnd() && p.current.Type != lexer.TokenSemicolon {
 		if p.current.Type == lexer.TokenIdentifier {
 			switch strings.ToUpper(p.current.Value) {
-			case "AS", "BEGIN", "LANGUAGE", "RETURN", "SECURITY", "IMMUTABLE", "STABLE", "VOLATILE":
+			case "AS", "BEGIN", "CONTAINS", "DETERMINISTIC", "LANGUAGE", "MODIFIES", "NO", "NOT", "READS", "RETURN", "SECURITY", "SQL", "IMMUTABLE", "STABLE", "VOLATILE":
 				function.SetReturns(strings.TrimSpace(returns.String()))
 				return nil
 			}
@@ -602,65 +698,106 @@ func (p *Parser) parseFunctionReturnBody(function *ast.CreateFunctionNode) error
 	return nil
 }
 
-func (p *Parser) parseFunctionAtomicBody(function *ast.CreateFunctionNode) error {
-	body, err := p.collectAtomicFunctionBody()
+func (p *Parser) parseFunctionBeginBody(function *ast.CreateFunctionNode) (bool, error) {
+	body, atomic, err := p.collectFunctionBeginBody()
 	if err != nil {
-		return err
+		return false, err
 	}
-	function.SetAtomicBody(body)
-	return nil
+	if atomic {
+		function.SetAtomicBody(body)
+		return false, nil
+	}
+	return true, nil
 }
 
-func (p *Parser) collectAtomicFunctionBody() (string, error) {
+func (p *Parser) collectFunctionBeginBody() (string, bool, error) {
 	if err := p.expect(lexer.TokenIdentifier, "BEGIN"); err != nil {
-		return "", err
+		return "", false, err
 	}
 
 	var body strings.Builder
 	body.WriteString("BEGIN")
 
 	p.skipWhitespace()
-	if err := p.expect(lexer.TokenIdentifier, "ATOMIC"); err != nil {
-		return "", fmt.Errorf("unsupported CREATE FUNCTION body: BEGIN without ATOMIC at position %d", p.current.Start)
+	atomic := false
+	if p.current.MatchIdentifierValue("ATOMIC") {
+		atomic = true
+		body.WriteString(" ATOMIC")
+		p.advance()
 	}
-	body.WriteString(" ATOMIC")
 
 	blockDepth := 1
 	caseDepth := 0
+	pendingEndTrailer := false
 	for !p.isAtEnd() {
 		if err := p.checkTimeout(); err != nil {
-			return "", err
+			return "", false, err
 		}
 
 		if p.current.Type == lexer.TokenIdentifier {
 			keyword := strings.ToUpper(p.current.Value)
-			switch keyword {
-			case "BEGIN":
-				blockDepth++
-			case "CASE":
-				caseDepth++
-			case "END":
-				if caseDepth > 0 {
-					caseDepth--
-				} else {
-					blockDepth--
-				}
-			}
+			trackRoutineCompoundKeyword(keyword, &blockDepth, &caseDepth, &pendingEndTrailer)
 
 			body.WriteString(p.current.Value)
 			p.advance()
 
 			if blockDepth == 0 {
-				return strings.TrimSpace(body.String()), nil
+				return strings.TrimSpace(body.String()), atomic, nil
 			}
 			continue
 		}
 
+		if p.current.Type == lexer.TokenSemicolon {
+			pendingEndTrailer = false
+		}
 		body.WriteString(p.current.Value)
 		p.advance()
 	}
 
-	return "", fmt.Errorf("unterminated SQL function body at position %d", p.current.Start)
+	return "", false, fmt.Errorf("unterminated SQL function body at position %d", p.current.Start)
+}
+
+func trackRoutineCompoundKeyword(keyword string, blockDepth, caseDepth *int, pendingEndTrailer *bool) {
+	if *pendingEndTrailer {
+		*pendingEndTrailer = false
+		if isRoutineEndTrailerKeyword(keyword) {
+			return
+		}
+	}
+
+	switch keyword {
+	case "BEGIN", "IF", "LOOP", "REPEAT", "WHILE":
+		(*blockDepth)++
+	case "CASE":
+		(*caseDepth)++
+	case "END":
+		if *caseDepth > 0 {
+			(*caseDepth)--
+		} else if *blockDepth > 0 {
+			(*blockDepth)--
+		}
+		*pendingEndTrailer = true
+	}
+}
+
+func isRoutineEndTrailerKeyword(keyword string) bool {
+	switch keyword {
+	case "CASE", "IF", "LOOP", "REPEAT", "WHILE":
+		return true
+	default:
+		return false
+	}
+}
+
+func (p *Parser) rawStatement(start int) string {
+	end := p.previous.End
+	if p.current.Type == lexer.TokenSemicolon {
+		end = p.current.End
+	}
+	if start < 0 || start > end || end > len(p.input) {
+		return ""
+	}
+	return strings.TrimSpace(p.input[start:end])
 }
 
 func (p *Parser) parseFunctionLanguage(function *ast.CreateFunctionNode) error {
