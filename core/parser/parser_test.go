@@ -419,6 +419,53 @@ func TestParser_ParseCreateFunctionWithSingleQuotedBody(t *testing.T) {
 	c.Assert(createFunction.Volatility, qt.Equals, "STABLE")
 }
 
+func TestParser_ParseCreateFunctionWithReturnBody(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "CREATE FUNCTION public.first_int(value text[]) RETURNS int RETURN value[1]::int;"
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	createFunction, ok := statements.Statements[0].(*ast.CreateFunctionNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(createFunction.Name, qt.Equals, "public.first_int")
+	c.Assert(createFunction.Parameters, qt.Equals, "value text[]")
+	c.Assert(createFunction.Returns, qt.Equals, "int")
+	c.Assert(createFunction.BodyKind, qt.Equals, ast.FunctionBodyReturn)
+	c.Assert(createFunction.Body, qt.Equals, "value[1]::int")
+}
+
+func TestParser_ParseCreateFunctionWithAtomicBody(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE FUNCTION public.is_even(x int) RETURNS boolean
+LANGUAGE SQL
+STABLE
+BEGIN ATOMIC
+SELECT CASE WHEN x % 2 = 0 THEN true ELSE false END;
+END;`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	createFunction, ok := statements.Statements[0].(*ast.CreateFunctionNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(createFunction.Name, qt.Equals, "public.is_even")
+	c.Assert(createFunction.Parameters, qt.Equals, "x int")
+	c.Assert(createFunction.Returns, qt.Equals, "boolean")
+	c.Assert(createFunction.Language, qt.Equals, "SQL")
+	c.Assert(createFunction.Volatility, qt.Equals, "STABLE")
+	c.Assert(createFunction.BodyKind, qt.Equals, ast.FunctionBodyAtomic)
+	c.Assert(createFunction.Body, qt.Contains, "BEGIN ATOMIC")
+	c.Assert(createFunction.Body, qt.Contains, "SELECT CASE WHEN x % 2 = 0 THEN true ELSE false END;")
+	c.Assert(createFunction.Body, qt.Contains, "END")
+}
+
 func TestParser_ParseCreateTrigger(t *testing.T) {
 	c := qt.New(t)
 
