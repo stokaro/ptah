@@ -146,6 +146,26 @@ func (r *Renderer) VisitCreateType(node *ast.CreateTypeNode) error {
 	return nil
 }
 
+// VisitCreateSchema renders a CREATE SCHEMA statement.
+func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
+	guard := ""
+	if node.IfNotExists {
+		guard = " IF NOT EXISTS"
+	}
+	r.w.WriteLinef("CREATE SCHEMA%s %s;", guard, node.Name)
+	return nil
+}
+
+// VisitCreateDatabase renders a CREATE DATABASE statement.
+func (r *Renderer) VisitCreateDatabase(node *ast.CreateDatabaseNode) error {
+	guard := ""
+	if node.IfNotExists {
+		guard = " IF NOT EXISTS"
+	}
+	r.w.WriteLinef("CREATE DATABASE%s %s;", guard, node.Name)
+	return nil
+}
+
 func (r *Renderer) VisitAlterType(node *ast.AlterTypeNode) error {
 	// MySQL/MariaDB doesn't support ALTER TYPE operations
 	// Type changes are handled through ALTER TABLE MODIFY COLUMN
