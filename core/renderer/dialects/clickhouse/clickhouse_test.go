@@ -589,6 +589,17 @@ func TestAlterTable_RenameTable(t *testing.T) {
 	c.Assert(out, qt.Contains, "RENAME TABLE old_events TO events;")
 }
 
+func TestCreateNamespaceStatements(t *testing.T) {
+	c := qt.New(t)
+	out := render(t,
+		&ast.CreateSchemaNode{Name: "events", IfNotExists: true},
+		&ast.CreateDatabaseNode{Name: "analytics"},
+	)
+
+	c.Assert(out, qt.Contains, "CREATE DATABASE IF NOT EXISTS events;")
+	c.Assert(out, qt.Contains, "CREATE DATABASE analytics;")
+}
+
 func TestAlterTable_AddSkippingIndex(t *testing.T) {
 	cases := []struct {
 		name string

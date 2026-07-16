@@ -48,6 +48,27 @@ func TestPostgres_AlterTable_RenameTable(t *testing.T) {
 	c.Assert(out, qt.Contains, "ALTER TABLE old_users RENAME TO users;")
 }
 
+func TestPostgres_CreateSchema(t *testing.T) {
+	c := qt.New(t)
+	out := renderPG(t, &ast.CreateSchemaNode{Name: "auth", IfNotExists: true})
+	c.Assert(out, qt.Contains, "CREATE SCHEMA IF NOT EXISTS auth;")
+}
+
+func TestPostgres_CreateDatabase(t *testing.T) {
+	c := qt.New(t)
+	out := renderPG(t, &ast.CreateDatabaseNode{Name: "appdb"})
+	c.Assert(out, qt.Contains, "CREATE DATABASE appdb;")
+}
+
+func TestPostgres_CreateDatabaseIfNotExistsUnsupported(t *testing.T) {
+	c := qt.New(t)
+	r := postgres.New()
+
+	err := (&ast.CreateDatabaseNode{Name: "appdb", IfNotExists: true}).Accept(r)
+
+	c.Assert(err, qt.ErrorMatches, "create database if not exists is not supported in PostgreSQL")
+}
+
 // AddSkippingIndex and ModifyTTL are ClickHouse-only; postgres emits an
 // explanatory comment and otherwise treats the operation as a no-op.
 func TestPostgres_AlterTable_ClickHouseOnlyOpsEmitComment(t *testing.T) {

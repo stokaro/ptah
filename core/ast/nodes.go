@@ -99,6 +99,42 @@ func (n *CreateTableNode) Accept(visitor Visitor) error {
 	return visitor.VisitCreateTable(n)
 }
 
+// CreateSchemaNode represents a CREATE SCHEMA statement.
+type CreateSchemaNode struct {
+	// Name is the schema name.
+	Name string
+	// IfNotExists preserves an IF NOT EXISTS guard when the dialect supports it.
+	IfNotExists bool
+}
+
+// NewCreateSchema creates a new CREATE SCHEMA node.
+func NewCreateSchema(name string) *CreateSchemaNode {
+	return &CreateSchemaNode{Name: name}
+}
+
+// Accept implements the Node interface for CreateSchemaNode.
+func (n *CreateSchemaNode) Accept(visitor Visitor) error {
+	return visitor.VisitCreateSchema(n)
+}
+
+// CreateDatabaseNode represents a CREATE DATABASE statement.
+type CreateDatabaseNode struct {
+	// Name is the database name.
+	Name string
+	// IfNotExists preserves an IF NOT EXISTS guard when the dialect supports it.
+	IfNotExists bool
+}
+
+// NewCreateDatabase creates a new CREATE DATABASE node.
+func NewCreateDatabase(name string) *CreateDatabaseNode {
+	return &CreateDatabaseNode{Name: name}
+}
+
+// Accept implements the Node interface for CreateDatabaseNode.
+func (n *CreateDatabaseNode) Accept(visitor Visitor) error {
+	return visitor.VisitCreateDatabase(n)
+}
+
 // AddColumn adds a column to the CREATE TABLE statement and returns the table node for chaining.
 //
 // Example:

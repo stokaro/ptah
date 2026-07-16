@@ -54,6 +54,31 @@ func TestCreateTableNode_Accept(t *testing.T) {
 	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"CreateTable:users"})
 }
 
+func TestCreateSchemaNode_Accept(t *testing.T) {
+	c := qt.New(t)
+
+	visitor := &mocks.MockVisitor{}
+	node := ast.NewCreateSchema("public")
+	node.IfNotExists = true
+
+	err := node.Accept(visitor)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"CreateSchema:public"})
+}
+
+func TestCreateDatabaseNode_Accept(t *testing.T) {
+	c := qt.New(t)
+
+	visitor := &mocks.MockVisitor{}
+	node := ast.NewCreateDatabase("app")
+
+	err := node.Accept(visitor)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"CreateDatabase:app"})
+}
+
 func TestAlterTableNode_Accept(t *testing.T) {
 	c := qt.New(t)
 

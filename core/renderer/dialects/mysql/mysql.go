@@ -41,6 +41,16 @@ func (r *Renderer) VisitCreateType(node *ast.CreateTypeNode) error {
 	return r.r.VisitCreateType(node)
 }
 
+// VisitCreateSchema delegates to the mysqllike renderer
+func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
+	return r.r.VisitCreateSchema(node)
+}
+
+// VisitCreateDatabase delegates to the mysqllike renderer
+func (r *Renderer) VisitCreateDatabase(node *ast.CreateDatabaseNode) error {
+	return r.r.VisitCreateDatabase(node)
+}
+
 func (r *Renderer) VisitAlterType(node *ast.AlterTypeNode) error {
 	return r.r.VisitAlterType(node)
 }

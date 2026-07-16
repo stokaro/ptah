@@ -20,6 +20,22 @@ func (m *MockVisitor) VisitCreateTable(node *ast.CreateTableNode) error {
 	return nil
 }
 
+func (m *MockVisitor) VisitCreateSchema(node *ast.CreateSchemaNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "CreateSchema:"+node.Name)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
+func (m *MockVisitor) VisitCreateDatabase(node *ast.CreateDatabaseNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "CreateDatabase:"+node.Name)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
 func (m *MockVisitor) VisitAlterTable(node *ast.AlterTableNode) error {
 	m.VisitedNodes = append(m.VisitedNodes, "AlterTable:"+node.Name)
 	if m.ReturnError {

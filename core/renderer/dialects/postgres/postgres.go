@@ -53,6 +53,25 @@ func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 	return nil
 }
 
+// VisitCreateSchema renders a CREATE SCHEMA statement.
+func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
+	guard := ""
+	if node.IfNotExists {
+		guard = " IF NOT EXISTS"
+	}
+	r.w.WriteLinef("CREATE SCHEMA%s %s;", guard, node.Name)
+	return nil
+}
+
+// VisitCreateDatabase renders a CREATE DATABASE statement.
+func (r *Renderer) VisitCreateDatabase(node *ast.CreateDatabaseNode) error {
+	if node.IfNotExists {
+		return fmt.Errorf("create database if not exists is not supported in PostgreSQL")
+	}
+	r.w.WriteLinef("CREATE DATABASE %s;", node.Name)
+	return nil
+}
+
 func (r *Renderer) VisitCreateType(node *ast.CreateTypeNode) error {
 	// Add comment if provided
 	if node.Comment != "" {

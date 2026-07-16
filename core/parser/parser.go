@@ -122,11 +122,15 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 	p.skipWhitespace()
 
 	if p.current.Type != lexer.TokenIdentifier {
-		return nil, fmt.Errorf("expected CREATE target (TABLE, VIEW, FUNCTION, INDEX, TYPE, DOMAIN), got %s at position %d", p.current.Type, p.current.Start)
+		return nil, fmt.Errorf("expected CREATE target (TABLE, VIEW, FUNCTION, INDEX, TYPE, DOMAIN, SCHEMA, DATABASE), got %s at position %d", p.current.Type, p.current.Start)
 	}
 
 	target := strings.ToUpper(p.current.Value)
 	switch target {
+	case "SCHEMA":
+		return p.parseCreateSchema()
+	case "DATABASE":
+		return p.parseCreateDatabase()
 	case "TABLE":
 		return p.parseCreateTable()
 	case "VIEW":
@@ -152,6 +156,58 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 	default:
 		return nil, fmt.Errorf("unsupported CREATE target: %s at position %d", target, p.current.Start)
 	}
+}
+
+func (p *Parser) parseCreateSchema() (*ast.CreateSchemaNode, error) {
+	if err := p.expect(lexer.TokenIdentifier, "SCHEMA"); err != nil {
+		return nil, err
+	}
+	name, ifNotExists, err := p.parseCreateNamespaceName("schema name")
+	if err != nil {
+		return nil, err
+	}
+	return &ast.CreateSchemaNode{Name: name, IfNotExists: ifNotExists}, nil
+}
+
+func (p *Parser) parseCreateDatabase() (*ast.CreateDatabaseNode, error) {
+	if err := p.expect(lexer.TokenIdentifier, "DATABASE"); err != nil {
+		return nil, err
+	}
+	name, ifNotExists, err := p.parseCreateNamespaceName("database name")
+	if err != nil {
+		return nil, err
+	}
+	return &ast.CreateDatabaseNode{Name: name, IfNotExists: ifNotExists}, nil
+}
+
+func (p *Parser) parseCreateNamespaceName(label string) (string, bool, error) {
+	p.skipWhitespace()
+	ifNotExists, err := p.parseOptionalIfNotExists()
+	if err != nil {
+		return "", false, err
+	}
+	p.skipWhitespace()
+	name, err := p.expectIdentifier()
+	if err != nil {
+		return "", false, fmt.Errorf("expected %s: %w", label, err)
+	}
+	return name, ifNotExists, nil
+}
+
+func (p *Parser) parseOptionalIfNotExists() (bool, error) {
+	if !p.current.MatchIdentifierValue("IF") {
+		return false, nil
+	}
+	p.advance()
+	p.skipWhitespace()
+	if err := p.expect(lexer.TokenIdentifier, "NOT"); err != nil {
+		return false, fmt.Errorf("expected NOT after IF: %w", err)
+	}
+	p.skipWhitespace()
+	if err := p.expect(lexer.TokenIdentifier, "EXISTS"); err != nil {
+		return false, fmt.Errorf("expected EXISTS after IF NOT: %w", err)
+	}
+	return true, nil
 }
 
 func (p *Parser) parseCreateOrReplaceStatement() (ast.Node, error) {
@@ -206,12 +262,16 @@ func (p *Parser) expect(tokenType lexer.TokenType, value string) error {
 
 // expectIdentifier consumes an identifier token and returns its value.
 func (p *Parser) expectIdentifier() (string, error) {
-	if p.current.Type != lexer.TokenIdentifier {
+	if p.current.Type != lexer.TokenIdentifier && !isDoubleQuotedIdentifierToken(p.current) {
 		return "", fmt.Errorf("expected identifier, got %s at position %d", p.current.Type, p.current.Start)
 	}
 	value := p.current.Value
 	p.advance()
 	return value, nil
+}
+
+func isDoubleQuotedIdentifierToken(tok lexer.Token) bool {
+	return tok.Type == lexer.TokenString && strings.HasPrefix(tok.Value, `"`)
 }
 
 func (p *Parser) parseQualifiedIdentifier(label string) (string, error) {
@@ -1774,10 +1834,10 @@ func (p *Parser) handleTableCharset(table *ast.CreateTableNode, option string) e
 		}
 		p.skipWhitespace()
 	}
-	if err := p.expect(lexer.TokenOperator, "="); err != nil {
-		return fmt.Errorf("expected '=' after CHARSET: %w", err)
+	if p.current.MatchOperatorValue("=") {
+		p.advance()
+		p.skipWhitespace()
 	}
-	p.skipWhitespace()
 	value, err := p.expectIdentifier()
 	if err != nil {
 		return fmt.Errorf("expected charset value: %w", err)
@@ -1790,10 +1850,10 @@ func (p *Parser) handleTableCollate(table *ast.CreateTableNode) error {
 	// Handle COLLATE
 	p.advance()
 	p.skipWhitespace()
-	if err := p.expect(lexer.TokenOperator, "="); err != nil {
-		return fmt.Errorf("expected '=' after COLLATE: %w", err)
+	if p.current.MatchOperatorValue("=") {
+		p.advance()
+		p.skipWhitespace()
 	}
-	p.skipWhitespace()
 	value, err := p.expectIdentifier()
 	if err != nil {
 		return fmt.Errorf("expected collate value: %w", err)
