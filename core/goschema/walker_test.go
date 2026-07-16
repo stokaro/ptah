@@ -1394,6 +1394,12 @@ func TestParseFS_ConflictingDuplicateSchemaObjectsFail(t *testing.T) {
 			sourceB: `//migrator:schema:role name="app_user" login="true" inherit="true"`,
 			err:     `conflicting role "app_user" definitions`,
 		},
+		{
+			name:    "schema comment",
+			sourceA: `//migrator:schema:schema name="auth" comment="Authentication schema"`,
+			sourceB: `//migrator:schema:schema name="auth" comment="Identity schema"`,
+			err:     `conflicting schema "auth" definitions`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1439,6 +1445,31 @@ type Second struct{}
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Views, qt.HasLen, 1)
 	c.Assert(result.Views[0].Comment, qt.Equals, "first")
+}
+
+func TestParseFS_IdenticalDuplicateSchemasAreNoOp(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"a.go": {Data: []byte(`package fixtures
+
+//migrator:schema:schema name="auth" comment="Authentication schema"
+type First struct{}
+`)},
+		"b.go": {Data: []byte(`package fixtures
+
+//migrator:schema:schema name="auth" comment="Authentication schema"
+type Second struct{}
+`)},
+	}
+
+	result, err := goschema.ParseFS(fsys, ".")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Schemas, qt.DeepEquals, []goschema.Schema{{
+		Name:    "auth",
+		Comment: "Authentication schema",
+	}})
 }
 
 // BenchmarkParseFS_LargeProject benchmarks ParseFS performance on a larger project

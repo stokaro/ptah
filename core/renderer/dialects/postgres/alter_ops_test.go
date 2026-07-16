@@ -50,8 +50,9 @@ func TestPostgres_AlterTable_RenameTable(t *testing.T) {
 
 func TestPostgres_CreateSchema(t *testing.T) {
 	c := qt.New(t)
-	out := renderPG(t, &ast.CreateSchemaNode{Name: "auth", IfNotExists: true})
+	out := renderPG(t, &ast.CreateSchemaNode{Name: "auth", IfNotExists: true, Comment: "Auth user's schema"})
 	c.Assert(out, qt.Contains, "CREATE SCHEMA IF NOT EXISTS auth;")
+	c.Assert(out, qt.Contains, "COMMENT ON SCHEMA auth IS 'Auth user''s schema';")
 }
 
 func TestPostgres_CreateDatabase(t *testing.T) {

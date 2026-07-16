@@ -206,6 +206,13 @@ type User struct {
 
 Migration generation emits `CREATE SCHEMA IF NOT EXISTS auth` before creating schema-qualified tables and renders references such as `auth.users`.
 
+Schema objects can also be declared explicitly when you need schema-level metadata such as PostgreSQL comments:
+
+```go
+//migrator:schema:schema name="auth" comment="Authentication objects"
+type AuthSchema struct{}
+```
+
 ### Field Definition
 ```go
 //migrator:schema:field name="id" type="SERIAL" primary="true" platform.mysql.type="INT AUTO_INCREMENT"
