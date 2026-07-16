@@ -105,6 +105,9 @@ func (p *Parser) parseStatement() (ast.Node, error) {
 		return p.parseCommentStatement()
 	case "DROP":
 		return p.parseDropStatement()
+	case "ANALYZE", "BEGIN", "COMMIT", "DELETE", "INSERT", "PRAGMA", "REINDEX", "ROLLBACK", "SELECT", "SET", "UPDATE", "USE", "VACUUM", "WITH":
+		p.skipSchemaNeutralStatement()
+		return nil, nil
 	default:
 		return nil, fmt.Errorf("unsupported SQL statement: %s at position %d", keyword, p.current.Start)
 	}
@@ -211,6 +214,16 @@ func (p *Parser) parseQualifiedIdentifier(label string) (string, error) {
 // skipWhitespace skips whitespace and comment tokens.
 func (p *Parser) skipWhitespace() {
 	for p.current.Type == lexer.TokenWhitespace || p.current.Type == lexer.TokenComment {
+		p.advance()
+	}
+}
+
+func (p *Parser) skipSchemaNeutralStatement() {
+	for !p.isAtEnd() {
+		if p.current.Type == lexer.TokenSemicolon {
+			p.advance()
+			return
+		}
 		p.advance()
 	}
 }
