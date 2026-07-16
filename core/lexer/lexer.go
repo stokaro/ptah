@@ -180,6 +180,8 @@ func (l *Lexer) NextToken() Token {
 			return l.scanOperator()
 		case ch == '-' && l.peekNext() == '-':
 			return l.scanLineComment()
+		case ch == '#' && !isHashOperatorContinuation(l.peekNext()):
+			return l.scanHashLineComment()
 		case ch == '/' && l.peekNext() == '*':
 			return l.scanBlockComment()
 		case isIdentifierStart(ch):
@@ -251,6 +253,30 @@ func (l *Lexer) scanLineComment() Token {
 	}
 
 	return l.emit(TokenComment)
+}
+
+// scanHashLineComment scans a MySQL-style line comment (# comment).
+func (l *Lexer) scanHashLineComment() Token {
+	l.advance() // consume #
+
+	for {
+		ch := l.peek()
+		if ch == 0 || ch == '\n' || ch == '\r' {
+			break
+		}
+		l.advance()
+	}
+
+	return l.emit(TokenComment)
+}
+
+func isHashOperatorContinuation(ch rune) bool {
+	switch ch {
+	case '!', '#', '%', '&', '*', '+', '-', '/', '<', '=', '>', '?', '@', '^', '|', '~':
+		return true
+	default:
+		return false
+	}
 }
 
 // scanBlockComment scans a block comment (/* comment */)

@@ -89,6 +89,34 @@ func TestLexer_NextToken_HappyPath(t *testing.T) {
 			},
 		},
 		{
+			name:  "hash_line_comment",
+			input: "SELECT # this is a comment\nFROM users",
+			expected: []lexer.Token{
+				{Type: lexer.TokenIdentifier, Value: "SELECT", Start: 0, End: 6},
+				{Type: lexer.TokenWhitespace, Value: " ", Start: 6, End: 7},
+				{Type: lexer.TokenComment, Value: "# this is a comment", Start: 7, End: 26},
+				{Type: lexer.TokenWhitespace, Value: "\n", Start: 26, End: 27},
+				{Type: lexer.TokenIdentifier, Value: "FROM", Start: 27, End: 31},
+				{Type: lexer.TokenWhitespace, Value: " ", Start: 31, End: 32},
+				{Type: lexer.TokenIdentifier, Value: "users", Start: 32, End: 37},
+				{Type: lexer.TokenEOF, Value: "", Start: 37, End: 37},
+			},
+		},
+		{
+			name:  "postgres_hash_operator",
+			input: "c #>> '{a}'",
+			expected: []lexer.Token{
+				{Type: lexer.TokenIdentifier, Value: "c", Start: 0, End: 1},
+				{Type: lexer.TokenWhitespace, Value: " ", Start: 1, End: 2},
+				{Type: lexer.TokenOperator, Value: "#", Start: 2, End: 3},
+				{Type: lexer.TokenOperator, Value: ">", Start: 3, End: 4},
+				{Type: lexer.TokenOperator, Value: ">", Start: 4, End: 5},
+				{Type: lexer.TokenWhitespace, Value: " ", Start: 5, End: 6},
+				{Type: lexer.TokenString, Value: "'{a}'", Start: 6, End: 11},
+				{Type: lexer.TokenEOF, Value: "", Start: 11, End: 11},
+			},
+		},
+		{
 			name:  "block_comment",
 			input: "SELECT /* multi\nline comment */ FROM users",
 			expected: []lexer.Token{
