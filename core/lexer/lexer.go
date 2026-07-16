@@ -3,6 +3,7 @@ package lexer
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // TokenType represents the type of SQL token
@@ -85,15 +86,41 @@ func (l *Lexer) peek() rune {
 	if l.pos >= len(l.input) {
 		return 0
 	}
-	return rune(l.input[l.pos])
+	ch, _ := utf8.DecodeRuneInString(l.input[l.pos:])
+	return ch
 }
 
 // peekNext returns the character at the next position without advancing
 func (l *Lexer) peekNext() rune {
-	if l.pos+1 >= len(l.input) {
+	if l.pos >= len(l.input) {
 		return 0
 	}
-	return rune(l.input[l.pos+1])
+	_, size := utf8.DecodeRuneInString(l.input[l.pos:])
+	next := l.pos + size
+	if next >= len(l.input) {
+		return 0
+	}
+	ch, _ := utf8.DecodeRuneInString(l.input[next:])
+	return ch
+}
+
+// peekAfterNext returns the rune after peekNext without advancing.
+func (l *Lexer) peekAfterNext() rune {
+	if l.pos >= len(l.input) {
+		return 0
+	}
+	_, size := utf8.DecodeRuneInString(l.input[l.pos:])
+	next := l.pos + size
+	if next >= len(l.input) {
+		return 0
+	}
+	_, nextSize := utf8.DecodeRuneInString(l.input[next:])
+	afterNext := next + nextSize
+	if afterNext >= len(l.input) {
+		return 0
+	}
+	ch, _ := utf8.DecodeRuneInString(l.input[afterNext:])
+	return ch
 }
 
 // advance moves to the next character and returns it
@@ -101,8 +128,8 @@ func (l *Lexer) advance() rune {
 	if l.pos >= len(l.input) {
 		return 0
 	}
-	ch := rune(l.input[l.pos])
-	l.pos++
+	ch, size := utf8.DecodeRuneInString(l.input[l.pos:])
+	l.pos += size
 	return ch
 }
 
@@ -147,12 +174,15 @@ func (l *Lexer) NextToken() Token {
 			if l.isDollarQuotedString() {
 				return l.scanDollarQuotedString()
 			}
+			if isIdentifierPart(l.peekNext()) {
+				return l.scanIdentifier()
+			}
 			return l.scanOperator()
 		case ch == '-' && l.peekNext() == '-':
 			return l.scanLineComment()
 		case ch == '/' && l.peekNext() == '*':
 			return l.scanBlockComment()
-		case unicode.IsLetter(ch) || ch == '_':
+		case isIdentifierStart(ch):
 			return l.scanIdentifier()
 		case unicode.IsDigit(ch):
 			return l.scanNumber()
@@ -187,6 +217,10 @@ func (l *Lexer) scanString() Token {
 		}
 
 		if ch == '\\' {
+			if quote == '\'' && l.peekNext() == quote && isStringTerminator(l.peekAfterNext()) {
+				l.advance()
+				continue
+			}
 			l.advance() // consume backslash
 			if l.peek() != 0 {
 				l.advance() // consume escaped character
@@ -197,6 +231,10 @@ func (l *Lexer) scanString() Token {
 	}
 
 	return l.emit(TokenString)
+}
+
+func isStringTerminator(ch rune) bool {
+	return ch == 0 || ch == ';' || ch == ',' || ch == ')'
 }
 
 // scanLineComment scans a line comment (-- comment)
@@ -243,12 +281,20 @@ func (l *Lexer) scanBlockComment() Token {
 func (l *Lexer) scanIdentifier() Token {
 	for {
 		ch := l.peek()
-		if !unicode.IsLetter(ch) && !unicode.IsDigit(ch) && ch != '_' {
+		if !isIdentifierPart(ch) {
 			break
 		}
 		l.advance()
 	}
 	return l.emit(TokenIdentifier)
+}
+
+func isIdentifierStart(ch rune) bool {
+	return unicode.IsLetter(ch) || ch == '_' || ch == '$'
+}
+
+func isIdentifierPart(ch rune) bool {
+	return unicode.IsLetter(ch) || unicode.IsDigit(ch) || ch == '_' || ch == '$'
 }
 
 // scanBacktickedIdentifier scans a backtick-quoted identifier (MySQL style)
