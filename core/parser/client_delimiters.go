@@ -4,21 +4,33 @@ import "strings"
 
 func normalizeClientDelimiters(input string) string {
 	delimiter := ";"
+	allowCommentDelimiter := false
 	var output strings.Builder
 	var pending strings.Builder
 
 	for line := range strings.SplitAfterSeq(input, "\n") {
-		if nextDelimiter, ok := parseClientDelimiterDirective(line); ok {
-			output.WriteString(rewriteClientDelimitedStatements(pending.String(), delimiter))
+		if nextDelimiter, commentDelimiter, ok := parseDelimiterDirective(line); ok {
+			output.WriteString(rewriteClientDelimitedStatements(pending.String(), delimiter, allowCommentDelimiter))
 			pending.Reset()
 			delimiter = nextDelimiter
+			allowCommentDelimiter = commentDelimiter
 			continue
 		}
 		pending.WriteString(line)
 	}
 
-	output.WriteString(rewriteClientDelimitedStatements(pending.String(), delimiter))
+	output.WriteString(rewriteClientDelimitedStatements(pending.String(), delimiter, allowCommentDelimiter))
 	return output.String()
+}
+
+func parseDelimiterDirective(line string) (delimiter string, allowCommentDelimiter bool, ok bool) {
+	if delimiter, ok := parseClientDelimiterDirective(line); ok {
+		return delimiter, false, true
+	}
+	if delimiter, ok := parseAtlasDelimiterDirective(line); ok {
+		return delimiter, true, true
+	}
+	return "", false, false
 }
 
 func parseClientDelimiterDirective(line string) (string, bool) {
@@ -31,6 +43,26 @@ func parseClientDelimiterDirective(line string) (string, bool) {
 	}
 
 	delimiter := strings.TrimSpace(trimmed[len("DELIMITER"):])
+	if delimiter == "" {
+		return "", false
+	}
+	delimiter = stripClientDelimiterQuotes(delimiter)
+	delimiter = strings.NewReplacer(`\n`, "\n", `\r`, "\r", `\t`, "\t").Replace(delimiter)
+	return delimiter, true
+}
+
+func parseAtlasDelimiterDirective(line string) (string, bool) {
+	const prefix = "-- atlas:delimiter"
+
+	trimmed := strings.TrimSpace(line)
+	if len(trimmed) < len(prefix) || !strings.EqualFold(trimmed[:len(prefix)], prefix) {
+		return "", false
+	}
+	if len(trimmed) > len(prefix) && !isClientDelimiterBoundary(trimmed[len(prefix)]) {
+		return "", false
+	}
+
+	delimiter := strings.TrimSpace(trimmed[len(prefix):])
 	if delimiter == "" {
 		return "", false
 	}
@@ -58,7 +90,7 @@ func stripClientDelimiterQuotes(delimiter string) string {
 	return delimiter
 }
 
-func rewriteClientDelimitedStatements(input, delimiter string) string {
+func rewriteClientDelimitedStatements(input, delimiter string, allowCommentDelimiter bool) string {
 	if delimiter == "" || delimiter == ";" {
 		return input
 	}
@@ -71,6 +103,9 @@ func rewriteClientDelimitedStatements(input, delimiter string) string {
 	var output strings.Builder
 	for pos := 0; pos < len(input); {
 		switch {
+		case allowCommentDelimiter && strings.HasPrefix(input[pos:], delimiter):
+			output.WriteString(replacement)
+			pos += len(delimiter)
 		case strings.HasPrefix(input[pos:], "--"):
 			pos = writeUntilLineEnd(&output, input, pos)
 		case strings.HasPrefix(input[pos:], "/*"):
