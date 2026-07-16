@@ -122,7 +122,7 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 	p.skipWhitespace()
 
 	if p.current.Type != lexer.TokenIdentifier {
-		return nil, fmt.Errorf("expected CREATE target (TABLE, VIEW, INDEX, TYPE, DOMAIN), got %s at position %d", p.current.Type, p.current.Start)
+		return nil, fmt.Errorf("expected CREATE target (TABLE, VIEW, FUNCTION, INDEX, TYPE, DOMAIN), got %s at position %d", p.current.Type, p.current.Start)
 	}
 
 	target := strings.ToUpper(p.current.Value)
@@ -131,6 +131,8 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 		return p.parseCreateTable()
 	case "VIEW":
 		return p.parseCreateView()
+	case "FUNCTION":
+		return p.parseCreateFunction()
 	case "INDEX":
 		return p.parseCreateIndex()
 	case "OR":
@@ -163,6 +165,9 @@ func (p *Parser) parseCreateOrReplaceStatement() (ast.Node, error) {
 	p.skipWhitespace()
 	if p.current.MatchIdentifierValue("VIEW") {
 		return p.parseCreateOrReplaceView()
+	}
+	if p.current.MatchIdentifierValue("FUNCTION") {
+		return p.parseCreateOrReplaceFunction()
 	}
 	return nil, fmt.Errorf("unsupported CREATE OR REPLACE target: %s at position %d", p.current.Value, p.current.Start)
 }
@@ -278,6 +283,200 @@ func (p *Parser) parseCreateOrReplaceView() (*ast.CreateViewNode, error) {
 	}
 	view.SetReplace()
 	return view, nil
+}
+
+func (p *Parser) parseCreateFunction() (*ast.CreateFunctionNode, error) {
+	return p.parseCreateFunctionNode()
+}
+
+func (p *Parser) parseCreateOrReplaceFunction() (*ast.CreateFunctionNode, error) {
+	return p.parseCreateFunctionNode()
+}
+
+func (p *Parser) parseCreateFunctionNode() (*ast.CreateFunctionNode, error) {
+	if err := p.expect(lexer.TokenIdentifier, "FUNCTION"); err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
+
+	functionName, err := p.parseQualifiedIdentifier("function name")
+	if err != nil {
+		return nil, fmt.Errorf("unsupported CREATE FUNCTION syntax: %w", err)
+	}
+
+	p.skipWhitespace()
+	parameters, err := p.collectParenthesizedBody("function parameters")
+	if err != nil {
+		return nil, err
+	}
+
+	function := ast.NewCreateFunction(functionName).SetParameters(parameters)
+	if err := p.parseFunctionClauses(function); err != nil {
+		return nil, err
+	}
+	return function, nil
+}
+
+func (p *Parser) collectParenthesizedBody(label string) (string, error) {
+	if err := p.expect(lexer.TokenOperator, "("); err != nil {
+		return "", fmt.Errorf("expected '(' for %s: %w", label, err)
+	}
+
+	var body strings.Builder
+	depth := 1
+	for depth > 0 && !p.isAtEnd() {
+		if err := p.checkTimeout(); err != nil {
+			return "", err
+		}
+
+		if p.current.Type == lexer.TokenOperator {
+			switch p.current.Value {
+			case "(":
+				depth++
+			case ")":
+				depth--
+				if depth == 0 {
+					p.advance()
+					return strings.TrimSpace(body.String()), nil
+				}
+			}
+		}
+
+		body.WriteString(p.current.Value)
+		p.advance()
+	}
+
+	return "", fmt.Errorf("unterminated %s at position %d", label, p.current.Start)
+}
+
+func (p *Parser) parseFunctionClauses(function *ast.CreateFunctionNode) error {
+	for !p.isAtEnd() && p.current.Type != lexer.TokenSemicolon {
+		if err := p.checkTimeout(); err != nil {
+			return err
+		}
+
+		p.skipWhitespace()
+		if p.isAtEnd() || p.current.Type == lexer.TokenSemicolon {
+			return nil
+		}
+		if p.current.Type != lexer.TokenIdentifier {
+			return fmt.Errorf("unsupported CREATE FUNCTION syntax: expected function clause, got %s at position %d", p.current.Type, p.current.Start)
+		}
+
+		switch strings.ToUpper(p.current.Value) {
+		case "RETURNS":
+			if err := p.parseFunctionReturns(function); err != nil {
+				return err
+			}
+		case "AS":
+			if err := p.parseFunctionBody(function); err != nil {
+				return err
+			}
+		case "LANGUAGE":
+			if err := p.parseFunctionLanguage(function); err != nil {
+				return err
+			}
+		case "SECURITY":
+			if err := p.parseFunctionSecurity(function); err != nil {
+				return err
+			}
+		case "IMMUTABLE", "STABLE", "VOLATILE":
+			function.SetVolatility(strings.ToUpper(p.current.Value))
+			p.advance()
+		default:
+			return fmt.Errorf("unsupported CREATE FUNCTION clause: %s at position %d", p.current.Value, p.current.Start)
+		}
+	}
+	return nil
+}
+
+func (p *Parser) parseFunctionReturns(function *ast.CreateFunctionNode) error {
+	if err := p.expect(lexer.TokenIdentifier, "RETURNS"); err != nil {
+		return err
+	}
+	p.skipWhitespace()
+
+	var returns strings.Builder
+	for !p.isAtEnd() && p.current.Type != lexer.TokenSemicolon {
+		if p.current.Type == lexer.TokenIdentifier {
+			switch strings.ToUpper(p.current.Value) {
+			case "AS", "LANGUAGE", "SECURITY", "IMMUTABLE", "STABLE", "VOLATILE":
+				function.SetReturns(strings.TrimSpace(returns.String()))
+				return nil
+			}
+		}
+		returns.WriteString(p.current.Value)
+		p.advance()
+	}
+
+	function.SetReturns(strings.TrimSpace(returns.String()))
+	return nil
+}
+
+func (p *Parser) parseFunctionBody(function *ast.CreateFunctionNode) error {
+	if err := p.expect(lexer.TokenIdentifier, "AS"); err != nil {
+		return err
+	}
+	p.skipWhitespace()
+
+	if p.current.Type != lexer.TokenString {
+		return fmt.Errorf("unsupported CREATE FUNCTION body: expected string literal after AS, got %s at position %d", p.current.Type, p.current.Start)
+	}
+
+	body := p.current.Value
+	function.SetBody(stripSQLStringDelimiters(body))
+	p.advance()
+	return nil
+}
+
+func (p *Parser) parseFunctionLanguage(function *ast.CreateFunctionNode) error {
+	if err := p.expect(lexer.TokenIdentifier, "LANGUAGE"); err != nil {
+		return err
+	}
+	p.skipWhitespace()
+
+	language, err := p.expectIdentifier()
+	if err != nil {
+		return fmt.Errorf("expected function language: %w", err)
+	}
+	function.SetLanguage(language)
+	return nil
+}
+
+func (p *Parser) parseFunctionSecurity(function *ast.CreateFunctionNode) error {
+	if err := p.expect(lexer.TokenIdentifier, "SECURITY"); err != nil {
+		return err
+	}
+	p.skipWhitespace()
+
+	security, err := p.expectIdentifier()
+	if err != nil {
+		return fmt.Errorf("expected function security mode: %w", err)
+	}
+	function.SetSecurity(strings.ToUpper(security))
+	return nil
+}
+
+func stripSQLStringDelimiters(value string) string {
+	if len(value) < 2 {
+		return value
+	}
+	if value[0] == '\'' && value[len(value)-1] == '\'' {
+		return value[1 : len(value)-1]
+	}
+	if value[0] != '$' {
+		return value
+	}
+
+	end := strings.Index(value[1:], "$")
+	if end < 0 {
+		return value
+	}
+	tag := value[:end+2]
+	if !strings.HasSuffix(value, tag) {
+		return value
+	}
+	return value[len(tag) : len(value)-len(tag)]
 }
 
 func (p *Parser) parseCreateViewNode() (*ast.CreateViewNode, error) {

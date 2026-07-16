@@ -30,6 +30,11 @@ The parser supports the following SQL DDL statements:
 - `CREATE VIEW ... AS SELECT ...`
 - `CREATE OR REPLACE VIEW ... AS SELECT ...`
 
+### CREATE FUNCTION
+- PostgreSQL-style `CREATE FUNCTION ... RETURNS ... AS $...$ LANGUAGE ...`
+- PostgreSQL-style `CREATE OR REPLACE FUNCTION ... AS '...' LANGUAGE ...`
+- Function parameters, return type, language, security, and volatility clauses
+
 ### CREATE TYPE (ENUM)
 - PostgreSQL-style enum type definitions
 
