@@ -666,6 +666,42 @@ CALL dorepeat(100);`
 	c.Assert(raw.SQL, qt.Contains, "REPEAT SET @x = @x + 1; UNTIL @x > p1 END REPEAT;")
 }
 
+func TestParser_ParseCreateDefinerProcedureWithAtlasDelimiter(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `-- atlas:delimiter \n-- end --\n
+
+CREATE DEFINER='boring' PROCEDURE proc ()
+    COMMENT 'ATLAS_DELIMITER'
+    SQL SECURITY INVOKER
+    NOT DETERMINISTIC
+    MODIFIES SQL DATA
+BEGIN
+    UPDATE performance_schema.threads
+    SET instrumented = 'YES'
+    WHERE type = 'BACKGROUND';
+
+    SELECT CONCAT('Enabled ', @rows := ROW_COUNT(), ' background thread', IF(@rows != 1, 's', '')) AS summary;
+END
+
+-- end --
+
+CALL proc();`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	raw, ok := statements.Statements[0].(*ast.RawSQLNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(raw.SQL, qt.Contains, "CREATE DEFINER='boring' PROCEDURE proc ()")
+	c.Assert(raw.SQL, qt.Contains, "SQL SECURITY INVOKER")
+	c.Assert(raw.SQL, qt.Contains, "IF(@rows != 1, 's', '')")
+	c.Assert(raw.SQL, qt.Not(qt.Contains), "CALL proc")
+	c.Assert(raw.SQL, qt.Not(qt.Contains), "-- end --")
+}
+
 func TestParser_ParseCreateTrigger(t *testing.T) {
 	c := qt.New(t)
 

@@ -148,6 +148,8 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 		return p.parseCreateView()
 	case "FUNCTION", "PROCEDURE":
 		return p.parseCreateRoutine(target, statementStart)
+	case "DEFINER":
+		return p.parseCreateDefinerRoutine(statementStart)
 	case "TRIGGER":
 		return p.parseCreateTrigger()
 	case "INDEX":
@@ -182,9 +184,22 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 
 func (p *Parser) parseCreateRoutine(target string, statementStart int) (ast.Node, error) {
 	if target == "PROCEDURE" {
-		return p.parseCreateRawRoutine("CREATE ")
+		return p.parseCreateRawRoutineStatement(statementStart)
 	}
 	return p.parseCreateFunction(statementStart)
+}
+
+func (p *Parser) parseCreateDefinerRoutine(statementStart int) (ast.Node, error) {
+	for !p.isAtEnd() && p.current.Type != lexer.TokenSemicolon {
+		if err := p.checkTimeout(); err != nil {
+			return nil, err
+		}
+		if p.current.MatchIdentifierValue("FUNCTION") || p.current.MatchIdentifierValue("PROCEDURE") {
+			return p.parseCreateRawRoutineStatement(statementStart)
+		}
+		p.advance()
+	}
+	return nil, fmt.Errorf("unsupported CREATE DEFINER target at position %d", p.current.Start)
 }
 
 func (p *Parser) parseCreateTemporary(target string) (ast.Node, error) {
@@ -311,7 +326,7 @@ func (p *Parser) parseCreateOrReplaceStatement(statementStart int) (ast.Node, er
 		return p.parseCreateFunction(statementStart)
 	}
 	if p.current.MatchIdentifierValue("PROCEDURE") {
-		return p.parseCreateRawRoutine("CREATE OR REPLACE ")
+		return p.parseCreateRawRoutineStatement(statementStart)
 	}
 	if p.current.MatchIdentifierValue("TRIGGER") {
 		trigger, err := p.parseCreateTrigger()
@@ -476,18 +491,15 @@ func (p *Parser) parseCreateFunction(statementStart int) (ast.Node, error) {
 	return function, nil
 }
 
-func (p *Parser) parseCreateRawRoutine(prefix string) (ast.Node, error) {
-	sql, err := p.collectRawRoutine(prefix)
+func (p *Parser) parseCreateRawRoutineStatement(statementStart int) (ast.Node, error) {
+	sql, err := p.collectRawRoutineStatement(statementStart)
 	if err != nil {
 		return nil, err
 	}
 	return ast.NewRawSQL(sql), nil
 }
 
-func (p *Parser) collectRawRoutine(prefix string) (string, error) {
-	var sql strings.Builder
-	sql.WriteString(prefix)
-
+func (p *Parser) collectRawRoutineStatement(statementStart int) (string, error) {
 	blockDepth := 0
 	caseDepth := 0
 	pendingEndTrailer := false
@@ -497,25 +509,25 @@ func (p *Parser) collectRawRoutine(prefix string) (string, error) {
 		}
 
 		if p.current.Type == lexer.TokenSemicolon && blockDepth == 0 {
+			sql := p.rawStatementFragment(statementStart, p.current.Start)
 			p.advance()
-			return strings.TrimSpace(sql.String()), nil
+			return sql, nil
 		}
 
 		if p.current.Type == lexer.TokenIdentifier {
-			trackRoutineCompoundKeyword(strings.ToUpper(p.current.Value), &blockDepth, &caseDepth, &pendingEndTrailer)
+			p.trackCurrentRoutineCompoundKeyword(&blockDepth, &caseDepth, &pendingEndTrailer)
 		}
 		if p.current.Type == lexer.TokenSemicolon {
 			pendingEndTrailer = false
 		}
 
-		sql.WriteString(p.current.Value)
 		p.advance()
 	}
 
 	if blockDepth > 0 {
 		return "", fmt.Errorf("unterminated CREATE routine body at position %d", p.current.Start)
 	}
-	return strings.TrimSpace(sql.String()), nil
+	return p.rawStatementFragment(statementStart, p.previous.End), nil
 }
 
 func (p *Parser) collectParenthesizedBody(label string) (string, error) {
@@ -735,8 +747,7 @@ func (p *Parser) collectFunctionBeginBody() (string, bool, error) {
 		}
 
 		if p.current.Type == lexer.TokenIdentifier {
-			keyword := strings.ToUpper(p.current.Value)
-			trackRoutineCompoundKeyword(keyword, &blockDepth, &caseDepth, &pendingEndTrailer)
+			p.trackCurrentRoutineCompoundKeyword(&blockDepth, &caseDepth, &pendingEndTrailer)
 
 			body.WriteString(p.current.Value)
 			p.advance()
@@ -755,6 +766,15 @@ func (p *Parser) collectFunctionBeginBody() (string, bool, error) {
 	}
 
 	return "", false, fmt.Errorf("unterminated SQL function body at position %d", p.current.Start)
+}
+
+func (p *Parser) trackCurrentRoutineCompoundKeyword(blockDepth, caseDepth *int, pendingEndTrailer *bool) {
+	keyword := strings.ToUpper(p.current.Value)
+	if keyword == "IF" && p.current.End < len(p.input) && p.input[p.current.End] == '(' {
+		// MySQL scalar IF(...) calls are not compound IF ... END IF blocks.
+		return
+	}
+	trackRoutineCompoundKeyword(keyword, blockDepth, caseDepth, pendingEndTrailer)
 }
 
 func trackRoutineCompoundKeyword(keyword string, blockDepth, caseDepth *int, pendingEndTrailer *bool) {
@@ -794,6 +814,10 @@ func (p *Parser) rawStatement(start int) string {
 	if p.current.Type == lexer.TokenSemicolon {
 		end = p.current.End
 	}
+	return p.rawStatementFragment(start, end)
+}
+
+func (p *Parser) rawStatementFragment(start, end int) string {
 	if start < 0 || start > end || end > len(p.input) {
 		return ""
 	}
