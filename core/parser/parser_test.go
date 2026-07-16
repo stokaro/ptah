@@ -136,6 +136,24 @@ GO
 	c.Assert(statements.Statements[1].(*ast.CreateTableNode).Name, qt.Equals, "second_table")
 }
 
+func TestParser_ParseMySQLHashLineComments(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `# CREATE TABLE skipped(id int);
+CREATE TABLE t1(id int);
+SELECT * FROM t1 # inline comment
+;
+# another skipped statement
+CREATE TABLE t2(id int);`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 2)
+	c.Assert(statements.Statements[0].(*ast.CreateTableNode).Name, qt.Equals, "t1")
+	c.Assert(statements.Statements[1].(*ast.CreateTableNode).Name, qt.Equals, "t2")
+}
+
 func TestParser_ParseDoesNotTreatGotoAsGoBatchSeparator(t *testing.T) {
 	c := qt.New(t)
 
