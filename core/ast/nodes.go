@@ -2,6 +2,7 @@ package ast
 
 import (
 	"fmt"
+	"slices"
 )
 
 // Node represents any SQL AST node that can be visited by a Visitor.
@@ -724,6 +725,8 @@ func (n *CommentNode) Accept(visitor Visitor) error {
 type DropTableNode struct {
 	// Name is the name of the table to drop
 	Name string
+	// Names contains all tables to drop. Name is kept as the first table for compatibility.
+	Names []string
 	// IfExists indicates whether to use IF EXISTS clause
 	IfExists bool
 	// Cascade indicates whether to use CASCADE option (PostgreSQL)
@@ -743,9 +746,32 @@ type DropTableNode struct {
 func NewDropTable(name string) *DropTableNode {
 	return &DropTableNode{
 		Name:     name,
+		Names:    []string{name},
 		IfExists: false,
 		Cascade:  false,
 	}
+}
+
+// SetNames sets the table names to drop and keeps Name aligned with the first table.
+func (n *DropTableNode) SetNames(names []string) *DropTableNode {
+	n.Names = slices.Clone(names)
+	if len(names) == 0 {
+		n.Name = ""
+		return n
+	}
+	n.Name = names[0]
+	return n
+}
+
+// TableNames returns every table targeted by the DROP TABLE statement.
+func (n *DropTableNode) TableNames() []string {
+	if len(n.Names) > 0 {
+		return slices.Clone(n.Names)
+	}
+	if n.Name == "" {
+		return nil
+	}
+	return []string{n.Name}
 }
 
 // SetIfExists sets the IF EXISTS option for the DROP TABLE statement.

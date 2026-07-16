@@ -776,9 +776,9 @@ func (r *Renderer) VisitDropTable(node *ast.DropTableNode) error {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
 	if node.IfExists {
-		r.w.WriteLinef("DROP TABLE IF EXISTS %s;", node.Name)
+		r.w.WriteLinef("DROP TABLE IF EXISTS %s;", strings.Join(node.TableNames(), ", "))
 	} else {
-		r.w.WriteLinef("DROP TABLE %s;", node.Name)
+		r.w.WriteLinef("DROP TABLE %s;", strings.Join(node.TableNames(), ", "))
 	}
 	return nil
 }

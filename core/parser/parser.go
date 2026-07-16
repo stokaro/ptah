@@ -32,7 +32,7 @@ type Parser struct {
 //
 //	parser := NewParser("CREATE TABLE users (id INTEGER PRIMARY KEY);")
 func NewParser(input string) *Parser {
-	l := lexer.NewLexer(input)
+	l := lexer.NewLexer(normalizeClientDelimiters(input))
 	p := &Parser{
 		lexer:     l,
 		startTime: time.Now(),
@@ -110,7 +110,7 @@ func (p *Parser) parseStatement() (ast.Node, error) {
 		// SQL Server tooling uses GO as a batch separator, not as schema DDL.
 		p.skipGoBatchSeparator()
 		return nil, nil
-	case "ANALYZE", "BEGIN", "COMMIT", "DELETE", "INSERT", "PRAGMA", "REINDEX", "ROLLBACK", "SELECT", "SET", "UPDATE", "USE", "VACUUM", "WITH":
+	case "ANALYZE", "BEGIN", "CALL", "COMMIT", "DELETE", "INSERT", "PRAGMA", "REINDEX", "ROLLBACK", "SELECT", "SET", "SHOW", "UPDATE", "USE", "VACUUM", "WITH":
 		p.skipSchemaNeutralStatement()
 		return nil, nil
 	default:
@@ -621,7 +621,7 @@ func (p *Parser) collectAtomicFunctionBody() (string, error) {
 
 	p.skipWhitespace()
 	if err := p.expect(lexer.TokenIdentifier, "ATOMIC"); err != nil {
-		return "", fmt.Errorf("expected ATOMIC after BEGIN in SQL function body: %w", err)
+		return "", fmt.Errorf("unsupported CREATE FUNCTION body: BEGIN without ATOMIC at position %d", p.current.Start)
 	}
 	body.WriteString(" ATOMIC")
 
@@ -1537,7 +1537,7 @@ func (p *Parser) parseOptionalColumnType() (string, error) {
 	switch {
 	case p.current.Type == lexer.TokenIdentifier && isColumnConstraintStart(p.current.Value):
 		return "", nil
-	case p.current.MatchOperatorValue(",") || p.current.MatchOperatorValue(")"):
+	case p.current.Type == lexer.TokenSemicolon || p.current.MatchOperatorValue(",") || p.current.MatchOperatorValue(")"):
 		return "", nil
 	default:
 		return p.parseColumnType()
@@ -2767,12 +2767,12 @@ func (p *Parser) parseDropTable() (*ast.DropTableNode, error) {
 		ifExists = true
 	}
 
-	tableName, err := p.parseQualifiedIdentifier("table name")
+	tableNames, err := p.parseDropTableNames()
 	if err != nil {
 		return nil, err
 	}
 
-	dropTable := ast.NewDropTable(tableName)
+	dropTable := ast.NewDropTable(tableNames[0]).SetNames(tableNames)
 	if ifExists {
 		dropTable.SetIfExists()
 	}
@@ -2787,6 +2787,24 @@ func (p *Parser) parseDropTable() (*ast.DropTableNode, error) {
 		p.advance()
 	}
 	return dropTable, nil
+}
+
+func (p *Parser) parseDropTableNames() ([]string, error) {
+	var names []string
+	for {
+		tableName, err := p.parseQualifiedIdentifier("table name")
+		if err != nil {
+			return nil, err
+		}
+		names = append(names, tableName)
+
+		p.skipWhitespace()
+		if !p.current.MatchOperatorValue(",") {
+			return names, nil
+		}
+		p.advance()
+		p.skipWhitespace()
+	}
 }
 
 // parseAlterOperation parses individual ALTER TABLE operations.
