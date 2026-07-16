@@ -271,6 +271,88 @@ func TestParser_ParseAlterTable(t *testing.T) {
 	c.Assert(addOp.Column.Unique, qt.IsTrue)
 }
 
+func TestParser_ParseAlterTableQualifiedName(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "ALTER TABLE `atlantis`.`tbl` ADD `col_2` TEXT;"
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	alterTable, ok := statements.Statements[0].(*ast.AlterTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(alterTable.Name, qt.Equals, "`atlantis`.`tbl`")
+	c.Assert(alterTable.Operations, qt.HasLen, 1)
+
+	addOp, ok := alterTable.Operations[0].(*ast.AddColumnOperation)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(addOp.Column.Name, qt.Equals, "`col_2`")
+	c.Assert(addOp.Column.Type, qt.Equals, "TEXT")
+}
+
+func TestParser_ParseAlterTableRenameTable(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "ALTER TABLE `new_users` RENAME TO `users`;"
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	alterTable, ok := statements.Statements[0].(*ast.AlterTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(alterTable.Name, qt.Equals, "`new_users`")
+	c.Assert(alterTable.Operations, qt.HasLen, 1)
+
+	renameOp, ok := alterTable.Operations[0].(*ast.RenameTableOperation)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(renameOp.NewName, qt.Equals, "`users`")
+}
+
+func TestParser_ParseAlterTableRenameQualifiedTable(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "ALTER TABLE public.old_users RENAME TO archive.users;"
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	alterTable, ok := statements.Statements[0].(*ast.AlterTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(alterTable.Name, qt.Equals, "public.old_users")
+	c.Assert(alterTable.Operations, qt.HasLen, 1)
+
+	renameOp, ok := alterTable.Operations[0].(*ast.RenameTableOperation)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(renameOp.NewName, qt.Equals, "archive.users")
+}
+
+func TestParser_ParseAlterTableRenameColumn(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "ALTER TABLE users RENAME COLUMN old_name TO new_name;"
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	alterTable, ok := statements.Statements[0].(*ast.AlterTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(alterTable.Name, qt.Equals, "users")
+	c.Assert(alterTable.Operations, qt.HasLen, 1)
+
+	renameOp, ok := alterTable.Operations[0].(*ast.RenameColumnOperation)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(renameOp.OldName, qt.Equals, "old_name")
+	c.Assert(renameOp.NewName, qt.Equals, "new_name")
+}
+
 func TestParser_ParseDropTable(t *testing.T) {
 	tests := []struct {
 		name     string

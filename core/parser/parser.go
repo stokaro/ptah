@@ -2041,9 +2041,9 @@ func (p *Parser) parseAlterStatement() (*ast.AlterTableNode, error) {
 	p.skipWhitespace()
 
 	// Get table name
-	tableName, err := p.expectIdentifier()
+	tableName, err := p.parseQualifiedIdentifier("table name")
 	if err != nil {
-		return nil, fmt.Errorf("expected table name: %w", err)
+		return nil, err
 	}
 
 	alterNode := &ast.AlterTableNode{
@@ -2158,9 +2158,57 @@ func (p *Parser) parseAlterOperation() (ast.AlterOperation, error) {
 		return p.parseDropOperation()
 	case "MODIFY", "ALTER":
 		return p.parseModifyOperation()
+	case "RENAME":
+		return p.parseRenameOperation()
 	default:
 		return nil, fmt.Errorf("unsupported ALTER operation: %s at position %d", operation, p.current.Start)
 	}
+}
+
+func (p *Parser) parseRenameOperation() (ast.AlterOperation, error) {
+	if err := p.expect(lexer.TokenIdentifier, "RENAME"); err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
+
+	if p.current.MatchIdentifierValue("COLUMN") {
+		return p.parseRenameColumnOperation()
+	}
+	if !p.current.MatchIdentifierValue("TO") {
+		return nil, fmt.Errorf("expected TO or COLUMN after RENAME at position %d", p.current.Start)
+	}
+
+	p.advance()
+	p.skipWhitespace()
+	newName, err := p.parseQualifiedIdentifier("new table name")
+	if err != nil {
+		return nil, err
+	}
+	return &ast.RenameTableOperation{NewName: newName}, nil
+}
+
+func (p *Parser) parseRenameColumnOperation() (*ast.RenameColumnOperation, error) {
+	if err := p.expect(lexer.TokenIdentifier, "COLUMN"); err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
+
+	oldName, err := p.expectIdentifier()
+	if err != nil {
+		return nil, fmt.Errorf("expected old column name: %w", err)
+	}
+	p.skipWhitespace()
+
+	if err := p.expect(lexer.TokenIdentifier, "TO"); err != nil {
+		return nil, fmt.Errorf("expected TO after old column name: %w", err)
+	}
+	p.skipWhitespace()
+
+	newName, err := p.expectIdentifier()
+	if err != nil {
+		return nil, fmt.Errorf("expected new column name: %w", err)
+	}
+	return &ast.RenameColumnOperation{OldName: oldName, NewName: newName}, nil
 }
 
 // parseAddOperation parses ADD COLUMN operations.

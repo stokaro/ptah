@@ -98,8 +98,10 @@ func TestAlterOperations_ImplementInterface(t *testing.T) {
 	ops = append(ops, &ast.ModifyColumnOperation{Column: ast.NewColumn("test", "INTEGER")})
 	ops = append(ops, &ast.AddConstraintOperation{Constraint: ast.NewUniqueConstraint("uk_test", "test")})
 	ops = append(ops, &ast.DropConstraintOperation{ConstraintName: "test_constraint"})
+	ops = append(ops, &ast.RenameColumnOperation{OldName: "old_test", NewName: "test"})
+	ops = append(ops, &ast.RenameTableOperation{NewName: "renamed_test"})
 
-	c.Assert(ops, qt.HasLen, 5)
+	c.Assert(ops, qt.HasLen, 7)
 
 	// Test that they all implement the Node interface as well (since AlterOperation embeds Node)
 	for _, op := range ops {
@@ -120,6 +122,8 @@ func TestAlterOperations_InterfaceCompliance(t *testing.T) {
 	var _ ast.AlterOperation = &ast.ModifyColumnOperation{}
 	var _ ast.AlterOperation = &ast.AddConstraintOperation{}
 	var _ ast.AlterOperation = &ast.DropConstraintOperation{}
+	var _ ast.AlterOperation = &ast.RenameColumnOperation{}
+	var _ ast.AlterOperation = &ast.RenameTableOperation{}
 
 	// Test that they also implement Node interface
 	var _ ast.Node = &ast.AddColumnOperation{}
@@ -127,6 +131,8 @@ func TestAlterOperations_InterfaceCompliance(t *testing.T) {
 	var _ ast.Node = &ast.ModifyColumnOperation{}
 	var _ ast.Node = &ast.AddConstraintOperation{}
 	var _ ast.Node = &ast.DropConstraintOperation{}
+	var _ ast.Node = &ast.RenameColumnOperation{}
+	var _ ast.Node = &ast.RenameTableOperation{}
 
 	// If we get here, all interfaces are implemented correctly
 	c.Assert(true, qt.IsTrue)

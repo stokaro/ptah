@@ -110,6 +110,12 @@ func TestClassifyASTStatements(t *testing.T) {
 			},
 		},
 	}), qt.Equals, safety.Destructive)
+	c.Assert(safety.Classify(&ast.AlterTableNode{
+		Name: "old_users",
+		Operations: []ast.AlterOperation{
+			&ast.RenameTableOperation{NewName: "users"},
+		},
+	}), qt.Equals, safety.Warning)
 	c.Assert(safety.Classify(ast.NewIndex("users_email_key", "users", "email").SetUnique()), qt.Equals, safety.Warning)
 	c.Assert(safety.Classify(ast.NewRawSQL("DELETE FROM pg_enum WHERE enumlabel = 'archived'")), qt.Equals, safety.Destructive)
 	c.Assert(safety.Classify(ast.NewRawSQL("DROP TYPE status")), qt.Equals, safety.Destructive)

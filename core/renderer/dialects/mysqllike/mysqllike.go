@@ -651,6 +651,8 @@ func (r *Renderer) visitAlterTableWithEnums(node *ast.AlterTableNode, enums map[
 			// version is the caller's concern; older servers will fail at
 			// migration apply time rather than at SQL generation time.
 			r.w.WriteLinef("ALTER TABLE %s RENAME COLUMN %s TO %s;", node.Name, op.OldName, op.NewName)
+		case *ast.RenameTableOperation:
+			r.w.WriteLinef("ALTER TABLE %s RENAME TO %s;", node.Name, op.NewName)
 
 		case *ast.AddSkippingIndexOperation:
 			// Data-skipping indexes are a ClickHouse-specific construct; no

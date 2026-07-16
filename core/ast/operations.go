@@ -168,6 +168,26 @@ func (op *RenameColumnOperation) Accept(_visitor Visitor) error { return nil }
 // alterOperation implements the marker method for type safety.
 func (op *RenameColumnOperation) alterOperation() {}
 
+// RenameTableOperation represents a RENAME TO operation in ALTER TABLE statements.
+//
+// It is modeled separately from RenameColumnOperation because it changes the
+// relation name itself rather than a column inside the relation. Dialects may
+// render this as `ALTER TABLE old_name RENAME TO new_name` or as an equivalent
+// standalone table-rename statement.
+type RenameTableOperation struct {
+	// NewName is the new table name.
+	NewName string
+}
+
+// Accept implements the Node interface for RenameTableOperation.
+//
+// The actual rendering is handled by the dialect's VisitAlterTable method;
+// this stub exists to satisfy the Node interface.
+func (op *RenameTableOperation) Accept(_visitor Visitor) error { return nil }
+
+// alterOperation implements the marker method for type safety.
+func (op *RenameTableOperation) alterOperation() {}
+
 // AddSkippingIndexOperation represents ClickHouse's
 // `ALTER TABLE x ADD INDEX name expression TYPE indexType GRANULARITY n`.
 //

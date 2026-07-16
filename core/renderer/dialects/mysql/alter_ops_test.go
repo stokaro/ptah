@@ -36,6 +36,18 @@ func TestMySQL_AlterTable_RenameColumn(t *testing.T) {
 	c.Assert(out, qt.Contains, "ALTER TABLE users RENAME COLUMN email_old TO email;")
 }
 
+func TestMySQL_AlterTable_RenameTable(t *testing.T) {
+	c := qt.New(t)
+	alter := &ast.AlterTableNode{
+		Name: "old_users",
+		Operations: []ast.AlterOperation{
+			&ast.RenameTableOperation{NewName: "users"},
+		},
+	}
+	out := renderMySQL(t, alter)
+	c.Assert(out, qt.Contains, "ALTER TABLE old_users RENAME TO users;")
+}
+
 func TestMySQL_AlterTable_ClickHouseOnlyOpsEmitComment(t *testing.T) {
 	c := qt.New(t)
 	alter := &ast.AlterTableNode{

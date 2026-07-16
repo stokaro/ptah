@@ -356,6 +356,8 @@ func classifyAlterOperation(op ast.AlterOperation) (Severity, string) {
 		return Destructive, "DROP CONSTRAINT removes an existing data protection"
 	case *ast.RenameColumnOperation:
 		return Warning, "RENAME COLUMN can break deployed readers and writers"
+	case *ast.RenameTableOperation:
+		return Warning, "RENAME TABLE can break deployed readers and writers"
 	case *ast.AddConstraintOperation:
 		return Warning, "ADD CONSTRAINT can fail on existing rows"
 	case *ast.AddColumnOperation:

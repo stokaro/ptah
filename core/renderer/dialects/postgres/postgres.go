@@ -341,6 +341,8 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 			// PostgreSQL has supported `ALTER TABLE x RENAME COLUMN old TO new`
 			// for a long time; emit it unconditionally.
 			r.w.WriteLinef("ALTER TABLE %s RENAME COLUMN %s TO %s;", node.Name, op.OldName, op.NewName)
+		case *ast.RenameTableOperation:
+			r.w.WriteLinef("ALTER TABLE %s RENAME TO %s;", node.Name, op.NewName)
 		case *ast.AddSkippingIndexOperation:
 			// Data-skipping indexes are a ClickHouse-specific construct; no
 			// PostgreSQL equivalent exists. Emit a self-explanatory comment.
