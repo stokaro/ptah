@@ -419,6 +419,77 @@ func TestParser_ParseCreateFunctionWithSingleQuotedBody(t *testing.T) {
 	c.Assert(createFunction.Volatility, qt.Equals, "STABLE")
 }
 
+func TestParser_ParseCreateTrigger(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE TRIGGER before_tbl_insert BEFORE INSERT ON tbl BEGIN SELECT CASE
+    WHEN (new.a = 4) THEN RAISE(IGNORE) END;
+END;
+
+CREATE TABLE t2(x,y,z);
+CREATE TRIGGER t2r3 AFTER UPDATE ON t2 BEGIN SELECT 1; END;
+CREATE TRIGGER trigItem_UNDO_AD AFTER DELETE ON Item FOR EACH ROW
+BEGIN
+  INSERT INTO Undo SELECT 'INSERT INTO Item (a,b,c) VALUES ('
+   || coalesce(old.a,'NULL') || ',' || quote(old.b) || ',' || old.c || ');';
+END;`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 4)
+
+	firstTrigger, ok := statements.Statements[0].(*ast.CreateTriggerNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(firstTrigger.Name, qt.Equals, "before_tbl_insert")
+	c.Assert(firstTrigger.Table, qt.Equals, "tbl")
+	c.Assert(firstTrigger.Timing, qt.Equals, "BEFORE")
+	c.Assert(firstTrigger.Event, qt.Equals, "INSERT")
+	c.Assert(firstTrigger.ForEach, qt.Equals, "ROW")
+	c.Assert(firstTrigger.Body, qt.Contains, "RAISE(IGNORE) END;")
+
+	table, ok := statements.Statements[1].(*ast.CreateTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(table.Name, qt.Equals, "t2")
+	c.Assert(table.Columns, qt.HasLen, 3)
+	c.Assert(table.Columns[0].Name, qt.Equals, "x")
+	c.Assert(table.Columns[0].Type, qt.Equals, "")
+
+	updateTrigger, ok := statements.Statements[2].(*ast.CreateTriggerNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(updateTrigger.Name, qt.Equals, "t2r3")
+	c.Assert(updateTrigger.Timing, qt.Equals, "AFTER")
+	c.Assert(updateTrigger.Event, qt.Equals, "UPDATE")
+	c.Assert(updateTrigger.Body, qt.Equals, "BEGIN SELECT 1; END")
+
+	deleteTrigger, ok := statements.Statements[3].(*ast.CreateTriggerNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(deleteTrigger.Name, qt.Equals, "trigItem_UNDO_AD")
+	c.Assert(deleteTrigger.Table, qt.Equals, "Item")
+	c.Assert(deleteTrigger.Event, qt.Equals, "DELETE")
+	c.Assert(deleteTrigger.ForEach, qt.Equals, "ROW")
+	c.Assert(deleteTrigger.Body, qt.Contains, "coalesce(old.a,'NULL')")
+}
+
+func TestParser_ParseCreateOrReplaceTrigger(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "CREATE OR REPLACE TRIGGER set_updated_at BEFORE UPDATE ON users BEGIN SELECT 1; END;"
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	createTrigger, ok := statements.Statements[0].(*ast.CreateTriggerNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(createTrigger.Name, qt.Equals, "set_updated_at")
+	c.Assert(createTrigger.Replace, qt.IsTrue)
+	c.Assert(createTrigger.Timing, qt.Equals, "BEFORE")
+	c.Assert(createTrigger.Event, qt.Equals, "UPDATE")
+	c.Assert(createTrigger.Table, qt.Equals, "users")
+}
+
 func TestParser_ParseRejectsUnsupportedCreateOrReplaceTarget(t *testing.T) {
 	c := qt.New(t)
 
@@ -2759,8 +2830,8 @@ func TestParser_ErrorHandling(t *testing.T) {
 			sql:  "CREATE TABLE users id INTEGER);",
 		},
 		{
-			name: "Missing column type",
-			sql:  "CREATE TABLE users (id);",
+			name: "Invalid column type token",
+			sql:  "CREATE TABLE users (id @);",
 		},
 		{
 			name: "Unterminated column list",
