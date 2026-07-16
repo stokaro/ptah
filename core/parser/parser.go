@@ -500,6 +500,10 @@ func (p *Parser) parseCreateFunction(statementStart int) (ast.Node, error) {
 	}
 	p.skipWhitespace()
 
+	if p.isSQLServerBracketedFunctionNameStart() {
+		return p.parseCreateRawSQLServerFunction(statementStart)
+	}
+
 	functionName, err := p.parseQualifiedIdentifier("function name")
 	if err != nil {
 		return nil, fmt.Errorf("unsupported CREATE FUNCTION syntax: %w", err)
@@ -520,6 +524,87 @@ func (p *Parser) parseCreateFunction(statementStart int) (ast.Node, error) {
 		return ast.NewRawSQL(p.rawStatement(statementStart)), nil
 	}
 	return function, nil
+}
+
+func (p *Parser) isSQLServerBracketedFunctionNameStart() bool {
+	// Bracketed function names enter T-SQL's routine-body sub-language. Until
+	// #323 adds a dialect-aware body parser, preserve the statement as raw SQL.
+	return p.current.MatchOperatorValue("[")
+}
+
+func (p *Parser) parseCreateRawSQLServerFunction(statementStart int) (ast.Node, error) {
+	sql, err := p.collectRawSQLServerFunction(statementStart)
+	if err != nil {
+		return nil, err
+	}
+	return ast.NewRawSQL(sql), nil
+}
+
+func (p *Parser) collectRawSQLServerFunction(statementStart int) (string, error) {
+	blockDepth := 0
+	caseDepth := 0
+	for !p.isAtEnd() {
+		if err := p.checkTimeout(); err != nil {
+			return "", err
+		}
+
+		if p.current.MatchOperatorValue("[") {
+			p.skipSQLServerBracketedIdentifier()
+			continue
+		}
+
+		if p.current.Type == lexer.TokenSemicolon && blockDepth == 0 {
+			sql := p.rawStatement(statementStart)
+			p.advance()
+			return sql, nil
+		}
+
+		if p.current.Type == lexer.TokenIdentifier {
+			if complete := trackSQLServerRawFunctionKeyword(strings.ToUpper(p.current.Value), &blockDepth, &caseDepth); complete {
+				end := p.current.End
+				p.advance()
+				return p.rawStatementFragment(statementStart, end), nil
+			}
+		}
+		p.advance()
+	}
+
+	if blockDepth > 0 {
+		return "", fmt.Errorf("unterminated CREATE FUNCTION body at position %d", p.current.Start)
+	}
+	return p.rawStatementFragment(statementStart, p.previous.End), nil
+}
+
+func (p *Parser) skipSQLServerBracketedIdentifier() {
+	p.advance()
+	for !p.isAtEnd() {
+		if p.current.MatchOperatorValue("]") {
+			p.advance()
+			if p.current.MatchOperatorValue("]") {
+				p.advance()
+				continue
+			}
+			return
+		}
+		p.advance()
+	}
+}
+
+func trackSQLServerRawFunctionKeyword(keyword string, blockDepth, caseDepth *int) bool {
+	switch keyword {
+	case "BEGIN":
+		(*blockDepth)++
+	case "CASE":
+		(*caseDepth)++
+	case "END":
+		if *caseDepth > 0 {
+			(*caseDepth)--
+		} else if *blockDepth > 0 {
+			(*blockDepth)--
+			return *blockDepth == 0
+		}
+	}
+	return false
 }
 
 func (p *Parser) parseCreateRawRoutineStatement(statementStart int) (ast.Node, error) {
