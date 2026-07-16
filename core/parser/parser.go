@@ -122,7 +122,7 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 	p.skipWhitespace()
 
 	if p.current.Type != lexer.TokenIdentifier {
-		return nil, fmt.Errorf("expected CREATE target (TABLE, VIEW, FUNCTION, INDEX, TYPE, DOMAIN, SCHEMA, DATABASE), got %s at position %d", p.current.Type, p.current.Start)
+		return nil, fmt.Errorf("expected CREATE target (TABLE, VIEW, FUNCTION, INDEX, TYPE, DOMAIN, SCHEMA, DATABASE, EXTENSION), got %s at position %d", p.current.Type, p.current.Start)
 	}
 
 	target := strings.ToUpper(p.current.Value)
@@ -131,6 +131,8 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 		return p.parseCreateSchema()
 	case "DATABASE":
 		return p.parseCreateDatabase()
+	case "EXTENSION":
+		return p.parseCreateExtension()
 	case "TABLE":
 		return p.parseCreateTable()
 	case "VIEW":
@@ -185,6 +187,53 @@ func (p *Parser) parseCreateDatabase() (*ast.CreateDatabaseNode, error) {
 		return nil, err
 	}
 	return &ast.CreateDatabaseNode{Name: name, IfNotExists: ifNotExists}, nil
+}
+
+func (p *Parser) parseCreateExtension() (*ast.ExtensionNode, error) {
+	if err := p.expect(lexer.TokenIdentifier, "EXTENSION"); err != nil {
+		return nil, err
+	}
+
+	p.skipWhitespace()
+	ifNotExists, err := p.parseOptionalIfNotExists()
+	if err != nil {
+		return nil, err
+	}
+
+	p.skipWhitespace()
+	name, err := p.expectIdentifier()
+	if err != nil {
+		return nil, fmt.Errorf("expected extension name: %w", err)
+	}
+
+	extension := ast.NewExtension(name)
+	if ifNotExists {
+		extension.SetIfNotExists()
+	}
+
+	p.skipWhitespace()
+	if p.current.MatchIdentifierValue("VERSION") {
+		version, err := p.parseCreateExtensionVersion()
+		if err != nil {
+			return nil, err
+		}
+		extension.SetVersion(version)
+	}
+
+	return extension, nil
+}
+
+func (p *Parser) parseCreateExtensionVersion() (string, error) {
+	p.advance()
+	p.skipWhitespace()
+
+	if p.current.Type != lexer.TokenString && p.current.Type != lexer.TokenIdentifier {
+		return "", fmt.Errorf("expected extension version, got %s at position %d", p.current.Type, p.current.Start)
+	}
+
+	version := strings.Trim(p.current.Value, "'\"")
+	p.advance()
+	return version, nil
 }
 
 func (p *Parser) parseCreateNamespaceName(label string) (string, bool, error) {

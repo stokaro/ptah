@@ -686,6 +686,51 @@ func TestParser_ParseCreateTypedIndex(t *testing.T) {
 	}
 }
 
+func TestParser_ParseCreateExtension(t *testing.T) {
+	tests := []struct {
+		name        string
+		sql         string
+		extension   string
+		ifNotExists bool
+		version     string
+	}{
+		{
+			name:      "plain",
+			sql:       "CREATE EXTENSION pg_trgm;",
+			extension: "pg_trgm",
+		},
+		{
+			name:        "if not exists",
+			sql:         "CREATE EXTENSION IF NOT EXISTS unaccent;",
+			extension:   "unaccent",
+			ifNotExists: true,
+		},
+		{
+			name:      "version",
+			sql:       "CREATE EXTENSION postgis VERSION '3.0';",
+			extension: "postgis",
+			version:   "3.0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			p := parser.NewParser(tt.sql)
+			statements, err := p.Parse()
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements.Statements, qt.HasLen, 1)
+
+			extension, ok := statements.Statements[0].(*ast.ExtensionNode)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(extension.Name, qt.Equals, tt.extension)
+			c.Assert(extension.IfNotExists, qt.Equals, tt.ifNotExists)
+			c.Assert(extension.Version, qt.Equals, tt.version)
+		})
+	}
+}
+
 func TestParser_ParseCreateEnum(t *testing.T) {
 	c := qt.New(t)
 
