@@ -37,6 +37,7 @@ const (
 	migrationsFlag       = "migrations-dir"
 	targetFlag           = "target"
 	dirFormatFlag        = "dir-format"
+	atlasEnvFlag         = "atlas-env"
 	dryRunFlag           = "dry-run"
 	verboseFlag          = "verbose"
 	confirmFlag          = "confirm"
@@ -65,6 +66,11 @@ var migrateDownFlags = map[string]cobraflags.Flag{
 		Name:  dirFormatFlag,
 		Value: string(migrator.MigrationDirFormatAuto),
 		Usage: "Migration directory format: auto, ptah, or atlas",
+	},
+	atlasEnvFlag: &cobraflags.StringFlag{
+		Name:  atlasEnvFlag,
+		Value: "",
+		Usage: "Value exposed as .Env when rendering Atlas SQL template migrations",
 	},
 	dryRunFlag: &cobraflags.BoolFlag{
 		Name:  dryRunFlag,
@@ -112,6 +118,7 @@ func migrateDownCommand(_ *cobra.Command, _ []string) error {
 	migrationsDir := migrateDownFlags[migrationsFlag].GetString()
 	targetVersionValue := migrateDownFlags[targetFlag].GetString()
 	dirFormatValue := migrateDownFlags[dirFormatFlag].GetString()
+	atlasEnv := migrateDownFlags[atlasEnvFlag].GetString()
 	dryRun := migrateDownFlags[dryRunFlag].GetBool()
 	verbose := migrateDownFlags[verboseFlag].GetBool()
 	skipConfirm := migrateDownFlags[confirmFlag].GetBool()
@@ -200,7 +207,13 @@ func migrateDownCommand(_ *cobra.Command, _ []string) error {
 	interceptor := onlineddl.New(*onlineCfg).WithDryRun(dryRun)
 
 	// Create migrator to access applied migrations
-	mig, err := migrator.NewFSMigrator(conn, migrationsFS, migrator.WithStatementInterceptor(interceptor), migrator.WithMigrationDirFormat(dirFormat))
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		migrationsFS,
+		migrator.WithStatementInterceptor(interceptor),
+		migrator.WithMigrationDirFormat(dirFormat),
+		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: atlasEnv}),
+	)
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}

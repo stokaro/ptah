@@ -15,6 +15,7 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/migration/lint"
+	"github.com/stokaro/ptah/migration/migrator"
 )
 
 const (
@@ -35,6 +36,7 @@ func NewLintCommand() *cobra.Command {
 	var dialect string
 	var format string
 	var configPath string
+	var atlasEnv string
 	var disabled []string
 	var failOn string
 
@@ -60,6 +62,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 				dialect:    dialect,
 				format:     format,
 				configPath: configPath,
+				atlasEnv:   atlasEnv,
 				disabled:   disabled,
 				failOn:     failOn,
 				positional: args,
@@ -71,6 +74,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 	cmd.Flags().StringVar(&dialect, "dialect", "", "Target dialect gating dialect-specific rules: postgres, mysql or mariadb (empty runs every rule)")
 	cmd.Flags().StringVar(&format, "format", formatText, "Output format: text, json, github-actions")
 	cmd.Flags().StringVar(&configPath, "config", "", "Path to a lint config file (default: <dir>/"+lint.ConfigFileName+" when present)")
+	cmd.Flags().StringVar(&atlasEnv, "atlas-env", "", "Value exposed as .Env when rendering Atlas SQL template migrations")
 	cmd.Flags().StringArrayVar(&disabled, "disable", nil, "Disable a rule code or family, for example DS101 or MY (repeatable)")
 	cmd.Flags().StringVar(&failOn, "fail-on", failOnError, "Failure threshold controlling the exit code: error, any or none")
 
@@ -89,6 +93,7 @@ type runOptions struct {
 	dialect    string
 	format     string
 	configPath string
+	atlasEnv   string
 	disabled   []string
 	failOn     string
 	positional []string
@@ -141,9 +146,10 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	disabled := append(append([]string{}, cfg.DisabledRules...), opts.disabled...)
 
 	findings, err := lint.LintFS(os.DirFS(opts.dir), lint.Options{
-		Dialect:    dialect,
-		Disabled:   disabled,
-		PathPrefix: filepath.ToSlash(opts.dir),
+		Dialect:           dialect,
+		Disabled:          disabled,
+		PathPrefix:        filepath.ToSlash(opts.dir),
+		AtlasTemplateData: migrator.AtlasTemplateData{Env: opts.atlasEnv},
 	})
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())

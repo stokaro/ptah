@@ -58,10 +58,11 @@ func (p *RegisteredMigrationProvider) maybeSort() {
 // It scans the filesystem for migration files following the naming convention and
 // automatically creates Migration instances from the SQL files.
 type FSMigrationProvider struct {
-	fsys        fs.FS
-	migrations  []*Migration
-	interceptor StatementInterceptor
-	format      MigrationDirFormat
+	fsys              fs.FS
+	migrations        []*Migration
+	interceptor       StatementInterceptor
+	format            MigrationDirFormat
+	atlasTemplateData any
 }
 
 // FSProviderOption configures a FSMigrationProvider before it loads
@@ -88,6 +89,14 @@ func WithStatementInterceptor(interceptor StatementInterceptor) FSProviderOption
 func WithMigrationDirFormat(format MigrationDirFormat) FSProviderOption {
 	return func(p *FSMigrationProvider) {
 		p.format = format
+	}
+}
+
+// WithAtlasTemplateData supplies the data object used to render Atlas SQL
+// template migrations. When omitted, templates render with AtlasTemplateData{}.
+func WithAtlasTemplateData(data any) FSProviderOption {
+	return func(p *FSMigrationProvider) {
+		p.atlasTemplateData = data
 	}
 }
 
@@ -147,7 +156,7 @@ func (p *FSMigrationProvider) loadPtah(files []MigrationFile) error {
 		migration := migrationsMap[migrationFile.Version]
 		switch migrationFile.Direction {
 		case "up":
-			up, err := migrationFuncFromSQLFilenameWithMetadata(migrationFile.Path, p.fsys, p.interceptor)
+			up, err := migrationFuncFromSQLFilenameWithMetadata(migrationFile.Path, p.fsys, p.interceptor, nil)
 			if err != nil {
 				return fmt.Errorf("failed to load up migration %s: %w", migrationFile.Path, err)
 			}
@@ -157,7 +166,7 @@ func (p *FSMigrationProvider) loadPtah(files []MigrationFile) error {
 			migration.UpTimeouts = up.timeouts
 			migration.NoTransaction = migration.NoTransaction || up.noTransaction
 		case "down":
-			down, err := migrationFuncFromSQLFilenameWithMetadata(migrationFile.Path, p.fsys, p.interceptor)
+			down, err := migrationFuncFromSQLFilenameWithMetadata(migrationFile.Path, p.fsys, p.interceptor, nil)
 			if err != nil {
 				return fmt.Errorf("failed to load down migration %s: %w", migrationFile.Path, err)
 			}
@@ -254,7 +263,7 @@ func (p *FSMigrationProvider) loadAtlasFile(parts *atlasParts, migrationFile Mig
 
 func (p *FSMigrationProvider) loadAtlasUp(parts *atlasParts, migrationFile MigrationFile) error {
 	if isAtlasDirectionalMigrationFile(migrationFile) {
-		up, err := migrationFuncFromSQLFilenameWithMetadata(migrationFile.Path, p.fsys, p.interceptor)
+		up, err := migrationFuncFromSQLFilenameWithMetadata(migrationFile.Path, p.fsys, p.interceptor, p.atlasTemplateData)
 		if err != nil {
 			return fmt.Errorf("failed to load Atlas migration %s: %w", migrationFile.Path, err)
 		}
@@ -262,7 +271,7 @@ func (p *FSMigrationProvider) loadAtlasUp(parts *atlasParts, migrationFile Migra
 		return nil
 	}
 
-	atlasFile, err := atlasSQLMigrationFileFromSQLFilenameWithMetadata(migrationFile.Path, p.fsys, p.interceptor)
+	atlasFile, err := atlasSQLMigrationFileFromSQLFilenameWithMetadata(migrationFile.Path, p.fsys, p.interceptor, p.atlasTemplateData)
 	if err != nil {
 		return fmt.Errorf("failed to load Atlas migration %s: %w", migrationFile.Path, err)
 	}
@@ -277,7 +286,7 @@ func (p *FSMigrationProvider) loadAtlasUp(parts *atlasParts, migrationFile Migra
 }
 
 func (p *FSMigrationProvider) loadAtlasDown(parts *atlasParts, migrationFile MigrationFile) error {
-	down, err := migrationFuncFromSQLFilenameWithMetadata(migrationFile.Path, p.fsys, p.interceptor)
+	down, err := migrationFuncFromSQLFilenameWithMetadata(migrationFile.Path, p.fsys, p.interceptor, p.atlasTemplateData)
 	if err != nil {
 		return fmt.Errorf("failed to load Atlas migration %s: %w", migrationFile.Path, err)
 	}

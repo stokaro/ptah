@@ -663,6 +663,13 @@ comments that look like `-- keep this comment --` remain comments, not txtar
 section boundaries. Ptah's txtar support is intentionally limited to Atlas SQL
 migration containers and is not a general-purpose txtar parser.
 
+Atlas-format SQL template migrations are rendered with Go `text/template`
+before execution and linting. Root versioned files such as `1.sql` and `2.sql`
+are executable migrations; shared template files in subdirectories can define
+helpers such as `{{ define "shared/users" }}` and are not executed as standalone
+migrations. The template data object exposes `.Env`; CLI commands set it with
+`--atlas-env`, and programmatic callers can pass `WithAtlasTemplateData`.
+
 If an Atlas migration has no embedded `down.sql`, `migrate-down` fails with a
 typed error explaining that Atlas dynamic down-plan synthesis is not implemented
 yet. This is different from transaction rollback: transaction rollback undoes a
@@ -695,6 +702,9 @@ Apply all pending migrations to bring database up to latest version:
 
 # Apply an Atlas-style versioned migration directory
 ./package-migrator migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dir-format atlas
+
+# Apply Atlas SQL template migrations with .Env set to dev
+./package-migrator migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dir-format atlas --atlas-env dev
 ```
 
 Migration files can override the CLI defaults with top-of-file directives:
@@ -791,6 +801,9 @@ Show current migration status and pending migrations:
 
 # Check an Atlas-style versioned migration directory
 ./package-migrator migrate-status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dir-format atlas
+
+# Check Atlas SQL template migrations with .Env set to dev
+./package-migrator migrate-status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dir-format atlas --atlas-env dev
 ```
 
 **Output includes:**

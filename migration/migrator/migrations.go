@@ -112,7 +112,7 @@ func MigrationFuncFromSQLFilename(filename string, fsys fs.FS) MigrationFunc {
 // behaves exactly like MigrationFuncFromSQLFilename.
 func MigrationFuncFromSQLFilenameWithInterceptor(filename string, fsys fs.FS, interceptor StatementInterceptor) MigrationFunc {
 	return func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-		migrationFile, err := migrationFuncFromSQLFilenameWithMetadata(filename, fsys, interceptor)
+		migrationFile, err := migrationFuncFromSQLFilenameWithMetadata(filename, fsys, interceptor, nil)
 		if err != nil {
 			return err
 		}
@@ -134,7 +134,7 @@ func MigrationFuncFromSQLFilenameWithTimeoutsAndInterceptor(
 	fsys fs.FS,
 	interceptor StatementInterceptor,
 ) (MigrationFunc, MigrationTimeouts, error) {
-	migrationFile, err := migrationFuncFromSQLFilenameWithMetadata(filename, fsys, interceptor)
+	migrationFile, err := migrationFuncFromSQLFilenameWithMetadata(filename, fsys, interceptor, nil)
 	if err != nil {
 		return nil, MigrationTimeouts{}, err
 	}
@@ -147,13 +147,14 @@ func migrationFuncFromSQLFilenameWithMetadata(
 	filename string,
 	fsys fs.FS,
 	interceptor StatementInterceptor,
+	atlasTemplateData any,
 ) (sqlMigrationFile, error) {
-	sql, err := fs.ReadFile(fsys, filename)
+	sql, err := readSQLMigrationFile(fsys, filename, atlasTemplateData)
 	if err != nil {
-		return sqlMigrationFile{}, fmt.Errorf("failed to read migration file: %w", err)
+		return sqlMigrationFile{}, err
 	}
 
-	atlasMigrationFile, ok, err := atlasSQLMigrationFileFromSQL(filename, string(sql), interceptor)
+	atlasMigrationFile, ok, err := atlasSQLMigrationFileFromSQL(filename, sql, interceptor)
 	if err != nil {
 		return sqlMigrationFile{}, err
 	}
@@ -161,20 +162,21 @@ func migrationFuncFromSQLFilenameWithMetadata(
 		return atlasMigrationFile.up, nil
 	}
 
-	return migrationFuncFromSQLStringWithMetadata(filename, string(sql), interceptor)
+	return migrationFuncFromSQLStringWithMetadata(filename, sql, interceptor)
 }
 
 func atlasSQLMigrationFileFromSQLFilenameWithMetadata(
 	filename string,
 	fsys fs.FS,
 	interceptor StatementInterceptor,
+	atlasTemplateData any,
 ) (atlasSQLMigrationFile, error) {
-	sql, err := fs.ReadFile(fsys, filename)
+	sql, err := readSQLMigrationFile(fsys, filename, atlasTemplateData)
 	if err != nil {
-		return atlasSQLMigrationFile{}, fmt.Errorf("failed to read migration file: %w", err)
+		return atlasSQLMigrationFile{}, err
 	}
 
-	atlasMigrationFile, ok, err := atlasSQLMigrationFileFromSQL(filename, string(sql), interceptor)
+	atlasMigrationFile, ok, err := atlasSQLMigrationFileFromSQL(filename, sql, interceptor)
 	if err != nil {
 		return atlasSQLMigrationFile{}, err
 	}
@@ -182,11 +184,16 @@ func atlasSQLMigrationFileFromSQLFilenameWithMetadata(
 		return atlasMigrationFile, nil
 	}
 
-	up, err := migrationFuncFromSQLStringWithMetadata(filename, string(sql), interceptor)
+	up, err := migrationFuncFromSQLStringWithMetadata(filename, sql, interceptor)
 	if err != nil {
 		return atlasSQLMigrationFile{}, err
 	}
 	return atlasSQLMigrationFile{up: up}, nil
+}
+
+func readSQLMigrationFile(fsys fs.FS, filename string, atlasTemplateData any) (string, error) {
+	sql, _, err := RenderAtlasTemplateSQL(fsys, filename, atlasTemplateData)
+	return sql, err
 }
 
 func atlasSQLMigrationFileFromSQL(filename, sql string, interceptor StatementInterceptor) (atlasSQLMigrationFile, bool, error) {
