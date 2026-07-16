@@ -70,6 +70,7 @@ func ParseDir(rootDir string) (*Database, error) {
 //	statements := GetOrderedCreateStatements(result, "postgresql")
 func ParseFS(fsys fs.FS, rootDir string) (*Database, error) {
 	result := &Database{
+		Schemas:                    []Schema{},
 		Tables:                     []Table{},
 		Fields:                     []Field{},
 		Indexes:                    []Index{},
@@ -122,6 +123,7 @@ func ParseFS(fsys fs.FS, rootDir string) (*Database, error) {
 		database := ParseSource(path, reader)
 
 		// Add to result
+		result.Schemas = append(result.Schemas, database.Schemas...)
 		result.EmbeddedFields = append(result.EmbeddedFields, database.EmbeddedFields...)
 		result.Fields = append(result.Fields, database.Fields...)
 		result.Indexes = append(result.Indexes, database.Indexes...)

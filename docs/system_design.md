@@ -155,6 +155,7 @@ For a detailed view of the migration workflow, see the [Migration Architecture D
 ```go
 // Core schema representation from Go annotations
 type Database struct {
+    Schemas       []Schema
     Tables         []Table
     Fields         []Field
     Indexes        []Index

@@ -63,6 +63,10 @@ func (p *parser) parseBody(body *hclsyntax.Body) error {
 			if err := p.rejectUnsupportedSchemaBody(block); err != nil {
 				return err
 			}
+			p.db.Schemas = append(p.db.Schemas, goschema.Schema{
+				Name:    block.Labels[0],
+				Comment: p.optionalString(block.Body.Attributes["comment"]),
+			})
 		case "table":
 			if err := p.parseTable(block); err != nil {
 				return err
@@ -337,7 +341,9 @@ func (p *parser) rejectUnsupportedSchemaBody(block *hclsyntax.Block) error {
 	if len(block.Body.Blocks) > 0 {
 		return p.blockError(block.Body.Blocks[0], "unsupported schema block %q", block.Body.Blocks[0].Type)
 	}
-	return p.rejectUnsupportedAttrs(block, map[string]bool{}, "schema")
+	return p.rejectUnsupportedAttrs(block, map[string]bool{
+		"comment": true,
+	}, "schema")
 }
 
 func (p *parser) rejectUnsupportedTableAttrs(block *hclsyntax.Block) error {

@@ -88,6 +88,11 @@ var knownTriggerAttributes = map[string]bool{
 	"comment": true,
 }
 
+var knownSchemaAttributes = map[string]bool{
+	"name":    true,
+	"comment": true,
+}
+
 // validateAttributes panics if kv contains any key the directive does not
 // recognize. Platform-specific overrides (platform.*) are always allowed.
 // This catches typos like default_fn-vs-default_expr at parse time instead of
@@ -315,6 +320,17 @@ func parseExtensionComment(comment *ast.Comment, extensions *[]Extension) {
 	})
 }
 
+func parseSchemaComment(comment *ast.Comment, schemas *[]Schema) {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	validateAttributes(kv, knownSchemaAttributes, "//migrator:schema:schema", kv["name"])
+	requireAttributes(kv, []string{"name"}, "//migrator:schema:schema", kv["name"])
+
+	*schemas = append(*schemas, Schema{
+		Name:    kv["name"],
+		Comment: kv["comment"],
+	})
+}
+
 func parseTableComment(comment *ast.Comment, structName string, tableDirectives *[]Table) {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	*tableDirectives = append(*tableDirectives, Table{
@@ -393,6 +409,7 @@ func processTableComments(
 	rlsEnabledTables *[]RLSEnabledTable,
 	roles *[]Role,
 	grants *[]Grant,
+	schemas *[]Schema,
 ) {
 	if genDecl.Doc == nil {
 		return
@@ -422,6 +439,8 @@ func processTableComments(
 			parseRoleComment(comment, structName, roles)
 		case strings.HasPrefix(comment.Text, "//migrator:schema:grant"):
 			parseGrantComment(comment, structName, grants)
+		case strings.HasPrefix(comment.Text, "//migrator:schema:schema"):
+			parseSchemaComment(comment, schemas)
 		}
 	}
 }
@@ -493,6 +512,7 @@ func parseFileAST(f *ast.File) Database {
 	var rlsEnabledTables []RLSEnabledTable
 	var roles []Role
 	var grants []Grant
+	var schemas []Schema
 	globalEnumsMap := make(map[string]Enum)
 
 	// Single pass: collect table names and process all declarations and comments
@@ -515,6 +535,7 @@ func parseFileAST(f *ast.File) Database {
 		&rlsEnabledTables,
 		&roles,
 		&grants,
+		&schemas,
 	)
 
 	enums := make([]Enum, 0, len(globalEnumsMap))
@@ -533,6 +554,7 @@ func parseFileAST(f *ast.File) Database {
 	})
 
 	result := Database{
+		Schemas:           schemas,
 		Tables:            tableDirectives,
 		Fields:            schemaFields,
 		Indexes:           schemaIndexes,
@@ -574,6 +596,7 @@ func processFileAST(
 	rlsEnabledTables *[]RLSEnabledTable,
 	roles *[]Role,
 	grants *[]Grant,
+	schemas *[]Schema,
 ) {
 	// First, collect table names from struct declarations
 	for _, decl := range f.Decls {
@@ -615,6 +638,7 @@ func processFileAST(
 		rlsEnabledTables,
 		roles,
 		grants,
+		schemas,
 	)
 
 	// Process all file comments for RLS annotations that might not be associated with struct declarations
@@ -660,6 +684,7 @@ func processDeclarations(
 	rlsEnabledTables *[]RLSEnabledTable,
 	roles *[]Role,
 	grants *[]Grant,
+	schemas *[]Schema,
 ) {
 	for _, decl := range f.Decls {
 		genDecl, ok := decl.(*ast.GenDecl)
@@ -677,7 +702,7 @@ func processDeclarations(
 				continue
 			}
 
-			processTableComments(structName, genDecl, tableDirectives, schemaConstraints, extensions, functions, views, materializedViews, triggers, rlsPolicies, rlsEnabledTables, roles, grants)
+			processTableComments(structName, genDecl, tableDirectives, schemaConstraints, extensions, functions, views, materializedViews, triggers, rlsPolicies, rlsEnabledTables, roles, grants, schemas)
 			processFieldComments(structName, structType, globalEnumsMap, schemaFields, embeddedFields, schemaIndexes, schemaConstraints, extensions, functions, views, materializedViews, triggers, rlsPolicies, rlsEnabledTables, roles, grants)
 		}
 	}

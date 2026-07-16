@@ -24,7 +24,8 @@ go run ./cmd generate --schema-file schema.hcl --dialect postgres
 The parser supports the schema-object subset that maps directly to Ptah's
 current schema IR:
 
-- `schema` labels, for table namespace references such as `schema = schema.main`
+- `schema` labels and `comment`, for table namespace references such as
+  `schema = schema.main`
 - `table` blocks
 - `column` blocks with `type`, `null`, `auto_increment`, `unique`, `default`,
   and `comment`
