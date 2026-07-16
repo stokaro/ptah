@@ -693,6 +693,135 @@ CALL gen_uuid();`
 	c.Assert(raw.SQL, qt.Contains, "date_format(NOW(6), '%Y%m%d%i%s%f')")
 }
 
+func TestParser_ParseSQLServerInlineTableFunctionAsRawSQL(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE FUNCTION [f2](@a as INT, @b as INT = 1)
+RETURNS TABLE
+AS RETURN SELECT @a as [a], @b as [b], (@a+@b)*2 as [p], @a*@b as [s];
+CREATE TABLE after_fn (id int);`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 2)
+
+	raw, ok := statements.Statements[0].(*ast.RawSQLNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(raw.SQL, qt.Contains, "CREATE FUNCTION [f2](@a as INT, @b as INT = 1)")
+	c.Assert(raw.SQL, qt.Contains, "RETURNS TABLE")
+	c.Assert(raw.SQL, qt.Contains, "AS RETURN SELECT @a as [a]")
+	c.Assert(raw.SQL, qt.Not(qt.Contains), "CREATE TABLE after_fn")
+
+	createTable, ok := statements.Statements[1].(*ast.CreateTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(createTable.Name, qt.Equals, "after_fn")
+}
+
+func TestParser_ParseSQLServerMultiStatementTableFunctionAsRawSQL(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE FUNCTION [f3] (@a int, @b int = 1) RETURNS @t1 TABLE ([c1] int NOT NULL, [c2] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL, [c3] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS DEFAULT N'G' NULL, [c4] int NOT NULL, PRIMARY KEY CLUSTERED ([c1] ASC), INDEX [idx] NONCLUSTERED ([c2] ASC), UNIQUE NONCLUSTERED ([c2] ASC, [c3] DESC), UNIQUE NONCLUSTERED ([c3] DESC, [c4] ASC), CHECK ([c4]>(0))) AS BEGIN
+  INSERT @t1
+  SELECT 1 AS [c1], 'A' AS [c2], NULL AS [c3], @a * @a + @b AS [c4];
+RETURN
+END;
+CREATE TABLE after_fn (id int);`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 2)
+
+	raw, ok := statements.Statements[0].(*ast.RawSQLNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(raw.SQL, qt.Contains, "CREATE FUNCTION [f3]")
+	c.Assert(raw.SQL, qt.Contains, "RETURNS @t1 TABLE")
+	c.Assert(raw.SQL, qt.Contains, "INSERT @t1")
+	c.Assert(raw.SQL, qt.Contains, "RETURN\nEND")
+	c.Assert(raw.SQL, qt.Not(qt.Contains), "CREATE TABLE after_fn")
+
+	createTable, ok := statements.Statements[1].(*ast.CreateTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(createTable.Name, qt.Equals, "after_fn")
+}
+
+func TestParser_ParseSQLServerGoDelimitedFunctionsAsRawSQL(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `-- atlas:delimiter \nGO
+
+CREATE FUNCTION [f3] (@a int, @b int = 1) RETURNS @t1 TABLE ([c1] int NOT NULL) AS BEGIN
+  INSERT @t1
+  SELECT 1 AS [c1];
+RETURN
+END
+GO
+CREATE FUNCTION [f4] (@a int) RETURNS TABLE
+AS RETURN SELECT @a as [a];`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 2)
+
+	first, ok := statements.Statements[0].(*ast.RawSQLNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(first.SQL, qt.Contains, "CREATE FUNCTION [f3]")
+	c.Assert(first.SQL, qt.Contains, "SELECT 1 AS [c1];")
+	c.Assert(first.SQL, qt.Not(qt.Contains), "GO")
+
+	second, ok := statements.Statements[1].(*ast.RawSQLNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(second.SQL, qt.Contains, "CREATE FUNCTION [f4]")
+	c.Assert(second.SQL, qt.Contains, "AS RETURN SELECT @a as [a];")
+}
+
+func TestParser_ParseSQLServerFunctionWithCaseExpressionAsRawSQL(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE FUNCTION [f5] (@a int) RETURNS @t TABLE ([result] int NOT NULL) AS BEGIN
+  INSERT @t
+  SELECT CASE WHEN @a > 0 THEN @a ELSE 0 END AS [result];
+RETURN
+END
+CREATE TABLE after_fn (id int);`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 2)
+
+	raw, ok := statements.Statements[0].(*ast.RawSQLNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(raw.SQL, qt.Contains, "CASE WHEN @a > 0 THEN @a ELSE 0 END")
+	c.Assert(raw.SQL, qt.Contains, "RETURN\nEND")
+	c.Assert(raw.SQL, qt.Not(qt.Contains), "CREATE TABLE after_fn")
+}
+
+func TestParser_ParseSQLServerFunctionWithBracketedEndIdentifierAsRawSQL(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE FUNCTION [f6] (@a int) RETURNS @t TABLE ([END]]value] int NOT NULL) AS BEGIN
+  INSERT @t
+  SELECT @a AS [END]]value];
+RETURN
+END
+CREATE TABLE after_fn (id int);`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 2)
+
+	raw, ok := statements.Statements[0].(*ast.RawSQLNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(raw.SQL, qt.Contains, "RETURNS @t TABLE ([END]]value] int NOT NULL)")
+	c.Assert(raw.SQL, qt.Contains, "SELECT @a AS [END]]value];")
+	c.Assert(raw.SQL, qt.Contains, "RETURN\nEND")
+	c.Assert(raw.SQL, qt.Not(qt.Contains), "CREATE TABLE after_fn")
+}
+
 func TestParser_ParseCreateProcedureAsRawSQL(t *testing.T) {
 	c := qt.New(t)
 
