@@ -195,6 +195,9 @@ func (p *FSMigrationProvider) loadAtlas(files []MigrationFile) error {
 	partsByVersion := make(map[int64]*atlasParts)
 	for i := range files {
 		migrationFile := files[i]
+		if migrationFile.Repeatable {
+			continue
+		}
 		parts := partsByVersion[migrationFile.Version]
 		if parts == nil {
 			parts = &atlasParts{
