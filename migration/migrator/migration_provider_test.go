@@ -249,6 +249,51 @@ func TestNewFSMigrationProvider_AtlasRepeatableFilesAreDiscoveryOnly(t *testing.
 	c.Assert(migrations[0].Description, qt.Equals, "Baseline")
 }
 
+func TestNewFSMigrationProvider_AtlasTemplateMigrations(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"1.sql": &fstest.MapFile{Data: []byte(`{{- if eq .Env "dev" }}
+CREATE TABLE dev1 (id INT);
+{{- else }}
+CREATE TABLE prod1 (id INT);
+{{- end }}
+`)},
+		"2.sql": &fstest.MapFile{Data: []byte(`{{- if eq .Env "dev" }}
+{{ template "shared/users" "dev2" }}
+{{- else }}
+{{ template "shared/users" "prod2" }}
+{{- end }}
+`)},
+		"shared/users.sql": &fstest.MapFile{Data: []byte(`{{- define "shared/users" }}
+CREATE TABLE users_{{ $ }} (id INT);
+{{- end }}
+`)},
+	}
+	interceptor := &recordingInterceptor{}
+	provider, err := migrator.NewFSMigrationProvider(
+		fsys,
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithStatementInterceptor(interceptor),
+		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: "dev"}),
+	)
+	c.Assert(err, qt.IsNil)
+
+	migrations := provider.Migrations()
+	c.Assert(migrations, qt.HasLen, 2)
+	c.Assert(migrations[0].Version, qt.Equals, int64(1))
+	c.Assert(migrations[1].Version, qt.Equals, int64(2))
+
+	err = migrations[0].Up(context.Background(), nil)
+	c.Assert(err, qt.IsNil)
+	c.Assert(interceptor.statements, qt.DeepEquals, []string{"CREATE TABLE dev1 (id INT)"})
+
+	interceptor.statements = nil
+	err = migrations[1].Up(context.Background(), nil)
+	c.Assert(err, qt.IsNil)
+	c.Assert(interceptor.statements, qt.DeepEquals, []string{"CREATE TABLE users_dev2 (id INT)"})
+}
+
 func TestNewFSMigrationProvider_AtlasTxtarSectionsAndDirectives(t *testing.T) {
 	c := qt.New(t)
 

@@ -99,6 +99,13 @@ comments that look like `-- keep this comment --` remain comments, not txtar
 section boundaries. Ptah's txtar support is intentionally limited to Atlas SQL
 migration containers and is not a general-purpose txtar parser.
 
+Atlas-format SQL template migrations are rendered with Go `text/template`
+before execution and linting. Root versioned files such as `1.sql` and `2.sql`
+are executable migrations; shared template files in subdirectories can define
+helpers such as `{{ define "shared/users" }}` and are not executed as standalone
+migrations. The template data object exposes `.Env`; CLI commands set it with
+`--atlas-env`, and programmatic callers can pass `WithAtlasTemplateData`.
+
 If an Atlas migration does not provide `down.sql`, `migrate-down` returns a typed
 error explaining that Atlas dynamic down-plan synthesis is not implemented yet.
 This is distinct from transaction rollback on a failed migration: transaction
@@ -217,6 +224,7 @@ pending and out of order.
 - **`WithMigrationsTable(schema, table)`**: Configures the migration history table
 - **`WithExecOrder(policy)`**: Configures out-of-order migration handling
 - **`WithMigrationDirFormat(format)`**: Selects `auto`, `ptah`, or `atlas` filesystem discovery
+- **`WithAtlasTemplateData(data)`**: Supplies data, including `.Env`, for Atlas SQL template migrations
 
 ## Programmatic Usage
 

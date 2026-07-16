@@ -537,6 +537,30 @@ func TestLintFS_AtlasImportedMigrationNamesAreScanned(t *testing.T) {
 	c.Assert(findings[0].File, qt.Equals, "1_initial.up.sql")
 }
 
+func TestLintFS_AtlasTemplateMigrationsAreRendered(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fixture(map[string]string{
+		"1.sql": `{{- if eq .Env "dev" }}
+CREATE TABLE dev1 (id INT);
+{{- else }}
+DROP TABLE prod1;
+{{- end }}
+`,
+		"2.sql": `{{ template "shared/users" "prod2" }}`,
+		"shared/users.sql": `{{- define "shared/users" }}
+CREATE TABLE users_{{ $ }} (id INT);
+{{- end }}
+`,
+	})
+
+	findings, err := lint.LintFS(fsys, lint.Options{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DS101"},
+		qt.Commentf("Atlas templates should be rendered before linting and shared definitions should not emit MF103; got %v", findings))
+	c.Assert(findings[0].File, qt.Equals, "1.sql")
+}
+
 func TestLintFS_CaseVariantSQLFilesGetNamingWarning(t *testing.T) {
 	c := qt.New(t)
 

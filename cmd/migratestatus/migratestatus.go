@@ -34,6 +34,7 @@ const (
 	dbURLFlag      = "db-url"
 	migrationsFlag = "migrations-dir"
 	dirFormatFlag  = "dir-format"
+	atlasEnvFlag   = "atlas-env"
 	verboseFlag    = "verbose"
 	jsonFlag       = "json"
 )
@@ -53,6 +54,11 @@ var migrateStatusFlags = map[string]cobraflags.Flag{
 		Name:  dirFormatFlag,
 		Value: string(migrator.MigrationDirFormatAuto),
 		Usage: "Migration directory format: auto, ptah, or atlas",
+	},
+	atlasEnvFlag: &cobraflags.StringFlag{
+		Name:  atlasEnvFlag,
+		Value: "",
+		Usage: "Value exposed as .Env when rendering Atlas SQL template migrations",
 	},
 	verboseFlag: &cobraflags.BoolFlag{
 		Name:  verboseFlag,
@@ -78,6 +84,7 @@ func migrateStatusCommand(_ *cobra.Command, _ []string) error {
 	dbURL := migrateStatusFlags[dbURLFlag].GetString()
 	migrationsDir := migrateStatusFlags[migrationsFlag].GetString()
 	dirFormatValue := migrateStatusFlags[dirFormatFlag].GetString()
+	atlasEnv := migrateStatusFlags[atlasEnvFlag].GetString()
 	verbose := migrateStatusFlags[verboseFlag].GetBool()
 	jsonOutput := migrateStatusFlags[jsonFlag].GetBool()
 	migrationsSchema := migrateStatusFlags[dbcli.MigrationsSchemaFlagName].GetString()
@@ -112,7 +119,12 @@ func migrateStatusCommand(_ *cobra.Command, _ []string) error {
 	// Create filesystem from migrations directory
 	migrationsFS := os.DirFS(migrationsDir)
 
-	mig, err := migrator.NewFSMigrator(conn, migrationsFS, migrator.WithMigrationDirFormat(dirFormat))
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		migrationsFS,
+		migrator.WithMigrationDirFormat(dirFormat),
+		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: atlasEnv}),
+	)
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
