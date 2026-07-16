@@ -38,6 +38,10 @@ func TestAtlasTxtarDown_PostgresIntegration(t *testing.T) {
 	runAtlasTxtarDownIntegration(t, postgresTestURL(t))
 }
 
+func TestAtlasTemplate_PostgresIntegration(t *testing.T) {
+	runAtlasTemplateIntegration(t, postgresTestURL(t))
+}
+
 func TestAtlasTxtarDown_MySQLIntegration(t *testing.T) {
 	dbURL := os.Getenv("MYSQL_TEST_DSN")
 	if dbURL == "" {
@@ -141,6 +145,48 @@ DROP TABLE ptah_issue_290_widgets;
 	c.Assert(issue290WidgetTableExists(t, conn), qt.IsFalse)
 }
 
+func runAtlasTemplateIntegration(t *testing.T, dbURL string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = conn.Close() }()
+
+	cleanupIssue299(t, conn)
+	defer cleanupIssue299(t, conn)
+
+	fsys := fstest.MapFS{
+		"1.sql": &fstest.MapFile{Data: []byte(`{{- if eq .Env "dev" }}
+CREATE TABLE ptah_issue_299_dev (id INT PRIMARY KEY);
+{{- else }}
+CREATE TABLE ptah_issue_299_prod (id INT PRIMARY KEY);
+{{- end }}
+`)},
+		"2.sql": &fstest.MapFile{Data: []byte(`{{ template "shared/users" "dev" }}`)},
+		"shared/users.sql": &fstest.MapFile{Data: []byte(`{{- define "shared/users" }}
+CREATE TABLE ptah_issue_299_users_{{ $ }} (id INT PRIMARY KEY);
+{{- end }}
+`)},
+	}
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fsys,
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: "dev"}),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithMigrationsTable("", "schema_migrations_issue_299")
+
+	err = mig.MigrateUp(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(tableExists(t, conn, "ptah_issue_299_dev"), qt.IsTrue)
+	c.Assert(tableExists(t, conn, "ptah_issue_299_prod"), qt.IsFalse)
+	c.Assert(tableExists(t, conn, "ptah_issue_299_users_dev"), qt.IsTrue)
+	c.Assert(issue299Versions(t, conn), qt.DeepEquals, []int64{1, 2})
+}
+
 func cleanupIssue273(t *testing.T, conn *dbschema.DatabaseConnection) {
 	t.Helper()
 
@@ -149,6 +195,19 @@ func cleanupIssue273(t *testing.T, conn *dbschema.DatabaseConnection) {
 		"DROP TABLE IF EXISTS ptah_issue_273_users",
 		"DROP TABLE IF EXISTS ptah_issue_273_teams",
 		"DROP TABLE IF EXISTS schema_migrations_issue_273",
+	} {
+		_, _ = conn.ExecContext(context.Background(), statement)
+	}
+}
+
+func cleanupIssue299(t *testing.T, conn *dbschema.DatabaseConnection) {
+	t.Helper()
+
+	for _, statement := range []string{
+		"DROP TABLE IF EXISTS ptah_issue_299_users_dev",
+		"DROP TABLE IF EXISTS ptah_issue_299_prod",
+		"DROP TABLE IF EXISTS ptah_issue_299_dev",
+		"DROP TABLE IF EXISTS schema_migrations_issue_299",
 	} {
 		_, _ = conn.ExecContext(context.Background(), statement)
 	}
@@ -218,6 +277,23 @@ func issue290Versions(t *testing.T, conn *dbschema.DatabaseConnection) []int64 {
 	t.Helper()
 
 	rows, err := conn.Query("SELECT version FROM schema_migrations_issue_290 ORDER BY version")
+	qt.Assert(t, err, qt.IsNil)
+	defer rows.Close()
+
+	var versions []int64
+	for rows.Next() {
+		var version int64
+		qt.Assert(t, rows.Scan(&version), qt.IsNil)
+		versions = append(versions, version)
+	}
+	qt.Assert(t, rows.Err(), qt.IsNil)
+	return versions
+}
+
+func issue299Versions(t *testing.T, conn *dbschema.DatabaseConnection) []int64 {
+	t.Helper()
+
+	rows, err := conn.Query("SELECT version FROM schema_migrations_issue_299 ORDER BY version")
 	qt.Assert(t, err, qt.IsNil)
 	defer rows.Close()
 
