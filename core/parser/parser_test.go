@@ -134,11 +134,84 @@ func TestParser_ParseCreateOrReplaceView(t *testing.T) {
 	c.Assert(createView.Body, qt.Equals, "SELECT * FROM users")
 }
 
+func TestParser_ParseCreateFunction(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE FUNCTION public.add_one(value integer)
+RETURNS integer
+LANGUAGE sql
+IMMUTABLE
+AS $$ SELECT value + 1; $$;`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	createFunction, ok := statements.Statements[0].(*ast.CreateFunctionNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(createFunction.Name, qt.Equals, "public.add_one")
+	c.Assert(createFunction.Parameters, qt.Equals, "value integer")
+	c.Assert(createFunction.Returns, qt.Equals, "integer")
+	c.Assert(createFunction.Language, qt.Equals, "sql")
+	c.Assert(createFunction.Volatility, qt.Equals, "IMMUTABLE")
+	c.Assert(createFunction.Body, qt.Equals, " SELECT value + 1; ")
+}
+
+func TestParser_ParseCreateOrReplaceFunction(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE
+OR REPLACE FUNCTION histories_partition_creation( DATE, DATE )
+returns void AS $$
+DECLARE
+create_query text;
+BEGIN
+EXECUTE create_query;
+END;
+$$
+language plpgsql;`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	createFunction, ok := statements.Statements[0].(*ast.CreateFunctionNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(createFunction.Name, qt.Equals, "histories_partition_creation")
+	c.Assert(createFunction.Parameters, qt.Equals, "DATE, DATE")
+	c.Assert(createFunction.Returns, qt.Equals, "void")
+	c.Assert(createFunction.Language, qt.Equals, "plpgsql")
+	c.Assert(createFunction.Body, qt.Contains, "EXECUTE create_query;")
+}
+
+func TestParser_ParseCreateFunctionWithSingleQuotedBody(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "CREATE FUNCTION public.read_value() RETURNS text AS 'SELECT current_user' LANGUAGE sql SECURITY DEFINER STABLE;"
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	createFunction, ok := statements.Statements[0].(*ast.CreateFunctionNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(createFunction.Name, qt.Equals, "public.read_value")
+	c.Assert(createFunction.Parameters, qt.Equals, "")
+	c.Assert(createFunction.Returns, qt.Equals, "text")
+	c.Assert(createFunction.Body, qt.Equals, "SELECT current_user")
+	c.Assert(createFunction.Language, qt.Equals, "sql")
+	c.Assert(createFunction.Security, qt.Equals, "DEFINER")
+	c.Assert(createFunction.Volatility, qt.Equals, "STABLE")
+}
+
 func TestParser_ParseRejectsUnsupportedCreateOrReplaceTarget(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := parser.NewParser("CREATE OR REPLACE FUNCTION f() RETURNS int AS $$ SELECT 1 $$;").Parse()
-	c.Assert(err, qt.ErrorMatches, `unsupported CREATE OR REPLACE target: FUNCTION at position 18`)
+	_, err := parser.NewParser("CREATE OR REPLACE PROCEDURE p() AS $$ SELECT 1 $$;").Parse()
+	c.Assert(err, qt.ErrorMatches, `unsupported CREATE OR REPLACE target: PROCEDURE at position 18`)
 }
 
 func TestParser_ParseSkipsSchemaNeutralStatements(t *testing.T) {
