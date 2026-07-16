@@ -39,6 +39,7 @@ const (
 	verboseFlag          = "verbose"
 	verifySumFlag        = "verify-sum"
 	dirFormatFlag        = "dir-format"
+	atlasEnvFlag         = "atlas-env"
 	execOrderFlag        = "exec-order"
 	lockTimeoutFlag      = "lock-timeout"
 	statementTimeoutFlag = "statement-timeout"
@@ -75,6 +76,11 @@ var migrateUpFlags = map[string]cobraflags.Flag{
 		Name:  dirFormatFlag,
 		Value: string(migrator.MigrationDirFormatAuto),
 		Usage: "Migration directory format: auto, ptah, or atlas",
+	},
+	atlasEnvFlag: &cobraflags.StringFlag{
+		Name:  atlasEnvFlag,
+		Value: "",
+		Usage: "Value exposed as .Env when rendering Atlas SQL template migrations",
 	},
 	execOrderFlag: &cobraflags.StringFlag{
 		Name:  execOrderFlag,
@@ -114,6 +120,7 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 	verbose := migrateUpFlags[verboseFlag].GetBool()
 	verifySum := migrateUpFlags[verifySumFlag].GetBool()
 	dirFormatValue := migrateUpFlags[dirFormatFlag].GetString()
+	atlasEnv := migrateUpFlags[atlasEnvFlag].GetString()
 	execOrderValue := migrateUpFlags[execOrderFlag].GetString()
 	lockTimeout := migrateUpFlags[lockTimeoutFlag].GetString()
 	statementTimeout := migrateUpFlags[statementTimeoutFlag].GetString()
@@ -206,7 +213,13 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 	}
 	interceptor := onlineddl.New(*onlineCfg).WithDryRun(dryRun)
 
-	mig, err := migrator.NewFSMigrator(conn, migrationsFS, migrator.WithStatementInterceptor(interceptor), migrator.WithMigrationDirFormat(dirFormat))
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		migrationsFS,
+		migrator.WithStatementInterceptor(interceptor),
+		migrator.WithMigrationDirFormat(dirFormat),
+		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: atlasEnv}),
+	)
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}

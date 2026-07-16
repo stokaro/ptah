@@ -154,6 +154,9 @@ type Options struct {
 	// Versions restricts linting to parsed migration versions. Empty means
 	// every migration file is linted.
 	Versions []int64
+	// AtlasTemplateData supplies data for Atlas SQL template migrations.
+	// When nil, templates render with migrator.AtlasTemplateData{}.
+	AtlasTemplateData any
 }
 
 // LintFS lints every *.sql file under fsys — recursively, because the
@@ -180,6 +183,10 @@ func LintFS(fsys fs.FS, opts Options) ([]Finding, error) {
 	}
 	sort.Strings(names)
 	names = filterNamesByVersion(names, opts.Versions)
+	names, err = filterAtlasTemplateSupportNames(fsys, names)
+	if err != nil {
+		return nil, err
+	}
 	if len(names) == 0 {
 		return nil, nil
 	}
@@ -205,7 +212,7 @@ func LintFS(fsys fs.FS, opts Options) ([]Finding, error) {
 	mode := modeForDialect(opts.Dialect)
 	var findings []Finding
 	for _, name := range names {
-		file, err := prepareFile(fsys, name, present, versionDirs, opts.PathPrefix, mode)
+		file, err := prepareFile(fsys, name, present, versionDirs, opts.PathPrefix, mode, opts.AtlasTemplateData)
 		if err != nil {
 			return nil, err
 		}
@@ -245,8 +252,65 @@ func filterNamesByVersion(names []string, versions []int64) []string {
 	return filtered
 }
 
+func filterAtlasTemplateSupportNames(fsys fs.FS, names []string) ([]string, error) {
+	hasAtlasTemplate, err := hasAtlasTemplateMigration(fsys, names)
+	if err != nil || !hasAtlasTemplate {
+		return names, err
+	}
+
+	filtered := make([]string, 0, len(names))
+	for _, name := range names {
+		if _, err := parseKnownMigrationName(path.Base(name)); err == nil {
+			filtered = append(filtered, name)
+			continue
+		}
+		support, err := isAtlasTemplateSupportFile(fsys, name)
+		if err != nil {
+			return nil, err
+		}
+		if !support {
+			filtered = append(filtered, name)
+		}
+	}
+	return filtered, nil
+}
+
+func hasAtlasTemplateMigration(fsys fs.FS, names []string) (bool, error) {
+	for _, name := range names {
+		parsed, err := parseKnownMigrationName(path.Base(name))
+		if err != nil || parsed.Format != migrator.MigrationDirFormatAtlas {
+			continue
+		}
+		raw, err := fs.ReadFile(fsys, name)
+		if err != nil {
+			return false, fmt.Errorf("failed to read %s: %w", name, err)
+		}
+		if migrator.LooksAtlasTemplateSQL(string(raw)) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func isAtlasTemplateSupportFile(fsys fs.FS, name string) (bool, error) {
+	raw, err := fs.ReadFile(fsys, name)
+	if err != nil {
+		return false, fmt.Errorf("failed to read %s: %w", name, err)
+	}
+	sql := string(raw)
+	return migrator.LooksAtlasTemplateSQL(sql) && strings.Contains(sql, "define "), nil
+}
+
 // prepareFile loads one migration file into the forms rules consume.
-func prepareFile(fsys fs.FS, name string, present map[string]struct{}, versionDirs map[int64]map[string]bool, pathPrefix string, mode scanMode) (*File, error) {
+func prepareFile(
+	fsys fs.FS,
+	name string,
+	present map[string]struct{},
+	versionDirs map[int64]map[string]bool,
+	pathPrefix string,
+	mode scanMode,
+	atlasTemplateData any,
+) (*File, error) {
 	raw, err := fs.ReadFile(fsys, name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %s: %w", name, err)
@@ -292,7 +356,15 @@ func prepareFile(fsys fs.FS, name string, present map[string]struct{}, versionDi
 
 	// Statement rules apply to up migrations only.
 	if file.IsUp {
-		for _, rawStmt := range splitStatementsWithLines(string(raw), mode) {
+		sql := string(raw)
+		if atlasFormat && migrator.LooksAtlasTemplateSQL(sql) {
+			rendered, _, err := migrator.RenderAtlasTemplateSQL(fsys, name, atlasTemplateData)
+			if err != nil {
+				return nil, err
+			}
+			sql = rendered
+		}
+		for _, rawStmt := range splitStatementsWithLines(sql, mode) {
 			file.Statements = append(file.Statements, Statement{
 				SQL:       rawStmt.text,
 				Canonical: canonicalize(rawStmt.text, mode),
