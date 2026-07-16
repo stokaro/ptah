@@ -623,6 +623,8 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 			// on MergeTree-family engines. The runtime DB version is the
 			// user's problem; we emit the canonical spelling unconditionally.
 			r.w.WriteLinef("ALTER TABLE %s RENAME COLUMN %s TO %s;", node.Name, op.OldName, op.NewName)
+		case *ast.RenameTableOperation:
+			r.w.WriteLinef("RENAME TABLE %s TO %s;", node.Name, op.NewName)
 		case *ast.AddSkippingIndexOperation:
 			if err := r.renderAddSkippingIndex(node.Name, op); err != nil {
 				return err
