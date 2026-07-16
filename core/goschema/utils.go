@@ -820,8 +820,9 @@ func isFunctionInSorted(function Function, sorted []Function) bool {
 //   - Constraints: Deduplicated by explicit table + name, or declaring struct + name when table is omitted
 //   - Grants: Deduplicated by role + privileges + grant option + (table or schema) target
 //   - Roles: Deduplicated by role name
+//   - Schemas: Deduplicated by schema name
 //
-// All 15 Database slice collections are now covered (previously only a subset
+// All 16 Database slice collections are now covered (previously only a subset
 // of appended collections were deduplicated, and the five dropped by ParseFS
 // were never reached). This prevents duplicate emits when objects are declared
 // across files.
@@ -830,6 +831,8 @@ func isFunctionInSorted(function Function, sorted []Function) bool {
 // slices with deduplicated versions. The order of entities may change during
 // this process, but dependency ordering is handled separately.
 func Deduplicate(r *Database) {
+	r.Schemas = deduplicateSchemas(r.Schemas)
+
 	// Deduplicate tables by schema-qualified name - preserve order
 	tableSeen := make(map[string]bool)
 	var deduplicatedTables []Table
@@ -952,6 +955,18 @@ func deduplicateSchemaObjects(r *Database) {
 	r.Roles = deduplicateRoles(r.Roles)
 }
 
+func deduplicateSchemas(schemas []Schema) []Schema {
+	seen := make(map[string]bool)
+	deduplicated := make([]Schema, 0, len(schemas))
+	for _, schema := range schemas {
+		if !seen[schema.Name] {
+			seen[schema.Name] = true
+			deduplicated = append(deduplicated, schema)
+		}
+	}
+	return deduplicated
+}
+
 func deduplicateViews(views []View) []View {
 	seen := make(map[string]bool)
 	deduplicated := make([]View, 0, len(views))
@@ -1039,6 +1054,9 @@ func deduplicateGrants(grants []Grant) []Grant {
 }
 
 func validateDuplicateSchemaObjectDefinitions(r *Database) error {
+	if err := validateDuplicateSchemas(r.Schemas); err != nil {
+		return err
+	}
 	if err := validateDuplicateViews(r.Views); err != nil {
 		return err
 	}
@@ -1053,6 +1071,17 @@ func validateDuplicateSchemaObjectDefinitions(r *Database) error {
 	}
 	if err := validateDuplicateRoles(r.Roles); err != nil {
 		return err
+	}
+	return nil
+}
+
+func validateDuplicateSchemas(schemas []Schema) error {
+	seen := make(map[string]string)
+	for _, schema := range schemas {
+		if previous, ok := seen[schema.Name]; ok && previous != schema.Comment {
+			return fmt.Errorf("conflicting schema %q definitions", schema.Name)
+		}
+		seen[schema.Name] = schema.Comment
 	}
 	return nil
 }

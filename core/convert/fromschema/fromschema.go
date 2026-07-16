@@ -938,23 +938,27 @@ func FromGrant(grant goschema.Grant) *ast.GrantPrivilegeNode {
 // FromDatabase converts a complete goschema.Database to an ast.StatementList containing all DDL statements.
 //
 // This function creates a comprehensive database schema by converting all schema elements
-// (enums, tables, indexes, embedded fields) into their corresponding AST nodes. The statements are ordered
+// (schemas, enums, tables, indexes, embedded fields) into their corresponding AST nodes. The statements are ordered
 // to ensure proper dependency resolution during SQL execution, with platform-specific
 // overrides applied throughout.
 //
 // # Parameters
 //
-//   - database: The complete database schema containing all tables, fields, indexes, enums, and embedded fields
+//   - database: The complete database schema containing all schemas, tables, fields, indexes, enums, and embedded fields
 //   - targetPlatform: Target database platform for applying platform-specific overrides
 //
 // # Statement Ordering
 //
 // The function generates statements in the following order to respect dependencies:
-//  1. Enum type definitions (CREATE TYPE statements)
-//  2. Table definitions (CREATE TABLE statements) with embedded fields processed
-//  3. Index definitions (CREATE INDEX statements)
+//  1. Schema definitions (CREATE SCHEMA statements)
+//  2. Enum type definitions (CREATE TYPE statements)
+//  3. Table definitions (CREATE TABLE statements) with embedded fields processed
+//  4. Extension definitions
+//  5. Dialect-specific objects such as roles, functions, views, RLS policies, grants, and triggers
+//  6. Index definitions (CREATE INDEX statements)
 //
 // This ordering ensures that:
+//   - Schemas are created before tables that reference them
 //   - Enum types are created before tables that reference them
 //   - Tables are created before indexes that reference them
 //   - Foreign key dependencies are handled by the table creation order
@@ -1010,13 +1014,16 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 	// Process embedded fields to generate additional fields for each table
 	allFields := ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
 
-	// 1. Add enum definitions first (they may be referenced by tables)
+	// 1. Add schema definitions first (they may be referenced by tables)
+	appendSchemaStatements(statements, database.Schemas)
+
+	// 2. Add enum definitions (they may be referenced by tables)
 	for _, enum := range database.Enums {
 		enumNode := FromEnum(enum)
 		statements.Statements = append(statements.Statements, enumNode)
 	}
 
-	// 2. Add table definitions (they may be referenced by indexes)
+	// 3. Add table definitions (they may be referenced by indexes)
 	// Use the combined field list that includes embedded field expansions
 	for _, table := range database.Tables {
 		tableNode := FromTable(table, allFields, database.Enums, targetPlatform)
@@ -1024,13 +1031,13 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 		statements.Statements = append(statements.Statements, tableNode)
 	}
 
-	// 3. Add extension definitions (PostgreSQL-specific)
+	// 4. Add extension definitions (PostgreSQL-specific)
 	for _, extension := range database.Extensions {
 		extensionNode := FromExtension(extension)
 		statements.Statements = append(statements.Statements, extensionNode)
 	}
 
-	// 4. Add PostgreSQL-specific features (functions and RLS)
+	// 5. Add PostgreSQL-specific features (functions and RLS)
 	// These features are only supported by PostgreSQL, so we only generate them for PostgreSQL dialects
 	isPostgreSQL := strings.ToLower(targetPlatform) == "postgresql" || strings.ToLower(targetPlatform) == "postgres"
 
@@ -1100,6 +1107,16 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 	}
 
 	return statements
+}
+
+func appendSchemaStatements(statements *ast.StatementList, schemas []goschema.Schema) {
+	for _, schema := range schemas {
+		statements.Statements = append(statements.Statements, &ast.CreateSchemaNode{
+			Name:        schema.Name,
+			IfNotExists: true,
+			Comment:     schema.Comment,
+		})
+	}
 }
 
 // createStructToTableMap creates a mapping from struct names to table names.

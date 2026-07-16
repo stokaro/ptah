@@ -21,6 +21,7 @@ import (
 //   - Sort tables in topological order to ensure proper creation sequence
 //
 // Fields:
+//   - Schemas: All explicit database schema/namespace directives
 //   - Tables: All table directives found in the project
 //   - Fields: All field definitions with their database mappings
 //   - Indexes: All index definitions for database optimization
@@ -28,6 +29,7 @@ import (
 //   - EmbeddedFields: Fields from embedded structs with their relation modes
 //   - Dependencies: Dependency graph mapping table names to their dependencies
 type Database struct {
+	Schemas                    []Schema
 	Tables                     []Table
 	Fields                     []Field
 	Indexes                    []Index
@@ -46,6 +48,12 @@ type Database struct {
 	Dependencies               map[string][]string            // table -> list of tables it depends on
 	FunctionDependencies       map[string][]string            // function -> list of functions it depends on
 	SelfReferencingForeignKeys map[string][]SelfReferencingFK // table -> list of self-referencing foreign keys
+}
+
+// Schema represents a database schema/namespace.
+type Schema struct {
+	Name    string // Schema name, e.g. "public"
+	Comment string // Optional schema comment/description
 }
 
 // EmbeddedField represents an embedded field in a Go struct that should be handled specially

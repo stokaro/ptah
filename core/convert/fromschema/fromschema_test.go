@@ -515,6 +515,31 @@ func TestFromDatabase_TableLevelConstraints(t *testing.T) {
 	c.Assert(table.Constraints[0].Expression, qt.Equals, "position('@' in email) > 1")
 }
 
+func TestFromDatabase_Schemas(t *testing.T) {
+	c := qt.New(t)
+
+	db := goschema.Database{
+		Schemas: []goschema.Schema{{
+			Name:    "public",
+			Comment: "Application schema",
+		}},
+		Tables: []goschema.Table{{
+			StructName: "User",
+			Name:       "users",
+			Schema:     "public",
+		}},
+	}
+
+	result := fromschema.FromDatabase(db, "postgres")
+
+	c.Assert(result.Statements, qt.HasLen, 2)
+	schema, ok := result.Statements[0].(*ast.CreateSchemaNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(schema.Name, qt.Equals, "public")
+	c.Assert(schema.IfNotExists, qt.IsTrue)
+	c.Assert(schema.Comment, qt.Equals, "Application schema")
+}
+
 func TestFromTable_FiltersByStructName(t *testing.T) {
 	c := qt.New(t)
 

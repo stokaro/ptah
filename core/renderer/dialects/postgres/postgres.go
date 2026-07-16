@@ -60,6 +60,9 @@ func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
 		guard = " IF NOT EXISTS"
 	}
 	r.w.WriteLinef("CREATE SCHEMA%s %s;", guard, node.Name)
+	if node.Comment != "" {
+		r.w.WriteLinef("COMMENT ON SCHEMA %s IS %s;", node.Name, r.escapeValue(node.Comment))
+	}
 	return nil
 }
 
