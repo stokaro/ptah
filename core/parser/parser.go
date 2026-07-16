@@ -3,6 +3,7 @@ package parser
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -106,6 +107,7 @@ func (p *Parser) parseStatement() (ast.Node, error) {
 	case "DROP":
 		return p.parseDropStatement()
 	case "GO":
+		// SQL Server tooling uses GO as a batch separator, not as schema DDL.
 		p.skipGoBatchSeparator()
 		return nil, nil
 	case "ANALYZE", "BEGIN", "COMMIT", "DELETE", "INSERT", "PRAGMA", "REINDEX", "ROLLBACK", "SELECT", "SET", "UPDATE", "USE", "VACUUM", "WITH":
@@ -2655,11 +2657,10 @@ func (p *Parser) parseCreateIndexAfterKeyword(indexType string) (*ast.IndexNode,
 	p.skipWhitespace()
 
 	// Get index name
-	if p.current.Type != lexer.TokenIdentifier {
-		return nil, fmt.Errorf("expected index name, got %s at position %d", p.current.Type, p.current.Start)
+	indexName, err := p.expectIdentifier()
+	if err != nil {
+		return nil, fmt.Errorf("expected index name: %w", err)
 	}
-	indexName := p.current.Value
-	p.advance()
 
 	p.skipWhitespace()
 
@@ -2670,49 +2671,90 @@ func (p *Parser) parseCreateIndexAfterKeyword(indexType string) (*ast.IndexNode,
 	p.skipWhitespace()
 
 	// Get table name
-	tableName, err := p.expectIdentifier()
+	tableName, err := p.parseQualifiedIdentifier("table name")
 	if err != nil {
-		return nil, fmt.Errorf("expected table name: %w", err)
+		return nil, err
 	}
 
 	p.skipWhitespace()
 
-	// Parse column list
-	if err := p.expect(lexer.TokenOperator, "("); err != nil {
-		return nil, fmt.Errorf("expected '(' for index columns: %w", err)
-	}
-
-	var columns []string
-	for {
-		p.skipWhitespace()
-
-		columnName, err := p.expectIdentifier()
-		if err != nil {
-			return nil, fmt.Errorf("expected column name: %w", err)
-		}
-		columns = append(columns, columnName)
-
-		p.skipWhitespace()
-
-		if p.current.MatchOperatorValue(",") {
-			p.advance()
-			continue
-		}
-
-		if p.current.MatchOperatorValue(")") {
-			break
-		}
-
-		return nil, fmt.Errorf("expected ',' or ')' in column list at position %d", p.current.Start)
-	}
-
-	if err := p.expect(lexer.TokenOperator, ")"); err != nil {
+	columns, err := p.parseCreateIndexColumns()
+	if err != nil {
 		return nil, err
 	}
 
 	index := ast.NewIndex(indexName, tableName, columns...)
 	index.Type = indexType
 	return index, nil
+}
+
+func (p *Parser) parseCreateIndexColumns() ([]string, error) {
+	if err := p.expect(lexer.TokenOperator, "("); err != nil {
+		return nil, fmt.Errorf("expected '(' for index columns: %w", err)
+	}
+
+	var columns []string
+	var column strings.Builder
+	parenDepth := 0
+	lastWasSpace := false
+
+columnList:
+	for !p.isAtEnd() {
+		if p.current.Type == lexer.TokenOperator {
+			switch p.current.Value {
+			case "(":
+				parenDepth++
+			case ")":
+				if parenDepth == 0 {
+					break columnList
+				}
+				parenDepth--
+			case ",":
+				if parenDepth == 0 {
+					columnText := strings.TrimSpace(column.String())
+					if columnText == "" {
+						return nil, fmt.Errorf("expected column or expression before ',' in index column list at position %d", p.current.Start)
+					}
+					columns = append(columns, columnText)
+					column.Reset()
+					lastWasSpace = false
+					p.advance()
+					p.skipWhitespace()
+					continue
+				}
+			}
+		}
+
+		appendTokenValue(&column, p.current, &lastWasSpace)
+		p.advance()
+	}
+
+	if p.isAtEnd() {
+		return nil, fmt.Errorf("expected ')' for index columns before end of input")
+	}
+
+	columns = append(columns, strings.TrimSpace(column.String()))
+	if slices.Contains(columns, "") {
+		return nil, fmt.Errorf("expected column or expression in index column list at position %d", p.current.Start)
+	}
+
+	if err := p.expect(lexer.TokenOperator, ")"); err != nil {
+		return nil, err
+	}
+	return columns, nil
+}
+
+func appendTokenValue(builder *strings.Builder, token lexer.Token, lastWasSpace *bool) {
+	if token.Type == lexer.TokenWhitespace {
+		if builder.Len() > 0 && !*lastWasSpace {
+			builder.WriteString(" ")
+			*lastWasSpace = true
+		}
+		return
+	}
+
+	builder.WriteString(token.Value)
+	*lastWasSpace = false
 }
 
 // parseCreateUniqueIndex parses CREATE UNIQUE INDEX statements.

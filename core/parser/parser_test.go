@@ -678,6 +678,74 @@ func TestParser_ParseCreateIndex(t *testing.T) {
 	c.Assert(index.Unique, qt.IsFalse)
 }
 
+func TestParser_ParseCreateIndexExpressions(t *testing.T) {
+	tests := []struct {
+		name      string
+		sql       string
+		indexName string
+		tableName string
+		columns   []string
+	}{
+		{
+			name:      "quoted qualified table and nested expression",
+			sql:       `CREATE INDEX "i" ON "s"."t" (((c #>> '{a,b,c}'::text[])));`,
+			indexName: `"i"`,
+			tableName: `"s"."t"`,
+			columns:   []string{"((c #>> '{a,b,c}'::text[]))"},
+		},
+		{
+			name:      "function expression",
+			sql:       `CREATE INDEX "idx_emp_contact" ON "company"."employees" (LOWER(info #>> '{contact, email}'));`,
+			indexName: `"idx_emp_contact"`,
+			tableName: `"company"."employees"`,
+			columns:   []string{"LOWER(info #>> '{contact, email}')"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			p := parser.NewParser(tt.sql)
+			statements, err := p.Parse()
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements.Statements, qt.HasLen, 1)
+
+			index, ok := statements.Statements[0].(*ast.IndexNode)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(index.Name, qt.Equals, tt.indexName)
+			c.Assert(index.Table, qt.Equals, tt.tableName)
+			c.Assert(index.Columns, qt.DeepEquals, tt.columns)
+			c.Assert(index.Unique, qt.IsFalse)
+		})
+	}
+}
+
+func TestParser_ParseCreateIndexRejectsEmptyColumnExpressions(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+	}{
+		{
+			name: "empty first expression",
+			sql:  "CREATE INDEX idx_users_email ON users (, email);",
+		},
+		{
+			name: "empty trailing expression",
+			sql:  "CREATE INDEX idx_users_email ON users (email,);",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := parser.NewParser(tt.sql).Parse()
+			c.Assert(err, qt.ErrorMatches, "expected column or expression.*")
+		})
+	}
+}
+
 func TestParser_ParseCreateUniqueIndex(t *testing.T) {
 	c := qt.New(t)
 
