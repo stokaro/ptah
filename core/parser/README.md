@@ -19,6 +19,9 @@ The parser supports the following SQL DDL statements:
 - ADD COLUMN operations
 - DROP COLUMN operations  
 - MODIFY/ALTER COLUMN operations
+- RENAME COLUMN operations
+- RENAME TO table operations
+- Schema-qualified table names
 - Multiple operations in a single statement
 
 ### CREATE INDEX

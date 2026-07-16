@@ -36,6 +36,18 @@ func TestPostgres_AlterTable_RenameColumn(t *testing.T) {
 	c.Assert(out, qt.Contains, "ALTER TABLE users RENAME COLUMN email_old TO email;")
 }
 
+func TestPostgres_AlterTable_RenameTable(t *testing.T) {
+	c := qt.New(t)
+	alter := &ast.AlterTableNode{
+		Name: "old_users",
+		Operations: []ast.AlterOperation{
+			&ast.RenameTableOperation{NewName: "users"},
+		},
+	}
+	out := renderPG(t, alter)
+	c.Assert(out, qt.Contains, "ALTER TABLE old_users RENAME TO users;")
+}
+
 // AddSkippingIndex and ModifyTTL are ClickHouse-only; postgres emits an
 // explanatory comment and otherwise treats the operation as a no-op.
 func TestPostgres_AlterTable_ClickHouseOnlyOpsEmitComment(t *testing.T) {

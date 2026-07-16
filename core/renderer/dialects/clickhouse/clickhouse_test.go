@@ -577,6 +577,18 @@ func TestAlterTable_RenameColumn(t *testing.T) {
 	c.Assert(out, qt.Contains, "ALTER TABLE events RENAME COLUMN payload_old TO payload;")
 }
 
+func TestAlterTable_RenameTable(t *testing.T) {
+	c := qt.New(t)
+	alter := &ast.AlterTableNode{
+		Name: "old_events",
+		Operations: []ast.AlterOperation{
+			&ast.RenameTableOperation{NewName: "events"},
+		},
+	}
+	out := render(t, alter)
+	c.Assert(out, qt.Contains, "RENAME TABLE old_events TO events;")
+}
+
 func TestAlterTable_AddSkippingIndex(t *testing.T) {
 	cases := []struct {
 		name string
