@@ -100,6 +100,41 @@ func TestParser_ParseCreateTable_WithTableOptions(t *testing.T) {
 	c.Assert(createTable.Comment, qt.Equals, "'Product catalog'")
 }
 
+func TestParser_ParseSkipsSchemaNeutralStatements(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `
+		INSERT INTO ignored_seed_data (id, name) VALUES (1, 'semi;colon');
+		CREATE TABLE users (id INTEGER PRIMARY KEY);
+		PRAGMA foreign_keys = off;
+		SELECT * FROM users;
+	`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	createTable, ok := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(createTable.Name, qt.Equals, "users")
+}
+
+func TestParser_ParseSchemaNeutralOnlyReturnsNoStatements(t *testing.T) {
+	c := qt.New(t)
+
+	statements, err := parser.NewParser("INSERT INTO seed_data (id) VALUES (1);").Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 0)
+}
+
+func TestParser_ParseRejectsUnknownStatement(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := parser.NewParser("BROKEN STATEMENT;").Parse()
+	c.Assert(err, qt.ErrorMatches, `unsupported SQL statement: BROKEN at position 0`)
+}
+
 func TestParser_ParseAlterTable(t *testing.T) {
 	c := qt.New(t)
 
