@@ -117,6 +117,33 @@ func TestParser_ParseCreateTable_IfNotExists(t *testing.T) {
 	c.Assert(createTable.Columns[0].Primary, qt.IsTrue)
 }
 
+func TestParser_ParseSQLServerGoBatchSeparators(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `
+GO
+CREATE TABLE first_table (id INTEGER)
+gO 11
+CREATE TABLE second_table (id INTEGER)
+GO
+`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 2)
+	c.Assert(statements.Statements[0].(*ast.CreateTableNode).Name, qt.Equals, "first_table")
+	c.Assert(statements.Statements[1].(*ast.CreateTableNode).Name, qt.Equals, "second_table")
+}
+
+func TestParser_ParseDoesNotTreatGotoAsGoBatchSeparator(t *testing.T) {
+	c := qt.New(t)
+
+	p := parser.NewParser("GOTO label;")
+	_, err := p.Parse()
+	c.Assert(err, qt.ErrorMatches, `unsupported SQL statement: GOTO at position 0`)
+}
+
 func TestParser_ParseCreateTable_TablePrimaryKeyWithoutComma(t *testing.T) {
 	c := qt.New(t)
 
@@ -454,6 +481,36 @@ func TestParser_ParseAlterTable(t *testing.T) {
 	c.Assert(addOp.Column.Name, qt.Equals, "email")
 	c.Assert(addOp.Column.Type, qt.Equals, "VARCHAR(255)")
 	c.Assert(addOp.Column.Unique, qt.IsTrue)
+}
+
+func TestParser_ParseAlterTableOnlyAddExcludeConstraint(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `ALTER TABLE ONLY t
+    ADD CONSTRAINT name3 EXCLUDE USING gist (id WITH =, cid WITH -|-),
+    ADD CONSTRAINT name4 EXCLUDE USING gist (id WITH =, cid WITH -|-);`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	alterTable, ok := statements.Statements[0].(*ast.AlterTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(alterTable.Name, qt.Equals, "t")
+	c.Assert(alterTable.Operations, qt.HasLen, 2)
+
+	firstOp, ok := alterTable.Operations[0].(*ast.AddConstraintOperation)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(firstOp.Constraint.Name, qt.Equals, "name3")
+	c.Assert(firstOp.Constraint.Type, qt.Equals, ast.ExcludeConstraint)
+	c.Assert(firstOp.Constraint.UsingMethod, qt.Equals, "gist")
+	c.Assert(firstOp.Constraint.ExcludeElements, qt.Equals, "id WITH =, cid WITH -|-")
+
+	secondOp, ok := alterTable.Operations[1].(*ast.AddConstraintOperation)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(secondOp.Constraint.Name, qt.Equals, "name4")
+	c.Assert(secondOp.Constraint.Type, qt.Equals, ast.ExcludeConstraint)
 }
 
 func TestParser_ParseAlterTableQualifiedName(t *testing.T) {
