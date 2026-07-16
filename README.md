@@ -438,14 +438,17 @@ type Booking struct {
 ./package-migrator generate --root-dir ./models --dialect mysql
 ```
 
-You can also generate from a language-agnostic YAML schema file:
+You can also generate from a language-agnostic YAML schema file or an Atlas HCL
+schema file:
 
 ```bash
 ./package-migrator generate --schema-file schema.yaml --dialect postgres
+./package-migrator generate --schema-file schema.hcl --dialect postgres
 ```
 
 See [YAML Schema Input](docs/yaml_schema.md) for the supported file format,
-validation rules, and examples.
+validation rules, and examples. See [Atlas HCL Schema Input](docs/atlas_hcl_schema.md)
+for the supported Atlas HCL subset and current limitations.
 
 3. **Compare and migrate**:
 
@@ -482,6 +485,9 @@ Generate SQL DDL statements from Go entities without touching the database:
 
 # Generate from a YAML schema file instead of Go annotations
 ./package-migrator generate --schema-file schema.yaml --dialect postgres
+
+# Generate from an Atlas HCL schema file instead of Go annotations
+./package-migrator generate --schema-file schema.hcl --dialect postgres
 ```
 
 ### Database Operations
