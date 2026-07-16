@@ -122,15 +122,19 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 	p.skipWhitespace()
 
 	if p.current.Type != lexer.TokenIdentifier {
-		return nil, fmt.Errorf("expected CREATE target (TABLE, INDEX, TYPE), got %s at position %d", p.current.Type, p.current.Start)
+		return nil, fmt.Errorf("expected CREATE target (TABLE, VIEW, INDEX, TYPE, DOMAIN), got %s at position %d", p.current.Type, p.current.Start)
 	}
 
 	target := strings.ToUpper(p.current.Value)
 	switch target {
 	case "TABLE":
 		return p.parseCreateTable()
+	case "VIEW":
+		return p.parseCreateView()
 	case "INDEX":
 		return p.parseCreateIndex()
+	case "OR":
+		return p.parseCreateOrReplaceStatement()
 	case "UNIQUE":
 		// Handle CREATE UNIQUE INDEX
 		p.advance()
@@ -146,6 +150,21 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 	default:
 		return nil, fmt.Errorf("unsupported CREATE target: %s at position %d", target, p.current.Start)
 	}
+}
+
+func (p *Parser) parseCreateOrReplaceStatement() (ast.Node, error) {
+	if err := p.expect(lexer.TokenIdentifier, "OR"); err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
+	if err := p.expect(lexer.TokenIdentifier, "REPLACE"); err != nil {
+		return nil, fmt.Errorf("expected REPLACE after CREATE OR: %w", err)
+	}
+	p.skipWhitespace()
+	if p.current.MatchIdentifierValue("VIEW") {
+		return p.parseCreateOrReplaceView()
+	}
+	return nil, fmt.Errorf("unsupported CREATE OR REPLACE target: %s at position %d", p.current.Value, p.current.Start)
 }
 
 // advance moves to the next token.
@@ -246,6 +265,52 @@ func isNumeric(s string) bool {
 		}
 	}
 	return true
+}
+
+func (p *Parser) parseCreateView() (*ast.CreateViewNode, error) {
+	return p.parseCreateViewNode()
+}
+
+func (p *Parser) parseCreateOrReplaceView() (*ast.CreateViewNode, error) {
+	view, err := p.parseCreateViewNode()
+	if err != nil {
+		return nil, err
+	}
+	view.SetReplace()
+	return view, nil
+}
+
+func (p *Parser) parseCreateViewNode() (*ast.CreateViewNode, error) {
+	if err := p.expect(lexer.TokenIdentifier, "VIEW"); err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
+
+	viewName, err := p.parseQualifiedIdentifier("view name")
+	if err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
+
+	if err := p.expect(lexer.TokenIdentifier, "AS"); err != nil {
+		return nil, fmt.Errorf("expected AS after view name: %w", err)
+	}
+
+	body := p.collectStatementBody()
+	if strings.TrimSpace(body) == "" {
+		return nil, fmt.Errorf("expected view body after AS at position %d", p.current.Start)
+	}
+
+	return ast.NewCreateView(viewName).SetBody(body), nil
+}
+
+func (p *Parser) collectStatementBody() string {
+	var body strings.Builder
+	for !p.isAtEnd() && p.current.Type != lexer.TokenSemicolon {
+		body.WriteString(p.current.Value)
+		p.advance()
+	}
+	return strings.TrimSpace(body.String())
 }
 
 // parseCreateTable parses CREATE TABLE statements.

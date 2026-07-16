@@ -26,6 +26,10 @@ The parser supports the following SQL DDL statements:
 - Unique indexes
 - Multi-column indexes
 
+### CREATE VIEW
+- `CREATE VIEW ... AS SELECT ...`
+- `CREATE OR REPLACE VIEW ... AS SELECT ...`
+
 ### CREATE TYPE (ENUM)
 - PostgreSQL-style enum type definitions
 
