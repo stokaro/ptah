@@ -139,6 +139,13 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 		return p.parseCreateFunction()
 	case "INDEX":
 		return p.parseCreateIndex()
+	case "FULLTEXT", "SPATIAL":
+		p.advance()
+		p.skipWhitespace()
+		if err := p.expect(lexer.TokenIdentifier, "INDEX"); err != nil {
+			return nil, fmt.Errorf("expected INDEX after %s: %w", target, err)
+		}
+		return p.parseCreateIndexAfterKeyword(target)
 	case "OR":
 		return p.parseCreateOrReplaceStatement()
 	case "UNIQUE":
@@ -2552,70 +2559,14 @@ func (p *Parser) parseCreateIndex() (*ast.IndexNode, error) {
 		return nil, err
 	}
 
-	p.skipWhitespace()
-
-	// Get index name
-	if p.current.Type != lexer.TokenIdentifier {
-		return nil, fmt.Errorf("expected index name, got %s at position %d", p.current.Type, p.current.Start)
-	}
-	indexName := p.current.Value
-	p.advance()
-
-	p.skipWhitespace()
-
-	if err := p.expect(lexer.TokenIdentifier, "ON"); err != nil {
-		return nil, fmt.Errorf("expected ON after index name: %w", err)
-	}
-
-	p.skipWhitespace()
-
-	// Get table name
-	tableName, err := p.expectIdentifier()
-	if err != nil {
-		return nil, fmt.Errorf("expected table name: %w", err)
-	}
-
-	p.skipWhitespace()
-
-	// Parse column list
-	if err := p.expect(lexer.TokenOperator, "("); err != nil {
-		return nil, fmt.Errorf("expected '(' for index columns: %w", err)
-	}
-
-	var columns []string
-	for {
-		p.skipWhitespace()
-
-		columnName, err := p.expectIdentifier()
-		if err != nil {
-			return nil, fmt.Errorf("expected column name: %w", err)
-		}
-		columns = append(columns, columnName)
-
-		p.skipWhitespace()
-
-		if p.current.MatchOperatorValue(",") {
-			p.advance()
-			continue
-		}
-
-		if p.current.MatchOperatorValue(")") {
-			break
-		}
-
-		return nil, fmt.Errorf("expected ',' or ')' in column list at position %d", p.current.Start)
-	}
-
-	if err := p.expect(lexer.TokenOperator, ")"); err != nil {
-		return nil, err
-	}
-
-	return ast.NewIndex(indexName, tableName, columns...), nil
+	return p.parseCreateIndexAfterKeyword(regularIndexType)
 }
 
-// parseCreateUniqueIndex parses CREATE UNIQUE INDEX statements.
-// Note: The INDEX token has already been consumed by parseCreateStatement
-func (p *Parser) parseCreateUniqueIndex() (*ast.IndexNode, error) {
+// regularIndexType is the zero value for IndexNode.Type: a plain CREATE INDEX
+// without a MySQL-family FULLTEXT or SPATIAL prefix.
+const regularIndexType = ""
+
+func (p *Parser) parseCreateIndexAfterKeyword(indexType string) (*ast.IndexNode, error) {
 	p.skipWhitespace()
 
 	// Get index name
@@ -2675,6 +2626,17 @@ func (p *Parser) parseCreateUniqueIndex() (*ast.IndexNode, error) {
 	}
 
 	index := ast.NewIndex(indexName, tableName, columns...)
+	index.Type = indexType
+	return index, nil
+}
+
+// parseCreateUniqueIndex parses CREATE UNIQUE INDEX statements.
+// Note: The INDEX token has already been consumed by parseCreateStatement
+func (p *Parser) parseCreateUniqueIndex() (*ast.IndexNode, error) {
+	index, err := p.parseCreateIndexAfterKeyword(regularIndexType)
+	if err != nil {
+		return nil, err
+	}
 	index.SetUnique()
 	return index, nil
 }
