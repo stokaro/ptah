@@ -513,6 +513,14 @@ func (p *Parser) parseFunctionClauses(function *ast.CreateFunctionNode) error {
 			if err := p.parseFunctionReturns(function); err != nil {
 				return err
 			}
+		case "RETURN":
+			if err := p.parseFunctionReturnBody(function); err != nil {
+				return err
+			}
+		case "BEGIN":
+			if err := p.parseFunctionAtomicBody(function); err != nil {
+				return err
+			}
 		case "AS":
 			if err := p.parseFunctionBody(function); err != nil {
 				return err
@@ -545,7 +553,7 @@ func (p *Parser) parseFunctionReturns(function *ast.CreateFunctionNode) error {
 	for !p.isAtEnd() && p.current.Type != lexer.TokenSemicolon {
 		if p.current.Type == lexer.TokenIdentifier {
 			switch strings.ToUpper(p.current.Value) {
-			case "AS", "LANGUAGE", "SECURITY", "IMMUTABLE", "STABLE", "VOLATILE":
+			case "AS", "BEGIN", "LANGUAGE", "RETURN", "SECURITY", "IMMUTABLE", "STABLE", "VOLATILE":
 				function.SetReturns(strings.TrimSpace(returns.String()))
 				return nil
 			}
@@ -572,6 +580,87 @@ func (p *Parser) parseFunctionBody(function *ast.CreateFunctionNode) error {
 	function.SetBody(stripSQLStringDelimiters(body))
 	p.advance()
 	return nil
+}
+
+func (p *Parser) parseFunctionReturnBody(function *ast.CreateFunctionNode) error {
+	if err := p.expect(lexer.TokenIdentifier, "RETURN"); err != nil {
+		return err
+	}
+	p.skipWhitespace()
+
+	var body strings.Builder
+	for !p.isAtEnd() && p.current.Type != lexer.TokenSemicolon {
+		if err := p.checkTimeout(); err != nil {
+			return err
+		}
+
+		body.WriteString(p.current.Value)
+		p.advance()
+	}
+
+	function.SetReturnBody(strings.TrimSpace(body.String()))
+	return nil
+}
+
+func (p *Parser) parseFunctionAtomicBody(function *ast.CreateFunctionNode) error {
+	body, err := p.collectAtomicFunctionBody()
+	if err != nil {
+		return err
+	}
+	function.SetAtomicBody(body)
+	return nil
+}
+
+func (p *Parser) collectAtomicFunctionBody() (string, error) {
+	if err := p.expect(lexer.TokenIdentifier, "BEGIN"); err != nil {
+		return "", err
+	}
+
+	var body strings.Builder
+	body.WriteString("BEGIN")
+
+	p.skipWhitespace()
+	if err := p.expect(lexer.TokenIdentifier, "ATOMIC"); err != nil {
+		return "", fmt.Errorf("expected ATOMIC after BEGIN in SQL function body: %w", err)
+	}
+	body.WriteString(" ATOMIC")
+
+	blockDepth := 1
+	caseDepth := 0
+	for !p.isAtEnd() {
+		if err := p.checkTimeout(); err != nil {
+			return "", err
+		}
+
+		if p.current.Type == lexer.TokenIdentifier {
+			keyword := strings.ToUpper(p.current.Value)
+			switch keyword {
+			case "BEGIN":
+				blockDepth++
+			case "CASE":
+				caseDepth++
+			case "END":
+				if caseDepth > 0 {
+					caseDepth--
+				} else {
+					blockDepth--
+				}
+			}
+
+			body.WriteString(p.current.Value)
+			p.advance()
+
+			if blockDepth == 0 {
+				return strings.TrimSpace(body.String()), nil
+			}
+			continue
+		}
+
+		body.WriteString(p.current.Value)
+		p.advance()
+	}
+
+	return "", fmt.Errorf("unterminated SQL function body at position %d", p.current.Start)
 }
 
 func (p *Parser) parseFunctionLanguage(function *ast.CreateFunctionNode) error {

@@ -1183,6 +1183,8 @@ type CreateFunctionNode struct {
 	Language string
 	// Body contains the function implementation code
 	Body string
+	// BodyKind specifies how Body should be rendered.
+	BodyKind FunctionBodyKind
 	// Security specifies security attributes (e.g., "DEFINER", "INVOKER")
 	Security string
 	// Volatility specifies function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
@@ -1190,6 +1192,18 @@ type CreateFunctionNode struct {
 	// Comment is an optional comment for the function
 	Comment string
 }
+
+// FunctionBodyKind specifies the PostgreSQL CREATE FUNCTION body syntax.
+type FunctionBodyKind string
+
+const (
+	// FunctionBodyQuoted renders AS $$ body $$.
+	FunctionBodyQuoted FunctionBodyKind = "quoted"
+	// FunctionBodyReturn renders a SQL-standard RETURN body.
+	FunctionBodyReturn FunctionBodyKind = "return"
+	// FunctionBodyAtomic renders a SQL-standard BEGIN ATOMIC body.
+	FunctionBodyAtomic FunctionBodyKind = "atomic"
+)
 
 // NewCreateFunction creates a new CREATE FUNCTION node with the specified name.
 //
@@ -1203,7 +1217,8 @@ type CreateFunctionNode struct {
 //		SetBody("BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;")
 func NewCreateFunction(name string) *CreateFunctionNode {
 	return &CreateFunctionNode{
-		Name: name,
+		Name:     name,
+		BodyKind: FunctionBodyQuoted,
 	}
 }
 
@@ -1244,6 +1259,21 @@ func (n *CreateFunctionNode) SetLanguage(language string) *CreateFunctionNode {
 //	createFunc.SetBody("BEGIN RETURN current_setting('app.current_tenant_id', true); END;")
 func (n *CreateFunctionNode) SetBody(body string) *CreateFunctionNode {
 	n.Body = body
+	n.BodyKind = FunctionBodyQuoted
+	return n
+}
+
+// SetReturnBody sets a SQL-standard RETURN function body.
+func (n *CreateFunctionNode) SetReturnBody(body string) *CreateFunctionNode {
+	n.Body = body
+	n.BodyKind = FunctionBodyReturn
+	return n
+}
+
+// SetAtomicBody sets a SQL-standard BEGIN ATOMIC function body.
+func (n *CreateFunctionNode) SetAtomicBody(body string) *CreateFunctionNode {
+	n.Body = body
+	n.BodyKind = FunctionBodyAtomic
 	return n
 }
 

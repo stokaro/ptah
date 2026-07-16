@@ -395,6 +395,31 @@ $$
 LANGUAGE sql;
 `,
 		},
+		{
+			name: "function with return body",
+			function: ast.NewCreateFunction("first_int").
+				SetParameters("value text[]").
+				SetReturns("int").
+				SetLanguage("sql").
+				SetReturnBody("value[1]::int"),
+			expected: `CREATE OR REPLACE FUNCTION first_int(value text[]) RETURNS int LANGUAGE sql RETURN value[1]::int;
+`,
+		},
+		{
+			name: "function with atomic body",
+			function: ast.NewCreateFunction("is_even").
+				SetParameters("x int").
+				SetReturns("boolean").
+				SetLanguage("SQL").
+				SetVolatility("STABLE").
+				SetAtomicBody(`BEGIN ATOMIC
+SELECT CASE WHEN x % 2 = 0 THEN true ELSE false END;
+END`),
+			expected: `CREATE OR REPLACE FUNCTION is_even(x int) RETURNS boolean LANGUAGE SQL STABLE BEGIN ATOMIC
+SELECT CASE WHEN x % 2 = 0 THEN true ELSE false END;
+END;
+`,
+		},
 	}
 
 	for _, tt := range tests {
