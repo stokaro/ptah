@@ -907,10 +907,6 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 		parts = append(parts, "RETURNS", node.Returns)
 	}
 
-	// Function body with dollar quoting
-	r.w.WriteLinef("%s AS $$", strings.Join(parts, " "))
-	r.w.WriteLinef("%s", node.Body)
-
 	// Language specification and other attributes
 	var attributes []string
 	if node.Language != "" {
@@ -927,13 +923,28 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 		attributes = append(attributes, node.Volatility)
 	}
 
+	if node.BodyKind == ast.FunctionBodyReturn || node.BodyKind == ast.FunctionBodyAtomic {
+		parts = append(parts, attributes...)
+		switch node.BodyKind {
+		case ast.FunctionBodyReturn:
+			r.w.WriteLinef("%s RETURN %s;", strings.Join(parts, " "), node.Body)
+		case ast.FunctionBodyAtomic:
+			r.w.WriteLinef("%s %s;", strings.Join(parts, " "), node.Body)
+		}
+		return nil
+	}
+
+	// Function body with dollar quoting
+	r.w.WriteLinef("%s AS $$", strings.Join(parts, " "))
+	r.w.WriteLinef("%s", node.Body)
+
 	// Close the function with attributes
 	if len(attributes) > 0 {
 		r.w.WriteLinef("$$")
 		r.w.WriteLinef("%s;", strings.Join(attributes, " "))
-	} else {
-		r.w.WriteLinef("$$;")
+		return nil
 	}
+	r.w.WriteLinef("$$;")
 
 	return nil
 }
