@@ -227,6 +227,28 @@ func TestNewFSMigrationProvider_AtlasImportedDirectionalFiles(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `migration 2 has no Atlas down migration; dynamic Atlas-style down migrations are not implemented yet; add an atlas txtar down.sql section or migrate down manually`)
 }
 
+func TestNewFSMigrationProvider_AtlasRepeatableFilesAreDiscoveryOnly(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"2_baseline.sql": &fstest.MapFile{Data: []byte("CREATE TABLE users (id INT);\n")},
+		"3R_views.sql":   &fstest.MapFile{Data: []byte("CREATE VIEW active_users AS SELECT * FROM users;\n")},
+	}
+
+	files, err := migrator.DiscoverMigrationFiles(fsys, migrator.MigrationDirFormatAtlas)
+	c.Assert(err, qt.IsNil)
+	c.Assert(files, qt.HasLen, 2)
+	c.Assert(files[0].Path, qt.Equals, "3R_views.sql")
+	c.Assert(files[0].Repeatable, qt.IsTrue)
+
+	provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
+	c.Assert(err, qt.IsNil)
+	migrations := provider.Migrations()
+	c.Assert(migrations, qt.HasLen, 1)
+	c.Assert(migrations[0].Version, qt.Equals, int64(2))
+	c.Assert(migrations[0].Description, qt.Equals, "Baseline")
+}
+
 func TestNewFSMigrationProvider_AtlasTxtarSectionsAndDirectives(t *testing.T) {
 	c := qt.New(t)
 
