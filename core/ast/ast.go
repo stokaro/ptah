@@ -12,6 +12,10 @@ package ast
 type Visitor interface {
 	// VisitCreateTable renders a CREATE TABLE statement
 	VisitCreateTable(*CreateTableNode) error
+	// VisitCreateSchema renders a CREATE SCHEMA statement
+	VisitCreateSchema(*CreateSchemaNode) error
+	// VisitCreateDatabase renders a CREATE DATABASE statement
+	VisitCreateDatabase(*CreateDatabaseNode) error
 	// VisitAlterTable renders an ALTER TABLE statement
 	VisitAlterTable(*AlterTableNode) error
 	// VisitColumn renders a column definition (typically called from other visitors)

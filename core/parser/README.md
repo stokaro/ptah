@@ -15,6 +15,9 @@ The parser supports the following SQL DDL statements:
 - Table-level constraints (PRIMARY KEY, UNIQUE, FOREIGN KEY, CHECK)
 - Table options (ENGINE, CHARSET, COLLATE, COMMENT)
 
+### CREATE SCHEMA / CREATE DATABASE
+- Namespace creation with optional `IF NOT EXISTS`
+
 ### ALTER TABLE
 - ADD COLUMN operations
 - DROP COLUMN operations  

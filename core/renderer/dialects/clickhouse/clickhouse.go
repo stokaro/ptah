@@ -87,6 +87,26 @@ func (r *Renderer) notSupported(feature, name string) {
 	r.w.WriteLinef("-- CLICKHOUSE: %s %q is not supported", feature, name)
 }
 
+// VisitCreateSchema renders schema creation as ClickHouse database creation.
+func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
+	guard := ""
+	if node.IfNotExists {
+		guard = " IF NOT EXISTS"
+	}
+	r.w.WriteLinef("CREATE DATABASE%s %s;", guard, node.Name)
+	return nil
+}
+
+// VisitCreateDatabase renders a CREATE DATABASE statement.
+func (r *Renderer) VisitCreateDatabase(node *ast.CreateDatabaseNode) error {
+	guard := ""
+	if node.IfNotExists {
+		guard = " IF NOT EXISTS"
+	}
+	r.w.WriteLinef("CREATE DATABASE%s %s;", guard, node.Name)
+	return nil
+}
+
 // escapeStringLiteral doubles single quotes for safe embedding in a SQL
 // string literal.
 func escapeStringLiteral(s string) string {

@@ -134,6 +134,59 @@ func TestParser_ParseCreateOrReplaceView(t *testing.T) {
 	c.Assert(createView.Body, qt.Equals, "SELECT * FROM users")
 }
 
+func TestParser_ParseCreateSchema(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE SCHEMA IF NOT EXISTS "bc_test";`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	createSchema, ok := statements.Statements[0].(*ast.CreateSchemaNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(createSchema.Name, qt.Equals, `"bc_test"`)
+	c.Assert(createSchema.IfNotExists, qt.IsTrue)
+}
+
+func TestParser_ParseCreateDatabase(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "CREATE DATABASE `atlantis`;"
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	createDatabase, ok := statements.Statements[0].(*ast.CreateDatabaseNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(createDatabase.Name, qt.Equals, "`atlantis`")
+	c.Assert(createDatabase.IfNotExists, qt.IsFalse)
+}
+
+func TestParser_ParseCreateDatabaseWithQualifiedTableAndMySQLOptions(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "CREATE DATABASE `atlantis`; CREATE TABLE `atlantis`.`tbl` (`col` int NOT NULL) CHARSET utf8mb4 COLLATE utf8mb4_general_ci;"
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 2)
+
+	createDatabase, ok := statements.Statements[0].(*ast.CreateDatabaseNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(createDatabase.Name, qt.Equals, "`atlantis`")
+
+	createTable, ok := statements.Statements[1].(*ast.CreateTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(createTable.Name, qt.Equals, "`atlantis`.`tbl`")
+	c.Assert(createTable.Options["CHARSET"], qt.Equals, "utf8mb4")
+	c.Assert(createTable.Options["COLLATE"], qt.Equals, "utf8mb4_general_ci")
+}
+
 func TestParser_ParseCreateFunction(t *testing.T) {
 	c := qt.New(t)
 

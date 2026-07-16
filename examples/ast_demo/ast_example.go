@@ -236,9 +236,11 @@ func (a *SchemaAnalyzer) VisitCreateTable(node *ast.CreateTableNode) error {
 	return nil
 }
 
-func (a *SchemaAnalyzer) VisitAlterTable(node *ast.AlterTableNode) error { return nil }
-func (a *SchemaAnalyzer) VisitColumn(node *ast.ColumnNode) error         { return nil }
-func (a *SchemaAnalyzer) VisitConstraint(node *ast.ConstraintNode) error { return nil }
+func (a *SchemaAnalyzer) VisitCreateSchema(node *ast.CreateSchemaNode) error     { return nil }
+func (a *SchemaAnalyzer) VisitCreateDatabase(node *ast.CreateDatabaseNode) error { return nil }
+func (a *SchemaAnalyzer) VisitAlterTable(node *ast.AlterTableNode) error         { return nil }
+func (a *SchemaAnalyzer) VisitColumn(node *ast.ColumnNode) error                 { return nil }
+func (a *SchemaAnalyzer) VisitConstraint(node *ast.ConstraintNode) error         { return nil }
 func (a *SchemaAnalyzer) VisitIndex(node *ast.IndexNode) error {
 	a.IndexCount++
 	return nil

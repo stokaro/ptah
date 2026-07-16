@@ -48,6 +48,17 @@ func TestMySQL_AlterTable_RenameTable(t *testing.T) {
 	c.Assert(out, qt.Contains, "ALTER TABLE old_users RENAME TO users;")
 }
 
+func TestMySQL_CreateNamespaceStatements(t *testing.T) {
+	c := qt.New(t)
+	out := renderMySQL(t,
+		&ast.CreateSchemaNode{Name: "`bc_test`", IfNotExists: true},
+		&ast.CreateDatabaseNode{Name: "`atlantis`"},
+	)
+
+	c.Assert(out, qt.Contains, "CREATE SCHEMA IF NOT EXISTS `bc_test`;")
+	c.Assert(out, qt.Contains, "CREATE DATABASE `atlantis`;")
+}
+
 func TestMySQL_AlterTable_ClickHouseOnlyOpsEmitComment(t *testing.T) {
 	c := qt.New(t)
 	alter := &ast.AlterTableNode{
