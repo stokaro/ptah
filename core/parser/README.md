@@ -14,6 +14,9 @@ The parser supports the following SQL DDL statements:
 - Foreign key references with ON DELETE/UPDATE actions
 - Table-level constraints (PRIMARY KEY, UNIQUE, FOREIGN KEY, CHECK)
 - Table options (ENGINE, CHARSET, COLLATE, COMMENT)
+- Optional `IF NOT EXISTS`
+- MySQL-style `CREATE TABLE ... SELECT ...` tails, preserved as raw SELECT SQL
+- Unicode identifiers and MySQL identifiers containing `$`
 
 ### CREATE SCHEMA / CREATE DATABASE
 - Namespace creation with optional `IF NOT EXISTS`
@@ -143,6 +146,18 @@ for _, stmt := range statements.Statements {
 - `CHARSET=utf8mb4` / `CHARACTER SET=utf8mb4`
 - `COLLATE=utf8mb4_unicode_ci`
 - `COMMENT='table description'`
+
+### CREATE TABLE ... SELECT
+
+The parser can represent MySQL-style `CREATE TABLE ... SELECT ...` statements by
+storing the SELECT tail on the `CreateTableNode`. The SELECT body is preserved
+as SQL text; Ptah does not infer schema columns from SELECT expressions.
+
+Supported forms include:
+
+- `CREATE TABLE IF NOT EXISTS users_copy SELECT * FROM users`
+- `CREATE TABLE users_copy ENGINE=heap SELECT * FROM users`
+- `CREATE TABLE users_copy (id INT) SELECT id FROM users`
 
 ## Architecture
 

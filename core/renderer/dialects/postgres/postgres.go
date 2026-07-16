@@ -233,65 +233,26 @@ func (r *Renderer) GetOutput() string {
 
 // VisitCreateTable renders CREATE TABLE with PostgreSQL-specific handling
 func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
-	// Table comment
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s TABLE: %s (%s) --", r.dialectUpper, node.Name, node.Comment)
 	} else {
 		r.w.WriteLinef("-- %s TABLE: %s --", r.dialectUpper, node.Name)
 	}
 
-	// CREATE TABLE statement
-	r.w.WriteLinef("CREATE TABLE %s (", node.Name)
-
-	var lines []string
-
-	// Render columns using PostgreSQL-specific column rendering
-	for _, column := range node.Columns {
-		line, err := r.renderColumn(column)
-		if err != nil {
-			return fmt.Errorf("error rendering column %s: %w", column.Name, err)
-		}
-		lines = append(lines, line)
+	guard := ""
+	if node.IfNotExists {
+		guard = " IF NOT EXISTS"
 	}
 
-	// Render table-level constraints
-	for _, constraint := range node.Constraints {
-		line, err := r.renderConstraint(constraint)
-		if err != nil {
-			return fmt.Errorf("error rendering constraint: %w", err)
-		}
-		if line != "" {
-			lines = append(lines, line)
-		}
+	if node.SelectBody != "" {
+		return r.visitCreateTableAsSelect(node, guard)
 	}
 
-	// Convert column-level foreign keys to table-level constraints
-	for _, column := range node.Columns {
-		if column.ForeignKey != nil {
-			fk := column.ForeignKey
-			constraint := &ast.ConstraintNode{
-				Type:    ast.ForeignKeyConstraint,
-				Name:    fk.Name,
-				Columns: []string{column.Name},
-				Reference: &ast.ForeignKeyRef{
-					Table:    fk.Table,
-					Column:   fk.Column,
-					OnDelete: fk.OnDelete,
-					OnUpdate: fk.OnUpdate,
-					Name:     fk.Name,
-				},
-			}
-			line, err := r.renderConstraint(constraint)
-			if err != nil {
-				return fmt.Errorf("error rendering foreign key constraint: %w", err)
-			}
-			if line != "" {
-				lines = append(lines, line)
-			}
-		}
+	r.w.WriteLinef("CREATE TABLE%s %s (", guard, node.Name)
+	lines, err := r.renderCreateTableLines(node)
+	if err != nil {
+		return err
 	}
-
-	// Join all lines
 	for i, line := range lines {
 		if i == len(lines)-1 {
 			r.w.WriteLine(line) // Last line without comma
@@ -312,6 +273,76 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 	r.w.WriteLine("")
 
 	return nil
+}
+
+func (r *Renderer) visitCreateTableAsSelect(node *ast.CreateTableNode, guard string) error {
+	if len(node.Columns) > 0 || len(node.Constraints) > 0 {
+		return fmt.Errorf("postgres: create table as select with explicit column definitions is not supported")
+	}
+
+	r.w.WriteLinef("CREATE TABLE%s %s AS", guard, node.Name)
+	r.w.WriteLine(strings.TrimSpace(node.SelectBody))
+	r.w.WriteLine(";")
+	r.w.WriteLine("")
+	return nil
+}
+
+func (r *Renderer) renderCreateTableLines(node *ast.CreateTableNode) ([]string, error) {
+	lines := make([]string, 0, len(node.Columns)+len(node.Constraints))
+	for _, column := range node.Columns {
+		line, err := r.renderColumn(column)
+		if err != nil {
+			return nil, fmt.Errorf("error rendering column %s: %w", column.Name, err)
+		}
+		lines = append(lines, line)
+	}
+
+	for _, constraint := range node.Constraints {
+		line, err := r.renderConstraint(constraint)
+		if err != nil {
+			return nil, fmt.Errorf("error rendering constraint: %w", err)
+		}
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+
+	return r.appendColumnForeignKeyLines(lines, node.Columns)
+}
+
+func (r *Renderer) appendColumnForeignKeyLines(lines []string, columns []*ast.ColumnNode) ([]string, error) {
+	for _, column := range columns {
+		if column.ForeignKey == nil {
+			continue
+		}
+		line, err := r.renderColumnForeignKey(column)
+		if err != nil {
+			return nil, err
+		}
+		lines = append(lines, line)
+	}
+	return lines, nil
+}
+
+func (r *Renderer) renderColumnForeignKey(column *ast.ColumnNode) (string, error) {
+	fk := column.ForeignKey
+	constraint := &ast.ConstraintNode{
+		Type:    ast.ForeignKeyConstraint,
+		Name:    fk.Name,
+		Columns: []string{column.Name},
+		Reference: &ast.ForeignKeyRef{
+			Table:    fk.Table,
+			Column:   fk.Column,
+			OnDelete: fk.OnDelete,
+			OnUpdate: fk.OnUpdate,
+			Name:     fk.Name,
+		},
+	}
+	line, err := r.renderConstraint(constraint)
+	if err != nil {
+		return "", fmt.Errorf("error rendering foreign key constraint: %w", err)
+	}
+	return line, nil
 }
 
 // VisitAlterTable renders PostgreSQL-specific ALTER TABLE statements

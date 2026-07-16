@@ -600,6 +600,28 @@ func TestCreateNamespaceStatements(t *testing.T) {
 	c.Assert(out, qt.Contains, "CREATE DATABASE analytics;")
 }
 
+func TestCreateTableSelectTailWithEngine(t *testing.T) {
+	c := qt.New(t)
+	table := ast.NewCreateTable("copied_events").
+		SetIfNotExists().
+		SetOption("ENGINE", "Memory").
+		SetSelectBody("SELECT * FROM events")
+
+	out := render(t, table)
+
+	c.Assert(out, qt.Contains, "CREATE TABLE IF NOT EXISTS copied_events ENGINE = Memory AS\nSELECT * FROM events\n;")
+}
+
+func TestCreateTableSelectTailRequiresValidEngine(t *testing.T) {
+	c := qt.New(t)
+	table := ast.NewCreateTable("copied_events").
+		SetSelectBody("SELECT * FROM events")
+
+	err := renderErr(table)
+
+	c.Assert(err, qt.ErrorMatches, `clickhouse: table "copied_events" uses engine MergeTree which requires ORDER BY; set platform.clickhouse.order_by or declare a primary key`)
+}
+
 func TestAlterTable_AddSkippingIndex(t *testing.T) {
 	cases := []struct {
 		name string

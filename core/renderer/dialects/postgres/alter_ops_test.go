@@ -69,6 +69,18 @@ func TestPostgres_CreateDatabaseIfNotExistsUnsupported(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, "create database if not exists is not supported in PostgreSQL")
 }
 
+func TestPostgres_CreateTableSelectWithTypedColumnsUnsupported(t *testing.T) {
+	c := qt.New(t)
+	r := postgres.New()
+	table := ast.NewCreateTable("copied_users").
+		AddColumn(ast.NewColumn("id", "INTEGER")).
+		SetSelectBody("SELECT id FROM users")
+
+	err := table.Accept(r)
+
+	c.Assert(err, qt.ErrorMatches, "postgres: create table as select with explicit column definitions is not supported")
+}
+
 // AddSkippingIndex and ModifyTTL are ClickHouse-only; postgres emits an
 // explanatory comment and otherwise treats the operation as a no-op.
 func TestPostgres_AlterTable_ClickHouseOnlyOpsEmitComment(t *testing.T) {

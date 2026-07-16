@@ -30,16 +30,20 @@ func TestCreateTableNode_FluentAPI(t *testing.T) {
 	constraint := ast.NewPrimaryKeyConstraint("id")
 
 	table := ast.NewCreateTable("users").
+		SetIfNotExists().
 		AddColumn(column).
 		AddConstraint(constraint).
-		SetOption("ENGINE", "InnoDB")
+		SetOption("ENGINE", "InnoDB").
+		SetSelectBody("SELECT * FROM seed_users")
 
 	c.Assert(table.Name, qt.Equals, "users")
+	c.Assert(table.IfNotExists, qt.IsTrue)
 	c.Assert(table.Columns, qt.HasLen, 1)
 	c.Assert(table.Columns[0], qt.Equals, column)
 	c.Assert(table.Constraints, qt.HasLen, 1)
 	c.Assert(table.Constraints[0], qt.Equals, constraint)
 	c.Assert(table.Options["ENGINE"], qt.Equals, "InnoDB")
+	c.Assert(table.SelectBody, qt.Equals, "SELECT * FROM seed_users")
 }
 
 func TestCreateTableNode_Accept(t *testing.T) {

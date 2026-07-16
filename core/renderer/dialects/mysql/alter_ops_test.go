@@ -59,6 +59,19 @@ func TestMySQL_CreateNamespaceStatements(t *testing.T) {
 	c.Assert(out, qt.Contains, "CREATE DATABASE `atlantis`;")
 }
 
+func TestMySQL_CreateTableSelectTail(t *testing.T) {
+	c := qt.New(t)
+	table := ast.NewCreateTable("t2").
+		SetIfNotExists().
+		SetOption("ENGINE", "heap").
+		SetSelectBody("SELECT * FROM t1")
+
+	out := renderMySQL(t, table)
+
+	c.Assert(out, qt.Contains, "CREATE TABLE IF NOT EXISTS t2 ENGINE=heap SELECT * FROM t1;")
+	c.Assert(out, qt.Not(qt.Contains), "CREATE TABLE IF NOT EXISTS t2 (")
+}
+
 func TestMySQL_AlterTable_ClickHouseOnlyOpsEmitComment(t *testing.T) {
 	c := qt.New(t)
 	alter := &ast.AlterTableNode{

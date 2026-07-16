@@ -574,10 +574,46 @@ func (p *Parser) collectStatementBody() string {
 
 // parseCreateTable parses CREATE TABLE statements.
 func (p *Parser) parseCreateTable() (*ast.CreateTableNode, error) {
+	table, err := p.parseCreateTableHeader()
+	if err != nil {
+		return nil, err
+	}
+
+	done, err := p.parseCreateTableBeforeColumnList(table)
+	if err != nil || done {
+		return table, err
+	}
+
+	if err := p.expect(lexer.TokenOperator, "("); err != nil {
+		return nil, fmt.Errorf("expected '(' after table name: %w", err)
+	}
+
+	if err := p.parseCreateTableElements(table); err != nil {
+		return nil, err
+	}
+
+	if err := p.expect(lexer.TokenOperator, ")"); err != nil {
+		return nil, err
+	}
+
+	if err := p.parseCreateTableSuffix(table); err != nil {
+		return nil, err
+	}
+
+	return table, nil
+}
+
+func (p *Parser) parseCreateTableHeader() (*ast.CreateTableNode, error) {
 	if err := p.expect(lexer.TokenIdentifier, "TABLE"); err != nil {
 		return nil, err
 	}
 
+	p.skipWhitespace()
+
+	ifNotExists, err := p.parseOptionalIfNotExists()
+	if err != nil {
+		return nil, err
+	}
 	p.skipWhitespace()
 
 	// Get table name (could be schema.table)
@@ -586,20 +622,44 @@ func (p *Parser) parseCreateTable() (*ast.CreateTableNode, error) {
 		return nil, err
 	}
 
-	p.skipWhitespace()
-
-	// Expect opening parenthesis
-	if err := p.expect(lexer.TokenOperator, "("); err != nil {
-		return nil, fmt.Errorf("expected '(' after table name: %w", err)
+	table := ast.NewCreateTable(tableName)
+	if ifNotExists {
+		table.SetIfNotExists()
 	}
 
-	table := ast.NewCreateTable(tableName)
+	return table, nil
+}
 
+func (p *Parser) parseCreateTableBeforeColumnList(table *ast.CreateTableNode) (bool, error) {
+	p.skipWhitespace()
+	if p.current.MatchIdentifierValue("AS") || p.current.MatchIdentifierValue("SELECT") {
+		if err := p.parseCreateTableSelectBody(table); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	if !p.current.MatchOperatorValue("(") && p.current.Type == lexer.TokenIdentifier {
+		if err := p.parseTableOptions(table); err != nil {
+			return false, err
+		}
+		p.skipWhitespace()
+		if p.current.MatchIdentifierValue("AS") || p.current.MatchIdentifierValue("SELECT") {
+			if err := p.parseCreateTableSelectBody(table); err != nil {
+				return false, err
+			}
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+func (p *Parser) parseCreateTableElements(table *ast.CreateTableNode) error {
 	// Parse column definitions and constraints
 	for {
 		// Check for timeout to prevent infinite loops
 		if err := p.checkTimeout(); err != nil {
-			return nil, err
+			return err
 		}
 
 		p.skipWhitespace()
@@ -611,7 +671,7 @@ func (p *Parser) parseCreateTable() (*ast.CreateTableNode, error) {
 
 		// Parse column or constraint
 		if err := p.parseTableElement(table); err != nil {
-			return nil, err
+			return err
 		}
 
 		p.skipWhitespace()
@@ -644,20 +704,36 @@ func (p *Parser) parseCreateTable() (*ast.CreateTableNode, error) {
 			continue
 		}
 
-		return nil, fmt.Errorf("expected ',' or ')' after table element at position %d", p.current.Start)
+		return fmt.Errorf("expected ',' or ')' after table element at position %d", p.current.Start)
 	}
 
-	// Consume closing parenthesis
-	if err := p.expect(lexer.TokenOperator, ")"); err != nil {
-		return nil, err
-	}
+	return nil
+}
 
+func (p *Parser) parseCreateTableSuffix(table *ast.CreateTableNode) error {
 	// Parse optional table options (ENGINE, etc.)
 	if err := p.parseTableOptions(table); err != nil {
-		return nil, err
+		return err
 	}
+	if p.current.MatchIdentifierValue("AS") || p.current.MatchIdentifierValue("SELECT") {
+		if err := p.parseCreateTableSelectBody(table); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
-	return table, nil
+func (p *Parser) parseCreateTableSelectBody(table *ast.CreateTableNode) error {
+	p.skipWhitespace()
+	if p.current.MatchIdentifierValue("AS") {
+		p.advance()
+		p.skipWhitespace()
+	}
+	if !p.current.MatchIdentifierValue("SELECT") {
+		return fmt.Errorf("expected SELECT in CREATE TABLE SELECT body, got %s at position %d", p.current.Type, p.current.Start)
+	}
+	table.SetSelectBody(p.collectStatementBody())
+	return nil
 }
 
 // parseTableElement parses a column definition or table constraint.
@@ -679,7 +755,7 @@ func (p *Parser) parseTableElement(table *ast.CreateTableNode) error {
 	}
 
 	// Otherwise, parse as column definition
-	column, err := p.parseColumnDefinition()
+	column, err := p.parseColumnDefinition(table)
 	if err != nil {
 		return err
 	}
@@ -873,10 +949,21 @@ func (p *Parser) handleCharacter(column *ast.ColumnNode) {
 	p.advance()
 	p.skipWhitespace()
 	if p.current.Type == lexer.TokenIdentifier {
-		// Store charset as comment for now
-		column.SetComment("CHARACTER SET " + p.current.Value)
+		appendColumnComment(column, "CHARACTER SET "+p.current.Value)
 		p.advance()
 	}
+}
+
+func (p *Parser) handleCharset(column *ast.ColumnNode) error {
+	p.advance()
+	p.skipWhitespace()
+
+	value, err := p.expectIdentifier()
+	if err != nil {
+		return fmt.Errorf("expected charset name: %w", err)
+	}
+	appendColumnComment(column, "CHARSET "+value)
+	return nil
 }
 
 func (p *Parser) handleCollate(column *ast.ColumnNode) error {
@@ -898,10 +985,28 @@ func (p *Parser) handleCollate(column *ast.ColumnNode) error {
 		return fmt.Errorf("expected collation name: got %s at position %d", p.current.Type, p.current.Start)
 	}
 
-	// Store as comment for now (in a full implementation, add Collation field to ColumnNode)
-	column.SetComment("COLLATE " + collation)
+	appendColumnComment(column, "COLLATE "+collation)
 
 	return nil
+}
+
+func (p *Parser) handleColumnComment(column *ast.ColumnNode) error {
+	p.advance()
+	p.skipWhitespace()
+	if p.current.Type != lexer.TokenString {
+		return fmt.Errorf("expected column comment string, got %s at position %d", p.current.Type, p.current.Start)
+	}
+	appendColumnComment(column, "COMMENT "+p.current.Value)
+	p.advance()
+	return nil
+}
+
+func appendColumnComment(column *ast.ColumnNode, text string) {
+	if column.Comment == "" {
+		column.SetComment(text)
+		return
+	}
+	column.SetComment(column.Comment + "; " + text)
 }
 
 func (p *Parser) handleOn(column *ast.ColumnNode) {
@@ -941,7 +1046,7 @@ func (p *Parser) handleOn(column *ast.ColumnNode) {
 	column.SetComment("ON UPDATE " + updateExpr)
 }
 
-func (p *Parser) parseColumnConstraintsAndAttributes(column *ast.ColumnNode) error {
+func (p *Parser) parseColumnConstraintsAndAttributes(table *ast.CreateTableNode, column *ast.ColumnNode) error {
 	var err error
 	for {
 		// Check for timeout to prevent infinite loops
@@ -956,38 +1061,7 @@ func (p *Parser) parseColumnConstraintsAndAttributes(column *ast.ColumnNode) err
 		}
 
 		keyword := strings.ToUpper(p.current.Value)
-		switch keyword {
-		case "NOT":
-			err = p.handleNotNull(column)
-		case "NULL":
-			p.handleNull(column)
-		case "PRIMARY":
-			err = p.handlePrimaryKey(column)
-		case "UNIQUE":
-			p.handleUnique(column)
-		case "AUTO_INCREMENT", "AUTOINCREMENT":
-			p.handleAutoIncrement(column)
-		case "DEFAULT":
-			err = p.handleDefault(column)
-		case "CHECK":
-			err = p.handleCheck(column)
-		case "REFERENCES":
-			err = p.handleReferences(column)
-		case "AS":
-			err = p.handleAs(column)
-		case "GENERATED":
-			err = p.handleGenerated(column)
-		case "CHARACTER":
-			p.handleCharacter(column)
-		case "COLLATE":
-			err = p.handleCollate(column)
-		case "ON":
-			p.handleOn(column)
-		default:
-			// Unknown keyword, stop parsing column attributes
-			err = fmt.Errorf("unsupported column attribute: %s at position %d", keyword, p.current.Start)
-		}
-
+		err = p.parseColumnConstraintOrAttribute(table, column, keyword)
 		if err != nil {
 			return err
 		}
@@ -996,8 +1070,80 @@ func (p *Parser) parseColumnConstraintsAndAttributes(column *ast.ColumnNode) err
 	return nil
 }
 
+func (p *Parser) parseColumnConstraintOrAttribute(table *ast.CreateTableNode, column *ast.ColumnNode, keyword string) error {
+	switch keyword {
+	case "NOT":
+		return p.handleNotNull(column)
+	case "NULL":
+		p.handleNull(column)
+	case "PRIMARY":
+		return p.handlePrimaryKeyAttribute(table, column)
+	case "UNIQUE":
+		p.handleUnique(column)
+	case "AUTO_INCREMENT", "AUTOINCREMENT":
+		p.handleAutoIncrement(column)
+	case "DEFAULT":
+		return p.handleDefault(column)
+	case "CHECK":
+		return p.handleCheck(column)
+	case "REFERENCES":
+		return p.handleReferences(column)
+	case "AS":
+		return p.handleAs(column)
+	case "GENERATED":
+		return p.handleGenerated(column)
+	case "CHARACTER":
+		p.handleCharacter(column)
+	case "CHARSET":
+		return p.handleCharset(column)
+	case "COLLATE":
+		return p.handleCollate(column)
+	case "COMMENT":
+		return p.handleColumnComment(column)
+	case "ON":
+		p.handleOn(column)
+	default:
+		return fmt.Errorf("unsupported column attribute: %s at position %d", keyword, p.current.Start)
+	}
+	return nil
+}
+
+func (p *Parser) handlePrimaryKeyAttribute(table *ast.CreateTableNode, column *ast.ColumnNode) error {
+	if table == nil {
+		return p.handlePrimaryKey(column)
+	}
+	handled, err := p.handlePrimaryKeyOrInlineTableConstraint(table, column)
+	if err != nil {
+		return err
+	}
+	if handled {
+		return nil
+	}
+	return p.handlePrimaryKey(column)
+}
+
+func (p *Parser) handlePrimaryKeyOrInlineTableConstraint(table *ast.CreateTableNode, column *ast.ColumnNode) (bool, error) {
+	p.advance()
+	p.skipWhitespace()
+	if err := p.expect(lexer.TokenIdentifier, "KEY"); err != nil {
+		return false, fmt.Errorf("expected KEY after PRIMARY: %w", err)
+	}
+	p.skipWhitespace()
+	if !p.current.MatchOperatorValue("(") {
+		column.SetPrimary()
+		return true, nil
+	}
+
+	constraint := &ast.ConstraintNode{Type: ast.PrimaryKeyConstraint}
+	if err := p.parseTableColumnList(constraint); err != nil {
+		return false, err
+	}
+	table.AddConstraint(constraint)
+	return true, nil
+}
+
 // parseColumnDefinition parses a column definition.
-func (p *Parser) parseColumnDefinition() (*ast.ColumnNode, error) {
+func (p *Parser) parseColumnDefinition(table *ast.CreateTableNode) (*ast.ColumnNode, error) {
 	p.skipWhitespace()
 
 	// Get column name
@@ -1015,7 +1161,7 @@ func (p *Parser) parseColumnDefinition() (*ast.ColumnNode, error) {
 	}
 
 	column := ast.NewColumn(columnName, columnType)
-	err = p.parseColumnConstraintsAndAttributes(column)
+	err = p.parseColumnConstraintsAndAttributes(table, column)
 	if err != nil {
 		return nil, err
 	}
@@ -1264,6 +1410,13 @@ func (p *Parser) handleFunctionCallOrKeyword() (*ast.DefaultValue, error) {
 	value := p.current.Value
 	p.advance()
 
+	upperValue := strings.ToUpper(value)
+	if upperValue == "E" && p.current.Type == lexer.TokenString {
+		value += p.current.Value
+		p.advance()
+		return &ast.DefaultValue{Value: value}, nil
+	}
+
 	// Check if it's a function call
 	if p.current.Type == lexer.TokenOperator && p.current.Value == "(" {
 		// Parse function call
@@ -1279,7 +1432,6 @@ func (p *Parser) handleFunctionCallOrKeyword() (*ast.DefaultValue, error) {
 	}
 
 	// Handle MySQL/PostgreSQL functions that can be used without parentheses
-	upperValue := strings.ToUpper(value)
 	if upperValue == "CURRENT_TIMESTAMP" || upperValue == "NOW" || upperValue == "CURRENT_DATE" || upperValue == "CURRENT_TIME" {
 		return &ast.DefaultValue{Expression: value + "()"}, nil
 	}
@@ -1330,19 +1482,62 @@ func (p *Parser) handleNumber() (*ast.DefaultValue, error) {
 func (p *Parser) parseDefaultValue() (*ast.DefaultValue, error) {
 	p.skipWhitespace()
 
+	var value *ast.DefaultValue
+	var err error
 	switch p.current.Type {
 	case lexer.TokenString:
 		// String literal
-		return p.handleStringLiteral()
+		value, err = p.handleStringLiteral()
 	case lexer.TokenIdentifier:
 		// Could be a function call or keyword like NULL, TRUE, FALSE
-		return p.handleFunctionCallOrKeyword()
+		value, err = p.handleFunctionCallOrKeyword()
 	case lexer.TokenOperator:
 		// Could be a number (positive or negative) or just a number
-		return p.handleNumber()
+		value, err = p.handleNumber()
 	default:
 		return nil, fmt.Errorf("expected default value, got %s at position %d", p.current.Type, p.current.Start)
 	}
+	if err != nil {
+		return nil, err
+	}
+	return p.extendDefaultExpression(value), nil
+}
+
+func (p *Parser) extendDefaultExpression(value *ast.DefaultValue) *ast.DefaultValue {
+	p.skipWhitespace()
+	if !p.current.MatchOperatorValue("+") {
+		return value
+	}
+
+	var expr strings.Builder
+	if value.Expression != "" {
+		expr.WriteString(value.Expression)
+	} else {
+		expr.WriteString(value.Value)
+	}
+
+	depth := 0
+	for !p.isAtEnd() && p.current.Type != lexer.TokenSemicolon {
+		if p.current.Type == lexer.TokenOperator {
+			switch p.current.Value {
+			case "(":
+				depth++
+			case ")":
+				if depth == 0 {
+					return &ast.DefaultValue{Expression: strings.TrimSpace(expr.String())}
+				}
+				depth--
+			case ",":
+				if depth == 0 {
+					return &ast.DefaultValue{Expression: strings.TrimSpace(expr.String())}
+				}
+			}
+		}
+
+		expr.WriteString(p.current.Value)
+		p.advance()
+	}
+	return &ast.DefaultValue{Expression: strings.TrimSpace(expr.String())}
 }
 
 // parseCheckExpression parses a CHECK constraint expression.
@@ -1972,6 +2167,9 @@ func (p *Parser) parseTableOptions(table *ast.CreateTableNode) error {
 
 		var err error
 		option := strings.ToUpper(p.current.Value)
+		if option == "AS" || option == "SELECT" {
+			return nil
+		}
 		switch option {
 		case "ENGINE":
 			err = p.handleTableEngine(table)
@@ -2286,7 +2484,7 @@ func (p *Parser) parseAddOperation() (*ast.AddColumnOperation, error) {
 	}
 
 	// Parse column definition
-	column, err := p.parseColumnDefinition()
+	column, err := p.parseColumnDefinition(nil)
 	if err != nil {
 		return nil, err
 	}
@@ -2340,7 +2538,7 @@ func (p *Parser) parseModifyOperation() (*ast.ModifyColumnOperation, error) {
 	}
 
 	// Parse column definition
-	column, err := p.parseColumnDefinition()
+	column, err := p.parseColumnDefinition(nil)
 	if err != nil {
 		return nil, err
 	}

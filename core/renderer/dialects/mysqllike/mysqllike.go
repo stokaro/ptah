@@ -213,8 +213,27 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 		r.w.WriteLinef("-- %s TABLE: %s --", r.dialectUpper, node.Name)
 	}
 
+	guard := ""
+	if node.IfNotExists {
+		guard = " IF NOT EXISTS"
+	}
+
+	if len(node.Columns) == 0 && len(node.Constraints) == 0 && node.SelectBody != "" {
+		r.w.Writef("CREATE TABLE%s %s", guard, node.Name)
+		if len(node.Options) > 0 {
+			options := r.renderTableOptions(node.Options)
+			if options != "" {
+				r.w.Write(" ")
+				r.w.Write(options)
+			}
+		}
+		r.w.WriteLinef(" %s;", strings.TrimSpace(node.SelectBody))
+		r.w.WriteLine("")
+		return nil
+	}
+
 	// CREATE TABLE statement
-	r.w.WriteLinef("CREATE TABLE %s (", node.Name)
+	r.w.WriteLinef("CREATE TABLE%s %s (", guard, node.Name)
 
 	var lines []string
 
@@ -256,6 +275,11 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 			r.w.Write(" ")
 			r.w.Write(options)
 		}
+	}
+
+	if node.SelectBody != "" {
+		r.w.Write(" ")
+		r.w.Write(strings.TrimSpace(node.SelectBody))
 	}
 
 	r.w.WriteLine(";")

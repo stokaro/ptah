@@ -472,6 +472,25 @@ func splitColumns(expr string) []string {
 // thread it through r.forceNotNullSet so the per-column renderer can return
 // a precise error rather than silently stripping Nullable.
 func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
+	guard := ""
+	if node.IfNotExists {
+		guard = " IF NOT EXISTS"
+	}
+
+	if len(node.Columns) == 0 && len(node.Constraints) == 0 && node.SelectBody != "" {
+		spec, err := r.resolveAndValidateTableEngine(node)
+		if err != nil {
+			return err
+		}
+		r.w.Writef("CREATE TABLE%s %s", guard, node.Name)
+		r.writeEngineSpec(spec)
+		r.w.WriteLine(" AS")
+		r.w.WriteLine(strings.TrimSpace(node.SelectBody))
+		r.w.WriteLine(";")
+		r.w.WriteLine("")
+		return nil
+	}
+
 	spec, err := r.resolveAndValidateTableEngine(node)
 	if err != nil {
 		return err
@@ -480,7 +499,7 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 	r.forceNotNullSet = sortKeyColumnSet(spec)
 	defer func() { r.forceNotNullSet = nil }()
 
-	r.w.WriteLinef("CREATE TABLE %s (", node.Name)
+	r.w.WriteLinef("CREATE TABLE%s %s (", guard, node.Name)
 	lines, err := r.renderTableBody(node)
 	if err != nil {
 		return err
@@ -495,6 +514,10 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 	r.writeEngineClause(spec)
 	if node.Comment != "" {
 		r.w.Writef(" COMMENT %s", escapeStringLiteral(node.Comment))
+	}
+	if node.SelectBody != "" {
+		r.w.Write(" AS ")
+		r.w.Write(strings.TrimSpace(node.SelectBody))
 	}
 	r.w.WriteLine(";")
 	r.w.WriteLine("")
@@ -578,7 +601,12 @@ func (r *Renderer) renderTableBody(node *ast.CreateTableNode) ([]string, error) 
 // writeEngineClause emits the trailing ENGINE/PARTITION BY/... clause for a
 // CREATE TABLE statement, in the order ClickHouse expects.
 func (r *Renderer) writeEngineClause(spec tableEngineSpec) {
-	r.w.Writef(") ENGINE = %s", spec.engine)
+	r.w.Write(")")
+	r.writeEngineSpec(spec)
+}
+
+func (r *Renderer) writeEngineSpec(spec tableEngineSpec) {
+	r.w.Writef(" ENGINE = %s", spec.engine)
 	if spec.partitionBy != "" {
 		r.w.Writef(" PARTITION BY %s", spec.partitionBy)
 	}

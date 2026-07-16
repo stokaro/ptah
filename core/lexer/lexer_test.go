@@ -113,6 +113,27 @@ func TestLexer_NextToken_HappyPath(t *testing.T) {
 			},
 		},
 		{
+			name:  "dollar_identifier",
+			input: "mysqltest.$test1 ($b int, c$ int)",
+			expected: []lexer.Token{
+				{Type: lexer.TokenIdentifier, Value: "mysqltest", Start: 0, End: 9},
+				{Type: lexer.TokenOperator, Value: ".", Start: 9, End: 10},
+				{Type: lexer.TokenIdentifier, Value: "$test1", Start: 10, End: 16},
+				{Type: lexer.TokenWhitespace, Value: " ", Start: 16, End: 17},
+				{Type: lexer.TokenOperator, Value: "(", Start: 17, End: 18},
+				{Type: lexer.TokenIdentifier, Value: "$b", Start: 18, End: 20},
+				{Type: lexer.TokenWhitespace, Value: " ", Start: 20, End: 21},
+				{Type: lexer.TokenIdentifier, Value: "int", Start: 21, End: 24},
+				{Type: lexer.TokenOperator, Value: ",", Start: 24, End: 25},
+				{Type: lexer.TokenWhitespace, Value: " ", Start: 25, End: 26},
+				{Type: lexer.TokenIdentifier, Value: "c$", Start: 26, End: 28},
+				{Type: lexer.TokenWhitespace, Value: " ", Start: 28, End: 29},
+				{Type: lexer.TokenIdentifier, Value: "int", Start: 29, End: 32},
+				{Type: lexer.TokenOperator, Value: ")", Start: 32, End: 33},
+				{Type: lexer.TokenEOF, Value: "", Start: 33, End: 33},
+			},
+		},
+		{
 			name:  "numbers",
 			input: "123 45.67 89",
 			expected: []lexer.Token{
