@@ -127,7 +127,7 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 	p.skipWhitespace()
 
 	if p.current.Type != lexer.TokenIdentifier {
-		return nil, fmt.Errorf("expected CREATE target (TABLE, VIEW, FUNCTION, INDEX, TYPE, DOMAIN, SCHEMA, DATABASE, EXTENSION), got %s at position %d", p.current.Type, p.current.Start)
+		return nil, fmt.Errorf("expected CREATE target (TABLE, VIEW, FUNCTION, TRIGGER, INDEX, TYPE, DOMAIN, SCHEMA, DATABASE, EXTENSION), got %s at position %d", p.current.Type, p.current.Start)
 	}
 
 	target := strings.ToUpper(p.current.Value)
@@ -144,6 +144,8 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 		return p.parseCreateView()
 	case "FUNCTION":
 		return p.parseCreateFunction()
+	case "TRIGGER":
+		return p.parseCreateTrigger()
 	case "INDEX":
 		return p.parseCreateIndex()
 	case "FULLTEXT", "SPATIAL":
@@ -155,6 +157,13 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 		return p.parseCreateIndexAfterKeyword(target)
 	case "OR":
 		return p.parseCreateOrReplaceStatement()
+	case "TEMP", "TEMPORARY":
+		p.advance()
+		p.skipWhitespace()
+		if p.current.MatchIdentifierValue("TRIGGER") {
+			return p.parseCreateTrigger()
+		}
+		return nil, fmt.Errorf("unsupported CREATE %s target: %s at position %d", target, p.current.Value, p.current.Start)
 	case "UNIQUE":
 		// Handle CREATE UNIQUE INDEX
 		p.advance()
@@ -285,6 +294,13 @@ func (p *Parser) parseCreateOrReplaceStatement() (ast.Node, error) {
 	}
 	if p.current.MatchIdentifierValue("FUNCTION") {
 		return p.parseCreateOrReplaceFunction()
+	}
+	if p.current.MatchIdentifierValue("TRIGGER") {
+		trigger, err := p.parseCreateTrigger()
+		if err != nil {
+			return nil, err
+		}
+		return trigger.SetReplace(), nil
 	}
 	return nil, fmt.Errorf("unsupported CREATE OR REPLACE target: %s at position %d", p.current.Value, p.current.Start)
 }
@@ -584,6 +600,196 @@ func (p *Parser) parseFunctionSecurity(function *ast.CreateFunctionNode) error {
 	}
 	function.SetSecurity(strings.ToUpper(security))
 	return nil
+}
+
+func (p *Parser) parseCreateTrigger() (*ast.CreateTriggerNode, error) {
+	if err := p.expect(lexer.TokenIdentifier, "TRIGGER"); err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
+
+	if p.current.MatchIdentifierValue("IF") {
+		if err := p.parseTriggerIfNotExists(); err != nil {
+			return nil, err
+		}
+		p.skipWhitespace()
+	}
+
+	triggerName, err := p.parseQualifiedIdentifier("trigger name")
+	if err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
+
+	timing, err := p.parseTriggerTiming()
+	if err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
+
+	event, err := p.parseTriggerEvent()
+	if err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
+
+	if err := p.expect(lexer.TokenIdentifier, "ON"); err != nil {
+		return nil, fmt.Errorf("expected ON after trigger event: %w", err)
+	}
+	p.skipWhitespace()
+
+	tableName, err := p.parseQualifiedIdentifier("trigger table name")
+	if err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
+
+	forEach, err := p.parseOptionalTriggerForEach()
+	if err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
+
+	body, err := p.collectTriggerBody()
+	if err != nil {
+		return nil, err
+	}
+
+	return ast.NewCreateTrigger(triggerName, tableName).
+		SetTiming(timing).
+		SetEvent(event).
+		SetForEach(forEach).
+		SetBody(body), nil
+}
+
+func (p *Parser) parseTriggerIfNotExists() error {
+	if err := p.expect(lexer.TokenIdentifier, "IF"); err != nil {
+		return err
+	}
+	p.skipWhitespace()
+	if err := p.expect(lexer.TokenIdentifier, "NOT"); err != nil {
+		return fmt.Errorf("expected NOT after IF: %w", err)
+	}
+	p.skipWhitespace()
+	if err := p.expect(lexer.TokenIdentifier, "EXISTS"); err != nil {
+		return fmt.Errorf("expected EXISTS after IF NOT: %w", err)
+	}
+	return nil
+}
+
+func (p *Parser) parseTriggerTiming() (string, error) {
+	switch {
+	case p.current.MatchIdentifierValue("BEFORE"), p.current.MatchIdentifierValue("AFTER"):
+		timing := strings.ToUpper(p.current.Value)
+		p.advance()
+		return timing, nil
+	case p.current.MatchIdentifierValue("INSTEAD"):
+		p.advance()
+		p.skipWhitespace()
+		if err := p.expect(lexer.TokenIdentifier, "OF"); err != nil {
+			return "", fmt.Errorf("expected OF after INSTEAD in trigger timing: %w", err)
+		}
+		return "INSTEAD OF", nil
+	default:
+		return "", fmt.Errorf("expected trigger timing, got %s at position %d", p.current.Type, p.current.Start)
+	}
+}
+
+func (p *Parser) parseTriggerEvent() (string, error) {
+	switch {
+	case p.current.MatchIdentifierValue("INSERT"), p.current.MatchIdentifierValue("DELETE"):
+		event := strings.ToUpper(p.current.Value)
+		p.advance()
+		return event, nil
+	case p.current.MatchIdentifierValue("UPDATE"):
+		return p.parseUpdateTriggerEvent(), nil
+	default:
+		return "", fmt.Errorf("expected trigger event, got %s at position %d", p.current.Type, p.current.Start)
+	}
+}
+
+func (p *Parser) parseUpdateTriggerEvent() string {
+	var event strings.Builder
+	event.WriteString(strings.ToUpper(p.current.Value))
+	p.advance()
+	p.skipWhitespace()
+	if !p.current.MatchIdentifierValue("OF") {
+		return event.String()
+	}
+
+	event.WriteString(" OF")
+	p.advance()
+	for !p.isAtEnd() && !p.current.MatchIdentifierValue("ON") {
+		event.WriteString(p.current.Value)
+		p.advance()
+	}
+	return strings.TrimSpace(event.String())
+}
+
+func (p *Parser) parseOptionalTriggerForEach() (string, error) {
+	if !p.current.MatchIdentifierValue("FOR") {
+		return "ROW", nil
+	}
+	p.advance()
+	p.skipWhitespace()
+	if err := p.expect(lexer.TokenIdentifier, "EACH"); err != nil {
+		return "", fmt.Errorf("expected EACH after FOR in trigger clause: %w", err)
+	}
+	p.skipWhitespace()
+
+	forEach, err := p.expectIdentifier()
+	if err != nil {
+		return "", fmt.Errorf("expected trigger FOR EACH target: %w", err)
+	}
+	return strings.ToUpper(forEach), nil
+}
+
+func (p *Parser) collectTriggerBody() (string, error) {
+	var body strings.Builder
+	blockDepth := 0
+	caseDepth := 0
+	seenBegin := false
+
+	for !p.isAtEnd() {
+		if err := p.checkTimeout(); err != nil {
+			return "", err
+		}
+
+		if p.current.Type == lexer.TokenIdentifier {
+			keyword := strings.ToUpper(p.current.Value)
+			switch keyword {
+			case "BEGIN":
+				seenBegin = true
+				blockDepth++
+			case "CASE":
+				if seenBegin {
+					caseDepth++
+				}
+			case "END":
+				if caseDepth > 0 {
+					caseDepth--
+				} else if seenBegin {
+					blockDepth--
+				}
+			}
+
+			body.WriteString(p.current.Value)
+			p.advance()
+
+			if seenBegin && blockDepth == 0 {
+				return strings.TrimSpace(body.String()), nil
+			}
+			continue
+		}
+
+		body.WriteString(p.current.Value)
+		p.advance()
+	}
+
+	if !seenBegin {
+		return "", fmt.Errorf("expected trigger body BEGIN at position %d", p.current.Start)
+	}
+	return "", fmt.Errorf("unterminated trigger body at position %d", p.current.Start)
 }
 
 func stripSQLStringDelimiters(value string) string {
@@ -1223,8 +1429,8 @@ func (p *Parser) parseColumnDefinition(table *ast.CreateTableNode) (*ast.ColumnN
 
 	p.skipWhitespace()
 
-	// Get column type
-	columnType, err := p.parseColumnType()
+	// Get column type. SQLite permits columns without an explicit type.
+	columnType, err := p.parseOptionalColumnType()
 	if err != nil {
 		return nil, fmt.Errorf("expected column type: %w", err)
 	}
@@ -1236,6 +1442,26 @@ func (p *Parser) parseColumnDefinition(table *ast.CreateTableNode) (*ast.ColumnN
 	}
 
 	return column, nil
+}
+
+func (p *Parser) parseOptionalColumnType() (string, error) {
+	switch {
+	case p.current.Type == lexer.TokenIdentifier && isColumnConstraintStart(p.current.Value):
+		return "", nil
+	case p.current.MatchOperatorValue(",") || p.current.MatchOperatorValue(")"):
+		return "", nil
+	default:
+		return p.parseColumnType()
+	}
+}
+
+func isColumnConstraintStart(value string) bool {
+	switch strings.ToUpper(value) {
+	case "NOT", "NULL", "PRIMARY", "UNIQUE", "AUTO_INCREMENT", "AUTOINCREMENT", "DEFAULT", "CHECK", "REFERENCES", "COMMENT", "COLLATE", "GENERATED", "AS":
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *Parser) handleMultiWordType(typeName string) string {
