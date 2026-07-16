@@ -109,6 +109,8 @@ func (p *Parser) parseStatement() (ast.Node, error) {
 		return p.parseCommentStatement()
 	case "DROP":
 		return p.parseDropStatement()
+	case "DO":
+		return p.parseDoStatement()
 	case "GO":
 		// SQL Server tooling uses GO as a batch separator, not as schema DDL.
 		p.skipGoBatchSeparator()
@@ -119,6 +121,31 @@ func (p *Parser) parseStatement() (ast.Node, error) {
 	default:
 		return nil, fmt.Errorf("unsupported SQL statement: %s at position %d", keyword, p.current.Start)
 	}
+}
+
+func (p *Parser) parseDoStatement() (ast.Node, error) {
+	statementStart := p.current.Start
+	p.advance()
+	sql, err := p.collectRawStatement(statementStart, "DO statement")
+	if err != nil {
+		return nil, err
+	}
+	return ast.NewRawSQL(sql), nil
+}
+
+func (p *Parser) collectRawStatement(statementStart int, label string) (string, error) {
+	for !p.isAtEnd() {
+		if err := p.checkTimeout(); err != nil {
+			return "", err
+		}
+		if p.current.Type == lexer.TokenSemicolon {
+			sql := p.rawStatement(statementStart)
+			p.advance()
+			return sql, nil
+		}
+		p.advance()
+	}
+	return "", fmt.Errorf("unterminated %s at position %d", label, p.current.Start)
 }
 
 // parseCreateStatement parses CREATE statements (TABLE, INDEX, TYPE).
@@ -151,7 +178,7 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 	case "DEFINER":
 		return p.parseCreateDefinerRoutine(statementStart)
 	case "TRIGGER":
-		return p.parseCreateTrigger()
+		return p.parseCreateTrigger(statementStart)
 	case "INDEX":
 		return p.parseCreateIndex()
 	case "FULLTEXT", "SPATIAL":
@@ -164,7 +191,7 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 	case "OR":
 		return p.parseCreateOrReplaceStatement(statementStart)
 	case "TEMP", "TEMPORARY":
-		return p.parseCreateTemporary(target)
+		return p.parseCreateTemporary(target, statementStart)
 	case "UNIQUE":
 		// Handle CREATE UNIQUE INDEX
 		p.advance()
@@ -202,11 +229,11 @@ func (p *Parser) parseCreateDefinerRoutine(statementStart int) (ast.Node, error)
 	return nil, fmt.Errorf("unsupported CREATE DEFINER target at position %d", p.current.Start)
 }
 
-func (p *Parser) parseCreateTemporary(target string) (ast.Node, error) {
+func (p *Parser) parseCreateTemporary(target string, statementStart int) (ast.Node, error) {
 	p.advance()
 	p.skipWhitespace()
 	if p.current.MatchIdentifierValue("TRIGGER") {
-		return p.parseCreateTrigger()
+		return p.parseCreateTrigger(statementStart)
 	}
 	return nil, fmt.Errorf("unsupported CREATE %s target: %s at position %d", target, p.current.Value, p.current.Start)
 }
@@ -329,9 +356,13 @@ func (p *Parser) parseCreateOrReplaceStatement(statementStart int) (ast.Node, er
 		return p.parseCreateRawRoutineStatement(statementStart)
 	}
 	if p.current.MatchIdentifierValue("TRIGGER") {
-		trigger, err := p.parseCreateTrigger()
+		node, err := p.parseCreateTrigger(statementStart)
 		if err != nil {
 			return nil, err
+		}
+		trigger, ok := node.(*ast.CreateTriggerNode)
+		if !ok {
+			return node, nil
 		}
 		return trigger.SetReplace(), nil
 	}
@@ -852,7 +883,7 @@ func (p *Parser) parseFunctionSecurity(function *ast.CreateFunctionNode) error {
 	return nil
 }
 
-func (p *Parser) parseCreateTrigger() (*ast.CreateTriggerNode, error) {
+func (p *Parser) parseCreateTrigger(statementStart int) (ast.Node, error) {
 	if err := p.expect(lexer.TokenIdentifier, "TRIGGER"); err != nil {
 		return nil, err
 	}
@@ -899,6 +930,14 @@ func (p *Parser) parseCreateTrigger() (*ast.CreateTriggerNode, error) {
 		return nil, err
 	}
 	p.skipWhitespace()
+
+	if p.current.MatchIdentifierValue("EXECUTE") {
+		sql, err := p.collectRawStatement(statementStart, "CREATE TRIGGER statement")
+		if err != nil {
+			return nil, err
+		}
+		return ast.NewRawSQL(sql), nil
+	}
 
 	body, err := p.collectTriggerBody()
 	if err != nil {
