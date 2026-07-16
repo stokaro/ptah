@@ -1,5 +1,8 @@
 package entities
 
+//migrator:schema:schema name="public" comment="Fixture public schema"
+type SchemaMarker struct{}
+
 //migrator:schema:extension name="pg_trgm" if_not_exists="true" comment="Fixture extension"
 type ExtensionsMarker struct{}
 

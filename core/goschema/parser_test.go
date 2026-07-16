@@ -131,6 +131,7 @@ package test
 //migrator:schema:view name="active_users" body="SELECT id FROM users WHERE deleted_at IS NULL" with_check="true" comment="Active users"
 //migrator:schema:matview name="user_stats" body="SELECT id, COUNT(*) FROM users GROUP BY id"
 //migrator:schema:trigger name="set_updated_at" table="users" timing="before" event="update" body="NEW.updated_at = NOW(); RETURN NEW;"
+//migrator:schema:schema name="auth" comment="Authentication schema"
 //migrator:schema:table name="users"
 type User struct {
 	//migrator:schema:field name="id" type="SERIAL" primary="true"
@@ -150,6 +151,10 @@ type User struct {
 	c.Assert(db.Triggers[0].Timing, qt.Equals, "BEFORE")
 	c.Assert(db.Triggers[0].Event, qt.Equals, "UPDATE")
 	c.Assert(db.Triggers[0].ForEach, qt.Equals, "ROW")
+	c.Assert(db.Schemas, qt.DeepEquals, []goschema.Schema{{
+		Name:    "auth",
+		Comment: "Authentication schema",
+	}})
 }
 
 func TestParseSchemaObjectAnnotations_RejectsInvalidAttributes(t *testing.T) {
@@ -174,6 +179,11 @@ func TestParseSchemaObjectAnnotations_RejectsInvalidAttributes(t *testing.T) {
 			name:       "missing trigger table",
 			annotation: `//migrator:schema:trigger name="set_updated_at" timing="before" event="update" body="RETURN NEW;"`,
 			want:       `missing required annotation attribute "table"`,
+		},
+		{
+			name:       "missing schema name",
+			annotation: `//migrator:schema:schema comment="missing name"`,
+			want:       `missing required annotation attribute "name"`,
 		},
 	}
 

@@ -110,6 +110,8 @@ type CreateSchemaNode struct {
 	Name string
 	// IfNotExists preserves an IF NOT EXISTS guard when the dialect supports it.
 	IfNotExists bool
+	// Comment is an optional schema comment.
+	Comment string
 }
 
 // NewCreateSchema creates a new CREATE SCHEMA node.

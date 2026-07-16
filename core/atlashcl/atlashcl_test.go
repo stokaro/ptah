@@ -36,6 +36,7 @@ table "users" {
 }
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
+	c.Assert(db.Schemas, qt.DeepEquals, []goschema.Schema{{Name: "main"}})
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Name, qt.Equals, "users")
 	c.Assert(db.Tables[0].Schema, qt.Equals, "main")
@@ -50,6 +51,25 @@ table "users" {
 	c.Assert(sql, qt.Contains, `CREATE TABLE main.users`)
 	c.Assert(sql, qt.Contains, `id int PRIMARY KEY`)
 	c.Assert(sql, qt.Contains, `CREATE UNIQUE INDEX`)
+}
+
+func TestParseSchemaComment(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+schema "public" {
+  comment = "This is a test schema"
+}
+`), "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Schemas, qt.DeepEquals, []goschema.Schema{{
+		Name:    "public",
+		Comment: "This is a test schema",
+	}})
+
+	sql := strings.Join(renderer.GetOrderedCreateStatements(db, "postgres"), "\n")
+	c.Assert(sql, qt.Contains, `CREATE SCHEMA IF NOT EXISTS public;`)
+	c.Assert(sql, qt.Contains, `COMMENT ON SCHEMA public IS 'This is a test schema';`)
 }
 
 func TestParseCompositePrimaryKeyAndForeignKey(t *testing.T) {

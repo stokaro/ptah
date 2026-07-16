@@ -484,6 +484,7 @@ func ToEnum(enum *ast.EnumNode) goschema.Enum {
 // properly categorized from the AST statement list.
 func ToDatabase(statements *ast.StatementList) goschema.Database {
 	database := goschema.Database{
+		Schemas: []goschema.Schema{},
 		Tables:  []goschema.Table{},
 		Fields:  []goschema.Field{},
 		Indexes: []goschema.Index{},
@@ -493,6 +494,12 @@ func ToDatabase(statements *ast.StatementList) goschema.Database {
 	// Process all statements and categorize them
 	for _, stmt := range statements.Statements {
 		switch node := stmt.(type) {
+		case *ast.CreateSchemaNode:
+			database.Schemas = append(database.Schemas, goschema.Schema{
+				Name:    node.Name,
+				Comment: node.Comment,
+			})
+
 		case *ast.EnumNode:
 			// Convert enum definitions
 			enumSchema := ToEnum(node)
