@@ -532,7 +532,7 @@ func (r *Renderer) VisitDropTable(node *ast.DropTableNode) error {
 		parts = append(parts, "IF EXISTS")
 	}
 
-	parts = append(parts, node.Name)
+	parts = append(parts, strings.Join(node.TableNames(), ", "))
 
 	if node.Cascade {
 		parts = append(parts, "CASCADE")
