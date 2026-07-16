@@ -29,6 +29,14 @@ The parser supports the following SQL DDL statements:
 ### CREATE TYPE (ENUM)
 - PostgreSQL-style enum type definitions
 
+### Schema-neutral statements
+- DML and session-control statements such as `INSERT`, `UPDATE`, `DELETE`,
+  `SELECT`, `PRAGMA`, `SET`, `BEGIN`, `COMMIT`, and `ROLLBACK` are skipped.
+
+These statements are intentionally not represented in the schema AST. They can
+appear in migration files alongside DDL, but they do not describe the database
+schema that Ptah can diff or render.
+
 ## Usage
 
 ### Basic Usage
@@ -177,7 +185,9 @@ The parser integrates with other Ptah components:
 ## Limitations
 
 Current limitations include:
-- Limited to DDL statements (no DML like INSERT, UPDATE, DELETE)
+- Limited to schema DDL statements. DML like `INSERT`, `UPDATE`, and `DELETE`
+  is tolerated and skipped when it appears in a migration file, but it is not
+  modeled in the AST.
 - Basic expression parsing in CHECK constraints
 - Simplified handling of complex data types
 - No support for stored procedures or functions
