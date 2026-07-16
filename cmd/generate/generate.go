@@ -9,6 +9,7 @@ import (
 	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/core/atlashcl"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/renderer"
@@ -17,11 +18,11 @@ import (
 
 var generateCmd = &cobra.Command{
 	Use:   "generate",
-	Short: "Generate schema from Go entities or YAML schema files",
+	Short: "Generate schema from Go entities, YAML schema files, or Atlas HCL schema files",
 	Long: `Generate database schema from Go entities in the specified directory or from a schema file.
 	
 By default, this command scans the directory recursively for Go files with migrator directives.
-When --schema-file is set, it reads a language-agnostic YAML schema instead.`,
+When --schema-file is set, it reads a language-agnostic YAML schema or Atlas HCL schema instead.`,
 	RunE: generateCommand,
 }
 
@@ -40,7 +41,7 @@ var generateFlags = map[string]cobraflags.Flag{
 	schemaFileFlag: &cobraflags.StringFlag{
 		Name:  schemaFileFlag,
 		Value: "",
-		Usage: "YAML schema file to generate from instead of scanning Go entities",
+		Usage: "YAML or Atlas HCL schema file to generate from instead of scanning Go entities",
 	},
 	dialectFlag: &cobraflags.StringFlag{
 		Name:  dialectFlag,
@@ -167,15 +168,22 @@ func loadSchemaFile(schemaFile string) (*goschema.Database, error) {
 
 	switch strings.ToLower(filepath.Ext(absPath)) {
 	case ".yaml", ".yml":
+	case ".hcl":
 	default:
-		return nil, fmt.Errorf("unsupported schema file extension %q: only .yaml and .yml are supported", filepath.Ext(absPath))
+		return nil, fmt.Errorf("unsupported schema file extension %q: only .yaml, .yml, and .hcl are supported", filepath.Ext(absPath))
 	}
 
 	fmt.Printf("Reading schema file: %s\n", absPath)
 	fmt.Println("=" + strings.Repeat("=", len(absPath)+21))
 	fmt.Println()
 
-	result, err := yamlschema.ParseFile(absPath)
+	var result *goschema.Database
+	switch strings.ToLower(filepath.Ext(absPath)) {
+	case ".hcl":
+		result, err = atlashcl.ParseFile(absPath)
+	default:
+		result, err = yamlschema.ParseFile(absPath)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("error parsing schema file: %w", err)
 	}
