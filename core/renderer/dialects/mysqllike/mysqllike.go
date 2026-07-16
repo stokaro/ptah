@@ -318,6 +318,10 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 		parts = append(parts, "UNIQUE")
 	}
 
+	if indexType := mysqlIndexPrefixType(node.Type); indexType != "" {
+		parts = append(parts, indexType)
+	}
+
 	parts = append(parts, "INDEX")
 	parts = append(parts, node.Name)
 	parts = append(parts, "ON")
@@ -326,6 +330,16 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
+}
+
+func mysqlIndexPrefixType(indexType string) string {
+	normalized := strings.ToUpper(strings.TrimSpace(indexType))
+	switch normalized {
+	case "FULLTEXT", "SPATIAL":
+		return normalized
+	default:
+		return ""
+	}
 }
 
 // VisitEnum renders enum handling for MariaDB (inline ENUM types like MySQL)
