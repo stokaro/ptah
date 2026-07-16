@@ -105,6 +105,9 @@ func (p *Parser) parseStatement() (ast.Node, error) {
 		return p.parseCommentStatement()
 	case "DROP":
 		return p.parseDropStatement()
+	case "GO":
+		p.skipGoBatchSeparator()
+		return nil, nil
 	case "ANALYZE", "BEGIN", "COMMIT", "DELETE", "INSERT", "PRAGMA", "REINDEX", "ROLLBACK", "SELECT", "SET", "UPDATE", "USE", "VACUUM", "WITH":
 		p.skipSchemaNeutralStatement()
 		return nil, nil
@@ -364,6 +367,14 @@ func (p *Parser) skipSchemaNeutralStatement() {
 			p.advance()
 			return
 		}
+		p.advance()
+	}
+}
+
+func (p *Parser) skipGoBatchSeparator() {
+	p.advance()
+	p.skipWhitespace()
+	if p.current.Type == lexer.TokenIdentifier && isNumeric(p.current.Value) {
 		p.advance()
 	}
 }
@@ -2223,7 +2234,7 @@ func (p *Parser) parseTableOptions(table *ast.CreateTableNode) error {
 
 		var err error
 		option := strings.ToUpper(p.current.Value)
-		if option == "AS" || option == "SELECT" {
+		if option == "AS" || option == "SELECT" || option == "GO" {
 			return nil
 		}
 		switch option {
@@ -2353,6 +2364,11 @@ func (p *Parser) parseAlterStatement() (*ast.AlterTableNode, error) {
 	}
 
 	p.skipWhitespace()
+
+	if p.current.MatchIdentifierValue("ONLY") {
+		p.advance()
+		p.skipWhitespace()
+	}
 
 	// Get table name
 	tableName, err := p.parseQualifiedIdentifier("table name")
@@ -2525,13 +2541,21 @@ func (p *Parser) parseRenameColumnOperation() (*ast.RenameColumnOperation, error
 	return &ast.RenameColumnOperation{OldName: oldName, NewName: newName}, nil
 }
 
-// parseAddOperation parses ADD COLUMN operations.
-func (p *Parser) parseAddOperation() (*ast.AddColumnOperation, error) {
+// parseAddOperation parses ADD COLUMN and ADD CONSTRAINT operations.
+func (p *Parser) parseAddOperation() (ast.AlterOperation, error) {
 	if err := p.expect(lexer.TokenIdentifier, "ADD"); err != nil {
 		return nil, err
 	}
 
 	p.skipWhitespace()
+
+	if p.isAlterAddConstraintStart() {
+		constraint, err := p.parseTableConstraint()
+		if err != nil {
+			return nil, err
+		}
+		return &ast.AddConstraintOperation{Constraint: constraint}, nil
+	}
 
 	// Optional COLUMN keyword
 	if p.current.Type == lexer.TokenIdentifier && strings.ToUpper(p.current.Value) == "COLUMN" {
@@ -2546,6 +2570,18 @@ func (p *Parser) parseAddOperation() (*ast.AddColumnOperation, error) {
 	}
 
 	return &ast.AddColumnOperation{Column: column}, nil
+}
+
+func (p *Parser) isAlterAddConstraintStart() bool {
+	if p.current.Type != lexer.TokenIdentifier {
+		return false
+	}
+	switch strings.ToUpper(p.current.Value) {
+	case "CONSTRAINT", "PRIMARY", "UNIQUE", "FOREIGN", "CHECK", "EXCLUDE":
+		return true
+	default:
+		return false
+	}
 }
 
 // parseDropOperation parses DROP COLUMN operations.
