@@ -258,13 +258,19 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 	if err := p.rejectUnsupportedIndexAttrs(block); err != nil {
 		return goschema.Index{}, err
 	}
+	indexType := p.optionalString(block.Body.Attributes["type"])
+	parserName := p.optionalString(block.Body.Attributes["parser"])
+	if parserName != "" && !strings.EqualFold(indexType, "FULLTEXT") {
+		return goschema.Index{}, p.blockError(block, "index parser requires FULLTEXT type")
+	}
 	return goschema.Index{
 		StructName: structName,
 		Name:       block.Labels[0],
 		Fields:     columns,
 		Parts:      parts,
 		Unique:     p.optionalBool(block.Body.Attributes["unique"], false),
-		Type:       p.optionalString(block.Body.Attributes["type"]),
+		Type:       indexType,
+		Parser:     parserName,
 		Condition:  p.optionalString(block.Body.Attributes["where"]),
 		TableName:  tableName,
 	}, nil
@@ -546,6 +552,7 @@ func (p *parser) rejectUnsupportedGeneratedColumnAttrs(block *hclsyntax.Block) e
 func (p *parser) rejectUnsupportedIndexAttrs(block *hclsyntax.Block) error {
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"columns": true,
+		"parser":  true,
 		"unique":  true,
 		"type":    true,
 		"where":   true,

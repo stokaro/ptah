@@ -232,6 +232,8 @@ type Index struct {
 	// GIN/GIST/BTREE/HASH; for ClickHouse data-skipping indexes it is
 	// "minmax"/"set(N)"/"bloom_filter(p)"/"tokenbf_v1(...)"/etc.
 	Type string
+	// Parser carries a MySQL FULLTEXT parser name, for example ngram.
+	Parser string
 	// Condition is the WHERE clause for partial indexes (PostgreSQL only).
 	Condition string
 	// Operator is the operator class (PostgreSQL only, e.g. "gin_trgm_ops").
