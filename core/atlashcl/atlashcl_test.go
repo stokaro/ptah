@@ -118,6 +118,33 @@ table "events" {
 	c.Assert(db.Tables[0].WithoutRowID, qt.IsTrue)
 }
 
+func TestParseMySQLTableAutoIncrement(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+schema "main" {}
+
+table "users" {
+  schema = schema.main
+  auto_increment = 1000
+  column "id" {
+    null = false
+    type = bigint
+    auto_increment = true
+  }
+  primary_key {
+    columns = [column.id]
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Tables, qt.HasLen, 1)
+	c.Assert(db.Tables[0].AutoIncrement, qt.Equals, "1000")
+
+	sql := strings.Join(renderer.GetOrderedCreateStatements(db, "mysql"), "\n")
+	c.Assert(sql, qt.Contains, "AUTO_INCREMENT=1000")
+}
+
 func TestParseSQLiteTableOptionsRejectNonBool(t *testing.T) {
 	c := qt.New(t)
 
