@@ -53,6 +53,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/stokaro/ptah/core/ast"
@@ -414,6 +415,8 @@ func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table goschem
 	}
 	tableComment := table.Comment
 	tableEngine := table.Engine
+	tableStrict := table.Strict
+	tableWithoutRowID := table.WithoutRowID
 
 	platformOverrides, exists := table.Overrides[targetPlatform]
 	if !exists {
@@ -428,9 +431,19 @@ func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table goschem
 	if engineOverride, ok := platformOverrides["engine"]; ok {
 		tableEngine = engineOverride
 	}
+	if strictOverride, ok := platformOverrides["strict"]; ok {
+		if strict, err := strconv.ParseBool(strictOverride); err == nil {
+			tableStrict = strict
+		}
+	}
+	if withoutRowIDOverride, ok := platformOverrides["without_rowid"]; ok {
+		if withoutRowID, err := strconv.ParseBool(withoutRowIDOverride); err == nil {
+			tableWithoutRowID = withoutRowID
+		}
+	}
 	// Apply any other platform-specific options
 	for key, value := range platformOverrides {
-		if key != "comment" && key != "engine" {
+		if key != "comment" && key != "engine" && key != "strict" && key != "without_rowid" {
 			createTable.SetOption(strings.ToUpper(key), value)
 		}
 	}
@@ -438,6 +451,8 @@ func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table goschem
 	newTable := table
 	newTable.Comment = tableComment
 	newTable.Engine = tableEngine
+	newTable.Strict = tableStrict
+	newTable.WithoutRowID = tableWithoutRowID
 	return newTable
 }
 
@@ -533,6 +548,14 @@ func FromTable(table goschema.Table, fields []goschema.Field, enums []goschema.E
 	// Set database-specific options (using potentially overridden value)
 	if tableEngine != "" {
 		createTable.SetOption("ENGINE", tableEngine)
+	}
+	if targetPlatform == "sqlite" {
+		if newTable.WithoutRowID {
+			createTable.SetOption("WITHOUT_ROWID", "true")
+		}
+		if newTable.Strict {
+			createTable.SetOption("STRICT", "true")
+		}
 	}
 
 	// Add columns for fields that belong to this table

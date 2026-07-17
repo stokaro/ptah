@@ -100,6 +100,22 @@ func TestParser_ParseCreateTable_WithTableOptions(t *testing.T) {
 	c.Assert(createTable.Comment, qt.Equals, "'Product catalog'")
 }
 
+func TestParser_ParseCreateTable_WithSQLiteTableOptions(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "CREATE TABLE events (id integer NOT NULL, PRIMARY KEY (id)) WITHOUT ROWID, STRICT;"
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	createTable := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(createTable.Name, qt.Equals, "events")
+	c.Assert(createTable.Options["WITHOUT_ROWID"], qt.Equals, "true")
+	c.Assert(createTable.Options["STRICT"], qt.Equals, "true")
+}
+
 func TestParser_ParseCreateTable_IfNotExists(t *testing.T) {
 	c := qt.New(t)
 

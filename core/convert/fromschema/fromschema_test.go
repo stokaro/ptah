@@ -1090,6 +1090,44 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 					table.Comment == "Default comment" // Uses default
 			},
 		},
+		{
+			name: "SQLite strict and without rowid options",
+			table: goschema.Table{
+				StructName:   "Event",
+				Name:         "events",
+				Strict:       true,
+				WithoutRowID: true,
+			},
+			fields:         []goschema.Field{},
+			targetPlatform: "sqlite",
+			expected: func(table *ast.CreateTableNode) bool {
+				return table.Name == "events" &&
+					table.Options["STRICT"] == "true" &&
+					table.Options["WITHOUT_ROWID"] == "true"
+			},
+		},
+		{
+			name: "SQLite table options use platform overrides",
+			table: goschema.Table{
+				StructName:   "Event",
+				Name:         "events",
+				Strict:       true,
+				WithoutRowID: true,
+				Overrides: map[string]map[string]string{
+					"sqlite": {
+						"strict":        "false",
+						"without_rowid": "false",
+					},
+				},
+			},
+			fields:         []goschema.Field{},
+			targetPlatform: "sqlite",
+			expected: func(table *ast.CreateTableNode) bool {
+				_, strict := table.Options["STRICT"]
+				_, withoutRowID := table.Options["WITHOUT_ROWID"]
+				return table.Name == "events" && !strict && !withoutRowID
+			},
+		},
 	}
 
 	for _, test := range tests {

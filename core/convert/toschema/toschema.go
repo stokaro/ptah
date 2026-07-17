@@ -42,6 +42,7 @@
 package toschema
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/stokaro/ptah/core/ast"
@@ -241,6 +242,12 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) goschema.Table {
 	if engine, exists := table.Options["ENGINE"]; exists {
 		tableSchema.Engine = engine
 	}
+	if strict, exists := table.Options["STRICT"]; exists {
+		tableSchema.Strict, _ = strconv.ParseBool(strict)
+	}
+	if withoutRowID, exists := table.Options["WITHOUT_ROWID"]; exists {
+		tableSchema.WithoutRowID, _ = strconv.ParseBool(withoutRowID)
+	}
 
 	// Extract composite primary key from constraints
 	for _, constraint := range table.Constraints {
@@ -258,7 +265,7 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) goschema.Table {
 		// Store platform-specific options as overrides
 		platformOverrides := make(map[string]string)
 		for key, value := range table.Options {
-			if key != "ENGINE" { // ENGINE is handled separately
+			if key != "ENGINE" && key != "STRICT" && key != "WITHOUT_ROWID" {
 				platformOverrides[strings.ToLower(key)] = value
 			}
 		}
@@ -694,6 +701,12 @@ func MergeTableOverrides(baseTable goschema.Table, platformTables map[string]gos
 		// Check for comment differences
 		if platformTable.Comment != baseTable.Comment {
 			platformOverrides["comment"] = platformTable.Comment
+		}
+		if platformTable.Strict != baseTable.Strict {
+			platformOverrides["strict"] = strconv.FormatBool(platformTable.Strict)
+		}
+		if platformTable.WithoutRowID != baseTable.WithoutRowID {
+			platformOverrides["without_rowid"] = strconv.FormatBool(platformTable.WithoutRowID)
 		}
 
 		// Store platform overrides if any differences were found
