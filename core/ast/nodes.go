@@ -372,6 +372,16 @@ func (n *ColumnNode) SetForeignKey(table, column, name string) *ColumnNode {
 	return n
 }
 
+// ConstraintColumn represents a column reference inside a table-level constraint.
+type ConstraintColumn struct {
+	// Name is the referenced column name.
+	Name string
+	// Prefix stores MySQL index prefix length, as in PRIMARY KEY (`name` (7)).
+	Prefix string
+	// Desc is true when the constraint column is declared with DESC ordering.
+	Desc bool
+}
+
 // ConstraintNode represents table-level constraints (PRIMARY KEY, UNIQUE, FOREIGN KEY, CHECK, EXCLUDE).
 //
 // Table-level constraints can span multiple columns and are defined separately
@@ -384,6 +394,9 @@ type ConstraintNode struct {
 	Name string
 	// Columns contains the list of column names involved in the constraint
 	Columns []string
+	// ColumnParts contains structured column references for dialect-specific
+	// attributes such as MySQL prefix lengths and DESC ordering.
+	ColumnParts []ConstraintColumn
 	// Reference contains foreign key reference information (only for FOREIGN KEY constraints)
 	Reference *ForeignKeyRef
 	// Expression contains the check expression (only for CHECK constraints)
