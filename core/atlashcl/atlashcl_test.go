@@ -489,6 +489,25 @@ table "users" {
 	c.Assert(db.Fields[1].GeneratedKind, qt.Equals, "STORED")
 }
 
+func TestParseColumnOnUpdateExpression(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+table "users" {
+  column "updated_at" {
+    null      = false
+    type      = timestamp(6)
+    default   = sql("CURRENT_TIMESTAMP(6)")
+    on_update = sql("CURRENT_TIMESTAMP(6)")
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Fields, qt.HasLen, 1)
+	c.Assert(db.Fields[0].DefaultExpr, qt.Equals, "CURRENT_TIMESTAMP(6)")
+	c.Assert(db.Fields[0].UpdateExpression, qt.Equals, "CURRENT_TIMESTAMP(6)")
+}
+
 func TestParseRejectsInvalidGeneratedColumnForms(t *testing.T) {
 	tests := []struct {
 		name  string

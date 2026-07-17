@@ -75,6 +75,15 @@ func TestToField_BasicProperties(t *testing.T) {
 			},
 		},
 		{
+			name: "column update expression",
+			column: ast.NewColumn("updated_at", "TIMESTAMP").
+				SetUpdateExpression("CURRENT_TIMESTAMP"),
+			structName: "User",
+			expected: func(field goschema.Field) bool {
+				return field.UpdateExpression == "CURRENT_TIMESTAMP"
+			},
+		},
+		{
 			name: "column charset and collate",
 			column: ast.NewColumn("name", "VARCHAR(255)").
 				SetCharset("hebrew").
