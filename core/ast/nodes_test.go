@@ -153,6 +153,20 @@ func TestColumnNode_SetAutoIncrement(t *testing.T) {
 	c.Assert(column.AutoInc, qt.IsTrue)
 }
 
+func TestColumnNode_SetIdentity(t *testing.T) {
+	c := qt.New(t)
+
+	column := ast.NewColumn("id", "INTEGER").
+		SetIdentity("BY_DEFAULT", "10", "5").
+		SetIdentityOptions(" START WITH 10 INCREMENT BY 5 CACHE 3 ")
+
+	c.Assert(column.AutoInc, qt.IsTrue)
+	c.Assert(column.IdentityGeneration, qt.Equals, "BY_DEFAULT")
+	c.Assert(column.IdentityStart, qt.Equals, "10")
+	c.Assert(column.IdentityIncrement, qt.Equals, "5")
+	c.Assert(column.IdentityOptions, qt.Equals, "START WITH 10 INCREMENT BY 5 CACHE 3")
+}
+
 func TestColumnNode_SetDefault(t *testing.T) {
 	c := qt.New(t)
 

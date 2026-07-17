@@ -77,31 +77,35 @@ type tableSpec struct {
 }
 
 type fieldSpec struct {
-	FieldName      stringScalar `yaml:"field_name"`
-	Name           stringScalar `yaml:"name"`
-	Type           stringScalar `yaml:"type"`
-	Nullable       *bool        `yaml:"nullable"`
-	NotNull        bool         `yaml:"not_null"`
-	Primary        bool         `yaml:"primary"`
-	AutoIncrement  bool         `yaml:"auto_increment"`
-	AutoInc        bool         `yaml:"auto_inc"`
-	Unique         bool         `yaml:"unique"`
-	UniqueExpr     stringScalar `yaml:"unique_expr"`
-	Index          bool         `yaml:"index"`
-	Default        stringScalar `yaml:"default"`
-	DefaultExpr    stringScalar `yaml:"default_expr"`
-	Foreign        stringScalar `yaml:"foreign"`
-	ForeignKeyName stringScalar `yaml:"foreign_key_name"`
-	OnDelete       stringScalar `yaml:"on_delete"`
-	OnUpdate       stringScalar `yaml:"on_update"`
-	Enum           stringList   `yaml:"enum"`
-	Check          stringScalar `yaml:"check"`
-	CheckName      stringScalar `yaml:"check_name"`
-	Charset        stringScalar `yaml:"charset"`
-	Collate        stringScalar `yaml:"collate"`
-	Comment        stringScalar `yaml:"comment"`
-	Platform       platformSpec `yaml:"platform"`
-	Overrides      platformSpec `yaml:"overrides"`
+	FieldName          stringScalar `yaml:"field_name"`
+	Name               stringScalar `yaml:"name"`
+	Type               stringScalar `yaml:"type"`
+	Nullable           *bool        `yaml:"nullable"`
+	NotNull            bool         `yaml:"not_null"`
+	Primary            bool         `yaml:"primary"`
+	AutoIncrement      bool         `yaml:"auto_increment"`
+	AutoInc            bool         `yaml:"auto_inc"`
+	IdentityGeneration stringScalar `yaml:"identity_generation"`
+	IdentityStart      stringScalar `yaml:"identity_start"`
+	IdentityIncrement  stringScalar `yaml:"identity_increment"`
+	IdentityOptions    stringScalar `yaml:"identity_options"`
+	Unique             bool         `yaml:"unique"`
+	UniqueExpr         stringScalar `yaml:"unique_expr"`
+	Index              bool         `yaml:"index"`
+	Default            stringScalar `yaml:"default"`
+	DefaultExpr        stringScalar `yaml:"default_expr"`
+	Foreign            stringScalar `yaml:"foreign"`
+	ForeignKeyName     stringScalar `yaml:"foreign_key_name"`
+	OnDelete           stringScalar `yaml:"on_delete"`
+	OnUpdate           stringScalar `yaml:"on_update"`
+	Enum               stringList   `yaml:"enum"`
+	Check              stringScalar `yaml:"check"`
+	CheckName          stringScalar `yaml:"check_name"`
+	Charset            stringScalar `yaml:"charset"`
+	Collate            stringScalar `yaml:"collate"`
+	Comment            stringScalar `yaml:"comment"`
+	Platform           platformSpec `yaml:"platform"`
+	Overrides          platformSpec `yaml:"overrides"`
 }
 
 type indexSpec struct {
@@ -332,20 +336,28 @@ func addFields(db *goschema.Database, structName string, columns, fields ordered
 	seen := make(map[string]bool)
 	for _, column := range columns {
 		seen[column.Name] = true
-		db.Fields = append(db.Fields, buildField(structName, column.Name, column.Value, db))
+		field, err := buildField(structName, column.Name, column.Value, db)
+		if err != nil {
+			return err
+		}
+		db.Fields = append(db.Fields, field)
 	}
 
 	for _, field := range fields {
 		if seen[field.Name] {
 			return fmt.Errorf("duplicate column %q in columns and fields", field.Name)
 		}
-		db.Fields = append(db.Fields, buildField(structName, field.Name, field.Value, db))
+		parsedField, err := buildField(structName, field.Name, field.Value, db)
+		if err != nil {
+			return err
+		}
+		db.Fields = append(db.Fields, parsedField)
 	}
 
 	return nil
 }
 
-func buildField(structName, key string, spec fieldSpec, db *goschema.Database) goschema.Field {
+func buildField(structName, key string, spec fieldSpec, db *goschema.Database) (goschema.Field, error) {
 	fieldName := valueOrDefault(spec.FieldName, key)
 	columnName := valueOrDefault(spec.Name, key)
 	fieldType := string(spec.Type)
@@ -363,30 +375,56 @@ func buildField(structName, key string, spec fieldSpec, db *goschema.Database) g
 	if spec.NotNull {
 		nullable = false
 	}
+	identityGeneration := normalizeIdentityGeneration(string(spec.IdentityGeneration))
+	if spec.IdentityGeneration != "" && identityGeneration == "" {
+		return goschema.Field{}, fmt.Errorf("column %q has unsupported identity_generation %q", key, spec.IdentityGeneration)
+	}
+	if identityGeneration == "" && hasIdentitySettings(spec) {
+		identityGeneration = "BY_DEFAULT"
+	}
 
 	return goschema.Field{
-		StructName:     structName,
-		FieldName:      fieldName,
-		Name:           columnName,
-		Type:           fieldType,
-		Nullable:       nullable,
-		Primary:        spec.Primary,
-		AutoInc:        spec.AutoIncrement || spec.AutoInc,
-		Unique:         spec.Unique,
-		UniqueExpr:     string(spec.UniqueExpr),
-		Default:        string(spec.Default),
-		DefaultExpr:    string(spec.DefaultExpr),
-		Foreign:        string(spec.Foreign),
-		ForeignKeyName: string(spec.ForeignKeyName),
-		OnDelete:       string(spec.OnDelete),
-		OnUpdate:       string(spec.OnUpdate),
-		Enum:           enumValues,
-		Check:          string(spec.Check),
-		CheckName:      string(spec.CheckName),
-		Charset:        string(spec.Charset),
-		Collate:        string(spec.Collate),
-		Comment:        string(spec.Comment),
-		Overrides:      mergePlatform(spec.Platform, spec.Overrides),
+		StructName:         structName,
+		FieldName:          fieldName,
+		Name:               columnName,
+		Type:               fieldType,
+		Nullable:           nullable,
+		Primary:            spec.Primary,
+		AutoInc:            spec.AutoIncrement || spec.AutoInc || identityGeneration != "",
+		IdentityGeneration: identityGeneration,
+		IdentityStart:      string(spec.IdentityStart),
+		IdentityIncrement:  string(spec.IdentityIncrement),
+		IdentityOptions:    string(spec.IdentityOptions),
+		Unique:             spec.Unique,
+		UniqueExpr:         string(spec.UniqueExpr),
+		Default:            string(spec.Default),
+		DefaultExpr:        string(spec.DefaultExpr),
+		Foreign:            string(spec.Foreign),
+		ForeignKeyName:     string(spec.ForeignKeyName),
+		OnDelete:           string(spec.OnDelete),
+		OnUpdate:           string(spec.OnUpdate),
+		Enum:               enumValues,
+		Check:              string(spec.Check),
+		CheckName:          string(spec.CheckName),
+		Charset:            string(spec.Charset),
+		Collate:            string(spec.Collate),
+		Comment:            string(spec.Comment),
+		Overrides:          mergePlatform(spec.Platform, spec.Overrides),
+	}, nil
+}
+
+func hasIdentitySettings(spec fieldSpec) bool {
+	return spec.IdentityStart != "" || spec.IdentityIncrement != "" || spec.IdentityOptions != ""
+}
+
+func normalizeIdentityGeneration(value string) string {
+	switch strings.ToUpper(strings.ReplaceAll(value, " ", "_")) {
+	case "ALWAYS":
+		return "ALWAYS"
+	case "BY_DEFAULT":
+		return "BY_DEFAULT"
+	default:
+		return ""
 	}
 }
 

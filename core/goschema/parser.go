@@ -42,26 +42,30 @@ var knownIndexAttributes = map[string]bool{
 // "nullable", "index", and "autoincrement" are whitelisted because parseutils
 // auto-promotes them to booleans when written as bare words.
 var knownFieldAttributes = map[string]bool{
-	"name":             true,
-	"type":             true,
-	"not_null":         true,
-	"nullable":         true,
-	"primary":          true,
-	"auto_increment":   true,
-	"autoincrement":    true,
-	"unique":           true,
-	"unique_expr":      true,
-	"index":            true,
-	"default":          true,
-	"default_expr":     true,
-	"foreign":          true,
-	"foreign_key_name": true,
-	"on_delete":        true,
-	"on_update":        true,
-	"enum":             true,
-	"check":            true,
-	"check_name":       true,
-	"comment":          true,
+	"name":                true,
+	"type":                true,
+	"not_null":            true,
+	"nullable":            true,
+	"primary":             true,
+	"auto_increment":      true,
+	"autoincrement":       true,
+	"identity_generation": true,
+	"identity_start":      true,
+	"identity_increment":  true,
+	"identity_options":    true,
+	"unique":              true,
+	"unique_expr":         true,
+	"index":               true,
+	"default":             true,
+	"default_expr":        true,
+	"foreign":             true,
+	"foreign_key_name":    true,
+	"on_delete":           true,
+	"on_update":           true,
+	"enum":                true,
+	"check":               true,
+	"check_name":          true,
+	"comment":             true,
 }
 
 var knownViewAttributes = map[string]bool{
@@ -159,31 +163,46 @@ func parseFieldComment(comment *ast.Comment, field *ast.Field, structName string
 			fieldType = enumName
 		}
 
+		identityGeneration := normalizeIdentityGeneration(kv["identity_generation"])
+		if kv["identity_generation"] != "" && identityGeneration == "" {
+			panic(fmt.Sprintf("invalid identity_generation %q on //migrator:schema:field at %s", kv["identity_generation"], location))
+		}
+		if identityGeneration == "" && hasIdentitySettings(kv) {
+			identityGeneration = "BY_DEFAULT"
+		}
 		_, defaultSet := kv["default"]
 		*schemaFields = append(*schemaFields, Field{
-			StructName:     structName,
-			FieldName:      name.Name,
-			Name:           kv["name"],
-			Type:           fieldType,
-			Nullable:       kv["not_null"] != "true",
-			Primary:        kv["primary"] == "true",
-			AutoInc:        kv["auto_increment"] == "true",
-			Unique:         kv["unique"] == "true",
-			UniqueExpr:     kv["unique_expr"],
-			Default:        kv["default"],
-			DefaultSet:     defaultSet,
-			DefaultExpr:    kv["default_expr"],
-			Foreign:        kv["foreign"],
-			ForeignKeyName: kv["foreign_key_name"],
-			OnDelete:       kv["on_delete"],
-			OnUpdate:       kv["on_update"],
-			Enum:           enum,
-			Check:          kv["check"],
-			CheckName:      kv["check_name"],
-			Comment:        kv["comment"],
-			Overrides:      parseutils.ParsePlatformSpecific(kv),
+			StructName:         structName,
+			FieldName:          name.Name,
+			Name:               kv["name"],
+			Type:               fieldType,
+			Nullable:           kv["not_null"] != "true",
+			Primary:            kv["primary"] == "true",
+			AutoInc:            kv["auto_increment"] == "true" || identityGeneration != "",
+			IdentityGeneration: identityGeneration,
+			IdentityStart:      kv["identity_start"],
+			IdentityIncrement:  kv["identity_increment"],
+			IdentityOptions:    kv["identity_options"],
+			Unique:             kv["unique"] == "true",
+			UniqueExpr:         kv["unique_expr"],
+			Default:            kv["default"],
+			DefaultSet:         defaultSet,
+			DefaultExpr:        kv["default_expr"],
+			Foreign:            kv["foreign"],
+			ForeignKeyName:     kv["foreign_key_name"],
+			OnDelete:           kv["on_delete"],
+			OnUpdate:           kv["on_update"],
+			Enum:               enum,
+			Check:              kv["check"],
+			CheckName:          kv["check_name"],
+			Comment:            kv["comment"],
+			Overrides:          parseutils.ParsePlatformSpecific(kv),
 		})
 	}
+}
+
+func hasIdentitySettings(kv map[string]string) bool {
+	return kv["identity_start"] != "" || kv["identity_increment"] != "" || kv["identity_options"] != ""
 }
 
 func parseEmbeddedComment(comment *ast.Comment, field *ast.Field, structName string, embeddedFields *[]EmbeddedField) {

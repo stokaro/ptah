@@ -166,6 +166,10 @@ Columns support the same information as field annotations:
 | `not_null` | Marks the column `NOT NULL`. |
 | `primary` | Marks the column as a primary key. |
 | `auto_increment` / `auto_inc` | Marks the column as auto-incrementing. |
+| `identity_generation` | PostgreSQL identity mode: `ALWAYS` or `BY_DEFAULT`. Defaults to `BY_DEFAULT` when another identity key is set. |
+| `identity_start` | Optional PostgreSQL identity `START WITH` value. |
+| `identity_increment` | Optional PostgreSQL identity `INCREMENT BY` value. |
+| `identity_options` | Raw PostgreSQL identity option clause. When set, it is rendered inside `AS IDENTITY (...)` instead of rebuilding options from `identity_start` and `identity_increment`. |
 | `unique` | Marks the column unique. |
 | `unique_expr` | Unique expression. |
 | `index` | Requests an index for the column. |
@@ -182,6 +186,24 @@ Columns support the same information as field annotations:
 
 If `enum` is provided and `type` is empty or `ENUM`, Ptah creates an enum named
 `enum_<struct_name>_<field_name>` and uses that generated type for the column.
+
+PostgreSQL identity columns can be declared without using legacy `SERIAL`
+types:
+
+```yaml
+tables:
+  users:
+    columns:
+      id:
+        type: INTEGER
+        not_null: true
+        identity_generation: BY_DEFAULT
+        identity_start: 10
+        identity_increment: 5
+```
+
+Use `identity_options` when you need additional PostgreSQL sequence options
+such as `MINVALUE`, `MAXVALUE`, `CACHE`, or `NO CYCLE`.
 
 ## Indexes
 

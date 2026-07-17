@@ -66,6 +66,18 @@ func TestToField_BasicProperties(t *testing.T) {
 			},
 		},
 		{
+			name:       "identity field",
+			column:     ast.NewColumn("id", "INTEGER").SetIdentity("ALWAYS", "10", "5").SetIdentityOptions("START WITH 10 INCREMENT BY 5 CACHE 3"),
+			structName: "User",
+			expected: func(field goschema.Field) bool {
+				return field.AutoInc == true &&
+					field.IdentityGeneration == "ALWAYS" &&
+					field.IdentityStart == "10" &&
+					field.IdentityIncrement == "5" &&
+					field.IdentityOptions == "START WITH 10 INCREMENT BY 5 CACHE 3"
+			},
+		},
+		{
 			name:       "generated field",
 			column:     ast.NewColumn("slug", "TEXT").SetGenerated("lower(name)", "STORED"),
 			structName: "User",

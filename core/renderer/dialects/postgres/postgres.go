@@ -616,8 +616,16 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 		}
 	}
 
-	// PostgreSQL doesn't use AUTO_INCREMENT keyword - it's handled by SERIAL types
-	// So we skip the auto increment rendering
+	if column.IdentityGeneration != "" {
+		if column.GeneratedExpression != "" {
+			return "", fmt.Errorf("postgres column %s cannot be both identity and generated", column.Name)
+		}
+		identity, err := r.renderIdentity(column)
+		if err != nil {
+			return "", err
+		}
+		parts = append(parts, identity)
+	}
 
 	// Default value
 	switch {
@@ -649,6 +657,38 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	}
 
 	return strings.Join(parts, " "), nil
+}
+
+func (r *Renderer) renderIdentity(column *ast.ColumnNode) (string, error) {
+	generation, err := renderIdentityGeneration(column.IdentityGeneration)
+	if err != nil {
+		return "", err
+	}
+	if column.IdentityOptions != "" {
+		return fmt.Sprintf("GENERATED %s AS IDENTITY (%s)", generation, column.IdentityOptions), nil
+	}
+	options := make([]string, 0, 2)
+	if column.IdentityStart != "" {
+		options = append(options, fmt.Sprintf("START WITH %s", column.IdentityStart))
+	}
+	if column.IdentityIncrement != "" {
+		options = append(options, fmt.Sprintf("INCREMENT BY %s", column.IdentityIncrement))
+	}
+	if len(options) == 0 {
+		return fmt.Sprintf("GENERATED %s AS IDENTITY", generation), nil
+	}
+	return fmt.Sprintf("GENERATED %s AS IDENTITY (%s)", generation, strings.Join(options, " ")), nil
+}
+
+func renderIdentityGeneration(generation string) (string, error) {
+	switch strings.ToUpper(strings.ReplaceAll(generation, " ", "_")) {
+	case "ALWAYS":
+		return "ALWAYS", nil
+	case "BY_DEFAULT":
+		return "BY DEFAULT", nil
+	default:
+		return "", fmt.Errorf("postgres does not support %s identity generation", generation)
+	}
 }
 
 // processFieldType processes field type for PostgreSQL, handling enums appropriately
