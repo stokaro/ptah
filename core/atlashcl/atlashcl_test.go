@@ -93,6 +93,51 @@ table "tokens" {
 	c.Assert(sql, qt.Not(qt.Contains), "id tinytext PRIMARY KEY")
 }
 
+func TestParsePrimaryKeyType(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+schema "main" {}
+
+table "users" {
+  schema = schema.main
+  column "id" {
+    type = varchar(128)
+  }
+  primary_key {
+    columns = [column.id]
+    type    = HASH
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Tables, qt.HasLen, 1)
+	c.Assert(db.Tables[0].PrimaryKey, qt.DeepEquals, []string{"id"})
+
+	sql := strings.Join(renderer.GetOrderedCreateStatements(db, "mysql"), "\n")
+	c.Assert(sql, qt.Contains, "id varchar(128) PRIMARY KEY")
+}
+
+func TestParsePrimaryKeyTypeRejectsUnknownValue(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := atlashcl.Parse([]byte(`
+schema "main" {}
+
+table "users" {
+  schema = schema.main
+  column "id" {
+    type = varchar(128)
+  }
+  primary_key {
+    columns = [column.id]
+    type    = GIANT
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.ErrorMatches, `.*unsupported primary_key type "GIANT".*`)
+}
+
 func TestParseSQLiteTableOptions(t *testing.T) {
 	c := qt.New(t)
 
