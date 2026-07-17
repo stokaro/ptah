@@ -347,16 +347,10 @@ func Columns(genCol goschema.Field, dbCol types.DBColumn) difftypes.ColumnDiff {
 		Changes:    make(map[string]string),
 	}
 
-	// ClickHouse-only: when the database side declares a MATERIALIZED /
-	// ALIAS / EPHEMERAL column there is currently no goschema-side
-	// annotation to express that, so the diff layer cannot tell whether a
-	// plain DEFAULT in the entity should become MATERIALIZED on the
-	// database (or vice-versa). Suppress per-column diffing entirely for
-	// generated columns so we don't emit a no-op ALTER on every migration.
-	// Round-trip support is tracked alongside the goschema annotation
-	// work; once that lands this guard can be tightened to compare
-	// GeneratedKind/Expression directly.
-	if dbCol.GeneratedKind != "" {
+	// Legacy ClickHouse-only guard: old goschema models cannot express
+	// MATERIALIZED / ALIAS / EPHEMERAL columns. Once the schema side carries a
+	// generated expression, compare it normally below.
+	if dbCol.GeneratedKind != "" && genCol.GeneratedExpression == "" {
 		return colDiff
 	}
 
@@ -394,6 +388,9 @@ func Columns(genCol goschema.Field, dbCol types.DBColumn) difftypes.ColumnDiff {
 	if genUnique != dbUnique {
 		colDiff.Changes["unique"] = fmt.Sprintf("%t -> %t", dbUnique, genUnique)
 	}
+	if diff := generatedColumnDiff(genCol, dbCol); diff != "" {
+		colDiff.Changes["generated"] = diff
+	}
 
 	// Compare default values (simplified)
 	genDefault := genCol.Default
@@ -424,6 +421,20 @@ func Columns(genCol goschema.Field, dbCol types.DBColumn) difftypes.ColumnDiff {
 	}
 
 	return colDiff
+}
+
+func generatedColumnDiff(genCol goschema.Field, dbCol types.DBColumn) string {
+	genExpr := strings.TrimSpace(genCol.GeneratedExpression)
+	dbExpr := ""
+	if dbCol.GeneratedExpression != nil {
+		dbExpr = strings.TrimSpace(*dbCol.GeneratedExpression)
+	}
+	genKind := strings.ToUpper(strings.TrimSpace(genCol.GeneratedKind))
+	dbKind := strings.ToUpper(strings.TrimSpace(dbCol.GeneratedKind))
+	if genExpr == dbExpr && genKind == dbKind {
+		return ""
+	}
+	return fmt.Sprintf("%s %s -> %s %s", dbKind, dbExpr, genKind, genExpr)
 }
 
 func rawDBColumnType(dbCol types.DBColumn) string {

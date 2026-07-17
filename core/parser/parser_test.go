@@ -2077,8 +2077,9 @@ func TestParser_ParsePostgreSQLGeneratedColumn(t *testing.T) {
 	fullNameCol := createTable.Columns[2]
 	c.Assert(fullNameCol.Name, qt.Equals, "full_name")
 	c.Assert(fullNameCol.Type, qt.Equals, "TEXT")
-	c.Assert(fullNameCol.Check, qt.Contains, "GENERATED ALWAYS AS")
-	c.Assert(fullNameCol.Check, qt.Contains, "first_name || ' ' || last_name")
+	c.Assert(fullNameCol.GeneratedExpression, qt.Equals, "first_name || ' ' || last_name")
+	c.Assert(fullNameCol.GeneratedKind, qt.Equals, "STORED")
+	c.Assert(fullNameCol.Check, qt.Equals, "")
 }
 
 func TestParser_ParsePostgreSQLJSONTypes(t *testing.T) {
@@ -2971,6 +2972,8 @@ func TestParser_ParseMariaDBComprehensiveDemo(t *testing.T) {
 	fullnameCol := createTable.Columns[12]
 	c.Assert(fullnameCol.Name, qt.Equals, "`fullname`")
 	c.Assert(fullnameCol.Type, qt.Equals, "VARCHAR(100)")
+	c.Assert(fullnameCol.GeneratedExpression, qt.Equals, "CONCAT(`username`, ' ', 'User')")
+	c.Assert(fullnameCol.GeneratedKind, qt.Equals, "STORED")
 
 	// Test foreign key column
 	countryCol := createTable.Columns[13]
@@ -3128,6 +3131,8 @@ func TestParser_MariaDBVirtualColumn(t *testing.T) {
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(createTable.Columns, qt.HasLen, 2)
 	c.Assert(createTable.Columns[1].Type, qt.Equals, "VARCHAR(100)")
+	c.Assert(createTable.Columns[1].GeneratedExpression, qt.Equals, "CONCAT(`name`, ' ', 'User')")
+	c.Assert(createTable.Columns[1].GeneratedKind, qt.Equals, "STORED")
 }
 
 func TestParser_MariaDBTableOptions(t *testing.T) {

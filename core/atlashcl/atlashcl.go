@@ -167,21 +167,68 @@ func (p *parser) parseColumn(structName string, block *hclsyntax.Block) (goschem
 	if err := p.rejectUnsupportedColumnAttrs(block); err != nil {
 		return goschema.Field{}, err
 	}
+	generated, err := p.parseGeneratedColumn(block)
+	if err != nil {
+		return goschema.Field{}, err
+	}
 
 	field := goschema.Field{
-		StructName: structName,
-		FieldName:  name,
-		Name:       name,
-		Type:       p.rawExpr(typeAttr),
-		Nullable:   p.optionalBool(block.Body.Attributes["null"], false),
-		AutoInc:    p.optionalBool(block.Body.Attributes["auto_increment"], false),
-		Unique:     p.optionalBool(block.Body.Attributes["unique"], false),
-		Comment:    p.optionalString(block.Body.Attributes["comment"]),
+		StructName:          structName,
+		FieldName:           name,
+		Name:                name,
+		Type:                p.rawExpr(typeAttr),
+		Nullable:            p.optionalBool(block.Body.Attributes["null"], false),
+		AutoInc:             p.optionalBool(block.Body.Attributes["auto_increment"], false),
+		Unique:              p.optionalBool(block.Body.Attributes["unique"], false),
+		GeneratedExpression: generated.expression,
+		GeneratedKind:       generated.kind,
+		Comment:             p.optionalString(block.Body.Attributes["comment"]),
 	}
 	if attr := block.Body.Attributes["default"]; attr != nil {
 		p.setDefault(&field, attr)
 	}
 	return field, nil
+}
+
+type generatedColumnSpec struct {
+	expression string
+	kind       string
+}
+
+func (p *parser) parseGeneratedColumn(block *hclsyntax.Block) (generatedColumnSpec, error) {
+	attr := block.Body.Attributes["as"]
+	var asBlocks []*hclsyntax.Block
+	for _, nested := range block.Body.Blocks {
+		if nested.Type != "as" {
+			return generatedColumnSpec{}, p.blockError(nested, "unsupported column block %q", nested.Type)
+		}
+		asBlocks = append(asBlocks, nested)
+	}
+	if attr != nil && len(asBlocks) > 0 {
+		return generatedColumnSpec{}, p.blockError(asBlocks[0], "column cannot mix as attribute with as block")
+	}
+	if len(asBlocks) > 1 {
+		return generatedColumnSpec{}, p.blockError(asBlocks[1], "column can contain at most one as block")
+	}
+	if attr != nil {
+		return generatedColumnSpec{expression: p.exprString(attr), kind: "VIRTUAL"}, nil
+	}
+	if len(asBlocks) == 0 {
+		return generatedColumnSpec{}, nil
+	}
+
+	asBlock := asBlocks[0]
+	if err := p.rejectUnsupportedGeneratedColumnAttrs(asBlock); err != nil {
+		return generatedColumnSpec{}, err
+	}
+	exprAttr := asBlock.Body.Attributes["expr"]
+	if exprAttr == nil {
+		return generatedColumnSpec{}, p.blockError(asBlock, "column as block requires expr")
+	}
+	return generatedColumnSpec{
+		expression: p.exprString(exprAttr),
+		kind:       strings.ToUpper(p.optionalString(asBlock.Body.Attributes["type"])),
+	}, nil
 }
 
 func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block) (goschema.Index, error) {
@@ -471,8 +518,19 @@ func (p *parser) rejectUnsupportedColumnAttrs(block *hclsyntax.Block) error {
 		"auto_increment": true,
 		"unique":         true,
 		"default":        true,
+		"as":             true,
 		"comment":        true,
 	}, "column")
+}
+
+func (p *parser) rejectUnsupportedGeneratedColumnAttrs(block *hclsyntax.Block) error {
+	if len(block.Body.Blocks) > 0 {
+		return p.blockError(block.Body.Blocks[0], "unsupported column as block %q", block.Body.Blocks[0].Type)
+	}
+	return p.rejectUnsupportedAttrs(block, map[string]bool{
+		"expr": true,
+		"type": true,
+	}, "column as")
 }
 
 func (p *parser) rejectUnsupportedIndexAttrs(block *hclsyntax.Block) error {
