@@ -422,6 +422,8 @@ func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table goschem
 	tableComment := table.Comment
 	tableEngine := table.Engine
 	tableAutoIncrement := table.AutoIncrement
+	tableCharset := table.Charset
+	tableCollate := table.Collate
 	tableStrict := table.Strict
 	tableWithoutRowID := table.WithoutRowID
 
@@ -430,30 +432,17 @@ func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table goschem
 		return table
 	}
 
-	// Override comment if specified
-	if commentOverride, ok := platformOverrides["comment"]; ok {
-		tableComment = commentOverride
-	}
-	// Override engine if specified
-	if engineOverride, ok := platformOverrides["engine"]; ok {
-		tableEngine = engineOverride
-	}
-	if autoIncrementOverride, ok := platformOverrides["auto_increment"]; ok {
-		tableAutoIncrement = autoIncrementOverride
-	}
-	if strictOverride, ok := platformOverrides["strict"]; ok {
-		if strict, err := strconv.ParseBool(strictOverride); err == nil {
-			tableStrict = strict
-		}
-	}
-	if withoutRowIDOverride, ok := platformOverrides["without_rowid"]; ok {
-		if withoutRowID, err := strconv.ParseBool(withoutRowIDOverride); err == nil {
-			tableWithoutRowID = withoutRowID
-		}
-	}
+	tableComment = overrideString(platformOverrides, "comment", tableComment)
+	tableEngine = overrideString(platformOverrides, "engine", tableEngine)
+	tableAutoIncrement = overrideString(platformOverrides, "auto_increment", tableAutoIncrement)
+	tableCharset = overrideString(platformOverrides, "charset", tableCharset)
+	tableCollate = overrideString(platformOverrides, "collate", tableCollate)
+	tableStrict = overrideBool(platformOverrides, "strict", tableStrict)
+	tableWithoutRowID = overrideBool(platformOverrides, "without_rowid", tableWithoutRowID)
+
 	// Apply any other platform-specific options
 	for key, value := range platformOverrides {
-		if key != "comment" && key != "engine" && key != "auto_increment" && key != "strict" && key != "without_rowid" {
+		if !isKnownTablePlatformOverride(key) {
 			createTable.SetOption(strings.ToUpper(key), value)
 		}
 	}
@@ -462,9 +451,43 @@ func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table goschem
 	newTable.Comment = tableComment
 	newTable.Engine = tableEngine
 	newTable.AutoIncrement = tableAutoIncrement
+	newTable.Charset = tableCharset
+	newTable.Collate = tableCollate
 	newTable.Strict = tableStrict
 	newTable.WithoutRowID = tableWithoutRowID
 	return newTable
+}
+
+func overrideString(overrides map[string]string, key, current string) string {
+	if value, ok := overrides[key]; ok {
+		return value
+	}
+	return current
+}
+
+func overrideBool(overrides map[string]string, key string, current bool) bool {
+	value, ok := overrides[key]
+	if !ok {
+		return current
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return current
+	}
+	return parsed
+}
+
+func isKnownTablePlatformOverride(key string) bool {
+	knownKeys := []string{
+		"comment",
+		"engine",
+		"auto_increment",
+		"charset",
+		"collate",
+		"strict",
+		"without_rowid",
+	}
+	return slices.Contains(knownKeys, key)
 }
 
 // FromTable converts a goschema.Table to an ast.CreateTableNode with all associated columns and constraints.
@@ -562,6 +585,12 @@ func FromTable(table goschema.Table, fields []goschema.Field, enums []goschema.E
 	}
 	if newTable.AutoIncrement != "" {
 		createTable.SetOption("AUTO_INCREMENT", newTable.AutoIncrement)
+	}
+	if newTable.Charset != "" {
+		createTable.SetOption("CHARSET", newTable.Charset)
+	}
+	if newTable.Collate != "" {
+		createTable.SetOption("COLLATE", newTable.Collate)
 	}
 	if targetPlatform == "sqlite" {
 		if newTable.WithoutRowID {

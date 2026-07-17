@@ -2,6 +2,7 @@ package mysqllike
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/stokaro/ptah/core/ast"
@@ -574,9 +575,27 @@ func (r *Renderer) renderAutoIncrement() string {
 
 // renderTableOptions renders MariaDB table options (same as MySQL)
 func (r *Renderer) renderTableOptions(options map[string]string) string {
-	var parts []string
-	for key, value := range options {
-		parts = append(parts, fmt.Sprintf("%s=%s", key, value))
+	knownOrder := []string{"ENGINE", "AUTO_INCREMENT", "CHARSET", "COLLATE"}
+	parts := make([]string, 0, len(options))
+	renderOption := func(key string) {
+		if value, ok := options[key]; ok {
+			parts = append(parts, fmt.Sprintf("%s=%s", key, value))
+		}
+	}
+
+	for _, key := range knownOrder {
+		renderOption(key)
+	}
+
+	var unknownKeys []string
+	for key := range options {
+		if !slices.Contains(knownOrder, key) {
+			unknownKeys = append(unknownKeys, key)
+		}
+	}
+	slices.Sort(unknownKeys)
+	for _, key := range unknownKeys {
+		renderOption(key)
 	}
 	return strings.Join(parts, " ")
 }
