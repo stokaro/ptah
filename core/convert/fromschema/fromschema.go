@@ -87,6 +87,8 @@ func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschem
 	checkConstraint := field.Check
 	checkName := field.CheckName
 	comment := field.Comment
+	charset := field.Charset
+	collate := field.Collate
 	defaultValue := field.Default
 	defaultSet := field.DefaultSet
 	defaultExpr := field.DefaultExpr
@@ -110,6 +112,8 @@ func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschem
 		newField.Check = checkConstraint
 		newField.CheckName = checkName
 		newField.Comment = comment
+		newField.Charset = charset
+		newField.Collate = collate
 		newField.Default = defaultValue
 		newField.DefaultSet = defaultSet
 		newField.DefaultExpr = defaultExpr
@@ -123,6 +127,8 @@ func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschem
 		newField.Check = checkConstraint
 		newField.CheckName = checkName
 		newField.Comment = comment
+		newField.Charset = charset
+		newField.Collate = collate
 		newField.Default = defaultValue
 		newField.DefaultSet = defaultSet
 		newField.DefaultExpr = defaultExpr
@@ -145,6 +151,13 @@ func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschem
 	if commentOverride, ok := platformOverrides["comment"]; ok {
 		comment = commentOverride
 	}
+	// Override column charset/collation if specified.
+	if charsetOverride, ok := platformOverrides["charset"]; ok {
+		charset = charsetOverride
+	}
+	if collateOverride, ok := platformOverrides["collate"]; ok {
+		collate = collateOverride
+	}
 	// Override default value if specified
 	if defaultOverride, ok := platformOverrides["default"]; ok {
 		defaultValue = defaultOverride
@@ -163,6 +176,8 @@ func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschem
 	newField.Check = checkConstraint
 	newField.CheckName = checkName
 	newField.Comment = comment
+	newField.Charset = charset
+	newField.Collate = collate
 	newField.Default = defaultValue
 	newField.DefaultSet = defaultSet
 	newField.DefaultExpr = defaultExpr
@@ -331,6 +346,12 @@ func FromField(field goschema.Field, enums []goschema.Enum, targetPlatform strin
 	if field.GeneratedExpression != "" {
 		column.SetGenerated(field.GeneratedExpression, field.GeneratedKind)
 	}
+	if field.Charset != "" {
+		column.SetCharset(field.Charset)
+	}
+	if field.Collate != "" {
+		column.SetCollate(field.Collate)
+	}
 
 	// Set comment (using potentially overridden value)
 	if field.Comment != "" {
@@ -407,6 +428,12 @@ func FromFieldWithoutForeignKeys(field goschema.Field, enums []goschema.Enum, ta
 	}
 	if field.GeneratedExpression != "" {
 		column.SetGenerated(field.GeneratedExpression, field.GeneratedKind)
+	}
+	if field.Charset != "" {
+		column.SetCharset(field.Charset)
+	}
+	if field.Collate != "" {
+		column.SetCollate(field.Collate)
 	}
 
 	// Set comment (using potentially overridden value)

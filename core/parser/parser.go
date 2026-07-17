@@ -1598,7 +1598,7 @@ func (p *Parser) handleCharacter(column *ast.ColumnNode) {
 	p.advance()
 	p.skipWhitespace()
 	if p.current.Type == lexer.TokenIdentifier {
-		appendColumnComment(column, "CHARACTER SET "+p.current.Value)
+		column.Charset = p.current.Value
 		p.advance()
 	}
 }
@@ -1611,7 +1611,7 @@ func (p *Parser) handleCharset(column *ast.ColumnNode) error {
 	if err != nil {
 		return fmt.Errorf("expected charset name: %w", err)
 	}
-	appendColumnComment(column, "CHARSET "+value)
+	column.Charset = value
 	return nil
 }
 
@@ -1634,7 +1634,7 @@ func (p *Parser) handleCollate(column *ast.ColumnNode) error {
 		return fmt.Errorf("expected collation name: got %s at position %d", p.current.Type, p.current.Start)
 	}
 
-	appendColumnComment(column, "COLLATE "+collation)
+	column.Collate = collation
 
 	return nil
 }

@@ -97,6 +97,8 @@ type fieldSpec struct {
 	Enum           stringList   `yaml:"enum"`
 	Check          stringScalar `yaml:"check"`
 	CheckName      stringScalar `yaml:"check_name"`
+	Charset        stringScalar `yaml:"charset"`
+	Collate        stringScalar `yaml:"collate"`
 	Comment        stringScalar `yaml:"comment"`
 	Platform       platformSpec `yaml:"platform"`
 	Overrides      platformSpec `yaml:"overrides"`
@@ -381,6 +383,8 @@ func buildField(structName, key string, spec fieldSpec, db *goschema.Database) g
 		Enum:           enumValues,
 		Check:          string(spec.Check),
 		CheckName:      string(spec.CheckName),
+		Charset:        string(spec.Charset),
+		Collate:        string(spec.Collate),
 		Comment:        string(spec.Comment),
 		Overrides:      mergePlatform(spec.Platform, spec.Overrides),
 	}
