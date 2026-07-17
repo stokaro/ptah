@@ -152,7 +152,15 @@ func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
 	if node.IfNotExists {
 		guard = " IF NOT EXISTS"
 	}
-	r.w.WriteLinef("CREATE SCHEMA%s %s;", guard, node.Name)
+	var parts []string
+	parts = append(parts, "CREATE SCHEMA"+guard, node.Name)
+	if node.Charset != "" {
+		parts = append(parts, "DEFAULT CHARACTER SET", node.Charset)
+	}
+	if node.Collate != "" {
+		parts = append(parts, "COLLATE", node.Collate)
+	}
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
 }
 
