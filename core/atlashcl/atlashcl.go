@@ -174,6 +174,13 @@ func (p *parser) parseColumn(structName string, block *hclsyntax.Block) (goschem
 	if err != nil {
 		return goschema.Field{}, err
 	}
+	identity, err := p.parseIdentityColumn(block)
+	if err != nil {
+		return goschema.Field{}, err
+	}
+	if generated.expression != "" && identity.generation != "" {
+		return goschema.Field{}, p.blockError(block, "column cannot mix as and identity blocks")
+	}
 
 	field := goschema.Field{
 		StructName:          structName,
@@ -181,7 +188,10 @@ func (p *parser) parseColumn(structName string, block *hclsyntax.Block) (goschem
 		Name:                name,
 		Type:                p.rawExpr(typeAttr),
 		Nullable:            p.optionalBool(block.Body.Attributes["null"], false),
-		AutoInc:             p.optionalBool(block.Body.Attributes["auto_increment"], false),
+		AutoInc:             p.optionalBool(block.Body.Attributes["auto_increment"], false) || identity.generation != "",
+		IdentityGeneration:  identity.generation,
+		IdentityStart:       identity.start,
+		IdentityIncrement:   identity.increment,
 		Unique:              p.optionalBool(block.Body.Attributes["unique"], false),
 		GeneratedExpression: generated.expression,
 		GeneratedKind:       generated.kind,
@@ -205,10 +215,14 @@ func (p *parser) parseGeneratedColumn(block *hclsyntax.Block) (generatedColumnSp
 	attr := block.Body.Attributes["as"]
 	var asBlocks []*hclsyntax.Block
 	for _, nested := range block.Body.Blocks {
-		if nested.Type != "as" {
+		switch nested.Type {
+		case "as":
+			asBlocks = append(asBlocks, nested)
+		case "identity":
+			continue
+		default:
 			return generatedColumnSpec{}, p.blockError(nested, "unsupported column block %q", nested.Type)
 		}
-		asBlocks = append(asBlocks, nested)
 	}
 	if attr != nil && len(asBlocks) > 0 {
 		return generatedColumnSpec{}, p.blockError(asBlocks[0], "column cannot mix as attribute with as block")
@@ -234,6 +248,50 @@ func (p *parser) parseGeneratedColumn(block *hclsyntax.Block) (generatedColumnSp
 	return generatedColumnSpec{
 		expression: p.exprString(exprAttr),
 		kind:       strings.ToUpper(p.optionalString(asBlock.Body.Attributes["type"])),
+	}, nil
+}
+
+type identityColumnSpec struct {
+	generation string
+	start      string
+	increment  string
+}
+
+func (p *parser) parseIdentityColumn(block *hclsyntax.Block) (identityColumnSpec, error) {
+	var identityBlocks []*hclsyntax.Block
+	for _, nested := range block.Body.Blocks {
+		switch nested.Type {
+		case "identity":
+			identityBlocks = append(identityBlocks, nested)
+		case "as":
+			continue
+		default:
+			return identityColumnSpec{}, p.blockError(nested, "unsupported column block %q", nested.Type)
+		}
+	}
+	if len(identityBlocks) == 0 {
+		return identityColumnSpec{}, nil
+	}
+	if len(identityBlocks) > 1 {
+		return identityColumnSpec{}, p.blockError(identityBlocks[1], "column can contain at most one identity block")
+	}
+
+	identityBlock := identityBlocks[0]
+	if err := p.rejectUnsupportedIdentityColumnAttrs(identityBlock); err != nil {
+		return identityColumnSpec{}, err
+	}
+	generated := p.optionalString(identityBlock.Body.Attributes["generated"])
+	generation := normalizeIdentityGeneration(generated)
+	if generation == "" {
+		if generated != "" {
+			return identityColumnSpec{}, p.blockError(identityBlock, "unsupported identity generated value %q", generated)
+		}
+		generation = "BY_DEFAULT"
+	}
+	return identityColumnSpec{
+		generation: generation,
+		start:      p.optionalString(identityBlock.Body.Attributes["start"]),
+		increment:  p.optionalString(identityBlock.Body.Attributes["increment"]),
 	}, nil
 }
 
@@ -620,6 +678,17 @@ func (p *parser) rejectUnsupportedGeneratedColumnAttrs(block *hclsyntax.Block) e
 	}, "column as")
 }
 
+func (p *parser) rejectUnsupportedIdentityColumnAttrs(block *hclsyntax.Block) error {
+	if len(block.Body.Blocks) > 0 {
+		return p.blockError(block.Body.Blocks[0], "unsupported column identity block %q", block.Body.Blocks[0].Type)
+	}
+	return p.rejectUnsupportedAttrs(block, map[string]bool{
+		"generated": true,
+		"start":     true,
+		"increment": true,
+	}, "column identity")
+}
+
 func (p *parser) rejectUnsupportedIndexAttrs(block *hclsyntax.Block) error {
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"columns": true,
@@ -796,6 +865,17 @@ func refName(raw string) string {
 		return suffix
 	}
 	return raw
+}
+
+func normalizeIdentityGeneration(value string) string {
+	switch strings.ToUpper(strings.ReplaceAll(value, " ", "_")) {
+	case "ALWAYS":
+		return "ALWAYS"
+	case "BY_DEFAULT":
+		return "BY_DEFAULT"
+	default:
+		return ""
+	}
 }
 
 func columnNameFromRef(raw string) string {

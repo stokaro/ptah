@@ -327,6 +327,10 @@ func FromField(field goschema.Field, enums []goschema.Enum, targetPlatform strin
 	if field.AutoInc {
 		column.SetAutoIncrement()
 	}
+	if field.IdentityGeneration != "" {
+		column.SetIdentity(field.IdentityGeneration, field.IdentityStart, field.IdentityIncrement)
+		column.SetIdentityOptions(field.IdentityOptions)
+	}
 
 	// Set default values (using potentially overridden values)
 	switch {
@@ -410,6 +414,10 @@ func FromFieldWithoutForeignKeys(field goschema.Field, enums []goschema.Enum, ta
 	// Set auto increment
 	if field.AutoInc {
 		column.SetAutoIncrement()
+	}
+	if field.IdentityGeneration != "" {
+		column.SetIdentity(field.IdentityGeneration, field.IdentityStart, field.IdentityIncrement)
+		column.SetIdentityOptions(field.IdentityOptions)
 	}
 
 	// Set default value (using potentially overridden value)
