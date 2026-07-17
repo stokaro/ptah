@@ -160,6 +160,20 @@ func TestColumnNode_SetDefault(t *testing.T) {
 
 	c.Assert(column.Default, qt.IsNotNil)
 	c.Assert(column.Default.Value, qt.Equals, "'active'")
+	c.Assert(column.Default.ValueSet, qt.IsTrue)
+	c.Assert(column.Default.HasLiteral(), qt.IsTrue)
+	c.Assert(column.Default.Expression, qt.Equals, "")
+}
+
+func TestColumnNode_SetDefaultEmptyLiteral(t *testing.T) {
+	c := qt.New(t)
+
+	column := ast.NewColumn("name", "VARCHAR(50)").SetDefault("")
+
+	c.Assert(column.Default, qt.IsNotNil)
+	c.Assert(column.Default.Value, qt.Equals, "")
+	c.Assert(column.Default.ValueSet, qt.IsTrue)
+	c.Assert(column.Default.HasLiteral(), qt.IsTrue)
 	c.Assert(column.Default.Expression, qt.Equals, "")
 }
 

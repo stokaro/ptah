@@ -148,8 +148,9 @@ func ToField(column *ast.ColumnNode, structName, sourcePlatform string) goschema
 
 	// Extract default values
 	if column.Default != nil {
-		if column.Default.Value != "" {
+		if column.Default.HasLiteral() {
 			field.Default = column.Default.Value
+			field.DefaultSet = true
 		} else if column.Default.Expression != "" {
 			field.DefaultExpr = column.Default.Expression
 		}
@@ -653,7 +654,7 @@ func MergeFieldOverrides(baseField goschema.Field, platformFields map[string]gos
 		}
 
 		// Check for default value differences
-		if platformField.Default != baseField.Default {
+		if platformField.Default != baseField.Default || platformField.DefaultSet != baseField.DefaultSet {
 			platformOverrides["default"] = platformField.Default
 		}
 

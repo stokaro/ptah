@@ -109,7 +109,20 @@ func TestFromField_DefaultValues(t *testing.T) {
 				Default: "'active'",
 			},
 			expected: func(col *ast.ColumnNode) bool {
-				return col.Default != nil && col.Default.Value == "'active'" && col.Default.Expression == ""
+				return col.Default != nil && col.Default.Value == "'active'" &&
+					col.Default.HasLiteral() && col.Default.Expression == ""
+			},
+		},
+		{
+			name: "empty literal default value",
+			field: goschema.Field{
+				Name:       "status",
+				Type:       "VARCHAR(20)",
+				DefaultSet: true,
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.Default != nil && col.Default.Value == "" &&
+					col.Default.HasLiteral() && col.Default.Expression == ""
 			},
 		},
 		{

@@ -313,7 +313,7 @@ func (n *ColumnNode) SetAutoIncrement() *ColumnNode {
 //	column.SetDefault("'active'")
 //	column.SetDefault("0")
 func (n *ColumnNode) SetDefault(value string) *ColumnNode {
-	n.Default = &DefaultValue{Value: value}
+	n.Default = &DefaultValue{Value: value, ValueSet: true}
 	return n
 }
 

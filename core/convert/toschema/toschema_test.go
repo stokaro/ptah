@@ -97,7 +97,15 @@ func TestToField_DefaultValues(t *testing.T) {
 			column:     ast.NewColumn("status", "VARCHAR(20)").SetDefault("'active'"),
 			structName: "User",
 			expected: func(field goschema.Field) bool {
-				return field.Default == "'active'" && field.DefaultExpr == ""
+				return field.Default == "'active'" && field.DefaultSet && field.DefaultExpr == ""
+			},
+		},
+		{
+			name:       "empty literal default value",
+			column:     ast.NewColumn("status", "VARCHAR(20)").SetDefault(""),
+			structName: "User",
+			expected: func(field goschema.Field) bool {
+				return field.Default == "" && field.DefaultSet && field.DefaultExpr == ""
 			},
 		},
 		{
@@ -113,7 +121,7 @@ func TestToField_DefaultValues(t *testing.T) {
 			column:     ast.NewColumn("description", "TEXT"),
 			structName: "User",
 			expected: func(field goschema.Field) bool {
-				return field.Default == "" && field.DefaultExpr == ""
+				return field.Default == "" && !field.DefaultSet && field.DefaultExpr == ""
 			},
 		},
 	}

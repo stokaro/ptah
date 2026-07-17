@@ -136,6 +136,7 @@ type Field struct {
 	Unique         bool     // Whether this column has a unique constraint
 	UniqueExpr     string   // Custom unique constraint expression
 	Default        string   // Default value for the column
+	DefaultSet     bool     // Whether Default is set, including an empty string literal
 	DefaultExpr    string   // Default expression (e.g., "NOW()", "UUID()", "CURRENT_TIMESTAMP", "1", "true")
 	Foreign        string   // Foreign key reference (e.g., "users(id)")
 	ForeignKeyName string   // Custom foreign key constraint name

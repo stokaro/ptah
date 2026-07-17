@@ -2029,7 +2029,7 @@ func (p *Parser) handleStringLiteral() (*ast.DefaultValue, error) {
 		}
 	}
 
-	return &ast.DefaultValue{Value: value}, nil
+	return &ast.DefaultValue{Value: value, ValueSet: true}, nil
 }
 
 func (p *Parser) parseArrayLiteral(value string) (*string, error) {
@@ -2103,7 +2103,7 @@ func (p *Parser) handleFunctionCallOrKeyword() (*ast.DefaultValue, error) {
 	if upperValue == "E" && p.current.Type == lexer.TokenString {
 		value += p.current.Value
 		p.advance()
-		return &ast.DefaultValue{Value: value}, nil
+		return &ast.DefaultValue{Value: value, ValueSet: true}, nil
 	}
 
 	// Check if it's a function call
@@ -2141,7 +2141,7 @@ func (p *Parser) handleFunctionCallOrKeyword() (*ast.DefaultValue, error) {
 	}
 
 	// Regular identifier/keyword
-	return &ast.DefaultValue{Value: value}, nil
+	return &ast.DefaultValue{Value: value, ValueSet: true}, nil
 }
 
 func (p *Parser) handleNumber() (*ast.DefaultValue, error) {
@@ -2152,7 +2152,7 @@ func (p *Parser) handleNumber() (*ast.DefaultValue, error) {
 		if p.current.Type == lexer.TokenIdentifier || p.current.Type == lexer.TokenOperator {
 			value := sign + p.current.Value
 			p.advance()
-			return &ast.DefaultValue{Value: value}, nil
+			return &ast.DefaultValue{Value: value, ValueSet: true}, nil
 		}
 	}
 	// Check if it's a number that the lexer tokenized as an operator (like "0", "1", etc.)
@@ -2161,7 +2161,7 @@ func (p *Parser) handleNumber() (*ast.DefaultValue, error) {
 	// Check if this looks like a number
 	if isNumeric(value) {
 		p.advance()
-		return &ast.DefaultValue{Value: value}, nil
+		return &ast.DefaultValue{Value: value, ValueSet: true}, nil
 	}
 
 	return nil, fmt.Errorf("unexpected token for default value: %s at position %d", p.current.Value, p.current.Start)
