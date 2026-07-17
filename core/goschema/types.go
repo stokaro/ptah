@@ -329,15 +329,25 @@ type Extension struct {
 //	    RoleID int64
 //	}
 type Table struct {
-	StructName string                       // Name of the Go struct this table represents
-	Name       string                       // Database table name
-	Schema     string                       // Optional database schema/namespace (PostgreSQL-style)
-	Engine     string                       // Storage engine (MySQL/MariaDB specific, e.g., "InnoDB")
-	Comment    string                       // Table comment/description
-	PrimaryKey []string                     // Composite primary key column names
-	Checks     []string                     // Table-level check constraints
-	CustomSQL  string                       // Custom SQL to append to CREATE TABLE
-	Overrides  map[string]map[string]string // Platform-specific overrides
+	StructName string   // Name of the Go struct this table represents
+	Name       string   // Database table name
+	Schema     string   // Optional database schema/namespace (PostgreSQL-style)
+	Engine     string   // Storage engine (MySQL/MariaDB specific, e.g., "InnoDB")
+	Comment    string   // Table comment/description
+	PrimaryKey []string // Composite primary key column names
+	// PrimaryKeyParts carries dialect-specific metadata for composite primary
+	// key elements, such as MySQL prefix lengths and DESC ordering.
+	PrimaryKeyParts []PrimaryKeyPart
+	Checks          []string                     // Table-level check constraints
+	CustomSQL       string                       // Custom SQL to append to CREATE TABLE
+	Overrides       map[string]map[string]string // Platform-specific overrides
+}
+
+// PrimaryKeyPart represents one column reference inside a table primary key.
+type PrimaryKeyPart struct {
+	Name   string // Column name
+	Prefix string // MySQL index prefix length
+	Desc   bool   // Whether the column is ordered DESC
 }
 
 // QualifiedName returns the schema-qualified database table name when a schema
