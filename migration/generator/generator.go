@@ -490,14 +490,15 @@ func foreignKeyAdditionFromDBConstraint(name, table string, dbFK dbschematypes.D
 		OnDelete:  derefString(dbFK.DeleteRule),
 		OnUpdate:  derefString(dbFK.UpdateRule),
 	}
-	if dbFK.ColumnName != "" {
-		info.Columns = []string{dbFK.ColumnName}
+	if columns := dbFK.ColumnNamesOrDefault(); len(columns) > 0 {
+		info.Columns = append([]string(nil), columns...)
 	}
 	if dbFK.ForeignTable != nil {
 		info.ForeignTable = *dbFK.ForeignTable
 	}
-	if dbFK.ForeignColumn != nil {
-		info.ForeignColumn = *dbFK.ForeignColumn
+	if foreignColumns := dbFK.ForeignColumnsOrDefault(); len(foreignColumns) > 0 {
+		info.ForeignColumn = foreignColumns[0]
+		info.ForeignColumns = append([]string(nil), foreignColumns...)
 	}
 	return info
 }

@@ -2300,10 +2300,21 @@ func (p *Parser) parseForeignKeyReference() (*ast.ForeignKeyRef, error) {
 
 	p.skipWhitespace()
 
-	// Get referenced column name
-	columnName, err := p.expectIdentifier()
-	if err != nil {
-		return nil, fmt.Errorf("expected column name in REFERENCES: %w", err)
+	// Get referenced column names
+	var columnNames []string
+	for {
+		columnName, err := p.expectIdentifier()
+		if err != nil {
+			return nil, fmt.Errorf("expected column name in REFERENCES: %w", err)
+		}
+		columnNames = append(columnNames, columnName)
+
+		p.skipWhitespace()
+		if !p.current.MatchOperatorValue(",") {
+			break
+		}
+		p.advance()
+		p.skipWhitespace()
 	}
 
 	p.skipWhitespace()
@@ -2315,7 +2326,10 @@ func (p *Parser) parseForeignKeyReference() (*ast.ForeignKeyRef, error) {
 
 	fkRef := &ast.ForeignKeyRef{
 		Table:  tableName,
-		Column: columnName,
+		Column: columnNames[0],
+	}
+	if len(columnNames) > 1 {
+		fkRef.Columns = columnNames
 	}
 
 	// Parse optional ON DELETE/UPDATE actions

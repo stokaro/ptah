@@ -127,17 +127,19 @@ func (i DBIndex) QualifiedTableName() string {
 
 // DBConstraint represents a database constraint
 type DBConstraint struct {
-	Name          string  `json:"name"`
-	TableName     string  `json:"table_name"`
-	Schema        string  `json:"schema,omitempty"`
-	Type          string  `json:"type"` // PRIMARY KEY, FOREIGN KEY, UNIQUE, CHECK, EXCLUDE
-	ColumnName    string  `json:"column_name"`
-	ForeignTable  *string `json:"foreign_table"` // For foreign keys
-	ForeignSchema string  `json:"foreign_schema,omitempty"`
-	ForeignColumn *string `json:"foreign_column"` // For foreign keys
-	DeleteRule    *string `json:"delete_rule"`    // CASCADE, RESTRICT, etc.
-	UpdateRule    *string `json:"update_rule"`    // CASCADE, RESTRICT, etc.
-	CheckClause   *string `json:"check_clause"`   // For CHECK constraints
+	Name           string   `json:"name"`
+	TableName      string   `json:"table_name"`
+	Schema         string   `json:"schema,omitempty"`
+	Type           string   `json:"type"` // PRIMARY KEY, FOREIGN KEY, UNIQUE, CHECK, EXCLUDE
+	ColumnName     string   `json:"column_name"`
+	ColumnNames    []string `json:"column_names,omitempty"`
+	ForeignTable   *string  `json:"foreign_table"` // For foreign keys
+	ForeignSchema  string   `json:"foreign_schema,omitempty"`
+	ForeignColumn  *string  `json:"foreign_column"` // For foreign keys
+	ForeignColumns []string `json:"foreign_columns,omitempty"`
+	DeleteRule     *string  `json:"delete_rule"`  // CASCADE, RESTRICT, etc.
+	UpdateRule     *string  `json:"update_rule"`  // CASCADE, RESTRICT, etc.
+	CheckClause    *string  `json:"check_clause"` // For CHECK constraints
 	// EXCLUDE constraint specific fields (PostgreSQL only)
 	UsingMethod     *string `json:"using_method"`     // Index method: gist, btree, etc.
 	ExcludeElements *string `json:"exclude_elements"` // Elements with operators: "room_id WITH =, during WITH &&"
@@ -155,6 +157,30 @@ func (c DBConstraint) QualifiedForeignTableName() string {
 		return ""
 	}
 	return QualifyTableName(c.ForeignSchema, *c.ForeignTable)
+}
+
+// ColumnNamesOrDefault returns all local constraint columns, falling back to
+// the legacy single-column field for callers that have not populated slices.
+func (c DBConstraint) ColumnNamesOrDefault() []string {
+	if len(c.ColumnNames) > 0 {
+		return c.ColumnNames
+	}
+	if c.ColumnName != "" {
+		return []string{c.ColumnName}
+	}
+	return nil
+}
+
+// ForeignColumnsOrDefault returns all referenced FK columns, falling back to
+// the legacy single-column field for older readers and test fixtures.
+func (c DBConstraint) ForeignColumnsOrDefault() []string {
+	if len(c.ForeignColumns) > 0 {
+		return c.ForeignColumns
+	}
+	if c.ForeignColumn != nil && *c.ForeignColumn != "" {
+		return []string{*c.ForeignColumn}
+	}
+	return nil
 }
 
 // DBExtension represents a PostgreSQL extension installed in the database
