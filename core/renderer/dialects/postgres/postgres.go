@@ -110,7 +110,7 @@ func (r *Renderer) VisitCreateType(node *ast.CreateTypeNode) error {
 
 		// Add DEFAULT if specified
 		if typeDef.Default != nil {
-			if typeDef.Default.Value != "" {
+			if typeDef.Default.HasLiteral() {
 				sql += fmt.Sprintf(" DEFAULT '%s'", typeDef.Default.Value)
 			} else if typeDef.Default.Expression != "" {
 				sql += fmt.Sprintf(" DEFAULT %s", typeDef.Default.Expression)
@@ -623,7 +623,7 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	switch {
 	case column.Default == nil:
 		// No default value
-	case column.Default.Value != "":
+	case column.Default.HasLiteral():
 		parts = append(parts, fmt.Sprintf("DEFAULT %s", r.escapeValue(column.Default.Value)))
 	case column.Default.Expression != "":
 		parts = append(parts, fmt.Sprintf("DEFAULT %s", column.Default.Expression))
@@ -822,7 +822,7 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, column *ast.Co
 	switch {
 	case column.Default == nil:
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP DEFAULT;", tableName, column.Name)
-	case column.Default.Value != "":
+	case column.Default.HasLiteral():
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s;", tableName, column.Name, r.escapeValue(column.Default.Value))
 	case column.Default.Expression != "":
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s;", tableName, column.Name, column.Default.Expression)
@@ -862,7 +862,7 @@ func (r *Renderer) updateNullValuesBeforeNotNull(tableName string, column *ast.C
 	if column.Default != nil {
 		if column.Default.Expression != "" {
 			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", r.escapeIdentifier(tableName), r.escapeIdentifier(column.Name), column.Default.Expression, r.escapeIdentifier(column.Name))
-		} else if column.Default.Value != "" {
+		} else if column.Default.HasLiteral() {
 			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", r.escapeIdentifier(tableName), r.escapeIdentifier(column.Name), r.escapeValue(column.Default.Value), r.escapeIdentifier(column.Name))
 		}
 	} else {

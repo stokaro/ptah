@@ -545,7 +545,7 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	switch {
 	case column.Default == nil:
 		// No default value
-	case column.Default.Value != "":
+	case column.Default.HasLiteral():
 		parts = append(parts, fmt.Sprintf("DEFAULT %s", r.escapeValue(column.Default.Value)))
 	case column.Default.Expression != "":
 		parts = append(parts, fmt.Sprintf("DEFAULT %s", column.Default.Expression))
@@ -711,7 +711,7 @@ func (r *Renderer) renderColumnWithEnums(column *ast.ColumnNode, enumValues []st
 	if column.Default != nil {
 		if column.Default.Expression != "" {
 			parts = append(parts, fmt.Sprintf("DEFAULT %s", column.Default.Expression))
-		} else if column.Default.Value != "" {
+		} else if column.Default.HasLiteral() {
 			parts = append(parts, fmt.Sprintf("DEFAULT '%s'", column.Default.Value))
 		}
 	}

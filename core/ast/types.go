@@ -128,7 +128,7 @@ func (td *DomainTypeDef) SetNotNull() *DomainTypeDef {
 
 // SetDefault sets a literal default value and returns the domain for chaining.
 func (td *DomainTypeDef) SetDefault(value string) *DomainTypeDef {
-	td.Default = &DefaultValue{Value: value}
+	td.Default = &DefaultValue{Value: value, ValueSet: true}
 	return td
 }
 
