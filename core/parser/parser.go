@@ -1521,17 +1521,17 @@ func (p *Parser) handleAs(column *ast.ColumnNode) error {
 		p.advance()
 	}
 
-	// Parse STORED/VIRTUAL keyword
+	generatedKind := ""
 	p.skipWhitespace()
 	if p.current.Type == lexer.TokenIdentifier {
 		storageType := strings.ToUpper(p.current.Value)
 		if storageType == "STORED" || storageType == "VIRTUAL" {
+			generatedKind = storageType
 			p.advance()
 		}
 	}
 
-	// Store as a check constraint for now (in a full implementation, add Generated field to ColumnNode)
-	column.SetCheck("AS (" + expr.String() + ") STORED")
+	column.SetGenerated(expr.String(), generatedKind)
 	return nil
 }
 
@@ -1571,14 +1571,14 @@ func (p *Parser) handleGenerated(column *ast.ColumnNode) error {
 		p.advance()
 	}
 
-	// Parse STORED keyword
+	generatedKind := ""
 	p.skipWhitespace()
 	if p.current.Type == lexer.TokenIdentifier && strings.ToUpper(p.current.Value) == "STORED" {
+		generatedKind = "STORED"
 		p.advance()
 	}
 
-	// Store as a check constraint for now (in a full implementation, add Generated field to ColumnNode)
-	column.SetCheck("GENERATED ALWAYS AS (" + expr.String() + ") STORED")
+	column.SetGenerated(expr.String(), generatedKind)
 
 	return nil
 }

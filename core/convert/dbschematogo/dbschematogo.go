@@ -59,14 +59,18 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 		// Convert columns to fields
 		for _, dbColumn := range dbTable.Columns {
 			field := goschema.Field{
-				StructName: structName,
-				FieldName:  generateFieldName(dbColumn.Name),
-				Name:       dbColumn.Name,
-				Type:       dbColumn.DataType,
-				Nullable:   dbColumn.IsNullable == "YES",
-				Primary:    dbColumn.IsPrimaryKey,
-				AutoInc:    dbColumn.IsAutoIncrement,
-				Unique:     dbColumn.IsUnique,
+				StructName:    structName,
+				FieldName:     generateFieldName(dbColumn.Name),
+				Name:          dbColumn.Name,
+				Type:          dbColumn.DataType,
+				Nullable:      dbColumn.IsNullable == "YES",
+				Primary:       dbColumn.IsPrimaryKey,
+				AutoInc:       dbColumn.IsAutoIncrement,
+				Unique:        dbColumn.IsUnique,
+				GeneratedKind: dbColumn.GeneratedKind,
+			}
+			if dbColumn.GeneratedExpression != nil {
+				field.GeneratedExpression = *dbColumn.GeneratedExpression
 			}
 
 			// Set default value if present

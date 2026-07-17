@@ -322,6 +322,9 @@ func FromField(field goschema.Field, enums []goschema.Enum, targetPlatform strin
 			column.SetCheckName(field.CheckName)
 		}
 	}
+	if field.GeneratedExpression != "" {
+		column.SetGenerated(field.GeneratedExpression, field.GeneratedKind)
+	}
 
 	// Set comment (using potentially overridden value)
 	if field.Comment != "" {
@@ -395,6 +398,9 @@ func FromFieldWithoutForeignKeys(field goschema.Field, enums []goschema.Enum, ta
 		if field.CheckName != "" {
 			column.SetCheckName(field.CheckName)
 		}
+	}
+	if field.GeneratedExpression != "" {
+		column.SetGenerated(field.GeneratedExpression, field.GeneratedKind)
 	}
 
 	// Set comment (using potentially overridden value)

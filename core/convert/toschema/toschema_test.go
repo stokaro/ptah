@@ -65,6 +65,15 @@ func TestToField_BasicProperties(t *testing.T) {
 					field.AutoInc == true
 			},
 		},
+		{
+			name:       "generated field",
+			column:     ast.NewColumn("slug", "TEXT").SetGenerated("lower(name)", "STORED"),
+			structName: "User",
+			expected: func(field goschema.Field) bool {
+				return field.GeneratedExpression == "lower(name)" &&
+					field.GeneratedKind == "STORED"
+			},
+		},
 	}
 
 	for _, test := range tests {

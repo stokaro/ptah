@@ -124,16 +124,18 @@ import (
 // The StructName is set to the provided structName parameter.
 func ToField(column *ast.ColumnNode, structName, sourcePlatform string) goschema.Field {
 	field := goschema.Field{
-		StructName: structName,
-		FieldName:  "", // This would need to be set separately as it's not in the AST
-		Name:       column.Name,
-		Type:       column.Type,
-		Nullable:   column.Nullable,
-		Primary:    column.Primary,
-		AutoInc:    column.AutoInc,
-		Unique:     column.Unique,
-		Check:      column.Check,
-		Comment:    column.Comment,
+		StructName:          structName,
+		FieldName:           "", // This would need to be set separately as it's not in the AST
+		Name:                column.Name,
+		Type:                column.Type,
+		Nullable:            column.Nullable,
+		Primary:             column.Primary,
+		AutoInc:             column.AutoInc,
+		Unique:              column.Unique,
+		Check:               column.Check,
+		GeneratedExpression: column.GeneratedExpression,
+		GeneratedKind:       column.GeneratedKind,
+		Comment:             column.Comment,
 	}
 
 	// Mirror the fromschema guarding: only surface CheckName when there's

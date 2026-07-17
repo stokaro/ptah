@@ -262,6 +262,31 @@ func TestColumns_HappyPath(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "generated expression change",
+			genCol: goschema.Field{
+				Name:                "slug",
+				Type:                "TEXT",
+				GeneratedExpression: "lower(name)",
+				GeneratedKind:       "STORED",
+			},
+			dbCol: types.DBColumn{
+				Name:          "slug",
+				DataType:      "TEXT",
+				IsNullable:    "NO",
+				GeneratedKind: "VIRTUAL",
+				GeneratedExpression: func() *string {
+					value := "upper(name)"
+					return &value
+				}(),
+			},
+			expected: difftypes.ColumnDiff{
+				ColumnName: "slug",
+				Changes: map[string]string{
+					"generated": "VIRTUAL upper(name) -> STORED lower(name)",
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {

@@ -172,6 +172,12 @@ func (cb *ColumnBuilder) Check(expression string) *ColumnBuilder {
 	return cb
 }
 
+// Generated marks the column as generated from the supplied raw SQL expression.
+func (cb *ColumnBuilder) Generated(expression, kind string) *ColumnBuilder {
+	cb.column.SetGenerated(expression, kind)
+	return cb
+}
+
 // Comment sets a descriptive comment for the column and returns the ColumnBuilder for chaining.
 //
 // Comments are useful for documenting the purpose, format, or constraints of a column.
@@ -394,6 +400,12 @@ func (scb *SchemaColumnBuilder) DefaultExpression(fn string) *SchemaColumnBuilde
 //	column := schema.Table("users").Column("email", "VARCHAR(255)").Check("email LIKE '%@%'")
 func (scb *SchemaColumnBuilder) Check(expression string) *SchemaColumnBuilder {
 	scb.column.SetCheck(expression)
+	return scb
+}
+
+// Generated marks the column as generated from the supplied raw SQL expression.
+func (scb *SchemaColumnBuilder) Generated(expression, kind string) *SchemaColumnBuilder {
+	scb.column.SetGenerated(expression, kind)
 	return scb
 }
 

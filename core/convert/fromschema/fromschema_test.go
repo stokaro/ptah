@@ -71,6 +71,18 @@ func TestFromField_BasicProperties(t *testing.T) {
 				return col.Name == "id" && col.AutoInc == true
 			},
 		},
+		{
+			name: "generated field",
+			field: goschema.Field{
+				Name:                "slug",
+				Type:                "TEXT",
+				GeneratedExpression: "lower(name)",
+				GeneratedKind:       "STORED",
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.GeneratedExpression == "lower(name)" && col.GeneratedKind == "STORED"
+			},
+		},
 	}
 
 	for _, test := range tests {

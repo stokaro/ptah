@@ -79,6 +79,19 @@ func TestMySQL_CreateTableSelectTail(t *testing.T) {
 	c.Assert(out, qt.Not(qt.Contains), "CREATE TABLE IF NOT EXISTS t2 (")
 }
 
+func TestMySQL_CreateTableGeneratedColumn(t *testing.T) {
+	c := qt.New(t)
+	table := ast.NewCreateTable("users").
+		AddColumn(ast.NewColumn("id", "int").SetPrimary()).
+		AddColumn(ast.NewColumn("slug", "varchar(255)").
+			SetNotNull().
+			SetGenerated("lower(name)", "STORED"))
+
+	out := renderMySQL(t, table)
+
+	c.Assert(out, qt.Contains, "slug varchar(255) NOT NULL AS (lower(name)) STORED")
+}
+
 func TestMySQL_AlterTable_ClickHouseOnlyOpsEmitComment(t *testing.T) {
 	c := qt.New(t)
 	alter := &ast.AlterTableNode{

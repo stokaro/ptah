@@ -220,6 +220,10 @@ type ColumnNode struct {
 	// when matching against introspected constraints, a deterministic
 	// "<table>_<column>_check" identifier.
 	CheckName string
+	// GeneratedExpression stores the raw SQL expression for generated columns.
+	GeneratedExpression string
+	// GeneratedKind stores the generated column kind, such as VIRTUAL or STORED.
+	GeneratedKind string
 	// Comment is an optional column comment
 	Comment string
 	// ForeignKey contains foreign key reference information if this column references another table
@@ -346,6 +350,13 @@ func (n *ColumnNode) SetCheck(expression string) *ColumnNode {
 // required (e.g. for drift detection on field-level CHECKs).
 func (n *ColumnNode) SetCheckName(name string) *ColumnNode {
 	n.CheckName = name
+	return n
+}
+
+// SetGenerated marks the column as generated from the supplied raw SQL expression.
+func (n *ColumnNode) SetGenerated(expression, kind string) *ColumnNode {
+	n.GeneratedExpression = expression
+	n.GeneratedKind = kind
 	return n
 }
 
