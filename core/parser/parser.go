@@ -2510,11 +2510,12 @@ func (p *Parser) parseTableColumnList(constraint *ast.ConstraintNode) error {
 
 	// Parse column names
 	for {
-		columnName, err := p.expectIdentifier()
+		column, err := p.parseConstraintColumn()
 		if err != nil {
-			return fmt.Errorf("expected column name: %w", err)
+			return err
 		}
-		constraint.Columns = append(constraint.Columns, columnName)
+		constraint.Columns = append(constraint.Columns, column.Name)
+		constraint.ColumnParts = append(constraint.ColumnParts, column)
 
 		p.skipWhitespace()
 
@@ -2536,6 +2537,41 @@ func (p *Parser) parseTableColumnList(constraint *ast.ConstraintNode) error {
 	}
 
 	return nil
+}
+
+func (p *Parser) parseConstraintColumn() (ast.ConstraintColumn, error) {
+	columnName, err := p.expectIdentifier()
+	if err != nil {
+		return ast.ConstraintColumn{}, fmt.Errorf("expected column name: %w", err)
+	}
+	column := ast.ConstraintColumn{Name: columnName}
+
+	p.skipWhitespace()
+	if p.current.MatchOperatorValue("(") {
+		p.advance()
+		p.skipWhitespace()
+		prefix, err := p.expectIdentifier()
+		if err != nil {
+			return ast.ConstraintColumn{}, fmt.Errorf("expected column prefix length: %w", err)
+		}
+		column.Prefix = prefix
+		p.skipWhitespace()
+		if err := p.expect(lexer.TokenOperator, ")"); err != nil {
+			return ast.ConstraintColumn{}, fmt.Errorf("expected ')' after column prefix length: %w", err)
+		}
+		p.skipWhitespace()
+	}
+
+	if p.current.MatchIdentifierValue("DESC") {
+		column.Desc = true
+		p.advance()
+		p.skipWhitespace()
+	} else if p.current.MatchIdentifierValue("ASC") {
+		p.advance()
+		p.skipWhitespace()
+	}
+
+	return column, nil
 }
 
 func (p *Parser) handleTableForeignKey(constraint *ast.ConstraintNode) error {
