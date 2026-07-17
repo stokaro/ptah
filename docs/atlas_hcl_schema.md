@@ -28,7 +28,7 @@ current schema IR:
   `schema = schema.main`
 - `table` blocks
 - `column` blocks with `type`, `null`, `auto_increment`, `unique`, `default`,
-  and `comment`
+  `identity`, and `comment`
 - `primary_key` blocks with `columns`
 - `index` blocks with `columns`, `on { column = ..., prefix = ... }`,
   `on { expr = "..." }`, `desc`, `unique`, `type`, and `where`
@@ -119,6 +119,30 @@ table "posts" {
   }
 }
 ```
+
+## PostgreSQL Identity Columns
+
+Atlas-style `identity` blocks map to PostgreSQL `GENERATED ... AS IDENTITY`
+columns:
+
+```hcl
+table "users" {
+  column "id" {
+    type = int
+    null = false
+    identity {
+      generated = BY_DEFAULT
+      start = 10
+      increment = 5
+    }
+  }
+}
+```
+
+`generated` accepts `ALWAYS` or `BY_DEFAULT`. When omitted, Ptah follows
+PostgreSQL and Atlas defaults and renders `BY DEFAULT`. Ptah currently supports
+the Atlas `start` and `increment` identity options in HCL input. Other identity
+block attributes are rejected instead of being silently dropped.
 
 ## Current Limitations
 

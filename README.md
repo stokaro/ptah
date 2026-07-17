@@ -218,6 +218,9 @@ type AuthSchema struct{}
 //migrator:schema:field name="id" type="SERIAL" primary="true" platform.mysql.type="INT AUTO_INCREMENT"
 ID int64
 
+//migrator:schema:field name="identity_id" type="INTEGER" not_null="true" identity_generation="BY_DEFAULT" identity_start="10" identity_increment="5"
+IdentityID int64
+
 //migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
 Name string
 

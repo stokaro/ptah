@@ -122,6 +122,62 @@ func TestParseKeyValueComment_SimplifiedSyntax(t *testing.T) {
 	}
 }
 
+func TestParseSource_FieldIdentityAttributes(t *testing.T) {
+	c := qt.New(t)
+
+	db := goschema.ParseSource("schema.go", `
+package test
+
+//migrator:schema:table name="users"
+type User struct {
+	//migrator:schema:field name="id" type="int" identity_generation="BY_DEFAULT" identity_start="10" identity_increment="5" identity_options="START WITH 10 INCREMENT BY 5 CACHE 3"
+	ID int64
+}
+`)
+
+	c.Assert(db.Fields, qt.HasLen, 1)
+	c.Assert(db.Fields[0].AutoInc, qt.IsTrue)
+	c.Assert(db.Fields[0].IdentityGeneration, qt.Equals, "BY_DEFAULT")
+	c.Assert(db.Fields[0].IdentityStart, qt.Equals, "10")
+	c.Assert(db.Fields[0].IdentityIncrement, qt.Equals, "5")
+	c.Assert(db.Fields[0].IdentityOptions, qt.Equals, "START WITH 10 INCREMENT BY 5 CACHE 3")
+}
+
+func TestParseSource_FieldIdentityAttributesRejectInvalidGeneration(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(func() {
+		goschema.ParseSource("schema.go", `
+package test
+
+//migrator:schema:table name="users"
+type User struct {
+	//migrator:schema:field name="id" type="int" identity_generation="BY_DEFUALT"
+	ID int64
+}
+`)
+	}, qt.PanicMatches, `invalid identity_generation "BY_DEFUALT".*`)
+}
+
+func TestParseSource_FieldIdentityOptionsDefaultGeneration(t *testing.T) {
+	c := qt.New(t)
+
+	db := goschema.ParseSource("schema.go", `
+package test
+
+//migrator:schema:table name="users"
+type User struct {
+	//migrator:schema:field name="id" type="int" identity_options="MINVALUE 0 START WITH 0"
+	ID int64
+}
+`)
+
+	c.Assert(db.Fields, qt.HasLen, 1)
+	c.Assert(db.Fields[0].AutoInc, qt.IsTrue)
+	c.Assert(db.Fields[0].IdentityGeneration, qt.Equals, "BY_DEFAULT")
+	c.Assert(db.Fields[0].IdentityOptions, qt.Equals, "MINVALUE 0 START WITH 0")
+}
+
 func TestParseSchemaObjectAnnotations(t *testing.T) {
 	c := qt.New(t)
 

@@ -582,6 +582,83 @@ table "users" {
 	c.Assert(db.Fields[1].GeneratedKind, qt.Equals, "STORED")
 }
 
+func TestParseIdentityColumn(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+table "users" {
+  column "id" {
+    type = int
+    null = false
+    identity {
+      generated = ALWAYS
+      start = 10
+      increment = 5
+    }
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Fields, qt.HasLen, 1)
+	c.Assert(db.Fields[0].AutoInc, qt.IsTrue)
+	c.Assert(db.Fields[0].IdentityGeneration, qt.Equals, "ALWAYS")
+	c.Assert(db.Fields[0].IdentityStart, qt.Equals, "10")
+	c.Assert(db.Fields[0].IdentityIncrement, qt.Equals, "5")
+}
+
+func TestParseIdentityColumnDefaultsGeneration(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+table "users" {
+  column "id" {
+    type = int
+    identity {
+      start = 100
+    }
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Fields, qt.HasLen, 1)
+	c.Assert(db.Fields[0].AutoInc, qt.IsTrue)
+	c.Assert(db.Fields[0].IdentityGeneration, qt.Equals, "BY_DEFAULT")
+	c.Assert(db.Fields[0].IdentityStart, qt.Equals, "100")
+}
+
+func TestParseIdentityColumnRejectsUnsupportedAttrs(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := atlashcl.Parse([]byte(`
+table "users" {
+  column "id" {
+    type = int
+    identity {
+      generated = ALWAYS
+      cache = 10
+    }
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.ErrorMatches, `.*unsupported column identity attribute "cache".*`)
+}
+
+func TestParseIdentityColumnRejectsInvalidGeneration(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := atlashcl.Parse([]byte(`
+table "users" {
+  column "id" {
+    type = int
+    identity {
+      generated = SOMETIMES
+    }
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.ErrorMatches, `.*unsupported identity generated value "SOMETIMES".*`)
+}
+
 func TestParseColumnOnUpdateExpression(t *testing.T) {
 	c := qt.New(t)
 

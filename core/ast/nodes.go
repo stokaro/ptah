@@ -3,6 +3,7 @@ package ast
 import (
 	"fmt"
 	"slices"
+	"strings"
 )
 
 // Node represents any SQL AST node that can be visited by a Visitor.
@@ -210,6 +211,14 @@ type ColumnNode struct {
 	Unique bool
 	// AutoInc indicates whether this column is auto-incrementing
 	AutoInc bool
+	// IdentityGeneration stores PostgreSQL identity generation mode: ALWAYS or BY_DEFAULT.
+	IdentityGeneration string
+	// IdentityStart stores the optional PostgreSQL identity START WITH value.
+	IdentityStart string
+	// IdentityIncrement stores the optional PostgreSQL identity INCREMENT BY value.
+	IdentityIncrement string
+	// IdentityOptions stores raw PostgreSQL identity sequence options for SQL round-trips.
+	IdentityOptions string
 	// Default contains the default value specification (literal or function)
 	Default *DefaultValue
 	// Check contains a check constraint expression for this column
@@ -306,6 +315,21 @@ func (n *ColumnNode) SetUnique() *ColumnNode {
 //	column.SetAutoIncrement()
 func (n *ColumnNode) SetAutoIncrement() *ColumnNode {
 	n.AutoInc = true
+	return n
+}
+
+// SetIdentity marks the column as a PostgreSQL identity column and returns the column for chaining.
+func (n *ColumnNode) SetIdentity(generation, start, increment string) *ColumnNode {
+	n.AutoInc = true
+	n.IdentityGeneration = generation
+	n.IdentityStart = start
+	n.IdentityIncrement = increment
+	return n
+}
+
+// SetIdentityOptions stores raw PostgreSQL identity sequence options and returns the column for chaining.
+func (n *ColumnNode) SetIdentityOptions(options string) *ColumnNode {
+	n.IdentityOptions = strings.TrimSpace(options)
 	return n
 }
 

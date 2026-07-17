@@ -126,25 +126,33 @@ type EmbeddedField struct {
 //	//migrator:schema:field name="id" type="SERIAL" platform.mysql.type="INT AUTO_INCREMENT"
 //	ID int64
 type Field struct {
-	StructName     string   // Name of the Go struct this field belongs to
-	FieldName      string   // Name of the Go struct field
-	Name           string   // Database column name
-	Type           string   // Database column type (e.g., "VARCHAR(255)", "INTEGER")
-	Nullable       bool     // Whether the column allows NULL values
-	Primary        bool     // Whether this is a primary key column
-	AutoInc        bool     // Whether this column auto-increments
-	Unique         bool     // Whether this column has a unique constraint
-	UniqueExpr     string   // Custom unique constraint expression
-	Default        string   // Default value for the column
-	DefaultSet     bool     // Whether Default is set, including an empty string literal
-	DefaultExpr    string   // Default expression (e.g., "NOW()", "UUID()", "CURRENT_TIMESTAMP", "1", "true")
-	Foreign        string   // Foreign key reference (e.g., "users(id)")
-	ForeignKeyName string   // Custom foreign key constraint name
-	OnDelete       string   // Foreign key ON DELETE action (CASCADE, SET NULL, RESTRICT, NO ACTION)
-	OnUpdate       string   // Foreign key ON UPDATE action (CASCADE, SET NULL, RESTRICT, NO ACTION)
-	Enum           []string // Enum values for ENUM type fields
-	Check          string   // Check constraint expression
-	CheckName      string   // Optional constraint name for the column-level CHECK; defaults to "<table>_<column>_check"
+	StructName string // Name of the Go struct this field belongs to
+	FieldName  string // Name of the Go struct field
+	Name       string // Database column name
+	Type       string // Database column type (e.g., "VARCHAR(255)", "INTEGER")
+	Nullable   bool   // Whether the column allows NULL values
+	Primary    bool   // Whether this is a primary key column
+	AutoInc    bool   // Whether this column auto-increments
+	// IdentityGeneration stores PostgreSQL identity generation mode: ALWAYS or BY_DEFAULT.
+	IdentityGeneration string
+	// IdentityStart stores the optional PostgreSQL identity START WITH value.
+	IdentityStart string
+	// IdentityIncrement stores the optional PostgreSQL identity INCREMENT BY value.
+	IdentityIncrement string
+	// IdentityOptions stores raw PostgreSQL identity sequence options for SQL round-trips.
+	IdentityOptions string
+	Unique          bool     // Whether this column has a unique constraint
+	UniqueExpr      string   // Custom unique constraint expression
+	Default         string   // Default value for the column
+	DefaultSet      bool     // Whether Default is set, including an empty string literal
+	DefaultExpr     string   // Default expression (e.g., "NOW()", "UUID()", "CURRENT_TIMESTAMP", "1", "true")
+	Foreign         string   // Foreign key reference (e.g., "users(id)")
+	ForeignKeyName  string   // Custom foreign key constraint name
+	OnDelete        string   // Foreign key ON DELETE action (CASCADE, SET NULL, RESTRICT, NO ACTION)
+	OnUpdate        string   // Foreign key ON UPDATE action (CASCADE, SET NULL, RESTRICT, NO ACTION)
+	Enum            []string // Enum values for ENUM type fields
+	Check           string   // Check constraint expression
+	CheckName       string   // Optional constraint name for the column-level CHECK; defaults to "<table>_<column>_check"
 	// GeneratedExpression stores the raw SQL expression for generated columns.
 	GeneratedExpression string
 	// GeneratedKind stores the generated column kind, such as VIRTUAL or STORED.
@@ -846,4 +854,15 @@ type SelfReferencingFK struct {
 	ForeignKeyName string // Name of the foreign key constraint (e.g., "fk_users_parent")
 	OnDelete       string // ON DELETE action (CASCADE, SET NULL, RESTRICT, NO ACTION)
 	OnUpdate       string // ON UPDATE action (CASCADE, SET NULL, RESTRICT, NO ACTION)
+}
+
+func normalizeIdentityGeneration(value string) string {
+	switch strings.ToUpper(strings.ReplaceAll(value, " ", "_")) {
+	case "ALWAYS":
+		return "ALWAYS"
+	case "BY_DEFAULT":
+		return "BY_DEFAULT"
+	default:
+		return ""
+	}
 }
