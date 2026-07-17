@@ -49,3 +49,17 @@ func TestMySQLRenderer_ConstraintColumnParts(t *testing.T) {
 
 	c.Assert(sql, qt.Contains, "PRIMARY KEY (`id` (7) DESC)")
 }
+
+func TestMySQLRenderer_IndexParts(t *testing.T) {
+	c := qt.New(t)
+
+	sql := renderMySQL(t,
+		ast.NewIndex("idx_users_rank", "users", "rank").
+			SetParts([]ast.IndexPart{{Name: "rank", Desc: true}}),
+		ast.NewIndex("idx_users_lower_name", "users", "lower(name)").
+			SetParts([]ast.IndexPart{{Expr: "lower(name)"}}),
+	)
+
+	c.Assert(sql, qt.Contains, "CREATE INDEX idx_users_rank ON users (rank DESC);")
+	c.Assert(sql, qt.Contains, "CREATE INDEX idx_users_lower_name ON users ((lower(name)));")
+}

@@ -30,8 +30,8 @@ current schema IR:
 - `column` blocks with `type`, `null`, `auto_increment`, `unique`, `default`,
   and `comment`
 - `primary_key` blocks with `columns`
-- `index` blocks with `columns`, `on { column = ... }`, `unique`, `type`, and
-  `where`
+- `index` blocks with `columns`, `on { column = ... }`, `on { expr = "..." }`,
+  `desc`, `unique`, `type`, and `where`
 - `foreign_key` blocks with one local `columns` entry and one table-qualified
   `ref_columns` entry
 - `check` blocks with `expr`

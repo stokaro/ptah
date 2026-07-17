@@ -188,12 +188,16 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 	if len(block.Labels) != 1 {
 		return goschema.Index{}, p.blockError(block, "index block requires exactly one label")
 	}
+	if block.Body.Attributes["columns"] != nil && len(block.Body.Blocks) > 0 {
+		return goschema.Index{}, p.blockError(block.Body.Blocks[0], "index cannot mix columns attribute with on blocks")
+	}
 	columns, err := p.parseColumnsAttr(block, "columns")
 	if err != nil {
 		return goschema.Index{}, err
 	}
+	var parts []goschema.IndexPart
 	if len(columns) == 0 {
-		columns, err = p.parseIndexParts(block)
+		columns, parts, err = p.parseIndexParts(block)
 		if err != nil {
 			return goschema.Index{}, err
 		}
@@ -208,6 +212,7 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 		StructName: structName,
 		Name:       block.Labels[0],
 		Fields:     columns,
+		Parts:      parts,
 		Unique:     p.optionalBool(block.Body.Attributes["unique"], false),
 		Type:       p.optionalString(block.Body.Attributes["type"]),
 		Condition:  p.optionalString(block.Body.Attributes["where"]),
@@ -215,22 +220,39 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 	}, nil
 }
 
-func (p *parser) parseIndexParts(block *hclsyntax.Block) ([]string, error) {
+func (p *parser) parseIndexParts(block *hclsyntax.Block) ([]string, []goschema.IndexPart, error) {
 	var columns []string
+	var parts []goschema.IndexPart
 	for _, nested := range block.Body.Blocks {
 		if nested.Type != "on" {
-			return nil, p.blockError(nested, "unsupported index block %q", nested.Type)
+			return nil, nil, p.blockError(nested, "unsupported index block %q", nested.Type)
 		}
 		if err := p.rejectUnsupportedIndexOnAttrs(nested); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		attr := nested.Body.Attributes["column"]
-		if attr == nil {
-			return nil, p.blockError(nested, "index on block requires column")
+		columnAttr := nested.Body.Attributes["column"]
+		exprAttr := nested.Body.Attributes["expr"]
+		if columnAttr == nil && exprAttr == nil {
+			return nil, nil, p.blockError(nested, "index on block requires column or expr")
 		}
-		columns = append(columns, p.columnNameFromExpr(attr))
+		if columnAttr != nil && exprAttr != nil {
+			return nil, nil, p.blockError(nested, "index on block cannot set both column and expr")
+		}
+		desc, err := p.optionalIndexOnBool(nested, "desc", false)
+		if err != nil {
+			return nil, nil, err
+		}
+		if columnAttr != nil {
+			column := p.columnNameFromExpr(columnAttr)
+			columns = append(columns, column)
+			parts = append(parts, goschema.IndexPart{Name: column, Desc: desc})
+			continue
+		}
+		expr := p.exprString(exprAttr)
+		columns = append(columns, expr)
+		parts = append(parts, goschema.IndexPart{Expr: expr, Desc: desc})
 	}
-	return columns, nil
+	return columns, parts, nil
 }
 
 func (p *parser) parsePrimaryKey(block *hclsyntax.Block) ([]string, []goschema.PrimaryKeyPart, error) {
@@ -465,6 +487,8 @@ func (p *parser) rejectUnsupportedIndexAttrs(block *hclsyntax.Block) error {
 func (p *parser) rejectUnsupportedIndexOnAttrs(block *hclsyntax.Block) error {
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"column": true,
+		"expr":   true,
+		"desc":   true,
 	}, "index on")
 }
 
@@ -552,6 +576,18 @@ func (p *parser) optionalTableBool(block *hclsyntax.Block, name string, fallback
 	value, diags := attr.Expr.Value(nil)
 	if diags.HasErrors() || value.Type() != cty.Bool {
 		return false, p.blockError(block, "table attribute %q must be a bool", name)
+	}
+	return value.True(), nil
+}
+
+func (p *parser) optionalIndexOnBool(block *hclsyntax.Block, name string, fallback bool) (bool, error) {
+	attr := block.Body.Attributes[name]
+	if attr == nil {
+		return fallback, nil
+	}
+	value, diags := attr.Expr.Value(nil)
+	if diags.HasErrors() || value.Type() != cty.Bool {
+		return false, p.blockError(block, "index on attribute %q must be a bool", name)
 	}
 	return value.True(), nil
 }
