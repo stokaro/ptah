@@ -239,6 +239,22 @@ func TestNewIndex(t *testing.T) {
 	c.Assert(index.Unique, qt.IsFalse)
 }
 
+func TestIndexNode_EffectiveParts(t *testing.T) {
+	c := qt.New(t)
+
+	index := ast.NewIndex("idx_users_email", "users", "email")
+	c.Assert(index.EffectiveParts(), qt.DeepEquals, []ast.IndexPart{{Name: "email"}})
+
+	index.SetParts([]ast.IndexPart{
+		{Name: "email", Desc: true},
+		{Expr: "lower(name)"},
+	})
+	c.Assert(index.EffectiveParts(), qt.DeepEquals, []ast.IndexPart{
+		{Name: "email", Desc: true},
+		{Expr: "lower(name)"},
+	})
+}
+
 func TestIndexNode_Accept(t *testing.T) {
 	c := qt.New(t)
 

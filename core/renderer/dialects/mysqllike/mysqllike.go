@@ -334,10 +334,25 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	parts = append(parts, node.Name)
 	parts = append(parts, "ON")
 	parts = append(parts, node.Table)
-	parts = append(parts, fmt.Sprintf("(%s)", strings.Join(node.Columns, ", ")))
+	parts = append(parts, fmt.Sprintf("(%s)", strings.Join(renderIndexParts(node.EffectiveParts()), ", ")))
 
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
+}
+
+func renderIndexParts(parts []ast.IndexPart) []string {
+	specs := make([]string, 0, len(parts))
+	for _, part := range parts {
+		spec := part.Reference()
+		if part.Expr != "" {
+			spec = fmt.Sprintf("(%s)", part.Expr)
+		}
+		if part.Desc {
+			spec += " DESC"
+		}
+		specs = append(specs, spec)
+	}
+	return specs
 }
 
 func mysqlIndexPrefixType(indexType string) string {
