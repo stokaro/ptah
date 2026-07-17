@@ -346,14 +346,15 @@ type Extension struct {
 //	    RoleID int64
 //	}
 type Table struct {
-	StructName   string   // Name of the Go struct this table represents
-	Name         string   // Database table name
-	Schema       string   // Optional database schema/namespace (PostgreSQL-style)
-	Engine       string   // Storage engine (MySQL/MariaDB specific, e.g., "InnoDB")
-	Strict       bool     // SQLite STRICT table option
-	WithoutRowID bool     // SQLite WITHOUT ROWID table option
-	Comment      string   // Table comment/description
-	PrimaryKey   []string // Composite primary key column names
+	StructName    string   // Name of the Go struct this table represents
+	Name          string   // Database table name
+	Schema        string   // Optional database schema/namespace (PostgreSQL-style)
+	Engine        string   // Storage engine (MySQL/MariaDB specific, e.g., "InnoDB")
+	AutoIncrement string   // Initial AUTO_INCREMENT value (MySQL/MariaDB specific)
+	Strict        bool     // SQLite STRICT table option
+	WithoutRowID  bool     // SQLite WITHOUT ROWID table option
+	Comment       string   // Table comment/description
+	PrimaryKey    []string // Composite primary key column names
 	// PrimaryKeyParts carries dialect-specific metadata for composite primary
 	// key elements, such as MySQL prefix lengths and DESC ordering.
 	PrimaryKeyParts []PrimaryKeyPart
