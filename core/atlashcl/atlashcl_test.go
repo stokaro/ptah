@@ -199,6 +199,7 @@ table "users" {
   index "rank_score_idx" {
     on {
       column = column.rank
+      prefix = 7
     }
     on {
       column = column.score
@@ -216,7 +217,7 @@ table "users" {
 	c.Assert(db.Indexes, qt.HasLen, 2)
 	c.Assert(db.Indexes[0].Fields, qt.DeepEquals, []string{"rank", "score"})
 	c.Assert(db.Indexes[0].Parts, qt.DeepEquals, []goschema.IndexPart{
-		{Name: "rank"},
+		{Name: "rank", Prefix: "7"},
 		{Name: "score", Desc: true},
 	})
 	c.Assert(db.Indexes[1].Fields, qt.DeepEquals, []string{"first_name || ' ' || last_name"})
@@ -494,7 +495,7 @@ schema "main" {
 	c.Assert(err, qt.ErrorMatches, `.*unsupported schema attribute "owner".*`)
 }
 
-func TestParseRejectsUnsupportedIndexPartAttributes(t *testing.T) {
+func TestParseRejectsIndexExprPrefix(t *testing.T) {
 	c := qt.New(t)
 
 	_, err := atlashcl.Parse([]byte(`
@@ -504,13 +505,13 @@ table "users" {
   }
   index "idx_users_email" {
     on {
-      column = column.email
+      expr = "lower(email)"
       prefix = 32
     }
   }
 }
 `), "schema.hcl")
-	c.Assert(err, qt.ErrorMatches, `.*unsupported index on attribute "prefix".*`)
+	c.Assert(err, qt.ErrorMatches, `.*index on prefix requires column.*`)
 }
 
 func TestParseRejectsInvalidIndexParts(t *testing.T) {

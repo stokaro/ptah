@@ -734,7 +734,7 @@ func TestFromIndex_BasicIndex(t *testing.T) {
 				StructName: "users",
 				Fields:     []string{"stale_rank", "stale_name"},
 				Parts: []goschema.IndexPart{
-					{Name: "rank", Desc: true},
+					{Name: "rank", Prefix: "7", Desc: true},
 					{Expr: "lower(name)"},
 				},
 			},
@@ -745,7 +745,7 @@ func TestFromIndex_BasicIndex(t *testing.T) {
 					idx.Columns[0] == "rank" &&
 					idx.Columns[1] == "lower(name)" &&
 					len(idx.Parts) == 2 &&
-					idx.Parts[0] == (ast.IndexPart{Name: "rank", Desc: true}) &&
+					idx.Parts[0] == (ast.IndexPart{Name: "rank", Prefix: "7", Desc: true}) &&
 					idx.Parts[1] == (ast.IndexPart{Expr: "lower(name)"})
 			},
 		},
