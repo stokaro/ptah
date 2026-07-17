@@ -470,6 +470,8 @@ type IndexNode struct {
 	// PostgreSQL; "minmax", "set(N)", "bloom_filter(p)", "tokenbf_v1(...)"
 	// etc. for ClickHouse data-skipping indexes) - database-specific.
 	Type string
+	// Parser specifies the MySQL FULLTEXT parser name, for example ngram.
+	Parser string
 	// Comment is an optional index comment
 	Comment string
 	// IfNotExists indicates whether to use IF NOT EXISTS clause for idempotent migrations

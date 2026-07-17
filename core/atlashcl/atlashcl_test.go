@@ -226,6 +226,45 @@ table "users" {
 	})
 }
 
+func TestParseFulltextIndexParser(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+table "users" {
+  column "bio" {
+    type = text
+  }
+  index "idx_users_bio" {
+    type = FULLTEXT
+    parser = ngram
+    columns = [column.bio]
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Indexes, qt.HasLen, 1)
+	c.Assert(db.Indexes[0].Fields, qt.DeepEquals, []string{"bio"})
+	c.Assert(db.Indexes[0].Type, qt.Equals, "FULLTEXT")
+	c.Assert(db.Indexes[0].Parser, qt.Equals, "ngram")
+}
+
+func TestParseRejectsIndexParserWithoutFulltext(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := atlashcl.Parse([]byte(`
+table "users" {
+  column "bio" {
+    type = text
+  }
+  index "idx_users_bio" {
+    parser = ngram
+    columns = [column.bio]
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.ErrorMatches, `.*index parser requires FULLTEXT type.*`)
+}
+
 func TestParseRejectsIndexColumnsAndOnBlocks(t *testing.T) {
 	c := qt.New(t)
 

@@ -57,6 +57,10 @@ table "users" {
     null = false
   }
 
+  column "bio" {
+    type = text
+  }
+
   primary_key {
     columns = [column.id]
   }
@@ -64,6 +68,12 @@ table "users" {
   index "idx_users_email" {
     unique = true
     columns = [column.email]
+  }
+
+  index "idx_users_bio" {
+    type = FULLTEXT
+    parser = ngram
+    columns = [column.bio]
   }
 }
 ```

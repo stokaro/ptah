@@ -66,3 +66,15 @@ func TestMySQLRenderer_IndexParts(t *testing.T) {
 	c.Assert(sql, qt.Contains, "CREATE INDEX idx_users_name ON users (name (64));")
 	c.Assert(sql, qt.Contains, "CREATE INDEX idx_users_lower_name ON users ((lower(name)));")
 }
+
+func TestMySQLRenderer_FulltextIndexParser(t *testing.T) {
+	c := qt.New(t)
+
+	index := ast.NewIndex("idx_users_bio", "users", "bio")
+	index.Type = "FULLTEXT"
+	index.Parser = "ngram"
+
+	sql := renderMySQL(t, index)
+
+	c.Assert(sql, qt.Contains, "CREATE FULLTEXT INDEX idx_users_bio ON users (bio) /*!50100 WITH PARSER `ngram` */;")
+}

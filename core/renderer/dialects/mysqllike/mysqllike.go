@@ -335,7 +335,11 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	parts = append(parts, node.Name)
 	parts = append(parts, "ON")
 	parts = append(parts, node.Table)
-	parts = append(parts, fmt.Sprintf("(%s)", strings.Join(renderIndexParts(node.EffectiveParts()), ", ")))
+	columnSpec := fmt.Sprintf("(%s)", strings.Join(renderIndexParts(node.EffectiveParts()), ", "))
+	if node.Parser != "" {
+		columnSpec += fmt.Sprintf(" /*!50100 WITH PARSER `%s` */", strings.ReplaceAll(node.Parser, "`", "``"))
+	}
+	parts = append(parts, columnSpec)
 
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
