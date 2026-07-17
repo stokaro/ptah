@@ -54,6 +54,8 @@ type Database struct {
 type Schema struct {
 	Name    string // Schema name, e.g. "public"
 	Comment string // Optional schema comment/description
+	Charset string // Optional default character set (MySQL/MariaDB)
+	Collate string // Optional default collation (MySQL/MariaDB)
 }
 
 // EmbeddedField represents an embedded field in a Go struct that should be handled specially
