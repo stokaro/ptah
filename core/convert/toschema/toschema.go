@@ -246,6 +246,7 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) goschema.Table {
 	for _, constraint := range table.Constraints {
 		if constraint.Type == ast.PrimaryKeyConstraint {
 			tableSchema.PrimaryKey = constraint.Columns
+			tableSchema.PrimaryKeyParts = toPrimaryKeyParts(constraint)
 			break // Only one primary key constraint per table
 		}
 	}
@@ -278,6 +279,25 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) goschema.Table {
 	}
 
 	return tableSchema
+}
+
+func toPrimaryKeyParts(constraint *ast.ConstraintNode) []goschema.PrimaryKeyPart {
+	if len(constraint.ColumnParts) == 0 {
+		parts := make([]goschema.PrimaryKeyPart, 0, len(constraint.Columns))
+		for _, column := range constraint.Columns {
+			parts = append(parts, goschema.PrimaryKeyPart{Name: column})
+		}
+		return parts
+	}
+	parts := make([]goschema.PrimaryKeyPart, 0, len(constraint.ColumnParts))
+	for _, column := range constraint.ColumnParts {
+		parts = append(parts, goschema.PrimaryKeyPart{
+			Name:   column.Name,
+			Prefix: column.Prefix,
+			Desc:   column.Desc,
+		})
+	}
+	return parts
 }
 
 // ToIndex converts an ast.IndexNode to a goschema.Index for database index definitions.

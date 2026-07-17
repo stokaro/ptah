@@ -483,6 +483,40 @@ func TestFromTable_CompositePrimaryKey(t *testing.T) {
 	c.Assert(result.Constraints[0].Columns, qt.DeepEquals, []string{"user_id", "role_id"})
 }
 
+func TestFromTable_PrimaryKeyParts(t *testing.T) {
+	c := qt.New(t)
+
+	table := goschema.Table{
+		StructName: "Token",
+		Name:       "tokens",
+		PrimaryKey: []string{"id"},
+		PrimaryKeyParts: []goschema.PrimaryKeyPart{{
+			Name:   "id",
+			Prefix: "7",
+			Desc:   true,
+		}},
+	}
+	fields := []goschema.Field{{
+		StructName: "Token",
+		Name:       "id",
+		Type:       "tinytext",
+		Primary:    true,
+	}}
+
+	result := fromschema.FromTable(table, fields, nil, "")
+
+	c.Assert(result.Columns, qt.HasLen, 1)
+	c.Assert(result.Columns[0].Primary, qt.IsFalse)
+	c.Assert(result.Constraints, qt.HasLen, 1)
+	c.Assert(result.Constraints[0].Type, qt.Equals, ast.PrimaryKeyConstraint)
+	c.Assert(result.Constraints[0].Columns, qt.DeepEquals, []string{"id"})
+	c.Assert(result.Constraints[0].ColumnParts, qt.DeepEquals, []ast.ConstraintColumn{{
+		Name:   "id",
+		Prefix: "7",
+		Desc:   true,
+	}})
+}
+
 func TestFromDatabase_TableLevelConstraints(t *testing.T) {
 	c := qt.New(t)
 

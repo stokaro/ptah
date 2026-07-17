@@ -304,6 +304,30 @@ func TestToTable_CompositePrimaryKey(t *testing.T) {
 	c.Assert(result.PrimaryKey[1], qt.Equals, "role_id")
 }
 
+func TestToTable_PrimaryKeyParts(t *testing.T) {
+	c := qt.New(t)
+
+	table := ast.NewCreateTable("tokens").
+		AddConstraint(&ast.ConstraintNode{
+			Type:    ast.PrimaryKeyConstraint,
+			Columns: []string{"id"},
+			ColumnParts: []ast.ConstraintColumn{{
+				Name:   "id",
+				Prefix: "7",
+				Desc:   true,
+			}},
+		})
+
+	result := toschema.ToTable(table, "")
+
+	c.Assert(result.PrimaryKey, qt.DeepEquals, []string{"id"})
+	c.Assert(result.PrimaryKeyParts, qt.DeepEquals, []goschema.PrimaryKeyPart{{
+		Name:   "id",
+		Prefix: "7",
+		Desc:   true,
+	}})
+}
+
 func TestToTable_PlatformSource(t *testing.T) {
 	c := qt.New(t)
 
