@@ -1735,6 +1735,8 @@ func (p *Parser) parseColumnConstraintOrAttribute(table *ast.CreateTableNode, co
 		return p.handleDefault(column)
 	case "CHECK":
 		return p.handleCheck(column)
+	case "CONSTRAINT":
+		return p.handleColumnConstraint(column)
 	case "REFERENCES":
 		return p.handleReferences(column)
 	case "AS":
@@ -1754,6 +1756,24 @@ func (p *Parser) parseColumnConstraintOrAttribute(table *ast.CreateTableNode, co
 	default:
 		return fmt.Errorf("unsupported column attribute: %s at position %d", keyword, p.current.Start)
 	}
+	return nil
+}
+
+func (p *Parser) handleColumnConstraint(column *ast.ColumnNode) error {
+	p.advance()
+	p.skipWhitespace()
+	name, err := p.expectIdentifier()
+	if err != nil {
+		return fmt.Errorf("expected column constraint name: %w", err)
+	}
+	p.skipWhitespace()
+	if !p.current.MatchIdentifierValue("CHECK") {
+		return fmt.Errorf("unsupported column constraint %q at position %d", p.current.Value, p.current.Start)
+	}
+	if err := p.handleCheck(column); err != nil {
+		return err
+	}
+	column.SetCheckName(name)
 	return nil
 }
 

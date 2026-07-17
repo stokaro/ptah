@@ -3182,6 +3182,30 @@ func TestParser_MariaDBWithCheckConstraint(t *testing.T) {
 	c.Assert(createTable.Columns, qt.HasLen, 1)
 }
 
+func TestParser_ColumnLevelNamedCheckConstraint(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE TABLE test (
+		a int CONSTRAINT c1 CHECK (a > 0),
+		b int constraint c2 check (b > 0)
+	);`
+	p := parser.NewParser(sql)
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	createTable := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(createTable.Columns, qt.HasLen, 2)
+
+	c.Assert(createTable.Columns[0].Name, qt.Equals, "a")
+	c.Assert(createTable.Columns[0].CheckName, qt.Equals, "c1")
+	c.Assert(createTable.Columns[0].Check, qt.Equals, "a > 0")
+
+	c.Assert(createTable.Columns[1].Name, qt.Equals, "b")
+	c.Assert(createTable.Columns[1].CheckName, qt.Equals, "c2")
+	c.Assert(createTable.Columns[1].Check, qt.Equals, "b > 0")
+}
+
 func TestParser_MariaDBOnUpdateTimestamp(t *testing.T) {
 	c := qt.New(t)
 
