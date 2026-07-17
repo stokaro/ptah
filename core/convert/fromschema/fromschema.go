@@ -779,6 +779,10 @@ func FromIndex(index goschema.Index) *ast.IndexNode {
 		indexNode.Type = index.Type
 	}
 
+	if index.Parser != "" {
+		indexNode.Parser = index.Parser
+	}
+
 	if index.Condition != "" {
 		indexNode.Condition = index.Condition
 	}
@@ -1276,6 +1280,10 @@ func FromIndexWithTableMapping(index goschema.Index, structToTableMap map[string
 	// and CH (minmax/set/bloom_filter/...) — the renderer interprets it.
 	if index.Type != "" {
 		indexNode.Type = index.Type
+	}
+
+	if index.Parser != "" {
+		indexNode.Parser = index.Parser
 	}
 
 	if index.Condition != "" {

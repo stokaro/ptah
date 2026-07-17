@@ -363,6 +363,7 @@ func ToIndex(index *ast.IndexNode) goschema.Index {
 		Comment:    index.Comment,
 		// PostgreSQL-specific features
 		Type:      index.Type,
+		Parser:    index.Parser,
 		Condition: index.Condition,
 		Operator:  index.Operator,
 		TableName: index.Table,
