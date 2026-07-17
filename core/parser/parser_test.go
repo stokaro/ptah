@@ -3206,6 +3206,26 @@ func TestParser_ColumnLevelNamedCheckConstraint(t *testing.T) {
 	c.Assert(createTable.Columns[1].Check, qt.Equals, "b > 0")
 }
 
+func TestParser_TableConstraintColumnParts(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "CREATE TABLE t (`id` tinytext NOT NULL, PRIMARY KEY (`id` (7) DESC));"
+	statements, err := parser.NewParser(sql).Parse()
+	c.Assert(err, qt.IsNil)
+
+	createTable := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(createTable.Constraints, qt.HasLen, 1)
+
+	pk := createTable.Constraints[0]
+	c.Assert(pk.Type, qt.Equals, ast.PrimaryKeyConstraint)
+	c.Assert(pk.Columns, qt.DeepEquals, []string{"`id`"})
+	c.Assert(pk.ColumnParts, qt.DeepEquals, []ast.ConstraintColumn{{
+		Name:   "`id`",
+		Prefix: "7",
+		Desc:   true,
+	}})
+}
+
 func TestParser_MariaDBOnUpdateTimestamp(t *testing.T) {
 	c := qt.New(t)
 
