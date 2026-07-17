@@ -519,13 +519,9 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	var parts []string
 
 	// Column name and type
-	parts = append(parts, fmt.Sprintf("  %s %s", column.Name, column.Type))
-	if column.Charset != "" {
-		parts = append(parts, "CHARACTER SET", column.Charset)
-	}
-	if column.Collate != "" {
-		parts = append(parts, "COLLATE", column.Collate)
-	}
+	columnType := r.renderColumnType(column, column.Type)
+	parts = append(parts, fmt.Sprintf("  %s %s", column.Name, columnType))
+	parts = r.appendColumnCharsetCollate(parts, column)
 
 	// Column constraints
 	if column.Primary {
@@ -569,8 +565,46 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 			parts = append(parts, fmt.Sprintf("CHECK (%s)", column.Check))
 		}
 	}
+	if r.needsMariaDBJSONCheck(column) {
+		parts = append(parts, fmt.Sprintf("CHECK (json_valid(%s))", column.Name))
+	}
 
 	return strings.Join(parts, " "), nil
+}
+
+func (r *Renderer) renderColumnType(column *ast.ColumnNode, columnType string) string {
+	if r.isMariaDBJSONColumn(column) {
+		return "longtext"
+	}
+	return columnType
+}
+
+func (r *Renderer) appendColumnCharsetCollate(parts []string, column *ast.ColumnNode) []string {
+	charset := column.Charset
+	collate := column.Collate
+	if r.isMariaDBJSONColumn(column) {
+		if charset == "" {
+			charset = "utf8mb4"
+		}
+		if collate == "" {
+			collate = "utf8mb4_bin"
+		}
+	}
+	if charset != "" {
+		parts = append(parts, "CHARACTER SET", charset)
+	}
+	if collate != "" {
+		parts = append(parts, "COLLATE", collate)
+	}
+	return parts
+}
+
+func (r *Renderer) isMariaDBJSONColumn(column *ast.ColumnNode) bool {
+	return r.dialect == "mariadb" && strings.EqualFold(column.Type, "json")
+}
+
+func (r *Renderer) needsMariaDBJSONCheck(column *ast.ColumnNode) bool {
+	return r.isMariaDBJSONColumn(column) && !strings.Contains(strings.ToLower(column.Check), "json_valid(")
 }
 
 func renderGeneratedColumn(column *ast.ColumnNode) string {
@@ -693,7 +727,9 @@ func (r *Renderer) renderColumnWithEnums(column *ast.ColumnNode, enumValues []st
 	}
 
 	// Column name and type
+	columnType = r.renderColumnType(column, columnType)
 	parts = append(parts, fmt.Sprintf("  %s %s", column.Name, columnType))
+	parts = r.appendColumnCharsetCollate(parts, column)
 
 	// Column constraints - MariaDB order: PRIMARY KEY, then NOT NULL, then UNIQUE
 	if column.Primary {
@@ -728,6 +764,9 @@ func (r *Renderer) renderColumnWithEnums(column *ast.ColumnNode, enumValues []st
 	// Check constraints
 	if column.Check != "" {
 		parts = append(parts, fmt.Sprintf("CHECK (%s)", column.Check))
+	}
+	if r.needsMariaDBJSONCheck(column) {
+		parts = append(parts, fmt.Sprintf("CHECK (json_valid(%s))", column.Name))
 	}
 
 	// Comments

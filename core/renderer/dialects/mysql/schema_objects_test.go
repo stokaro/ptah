@@ -75,6 +75,18 @@ func TestMySQLRenderer_ColumnCharsetCollate(t *testing.T) {
 	c.Assert(sql, qt.Contains, "name varchar(255) CHARACTER SET hebrew COLLATE hebrew_general_ci NOT NULL")
 }
 
+func TestMySQLRenderer_JSONColumnRemainsNativeJSON(t *testing.T) {
+	c := qt.New(t)
+
+	table := ast.NewCreateTable("users").
+		AddColumn(ast.NewColumn("payload", "json").SetNotNull())
+
+	sql := renderMySQL(t, table)
+
+	c.Assert(sql, qt.Contains, "payload json NOT NULL")
+	c.Assert(sql, qt.Not(qt.Contains), "json_valid")
+}
+
 func TestMySQLRenderer_IndexParts(t *testing.T) {
 	c := qt.New(t)
 
