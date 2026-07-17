@@ -2885,6 +2885,10 @@ func (p *Parser) parseTableOptions(table *ast.CreateTableNode) error {
 		}
 
 		p.skipWhitespace()
+		if p.current.MatchOperatorValue(",") {
+			p.advance()
+			continue
+		}
 
 		if p.current.Type != lexer.TokenIdentifier {
 			break
@@ -2917,6 +2921,11 @@ func (p *Parser) parseTableOptions(table *ast.CreateTableNode) error {
 		case "TABLESPACE":
 			// Handle PostgreSQL TABLESPACE
 			err = p.handleTablespace(table)
+		case "WITHOUT":
+			err = p.handleSQLiteWithoutRowID(table)
+		case "STRICT":
+			table.SetOption("STRICT", "true")
+			p.advance()
 		default:
 			// Unknown option, stop parsing
 			err = fmt.Errorf("unsupported table option: %s at position %d", option, p.current.Start)
@@ -2927,6 +2936,17 @@ func (p *Parser) parseTableOptions(table *ast.CreateTableNode) error {
 		}
 	}
 
+	return nil
+}
+
+func (p *Parser) handleSQLiteWithoutRowID(table *ast.CreateTableNode) error {
+	if err := p.expect(lexer.TokenIdentifier, "WITHOUT"); err != nil {
+		return err
+	}
+	if err := p.expect(lexer.TokenIdentifier, "ROWID"); err != nil {
+		return fmt.Errorf("expected ROWID after WITHOUT: %w", err)
+	}
+	table.SetOption("WITHOUT_ROWID", "true")
 	return nil
 }
 

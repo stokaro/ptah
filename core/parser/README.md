@@ -146,6 +146,8 @@ for _, stmt := range statements.Statements {
 - `CHARSET=utf8mb4` / `CHARACTER SET=utf8mb4`
 - `COLLATE=utf8mb4_unicode_ci`
 - `COMMENT='table description'`
+- SQLite `WITHOUT ROWID`
+- SQLite `STRICT`
 
 ### CREATE TABLE ... SELECT
 

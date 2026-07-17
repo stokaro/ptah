@@ -88,12 +88,23 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 		return p.blockError(block, "table block requires exactly one label")
 	}
 
+	strict, err := p.optionalTableBool(block, "strict", false)
+	if err != nil {
+		return err
+	}
+	withoutRowID, err := p.optionalTableBool(block, "without_rowid", false)
+	if err != nil {
+		return err
+	}
+
 	table := goschema.Table{
-		StructName: block.Labels[0],
-		Name:       block.Labels[0],
-		Schema:     p.optionalRefName(block.Body.Attributes["schema"]),
-		Engine:     p.optionalString(block.Body.Attributes["engine"]),
-		Comment:    p.optionalString(block.Body.Attributes["comment"]),
+		StructName:   block.Labels[0],
+		Name:         block.Labels[0],
+		Schema:       p.optionalRefName(block.Body.Attributes["schema"]),
+		Engine:       p.optionalString(block.Body.Attributes["engine"]),
+		Strict:       strict,
+		WithoutRowID: withoutRowID,
+		Comment:      p.optionalString(block.Body.Attributes["comment"]),
 	}
 
 	fieldsStart := len(p.db.Fields)
@@ -409,9 +420,11 @@ func (p *parser) rejectUnsupportedSchemaBody(block *hclsyntax.Block) error {
 
 func (p *parser) rejectUnsupportedTableAttrs(block *hclsyntax.Block) error {
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
-		"schema":  true,
-		"engine":  true,
-		"comment": true,
+		"schema":        true,
+		"engine":        true,
+		"strict":        true,
+		"without_rowid": true,
+		"comment":       true,
 	}, "table")
 }
 
@@ -529,6 +542,18 @@ func (p *parser) optionalBool(attr *hclsyntax.Attribute, fallback bool) bool {
 		return fallback
 	}
 	return value.True()
+}
+
+func (p *parser) optionalTableBool(block *hclsyntax.Block, name string, fallback bool) (bool, error) {
+	attr := block.Body.Attributes[name]
+	if attr == nil {
+		return fallback, nil
+	}
+	value, diags := attr.Expr.Value(nil)
+	if diags.HasErrors() || value.Type() != cty.Bool {
+		return false, p.blockError(block, "table attribute %q must be a bool", name)
+	}
+	return value.True(), nil
 }
 
 func (p *parser) optionalRawExpr(attr *hclsyntax.Attribute) string {
