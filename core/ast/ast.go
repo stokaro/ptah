@@ -106,20 +106,39 @@ func (d *DefaultValue) HasLiteral() bool {
 
 // ForeignKeyRef represents a foreign key reference with optional referential actions.
 //
-// This structure defines the target table and column for a foreign key constraint,
+// This structure defines the target table and columns for a foreign key constraint,
 // along with optional ON DELETE and ON UPDATE actions that specify what should
 // happen when the referenced row is deleted or updated.
 type ForeignKeyRef struct {
 	// Table is the name of the referenced table
 	Table string
-	// Column is the name of the referenced column
+	// Column is the name of the referenced column. It is kept for single-column
+	// foreign keys and compatibility with existing struct literals.
 	Column string
+	// Columns contains the referenced columns for composite foreign keys. When
+	// empty, Column remains the source of truth.
+	Columns []string
 	// OnDelete specifies the action when the referenced row is deleted (CASCADE, SET NULL, etc.)
 	OnDelete string
 	// OnUpdate specifies the action when the referenced row is updated (CASCADE, SET NULL, etc.)
 	OnUpdate string
 	// Name is the constraint name for the foreign key
 	Name string
+}
+
+// ReferencedColumns returns the referenced column list, falling back to Column
+// for legacy single-column foreign key references.
+func (f *ForeignKeyRef) ReferencedColumns() []string {
+	if f == nil {
+		return nil
+	}
+	if len(f.Columns) > 0 {
+		return f.Columns
+	}
+	if f.Column != "" {
+		return []string{f.Column}
+	}
+	return nil
 }
 
 // ConstraintType represents the different types of table constraints.

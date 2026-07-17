@@ -182,8 +182,50 @@ func TestReverseConstraintAdditions_RestoresPerHostBody(t *testing.T) {
 		c.Assert(a.Columns, qt.DeepEquals, []string{"tenant_id"})
 		c.Assert(a.ForeignTable, qt.Equals, "tenants")
 		c.Assert(a.ForeignColumn, qt.Equals, "id")
+		c.Assert(a.ForeignColumns, qt.DeepEquals, []string{"id"})
 		c.Assert(a.OnDelete, qt.Equals, "NO ACTION")
 	}
+}
+
+func TestReverseConstraintAdditions_RestoresCompositeForeignKeyBody(t *testing.T) {
+	c := qt.New(t)
+	dbSchema := &dbschematypes.DBSchema{
+		Constraints: []dbschematypes.DBConstraint{
+			{
+				Name:           "fk_orders_accounts",
+				TableName:      "orders",
+				Type:           "FOREIGN KEY",
+				ColumnName:     "tenant_id",
+				ColumnNames:    []string{"tenant_id", "owner_id"},
+				ForeignTable:   new("accounts"),
+				ForeignColumn:  new("tenant_id"),
+				ForeignColumns: []string{"tenant_id", "id"},
+				DeleteRule:     new("CASCADE"),
+				UpdateRule:     new("NO ACTION"),
+			},
+		},
+	}
+	upDiff := &types.SchemaDiff{
+		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+			{Name: "fk_orders_accounts", TableName: "orders", Type: "FOREIGN KEY"},
+		},
+	}
+
+	additions := reverseConstraintAdditions(upDiff, dbSchema)
+
+	c.Assert(additions, qt.DeepEquals, []types.ConstraintAdditionInfo{
+		{
+			Name:           "fk_orders_accounts",
+			TableName:      "orders",
+			Type:           "FOREIGN KEY",
+			Columns:        []string{"tenant_id", "owner_id"},
+			ForeignTable:   "accounts",
+			ForeignColumn:  "tenant_id",
+			ForeignColumns: []string{"tenant_id", "id"},
+			OnDelete:       "CASCADE",
+			OnUpdate:       "NO ACTION",
+		},
+	})
 }
 
 // TestReverseConstraintAdditions_NilDBSchema is the legacy-caller path: with no

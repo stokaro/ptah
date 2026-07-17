@@ -709,6 +709,7 @@ func FromConstraint(constraint goschema.Constraint) *ast.ConstraintNode {
 		return ast.NewForeignKeyConstraint(constraint.Name, constraint.Columns, &ast.ForeignKeyRef{
 			Table:    constraint.ForeignTable,
 			Column:   constraint.ForeignColumn,
+			Columns:  constraint.ForeignColumns,
 			OnDelete: constraint.OnDelete,
 			OnUpdate: constraint.OnUpdate,
 		})

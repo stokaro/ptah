@@ -296,12 +296,25 @@ type Constraint struct {
 	Columns []string // Column names for UNIQUE/PRIMARY KEY constraints
 
 	// FOREIGN KEY constraint specific fields
-	ForeignTable  string // Referenced table name
-	ForeignColumn string // Referenced column name
-	OnDelete      string // ON DELETE action
-	OnUpdate      string // ON UPDATE action
+	ForeignTable   string   // Referenced table name
+	ForeignColumn  string   // Referenced column name for single-column foreign keys
+	ForeignColumns []string // Referenced column names for composite foreign keys
+	OnDelete       string   // ON DELETE action
+	OnUpdate       string   // ON UPDATE action
 
 	Comment string // Constraint comment/description
+}
+
+// ForeignColumnsOrDefault returns the referenced column list for FOREIGN KEY
+// constraints, falling back to ForeignColumn for legacy single-column callers.
+func (c Constraint) ForeignColumnsOrDefault() []string {
+	if len(c.ForeignColumns) > 0 {
+		return c.ForeignColumns
+	}
+	if c.ForeignColumn != "" {
+		return []string{c.ForeignColumn}
+	}
+	return nil
 }
 
 // Extension represents a PostgreSQL extension definition parsed from Go struct annotations.

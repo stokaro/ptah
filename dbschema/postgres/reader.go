@@ -452,10 +452,10 @@ func (r *Reader) readBasicConstraintsForSchema(schemaName string) ([]types.DBCon
 				tc.table_name,
 				tc.constraint_name,
 				tc.constraint_type,
-				COALESCE(kcu.column_name, ''),
-				COALESCE(ccu.table_schema, ''),
-				COALESCE(ccu.table_name, ''),
-				COALESCE(ccu.column_name, ''),
+				COALESCE(string_agg(kcu.column_name, ',' ORDER BY kcu.ordinal_position) FILTER (WHERE kcu.column_name IS NOT NULL), ''),
+				COALESCE(max(ukcu.table_schema), ''),
+				COALESCE(max(ukcu.table_name), ''),
+				COALESCE(string_agg(ukcu.column_name, ',' ORDER BY kcu.ordinal_position) FILTER (WHERE ukcu.column_name IS NOT NULL), ''),
 				COALESCE(rc.delete_rule, ''),
 			COALESCE(rc.update_rule, ''),
 			COALESCE(cc.check_clause, '')
@@ -464,17 +464,26 @@ func (r *Reader) readBasicConstraintsForSchema(schemaName string) ([]types.DBCon
 			ON tc.constraint_name = kcu.constraint_name
 			AND tc.table_schema = kcu.table_schema
 			AND tc.table_name = kcu.table_name
-			LEFT JOIN information_schema.constraint_column_usage AS ccu
-				ON ccu.constraint_name = tc.constraint_name
-				AND ccu.constraint_schema = tc.constraint_schema
 		LEFT JOIN information_schema.referential_constraints AS rc
 			ON tc.constraint_name = rc.constraint_name
 			AND tc.table_schema = rc.constraint_schema
+		LEFT JOIN information_schema.key_column_usage AS ukcu
+			ON ukcu.constraint_schema = rc.unique_constraint_schema
+			AND ukcu.constraint_name = rc.unique_constraint_name
+			AND ukcu.ordinal_position = kcu.position_in_unique_constraint
 		LEFT JOIN information_schema.check_constraints AS cc
 			ON tc.constraint_name = cc.constraint_name
 			AND tc.table_schema = cc.constraint_schema
 		WHERE tc.table_schema = $1
 		AND tc.table_name NOT IN ('schema_migrations')
+		GROUP BY
+			tc.table_schema,
+			tc.table_name,
+			tc.constraint_name,
+			tc.constraint_type,
+			rc.delete_rule,
+			rc.update_rule,
+			cc.check_clause
 		ORDER BY tc.table_name, tc.constraint_type, tc.constraint_name`
 
 	rows, err := r.db.Query(constraintsQuery, schemaName)
@@ -486,17 +495,17 @@ func (r *Reader) readBasicConstraintsForSchema(schemaName string) ([]types.DBCon
 	var constraints []types.DBConstraint
 	for rows.Next() {
 		var constraint types.DBConstraint
-		var foreignSchema, foreignTable, foreignColumn, deleteRule, updateRule, checkClause string
+		var columnNames, foreignSchema, foreignTable, foreignColumns, deleteRule, updateRule, checkClause string
 
 		err := rows.Scan(
 			&constraint.Schema,
 			&constraint.TableName,
 			&constraint.Name,
 			&constraint.Type,
-			&constraint.ColumnName,
+			&columnNames,
 			&foreignSchema,
 			&foreignTable,
-			&foreignColumn,
+			&foreignColumns,
 			&deleteRule,
 			&updateRule,
 			&checkClause,
@@ -506,13 +515,18 @@ func (r *Reader) readBasicConstraintsForSchema(schemaName string) ([]types.DBCon
 		}
 
 		// Set optional fields
+		if columnNames != "" {
+			constraint.ColumnNames = strings.Split(columnNames, ",")
+			constraint.ColumnName = constraint.ColumnNames[0]
+		}
 		if foreignTable != "" {
 			constraint.ForeignTable = &foreignTable
 		}
 		constraint.Schema = r.outputSchema(constraint.Schema)
 		constraint.ForeignSchema = r.outputSchema(foreignSchema)
-		if foreignColumn != "" {
-			constraint.ForeignColumn = &foreignColumn
+		if foreignColumns != "" {
+			constraint.ForeignColumns = strings.Split(foreignColumns, ",")
+			constraint.ForeignColumn = &constraint.ForeignColumns[0]
 		}
 		if deleteRule != "" {
 			constraint.DeleteRule = &deleteRule

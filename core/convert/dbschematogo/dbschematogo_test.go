@@ -195,6 +195,41 @@ func TestConvertDBSchemaToGoSchema_GeneratedColumns(t *testing.T) {
 	c.Assert(result.Fields[0].GeneratedKind, qt.Equals, "STORED")
 }
 
+func TestConvertDBSchemaToGoSchema_SkipsCompositeForeignKeys(t *testing.T) {
+	c := qt.New(t)
+	dbSchema := &types.DBSchema{
+		Tables: []types.DBTable{
+			{
+				Name: "orders",
+				Columns: []types.DBColumn{
+					{Name: "tenant_id", DataType: "integer"},
+					{Name: "owner_id", DataType: "integer"},
+				},
+			},
+		},
+		Constraints: []types.DBConstraint{
+			{
+				Name:           "fk_orders_accounts",
+				TableName:      "orders",
+				Type:           "FOREIGN KEY",
+				ColumnName:     "tenant_id",
+				ColumnNames:    []string{"tenant_id", "owner_id"},
+				ForeignTable:   new("accounts"),
+				ForeignColumn:  new("tenant_id"),
+				ForeignColumns: []string{"tenant_id", "id"},
+			},
+		},
+	}
+
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+
+	c.Assert(result.Fields, qt.HasLen, 2)
+	for _, field := range result.Fields {
+		c.Assert(field.Foreign, qt.Equals, "")
+		c.Assert(field.ForeignKeyName, qt.Equals, "")
+	}
+}
+
 func TestConvertDBSchemaToGoSchema_ColumnCharsetCollate(t *testing.T) {
 	c := qt.New(t)
 	dbSchema := &types.DBSchema{

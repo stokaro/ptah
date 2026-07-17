@@ -230,6 +230,149 @@ func TestConstraints_HasChanges(t *testing.T) {
 	}
 }
 
+func TestConstraints_CompositeForeignKeyAdditionCarriesReferencedColumns(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Constraints: []goschema.Constraint{
+			{
+				StructName:     "Order",
+				Name:           "fk_orders_accounts",
+				Type:           "FOREIGN KEY",
+				Table:          "orders",
+				Columns:        []string{"tenant_id", "owner_id"},
+				ForeignTable:   "accounts",
+				ForeignColumn:  "tenant_id",
+				ForeignColumns: []string{"tenant_id", "id"},
+				OnDelete:       "CASCADE",
+			},
+		},
+	}
+
+	diff := &difftypes.SchemaDiff{}
+	compare.Constraints(generated, &types.DBSchema{}, diff, nil)
+
+	c.Assert(diff.ConstraintsAdded, qt.DeepEquals, []string{"fk_orders_accounts"})
+	c.Assert(diff.ConstraintsAddedWithTables, qt.DeepEquals, []difftypes.ConstraintAdditionInfo{
+		{
+			Name:           "fk_orders_accounts",
+			TableName:      "orders",
+			Type:           "FOREIGN KEY",
+			Columns:        []string{"tenant_id", "owner_id"},
+			ForeignTable:   "accounts",
+			ForeignColumn:  "tenant_id",
+			ForeignColumns: []string{"tenant_id", "id"},
+			OnDelete:       "CASCADE",
+		},
+	})
+}
+
+func TestConstraints_CompositeForeignKeyReferencedColumnDrift(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Constraints: []goschema.Constraint{
+			{
+				StructName:     "Order",
+				Name:           "fk_orders_accounts",
+				Type:           "FOREIGN KEY",
+				Table:          "orders",
+				Columns:        []string{"tenant_id", "owner_id"},
+				ForeignTable:   "accounts",
+				ForeignColumn:  "tenant_id",
+				ForeignColumns: []string{"tenant_id", "id"},
+			},
+		},
+	}
+	database := &types.DBSchema{
+		Constraints: []types.DBConstraint{
+			{
+				Name:           "fk_orders_accounts",
+				TableName:      "orders",
+				Type:           "FOREIGN KEY",
+				ColumnName:     "tenant_id",
+				ColumnNames:    []string{"tenant_id", "owner_id"},
+				ForeignTable:   new("accounts"),
+				ForeignColumn:  new("tenant_id"),
+				ForeignColumns: []string{"tenant_id", "account_id"},
+				DeleteRule:     new("NO ACTION"),
+				UpdateRule:     new("NO ACTION"),
+			},
+		},
+	}
+
+	diff := &difftypes.SchemaDiff{}
+	compare.Constraints(generated, database, diff, nil)
+
+	c.Assert(diff.ConstraintsRemovedWithTables, qt.DeepEquals, []difftypes.ConstraintRemovalInfo{
+		{Name: "fk_orders_accounts", TableName: "orders", Type: "FOREIGN KEY"},
+	})
+	c.Assert(diff.ConstraintsAddedWithTables, qt.DeepEquals, []difftypes.ConstraintAdditionInfo{
+		{
+			Name:           "fk_orders_accounts",
+			TableName:      "orders",
+			Type:           "FOREIGN KEY",
+			Columns:        []string{"tenant_id", "owner_id"},
+			ForeignTable:   "accounts",
+			ForeignColumn:  "tenant_id",
+			ForeignColumns: []string{"tenant_id", "id"},
+		},
+	})
+}
+
+func TestConstraints_CompositeForeignKeyLocalColumnDrift(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Constraints: []goschema.Constraint{
+			{
+				StructName:     "Order",
+				Name:           "fk_orders_accounts",
+				Type:           "FOREIGN KEY",
+				Table:          "orders",
+				Columns:        []string{"tenant_id", "owner_id"},
+				ForeignTable:   "accounts",
+				ForeignColumn:  "tenant_id",
+				ForeignColumns: []string{"tenant_id", "id"},
+			},
+		},
+	}
+	database := &types.DBSchema{
+		Constraints: []types.DBConstraint{
+			{
+				Name:           "fk_orders_accounts",
+				TableName:      "orders",
+				Type:           "FOREIGN KEY",
+				ColumnName:     "tenant_id",
+				ColumnNames:    []string{"tenant_id", "account_owner_id"},
+				ForeignTable:   new("accounts"),
+				ForeignColumn:  new("tenant_id"),
+				ForeignColumns: []string{"tenant_id", "id"},
+				DeleteRule:     new("NO ACTION"),
+				UpdateRule:     new("NO ACTION"),
+			},
+		},
+	}
+
+	diff := &difftypes.SchemaDiff{}
+	compare.Constraints(generated, database, diff, nil)
+
+	c.Assert(diff.ConstraintsRemovedWithTables, qt.DeepEquals, []difftypes.ConstraintRemovalInfo{
+		{Name: "fk_orders_accounts", TableName: "orders", Type: "FOREIGN KEY"},
+	})
+	c.Assert(diff.ConstraintsAddedWithTables, qt.DeepEquals, []difftypes.ConstraintAdditionInfo{
+		{
+			Name:           "fk_orders_accounts",
+			TableName:      "orders",
+			Type:           "FOREIGN KEY",
+			Columns:        []string{"tenant_id", "owner_id"},
+			ForeignTable:   "accounts",
+			ForeignColumn:  "tenant_id",
+			ForeignColumns: []string{"tenant_id", "id"},
+		},
+	})
+}
+
 func TestConstraints_EdgeCases(t *testing.T) {
 	c := qt.New(t)
 

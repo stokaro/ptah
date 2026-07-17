@@ -160,8 +160,9 @@ func sortTablesByDependencies(r *Database) {
 //  1. Initializes empty dependency lists for all tables
 //  2. Scans all fields for foreign key references (field.Foreign attribute)
 //  3. Scans embedded fields with relation mode for references (embedded.Ref attribute)
-//  4. Extracts referenced table names from foreign key specifications
-//  5. Maps each table to its list of dependencies
+//  4. Scans table-level FOREIGN KEY constraints
+//  5. Extracts referenced table names from foreign key specifications
+//  6. Maps each table to its list of dependencies
 //
 // Foreign key format examples:
 //   - "users(id)" -> depends on "users" table
@@ -173,6 +174,7 @@ func buildDependencyGraph(r *Database) {
 	initializeDependencyMaps(r)
 	analyzeFieldForeignKeys(r)
 	analyzeEmbeddedFieldRelations(r)
+	analyzeConstraintForeignKeys(r)
 	buildFunctionDependencies(r)
 }
 
@@ -341,6 +343,32 @@ func analyzeEmbeddedFieldRelations(r *Database) {
 			OnUpdate:       embedded.OnUpdate,
 		})
 	}
+}
+
+func analyzeConstraintForeignKeys(r *Database) {
+	for _, constraint := range r.Constraints {
+		if constraint.ForeignTable == "" || strings.ToUpper(constraint.Type) != "FOREIGN KEY" {
+			continue
+		}
+		table := resolveTableReference(r.Tables, constraint.StructName, constraint.Table)
+		if table == nil {
+			continue
+		}
+		processForeignKeyDependency(r, *table, constraint.ForeignTable, SelfReferencingFK{
+			FieldName:      strings.Join(constraint.Columns, ","),
+			Foreign:        foreignKeyReferenceString(constraint.ForeignTable, constraint.ForeignColumnsOrDefault()),
+			ForeignKeyName: constraint.Name,
+			OnDelete:       constraint.OnDelete,
+			OnUpdate:       constraint.OnUpdate,
+		})
+	}
+}
+
+func foreignKeyReferenceString(table string, columns []string) string {
+	if len(columns) == 0 {
+		return table
+	}
+	return table + "(" + strings.Join(columns, ",") + ")"
 }
 
 // findTableByStructName finds a table by its struct name
@@ -1138,7 +1166,7 @@ func validateDuplicateConstraints(constraints []Constraint) error {
 			constraint.CheckExpression,
 			strings.Join(constraint.Columns, ","),
 			constraint.ForeignTable,
-			constraint.ForeignColumn,
+			strings.Join(constraint.ForeignColumnsOrDefault(), ","),
 			constraint.OnDelete,
 			constraint.OnUpdate,
 		}, "\x00")
