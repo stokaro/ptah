@@ -242,8 +242,12 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) goschema.Table {
 	if engine, exists := table.Options["ENGINE"]; exists {
 		tableSchema.Engine = engine
 	}
-	_, tableSchema.Strict = table.Options["STRICT"]
-	_, tableSchema.WithoutRowID = table.Options["WITHOUT_ROWID"]
+	if strict, exists := table.Options["STRICT"]; exists {
+		tableSchema.Strict, _ = strconv.ParseBool(strict)
+	}
+	if withoutRowID, exists := table.Options["WITHOUT_ROWID"]; exists {
+		tableSchema.WithoutRowID, _ = strconv.ParseBool(withoutRowID)
+	}
 
 	// Extract composite primary key from constraints
 	for _, constraint := range table.Constraints {

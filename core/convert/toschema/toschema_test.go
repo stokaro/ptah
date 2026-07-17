@@ -291,6 +291,18 @@ func TestToTable_BasicTable(t *testing.T) {
 					table.WithoutRowID
 			},
 		},
+		{
+			name: "SQLite false table options",
+			table: ast.NewCreateTable("events").
+				SetOption("STRICT", "false").
+				SetOption("WITHOUT_ROWID", "false"),
+			sourcePlatform: "sqlite",
+			expected: func(table goschema.Table) bool {
+				return table.Name == "events" &&
+					!table.Strict &&
+					!table.WithoutRowID
+			},
+		},
 	}
 
 	for _, test := range tests {

@@ -88,13 +88,22 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 		return p.blockError(block, "table block requires exactly one label")
 	}
 
+	strict, err := p.optionalTableBool(block, "strict", false)
+	if err != nil {
+		return err
+	}
+	withoutRowID, err := p.optionalTableBool(block, "without_rowid", false)
+	if err != nil {
+		return err
+	}
+
 	table := goschema.Table{
 		StructName:   block.Labels[0],
 		Name:         block.Labels[0],
 		Schema:       p.optionalRefName(block.Body.Attributes["schema"]),
 		Engine:       p.optionalString(block.Body.Attributes["engine"]),
-		Strict:       p.optionalBool(block.Body.Attributes["strict"], false),
-		WithoutRowID: p.optionalBool(block.Body.Attributes["without_rowid"], false),
+		Strict:       strict,
+		WithoutRowID: withoutRowID,
 		Comment:      p.optionalString(block.Body.Attributes["comment"]),
 	}
 
@@ -533,6 +542,18 @@ func (p *parser) optionalBool(attr *hclsyntax.Attribute, fallback bool) bool {
 		return fallback
 	}
 	return value.True()
+}
+
+func (p *parser) optionalTableBool(block *hclsyntax.Block, name string, fallback bool) (bool, error) {
+	attr := block.Body.Attributes[name]
+	if attr == nil {
+		return fallback, nil
+	}
+	value, diags := attr.Expr.Value(nil)
+	if diags.HasErrors() || value.Type() != cty.Bool {
+		return false, p.blockError(block, "table attribute %q must be a bool", name)
+	}
+	return value.True(), nil
 }
 
 func (p *parser) optionalRawExpr(attr *hclsyntax.Attribute) string {

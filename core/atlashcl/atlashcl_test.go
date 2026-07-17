@@ -118,6 +118,20 @@ table "events" {
 	c.Assert(db.Tables[0].WithoutRowID, qt.IsTrue)
 }
 
+func TestParseSQLiteTableOptionsRejectNonBool(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := atlashcl.Parse([]byte(`
+table "events" {
+  strict = "true"
+  column "id" {
+    type = integer
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.ErrorMatches, `.*table attribute "strict" must be a bool.*`)
+}
+
 func TestParseSchemaComment(t *testing.T) {
 	c := qt.New(t)
 
