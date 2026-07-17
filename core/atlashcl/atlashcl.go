@@ -104,14 +104,12 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 			}
 			p.db.Fields = append(p.db.Fields, field)
 		case "primary_key":
-			if err := p.rejectUnsupportedPrimaryKeyAttrs(nested); err != nil {
-				return err
-			}
-			columns, err := p.parseColumnsAttr(nested, "columns")
+			columns, parts, err := p.parsePrimaryKey(nested)
 			if err != nil {
 				return err
 			}
 			table.PrimaryKey = columns
+			table.PrimaryKeyParts = parts
 		case "index":
 			index, err := p.parseIndex(table.StructName, table.Name, nested)
 			if err != nil {
@@ -220,6 +218,65 @@ func (p *parser) parseIndexParts(block *hclsyntax.Block) ([]string, error) {
 		columns = append(columns, p.columnNameFromExpr(attr))
 	}
 	return columns, nil
+}
+
+func (p *parser) parsePrimaryKey(block *hclsyntax.Block) ([]string, []goschema.PrimaryKeyPart, error) {
+	if err := p.rejectUnsupportedPrimaryKeyAttrs(block); err != nil {
+		return nil, nil, err
+	}
+	if block.Body.Attributes["columns"] != nil {
+		if len(block.Body.Blocks) > 0 {
+			return nil, nil, p.blockError(block.Body.Blocks[0], "primary_key cannot mix columns attribute with on blocks")
+		}
+		columns, err := p.parseColumnsAttr(block, "columns")
+		if err != nil {
+			return nil, nil, err
+		}
+		return columns, primaryKeyParts(columns), nil
+	}
+
+	parts, err := p.parsePrimaryKeyParts(block)
+	if err != nil {
+		return nil, nil, err
+	}
+	columns := make([]string, 0, len(parts))
+	for _, part := range parts {
+		columns = append(columns, part.Name)
+	}
+	return columns, parts, nil
+}
+
+func (p *parser) parsePrimaryKeyParts(block *hclsyntax.Block) ([]goschema.PrimaryKeyPart, error) {
+	if len(block.Body.Blocks) == 0 {
+		return nil, p.blockError(block, "primary_key requires columns attribute or on blocks")
+	}
+	parts := make([]goschema.PrimaryKeyPart, 0, len(block.Body.Blocks))
+	for _, nested := range block.Body.Blocks {
+		if nested.Type != "on" {
+			return nil, p.blockError(nested, "unsupported primary_key block %q", nested.Type)
+		}
+		if err := p.rejectUnsupportedPrimaryKeyOnAttrs(nested); err != nil {
+			return nil, err
+		}
+		attr := nested.Body.Attributes["column"]
+		if attr == nil {
+			return nil, p.blockError(nested, "primary_key on block requires column")
+		}
+		parts = append(parts, goschema.PrimaryKeyPart{
+			Name:   p.columnNameFromExpr(attr),
+			Prefix: p.optionalRawExpr(nested.Body.Attributes["prefix"]),
+			Desc:   p.optionalBool(nested.Body.Attributes["desc"], false),
+		})
+	}
+	return parts, nil
+}
+
+func primaryKeyParts(columns []string) []goschema.PrimaryKeyPart {
+	parts := make([]goschema.PrimaryKeyPart, 0, len(columns))
+	for _, column := range columns {
+		parts = append(parts, goschema.PrimaryKeyPart{Name: column})
+	}
+	return parts
 }
 
 type foreignKeySpec struct {
@@ -360,6 +417,14 @@ func (p *parser) rejectUnsupportedPrimaryKeyAttrs(block *hclsyntax.Block) error 
 	}, "primary_key")
 }
 
+func (p *parser) rejectUnsupportedPrimaryKeyOnAttrs(block *hclsyntax.Block) error {
+	return p.rejectUnsupportedAttrs(block, map[string]bool{
+		"column": true,
+		"prefix": true,
+		"desc":   true,
+	}, "primary_key on")
+}
+
 func (p *parser) rejectUnsupportedColumnAttrs(block *hclsyntax.Block) error {
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"type":           true,
@@ -460,6 +525,13 @@ func (p *parser) optionalBool(attr *hclsyntax.Attribute, fallback bool) bool {
 		return fallback
 	}
 	return value.True()
+}
+
+func (p *parser) optionalRawExpr(attr *hclsyntax.Attribute) string {
+	if attr == nil {
+		return ""
+	}
+	return p.rawExpr(attr)
 }
 
 func (p *parser) exprString(attr *hclsyntax.Attribute) string {

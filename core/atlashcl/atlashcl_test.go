@@ -53,6 +53,46 @@ table "users" {
 	c.Assert(sql, qt.Contains, `CREATE UNIQUE INDEX`)
 }
 
+func TestParsePrimaryKeyParts(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+schema "main" {}
+
+table "tokens" {
+  schema = schema.main
+  column "id" {
+    type = tinytext
+  }
+  column "tenant_id" {
+    type = tinytext
+  }
+  primary_key {
+    on {
+      column = column.id
+      prefix = 7
+    }
+    on {
+      desc   = true
+      column = column.tenant_id
+      prefix = 1
+    }
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Tables, qt.HasLen, 1)
+	c.Assert(db.Tables[0].PrimaryKey, qt.DeepEquals, []string{"id", "tenant_id"})
+	c.Assert(db.Tables[0].PrimaryKeyParts, qt.DeepEquals, []goschema.PrimaryKeyPart{
+		{Name: "id", Prefix: "7"},
+		{Name: "tenant_id", Prefix: "1", Desc: true},
+	})
+
+	sql := strings.Join(renderer.GetOrderedCreateStatements(db, "mysql"), "\n")
+	c.Assert(sql, qt.Contains, "PRIMARY KEY (id (7), tenant_id (1) DESC)")
+	c.Assert(sql, qt.Not(qt.Contains), "id tinytext PRIMARY KEY")
+}
+
 func TestParseSchemaComment(t *testing.T) {
 	c := qt.New(t)
 
