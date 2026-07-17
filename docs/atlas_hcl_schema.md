@@ -90,6 +90,17 @@ table "posts" {
     type = int
     null = true
   }
+  column "slug" {
+    type = text
+    as = "lower(name)"
+  }
+  column "name_key" {
+    type = text
+    as {
+      expr = "lower(name)"
+      type = STORED
+    }
+  }
 
   foreign_key "owner_id" {
     columns = [column.owner_id]
@@ -104,8 +115,6 @@ table "posts" {
 The Atlas HCL frontend is intentionally conservative. It does not yet model
 Atlas features that Ptah cannot represent without losing semantics, including:
 
-- schema-level charset and collation attributes
-- generated columns
 - composite foreign keys
 - index prefix parts
 - Atlas project `env` execution semantics

@@ -126,26 +126,30 @@ type EmbeddedField struct {
 //	//migrator:schema:field name="id" type="SERIAL" platform.mysql.type="INT AUTO_INCREMENT"
 //	ID int64
 type Field struct {
-	StructName     string                       // Name of the Go struct this field belongs to
-	FieldName      string                       // Name of the Go struct field
-	Name           string                       // Database column name
-	Type           string                       // Database column type (e.g., "VARCHAR(255)", "INTEGER")
-	Nullable       bool                         // Whether the column allows NULL values
-	Primary        bool                         // Whether this is a primary key column
-	AutoInc        bool                         // Whether this column auto-increments
-	Unique         bool                         // Whether this column has a unique constraint
-	UniqueExpr     string                       // Custom unique constraint expression
-	Default        string                       // Default value for the column
-	DefaultExpr    string                       // Default expression (e.g., "NOW()", "UUID()", "CURRENT_TIMESTAMP", "1", "true")
-	Foreign        string                       // Foreign key reference (e.g., "users(id)")
-	ForeignKeyName string                       // Custom foreign key constraint name
-	OnDelete       string                       // Foreign key ON DELETE action (CASCADE, SET NULL, RESTRICT, NO ACTION)
-	OnUpdate       string                       // Foreign key ON UPDATE action (CASCADE, SET NULL, RESTRICT, NO ACTION)
-	Enum           []string                     // Enum values for ENUM type fields
-	Check          string                       // Check constraint expression
-	CheckName      string                       // Optional constraint name for the column-level CHECK; defaults to "<table>_<column>_check"
-	Comment        string                       // Column comment
-	Overrides      map[string]map[string]string // Platform-specific overrides (e.g., platform.mysql.type)
+	StructName     string   // Name of the Go struct this field belongs to
+	FieldName      string   // Name of the Go struct field
+	Name           string   // Database column name
+	Type           string   // Database column type (e.g., "VARCHAR(255)", "INTEGER")
+	Nullable       bool     // Whether the column allows NULL values
+	Primary        bool     // Whether this is a primary key column
+	AutoInc        bool     // Whether this column auto-increments
+	Unique         bool     // Whether this column has a unique constraint
+	UniqueExpr     string   // Custom unique constraint expression
+	Default        string   // Default value for the column
+	DefaultExpr    string   // Default expression (e.g., "NOW()", "UUID()", "CURRENT_TIMESTAMP", "1", "true")
+	Foreign        string   // Foreign key reference (e.g., "users(id)")
+	ForeignKeyName string   // Custom foreign key constraint name
+	OnDelete       string   // Foreign key ON DELETE action (CASCADE, SET NULL, RESTRICT, NO ACTION)
+	OnUpdate       string   // Foreign key ON UPDATE action (CASCADE, SET NULL, RESTRICT, NO ACTION)
+	Enum           []string // Enum values for ENUM type fields
+	Check          string   // Check constraint expression
+	CheckName      string   // Optional constraint name for the column-level CHECK; defaults to "<table>_<column>_check"
+	// GeneratedExpression stores the raw SQL expression for generated columns.
+	GeneratedExpression string
+	// GeneratedKind stores the generated column kind, such as VIRTUAL or STORED.
+	GeneratedKind string
+	Comment       string                       // Column comment
+	Overrides     map[string]map[string]string // Platform-specific overrides (e.g., platform.mysql.type)
 }
 
 // IndexPart represents one column or expression inside an index definition.

@@ -67,3 +67,18 @@ CREATE TABLE files (
 		})
 	}
 }
+
+func TestPostgreSQLRenderer_GeneratedColumn(t *testing.T) {
+	c := qt.New(t)
+	table := ast.NewCreateTable("users").
+		AddColumn(ast.NewColumn("id", "INTEGER").SetPrimary()).
+		AddColumn(ast.NewColumn("slug", "TEXT").
+			SetNotNull().
+			SetGenerated("lower(name)", "STORED"))
+
+	renderer := postgres.New()
+	result, err := renderer.Render(table)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result, qt.Contains, "slug TEXT NOT NULL GENERATED ALWAYS AS (lower(name)) STORED")
+}

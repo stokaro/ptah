@@ -169,6 +169,32 @@ func TestConvertDBSchemaToGoSchema_ExtensionsWithOtherElements(t *testing.T) {
 	c.Assert(result.Enums[0].Name, qt.Equals, "status_type")
 }
 
+func TestConvertDBSchemaToGoSchema_GeneratedColumns(t *testing.T) {
+	c := qt.New(t)
+	expression := "lower(name)"
+	dbSchema := &types.DBSchema{
+		Tables: []types.DBTable{
+			{
+				Name: "users",
+				Columns: []types.DBColumn{
+					{
+						Name:                "slug",
+						DataType:            "text",
+						GeneratedExpression: &expression,
+						GeneratedKind:       "STORED",
+					},
+				},
+			},
+		},
+	}
+
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+
+	c.Assert(result.Fields, qt.HasLen, 1)
+	c.Assert(result.Fields[0].GeneratedExpression, qt.Equals, "lower(name)")
+	c.Assert(result.Fields[0].GeneratedKind, qt.Equals, "STORED")
+}
+
 func TestConvertDBSchemaToGoSchema_ExtensionDefaultValues(t *testing.T) {
 	c := qt.New(t)
 

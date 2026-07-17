@@ -329,18 +329,105 @@ table "users" {
 	c.Assert(db.Indexes[0].Fields, qt.DeepEquals, []string{"email,normalized"})
 }
 
-func TestParseRejectsUnsupportedSemanticColumnAttributes(t *testing.T) {
+func TestParseGeneratedColumns(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlashcl.Parse([]byte(`
+	db, err := atlashcl.Parse([]byte(`
 table "users" {
   column "slug" {
     type = text
     as = "lower(name)"
   }
+  column "name_key" {
+    type = text
+    as {
+      expr = "lower(name)"
+      type = STORED
+    }
+  }
 }
 `), "schema.hcl")
-	c.Assert(err, qt.ErrorMatches, `.*unsupported column attribute "as".*`)
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Fields, qt.HasLen, 2)
+	c.Assert(db.Fields[0].GeneratedExpression, qt.Equals, "lower(name)")
+	c.Assert(db.Fields[0].GeneratedKind, qt.Equals, "VIRTUAL")
+	c.Assert(db.Fields[1].GeneratedExpression, qt.Equals, "lower(name)")
+	c.Assert(db.Fields[1].GeneratedKind, qt.Equals, "STORED")
+}
+
+func TestParseRejectsInvalidGeneratedColumnForms(t *testing.T) {
+	tests := []struct {
+		name  string
+		hcl   string
+		match string
+	}{
+		{
+			name: "as attribute and block",
+			hcl: `
+table "users" {
+  column "slug" {
+    type = text
+    as = "lower(name)"
+    as {
+      expr = "lower(name)"
+    }
+  }
+}
+`,
+			match: `.*column cannot mix as attribute with as block.*`,
+		},
+		{
+			name: "as block without expr",
+			hcl: `
+table "users" {
+  column "slug" {
+    type = text
+    as {
+      type = STORED
+    }
+  }
+}
+`,
+			match: `.*column as block requires expr.*`,
+		},
+		{
+			name: "unsupported as block attribute",
+			hcl: `
+table "users" {
+  column "slug" {
+    type = text
+    as {
+      expr = "lower(name)"
+      unknown = true
+    }
+  }
+}
+`,
+			match: `.*unsupported column as attribute "unknown".*`,
+		},
+		{
+			name: "unsupported column block",
+			hcl: `
+table "users" {
+  column "slug" {
+    type = text
+    generated {
+      expr = "lower(name)"
+    }
+  }
+}
+`,
+			match: `.*unsupported column block "generated".*`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			_, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
+			c.Assert(err, qt.ErrorMatches, test.match)
+		})
+	}
 }
 
 func TestParseRejectsUnsupportedSchemaAttributes(t *testing.T) {

@@ -529,6 +529,9 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	if column.AutoInc {
 		parts = append(parts, r.renderAutoIncrement())
 	}
+	if column.GeneratedExpression != "" {
+		parts = append(parts, renderGeneratedColumn(column))
+	}
 
 	// Default value
 	switch {
@@ -554,6 +557,14 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	}
 
 	return strings.Join(parts, " "), nil
+}
+
+func renderGeneratedColumn(column *ast.ColumnNode) string {
+	sql := fmt.Sprintf("AS (%s)", column.GeneratedExpression)
+	if column.GeneratedKind != "" {
+		sql += " " + column.GeneratedKind
+	}
+	return sql
 }
 
 // renderAutoIncrement renders auto increment (dialect-specific, override in subclasses)
@@ -677,6 +688,9 @@ func (r *Renderer) renderColumnWithEnums(column *ast.ColumnNode, enumValues []st
 		} else if column.Default.Value != "" {
 			parts = append(parts, fmt.Sprintf("DEFAULT '%s'", column.Default.Value))
 		}
+	}
+	if column.GeneratedExpression != "" {
+		parts = append(parts, renderGeneratedColumn(column))
 	}
 
 	// Check constraints

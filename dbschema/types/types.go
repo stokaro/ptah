@@ -51,13 +51,10 @@ func QualifyTableName(schema, table string) string {
 
 // DBColumn represents a database column.
 //
-// GeneratedKind / GeneratedExpression are populated only by the ClickHouse
-// reader and capture columns declared with non-DEFAULT default kinds
-// (MATERIALIZED, ALIAS, EPHEMERAL). The planner currently ignores these
-// fields — round-trip support for generated columns is not yet wired through
-// the goschema-side annotation surface — but capturing the data here means
-// the schema read is lossless. See the renderer/planner comments for the
-// follow-up boundary.
+// GeneratedKind / GeneratedExpression are currently populated by the ClickHouse
+// reader for columns declared with non-DEFAULT default kinds (MATERIALIZED,
+// ALIAS, EPHEMERAL). Schema comparison can match these fields when the
+// goschema-side model also carries generated column metadata.
 type DBColumn struct {
 	Name               string  `json:"name"`
 	DataType           string  `json:"data_type"`

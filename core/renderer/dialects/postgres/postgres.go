@@ -628,6 +628,12 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	case column.Default.Expression != "":
 		parts = append(parts, fmt.Sprintf("DEFAULT %s", column.Default.Expression))
 	}
+	if column.GeneratedExpression != "" {
+		if column.GeneratedKind != "" && !strings.EqualFold(column.GeneratedKind, "STORED") {
+			return "", fmt.Errorf("postgres does not support %s generated columns", column.GeneratedKind)
+		}
+		parts = append(parts, fmt.Sprintf("GENERATED ALWAYS AS (%s) STORED", column.GeneratedExpression))
+	}
 
 	// Check constraint. Emit `CONSTRAINT <name> CHECK (...)` only when an
 	// explicit name was provided via `check_name=` on the field annotation —
