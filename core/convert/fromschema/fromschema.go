@@ -346,6 +346,9 @@ func FromField(field goschema.Field, enums []goschema.Enum, targetPlatform strin
 	if field.GeneratedExpression != "" {
 		column.SetGenerated(field.GeneratedExpression, field.GeneratedKind)
 	}
+	if field.UpdateExpression != "" {
+		column.SetUpdateExpression(field.UpdateExpression)
+	}
 	if field.Charset != "" {
 		column.SetCharset(field.Charset)
 	}
@@ -428,6 +431,9 @@ func FromFieldWithoutForeignKeys(field goschema.Field, enums []goschema.Enum, ta
 	}
 	if field.GeneratedExpression != "" {
 		column.SetGenerated(field.GeneratedExpression, field.GeneratedKind)
+	}
+	if field.UpdateExpression != "" {
+		column.SetUpdateExpression(field.UpdateExpression)
 	}
 	if field.Charset != "" {
 		column.SetCharset(field.Charset)

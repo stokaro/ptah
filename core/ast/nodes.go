@@ -224,6 +224,8 @@ type ColumnNode struct {
 	GeneratedExpression string
 	// GeneratedKind stores the generated column kind, such as VIRTUAL or STORED.
 	GeneratedKind string
+	// UpdateExpression stores MySQL/MariaDB ON UPDATE expressions such as CURRENT_TIMESTAMP(6).
+	UpdateExpression string
 	// Charset is an optional column character set for MySQL-compatible dialects.
 	Charset string
 	// Collate is an optional column collation for MySQL-compatible dialects.
@@ -361,6 +363,12 @@ func (n *ColumnNode) SetCheckName(name string) *ColumnNode {
 func (n *ColumnNode) SetGenerated(expression, kind string) *ColumnNode {
 	n.GeneratedExpression = expression
 	n.GeneratedKind = kind
+	return n
+}
+
+// SetUpdateExpression sets the MySQL/MariaDB ON UPDATE expression for the column.
+func (n *ColumnNode) SetUpdateExpression(expression string) *ColumnNode {
+	n.UpdateExpression = expression
 	return n
 }
 

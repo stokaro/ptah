@@ -3212,13 +3212,8 @@ func TestParser_MariaDBWithCheckConstraint(t *testing.T) {
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 
-	// Debug: Print actual columns found
-	t.Logf("Found %d columns:", len(createTable.Columns))
-	for i, col := range createTable.Columns {
-		t.Logf("  %d: %s %s", i, col.Name, col.Type)
-	}
-
 	c.Assert(createTable.Columns, qt.HasLen, 1)
+	c.Assert(createTable.Columns[0].Check, qt.Equals, "`balance` >= 0")
 }
 
 func TestParser_ColumnLevelNamedCheckConstraint(t *testing.T) {
@@ -3279,13 +3274,24 @@ func TestParser_MariaDBOnUpdateTimestamp(t *testing.T) {
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 
-	// Debug: Print actual columns found
-	t.Logf("Found %d columns:", len(createTable.Columns))
-	for i, col := range createTable.Columns {
-		t.Logf("  %d: %s %s", i, col.Name, col.Type)
-	}
-
 	c.Assert(createTable.Columns, qt.HasLen, 1)
+	c.Assert(createTable.Columns[0].UpdateExpression, qt.Equals, "CURRENT_TIMESTAMP")
+	c.Assert(createTable.Columns[0].Comment, qt.Equals, "")
+}
+
+func TestParser_MariaDBOnUpdateBeforeComment(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE TABLE test (
+		` + "`updated_at`" + ` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated timestamp'
+	);`
+	statements, err := parser.NewParser(sql).Parse()
+	c.Assert(err, qt.IsNil)
+
+	createTable := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(createTable.Columns, qt.HasLen, 1)
+	c.Assert(createTable.Columns[0].UpdateExpression, qt.Equals, "CURRENT_TIMESTAMP")
+	c.Assert(createTable.Columns[0].Comment, qt.Equals, "COMMENT 'Updated timestamp'")
 }
 
 func TestParser_MariaDBFirst5Columns(t *testing.T) {
