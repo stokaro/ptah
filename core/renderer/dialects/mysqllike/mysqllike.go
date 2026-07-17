@@ -552,6 +552,9 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	case column.Default.Expression != "":
 		parts = append(parts, fmt.Sprintf("DEFAULT %s", column.Default.Expression))
 	}
+	if column.UpdateExpression != "" {
+		parts = append(parts, "ON UPDATE", column.UpdateExpression)
+	}
 
 	// Check constraint. When `check_name=` is provided, emit the explicit
 	// `CONSTRAINT <name> CHECK (...)` form so the constraint round-trips
@@ -756,6 +759,9 @@ func (r *Renderer) renderColumnWithEnums(column *ast.ColumnNode, enumValues []st
 		} else if column.Default.HasLiteral() {
 			parts = append(parts, fmt.Sprintf("DEFAULT '%s'", column.Default.Value))
 		}
+	}
+	if column.UpdateExpression != "" {
+		parts = append(parts, "ON UPDATE", column.UpdateExpression)
 	}
 	if column.GeneratedExpression != "" {
 		parts = append(parts, renderGeneratedColumn(column))

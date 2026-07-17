@@ -1669,30 +1669,50 @@ func (p *Parser) handleOn(column *ast.ColumnNode) {
 	p.advance()
 	p.skipWhitespace()
 
-	// Parse the update expression (usually CURRENT_TIMESTAMP)
-
-	if p.current.Type != lexer.TokenIdentifier {
+	updateExpr := p.parseOnUpdateExpression()
+	if updateExpr == "" {
 		return
 	}
+	column.SetUpdateExpression(updateExpr)
+}
 
-	updateExpr := p.current.Value
-	p.advance()
-
-	// Handle function calls like CURRENT_TIMESTAMP()
-
-	if !p.current.MatchOperatorValue("(") {
-		return
+func (p *Parser) parseOnUpdateExpression() string {
+	var expr strings.Builder
+	depth := 0
+	for !p.isAtEnd() && p.current.Type != lexer.TokenSemicolon {
+		if depth == 0 && expr.Len() > 0 && p.current.Type == lexer.TokenIdentifier &&
+			isOnUpdateExpressionTerminator(p.current.Value) {
+			return strings.TrimSpace(expr.String())
+		}
+		if p.current.Type == lexer.TokenOperator {
+			switch p.current.Value {
+			case "(":
+				depth++
+			case ")":
+				if depth == 0 {
+					return strings.TrimSpace(expr.String())
+				}
+				depth--
+			case ",":
+				if depth == 0 {
+					return strings.TrimSpace(expr.String())
+				}
+			}
+		}
+		expr.WriteString(p.current.Value)
+		p.advance()
 	}
-	p.advance()
-	if !p.current.MatchOperatorValue(")") {
-		return
+	return strings.TrimSpace(expr.String())
+}
+
+func isOnUpdateExpressionTerminator(value string) bool {
+	switch strings.ToUpper(value) {
+	case "NOT", "NULL", "PRIMARY", "UNIQUE", "AUTO_INCREMENT", "AUTOINCREMENT", "DEFAULT", "CHECK",
+		"CONSTRAINT", "REFERENCES", "AS", "GENERATED", "CHARACTER", "CHARSET", "COLLATE", "COMMENT", "ON":
+		return true
+	default:
+		return false
 	}
-
-	updateExpr += "()"
-	p.advance()
-
-	// Store as comment for now
-	column.SetComment("ON UPDATE " + updateExpr)
 }
 
 func (p *Parser) parseColumnConstraintsAndAttributes(table *ast.CreateTableNode, column *ast.ColumnNode) error {

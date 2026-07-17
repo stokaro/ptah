@@ -185,6 +185,7 @@ func (p *parser) parseColumn(structName string, block *hclsyntax.Block) (goschem
 		Unique:              p.optionalBool(block.Body.Attributes["unique"], false),
 		GeneratedExpression: generated.expression,
 		GeneratedKind:       generated.kind,
+		UpdateExpression:    p.optionalSQLExpression(block.Body.Attributes["on_update"]),
 		Charset:             p.optionalString(block.Body.Attributes["charset"]),
 		Collate:             p.optionalString(block.Body.Attributes["collate"]),
 		Comment:             p.optionalString(block.Body.Attributes["comment"]),
@@ -536,6 +537,7 @@ func (p *parser) rejectUnsupportedColumnAttrs(block *hclsyntax.Block) error {
 		"auto_increment": true,
 		"unique":         true,
 		"default":        true,
+		"on_update":      true,
 		"as":             true,
 		"charset":        true,
 		"collate":        true,
@@ -610,13 +612,7 @@ func markPrimaryFields(fields []goschema.Field, columns []string) {
 }
 
 func (p *parser) setDefault(field *goschema.Field, attr *hclsyntax.Attribute) {
-	raw := p.rawExpr(attr)
-	if value, ok := strings.CutPrefix(raw, "sql("); ok && strings.HasSuffix(value, ")") {
-		value = strings.TrimSuffix(value, ")")
-		if unquoted, err := strconv.Unquote(value); err == nil {
-			field.DefaultExpr = unquoted
-			return
-		}
+	if value, ok := p.sqlExpression(attr); ok {
 		field.DefaultExpr = value
 		return
 	}
@@ -678,6 +674,28 @@ func (p *parser) optionalRawExpr(attr *hclsyntax.Attribute) string {
 		return ""
 	}
 	return p.rawExpr(attr)
+}
+
+func (p *parser) optionalSQLExpression(attr *hclsyntax.Attribute) string {
+	if attr == nil {
+		return ""
+	}
+	if value, ok := p.sqlExpression(attr); ok {
+		return value
+	}
+	return p.exprString(attr)
+}
+
+func (p *parser) sqlExpression(attr *hclsyntax.Attribute) (string, bool) {
+	raw := p.rawExpr(attr)
+	if value, ok := strings.CutPrefix(raw, "sql("); ok && strings.HasSuffix(value, ")") {
+		value = strings.TrimSuffix(value, ")")
+		if unquoted, err := strconv.Unquote(value); err == nil {
+			return unquoted, true
+		}
+		return value, true
+	}
+	return "", false
 }
 
 func (p *parser) exprString(attr *hclsyntax.Attribute) string {

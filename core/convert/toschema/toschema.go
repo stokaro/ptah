@@ -135,6 +135,7 @@ func ToField(column *ast.ColumnNode, structName, sourcePlatform string) goschema
 		Check:               column.Check,
 		GeneratedExpression: column.GeneratedExpression,
 		GeneratedKind:       column.GeneratedKind,
+		UpdateExpression:    column.UpdateExpression,
 		Charset:             column.Charset,
 		Collate:             column.Collate,
 		Comment:             column.Comment,

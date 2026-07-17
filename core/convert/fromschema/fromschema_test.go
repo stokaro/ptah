@@ -84,6 +84,17 @@ func TestFromField_BasicProperties(t *testing.T) {
 			},
 		},
 		{
+			name: "column update expression",
+			field: goschema.Field{
+				Name:             "updated_at",
+				Type:             "TIMESTAMP",
+				UpdateExpression: "CURRENT_TIMESTAMP",
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.UpdateExpression == "CURRENT_TIMESTAMP"
+			},
+		},
+		{
 			name: "column charset and collate",
 			field: goschema.Field{
 				Name:    "name",
