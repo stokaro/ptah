@@ -322,6 +322,9 @@ func (p *parser) parsePrimaryKey(block *hclsyntax.Block) ([]string, []goschema.P
 	if err := p.rejectUnsupportedPrimaryKeyAttrs(block); err != nil {
 		return nil, nil, err
 	}
+	if err := p.validatePrimaryKeyType(block); err != nil {
+		return nil, nil, err
+	}
 	if block.Body.Attributes["columns"] != nil {
 		if len(block.Body.Blocks) > 0 {
 			return nil, nil, p.blockError(block.Body.Blocks[0], "primary_key cannot mix columns attribute with on blocks")
@@ -342,6 +345,16 @@ func (p *parser) parsePrimaryKey(block *hclsyntax.Block) ([]string, []goschema.P
 		columns = append(columns, part.Name)
 	}
 	return columns, parts, nil
+}
+
+func (p *parser) validatePrimaryKeyType(block *hclsyntax.Block) error {
+	primaryKeyType := strings.ToUpper(p.optionalString(block.Body.Attributes["type"]))
+	switch primaryKeyType {
+	case "", "BTREE", "HASH":
+		return nil
+	default:
+		return p.blockError(block, "unsupported primary_key type %q", primaryKeyType)
+	}
 }
 
 func (p *parser) parsePrimaryKeyParts(block *hclsyntax.Block) ([]goschema.PrimaryKeyPart, error) {
@@ -570,6 +583,7 @@ func (p *parser) rejectUnsupportedTableAttrs(block *hclsyntax.Block) error {
 func (p *parser) rejectUnsupportedPrimaryKeyAttrs(block *hclsyntax.Block) error {
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"columns": true,
+		"type":    true,
 	}, "primary_key")
 }
 
