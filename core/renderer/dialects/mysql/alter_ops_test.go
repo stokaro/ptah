@@ -52,10 +52,17 @@ func TestMySQL_CreateNamespaceStatements(t *testing.T) {
 	c := qt.New(t)
 	out := renderMySQL(t,
 		&ast.CreateSchemaNode{Name: "`bc_test`", IfNotExists: true},
+		&ast.CreateSchemaNode{
+			Name:        "`tenant`",
+			IfNotExists: true,
+			Charset:     "utf8mb4",
+			Collate:     "utf8mb4_0900_ai_ci",
+		},
 		&ast.CreateDatabaseNode{Name: "`atlantis`"},
 	)
 
 	c.Assert(out, qt.Contains, "CREATE SCHEMA IF NOT EXISTS `bc_test`;")
+	c.Assert(out, qt.Contains, "CREATE SCHEMA IF NOT EXISTS `tenant` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;")
 	c.Assert(out, qt.Contains, "CREATE DATABASE `atlantis`;")
 }
 

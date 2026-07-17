@@ -112,6 +112,10 @@ type CreateSchemaNode struct {
 	IfNotExists bool
 	// Comment is an optional schema comment.
 	Comment string
+	// Charset is an optional default character set for MySQL-compatible dialects.
+	Charset string
+	// Collate is an optional default collation for MySQL-compatible dialects.
+	Collate string
 }
 
 // NewCreateSchema creates a new CREATE SCHEMA node.

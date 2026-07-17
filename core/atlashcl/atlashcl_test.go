@@ -112,6 +112,26 @@ schema "public" {
 	c.Assert(sql, qt.Contains, `COMMENT ON SCHEMA public IS 'This is a test schema';`)
 }
 
+func TestParseSchemaCharsetAndCollate(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+schema "app" {
+  charset = "utf8mb4"
+  collate = "utf8mb4_0900_ai_ci"
+}
+`), "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Schemas, qt.DeepEquals, []goschema.Schema{{
+		Name:    "app",
+		Charset: "utf8mb4",
+		Collate: "utf8mb4_0900_ai_ci",
+	}})
+
+	sql := strings.Join(renderer.GetOrderedCreateStatements(db, "mysql"), "\n")
+	c.Assert(sql, qt.Contains, `CREATE SCHEMA IF NOT EXISTS app DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;`)
+}
+
 func TestParseCompositePrimaryKeyAndForeignKey(t *testing.T) {
 	c := qt.New(t)
 
@@ -230,10 +250,10 @@ func TestParseRejectsUnsupportedSchemaAttributes(t *testing.T) {
 
 	_, err := atlashcl.Parse([]byte(`
 schema "main" {
-  charset = "utf8mb4"
+  owner = "app"
 }
 `), "schema.hcl")
-	c.Assert(err, qt.ErrorMatches, `.*unsupported schema attribute "charset".*`)
+	c.Assert(err, qt.ErrorMatches, `.*unsupported schema attribute "owner".*`)
 }
 
 func TestParseRejectsUnsupportedIndexPartAttributes(t *testing.T) {
