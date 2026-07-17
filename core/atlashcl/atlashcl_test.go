@@ -93,6 +93,31 @@ table "tokens" {
 	c.Assert(sql, qt.Not(qt.Contains), "id tinytext PRIMARY KEY")
 }
 
+func TestParseSQLiteTableOptions(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+schema "main" {}
+
+table "events" {
+  schema = schema.main
+  strict = true
+  without_rowid = true
+  column "id" {
+    null = false
+    type = integer
+  }
+  primary_key {
+    columns = [column.id]
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Tables, qt.HasLen, 1)
+	c.Assert(db.Tables[0].Strict, qt.IsTrue)
+	c.Assert(db.Tables[0].WithoutRowID, qt.IsTrue)
+}
+
 func TestParseSchemaComment(t *testing.T) {
 	c := qt.New(t)
 

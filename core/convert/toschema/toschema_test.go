@@ -227,9 +227,10 @@ func TestToField_PlatformSource(t *testing.T) {
 
 func TestToTable_BasicTable(t *testing.T) {
 	tests := []struct {
-		name     string
-		table    *ast.CreateTableNode
-		expected func(goschema.Table) bool
+		name           string
+		table          *ast.CreateTableNode
+		sourcePlatform string
+		expected       func(goschema.Table) bool
 	}{
 		{
 			name:  "basic table",
@@ -278,12 +279,24 @@ func TestToTable_BasicTable(t *testing.T) {
 					table.Comment == "Product catalog"
 			},
 		},
+		{
+			name: "SQLite table options",
+			table: ast.NewCreateTable("events").
+				SetOption("STRICT", "true").
+				SetOption("WITHOUT_ROWID", "true"),
+			sourcePlatform: "sqlite",
+			expected: func(table goschema.Table) bool {
+				return table.Name == "events" &&
+					table.Strict &&
+					table.WithoutRowID
+			},
+		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := toschema.ToTable(test.table, "")
+			result := toschema.ToTable(test.table, test.sourcePlatform)
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
 	}
@@ -619,6 +632,13 @@ func TestMergeTableOverrides_BasicMerging(t *testing.T) {
 			Engine:  "MyISAM",
 			Comment: "Product catalog",
 		},
+		"sqlite": {
+			Name:         "products",
+			Engine:       "InnoDB",
+			Comment:      "Product catalog",
+			Strict:       true,
+			WithoutRowID: true,
+		},
 	}
 
 	result := toschema.MergeTableOverrides(baseTable, platformTables)
@@ -626,7 +646,7 @@ func TestMergeTableOverrides_BasicMerging(t *testing.T) {
 	c.Assert(result.Name, qt.Equals, "products")
 	c.Assert(result.Engine, qt.Equals, "InnoDB") // Base engine unchanged
 	c.Assert(result.Overrides, qt.IsNotNil)
-	c.Assert(result.Overrides, qt.HasLen, 2)
+	c.Assert(result.Overrides, qt.HasLen, 3)
 
 	// Check MariaDB overrides
 	c.Assert(result.Overrides["mariadb"]["comment"], qt.Equals, "MariaDB product catalog")
@@ -635,6 +655,10 @@ func TestMergeTableOverrides_BasicMerging(t *testing.T) {
 	// Check MySQL overrides
 	c.Assert(result.Overrides["mysql"]["engine"], qt.Equals, "MyISAM")
 	c.Assert(result.Overrides["mysql"]["comment"], qt.Equals, "") // Same as base
+
+	// Check SQLite overrides
+	c.Assert(result.Overrides["sqlite"]["strict"], qt.Equals, "true")
+	c.Assert(result.Overrides["sqlite"]["without_rowid"], qt.Equals, "true")
 }
 
 func TestGenerateStructName_BasicConversions(t *testing.T) {
