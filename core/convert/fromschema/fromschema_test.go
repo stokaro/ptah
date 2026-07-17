@@ -449,6 +449,28 @@ func TestFromTable_BasicTable(t *testing.T) {
 					len(table.Columns) == 1
 			},
 		},
+		{
+			name: "table with auto increment option",
+			table: goschema.Table{
+				StructName:    "User",
+				Name:          "users",
+				AutoIncrement: "1000",
+			},
+			fields: []goschema.Field{
+				{
+					StructName: "User",
+					Name:       "id",
+					Type:       "BIGINT",
+					Primary:    true,
+					AutoInc:    true,
+				},
+			},
+			expected: func(table *ast.CreateTableNode) bool {
+				return table.Name == "users" &&
+					table.Options["AUTO_INCREMENT"] == "1000" &&
+					len(table.Columns) == 1
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -1049,14 +1071,16 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 		{
 			name: "MySQL engine and comment override",
 			table: goschema.Table{
-				StructName: "Product",
-				Name:       "products",
-				Comment:    "Default comment",
-				Engine:     "MyISAM",
+				StructName:    "Product",
+				Name:          "products",
+				Comment:       "Default comment",
+				Engine:        "MyISAM",
+				AutoIncrement: "100",
 				Overrides: map[string]map[string]string{
 					"mysql": {
-						"engine":  "InnoDB",
-						"comment": "MySQL-specific comment",
+						"engine":         "InnoDB",
+						"comment":        "MySQL-specific comment",
+						"auto_increment": "1000",
 					},
 				},
 			},
@@ -1065,7 +1089,8 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 			expected: func(table *ast.CreateTableNode) bool {
 				return table.Name == "products" &&
 					table.Comment == "MySQL-specific comment" &&
-					table.Options["ENGINE"] == "InnoDB"
+					table.Options["ENGINE"] == "InnoDB" &&
+					table.Options["AUTO_INCREMENT"] == "1000"
 			},
 		},
 		{

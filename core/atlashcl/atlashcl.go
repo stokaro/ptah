@@ -98,13 +98,14 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 	}
 
 	table := goschema.Table{
-		StructName:   block.Labels[0],
-		Name:         block.Labels[0],
-		Schema:       p.optionalRefName(block.Body.Attributes["schema"]),
-		Engine:       p.optionalString(block.Body.Attributes["engine"]),
-		Strict:       strict,
-		WithoutRowID: withoutRowID,
-		Comment:      p.optionalString(block.Body.Attributes["comment"]),
+		StructName:    block.Labels[0],
+		Name:          block.Labels[0],
+		Schema:        p.optionalRefName(block.Body.Attributes["schema"]),
+		Engine:        p.optionalString(block.Body.Attributes["engine"]),
+		AutoIncrement: p.optionalString(block.Body.Attributes["auto_increment"]),
+		Strict:        strict,
+		WithoutRowID:  withoutRowID,
+		Comment:       p.optionalString(block.Body.Attributes["comment"]),
 	}
 
 	fieldsStart := len(p.db.Fields)
@@ -489,11 +490,12 @@ func (p *parser) rejectUnsupportedSchemaBody(block *hclsyntax.Block) error {
 
 func (p *parser) rejectUnsupportedTableAttrs(block *hclsyntax.Block) error {
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
-		"schema":        true,
-		"engine":        true,
-		"strict":        true,
-		"without_rowid": true,
-		"comment":       true,
+		"schema":         true,
+		"engine":         true,
+		"auto_increment": true,
+		"strict":         true,
+		"without_rowid":  true,
+		"comment":        true,
 	}, "table")
 }
 

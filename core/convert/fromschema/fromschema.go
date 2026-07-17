@@ -421,6 +421,7 @@ func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table goschem
 	}
 	tableComment := table.Comment
 	tableEngine := table.Engine
+	tableAutoIncrement := table.AutoIncrement
 	tableStrict := table.Strict
 	tableWithoutRowID := table.WithoutRowID
 
@@ -437,6 +438,9 @@ func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table goschem
 	if engineOverride, ok := platformOverrides["engine"]; ok {
 		tableEngine = engineOverride
 	}
+	if autoIncrementOverride, ok := platformOverrides["auto_increment"]; ok {
+		tableAutoIncrement = autoIncrementOverride
+	}
 	if strictOverride, ok := platformOverrides["strict"]; ok {
 		if strict, err := strconv.ParseBool(strictOverride); err == nil {
 			tableStrict = strict
@@ -449,7 +453,7 @@ func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table goschem
 	}
 	// Apply any other platform-specific options
 	for key, value := range platformOverrides {
-		if key != "comment" && key != "engine" && key != "strict" && key != "without_rowid" {
+		if key != "comment" && key != "engine" && key != "auto_increment" && key != "strict" && key != "without_rowid" {
 			createTable.SetOption(strings.ToUpper(key), value)
 		}
 	}
@@ -457,6 +461,7 @@ func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table goschem
 	newTable := table
 	newTable.Comment = tableComment
 	newTable.Engine = tableEngine
+	newTable.AutoIncrement = tableAutoIncrement
 	newTable.Strict = tableStrict
 	newTable.WithoutRowID = tableWithoutRowID
 	return newTable
@@ -554,6 +559,9 @@ func FromTable(table goschema.Table, fields []goschema.Field, enums []goschema.E
 	// Set database-specific options (using potentially overridden value)
 	if tableEngine != "" {
 		createTable.SetOption("ENGINE", tableEngine)
+	}
+	if newTable.AutoIncrement != "" {
+		createTable.SetOption("AUTO_INCREMENT", newTable.AutoIncrement)
 	}
 	if targetPlatform == "sqlite" {
 		if newTable.WithoutRowID {
