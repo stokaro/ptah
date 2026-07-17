@@ -14,8 +14,9 @@ package ast
 //	pk := NewPrimaryKeyConstraint("user_id", "role_id")
 func NewPrimaryKeyConstraint(columns ...string) *ConstraintNode {
 	return &ConstraintNode{
-		Type:    PrimaryKeyConstraint,
-		Columns: columns,
+		Type:        PrimaryKeyConstraint,
+		Columns:     columns,
+		ColumnParts: constraintColumnParts(columns),
 	}
 }
 
@@ -33,9 +34,10 @@ func NewPrimaryKeyConstraint(columns ...string) *ConstraintNode {
 //	unique := NewUniqueConstraint("uk_users_name_company", "name", "company_id")
 func NewUniqueConstraint(name string, columns ...string) *ConstraintNode {
 	return &ConstraintNode{
-		Type:    UniqueConstraint,
-		Name:    name,
-		Columns: columns,
+		Type:        UniqueConstraint,
+		Name:        name,
+		Columns:     columns,
+		ColumnParts: constraintColumnParts(columns),
 	}
 }
 
@@ -56,11 +58,20 @@ func NewUniqueConstraint(name string, columns ...string) *ConstraintNode {
 //	fk := NewForeignKeyConstraint("fk_orders_user", []string{"user_id"}, ref)
 func NewForeignKeyConstraint(name string, columns []string, ref *ForeignKeyRef) *ConstraintNode {
 	return &ConstraintNode{
-		Type:      ForeignKeyConstraint,
-		Name:      name,
-		Columns:   columns,
-		Reference: ref,
+		Type:        ForeignKeyConstraint,
+		Name:        name,
+		Columns:     columns,
+		ColumnParts: constraintColumnParts(columns),
+		Reference:   ref,
 	}
+}
+
+func constraintColumnParts(columns []string) []ConstraintColumn {
+	parts := make([]ConstraintColumn, 0, len(columns))
+	for _, column := range columns {
+		parts = append(parts, ConstraintColumn{Name: column})
+	}
+	return parts
 }
 
 // NewExcludeConstraint creates a table-level exclude constraint with a name, using method, and elements.

@@ -551,12 +551,12 @@ func (r *Renderer) renderTableOptions(options map[string]string) string {
 func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, error) {
 	switch constraint.Type {
 	case ast.PrimaryKeyConstraint:
-		return fmt.Sprintf("  PRIMARY KEY (%s)", strings.Join(constraint.Columns, ", ")), nil
+		return fmt.Sprintf("  PRIMARY KEY (%s)", renderMySQLConstraintColumns(constraint)), nil
 	case ast.UniqueConstraint:
 		if constraint.Name != "" {
-			return fmt.Sprintf("  CONSTRAINT %s UNIQUE (%s)", constraint.Name, strings.Join(constraint.Columns, ", ")), nil
+			return fmt.Sprintf("  CONSTRAINT %s UNIQUE (%s)", constraint.Name, renderMySQLConstraintColumns(constraint)), nil
 		}
-		return fmt.Sprintf("  UNIQUE (%s)", strings.Join(constraint.Columns, ", ")), nil
+		return fmt.Sprintf("  UNIQUE (%s)", renderMySQLConstraintColumns(constraint)), nil
 	case ast.ForeignKeyConstraint:
 		return r.renderForeignKeyConstraint(constraint)
 	case ast.CheckConstraint:
@@ -567,6 +567,24 @@ func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, err
 	default:
 		return "", fmt.Errorf("unknown constraint type: %v", constraint.Type)
 	}
+}
+
+func renderMySQLConstraintColumns(constraint *ast.ConstraintNode) string {
+	if len(constraint.ColumnParts) == 0 {
+		return strings.Join(constraint.Columns, ", ")
+	}
+	parts := make([]string, 0, len(constraint.ColumnParts))
+	for _, column := range constraint.ColumnParts {
+		part := column.Name
+		if column.Prefix != "" {
+			part += " (" + column.Prefix + ")"
+		}
+		if column.Desc {
+			part += " DESC"
+		}
+		parts = append(parts, part)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // renderForeignKeyConstraint renders a foreign key constraint

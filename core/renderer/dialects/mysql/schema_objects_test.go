@@ -29,3 +29,23 @@ func TestMySQLRenderer_ViewsAndTriggers(t *testing.T) {
 	c.Assert(sql, qt.Contains, "CREATE TRIGGER set_updated_at BEFORE UPDATE ON users FOR EACH ROW SET NEW.updated_at = NOW();")
 	c.Assert(sql, qt.Contains, "-- MYSQL does not support CREATE MATERIALIZED VIEW user_stats")
 }
+
+func TestMySQLRenderer_ConstraintColumnParts(t *testing.T) {
+	c := qt.New(t)
+
+	table := ast.NewCreateTable("t1").
+		AddColumn(ast.NewColumn("`id`", "tinytext").SetNotNull()).
+		AddConstraint(&ast.ConstraintNode{
+			Type:    ast.PrimaryKeyConstraint,
+			Columns: []string{"`id`"},
+			ColumnParts: []ast.ConstraintColumn{{
+				Name:   "`id`",
+				Prefix: "7",
+				Desc:   true,
+			}},
+		})
+
+	sql := renderMySQL(t, table)
+
+	c.Assert(sql, qt.Contains, "PRIMARY KEY (`id` (7) DESC)")
+}
