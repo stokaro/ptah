@@ -137,7 +137,7 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 			if err != nil {
 				return err
 			}
-			if err := p.applyForeignKey(fieldsStart, nested, spec); err != nil {
+			if err := p.applyForeignKey(table, fieldsStart, nested, spec); err != nil {
 				return err
 			}
 		case "check":
@@ -378,12 +378,12 @@ func primaryKeyParts(columns []string) []goschema.PrimaryKeyPart {
 }
 
 type foreignKeySpec struct {
-	name          string
-	column        string
-	foreignTable  string
-	foreignColumn string
-	onDelete      string
-	onUpdate      string
+	name           string
+	columns        []string
+	foreignTable   string
+	foreignColumns []string
+	onDelete       string
+	onUpdate       string
 }
 
 func (p *parser) parseForeignKey(block *hclsyntax.Block) (foreignKeySpec, error) {
@@ -401,36 +401,87 @@ func (p *parser) parseForeignKey(block *hclsyntax.Block) (foreignKeySpec, error)
 	if err != nil {
 		return foreignKeySpec{}, err
 	}
-	if len(columns) != 1 || len(refColumns) != 1 {
-		return foreignKeySpec{}, p.blockError(block, "foreign_key %q currently requires one column and one ref_column", block.Labels[0])
+	if len(columns) == 0 || len(refColumns) == 0 {
+		return foreignKeySpec{}, p.blockError(block, "foreign_key %q requires columns and ref_columns", block.Labels[0])
 	}
-	if refColumns[0].table == "" || refColumns[0].column == "" {
-		return foreignKeySpec{}, p.blockError(block, "foreign_key %q requires table-qualified ref_columns", block.Labels[0])
+	if len(columns) != len(refColumns) {
+		return foreignKeySpec{}, p.blockError(block, "foreign_key %q requires matching columns and ref_columns counts", block.Labels[0])
+	}
+
+	localColumns := make([]string, 0, len(columns))
+	foreignColumns := make([]string, 0, len(refColumns))
+	foreignTable := refColumns[0].table
+	for _, refColumn := range refColumns {
+		if refColumn.table == "" || refColumn.column == "" {
+			return foreignKeySpec{}, p.blockError(block, "foreign_key %q requires table-qualified ref_columns", block.Labels[0])
+		}
+		if refColumn.table != foreignTable {
+			return foreignKeySpec{}, p.blockError(block, "foreign_key %q ref_columns must target one table", block.Labels[0])
+		}
+		foreignColumns = append(foreignColumns, refColumn.column)
+	}
+	for _, column := range columns {
+		if column.column == "" {
+			return foreignKeySpec{}, p.blockError(block, "foreign_key %q requires column refs", block.Labels[0])
+		}
+		localColumns = append(localColumns, column.column)
 	}
 
 	return foreignKeySpec{
-		name:          block.Labels[0],
-		column:        columns[0].column,
-		foreignTable:  refColumns[0].table,
-		foreignColumn: refColumns[0].column,
-		onDelete:      p.optionalString(block.Body.Attributes["on_delete"]),
-		onUpdate:      p.optionalString(block.Body.Attributes["on_update"]),
+		name:           block.Labels[0],
+		columns:        localColumns,
+		foreignTable:   foreignTable,
+		foreignColumns: foreignColumns,
+		onDelete:       p.optionalString(block.Body.Attributes["on_delete"]),
+		onUpdate:       p.optionalString(block.Body.Attributes["on_update"]),
 	}, nil
 }
 
-func (p *parser) applyForeignKey(fieldsStart int, block *hclsyntax.Block, spec foreignKeySpec) error {
+func (p *parser) applyForeignKey(table goschema.Table, fieldsStart int, block *hclsyntax.Block, spec foreignKeySpec) error {
+	if err := p.requireForeignKeyLocalColumns(fieldsStart, block, spec); err != nil {
+		return err
+	}
+	if len(spec.columns) > 1 {
+		p.db.Constraints = append(p.db.Constraints, goschema.Constraint{
+			StructName:     table.StructName,
+			Name:           spec.name,
+			Type:           "FOREIGN KEY",
+			Table:          table.Name,
+			Columns:        spec.columns,
+			ForeignTable:   spec.foreignTable,
+			ForeignColumn:  spec.foreignColumns[0],
+			ForeignColumns: spec.foreignColumns,
+			OnDelete:       spec.onDelete,
+			OnUpdate:       spec.onUpdate,
+		})
+		return nil
+	}
+
 	for i := fieldsStart; i < len(p.db.Fields); i++ {
 		field := &p.db.Fields[i]
-		if field.Name != spec.column {
+		if field.Name != spec.columns[0] {
 			continue
 		}
-		field.Foreign = spec.foreignTable + "(" + spec.foreignColumn + ")"
+		field.Foreign = spec.foreignTable + "(" + spec.foreignColumns[0] + ")"
 		field.ForeignKeyName = spec.name
 		field.OnDelete = spec.onDelete
 		field.OnUpdate = spec.onUpdate
 		return nil
 	}
-	return p.blockError(block, "foreign_key %q references unknown local column %q", spec.name, spec.column)
+	return nil
+}
+
+func (p *parser) requireForeignKeyLocalColumns(fieldsStart int, block *hclsyntax.Block, spec foreignKeySpec) error {
+	seen := make(map[string]bool, len(spec.columns))
+	for i := fieldsStart; i < len(p.db.Fields); i++ {
+		seen[p.db.Fields[i].Name] = true
+	}
+	for _, column := range spec.columns {
+		if !seen[column] {
+			return p.blockError(block, "foreign_key %q references unknown local column %q", spec.name, column)
+		}
+	}
+	return nil
 }
 
 func (p *parser) parseCheck(structName, tableName string, block *hclsyntax.Block) (goschema.Constraint, error) {

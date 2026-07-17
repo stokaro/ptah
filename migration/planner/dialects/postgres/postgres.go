@@ -1598,6 +1598,7 @@ func (p *Planner) foreignKeyAdditionNode(add types.ConstraintAdditionInfo) *ast.
 	fkRef := &ast.ForeignKeyRef{
 		Table:    add.ForeignTable,
 		Column:   add.ForeignColumn,
+		Columns:  add.ForeignColumns,
 		OnDelete: add.OnDelete,
 		OnUpdate: add.OnUpdate,
 	}
@@ -1943,12 +1944,13 @@ func (p *Planner) convertConstraintToAST(constraint goschema.Constraint) *ast.Co
 		return ast.NewPrimaryKeyConstraint(constraint.Columns...)
 
 	case "FOREIGN KEY":
-		if len(constraint.Columns) == 0 || constraint.ForeignTable == "" || constraint.ForeignColumn == "" {
+		if len(constraint.Columns) == 0 || constraint.ForeignTable == "" || len(constraint.ForeignColumnsOrDefault()) == 0 {
 			return nil // Invalid FOREIGN KEY constraint
 		}
 		ref := &ast.ForeignKeyRef{
 			Table:    constraint.ForeignTable,
 			Column:   constraint.ForeignColumn,
+			Columns:  constraint.ForeignColumns,
 			OnDelete: constraint.OnDelete,
 			OnUpdate: constraint.OnUpdate,
 			Name:     constraint.Name,

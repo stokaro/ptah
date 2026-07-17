@@ -13,6 +13,33 @@ import (
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
+func TestPlanner_GenerateMigrationAST_CompositeForeignKeyAddition(t *testing.T) {
+	c := qt.New(t)
+
+	diff := &types.SchemaDiff{
+		ConstraintsAdded: []string{"fk_orders_accounts"},
+		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+			{
+				Name:           "fk_orders_accounts",
+				TableName:      "orders",
+				Type:           "FOREIGN KEY",
+				Columns:        []string{"tenant_id", "owner_id"},
+				ForeignTable:   "accounts",
+				ForeignColumn:  "tenant_id",
+				ForeignColumns: []string{"tenant_id", "id"},
+				OnDelete:       "CASCADE",
+			},
+		},
+	}
+
+	nodes := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
+	sql, err := renderer.RenderSQL("postgres", nodes...)
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(sql, qt.Contains, "ALTER TABLE orders ADD CONSTRAINT fk_orders_accounts FOREIGN KEY (tenant_id, owner_id) REFERENCES accounts(tenant_id, id) ON DELETE CASCADE;",
+		qt.Commentf("composite FK addition must preserve all referenced columns; got:\n%s", sql))
+}
+
 func TestPlanner_GenerateMigrationAST_ConstraintsAdded(t *testing.T) {
 	tests := []struct {
 		name        string

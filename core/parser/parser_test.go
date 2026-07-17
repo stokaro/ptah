@@ -97,6 +97,30 @@ func TestParser_ParseCreateTable_WithConstraints(t *testing.T) {
 	c.Assert(fkConstraint.Reference.Column, qt.Equals, "id")
 }
 
+func TestParser_ParseCreateTable_WithCompositeForeignKey(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE TABLE orders (
+		tenant_id INTEGER,
+		customer_id INTEGER,
+		CONSTRAINT fk_orders_customer FOREIGN KEY (tenant_id, customer_id) REFERENCES customers (tenant_id, id)
+	);`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	createTable := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(createTable.Constraints, qt.HasLen, 1)
+	constraint := createTable.Constraints[0]
+	c.Assert(constraint.Type, qt.Equals, ast.ForeignKeyConstraint)
+	c.Assert(constraint.Columns, qt.DeepEquals, []string{"tenant_id", "customer_id"})
+	c.Assert(constraint.Reference.Table, qt.Equals, "customers")
+	c.Assert(constraint.Reference.Column, qt.Equals, "tenant_id")
+	c.Assert(constraint.Reference.Columns, qt.DeepEquals, []string{"tenant_id", "id"})
+}
+
 func TestParser_ParseCreateTable_WithTableOptions(t *testing.T) {
 	c := qt.New(t)
 

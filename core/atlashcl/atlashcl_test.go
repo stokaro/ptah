@@ -393,6 +393,54 @@ table "posts" {
 	c.Assert(db.Dependencies["main.posts"], qt.DeepEquals, []string{"main.users"})
 }
 
+func TestParseCompositeForeignKey(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+table "accounts" {
+  column "tenant_id" {
+    type = int
+  }
+  column "id" {
+    type = int
+  }
+  primary_key {
+    columns = [column.tenant_id, column.id]
+  }
+}
+
+table "posts" {
+  column "tenant_id" {
+    type = int
+  }
+  column "owner_id" {
+    type = int
+  }
+  foreign_key "owner_ref" {
+    columns = [column.tenant_id, column.owner_id]
+    ref_columns = [table.accounts.column.tenant_id, table.accounts.column.id]
+    on_delete = CASCADE
+    on_update = NO_ACTION
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.IsNil)
+
+	constraint := constraintByName(db.Constraints, "owner_ref")
+	c.Assert(constraint.Type, qt.Equals, "FOREIGN KEY")
+	c.Assert(constraint.Table, qt.Equals, "posts")
+	c.Assert(constraint.Columns, qt.DeepEquals, []string{"tenant_id", "owner_id"})
+	c.Assert(constraint.ForeignTable, qt.Equals, "accounts")
+	c.Assert(constraint.ForeignColumn, qt.Equals, "tenant_id")
+	c.Assert(constraint.ForeignColumns, qt.DeepEquals, []string{"tenant_id", "id"})
+	c.Assert(constraint.OnDelete, qt.Equals, "CASCADE")
+	c.Assert(constraint.OnUpdate, qt.Equals, "NO_ACTION")
+	c.Assert(db.Dependencies["posts"], qt.DeepEquals, []string{"accounts"})
+
+	sql := strings.Join(renderer.GetOrderedCreateStatements(db, "mysql"), "\n")
+	c.Assert(sql, qt.Contains, `CONSTRAINT owner_ref FOREIGN KEY (tenant_id, owner_id) REFERENCES accounts(tenant_id, id) ON DELETE CASCADE ON UPDATE NO_ACTION`)
+}
+
 func TestParseDefaultsAndChecks(t *testing.T) {
 	c := qt.New(t)
 
@@ -703,4 +751,13 @@ func fieldByName(fields []goschema.Field, structName, name string) goschema.Fiel
 		}
 	}
 	return goschema.Field{}
+}
+
+func constraintByName(constraints []goschema.Constraint, name string) goschema.Constraint {
+	for _, constraint := range constraints {
+		if constraint.Name == name {
+			return constraint
+		}
+	}
+	return goschema.Constraint{}
 }

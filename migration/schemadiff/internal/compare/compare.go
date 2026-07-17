@@ -3,6 +3,7 @@ package compare
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -1050,14 +1051,15 @@ func appendConstraintRemoval(infos []difftypes.ConstraintRemovalInfo, dbConstrai
 // one entry and matches the legacy field-scan behavior.
 func appendConstraintAddition(infos []difftypes.ConstraintAdditionInfo, genConstraint goschema.Constraint) []difftypes.ConstraintAdditionInfo {
 	return append(infos, difftypes.ConstraintAdditionInfo{
-		Name:          genConstraint.Name,
-		TableName:     genConstraint.Table,
-		Type:          genConstraint.Type,
-		Columns:       append([]string(nil), genConstraint.Columns...),
-		ForeignTable:  genConstraint.ForeignTable,
-		ForeignColumn: genConstraint.ForeignColumn,
-		OnDelete:      genConstraint.OnDelete,
-		OnUpdate:      genConstraint.OnUpdate,
+		Name:           genConstraint.Name,
+		TableName:      genConstraint.Table,
+		Type:           genConstraint.Type,
+		Columns:        append([]string(nil), genConstraint.Columns...),
+		ForeignTable:   genConstraint.ForeignTable,
+		ForeignColumn:  genConstraint.ForeignColumn,
+		ForeignColumns: append([]string(nil), genConstraint.ForeignColumnsOrDefault()...),
+		OnDelete:       genConstraint.OnDelete,
+		OnUpdate:       genConstraint.OnUpdate,
 	})
 }
 
@@ -1152,13 +1154,18 @@ func uniqueConstraintChanged(genConstraint goschema.Constraint, dbConstraint typ
 // explicit action, producing a perpetual drop+add loop on every `generate`
 // (the same hazard checkConstraintChanged guards against for CHECK clauses).
 func foreignKeyConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint, dialect string) bool {
+	// Compare local columns.
+	if !slices.Equal(genConstraint.Columns, dbConstraint.ColumnNamesOrDefault()) {
+		return true
+	}
+
 	// Compare referenced table
 	if !foreignTableRefMatches(genConstraint.ForeignTable, dbConstraint) {
 		return true
 	}
 
-	// Compare referenced column
-	if genConstraint.ForeignColumn != getStringValue(dbConstraint.ForeignColumn) {
+	// Compare referenced columns.
+	if !slices.Equal(genConstraint.ForeignColumnsOrDefault(), dbConstraint.ForeignColumnsOrDefault()) {
 		return true
 	}
 
@@ -1484,15 +1491,16 @@ func synthesizeFieldLevelForeignKeyConstraints(generated *goschema.Database, dat
 		}
 		dedupe[dedupeKey] = struct{}{}
 		synthesized = append(synthesized, goschema.Constraint{
-			StructName:    f.StructName,
-			Name:          name,
-			Type:          "FOREIGN KEY",
-			Table:         tableName,
-			Columns:       []string{f.Name},
-			ForeignTable:  fkRef.Table,
-			ForeignColumn: fkRef.Column,
-			OnDelete:      f.OnDelete,
-			OnUpdate:      f.OnUpdate,
+			StructName:     f.StructName,
+			Name:           name,
+			Type:           "FOREIGN KEY",
+			Table:          tableName,
+			Columns:        []string{f.Name},
+			ForeignTable:   fkRef.Table,
+			ForeignColumn:  fkRef.Column,
+			ForeignColumns: fkRef.ReferencedColumns(),
+			OnDelete:       f.OnDelete,
+			OnUpdate:       f.OnUpdate,
 		})
 	}
 	return synthesized

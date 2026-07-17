@@ -550,9 +550,16 @@ func (r *Reader) readConstraints(dbName string) ([]types.DBConstraint, error) {
 		}
 
 		// For multi-column constraints, we only store the first column name
-		// This matches the existing behavior and avoids duplicates
+		// in the legacy scalar field. ColumnNames / ForeignColumns retain the
+		// full ordered list for composite keys.
 		if constraint.ColumnName == "" && columnName != "" {
 			constraint.ColumnName = columnName
+		}
+		if columnName != "" {
+			constraint.ColumnNames = append(constraint.ColumnNames, columnName)
+		}
+		if referencedColumn != "" {
+			constraint.ForeignColumns = append(constraint.ForeignColumns, referencedColumn)
 		}
 	}
 

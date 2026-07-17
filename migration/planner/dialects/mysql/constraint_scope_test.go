@@ -31,6 +31,35 @@ func renderMySQLFamily(c *qt.C, dialect string, diff *types.SchemaDiff, generate
 	return sql
 }
 
+func TestPlanner_GenerateMigrationAST_CompositeForeignKeyAddition(t *testing.T) {
+	for _, dialect := range mysqlFamilyDialects {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff := &types.SchemaDiff{
+				ConstraintsAdded: []string{"fk_orders_accounts"},
+				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+					{
+						Name:           "fk_orders_accounts",
+						TableName:      "orders",
+						Type:           "FOREIGN KEY",
+						Columns:        []string{"tenant_id", "owner_id"},
+						ForeignTable:   "accounts",
+						ForeignColumn:  "tenant_id",
+						ForeignColumns: []string{"tenant_id", "id"},
+						OnDelete:       "CASCADE",
+					},
+				},
+			}
+
+			sql := renderMySQLFamily(c, dialect, diff, &goschema.Database{})
+
+			c.Assert(sql, qt.Contains, "ALTER TABLE orders ADD CONSTRAINT fk_orders_accounts FOREIGN KEY (tenant_id, owner_id) REFERENCES accounts(tenant_id, id) ON DELETE CASCADE;",
+				qt.Commentf("composite FK addition must preserve all referenced columns; got:\n%s", sql))
+		})
+	}
+}
+
 // TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePurelyRemovedOnAnother
 // guards issue #207 — the MySQL-family sibling of the postgres issue #206. A
 // single constraint name is shared across two tables: it is MODIFIED on table

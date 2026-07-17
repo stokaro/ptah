@@ -701,7 +701,7 @@ func (r *Renderer) renderForeignKeyConstraint(constraint *ast.ConstraintNode) (s
 		constraint.Name,
 		strings.Join(constraint.Columns, ", "),
 		ref.Table,
-		ref.Column)
+		strings.Join(ref.ReferencedColumns(), ", "))
 
 	if ref.OnDelete != "" {
 		result += fmt.Sprintf(" ON DELETE %s", ref.OnDelete)

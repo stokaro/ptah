@@ -59,9 +59,13 @@ type ConstraintAdditionInfo struct {
 	// Columns are the local columns the constraint covers (FK source columns).
 	Columns []string `json:"columns,omitempty"`
 
-	// ForeignTable / ForeignColumn describe the FK target (FOREIGN KEY only).
-	ForeignTable  string `json:"foreign_table,omitempty"`
-	ForeignColumn string `json:"foreign_column,omitempty"`
+	// ForeignTable / ForeignColumn / ForeignColumns describe the FK target
+	// (FOREIGN KEY only). ForeignColumn is kept for compatibility with older
+	// single-column callers; ForeignColumns carries the full referenced column
+	// list for composite keys.
+	ForeignTable   string   `json:"foreign_table,omitempty"`
+	ForeignColumn  string   `json:"foreign_column,omitempty"`
+	ForeignColumns []string `json:"foreign_columns,omitempty"`
 
 	// OnDelete / OnUpdate are the referential actions (FOREIGN KEY only).
 	OnDelete string `json:"on_delete,omitempty"`

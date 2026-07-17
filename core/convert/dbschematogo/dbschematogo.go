@@ -261,13 +261,13 @@ type foreignKeyInfo struct {
 func indexForeignKeysByColumn(dbSchema *dbschematypes.DBSchema) map[string]foreignKeyInfo {
 	result := make(map[string]foreignKeyInfo)
 	for _, c := range dbSchema.Constraints {
-		if c.Type != "FOREIGN KEY" || c.ColumnName == "" || c.ForeignTable == nil {
+		if c.Type != "FOREIGN KEY" || c.ColumnName == "" || c.ForeignTable == nil || len(c.ColumnNamesOrDefault()) != 1 {
 			continue
 		}
 		foreignTable := c.QualifiedForeignTableName()
 		foreignColumn := ""
-		if c.ForeignColumn != nil {
-			foreignColumn = *c.ForeignColumn
+		if foreignColumns := c.ForeignColumnsOrDefault(); len(foreignColumns) == 1 {
+			foreignColumn = foreignColumns[0]
 		}
 		foreign := foreignTable
 		if foreignColumn != "" {

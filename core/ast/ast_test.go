@@ -317,6 +317,22 @@ func TestForeignKeyRef_EmptyFields(t *testing.T) {
 	c.Assert(fkRef.Name, qt.Equals, "")
 }
 
+func TestForeignKeyRef_ReferencedColumns(t *testing.T) {
+	c := qt.New(t)
+
+	single := &ast.ForeignKeyRef{Column: "id"}
+	c.Assert(single.ReferencedColumns(), qt.DeepEquals, []string{"id"})
+
+	composite := &ast.ForeignKeyRef{
+		Column:  "tenant_id",
+		Columns: []string{"tenant_id", "id"},
+	}
+	c.Assert(composite.ReferencedColumns(), qt.DeepEquals, []string{"tenant_id", "id"})
+
+	var nilRef *ast.ForeignKeyRef
+	c.Assert(nilRef.ReferencedColumns(), qt.IsNil)
+}
+
 // Test foreign key reference with all fields through column
 func TestForeignKeyRef_ThroughColumn(t *testing.T) {
 	c := qt.New(t)
