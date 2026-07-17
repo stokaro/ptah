@@ -145,6 +145,32 @@ table "users" {
 	c.Assert(sql, qt.Contains, "AUTO_INCREMENT=1000")
 }
 
+func TestParseMySQLTableCharsetCollate(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+schema "main" {}
+
+table "users" {
+  schema = schema.main
+  charset = "utf8mb4"
+  collate = "utf8mb4_bin"
+  column "name" {
+    null = false
+    type = varchar(255)
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Tables, qt.HasLen, 1)
+	c.Assert(db.Tables[0].Charset, qt.Equals, "utf8mb4")
+	c.Assert(db.Tables[0].Collate, qt.Equals, "utf8mb4_bin")
+
+	sql := strings.Join(renderer.GetOrderedCreateStatements(db, "mysql"), "\n")
+	c.Assert(sql, qt.Contains, "CHARSET=utf8mb4")
+	c.Assert(sql, qt.Contains, "COLLATE=utf8mb4_bin")
+}
+
 func TestParseSQLiteTableOptionsRejectNonBool(t *testing.T) {
 	c := qt.New(t)
 

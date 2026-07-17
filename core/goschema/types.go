@@ -351,6 +351,8 @@ type Table struct {
 	Schema        string   // Optional database schema/namespace (PostgreSQL-style)
 	Engine        string   // Storage engine (MySQL/MariaDB specific, e.g., "InnoDB")
 	AutoIncrement string   // Initial AUTO_INCREMENT value (MySQL/MariaDB specific)
+	Charset       string   // Table default character set (MySQL/MariaDB specific)
+	Collate       string   // Table default collation (MySQL/MariaDB specific)
 	Strict        bool     // SQLite STRICT table option
 	WithoutRowID  bool     // SQLite WITHOUT ROWID table option
 	Comment       string   // Table comment/description
