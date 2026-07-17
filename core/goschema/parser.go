@@ -159,6 +159,7 @@ func parseFieldComment(comment *ast.Comment, field *ast.Field, structName string
 			fieldType = enumName
 		}
 
+		_, defaultSet := kv["default"]
 		*schemaFields = append(*schemaFields, Field{
 			StructName:     structName,
 			FieldName:      name.Name,
@@ -170,6 +171,7 @@ func parseFieldComment(comment *ast.Comment, field *ast.Field, structName string
 			Unique:         kv["unique"] == "true",
 			UniqueExpr:     kv["unique_expr"],
 			Default:        kv["default"],
+			DefaultSet:     defaultSet,
 			DefaultExpr:    kv["default_expr"],
 			Foreign:        kv["foreign"],
 			ForeignKeyName: kv["foreign_key_name"],

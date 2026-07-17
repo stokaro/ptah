@@ -88,6 +88,7 @@ func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschem
 	checkName := field.CheckName
 	comment := field.Comment
 	defaultValue := field.Default
+	defaultSet := field.DefaultSet
 	defaultExpr := field.DefaultExpr
 
 	// Apply built-in platform-specific type conversions for MySQL/MariaDB
@@ -110,6 +111,7 @@ func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschem
 		newField.CheckName = checkName
 		newField.Comment = comment
 		newField.Default = defaultValue
+		newField.DefaultSet = defaultSet
 		newField.DefaultExpr = defaultExpr
 		return newField
 	}
@@ -122,6 +124,7 @@ func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschem
 		newField.CheckName = checkName
 		newField.Comment = comment
 		newField.Default = defaultValue
+		newField.DefaultSet = defaultSet
 		newField.DefaultExpr = defaultExpr
 		return newField
 	}
@@ -145,12 +148,14 @@ func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschem
 	// Override default value if specified
 	if defaultOverride, ok := platformOverrides["default"]; ok {
 		defaultValue = defaultOverride
+		defaultSet = true
 		defaultExpr = "" // Clear expression if literal default is overridden
 	}
 	// Override default expression if specified
 	if defaultExprOverride, ok := platformOverrides["default_expr"]; ok {
 		defaultExpr = defaultExprOverride
 		defaultValue = "" // Clear literal if expression default is overridden
+		defaultSet = false
 	}
 
 	newField := field // Shallow copy to avoid modifying original field
@@ -159,6 +164,7 @@ func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschem
 	newField.CheckName = checkName
 	newField.Comment = comment
 	newField.Default = defaultValue
+	newField.DefaultSet = defaultSet
 	newField.DefaultExpr = defaultExpr
 
 	return newField
@@ -309,7 +315,7 @@ func FromField(field goschema.Field, enums []goschema.Enum, targetPlatform strin
 
 	// Set default values (using potentially overridden values)
 	switch {
-	case field.Default != "":
+	case field.DefaultSet || field.Default != "":
 		column.SetDefault(field.Default)
 	case field.DefaultExpr != "":
 		column.SetDefaultExpression(field.DefaultExpr)
@@ -383,7 +389,7 @@ func FromFieldWithoutForeignKeys(field goschema.Field, enums []goschema.Enum, ta
 	}
 
 	// Set default value (using potentially overridden value)
-	if field.Default != "" {
+	if field.DefaultSet || field.Default != "" {
 		column.SetDefault(field.Default)
 	}
 

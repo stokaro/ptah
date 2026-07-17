@@ -295,7 +295,7 @@ func (r *Renderer) renderColumn(col *ast.ColumnNode) (string, error) {
 		switch {
 		case col.Default.Expression != "":
 			parts = append(parts, "DEFAULT "+col.Default.Expression)
-		case col.Default.Value != "":
+		case col.Default.HasLiteral():
 			parts = append(parts, "DEFAULT "+escapeStringLiteral(col.Default.Value))
 		}
 	}

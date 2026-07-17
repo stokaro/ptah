@@ -400,8 +400,27 @@ table "accounts" {
 	c.Assert(db.Fields[0].AutoInc, qt.IsTrue)
 	c.Assert(db.Fields[1].DefaultExpr, qt.Equals, "CURRENT_TIMESTAMP")
 	c.Assert(db.Fields[2].Default, qt.Equals, "active")
+	c.Assert(db.Fields[2].DefaultSet, qt.IsTrue)
 	c.Assert(db.Constraints, qt.HasLen, 1)
 	c.Assert(db.Constraints[0].CheckExpression, qt.Equals, "status IN ('active', 'disabled')")
+}
+
+func TestParseEmptyLiteralDefault(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+table "users" {
+  column "name" {
+    type = varchar(255)
+    default = ""
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Fields, qt.HasLen, 1)
+	c.Assert(db.Fields[0].Default, qt.Equals, "")
+	c.Assert(db.Fields[0].DefaultSet, qt.IsTrue)
+	c.Assert(db.Fields[0].DefaultExpr, qt.Equals, "")
 }
 
 func TestParseBracketQuotedColumnReferences(t *testing.T) {

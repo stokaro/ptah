@@ -91,8 +91,17 @@ type Visitor interface {
 type DefaultValue struct {
 	// Value contains literal default values like 'default_value', '42', 'true'
 	Value string
+	// ValueSet distinguishes an explicitly empty literal from no literal.
+	ValueSet bool
 	// Function contains function calls like NOW(), UUID()
 	Expression string
+}
+
+// HasLiteral reports whether the default is a literal value, including an
+// explicitly empty string. Non-empty Value is accepted for compatibility with
+// existing struct literals.
+func (d *DefaultValue) HasLiteral() bool {
+	return d != nil && (d.ValueSet || d.Value != "")
 }
 
 // ForeignKeyRef represents a foreign key reference with optional referential actions.

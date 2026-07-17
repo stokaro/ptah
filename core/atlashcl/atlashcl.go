@@ -617,6 +617,7 @@ func (p *parser) setDefault(field *goschema.Field, attr *hclsyntax.Attribute) {
 		return
 	}
 	field.Default = p.exprString(attr)
+	field.DefaultSet = true
 }
 
 func (p *parser) optionalRefName(attr *hclsyntax.Attribute) string {
