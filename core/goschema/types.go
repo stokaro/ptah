@@ -149,8 +149,12 @@ type Field struct {
 	GeneratedExpression string
 	// GeneratedKind stores the generated column kind, such as VIRTUAL or STORED.
 	GeneratedKind string
-	Comment       string                       // Column comment
-	Overrides     map[string]map[string]string // Platform-specific overrides (e.g., platform.mysql.type)
+	// Charset stores the column character set for MySQL-compatible dialects.
+	Charset string
+	// Collate stores the column collation for MySQL-compatible dialects.
+	Collate   string
+	Comment   string                       // Column comment
+	Overrides map[string]map[string]string // Platform-specific overrides (e.g., platform.mysql.type)
 }
 
 // IndexPart represents one column or expression inside an index definition.

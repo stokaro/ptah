@@ -67,6 +67,8 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 				Primary:       dbColumn.IsPrimaryKey,
 				AutoInc:       dbColumn.IsAutoIncrement,
 				Unique:        dbColumn.IsUnique,
+				Charset:       dbColumn.Charset,
+				Collate:       dbColumn.Collate,
 				GeneratedKind: dbColumn.GeneratedKind,
 			}
 			if dbColumn.GeneratedExpression != nil {

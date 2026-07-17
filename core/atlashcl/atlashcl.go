@@ -185,6 +185,8 @@ func (p *parser) parseColumn(structName string, block *hclsyntax.Block) (goschem
 		Unique:              p.optionalBool(block.Body.Attributes["unique"], false),
 		GeneratedExpression: generated.expression,
 		GeneratedKind:       generated.kind,
+		Charset:             p.optionalString(block.Body.Attributes["charset"]),
+		Collate:             p.optionalString(block.Body.Attributes["collate"]),
 		Comment:             p.optionalString(block.Body.Attributes["comment"]),
 	}
 	if attr := block.Body.Attributes["default"]; attr != nil {
@@ -535,6 +537,8 @@ func (p *parser) rejectUnsupportedColumnAttrs(block *hclsyntax.Block) error {
 		"unique":         true,
 		"default":        true,
 		"as":             true,
+		"charset":        true,
+		"collate":        true,
 		"comment":        true,
 	}, "column")
 }

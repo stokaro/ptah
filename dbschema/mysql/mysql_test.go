@@ -213,6 +213,21 @@ func TestMySQLReader_parseTableFromDDL(t *testing.T) {
 			},
 		},
 		{
+			name: "column charset and collate",
+			ddl: "CREATE TABLE `users` (\n" +
+				"  `name` varchar(255) CHARACTER SET hebrew COLLATE hebrew_general_ci NOT NULL\n" +
+				") ENGINE=InnoDB",
+			expectError: false,
+			validate: func(c *qt.C, table types.DBTable) {
+				c.Assert(table.Columns, qt.HasLen, 1)
+				nameCol := table.Columns[0]
+				c.Assert(nameCol.Name, qt.Equals, "name")
+				c.Assert(nameCol.Charset, qt.Equals, "hebrew")
+				c.Assert(nameCol.Collate, qt.Equals, "hebrew_general_ci")
+				c.Assert(nameCol.IsNullable, qt.Equals, "NO")
+			},
+		},
+		{
 			name:        "invalid DDL",
 			ddl:         "INVALID SQL STATEMENT",
 			expectError: true,

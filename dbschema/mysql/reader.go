@@ -264,6 +264,8 @@ func (r *Reader) convertASTToTable(node *ast.CreateTableNode) types.DBTable {
 			DataType:        astCol.Type,
 			ColumnType:      astCol.Type, // For MySQL, these are often the same
 			IsNullable:      isNullable,
+			Charset:         astCol.Charset,
+			Collate:         astCol.Collate,
 			OrdinalPosition: len(table.Columns) + 1,
 			IsAutoIncrement: astCol.AutoInc,
 			IsPrimaryKey:    astCol.Primary,

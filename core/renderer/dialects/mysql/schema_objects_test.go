@@ -61,6 +61,20 @@ func TestMySQLRenderer_EmptyLiteralDefault(t *testing.T) {
 	c.Assert(sql, qt.Contains, "name varchar(255) NOT NULL DEFAULT ''")
 }
 
+func TestMySQLRenderer_ColumnCharsetCollate(t *testing.T) {
+	c := qt.New(t)
+
+	table := ast.NewCreateTable("users").
+		AddColumn(ast.NewColumn("name", "varchar(255)").
+			SetCharset("hebrew").
+			SetCollate("hebrew_general_ci").
+			SetNotNull())
+
+	sql := renderMySQL(t, table)
+
+	c.Assert(sql, qt.Contains, "name varchar(255) CHARACTER SET hebrew COLLATE hebrew_general_ci NOT NULL")
+}
+
 func TestMySQLRenderer_IndexParts(t *testing.T) {
 	c := qt.New(t)
 

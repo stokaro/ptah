@@ -74,6 +74,17 @@ func TestToField_BasicProperties(t *testing.T) {
 					field.GeneratedKind == "STORED"
 			},
 		},
+		{
+			name: "column charset and collate",
+			column: ast.NewColumn("name", "VARCHAR(255)").
+				SetCharset("hebrew").
+				SetCollate("hebrew_general_ci"),
+			structName: "User",
+			expected: func(field goschema.Field) bool {
+				return field.Charset == "hebrew" &&
+					field.Collate == "hebrew_general_ci"
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -628,6 +639,28 @@ func TestMergeFieldOverrides_BasicMerging(t *testing.T) {
 	// Check MariaDB overrides
 	c.Assert(result.Overrides["mariadb"]["type"], qt.Equals, "LONGTEXT")
 	c.Assert(result.Overrides["mariadb"]["check"], qt.Equals, "JSON_VALID(data)")
+}
+
+func TestMergeFieldOverrides_CharsetCollate(t *testing.T) {
+	c := qt.New(t)
+
+	baseField := goschema.Field{
+		Name: "name",
+		Type: "VARCHAR(255)",
+	}
+	platformFields := map[string]goschema.Field{
+		"mysql": {
+			Name:    "name",
+			Type:    "VARCHAR(255)",
+			Charset: "hebrew",
+			Collate: "hebrew_general_ci",
+		},
+	}
+
+	result := toschema.MergeFieldOverrides(baseField, platformFields)
+
+	c.Assert(result.Overrides["mysql"]["charset"], qt.Equals, "hebrew")
+	c.Assert(result.Overrides["mysql"]["collate"], qt.Equals, "hebrew_general_ci")
 }
 
 func TestMergeFieldOverrides_DefaultValues(t *testing.T) {

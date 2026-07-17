@@ -83,6 +83,18 @@ func TestFromField_BasicProperties(t *testing.T) {
 				return col.GeneratedExpression == "lower(name)" && col.GeneratedKind == "STORED"
 			},
 		},
+		{
+			name: "column charset and collate",
+			field: goschema.Field{
+				Name:    "name",
+				Type:    "VARCHAR(255)",
+				Charset: "hebrew",
+				Collate: "hebrew_general_ci",
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.Charset == "hebrew" && col.Collate == "hebrew_general_ci"
+			},
+		},
 	}
 
 	for _, test := range tests {
