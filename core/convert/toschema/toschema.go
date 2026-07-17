@@ -518,6 +518,8 @@ func ToDatabase(statements *ast.StatementList) goschema.Database {
 			database.Schemas = append(database.Schemas, goschema.Schema{
 				Name:    node.Name,
 				Comment: node.Comment,
+				Charset: node.Charset,
+				Collate: node.Collate,
 			})
 
 		case *ast.EnumNode:

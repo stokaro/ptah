@@ -1157,6 +1157,8 @@ func appendSchemaStatements(statements *ast.StatementList, schemas []goschema.Sc
 			Name:        schema.Name,
 			IfNotExists: true,
 			Comment:     schema.Comment,
+			Charset:     schema.Charset,
+			Collate:     schema.Collate,
 		})
 	}
 }

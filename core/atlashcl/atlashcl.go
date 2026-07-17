@@ -66,6 +66,8 @@ func (p *parser) parseBody(body *hclsyntax.Body) error {
 			p.db.Schemas = append(p.db.Schemas, goschema.Schema{
 				Name:    block.Labels[0],
 				Comment: p.optionalString(block.Body.Attributes["comment"]),
+				Charset: p.optionalString(block.Body.Attributes["charset"]),
+				Collate: p.optionalString(block.Body.Attributes["collate"]),
 			})
 		case "table":
 			if err := p.parseTable(block); err != nil {
@@ -400,6 +402,8 @@ func (p *parser) rejectUnsupportedSchemaBody(block *hclsyntax.Block) error {
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"comment": true,
+		"charset": true,
+		"collate": true,
 	}, "schema")
 }
 
