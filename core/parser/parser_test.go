@@ -49,6 +49,23 @@ func TestParser_ParseCreateTable_Basic(t *testing.T) {
 	c.Assert(nameColumn.Nullable, qt.IsFalse) // NOT NULL specified
 }
 
+func TestParser_ParseCreateTable_ColumnCharsetCollate(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "CREATE TABLE users (name VARCHAR(255) CHARACTER SET hebrew COLLATE hebrew_general_ci NOT NULL);"
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+	createTable, ok := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(createTable.Columns, qt.HasLen, 1)
+	c.Assert(createTable.Columns[0].Charset, qt.Equals, "hebrew")
+	c.Assert(createTable.Columns[0].Collate, qt.Equals, "hebrew_general_ci")
+	c.Assert(createTable.Columns[0].Nullable, qt.IsFalse)
+}
+
 func TestParser_ParseCreateTable_WithConstraints(t *testing.T) {
 	c := qt.New(t)
 
@@ -350,9 +367,10 @@ func TestParser_ParseCreateTable_MySQLColumnModifiers(t *testing.T) {
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(createTable.Columns, qt.HasLen, 3)
 	c.Assert(createTable.Columns[0].Comment, qt.Equals, "COMMENT 'column1'")
-	c.Assert(createTable.Columns[1].Comment, qt.Equals, "CHARACTER SET utf8")
+	c.Assert(createTable.Columns[1].Charset, qt.Equals, "utf8")
 	c.Assert(createTable.Columns[1].Nullable, qt.IsFalse)
-	c.Assert(createTable.Columns[2].Comment, qt.Equals, "CHARSET utf8; COLLATE utf8_unicode_ci")
+	c.Assert(createTable.Columns[2].Charset, qt.Equals, "utf8")
+	c.Assert(createTable.Columns[2].Collate, qt.Equals, "utf8_unicode_ci")
 	c.Assert(createTable.Columns[2].Nullable, qt.IsTrue)
 }
 

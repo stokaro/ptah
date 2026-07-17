@@ -135,6 +135,8 @@ func ToField(column *ast.ColumnNode, structName, sourcePlatform string) goschema
 		Check:               column.Check,
 		GeneratedExpression: column.GeneratedExpression,
 		GeneratedKind:       column.GeneratedKind,
+		Charset:             column.Charset,
+		Collate:             column.Collate,
 		Comment:             column.Comment,
 	}
 
@@ -651,6 +653,14 @@ func MergeFieldOverrides(baseField goschema.Field, platformFields map[string]gos
 		// Check for comment differences
 		if platformField.Comment != baseField.Comment {
 			platformOverrides["comment"] = platformField.Comment
+		}
+
+		// Check for column charset/collation differences
+		if platformField.Charset != baseField.Charset {
+			platformOverrides["charset"] = platformField.Charset
+		}
+		if platformField.Collate != baseField.Collate {
+			platformOverrides["collate"] = platformField.Collate
 		}
 
 		// Check for default value differences

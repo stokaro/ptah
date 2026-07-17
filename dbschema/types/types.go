@@ -63,6 +63,8 @@ type DBColumn struct {
 	IsNullable         string  `json:"is_nullable"`          // YES/NO
 	ColumnDefault      *string `json:"column_default"`       // Can be NULL
 	CharacterMaxLength *int    `json:"character_max_length"` // For VARCHAR, etc.
+	Charset            string  `json:"charset,omitempty"`    // MySQL/MariaDB column character set
+	Collate            string  `json:"collate,omitempty"`    // MySQL/MariaDB column collation
 	NumericPrecision   *int    `json:"numeric_precision"`    // For DECIMAL, etc.
 	NumericScale       *int    `json:"numeric_scale"`        // For DECIMAL, etc.
 	OrdinalPosition    int     `json:"ordinal_position"`

@@ -224,6 +224,10 @@ type ColumnNode struct {
 	GeneratedExpression string
 	// GeneratedKind stores the generated column kind, such as VIRTUAL or STORED.
 	GeneratedKind string
+	// Charset is an optional column character set for MySQL-compatible dialects.
+	Charset string
+	// Collate is an optional column collation for MySQL-compatible dialects.
+	Collate string
 	// Comment is an optional column comment
 	Comment string
 	// ForeignKey contains foreign key reference information if this column references another table
@@ -357,6 +361,18 @@ func (n *ColumnNode) SetCheckName(name string) *ColumnNode {
 func (n *ColumnNode) SetGenerated(expression, kind string) *ColumnNode {
 	n.GeneratedExpression = expression
 	n.GeneratedKind = kind
+	return n
+}
+
+// SetCharset sets the column character set and returns the column for chaining.
+func (n *ColumnNode) SetCharset(charset string) *ColumnNode {
+	n.Charset = charset
+	return n
+}
+
+// SetCollate sets the column collation and returns the column for chaining.
+func (n *ColumnNode) SetCollate(collate string) *ColumnNode {
+	n.Collate = collate
 	return n
 }
 

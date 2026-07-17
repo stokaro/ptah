@@ -18,6 +18,7 @@ import (
 //   - Auto-increment behavior
 //   - Default values (literal and expressions)
 //   - Check constraints
+//   - MySQL-compatible character sets and collations
 //   - Comments
 //   - Foreign key references
 //
@@ -175,6 +176,18 @@ func (cb *ColumnBuilder) Check(expression string) *ColumnBuilder {
 // Generated marks the column as generated from the supplied raw SQL expression.
 func (cb *ColumnBuilder) Generated(expression, kind string) *ColumnBuilder {
 	cb.column.SetGenerated(expression, kind)
+	return cb
+}
+
+// Charset sets the column character set and returns the ColumnBuilder for chaining.
+func (cb *ColumnBuilder) Charset(charset string) *ColumnBuilder {
+	cb.column.SetCharset(charset)
+	return cb
+}
+
+// Collate sets the column collation and returns the ColumnBuilder for chaining.
+func (cb *ColumnBuilder) Collate(collate string) *ColumnBuilder {
+	cb.column.SetCollate(collate)
 	return cb
 }
 
@@ -406,6 +419,18 @@ func (scb *SchemaColumnBuilder) Check(expression string) *SchemaColumnBuilder {
 // Generated marks the column as generated from the supplied raw SQL expression.
 func (scb *SchemaColumnBuilder) Generated(expression, kind string) *SchemaColumnBuilder {
 	scb.column.SetGenerated(expression, kind)
+	return scb
+}
+
+// Charset sets the column character set and returns the SchemaColumnBuilder for chaining.
+func (scb *SchemaColumnBuilder) Charset(charset string) *SchemaColumnBuilder {
+	scb.column.SetCharset(charset)
+	return scb
+}
+
+// Collate sets the column collation and returns the SchemaColumnBuilder for chaining.
+func (scb *SchemaColumnBuilder) Collate(collate string) *SchemaColumnBuilder {
+	scb.column.SetCollate(collate)
 	return scb
 }
 

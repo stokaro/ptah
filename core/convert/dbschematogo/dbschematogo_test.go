@@ -195,6 +195,31 @@ func TestConvertDBSchemaToGoSchema_GeneratedColumns(t *testing.T) {
 	c.Assert(result.Fields[0].GeneratedKind, qt.Equals, "STORED")
 }
 
+func TestConvertDBSchemaToGoSchema_ColumnCharsetCollate(t *testing.T) {
+	c := qt.New(t)
+	dbSchema := &types.DBSchema{
+		Tables: []types.DBTable{
+			{
+				Name: "users",
+				Columns: []types.DBColumn{
+					{
+						Name:     "name",
+						DataType: "varchar(255)",
+						Charset:  "hebrew",
+						Collate:  "hebrew_general_ci",
+					},
+				},
+			},
+		},
+	}
+
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+
+	c.Assert(result.Fields, qt.HasLen, 1)
+	c.Assert(result.Fields[0].Charset, qt.Equals, "hebrew")
+	c.Assert(result.Fields[0].Collate, qt.Equals, "hebrew_general_ci")
+}
+
 func TestConvertDBSchemaToGoSchema_ExtensionDefaultValues(t *testing.T) {
 	c := qt.New(t)
 

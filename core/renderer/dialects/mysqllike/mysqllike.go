@@ -520,6 +520,12 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 
 	// Column name and type
 	parts = append(parts, fmt.Sprintf("  %s %s", column.Name, column.Type))
+	if column.Charset != "" {
+		parts = append(parts, "CHARACTER SET", column.Charset)
+	}
+	if column.Collate != "" {
+		parts = append(parts, "COLLATE", column.Collate)
+	}
 
 	// Column constraints
 	if column.Primary {

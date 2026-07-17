@@ -171,6 +171,28 @@ table "users" {
 	c.Assert(sql, qt.Contains, "COLLATE=utf8mb4_bin")
 }
 
+func TestParseMySQLColumnCharsetCollate(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+table "users" {
+  column "name" {
+    null = false
+    type = varchar(255)
+    charset = "hebrew"
+    collate = "hebrew_general_ci"
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Fields, qt.HasLen, 1)
+	c.Assert(db.Fields[0].Charset, qt.Equals, "hebrew")
+	c.Assert(db.Fields[0].Collate, qt.Equals, "hebrew_general_ci")
+
+	sql := strings.Join(renderer.GetOrderedCreateStatements(db, "mysql"), "\n")
+	c.Assert(sql, qt.Contains, "name varchar(255) CHARACTER SET hebrew COLLATE hebrew_general_ci NOT NULL")
+}
+
 func TestParseSQLiteTableOptionsRejectNonBool(t *testing.T) {
 	c := qt.New(t)
 
