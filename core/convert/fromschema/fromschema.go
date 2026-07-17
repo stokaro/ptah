@@ -52,6 +52,7 @@ package fromschema
 import (
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"github.com/stokaro/ptah/core/ast"
@@ -535,20 +536,61 @@ func FromTable(table goschema.Table, fields []goschema.Field, enums []goschema.E
 	}
 
 	// Add columns for fields that belong to this table
+	tableLevelPK := tableNeedsPrimaryKeyConstraint(newTable)
 	for _, field := range fields {
 		if field.StructName == table.StructName {
+			if tableLevelPK && slices.Contains(newTable.PrimaryKey, field.Name) {
+				field.Primary = false
+			}
 			column := FromField(field, enums, targetPlatform)
 			createTable.AddColumn(column)
 		}
 	}
 
 	// Add composite primary key constraint if specified
-	if len(table.PrimaryKey) > 1 {
-		constraint := ast.NewPrimaryKeyConstraint(table.PrimaryKey...)
+	if tableLevelPK {
+		constraint := newPrimaryKeyConstraint(newTable)
 		createTable.AddConstraint(constraint)
 	}
 
 	return createTable
+}
+
+func tableNeedsPrimaryKeyConstraint(table goschema.Table) bool {
+	if len(table.PrimaryKeyParts) > 0 {
+		return len(table.PrimaryKeyParts) > 1 || primaryKeyPartsHaveAttributes(table.PrimaryKeyParts)
+	}
+	return len(table.PrimaryKey) > 1
+}
+
+func primaryKeyPartsHaveAttributes(parts []goschema.PrimaryKeyPart) bool {
+	for _, part := range parts {
+		if part.Prefix != "" || part.Desc {
+			return true
+		}
+	}
+	return false
+}
+
+func newPrimaryKeyConstraint(table goschema.Table) *ast.ConstraintNode {
+	if len(table.PrimaryKeyParts) == 0 {
+		return ast.NewPrimaryKeyConstraint(table.PrimaryKey...)
+	}
+	columns := make([]string, 0, len(table.PrimaryKeyParts))
+	columnParts := make([]ast.ConstraintColumn, 0, len(table.PrimaryKeyParts))
+	for _, part := range table.PrimaryKeyParts {
+		columns = append(columns, part.Name)
+		columnParts = append(columnParts, ast.ConstraintColumn{
+			Name:   part.Name,
+			Prefix: part.Prefix,
+			Desc:   part.Desc,
+		})
+	}
+	return &ast.ConstraintNode{
+		Type:        ast.PrimaryKeyConstraint,
+		Columns:     columns,
+		ColumnParts: columnParts,
+	}
 }
 
 // FromConstraint converts a goschema.Constraint to an AST table constraint.
