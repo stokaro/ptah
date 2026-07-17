@@ -154,9 +154,10 @@ type Field struct {
 
 // IndexPart represents one column or expression inside an index definition.
 type IndexPart struct {
-	Name string // Column name
-	Expr string // Raw index expression
-	Desc bool   // Whether this part is ordered DESC
+	Name   string // Column name
+	Expr   string // Raw index expression
+	Prefix string // MySQL index prefix length
+	Desc   bool   // Whether this part is ordered DESC
 }
 
 // Index represents a database index definition parsed from Go struct annotations.

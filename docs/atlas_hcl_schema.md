@@ -30,8 +30,8 @@ current schema IR:
 - `column` blocks with `type`, `null`, `auto_increment`, `unique`, `default`,
   and `comment`
 - `primary_key` blocks with `columns`
-- `index` blocks with `columns`, `on { column = ... }`, `on { expr = "..." }`,
-  `desc`, `unique`, `type`, and `where`
+- `index` blocks with `columns`, `on { column = ..., prefix = ... }`,
+  `on { expr = "..." }`, `desc`, `unique`, `type`, and `where`
 - `foreign_key` blocks with one local `columns` entry and one table-qualified
   `ref_columns` entry
 - `check` blocks with `expr`
@@ -116,7 +116,6 @@ The Atlas HCL frontend is intentionally conservative. It does not yet model
 Atlas features that Ptah cannot represent without losing semantics, including:
 
 - composite foreign keys
-- index prefix parts
 - Atlas project `env` execution semantics
 - Atlas HCL objects outside direct schema definitions, such as variables,
   realms, extensions, and other dialect-specific object types
