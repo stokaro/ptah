@@ -79,6 +79,22 @@ func TestMySQL_CreateTableSelectTail(t *testing.T) {
 	c.Assert(out, qt.Not(qt.Contains), "CREATE TABLE IF NOT EXISTS t2 (")
 }
 
+func TestMySQL_CreateTableOptionsRenderInStableOrder(t *testing.T) {
+	c := qt.New(t)
+	table := ast.NewCreateTable("users").
+		AddColumn(ast.NewColumn("id", "int").SetPrimary()).
+		SetOption("ZZZ", "last").
+		SetOption("CHARSET", "utf8mb4").
+		SetOption("AUTO_INCREMENT", "42").
+		SetOption("AAA", "first").
+		SetOption("COLLATE", "utf8mb4_bin").
+		SetOption("ENGINE", "InnoDB")
+
+	out := renderMySQL(t, table)
+
+	c.Assert(out, qt.Contains, ") ENGINE=InnoDB AUTO_INCREMENT=42 CHARSET=utf8mb4 COLLATE=utf8mb4_bin AAA=first ZZZ=last;")
+}
+
 func TestMySQL_CreateTableGeneratedColumn(t *testing.T) {
 	c := qt.New(t)
 	table := ast.NewCreateTable("users").

@@ -471,6 +471,28 @@ func TestFromTable_BasicTable(t *testing.T) {
 					len(table.Columns) == 1
 			},
 		},
+		{
+			name: "table with charset and collate options",
+			table: goschema.Table{
+				StructName: "User",
+				Name:       "users",
+				Charset:    "utf8mb4",
+				Collate:    "utf8mb4_bin",
+			},
+			fields: []goschema.Field{
+				{
+					StructName: "User",
+					Name:       "name",
+					Type:       "VARCHAR(255)",
+				},
+			},
+			expected: func(table *ast.CreateTableNode) bool {
+				return table.Name == "users" &&
+					table.Options["CHARSET"] == "utf8mb4" &&
+					table.Options["COLLATE"] == "utf8mb4_bin" &&
+					len(table.Columns) == 1
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -1101,6 +1123,7 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 				Overrides: map[string]map[string]string{
 					"mariadb": {
 						"charset":   "utf8mb4",
+						"collate":   "utf8mb4_bin",
 						"collation": "utf8mb4_unicode_ci",
 					},
 				},
@@ -1110,6 +1133,7 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 			expected: func(table *ast.CreateTableNode) bool {
 				return table.Name == "users" &&
 					table.Options["CHARSET"] == "utf8mb4" &&
+					table.Options["COLLATE"] == "utf8mb4_bin" &&
 					table.Options["COLLATION"] == "utf8mb4_unicode_ci"
 			},
 		},
