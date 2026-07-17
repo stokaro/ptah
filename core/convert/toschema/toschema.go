@@ -355,7 +355,8 @@ func ToIndex(index *ast.IndexNode) goschema.Index {
 	return goschema.Index{
 		Name:       index.Name,
 		StructName: index.Table, // Use table name as struct name
-		Fields:     index.Columns,
+		Fields:     indexFieldNames(index),
+		Parts:      toSchemaIndexParts(index.Parts),
 		Unique:     index.Unique,
 		Comment:    index.Comment,
 		// PostgreSQL-specific features
@@ -364,6 +365,29 @@ func ToIndex(index *ast.IndexNode) goschema.Index {
 		Operator:  index.Operator,
 		TableName: index.Table,
 	}
+}
+
+func indexFieldNames(index *ast.IndexNode) []string {
+	if len(index.Parts) == 0 {
+		return index.Columns
+	}
+	fields := make([]string, 0, len(index.Parts))
+	for _, part := range index.Parts {
+		fields = append(fields, part.Reference())
+	}
+	return fields
+}
+
+func toSchemaIndexParts(parts []ast.IndexPart) []goschema.IndexPart {
+	schemaParts := make([]goschema.IndexPart, 0, len(parts))
+	for _, part := range parts {
+		schemaParts = append(schemaParts, goschema.IndexPart{
+			Name: part.Name,
+			Expr: part.Expr,
+			Desc: part.Desc,
+		})
+	}
+	return schemaParts
 }
 
 // ToExtension converts an ast.ExtensionNode to a goschema.Extension for database extension definitions.

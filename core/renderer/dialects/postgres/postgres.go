@@ -458,10 +458,13 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 
 	// Add columns with optional operator class
 	var columnSpecs []string
-	for _, column := range node.Columns {
-		columnSpec := column
+	for _, part := range node.EffectiveParts() {
+		columnSpec := renderIndexPart(part)
 		if node.Operator != "" {
-			columnSpec = fmt.Sprintf("%s %s", column, node.Operator)
+			columnSpec = fmt.Sprintf("%s %s", columnSpec, node.Operator)
+		}
+		if part.Desc {
+			columnSpec += " DESC"
 		}
 		columnSpecs = append(columnSpecs, columnSpec)
 	}
@@ -476,6 +479,13 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 
 	return nil
+}
+
+func renderIndexPart(part ast.IndexPart) string {
+	if part.Expr != "" {
+		return fmt.Sprintf("(%s)", part.Expr)
+	}
+	return part.Name
 }
 
 func (r *Renderer) VisitExtension(node *ast.ExtensionNode) error {

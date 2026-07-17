@@ -148,6 +148,13 @@ type Field struct {
 	Overrides      map[string]map[string]string // Platform-specific overrides (e.g., platform.mysql.type)
 }
 
+// IndexPart represents one column or expression inside an index definition.
+type IndexPart struct {
+	Name string // Column name
+	Expr string // Raw index expression
+	Desc bool   // Whether this part is ordered DESC
+}
+
 // Index represents a database index definition parsed from Go struct annotations.
 // Indexes are used to improve query performance and enforce uniqueness constraints
 // on one or more columns.
@@ -209,8 +216,12 @@ type Index struct {
 	StructName string   // Name of the Go struct this index belongs to
 	Name       string   // Index name (e.g., "idx_users_email")
 	Fields     []string // Column names included in the index
-	Unique     bool     // Whether this is a unique index
-	Comment    string   // Index comment/description
+	// Parts carries structured index elements for dialect-specific metadata,
+	// such as DESC ordering and expression indexes. Fields remains the legacy
+	// column/expression list for compatibility.
+	Parts   []IndexPart
+	Unique  bool   // Whether this is a unique index
+	Comment string // Index comment/description
 
 	// Type carries the dialect-specific index type. For PostgreSQL this is
 	// GIN/GIST/BTREE/HASH; for ClickHouse data-skipping indexes it is

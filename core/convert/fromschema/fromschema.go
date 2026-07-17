@@ -715,7 +715,10 @@ func FromIndex(index goschema.Index) *ast.IndexNode {
 		tableName = index.StructName
 	}
 
-	indexNode := ast.NewIndex(index.Name, tableName, index.Fields...)
+	indexNode := ast.NewIndex(index.Name, tableName, indexFields(index)...)
+	if len(index.Parts) > 0 {
+		indexNode.SetParts(toASTIndexParts(index.Parts))
+	}
 
 	// Set unique constraint
 	if index.Unique {
@@ -1211,7 +1214,10 @@ func FromIndexWithTableMapping(index goschema.Index, structToTableMap map[string
 		}
 	}
 
-	indexNode := ast.NewIndex(index.Name, tableName, index.Fields...)
+	indexNode := ast.NewIndex(index.Name, tableName, indexFields(index)...)
+	if len(index.Parts) > 0 {
+		indexNode.SetParts(toASTIndexParts(index.Parts))
+	}
 
 	// Set unique constraint
 	if index.Unique {
@@ -1244,6 +1250,33 @@ func FromIndexWithTableMapping(index goschema.Index, structToTableMap map[string
 	indexNode.IfNotExists = true
 
 	return indexNode
+}
+
+func toASTIndexParts(parts []goschema.IndexPart) []ast.IndexPart {
+	astParts := make([]ast.IndexPart, 0, len(parts))
+	for _, part := range parts {
+		astParts = append(astParts, ast.IndexPart{
+			Name: part.Name,
+			Expr: part.Expr,
+			Desc: part.Desc,
+		})
+	}
+	return astParts
+}
+
+func indexFields(index goschema.Index) []string {
+	if len(index.Parts) == 0 {
+		return index.Fields
+	}
+	fields := make([]string, 0, len(index.Parts))
+	for _, part := range index.Parts {
+		if part.Expr != "" {
+			fields = append(fields, part.Expr)
+			continue
+		}
+		fields = append(fields, part.Name)
+	}
+	return fields
 }
 
 // ParseForeignKeyReference parses a foreign key reference string into an ast.ForeignKeyRef.

@@ -418,6 +418,24 @@ func (n *ConstraintNode) Accept(visitor Visitor) error {
 	return visitor.VisitConstraint(n)
 }
 
+// IndexPart represents one column or expression inside a CREATE INDEX column list.
+type IndexPart struct {
+	// Name is the indexed column name.
+	Name string
+	// Expr is a raw indexed expression. It is mutually exclusive with Name.
+	Expr string
+	// Desc indicates DESC ordering for this index part.
+	Desc bool
+}
+
+// Reference returns the column name or expression represented by the index part.
+func (p IndexPart) Reference() string {
+	if p.Expr != "" {
+		return p.Expr
+	}
+	return p.Name
+}
+
 // IndexNode represents a CREATE INDEX statement.
 //
 // Indexes can be unique or non-unique and may specify an index type
@@ -430,6 +448,9 @@ type IndexNode struct {
 	Table string
 	// Columns contains the list of column names to include in the index
 	Columns []string
+	// Parts contains structured index elements. When empty, Columns remains
+	// the source of truth for legacy callers.
+	Parts []IndexPart
 	// Unique indicates whether this is a unique index
 	Unique bool
 	// Type specifies the index type (BTREE, HASH, GIN, GIST, etc. for
@@ -612,6 +633,24 @@ func NewIndex(name, table string, columns ...string) *IndexNode {
 // Accept implements the Node interface for IndexNode.
 func (n *IndexNode) Accept(visitor Visitor) error {
 	return visitor.VisitIndex(n)
+}
+
+// SetParts replaces the structured index parts and returns the index for chaining.
+func (n *IndexNode) SetParts(parts []IndexPart) *IndexNode {
+	n.Parts = slices.Clone(parts)
+	return n
+}
+
+// EffectiveParts returns structured index parts, falling back to Columns for legacy callers.
+func (n *IndexNode) EffectiveParts() []IndexPart {
+	if len(n.Parts) > 0 {
+		return slices.Clone(n.Parts)
+	}
+	parts := make([]IndexPart, 0, len(n.Columns))
+	for _, column := range n.Columns {
+		parts = append(parts, IndexPart{Name: column})
+	}
+	return parts
 }
 
 // SetUnique marks the index as unique and returns the index for chaining.

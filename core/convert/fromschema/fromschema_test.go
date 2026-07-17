@@ -671,6 +671,28 @@ func TestFromIndex_BasicIndex(t *testing.T) {
 					idx.Comment == "Index for price range queries"
 			},
 		},
+		{
+			name: "structured index parts",
+			index: goschema.Index{
+				Name:       "idx_users_rank_name",
+				StructName: "users",
+				Fields:     []string{"stale_rank", "stale_name"},
+				Parts: []goschema.IndexPart{
+					{Name: "rank", Desc: true},
+					{Expr: "lower(name)"},
+				},
+			},
+			expected: func(idx *ast.IndexNode) bool {
+				return idx.Name == "idx_users_rank_name" &&
+					idx.Table == "users" &&
+					len(idx.Columns) == 2 &&
+					idx.Columns[0] == "rank" &&
+					idx.Columns[1] == "lower(name)" &&
+					len(idx.Parts) == 2 &&
+					idx.Parts[0] == (ast.IndexPart{Name: "rank", Desc: true}) &&
+					idx.Parts[1] == (ast.IndexPart{Expr: "lower(name)"})
+			},
+		},
 	}
 
 	for _, test := range tests {

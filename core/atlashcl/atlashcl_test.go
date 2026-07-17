@@ -132,6 +132,65 @@ table "events" {
 	c.Assert(err, qt.ErrorMatches, `.*table attribute "strict" must be a bool.*`)
 }
 
+func TestParseIndexParts(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+table "users" {
+  column "rank" {
+    type = int
+  }
+  column "score" {
+    type = int
+  }
+  index "rank_score_idx" {
+    on {
+      column = column.rank
+    }
+    on {
+      column = column.score
+      desc = true
+    }
+  }
+  index "full_name" {
+    on {
+      expr = "first_name || ' ' || last_name"
+    }
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Indexes, qt.HasLen, 2)
+	c.Assert(db.Indexes[0].Fields, qt.DeepEquals, []string{"rank", "score"})
+	c.Assert(db.Indexes[0].Parts, qt.DeepEquals, []goschema.IndexPart{
+		{Name: "rank"},
+		{Name: "score", Desc: true},
+	})
+	c.Assert(db.Indexes[1].Fields, qt.DeepEquals, []string{"first_name || ' ' || last_name"})
+	c.Assert(db.Indexes[1].Parts, qt.DeepEquals, []goschema.IndexPart{
+		{Expr: "first_name || ' ' || last_name"},
+	})
+}
+
+func TestParseRejectsIndexColumnsAndOnBlocks(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := atlashcl.Parse([]byte(`
+table "users" {
+  column "email" {
+    type = varchar(255)
+  }
+  index "idx_users_email" {
+    columns = [column.email]
+    on {
+      column = column.email
+    }
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.ErrorMatches, `.*index cannot mix columns attribute with on blocks.*`)
+}
+
 func TestParseSchemaComment(t *testing.T) {
 	c := qt.New(t)
 
@@ -312,6 +371,57 @@ table "users" {
 }
 `), "schema.hcl")
 	c.Assert(err, qt.ErrorMatches, `.*unsupported index on attribute "prefix".*`)
+}
+
+func TestParseRejectsInvalidIndexParts(t *testing.T) {
+	tests := []struct {
+		name  string
+		part  string
+		match string
+	}{
+		{
+			name: "missing column and expr",
+			part: `
+    on {
+      desc = true
+    }`,
+			match: `.*index on block requires column or expr.*`,
+		},
+		{
+			name: "column and expr together",
+			part: `
+    on {
+      column = column.email
+      expr = "lower(email)"
+    }`,
+			match: `.*index on block cannot set both column and expr.*`,
+		},
+		{
+			name: "non-bool desc",
+			part: `
+    on {
+      column = column.email
+      desc = "true"
+    }`,
+			match: `.*index on attribute "desc" must be a bool.*`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			_, err := atlashcl.Parse([]byte(`
+table "users" {
+  column "email" {
+    type = varchar(255)
+  }
+  index "idx_users_email" {`+test.part+`
+  }
+}
+`), "schema.hcl")
+			c.Assert(err, qt.ErrorMatches, test.match)
+		})
+	}
 }
 
 func TestParseRejectsForeignKeyWithUnknownLocalColumn(t *testing.T) {

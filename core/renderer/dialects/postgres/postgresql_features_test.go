@@ -46,6 +46,18 @@ func TestPostgreSQLRenderer_VisitIndex_PostgreSQLFeatures(t *testing.T) {
 			expected: "CREATE INDEX idx_products_tags ON products USING GIN (tags);\n",
 		},
 		{
+			name: "descending index part",
+			index: ast.NewIndex("idx_users_rank", "users", "rank").
+				SetParts([]ast.IndexPart{{Name: "rank", Desc: true}}),
+			expected: "CREATE INDEX idx_users_rank ON users (rank DESC);\n",
+		},
+		{
+			name: "expression index part",
+			index: ast.NewIndex("idx_users_full_name", "users", "first_name || ' ' || last_name").
+				SetParts([]ast.IndexPart{{Expr: "first_name || ' ' || last_name"}}),
+			expected: "CREATE INDEX idx_users_full_name ON users ((first_name || ' ' || last_name));\n",
+		},
+		{
 			name: "partial index",
 			index: &ast.IndexNode{
 				Name:      "idx_active_users",
