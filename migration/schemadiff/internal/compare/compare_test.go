@@ -737,6 +737,26 @@ func TestIndexes_HappyPath(t *testing.T) {
 				IndexesRemoved: []string{"old_index"},
 			},
 		},
+		{
+			name: "index nulls distinct changed",
+			generated: func() *goschema.Database {
+				nullsDistinct := false
+				return &goschema.Database{
+					Indexes: []goschema.Index{
+						{Name: "idx_users_c", StructName: "users", Fields: []string{"c"}, Unique: true, NullsDistinct: &nullsDistinct},
+					},
+				}
+			}(),
+			database: &types.DBSchema{
+				Indexes: []types.DBIndex{
+					{Name: "idx_users_c", TableName: "users", Columns: []string{"c"}, IsUnique: true},
+				},
+			},
+			expected: &difftypes.SchemaDiff{
+				IndexesAdded:   []string{"idx_users_c"},
+				IndexesRemoved: []string{"idx_users_c"},
+			},
+		},
 	}
 
 	for _, tt := range tests {

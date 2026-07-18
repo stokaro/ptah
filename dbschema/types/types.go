@@ -103,6 +103,9 @@ type DBIndex struct {
 	IsUnique   bool     `json:"is_unique"`
 	IsPrimary  bool     `json:"is_primary"`
 	Definition string   `json:"definition"` // Full index definition
+	// NullsDistinct carries PostgreSQL UNIQUE INDEX NULLS [NOT] DISTINCT
+	// state. Nil means the clause was not present in the definition.
+	NullsDistinct *bool `json:"nulls_distinct,omitempty"`
 
 	// Type is the ClickHouse data-skipping-index type. One of
 	// "minmax" / "set(N)" / "bloom_filter" / "bloom_filter(p)" /
@@ -140,6 +143,9 @@ type DBConstraint struct {
 	DeleteRule     *string  `json:"delete_rule"`  // CASCADE, RESTRICT, etc.
 	UpdateRule     *string  `json:"update_rule"`  // CASCADE, RESTRICT, etc.
 	CheckClause    *string  `json:"check_clause"` // For CHECK constraints
+	// NullsDistinct carries PostgreSQL UNIQUE NULLS [NOT] DISTINCT state.
+	// Nil means the clause was not present in the definition.
+	NullsDistinct *bool `json:"nulls_distinct,omitempty"`
 	// EXCLUDE constraint specific fields (PostgreSQL only)
 	UsingMethod     *string `json:"using_method"`     // Index method: gist, btree, etc.
 	ExcludeElements *string `json:"exclude_elements"` // Elements with operators: "room_id WITH =, during WITH &&"

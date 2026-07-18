@@ -384,12 +384,13 @@ func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error
 
 		// Parse index definition to extract columns and properties
 		index := types.DBIndex{
-			Name:       indexName,
-			TableName:  tableName,
-			Schema:     r.outputSchema(schemaName),
-			Definition: indexDef,
-			IsUnique:   isUnique,
-			IsPrimary:  isPrimary,
+			Name:          indexName,
+			TableName:     tableName,
+			Schema:        r.outputSchema(schemaName),
+			Definition:    indexDef,
+			IsUnique:      isUnique,
+			IsPrimary:     isPrimary,
+			NullsDistinct: postgresNullsDistinctFromDefinition(indexDef),
 		}
 
 		// Extract column names from index definition (simplified parsing)
@@ -458,7 +459,17 @@ func (r *Reader) readBasicConstraintsForSchema(schemaName string) ([]types.DBCon
 				COALESCE(string_agg(ukcu.column_name, ',' ORDER BY kcu.ordinal_position) FILTER (WHERE ukcu.column_name IS NOT NULL), ''),
 				COALESCE(rc.delete_rule, ''),
 			COALESCE(rc.update_rule, ''),
-			COALESCE(cc.check_clause, '')
+			COALESCE(cc.check_clause, ''),
+			COALESCE((
+				SELECT pg_get_constraintdef(pc.oid)
+				FROM pg_constraint pc
+				JOIN pg_class pc_table ON pc_table.oid = pc.conrelid
+				JOIN pg_namespace pc_schema ON pc_schema.oid = pc_table.relnamespace
+				WHERE pc_schema.nspname = tc.table_schema
+				AND pc_table.relname = tc.table_name
+				AND pc.conname = tc.constraint_name
+				LIMIT 1
+			), '')
 		FROM information_schema.table_constraints AS tc
 		LEFT JOIN information_schema.key_column_usage AS kcu
 			ON tc.constraint_name = kcu.constraint_name
@@ -495,7 +506,7 @@ func (r *Reader) readBasicConstraintsForSchema(schemaName string) ([]types.DBCon
 	var constraints []types.DBConstraint
 	for rows.Next() {
 		var constraint types.DBConstraint
-		var columnNames, foreignSchema, foreignTable, foreignColumns, deleteRule, updateRule, checkClause string
+		var columnNames, foreignSchema, foreignTable, foreignColumns, deleteRule, updateRule, checkClause, constraintDefinition string
 
 		err := rows.Scan(
 			&constraint.Schema,
@@ -509,6 +520,7 @@ func (r *Reader) readBasicConstraintsForSchema(schemaName string) ([]types.DBCon
 			&deleteRule,
 			&updateRule,
 			&checkClause,
+			&constraintDefinition,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan constraint: %w", err)
@@ -537,11 +549,25 @@ func (r *Reader) readBasicConstraintsForSchema(schemaName string) ([]types.DBCon
 		if checkClause != "" {
 			constraint.CheckClause = &checkClause
 		}
+		constraint.NullsDistinct = postgresNullsDistinctFromDefinition(constraintDefinition)
 
 		constraints = append(constraints, constraint)
 	}
 
 	return constraints, nil
+}
+
+func postgresNullsDistinctFromDefinition(definition string) *bool {
+	upper := strings.ToUpper(definition)
+	if strings.Contains(upper, "NULLS NOT DISTINCT") {
+		nullsDistinct := false
+		return &nullsDistinct
+	}
+	if strings.Contains(upper, "NULLS DISTINCT") {
+		nullsDistinct := true
+		return &nullsDistinct
+	}
+	return nil
 }
 
 // readPostgreSQLConstraints reads PostgreSQL-specific constraints from pg_constraint
