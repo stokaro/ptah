@@ -735,7 +735,15 @@ func (r *Renderer) isEnumType(fieldType string, enums []string) bool {
 func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, error) {
 	switch constraint.Type {
 	case ast.PrimaryKeyConstraint:
-		return fmt.Sprintf("  PRIMARY KEY (%s)", strings.Join(constraint.Columns, ", ")), nil
+		line := "  "
+		if constraint.Name != "" {
+			line += fmt.Sprintf("CONSTRAINT %s ", constraint.Name)
+		}
+		line += fmt.Sprintf("PRIMARY KEY (%s)", strings.Join(constraint.Columns, ", "))
+		if len(constraint.IncludeColumns) > 0 {
+			line += fmt.Sprintf(" INCLUDE (%s)", strings.Join(constraint.IncludeColumns, ", "))
+		}
+		return line, nil
 	case ast.UniqueConstraint:
 		if constraint.Name != "" {
 			return fmt.Sprintf("  CONSTRAINT %s UNIQUE (%s)", constraint.Name, strings.Join(constraint.Columns, ", ")), nil

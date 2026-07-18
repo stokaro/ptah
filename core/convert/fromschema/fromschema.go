@@ -670,6 +670,9 @@ func FromTable(table goschema.Table, fields []goschema.Field, enums []goschema.E
 }
 
 func tableNeedsPrimaryKeyConstraint(table goschema.Table) bool {
+	if len(table.PrimaryKeyInclude) > 0 && (len(table.PrimaryKey) > 0 || len(table.PrimaryKeyParts) > 0) {
+		return true
+	}
 	if len(table.PrimaryKeyParts) > 0 {
 		return len(table.PrimaryKeyParts) > 1 || primaryKeyPartsHaveAttributes(table.PrimaryKeyParts)
 	}
@@ -687,7 +690,9 @@ func primaryKeyPartsHaveAttributes(parts []goschema.PrimaryKeyPart) bool {
 
 func newPrimaryKeyConstraint(table goschema.Table) *ast.ConstraintNode {
 	if len(table.PrimaryKeyParts) == 0 {
-		return ast.NewPrimaryKeyConstraint(table.PrimaryKey...)
+		constraint := ast.NewPrimaryKeyConstraint(table.PrimaryKey...)
+		constraint.IncludeColumns = table.PrimaryKeyInclude
+		return constraint
 	}
 	columns := make([]string, 0, len(table.PrimaryKeyParts))
 	columnParts := make([]ast.ConstraintColumn, 0, len(table.PrimaryKeyParts))
@@ -700,9 +705,10 @@ func newPrimaryKeyConstraint(table goschema.Table) *ast.ConstraintNode {
 		})
 	}
 	return &ast.ConstraintNode{
-		Type:        ast.PrimaryKeyConstraint,
-		Columns:     columns,
-		ColumnParts: columnParts,
+		Type:           ast.PrimaryKeyConstraint,
+		Columns:        columns,
+		ColumnParts:    columnParts,
+		IncludeColumns: table.PrimaryKeyInclude,
 	}
 }
 

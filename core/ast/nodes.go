@@ -460,6 +460,8 @@ type ConstraintNode struct {
 	// ColumnParts contains structured column references for dialect-specific
 	// attributes such as MySQL prefix lengths and DESC ordering.
 	ColumnParts []ConstraintColumn
+	// IncludeColumns contains PostgreSQL INCLUDE columns for primary key constraints.
+	IncludeColumns []string
 	// Reference contains foreign key reference information (only for FOREIGN KEY constraints)
 	Reference *ForeignKeyRef
 	// Expression contains the check expression (only for CHECK constraints)

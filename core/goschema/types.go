@@ -391,9 +391,12 @@ type Table struct {
 	// PrimaryKeyParts carries dialect-specific metadata for composite primary
 	// key elements, such as MySQL prefix lengths and DESC ordering.
 	PrimaryKeyParts []PrimaryKeyPart
-	Checks          []string                     // Table-level check constraints
-	CustomSQL       string                       // Custom SQL to append to CREATE TABLE
-	Overrides       map[string]map[string]string // Platform-specific overrides
+	// PrimaryKeyInclude carries PostgreSQL INCLUDE columns for table-level
+	// primary keys.
+	PrimaryKeyInclude []string
+	Checks            []string                     // Table-level check constraints
+	CustomSQL         string                       // Custom SQL to append to CREATE TABLE
+	Overrides         map[string]map[string]string // Platform-specific overrides
 }
 
 // PrimaryKeyPart represents one column reference inside a table primary key.
