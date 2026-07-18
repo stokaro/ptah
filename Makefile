@@ -2,6 +2,13 @@
 
 .PHONY: help build test integration-test clean docker-build lint lint-qtlint lint-fix install-hooks
 
+VERSION ?= $(shell git describe --tags --always --dirty)
+COMMIT ?= $(shell git rev-parse --short HEAD)
+DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS := -X github.com/stokaro/ptah/cmd/internal/buildinfo.Version=$(VERSION) \
+	-X github.com/stokaro/ptah/cmd/internal/buildinfo.Commit=$(COMMIT) \
+	-X github.com/stokaro/ptah/cmd/internal/buildinfo.Date=$(DATE)
+
 # Default target
 help:
 	@echo "Ptah Migration Library"
@@ -21,7 +28,7 @@ help:
 # Build all binaries
 build:
 	@echo "Building Ptah binaries..."
-	go build -o bin/ptah ./cmd/main.go
+	go build -ldflags "$(LDFLAGS)" -o bin/ptah ./cmd/ptah
 	go build -o bin/ptah-integration-test ./cmd/integration-test
 
 # Run unit tests

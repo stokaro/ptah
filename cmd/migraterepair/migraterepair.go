@@ -75,8 +75,14 @@ var migrateRepairFlags = map[string]cobraflags.Flag{
 	dbcli.RevisionTableFormatFlagName: dbcli.NewRevisionTableFormatFlag(),
 }
 
+var migrateRepairFlagsRegistered bool
+
 func NewMigrateRepairCommand() *cobra.Command {
-	cobraflags.RegisterMap(migrateRepairCmd, migrateRepairFlags)
+	if !migrateRepairFlagsRegistered {
+		cobraflags.RegisterMap(migrateRepairCmd, migrateRepairFlags)
+		migrateRepairFlagsRegistered = true
+	}
+
 	return migrateRepairCmd
 }
 
