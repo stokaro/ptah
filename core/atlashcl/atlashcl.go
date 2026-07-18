@@ -69,6 +69,10 @@ func (p *parser) parseBody(body *hclsyntax.Body) error {
 				Charset: p.optionalString(block.Body.Attributes["charset"]),
 				Collate: p.optionalString(block.Body.Attributes["collate"]),
 			})
+		case "enum":
+			if err := p.parseEnum(block); err != nil {
+				return err
+			}
 		case "table":
 			if err := p.parseTable(block); err != nil {
 				return err
@@ -80,6 +84,27 @@ func (p *parser) parseBody(body *hclsyntax.Body) error {
 			return p.blockError(block, "unsupported top-level block %q", block.Type)
 		}
 	}
+	return nil
+}
+
+func (p *parser) parseEnum(block *hclsyntax.Block) error {
+	if len(block.Labels) != 1 {
+		return p.blockError(block, "enum block requires exactly one label")
+	}
+	if err := p.rejectUnsupportedEnumAttrs(block); err != nil {
+		return err
+	}
+	values, err := p.stringListAttr(block, "values")
+	if err != nil {
+		return err
+	}
+	if len(values) == 0 {
+		return p.blockError(block, "enum %q requires values", block.Labels[0])
+	}
+	p.db.Enums = append(p.db.Enums, goschema.Enum{
+		Name:   block.Labels[0],
+		Values: values,
+	})
 	return nil
 }
 
@@ -193,7 +218,7 @@ func (p *parser) parseColumn(structName string, block *hclsyntax.Block) (goschem
 		StructName:          structName,
 		FieldName:           name,
 		Name:                name,
-		Type:                p.rawExpr(typeAttr),
+		Type:                p.columnTypeName(typeAttr),
 		Nullable:            p.optionalBool(block.Body.Attributes["null"], false),
 		AutoInc:             p.optionalBool(block.Body.Attributes["auto_increment"], false) || identity.generation != "",
 		IdentityGeneration:  identity.generation,
@@ -708,6 +733,16 @@ func (p *parser) rejectUnsupportedSchemaBody(block *hclsyntax.Block) error {
 	}, "schema")
 }
 
+func (p *parser) rejectUnsupportedEnumAttrs(block *hclsyntax.Block) error {
+	if len(block.Body.Blocks) > 0 {
+		return p.blockError(block.Body.Blocks[0], "unsupported enum block %q", block.Body.Blocks[0].Type)
+	}
+	return p.rejectUnsupportedAttrs(block, map[string]bool{
+		"schema": true,
+		"values": true,
+	}, "enum")
+}
+
 func (p *parser) rejectUnsupportedTableAttrs(block *hclsyntax.Block) error {
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"schema":         true,
@@ -946,6 +981,35 @@ func (p *parser) exprString(attr *hclsyntax.Attribute) string {
 		return value.AsString()
 	}
 	return p.rawExpr(attr)
+}
+
+func (p *parser) columnTypeName(attr *hclsyntax.Attribute) string {
+	typ := p.rawExpr(attr)
+	if enumName, ok := strings.CutPrefix(typ, "enum."); ok {
+		return enumName
+	}
+	return typ
+}
+
+func (p *parser) stringListAttr(block *hclsyntax.Block, attrName string) ([]string, error) {
+	attr := block.Body.Attributes[attrName]
+	if attr == nil {
+		return nil, nil
+	}
+	value, diags := attr.Expr.Value(nil)
+	if diags.HasErrors() || !value.CanIterateElements() {
+		return nil, p.blockError(block, "%s must be a list of strings", attrName)
+	}
+	values := make([]string, 0, value.LengthInt())
+	it := value.ElementIterator()
+	for it.Next() {
+		_, item := it.Element()
+		if item.Type() != cty.String {
+			return nil, p.blockError(block, "%s must be a list of strings", attrName)
+		}
+		values = append(values, item.AsString())
+	}
+	return values, nil
 }
 
 func (p *parser) columnNameFromExpr(attr *hclsyntax.Attribute) string {
