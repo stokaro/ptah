@@ -8,6 +8,7 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/generator"
 )
 
@@ -96,6 +97,10 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	}
 	if migrationsDir == "" {
 		return fmt.Errorf("migrations directory is required")
+	}
+	migrationsDir, err = pathguard.ResolveCLIPath(migrationsDir)
+	if err != nil {
+		return fmt.Errorf("invalid migrations directory: %w", err)
 	}
 
 	connectTimeout, err := dbcli.ParseConnectTimeout(connectTimeoutValue)

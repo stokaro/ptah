@@ -202,6 +202,9 @@ type GenerateMigrationOptions struct {
     // OutputDir is the directory where migration files will be saved (always real filesystem)
     OutputDir string
 
+    // AllowedOutputRoot constrains OutputDir when accepting user-supplied paths
+    AllowedOutputRoot string
+
     // CompareOptions are the options to use when comparing schemas
     CompareOptions *config.CompareOptions
 
