@@ -80,10 +80,21 @@
 //	CREATE TABLE schema_migrations (
 //		version BIGINT PRIMARY KEY,
 //		description TEXT NOT NULL,
-//		applied_at TIMESTAMP NOT NULL
+//		applied_at TIMESTAMP NOT NULL,
+//		state VARCHAR(32) NOT NULL DEFAULT 'applied',
+//		applied INTEGER NOT NULL DEFAULT 1,
+//		total INTEGER NOT NULL DEFAULT 1,
+//		error TEXT NULL,
+//		error_stmt TEXT NULL,
+//		execution_time_ms BIGINT NOT NULL DEFAULT 0,
+//		checksum VARCHAR(64) NOT NULL DEFAULT ''
 //	);
 //
-// This table tracks which migrations have been applied and when. Use
+// This table tracks which migrations have been applied and when. Failed or
+// interrupted migrations leave a dirty revision row with statement progress and
+// error details; later migration operations refuse to continue until the row is
+// repaired. Applied rows also store a checksum of the up SQL so edited
+// migration files are detected before new work starts. Use
 // WithMigrationsTable(schema, table) to store migration history in a custom
 // schema or table, for example an `infra.ptah_migrations` table in PostgreSQL.
 //
@@ -103,6 +114,7 @@
 //   - GetAppliedMigrations(): List all applied migration versions
 //   - GetPendingMigrations(): List all pending migration versions
 //   - GetMigrationStatus(): Get comprehensive migration status information
+//   - RepairMigration(opts): Clear a dirty migration after manual repair, or resume remaining up statements
 //
 // # Migration Providers
 //
@@ -119,8 +131,8 @@
 //
 //   - If a migration succeeds, the transaction is committed
 //   - If a migration fails, the transaction is rolled back
-//   - Migration history is updated only after successful execution
-//   - Partial failures leave the database in a consistent state
+//   - Migration history is marked pending before execution and applied only after success
+//   - Partial failures leave dirty migration metadata that blocks later migration operations
 //
 // # SQL File Support
 //

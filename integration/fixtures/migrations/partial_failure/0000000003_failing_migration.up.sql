@@ -1,5 +1,6 @@
--- This migration should fail, causing partial failure
+-- This migration should fail after one valid statement. Transactional engines
+-- roll the table back, but the metadata row still records failed progress.
 CREATE TABLE invalid_table (
-    id SERIAL PRIMARY KEY,
-    invalid_column INVALID_TYPE_THAT_DOES_NOT_EXIST
+    id SERIAL PRIMARY KEY
 );
+SELECT * FROM missing_partial_failure_dependency;

@@ -15,6 +15,7 @@ import (
 	"github.com/stokaro/ptah/cmd/migrate"
 	"github.com/stokaro/ptah/cmd/migratedown"
 	"github.com/stokaro/ptah/cmd/migratehash"
+	"github.com/stokaro/ptah/cmd/migraterepair"
 	"github.com/stokaro/ptah/cmd/migratestatus"
 	"github.com/stokaro/ptah/cmd/migrateup"
 	"github.com/stokaro/ptah/cmd/migratevalidate"
@@ -54,6 +55,7 @@ func Execute(args ...string) {
 	rootCmd.AddCommand(migrate.NewMigrateCommand())
 	rootCmd.AddCommand(migrateup.NewMigrateUpCommand())
 	rootCmd.AddCommand(migratedown.NewMigrateDownCommand())
+	rootCmd.AddCommand(migraterepair.NewMigrateRepairCommand())
 	rootCmd.AddCommand(migratestatus.NewMigrateStatusCommand())
 	rootCmd.AddCommand(migratehash.NewMigrateHashCommand())
 	rootCmd.AddCommand(migratevalidate.NewMigrateValidateCommand())

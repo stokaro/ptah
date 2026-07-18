@@ -763,11 +763,34 @@ of silently reporting "up to date". Use `--exec-order=non-linear` to apply those
 pending lower versions, or `--exec-order=linear-skip` to leave them unapplied with
 a warning.
 
+Ptah records migration state before executing each migration and marks the row
+`applied` only after the migration finishes. A failed migration leaves a dirty
+`schema_migrations` revision with statement progress, error text, execution
+time, and a SHA-256 checksum of the up SQL. `migrate-up`, `migrate-down`, and
+`migrate-to` refuse to continue while a dirty revision exists, so operators can
+inspect the database instead of accidentally running later migrations on a
+half-applied schema.
+
+After fixing the database state manually, use `migrate-repair` to mark the
+dirty revision resolved:
+
+```bash
+./package-migrator migrate-repair --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --version 12
+
+# For non-transactional engines, resume remaining up statements before marking applied.
+./package-migrator migrate-repair --db-url mysql://user:pass@tcp(localhost:3306)/database --migrations-dir ./migrations --version 12 --resume-from 2
+```
+
+Already-applied migrations are also checked against the current up SQL checksum.
+If a migration file is edited after it was applied, Ptah aborts before planning
+new work and reports a checksum mismatch for that version.
+
 **Features:**
 - ✅ Applies migrations in correct order based on version numbers
 - ✅ Detects out-of-order pending migrations below the current version
 - ✅ Each migration runs in its own transaction unless explicitly marked `no_transaction`
-- ✅ Automatic rollback on failure
+- ✅ Tracks dirty/failed migration state and refuses to continue until repaired
+- ✅ Verifies applied migration checksums before running new work
 - ✅ Executes Ptah paired down files and Atlas txtar `down.sql` sections
 - ✅ Tracks applied migrations in `schema_migrations` table, or a custom `--migrations-schema`/`--migrations-table`
 - ✅ Supports dry-run mode for preview

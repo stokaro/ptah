@@ -344,11 +344,25 @@ The migrator automatically creates a `schema_migrations` table to track applied 
 
 ```sql
 CREATE TABLE schema_migrations (
-    version INTEGER PRIMARY KEY,
+    version BIGINT PRIMARY KEY,
     description TEXT NOT NULL,
-    applied_at TIMESTAMP NOT NULL
+    applied_at TIMESTAMP NOT NULL,
+    state VARCHAR(32) NOT NULL DEFAULT 'applied',
+    applied INTEGER NOT NULL DEFAULT 1,
+    total INTEGER NOT NULL DEFAULT 1,
+    error TEXT NULL,
+    error_stmt TEXT NULL,
+    execution_time_ms BIGINT NOT NULL DEFAULT 0,
+    checksum VARCHAR(64) NOT NULL DEFAULT ''
 );
 ```
+
+Rows are written as `pending` before migration SQL executes, then marked
+`applied` after success. Failed or interrupted runs leave a dirty row with
+statement progress and error details; later migration operations refuse to
+continue until `RepairMigration` or the `migrate-repair` CLI resolves it.
+Applied rows store an up-SQL checksum, so editing an already-applied migration
+file is detected before new work starts.
 
 ## Best Practices
 

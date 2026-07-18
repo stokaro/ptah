@@ -306,15 +306,40 @@ func testPartialFailureRecovery(ctx context.Context, conn *dbschema.DatabaseConn
 		return fmt.Errorf("expected migration to fail, but it succeeded")
 	}
 
-	// Check what was applied before failure
+	mig, err := migrator.NewFSMigrator(conn, migrationsFS)
+	if err != nil {
+		return fmt.Errorf("failed to create migrator after partial failure: %w", err)
+	}
+	status, err := mig.GetMigrationStatus(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get migration status after partial failure: %w", err)
+	}
+	if status.DirtyRevision == nil {
+		return fmt.Errorf("expected dirty migration revision after partial failure")
+	}
+	if status.DirtyRevision.Version != 3 {
+		return fmt.Errorf("expected dirty migration version 3, got %d", status.DirtyRevision.Version)
+	}
+	if status.DirtyRevision.Total < 2 {
+		return fmt.Errorf("expected dirty migration to record multi-statement progress, got total=%d", status.DirtyRevision.Total)
+	}
+
+	err = helper.ApplyMigrations(ctx, migrationsFS)
+	if err == nil {
+		return fmt.Errorf("expected retry to fail while dirty migration state exists")
+	}
+	if !migrator.IsDirtyMigration(err) {
+		return fmt.Errorf("expected dirty migration error on retry, got %w", err)
+	}
+
+	// Check what was applied before failure.
 	version, err := helper.GetCurrentVersion(ctx, migrationsFS)
 	if err != nil {
 		return fmt.Errorf("should be able to query version after partial failure: %w", err)
 	}
 
-	// Should have applied some but not all migrations
-	if version == 0 {
-		return fmt.Errorf("expected some migrations to be applied before failure")
+	if version != 2 {
+		return fmt.Errorf("expected completed migration version 2 after failure, got %d", version)
 	}
 
 	// Verify we can still interact with the database
