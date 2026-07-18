@@ -363,12 +363,24 @@ CREATE TABLE schema_migrations (
 8. **Use production timeouts**: Run production DDL with `--lock-timeout 3s --statement-timeout 30s` so hot-table locks and runaway statements fail fast
 9. **Version numbers**: Use sequential version numbers or timestamps
 
+### Migration Advisory Locks
+
+PostgreSQL, MySQL, and MariaDB migrators acquire a session-level advisory lock
+around the planning and apply window for `MigrateUp`, `MigrateDown`,
+`MigrateDownTo`, and `MigrateTo`. This prevents concurrent runners from reading
+the same pending migration set and applying it more than once.
+
+By default the migrator waits until the lock is available. Use
+`WithMigrationLockTimeout` or the CLI `--migration-lock-timeout` flag to bound
+that wait. Timed-out callers receive a typed error that can be detected with
+`migrator.IsMigrationLockTimeout`.
+
 ### Per-Migration Timeouts
 
 Set CLI defaults for every pending migration:
 
 ```bash
-go run ./cmd migrate-up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --lock-timeout 3s --statement-timeout 30s
+go run ./cmd migrate-up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --lock-timeout 3s --statement-timeout 30s --migration-lock-timeout 30s
 ```
 
 Override those defaults in a specific migration file with top-of-file directives:
