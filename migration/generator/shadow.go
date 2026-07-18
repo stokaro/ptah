@@ -98,7 +98,7 @@ func sameDialect(left, right string) bool {
 	return platform.NormalizeDialect(left) == platform.NormalizeDialect(right)
 }
 
-func loadPriorMigrations(dir string) ([]*migrator.Migration, error) {
+func loadPriorMigrations(dir string, opts ...migrator.FSProviderOption) ([]*migrator.Migration, error) {
 	if strings.TrimSpace(dir) == "" {
 		return nil, nil
 	}
@@ -109,7 +109,7 @@ func loadPriorMigrations(dir string) ([]*migrator.Migration, error) {
 		return nil, err
 	}
 
-	provider, err := migrator.NewFSMigrationProvider(os.DirFS(dir))
+	provider, err := migrator.NewFSMigrationProvider(os.DirFS(dir), opts...)
 	if err != nil {
 		return nil, err
 	}
