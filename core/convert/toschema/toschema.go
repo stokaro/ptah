@@ -42,6 +42,7 @@
 package toschema
 
 import (
+	"maps"
 	"strconv"
 	"strings"
 
@@ -376,6 +377,7 @@ func ToIndex(index *ast.IndexNode) goschema.Index {
 		Condition:      index.Condition,
 		Operator:       index.Operator,
 		IncludeColumns: index.IncludeColumns,
+		StorageParams:  maps.Clone(index.StorageParams),
 		TableName:      index.Table,
 	}
 }

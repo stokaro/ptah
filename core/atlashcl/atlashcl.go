@@ -324,6 +324,10 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 	if err := p.rejectUnsupportedIndexAttrs(block); err != nil {
 		return goschema.Index{}, err
 	}
+	storageParams, err := p.parseIndexStorageParams(block)
+	if err != nil {
+		return goschema.Index{}, err
+	}
 	indexType := p.optionalString(block.Body.Attributes["type"])
 	parserName := p.optionalString(block.Body.Attributes["parser"])
 	if parserName != "" && !strings.EqualFold(indexType, "FULLTEXT") {
@@ -339,8 +343,28 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 		Parser:         parserName,
 		Condition:      p.optionalString(block.Body.Attributes["where"]),
 		IncludeColumns: include,
+		StorageParams:  storageParams,
 		TableName:      tableName,
 	}, nil
+}
+
+func (p *parser) parseIndexStorageParams(block *hclsyntax.Block) (map[string]string, error) {
+	pagePerRange := block.Body.Attributes["page_per_range"]
+	pagesPerRange := block.Body.Attributes["pages_per_range"]
+	if pagePerRange != nil && pagesPerRange != nil {
+		return nil, p.blockError(block, "index cannot set both page_per_range and pages_per_range")
+	}
+	params := map[string]string{}
+	if pagePerRange != nil {
+		params["pages_per_range"] = p.exprString(pagePerRange)
+	}
+	if pagesPerRange != nil {
+		params["pages_per_range"] = p.exprString(pagesPerRange)
+	}
+	if len(params) == 0 {
+		return nil, nil
+	}
+	return params, nil
 }
 
 func (p *parser) parseIndexParts(block *hclsyntax.Block) ([]string, []goschema.IndexPart, error) {
@@ -708,12 +732,14 @@ func (p *parser) rejectUnsupportedIdentityColumnAttrs(block *hclsyntax.Block) er
 
 func (p *parser) rejectUnsupportedIndexAttrs(block *hclsyntax.Block) error {
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
-		"columns": true,
-		"include": true,
-		"parser":  true,
-		"unique":  true,
-		"type":    true,
-		"where":   true,
+		"columns":         true,
+		"include":         true,
+		"parser":          true,
+		"page_per_range":  true,
+		"pages_per_range": true,
+		"unique":          true,
+		"type":            true,
+		"where":           true,
 	}, "index")
 }
 

@@ -474,6 +474,14 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 		parts = append(parts, fmt.Sprintf("INCLUDE (%s)", strings.Join(node.IncludeColumns, ", ")))
 	}
 
+	if len(node.StorageParams) > 0 {
+		storageParams, err := r.renderIndexStorageParams(node.StorageParams)
+		if err != nil {
+			return err
+		}
+		parts = append(parts, storageParams)
+	}
+
 	// Add WHERE condition for partial indexes
 	if node.Condition != "" {
 		parts = append(parts, "WHERE")
@@ -483,6 +491,39 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 
 	return nil
+}
+
+func (r *Renderer) renderIndexStorageParams(params map[string]string) (string, error) {
+	keys := make([]string, 0, len(params))
+	for key := range params {
+		if !validIndexStorageParamName(key) {
+			return "", fmt.Errorf("invalid PostgreSQL index storage parameter %q", key)
+		}
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+
+	rendered := make([]string, 0, len(keys))
+	for _, key := range keys {
+		rendered = append(rendered, fmt.Sprintf("%s=%s", key, r.escapeValue(params[key])))
+	}
+	return fmt.Sprintf("WITH (%s)", strings.Join(rendered, ", ")), nil
+}
+
+func validIndexStorageParamName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i, ch := range name {
+		switch {
+		case ch >= 'a' && ch <= 'z':
+		case ch == '_':
+		case i > 0 && ch >= '0' && ch <= '9':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func renderIndexPart(part ast.IndexPart) string {

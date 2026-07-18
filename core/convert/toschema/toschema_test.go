@@ -534,6 +534,22 @@ func TestToIndex_BasicIndex(t *testing.T) {
 					index.IncludeColumns[0] == "active"
 			},
 		},
+		{
+			name: "index storage params",
+			index: func() *ast.IndexNode {
+				index := ast.NewIndex("idx_users_c", "users", "c")
+				index.Type = "BRIN"
+				index.StorageParams = map[string]string{"pages_per_range": "2"}
+				return index
+			}(),
+			expected: func(index goschema.Index) bool {
+				return index.Name == "idx_users_c" &&
+					index.StructName == "users" &&
+					index.Fields[0] == "c" &&
+					index.Type == "BRIN" &&
+					index.StorageParams["pages_per_range"] == "2"
+			},
+		},
 	}
 
 	for _, test := range tests {

@@ -79,6 +79,17 @@ func TestPostgreSQLRenderer_VisitIndex_PostgreSQLFeatures(t *testing.T) {
 			expected: "CREATE INDEX idx_users_name ON users (name) INCLUDE (active) WHERE active;\n",
 		},
 		{
+			name: "BRIN index with storage params",
+			index: &ast.IndexNode{
+				Name:          "idx_users_c",
+				Table:         "users",
+				Columns:       []string{"c"},
+				Type:          "BRIN",
+				StorageParams: map[string]string{"pages_per_range": "2"},
+			},
+			expected: "CREATE INDEX idx_users_c ON users USING BRIN (c) WITH (pages_per_range='2');\n",
+		},
+		{
 			name: "trigram index",
 			index: &ast.IndexNode{
 				Name:     "idx_users_name_trgm",
@@ -159,6 +170,21 @@ func TestPostgreSQLRenderer_VisitIndex_PostgreSQLFeatures(t *testing.T) {
 			c.Assert(sql, qt.Equals, tt.expected)
 		})
 	}
+}
+
+func TestPostgreSQLRenderer_RejectsUnsafeIndexStorageParamName(t *testing.T) {
+	c := qt.New(t)
+	renderer := postgres.New()
+	index := &ast.IndexNode{
+		Name:          "idx_users_c",
+		Table:         "users",
+		Columns:       []string{"c"},
+		Type:          "BRIN",
+		StorageParams: map[string]string{"pages_per_range) = 2; DROP TABLE users; --": "2"},
+	}
+
+	_, err := renderer.Render(index)
+	c.Assert(err, qt.ErrorMatches, `invalid PostgreSQL index storage parameter .*`)
 }
 
 func TestPostgreSQLRenderer_VisitExtension(t *testing.T) {

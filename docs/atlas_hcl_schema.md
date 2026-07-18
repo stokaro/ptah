@@ -33,7 +33,7 @@ current schema IR:
   `include`
 - `index` blocks with `columns`, `on { column = ..., prefix = ... }`,
   `on { expr = "..." }`, `desc`, `unique`, `type`, and `where`; PostgreSQL
-  indexes also support `include`
+  indexes also support `include` and BRIN `page_per_range`
 - `foreign_key` blocks with one local `columns` entry and one table-qualified
   `ref_columns` entry
 - `check` blocks with `expr`
@@ -114,6 +114,22 @@ table "users" {
   index "idx_users_name" {
     columns = [column.name]
     include = [column.active]
+  }
+}
+```
+
+## PostgreSQL BRIN Storage Parameter Example
+
+```hcl
+table "users" {
+  column "c" {
+    type = int
+  }
+
+  index "idx_users_c" {
+    type = BRIN
+    columns = [column.c]
+    page_per_range = 2
   }
 }
 ```

@@ -866,6 +866,23 @@ func TestFromIndex_BasicIndex(t *testing.T) {
 					idx.IncludeColumns[0] == "active"
 			},
 		},
+		{
+			name: "index storage params",
+			index: goschema.Index{
+				Name:          "idx_users_c",
+				StructName:    "users",
+				Fields:        []string{"c"},
+				Type:          "BRIN",
+				StorageParams: map[string]string{"pages_per_range": "2"},
+			},
+			expected: func(idx *ast.IndexNode) bool {
+				return idx.Name == "idx_users_c" &&
+					idx.Table == "users" &&
+					idx.Columns[0] == "c" &&
+					idx.Type == "BRIN" &&
+					idx.StorageParams["pages_per_range"] == "2"
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -895,6 +912,7 @@ func TestFromDatabase_IndexIncludeColumns(t *testing.T) {
 				Fields:         []string{"name"},
 				Condition:      "active",
 				IncludeColumns: []string{"active"},
+				StorageParams:  map[string]string{"pages_per_range": "2"},
 			},
 		},
 	}
@@ -908,6 +926,7 @@ func TestFromDatabase_IndexIncludeColumns(t *testing.T) {
 	c.Assert(index.Columns, qt.DeepEquals, []string{"name"})
 	c.Assert(index.Condition, qt.Equals, "active")
 	c.Assert(index.IncludeColumns, qt.DeepEquals, []string{"active"})
+	c.Assert(index.StorageParams, qt.DeepEquals, map[string]string{"pages_per_range": "2"})
 }
 
 func TestFromEnum_BasicEnum(t *testing.T) {

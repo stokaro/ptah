@@ -4,6 +4,7 @@ package parser
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -3523,6 +3524,16 @@ func (p *Parser) parseCreateIndexAfterKeyword(indexType string) (*ast.IndexNode,
 	}
 
 	p.skipWhitespace()
+	if p.current.MatchIdentifierValue("USING") {
+		p.advance()
+		p.skipWhitespace()
+		usingType, err := p.expectIdentifier()
+		if err != nil {
+			return nil, fmt.Errorf("expected index method after USING: %w", err)
+		}
+		indexType = usingType
+		p.skipWhitespace()
+	}
 
 	columns, err := p.parseCreateIndexColumns()
 	if err != nil {
@@ -3533,10 +3544,16 @@ func (p *Parser) parseCreateIndexAfterKeyword(indexType string) (*ast.IndexNode,
 	if err != nil {
 		return nil, err
 	}
+	p.skipWhitespace()
+	storageParams, err := p.parseCreateIndexStorageParams()
+	if err != nil {
+		return nil, err
+	}
 
 	index := ast.NewIndex(indexName, tableName, columns...)
 	index.Type = indexType
 	index.IncludeColumns = includeColumns
+	index.StorageParams = storageParams
 	return index, nil
 }
 
@@ -3569,6 +3586,67 @@ func (p *Parser) parseCreateIndexIncludeColumns() ([]string, error) {
 		return nil, fmt.Errorf("expected ',' or ')' in index INCLUDE list at position %d", p.current.Start)
 	}
 	return columns, p.expect(lexer.TokenOperator, ")")
+}
+
+func (p *Parser) parseCreateIndexStorageParams() (map[string]string, error) {
+	if !p.current.MatchIdentifierValue("WITH") {
+		return nil, nil
+	}
+	p.advance()
+	p.skipWhitespace()
+	if err := p.expect(lexer.TokenOperator, "("); err != nil {
+		return nil, fmt.Errorf("expected '(' after index WITH: %w", err)
+	}
+	p.skipWhitespace()
+
+	params := map[string]string{}
+	for {
+		key, err := p.expectIdentifier()
+		if err != nil {
+			return nil, fmt.Errorf("expected index storage parameter name: %w", err)
+		}
+		p.skipWhitespace()
+		if err := p.expect(lexer.TokenOperator, "="); err != nil {
+			return nil, fmt.Errorf("expected '=' after index storage parameter %q: %w", key, err)
+		}
+		p.skipWhitespace()
+		value, err := p.parseCreateIndexStorageParamValue()
+		if err != nil {
+			return nil, err
+		}
+		params[key] = value
+		p.skipWhitespace()
+
+		if p.current.MatchOperatorValue(",") {
+			p.advance()
+			p.skipWhitespace()
+			continue
+		}
+		if p.current.MatchOperatorValue(")") {
+			break
+		}
+		return nil, fmt.Errorf("expected ',' or ')' in index WITH parameter list at position %d", p.current.Start)
+	}
+	if err := p.expect(lexer.TokenOperator, ")"); err != nil {
+		return nil, err
+	}
+	return params, nil
+}
+
+func (p *Parser) parseCreateIndexStorageParamValue() (string, error) {
+	if p.current.Type == lexer.TokenEOF || p.current.MatchOperatorValue(",") || p.current.MatchOperatorValue(")") {
+		return "", fmt.Errorf("expected index storage parameter value at position %d", p.current.Start)
+	}
+	value := p.current.Value
+	p.advance()
+	if unquoted, err := strconv.Unquote(value); err == nil {
+		return unquoted, nil
+	}
+	if len(value) >= 2 && strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'") {
+		value = strings.TrimSuffix(strings.TrimPrefix(value, "'"), "'")
+		return strings.ReplaceAll(value, "''", "'"), nil
+	}
+	return value, nil
 }
 
 func (p *Parser) parseCreateIndexColumns() ([]string, error) {

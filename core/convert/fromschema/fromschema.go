@@ -52,6 +52,7 @@ package fromschema
 import (
 	"fmt"
 	"log/slog"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -817,6 +818,7 @@ func FromIndex(index goschema.Index) *ast.IndexNode {
 		indexNode.SetParts(toASTIndexParts(index.Parts))
 	}
 	indexNode.IncludeColumns = index.IncludeColumns
+	indexNode.StorageParams = maps.Clone(index.StorageParams)
 
 	// Set unique constraint
 	if index.Unique {
@@ -1321,6 +1323,7 @@ func FromIndexWithTableMapping(index goschema.Index, structToTableMap map[string
 		indexNode.SetParts(toASTIndexParts(index.Parts))
 	}
 	indexNode.IncludeColumns = index.IncludeColumns
+	indexNode.StorageParams = maps.Clone(index.StorageParams)
 
 	// Set unique constraint
 	if index.Unique {
