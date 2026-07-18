@@ -3835,7 +3835,7 @@ func (p *Parser) parseCreateType() (*ast.EnumNode, error) {
 }
 
 // parseCreateDomain parses CREATE DOMAIN statements (PostgreSQL).
-func (p *Parser) parseCreateDomain() (*ast.CommentNode, error) {
+func (p *Parser) parseCreateDomain() (*ast.CreateTypeNode, error) {
 	if err := p.expect(lexer.TokenIdentifier, "DOMAIN"); err != nil {
 		return nil, err
 	}
@@ -3843,9 +3843,9 @@ func (p *Parser) parseCreateDomain() (*ast.CommentNode, error) {
 	p.skipWhitespace()
 
 	// Get domain name
-	domainName, err := p.expectIdentifier()
+	domainName, err := p.parseQualifiedIdentifier("domain name")
 	if err != nil {
-		return nil, fmt.Errorf("expected domain name: %w", err)
+		return nil, err
 	}
 
 	p.skipWhitespace()
@@ -3862,12 +3862,9 @@ func (p *Parser) parseCreateDomain() (*ast.CommentNode, error) {
 		return nil, fmt.Errorf("expected base type: %w", err)
 	}
 
-	// For now, we'll represent domains as comments since they're not in the AST
-	// In a full implementation, you'd want to add a DomainNode to the AST
-	var domainText strings.Builder
-	fmt.Fprintf(&domainText, "CREATE DOMAIN %s AS %s", domainName, baseType)
+	domainDef := ast.NewDomainTypeDef(baseType)
 
-	// Parse optional constraints (CHECK, etc.)
+	// Parse optional domain constraints.
 	for {
 		p.skipWhitespace()
 
@@ -3876,20 +3873,39 @@ func (p *Parser) parseCreateDomain() (*ast.CommentNode, error) {
 		}
 
 		keyword := strings.ToUpper(p.current.Value)
-		if keyword != "CHECK" {
+		handled := true
+		switch keyword {
+		case "CHECK":
+			p.advance()
+			p.skipWhitespace()
+			checkExpr, err := p.parseCheckExpression()
+			if err != nil {
+				return nil, fmt.Errorf("expected check expression: %w", err)
+			}
+			domainDef.SetCheck(checkExpr)
+		case "NOT":
+			p.advance()
+			p.skipWhitespace()
+			if err := p.expect(lexer.TokenIdentifier, "NULL"); err != nil {
+				return nil, fmt.Errorf("expected NULL after NOT in domain definition: %w", err)
+			}
+			domainDef.SetNotNull()
+		case "DEFAULT":
+			p.advance()
+			defaultValue, err := p.parseDefaultValue()
+			if err != nil {
+				return nil, fmt.Errorf("expected domain default value: %w", err)
+			}
+			domainDef.Default = defaultValue
+		default:
+			handled = false
+		}
+		if !handled {
 			break
 		}
-
-		p.advance()
-		p.skipWhitespace()
-		checkExpr, err := p.parseCheckExpression()
-		if err != nil {
-			return nil, fmt.Errorf("expected check expression: %w", err)
-		}
-		fmt.Fprintf(&domainText, " CHECK (%s)", checkExpr)
 	}
 
-	return ast.NewComment(domainText.String()), nil
+	return ast.NewCreateType(domainName, domainDef), nil
 }
 
 // parseCommentStatement parses COMMENT ON statements (PostgreSQL).
