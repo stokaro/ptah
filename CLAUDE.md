@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 Ptah is a comprehensive database schema management tool for Go applications. It generates SQL DDL from Go struct annotations,
-scompares schemas, and manages migrations across PostgreSQL, MySQL, and MariaDB databases.
+compares schemas, and manages migrations across PostgreSQL, MySQL, and MariaDB databases.
 
 ## Common Commands
 
@@ -13,7 +13,7 @@ scompares schemas, and manages migrations across PostgreSQL, MySQL, and MariaDB 
 
 ```bash
 # Build the main CLI binary
-go build -o bin/ptah ./cmd/main.go
+go build -o bin/ptah ./cmd/ptah
 
 # Build integration test binary
 go build -o bin/ptah-integration-test ./cmd/integration-test
@@ -36,35 +36,38 @@ make clean         # Clean build artifacts
 
 ### CLI Usage
 
-The main binary is built as `package-migrator` (or `ptah`):
+The main binary is built as `ptah`:
 
 ```bash
 # Generate SQL schema from Go entities
-./package-migrator generate --root-dir ./models --dialect postgres
+./ptah generate --root-dir ./models --dialect postgres
 
 # Read current database schema
-./package-migrator read-db --db-url postgres://user:pass@localhost/db
+./ptah read-db --db-url postgres://user:pass@localhost/db
 
 # Compare Go entities with database
-./package-migrator compare --root-dir ./models --db-url postgres://user:pass@localhost/db
+./ptah compare --root-dir ./models --db-url postgres://user:pass@localhost/db
 
 # Generate migration SQL
-./package-migrator migrate --root-dir ./models --db-url postgres://user:pass@localhost/db
+./ptah migrate --root-dir ./models --db-url postgres://user:pass@localhost/db
 
 # Apply migrations
-./package-migrator migrate-up --db-url postgres://user:pass@localhost/db --migrations-dir ./migrations
+./ptah migrate-up --db-url postgres://user:pass@localhost/db --migrations-dir ./migrations
 
 # Rollback migrations
-./package-migrator migrate-down --db-url postgres://user:pass@localhost/db --migrations-dir ./migrations --target 5
+./ptah migrate-down --db-url postgres://user:pass@localhost/db --migrations-dir ./migrations --target 5
 
 # Check migration status
-./package-migrator migrate-status --db-url postgres://user:pass@localhost/db --migrations-dir ./migrations
+./ptah migrate-status --db-url postgres://user:pass@localhost/db --migrations-dir ./migrations
+
+# Print version metadata
+./ptah version
 
 # Drop all tables (DANGEROUS!)
-./package-migrator drop-all --db-url postgres://user:pass@localhost/db --dry-run
+./ptah drop-all --db-url postgres://user:pass@localhost/db --dry-run
 
 # Run integration test suite
-./package-migrator integration-test --report html --verbose
+./bin/ptah-integration-test --report html --verbose
 ```
 
 ### Docker-based Testing
@@ -113,7 +116,8 @@ The system is organized into several key packages:
 
 **`cmd/`** - CLI commands:
 - Each command is in its own package (generate, migrate, compare, etc.)
-- Main entry point in `cmd/main.go` → `cmd/packagemigrator/packagemigrator.go`
+- Main binary entry point in `cmd/ptah/main.go`
+- Root command assembly in `cmd/root/root.go`
 
 ### Key Design Patterns
 
@@ -184,7 +188,7 @@ _ int
 
 ## Important File Locations
 
-- Main CLI entry: `cmd/main.go`
+- Main CLI entry: `cmd/ptah/main.go`
 - Core parsing: `core/goschema/parser.go`
 - SQL generation: `core/renderer/renderer.go` 
 - Schema comparison: `migration/schemadiff/schemadiff.go`

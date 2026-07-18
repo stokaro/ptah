@@ -44,8 +44,14 @@ var dropAllFlags = map[string]cobraflags.Flag{
 	dbcli.ConnectTimeoutFlagName: dbcli.NewConnectTimeoutFlag(),
 }
 
+var dropAllFlagsRegistered bool
+
 func NewDropAllCommand() *cobra.Command {
-	cobraflags.RegisterMap(dropAllCmd, dropAllFlags)
+	if !dropAllFlagsRegistered {
+		cobraflags.RegisterMap(dropAllCmd, dropAllFlags)
+		dropAllFlagsRegistered = true
+	}
+
 	return dropAllCmd
 }
 

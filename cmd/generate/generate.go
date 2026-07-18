@@ -50,8 +50,14 @@ var generateFlags = map[string]cobraflags.Flag{
 	},
 }
 
+var generateFlagsRegistered bool
+
 func NewGenerateCommand() *cobra.Command {
-	cobraflags.RegisterMap(generateCmd, generateFlags)
+	if !generateFlagsRegistered {
+		cobraflags.RegisterMap(generateCmd, generateFlags)
+		generateFlagsRegistered = true
+	}
+
 	return generateCmd
 }
 

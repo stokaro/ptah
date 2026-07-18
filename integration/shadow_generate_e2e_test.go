@@ -30,8 +30,8 @@ func TestMigrateGenerateShadowDatabaseE2E(t *testing.T) {
 	defer cancel()
 
 	repoRoot := e2eRepoRoot(t)
-	binaryPath := filepath.Join(t.TempDir(), "package-migrator")
-	buildPackageMigrator(c, ctx, repoRoot, binaryPath)
+	binaryPath := filepath.Join(t.TempDir(), "ptah")
+	buildPtah(c, ctx, repoRoot, binaryPath)
 
 	adminDB, err := sql.Open("pgx", dbURL)
 	c.Assert(err, qt.IsNil)
@@ -52,7 +52,7 @@ func TestMigrateGenerateShadowDatabaseE2E(t *testing.T) {
 		writeShadowE2EPriorMigration(c, migrationsDir, "CREATE TABLE users (id SERIAL PRIMARY KEY);\n")
 		prepareShadowE2ETargetDB(c, ctx, testDBURL)
 
-		output, err := runPackageMigrator(
+		output, err := runPtah(
 			ctx,
 			repoRoot,
 			binaryPath,
@@ -80,7 +80,7 @@ func TestMigrateGenerateShadowDatabaseE2E(t *testing.T) {
 		writeShadowE2EPriorMigration(c, migrationsDir, "CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT NOT NULL);\n")
 		prepareShadowE2ETargetDB(c, ctx, testDBURL)
 
-		output, err := runPackageMigrator(
+		output, err := runPtah(
 			ctx,
 			repoRoot,
 			binaryPath,
@@ -120,14 +120,14 @@ func e2eRepoRoot(t *testing.T) string {
 	return filepath.Dir(filepath.Dir(file))
 }
 
-func buildPackageMigrator(c *qt.C, ctx context.Context, repoRoot, binaryPath string) {
-	cmd := exec.CommandContext(ctx, "go", "build", "-o", binaryPath, "./cmd")
+func buildPtah(c *qt.C, ctx context.Context, repoRoot, binaryPath string) {
+	cmd := exec.CommandContext(ctx, "go", "build", "-o", binaryPath, "./cmd/ptah")
 	cmd.Dir = repoRoot
 	output, err := cmd.CombinedOutput()
 	c.Assert(err, qt.IsNil, qt.Commentf("go build output:\n%s", string(output)))
 }
 
-func runPackageMigrator(ctx context.Context, repoRoot, binaryPath string, args ...string) (string, error) {
+func runPtah(ctx context.Context, repoRoot, binaryPath string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, binaryPath, args...)
 	cmd.Dir = repoRoot
 	output, err := cmd.CombinedOutput()
