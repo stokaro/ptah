@@ -163,6 +163,7 @@ func (p *FSMigrationProvider) loadPtah(files []MigrationFile) error {
 			migration.Up = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 				return up.fn(ctx, conn, migration.executionMode())
 			}
+			migration.UpSQL = up.sql
 			migration.UpTimeouts = up.timeouts
 			migration.NoTransaction = migration.NoTransaction || up.noTransaction
 		case "down":
@@ -173,6 +174,7 @@ func (p *FSMigrationProvider) loadPtah(files []MigrationFile) error {
 			migration.Down = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 				return down.fn(ctx, conn, migration.executionMode())
 			}
+			migration.DownSQL = down.sql
 			migration.DownTimeouts = down.timeouts
 			migration.NoTransaction = migration.NoTransaction || down.noTransaction
 		default:
@@ -299,6 +301,7 @@ func setAtlasUp(parts *atlasParts, up sqlMigrationFile) {
 	migration.Up = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 		return up.fn(ctx, conn, migration.executionMode())
 	}
+	migration.UpSQL = up.sql
 	migration.UpTimeouts = up.timeouts
 	migration.NoTransaction = migration.NoTransaction || up.noTransaction
 	parts.hasUp = true
@@ -309,6 +312,7 @@ func setAtlasDown(parts *atlasParts, down sqlMigrationFile) {
 	migration.Down = func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 		return down.fn(ctx, conn, migration.executionMode())
 	}
+	migration.DownSQL = down.sql
 	migration.DownTimeouts = down.timeouts
 	migration.NoTransaction = migration.NoTransaction || down.noTransaction
 	parts.hasDown = true
