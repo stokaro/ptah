@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/stokaro/ptah/dbschema"
@@ -36,6 +37,11 @@ type Conn interface {
 
 // CommandRunner executes an external tool invocation.
 type CommandRunner func(ctx context.Context, binary string, args []string) error
+
+type toolInvocation struct {
+	args    []string
+	cleanup func() error
+}
 
 // Executor routes ALTER TABLE migration statements through an online-DDL
 // tool. It implements migrator.StatementInterceptor.
@@ -146,18 +152,29 @@ func (e *Executor) executeStatement(ctx context.Context, conn Conn, stmt string,
 		dsn.Database = target.Schema
 	}
 
-	args, err := buildArgs(tool, dsn, target, e.cfg.Args)
-	if err != nil {
-		return false, fmt.Errorf("cannot build %s invocation: %w", binary, err)
-	}
 	if e.dryRun {
+		if err := validateToolInvocation(tool, dsn, target); err != nil {
+			return false, fmt.Errorf("cannot build %s invocation: %w", binary, err)
+		}
 		e.logger.Info("DRY RUN: would run online-DDL tool",
 			"tool", binary, "table", target.Table, "alter", target.Clause)
 		return true, nil
 	}
 
+	invocation, err := buildArgs(tool, dsn, target, e.cfg.Args)
+	if err != nil {
+		return false, fmt.Errorf("cannot build %s invocation: %w", binary, err)
+	}
+	if invocation.cleanup != nil {
+		defer func() {
+			if err := invocation.cleanup(); err != nil {
+				e.logger.Warn("failed to remove online-DDL credential file",
+					"tool", binary, "table", target.Table, "error", err)
+			}
+		}()
+	}
 	e.logger.Info("Running online-DDL tool", "tool", binary, "table", target.Table, "alter", target.Clause)
-	if err := e.run(ctx, binary, args); err != nil {
+	if err := e.run(ctx, binary, invocation.args); err != nil {
 		return false, fmt.Errorf("online-DDL tool %s failed for table %s: %w", binary, target.Table, err)
 	}
 	e.logger.Info("Online-DDL tool finished", "tool", binary, "table", target.Table)
@@ -205,53 +222,188 @@ func binaryFor(tool string) string {
 
 // buildArgs assembles the tool invocation. User-configured args go before
 // the final --execute so they can never be overridden by it.
-func buildArgs(tool string, dsn DSN, target AlterTarget, extra []string) ([]string, error) {
+func buildArgs(tool string, dsn DSN, target AlterTarget, extra []string) (toolInvocation, error) {
 	switch tool {
 	case ToolPTOSC:
 		return buildPTOSCArgs(dsn, target, extra)
 	default: // ToolGhost
-		// gh-ost takes each endpoint as its own --flag=value argv element, so
-		// values are passed literally with no delimiter to escape.
-		args := []string{
-			"--host=" + dsn.Host,
-			"--port=" + dsn.Port,
-			"--user=" + dsn.User,
-			"--database=" + dsn.Database,
-			"--table=" + target.Table,
-			"--alter=" + target.Clause,
-		}
-		if dsn.Password != "" {
-			args = append(args, "--password="+dsn.Password)
-		}
-		args = append(args, extra...)
-		return append(args, "--execute"), nil
+		return buildGhostArgs(dsn, target, extra)
 	}
 }
 
+func buildGhostArgs(dsn DSN, target AlterTarget, extra []string) (toolInvocation, error) {
+	// gh-ost takes each endpoint as its own --flag=value argv element, so
+	// values are passed literally with no delimiter to escape.
+	args := []string{
+		"--host=" + dsn.Host,
+		"--port=" + dsn.Port,
+		"--user=" + dsn.User,
+		"--database=" + dsn.Database,
+		"--table=" + target.Table,
+		"--alter=" + target.Clause,
+	}
+	cleanup, err := maybeAppendGhostCredential(&args, dsn, extra)
+	if err != nil {
+		return toolInvocation{}, err
+	}
+	args = append(args, extra...)
+	return toolInvocation{args: append(args, "--execute"), cleanup: cleanup}, nil
+}
+
+func maybeAppendGhostCredential(args *[]string, dsn DSN, extra []string) (func() error, error) {
+	if dsn.Password == "" || ghostArgsCarryCredentials(extra) {
+		return nil, nil
+	}
+	path, cleanup, err := createMySQLDefaultsFile(dsn)
+	if err != nil {
+		return nil, err
+	}
+	*args = append(*args, "--conf="+path)
+	return cleanup, nil
+}
+
 // buildPTOSCArgs assembles the pt-online-schema-change invocation. Its DSN is
-// a single comma-delimited argv element (h=,P=,u=,D=,t=[,p=]) that Percona's
+// a single comma-delimited argv element (h=,P=,u=,D=,t=[,F=]) that Percona's
 // DSN parser splits on literal commas with no un-escaping, so a comma in any
 // endpoint would silently smuggle extra DSN keys (host redirect, F= defaults
 // file). Rather than emit a corrupt or injectable DSN, refuse to build it.
-func buildPTOSCArgs(dsn DSN, target AlterTarget, extra []string) ([]string, error) {
-	fields := map[string]string{
-		"host": dsn.Host, "port": dsn.Port, "user": dsn.User,
-		"database": dsn.Database, "table": target.Table, "password": dsn.Password,
-	}
-	for name, value := range fields {
-		if strings.Contains(value, ",") {
-			return nil, fmt.Errorf("pt-online-schema-change cannot receive a %s containing a comma (%q); "+
-				"pass it via online_ddl.args (for example a --defaults-file) instead", name, value)
-		}
+func buildPTOSCArgs(dsn DSN, target AlterTarget, extra []string) (toolInvocation, error) {
+	if err := validatePTOSCFields(dsn, target); err != nil {
+		return toolInvocation{}, err
 	}
 
 	spec := fmt.Sprintf("h=%s,P=%s,u=%s,D=%s,t=%s", dsn.Host, dsn.Port, dsn.User, dsn.Database, target.Table)
-	if dsn.Password != "" {
-		spec += ",p=" + dsn.Password
+	cleanup, err := maybeAppendPTOSCCredential(&spec, dsn, extra)
+	if err != nil {
+		return toolInvocation{}, err
 	}
 	args := []string{"--alter", target.Clause}
 	args = append(args, extra...)
-	return append(args, "--execute", spec), nil
+	return toolInvocation{args: append(args, "--execute", spec), cleanup: cleanup}, nil
+}
+
+func validateToolInvocation(tool string, dsn DSN, target AlterTarget) error {
+	if tool != ToolPTOSC {
+		return nil
+	}
+	return validatePTOSCFields(dsn, target)
+}
+
+func validatePTOSCFields(dsn DSN, target AlterTarget) error {
+	fields := map[string]string{
+		"host": dsn.Host, "port": dsn.Port, "user": dsn.User,
+		"database": dsn.Database, "table": target.Table,
+	}
+	for name, value := range fields {
+		if strings.Contains(value, ",") {
+			return fmt.Errorf("pt-online-schema-change cannot receive a %s containing a comma (%q); "+
+				"pass it via online_ddl.args (for example a --defaults-file) instead", name, value)
+		}
+	}
+	return nil
+}
+
+func maybeAppendPTOSCCredential(spec *string, dsn DSN, extra []string) (func() error, error) {
+	if dsn.Password == "" || ptoscArgsCarryCredentials(extra) {
+		return nil, nil
+	}
+	path, cleanup, err := createMySQLDefaultsFile(dsn)
+	if err != nil {
+		return nil, err
+	}
+	if strings.Contains(path, ",") {
+		if cleanupErr := cleanup(); cleanupErr != nil {
+			return nil, fmt.Errorf("online-DDL credential file path contains a comma and cleanup failed: %w", cleanupErr)
+		}
+		return nil, fmt.Errorf("online-DDL credential file path contains a comma; set online_ddl.args with --defaults-file instead")
+	}
+	*spec += ",F=" + path
+	return cleanup, nil
+}
+
+func ghostArgsCarryCredentials(args []string) bool {
+	return hasFlagArg(args, "--conf") || hasFlagArg(args, "--password")
+}
+
+func ptoscArgsCarryCredentials(args []string) bool {
+	if hasFlagArg(args, "--defaults-file") || hasFlagArg(args, "--defaults-extra-file") {
+		return true
+	}
+	for _, arg := range args {
+		if dsnArgContainsKey(arg, "p") || dsnArgContainsKey(arg, "F") {
+			return true
+		}
+	}
+	return false
+}
+
+func hasFlagArg(args []string, flag string) bool {
+	for _, arg := range args {
+		if arg == flag || strings.HasPrefix(arg, flag+"=") {
+			return true
+		}
+	}
+	return false
+}
+
+func dsnArgContainsKey(arg, key string) bool {
+	for part := range strings.SplitSeq(arg, ",") {
+		name, _, ok := strings.Cut(part, "=")
+		if ok && name == key {
+			return true
+		}
+	}
+	return false
+}
+
+func createMySQLDefaultsFile(dsn DSN) (string, func() error, error) {
+	content, err := mysqlDefaultsFileContent(dsn)
+	if err != nil {
+		return "", nil, err
+	}
+	file, err := os.CreateTemp("", "ptah-online-ddl-*.cnf")
+	if err != nil {
+		return "", nil, fmt.Errorf("create online-DDL credential file: %w", err)
+	}
+	path := file.Name()
+	cleanup := func() error {
+		return os.Remove(path)
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		_ = file.Close()
+		_ = cleanup()
+		return "", nil, fmt.Errorf("secure online-DDL credential file %s: %w", filepath.Base(path), err)
+	}
+	if _, err := file.WriteString(content); err != nil {
+		_ = file.Close()
+		_ = cleanup()
+		return "", nil, fmt.Errorf("write online-DDL credential file %s: %w", filepath.Base(path), err)
+	}
+	if err := file.Close(); err != nil {
+		_ = cleanup()
+		return "", nil, fmt.Errorf("close online-DDL credential file %s: %w", filepath.Base(path), err)
+	}
+	return path, cleanup, nil
+}
+
+func mysqlDefaultsFileContent(dsn DSN) (string, error) {
+	user, err := mysqlOptionValue(dsn.User)
+	if err != nil {
+		return "", fmt.Errorf("invalid MySQL user for online-DDL credential file: %w", err)
+	}
+	password, err := mysqlOptionValue(dsn.Password)
+	if err != nil {
+		return "", fmt.Errorf("invalid MySQL password for online-DDL credential file: %w", err)
+	}
+	return "[client]\nuser=" + user + "\npassword=" + password + "\n", nil
+}
+
+func mysqlOptionValue(value string) (string, error) {
+	if strings.ContainsAny(value, "\x00\r\n") {
+		return "", fmt.Errorf("value contains a control character")
+	}
+	escaped := strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(value)
+	return `"` + escaped + `"`, nil
 }
 
 // runCommand is the production CommandRunner: it streams the tool's output
