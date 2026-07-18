@@ -810,6 +810,35 @@ CREATE TABLE user_sessions (
 	c.Assert(result, qt.Equals, expected)
 }
 
+func TestPostgreSQLRenderer_TablePartition(t *testing.T) {
+	c := qt.New(t)
+
+	table := ast.NewCreateTable("metrics").
+		AddColumn(ast.NewColumn("x", "integer").SetNotNull()).
+		AddColumn(ast.NewColumn("y", "integer").SetNotNull())
+	table.Partition = &ast.PartitionSpec{
+		Type: "RANGE",
+		Parts: []ast.PartitionPart{
+			{Name: "x"},
+			{Expr: "floor(y)"},
+			{Expr: "y * 2"},
+		},
+	}
+
+	renderer := postgres.New()
+	result, err := renderer.Render(table)
+
+	c.Assert(err, qt.IsNil)
+	expected := `-- POSTGRES TABLE: metrics --
+CREATE TABLE metrics (
+  x integer NOT NULL,
+  y integer NOT NULL
+) PARTITION BY RANGE (x, (floor(y)), (y * 2));
+
+`
+	c.Assert(result, qt.Equals, expected)
+}
+
 func TestPostgreSQLRenderer_ExcludeConstraint_Errors(t *testing.T) {
 	tests := []struct {
 		name  string

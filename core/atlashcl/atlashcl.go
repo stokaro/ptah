@@ -137,49 +137,8 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 
 	fieldsStart := len(p.db.Fields)
 	for _, nested := range block.Body.Blocks {
-		switch nested.Type {
-		case "column":
-			field, err := p.parseColumn(table.StructName, nested)
-			if err != nil {
-				return err
-			}
-			p.db.Fields = append(p.db.Fields, field)
-		case "primary_key":
-			primaryKey, err := p.parsePrimaryKey(nested)
-			if err != nil {
-				return err
-			}
-			table.PrimaryKey = primaryKey.columns
-			table.PrimaryKeyParts = primaryKey.parts
-			table.PrimaryKeyInclude = primaryKey.include
-		case "index":
-			index, err := p.parseIndex(table.StructName, table.Name, nested)
-			if err != nil {
-				return err
-			}
-			p.db.Indexes = append(p.db.Indexes, index)
-		case "unique":
-			constraint, err := p.parseUnique(table.StructName, table.Name, nested)
-			if err != nil {
-				return err
-			}
-			p.db.Constraints = append(p.db.Constraints, constraint)
-		case "foreign_key":
-			spec, err := p.parseForeignKey(nested)
-			if err != nil {
-				return err
-			}
-			if err := p.applyForeignKey(table, fieldsStart, nested, spec); err != nil {
-				return err
-			}
-		case "check":
-			constraint, err := p.parseCheck(table.StructName, table.Name, nested)
-			if err != nil {
-				return err
-			}
-			p.db.Constraints = append(p.db.Constraints, constraint)
-		default:
-			return p.blockError(nested, "unsupported table block %q", nested.Type)
+		if err := p.parseTableBlock(&table, fieldsStart, nested); err != nil {
+			return err
 		}
 	}
 	markPrimaryFields(p.db.Fields[fieldsStart:], table.PrimaryKey)
@@ -187,6 +146,63 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 		return err
 	}
 	p.db.Tables = append(p.db.Tables, table)
+	return nil
+}
+
+func (p *parser) parseTableBlock(table *goschema.Table, fieldsStart int, block *hclsyntax.Block) error {
+	switch block.Type {
+	case "column":
+		field, err := p.parseColumn(table.StructName, block)
+		if err != nil {
+			return err
+		}
+		p.db.Fields = append(p.db.Fields, field)
+	case "primary_key":
+		primaryKey, err := p.parsePrimaryKey(block)
+		if err != nil {
+			return err
+		}
+		table.PrimaryKey = primaryKey.columns
+		table.PrimaryKeyParts = primaryKey.parts
+		table.PrimaryKeyInclude = primaryKey.include
+	case "index":
+		index, err := p.parseIndex(table.StructName, table.Name, block)
+		if err != nil {
+			return err
+		}
+		p.db.Indexes = append(p.db.Indexes, index)
+	case "unique":
+		constraint, err := p.parseUnique(table.StructName, table.Name, block)
+		if err != nil {
+			return err
+		}
+		p.db.Constraints = append(p.db.Constraints, constraint)
+	case "foreign_key":
+		spec, err := p.parseForeignKey(block)
+		if err != nil {
+			return err
+		}
+		if err := p.applyForeignKey(*table, fieldsStart, block, spec); err != nil {
+			return err
+		}
+	case "check":
+		constraint, err := p.parseCheck(table.StructName, table.Name, block)
+		if err != nil {
+			return err
+		}
+		p.db.Constraints = append(p.db.Constraints, constraint)
+	case "partition":
+		partition, err := p.parsePartition(block)
+		if err != nil {
+			return err
+		}
+		if table.Partition != nil {
+			return p.blockError(block, "table %q has multiple partition blocks", table.Name)
+		}
+		table.Partition = partition
+	default:
+		return p.blockError(block, "unsupported table block %q", block.Type)
+	}
 	return nil
 }
 
@@ -514,6 +530,75 @@ func (p *parser) parsePrimaryKey(block *hclsyntax.Block) (primaryKeySpec, error)
 	return primaryKeySpec{columns: columns, parts: parts, include: include}, nil
 }
 
+func (p *parser) parsePartition(block *hclsyntax.Block) (*goschema.PartitionSpec, error) {
+	if len(block.Labels) != 0 {
+		return nil, p.blockError(block, "partition block does not accept labels")
+	}
+	if err := p.rejectUnsupportedPartitionAttrs(block); err != nil {
+		return nil, err
+	}
+	partitionType := strings.ToUpper(p.optionalString(block.Body.Attributes["type"]))
+	if partitionType == "" {
+		return nil, p.blockError(block, "partition requires type")
+	}
+	if block.Body.Attributes["columns"] != nil {
+		if len(block.Body.Blocks) > 0 {
+			return nil, p.blockError(block.Body.Blocks[0], "partition cannot mix columns attribute with by blocks")
+		}
+		columns, err := p.parseColumnsAttr(block, "columns")
+		if err != nil {
+			return nil, err
+		}
+		if len(columns) == 0 {
+			return nil, p.blockError(block, "partition requires at least one column")
+		}
+		return &goschema.PartitionSpec{Type: partitionType, Parts: partitionColumnParts(columns)}, nil
+	}
+
+	parts, err := p.parsePartitionParts(block)
+	if err != nil {
+		return nil, err
+	}
+	return &goschema.PartitionSpec{Type: partitionType, Parts: parts}, nil
+}
+
+func (p *parser) parsePartitionParts(block *hclsyntax.Block) ([]goschema.PartitionPart, error) {
+	if len(block.Body.Blocks) == 0 {
+		return nil, p.blockError(block, "partition requires columns attribute or by blocks")
+	}
+	parts := make([]goschema.PartitionPart, 0, len(block.Body.Blocks))
+	for _, nested := range block.Body.Blocks {
+		if nested.Type != "by" {
+			return nil, p.blockError(nested, "unsupported partition block %q", nested.Type)
+		}
+		if err := p.rejectUnsupportedPartitionByAttrs(nested); err != nil {
+			return nil, err
+		}
+		columnAttr := nested.Body.Attributes["column"]
+		exprAttr := nested.Body.Attributes["expr"]
+		if columnAttr == nil && exprAttr == nil {
+			return nil, p.blockError(nested, "partition by block requires column or expr")
+		}
+		if columnAttr != nil && exprAttr != nil {
+			return nil, p.blockError(nested, "partition by block cannot set both column and expr")
+		}
+		if columnAttr != nil {
+			parts = append(parts, goschema.PartitionPart{Name: p.columnNameFromExpr(columnAttr)})
+			continue
+		}
+		parts = append(parts, goschema.PartitionPart{Expr: p.exprString(exprAttr)})
+	}
+	return parts, nil
+}
+
+func partitionColumnParts(columns []string) []goschema.PartitionPart {
+	parts := make([]goschema.PartitionPart, 0, len(columns))
+	for _, column := range columns {
+		parts = append(parts, goschema.PartitionPart{Name: column})
+	}
+	return parts
+}
+
 func (p *parser) validatePrimaryKeyType(block *hclsyntax.Block) error {
 	primaryKeyType := strings.ToUpper(p.optionalString(block.Body.Attributes["type"]))
 	switch primaryKeyType {
@@ -771,6 +856,20 @@ func (p *parser) rejectUnsupportedPrimaryKeyOnAttrs(block *hclsyntax.Block) erro
 		"prefix": true,
 		"desc":   true,
 	}, "primary_key on")
+}
+
+func (p *parser) rejectUnsupportedPartitionAttrs(block *hclsyntax.Block) error {
+	return p.rejectUnsupportedAttrs(block, map[string]bool{
+		"type":    true,
+		"columns": true,
+	}, "partition")
+}
+
+func (p *parser) rejectUnsupportedPartitionByAttrs(block *hclsyntax.Block) error {
+	return p.rejectUnsupportedAttrs(block, map[string]bool{
+		"column": true,
+		"expr":   true,
+	}, "partition by")
 }
 
 func (p *parser) rejectUnsupportedColumnAttrs(block *hclsyntax.Block) error {

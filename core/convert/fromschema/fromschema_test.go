@@ -1452,6 +1452,29 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 				return table.Name == "events" && !strict && !withoutRowID
 			},
 		},
+		{
+			name: "PostgreSQL partition",
+			table: goschema.Table{
+				StructName: "Metric",
+				Name:       "metrics",
+				Partition: &goschema.PartitionSpec{
+					Type: "RANGE",
+					Parts: []goschema.PartitionPart{
+						{Name: "x"},
+						{Expr: "floor(y)"},
+					},
+				},
+			},
+			fields:         []goschema.Field{},
+			targetPlatform: "postgres",
+			expected: func(table *ast.CreateTableNode) bool {
+				return table.Partition != nil &&
+					table.Partition.Type == "RANGE" &&
+					len(table.Partition.Parts) == 2 &&
+					table.Partition.Parts[0].Name == "x" &&
+					table.Partition.Parts[1].Expr == "floor(y)"
+			},
+		},
 	}
 
 	for _, test := range tests {

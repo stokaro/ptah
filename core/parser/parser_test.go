@@ -66,6 +66,37 @@ func TestParser_ParseCreateTable_ColumnCharsetCollate(t *testing.T) {
 	c.Assert(createTable.Columns[0].Nullable, qt.IsFalse)
 }
 
+func TestParser_ParseCreateTable_PostgreSQLPartitionBy(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE TABLE metrics (x integer NOT NULL, y integer NOT NULL) PARTITION BY RANGE (x, (floor(y)), (y * 2));`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+	createTable, ok := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(createTable.Partition, qt.DeepEquals, &ast.PartitionSpec{
+		Type: "RANGE",
+		Parts: []ast.PartitionPart{
+			{Name: "x"},
+			{Expr: "floor(y)"},
+			{Expr: "y * 2"},
+		},
+	})
+}
+
+func TestParser_ParseCreateTable_RejectsDuplicatePartitionBy(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE TABLE metrics (x integer NOT NULL) PARTITION BY RANGE (x) PARTITION BY LIST (x);`
+	p := parser.NewParser(sql)
+
+	_, err := p.Parse()
+	c.Assert(err, qt.ErrorMatches, `.*duplicate PARTITION BY clause.*`)
+}
+
 func TestParser_ParseCreateTable_WithConstraints(t *testing.T) {
 	c := qt.New(t)
 

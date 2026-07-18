@@ -352,6 +352,28 @@ func TestToTable_BasicTable(t *testing.T) {
 					!table.WithoutRowID
 			},
 		},
+		{
+			name: "PostgreSQL partition",
+			table: func() *ast.CreateTableNode {
+				table := ast.NewCreateTable("metrics")
+				table.Partition = &ast.PartitionSpec{
+					Type: "RANGE",
+					Parts: []ast.PartitionPart{
+						{Name: "x"},
+						{Expr: "floor(y)"},
+					},
+				}
+				return table
+			}(),
+			sourcePlatform: "postgres",
+			expected: func(table goschema.Table) bool {
+				return table.Partition != nil &&
+					table.Partition.Type == "RANGE" &&
+					len(table.Partition.Parts) == 2 &&
+					table.Partition.Parts[0].Name == "x" &&
+					table.Partition.Parts[1].Expr == "floor(y)"
+			},
+		},
 	}
 
 	for _, test := range tests {

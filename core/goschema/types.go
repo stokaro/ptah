@@ -407,6 +407,7 @@ type Table struct {
 	// primary keys.
 	PrimaryKeyInclude []string
 	Checks            []string                     // Table-level check constraints
+	Partition         *PartitionSpec               // PostgreSQL table partitioning metadata
 	CustomSQL         string                       // Custom SQL to append to CREATE TABLE
 	Overrides         map[string]map[string]string // Platform-specific overrides
 }
@@ -416,6 +417,18 @@ type PrimaryKeyPart struct {
 	Name   string // Column name
 	Prefix string // MySQL index prefix length
 	Desc   bool   // Whether the column is ordered DESC
+}
+
+// PartitionSpec represents PostgreSQL table partitioning metadata.
+type PartitionSpec struct {
+	Type  string          // Partitioning method, such as RANGE, LIST, or HASH
+	Parts []PartitionPart // Partition key columns or expressions
+}
+
+// PartitionPart represents one partition key column or expression.
+type PartitionPart struct {
+	Name string // Column name
+	Expr string // Raw partition expression
 }
 
 // QualifiedName returns the schema-qualified database table name when a schema
