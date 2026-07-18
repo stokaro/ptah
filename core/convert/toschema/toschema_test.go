@@ -402,6 +402,24 @@ func TestToTable_PrimaryKeyParts(t *testing.T) {
 	}})
 }
 
+func TestToTable_PrimaryKeyInclude(t *testing.T) {
+	c := qt.New(t)
+
+	table := ast.NewCreateTable("users").
+		AddConstraint(&ast.ConstraintNode{
+			Type:           ast.PrimaryKeyConstraint,
+			Columns:        []string{"id"},
+			ColumnParts:    []ast.ConstraintColumn{{Name: "id"}},
+			IncludeColumns: []string{"covering"},
+		})
+
+	result := toschema.ToTable(table, "")
+
+	c.Assert(result.PrimaryKey, qt.DeepEquals, []string{"id"})
+	c.Assert(result.PrimaryKeyParts, qt.DeepEquals, []goschema.PrimaryKeyPart{{Name: "id"}})
+	c.Assert(result.PrimaryKeyInclude, qt.DeepEquals, []string{"covering"})
+}
+
 func TestToTable_PlatformSource(t *testing.T) {
 	c := qt.New(t)
 

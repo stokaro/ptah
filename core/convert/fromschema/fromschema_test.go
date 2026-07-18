@@ -627,6 +627,39 @@ func TestFromTable_PrimaryKeyParts(t *testing.T) {
 	}})
 }
 
+func TestFromTable_PrimaryKeyInclude(t *testing.T) {
+	c := qt.New(t)
+
+	table := goschema.Table{
+		StructName:        "User",
+		Name:              "users",
+		PrimaryKey:        []string{"id"},
+		PrimaryKeyInclude: []string{"covering"},
+	}
+	fields := []goschema.Field{
+		{
+			StructName: "User",
+			Name:       "id",
+			Type:       "INTEGER",
+			Primary:    true,
+		},
+		{
+			StructName: "User",
+			Name:       "covering",
+			Type:       "INTEGER",
+		},
+	}
+
+	result := fromschema.FromTable(table, fields, nil, "")
+
+	c.Assert(result.Columns, qt.HasLen, 2)
+	c.Assert(result.Columns[0].Primary, qt.IsFalse)
+	c.Assert(result.Constraints, qt.HasLen, 1)
+	c.Assert(result.Constraints[0].Type, qt.Equals, ast.PrimaryKeyConstraint)
+	c.Assert(result.Constraints[0].Columns, qt.DeepEquals, []string{"id"})
+	c.Assert(result.Constraints[0].IncludeColumns, qt.DeepEquals, []string{"covering"})
+}
+
 func TestFromDatabase_TableLevelConstraints(t *testing.T) {
 	c := qt.New(t)
 
