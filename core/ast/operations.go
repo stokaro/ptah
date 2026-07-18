@@ -132,6 +132,10 @@ type DropConstraintOperation struct {
 	// sets it for every UNIQUE removal (issue #195). Ignored when ForeignKey
 	// or Check is set; PostgreSQL-style renderers may ignore it.
 	Unique bool
+	// PrimaryKey requests the MySQL-family `DROP PRIMARY KEY` spelling. MySQL
+	// and MariaDB do not accept a generic DROP CONSTRAINT form for primary keys,
+	// and the primary key name is always implicit in that syntax.
+	PrimaryKey bool
 }
 
 // Accept implements the Node interface for DropConstraintOperation.

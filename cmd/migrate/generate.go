@@ -29,7 +29,8 @@ func newMigrateGenerateCommand() *cobra.Command {
 		Short: "Generate migration files from schema differences",
 		Long: `Generate migration files by comparing Go entities with the current database schema.
 
-When --shadow-db is set, Ptah verifies the generated candidate on the shadow database before writing files:
+When --shadow-db is set, or migrate.generate.shadow_db is configured in ptah.yaml, Ptah verifies
+the generated candidate on the shadow database before writing files:
 it drops all shadow objects, replays existing migrations, applies the candidate, re-introspects the schema,
 and performs an up/down/up round-trip.`,
 		RunE: migrateGenerateCommand,
@@ -44,6 +45,7 @@ and performs an up/down/up round-trip.`,
 	flags.Bool(generateCheckDestructiveFlag, false, "Fail when generated migration SQL contains destructive statements")
 	flags.Bool(generateAllowDestructiveFlag, false, "Allow destructive statements when --check-destructive is set")
 	flags.String(generateReportFormatFlag, "", `Safety report format next to the migration files: "" or html`)
+	flags.String(dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
 	flags.String(dbcli.ConnectTimeoutFlagName, dbcli.DefaultConnectTimeout.String(), "Initial database connection timeout")
 	flags.String(dbcli.SchemasFlagName, "", "Comma-separated schemas to introspect when supported")
 
@@ -68,6 +70,14 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	shadowDB, err := cmd.Flags().GetString(generateShadowDBFlag)
+	if err != nil {
+		return err
+	}
+	configPath, err := cmd.Flags().GetString(dbcli.ConfigFlagName)
+	if err != nil {
+		return err
+	}
+	shadowDB, err = effectiveMigrateGenerateShadowDB(shadowDB, configPath)
 	if err != nil {
 		return err
 	}
@@ -136,4 +146,15 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		fmt.Fprintf(out, "REPORT: %s\n", files.ReportFile)
 	}
 	return nil
+}
+
+func effectiveMigrateGenerateShadowDB(flagValue, configPath string) (string, error) {
+	if flagValue != "" {
+		return flagValue, nil
+	}
+	cfg, err := dbcli.LoadMigrateGenerateConfig(configPath)
+	if err != nil {
+		return "", err
+	}
+	return cfg.ShadowDatabaseURL, nil
 }

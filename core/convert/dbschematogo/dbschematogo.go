@@ -62,7 +62,7 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 				StructName:    structName,
 				FieldName:     generateFieldName(dbColumn.Name),
 				Name:          dbColumn.Name,
-				Type:          dbColumn.DataType,
+				Type:          goSchemaFieldType(dbColumn),
 				Nullable:      dbColumn.IsNullable == "YES",
 				Primary:       dbColumn.IsPrimaryKey,
 				AutoInc:       dbColumn.IsAutoIncrement,
@@ -75,9 +75,8 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 				field.GeneratedExpression = *dbColumn.GeneratedExpression
 			}
 
-			// Set default value if present
 			if dbColumn.ColumnDefault != nil {
-				field.Default = *dbColumn.ColumnDefault
+				setFieldDefaultFromDB(&field, *dbColumn.ColumnDefault)
 			}
 
 			// Carry the field-level foreign key (reference + referential actions)
@@ -223,6 +222,35 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 	}
 
 	return database
+}
+
+func goSchemaFieldType(dbColumn dbschematypes.DBColumn) string {
+	if strings.EqualFold(dbColumn.DataType, "USER-DEFINED") && dbColumn.UDTName != "" {
+		return dbColumn.UDTName
+	}
+	return dbColumn.DataType
+}
+
+func setFieldDefaultFromDB(field *goschema.Field, defaultSQL string) {
+	if dbDefaultLooksLikeExpression(defaultSQL) {
+		field.DefaultExpr = defaultSQL
+		return
+	}
+	field.Default = defaultSQL
+}
+
+func dbDefaultLooksLikeExpression(defaultSQL string) bool {
+	value := strings.TrimSpace(defaultSQL)
+	if value == "" {
+		return false
+	}
+	if strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`) {
+		return false
+	}
+	if strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'") {
+		return false
+	}
+	return true
 }
 
 func convertGrants(dbGrants []dbschematypes.DBGrant) []goschema.Grant {

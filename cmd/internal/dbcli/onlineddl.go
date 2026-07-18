@@ -1,10 +1,13 @@
 package dbcli
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 
 	"github.com/go-extras/cobraflags"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/stokaro/ptah/migration/onlineddl"
 )
@@ -35,4 +38,42 @@ func LoadOnlineDDLConfig(path string) (*onlineddl.Config, error) {
 		return nil, fmt.Errorf("ptah config %s: %w", path, err)
 	}
 	return onlineddl.LoadConfig(path)
+}
+
+// MigrateGenerateConfig is the migrate.generate section of ptah.yaml.
+type MigrateGenerateConfig struct {
+	// ShadowDatabaseURL is the disposable shadow database used by migrate
+	// generate to verify candidate migrations before writing files.
+	ShadowDatabaseURL string `yaml:"shadow_db"`
+}
+
+type migrateGeneratePtahConfig struct {
+	Migrate struct {
+		Generate MigrateGenerateConfig `yaml:"generate"`
+	} `yaml:"migrate"`
+}
+
+// LoadMigrateGenerateConfig loads the migrate.generate section for the
+// migration-generation command. An explicitly passed path must exist; the
+// conventional ./ptah.yaml is optional and yields an empty config when absent.
+func LoadMigrateGenerateConfig(path string) (*MigrateGenerateConfig, error) {
+	if path == "" {
+		path = onlineddl.ConfigFileName
+	} else if _, err := os.Stat(path); err != nil {
+		return nil, fmt.Errorf("ptah config %s: %w", path, err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return &MigrateGenerateConfig{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read ptah config %s: %w", path, err)
+	}
+
+	var cfg migrateGeneratePtahConfig
+	if err := yaml.Unmarshal(raw, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse ptah config %s: %w", path, err)
+	}
+	return &cfg.Migrate.Generate, nil
 }

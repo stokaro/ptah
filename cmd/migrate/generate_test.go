@@ -21,6 +21,22 @@ func TestMigrateGenerateCommandExposesShadowDBFlag(t *testing.T) {
 	c.Assert(cmd.Name(), qt.Equals, "generate")
 	c.Assert(cmd.Flags().Lookup(generateShadowDBFlag), qt.IsNotNil)
 	c.Assert(cmd.Flags().Lookup(generateMigrationsDirFlag), qt.IsNotNil)
+	c.Assert(cmd.Flags().Lookup("config"), qt.IsNotNil)
+}
+
+func TestEffectiveMigrateGenerateShadowDB(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ptah.yaml")
+	c.Assert(os.WriteFile(path, []byte("migrate:\n  generate:\n    shadow_db: postgres://localhost/shadow\n"), 0o600), qt.IsNil)
+
+	shadowDB, err := effectiveMigrateGenerateShadowDB("", path)
+	c.Assert(err, qt.IsNil)
+	c.Assert(shadowDB, qt.Equals, "postgres://localhost/shadow")
+
+	shadowDB, err = effectiveMigrateGenerateShadowDB("postgres://localhost/flag_shadow", path)
+	c.Assert(err, qt.IsNil)
+	c.Assert(shadowDB, qt.Equals, "postgres://localhost/flag_shadow")
 }
 
 func TestAddMigrateGenerateCommandIsIdempotent(t *testing.T) {

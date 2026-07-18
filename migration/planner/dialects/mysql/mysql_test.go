@@ -136,6 +136,32 @@ func TestPlanner_GenerateMigrationAST_TablesAdded(t *testing.T) {
 				return tableNode.Name == "users" && len(tableNode.Columns) == 2
 			},
 		},
+		{
+			name: "composite primary key is created with new table",
+			diff: &types.SchemaDiff{
+				TablesAdded: []string{"memberships"},
+			},
+			generated: &goschema.Database{
+				Tables: []goschema.Table{{
+					Name:       "memberships",
+					StructName: "Membership",
+					PrimaryKey: []string{"org_id", "user_id"},
+				}},
+				Fields: []goschema.Field{
+					{Name: "org_id", Type: "INT", StructName: "Membership", Nullable: false},
+					{Name: "user_id", Type: "INT", StructName: "Membership", Nullable: false},
+					{Name: "role", Type: "TEXT", StructName: "Membership", Nullable: false},
+				},
+			},
+			expected: func(nodes []ast.Node) bool {
+				sql, err := renderer.RenderSQL("mysql", nodes...)
+				if err != nil {
+					return false
+				}
+				sql = legacyRenderedSQL(sql)
+				return strings.Contains(sql, "PRIMARY KEY (org_id, user_id)")
+			},
+		},
 	}
 
 	for _, tt := range tests {
