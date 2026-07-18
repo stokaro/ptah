@@ -155,7 +155,9 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 	}
 
 	// 5. Generate up migration SQL
-	upSQL, err := generateUpMigrationSQL(diff, generated, info.Dialect, info.Capabilities)
+	requiresNoTransaction := planner.RequiresNoTransaction(info.Dialect, upNodes)
+	directiveOpts := generatedDirectiveOptions{skipTimeouts: requiresNoTransaction}
+	upSQL, err := generateUpMigrationSQLWithOptions(diff, generated, info.Dialect, directiveOpts, info.Capabilities)
 	if err != nil {
 		return nil, fmt.Errorf("error generating up migration SQL: %w", err)
 	}
@@ -165,12 +167,12 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 		// No migration needed - this is a successful no-op operation
 		return nil, nil
 	}
-	if planner.RequiresNoTransaction(info.Dialect, upNodes) {
+	if requiresNoTransaction {
 		upSQL = withNoTransactionDirective(upSQL)
 	}
 
 	// 6. Generate down migration SQL
-	downSQL, err := generateDownMigrationSQL(diff, generated, dbSchema, info.Dialect, info.Capabilities)
+	downSQL, err := generateDownMigrationSQLWithOptions(diff, generated, dbSchema, info.Dialect, directiveOpts, info.Capabilities)
 	if err != nil {
 		return nil, fmt.Errorf("error generating down migration SQL: %w", err)
 	}
@@ -270,6 +272,20 @@ func generateUpMigrationSQL(
 	dialect string,
 	capsOverride ...capability.Capabilities,
 ) (string, error) {
+	return generateUpMigrationSQLWithOptions(diff, generated, dialect, generatedDirectiveOptions{}, capsOverride...)
+}
+
+type generatedDirectiveOptions struct {
+	skipTimeouts bool
+}
+
+func generateUpMigrationSQLWithOptions(
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+	dialect string,
+	directiveOpts generatedDirectiveOptions,
+	capsOverride ...capability.Capabilities,
+) (string, error) {
 	caps := capability.ForDialect(dialect)
 	if len(capsOverride) > 0 {
 		caps = capsOverride[0]
@@ -285,7 +301,7 @@ func generateUpMigrationSQL(
 	header := fmt.Sprintf("-- Migration generated from schema differences\n-- Generated on: %s\n-- Direction: UP\n\n",
 		time.Now().Format(time.RFC3339))
 
-	return withGeneratedTimeoutDirectives(header+strings.Join(statements, ";\n")+";", dialect), nil
+	return withGeneratedTimeoutDirectivesForOptions(header+strings.Join(statements, ";\n")+";", dialect, directiveOpts), nil
 }
 
 // generateDownMigrationSQL generates the SQL for the down migration by reversing the diff.
@@ -294,6 +310,17 @@ func generateDownMigrationSQL(
 	generated *goschema.Database,
 	dbSchema *dbschematypes.DBSchema,
 	dialect string,
+	capsOverride ...capability.Capabilities,
+) (string, error) {
+	return generateDownMigrationSQLWithOptions(diff, generated, dbSchema, dialect, generatedDirectiveOptions{}, capsOverride...)
+}
+
+func generateDownMigrationSQLWithOptions(
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+	dbSchema *dbschematypes.DBSchema,
+	dialect string,
+	directiveOpts generatedDirectiveOptions,
 	capsOverride ...capability.Capabilities,
 ) (string, error) {
 	// For down migrations, we need to use the current database schema as the "generated" schema
@@ -324,7 +351,14 @@ func generateDownMigrationSQL(
 	header := fmt.Sprintf("-- Migration rollback\n-- Generated on: %s\n-- Direction: DOWN\n\n",
 		time.Now().Format(time.RFC3339))
 
-	return withGeneratedTimeoutDirectives(header+strings.Join(statements, ";\n")+";", dialect), nil
+	return withGeneratedTimeoutDirectivesForOptions(header+strings.Join(statements, ";\n")+";", dialect, directiveOpts), nil
+}
+
+func withGeneratedTimeoutDirectivesForOptions(sql, dialect string, opts generatedDirectiveOptions) string {
+	if opts.skipTimeouts {
+		return sql
+	}
+	return withGeneratedTimeoutDirectives(sql, dialect)
 }
 
 func withGeneratedTimeoutDirectives(sql, dialect string) string {
@@ -449,31 +483,43 @@ func reverseConstraintAdditions(diff *types.SchemaDiff, dbSchema *dbschematypes.
 		return nil
 	}
 
-	// Index the introspected FOREIGN KEY constraints by (table, name) so each
-	// reversed addition restores the body from the exact host it was removed
-	// from. A mixin-shared FK name legitimately repeats across host tables, so a
+	// Index the introspected constraints by (table, name) so each reversed
+	// addition restores the body from the exact host it was removed from. A
+	// mixin-shared FK name legitimately repeats across host tables, so a
 	// name-only key would collapse them onto one host.
-	dbFKByTableName := make(map[string]dbschematypes.DBConstraint)
+	dbConstraintByTableName := make(map[string]dbschematypes.DBConstraint)
 	for _, c := range dbSchema.Constraints {
-		if c.Type != "FOREIGN KEY" {
+		if c.Type != "FOREIGN KEY" && c.Type != "PRIMARY KEY" {
 			continue
 		}
-		dbFKByTableName[c.TableName+"."+c.Name] = c
+		dbConstraintByTableName[c.TableName+"."+c.Name] = c
 	}
 
 	var infos []types.ConstraintAdditionInfo
 	for _, removed := range diff.ConstraintsRemovedWithTables {
-		if removed.Type != "FOREIGN KEY" || removed.TableName == "" {
+		if removed.TableName == "" {
 			continue
 		}
-		dbFK, ok := dbFKByTableName[removed.TableName+"."+removed.Name]
+		dbConstraint, ok := dbConstraintByTableName[removed.TableName+"."+removed.Name]
 		if !ok {
 			// No introspected body to restore (e.g. the constraint was a
 			// pure-removal not present pre-change, or a non-FK). The name still
 			// rides in ConstraintsAdded for the name-only fallback.
 			continue
 		}
-		infos = append(infos, foreignKeyAdditionFromDBConstraint(removed.Name, removed.TableName, dbFK))
+		switch removed.Type {
+		case "FOREIGN KEY":
+			infos = append(infos, foreignKeyAdditionFromDBConstraint(removed.Name, removed.TableName, dbConstraint))
+		case "PRIMARY KEY":
+			if columns := dbConstraint.ColumnNamesOrDefault(); len(columns) > 0 {
+				infos = append(infos, types.ConstraintAdditionInfo{
+					Name:      removed.Name,
+					TableName: removed.TableName,
+					Type:      "PRIMARY KEY",
+					Columns:   append([]string(nil), columns...),
+				})
+			}
+		}
 	}
 	return infos
 }

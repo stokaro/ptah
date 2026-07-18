@@ -1021,6 +1021,15 @@ re-introspects the schema, and only writes files when the replayed schema
 matches the Go source. A mismatch aborts before writing files with a diagnostic
 such as `shadow check failed: missing column users.email`.
 
+You can make this the default for `migrate generate` by configuring the same
+disposable database in `ptah.yaml`; an explicit `--shadow-db` value still wins:
+
+```yaml
+migrate:
+  generate:
+    shadow_db: postgres://user:pass@localhost:5432/shadow_database
+```
+
 **Using Existing Database Connection:**
 
 ```go

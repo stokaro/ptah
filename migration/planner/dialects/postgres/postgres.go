@@ -131,22 +131,171 @@ func (p *Planner) addNewEnums(result []ast.Node, diff *types.SchemaDiff, generat
 	return result
 }
 
-func (p *Planner) modifyExistingEnums(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+type postgresEnumColumnUsage struct {
+	Table       string
+	Column      string
+	Default     string
+	DefaultSet  bool
+	DefaultExpr string
+}
+
+func (p *Planner) modifyExistingEnums(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
 	for _, enumDiff := range diff.EnumsModified {
+		if len(enumDiff.ValuesRemoved) > 0 {
+			values, ok := postgresEnumValues(generated, enumDiff.EnumName)
+			if !ok {
+				result = append(result, ast.NewComment(fmt.Sprintf(
+					"WARNING: Cannot remove enum values %v from %s because the target enum definition was not found",
+					enumDiff.ValuesRemoved,
+					enumDiff.EnumName,
+				)))
+				continue
+			}
+			result = append(result, ast.NewRawSQL(postgresEnumValueRemovalSQL(
+				enumDiff.EnumName,
+				values,
+				postgresEnumColumnUsages(generated, enumDiff.EnumName),
+			)))
+			continue
+		}
+
 		astNode := ast.NewAlterType(enumDiff.EnumName)
 		for _, value := range enumDiff.ValuesAdded {
 			addEnumAst := ast.NewAddEnumValueOperation(value)
 			astNode.AddOperation(addEnumAst)
 		}
 		result = append(result, astNode)
-
-		// Note: PostgreSQL doesn't support removing enum values without recreating the enum
-		if len(enumDiff.ValuesRemoved) > 0 {
-			astCommentNode := ast.NewComment(fmt.Sprintf("WARNING: Cannot remove enum values %v from %s without recreating the enum", enumDiff.ValuesRemoved, enumDiff.EnumName))
-			result = append(result, astCommentNode)
-		}
 	}
 	return result
+}
+
+func postgresEnumValues(generated *goschema.Database, enumName string) ([]string, bool) {
+	if generated == nil {
+		return nil, false
+	}
+	for _, enum := range generated.Enums {
+		if enum.Name == enumName {
+			return append([]string(nil), enum.Values...), true
+		}
+	}
+	return nil, false
+}
+
+func postgresEnumColumnUsages(generated *goschema.Database, enumName string) []postgresEnumColumnUsage {
+	if generated == nil {
+		return nil
+	}
+	tablesByStruct := make(map[string]goschema.Table, len(generated.Tables))
+	for _, table := range generated.Tables {
+		tablesByStruct[table.StructName] = table
+	}
+
+	usages := make([]postgresEnumColumnUsage, 0)
+	for _, field := range generated.Fields {
+		if field.Type != enumName {
+			continue
+		}
+		table, ok := tablesByStruct[field.StructName]
+		if !ok {
+			continue
+		}
+		usages = append(usages, postgresEnumColumnUsage{
+			Table:       table.QualifiedName(),
+			Column:      field.Name,
+			Default:     field.Default,
+			DefaultSet:  field.DefaultSet,
+			DefaultExpr: field.DefaultExpr,
+		})
+	}
+	return usages
+}
+
+func postgresEnumValueRemovalSQL(enumName string, values []string, usages []postgresEnumColumnUsage) string {
+	oldName := postgresTemporaryEnumName(enumName)
+	enumIdent := quotePostgresIdentifierPath(enumName)
+	oldIdent := quotePostgresIdentifierPath(oldName)
+
+	var sql strings.Builder
+	for _, usage := range usages {
+		if usage.DefaultSet || usage.Default != "" || usage.DefaultExpr != "" {
+			fmt.Fprintf(&sql, "ALTER TABLE %s ALTER COLUMN %s DROP DEFAULT;\n",
+				quotePostgresIdentifierPath(usage.Table),
+				quotePostgresIdentifier(usage.Column),
+			)
+		}
+	}
+	fmt.Fprintf(&sql, "ALTER TYPE %s RENAME TO %s;\n", enumIdent, quotePostgresIdentifier(postgresBaseName(oldName)))
+	fmt.Fprintf(&sql, "CREATE TYPE %s AS ENUM (%s);\n", enumIdent, postgresEnumValueList(values))
+	for _, usage := range usages {
+		fmt.Fprintf(&sql, "ALTER TABLE %s ALTER COLUMN %s TYPE %s USING %s::text::%s;\n",
+			quotePostgresIdentifierPath(usage.Table),
+			quotePostgresIdentifier(usage.Column),
+			enumIdent,
+			quotePostgresIdentifier(usage.Column),
+			enumIdent,
+		)
+		if defaultSQL, ok := postgresDefaultSQL(usage); ok {
+			fmt.Fprintf(&sql, "ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s;\n",
+				quotePostgresIdentifierPath(usage.Table),
+				quotePostgresIdentifier(usage.Column),
+				defaultSQL,
+			)
+		}
+	}
+	fmt.Fprintf(&sql, "DROP TYPE %s;", oldIdent)
+	return sql.String()
+}
+
+func postgresTemporaryEnumName(enumName string) string {
+	parts := strings.Split(enumName, ".")
+	parts[len(parts)-1] += "__ptah_old"
+	return strings.Join(parts, ".")
+}
+
+func postgresBaseName(name string) string {
+	parts := strings.Split(name, ".")
+	return parts[len(parts)-1]
+}
+
+func postgresEnumValueList(values []string) string {
+	quoted := make([]string, 0, len(values))
+	for _, value := range values {
+		quoted = append(quoted, quotePostgresLiteral(value))
+	}
+	return strings.Join(quoted, ", ")
+}
+
+func postgresDefaultSQL(usage postgresEnumColumnUsage) (string, bool) {
+	if usage.DefaultExpr != "" {
+		return usage.DefaultExpr, true
+	}
+	if usage.DefaultSet || usage.Default != "" {
+		return postgresDefaultLiteral(usage.Default), true
+	}
+	return "", false
+}
+
+func postgresDefaultLiteral(value string) string {
+	if strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'") {
+		return value
+	}
+	return quotePostgresLiteral(value)
+}
+
+func quotePostgresLiteral(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+}
+
+func quotePostgresIdentifierPath(name string) string {
+	parts := strings.Split(name, ".")
+	for i, part := range parts {
+		parts[i] = quotePostgresIdentifier(part)
+	}
+	return strings.Join(parts, ".")
+}
+
+func quotePostgresIdentifier(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
 func (p *Planner) addNewTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
@@ -197,12 +346,9 @@ func (p *Planner) createTablesWithoutForeignKeys(result []ast.Node, generated *g
 			continue
 		}
 
-		astNode := ast.NewCreateTable(table.QualifiedName())
-		for _, field := range allFields {
-			if field.StructName == table.StructName {
-				columnNode := fromschema.FromFieldWithoutForeignKeys(field, generated.Enums, DialectName)
-				astNode.AddColumn(columnNode)
-			}
+		astNode := fromschema.FromTable(table, allFields, generated.Enums, DialectName)
+		for _, column := range astNode.Columns {
+			column.ForeignKey = nil
 		}
 		result = append(result, astNode)
 	}
@@ -786,8 +932,8 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	// 3. Add new enums (PostgreSQL requires enum types to exist before tables use them)
 	result = p.addNewEnums(result, diff, generated)
 
-	// 4. Modify existing enums (add values only - PostgreSQL doesn't support removing enum values easily)
-	result = p.modifyExistingEnums(result, diff)
+	// 4. Modify existing enums
+	result = p.modifyExistingEnums(result, diff, generated)
 
 	// 5. Add new tables
 	result = p.addNewTables(result, diff, generated)

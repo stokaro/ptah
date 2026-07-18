@@ -34,6 +34,54 @@ func TestCompare_DefaultBehavior(t *testing.T) {
 	c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, []string{})
 }
 
+func TestCompareWithDialect_MySQLFamilyInlineEnumsMatchGeneratedEnumFields(t *testing.T) {
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			generated := &goschema.Database{
+				Tables: []goschema.Table{{
+					Name:       "products",
+					StructName: "Product",
+				}},
+				Fields: []goschema.Field{
+					{StructName: "Product", Name: "id", Type: "int", Primary: true},
+					{
+						StructName: "Product",
+						Name:       "status",
+						Type:       "enum_product_status",
+						Enum:       []string{"draft", "active"},
+						Nullable:   false,
+					},
+				},
+				Enums: []goschema.Enum{{
+					Name:   "enum_product_status",
+					Values: []string{"draft", "active"},
+				}},
+			}
+			database := &types.DBSchema{
+				Tables: []types.DBTable{{
+					Name: "products",
+					Type: "TABLE",
+					Columns: []types.DBColumn{
+						{Name: "id", DataType: "int", IsNullable: "NO", IsPrimaryKey: true},
+						{Name: "status", DataType: "enum('draft','active')", IsNullable: "NO"},
+					},
+				}},
+				Enums: []types.DBEnum{{
+					Name:   "enum_draft_active",
+					Values: []string{"draft", "active"},
+				}},
+			}
+
+			diff := schemadiff.CompareWithDialect(generated, database, dialect)
+			c.Assert(diff.EnumsAdded, qt.HasLen, 0)
+			c.Assert(diff.EnumsRemoved, qt.HasLen, 0)
+			c.Assert(diff.TablesModified, qt.HasLen, 0)
+		})
+	}
+}
+
 func TestCompareWithOptions_CustomIgnoreList(t *testing.T) {
 	c := qt.New(t)
 

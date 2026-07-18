@@ -54,6 +54,13 @@ func (r *Renderer) escapeValue(value string) string {
 	return "'" + escaped + "'"
 }
 
+func (r *Renderer) renderDefaultLiteral(value string) string {
+	if strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'") {
+		return value
+	}
+	return r.escapeValue(value)
+}
+
 // dropConstraintSQL renders a single ALTER TABLE constraint drop.
 //
 // MySQL/MariaDB constraint drops are type-specific. Foreign keys use the
@@ -97,6 +104,9 @@ func (r *Renderer) dropConstraintSQL(table string, op *ast.DropConstraintOperati
 		if op.IfExists && r.caps.Has(capability.DropIndexIfExists) {
 			dropSQL += " IF EXISTS"
 		}
+	case op.PrimaryKey:
+		dropSQL += " PRIMARY KEY"
+		return dropSQL
 	case guarded:
 		dropSQL += " CONSTRAINT IF EXISTS"
 	default:
@@ -548,7 +558,7 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	case column.Default == nil:
 		// No default value
 	case column.Default.HasLiteral():
-		parts = append(parts, fmt.Sprintf("DEFAULT %s", r.escapeValue(column.Default.Value)))
+		parts = append(parts, fmt.Sprintf("DEFAULT %s", r.renderDefaultLiteral(column.Default.Value)))
 	case column.Default.Expression != "":
 		parts = append(parts, fmt.Sprintf("DEFAULT %s", column.Default.Expression))
 	}
@@ -757,7 +767,7 @@ func (r *Renderer) renderColumnWithEnums(column *ast.ColumnNode, enumValues []st
 		if column.Default.Expression != "" {
 			parts = append(parts, fmt.Sprintf("DEFAULT %s", column.Default.Expression))
 		} else if column.Default.HasLiteral() {
-			parts = append(parts, fmt.Sprintf("DEFAULT '%s'", column.Default.Value))
+			parts = append(parts, fmt.Sprintf("DEFAULT %s", r.renderDefaultLiteral(column.Default.Value)))
 		}
 	}
 	if column.UpdateExpression != "" {

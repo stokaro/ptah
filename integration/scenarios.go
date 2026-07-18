@@ -119,6 +119,11 @@ func GetAllScenarios() []TestScenario {
 			Description:      "Validate migration generator with forward and rollback migrations",
 			EnhancedTestFunc: testMigrationGeneratorValidation,
 		},
+		{
+			Name:             "migration_generator_roundtrip_fixtures",
+			Description:      "Validate generated migrations with fixture-driven apply, down-to-zero, and re-apply round trips",
+			EnhancedTestFunc: testMigrationGeneratorRoundTripFixtures,
+		},
 
 		// Cleanup Support
 		{

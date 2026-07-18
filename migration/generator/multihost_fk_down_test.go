@@ -187,6 +187,34 @@ func TestReverseConstraintAdditions_RestoresPerHostBody(t *testing.T) {
 	}
 }
 
+func TestReverseConstraintAdditions_RestoresPrimaryKeyColumns(t *testing.T) {
+	c := qt.New(t)
+
+	dbSchema := &dbschematypes.DBSchema{
+		Constraints: []dbschematypes.DBConstraint{{
+			Name:        "PRIMARY",
+			TableName:   "memberships",
+			Type:        "PRIMARY KEY",
+			ColumnNames: []string{"org_id", "user_id"},
+		}},
+	}
+	upDiff := &types.SchemaDiff{
+		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{{
+			Name:      "PRIMARY",
+			TableName: "memberships",
+			Type:      "PRIMARY KEY",
+		}},
+	}
+
+	additions := reverseConstraintAdditions(upDiff, dbSchema)
+	c.Assert(additions, qt.DeepEquals, []types.ConstraintAdditionInfo{{
+		Name:      "PRIMARY",
+		TableName: "memberships",
+		Type:      "PRIMARY KEY",
+		Columns:   []string{"org_id", "user_id"},
+	}})
+}
+
 func TestReverseConstraintAdditions_RestoresCompositeForeignKeyBody(t *testing.T) {
 	c := qt.New(t)
 	dbSchema := &dbschematypes.DBSchema{

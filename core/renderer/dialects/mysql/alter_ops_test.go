@@ -108,6 +108,31 @@ func TestMySQL_CreateTableGeneratedColumn(t *testing.T) {
 	c.Assert(out, qt.Contains, "slug varchar(255) NOT NULL AS (lower(name)) STORED")
 }
 
+func TestMySQL_ColumnDefaultLiteralQuoting(t *testing.T) {
+	c := qt.New(t)
+
+	table := ast.NewCreateTable("products").
+		AddColumn(ast.NewColumn("status", "enum('draft','active')").
+			SetNotNull().
+			SetDefault("draft"))
+	alter := &ast.AlterTableNode{
+		Name: "products",
+		Operations: []ast.AlterOperation{
+			&ast.ModifyColumnOperation{
+				Column: ast.NewColumn("status", "enum('draft','active')").
+					SetNotNull().
+					SetDefault("'draft'"),
+			},
+		},
+	}
+
+	out := renderMySQL(t, table, alter)
+
+	c.Assert(out, qt.Contains, "status enum('draft','active') NOT NULL DEFAULT 'draft'")
+	c.Assert(out, qt.Contains, "ALTER TABLE products MODIFY COLUMN status enum('draft','active') NOT NULL DEFAULT 'draft';")
+	c.Assert(out, qt.Not(qt.Contains), "DEFAULT ''draft''")
+}
+
 func TestMySQL_AlterTable_ClickHouseOnlyOpsEmitComment(t *testing.T) {
 	c := qt.New(t)
 	alter := &ast.AlterTableNode{

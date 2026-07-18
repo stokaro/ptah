@@ -144,12 +144,9 @@ func (p *Planner) createTablesWithoutForeignKeys(result []ast.Node, generated *g
 			continue
 		}
 
-		astNode := ast.NewCreateTable(table.Name)
-		for _, field := range allFields {
-			if field.StructName == table.StructName {
-				columnNode := fromschema.FromFieldWithoutForeignKeys(field, generated.Enums, DialectName)
-				astNode.AddColumn(columnNode)
-			}
+		astNode := fromschema.FromTable(table, allFields, generated.Enums, DialectName)
+		for _, column := range astNode.Columns {
+			column.ForeignKey = nil
 		}
 		result = append(result, astNode)
 	}
@@ -313,8 +310,19 @@ func (p *Planner) addNewTableColumns(result []ast.Node, tableDiff *types.TableDi
 	return result
 }
 
-func (p *Planner) modifyExistingColumns(result []ast.Node, tableDiff *types.TableDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) modifyExistingColumns(result []ast.Node, diff *types.SchemaDiff, tableDiff *types.TableDiff, generated *goschema.Database) []ast.Node {
 	for _, colDiff := range tableDiff.ColumnsModified {
+		suppressColumnPrimary := false
+		if _, hasPrimaryKeyChange := colDiff.Changes["primary_key"]; hasPrimaryKeyChange &&
+			primaryKeyColumnChangeOwnedByTableConstraint(diff, tableDiff.TableName, colDiff.ColumnName) {
+			colDiff.Changes = maps.Clone(colDiff.Changes)
+			delete(colDiff.Changes, "primary_key")
+			suppressColumnPrimary = true
+			if len(colDiff.Changes) == 0 {
+				continue
+			}
+		}
+
 		// Find the target field definition for this column
 		// We need to find the struct name that corresponds to this table name
 		var targetField *goschema.Field
@@ -343,7 +351,11 @@ func (p *Planner) modifyExistingColumns(result []ast.Node, tableDiff *types.Tabl
 		}
 
 		// Create a column definition with the target field properties
-		columnNode := fromschema.FromField(*targetField, generated.Enums, "mysql")
+		field := *targetField
+		if suppressColumnPrimary {
+			field.Primary = false
+		}
+		columnNode := fromschema.FromField(field, generated.Enums, "mysql")
 
 		// Generate ALTER COLUMN statements using AST
 		alterNode := &ast.AlterTableNode{
@@ -370,6 +382,22 @@ func (p *Planner) modifyExistingColumns(result []ast.Node, tableDiff *types.Tabl
 	return result
 }
 
+func primaryKeyColumnChangeOwnedByTableConstraint(diff *types.SchemaDiff, tableName, columnName string) bool {
+	for _, info := range diff.ConstraintsAddedWithTables {
+		if strings.EqualFold(info.Type, "PRIMARY KEY") &&
+			info.TableName == tableName &&
+			slices.Contains(info.Columns, columnName) {
+			return true
+		}
+	}
+	for _, info := range diff.ConstraintsRemovedWithTables {
+		if strings.EqualFold(info.Type, "PRIMARY KEY") && info.TableName == tableName {
+			return true
+		}
+	}
+	return false
+}
+
 func (p *Planner) removeColumns(result []ast.Node, tableDiff *types.TableDiff) []ast.Node {
 	for _, colName := range tableDiff.ColumnsRemoved {
 		// Generate DROP COLUMN statement using AST
@@ -393,7 +421,7 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *types.SchemaDiff
 		result = p.addNewTableColumns(result, &tableDiff, generated)
 
 		// Modify existing columns
-		result = p.modifyExistingColumns(result, &tableDiff, generated)
+		result = p.modifyExistingColumns(result, diff, &tableDiff, generated)
 
 		// Remove columns (dangerous!)
 		result = p.removeColumns(result, &tableDiff)
@@ -1049,6 +1077,7 @@ func (p *Planner) fieldLevelForeignKeyConstraintNode(constraintName string, gene
 //     not accepted for FKs on MySQL/MariaDB)
 //   - DROP CONSTRAINT <name> for CHECK constraints (MySQL 8.0.19+ / MariaDB)
 //   - DROP INDEX <name> for UNIQUE constraints
+//   - DROP PRIMARY KEY for PRIMARY KEY constraints
 //
 // The owning table is carried on diff.ConstraintsRemovedWithTables (the bare
 // ConstraintsRemoved name list does not retain it, and MySQL has no runtime
@@ -1100,8 +1129,7 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 
 	// Constraints owned by a table that is itself being dropped do not need an
 	// explicit drop — the DROP TABLE cascades them. Emitting one is at best
-	// redundant and at worst invalid (MySQL/MariaDB reject DROP CONSTRAINT for a
-	// PRIMARY KEY; PRIMARY KEY uses DROP PRIMARY KEY), so skip them.
+	// redundant and at worst invalid, so skip them.
 	droppedTables := make(map[string]struct{}, len(diff.TablesRemoved))
 	for _, t := range diff.TablesRemoved {
 		droppedTables[t] = struct{}{}
@@ -1125,11 +1153,6 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 			continue
 		}
 		if _, droppedTable := droppedTables[info.TableName]; droppedTable {
-			continue
-		}
-		// PRIMARY KEY uses a dedicated syntax and is owned by the column/table
-		// lifecycle; ptah never emits a standalone PK drop here.
-		if strings.EqualFold(info.Type, "PRIMARY KEY") {
 			continue
 		}
 		result = p.appendScopedDrop(result, info, dropped)
@@ -1176,6 +1199,8 @@ func (p *Planner) dropConstraintNode(info types.ConstraintRemovalInfo) ast.Node 
 		// neither), but a composed set may enable them independently and the
 		// intent must match the chosen spelling.
 		op.IfExists = caps.Has(capability.DropIndexIfExists)
+	case strings.EqualFold(info.Type, "PRIMARY KEY"):
+		op.PrimaryKey = true
 	case strings.EqualFold(info.Type, "CHECK") && !caps.Has(capability.DropConstraintGeneric):
 		if !caps.Has(capability.DropCheckClause) {
 			// No generic clause and no DROP CHECK either (MySQLLegacy):

@@ -522,10 +522,9 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 
 // TestPlanner_GenerateMigrationAST_PureConstraintRemovals_TableQualified locks
 // the pure-removal path: every removal with a known host is dropped exactly
-// once with the type-correct syntax; PRIMARY KEY removals and constraints on
-// tables that are themselves being dropped are skipped; a duplicate removal
-// entry for the same (table, name) is deduped — MySQL would abort on the
-// second, unguarded drop otherwise.
+// once with the type-correct syntax; constraints on tables that are themselves
+// being dropped are skipped; a duplicate removal entry for the same (table,
+// name) is deduped — MySQL would abort on the second, unguarded drop otherwise.
 func TestPlanner_GenerateMigrationAST_PureConstraintRemovals_TableQualified(t *testing.T) {
 	for _, dialect := range mysqlFamilyDialects {
 		t.Run(dialect, func(t *testing.T) {
@@ -556,8 +555,8 @@ func TestPlanner_GenerateMigrationAST_PureConstraintRemovals_TableQualified(t *t
 				qt.Commentf("FK removal must be dropped exactly once (deduped) with FK syntax; got:\n%s", sql))
 			c.Assert(strings.Count(sql, "ALTER TABLE things DROP CONSTRAINT chk_qty;"), qt.Equals, 1,
 				qt.Commentf("CHECK removal must be dropped exactly once; got:\n%s", sql))
-			c.Assert(sql, qt.Not(qt.Contains), "pk_legacy",
-				qt.Commentf("PRIMARY KEY removals must be skipped; got:\n%s", sql))
+			c.Assert(strings.Count(sql, "ALTER TABLE legacy DROP PRIMARY KEY;"), qt.Equals, 1,
+				qt.Commentf("PRIMARY KEY removal must use the dedicated MySQL-family spelling; got:\n%s", sql))
 			c.Assert(sql, qt.Not(qt.Contains), "DROP CONSTRAINT chk_on_obsolete",
 				qt.Commentf("constraints on dropped tables are cascaded by DROP TABLE, not dropped explicitly; got:\n%s", sql))
 			c.Assert(sql, qt.Contains, "DROP TABLE IF EXISTS obsolete",
@@ -576,6 +575,13 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedPrimaryKeyAddition(t *testin
 			c := qt.New(t)
 
 			diff := &types.SchemaDiff{
+				TablesModified: []types.TableDiff{{
+					TableName: "memberships",
+					ColumnsModified: []types.ColumnDiff{
+						{ColumnName: "org_id", Changes: map[string]string{"primary_key": "false -> true"}},
+						{ColumnName: "user_id", Changes: map[string]string{"primary_key": "false -> true"}},
+					},
+				}},
 				ConstraintsAdded: []string{"PRIMARY"},
 				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
 					Name:      "PRIMARY",
@@ -587,6 +593,37 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedPrimaryKeyAddition(t *testin
 
 			sql := renderMySQLFamily(c, dialect, diff, &goschema.Database{})
 			c.Assert(sql, qt.Contains, "ALTER TABLE memberships ADD PRIMARY KEY (org_id, user_id);")
+			c.Assert(sql, qt.Not(qt.Contains), "MODIFY COLUMN org_id")
+			c.Assert(sql, qt.Not(qt.Contains), "MODIFY COLUMN user_id")
+		})
+	}
+}
+
+func TestPlanner_GenerateMigrationAST_TableQualifiedPrimaryKeyRemovalSuppressesColumnModify(t *testing.T) {
+	for _, dialect := range mysqlFamilyDialects {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff := &types.SchemaDiff{
+				TablesModified: []types.TableDiff{{
+					TableName: "memberships",
+					ColumnsModified: []types.ColumnDiff{
+						{ColumnName: "org_id", Changes: map[string]string{"primary_key": "true -> false"}},
+						{ColumnName: "user_id", Changes: map[string]string{"primary_key": "true -> false"}},
+					},
+				}},
+				ConstraintsRemoved: []string{"PRIMARY"},
+				ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{{
+					Name:      "PRIMARY",
+					TableName: "memberships",
+					Type:      "PRIMARY KEY",
+				}},
+			}
+
+			sql := renderMySQLFamily(c, dialect, diff, &goschema.Database{})
+			c.Assert(sql, qt.Contains, "ALTER TABLE memberships DROP PRIMARY KEY;")
+			c.Assert(sql, qt.Not(qt.Contains), "MODIFY COLUMN org_id")
+			c.Assert(sql, qt.Not(qt.Contains), "MODIFY COLUMN user_id")
 		})
 	}
 }
