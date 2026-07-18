@@ -162,6 +162,25 @@ func outputHuman(status *migrator.MigrationStatus, conn *dbschema.DatabaseConnec
 	fmt.Printf("Pending Migrations: %d\n", len(status.PendingMigrations))
 	fmt.Printf("Out-of-order Migrations: %d\n", len(status.OutOfOrderMigrations))
 
+	if status.DirtyRevision != nil {
+		fmt.Println("Status: ❌ Dirty migration state detected")
+		fmt.Printf(
+			"Dirty Migration: version=%d state=%s applied=%d/%d\n",
+			status.DirtyRevision.Version,
+			status.DirtyRevision.State,
+			status.DirtyRevision.Applied,
+			status.DirtyRevision.Total,
+		)
+		if status.DirtyRevision.Error != "" {
+			fmt.Printf("Error: %s\n", status.DirtyRevision.Error)
+		}
+		if status.DirtyRevision.ErrorStatement != "" {
+			fmt.Printf("Error Statement: %s\n", status.DirtyRevision.ErrorStatement)
+		}
+		fmt.Println("\nRun 'migrate-repair --version <version>' after fixing the database state.")
+		return nil
+	}
+
 	if status.HasPendingChanges {
 		fmt.Println("Status: ⚠️  Pending migrations available")
 

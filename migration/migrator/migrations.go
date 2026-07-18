@@ -51,6 +51,7 @@ type sqlMigrationFunc func(context.Context, *dbschema.DatabaseConnection, migrat
 
 type sqlMigrationFile struct {
 	fn            sqlMigrationFunc
+	sql           string
 	timeouts      MigrationTimeouts
 	noTransaction bool
 }
@@ -232,6 +233,7 @@ func migrationFuncFromSQLStringWithMetadata(filename, sql string, interceptor St
 		fn: func(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrationExecutionMode) error {
 			return executeMigrationFileSQL(ctx, conn, filename, sql, interceptor, mode)
 		},
+		sql:           sql,
 		timeouts:      timeouts,
 		noTransaction: noTransaction,
 	}, nil
@@ -334,6 +336,8 @@ type Migration struct {
 	Description     string
 	Up              MigrationFunc
 	Down            MigrationFunc
+	UpSQL           string
+	DownSQL         string
 	UpTimeouts      MigrationTimeouts
 	DownTimeouts    MigrationTimeouts
 	downUnavailable bool
@@ -360,6 +364,8 @@ func CreateMigrationFromSQL(version int64, description, upSQL, downSQL string) *
 	migration := &Migration{
 		Version:       version,
 		Description:   description,
+		UpSQL:         upSQL,
+		DownSQL:       downSQL,
 		NoTransaction: upNoTransaction || downNoTransaction,
 	}
 
@@ -387,14 +393,19 @@ func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection
 	// Split SQL by semicolons and execute each statement
 	statements := SplitSQLStatements(sql)
 
-	for _, stmt := range statements {
+	for i, stmt := range statements {
 		stmt = strings.TrimSpace(stmt)
 		if stmt == "" {
 			continue // Skip empty statements and comments
 		}
 
 		if err := executeMigrationStatement(ctx, conn, stmt, mode); err != nil {
-			return fmt.Errorf("failed to execute SQL statement: %w\nSQL: %s", err, stmt)
+			return &MigrationExecutionError{
+				Err:            fmt.Errorf("failed to execute SQL statement: %w", err),
+				Statement:      stmt,
+				StatementIndex: i + 1,
+				Total:          len(statements),
+			}
 		}
 	}
 
@@ -421,7 +432,7 @@ func executeMigrationFileSQL(
 	}
 
 	statements := SplitSQLStatements(sql)
-	for _, stmt := range statements {
+	for i, stmt := range statements {
 		stmt = strings.TrimSpace(stmt)
 		if stmt == "" {
 			continue
@@ -430,7 +441,12 @@ func executeMigrationFileSQL(
 		if interceptor != nil {
 			handled, err := interceptor.ExecuteStatement(ctx, conn, stmt, directives)
 			if err != nil {
-				return fmt.Errorf("failed to execute migration SQL: %w", err)
+				return &MigrationExecutionError{
+					Err:            fmt.Errorf("failed to execute migration SQL: %w", err),
+					Statement:      stmt,
+					StatementIndex: i + 1,
+					Total:          len(statements),
+				}
 			}
 			if handled {
 				continue
@@ -438,10 +454,32 @@ func executeMigrationFileSQL(
 		}
 
 		if err := executeMigrationStatement(ctx, conn, stmt, mode); err != nil {
-			return fmt.Errorf("failed to execute migration SQL: %w", err)
+			return &MigrationExecutionError{
+				Err:            fmt.Errorf("failed to execute migration SQL: %w", err),
+				Statement:      stmt,
+				StatementIndex: i + 1,
+				Total:          len(statements),
+			}
 		}
 	}
 	return nil
+}
+
+// MigrationExecutionError reports the statement that failed while applying a
+// SQL migration.
+type MigrationExecutionError struct {
+	Err            error
+	Statement      string
+	StatementIndex int
+	Total          int
+}
+
+func (e *MigrationExecutionError) Error() string {
+	return fmt.Sprintf("%v\nSQL: %s", e.Err, e.Statement)
+}
+
+func (e *MigrationExecutionError) Unwrap() error {
+	return e.Err
 }
 
 func executeMigrationStatement(ctx context.Context, conn *dbschema.DatabaseConnection, stmt string, mode migrationExecutionMode) error {

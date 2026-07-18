@@ -85,7 +85,7 @@ func TestMigrationFuncFromSQLFilenameWithInterceptor_ErrorAbortsMigration(t *tes
 
 	fn := migrator.MigrationFuncFromSQLFilenameWithInterceptor("m.sql", fsys, interceptor)
 	err := fn(context.Background(), nil)
-	c.Assert(err, qt.ErrorMatches, "failed to execute migration SQL: .*")
+	c.Assert(err, qt.ErrorMatches, "(?s)failed to execute migration SQL: .*")
 }
 
 func TestMigrationFuncFromSQLFilenameWithInterceptor_AtlasTxtarExecutesMigrationSectionOnly(t *testing.T) {

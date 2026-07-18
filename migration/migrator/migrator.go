@@ -16,12 +16,13 @@ import (
 
 // MigrationStatus represents the current state of migrations
 type MigrationStatus struct {
-	CurrentVersion       int64   `json:"current_version"`
-	AppliedMigrations    []int64 `json:"applied_migrations"`
-	PendingMigrations    []int64 `json:"pending_migrations"`
-	OutOfOrderMigrations []int64 `json:"out_of_order_migrations"`
-	TotalMigrations      int     `json:"total_migrations"`
-	HasPendingChanges    bool    `json:"has_pending_changes"`
+	CurrentVersion       int64              `json:"current_version"`
+	AppliedMigrations    []int64            `json:"applied_migrations"`
+	PendingMigrations    []int64            `json:"pending_migrations"`
+	OutOfOrderMigrations []int64            `json:"out_of_order_migrations"`
+	TotalMigrations      int                `json:"total_migrations"`
+	HasPendingChanges    bool               `json:"has_pending_changes"`
+	DirtyRevision        *MigrationRevision `json:"dirty_revision,omitempty"`
 }
 
 // Migrator handles database migrations for ptah
@@ -122,20 +123,23 @@ func (m *Migrator) createMigrationsTableSQL() string {
 	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
     version BIGINT PRIMARY KEY,
     description TEXT NOT NULL,
-    applied_at TIMESTAMP NOT NULL
+    applied_at TIMESTAMP NOT NULL,
+    state VARCHAR(32) NOT NULL DEFAULT 'applied',
+    applied INTEGER NOT NULL DEFAULT 1,
+    total INTEGER NOT NULL DEFAULT 1,
+    error TEXT NULL,
+    error_stmt TEXT NULL,
+    execution_time_ms BIGINT NOT NULL DEFAULT 0,
+    checksum VARCHAR(64) NOT NULL DEFAULT ''
 )`, m.qualifiedMigrationsTable())
 }
 
 func (m *Migrator) getVersionSQL() string {
-	return fmt.Sprintf("SELECT COALESCE(MAX(version), 0) FROM %s", m.qualifiedMigrationsTable())
+	return fmt.Sprintf("SELECT COALESCE(MAX(version), 0) FROM %s WHERE state = 'applied'", m.qualifiedMigrationsTable())
 }
 
 func (m *Migrator) getAppliedMigrationsSQL() string {
-	return fmt.Sprintf("SELECT version FROM %s ORDER BY version", m.qualifiedMigrationsTable())
-}
-
-func (m *Migrator) recordMigrationSQL() string {
-	return fmt.Sprintf("INSERT INTO %s (version, description, applied_at) VALUES (?, ?, ?)", m.qualifiedMigrationsTable())
+	return fmt.Sprintf("SELECT version FROM %s WHERE state = 'applied' ORDER BY version", m.qualifiedMigrationsTable())
 }
 
 func (m *Migrator) deleteMigrationSQL() string {
@@ -172,10 +176,82 @@ func (m *Migrator) Initialize(ctx context.Context) error {
 	if err := m.ensureMigrationsVersionColumn(ctx); err != nil {
 		return fmt.Errorf("failed to prepare migrations version column: %w", err)
 	}
+	if err := m.ensureMigrationsRevisionColumns(ctx); err != nil {
+		return fmt.Errorf("failed to prepare migrations revision columns: %w", err)
+	}
 
 	// Mark as initialized
 	m.initialized = true
 	return nil
+}
+
+func (m *Migrator) ensureMigrationsRevisionColumns(ctx context.Context) error {
+	columns := []struct {
+		name       string
+		definition string
+	}{
+		{name: "state", definition: "VARCHAR(32) NOT NULL DEFAULT 'applied'"},
+		{name: "applied", definition: "INTEGER NOT NULL DEFAULT 1"},
+		{name: "total", definition: "INTEGER NOT NULL DEFAULT 1"},
+		{name: "error", definition: "TEXT NULL"},
+		{name: "error_stmt", definition: "TEXT NULL"},
+		{name: "execution_time_ms", definition: "BIGINT NOT NULL DEFAULT 0"},
+		{name: "checksum", definition: "VARCHAR(64) NOT NULL DEFAULT ''"},
+	}
+	for _, column := range columns {
+		if err := m.ensureMigrationsRevisionColumn(ctx, column.name, column.definition); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *Migrator) ensureMigrationsRevisionColumn(ctx context.Context, name, definition string) error {
+	exists, err := m.migrationsColumnExists(ctx, name)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	query := fmt.Sprintf(
+		"ALTER TABLE %s ADD COLUMN %s %s",
+		m.qualifiedMigrationsTable(),
+		m.quoteIdentifier(name),
+		definition,
+	)
+	if _, err := m.conn.ExecContext(ctx, query); err != nil {
+		return fmt.Errorf("failed to add migrations metadata column %s: %w", name, err)
+	}
+	return nil
+}
+
+func (m *Migrator) migrationsColumnExists(ctx context.Context, name string) (bool, error) {
+	if m.conn.Info().Dialect == "clickhouse" {
+		return m.clickHouseMigrationsColumnExists(ctx, name)
+	}
+	query := sqlutil.Rebind(m.conn.Info().Dialect, `
+SELECT COUNT(*)
+FROM information_schema.columns
+WHERE table_schema = ? AND table_name = ? AND column_name = ?`)
+	var count int
+	if err := m.conn.QueryRowContext(ctx, query, m.metadataSchemaName(), m.migrationsTableName(), name).Scan(&count); err != nil {
+		return false, fmt.Errorf("failed to inspect migrations metadata column %s: %w", name, err)
+	}
+	return count > 0, nil
+}
+
+func (m *Migrator) clickHouseMigrationsColumnExists(ctx context.Context, name string) (bool, error) {
+	var count int
+	if err := m.conn.QueryRowContext(
+		ctx,
+		`SELECT count() FROM system.columns WHERE database = currentDatabase() AND table = ? AND name = ?`,
+		m.migrationsTableName(),
+		name,
+	).Scan(&count); err != nil {
+		return false, fmt.Errorf("failed to inspect migrations metadata column %s: %w", name, err)
+	}
+	return count > 0, nil
 }
 
 func (m *Migrator) ensureMigrationsVersionColumn(ctx context.Context) error {
@@ -358,6 +434,10 @@ func (m *Migrator) GetMigrationStatus(ctx context.Context) (*MigrationStatus, er
 	currentVersion := maxAppliedVersion(appliedMigrations)
 	pendingMigrations := pendingMigrationVersions(m.MigrationProvider().Migrations(), appliedMigrations)
 	outOfOrderMigrations := outOfOrderMigrationVersions(pendingMigrations, currentVersion)
+	dirtyRevision, err := m.dirtyRevision(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dirty migration revision: %w", err)
+	}
 
 	return &MigrationStatus{
 		CurrentVersion:       currentVersion,
@@ -365,7 +445,8 @@ func (m *Migrator) GetMigrationStatus(ctx context.Context) (*MigrationStatus, er
 		PendingMigrations:    pendingMigrations,
 		OutOfOrderMigrations: outOfOrderMigrations,
 		TotalMigrations:      len(m.MigrationProvider().Migrations()),
-		HasPendingChanges:    len(pendingMigrations) > 0,
+		HasPendingChanges:    len(pendingMigrations) > 0 || dirtyRevision != nil,
+		DirtyRevision:        dirtyRevision,
 	}, nil
 }
 
@@ -379,6 +460,9 @@ func (m *Migrator) migrateUpLocked(ctx context.Context) error {
 	if err := m.Initialize(ctx); err != nil {
 		return fmt.Errorf("failed to initialize migrations table: %w", err)
 	}
+	if err := m.failIfDirty(ctx); err != nil {
+		return err
+	}
 
 	appliedMigrations, err := m.GetAppliedMigrations(ctx)
 	if err != nil {
@@ -387,6 +471,9 @@ func (m *Migrator) migrateUpLocked(ctx context.Context) error {
 	currentVersion := maxAppliedVersion(appliedMigrations)
 
 	migrations := m.migrationProvider.Migrations()
+	if err := m.verifyAppliedMigrationChecksums(ctx, migrations); err != nil {
+		return err
+	}
 	migrationsToApply, err := m.migrationsToApply(migrations, appliedMigrations, 0)
 	if err != nil {
 		return err
@@ -413,6 +500,9 @@ func (m *Migrator) migrateDownLocked(ctx context.Context) error {
 	if err := m.Initialize(ctx); err != nil {
 		return fmt.Errorf("failed to initialize migrations table: %w", err)
 	}
+	if err := m.failIfDirty(ctx); err != nil {
+		return err
+	}
 
 	targetVersion, err := m.GetPreviousMigrationVersion(ctx)
 	if err != nil {
@@ -434,6 +524,9 @@ func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64)
 	if err := m.Initialize(ctx); err != nil {
 		return fmt.Errorf("failed to initialize migrations table: %w", err)
 	}
+	if err := m.failIfDirty(ctx); err != nil {
+		return err
+	}
 
 	appliedMigrations, err := m.GetAppliedMigrations(ctx)
 	if err != nil {
@@ -448,6 +541,9 @@ func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64)
 	}
 
 	migrationMap := migrationsByVersion(m.migrationProvider.Migrations())
+	if err := m.verifyAppliedMigrationChecksums(ctx, m.migrationProvider.Migrations()); err != nil {
+		return err
+	}
 	migrationsToRollback, err := migrationsToRollback(migrationMap, appliedMigrations, targetVersion)
 	if err != nil {
 		return err
@@ -460,55 +556,9 @@ func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64)
 	deleteSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteMigrationSQL())
 
 	for _, migration := range migrationsToRollback {
-		m.logger.Info("Rolling back migration", "version", migration.Version, "description", migration.Description)
-		if migration.downUnavailable {
-			if err := migration.Down(ctx, m.conn); err != nil {
-				return fmt.Errorf("failed to revert migration %d: %w", migration.Version, err)
-			}
-			continue
-		}
-		if migration.NoTransaction {
-			if err := m.rollbackMigrationNoTransaction(ctx, migration, deleteSQL); err != nil {
-				return err
-			}
-			continue
-		}
-
-		// Begin transaction for this migration rollback
-		if err := m.conn.Writer().BeginTransaction(); err != nil {
-			return fmt.Errorf("failed to begin transaction for migration %d: %w", migration.Version, err)
-		}
-
-		restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, mergeMigrationTimeouts(m.defaultTimeouts, migration.DownTimeouts))
-		if err != nil {
-			_ = m.conn.Writer().RollbackTransaction()
-			return fmt.Errorf("failed to apply timeouts for migration %d: %w", migration.Version, err)
-		}
-
-		// Apply down migration
-		if err := migration.Down(ctx, m.conn); err != nil {
-			err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
-			_ = m.conn.Writer().RollbackTransaction()
-			return fmt.Errorf("failed to revert migration %d: %w", migration.Version, err)
-		}
-
-		if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
-			_ = m.conn.Writer().RollbackTransaction()
+		if err := m.rollbackMigration(ctx, migration, deleteSQL); err != nil {
 			return err
 		}
-
-		// Remove migration record.
-		if err := m.conn.Writer().ExecuteSQL(ctx, deleteSQL, migration.Version); err != nil {
-			_ = m.conn.Writer().RollbackTransaction()
-			return fmt.Errorf("failed to record migration reversion %d: %w", migration.Version, err)
-		}
-
-		// Commit transaction
-		if err := m.conn.Writer().CommitTransaction(); err != nil {
-			return fmt.Errorf("failed to commit transaction for migration %d: %w", migration.Version, err)
-		}
-
-		m.logger.Info("Rolled back migration", "version", migration.Version, "description", migration.Description)
 	}
 
 	m.logger.Info("All migrations rolled back successfully")
@@ -526,6 +576,9 @@ func (m *Migrator) migrateToLocked(ctx context.Context, targetVersion int64) err
 	// Initialize the migrations table
 	if err := m.Initialize(ctx); err != nil {
 		return fmt.Errorf("failed to initialize migrations table: %w", err)
+	}
+	if err := m.failIfDirty(ctx); err != nil {
+		return err
 	}
 
 	appliedMigrations, err := m.GetAppliedMigrations(ctx)
@@ -566,6 +619,9 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int64) error {
 	currentVersion := maxAppliedVersion(appliedMigrations)
 
 	migrations := m.migrationProvider.Migrations()
+	if err := m.verifyAppliedMigrationChecksums(ctx, migrations); err != nil {
+		return err
+	}
 	migrationsToApply, err := m.migrationsToApply(migrations, appliedMigrations, targetVersion)
 	if err != nil {
 		return err
@@ -581,86 +637,259 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int64) error {
 }
 
 func (m *Migrator) applyUpMigrations(ctx context.Context, migrations []*Migration) error {
-	// Rebind once: the template and dialect are loop-invariant. Values are
-	// still bound as native driver parameters via these placeholders so we
-	// never interpolate user-controlled strings into the SQL text.
-	recordSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.recordMigrationSQL())
-
 	for _, migration := range migrations {
+		startedAt := time.Now()
 		m.logger.Info("Applying migration", "version", migration.Version, "description", migration.Description)
+		if err := m.beginMigrationRevision(ctx, migration); err != nil {
+			return fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
+		}
 		if migration.NoTransaction {
-			if err := m.applyUpMigrationNoTransaction(ctx, migration, recordSQL); err != nil {
+			if err := m.applyUpMigrationNoTransaction(ctx, migration, startedAt); err != nil {
 				return err
 			}
 			continue
 		}
 
-		// Begin transaction for this migration
-		if err := m.conn.Writer().BeginTransaction(); err != nil {
-			return fmt.Errorf("failed to begin transaction for migration %d: %w", migration.Version, err)
-		}
-
-		restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts))
-		if err != nil {
-			_ = m.conn.Writer().RollbackTransaction()
-			return fmt.Errorf("failed to apply timeouts for migration %d: %w", migration.Version, err)
-		}
-
-		// Apply migration
-		if err := migration.Up(ctx, m.conn); err != nil {
-			err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
-			_ = m.conn.Writer().RollbackTransaction()
-			return fmt.Errorf("failed to apply migration %d: %w", migration.Version, err)
-		}
-
-		if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
-			_ = m.conn.Writer().RollbackTransaction()
+		if err := m.applyUpMigrationTransactional(ctx, migration, startedAt); err != nil {
 			return err
 		}
-
-		// Record migration via parameter binding.
-		if err := m.conn.Writer().ExecuteSQL(ctx, recordSQL, migration.Version, migration.Description, time.Now()); err != nil {
-			_ = m.conn.Writer().RollbackTransaction()
-			return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)
-		}
-
-		// Commit transaction
-		if err := m.conn.Writer().CommitTransaction(); err != nil {
-			return fmt.Errorf("failed to commit transaction for migration %d: %w", migration.Version, err)
-		}
-
-		m.logger.Info("Applied migration", "version", migration.Version, "description", migration.Description)
 	}
 
 	return nil
 }
 
-func (m *Migrator) applyUpMigrationNoTransaction(ctx context.Context, migration *Migration, recordSQL string) error {
+func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration *Migration, startedAt time.Time) error {
+	if err := m.conn.Writer().BeginTransaction(); err != nil {
+		return m.failMigrationWithDirtyState(
+			ctx,
+			migration,
+			startedAt,
+			err,
+			migration.UpSQL,
+			fmt.Sprintf("failed to begin transaction for migration %d", migration.Version),
+		)
+	}
+
+	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts))
+	if err != nil {
+		_ = m.conn.Writer().RollbackTransaction()
+		return m.failMigrationWithDirtyState(
+			ctx,
+			migration,
+			startedAt,
+			err,
+			migration.UpSQL,
+			fmt.Sprintf("failed to apply timeouts for migration %d", migration.Version),
+		)
+	}
+
+	if err := migration.Up(ctx, m.conn); err != nil {
+		err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
+		_ = m.conn.Writer().RollbackTransaction()
+		return m.failMigrationWithDirtyState(
+			ctx,
+			migration,
+			startedAt,
+			err,
+			migration.UpSQL,
+			fmt.Sprintf("failed to apply migration %d", migration.Version),
+		)
+	}
+
+	if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
+		_ = m.conn.Writer().RollbackTransaction()
+		return m.failMigrationWithDirtyState(ctx, migration, startedAt, err, migration.UpSQL, "")
+	}
+
+	if err := m.conn.Writer().CommitTransaction(); err != nil {
+		return m.failMigrationWithDirtyState(
+			ctx,
+			migration,
+			startedAt,
+			err,
+			migration.UpSQL,
+			fmt.Sprintf("failed to commit transaction for migration %d", migration.Version),
+		)
+	}
+	if err := m.completeMigrationRevision(ctx, migration, startedAt); err != nil {
+		return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)
+	}
+
+	m.logger.Info("Applied migration", "version", migration.Version, "description", migration.Description)
+	return nil
+}
+
+func (m *Migrator) applyUpMigrationNoTransaction(ctx context.Context, migration *Migration, startedAt time.Time) error {
 	if err := ensureNoTransactionHasNoTimeouts(migration.Version, mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts)); err != nil {
-		return err
+		return m.failMigrationWithDirtyState(ctx, migration, startedAt, err, migration.UpSQL, "")
 	}
 	if err := migration.Up(ctx, m.conn); err != nil {
-		return fmt.Errorf("failed to apply migration %d: %w", migration.Version, err)
+		return m.failMigrationWithDirtyState(
+			ctx,
+			migration,
+			startedAt,
+			err,
+			migration.UpSQL,
+			fmt.Sprintf("failed to apply migration %d", migration.Version),
+		)
 	}
-	if err := executeSQLOutsideTransaction(ctx, m.conn, recordSQL, migration.Version, migration.Description, time.Now()); err != nil {
+	if err := m.completeMigrationRevision(ctx, migration, startedAt); err != nil {
 		return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)
 	}
 	m.logger.Info("Applied non-transactional migration", "version", migration.Version, "description", migration.Description)
 	return nil
 }
 
-func (m *Migrator) rollbackMigrationNoTransaction(ctx context.Context, migration *Migration, deleteSQL string) error {
+func (m *Migrator) rollbackMigration(ctx context.Context, migration *Migration, deleteSQL string) error {
+	startedAt := time.Now()
+	m.logger.Info("Rolling back migration", "version", migration.Version, "description", migration.Description)
+	if err := m.beginRollbackRevision(ctx, migration); err != nil {
+		return fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
+	}
+	if migration.downUnavailable {
+		return m.rollbackMigrationWithoutRegisteredDown(ctx, migration, startedAt, deleteSQL)
+	}
+	if migration.NoTransaction {
+		return m.rollbackMigrationNoTransaction(ctx, migration, startedAt, deleteSQL)
+	}
+	return m.rollbackMigrationTransactional(ctx, migration, startedAt, deleteSQL)
+}
+
+func (m *Migrator) rollbackMigrationWithoutRegisteredDown(
+	ctx context.Context,
+	migration *Migration,
+	startedAt time.Time,
+	deleteSQL string,
+) error {
+	if err := migration.Down(ctx, m.conn); err != nil {
+		return m.failMigrationWithDirtyState(
+			ctx,
+			migration,
+			startedAt,
+			err,
+			migration.DownSQL,
+			fmt.Sprintf("failed to revert migration %d", migration.Version),
+		)
+	}
+	if err := executeSQLOutsideTransaction(ctx, m.conn, deleteSQL, migration.Version); err != nil {
+		return fmt.Errorf("failed to record migration reversion %d: %w", migration.Version, err)
+	}
+	m.logger.Info("Rolled back migration", "version", migration.Version, "description", migration.Description)
+	return nil
+}
+
+func (m *Migrator) rollbackMigrationTransactional(
+	ctx context.Context,
+	migration *Migration,
+	startedAt time.Time,
+	deleteSQL string,
+) error {
+	if err := m.conn.Writer().BeginTransaction(); err != nil {
+		return m.failMigrationWithDirtyState(
+			ctx,
+			migration,
+			startedAt,
+			err,
+			migration.DownSQL,
+			fmt.Sprintf("failed to begin transaction for migration %d", migration.Version),
+		)
+	}
+
+	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, mergeMigrationTimeouts(m.defaultTimeouts, migration.DownTimeouts))
+	if err != nil {
+		_ = m.conn.Writer().RollbackTransaction()
+		return m.failMigrationWithDirtyState(
+			ctx,
+			migration,
+			startedAt,
+			err,
+			migration.DownSQL,
+			fmt.Sprintf("failed to apply timeouts for migration %d", migration.Version),
+		)
+	}
+
+	if err := migration.Down(ctx, m.conn); err != nil {
+		err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
+		_ = m.conn.Writer().RollbackTransaction()
+		return m.failMigrationWithDirtyState(
+			ctx,
+			migration,
+			startedAt,
+			err,
+			migration.DownSQL,
+			fmt.Sprintf("failed to revert migration %d", migration.Version),
+		)
+	}
+
+	if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
+		_ = m.conn.Writer().RollbackTransaction()
+		return m.failMigrationWithDirtyState(ctx, migration, startedAt, err, migration.DownSQL, "")
+	}
+
+	if err := m.conn.Writer().ExecuteSQL(ctx, deleteSQL, migration.Version); err != nil {
+		_ = m.conn.Writer().RollbackTransaction()
+		return fmt.Errorf("failed to record migration reversion %d: %w", migration.Version, err)
+	}
+
+	if err := m.conn.Writer().CommitTransaction(); err != nil {
+		return m.failMigrationWithDirtyState(
+			ctx,
+			migration,
+			startedAt,
+			err,
+			migration.DownSQL,
+			fmt.Sprintf("failed to commit transaction for migration %d", migration.Version),
+		)
+	}
+
+	m.logger.Info("Rolled back migration", "version", migration.Version, "description", migration.Description)
+	return nil
+}
+
+func (m *Migrator) rollbackMigrationNoTransaction(
+	ctx context.Context,
+	migration *Migration,
+	startedAt time.Time,
+	deleteSQL string,
+) error {
 	if err := ensureNoTransactionHasNoTimeouts(migration.Version, mergeMigrationTimeouts(m.defaultTimeouts, migration.DownTimeouts)); err != nil {
-		return err
+		return m.failMigrationWithDirtyState(ctx, migration, startedAt, err, migration.DownSQL, "")
 	}
 	if err := migration.Down(ctx, m.conn); err != nil {
-		return fmt.Errorf("failed to revert migration %d: %w", migration.Version, err)
+		return m.failMigrationWithDirtyState(
+			ctx,
+			migration,
+			startedAt,
+			err,
+			migration.DownSQL,
+			fmt.Sprintf("failed to revert migration %d", migration.Version),
+		)
 	}
 	if err := executeSQLOutsideTransaction(ctx, m.conn, deleteSQL, migration.Version); err != nil {
 		return fmt.Errorf("failed to record migration reversion %d: %w", migration.Version, err)
 	}
 	m.logger.Info("Rolled back non-transactional migration", "version", migration.Version, "description", migration.Description)
 	return nil
+}
+
+func (m *Migrator) failMigrationWithDirtyState(
+	ctx context.Context,
+	migration *Migration,
+	startedAt time.Time,
+	failure error,
+	sqlText string,
+	prefix string,
+) error {
+	if revisionErr := m.failMigrationRevision(ctx, migration, startedAt, failure, sqlText); revisionErr != nil {
+		if prefix == "" {
+			return fmt.Errorf("%w; additionally failed to record dirty migration state: %v", failure, revisionErr)
+		}
+		return fmt.Errorf("%s: %w; additionally failed to record dirty migration state: %v", prefix, failure, revisionErr)
+	}
+	if prefix == "" {
+		return failure
+	}
+	return fmt.Errorf("%s: %w", prefix, failure)
 }
 
 func ensureNoTransactionHasNoTimeouts(version int64, timeouts MigrationTimeouts) error {
