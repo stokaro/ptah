@@ -87,6 +87,11 @@
 // WithMigrationsTable(schema, table) to store migration history in a custom
 // schema or table, for example an `infra.ptah_migrations` table in PostgreSQL.
 //
+// PostgreSQL, MySQL, and MariaDB migrations acquire a session-level advisory
+// lock around the planning and apply window. Use WithMigrationLockTimeout to
+// bound the wait for that lock; callers can detect acquisition timeouts with
+// IsMigrationLockTimeout.
+//
 // # Migration Operations
 //
 // The migrator supports several migration operations:
