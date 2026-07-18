@@ -45,6 +45,7 @@ func TestPlanner_GenerateMigrationAST_FunctionsModified_EmitsCreateOrReplace(t *
 
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 
 	c.Assert(sql, qt.Contains, "CREATE OR REPLACE FUNCTION set_tenant_context(tenant_id_param TEXT)")
 	c.Assert(sql, qt.Contains, "RETURNS VOID")
@@ -76,6 +77,7 @@ func TestPlanner_GenerateMigrationAST_FunctionsModified_SkippedWhenTargetMissing
 
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Not(qt.Contains), "ghost",
 		qt.Commentf("planner must not emit SQL for a modified function whose target definition is missing"))
 }

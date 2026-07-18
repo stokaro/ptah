@@ -92,10 +92,12 @@ func TestMigrationFileGeneration_ExtensionSQL(t *testing.T) {
 			// 2. Generate up migration SQL
 			upSQL, err := generateUpMigrationSQL(diff, tt.generatedSchema, "postgres")
 			c.Assert(err, qt.IsNil)
+			upSQL = legacyRenderedSQL(upSQL)
 
 			// 3. Generate down migration SQL using the fixed reverseSchemaDiff function
 			downSQL, err := generateDownMigrationSQL(diff, tt.generatedSchema, tt.databaseSchema, "postgres")
 			c.Assert(err, qt.IsNil)
+			downSQL = legacyRenderedSQL(downSQL)
 
 			// 4. Verify up migration SQL contains expected patterns
 			for _, expected := range tt.expectedUpSQL {
@@ -160,6 +162,7 @@ func TestExtensionMigrationSQL_CompleteFlow(t *testing.T) {
 	upDiff := schemadiff.Compare(generatedSchema, emptyDatabase)
 	upSQL, err := generateUpMigrationSQL(upDiff, generatedSchema, "postgres")
 	c.Assert(err, qt.IsNil)
+	upSQL = legacyRenderedSQL(upSQL)
 	c.Assert(upSQL, qt.Contains, "CREATE EXTENSION IF NOT EXISTS pg_trgm;")
 
 	// 2. Simulate database state after up migration
@@ -173,6 +176,7 @@ func TestExtensionMigrationSQL_CompleteFlow(t *testing.T) {
 	// For down migration, we use the original upDiff and reverse it
 	downSQL, err := generateDownMigrationSQL(upDiff, generatedSchema, databaseAfterUp, "postgres")
 	c.Assert(err, qt.IsNil)
+	downSQL = legacyRenderedSQL(downSQL)
 	c.Assert(downSQL, qt.Contains, "DROP EXTENSION IF EXISTS pg_trgm;")
 
 	// 4. Verify the cycle is complete

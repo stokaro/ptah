@@ -28,6 +28,7 @@ func renderMySQLFamily(c *qt.C, dialect string, diff *types.SchemaDiff, generate
 	nodes := mysql.New().GenerateMigrationAST(diff, generated)
 	sql, err := renderer.RenderSQL(dialect, nodes...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 	return sql
 }
 

@@ -38,6 +38,7 @@ func TestMySQLFamilyRenderers_ConstraintDropGuardValidity(t *testing.T) {
 
 		sql, err := renderer.RenderSQL("mysql", dropFK, dropCheck)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 		c.Assert(sql, qt.Contains, "ALTER TABLE posts DROP FOREIGN KEY fk_posts_user;",
 			qt.Commentf("got:\n%s", sql))
 		c.Assert(sql, qt.Contains, "ALTER TABLE things DROP CONSTRAINT chk_qty;",
@@ -51,6 +52,7 @@ func TestMySQLFamilyRenderers_ConstraintDropGuardValidity(t *testing.T) {
 
 		sql, err := renderer.RenderSQL("mariadb", dropFK, dropCheck)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 		c.Assert(sql, qt.Contains, "ALTER TABLE posts DROP FOREIGN KEY IF EXISTS fk_posts_user;",
 			qt.Commentf("got:\n%s", sql))
 		c.Assert(sql, qt.Contains, "ALTER TABLE things DROP CONSTRAINT IF EXISTS chk_qty;",
@@ -75,11 +77,13 @@ func TestMySQLFamilyRenderers_DropCheckSpelling(t *testing.T) {
 	}
 	sql, err := renderer.RenderSQL("mysql", node)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "ALTER TABLE things DROP CHECK chk_qty;",
 		qt.Commentf("got:\n%s", sql))
 
 	sql, err = renderer.RenderSQL("mariadb", node)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "ALTER TABLE things DROP CONSTRAINT chk_qty;",
 		qt.Commentf("mariadb must degrade DROP CHECK to the generic clause; got:\n%s", sql))
 	c.Assert(sql, qt.Not(qt.Contains), "DROP CHECK",
@@ -93,11 +97,13 @@ func TestMySQLRendererWithCapabilities_UsesPassedCapabilitySet(t *testing.T) {
 
 	sql, err := renderer.RenderSQLWithCapabilities("mysql", capability.MySQL80(), node)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "DROP INDEX idx_users_email ON users;")
 	c.Assert(sql, qt.Not(qt.Contains), "IF EXISTS")
 
 	sql, err = renderer.RenderSQLWithCapabilities("mysql", capability.MariaDB1011(), node)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "DROP INDEX IF EXISTS idx_users_email ON users;")
 }
 
@@ -112,6 +118,7 @@ func TestMySQLRendererWithCapabilities_ClonesCapabilitySet(t *testing.T) {
 	sql, err := mysqlRenderer.Render(node)
 
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "DROP INDEX idx_users_email ON users;")
 	c.Assert(sql, qt.Not(qt.Contains), "IF EXISTS")
 }
@@ -137,6 +144,7 @@ func TestMySQLFamilyRenderers_IndexPrefixTypes(t *testing.T) {
 			)
 
 			c.Assert(err, qt.IsNil)
+			sql = legacyRenderedSQL(sql)
 			c.Assert(sql, qt.Contains, "CREATE FULLTEXT INDEX idx_users_bio ON users (bio);",
 				qt.Commentf("got:\n%s", sql))
 			c.Assert(sql, qt.Contains, "CREATE SPATIAL INDEX idx_geom_g ON geom (g);",
@@ -163,6 +171,7 @@ func TestMySQLFamilyRenderers_DropUniqueIndexSpelling(t *testing.T) {
 	for _, dialect := range []string{"mysql", "mariadb"} {
 		sql, err := renderer.RenderSQL(dialect, node)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 		c.Assert(sql, qt.Contains, "ALTER TABLE users DROP INDEX uq_email;",
 			qt.Commentf("%s: got:\n%s", dialect, sql))
 	}
@@ -177,11 +186,13 @@ func TestMySQLFamilyRenderers_DropUniqueIndexSpelling(t *testing.T) {
 	}
 	sql, err := renderer.RenderSQL("mariadb", guardedNode)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "ALTER TABLE users DROP INDEX IF EXISTS uq_email;",
 		qt.Commentf("mariadb honors the guard on the DROP INDEX spelling; got:\n%s", sql))
 
 	sql, err = renderer.RenderSQL("mysql", guardedNode)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "ALTER TABLE users DROP INDEX uq_email;",
 		qt.Commentf("mysql strips the guard it cannot parse; got:\n%s", sql))
 	c.Assert(sql, qt.Not(qt.Contains), "IF EXISTS", qt.Commentf("got:\n%s", sql))
@@ -197,12 +208,14 @@ func TestMySQLFamilyRenderers_DropIndexGuardValidity(t *testing.T) {
 
 	sqlMySQL, err := renderer.RenderSQL("mysql", node)
 	c.Assert(err, qt.IsNil)
+	sqlMySQL = legacyRenderedSQL(sqlMySQL)
 	c.Assert(sqlMySQL, qt.Contains, "DROP INDEX idx_users_email ON users;",
 		qt.Commentf("got:\n%s", sqlMySQL))
 	c.Assert(sqlMySQL, qt.Not(qt.Contains), "IF EXISTS")
 
 	sqlMariaDB, err := renderer.RenderSQL("mariadb", node)
 	c.Assert(err, qt.IsNil)
+	sqlMariaDB = legacyRenderedSQL(sqlMariaDB)
 	c.Assert(sqlMariaDB, qt.Contains, "DROP INDEX IF EXISTS idx_users_email ON users;",
 		qt.Commentf("got:\n%s", sqlMariaDB))
 }

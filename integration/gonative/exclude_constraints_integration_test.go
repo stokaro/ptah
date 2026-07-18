@@ -166,7 +166,7 @@ func TestExcludeConstraints_EndToEnd_PostgreSQL(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 
 			// Step 5: Extract and verify SQL statements
-			lines := strings.Split(sql, "\n")
+			lines := strings.Split(legacyRenderedSQL(sql), "\n")
 			var actualSQL []string
 			for _, line := range lines {
 				line = strings.TrimSpace(line)

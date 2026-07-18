@@ -39,6 +39,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 		nodes := postgres.New().GenerateMigrationAST(diff, generated)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 
 		c.Assert(sql, qt.Contains, "CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);",
 			qt.Commentf("default output must be byte-identical to the pre-capability planner; got:\n%s", sql))
@@ -51,6 +52,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 		nodes := postgres.New().WithConcurrentIndexes().GenerateMigrationAST(diff, generated)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 
 		c.Assert(sql, qt.Contains, "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_email ON users (email);",
 			qt.Commentf("CONCURRENTLY must precede IF NOT EXISTS per the PostgreSQL grammar; got:\n%s", sql))
@@ -63,6 +65,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 		nodes := postgres.NewWithCapabilities(caps).WithConcurrentIndexes().GenerateMigrationAST(diff, generated)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 
 		c.Assert(sql, qt.Not(qt.Contains), "CONCURRENTLY",
 			qt.Commentf("the capability gate must win over the policy; got:\n%s", sql))
@@ -82,6 +85,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 		nodes := postgres.New().WithConcurrentIndexes().GenerateMigrationAST(uniqueDiff, uniqueGenerated)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 
 		c.Assert(sql, qt.Contains, "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_users_email ON users (email);",
 			qt.Commentf("UNIQUE and CONCURRENTLY must compose; got:\n%s", sql))
@@ -96,6 +100,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 		nodes := base.GenerateMigrationAST(diff, generated)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 		c.Assert(sql, qt.Not(qt.Contains), "CONCURRENTLY",
 			qt.Commentf("the original planner must keep the default policy; got:\n%s", sql))
 	})

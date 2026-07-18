@@ -1327,6 +1327,7 @@ func TestParser_ParseDropTable(t *testing.T) {
 
 			rendered, err := renderer.RenderSQL("postgres", dropTable)
 			c.Assert(err, qt.IsNil)
+			rendered = legacyRenderedSQL(rendered)
 			c.Assert(rendered, qt.Equals, tt.rendered)
 		})
 	}

@@ -579,7 +579,7 @@ func testDynamicSchemaDiff(ctx context.Context, conn *dbschema.DatabaseConnectio
 	// Verify we have statements for adding the posts table
 	hasPostsTable := false
 	for _, stmt := range statements {
-		if contains(stmt, "CREATE TABLE posts") || contains(stmt, "CREATE TABLE \"posts\"") {
+		if containsCreateTableStatement(stmt, conn.Info().Dialect, "posts") {
 			hasPostsTable = true
 			break
 		}
@@ -620,10 +620,10 @@ func testDynamicMigrationSQLGeneration(ctx context.Context, conn *dbschema.Datab
 	hasProductsTable := false
 
 	for _, stmt := range statements {
-		if contains(stmt, "CREATE TABLE users") || contains(stmt, "CREATE TABLE \"users\"") {
+		if containsCreateTableStatement(stmt, conn.Info().Dialect, "users") {
 			hasUsersTable = true
 		}
-		if contains(stmt, "CREATE TABLE products") || contains(stmt, "CREATE TABLE \"products\"") {
+		if containsCreateTableStatement(stmt, conn.Info().Dialect, "products") {
 			hasProductsTable = true
 		}
 	}
@@ -659,6 +659,30 @@ func clearMigrationRevision(ctx context.Context, conn *dbschema.DatabaseConnecti
 		return fmt.Errorf("failed to delete migration revision %d: %w", version, err)
 	}
 	return nil
+}
+
+func containsCreateTableStatement(stmt, dialect, tableName string) bool {
+	patterns := []string{fmt.Sprintf("CREATE TABLE %s", tableName)}
+
+	switch dialect {
+	case "postgres", "cockroachdb", "yugabytedb":
+		patterns = append(patterns, fmt.Sprintf("CREATE TABLE \"%s\"", tableName))
+	case "mysql", "mariadb":
+		patterns = append(patterns, fmt.Sprintf("CREATE TABLE `%s`", tableName))
+	default:
+		patterns = append(patterns,
+			fmt.Sprintf("CREATE TABLE \"%s\"", tableName),
+			fmt.Sprintf("CREATE TABLE `%s`", tableName),
+		)
+	}
+
+	for _, pattern := range patterns {
+		if contains(stmt, pattern) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // contains checks if a string contains a substring (case-insensitive)

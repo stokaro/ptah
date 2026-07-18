@@ -291,10 +291,28 @@ func isPostgresDistributedSQL(dialect string) bool {
 	}
 }
 
-// cleanDatabase drops all tables and resets the database to a clean state
-func (tr *TestRunner) cleanDatabase(_ context.Context, conn *dbschema.DatabaseConnection) error {
-	// Drop all tables to ensure clean state
-	return conn.Writer().DropAllTables()
+// cleanDatabase drops all scenario-owned objects and resets the database to a clean state.
+func (tr *TestRunner) cleanDatabase(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+	if err := conn.Writer().DropAllTables(); err != nil {
+		return err
+	}
+	if platform.NormalizeDialect(conn.Info().Dialect) == platform.Postgres {
+		return cleanPostgresFixtureFunctions(ctx, conn)
+	}
+	return nil
+}
+
+func cleanPostgresFixtureFunctions(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+	for _, signature := range []string{
+		"get_current_tenant_id()",
+		"set_tenant_context(TEXT)",
+		"validate_user_access(INTEGER, TEXT)",
+	} {
+		if _, err := conn.ExecContext(ctx, "DROP FUNCTION IF EXISTS "+signature); err != nil {
+			return fmt.Errorf("failed to drop PostgreSQL fixture function %s: %w", signature, err)
+		}
+	}
+	return nil
 }
 
 // VersionedEntityManager manages versioned entity fixtures for tests

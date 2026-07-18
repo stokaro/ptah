@@ -50,7 +50,7 @@ func TestPostgreSQLRenderer_Integration(t *testing.T) {
 
 	dropSQL, err := renderer.RenderSQL("postgres", dropTable)
 	c.Assert(err, qt.IsNil)
-	c.Assert(dropSQL, qt.Contains, "DROP TABLE IF EXISTS test_users")
+	c.Assert(legacyRenderedSQL(dropSQL), qt.Contains, "DROP TABLE IF EXISTS test_users")
 
 	// Clean up any existing table
 	_, err = db.Exec(dropSQL)
@@ -82,7 +82,7 @@ func TestPostgreSQLRenderer_Integration(t *testing.T) {
 
 	createSQL, err := renderer.RenderSQL("postgresql", table)
 	c.Assert(err, qt.IsNil)
-	c.Assert(createSQL, qt.Contains, "CREATE TABLE test_users")
+	c.Assert(legacyRenderedSQL(createSQL), qt.Contains, "CREATE TABLE test_users")
 
 	// Execute the generated SQL
 	_, err = db.Exec(createSQL)
@@ -101,7 +101,7 @@ func TestPostgreSQLRenderer_Integration(t *testing.T) {
 	}
 	dropSQL, err = renderer.RenderSQL("postgresql", dropTable)
 	c.Assert(err, qt.IsNil)
-	c.Assert(dropSQL, qt.Contains, "DROP TABLE test_users")
+	c.Assert(legacyRenderedSQL(dropSQL), qt.Contains, "DROP TABLE test_users")
 
 	_, err = db.Exec(dropSQL)
 	c.Assert(err, qt.IsNil)
@@ -123,7 +123,7 @@ func TestMySQLRenderer_Integration(t *testing.T) {
 
 	dropSQL, err := renderer.RenderSQL("mysql", dropTable)
 	c.Assert(err, qt.IsNil)
-	c.Assert(dropSQL, qt.Contains, "DROP TABLE IF EXISTS test_users")
+	c.Assert(legacyRenderedSQL(dropSQL), qt.Contains, "DROP TABLE IF EXISTS test_users")
 
 	// Clean up any existing table
 	_, err = db.Exec(dropSQL)
@@ -159,7 +159,7 @@ func TestMySQLRenderer_Integration(t *testing.T) {
 
 	createSQL, err := renderer.RenderSQL("mysql", table)
 	c.Assert(err, qt.IsNil)
-	c.Assert(createSQL, qt.Contains, "CREATE TABLE test_users")
+	c.Assert(legacyRenderedSQL(createSQL), qt.Contains, "CREATE TABLE test_users")
 	c.Assert(createSQL, qt.Contains, "ENGINE=InnoDB")
 
 	// Execute the generated SQL
@@ -180,7 +180,7 @@ func TestMySQLRenderer_Integration(t *testing.T) {
 	}
 	dropSQL, err = renderer.RenderSQL("mysql", dropTable)
 	c.Assert(err, qt.IsNil)
-	c.Assert(dropSQL, qt.Contains, "DROP TABLE test_users")
+	c.Assert(legacyRenderedSQL(dropSQL), qt.Contains, "DROP TABLE test_users")
 
 	_, err = db.Exec(dropSQL)
 	c.Assert(err, qt.IsNil)
@@ -202,7 +202,7 @@ func TestMariaDBRenderer_Integration(t *testing.T) {
 
 	dropSQL, err := renderer.RenderSQL("mariadb", dropTable)
 	c.Assert(err, qt.IsNil)
-	c.Assert(dropSQL, qt.Contains, "DROP TABLE IF EXISTS test_products")
+	c.Assert(legacyRenderedSQL(dropSQL), qt.Contains, "DROP TABLE IF EXISTS test_products")
 
 	// Clean up any existing table
 	_, err = db.Exec(dropSQL)
@@ -237,7 +237,7 @@ func TestMariaDBRenderer_Integration(t *testing.T) {
 
 	createSQL, err := renderer.RenderSQL("mariadb", table)
 	c.Assert(err, qt.IsNil)
-	c.Assert(createSQL, qt.Contains, "CREATE TABLE test_products")
+	c.Assert(legacyRenderedSQL(createSQL), qt.Contains, "CREATE TABLE test_products")
 	c.Assert(createSQL, qt.Contains, "ENGINE=InnoDB")
 
 	// Execute the generated SQL
@@ -258,7 +258,7 @@ func TestMariaDBRenderer_Integration(t *testing.T) {
 	}
 	dropSQL, err = renderer.RenderSQL("mariadb", dropTable)
 	c.Assert(err, qt.IsNil)
-	c.Assert(dropSQL, qt.Contains, "DROP TABLE test_products")
+	c.Assert(legacyRenderedSQL(dropSQL), qt.Contains, "DROP TABLE test_products")
 
 	_, err = db.Exec(dropSQL)
 	c.Assert(err, qt.IsNil)
@@ -346,7 +346,7 @@ func TestRenderer_DialectSpecificSQL(t *testing.T) {
 
 			// Check for dialect-specific content
 			for _, expected := range tt.contains {
-				c.Assert(sql, qt.Contains, expected, qt.Commentf("Expected %q in SQL for %s", expected, tt.dialect))
+				c.Assert(legacyRenderedSQL(sql), qt.Contains, expected, qt.Commentf("Expected %q in SQL for %s", expected, tt.dialect))
 			}
 
 			for _, excluded := range tt.excludes {
@@ -370,6 +370,93 @@ func TestRenderer_DialectSpecificSQL(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 		})
 	}
+}
+
+func TestRenderer_ReservedIdentifiersExecute(t *testing.T) {
+	tests := []struct {
+		name         string
+		dialect      string
+		skipFunc     func(*testing.T) string
+		driver       string
+		cleanupTable string
+	}{
+		{
+			name:         "PostgreSQL reserved identifiers",
+			dialect:      "postgres",
+			skipFunc:     skipIfNoPostgreSQLRenderer,
+			driver:       "pgx",
+			cleanupTable: `"user"`,
+		},
+		{
+			name:         "MySQL reserved identifiers",
+			dialect:      "mysql",
+			skipFunc:     skipIfNoMySQLRenderer,
+			driver:       "mysql",
+			cleanupTable: "`user`",
+		},
+		{
+			name:         "MariaDB reserved identifiers",
+			dialect:      "mariadb",
+			skipFunc:     skipIfNoMariaDBRenderer,
+			driver:       "mysql",
+			cleanupTable: "`user`",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dsn := tt.skipFunc(t)
+			c := qt.New(t)
+
+			db, err := sql.Open(tt.driver, dsn)
+			c.Assert(err, qt.IsNil)
+			defer db.Close()
+
+			_, _ = db.Exec("DROP TABLE IF EXISTS " + tt.cleanupTable)
+			defer func() { _, _ = db.Exec("DROP TABLE IF EXISTS " + tt.cleanupTable) }()
+
+			table := ast.NewCreateTable("user").
+				AddColumn(ast.NewColumn("order", "INTEGER").SetNotNull()).
+				AddColumn(ast.NewColumn("key", "VARCHAR(32)")).
+				AddConstraint(&ast.ConstraintNode{
+					Type:    ast.UniqueConstraint,
+					Name:    "user_order_key",
+					Columns: []string{"order", "key"},
+				})
+			index := ast.NewIndex("idx_user_order", "user", "order")
+
+			sqlText, err := renderer.RenderSQL(tt.dialect, table, index)
+			c.Assert(err, qt.IsNil)
+
+			for _, statement := range executableStatements(sqlText) {
+				_, err = db.Exec(statement)
+				c.Assert(err, qt.IsNil, qt.Commentf("Failed to execute %s statement: %s", tt.dialect, statement))
+			}
+		})
+	}
+}
+
+func executableStatements(sqlText string) []string {
+	lines := strings.Split(sqlText, "\n")
+	statements := make([]string, 0, len(lines))
+	var current strings.Builder
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "--") {
+			continue
+		}
+		current.WriteString(line)
+		current.WriteByte('\n')
+		if !strings.HasSuffix(line, ";") {
+			continue
+		}
+		statements = append(statements, strings.TrimSpace(current.String()))
+		current.Reset()
+	}
+	if tail := strings.TrimSpace(current.String()); tail != "" {
+		statements = append(statements, tail)
+	}
+	return statements
 }
 
 // TestDropIndex_Integration tests DROP INDEX functionality across all dialects
@@ -454,7 +541,7 @@ func TestDropIndex_Integration(t *testing.T) {
 
 			// Check for expected content
 			for _, expected := range tt.contains {
-				c.Assert(dropSQL, qt.Contains, expected, qt.Commentf("Expected %q in DROP INDEX SQL for %s", expected, tt.dialect))
+				c.Assert(legacyRenderedSQL(dropSQL), qt.Contains, expected, qt.Commentf("Expected %q in DROP INDEX SQL for %s", expected, tt.dialect))
 			}
 
 			// Execute the DROP INDEX
@@ -577,7 +664,7 @@ func TestCreateType_Integration(t *testing.T) {
 
 			// Check for expected content
 			for _, expected := range tt.contains {
-				c.Assert(createSQL, qt.Contains, expected, qt.Commentf("Expected %q in CREATE TYPE SQL for %s", expected, tt.dialect))
+				c.Assert(legacyRenderedSQL(createSQL), qt.Contains, expected, qt.Commentf("Expected %q in CREATE TYPE SQL for %s", expected, tt.dialect))
 			}
 
 			// Execute the CREATE TYPE if it should be executable
@@ -720,7 +807,7 @@ func TestAlterType_Integration(t *testing.T) {
 
 			// Check for expected content
 			for _, expected := range tt.contains {
-				c.Assert(alterSQL, qt.Contains, expected, qt.Commentf("Expected %q in ALTER TYPE SQL for %s", expected, tt.dialect))
+				c.Assert(legacyRenderedSQL(alterSQL), qt.Contains, expected, qt.Commentf("Expected %q in ALTER TYPE SQL for %s", expected, tt.dialect))
 			}
 
 			// Execute the ALTER TYPE if it should be executable

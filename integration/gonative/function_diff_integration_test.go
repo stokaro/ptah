@@ -91,9 +91,10 @@ func TestFunctionDiff_BodyAndSecurityChange_Integration(t *testing.T) {
 		qt.Commentf("planner must emit at least one SQL statement for FunctionsModified"))
 
 	sqlText := strings.Join(statements, ";\n") + ";"
-	c.Assert(strings.Contains(sqlText, "CREATE OR REPLACE FUNCTION ptah_test_set_group_context"), qt.IsTrue)
-	c.Assert(strings.Contains(sqlText, "set_config('app.current_group_id', group_id_param, true)"), qt.IsTrue)
-	c.Assert(strings.Contains(sqlText, "SECURITY DEFINER"), qt.IsFalse,
+	sqlForAssert := legacyRenderedSQL(sqlText)
+	c.Assert(strings.Contains(sqlForAssert, "CREATE OR REPLACE FUNCTION ptah_test_set_group_context"), qt.IsTrue)
+	c.Assert(strings.Contains(sqlForAssert, "set_config('app.current_group_id', group_id_param, true)"), qt.IsTrue)
+	c.Assert(strings.Contains(sqlForAssert, "SECURITY DEFINER"), qt.IsFalse,
 		qt.Commentf("the rewritten definition must not carry the dropped SECURITY DEFINER"))
 
 	_, err = db.Exec(sqlText)

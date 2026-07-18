@@ -35,6 +35,7 @@ func TestCompare_FieldLevelForeignKeyActionDrift_MySQL(t *testing.T) {
 	nodes := mysql.New().GenerateMigrationAST(diff, gen)
 	sql, err := renderer.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 
 	const dropStmt = "ALTER TABLE exports DROP FOREIGN KEY fk_export_file;"
 	const addStmt = "ALTER TABLE exports ADD CONSTRAINT fk_export_file FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE SET NULL;"

@@ -220,7 +220,7 @@ type TestTable struct {
 	upContent, err := os.ReadFile(files.UpFile)
 	c.Assert(err, qt.IsNil)
 
-	upSQL := string(upContent)
+	upSQL := legacyRenderedSQL(string(upContent))
 	c.Assert(upSQL, qt.Contains, "CREATE EXTENSION IF NOT EXISTS pg_trgm",
 		qt.Commentf("UP migration should contain CREATE EXTENSION for pg_trgm"))
 	c.Assert(upSQL, qt.Contains, "CREATE EXTENSION IF NOT EXISTS btree_gin",
@@ -232,7 +232,7 @@ type TestTable struct {
 	downContent, err := os.ReadFile(files.DownFile)
 	c.Assert(err, qt.IsNil)
 
-	downSQL := string(downContent)
+	downSQL := legacyRenderedSQL(string(downContent))
 	c.Assert(downSQL, qt.Contains, "DROP EXTENSION IF EXISTS pg_trgm",
 		qt.Commentf("DOWN migration should contain DROP EXTENSION for pg_trgm"))
 	c.Assert(downSQL, qt.Contains, "DROP EXTENSION IF EXISTS btree_gin",

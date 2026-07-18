@@ -39,7 +39,7 @@ func TestPostgreSQLPartitionedTableExecuteIntegration(t *testing.T) {
 
 	sqlText, err := renderer.RenderSQL("postgres", table)
 	c.Assert(err, qt.IsNil)
-	c.Assert(sqlText, qt.Contains, "PARTITION BY RANGE (x, (y * 2))")
+	c.Assert(legacyRenderedSQL(sqlText), qt.Contains, "PARTITION BY RANGE (x, (y * 2))")
 
 	for _, stmt := range migrator.SplitSQLStatements(sqlText) {
 		_, err = db.Exec(stmt)

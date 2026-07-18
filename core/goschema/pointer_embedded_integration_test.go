@@ -167,6 +167,7 @@ type BlogPost struct {
 	for _, stmt := range statements.Statements {
 		sql, err := renderer.RenderSQL("postgresql", stmt)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 		if containsSubstr(sql, "CREATE TABLE blog_posts") {
 			blogPostSQL = sql
 			break

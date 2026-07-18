@@ -164,6 +164,7 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 			nodes := mysql.New().GenerateMigrationAST(diff, tt.generated)
 			sql, err := renderer.RenderSQL("mysql", nodes...)
 			c.Assert(err, qt.IsNil)
+			sql = legacyRenderedSQL(sql)
 
 			c.Assert(sql, qt.Contains, tt.mustEmit,
 				qt.Commentf("expected SQL to contain:\n  %s\ngot:\n%s", tt.mustEmit, sql))

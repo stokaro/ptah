@@ -69,6 +69,7 @@ type User struct {
 		// Render to SQL
 		sql, err := renderer.RenderSQL("postgresql", astNodes[0])
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 
 		if i == 0 {
 			previousSQL = sql
@@ -176,6 +177,7 @@ type Post struct {
 		// Render to SQL
 		sql, err := renderer.RenderSQL("postgresql", astNodes[0])
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 
 		if i == 0 {
 			previousSQL = sql
@@ -276,6 +278,7 @@ type Post struct {
 		for _, node := range astNodes {
 			sql, err := renderer.RenderSQL("postgresql", node)
 			c.Assert(err, qt.IsNil)
+			sql = legacyRenderedSQL(sql)
 			sqlStatements = append(sqlStatements, sql)
 		}
 

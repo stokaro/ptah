@@ -63,7 +63,7 @@ CREATE TABLE files (
 			result, err := renderer.Render(tt.table)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(result, qt.Equals, tt.expected)
+			c.Assert(legacyPostgresSQL(result), qt.Equals, tt.expected)
 		})
 	}
 }
@@ -80,5 +80,5 @@ func TestPostgreSQLRenderer_GeneratedColumn(t *testing.T) {
 	result, err := renderer.Render(table)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(result, qt.Contains, "slug TEXT NOT NULL GENERATED ALWAYS AS (lower(name)) STORED")
+	c.Assert(legacyPostgresSQL(result), qt.Contains, "slug TEXT NOT NULL GENERATED ALWAYS AS (lower(name)) STORED")
 }

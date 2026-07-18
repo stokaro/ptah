@@ -145,6 +145,7 @@ func TestCompare_FieldLevelForeignKeyActionMigrationSQL(t *testing.T) {
 	nodes := postgres.New().GenerateMigrationAST(diff, gen)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 
 	// The new FK with the action clause is emitted.
 	const addStmt = "ALTER TABLE exports ADD CONSTRAINT fk_export_file FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE SET NULL;"
@@ -175,6 +176,7 @@ func TestCompare_FieldLevelForeignKeyActionMigrationSQL(t *testing.T) {
 	noopNodes := postgres.New().GenerateMigrationAST(converged, exportsSchema("SET NULL"))
 	noopSQL, err := renderer.RenderSQL("postgres", noopNodes...)
 	c.Assert(err, qt.IsNil)
+	noopSQL = legacyRenderedSQL(noopSQL)
 	c.Assert(strings.TrimSpace(noopSQL), qt.Equals, "",
 		qt.Commentf("converged schema must produce an empty migration, got:\n%s", noopSQL))
 }

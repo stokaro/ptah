@@ -145,6 +145,7 @@ func TestPostgresFamilyRenderer_CapabilityGates(t *testing.T) {
 
 	sql, err := renderer.RenderSQL("cockroachdb", idx)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);")
 	c.Assert(sql, qt.Not(qt.Contains), "CONCURRENTLY",
 		qt.Commentf("CockroachDB renderer must strip a stray CONCURRENTLY flag; got:\n%s", sql))
@@ -320,6 +321,7 @@ func TestNewVisitorMethods_UnitTests(t *testing.T) {
 
 				sql, err := renderer.RenderSQL(dialect, dropIndex)
 				c.Assert(err, qt.IsNil)
+				sql = legacyRenderedSQL(sql)
 				c.Assert(sql, qt.IsNotNil)
 				c.Assert(sql, qt.Contains, "DROP INDEX")
 				c.Assert(sql, qt.Contains, "test_index")
@@ -340,6 +342,7 @@ func TestNewVisitorMethods_UnitTests(t *testing.T) {
 
 				sql, err := renderer.RenderSQL(dialect, createType)
 				c.Assert(err, qt.IsNil)
+				sql = legacyRenderedSQL(sql)
 				c.Assert(sql, qt.IsNotNil)
 
 				if dialect == "postgresql" {
@@ -359,6 +362,7 @@ func TestNewVisitorMethods_UnitTests(t *testing.T) {
 
 				sql, err := renderer.RenderSQL(dialect, alterType)
 				c.Assert(err, qt.IsNil)
+				sql = legacyRenderedSQL(sql)
 				c.Assert(sql, qt.IsNotNil)
 
 				if dialect == "postgresql" {
@@ -381,6 +385,7 @@ func TestPlatformSpecificOverrides(t *testing.T) {
 	postgresStatements := renderer.GetOrderedCreateStatements(result, "postgres")
 	var postgresArticlesSQL string
 	for _, statement := range postgresStatements {
+		statement = legacyRenderedSQL(statement)
 		if strings.Contains(statement, "CREATE TABLE articles") {
 			postgresArticlesSQL = statement
 			break
@@ -392,6 +397,7 @@ func TestPlatformSpecificOverrides(t *testing.T) {
 	mysqlStatements := renderer.GetOrderedCreateStatements(result, "mysql")
 	var mysqlArticlesSQL string
 	for _, statement := range mysqlStatements {
+		statement = legacyRenderedSQL(statement)
 		if strings.Contains(statement, "CREATE TABLE articles") {
 			mysqlArticlesSQL = statement
 			break
@@ -403,6 +409,7 @@ func TestPlatformSpecificOverrides(t *testing.T) {
 	mariadbStatements := renderer.GetOrderedCreateStatements(result, "mariadb")
 	var mariadbArticlesSQL string
 	for _, statement := range mariadbStatements {
+		statement = legacyRenderedSQL(statement)
 		if strings.Contains(statement, "CREATE TABLE articles") {
 			mariadbArticlesSQL = statement
 			break
@@ -422,6 +429,7 @@ func TestEmbeddedFieldsInPackageParser(t *testing.T) {
 	statements := renderer.GetOrderedCreateStatements(result, "postgres")
 	var articlesSQL string
 	for _, statement := range statements {
+		statement = legacyRenderedSQL(statement)
 		if strings.Contains(statement, "CREATE TABLE articles") {
 			articlesSQL = statement
 			break

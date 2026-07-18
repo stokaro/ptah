@@ -41,6 +41,7 @@ func TestPlanner_GenerateMigrationAST_SchemaObjectsModified(t *testing.T) {
 	nodes := planner.GenerateMigrationAST(diff, generated)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "CREATE OR REPLACE VIEW active_users")
 	c.Assert(sql, qt.Contains, "DROP MATERIALIZED VIEW IF EXISTS user_stats CASCADE;")
 	c.Assert(sql, qt.Contains, "CREATE MATERIALIZED VIEW user_stats AS")
@@ -79,6 +80,7 @@ func TestPlanner_GenerateMigrationAST_DuplicateTriggerNamesUseDistinctFunctions(
 	nodes := planner.GenerateMigrationAST(diff, generated)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "CREATE OR REPLACE FUNCTION ptah_trigger_users_set_updated_at()")
 	c.Assert(sql, qt.Contains, "CREATE OR REPLACE FUNCTION ptah_trigger_posts_set_updated_at()")
 	c.Assert(sql, qt.Contains, "CREATE TRIGGER set_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION ptah_trigger_users_set_updated_at();")
@@ -103,6 +105,7 @@ func TestPlanner_GenerateMigrationAST_MaterializedViewRefreshStrategyDoesNotAuto
 	nodes := planner.GenerateMigrationAST(diff, generated)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "CREATE MATERIALIZED VIEW user_stats AS")
 	c.Assert(sql, qt.Not(qt.Contains), "REFRESH MATERIALIZED VIEW CONCURRENTLY")
 }

@@ -132,6 +132,7 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 
 			// 2. Generate up migration SQL
 			upSQL := planner.GenerateSchemaDiffSQL(diff, tt.generatedSchema, "postgres")
+			upSQL = legacyRenderedSQL(upSQL)
 
 			// 3. Generate down migration SQL by reversing the diff
 			reverseDiff := &difftypes.SchemaDiff{
@@ -151,6 +152,7 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 			}
 
 			downSQL := planner.GenerateSchemaDiffSQL(reverseDiff, dbAsGoSchema, "postgres")
+			downSQL = legacyRenderedSQL(downSQL)
 
 			// 4. Verify up migration SQL
 			for _, expected := range tt.expectedUpSQL {
