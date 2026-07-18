@@ -59,9 +59,10 @@ func TestPostgreSQLMultiSchemaGenerateApplyReadDiffIntegration(t *testing.T) {
 	nodes := planner.GenerateSchemaDiffAST(diff, generated, "postgres")
 	migrationSQL, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
-	c.Assert(migrationSQL, qt.Contains, "CREATE SCHEMA IF NOT EXISTS ptah_ms_auth;")
-	c.Assert(migrationSQL, qt.Contains, "CREATE SCHEMA IF NOT EXISTS ptah_ms_billing;")
-	c.Assert(migrationSQL, qt.Contains, "REFERENCES ptah_ms_auth.ptah_ms_users(id);")
+	migrationSQLForAssert := legacyRenderedSQL(migrationSQL)
+	c.Assert(migrationSQLForAssert, qt.Contains, "CREATE SCHEMA IF NOT EXISTS ptah_ms_auth;")
+	c.Assert(migrationSQLForAssert, qt.Contains, "CREATE SCHEMA IF NOT EXISTS ptah_ms_billing;")
+	c.Assert(migrationSQLForAssert, qt.Contains, "REFERENCES ptah_ms_auth.ptah_ms_users(id);")
 
 	for _, stmt := range migrator.SplitSQLStatements(migrationSQL) {
 		_, err = db.Exec(stmt)

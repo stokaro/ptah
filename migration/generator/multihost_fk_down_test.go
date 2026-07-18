@@ -99,6 +99,7 @@ func TestGenerateDownMigration_MultiHostMixinFKModify_RestoresPriorActionPerHost
 
 			downSQL, err := generateDownMigrationSQL(upDiff, gen, dbSchema, dialect)
 			c.Assert(err, qt.IsNil)
+			downSQL = legacyRenderedSQL(downSQL)
 
 			for _, h := range hosts {
 				var dropStmt string
@@ -145,6 +146,7 @@ func TestGenerateDownMigration_MultiHostMixinFKModify_NameOnlyCounterfactual(t *
 
 	downSQL, err := generateDownMigrationSQL(upDiff, gen, dbSchema, "postgres")
 	c.Assert(err, qt.IsNil)
+	downSQL = legacyRenderedSQL(downSQL)
 
 	// One re-ADD per host (the old name-only path produced exactly one total).
 	total := strings.Count(downSQL, "ADD CONSTRAINT fk_entity_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id)")

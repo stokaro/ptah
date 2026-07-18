@@ -130,7 +130,7 @@ type Product struct {
 	statements := renderer.GetOrderedCreateStatements(&database, "postgresql")
 	c.Assert(statements, qt.Not(qt.HasLen), 0)
 
-	sqlOutput := strings.Join(statements, "\n")
+	sqlOutput := legacyRenderedSQL(strings.Join(statements, "\n"))
 
 	// Verify function creation SQL
 	// Types lowercased by Function.Canonicalize to match Postgres' canonical form.
@@ -194,7 +194,7 @@ type TestTable struct {
 
 	// Generate MySQL SQL - PostgreSQL-specific features should be skipped
 	statements := renderer.GetOrderedCreateStatements(&database, "mysql")
-	sqlOutput := strings.Join(statements, "\n")
+	sqlOutput := legacyRenderedSQL(strings.Join(statements, "\n"))
 
 	// Verify that PostgreSQL-specific features are not included in MySQL output
 	c.Assert(sqlOutput, qt.Not(qt.Contains), "CREATE FUNCTION")

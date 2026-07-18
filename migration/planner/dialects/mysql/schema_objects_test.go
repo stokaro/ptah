@@ -37,6 +37,7 @@ func TestPlanner_GenerateMigrationAST_ViewsAndTriggersModified(t *testing.T) {
 	nodes := planner.GenerateMigrationAST(diff, generated)
 	sql, err := renderer.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "CREATE OR REPLACE VIEW active_users")
 	c.Assert(sql, qt.Contains, "DROP TRIGGER IF EXISTS set_updated_at;")
 	c.Assert(sql, qt.Contains, "CREATE TRIGGER set_updated_at BEFORE UPDATE ON users FOR EACH ROW SET NEW.updated_at = NOW();")
@@ -63,6 +64,9 @@ func TestPlanner_GenerateSchemaDiffSQLStatements_CompoundTriggerBody(t *testing.
 	}
 
 	statements := migrationplanner.GenerateSchemaDiffSQLStatements(diff, generated, "mysql")
+	for i, statement := range statements {
+		statements[i] = legacyRenderedSQL(statement)
+	}
 
 	c.Assert(statements, qt.HasLen, 2)
 	c.Assert(statements[0], qt.Equals, "DROP TRIGGER IF EXISTS set_updated_at")

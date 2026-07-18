@@ -245,7 +245,7 @@ func TestGoFixtures_ParseDirForSchemaObjects(t *testing.T) {
 	genCmd := exec.Command("go", "run", goMain, "generate", "--root-dir", absFixture, "--dialect", "postgres")
 	genOut, err := genCmd.CombinedOutput()
 	c.Assert(err, qt.IsNil)
-	outStr := string(genOut)
+	outStr := legacyRenderedSQL(string(genOut))
 	c.Assert(outStr, qt.Contains, "CREATE VIEW active_users")
 	c.Assert(outStr, qt.Contains, "CREATE MATERIALIZED VIEW user_stats")
 	c.Assert(outStr, qt.Contains, "CREATE TRIGGER")
