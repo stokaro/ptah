@@ -263,7 +263,7 @@ func (p *parser) parseGeneratedColumn(block *hclsyntax.Block) (generatedColumnSp
 		return generatedColumnSpec{}, p.blockError(asBlocks[1], "column can contain at most one as block")
 	}
 	if attr != nil {
-		return generatedColumnSpec{expression: p.exprString(attr), kind: "VIRTUAL"}, nil
+		return generatedColumnSpec{expression: p.exprString(attr)}, nil
 	}
 	if len(asBlocks) == 0 {
 		return generatedColumnSpec{}, nil

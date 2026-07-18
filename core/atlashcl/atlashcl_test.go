@@ -767,7 +767,7 @@ table "users" {
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Fields, qt.HasLen, 2)
 	c.Assert(db.Fields[0].GeneratedExpression, qt.Equals, "lower(name)")
-	c.Assert(db.Fields[0].GeneratedKind, qt.Equals, "VIRTUAL")
+	c.Assert(db.Fields[0].GeneratedKind, qt.Equals, "")
 	c.Assert(db.Fields[1].GeneratedExpression, qt.Equals, "lower(name)")
 	c.Assert(db.Fields[1].GeneratedKind, qt.Equals, "STORED")
 }

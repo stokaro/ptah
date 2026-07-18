@@ -12,9 +12,10 @@ import (
 
 func TestFromField_BasicProperties(t *testing.T) {
 	tests := []struct {
-		name     string
-		field    goschema.Field
-		expected func(*ast.ColumnNode) bool
+		name           string
+		field          goschema.Field
+		targetPlatform string
+		expected       func(*ast.ColumnNode) bool
 	}{
 		{
 			name: "basic field with name and type",
@@ -102,6 +103,43 @@ func TestFromField_BasicProperties(t *testing.T) {
 			},
 		},
 		{
+			name: "PostgreSQL generated field defaults to stored",
+			field: goschema.Field{
+				Name:                "slug",
+				Type:                "TEXT",
+				GeneratedExpression: "lower(name)",
+			},
+			targetPlatform: "postgres",
+			expected: func(col *ast.ColumnNode) bool {
+				return col.GeneratedExpression == "lower(name)" && col.GeneratedKind == "STORED"
+			},
+		},
+		{
+			name: "PostgreSQL explicit virtual generated field is preserved",
+			field: goschema.Field{
+				Name:                "slug",
+				Type:                "TEXT",
+				GeneratedExpression: "lower(name)",
+				GeneratedKind:       "VIRTUAL",
+			},
+			targetPlatform: "postgres",
+			expected: func(col *ast.ColumnNode) bool {
+				return col.GeneratedExpression == "lower(name)" && col.GeneratedKind == "VIRTUAL"
+			},
+		},
+		{
+			name: "MySQL generated field defaults to virtual",
+			field: goschema.Field{
+				Name:                "slug",
+				Type:                "TEXT",
+				GeneratedExpression: "lower(name)",
+			},
+			targetPlatform: "mysql",
+			expected: func(col *ast.ColumnNode) bool {
+				return col.GeneratedExpression == "lower(name)" && col.GeneratedKind == "VIRTUAL"
+			},
+		},
+		{
 			name: "column update expression",
 			field: goschema.Field{
 				Name:             "updated_at",
@@ -129,7 +167,7 @@ func TestFromField_BasicProperties(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := fromschema.FromField(test.field, nil, "")
+			result := fromschema.FromField(test.field, nil, test.targetPlatform)
 			c.Assert(result, qt.IsNotNil)
 			c.Assert(test.expected(result), qt.IsTrue)
 		})

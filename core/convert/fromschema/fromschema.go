@@ -83,6 +83,24 @@ func GenerateForeignKeyName(tableName, fieldName string) string {
 	return "fk_" + strings.ToLower(tableName) + "_" + strings.ToLower(fieldName)
 }
 
+func defaultGeneratedKind(field goschema.Field, targetPlatform string) string {
+	if field.GeneratedExpression == "" || field.GeneratedKind != "" {
+		return field.GeneratedKind
+	}
+	switch {
+	case isPostgreSQLPlatform(targetPlatform):
+		return "STORED"
+	case targetPlatform == "mysql" || targetPlatform == "mariadb":
+		return "VIRTUAL"
+	default:
+		return field.GeneratedKind
+	}
+}
+
+func isPostgreSQLPlatform(targetPlatform string) bool {
+	return strings.EqualFold(targetPlatform, "postgres") || strings.EqualFold(targetPlatform, "postgresql")
+}
+
 func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschema.Field {
 	fieldType := field.Type
 	checkConstraint := field.Check
@@ -349,7 +367,7 @@ func FromField(field goschema.Field, enums []goschema.Enum, targetPlatform strin
 		}
 	}
 	if field.GeneratedExpression != "" {
-		column.SetGenerated(field.GeneratedExpression, field.GeneratedKind)
+		column.SetGenerated(field.GeneratedExpression, defaultGeneratedKind(field, targetPlatform))
 	}
 	if field.UpdateExpression != "" {
 		column.SetUpdateExpression(field.UpdateExpression)
@@ -439,7 +457,7 @@ func FromFieldWithoutForeignKeys(field goschema.Field, enums []goschema.Enum, ta
 		}
 	}
 	if field.GeneratedExpression != "" {
-		column.SetGenerated(field.GeneratedExpression, field.GeneratedKind)
+		column.SetGenerated(field.GeneratedExpression, defaultGeneratedKind(field, targetPlatform))
 	}
 	if field.UpdateExpression != "" {
 		column.SetUpdateExpression(field.UpdateExpression)
