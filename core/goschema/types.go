@@ -253,6 +253,8 @@ type Index struct {
 	Condition string
 	// Operator is the operator class (PostgreSQL only, e.g. "gin_trgm_ops").
 	Operator string
+	// IncludeColumns carries PostgreSQL INCLUDE columns for covering indexes.
+	IncludeColumns []string
 	// TableName is the cross-table association (overrides StructName-based
 	// resolution when set).
 	TableName string

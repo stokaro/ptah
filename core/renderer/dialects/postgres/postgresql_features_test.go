@@ -68,6 +68,17 @@ func TestPostgreSQLRenderer_VisitIndex_PostgreSQLFeatures(t *testing.T) {
 			expected: "CREATE INDEX idx_active_users ON users (status) WHERE deleted_at IS NULL;\n",
 		},
 		{
+			name: "covering index",
+			index: &ast.IndexNode{
+				Name:           "idx_users_name",
+				Table:          "users",
+				Columns:        []string{"name"},
+				IncludeColumns: []string{"active"},
+				Condition:      "active",
+			},
+			expected: "CREATE INDEX idx_users_name ON users (name) INCLUDE (active) WHERE active;\n",
+		},
+		{
 			name: "trigram index",
 			index: &ast.IndexNode{
 				Name:     "idx_users_name_trgm",

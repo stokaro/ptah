@@ -32,7 +32,8 @@ current schema IR:
 - `primary_key` blocks with `columns`; PostgreSQL primary keys also support
   `include`
 - `index` blocks with `columns`, `on { column = ..., prefix = ... }`,
-  `on { expr = "..." }`, `desc`, `unique`, `type`, and `where`
+  `on { expr = "..." }`, `desc`, `unique`, `type`, and `where`; PostgreSQL
+  indexes also support `include`
 - `foreign_key` blocks with one local `columns` entry and one table-qualified
   `ref_columns` entry
 - `check` blocks with `expr`
@@ -94,6 +95,25 @@ table "users" {
   primary_key {
     columns = [column.id]
     include = [column.covering]
+  }
+}
+```
+
+## PostgreSQL Index Include Example
+
+```hcl
+table "users" {
+  column "name" {
+    type = text
+  }
+
+  column "active" {
+    type = bool
+  }
+
+  index "idx_users_name" {
+    columns = [column.name]
+    include = [column.active]
   }
 }
 ```
