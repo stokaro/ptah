@@ -1320,6 +1320,7 @@ func FromIndexWithTableMapping(index goschema.Index, structToTableMap map[string
 	if len(index.Parts) > 0 {
 		indexNode.SetParts(toASTIndexParts(index.Parts))
 	}
+	indexNode.IncludeColumns = index.IncludeColumns
 
 	// Set unique constraint
 	if index.Unique {
