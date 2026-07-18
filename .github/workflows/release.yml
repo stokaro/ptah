@@ -46,7 +46,7 @@ jobs:
           version: v2.15.4
           args: check
 
-      - uses: anchore/sbom-action/download-syft@v0.17.9
+      - uses: anchore/sbom-action/download-syft@v0.24.0
 
       - name: Build snapshot artifacts
         uses: goreleaser/goreleaser-action@v6
@@ -82,7 +82,7 @@ jobs:
 
       - uses: sigstore/cosign-installer@v3.7.0
 
-      - uses: anchore/sbom-action/download-syft@v0.17.9
+      - uses: anchore/sbom-action/download-syft@v0.24.0
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
