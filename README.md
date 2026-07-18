@@ -686,6 +686,15 @@ helpers such as `{{ define "shared/users" }}` and are not executed as standalone
 migrations. The template data object exposes `.Env`; CLI commands set it with
 `--atlas-env`, and programmatic callers can pass `WithAtlasTemplateData`.
 
+`--dir-format` controls only migration-file discovery. To continue a database
+that already uses Atlas's runtime history table, pass `--revision-format atlas`
+to `migrate-up`, `migrate-down`, `migrate-status`, `migrate-repair`, or
+`migrate-baseline`. Atlas revision mode uses `atlas_schema_revisions` by
+default, stores string migration versions, reads the Atlas `applied`/`total` and
+`error` state fields, and writes the Atlas `hash` value from `atlas.sum` when it
+is available. `--migrations-schema` and `--migrations-table` still override the
+metadata table location when needed.
+
 If an Atlas migration has no embedded `down.sql`, `migrate-down` fails with a
 typed error explaining that Atlas dynamic down-plan synthesis is not implemented
 yet. This is different from transaction rollback: transaction rollback undoes a
@@ -718,6 +727,9 @@ Apply all pending migrations to bring database up to latest version:
 
 # Apply an Atlas-style versioned migration directory
 ./package-migrator migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dir-format atlas
+
+# Continue an Atlas-managed database using atlas_schema_revisions
+./package-migrator migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dir-format atlas --revision-format atlas
 
 # Apply Atlas SQL template migrations with .Env set to dev
 ./package-migrator migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dir-format atlas --atlas-env dev
@@ -882,6 +894,9 @@ Show current migration status and pending migrations:
 # Check an Atlas-style versioned migration directory
 ./package-migrator migrate-status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dir-format atlas
 
+# Check an Atlas-managed revisions table
+./package-migrator migrate-status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dir-format atlas --revision-format atlas
+
 # Check Atlas SQL template migrations with .Env set to dev
 ./package-migrator migrate-status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dir-format atlas --atlas-env dev
 ```
@@ -893,6 +908,32 @@ Show current migration status and pending migrations:
 - List of pending migrations
 - Out-of-order pending migrations
 - Migration history and timestamps
+
+#### Atlas-Compatible CLI Namespace And Exit Codes
+
+Ptah keeps the existing kebab-case commands as native commands, and reserves an
+Atlas-compatible command tree under `ptah atlas <command> ...` for scripts that
+expect Atlas OSS command paths. The native command tree remains separate while
+it is redesigned independently.
+
+| Atlas-compatible command | Native command |
+| --- | --- |
+| `ptah atlas migrate apply` | `ptah migrate-up` |
+| `ptah atlas migrate down` | `ptah migrate-down` |
+| `ptah atlas migrate status` | `ptah migrate-status` |
+| `ptah atlas migrate hash` | `ptah migrate-hash` |
+| `ptah atlas migrate validate` | `ptah migrate-validate` |
+| `ptah atlas migrate lint` | `ptah lint` |
+| `ptah atlas migrate diff` | `ptah migrate` |
+| `ptah atlas schema inspect` | `ptah read-db` |
+| `ptah atlas schema diff` | `ptah compare` |
+
+The Atlas-compatible commands delegate to the native commands, so their flag
+parsing and exit codes are the native contracts: `0` for success, `1` for
+drift/findings where a native command documents that content state, and `2` for
+command/usage errors on commands with an explicit 0/1/2 contract (`drift`,
+`lint`, and `migrate-validate`). Other runtime failures continue to use the CLI
+fallback non-zero exit code.
 
 #### Migration Directory Integrity (`ptah.sum` / `atlas.sum`)
 

@@ -335,6 +335,7 @@ func NoopMigrationFunc(_ctx context.Context, _conn *dbschema.DatabaseConnection)
 type Migration struct {
 	Version         int64
 	Description     string
+	Checksum        string
 	Up              MigrationFunc
 	Down            MigrationFunc
 	UpSQL           string

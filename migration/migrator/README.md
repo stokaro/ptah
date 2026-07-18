@@ -106,6 +106,15 @@ helpers such as `{{ define "shared/users" }}` and are not executed as standalone
 migrations. The template data object exposes `.Env`; CLI commands set it with
 `--atlas-env`, and programmatic callers can pass `WithAtlasTemplateData`.
 
+`--dir-format` controls only migration-file discovery. To continue a database
+that already uses Atlas's runtime history table, pass `--revision-format atlas`
+on the CLI or `WithRevisionTableFormat(RevisionTableFormatAtlas)` in Go. Atlas
+revision mode uses `atlas_schema_revisions` by default, stores string migration
+versions, reads the Atlas `applied`/`total` and `error` state fields, and writes
+the Atlas `hash` value from `atlas.sum` when it is available. Custom
+`--migrations-schema` / `--migrations-table` values still override the metadata
+table location.
+
 If an Atlas migration does not provide `down.sql`, `migrate-down` returns a typed
 error explaining that Atlas dynamic down-plan synthesis is not implemented yet.
 This is distinct from transaction rollback on a failed migration: transaction
@@ -142,6 +151,11 @@ go run ./cmd migrate-up --db-url postgres://user:pass@localhost/db --migrations-
 With an Atlas-style versioned migration directory:
 ```bash
 go run ./cmd migrate-up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dir-format atlas
+```
+
+Continue an Atlas-managed database using `atlas_schema_revisions`:
+```bash
+go run ./cmd migrate-up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dir-format atlas --revision-format atlas
 ```
 
 ### Migrate Down
@@ -186,6 +200,11 @@ With an Atlas-style versioned migration directory:
 go run ./cmd migrate-status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dir-format atlas
 ```
 
+Check an Atlas-managed revisions table:
+```bash
+go run ./cmd migrate-status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dir-format atlas --revision-format atlas
+```
+
 ## API Overview
 
 The migrator package provides a clean, modular API with the following key components:
@@ -225,6 +244,7 @@ pending and out of order.
 - **`WithExecOrder(policy)`**: Configures out-of-order migration handling
 - **`WithMigrationDirFormat(format)`**: Selects `auto`, `ptah`, or `atlas` filesystem discovery
 - **`WithAtlasTemplateData(data)`**: Supplies data, including `.Env`, for Atlas SQL template migrations
+- **`WithRevisionTableFormat(format)`**: Selects Ptah's native `schema_migrations` layout or Atlas's `atlas_schema_revisions` layout
 - **`Baseline(ctx, version)` / `BaselineWithOptions(ctx, opts)`**: Records provider migrations as already applied without executing their SQL bodies
 
 ## Programmatic Usage

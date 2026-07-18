@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,6 +33,7 @@ type Migrator struct {
 	defaultTimeouts      MigrationTimeouts
 	migrationsTable      string
 	migrationsSchema     string
+	revisionTableFormat  RevisionTableFormat
 	execOrder            ExecOrder
 	migrationLockTimeout time.Duration
 	initialized          bool
@@ -54,11 +56,12 @@ func NewFSMigrator(conn *dbschema.DatabaseConnection, fsys fs.FS, opts ...FSProv
 // NewMigrator creates a new migrator with the given database connection
 func NewMigrator(conn *dbschema.DatabaseConnection, provider MigrationProvider) *Migrator {
 	return &Migrator{
-		conn:              conn,
-		migrationProvider: provider,
-		migrationsTable:   "schema_migrations",
-		execOrder:         ExecOrderLinear,
-		logger:            slog.Default(),
+		conn:                conn,
+		migrationProvider:   provider,
+		migrationsTable:     defaultPtahMigrationsTable,
+		revisionTableFormat: RevisionTableFormatPtah,
+		execOrder:           ExecOrderLinear,
+		logger:              slog.Default(),
 	}
 }
 
@@ -83,17 +86,33 @@ func (m *Migrator) WithMigrationsTable(schema, table string) *Migrator {
 	tmp.migrationsSchema = strings.TrimSpace(schema)
 	tmp.migrationsTable = strings.TrimSpace(table)
 	if tmp.migrationsTable == "" {
-		tmp.migrationsTable = "schema_migrations"
+		tmp.migrationsTable = tmp.defaultMigrationsTable()
 	}
 	tmp.initialized = false
 	return &tmp
 }
 
-func (m *Migrator) qualifiedMigrationsTable() string {
-	table := m.migrationsTable
-	if table == "" {
-		table = "schema_migrations"
+// WithRevisionTableFormat sets the database table layout used for migration
+// revision metadata.
+func (m *Migrator) WithRevisionTableFormat(format RevisionTableFormat) *Migrator {
+	tmp := *m
+	tmp.revisionTableFormat = format
+	if tmp.migrationsTable == "" || tmp.migrationsTable == defaultPtahMigrationsTable {
+		tmp.migrationsTable = tmp.defaultMigrationsTable()
 	}
+	tmp.initialized = false
+	return &tmp
+}
+
+func (m *Migrator) defaultMigrationsTable() string {
+	if m.revisionTableFormat.isAtlas() {
+		return defaultAtlasRevisionsTable
+	}
+	return defaultPtahMigrationsTable
+}
+
+func (m *Migrator) qualifiedMigrationsTable() string {
+	table := m.migrationsTableName()
 	if m.migrationsSchema == "" {
 		return m.quoteIdentifier(table)
 	}
@@ -125,6 +144,9 @@ func (m *Migrator) quoteIdentifier(identifier string) string {
 }
 
 func (m *Migrator) createMigrationsTableSQL() string {
+	if m.revisionTableFormat.isAtlas() {
+		return m.createAtlasRevisionsTableSQL()
+	}
 	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
     version BIGINT PRIMARY KEY,
     description TEXT NOT NULL,
@@ -140,10 +162,24 @@ func (m *Migrator) createMigrationsTableSQL() string {
 }
 
 func (m *Migrator) getVersionSQL() string {
+	if m.revisionTableFormat.isAtlas() {
+		return fmt.Sprintf(
+			"SELECT COALESCE(MAX(%s), 0) FROM %s WHERE applied = total AND COALESCE(error, '') = ''",
+			m.atlasVersionNumberExpression(),
+			m.qualifiedMigrationsTable(),
+		)
+	}
 	return fmt.Sprintf("SELECT COALESCE(MAX(version), 0) FROM %s WHERE state = 'applied'", m.qualifiedMigrationsTable())
 }
 
 func (m *Migrator) getAppliedMigrationsSQL() string {
+	if m.revisionTableFormat.isAtlas() {
+		return fmt.Sprintf(
+			"SELECT version FROM %s WHERE applied = total AND COALESCE(error, '') = '' ORDER BY %s",
+			m.qualifiedMigrationsTable(),
+			m.atlasVersionNumberExpression(),
+		)
+	}
 	return fmt.Sprintf("SELECT version FROM %s WHERE state = 'applied' ORDER BY version", m.qualifiedMigrationsTable())
 }
 
@@ -174,15 +210,16 @@ func (m *Migrator) Initialize(ctx context.Context) error {
 
 	// Deliberately outside the migration writer for the same reason as schema
 	// creation: there is no active migration transaction yet.
-	_, err := m.conn.ExecContext(ctx, m.createMigrationsTableSQL())
-	if err != nil {
+	if _, err := m.conn.ExecContext(ctx, m.createMigrationsTableSQL()); err != nil {
 		return fmt.Errorf("failed to create migrations table: %w", err)
 	}
-	if err := m.ensureMigrationsVersionColumn(ctx); err != nil {
-		return fmt.Errorf("failed to prepare migrations version column: %w", err)
-	}
-	if err := m.ensureMigrationsRevisionColumns(ctx); err != nil {
-		return fmt.Errorf("failed to prepare migrations revision columns: %w", err)
+	if !m.revisionTableFormat.isAtlas() {
+		if err := m.ensureMigrationsVersionColumn(ctx); err != nil {
+			return fmt.Errorf("failed to prepare migrations version column: %w", err)
+		}
+		if err := m.ensureMigrationsRevisionColumns(ctx); err != nil {
+			return fmt.Errorf("failed to prepare migrations revision columns: %w", err)
+		}
 	}
 
 	// Mark as initialized
@@ -345,7 +382,7 @@ func (m *Migrator) metadataSchemaName() string {
 
 func (m *Migrator) migrationsTableName() string {
 	if m.migrationsTable == "" {
-		return "schema_migrations"
+		return m.defaultMigrationsTable()
 	}
 	return m.migrationsTable
 }
@@ -361,13 +398,7 @@ func (m *Migrator) GetCurrentVersion(ctx context.Context) (int64, error) {
 	}
 
 	// Query the current version
-	var version int64
-	row := m.conn.QueryRowContext(ctx, m.getVersionSQL())
-	if err := row.Scan(&version); err != nil {
-		return 0, fmt.Errorf("failed to get current version: %w", err)
-	}
-
-	return version, nil
+	return m.scanCurrentVersion(ctx)
 }
 
 // GetAppliedMigrations returns a list of applied migration versions
@@ -389,8 +420,8 @@ func (m *Migrator) GetAppliedMigrations(ctx context.Context) ([]int64, error) {
 
 	applied := make([]int64, 0)
 	for rows.Next() {
-		var version int64
-		if err := rows.Scan(&version); err != nil {
+		version, err := m.scanAppliedVersion(rows)
+		if err != nil {
 			return nil, fmt.Errorf("failed to scan migration version: %w", err)
 		}
 		applied = append(applied, version)
@@ -401,6 +432,42 @@ func (m *Migrator) GetAppliedMigrations(ctx context.Context) ([]int64, error) {
 	}
 
 	return applied, nil
+}
+
+func (m *Migrator) scanCurrentVersion(ctx context.Context) (int64, error) {
+	row := m.conn.QueryRowContext(ctx, m.getVersionSQL())
+	var version int64
+	if err := row.Scan(&version); err != nil {
+		return 0, fmt.Errorf("failed to get current version: %w", err)
+	}
+	return version, nil
+}
+
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func (m *Migrator) scanAppliedVersion(row rowScanner) (int64, error) {
+	if m.revisionTableFormat.isAtlas() {
+		var version string
+		if err := row.Scan(&version); err != nil {
+			return 0, err
+		}
+		return parseAtlasRevisionVersion(version)
+	}
+	var version int64
+	if err := row.Scan(&version); err != nil {
+		return 0, err
+	}
+	return version, nil
+}
+
+func parseAtlasRevisionVersion(version string) (int64, error) {
+	parsed, err := strconv.ParseInt(strings.TrimSpace(version), 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("Atlas revision version %q is not a numeric Ptah migration version: %w", version, err)
+	}
+	return parsed, nil
 }
 
 // GetPendingMigrations returns a list of pending migration versions
@@ -780,7 +847,7 @@ func (m *Migrator) rollbackMigrationWithoutRegisteredDown(
 			fmt.Sprintf("failed to revert migration %d", migration.Version),
 		)
 	}
-	if err := executeSQLOutsideTransaction(ctx, m.conn, deleteSQL, migration.Version); err != nil {
+	if err := executeSQLOutsideTransaction(ctx, m.conn, deleteSQL, m.revisionVersionArg(migration.Version)); err != nil {
 		return fmt.Errorf("failed to record migration reversion %d: %w", migration.Version, err)
 	}
 	m.logger.Info("Rolled back migration", "version", migration.Version, "description", migration.Description)
@@ -835,7 +902,7 @@ func (m *Migrator) rollbackMigrationTransactional(
 		return m.failMigrationWithDirtyState(ctx, migration, startedAt, err, migration.DownSQL, "")
 	}
 
-	if err := m.conn.Writer().ExecuteSQL(ctx, deleteSQL, migration.Version); err != nil {
+	if err := m.conn.Writer().ExecuteSQL(ctx, deleteSQL, m.revisionVersionArg(migration.Version)); err != nil {
 		_ = m.conn.Writer().RollbackTransaction()
 		return fmt.Errorf("failed to record migration reversion %d: %w", migration.Version, err)
 	}
@@ -874,7 +941,7 @@ func (m *Migrator) rollbackMigrationNoTransaction(
 			fmt.Sprintf("failed to revert migration %d", migration.Version),
 		)
 	}
-	if err := executeSQLOutsideTransaction(ctx, m.conn, deleteSQL, migration.Version); err != nil {
+	if err := executeSQLOutsideTransaction(ctx, m.conn, deleteSQL, m.revisionVersionArg(migration.Version)); err != nil {
 		return fmt.Errorf("failed to record migration reversion %d: %w", migration.Version, err)
 	}
 	m.logger.Info("Rolled back non-transactional migration", "version", migration.Version, "description", migration.Description)

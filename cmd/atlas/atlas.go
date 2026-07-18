@@ -5,12 +5,27 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+
+	"github.com/stokaro/ptah/cmd/compare"
+	"github.com/stokaro/ptah/cmd/dropall"
+	"github.com/stokaro/ptah/cmd/internal/cmdalias"
+	"github.com/stokaro/ptah/cmd/lint"
+	"github.com/stokaro/ptah/cmd/migrate"
+	"github.com/stokaro/ptah/cmd/migratedown"
+	"github.com/stokaro/ptah/cmd/migratehash"
+	"github.com/stokaro/ptah/cmd/migraterepair"
+	"github.com/stokaro/ptah/cmd/migratestatus"
+	"github.com/stokaro/ptah/cmd/migrateup"
+	"github.com/stokaro/ptah/cmd/migratevalidate"
+	"github.com/stokaro/ptah/cmd/readdb"
 )
 
 type atlasVerb struct {
-	use    string
-	short  string
-	native string
+	use        string
+	short      string
+	native     string
+	factory    func() *cobra.Command
+	prefixArgs []string
 }
 
 // NewAtlasCommand returns the Atlas compatibility namespace.
@@ -21,8 +36,8 @@ func NewAtlasCommand() *cobra.Command {
 		Long: `Atlas-compatible command namespace.
 
 These commands reserve the Atlas OSS CLI surface under Ptah. Commands that have
-an existing Ptah equivalent point to that native command. Runtime-compatible
-flag translation and Atlas revision-table compatibility are tracked separately.`,
+an existing Ptah equivalent forward to that native command while keeping the
+native Ptah command tree separate for future redesign.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
@@ -43,11 +58,11 @@ func newAtlasSchemaCommand() *cobra.Command {
 		},
 	}
 	for _, verb := range []atlasVerb{
-		{use: "inspect", short: "Inspect a database schema", native: "read-db"},
+		{use: "inspect", short: "Inspect a database schema", native: "read-db", factory: readdb.NewReadDBCommand},
 		{use: "apply", short: "Apply a desired schema to a database", native: ""},
-		{use: "diff", short: "Diff desired schema against a database", native: "compare"},
+		{use: "diff", short: "Diff desired schema against a database", native: "compare", factory: compare.NewCompareCommand},
 		{use: "fmt", short: "Format schema files", native: ""},
-		{use: "clean", short: "Clean database schema objects", native: "drop-all"},
+		{use: "clean", short: "Clean database schema objects", native: "drop-all", factory: dropall.NewDropAllCommand},
 	} {
 		cmd.AddCommand(newAtlasAliasCommand("schema", verb))
 	}
@@ -63,15 +78,16 @@ func newAtlasMigrateCommand() *cobra.Command {
 		},
 	}
 	for _, verb := range []atlasVerb{
-		{use: "apply", short: "Apply pending migrations", native: "migrate-up"},
-		{use: "diff", short: "Generate migration SQL from differences", native: "migrate"},
-		{use: "hash", short: "Write or update the migration directory checksum", native: "migrate-hash"},
+		{use: "apply", short: "Apply pending migrations", native: "migrate-up", factory: migrateup.NewMigrateUpCommand},
+		{use: "diff", short: "Generate migration SQL from differences", native: "migrate", factory: migrate.NewMigrateCommand},
+		{use: "down", short: "Roll back migrations", native: "migrate-down", factory: migratedown.NewMigrateDownCommand},
+		{use: "hash", short: "Write or update the migration directory checksum", native: "migrate-hash", factory: migratehash.NewMigrateHashCommand},
 		{use: "import", short: "Import migrations from another tool", native: ""},
-		{use: "lint", short: "Lint migration files", native: "lint"},
-		{use: "new", short: "Create a new migration file", native: "migrate generate"},
-		{use: "set", short: "Set migration revision state", native: "migrate-repair"},
-		{use: "status", short: "Show migration status", native: "migrate-status"},
-		{use: "validate", short: "Validate migration directory integrity", native: "migrate-validate"},
+		{use: "lint", short: "Lint migration files", native: "lint", factory: lint.NewLintCommand},
+		{use: "new", short: "Create a new migration file", native: "migrate generate", factory: migrate.NewMigrateCommand, prefixArgs: []string{"generate"}},
+		{use: "set", short: "Set migration revision state", native: "migrate-repair", factory: migraterepair.NewMigrateRepairCommand},
+		{use: "status", short: "Show migration status", native: "migrate-status", factory: migratestatus.NewMigrateStatusCommand},
+		{use: "validate", short: "Validate migration directory integrity", native: "migrate-validate", factory: migratevalidate.NewMigrateValidateCommand},
 	} {
 		cmd.AddCommand(newAtlasAliasCommand("migrate", verb))
 	}
@@ -99,6 +115,15 @@ func newAtlasLicenseCommand() *cobra.Command {
 }
 
 func newAtlasAliasCommand(group string, verb atlasVerb) *cobra.Command {
+	if verb.factory != nil {
+		return cmdalias.NewForwardCommandWithArgs(
+			verb.use,
+			verb.short,
+			verb.native,
+			verb.factory,
+			verb.prefixArgs...,
+		)
+	}
 	cmd := &cobra.Command{
 		Use:   verb.use,
 		Short: verb.short,

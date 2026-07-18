@@ -2,6 +2,7 @@ package migrator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -203,6 +204,10 @@ func (p *FSMigrationProvider) loadPtah(files []MigrationFile) error {
 }
 
 func (p *FSMigrationProvider) loadAtlas(files []MigrationFile) error {
+	hashes, err := readAtlasSumHashes(p.fsys)
+	if err != nil {
+		return err
+	}
 	partsByVersion := make(map[int64]*atlasParts)
 	for i := range files {
 		migrationFile := files[i]
@@ -218,6 +223,9 @@ func (p *FSMigrationProvider) loadAtlas(files []MigrationFile) error {
 				},
 			}
 			partsByVersion[migrationFile.Version] = parts
+		}
+		if hash := hashes[migrationFile.Path]; hash != "" && migrationFile.Direction == "up" {
+			parts.migration.Checksum = hash
 		}
 		if err := p.loadAtlasFile(parts, migrationFile); err != nil {
 			return err
@@ -321,6 +329,30 @@ func setAtlasDown(parts *atlasParts, down sqlMigrationFile) {
 func isAtlasDirectionalMigrationFile(file MigrationFile) bool {
 	base := path.Base(file.Path)
 	return strings.HasSuffix(base, ".up.sql") || strings.HasSuffix(base, ".down.sql")
+}
+
+func readAtlasSumHashes(fsys fs.FS) (map[string]string, error) {
+	data, err := fs.ReadFile(fsys, "atlas.sum")
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return map[string]string{}, nil
+		}
+		return nil, fmt.Errorf("failed to read atlas.sum: %w", err)
+	}
+	hashes := make(map[string]string)
+	lines := strings.Split(strings.TrimRight(string(data), "\r\n"), "\n")
+	for _, line := range lines[1:] {
+		line = strings.TrimRight(line, "\r")
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		idx := strings.LastIndex(line, " ")
+		if idx <= 0 || idx == len(line)-1 {
+			return nil, fmt.Errorf("malformed atlas.sum entry line: %q", line)
+		}
+		hashes[line[:idx]] = line[idx+1:]
+	}
+	return hashes, nil
 }
 
 func sortMigrations(migrations []*Migration) {

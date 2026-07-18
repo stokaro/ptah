@@ -70,13 +70,19 @@ var migrateStatusFlags = map[string]cobraflags.Flag{
 		Value: false,
 		Usage: "Output status in JSON format",
 	},
-	dbcli.ConnectTimeoutFlagName:   dbcli.NewConnectTimeoutFlag(),
-	dbcli.MigrationsSchemaFlagName: dbcli.NewMigrationsSchemaFlag(),
-	dbcli.MigrationsTableFlagName:  dbcli.NewMigrationsTableFlag(),
+	dbcli.ConnectTimeoutFlagName:      dbcli.NewConnectTimeoutFlag(),
+	dbcli.MigrationsSchemaFlagName:    dbcli.NewMigrationsSchemaFlag(),
+	dbcli.MigrationsTableFlagName:     dbcli.NewMigrationsTableFlag(),
+	dbcli.RevisionTableFormatFlagName: dbcli.NewRevisionTableFormatFlag(),
 }
 
+var migrateStatusFlagsRegistered bool
+
 func NewMigrateStatusCommand() *cobra.Command {
-	cobraflags.RegisterMap(migrateStatusCmd, migrateStatusFlags)
+	if !migrateStatusFlagsRegistered {
+		cobraflags.RegisterMap(migrateStatusCmd, migrateStatusFlags)
+		migrateStatusFlagsRegistered = true
+	}
 	return migrateStatusCmd
 }
 
@@ -89,6 +95,7 @@ func migrateStatusCommand(_ *cobra.Command, _ []string) error {
 	jsonOutput := migrateStatusFlags[jsonFlag].GetBool()
 	migrationsSchema := migrateStatusFlags[dbcli.MigrationsSchemaFlagName].GetString()
 	migrationsTable := migrateStatusFlags[dbcli.MigrationsTableFlagName].GetString()
+	revisionFormatValue := migrateStatusFlags[dbcli.RevisionTableFormatFlagName].GetString()
 
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
@@ -99,6 +106,10 @@ func migrateStatusCommand(_ *cobra.Command, _ []string) error {
 	}
 
 	dirFormat, err := migrator.ParseMigrationDirFormat(dirFormatValue)
+	if err != nil {
+		return err
+	}
+	revisionFormat, err := migrator.ParseRevisionTableFormat(revisionFormatValue)
 	if err != nil {
 		return err
 	}
@@ -128,7 +139,8 @@ func migrateStatusCommand(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
-	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable)
+	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable).
+		WithRevisionTableFormat(revisionFormat)
 
 	// Get migration status
 	status, err := mig.GetMigrationStatus(context.Background())

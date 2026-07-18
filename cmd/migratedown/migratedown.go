@@ -108,14 +108,20 @@ var migrateDownFlags = map[string]cobraflags.Flag{
 		Value: "",
 		Usage: "Default per-migration statement timeout, such as 30s or 2m",
 	},
-	dbcli.ConnectTimeoutFlagName:   dbcli.NewConnectTimeoutFlag(),
-	dbcli.ConfigFlagName:           dbcli.NewConfigFlag(),
-	dbcli.MigrationsSchemaFlagName: dbcli.NewMigrationsSchemaFlag(),
-	dbcli.MigrationsTableFlagName:  dbcli.NewMigrationsTableFlag(),
+	dbcli.ConnectTimeoutFlagName:      dbcli.NewConnectTimeoutFlag(),
+	dbcli.ConfigFlagName:              dbcli.NewConfigFlag(),
+	dbcli.MigrationsSchemaFlagName:    dbcli.NewMigrationsSchemaFlag(),
+	dbcli.MigrationsTableFlagName:     dbcli.NewMigrationsTableFlag(),
+	dbcli.RevisionTableFormatFlagName: dbcli.NewRevisionTableFormatFlag(),
 }
 
+var migrateDownFlagsRegistered bool
+
 func NewMigrateDownCommand() *cobra.Command {
-	cobraflags.RegisterMap(migrateDownCmd, migrateDownFlags)
+	if !migrateDownFlagsRegistered {
+		cobraflags.RegisterMap(migrateDownCmd, migrateDownFlags)
+		migrateDownFlagsRegistered = true
+	}
 	return migrateDownCmd
 }
 
@@ -134,6 +140,7 @@ func migrateDownCommand(_ *cobra.Command, _ []string) error {
 	statementTimeout := migrateDownFlags[statementTimeoutFlag].GetString()
 	migrationsSchema := migrateDownFlags[dbcli.MigrationsSchemaFlagName].GetString()
 	migrationsTable := migrateDownFlags[dbcli.MigrationsTableFlagName].GetString()
+	revisionFormatValue := migrateDownFlags[dbcli.RevisionTableFormatFlagName].GetString()
 
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
@@ -152,6 +159,10 @@ func migrateDownCommand(_ *cobra.Command, _ []string) error {
 	}
 
 	dirFormat, err := migrator.ParseMigrationDirFormat(dirFormatValue)
+	if err != nil {
+		return err
+	}
+	revisionFormat, err := migrator.ParseRevisionTableFormat(revisionFormatValue)
 	if err != nil {
 		return err
 	}
@@ -229,6 +240,7 @@ func migrateDownCommand(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
 	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable).
+		WithRevisionTableFormat(revisionFormat).
 		WithDefaultTimeouts(timeouts).
 		WithExecOrder(execOrder).
 		WithMigrationLockTimeout(migrationLockTimeout)
