@@ -38,8 +38,13 @@ var readDBFlags = map[string]cobraflags.Flag{
 	dbcli.SchemasFlagName:        dbcli.NewSchemasFlag(),
 }
 
+var readDBFlagsRegistered bool
+
 func NewReadDBCommand() *cobra.Command {
-	cobraflags.RegisterMap(readDBCmd, readDBFlags)
+	if !readDBFlagsRegistered {
+		cobraflags.RegisterMap(readDBCmd, readDBFlags)
+		readDBFlagsRegistered = true
+	}
 	return readDBCmd
 }
 

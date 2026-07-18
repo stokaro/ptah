@@ -26,6 +26,8 @@ const (
 	MigrationsSchemaFlagName = "migrations-schema"
 	// MigrationsTableFlagName is the CLI flag name for the schema_migrations table name.
 	MigrationsTableFlagName = "migrations-table"
+	// RevisionTableFormatFlagName is the CLI flag name for the migration revision table layout.
+	RevisionTableFormatFlagName = "revision-format"
 )
 
 // DefaultConnectTimeout is the default value for [ConnectTimeoutFlagName]. It
@@ -66,8 +68,17 @@ func NewMigrationsSchemaFlag() cobraflags.Flag {
 func NewMigrationsTableFlag() cobraflags.Flag {
 	return &cobraflags.StringFlag{
 		Name:  MigrationsTableFlagName,
-		Value: "schema_migrations",
-		Usage: "Table name for Ptah's migration tracking table.",
+		Value: "",
+		Usage: "Table name for the migration tracking table. Empty uses the revision format default.",
+	}
+}
+
+// NewRevisionTableFormatFlag returns the migration revision table layout flag.
+func NewRevisionTableFormatFlag() cobraflags.Flag {
+	return &cobraflags.StringFlag{
+		Name:  RevisionTableFormatFlagName,
+		Value: "ptah",
+		Usage: "Migration revision table format: ptah or atlas.",
 	}
 }
 

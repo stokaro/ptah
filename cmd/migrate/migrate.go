@@ -25,6 +25,7 @@ var migrateCmd = &cobra.Command{
 	
 This command compares your Go entities with the current database schema and generates
 the SQL statements needed to update the database to match your entities.`,
+	Args: cobra.NoArgs,
 	RunE: migrateCommand,
 }
 
@@ -38,34 +39,38 @@ const (
 	reportFormatFlag     = "report"
 )
 
-var migrateFlags = map[string]cobraflags.Flag{
-	rootDirFlag: &cobraflags.StringFlag{
-		Name:  rootDirFlag,
-		Value: "./",
-		Usage: "Root directory to scan for Go entities",
-	},
-	dbURLFlag: &cobraflags.StringFlag{
-		Name:  dbURLFlag,
-		Value: "",
-		Usage: "Database URL (required). Example: postgres://localhost:5432/dbname",
-	},
-	checkDestructiveFlag: &cobraflags.BoolFlag{
-		Name:  checkDestructiveFlag,
-		Value: false,
-		Usage: "Fail when generated migration SQL contains destructive statements",
-	},
-	allowDestructiveFlag: &cobraflags.BoolFlag{
-		Name:  allowDestructiveFlag,
-		Value: false,
-		Usage: "Allow destructive statements when --check-destructive is set",
-	},
-	reportFormatFlag: &cobraflags.StringFlag{
-		Name:  reportFormatFlag,
-		Value: "text",
-		Usage: "Safety report format: text or html",
-	},
-	dbcli.ConnectTimeoutFlagName: dbcli.NewConnectTimeoutFlag(),
-	dbcli.SchemasFlagName:        dbcli.NewSchemasFlag(),
+var migrateFlags = newMigrateFlags()
+
+func newMigrateFlags() map[string]cobraflags.Flag {
+	return map[string]cobraflags.Flag{
+		rootDirFlag: &cobraflags.StringFlag{
+			Name:  rootDirFlag,
+			Value: "./",
+			Usage: "Root directory to scan for Go entities",
+		},
+		dbURLFlag: &cobraflags.StringFlag{
+			Name:  dbURLFlag,
+			Value: "",
+			Usage: "Database URL (required). Example: postgres://localhost:5432/dbname",
+		},
+		checkDestructiveFlag: &cobraflags.BoolFlag{
+			Name:  checkDestructiveFlag,
+			Value: false,
+			Usage: "Fail when generated migration SQL contains destructive statements",
+		},
+		allowDestructiveFlag: &cobraflags.BoolFlag{
+			Name:  allowDestructiveFlag,
+			Value: false,
+			Usage: "Allow destructive statements when --check-destructive is set",
+		},
+		reportFormatFlag: &cobraflags.StringFlag{
+			Name:  reportFormatFlag,
+			Value: "text",
+			Usage: "Safety report format: text or html",
+		},
+		dbcli.ConnectTimeoutFlagName: dbcli.NewConnectTimeoutFlag(),
+		dbcli.SchemasFlagName:        dbcli.NewSchemasFlag(),
+	}
 }
 
 func NewMigrateCommand() *cobra.Command {
@@ -87,12 +92,16 @@ func addMigrateGenerateCommand(cmd *cobra.Command) {
 }
 
 func migrateCommand(cmd *cobra.Command, _ []string) error {
+	return migrateCommandWithFlags(cmd, migrateFlags)
+}
+
+func migrateCommandWithFlags(cmd *cobra.Command, flags map[string]cobraflags.Flag) error {
 	out := cmd.OutOrStdout()
-	rootDir := migrateFlags[rootDirFlag].GetString()
-	dbURL := migrateFlags[dbURLFlag].GetString()
-	checkDestructive := migrateFlags[checkDestructiveFlag].GetBool()
-	allowDestructive := migrateFlags[allowDestructiveFlag].GetBool()
-	reportFormat := strings.ToLower(strings.TrimSpace(migrateFlags[reportFormatFlag].GetString()))
+	rootDir := flags[rootDirFlag].GetString()
+	dbURL := flags[dbURLFlag].GetString()
+	checkDestructive := flags[checkDestructiveFlag].GetBool()
+	allowDestructive := flags[allowDestructiveFlag].GetBool()
+	reportFormat := strings.ToLower(strings.TrimSpace(flags[reportFormatFlag].GetString()))
 
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
@@ -118,7 +127,7 @@ func migrateCommand(cmd *cobra.Command, _ []string) error {
 	}
 
 	// 2. Connect to database and read schema
-	connectTimeout, err := dbcli.ParseConnectTimeout(migrateFlags[dbcli.ConnectTimeoutFlagName].GetString())
+	connectTimeout, err := dbcli.ParseConnectTimeout(flags[dbcli.ConnectTimeoutFlagName].GetString())
 	if err != nil {
 		return err
 	}
@@ -131,7 +140,7 @@ func migrateCommand(cmd *cobra.Command, _ []string) error {
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	schemas := dbcli.ParseSchemas(migrateFlags[dbcli.SchemasFlagName].GetString())
+	schemas := dbcli.ParseSchemas(flags[dbcli.SchemasFlagName].GetString())
 	dbSchema, err := dbschema.ReadSchemaWithSchemas(conn, schemas)
 	if err != nil {
 		return fmt.Errorf("error reading database schema: %w", err)

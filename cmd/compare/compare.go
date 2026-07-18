@@ -45,8 +45,13 @@ var compareFlags = map[string]cobraflags.Flag{
 	dbcli.SchemasFlagName:        dbcli.NewSchemasFlag(),
 }
 
+var compareFlagsRegistered bool
+
 func NewCompareCommand() *cobra.Command {
-	cobraflags.RegisterMap(compareCmd, compareFlags)
+	if !compareFlagsRegistered {
+		cobraflags.RegisterMap(compareCmd, compareFlags)
+		compareFlagsRegistered = true
+	}
 	return compareCmd
 }
 
