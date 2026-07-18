@@ -10,6 +10,7 @@ import (
 
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/lexer"
+	"github.com/stokaro/ptah/core/sqlutil"
 )
 
 // Parser converts SQL tokens into AST nodes.
@@ -34,7 +35,7 @@ type Parser struct {
 //
 //	parser := NewParser("CREATE TABLE users (id INTEGER PRIMARY KEY);")
 func NewParser(input string) *Parser {
-	normalized := normalizeClientDelimiters(input)
+	normalized := sqlutil.NormalizeClientDelimiters(input)
 	l := lexer.NewLexer(normalized)
 	p := &Parser{
 		lexer:     l,

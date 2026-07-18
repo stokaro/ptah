@@ -159,6 +159,30 @@ func TestSplitSQLStatements(t *testing.T) {
 	}
 }
 
+func TestSplitSQLStatements_AtlasDelimiterBeforeCommentStripping(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `-- atlas:delimiter -- end
+CREATE PROCEDURE dorepeat(p1 INT)
+BEGIN
+    SET @x = 0;
+    REPEAT SET @x = @x + 1; UNTIL @x > p1 END REPEAT;
+END;
+-- end
+CALL dorepeat(1000);`
+
+	result := SplitSQLStatements(sql)
+
+	c.Assert(result, qt.DeepEquals, []string{
+		`CREATE PROCEDURE dorepeat(p1 INT)
+BEGIN
+    SET @x = 0;
+    REPEAT SET @x = @x + 1; UNTIL @x > p1 END REPEAT;
+END`,
+		"CALL dorepeat(1000)",
+	})
+}
+
 func TestMigrationFuncFromSQLFilename_Success(t *testing.T) {
 	c := qt.New(t)
 

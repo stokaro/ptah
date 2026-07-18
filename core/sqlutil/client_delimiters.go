@@ -1,8 +1,10 @@
-package parser
+package sqlutil
 
 import "strings"
 
-func normalizeClientDelimiters(input string) string {
+// NormalizeClientDelimiters rewrites MySQL DELIMITER and Atlas delimiter
+// directives into regular semicolon-terminated SQL before tokenization.
+func NormalizeClientDelimiters(input string) string {
 	delimiter := ";"
 	allowCommentDelimiter := false
 	var output strings.Builder
@@ -104,7 +106,7 @@ func rewriteClientDelimitedStatements(input, delimiter string, allowCommentDelim
 	for pos := 0; pos < len(input); {
 		switch {
 		case allowCommentDelimiter && strings.HasPrefix(input[pos:], delimiter):
-			output.WriteString(replacement)
+			writeDelimiterReplacement(&output, replacement)
 			pos += len(delimiter)
 		case strings.HasPrefix(input[pos:], "--"):
 			pos = writeUntilLineEnd(&output, input, pos)
@@ -115,7 +117,7 @@ func rewriteClientDelimitedStatements(input, delimiter string, allowCommentDelim
 		case input[pos] == '\'' || input[pos] == '"' || input[pos] == '`':
 			pos = writeQuotedSQL(&output, input, pos, input[pos])
 		case strings.HasPrefix(input[pos:], delimiter):
-			output.WriteString(replacement)
+			writeDelimiterReplacement(&output, replacement)
 			pos += len(delimiter)
 		case input[pos] == '$':
 			if nextPos, ok := writeDollarQuotedSQL(&output, input, pos); ok {
@@ -130,6 +132,28 @@ func rewriteClientDelimitedStatements(input, delimiter string, allowCommentDelim
 		}
 	}
 	return output.String()
+}
+
+func writeDelimiterReplacement(output *strings.Builder, replacement string) {
+	if builderEndsWithSemicolon(output) {
+		return
+	}
+	output.WriteString(replacement)
+}
+
+func builderEndsWithSemicolon(output *strings.Builder) bool {
+	text := output.String()
+	for i := len(text) - 1; i >= 0; i-- {
+		switch text[i] {
+		case ' ', '\t', '\n', '\r':
+			continue
+		case ';':
+			return true
+		default:
+			return false
+		}
+	}
+	return false
 }
 
 func isClientHashOperatorContinuation(input string, pos int) bool {
