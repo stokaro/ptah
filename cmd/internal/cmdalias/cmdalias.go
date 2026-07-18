@@ -34,6 +34,9 @@ func NewForwardCommandWithArgs(
 		SilenceUsage:       true,
 		SilenceErrors:      true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if hasHelpArg(args) {
+				return cmd.Help()
+			}
 			target := factory()
 			resetCommandFlags(target)
 			parent := target.Parent()
@@ -51,6 +54,15 @@ func NewForwardCommandWithArgs(
 			return target.Execute()
 		},
 	}
+}
+
+func hasHelpArg(args []string) bool {
+	for _, arg := range args {
+		if arg == "--help" || arg == "-h" {
+			return true
+		}
+	}
+	return false
 }
 
 func resetCommandFlags(cmd *cobra.Command) {
