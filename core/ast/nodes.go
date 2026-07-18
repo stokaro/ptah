@@ -534,6 +534,9 @@ type IndexNode struct {
 	Operator string
 	// IncludeColumns contains PostgreSQL INCLUDE columns for covering indexes.
 	IncludeColumns []string
+	// StorageParams contains PostgreSQL index storage parameters rendered as
+	// WITH (key='value'), for example pages_per_range for BRIN indexes.
+	StorageParams map[string]string
 	// Concurrently requests CREATE INDEX CONCURRENTLY, PostgreSQL's
 	// non-locking index build. Set by planners only when the target
 	// capability set includes capability.CreateIndexConcurrently and the

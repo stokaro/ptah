@@ -347,6 +347,46 @@ table "users" {
 	c.Assert(db.Indexes[0].IncludeColumns, qt.DeepEquals, []string{"active"})
 }
 
+func TestParsePostgreSQLIndexStorageParams(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+table "users" {
+  column "c" {
+    type = int
+  }
+  index "idx_users_c" {
+    type = BRIN
+    columns = [column.c]
+    page_per_range = 2
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Indexes, qt.HasLen, 1)
+	c.Assert(db.Indexes[0].Type, qt.Equals, "BRIN")
+	c.Assert(db.Indexes[0].StorageParams, qt.DeepEquals, map[string]string{"pages_per_range": "2"})
+}
+
+func TestParsePostgreSQLIndexStorageParamsRejectsDuplicateAliases(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := atlashcl.Parse([]byte(`
+table "users" {
+  column "c" {
+    type = int
+  }
+  index "idx_users_c" {
+    type = BRIN
+    columns = [column.c]
+    page_per_range = 2
+    pages_per_range = 3
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.ErrorMatches, `.*index cannot set both page_per_range and pages_per_range`)
+}
+
 func TestParseFulltextIndexParser(t *testing.T) {
 	c := qt.New(t)
 
