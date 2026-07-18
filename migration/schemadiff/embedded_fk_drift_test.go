@@ -140,6 +140,7 @@ func TestEmbeddedInlineMixinFK_NeverTargetsStructName(t *testing.T) {
 		nodes := postgres.New().GenerateMigrationAST(diff, gen)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 
 		// Never the mixin struct name.
 		c.Assert(sql, qt.Not(qt.Contains), "ALTER TABLE Ownable",
@@ -165,6 +166,7 @@ func TestEmbeddedInlineMixinFK_NeverTargetsStructName(t *testing.T) {
 		nodes := postgres.New().GenerateMigrationAST(downDiff, gen)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 
 		c.Assert(sql, qt.Not(qt.Contains), "Ownable",
 			qt.Commentf("down must not reference the mixin struct, got:\n%s", sql))
@@ -211,6 +213,7 @@ func TestEmbeddedInlineMixinFK_MultiHostActionDrift(t *testing.T) {
 		nodes := postgres.New().GenerateMigrationAST(diff, gen)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 
 		for _, h := range hosts {
 			dropStmt := "ALTER TABLE " + h + " DROP CONSTRAINT IF EXISTS fk_entity_tenant;"
@@ -234,6 +237,7 @@ func TestEmbeddedInlineMixinFK_MultiHostActionDrift(t *testing.T) {
 		noopNodes := postgres.New().GenerateMigrationAST(converged, gen)
 		noopSQL, err := renderer.RenderSQL("postgres", noopNodes...)
 		c.Assert(err, qt.IsNil)
+		noopSQL = legacyRenderedSQL(noopSQL)
 		c.Assert(noopSQL, qt.Not(qt.Contains), "fk_entity_tenant",
 			qt.Commentf("converged tenant FK must produce no churn, got:\n%s", noopSQL))
 	})
@@ -248,6 +252,7 @@ func TestEmbeddedInlineMixinFK_MultiHostActionDrift(t *testing.T) {
 		nodes := mysql.New().GenerateMigrationAST(diff, gen)
 		sql, err := renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 
 		for _, h := range hosts {
 			dropStmt := "ALTER TABLE " + h + " DROP FOREIGN KEY fk_entity_tenant;"
@@ -303,6 +308,7 @@ func TestEmbeddedInlineMixinFK_MixedModifyAndAdd_NoPhantomDrop(t *testing.T) {
 	nodes := postgres.New().GenerateMigrationAST(diff, gen)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 
 	// Each modify host gets a table-qualified DROP before its re-ADD.
 	for _, h := range modifyHosts {

@@ -36,7 +36,7 @@ func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 		parts = append(parts, "IF EXISTS")
 	}
 
-	parts = append(parts, node.Name)
+	parts = append(parts, r.escapeQualifiedIdentifier(node.Name))
 
 	// PostgreSQL doesn't require table name in DROP INDEX
 	// but we can add CASCADE if needed
@@ -59,9 +59,10 @@ func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
 	if node.IfNotExists {
 		guard = " IF NOT EXISTS"
 	}
-	r.w.WriteLinef("CREATE SCHEMA%s %s;", guard, node.Name)
+	schemaName := r.escapeIdentifier(node.Name)
+	r.w.WriteLinef("CREATE SCHEMA%s %s;", guard, schemaName)
 	if node.Comment != "" {
-		r.w.WriteLinef("COMMENT ON SCHEMA %s IS %s;", node.Name, r.escapeValue(node.Comment))
+		r.w.WriteLinef("COMMENT ON SCHEMA %s IS %s;", schemaName, r.escapeValue(node.Comment))
 	}
 	return nil
 }
@@ -71,7 +72,7 @@ func (r *Renderer) VisitCreateDatabase(node *ast.CreateDatabaseNode) error {
 	if node.IfNotExists {
 		return fmt.Errorf("create database if not exists is not supported in PostgreSQL")
 	}
-	r.w.WriteLinef("CREATE DATABASE %s;", node.Name)
+	r.w.WriteLinef("CREATE DATABASE %s;", r.escapeIdentifier(node.Name))
 	return nil
 }
 
@@ -87,21 +88,21 @@ func (r *Renderer) VisitCreateType(node *ast.CreateTypeNode) error {
 		// CREATE TYPE name AS ENUM (value1, value2, ...)
 		values := make([]string, len(typeDef.Values))
 		for i, value := range typeDef.Values {
-			values[i] = fmt.Sprintf("'%s'", value)
+			values[i] = r.escapeValue(value)
 		}
-		r.w.WriteLinef("CREATE TYPE %s AS ENUM (%s);", node.Name, strings.Join(values, ", "))
+		r.w.WriteLinef("CREATE TYPE %s AS ENUM (%s);", r.escapeQualifiedIdentifier(node.Name), strings.Join(values, ", "))
 
 	case *ast.CompositeTypeDef:
 		// CREATE TYPE name AS (field1 type1, field2 type2, ...)
 		fields := make([]string, len(typeDef.Fields))
 		for i, field := range typeDef.Fields {
-			fields[i] = fmt.Sprintf("%s %s", field.Name, field.Type)
+			fields[i] = fmt.Sprintf("%s %s", r.escapeIdentifier(field.Name), field.Type)
 		}
-		r.w.WriteLinef("CREATE TYPE %s AS (%s);", node.Name, strings.Join(fields, ", "))
+		r.w.WriteLinef("CREATE TYPE %s AS (%s);", r.escapeQualifiedIdentifier(node.Name), strings.Join(fields, ", "))
 
 	case *ast.DomainTypeDef:
 		// CREATE DOMAIN name AS base_type [NOT NULL] [DEFAULT value] [CHECK (constraint)]
-		sql := fmt.Sprintf("CREATE DOMAIN %s AS %s", node.Name, typeDef.BaseType)
+		sql := fmt.Sprintf("CREATE DOMAIN %s AS %s", r.escapeQualifiedIdentifier(node.Name), typeDef.BaseType)
 
 		// Add NOT NULL if specified
 		if !typeDef.Nullable {
@@ -111,7 +112,7 @@ func (r *Renderer) VisitCreateType(node *ast.CreateTypeNode) error {
 		// Add DEFAULT if specified
 		if typeDef.Default != nil {
 			if typeDef.Default.HasLiteral() {
-				sql += fmt.Sprintf(" DEFAULT '%s'", typeDef.Default.Value)
+				sql += fmt.Sprintf(" DEFAULT %s", r.escapeValue(typeDef.Default.Value))
 			} else if typeDef.Default.Expression != "" {
 				sql += fmt.Sprintf(" DEFAULT %s", typeDef.Default.Expression)
 			}
@@ -137,24 +138,24 @@ func (r *Renderer) VisitAlterType(node *ast.AlterTypeNode) error {
 		switch op := operation.(type) {
 		case *ast.AddEnumValueOperation:
 			// ALTER TYPE name ADD VALUE 'new_value' [BEFORE 'existing_value' | AFTER 'existing_value']
-			sql := fmt.Sprintf("ALTER TYPE %s ADD VALUE '%s'", node.Name, op.Value)
+			sql := fmt.Sprintf("ALTER TYPE %s ADD VALUE %s", r.escapeQualifiedIdentifier(node.Name), r.escapeValue(op.Value))
 
 			if op.Before != "" {
-				sql += fmt.Sprintf(" BEFORE '%s'", op.Before)
+				sql += fmt.Sprintf(" BEFORE %s", r.escapeValue(op.Before))
 			} else if op.After != "" {
-				sql += fmt.Sprintf(" AFTER '%s'", op.After)
+				sql += fmt.Sprintf(" AFTER %s", r.escapeValue(op.After))
 			}
 
 			r.w.WriteLinef("%s;", sql)
 
 		case *ast.RenameEnumValueOperation:
 			// ALTER TYPE name RENAME VALUE 'old_value' TO 'new_value'
-			r.w.WriteLinef("ALTER TYPE %s RENAME VALUE '%s' TO '%s';",
-				node.Name, op.OldValue, op.NewValue)
+			r.w.WriteLinef("ALTER TYPE %s RENAME VALUE %s TO %s;",
+				r.escapeQualifiedIdentifier(node.Name), r.escapeValue(op.OldValue), r.escapeValue(op.NewValue))
 
 		case *ast.RenameTypeOperation:
 			// ALTER TYPE name RENAME TO new_name
-			r.w.WriteLinef("ALTER TYPE %s RENAME TO %s;", node.Name, op.NewName)
+			r.w.WriteLinef("ALTER TYPE %s RENAME TO %s;", r.escapeQualifiedIdentifier(node.Name), r.escapeIdentifier(op.NewName))
 
 		default:
 			return fmt.Errorf("unsupported alter type operation: %T", operation)
@@ -220,8 +221,95 @@ func (r *Renderer) escapeValue(value string) string {
 // escapeIdentifier safely escapes SQL identifiers (table/column names) for PostgreSQL
 func (r *Renderer) escapeIdentifier(identifier string) string {
 	// Escape double quotes by doubling them and wrap in double quotes
-	escaped := strings.ReplaceAll(identifier, `"`, `""`)
+	unquoted := unquoteIdentifier(identifier)
+	escaped := strings.ReplaceAll(unquoted, `"`, `""`)
 	return `"` + escaped + `"`
+}
+
+func (r *Renderer) escapeQualifiedIdentifier(identifier string) string {
+	parts := splitQualifiedIdentifier(identifier)
+	for i, part := range parts {
+		parts[i] = r.escapeIdentifier(part)
+	}
+	return strings.Join(parts, ".")
+}
+
+func (r *Renderer) escapeIdentifierList(identifiers []string) []string {
+	escaped := make([]string, len(identifiers))
+	for i, identifier := range identifiers {
+		escaped[i] = r.escapeIdentifier(identifier)
+	}
+	return escaped
+}
+
+func (r *Renderer) escapeQualifiedIdentifierList(identifiers []string) []string {
+	escaped := make([]string, len(identifiers))
+	for i, identifier := range identifiers {
+		escaped[i] = r.escapeQualifiedIdentifier(identifier)
+	}
+	return escaped
+}
+
+func (r *Renderer) escapeFunctionSignature(name, parameters string) string {
+	signature := r.escapeQualifiedIdentifier(name)
+	if parameters == "" {
+		return signature + "()"
+	}
+	return signature + "(" + parameters + ")"
+}
+
+func (r *Renderer) escapeRoleTarget(role string) string {
+	role = strings.TrimSpace(role)
+	if isPostgreSQLRoleKeyword(role) {
+		return strings.ToUpper(role)
+	}
+	return r.escapeIdentifier(role)
+}
+
+func (r *Renderer) escapeRoleTargetList(roles string) string {
+	parts := strings.Split(roles, ",")
+	for i, role := range parts {
+		parts[i] = r.escapeRoleTarget(role)
+	}
+	return strings.Join(parts, ", ")
+}
+
+func isPostgreSQLRoleKeyword(role string) bool {
+	switch strings.ToUpper(strings.TrimSpace(role)) {
+	case "PUBLIC", "CURRENT_ROLE", "CURRENT_USER", "SESSION_USER":
+		return true
+	default:
+		return false
+	}
+}
+
+func unquoteIdentifier(identifier string) string {
+	if len(identifier) >= 2 && identifier[0] == '"' && identifier[len(identifier)-1] == '"' {
+		return strings.ReplaceAll(identifier[1:len(identifier)-1], `""`, `"`)
+	}
+	return identifier
+}
+
+func splitQualifiedIdentifier(identifier string) []string {
+	parts := []string{""}
+	inQuotes := false
+	for i := 0; i < len(identifier); i++ {
+		character := identifier[i]
+		if character == '"' {
+			if inQuotes && i+1 < len(identifier) && identifier[i+1] == '"' {
+				parts[len(parts)-1] += `""`
+				i++
+				continue
+			}
+			inQuotes = !inQuotes
+		}
+		if character == '.' && !inQuotes {
+			parts = append(parts, "")
+			continue
+		}
+		parts[len(parts)-1] += string(character)
+	}
+	return parts
 }
 
 // GetDialect returns the database dialect (alias for Dialect for compatibility)
@@ -251,7 +339,7 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 		return r.visitCreateTableAsSelect(node, guard)
 	}
 
-	r.w.WriteLinef("CREATE TABLE%s %s (", guard, node.Name)
+	r.w.WriteLinef("CREATE TABLE%s %s (", guard, r.escapeQualifiedIdentifier(node.Name))
 	lines, err := r.renderCreateTableLines(node)
 	if err != nil {
 		return err
@@ -295,7 +383,7 @@ func (r *Renderer) visitCreateTableAsSelect(node *ast.CreateTableNode, guard str
 		return fmt.Errorf("postgres: create table as select with explicit column definitions is not supported")
 	}
 
-	r.w.WriteLinef("CREATE TABLE%s %s AS", guard, node.Name)
+	r.w.WriteLinef("CREATE TABLE%s %s AS", guard, r.escapeQualifiedIdentifier(node.Name))
 	r.w.WriteLine(strings.TrimSpace(node.SelectBody))
 	r.w.WriteLine(";")
 	r.w.WriteLine("")
@@ -339,7 +427,7 @@ func (r *Renderer) renderPartition(partition *ast.PartitionSpec) (string, error)
 		case part.Name != "" && part.Expr != "":
 			return "", fmt.Errorf("postgres partition key cannot set both column and expression")
 		case part.Name != "":
-			parts = append(parts, part.Name)
+			parts = append(parts, r.escapeIdentifier(part.Name))
 		case part.Expr != "":
 			parts = append(parts, renderPartitionExpression(part.Expr))
 		default:
@@ -405,7 +493,7 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 			}
 			// Remove the leading spaces from column rendering for ALTER
 			line = strings.TrimPrefix(line, "  ")
-			r.w.WriteLinef("ALTER TABLE %s ADD COLUMN %s;", node.Name, line)
+			r.w.WriteLinef("ALTER TABLE %s ADD COLUMN %s;", r.escapeQualifiedIdentifier(node.Name), line)
 		case *ast.AddConstraintOperation:
 			constraintLine, err := r.renderConstraint(op.Constraint)
 			if err != nil {
@@ -417,16 +505,16 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 			}
 			// Remove the leading spaces from constraint rendering for ALTER
 			constraintLine = strings.TrimPrefix(constraintLine, "  ")
-			r.w.WriteLinef("ALTER TABLE %s ADD %s;", node.Name, constraintLine)
+			r.w.WriteLinef("ALTER TABLE %s ADD %s;", r.escapeQualifiedIdentifier(node.Name), constraintLine)
 		case *ast.DropConstraintOperation:
-			dropSQL := fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT", node.Name)
+			dropSQL := fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT", r.escapeQualifiedIdentifier(node.Name))
 			if op.IfExists {
 				dropSQL += " IF EXISTS"
 			}
-			dropSQL += fmt.Sprintf(" %s", op.ConstraintName)
+			dropSQL += fmt.Sprintf(" %s", r.escapeIdentifier(op.ConstraintName))
 			r.w.WriteLinef("%s;", dropSQL)
 		case *ast.DropColumnOperation:
-			dropSQL := fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", node.Name, op.ColumnName)
+			dropSQL := fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", r.escapeQualifiedIdentifier(node.Name), r.escapeIdentifier(op.ColumnName))
 			if op.Cascade {
 				dropSQL += " CASCADE"
 			}
@@ -437,9 +525,10 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 		case *ast.RenameColumnOperation:
 			// PostgreSQL has supported `ALTER TABLE x RENAME COLUMN old TO new`
 			// for a long time; emit it unconditionally.
-			r.w.WriteLinef("ALTER TABLE %s RENAME COLUMN %s TO %s;", node.Name, op.OldName, op.NewName)
+			r.w.WriteLinef("ALTER TABLE %s RENAME COLUMN %s TO %s;",
+				r.escapeQualifiedIdentifier(node.Name), r.escapeIdentifier(op.OldName), r.escapeIdentifier(op.NewName))
 		case *ast.RenameTableOperation:
-			r.w.WriteLinef("ALTER TABLE %s RENAME TO %s;", node.Name, op.NewName)
+			r.w.WriteLinef("ALTER TABLE %s RENAME TO %s;", r.escapeQualifiedIdentifier(node.Name), r.escapeIdentifier(op.NewName))
 		case *ast.AddSkippingIndexOperation:
 			// Data-skipping indexes are a ClickHouse-specific construct; no
 			// PostgreSQL equivalent exists. Emit a self-explanatory comment.
@@ -493,9 +582,9 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 		parts = append(parts, "IF NOT EXISTS")
 	}
 
-	parts = append(parts, node.Name)
+	parts = append(parts, r.escapeQualifiedIdentifier(node.Name))
 	parts = append(parts, "ON")
-	parts = append(parts, node.Table)
+	parts = append(parts, r.escapeQualifiedIdentifier(node.Table))
 
 	// Add index type (USING clause) for PostgreSQL
 	if node.Type != "" && node.Type != "BTREE" {
@@ -506,7 +595,7 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	// Add columns with optional operator class
 	var columnSpecs []string
 	for _, part := range node.EffectiveParts() {
-		columnSpec := renderIndexPart(part)
+		columnSpec := r.renderIndexPart(part)
 		if part.Operator != "" {
 			columnSpec = fmt.Sprintf("%s %s", columnSpec, part.Operator)
 		} else if node.Operator != "" {
@@ -520,7 +609,7 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	parts = append(parts, fmt.Sprintf("(%s)", strings.Join(columnSpecs, ", ")))
 
 	if len(node.IncludeColumns) > 0 {
-		parts = append(parts, fmt.Sprintf("INCLUDE (%s)", strings.Join(node.IncludeColumns, ", ")))
+		parts = append(parts, fmt.Sprintf("INCLUDE (%s)", strings.Join(r.escapeIdentifierList(node.IncludeColumns), ", ")))
 	}
 
 	if node.NullsDistinct != nil {
@@ -579,11 +668,11 @@ func validIndexStorageParamName(name string) bool {
 	return true
 }
 
-func renderIndexPart(part ast.IndexPart) string {
+func (r *Renderer) renderIndexPart(part ast.IndexPart) string {
 	if part.Expr != "" {
 		return fmt.Sprintf("(%s)", part.Expr)
 	}
-	return part.Name
+	return r.escapeIdentifier(part.Name)
 }
 
 func (r *Renderer) VisitExtension(node *ast.ExtensionNode) error {
@@ -595,11 +684,11 @@ func (r *Renderer) VisitExtension(node *ast.ExtensionNode) error {
 		parts = append(parts, "IF NOT EXISTS")
 	}
 
-	parts = append(parts, node.Name)
+	parts = append(parts, r.escapeQualifiedIdentifier(node.Name))
 
 	// Add version specification if provided
 	if node.Version != "" {
-		parts = append(parts, fmt.Sprintf("VERSION '%s'", node.Version))
+		parts = append(parts, fmt.Sprintf("VERSION %s", r.escapeValue(node.Version)))
 	}
 
 	// Add comment if provided
@@ -621,10 +710,10 @@ func (r *Renderer) VisitEnum(node *ast.EnumNode) error {
 
 	values := make([]string, len(node.Values))
 	for i, value := range node.Values {
-		values[i] = fmt.Sprintf("'%s'", value)
+		values[i] = r.escapeValue(value)
 	}
 
-	r.w.WriteLinef("CREATE TYPE %s AS ENUM (%s);", node.Name, strings.Join(values, ", "))
+	r.w.WriteLinef("CREATE TYPE %s AS ENUM (%s);", r.escapeQualifiedIdentifier(node.Name), strings.Join(values, ", "))
 	return nil
 }
 
@@ -643,7 +732,7 @@ func (r *Renderer) VisitDropTable(node *ast.DropTableNode) error {
 		parts = append(parts, "IF EXISTS")
 	}
 
-	parts = append(parts, strings.Join(node.TableNames(), ", "))
+	parts = append(parts, strings.Join(r.escapeQualifiedIdentifierList(node.TableNames()), ", "))
 
 	if node.Cascade {
 		parts = append(parts, "CASCADE")
@@ -670,7 +759,7 @@ func (r *Renderer) VisitDropType(node *ast.DropTypeNode) error {
 		parts = append(parts, "IF EXISTS")
 	}
 
-	parts = append(parts, node.Name)
+	parts = append(parts, r.escapeQualifiedIdentifier(node.Name))
 
 	if node.Cascade {
 		parts = append(parts, "CASCADE")
@@ -698,7 +787,7 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	}
 
 	// Column name and type
-	parts = append(parts, fmt.Sprintf("  %s %s", column.Name, columnType))
+	parts = append(parts, fmt.Sprintf("  %s %s", r.escapeIdentifier(column.Name), columnType))
 
 	// Column constraints - PostgreSQL order: PRIMARY KEY, then NOT NULL, then UNIQUE
 	if column.Primary {
@@ -748,7 +837,7 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	// expects, so we don't burn a constraint name on every column needlessly.
 	if column.Check != "" {
 		if column.CheckName != "" {
-			parts = append(parts, fmt.Sprintf("CONSTRAINT %s CHECK (%s)", column.CheckName, column.Check))
+			parts = append(parts, fmt.Sprintf("CONSTRAINT %s CHECK (%s)", r.escapeIdentifier(column.CheckName), column.Check))
 		} else {
 			parts = append(parts, fmt.Sprintf("CHECK (%s)", column.Check))
 		}
@@ -835,11 +924,11 @@ func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, err
 	case ast.PrimaryKeyConstraint:
 		line := "  "
 		if constraint.Name != "" {
-			line += fmt.Sprintf("CONSTRAINT %s ", constraint.Name)
+			line += fmt.Sprintf("CONSTRAINT %s ", r.escapeIdentifier(constraint.Name))
 		}
-		line += fmt.Sprintf("PRIMARY KEY (%s)", strings.Join(constraint.Columns, ", "))
+		line += fmt.Sprintf("PRIMARY KEY (%s)", strings.Join(r.escapeIdentifierList(constraint.Columns), ", "))
 		if len(constraint.IncludeColumns) > 0 {
-			line += fmt.Sprintf(" INCLUDE (%s)", strings.Join(constraint.IncludeColumns, ", "))
+			line += fmt.Sprintf(" INCLUDE (%s)", strings.Join(r.escapeIdentifierList(constraint.IncludeColumns), ", "))
 		}
 		return line, nil
 	case ast.UniqueConstraint:
@@ -848,9 +937,9 @@ func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, err
 			clause += " " + renderNullsDistinctClause(constraint.NullsDistinct)
 		}
 		if constraint.Name != "" {
-			return fmt.Sprintf("  CONSTRAINT %s %s (%s)", constraint.Name, clause, strings.Join(constraint.Columns, ", ")), nil
+			return fmt.Sprintf("  CONSTRAINT %s %s (%s)", r.escapeIdentifier(constraint.Name), clause, strings.Join(r.escapeIdentifierList(constraint.Columns), ", ")), nil
 		}
-		return fmt.Sprintf("  %s (%s)", clause, strings.Join(constraint.Columns, ", ")), nil
+		return fmt.Sprintf("  %s (%s)", clause, strings.Join(r.escapeIdentifierList(constraint.Columns), ", ")), nil
 	case ast.ForeignKeyConstraint:
 		if !r.capabilities().Has(capability.ForeignKeys) {
 			return "", nil
@@ -858,7 +947,7 @@ func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, err
 		return r.renderForeignKeyConstraint(constraint)
 	case ast.CheckConstraint:
 		if constraint.Name != "" {
-			return fmt.Sprintf("  CONSTRAINT %s CHECK (%s)", constraint.Name, constraint.Expression), nil
+			return fmt.Sprintf("  CONSTRAINT %s CHECK (%s)", r.escapeIdentifier(constraint.Name), constraint.Expression), nil
 		}
 		return fmt.Sprintf("  CHECK (%s)", constraint.Expression), nil
 	case ast.ExcludeConstraint:
@@ -882,11 +971,16 @@ func (r *Renderer) renderForeignKeyConstraint(constraint *ast.ConstraintNode) (s
 	}
 
 	ref := constraint.Reference
-	result := fmt.Sprintf("  CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s(%s)",
-		constraint.Name,
-		strings.Join(constraint.Columns, ", "),
-		ref.Table,
-		strings.Join(ref.ReferencedColumns(), ", "))
+	var result string
+	foreignKey := fmt.Sprintf("FOREIGN KEY (%s) REFERENCES %s(%s)",
+		strings.Join(r.escapeIdentifierList(constraint.Columns), ", "),
+		r.escapeQualifiedIdentifier(ref.Table),
+		strings.Join(r.escapeIdentifierList(ref.ReferencedColumns()), ", "))
+	if constraint.Name != "" {
+		result = fmt.Sprintf("  CONSTRAINT %s %s", r.escapeIdentifier(constraint.Name), foreignKey)
+	} else {
+		result = "  " + foreignKey
+	}
 
 	if ref.OnDelete != "" {
 		result += fmt.Sprintf(" ON DELETE %s", ref.OnDelete)
@@ -908,7 +1002,7 @@ func (r *Renderer) renderExcludeConstraint(constraint *ast.ConstraintNode) (stri
 	// Build the constraint string
 	var result string
 	if constraint.Name != "" {
-		result = fmt.Sprintf("  CONSTRAINT %s EXCLUDE USING %s (%s)", constraint.Name, constraint.UsingMethod, constraint.ExcludeElements)
+		result = fmt.Sprintf("  CONSTRAINT %s EXCLUDE USING %s (%s)", r.escapeIdentifier(constraint.Name), constraint.UsingMethod, constraint.ExcludeElements)
 	} else {
 		result = fmt.Sprintf("  EXCLUDE USING %s (%s)", constraint.UsingMethod, constraint.ExcludeElements)
 	}
@@ -954,35 +1048,37 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, column *ast.Co
 		// Type was transformed (e.g., enum handling), use the processed type
 		// For enum types, add USING clause to handle potential casting issues
 		if strings.HasPrefix(columnType, "enum_") {
-			r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s USING %s::%s;", tableName, column.Name, columnType, column.Name, columnType)
+			r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s USING %s::%s;",
+				r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), columnType, r.escapeIdentifier(column.Name), columnType)
 		} else {
-			r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s;", tableName, column.Name, columnType)
+			r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), columnType)
 		}
 	} else {
 		// For enum types, add USING clause to handle potential casting issues
 		if strings.HasPrefix(column.Type, "enum_") {
-			r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s USING %s::%s;", tableName, column.Name, column.Type, column.Name, column.Type)
+			r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s USING %s::%s;",
+				r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), column.Type, r.escapeIdentifier(column.Name), column.Type)
 		} else {
-			r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s;", tableName, column.Name, column.Type)
+			r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s TYPE %s;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), column.Type)
 		}
 	}
 
 	// Change nullability
 	if column.Nullable {
-		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP NOT NULL;", tableName, column.Name)
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP NOT NULL;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
 	} else {
 		r.updateNullValuesBeforeNotNull(tableName, column)
-		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET NOT NULL;", tableName, column.Name)
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET NOT NULL;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
 	}
 
 	// Change default value
 	switch {
 	case column.Default == nil:
-		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP DEFAULT;", tableName, column.Name)
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP DEFAULT;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
 	case column.Default.HasLiteral():
-		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s;", tableName, column.Name, r.escapeValue(column.Default.Value))
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), r.escapeValue(column.Default.Value))
 	case column.Default.Expression != "":
-		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s;", tableName, column.Name, column.Default.Expression)
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), column.Default.Expression)
 	}
 }
 
@@ -1014,19 +1110,21 @@ func (r *Renderer) updateNullValuesBeforeNotNull(tableName string, column *ast.C
 	// First check if there are any NULL values to avoid unnecessary UPDATE operations
 	r.w.WriteLinef("DO $$")
 	r.w.WriteLinef("BEGIN")
-	r.w.WriteLinef("    IF EXISTS (SELECT 1 FROM %s WHERE %s IS NULL LIMIT 1) THEN", r.escapeIdentifier(tableName), r.escapeIdentifier(column.Name))
+	tableIdentifier := r.escapeQualifiedIdentifier(tableName)
+	columnIdentifier := r.escapeIdentifier(column.Name)
+	r.w.WriteLinef("    IF EXISTS (SELECT 1 FROM %s WHERE %s IS NULL LIMIT 1) THEN", tableIdentifier, columnIdentifier)
 
 	if column.Default != nil {
 		if column.Default.Expression != "" {
-			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", r.escapeIdentifier(tableName), r.escapeIdentifier(column.Name), column.Default.Expression, r.escapeIdentifier(column.Name))
+			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", tableIdentifier, columnIdentifier, column.Default.Expression, columnIdentifier)
 		} else if column.Default.HasLiteral() {
-			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", r.escapeIdentifier(tableName), r.escapeIdentifier(column.Name), r.escapeValue(column.Default.Value), r.escapeIdentifier(column.Name))
+			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", tableIdentifier, columnIdentifier, r.escapeValue(column.Default.Value), columnIdentifier)
 		}
 	} else {
 		// If no default is specified, use a sensible default based on column type
 		defaultValue := r.getDefaultValueForType(column.Type)
 		if defaultValue != "" {
-			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", r.escapeIdentifier(tableName), r.escapeIdentifier(column.Name), defaultValue, r.escapeIdentifier(column.Name))
+			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", tableIdentifier, columnIdentifier, defaultValue, columnIdentifier)
 		}
 	}
 
@@ -1044,7 +1142,7 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 		parts = append(parts, "IF EXISTS")
 	}
 
-	parts = append(parts, node.Name)
+	parts = append(parts, r.escapeIdentifier(node.Name))
 
 	if node.Cascade {
 		parts = append(parts, "CASCADE")
@@ -1071,12 +1169,9 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 	var parts []string
 	parts = append(parts, "CREATE OR REPLACE FUNCTION")
 
-	// Function name and parameters
-	if node.Parameters != "" {
-		parts = append(parts, fmt.Sprintf("%s(%s)", node.Name, node.Parameters))
-	} else {
-		parts = append(parts, fmt.Sprintf("%s()", node.Name))
-	}
+	// Function parameters are raw SQL fragments; only the function identifier
+	// is quoted here.
+	parts = append(parts, r.escapeFunctionSignature(node.Name, node.Parameters))
 
 	// Return type
 	if node.Returns != "" {
@@ -1138,12 +1233,12 @@ func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
 
 	// If Replace is true, drop the policy first to avoid conflicts
 	if node.Replace {
-		r.w.WriteLinef("DROP POLICY IF EXISTS %s ON %s;", node.Name, node.Table)
+		r.w.WriteLinef("DROP POLICY IF EXISTS %s ON %s;", r.escapeIdentifier(node.Name), r.escapeQualifiedIdentifier(node.Table))
 	}
 
 	// Build CREATE POLICY statement
 	var parts []string
-	parts = append(parts, "CREATE POLICY", node.Name, "ON", node.Table)
+	parts = append(parts, "CREATE POLICY", r.escapeIdentifier(node.Name), "ON", r.escapeQualifiedIdentifier(node.Table))
 
 	// FOR clause
 	if node.PolicyFor != "" {
@@ -1152,7 +1247,7 @@ func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
 
 	// TO clause
 	if node.ToRoles != "" {
-		parts = append(parts, "TO", node.ToRoles)
+		parts = append(parts, "TO", r.escapeRoleTargetList(node.ToRoles))
 	}
 
 	r.w.WriteLinef("%s", strings.Join(parts, " "))
@@ -1184,7 +1279,7 @@ func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) e
 	}
 
 	// Build ALTER TABLE ENABLE ROW LEVEL SECURITY statement
-	r.w.WriteLinef("ALTER TABLE %s ENABLE ROW LEVEL SECURITY;", node.Table)
+	r.w.WriteLinef("ALTER TABLE %s ENABLE ROW LEVEL SECURITY;", r.escapeQualifiedIdentifier(node.Table))
 
 	return nil
 }
@@ -1204,12 +1299,9 @@ func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
 		parts = append(parts, "IF EXISTS")
 	}
 
-	// Function name with parameters for signature matching
-	functionSignature := node.Name
-	if node.Parameters != "" {
-		functionSignature += "(" + node.Parameters + ")"
-	}
-	parts = append(parts, functionSignature)
+	// Function parameters are raw SQL fragments; only the function identifier
+	// is quoted here.
+	parts = append(parts, r.escapeFunctionSignature(node.Name, node.Parameters))
 
 	if node.Cascade {
 		parts = append(parts, "CASCADE")
@@ -1230,7 +1322,7 @@ func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
 	if node.Replace {
 		create = "CREATE OR REPLACE VIEW"
 	}
-	r.w.WriteLinef("%s %s AS", create, node.Name)
+	r.w.WriteLinef("%s %s AS", create, r.escapeQualifiedIdentifier(node.Name))
 	r.w.WriteLine(strings.TrimSpace(node.Body))
 	if node.WithCheck {
 		r.w.WriteLine("WITH CHECK OPTION")
@@ -1249,7 +1341,7 @@ func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
 	if node.IfExists {
 		parts = append(parts, "IF EXISTS")
 	}
-	parts = append(parts, node.Name)
+	parts = append(parts, r.escapeQualifiedIdentifier(node.Name))
 	if node.Cascade {
 		parts = append(parts, "CASCADE")
 	}
@@ -1263,7 +1355,7 @@ func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewN
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
 
-	r.w.WriteLinef("CREATE MATERIALIZED VIEW %s AS", node.Name)
+	r.w.WriteLinef("CREATE MATERIALIZED VIEW %s AS", r.escapeQualifiedIdentifier(node.Name))
 	r.w.WriteLine(strings.TrimSpace(node.Body))
 	r.w.WriteLine(";")
 	return nil
@@ -1279,7 +1371,7 @@ func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode)
 	if node.IfExists {
 		parts = append(parts, "IF EXISTS")
 	}
-	parts = append(parts, node.Name)
+	parts = append(parts, r.escapeQualifiedIdentifier(node.Name))
 	if node.Cascade {
 		parts = append(parts, "CASCADE")
 	}
@@ -1297,7 +1389,7 @@ func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedVie
 	if node.Concurrently {
 		parts = append(parts, "CONCURRENTLY")
 	}
-	parts = append(parts, node.Name)
+	parts = append(parts, r.escapeQualifiedIdentifier(node.Name))
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
 }
@@ -1314,13 +1406,13 @@ func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
 		functionName = postgresTriggerFunctionName(node.Table, node.Name)
 	}
 
-	r.w.WriteLinef("CREATE OR REPLACE FUNCTION %s()", functionName)
+	r.w.WriteLinef("CREATE OR REPLACE FUNCTION %s()", r.escapeQualifiedIdentifier(functionName))
 	r.w.WriteLine("RETURNS trigger AS $$")
 	r.w.WriteLine(renderPostgreSQLTriggerFunctionBody(node.Body))
 	r.w.WriteLine("$$ LANGUAGE plpgsql;")
 
 	if node.Replace && !r.capabilities().Has(capability.CreateOrReplaceTrigger) {
-		r.w.WriteLinef("DROP TRIGGER IF EXISTS %s ON %s;", node.Name, node.Table)
+		r.w.WriteLinef("DROP TRIGGER IF EXISTS %s ON %s;", r.escapeIdentifier(node.Name), r.escapeQualifiedIdentifier(node.Table))
 	}
 
 	create := "CREATE TRIGGER"
@@ -1333,7 +1425,13 @@ func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
 		forEach = "ROW"
 	}
 	r.w.WriteLinef("%s %s %s %s ON %s FOR EACH %s EXECUTE FUNCTION %s();",
-		create, node.Name, node.Timing, node.Event, node.Table, forEach, functionName)
+		create,
+		r.escapeIdentifier(node.Name),
+		node.Timing,
+		node.Event,
+		r.escapeQualifiedIdentifier(node.Table),
+		forEach,
+		r.escapeQualifiedIdentifier(functionName))
 	return nil
 }
 
@@ -1357,7 +1455,7 @@ func (r *Renderer) VisitDropTrigger(node *ast.DropTriggerNode) error {
 	if node.IfExists {
 		parts = append(parts, "IF EXISTS")
 	}
-	parts = append(parts, node.Name, "ON", node.Table)
+	parts = append(parts, r.escapeIdentifier(node.Name), "ON", r.escapeQualifiedIdentifier(node.Table))
 	if node.Cascade {
 		parts = append(parts, "CASCADE")
 	}
@@ -1367,7 +1465,7 @@ func (r *Renderer) VisitDropTrigger(node *ast.DropTriggerNode) error {
 	if functionName == "" {
 		functionName = postgresTriggerFunctionName(node.Table, node.Name)
 	}
-	r.w.WriteLinef("DROP FUNCTION IF EXISTS %s();", functionName)
+	r.w.WriteLinef("DROP FUNCTION IF EXISTS %s();", r.escapeQualifiedIdentifier(functionName))
 	return nil
 }
 
@@ -1440,7 +1538,7 @@ func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
 		parts = append(parts, "IF EXISTS")
 	}
 
-	parts = append(parts, node.Name, "ON", node.Table)
+	parts = append(parts, r.escapeIdentifier(node.Name), "ON", r.escapeQualifiedIdentifier(node.Table))
 
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 
@@ -1459,7 +1557,7 @@ func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode)
 	}
 
 	// Build ALTER TABLE DISABLE ROW LEVEL SECURITY statement
-	r.w.WriteLinef("ALTER TABLE %s DISABLE ROW LEVEL SECURITY;", node.Table)
+	r.w.WriteLinef("ALTER TABLE %s DISABLE ROW LEVEL SECURITY;", r.escapeQualifiedIdentifier(node.Table))
 
 	return nil
 }
@@ -1477,7 +1575,7 @@ func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
 
 	// Build CREATE ROLE statement
 	var parts []string
-	parts = append(parts, "CREATE ROLE", node.Name)
+	parts = append(parts, "CREATE ROLE", r.escapeIdentifier(node.Name))
 
 	// Add role attributes
 	var attributes []string
@@ -1494,7 +1592,7 @@ func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
 			// Add a comment warning about potential plaintext password
 			r.w.WriteLinef("-- WARNING: Password may not be encrypted - ensure passwords are properly hashed")
 		}
-		attributes = append(attributes, fmt.Sprintf("PASSWORD '%s'", node.Password))
+		attributes = append(attributes, fmt.Sprintf("PASSWORD %s", r.escapeValue(node.Password)))
 	}
 
 	if node.Superuser {
@@ -1556,7 +1654,7 @@ func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
 		parts = append(parts, "IF EXISTS")
 	}
 
-	parts = append(parts, node.Name)
+	parts = append(parts, r.escapeIdentifier(node.Name))
 
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 
@@ -1587,7 +1685,8 @@ func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 	if node.WithOption {
 		grantOption = " WITH GRANT OPTION"
 	}
-	r.w.WriteLinef("GRANT %s ON %s %s TO %s%s;", privileges, node.ObjectType, node.ObjectName, node.Role, grantOption)
+	r.w.WriteLinef("GRANT %s ON %s %s TO %s%s;",
+		privileges, node.ObjectType, r.escapeQualifiedIdentifier(node.ObjectName), r.escapeRoleTarget(node.Role), grantOption)
 	return nil
 }
 
@@ -1615,7 +1714,8 @@ func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	if node.GrantOptionFor {
 		prefix = "REVOKE GRANT OPTION FOR"
 	}
-	r.w.WriteLinef("%s %s ON %s %s FROM %s;", prefix, privileges, node.ObjectType, node.ObjectName, node.Role)
+	r.w.WriteLinef("%s %s ON %s %s FROM %s;",
+		prefix, privileges, node.ObjectType, r.escapeQualifiedIdentifier(node.ObjectName), r.escapeRoleTarget(node.Role))
 	return nil
 }
 
@@ -1673,7 +1773,7 @@ func (r *Renderer) requireRoleManagementCapability() error {
 // renderRoleOperation renders a single role operation as an ALTER ROLE statement
 func (r *Renderer) renderRoleOperation(roleName string, operation ast.RoleOperation) error {
 	var parts []string
-	parts = append(parts, "ALTER ROLE", roleName)
+	parts = append(parts, "ALTER ROLE", r.escapeIdentifier(roleName))
 
 	switch op := operation.(type) {
 	case *ast.SetPasswordOperation:
@@ -1682,7 +1782,7 @@ func (r *Renderer) renderRoleOperation(roleName string, operation ast.RoleOperat
 			// Add a comment warning about potential plaintext password
 			r.w.WriteLinef("-- WARNING: Password may not be encrypted - ensure passwords are properly hashed")
 		}
-		parts = append(parts, fmt.Sprintf("PASSWORD '%s'", op.Password))
+		parts = append(parts, fmt.Sprintf("PASSWORD %s", r.escapeValue(op.Password)))
 
 	case *ast.SetLoginOperation:
 		if op.Login {

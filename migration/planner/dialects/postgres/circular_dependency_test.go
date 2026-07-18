@@ -53,6 +53,7 @@ func TestTwoPhaseTableCreationWithSelfReference(t *testing.T) {
 	for _, node := range nodes {
 		sql, err := r.Render(node)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 		sqlStatements = append(sqlStatements, sql)
 	}
 
@@ -139,6 +140,7 @@ func TestComplexDependencyChainTwoPhase(t *testing.T) {
 	for _, node := range nodes {
 		sql, err := r.Render(node)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 		sqlStatements = append(sqlStatements, sql)
 	}
 
@@ -219,6 +221,7 @@ func TestNoForeignKeysInCreateTable(t *testing.T) {
 	for _, node := range nodes {
 		sql, err := r.Render(node)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 		sqlStatements = append(sqlStatements, sql)
 	}
 

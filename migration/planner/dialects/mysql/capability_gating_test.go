@@ -45,6 +45,7 @@ func TestPlanner_CapabilityGating_MariaDBGuardedConstraintDrops(t *testing.T) {
 	nodes := mysql.NewWithCapabilities(capability.MariaDB1011()).GenerateMigrationAST(mixedSharedFKDiff(), &goschema.Database{})
 	sql, err := renderer.RenderSQL("mariadb", nodes...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 
 	c.Assert(strings.Count(sql, "ALTER TABLE articles DROP FOREIGN KEY IF EXISTS shared_fk;"), qt.Equals, 1,
 		qt.Commentf("modified host drop must carry the MariaDB IF EXISTS guard; got:\n%s", sql))
@@ -75,6 +76,7 @@ func TestPlanner_CapabilityGating_RendererStripsGuardsForMySQL(t *testing.T) {
 	nodes := mysql.NewWithCapabilities(capability.MariaDB1011()).GenerateMigrationAST(mixedSharedFKDiff(), &goschema.Database{})
 	sql, err := renderer.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 
 	c.Assert(sql, qt.Not(qt.Contains), "IF EXISTS",
 		qt.Commentf("the mysql renderer must strip guards the target rejects; got:\n%s", sql))
@@ -91,6 +93,7 @@ func TestPlanner_CapabilityGating_MySQLPlannerEmitsNoGuardIntent(t *testing.T) {
 	nodes := mysql.New().GenerateMigrationAST(mixedSharedFKDiff(), &goschema.Database{})
 	sql, err := renderer.RenderSQL("mariadb", nodes...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 
 	c.Assert(sql, qt.Not(qt.Contains), "DROP FOREIGN KEY IF EXISTS",
 		qt.Commentf("a MySQL-preset planner must not request guards; got:\n%s", sql))
@@ -114,6 +117,7 @@ func TestPlanner_CapabilityGating_DropCheckSpellingWithoutGenericClause(t *testi
 	nodes := mysql.NewWithCapabilities(capability.MySQL8016()).GenerateMigrationAST(diff, &goschema.Database{})
 	sql, err := renderer.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 
 	c.Assert(strings.Count(sql, "ALTER TABLE things DROP CHECK chk_qty;"), qt.Equals, 1,
 		qt.Commentf("without drop_constraint_generic a CHECK drop must use DROP CHECK; got:\n%s", sql))
@@ -124,6 +128,7 @@ func TestPlanner_CapabilityGating_DropCheckSpellingWithoutGenericClause(t *testi
 	nodes = mysql.New().GenerateMigrationAST(diff, &goschema.Database{})
 	sql, err = renderer.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 	c.Assert(strings.Count(sql, "ALTER TABLE things DROP CONSTRAINT chk_qty;"), qt.Equals, 1,
 		qt.Commentf("modern MySQL keeps DROP CONSTRAINT; got:\n%s", sql))
 }
@@ -151,6 +156,7 @@ func TestPlanner_CapabilityGating_NoGenericClauseFallbacks(t *testing.T) {
 			nodes := mysql.NewWithCapabilities(caps).GenerateMigrationAST(diff, &goschema.Database{})
 			sql, err := renderer.RenderSQL("mysql", nodes...)
 			c.Assert(err, qt.IsNil)
+			sql = legacyRenderedSQL(sql)
 			c.Assert(strings.Count(sql, "ALTER TABLE users DROP INDEX uq_email;"), qt.Equals, 1,
 				qt.Commentf("a UNIQUE drop must use DROP INDEX; got:\n%s", sql))
 			c.Assert(sql, qt.Not(qt.Contains), "DROP CONSTRAINT",
@@ -170,6 +176,7 @@ func TestPlanner_CapabilityGating_NoGenericClauseFallbacks(t *testing.T) {
 		nodes := mysql.NewWithCapabilities(capability.MySQLLegacy()).GenerateMigrationAST(diff, &goschema.Database{})
 		sql, err := renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 		// No statement may be emitted at all — only the warning comment
 		// (asserting on statement shape, not bare keywords, because the
 		// warning text itself names the missing clauses).
@@ -199,6 +206,7 @@ func TestPlanner_CapabilityGating_CheckAddSkippedWhenUnenforced(t *testing.T) {
 		nodes := mysql.NewWithCapabilities(capability.MySQLLegacy()).GenerateMigrationAST(diff, generated)
 		sql, err := renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 
 		c.Assert(sql, qt.Not(qt.Contains), "ADD CONSTRAINT",
 			qt.Commentf("an unenforced CHECK must not be emitted; got:\n%s", sql))
@@ -209,6 +217,7 @@ func TestPlanner_CapabilityGating_CheckAddSkippedWhenUnenforced(t *testing.T) {
 		nodes = mysql.NewWithCapabilities(capability.MySQL8016()).GenerateMigrationAST(diff, generated)
 		sql, err = renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 		c.Assert(sql, qt.Contains, "ALTER TABLE products ADD CONSTRAINT positive_price CHECK (price > 0);",
 			qt.Commentf("enforcing targets keep the ADD; got:\n%s", sql))
 	})
@@ -230,6 +239,7 @@ func TestPlanner_CapabilityGating_CheckAddSkippedWhenUnenforced(t *testing.T) {
 		nodes := mysql.NewWithCapabilities(capability.MySQLLegacy()).GenerateMigrationAST(diff, generated)
 		sql, err := renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 
 		c.Assert(sql, qt.Not(qt.Contains), "ADD CONSTRAINT",
 			qt.Commentf("an unenforced field-level CHECK must not be emitted; got:\n%s", sql))
@@ -241,6 +251,7 @@ func TestPlanner_CapabilityGating_CheckAddSkippedWhenUnenforced(t *testing.T) {
 		nodes = mysql.New().GenerateMigrationAST(diff, generated)
 		sql, err = renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 		c.Assert(sql, qt.Contains, "ALTER TABLE things ADD CONSTRAINT things_qty_check CHECK (qty >= 0);",
 			qt.Commentf("enforcing targets keep the field-level ADD; got:\n%s", sql))
 		c.Assert(sql, qt.Not(qt.Contains), "WARNING")
@@ -274,6 +285,8 @@ func TestPlanner_CapabilityGating_ZeroValuePlannerBehavesLikeNew(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	newSQL, err := renderer.RenderSQL("mysql", mysql.New().GenerateMigrationAST(diff, generated)...)
 	c.Assert(err, qt.IsNil)
+	zeroSQL = legacyRenderedSQL(zeroSQL)
+	newSQL = legacyRenderedSQL(newSQL)
 
 	c.Assert(zeroSQL, qt.Equals, newSQL,
 		qt.Commentf("a zero-value planner must be byte-identical to New()"))
@@ -301,6 +314,7 @@ func TestPlanner_CapabilityGating_DropCheckDegradesOnMariaDBRenderer(t *testing.
 
 	sql, err := renderer.RenderSQL("mariadb", nodes...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "ALTER TABLE things DROP CONSTRAINT chk_qty;",
 		qt.Commentf("the mariadb renderer must degrade DROP CHECK to the generic clause; got:\n%s", sql))
 	c.Assert(sql, qt.Not(qt.Contains), "DROP CHECK",
@@ -329,11 +343,13 @@ func TestPlanner_CapabilityGating_DropIndexGuard(t *testing.T) {
 
 	sqlMariaDB, err := renderer.RenderSQL("mariadb", nodes...)
 	c.Assert(err, qt.IsNil)
+	sqlMariaDB = legacyRenderedSQL(sqlMariaDB)
 	c.Assert(sqlMariaDB, qt.Contains, "DROP INDEX IF EXISTS idx_things_qty ON things;",
 		qt.Commentf("mariadb honors the guard intent; got:\n%s", sqlMariaDB))
 
 	sqlMySQL, err := renderer.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
+	sqlMySQL = legacyRenderedSQL(sqlMySQL)
 	c.Assert(sqlMySQL, qt.Contains, "DROP INDEX idx_things_qty ON things;",
 		qt.Commentf("the mysql renderer strips the guard it cannot parse; got:\n%s", sqlMySQL))
 	c.Assert(sqlMySQL, qt.Not(qt.Contains), "IF EXISTS")
@@ -343,6 +359,7 @@ func TestPlanner_CapabilityGating_DropIndexGuard(t *testing.T) {
 	nodes = mysql.New().GenerateMigrationAST(diff, &goschema.Database{})
 	sqlMariaDB, err = renderer.RenderSQL("mariadb", nodes...)
 	c.Assert(err, qt.IsNil)
+	sqlMariaDB = legacyRenderedSQL(sqlMariaDB)
 	c.Assert(sqlMariaDB, qt.Contains, "DROP INDEX idx_things_qty ON things;",
 		qt.Commentf("got:\n%s", sqlMariaDB))
 	c.Assert(sqlMariaDB, qt.Not(qt.Contains), "IF EXISTS",
@@ -373,6 +390,7 @@ func TestPlanner_UniqueConstraintRemoval_UsesDropIndex(t *testing.T) {
 		nodes := mysql.New().GenerateMigrationAST(diff, &goschema.Database{})
 		sql, err := renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 
 		c.Assert(strings.Count(sql, "ALTER TABLE users DROP INDEX uq_email;"), qt.Equals, 1,
 			qt.Commentf("UNIQUE removal must render DROP INDEX; got:\n%s", sql))
@@ -390,6 +408,7 @@ func TestPlanner_UniqueConstraintRemoval_UsesDropIndex(t *testing.T) {
 		nodes := mysql.NewWithCapabilities(capability.MariaDB1011()).GenerateMigrationAST(diff, &goschema.Database{})
 		sql, err := renderer.RenderSQL("mariadb", nodes...)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 
 		c.Assert(strings.Count(sql, "ALTER TABLE users DROP INDEX IF EXISTS uq_email;"), qt.Equals, 1,
 			qt.Commentf("MariaDB guards the DROP INDEX spelling; got:\n%s", sql))
@@ -399,6 +418,7 @@ func TestPlanner_UniqueConstraintRemoval_UsesDropIndex(t *testing.T) {
 		// The same plan through the mysql renderer strips every guard.
 		sqlMySQL, err := renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
+		sqlMySQL = legacyRenderedSQL(sqlMySQL)
 		c.Assert(sqlMySQL, qt.Not(qt.Contains), "IF EXISTS", qt.Commentf("got:\n%s", sqlMySQL))
 		c.Assert(sqlMySQL, qt.Contains, "ALTER TABLE users DROP INDEX uq_email;",
 			qt.Commentf("got:\n%s", sqlMySQL))
@@ -428,6 +448,7 @@ func TestPlanner_UniqueDropGuard_FollowsIndexCapability(t *testing.T) {
 	nodes := mysql.NewWithCapabilities(caps).GenerateMigrationAST(diff, &goschema.Database{})
 	sql, err := renderer.RenderSQL("mariadb", nodes...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "ALTER TABLE users DROP INDEX uq_email;",
 		qt.Commentf("got:\n%s", sql))
 	c.Assert(sql, qt.Not(qt.Contains), "DROP INDEX IF EXISTS",
@@ -441,6 +462,7 @@ func TestPlanner_UniqueDropGuard_FollowsIndexCapability(t *testing.T) {
 	nodes = mysql.NewWithCapabilities(caps).GenerateMigrationAST(diff, &goschema.Database{})
 	sql, err = renderer.RenderSQL("mariadb", nodes...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "ALTER TABLE users DROP INDEX IF EXISTS uq_email;",
 		qt.Commentf("got:\n%s", sql))
 	c.Assert(sql, qt.Contains, "ALTER TABLE posts DROP FOREIGN KEY fk_posts_user;",

@@ -32,7 +32,7 @@ func TestPostgres_AlterTable_RenameColumn(t *testing.T) {
 			&ast.RenameColumnOperation{OldName: "email_old", NewName: "email"},
 		},
 	}
-	out := renderPG(t, alter)
+	out := legacyPostgresSQL(renderPG(t, alter))
 	c.Assert(out, qt.Contains, "ALTER TABLE users RENAME COLUMN email_old TO email;")
 }
 
@@ -44,20 +44,20 @@ func TestPostgres_AlterTable_RenameTable(t *testing.T) {
 			&ast.RenameTableOperation{NewName: "users"},
 		},
 	}
-	out := renderPG(t, alter)
+	out := legacyPostgresSQL(renderPG(t, alter))
 	c.Assert(out, qt.Contains, "ALTER TABLE old_users RENAME TO users;")
 }
 
 func TestPostgres_CreateSchema(t *testing.T) {
 	c := qt.New(t)
-	out := renderPG(t, &ast.CreateSchemaNode{Name: "auth", IfNotExists: true, Comment: "Auth user's schema"})
+	out := legacyPostgresSQL(renderPG(t, &ast.CreateSchemaNode{Name: "auth", IfNotExists: true, Comment: "Auth user's schema"}))
 	c.Assert(out, qt.Contains, "CREATE SCHEMA IF NOT EXISTS auth;")
 	c.Assert(out, qt.Contains, "COMMENT ON SCHEMA auth IS 'Auth user''s schema';")
 }
 
 func TestPostgres_CreateDatabase(t *testing.T) {
 	c := qt.New(t)
-	out := renderPG(t, &ast.CreateDatabaseNode{Name: "appdb"})
+	out := legacyPostgresSQL(renderPG(t, &ast.CreateDatabaseNode{Name: "appdb"}))
 	c.Assert(out, qt.Contains, "CREATE DATABASE appdb;")
 }
 

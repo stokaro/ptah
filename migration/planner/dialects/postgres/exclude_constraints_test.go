@@ -35,6 +35,7 @@ func TestPlanner_GenerateMigrationAST_CompositeForeignKeyAddition(t *testing.T) 
 	nodes := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 
 	c.Assert(sql, qt.Contains, "ALTER TABLE orders ADD CONSTRAINT fk_orders_accounts FOREIGN KEY (tenant_id, owner_id) REFERENCES accounts(tenant_id, id) ON DELETE CASCADE;",
 		qt.Commentf("composite FK addition must preserve all referenced columns; got:\n%s", sql))
@@ -194,6 +195,7 @@ func TestPlanner_GenerateMigrationAST_ConstraintsAdded(t *testing.T) {
 			// Convert AST nodes to SQL for verification
 			sql, err := renderer.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
+			sql = legacyRenderedSQL(sql)
 
 			// Remove header comments and split into statements
 			lines := strings.Split(sql, "\n")
@@ -252,6 +254,7 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_ScopesDropToHostTable(t *testin
 		nodes := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 
 		// The DROP is scoped to the intended host with a direct ALTER TABLE.
 		c.Assert(sql, qt.Contains, "ALTER TABLE orders DROP CONSTRAINT IF EXISTS fk_customer;",
@@ -304,6 +307,7 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_ScopesDropToHostTable(t *testin
 		nodes := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 
 		c.Assert(strings.Count(sql, "ALTER TABLE orders DROP CONSTRAINT IF EXISTS fk_customer;"), qt.Equals, 1,
 			qt.Commentf("orders host dropped exactly once; got:\n%s", sql))
@@ -350,6 +354,7 @@ func TestPlanner_GenerateMigrationAST_ModifiedNonFKConstraint_ScopesDropToHostTa
 		nodes := postgres.New().GenerateMigrationAST(diff, generated)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 
 		// The DROP is scoped to the intended host with a direct ALTER TABLE.
 		c.Assert(sql, qt.Contains, "ALTER TABLE articles DROP CONSTRAINT IF EXISTS uq_slug;",
@@ -391,6 +396,7 @@ func TestPlanner_GenerateMigrationAST_ModifiedNonFKConstraint_ScopesDropToHostTa
 		nodes := postgres.New().GenerateMigrationAST(diff, generated)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 
 		c.Assert(sql, qt.Contains, "information_schema.table_constraints",
 			qt.Commentf("with no recorded host the planner must fall back to the DO block; got:\n%s", sql))
@@ -444,6 +450,7 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 		nodes := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 
 		// The pure removal on B (pages) is dropped table-qualified and NOT skipped.
 		// This is the assertion that fails against the pre-fix bare-name skip.
@@ -496,6 +503,7 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 		nodes := postgres.New().GenerateMigrationAST(diff, generated)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 
 		c.Assert(sql, qt.Contains, "ALTER TABLE pages DROP CONSTRAINT IF EXISTS shared_check;",
 			qt.Commentf("purely-removed host must be dropped table-qualified; got:\n%s", sql))
@@ -552,6 +560,7 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_ScopesToHostWhenAddedHostsAbsen
 	nodes := postgres.New().GenerateMigrationAST(diff, generated)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 
 	// Table-scoped drop, not the name-only DO block.
 	c.Assert(sql, qt.Contains, "ALTER TABLE things DROP CONSTRAINT IF EXISTS chk_down;",
@@ -586,6 +595,7 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved(t *testing.T) {
 
 	sql, err := renderer.RenderSQL("postgres", nodes[0])
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "DO $ptah$")
 	c.Assert(sql, qt.Contains, "information_schema.table_constraints")
 	c.Assert(sql, qt.Contains, "constraint_name = 'old_constraint'")
@@ -634,6 +644,7 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_EscapesSingleQuoteInNam
 
 	sql, err := renderer.RenderSQL("postgres", nodes[0])
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "'don''t_drop'", qt.Commentf("single quote in constraint name must be SQL-escaped"))
 	// The bare unescaped form must NOT appear in any SQL string literal.
 	c.Assert(sql, qt.Not(qt.Contains), "'don't_drop'",
@@ -675,6 +686,7 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_RejectsUnsafeName(t *te
 
 			sql, err := renderer.RenderSQL("postgres", nodes[0])
 			c.Assert(err, qt.IsNil)
+			sql = legacyRenderedSQL(sql)
 			c.Assert(sql, qt.Contains, "RAISE EXCEPTION",
 				qt.Commentf("planner must emit RAISE EXCEPTION for unsafe names; got: %s", sql))
 			c.Assert(sql, qt.Not(qt.Contains), "ALTER TABLE %I DROP CONSTRAINT",

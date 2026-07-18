@@ -33,6 +33,7 @@ func TestGetPlanner_CapabilityWiring(t *testing.T) {
 		nodes := planner.GenerateSchemaDiffAST(diff, generated, "mariadb")
 		sql, err := renderer.RenderSQL("mariadb", nodes...)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 		c.Assert(sql, qt.Contains, "ALTER TABLE posts DROP FOREIGN KEY IF EXISTS fk_posts_user;",
 			qt.Commentf("GetPlanner(mariadb) must carry the MariaDB capability preset; got:\n%s", sql))
 	})
@@ -43,6 +44,7 @@ func TestGetPlanner_CapabilityWiring(t *testing.T) {
 		nodes := planner.GenerateSchemaDiffAST(diff, generated, "mysql")
 		sql, err := renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 		c.Assert(sql, qt.Contains, "ALTER TABLE posts DROP FOREIGN KEY fk_posts_user;",
 			qt.Commentf("got:\n%s", sql))
 		c.Assert(sql, qt.Not(qt.Contains), "IF EXISTS",
@@ -64,7 +66,7 @@ func TestGenerateSchemaDiffSQLStatementsWithCapabilities_UsesServerVersionPreset
 		caps := capability.ForServerVersion("mysql", "5.7.44")
 
 		statements := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(diff, generated, "mysql", caps)
-		sql := strings.Join(statements, "\n")
+		sql := legacyRenderedSQL(strings.Join(statements, "\n"))
 
 		c.Assert(sql, qt.Contains, "WARNING: cannot drop CHECK constraint chk_qty")
 		c.Assert(sql, qt.Not(qt.Contains), "ALTER TABLE")
@@ -75,7 +77,7 @@ func TestGenerateSchemaDiffSQLStatementsWithCapabilities_UsesServerVersionPreset
 		caps := capability.ForServerVersion("mysql", "8.0.17")
 
 		statements := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(diff, generated, "mysql", caps)
-		sql := strings.Join(statements, "\n")
+		sql := legacyRenderedSQL(strings.Join(statements, "\n"))
 
 		c.Assert(sql, qt.Contains, "ALTER TABLE things DROP CHECK chk_qty")
 	})
@@ -85,7 +87,7 @@ func TestGenerateSchemaDiffSQLStatementsWithCapabilities_UsesServerVersionPreset
 		caps := capability.ForServerVersion("mysql", "8.0.19")
 
 		statements := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(diff, generated, "mysql", caps)
-		sql := strings.Join(statements, "\n")
+		sql := legacyRenderedSQL(strings.Join(statements, "\n"))
 
 		c.Assert(sql, qt.Contains, "ALTER TABLE things DROP CONSTRAINT chk_qty")
 	})
@@ -105,6 +107,7 @@ func TestGetPlanner_DistributedSQLCapabilityWiring(t *testing.T) {
 	nodes := planner.GenerateSchemaDiffAST(diff, generated, platform.CockroachDB)
 	sql, err := renderer.RenderSQL(platform.CockroachDB, nodes...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);",
 		qt.Commentf("got:\n%s", sql))
 	c.Assert(sql, qt.Not(qt.Contains), "CONCURRENTLY",

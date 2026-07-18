@@ -33,6 +33,7 @@ func TestPlanner_GenerateMigrationAST_Grants(t *testing.T) {
 	sql, err := renderer.RenderSQL("postgres", postgres.New().GenerateMigrationAST(diff, &goschema.Database{})...)
 
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 	lines := strings.Split(strings.TrimSpace(sql), "\n")
 	c.Assert(lines, qt.DeepEquals, []string{
 		"REVOKE DELETE ON TABLE users FROM app_role;",

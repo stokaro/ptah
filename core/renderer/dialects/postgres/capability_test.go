@@ -40,7 +40,7 @@ func TestPostgreSQLRenderer_SequenceCapability(t *testing.T) {
 		sql, err := renderer.Render(table)
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(sql, qt.Contains, "id SERIAL PRIMARY KEY NOT NULL")
+		c.Assert(legacyPostgresSQL(sql), qt.Contains, "id SERIAL PRIMARY KEY NOT NULL")
 	})
 
 	t.Run("cockroach rejects explicit SERIAL", func(t *testing.T) {

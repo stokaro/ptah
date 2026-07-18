@@ -50,6 +50,7 @@ func TestGenerateCreateTableFromStubs(t *testing.T) {
 					createTableNode := fromschema.FromTable(table, database.Fields, database.Enums, "postgres")
 					pgSQL, err := renderer.RenderSQL("postgres", createTableNode)
 					c.Assert(err, qt.IsNil)
+					pgSQL = legacyRenderedSQL(pgSQL)
 
 					// Verify PostgreSQL SQL contains expected elements
 					c.Assert(pgSQL, qt.Contains, fmt.Sprintf("-- POSTGRES TABLE: %s --", table.Name))
@@ -60,6 +61,7 @@ func TestGenerateCreateTableFromStubs(t *testing.T) {
 						enumNode := fromschema.FromEnum(enum)
 						enumSQL, err := renderer.RenderSQL("postgres", enumNode)
 						c.Assert(err, qt.IsNil)
+						enumSQL = legacyRenderedSQL(enumSQL)
 						c.Assert(enumSQL, qt.Contains, fmt.Sprintf("CREATE TYPE %s AS ENUM", enum.Name))
 					}
 
@@ -67,6 +69,7 @@ func TestGenerateCreateTableFromStubs(t *testing.T) {
 					createTableNodeMySQL := fromschema.FromTable(table, database.Fields, database.Enums, "mysql")
 					mySQL, err := renderer.RenderSQL("mysql", createTableNodeMySQL)
 					c.Assert(err, qt.IsNil)
+					mySQL = legacyRenderedSQL(mySQL)
 
 					// Verify MySQL SQL contains expected elements (may include table comment from overrides)
 					c.Assert(mySQL, qt.Contains, fmt.Sprintf("-- MYSQL TABLE: %s", table.Name))
@@ -95,6 +98,7 @@ func TestGenerateCreateTableFromStubs(t *testing.T) {
 					createTableNodeMariaDB := fromschema.FromTable(table, database.Fields, database.Enums, "mariadb")
 					mariaSQL, err := renderer.RenderSQL("mariadb", createTableNodeMariaDB)
 					c.Assert(err, qt.IsNil)
+					mariaSQL = legacyRenderedSQL(mariaSQL)
 
 					// Verify MariaDB SQL has correct header
 					c.Assert(mariaSQL, qt.Contains, fmt.Sprintf("-- MARIADB TABLE: %s", table.Name))
