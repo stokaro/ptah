@@ -675,6 +675,7 @@ func FromTable(table goschema.Table, fields []goschema.Field, enums []goschema.E
 			if tableLevelPK && slices.Contains(newTable.PrimaryKey, field.Name) {
 				field.Primary = false
 			}
+			field = withDefaultForeignKeyName(newTable.Name, field)
 			column := FromField(field, enums, targetPlatform)
 			createTable.AddColumn(column)
 		}
@@ -687,6 +688,14 @@ func FromTable(table goschema.Table, fields []goschema.Field, enums []goschema.E
 	}
 
 	return createTable
+}
+
+func withDefaultForeignKeyName(tableName string, field goschema.Field) goschema.Field {
+	if field.Foreign == "" || field.ForeignKeyName != "" {
+		return field
+	}
+	field.ForeignKeyName = GenerateForeignKeyName(tableName, field.Name)
+	return field
 }
 
 func toASTPartition(partition *goschema.PartitionSpec) *ast.PartitionSpec {

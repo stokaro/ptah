@@ -144,3 +144,21 @@ func TestPlanner_GenerateMigrationAST_EmptyTableNameAdditionTreatedAsHostless(t 
 	c.Assert(sql, qt.Not(qt.Contains), "information_schema.table_constraints",
 		qt.Commentf("the name-only DO block must not be used when removal hosts are known"))
 }
+
+func TestPlanner_GenerateMigrationAST_TableQualifiedPrimaryKeyAddition(t *testing.T) {
+	c := qt.New(t)
+
+	diff := &types.SchemaDiff{
+		ConstraintsAdded: []string{"memberships_pkey"},
+		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+			Name:      "memberships_pkey",
+			TableName: "memberships",
+			Type:      "PRIMARY KEY",
+			Columns:   []string{"org_id", "user_id"},
+		}},
+	}
+
+	sql, err := renderer.RenderSQL("postgres", postgres.New().GenerateMigrationAST(diff, &goschema.Database{})...)
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "ALTER TABLE memberships ADD PRIMARY KEY (org_id, user_id);")
+}

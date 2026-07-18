@@ -569,3 +569,24 @@ func TestPlanner_GenerateMigrationAST_PureConstraintRemovals_TableQualified(t *t
 		})
 	}
 }
+
+func TestPlanner_GenerateMigrationAST_TableQualifiedPrimaryKeyAddition(t *testing.T) {
+	for _, dialect := range mysqlFamilyDialects {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff := &types.SchemaDiff{
+				ConstraintsAdded: []string{"PRIMARY"},
+				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+					Name:      "PRIMARY",
+					TableName: "memberships",
+					Type:      "PRIMARY KEY",
+					Columns:   []string{"org_id", "user_id"},
+				}},
+			}
+
+			sql := renderMySQLFamily(c, dialect, diff, &goschema.Database{})
+			c.Assert(sql, qt.Contains, "ALTER TABLE memberships ADD PRIMARY KEY (org_id, user_id);")
+		})
+	}
+}
