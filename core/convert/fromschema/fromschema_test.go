@@ -874,8 +874,8 @@ func TestFromIndex_BasicIndex(t *testing.T) {
 				StructName: "users",
 				Fields:     []string{"stale_rank", "stale_name"},
 				Parts: []goschema.IndexPart{
-					{Name: "rank", Prefix: "7", Desc: true},
-					{Expr: "lower(name)"},
+					{Name: "rank", Operator: "bpchar_ops", Prefix: "7", Desc: true},
+					{Expr: "lower(name)", Operator: "text_pattern_ops"},
 				},
 			},
 			expected: func(idx *ast.IndexNode) bool {
@@ -885,8 +885,8 @@ func TestFromIndex_BasicIndex(t *testing.T) {
 					idx.Columns[0] == "rank" &&
 					idx.Columns[1] == "lower(name)" &&
 					len(idx.Parts) == 2 &&
-					idx.Parts[0] == (ast.IndexPart{Name: "rank", Prefix: "7", Desc: true}) &&
-					idx.Parts[1] == (ast.IndexPart{Expr: "lower(name)"})
+					idx.Parts[0] == (ast.IndexPart{Name: "rank", Operator: "bpchar_ops", Prefix: "7", Desc: true}) &&
+					idx.Parts[1] == (ast.IndexPart{Expr: "lower(name)", Operator: "text_pattern_ops"})
 			},
 		},
 		{

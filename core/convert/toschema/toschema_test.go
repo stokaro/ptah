@@ -506,8 +506,8 @@ func TestToIndex_BasicIndex(t *testing.T) {
 			name: "structured index parts",
 			index: ast.NewIndex("idx_users_rank_name", "users").
 				SetParts([]ast.IndexPart{
-					{Name: "rank", Prefix: "7", Desc: true},
-					{Expr: "lower(name)"},
+					{Name: "rank", Operator: "bpchar_ops", Prefix: "7", Desc: true},
+					{Expr: "lower(name)", Operator: "text_pattern_ops"},
 				}),
 			expected: func(index goschema.Index) bool {
 				return index.Name == "idx_users_rank_name" &&
@@ -516,8 +516,8 @@ func TestToIndex_BasicIndex(t *testing.T) {
 					index.Fields[0] == "rank" &&
 					index.Fields[1] == "lower(name)" &&
 					len(index.Parts) == 2 &&
-					index.Parts[0] == (goschema.IndexPart{Name: "rank", Prefix: "7", Desc: true}) &&
-					index.Parts[1] == (goschema.IndexPart{Expr: "lower(name)"})
+					index.Parts[0] == (goschema.IndexPart{Name: "rank", Operator: "bpchar_ops", Prefix: "7", Desc: true}) &&
+					index.Parts[1] == (goschema.IndexPart{Expr: "lower(name)", Operator: "text_pattern_ops"})
 			},
 		},
 		{

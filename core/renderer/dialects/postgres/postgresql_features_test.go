@@ -58,6 +58,15 @@ func TestPostgreSQLRenderer_VisitIndex_PostgreSQLFeatures(t *testing.T) {
 			expected: "CREATE INDEX idx_users_full_name ON users ((first_name || ' ' || last_name));\n",
 		},
 		{
+			name: "per-part operator classes",
+			index: ast.NewIndex("idx_users_search", "users").
+				SetParts([]ast.IndexPart{
+					{Name: "name", Operator: "bpchar_pattern_ops"},
+					{Name: "body", Operator: "tsvector_ops(siglen=8)"},
+				}),
+			expected: "CREATE INDEX idx_users_search ON users (name bpchar_pattern_ops, body tsvector_ops(siglen=8));\n",
+		},
+		{
 			name: "partial index",
 			index: &ast.IndexNode{
 				Name:      "idx_active_users",

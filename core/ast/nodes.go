@@ -488,6 +488,8 @@ type IndexPart struct {
 	Name string
 	// Expr is a raw indexed expression. It is mutually exclusive with Name.
 	Expr string
+	// Operator is the PostgreSQL operator class for this index part.
+	Operator string
 	// Prefix stores the MySQL index prefix length for column parts.
 	Prefix string
 	// Desc indicates DESC ordering for this index part.
