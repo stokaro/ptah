@@ -398,10 +398,11 @@ func toSchemaIndexParts(parts []ast.IndexPart) []goschema.IndexPart {
 	schemaParts := make([]goschema.IndexPart, 0, len(parts))
 	for _, part := range parts {
 		schemaParts = append(schemaParts, goschema.IndexPart{
-			Name:   part.Name,
-			Expr:   part.Expr,
-			Prefix: part.Prefix,
-			Desc:   part.Desc,
+			Name:     part.Name,
+			Expr:     part.Expr,
+			Operator: part.Operator,
+			Prefix:   part.Prefix,
+			Desc:     part.Desc,
 		})
 	}
 	return schemaParts

@@ -463,7 +463,9 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	var columnSpecs []string
 	for _, part := range node.EffectiveParts() {
 		columnSpec := renderIndexPart(part)
-		if node.Operator != "" {
+		if part.Operator != "" {
+			columnSpec = fmt.Sprintf("%s %s", columnSpec, part.Operator)
+		} else if node.Operator != "" {
 			columnSpec = fmt.Sprintf("%s %s", columnSpec, node.Operator)
 		}
 		if part.Desc {

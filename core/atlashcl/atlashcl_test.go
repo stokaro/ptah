@@ -341,10 +341,12 @@ table "users" {
   index "rank_score_idx" {
     on {
       column = column.rank
+      ops    = bpchar_ops
       prefix = 7
     }
     on {
       column = column.score
+      ops    = sql("tsvector_ops(siglen=8)")
       desc = true
     }
   }
@@ -359,8 +361,8 @@ table "users" {
 	c.Assert(db.Indexes, qt.HasLen, 2)
 	c.Assert(db.Indexes[0].Fields, qt.DeepEquals, []string{"rank", "score"})
 	c.Assert(db.Indexes[0].Parts, qt.DeepEquals, []goschema.IndexPart{
-		{Name: "rank", Prefix: "7"},
-		{Name: "score", Desc: true},
+		{Name: "rank", Operator: "bpchar_ops", Prefix: "7"},
+		{Name: "score", Operator: "tsvector_ops(siglen=8)", Desc: true},
 	})
 	c.Assert(db.Indexes[1].Fields, qt.DeepEquals, []string{"first_name || ' ' || last_name"})
 	c.Assert(db.Indexes[1].Parts, qt.DeepEquals, []goschema.IndexPart{

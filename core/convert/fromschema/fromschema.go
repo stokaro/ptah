@@ -1396,10 +1396,11 @@ func toASTIndexParts(parts []goschema.IndexPart) []ast.IndexPart {
 	astParts := make([]ast.IndexPart, 0, len(parts))
 	for _, part := range parts {
 		astParts = append(astParts, ast.IndexPart{
-			Name:   part.Name,
-			Expr:   part.Expr,
-			Prefix: part.Prefix,
-			Desc:   part.Desc,
+			Name:     part.Name,
+			Expr:     part.Expr,
+			Operator: part.Operator,
+			Prefix:   part.Prefix,
+			Desc:     part.Desc,
 		})
 	}
 	return astParts
