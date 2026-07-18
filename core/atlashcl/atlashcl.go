@@ -457,11 +457,12 @@ func (p *parser) parseIndexParts(block *hclsyntax.Block) ([]string, []goschema.I
 		if err != nil {
 			return nil, nil, err
 		}
+		operator := p.optionalSQLExpression(nested.Body.Attributes["ops"])
 		prefix := p.optionalRawExpr(nested.Body.Attributes["prefix"])
 		if columnAttr != nil {
 			column := p.columnNameFromExpr(columnAttr)
 			columns = append(columns, column)
-			parts = append(parts, goschema.IndexPart{Name: column, Prefix: prefix, Desc: desc})
+			parts = append(parts, goschema.IndexPart{Name: column, Operator: operator, Prefix: prefix, Desc: desc})
 			continue
 		}
 		if prefix != "" {
@@ -469,7 +470,7 @@ func (p *parser) parseIndexParts(block *hclsyntax.Block) ([]string, []goschema.I
 		}
 		expr := p.exprString(exprAttr)
 		columns = append(columns, expr)
-		parts = append(parts, goschema.IndexPart{Expr: expr, Desc: desc})
+		parts = append(parts, goschema.IndexPart{Expr: expr, Operator: operator, Desc: desc})
 	}
 	return columns, parts, nil
 }
@@ -833,6 +834,7 @@ func (p *parser) rejectUnsupportedIndexOnAttrs(block *hclsyntax.Block) error {
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"column": true,
 		"expr":   true,
+		"ops":    true,
 		"prefix": true,
 		"desc":   true,
 	}, "index on")
