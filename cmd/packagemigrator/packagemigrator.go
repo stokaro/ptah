@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/stokaro/ptah/cmd/atlas"
 	"github.com/stokaro/ptah/cmd/compare"
 	"github.com/stokaro/ptah/cmd/drift"
 	"github.com/stokaro/ptah/cmd/dropall"
@@ -64,6 +65,7 @@ func Execute(args ...string) {
 	rootCmd.AddCommand(seed.NewSeedCommand())
 	rootCmd.AddCommand(dropall.NewDropAllCommand())
 	rootCmd.AddCommand(lint.NewLintCommand())
+	rootCmd.AddCommand(atlas.NewAtlasCommand())
 
 	err := rootCmd.Execute()
 	if err != nil {
