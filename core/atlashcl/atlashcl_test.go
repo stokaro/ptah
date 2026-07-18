@@ -324,6 +324,29 @@ table "users" {
 	})
 }
 
+func TestParseIndexInclude(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+table "users" {
+  column "name" {
+    type = text
+  }
+  column "active" {
+    type = bool
+  }
+  index "idx_users_name" {
+    columns = [column.name]
+    include = [column.active]
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Indexes, qt.HasLen, 1)
+	c.Assert(db.Indexes[0].Fields, qt.DeepEquals, []string{"name"})
+	c.Assert(db.Indexes[0].IncludeColumns, qt.DeepEquals, []string{"active"})
+}
+
 func TestParseFulltextIndexParser(t *testing.T) {
 	c := qt.New(t)
 

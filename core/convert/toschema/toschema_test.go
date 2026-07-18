@@ -520,6 +520,20 @@ func TestToIndex_BasicIndex(t *testing.T) {
 					index.Parts[1] == (goschema.IndexPart{Expr: "lower(name)"})
 			},
 		},
+		{
+			name: "index include columns",
+			index: func() *ast.IndexNode {
+				index := ast.NewIndex("idx_users_name", "users", "name")
+				index.IncludeColumns = []string{"active"}
+				return index
+			}(),
+			expected: func(index goschema.Index) bool {
+				return index.Name == "idx_users_name" &&
+					index.StructName == "users" &&
+					index.Fields[0] == "name" &&
+					index.IncludeColumns[0] == "active"
+			},
+		},
 	}
 
 	for _, test := range tests {

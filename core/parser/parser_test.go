@@ -1303,6 +1303,40 @@ func TestParser_ParseCreateIndex(t *testing.T) {
 	c.Assert(index.Unique, qt.IsFalse)
 }
 
+func TestParser_ParseCreateIndexInclude(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "CREATE INDEX idx_users_name ON users (name) INCLUDE (active, version);"
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	index, ok := statements.Statements[0].(*ast.IndexNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(index.Name, qt.Equals, "idx_users_name")
+	c.Assert(index.Table, qt.Equals, "users")
+	c.Assert(index.Columns, qt.DeepEquals, []string{"name"})
+	c.Assert(index.IncludeColumns, qt.DeepEquals, []string{"active", "version"})
+}
+
+func TestParser_ParseCreateIndexIncludeRejectsInvalidLists(t *testing.T) {
+	tests := []string{
+		"CREATE INDEX idx_users_name ON users (name) INCLUDE ();",
+		"CREATE INDEX idx_users_name ON users (name) INCLUDE (active,);",
+	}
+	for _, sql := range tests {
+		t.Run(sql, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := parser.NewParser(sql).Parse()
+
+			c.Assert(err, qt.IsNotNil)
+		})
+	}
+}
+
 func TestParser_ParseCreateIndexExpressions(t *testing.T) {
 	tests := []struct {
 		name      string

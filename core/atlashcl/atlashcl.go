@@ -307,6 +307,10 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 	if err != nil {
 		return goschema.Index{}, err
 	}
+	include, err := p.parseColumnsAttr(block, "include")
+	if err != nil {
+		return goschema.Index{}, err
+	}
 	var parts []goschema.IndexPart
 	if len(columns) == 0 {
 		columns, parts, err = p.parseIndexParts(block)
@@ -326,15 +330,16 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 		return goschema.Index{}, p.blockError(block, "index parser requires FULLTEXT type")
 	}
 	return goschema.Index{
-		StructName: structName,
-		Name:       block.Labels[0],
-		Fields:     columns,
-		Parts:      parts,
-		Unique:     p.optionalBool(block.Body.Attributes["unique"], false),
-		Type:       indexType,
-		Parser:     parserName,
-		Condition:  p.optionalString(block.Body.Attributes["where"]),
-		TableName:  tableName,
+		StructName:     structName,
+		Name:           block.Labels[0],
+		Fields:         columns,
+		Parts:          parts,
+		Unique:         p.optionalBool(block.Body.Attributes["unique"], false),
+		Type:           indexType,
+		Parser:         parserName,
+		Condition:      p.optionalString(block.Body.Attributes["where"]),
+		IncludeColumns: include,
+		TableName:      tableName,
 	}, nil
 }
 
@@ -704,6 +709,7 @@ func (p *parser) rejectUnsupportedIdentityColumnAttrs(block *hclsyntax.Block) er
 func (p *parser) rejectUnsupportedIndexAttrs(block *hclsyntax.Block) error {
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"columns": true,
+		"include": true,
 		"parser":  true,
 		"unique":  true,
 		"type":    true,

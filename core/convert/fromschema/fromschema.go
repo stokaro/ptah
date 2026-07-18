@@ -816,6 +816,7 @@ func FromIndex(index goschema.Index) *ast.IndexNode {
 	if len(index.Parts) > 0 {
 		indexNode.SetParts(toASTIndexParts(index.Parts))
 	}
+	indexNode.IncludeColumns = index.IncludeColumns
 
 	// Set unique constraint
 	if index.Unique {
