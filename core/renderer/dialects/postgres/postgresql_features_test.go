@@ -201,6 +201,20 @@ func TestPostgreSQLRenderer_RejectsUnsafeIndexStorageParamName(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `invalid PostgreSQL index storage parameter .*`)
 }
 
+func TestPostgreSQLRenderer_CreateDomain(t *testing.T) {
+	c := qt.New(t)
+	renderer := postgres.New()
+	node := ast.NewCreateType(
+		"script_column_domain.positive_int",
+		ast.NewDomainTypeDef("bigint").SetCheck("VALUE > 0"),
+	)
+
+	sql, err := renderer.Render(node)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Equals, "CREATE DOMAIN script_column_domain.positive_int AS bigint CHECK (VALUE > 0);\n")
+}
+
 func TestPostgreSQLRenderer_RejectsNullsDistinctOnNonUniqueIndex(t *testing.T) {
 	c := qt.New(t)
 	renderer := postgres.New()
