@@ -102,10 +102,11 @@ func newMigrateBaselineFlags() map[string]cobraflags.Flag {
 			Value: "",
 			Usage: "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m",
 		},
-		dbcli.ConnectTimeoutFlagName:   dbcli.NewConnectTimeoutFlag(),
-		dbcli.MigrationsSchemaFlagName: dbcli.NewMigrationsSchemaFlag(),
-		dbcli.MigrationsTableFlagName:  dbcli.NewMigrationsTableFlag(),
-		dbcli.SchemasFlagName:          dbcli.NewSchemasFlag(),
+		dbcli.ConnectTimeoutFlagName:      dbcli.NewConnectTimeoutFlag(),
+		dbcli.MigrationsSchemaFlagName:    dbcli.NewMigrationsSchemaFlag(),
+		dbcli.MigrationsTableFlagName:     dbcli.NewMigrationsTableFlag(),
+		dbcli.RevisionTableFormatFlagName: dbcli.NewRevisionTableFormatFlag(),
+		dbcli.SchemasFlagName:             dbcli.NewSchemasFlag(),
 	}
 }
 
@@ -123,6 +124,7 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, flags map[string]cob
 	lockTimeoutValue := flags[lockTimeoutFlag].GetString()
 	migrationsSchema := flags[dbcli.MigrationsSchemaFlagName].GetString()
 	migrationsTable := flags[dbcli.MigrationsTableFlagName].GetString()
+	revisionFormatValue := flags[dbcli.RevisionTableFormatFlagName].GetString()
 	schemas := dbcli.ParseSchemas(flags[dbcli.SchemasFlagName].GetString())
 
 	if dbURL == "" {
@@ -133,6 +135,10 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, flags map[string]cob
 	}
 
 	dirFormat, err := migrator.ParseMigrationDirFormat(dirFormatValue)
+	if err != nil {
+		return err
+	}
+	revisionFormat, err := migrator.ParseRevisionTableFormat(revisionFormatValue)
 	if err != nil {
 		return err
 	}
@@ -172,6 +178,7 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, flags map[string]cob
 	conn.Writer().SetDryRun(dryRun)
 	mig := migrator.NewMigrator(conn, provider).
 		WithMigrationsTable(migrationsSchema, migrationsTable).
+		WithRevisionTableFormat(revisionFormat).
 		WithMigrationLockTimeout(lockTimeout)
 	if dryRun {
 		printDryRun(dbURL, migrationsDir, version, mig, rows)

@@ -1,0 +1,145 @@
+version: 2
+
+project_name: ptah
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: ptah
+    main: ./cmd/ptah
+    binary: ptah
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+    ldflags:
+      - >-
+        -s -w
+        -X github.com/stokaro/ptah/cmd/internal/buildinfo.Version={{ .Version }}
+        -X github.com/stokaro/ptah/cmd/internal/buildinfo.Commit={{ .Commit }}
+        -X github.com/stokaro/ptah/cmd/internal/buildinfo.Date={{ .CommitDate }}
+
+archives:
+  - id: ptah
+    ids:
+      - ptah
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: checksums.txt
+
+source:
+  enabled: true
+
+sboms:
+  - id: archive
+    artifacts: archive
+  - id: source
+    artifacts: source
+
+signs:
+  - id: checksums
+    cmd: cosign
+    env:
+      - COSIGN_EXPERIMENTAL=1
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - "--yes"
+      - "--output-certificate=${certificate}"
+      - "--output-signature=${signature}"
+      - "${artifact}"
+    artifacts: checksum
+    output: true
+  - id: sboms
+    cmd: cosign
+    env:
+      - COSIGN_EXPERIMENTAL=1
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - "--yes"
+      - "--output-certificate=${certificate}"
+      - "--output-signature=${signature}"
+      - "${artifact}"
+    artifacts: sbom
+    output: true
+
+dockers:
+  - id: ptah-linux-amd64
+    ids:
+      - ptah
+    goos: linux
+    goarch: amd64
+    dockerfile: Dockerfile
+    use: buildx
+    image_templates:
+      - "ghcr.io/stokaro/ptah:{{ .Version }}-amd64"
+    build_flag_templates:
+      - "--platform=linux/amd64"
+  - id: ptah-linux-arm64
+    ids:
+      - ptah
+    goos: linux
+    goarch: arm64
+    dockerfile: Dockerfile
+    use: buildx
+    image_templates:
+      - "ghcr.io/stokaro/ptah:{{ .Version }}-arm64"
+    build_flag_templates:
+      - "--platform=linux/arm64"
+
+docker_manifests:
+  - name_template: "ghcr.io/stokaro/ptah:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/stokaro/ptah:{{ .Version }}-amd64"
+      - "ghcr.io/stokaro/ptah:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/stokaro/ptah:latest"
+    image_templates:
+      - "ghcr.io/stokaro/ptah:{{ .Version }}-amd64"
+      - "ghcr.io/stokaro/ptah:{{ .Version }}-arm64"
+
+# Issue #174 requires `brew install stokaro/ptah/ptah`, which is still a
+# Homebrew formula flow. GoReleaser's newer homebrew_casks replacement does not
+# satisfy that command contract, so the release workflow pins GoReleaser 2.15.4
+# while formula publishing remains required.
+brews:
+  - name: ptah
+    ids:
+      - ptah
+    repository:
+      owner: stokaro
+      name: homebrew-ptah
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/stokaro/ptah"
+    description: "Schema management and migration tooling for Go projects"
+    license: MIT
+    commit_msg_template: "Brew formula update for {{ .ProjectName }} {{ .Tag }}"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"

@@ -61,6 +61,52 @@ func (r *Renderer) renderDefaultLiteral(value string) string {
 	return r.escapeValue(value)
 }
 
+func escapeIdentifier(identifier string) string {
+	unquoted := unquoteIdentifier(identifier)
+	escaped := strings.ReplaceAll(unquoted, "`", "``")
+	return "`" + escaped + "`"
+}
+
+func escapeQualifiedIdentifier(identifier string) string {
+	parts := splitQualifiedIdentifier(identifier)
+	for i, part := range parts {
+		parts[i] = escapeIdentifier(part)
+	}
+	return strings.Join(parts, ".")
+}
+
+func escapeIdentifierList(identifiers []string) []string {
+	escaped := make([]string, len(identifiers))
+	for i, identifier := range identifiers {
+		escaped[i] = escapeQualifiedIdentifier(identifier)
+	}
+	return escaped
+}
+
+func unquoteIdentifier(identifier string) string {
+	if len(identifier) >= 2 && identifier[0] == '`' && identifier[len(identifier)-1] == '`' {
+		return strings.ReplaceAll(identifier[1:len(identifier)-1], "``", "`")
+	}
+	return identifier
+}
+
+func splitQualifiedIdentifier(identifier string) []string {
+	parts := []string{""}
+	inBackticks := false
+	for i := range len(identifier) {
+		character := identifier[i]
+		if character == '`' {
+			inBackticks = !inBackticks
+		}
+		if character == '.' && !inBackticks {
+			parts = append(parts, "")
+			continue
+		}
+		parts[len(parts)-1] += string(character)
+	}
+	return parts
+}
+
 // dropConstraintSQL renders a single ALTER TABLE constraint drop.
 //
 // MySQL/MariaDB constraint drops are type-specific. Foreign keys use the
@@ -83,7 +129,7 @@ func (r *Renderer) renderDefaultLiteral(value string) string {
 //     reaching a MariaDB renderer degrades to the generic clause, which every
 //     CHECK-capable MariaDB accepts.
 func (r *Renderer) dropConstraintSQL(table string, op *ast.DropConstraintOperation) string {
-	dropSQL := fmt.Sprintf("ALTER TABLE %s DROP", table)
+	dropSQL := fmt.Sprintf("ALTER TABLE %s DROP", escapeQualifiedIdentifier(table))
 	guarded := op.IfExists && r.caps.Has(capability.DropConstraintIfExists)
 	switch {
 	case op.ForeignKey:
@@ -112,7 +158,7 @@ func (r *Renderer) dropConstraintSQL(table string, op *ast.DropConstraintOperati
 	default:
 		dropSQL += " CONSTRAINT"
 	}
-	return dropSQL + " " + op.ConstraintName
+	return dropSQL + " " + escapeIdentifier(op.ConstraintName)
 }
 
 func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
@@ -129,11 +175,11 @@ func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 		parts = append(parts, "IF EXISTS")
 	}
 
-	parts = append(parts, node.Name)
+	parts = append(parts, escapeIdentifier(node.Name))
 
 	// MySQL/MariaDB requires table name in DROP INDEX
 	if node.Table != "" {
-		parts = append(parts, "ON", node.Table)
+		parts = append(parts, "ON", escapeQualifiedIdentifier(node.Table))
 	}
 
 	sql := strings.Join(parts, " ") + ";"
@@ -164,7 +210,7 @@ func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
 		guard = " IF NOT EXISTS"
 	}
 	var parts []string
-	parts = append(parts, "CREATE SCHEMA"+guard, node.Name)
+	parts = append(parts, "CREATE SCHEMA"+guard, escapeIdentifier(node.Name))
 	if node.Charset != "" {
 		parts = append(parts, "DEFAULT CHARACTER SET", node.Charset)
 	}
@@ -181,7 +227,7 @@ func (r *Renderer) VisitCreateDatabase(node *ast.CreateDatabaseNode) error {
 	if node.IfNotExists {
 		guard = " IF NOT EXISTS"
 	}
-	r.w.WriteLinef("CREATE DATABASE%s %s;", guard, node.Name)
+	r.w.WriteLinef("CREATE DATABASE%s %s;", guard, escapeIdentifier(node.Name))
 	return nil
 }
 
@@ -238,7 +284,7 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 	}
 
 	if len(node.Columns) == 0 && len(node.Constraints) == 0 && node.SelectBody != "" {
-		r.w.Writef("CREATE TABLE%s %s", guard, node.Name)
+		r.w.Writef("CREATE TABLE%s %s", guard, escapeQualifiedIdentifier(node.Name))
 		if len(node.Options) > 0 {
 			options := r.renderTableOptions(node.Options)
 			if options != "" {
@@ -252,7 +298,7 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 	}
 
 	// CREATE TABLE statement
-	r.w.WriteLinef("CREATE TABLE%s %s (", guard, node.Name)
+	r.w.WriteLinef("CREATE TABLE%s %s (", guard, escapeQualifiedIdentifier(node.Name))
 
 	var lines []string
 
@@ -342,12 +388,12 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	}
 
 	parts = append(parts, "INDEX")
-	parts = append(parts, node.Name)
+	parts = append(parts, escapeIdentifier(node.Name))
 	parts = append(parts, "ON")
-	parts = append(parts, node.Table)
+	parts = append(parts, escapeQualifiedIdentifier(node.Table))
 	columnSpec := fmt.Sprintf("(%s)", strings.Join(renderIndexParts(node.EffectiveParts()), ", "))
 	if node.Parser != "" {
-		columnSpec += fmt.Sprintf(" /*!50100 WITH PARSER `%s` */", strings.ReplaceAll(node.Parser, "`", "``"))
+		columnSpec += fmt.Sprintf(" /*!50100 WITH PARSER %s */", escapeIdentifier(node.Parser))
 	}
 	parts = append(parts, columnSpec)
 
@@ -358,7 +404,7 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 func renderIndexParts(parts []ast.IndexPart) []string {
 	specs := make([]string, 0, len(parts))
 	for _, part := range parts {
-		spec := part.Reference()
+		spec := escapeQualifiedIdentifier(part.Reference())
 		if part.Expr != "" {
 			spec = fmt.Sprintf("(%s)", part.Expr)
 		}
@@ -407,7 +453,7 @@ func (r *Renderer) VisitDropTable(node *ast.DropTableNode) error {
 		parts = append(parts, "IF EXISTS")
 	}
 
-	parts = append(parts, strings.Join(node.TableNames(), ", "))
+	parts = append(parts, strings.Join(escapeIdentifierList(node.TableNames()), ", "))
 
 	// MariaDB doesn't support CASCADE for DROP TABLE like PostgreSQL
 	// Ignore the Cascade flag for MariaDB
@@ -443,7 +489,7 @@ func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
 	if node.Replace {
 		create = "CREATE OR REPLACE VIEW"
 	}
-	r.w.WriteLinef("%s %s AS", create, node.Name)
+	r.w.WriteLinef("%s %s AS", create, escapeQualifiedIdentifier(node.Name))
 	r.w.WriteLine(strings.TrimSpace(node.Body))
 	if node.WithCheck {
 		r.w.WriteLine("WITH CHECK OPTION")
@@ -461,7 +507,7 @@ func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
 	if node.IfExists {
 		parts = append(parts, "IF EXISTS")
 	}
-	parts = append(parts, node.Name)
+	parts = append(parts, escapeQualifiedIdentifier(node.Name))
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
 }
@@ -499,14 +545,14 @@ func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
 	if node.Replace && !r.caps.Has(capability.CreateOrReplaceTrigger) {
-		r.w.WriteLinef("DROP TRIGGER IF EXISTS %s;", node.Name)
+		r.w.WriteLinef("DROP TRIGGER IF EXISTS %s;", escapeIdentifier(node.Name))
 	}
 	create := "CREATE TRIGGER"
 	if node.Replace && r.caps.Has(capability.CreateOrReplaceTrigger) {
 		create = "CREATE OR REPLACE TRIGGER"
 	}
 	r.w.WriteLinef("%s %s %s %s ON %s FOR EACH ROW %s;",
-		create, node.Name, node.Timing, node.Event, node.Table, strings.TrimSpace(node.Body))
+		create, escapeIdentifier(node.Name), node.Timing, node.Event, escapeQualifiedIdentifier(node.Table), strings.TrimSpace(node.Body))
 	return nil
 }
 
@@ -519,7 +565,7 @@ func (r *Renderer) VisitDropTrigger(node *ast.DropTriggerNode) error {
 	if node.IfExists {
 		parts = append(parts, "IF EXISTS")
 	}
-	parts = append(parts, node.Name)
+	parts = append(parts, escapeIdentifier(node.Name))
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
 }
@@ -530,7 +576,7 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 
 	// Column name and type
 	columnType := r.renderColumnType(column, column.Type)
-	parts = append(parts, fmt.Sprintf("  %s %s", column.Name, columnType))
+	parts = append(parts, fmt.Sprintf("  %s %s", escapeIdentifier(column.Name), columnType))
 	parts = r.appendColumnCharsetCollate(parts, column)
 
 	// Column constraints
@@ -573,13 +619,13 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	// expected name).
 	if column.Check != "" {
 		if column.CheckName != "" {
-			parts = append(parts, fmt.Sprintf("CONSTRAINT %s CHECK (%s)", column.CheckName, column.Check))
+			parts = append(parts, fmt.Sprintf("CONSTRAINT %s CHECK (%s)", escapeIdentifier(column.CheckName), column.Check))
 		} else {
 			parts = append(parts, fmt.Sprintf("CHECK (%s)", column.Check))
 		}
 	}
 	if r.needsMariaDBJSONCheck(column) {
-		parts = append(parts, fmt.Sprintf("CHECK (json_valid(%s))", column.Name))
+		parts = append(parts, fmt.Sprintf("CHECK (json_valid(%s))", escapeIdentifier(column.Name)))
 	}
 
 	return strings.Join(parts, " "), nil
@@ -667,14 +713,14 @@ func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, err
 		return fmt.Sprintf("  PRIMARY KEY (%s)", renderMySQLConstraintColumns(constraint)), nil
 	case ast.UniqueConstraint:
 		if constraint.Name != "" {
-			return fmt.Sprintf("  CONSTRAINT %s UNIQUE (%s)", constraint.Name, renderMySQLConstraintColumns(constraint)), nil
+			return fmt.Sprintf("  CONSTRAINT %s UNIQUE (%s)", escapeIdentifier(constraint.Name), renderMySQLConstraintColumns(constraint)), nil
 		}
 		return fmt.Sprintf("  UNIQUE (%s)", renderMySQLConstraintColumns(constraint)), nil
 	case ast.ForeignKeyConstraint:
 		return r.renderForeignKeyConstraint(constraint)
 	case ast.CheckConstraint:
 		if constraint.Name != "" {
-			return fmt.Sprintf("  CONSTRAINT %s CHECK (%s)", constraint.Name, constraint.Expression), nil
+			return fmt.Sprintf("  CONSTRAINT %s CHECK (%s)", escapeIdentifier(constraint.Name), constraint.Expression), nil
 		}
 		return fmt.Sprintf("  CHECK (%s)", constraint.Expression), nil
 	default:
@@ -684,11 +730,11 @@ func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, err
 
 func renderMySQLConstraintColumns(constraint *ast.ConstraintNode) string {
 	if len(constraint.ColumnParts) == 0 {
-		return strings.Join(constraint.Columns, ", ")
+		return strings.Join(escapeIdentifierList(constraint.Columns), ", ")
 	}
 	parts := make([]string, 0, len(constraint.ColumnParts))
 	for _, column := range constraint.ColumnParts {
-		part := column.Name
+		part := escapeIdentifier(column.Name)
 		if column.Prefix != "" {
 			part += " (" + column.Prefix + ")"
 		}
@@ -708,10 +754,10 @@ func (r *Renderer) renderForeignKeyConstraint(constraint *ast.ConstraintNode) (s
 
 	ref := constraint.Reference
 	result := fmt.Sprintf("  CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s(%s)",
-		constraint.Name,
-		strings.Join(constraint.Columns, ", "),
-		ref.Table,
-		strings.Join(ref.ReferencedColumns(), ", "))
+		escapeIdentifier(constraint.Name),
+		strings.Join(escapeIdentifierList(constraint.Columns), ", "),
+		escapeQualifiedIdentifier(ref.Table),
+		strings.Join(escapeIdentifierList(ref.ReferencedColumns()), ", "))
 
 	if ref.OnDelete != "" {
 		result += fmt.Sprintf(" ON DELETE %s", ref.OnDelete)
@@ -741,7 +787,7 @@ func (r *Renderer) renderColumnWithEnums(column *ast.ColumnNode, enumValues []st
 
 	// Column name and type
 	columnType = r.renderColumnType(column, columnType)
-	parts = append(parts, fmt.Sprintf("  %s %s", column.Name, columnType))
+	parts = append(parts, fmt.Sprintf("  %s %s", escapeIdentifier(column.Name), columnType))
 	parts = r.appendColumnCharsetCollate(parts, column)
 
 	// Column constraints - MariaDB order: PRIMARY KEY, then NOT NULL, then UNIQUE
@@ -782,12 +828,12 @@ func (r *Renderer) renderColumnWithEnums(column *ast.ColumnNode, enumValues []st
 		parts = append(parts, fmt.Sprintf("CHECK (%s)", column.Check))
 	}
 	if r.needsMariaDBJSONCheck(column) {
-		parts = append(parts, fmt.Sprintf("CHECK (json_valid(%s))", column.Name))
+		parts = append(parts, fmt.Sprintf("CHECK (json_valid(%s))", escapeIdentifier(column.Name)))
 	}
 
 	// Comments
 	if column.Comment != "" {
-		parts = append(parts, fmt.Sprintf("COMMENT '%s'", column.Comment))
+		parts = append(parts, fmt.Sprintf("COMMENT %s", r.escapeValue(column.Comment)))
 	}
 
 	return strings.Join(parts, " "), nil
@@ -812,7 +858,7 @@ func (r *Renderer) visitAlterTableWithEnums(node *ast.AlterTableNode, enums map[
 			}
 			// Remove the leading spaces from column rendering for ALTER
 			line = strings.TrimPrefix(line, "  ")
-			r.w.WriteLinef("ALTER TABLE %s ADD COLUMN %s;", node.Name, line)
+			r.w.WriteLinef("ALTER TABLE %s ADD COLUMN %s;", escapeQualifiedIdentifier(node.Name), line)
 
 		case *ast.AddConstraintOperation:
 			constraintLine, err := r.renderConstraint(op.Constraint)
@@ -821,13 +867,13 @@ func (r *Renderer) visitAlterTableWithEnums(node *ast.AlterTableNode, enums map[
 			}
 			// Remove the leading spaces from constraint rendering for ALTER
 			constraintLine = strings.TrimPrefix(constraintLine, "  ")
-			r.w.WriteLinef("ALTER TABLE %s ADD %s;", node.Name, constraintLine)
+			r.w.WriteLinef("ALTER TABLE %s ADD %s;", escapeQualifiedIdentifier(node.Name), constraintLine)
 
 		case *ast.DropConstraintOperation:
 			r.w.WriteLinef("%s;", r.dropConstraintSQL(node.Name, op))
 
 		case *ast.DropColumnOperation:
-			r.w.WriteLinef("ALTER TABLE %s DROP COLUMN %s;", node.Name, op.ColumnName)
+			r.w.WriteLinef("ALTER TABLE %s DROP COLUMN %s;", escapeQualifiedIdentifier(node.Name), escapeIdentifier(op.ColumnName))
 
 		case *ast.ModifyColumnOperation:
 			// Get enum values for this column type
@@ -843,16 +889,17 @@ func (r *Renderer) visitAlterTableWithEnums(node *ast.AlterTableNode, enums map[
 			}
 			// Remove the leading spaces from column rendering for ALTER
 			line = strings.TrimPrefix(line, "  ")
-			r.w.WriteLinef("ALTER TABLE %s MODIFY COLUMN %s;", node.Name, line)
+			r.w.WriteLinef("ALTER TABLE %s MODIFY COLUMN %s;", escapeQualifiedIdentifier(node.Name), line)
 
 		case *ast.RenameColumnOperation:
 			// MySQL 8.0+ and MariaDB 10.5.2+ both support the canonical
 			// `ALTER TABLE x RENAME COLUMN old TO new` form. The runtime
 			// version is the caller's concern; older servers will fail at
 			// migration apply time rather than at SQL generation time.
-			r.w.WriteLinef("ALTER TABLE %s RENAME COLUMN %s TO %s;", node.Name, op.OldName, op.NewName)
+			r.w.WriteLinef("ALTER TABLE %s RENAME COLUMN %s TO %s;",
+				escapeQualifiedIdentifier(node.Name), escapeIdentifier(op.OldName), escapeIdentifier(op.NewName))
 		case *ast.RenameTableOperation:
-			r.w.WriteLinef("ALTER TABLE %s RENAME TO %s;", node.Name, op.NewName)
+			r.w.WriteLinef("ALTER TABLE %s RENAME TO %s;", escapeQualifiedIdentifier(node.Name), escapeQualifiedIdentifier(op.NewName))
 
 		case *ast.AddSkippingIndexOperation:
 			// Data-skipping indexes are a ClickHouse-specific construct; no

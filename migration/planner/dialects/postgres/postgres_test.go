@@ -577,6 +577,7 @@ func TestPlanner_ForeignKeyDependencyOrdering_SQLOutput(t *testing.T) {
 	// Render to SQL to verify the actual output
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 
 	// Verify that ADD COLUMN operations come before ADD CONSTRAINT operations
 	lines := strings.Split(sql, "\n")
@@ -1224,6 +1225,7 @@ func TestPlanner_ExtensionSQL_Generation(t *testing.T) {
 			// Render nodes to SQL
 			sql, err := renderer.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
+			sql = legacyRenderedSQL(sql)
 
 			// Check expected SQL patterns
 			for _, expected := range tt.expectedSQL {
@@ -1277,6 +1279,7 @@ func TestPlanner_AddNewTables_WithEmbeddedFields(t *testing.T) {
 	// Convert AST to SQL to verify content
 	sql, err := renderer.RenderSQL("postgresql", result[0])
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 
 	// Verify table creation
 	c.Assert(strings.Contains(sql, "CREATE TABLE test_table"), qt.Equals, true)

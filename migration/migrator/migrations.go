@@ -18,7 +18,8 @@ type MigrationFunc func(context.Context, *dbschema.DatabaseConnection) error
 // This is needed because MySQL doesn't handle multiple statements in a single ExecuteSQL call.
 // Unlike simple string splitting, this properly handles semicolons within string literals and comments.
 func SplitSQLStatements(sql string) []string {
-	return sqlutil.SplitSQLStatements(sqlutil.StripComments(sql))
+	normalized := sqlutil.NormalizeClientDelimiters(sql)
+	return sqlutil.SplitSQLStatements(sqlutil.StripComments(normalized))
 }
 
 // StatementInterceptor lets an external executor take over individual
@@ -334,6 +335,7 @@ func NoopMigrationFunc(_ctx context.Context, _conn *dbschema.DatabaseConnection)
 type Migration struct {
 	Version         int64
 	Description     string
+	Checksum        string
 	Up              MigrationFunc
 	Down            MigrationFunc
 	UpSQL           string

@@ -69,13 +69,20 @@ var migrateRepairFlags = map[string]cobraflags.Flag{
 		Value: "",
 		Usage: "Execute remaining up statements starting from this 1-based statement number before marking applied",
 	},
-	dbcli.ConnectTimeoutFlagName:   dbcli.NewConnectTimeoutFlag(),
-	dbcli.MigrationsSchemaFlagName: dbcli.NewMigrationsSchemaFlag(),
-	dbcli.MigrationsTableFlagName:  dbcli.NewMigrationsTableFlag(),
+	dbcli.ConnectTimeoutFlagName:      dbcli.NewConnectTimeoutFlag(),
+	dbcli.MigrationsSchemaFlagName:    dbcli.NewMigrationsSchemaFlag(),
+	dbcli.MigrationsTableFlagName:     dbcli.NewMigrationsTableFlag(),
+	dbcli.RevisionTableFormatFlagName: dbcli.NewRevisionTableFormatFlag(),
 }
 
+var migrateRepairFlagsRegistered bool
+
 func NewMigrateRepairCommand() *cobra.Command {
-	cobraflags.RegisterMap(migrateRepairCmd, migrateRepairFlags)
+	if !migrateRepairFlagsRegistered {
+		cobraflags.RegisterMap(migrateRepairCmd, migrateRepairFlags)
+		migrateRepairFlagsRegistered = true
+	}
+
 	return migrateRepairCmd
 }
 
@@ -89,6 +96,7 @@ func migrateRepairCommand(_ *cobra.Command, _ []string) error {
 	resumeFromValue := migrateRepairFlags[resumeFromFlag].GetString()
 	migrationsSchema := migrateRepairFlags[dbcli.MigrationsSchemaFlagName].GetString()
 	migrationsTable := migrateRepairFlags[dbcli.MigrationsTableFlagName].GetString()
+	revisionFormatValue := migrateRepairFlags[dbcli.RevisionTableFormatFlagName].GetString()
 
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
@@ -109,6 +117,10 @@ func migrateRepairCommand(_ *cobra.Command, _ []string) error {
 		return err
 	}
 	dirFormat, err := migrator.ParseMigrationDirFormat(dirFormatValue)
+	if err != nil {
+		return err
+	}
+	revisionFormat, err := migrator.ParseRevisionTableFormat(revisionFormatValue)
 	if err != nil {
 		return err
 	}
@@ -134,7 +146,8 @@ func migrateRepairCommand(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
-	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable)
+	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable).
+		WithRevisionTableFormat(revisionFormat)
 
 	err = mig.RepairMigration(context.Background(), migrator.RepairMigrationOptions{
 		Version:    version,

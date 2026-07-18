@@ -424,6 +424,7 @@ func TestPlanner_AddNewTables_WithEmbeddedFields(t *testing.T) {
 	// Convert AST to SQL to verify content
 	sql, err := renderer.RenderSQL("mysql", result[0])
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 
 	// Verify table creation
 	c.Assert(strings.Contains(sql, "CREATE TABLE test_table"), qt.Equals, true)

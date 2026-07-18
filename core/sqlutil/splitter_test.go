@@ -220,6 +220,152 @@ END`,
 	}
 }
 
+func TestSplitSQLStatements_ClientDelimiters(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{
+			name: "mysql delimiter command",
+			input: `DELIMITER $$
+CREATE FUNCTION gen_uuid() RETURNS VARCHAR(22)
+BEGIN
+    RETURN concat(NOW(6), RAND());
+END;$$
+DELIMITER ;
+CALL gen_uuid();`,
+			expected: []string{
+				`CREATE FUNCTION gen_uuid() RETURNS VARCHAR(22)
+BEGIN
+    RETURN concat(NOW(6), RAND());
+END`,
+				"CALL gen_uuid()",
+			},
+		},
+		{
+			name: "atlas comment delimiter",
+			input: `-- atlas:delimiter -- end
+
+CREATE PROCEDURE dorepeat(p1 INT)
+BEGIN
+    SET @x = 0;
+END;
+-- end
+CALL dorepeat(1000);`,
+			expected: []string{
+				`CREATE PROCEDURE dorepeat(p1 INT)
+BEGIN
+    SET @x = 0;
+END`,
+				"CALL dorepeat(1000)",
+			},
+		},
+		{
+			name: "atlas escaped blank line delimiter",
+			input: `-- atlas:delimiter \n\n
+
+CREATE EXTENSION IF NOT EXISTS unaccent;
+
+CREATE OR REPLACE FUNCTION public.slugify(
+    v TEXT
+) RETURNS TEXT STRICT IMMUTABLE AS $$
+BEGIN
+    RETURN lower(v);
+END;
+LANGUAGE plpgsql;
+`,
+			expected: []string{
+				"CREATE EXTENSION IF NOT EXISTS unaccent",
+				`CREATE OR REPLACE FUNCTION public.slugify(
+    v TEXT
+) RETURNS TEXT STRICT IMMUTABLE AS $$
+BEGIN
+    RETURN lower(v);
+END;
+LANGUAGE plpgsql;`,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := sqlutil.SplitSQLStatements(tt.input)
+			c.Assert(result, qt.DeepEquals, tt.expected)
+		})
+	}
+}
+
+func TestSplitSQLStatements_CompoundRoutineBodies(t *testing.T) {
+	c := qt.New(t)
+
+	input := `CREATE PROCEDURE CompProc(IN p INT)
+BEGIN
+    DECLARE v1 INT DEFAULT 0;
+    BEGIN
+        IF v1 > 100 THEN
+            CALL OtherProc(p);
+        END IF;
+    END;
+END;
+
+CREATE FUNCTION CompFunc(eID INT) RETURNS INT
+BEGIN
+    DECLARE b INT;
+    RETURN b;
+END;
+
+CREATE TABLE after_routines (id INT);`
+
+	result := sqlutil.SplitSQLStatements(input)
+
+	c.Assert(result, qt.DeepEquals, []string{
+		`CREATE PROCEDURE CompProc(IN p INT)
+BEGIN
+    DECLARE v1 INT DEFAULT 0;
+    BEGIN
+        IF v1 > 100 THEN
+            CALL OtherProc(p);
+        END IF;
+    END;
+END`,
+		`CREATE FUNCTION CompFunc(eID INT) RETURNS INT
+BEGIN
+    DECLARE b INT;
+    RETURN b;
+END`,
+		"CREATE TABLE after_routines (id INT)",
+	})
+}
+
+func TestSplitSQLStatements_CompoundBodiesWithCaseExpressions(t *testing.T) {
+	c := qt.New(t)
+
+	input := `CREATE TRIGGER before_tbl_insert BEFORE INSERT ON tbl BEGIN SELECT CASE
+    WHEN (new.a = 4) THEN RAISE(IGNORE) END;
+END;
+
+CREATE FUNCTION functest_S_15(x int) RETURNS boolean
+    LANGUAGE SQL
+BEGIN ATOMIC
+select case when x % 2 = 0 then true else false end;
+END;`
+
+	result := sqlutil.SplitSQLStatements(input)
+
+	c.Assert(result, qt.DeepEquals, []string{
+		`CREATE TRIGGER before_tbl_insert BEFORE INSERT ON tbl BEGIN SELECT CASE
+    WHEN (new.a = 4) THEN RAISE(IGNORE) END;
+END`,
+		`CREATE FUNCTION functest_S_15(x int) RETURNS boolean
+    LANGUAGE SQL
+BEGIN ATOMIC
+select case when x % 2 = 0 then true else false end;
+END`,
+	})
+}
+
 func TestSplitSQLStatements_Comments(t *testing.T) {
 	tests := []struct {
 		name     string

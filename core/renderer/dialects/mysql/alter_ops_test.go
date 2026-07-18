@@ -33,7 +33,7 @@ func TestMySQL_AlterTable_RenameColumn(t *testing.T) {
 		},
 	}
 	out := renderMySQL(t, alter)
-	c.Assert(out, qt.Contains, "ALTER TABLE users RENAME COLUMN email_old TO email;")
+	c.Assert(out, qt.Contains, "ALTER TABLE `users` RENAME COLUMN `email_old` TO `email`;")
 }
 
 func TestMySQL_AlterTable_RenameTable(t *testing.T) {
@@ -45,7 +45,7 @@ func TestMySQL_AlterTable_RenameTable(t *testing.T) {
 		},
 	}
 	out := renderMySQL(t, alter)
-	c.Assert(out, qt.Contains, "ALTER TABLE old_users RENAME TO users;")
+	c.Assert(out, qt.Contains, "ALTER TABLE `old_users` RENAME TO `users`;")
 }
 
 func TestMySQL_CreateNamespaceStatements(t *testing.T) {
@@ -75,8 +75,8 @@ func TestMySQL_CreateTableSelectTail(t *testing.T) {
 
 	out := renderMySQL(t, table)
 
-	c.Assert(out, qt.Contains, "CREATE TABLE IF NOT EXISTS t2 ENGINE=heap SELECT * FROM t1;")
-	c.Assert(out, qt.Not(qt.Contains), "CREATE TABLE IF NOT EXISTS t2 (")
+	c.Assert(out, qt.Contains, "CREATE TABLE IF NOT EXISTS `t2` ENGINE=heap SELECT * FROM t1;")
+	c.Assert(out, qt.Not(qt.Contains), "CREATE TABLE IF NOT EXISTS `t2` (")
 }
 
 func TestMySQL_CreateTableOptionsRenderInStableOrder(t *testing.T) {
@@ -105,7 +105,7 @@ func TestMySQL_CreateTableGeneratedColumn(t *testing.T) {
 
 	out := renderMySQL(t, table)
 
-	c.Assert(out, qt.Contains, "slug varchar(255) NOT NULL AS (lower(name)) STORED")
+	c.Assert(out, qt.Contains, "`slug` varchar(255) NOT NULL AS (lower(name)) STORED")
 }
 
 func TestMySQL_ColumnDefaultLiteralQuoting(t *testing.T) {

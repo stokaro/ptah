@@ -114,6 +114,9 @@ type File struct {
 	// independently of the migrator's parser as defense in depth (see the
 	// strictNameRe comment).
 	WellFormedName bool
+	// NoTransaction reports whether file-scoped directives opt this migration
+	// out of the migrator's transaction wrapper.
+	NoTransaction bool
 	// Statements holds the parsed statements of up migrations. Empty for
 	// down migrations (statement rules do not run there).
 	Statements []Statement
@@ -336,6 +339,7 @@ func prepareFile(
 		// .up.sql files whose version prefix is malformed.
 		IsUp:           direction == "up" || strings.HasSuffix(base, ".up.sql"),
 		WellFormedName: strictNameRe.MatchString(base) || atlasFormat,
+		NoTransaction:  fileNoTransactionDirective(string(raw)),
 	}
 	switch {
 	case atlasFormat:
@@ -382,6 +386,18 @@ func parseKnownMigrationName(name string) (*migrator.MigrationFile, error) {
 		return parsed, nil
 	}
 	return migrator.ParseAtlasMigrationFileNameForAutoDetection(name)
+}
+
+func fileNoTransactionDirective(sql string) bool {
+	if value := migrator.ParseFileDirectives(sql)[migrator.DirectiveNoTransaction]; value == "true" {
+		return true
+	}
+	for line := range strings.Lines(sql) {
+		if strings.EqualFold(strings.TrimSpace(line), "-- atlas:txmode none") {
+			return true
+		}
+	}
+	return false
 }
 
 // runRules applies every enabled rule to one prepared file.

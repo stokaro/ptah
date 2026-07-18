@@ -2,6 +2,7 @@ package generator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -20,6 +21,7 @@ import (
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/safety"
@@ -41,6 +43,9 @@ type GenerateMigrationOptions struct {
 	MigrationName string
 	// OutputDir is the directory where migration files will be saved (always real filesystem)
 	OutputDir string
+	// AllowedOutputRoot constrains OutputDir when set. Embedders that accept
+	// user-supplied output paths should set this to the project/workspace root.
+	AllowedOutputRoot string
 	// CompareOptions are the options to use when comparing schemas
 	CompareOptions *config.CompareOptions
 	// Schemas restricts database introspection to the listed schemas when the
@@ -78,9 +83,9 @@ type MigrationFiles struct {
 // yet propagate the context; future work may thread it through there too.
 // When opts.DBConn is supplied the context is currently unused.
 func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*MigrationFiles, error) {
-	// Set default migration name if not provided
-	if opts.MigrationName == "" {
-		opts.MigrationName = "migration"
+	opts, err := normalizeGenerateMigrationOptions(opts)
+	if err != nil {
+		return nil, err
 	}
 
 	var entitiesDir string
@@ -209,6 +214,18 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 	}
 
 	return files, nil
+}
+
+func normalizeGenerateMigrationOptions(opts GenerateMigrationOptions) (GenerateMigrationOptions, error) {
+	if opts.MigrationName == "" {
+		opts.MigrationName = "migration"
+	}
+	outputDir, err := pathguard.ResolveWithinRoot(opts.OutputDir, opts.AllowedOutputRoot)
+	if err != nil {
+		return opts, fmt.Errorf("error validating output directory: %w", err)
+	}
+	opts.OutputDir = outputDir
+	return opts, nil
 }
 
 // withDialect returns a copy of opts with the Dialect set, allocating a default
@@ -401,8 +418,8 @@ func reverseSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Database, dbSchema *dbschematypes.DBSchema) *types.SchemaDiff {
 	return &types.SchemaDiff{
 		// Reverse table operations
-		TablesAdded:    diff.TablesRemoved, // Tables to remove become tables to add
-		TablesRemoved:  diff.TablesAdded,   // Tables to add become tables to remove
+		TablesAdded:    diff.TablesRemoved,                               // Tables to remove become tables to add
+		TablesRemoved:  rollbackDropTableOrder(diff.TablesAdded, schema), // Tables to add become tables to remove
 		TablesModified: reverseTableDiffs(diff.TablesModified),
 
 		// Reverse enum operations
@@ -462,6 +479,185 @@ func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Databa
 		ConstraintsRemovedWithTables: reverseConstraintRemovals(diff, schema),
 		ConstraintsAddedWithTables:   reverseConstraintAdditions(diff, dbSchema),
 	}
+}
+
+func rollbackDropTableOrder(tableNames []string, schema *goschema.Database) []string {
+	ordered := append([]string(nil), tableNames...)
+	if schema == nil || len(ordered) < 2 {
+		return ordered
+	}
+
+	candidates := make(map[string]bool, len(ordered))
+	for _, tableName := range ordered {
+		candidates[tableName] = true
+	}
+
+	dependencies := generatedTableDependencies(schema)
+	dependents := make(map[string][]string)
+	for _, child := range ordered {
+		for _, parent := range dependencies[child] {
+			if candidates[parent] && parent != child && !slices.Contains(dependents[parent], child) {
+				dependents[parent] = append(dependents[parent], child)
+			}
+		}
+	}
+
+	result := make([]string, 0, len(ordered))
+	state := make(map[string]int, len(ordered))
+	var visit func(string)
+	visit = func(tableName string) {
+		switch state[tableName] {
+		case 1:
+			return
+		case 2:
+			return
+		}
+		state[tableName] = 1
+		for _, child := range dependents[tableName] {
+			visit(child)
+		}
+		state[tableName] = 2
+		result = append(result, tableName)
+	}
+
+	for _, tableName := range ordered {
+		visit(tableName)
+	}
+	return result
+}
+
+func generatedTableDependencies(schema *goschema.Database) map[string][]string {
+	dependencies := make(map[string][]string, len(schema.Tables))
+	for _, table := range schema.Tables {
+		dependencies[table.QualifiedName()] = append([]string(nil), schema.Dependencies[table.QualifiedName()]...)
+	}
+
+	for _, field := range schema.Fields {
+		if field.Foreign == "" {
+			continue
+		}
+		table := generatedTableByStructName(schema.Tables, field.StructName)
+		if table == nil {
+			continue
+		}
+		addGeneratedTableDependency(dependencies, schema.Tables, *table, foreignReferenceTable(field.Foreign))
+	}
+
+	for _, embedded := range schema.EmbeddedFields {
+		if embedded.Mode != "relation" || embedded.Ref == "" {
+			continue
+		}
+		table := generatedTableByStructName(schema.Tables, embedded.StructName)
+		if table == nil {
+			continue
+		}
+		addGeneratedTableDependency(dependencies, schema.Tables, *table, foreignReferenceTable(embedded.Ref))
+	}
+
+	for _, constraint := range schema.Constraints {
+		if constraint.ForeignTable == "" || !strings.EqualFold(constraint.Type, "FOREIGN KEY") {
+			continue
+		}
+		table := generatedTableReference(schema.Tables, constraint.StructName, constraint.Table)
+		if table == nil {
+			continue
+		}
+		addGeneratedTableDependency(dependencies, schema.Tables, *table, constraint.ForeignTable)
+	}
+
+	return dependencies
+}
+
+func addGeneratedTableDependency(
+	dependencies map[string][]string,
+	tables []goschema.Table,
+	table goschema.Table,
+	refTable string,
+) {
+	tableName := table.QualifiedName()
+	refTable = resolveGeneratedReferenceTableName(tables, table, refTable)
+	if tableName == refTable || slices.Contains(dependencies[tableName], refTable) {
+		return
+	}
+	dependencies[tableName] = append(dependencies[tableName], refTable)
+}
+
+func generatedTableByStructName(tables []goschema.Table, structName string) *goschema.Table {
+	for i := range tables {
+		if tables[i].StructName == structName {
+			return &tables[i]
+		}
+	}
+	return nil
+}
+
+func generatedTableReference(tables []goschema.Table, structName, tableName string) *goschema.Table {
+	tableName = strings.TrimSpace(tableName)
+	for i := range tables {
+		table := &tables[i]
+		if tableName == "" && table.StructName == structName {
+			return table
+		}
+		if tableName != "" && table.StructName == structName && (table.Name == tableName || table.QualifiedName() == tableName) {
+			return table
+		}
+	}
+	if tableName == "" {
+		return nil
+	}
+	if strings.Contains(tableName, ".") {
+		for i := range tables {
+			if tables[i].QualifiedName() == tableName {
+				return &tables[i]
+			}
+		}
+		return nil
+	}
+
+	var match *goschema.Table
+	for i := range tables {
+		if tables[i].Name != tableName {
+			continue
+		}
+		if match != nil {
+			return nil
+		}
+		match = &tables[i]
+	}
+	return match
+}
+
+func resolveGeneratedReferenceTableName(tables []goschema.Table, current goschema.Table, refTable string) string {
+	refTable = strings.TrimSpace(refTable)
+	if strings.Contains(refTable, ".") {
+		return refTable
+	}
+	for _, table := range tables {
+		if table.Schema == current.Schema && table.Name == refTable {
+			return table.QualifiedName()
+		}
+	}
+	var match string
+	for _, table := range tables {
+		if table.Name != refTable {
+			continue
+		}
+		if match != "" {
+			return refTable
+		}
+		match = table.QualifiedName()
+	}
+	if match != "" {
+		return match
+	}
+	return refTable
+}
+
+func foreignReferenceTable(ref string) string {
+	if tableName, _, ok := strings.Cut(ref, "("); ok {
+		return strings.TrimSpace(tableName)
+	}
+	return strings.TrimSpace(ref)
 }
 
 // reverseConstraintAdditions builds the table-qualified additions for the down
@@ -537,16 +733,30 @@ func foreignKeyAdditionFromDBConstraint(name, table string, dbFK dbschematypes.D
 		OnUpdate:  derefString(dbFK.UpdateRule),
 	}
 	if columns := dbFK.ColumnNamesOrDefault(); len(columns) > 0 {
-		info.Columns = append([]string(nil), columns...)
+		info.Columns = uniqueStringsPreserveOrder(columns)
 	}
 	if dbFK.ForeignTable != nil {
 		info.ForeignTable = *dbFK.ForeignTable
 	}
 	if foreignColumns := dbFK.ForeignColumnsOrDefault(); len(foreignColumns) > 0 {
+		foreignColumns = uniqueStringsPreserveOrder(foreignColumns)
 		info.ForeignColumn = foreignColumns[0]
-		info.ForeignColumns = append([]string(nil), foreignColumns...)
+		info.ForeignColumns = foreignColumns
 	}
 	return info
+}
+
+func uniqueStringsPreserveOrder(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }
 
 // derefString returns the pointed-to string or "" when nil.
@@ -827,7 +1037,7 @@ func nextAvailableMigrationVersion(outputDir string, version int64, migrationNam
 	for {
 		upFilePath := filepath.Join(outputDir, migrator.GenerateMigrationFileName(version, migrationName, "up"))
 		downFilePath := filepath.Join(outputDir, migrator.GenerateMigrationFileName(version, migrationName, "down"))
-		if !nonEmptyFileExists(upFilePath) && !nonEmptyFileExists(downFilePath) {
+		if !fileExists(upFilePath) && !fileExists(downFilePath) {
 			return version
 		}
 		version++
@@ -855,9 +1065,9 @@ func latestExistingMigrationVersion(outputDir string) int64 {
 	return latest
 }
 
-func nonEmptyFileExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.Size() > 0
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func withNoTransactionDirective(sql string) string {
@@ -872,31 +1082,81 @@ func withNoTransactionDirective(sql string) string {
 
 // createMigrationFiles creates the up and down migration files
 func createMigrationFiles(outputDir string, version int64, migrationName, upSQL, downSQL string) (*MigrationFiles, error) {
-	// Ensure output directory exists
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
+	if err := ensureMigrationOutputDir(outputDir); err != nil {
 		return nil, fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	// Generate file names using the existing utility
-	upFileName := migrator.GenerateMigrationFileName(version, migrationName, "up")
-	downFileName := migrator.GenerateMigrationFileName(version, migrationName, "down")
+	for {
+		upFileName := migrator.GenerateMigrationFileName(version, migrationName, "up")
+		downFileName := migrator.GenerateMigrationFileName(version, migrationName, "down")
 
-	upFilePath := filepath.Join(outputDir, upFileName)
-	downFilePath := filepath.Join(outputDir, downFileName)
+		upFilePath := filepath.Join(outputDir, upFileName)
+		downFilePath := filepath.Join(outputDir, downFileName)
 
-	// Write up migration file
-	if err := os.WriteFile(upFilePath, []byte(upSQL), 0644); err != nil { //nolint:gosec // 0644 is fine
-		return nil, fmt.Errorf("failed to write up migration file: %w", err)
+		if err := writeNewMigrationFile(upFilePath, upSQL); err != nil {
+			if errors.Is(err, os.ErrExist) {
+				version++
+				continue
+			}
+			return nil, fmt.Errorf("failed to write up migration file: %w", err)
+		}
+
+		if err := writeNewMigrationFile(downFilePath, downSQL); err != nil {
+			_ = os.Remove(upFilePath)
+			if errors.Is(err, os.ErrExist) {
+				version++
+				continue
+			}
+			return nil, fmt.Errorf("failed to write down migration file: %w", err)
+		}
+
+		return &MigrationFiles{
+			UpFile:   upFilePath,
+			DownFile: downFilePath,
+			Version:  version,
+		}, nil
+	}
+}
+
+func ensureMigrationOutputDir(outputDir string) error {
+	info, err := os.Stat(outputDir)
+	if err == nil {
+		if !info.IsDir() {
+			return fmt.Errorf("%q exists and is not a directory", outputDir)
+		}
+		return nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 
-	// Write down migration file
-	if err := os.WriteFile(downFilePath, []byte(downSQL), 0644); err != nil { //nolint:gosec // 0644 is fine
-		return nil, fmt.Errorf("failed to write down migration file: %w", err)
+	parent := filepath.Dir(outputDir)
+	if parentInfo, statErr := os.Stat(parent); statErr != nil {
+		return fmt.Errorf("parent directory %q is not available: %w", parent, statErr)
+	} else if !parentInfo.IsDir() {
+		return fmt.Errorf("parent path %q is not a directory", parent)
 	}
+	return os.Mkdir(outputDir, 0755)
+}
 
-	return &MigrationFiles{
-		UpFile:   upFilePath,
-		DownFile: downFilePath,
-		Version:  version,
-	}, nil
+func writeNewMigrationFile(path, content string) error {
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	removeOnError := true
+	defer func() {
+		if removeOnError {
+			_ = os.Remove(path)
+		}
+	}()
+	if _, err := file.WriteString(content); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	removeOnError = false
+	return nil
 }

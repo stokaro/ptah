@@ -137,7 +137,7 @@ func TestGeneratedRLSPolicyRemovalIsDestructive(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(safety.HasDestructiveAssessment(assessments), qt.IsTrue)
 	c.Assert(assessments[0].Severity, qt.Equals, safety.Destructive)
-	c.Assert(assessments[0].Statement, qt.Contains, "DROP POLICY IF EXISTS tenant_isolation ON accounts")
+	c.Assert(legacyRenderedSQL(assessments[0].Statement), qt.Contains, "DROP POLICY IF EXISTS tenant_isolation ON accounts")
 }
 
 func TestGenerateMigrationAST(t *testing.T) {

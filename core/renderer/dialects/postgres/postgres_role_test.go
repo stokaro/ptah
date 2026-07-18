@@ -19,7 +19,7 @@ func TestPostgreSQLRenderer_VisitCreateRole(t *testing.T) {
 		sql, err := renderer.Render(role)
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(sql, qt.Equals, "CREATE ROLE test_role WITH NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOREPLICATION;\n")
+		c.Assert(legacyPostgresSQL(sql), qt.Equals, "CREATE ROLE test_role WITH NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOREPLICATION;\n")
 	})
 
 	t.Run("role with login and password", func(t *testing.T) {
@@ -32,7 +32,7 @@ func TestPostgreSQLRenderer_VisitCreateRole(t *testing.T) {
 		sql, err := renderer.Render(role)
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(sql, qt.Contains, "CREATE ROLE app_user WITH LOGIN PASSWORD 'encrypted_password'")
+		c.Assert(legacyPostgresSQL(sql), qt.Contains, "CREATE ROLE app_user WITH LOGIN PASSWORD 'encrypted_password'")
 		c.Assert(sql, qt.Contains, "NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOREPLICATION")
 	})
 
@@ -46,7 +46,7 @@ func TestPostgreSQLRenderer_VisitCreateRole(t *testing.T) {
 		sql, err := renderer.Render(role)
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(sql, qt.Contains, "CREATE ROLE admin_user WITH LOGIN SUPERUSER")
+		c.Assert(legacyPostgresSQL(sql), qt.Contains, "CREATE ROLE admin_user WITH LOGIN SUPERUSER")
 		c.Assert(sql, qt.Contains, "NOCREATEDB NOCREATEROLE INHERIT NOREPLICATION")
 	})
 
@@ -64,7 +64,7 @@ func TestPostgreSQLRenderer_VisitCreateRole(t *testing.T) {
 		sql, err := renderer.Render(role)
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(sql, qt.Contains, "CREATE ROLE power_user WITH LOGIN SUPERUSER CREATEDB CREATEROLE NOINHERIT REPLICATION")
+		c.Assert(legacyPostgresSQL(sql), qt.Contains, "CREATE ROLE power_user WITH LOGIN SUPERUSER CREATEDB CREATEROLE NOINHERIT REPLICATION")
 	})
 
 	t.Run("role with comment", func(t *testing.T) {
@@ -76,7 +76,7 @@ func TestPostgreSQLRenderer_VisitCreateRole(t *testing.T) {
 		sql, err := renderer.Render(role)
 
 		c.Assert(err, qt.IsNil)
-		lines := strings.Split(strings.TrimSpace(sql), "\n")
+		lines := strings.Split(strings.TrimSpace(legacyPostgresSQL(sql)), "\n")
 		c.Assert(lines[0], qt.Equals, "-- This is a test role")
 		c.Assert(lines[1], qt.Contains, "CREATE ROLE documented_role")
 	})
@@ -91,7 +91,7 @@ func TestPostgreSQLRenderer_VisitDropRole(t *testing.T) {
 		sql, err := renderer.Render(dropRole)
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(sql, qt.Equals, "DROP ROLE test_role;\n")
+		c.Assert(legacyPostgresSQL(sql), qt.Equals, "DROP ROLE test_role;\n")
 	})
 
 	t.Run("drop role with IF EXISTS", func(t *testing.T) {
@@ -102,7 +102,7 @@ func TestPostgreSQLRenderer_VisitDropRole(t *testing.T) {
 		sql, err := renderer.Render(dropRole)
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(sql, qt.Equals, "DROP ROLE IF EXISTS test_role;\n")
+		c.Assert(legacyPostgresSQL(sql), qt.Equals, "DROP ROLE IF EXISTS test_role;\n")
 	})
 
 	t.Run("drop role with comment", func(t *testing.T) {
@@ -114,7 +114,7 @@ func TestPostgreSQLRenderer_VisitDropRole(t *testing.T) {
 		sql, err := renderer.Render(dropRole)
 
 		c.Assert(err, qt.IsNil)
-		lines := strings.Split(strings.TrimSpace(sql), "\n")
+		lines := strings.Split(strings.TrimSpace(legacyPostgresSQL(sql)), "\n")
 		c.Assert(lines[0], qt.Equals, "-- Remove unused role")
 		c.Assert(lines[1], qt.Equals, "DROP ROLE test_role;")
 	})
@@ -130,7 +130,7 @@ func TestPostgreSQLRenderer_VisitAlterRole(t *testing.T) {
 		sql, err := renderer.Render(alterRole)
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(sql, qt.Equals, "ALTER ROLE test_role LOGIN;\n")
+		c.Assert(legacyPostgresSQL(sql), qt.Equals, "ALTER ROLE test_role LOGIN;\n")
 	})
 
 	t.Run("alter role with multiple operations", func(t *testing.T) {
@@ -144,7 +144,7 @@ func TestPostgreSQLRenderer_VisitAlterRole(t *testing.T) {
 		sql, err := renderer.Render(alterRole)
 
 		c.Assert(err, qt.IsNil)
-		lines := strings.Split(strings.TrimSpace(sql), "\n")
+		lines := strings.Split(strings.TrimSpace(legacyPostgresSQL(sql)), "\n")
 		c.Assert(lines, qt.HasLen, 3)
 		c.Assert(lines[0], qt.Equals, "ALTER ROLE test_role LOGIN;")
 		c.Assert(lines[1], qt.Equals, "ALTER ROLE test_role PASSWORD 'md5a1b2c3d4e5f6789012345678901234';")
@@ -166,7 +166,7 @@ func TestPostgreSQLRenderer_VisitAlterRole(t *testing.T) {
 		sql, err := renderer.Render(alterRole)
 
 		c.Assert(err, qt.IsNil)
-		lines := strings.Split(strings.TrimSpace(sql), "\n")
+		lines := strings.Split(strings.TrimSpace(legacyPostgresSQL(sql)), "\n")
 		c.Assert(lines, qt.HasLen, 7)
 		c.Assert(lines[0], qt.Equals, "ALTER ROLE test_role NOLOGIN;")
 		c.Assert(lines[1], qt.Equals, "ALTER ROLE test_role PASSWORD 'SCRAM-SHA-256$4096:abcd1234$hash:signature';")
@@ -187,7 +187,7 @@ func TestPostgreSQLRenderer_VisitAlterRole(t *testing.T) {
 		sql, err := renderer.Render(alterRole)
 
 		c.Assert(err, qt.IsNil)
-		lines := strings.Split(strings.TrimSpace(sql), "\n")
+		lines := strings.Split(strings.TrimSpace(legacyPostgresSQL(sql)), "\n")
 		c.Assert(lines[0], qt.Equals, "-- Enable login for test role")
 		c.Assert(lines[1], qt.Equals, "ALTER ROLE test_role LOGIN;")
 	})
@@ -214,7 +214,7 @@ func TestPostgreSQLRenderer_VisitGrantPrivilege(t *testing.T) {
 		sql, err := renderer.Render(grant)
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(sql, qt.Equals, "-- Grant application DML\nGRANT SELECT, INSERT ON TABLE users TO app_role;\n")
+		c.Assert(legacyPostgresSQL(sql), qt.Equals, "-- Grant application DML\nGRANT SELECT, INSERT ON TABLE users TO app_role;\n")
 	})
 
 	t.Run("schema grant with grant option", func(t *testing.T) {
@@ -226,7 +226,7 @@ func TestPostgreSQLRenderer_VisitGrantPrivilege(t *testing.T) {
 		sql, err := renderer.Render(grant)
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(sql, qt.Equals, "GRANT USAGE ON SCHEMA public TO app_role WITH GRANT OPTION;\n")
+		c.Assert(legacyPostgresSQL(sql), qt.Equals, "GRANT USAGE ON SCHEMA public TO app_role WITH GRANT OPTION;\n")
 	})
 }
 
@@ -239,7 +239,7 @@ func TestPostgreSQLRenderer_VisitRevokePrivilege(t *testing.T) {
 		sql, err := renderer.Render(revoke)
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(sql, qt.Equals, "REVOKE DELETE ON TABLE users FROM app_role;\n")
+		c.Assert(legacyPostgresSQL(sql), qt.Equals, "REVOKE DELETE ON TABLE users FROM app_role;\n")
 	})
 
 	t.Run("grant option revoke", func(t *testing.T) {
@@ -251,6 +251,6 @@ func TestPostgreSQLRenderer_VisitRevokePrivilege(t *testing.T) {
 		sql, err := renderer.Render(revoke)
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(sql, qt.Equals, "REVOKE GRANT OPTION FOR USAGE ON SCHEMA public FROM app_role;\n")
+		c.Assert(legacyPostgresSQL(sql), qt.Equals, "REVOKE GRANT OPTION FOR USAGE ON SCHEMA public FROM app_role;\n")
 	})
 }

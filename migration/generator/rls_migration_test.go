@@ -30,6 +30,7 @@ func TestRLSMigrationGeneration(t *testing.T) {
 
 	// Generate migration SQL
 	sql := planner.GenerateSchemaDiffSQL(diff, generated, platform.Postgres)
+	sql = legacyRenderedSQL(sql)
 
 	t.Logf("Generated SQL:\n%s", sql)
 

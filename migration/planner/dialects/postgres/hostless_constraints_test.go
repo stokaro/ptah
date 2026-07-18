@@ -44,6 +44,7 @@ func TestPlanner_GenerateMigrationAST_HostlessReAdd_DropsExactlyOnce(t *testing.
 
 		sql, err := renderer.RenderSQL("postgres", postgres.New().GenerateMigrationAST(diff, generated)...)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 
 		c.Assert(strings.Count(sql, "ALTER TABLE things DROP CONSTRAINT IF EXISTS chk_down;"), qt.Equals, 1,
 			qt.Commentf("the drop must be emitted exactly once across both planner phases; got:\n%s", sql))
@@ -83,6 +84,7 @@ func TestPlanner_GenerateMigrationAST_HostlessReAdd_DropsExactlyOnce(t *testing.
 
 		sql, err := renderer.RenderSQL("postgres", postgres.New().GenerateMigrationAST(diff, generated)...)
 		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
 
 		c.Assert(strings.Count(sql, "ALTER TABLE articles DROP CONSTRAINT IF EXISTS shared_check;"), qt.Equals, 1,
 			qt.Commentf("first removal host dropped exactly once; got:\n%s", sql))
@@ -128,6 +130,7 @@ func TestPlanner_GenerateMigrationAST_EmptyTableNameAdditionTreatedAsHostless(t 
 
 	sql, err := renderer.RenderSQL("postgres", postgres.New().GenerateMigrationAST(diff, generated)...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 
 	c.Assert(strings.Count(sql, "ALTER TABLE things DROP CONSTRAINT IF EXISTS chk_ghost;"), qt.Equals, 1,
 		qt.Commentf("the recorded removal host must be dropped exactly once; got:\n%s", sql))
@@ -160,5 +163,6 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedPrimaryKeyAddition(t *testin
 
 	sql, err := renderer.RenderSQL("postgres", postgres.New().GenerateMigrationAST(diff, &goschema.Database{})...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "ALTER TABLE memberships ADD PRIMARY KEY (org_id, user_id);")
 }

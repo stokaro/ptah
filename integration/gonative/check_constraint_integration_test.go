@@ -68,8 +68,9 @@ func TestFieldLevelCheckConstraint_RoundTrip_Integration(t *testing.T) {
 	stmts := fromschema.FromDatabase(*target, "postgres")
 	sqlText, err := renderer.RenderSQL("postgres", stmts.Statements...)
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.Contains(sqlText, "CHECK (category IN"), qt.IsTrue)
-	c.Assert(strings.Contains(sqlText, "CONSTRAINT ptah_test_files_kind_valid CHECK"), qt.IsTrue)
+	sqlForAssert := legacyRenderedSQL(sqlText)
+	c.Assert(strings.Contains(sqlForAssert, "CHECK (category IN"), qt.IsTrue)
+	c.Assert(strings.Contains(sqlForAssert, "CONSTRAINT ptah_test_files_kind_valid CHECK"), qt.IsTrue)
 
 	_, err = db.Exec(sqlText)
 	c.Assert(err, qt.IsNil, qt.Commentf("CREATE TABLE must execute: %s", sqlText))

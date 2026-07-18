@@ -12,6 +12,7 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/lint"
 	"github.com/stokaro/ptah/migration/migratesum"
 	"github.com/stokaro/ptah/migration/migrator"
@@ -108,14 +109,20 @@ var migrateUpFlags = map[string]cobraflags.Flag{
 		Value: false,
 		Usage: "Allow pending migrations that contain destructive statements",
 	},
-	dbcli.ConnectTimeoutFlagName:   dbcli.NewConnectTimeoutFlag(),
-	dbcli.ConfigFlagName:           dbcli.NewConfigFlag(),
-	dbcli.MigrationsSchemaFlagName: dbcli.NewMigrationsSchemaFlag(),
-	dbcli.MigrationsTableFlagName:  dbcli.NewMigrationsTableFlag(),
+	dbcli.ConnectTimeoutFlagName:      dbcli.NewConnectTimeoutFlag(),
+	dbcli.ConfigFlagName:              dbcli.NewConfigFlag(),
+	dbcli.MigrationsSchemaFlagName:    dbcli.NewMigrationsSchemaFlag(),
+	dbcli.MigrationsTableFlagName:     dbcli.NewMigrationsTableFlag(),
+	dbcli.RevisionTableFormatFlagName: dbcli.NewRevisionTableFormatFlag(),
 }
 
+var migrateUpFlagsRegistered bool
+
 func NewMigrateUpCommand() *cobra.Command {
-	cobraflags.RegisterMap(migrateUpCmd, migrateUpFlags)
+	if !migrateUpFlagsRegistered {
+		cobraflags.RegisterMap(migrateUpCmd, migrateUpFlags)
+		migrateUpFlagsRegistered = true
+	}
 	return migrateUpCmd
 }
 
@@ -134,6 +141,7 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 	allowDestructive := migrateUpFlags[allowDestructiveFlag].GetBool()
 	migrationsSchema := migrateUpFlags[dbcli.MigrationsSchemaFlagName].GetString()
 	migrationsTable := migrateUpFlags[dbcli.MigrationsTableFlagName].GetString()
+	revisionFormatValue := migrateUpFlags[dbcli.RevisionTableFormatFlagName].GetString()
 
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
@@ -142,8 +150,16 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 	if migrationsDir == "" {
 		return fmt.Errorf("migrations directory is required")
 	}
+	migrationsDir, err := pathguard.ResolveCLIPath(migrationsDir)
+	if err != nil {
+		return fmt.Errorf("invalid migrations directory: %w", err)
+	}
 
 	dirFormat, err := migrator.ParseMigrationDirFormat(dirFormatValue)
+	if err != nil {
+		return err
+	}
+	revisionFormat, err := migrator.ParseRevisionTableFormat(revisionFormatValue)
 	if err != nil {
 		return err
 	}
@@ -235,6 +251,7 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
 	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable).
+		WithRevisionTableFormat(revisionFormat).
 		WithDefaultTimeouts(timeouts).
 		WithExecOrder(execOrder).
 		WithMigrationLockTimeout(migrationLockTimeout)

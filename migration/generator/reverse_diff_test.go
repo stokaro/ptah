@@ -158,6 +158,8 @@ func TestGenerateDownMigrationSQL_Issue43_RLSPolicyTableNames(t *testing.T) {
 	// Generate down migration SQL
 	downSQL, err := generateDownMigrationSQL(upDiff, generatedSchema, dbSchema, "postgres")
 	c.Assert(err, qt.IsNil)
+	downSQL = legacyRenderedSQL(downSQL)
+	downSQL = legacyRenderedSQL(downSQL)
 
 	// Verify that the down migration contains proper DROP POLICY statements with table names
 	c.Assert(downSQL, qt.Contains, "DROP POLICY IF EXISTS area_user_isolation ON areas")
@@ -233,6 +235,7 @@ func TestGenerateDownMigrationSQL_Issue57_MissingTableNames(t *testing.T) {
 	// Generate down migration SQL
 	downSQL, err := generateDownMigrationSQL(upDiff, generatedSchema, dbSchema, "postgres")
 	c.Assert(err, qt.IsNil)
+	downSQL = legacyRenderedSQL(downSQL)
 
 	// After the fix, these assertions should pass - the table names should be present
 	c.Assert(downSQL, qt.Contains, "DROP POLICY IF EXISTS area_tenant_isolation ON areas")
@@ -324,6 +327,78 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 	c.Assert(result.GrantOptionsRevoked, qt.DeepEquals, input.GrantOptionsAdded)
 }
 
+func TestGenerateDownMigrationSQL_DropsFKChainChildBeforeParent(t *testing.T) {
+	c := qt.New(t)
+	schema := fkOrderSchema()
+	upDiff := &types.SchemaDiff{
+		TablesAdded: []string{
+			"ptah_fk_order_accounts",
+			"ptah_fk_order_projects",
+			"ptah_fk_order_tasks",
+		},
+	}
+
+	downSQL, err := generateDownMigrationSQL(upDiff, schema, &dbschematypes.DBSchema{}, "postgres")
+	downSQL = legacyRenderedSQL(downSQL)
+
+	c.Assert(err, qt.IsNil)
+	assertSQLBefore(t, downSQL, "DROP TABLE IF EXISTS ptah_fk_order_tasks", "DROP TABLE IF EXISTS ptah_fk_order_projects")
+	assertSQLBefore(t, downSQL, "DROP TABLE IF EXISTS ptah_fk_order_projects", "DROP TABLE IF EXISTS ptah_fk_order_accounts")
+}
+
+func TestGenerateDownMigrationSQL_DropsFKDiamondLeavesBeforeRoot(t *testing.T) {
+	c := qt.New(t)
+	schema := fkOrderSchema()
+	upDiff := &types.SchemaDiff{
+		TablesAdded: []string{
+			"ptah_fk_order_accounts",
+			"ptah_fk_order_memberships",
+			"ptah_fk_order_projects",
+			"ptah_fk_order_tasks",
+		},
+	}
+
+	downSQL, err := generateDownMigrationSQL(upDiff, schema, &dbschematypes.DBSchema{}, "postgres")
+	downSQL = legacyRenderedSQL(downSQL)
+
+	c.Assert(err, qt.IsNil)
+	assertSQLBefore(t, downSQL, "DROP TABLE IF EXISTS ptah_fk_order_tasks", "DROP TABLE IF EXISTS ptah_fk_order_projects")
+	assertSQLBefore(t, downSQL, "DROP TABLE IF EXISTS ptah_fk_order_tasks", "DROP TABLE IF EXISTS ptah_fk_order_memberships")
+	assertSQLBefore(t, downSQL, "DROP TABLE IF EXISTS ptah_fk_order_projects", "DROP TABLE IF EXISTS ptah_fk_order_accounts")
+	assertSQLBefore(t, downSQL, "DROP TABLE IF EXISTS ptah_fk_order_memberships", "DROP TABLE IF EXISTS ptah_fk_order_accounts")
+}
+
+func TestGenerateDownMigrationSQL_DropsSchemaQualifiedTableLevelFKChildBeforeParent(t *testing.T) {
+	c := qt.New(t)
+	schema := &goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "Account", Schema: "app", Name: "accounts"},
+			{StructName: "Project", Schema: "app", Name: "projects"},
+		},
+		Fields: []goschema.Field{
+			{StructName: "Account", Name: "id", Type: "VARCHAR(36)", Primary: true},
+			{StructName: "Project", Name: "id", Type: "VARCHAR(36)", Primary: true},
+			{StructName: "Project", Name: "account_id", Type: "VARCHAR(36)"},
+		},
+		Constraints: []goschema.Constraint{
+			{
+				Name:           "fk_projects_account",
+				Type:           "FOREIGN KEY",
+				Table:          "app.projects",
+				Columns:        []string{"account_id"},
+				ForeignTable:   "app.accounts",
+				ForeignColumns: []string{"id"},
+			},
+		},
+	}
+	upDiff := &types.SchemaDiff{TablesAdded: []string{"app.accounts", "app.projects"}}
+
+	downSQL, err := generateDownMigrationSQL(upDiff, schema, &dbschematypes.DBSchema{}, "postgres")
+
+	c.Assert(err, qt.IsNil)
+	assertSQLBefore(t, downSQL, "DROP TABLE IF EXISTS app.projects", "DROP TABLE IF EXISTS app.accounts")
+}
+
 func TestReverseSchemaDiff_GrantOptionUpgradeDownRevokesOnlyOption(t *testing.T) {
 	c := qt.New(t)
 	upDiff := &types.SchemaDiff{
@@ -336,6 +411,7 @@ func TestReverseSchemaDiff_GrantOptionUpgradeDownRevokesOnlyOption(t *testing.T)
 	downSQL, err := renderer.RenderSQL("postgres", postgres.New().GenerateMigrationAST(downDiff, &goschema.Database{})...)
 
 	c.Assert(err, qt.IsNil)
+	downSQL = legacyRenderedSQL(downSQL)
 	c.Assert(downSQL, qt.Contains, "REVOKE GRANT OPTION FOR SELECT ON TABLE users FROM app_role;")
 	c.Assert(strings.Contains(downSQL, "REVOKE SELECT ON TABLE users FROM app_role;"), qt.Equals, false)
 }
@@ -670,6 +746,81 @@ func TestReverseSchemaDiff_FieldLevelCheckRemovalsWithTables(t *testing.T) {
 	})
 }
 
+func TestForeignKeyAdditionFromDBConstraint_DeduplicatesRepeatedIntrospectionColumns(t *testing.T) {
+	c := qt.New(t)
+	foreignTable := "ptah_tenants"
+	dbConstraint := dbschematypes.DBConstraint{
+		Name:           "fk_entity_tenant",
+		TableName:      "ptah_area",
+		Type:           "FOREIGN KEY",
+		ColumnNames:    []string{"tenant_id", "tenant_id", "tenant_id"},
+		ForeignTable:   &foreignTable,
+		ForeignColumns: []string{"id", "id", "id"},
+	}
+
+	info := foreignKeyAdditionFromDBConstraint("fk_entity_tenant", "ptah_area", dbConstraint)
+
+	c.Assert(info.Columns, qt.DeepEquals, []string{"tenant_id"})
+	c.Assert(info.ForeignColumns, qt.DeepEquals, []string{"id"})
+	c.Assert(info.ForeignColumn, qt.Equals, "id")
+}
+
+func fkOrderSchema() *goschema.Database {
+	return &goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "PtahFKOrderAccount", Name: "ptah_fk_order_accounts"},
+			{StructName: "PtahFKOrderProject", Name: "ptah_fk_order_projects"},
+			{StructName: "PtahFKOrderMembership", Name: "ptah_fk_order_memberships"},
+			{StructName: "PtahFKOrderTask", Name: "ptah_fk_order_tasks"},
+		},
+		Fields: []goschema.Field{
+			{StructName: "PtahFKOrderAccount", Name: "id", Type: "VARCHAR(36)", Primary: true},
+			{StructName: "PtahFKOrderProject", Name: "id", Type: "VARCHAR(36)", Primary: true},
+			{
+				StructName:     "PtahFKOrderProject",
+				Name:           "account_id",
+				Type:           "VARCHAR(36)",
+				Foreign:        "ptah_fk_order_accounts(id)",
+				ForeignKeyName: "fk_ptah_fk_order_projects_account",
+			},
+			{StructName: "PtahFKOrderMembership", Name: "id", Type: "VARCHAR(36)", Primary: true},
+			{
+				StructName:     "PtahFKOrderMembership",
+				Name:           "account_id",
+				Type:           "VARCHAR(36)",
+				Foreign:        "ptah_fk_order_accounts(id)",
+				ForeignKeyName: "fk_ptah_fk_order_memberships_account",
+			},
+			{StructName: "PtahFKOrderTask", Name: "id", Type: "VARCHAR(36)", Primary: true},
+			{
+				StructName:     "PtahFKOrderTask",
+				Name:           "project_id",
+				Type:           "VARCHAR(36)",
+				Foreign:        "ptah_fk_order_projects(id)",
+				ForeignKeyName: "fk_ptah_fk_order_tasks_project",
+			},
+			{
+				StructName:     "PtahFKOrderTask",
+				Name:           "membership_id",
+				Type:           "VARCHAR(36)",
+				Foreign:        "ptah_fk_order_memberships(id)",
+				ForeignKeyName: "fk_ptah_fk_order_tasks_membership",
+			},
+		},
+	}
+}
+
+func assertSQLBefore(t *testing.T, sql, earlier, later string) {
+	t.Helper()
+	c := qt.New(t)
+	sql = legacyRenderedSQL(sql)
+	earlierIndex := strings.Index(sql, earlier)
+	laterIndex := strings.Index(sql, later)
+	c.Assert(earlierIndex >= 0, qt.IsTrue, qt.Commentf("%q not found in SQL:\n%s", earlier, sql))
+	c.Assert(laterIndex >= 0, qt.IsTrue, qt.Commentf("%q not found in SQL:\n%s", later, sql))
+	c.Assert(earlierIndex < laterIndex, qt.IsTrue, qt.Commentf("%q must appear before %q:\n%s", earlier, later, sql))
+}
+
 // TestGenerateDownMigrationSQL_Issue189_RestoresPriorForeignKeyAction is the
 // acceptance test for the down half of issue #189: when an up migration changes
 // a field-level FK's ON DELETE action, the generated down migration must DROP
@@ -733,6 +884,7 @@ func TestGenerateDownMigrationSQL_Issue189_RestoresPriorForeignKeyAction(t *test
 		c := qt.New(t)
 		downSQL, err := generateDownMigrationSQL(upDiff, generatedSchema, dbSchema, "postgres")
 		c.Assert(err, qt.IsNil)
+		downSQL = legacyRenderedSQL(downSQL)
 
 		// The down must be non-empty and re-add the FK (restoring the prior
 		// action) plus drop the new definition first.
@@ -747,6 +899,7 @@ func TestGenerateDownMigrationSQL_Issue189_RestoresPriorForeignKeyAction(t *test
 		c := qt.New(t)
 		downSQL, err := generateDownMigrationSQL(upDiff, generatedSchema, dbSchema, "mysql")
 		c.Assert(err, qt.IsNil)
+		downSQL = legacyRenderedSQL(downSQL)
 
 		// Real DROP FOREIGN KEY + re-ADD with the prior action; never a TODO.
 		c.Assert(downSQL, qt.Contains, "ALTER TABLE exports DROP FOREIGN KEY fk_export_file;")
@@ -793,6 +946,7 @@ func TestGenerateDownMigrationSQL_Issue194_DropsFieldLevelCheckMySQLFamily(t *te
 
 			downSQL, err := generateDownMigrationSQL(upDiff, generatedSchema, dbSchema, dialect)
 			c.Assert(err, qt.IsNil)
+			downSQL = legacyRenderedSQL(downSQL)
 
 			wantDrop := "ALTER TABLE files DROP CONSTRAINT files_category_check;"
 			if dialect == "mariadb" {

@@ -34,6 +34,7 @@ func TestPlanner_GenerateMigrationAST_MultiSchemaTablesAndFKs(t *testing.T) {
 	nodes := postgres.New().GenerateMigrationAST(diff, generated)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 
 	c.Assert(sql, qt.Contains, "CREATE SCHEMA IF NOT EXISTS auth;")
 	c.Assert(sql, qt.Contains, "CREATE SCHEMA IF NOT EXISTS billing;")
@@ -65,6 +66,7 @@ func TestPlanner_GenerateMigrationAST_TrimsSchemaPreconditions(t *testing.T) {
 	nodes := postgres.New().GenerateMigrationAST(diff, generated)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 
 	c.Assert(sql, qt.Contains, "CREATE SCHEMA IF NOT EXISTS auth;")
 	c.Assert(sql, qt.Not(qt.Contains), "CREATE SCHEMA IF NOT EXISTS  auth ;")
@@ -96,6 +98,7 @@ func TestPlanner_GenerateMigrationAST_DoesNotQualifyAmbiguousLeafFK(t *testing.T
 	nodes := postgres.New().GenerateMigrationAST(diff, generated)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
 
 	c.Assert(sql, qt.Contains, "ALTER TABLE billing.invoices ADD CONSTRAINT fk_invoices_user_id FOREIGN KEY (user_id) REFERENCES users(id);")
 	c.Assert(sql, qt.Not(qt.Contains), "REFERENCES auth.users(id)")
