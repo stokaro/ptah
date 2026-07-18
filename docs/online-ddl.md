@@ -66,15 +66,23 @@ For `ALTER TABLE <tbl> <clause>` with database URL
 
 ```text
 gh-ost --host=host --port=port --user=user --database=db --table=tbl \
-       --alter="<clause>" [--password=pass] [args...] --execute
+       --alter="<clause>" [--conf=/tmp/ptah-online-ddl-*.cnf] [args...] --execute
 
 pt-online-schema-change --alter "<clause>" [args...] --execute \
-       h=host,P=port,u=user,D=db,t=tbl,p=pass
+       h=host,P=port,u=user,D=db,t=tbl[,F=/tmp/ptah-online-ddl-*.cnf]
 ```
 
 A schema-qualified table (`ALTER TABLE shop.users ...`) overrides the
 database from the URL. The alter clause is passed through verbatim, so
 multi-part alters (`ADD COLUMN a INT, ADD INDEX idx (a)`) work.
+
+If the database URL contains a password, ptah writes a temporary MySQL
+defaults file with mode `0600`, passes only that file path to the tool, and
+removes it after the tool exits, fails, or is canceled. The password is never
+passed as a command-line argument. User-supplied credential configuration wins: when
+`online_ddl.args` already includes gh-ost `--conf`, pt-osc `--defaults-file`,
+or pt-osc DSN credentials (`p=` or `F=`), ptah does not generate its own
+credential file.
 
 ## Prerequisites you must provide
 
@@ -94,10 +102,10 @@ enabling:
 - **Privileges**: both tools need more than plain ALTER — gh-ost needs
   REPLICATION SLAVE/CLIENT plus DDL/DML on the schema; pt-osc needs
   CREATE/DROP/TRIGGER.
-- **Credentials on the command line** are visible in the process list. For
-  shared hosts prefer the tools' own config mechanisms (gh-ost `--conf`,
-  pt-osc `/etc/percona-toolkit/`), passing them via `online_ddl.args`, and a
-  database URL without an inline password.
+- **Credentials**: ptah never passes the database password on the command
+  line. For shared hosts you can still provide your own credential file via
+  `online_ddl.args` (`--conf` for gh-ost, `--defaults-file` or `F=` for
+  pt-osc); in that case ptah will not generate one.
 
 ## Interaction with migration transactions
 
