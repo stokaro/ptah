@@ -2109,10 +2109,33 @@ func TestParser_ParsePostgreSQLDomain(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
 
-	comment, ok := statements.Statements[0].(*ast.CommentNode)
+	domain, ok := statements.Statements[0].(*ast.CreateTypeNode)
 	c.Assert(ok, qt.IsTrue)
-	c.Assert(comment.Text, qt.Contains, "CREATE DOMAIN email_domain AS TEXT")
-	c.Assert(comment.Text, qt.Contains, "CHECK")
+	c.Assert(domain.Name, qt.Equals, "email_domain")
+	domainDef, ok := domain.TypeDef.(*ast.DomainTypeDef)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(domainDef.BaseType, qt.Equals, "TEXT")
+	c.Assert(domainDef.Nullable, qt.IsTrue)
+	c.Assert(domainDef.Check, qt.Contains, "VALUE ~*")
+}
+
+func TestParser_ParsePostgreSQLQualifiedDomain(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE DOMAIN script_column_domain.positive_int AS bigint CHECK (VALUE > 0);`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	domain, ok := statements.Statements[0].(*ast.CreateTypeNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(domain.Name, qt.Equals, "script_column_domain.positive_int")
+	domainDef, ok := domain.TypeDef.(*ast.DomainTypeDef)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(domainDef.BaseType, qt.Equals, "bigint")
+	c.Assert(domainDef.Check, qt.Equals, "VALUE > 0")
 }
 
 func TestParser_ParsePostgreSQLSerialTypes(t *testing.T) {
@@ -2388,10 +2411,14 @@ func TestParser_ParsePostgreSQLMultipleStatements(t *testing.T) {
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(enum.Name, qt.Equals, "status_enum")
 
-	// Check domain (represented as comment)
-	domain, ok := statements.Statements[1].(*ast.CommentNode)
+	// Check domain
+	domain, ok := statements.Statements[1].(*ast.CreateTypeNode)
 	c.Assert(ok, qt.IsTrue)
-	c.Assert(domain.Text, qt.Contains, "CREATE DOMAIN email_domain")
+	c.Assert(domain.Name, qt.Equals, "email_domain")
+	domainDef, ok := domain.TypeDef.(*ast.DomainTypeDef)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(domainDef.BaseType, qt.Equals, "TEXT")
+	c.Assert(domainDef.Check, qt.Contains, "VALUE ~*")
 
 	// Check table
 	table, ok := statements.Statements[2].(*ast.CreateTableNode)
