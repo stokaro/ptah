@@ -1321,6 +1321,25 @@ func TestParser_ParseCreateIndexInclude(t *testing.T) {
 	c.Assert(index.IncludeColumns, qt.DeepEquals, []string{"active", "version"})
 }
 
+func TestParser_ParseCreateIndexUsingAndStorageParams(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "CREATE INDEX idx_users_c ON users USING BRIN (c) WITH (pages_per_range='2');"
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	index, ok := statements.Statements[0].(*ast.IndexNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(index.Name, qt.Equals, "idx_users_c")
+	c.Assert(index.Table, qt.Equals, "users")
+	c.Assert(index.Type, qt.Equals, "BRIN")
+	c.Assert(index.Columns, qt.DeepEquals, []string{"c"})
+	c.Assert(index.StorageParams, qt.DeepEquals, map[string]string{"pages_per_range": "2"})
+}
+
 func TestParser_ParseCreateIndexIncludeRejectsInvalidLists(t *testing.T) {
 	tests := []string{
 		"CREATE INDEX idx_users_name ON users (name) INCLUDE ();",

@@ -255,6 +255,9 @@ type Index struct {
 	Operator string
 	// IncludeColumns carries PostgreSQL INCLUDE columns for covering indexes.
 	IncludeColumns []string
+	// StorageParams carries PostgreSQL index storage parameters rendered as
+	// WITH (key='value'), for example pages_per_range for BRIN indexes.
+	StorageParams map[string]string
 	// TableName is the cross-table association (overrides StructName-based
 	// resolution when set).
 	TableName string
