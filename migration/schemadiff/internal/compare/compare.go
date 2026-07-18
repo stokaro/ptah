@@ -6,6 +6,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/stokaro/ptah/config"
 	"github.com/stokaro/ptah/core/convert/fromschema"
@@ -1160,38 +1161,156 @@ func excludeConstraintChanged(genConstraint goschema.Constraint, dbConstraint ty
 }
 
 // checkConstraintChanged compares CHECK constraint definitions.
-//
-// In practice, we cannot rely on a literal string compare here: PostgreSQL
-// stores the parsed/analyzed node tree (`pg_constraint.conbin`) and
-// `information_schema.check_constraints.check_clause` is `pg_get_expr`
-// decompiling it — which normalizes parens, injects `::type` casts, and
-// rewrites `IN (...)` to `= ANY (ARRAY[...])`. So `check_clause` never
-// round-trips byte-equal to what the user wrote in `check=`. Doing the
-// naive compare would mark every CHECK as drifted on the very next run,
-// producing a perpetual drop+add loop (see issue #112 discussion).
-//
-// For v1 the contract is "spelling-equivalence + a stable generated name
-// is enough as long as users don't author the same CHECK two different
-// ways" (verbatim from the issue body). Trusting the constraint name
-// gives us:
-//   - Adding `check=` → ConstraintsAdded (name not in DB).
-//   - Removing `check=` → ConstraintsRemoved (name not in generated).
-//   - Renaming via `check_name=` → drop + add (different name).
-//   - Idempotency after apply → no diff (same name).
-//
-// The known limitation is that changing only the expression while keeping
-// the constraint name will not trigger a migration. Users who need that
-// today should change `check_name=` alongside the expression; an
-// expression-normalization pass (and possibly AST-level compare) is a
-// follow-up tracked against future work.
-func checkConstraintChanged(_ goschema.Constraint, _ types.DBConstraint) bool {
-	return false
+func checkConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint) bool {
+	dbClause := getStringValue(dbConstraint.CheckClause)
+	if strings.TrimSpace(genConstraint.CheckExpression) == "" || strings.TrimSpace(dbClause) == "" {
+		return false
+	}
+	if checkExpressionHasUnsupportedRewrite(genConstraint.CheckExpression, dbClause) {
+		return false
+	}
+	return normalizeCheckExpression(genConstraint.CheckExpression) != normalizeCheckExpression(dbClause)
 }
 
 // uniqueConstraintChanged compares UNIQUE constraint definitions
 func uniqueConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint) bool {
-	return !slices.Equal(genConstraint.Columns, dbConstraint.ColumnNamesOrDefault()) ||
+	return !stringSetsEqual(genConstraint.Columns, dbConstraint.ColumnNamesOrDefault()) ||
 		!boolPtrEqual(genConstraint.NullsDistinct, dbConstraint.NullsDistinct)
+}
+
+func normalizeCheckExpression(expr string) string {
+	expr = trimBalancedCheckParens(strings.TrimSpace(expr))
+
+	var b strings.Builder
+	inString := false
+	for i := 0; i < len(expr); i++ {
+		ch := expr[i]
+		if ch == '\'' {
+			b.WriteByte(ch)
+			if inString && i+1 < len(expr) && expr[i+1] == '\'' {
+				i++
+				b.WriteByte('\'')
+				continue
+			}
+			inString = !inString
+			continue
+		}
+		if !inString && ch == ':' && i+1 < len(expr) && expr[i+1] == ':' && checkCastFollowsLiteral(expr, i) {
+			i += 2
+			for i < len(expr) && isCheckCastChar(rune(expr[i])) {
+				i++
+			}
+			i--
+			continue
+		}
+		if !inString && unicode.IsSpace(rune(ch)) {
+			continue
+		}
+		if !inString && ch >= 'A' && ch <= 'Z' {
+			ch += 'a' - 'A'
+		}
+		b.WriteByte(ch)
+	}
+	return b.String()
+}
+
+func trimBalancedCheckParens(expr string) string {
+	for {
+		trimmed := strings.TrimSpace(expr)
+		if len(trimmed) < 2 || trimmed[0] != '(' || trimmed[len(trimmed)-1] != ')' {
+			return trimmed
+		}
+		if !checkOuterParensWrap(trimmed) {
+			return trimmed
+		}
+		expr = trimmed[1 : len(trimmed)-1]
+	}
+}
+
+func checkOuterParensWrap(expr string) bool {
+	depth := 0
+	inString := false
+	for i := 0; i < len(expr); i++ {
+		ch := expr[i]
+		if ch == '\'' {
+			if inString && i+1 < len(expr) && expr[i+1] == '\'' {
+				i++
+				continue
+			}
+			inString = !inString
+			continue
+		}
+		if inString {
+			continue
+		}
+
+		switch ch {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth < 0 || (depth == 0 && i != len(expr)-1) {
+				return false
+			}
+		}
+	}
+	return depth == 0
+}
+
+func isCheckCastChar(ch rune) bool {
+	return unicode.IsLetter(ch) || unicode.IsDigit(ch) || ch == '_' || ch == '[' || ch == ']' || ch == '.'
+}
+
+func checkCastFollowsLiteral(expr string, castIndex int) bool {
+	for i := castIndex - 1; i >= 0; i-- {
+		ch := expr[i]
+		if unicode.IsSpace(rune(ch)) {
+			continue
+		}
+		return ch == '\'' || (ch >= '0' && ch <= '9')
+	}
+	return false
+}
+
+func checkExpressionHasUnsupportedRewrite(generated, database string) bool {
+	db := strings.ToLower(database)
+	return checkExpressionContainsInOperator(generated) && strings.Contains(db, "any") && strings.Contains(db, "array[")
+}
+
+func checkExpressionContainsInOperator(expr string) bool {
+	inString := false
+	for i := 0; i < len(expr)-1; i++ {
+		ch := expr[i]
+		if ch == '\'' {
+			if inString && i+1 < len(expr) && expr[i+1] == '\'' {
+				i++
+				continue
+			}
+			inString = !inString
+			continue
+		}
+		if inString || (ch != 'i' && ch != 'I') || (expr[i+1] != 'n' && expr[i+1] != 'N') {
+			continue
+		}
+		prevIdent := i > 0 && isCheckIdentChar(rune(expr[i-1]))
+		nextIdent := i+2 < len(expr) && isCheckIdentChar(rune(expr[i+2]))
+		if !prevIdent && !nextIdent {
+			return true
+		}
+	}
+	return false
+}
+
+func isCheckIdentChar(ch rune) bool {
+	return unicode.IsLetter(ch) || unicode.IsDigit(ch) || ch == '_'
+}
+
+func stringSetsEqual(left, right []string) bool {
+	left = uniqueStringsPreserveOrder(left)
+	right = uniqueStringsPreserveOrder(right)
+	sort.Strings(left)
+	sort.Strings(right)
+	return slices.Equal(left, right)
 }
 
 func boolPtrEqual(left, right *bool) bool {
@@ -1874,9 +1993,13 @@ func Indexes(generated *goschema.Database, database *types.DBSchema, diff *difft
 	// naturally empty there and the filter is a no-op. Keyed by table.index so a
 	// constraint name only suppresses the index on its own table.
 	fkBackedIndexes := make(map[string]struct{}, len(database.Constraints))
+	uniqueConstraintIndexes := make(map[string]struct{}, len(database.Constraints))
 	for _, c := range database.Constraints {
-		if c.Type == "FOREIGN KEY" {
+		switch c.Type {
+		case "FOREIGN KEY":
 			fkBackedIndexes[c.QualifiedTableName()+"."+c.Name] = struct{}{}
+		case "UNIQUE":
+			uniqueConstraintIndexes[c.QualifiedTableName()+"."+c.Name] = struct{}{}
 		}
 	}
 
@@ -1890,6 +2013,9 @@ func Indexes(generated *goschema.Database, database *types.DBSchema, diff *difft
 		// Skip constraint-based unique indexes (automatically created by UNIQUE constraints)
 		// but allow explicitly defined unique indexes (created via schema annotations)
 		if index.IsUnique && isConstraintBasedUniqueIndex(index.Name, index.TableName, index.Columns) {
+			continue
+		}
+		if _, ok := uniqueConstraintIndexes[index.QualifiedTableName()+"."+index.Name]; ok {
 			continue
 		}
 
