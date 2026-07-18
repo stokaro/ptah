@@ -794,6 +794,19 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 	handled := make(map[string]struct{})
 	droppedForModify := make(map[string]struct{})
 	for _, add := range diff.ConstraintsAddedWithTables {
+		if add.Type != "PRIMARY KEY" || add.TableName == "" || len(add.Columns) == 0 {
+			continue
+		}
+		if _, modified := removalByTableName[add.TableName+"."+add.Name]; modified {
+			continue
+		}
+		result = append(result, &ast.AlterTableNode{
+			Name:       add.TableName,
+			Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: ast.NewPrimaryKeyConstraint(add.Columns...)}},
+		})
+		handled[add.Name] = struct{}{}
+	}
+	for _, add := range diff.ConstraintsAddedWithTables {
 		if add.Type != "FOREIGN KEY" || add.TableName == "" {
 			continue
 		}
