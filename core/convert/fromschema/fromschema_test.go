@@ -878,6 +878,38 @@ func TestFromIndex_BasicIndex(t *testing.T) {
 	}
 }
 
+func TestFromDatabase_IndexIncludeColumns(t *testing.T) {
+	c := qt.New(t)
+	db := goschema.Database{
+		Tables: []goschema.Table{
+			{Name: "users", StructName: "User"},
+		},
+		Fields: []goschema.Field{
+			{Name: "name", Type: "text", StructName: "User"},
+			{Name: "active", Type: "boolean", StructName: "User"},
+		},
+		Indexes: []goschema.Index{
+			{
+				Name:           "users_name",
+				StructName:     "User",
+				Fields:         []string{"name"},
+				Condition:      "active",
+				IncludeColumns: []string{"active"},
+			},
+		},
+	}
+
+	result := fromschema.FromDatabase(db, "postgres")
+	c.Assert(result.Statements, qt.HasLen, 2)
+	index, ok := result.Statements[1].(*ast.IndexNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(index.Name, qt.Equals, "users_name")
+	c.Assert(index.Table, qt.Equals, "users")
+	c.Assert(index.Columns, qt.DeepEquals, []string{"name"})
+	c.Assert(index.Condition, qt.Equals, "active")
+	c.Assert(index.IncludeColumns, qt.DeepEquals, []string{"active"})
+}
+
 func TestFromEnum_BasicEnum(t *testing.T) {
 	tests := []struct {
 		name     string
