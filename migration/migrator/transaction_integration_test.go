@@ -34,7 +34,13 @@ func TestCreateMigrationFromSQL_PostgresFailureRollsBackStatements(t *testing.T)
 	err = mig.MigrateUp(ctx)
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(columnExists(t, conn, "ptah_issue_262_users", "status"), qt.IsFalse)
-	c.Assert(issue262MigrationRecordCount(t, conn), qt.Equals, int64(0))
+	c.Assert(issue262MigrationRecordCount(t, conn), qt.Equals, int64(1))
+	status, err := mig.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.DirtyRevision, qt.IsNotNil)
+
+	_, err = conn.ExecContext(ctx, "DROP TABLE IF EXISTS schema_migrations_issue_262")
+	c.Assert(err, qt.IsNil)
 
 	fixedMigration := migrator.CreateMigrationFromSQL(1, "add status",
 		`ALTER TABLE ptah_issue_262_users ADD COLUMN status TEXT;
@@ -160,13 +166,13 @@ func columnExists(t *testing.T, conn *dbschema.DatabaseConnection, tableName, co
 	return exists
 }
 
-func issue262MigrationRecordCount(t *testing.T, conn *dbschema.DatabaseConnection) int {
+func issue262MigrationRecordCount(t *testing.T, conn *dbschema.DatabaseConnection) int64 {
 	t.Helper()
 
 	if !tableExists(t, conn, "schema_migrations_issue_262") {
 		return 0
 	}
-	var count int
+	var count int64
 	err := conn.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM schema_migrations_issue_262").Scan(&count)
 	qt.Assert(t, err, qt.IsNil)
 	return count

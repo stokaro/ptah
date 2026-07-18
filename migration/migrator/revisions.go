@@ -76,6 +76,12 @@ type RepairMigrationOptions struct {
 	ResumeFrom int
 }
 
+// BaselineOptions configures migration metadata baselining.
+type BaselineOptions struct {
+	Version int64
+	Force   bool
+}
+
 func migrationChecksum(sqlText string) string {
 	sum := sha256.Sum256([]byte(sqlText))
 	return hex.EncodeToString(sum[:])
@@ -168,6 +174,14 @@ func (m *Migrator) forceAppliedUpdateSQL() string {
 UPDATE description = ?, applied_at = ?, state = ?, applied = ?, total = ?, error = NULL, error_stmt = NULL, execution_time_ms = ?, checksum = ?
 WHERE version = ?
 SETTINGS mutations_sync = 1`, m.qualifiedMigrationsTable())
+}
+
+func (m *Migrator) countRevisionsSQL() string {
+	return fmt.Sprintf(`SELECT COUNT(*) FROM %s`, m.qualifiedMigrationsTable())
+}
+
+func (m *Migrator) countRevisionsAboveSQL() string {
+	return fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE version > ?`, m.qualifiedMigrationsTable())
 }
 
 func (m *Migrator) isClickHouse() bool {
@@ -411,6 +425,136 @@ func (m *Migrator) verifyAppliedMigrationChecksums(ctx context.Context, migratio
 				Stored:   revision.Checksum,
 				Computed: checksum,
 			}
+		}
+	}
+	return nil
+}
+
+// Baseline records provider migrations up to version as already applied without
+// executing their SQL bodies.
+func (m *Migrator) Baseline(ctx context.Context, version int64) error {
+	return m.BaselineWithOptions(ctx, BaselineOptions{Version: version})
+}
+
+// BaselineWithOptions records provider migrations up to opts.Version as already
+// applied without executing their SQL bodies.
+func (m *Migrator) BaselineWithOptions(ctx context.Context, opts BaselineOptions) error {
+	return m.withMigrationLock(ctx, "baseline", func(ctx context.Context) error {
+		return m.baselineLocked(ctx, opts)
+	})
+}
+
+func (m *Migrator) baselineLocked(ctx context.Context, opts BaselineOptions) error {
+	if opts.Version <= 0 {
+		return fmt.Errorf("baseline version must be greater than zero")
+	}
+	migrations := m.migrationsAtOrBelow(opts.Version)
+	if len(migrations) == 0 {
+		return fmt.Errorf("no migrations found at or below baseline version %d", opts.Version)
+	}
+	if err := m.Initialize(ctx); err != nil {
+		return fmt.Errorf("failed to initialize migrations table: %w", err)
+	}
+	if m.conn.Writer().IsDryRun() {
+		return nil
+	}
+	if err := m.failIfDirty(ctx); err != nil {
+		return err
+	}
+	revisionCount, err := m.revisionCount(ctx)
+	if err != nil {
+		return err
+	}
+	if revisionCount > 0 && !opts.Force {
+		return fmt.Errorf("schema migrations table is not empty; rerun with force to baseline anyway")
+	}
+	if opts.Force {
+		if err := m.failIfRevisionAboveBaseline(ctx, opts.Version); err != nil {
+			return err
+		}
+	}
+	return m.baselineMigrations(ctx, migrations)
+}
+
+func (m *Migrator) migrationsAtOrBelow(version int64) []*Migration {
+	migrations := m.migrationProvider.Migrations()
+	out := make([]*Migration, 0, len(migrations))
+	for _, migration := range migrations {
+		if migration.Version <= version {
+			out = append(out, migration)
+		}
+	}
+	return out
+}
+
+func (m *Migrator) revisionCount(ctx context.Context) (int, error) {
+	query := sqlutil.Rebind(m.conn.Info().Dialect, m.countRevisionsSQL())
+	var count int
+	if err := m.conn.QueryRowContext(ctx, query).Scan(&count); err != nil {
+		return 0, fmt.Errorf("failed to count migration revisions: %w", err)
+	}
+	return count, nil
+}
+
+func (m *Migrator) baselineMigrations(ctx context.Context, migrations []*Migration) error {
+	if m.isClickHouse() {
+		return m.baselineMigrationsNoTransaction(ctx, migrations)
+	}
+	if err := m.conn.Writer().BeginTransaction(); err != nil {
+		return fmt.Errorf("failed to begin baseline transaction: %w", err)
+	}
+	if err := m.writeBaselineMigrations(ctx, migrations); err != nil {
+		_ = m.conn.Writer().RollbackTransaction()
+		return err
+	}
+	if err := m.conn.Writer().CommitTransaction(); err != nil {
+		return fmt.Errorf("failed to commit baseline transaction: %w", err)
+	}
+	return nil
+}
+
+func (m *Migrator) baselineMigrationsNoTransaction(ctx context.Context, migrations []*Migration) error {
+	return m.writeBaselineMigrations(ctx, migrations)
+}
+
+func (m *Migrator) writeBaselineMigrations(ctx context.Context, migrations []*Migration) error {
+	return m.writeBaselineMigrationRows(ctx, migrations)
+}
+
+func (m *Migrator) failIfRevisionAboveBaseline(ctx context.Context, version int64) error {
+	query := sqlutil.Rebind(m.conn.Info().Dialect, m.countRevisionsAboveSQL())
+	var count int
+	if err := m.conn.QueryRowContext(ctx, query, version).Scan(&count); err != nil {
+		return fmt.Errorf("failed to inspect migration revisions above baseline: %w", err)
+	}
+	if count > 0 {
+		return fmt.Errorf("schema migrations table contains revisions above baseline version %d; refusing to rewrite migration history", version)
+	}
+	return nil
+}
+
+func (m *Migrator) writeBaselineMigrationRows(ctx context.Context, migrations []*Migration) error {
+	query := sqlutil.Rebind(m.conn.Info().Dialect, m.forceAppliedMigrationSQL())
+	for _, migration := range migrations {
+		if m.forceAppliedConflictClause() == "" {
+			deleteSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteMigrationSQL())
+			if err := m.conn.Writer().ExecuteSQL(ctx, deleteSQL, migration.Version); err != nil {
+				return fmt.Errorf("failed to prepare baseline revision %d: %w", migration.Version, err)
+			}
+		}
+		if err := m.conn.Writer().ExecuteSQL(
+			ctx,
+			query,
+			migration.Version,
+			migration.Description,
+			time.Now(),
+			migrationStateApplied,
+			migrationStatementCount(migration.UpSQL),
+			migrationStatementCount(migration.UpSQL),
+			0,
+			migrationChecksum(migration.UpSQL),
+		); err != nil {
+			return fmt.Errorf("failed to record baseline revision %d: %w", migration.Version, err)
 		}
 	}
 	return nil

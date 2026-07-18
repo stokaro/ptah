@@ -13,6 +13,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/lint"
 	"github.com/stokaro/ptah/cmd/migrate"
+	"github.com/stokaro/ptah/cmd/migratebaseline"
 	"github.com/stokaro/ptah/cmd/migratedown"
 	"github.com/stokaro/ptah/cmd/migratehash"
 	"github.com/stokaro/ptah/cmd/migraterepair"
@@ -53,6 +54,7 @@ func Execute(args ...string) {
 	rootCmd.AddCommand(compare.NewCompareCommand())
 	rootCmd.AddCommand(drift.NewDriftCommand())
 	rootCmd.AddCommand(migrate.NewMigrateCommand())
+	rootCmd.AddCommand(migratebaseline.NewMigrateBaselineCommand())
 	rootCmd.AddCommand(migrateup.NewMigrateUpCommand())
 	rootCmd.AddCommand(migratedown.NewMigrateDownCommand())
 	rootCmd.AddCommand(migraterepair.NewMigrateRepairCommand())

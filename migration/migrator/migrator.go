@@ -100,6 +100,11 @@ func (m *Migrator) qualifiedMigrationsTable() string {
 	return m.quoteIdentifier(m.migrationsSchema) + "." + m.quoteIdentifier(table)
 }
 
+// MigrationsTableIdentifier returns the dialect-quoted metadata table name.
+func (m *Migrator) MigrationsTableIdentifier() string {
+	return m.qualifiedMigrationsTable()
+}
+
 func (m *Migrator) migrationsSchemaStatement() string {
 	if m.migrationsSchema == "" {
 		return ""
@@ -434,9 +439,13 @@ func (m *Migrator) GetMigrationStatus(ctx context.Context) (*MigrationStatus, er
 	currentVersion := maxAppliedVersion(appliedMigrations)
 	pendingMigrations := pendingMigrationVersions(m.MigrationProvider().Migrations(), appliedMigrations)
 	outOfOrderMigrations := outOfOrderMigrationVersions(pendingMigrations, currentVersion)
-	dirtyRevision, err := m.dirtyRevision(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get dirty migration revision: %w", err)
+	var dirtyRevision *MigrationRevision
+	if !m.conn.Writer().IsDryRun() {
+		var err error
+		dirtyRevision, err = m.dirtyRevision(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get dirty migration revision: %w", err)
+		}
 	}
 
 	return &MigrationStatus{
