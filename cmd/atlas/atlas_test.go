@@ -45,6 +45,7 @@ func TestNewAtlasCommand_OSSCommandPathsResolve(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(out.String(), qt.Contains, "Usage:")
+			c.Assert(out.String(), qt.Contains, "atlas "+strings.Join(path, " "))
 		})
 	}
 }
@@ -75,6 +76,23 @@ func TestNewAtlasCommand_ForwardsParentedNativeCommand(t *testing.T) {
 	err := root.Execute()
 
 	c.Assert(err, qt.ErrorMatches, "database URL is required")
+}
+
+func TestNewAtlasCommand_HelpUsesAtlasPathForForwardedParentedCommand(t *testing.T) {
+	c := qt.New(t)
+	root := &cobra.Command{Use: "ptah"}
+	root.AddCommand(migrateup.NewMigrateUpCommand())
+	root.AddCommand(NewAtlasCommand())
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"atlas", "migrate", "apply", "--help"})
+
+	err := root.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "ptah atlas migrate apply")
+	c.Assert(out.String(), qt.Not(qt.Contains), "Usage:\n  migrate-up")
 }
 
 func TestNewAtlasCommand_UnsupportedCommandsAreExplicit(t *testing.T) {
