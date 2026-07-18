@@ -1439,6 +1439,7 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 
 	handled := make(map[string]struct{})
 	droppedForModify := make(map[string]struct{})
+	result = p.addPrimaryKeyConstraintsWithTables(result, diff.ConstraintsAddedWithTables, removalByTableName, handled, droppedForModify)
 	for _, add := range diff.ConstraintsAddedWithTables {
 		if add.Type != "FOREIGN KEY" || add.TableName == "" {
 			continue
@@ -1481,6 +1482,29 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 			}
 			continue
 		}
+	}
+	return result
+}
+
+func (p *Planner) addPrimaryKeyConstraintsWithTables(
+	result []ast.Node,
+	additions []types.ConstraintAdditionInfo,
+	removalByTableName map[string]types.ConstraintRemovalInfo,
+	handled map[string]struct{},
+	droppedForModify map[string]struct{},
+) []ast.Node {
+	for _, add := range additions {
+		if add.Type != "PRIMARY KEY" || add.TableName == "" || len(add.Columns) == 0 {
+			continue
+		}
+		if _, modified := removalByTableName[add.TableName+"."+add.Name]; modified {
+			result = p.emitModifyDrop(result, add, droppedForModify)
+		}
+		result = append(result, &ast.AlterTableNode{
+			Name:       add.TableName,
+			Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: ast.NewPrimaryKeyConstraint(add.Columns...)}},
+		})
+		handled[add.Name] = struct{}{}
 	}
 	return result
 }

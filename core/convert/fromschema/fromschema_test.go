@@ -631,6 +631,29 @@ func TestFromTable_CompositePrimaryKey(t *testing.T) {
 	c.Assert(result.Constraints[0].Columns, qt.DeepEquals, []string{"user_id", "role_id"})
 }
 
+func TestFromTable_FieldForeignKeyWithoutNameUsesTableColumnConvention(t *testing.T) {
+	c := qt.New(t)
+
+	table := goschema.Table{
+		StructName: "Book",
+		Name:       "books",
+	}
+	fields := []goschema.Field{
+		{
+			StructName: "Book",
+			Name:       "author_id",
+			Type:       "INTEGER",
+			Foreign:    "authors(id)",
+		},
+	}
+
+	result := fromschema.FromTable(table, fields, nil, "postgres")
+	c.Assert(result, qt.IsNotNil)
+	c.Assert(result.Columns, qt.HasLen, 1)
+	c.Assert(result.Columns[0].ForeignKey, qt.IsNotNil)
+	c.Assert(result.Columns[0].ForeignKey.Name, qt.Equals, "fk_books_author_id")
+}
+
 func TestFromTable_PrimaryKeyParts(t *testing.T) {
 	c := qt.New(t)
 

@@ -242,6 +242,9 @@ func TableColumns(genTable goschema.Table, dbTable types.DBTable, generated *gos
 	// Find modified columns
 	for colName, genCol := range genColumns {
 		if dbCol, exists := dbColumns[colName]; exists {
+			if columnInTablePrimaryKey(genTable, genCol.Name) {
+				genCol = normalizeTablePrimaryKeyColumn(genCol, dbCol)
+			}
 			colDiff := Columns(genCol, dbCol)
 			if len(colDiff.Changes) > 0 {
 				tableDiff.ColumnsModified = append(tableDiff.ColumnsModified, colDiff)
@@ -422,6 +425,39 @@ func Columns(genCol goschema.Field, dbCol types.DBColumn) difftypes.ColumnDiff {
 	}
 
 	return colDiff
+}
+
+func normalizeTablePrimaryKeyColumn(genCol goschema.Field, dbCol types.DBColumn) goschema.Field {
+	genCol.Nullable = false
+	genCol.Primary = dbCol.IsPrimaryKey
+	return genCol
+}
+
+func columnInTablePrimaryKey(table goschema.Table, column string) bool {
+	return slices.Contains(tablePrimaryKeyColumns(table), column)
+}
+
+func tablePrimaryKeyColumns(table goschema.Table) []string {
+	if len(table.PrimaryKeyParts) == 0 {
+		return nonEmptyNames(table.PrimaryKey)
+	}
+	columns := make([]string, 0, len(table.PrimaryKeyParts))
+	for _, part := range table.PrimaryKeyParts {
+		if name := strings.TrimSpace(part.Name); name != "" {
+			columns = append(columns, name)
+		}
+	}
+	return columns
+}
+
+func nonEmptyNames(names []string) []string {
+	filtered := make([]string, 0, len(names))
+	for _, name := range names {
+		if name := strings.TrimSpace(name); name != "" {
+			filtered = append(filtered, name)
+		}
+	}
+	return filtered
 }
 
 func generatedColumnDiff(genCol goschema.Field, dbCol types.DBColumn) string {
@@ -939,6 +975,15 @@ func Constraints(generated *goschema.Database, database *types.DBSchema, diff *d
 		}
 	}
 
+	for _, synthesized := range synthesizeTablePrimaryKeyConstraints(generated, database, dialect) {
+		key := synthesized.Table + "." + synthesized.Name
+		// Don't clobber an explicit table-level constraint that happens to
+		// share the same name.
+		if _, exists := genConstraints[key]; !exists {
+			genConstraints[key] = synthesized
+		}
+	}
+
 	// Synthesize table-level Constraint entries from field-level `foreign=`
 	// annotations so on_delete / on_update drift on an existing field-level
 	// FK participates in comparison (issue #189), mirroring the field-level
@@ -1080,12 +1125,18 @@ func constraintDefinitionsChanged(genConstraint goschema.Constraint, dbConstrain
 		return checkConstraintChanged(genConstraint, dbConstraint)
 	case "UNIQUE":
 		return uniqueConstraintChanged(genConstraint, dbConstraint)
+	case "PRIMARY KEY":
+		return primaryKeyConstraintChanged(genConstraint, dbConstraint)
 	case "FOREIGN KEY":
 		return foreignKeyConstraintChanged(genConstraint, dbConstraint, dialect)
 	default:
 		// For unknown constraint types, assume no change
 		return false
 	}
+}
+
+func primaryKeyConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint) bool {
+	return !slices.Equal(genConstraint.Columns, dbConstraint.ColumnNamesOrDefault())
 }
 
 // excludeConstraintChanged compares EXCLUDE constraint definitions
@@ -1419,6 +1470,55 @@ func synthesizeFieldLevelCheckConstraints(generated *goschema.Database, database
 		})
 	}
 	return synthesized
+}
+
+func synthesizeTablePrimaryKeyConstraints(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	dialect string,
+) []goschema.Constraint {
+	if generated == nil || database == nil {
+		return nil
+	}
+
+	dbTables := make(map[string]struct{}, len(database.Tables))
+	for _, table := range database.Tables {
+		dbTables[table.QualifiedName()] = struct{}{}
+	}
+
+	var synthesized []goschema.Constraint
+	for _, table := range generated.Tables {
+		columns := tablePrimaryKeyColumns(table)
+		if len(columns) == 0 {
+			continue
+		}
+		if _, exists := dbTables[table.QualifiedName()]; !exists {
+			continue
+		}
+
+		name := tablePrimaryKeyConstraintName(table, database.Constraints, dialect)
+		synthesized = append(synthesized, goschema.Constraint{
+			StructName: table.StructName,
+			Name:       name,
+			Type:       "PRIMARY KEY",
+			Table:      table.QualifiedName(),
+			Columns:    append([]string(nil), columns...),
+		})
+	}
+	return synthesized
+}
+
+func tablePrimaryKeyConstraintName(table goschema.Table, dbConstraints []types.DBConstraint, dialect string) string {
+	for _, constraint := range dbConstraints {
+		if constraint.Type == "PRIMARY KEY" && constraint.QualifiedTableName() == table.QualifiedName() {
+			return constraint.Name
+		}
+	}
+
+	if isMySQLFamily(dialect) {
+		return "PRIMARY"
+	}
+	return table.Name + "_pkey"
 }
 
 // synthesizeFieldLevelForeignKeyConstraints turns each field-level `foreign=`
