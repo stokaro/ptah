@@ -247,6 +247,7 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) goschema.Table {
 		StructName: generateStructName(table.Name),
 		Name:       table.Name,
 		Comment:    table.Comment,
+		Partition:  toSchemaPartition(table.Partition),
 	}
 
 	// Extract ENGINE option if present
@@ -298,6 +299,17 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) goschema.Table {
 	}
 
 	return tableSchema
+}
+
+func toSchemaPartition(partition *ast.PartitionSpec) *goschema.PartitionSpec {
+	if partition == nil {
+		return nil
+	}
+	parts := make([]goschema.PartitionPart, 0, len(partition.Parts))
+	for _, part := range partition.Parts {
+		parts = append(parts, goschema.PartitionPart{Name: part.Name, Expr: part.Expr})
+	}
+	return &goschema.PartitionSpec{Type: partition.Type, Parts: parts}
 }
 
 func toPrimaryKeyParts(constraint *ast.ConstraintNode) []goschema.PrimaryKeyPart {

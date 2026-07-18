@@ -53,6 +53,64 @@ table "users" {
 	c.Assert(sql, qt.Contains, `CREATE UNIQUE INDEX`)
 }
 
+func TestParseTablePartition(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+schema "main" {}
+
+table "metrics" {
+  schema = schema.main
+  column "x" {
+    null = false
+    type = integer
+  }
+  column "y" {
+    null = false
+    type = integer
+  }
+  partition {
+    type = RANGE
+    by {
+      column = column.x
+    }
+    by {
+      expr = "floor(y)"
+    }
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Tables, qt.HasLen, 1)
+	c.Assert(db.Tables[0].Partition, qt.DeepEquals, &goschema.PartitionSpec{
+		Type: "RANGE",
+		Parts: []goschema.PartitionPart{
+			{Name: "x"},
+			{Expr: "floor(y)"},
+		},
+	})
+
+	sql := strings.Join(renderer.GetOrderedCreateStatements(db, "postgres"), "\n")
+	c.Assert(sql, qt.Contains, `PARTITION BY RANGE (x, (floor(y)))`)
+}
+
+func TestParseTablePartitionRequiresColumnOrBy(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := atlashcl.Parse([]byte(`
+table "metrics" {
+  column "x" {
+    type = integer
+  }
+  partition {
+    type    = RANGE
+    columns = []
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.ErrorMatches, `.*partition requires at least one column.*`)
+}
+
 func TestParsePostgreSQLEnumBlock(t *testing.T) {
 	c := qt.New(t)
 
