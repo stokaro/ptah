@@ -1220,7 +1220,7 @@ func cloneBoolPtr(value *bool) *bool {
 // (the same hazard checkConstraintChanged guards against for CHECK clauses).
 func foreignKeyConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint, dialect string) bool {
 	// Compare local columns.
-	if !slices.Equal(genConstraint.Columns, dbConstraint.ColumnNamesOrDefault()) {
+	if !slices.Equal(genConstraint.Columns, uniqueStringsPreserveOrder(dbConstraint.ColumnNamesOrDefault())) {
 		return true
 	}
 
@@ -1230,7 +1230,7 @@ func foreignKeyConstraintChanged(genConstraint goschema.Constraint, dbConstraint
 	}
 
 	// Compare referenced columns.
-	if !slices.Equal(genConstraint.ForeignColumnsOrDefault(), dbConstraint.ForeignColumnsOrDefault()) {
+	if !slices.Equal(genConstraint.ForeignColumnsOrDefault(), uniqueStringsPreserveOrder(dbConstraint.ForeignColumnsOrDefault())) {
 		return true
 	}
 
@@ -1245,6 +1245,19 @@ func foreignKeyConstraintChanged(genConstraint goschema.Constraint, dbConstraint
 	}
 
 	return false
+}
+
+func uniqueStringsPreserveOrder(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }
 
 func foreignTableRefMatches(generated string, dbConstraint types.DBConstraint) bool {
