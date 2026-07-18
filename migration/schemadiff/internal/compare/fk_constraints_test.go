@@ -337,3 +337,44 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 		})
 	}
 }
+
+func TestConstraints_FieldLevelForeignKeyDeduplicatesRepeatedIntrospectionColumns(t *testing.T) {
+	c := qt.New(t)
+	generated := &goschema.Database{
+		Tables: []goschema.Table{{StructName: "Area", Name: "ptah_area"}},
+		Fields: []goschema.Field{
+			{StructName: "Area", Name: "id", Type: "TEXT", Primary: true},
+			{
+				StructName:     "Area",
+				Name:           "tenant_id",
+				Type:           "TEXT",
+				Foreign:        "ptah_tenants(id)",
+				ForeignKeyName: "fk_entity_tenant",
+			},
+		},
+	}
+	foreignTable := "ptah_tenants"
+	database := &types.DBSchema{
+		Tables: []types.DBTable{
+			{Name: "ptah_area", Columns: []types.DBColumn{{Name: "id"}, {Name: "tenant_id"}}},
+			{Name: "ptah_tenants", Columns: []types.DBColumn{{Name: "id"}}},
+		},
+		Constraints: []types.DBConstraint{
+			{
+				Name:           "fk_entity_tenant",
+				TableName:      "ptah_area",
+				Type:           "FOREIGN KEY",
+				ColumnNames:    []string{"tenant_id", "tenant_id", "tenant_id"},
+				ForeignTable:   &foreignTable,
+				ForeignColumns: []string{"id", "id", "id"},
+				DeleteRule:     new("NO ACTION"),
+				UpdateRule:     new("NO ACTION"),
+			},
+		},
+	}
+	diff := &difftypes.SchemaDiff{}
+
+	compare.Constraints(generated, database, diff, nil)
+
+	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("added=%v removed=%v", diff.ConstraintsAdded, diff.ConstraintsRemoved))
+}
