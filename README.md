@@ -705,7 +705,7 @@ Apply all pending migrations to bring database up to latest version:
 ./package-migrator migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations
 
 # Production rollout defaults: fail fast on hot-table locks and runaway statements
-./package-migrator migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --lock-timeout 3s --statement-timeout 30s
+./package-migrator migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --lock-timeout 3s --statement-timeout 30s --migration-lock-timeout 30s
 
 # Dry run to preview what would be applied
 ./package-migrator migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dry-run
@@ -731,6 +731,16 @@ Migration files can override the CLI defaults with top-of-file directives:
 ```
 
 PostgreSQL uses `SET LOCAL lock_timeout` and `SET LOCAL statement_timeout` inside the migration transaction. MySQL and MariaDB use `SET SESSION innodb_lock_wait_timeout`; statement timeouts use `max_execution_time` on MySQL and `max_statement_time` on MariaDB. Generated migrations that contain `ALTER TABLE` include the recommended `3s` lock timeout and `30s` statement timeout directives for supported dialects.
+
+`migrate-up`, `migrate-down`, and programmatic `MigrateTo` acquire a
+session-level migration advisory lock around the planning and apply window for
+PostgreSQL, MySQL, and MariaDB. PostgreSQL uses `pg_advisory_lock`; MySQL and
+MariaDB use `GET_LOCK('ptah_migrate', timeout)`. By default Ptah waits until
+the lock is available; MariaDB does not accept MySQL's negative infinite
+timeout, so Ptah uses a long server-side wait there unless an explicit timeout
+is configured. Set `--migration-lock-timeout` to make concurrent runners fail
+with a typed migration lock timeout error that callers can detect with
+`migrator.IsMigrationLockTimeout`.
 
 Most migrations run inside the normal per-migration transaction. If the database
 rejects transactional execution, use an explicit file directive:
@@ -788,7 +798,7 @@ Roll back migrations to a specific version:
 ./package-migrator migrate-down --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --target 5
 
 # Use the same production safety defaults for rollback DDL
-./package-migrator migrate-down --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --target 5 --lock-timeout 3s --statement-timeout 30s
+./package-migrator migrate-down --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --target 5 --lock-timeout 3s --statement-timeout 30s --migration-lock-timeout 30s
 
 # Dry run to preview rollback
 ./package-migrator migrate-down --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --target 5 --dry-run

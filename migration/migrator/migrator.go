@@ -26,14 +26,15 @@ type MigrationStatus struct {
 
 // Migrator handles database migrations for ptah
 type Migrator struct {
-	conn              *dbschema.DatabaseConnection
-	migrationProvider MigrationProvider
-	defaultTimeouts   MigrationTimeouts
-	migrationsTable   string
-	migrationsSchema  string
-	execOrder         ExecOrder
-	initialized       bool
-	logger            *slog.Logger
+	conn                 *dbschema.DatabaseConnection
+	migrationProvider    MigrationProvider
+	defaultTimeouts      MigrationTimeouts
+	migrationsTable      string
+	migrationsSchema     string
+	execOrder            ExecOrder
+	migrationLockTimeout time.Duration
+	initialized          bool
+	logger               *slog.Logger
 }
 
 // NewFSMigrator creates a new migrator that loads migrations from a filesystem.
@@ -370,6 +371,10 @@ func (m *Migrator) GetMigrationStatus(ctx context.Context) (*MigrationStatus, er
 
 // MigrateUp migrates the database up to the latest version
 func (m *Migrator) MigrateUp(ctx context.Context) error {
+	return m.withMigrationLock(ctx, "migrate up", m.migrateUpLocked)
+}
+
+func (m *Migrator) migrateUpLocked(ctx context.Context) error {
 	// Initialize the migrations table
 	if err := m.Initialize(ctx); err != nil {
 		return fmt.Errorf("failed to initialize migrations table: %w", err)
@@ -398,6 +403,12 @@ func (m *Migrator) MigrateUp(ctx context.Context) error {
 
 // MigrateDown migrates the database down to the previous version
 func (m *Migrator) MigrateDown(ctx context.Context) error {
+	return m.withMigrationLock(ctx, "migrate down", func(ctx context.Context) error {
+		return m.migrateDownLocked(ctx)
+	})
+}
+
+func (m *Migrator) migrateDownLocked(ctx context.Context) error {
 	// Initialize the migrations table
 	if err := m.Initialize(ctx); err != nil {
 		return fmt.Errorf("failed to initialize migrations table: %w", err)
@@ -408,11 +419,17 @@ func (m *Migrator) MigrateDown(ctx context.Context) error {
 		return fmt.Errorf("failed to get previous version: %w", err)
 	}
 
-	return m.MigrateDownTo(ctx, targetVersion)
+	return m.migrateDownToLocked(ctx, targetVersion)
 }
 
 // MigrateDownTo migrates the database down to the specified target version
 func (m *Migrator) MigrateDownTo(ctx context.Context, targetVersion int64) error {
+	return m.withMigrationLock(ctx, "migrate down", func(ctx context.Context) error {
+		return m.migrateDownToLocked(ctx, targetVersion)
+	})
+}
+
+func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64) error {
 	// Initialize the migrations table
 	if err := m.Initialize(ctx); err != nil {
 		return fmt.Errorf("failed to initialize migrations table: %w", err)
@@ -500,6 +517,12 @@ func (m *Migrator) MigrateDownTo(ctx context.Context, targetVersion int64) error
 
 // MigrateTo migrates the database to a specific version (up or down)
 func (m *Migrator) MigrateTo(ctx context.Context, targetVersion int64) error {
+	return m.withMigrationLock(ctx, "migrate to", func(ctx context.Context) error {
+		return m.migrateToLocked(ctx, targetVersion)
+	})
+}
+
+func (m *Migrator) migrateToLocked(ctx context.Context, targetVersion int64) error {
 	// Initialize the migrations table
 	if err := m.Initialize(ctx); err != nil {
 		return fmt.Errorf("failed to initialize migrations table: %w", err)
@@ -526,7 +549,7 @@ func (m *Migrator) MigrateTo(ctx context.Context, targetVersion int64) error {
 	}
 
 	// Migrate down to target version
-	return m.MigrateDownTo(ctx, targetVersion)
+	return m.migrateDownToLocked(ctx, targetVersion)
 }
 
 // MigrationProvider returns the migration provider

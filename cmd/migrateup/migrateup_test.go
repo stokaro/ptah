@@ -36,6 +36,8 @@ func TestMigrateUp_VerifySumAbortsOnDriftBeforeConnecting(t *testing.T) {
 	write("0000000001_init.up.sql", "CREATE TABLE t (id BIGINT);\n")
 
 	cmd := NewMigrateUpCommand()
+	c.Assert(cmd.Flag(migrationLockTimeoutFlag), qt.IsNotNil)
+
 	var out, errOut bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)

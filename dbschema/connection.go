@@ -194,6 +194,12 @@ func (dc *DatabaseConnection) ExecContext(ctx context.Context, query string, arg
 	return dc.db.ExecContext(ctx, query, args...)
 }
 
+// Conn returns a dedicated database session. Callers that use session-scoped
+// database features must close the returned connection when finished.
+func (dc *DatabaseConnection) Conn(ctx context.Context) (*sql.Conn, error) {
+	return dc.db.Conn(ctx)
+}
+
 // Close closes the database connection
 func (dc *DatabaseConnection) Close() error {
 	if dc.db != nil {

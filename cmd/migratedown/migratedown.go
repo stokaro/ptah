@@ -33,17 +33,18 @@ before running down migrations in production.`,
 }
 
 const (
-	dbURLFlag            = "db-url"
-	migrationsFlag       = "migrations-dir"
-	targetFlag           = "target"
-	dirFormatFlag        = "dir-format"
-	atlasEnvFlag         = "atlas-env"
-	dryRunFlag           = "dry-run"
-	verboseFlag          = "verbose"
-	confirmFlag          = "confirm"
-	execOrderFlag        = "exec-order"
-	lockTimeoutFlag      = "lock-timeout"
-	statementTimeoutFlag = "statement-timeout"
+	dbURLFlag                = "db-url"
+	migrationsFlag           = "migrations-dir"
+	targetFlag               = "target"
+	dirFormatFlag            = "dir-format"
+	atlasEnvFlag             = "atlas-env"
+	dryRunFlag               = "dry-run"
+	verboseFlag              = "verbose"
+	confirmFlag              = "confirm"
+	execOrderFlag            = "exec-order"
+	migrationLockTimeoutFlag = "migration-lock-timeout"
+	lockTimeoutFlag          = "lock-timeout"
+	statementTimeoutFlag     = "statement-timeout"
 )
 
 var migrateDownFlags = map[string]cobraflags.Flag{
@@ -92,6 +93,11 @@ var migrateDownFlags = map[string]cobraflags.Flag{
 		Value: string(migrator.ExecOrderLinear),
 		Usage: "Execution order policy for pending migrations below the current version: linear, linear-skip, or non-linear",
 	},
+	migrationLockTimeoutFlag: &cobraflags.StringFlag{
+		Name:  migrationLockTimeoutFlag,
+		Value: "",
+		Usage: "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m",
+	},
 	lockTimeoutFlag: &cobraflags.StringFlag{
 		Name:  lockTimeoutFlag,
 		Value: "",
@@ -123,6 +129,7 @@ func migrateDownCommand(_ *cobra.Command, _ []string) error {
 	verbose := migrateDownFlags[verboseFlag].GetBool()
 	skipConfirm := migrateDownFlags[confirmFlag].GetBool()
 	execOrderValue := migrateDownFlags[execOrderFlag].GetString()
+	migrationLockTimeoutValue := migrateDownFlags[migrationLockTimeoutFlag].GetString()
 	lockTimeout := migrateDownFlags[lockTimeoutFlag].GetString()
 	statementTimeout := migrateDownFlags[statementTimeoutFlag].GetString()
 	migrationsSchema := migrateDownFlags[dbcli.MigrationsSchemaFlagName].GetString()
@@ -158,6 +165,10 @@ func migrateDownCommand(_ *cobra.Command, _ []string) error {
 		return err
 	}
 	execOrder, err := migrator.ParseExecOrder(execOrderValue)
+	if err != nil {
+		return err
+	}
+	migrationLockTimeout, err := migrator.ParseMigrationLockTimeout(migrationLockTimeoutValue)
 	if err != nil {
 		return err
 	}
@@ -217,7 +228,10 @@ func migrateDownCommand(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
-	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable).WithDefaultTimeouts(timeouts).WithExecOrder(execOrder)
+	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable).
+		WithDefaultTimeouts(timeouts).
+		WithExecOrder(execOrder).
+		WithMigrationLockTimeout(migrationLockTimeout)
 
 	// Get migration status before running
 	status, err := mig.GetMigrationStatus(context.Background())
