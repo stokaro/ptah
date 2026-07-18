@@ -462,6 +462,9 @@ type ConstraintNode struct {
 	ColumnParts []ConstraintColumn
 	// IncludeColumns contains PostgreSQL INCLUDE columns for primary key constraints.
 	IncludeColumns []string
+	// NullsDistinct carries PostgreSQL UNIQUE NULLS [NOT] DISTINCT state.
+	// Nil means the clause was not specified.
+	NullsDistinct *bool
 	// Reference contains foreign key reference information (only for FOREIGN KEY constraints)
 	Reference *ForeignKeyRef
 	// Expression contains the check expression (only for CHECK constraints)
@@ -516,6 +519,9 @@ type IndexNode struct {
 	Parts []IndexPart
 	// Unique indicates whether this is a unique index
 	Unique bool
+	// NullsDistinct carries PostgreSQL UNIQUE INDEX NULLS [NOT] DISTINCT state.
+	// Nil means the clause was not specified.
+	NullsDistinct *bool
 	// Type specifies the index type (BTREE, HASH, GIN, GIST, etc. for
 	// PostgreSQL; "minmax", "set(N)", "bloom_filter(p)", "tokenbf_v1(...)"
 	// etc. for ClickHouse data-skipping indexes) - database-specific.

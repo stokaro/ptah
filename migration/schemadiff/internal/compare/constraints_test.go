@@ -129,6 +129,38 @@ func TestConstraints(t *testing.T) {
 			},
 		},
 		{
+			name: "UNIQUE constraint nulls distinct changed",
+			generated: func() *goschema.Database {
+				nullsDistinct := false
+				return &goschema.Database{
+					Constraints: []goschema.Constraint{
+						{
+							StructName:    "User",
+							Name:          "users_c_key",
+							Type:          "UNIQUE",
+							Table:         "users",
+							Columns:       []string{"c"},
+							NullsDistinct: &nullsDistinct,
+						},
+					},
+				}
+			}(),
+			database: &types.DBSchema{
+				Constraints: []types.DBConstraint{
+					{
+						Name:        "users_c_key",
+						TableName:   "users",
+						Type:        "UNIQUE",
+						ColumnNames: []string{"c"},
+					},
+				},
+			},
+			expected: &difftypes.SchemaDiff{
+				ConstraintsAdded:   []string{"users_c_key"},
+				ConstraintsRemoved: []string{"users_c_key"},
+			},
+		},
+		{
 			name: "FOREIGN KEY constraint added",
 			generated: &goschema.Database{
 				Constraints: []goschema.Constraint{

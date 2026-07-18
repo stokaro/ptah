@@ -433,6 +433,9 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	if node.Unique {
 		parts = append(parts, "UNIQUE")
 	}
+	if node.NullsDistinct != nil && !node.Unique {
+		return fmt.Errorf("postgresql NULLS DISTINCT is only valid for unique indexes")
+	}
 
 	parts = append(parts, "INDEX")
 
@@ -472,6 +475,10 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 
 	if len(node.IncludeColumns) > 0 {
 		parts = append(parts, fmt.Sprintf("INCLUDE (%s)", strings.Join(node.IncludeColumns, ", ")))
+	}
+
+	if node.NullsDistinct != nil {
+		parts = append(parts, renderNullsDistinctClause(node.NullsDistinct))
 	}
 
 	if len(node.StorageParams) > 0 {
@@ -790,10 +797,14 @@ func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, err
 		}
 		return line, nil
 	case ast.UniqueConstraint:
-		if constraint.Name != "" {
-			return fmt.Sprintf("  CONSTRAINT %s UNIQUE (%s)", constraint.Name, strings.Join(constraint.Columns, ", ")), nil
+		clause := "UNIQUE"
+		if constraint.NullsDistinct != nil {
+			clause += " " + renderNullsDistinctClause(constraint.NullsDistinct)
 		}
-		return fmt.Sprintf("  UNIQUE (%s)", strings.Join(constraint.Columns, ", ")), nil
+		if constraint.Name != "" {
+			return fmt.Sprintf("  CONSTRAINT %s %s (%s)", constraint.Name, clause, strings.Join(constraint.Columns, ", ")), nil
+		}
+		return fmt.Sprintf("  %s (%s)", clause, strings.Join(constraint.Columns, ", ")), nil
 	case ast.ForeignKeyConstraint:
 		if !r.capabilities().Has(capability.ForeignKeys) {
 			return "", nil
@@ -809,6 +820,13 @@ func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, err
 	default:
 		return "", fmt.Errorf("unknown constraint type: %v", constraint.Type)
 	}
+}
+
+func renderNullsDistinctClause(nullsDistinct *bool) string {
+	if nullsDistinct != nil && *nullsDistinct {
+		return "NULLS DISTINCT"
+	}
+	return "NULLS NOT DISTINCT"
 }
 
 // renderForeignKeyConstraint renders a foreign key constraint

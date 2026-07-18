@@ -623,6 +623,33 @@ func TestPlanner_GenerateMigrationSQL_IndexesAdded(t *testing.T) {
 				return indexNode.Name == "uk_users_email" && indexNode.Unique
 			},
 		},
+		{
+			name: "same name index replacement drops before create",
+			diff: &types.SchemaDiff{
+				IndexesAdded:   []string{"idx_users_c"},
+				IndexesRemoved: []string{"idx_users_c"},
+			},
+			generated: func() *goschema.Database {
+				nullsDistinct := false
+				return &goschema.Database{
+					Indexes: []goschema.Index{
+						{Name: "idx_users_c", StructName: "users", Fields: []string{"c"}, Unique: true, NullsDistinct: &nullsDistinct},
+					},
+				}
+			}(),
+			expected: func(nodes []ast.Node) bool {
+				if len(nodes) != 2 {
+					return false
+				}
+				dropNode, dropOk := nodes[0].(*ast.DropIndexNode)
+				indexNode, indexOk := nodes[1].(*ast.IndexNode)
+				return dropOk && indexOk &&
+					dropNode.Name == "idx_users_c" &&
+					indexNode.Name == "idx_users_c" &&
+					indexNode.NullsDistinct != nil &&
+					!*indexNode.NullsDistinct
+			},
+		},
 	}
 
 	for _, tt := range tests {

@@ -53,6 +53,44 @@ func TestNewPostgreSQLReaderWithCapabilities(t *testing.T) {
 	c.Assert(reader.caps.Has(capability.XMLType), qt.IsFalse)
 }
 
+func TestPostgresNullsDistinctFromDefinition(t *testing.T) {
+	tests := []struct {
+		name        string
+		definition  string
+		expected    bool
+		expectedSet bool
+	}{
+		{
+			name:        "nulls not distinct",
+			definition:  `CREATE UNIQUE INDEX users_c_key ON public.users USING btree (c) NULLS NOT DISTINCT`,
+			expected:    false,
+			expectedSet: true,
+		},
+		{
+			name:        "nulls distinct",
+			definition:  `CREATE UNIQUE INDEX users_c_key ON public.users USING btree (c) NULLS DISTINCT`,
+			expected:    true,
+			expectedSet: true,
+		},
+		{
+			name:       "absent",
+			definition: `CREATE UNIQUE INDEX users_c_key ON public.users USING btree (c)`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			actual := postgresNullsDistinctFromDefinition(test.definition)
+			if !test.expectedSet {
+				c.Assert(actual, qt.IsNil)
+				return
+			}
+			c.Assert(actual, qt.IsNotNil)
+			c.Assert(*actual, qt.Equals, test.expected)
+		})
+	}
+}
+
 func TestPostgreSQLReader_ReadSchema_NoConnection(t *testing.T) {
 	c := qt.New(t)
 

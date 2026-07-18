@@ -33,7 +33,9 @@ current schema IR:
   `include`
 - `index` blocks with `columns`, `on { column = ..., prefix = ... }`,
   `on { expr = "..." }`, `desc`, `unique`, `type`, and `where`; PostgreSQL
-  indexes also support `include` and BRIN `page_per_range`
+  indexes also support `include`, BRIN `page_per_range`, and
+  `nulls_distinct`
+- `unique` blocks with `columns` and PostgreSQL `nulls_distinct`
 - `foreign_key` blocks with one local `columns` entry and one table-qualified
   `ref_columns` entry
 - `check` blocks with `expr`
@@ -130,6 +132,27 @@ table "users" {
     type = BRIN
     columns = [column.c]
     page_per_range = 2
+  }
+}
+```
+
+## PostgreSQL NULLS NOT DISTINCT Example
+
+```hcl
+table "users" {
+  column "c" {
+    type = int
+  }
+
+  index "users_c_idx" {
+    unique = true
+    columns = [column.c]
+    nulls_distinct = false
+  }
+
+  unique "users_c_key" {
+    columns = [column.c]
+    nulls_distinct = false
   }
 }
 ```

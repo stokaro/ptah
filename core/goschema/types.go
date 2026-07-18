@@ -242,6 +242,9 @@ type Index struct {
 	Parts   []IndexPart
 	Unique  bool   // Whether this is a unique index
 	Comment string // Index comment/description
+	// NullsDistinct carries PostgreSQL UNIQUE INDEX NULLS [NOT] DISTINCT
+	// state. Nil means the clause was not specified.
+	NullsDistinct *bool
 
 	// Type carries the dialect-specific index type. For PostgreSQL this is
 	// GIN/GIST/BTREE/HASH; for ClickHouse data-skipping indexes it is
@@ -307,6 +310,9 @@ type Constraint struct {
 
 	// UNIQUE/PRIMARY KEY constraint specific fields
 	Columns []string // Column names for UNIQUE/PRIMARY KEY constraints
+	// NullsDistinct carries PostgreSQL UNIQUE NULLS [NOT] DISTINCT state.
+	// Nil means the clause was not specified.
+	NullsDistinct *bool
 
 	// FOREIGN KEY constraint specific fields
 	ForeignTable   string   // Referenced table name
