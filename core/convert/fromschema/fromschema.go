@@ -666,6 +666,7 @@ func FromTable(table goschema.Table, fields []goschema.Field, enums []goschema.E
 			createTable.SetOption("STRICT", "true")
 		}
 	}
+	createTable.Partition = toASTPartition(newTable.Partition)
 
 	// Add columns for fields that belong to this table
 	tableLevelPK := tableNeedsPrimaryKeyConstraint(newTable)
@@ -686,6 +687,17 @@ func FromTable(table goschema.Table, fields []goschema.Field, enums []goschema.E
 	}
 
 	return createTable
+}
+
+func toASTPartition(partition *goschema.PartitionSpec) *ast.PartitionSpec {
+	if partition == nil {
+		return nil
+	}
+	parts := make([]ast.PartitionPart, 0, len(partition.Parts))
+	for _, part := range partition.Parts {
+		parts = append(parts, ast.PartitionPart{Name: part.Name, Expr: part.Expr})
+	}
+	return &ast.PartitionSpec{Type: partition.Type, Parts: parts}
 }
 
 func tableNeedsPrimaryKeyConstraint(table goschema.Table) bool {
