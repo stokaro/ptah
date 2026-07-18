@@ -135,6 +135,8 @@ func TestPostgreSQLReader_enhanceTablesWithConstraints(t *testing.T) {
 				{Name: "id", IsPrimaryKey: false, IsUnique: false},
 				{Name: "email", IsPrimaryKey: false, IsUnique: false},
 				{Name: "name", IsPrimaryKey: false, IsUnique: false},
+				{Name: "sku", IsPrimaryKey: false, IsUnique: false},
+				{Name: "region", IsPrimaryKey: false, IsUnique: false},
 			},
 		},
 	}
@@ -142,6 +144,7 @@ func TestPostgreSQLReader_enhanceTablesWithConstraints(t *testing.T) {
 	constraints := []types.DBConstraint{
 		{TableName: "test_table", ColumnName: "id", Type: "PRIMARY KEY"},
 		{TableName: "test_table", ColumnName: "email", Type: "UNIQUE"},
+		{TableName: "test_table", ColumnNames: []string{"sku", "region"}, Type: "UNIQUE"},
 	}
 
 	// Test the enhancement
@@ -159,6 +162,14 @@ func TestPostgreSQLReader_enhanceTablesWithConstraints(t *testing.T) {
 	nameCol := testutils.FindColumn(tables[0].Columns, "name")
 	c.Assert(nameCol.IsPrimaryKey, qt.IsFalse)
 	c.Assert(nameCol.IsUnique, qt.IsFalse)
+
+	skuCol := testutils.FindColumn(tables[0].Columns, "sku")
+	c.Assert(skuCol.IsPrimaryKey, qt.IsFalse)
+	c.Assert(skuCol.IsUnique, qt.IsFalse)
+
+	regionCol := testutils.FindColumn(tables[0].Columns, "region")
+	c.Assert(regionCol.IsPrimaryKey, qt.IsFalse)
+	c.Assert(regionCol.IsUnique, qt.IsFalse)
 }
 
 func TestNewPostgreSQLWriter(t *testing.T) {

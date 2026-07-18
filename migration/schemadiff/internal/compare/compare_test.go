@@ -862,6 +862,26 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 			expected: &difftypes.SchemaDiff{},
 		},
 		{
+			name: "custom-named unique constraint backing indexes should be ignored",
+			generated: &goschema.Database{
+				Indexes: []goschema.Index{},
+			},
+			database: &types.DBSchema{
+				Constraints: []types.DBConstraint{
+					{Name: "ptah_constraint_unique", TableName: "ptah_constraint_drift", Type: "UNIQUE", ColumnNames: []string{"sku", "region"}},
+				},
+				Indexes: []types.DBIndex{
+					{
+						Name:      "ptah_constraint_unique",
+						TableName: "ptah_constraint_drift",
+						Columns:   []string{"sku", "region"},
+						IsUnique:  true,
+					},
+				},
+			},
+			expected: &difftypes.SchemaDiff{},
+		},
+		{
 			name: "mixed constraint-based and explicitly defined unique indexes",
 			generated: &goschema.Database{
 				Indexes: []goschema.Index{

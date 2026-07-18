@@ -796,10 +796,14 @@ func (r *Reader) enhanceTablesWithConstraints(tables []types.DBTable, constraint
 			primaryKeys[tableName][constraint.ColumnName] = true
 		}
 		if constraint.Type == "UNIQUE" {
+			columns := constraint.ColumnNamesOrDefault()
+			if len(columns) != 1 {
+				continue
+			}
 			if uniqueKeys[tableName] == nil {
 				uniqueKeys[tableName] = make(map[string]bool)
 			}
-			uniqueKeys[tableName][constraint.ColumnName] = true
+			uniqueKeys[tableName][columns[0]] = true
 		}
 	}
 
