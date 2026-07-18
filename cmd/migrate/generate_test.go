@@ -39,6 +39,20 @@ func TestAddMigrateGenerateCommandIsIdempotent(t *testing.T) {
 	c.Assert(count, qt.Equals, 1)
 }
 
+func TestMigrateCommandRejectsAtlasApplyAtRoot(t *testing.T) {
+	c := qt.New(t)
+
+	cmd := NewMigrateCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"apply"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `unknown command "apply" for "migrate"`)
+}
+
 func TestMigrateGenerateShadowVerificationWithRealDB(t *testing.T) {
 	dbURL := migrateGenerateTestDatabaseURL()
 	if dbURL == "" {

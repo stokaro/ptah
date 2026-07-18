@@ -161,6 +161,11 @@ func TestNewFSMigrationProvider_AtlasFormat(t *testing.T) {
 	c := qt.New(t)
 
 	fsys := fstest.MapFS{
+		"atlas.sum": &fstest.MapFile{Data: []byte(
+			"h1:directory\n" +
+				"20220318104614_team_A.sql h1:teamhash\n" +
+				"20220318104615_add_users.sql h1:userhash\n",
+		)},
 		"20220318104615_add_users.sql": &fstest.MapFile{Data: []byte("CREATE TABLE users (id INT);\n")},
 		"20220318104614_team_A.sql":    &fstest.MapFile{Data: []byte("CREATE TABLE teams (id INT);\n")},
 	}
@@ -172,8 +177,10 @@ func TestNewFSMigrationProvider_AtlasFormat(t *testing.T) {
 	c.Assert(migrations, qt.HasLen, 2)
 	c.Assert(migrations[0].Version, qt.Equals, int64(20220318104614))
 	c.Assert(migrations[0].Description, qt.Equals, "Team A")
+	c.Assert(migrations[0].Checksum, qt.Equals, "h1:teamhash")
 	c.Assert(migrations[1].Version, qt.Equals, int64(20220318104615))
 	c.Assert(migrations[1].Description, qt.Equals, "Add Users")
+	c.Assert(migrations[1].Checksum, qt.Equals, "h1:userhash")
 
 	err = migrations[0].Down(context.Background(), nil)
 	c.Assert(err, qt.ErrorMatches, `migration 20220318104614 has no Atlas down migration; dynamic Atlas-style down migrations are not implemented yet; add an atlas txtar down.sql section or migrate down manually`)
