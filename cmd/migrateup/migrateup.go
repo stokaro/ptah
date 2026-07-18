@@ -12,6 +12,7 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/lint"
 	"github.com/stokaro/ptah/migration/migratesum"
 	"github.com/stokaro/ptah/migration/migrator"
@@ -148,6 +149,10 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 
 	if migrationsDir == "" {
 		return fmt.Errorf("migrations directory is required")
+	}
+	migrationsDir, err := pathguard.ResolveCLIPath(migrationsDir)
+	if err != nil {
+		return fmt.Errorf("invalid migrations directory: %w", err)
 	}
 
 	dirFormat, err := migrator.ParseMigrationDirFormat(dirFormatValue)
