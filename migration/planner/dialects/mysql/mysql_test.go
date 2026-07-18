@@ -155,7 +155,11 @@ func TestPlanner_GenerateMigrationAST_TablesAdded(t *testing.T) {
 			},
 			expected: func(nodes []ast.Node) bool {
 				sql, err := renderer.RenderSQL("mysql", nodes...)
-				return err == nil && strings.Contains(sql, "PRIMARY KEY (org_id, user_id)")
+				if err != nil {
+					return false
+				}
+				sql = legacyRenderedSQL(sql)
+				return strings.Contains(sql, "PRIMARY KEY (org_id, user_id)")
 			},
 		},
 	}

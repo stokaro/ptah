@@ -88,10 +88,10 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 				ConstraintsAdded: []string{"fk_export_file"},
 			},
 			wantSQL: []string{
-				"ALTER TABLE exports",
-				"ADD CONSTRAINT fk_export_file",
-				"FOREIGN KEY (file_id)",
-				"REFERENCES files(id)",
+				`ALTER TABLE "exports"`,
+				`ADD CONSTRAINT "fk_export_file"`,
+				`FOREIGN KEY ("file_id")`,
+				`REFERENCES "files"("id")`,
 			},
 		},
 		{

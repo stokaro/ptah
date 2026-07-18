@@ -128,8 +128,8 @@ func TestMySQL_ColumnDefaultLiteralQuoting(t *testing.T) {
 
 	out := renderMySQL(t, table, alter)
 
-	c.Assert(out, qt.Contains, "status enum('draft','active') NOT NULL DEFAULT 'draft'")
-	c.Assert(out, qt.Contains, "ALTER TABLE products MODIFY COLUMN status enum('draft','active') NOT NULL DEFAULT 'draft';")
+	c.Assert(out, qt.Contains, "`status` enum('draft','active') NOT NULL DEFAULT 'draft'")
+	c.Assert(out, qt.Contains, "ALTER TABLE `products` MODIFY COLUMN `status` enum('draft','active') NOT NULL DEFAULT 'draft';")
 	c.Assert(out, qt.Not(qt.Contains), "DEFAULT ''draft''")
 }
 

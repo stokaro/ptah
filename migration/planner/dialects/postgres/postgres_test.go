@@ -227,7 +227,7 @@ func TestPlanner_GenerateMigrationSQL_TablesAdded(t *testing.T) {
 			},
 			expected: func(nodes []ast.Node) bool {
 				sql, err := renderer.RenderSQL("postgres", nodes...)
-				return err == nil && strings.Contains(sql, "PRIMARY KEY (org_id, user_id)")
+				return err == nil && strings.Contains(sql, `PRIMARY KEY ("org_id", "user_id")`)
 			},
 		},
 	}
