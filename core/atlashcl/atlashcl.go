@@ -120,12 +120,13 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 			}
 			p.db.Fields = append(p.db.Fields, field)
 		case "primary_key":
-			columns, parts, err := p.parsePrimaryKey(nested)
+			primaryKey, err := p.parsePrimaryKey(nested)
 			if err != nil {
 				return err
 			}
-			table.PrimaryKey = columns
-			table.PrimaryKeyParts = parts
+			table.PrimaryKey = primaryKey.columns
+			table.PrimaryKeyParts = primaryKey.parts
+			table.PrimaryKeyInclude = primaryKey.include
 		case "index":
 			index, err := p.parseIndex(table.StructName, table.Name, nested)
 			if err != nil {
@@ -376,33 +377,43 @@ func (p *parser) parseIndexParts(block *hclsyntax.Block) ([]string, []goschema.I
 	return columns, parts, nil
 }
 
-func (p *parser) parsePrimaryKey(block *hclsyntax.Block) ([]string, []goschema.PrimaryKeyPart, error) {
+type primaryKeySpec struct {
+	columns []string
+	parts   []goschema.PrimaryKeyPart
+	include []string
+}
+
+func (p *parser) parsePrimaryKey(block *hclsyntax.Block) (primaryKeySpec, error) {
 	if err := p.rejectUnsupportedPrimaryKeyAttrs(block); err != nil {
-		return nil, nil, err
+		return primaryKeySpec{}, err
 	}
 	if err := p.validatePrimaryKeyType(block); err != nil {
-		return nil, nil, err
+		return primaryKeySpec{}, err
+	}
+	include, err := p.parseColumnsAttr(block, "include")
+	if err != nil {
+		return primaryKeySpec{}, err
 	}
 	if block.Body.Attributes["columns"] != nil {
 		if len(block.Body.Blocks) > 0 {
-			return nil, nil, p.blockError(block.Body.Blocks[0], "primary_key cannot mix columns attribute with on blocks")
+			return primaryKeySpec{}, p.blockError(block.Body.Blocks[0], "primary_key cannot mix columns attribute with on blocks")
 		}
 		columns, err := p.parseColumnsAttr(block, "columns")
 		if err != nil {
-			return nil, nil, err
+			return primaryKeySpec{}, err
 		}
-		return columns, primaryKeyParts(columns), nil
+		return primaryKeySpec{columns: columns, parts: primaryKeyParts(columns), include: include}, nil
 	}
 
 	parts, err := p.parsePrimaryKeyParts(block)
 	if err != nil {
-		return nil, nil, err
+		return primaryKeySpec{}, err
 	}
 	columns := make([]string, 0, len(parts))
 	for _, part := range parts {
 		columns = append(columns, part.Name)
 	}
-	return columns, parts, nil
+	return primaryKeySpec{columns: columns, parts: parts, include: include}, nil
 }
 
 func (p *parser) validatePrimaryKeyType(block *hclsyntax.Block) error {
@@ -641,6 +652,7 @@ func (p *parser) rejectUnsupportedTableAttrs(block *hclsyntax.Block) error {
 func (p *parser) rejectUnsupportedPrimaryKeyAttrs(block *hclsyntax.Block) error {
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"columns": true,
+		"include": true,
 		"type":    true,
 	}, "primary_key")
 }

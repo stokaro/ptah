@@ -93,6 +93,37 @@ table "tokens" {
 	c.Assert(sql, qt.Not(qt.Contains), "id tinytext PRIMARY KEY")
 }
 
+func TestParsePrimaryKeyInclude(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+schema "main" {}
+
+table "users" {
+  schema = schema.main
+  column "id" {
+    type = int
+  }
+  column "covering" {
+    type = int
+  }
+  primary_key {
+    columns = [column.id]
+    include = [column.covering]
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Tables, qt.HasLen, 1)
+	c.Assert(db.Tables[0].PrimaryKey, qt.DeepEquals, []string{"id"})
+	c.Assert(db.Tables[0].PrimaryKeyParts, qt.DeepEquals, []goschema.PrimaryKeyPart{{Name: "id"}})
+	c.Assert(db.Tables[0].PrimaryKeyInclude, qt.DeepEquals, []string{"covering"})
+
+	sql := strings.Join(renderer.GetOrderedCreateStatements(db, "postgres"), "\n")
+	c.Assert(sql, qt.Contains, "PRIMARY KEY (id) INCLUDE (covering)")
+	c.Assert(sql, qt.Not(qt.Contains), "id int PRIMARY KEY")
+}
+
 func TestParsePrimaryKeyType(t *testing.T) {
 	c := qt.New(t)
 

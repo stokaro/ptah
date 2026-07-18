@@ -29,7 +29,8 @@ current schema IR:
 - `table` blocks
 - `column` blocks with `type`, `null`, `auto_increment`, `unique`, `default`,
   `identity`, and `comment`
-- `primary_key` blocks with `columns`
+- `primary_key` blocks with `columns`; PostgreSQL primary keys also support
+  `include`
 - `index` blocks with `columns`, `on { column = ..., prefix = ... }`,
   `on { expr = "..." }`, `desc`, `unique`, `type`, and `where`
 - `foreign_key` blocks with one local `columns` entry and one table-qualified
@@ -74,6 +75,25 @@ table "users" {
     type = FULLTEXT
     parser = ngram
     columns = [column.bio]
+  }
+}
+```
+
+## PostgreSQL Primary Key Include Example
+
+```hcl
+table "users" {
+  column "id" {
+    type = int
+  }
+
+  column "covering" {
+    type = int
+  }
+
+  primary_key {
+    columns = [column.id]
+    include = [column.covering]
   }
 }
 ```

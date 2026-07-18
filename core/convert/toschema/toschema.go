@@ -264,6 +264,7 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) goschema.Table {
 		if constraint.Type == ast.PrimaryKeyConstraint {
 			tableSchema.PrimaryKey = constraint.Columns
 			tableSchema.PrimaryKeyParts = toPrimaryKeyParts(constraint)
+			tableSchema.PrimaryKeyInclude = constraint.IncludeColumns
 			break // Only one primary key constraint per table
 		}
 	}

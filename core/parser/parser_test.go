@@ -3322,6 +3322,46 @@ func TestParser_TableConstraintColumnParts(t *testing.T) {
 	}})
 }
 
+func TestParser_TablePrimaryKeyInclude(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE TABLE users (id integer NOT NULL, covering integer, PRIMARY KEY (id) INCLUDE (covering));`
+	statements, err := parser.NewParser(sql).Parse()
+	c.Assert(err, qt.IsNil)
+
+	createTable := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(createTable.Constraints, qt.HasLen, 1)
+
+	pk := createTable.Constraints[0]
+	c.Assert(pk.Type, qt.Equals, ast.PrimaryKeyConstraint)
+	c.Assert(pk.Columns, qt.DeepEquals, []string{"id"})
+	c.Assert(pk.IncludeColumns, qt.DeepEquals, []string{"covering"})
+}
+
+func TestParser_PrimaryKeyIncludeRejectsInvalidLists(t *testing.T) {
+	tests := []string{
+		`CREATE TABLE users (id integer NOT NULL, covering integer, PRIMARY KEY (id) INCLUDE ());`,
+		`CREATE TABLE users (id integer NOT NULL, covering integer, PRIMARY KEY (id) INCLUDE (covering,));`,
+	}
+	for _, sql := range tests {
+		t.Run(sql, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := parser.NewParser(sql).Parse()
+
+			c.Assert(err, qt.IsNotNil)
+		})
+	}
+}
+
+func TestParser_PrimaryKeyIncludeRejectsColumnConstraint(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := parser.NewParser(`CREATE TABLE users (id integer PRIMARY KEY INCLUDE (covering), covering integer);`).Parse()
+
+	c.Assert(err, qt.IsNotNil)
+}
+
 func TestParser_MariaDBOnUpdateTimestamp(t *testing.T) {
 	c := qt.New(t)
 

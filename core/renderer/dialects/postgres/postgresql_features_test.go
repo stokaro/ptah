@@ -645,6 +645,26 @@ CREATE TABLE users (
 `)
 }
 
+func TestPostgreSQLRenderer_PrimaryKeyInclude(t *testing.T) {
+	c := qt.New(t)
+
+	table := ast.NewCreateTable("users").
+		AddColumn(ast.NewColumn("id", "INTEGER").SetNotNull()).
+		AddColumn(ast.NewColumn("covering", "INTEGER")).
+		AddConstraint(&ast.ConstraintNode{
+			Type:           ast.PrimaryKeyConstraint,
+			Name:           "users_pkey",
+			Columns:        []string{"id"},
+			IncludeColumns: []string{"covering"},
+		})
+
+	renderer := postgres.New()
+	result, err := renderer.Render(table)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result, qt.Contains, "  CONSTRAINT users_pkey PRIMARY KEY (id) INCLUDE (covering)")
+}
+
 func TestPostgreSQLRenderer_RejectsIdentityGeneratedColumnMix(t *testing.T) {
 	c := qt.New(t)
 
