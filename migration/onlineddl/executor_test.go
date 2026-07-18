@@ -288,34 +288,139 @@ func TestValidateDirectives(t *testing.T) {
 	c.Assert(e.ValidateDirectives(map[string]string{DirectiveTool: ToolGhost}), qt.IsNil)
 	c.Assert(e.ValidateDirectives(map[string]string{DirectiveTool: ToolPTOSC}), qt.IsNil)
 	c.Assert(e.ValidateDirectives(map[string]string{DirectiveTool: DirectiveNone}), qt.IsNil)
+	c.Assert(e.ValidateDirectives(map[string]string{DirectiveFallback: FallbackError}), qt.IsNil)
+	c.Assert(e.ValidateDirectives(map[string]string{DirectiveFallback: FallbackPlain}), qt.IsNil)
 	c.Assert(e.ValidateDirectives(map[string]string{"unrelated": "x"}), qt.IsNil)
 	c.Assert(e.ValidateDirectives(map[string]string{DirectiveTool: "goste"}),
 		qt.ErrorMatches, `unknown online_ddl_tool directive value "goste".*`)
+	c.Assert(e.ValidateDirectives(map[string]string{DirectiveFallback: "warn"}),
+		qt.ErrorMatches, `unknown online_ddl_fallback directive value "warn".*`)
 }
 
-func TestExecuteStatement_FallbackPathsWarn(t *testing.T) {
-	c := qt.New(t)
+func TestExecuteStatement_MissingBinaryFallbackPolicy(t *testing.T) {
+	tests := []struct {
+		name       string
+		cfg        Config
+		directives map[string]string
+		rows       int64
+		wantErr    string
+		wantWarn   bool
+	}{
+		{
+			name:       "explicit directive defaults to error",
+			directives: map[string]string{DirectiveTool: ToolGhost},
+			wantErr:    `online-DDL tool gh-ost unavailable for table users: executable file not found in \$PATH; no ALTER TABLE was applied`,
+		},
+		{
+			name:       "explicit directive can opt into plain fallback",
+			cfg:        Config{Fallback: FallbackError},
+			directives: map[string]string{DirectiveTool: ToolGhost, DirectiveFallback: FallbackPlain},
+			wantWarn:   true,
+		},
+		{
+			name:     "threshold routing defaults to plain fallback",
+			cfg:      Config{Tool: ToolGhost, ThresholdRows: 1000},
+			rows:     1000,
+			wantWarn: true,
+		},
+		{
+			name:    "threshold routing can opt into error fallback",
+			cfg:     Config{Tool: ToolGhost, ThresholdRows: 1000, Fallback: FallbackError},
+			rows:    1000,
+			wantErr: `online-DDL tool gh-ost unavailable for table users: executable file not found in \$PATH; no ALTER TABLE was applied`,
+		},
+		{
+			name:       "config plain fallback overrides explicit directive default",
+			cfg:        Config{Fallback: FallbackPlain},
+			directives: map[string]string{DirectiveTool: ToolGhost},
+			wantWarn:   true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			var buf bytes.Buffer
+			logger := slog.New(slog.NewTextHandler(&buf, nil))
+			var ran []invocation
+			e := testExecutor(tt.cfg, &ran, errors.New("executable file not found in $PATH"), tt.rows, nil).WithLogger(logger)
 
-	// Missing binary warns then falls through.
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, nil))
-	var ran []invocation
-	e := testExecutor(Config{}, &ran, errors.New("not found"), 0, nil).WithLogger(logger)
-	handled, err := e.executeStatement(context.Background(), mysqlConn(),
-		"ALTER TABLE users ADD COLUMN a INT", map[string]string{DirectiveTool: ToolGhost})
-	c.Assert(err, qt.IsNil)
-	c.Assert(handled, qt.IsFalse)
-	c.Assert(buf.String(), qt.Contains, "unavailable on PATH")
-	c.Assert(buf.String(), qt.Contains, "not found", qt.Commentf("the underlying lookPath error is surfaced"))
+			handled, err := e.executeStatement(context.Background(), mysqlConn(),
+				"ALTER TABLE users ADD COLUMN a INT", tt.directives)
 
-	// Row-count estimate failure warns then falls through.
-	buf.Reset()
-	e = testExecutor(Config{Tool: ToolGhost, ThresholdRows: 1}, &ran, nil, 0, errors.New("boom")).WithLogger(logger)
-	handled, err = e.executeStatement(context.Background(), mysqlConn(),
-		"ALTER TABLE users ADD COLUMN a INT", nil)
-	c.Assert(err, qt.IsNil)
-	c.Assert(handled, qt.IsFalse)
-	c.Assert(buf.String(), qt.Contains, "row-count check failed")
+			if tt.wantErr != "" {
+				c.Assert(err, qt.ErrorMatches, tt.wantErr)
+			} else {
+				c.Assert(err, qt.IsNil)
+			}
+			c.Assert(handled, qt.IsFalse)
+			c.Assert(ran, qt.HasLen, 0)
+			if tt.wantWarn {
+				c.Assert(buf.String(), qt.Contains, "unavailable on PATH")
+				c.Assert(buf.String(), qt.Contains, "executable file not found in $PATH",
+					qt.Commentf("the underlying lookPath error is surfaced"))
+			} else {
+				c.Assert(buf.String(), qt.Not(qt.Contains), "falling back to a plain ALTER TABLE")
+			}
+		})
+	}
+}
+
+func TestExecuteStatement_RowCountFailureFallbackPolicy(t *testing.T) {
+	tests := []struct {
+		name       string
+		cfg        Config
+		directives map[string]string
+		wantErr    string
+		wantWarn   bool
+	}{
+		{
+			name:     "threshold default falls through",
+			cfg:      Config{Tool: ToolGhost, ThresholdRows: 1},
+			wantWarn: true,
+		},
+		{
+			name:    "config error aborts",
+			cfg:     Config{Tool: ToolGhost, ThresholdRows: 1, Fallback: FallbackError},
+			wantErr: `online-DDL row-count check failed for table users: information_schema unavailable; no ALTER TABLE was applied`,
+		},
+		{
+			name:       "directive error aborts",
+			cfg:        Config{Tool: ToolGhost, ThresholdRows: 1},
+			directives: map[string]string{DirectiveFallback: FallbackError},
+			wantErr:    `online-DDL row-count check failed for table users: information_schema unavailable; no ALTER TABLE was applied`,
+		},
+		{
+			name:       "directive plain overrides config error",
+			cfg:        Config{Tool: ToolGhost, ThresholdRows: 1, Fallback: FallbackError},
+			directives: map[string]string{DirectiveFallback: FallbackPlain},
+			wantWarn:   true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			var buf bytes.Buffer
+			logger := slog.New(slog.NewTextHandler(&buf, nil))
+			var ran []invocation
+			e := testExecutor(tt.cfg, &ran, nil, 0, errors.New("information_schema unavailable")).WithLogger(logger)
+
+			handled, err := e.executeStatement(context.Background(), mysqlConn(),
+				"ALTER TABLE users ADD COLUMN a INT", tt.directives)
+
+			if tt.wantErr != "" {
+				c.Assert(err, qt.ErrorMatches, tt.wantErr)
+			} else {
+				c.Assert(err, qt.IsNil)
+			}
+			c.Assert(handled, qt.IsFalse)
+			c.Assert(ran, qt.HasLen, 0)
+			if tt.wantWarn {
+				c.Assert(buf.String(), qt.Contains, "row-count check failed")
+			} else {
+				c.Assert(buf.String(), qt.Not(qt.Contains), "row-count check failed")
+			}
+		})
+	}
 }
 
 func TestExecuteStatement_DirectiveRoutesThroughPTOSC(t *testing.T) {
@@ -398,7 +503,7 @@ func TestExecuteStatement_ThresholdAutoRouting(t *testing.T) {
 	c.Assert(handled, qt.IsFalse)
 	c.Assert(ran, qt.HasLen, 0)
 
-	// Row-count estimate broken: fail open to the plain ALTER.
+	// Row-count estimate broken: threshold routing defaults to plain fallback.
 	ran = nil
 	e = testExecutor(cfg, &ran, nil, 0, errors.New("information_schema unavailable"))
 	handled, err = e.executeStatement(context.Background(), mysqlConn(),
@@ -431,7 +536,7 @@ func TestExecuteStatement_NonAlterAndNonMySQLPassThrough(t *testing.T) {
 	c.Assert(ran, qt.HasLen, 0)
 }
 
-func TestExecuteStatement_MissingBinaryFallsBackToPlainAlter(t *testing.T) {
+func TestExecuteStatement_ExplicitMissingBinaryAbortsByDefault(t *testing.T) {
 	c := qt.New(t)
 
 	var ran []invocation
@@ -441,8 +546,8 @@ func TestExecuteStatement_MissingBinaryFallsBackToPlainAlter(t *testing.T) {
 		"ALTER TABLE users ADD COLUMN bio TEXT",
 		map[string]string{DirectiveTool: ToolGhost})
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(handled, qt.IsFalse, qt.Commentf("the migrator must execute the plain ALTER instead"))
+	c.Assert(err, qt.ErrorMatches, `online-DDL tool gh-ost unavailable for table users: executable file not found in \$PATH; no ALTER TABLE was applied`)
+	c.Assert(handled, qt.IsFalse)
 	c.Assert(ran, qt.HasLen, 0)
 }
 
