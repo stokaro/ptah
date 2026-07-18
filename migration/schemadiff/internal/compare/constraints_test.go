@@ -109,6 +109,90 @@ func TestConstraints(t *testing.T) {
 			},
 		},
 		{
+			name: "CHECK constraint modified",
+			generated: &goschema.Database{
+				Constraints: []goschema.Constraint{
+					{
+						StructName:      "Product",
+						Name:            "positive_price",
+						Type:            "CHECK",
+						Table:           "products",
+						CheckExpression: "price >= 0",
+					},
+				},
+			},
+			database: &types.DBSchema{
+				Constraints: []types.DBConstraint{
+					{
+						Name:        "positive_price",
+						TableName:   "products",
+						Type:        "CHECK",
+						CheckClause: new("price > 0"),
+					},
+				},
+			},
+			expected: &difftypes.SchemaDiff{
+				ConstraintsAdded:   []string{"positive_price"},
+				ConstraintsRemoved: []string{"positive_price"},
+			},
+		},
+		{
+			name: "CHECK constraint semantic parentheses are preserved",
+			generated: &goschema.Database{
+				Constraints: []goschema.Constraint{
+					{
+						StructName:      "Invoice",
+						Name:            "positive_balance",
+						Type:            "CHECK",
+						Table:           "invoices",
+						CheckExpression: "amount - (discount - fee) > 0",
+					},
+				},
+			},
+			database: &types.DBSchema{
+				Constraints: []types.DBConstraint{
+					{
+						Name:        "positive_balance",
+						TableName:   "invoices",
+						Type:        "CHECK",
+						CheckClause: new("amount - discount - fee > 0"),
+					},
+				},
+			},
+			expected: &difftypes.SchemaDiff{
+				ConstraintsAdded:   []string{"positive_balance"},
+				ConstraintsRemoved: []string{"positive_balance"},
+			},
+		},
+		{
+			name: "CHECK constraint explicit column cast is preserved",
+			generated: &goschema.Database{
+				Constraints: []goschema.Constraint{
+					{
+						StructName:      "Invoice",
+						Name:            "positive_amount",
+						Type:            "CHECK",
+						Table:           "invoices",
+						CheckExpression: "amount::numeric > 0",
+					},
+				},
+			},
+			database: &types.DBSchema{
+				Constraints: []types.DBConstraint{
+					{
+						Name:        "positive_amount",
+						TableName:   "invoices",
+						Type:        "CHECK",
+						CheckClause: new("amount > 0"),
+					},
+				},
+			},
+			expected: &difftypes.SchemaDiff{
+				ConstraintsAdded:   []string{"positive_amount"},
+				ConstraintsRemoved: []string{"positive_amount"},
+			},
+		},
+		{
 			name: "UNIQUE constraint added",
 			generated: &goschema.Database{
 				Constraints: []goschema.Constraint{
@@ -127,6 +211,59 @@ func TestConstraints(t *testing.T) {
 			expected: &difftypes.SchemaDiff{
 				ConstraintsAdded: []string{"unique_user_email"},
 			},
+		},
+		{
+			name: "UNIQUE constraint column set changed",
+			generated: &goschema.Database{
+				Constraints: []goschema.Constraint{
+					{
+						StructName: "User",
+						Name:       "unique_user_email",
+						Type:       "UNIQUE",
+						Table:      "users",
+						Columns:    []string{"user_id", "email", "tenant_id"},
+					},
+				},
+			},
+			database: &types.DBSchema{
+				Constraints: []types.DBConstraint{
+					{
+						Name:        "unique_user_email",
+						TableName:   "users",
+						Type:        "UNIQUE",
+						ColumnNames: []string{"user_id", "email"},
+					},
+				},
+			},
+			expected: &difftypes.SchemaDiff{
+				ConstraintsAdded:   []string{"unique_user_email"},
+				ConstraintsRemoved: []string{"unique_user_email"},
+			},
+		},
+		{
+			name: "UNIQUE constraint column order changed",
+			generated: &goschema.Database{
+				Constraints: []goschema.Constraint{
+					{
+						StructName: "User",
+						Name:       "unique_user_email",
+						Type:       "UNIQUE",
+						Table:      "users",
+						Columns:    []string{"user_id", "email"},
+					},
+				},
+			},
+			database: &types.DBSchema{
+				Constraints: []types.DBConstraint{
+					{
+						Name:        "unique_user_email",
+						TableName:   "users",
+						Type:        "UNIQUE",
+						ColumnNames: []string{"email", "user_id"},
+					},
+				},
+			},
+			expected: &difftypes.SchemaDiff{},
 		},
 		{
 			name: "UNIQUE constraint nulls distinct changed",
@@ -659,12 +796,11 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 		{
 			// Realistic introspection shape: PostgreSQL stores the clause
 			// as the parser/rewriter produced it, NOT as the user wrote
-			// it. The user authored `category IN ('a','b')`; what comes
+			// it. The user authored `category IN('a','b')`; what comes
 			// back is roughly `((category)::text = ANY ((ARRAY['a'::text,
-			// 'b'::text])::text[]))`. The diff must STILL be empty —
-			// that's the whole point of the trust-name v1 contract. If a
-			// future regression reintroduces an expression compare here,
-			// this case will start failing.
+			// 'b'::text])::text[]))`. The comparator deliberately treats
+			// that `IN (...)` to `ANY (ARRAY[...])` form as an unsupported
+			// rewrite rather than emitting a perpetual drop+add loop.
 			name: "field-level CHECK matches existing — no diff (idempotency, Postgres-normalized clause)",
 			generated: &goschema.Database{
 				Tables: []goschema.Table{{StructName: "File", Name: "files"}},
@@ -673,7 +809,7 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 						StructName: "File",
 						Name:       "category",
 						Type:       "TEXT",
-						Check:      "category IN ('a','b')",
+						Check:      "category IN('a','b')",
 					},
 				},
 			},
@@ -691,15 +827,7 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 			expected: &difftypes.SchemaDiff{},
 		},
 		{
-			// v1 trade-off documented on checkConstraintChanged: an
-			// expression-only change with the same constraint name does
-			// NOT trigger a migration, because PostgreSQL normalizes the
-			// stored clause (parens / casts / `IN (...)` → `= ANY
-			// (ARRAY[...])`) and a literal string compare would otherwise
-			// produce a permanent drift loop on every run. Users who need
-			// to force a regen should change `check_name=` alongside the
-			// expression — covered by the next case below.
-			name: "field-level CHECK expression-only change is intentionally not surfaced (v1)",
+			name: "field-level CHECK expression-only change surfaces as drop + add",
 			generated: &goschema.Database{
 				Tables: []goschema.Table{{StructName: "File", Name: "files"}},
 				Fields: []goschema.Field{
@@ -722,7 +850,10 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 					},
 				},
 			},
-			expected: &difftypes.SchemaDiff{},
+			expected: &difftypes.SchemaDiff{
+				ConstraintsAdded:   []string{"files_category_check"},
+				ConstraintsRemoved: []string{"files_category_check"},
+			},
 		},
 		{
 			// Renaming the constraint via `check_name=` while keeping the
