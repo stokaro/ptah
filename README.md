@@ -397,6 +397,28 @@ type User struct {
 
 ### Installation
 
+Install the latest released CLI with Go:
+
+```bash
+go install github.com/stokaro/ptah/cmd/ptah@latest
+ptah version
+```
+
+On macOS or Linux with Homebrew:
+
+```bash
+brew install stokaro/ptah/ptah
+ptah version
+```
+
+Use the published container image:
+
+```bash
+docker run --rm ghcr.io/stokaro/ptah:latest version
+```
+
+Build from source:
+
 ```bash
 # Clone the repository
 git clone https://github.com/stokaro/ptah.git
