@@ -225,6 +225,7 @@ pending and out of order.
 - **`WithExecOrder(policy)`**: Configures out-of-order migration handling
 - **`WithMigrationDirFormat(format)`**: Selects `auto`, `ptah`, or `atlas` filesystem discovery
 - **`WithAtlasTemplateData(data)`**: Supplies data, including `.Env`, for Atlas SQL template migrations
+- **`Baseline(ctx, version)` / `BaselineWithOptions(ctx, opts)`**: Records provider migrations as already applied without executing their SQL bodies
 
 ## Programmatic Usage
 
@@ -338,6 +339,37 @@ if status.HasPendingChanges {
 }
 ```
 
+### Brownfield Baseline
+
+Use baseline mode when the target database schema already exists and should
+become managed by Ptah from this point forward. Baseline writes migration
+metadata only; it does not execute the migration bodies.
+
+```go
+provider, err := migrator.NewFSMigrationProvider(os.DirFS("/path/to/migrations"))
+if err != nil {
+    panic(err)
+}
+
+m := migrator.NewMigrator(conn, provider).
+    WithMigrationsTable("infra", "ptah_migrations")
+
+err = m.BaselineWithOptions(context.Background(), migrator.BaselineOptions{
+    Version: 20260718120000,
+})
+if err != nil {
+    panic(err)
+}
+```
+
+`BaselineWithOptions` refuses to write when the metadata table already contains
+rows unless `Force` is set. `Force` can fill or update metadata at or below the
+baseline version, but it refuses to rewrite history when rows above that version
+already exist. The CLI `migrate-baseline` adds pre-flight schema verification:
+with `--shadow-db`, it replays baselined migrations on a disposable database and
+compares the result to the target; without `--shadow-db`, it uses the weaker
+entity drift check against `--root-dir`.
+
 ## Migration Table
 
 The migrator automatically creates a `schema_migrations` table to track applied migrations:
@@ -433,11 +465,12 @@ timeouts to raw autocommit statements.
 - **Confirmation Prompts**: Down migrations require confirmation (unless `--confirm` is used)
 - **Dry Run Mode**: Preview migrations without applying them
 - **Migration Timeouts**: File-level directives and CLI defaults can cap lock waits and statement runtime for safer production rollouts
+- **Baseline Guardrails**: Brownfield baselining refuses existing migration metadata by default and the CLI can verify against a replayed shadow database
 - **Validation**: Migrations are validated before execution
 
 ## Limitations
 
-- **Concurrent Migrations**: No built-in protection against concurrent migration execution
+- **Baseline Verification Without Shadow DB**: Entity drift checks cannot prove that migration files replay to the same schema; use `--shadow-db` for production adoption
 - **Advanced Features**: Some advanced migration features like conditional migrations or complex rollback scenarios are not yet implemented
 
 ## Integration with Ptah

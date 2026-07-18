@@ -785,12 +785,43 @@ Already-applied migrations are also checked against the current up SQL checksum.
 If a migration file is edited after it was applied, Ptah aborts before planning
 new work and reports a checksum mismatch for that version.
 
+#### Baseline an Existing Database
+
+Use `migrate-baseline` when adopting Ptah on a database whose schema already
+exists. The command initializes the migration metadata table and records every
+migration at or below the baseline version as `applied` without executing those
+migration SQL bodies. By default the baseline version is the highest migration
+in the directory.
+
+```bash
+# Strong verification: replay migrations on a disposable shadow database, then
+# compare the shadow schema to the existing target schema before writing metadata.
+./package-migrator migrate-baseline --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --shadow-db postgres://user:pass@localhost:5432/ptah_shadow
+
+# Preview exactly which rows would be written and which metadata table is used.
+./package-migrator migrate-baseline --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dry-run
+
+# Baseline through a specific version and use a custom metadata table.
+./package-migrator migrate-baseline --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --version 20260718120000 --migrations-schema infra --migrations-table ptah_migrations
+```
+
+Without `--shadow-db`, Ptah falls back to a weaker entity drift check: it parses
+Go entities from `--root-dir`, introspects the target database, and refuses to
+baseline if they differ. This does not prove that the migration files reproduce
+the target schema; use a disposable shadow database for production brownfield
+adoption. `migrate-baseline` refuses to write into a non-empty metadata table
+unless `--force` is set. With `--force`, verification failures are treated as
+explicit operator overrides, and existing metadata rows at or below the baseline
+version can be updated. Ptah still refuses to rewrite history if the metadata
+table already contains revisions above the requested baseline version.
+
 **Features:**
 - ✅ Applies migrations in correct order based on version numbers
 - ✅ Detects out-of-order pending migrations below the current version
 - ✅ Each migration runs in its own transaction unless explicitly marked `no_transaction`
 - ✅ Tracks dirty/failed migration state and refuses to continue until repaired
 - ✅ Verifies applied migration checksums before running new work
+- ✅ Baselines existing databases by stamping migration metadata without executing DDL
 - ✅ Executes Ptah paired down files and Atlas txtar `down.sql` sections
 - ✅ Tracks applied migrations in `schema_migrations` table, or a custom `--migrations-schema`/`--migrations-table`
 - ✅ Supports dry-run mode for preview
@@ -1583,6 +1614,7 @@ This project is part of the Inventario system and follows the same licensing ter
 - ✅ **PostgreSQL extensions support** - Support for PostgreSQL extensions in schema definitions
 - ✅ **PostgreSQL EXCLUDE constraints** - Full support for EXCLUDE constraints with USING methods, elements, and WHERE conditions
 - ✅ **Migration file generation** - Automatic generation of timestamped migration files from schema differences
+- ✅ **Brownfield baseline workflow** - Adopt existing databases by verifying and stamping migration metadata without replaying DDL
 - ✅ **Dry-run capabilities** - Preview operations before execution across all commands
 - ✅ **Transaction safety** - All operations wrapped in transactions for consistency
 
