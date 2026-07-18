@@ -470,6 +470,10 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	}
 	parts = append(parts, fmt.Sprintf("(%s)", strings.Join(columnSpecs, ", ")))
 
+	if len(node.IncludeColumns) > 0 {
+		parts = append(parts, fmt.Sprintf("INCLUDE (%s)", strings.Join(node.IncludeColumns, ", ")))
+	}
+
 	// Add WHERE condition for partial indexes
 	if node.Condition != "" {
 		parts = append(parts, "WHERE")

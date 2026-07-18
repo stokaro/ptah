@@ -3528,10 +3528,47 @@ func (p *Parser) parseCreateIndexAfterKeyword(indexType string) (*ast.IndexNode,
 	if err != nil {
 		return nil, err
 	}
+	p.skipWhitespace()
+	includeColumns, err := p.parseCreateIndexIncludeColumns()
+	if err != nil {
+		return nil, err
+	}
 
 	index := ast.NewIndex(indexName, tableName, columns...)
 	index.Type = indexType
+	index.IncludeColumns = includeColumns
 	return index, nil
+}
+
+func (p *Parser) parseCreateIndexIncludeColumns() ([]string, error) {
+	if !p.current.MatchIdentifierValue("INCLUDE") {
+		return nil, nil
+	}
+	p.advance()
+	p.skipWhitespace()
+	if err := p.expect(lexer.TokenOperator, "("); err != nil {
+		return nil, fmt.Errorf("expected '(' after index INCLUDE: %w", err)
+	}
+	p.skipWhitespace()
+	var columns []string
+	for {
+		column, err := p.expectIdentifier()
+		if err != nil {
+			return nil, fmt.Errorf("expected index INCLUDE column name: %w", err)
+		}
+		columns = append(columns, column)
+		p.skipWhitespace()
+		if p.current.MatchOperatorValue(",") {
+			p.advance()
+			p.skipWhitespace()
+			continue
+		}
+		if p.current.MatchOperatorValue(")") {
+			break
+		}
+		return nil, fmt.Errorf("expected ',' or ')' in index INCLUDE list at position %d", p.current.Start)
+	}
+	return columns, p.expect(lexer.TokenOperator, ")")
 }
 
 func (p *Parser) parseCreateIndexColumns() ([]string, error) {

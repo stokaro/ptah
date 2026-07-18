@@ -532,6 +532,8 @@ type IndexNode struct {
 	Condition string
 	// Operator specifies the operator class (gin_trgm_ops, etc.)
 	Operator string
+	// IncludeColumns contains PostgreSQL INCLUDE columns for covering indexes.
+	IncludeColumns []string
 	// Concurrently requests CREATE INDEX CONCURRENTLY, PostgreSQL's
 	// non-locking index build. Set by planners only when the target
 	// capability set includes capability.CreateIndexConcurrently and the
