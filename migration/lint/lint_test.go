@@ -231,8 +231,8 @@ func TestLintFS_OptionalKeywordForms(t *testing.T) {
 		{"drop system versioning", "ALTER TABLE users DROP SYSTEM VERSIONING;", nil},
 
 		// Columns that happen to be named like keywords are not hazards.
-		{"column named type set not null", "ALTER TABLE users ALTER COLUMN type SET NOT NULL;", nil},
-		{"quoted column named type", `ALTER TABLE users ALTER COLUMN "type" SET NOT NULL;`, nil},
+		{"column named type set not null", "ALTER TABLE users ALTER COLUMN type SET NOT NULL;", []string{"LT101", "PG303"}},
+		{"quoted column named type", `ALTER TABLE users ALTER COLUMN "type" SET NOT NULL;`, []string{"LT101", "PG303"}},
 		{"column named not drop default", "ALTER TABLE users ALTER COLUMN not DROP DEFAULT;", nil},
 		{"added column named modify", "ALTER TABLE users ADD COLUMN modify TEXT;", nil},
 		{"added column named rename", "ALTER TABLE users ADD COLUMN rename TEXT;", nil},
@@ -277,7 +277,7 @@ func TestLintFS_CommentsAndLiteralsDoNotHideOrFakeHazards(t *testing.T) {
 		{"comment inside alter clause", "ALTER TABLE users DROP/*hidden*/COLUMN email;", []string{"DS102"}},
 		{"hazard text inside a string literal", "ALTER TABLE t ADD COLUMN note TEXT DEFAULT 'use DROP COLUMN x';", nil},
 		{"concurrently in a literal is no guard", "CREATE INDEX i ON t (a) WHERE b = 'CONCURRENTLY';", []string{"PG101"}},
-		{"create index concurrently is safe", "CREATE UNIQUE INDEX CONCURRENTLY uq ON t (a);", nil},
+		{"create index concurrently requires non-transactional migration", "CREATE UNIQUE INDEX CONCURRENTLY uq ON t (a);", []string{"PG103"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -288,6 +288,94 @@ func TestLintFS_CommentsAndLiteralsDoNotHideOrFakeHazards(t *testing.T) {
 			} else {
 				c.Assert(got, qt.DeepEquals, tt.want, qt.Commentf("sql: %s", tt.sql))
 			}
+		})
+	}
+}
+
+func TestLintFS_AtlasAnalyzerCatalogHazards(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		sql     string
+		want    []string
+	}{
+		{"drop schema", "postgres", "DROP SCHEMA s;", []string{"DS107"}},
+		{"add non-nullable column without default", "postgres", "ALTER TABLE t ADD COLUMN c INT NOT NULL;", []string{"DD101"}},
+		{"add unique constraint", "postgres", "ALTER TABLE t ADD CONSTRAINT u UNIQUE (email);", []string{"PG105"}},
+		{"drop index without concurrently", "postgres", "DROP INDEX idx;", []string{"PG106"}},
+		{"add primary key", "postgres", "ALTER TABLE t ADD PRIMARY KEY (id);", []string{"PG104"}},
+		{"volatile default", "postgres", "ALTER TABLE t ADD COLUMN c UUID DEFAULT gen_random_uuid();", []string{"PG302"}},
+		{"set not null", "postgres", "ALTER TABLE t ALTER COLUMN c SET NOT NULL;", []string{"PG303"}},
+		{"add check", "postgres", "ALTER TABLE t ADD CONSTRAINT ck CHECK (id > 0);", []string{"PG305"}},
+		{"add foreign key", "postgres", "ALTER TABLE t ADD CONSTRAINT fk FOREIGN KEY (p_id) REFERENCES p (id);", []string{"PG306"}},
+		{"set unlogged", "postgres", "ALTER TABLE t SET UNLOGGED;", []string{"PG307"}},
+		{"create trigger", "postgres", "CREATE TRIGGER tr BEFORE INSERT ON t FOR EACH ROW EXECUTE FUNCTION f();", []string{"PG308"}},
+		{"stored generated column", "postgres", "ALTER TABLE t ADD COLUMN g INT GENERATED ALWAYS AS (c * 2) STORED;", []string{"PG309"}},
+		{"identity column", "postgres", "ALTER TABLE t ADD COLUMN n INT GENERATED ALWAYS AS IDENTITY;", []string{"PG310"}},
+		{"access method", "postgres", "ALTER TABLE t SET ACCESS METHOD heap2;", []string{"PG311"}},
+		{"column alignment", "postgres", "CREATE TABLE t (a BOOLEAN, b BIGINT, c BOOLEAN, d BIGINT);", []string{"PG110"}},
+		{"mysql inline references", "mysql", "ALTER TABLE t ADD COLUMN p_id INT REFERENCES p (id);", []string{"MY102"}},
+		{"mysql add foreign key", "mysql", "ALTER TABLE t ADD CONSTRAINT fk FOREIGN KEY (p_id) REFERENCES p (id);", []string{"MY131"}},
+		{"mysql add primary key", "mysql", "ALTER TABLE t ADD PRIMARY KEY (id);", []string{"MY132"}},
+		{"mysql fulltext index", "mysql", "ALTER TABLE t ADD FULLTEXT INDEX ft (c);", []string{"MY134"}},
+		{"mysql spatial index", "mysql", "ALTER TABLE t ADD SPATIAL INDEX sp (g);", []string{"MY135"}},
+		{"sqlite set not null", "sqlite", "ALTER TABLE t ALTER COLUMN c SET NOT NULL;", []string{"LT101"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			got := lintOneDialect(c, tt.dialect, tt.sql)
+			c.Assert(got, qt.DeepEquals, tt.want, qt.Commentf("sql: %s", tt.sql))
+		})
+	}
+}
+
+func TestLintFS_TransactionHazards(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fixture(map[string]string{
+		"0000000001_x.up.sql": `CREATE INDEX CONCURRENTLY idx ON t (id);
+ALTER TABLE t ADD COLUMN c INT;
+`,
+		"0000000001_x.down.sql": "-- restore\n",
+	})
+	findings, err := lint.LintFS(fsys, lint.Options{Dialect: "postgres"})
+	c.Assert(err, qt.IsNil)
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"PG103", "TX101"})
+
+	c.Assert(lintOneDialect(c, "postgres", "BEGIN;\nALTER TABLE t ADD COLUMN c INT;\nCOMMIT;"), qt.DeepEquals, []string{"TX201"})
+}
+
+func TestLintFS_NonTransactionalDirectivesSuppressTransactionFindings(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+	}{
+		{
+			name: "ptah directive",
+			sql: `-- +ptah no_transaction
+CREATE INDEX CONCURRENTLY idx ON t (id);
+ALTER TABLE t ADD COLUMN c INT;`,
+		},
+		{
+			name: "atlas directive",
+			sql: `-- atlas:txmode none
+CREATE INDEX CONCURRENTLY idx ON t (id);
+ALTER TABLE t ADD COLUMN c INT;`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			fsys := fixture(map[string]string{
+				"0000000001_x.up.sql":   tt.sql,
+				"0000000001_x.down.sql": "-- restore\n",
+			})
+			findings, err := lint.LintFS(fsys, lint.Options{Dialect: "postgres"})
+			c.Assert(err, qt.IsNil)
+			c.Assert(rulesOf(findings), qt.HasLen, 0)
 		})
 	}
 }
@@ -305,7 +393,7 @@ func TestLintFS_DialectAwareScanning(t *testing.T) {
 		{"postgres trailing backslash literal", "postgres",
 			"INSERT INTO paths (prefix) VALUES ('C:\\');\nALTER TABLE users DROP COLUMN email;", []string{"DS102"}},
 		{"postgres like escape literal", "postgres",
-			"ALTER TABLE t ADD CONSTRAINT chk CHECK (code NOT LIKE '%\\_%' ESCAPE '\\');\nALTER TABLE users DROP COLUMN email;", []string{"DS102"}},
+			"ALTER TABLE t ADD CONSTRAINT chk CHECK (code NOT LIKE '%\\_%' ESCAPE '\\');\nALTER TABLE users DROP COLUMN email;", []string{"PG305", "DS102"}},
 		// MySQL treats backslash as an escape: \' stays inside the literal.
 		{"mysql backslash-escaped quote", "mysql",
 			"INSERT INTO notes (t) VALUES ('it\\'s; fine');\nALTER TABLE users DROP COLUMN email;", []string{"DS102"}},
