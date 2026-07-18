@@ -32,3 +32,23 @@ func TestLoadOnlineDDLConfig_ExplicitMissingPathIsAnError(t *testing.T) {
 	_, err := dbcli.LoadOnlineDDLConfig(filepath.Join(t.TempDir(), "absent.yaml"))
 	c.Assert(err, qt.ErrorMatches, "ptah config .*absent.yaml.*")
 }
+
+func TestLoadMigrateGenerateConfig(t *testing.T) {
+	c := qt.New(t)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ptah.yaml")
+	c.Assert(os.WriteFile(path, []byte("migrate:\n  generate:\n    shadow_db: postgres://localhost/shadow\n"), 0o600), qt.IsNil)
+
+	cfg, err := dbcli.LoadMigrateGenerateConfig(path)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.ShadowDatabaseURL, qt.Equals, "postgres://localhost/shadow")
+}
+
+func TestLoadMigrateGenerateConfig_ExplicitMissingPathIsAnError(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := dbcli.LoadMigrateGenerateConfig(filepath.Join(t.TempDir(), "absent.yaml"))
+	c.Assert(err, qt.ErrorMatches, "ptah config .*absent.yaml.*")
+}

@@ -464,3 +464,27 @@ func TestGetOrderedCreateStatements(t *testing.T) {
 		c.Assert(statements[i], qt.Contains, "CREATE TABLE")
 	}
 }
+
+func TestGenerateSchema_Deterministic(t *testing.T) {
+	fixtureDir := "../../integration/fixtures/entities/035-roundtrip-fk-diamond"
+	dialects := []string{"postgres", "mysql", "mariadb"}
+
+	for _, dialect := range dialects {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			var first string
+			for i := range 100 {
+				result, err := goschema.ParseDir(fixtureDir)
+				c.Assert(err, qt.IsNil)
+
+				sql := strings.Join(renderer.GetOrderedCreateStatements(result, dialect), "\n")
+				if i == 0 {
+					first = sql
+					continue
+				}
+				c.Assert(sql, qt.Equals, first)
+			}
+		})
+	}
+}

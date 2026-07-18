@@ -119,7 +119,7 @@ func TestPlanner_GenerateMigrationSQL_EnumsModified(t *testing.T) {
 			},
 		},
 		{
-			name: "enum with values removed (should generate warning)",
+			name: "enum with values removed recreates type",
 			diff: &types.SchemaDiff{
 				EnumsModified: []types.EnumDiff{
 					{
@@ -128,25 +128,38 @@ func TestPlanner_GenerateMigrationSQL_EnumsModified(t *testing.T) {
 					},
 				},
 			},
-			generated: &goschema.Database{},
+			generated: &goschema.Database{
+				Enums: []goschema.Enum{
+					{Name: "user_status", Values: []string{"active", "suspended"}},
+				},
+				Tables: []goschema.Table{
+					{Name: "users", StructName: "User"},
+				},
+				Fields: []goschema.Field{
+					{
+						Name:       "status",
+						Type:       "user_status",
+						StructName: "User",
+						Default:    "active",
+						DefaultSet: true,
+					},
+				},
+			},
 			expected: func(nodes []ast.Node) bool {
-				if len(nodes) != 2 {
+				if len(nodes) != 1 {
 					return false
 				}
 
-				// First should be ALTER TYPE
-				alterNode, ok := nodes[0].(*ast.AlterTypeNode)
-				if !ok || alterNode.Name != "user_status" {
-					return false
-				}
-
-				// Second should be warning comment
-				commentNode, ok := nodes[1].(*ast.CommentNode)
+				rawNode, ok := nodes[0].(*ast.RawSQLNode)
 				if !ok {
 					return false
 				}
-
-				return commentNode.Text != ""
+				return strings.Contains(rawNode.SQL, `ALTER TABLE "users" ALTER COLUMN "status" DROP DEFAULT;`) &&
+					strings.Contains(rawNode.SQL, `ALTER TYPE "user_status" RENAME TO "user_status__ptah_old";`) &&
+					strings.Contains(rawNode.SQL, `CREATE TYPE "user_status" AS ENUM ('active', 'suspended');`) &&
+					strings.Contains(rawNode.SQL, `ALTER TABLE "users" ALTER COLUMN "status" TYPE "user_status" USING "status"::text::"user_status";`) &&
+					strings.Contains(rawNode.SQL, `ALTER TABLE "users" ALTER COLUMN "status" SET DEFAULT 'active';`) &&
+					strings.Contains(rawNode.SQL, `DROP TYPE "user_status__ptah_old";`)
 			},
 		},
 	}
@@ -193,6 +206,28 @@ func TestPlanner_GenerateMigrationSQL_TablesAdded(t *testing.T) {
 					return false
 				}
 				return tableNode.Name == "users" && len(tableNode.Columns) == 2
+			},
+		},
+		{
+			name: "composite primary key is created with new table",
+			diff: &types.SchemaDiff{
+				TablesAdded: []string{"memberships"},
+			},
+			generated: &goschema.Database{
+				Tables: []goschema.Table{{
+					Name:       "memberships",
+					StructName: "Membership",
+					PrimaryKey: []string{"org_id", "user_id"},
+				}},
+				Fields: []goschema.Field{
+					{Name: "org_id", Type: "INTEGER", StructName: "Membership", Nullable: false},
+					{Name: "user_id", Type: "INTEGER", StructName: "Membership", Nullable: false},
+					{Name: "role", Type: "TEXT", StructName: "Membership", Nullable: false},
+				},
+			},
+			expected: func(nodes []ast.Node) bool {
+				sql, err := renderer.RenderSQL("postgres", nodes...)
+				return err == nil && strings.Contains(sql, `PRIMARY KEY ("org_id", "user_id")`)
 			},
 		},
 	}

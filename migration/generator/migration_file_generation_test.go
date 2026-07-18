@@ -339,6 +339,17 @@ func TestWithGeneratedTimeoutDirectives(t *testing.T) {
 	c.Assert(got, qt.Matches, "(?s).*-- Direction: UP\n-- \\+ptah lock_timeout=3s\n-- \\+ptah statement_timeout=30s\n\nALTER TABLE.*")
 }
 
+func TestWithGeneratedTimeoutDirectivesForOptions_SkipsNoTransactionPair(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "-- Migration rollback\n-- Direction: DOWN\n\nALTER TABLE users DROP COLUMN email;"
+	got := withGeneratedTimeoutDirectivesForOptions(sql, "postgres", generatedDirectiveOptions{skipTimeouts: true})
+
+	c.Assert(got, qt.Equals, sql)
+	c.Assert(got, qt.Not(qt.Contains), "-- +ptah lock_timeout")
+	c.Assert(got, qt.Not(qt.Contains), "-- +ptah statement_timeout")
+}
+
 func TestWithGeneratedTimeoutDirectives_NoAlterTable(t *testing.T) {
 	c := qt.New(t)
 

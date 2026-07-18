@@ -1,8 +1,11 @@
 package schemadiff
 
 import (
+	"strings"
+
 	"github.com/stokaro/ptah/config"
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/migration/schemadiff/internal/compare"
 	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
@@ -53,6 +56,7 @@ func CompareWithDialect(generated *goschema.Database, database *types.DBSchema, 
 //	diff := schemadiff.CompareWithOptions(generated, database, opts)
 func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, opts *config.CompareOptions) *difftypes.SchemaDiff {
 	diff := &difftypes.SchemaDiff{}
+	generated, database = normalizeInlineEnumsForCompare(generated, database, opts)
 
 	// Compare tables and their column structures
 	compare.TablesAndColumns(generated, database, diff)
@@ -90,4 +94,46 @@ func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, 
 	compare.Constraints(generated, database, diff, opts)
 
 	return diff
+}
+
+func normalizeInlineEnumsForCompare(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	opts *config.CompareOptions,
+) (*goschema.Database, *types.DBSchema) {
+	if generated == nil || database == nil || opts == nil || !isMySQLFamily(opts.Dialect) {
+		return generated, database
+	}
+
+	normalizedGenerated := *generated
+	normalizedGenerated.Enums = nil
+	normalizedGenerated.Fields = append([]goschema.Field(nil), generated.Fields...)
+	for i := range normalizedGenerated.Fields {
+		field := &normalizedGenerated.Fields[i]
+		if len(field.Enum) > 0 {
+			field.Type = mysqlInlineEnumType(field.Enum)
+		}
+	}
+
+	normalizedDatabase := *database
+	normalizedDatabase.Enums = nil
+
+	return &normalizedGenerated, &normalizedDatabase
+}
+
+func isMySQLFamily(dialect string) bool {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.MySQL, platform.MariaDB:
+		return true
+	default:
+		return false
+	}
+}
+
+func mysqlInlineEnumType(values []string) string {
+	quoted := make([]string, 0, len(values))
+	for _, value := range values {
+		quoted = append(quoted, "'"+strings.ReplaceAll(value, "'", "''")+"'")
+	}
+	return "enum(" + strings.Join(quoted, ",") + ")"
 }

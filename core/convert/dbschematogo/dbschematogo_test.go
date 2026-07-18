@@ -195,6 +195,63 @@ func TestConvertDBSchemaToGoSchema_GeneratedColumns(t *testing.T) {
 	c.Assert(result.Fields[0].GeneratedKind, qt.Equals, "STORED")
 }
 
+func TestConvertDBSchemaToGoSchema_PostgresUserDefinedColumnUsesUDTName(t *testing.T) {
+	c := qt.New(t)
+	dbSchema := &types.DBSchema{
+		Tables: []types.DBTable{
+			{
+				Name: "products",
+				Columns: []types.DBColumn{
+					{
+						Name:     "status",
+						DataType: "USER-DEFINED",
+						UDTName:  "enum_product_status",
+					},
+				},
+			},
+		},
+	}
+
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+
+	c.Assert(result.Fields, qt.HasLen, 1)
+	c.Assert(result.Fields[0].Type, qt.Equals, "enum_product_status")
+}
+
+func TestConvertDBSchemaToGoSchema_DBDefaultExpression(t *testing.T) {
+	c := qt.New(t)
+	statusDefault := "'draft'::enum_product_status"
+	nameDefault := "'unnamed'"
+	dbSchema := &types.DBSchema{
+		Tables: []types.DBTable{
+			{
+				Name: "products",
+				Columns: []types.DBColumn{
+					{
+						Name:          "status",
+						DataType:      "USER-DEFINED",
+						UDTName:       "enum_product_status",
+						ColumnDefault: &statusDefault,
+					},
+					{
+						Name:          "name",
+						DataType:      "text",
+						ColumnDefault: &nameDefault,
+					},
+				},
+			},
+		},
+	}
+
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+
+	c.Assert(result.Fields, qt.HasLen, 2)
+	c.Assert(result.Fields[0].Default, qt.Equals, "")
+	c.Assert(result.Fields[0].DefaultExpr, qt.Equals, "'draft'::enum_product_status")
+	c.Assert(result.Fields[1].Default, qt.Equals, "'unnamed'")
+	c.Assert(result.Fields[1].DefaultExpr, qt.Equals, "")
+}
+
 func TestConvertDBSchemaToGoSchema_SkipsCompositeForeignKeys(t *testing.T) {
 	c := qt.New(t)
 	dbSchema := &types.DBSchema{

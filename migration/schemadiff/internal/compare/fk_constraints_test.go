@@ -1,12 +1,14 @@
 package compare_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/schemadiff/internal/compare"
 	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
 )
@@ -51,7 +53,47 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 		generated *goschema.Database
 		database  *types.DBSchema
 		expected  *difftypes.SchemaDiff
+		wantSQL   []string
 	}{
+		{
+			// A column can already exist before the Go annotation gains
+			// foreign=. This must synthesize a table-qualified ADD CONSTRAINT
+			// entry and the planner must render that entry, otherwise #136
+			// regresses silently.
+			name: "field-level FK added to existing column reaches planner output",
+			generated: &goschema.Database{
+				Tables: []goschema.Table{
+					{StructName: "File", Name: "files"},
+					{StructName: "Export", Name: "exports"},
+				},
+				Fields: []goschema.Field{
+					{StructName: "File", Name: "id", Type: "TEXT", Primary: true},
+					{StructName: "Export", Name: "id", Type: "TEXT", Primary: true},
+					{
+						StructName:     "Export",
+						Name:           "file_id",
+						Type:           "TEXT",
+						Foreign:        "files(id)",
+						ForeignKeyName: "fk_export_file",
+					},
+				},
+			},
+			database: &types.DBSchema{
+				Tables: []types.DBTable{
+					{Name: "files", Columns: []types.DBColumn{{Name: "id"}}},
+					exportsTable,
+				},
+			},
+			expected: &difftypes.SchemaDiff{
+				ConstraintsAdded: []string{"fk_export_file"},
+			},
+			wantSQL: []string{
+				`ALTER TABLE "exports"`,
+				`ADD CONSTRAINT "fk_export_file"`,
+				`FOREIGN KEY ("file_id")`,
+				`REFERENCES "files"("id")`,
+			},
+		},
 		{
 			// The headline bug: model says SET NULL, the live FK is NO ACTION.
 			// Expect a drop + add so a non-empty up/down migration is produced.
@@ -333,6 +375,14 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 				qt.Commentf("ConstraintsRemoved=%v", diff.ConstraintsRemoved))
 			for _, expected := range tt.expected.ConstraintsRemoved {
 				c.Assert(diff.ConstraintsRemoved, qt.Contains, expected)
+			}
+
+			if len(tt.wantSQL) > 0 {
+				statements := planner.GenerateSchemaDiffSQLStatements(diff, tt.generated, "postgres")
+				sql := strings.Join(statements, "\n")
+				for _, expected := range tt.wantSQL {
+					c.Assert(sql, qt.Contains, expected)
+				}
 			}
 		})
 	}
