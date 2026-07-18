@@ -642,7 +642,7 @@ func testDynamicMigrationSQLGeneration(ctx context.Context, conn *dbschema.Datab
 // getCurrentMigrationVersion gets the current migration version from the database
 func getCurrentMigrationVersion(ctx context.Context, conn *dbschema.DatabaseConnection) (int64, error) {
 	// Query the schema_migrations table to get the highest version
-	query := "SELECT COALESCE(MAX(version), 0) FROM schema_migrations"
+	query := "SELECT COALESCE(MAX(version), 0) FROM schema_migrations WHERE state = 'applied'"
 	row := conn.QueryRow(query)
 
 	var version int64
@@ -651,6 +651,14 @@ func getCurrentMigrationVersion(ctx context.Context, conn *dbschema.DatabaseConn
 	}
 
 	return version, nil
+}
+
+func clearMigrationRevision(ctx context.Context, conn *dbschema.DatabaseConnection, version int64) error {
+	query := sqlutil.Rebind(conn.Info().Dialect, "DELETE FROM schema_migrations WHERE version = ?")
+	if _, err := conn.ExecContext(ctx, query, version); err != nil {
+		return fmt.Errorf("failed to delete migration revision %d: %w", version, err)
+	}
+	return nil
 }
 
 // contains checks if a string contains a substring (case-insensitive)
@@ -1064,13 +1072,17 @@ func testDynamicPartialFailureRecovery(ctx context.Context, conn *dbschema.Datab
 			return fmt.Errorf("expected migration to fail, but it succeeded")
 		}
 
-		// Verify we're still at version 2 (the invalid migration should not have been recorded)
+		// Verify we're still at version 2. The invalid migration leaves a dirty
+		// metadata row, but dirty rows must not count as applied.
 		currentVersion, err := getCurrentMigrationVersion(ctx, conn)
 		if err != nil {
 			return fmt.Errorf("failed to get current version after failure: %w", err)
 		}
 		if currentVersion != 2 {
 			return fmt.Errorf("expected version 2 after failed migration, got %d", currentVersion)
+		}
+		if err := clearMigrationRevision(ctx, conn, 999); err != nil {
+			return fmt.Errorf("failed to clear synthetic dirty migration: %w", err)
 		}
 
 		return nil
@@ -2084,6 +2096,9 @@ func testDynamicForeignKeyCascade(ctx context.Context, conn *dbschema.DatabaseCo
 		// This should fail due to foreign key constraint
 		if err := m.MigrateUp(ctx); err == nil {
 			return fmt.Errorf("dropping parent table should fail due to FK constraint")
+		}
+		if err := clearMigrationRevision(ctx, conn, 2); err != nil {
+			return fmt.Errorf("failed to clear synthetic dirty migration: %w", err)
 		}
 		return nil
 	})

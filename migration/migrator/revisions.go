@@ -293,6 +293,9 @@ func parseRevisionAppliedAtString(value string) (time.Time, error) {
 }
 
 func (m *Migrator) failIfDirty(ctx context.Context) error {
+	if m.conn.Writer().IsDryRun() {
+		return nil
+	}
 	revision, err := m.dirtyRevision(ctx)
 	if err != nil {
 		return err
