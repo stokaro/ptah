@@ -2,6 +2,7 @@ package generator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -20,6 +21,7 @@ import (
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/safety"
@@ -41,6 +43,9 @@ type GenerateMigrationOptions struct {
 	MigrationName string
 	// OutputDir is the directory where migration files will be saved (always real filesystem)
 	OutputDir string
+	// AllowedOutputRoot constrains OutputDir when set. Embedders that accept
+	// user-supplied output paths should set this to the project/workspace root.
+	AllowedOutputRoot string
 	// CompareOptions are the options to use when comparing schemas
 	CompareOptions *config.CompareOptions
 	// Schemas restricts database introspection to the listed schemas when the
@@ -78,9 +83,9 @@ type MigrationFiles struct {
 // yet propagate the context; future work may thread it through there too.
 // When opts.DBConn is supplied the context is currently unused.
 func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*MigrationFiles, error) {
-	// Set default migration name if not provided
-	if opts.MigrationName == "" {
-		opts.MigrationName = "migration"
+	opts, err := normalizeGenerateMigrationOptions(opts)
+	if err != nil {
+		return nil, err
 	}
 
 	var entitiesDir string
@@ -207,6 +212,18 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 	}
 
 	return files, nil
+}
+
+func normalizeGenerateMigrationOptions(opts GenerateMigrationOptions) (GenerateMigrationOptions, error) {
+	if opts.MigrationName == "" {
+		opts.MigrationName = "migration"
+	}
+	outputDir, err := pathguard.ResolveWithinRoot(opts.OutputDir, opts.AllowedOutputRoot)
+	if err != nil {
+		return opts, fmt.Errorf("error validating output directory: %w", err)
+	}
+	opts.OutputDir = outputDir
+	return opts, nil
 }
 
 // withDialect returns a copy of opts with the Dialect set, allocating a default
@@ -974,7 +991,7 @@ func nextAvailableMigrationVersion(outputDir string, version int64, migrationNam
 	for {
 		upFilePath := filepath.Join(outputDir, migrator.GenerateMigrationFileName(version, migrationName, "up"))
 		downFilePath := filepath.Join(outputDir, migrator.GenerateMigrationFileName(version, migrationName, "down"))
-		if !nonEmptyFileExists(upFilePath) && !nonEmptyFileExists(downFilePath) {
+		if !fileExists(upFilePath) && !fileExists(downFilePath) {
 			return version
 		}
 		version++
@@ -1002,9 +1019,9 @@ func latestExistingMigrationVersion(outputDir string) int64 {
 	return latest
 }
 
-func nonEmptyFileExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.Size() > 0
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func withNoTransactionDirective(sql string) string {
@@ -1019,31 +1036,81 @@ func withNoTransactionDirective(sql string) string {
 
 // createMigrationFiles creates the up and down migration files
 func createMigrationFiles(outputDir string, version int64, migrationName, upSQL, downSQL string) (*MigrationFiles, error) {
-	// Ensure output directory exists
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
+	if err := ensureMigrationOutputDir(outputDir); err != nil {
 		return nil, fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	// Generate file names using the existing utility
-	upFileName := migrator.GenerateMigrationFileName(version, migrationName, "up")
-	downFileName := migrator.GenerateMigrationFileName(version, migrationName, "down")
+	for {
+		upFileName := migrator.GenerateMigrationFileName(version, migrationName, "up")
+		downFileName := migrator.GenerateMigrationFileName(version, migrationName, "down")
 
-	upFilePath := filepath.Join(outputDir, upFileName)
-	downFilePath := filepath.Join(outputDir, downFileName)
+		upFilePath := filepath.Join(outputDir, upFileName)
+		downFilePath := filepath.Join(outputDir, downFileName)
 
-	// Write up migration file
-	if err := os.WriteFile(upFilePath, []byte(upSQL), 0644); err != nil { //nolint:gosec // 0644 is fine
-		return nil, fmt.Errorf("failed to write up migration file: %w", err)
+		if err := writeNewMigrationFile(upFilePath, upSQL); err != nil {
+			if errors.Is(err, os.ErrExist) {
+				version++
+				continue
+			}
+			return nil, fmt.Errorf("failed to write up migration file: %w", err)
+		}
+
+		if err := writeNewMigrationFile(downFilePath, downSQL); err != nil {
+			_ = os.Remove(upFilePath)
+			if errors.Is(err, os.ErrExist) {
+				version++
+				continue
+			}
+			return nil, fmt.Errorf("failed to write down migration file: %w", err)
+		}
+
+		return &MigrationFiles{
+			UpFile:   upFilePath,
+			DownFile: downFilePath,
+			Version:  version,
+		}, nil
+	}
+}
+
+func ensureMigrationOutputDir(outputDir string) error {
+	info, err := os.Stat(outputDir)
+	if err == nil {
+		if !info.IsDir() {
+			return fmt.Errorf("%q exists and is not a directory", outputDir)
+		}
+		return nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 
-	// Write down migration file
-	if err := os.WriteFile(downFilePath, []byte(downSQL), 0644); err != nil { //nolint:gosec // 0644 is fine
-		return nil, fmt.Errorf("failed to write down migration file: %w", err)
+	parent := filepath.Dir(outputDir)
+	if parentInfo, statErr := os.Stat(parent); statErr != nil {
+		return fmt.Errorf("parent directory %q is not available: %w", parent, statErr)
+	} else if !parentInfo.IsDir() {
+		return fmt.Errorf("parent path %q is not a directory", parent)
 	}
+	return os.Mkdir(outputDir, 0755)
+}
 
-	return &MigrationFiles{
-		UpFile:   upFilePath,
-		DownFile: downFilePath,
-		Version:  version,
-	}, nil
+func writeNewMigrationFile(path, content string) error {
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	removeOnError := true
+	defer func() {
+		if removeOnError {
+			_ = os.Remove(path)
+		}
+	}()
+	if _, err := file.WriteString(content); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	removeOnError = false
+	return nil
 }
