@@ -2848,6 +2848,13 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, error) {
 	}
 
 	p.skipWhitespace()
+	if constraint.Type == ast.UniqueConstraint {
+		constraint.NullsDistinct, err = p.parseNullsDistinctClause()
+		if err != nil {
+			return nil, err
+		}
+		p.skipWhitespace()
+	}
 
 	// Parse column list for PRIMARY KEY, UNIQUE, FOREIGN KEY
 	err = p.parseTableColumnList(constraint)
@@ -3545,6 +3552,11 @@ func (p *Parser) parseCreateIndexAfterKeyword(indexType string) (*ast.IndexNode,
 		return nil, err
 	}
 	p.skipWhitespace()
+	nullsDistinct, err := p.parseNullsDistinctClause()
+	if err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
 	storageParams, err := p.parseCreateIndexStorageParams()
 	if err != nil {
 		return nil, err
@@ -3553,6 +3565,7 @@ func (p *Parser) parseCreateIndexAfterKeyword(indexType string) (*ast.IndexNode,
 	index := ast.NewIndex(indexName, tableName, columns...)
 	index.Type = indexType
 	index.IncludeColumns = includeColumns
+	index.NullsDistinct = nullsDistinct
 	index.StorageParams = storageParams
 	return index, nil
 }
@@ -3586,6 +3599,24 @@ func (p *Parser) parseCreateIndexIncludeColumns() ([]string, error) {
 		return nil, fmt.Errorf("expected ',' or ')' in index INCLUDE list at position %d", p.current.Start)
 	}
 	return columns, p.expect(lexer.TokenOperator, ")")
+}
+
+func (p *Parser) parseNullsDistinctClause() (*bool, error) {
+	if !p.current.MatchIdentifierValue("NULLS") {
+		return nil, nil
+	}
+	p.advance()
+	p.skipWhitespace()
+	nullsDistinct := true
+	if p.current.MatchIdentifierValue("NOT") {
+		nullsDistinct = false
+		p.advance()
+		p.skipWhitespace()
+	}
+	if err := p.expect(lexer.TokenIdentifier, "DISTINCT"); err != nil {
+		return nil, fmt.Errorf("expected DISTINCT after NULLS clause: %w", err)
+	}
+	return &nullsDistinct, nil
 }
 
 func (p *Parser) parseCreateIndexStorageParams() (map[string]string, error) {

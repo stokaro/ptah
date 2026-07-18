@@ -604,11 +604,20 @@ func (p *Planner) addNewIndexes(result []ast.Node, diff *types.SchemaDiff, gener
 	for _, table := range generated.Tables {
 		structToTableMap[table.StructName] = table.QualifiedName()
 	}
+	replacementIndexes := stringSet(diff.IndexesRemoved)
+	guardedDrops := p.capabilities().Has(capability.DropIndexIfExists)
 
 	for _, indexName := range diff.IndexesAdded {
 		// Find the index definition
 		for _, idx := range generated.Indexes {
 			if idx.Name == indexName {
+				if _, replacing := replacementIndexes[indexName]; replacing {
+					dropIndexNode := ast.NewDropIndex(indexName)
+					if guardedDrops {
+						dropIndexNode.SetIfExists()
+					}
+					result = append(result, dropIndexNode)
+				}
 				// Use enhanced index creation with PostgreSQL features
 				indexNode := fromschema.FromIndexWithTableMapping(idx, structToTableMap)
 				// CONCURRENTLY is opt-in policy AND capability-gated: the
@@ -632,7 +641,11 @@ func (p *Planner) removeIndexes(result []ast.Node, diff *types.SchemaDiff) []ast
 	// the default preset keeps today's output; a preset without it (or a
 	// composed set) actually changes the plan.
 	guarded := p.capabilities().Has(capability.DropIndexIfExists)
+	replacementIndexes := stringSet(diff.IndexesAdded)
 	for _, indexName := range diff.IndexesRemoved {
+		if _, replaced := replacementIndexes[indexName]; replaced {
+			continue
+		}
 		dropIndexNode := ast.NewDropIndex(indexName)
 		if guarded {
 			dropIndexNode.SetIfExists()
@@ -640,6 +653,14 @@ func (p *Planner) removeIndexes(result []ast.Node, diff *types.SchemaDiff) []ast
 		result = append(result, dropIndexNode)
 	}
 	return result
+}
+
+func stringSet(values []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		set[value] = struct{}{}
+	}
+	return set
 }
 
 func (p *Planner) removeTables(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
@@ -1935,7 +1956,9 @@ func (p *Planner) convertConstraintToAST(constraint goschema.Constraint) *ast.Co
 		if len(constraint.Columns) == 0 {
 			return nil // Invalid UNIQUE constraint
 		}
-		return ast.NewUniqueConstraint(constraint.Name, constraint.Columns...)
+		astConstraint := ast.NewUniqueConstraint(constraint.Name, constraint.Columns...)
+		astConstraint.NullsDistinct = cloneBoolPtr(constraint.NullsDistinct)
+		return astConstraint
 
 	case "PRIMARY KEY":
 		if len(constraint.Columns) == 0 {
@@ -1960,4 +1983,12 @@ func (p *Planner) convertConstraintToAST(constraint goschema.Constraint) *ast.Co
 	default:
 		return nil // Unsupported constraint type
 	}
+}
+
+func cloneBoolPtr(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
 }

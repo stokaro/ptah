@@ -1055,6 +1055,7 @@ func appendConstraintAddition(infos []difftypes.ConstraintAdditionInfo, genConst
 		TableName:      genConstraint.Table,
 		Type:           genConstraint.Type,
 		Columns:        append([]string(nil), genConstraint.Columns...),
+		NullsDistinct:  cloneBoolPtr(genConstraint.NullsDistinct),
 		ForeignTable:   genConstraint.ForeignTable,
 		ForeignColumn:  genConstraint.ForeignColumn,
 		ForeignColumns: append([]string(nil), genConstraint.ForeignColumnsOrDefault()...),
@@ -1138,10 +1139,23 @@ func checkConstraintChanged(_ goschema.Constraint, _ types.DBConstraint) bool {
 
 // uniqueConstraintChanged compares UNIQUE constraint definitions
 func uniqueConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint) bool {
-	// For UNIQUE constraints, we primarily compare the columns involved
-	// This is a simplified comparison - in practice, we might need to compare
-	// the actual column lists from the database constraint
-	return false // For now, assume UNIQUE constraints don't change
+	return !slices.Equal(genConstraint.Columns, dbConstraint.ColumnNamesOrDefault()) ||
+		!boolPtrEqual(genConstraint.NullsDistinct, dbConstraint.NullsDistinct)
+}
+
+func boolPtrEqual(left, right *bool) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return *left == *right
+}
+
+func cloneBoolPtr(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
 }
 
 // foreignKeyConstraintChanged compares FOREIGN KEY constraint definitions.
@@ -1733,9 +1747,9 @@ func isMySQLConstraintBasedUniqueIndex(indexName, tableName string) bool {
 // - Index operations can be expensive on large tables in production
 func Indexes(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
 	// Create sets for comparison
-	genIndexes := make(map[string]bool)
+	genIndexes := make(map[string]goschema.Index)
 	for _, index := range generated.Indexes {
-		genIndexes[index.Name] = true
+		genIndexes[index.Name] = index
 	}
 
 	// MySQL/MariaDB transparently create a backing index for every FOREIGN KEY,
@@ -1753,7 +1767,7 @@ func Indexes(generated *goschema.Database, database *types.DBSchema, diff *difft
 		}
 	}
 
-	dbIndexes := make(map[string]bool)
+	dbIndexes := make(map[string]types.DBIndex)
 	for _, index := range database.Indexes {
 		// Skip primary key indexes as they're handled with tables
 		if index.IsPrimary {
@@ -1772,30 +1786,32 @@ func Indexes(generated *goschema.Database, database *types.DBSchema, diff *difft
 			continue
 		}
 
-		dbIndexes[index.Name] = true
+		dbIndexes[index.Name] = index
 	}
 
 	// Find added and removed indexes
-	for indexName := range genIndexes {
-		if !dbIndexes[indexName] {
+	for indexName, genIndex := range genIndexes {
+		dbIndex, exists := dbIndexes[indexName]
+		switch {
+		case !exists:
 			diff.IndexesAdded = append(diff.IndexesAdded, indexName)
+		case indexDefinitionsChanged(genIndex, dbIndex):
+			diff.IndexesAdded = append(diff.IndexesAdded, indexName)
+			diff.IndexesRemoved = append(diff.IndexesRemoved, indexName)
+			diff.IndexesRemovedWithTables = append(diff.IndexesRemovedWithTables, difftypes.IndexRemovalInfo{
+				Name:      indexName,
+				TableName: dbIndex.QualifiedTableName(),
+			})
 		}
 	}
 
-	for indexName := range dbIndexes {
-		if !genIndexes[indexName] {
+	for indexName, dbIndex := range dbIndexes {
+		if _, exists := genIndexes[indexName]; !exists {
 			diff.IndexesRemoved = append(diff.IndexesRemoved, indexName)
-
-			// Also populate the detailed removal info with table name for MySQL/MariaDB support
-			for _, index := range database.Indexes {
-				if index.Name == indexName {
-					diff.IndexesRemovedWithTables = append(diff.IndexesRemovedWithTables, difftypes.IndexRemovalInfo{
-						Name:      indexName,
-						TableName: index.QualifiedTableName(),
-					})
-					break
-				}
-			}
+			diff.IndexesRemovedWithTables = append(diff.IndexesRemovedWithTables, difftypes.IndexRemovalInfo{
+				Name:      indexName,
+				TableName: dbIndex.QualifiedTableName(),
+			})
 		}
 	}
 
@@ -1807,6 +1823,10 @@ func Indexes(generated *goschema.Database, database *types.DBSchema, diff *difft
 	sort.Slice(diff.IndexesRemovedWithTables, func(i, j int) bool {
 		return diff.IndexesRemovedWithTables[i].Name < diff.IndexesRemovedWithTables[j].Name
 	})
+}
+
+func indexDefinitionsChanged(genIndex goschema.Index, dbIndex types.DBIndex) bool {
+	return !boolPtrEqual(genIndex.NullsDistinct, dbIndex.NullsDistinct)
 }
 
 // compareNamedItems is a generic helper function that compares two maps of named items

@@ -883,6 +883,25 @@ func TestFromIndex_BasicIndex(t *testing.T) {
 					idx.StorageParams["pages_per_range"] == "2"
 			},
 		},
+		{
+			name: "index nulls not distinct",
+			index: func() goschema.Index {
+				nullsDistinct := false
+				return goschema.Index{
+					Name:          "idx_users_c",
+					StructName:    "users",
+					Fields:        []string{"c"},
+					Unique:        true,
+					NullsDistinct: &nullsDistinct,
+				}
+			}(),
+			expected: func(idx *ast.IndexNode) bool {
+				return idx.Name == "idx_users_c" &&
+					idx.Unique &&
+					idx.NullsDistinct != nil &&
+					!*idx.NullsDistinct
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -927,6 +946,22 @@ func TestFromDatabase_IndexIncludeColumns(t *testing.T) {
 	c.Assert(index.Condition, qt.Equals, "active")
 	c.Assert(index.IncludeColumns, qt.DeepEquals, []string{"active"})
 	c.Assert(index.StorageParams, qt.DeepEquals, map[string]string{"pages_per_range": "2"})
+}
+
+func TestFromConstraint_UniqueNullsNotDistinct(t *testing.T) {
+	c := qt.New(t)
+	nullsDistinct := false
+
+	node := fromschema.FromConstraint(goschema.Constraint{
+		Name:          "users_c_key",
+		Type:          "UNIQUE",
+		Columns:       []string{"c"},
+		NullsDistinct: &nullsDistinct,
+	})
+
+	c.Assert(node.Type, qt.Equals, ast.UniqueConstraint)
+	c.Assert(node.NullsDistinct, qt.IsNotNil)
+	c.Assert(*node.NullsDistinct, qt.IsFalse)
 }
 
 func TestFromEnum_BasicEnum(t *testing.T) {

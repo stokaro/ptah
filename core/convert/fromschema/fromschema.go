@@ -719,7 +719,9 @@ func FromConstraint(constraint goschema.Constraint) *ast.ConstraintNode {
 	case "PRIMARY KEY":
 		return ast.NewPrimaryKeyConstraint(constraint.Columns...)
 	case "UNIQUE":
-		return ast.NewUniqueConstraint(constraint.Name, constraint.Columns...)
+		node := ast.NewUniqueConstraint(constraint.Name, constraint.Columns...)
+		node.NullsDistinct = cloneBoolPtr(constraint.NullsDistinct)
+		return node
 	case "FOREIGN KEY":
 		return ast.NewForeignKeyConstraint(constraint.Name, constraint.Columns, &ast.ForeignKeyRef{
 			Table:    constraint.ForeignTable,
@@ -818,6 +820,7 @@ func FromIndex(index goschema.Index) *ast.IndexNode {
 		indexNode.SetParts(toASTIndexParts(index.Parts))
 	}
 	indexNode.IncludeColumns = index.IncludeColumns
+	indexNode.NullsDistinct = cloneBoolPtr(index.NullsDistinct)
 	indexNode.StorageParams = maps.Clone(index.StorageParams)
 
 	// Set unique constraint
@@ -1323,6 +1326,7 @@ func FromIndexWithTableMapping(index goschema.Index, structToTableMap map[string
 		indexNode.SetParts(toASTIndexParts(index.Parts))
 	}
 	indexNode.IncludeColumns = index.IncludeColumns
+	indexNode.NullsDistinct = cloneBoolPtr(index.NullsDistinct)
 	indexNode.StorageParams = maps.Clone(index.StorageParams)
 
 	// Set unique constraint
@@ -1360,6 +1364,14 @@ func FromIndexWithTableMapping(index goschema.Index, structToTableMap map[string
 	indexNode.IfNotExists = true
 
 	return indexNode
+}
+
+func cloneBoolPtr(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
 }
 
 func toASTIndexParts(parts []goschema.IndexPart) []ast.IndexPart {

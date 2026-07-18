@@ -133,6 +133,12 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 				return err
 			}
 			p.db.Indexes = append(p.db.Indexes, index)
+		case "unique":
+			constraint, err := p.parseUnique(table.StructName, table.Name, nested)
+			if err != nil {
+				return err
+			}
+			p.db.Constraints = append(p.db.Constraints, constraint)
 		case "foreign_key":
 			spec, err := p.parseForeignKey(nested)
 			if err != nil {
@@ -329,22 +335,59 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 		return goschema.Index{}, err
 	}
 	indexType := p.optionalString(block.Body.Attributes["type"])
+	nullsDistinct, err := p.optionalBlockBoolPtr(block, "nulls_distinct", "index")
+	if err != nil {
+		return goschema.Index{}, err
+	}
 	parserName := p.optionalString(block.Body.Attributes["parser"])
 	if parserName != "" && !strings.EqualFold(indexType, "FULLTEXT") {
 		return goschema.Index{}, p.blockError(block, "index parser requires FULLTEXT type")
+	}
+	unique := p.optionalBool(block.Body.Attributes["unique"], false)
+	if nullsDistinct != nil && !unique {
+		return goschema.Index{}, p.blockError(block, "index nulls_distinct requires unique = true")
 	}
 	return goschema.Index{
 		StructName:     structName,
 		Name:           block.Labels[0],
 		Fields:         columns,
 		Parts:          parts,
-		Unique:         p.optionalBool(block.Body.Attributes["unique"], false),
+		Unique:         unique,
+		NullsDistinct:  nullsDistinct,
 		Type:           indexType,
 		Parser:         parserName,
 		Condition:      p.optionalString(block.Body.Attributes["where"]),
 		IncludeColumns: include,
 		StorageParams:  storageParams,
 		TableName:      tableName,
+	}, nil
+}
+
+func (p *parser) parseUnique(structName, tableName string, block *hclsyntax.Block) (goschema.Constraint, error) {
+	if len(block.Labels) != 1 {
+		return goschema.Constraint{}, p.blockError(block, "unique block requires exactly one label")
+	}
+	if err := p.rejectUnsupportedUniqueAttrs(block); err != nil {
+		return goschema.Constraint{}, err
+	}
+	columns, err := p.parseColumnsAttr(block, "columns")
+	if err != nil {
+		return goschema.Constraint{}, err
+	}
+	if len(columns) == 0 {
+		return goschema.Constraint{}, p.blockError(block, "unique %q requires columns", block.Labels[0])
+	}
+	nullsDistinct, err := p.optionalBlockBoolPtr(block, "nulls_distinct", "unique")
+	if err != nil {
+		return goschema.Constraint{}, err
+	}
+	return goschema.Constraint{
+		StructName:    structName,
+		Name:          block.Labels[0],
+		Type:          "UNIQUE",
+		Table:         tableName,
+		Columns:       columns,
+		NullsDistinct: nullsDistinct,
 	}, nil
 }
 
@@ -737,10 +780,18 @@ func (p *parser) rejectUnsupportedIndexAttrs(block *hclsyntax.Block) error {
 		"parser":          true,
 		"page_per_range":  true,
 		"pages_per_range": true,
+		"nulls_distinct":  true,
 		"unique":          true,
 		"type":            true,
 		"where":           true,
 	}, "index")
+}
+
+func (p *parser) rejectUnsupportedUniqueAttrs(block *hclsyntax.Block) error {
+	return p.rejectUnsupportedAttrs(block, map[string]bool{
+		"columns":        true,
+		"nulls_distinct": true,
+	}, "unique")
 }
 
 func (p *parser) rejectUnsupportedIndexOnAttrs(block *hclsyntax.Block) error {
@@ -845,6 +896,19 @@ func (p *parser) optionalIndexOnBool(block *hclsyntax.Block, name string, fallba
 		return false, p.blockError(block, "index on attribute %q must be a bool", name)
 	}
 	return value.True(), nil
+}
+
+func (p *parser) optionalBlockBoolPtr(block *hclsyntax.Block, name, label string) (*bool, error) {
+	attr := block.Body.Attributes[name]
+	if attr == nil {
+		return nil, nil
+	}
+	value, diags := attr.Expr.Value(nil)
+	if diags.HasErrors() || value.Type() != cty.Bool {
+		return nil, p.blockError(block, "%s attribute %q must be a bool", label, name)
+	}
+	result := value.True()
+	return &result, nil
 }
 
 func (p *parser) optionalRawExpr(attr *hclsyntax.Attribute) string {

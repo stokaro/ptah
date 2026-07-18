@@ -387,6 +387,58 @@ table "users" {
 	c.Assert(err, qt.ErrorMatches, `.*index cannot set both page_per_range and pages_per_range`)
 }
 
+func TestParsePostgreSQLNullsDistinctIndexAndUnique(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+table "users" {
+  column "c" {
+    type = int
+  }
+  index "nulls_not_distinct" {
+    unique = true
+    columns = [column.c]
+    nulls_distinct = false
+  }
+  unique "nulls_not_distinct2" {
+    columns = [column.c]
+    nulls_distinct = false
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Indexes, qt.HasLen, 1)
+	c.Assert(db.Indexes[0].Unique, qt.IsTrue)
+	c.Assert(db.Indexes[0].NullsDistinct, qt.IsNotNil)
+	c.Assert(*db.Indexes[0].NullsDistinct, qt.IsFalse)
+	c.Assert(db.Constraints, qt.HasLen, 1)
+	c.Assert(db.Constraints[0].Type, qt.Equals, "UNIQUE")
+	c.Assert(db.Constraints[0].Columns, qt.DeepEquals, []string{"c"})
+	c.Assert(db.Constraints[0].NullsDistinct, qt.IsNotNil)
+	c.Assert(*db.Constraints[0].NullsDistinct, qt.IsFalse)
+
+	sql := strings.Join(renderer.GetOrderedCreateStatements(db, "postgres"), "\n")
+	c.Assert(sql, qt.Contains, "CREATE UNIQUE INDEX IF NOT EXISTS nulls_not_distinct ON users (c) NULLS NOT DISTINCT")
+	c.Assert(sql, qt.Contains, "CONSTRAINT nulls_not_distinct2 UNIQUE NULLS NOT DISTINCT (c)")
+}
+
+func TestParsePostgreSQLIndexNullsDistinctRequiresUnique(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := atlashcl.Parse([]byte(`
+table "users" {
+  column "c" {
+    type = int
+  }
+  index "idx_users_c" {
+    columns = [column.c]
+    nulls_distinct = false
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.ErrorMatches, `.*index nulls_distinct requires unique = true`)
+}
+
 func TestParseFulltextIndexParser(t *testing.T) {
 	c := qt.New(t)
 

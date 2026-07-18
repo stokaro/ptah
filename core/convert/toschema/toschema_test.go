@@ -550,6 +550,21 @@ func TestToIndex_BasicIndex(t *testing.T) {
 					index.StorageParams["pages_per_range"] == "2"
 			},
 		},
+		{
+			name: "index nulls not distinct",
+			index: func() *ast.IndexNode {
+				nullsDistinct := false
+				index := ast.NewIndex("idx_users_c", "users", "c").SetUnique()
+				index.NullsDistinct = &nullsDistinct
+				return index
+			}(),
+			expected: func(index goschema.Index) bool {
+				return index.Name == "idx_users_c" &&
+					index.Unique &&
+					index.NullsDistinct != nil &&
+					!*index.NullsDistinct
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -653,6 +668,27 @@ func TestToDatabase_CompleteSchema(t *testing.T) {
 	c.Assert(result.Indexes, qt.HasLen, 2)
 	c.Assert(result.Indexes[0].Name, qt.Equals, "idx_users_status")
 	c.Assert(result.Indexes[1].Name, qt.Equals, "idx_posts_user")
+}
+
+func TestToDatabase_UniqueConstraintNullsNotDistinct(t *testing.T) {
+	c := qt.New(t)
+	nullsDistinct := false
+	usersTable := ast.NewCreateTable("users").
+		AddColumn(ast.NewColumn("c", "INTEGER")).
+		AddConstraint(&ast.ConstraintNode{
+			Type:          ast.UniqueConstraint,
+			Name:          "users_c_key",
+			Columns:       []string{"c"},
+			NullsDistinct: &nullsDistinct,
+		})
+
+	result := toschema.ToDatabase(&ast.StatementList{Statements: []ast.Node{usersTable}})
+
+	c.Assert(result.Constraints, qt.HasLen, 1)
+	c.Assert(result.Constraints[0].Name, qt.Equals, "users_c_key")
+	c.Assert(result.Constraints[0].Type, qt.Equals, "UNIQUE")
+	c.Assert(result.Constraints[0].NullsDistinct, qt.IsNotNil)
+	c.Assert(*result.Constraints[0].NullsDistinct, qt.IsFalse)
 }
 
 func TestToDatabase_EmptySchema(t *testing.T) {

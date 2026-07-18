@@ -97,6 +97,29 @@ func TestParser_ParseCreateTable_WithConstraints(t *testing.T) {
 	c.Assert(fkConstraint.Reference.Column, qt.Equals, "id")
 }
 
+func TestParser_ParseCreateTable_UniqueNullsNotDistinct(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE TABLE users (
+		c INTEGER,
+		CONSTRAINT users_c_key UNIQUE NULLS NOT DISTINCT (c)
+	);`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	createTable := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(createTable.Constraints, qt.HasLen, 1)
+	constraint := createTable.Constraints[0]
+	c.Assert(constraint.Type, qt.Equals, ast.UniqueConstraint)
+	c.Assert(constraint.Name, qt.Equals, "users_c_key")
+	c.Assert(constraint.Columns, qt.DeepEquals, []string{"c"})
+	c.Assert(constraint.NullsDistinct, qt.IsNotNil)
+	c.Assert(*constraint.NullsDistinct, qt.IsFalse)
+}
+
 func TestParser_ParseCreateTable_WithCompositeForeignKey(t *testing.T) {
 	c := qt.New(t)
 
@@ -1338,6 +1361,23 @@ func TestParser_ParseCreateIndexUsingAndStorageParams(t *testing.T) {
 	c.Assert(index.Type, qt.Equals, "BRIN")
 	c.Assert(index.Columns, qt.DeepEquals, []string{"c"})
 	c.Assert(index.StorageParams, qt.DeepEquals, map[string]string{"pages_per_range": "2"})
+}
+
+func TestParser_ParseCreateUniqueIndexNullsNotDistinct(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "CREATE UNIQUE INDEX idx_users_c ON users (c) NULLS NOT DISTINCT;"
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	index, ok := statements.Statements[0].(*ast.IndexNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(index.Unique, qt.IsTrue)
+	c.Assert(index.NullsDistinct, qt.IsNotNil)
+	c.Assert(*index.NullsDistinct, qt.IsFalse)
 }
 
 func TestParser_ParseCreateIndexIncludeRejectsInvalidLists(t *testing.T) {

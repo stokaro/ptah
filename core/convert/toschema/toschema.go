@@ -377,6 +377,7 @@ func ToIndex(index *ast.IndexNode) goschema.Index {
 		Condition:      index.Condition,
 		Operator:       index.Operator,
 		IncludeColumns: index.IncludeColumns,
+		NullsDistinct:  cloneBoolPtr(index.NullsDistinct),
 		StorageParams:  maps.Clone(index.StorageParams),
 		TableName:      index.Table,
 	}
@@ -584,6 +585,12 @@ func ToDatabase(statements *ast.StatementList) goschema.Database {
 				fieldSchema := ToField(column, tableSchema.StructName, "")
 				database.Fields = append(database.Fields, fieldSchema)
 			}
+			for _, constraint := range node.Constraints {
+				constraintSchema, ok := ToConstraint(constraint, tableSchema.StructName, tableSchema.Name)
+				if ok {
+					database.Constraints = append(database.Constraints, constraintSchema)
+				}
+			}
 
 		case *ast.IndexNode:
 			// Convert index definitions
@@ -593,6 +600,30 @@ func ToDatabase(statements *ast.StatementList) goschema.Database {
 	}
 
 	return database
+}
+
+func ToConstraint(constraint *ast.ConstraintNode, structName, tableName string) (goschema.Constraint, bool) {
+	switch constraint.Type {
+	case ast.UniqueConstraint:
+		return goschema.Constraint{
+			StructName:    structName,
+			Name:          constraint.Name,
+			Type:          "UNIQUE",
+			Table:         tableName,
+			Columns:       append([]string(nil), constraint.Columns...),
+			NullsDistinct: cloneBoolPtr(constraint.NullsDistinct),
+		}, true
+	default:
+		return goschema.Constraint{}, false
+	}
+}
+
+func cloneBoolPtr(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
 }
 
 // MergeFieldOverrides merges platform-specific field variants to reconstruct platform overrides.

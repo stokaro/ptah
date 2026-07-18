@@ -90,6 +90,20 @@ func TestPostgreSQLRenderer_VisitIndex_PostgreSQLFeatures(t *testing.T) {
 			expected: "CREATE INDEX idx_users_c ON users USING BRIN (c) WITH (pages_per_range='2');\n",
 		},
 		{
+			name: "unique index nulls not distinct",
+			index: func() *ast.IndexNode {
+				nullsDistinct := false
+				return &ast.IndexNode{
+					Name:          "idx_users_c",
+					Table:         "users",
+					Columns:       []string{"c"},
+					Unique:        true,
+					NullsDistinct: &nullsDistinct,
+				}
+			}(),
+			expected: "CREATE UNIQUE INDEX idx_users_c ON users (c) NULLS NOT DISTINCT;\n",
+		},
+		{
 			name: "trigram index",
 			index: &ast.IndexNode{
 				Name:     "idx_users_name_trgm",
@@ -185,6 +199,21 @@ func TestPostgreSQLRenderer_RejectsUnsafeIndexStorageParamName(t *testing.T) {
 
 	_, err := renderer.Render(index)
 	c.Assert(err, qt.ErrorMatches, `invalid PostgreSQL index storage parameter .*`)
+}
+
+func TestPostgreSQLRenderer_RejectsNullsDistinctOnNonUniqueIndex(t *testing.T) {
+	c := qt.New(t)
+	renderer := postgres.New()
+	nullsDistinct := false
+	index := &ast.IndexNode{
+		Name:          "idx_users_c",
+		Table:         "users",
+		Columns:       []string{"c"},
+		NullsDistinct: &nullsDistinct,
+	}
+
+	_, err := renderer.Render(index)
+	c.Assert(err, qt.ErrorMatches, `postgresql NULLS DISTINCT is only valid for unique indexes`)
 }
 
 func TestPostgreSQLRenderer_VisitExtension(t *testing.T) {
@@ -700,6 +729,24 @@ func TestPostgreSQLRenderer_PrimaryKeyInclude(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result, qt.Contains, "  CONSTRAINT users_pkey PRIMARY KEY (id) INCLUDE (covering)")
+}
+
+func TestPostgreSQLRenderer_UniqueConstraintNullsNotDistinct(t *testing.T) {
+	c := qt.New(t)
+	nullsDistinct := false
+	table := ast.NewCreateTable("users").
+		AddColumn(ast.NewColumn("c", "integer")).
+		AddConstraint(&ast.ConstraintNode{
+			Type:          ast.UniqueConstraint,
+			Name:          "users_c_key",
+			Columns:       []string{"c"},
+			NullsDistinct: &nullsDistinct,
+		})
+
+	result, err := postgres.New().Render(table)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result, qt.Contains, "  CONSTRAINT users_c_key UNIQUE NULLS NOT DISTINCT (c)")
 }
 
 func TestPostgreSQLRenderer_RejectsIdentityGeneratedColumnMix(t *testing.T) {

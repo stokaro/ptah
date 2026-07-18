@@ -58,6 +58,9 @@ type ConstraintAdditionInfo struct {
 
 	// Columns are the local columns the constraint covers (FK source columns).
 	Columns []string `json:"columns,omitempty"`
+	// NullsDistinct carries PostgreSQL UNIQUE NULLS [NOT] DISTINCT state.
+	// Nil means the clause was not specified.
+	NullsDistinct *bool `json:"nulls_distinct,omitempty"`
 
 	// ForeignTable / ForeignColumn / ForeignColumns describe the FK target
 	// (FOREIGN KEY only). ForeignColumn is kept for compatibility with older
