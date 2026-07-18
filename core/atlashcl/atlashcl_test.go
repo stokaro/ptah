@@ -53,6 +53,50 @@ table "users" {
 	c.Assert(sql, qt.Contains, `CREATE UNIQUE INDEX`)
 }
 
+func TestParsePostgreSQLEnumBlock(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+schema "main" {}
+
+enum "status" {
+  schema = schema.main
+  values = ["active", "inactive"]
+}
+
+table "users" {
+  schema = schema.main
+  column "status" {
+    type    = enum.status
+    default = "active"
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Enums, qt.DeepEquals, []goschema.Enum{
+		{Name: "status", Values: []string{"active", "inactive"}},
+	})
+	c.Assert(db.Fields, qt.HasLen, 1)
+	c.Assert(db.Fields[0].Type, qt.Equals, "status")
+	c.Assert(db.Fields[0].Default, qt.Equals, "active")
+	c.Assert(db.Fields[0].DefaultSet, qt.IsTrue)
+
+	sql := strings.Join(renderer.GetOrderedCreateStatements(db, "postgres"), "\n")
+	c.Assert(sql, qt.Contains, "CREATE TYPE status AS ENUM ('active', 'inactive');")
+	c.Assert(sql, qt.Contains, "status status NOT NULL DEFAULT 'active'")
+}
+
+func TestParseEnumRequiresStringValues(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := atlashcl.Parse([]byte(`
+enum "status" {
+  values = ["active", 1]
+}
+`), "schema.hcl")
+	c.Assert(err, qt.ErrorMatches, `.*values must be a list of strings.*`)
+}
+
 func TestParsePrimaryKeyParts(t *testing.T) {
 	c := qt.New(t)
 
