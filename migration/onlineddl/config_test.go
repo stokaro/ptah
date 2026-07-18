@@ -22,11 +22,12 @@ func writeConfig(t *testing.T, content string) string {
 func TestLoadConfig(t *testing.T) {
 	c := qt.New(t)
 
-	path := writeConfig(t, "online_ddl:\n  tool: ghost\n  threshold_rows: 1000000\n  args:\n    - --allow-on-master\n    - --max-load=Threads_running=25\n")
+	path := writeConfig(t, "online_ddl:\n  tool: ghost\n  threshold_rows: 1000000\n  fallback: error\n  args:\n    - --allow-on-master\n    - --max-load=Threads_running=25\n")
 	cfg, err := onlineddl.LoadConfig(path)
 	c.Assert(err, qt.IsNil)
 	c.Assert(cfg.Tool, qt.Equals, onlineddl.ToolGhost)
 	c.Assert(cfg.ThresholdRows, qt.Equals, int64(1000000))
+	c.Assert(cfg.Fallback, qt.Equals, onlineddl.FallbackError)
 	c.Assert(cfg.Args, qt.DeepEquals, []string{"--allow-on-master", "--max-load=Threads_running=25"})
 	c.Assert(cfg.Enabled(), qt.IsTrue)
 }
@@ -54,6 +55,9 @@ func TestLoadConfig_Invalid(t *testing.T) {
 
 	_, err = onlineddl.LoadConfig(writeConfig(t, "online_ddl:\n  threshold_rows: 100\n"))
 	c.Assert(err, qt.ErrorMatches, ".*threshold_rows is set but no tool is configured.*")
+
+	_, err = onlineddl.LoadConfig(writeConfig(t, "online_ddl:\n  tool: ghost\n  fallback: warn\n"))
+	c.Assert(err, qt.ErrorMatches, `invalid online_ddl config .*unknown online_ddl fallback "warn".*`)
 }
 
 func TestConfig_Enabled(t *testing.T) {

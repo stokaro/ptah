@@ -11,8 +11,9 @@
 //     routes any ALTER TABLE automatically when the target table's estimated
 //     row count reaches the threshold.
 //
-// When the selected tool is not on PATH the executor logs a warning and the
-// statement falls back to a plain ALTER TABLE on the migration connection.
+// Fallback behavior depends on intent: explicit tool directives fail closed by
+// default, while automatic threshold routing preserves the original warning +
+// plain ALTER fallback unless online_ddl.fallback overrides it.
 package onlineddl
 
 import (
@@ -36,6 +37,16 @@ const (
 	ToolPTOSC = "pt-osc"
 )
 
+// Fallback policies accepted in configuration and directives.
+const (
+	// FallbackError aborts instead of letting a routed statement degrade to a
+	// plain ALTER TABLE.
+	FallbackError = "error"
+	// FallbackPlain falls through so the migrator executes the plain ALTER
+	// TABLE on its own connection.
+	FallbackPlain = "plain"
+)
+
 // Config is the online_ddl section of ptah.yaml.
 type Config struct {
 	// Tool selects the online-DDL tool used for automatic routing: "ghost"
@@ -49,6 +60,10 @@ type Config struct {
 	// Args are extra arguments appended to every tool invocation — e.g.
 	// gh-ost's --allow-on-master or --max-load, pt-osc's --max-lag.
 	Args []string `yaml:"args"`
+	// Fallback controls what happens when a selected online-DDL path cannot be
+	// used: "error" aborts, "plain" runs the plain ALTER. Empty uses the
+	// source default.
+	Fallback string `yaml:"fallback"`
 }
 
 // ptahConfig is the ptah.yaml envelope.
@@ -74,6 +89,11 @@ func (c Config) Validate() error {
 	}
 	if c.ThresholdRows > 0 && c.Tool == "" {
 		return fmt.Errorf("online_ddl threshold_rows is set but no tool is configured")
+	}
+	if c.Fallback != "" {
+		if err := validateConfigFallback(c.Fallback); err != nil {
+			return err
+		}
 	}
 	return nil
 }

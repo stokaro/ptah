@@ -18,6 +18,10 @@ import (
 // tool, written as `-- +ptah online_ddl_tool=ghost` in a migration file.
 const DirectiveTool = "online_ddl_tool"
 
+// DirectiveFallback is the per-migration directive key selecting the fallback
+// policy, written as `-- +ptah online_ddl_fallback=error`.
+const DirectiveFallback = "online_ddl_fallback"
+
 // DirectiveNone is the DirectiveTool value that opts a migration out of
 // automatic threshold routing.
 const DirectiveNone = "none"
@@ -41,6 +45,11 @@ type CommandRunner func(ctx context.Context, binary string, args []string) error
 type toolInvocation struct {
 	args    []string
 	cleanup func() error
+}
+
+type toolRoute struct {
+	tool     string
+	fallback string
 }
 
 // Executor routes ALTER TABLE migration statements through an online-DDL
@@ -84,22 +93,25 @@ func (e *Executor) WithDryRun(dryRun bool) *Executor {
 	return &tmp
 }
 
-// ValidateDirectives implements migrator.StatementInterceptor: it rejects an
-// unknown online_ddl_tool directive value before any statement runs, so a
-// typo fails the migration cleanly instead of aborting midway (after earlier,
+// ValidateDirectives implements migrator.StatementInterceptor: it rejects
+// unknown online-DDL directive values before any statement runs, so a typo
+// fails the migration cleanly instead of aborting midway (after earlier,
 // implicitly committed DDL) when the first ALTER is reached.
 func (e *Executor) ValidateDirectives(directives map[string]string) error {
-	tool, ok := directives[DirectiveTool]
-	if !ok {
-		return nil
+	if tool, ok := directives[DirectiveTool]; ok {
+		switch tool {
+		case ToolGhost, ToolPTOSC, DirectiveNone:
+		default:
+			return fmt.Errorf("unknown %s directive value %q: expected %s, %s or %s",
+				DirectiveTool, tool, ToolGhost, ToolPTOSC, DirectiveNone)
+		}
 	}
-	switch tool {
-	case ToolGhost, ToolPTOSC, DirectiveNone:
-		return nil
-	default:
-		return fmt.Errorf("unknown %s directive value %q: expected %s, %s or %s",
-			DirectiveTool, tool, ToolGhost, ToolPTOSC, DirectiveNone)
+	if fallback, ok := directives[DirectiveFallback]; ok {
+		if err := validateFallbackDirective(fallback); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // ExecuteStatement implements migrator.StatementInterceptor: it returns
@@ -130,17 +142,21 @@ func (e *Executor) executeStatement(ctx context.Context, conn Conn, stmt string,
 		return false, nil
 	}
 
-	tool, err := e.pickTool(ctx, conn, target, directives)
-	if err != nil || tool == "" {
+	route, err := e.pickTool(ctx, conn, target, directives)
+	if err != nil || route.tool == "" {
 		return false, err
 	}
 
-	binary := binaryFor(tool)
+	binary := binaryFor(route.tool)
 	if _, err := e.lookPath(binary); err != nil {
 		// Not just ErrNotFound: a non-executable binary or a permission
 		// error also lands here, so surface the underlying cause.
+		if route.fallback == FallbackError {
+			return false, fmt.Errorf("online-DDL tool %s unavailable for table %s: %w; no ALTER TABLE was applied",
+				binary, target.Table, err)
+		}
 		e.logger.Warn("online-DDL tool unavailable on PATH; falling back to a plain ALTER TABLE",
-			"tool", tool, "binary", binary, "table", target.Table, "error", err)
+			"tool", route.tool, "binary", binary, "table", target.Table, "error", err)
 		return false, nil
 	}
 
@@ -153,7 +169,7 @@ func (e *Executor) executeStatement(ctx context.Context, conn Conn, stmt string,
 	}
 
 	if e.dryRun {
-		if err := validateToolInvocation(tool, dsn, target); err != nil {
+		if err := validateToolInvocation(route.tool, dsn, target); err != nil {
 			return false, fmt.Errorf("cannot build %s invocation: %w", binary, err)
 		}
 		e.logger.Info("DRY RUN: would run online-DDL tool",
@@ -161,7 +177,7 @@ func (e *Executor) executeStatement(ctx context.Context, conn Conn, stmt string,
 		return true, nil
 	}
 
-	invocation, err := buildArgs(tool, dsn, target, e.cfg.Args)
+	invocation, err := buildArgs(route.tool, dsn, target, e.cfg.Args)
 	if err != nil {
 		return false, fmt.Errorf("cannot build %s invocation: %w", binary, err)
 	}
@@ -183,33 +199,78 @@ func (e *Executor) executeStatement(ctx context.Context, conn Conn, stmt string,
 
 // pickTool decides which tool (if any) handles the statement: an explicit
 // directive wins; otherwise the configured tool applies when the table's
-// estimated row count reaches the threshold. Empty means "not routed".
-func (e *Executor) pickTool(ctx context.Context, conn Conn, target AlterTarget, directives map[string]string) (string, error) {
+// estimated row count reaches the threshold. Empty tool means "not routed".
+func (e *Executor) pickTool(ctx context.Context, conn Conn, target AlterTarget, directives map[string]string) (toolRoute, error) {
 	if directiveTool, ok := directives[DirectiveTool]; ok {
 		if directiveTool != ToolGhost && directiveTool != ToolPTOSC {
-			return "", fmt.Errorf("unknown %s directive value %q: expected %s, %s or %s",
+			return toolRoute{}, fmt.Errorf("unknown %s directive value %q: expected %s, %s or %s",
 				DirectiveTool, directiveTool, ToolGhost, ToolPTOSC, DirectiveNone)
 		}
-		return directiveTool, nil
+		fallback, err := e.fallbackPolicy(directives, FallbackError)
+		if err != nil {
+			return toolRoute{}, err
+		}
+		return toolRoute{tool: directiveTool, fallback: fallback}, nil
 	}
 
 	if !e.cfg.Enabled() {
-		return "", nil
+		return toolRoute{}, nil
+	}
+	fallback, err := e.fallbackPolicy(directives, FallbackPlain)
+	if err != nil {
+		return toolRoute{}, err
 	}
 	rows, err := e.rowCount(ctx, conn, target.Schema, target.Table)
 	if err != nil {
-		// Fail open: the plain ALTER is the pre-feature behavior, and a
-		// broken estimate must not block a migration.
+		if fallback == FallbackError {
+			return toolRoute{}, fmt.Errorf("online-DDL row-count check failed for table %s: %w; no ALTER TABLE was applied",
+				target.Table, err)
+		}
 		e.logger.Warn("online-DDL row-count check failed; executing a plain ALTER TABLE",
 			"table", target.Table, "error", err)
-		return "", nil
+		return toolRoute{}, nil
 	}
 	if rows < e.cfg.ThresholdRows {
-		return "", nil
+		return toolRoute{}, nil
 	}
 	e.logger.Info("Routing ALTER TABLE through the online-DDL tool: table exceeds the row threshold",
 		"table", target.Table, "rows", rows, "threshold", e.cfg.ThresholdRows, "tool", e.cfg.Tool)
-	return e.cfg.Tool, nil
+	return toolRoute{tool: e.cfg.Tool, fallback: fallback}, nil
+}
+
+func (e *Executor) fallbackPolicy(directives map[string]string, defaultPolicy string) (string, error) {
+	if fallback, ok := directives[DirectiveFallback]; ok {
+		if err := validateFallbackDirective(fallback); err != nil {
+			return "", err
+		}
+		return fallback, nil
+	}
+	if e.cfg.Fallback != "" {
+		if err := validateConfigFallback(e.cfg.Fallback); err != nil {
+			return "", err
+		}
+		return e.cfg.Fallback, nil
+	}
+	return defaultPolicy, nil
+}
+
+func validateFallbackDirective(value string) error {
+	switch value {
+	case FallbackError, FallbackPlain:
+		return nil
+	default:
+		return fmt.Errorf("unknown %s directive value %q: expected %s or %s",
+			DirectiveFallback, value, FallbackError, FallbackPlain)
+	}
+}
+
+func validateConfigFallback(value string) error {
+	switch value {
+	case FallbackError, FallbackPlain:
+		return nil
+	default:
+		return fmt.Errorf("unknown online_ddl fallback %q: expected %s or %s", value, FallbackError, FallbackPlain)
+	}
 }
 
 // binaryFor maps a canonical tool name to its binary on PATH.

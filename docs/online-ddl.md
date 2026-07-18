@@ -34,6 +34,7 @@ Create a `ptah.yaml` next to where you run the CLI (or pass `--config`):
 online_ddl:
   tool: ghost            # or pt-osc
   threshold_rows: 1000000
+  fallback: error        # optional: error or plain
   args:
     - --allow-on-master
     - --max-load=Threads_running=25
@@ -47,11 +48,19 @@ deployment-specific switches belong.
 
 ## Fallback behavior
 
-The routing degrades safely — the plain `ALTER TABLE` on the migration
-connection is always the fallback:
+Fallback behavior depends on how the tool was selected:
 
-- the tool binary is not on `PATH` → warning + plain ALTER;
-- the row-count estimate fails → warning + plain ALTER;
+- an explicit `-- +ptah online_ddl_tool=...` directive defaults to
+  `fallback=error`, so a missing/non-executable tool aborts and no plain
+  `ALTER TABLE` is applied;
+- automatic threshold routing defaults to `fallback=plain`, preserving the
+  original warning + plain ALTER behavior for opportunistic routing;
+- `online_ddl.fallback: error | plain` overrides those defaults globally;
+- `-- +ptah online_ddl_fallback=error | plain` overrides the policy for one
+  migration file, including migrations that rely on directives with no config
+  file;
+- under `fallback=error`, a missing/non-executable tool or row-count estimate
+  failure aborts before the statement reaches the migration connection;
 - the dialect is not MySQL/MariaDB → directives are ignored with a warning;
 - the tool itself exits non-zero → the migration **fails** (no silent
   fallback once the tool has started: it may have left a shadow table
