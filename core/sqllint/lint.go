@@ -338,6 +338,10 @@ func (unsupportedRoutineRule) CheckStatement(ctx Context, stmt ast.Node) []Findi
 		return []Finding{ctx.unsupportedModeledSQLFinding("CREATE "+strings.ToUpper(string(node.Kind)), 0)}
 	case *ast.OpaqueRoutineNode:
 		return []Finding{ctx.unsupportedModeledSQLFinding("CREATE "+strings.ToUpper(string(node.Kind)), 0)}
+	case *ast.PostgresDoBlockNode:
+		return []Finding{ctx.unsupportedModeledSQLFinding("DO", 0)}
+	case *ast.PostgresRoutineNode:
+		return []Finding{ctx.unsupportedModeledSQLFinding("CREATE "+strings.ToUpper(string(node.Kind)), 0)}
 	case *ast.CreateFunctionNode:
 		return []Finding{ctx.unsupportedModeledSQLFinding("CREATE FUNCTION", 0)}
 	case *ast.CreateTriggerNode:

@@ -60,3 +60,52 @@ func TestMySQLRoutineNode_AcceptPropagatesRawSQLError(t *testing.T) {
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"RawSQL:CREATE PROCEDURE p() SELECT 1;"})
 }
+
+func TestNewPostgresDoBlock(t *testing.T) {
+	c := qt.New(t)
+
+	block := ast.NewPostgresDoBlock(" DO $$ BEGIN RAISE NOTICE 'x'; END $$; ")
+
+	c.Assert(block.SQL, qt.Equals, "DO $$ BEGIN RAISE NOTICE 'x'; END $$;")
+	c.Assert(block.Language, qt.Equals, "")
+	c.Assert(block.Body.SQL, qt.Equals, "")
+}
+
+func TestPostgresDoBlockNode_AcceptDelegatesToRawSQL(t *testing.T) {
+	c := qt.New(t)
+
+	block := ast.NewPostgresDoBlock(" DO $$ BEGIN PERFORM 1; END $$; ")
+	visitor := &mocks.MockVisitor{}
+
+	err := block.Accept(visitor)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(block.SQL, qt.Equals, "DO $$ BEGIN PERFORM 1; END $$;")
+	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"RawSQL:DO $$ BEGIN PERFORM 1; END $$;"})
+}
+
+func TestNewPostgresRoutine(t *testing.T) {
+	c := qt.New(t)
+
+	routine := ast.NewPostgresRoutine(" CREATE PROCEDURE p() LANGUAGE sql AS $$ SELECT 1 $$; ", "postgres", ast.RoutineKindProcedure)
+	routine.Name = "p"
+	routine.Language = "sql"
+
+	c.Assert(routine.SQL, qt.Equals, "CREATE PROCEDURE p() LANGUAGE sql AS $$ SELECT 1 $$;")
+	c.Assert(routine.Dialect, qt.Equals, "postgres")
+	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindProcedure)
+	c.Assert(routine.Name, qt.Equals, "p")
+	c.Assert(routine.Language, qt.Equals, "sql")
+}
+
+func TestPostgresRoutineNode_AcceptDelegatesToRawSQL(t *testing.T) {
+	c := qt.New(t)
+
+	routine := ast.NewPostgresRoutine(" CREATE PROCEDURE p() LANGUAGE sql AS $$ SELECT 1 $$; ", "postgres", ast.RoutineKindProcedure)
+	visitor := &mocks.MockVisitor{}
+
+	err := routine.Accept(visitor)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"RawSQL:CREATE PROCEDURE p() LANGUAGE sql AS $$ SELECT 1 $$;"})
+}
