@@ -105,7 +105,7 @@ func rewriteClientDelimitedStatements(input, delimiter string, allowCommentDelim
 	var output strings.Builder
 	for pos := 0; pos < len(input); {
 		switch {
-		case allowCommentDelimiter && strings.HasPrefix(input[pos:], delimiter):
+		case allowCommentDelimiter && isCommentDelimiterAt(input, pos, delimiter):
 			writeDelimiterReplacement(&output, replacement)
 			pos += len(delimiter)
 		case strings.HasPrefix(input[pos:], "--"):
@@ -132,6 +132,26 @@ func rewriteClientDelimitedStatements(input, delimiter string, allowCommentDelim
 		}
 	}
 	return output.String()
+}
+
+func isCommentDelimiterAt(input string, pos int, delimiter string) bool {
+	if !strings.HasPrefix(input[pos:], delimiter) {
+		return false
+	}
+	if strings.ContainsAny(delimiter, "\r\n") {
+		return true
+	}
+
+	lineStart := strings.LastIndexAny(input[:pos], "\r\n") + 1
+	if strings.TrimSpace(input[lineStart:pos]) != "" {
+		return false
+	}
+
+	lineEnd := pos + len(delimiter)
+	for lineEnd < len(input) && input[lineEnd] != '\n' && input[lineEnd] != '\r' {
+		lineEnd++
+	}
+	return strings.TrimSpace(input[pos:lineEnd]) == delimiter
 }
 
 func writeDelimiterReplacement(output *strings.Builder, replacement string) {

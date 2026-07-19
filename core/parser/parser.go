@@ -390,6 +390,9 @@ func (p *Parser) parseCreateOrReplaceStatement(statementStart int) (ast.Node, er
 	if p.current.MatchIdentifierValue("PROCEDURE") {
 		return p.parseCreateRoutine("PROCEDURE", statementStart)
 	}
+	if p.current.MatchIdentifierValue("DEFINER") {
+		return p.parseCreateDefinerRoutine(statementStart)
+	}
 	if p.current.MatchIdentifierValue("TRIGGER") {
 		node, err := p.parseCreateTrigger(statementStart)
 		if err != nil {
@@ -980,7 +983,7 @@ func (p *Parser) collectFunctionBeginBody() (string, bool, error) {
 
 func (p *Parser) trackCurrentRoutineCompoundKeyword(blockDepth, caseDepth *int, pendingEndTrailer *bool) {
 	keyword := strings.ToUpper(p.current.Value)
-	if keyword == "IF" && p.current.End < len(p.input) && p.input[p.current.End] == '(' {
+	if keyword == "IF" && sqlutil.IsScalarIFExpressionFragment(p.input[p.current.End:]) {
 		// MySQL scalar IF(...) calls are not compound IF ... END IF blocks.
 		return
 	}

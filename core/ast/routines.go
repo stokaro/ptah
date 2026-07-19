@@ -201,6 +201,9 @@ const (
 	MySQLRoutineStatementInsert      MySQLRoutineStatementKind = "insert"
 	MySQLRoutineStatementUpdate      MySQLRoutineStatementKind = "update"
 	MySQLRoutineStatementDelete      MySQLRoutineStatementKind = "delete"
+	MySQLRoutineStatementOpen        MySQLRoutineStatementKind = "open"
+	MySQLRoutineStatementFetch       MySQLRoutineStatementKind = "fetch"
+	MySQLRoutineStatementClose       MySQLRoutineStatementKind = "close"
 	MySQLRoutineStatementLabel       MySQLRoutineStatementKind = "label"
 )
 
