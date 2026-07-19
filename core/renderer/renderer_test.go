@@ -20,6 +20,21 @@ func TestSupportedDialects(t *testing.T) {
 	c.Assert(dialects, qt.DeepEquals, expected)
 }
 
+func TestRenderSQL_MySQLFamilyRoutinePreservesRawSQL(t *testing.T) {
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			routine := ast.NewMySQLRoutine("CREATE PROCEDURE p1() BEGIN SELECT 1; END", dialect, ast.RoutineKindProcedure)
+
+			sql, err := renderer.RenderSQL(dialect, routine)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Equals, "CREATE PROCEDURE p1() BEGIN SELECT 1; END;\n")
+		})
+	}
+}
+
 func TestNewRenderer_SupportedDialects(t *testing.T) {
 	tests := []struct {
 		name     string

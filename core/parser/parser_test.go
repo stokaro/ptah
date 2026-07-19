@@ -2109,6 +2109,94 @@ CREATE TABLE after_proc (id int);`
 	c.Assert(createTable.Name, qt.Equals, "after_proc")
 }
 
+func TestParser_ParseMySQLDialectParenthesizedProceduralIF(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE PROCEDURE parenthesized_if()
+BEGIN
+    DECLARE seen INT DEFAULT 0;
+    IF (seen = 0) THEN
+        SET seen = 1;
+    END IF;
+    SELECT IF(seen = 1, 'yes', 'no') AS result;
+END;
+CREATE TABLE after_proc (id int);`
+	p := parser.NewParser(sql, parser.WithDialect(platform.MySQL))
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 2)
+
+	routine, ok := statements.Statements[0].(*ast.MySQLRoutineNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(routine.Body.SQL, qt.Contains, "END IF")
+	c.Assert(routine.SQL, qt.Not(qt.Contains), "CREATE TABLE after_proc")
+	c.Assert(routineStatementKinds(routine.Body.Statements), qt.DeepEquals, []ast.MySQLRoutineStatementKind{
+		ast.MySQLRoutineStatementDeclaration,
+		ast.MySQLRoutineStatementIf,
+		ast.MySQLRoutineStatementSelect,
+	})
+
+	createTable, ok := statements.Statements[1].(*ast.CreateTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(createTable.Name, qt.Equals, "after_proc")
+}
+
+func TestParser_ParseMariaDBDialectDefinerRoutineHardening(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "CREATE OR REPLACE DEFINER=`root`@`localhost` PROCEDURE p1() main: BEGIN\n" +
+		"    DECLARE done BOOL DEFAULT FALSE;\n" +
+		"    DECLARE cur CURSOR FOR SELECT id FROM users;\n" +
+		"    DECLARE CONTINUE HANDLER FOR NOT FOUND BEGIN\n" +
+		"        SET done = TRUE;\n" +
+		"    END;\n" +
+		"    OPEN cur;\n" +
+		"    FETCH cur INTO done;\n" +
+		"    CLOSE cur;\n" +
+		"    IF (done = FALSE) THEN\n" +
+		"        SET done = TRUE;\n" +
+		"    END IF;\n" +
+		"    SELECT IF(done, 1, 0) AS value;\n" +
+		"END main;\n" +
+		"CREATE TABLE after_proc (id int);"
+	p := parser.NewParser(sql, parser.WithDialect(platform.MariaDB))
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 2)
+
+	routine, ok := statements.Statements[0].(*ast.MySQLRoutineNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(routine.Dialect, qt.Equals, platform.MariaDB)
+	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindProcedure)
+	c.Assert(routine.Definer, qt.Equals, "DEFINER=`root`@`localhost`")
+	c.Assert(routine.Name, qt.Equals, "p1")
+	c.Assert(routine.SQL, qt.Contains, "CREATE OR REPLACE DEFINER=`root`@`localhost` PROCEDURE p1()")
+	c.Assert(routine.SQL, qt.Not(qt.Contains), "CREATE TABLE after_proc")
+	c.Assert(routine.Body.SQL, qt.Contains, "main: BEGIN")
+	c.Assert(routine.Body.SQL, qt.Contains, "END main")
+	c.Assert(routineStatementKinds(routine.Body.Statements), qt.DeepEquals, []ast.MySQLRoutineStatementKind{
+		ast.MySQLRoutineStatementDeclaration,
+		ast.MySQLRoutineStatementCursor,
+		ast.MySQLRoutineStatementHandler,
+		ast.MySQLRoutineStatementOpen,
+		ast.MySQLRoutineStatementFetch,
+		ast.MySQLRoutineStatementClose,
+		ast.MySQLRoutineStatementIf,
+		ast.MySQLRoutineStatementSelect,
+	})
+	c.Assert(routine.Body.Statements[2].Handler, qt.DeepEquals, &ast.MySQLRoutineHandler{
+		Action:       "CONTINUE",
+		Conditions:   []string{"NOT FOUND"},
+		StatementSQL: "BEGIN\n        SET done = TRUE;\n    END",
+	})
+
+	createTable, ok := statements.Statements[1].(*ast.CreateTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(createTable.Name, qt.Equals, "after_proc")
+}
+
 func TestParser_ParseMySQLDialectMalformedDeclareMetadataStaysRaw(t *testing.T) {
 	c := qt.New(t)
 

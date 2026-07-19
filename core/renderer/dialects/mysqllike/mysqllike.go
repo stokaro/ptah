@@ -1020,12 +1020,14 @@ func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	return fmt.Errorf("REVOKE privilege management is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)
 }
 
-// VisitRawSQL refuses to emit raw SQL. The only emitter of RawSQLNode today
-// is the PostgreSQL planner's constraint-drop path, which produces a PG-
-// specific DO block; routing that through a MySQL-family renderer would
-// produce a migration the target server can't execute. If a future caller
-// genuinely needs dialect-neutral raw SQL it should add a typed escape hatch
-// rather than relying on this method.
+// VisitRawSQL renders a literal SQL fragment verbatim. Dialect-specific
+// routine nodes use this path to preserve executable routine bodies while
+// keeping parser metadata available to callers.
 func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
-	return fmt.Errorf("RawSQLNode is not supported in %s: %q was emitted by a Postgres-specific planner path", r.dialectUpper, node.SQL)
+	sql := strings.TrimSpace(node.SQL)
+	if !strings.HasSuffix(sql, ";") {
+		sql += ";"
+	}
+	r.w.WriteLine(sql)
+	return nil
 }

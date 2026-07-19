@@ -262,6 +262,26 @@ END`,
 			},
 		},
 		{
+			name: "atlas comment delimiter requires exact line",
+			input: `-- atlas:delimiter -- end
+
+CREATE PROCEDURE setup()
+BEGIN
+    -- end of setup is a normal routine comment
+    SELECT 1;
+END
+-- end
+CREATE TABLE after_proc (id INT);`,
+			expected: []string{
+				`CREATE PROCEDURE setup()
+BEGIN
+    -- end of setup is a normal routine comment
+    SELECT 1;
+END`,
+				"CREATE TABLE after_proc (id INT)",
+			},
+		},
+		{
 			name: "atlas escaped blank line delimiter",
 			input: `-- atlas:delimiter \n\n
 
@@ -336,6 +356,35 @@ BEGIN
     RETURN b;
 END`,
 		"CREATE TABLE after_routines (id INT)",
+	})
+}
+
+func TestSplitSQLStatements_CompoundRoutineWithScalarAndParenthesizedIF(t *testing.T) {
+	c := qt.New(t)
+
+	input := `CREATE PROCEDURE parenthesized_if()
+BEGIN
+    DECLARE seen INT DEFAULT 0;
+    IF (seen = 0) THEN
+        SET seen = 1;
+    END IF;
+    SELECT IF(seen = 1, 'yes', 'no') AS result;
+END;
+
+CREATE TABLE after_proc (id INT);`
+
+	result := sqlutil.SplitSQLStatements(input)
+
+	c.Assert(result, qt.DeepEquals, []string{
+		`CREATE PROCEDURE parenthesized_if()
+BEGIN
+    DECLARE seen INT DEFAULT 0;
+    IF (seen = 0) THEN
+        SET seen = 1;
+    END IF;
+    SELECT IF(seen = 1, 'yes', 'no') AS result;
+END`,
+		"CREATE TABLE after_proc (id INT)",
 	})
 }
 

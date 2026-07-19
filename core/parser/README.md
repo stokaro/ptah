@@ -263,7 +263,7 @@ The parser includes comprehensive tests covering:
 
 Run tests with:
 ```bash
-go test -v ./ptah/core/parser
+go test -v ./core/parser
 ```
 
 ## Integration
@@ -282,7 +282,10 @@ Current limitations include:
   modeled in the AST.
 - Basic expression parsing in CHECK constraints
 - Simplified handling of complex data types
-- No support for stored procedures or functions
+- Stored procedure and function support is dialect-scoped. MySQL/MariaDB,
+  PostgreSQL-family, and SQL Server dialect modes expose routine metadata for
+  supported routine forms while preserving expression internals as raw SQL;
+  unsupported routine body shapes fall back to typed opaque routines or raw SQL.
 
 ## Future Enhancements
 
