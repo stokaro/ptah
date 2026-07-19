@@ -373,12 +373,6 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-// ParseConstraintComment parses a constraint comment and adds it to the constraints slice.
-// This function is exported for testing purposes.
-func ParseConstraintComment(comment *ast.Comment, structName string, schemaConstraints *[]Constraint) {
-	*schemaConstraints = append(*schemaConstraints, parseConstraintComment(comment, structName))
-}
-
 func (s *schemaParseState) parseConstraintComment(comment *ast.Comment, structName string) {
 	s.schemaConstraints = append(s.schemaConstraints, parseConstraintComment(comment, structName))
 }
@@ -503,6 +497,11 @@ type structDeclaration struct {
 	structType *ast.StructType
 }
 
+type schemaCommentTarget struct {
+	structName string
+	field      *ast.Field
+}
+
 func newSchemaParseState(filename string, fset *token.FileSet) *schemaParseState {
 	return &schemaParseState{
 		filename:              filename,
@@ -528,40 +527,40 @@ func (s *schemaParseState) annotationContext(
 	return ctx
 }
 
-func (s *schemaParseState) parseStructComment(comment *ast.Comment, structName string) error {
-	if handled, err := s.parseStructScopedComment(comment, structName); handled || err != nil {
+func (s *schemaParseState) parseStructComment(comment *ast.Comment, target schemaCommentTarget) error {
+	if handled, err := s.parseStructScopedComment(comment, target); handled || err != nil {
 		return err
 	}
 
-	return s.parseSharedComment(comment, structName)
+	return s.parseSharedComment(comment, target)
 }
 
-func (s *schemaParseState) parseStructFieldComment(comment *ast.Comment, structName string, field *ast.Field) error {
-	if handled, err := s.parseFieldScopedComment(comment, structName, field); handled || err != nil {
+func (s *schemaParseState) parseStructFieldComment(comment *ast.Comment, target schemaCommentTarget) error {
+	if handled, err := s.parseFieldScopedComment(comment, target); handled || err != nil {
 		return err
 	}
 
-	return s.parseSharedComment(comment, structName)
+	return s.parseSharedComment(comment, target)
 }
 
-func (s *schemaParseState) parseFieldScopedComment(comment *ast.Comment, structName string, field *ast.Field) (bool, error) {
+func (s *schemaParseState) parseFieldScopedComment(comment *ast.Comment, target schemaCommentTarget) (bool, error) {
 	switch {
 	case strings.HasPrefix(comment.Text, "//migrator:schema:field"):
-		return true, s.parseFieldComment(comment, field, structName)
+		return true, s.parseFieldComment(comment, target.field, target.structName)
 	case strings.HasPrefix(comment.Text, "//migrator:embedded"):
-		s.parseEmbeddedComment(comment, field, structName)
+		s.parseEmbeddedComment(comment, target.field, target.structName)
 		return true, nil
 	case strings.HasPrefix(comment.Text, "//migrator:schema:index"):
-		return true, s.parseIndexComment(comment, structName)
+		return true, s.parseIndexComment(comment, target.structName)
 	default:
 		return false, nil
 	}
 }
 
-func (s *schemaParseState) parseStructScopedComment(comment *ast.Comment, structName string) (bool, error) {
+func (s *schemaParseState) parseStructScopedComment(comment *ast.Comment, target schemaCommentTarget) (bool, error) {
 	switch {
 	case strings.HasPrefix(comment.Text, "//migrator:schema:table"):
-		s.parseTableComment(comment, structName)
+		s.parseTableComment(comment, target.structName)
 		return true, nil
 	case strings.HasPrefix(comment.Text, "//migrator:schema:schema"):
 		return true, s.parseSchemaComment(comment)
@@ -570,52 +569,57 @@ func (s *schemaParseState) parseStructScopedComment(comment *ast.Comment, struct
 	}
 }
 
-func (s *schemaParseState) parseSharedComment(comment *ast.Comment, structName string) error {
+func (s *schemaParseState) parseSharedComment(comment *ast.Comment, target schemaCommentTarget) error {
 	switch {
 	case strings.HasPrefix(comment.Text, "//migrator:schema:constraint"):
-		s.parseConstraintComment(comment, structName)
+		s.parseConstraintComment(comment, target.structName)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:extension"):
 		s.parseExtensionComment(comment)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:function"):
-		s.parseFunctionComment(comment, structName)
+		s.parseFunctionComment(comment, target.structName)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:view"):
-		return s.parseViewComment(comment, structName)
+		return s.parseViewComment(comment, target.structName)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:matview"):
-		return s.parseMaterializedViewComment(comment, structName)
+		return s.parseMaterializedViewComment(comment, target.structName)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:trigger"):
-		return s.parseTriggerComment(comment, structName)
+		return s.parseTriggerComment(comment, target.structName)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:rls:policy"):
-		s.parseRLSPolicyComment(comment, structName)
+		s.parseRLSPolicyComment(comment, target.structName)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:rls:enable"):
-		s.parseRLSEnableComment(comment, structName)
+		s.parseRLSEnableComment(comment, target.structName)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:role"):
-		s.parseRoleComment(comment, structName)
+		s.parseRoleComment(comment, target.structName)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:grant"):
-		s.parseGrantComment(comment, structName)
+		s.parseGrantComment(comment, target.structName)
 	}
 	return nil
 }
 
-func (s *schemaParseState) processTableComments(structName string, genDecl *ast.GenDecl) error {
-	if genDecl.Doc == nil {
+func (s *schemaParseState) processStructComments(structDecl structDeclaration) error {
+	if structDecl.genDecl.Doc == nil {
 		return nil
 	}
 
-	for _, comment := range genDecl.Doc.List {
-		if err := s.parseStructComment(comment, structName); err != nil {
+	target := schemaCommentTarget{structName: structDecl.name}
+	for _, comment := range structDecl.genDecl.Doc.List {
+		if err := s.parseStructComment(comment, target); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *schemaParseState) processFieldComments(structName string, structType *ast.StructType) error {
-	for _, field := range structType.Fields.List {
+func (s *schemaParseState) processFieldComments(structDecl structDeclaration) error {
+	for _, field := range structDecl.structType.Fields.List {
 		if field.Doc == nil {
 			continue
 		}
+		target := schemaCommentTarget{
+			structName: structDecl.name,
+			field:      field,
+		}
 		for _, comment := range field.Doc.List {
-			if err := s.parseStructFieldComment(comment, structName, field); err != nil {
+			if err := s.parseStructFieldComment(comment, target); err != nil {
 				return err
 			}
 		}
@@ -778,10 +782,10 @@ func (s *schemaParseState) processDeclarations(structDecls []structDeclaration) 
 }
 
 func (s *schemaParseState) processDeclaration(structDecl structDeclaration) error {
-	if err := s.processTableComments(structDecl.name, structDecl.genDecl); err != nil {
+	if err := s.processStructComments(structDecl); err != nil {
 		return err
 	}
-	return s.processFieldComments(structDecl.name, structDecl.structType)
+	return s.processFieldComments(structDecl)
 }
 
 // processAllFileComments scans comments for RLS annotations that are separated
