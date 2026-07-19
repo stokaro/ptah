@@ -405,10 +405,53 @@ func (p mysqlRoutineBodyParser) statement(startIdx, endIdx int) ast.MySQLRoutine
 		end = p.tokens[endIdx].Start
 	}
 	sql := strings.TrimSpace(p.rawFragment(p.tokens[startIdx].Start, end))
-	return ast.MySQLRoutineStatement{
+	statement := ast.MySQLRoutineStatement{
 		Kind: p.classifyStatement(startIdx),
 		SQL:  sql,
 	}
+	p.populateDeclareMetadata(&statement, startIdx, endIdx)
+	return statement
+}
+
+func (p mysqlRoutineBodyParser) populateDeclareMetadata(statement *ast.MySQLRoutineStatement, startIdx, endIdx int) {
+	if statement == nil {
+		return
+	}
+
+	switch statement.Kind {
+	case ast.MySQLRoutineStatementDeclaration:
+		statement.Declaration = p.parseDeclareStatement(startIdx, endIdx)
+	case ast.MySQLRoutineStatementCursor:
+		statement.Cursor = p.parseCursorStatement(startIdx, endIdx)
+	case ast.MySQLRoutineStatementHandler:
+		statement.Handler = p.parseHandlerStatement(startIdx, endIdx)
+	}
+}
+
+func (p mysqlRoutineBodyParser) findSignificantKeyword(startIdx, endIdx int, keyword string) int {
+	for i := startIdx; i < endIdx; i++ {
+		if p.tokens[i].MatchIdentifierValue(keyword) {
+			return i
+		}
+	}
+	return -1
+}
+
+func (p mysqlRoutineBodyParser) statementContentEnd(endIdx int) int {
+	if endIdx < 0 || endIdx >= len(p.tokens) {
+		return len(p.input)
+	}
+	if p.tokens[endIdx].Type == lexer.TokenSemicolon || p.tokens[endIdx].Type == lexer.TokenEOF {
+		return p.tokens[endIdx].Start
+	}
+	return p.tokens[endIdx].End
+}
+
+func (p mysqlRoutineBodyParser) rawTokenRange(startIdx int, end int) string {
+	if startIdx < 0 || startIdx >= len(p.tokens) {
+		return ""
+	}
+	return strings.TrimSpace(p.rawFragment(p.tokens[startIdx].Start, end))
 }
 
 func (p mysqlRoutineBodyParser) classifyStatement(startIdx int) ast.MySQLRoutineStatementKind {
