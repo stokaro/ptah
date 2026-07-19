@@ -86,6 +86,32 @@ func main() {
 }
 ```
 
+### Dialect-Aware Parsing
+
+`parser.NewParser(sql)` keeps the compatibility-oriented best-effort behavior
+used by existing callers. When the target SQL family is known, pass an explicit
+dialect:
+
+```go
+p := parser.NewParser(sql, parser.WithDialect(platform.MySQL))
+```
+
+Capabilities are separate from dialect identity. Pass them only when the caller
+knows the concrete server feature set:
+
+```go
+p := parser.NewParser(
+    sql,
+    parser.WithDialect(platform.Postgres),
+    parser.WithCapabilities(capability.Postgres13()),
+)
+```
+
+Dialect-specific routine bodies are handled behind parser strategies. Generic
+mode stays best-effort; dialect mode can use a routine boundary detector that is
+specific to the selected SQL family without turning the generic DDL parser into
+a stored-procedure sub-language parser.
+
 ### Parsing Multiple Statements
 
 ```go
