@@ -788,13 +788,15 @@ helpers such as `{{ define "shared/users" }}` and are not executed as standalone
 migrations. The template data object exposes `.Env`; CLI commands set it with
 `--atlas-env`, and programmatic callers can pass `WithAtlasTemplateData`.
 
-Ptah can also read a limited Atlas project config subset from `atlas.hcl`.
-Supported `env` blocks can provide `url`, `dev`, `exclude`, `migration { dir,
-format, revisions_schema, lock_timeout, exec_order }`, and `lint { latest }`.
-Project config precedence is explicit CLI flags, then `atlas.hcl`, then
-`ptah.yaml`, then built-in defaults. Use `--env <name>` when multiple `env`
-blocks exist; a single env is selected automatically. See
-[Atlas Project Config](docs/atlas_project_config.md).
+Ptah reads project defaults from strict `ptah.yaml` named environments and can
+also translate a limited Atlas project config subset from `atlas.hcl`.
+Supported settings include database URL, dev/shadow URL, schema allow-list,
+migration directory/revision-table settings, timeouts, execution order, lint
+defaults, and online-DDL routing. Project config precedence is explicit CLI
+flags, then `PTAH_*` environment variables, then `atlas.hcl`, then `ptah.yaml`,
+then built-in defaults. Use `--env <name>` when multiple env blocks exist; a
+single env is selected automatically. See [Ptah Project Config](docs/project_config.md)
+and [Atlas Project Config](docs/atlas_project_config.md).
 
 `--dir-format` controls only migration-file discovery. To continue a database
 that already uses Atlas's runtime history table, pass `--revision-format atlas`

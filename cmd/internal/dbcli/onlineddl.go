@@ -31,13 +31,19 @@ func NewConfigFlag() cobraflags.Flag {
 // An explicitly passed path must exist; the conventional ./ptah.yaml is
 // optional and yields a disabled config when absent.
 func LoadOnlineDDLConfig(path string) (*onlineddl.Config, error) {
+	return LoadOnlineDDLConfigForEnv(path, "")
+}
+
+// LoadOnlineDDLConfigForEnv loads the online_ddl section after applying a
+// selected project environment.
+func LoadOnlineDDLConfigForEnv(path, envName string) (*onlineddl.Config, error) {
 	if path == "" {
-		return onlineddl.LoadConfig(onlineddl.ConfigFileName)
+		return onlineddl.LoadConfigForEnv(onlineddl.ConfigFileName, envName)
 	}
 	if _, err := os.Stat(path); err != nil {
 		return nil, fmt.Errorf("ptah config %s: %w", path, err)
 	}
-	return onlineddl.LoadConfig(path)
+	return onlineddl.LoadConfigForEnv(path, envName)
 }
 
 // MigrateGenerateConfig is the migrate.generate section of ptah.yaml.

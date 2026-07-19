@@ -47,7 +47,7 @@ and performs an up/down/up round-trip.`,
 	flags.String(generateReportFormatFlag, "", `Safety report format next to the migration files: "", html, or json`)
 	flags.String(dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
 	flags.String(dbcli.ConnectTimeoutFlagName, dbcli.DefaultConnectTimeout.String(), "Initial database connection timeout")
-	flags.String(dbcli.EnvFlagName, "", "Atlas project env name to read from atlas.hcl")
+	flags.String(dbcli.EnvFlagName, "", "Project env name to read from ptah.yaml or atlas.hcl")
 	flags.String(dbcli.SchemasFlagName, "", "Comma-separated schemas to introspect when supported")
 
 	return cmd
@@ -105,6 +105,8 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	schemasValue = dbcli.EffectiveString(cmd, dbcli.SchemasFlagName, schemasValue, dbcli.JoinSchemas(projectCfg.Schemas))
+	connectTimeoutValue = dbcli.EffectiveString(cmd, dbcli.ConnectTimeoutFlagName, connectTimeoutValue, projectCfg.Migration.ConnectTimeout)
 
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")

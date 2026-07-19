@@ -46,6 +46,23 @@ routed through the tool automatically. Smaller tables get a plain `ALTER`.
 `args` are appended verbatim to every tool invocation — this is where
 deployment-specific switches belong.
 
+`online_ddl` can also live inside a named `ptah.yaml` environment selected
+with `--env`. Environment-specific values override top-level defaults. Explicit
+empty values clear inherited settings, so an environment can disable automatic
+routing with:
+
+```yaml
+online_ddl:
+  tool: ghost
+  threshold_rows: 1000000
+
+env:
+  local:
+    online_ddl:
+      tool: ""
+      threshold_rows: 0
+```
+
 ## Fallback behavior
 
 Fallback behavior depends on how the tool was selected:
