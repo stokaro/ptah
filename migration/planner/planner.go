@@ -82,7 +82,10 @@ import (
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
-var builtInPlannerRegistration sync.Once
+var builtInPlannerRegistration struct {
+	once sync.Once
+	err  error
+}
 
 // Planner defines the interface for database-specific migration planning.
 //
@@ -142,19 +145,17 @@ type Factory = registry.Factory
 // Register registers a planner factory for a dialect. Third-party dialects can
 // call this from init and then use the standard planner helpers.
 func Register(dialect string, factory Factory) error {
-	ensureBuiltInPlannersRegistered()
+	if err := ensureBuiltInPlannersRegistered(); err != nil {
+		return err
+	}
 	return registry.Register(dialect, factory)
-}
-
-// MustRegister registers a planner factory and panics if registration fails.
-func MustRegister(dialect string, factory Factory) {
-	ensureBuiltInPlannersRegistered()
-	registry.MustRegister(dialect, factory)
 }
 
 // RegisteredDialects returns the registered planner dialect names.
 func RegisteredDialects() []string {
-	ensureBuiltInPlannersRegistered()
+	if err := ensureBuiltInPlannersRegistered(); err != nil {
+		return nil
+	}
 	return registry.RegisteredDialects()
 }
 
@@ -232,43 +233,56 @@ func GetPlannerWithCapabilities(dialect string, caps capability.Capabilities) (P
 // GetPlannerWithOptions returns a dialect-specific migration planner with
 // explicit high-level generation policy.
 func GetPlannerWithOptions(dialect string, opts Options) (Planner, error) {
-	ensureBuiltInPlannersRegistered()
+	if err := ensureBuiltInPlannersRegistered(); err != nil {
+		return nil, err
+	}
 	return registry.Get(dialect, opts)
 }
 
-func ensureBuiltInPlannersRegistered() {
-	builtInPlannerRegistration.Do(func() {
-		for _, dialect := range []string{
-			platform.Postgres,
-			platform.CockroachDB,
-			platform.YugabyteDB,
-			platform.Spanner,
-		} {
-			registerPostgresFamilyPlanner(dialect)
-		}
+func ensureBuiltInPlannersRegistered() error {
+	builtInPlannerRegistration.once.Do(func() {
+		builtInPlannerRegistration.err = registerBuiltInPlanners()
+	})
+	return builtInPlannerRegistration.err
+}
 
-		for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
-			registerMySQLFamilyPlanner(dialect)
+func registerBuiltInPlanners() error {
+	for _, dialect := range []string{
+		platform.Postgres,
+		platform.CockroachDB,
+		platform.YugabyteDB,
+		platform.Spanner,
+	} {
+		if err := registerPostgresFamilyPlanner(dialect); err != nil {
+			return err
 		}
+	}
 
-		registry.MustRegister(platform.ClickHouse, func(Options) Planner {
-			return clickhouse.New()
-		})
-		registry.MustRegister(platform.SQLite, func(Options) Planner {
-			return sqlite.New()
-		})
+	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+		if err := registerMySQLFamilyPlanner(dialect); err != nil {
+			return err
+		}
+	}
+
+	if err := registry.Register(platform.ClickHouse, func(Options) Planner {
+		return clickhouse.New()
+	}); err != nil {
+		return err
+	}
+	return registry.Register(platform.SQLite, func(Options) Planner {
+		return sqlite.New()
 	})
 }
 
-func registerPostgresFamilyPlanner(dialect string) {
-	registry.MustRegister(dialect, func(opts Options) Planner {
+func registerPostgresFamilyPlanner(dialect string) error {
+	return registry.Register(dialect, func(opts Options) Planner {
 		return postgres.NewWithCapabilities(opts.CapabilitiesFor(dialect)).
 			WithConcurrentIndexNames(opts.ConcurrentIndexNames...)
 	})
 }
 
-func registerMySQLFamilyPlanner(dialect string) {
-	registry.MustRegister(dialect, func(opts Options) Planner {
+func registerMySQLFamilyPlanner(dialect string) error {
+	return registry.Register(dialect, func(opts Options) Planner {
 		return mysql.NewWithCapabilities(opts.CapabilitiesFor(dialect))
 	})
 }

@@ -156,9 +156,13 @@
 // register additional dialects without forking Ptah:
 //
 //	func init() {
-//		planner.MustRegister("acme", func(opts planner.Options) planner.Planner {
+//		err := planner.Register("acme", func(opts planner.Options) planner.Planner {
 //			return acmeplanner.New(opts.Capabilities)
 //		})
+//		if err != nil {
+//			// Store or report the error through the extension package's own
+//			// initialization contract.
+//		}
 //	}
 //
 // # Thread Safety

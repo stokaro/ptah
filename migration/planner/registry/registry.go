@@ -69,13 +69,6 @@ func Register(dialect string, factory Factory) error {
 	return nil
 }
 
-// MustRegister registers a planner factory and panics if registration fails.
-func MustRegister(dialect string, factory Factory) {
-	if err := Register(dialect, factory); err != nil {
-		panic(err)
-	}
-}
-
 // Get returns a registered planner for dialect.
 func Get(dialect string, opts Options) (Planner, error) {
 	normalized := normalizeRegistryDialect(dialect)
