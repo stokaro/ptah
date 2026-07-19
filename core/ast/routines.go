@@ -71,8 +71,43 @@ const (
 // MySQLRoutineStatement is one top-level statement inside a MySQL routine
 // body. SQL expression internals are preserved as raw fragments.
 type MySQLRoutineStatement struct {
-	Kind MySQLRoutineStatementKind
-	SQL  string
+	Kind        MySQLRoutineStatementKind
+	SQL         string
+	Declaration *MySQLRoutineDeclaration
+	Cursor      *MySQLRoutineCursor
+	Handler     *MySQLRoutineHandler
+}
+
+// MySQLRoutineDeclarationKind identifies the DECLARE subform.
+type MySQLRoutineDeclarationKind string
+
+const (
+	MySQLRoutineDeclarationVariable  MySQLRoutineDeclarationKind = "variable"
+	MySQLRoutineDeclarationCondition MySQLRoutineDeclarationKind = "condition"
+)
+
+// MySQLRoutineDeclaration models DECLARE variable and condition statements.
+// TypeSQL, DefaultSQL, and ConditionSQL remain raw MySQL fragments; expression
+// parsing is intentionally outside the routine statement-boundary layer.
+type MySQLRoutineDeclaration struct {
+	Kind         MySQLRoutineDeclarationKind
+	Names        []string
+	TypeSQL      string
+	DefaultSQL   string
+	ConditionSQL string
+}
+
+// MySQLRoutineCursor models DECLARE ... CURSOR statements.
+type MySQLRoutineCursor struct {
+	Name      string
+	SelectSQL string
+}
+
+// MySQLRoutineHandler models DECLARE ... HANDLER statements.
+type MySQLRoutineHandler struct {
+	Action       string
+	Conditions   []string
+	StatementSQL string
 }
 
 // NewMySQLRoutine creates a MySQL-family routine node.

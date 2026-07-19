@@ -1270,9 +1270,10 @@ func TestParser_ParseMySQLDialectRoutineBodyStatementKinds(t *testing.T) {
 
 	sql := `CREATE PROCEDURE control_flow()
 BEGIN
-    DECLARE done BOOL DEFAULT FALSE;
+    DECLARE done, retried BOOL DEFAULT FALSE;
+    DECLARE duplicate_key CONDITION FOR SQLSTATE '23000';
     DECLARE cur CURSOR FOR SELECT id FROM users;
-    DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
+    DECLARE CONTINUE HANDLER FOR NOT FOUND, duplicate_key SET done = TRUE;
     SET @seen = 0;
     BEGIN
         SET @seen = @seen + 10;
@@ -1307,6 +1308,7 @@ CREATE TABLE after_proc (id int);`
 	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindProcedure)
 	c.Assert(routineStatementKinds(routine.Body.Statements), qt.DeepEquals, []ast.MySQLRoutineStatementKind{
 		ast.MySQLRoutineStatementDeclaration,
+		ast.MySQLRoutineStatementDeclaration,
 		ast.MySQLRoutineStatementCursor,
 		ast.MySQLRoutineStatementHandler,
 		ast.MySQLRoutineStatementSet,
@@ -1318,11 +1320,93 @@ CREATE TABLE after_proc (id int);`
 		ast.MySQLRoutineStatementLabel,
 		ast.MySQLRoutineStatementSelect,
 	})
-	c.Assert(routine.Body.Statements[10].SQL, qt.Contains, "IF(@seen = 0, 1, 0)")
+	c.Assert(routine.Body.Statements[0].Declaration, qt.DeepEquals, &ast.MySQLRoutineDeclaration{
+		Kind:       ast.MySQLRoutineDeclarationVariable,
+		Names:      []string{"done", "retried"},
+		TypeSQL:    "BOOL",
+		DefaultSQL: "FALSE",
+	})
+	c.Assert(routine.Body.Statements[1].Declaration, qt.DeepEquals, &ast.MySQLRoutineDeclaration{
+		Kind:         ast.MySQLRoutineDeclarationCondition,
+		Names:        []string{"duplicate_key"},
+		ConditionSQL: "SQLSTATE '23000'",
+	})
+	c.Assert(routine.Body.Statements[2].Cursor, qt.DeepEquals, &ast.MySQLRoutineCursor{
+		Name:      "cur",
+		SelectSQL: "SELECT id FROM users",
+	})
+	c.Assert(routine.Body.Statements[3].Handler, qt.DeepEquals, &ast.MySQLRoutineHandler{
+		Action:       "CONTINUE",
+		Conditions:   []string{"NOT FOUND", "duplicate_key"},
+		StatementSQL: "SET done = TRUE",
+	})
+	c.Assert(routine.Body.Statements[11].SQL, qt.Contains, "IF(@seen = 0, 1, 0)")
 
 	createTable, ok := statements.Statements[1].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(createTable.Name, qt.Equals, "after_proc")
+}
+
+func TestParser_ParseMySQLDialectMalformedDeclareMetadataStaysRaw(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE PROCEDURE malformed_handler()
+BEGIN
+    DECLARE CONTINUE HANDLER FOR;
+    DECLARE v INT DEFAULT;
+END;`
+	p := parser.NewParser(sql, parser.WithDialect(platform.MySQL))
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	routine, ok := statements.Statements[0].(*ast.MySQLRoutineNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(routine.Body.Statements, qt.HasLen, 2)
+	c.Assert(routine.Body.Statements[0].Kind, qt.Equals, ast.MySQLRoutineStatementHandler)
+	c.Assert(routine.Body.Statements[0].SQL, qt.Equals, "DECLARE CONTINUE HANDLER FOR;")
+	c.Assert(routine.Body.Statements[0].Handler, qt.IsNil)
+	c.Assert(routine.Body.Statements[1].Kind, qt.Equals, ast.MySQLRoutineStatementDeclaration)
+	c.Assert(routine.Body.Statements[1].SQL, qt.Equals, "DECLARE v INT DEFAULT;")
+	c.Assert(routine.Body.Statements[1].Declaration, qt.IsNil)
+}
+
+func TestParser_ParseMySQLDialectHandlerMetadataStatementStarts(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE PROCEDURE handler_starts()
+BEGIN
+    DECLARE v INT DEFAULT 0;
+    DECLARE cur CURSOR FOR SELECT id FROM users;
+    DECLARE CONTINUE HANDLER FOR NOT FOUND CLOSE cur;
+    DECLARE CONTINUE HANDLER FOR SQLSTATE VALUE '23000' FETCH cur INTO v;
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION GET DIAGNOSTICS CONDITION 1 v = MESSAGE_TEXT;
+END;`
+	p := parser.NewParser(sql, parser.WithDialect(platform.MySQL))
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	routine, ok := statements.Statements[0].(*ast.MySQLRoutineNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(routine.Body.Statements, qt.HasLen, 5)
+	c.Assert(routine.Body.Statements[2].Handler, qt.DeepEquals, &ast.MySQLRoutineHandler{
+		Action:       "CONTINUE",
+		Conditions:   []string{"NOT FOUND"},
+		StatementSQL: "CLOSE cur",
+	})
+	c.Assert(routine.Body.Statements[3].Handler, qt.DeepEquals, &ast.MySQLRoutineHandler{
+		Action:       "CONTINUE",
+		Conditions:   []string{"SQLSTATE VALUE '23000'"},
+		StatementSQL: "FETCH cur INTO v",
+	})
+	c.Assert(routine.Body.Statements[4].Handler, qt.DeepEquals, &ast.MySQLRoutineHandler{
+		Action:       "EXIT",
+		Conditions:   []string{"SQLEXCEPTION"},
+		StatementSQL: "GET DIAGNOSTICS CONDITION 1 v = MESSAGE_TEXT",
+	})
 }
 
 func TestParser_ParseMySQLDialectUnsupportedRoutineBodyAsOpaqueRoutine(t *testing.T) {

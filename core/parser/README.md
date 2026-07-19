@@ -114,8 +114,10 @@ a stored-procedure sub-language parser.
 
 MySQL and MariaDB dialect mode parses routine headers and top-level routine-body
 statement boundaries into `ast.MySQLRoutineNode`. Expressions remain raw SQL
-fragments in this slice, but declarations, handlers, cursors, labels, and
-control-flow statement classes are distinguished by the routine-body parser.
+fragments in this slice, but declaration statements now carry typed metadata
+for local variables, named conditions, cursors, and handlers. Labels and
+control-flow statement classes are still distinguished without parsing scalar
+SQL expressions.
 
 When a dialect-aware routine boundary is known but the body sub-language is not
 structured yet, the parser returns an `ast.OpaqueRoutineNode`: renderers emit its
