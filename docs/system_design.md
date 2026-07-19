@@ -34,11 +34,11 @@ The system operates through four main layers:
 
 ### Key Design Principles
 
-- **Database Agnostic**: Core logic works with PostgreSQL, MySQL, and MariaDB
+- **Database Agnostic**: Core logic works across supported PostgreSQL-family, MySQL, MariaDB, ClickHouse, and Spanner workflows
 - **AST-Based**: Uses Abstract Syntax Trees for type-safe SQL generation
 - **Visitor Pattern**: Enables dialect-specific rendering without modifying core AST
 - **Dependency Aware**: Automatically handles table creation order based on foreign keys
-- **Transaction Safe**: All operations are wrapped in transactions for consistency
+- **Dialect-Aware Safety**: Migration execution records dirty state and uses transactions only where the target engine supports transactional DDL
 
 ## Core Components
 
@@ -100,7 +100,7 @@ The system operates through four main layers:
 
 #### renderer Package
 - **Purpose**: Converts AST nodes to dialect-specific SQL statements
-- **Supported Dialects**: PostgreSQL, MySQL, MariaDB
+- **Supported Dialects**: PostgreSQL-family targets, MySQL, MariaDB, ClickHouse, and Spanner
 - **Functionality**: Implements visitor pattern to traverse AST and generate SQL
 
 ### 3. Database Integration
@@ -215,14 +215,27 @@ type SchemaDiff struct {
 ## Supported Databases
 
 ### PostgreSQL
-- Full support including enums, constraints, and indexes
+- Full support including enums, constraints, indexes, RLS policies, roles, grants, extensions, and functions
 - Native enum types with CREATE TYPE statements
-- Advanced constraint support
+- Transactional DDL for ordinary migration execution
 
 ### MySQL/MariaDB
-- Full support with platform-specific optimizations
+- Full support with platform-specific optimizations and online DDL hooks
 - ENUM column types for enumerated values
 - Engine-specific table options (InnoDB, MyISAM)
+- DDL implicitly commits, so failed multi-statement migrations can leave earlier DDL applied; Ptah records dirty migration state for recovery
+
+### ClickHouse
+- Compatible MergeTree-oriented subset with live introspection through system tables
+- Transaction hooks are no-ops; compatible scenarios rely on dirty-state tracking rather than rollback
+
+### CockroachDB/YugabyteDB
+- PostgreSQL-family common subset with live CI coverage for supported scenarios
+- Capability presets disable PostgreSQL features the target does not support, such as advisory locks or `CREATE INDEX CONCURRENTLY` where unavailable
+
+### Spanner
+- Conservative PostgreSQL-interface routing for planning and rendering
+- No live CI coverage and not production-supported yet
 
 ## Go Struct Annotations
 
@@ -261,10 +274,11 @@ type Product struct {
 
 ## Error Handling and Safety
 
-### Transaction Safety
-- All migration operations run in transactions
-- Automatic rollback on failure
-- Dry-run mode for validation
+### Transaction Semantics
+- PostgreSQL-family DDL runs in transactions unless a migration opts out with `-- +ptah no_transaction`
+- MySQL/MariaDB DDL implicitly commits; failed migrations can leave partial DDL applied and must be inspected before repair
+- ClickHouse transaction methods are no-ops in Ptah
+- Dry-run mode is available for validation
 
 ### Safety Mechanisms
 - Confirmation prompts for destructive operations

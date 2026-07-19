@@ -110,7 +110,7 @@ The system is organized into several key packages:
 - `schemadiff/` - Schema comparison and difference analysis
 
 **`dbschema/`** - Database operations:
-- Connection management for PostgreSQL, MySQL, MariaDB
+- Connection management for PostgreSQL-family targets, MySQL, MariaDB, ClickHouse, and Spanner
 - Schema reading/introspection and writing capabilities
 - Database cleaning and schema dropping operations
 
@@ -153,11 +153,11 @@ _ int
 ### Integration Tests  
 - Located in `integration/gonative/` directory
 - Use build tag `integration` 
-- Require live databases (PostgreSQL, MySQL, MariaDB)
+- Require live databases for PostgreSQL-family targets, MySQL, MariaDB, and ClickHouse coverage
 - Comprehensive test framework with scenarios covering:
   - Basic migration operations (up/down/status)
   - Idempotency testing
-  - Concurrency and locking
+  - Parallel execution smoke
   - Partial failure recovery
   - Schema diff validation
 

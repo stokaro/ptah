@@ -95,7 +95,7 @@ jobs:
         run: |
           docker run --detach --name ptah-cockroachdb \
             --publish 26257:26257 \
-            cockroachdb/cockroach:v23.2.5 \
+            cockroachdb/cockroach:v26.2.4 \
             start-single-node --insecure --advertise-addr=localhost:26257
 
           docker run --detach --name ptah-yugabytedb \
