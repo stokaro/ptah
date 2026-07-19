@@ -119,6 +119,16 @@ for local variables, named conditions, cursors, and handlers. Labels and
 control-flow statement classes are still distinguished without parsing scalar
 SQL expressions.
 
+PostgreSQL-family dialect mode keeps `CREATE FUNCTION` rendering on
+`ast.CreateFunctionNode`, but attaches parser-only `PostgresRoutineBody`
+metadata for quoted, SQL-standard `RETURN`, and `BEGIN ATOMIC` bodies.
+`CREATE PROCEDURE` and `DO` blocks become PostgreSQL-specific routine nodes in
+PostgreSQL-family dialect mode and still render through the raw-SQL visitor
+contract.
+PL/pgSQL expressions remain raw; the body parser classifies top-level
+declarations, block statements, exceptions, returns, dynamic execution, raises,
+and control-flow statements.
+
 When a dialect-aware routine boundary is known but the body sub-language is not
 structured yet, the parser returns an `ast.OpaqueRoutineNode`: renderers emit its
 SQL through the raw-SQL visitor contract, while parser consumers can still

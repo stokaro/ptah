@@ -134,6 +134,9 @@ func (p *Parser) parseStatement() (ast.Node, error) {
 
 func (p *Parser) parseDoStatement() (ast.Node, error) {
 	statementStart := p.current.Start
+	if p.isPostgresRoutineDialect() {
+		return p.parsePostgresDoStatement(statementStart)
+	}
 	p.advance()
 	sql, err := p.collectRawStatement(statementStart, "DO statement")
 	if err != nil {
@@ -533,6 +536,7 @@ func (p *Parser) parseCreateFunction(statementStart int) (ast.Node, error) {
 	if raw {
 		return ast.NewRawSQL(p.rawStatement(statementStart)), nil
 	}
+	p.attachPostgresFunctionBody(function)
 	return function, nil
 }
 
@@ -825,6 +829,9 @@ func (p *Parser) parseFunctionBody(function *ast.CreateFunctionNode) error {
 
 	body := p.current.Value
 	function.SetBody(stripSQLStringDelimiters(body))
+	if p.isPostgresRoutineDialect() {
+		function.RoutineBody = &ast.PostgresRoutineBody{Delimiter: dollarQuoteDelimiter(body)}
+	}
 	p.advance()
 	return nil
 }
