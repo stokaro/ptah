@@ -454,15 +454,61 @@ func TestGetOrderedCreateStatements(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	statements := renderer.GetOrderedCreateStatements(result, "postgres")
-	c.Assert(statements, qt.HasLen, len(result.Tables)+3) // 1 type + 2 indexes
 
 	c.Assert(statements[0], qt.Contains, "CREATE TYPE")
-	c.Assert(statements[17], qt.Contains, "CREATE INDEX")
-	c.Assert(statements[18], qt.Contains, "CREATE INDEX")
 
-	for i := 1; i < 17; i++ {
-		c.Assert(statements[i], qt.Contains, "CREATE TABLE")
+	createTables := 0
+	foreignKeyAlters := 0
+	indexes := 0
+	seenForeignKeyAlter := false
+	seenIndex := false
+	for _, statement := range statements[1:] {
+		switch {
+		case strings.Contains(statement, "CREATE TABLE"):
+			c.Assert(seenForeignKeyAlter, qt.IsFalse)
+			c.Assert(seenIndex, qt.IsFalse)
+			c.Assert(statement, qt.Not(qt.Contains), "FOREIGN KEY")
+			createTables++
+		case strings.Contains(statement, "ALTER TABLE") && strings.Contains(statement, "FOREIGN KEY"):
+			c.Assert(seenIndex, qt.IsFalse)
+			seenForeignKeyAlter = true
+			foreignKeyAlters++
+		case strings.Contains(statement, "CREATE INDEX"):
+			seenIndex = true
+			indexes++
+		}
 	}
+
+	c.Assert(createTables, qt.Equals, len(result.Tables))
+	c.Assert(foreignKeyAlters > 0, qt.IsTrue)
+	c.Assert(indexes, qt.Equals, 2)
+}
+
+func TestGetOrderedCreateStatements_MutualForeignKeysAreTwoPhase(t *testing.T) {
+	c := qt.New(t)
+
+	result := &goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "A", Name: "a"},
+			{StructName: "B", Name: "b"},
+		},
+		Fields: []goschema.Field{
+			{StructName: "A", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "A", Name: "b_id", Type: "INTEGER", Foreign: "b(id)", ForeignKeyName: "fk_a_b"},
+			{StructName: "B", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "B", Name: "a_id", Type: "INTEGER", Foreign: "a(id)", ForeignKeyName: "fk_b_a"},
+		},
+	}
+
+	statements := renderer.GetOrderedCreateStatements(result, "postgres")
+
+	c.Assert(statements, qt.HasLen, 4)
+	c.Assert(statements[0], qt.Contains, `CREATE TABLE "a"`)
+	c.Assert(statements[0], qt.Not(qt.Contains), "FOREIGN KEY")
+	c.Assert(statements[1], qt.Contains, `CREATE TABLE "b"`)
+	c.Assert(statements[1], qt.Not(qt.Contains), "FOREIGN KEY")
+	c.Assert(statements[2], qt.Contains, `ALTER TABLE "a" ADD CONSTRAINT "fk_a_b" FOREIGN KEY ("b_id") REFERENCES "b"("id")`)
+	c.Assert(statements[3], qt.Contains, `ALTER TABLE "b" ADD CONSTRAINT "fk_b_a" FOREIGN KEY ("a_id") REFERENCES "a"("id")`)
 }
 
 func TestGenerateSchema_Deterministic(t *testing.T) {

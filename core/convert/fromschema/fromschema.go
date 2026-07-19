@@ -556,6 +556,8 @@ func isKnownTablePlatformOverride(key string) bool {
 	return slices.Contains(knownKeys, key)
 }
 
+type fieldConverter func(goschema.Field, []goschema.Enum, string) *ast.ColumnNode
+
 // FromTable converts a goschema.Table to an ast.CreateTableNode with all associated columns and constraints.
 //
 // This function creates a complete table definition by combining table metadata with its associated
@@ -632,6 +634,16 @@ func isKnownTablePlatformOverride(key string) bool {
 // Returns a fully configured *ast.CreateTableNode ready for SQL generation.
 // The node contains the table definition with all columns, constraints, and platform-specific options.
 func FromTable(table goschema.Table, fields []goschema.Field, enums []goschema.Enum, targetPlatform string) *ast.CreateTableNode {
+	return fromTableWithFieldConverter(table, fields, enums, targetPlatform, FromField)
+}
+
+func fromTableWithFieldConverter(
+	table goschema.Table,
+	fields []goschema.Field,
+	enums []goschema.Enum,
+	targetPlatform string,
+	convertField fieldConverter,
+) *ast.CreateTableNode {
 	createTable := ast.NewCreateTable(table.QualifiedName())
 
 	newTable := applyTablePlatformOverrides(createTable, table, targetPlatform)
@@ -676,8 +688,7 @@ func FromTable(table goschema.Table, fields []goschema.Field, enums []goschema.E
 				field.Primary = false
 			}
 			field = withDefaultForeignKeyName(newTable.Name, field)
-			column := FromField(field, enums, targetPlatform)
-			createTable.AddColumn(column)
+			createTable.AddColumn(convertField(field, enums, targetPlatform))
 		}
 	}
 
@@ -688,6 +699,15 @@ func FromTable(table goschema.Table, fields []goschema.Field, enums []goschema.E
 	}
 
 	return createTable
+}
+
+func fromTableWithoutForeignKeys(
+	table goschema.Table,
+	fields []goschema.Field,
+	enums []goschema.Enum,
+	targetPlatform string,
+) *ast.CreateTableNode {
+	return fromTableWithFieldConverter(table, fields, enums, targetPlatform, FromFieldWithoutForeignKeys)
 }
 
 func withDefaultForeignKeyName(tableName string, field goschema.Field) goschema.Field {
@@ -768,6 +788,7 @@ func FromConstraint(constraint goschema.Constraint) *ast.ConstraintNode {
 			Columns:  constraint.ForeignColumns,
 			OnDelete: constraint.OnDelete,
 			OnUpdate: constraint.OnUpdate,
+			Name:     constraint.Name,
 		})
 	case "CHECK":
 		return &ast.ConstraintNode{
@@ -788,12 +809,31 @@ func addTableConstraints(createTable *ast.CreateTableNode, table goschema.Table,
 		if !constraintBelongsToTable(constraint, table) {
 			continue
 		}
+		if isForeignKeyConstraint(constraint) {
+			continue
+		}
 
 		node := FromConstraint(constraint)
 		if node != nil {
 			createTable.AddConstraint(node)
 		}
 	}
+}
+
+func isForeignKeyConstraint(constraint goschema.Constraint) bool {
+	return strings.EqualFold(constraint.Type, "FOREIGN KEY")
+}
+
+func withDefaultConstraintForeignKeyName(tableName string, constraint goschema.Constraint) goschema.Constraint {
+	if !isForeignKeyConstraint(constraint) || constraint.Name != "" {
+		return constraint
+	}
+	columnName := strings.Join(constraint.Columns, "_")
+	if columnName == "" {
+		columnName = "foreign_key"
+	}
+	constraint.Name = GenerateForeignKeyName(tableName, columnName)
+	return constraint
 }
 
 func constraintBelongsToTable(constraint goschema.Constraint, table goschema.Table) bool {
@@ -1052,6 +1092,77 @@ func FromMaterializedView(view goschema.MaterializedView) *ast.CreateMaterialize
 	return viewNode
 }
 
+func appendForeignKeyConstraintStatements(
+	statements *ast.StatementList,
+	tables []goschema.Table,
+	fields []goschema.Field,
+	constraints []goschema.Constraint,
+	targetPlatform string,
+) {
+	appendFieldForeignKeyConstraintStatements(statements, tables, fields, targetPlatform)
+	appendTableForeignKeyConstraintStatements(statements, tables, constraints)
+}
+
+func appendFieldForeignKeyConstraintStatements(
+	statements *ast.StatementList,
+	tables []goschema.Table,
+	fields []goschema.Field,
+	targetPlatform string,
+) {
+	for _, table := range tables {
+		for _, field := range fields {
+			if field.StructName != table.StructName {
+				continue
+			}
+			field = applyPlatformOverrides(field, targetPlatform)
+			if field.Foreign == "" {
+				continue
+			}
+			field = withDefaultForeignKeyName(table.Name, field)
+			fkRef := ParseForeignKeyReference(field.Foreign)
+			if fkRef == nil {
+				continue
+			}
+			fkRef.OnDelete = field.OnDelete
+			fkRef.OnUpdate = field.OnUpdate
+			fkRef.Name = field.ForeignKeyName
+			statements.Statements = append(statements.Statements, &ast.AlterTableNode{
+				Name: table.QualifiedName(),
+				Operations: []ast.AlterOperation{
+					&ast.AddConstraintOperation{
+						Constraint: ast.NewForeignKeyConstraint(field.ForeignKeyName, []string{field.Name}, fkRef),
+					},
+				},
+			})
+		}
+	}
+}
+
+func appendTableForeignKeyConstraintStatements(
+	statements *ast.StatementList,
+	tables []goschema.Table,
+	constraints []goschema.Constraint,
+) {
+	for _, table := range tables {
+		for _, constraint := range constraints {
+			if !constraintBelongsToTable(constraint, table) || !isForeignKeyConstraint(constraint) {
+				continue
+			}
+			constraint = withDefaultConstraintForeignKeyName(table.Name, constraint)
+			node := FromConstraint(constraint)
+			if node == nil {
+				continue
+			}
+			statements.Statements = append(statements.Statements, &ast.AlterTableNode{
+				Name: table.QualifiedName(),
+				Operations: []ast.AlterOperation{
+					&ast.AddConstraintOperation{Constraint: node},
+				},
+			})
+		}
+	}
+}
+
 // FromTrigger converts a goschema.Trigger to an ast.CreateTriggerNode.
 func FromTrigger(trigger goschema.Trigger) *ast.CreateTriggerNode {
 	trigger.Canonicalize()
@@ -1166,16 +1277,17 @@ func FromGrant(grant goschema.Grant) *ast.GrantPrivilegeNode {
 // The function generates statements in the following order to respect dependencies:
 //  1. Schema definitions (CREATE SCHEMA statements)
 //  2. Enum type definitions (CREATE TYPE statements)
-//  3. Table definitions (CREATE TABLE statements) with embedded fields processed
-//  4. Extension definitions
-//  5. Dialect-specific objects such as roles, functions, views, RLS policies, grants, and triggers
-//  6. Index definitions (CREATE INDEX statements)
+//  3. Table definitions (CREATE TABLE statements) with embedded fields processed, but without foreign keys
+//  4. Foreign key constraints (ALTER TABLE statements)
+//  5. Extension definitions
+//  6. Dialect-specific objects such as roles, functions, views, RLS policies, grants, and triggers
+//  7. Index definitions (CREATE INDEX statements)
 //
 // This ordering ensures that:
 //   - Schemas are created before tables that reference them
 //   - Enum types are created before tables that reference them
 //   - Tables are created before indexes that reference them
-//   - Foreign key dependencies are handled by the table creation order
+//   - Foreign key dependencies are handled after table creation, so cyclic table references remain executable
 //   - Embedded fields are processed and converted to regular fields before table creation
 //
 // # Embedded Field Processing
@@ -1240,10 +1352,11 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 	// 3. Add table definitions (they may be referenced by indexes)
 	// Use the combined field list that includes embedded field expansions
 	for _, table := range database.Tables {
-		tableNode := FromTable(table, allFields, database.Enums, targetPlatform)
+		tableNode := fromTableWithoutForeignKeys(table, allFields, database.Enums, targetPlatform)
 		addTableConstraints(tableNode, table, database.Constraints)
 		statements.Statements = append(statements.Statements, tableNode)
 	}
+	appendForeignKeyConstraintStatements(statements, database.Tables, allFields, database.Constraints, targetPlatform)
 
 	// 4. Add extension definitions (PostgreSQL-specific)
 	for _, extension := range database.Extensions {

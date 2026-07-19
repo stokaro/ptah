@@ -10,6 +10,32 @@ import (
 	"github.com/stokaro/ptah/core/goschema"
 )
 
+func tableStatementByName(statements *ast.StatementList, name string) *ast.CreateTableNode {
+	for _, stmt := range statements.Statements {
+		table, ok := stmt.(*ast.CreateTableNode)
+		if ok && table.Name == name {
+			return table
+		}
+	}
+	return nil
+}
+
+func foreignKeyAlterStatementByName(statements *ast.StatementList, tableName, constraintName string) *ast.AlterTableNode {
+	for _, stmt := range statements.Statements {
+		alter, ok := stmt.(*ast.AlterTableNode)
+		if !ok || alter.Name != tableName {
+			continue
+		}
+		for _, operation := range alter.Operations {
+			add, ok := operation.(*ast.AddConstraintOperation)
+			if ok && add.Constraint.Name == constraintName && add.Constraint.Type == ast.ForeignKeyConstraint {
+				return alter
+			}
+		}
+	}
+	return nil
+}
+
 func TestFromField_BasicProperties(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -753,6 +779,66 @@ func TestFromDatabase_TableLevelConstraints(t *testing.T) {
 	c.Assert(table.Constraints[0].Expression, qt.Equals, "position('@' in email) > 1")
 }
 
+func TestFromDatabase_TableLevelForeignKeysAreTwoPhase(t *testing.T) {
+	c := qt.New(t)
+
+	db := goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "Account", Name: "accounts"},
+			{StructName: "Profile", Name: "profiles"},
+		},
+		Fields: []goschema.Field{
+			{StructName: "Account", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Account", Name: "profile_id", Type: "INTEGER"},
+			{StructName: "Profile", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Profile", Name: "account_id", Type: "INTEGER"},
+		},
+		Constraints: []goschema.Constraint{
+			{
+				StructName:     "Account",
+				Name:           "fk_accounts_profiles",
+				Type:           "FOREIGN KEY",
+				Columns:        []string{"profile_id"},
+				ForeignTable:   "profiles",
+				ForeignColumns: []string{"id"},
+				OnDelete:       "CASCADE",
+			},
+			{
+				StructName:    "Profile",
+				Type:          "FOREIGN KEY",
+				Columns:       []string{"account_id"},
+				ForeignTable:  "accounts",
+				ForeignColumn: "id",
+				OnUpdate:      "RESTRICT",
+			},
+		},
+	}
+
+	result := fromschema.FromDatabase(db, "postgres")
+
+	c.Assert(result.Statements, qt.HasLen, 4)
+	accounts := result.Statements[0].(*ast.CreateTableNode)
+	profiles := result.Statements[1].(*ast.CreateTableNode)
+	c.Assert(accounts.Constraints, qt.HasLen, 0)
+	c.Assert(profiles.Constraints, qt.HasLen, 0)
+
+	accountsFK := foreignKeyAlterStatementByName(result, "accounts", "fk_accounts_profiles")
+	c.Assert(accountsFK, qt.IsNotNil)
+	addAccountsFK := accountsFK.Operations[0].(*ast.AddConstraintOperation)
+	c.Assert(addAccountsFK.Constraint.Columns, qt.DeepEquals, []string{"profile_id"})
+	c.Assert(addAccountsFK.Constraint.Reference.Table, qt.Equals, "profiles")
+	c.Assert(addAccountsFK.Constraint.Reference.ReferencedColumns(), qt.DeepEquals, []string{"id"})
+	c.Assert(addAccountsFK.Constraint.Reference.OnDelete, qt.Equals, "CASCADE")
+
+	profilesFK := foreignKeyAlterStatementByName(result, "profiles", "fk_profiles_account_id")
+	c.Assert(profilesFK, qt.IsNotNil)
+	addProfilesFK := profilesFK.Operations[0].(*ast.AddConstraintOperation)
+	c.Assert(addProfilesFK.Constraint.Columns, qt.DeepEquals, []string{"account_id"})
+	c.Assert(addProfilesFK.Constraint.Reference.Table, qt.Equals, "accounts")
+	c.Assert(addProfilesFK.Constraint.Reference.ReferencedColumns(), qt.DeepEquals, []string{"id"})
+	c.Assert(addProfilesFK.Constraint.Reference.OnUpdate, qt.Equals, "RESTRICT")
+}
+
 func TestFromDatabase_Schemas(t *testing.T) {
 	c := qt.New(t)
 
@@ -1146,9 +1232,9 @@ func TestFromDatabase_CompleteSchema(t *testing.T) {
 	result := fromschema.FromDatabase(database, "")
 
 	c.Assert(result, qt.IsNotNil)
-	c.Assert(result.Statements, qt.HasLen, 5) // 1 enum + 2 tables + 2 indexes
+	c.Assert(result.Statements, qt.HasLen, 6) // 1 enum + 2 tables + 1 FK + 2 indexes
 
-	// Check statement ordering: enums first, then tables, then indexes
+	// Check statement ordering: enums first, then tables, then foreign keys, then indexes
 	enumNode, ok := result.Statements[0].(*ast.EnumNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(enumNode.Name, qt.Equals, "user_status")
@@ -1161,11 +1247,15 @@ func TestFromDatabase_CompleteSchema(t *testing.T) {
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(table2Node.Name, qt.Equals, "posts")
 
-	index1Node, ok := result.Statements[3].(*ast.IndexNode)
+	fkNode, ok := result.Statements[3].(*ast.AlterTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(fkNode.Name, qt.Equals, "posts")
+
+	index1Node, ok := result.Statements[4].(*ast.IndexNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(index1Node.Name, qt.Equals, "idx_users_status")
 
-	index2Node, ok := result.Statements[4].(*ast.IndexNode)
+	index2Node, ok := result.Statements[5].(*ast.IndexNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(index2Node.Name, qt.Equals, "idx_posts_user")
 }
@@ -1871,7 +1961,7 @@ func TestFromDatabase_EmbeddedFields_RelationMode(t *testing.T) {
 				},
 			},
 			expected: func(result *ast.StatementList) bool {
-				if len(result.Statements) != 1 {
+				if len(result.Statements) != 2 {
 					return false
 				}
 				tableNode, ok := result.Statements[0].(*ast.CreateTableNode)
@@ -1884,10 +1974,9 @@ func TestFromDatabase_EmbeddedFields_RelationMode(t *testing.T) {
 					tableNode.Columns[0].Name == "id" &&
 					tableNode.Columns[1].Name == "user_id" &&
 					tableNode.Columns[1].Type == "INTEGER" &&
-					tableNode.Columns[1].ForeignKey != nil &&
-					tableNode.Columns[1].ForeignKey.Table == "users" &&
-					tableNode.Columns[1].ForeignKey.Column == "id" &&
-					tableNode.Columns[1].Comment == "Reference to user"
+					tableNode.Columns[1].ForeignKey == nil &&
+					tableNode.Columns[1].Comment == "Reference to user" &&
+					foreignKeyAlterStatementByName(result, "posts", "fk_post_user_id") != nil
 			},
 		},
 		{
@@ -1919,7 +2008,7 @@ func TestFromDatabase_EmbeddedFields_RelationMode(t *testing.T) {
 				},
 			},
 			expected: func(result *ast.StatementList) bool {
-				if len(result.Statements) != 1 {
+				if len(result.Statements) != 2 {
 					return false
 				}
 				tableNode, ok := result.Statements[0].(*ast.CreateTableNode)
@@ -1933,9 +2022,8 @@ func TestFromDatabase_EmbeddedFields_RelationMode(t *testing.T) {
 					tableNode.Columns[1].Name == "customer_uuid" &&
 					tableNode.Columns[1].Type == "VARCHAR(36)" && // UUID type inference
 					tableNode.Columns[1].Nullable == true &&
-					tableNode.Columns[1].ForeignKey != nil &&
-					tableNode.Columns[1].ForeignKey.Table == "customers" &&
-					tableNode.Columns[1].ForeignKey.Column == "uuid"
+					tableNode.Columns[1].ForeignKey == nil &&
+					foreignKeyAlterStatementByName(result, "orders", "fk_order_customer_uuid") != nil
 			},
 		},
 		{
@@ -2239,7 +2327,7 @@ func TestFromDatabase_EmbeddedFields_ComplexScenario(t *testing.T) {
 	result := fromschema.FromDatabase(database, "")
 
 	c.Assert(result, qt.IsNotNil)
-	c.Assert(result.Statements, qt.HasLen, 1)
+	c.Assert(result.Statements, qt.HasLen, 2)
 
 	tableNode, ok := result.Statements[0].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue)
@@ -2296,9 +2384,13 @@ func TestFromDatabase_EmbeddedFields_ComplexScenario(t *testing.T) {
 	c.Assert(columns["author_id"], qt.IsNotNil)
 	c.Assert(columns["author_id"].Type, qt.Equals, "INTEGER")
 	c.Assert(columns["author_id"].Comment, qt.Equals, "Article author")
-	c.Assert(columns["author_id"].ForeignKey, qt.IsNotNil)
-	c.Assert(columns["author_id"].ForeignKey.Table, qt.Equals, "users")
-	c.Assert(columns["author_id"].ForeignKey.Column, qt.Equals, "id")
+	c.Assert(columns["author_id"].ForeignKey, qt.IsNil)
+
+	authorFK := foreignKeyAlterStatementByName(result, "articles", "fk_article_author_id")
+	c.Assert(authorFK, qt.IsNotNil)
+	addAuthorFK := authorFK.Operations[0].(*ast.AddConstraintOperation)
+	c.Assert(addAuthorFK.Constraint.Reference.Table, qt.Equals, "users")
+	c.Assert(addAuthorFK.Constraint.Reference.ReferencedColumns(), qt.DeepEquals, []string{"id"})
 }
 
 // TestFromField_EnumConversion_SQLInjectionPrevention tests that enum values are properly escaped
@@ -2356,7 +2448,7 @@ func TestFromField_EnumConversion_SQLInjectionPrevention(t *testing.T) {
 
 // TestFromDatabase_EmbeddedRelationFKActions verifies that on_delete /
 // on_update declared on a //migrator:embedded mode="relation" annotation
-// flow through to the column-level ForeignKey on the generated table.
+// flow through to the generated foreign key constraint.
 //
 // Regression coverage for the embedded path of issue #117 — the field-level
 // fix wired the regular Field path, and this test pins the parallel wiring
@@ -2390,13 +2482,7 @@ func TestFromDatabase_EmbeddedRelationFKActions(t *testing.T) {
 	statements := fromschema.FromDatabase(db, "postgres")
 	c.Assert(statements, qt.IsNotNil)
 
-	var postsTable *ast.CreateTableNode
-	for _, stmt := range statements.Statements {
-		if t, ok := stmt.(*ast.CreateTableNode); ok && t.Name == "posts" {
-			postsTable = t
-			break
-		}
-	}
+	postsTable := tableStatementByName(statements, "posts")
 	c.Assert(postsTable, qt.IsNotNil)
 
 	var authorCol *ast.ColumnNode
@@ -2407,8 +2493,12 @@ func TestFromDatabase_EmbeddedRelationFKActions(t *testing.T) {
 		}
 	}
 	c.Assert(authorCol, qt.IsNotNil)
-	c.Assert(authorCol.ForeignKey, qt.IsNotNil)
-	c.Assert(authorCol.ForeignKey.Table, qt.Equals, "users")
-	c.Assert(authorCol.ForeignKey.OnDelete, qt.Equals, "CASCADE")
-	c.Assert(authorCol.ForeignKey.OnUpdate, qt.Equals, "RESTRICT")
+	c.Assert(authorCol.ForeignKey, qt.IsNil)
+
+	authorFK := foreignKeyAlterStatementByName(statements, "posts", "fk_post_author_id")
+	c.Assert(authorFK, qt.IsNotNil)
+	addAuthorFK := authorFK.Operations[0].(*ast.AddConstraintOperation)
+	c.Assert(addAuthorFK.Constraint.Reference.Table, qt.Equals, "users")
+	c.Assert(addAuthorFK.Constraint.Reference.OnDelete, qt.Equals, "CASCADE")
+	c.Assert(addAuthorFK.Constraint.Reference.OnUpdate, qt.Equals, "RESTRICT")
 }
