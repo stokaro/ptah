@@ -334,6 +334,8 @@ func (unsupportedRoutineRule) CheckStatement(ctx Context, stmt ast.Node) []Findi
 			keyword = "raw SQL"
 		}
 		return []Finding{ctx.unsupportedModeledSQLFinding(keyword, keywordOffset)}
+	case *ast.MySQLRoutineNode:
+		return []Finding{ctx.unsupportedModeledSQLFinding("CREATE "+strings.ToUpper(string(node.Kind)), 0)}
 	case *ast.OpaqueRoutineNode:
 		return []Finding{ctx.unsupportedModeledSQLFinding("CREATE "+strings.ToUpper(string(node.Kind)), 0)}
 	case *ast.CreateFunctionNode:

@@ -138,24 +138,26 @@ func TestLintSource_RawSQLNodesAreExplicitUnsupportedFindings(t *testing.T) {
 	}
 }
 
-func TestLintSource_OpaqueRoutineNodesAreExplicitUnsupportedFindings(t *testing.T) {
+func TestLintSource_MySQLRoutineNodesAreExplicitUnsupportedFindings(t *testing.T) {
 	c := qt.New(t)
 
-	findings, err := LintSource(Source{
-		Name: "routine.sql",
-		SQL: `DELIMITER //
+	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+		findings, err := LintSource(Source{
+			Name: "routine.sql",
+			SQL: `DELIMITER //
 CREATE PROCEDURE p1()
 BEGIN
   SELECT 1;
 END//
 DELIMITER ;`,
-	}, Options{Dialect: platform.MySQL})
+		}, Options{Dialect: dialect})
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(findings, qt.HasLen, 1)
-	c.Assert(findings[0].Rule, qt.Equals, RuleUnsupportedStatement)
-	c.Assert(findings[0].Severity, qt.Equals, SeverityError)
-	c.Assert(findings[0].Message, qt.Contains, "CREATE PROCEDURE")
+		c.Assert(err, qt.IsNil)
+		c.Assert(findings, qt.HasLen, 1)
+		c.Assert(findings[0].Rule, qt.Equals, RuleUnsupportedStatement)
+		c.Assert(findings[0].Severity, qt.Equals, SeverityError)
+		c.Assert(findings[0].Message, qt.Contains, "CREATE PROCEDURE")
+	}
 }
 
 func TestLintSource_UnsupportedStatementDoesNotMaskLaterDDL(t *testing.T) {
