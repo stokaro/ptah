@@ -148,6 +148,23 @@ type Planner interface {
 	GenerateMigrationAST(diff *types.SchemaDiff, generated *goschema.Database) []ast.Node
 }
 
+// Options configures high-level planner helpers.
+type Options struct {
+	// Capabilities describes the concrete target server. Nil means the
+	// dialect's default capability preset.
+	Capabilities capability.Capabilities
+	// ConcurrentIndexNames requests PostgreSQL CREATE INDEX CONCURRENTLY for
+	// exactly these newly added index names when the target supports it.
+	ConcurrentIndexNames []string
+}
+
+func (o Options) capabilities(dialect string) capability.Capabilities {
+	if o.Capabilities != nil {
+		return o.Capabilities
+	}
+	return capability.ForDialect(dialect)
+}
+
 // GetPlanner returns a dialect-specific migration planner for the given database dialect.
 //
 // This factory function creates and returns the appropriate planner implementation
@@ -209,11 +226,18 @@ func GetPlanner(dialect string) Planner {
 // DBInfo.Capabilities so planning uses the same server-version preset as
 // readers and renderers. Offline callers should use GetPlanner.
 func GetPlannerWithCapabilities(dialect string, caps capability.Capabilities) Planner {
+	return GetPlannerWithOptions(dialect, Options{Capabilities: caps})
+}
+
+// GetPlannerWithOptions returns a dialect-specific migration planner with
+// explicit high-level generation policy.
+func GetPlannerWithOptions(dialect string, opts Options) Planner {
+	caps := opts.capabilities(dialect)
 	switch platform.NormalizeDialect(dialect) {
 	case platform.Postgres:
-		return postgres.NewWithCapabilities(caps)
+		return postgres.NewWithCapabilities(caps).WithConcurrentIndexNames(opts.ConcurrentIndexNames...)
 	case platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		return postgres.NewWithCapabilities(caps)
+		return postgres.NewWithCapabilities(caps).WithConcurrentIndexNames(opts.ConcurrentIndexNames...)
 	case platform.MySQL:
 		return mysql.NewWithCapabilities(caps)
 	case platform.MariaDB:
@@ -279,8 +303,40 @@ func GenerateSchemaDiffASTWithCapabilities(
 	dialect string,
 	caps capability.Capabilities,
 ) []ast.Node {
-	planner := GetPlannerWithCapabilities(dialect, caps)
+	return GenerateSchemaDiffASTWithOptions(diff, generated, dialect, Options{Capabilities: caps})
+}
+
+// GenerateSchemaDiffASTWithOptions generates AST nodes with explicit planning
+// options.
+func GenerateSchemaDiffASTWithOptions(
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+	dialect string,
+	opts Options,
+) []ast.Node {
+	planner := GetPlannerWithOptions(dialect, opts)
 	return planner.GenerateMigrationAST(diff, generated)
+}
+
+// NodeRequiresNoTransaction reports whether a single planned AST node must run
+// outside the migrator's per-migration transaction.
+func NodeRequiresNoTransaction(dialect string, node ast.Node) bool {
+	if !platform.IsPostgresFamily(dialect) {
+		return false
+	}
+	if index, ok := node.(*ast.IndexNode); ok {
+		return index.Concurrently
+	}
+	alterType, ok := node.(*ast.AlterTypeNode)
+	if !ok {
+		return false
+	}
+	for _, op := range alterType.Operations {
+		if _, ok := op.(*ast.AddEnumValueOperation); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // RequiresNoTransaction reports whether the planned migration contains
@@ -288,18 +344,9 @@ func GenerateSchemaDiffASTWithCapabilities(
 // transaction. Keep this conservative: it should only return true for DDL that
 // is known to be rejected or unusable in a PostgreSQL-family transaction.
 func RequiresNoTransaction(dialect string, nodes []ast.Node) bool {
-	if !platform.IsPostgresFamily(dialect) {
-		return false
-	}
 	for _, node := range nodes {
-		alterType, ok := node.(*ast.AlterTypeNode)
-		if !ok {
-			continue
-		}
-		for _, op := range alterType.Operations {
-			if _, ok := op.(*ast.AddEnumValueOperation); ok {
-				return true
-			}
+		if NodeRequiresNoTransaction(dialect, node) {
+			return true
 		}
 	}
 	return false
@@ -371,7 +418,18 @@ func GenerateSchemaDiffSQLStatementsWithCapabilities(
 	dialect string,
 	caps capability.Capabilities,
 ) []string {
-	output := GenerateSchemaDiffSQLWithCapabilities(diff, generated, dialect, caps)
+	return GenerateSchemaDiffSQLStatementsWithOptions(diff, generated, dialect, Options{Capabilities: caps})
+}
+
+// GenerateSchemaDiffSQLStatementsWithOptions generates individual SQL
+// statements using explicit planning options.
+func GenerateSchemaDiffSQLStatementsWithOptions(
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+	dialect string,
+	opts Options,
+) []string {
+	output := GenerateSchemaDiffSQLWithOptions(diff, generated, dialect, opts)
 	statements := sqlutil.SplitSQLStatements(output)
 	return statements
 }
@@ -448,7 +506,19 @@ func GenerateSchemaDiffSQLWithCapabilities(
 	dialect string,
 	caps capability.Capabilities,
 ) string {
-	astNodes := GenerateSchemaDiffASTWithCapabilities(diff, generated, dialect, caps)
+	return GenerateSchemaDiffSQLWithOptions(diff, generated, dialect, Options{Capabilities: caps})
+}
+
+// GenerateSchemaDiffSQLWithOptions generates complete SQL using explicit
+// planning options.
+func GenerateSchemaDiffSQLWithOptions(
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+	dialect string,
+	opts Options,
+) string {
+	caps := opts.capabilities(dialect)
+	astNodes := GenerateSchemaDiffASTWithOptions(diff, generated, dialect, opts)
 	output, err := renderer.RenderSQLWithCapabilities(dialect, caps, astNodes...)
 	if err != nil {
 		panic(err)

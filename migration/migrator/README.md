@@ -474,9 +474,10 @@ ALTER TABLE users ALTER COLUMN status SET DEFAULT 'archived';
 `no_transaction` executes the migration body and metadata update outside the
 normal per-migration transaction. This is intended for narrow database
 requirements such as PostgreSQL enum value additions that must be used by a
-later statement in the same migration. Migration timeouts are rejected for
-`no_transaction` migrations because Ptah cannot safely apply writer/session
-timeouts to raw autocommit statements.
+later statement in the same migration, or PostgreSQL `CREATE INDEX
+CONCURRENTLY` operations. Migration timeouts
+are rejected for `no_transaction` migrations because Ptah cannot safely apply
+writer/session timeouts to raw autocommit statements.
 
 ## Safety Features
 

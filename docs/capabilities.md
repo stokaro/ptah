@@ -167,9 +167,12 @@ value or wants to pin a specific server version in tests/CI.
 - **`CREATE INDEX CONCURRENTLY` (postgres).**
   `postgres.New().WithConcurrentIndexes()` emits `CONCURRENTLY` for new
   indexes **only** when the capability is present. It is a policy opt-in
-  because concurrent builds cannot run inside a transaction block (#152 tracks
-  migrator support); a capability-less target (CockroachDB-style preset, #171)
-  keeps plain `CREATE INDEX` regardless of policy.
+  because concurrent builds cannot run inside a transaction block. The
+  high-level migration generator uses the same capability to emit
+  `CREATE INDEX CONCURRENTLY` plus `-- +ptah no_transaction` for new indexes on
+  populated existing PostgreSQL tables; a capability-less target
+  (CockroachDB-style preset, #171) keeps plain `CREATE INDEX` regardless of
+  policy.
 - **Distributed-SQL PostgreSQL-family adapters (#171).**
   `platform.CockroachDB`, `platform.YugabyteDB`, and `platform.Spanner`
   normalize as distinct dialects but reuse the PostgreSQL planner, renderer,

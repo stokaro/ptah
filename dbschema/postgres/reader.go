@@ -192,11 +192,13 @@ func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error)
 	tablesQuery := `
 		SELECT table_schema, table_name, table_type,
 		       COALESCE(obj_description(c.oid), '') as table_comment,
+		       COALESCE(GREATEST(c.reltuples::bigint, st.n_live_tup, 0), 0) AS estimated_rows,
 		       COALESCE(c.relrowsecurity, false) AS rls_enabled
 			FROM information_schema.tables t
-			LEFT JOIN pg_class c ON c.relname = t.table_name
-		LEFT JOIN pg_namespace n ON n.oid = c.relnamespace
-			WHERE t.table_schema = $1 AND (n.nspname = $1 OR n.nspname IS NULL)
+			LEFT JOIN pg_namespace n ON n.nspname = t.table_schema
+			LEFT JOIN pg_class c ON c.relname = t.table_name AND c.relnamespace = n.oid
+			LEFT JOIN pg_stat_all_tables st ON st.relid = c.oid
+			WHERE t.table_schema = $1
 			AND t.table_type = 'BASE TABLE'
 			AND t.table_name NOT IN ('schema_migrations')
 			ORDER BY table_schema, table_name`
@@ -210,7 +212,7 @@ func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error)
 	var tables []types.DBTable
 	for rows.Next() {
 		var table types.DBTable
-		err := rows.Scan(&table.Schema, &table.Name, &table.Type, &table.Comment, &table.RLSEnabled)
+		err := rows.Scan(&table.Schema, &table.Name, &table.Type, &table.Comment, &table.EstimatedRows, &table.RLSEnabled)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan table: %w", err)
 		}

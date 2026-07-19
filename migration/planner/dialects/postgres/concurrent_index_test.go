@@ -105,3 +105,51 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 			qt.Commentf("the original planner must keep the default policy; got:\n%s", sql))
 	})
 }
+
+func TestPlanner_ConcurrentIndexNames(t *testing.T) {
+	diff := &types.SchemaDiff{IndexesAdded: []string{"idx_users_email", "idx_users_name"}}
+	generated := &goschema.Database{
+		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
+		Indexes: []goschema.Index{
+			{Name: "idx_users_email", StructName: "User", Fields: []string{"email"}},
+			{Name: "idx_users_name", StructName: "User", Fields: []string{"name"}},
+		},
+	}
+
+	t.Run("only listed indexes are concurrent", func(t *testing.T) {
+		c := qt.New(t)
+
+		nodes := postgres.New().WithConcurrentIndexNames("", "idx_users_email").GenerateMigrationAST(diff, generated)
+		sql, err := renderer.RenderSQL("postgres", nodes...)
+		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
+
+		c.Assert(sql, qt.Contains, "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_email ON users (email);")
+		c.Assert(sql, qt.Contains, "CREATE INDEX IF NOT EXISTS idx_users_name ON users (name);")
+	})
+
+	t.Run("capability gate still wins", func(t *testing.T) {
+		c := qt.New(t)
+
+		caps := capability.Postgres16().With(capability.CreateIndexConcurrently, false)
+		nodes := postgres.NewWithCapabilities(caps).WithConcurrentIndexNames("idx_users_email").GenerateMigrationAST(diff, generated)
+		sql, err := renderer.RenderSQL("postgres", nodes...)
+		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
+
+		c.Assert(sql, qt.Not(qt.Contains), "CONCURRENTLY")
+	})
+
+	t.Run("does not mutate receiver", func(t *testing.T) {
+		c := qt.New(t)
+
+		base := postgres.New()
+		_ = base.WithConcurrentIndexNames("idx_users_email")
+		nodes := base.GenerateMigrationAST(diff, generated)
+		sql, err := renderer.RenderSQL("postgres", nodes...)
+		c.Assert(err, qt.IsNil)
+		sql = legacyRenderedSQL(sql)
+
+		c.Assert(sql, qt.Not(qt.Contains), "CONCURRENTLY")
+	})
+}

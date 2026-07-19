@@ -145,6 +145,68 @@ func TestGenerateMigrationShadowVerificationWithRealDB(t *testing.T) {
 	})
 }
 
+func TestGenerateMigrationConcurrentIndexOnPopulatedPostgresTableWithRealDB(t *testing.T) {
+	dbURL := shadowTestDatabaseURL()
+	if dbURL == "" {
+		t.Skip("PostgreSQL test database URL is not set")
+	}
+
+	c := qt.New(t)
+	ctx := context.Background()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	if err != nil {
+		t.Skipf("test database is not available: %v", err)
+	}
+	defer dbschema.CloseAndWarn(conn)
+	if platform.NormalizeDialect(conn.Info().Dialect) != platform.Postgres {
+		t.Skipf("concurrent index acceptance test requires PostgreSQL, got %s", conn.Info().Dialect)
+	}
+	releaseLock := acquireShadowTestLock(c, ctx, conn)
+	defer releaseLock()
+	defer func() {
+		c.Assert(conn.Writer().DropAllTables(), qt.IsNil)
+	}()
+
+	c.Assert(conn.Writer().DropAllTables(), qt.IsNil)
+	_, err = conn.ExecContext(ctx, `
+		CREATE TABLE users (
+			id SERIAL PRIMARY KEY,
+			name TEXT NOT NULL,
+			email TEXT NOT NULL
+		);
+		INSERT INTO users (name, email) VALUES ('Ada', 'ada@example.com');
+		ANALYZE users;
+	`)
+	c.Assert(err, qt.IsNil)
+
+	dir := t.TempDir()
+	entitiesDir := writeConcurrentIndexEntities(c, dir)
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
+
+	files, err := GenerateMigration(ctx, GenerateMigrationOptions{
+		GoEntitiesDir: entitiesDir,
+		DatabaseURL:   dbURL,
+		MigrationName: "add_users_email_index",
+		OutputDir:     migrationsDir,
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(files, qt.IsNotNil)
+	c.Assert(files.Files, qt.HasLen, 1)
+	c.Assert(files.Files[0].NoTransaction, qt.IsTrue)
+
+	upSQL, err := os.ReadFile(files.UpFile)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(upSQL), qt.Contains, "-- +ptah no_transaction")
+	c.Assert(string(upSQL), qt.Contains, `CREATE INDEX CONCURRENTLY IF NOT EXISTS "idx_users_email" ON "users" ("email");`)
+
+	provider, err := migrator.NewFSMigrationProvider(os.DirFS(migrationsDir))
+	c.Assert(err, qt.IsNil)
+	mig := migrator.NewMigrator(conn, provider)
+	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
+}
+
 func shadowTestDatabaseURL() string {
 	for _, name := range []string{"TEST_DATABASE_URL", "TEST_DB_URL", "POSTGRES_TEST_DSN", "POSTGRES_URL"} {
 		if value := os.Getenv(name); value != "" {
@@ -152,6 +214,29 @@ func shadowTestDatabaseURL() string {
 		}
 	}
 	return ""
+}
+
+func writeConcurrentIndexEntities(c *qt.C, dir string) string {
+	entitiesDir := filepath.Join(dir, "entities")
+	c.Assert(os.MkdirAll(entitiesDir, 0755), qt.IsNil)
+
+	content := `package entities
+
+//migrator:schema:table name="users"
+type User struct {
+	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+
+	//migrator:schema:field name="name" type="TEXT"
+	Name string
+
+	//migrator:schema:field name="email" type="TEXT"
+	//migrator:schema:index name="idx_users_email" fields="email"
+	Email string
+}
+`
+	c.Assert(os.WriteFile(filepath.Join(entitiesDir, "schema.go"), []byte(content), 0600), qt.IsNil)
+	return entitiesDir
 }
 
 func acquireShadowTestLock(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnection) func() {
