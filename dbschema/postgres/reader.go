@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -243,10 +244,18 @@ func (r *Reader) readColumns(schemaName, tableName string) ([]types.DBColumn, er
 			character_maximum_length,
 			numeric_precision,
 			numeric_scale,
-			ordinal_position
-		FROM information_schema.columns
-		WHERE table_schema = $1 AND table_name = $2
-		ORDER BY ordinal_position`
+			ordinal_position,
+			COALESCE(a.attgenerated, '') AS generated_kind,
+			COALESCE(CASE WHEN a.attgenerated <> '' THEN pg_get_expr(ad.adbin, ad.adrelid) ELSE '' END, '') AS generated_expression
+		FROM information_schema.columns col
+		JOIN pg_namespace n ON n.nspname = col.table_schema
+		JOIN pg_class cls ON cls.relname = col.table_name AND cls.relnamespace = n.oid
+		LEFT JOIN pg_attribute a ON a.attrelid = cls.oid
+			AND a.attname = col.column_name
+			AND NOT a.attisdropped
+		LEFT JOIN pg_attrdef ad ON ad.adrelid = a.attrelid AND ad.adnum = a.attnum
+		WHERE col.table_schema = $1 AND col.table_name = $2
+		ORDER BY col.ordinal_position`
 
 	rows, err := r.db.Query(columnsQuery, schemaName, tableName)
 	if err != nil {
@@ -257,6 +266,8 @@ func (r *Reader) readColumns(schemaName, tableName string) ([]types.DBColumn, er
 	var columns []types.DBColumn
 	for rows.Next() {
 		var col types.DBColumn
+		var generatedKind string
+		var generatedExpression string
 		err := rows.Scan(
 			&col.Name,
 			&col.DataType,
@@ -267,9 +278,15 @@ func (r *Reader) readColumns(schemaName, tableName string) ([]types.DBColumn, er
 			&col.NumericPrecision,
 			&col.NumericScale,
 			&col.OrdinalPosition,
+			&generatedKind,
+			&generatedExpression,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan column: %w", err)
+		}
+		if generatedExpression != "" {
+			col.GeneratedExpression = &generatedExpression
+			col.GeneratedKind = postgresGeneratedKind(generatedKind)
 		}
 
 		// Detect auto increment (SERIAL types)
@@ -283,6 +300,15 @@ func (r *Reader) readColumns(schemaName, tableName string) ([]types.DBColumn, er
 	}
 
 	return columns, nil
+}
+
+func postgresGeneratedKind(code string) string {
+	switch code {
+	case "s":
+		return "STORED"
+	default:
+		return ""
+	}
 }
 
 // readEnums reads all enum types
@@ -359,6 +385,12 @@ func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error
 			t.relname as tablename,
 			i.relname as indexname,
 			pg_get_indexdef(i.oid) as indexdef,
+			COALESCE((
+				SELECT json_agg(pg_get_indexdef(i.oid, keys.ordinality::integer, true) ORDER BY keys.ordinality)::text
+				FROM unnest(ix.indkey) WITH ORDINALITY AS keys(attnum, ordinality)
+				WHERE keys.ordinality <= ix.indnkeyatts
+			), '[]') as index_columns,
+			COALESCE(pg_get_expr(ix.indpred, ix.indrelid), '') as predicate,
 			ix.indisprimary,
 			ix.indisunique
 		FROM pg_index ix
@@ -377,9 +409,9 @@ func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error
 
 	var indexes []types.DBIndex
 	for rows.Next() {
-		var schemaName, tableName, indexName, indexDef string
+		var schemaName, tableName, indexName, indexDef, indexColumns, predicate string
 		var isPrimary, isUnique bool
-		err := rows.Scan(&schemaName, &tableName, &indexName, &indexDef, &isPrimary, &isUnique)
+		err := rows.Scan(&schemaName, &tableName, &indexName, &indexDef, &indexColumns, &predicate, &isPrimary, &isUnique)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan index: %w", err)
 		}
@@ -390,29 +422,63 @@ func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error
 			TableName:     tableName,
 			Schema:        r.outputSchema(schemaName),
 			Definition:    indexDef,
+			Condition:     predicate,
 			IsUnique:      isUnique,
 			IsPrimary:     isPrimary,
 			NullsDistinct: postgresNullsDistinctFromDefinition(indexDef),
 		}
 
-		// Extract column names from index definition (simplified parsing)
-		if strings.Contains(indexDef, "(") && strings.Contains(indexDef, ")") {
-			start := strings.Index(indexDef, "(") + 1
-			end := strings.LastIndex(indexDef, ")")
-			if start < end {
-				columnsStr := indexDef[start:end]
-				columns := strings.Split(columnsStr, ",")
-				for i, col := range columns {
-					columns[i] = strings.TrimSpace(col)
-				}
-				index.Columns = columns
-			}
+		index.Columns, err = parsePostgresIndexColumns(indexColumns, indexDef)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse index columns for %s: %w", indexName, err)
 		}
 
 		indexes = append(indexes, index)
 	}
 
 	return indexes, nil
+}
+
+func parsePostgresIndexColumns(value, indexDef string) ([]string, error) {
+	if strings.TrimSpace(value) == "" || strings.TrimSpace(value) == "[]" {
+		return extractPostgresIndexColumns(indexDef), nil
+	}
+	var columns []string
+	if err := json.Unmarshal([]byte(value), &columns); err != nil {
+		return nil, err
+	}
+	return columns, nil
+}
+
+func extractPostgresIndexColumns(indexDef string) []string {
+	start := strings.Index(indexDef, "(")
+	if start == -1 {
+		return nil
+	}
+	depth := 0
+	for i := start; i < len(indexDef); i++ {
+		switch indexDef[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return splitPostgresIndexColumns(indexDef[start+1 : i])
+			}
+		}
+	}
+	return nil
+}
+
+func splitPostgresIndexColumns(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	columns := strings.Split(value, ",")
+	for i, col := range columns {
+		columns[i] = strings.TrimSpace(col)
+	}
+	return columns
 }
 
 // readConstraints reads all constraints

@@ -92,6 +92,9 @@ type fieldSpec struct {
 	Unique             bool         `yaml:"unique"`
 	UniqueExpr         stringScalar `yaml:"unique_expr"`
 	Index              bool         `yaml:"index"`
+	Generated          stringScalar `yaml:"generated"`
+	GeneratedKind      stringScalar `yaml:"generated_kind"`
+	Stored             bool         `yaml:"stored"`
 	Default            stringScalar `yaml:"default"`
 	DefaultExpr        stringScalar `yaml:"default_expr"`
 	Foreign            stringScalar `yaml:"foreign"`
@@ -116,6 +119,7 @@ type indexSpec struct {
 	Comment     stringScalar `yaml:"comment"`
 	Type        stringScalar `yaml:"type"`
 	Condition   stringScalar `yaml:"condition"`
+	Where       stringScalar `yaml:"where"`
 	Operator    stringScalar `yaml:"ops"`
 	TableName   stringScalar `yaml:"table"`
 	Granularity int          `yaml:"granularity"`
@@ -384,37 +388,61 @@ func buildField(structName, key string, spec fieldSpec, db *goschema.Database) (
 	}
 
 	return goschema.Field{
-		StructName:         structName,
-		FieldName:          fieldName,
-		Name:               columnName,
-		Type:               fieldType,
-		Nullable:           nullable,
-		Primary:            spec.Primary,
-		AutoInc:            spec.AutoIncrement || spec.AutoInc || identityGeneration != "",
-		IdentityGeneration: identityGeneration,
-		IdentityStart:      string(spec.IdentityStart),
-		IdentityIncrement:  string(spec.IdentityIncrement),
-		IdentityOptions:    string(spec.IdentityOptions),
-		Unique:             spec.Unique,
-		UniqueExpr:         string(spec.UniqueExpr),
-		Default:            string(spec.Default),
-		DefaultExpr:        string(spec.DefaultExpr),
-		Foreign:            string(spec.Foreign),
-		ForeignKeyName:     string(spec.ForeignKeyName),
-		OnDelete:           string(spec.OnDelete),
-		OnUpdate:           string(spec.OnUpdate),
-		Enum:               enumValues,
-		Check:              string(spec.Check),
-		CheckName:          string(spec.CheckName),
-		Charset:            string(spec.Charset),
-		Collate:            string(spec.Collate),
-		Comment:            string(spec.Comment),
-		Overrides:          mergePlatform(spec.Platform, spec.Overrides),
+		StructName:          structName,
+		FieldName:           fieldName,
+		Name:                columnName,
+		Type:                fieldType,
+		Nullable:            nullable,
+		Primary:             spec.Primary,
+		AutoInc:             spec.AutoIncrement || spec.AutoInc || identityGeneration != "",
+		IdentityGeneration:  identityGeneration,
+		IdentityStart:       string(spec.IdentityStart),
+		IdentityIncrement:   string(spec.IdentityIncrement),
+		IdentityOptions:     string(spec.IdentityOptions),
+		Unique:              spec.Unique,
+		UniqueExpr:          string(spec.UniqueExpr),
+		Default:             string(spec.Default),
+		DefaultExpr:         string(spec.DefaultExpr),
+		Foreign:             string(spec.Foreign),
+		ForeignKeyName:      string(spec.ForeignKeyName),
+		OnDelete:            string(spec.OnDelete),
+		OnUpdate:            string(spec.OnUpdate),
+		Enum:                enumValues,
+		Check:               string(spec.Check),
+		CheckName:           string(spec.CheckName),
+		GeneratedExpression: string(spec.Generated),
+		GeneratedKind:       yamlGeneratedColumnKind(spec),
+		Charset:             string(spec.Charset),
+		Collate:             string(spec.Collate),
+		Comment:             string(spec.Comment),
+		Overrides:           mergePlatform(spec.Platform, spec.Overrides),
 	}, nil
 }
 
 func hasIdentitySettings(spec fieldSpec) bool {
 	return spec.IdentityStart != "" || spec.IdentityIncrement != "" || spec.IdentityOptions != ""
+}
+
+func yamlGeneratedColumnKind(spec fieldSpec) string {
+	if strings.TrimSpace(string(spec.Generated)) == "" {
+		return ""
+	}
+	if kind := strings.TrimSpace(string(spec.GeneratedKind)); kind != "" {
+		return strings.ToUpper(kind)
+	}
+	if spec.Stored {
+		return "STORED"
+	}
+	return ""
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func normalizeIdentityGeneration(value string) string {
@@ -469,7 +497,7 @@ func buildIndex(key, structName string, spec indexSpec) (goschema.Index, error) 
 		Unique:      spec.Unique,
 		Comment:     string(spec.Comment),
 		Type:        string(spec.Type),
-		Condition:   string(spec.Condition),
+		Condition:   firstNonEmpty(string(spec.Where), string(spec.Condition)),
 		Operator:    string(spec.Operator),
 		TableName:   string(spec.TableName),
 		Granularity: spec.Granularity,

@@ -279,6 +279,9 @@ func (r *Reader) readIndexes(tableName, ddl string) ([]types.DBIndex, []types.DB
 			IsPrimary:  entry.origin == "pk",
 			Definition: definition,
 		}
+		if entry.partial != 0 {
+			index.Condition = extractIndexCondition(definition)
+		}
 		indexes = append(indexes, index)
 		if entry.origin == "u" {
 			constraints = append(constraints, types.DBConstraint{
@@ -292,6 +295,62 @@ func (r *Reader) readIndexes(tableName, ddl string) ([]types.DBIndex, []types.DB
 		}
 	}
 	return indexes, constraints, nil
+}
+
+func extractIndexCondition(definition string) string {
+	whereIdx := indexTopLevelKeyword(definition, "WHERE")
+	if whereIdx == -1 {
+		return ""
+	}
+	return strings.TrimSpace(definition[whereIdx+len("WHERE"):])
+}
+
+func indexTopLevelKeyword(definition, keyword string) int {
+	depth := 0
+	var quote byte
+	for i := 0; i < len(definition); i++ {
+		ch := definition[i]
+		if quote != 0 {
+			if ch == quote {
+				if i+1 < len(definition) && definition[i+1] == quote {
+					i++
+					continue
+				}
+				quote = 0
+			}
+			continue
+		}
+
+		switch ch {
+		case '\'', '"', '`':
+			quote = ch
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		default:
+			if depth == 0 && hasKeywordAt(definition, keyword, i) {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func hasKeywordAt(input, keyword string, idx int) bool {
+	if idx > 0 && isSQLIdentByte(input[idx-1]) {
+		return false
+	}
+	if idx+len(keyword) > len(input) || !strings.EqualFold(input[idx:idx+len(keyword)], keyword) {
+		return false
+	}
+	return idx+len(keyword) == len(input) || !isSQLIdentByte(input[idx+len(keyword)])
+}
+
+func isSQLIdentByte(ch byte) bool {
+	return ch == '_' || ch == '$' || ch >= '0' && ch <= '9' || ch >= 'A' && ch <= 'Z' || ch >= 'a' && ch <= 'z'
 }
 
 type sqliteIndexEntry struct {

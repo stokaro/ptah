@@ -91,6 +91,51 @@ func TestPostgresNullsDistinctFromDefinition(t *testing.T) {
 	}
 }
 
+func TestExtractPostgresIndexColumns(t *testing.T) {
+	tests := []struct {
+		name       string
+		definition string
+		expected   []string
+	}{
+		{
+			name:       "plain index",
+			definition: `CREATE INDEX idx_users_email ON public.users USING btree (email)`,
+			expected:   []string{"email"},
+		},
+		{
+			name:       "partial index predicate does not leak into columns",
+			definition: `CREATE INDEX idx_users_email_active ON public.users USING btree (email) WHERE (deleted_at IS NULL)`,
+			expected:   []string{"email"},
+		},
+		{
+			name:       "expression index fallback",
+			definition: `CREATE INDEX idx_users_email_lc ON public.users USING btree (lower(email))`,
+			expected:   []string{"lower(email)"},
+		},
+		{
+			name:       "mixed expression and column fallback",
+			definition: `CREATE INDEX idx_users_email_tenant ON public.users USING btree (lower(email), tenant_id)`,
+			expected:   []string{"lower(email)", "tenant_id"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(extractPostgresIndexColumns(test.definition), qt.DeepEquals, test.expected)
+		})
+	}
+}
+
+func TestParsePostgresIndexColumnsJSONPreservesExpressionCommas(t *testing.T) {
+	c := qt.New(t)
+
+	columns, err := parsePostgresIndexColumns(`["concat(first_name, last_name)","tenant_id"]`, "")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(columns, qt.DeepEquals, []string{"concat(first_name, last_name)", "tenant_id"})
+}
+
 func TestPostgreSQLReader_ReadSchema_NoConnection(t *testing.T) {
 	c := qt.New(t)
 

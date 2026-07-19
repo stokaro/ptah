@@ -105,6 +105,7 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 			TableName:  dbIndex.QualifiedTableName(),
 			Fields:     dbIndex.Columns,
 			Unique:     dbIndex.IsUnique,
+			Condition:  dbIndex.Condition,
 		}
 		database.Indexes = append(database.Indexes, index)
 	}

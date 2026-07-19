@@ -164,10 +164,15 @@ tables:
         platform:
           mysql:
             type: VARCHAR(191)
+      email_lc:
+        type: TEXT
+        generated: lower(email)
+        stored: true
     indexes:
       idx_users_email:
         fields: [email]
         unique: true
+        where: deleted_at IS NULL
     constraints:
       chk_users_email:
         type: CHECK
@@ -184,7 +189,9 @@ rls_policies:
 	c.Assert(db.Tables, qt.HasLen, 2)
 	c.Assert(db.Tables[0].Name, qt.Equals, "tenants")
 	c.Assert(db.Tables[1].Name, qt.Equals, "users")
-	c.Assert(db.Fields, qt.HasLen, 5)
+	c.Assert(db.Fields, qt.HasLen, 6)
+	c.Assert(db.Fields[5].GeneratedExpression, qt.Equals, "lower(email)")
+	c.Assert(db.Fields[5].GeneratedKind, qt.Equals, "STORED")
 	c.Assert(db.Enums, qt.DeepEquals, []goschema.Enum{{Name: "account_status", Values: []string{"active", "suspended"}}})
 	c.Assert(db.Extensions, qt.HasLen, 1)
 	c.Assert(db.Functions, qt.HasLen, 1)
@@ -199,9 +206,12 @@ rls_policies:
 	c.Assert(db.RLSEnabledTables, qt.HasLen, 1)
 	c.Assert(db.RLSPolicies, qt.HasLen, 1)
 	c.Assert(db.Constraints, qt.HasLen, 1)
+	c.Assert(db.Indexes[0].Condition, qt.Equals, "deleted_at IS NULL")
 	c.Assert(db.Dependencies["users"], qt.DeepEquals, []string{"tenants"})
 
 	sql := legacyRenderedSQL(strings.Join(renderer.GetOrderedCreateStatements(db, "postgres"), "\n"))
+	c.Assert(sql, qt.Contains, "email_lc TEXT GENERATED ALWAYS AS (lower(email)) STORED")
+	c.Assert(sql, qt.Contains, "WHERE deleted_at IS NULL")
 	c.Assert(sql, qt.Contains, `CONSTRAINT chk_users_email CHECK (position('@' in email) > 1)`)
 	c.Assert(sql, qt.Contains, `ALTER TABLE users ENABLE ROW LEVEL SECURITY;`)
 	c.Assert(sql, qt.Contains, `CREATE POLICY users_tenant_isolation ON users`)

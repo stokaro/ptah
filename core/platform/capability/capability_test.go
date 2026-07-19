@@ -93,6 +93,7 @@ func TestPresets_AllValid_AndCoverEveryRegisteredCapability(t *testing.T) {
 		"MySQLLegacy":   capability.MySQLLegacy(),
 		"MariaDB1011":   capability.MariaDB1011(),
 		"MariaDBLegacy": capability.MariaDBLegacy(),
+		"Postgres17":    capability.Postgres17(),
 		"Postgres16":    capability.Postgres16(),
 		"Postgres13":    capability.Postgres13(),
 		"ClickHouse24":  capability.ClickHouse24(),
@@ -128,9 +129,13 @@ func TestPresets_KeyDifferences(t *testing.T) {
 	c.Assert(capability.MySQL8016().Has(capability.CheckConstraintsEnforced), qt.IsTrue)
 	c.Assert(capability.MySQLLegacy().Has(capability.CheckConstraintsEnforced), qt.IsFalse)
 
-	// Postgres version presets gate CREATE OR REPLACE TRIGGER (PG 14+).
+	// Postgres version presets gate CREATE OR REPLACE TRIGGER (PG 14+) and
+	// generated-column SET EXPRESSION (PG 17+).
+	c.Assert(capability.Postgres17().Has(capability.AlterGeneratedColumnExpression), qt.IsTrue)
+	c.Assert(capability.Postgres16().Has(capability.AlterGeneratedColumnExpression), qt.IsFalse)
 	c.Assert(capability.Postgres16().Has(capability.CreateOrReplaceTrigger), qt.IsTrue)
 	c.Assert(capability.Postgres13().Has(capability.CreateOrReplaceTrigger), qt.IsFalse)
+	c.Assert(capability.Postgres13().Has(capability.AlterGeneratedColumnExpression), qt.IsFalse)
 	c.Assert(capability.Postgres13().Has(capability.CreateIndexConcurrently), qt.IsTrue)
 	c.Assert(capability.Postgres16().Has(capability.RoleManagement), qt.IsTrue)
 
@@ -218,6 +223,7 @@ func TestForDialect(t *testing.T) {
 	c.Assert(capability.ForDialect("mysql").Has(capability.DropConstraintIfExists), qt.IsFalse)
 	c.Assert(capability.ForDialect("mariadb").Has(capability.DropConstraintIfExists), qt.IsTrue)
 	c.Assert(capability.ForDialect("postgres").Has(capability.CreateIndexConcurrently), qt.IsTrue)
+	c.Assert(capability.ForDialect("postgres").Has(capability.AlterGeneratedColumnExpression), qt.IsTrue)
 	// Dialect aliases go through platform.NormalizeDialect.
 	c.Assert(capability.ForDialect("postgresql").Has(capability.EnumCustomType), qt.IsTrue)
 	c.Assert(capability.ForDialect("pgx").Has(capability.EnumCustomType), qt.IsTrue)
@@ -261,7 +267,9 @@ func TestForServerVersion(t *testing.T) {
 		{"mariadb pre-10.2 degrades to the legacy floor", "mariadb", "10.1.48-MariaDB", capability.DropConstraintIfExists, false},
 		{"mariadb pre-10.2 over mysql protocol prefix", "mysql", "5.5.5-10.1.48-MariaDB", capability.CheckConstraintsEnforced, false},
 		{"mariadb unparseable stays on the modern preset", "mariadb", "MariaDB something", capability.DropConstraintIfExists, true},
+		{"postgres 17 banner", "postgres", "PostgreSQL 17.5", capability.AlterGeneratedColumnExpression, true},
 		{"postgres 16 banner", "postgres", "PostgreSQL 16.3 (Debian 16.3-1.pgdg120+1)", capability.CreateOrReplaceTrigger, true},
+		{"postgres 16 lacks generated expression alter", "postgres", "PostgreSQL 16.3", capability.AlterGeneratedColumnExpression, false},
 		{"postgres 14 exact boundary", "postgres", "PostgreSQL 14.0", capability.CreateOrReplaceTrigger, true},
 		{"postgres 13 plain", "postgres", "13.14", capability.CreateOrReplaceTrigger, false},
 		{"postgres 13 still concurrent-capable", "postgres", "13.14", capability.CreateIndexConcurrently, true},
