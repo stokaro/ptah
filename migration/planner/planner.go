@@ -66,12 +66,14 @@
 package planner
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/platform/capability"
+	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/migration/planner/dialects/clickhouse"
@@ -325,11 +327,9 @@ func registerMySQLFamilyPlanner(dialect string) error {
 //   - GenerateSchemaDiffSQLStatements: For individual SQL statements
 //   - GetPlanner: For direct planner access
 func GenerateSchemaDiffAST(diff *types.SchemaDiff, generated *goschema.Database, dialect string) ([]ast.Node, error) {
-	planner, err := GetPlannerWithCapabilities(dialect, capability.ForDialect(dialect))
-	if err != nil {
-		return nil, err
-	}
-	return planner.GenerateMigrationASTChecked(diff, generated)
+	return GenerateSchemaDiffASTWithOptions(diff, generated, dialect, Options{
+		Capabilities: capability.ForDialect(dialect),
+	})
 }
 
 // GenerateSchemaDiffASTWithCapabilities generates AST nodes for a concrete
@@ -353,9 +353,13 @@ func GenerateSchemaDiffASTWithOptions(
 ) ([]ast.Node, error) {
 	planner, err := GetPlannerWithOptions(dialect, opts)
 	if err != nil {
-		return nil, err
+		return nil, wrapPlanError(dialect, err)
 	}
-	return planner.GenerateMigrationASTChecked(diff, generated)
+	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	if err != nil {
+		return nil, wrapPlanError(dialect, err)
+	}
+	return nodes, nil
 }
 
 // NodeRequiresNoTransaction reports whether a single planned AST node must run
@@ -562,7 +566,37 @@ func GenerateSchemaDiffSQLWithOptions(
 	}
 	output, err := renderer.RenderSQLWithCapabilities(dialect, caps, astNodes...)
 	if err != nil {
-		return "", err
+		return "", wrapRenderError(dialect, err)
 	}
 	return output, nil
+}
+
+func wrapPlanError(dialect string, err error) error {
+	if err == nil {
+		return nil
+	}
+	var planErr *ptaherr.PlanError
+	if errors.As(err, &planErr) {
+		return err
+	}
+	return &ptaherr.PlanError{
+		Dialect: dialect,
+		Err:     err,
+		Message: err.Error(),
+	}
+}
+
+func wrapRenderError(dialect string, err error) error {
+	if err == nil {
+		return nil
+	}
+	var renderErr *ptaherr.RenderError
+	if errors.As(err, &renderErr) {
+		return err
+	}
+	return &ptaherr.RenderError{
+		Dialect: dialect,
+		Err:     err,
+		Message: err.Error(),
+	}
 }

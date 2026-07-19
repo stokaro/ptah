@@ -33,6 +33,7 @@
 package renderer
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/stokaro/ptah/core/ast"
@@ -40,6 +41,7 @@ import (
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/platform/capability"
+	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/core/renderer/dialects/clickhouse"
 	"github.com/stokaro/ptah/core/renderer/dialects/mariadb"
 	"github.com/stokaro/ptah/core/renderer/dialects/mysql"
@@ -84,7 +86,11 @@ func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (
 	case platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
 		return postgres.NewWithCapabilities(caps, normalizedDialect), nil
 	default:
-		return nil, fmt.Errorf("unsupported database dialect: %s", dialect)
+		return nil, &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrUnsupportedDialect,
+			Message: fmt.Sprintf("unsupported database dialect: %s", dialect),
+		}
 	}
 }
 
@@ -113,7 +119,16 @@ func VisitorRenderSQL(r types.RenderVisitor, nodes ...ast.Node) (string, error) 
 	r.Reset()
 	for _, node := range nodes {
 		if err := node.Accept(r); err != nil {
-			return "", err
+			var renderErr *ptaherr.RenderError
+			if errors.As(err, &renderErr) {
+				return "", err
+			}
+			return "", &ptaherr.RenderError{
+				Dialect: r.GetDialect(),
+				Node:    node,
+				Err:     err,
+				Message: err.Error(),
+			}
 		}
 	}
 	return r.Output(), nil

@@ -2,6 +2,7 @@ package goschema
 
 import (
 	"bufio"
+	"errors"
 	"io/fs"
 	"os"
 	"strings"
@@ -91,6 +92,8 @@ func ParseFS(fsys fs.FS, rootDir string) (*Database, error) {
 		SelfReferencingForeignKeys: make(map[string][]SelfReferencingFK),
 	}
 
+	var parseErrors []error
+
 	// Walk through all directories recursively
 	err := fs.WalkDir(fsys, rootDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -114,7 +117,8 @@ func ParseFS(fsys fs.FS, rootDir string) (*Database, error) {
 
 		database, err := parseDatabaseFile(fsys, path)
 		if err != nil {
-			return err
+			parseErrors = append(parseErrors, err)
+			return nil
 		}
 
 		// Add to result
@@ -139,6 +143,9 @@ func ParseFS(fsys fs.FS, rootDir string) (*Database, error) {
 	})
 
 	if err != nil {
+		return nil, err
+	}
+	if err := errors.Join(parseErrors...); err != nil {
 		return nil, err
 	}
 

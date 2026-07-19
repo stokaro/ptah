@@ -1,7 +1,6 @@
 package goschema_test
 
 import (
-	"go/ast"
 	"os"
 	"path/filepath"
 	"slices"
@@ -867,7 +866,7 @@ func TestParseRLSEnableComment(t *testing.T) {
 	}
 }
 
-func TestParseConstraintComment(t *testing.T) {
+func TestParseSource_ConstraintComment(t *testing.T) {
 	tests := []struct {
 		name     string
 		comment  string
@@ -936,12 +935,11 @@ func TestParseConstraintComment(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			var constraints []goschema.Constraint
-			comment := &ast.Comment{Text: tt.comment}
-			goschema.ParseConstraintComment(comment, "TestStruct", &constraints)
+			source := "package test\n\n" + tt.comment + "\ntype TestStruct struct{}\n"
+			db := mustParseSource(c, "constraints.go", source)
 
-			c.Assert(constraints, qt.HasLen, 1)
-			constraint := constraints[0]
+			c.Assert(db.Constraints, qt.HasLen, 1)
+			constraint := db.Constraints[0]
 
 			c.Assert(constraint.StructName, qt.Equals, tt.expected.StructName)
 			c.Assert(constraint.Name, qt.Equals, tt.expected.Name)

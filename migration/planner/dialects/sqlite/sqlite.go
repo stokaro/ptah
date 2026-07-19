@@ -10,6 +10,7 @@ import (
 	"github.com/stokaro/ptah/core/convert/fromschema"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
@@ -76,31 +77,31 @@ func rejectUnsupportedTableChanges(diff *types.SchemaDiff) error {
 	for _, table := range diff.TablesModified {
 		switch {
 		case len(table.ColumnsRemoved) > 0:
-			return fmt.Errorf("sqlite: dropping columns from table %s requires a table rebuild plan", table.TableName)
+			return unsupportedFeaturef("dropping columns from table %s requires a table rebuild plan", table.TableName)
 		case len(table.ColumnsModified) > 0:
-			return fmt.Errorf("sqlite: modifying columns on table %s requires a table rebuild plan", table.TableName)
+			return unsupportedFeaturef("modifying columns on table %s requires a table rebuild plan", table.TableName)
 		case len(table.ConstraintsAdded) > 0 || len(table.ConstraintsRemoved) > 0:
-			return fmt.Errorf("sqlite: changing constraints on table %s requires a table rebuild plan", table.TableName)
+			return unsupportedFeaturef("changing constraints on table %s requires a table rebuild plan", table.TableName)
 		}
 	}
 	if len(diff.ConstraintsAdded) > 0 || len(diff.ConstraintsRemoved) > 0 {
-		return fmt.Errorf("sqlite: changing constraints on existing tables requires a table rebuild plan")
+		return unsupportedFeaturef("changing constraints on existing tables requires a table rebuild plan")
 	}
 	if len(diff.EnumsModified) > 0 || len(diff.EnumsRemoved) > 0 {
-		return fmt.Errorf("sqlite: changing enum-backed CHECK constraints requires a table rebuild plan")
+		return unsupportedFeaturef("changing enum-backed CHECK constraints requires a table rebuild plan")
 	}
 	return nil
 }
 
 func rejectUnsupportedSchemaObjects(diff *types.SchemaDiff) error {
 	if len(diff.MaterializedViewsAdded) > 0 || len(diff.MaterializedViewsModified) > 0 || len(diff.MaterializedViewsRemoved) > 0 {
-		return fmt.Errorf("sqlite: materialized views are not supported")
+		return unsupportedFeaturef("materialized views are not supported")
 	}
 	if len(diff.ExtensionsAdded) > 0 || len(diff.ExtensionsRemoved) > 0 {
-		return fmt.Errorf("sqlite: extensions are not supported")
+		return unsupportedFeaturef("extensions are not supported")
 	}
 	if len(diff.FunctionsAdded) > 0 || len(diff.FunctionsModified) > 0 || len(diff.FunctionsRemoved) > 0 {
-		return fmt.Errorf("sqlite: functions are not supported")
+		return unsupportedFeaturef("functions are not supported")
 	}
 	return nil
 }
@@ -108,12 +109,12 @@ func rejectUnsupportedSchemaObjects(diff *types.SchemaDiff) error {
 func rejectUnsupportedAccessControl(diff *types.SchemaDiff) error {
 	if len(diff.RLSPoliciesAdded) > 0 || len(diff.RLSPoliciesModified) > 0 || len(diff.RLSPoliciesRemoved) > 0 ||
 		len(diff.RLSEnabledTablesAdded) > 0 || len(diff.RLSEnabledTablesRemoved) > 0 {
-		return fmt.Errorf("sqlite: row-level security is not supported")
+		return unsupportedFeaturef("row-level security is not supported")
 	}
 	if len(diff.RolesAdded) > 0 || len(diff.RolesModified) > 0 || len(diff.RolesRemoved) > 0 ||
 		len(diff.GrantsAdded) > 0 || len(diff.GrantsRemoved) > 0 ||
 		len(diff.GrantOptionsAdded) > 0 || len(diff.GrantOptionsRevoked) > 0 {
-		return fmt.Errorf("sqlite: roles and grants are not supported")
+		return unsupportedFeaturef("roles and grants are not supported")
 	}
 	return nil
 }
@@ -144,7 +145,7 @@ func addInlineConstraints(node *ast.CreateTableNode, table goschema.Table, const
 			continue
 		}
 		if strings.EqualFold(constraint.Type, "EXCLUDE") {
-			return fmt.Errorf("sqlite: EXCLUDE constraints are not supported")
+			return unsupportedFeaturef("EXCLUDE constraints are not supported")
 		}
 		if slices.ContainsFunc(node.Constraints, func(existing *ast.ConstraintNode) bool {
 			return existing.Name != "" && existing.Name == constraint.Name
@@ -228,7 +229,7 @@ func validateAddedColumn(tableName string, column *ast.ColumnNode) error {
 }
 
 func sqliteColumnRebuildError(tableName, columnName string) error {
-	return fmt.Errorf("sqlite: adding column %s to table %s requires a table rebuild plan", columnName, tableName)
+	return unsupportedFeaturef("adding column %s to table %s requires a table rebuild plan", columnName, tableName)
 }
 
 func hasNonNullLiteralDefault(defaultValue *ast.DefaultValue) bool {
@@ -392,4 +393,14 @@ func findTrigger(triggers []goschema.Trigger, tableName, triggerName string) *go
 		}
 	}
 	return nil
+}
+
+func unsupportedFeaturef(format string, args ...any) error {
+	message := fmt.Sprintf("sqlite: "+format, args...)
+	return &ptaherr.CapabilityError{
+		Dialect: DialectName,
+		Feature: message,
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: message,
+	}
 }

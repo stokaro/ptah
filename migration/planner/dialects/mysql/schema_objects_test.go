@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/core/renderer"
 	migrationplanner "github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/planner/dialects/mysql"
@@ -93,6 +94,7 @@ func TestPlanner_GenerateMigrationAST_RejectsMaterializedViews(t *testing.T) {
 
 	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
 	c.Assert(nodes, qt.IsNil)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, "materialized views are not supported by MySQL or MariaDB.*")
 
 	c.Assert(func() {

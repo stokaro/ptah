@@ -13,6 +13,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/ptaherr"
 )
 
 func TestParseDir_ExtensionMerging(t *testing.T) {
@@ -305,6 +306,46 @@ type User struct {
 	result, err := goschema.ParseDir(rootDir)
 	c.Assert(result, qt.IsNil)
 	c.Assert(err, qt.ErrorMatches, `unknown annotation attribute "bogus" on //migrator:schema:field at User.ID`)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnknownAttribute)
+
+	var parseErr *ptaherr.ParseError
+	c.Assert(err, qt.ErrorAs, &parseErr)
+	c.Assert(parseErr.File, qt.Equals, "user.go")
+	c.Assert(parseErr.Line, qt.Equals, 5)
+	c.Assert(parseErr.Directive, qt.Equals, "migrator:schema:field")
+	c.Assert(parseErr.Attribute, qt.Equals, "bogus")
+}
+
+func TestParseDir_MultipleInvalidFieldAttributesReturnsJoinedError(t *testing.T) {
+	c := qt.New(t)
+
+	rootDir := c.TempDir()
+	first := `package models
+
+//migrator:schema:table name="users"
+type User struct {
+	//migrator:schema:field name="id" type="int" bogus="y"
+	ID int64
+}
+`
+	second := `package models
+
+//migrator:schema:table name="posts"
+type Post struct {
+	//migrator:schema:field name="id" type="int" wrong="y"
+	ID int64
+}
+`
+	err := os.WriteFile(filepath.Join(rootDir, "user.go"), []byte(first), 0o600)
+	c.Assert(err, qt.IsNil)
+	err = os.WriteFile(filepath.Join(rootDir, "post.go"), []byte(second), 0o600)
+	c.Assert(err, qt.IsNil)
+
+	result, err := goschema.ParseDir(rootDir)
+	c.Assert(result, qt.IsNil)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnknownAttribute)
+	c.Assert(err.Error(), qt.Contains, `unknown annotation attribute "bogus"`)
+	c.Assert(err.Error(), qt.Contains, `unknown annotation attribute "wrong"`)
 }
 
 func TestParseDir_SyntaxErrorReturnsError(t *testing.T) {
