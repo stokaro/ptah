@@ -97,6 +97,72 @@ func TestParser_ParseCreateTable_RejectsDuplicatePartitionBy(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `.*duplicate PARTITION BY clause.*`)
 }
 
+func TestParser_ParseCreateIndexConcurrently(t *testing.T) {
+	c := qt.New(t)
+
+	p := parser.NewParser("CREATE INDEX CONCURRENTLY idx_users_email ON users (email);")
+
+	statements, err := p.Parse()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+	index, ok := statements.Statements[0].(*ast.IndexNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(index.Name, qt.Equals, "idx_users_email")
+	c.Assert(index.Table, qt.Equals, "users")
+	c.Assert(index.Columns, qt.DeepEquals, []string{"email"})
+	c.Assert(index.Concurrently, qt.IsTrue)
+	c.Assert(index.Unique, qt.IsFalse)
+}
+
+func TestParser_ParseCreateUniqueIndexConcurrently(t *testing.T) {
+	c := qt.New(t)
+
+	p := parser.NewParser("CREATE UNIQUE INDEX CONCURRENTLY idx_users_email ON users (email);")
+
+	statements, err := p.Parse()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+	index, ok := statements.Statements[0].(*ast.IndexNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(index.Name, qt.Equals, "idx_users_email")
+	c.Assert(index.Concurrently, qt.IsTrue)
+	c.Assert(index.Unique, qt.IsTrue)
+}
+
+func TestParser_ParseCreateIndexConcurrentlyIfNotExists(t *testing.T) {
+	c := qt.New(t)
+
+	p := parser.NewParser("CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_email ON users (email);")
+
+	statements, err := p.Parse()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+	index, ok := statements.Statements[0].(*ast.IndexNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(index.Name, qt.Equals, "idx_users_email")
+	c.Assert(index.Concurrently, qt.IsTrue)
+	c.Assert(index.IfNotExists, qt.IsTrue)
+}
+
+func TestParser_ParseCreateIndexIfNotExists(t *testing.T) {
+	c := qt.New(t)
+
+	p := parser.NewParser("CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);")
+
+	statements, err := p.Parse()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+	index, ok := statements.Statements[0].(*ast.IndexNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(index.Name, qt.Equals, "idx_users_email")
+	c.Assert(index.IfNotExists, qt.IsTrue)
+	c.Assert(index.Concurrently, qt.IsFalse)
+}
+
 func TestParser_ParseCreateTable_WithConstraints(t *testing.T) {
 	c := qt.New(t)
 

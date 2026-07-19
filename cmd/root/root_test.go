@@ -183,6 +183,7 @@ func TestZZZRootUsageErrorsExit2WithoutUsage(t *testing.T) {
 		{name: "seed", args: []string{"seed", "--bogus-flag"}},
 		{name: "drop-all", args: []string{"drop-all", "--bogus-flag"}},
 		{name: "lint", args: []string{"lint", "--bogus-flag"}},
+		{name: "sql lint", args: []string{"sql", "lint", "--bogus-flag"}},
 		{name: "atlas version", args: []string{"atlas", "version", "--bogus-flag"}},
 		{name: "version", args: []string{"version", "--bogus-flag"}},
 	}

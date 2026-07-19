@@ -102,6 +102,11 @@ The core package contains all fundamental components for parsing, transforming, 
   - SQL statement splitting and comment removal
   - AST-based parsing for proper handling of strings and comments
 
+- **`sqllint/`** - Standalone SQL lint engine
+  - Uses Ptah's parser, AST, and target capability presets for regular SQL files
+  - Reports unsupported SQL explicitly so skipped statements cannot look clean
+  - Provides reusable rules independent of migration-directory layout
+
 - **`convert/`** - Schema conversion utilities
   - Converts between different schema representations
   - Handles transformations between goschema and database schema formats
@@ -148,6 +153,7 @@ Provides command-line interface for all Ptah operations:
 - **`compare`** - Compare Go entities with current database schema
 - **`drift`** - Check live database drift with CI-friendly exit codes
 - **`lint`** - Lint migration files for production-unsafe patterns (rule-coded, CI-friendly)
+- **`sql lint`** - Lint standalone SQL files or stdin with parser-backed DDL rules
 - **`migrate`** - Generate migration SQL for schema differences
 - **`migrate-up`** - Apply migrations to bring database up to latest version
 - **`migrate-down`** - Roll back migrations to previous versions
@@ -706,6 +712,28 @@ ALTER TABLE users ALTER COLUMN email TYPE VARCHAR(512);
 Go integrations can provide custom analyzers without reimplementing Ptah's
 dialect-aware scanner by passing `lint.Options{ExtraRules: []lint.Rule{...}}`
 or by preparing files first with `lint.PrepareFS`.
+
+#### Lint Standalone SQL
+Lint ordinary SQL files outside a migration directory:
+
+```bash
+./ptah sql lint --dialect postgres schema.sql
+cat schema.sql | ./ptah sql lint --dialect cockroachdb --version "CockroachDB CCL v23.1.0" --stdin
+./ptah sql lint --dialect sqlite --format json schema.sql
+```
+
+`ptah sql lint` is parser-backed and migration-layout independent. It accepts
+file paths or `--stdin`, supports `--format text|json`, and returns exit code
+`1` when an error-severity finding is present. Disable rules per code or family
+with `--disable DDL001 --disable CAP`. The first built-in rules cover general
+DDL quality, such as `DDL001` for `CREATE TABLE` without a primary key, and
+capability-aware validation, such as `CAP001` for
+`CREATE INDEX CONCURRENTLY` on targets whose preset disables
+`create_index_concurrently`.
+
+Unsupported statements are reported as `SQL002` findings instead of being
+silently treated as clean. That includes non-DDL statements such as `SELECT`
+and DDL forms that Ptah's parser does not yet model.
 
 #### Generate Migration SQL
 Generate SQL migration statements to synchronize schemas:
