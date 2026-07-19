@@ -53,6 +53,16 @@ func TestGetPlanner(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:    "sqlite planner",
+			dialect: platform.SQLite,
+			wantErr: false,
+		},
+		{
+			name:    "sqlite3 planner",
+			dialect: "sqlite3",
+			wantErr: false,
+		},
+		{
 			name:    "unknown dialect",
 			dialect: "unknown",
 			wantErr: true,

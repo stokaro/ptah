@@ -36,6 +36,7 @@
 //   - PostgreSQL: Full support with enum types, SERIAL columns, and advanced constraints
 //   - MySQL: Complete support with AUTO_INCREMENT, ENGINE specifications, and charset handling
 //   - MariaDB: Full compatibility using MySQL driver with MariaDB-specific optimizations
+//   - SQLite: Local file, URI, and in-memory databases with PRAGMA-backed introspection
 //
 // # Connection Management
 //
@@ -52,6 +53,9 @@
 //
 //	// MariaDB
 //	conn, err := dbschema.ConnectToDatabase(ctx, "mariadb://user:pass@tcp(localhost:3307)/database")
+//
+//	// SQLite
+//	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite:///tmp/app.db")
 //
 // # Schema Reading
 //
@@ -115,6 +119,7 @@
 //
 //   - Standard URLs: postgres://user:pass@host:port/database
 //   - MySQL TCP URLs: mysql://user:pass@tcp(host:port)/database
+//   - SQLite URLs: sqlite:///absolute/path.db, sqlite://relative.db, sqlite:///:memory:
 //   - Connection parameters: URLs with query parameters for SSL, charset, etc.
 //
 // # Transaction Safety

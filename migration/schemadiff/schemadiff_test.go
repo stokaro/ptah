@@ -82,6 +82,55 @@ func TestCompareWithDialect_MySQLFamilyInlineEnumsMatchGeneratedEnumFields(t *te
 	}
 }
 
+func TestCompareWithDialect_SQLiteInlineEnumsMatchGeneratedEnumFields(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Tables: []goschema.Table{{
+			Name:       "products",
+			StructName: "Product",
+		}},
+		Fields: []goschema.Field{
+			{StructName: "Product", Name: "id", Type: "INTEGER", Primary: true},
+			{
+				StructName: "Product",
+				Name:       "status",
+				Type:       "enum_product_status",
+				Enum:       []string{"draft", "active"},
+				Nullable:   false,
+			},
+		},
+		Enums: []goschema.Enum{{
+			Name:   "enum_product_status",
+			Values: []string{"draft", "active"},
+		}},
+	}
+	check := "status IN ('draft', 'active')"
+	database := &types.DBSchema{
+		Tables: []types.DBTable{{
+			Name: "products",
+			Type: "TABLE",
+			Columns: []types.DBColumn{
+				{Name: "id", DataType: "INTEGER", IsNullable: "NO", IsPrimaryKey: true},
+				{Name: "status", DataType: "TEXT", IsNullable: "NO"},
+			},
+		}},
+		Constraints: []types.DBConstraint{{
+			Name:        "products_status_check",
+			TableName:   "products",
+			Type:        "CHECK",
+			CheckClause: &check,
+		}},
+	}
+
+	diff := schemadiff.CompareWithDialect(generated, database, "sqlite")
+	c.Assert(diff.EnumsAdded, qt.HasLen, 0)
+	c.Assert(diff.EnumsRemoved, qt.HasLen, 0)
+	c.Assert(diff.TablesModified, qt.HasLen, 0)
+	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
+	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
+}
+
 func TestCompareWithOptions_CustomIgnoreList(t *testing.T) {
 	c := qt.New(t)
 

@@ -47,7 +47,7 @@ var generateFlags = map[string]cobraflags.Flag{
 	dialectFlag: &cobraflags.StringFlag{
 		Name:  dialectFlag,
 		Value: "",
-		Usage: "Database dialect (postgres, mysql, mariadb, clickhouse, cockroachdb, yugabytedb, spanner). If empty, generates for all dialects",
+		Usage: "Database dialect (postgres, mysql, mariadb, sqlite, clickhouse, cockroachdb, yugabytedb, spanner). If empty, generates for all dialects",
 	},
 }
 
@@ -83,7 +83,7 @@ func generateCommand(_ *cobra.Command, _ []string) error {
 	fmt.Println()
 
 	// Determine which dialects to generate
-	dialects := []string{"postgres", "mysql", "mariadb", "clickhouse", "cockroachdb", "yugabytedb", "spanner"}
+	dialects := []string{"postgres", "mysql", "mariadb", "sqlite", "clickhouse", "cockroachdb", "yugabytedb", "spanner"}
 	if dialect != "" {
 		dialects = []string{dialect}
 	}
