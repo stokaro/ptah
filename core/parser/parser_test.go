@@ -834,7 +834,7 @@ DELIMITER ;`
 	c.Assert(raw.SQL, qt.Contains, "RETURN x+2;")
 }
 
-func TestParser_ParseMySQLDialectCompoundFunctionAsOpaqueRoutine(t *testing.T) {
+func TestParser_ParseMySQLDialectCompoundFunctionAsRoutine(t *testing.T) {
 	c := qt.New(t)
 
 	sql := `DELIMITER |
@@ -850,13 +850,46 @@ DELIMITER ;`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
 
-	routine, ok := statements.Statements[0].(*ast.OpaqueRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.MySQLRoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Dialect, qt.Equals, platform.MySQL)
 	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindFunction)
+	c.Assert(routine.Name, qt.Equals, "fn1")
+	c.Assert(routine.Parameters, qt.Equals, "x int")
+	c.Assert(routine.Returns, qt.Equals, "int")
+	c.Assert(routine.Characteristics, qt.DeepEquals, []string{"DETERMINISTIC"})
 	c.Assert(routine.SQL, qt.Contains, "CREATE FUNCTION fn1(x int) RETURNS int DETERMINISTIC")
-	c.Assert(routine.SQL, qt.Contains, "INSERT INTO t1 VALUES (x);")
-	c.Assert(routine.SQL, qt.Contains, "RETURN x+2;")
+	c.Assert(routine.Body.SQL, qt.Contains, "INSERT INTO t1 VALUES (x);")
+	c.Assert(routine.Body.SQL, qt.Contains, "RETURN x+2;")
+	c.Assert(routineStatementKinds(routine.Body.Statements), qt.DeepEquals, []ast.MySQLRoutineStatementKind{
+		ast.MySQLRoutineStatementInsert,
+		ast.MySQLRoutineStatementReturn,
+	})
+}
+
+func TestParser_ParseMariaDBDialectCompoundFunctionAsRoutine(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE FUNCTION fn1(x int) RETURNS int DETERMINISTIC
+BEGIN
+       RETURN x+2;
+END;`
+	p := parser.NewParser(sql, parser.WithDialect(platform.MariaDB))
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	routine, ok := statements.Statements[0].(*ast.MySQLRoutineNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(routine.Dialect, qt.Equals, platform.MariaDB)
+	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindFunction)
+	c.Assert(routine.Name, qt.Equals, "fn1")
+	c.Assert(routine.Parameters, qt.Equals, "x int")
+	c.Assert(routine.Returns, qt.Equals, "int")
+	c.Assert(routineStatementKinds(routine.Body.Statements), qt.DeepEquals, []ast.MySQLRoutineStatementKind{
+		ast.MySQLRoutineStatementReturn,
+	})
 }
 
 func TestParser_ParseMySQLCreateFunctionWithNestedCompoundBody(t *testing.T) {
@@ -1162,7 +1195,7 @@ CALL proc();`
 	c.Assert(raw.SQL, qt.Not(qt.Contains), "-- end --")
 }
 
-func TestParser_ParseMySQLDialectDefinerProcedureAsOpaqueRoutine(t *testing.T) {
+func TestParser_ParseMySQLDialectDefinerProcedureAsRoutine(t *testing.T) {
 	c := qt.New(t)
 
 	sql := `-- atlas:delimiter \n-- end --\n
@@ -1185,15 +1218,128 @@ CALL proc();`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 1)
 
-	routine, ok := statements.Statements[0].(*ast.OpaqueRoutineNode)
+	routine, ok := statements.Statements[0].(*ast.MySQLRoutineNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(routine.Dialect, qt.Equals, platform.MySQL)
 	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindProcedure)
+	c.Assert(routine.Definer, qt.Equals, "DEFINER='boring'")
+	c.Assert(routine.Name, qt.Equals, "proc")
+	c.Assert(routine.Characteristics, qt.DeepEquals, []string{
+		"COMMENT 'ATLAS_DELIMITER'",
+		"SQL SECURITY INVOKER",
+		"NOT DETERMINISTIC",
+		"MODIFIES SQL DATA",
+	})
 	c.Assert(routine.SQL, qt.Contains, "CREATE DEFINER='boring' PROCEDURE proc ()")
 	c.Assert(routine.SQL, qt.Contains, "SQL SECURITY INVOKER")
 	c.Assert(routine.SQL, qt.Contains, "IF(@rows != 1, 's', '')")
 	c.Assert(routine.SQL, qt.Not(qt.Contains), "CALL proc")
 	c.Assert(routine.SQL, qt.Not(qt.Contains), "-- end --")
+	c.Assert(routineStatementKinds(routine.Body.Statements), qt.DeepEquals, []ast.MySQLRoutineStatementKind{
+		ast.MySQLRoutineStatementSelect,
+	})
+}
+
+func TestParser_ParseMySQLDialectDefinerFunctionAsRoutine(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "CREATE DEFINER=`root`@`localhost` FUNCTION `add2` (a int, b int) RETURNS int DETERMINISTIC RETURN a + b;"
+	p := parser.NewParser(sql, parser.WithDialect(platform.MySQL))
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	routine, ok := statements.Statements[0].(*ast.MySQLRoutineNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(routine.Dialect, qt.Equals, platform.MySQL)
+	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindFunction)
+	c.Assert(routine.Definer, qt.Equals, "DEFINER=`root`@`localhost`")
+	c.Assert(routine.Name, qt.Equals, "`add2`")
+	c.Assert(routine.Parameters, qt.Equals, "a int, b int")
+	c.Assert(routine.Returns, qt.Equals, "int")
+	c.Assert(routine.Characteristics, qt.DeepEquals, []string{"DETERMINISTIC"})
+	c.Assert(routine.Body.SQL, qt.Equals, "RETURN a + b")
+	c.Assert(routineStatementKinds(routine.Body.Statements), qt.DeepEquals, []ast.MySQLRoutineStatementKind{
+		ast.MySQLRoutineStatementReturn,
+	})
+}
+
+func TestParser_ParseMySQLDialectRoutineBodyStatementKinds(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE PROCEDURE control_flow()
+BEGIN
+    DECLARE done BOOL DEFAULT FALSE;
+    DECLARE cur CURSOR FOR SELECT id FROM users;
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
+    SET @seen = 0;
+    BEGIN
+        SET @seen = @seen + 10;
+    END;
+    IF @seen = 0 THEN
+        SET @seen = 1;
+    END IF;
+    CASE
+        WHEN @seen = 1 THEN SET @seen = 2;
+        ELSE SET @seen = 3;
+    END CASE;
+    WHILE @seen < 5 DO
+        SET @seen = @seen + 1;
+    END WHILE;
+    REPEAT
+        SET @seen = @seen - 1;
+    UNTIL @seen = 0 END REPEAT;
+    scan_loop: LOOP
+        LEAVE scan_loop;
+    END LOOP scan_loop;
+    SELECT IF(@seen = 0, 1, 0);
+END;
+CREATE TABLE after_proc (id int);`
+	p := parser.NewParser(sql, parser.WithDialect(platform.MySQL))
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 2)
+
+	routine, ok := statements.Statements[0].(*ast.MySQLRoutineNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindProcedure)
+	c.Assert(routineStatementKinds(routine.Body.Statements), qt.DeepEquals, []ast.MySQLRoutineStatementKind{
+		ast.MySQLRoutineStatementDeclaration,
+		ast.MySQLRoutineStatementCursor,
+		ast.MySQLRoutineStatementHandler,
+		ast.MySQLRoutineStatementSet,
+		ast.MySQLRoutineStatementBlock,
+		ast.MySQLRoutineStatementIf,
+		ast.MySQLRoutineStatementCase,
+		ast.MySQLRoutineStatementWhile,
+		ast.MySQLRoutineStatementRepeat,
+		ast.MySQLRoutineStatementLabel,
+		ast.MySQLRoutineStatementSelect,
+	})
+	c.Assert(routine.Body.Statements[10].SQL, qt.Contains, "IF(@seen = 0, 1, 0)")
+
+	createTable, ok := statements.Statements[1].(*ast.CreateTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(createTable.Name, qt.Equals, "after_proc")
+}
+
+func TestParser_ParseMySQLDialectUnsupportedRoutineBodyAsOpaqueRoutine(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "CREATE PROCEDURE p1() SELECT 1;"
+	p := parser.NewParser(sql, parser.WithDialect(platform.MySQL))
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	routine, ok := statements.Statements[0].(*ast.OpaqueRoutineNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(routine.Dialect, qt.Equals, platform.MySQL)
+	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindProcedure)
+	c.Assert(routine.SQL, qt.Equals, "CREATE PROCEDURE p1() SELECT 1")
 }
 
 func TestParser_ParseCreateTrigger(t *testing.T) {
@@ -1246,6 +1392,14 @@ END;`
 	c.Assert(deleteTrigger.Event, qt.Equals, "DELETE")
 	c.Assert(deleteTrigger.ForEach, qt.Equals, "ROW")
 	c.Assert(deleteTrigger.Body, qt.Contains, "coalesce(old.a,'NULL')")
+}
+
+func routineStatementKinds(statements []ast.MySQLRoutineStatement) []ast.MySQLRoutineStatementKind {
+	kinds := make([]ast.MySQLRoutineStatementKind, 0, len(statements))
+	for _, stmt := range statements {
+		kinds = append(kinds, stmt.Kind)
+	}
+	return kinds
 }
 
 func TestParser_ParseCreateOrReplaceTrigger(t *testing.T) {
