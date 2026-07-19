@@ -9,6 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"github.com/stokaro/ptah/migration/lint"
 	"github.com/stokaro/ptah/migration/migratesum"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -76,6 +77,41 @@ ALTER TABLE accounts DISABLE ROW LEVEL SECURITY;
 	c.Assert(findings, qt.HasLen, 5)
 	c.Assert([]string{findings[0].Rule, findings[1].Rule, findings[2].Rule, findings[3].Rule, findings[4].Rule}, qt.DeepEquals, []string{"DS102", "DS107", "DS107", "DS108", "DS109"})
 	c.Assert(findings[0].File, qt.Equals, "0000000002_next.up.sql")
+}
+
+func TestLintPendingDestructiveHonorsLintConfigSeverityAndDisable(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		lint.ConfigFileName: &fstest.MapFile{Data: []byte(`disabled-rules:
+  - DS102
+rules:
+  DS103:
+    severity: warning
+`)},
+		"0000000001_change_type.up.sql": &fstest.MapFile{
+			Data: []byte("ALTER TABLE users ALTER COLUMN email TYPE VARCHAR(512);\n"),
+		},
+		"0000000001_change_type.down.sql": &fstest.MapFile{Data: []byte("-- restore\n")},
+		"0000000002_drop_column.up.sql": &fstest.MapFile{
+			Data: []byte("ALTER TABLE users DROP COLUMN legacy;\n"),
+		},
+		"0000000002_drop_column.down.sql": &fstest.MapFile{Data: []byte("-- restore\n")},
+		"0000000003_drop_table.up.sql": &fstest.MapFile{
+			Data: []byte("DROP TABLE audit_log;\n"),
+		},
+		"0000000003_drop_table.down.sql": &fstest.MapFile{Data: []byte("-- restore\n")},
+	}
+
+	findings, err := lintPendingDestructive(fsys, []int64{1, 2}, "postgres")
+	c.Assert(err, qt.IsNil)
+	c.Assert(findings, qt.HasLen, 0,
+		qt.Commentf("DS103 is warning-grade and DS102 is disabled by config"))
+
+	findings, err = lintPendingDestructive(fsys, []int64{1, 2, 3}, "postgres")
+	c.Assert(err, qt.IsNil)
+	c.Assert(findings, qt.HasLen, 1)
+	c.Assert(findings[0].Rule, qt.Equals, "DS101")
 }
 
 func TestPendingMigrationsForSafetyCheckSkipsOutOfOrderWhenLinearSkip(t *testing.T) {

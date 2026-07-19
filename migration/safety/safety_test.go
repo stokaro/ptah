@@ -1,6 +1,8 @@
 package safety_test
 
 import (
+	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -144,6 +146,29 @@ func TestAssessHighestSeverity(t *testing.T) {
 	c.Assert(assessments[0].Index, qt.Equals, 1)
 	c.Assert(safety.HighestAssessment(assessments), qt.Equals, safety.Warning)
 	c.Assert(safety.HasDestructiveAssessment(assessments), qt.IsFalse)
+}
+
+func TestRenderJSON(t *testing.T) {
+	c := qt.New(t)
+
+	assessments := []safety.StatementAssessment{{
+		Index:     1,
+		NodeType:  "sql",
+		Subject:   "legacy",
+		Statement: "DROP TABLE legacy;",
+		Severity:  safety.Destructive,
+		Reason:    "DROP TABLE removes the table and all rows",
+	}}
+	var buf bytes.Buffer
+
+	err := safety.RenderJSON(&buf, assessments)
+
+	c.Assert(err, qt.IsNil)
+	var report safety.Report
+	c.Assert(json.Unmarshal(buf.Bytes(), &report), qt.IsNil)
+	c.Assert(report.Highest, qt.Equals, safety.Destructive)
+	c.Assert(report.Destructive, qt.IsTrue)
+	c.Assert(report.Assessments, qt.DeepEquals, assessments)
 }
 
 func TestAssessRenderedSplitsPostgresModifyColumnStatements(t *testing.T) {

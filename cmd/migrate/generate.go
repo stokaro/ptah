@@ -44,7 +44,7 @@ and performs an up/down/up round-trip.`,
 	flags.String(generateShadowDBFlag, "", "Shadow database URL used to verify generated migrations before writing files")
 	flags.Bool(generateCheckDestructiveFlag, false, "Fail when generated migration SQL contains destructive statements")
 	flags.Bool(generateAllowDestructiveFlag, false, "Allow destructive statements when --check-destructive is set")
-	flags.String(generateReportFormatFlag, "", `Safety report format next to the migration files: "" or html`)
+	flags.String(generateReportFormatFlag, "", `Safety report format next to the migration files: "", html, or json`)
 	flags.String(dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
 	flags.String(dbcli.ConnectTimeoutFlagName, dbcli.DefaultConnectTimeout.String(), "Initial database connection timeout")
 	flags.String(dbcli.EnvFlagName, "", "Atlas project env name to read from atlas.hcl")

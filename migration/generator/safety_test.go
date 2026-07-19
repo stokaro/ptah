@@ -1,6 +1,7 @@
 package generator
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -60,6 +61,17 @@ func TestCreateSafetyReportFile(t *testing.T) {
 	c.Assert(string(content), qt.Contains, "DROP TABLE legacy;")
 	c.Assert(string(content), qt.Contains, "destructive")
 
-	_, err = createSafetyReportFile(upFile, "json", nil)
-	c.Assert(err, qt.ErrorMatches, `unsupported safety report format "json"`)
+	jsonReportFile, err := createSafetyReportFile(upFile, "json", []safety.StatementAssessment{{
+		Index:    1,
+		Severity: safety.Destructive,
+		Reason:   "DROP TABLE removes the table and all rows",
+	}})
+	c.Assert(err, qt.IsNil)
+	c.Assert(jsonReportFile, qt.Equals, filepath.Join(dir, "1234567890_drop_legacy.safety.json"))
+	rawJSON, err := os.ReadFile(jsonReportFile)
+	c.Assert(err, qt.IsNil)
+	var report safety.Report
+	c.Assert(json.Unmarshal(rawJSON, &report), qt.IsNil)
+	c.Assert(report.Highest, qt.Equals, safety.Destructive)
+	c.Assert(report.Destructive, qt.IsTrue)
 }

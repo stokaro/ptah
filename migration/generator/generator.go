@@ -312,10 +312,23 @@ func checkDestructiveAllowed(opts GenerateMigrationOptions, assessments []safety
 }
 
 func createSafetyReportFile(upFile, format string, assessments []safety.StatementAssessment) (string, error) {
-	if !strings.EqualFold(format, "html") {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "html":
+		reportFile := strings.TrimSuffix(upFile, ".up.sql") + ".safety.html"
+		return writeSafetyReportFile(reportFile, func(file *os.File) error {
+			return safety.RenderHTML(file, assessments)
+		})
+	case "json":
+		reportFile := strings.TrimSuffix(upFile, ".up.sql") + ".safety.json"
+		return writeSafetyReportFile(reportFile, func(file *os.File) error {
+			return safety.RenderJSON(file, assessments)
+		})
+	default:
 		return "", fmt.Errorf("unsupported safety report format %q", format)
 	}
-	reportFile := strings.TrimSuffix(upFile, ".up.sql") + ".safety.html"
+}
+
+func writeSafetyReportFile(reportFile string, render func(*os.File) error) (string, error) {
 	file, err := os.Create(reportFile)
 	if err != nil {
 		return "", err
@@ -325,7 +338,7 @@ func createSafetyReportFile(upFile, format string, assessments []safety.Statemen
 			slog.Warn("failed to close safety report", "path", reportFile, "error", closeErr)
 		}
 	}()
-	if err := safety.RenderHTML(file, assessments); err != nil {
+	if err := render(file); err != nil {
 		return "", err
 	}
 	return reportFile, nil
