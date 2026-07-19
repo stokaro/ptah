@@ -17,6 +17,7 @@ import (
 	"github.com/stokaro/ptah/migration/migratesum"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/onlineddl"
+	"github.com/stokaro/ptah/migration/risk"
 )
 
 var migrateUpCmd = &cobra.Command{
@@ -356,17 +357,22 @@ func pendingMigrationsForSafetyCheck(status *migrator.MigrationStatus, execOrder
 }
 
 func lintPendingDestructive(fsys fs.FS, pending []int64, dialect string) ([]lint.Finding, error) {
+	cfg, err := lint.LoadConfigFS(fsys, lint.ConfigFileName)
+	if err != nil {
+		return nil, err
+	}
 	findings, err := lint.LintFS(fsys, lint.Options{
-		Dialect:  dialect,
-		Disabled: []string{"MF", "BC", "PG", "MY"},
-		Versions: pending,
+		Dialect:     dialect,
+		Disabled:    append([]string{"MF", "BC", "PG", "MY"}, cfg.DisabledRules...),
+		Versions:    pending,
+		RuleConfigs: cfg.Rules,
 	})
 	if err != nil {
 		return nil, err
 	}
 	var destructive []lint.Finding
 	for _, finding := range findings {
-		if strings.HasPrefix(finding.Rule, "DS") {
+		if strings.HasPrefix(finding.Rule, "DS") && risk.IsBlocking(finding.Severity) {
 			destructive = append(destructive, finding)
 		}
 	}

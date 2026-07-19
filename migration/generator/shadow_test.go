@@ -27,6 +27,16 @@ func TestDescribeShadowDiffMissingColumn(t *testing.T) {
 	}
 
 	c.Assert(describeShadowDiff(diff), qt.Equals, "missing column users.email")
+	mismatches := collectShadowMismatches(diff)
+	c.Assert(mismatches, qt.HasLen, 1)
+	c.Assert(mismatches[0].Kind, qt.Equals, "missing_column")
+	c.Assert(mismatches[0].Table, qt.Equals, "users")
+	c.Assert(mismatches[0].Column, qt.Equals, "email")
+	c.Assert((&ShadowVerificationError{Result: ShadowVerificationResult{
+		Stage:      "schema-match",
+		Success:    false,
+		Mismatches: mismatches,
+	}}).Error(), qt.Equals, "shadow check failed: missing column users.email")
 }
 
 func TestDescribeChangesIsDeterministic(t *testing.T) {

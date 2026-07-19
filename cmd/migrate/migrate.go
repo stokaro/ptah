@@ -3,6 +3,7 @@ package migrate
 import (
 	"context"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strings"
 
@@ -66,7 +67,7 @@ func newMigrateFlags() map[string]cobraflags.Flag {
 		reportFormatFlag: &cobraflags.StringFlag{
 			Name:  reportFormatFlag,
 			Value: "text",
-			Usage: "Safety report format: text or html",
+			Usage: "Safety report format: text, html, or json",
 		},
 		dbcli.ConnectTimeoutFlagName: dbcli.NewConnectTimeoutFlag(),
 		dbcli.SchemasFlagName:        dbcli.NewSchemasFlag(),
@@ -116,10 +117,10 @@ func migrateCommandWithFlags(cmd *cobra.Command, flags map[string]cobraflags.Fla
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
 	}
-	if reportFormat != "text" && reportFormat != "html" {
+	if reportFormat != "text" && reportFormat != "html" && reportFormat != "json" {
 		return fmt.Errorf("unsupported report format %q", reportFormat)
 	}
-	if reportFormat != "html" {
+	if reportFormat == "text" {
 		fmt.Fprintf(out, "Generating migration from %s to database %s\n", rootDir, dbschema.FormatDatabaseURL(dbURL))
 		fmt.Fprintln(out, "=== GENERATE MIGRATION SQL ===")
 		fmt.Fprintln(out)
@@ -166,8 +167,8 @@ func migrateCommandWithFlags(cmd *cobra.Command, flags map[string]cobraflags.Fla
 	if err != nil {
 		return fmt.Errorf("error assessing migration safety: %w", err)
 	}
-	if reportFormat == "html" {
-		if err := safety.RenderHTML(out, assessments); err != nil {
+	if reportFormat == "html" || reportFormat == "json" {
+		if err := renderSafetyReport(out, reportFormat, assessments); err != nil {
 			return fmt.Errorf("error rendering safety report: %w", err)
 		}
 		if checkDestructive && safety.HasDestructiveAssessment(assessments) && !allowDestructive {
@@ -176,7 +177,7 @@ func migrateCommandWithFlags(cmd *cobra.Command, flags map[string]cobraflags.Fla
 		return nil
 	}
 	fmt.Fprint(out, astNodes)
-	if err := safety.RenderText(out, assessments); err != nil {
+	if err := renderSafetyReport(out, reportFormat, assessments); err != nil {
 		return fmt.Errorf("error rendering safety report: %w", err)
 	}
 	if checkDestructive && safety.HasDestructiveAssessment(assessments) && !allowDestructive {
@@ -211,4 +212,17 @@ func migrateCommandWithFlags(cmd *cobra.Command, flags map[string]cobraflags.Fla
 	fmt.Fprintln(out, "⚠️  Review the SQL carefully before executing!")
 
 	return nil
+}
+
+func renderSafetyReport(w io.Writer, format string, assessments []safety.StatementAssessment) error {
+	switch format {
+	case "text":
+		return safety.RenderText(w, assessments)
+	case "html":
+		return safety.RenderHTML(w, assessments)
+	case "json":
+		return safety.RenderJSON(w, assessments)
+	default:
+		return fmt.Errorf("unsupported report format %q", format)
+	}
 }

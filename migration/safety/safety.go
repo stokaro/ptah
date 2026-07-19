@@ -2,6 +2,7 @@
 package safety
 
 import (
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -12,20 +13,21 @@ import (
 	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/core/sqlutil"
+	"github.com/stokaro/ptah/migration/risk"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 	"github.com/stokaro/ptah/migration/typechange"
 )
 
 // Severity is the operational risk level for a schema change.
-type Severity string
+type Severity = risk.Severity
 
 const (
 	// Safe changes should not remove data or tighten existing constraints.
-	Safe Severity = "safe"
+	Safe Severity = risk.Safe
 	// Warning changes are data-dependent or may affect runtime behavior.
-	Warning Severity = "warning"
+	Warning Severity = risk.Warning
 	// Destructive changes remove data, database objects, or protections.
-	Destructive Severity = "destructive"
+	Destructive Severity = risk.Destructive
 )
 
 // Finding summarizes one non-empty schema-diff category.
@@ -43,6 +45,13 @@ type StatementAssessment struct {
 	Statement string   `json:"statement,omitempty"`
 	Severity  Severity `json:"severity"`
 	Reason    string   `json:"reason"`
+}
+
+// Report is the machine-readable safety report envelope.
+type Report struct {
+	Highest     Severity              `json:"highest"`
+	Destructive bool                  `json:"destructive"`
+	Assessments []StatementAssessment `json:"assessments"`
 }
 
 // ClassifySchemaDiff returns severity findings for every non-empty diff
@@ -196,6 +205,23 @@ func HighestAssessment(assessments []StatementAssessment) Severity {
 // HasDestructiveAssessment returns true when any statement is destructive.
 func HasDestructiveAssessment(assessments []StatementAssessment) bool {
 	return HighestAssessment(assessments) == Destructive
+}
+
+// NewReport returns a machine-readable safety report envelope.
+func NewReport(assessments []StatementAssessment) Report {
+	highest := HighestAssessment(assessments)
+	return Report{
+		Highest:     highest,
+		Destructive: highest == Destructive,
+		Assessments: assessments,
+	}
+}
+
+// RenderJSON writes a machine-readable safety report.
+func RenderJSON(w io.Writer, assessments []StatementAssessment) error {
+	encoder := json.NewEncoder(w)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(NewReport(assessments))
 }
 
 // RenderText writes a compact text table for statement assessments.
@@ -509,14 +535,7 @@ func aggregate(findings []Finding) []Finding {
 }
 
 func severityRank(severity Severity) int {
-	switch severity {
-	case Destructive:
-		return 3
-	case Warning:
-		return 2
-	default:
-		return 1
-	}
+	return risk.Rank(severity)
 }
 
 // IsTypeNarrowing reports whether changing from oldType to newType can lose

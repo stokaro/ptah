@@ -658,14 +658,36 @@ Findings carry stable rule codes grouped into families:
 
 `--dialect` both gates the dialect-specific rule families and selects the dialect's SQL syntax for scanning (MySQL `#` comments, `/*!...*/` executable comments and backslash string escapes; PostgreSQL dollar quotes and nested block comments). With no dialect set, every rule runs under a hybrid scanner.
 
-Exit codes mirror `drift`: `0` clean (for the selected threshold), `1` findings above `--fail-on` (`error` by default; `any`, `none`), `2` command error. `--format text|json|github-actions` selects the output; the GitHub format annotates PR files inline. Disable rules per code or family with `--disable DS101 --disable MY`, or persistently via `.ptah-lint.yaml` in the migrations directory:
+Exit codes mirror `drift`: `0` clean (for the selected threshold), `1` findings above `--fail-on` (`error` by default; `any`, `none`), `2` command error. `--format text|json|github-actions|sarif` selects the output; the GitHub format annotates PR files inline, and SARIF 2.1.0 can be uploaded to GitHub code scanning. Disable rules per code or family with `--disable DS101 --disable MY`, or persistently via `.ptah-lint.yaml` in the migrations directory:
 
 ```yaml
 dialect: postgres
 disabled-rules:
   - MF103
   - MY
+rules:
+  DS103:
+    severity: warning
+  DS102:
+    severity: error
+    exclude:
+      - legacy/**
 ```
+
+Inline suppressions apply to the next statement only. Ptah accepts both its
+native directive and the Atlas-compatible alias:
+
+```sql
+-- ptah:nolint DS102
+ALTER TABLE users DROP COLUMN legacy_note;
+
+-- atlas:nolint DS103
+ALTER TABLE users ALTER COLUMN email TYPE VARCHAR(512);
+```
+
+Go integrations can provide custom analyzers without reimplementing Ptah's
+dialect-aware scanner by passing `lint.Options{ExtraRules: []lint.Rule{...}}`
+or by preparing files first with `lint.PrepareFS`.
 
 #### Generate Migration SQL
 Generate SQL migration statements to synchronize schemas:
@@ -673,6 +695,14 @@ Generate SQL migration statements to synchronize schemas:
 ```bash
 ./ptah migrate --root-dir ./models --db-url postgres://user:pass@localhost:5432/database
 ./ptah migrate --root-dir ./models --db-url postgres://user:pass@localhost:5432/database --schemas auth,billing,public
+```
+
+Use `--report json` when CI needs the destructive-safety verdict as structured
+data instead of text:
+
+```bash
+./ptah migrate --root-dir ./models --db-url postgres://user:pass@localhost:5432/database --report json
+./ptah migrate generate --root-dir ./models --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --report json
 ```
 
 **Output:** SQL statements to bring the database in sync with Go entities
@@ -1143,7 +1173,8 @@ ptah migrate generate \
 that database, replays existing migrations, applies the candidate migration,
 re-introspects the schema, and only writes files when the replayed schema
 matches the Go source. A mismatch aborts before writing files with a diagnostic
-such as `shadow check failed: missing column users.email`.
+such as `shadow check failed: missing column users.email`. Library callers can
+inspect structured shadow mismatches via `generator.ShadowVerificationError`.
 
 You can make this the default for `migrate generate` by configuring the same
 disposable database in `ptah.yaml`; an explicit `--shadow-db` value still wins:
