@@ -230,39 +230,110 @@ func CloseAndWarn(conn *DatabaseConnection) {
 	}
 }
 
-// FormatDatabaseURL formats a database URL for display (hiding password)
+const redactedQueryValue = "redacted"
+
+var mySQLTCPPasswordPattern = regexp.MustCompile(`^((?:mysql|mariadb)://[^:@/?#]+):([^@/?#]+)@`)
+
+// FormatDatabaseURL formats a database URL for display (hiding secrets).
 func FormatDatabaseURL(dbURL string) string {
 	// Handle MySQL/MariaDB URLs specially since they have a different format
 	if (strings.HasPrefix(dbURL, "mysql://") || strings.HasPrefix(dbURL, "mariadb://")) && strings.Contains(dbURL, "@tcp(") {
 		// For MySQL/MariaDB URLs like mysql://user:pass@tcp(host:port)/db?params
-		// Just replace the password part
-		re := regexp.MustCompile(`://([^:]+):([^@]+)@`)
-		return re.ReplaceAllString(dbURL, "://$1:***@")
+		// Redact only the leading authority credentials, not DSN-like values in query params.
+		return redactURLQuery(mySQLTCPPasswordPattern.ReplaceAllString(dbURL, "$1:***@"))
 	}
 
 	parsedURL, err := url.Parse(dbURL)
 	if err != nil {
 		return dbURL
 	}
+	parsedURL.RawQuery = redactRawQuery(parsedURL.RawQuery)
 
 	// Hide password
 	if parsedURL.User != nil {
 		if _, hasPassword := parsedURL.User.Password(); hasPassword {
-			// Create a new URL string manually to avoid URL encoding of ***
-			username := parsedURL.User.Username()
-			host := parsedURL.Host
-			scheme := parsedURL.Scheme
-			path := parsedURL.Path
-
-			result := scheme + "://" + username + ":***@" + host + path
-			if parsedURL.RawQuery != "" {
-				result += "?" + parsedURL.RawQuery
-			}
-			return result
+			return formatURLWithRedactedUserPassword(parsedURL)
 		}
 	}
 
 	return parsedURL.String()
+}
+
+func formatURLWithRedactedUserPassword(parsedURL *url.URL) string {
+	displayURL := *parsedURL
+	username := displayURL.User.Username()
+	displayURL.User = nil
+
+	prefix := displayURL.Scheme + "://"
+	base := strings.TrimPrefix(displayURL.String(), prefix)
+	return prefix + username + ":***@" + base
+}
+
+func redactURLQuery(displayURL string) string {
+	prefix, rawQuery, ok := strings.Cut(displayURL, "?")
+	if !ok {
+		return displayURL
+	}
+
+	query, fragment, hasFragment := strings.Cut(rawQuery, "#")
+	redactedQuery := redactRawQuery(query)
+	if redactedQuery == "" {
+		if hasFragment {
+			return prefix + "#" + fragment
+		}
+		return prefix
+	}
+
+	result := prefix + "?" + redactedQuery
+	if hasFragment {
+		result += "#" + fragment
+	}
+	return result
+}
+
+func redactRawQuery(rawQuery string) string {
+	if rawQuery == "" {
+		return ""
+	}
+
+	query, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		return ""
+	}
+	for key, values := range query {
+		if isSecretQueryParam(key) {
+			for idx := range values {
+				values[idx] = redactedQueryValue
+			}
+			query[key] = values
+		}
+	}
+	return query.Encode()
+}
+
+func isSecretQueryParam(key string) bool {
+	switch strings.ToLower(key) {
+	case "access_token",
+		"api_key",
+		"apikey",
+		"aws_secret_access_key",
+		"aws_session_token",
+		"client_secret",
+		"id_token",
+		"password",
+		"passwd",
+		"private_key",
+		"pwd",
+		"refresh_token",
+		"secret",
+		"sslcert",
+		"sslkey",
+		"sslpassword",
+		"token":
+		return true
+	default:
+		return false
+	}
 }
 
 // getDatabaseInfo retrieves database metadata
