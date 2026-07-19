@@ -9,6 +9,10 @@ import (
 	"github.com/spf13/pflag"
 )
 
+// ArgMapper rewrites compatibility command arguments before they are forwarded
+// to the native command.
+type ArgMapper func([]string) ([]string, error)
+
 // NewForwardCommand returns a command that forwards its raw arguments to a
 // native command factory. It is intended for compatibility aliases whose
 // behavior, flags, and exit-code contract should stay owned by the native
@@ -26,6 +30,19 @@ func NewForwardCommandWithArgs(
 	factory func() *cobra.Command,
 	prefixArgs ...string,
 ) *cobra.Command {
+	return NewForwardCommandWithArgsMapper(use, short, native, factory, nil, prefixArgs...)
+}
+
+// NewForwardCommandWithArgsMapper returns a forwarding command that can rewrite
+// compatibility arguments before prepending fixed arguments.
+func NewForwardCommandWithArgsMapper(
+	use string,
+	short string,
+	native string,
+	factory func() *cobra.Command,
+	mapper ArgMapper,
+	prefixArgs ...string,
+) *cobra.Command {
 	return &cobra.Command{
 		Use:                use,
 		Short:              short,
@@ -36,6 +53,13 @@ func NewForwardCommandWithArgs(
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if hasHelpArg(args) {
 				return cmd.Help()
+			}
+			if mapper != nil {
+				var err error
+				args, err = mapper(args)
+				if err != nil {
+					return err
+				}
 			}
 			target := factory()
 			resetCommandFlags(target)

@@ -1049,16 +1049,23 @@ it is redesigned independently.
 | `ptah atlas migrate hash` | `ptah migrate-hash` |
 | `ptah atlas migrate validate` | `ptah migrate-validate` |
 | `ptah atlas migrate lint` | `ptah lint` |
-| `ptah atlas migrate diff` | `ptah migrate` |
 | `ptah atlas schema inspect` | `ptah read-db` |
 | `ptah atlas schema diff` | `ptah compare` |
 
-The Atlas-compatible commands delegate to the native commands, so their flag
-parsing and exit codes are the native contracts: `0` for success, `1` for
-drift/findings where a native command documents that content state, and `2` for
-command/usage errors on commands with an explicit 0/1/2 contract (`drift`,
-`lint`, and `migrate-validate`). Other runtime failures continue to use the CLI
-fallback non-zero exit code.
+Atlas-compatible aliases accept the Atlas OSS flag names on the compatibility
+surface and translate implemented flags to the native Ptah flags before
+execution. For example, `ptah atlas migrate apply --url ... --dir ...` maps to
+`ptah migrate-up --db-url ... --migrations-dir ...`, and
+`ptah atlas schema inspect --url ...` maps to `ptah read-db --db-url ...`.
+Flags that are part of the Atlas OSS CLI but do not have Ptah behavior yet are
+advertised and rejected explicitly instead of being silently ignored.
+
+The implemented Atlas-compatible commands delegate to native commands after
+flag translation, so their exit codes are the native contracts: `0` for success,
+`1` for drift/findings where a native command documents that content state, and
+`2` for command/usage errors on commands with an explicit 0/1/2 contract
+(`drift`, `lint`, and `migrate-validate`). Other runtime failures continue to
+use the CLI fallback non-zero exit code.
 
 #### Migration Directory Integrity (`ptah.sum` / `atlas.sum`)
 
