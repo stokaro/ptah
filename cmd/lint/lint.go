@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -17,12 +18,14 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/migration/lint"
 	"github.com/stokaro/ptah/migration/migrator"
+	"github.com/stokaro/ptah/migration/risk"
 )
 
 const (
 	formatText          = "text"
 	formatJSON          = "json"
 	formatGitHubActions = "github-actions"
+	formatSARIF         = "sarif"
 
 	failOnError = "error"
 	failOnAny   = "any"
@@ -73,8 +76,8 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 	}
 
 	cmd.Flags().StringVar(&dir, "dir", "./migrations", "Directory containing migration files")
-	cmd.Flags().StringVar(&dialect, "dialect", "", "Target dialect gating dialect-specific rules: postgres, mysql or mariadb (empty runs every rule)")
-	cmd.Flags().StringVar(&format, "format", formatText, "Output format: text, json, github-actions")
+	cmd.Flags().StringVar(&dialect, "dialect", "", "Target dialect gating dialect-specific rules: postgres, mysql, mariadb, clickhouse, cockroachdb, yugabytedb, or spanner (empty runs every rule)")
+	cmd.Flags().StringVar(&format, "format", formatText, "Output format: text, json, github-actions, sarif")
 	cmd.Flags().StringVar(&configPath, "config", "", "Path to a lint config file (default: <dir>/"+lint.ConfigFileName+" when present)")
 	cmd.Flags().StringVar(&atlasEnv, "atlas-env", "", "Value exposed as .Env when rendering Atlas SQL template migrations")
 	cmd.Flags().StringVar(&envName, dbcli.EnvFlagName, "", "Atlas project env name to read from atlas.hcl")
@@ -112,6 +115,66 @@ type lintReport struct {
 	Error            string         `json:"error,omitempty"`
 }
 
+type sarifReport struct {
+	Version string     `json:"version"`
+	Schema  string     `json:"$schema"`
+	Runs    []sarifRun `json:"runs"`
+}
+
+type sarifRun struct {
+	Tool    sarifTool     `json:"tool"`
+	Results []sarifResult `json:"results"`
+}
+
+type sarifTool struct {
+	Driver sarifDriver `json:"driver"`
+}
+
+type sarifDriver struct {
+	Name           string      `json:"name"`
+	InformationURI string      `json:"informationUri,omitempty"`
+	Rules          []sarifRule `json:"rules,omitempty"`
+}
+
+type sarifRule struct {
+	ID               string             `json:"id"`
+	Name             string             `json:"name,omitempty"`
+	ShortDescription sarifMessage       `json:"shortDescription,omitzero"`
+	DefaultConfig    sarifDefaultConfig `json:"defaultConfiguration"`
+}
+
+type sarifDefaultConfig struct {
+	Level string `json:"level"`
+}
+
+type sarifResult struct {
+	RuleID    string          `json:"ruleId"`
+	Level     string          `json:"level"`
+	Message   sarifMessage    `json:"message"`
+	Locations []sarifLocation `json:"locations,omitempty"`
+}
+
+type sarifMessage struct {
+	Text string `json:"text"`
+}
+
+type sarifLocation struct {
+	PhysicalLocation sarifPhysicalLocation `json:"physicalLocation"`
+}
+
+type sarifPhysicalLocation struct {
+	ArtifactLocation sarifArtifactLocation `json:"artifactLocation"`
+	Region           *sarifRegion          `json:"region,omitempty"`
+}
+
+type sarifArtifactLocation struct {
+	URI string `json:"uri"`
+}
+
+type sarifRegion struct {
+	StartLine int `json:"startLine"`
+}
+
 func runLint(cmd *cobra.Command, opts runOptions) error {
 	if err := validateFormat(opts.format); err != nil {
 		return writeError(cmd.ErrOrStderr(), formatText, opts.failOn, err.Error())
@@ -143,7 +206,7 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
 	}
 	if !isValidDialect(cfg.Dialect) {
-		msg := fmt.Sprintf("invalid dialect %q in lint config: expected postgres, mysql, or mariadb", cfg.Dialect)
+		msg := fmt.Sprintf("invalid dialect %q in lint config: expected postgres, mysql, mariadb, clickhouse, cockroachdb, yugabytedb, or spanner", cfg.Dialect)
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, msg)
 	}
 	// An explicitly passed --dialect wins even when set to "" (run every
@@ -159,6 +222,7 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 		Disabled:          disabled,
 		PathPrefix:        filepath.ToSlash(opts.dir),
 		AtlasTemplateData: migrator.AtlasTemplateData{Env: opts.atlasEnv},
+		RuleConfigs:       cfg.Rules,
 	})
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
@@ -228,10 +292,77 @@ func writeReport(w io.Writer, format string, report lintReport) error {
 	case formatGitHubActions:
 		writeGitHubActions(w, report)
 		return nil
+	case formatSARIF:
+		return writeSARIF(w, report)
 	default:
 		writeText(w, report)
 		return nil
 	}
+}
+
+func writeSARIF(w io.Writer, report lintReport) error {
+	rules := sarifRules(report.Findings)
+	results := make([]sarifResult, 0, len(report.Findings))
+	for _, finding := range report.Findings {
+		location := sarifLocation{
+			PhysicalLocation: sarifPhysicalLocation{
+				ArtifactLocation: sarifArtifactLocation{URI: finding.File},
+			},
+		}
+		if finding.Line > 0 {
+			location.PhysicalLocation.Region = &sarifRegion{StartLine: finding.Line}
+		}
+		results = append(results, sarifResult{
+			RuleID:    finding.Rule,
+			Level:     sarifLevel(finding.Severity),
+			Message:   sarifMessage{Text: fmt.Sprintf("%s: %s", finding.Title, finding.Message)},
+			Locations: []sarifLocation{location},
+		})
+	}
+
+	encoder := json.NewEncoder(w)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(sarifReport{
+		Version: "2.1.0",
+		Schema:  "https://json.schemastore.org/sarif-2.1.0.json",
+		Runs: []sarifRun{{
+			Tool: sarifTool{Driver: sarifDriver{
+				Name:           "ptah lint",
+				InformationURI: "https://github.com/stokaro/ptah",
+				Rules:          rules,
+			}},
+			Results: results,
+		}},
+	})
+}
+
+func sarifRules(findings []lint.Finding) []sarifRule {
+	byCode := make(map[string]lint.Finding)
+	for _, finding := range findings {
+		if _, ok := byCode[finding.Rule]; !ok {
+			byCode[finding.Rule] = finding
+		}
+	}
+	codes := make([]string, 0, len(byCode))
+	for code := range byCode {
+		codes = append(codes, code)
+	}
+	sort.Strings(codes)
+	rules := make([]sarifRule, 0, len(codes))
+	for _, code := range codes {
+		finding := byCode[code]
+		rules = append(rules, sarifRule{
+			ID:               code,
+			Name:             finding.Title,
+			ShortDescription: sarifMessage{Text: finding.Title},
+			DefaultConfig:    sarifDefaultConfig{Level: sarifLevel(finding.Severity)},
+		})
+	}
+	return rules
+}
+
+func sarifLevel(severity lint.Severity) string {
+	return risk.SARIFLevel(severity)
 }
 
 func writeText(w io.Writer, report lintReport) {
@@ -299,10 +430,10 @@ func writeError(w io.Writer, format, failOn, msg string) error {
 
 func validateFormat(format string) error {
 	switch format {
-	case formatText, formatJSON, formatGitHubActions:
+	case formatText, formatJSON, formatGitHubActions, formatSARIF:
 		return nil
 	default:
-		return fmt.Errorf("invalid --format value %q: expected text, json, or github-actions", format)
+		return fmt.Errorf("invalid --format value %q: expected text, json, github-actions, or sarif", format)
 	}
 }
 
@@ -319,12 +450,12 @@ func validateDialect(dialect string) error {
 	if isValidDialect(dialect) {
 		return nil
 	}
-	return fmt.Errorf("invalid --dialect value %q: expected postgres, mysql, or mariadb", dialect)
+	return fmt.Errorf("invalid --dialect value %q: expected postgres, mysql, mariadb, clickhouse, cockroachdb, yugabytedb, or spanner", dialect)
 }
 
 func isValidDialect(dialect string) bool {
 	switch dialect {
-	case "", "postgres", "mysql", "mariadb":
+	case "", "postgres", "mysql", "mariadb", "clickhouse", "cockroachdb", "yugabytedb", "spanner":
 		return true
 	default:
 		return false

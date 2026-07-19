@@ -695,6 +695,115 @@ ALTER TABLE users MODIFY COLUMN email VARCHAR(64);
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"PG101", "DS103", "MY101"})
 }
 
+func TestLintFS_CustomRuleAndPrepareFSUsePublicScanner(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fixture(map[string]string{
+		"0000000001_create_users.up.sql":   "CREATE TABLE users (id INT);\n",
+		"0000000001_create_users.down.sql": "DROP TABLE users;\n",
+	})
+
+	files, err := lint.PrepareFS(fsys, lint.Options{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(files, qt.HasLen, 2)
+	var upFile *lint.File
+	for _, file := range files {
+		if file.IsUp {
+			upFile = file
+		}
+	}
+	c.Assert(upFile, qt.IsNotNil)
+	c.Assert(upFile.Statements[0].Words, qt.DeepEquals, []string{"CREATE", "TABLE", "USERS", "(", "ID", "INT", ")"})
+
+	customRule := lint.Rule{
+		Code:     "XX001",
+		Title:    "custom create table analyzer",
+		Severity: lint.SeverityWarning,
+		CheckStatement: func(stmt *lint.Statement) (bool, string) {
+			if len(stmt.Words) >= 3 && stmt.Words[0] == "CREATE" && stmt.Words[1] == "TABLE" {
+				return true, "custom analyzer saw a create table statement through Ptah's scanner"
+			}
+			return false, ""
+		},
+	}
+	findings, err := lint.LintFS(fsys, lint.Options{ExtraRules: []lint.Rule{customRule}})
+	c.Assert(err, qt.IsNil)
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"XX001"})
+	c.Assert(findings[0].Message, qt.Contains, "Ptah's scanner")
+}
+
+func TestLintFS_InvalidCustomRuleFailsFast(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := lint.LintFS(fixture(map[string]string{
+		"0000000001_x.up.sql":   "SELECT 1;\n",
+		"0000000001_x.down.sql": "-- restore\n",
+	}), lint.Options{ExtraRules: []lint.Rule{{Code: "XX001", Title: "broken"}}})
+
+	c.Assert(err, qt.ErrorMatches, "rule XX001 has unsupported severity.*")
+}
+
+func TestLintFS_RuleConfigsOverrideSeverityAndExcludePaths(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fixture(map[string]string{
+		"legacy/0000000001_legacy.up.sql":   "ALTER TABLE users DROP COLUMN old_legacy;\n",
+		"legacy/0000000001_legacy.down.sql": "ALTER TABLE users ADD COLUMN old_legacy TEXT;\n",
+		"main/0000000002_main.up.sql":       "ALTER TABLE users DROP COLUMN old_main;\n",
+		"main/0000000002_main.down.sql":     "ALTER TABLE users ADD COLUMN old_main TEXT;\n",
+	})
+
+	findings, err := lint.LintFS(fsys, lint.Options{
+		RuleConfigs: map[string]lint.RuleConfig{
+			"DS102": {
+				Severity: lint.SeverityWarning,
+				Exclude:  []string{"legacy/**"},
+			},
+		},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(findings, qt.HasLen, 1)
+	c.Assert(findings[0].Rule, qt.Equals, "DS102")
+	c.Assert(findings[0].Severity, qt.Equals, lint.SeverityWarning)
+	c.Assert(findings[0].File, qt.Equals, "main/0000000002_main.up.sql")
+}
+
+func TestLintFS_InlineNoLintSuppressesStatementAndFileFindings(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fixture(map[string]string{
+		"0000000001_suppress.up.sql": `-- ptah:nolint DS102
+ALTER TABLE users DROP COLUMN legacy;
+-- atlas:nolint DS102
+ALTER TABLE users DROP COLUMN legacy_two;
+-- ptah:nolint DS101
+DROP TABLE audit_log;
+ALTER TABLE users ALTER COLUMN email TYPE TEXT;
+`,
+		"0000000001_suppress.down.sql": "-- restore\n",
+	})
+
+	findings, err := lint.LintFS(fsys, lint.Options{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DS103"})
+}
+
+func TestLintFS_TrailingNoLintCommentDoesNotSuppressNextStatement(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fixture(map[string]string{
+		"0000000001_trailing.up.sql": `ALTER TABLE users ALTER COLUMN email TYPE TEXT; -- ptah:nolint DS102
+ALTER TABLE users DROP COLUMN legacy;
+`,
+		"0000000001_trailing.down.sql": "-- restore\n",
+	})
+
+	findings, err := lint.LintFS(fsys, lint.Options{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DS103", "DS102"})
+}
+
 func TestLintFS_DisabledRulesAndFamilies(t *testing.T) {
 	c := qt.New(t)
 
@@ -767,12 +876,23 @@ func TestLoadConfig(t *testing.T) {
 	c := qt.New(t)
 
 	dir := t.TempDir()
-	c.Assert(writeFile(dir+"/.ptah-lint.yaml", "dialect: postgres\ndisabled-rules:\n  - MF\n  - BC101\n"), qt.IsNil)
+	c.Assert(writeFile(dir+"/.ptah-lint.yaml", `dialect: postgres
+disabled-rules:
+  - MF
+  - BC101
+rules:
+  DS103:
+    severity: warning
+    exclude:
+      - legacy/**
+`), qt.IsNil)
 
 	cfg, err := lint.LoadConfig(dir + "/.ptah-lint.yaml")
 	c.Assert(err, qt.IsNil)
 	c.Assert(cfg.Dialect, qt.Equals, "postgres")
 	c.Assert(cfg.DisabledRules, qt.DeepEquals, []string{"MF", "BC101"})
+	c.Assert(cfg.Rules["DS103"].Severity, qt.Equals, lint.SeverityWarning)
+	c.Assert(cfg.Rules["DS103"].Exclude, qt.DeepEquals, []string{"legacy/**"})
 
 	// A missing file at the conventional location is not an error.
 	cfg, err = lint.LoadConfig(dir + "/nope.yaml")
@@ -784,6 +904,10 @@ func TestLoadConfig(t *testing.T) {
 	c.Assert(writeFile(dir+"/broken.yaml", "dialect: [not, a, string"), qt.IsNil)
 	_, err = lint.LoadConfig(dir + "/broken.yaml")
 	c.Assert(err, qt.ErrorMatches, "failed to parse lint config .*")
+
+	c.Assert(writeFile(dir+"/bad-severity.yaml", "rules:\n  DS102:\n    severity: fatal\n"), qt.IsNil)
+	_, err = lint.LoadConfig(dir + "/bad-severity.yaml")
+	c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*unsupported severity "fatal".*`)
 }
 
 func TestRules_EveryRuleHasCodeTitleAndOneChecker(t *testing.T) {

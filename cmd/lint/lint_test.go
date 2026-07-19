@@ -3,6 +3,8 @@ package lint
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -69,6 +71,70 @@ func TestRunLint_GitHubActionsFormatAnnotatesFileAndLine(t *testing.T) {
 	c.Assert(stderr, qt.Contains, "::warning file=testdata/bad/misnamed.sql::MF103:")
 }
 
+func TestRunLint_SARIFFormat(t *testing.T) {
+	c := qt.New(t)
+
+	stdout, _, err := execute("--dir", "testdata/bad", "--format", "sarif", "--fail-on", "none")
+
+	c.Assert(err, qt.IsNil)
+	var report struct {
+		Version string `json:"version"`
+		Runs    []struct {
+			Tool struct {
+				Driver struct {
+					Name  string `json:"name"`
+					Rules []struct {
+						ID string `json:"id"`
+					} `json:"rules"`
+				} `json:"driver"`
+			} `json:"tool"`
+			Results []struct {
+				RuleID    string `json:"ruleId"`
+				Level     string `json:"level"`
+				Locations []struct {
+					PhysicalLocation struct {
+						ArtifactLocation struct {
+							URI string `json:"uri"`
+						} `json:"artifactLocation"`
+						Region struct {
+							StartLine int `json:"startLine"`
+						} `json:"region"`
+					} `json:"physicalLocation"`
+				} `json:"locations"`
+			} `json:"results"`
+		} `json:"runs"`
+	}
+	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
+	c.Assert(report.Version, qt.Equals, "2.1.0")
+	c.Assert(report.Runs, qt.HasLen, 1)
+	c.Assert(report.Runs[0].Tool.Driver.Name, qt.Equals, "ptah lint")
+	c.Assert(report.Runs[0].Tool.Driver.Rules[0].ID, qt.Not(qt.Equals), "")
+	var dropTableResult struct {
+		RuleID    string `json:"ruleId"`
+		Level     string `json:"level"`
+		Locations []struct {
+			PhysicalLocation struct {
+				ArtifactLocation struct {
+					URI string `json:"uri"`
+				} `json:"artifactLocation"`
+				Region struct {
+					StartLine int `json:"startLine"`
+				} `json:"region"`
+			} `json:"physicalLocation"`
+		} `json:"locations"`
+	}
+	for _, result := range report.Runs[0].Results {
+		if result.RuleID == "DS101" {
+			dropTableResult = result
+			break
+		}
+	}
+	c.Assert(dropTableResult.RuleID, qt.Equals, "DS101")
+	c.Assert(dropTableResult.Level, qt.Equals, "error")
+	c.Assert(dropTableResult.Locations[0].PhysicalLocation.ArtifactLocation.URI, qt.Contains, "testdata/bad/")
+	c.Assert(dropTableResult.Locations[0].PhysicalLocation.Region.StartLine, qt.Equals, 2)
+}
+
 func TestRunLint_ConfigFileDisablesRulesAndSetsDialect(t *testing.T) {
 	c := qt.New(t)
 
@@ -91,6 +157,38 @@ func TestRunLint_ConfigFileDisablesRulesAndSetsDialect(t *testing.T) {
 		c.Assert(f.Rule, qt.Not(qt.Equals), "MY101",
 			qt.Commentf("dialect: postgres from the config must gate MY rules; got %v", f))
 	}
+}
+
+func TestRunLint_ConfigRuleSeverityAndExclude(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	write := func(name, content string) {
+		path := filepath.Join(dir, filepath.FromSlash(name))
+		c.Assert(os.MkdirAll(filepath.Dir(path), 0o750), qt.IsNil)
+		c.Assert(os.WriteFile(path, []byte(content), 0o600), qt.IsNil)
+	}
+	write(lint.ConfigFileName, `rules:
+  DS102:
+    severity: warning
+    exclude:
+      - legacy/**
+`)
+	write("legacy/0000000001_legacy.up.sql", "ALTER TABLE users DROP COLUMN old_legacy;\n")
+	write("legacy/0000000001_legacy.down.sql", "ALTER TABLE users ADD COLUMN old_legacy TEXT;\n")
+	write("main/0000000002_main.up.sql", "ALTER TABLE users DROP COLUMN old_main;\n")
+	write("main/0000000002_main.down.sql", "ALTER TABLE users ADD COLUMN old_main TEXT;\n")
+
+	stdout, _, err := execute("--dir", dir, "--format", "json")
+
+	c.Assert(err, qt.IsNil)
+	var report struct {
+		Findings []lint.Finding `json:"findings"`
+	}
+	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
+	c.Assert(report.Findings, qt.HasLen, 1)
+	c.Assert(report.Findings[0].Rule, qt.Equals, "DS102")
+	c.Assert(report.Findings[0].Severity, qt.Equals, lint.SeverityWarning)
+	c.Assert(report.Findings[0].File, qt.Contains, "main/0000000002_main.up.sql")
 }
 
 func TestRunLint_FailOnThresholds(t *testing.T) {
@@ -127,6 +225,12 @@ func TestRunLint_InvalidFlagValuesExitCode2(t *testing.T) {
 	_, stderr, err = execute("--dir", "testdata/bad", "--dialect", "oracle")
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 	c.Assert(stderr, qt.Contains, "invalid --dialect")
+	c.Assert(stderr, qt.Contains, "clickhouse")
+	c.Assert(stderr, qt.Contains, "spanner")
+
+	stdout, _, err := execute("--dir", "testdata/clean", "--dialect", "clickhouse")
+	c.Assert(err, qt.IsNil)
+	c.Assert(stdout, qt.Contains, "No lint findings.")
 
 	_, stderr, err = execute("--dir", "testdata/does-not-exist")
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)

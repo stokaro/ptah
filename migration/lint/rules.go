@@ -4,13 +4,44 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 )
 
-// Rules returns the built-in rule set. The slice is rebuilt on every call so
-// callers can never corrupt the registry.
+var registeredRules = struct {
+	sync.RWMutex
+	rules []Rule
+}{}
+
+// Register appends a process-wide custom lint rule. Prefer Options.ExtraRules
+// for request-scoped analyzers; Register exists for plugin-style integrations
+// that initialize rules once at process startup.
+func Register(rule Rule) error {
+	if err := validateRule(rule); err != nil {
+		return err
+	}
+	registeredRules.Lock()
+	defer registeredRules.Unlock()
+	for _, existing := range append(builtinRules(), registeredRules.rules...) {
+		if existing.Code == rule.Code {
+			return fmt.Errorf("duplicate rule code %s", rule.Code)
+		}
+	}
+	registeredRules.rules = append(registeredRules.rules, rule)
+	return nil
+}
+
+// Rules returns the built-in rule set plus process-wide registered rules. The
+// slice is rebuilt on every call so callers can never corrupt the registry.
 func Rules() []Rule {
+	rules := builtinRules()
+	registeredRules.RLock()
+	defer registeredRules.RUnlock()
+	return append(rules, registeredRules.rules...)
+}
+
+func builtinRules() []Rule {
 	var rules []Rule
 	rules = append(rules, dataSafetyRules()...)
 	rules = append(rules, dataDependentRules()...)
@@ -21,6 +52,38 @@ func Rules() []Rule {
 	rules = append(rules, sqliteRules()...)
 	rules = append(rules, transactionRules()...)
 	return rules
+}
+
+func validateRule(rule Rule) error {
+	if strings.TrimSpace(rule.Code) == "" {
+		return fmt.Errorf("rule code is required")
+	}
+	if strings.TrimSpace(rule.Title) == "" {
+		return fmt.Errorf("rule %s title is required", rule.Code)
+	}
+	switch rule.Severity {
+	case SeverityWarning, SeverityError:
+	default:
+		return fmt.Errorf("rule %s has unsupported severity %q", rule.Code, rule.Severity)
+	}
+	if (rule.CheckStatement != nil) == (rule.CheckFile != nil) {
+		return fmt.Errorf("rule %s must set exactly one checker", rule.Code)
+	}
+	return nil
+}
+
+func validateRules(rules []Rule) error {
+	seen := make(map[string]struct{}, len(rules))
+	for _, rule := range rules {
+		if err := validateRule(rule); err != nil {
+			return err
+		}
+		if _, ok := seen[rule.Code]; ok {
+			return fmt.Errorf("duplicate rule code %s", rule.Code)
+		}
+		seen[rule.Code] = struct{}{}
+	}
+	return nil
 }
 
 // dataSafetyRules covers the DS family: statements that destroy data.

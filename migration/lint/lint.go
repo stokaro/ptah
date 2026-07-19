@@ -16,16 +16,13 @@
 // string literals, quoted identifiers, comments (including the MySQL-family
 // # line comments and /*!...*/ executable comments) and PostgreSQL
 // dollar-quoted bodies never confuse the splitter, and Options.Dialect
-// selects which of those syntaxes apply. Every statement is then checked in
-// two complementary forms:
+// selects which of those syntaxes apply. Every statement is then checked through
+// the token form exposed to rules:
 //
-//   - Statement.Words — the token-word sequence the built-in rules scan,
+//   - Statement.Words — the token-word sequence rules scan,
 //     anchored at ALTER TABLE clause boundaries; string literals and quoted
 //     identifiers stay opaque single words, so data or a column named like a
-//     keyword can neither trigger nor mask a rule;
-//   - a best-effort AST (Statement.Node) parsed with core/parser for the
-//     statements it supports, available to rules that want structural
-//     precision.
+//     keyword can neither trigger nor mask a rule.
 //
 // Statement-level rules run on up migrations only: a down migration dropping
 // what its up created is the expected shape, not a hazard. File-level form
@@ -41,20 +38,19 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/stokaro/ptah/core/ast"
-	"github.com/stokaro/ptah/core/parser"
 	"github.com/stokaro/ptah/migration/migrator"
+	"github.com/stokaro/ptah/migration/risk"
 )
 
 // Severity is the urgency of a finding.
-type Severity string
+type Severity = risk.Severity
 
 const (
 	// SeverityWarning marks patterns that deserve review before a prod
 	// rollout but are not necessarily destructive.
-	SeverityWarning Severity = "warning"
+	SeverityWarning Severity = risk.Warning
 	// SeverityError marks patterns that destroy data or database objects.
-	SeverityError Severity = "error"
+	SeverityError Severity = risk.Error
 )
 
 // Finding is one rule hit in one migration file.
@@ -83,12 +79,11 @@ type Statement struct {
 	// as single opaque words (so a literal containing "DROP COLUMN" or a
 	// column named "type" can never impersonate a keyword).
 	Words []string
-	// Node is the best-effort parse of the statement into ptah's DDL AST;
-	// nil when the statement is outside the parser's supported subset.
-	// Word-scan rules must not rely on it.
-	Node ast.Node
 	// Line is the 1-based line number of the statement's first token.
 	Line int
+	// SuppressedRules lists rule codes or families suppressed by a leading
+	// ptah:nolint or atlas:nolint directive.
+	SuppressedRules []string
 }
 
 // File is one migration file prepared for linting.
@@ -140,6 +135,14 @@ type Rule struct {
 	CheckFile func(file *File) []Finding
 }
 
+// RuleConfig customizes one rule for a lint run.
+type RuleConfig struct {
+	// Severity overrides the rule's default severity when set.
+	Severity Severity `yaml:"severity,omitempty"`
+	// Exclude lists slash-separated path globs where this rule is skipped.
+	Exclude []string `yaml:"exclude,omitempty"`
+}
+
 // Options configures a lint run.
 type Options struct {
 	// Dialect gates dialect-specific rules — "postgres" enables PG rules,
@@ -160,6 +163,13 @@ type Options struct {
 	// AtlasTemplateData supplies data for Atlas SQL template migrations.
 	// When nil, templates render with migrator.AtlasTemplateData{}.
 	AtlasTemplateData any
+	// ExtraRules appends caller-provided rules to the built-in registry for
+	// this run. It is the preferred API for out-of-tree analyzers that should
+	// not mutate global process state.
+	ExtraRules []Rule
+	// RuleConfigs carries per-rule severity and path-scoping overrides,
+	// normally loaded from .ptah-lint.yaml.
+	RuleConfigs map[string]RuleConfig
 }
 
 // LintFS lints every *.sql file under fsys — recursively, because the
@@ -168,6 +178,35 @@ type Options struct {
 // suffix is matched case-insensitively so that stray case variants (x.UP.SQL)
 // at least earn a naming warning instead of vanishing.
 func LintFS(fsys fs.FS, opts Options) ([]Finding, error) {
+	if err := validateRules(rulesForOptions(opts)); err != nil {
+		return nil, err
+	}
+	files, err := PrepareFS(fsys, opts)
+	if err != nil {
+		return nil, err
+	}
+	var findings []Finding
+	for _, file := range files {
+		findings = append(findings, runRules(file, opts)...)
+	}
+
+	sort.SliceStable(findings, func(i, j int) bool {
+		if findings[i].File != findings[j].File {
+			return findings[i].File < findings[j].File
+		}
+		if findings[i].Line != findings[j].Line {
+			return findings[i].Line < findings[j].Line
+		}
+		return findings[i].Rule < findings[j].Rule
+	})
+	return findings, nil
+}
+
+// PrepareFS loads and tokenizes every migration file under fsys using the
+// same dialect-aware scanner and naming rules as LintFS. Custom analyzer
+// packages can call this when they need Ptah-prepared File and Statement
+// values without reimplementing the scanner.
+func PrepareFS(fsys fs.FS, opts Options) ([]*File, error) {
 	var names []string
 	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -213,25 +252,15 @@ func LintFS(fsys fs.FS, opts Options) ([]Finding, error) {
 	}
 
 	mode := modeForDialect(opts.Dialect)
-	var findings []Finding
+	files := make([]*File, 0, len(names))
 	for _, name := range names {
 		file, err := prepareFile(fsys, name, present, versionDirs, opts.PathPrefix, mode, opts.AtlasTemplateData)
 		if err != nil {
 			return nil, err
 		}
-		findings = append(findings, runRules(file, opts)...)
+		files = append(files, file)
 	}
-
-	sort.SliceStable(findings, func(i, j int) bool {
-		if findings[i].File != findings[j].File {
-			return findings[i].File < findings[j].File
-		}
-		if findings[i].Line != findings[j].Line {
-			return findings[i].Line < findings[j].Line
-		}
-		return findings[i].Rule < findings[j].Rule
-	})
-	return findings, nil
+	return files, nil
 }
 
 func filterNamesByVersion(names []string, versions []int64) []string {
@@ -370,11 +399,11 @@ func prepareFile(
 		}
 		for _, rawStmt := range splitStatementsWithLines(sql, mode) {
 			file.Statements = append(file.Statements, Statement{
-				SQL:       rawStmt.text,
-				Canonical: canonicalize(rawStmt.text, mode),
-				Words:     tokenizeWords(rawStmt.text, mode),
-				Node:      parseBestEffort(rawStmt.text),
-				Line:      rawStmt.line,
+				SQL:             rawStmt.text,
+				Canonical:       canonicalize(rawStmt.text, mode),
+				Words:           tokenizeWords(rawStmt.text, mode),
+				Line:            rawStmt.line,
+				SuppressedRules: rawStmt.suppressedRules,
 			})
 		}
 	}
@@ -403,20 +432,30 @@ func fileNoTransactionDirective(sql string) bool {
 // runRules applies every enabled rule to one prepared file.
 func runRules(file *File, opts Options) []Finding {
 	var findings []Finding
-	for _, rule := range Rules() {
-		if ruleDisabled(rule.Code, opts.Disabled) || !ruleAppliesToDialect(rule, opts.Dialect) {
+	for _, rule := range rulesForOptions(opts) {
+		if ruleDisabled(rule.Code, opts.Disabled) || !ruleAppliesToDialect(rule, opts.Dialect) || ruleExcludedForFile(rule.Code, file, opts.RuleConfigs) {
 			continue
 		}
+		severity := ruleSeverity(rule, opts.RuleConfigs)
 		if rule.CheckFile != nil {
-			findings = append(findings, rule.CheckFile(file)...)
+			for _, finding := range rule.CheckFile(file) {
+				if fileFindingSuppressed(file, finding) {
+					continue
+				}
+				finding.Severity = severity
+				findings = append(findings, finding)
+			}
 			continue
 		}
 		for i := range file.Statements {
+			if statementSuppressesRule(&file.Statements[i], rule.Code) {
+				continue
+			}
 			if hit, message := rule.CheckStatement(&file.Statements[i]); hit {
 				findings = append(findings, Finding{
 					Rule:     rule.Code,
 					Title:    rule.Title,
-					Severity: rule.Severity,
+					Severity: severity,
 					File:     file.Path,
 					Line:     file.Statements[i].Line,
 					Message:  message,
@@ -425,6 +464,88 @@ func runRules(file *File, opts Options) []Finding {
 		}
 	}
 	return findings
+}
+
+func rulesForOptions(opts Options) []Rule {
+	rules := Rules()
+	return append(rules, opts.ExtraRules...)
+}
+
+func ruleSeverity(rule Rule, configs map[string]RuleConfig) Severity {
+	config, ok := configs[rule.Code]
+	if !ok || config.Severity == "" {
+		return rule.Severity
+	}
+	return config.Severity
+}
+
+func ruleExcludedForFile(code string, file *File, configs map[string]RuleConfig) bool {
+	config, ok := configs[code]
+	if !ok {
+		return false
+	}
+	for _, pattern := range config.Exclude {
+		if pathGlobMatches(pattern, file.Name) || pathGlobMatches(pattern, file.Path) {
+			return true
+		}
+	}
+	return false
+}
+
+func statementSuppressesRule(stmt *Statement, code string) bool {
+	for _, entry := range stmt.SuppressedRules {
+		if entry == "*" || strings.HasPrefix(code, entry) {
+			return true
+		}
+	}
+	return false
+}
+
+func fileFindingSuppressed(file *File, finding Finding) bool {
+	if finding.Line == 0 {
+		return false
+	}
+	for i := range file.Statements {
+		stmt := &file.Statements[i]
+		if stmt.Line == finding.Line && statementSuppressesRule(stmt, finding.Rule) {
+			return true
+		}
+	}
+	return false
+}
+
+func pathGlobMatches(pattern, value string) bool {
+	pattern = path.Clean(strings.TrimSpace(pattern))
+	value = path.Clean(value)
+	if pattern == "." || value == "." {
+		return false
+	}
+	if ok, err := path.Match(pattern, value); err == nil && ok {
+		return true
+	}
+	return matchGlobSegments(strings.Split(pattern, "/"), strings.Split(value, "/"))
+}
+
+func matchGlobSegments(pattern, value []string) bool {
+	if len(pattern) == 0 {
+		return len(value) == 0
+	}
+	if pattern[0] == "**" {
+		for i := 0; i <= len(value); i++ {
+			if matchGlobSegments(pattern[1:], value[i:]) {
+				return true
+			}
+		}
+		return false
+	}
+	if len(value) == 0 {
+		return false
+	}
+	ok, err := path.Match(pattern[0], value[0])
+	if err != nil || !ok {
+		return false
+	}
+	return matchGlobSegments(pattern[1:], value[1:])
 }
 
 // ruleDisabled reports whether code matches any disabled entry — exact code
@@ -458,8 +579,9 @@ var strictNameRe = regexp.MustCompile(`^\d{10}_.+\.(up|down)\.sql$`)
 
 // rawStatement is one raw SQL statement plus the line it starts on.
 type rawStatement struct {
-	text string
-	line int
+	text            string
+	line            int
+	suppressedRules []string
 }
 
 // splitStatementsWithLines splits SQL into statements using the dialect-aware
@@ -471,28 +593,73 @@ func splitStatementsWithLines(raw string, mode scanMode) []rawStatement {
 	start := -1
 	end := 0
 	startLine := 0
+	lastStatementEndLine := 0
+	var pendingSuppressions []string
+	var activeSuppressions []string
 	for _, tok := range scanSQL(raw, mode) {
 		switch tok.kind {
 		case tokSemicolon:
 			if start >= 0 {
-				statements = append(statements, rawStatement{text: raw[start:end], line: startLine})
+				statements = append(statements, rawStatement{text: raw[start:end], line: startLine, suppressedRules: activeSuppressions})
 				start = -1
+				activeSuppressions = nil
+				lastStatementEndLine = tok.line
 			}
-		case tokWhitespace, tokComment:
+		case tokWhitespace:
 			// Never starts a statement; keep end untouched so trailing
 			// comments/whitespace are not included in the statement text.
+		case tokComment:
+			if start < 0 && tok.line != lastStatementEndLine {
+				pendingSuppressions = append(pendingSuppressions, parseNoLintDirective(tok.text)...)
+			}
 		default:
 			if start < 0 {
 				start = tok.start
 				startLine = tok.line
+				activeSuppressions = append([]string(nil), pendingSuppressions...)
+				pendingSuppressions = nil
 			}
 			end = tok.end
 		}
 	}
 	if start >= 0 {
-		statements = append(statements, rawStatement{text: raw[start:end], line: startLine})
+		statements = append(statements, rawStatement{text: raw[start:end], line: startLine, suppressedRules: activeSuppressions})
 	}
 	return statements
+}
+
+func parseNoLintDirective(comment string) []string {
+	trimmed := strings.TrimSpace(comment)
+	if !strings.HasPrefix(trimmed, "--") && !strings.HasPrefix(trimmed, "#") {
+		return nil
+	}
+	lower := strings.ToLower(comment)
+	idx := strings.Index(lower, "ptah:nolint")
+	markerLen := len("ptah:nolint")
+	if idx < 0 {
+		idx = strings.Index(lower, "atlas:nolint")
+		markerLen = len("atlas:nolint")
+	}
+	if idx < 0 {
+		return nil
+	}
+	rest := strings.TrimSpace(comment[idx+markerLen:])
+	if rest == "" {
+		return []string{"*"}
+	}
+	parts := strings.FieldsFunc(rest, isNoLintSeparator)
+	rules := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.ToUpper(strings.TrimSpace(part))
+		if part != "" {
+			rules = append(rules, part)
+		}
+	}
+	return rules
+}
+
+func isNoLintSeparator(r rune) bool {
+	return strings.ContainsRune(",;:/*)([]{}\"'` \t\r\n", r)
 }
 
 // canonicalize renders a statement in its display form: comments removed,
@@ -540,14 +707,4 @@ func tokenizeWords(sql string, mode scanMode) []string {
 		}
 	}
 	return words
-}
-
-// parseBestEffort parses a statement into ptah's DDL AST when it falls inside
-// the parser's supported subset, and returns nil otherwise.
-func parseBestEffort(sql string) ast.Node {
-	statements, err := parser.NewParser(sql).Parse()
-	if err != nil || statements == nil || len(statements.Statements) != 1 {
-		return nil
-	}
-	return statements.Statements[0]
 }
