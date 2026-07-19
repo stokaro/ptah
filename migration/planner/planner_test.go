@@ -10,6 +10,7 @@ import (
 	"github.com/stokaro/ptah/core/platform"
 	dbtypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/migration/planner"
+	"github.com/stokaro/ptah/migration/planner/dialects/mysql"
 	"github.com/stokaro/ptah/migration/safety"
 	"github.com/stokaro/ptah/migration/schemadiff"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
@@ -32,7 +33,7 @@ func TestGetPlanner(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "mariadb planner not implemented",
+			name:    "mariadb planner",
 			dialect: platform.MariaDB,
 			wantErr: false,
 		},
@@ -75,6 +76,15 @@ func TestGetPlanner(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetPlanner_MariaDBUsesMySQLPlanner(t *testing.T) {
+	c := qt.New(t)
+
+	plannerInstance := planner.GetPlanner(platform.MariaDB)
+	_, ok := plannerInstance.(*mysql.Planner)
+
+	c.Assert(ok, qt.IsTrue)
 }
 
 func TestRequiresNoTransaction(t *testing.T) {
