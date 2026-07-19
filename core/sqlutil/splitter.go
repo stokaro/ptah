@@ -65,7 +65,8 @@ func splitSQLStatements(sql string, dialect string) []string {
 			break
 		}
 		if skippingGoBatchLine {
-			if token.Type == lexer.TokenWhitespace && strings.ContainsAny(token.Value, "\r\n") {
+			if (token.Type == lexer.TokenWhitespace || token.Type == lexer.TokenComment) &&
+				strings.ContainsAny(token.Value, "\r\n") {
 				skippingGoBatchLine = false
 			}
 			continue
@@ -275,21 +276,66 @@ func (s *statementSplitState) keepSemicolonInsideStatement() bool {
 // utility batch separator command on its own line. Identifiers such as
 // "AS go" or variables such as "@go" are ordinary T-SQL tokens.
 func IsSQLServerGoBatchSeparatorAt(input string, start, end int) bool {
+	if !sqlServerGoLinePrefixIsEmpty(input, start) {
+		return false
+	}
+	return sqlServerGoTrailerIsBatchSeparator(input, end)
+}
+
+func sqlServerGoLinePrefixIsEmpty(input string, start int) bool {
 	for i := start - 1; i >= 0 && input[i] != '\n' && input[i] != '\r'; i-- {
 		if input[i] != ' ' && input[i] != '\t' {
 			return false
 		}
 	}
+	return true
+}
 
-	i := end
-	for i < len(input) && (input[i] == ' ' || input[i] == '\t') {
-		i++
+func sqlServerGoTrailerIsBatchSeparator(input string, pos int) bool {
+	i := pos
+	consumedCount := false
+	for {
+		i = skipSQLServerHorizontalSpace(input, i)
+		if !consumedCount && i < len(input) && input[i] >= '0' && input[i] <= '9' {
+			consumedCount = true
+			i = skipSQLServerDigits(input, i)
+			continue
+		}
+		switch {
+		case i >= len(input) || input[i] == '\n' || input[i] == '\r':
+			return true
+		case strings.HasPrefix(input[i:], "--"):
+			return true
+		case strings.HasPrefix(input[i:], "/*"):
+			next, ok := skipSQLServerBlockComment(input, i)
+			if !ok {
+				return false
+			}
+			i = next
+		default:
+			return false
+		}
 	}
-	for i < len(input) && input[i] >= '0' && input[i] <= '9' {
-		i++
+}
+
+func skipSQLServerHorizontalSpace(input string, pos int) int {
+	for pos < len(input) && (input[pos] == ' ' || input[pos] == '\t') {
+		pos++
 	}
-	for i < len(input) && (input[i] == ' ' || input[i] == '\t') {
-		i++
+	return pos
+}
+
+func skipSQLServerDigits(input string, pos int) int {
+	for pos < len(input) && input[pos] >= '0' && input[pos] <= '9' {
+		pos++
 	}
-	return i >= len(input) || input[i] == '\n' || input[i] == '\r' || strings.HasPrefix(input[i:], "--")
+	return pos
+}
+
+func skipSQLServerBlockComment(input string, pos int) (int, bool) {
+	commentEnd := strings.Index(input[pos+2:], "*/")
+	if commentEnd == -1 {
+		return pos, false
+	}
+	return pos + commentEnd + len("/**/"), true
 }
