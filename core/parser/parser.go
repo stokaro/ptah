@@ -10,6 +10,7 @@ import (
 
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/lexer"
+	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/core/sqlutil"
 )
 
@@ -25,6 +26,9 @@ type Parser struct {
 	previous  lexer.Token
 	startTime time.Time
 	timeout   time.Duration
+
+	dialect      string
+	capabilities capability.Capabilities
 }
 
 // NewParser creates a new parser with the given SQL input.
@@ -34,7 +38,7 @@ type Parser struct {
 // Example:
 //
 //	parser := NewParser("CREATE TABLE users (id INTEGER PRIMARY KEY);")
-func NewParser(input string) *Parser {
+func NewParser(input string, opts ...Option) *Parser {
 	normalized := sqlutil.NormalizeClientDelimiters(input)
 	l := lexer.NewLexer(normalized)
 	p := &Parser{
@@ -42,6 +46,9 @@ func NewParser(input string) *Parser {
 		input:     normalized,
 		startTime: time.Now(),
 		timeout:   30 * time.Second, // 30 second timeout to prevent infinite loops
+	}
+	for _, opt := range opts {
+		opt(p)
 	}
 	p.advance() // Load the first token
 	return p
@@ -212,13 +219,14 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 }
 
 func (p *Parser) parseCreateRoutine(target string, statementStart int) (ast.Node, error) {
-	if target == "PROCEDURE" {
-		return p.parseCreateRawRoutineStatement(statementStart)
-	}
-	return p.parseCreateFunction(statementStart)
+	return p.routineParser().parseCreateRoutine(p, target, statementStart)
 }
 
 func (p *Parser) parseCreateDefinerRoutine(statementStart int) (ast.Node, error) {
+	return p.routineParser().parseCreateDefinerRoutine(p, statementStart)
+}
+
+func (p *Parser) parseCreateDefinerRoutineBestEffort(statementStart int) (ast.Node, error) {
 	for !p.isAtEnd() && p.current.Type != lexer.TokenSemicolon {
 		if err := p.checkTimeout(); err != nil {
 			return nil, err
@@ -352,10 +360,10 @@ func (p *Parser) parseCreateOrReplaceStatement(statementStart int) (ast.Node, er
 		return p.parseCreateOrReplaceView()
 	}
 	if p.current.MatchIdentifierValue("FUNCTION") {
-		return p.parseCreateFunction(statementStart)
+		return p.parseCreateRoutine("FUNCTION", statementStart)
 	}
 	if p.current.MatchIdentifierValue("PROCEDURE") {
-		return p.parseCreateRawRoutineStatement(statementStart)
+		return p.parseCreateRoutine("PROCEDURE", statementStart)
 	}
 	if p.current.MatchIdentifierValue("TRIGGER") {
 		node, err := p.parseCreateTrigger(statementStart)
@@ -502,8 +510,8 @@ func (p *Parser) parseCreateFunction(statementStart int) (ast.Node, error) {
 	}
 	p.skipWhitespace()
 
-	if p.isSQLServerBracketedFunctionNameStart() {
-		return p.parseCreateRawSQLServerFunction(statementStart)
+	if p.isSQLServerBracketedRoutineNameStart() {
+		return p.parseCreateRawSQLServerRoutine(statementStart)
 	}
 
 	functionName, err := p.parseQualifiedIdentifier("function name")
@@ -528,21 +536,21 @@ func (p *Parser) parseCreateFunction(statementStart int) (ast.Node, error) {
 	return function, nil
 }
 
-func (p *Parser) isSQLServerBracketedFunctionNameStart() bool {
+func (p *Parser) isSQLServerBracketedRoutineNameStart() bool {
 	// Bracketed function names enter T-SQL's routine-body sub-language. Until
 	// #323 adds a dialect-aware body parser, preserve the statement as raw SQL.
 	return p.current.MatchOperatorValue("[")
 }
 
-func (p *Parser) parseCreateRawSQLServerFunction(statementStart int) (ast.Node, error) {
-	sql, err := p.collectRawSQLServerFunction(statementStart)
+func (p *Parser) parseCreateRawSQLServerRoutine(statementStart int) (ast.Node, error) {
+	sql, err := p.collectRawSQLServerRoutine(statementStart)
 	if err != nil {
 		return nil, err
 	}
 	return ast.NewRawSQL(sql), nil
 }
 
-func (p *Parser) collectRawSQLServerFunction(statementStart int) (string, error) {
+func (p *Parser) collectRawSQLServerRoutine(statementStart int) (string, error) {
 	blockDepth := 0
 	caseDepth := 0
 	for !p.isAtEnd() {
@@ -560,9 +568,14 @@ func (p *Parser) collectRawSQLServerFunction(statementStart int) (string, error)
 			p.advance()
 			return sql, nil
 		}
+		if p.current.MatchIdentifierValue("GO") && blockDepth == 0 {
+			sql := p.rawStatementFragment(statementStart, p.current.Start)
+			p.advance()
+			return sql, nil
+		}
 
 		if p.current.Type == lexer.TokenIdentifier {
-			if complete := trackSQLServerRawFunctionKeyword(strings.ToUpper(p.current.Value), &blockDepth, &caseDepth); complete {
+			if complete := trackSQLServerRawRoutineKeyword(strings.ToUpper(p.current.Value), &blockDepth, &caseDepth); complete {
 				end := p.current.End
 				p.advance()
 				return p.rawStatementFragment(statementStart, end), nil
@@ -572,7 +585,7 @@ func (p *Parser) collectRawSQLServerFunction(statementStart int) (string, error)
 	}
 
 	if blockDepth > 0 {
-		return "", fmt.Errorf("unterminated CREATE FUNCTION body at position %d", p.current.Start)
+		return "", fmt.Errorf("unterminated CREATE routine body at position %d", p.current.Start)
 	}
 	return p.rawStatementFragment(statementStart, p.previous.End), nil
 }
@@ -592,7 +605,7 @@ func (p *Parser) skipSQLServerBracketedIdentifier() {
 	}
 }
 
-func trackSQLServerRawFunctionKeyword(keyword string, blockDepth, caseDepth *int) bool {
+func trackSQLServerRawRoutineKeyword(keyword string, blockDepth, caseDepth *int) bool {
 	switch keyword {
 	case "BEGIN":
 		(*blockDepth)++

@@ -7,6 +7,8 @@ import (
 
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/parser"
+	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/core/renderer"
 )
 
@@ -15,6 +17,29 @@ func TestNewParser(t *testing.T) {
 
 	p := parser.NewParser("CREATE TABLE users (id INTEGER);")
 	c.Assert(p, qt.IsNotNil)
+	c.Assert(p.Dialect(), qt.Equals, "")
+	c.Assert(p.Capabilities(), qt.IsNil)
+}
+
+func TestNewParser_WithDialectAndCapabilities(t *testing.T) {
+	c := qt.New(t)
+
+	caps := capability.Postgres13()
+	p := parser.NewParser(
+		"CREATE TABLE users (id INTEGER);",
+		parser.WithDialect("postgresql"),
+		parser.WithCapabilities(caps),
+	)
+
+	c.Assert(p.Dialect(), qt.Equals, platform.Postgres)
+	c.Assert(p.Capabilities().Has(capability.CreateOrReplaceTrigger), qt.IsFalse)
+
+	caps[capability.CreateOrReplaceTrigger] = true
+	c.Assert(p.Capabilities().Has(capability.CreateOrReplaceTrigger), qt.IsFalse)
+
+	parserCaps := p.Capabilities()
+	parserCaps[capability.CreateOrReplaceTrigger] = true
+	c.Assert(p.Capabilities().Has(capability.CreateOrReplaceTrigger), qt.IsFalse)
 }
 
 func TestParser_ParseCreateTable_Basic(t *testing.T) {
@@ -998,6 +1023,54 @@ CREATE TABLE after_fn (id int);`
 	c.Assert(raw.SQL, qt.Contains, "SELECT @a AS [END]]value];")
 	c.Assert(raw.SQL, qt.Contains, "RETURN\nEND")
 	c.Assert(raw.SQL, qt.Not(qt.Contains), "CREATE TABLE after_fn")
+}
+
+func TestParser_ParseSQLServerDialectUnbracketedFunctionAsRawSQL(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE FUNCTION dbo.f7 (@a int) RETURNS int AS BEGIN
+  RETURN @a
+	END
+CREATE TABLE after_fn (id int);`
+	_, err := parser.NewParser(sql).Parse()
+	c.Assert(err, qt.IsNotNil)
+
+	statements, err := parser.NewParser(sql, parser.WithDialect(platform.SQLServer)).Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 2)
+
+	raw, ok := statements.Statements[0].(*ast.RawSQLNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(raw.SQL, qt.Contains, "CREATE FUNCTION dbo.f7")
+	c.Assert(raw.SQL, qt.Contains, "RETURN @a")
+	c.Assert(raw.SQL, qt.Not(qt.Contains), "CREATE TABLE after_fn")
+
+	createTable, ok := statements.Statements[1].(*ast.CreateTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(createTable.Name, qt.Equals, "after_fn")
+}
+
+func TestParser_ParseSQLServerDialectProcedureStopsAtGoBatch(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE PROCEDURE dbo.p1 AS
+  SELECT 1
+GO
+CREATE TABLE after_proc (id int);`
+	statements, err := parser.NewParser(sql, parser.WithDialect("mssql")).Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 2)
+
+	raw, ok := statements.Statements[0].(*ast.RawSQLNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(raw.SQL, qt.Contains, "CREATE PROCEDURE dbo.p1")
+	c.Assert(raw.SQL, qt.Contains, "SELECT 1")
+	c.Assert(raw.SQL, qt.Not(qt.Contains), "GO")
+	c.Assert(raw.SQL, qt.Not(qt.Contains), "CREATE TABLE after_proc")
+
+	createTable, ok := statements.Statements[1].(*ast.CreateTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(createTable.Name, qt.Equals, "after_proc")
 }
 
 func TestParser_ParseCreateProcedureAsRawSQL(t *testing.T) {
