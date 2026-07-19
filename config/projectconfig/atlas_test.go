@@ -149,12 +149,14 @@ func TestLoadMergesAtlasOverPtah(t *testing.T) {
 	ptahPath := filepath.Join(dir, "ptah.yaml")
 	atlasPath := filepath.Join(dir, "atlas.hcl")
 	c.Assert(os.WriteFile(ptahPath, []byte(`url: postgres://ptah/db
+exclude: [tmp_*]
 migration:
   dir: ./ptah-migrations
   exec_order: non-linear
 `), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(atlasPath, []byte(`env "local" {
   url = "postgres://atlas/db"
+  exclude = []
   migration {
     dir = "file://atlas-migrations"
   }
@@ -168,6 +170,7 @@ migration:
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(cfg.DatabaseURL, qt.Equals, "postgres://atlas/db")
+	c.Assert(cfg.Exclude, qt.DeepEquals, []string{})
 	c.Assert(cfg.Migration.Dir, qt.Equals, "atlas-migrations")
 	c.Assert(cfg.Migration.ExecOrder, qt.Equals, "non-linear")
 	c.Assert(cfg.Migration.Format, qt.Equals, "atlas")

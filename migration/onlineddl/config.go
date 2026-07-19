@@ -17,6 +17,7 @@
 package onlineddl
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -66,9 +67,55 @@ type Config struct {
 	Fallback string `yaml:"fallback"`
 }
 
-// ptahConfig is the ptah.yaml envelope.
+// ptahConfig is the top-level ptah.yaml envelope.
 type ptahConfig struct {
-	OnlineDDL Config `yaml:"online_ddl"`
+	ptahSettings `yaml:",inline"`
+	Env          map[string]ptahSettings `yaml:"env"`
+}
+
+type ptahSettings struct {
+	URL       string        `yaml:"url"`
+	Dev       string        `yaml:"dev"`
+	Schemas   []string      `yaml:"schemas"`
+	Exclude   []string      `yaml:"exclude"`
+	Migration yamlMigration `yaml:"migration"`
+	Lint      yamlLint      `yaml:"lint"`
+	Migrate   yamlMigrate   `yaml:"migrate"`
+	OnlineDDL yamlOnlineDDL `yaml:"online_ddl"`
+}
+
+type yamlMigration struct {
+	Dir                  string `yaml:"dir"`
+	Format               string `yaml:"format"`
+	RevisionsSchema      string `yaml:"revisions_schema"`
+	RevisionsTable       string `yaml:"revisions_table"`
+	RevisionFormat       string `yaml:"revision_format"`
+	LockTimeout          string `yaml:"lock_timeout"`
+	StatementTimeout     string `yaml:"statement_timeout"`
+	ConnectTimeout       string `yaml:"connect_timeout"`
+	MigrationLockTimeout string `yaml:"migration_lock_timeout"`
+	ExecOrder            string `yaml:"exec_order"`
+}
+
+type yamlLint struct {
+	Dialect       string   `yaml:"dialect"`
+	DisabledRules []string `yaml:"disabled-rules"`
+	Latest        *int     `yaml:"latest"`
+}
+
+type yamlMigrate struct {
+	Generate yamlMigrateGenerate `yaml:"generate"`
+}
+
+type yamlMigrateGenerate struct {
+	ShadowDatabaseURL string `yaml:"shadow_db"`
+}
+
+type yamlOnlineDDL struct {
+	Tool          *string   `yaml:"tool"`
+	ThresholdRows *int64    `yaml:"threshold_rows"`
+	Args          *[]string `yaml:"args"`
+	Fallback      *string   `yaml:"fallback"`
 }
 
 // Enabled reports whether automatic threshold routing is configured.
@@ -98,10 +145,17 @@ func (c Config) Validate() error {
 	return nil
 }
 
-// LoadConfig reads the online_ddl section of a ptah.yaml file. A missing file
-// at the conventional location is not an error — it yields a zero Config
-// (automatic routing disabled); an unreadable, malformed or invalid file is.
+// LoadConfig reads the top-level online_ddl section of a ptah.yaml file. A
+// missing file at the conventional location is not an error — it yields a zero
+// Config (automatic routing disabled); an unreadable, malformed or invalid
+// file is.
 func LoadConfig(path string) (*Config, error) {
+	return LoadConfigForEnv(path, "")
+}
+
+// LoadConfigForEnv reads the online_ddl section of a ptah.yaml file after
+// applying the selected project environment, when present.
+func LoadConfigForEnv(path, envName string) (*Config, error) {
 	raw, err := os.ReadFile(path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
@@ -111,11 +165,68 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	var cfg ptahConfig
-	if err := yaml.Unmarshal(raw, &cfg); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(raw))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse ptah config %s: %w", path, err)
 	}
-	if err := cfg.OnlineDDL.Validate(); err != nil {
+	onlineDDL := selectOnlineDDLConfig(cfg, envName)
+	if err := onlineDDL.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid online_ddl config in %s: %w", path, err)
 	}
-	return &cfg.OnlineDDL, nil
+	return &onlineDDL, nil
+}
+
+func selectOnlineDDLConfig(cfg ptahConfig, envName string) Config {
+	base := cfg.OnlineDDL.config()
+	if envName != "" {
+		if env, ok := cfg.Env[envName]; ok {
+			return mergeOnlineDDL(base, env.OnlineDDL)
+		}
+		return base
+	}
+	if len(cfg.Env) != 1 {
+		return base
+	}
+	for _, env := range cfg.Env {
+		return mergeOnlineDDL(base, env.OnlineDDL)
+	}
+	return base
+}
+
+func (c yamlOnlineDDL) config() Config {
+	var cfg Config
+	if c.Tool != nil {
+		cfg.Tool = *c.Tool
+	}
+	if c.ThresholdRows != nil {
+		cfg.ThresholdRows = *c.ThresholdRows
+	}
+	if c.Args != nil {
+		cfg.Args = append([]string{}, (*c.Args)...)
+	}
+	if c.Fallback != nil {
+		cfg.Fallback = *c.Fallback
+	}
+	return cfg
+}
+
+func mergeOnlineDDL(base Config, override yamlOnlineDDL) Config {
+	result := base
+	if override.Tool != nil {
+		result.Tool = *override.Tool
+		if *override.Tool == "" && override.ThresholdRows == nil {
+			result.ThresholdRows = 0
+		}
+	}
+	if override.ThresholdRows != nil {
+		result.ThresholdRows = *override.ThresholdRows
+	}
+	if override.Args != nil {
+		result.Args = append([]string{}, (*override.Args)...)
+	}
+	if override.Fallback != nil {
+		result.Fallback = *override.Fallback
+	}
+	return result
 }

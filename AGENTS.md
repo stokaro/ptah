@@ -2,6 +2,13 @@
 
 This file gives coding agents repository-local guidance for working in Ptah.
 
+## Language And Spelling
+
+Use American English spelling in code, comments, documentation, issue/PR text,
+and user-facing CLI output unless preserving an exact external quote or protocol
+token. Prefer spellings such as `behavior`, `color`, `canceled`, `initialize`,
+`normalize`, and `analyze`.
+
 ## Code Style And Linting
 
 Ptah treats `.golangci.yml` as a strict contract. Fix code to satisfy the configured linters instead of relaxing thresholds, disabling checks, or broadening exclusions. In particular, keep `revive` `error-strings` enabled and preserve the current "stricter wins" lint posture unless a maintainer explicitly asks for a config change.

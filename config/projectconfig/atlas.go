@@ -14,14 +14,12 @@ import (
 )
 
 // LoadAtlasFile loads the supported subset of an Atlas project config file. A
-// missing file returns an empty config unless envName is set.
+// missing file returns an empty config.
 func LoadAtlasFile(path, envName string) (Config, error) {
 	raw, err := os.ReadFile(path)
 	switch {
-	case errors.Is(err, fs.ErrNotExist) && envName == "":
-		return Config{}, nil
 	case errors.Is(err, fs.ErrNotExist):
-		return Config{}, fmt.Errorf("atlas config %s: %w", path, err)
+		return Config{}, nil
 	case err != nil:
 		return Config{}, fmt.Errorf("failed to read atlas config %s: %w", path, err)
 	}
@@ -120,6 +118,7 @@ func (p atlasParser) parseEnv(block *hclsyntax.Block) (atlasEnv, error) {
 				return atlasEnv{}, err
 			}
 			env.config.Exclude = values
+			env.config.presence.exclude = true
 		default:
 			return atlasEnv{}, unsupportedAttr(attrName, attr)
 		}

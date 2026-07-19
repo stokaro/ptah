@@ -15,33 +15,49 @@ const (
 // file formats into this shape; command code should consume this type instead
 // of branching on the original file format.
 type Config struct {
-	// EnvName is the selected Atlas env name, when the source had one.
+	// EnvName is the selected project env name, when the source had one.
 	EnvName string
 	// DatabaseURL is the target database URL used by migration commands.
 	DatabaseURL string
 	// DevURL is the disposable dev/shadow database URL.
 	DevURL string
+	// Schemas restricts database introspection to selected schemas.
+	Schemas []string
 	// Exclude lists schema patterns excluded by project config.
 	Exclude []string
 	// Migration holds migration-directory and runtime settings.
 	Migration MigrationConfig
 	// Lint holds migration-lint settings.
 	Lint LintConfig
+
+	presence configPresence
+}
+
+type configPresence struct {
+	schemas           bool
+	exclude           bool
+	lintDisabledRules bool
 }
 
 // MigrationConfig is the migration section of the project config IR.
 type MigrationConfig struct {
-	Dir             string
-	Format          string
-	RevisionsSchema string
-	RevisionFormat  string
-	LockTimeout     string
-	ExecOrder       string
+	Dir                  string
+	Format               string
+	RevisionsSchema      string
+	RevisionsTable       string
+	RevisionFormat       string
+	LockTimeout          string
+	StatementTimeout     string
+	ConnectTimeout       string
+	MigrationLockTimeout string
+	ExecOrder            string
 }
 
 // LintConfig is the lint section of the project config IR.
 type LintConfig struct {
-	Latest *int
+	Dialect       string
+	DisabledRules []string
+	Latest        *int
 }
 
 // Merge returns base overridden by non-zero values from override.
@@ -56,11 +72,19 @@ func Merge(base, override Config) Config {
 	if override.DevURL != "" {
 		result.DevURL = override.DevURL
 	}
-	if len(override.Exclude) > 0 {
+	if override.presence.schemas || len(override.Schemas) > 0 {
+		result.Schemas = slices.Clone(override.Schemas)
+		result.presence.schemas = true
+	}
+	if override.presence.exclude || len(override.Exclude) > 0 {
 		result.Exclude = slices.Clone(override.Exclude)
+		result.presence.exclude = true
 	}
 	result.Migration = mergeMigration(result.Migration, override.Migration)
-	result.Lint = mergeLint(result.Lint, override.Lint)
+	result.Lint = mergeLint(result.Lint, override.Lint, override.presence)
+	if override.presence.lintDisabledRules || len(override.Lint.DisabledRules) > 0 {
+		result.presence.lintDisabledRules = true
+	}
 	return result
 }
 
@@ -75,11 +99,23 @@ func mergeMigration(base, override MigrationConfig) MigrationConfig {
 	if override.RevisionsSchema != "" {
 		result.RevisionsSchema = override.RevisionsSchema
 	}
+	if override.RevisionsTable != "" {
+		result.RevisionsTable = override.RevisionsTable
+	}
 	if override.RevisionFormat != "" {
 		result.RevisionFormat = override.RevisionFormat
 	}
 	if override.LockTimeout != "" {
 		result.LockTimeout = override.LockTimeout
+	}
+	if override.StatementTimeout != "" {
+		result.StatementTimeout = override.StatementTimeout
+	}
+	if override.ConnectTimeout != "" {
+		result.ConnectTimeout = override.ConnectTimeout
+	}
+	if override.MigrationLockTimeout != "" {
+		result.MigrationLockTimeout = override.MigrationLockTimeout
 	}
 	if override.ExecOrder != "" {
 		result.ExecOrder = override.ExecOrder
@@ -87,8 +123,14 @@ func mergeMigration(base, override MigrationConfig) MigrationConfig {
 	return result
 }
 
-func mergeLint(base, override LintConfig) LintConfig {
+func mergeLint(base, override LintConfig, presence configPresence) LintConfig {
 	result := base
+	if override.Dialect != "" {
+		result.Dialect = override.Dialect
+	}
+	if presence.lintDisabledRules || len(override.DisabledRules) > 0 {
+		result.DisabledRules = slices.Clone(override.DisabledRules)
+	}
 	if override.Latest != nil {
 		latest := *override.Latest
 		result.Latest = &latest
