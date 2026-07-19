@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/stokaro/ptah/core/goschema/internal/parseutils"
+	"github.com/stokaro/ptah/core/ptaherr"
 )
 
 // knownIndexAttributes lists every attribute key recognized on a
@@ -105,32 +106,53 @@ var knownSchemaAttributes = map[string]bool{
 // Platform-specific overrides (platform.*) are always allowed. This catches
 // typos like default_fn-vs-default_expr at parse time instead of silently
 // dropping them and producing wrong SQL.
-func validateAttributes(kv map[string]string, known map[string]bool, directive, location string) error {
+type annotationErrorContext struct {
+	file      string
+	line      int
+	directive string
+	location  string
+}
+
+func validateAttributes(kv map[string]string, known map[string]bool, ctx annotationErrorContext) error {
 	for k := range kv {
 		if known[k] || strings.HasPrefix(k, "platform.") {
 			continue
 		}
 		slog.Error("unknown annotation attribute",
-			"directive", directive,
+			"directive", ctx.directive,
 			"attribute", k,
-			"location", location,
+			"location", ctx.location,
 		)
-		return fmt.Errorf("unknown annotation attribute %q on %s at %s", k, directive, location)
+		return &ptaherr.ParseError{
+			File:      ctx.file,
+			Line:      ctx.line,
+			Directive: strings.TrimPrefix(ctx.directive, "//"),
+			Attribute: k,
+			Err:       ptaherr.ErrUnknownAttribute,
+			Message:   fmt.Sprintf("unknown annotation attribute %q on %s at %s", k, ctx.directive, ctx.location),
+		}
 	}
 	return nil
 }
 
-func requireAttributes(kv map[string]string, required []string, directive, location string) error {
+func requireAttributes(kv map[string]string, required []string, ctx annotationErrorContext) error {
 	for _, key := range required {
 		if strings.TrimSpace(kv[key]) != "" {
 			continue
 		}
 		slog.Error("missing required annotation attribute",
-			"directive", directive,
+			"directive", ctx.directive,
 			"attribute", key,
-			"location", location,
+			"location", ctx.location,
 		)
-		return fmt.Errorf("missing required annotation attribute %q on %s at %s", key, directive, location)
+		return &ptaherr.ParseError{
+			File:      ctx.file,
+			Line:      ctx.line,
+			Directive: strings.TrimPrefix(ctx.directive, "//"),
+			Attribute: key,
+			Err:       ptaherr.ErrMissingRequiredAttribute,
+			Message:   fmt.Sprintf("missing required annotation attribute %q on %s at %s", key, ctx.directive, ctx.location),
+		}
 	}
 	return nil
 }
@@ -149,7 +171,11 @@ func (s *schemaParseState) parseFieldComment(
 	if len(field.Names) > 0 {
 		location = structName + "." + field.Names[0].Name
 	}
-	if err := validateAttributes(kv, knownFieldAttributes, "//migrator:schema:field", location); err != nil {
+	if err := validateAttributes(
+		kv,
+		knownFieldAttributes,
+		s.annotationContext(comment, "//migrator:schema:field", location),
+	); err != nil {
 		return err
 	}
 
@@ -177,7 +203,14 @@ func (s *schemaParseState) parseFieldComment(
 
 		identityGeneration := normalizeIdentityGeneration(kv["identity_generation"])
 		if kv["identity_generation"] != "" && identityGeneration == "" {
-			return fmt.Errorf("invalid identity_generation %q on //migrator:schema:field at %s", kv["identity_generation"], location)
+			return &ptaherr.ParseError{
+				File:      s.filename,
+				Line:      s.annotationContext(comment, "//migrator:schema:field", location).line,
+				Directive: "migrator:schema:field",
+				Attribute: "identity_generation",
+				Err:       ptaherr.ErrInvalidAttributeValue,
+				Message:   fmt.Sprintf("invalid identity_generation %q on //migrator:schema:field at %s", kv["identity_generation"], location),
+			}
 		}
 		if identityGeneration == "" && hasIdentitySettings(kv) {
 			identityGeneration = "BY_DEFAULT"
@@ -273,7 +306,11 @@ func (s *schemaParseState) parseEmbeddedComment(comment *ast.Comment, field *ast
 
 func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName string) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	if err := validateAttributes(kv, knownIndexAttributes, "//migrator:schema:index", structName); err != nil {
+	if err := validateAttributes(
+		kv,
+		knownIndexAttributes,
+		s.annotationContext(comment, "//migrator:schema:index", structName),
+	); err != nil {
 		return err
 	}
 
@@ -300,7 +337,14 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 	if g := strings.TrimSpace(kv["granularity"]); g != "" {
 		n, err := strconv.Atoi(g)
 		if err != nil || n < 0 {
-			return fmt.Errorf("invalid granularity %q on //migrator:schema:index at %s (must be a non-negative integer)", g, structName)
+			return &ptaherr.ParseError{
+				File:      s.filename,
+				Line:      s.annotationContext(comment, "//migrator:schema:index", structName).line,
+				Directive: "migrator:schema:index",
+				Attribute: "granularity",
+				Err:       ptaherr.ErrInvalidAttributeValue,
+				Message:   fmt.Sprintf("invalid granularity %q on //migrator:schema:index at %s (must be a non-negative integer)", g, structName),
+			}
 		}
 		granularity = n
 	}
@@ -394,10 +438,18 @@ func (s *schemaParseState) parseExtensionComment(comment *ast.Comment) {
 
 func (s *schemaParseState) parseSchemaComment(comment *ast.Comment) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	if err := validateAttributes(kv, knownSchemaAttributes, "//migrator:schema:schema", kv["name"]); err != nil {
+	if err := validateAttributes(
+		kv,
+		knownSchemaAttributes,
+		s.annotationContext(comment, "//migrator:schema:schema", kv["name"]),
+	); err != nil {
 		return err
 	}
-	if err := requireAttributes(kv, []string{"name"}, "//migrator:schema:schema", kv["name"]); err != nil {
+	if err := requireAttributes(
+		kv,
+		[]string{"name"},
+		s.annotationContext(comment, "//migrator:schema:schema", kv["name"]),
+	); err != nil {
 		return err
 	}
 
@@ -424,6 +476,8 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 }
 
 type schemaParseState struct {
+	filename              string
+	fset                  *token.FileSet
 	tableNameToStructName map[string]string
 	globalEnumsMap        map[string]Enum
 	embeddedFields        []EmbeddedField
@@ -449,11 +503,29 @@ type structDeclaration struct {
 	structType *ast.StructType
 }
 
-func newSchemaParseState() *schemaParseState {
+func newSchemaParseState(filename string, fset *token.FileSet) *schemaParseState {
 	return &schemaParseState{
+		filename:              filename,
+		fset:                  fset,
 		tableNameToStructName: make(map[string]string),
 		globalEnumsMap:        make(map[string]Enum),
 	}
+}
+
+func (s *schemaParseState) annotationContext(
+	comment *ast.Comment,
+	directive string,
+	location string,
+) annotationErrorContext {
+	ctx := annotationErrorContext{
+		file:      s.filename,
+		directive: directive,
+		location:  location,
+	}
+	if s.fset != nil && comment != nil {
+		ctx.line = s.fset.Position(comment.Slash).Line
+	}
+	return ctx
 }
 
 func (s *schemaParseState) parseStructComment(comment *ast.Comment, structName string) error {
@@ -556,10 +628,14 @@ func ParseFile(filename string) (Database, error) {
 	f, err := parser.ParseFile(fset, filename, nil, parser.ParseComments)
 	if err != nil {
 		slog.Error("Failed to parse file", "error", err)
-		return Database{}, fmt.Errorf("parse Go file %q: %w", filename, err)
+		return Database{}, &ptaherr.ParseError{
+			File:    filename,
+			Err:     err,
+			Message: fmt.Sprintf("parse Go file %q: %v", filename, err),
+		}
 	}
 
-	return parseFileAST(f)
+	return parseFileAST(filename, fset, f)
 }
 
 // ParseSource parses a Go source string and returns the database schema.
@@ -569,14 +645,18 @@ func ParseSource(filename string, source any) (Database, error) {
 	f, err := parser.ParseFile(fset, filename, source, parser.ParseComments)
 	if err != nil {
 		slog.Error("Failed to parse file", "error", err)
-		return Database{}, fmt.Errorf("parse Go source %q: %w", filename, err)
+		return Database{}, &ptaherr.ParseError{
+			File:    filename,
+			Err:     err,
+			Message: fmt.Sprintf("parse Go source %q: %v", filename, err),
+		}
 	}
 
-	return parseFileAST(f)
+	return parseFileAST(filename, fset, f)
 }
 
-func parseFileAST(f *ast.File) (Database, error) {
-	state := newSchemaParseState()
+func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (Database, error) {
+	state := newSchemaParseState(filename, fset)
 	if err := state.processFileAST(f); err != nil {
 		return Database{}, err
 	}
@@ -821,10 +901,18 @@ func (s *schemaParseState) parseFunctionComment(comment *ast.Comment, structName
 
 func (s *schemaParseState) parseViewComment(comment *ast.Comment, structName string) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	if err := validateAttributes(kv, knownViewAttributes, "//migrator:schema:view", structName); err != nil {
+	if err := validateAttributes(
+		kv,
+		knownViewAttributes,
+		s.annotationContext(comment, "//migrator:schema:view", structName),
+	); err != nil {
 		return err
 	}
-	if err := requireAttributes(kv, []string{"name", "body"}, "//migrator:schema:view", structName); err != nil {
+	if err := requireAttributes(
+		kv,
+		[]string{"name", "body"},
+		s.annotationContext(comment, "//migrator:schema:view", structName),
+	); err != nil {
 		return err
 	}
 	s.views = append(s.views, View{
@@ -839,10 +927,18 @@ func (s *schemaParseState) parseViewComment(comment *ast.Comment, structName str
 
 func (s *schemaParseState) parseMaterializedViewComment(comment *ast.Comment, structName string) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	if err := validateAttributes(kv, knownMaterializedViewAttributes, "//migrator:schema:matview", structName); err != nil {
+	if err := validateAttributes(
+		kv,
+		knownMaterializedViewAttributes,
+		s.annotationContext(comment, "//migrator:schema:matview", structName),
+	); err != nil {
 		return err
 	}
-	if err := requireAttributes(kv, []string{"name", "body"}, "//migrator:schema:matview", structName); err != nil {
+	if err := requireAttributes(
+		kv,
+		[]string{"name", "body"},
+		s.annotationContext(comment, "//migrator:schema:matview", structName),
+	); err != nil {
 		return err
 	}
 	refreshStrategy := kv["refresh_strategy"]
@@ -863,10 +959,18 @@ func (s *schemaParseState) parseMaterializedViewComment(comment *ast.Comment, st
 
 func (s *schemaParseState) parseTriggerComment(comment *ast.Comment, structName string) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	if err := validateAttributes(kv, knownTriggerAttributes, "//migrator:schema:trigger", structName); err != nil {
+	if err := validateAttributes(
+		kv,
+		knownTriggerAttributes,
+		s.annotationContext(comment, "//migrator:schema:trigger", structName),
+	); err != nil {
 		return err
 	}
-	if err := requireAttributes(kv, []string{"name", "table", "timing", "event", "body"}, "//migrator:schema:trigger", structName); err != nil {
+	if err := requireAttributes(
+		kv,
+		[]string{"name", "table", "timing", "event", "body"},
+		s.annotationContext(comment, "//migrator:schema:trigger", structName),
+	); err != nil {
 		return err
 	}
 	trigger := Trigger{

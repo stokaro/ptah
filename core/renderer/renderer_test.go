@@ -8,6 +8,7 @@ import (
 
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/core/renderer"
 )
 
@@ -198,6 +199,11 @@ func TestRenderSQL_UnsupportedDialect(t *testing.T) {
 	sql, err := renderer.RenderSQL("sqlserver", comment)
 	c.Assert(sql, qt.Equals, "")
 	c.Assert(err, qt.ErrorMatches, "unsupported database dialect: sqlserver")
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
+
+	var renderErr *ptaherr.RenderError
+	c.Assert(err, qt.ErrorAs, &renderErr)
+	c.Assert(renderErr.Dialect, qt.Equals, "sqlserver")
 }
 
 func TestRenderer_Interface(t *testing.T) {

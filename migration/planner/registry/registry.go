@@ -12,6 +12,7 @@ import (
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/platform/capability"
+	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
@@ -73,14 +74,22 @@ func Register(dialect string, factory Factory) error {
 func Get(dialect string, opts Options) (Planner, error) {
 	normalized := normalizeRegistryDialect(dialect)
 	if normalized == "" {
-		return nil, fmt.Errorf("unsupported database dialect: %s", dialect)
+		return nil, &ptaherr.PlanError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrUnsupportedDialect,
+			Message: fmt.Sprintf("unsupported database dialect: %s", dialect),
+		}
 	}
 
 	mu.RLock()
 	factory, exists := factories[normalized]
 	mu.RUnlock()
 	if !exists {
-		return nil, fmt.Errorf("unsupported database dialect: %s", dialect)
+		return nil, &ptaherr.PlanError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrUnsupportedDialect,
+			Message: fmt.Sprintf("unsupported database dialect: %s", dialect),
+		}
 	}
 	planner := factory(opts)
 	if planner == nil {
