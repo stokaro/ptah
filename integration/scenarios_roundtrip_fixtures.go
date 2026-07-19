@@ -71,13 +71,12 @@ var roundTripFixtures = []roundTripFixture{
 	},
 	{
 		Name:        "mutual_fk_cycle",
-		Description: "mutual foreign-key cycle must either generate executable SQL or fail cleanly",
+		Description: "mutual foreign-key cycle is generated, applied, introspected, and rolled back",
 		Versions:    []string{"029-roundtrip-mutual-cycle"},
-		// blocked on #137: circular dependency handling still warns and emits broken DDL.
+		// blocked on #127: MySQL/MariaDB need child-before-parent table drops.
 		BlockedByDialect: map[string]string{
-			"postgres": "#137",
-			"mysql":    "#137",
-			"mariadb":  "#137",
+			"mysql":   "#127",
+			"mariadb": "#127",
 		},
 	},
 	{
