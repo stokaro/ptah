@@ -9,6 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/dbschema"
 )
@@ -22,21 +23,41 @@ func TestMigrateGenerateCommandExposesShadowDBFlag(t *testing.T) {
 	c.Assert(cmd.Flags().Lookup(generateShadowDBFlag), qt.IsNotNil)
 	c.Assert(cmd.Flags().Lookup(generateMigrationsDirFlag), qt.IsNotNil)
 	c.Assert(cmd.Flags().Lookup("config"), qt.IsNotNil)
+	c.Assert(cmd.Flags().Lookup("env"), qt.IsNotNil)
 }
 
-func TestEffectiveMigrateGenerateShadowDB(t *testing.T) {
+func TestMigrateGenerateProjectConfigPrecedence(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	path := filepath.Join(dir, "ptah.yaml")
-	c.Assert(os.WriteFile(path, []byte("migrate:\n  generate:\n    shadow_db: postgres://localhost/shadow\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "ptah.yaml"), []byte("migrate:\n  generate:\n    shadow_db: postgres://localhost/ptah_shadow\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(`env "local" {
+  dev = "postgres://localhost/atlas_shadow"
+}
+`), 0o600), qt.IsNil)
 
-	shadowDB, err := effectiveMigrateGenerateShadowDB("", path)
+	originalWD, err := os.Getwd()
 	c.Assert(err, qt.IsNil)
-	c.Assert(shadowDB, qt.Equals, "postgres://localhost/shadow")
+	c.Assert(os.Chdir(dir), qt.IsNil)
+	defer func() {
+		c.Assert(os.Chdir(originalWD), qt.IsNil)
+	}()
 
-	shadowDB, err = effectiveMigrateGenerateShadowDB("postgres://localhost/flag_shadow", path)
+	cmd := newMigrateGenerateCommand()
+	c.Assert(cmd.ParseFlags([]string{"--shadow-db", "postgres://localhost/flag_shadow"}), qt.IsNil)
+	flagShadow, err := cmd.Flags().GetString(generateShadowDBFlag)
 	c.Assert(err, qt.IsNil)
+	cfg, err := dbcli.LoadProjectConfig(cmd, "")
+	c.Assert(err, qt.IsNil)
+
+	shadowDB := dbcli.EffectiveString(cmd, generateShadowDBFlag, flagShadow, cfg.DevURL)
+
 	c.Assert(shadowDB, qt.Equals, "postgres://localhost/flag_shadow")
+
+	cmd = newMigrateGenerateCommand()
+	cfg, err = dbcli.LoadProjectConfig(cmd, "")
+	c.Assert(err, qt.IsNil)
+	shadowDB = dbcli.EffectiveString(cmd, generateShadowDBFlag, "", cfg.DevURL)
+	c.Assert(shadowDB, qt.Equals, "postgres://localhost/atlas_shadow")
 }
 
 func TestAddMigrateGenerateCommandIsIdempotent(t *testing.T) {

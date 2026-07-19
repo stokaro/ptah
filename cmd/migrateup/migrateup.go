@@ -111,6 +111,7 @@ var migrateUpFlags = map[string]cobraflags.Flag{
 	},
 	dbcli.ConnectTimeoutFlagName:      dbcli.NewConnectTimeoutFlag(),
 	dbcli.ConfigFlagName:              dbcli.NewConfigFlag(),
+	dbcli.EnvFlagName:                 dbcli.NewEnvFlag(),
 	dbcli.MigrationsSchemaFlagName:    dbcli.NewMigrationsSchemaFlag(),
 	dbcli.MigrationsTableFlagName:     dbcli.NewMigrationsTableFlag(),
 	dbcli.RevisionTableFormatFlagName: dbcli.NewRevisionTableFormatFlag(),
@@ -126,7 +127,7 @@ func NewMigrateUpCommand() *cobra.Command {
 	return migrateUpCmd
 }
 
-func migrateUpCommand(_ *cobra.Command, _ []string) error {
+func migrateUpCommand(cmd *cobra.Command, _ []string) error {
 	dbURL := migrateUpFlags[dbURLFlag].GetString()
 	migrationsDir := migrateUpFlags[migrationsFlag].GetString()
 	dryRun := migrateUpFlags[dryRunFlag].GetBool()
@@ -142,6 +143,20 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 	migrationsSchema := migrateUpFlags[dbcli.MigrationsSchemaFlagName].GetString()
 	migrationsTable := migrateUpFlags[dbcli.MigrationsTableFlagName].GetString()
 	revisionFormatValue := migrateUpFlags[dbcli.RevisionTableFormatFlagName].GetString()
+	configPath := migrateUpFlags[dbcli.ConfigFlagName].GetString()
+
+	projectCfg, err := dbcli.LoadProjectConfig(cmd, configPath)
+	if err != nil {
+		return err
+	}
+	dbURL = dbcli.EffectiveString(cmd, dbURLFlag, dbURL, projectCfg.DatabaseURL)
+	migrationsDir = dbcli.EffectiveString(cmd, migrationsFlag, migrationsDir, projectCfg.Migration.Dir)
+	dirFormatValue = dbcli.EffectiveString(cmd, dirFormatFlag, dirFormatValue, projectCfg.Migration.Format)
+	atlasEnv = dbcli.EffectiveString(cmd, atlasEnvFlag, atlasEnv, projectCfg.EnvName)
+	execOrderValue = dbcli.EffectiveString(cmd, execOrderFlag, execOrderValue, projectCfg.Migration.ExecOrder)
+	lockTimeout = dbcli.EffectiveString(cmd, lockTimeoutFlag, lockTimeout, projectCfg.Migration.LockTimeout)
+	migrationsSchema = dbcli.EffectiveString(cmd, dbcli.MigrationsSchemaFlagName, migrationsSchema, projectCfg.Migration.RevisionsSchema)
+	revisionFormatValue = dbcli.EffectiveString(cmd, dbcli.RevisionTableFormatFlagName, revisionFormatValue, projectCfg.Migration.RevisionFormat)
 
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
@@ -150,7 +165,7 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 	if migrationsDir == "" {
 		return fmt.Errorf("migrations directory is required")
 	}
-	migrationsDir, err := pathguard.ResolveCLIPath(migrationsDir)
+	migrationsDir, err = pathguard.ResolveCLIPath(migrationsDir)
 	if err != nil {
 		return fmt.Errorf("invalid migrations directory: %w", err)
 	}
@@ -231,7 +246,7 @@ func migrateUpCommand(_ *cobra.Command, _ []string) error {
 	// Online-DDL routing: `-- +ptah online_ddl_tool=...` directives always
 	// work; the ptah.yaml online_ddl section adds automatic routing of
 	// ALTERs on tables above the configured row threshold.
-	onlineCfg, err := dbcli.LoadOnlineDDLConfig(migrateUpFlags[dbcli.ConfigFlagName].GetString())
+	onlineCfg, err := dbcli.LoadOnlineDDLConfig(configPath)
 	if err != nil {
 		return err
 	}
