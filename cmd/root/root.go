@@ -28,6 +28,7 @@ import (
 	"github.com/stokaro/ptah/cmd/readdb"
 	"github.com/stokaro/ptah/cmd/schema"
 	"github.com/stokaro/ptah/cmd/seed"
+	sqlcmd "github.com/stokaro/ptah/cmd/sql"
 	"github.com/stokaro/ptah/cmd/version"
 )
 
@@ -62,6 +63,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(seed.NewSeedCommand())
 	cmd.AddCommand(dropall.NewDropAllCommand())
 	cmd.AddCommand(lint.NewLintCommand())
+	cmd.AddCommand(sqlcmd.NewSQLCommand())
 	cmd.AddCommand(atlas.NewAtlasCommand())
 	cmd.AddCommand(version.NewVersionCommand())
 
