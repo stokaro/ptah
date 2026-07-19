@@ -604,6 +604,23 @@ func TestParser_ParseCreateTable_UnicodeIdentifiers(t *testing.T) {
 	c.Assert(createTable.Columns[0].Type, qt.Equals, "int")
 }
 
+func TestParser_ParseCreateTable_LatinUTF8Identifier(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE TABLE café (id INT, naïve TEXT);`
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	createTable := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(createTable.Name, qt.Equals, "café")
+	c.Assert(createTable.Columns, qt.HasLen, 2)
+	c.Assert(createTable.Columns[0].Name, qt.Equals, "id")
+	c.Assert(createTable.Columns[1].Name, qt.Equals, "naïve")
+}
+
 func TestParser_ParseCreateTable_EscapedDefaultStrings(t *testing.T) {
 	c := qt.New(t)
 
