@@ -28,6 +28,12 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
+      - name: Check documentation safety claims
+        run: |
+          ! grep -F "All operations are wrapped in transactions" README.md
+          ! grep -F "All operations wrapped in transactions" README.md
+          ! grep -F "locking prevents double-apply" README.md
+
       - name: qtlint
         run: go tool qtlint ./...
 

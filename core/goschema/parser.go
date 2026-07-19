@@ -406,15 +406,6 @@ type schemaParseState struct {
 	schemas               []Schema
 }
 
-type schemaCommentTarget struct {
-	structName string
-	field      *ast.Field
-}
-
-func (t schemaCommentTarget) isField() bool {
-	return t.field != nil
-}
-
 func newSchemaParseState() *schemaParseState {
 	return &schemaParseState{
 		tableNameToStructName: make(map[string]string),
@@ -422,35 +413,37 @@ func newSchemaParseState() *schemaParseState {
 	}
 }
 
-func (s *schemaParseState) parseComment(comment *ast.Comment, target schemaCommentTarget) error {
-	if target.isField() {
-		if handled, err := s.parseFieldScopedComment(comment, target); handled || err != nil {
-			return err
-		}
-	} else {
-		if handled, err := s.parseTypeScopedComment(comment, target.structName); handled || err != nil {
-			return err
-		}
+func (s *schemaParseState) parseStructComment(comment *ast.Comment, structName string) error {
+	if handled, err := s.parseStructScopedComment(comment, structName); handled || err != nil {
+		return err
 	}
 
-	return s.parseSharedComment(comment, target.structName)
+	return s.parseSharedComment(comment, structName)
 }
 
-func (s *schemaParseState) parseFieldScopedComment(comment *ast.Comment, target schemaCommentTarget) (bool, error) {
+func (s *schemaParseState) parseStructFieldComment(comment *ast.Comment, structName string, field *ast.Field) error {
+	if handled, err := s.parseFieldScopedComment(comment, structName, field); handled || err != nil {
+		return err
+	}
+
+	return s.parseSharedComment(comment, structName)
+}
+
+func (s *schemaParseState) parseFieldScopedComment(comment *ast.Comment, structName string, field *ast.Field) (bool, error) {
 	switch {
 	case strings.HasPrefix(comment.Text, "//migrator:schema:field"):
-		return true, parseFieldComment(comment, target.field, target.structName, s.globalEnumsMap, &s.schemaFields)
+		return true, parseFieldComment(comment, field, structName, s.globalEnumsMap, &s.schemaFields)
 	case strings.HasPrefix(comment.Text, "//migrator:embedded"):
-		parseEmbeddedComment(comment, target.field, target.structName, &s.embeddedFields)
+		parseEmbeddedComment(comment, field, structName, &s.embeddedFields)
 		return true, nil
 	case strings.HasPrefix(comment.Text, "//migrator:schema:index"):
-		return true, parseIndexComment(comment, target.structName, &s.schemaIndexes)
+		return true, parseIndexComment(comment, structName, &s.schemaIndexes)
 	default:
 		return false, nil
 	}
 }
 
-func (s *schemaParseState) parseTypeScopedComment(comment *ast.Comment, structName string) (bool, error) {
+func (s *schemaParseState) parseStructScopedComment(comment *ast.Comment, structName string) (bool, error) {
 	switch {
 	case strings.HasPrefix(comment.Text, "//migrator:schema:table"):
 		parseTableComment(comment, structName, &s.tableDirectives)
@@ -493,9 +486,8 @@ func (s *schemaParseState) processTableComments(structName string, genDecl *ast.
 		return nil
 	}
 
-	target := schemaCommentTarget{structName: structName}
 	for _, comment := range genDecl.Doc.List {
-		if err := s.parseComment(comment, target); err != nil {
+		if err := s.parseStructComment(comment, structName); err != nil {
 			return err
 		}
 	}
@@ -507,9 +499,8 @@ func (s *schemaParseState) processFieldComments(structName string, structType *a
 		if field.Doc == nil {
 			continue
 		}
-		target := schemaCommentTarget{structName: structName, field: field}
 		for _, comment := range field.Doc.List {
-			if err := s.parseComment(comment, target); err != nil {
+			if err := s.parseStructFieldComment(comment, structName, field); err != nil {
 				return err
 			}
 		}

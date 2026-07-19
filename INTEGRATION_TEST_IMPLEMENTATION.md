@@ -57,9 +57,10 @@ All scenarios from the original plan have been implemented:
 - ✅ Re-apply already applied migrations
 - ✅ Run migrate up when database is already up-to-date
 
-#### Concurrency ✅
+#### Parallel Execution Smoke ✅
 - ✅ Launch two migrate up processes in parallel
-- ✅ Ensure locking prevents double-apply
+- ✅ Verify at least one runner succeeds and the final migration state is consistent
+- ⚠️ Ptah does not yet provide a migration-level lock; production deployments must enforce a single runner externally until #124 lands
 
 #### Partial Failure Recovery ✅
 - ✅ Handle multi-step migration with intentional failure

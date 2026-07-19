@@ -34,7 +34,7 @@ capabilities include:
   Supports PostgreSQL RLS policies, roles, grants, and custom functions for multi-tenant data isolation.
 
 - 🔍 **Database Introspection**
-  Reads the current schema directly from PostgreSQL, MySQL, MariaDB, or ClickHouse for comparison and analysis.
+  Reads the current schema directly from PostgreSQL-family targets, MySQL, MariaDB, and ClickHouse for comparison and analysis.
 
 - 🧮 **Schema Diffing**
   Compares code-based schema with the live database schema using AST representations.
@@ -91,7 +91,7 @@ The core package contains all fundamental components for parsing, transforming, 
 
 - **`renderer/`** - Dialect-specific SQL generation from AST
   - Converts AST nodes to database-specific SQL statements
-  - Supports PostgreSQL, MySQL, MariaDB, ClickHouse, CockroachDB, YugabyteDB, and Spanner dialects
+  - Supports PostgreSQL-family targets, MySQL, MariaDB, ClickHouse, and Spanner dialects
   - Implements visitor pattern for extensible rendering
 
 - **`platform/`** - Database platform constants and identifiers
@@ -117,11 +117,11 @@ Provides comprehensive database migration functionality:
 - **`migrator/`** - Migration execution engine
   - Applies and rolls back database migrations
   - Tracks migration history and versions
-  - Provides dry-run capabilities and transaction safety
+  - Provides dry-run capabilities, dirty-state tracking, and dialect-aware transaction handling
 
 - **`planner/`** - Migration planning and SQL generation
   - Converts schema differences into executable SQL statements
-  - Dialect-specific planners for PostgreSQL, MySQL, MariaDB, ClickHouse, and PostgreSQL-family distributed SQL targets
+  - Dialect-specific planners for PostgreSQL-family targets, MySQL, MariaDB, and ClickHouse
   - Handles dependency ordering and safety checks
 
 - **`schemadiff/`** - Schema comparison and difference analysis
@@ -132,9 +132,9 @@ Provides comprehensive database migration functionality:
 #### `dbschema/` - Database Schema Operations
 Handles all database interactions and schema operations:
 
-- **Connection management** for PostgreSQL, MySQL, MariaDB, ClickHouse, CockroachDB, YugabyteDB, and Spanner
+- **Connection management** for PostgreSQL-family targets, MySQL, MariaDB, ClickHouse, and Spanner
 - **Schema reading and introspection** from live databases (including ClickHouse `system.tables` / `system.columns` / `system.data_skipping_indices`)
-- **Schema writing and migration execution** with transaction support (transactions are no-ops on ClickHouse — see the package godoc)
+- **Schema writing and migration execution** with dialect-specific transaction semantics (PostgreSQL-family DDL is transactional; MySQL/MariaDB DDL implicitly commits; ClickHouse transaction methods are no-ops)
 - **Database cleaning and schema dropping** capabilities
 - **Type definitions** for database schema representation
 
@@ -962,7 +962,7 @@ table already contains revisions above the requested baseline version.
 **Features:**
 - ✅ Applies migrations in correct order based on version numbers
 - ✅ Detects out-of-order pending migrations below the current version
-- ✅ Each migration runs in its own transaction unless explicitly marked `no_transaction`
+- ✅ PostgreSQL-family migrations run in transactions unless explicitly marked `no_transaction`
 - ✅ Tracks dirty/failed migration state and refuses to continue until repaired
 - ✅ Verifies applied migration checksums before running new work
 - ✅ Baselines existing databases by stamping migration metadata without executing DDL
@@ -971,6 +971,14 @@ table already contains revisions above the requested baseline version.
 - ✅ Supports dry-run mode for preview
 - ✅ Supports per-migration lock and statement timeout directives
 - ✅ Online DDL for large MySQL/MariaDB tables via gh-ost / pt-online-schema-change
+
+Transaction semantics are engine-specific. PostgreSQL-family DDL can roll back
+when a migration fails inside a transaction. MySQL and MariaDB implicitly commit
+most DDL, so a failed multi-statement migration can leave earlier DDL applied;
+Ptah records dirty migration state so operators can inspect and repair before
+continuing. ClickHouse transaction hooks are no-ops in Ptah because
+multi-statement transactions are experimental and require explicit session
+setup outside Ptah's current protection model.
 
 **Online DDL (MySQL/MariaDB):** route lock-heavy `ALTER TABLE` statements through
 [gh-ost](https://github.com/github/gh-ost) or
@@ -1008,7 +1016,7 @@ Roll back migrations to a specific version:
 **Features:**
 - ✅ Rolls back to any previous version
 - ✅ Executes down migrations in reverse order
-- ✅ Transaction safety with automatic rollback on failure
+- ✅ Transactional rollback on PostgreSQL-family engines; dirty-state tracking on engines where DDL cannot be rolled back
 - ✅ Updates migration tracking table
 
 #### Check Migration Status
@@ -1282,8 +1290,8 @@ Run comprehensive integration tests across multiple database platforms:
 ```
 
 **Features:**
-- ✅ Tests across PostgreSQL, MySQL, MariaDB, ClickHouse, CockroachDB, and YugabyteDB
-- ✅ Comprehensive scenario coverage (basic, concurrency, idempotency, failure recovery)
+- ✅ Tests across PostgreSQL-family targets, MySQL, MariaDB, and ClickHouse
+- ✅ Comprehensive scenario coverage (basic, parallel execution smoke, idempotency, failure recovery)
 - ✅ Multiple report formats (TXT, JSON, HTML)
 - ✅ Automated database setup and cleanup
 - ✅ ClickHouse scenarios are opt-in per scenario (`ClickHouseCompatible`); incompatible scenarios skip cleanly against a ClickHouse connection
@@ -1440,7 +1448,7 @@ go test -v ./migration/...
 
 ### Integration Testing Framework
 
-Ptah includes a comprehensive integration testing framework that validates migration functionality across PostgreSQL, MySQL, MariaDB, ClickHouse, and opt-in PostgreSQL-family distributed SQL targets. CockroachDB and YugabyteDB have live common-subset scenarios in CI; Spanner uses capability, planning, and rendering coverage only.
+Ptah includes a comprehensive integration testing framework that validates migration functionality across PostgreSQL-family targets, MySQL, MariaDB, and ClickHouse. CockroachDB and YugabyteDB have live common-subset scenarios in CI; Spanner uses capability, planning, and rendering coverage only.
 
 #### Run Integration Tests
 
@@ -1481,9 +1489,10 @@ The integration test suite covers:
 - Re-apply already applied migrations
 - Run migrate up when database is already up-to-date
 
-**🔀 Concurrency**
-- Launch parallel migrate up processes
-- Ensure locking prevents double-apply
+**🔀 Parallel Execution Smoke**
+- Launch two migrate up processes in parallel
+- Verify at least one runner succeeds and the final migration state is consistent
+- Ptah does not yet provide a migration-level lock; enforce a single production runner externally until #124 lands
 
 **🧪 Partial Failure Recovery**
 - Handle multi-step migrations with intentional failures
@@ -1550,17 +1559,22 @@ docker run --name test-mysql \
 - **AST-Based**: Uses Abstract Syntax Trees for type-safe SQL generation
 - **Visitor Pattern**: Enables dialect-specific rendering without modifying core AST
 - **Dependency Aware**: Automatically handles table creation order based on foreign keys
-- **Transaction Safe**: All operations are wrapped in transactions for consistency
+- **Dialect-Aware Safety**: PostgreSQL-family DDL uses transactions; MySQL/MariaDB implicit commits and ClickHouse no-op transactions are documented and tracked through dirty migration state
 
 ### Supported Databases
 
-- **PostgreSQL** - Full support including enums, constraints (CHECK, UNIQUE, FOREIGN KEY, EXCLUDE), indexes, RLS policies, and extensions
-- **MySQL** - Full support with MySQL-specific optimizations
-- **MariaDB** - Full support with MariaDB-specific features
-- **ClickHouse** - Opt-in MergeTree-oriented support for compatible scenarios
-- **CockroachDB** - PostgreSQL-family common subset via `platform.CockroachDB`; no `CREATE INDEX CONCURRENTLY`, XML, advisory locks, or RLS; covered by a live common-subset integration scenario
-- **YugabyteDB** - PostgreSQL-family common subset via `platform.YugabyteDB`; regular `CREATE INDEX` is used instead of PostgreSQL `CONCURRENTLY`; covered by a live common-subset integration scenario
-- **Spanner** - Conservative PostgreSQL-interface routing via `platform.Spanner`; full Spanner-specific DDL is not yet implemented
+This matrix describes workflow readiness. It is separate from the lower-level
+DDL capability matrix in [docs/capabilities.md](docs/capabilities.md).
+
+| Target | Parse + render | Introspect | Diff | Apply | Transactional apply | Live CI coverage | Production-supported |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| PostgreSQL | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| MySQL | Yes | Yes | Yes | Yes | No; DDL implicitly commits | Yes | Yes, with MySQL DDL caveats |
+| MariaDB | Yes | Yes | Yes | Yes | No; DDL implicitly commits | Yes | Yes, with MariaDB DDL caveats |
+| ClickHouse | Yes, compatible MergeTree subset | Yes | Yes, compatible subset | Yes, compatible subset | No; transaction hooks are no-ops | Yes | Limited to compatible scenarios |
+| CockroachDB | PostgreSQL-family common subset | Yes | Yes, common subset | Yes, common subset | Yes for supported transactional DDL | Yes | Limited to common-subset workflows |
+| YugabyteDB | PostgreSQL-family common subset | Yes | Yes, common subset | Yes, common subset | Yes for supported transactional DDL | Yes | Limited to common-subset workflows |
+| Spanner | Conservative PostgreSQL-interface routing | Partial/offline-oriented | Partial/offline-oriented | Not production-ready | No verified live apply path | No | No |
 
 ---
 
@@ -1802,17 +1816,26 @@ This project is part of the Inventario system and follows the same licensing ter
 
 ### ✅ Completed Features
 - ✅ **Migration versioning and rollback capabilities** - Full migration system with up/down migrations, version tracking, and rollback support
-- ✅ **Comprehensive integration testing** - Multi-database testing framework with PostgreSQL, MySQL, MariaDB, and ClickHouse support
+- ✅ **Comprehensive integration testing** - Multi-database testing framework with PostgreSQL-family, MySQL, MariaDB, and ClickHouse coverage
 - ✅ **ClickHouse dialect** - MergeTree-family engine annotations, data-skipping indexes, and live introspection via `system.tables`
+- ✅ **CockroachDB and YugabyteDB common-subset support** - PostgreSQL-family rendering, planning, and live integration coverage for supported features
+- ✅ **Spanner capability routing** - Conservative PostgreSQL-interface planning/rendering presets without live production support
 - ✅ **PostgreSQL extensions support** - Support for PostgreSQL extensions in schema definitions
 - ✅ **PostgreSQL EXCLUDE constraints** - Full support for EXCLUDE constraints with USING methods, elements, and WHERE conditions
+- ✅ **YAML schema frontend** - Language-agnostic schema files rendered through the same internal model as Go annotations
+- ✅ **Atlas HCL schema input and Go annotation export** - Parse supported Atlas schema HCL and export Go annotations to Atlas HCL
+- ✅ **Migration linting** - Rule-coded production-safety linting with text, JSON, GitHub Actions, and SARIF output
+- ✅ **Schema drift checks** - CI-friendly live drift detection with stable exit codes
 - ✅ **Migration file generation** - Automatic generation of timestamped migration files from schema differences
 - ✅ **Brownfield baseline workflow** - Adopt existing databases by verifying and stamping migration metadata without replaying DDL
+- ✅ **Online DDL hooks** - Optional gh-ost / pt-online-schema-change routing for large MySQL/MariaDB alters
+- ✅ **Migration directory integrity** - `ptah.sum` / `atlas.sum` hashing and validation
+- ✅ **Seed runner** - Environment-scoped SQL seed execution with production guards
+- ✅ **Stable CLI exit-code contract** - Documented `0` / `1` / `2` process semantics for scripting
 - ✅ **Dry-run capabilities** - Preview operations before execution across all commands
-- ✅ **Transaction safety** - All operations wrapped in transactions for consistency
+- ✅ **Dialect-aware transaction handling** - PostgreSQL-family transactional DDL with documented MySQL/MariaDB and ClickHouse caveats
 
 ### 🚧 In Progress
-- [ ] **Enhanced schema validation** - Advanced validation and linting capabilities
 - [ ] **Performance optimizations** - Optimizations for large schemas and complex migrations
 
 ### 🎯 Planned Features

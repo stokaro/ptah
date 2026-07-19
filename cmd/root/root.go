@@ -101,6 +101,6 @@ func executeWithRecovery(cmd *cobra.Command) (err error) {
 const rootLongDescription = `Ptah generates database schemas from Go entities,
 compares desired schemas with live databases, and manages database migrations.
 
-It supports PostgreSQL, MySQL, MariaDB, ClickHouse, CockroachDB, YugabyteDB,
-and Spanner-oriented schema workflows, with Atlas-compatible commands grouped
+It supports PostgreSQL-family targets, MySQL, MariaDB, ClickHouse, and
+Spanner-oriented schema workflows, with Atlas-compatible commands grouped
 under ptah atlas.`
