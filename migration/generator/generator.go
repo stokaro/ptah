@@ -74,6 +74,67 @@ type MigrationFiles struct {
 	Version    int64  // Migration version (timestamp)
 }
 
+// EmptyMigrationOptions contains options for skeleton migration creation.
+type EmptyMigrationOptions struct {
+	// MigrationName is the descriptive migration name used in filenames and headers.
+	MigrationName string
+	// OutputDir is the directory where migration files will be saved.
+	OutputDir string
+	// AllowedOutputRoot constrains OutputDir when set.
+	AllowedOutputRoot string
+}
+
+// GenerateEmptyMigration creates paired up/down skeleton migration files for
+// manual SQL authoring.
+func GenerateEmptyMigration(opts EmptyMigrationOptions) (*MigrationFiles, error) {
+	name := strings.TrimSpace(opts.MigrationName)
+	if err := validateEmptyMigrationName(name); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(opts.OutputDir) == "" {
+		return nil, fmt.Errorf("output directory is required")
+	}
+
+	outputDir, err := pathguard.ResolveWithinRoot(opts.OutputDir, opts.AllowedOutputRoot)
+	if err != nil {
+		return nil, fmt.Errorf("error validating output directory: %w", err)
+	}
+
+	version := migrator.GetNextMigrationVersion()
+	version = nextAvailableMigrationVersion(outputDir, version, name)
+	generatedAt := time.Now().UTC().Format(time.RFC3339)
+
+	return createMigrationFiles(
+		outputDir,
+		version,
+		name,
+		emptyMigrationSQL(name, generatedAt, "UP"),
+		emptyMigrationSQL(name, generatedAt, "DOWN"),
+	)
+}
+
+func validateEmptyMigrationName(name string) error {
+	if name == "" {
+		return fmt.Errorf("migration name is required")
+	}
+
+	fileName := migrator.GenerateMigrationFileName(1, name, "up")
+	if strings.HasPrefix(fileName, "0000000001_.") {
+		return fmt.Errorf("migration name must contain letters, digits, or underscores")
+	}
+
+	return nil
+}
+
+func emptyMigrationSQL(name, generatedAt, direction string) string {
+	return fmt.Sprintf(`-- Migration: %s
+-- Generated on: %s
+-- Direction: %s
+
+-- Add your migration SQL here.
+`, name, generatedAt, direction)
+}
+
 // GenerateMigration generates both up and down migration files by comparing
 // the desired schema (from Go entities) with the current database state.
 //
