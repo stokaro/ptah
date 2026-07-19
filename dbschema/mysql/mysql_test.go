@@ -41,6 +41,20 @@ func TestNewMySQLReader(t *testing.T) {
 	})
 }
 
+func TestMySQLReader_parseTableFromDDLGeneratedColumn(t *testing.T) {
+	c := qt.New(t)
+
+	reader := NewMySQLReader(nil, "")
+	table, err := reader.parseTableFromDDL("CREATE TABLE `users` (`name` varchar(255), `name_lc` varchar(255) GENERATED ALWAYS AS (lower(`name`)) STORED)")
+	c.Assert(err, qt.IsNil)
+
+	nameLC := findColumn(table.Columns, "name_lc")
+	c.Assert(nameLC, qt.IsNotNil)
+	c.Assert(nameLC.GeneratedExpression, qt.IsNotNil)
+	c.Assert(*nameLC.GeneratedExpression, qt.Equals, "lower(`name`)")
+	c.Assert(nameLC.GeneratedKind, qt.Equals, "STORED")
+}
+
 func TestMySQLReader_parseEnumValues(t *testing.T) {
 	t.Run("happy path", func(t *testing.T) {
 		tests := []struct {
@@ -502,4 +516,13 @@ func TestQuoteIdent(t *testing.T) {
 			c.Assert(quoteIdent(tc.in), qt.Equals, tc.want)
 		})
 	}
+}
+
+func findColumn(columns []types.DBColumn, name string) *types.DBColumn {
+	for i := range columns {
+		if columns[i].Name == name {
+			return &columns[i]
+		}
+	}
+	return nil
 }

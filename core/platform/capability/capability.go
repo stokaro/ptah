@@ -112,6 +112,13 @@ const (
 	// CREATE OR REPLACE TRIGGER and an explicit drop/create sequence.
 	CreateOrReplaceTrigger Capability = "create_or_replace_trigger"
 
+	// AlterGeneratedColumnExpression marks support for changing a generated
+	// column expression in place. PostgreSQL added
+	// ALTER TABLE ... ALTER COLUMN ... SET EXPRESSION AS (...) in 17. Older
+	// versions require destructive workarounds that Ptah does not plan
+	// automatically.
+	AlterGeneratedColumnExpression Capability = "alter_generated_column_expression"
+
 	// RowLevelSecurity marks support for row-level security policies
 	// (PostgreSQL ALTER TABLE ... ENABLE ROW LEVEL SECURITY + CREATE POLICY).
 	RowLevelSecurity Capability = "row_level_security"
@@ -182,6 +189,9 @@ var registry = map[Capability]spec{
 	},
 	CreateOrReplaceTrigger: {
 		doc: "CREATE OR REPLACE TRIGGER (PostgreSQL 14+, MariaDB; not MySQL)",
+	},
+	AlterGeneratedColumnExpression: {
+		doc: "in-place ALTER COLUMN SET EXPRESSION for generated columns (PostgreSQL 17+)",
 	},
 	RowLevelSecurity: {
 		doc: "row-level security policies (PostgreSQL)",
@@ -306,21 +316,22 @@ func All() []Capability {
 // (see the MySQL planner's constraint-drop ownership rules, issue #207).
 func MySQL80() Capabilities {
 	return Capabilities{
-		DropConstraintGeneric:    true,
-		DropConstraintIfExists:   false,
-		DropIndexIfExists:        false,
-		CheckConstraintsEnforced: true,
-		DropCheckClause:          true,
-		EnumInlineColumn:         true,
-		EnumCustomType:           false,
-		CreateIndexConcurrently:  false,
-		CreateOrReplaceTrigger:   false,
-		RowLevelSecurity:         false,
-		RoleManagement:           false,
-		ForeignKeys:              true,
-		Sequences:                false,
-		XMLType:                  false,
-		AdvisoryLocks:            false,
+		DropConstraintGeneric:          true,
+		DropConstraintIfExists:         false,
+		DropIndexIfExists:              false,
+		CheckConstraintsEnforced:       true,
+		DropCheckClause:                true,
+		EnumInlineColumn:               true,
+		EnumCustomType:                 false,
+		CreateIndexConcurrently:        false,
+		CreateOrReplaceTrigger:         false,
+		AlterGeneratedColumnExpression: false,
+		RowLevelSecurity:               false,
+		RoleManagement:                 false,
+		ForeignKeys:                    true,
+		Sequences:                      false,
+		XMLType:                        false,
+		AdvisoryLocks:                  false,
 	}
 }
 
@@ -345,21 +356,22 @@ func MySQLLegacy() Capabilities {
 // constraint and index drops.
 func MariaDB1011() Capabilities {
 	return Capabilities{
-		DropConstraintGeneric:    true,
-		DropConstraintIfExists:   true,
-		DropIndexIfExists:        true,
-		CheckConstraintsEnforced: true,
-		DropCheckClause:          false,
-		EnumInlineColumn:         true,
-		EnumCustomType:           false,
-		CreateIndexConcurrently:  false,
-		CreateOrReplaceTrigger:   true,
-		RowLevelSecurity:         false,
-		RoleManagement:           false,
-		ForeignKeys:              true,
-		Sequences:                true,
-		XMLType:                  false,
-		AdvisoryLocks:            false,
+		DropConstraintGeneric:          true,
+		DropConstraintIfExists:         true,
+		DropIndexIfExists:              true,
+		CheckConstraintsEnforced:       true,
+		DropCheckClause:                false,
+		EnumInlineColumn:               true,
+		EnumCustomType:                 false,
+		CreateIndexConcurrently:        false,
+		CreateOrReplaceTrigger:         true,
+		AlterGeneratedColumnExpression: false,
+		RowLevelSecurity:               false,
+		RoleManagement:                 false,
+		ForeignKeys:                    true,
+		Sequences:                      true,
+		XMLType:                        false,
+		AdvisoryLocks:                  false,
 	}
 }
 
@@ -377,25 +389,31 @@ func MariaDBLegacy() Capabilities {
 		With(CreateOrReplaceTrigger, false)
 }
 
-// Postgres16 is the preset for PostgreSQL 14+ (14/15/16/17 share these).
+// Postgres16 is the preset for PostgreSQL 14–16.
 func Postgres16() Capabilities {
 	return Capabilities{
-		DropConstraintGeneric:    true,
-		DropConstraintIfExists:   true,
-		DropIndexIfExists:        true,
-		CheckConstraintsEnforced: true,
-		DropCheckClause:          false,
-		EnumInlineColumn:         false,
-		EnumCustomType:           true,
-		CreateIndexConcurrently:  true,
-		CreateOrReplaceTrigger:   true,
-		RowLevelSecurity:         true,
-		RoleManagement:           true,
-		ForeignKeys:              true,
-		Sequences:                true,
-		XMLType:                  true,
-		AdvisoryLocks:            true,
+		DropConstraintGeneric:          true,
+		DropConstraintIfExists:         true,
+		DropIndexIfExists:              true,
+		CheckConstraintsEnforced:       true,
+		DropCheckClause:                false,
+		EnumInlineColumn:               false,
+		EnumCustomType:                 true,
+		CreateIndexConcurrently:        true,
+		CreateOrReplaceTrigger:         true,
+		AlterGeneratedColumnExpression: false,
+		RowLevelSecurity:               true,
+		RoleManagement:                 true,
+		ForeignKeys:                    true,
+		Sequences:                      true,
+		XMLType:                        true,
+		AdvisoryLocks:                  true,
 	}
+}
+
+// Postgres17 is the preset for PostgreSQL 17+.
+func Postgres17() Capabilities {
+	return Postgres16().With(AlterGeneratedColumnExpression, true)
 }
 
 // Postgres13 is the preset for PostgreSQL 12–13: identical to Postgres16
@@ -410,21 +428,22 @@ func Postgres13() Capabilities {
 // (Enum8/Enum16).
 func ClickHouse24() Capabilities {
 	return Capabilities{
-		DropConstraintGeneric:    false,
-		DropConstraintIfExists:   false,
-		DropIndexIfExists:        false,
-		CheckConstraintsEnforced: false,
-		DropCheckClause:          false,
-		EnumInlineColumn:         true,
-		EnumCustomType:           false,
-		CreateIndexConcurrently:  false,
-		CreateOrReplaceTrigger:   false,
-		RowLevelSecurity:         false,
-		RoleManagement:           false,
-		ForeignKeys:              false,
-		Sequences:                false,
-		XMLType:                  false,
-		AdvisoryLocks:            false,
+		DropConstraintGeneric:          false,
+		DropConstraintIfExists:         false,
+		DropIndexIfExists:              false,
+		CheckConstraintsEnforced:       false,
+		DropCheckClause:                false,
+		EnumInlineColumn:               true,
+		EnumCustomType:                 false,
+		CreateIndexConcurrently:        false,
+		CreateOrReplaceTrigger:         false,
+		AlterGeneratedColumnExpression: false,
+		RowLevelSecurity:               false,
+		RoleManagement:                 false,
+		ForeignKeys:                    false,
+		Sequences:                      false,
+		XMLType:                        false,
+		AdvisoryLocks:                  false,
 	}
 }
 
@@ -434,21 +453,22 @@ func ClickHouse24() Capabilities {
 // advisory-lock surface.
 func SQLite3() Capabilities {
 	return Capabilities{
-		DropConstraintGeneric:    false,
-		DropConstraintIfExists:   false,
-		DropIndexIfExists:        true,
-		CheckConstraintsEnforced: true,
-		DropCheckClause:          false,
-		EnumInlineColumn:         false,
-		EnumCustomType:           false,
-		CreateIndexConcurrently:  false,
-		CreateOrReplaceTrigger:   false,
-		RowLevelSecurity:         false,
-		RoleManagement:           false,
-		ForeignKeys:              true,
-		Sequences:                false,
-		XMLType:                  false,
-		AdvisoryLocks:            false,
+		DropConstraintGeneric:          false,
+		DropConstraintIfExists:         false,
+		DropIndexIfExists:              true,
+		CheckConstraintsEnforced:       true,
+		DropCheckClause:                false,
+		EnumInlineColumn:               false,
+		EnumCustomType:                 false,
+		CreateIndexConcurrently:        false,
+		CreateOrReplaceTrigger:         false,
+		AlterGeneratedColumnExpression: false,
+		RowLevelSecurity:               false,
+		RoleManagement:                 false,
+		ForeignKeys:                    true,
+		Sequences:                      false,
+		XMLType:                        false,
+		AdvisoryLocks:                  false,
 	}
 }
 
@@ -505,7 +525,7 @@ func SpannerPostgres() Capabilities {
 func ForDialect(dialect string) Capabilities {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.Postgres:
-		return Postgres16()
+		return Postgres17()
 	case platform.MySQL:
 		return MySQL80()
 	case platform.MariaDB:
@@ -578,6 +598,9 @@ func ForServerVersionResult(dialect, version string) (Capabilities, bool) {
 	case platform.MariaDB:
 		return mariaDBForVersion(version), parseableMariaDBVersion(version)
 	case platform.Postgres:
+		if v.major >= 17 {
+			return Postgres17(), true
+		}
 		if v.major >= 14 {
 			return Postgres16(), true
 		}

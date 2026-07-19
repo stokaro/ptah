@@ -167,7 +167,7 @@ func (r *Renderer) VisitAlterType(node *ast.AlterTypeNode) error {
 
 // New creates a new PostgreSQL renderer
 func New() *Renderer {
-	return NewWithCapabilities(capability.Postgres16(), platform.Postgres)
+	return NewWithCapabilities(capability.Postgres17(), platform.Postgres)
 }
 
 // NewWithCapabilities creates a PostgreSQL-family renderer configured for a
@@ -522,6 +522,24 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 		case *ast.ModifyColumnOperation:
 			// PostgreSQL uses different syntax for modifying columns
 			r.renderPostgreSQLModifyColumn(node.Name, op.Column)
+		case *ast.AlterGeneratedColumnExpressionOperation:
+			if !r.capabilities().Has(capability.AlterGeneratedColumnExpression) {
+				r.w.WriteLinef(
+					"-- %s: ALTER COLUMN SET EXPRESSION requires PostgreSQL 17+; generated column %q was not changed.",
+					r.dialectUpper,
+					op.ColumnName,
+				)
+				continue
+			}
+			expression := strings.TrimSpace(op.Expression)
+			if expression == "" {
+				return fmt.Errorf("postgres: generated column %q has empty expression", op.ColumnName)
+			}
+			r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET EXPRESSION AS (%s);",
+				r.escapeQualifiedIdentifier(node.Name),
+				r.escapeIdentifier(op.ColumnName),
+				expression,
+			)
 		case *ast.RenameColumnOperation:
 			// PostgreSQL has supported `ALTER TABLE x RENAME COLUMN old TO new`
 			// for a long time; emit it unconditionally.

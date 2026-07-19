@@ -83,6 +83,24 @@ func (op *ModifyColumnOperation) Accept(visitor Visitor) error {
 // alterOperation implements the marker method for type safety.
 func (op *ModifyColumnOperation) alterOperation() {}
 
+// AlterGeneratedColumnExpressionOperation changes the expression of an existing
+// generated column without dropping the column and its dependents.
+type AlterGeneratedColumnExpressionOperation struct {
+	// ColumnName is the generated column to alter.
+	ColumnName string
+	// Expression is the target generated-column expression without wrapping
+	// parentheses.
+	Expression string
+}
+
+// Accept implements the Node interface for AlterGeneratedColumnExpressionOperation.
+func (op *AlterGeneratedColumnExpressionOperation) Accept(_visitor Visitor) error {
+	return nil
+}
+
+// alterOperation implements the marker method for type safety.
+func (op *AlterGeneratedColumnExpressionOperation) alterOperation() {}
+
 // AddConstraintOperation represents an ADD CONSTRAINT operation in ALTER TABLE statements.
 //
 // This operation adds a new constraint to an existing table. The constraint can be

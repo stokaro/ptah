@@ -52,10 +52,9 @@ func QualifyTableName(schema, table string) string {
 
 // DBColumn represents a database column.
 //
-// GeneratedKind / GeneratedExpression are currently populated by the ClickHouse
-// reader for columns declared with non-DEFAULT default kinds (MATERIALIZED,
-// ALIAS, EPHEMERAL). Schema comparison can match these fields when the
-// goschema-side model also carries generated column metadata.
+// GeneratedKind / GeneratedExpression are populated by readers for dialects
+// that expose generated column metadata. Schema comparison matches these fields
+// when the goschema-side model also carries generated column metadata.
 type DBColumn struct {
 	Name               string  `json:"name"`
 	DataType           string  `json:"data_type"`
@@ -73,13 +72,11 @@ type DBColumn struct {
 	IsPrimaryKey       bool    `json:"is_primary_key"`    // Derived field
 	IsUnique           bool    `json:"is_unique"`         // Derived field
 
-	// GeneratedExpression holds the MATERIALIZED / ALIAS / EPHEMERAL
-	// expression for ClickHouse columns. Nil for plain columns. Other
-	// dialects always leave this nil.
+	// GeneratedExpression holds the generated-column expression. Nil for plain
+	// columns.
 	GeneratedExpression *string `json:"generated_expression,omitempty"`
-	// GeneratedKind names the ClickHouse default-kind: "MATERIALIZED",
-	// "ALIAS" or "EPHEMERAL". Empty for plain columns. Other dialects always
-	// leave this empty.
+	// GeneratedKind names the generated-column kind, for example STORED,
+	// VIRTUAL, MATERIALIZED, ALIAS, or EPHEMERAL. Empty for plain columns.
 	GeneratedKind string `json:"generated_kind,omitempty"`
 }
 
@@ -104,6 +101,9 @@ type DBIndex struct {
 	IsUnique   bool     `json:"is_unique"`
 	IsPrimary  bool     `json:"is_primary"`
 	Definition string   `json:"definition"` // Full index definition
+	// Condition is the WHERE clause for partial indexes when the dialect
+	// exposes one structurally.
+	Condition string `json:"condition,omitempty"`
 	// NullsDistinct carries PostgreSQL UNIQUE INDEX NULLS [NOT] DISTINCT
 	// state. Nil means the clause was not present in the definition.
 	NullsDistinct *bool `json:"nulls_distinct,omitempty"`

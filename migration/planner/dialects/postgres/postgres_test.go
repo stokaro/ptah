@@ -8,6 +8,7 @@ import (
 
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/migration/planner/dialects/postgres"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
@@ -760,6 +761,139 @@ func TestPlanner_GenerateMigrationSQL_IndexesRemoved(t *testing.T) {
 			c.Assert(tt.expected(nodes), qt.IsTrue)
 		})
 	}
+}
+
+func TestPlanner_RecreatesGeneratedColumnOnExpressionChange(t *testing.T) {
+	c := qt.New(t)
+
+	diff := &types.SchemaDiff{
+		TablesModified: []types.TableDiff{
+			{
+				TableName: "users",
+				ColumnsModified: []types.ColumnDiff{
+					{
+						ColumnName: "slug",
+						Changes: map[string]string{
+							"generated": "STORED upper(name) -> STORED lower(name)",
+						},
+					},
+				},
+			},
+		},
+	}
+	generated := &goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "User", Name: "users"},
+		},
+		Fields: []goschema.Field{
+			{
+				StructName:          "User",
+				Name:                "slug",
+				Type:                "TEXT",
+				Nullable:            true,
+				GeneratedExpression: "lower(name)",
+				GeneratedKind:       "STORED",
+			},
+		},
+	}
+
+	nodes := postgres.New().GenerateMigrationAST(diff, generated)
+	sql, err := renderer.RenderSQL("postgres", nodes...)
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, `ALTER TABLE "users" ALTER COLUMN "slug" SET EXPRESSION AS (lower(name));`)
+	c.Assert(sql, qt.Not(qt.Contains), `DROP COLUMN "slug"`)
+	c.Assert(sql, qt.Not(qt.Contains), `ADD COLUMN "slug"`)
+}
+
+func TestPlanner_GeneratedColumnExpressionChangeOnPostgres16RequiresManualMigration(t *testing.T) {
+	c := qt.New(t)
+
+	diff := &types.SchemaDiff{
+		TablesModified: []types.TableDiff{
+			{
+				TableName: "users",
+				ColumnsModified: []types.ColumnDiff{
+					{
+						ColumnName: "slug",
+						Changes: map[string]string{
+							"generated": "STORED upper(name) -> STORED lower(name)",
+						},
+					},
+				},
+			},
+		},
+	}
+	generated := &goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "User", Name: "users"},
+		},
+		Fields: []goschema.Field{
+			{
+				StructName:          "User",
+				Name:                "slug",
+				Type:                "TEXT",
+				Nullable:            true,
+				GeneratedExpression: "lower(name)",
+				GeneratedKind:       "STORED",
+			},
+		},
+	}
+
+	nodes := postgres.NewWithCapabilities(capability.Postgres16()).GenerateMigrationAST(diff, generated)
+	sql, err := renderer.RenderSQLWithCapabilities("postgres", capability.Postgres16(), nodes...)
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "WARNING: Generated column users.slug changed, but ALTER COLUMN SET EXPRESSION requires PostgreSQL 17+; manual migration required.")
+	c.Assert(sql, qt.Not(qt.Contains), `DROP COLUMN "slug"`)
+	c.Assert(sql, qt.Not(qt.Contains), `ADD COLUMN "slug"`)
+	c.Assert(sql, qt.Not(qt.Contains), "SET EXPRESSION AS")
+}
+
+func TestPlanner_RecreatesEmbeddedGeneratedColumnOnExpressionChange(t *testing.T) {
+	c := qt.New(t)
+
+	diff := &types.SchemaDiff{
+		TablesModified: []types.TableDiff{
+			{
+				TableName: "users",
+				ColumnsModified: []types.ColumnDiff{
+					{
+						ColumnName: "slug",
+						Changes: map[string]string{
+							"generated": "STORED upper(name) -> STORED lower(name)",
+						},
+					},
+				},
+			},
+		},
+	}
+	generated := &goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "User", Name: "users"},
+		},
+		Fields: []goschema.Field{
+			{
+				StructName:          "ComputedFields",
+				Name:                "slug",
+				Type:                "TEXT",
+				Nullable:            true,
+				GeneratedExpression: "lower(name)",
+				GeneratedKind:       "STORED",
+			},
+		},
+		EmbeddedFields: []goschema.EmbeddedField{
+			{
+				StructName:       "User",
+				Mode:             "inline",
+				EmbeddedTypeName: "ComputedFields",
+			},
+		},
+	}
+
+	nodes := postgres.New().GenerateMigrationAST(diff, generated)
+	sql, err := renderer.RenderSQL("postgres", nodes...)
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, `ALTER TABLE "users" ALTER COLUMN "slug" SET EXPRESSION AS (lower(name));`)
+	c.Assert(sql, qt.Not(qt.Contains), "Could not find field definition")
 }
 
 func TestPlanner_GenerateMigrationSQL_TablesRemoved(t *testing.T) {

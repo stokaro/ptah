@@ -241,11 +241,27 @@ Status string
 
 //migrator:schema:field name="category_id" type="INT" not_null="true" foreign="categories(id)" foreign_key_name="fk_product_category"
 CategoryID int64
+
+// PostgreSQL/MySQL generated column. PostgreSQL renders STORED generated
+// columns in the current portable preset; use `generated_kind="virtual"` only
+// with dialects that support virtual generated columns.
+//migrator:schema:field name="full_name" type="TEXT" generated="first_name || ' ' || last_name" stored="true"
+FullName string
 ```
+
+Ptah plans PostgreSQL generated-column expression changes with
+`ALTER COLUMN ... SET EXPRESSION` only when the target capabilities are
+PostgreSQL 17 or newer. Older PostgreSQL targets receive an explicit manual
+migration warning instead of an automatic destructive drop-and-recreate plan.
 
 ### Index Definition
 ```go
 //migrator:schema:index name="idx_products_category" fields="category_id"
+_ int
+
+// PostgreSQL/SQLite partial index. `condition=` remains accepted for older
+// annotations, but `where=` matches Atlas HCL terminology.
+//migrator:schema:index name="idx_active_products" fields="category_id" where="deleted_at IS NULL"
 _ int
 
 // ClickHouse data-skipping index: opt-in type + granularity

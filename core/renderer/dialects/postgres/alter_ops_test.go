@@ -6,6 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/core/ast"
+	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/core/renderer/dialects/postgres"
 )
 
@@ -102,4 +104,41 @@ func TestPostgres_AlterTable_ClickHouseOnlyOpsEmitComment(t *testing.T) {
 		qt.Commentf("postgres must not emit ADD INDEX for an AddSkippingIndexOperation; got: %q", out))
 	c.Assert(out, qt.Not(qt.Contains), "MODIFY TTL",
 		qt.Commentf("postgres must not emit MODIFY TTL for a ModifyTTLOperation; got: %q", out))
+}
+
+func TestPostgres_AlterTable_SetGeneratedExpression(t *testing.T) {
+	c := qt.New(t)
+	alter := &ast.AlterTableNode{
+		Name: "users",
+		Operations: []ast.AlterOperation{
+			&ast.AlterGeneratedColumnExpressionOperation{
+				ColumnName: "slug",
+				Expression: "lower(name)",
+			},
+		},
+	}
+
+	out := renderPG(t, alter)
+
+	c.Assert(out, qt.Contains, `ALTER TABLE "users" ALTER COLUMN "slug" SET EXPRESSION AS (lower(name));`)
+}
+
+func TestPostgres_AlterTable_SetGeneratedExpressionUnsupported(t *testing.T) {
+	c := qt.New(t)
+	renderer := postgres.NewWithCapabilities(capability.Postgres16(), platform.Postgres)
+	alter := &ast.AlterTableNode{
+		Name: "users",
+		Operations: []ast.AlterOperation{
+			&ast.AlterGeneratedColumnExpressionOperation{
+				ColumnName: "slug",
+				Expression: "lower(name)",
+			},
+		},
+	}
+
+	err := alter.Accept(renderer)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(renderer.Output(), qt.Contains, `ALTER COLUMN SET EXPRESSION requires PostgreSQL 17+`)
+	c.Assert(renderer.Output(), qt.Not(qt.Contains), `SET EXPRESSION AS`)
 }

@@ -757,6 +757,107 @@ func TestIndexes_HappyPath(t *testing.T) {
 				IndexesRemoved: []string{"idx_users_c"},
 			},
 		},
+		{
+			name: "partial index condition changed",
+			generated: &goschema.Database{
+				Indexes: []goschema.Index{
+					{Name: "idx_users_email_active", StructName: "users", Fields: []string{"email"}, Condition: "deleted_at IS NULL"},
+				},
+			},
+			database: &types.DBSchema{
+				Indexes: []types.DBIndex{
+					{
+						Name:      "idx_users_email_active",
+						TableName: "users",
+						Columns:   []string{"email"},
+						Condition: "deleted_at IS NOT NULL",
+					},
+				},
+			},
+			expected: &difftypes.SchemaDiff{
+				IndexesAdded:   []string{"idx_users_email_active"},
+				IndexesRemoved: []string{"idx_users_email_active"},
+			},
+		},
+		{
+			name: "partial index condition outer parentheses match",
+			generated: &goschema.Database{
+				Indexes: []goschema.Index{
+					{Name: "idx_users_email_active", StructName: "users", Fields: []string{"email"}, Condition: "deleted_at IS NULL"},
+				},
+			},
+			database: &types.DBSchema{
+				Indexes: []types.DBIndex{
+					{
+						Name:      "idx_users_email_active",
+						TableName: "users",
+						Columns:   []string{"email"},
+						Condition: "(deleted_at IS NULL)",
+					},
+				},
+			},
+			expected: &difftypes.SchemaDiff{},
+		},
+		{
+			name: "partial index condition whitespace outside literals matches",
+			generated: &goschema.Database{
+				Indexes: []goschema.Index{
+					{Name: "idx_users_email_active", StructName: "users", Fields: []string{"email"}, Condition: "deleted_at   IS\nNULL"},
+				},
+			},
+			database: &types.DBSchema{
+				Indexes: []types.DBIndex{
+					{
+						Name:      "idx_users_email_active",
+						TableName: "users",
+						Columns:   []string{"email"},
+						Condition: "(deleted_at IS NULL)",
+					},
+				},
+			},
+			expected: &difftypes.SchemaDiff{},
+		},
+		{
+			name: "partial index condition whitespace inside string literal differs",
+			generated: &goschema.Database{
+				Indexes: []goschema.Index{
+					{Name: "idx_users_email_active", StructName: "users", Fields: []string{"email"}, Condition: "status = 'a  b'"},
+				},
+			},
+			database: &types.DBSchema{
+				Indexes: []types.DBIndex{
+					{
+						Name:      "idx_users_email_active",
+						TableName: "users",
+						Columns:   []string{"email"},
+						Condition: "status = 'a b'",
+					},
+				},
+			},
+			expected: &difftypes.SchemaDiff{
+				IndexesAdded:   []string{"idx_users_email_active"},
+				IndexesRemoved: []string{"idx_users_email_active"},
+			},
+		},
+		{
+			name: "partial index condition postgres IN rewrite does not drift",
+			generated: &goschema.Database{
+				Indexes: []goschema.Index{
+					{Name: "idx_users_status", StructName: "users", Fields: []string{"status"}, Condition: "status IN ('active','pending')"},
+				},
+			},
+			database: &types.DBSchema{
+				Indexes: []types.DBIndex{
+					{
+						Name:      "idx_users_status",
+						TableName: "users",
+						Columns:   []string{"status"},
+						Condition: "((status)::text = ANY ((ARRAY['active'::text, 'pending'::text])::text[]))",
+					},
+				},
+			},
+			expected: &difftypes.SchemaDiff{},
+		},
 	}
 
 	for _, tt := range tests {

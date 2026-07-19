@@ -57,7 +57,7 @@ func CompareWithDialect(generated *goschema.Database, database *types.DBSchema, 
 func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, opts *config.CompareOptions) *difftypes.SchemaDiff {
 	diff := &difftypes.SchemaDiff{}
 	generated, database = normalizeInlineEnumsForCompare(generated, database, opts)
-	generated = normalizeSQLiteGeneratedColumnsForCompare(generated, opts)
+	generated = normalizeGeneratedColumnsForCompare(generated, opts)
 
 	// Compare tables and their column structures
 	compare.TablesAndColumns(generated, database, diff)
@@ -128,23 +128,38 @@ func normalizeInlineEnumsForCompare(
 	return &normalizedGenerated, &normalizedDatabase
 }
 
-func normalizeSQLiteGeneratedColumnsForCompare(
+func normalizeGeneratedColumnsForCompare(
 	generated *goschema.Database,
 	opts *config.CompareOptions,
 ) *goschema.Database {
-	if generated == nil || opts == nil || platform.NormalizeDialect(opts.Dialect) != platform.SQLite {
+	if generated == nil || opts == nil {
 		return generated
 	}
 
+	defaultKind := defaultGeneratedColumnKind(platform.NormalizeDialect(opts.Dialect))
+	if defaultKind == "" {
+		return generated
+	}
 	normalizedGenerated := *generated
 	normalizedGenerated.Fields = append([]goschema.Field(nil), generated.Fields...)
 	for i := range normalizedGenerated.Fields {
 		field := &normalizedGenerated.Fields[i]
 		if field.GeneratedExpression != "" && field.GeneratedKind == "" {
-			field.GeneratedKind = "VIRTUAL"
+			field.GeneratedKind = defaultKind
 		}
 	}
 	return &normalizedGenerated
+}
+
+func defaultGeneratedColumnKind(dialect string) string {
+	switch dialect {
+	case platform.Postgres:
+		return "STORED"
+	case platform.MySQL, platform.MariaDB, platform.SQLite:
+		return "VIRTUAL"
+	default:
+		return ""
+	}
 }
 
 func isInlineEnumDialect(dialect string) bool {

@@ -3836,15 +3836,33 @@ func (p *Parser) parseCreateIndexAfterKeyword(indexType string) (*ast.IndexNode,
 	if err != nil {
 		return nil, err
 	}
+	p.skipWhitespace()
+	condition := p.parseCreateIndexCondition()
 
 	index := ast.NewIndex(indexName, tableName, columns...)
 	index.Type = indexType
 	index.IncludeColumns = includeColumns
 	index.NullsDistinct = nullsDistinct
 	index.StorageParams = storageParams
+	index.Condition = condition
 	index.Concurrently = concurrently
 	index.IfNotExists = ifNotExists
 	return index, nil
+}
+
+func (p *Parser) parseCreateIndexCondition() string {
+	if !p.current.MatchIdentifierValue("WHERE") {
+		return ""
+	}
+	p.advance()
+	p.skipWhitespace()
+	start := p.current.Start
+	end := start
+	for !p.isAtEnd() && p.current.Type != lexer.TokenSemicolon {
+		end = p.current.End
+		p.advance()
+	}
+	return strings.TrimSpace(p.input[start:end])
 }
 
 func (p *Parser) parseCreateIndexIncludeColumns() ([]string, error) {

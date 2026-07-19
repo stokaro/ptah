@@ -59,9 +59,10 @@ const (
 type Planner struct {
 	// caps describes what the concrete target accepts (issue #225/#226); the
 	// nil zero value defaults to the current PostgreSQL line preset
-	// (capability.Postgres16) via the capabilities accessor, so a bare
+	// (capability.Postgres17) via the capabilities accessor, so a bare
 	// &Planner{} behaves exactly like New(). Version presets live in the
-	// capability package — capability.Postgres16 for PostgreSQL 14+,
+	// capability package — capability.Postgres17 for PostgreSQL 17+,
+	// capability.Postgres16 for PostgreSQL 14–16,
 	// capability.Postgres13 for 12–13.
 	caps capability.Capabilities
 	// concurrentIndexes requests CREATE INDEX CONCURRENTLY for new indexes.
@@ -80,9 +81,9 @@ type Planner struct {
 }
 
 // New returns a planner configured with the current PostgreSQL line preset
-// (capability.Postgres16: PostgreSQL 14+).
+// (capability.Postgres17: PostgreSQL 17+).
 func New() *Planner {
-	return NewWithCapabilities(capability.Postgres16())
+	return NewWithCapabilities(capability.Postgres17())
 }
 
 // NewWithCapabilities returns a planner for a specific capability set — e.g.
@@ -90,7 +91,7 @@ func New() *Planner {
 // from a live server via capability.ForServerVersion. The set is expected to
 // be valid (capability.Capabilities.Validate); presets always are. The set is
 // cloned, so later mutations by the caller cannot affect the planner. A nil
-// set defaults to the capability.Postgres16 preset.
+// set defaults to the capability.Postgres17 preset.
 func NewWithCapabilities(caps capability.Capabilities) *Planner {
 	return &Planner{caps: caps.Clone()}
 }
@@ -101,7 +102,7 @@ func NewWithCapabilities(caps capability.Capabilities) *Planner {
 // zero-value surprise.
 func (p *Planner) capabilities() capability.Capabilities {
 	if p.caps == nil {
-		return capability.Postgres16()
+		return capability.Postgres17()
 	}
 	return p.caps
 }
@@ -612,6 +613,7 @@ func (p *Planner) addForeignKeyConstraintsForNewColumns(result []ast.Node, table
 }
 
 func (p *Planner) modifyExistingTableColumns(result []ast.Node, tableDiff types.TableDiff, generated *goschema.Database) []ast.Node {
+	allFields := fromschema.ProcessEmbeddedFields(generated.EmbeddedFields, generated.Fields)
 	for _, colDiff := range tableDiff.ColumnsModified {
 		// Find the target field definition for this column
 		// We need to find the struct name that corresponds to this table name
@@ -624,7 +626,7 @@ func (p *Planner) modifyExistingTableColumns(result []ast.Node, tableDiff types.
 		}
 
 		// Now find the field using the correct struct name
-		for _, field := range generated.Fields {
+		for _, field := range allFields {
 			if field.StructName == targetStructName && field.Name == colDiff.ColumnName {
 				targetField = &field
 				break
@@ -639,6 +641,10 @@ func (p *Planner) modifyExistingTableColumns(result []ast.Node, tableDiff types.
 
 		// Create a column definition with the target field properties
 		columnNode := fromschema.FromField(*targetField, generated.Enums, "postgres")
+		if isGeneratedColumnChange(colDiff) {
+			result = p.modifyGeneratedColumnExpression(result, tableDiff.TableName, colDiff, columnNode)
+			continue
+		}
 
 		// Generate ALTER COLUMN statements using AST
 		alterNode := &ast.AlterTableNode{
@@ -663,6 +669,51 @@ func (p *Planner) modifyExistingTableColumns(result []ast.Node, tableDiff types.
 		result = append(result, astCommentNode)
 	}
 	return result
+}
+
+func (p *Planner) modifyGeneratedColumnExpression(
+	result []ast.Node,
+	tableName string,
+	colDiff types.ColumnDiff,
+	columnNode *ast.ColumnNode,
+) []ast.Node {
+	if columnNode == nil || strings.TrimSpace(columnNode.GeneratedExpression) == "" {
+		return append(result, ast.NewComment(fmt.Sprintf(
+			"WARNING: Generated column %s.%s changed, but the target schema is not a generated column; manual migration required.",
+			tableName,
+			colDiff.ColumnName,
+		)))
+	}
+	if !p.capabilities().Has(capability.AlterGeneratedColumnExpression) {
+		return append(result, ast.NewComment(fmt.Sprintf(
+			"WARNING: Generated column %s.%s changed, but ALTER COLUMN SET EXPRESSION requires PostgreSQL 17+; manual migration required.",
+			tableName,
+			colDiff.ColumnName,
+		)))
+	}
+
+	alterNode := &ast.AlterTableNode{
+		Name: tableName,
+		Operations: []ast.AlterOperation{
+			&ast.AlterGeneratedColumnExpressionOperation{
+				ColumnName: colDiff.ColumnName,
+				Expression: columnNode.GeneratedExpression,
+			},
+		},
+	}
+	result = append(result, alterNode)
+	result = append(result, ast.NewComment(fmt.Sprintf(
+		"Modify generated column %s.%s: %s",
+		tableName,
+		colDiff.ColumnName,
+		colDiff.Changes["generated"],
+	)))
+	return result
+}
+
+func isGeneratedColumnChange(colDiff types.ColumnDiff) bool {
+	_, ok := colDiff.Changes["generated"]
+	return ok
 }
 
 func findGeneratedTableByDiffName(generated *goschema.Database, tableName string) *goschema.Table {

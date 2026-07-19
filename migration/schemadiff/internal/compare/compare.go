@@ -2065,7 +2065,22 @@ func Indexes(generated *goschema.Database, database *types.DBSchema, diff *difft
 }
 
 func indexDefinitionsChanged(genIndex goschema.Index, dbIndex types.DBIndex) bool {
-	return !boolPtrEqual(genIndex.NullsDistinct, dbIndex.NullsDistinct)
+	return !boolPtrEqual(genIndex.NullsDistinct, dbIndex.NullsDistinct) ||
+		indexPredicateChanged(genIndex.Condition, dbIndex.Condition)
+}
+
+func indexPredicateChanged(generated, database string) bool {
+	if strings.TrimSpace(generated) == "" || strings.TrimSpace(database) == "" {
+		return strings.TrimSpace(generated) != strings.TrimSpace(database)
+	}
+	if checkExpressionHasUnsupportedRewrite(generated, database) {
+		return false
+	}
+	return normalizePredicate(generated) != normalizePredicate(database)
+}
+
+func normalizePredicate(value string) string {
+	return normalizeCheckExpression(value)
 }
 
 // compareNamedItems is a generic helper function that compares two maps of named items

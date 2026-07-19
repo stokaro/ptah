@@ -112,6 +112,18 @@ func TestParseIndexWithPostgreSQLFeatures(t *testing.T) {
 			},
 		},
 		{
+			name:    "partial index with atlas-style where alias",
+			comment: "//migrator:schema:index name=\"idx_active\" fields=\"status\" where=\"deleted_at IS NULL\"",
+			expected: goschema.Index{
+				Name:      "idx_active",
+				Fields:    []string{"status"},
+				Type:      "",
+				Condition: "deleted_at IS NULL",
+				Operator:  "",
+				TableName: "",
+			},
+		},
+		{
 			name:    "trigram index",
 			comment: "//migrator:schema:index name=\"idx_name_trgm\" fields=\"name\" type=\"GIN\" ops=\"gin_trgm_ops\"",
 			expected: goschema.Index{
@@ -173,6 +185,58 @@ type TestEntity struct {
 			c.Assert(idx.Condition, qt.Equals, tt.expected.Condition)
 			c.Assert(idx.Operator, qt.Equals, tt.expected.Operator)
 			c.Assert(idx.TableName, qt.Equals, tt.expected.TableName)
+		})
+	}
+}
+
+func TestParseGeneratedColumnField(t *testing.T) {
+	tests := []struct {
+		name     string
+		comment  string
+		expected goschema.Field
+	}{
+		{
+			name:    "stored generated column",
+			comment: "//migrator:schema:field name=\"full_name\" type=\"TEXT\" generated=\"first_name || ' ' || last_name\" stored=\"true\"",
+			expected: goschema.Field{
+				Name:                "full_name",
+				Type:                "TEXT",
+				GeneratedExpression: "first_name || ' ' || last_name",
+				GeneratedKind:       "STORED",
+			},
+		},
+		{
+			name:    "explicit generated kind",
+			comment: "//migrator:schema:field name=\"full_name\" type=\"TEXT\" generated=\"concat(first_name, ' ', last_name)\" generated_kind=\"virtual\"",
+			expected: goschema.Field{
+				Name:                "full_name",
+				Type:                "TEXT",
+				GeneratedExpression: "concat(first_name, ' ', last_name)",
+				GeneratedKind:       "VIRTUAL",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			content := `package test
+
+type TestEntity struct {
+	` + tt.comment + `
+	FullName string
+}
+`
+
+			database := parseStringAsGoFile(c, content)
+
+			c.Assert(database.Fields, qt.HasLen, 1)
+			field := database.Fields[0]
+			c.Assert(field.Name, qt.Equals, tt.expected.Name)
+			c.Assert(field.Type, qt.Equals, tt.expected.Type)
+			c.Assert(field.GeneratedExpression, qt.Equals, tt.expected.GeneratedExpression)
+			c.Assert(field.GeneratedKind, qt.Equals, tt.expected.GeneratedKind)
 		})
 	}
 }

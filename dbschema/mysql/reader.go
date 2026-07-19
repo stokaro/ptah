@@ -270,6 +270,11 @@ func (r *Reader) convertASTToTable(node *ast.CreateTableNode) types.DBTable {
 			IsAutoIncrement: astCol.AutoInc,
 			IsPrimaryKey:    astCol.Primary,
 			IsUnique:        astCol.Unique,
+			GeneratedKind:   strings.ToUpper(astCol.GeneratedKind),
+		}
+		if astCol.GeneratedExpression != "" {
+			expression := astCol.GeneratedExpression
+			col.GeneratedExpression = &expression
 		}
 
 		// Handle default values

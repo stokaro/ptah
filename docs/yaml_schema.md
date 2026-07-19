@@ -30,9 +30,16 @@ tables:
         type: VARCHAR(255)
         not_null: true
         unique: true
+      email_lc:
+        type: TEXT
+        generated: lower(email)
+        stored: true
     indexes:
       idx_users_email:
         fields: [email]
+      idx_active_users_email:
+        fields: [email]
+        where: deleted_at IS NULL
 ```
 
 This is equivalent to:
@@ -46,7 +53,13 @@ type User struct {
     //migrator:schema:field name="email" type="VARCHAR(255)" not_null="true" unique="true"
     Email string
 
+    //migrator:schema:field name="email_lc" type="TEXT" generated="lower(email)" stored="true"
+    EmailLC string
+
     //migrator:schema:index name="idx_users_email" fields="email"
+    _ int
+
+    //migrator:schema:index name="idx_active_users_email" fields="email" where="deleted_at IS NULL"
     _ int
 }
 ```
@@ -114,10 +127,17 @@ tables:
         platform:
           mysql:
             type: VARCHAR(191)
+      email_lc:
+        type: TEXT
+        generated: lower(email)
+        stored: true
     indexes:
       idx_users_email:
         fields: [email]
         unique: true
+      idx_active_users_email:
+        fields: [email]
+        where: deleted_at IS NULL
     constraints:
       chk_users_email:
         type: CHECK
@@ -173,6 +193,9 @@ Columns support the same information as field annotations:
 | `unique` | Marks the column unique. |
 | `unique_expr` | Unique expression. |
 | `index` | Requests an index for the column. |
+| `generated` | Generated-column SQL expression. |
+| `generated_kind` | Generated-column kind such as `STORED` or `VIRTUAL`. |
+| `stored` | Convenience boolean for `generated_kind: STORED`. Ignored unless `generated` is set. |
 | `default` | Literal default value. |
 | `default_expr` | Default SQL expression, such as `NOW()`. |
 | `foreign` | Foreign key reference in `table(column)` form. |
@@ -183,6 +206,11 @@ Columns support the same information as field annotations:
 | `check_name` | Explicit column check constraint name. |
 | `comment` | Column comment. |
 | `platform` / `overrides` | Dialect-specific overrides. |
+
+For PostgreSQL, Ptah plans generated-column expression changes with
+`ALTER COLUMN ... SET EXPRESSION` only for PostgreSQL 17+ capability sets.
+Older PostgreSQL targets receive an explicit manual migration warning instead
+of an automatic destructive drop-and-recreate plan.
 
 If `enum` is provided and `type` is empty or `ENUM`, Ptah creates an enum named
 `enum_<struct_name>_<field_name>` and uses that generated type for the column.
@@ -226,7 +254,7 @@ indexes:
 | `unique` | Emits a unique index. |
 | `comment` | Index comment. |
 | `type` | Dialect-specific index type. |
-| `condition` | Partial-index condition where supported. |
+| `where` / `condition` | Partial-index condition where supported. `where` matches Atlas terminology. |
 | `ops` | Operator or operator class string. |
 | `granularity` | ClickHouse data-skipping index granularity. |
 
