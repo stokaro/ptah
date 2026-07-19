@@ -13,11 +13,13 @@ import (
 	"time"
 
 	"github.com/stokaro/ptah/config"
+	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/convert/dbschematogo"
 	"github.com/stokaro/ptah/core/convert/fromschema"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/platform/capability"
+	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
@@ -57,7 +59,7 @@ type GenerateMigrationOptions struct {
 	// AllowDestructive permits destructive up migrations when CheckDestructive is set.
 	AllowDestructive bool
 	// ReportFormat optionally writes a safety report next to generated files.
-	// Supported values: "", "html".
+	// Supported values: "", "html", "json".
 	ReportFormat string
 	// ShadowDatabaseURL enables pre-write verification on an ephemeral database.
 	// The generator drops all objects in this database, replays existing
@@ -66,12 +68,22 @@ type GenerateMigrationOptions struct {
 	ShadowDatabaseURL string
 }
 
-// MigrationFiles represents the generated migration files
+// MigrationFilePair represents one generated up/down migration file pair.
+type MigrationFilePair struct {
+	UpFile        string // Path to the up migration file
+	DownFile      string // Path to the down migration file
+	ReportFile    string // Path to the safety report file, when requested
+	Version       int64  // Migration version (timestamp)
+	NoTransaction bool   // Whether the pair is marked with +ptah no_transaction
+}
+
+// MigrationFiles represents the generated migration files.
 type MigrationFiles struct {
-	UpFile     string // Path to the up migration file
-	DownFile   string // Path to the down migration file
-	ReportFile string // Path to the safety report file, when requested
-	Version    int64  // Migration version (timestamp)
+	UpFile     string              // Path to the first up migration file
+	DownFile   string              // Path to the first down migration file
+	ReportFile string              // Path to the first safety report file, when requested
+	Version    int64               // First migration version (timestamp)
+	Files      []MigrationFilePair // All generated migration file pairs, in apply order
 }
 
 // EmptyMigrationOptions contains options for skeleton migration creation.
@@ -211,36 +223,15 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 	slog.Debug("Generated migration version", "version", version)
 
 	info := conn.Info()
-	upNodes := planner.GenerateSchemaDiffASTWithCapabilities(diff, generated, info.Dialect, info.Capabilities)
-	assessments, err := safety.AssessRenderedWithCapabilities(upNodes, info.Dialect, info.Capabilities)
+	specs, assessments, err := planGeneratedMigrationSpecs(diff, generated, dbSchema, info, version, opts.MigrationName)
 	if err != nil {
-		return nil, fmt.Errorf("error assessing migration safety: %w", err)
+		return nil, err
+	}
+	if len(specs) == 0 {
+		return nil, nil
 	}
 	if err := checkDestructiveAllowed(opts, assessments); err != nil {
 		return nil, err
-	}
-
-	// 5. Generate up migration SQL
-	requiresNoTransaction := planner.RequiresNoTransaction(info.Dialect, upNodes)
-	directiveOpts := generatedDirectiveOptions{skipTimeouts: requiresNoTransaction}
-	upSQL, err := generateUpMigrationSQLWithOptions(diff, generated, info.Dialect, directiveOpts, info.Capabilities)
-	if err != nil {
-		return nil, fmt.Errorf("error generating up migration SQL: %w", err)
-	}
-
-	// Check if no actual migration is needed (empty upSQL indicates no changes)
-	if upSQL == "" {
-		// No migration needed - this is a successful no-op operation
-		return nil, nil
-	}
-	if requiresNoTransaction {
-		upSQL = withNoTransactionDirective(upSQL)
-	}
-
-	// 6. Generate down migration SQL
-	downSQL, err := generateDownMigrationSQLWithOptions(diff, generated, dbSchema, info.Dialect, directiveOpts, info.Capabilities)
-	if err != nil {
-		return nil, fmt.Errorf("error generating down migration SQL: %w", err)
 	}
 
 	if opts.ShadowDatabaseURL != "" {
@@ -249,10 +240,7 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 			MigrationsDir: opts.OutputDir,
 			Dialect:       info.Dialect,
 			Capabilities:  info.Capabilities,
-			Version:       version,
-			Name:          opts.MigrationName,
-			UpSQL:         upSQL,
-			DownSQL:       downSQL,
+			Candidates:    shadowCandidatesFromSpecs(specs),
 			Generated:     generated,
 			CompareOpts:   compareOpts,
 			Schemas:       opts.Schemas,
@@ -262,16 +250,9 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 	}
 
 	// 7. Create migration files
-	files, err := createMigrationFiles(opts.OutputDir, version, opts.MigrationName, upSQL, downSQL)
+	files, err := createMigrationFilesFromSpecs(opts.OutputDir, opts.ReportFormat, specs)
 	if err != nil {
 		return nil, fmt.Errorf("error creating migration files: %w", err)
-	}
-	if opts.ReportFormat != "" {
-		reportFile, err := createSafetyReportFile(files.UpFile, opts.ReportFormat, assessments)
-		if err != nil {
-			return nil, fmt.Errorf("error creating safety report: %w", err)
-		}
-		files.ReportFile = reportFile
 	}
 
 	return files, nil
@@ -309,6 +290,350 @@ func checkDestructiveAllowed(opts GenerateMigrationOptions, assessments []safety
 		return fmt.Errorf("destructive migration statements require AllowDestructive")
 	}
 	return nil
+}
+
+type generatedMigrationSpec struct {
+	Version       int64
+	Name          string
+	UpSQL         string
+	DownSQL       string
+	Assessments   []safety.StatementAssessment
+	NoTransaction bool
+}
+
+func planGeneratedMigrationSpecs(
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+	dbSchema *dbschematypes.DBSchema,
+	info dbschematypes.DBInfo,
+	version int64,
+	migrationName string,
+) ([]generatedMigrationSpec, []safety.StatementAssessment, error) {
+	concurrentIndexNames := concurrentIndexNamesForPopulatedTables(diff, generated, dbSchema, info)
+	plannerOpts := planner.Options{
+		Capabilities:         info.Capabilities,
+		ConcurrentIndexNames: concurrentIndexNames,
+	}
+	upNodes := planner.GenerateSchemaDiffASTWithOptions(diff, generated, info.Dialect, plannerOpts)
+	if len(upNodes) == 0 {
+		return nil, nil, nil
+	}
+	requiresNoTransaction := planner.RequiresNoTransaction(info.Dialect, upNodes)
+	if !requiresNoTransaction {
+		spec, assessments, err := buildGeneratedMigrationSpec(generatedMigrationSpecOptions{
+			Diff:         diff,
+			Generated:    generated,
+			DBSchema:     dbSchema,
+			Dialect:      info.Dialect,
+			Capabilities: info.Capabilities,
+			Version:      version,
+			Name:         migrationName,
+		})
+		if err != nil || spec.UpSQL == "" {
+			return nil, assessments, err
+		}
+		return []generatedMigrationSpec{spec}, assessments, nil
+	}
+
+	nodeGroups := splitNoTransactionNodes(info.Dialect, upNodes)
+	if len(nodeGroups.transactional) == 0 {
+		spec, assessments, err := buildGeneratedMigrationSpec(generatedMigrationSpecOptions{
+			Diff:                 diff,
+			Generated:            generated,
+			DBSchema:             dbSchema,
+			Dialect:              info.Dialect,
+			Capabilities:         info.Capabilities,
+			Version:              version,
+			Name:                 migrationName,
+			ConcurrentIndexNames: concurrentIndexNames,
+			NoTransaction:        true,
+		})
+		if err != nil || spec.UpSQL == "" {
+			return nil, assessments, err
+		}
+		return []generatedMigrationSpec{spec}, assessments, nil
+	}
+	if !allNoTransactionNodesAreConcurrentIndexes(nodeGroups.noTransaction) {
+		return nil, nil, fmt.Errorf("generated migration mixes transactional statements with non-transactional statements that cannot be split automatically")
+	}
+
+	diffGroups := splitConcurrentIndexDiff(diff, concurrentIndexNames)
+	specs := make([]generatedMigrationSpec, 0, 2)
+	allAssessments := make([]safety.StatementAssessment, 0)
+	if diffGroups.transactional.HasChanges() {
+		spec, assessments, err := buildGeneratedMigrationSpec(generatedMigrationSpecOptions{
+			Diff:         diffGroups.transactional,
+			Generated:    generated,
+			DBSchema:     dbSchema,
+			Dialect:      info.Dialect,
+			Capabilities: info.Capabilities,
+			Version:      version,
+			Name:         migrationName + "_transactional",
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		if spec.UpSQL != "" {
+			specs = append(specs, spec)
+			allAssessments = append(allAssessments, assessments...)
+			version++
+		}
+	}
+	if diffGroups.noTransaction.HasChanges() {
+		spec, assessments, err := buildGeneratedMigrationSpec(generatedMigrationSpecOptions{
+			Diff:                 diffGroups.noTransaction,
+			Generated:            generated,
+			DBSchema:             dbSchema,
+			Dialect:              info.Dialect,
+			Capabilities:         info.Capabilities,
+			Version:              version,
+			Name:                 migrationName + "_concurrent_indexes",
+			ConcurrentIndexNames: concurrentIndexNames,
+			NoTransaction:        true,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		if spec.UpSQL != "" {
+			specs = append(specs, spec)
+			allAssessments = append(allAssessments, assessments...)
+		}
+	}
+	return specs, allAssessments, nil
+}
+
+type generatedMigrationSpecOptions struct {
+	Diff                 *types.SchemaDiff
+	Generated            *goschema.Database
+	DBSchema             *dbschematypes.DBSchema
+	Dialect              string
+	Capabilities         capability.Capabilities
+	Version              int64
+	Name                 string
+	ConcurrentIndexNames []string
+	NoTransaction        bool
+}
+
+func buildGeneratedMigrationSpec(opts generatedMigrationSpecOptions) (generatedMigrationSpec, []safety.StatementAssessment, error) {
+	plannerOpts := planner.Options{
+		Capabilities:         opts.Capabilities,
+		ConcurrentIndexNames: opts.ConcurrentIndexNames,
+	}
+	upNodes := planner.GenerateSchemaDiffASTWithOptions(opts.Diff, opts.Generated, opts.Dialect, plannerOpts)
+	assessments, err := safety.AssessRenderedWithCapabilities(upNodes, opts.Dialect, opts.Capabilities)
+	if err != nil {
+		return generatedMigrationSpec{}, nil, fmt.Errorf("error assessing migration safety: %w", err)
+	}
+	directiveOpts := generatedDirectiveOptions{skipTimeouts: opts.NoTransaction}
+	upSQL, err := renderGeneratedMigrationSQL(upNodes, opts.Dialect, opts.Capabilities, "UP", directiveOpts)
+	if err != nil {
+		return generatedMigrationSpec{}, nil, fmt.Errorf("error generating up migration SQL: %w", err)
+	}
+	if upSQL == "" {
+		return generatedMigrationSpec{}, assessments, nil
+	}
+	if opts.NoTransaction {
+		upSQL = withNoTransactionDirective(upSQL)
+	}
+
+	downSQL, err := generateDownMigrationSQLWithOptions(opts.Diff, opts.Generated, opts.DBSchema, opts.Dialect, directiveOpts, opts.Capabilities)
+	if err != nil {
+		return generatedMigrationSpec{}, nil, fmt.Errorf("error generating down migration SQL: %w", err)
+	}
+	if opts.NoTransaction {
+		downSQL = withNoTransactionDirective(downSQL)
+	}
+
+	return generatedMigrationSpec{
+		Version:       opts.Version,
+		Name:          opts.Name,
+		UpSQL:         upSQL,
+		DownSQL:       downSQL,
+		Assessments:   assessments,
+		NoTransaction: opts.NoTransaction,
+	}, assessments, nil
+}
+
+func renderGeneratedMigrationSQL(
+	nodes []ast.Node,
+	dialect string,
+	caps capability.Capabilities,
+	direction string,
+	directiveOpts generatedDirectiveOptions,
+) (string, error) {
+	rawSQL, err := renderer.RenderSQLWithCapabilities(dialect, caps, nodes...)
+	if err != nil {
+		return "", err
+	}
+	statements := sqlutil.SplitSQLStatements(rawSQL)
+	if len(statements) == 0 || !hasActualSQLStatements(statements) {
+		return "", nil
+	}
+	header := fmt.Sprintf("-- Migration generated from schema differences\n-- Generated on: %s\n-- Direction: %s\n\n",
+		time.Now().Format(time.RFC3339), direction)
+	return withGeneratedTimeoutDirectivesForOptions(header+strings.Join(statements, ";\n")+";", dialect, directiveOpts), nil
+}
+
+type splitMigrationNodes struct {
+	transactional []ast.Node
+	noTransaction []ast.Node
+}
+
+func splitNoTransactionNodes(dialect string, nodes []ast.Node) splitMigrationNodes {
+	txNodes := make([]ast.Node, 0, len(nodes))
+	noTxNodes := make([]ast.Node, 0)
+	for _, node := range nodes {
+		if planner.NodeRequiresNoTransaction(dialect, node) {
+			noTxNodes = append(noTxNodes, node)
+			continue
+		}
+		txNodes = append(txNodes, node)
+	}
+	return splitMigrationNodes{transactional: txNodes, noTransaction: noTxNodes}
+}
+
+func allNoTransactionNodesAreConcurrentIndexes(nodes []ast.Node) bool {
+	for _, node := range nodes {
+		index, ok := node.(*ast.IndexNode)
+		if !ok || !index.Concurrently {
+			return false
+		}
+	}
+	return true
+}
+
+func concurrentIndexNamesForPopulatedTables(
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+	dbSchema *dbschematypes.DBSchema,
+	info dbschematypes.DBInfo,
+) []string {
+	if !platform.IsPostgresFamily(info.Dialect) || !info.Capabilities.Has(capability.CreateIndexConcurrently) {
+		return nil
+	}
+	added := stringSet(diff.IndexesAdded)
+	populatedTables := populatedTableSet(dbSchema)
+	structToTable := generatedStructTableMap(generated)
+	var names []string
+	for _, index := range generated.Indexes {
+		if _, ok := added[index.Name]; !ok {
+			continue
+		}
+		tableName := resolveGeneratedIndexTable(index, structToTable)
+		if _, ok := populatedTables[tableName]; ok {
+			names = append(names, index.Name)
+		}
+	}
+	slices.Sort(names)
+	return names
+}
+
+func populatedTableSet(dbSchema *dbschematypes.DBSchema) map[string]struct{} {
+	out := make(map[string]struct{})
+	if dbSchema == nil {
+		return out
+	}
+	for _, table := range dbSchema.Tables {
+		if table.EstimatedRows <= 0 {
+			continue
+		}
+		out[table.QualifiedName()] = struct{}{}
+		if table.Schema != "" {
+			out[table.Name] = struct{}{}
+		}
+	}
+	return out
+}
+
+func generatedStructTableMap(generated *goschema.Database) map[string]string {
+	out := make(map[string]string, len(generated.Tables))
+	for _, table := range generated.Tables {
+		out[table.StructName] = table.QualifiedName()
+	}
+	return out
+}
+
+func resolveGeneratedIndexTable(index goschema.Index, structToTable map[string]string) string {
+	if strings.TrimSpace(index.TableName) != "" {
+		return index.TableName
+	}
+	return structToTable[index.StructName]
+}
+
+type splitSchemaDiffs struct {
+	transactional *types.SchemaDiff
+	noTransaction *types.SchemaDiff
+}
+
+func splitConcurrentIndexDiff(diff *types.SchemaDiff, concurrentIndexNames []string) splitSchemaDiffs {
+	concurrent := stringSet(concurrentIndexNames)
+	txDiff := cloneSchemaDiff(diff)
+	noTxDiff := emptySchemaDiff()
+	txDiff.IndexesAdded = txDiff.IndexesAdded[:0]
+	for _, indexName := range diff.IndexesAdded {
+		if _, ok := concurrent[indexName]; ok {
+			noTxDiff.IndexesAdded = append(noTxDiff.IndexesAdded, indexName)
+			continue
+		}
+		txDiff.IndexesAdded = append(txDiff.IndexesAdded, indexName)
+	}
+	return splitSchemaDiffs{transactional: txDiff, noTransaction: noTxDiff}
+}
+
+func stringSet(values []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		out[value] = struct{}{}
+	}
+	return out
+}
+
+func emptySchemaDiff() *types.SchemaDiff {
+	return &types.SchemaDiff{}
+}
+
+func cloneSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
+	clone := *diff
+	clone.TablesAdded = slices.Clone(diff.TablesAdded)
+	clone.TablesRemoved = slices.Clone(diff.TablesRemoved)
+	clone.TablesModified = slices.Clone(diff.TablesModified)
+	clone.EnumsAdded = slices.Clone(diff.EnumsAdded)
+	clone.EnumsRemoved = slices.Clone(diff.EnumsRemoved)
+	clone.EnumsModified = slices.Clone(diff.EnumsModified)
+	clone.IndexesAdded = slices.Clone(diff.IndexesAdded)
+	clone.IndexesRemoved = slices.Clone(diff.IndexesRemoved)
+	clone.IndexesRemovedWithTables = slices.Clone(diff.IndexesRemovedWithTables)
+	clone.ExtensionsAdded = slices.Clone(diff.ExtensionsAdded)
+	clone.ExtensionsRemoved = slices.Clone(diff.ExtensionsRemoved)
+	clone.FunctionsAdded = slices.Clone(diff.FunctionsAdded)
+	clone.FunctionsRemoved = slices.Clone(diff.FunctionsRemoved)
+	clone.FunctionsModified = slices.Clone(diff.FunctionsModified)
+	clone.ViewsAdded = slices.Clone(diff.ViewsAdded)
+	clone.ViewsRemoved = slices.Clone(diff.ViewsRemoved)
+	clone.ViewsModified = slices.Clone(diff.ViewsModified)
+	clone.MaterializedViewsAdded = slices.Clone(diff.MaterializedViewsAdded)
+	clone.MaterializedViewsRemoved = slices.Clone(diff.MaterializedViewsRemoved)
+	clone.MaterializedViewsModified = slices.Clone(diff.MaterializedViewsModified)
+	clone.TriggersAdded = slices.Clone(diff.TriggersAdded)
+	clone.TriggersRemoved = slices.Clone(diff.TriggersRemoved)
+	clone.TriggersModified = slices.Clone(diff.TriggersModified)
+	clone.RLSPoliciesAdded = slices.Clone(diff.RLSPoliciesAdded)
+	clone.RLSPoliciesRemoved = slices.Clone(diff.RLSPoliciesRemoved)
+	clone.RLSPoliciesModified = slices.Clone(diff.RLSPoliciesModified)
+	clone.RLSEnabledTablesAdded = slices.Clone(diff.RLSEnabledTablesAdded)
+	clone.RLSEnabledTablesRemoved = slices.Clone(diff.RLSEnabledTablesRemoved)
+	clone.RolesAdded = slices.Clone(diff.RolesAdded)
+	clone.RolesRemoved = slices.Clone(diff.RolesRemoved)
+	clone.RolesModified = slices.Clone(diff.RolesModified)
+	clone.GrantsAdded = slices.Clone(diff.GrantsAdded)
+	clone.GrantsRemoved = slices.Clone(diff.GrantsRemoved)
+	clone.GrantOptionsAdded = slices.Clone(diff.GrantOptionsAdded)
+	clone.GrantOptionsRevoked = slices.Clone(diff.GrantOptionsRevoked)
+	clone.ConstraintsAdded = slices.Clone(diff.ConstraintsAdded)
+	clone.ConstraintsAddedWithTables = slices.Clone(diff.ConstraintsAddedWithTables)
+	clone.ConstraintsRemoved = slices.Clone(diff.ConstraintsRemoved)
+	clone.ConstraintsRemovedWithTables = slices.Clone(diff.ConstraintsRemovedWithTables)
+	return &clone
 }
 
 func createSafetyReportFile(upFile, format string, assessments []safety.StatementAssessment) (string, error) {
@@ -1184,11 +1509,72 @@ func createMigrationFiles(outputDir string, version int64, migrationName, upSQL,
 			return nil, fmt.Errorf("failed to write down migration file: %w", err)
 		}
 
-		return &MigrationFiles{
+		pair := MigrationFilePair{
 			UpFile:   upFilePath,
 			DownFile: downFilePath,
 			Version:  version,
-		}, nil
+		}
+		return migrationFilesFromPairs([]MigrationFilePair{pair}), nil
+	}
+}
+
+func createMigrationFilesFromSpecs(outputDir, reportFormat string, specs []generatedMigrationSpec) (*MigrationFiles, error) {
+	pairs := make([]MigrationFilePair, 0, len(specs))
+	cleanup := func() {
+		for _, pair := range pairs {
+			_ = os.Remove(pair.UpFile)
+			_ = os.Remove(pair.DownFile)
+			if pair.ReportFile != "" {
+				_ = os.Remove(pair.ReportFile)
+			}
+		}
+	}
+	for _, spec := range specs {
+		files, err := createMigrationFiles(outputDir, spec.Version, spec.Name, spec.UpSQL, spec.DownSQL)
+		if err != nil {
+			cleanup()
+			return nil, err
+		}
+		pair := files.Files[0]
+		pair.NoTransaction = spec.NoTransaction
+		if reportFormat != "" {
+			reportFile, err := createSafetyReportFile(pair.UpFile, reportFormat, spec.Assessments)
+			if err != nil {
+				pairs = append(pairs, pair)
+				cleanup()
+				return nil, fmt.Errorf("error creating safety report: %w", err)
+			}
+			pair.ReportFile = reportFile
+		}
+		pairs = append(pairs, pair)
+	}
+	return migrationFilesFromPairs(pairs), nil
+}
+
+func shadowCandidatesFromSpecs(specs []generatedMigrationSpec) []shadowCandidate {
+	candidates := make([]shadowCandidate, 0, len(specs))
+	for _, spec := range specs {
+		candidates = append(candidates, shadowCandidate{
+			Version: spec.Version,
+			Name:    spec.Name,
+			UpSQL:   spec.UpSQL,
+			DownSQL: spec.DownSQL,
+		})
+	}
+	return candidates
+}
+
+func migrationFilesFromPairs(pairs []MigrationFilePair) *MigrationFiles {
+	if len(pairs) == 0 {
+		return nil
+	}
+	first := pairs[0]
+	return &MigrationFiles{
+		UpFile:     first.UpFile,
+		DownFile:   first.DownFile,
+		ReportFile: first.ReportFile,
+		Version:    first.Version,
+		Files:      pairs,
 	}
 }
 
