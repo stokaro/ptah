@@ -6,11 +6,11 @@
 //
 // # Architecture Overview
 //
-// The planner package follows a factory pattern with dialect-specific implementations:
+// The planner package follows a registry pattern with dialect-specific implementations:
 //
 //	┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
 //	│   SchemaDiff    │───▶│     Planner      │───▶│   AST Nodes     │
-//	│   (Changes)     │    │   (Factory)      │    │  (SQL Logic)    │
+//	│   (Changes)     │    │   (Registry)     │    │  (SQL Logic)    │
 //	└─────────────────┘    └──────────────────┘    └─────────────────┘
 //	                                │
 //	                                ▼
@@ -66,7 +66,7 @@
 package planner
 
 import (
-	"fmt"
+	"sync"
 
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/goschema"
@@ -78,8 +78,11 @@ import (
 	"github.com/stokaro/ptah/migration/planner/dialects/mysql"
 	"github.com/stokaro/ptah/migration/planner/dialects/postgres"
 	"github.com/stokaro/ptah/migration/planner/dialects/sqlite"
+	"github.com/stokaro/ptah/migration/planner/registry"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
+
+var builtInPlannerRegistration sync.Once
 
 // Planner defines the interface for database-specific migration planning.
 //
@@ -128,60 +131,39 @@ import (
 //
 //		return nodes, nil
 //	}
-type Planner interface {
-	// GenerateMigrationAST converts schema differences into database-specific AST nodes.
-	//
-	// This method is the core of the migration planning process. It takes the differences
-	// identified by schema comparison and the target schema definition, then generates
-	// a sequence of AST nodes that represent the SQL operations needed to transform
-	// the current database schema to match the target schema.
-	//
-	// The generated AST nodes are ordered to respect database dependencies:
-	//   1. Type definitions (enums, custom types)
-	//   2. Table creations in dependency order
-	//   3. Column additions and modifications
-	//   4. Index and constraint additions
-	//   5. Data migrations (if applicable)
-	//   6. Cleanup operations (drops, if safe)
-	//
-	// Parameters:
-	//   - diff: Schema differences identified by the schemadiff package
-	//   - generated: Target schema parsed from Go struct annotations
-	//
-	// Returns:
-	//   - []ast.Node: Ordered sequence of AST nodes for migration execution
-	//
-	// The returned nodes can be rendered to SQL using the renderer package or
-	// processed further for validation, optimization, or custom transformations.
-	GenerateMigrationAST(diff *types.SchemaDiff, generated *goschema.Database) []ast.Node
-	// GenerateMigrationASTChecked is the error-returning planning path used by public
-	// helpers and CLI flows. Dialect implementations should return user-facing
-	// errors here for unsupported features instead of panicking.
-	GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error)
-}
+type Planner = registry.Planner
 
 // Options configures high-level planner helpers.
-type Options struct {
-	// Capabilities describes the concrete target server. Nil means the
-	// dialect's default capability preset.
-	Capabilities capability.Capabilities
-	// ConcurrentIndexNames requests PostgreSQL CREATE INDEX CONCURRENTLY for
-	// exactly these newly added index names when the target supports it.
-	ConcurrentIndexNames []string
+type Options = registry.Options
+
+// Factory creates a planner for a dialect from construction options.
+type Factory = registry.Factory
+
+// Register registers a planner factory for a dialect. Third-party dialects can
+// call this from init and then use the standard planner helpers.
+func Register(dialect string, factory Factory) error {
+	ensureBuiltInPlannersRegistered()
+	return registry.Register(dialect, factory)
 }
 
-func (o Options) capabilities(dialect string) capability.Capabilities {
-	if o.Capabilities != nil {
-		return o.Capabilities
-	}
-	return capability.ForDialect(dialect)
+// MustRegister registers a planner factory and panics if registration fails.
+func MustRegister(dialect string, factory Factory) {
+	ensureBuiltInPlannersRegistered()
+	registry.MustRegister(dialect, factory)
+}
+
+// RegisteredDialects returns the registered planner dialect names.
+func RegisteredDialects() []string {
+	ensureBuiltInPlannersRegistered()
+	return registry.RegisteredDialects()
 }
 
 // GetPlanner returns a dialect-specific migration planner for the given database dialect.
 //
-// This factory function creates and returns the appropriate planner implementation
-// based on the specified database dialect. Each planner handles dialect-specific
-// features, SQL syntax variations, and optimization strategies.
+// This registry lookup creates and returns the appropriate planner
+// implementation based on the specified database dialect. Each planner handles
+// dialect-specific features, SQL syntax variations, and optimization
+// strategies.
 //
 // # Supported Dialects
 //
@@ -230,9 +212,9 @@ func (o Options) capabilities(dialect string) capability.Capabilities {
 //
 // # Design Rationale
 //
-// The factory pattern is used here to:
+// The registry pattern is used here to:
 //   - Provide a clean, consistent interface for planner creation
-//   - Allow easy extension for new database dialects
+//   - Allow third-party extension for new database dialects
 //   - Centralize dialect validation and error handling
 //   - Enable dependency injection and testing scenarios
 func GetPlanner(dialect string) (Planner, error) {
@@ -250,23 +232,45 @@ func GetPlannerWithCapabilities(dialect string, caps capability.Capabilities) (P
 // GetPlannerWithOptions returns a dialect-specific migration planner with
 // explicit high-level generation policy.
 func GetPlannerWithOptions(dialect string, opts Options) (Planner, error) {
-	caps := opts.capabilities(dialect)
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres:
-		return postgres.NewWithCapabilities(caps).WithConcurrentIndexNames(opts.ConcurrentIndexNames...), nil
-	case platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		return postgres.NewWithCapabilities(caps).WithConcurrentIndexNames(opts.ConcurrentIndexNames...), nil
-	case platform.MySQL:
-		return mysql.NewWithCapabilities(caps), nil
-	case platform.MariaDB:
-		return mysql.NewWithCapabilities(caps), nil
-	case platform.ClickHouse:
-		return clickhouse.New(), nil
-	case platform.SQLite:
-		return sqlite.New(), nil
-	default:
-		return nil, fmt.Errorf("unsupported database dialect: %s", dialect)
-	}
+	ensureBuiltInPlannersRegistered()
+	return registry.Get(dialect, opts)
+}
+
+func ensureBuiltInPlannersRegistered() {
+	builtInPlannerRegistration.Do(func() {
+		for _, dialect := range []string{
+			platform.Postgres,
+			platform.CockroachDB,
+			platform.YugabyteDB,
+			platform.Spanner,
+		} {
+			registerPostgresFamilyPlanner(dialect)
+		}
+
+		for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+			registerMySQLFamilyPlanner(dialect)
+		}
+
+		registry.MustRegister(platform.ClickHouse, func(Options) Planner {
+			return clickhouse.New()
+		})
+		registry.MustRegister(platform.SQLite, func(Options) Planner {
+			return sqlite.New()
+		})
+	})
+}
+
+func registerPostgresFamilyPlanner(dialect string) {
+	registry.MustRegister(dialect, func(opts Options) Planner {
+		return postgres.NewWithCapabilities(opts.CapabilitiesFor(dialect)).
+			WithConcurrentIndexNames(opts.ConcurrentIndexNames...)
+	})
+}
+
+func registerMySQLFamilyPlanner(dialect string) {
+	registry.MustRegister(dialect, func(opts Options) Planner {
+		return mysql.NewWithCapabilities(opts.CapabilitiesFor(dialect))
+	})
 }
 
 // GenerateSchemaDiffAST generates AST nodes for schema differences using the specified dialect.
@@ -286,18 +290,15 @@ func GetPlannerWithOptions(dialect string, opts Options) (Planner, error) {
 // Returns a slice of AST nodes representing the SQL operations needed for migration.
 // The nodes are ordered to respect database dependencies and constraints.
 //
-// # Panics
-//
-// This function panics if:
-//   - An unsupported dialect is specified
-//   - The dialect-specific planner is not implemented
-//
 // # Usage Example
 //
 //	import "github.com/stokaro/ptah/core/platform"
 //
 //	// Generate AST nodes for PostgreSQL
-//	nodes := planner.GenerateSchemaDiffAST(diff, generated, platform.Postgres)
+//	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, platform.Postgres)
+//	if err != nil {
+//		return err
+//	}
 //
 //	// Process nodes for custom validation or transformation
 //	for _, node := range nodes {
@@ -404,19 +405,15 @@ func RequiresNoTransaction(dialect string, nodes []ast.Node) bool {
 //  3. Split the SQL into individual statements using sqlutil.SplitSQLStatements
 //  4. Return the statements as a string slice
 //
-// # Panics
-//
-// This function panics if:
-//   - An unsupported dialect is specified
-//   - SQL rendering fails due to invalid AST nodes
-//   - Statement splitting encounters malformed SQL
-//
 // # Usage Example
 //
 //	import "github.com/stokaro/ptah/core/platform"
 //
 //	// Generate SQL statements for MySQL
-//	statements := planner.GenerateSchemaDiffSQLStatements(diff, generated, platform.MySQL)
+//	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, platform.MySQL)
+//	if err != nil {
+//		return err
+//	}
 //
 //	// Execute statements sequentially
 //	for _, stmt := range statements {
@@ -497,19 +494,15 @@ func GenerateSchemaDiffSQLStatementsWithOptions(
 //   - Comments for complex operations (dialect-dependent)
 //   - Dependency-ordered statements
 //
-// # Panics
-//
-// This function panics if:
-//   - An unsupported dialect is specified
-//   - SQL rendering fails due to invalid AST nodes
-//   - The renderer encounters an unhandled node type
-//
 // # Usage Example
 //
 //	import "github.com/stokaro/ptah/core/platform"
 //
 //	// Generate complete SQL script for PostgreSQL
-//	sql := planner.GenerateSchemaDiffSQL(diff, generated, platform.Postgres)
+//	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.Postgres)
+//	if err != nil {
+//		return err
+//	}
 //
 //	// Write to migration file
 //	if err := os.WriteFile("migration.sql", []byte(sql), 0644); err != nil {
@@ -548,7 +541,7 @@ func GenerateSchemaDiffSQLWithOptions(
 	dialect string,
 	opts Options,
 ) (string, error) {
-	caps := opts.capabilities(dialect)
+	caps := opts.CapabilitiesFor(dialect)
 	astNodes, err := GenerateSchemaDiffASTWithOptions(diff, generated, dialect, opts)
 	if err != nil {
 		return "", err
