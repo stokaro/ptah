@@ -662,6 +662,31 @@ func TestCreateFunctionNode_Accept(t *testing.T) {
 	c.Assert(visitor.VisitedNodes[0], qt.Equals, "CreateFunction:test_function")
 }
 
+func TestOpaqueRoutineNode_AcceptDelegatesToRawSQL(t *testing.T) {
+	c := qt.New(t)
+
+	routine := ast.NewOpaqueRoutine(" CREATE PROCEDURE p() SELECT 1; ", "mysql", ast.RoutineKindProcedure)
+	visitor := &mocks.MockVisitor{}
+
+	err := routine.Accept(visitor)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(routine.SQL, qt.Equals, "CREATE PROCEDURE p() SELECT 1;")
+	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"RawSQL:CREATE PROCEDURE p() SELECT 1;"})
+}
+
+func TestOpaqueRoutineNode_AcceptPropagatesRawSQLError(t *testing.T) {
+	c := qt.New(t)
+
+	routine := ast.NewOpaqueRoutine("CREATE PROCEDURE p() SELECT 1;", "mysql", ast.RoutineKindProcedure)
+	visitor := &mocks.MockVisitor{ReturnError: true}
+
+	err := routine.Accept(visitor)
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"RawSQL:CREATE PROCEDURE p() SELECT 1;"})
+}
+
 func TestNewCreatePolicy(t *testing.T) {
 	c := qt.New(t)
 

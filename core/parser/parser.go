@@ -550,6 +550,14 @@ func (p *Parser) parseCreateRawSQLServerRoutine(statementStart int) (ast.Node, e
 	return ast.NewRawSQL(sql), nil
 }
 
+func (p *Parser) parseCreateOpaqueSQLServerRoutine(statementStart int, kind ast.RoutineKind) (ast.Node, error) {
+	sql, err := p.collectRawSQLServerRoutine(statementStart)
+	if err != nil {
+		return nil, err
+	}
+	return ast.NewOpaqueRoutine(sql, p.dialect, kind), nil
+}
+
 func (p *Parser) collectRawSQLServerRoutine(statementStart int) (string, error) {
 	blockDepth := 0
 	caseDepth := 0
@@ -628,6 +636,14 @@ func (p *Parser) parseCreateRawRoutineStatement(statementStart int) (ast.Node, e
 		return nil, err
 	}
 	return ast.NewRawSQL(sql), nil
+}
+
+func (p *Parser) parseCreateOpaqueRoutineStatement(statementStart int, kind ast.RoutineKind) (ast.Node, error) {
+	sql, err := p.collectRawRoutineStatement(statementStart)
+	if err != nil {
+		return nil, err
+	}
+	return ast.NewOpaqueRoutine(sql, p.dialect, kind), nil
 }
 
 func (p *Parser) collectRawRoutineStatement(statementStart int) (string, error) {

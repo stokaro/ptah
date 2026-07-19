@@ -110,7 +110,11 @@ p := parser.NewParser(
 Dialect-specific routine bodies are handled behind parser strategies. Generic
 mode stays best-effort; dialect mode can use a routine boundary detector that is
 specific to the selected SQL family without turning the generic DDL parser into
-a stored-procedure sub-language parser.
+a stored-procedure sub-language parser. When a dialect-aware routine boundary is
+known but the body sub-language is not structured yet, the parser returns an
+`ast.OpaqueRoutineNode`: renderers emit its SQL through the raw-SQL visitor
+contract, while parser consumers can still distinguish it from arbitrary raw
+SQL.
 
 ### Parsing Multiple Statements
 

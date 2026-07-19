@@ -1,7 +1,10 @@
 package parser
 
 import (
+	"fmt"
+
 	"github.com/stokaro/ptah/core/ast"
+	"github.com/stokaro/ptah/core/lexer"
 	"github.com/stokaro/ptah/core/platform"
 )
 
@@ -38,20 +41,45 @@ type mysqlFamilyRoutineParser struct{}
 
 func (mysqlFamilyRoutineParser) parseCreateRoutine(p *Parser, target string, statementStart int) (ast.Node, error) {
 	if target == "PROCEDURE" {
-		return p.parseCreateRawRoutineStatement(statementStart)
+		return p.parseCreateOpaqueRoutineStatement(statementStart, ast.RoutineKindProcedure)
 	}
-	return p.parseCreateFunction(statementStart)
+	node, err := p.parseCreateFunction(statementStart)
+	if err != nil {
+		return nil, err
+	}
+	if raw, ok := node.(*ast.RawSQLNode); ok {
+		return ast.NewOpaqueRoutine(raw.SQL, p.dialect, ast.RoutineKindFunction), nil
+	}
+	return node, nil
 }
 
 func (mysqlFamilyRoutineParser) parseCreateDefinerRoutine(p *Parser, statementStart int) (ast.Node, error) {
-	return p.parseCreateDefinerRoutineBestEffort(statementStart)
+	for !p.isAtEnd() {
+		if err := p.checkTimeout(); err != nil {
+			return nil, err
+		}
+		switch {
+		case p.current.MatchIdentifierValue("FUNCTION"):
+			return p.parseCreateOpaqueRoutineStatement(statementStart, ast.RoutineKindFunction)
+		case p.current.MatchIdentifierValue("PROCEDURE"):
+			return p.parseCreateOpaqueRoutineStatement(statementStart, ast.RoutineKindProcedure)
+		case p.current.Type == lexer.TokenSemicolon:
+			return nil, fmt.Errorf("unsupported CREATE DEFINER target at position %d", p.current.Start)
+		default:
+			p.advance()
+		}
+	}
+	return nil, fmt.Errorf("unsupported CREATE DEFINER target at position %d", p.current.Start)
 }
 
 type sqlServerRoutineParser struct{}
 
 func (sqlServerRoutineParser) parseCreateRoutine(p *Parser, target string, statementStart int) (ast.Node, error) {
-	if target == "FUNCTION" || target == "PROCEDURE" {
-		return p.parseCreateRawSQLServerRoutine(statementStart)
+	switch target {
+	case "FUNCTION":
+		return p.parseCreateOpaqueSQLServerRoutine(statementStart, ast.RoutineKindFunction)
+	case "PROCEDURE":
+		return p.parseCreateOpaqueSQLServerRoutine(statementStart, ast.RoutineKindProcedure)
 	}
 	return compatibilityRoutineParser{}.parseCreateRoutine(p, target, statementStart)
 }

@@ -83,6 +83,7 @@ The core package contains all fundamental components for parsing, transforming, 
   - Converts SQL DDL tokens into Abstract Syntax Tree nodes
   - Supports CREATE TABLE, ALTER TABLE, CREATE INDEX, CREATE TYPE statements
   - Accepts optional dialect and capability settings for syntax that cannot be parsed correctly in generic best-effort mode
+  - Preserves dialect-aware routine boundaries with typed opaque AST nodes until routine sub-language parsers exist
   - Provides comprehensive error handling and position information
 
 - **`lexer/`** - SQL tokenization and lexical analysis
