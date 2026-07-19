@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/stokaro/ptah/core/ast"
@@ -186,14 +187,14 @@ func parsePostgresSQLBody(sql string, tokens []lexer.Token) string {
 }
 
 func postgresRoutineStatementEnd(sql string, tokens []lexer.Token) int {
-	for i := len(tokens) - 1; i >= 0; i-- {
-		switch tokens[i].Type {
+	for _, tok := range slices.Backward(tokens) {
+		switch tok.Type {
 		case lexer.TokenEOF, lexer.TokenWhitespace, lexer.TokenComment:
 			continue
 		case lexer.TokenSemicolon:
-			return tokens[i].Start
+			return tok.Start
 		default:
-			return tokens[i].End
+			return tok.End
 		}
 	}
 	return len(sql)
