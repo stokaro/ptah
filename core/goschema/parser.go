@@ -690,14 +690,18 @@ func (s *schemaParseState) mapTableDirectiveStructName(comment *ast.Comment, str
 // processDeclarations processes all struct declarations in the file.
 func (s *schemaParseState) processDeclarations(structDecls []structDeclaration) error {
 	for _, structDecl := range structDecls {
-		if err := s.processTableComments(structDecl.name, structDecl.genDecl); err != nil {
-			return err
-		}
-		if err := s.processFieldComments(structDecl.name, structDecl.structType); err != nil {
+		if err := s.processDeclaration(structDecl); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (s *schemaParseState) processDeclaration(structDecl structDeclaration) error {
+	if err := s.processTableComments(structDecl.name, structDecl.genDecl); err != nil {
+		return err
+	}
+	return s.processFieldComments(structDecl.name, structDecl.structType)
 }
 
 // processAllFileComments scans comments for RLS annotations that are separated
