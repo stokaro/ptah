@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/internal/schemaops"
@@ -72,6 +73,7 @@ func NewDriftCommand() *cobra.Command {
 		"Maximum time to wait when establishing the initial database connection (for example 5s or 1m). Use 0 to disable the timeout.",
 	)
 
+	cmdutil.ConfigureCommand(cmd)
 	return cmd
 }
 

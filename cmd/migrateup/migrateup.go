@@ -10,6 +10,7 @@ import (
 	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/pathguard"
@@ -125,6 +126,7 @@ func NewMigrateUpCommand() *cobra.Command {
 		cobraflags.RegisterMap(migrateUpCmd, migrateUpFlags)
 		migrateUpFlagsRegistered = true
 	}
+	cmdutil.ConfigureCommand(migrateUpCmd)
 	return migrateUpCmd
 }
 

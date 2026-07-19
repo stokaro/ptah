@@ -1,6 +1,7 @@
 package generate
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -8,6 +9,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"github.com/stokaro/ptah/cmd/internal/exitcode"
 )
 
 func outputStatementContaining(output, marker string) string {
@@ -69,6 +72,26 @@ func TestLoadSchemaFile_RejectsUnsupportedExtension(t *testing.T) {
 
 	_, err := loadSchema("", path)
 	c.Assert(err, qt.ErrorMatches, `unsupported schema file extension ".json": only .yaml, .yml, and .hcl are supported`)
+}
+
+func TestGenerateCommandUnsupportedDialectExits2WithoutPanicTrace(t *testing.T) {
+	c := qt.New(t)
+
+	cmd := NewGenerateCommand()
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"--root-dir", filepath.Join("..", "..", "stubs"), "--dialect", "oracle"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+	c.Assert(errOut.String(), qt.Contains, "error: error rendering oracle schema: unsupported database dialect: oracle")
+	c.Assert(errOut.String(), qt.Not(qt.Contains), "panic:")
+	c.Assert(errOut.String(), qt.Not(qt.Contains), "goroutine")
+	c.Assert(errOut.String(), qt.Not(qt.Contains), "Usage:")
 }
 
 func TestGenerateCommand_MutualForeignKeysAreTwoPhase(t *testing.T) {

@@ -37,6 +37,7 @@ func NewSchemaCommand() *cobra.Command {
 			return cmd.Help()
 		},
 	}
+	cmdutil.ConfigureCommandArgs(cmd, nil)
 	cmd.AddCommand(newSchemaExportCommand())
 	return cmd
 }
@@ -59,7 +60,6 @@ The initial export path is Go annotations to Atlas schema HCL:
 
   ptah schema export --from go --to atlas-hcl --root-dir ./models --out schema.hcl`,
 		Args:          cmdutil.NoPositionalArgs,
-		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runExport(cmd, exportOptions{
@@ -82,7 +82,7 @@ The initial export path is Go annotations to Atlas schema HCL:
 	flags.BoolVar(&cleanupAnnotations, cleanupGoAnnotationsFlag, false, "Remove Ptah schema annotations from Go source after a successful export")
 	flags.BoolVar(&cleanupDryRun, cleanupDryRunFlag, false, "Show cleanup summary without modifying Go files")
 	flags.BoolVar(&cleanupDiff, cleanupDiffFlag, false, "Print cleanup diff without modifying Go files")
-	cmd.SetFlagErrorFunc(cmdutil.FlagErrorFunc)
+	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
 

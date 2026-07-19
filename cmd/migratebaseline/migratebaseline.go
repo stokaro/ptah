@@ -10,6 +10,7 @@ import (
 	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/schemaops"
 	"github.com/stokaro/ptah/dbschema"
@@ -47,6 +48,7 @@ migrate-up runs apply only new migrations.`,
 		},
 	}
 	cobraflags.RegisterMap(cmd, flags)
+	cmdutil.ConfigureCommand(cmd)
 	return cmd
 }
 

@@ -8,6 +8,7 @@ import (
 	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/core/convert/dbschematogo"
 	"github.com/stokaro/ptah/core/renderer"
@@ -45,6 +46,7 @@ func NewReadDBCommand() *cobra.Command {
 		cobraflags.RegisterMap(readDBCmd, readDBFlags)
 		readDBFlagsRegistered = true
 	}
+	cmdutil.ConfigureCommand(readDBCmd)
 	return readDBCmd
 }
 

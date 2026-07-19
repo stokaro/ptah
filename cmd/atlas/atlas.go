@@ -10,6 +10,7 @@ import (
 	"github.com/stokaro/ptah/cmd/compare"
 	"github.com/stokaro/ptah/cmd/dropall"
 	"github.com/stokaro/ptah/cmd/internal/cmdalias"
+	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/lint"
 	"github.com/stokaro/ptah/cmd/migrate"
 	"github.com/stokaro/ptah/cmd/migratedown"
@@ -68,6 +69,7 @@ native Ptah command tree separate for future redesign.`,
 			return cmd.Help()
 		},
 	}
+	cmdutil.ConfigureCommandArgs(cmd, nil)
 	cmd.AddCommand(newAtlasVersionCommand())
 	cmd.AddCommand(newAtlasLicenseCommand())
 	cmd.AddCommand(newAtlasSchemaCommand())
@@ -83,6 +85,7 @@ func newAtlasSchemaCommand() *cobra.Command {
 			return cmd.Help()
 		},
 	}
+	cmdutil.ConfigureCommandArgs(cmd, nil)
 	for _, verb := range []atlasVerb{
 		{
 			use:     "inspect",
@@ -147,6 +150,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 			return cmd.Help()
 		},
 	}
+	cmdutil.ConfigureCommandArgs(cmd, nil)
 	for _, verb := range []atlasVerb{
 		{
 			use:     "apply",
@@ -244,23 +248,27 @@ func newAtlasMigrateCommand() *cobra.Command {
 }
 
 func newAtlasVersionCommand() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Print Ptah version information",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("atlas version compatibility is not implemented yet; use the native Ptah version command once issue #268 lands")
 		},
 	}
+	cmdutil.ConfigureCommand(cmd)
+	return cmd
 }
 
 func newAtlasLicenseCommand() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "license",
 		Short: "Print license information",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("atlas license compatibility is not implemented yet")
 		},
 	}
+	cmdutil.ConfigureCommand(cmd)
+	return cmd
 }
 
 func newAtlasAliasCommand(group string, verb atlasVerb) *cobra.Command {
@@ -289,6 +297,7 @@ func newAtlasAliasCommand(group string, verb atlasVerb) *cobra.Command {
 		},
 	}
 	registerAtlasFlags(cmd, verb.flags)
+	cmdutil.ConfigureCommand(cmd)
 	return cmd
 }
 

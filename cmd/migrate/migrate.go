@@ -10,6 +10,7 @@ import (
 	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/renderer"
@@ -26,7 +27,6 @@ var migrateCmd = &cobra.Command{
 	
 This command compares your Go entities with the current database schema and generates
 the SQL statements needed to update the database to match your entities.`,
-	Args: cobra.NoArgs,
 	RunE: migrateCommand,
 }
 
@@ -81,6 +81,7 @@ func NewMigrateCommand() *cobra.Command {
 	}
 	addMigrateGenerateCommand(migrateCmd)
 	addMigrateNewCommand(migrateCmd)
+	cmdutil.ConfigureCommandArgs(migrateCmd, nil)
 	return migrateCmd
 }
 

@@ -7,14 +7,14 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/buildinfo"
+	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 )
 
 // NewVersionCommand returns the version-reporting command.
 func NewVersionCommand() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Print Ptah version information",
-		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			info := buildinfo.Resolve()
 			fmt.Fprintf(cmd.OutOrStdout(), "Version: %s\n", info.Version)
@@ -25,4 +25,6 @@ func NewVersionCommand() *cobra.Command {
 			return nil
 		},
 	}
+	cmdutil.ConfigureCommand(cmd)
+	return cmd
 }

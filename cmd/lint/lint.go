@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/migration/lint"
@@ -84,13 +85,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 	cmd.Flags().StringArrayVar(&disabled, "disable", nil, "Disable a rule code or family, for example DS101 or MY (repeatable)")
 	cmd.Flags().StringVar(&failOn, "fail-on", failOnError, "Failure threshold controlling the exit code: error, any or none")
 
-	// Flag-parse errors (unknown flags and the like) must surface a message
-	// and exit 2 like every other usage error, not vanish under SilenceErrors.
-	cmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
-		fmt.Fprintf(c.ErrOrStderr(), "error: %s\n", err)
-		return exitcode.New(2, err)
-	})
-
+	cmdutil.ConfigureCommand(cmd)
 	return cmd
 }
 

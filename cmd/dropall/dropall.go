@@ -10,6 +10,7 @@ import (
 	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
 )
@@ -51,6 +52,7 @@ func NewDropAllCommand() *cobra.Command {
 		cobraflags.RegisterMap(dropAllCmd, dropAllFlags)
 		dropAllFlagsRegistered = true
 	}
+	cmdutil.ConfigureCommand(dropAllCmd)
 
 	return dropAllCmd
 }

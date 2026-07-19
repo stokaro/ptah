@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/generator"
 )
@@ -31,6 +32,7 @@ migration naming convention.`,
 	flags.String(newMigrationsDirFlag, "", "Directory receiving generated migration files (required)")
 	flags.String(newNameFlag, "", "Migration name; optional when [name] is provided")
 
+	cmdutil.ConfigureCommandArgs(cmd, cobra.MaximumNArgs(1))
 	return cmd
 }
 
