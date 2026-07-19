@@ -345,7 +345,7 @@ func TestSplitSQLStatementsForDialect_SQLServerProcedureWithoutBegin(t *testing.
 	input := `CREATE PROCEDURE [dbo].[list_users] AS
 SELECT 1 AS [first];
 SELECT 2 AS [second];
-GO
+GO /* deploy */
 CREATE TABLE after_proc (id int);`
 
 	result := sqlutil.SplitSQLStatementsForDialect(input, "sqlserver")
