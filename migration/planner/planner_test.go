@@ -1,6 +1,8 @@
 package planner_test
 
 import (
+	"fmt"
+	"sync/atomic"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -8,6 +10,7 @@ import (
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/core/platform/capability"
 	dbtypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/planner/dialects/mysql"
@@ -15,6 +18,8 @@ import (
 	"github.com/stokaro/ptah/migration/schemadiff"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
+
+var externalPlannerDialectSeq atomic.Int64
 
 func TestGetPlanner(t *testing.T) {
 	tests := []struct {
@@ -58,6 +63,11 @@ func TestGetPlanner(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:    "clickhouse planner",
+			dialect: platform.ClickHouse,
+			wantErr: false,
+		},
+		{
 			name:    "sqlite3 planner",
 			dialect: "sqlite3",
 			wantErr: false,
@@ -95,6 +105,57 @@ func TestGetPlanner_MariaDBUsesMySQLPlanner(t *testing.T) {
 	c.Assert(ok, qt.IsTrue)
 }
 
+func TestRegisterExternalPlanner(t *testing.T) {
+	c := qt.New(t)
+
+	dialect := nextExternalPlannerDialect("external_planner_test")
+	err := planner.Register(dialect, func(opts planner.Options) planner.Planner {
+		return externalPlanner{caps: opts.CapabilitiesFor(dialect)}
+	})
+	c.Assert(err, qt.IsNil)
+
+	caps := capability.Postgres13()
+	registered, err := planner.GetPlannerWithOptions(dialect, planner.Options{Capabilities: caps})
+	c.Assert(err, qt.IsNil)
+
+	external, ok := registered.(externalPlanner)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(external.caps.Has(capability.CreateIndexConcurrently), qt.IsTrue)
+}
+
+func TestRegisterRejectsDuplicateAndNilFactories(t *testing.T) {
+	c := qt.New(t)
+
+	dialect := nextExternalPlannerDialect("duplicate_planner_test")
+	err := planner.Register(dialect, func(planner.Options) planner.Planner {
+		return externalPlanner{}
+	})
+	c.Assert(err, qt.IsNil)
+
+	err = planner.Register(dialect, func(planner.Options) planner.Planner {
+		return externalPlanner{}
+	})
+	c.Assert(err, qt.ErrorMatches, fmt.Sprintf(`planner registry: dialect %q is already registered`, dialect))
+
+	nilDialect := nextExternalPlannerDialect("nil_factory_planner_test")
+	err = planner.Register(nilDialect, nil)
+	c.Assert(err, qt.ErrorMatches, fmt.Sprintf(`planner registry: factory for dialect %q must not be nil`, nilDialect))
+}
+
+func TestGetPlannerRejectsFactoryReturningNil(t *testing.T) {
+	c := qt.New(t)
+
+	dialect := nextExternalPlannerDialect("nil_planner_test")
+	err := planner.Register(dialect, func(planner.Options) planner.Planner {
+		return nil
+	})
+	c.Assert(err, qt.IsNil)
+
+	registered, err := planner.GetPlanner(dialect)
+	c.Assert(registered, qt.IsNil)
+	c.Assert(err, qt.ErrorMatches, fmt.Sprintf(`planner registry: factory for dialect %q returned nil`, dialect))
+}
+
 func TestGenerateSchemaDiffSQL_UnsupportedDialectReturnsError(t *testing.T) {
 	c := qt.New(t)
 
@@ -114,6 +175,29 @@ func TestRequiresNoTransaction(t *testing.T) {
 	c.Assert(planner.RequiresNoTransaction(platform.MySQL, []ast.Node{enumAdd}), qt.IsFalse)
 	c.Assert(planner.RequiresNoTransaction(platform.Postgres, []ast.Node{enumRename}), qt.IsFalse)
 	c.Assert(planner.RequiresNoTransaction(platform.Postgres, []ast.Node{ast.NewComment("noop")}), qt.IsFalse)
+}
+
+type externalPlanner struct {
+	caps capability.Capabilities
+}
+
+func nextExternalPlannerDialect(prefix string) string {
+	return fmt.Sprintf("%s_%d", prefix, externalPlannerDialectSeq.Add(1))
+}
+
+func (p externalPlanner) GenerateMigrationAST(
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+) []ast.Node {
+	nodes, _ := p.GenerateMigrationASTChecked(diff, generated)
+	return nodes
+}
+
+func (p externalPlanner) GenerateMigrationASTChecked(
+	_ *types.SchemaDiff,
+	_ *goschema.Database,
+) ([]ast.Node, error) {
+	return []ast.Node{ast.NewComment("external planner")}, nil
 }
 
 func TestGeneratedNarrowingTypeChangeIsDestructive(t *testing.T) {
