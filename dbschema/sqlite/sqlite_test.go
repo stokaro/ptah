@@ -46,10 +46,12 @@ func TestReaderReadSchema(t *testing.T) {
 		id INTEGER PRIMARY KEY,
 		account_id INTEGER NOT NULL,
 		email TEXT NOT NULL CONSTRAINT users_email_check CHECK (email <> ''),
+		note TEXT,
 		status TEXT CHECK (status IN ('active', 'disabled')),
 		CONSTRAINT fk_users_account_id FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
 	) STRICT`)
 	execSQL(t, db, `CREATE UNIQUE INDEX idx_users_email_active ON users(email) WHERE status = 'active'`)
+	execSQL(t, db, `CREATE INDEX idx_users_note_where ON users(note) WHERE note = 'contains WHERE token' AND status = 'active'`)
 	execSQL(t, db, `CREATE VIEW active_users AS SELECT id, email FROM users WHERE status = 'active'`)
 	execSQL(t, db, `CREATE TRIGGER trg_users_ai AFTER INSERT ON users
 		BEGIN
@@ -82,6 +84,11 @@ func TestReaderReadSchema(t *testing.T) {
 	c.Assert(index.Columns, qt.DeepEquals, []string{"email"})
 	c.Assert(index.IsUnique, qt.IsTrue)
 	c.Assert(index.Definition, qt.Contains, "CREATE UNIQUE INDEX idx_users_email_active")
+	c.Assert(index.Condition, qt.Equals, "status = 'active'")
+
+	noteIndex := findIndex(schema.Indexes, "idx_users_note_where")
+	c.Assert(noteIndex, qt.IsNotNil)
+	c.Assert(noteIndex.Condition, qt.Equals, "note = 'contains WHERE token' AND status = 'active'")
 
 	fk := findConstraint(schema.Constraints, "fk_users_account_id")
 	c.Assert(fk, qt.IsNotNil)

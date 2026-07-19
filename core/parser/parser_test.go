@@ -2682,10 +2682,28 @@ func TestParser_ParseCreateIndexInclude(t *testing.T) {
 	c.Assert(index.IncludeColumns, qt.DeepEquals, []string{"active", "version"})
 }
 
+func TestParser_ParseCreatePartialIndex(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "CREATE INDEX idx_users_email_active ON users (email) WHERE deleted_at IS NULL;"
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	index, ok := statements.Statements[0].(*ast.IndexNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(index.Name, qt.Equals, "idx_users_email_active")
+	c.Assert(index.Table, qt.Equals, "users")
+	c.Assert(index.Columns, qt.DeepEquals, []string{"email"})
+	c.Assert(index.Condition, qt.Equals, "deleted_at IS NULL")
+}
+
 func TestParser_ParseCreateIndexUsingAndStorageParams(t *testing.T) {
 	c := qt.New(t)
 
-	sql := "CREATE INDEX idx_users_c ON users USING BRIN (c) WITH (pages_per_range='2');"
+	sql := "CREATE INDEX idx_users_c ON users USING BRIN (c) WITH (pages_per_range='2') WHERE c IS NOT NULL;"
 	p := parser.NewParser(sql)
 
 	statements, err := p.Parse()
@@ -2699,6 +2717,7 @@ func TestParser_ParseCreateIndexUsingAndStorageParams(t *testing.T) {
 	c.Assert(index.Type, qt.Equals, "BRIN")
 	c.Assert(index.Columns, qt.DeepEquals, []string{"c"})
 	c.Assert(index.StorageParams, qt.DeepEquals, map[string]string{"pages_per_range": "2"})
+	c.Assert(index.Condition, qt.Equals, "c IS NOT NULL")
 }
 
 func TestParser_ParseCreateUniqueIndexNullsNotDistinct(t *testing.T) {

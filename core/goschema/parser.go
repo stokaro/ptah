@@ -30,6 +30,7 @@ var knownIndexAttributes = map[string]bool{
 	"comment":     true,
 	"type":        true,
 	"condition":   true,
+	"where":       true,
 	"ops":         true,
 	"table":       true,
 	"granularity": true,
@@ -56,6 +57,9 @@ var knownFieldAttributes = map[string]bool{
 	"unique":              true,
 	"unique_expr":         true,
 	"index":               true,
+	"generated":           true,
+	"generated_kind":      true,
+	"stored":              true,
 	"default":             true,
 	"default_expr":        true,
 	"foreign":             true,
@@ -180,34 +184,52 @@ func (s *schemaParseState) parseFieldComment(
 		}
 		_, defaultSet := kv["default"]
 		s.schemaFields = append(s.schemaFields, Field{
-			StructName:         structName,
-			FieldName:          name.Name,
-			Name:               kv["name"],
-			Type:               fieldType,
-			Nullable:           kv["not_null"] != "true",
-			Primary:            kv["primary"] == "true",
-			AutoInc:            kv["auto_increment"] == "true" || identityGeneration != "",
-			IdentityGeneration: identityGeneration,
-			IdentityStart:      kv["identity_start"],
-			IdentityIncrement:  kv["identity_increment"],
-			IdentityOptions:    kv["identity_options"],
-			Unique:             kv["unique"] == "true",
-			UniqueExpr:         kv["unique_expr"],
-			Default:            kv["default"],
-			DefaultSet:         defaultSet,
-			DefaultExpr:        kv["default_expr"],
-			Foreign:            kv["foreign"],
-			ForeignKeyName:     kv["foreign_key_name"],
-			OnDelete:           kv["on_delete"],
-			OnUpdate:           kv["on_update"],
-			Enum:               enum,
-			Check:              kv["check"],
-			CheckName:          kv["check_name"],
-			Comment:            kv["comment"],
-			Overrides:          parseutils.ParsePlatformSpecific(kv),
+			StructName:          structName,
+			FieldName:           name.Name,
+			Name:                kv["name"],
+			Type:                fieldType,
+			Nullable:            kv["not_null"] != "true",
+			Primary:             kv["primary"] == "true",
+			AutoInc:             kv["auto_increment"] == "true" || identityGeneration != "",
+			IdentityGeneration:  identityGeneration,
+			IdentityStart:       kv["identity_start"],
+			IdentityIncrement:   kv["identity_increment"],
+			IdentityOptions:     kv["identity_options"],
+			Unique:              kv["unique"] == "true",
+			UniqueExpr:          kv["unique_expr"],
+			Default:             kv["default"],
+			DefaultSet:          defaultSet,
+			DefaultExpr:         kv["default_expr"],
+			Foreign:             kv["foreign"],
+			ForeignKeyName:      kv["foreign_key_name"],
+			OnDelete:            kv["on_delete"],
+			OnUpdate:            kv["on_update"],
+			Enum:                enum,
+			Check:               kv["check"],
+			CheckName:           kv["check_name"],
+			GeneratedExpression: kv["generated"],
+			GeneratedKind:       generatedColumnKind(kv),
+			Comment:             kv["comment"],
+			Overrides:           parseutils.ParsePlatformSpecific(kv),
 		})
 	}
 	return nil
+}
+
+func generatedColumnKind(kv map[string]string) string {
+	if strings.TrimSpace(kv["generated"]) == "" {
+		return ""
+	}
+	if kind := strings.TrimSpace(kv["generated_kind"]); kind != "" {
+		return strings.ToUpper(kind)
+	}
+	if stored := strings.TrimSpace(kv["stored"]); stored != "" {
+		if strings.EqualFold(stored, "true") {
+			return "STORED"
+		}
+		return "VIRTUAL"
+	}
+	return ""
 }
 
 func hasIdentitySettings(kv map[string]string) bool {
@@ -289,13 +311,22 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 		Fields:      fields,
 		Unique:      kv["unique"] == "true",
 		Comment:     kv["comment"],
-		Type:        kv["type"],      // PG: GIN/GIST/BTREE/HASH; CH: minmax/set(N)/bloom_filter/...
-		Condition:   kv["condition"], // PG only: WHERE clause for partial indexes
-		Operator:    kv["ops"],       // PG only: operator class (gin_trgm_ops, etc.)
-		TableName:   tableName,       // Target table name
-		Granularity: granularity,     // CH only: GRANULARITY n for data-skipping indexes
+		Type:        kv["type"],                                  // PG: GIN/GIST/BTREE/HASH; CH: minmax/set(N)/bloom_filter/...
+		Condition:   firstNonEmpty(kv["where"], kv["condition"]), // PG/SQLite: WHERE clause for partial indexes
+		Operator:    kv["ops"],                                   // PG only: operator class (gin_trgm_ops, etc.)
+		TableName:   tableName,                                   // Target table name
+		Granularity: granularity,                                 // CH only: GRANULARITY n for data-skipping indexes
 	})
 	return nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 // ParseConstraintComment parses a constraint comment and adds it to the constraints slice.
@@ -410,6 +441,12 @@ type schemaParseState struct {
 	roles                 []Role
 	grants                []Grant
 	schemas               []Schema
+}
+
+type structDeclaration struct {
+	name       string
+	genDecl    *ast.GenDecl
+	structType *ast.StructType
 }
 
 func newSchemaParseState() *schemaParseState {
@@ -583,31 +620,13 @@ func parseFileAST(f *ast.File) (Database, error) {
 	return result, nil
 }
 
-// processFileAST processes the entire AST file in a single optimized pass
+// processFileAST processes the entire AST file.
 func (s *schemaParseState) processFileAST(f *ast.File) error {
-	// First, collect table names from struct declarations
-	for _, decl := range f.Decls {
-		genDecl, ok := decl.(*ast.GenDecl)
-		if !ok {
-			continue
-		}
-		for _, spec := range genDecl.Specs {
-			typeSpec, ok := spec.(*ast.TypeSpec)
-			if !ok {
-				continue
-			}
-			structName := typeSpec.Name.Name
-			_, ok = typeSpec.Type.(*ast.StructType)
-			if !ok {
-				continue
-			}
-
-			mapTableDirectiveStructNames(genDecl.Doc, structName, s.tableNameToStructName)
-		}
-	}
+	structDecls := collectStructDeclarations(f)
+	s.mapTableDirectiveStructNames(structDecls)
 
 	// Process all struct declarations
-	if err := s.processDeclarations(f); err != nil {
+	if err := s.processDeclarations(structDecls); err != nil {
 		return err
 	}
 
@@ -616,28 +635,8 @@ func (s *schemaParseState) processFileAST(f *ast.File) error {
 	return nil
 }
 
-func mapTableDirectiveStructNames(doc *ast.CommentGroup, structName string, tableNameToStructName map[string]string) {
-	if doc == nil {
-		return
-	}
-	for _, comment := range doc.List {
-		if !strings.HasPrefix(comment.Text, "//migrator:schema:table") {
-			continue
-		}
-		kv := parseutils.ParseKeyValueComment(comment.Text)
-		tableName := kv["name"]
-		if tableName == "" {
-			continue
-		}
-		tableNameToStructName[tableName] = structName
-		if schemaName := kv["schema"]; schemaName != "" {
-			tableNameToStructName[QualifyTableName(schemaName, tableName)] = structName
-		}
-	}
-}
-
-// processDeclarations processes all struct declarations in the file
-func (s *schemaParseState) processDeclarations(f *ast.File) error {
+func collectStructDeclarations(f *ast.File) []structDeclaration {
+	var structDecls []structDeclaration
 	for _, decl := range f.Decls {
 		genDecl, ok := decl.(*ast.GenDecl)
 		if !ok {
@@ -648,18 +647,54 @@ func (s *schemaParseState) processDeclarations(f *ast.File) error {
 			if !ok {
 				continue
 			}
-			structName := typeSpec.Name.Name
 			structType, ok := typeSpec.Type.(*ast.StructType)
 			if !ok {
 				continue
 			}
+			structDecls = append(structDecls, structDeclaration{
+				name:       typeSpec.Name.Name,
+				genDecl:    genDecl,
+				structType: structType,
+			})
+		}
+	}
+	return structDecls
+}
 
-			if err := s.processTableComments(structName, genDecl); err != nil {
-				return err
-			}
-			if err := s.processFieldComments(structName, structType); err != nil {
-				return err
-			}
+func (s *schemaParseState) mapTableDirectiveStructNames(structDecls []structDeclaration) {
+	for _, structDecl := range structDecls {
+		if structDecl.genDecl.Doc == nil {
+			continue
+		}
+		for _, comment := range structDecl.genDecl.Doc.List {
+			s.mapTableDirectiveStructName(comment, structDecl.name)
+		}
+	}
+}
+
+func (s *schemaParseState) mapTableDirectiveStructName(comment *ast.Comment, structName string) {
+	if !strings.HasPrefix(comment.Text, "//migrator:schema:table") {
+		return
+	}
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	tableName := kv["name"]
+	if tableName == "" {
+		return
+	}
+	s.tableNameToStructName[tableName] = structName
+	if schemaName := kv["schema"]; schemaName != "" {
+		s.tableNameToStructName[QualifyTableName(schemaName, tableName)] = structName
+	}
+}
+
+// processDeclarations processes all struct declarations in the file.
+func (s *schemaParseState) processDeclarations(structDecls []structDeclaration) error {
+	for _, structDecl := range structDecls {
+		if err := s.processTableComments(structDecl.name, structDecl.genDecl); err != nil {
+			return err
+		}
+		if err := s.processFieldComments(structDecl.name, structDecl.structType); err != nil {
+			return err
 		}
 	}
 	return nil

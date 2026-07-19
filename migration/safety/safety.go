@@ -393,6 +393,8 @@ func classifyAlterOperation(op ast.AlterOperation) (Severity, string) {
 		return Safe, "ADD COLUMN is additive"
 	case *ast.ModifyColumnOperation:
 		return classifyModifyColumn(o)
+	case *ast.AlterGeneratedColumnExpressionOperation:
+		return Warning, "SET EXPRESSION rewrites generated column values"
 	case *ast.AddSkippingIndexOperation:
 		return Warning, "ADD INDEX can affect write workload during build"
 	case *ast.ModifyTTLOperation:

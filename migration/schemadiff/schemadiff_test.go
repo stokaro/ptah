@@ -82,6 +82,48 @@ func TestCompareWithDialect_MySQLFamilyInlineEnumsMatchGeneratedEnumFields(t *te
 	}
 }
 
+func TestCompareWithDialect_GeneratedColumnDefaultKindMatchesDialect(t *testing.T) {
+	tests := []struct {
+		name         string
+		dialect      string
+		databaseKind string
+	}{
+		{name: "postgres", dialect: "postgres", databaseKind: "STORED"},
+		{name: "mysql", dialect: "mysql", databaseKind: "VIRTUAL"},
+		{name: "mariadb", dialect: "mariadb", databaseKind: "VIRTUAL"},
+		{name: "sqlite", dialect: "sqlite", databaseKind: "VIRTUAL"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			expression := "lower(email)"
+			generated := &goschema.Database{
+				Tables: []goschema.Table{{Name: "users", StructName: "User"}},
+				Fields: []goschema.Field{
+					{StructName: "User", Name: "email_lc", Type: "TEXT", Nullable: true, GeneratedExpression: expression},
+				},
+			}
+			database := &types.DBSchema{
+				Tables: []types.DBTable{{
+					Name: "users",
+					Type: "TABLE",
+					Columns: []types.DBColumn{{
+						Name:                "email_lc",
+						DataType:            "TEXT",
+						IsNullable:          "YES",
+						GeneratedExpression: &expression,
+						GeneratedKind:       tt.databaseKind,
+					}},
+				}},
+			}
+
+			diff := schemadiff.CompareWithDialect(generated, database, tt.dialect)
+			c.Assert(diff.TablesModified, qt.HasLen, 0)
+		})
+	}
+}
+
 func TestCompareWithDialect_SQLiteInlineEnumsMatchGeneratedEnumFields(t *testing.T) {
 	c := qt.New(t)
 
