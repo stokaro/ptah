@@ -563,6 +563,76 @@ func TestLexer_TokenPositions(t *testing.T) {
 	c.Assert(token3.End, qt.Equals, 9)
 }
 
+func TestLexer_UTF8Identifiers(t *testing.T) {
+	c := qt.New(t)
+
+	input := `CREATE TABLE café (id INT, "naïve" TEXT);`
+	l := lexer.NewLexer(input)
+
+	tokens := collectTokens(l)
+
+	c.Assert(tokens, qt.DeepEquals, []lexer.Token{
+		{Type: lexer.TokenIdentifier, Value: "CREATE", Start: 0, End: 6},
+		{Type: lexer.TokenWhitespace, Value: " ", Start: 6, End: 7},
+		{Type: lexer.TokenIdentifier, Value: "TABLE", Start: 7, End: 12},
+		{Type: lexer.TokenWhitespace, Value: " ", Start: 12, End: 13},
+		{Type: lexer.TokenIdentifier, Value: "café", Start: 13, End: 18},
+		{Type: lexer.TokenWhitespace, Value: " ", Start: 18, End: 19},
+		{Type: lexer.TokenOperator, Value: "(", Start: 19, End: 20},
+		{Type: lexer.TokenIdentifier, Value: "id", Start: 20, End: 22},
+		{Type: lexer.TokenWhitespace, Value: " ", Start: 22, End: 23},
+		{Type: lexer.TokenIdentifier, Value: "INT", Start: 23, End: 26},
+		{Type: lexer.TokenOperator, Value: ",", Start: 26, End: 27},
+		{Type: lexer.TokenWhitespace, Value: " ", Start: 27, End: 28},
+		{Type: lexer.TokenString, Value: `"naïve"`, Start: 28, End: 36},
+		{Type: lexer.TokenWhitespace, Value: " ", Start: 36, End: 37},
+		{Type: lexer.TokenIdentifier, Value: "TEXT", Start: 37, End: 41},
+		{Type: lexer.TokenOperator, Value: ")", Start: 41, End: 42},
+		{Type: lexer.TokenSemicolon, Value: ";", Start: 42, End: 43},
+		{Type: lexer.TokenEOF, Value: "", Start: 43, End: 43},
+	})
+}
+
+func TestLexer_UTF8DollarQuotedStringTag(t *testing.T) {
+	c := qt.New(t)
+
+	input := "$тег$héllo$тег$"
+	l := lexer.NewLexer(input)
+
+	token := l.NextToken()
+
+	c.Assert(token.Type, qt.Equals, lexer.TokenString)
+	c.Assert(token.Value, qt.Equals, input)
+	c.Assert(token.Start, qt.Equals, 0)
+	c.Assert(token.End, qt.Equals, len(input))
+	c.Assert(l.NextToken().Type, qt.Equals, lexer.TokenEOF)
+}
+
+func TestLexer_LongDollarQuotedStringTag(t *testing.T) {
+	c := qt.New(t)
+
+	tag := strings.Repeat("tag", 60)
+	input := "$" + tag + "$body$" + tag + "$"
+	l := lexer.NewLexer(input)
+
+	token := l.NextToken()
+
+	c.Assert(token.Type, qt.Equals, lexer.TokenString)
+	c.Assert(token.Value, qt.Equals, input)
+	c.Assert(token.End, qt.Equals, len(input))
+}
+
+func collectTokens(l *lexer.Lexer) []lexer.Token {
+	var tokens []lexer.Token
+	for {
+		token := l.NextToken()
+		tokens = append(tokens, token)
+		if token.Type == lexer.TokenEOF {
+			return tokens
+		}
+	}
+}
+
 func BenchmarkLexer_SimpleSQL(b *testing.B) {
 	input := "SELECT id, name, email FROM users WHERE active = 'true' ORDER BY name;"
 

@@ -372,16 +372,14 @@ func (l *Lexer) scanOperator() Token {
 
 // isDollarQuotedString checks if the current position starts a PostgreSQL dollar-quoted string
 func (l *Lexer) isDollarQuotedString() bool {
-	const maxDollarTagLength = 128 // Reasonable upper bound for tag length
 	if l.peek() != '$' {
 		return false
 	}
 
 	// Look ahead to find the closing $ of the opening tag
 	pos := l.pos + 1
-	tagLen := 0
-	for pos < len(l.input) && tagLen < maxDollarTagLength {
-		ch := rune(l.input[pos])
+	for pos < len(l.input) {
+		ch, size := utf8.DecodeRuneInString(l.input[pos:])
 		if ch == '$' {
 			// Found potential closing $ of opening tag
 			return true
@@ -390,8 +388,7 @@ func (l *Lexer) isDollarQuotedString() bool {
 			// Invalid character in tag name
 			return false
 		}
-		pos++
-		tagLen++
+		pos += size
 	}
 	return false
 }
@@ -433,7 +430,8 @@ func (l *Lexer) scanDollarQuotedString() Token {
 			remainingInput := l.input[l.pos:]
 			if strings.HasPrefix(remainingInput, openingTag) {
 				// Found matching closing tag
-				for i := 0; i < len(openingTag); i++ {
+				tagEnd := l.pos + len(openingTag)
+				for l.pos < tagEnd {
 					l.advance()
 				}
 				break
