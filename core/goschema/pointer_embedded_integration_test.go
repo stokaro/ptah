@@ -162,15 +162,18 @@ type BlogPost struct {
 	// Generate schema
 	statements := fromschema.FromDatabase(*database, "postgresql")
 
-	// Find the BlogPost CREATE TABLE statement
-	var blogPostSQL string
+	// Find the BlogPost CREATE TABLE and FK ALTER TABLE statements
+	var blogPostSQL, blogPostFKSQL string
 	for _, stmt := range statements.Statements {
 		sql, err := renderer.RenderSQL("postgresql", stmt)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 		if containsSubstr(sql, "CREATE TABLE blog_posts") {
 			blogPostSQL = sql
-			break
+			continue
+		}
+		if containsSubstr(sql, "ALTER TABLE blog_posts") && containsSubstr(sql, "FOREIGN KEY") {
+			blogPostFKSQL = sql
 		}
 	}
 
@@ -202,9 +205,10 @@ type BlogPost struct {
 			qt.Commentf("BlogPost table should NOT contain skipped column %s", column))
 	}
 
-	// Verify foreign key constraint is present
-	c.Assert(containsSubstr(blogPostSQL, "FOREIGN KEY"), qt.IsTrue)
-	c.Assert(containsSubstr(blogPostSQL, "REFERENCES users(id)"), qt.IsTrue)
+	// Verify foreign key constraint is emitted after table creation.
+	c.Assert(containsSubstr(blogPostSQL, "FOREIGN KEY"), qt.IsFalse)
+	c.Assert(containsSubstr(blogPostFKSQL, "FOREIGN KEY"), qt.IsTrue)
+	c.Assert(containsSubstr(blogPostFKSQL, "REFERENCES users(id)"), qt.IsTrue)
 
 	t.Logf("Generated BlogPost SQL:\n%s", blogPostSQL)
 }

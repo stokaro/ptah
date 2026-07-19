@@ -74,7 +74,7 @@ func checkForCircularDependencies(r *Database, sorted *[]Table) {
 		return
 	}
 
-	slog.Warn("Circular dependency detected in foreign key relationships. Some tables may not be ordered correctly.")
+	slog.Warn("Circular dependency detected in foreign key relationships; emit foreign keys after table creation to keep DDL executable.")
 	// Add remaining tables to the end
 	for _, table := range r.Tables {
 		found := false
