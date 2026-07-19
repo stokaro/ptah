@@ -122,8 +122,11 @@ func (p *Parser) parseStatement() (ast.Node, error) {
 		return p.parseDoStatement()
 	case "GO":
 		// SQL Server tooling uses GO as a batch separator, not as schema DDL.
-		p.skipGoBatchSeparator()
-		return nil, nil
+		if p.isCurrentSQLServerGoBatchSeparator() {
+			p.skipGoBatchSeparator()
+			return nil, nil
+		}
+		return nil, fmt.Errorf("unsupported SQL statement: %s at position %d", keyword, p.current.Start)
 	case "ANALYZE", "BEGIN", "CALL", "COMMIT", "DELETE", "INSERT", "PRAGMA", "REINDEX", "ROLLBACK", "SELECT", "SET", "SHOW", "UPDATE", "USE", "VACUUM", "WITH":
 		p.skipSchemaNeutralStatement()
 		return nil, nil
@@ -170,7 +173,7 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 	p.skipWhitespace()
 
 	if p.current.Type != lexer.TokenIdentifier {
-		return nil, fmt.Errorf("expected CREATE target (TABLE, VIEW, FUNCTION, TRIGGER, INDEX, TYPE, DOMAIN, SCHEMA, DATABASE, EXTENSION), got %s at position %d", p.current.Type, p.current.Start)
+		return nil, fmt.Errorf("expected CREATE target (TABLE, VIEW, FUNCTION, PROCEDURE, PROC, TRIGGER, INDEX, TYPE, DOMAIN, SCHEMA, DATABASE, EXTENSION), got %s at position %d", p.current.Type, p.current.Start)
 	}
 
 	target := strings.ToUpper(p.current.Value)
@@ -185,7 +188,7 @@ func (p *Parser) parseCreateStatement() (ast.Node, error) {
 		return p.parseCreateTable()
 	case "VIEW":
 		return p.parseCreateView()
-	case "FUNCTION", "PROCEDURE":
+	case "FUNCTION", "PROC", "PROCEDURE":
 		return p.parseCreateRoutine(target, statementStart)
 	case "DEFINER":
 		return p.parseCreateDefinerRoutine(statementStart)
@@ -355,10 +358,29 @@ func (p *Parser) parseCreateOrReplaceStatement(statementStart int) (ast.Node, er
 		return nil, err
 	}
 	p.skipWhitespace()
-	if err := p.expect(lexer.TokenIdentifier, "REPLACE"); err != nil {
-		return nil, fmt.Errorf("expected REPLACE after CREATE OR: %w", err)
+	orMode := strings.ToUpper(p.current.Value)
+	switch orMode {
+	case "REPLACE", "ALTER":
+		p.advance()
+	default:
+		return nil, fmt.Errorf("expected REPLACE or ALTER after CREATE OR, got %s at position %d", p.current.Value, p.current.Start)
 	}
 	p.skipWhitespace()
+	if orMode == "ALTER" && !p.isSQLServerRoutineDialect() {
+		return nil, fmt.Errorf("unsupported CREATE OR ALTER outside SQL Server dialect at position %d", p.current.Start)
+	}
+	if orMode == "ALTER" {
+		switch {
+		case p.current.MatchIdentifierValue("FUNCTION"):
+			return p.parseCreateRoutine("FUNCTION", statementStart)
+		case p.current.MatchIdentifierValue("PROC"):
+			return p.parseCreateRoutine("PROC", statementStart)
+		case p.current.MatchIdentifierValue("PROCEDURE"):
+			return p.parseCreateRoutine("PROCEDURE", statementStart)
+		default:
+			return nil, fmt.Errorf("unsupported CREATE OR ALTER target: %s at position %d", p.current.Value, p.current.Start)
+		}
+	}
 	if p.current.MatchIdentifierValue("VIEW") {
 		return p.parseCreateOrReplaceView()
 	}
@@ -474,6 +496,13 @@ func (p *Parser) skipGoBatchSeparator() {
 	}
 }
 
+func (p *Parser) isCurrentSQLServerGoBatchSeparator() bool {
+	if !p.current.MatchIdentifierValue("GO") {
+		return false
+	}
+	return sqlutil.IsSQLServerGoBatchSeparatorAt(p.input, p.current.Start, p.current.End)
+}
+
 // isNumeric checks if a string represents a numeric value.
 func isNumeric(s string) bool {
 	if s == "" {
@@ -541,28 +570,27 @@ func (p *Parser) parseCreateFunction(statementStart int) (ast.Node, error) {
 }
 
 func (p *Parser) isSQLServerBracketedRoutineNameStart() bool {
-	// Bracketed function names enter T-SQL's routine-body sub-language. Until
-	// #323 adds a dialect-aware body parser, preserve the statement as raw SQL.
+	// Bracketed function names enter T-SQL's routine-body sub-language. The
+	// compatibility parser preserves them as raw SQL without dialect metadata.
 	return p.current.MatchOperatorValue("[")
 }
 
 func (p *Parser) parseCreateRawSQLServerRoutine(statementStart int) (ast.Node, error) {
-	sql, err := p.collectRawSQLServerRoutine(statementStart)
+	sql, err := p.collectRawSQLServerRoutine(statementStart, sqlServerRoutineStopAtTopLevelSemicolon)
 	if err != nil {
 		return nil, err
 	}
 	return ast.NewRawSQL(sql), nil
 }
 
-func (p *Parser) parseCreateOpaqueSQLServerRoutine(statementStart int, kind ast.RoutineKind) (ast.Node, error) {
-	sql, err := p.collectRawSQLServerRoutine(statementStart)
-	if err != nil {
-		return nil, err
-	}
-	return ast.NewOpaqueRoutine(sql, p.dialect, kind), nil
-}
+type sqlServerRoutineSemicolonMode int
 
-func (p *Parser) collectRawSQLServerRoutine(statementStart int) (string, error) {
+const (
+	sqlServerRoutineStopAtTopLevelSemicolon sqlServerRoutineSemicolonMode = iota
+	sqlServerRoutineKeepTopLevelSemicolon
+)
+
+func (p *Parser) collectRawSQLServerRoutine(statementStart int, semicolonMode sqlServerRoutineSemicolonMode) (string, error) {
 	blockDepth := 0
 	caseDepth := 0
 	for !p.isAtEnd() {
@@ -575,19 +603,22 @@ func (p *Parser) collectRawSQLServerRoutine(statementStart int) (string, error) 
 			continue
 		}
 
-		if p.current.Type == lexer.TokenSemicolon && blockDepth == 0 {
+		if p.current.Type == lexer.TokenSemicolon &&
+			blockDepth == 0 &&
+			semicolonMode == sqlServerRoutineStopAtTopLevelSemicolon {
 			sql := p.rawStatement(statementStart)
 			p.advance()
 			return sql, nil
 		}
-		if p.current.MatchIdentifierValue("GO") && blockDepth == 0 {
+		if p.isCurrentSQLServerGoBatchSeparator() && blockDepth == 0 {
 			sql := p.rawStatementFragment(statementStart, p.current.Start)
 			p.advance()
 			return sql, nil
 		}
 
 		if p.current.Type == lexer.TokenIdentifier {
-			if complete := trackSQLServerRawRoutineKeyword(strings.ToUpper(p.current.Value), &blockDepth, &caseDepth); complete {
+			nextValue := sqlServerRawRoutineNextSignificantValue(p.input, p.current.End)
+			if complete := trackSQLServerRawRoutineKeyword(strings.ToUpper(p.current.Value), nextValue, &blockDepth, &caseDepth); complete {
 				end := p.current.End
 				p.advance()
 				return p.rawStatementFragment(statementStart, end), nil
@@ -617,13 +648,19 @@ func (p *Parser) skipSQLServerBracketedIdentifier() {
 	}
 }
 
-func trackSQLServerRawRoutineKeyword(keyword string, blockDepth, caseDepth *int) bool {
+func trackSQLServerRawRoutineKeyword(keyword string, nextValue string, blockDepth, caseDepth *int) bool {
 	switch keyword {
 	case "BEGIN":
+		if sqlServerRawRoutineNonBlockBeginFollower(nextValue) {
+			return false
+		}
 		(*blockDepth)++
 	case "CASE":
 		(*caseDepth)++
 	case "END":
+		if strings.EqualFold(nextValue, "CONVERSATION") {
+			return false
+		}
 		if *caseDepth > 0 {
 			(*caseDepth)--
 		} else if *blockDepth > 0 {
@@ -632,6 +669,33 @@ func trackSQLServerRawRoutineKeyword(keyword string, blockDepth, caseDepth *int)
 		}
 	}
 	return false
+}
+
+func sqlServerRawRoutineNextSignificantValue(input string, pos int) string {
+	if pos >= len(input) {
+		return ""
+	}
+	l := lexer.NewLexer(input[pos:])
+	for {
+		tok := l.NextToken()
+		switch tok.Type {
+		case lexer.TokenWhitespace, lexer.TokenComment:
+			continue
+		case lexer.TokenEOF:
+			return ""
+		default:
+			return strings.ToUpper(tok.Value)
+		}
+	}
+}
+
+func sqlServerRawRoutineNonBlockBeginFollower(value string) bool {
+	switch strings.ToUpper(value) {
+	case "CONVERSATION", "DIALOG", "DISTRIBUTED", "TRAN", "TRANSACTION":
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *Parser) parseCreateRawRoutineStatement(statementStart int) (ast.Node, error) {

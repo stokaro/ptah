@@ -68,7 +68,7 @@ directory specific.`,
 	}
 
 	flags := cmd.Flags()
-	flags.StringVar(&dialect, "dialect", "", "Target dialect: postgres, mysql, mariadb, sqlite, clickhouse, cockroachdb, yugabytedb, or spanner")
+	flags.StringVar(&dialect, "dialect", "", "Target dialect: postgres, mysql, mariadb, sqlite, sqlserver, clickhouse, cockroachdb, yugabytedb, or spanner")
 	flags.StringVar(&version, "version", "", "Server version string used to refine target capabilities")
 	flags.StringVar(&format, "format", formatText, "Output format: text or json")
 	flags.BoolVar(&stdin, "stdin", false, "Read SQL from stdin")
@@ -149,7 +149,7 @@ func validateSQLLintOptions(opts sqlLintOptions) error {
 		return fmt.Errorf("invalid --format value %q: expected text or json", opts.format)
 	}
 	if opts.dialect != "" && platform.NormalizeDialect(opts.dialect) == "" {
-		return fmt.Errorf("invalid --dialect value %q: expected postgres, mysql, mariadb, sqlite, clickhouse, cockroachdb, yugabytedb, or spanner", opts.dialect)
+		return fmt.Errorf("invalid --dialect value %q: expected postgres, mysql, mariadb, sqlite, sqlserver, clickhouse, cockroachdb, yugabytedb, or spanner", opts.dialect)
 	}
 	if opts.version != "" && opts.dialect == "" {
 		return fmt.Errorf("--version requires --dialect")

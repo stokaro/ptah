@@ -27,11 +27,18 @@ func (p *Parser) routineParser() routineParser {
 	}
 }
 
+func (p *Parser) isSQLServerRoutineDialect() bool {
+	return p.dialect == platform.SQLServer
+}
+
 type compatibilityRoutineParser struct{}
 
 func (compatibilityRoutineParser) parseCreateRoutine(p *Parser, target string, statementStart int) (ast.Node, error) {
-	if target == "PROCEDURE" {
+	switch target {
+	case "PROCEDURE":
 		return p.parseCreateRawRoutineStatement(statementStart)
+	case "PROC":
+		return p.parseCreateRawSQLServerRoutine(statementStart)
 	}
 	return p.parseCreateFunction(statementStart)
 }
@@ -45,6 +52,9 @@ type mysqlFamilyRoutineParser struct{}
 func (mysqlFamilyRoutineParser) parseCreateRoutine(p *Parser, target string, statementStart int) (ast.Node, error) {
 	if target == "PROCEDURE" {
 		return p.parseCreateMySQLRoutineStatement(statementStart, ast.RoutineKindProcedure)
+	}
+	if target == "PROC" {
+		return compatibilityRoutineParser{}.parseCreateRoutine(p, target, statementStart)
 	}
 	return p.parseCreateMySQLRoutineStatement(statementStart, ast.RoutineKindFunction)
 }
@@ -73,9 +83,9 @@ type sqlServerRoutineParser struct{}
 func (sqlServerRoutineParser) parseCreateRoutine(p *Parser, target string, statementStart int) (ast.Node, error) {
 	switch target {
 	case "FUNCTION":
-		return p.parseCreateOpaqueSQLServerRoutine(statementStart, ast.RoutineKindFunction)
-	case "PROCEDURE":
-		return p.parseCreateOpaqueSQLServerRoutine(statementStart, ast.RoutineKindProcedure)
+		return p.parseCreateSQLServerRoutineStatement(statementStart, ast.RoutineKindFunction)
+	case "PROC", "PROCEDURE":
+		return p.parseCreateSQLServerRoutineStatement(statementStart, ast.RoutineKindProcedure)
 	}
 	return compatibilityRoutineParser{}.parseCreateRoutine(p, target, statementStart)
 }

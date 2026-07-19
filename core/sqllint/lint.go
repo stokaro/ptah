@@ -77,7 +77,7 @@ func DefaultRules() []Rule {
 
 func LintSource(source Source, opts Options) ([]Finding, error) {
 	var findings []Finding
-	for _, statement := range splitSourceStatements(source) {
+	for _, statement := range splitSourceStatements(source, opts.Dialect) {
 		keyword, keywordOffset := firstKeyword(statement.sql)
 		if keyword == "" {
 			continue
@@ -110,8 +110,8 @@ type sourceStatement struct {
 	offset int
 }
 
-func splitSourceStatements(source Source) []sourceStatement {
-	statements := sqlutil.SplitSQLStatements(source.SQL)
+func splitSourceStatements(source Source, dialect string) []sourceStatement {
+	statements := sqlutil.SplitSQLStatementsForDialect(source.SQL, dialect)
 	out := make([]sourceStatement, 0, len(statements))
 	cursor := 0
 	for _, statement := range statements {
@@ -341,6 +341,8 @@ func (unsupportedRoutineRule) CheckStatement(ctx Context, stmt ast.Node) []Findi
 	case *ast.PostgresDoBlockNode:
 		return []Finding{ctx.unsupportedModeledSQLFinding("DO", 0)}
 	case *ast.PostgresRoutineNode:
+		return []Finding{ctx.unsupportedModeledSQLFinding("CREATE "+strings.ToUpper(string(node.Kind)), 0)}
+	case *ast.SQLServerRoutineNode:
 		return []Finding{ctx.unsupportedModeledSQLFinding("CREATE "+strings.ToUpper(string(node.Kind)), 0)}
 	case *ast.CreateFunctionNode:
 		return []Finding{ctx.unsupportedModeledSQLFinding("CREATE FUNCTION", 0)}

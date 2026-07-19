@@ -109,3 +109,31 @@ func TestPostgresRoutineNode_AcceptDelegatesToRawSQL(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"RawSQL:CREATE PROCEDURE p() LANGUAGE sql AS $$ SELECT 1 $$;"})
 }
+
+func TestNewSQLServerRoutine(t *testing.T) {
+	c := qt.New(t)
+
+	routine := ast.NewSQLServerRoutine(" CREATE FUNCTION [dbo].[f]() RETURNS int AS BEGIN RETURN 1; END ", "sqlserver", ast.RoutineKindFunction)
+	routine.Name = "[dbo].[f]"
+	routine.Returns = "int"
+	routine.Form = ast.SQLServerRoutineFormScalarFunction
+
+	c.Assert(routine.SQL, qt.Equals, "CREATE FUNCTION [dbo].[f]() RETURNS int AS BEGIN RETURN 1; END")
+	c.Assert(routine.Dialect, qt.Equals, "sqlserver")
+	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindFunction)
+	c.Assert(routine.Name, qt.Equals, "[dbo].[f]")
+	c.Assert(routine.Returns, qt.Equals, "int")
+	c.Assert(routine.Form, qt.Equals, ast.SQLServerRoutineFormScalarFunction)
+}
+
+func TestSQLServerRoutineNode_AcceptDelegatesToRawSQL(t *testing.T) {
+	c := qt.New(t)
+
+	routine := ast.NewSQLServerRoutine(" CREATE PROCEDURE [dbo].[p] AS SELECT 1; ", "sqlserver", ast.RoutineKindProcedure)
+	visitor := &mocks.MockVisitor{}
+
+	err := routine.Accept(visitor)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"RawSQL:CREATE PROCEDURE [dbo].[p] AS SELECT 1;"})
+}
