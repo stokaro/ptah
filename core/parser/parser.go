@@ -3669,6 +3669,26 @@ const regularIndexType = ""
 
 func (p *Parser) parseCreateIndexAfterKeyword(indexType string) (*ast.IndexNode, error) {
 	p.skipWhitespace()
+	concurrently := false
+	if p.current.MatchIdentifierValue("CONCURRENTLY") {
+		concurrently = true
+		p.advance()
+		p.skipWhitespace()
+	}
+	ifNotExists := false
+	if p.current.MatchIdentifierValue("IF") {
+		p.advance()
+		p.skipWhitespace()
+		if err := p.expect(lexer.TokenIdentifier, "NOT"); err != nil {
+			return nil, fmt.Errorf("expected NOT after index IF: %w", err)
+		}
+		p.skipWhitespace()
+		if err := p.expect(lexer.TokenIdentifier, "EXISTS"); err != nil {
+			return nil, fmt.Errorf("expected EXISTS after index IF NOT: %w", err)
+		}
+		p.skipWhitespace()
+		ifNotExists = true
+	}
 
 	// Get index name
 	indexName, err := p.expectIdentifier()
@@ -3727,6 +3747,8 @@ func (p *Parser) parseCreateIndexAfterKeyword(indexType string) (*ast.IndexNode,
 	index.IncludeColumns = includeColumns
 	index.NullsDistinct = nullsDistinct
 	index.StorageParams = storageParams
+	index.Concurrently = concurrently
+	index.IfNotExists = ifNotExists
 	return index, nil
 }
 
