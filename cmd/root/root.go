@@ -14,6 +14,7 @@ import (
 	"github.com/stokaro/ptah/cmd/dropall"
 	"github.com/stokaro/ptah/cmd/generate"
 	"github.com/stokaro/ptah/cmd/internal/buildinfo"
+	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/lint"
 	"github.com/stokaro/ptah/cmd/migrate"
@@ -39,11 +40,11 @@ func NewRootCommand() *cobra.Command {
 		Short:   "Ptah schema management and migration tooling",
 		Long:    rootLongDescription,
 		Version: buildinfo.Resolve().Version,
-		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
 	}
+	cmdutil.ConfigureCommandArgs(cmd, nil)
 
 	cmd.AddCommand(generate.NewGenerateCommand())
 	cmd.AddCommand(readdb.NewReadDBCommand())
@@ -77,19 +78,24 @@ func Execute(args ...string) {
 
 	err := executeWithRecovery(cmd)
 	if err != nil {
-		os.Exit(exitcode.Code(err, 1)) //revive:disable-line:deep-exit
+		os.Exit(exitcode.Code(err, 2)) //revive:disable-line:deep-exit
 	}
 }
 
 func executeWithRecovery(cmd *cobra.Command) (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			err = fmt.Errorf("internal error: %v", recovered)
+			err = exitcode.New(2, fmt.Errorf("internal error: %v", recovered))
 			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 		}
 	}()
 
-	return cmd.Execute()
+	err = cmd.Execute()
+	if err == nil || exitcode.Code(err, -1) != -1 {
+		return err
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
+	return exitcode.New(2, err)
 }
 
 const rootLongDescription = `Ptah generates database schemas from Go entities,

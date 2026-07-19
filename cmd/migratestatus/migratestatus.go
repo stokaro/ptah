@@ -3,13 +3,16 @@ package migratestatus
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 
 	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -37,6 +40,7 @@ const (
 	atlasEnvFlag   = "atlas-env"
 	verboseFlag    = "verbose"
 	jsonFlag       = "json"
+	exitCodeFlag   = "exit-code"
 )
 
 var migrateStatusFlags = map[string]cobraflags.Flag{
@@ -70,6 +74,11 @@ var migrateStatusFlags = map[string]cobraflags.Flag{
 		Value: false,
 		Usage: "Output status in JSON format",
 	},
+	exitCodeFlag: &cobraflags.BoolFlag{
+		Name:  exitCodeFlag,
+		Value: false,
+		Usage: "Exit with 1 when pending migrations are available",
+	},
 	dbcli.ConnectTimeoutFlagName:      dbcli.NewConnectTimeoutFlag(),
 	dbcli.ConfigFlagName:              dbcli.NewConfigFlag(),
 	dbcli.EnvFlagName:                 dbcli.NewEnvFlag(),
@@ -85,6 +94,7 @@ func NewMigrateStatusCommand() *cobra.Command {
 		cobraflags.RegisterMap(migrateStatusCmd, migrateStatusFlags)
 		migrateStatusFlagsRegistered = true
 	}
+	cmdutil.ConfigureCommand(migrateStatusCmd)
 	return migrateStatusCmd
 }
 
@@ -95,6 +105,7 @@ func migrateStatusCommand(cmd *cobra.Command, _ []string) error {
 	atlasEnv := migrateStatusFlags[atlasEnvFlag].GetString()
 	verbose := migrateStatusFlags[verboseFlag].GetBool()
 	jsonOutput := migrateStatusFlags[jsonFlag].GetBool()
+	exitOnPending := migrateStatusFlags[exitCodeFlag].GetBool()
 	migrationsSchema := migrateStatusFlags[dbcli.MigrationsSchemaFlagName].GetString()
 	migrationsTable := migrateStatusFlags[dbcli.MigrationsTableFlagName].GetString()
 	revisionFormatValue := migrateStatusFlags[dbcli.RevisionTableFormatFlagName].GetString()
@@ -165,10 +176,24 @@ func migrateStatusCommand(cmd *cobra.Command, _ []string) error {
 	}
 
 	if jsonOutput {
-		return outputJSON(status)
+		if err := outputJSON(status); err != nil {
+			return err
+		}
+	} else if err := outputHuman(status, conn, verbose); err != nil {
+		return err
 	}
 
-	return outputHuman(status, conn, verbose)
+	if exitOnPending {
+		return pendingMigrationsExitCode(status)
+	}
+	return nil
+}
+
+func pendingMigrationsExitCode(status *migrator.MigrationStatus) error {
+	if status.HasPendingChanges {
+		return exitcode.New(1, errors.New("pending migrations available"))
+	}
+	return nil
 }
 
 func outputJSON(status *migrator.MigrationStatus) error {

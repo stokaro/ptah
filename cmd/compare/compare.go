@@ -2,17 +2,21 @@ package compare
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 
 	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/schemadiff"
+	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
 var compareCmd = &cobra.Command{
@@ -26,8 +30,9 @@ currently exists in the database, helping you identify what needs to be migrated
 }
 
 const (
-	rootDirFlag = "root-dir"
-	dbURLFlag   = "db-url"
+	rootDirFlag  = "root-dir"
+	dbURLFlag    = "db-url"
+	exitCodeFlag = "exit-code"
 )
 
 var compareFlags = map[string]cobraflags.Flag{
@@ -41,6 +46,11 @@ var compareFlags = map[string]cobraflags.Flag{
 		Value: "",
 		Usage: "Database URL (required). Example: postgres://localhost:5432/dbname",
 	},
+	exitCodeFlag: &cobraflags.BoolFlag{
+		Name:  exitCodeFlag,
+		Value: false,
+		Usage: "Exit with 1 when the schema diff is non-empty",
+	},
 	dbcli.ConnectTimeoutFlagName: dbcli.NewConnectTimeoutFlag(),
 	dbcli.SchemasFlagName:        dbcli.NewSchemasFlag(),
 }
@@ -52,20 +62,23 @@ func NewCompareCommand() *cobra.Command {
 		cobraflags.RegisterMap(compareCmd, compareFlags)
 		compareFlagsRegistered = true
 	}
+	cmdutil.ConfigureCommand(compareCmd)
 	return compareCmd
 }
 
-func compareCommand(_ *cobra.Command, _ []string) error {
+func compareCommand(cmd *cobra.Command, _ []string) error {
+	out := cmd.OutOrStdout()
 	rootDir := compareFlags[rootDirFlag].GetString()
 	dbURL := compareFlags[dbURLFlag].GetString()
+	exitOnDiff := compareFlags[exitCodeFlag].GetBool()
 
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
 	}
 
-	fmt.Printf("Comparing schema from %s with database %s\n", rootDir, dbschema.FormatDatabaseURL(dbURL))
-	fmt.Println("=== SCHEMA COMPARISON ===")
-	fmt.Println()
+	fmt.Fprintf(out, "Comparing schema from %s with database %s\n", rootDir, dbschema.FormatDatabaseURL(dbURL))
+	fmt.Fprintln(out, "=== SCHEMA COMPARISON ===")
+	fmt.Fprintln(out)
 
 	// 1. Parse Go entities
 	absPath, err := filepath.Abs(rootDir)
@@ -107,7 +120,17 @@ func compareCommand(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("error generating schema diff SQL: %w", err)
 	}
-	fmt.Print(output)
+	fmt.Fprint(out, output)
 
+	if exitOnDiff {
+		return nonEmptyDiffExitCode(diff)
+	}
+	return nil
+}
+
+func nonEmptyDiffExitCode(diff *difftypes.SchemaDiff) error {
+	if diff.HasChanges() {
+		return exitcode.New(1, errors.New("schema diff is non-empty"))
+	}
 	return nil
 }

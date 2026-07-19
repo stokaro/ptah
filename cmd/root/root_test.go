@@ -7,6 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
+
+	"github.com/stokaro/ptah/cmd/internal/exitcode"
 )
 
 func TestNewRootCommand_UsesPtahBranding(t *testing.T) {
@@ -113,5 +115,99 @@ func TestExecuteWithRecovery_ConvertsCommandPanicToError(t *testing.T) {
 	err := executeWithRecovery(cmd)
 
 	c.Assert(err, qt.ErrorMatches, "internal error: bad annotation")
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 	c.Assert(stderr.String(), qt.Contains, "error: internal error: bad annotation")
+}
+
+func TestZZZRootUnknownSubcommandExits2WithoutUsage(t *testing.T) {
+	c := qt.New(t)
+
+	_, stderr, err := executeRoot("bogus-subcommand")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+	c.Assert(stderr, qt.Contains, `unknown command "bogus-subcommand"`)
+	c.Assert(stderr, qt.Not(qt.Contains), "Usage:")
+}
+
+func TestZZZRootCommandErrorsExit2(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "compare unreachable database",
+			args: []string{
+				"compare",
+				"--root-dir", filepath.Join("..", "..", "stubs"),
+				"--db-url", "postgres://u:p@127.0.0.1:1/db?sslmode=disable",
+				"--connect-timeout", "1ms",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, stderr, err := executeRoot(tt.args...)
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+			c.Assert(stderr, qt.Contains, "error connecting to database")
+			c.Assert(stderr, qt.Not(qt.Contains), "Usage:")
+		})
+	}
+}
+
+func TestZZZRootUsageErrorsExit2WithoutUsage(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "generate", args: []string{"generate", "--bogus-flag"}},
+		{name: "read-db", args: []string{"read-db", "--bogus-flag"}},
+		{name: "schema export", args: []string{"schema", "export", "--bogus-flag"}},
+		{name: "compare", args: []string{"compare", "--bogus-flag"}},
+		{name: "drift", args: []string{"drift", "--bogus-flag"}},
+		{name: "migrate", args: []string{"migrate", "--bogus-flag"}},
+		{name: "migrate generate", args: []string{"migrate", "generate", "--bogus-flag"}},
+		{name: "migrate new", args: []string{"migrate", "new", "--bogus-flag"}},
+		{name: "migrate-baseline", args: []string{"migrate-baseline", "--bogus-flag"}},
+		{name: "migrate-up", args: []string{"migrate-up", "--bogus-flag"}},
+		{name: "migrate-down", args: []string{"migrate-down", "--bogus-flag"}},
+		{name: "migrate-repair", args: []string{"migrate-repair", "--bogus-flag"}},
+		{name: "migrate-status", args: []string{"migrate-status", "--bogus-flag"}},
+		{name: "migrate-hash", args: []string{"migrate-hash", "--bogus-flag"}},
+		{name: "migrate-validate", args: []string{"migrate-validate", "--bogus-flag"}},
+		{name: "seed", args: []string{"seed", "--bogus-flag"}},
+		{name: "drop-all", args: []string{"drop-all", "--bogus-flag"}},
+		{name: "lint", args: []string{"lint", "--bogus-flag"}},
+		{name: "atlas version", args: []string{"atlas", "version", "--bogus-flag"}},
+		{name: "version", args: []string{"version", "--bogus-flag"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, stderr, err := executeRoot(tt.args...)
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+			c.Assert(stderr, qt.Contains, "error: unknown flag: --bogus-flag")
+			c.Assert(stderr, qt.Not(qt.Contains), "Usage:")
+		})
+	}
+}
+
+func executeRoot(args ...string) (stdout, stderr string, err error) {
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs(args)
+	err = executeWithRecovery(cmd)
+	return out.String(), errOut.String(), err
 }

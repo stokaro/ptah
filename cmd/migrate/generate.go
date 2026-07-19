@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/pathguard"
@@ -50,6 +51,7 @@ and performs an up/down/up round-trip.`,
 	flags.String(dbcli.EnvFlagName, "", "Project env name to read from ptah.yaml or atlas.hcl")
 	flags.String(dbcli.SchemasFlagName, "", "Comma-separated schemas to introspect when supported")
 
+	cmdutil.ConfigureCommand(cmd)
 	return cmd
 }
 
