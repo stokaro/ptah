@@ -58,15 +58,16 @@
 //
 // The package includes dialect-specific planners in the dialects subdirectory:
 //
-//   - dialects/postgres: PostgreSQL-specific migration planning
-//   - dialects/mysql: MySQL-specific migration planning
-//   - dialects/mariadb: MariaDB-specific migration planning (planned)
+//   - dialects/postgres: PostgreSQL and PostgreSQL-family migration planning
+//   - dialects/mysql: MySQL and MariaDB migration planning
+//   - dialects/clickhouse: ClickHouse migration planning
 //
 // Each dialect planner handles platform-specific features and limitations:
 //
 //   - PostgreSQL: ENUM types, SERIAL columns, advanced constraints
 //   - MySQL: AUTO_INCREMENT, ENGINE specifications, charset handling
-//   - MariaDB: MariaDB-specific extensions and optimizations
+//   - MariaDB: MySQL-family planning with the MariaDB capability preset
+//   - ClickHouse: MergeTree-oriented table and index planning
 //
 // # Migration Order
 //
@@ -144,7 +145,8 @@
 //  1. Implementing the Planner interface
 //  2. Creating a new dialect package under dialects/
 //  3. Adding the dialect to the GetPlanner() factory function
-//  4. Implementing dialect-specific SQL generation logic
+//  4. Adding a capability preset when a dialect reuses an existing planner
+//  5. Implementing dialect-specific SQL generation logic
 //
 // # Thread Safety
 //
