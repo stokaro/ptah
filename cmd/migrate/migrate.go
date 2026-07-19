@@ -79,6 +79,7 @@ func NewMigrateCommand() *cobra.Command {
 		migrateFlagsRegistered = true
 	}
 	addMigrateGenerateCommand(migrateCmd)
+	addMigrateNewCommand(migrateCmd)
 	return migrateCmd
 }
 
@@ -89,6 +90,15 @@ func addMigrateGenerateCommand(cmd *cobra.Command) {
 		}
 	}
 	cmd.AddCommand(newMigrateGenerateCommand())
+}
+
+func addMigrateNewCommand(cmd *cobra.Command) {
+	for _, child := range cmd.Commands() {
+		if child.Name() == "new" {
+			return
+		}
+	}
+	cmd.AddCommand(newMigrateNewCommand())
 }
 
 func migrateCommand(cmd *cobra.Command, _ []string) error {

@@ -15,6 +15,7 @@
 //
 //   - Dynamic migration generation from schema differences
 //   - Automatic up and down migration file creation
+//   - Empty migration skeleton creation for manual SQL
 //   - Timestamped migration versioning
 //   - Dialect-specific SQL generation
 //   - Proper dependency ordering and safety checks
@@ -36,6 +37,7 @@
 // The package provides these main types:
 //
 //   - GenerateMigrationOptions: Configuration for migration generation
+//   - EmptyMigrationOptions: Configuration for empty migration skeleton creation
 //   - MigrationFiles: Information about generated migration files
 //
 // # Usage Example

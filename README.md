@@ -506,6 +506,9 @@ for the supported Atlas HCL subset and current limitations.
 # Generate migration SQL
 ./ptah migrate --root-dir ./models --db-url postgres://user:pass@localhost/db
 
+# Create paired empty migration files for manual SQL
+./ptah migrate new add_user_preferences --migrations-dir ./migrations
+
 # Generate migration SQL while introspecting specific PostgreSQL schemas
 ./ptah migrate --root-dir ./models --db-url postgres://user:pass@localhost/db --schemas auth,billing,public
 
@@ -653,6 +656,18 @@ Generate SQL migration statements to synchronize schemas:
 ```
 
 **Output:** SQL statements to bring the database in sync with Go entities
+
+#### Create Empty Migration Files
+Create paired `.up.sql` and `.down.sql` files for manual SQL authoring:
+
+```bash
+./ptah migrate new add_user_preferences --migrations-dir ./migrations
+./ptah migrate new --name hotfix_existing_data --migrations-dir ./migrations
+./ptah atlas migrate new add_user_preferences --migrations-dir ./migrations
+```
+
+The command creates timestamped files using Ptah's paired migration naming
+convention and writes comment headers for the UP and DOWN directions.
 
 #### Apply Seed Data
 Apply environment-scoped SQL seeds from a `seeds/` directory:

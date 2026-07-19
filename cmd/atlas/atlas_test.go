@@ -2,6 +2,7 @@ package atlas
 
 import (
 	"bytes"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -76,6 +77,24 @@ func TestNewAtlasCommand_ForwardsParentedNativeCommand(t *testing.T) {
 	err := root.Execute()
 
 	c.Assert(err, qt.ErrorMatches, "database URL is required")
+}
+
+func TestNewAtlasCommand_MigrateNewCreatesSkeletonFiles(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"migrate", "new", "manual_hotfix", "--migrations-dir", dir})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Generated empty migration files:")
+	matches, globErr := filepath.Glob(filepath.Join(dir, "*_manual_hotfix.*.sql"))
+	c.Assert(globErr, qt.IsNil)
+	c.Assert(matches, qt.HasLen, 2)
 }
 
 func TestNewAtlasCommand_HelpUsesAtlasPathForForwardedParentedCommand(t *testing.T) {

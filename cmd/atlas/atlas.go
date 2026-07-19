@@ -84,7 +84,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 		{use: "hash", short: "Write or update the migration directory checksum", native: "migrate-hash", factory: migratehash.NewMigrateHashCommand},
 		{use: "import", short: "Import migrations from another tool", native: ""},
 		{use: "lint", short: "Lint migration files", native: "lint", factory: lint.NewLintCommand},
-		{use: "new", short: "Create a new migration file", native: "migrate generate", factory: migrate.NewMigrateCommand, prefixArgs: []string{"generate"}},
+		{use: "new", short: "Create a new migration file", native: "migrate new", factory: migrate.NewMigrateCommand, prefixArgs: []string{"new"}},
 		{use: "set", short: "Set migration revision state", native: "migrate-repair", factory: migraterepair.NewMigrateRepairCommand},
 		{use: "status", short: "Show migration status", native: "migrate-status", factory: migratestatus.NewMigrateStatusCommand},
 		{use: "validate", short: "Validate migration directory integrity", native: "migrate-validate", factory: migratevalidate.NewMigrateValidateCommand},
