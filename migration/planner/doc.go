@@ -36,7 +36,8 @@
 //   - GenerateSchemaDiffAST(): Generates AST nodes from schema differences
 //   - GenerateSchemaDiffSQL(): Generates complete SQL string from schema differences
 //   - GenerateSchemaDiffSQLStatements(): Generates individual SQL statements as string slice
-//   - GetPlanner(): Factory function to get dialect-specific planners
+//   - GetPlanner(): Registry-backed function to get dialect-specific planners
+//   - Register(): Extension point for third-party planner dialects
 //
 // # Usage Example
 //
@@ -147,10 +148,18 @@
 // New database dialects can be added by:
 //
 //  1. Implementing the Planner interface
-//  2. Creating a new dialect package under dialects/
-//  3. Adding the dialect to the GetPlanner() factory function
-//  4. Adding a capability preset when a dialect reuses an existing planner
-//  5. Implementing dialect-specific SQL generation logic
+//  2. Registering a factory with Register, typically from the dialect package's init
+//  3. Adding a capability preset when a dialect reuses an existing planner
+//  4. Implementing dialect-specific SQL generation logic
+//
+// Built-in dialects are registered by this package. Third-party packages can
+// register additional dialects without forking Ptah:
+//
+//	func init() {
+//		planner.MustRegister("acme", func(opts planner.Options) planner.Planner {
+//			return acmeplanner.New(opts.Capabilities)
+//		})
+//	}
 //
 // # Thread Safety
 //
