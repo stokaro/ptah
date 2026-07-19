@@ -41,16 +41,9 @@ type mysqlFamilyRoutineParser struct{}
 
 func (mysqlFamilyRoutineParser) parseCreateRoutine(p *Parser, target string, statementStart int) (ast.Node, error) {
 	if target == "PROCEDURE" {
-		return p.parseCreateOpaqueRoutineStatement(statementStart, ast.RoutineKindProcedure)
+		return p.parseCreateMySQLRoutineStatement(statementStart, ast.RoutineKindProcedure)
 	}
-	node, err := p.parseCreateFunction(statementStart)
-	if err != nil {
-		return nil, err
-	}
-	if raw, ok := node.(*ast.RawSQLNode); ok {
-		return ast.NewOpaqueRoutine(raw.SQL, p.dialect, ast.RoutineKindFunction), nil
-	}
-	return node, nil
+	return p.parseCreateMySQLRoutineStatement(statementStart, ast.RoutineKindFunction)
 }
 
 func (mysqlFamilyRoutineParser) parseCreateDefinerRoutine(p *Parser, statementStart int) (ast.Node, error) {
@@ -60,9 +53,9 @@ func (mysqlFamilyRoutineParser) parseCreateDefinerRoutine(p *Parser, statementSt
 		}
 		switch {
 		case p.current.MatchIdentifierValue("FUNCTION"):
-			return p.parseCreateOpaqueRoutineStatement(statementStart, ast.RoutineKindFunction)
+			return p.parseCreateMySQLRoutineStatement(statementStart, ast.RoutineKindFunction)
 		case p.current.MatchIdentifierValue("PROCEDURE"):
-			return p.parseCreateOpaqueRoutineStatement(statementStart, ast.RoutineKindProcedure)
+			return p.parseCreateMySQLRoutineStatement(statementStart, ast.RoutineKindProcedure)
 		case p.current.Type == lexer.TokenSemicolon:
 			return nil, fmt.Errorf("unsupported CREATE DEFINER target at position %d", p.current.Start)
 		default:
