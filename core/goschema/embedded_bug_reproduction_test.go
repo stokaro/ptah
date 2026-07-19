@@ -75,7 +75,8 @@ func TestEmbeddedEntityIDBugReproduction(t *testing.T) {
 	c := qt.New(t)
 
 	// Parse the test file to get the schema
-	database := ParseFile("embedded_bug_reproduction_test.go")
+	database, err := ParseFile("embedded_bug_reproduction_test.go")
+	c.Assert(err, qt.IsNil)
 
 	// Process embedded fields to get all fields
 	allFields := processEmbeddedFields(database.EmbeddedFields, database.Fields)
@@ -160,7 +161,8 @@ func TestEmbeddedFieldProcessingDebug(t *testing.T) {
 	c := qt.New(t)
 
 	// Parse the test file to get the schema
-	database := ParseFile("embedded_bug_reproduction_test.go")
+	database, err := ParseFile("embedded_bug_reproduction_test.go")
+	c.Assert(err, qt.IsNil)
 
 	t.Logf("Found %d tables", len(database.Tables))
 	for _, table := range database.Tables {
@@ -206,7 +208,8 @@ func TestNestedEmbeddedFieldsComprehensive(t *testing.T) {
 	c := qt.New(t)
 
 	// Parse the test file to get the schema
-	database := ParseFile("embedded_bug_reproduction_test.go")
+	database, err := ParseFile("embedded_bug_reproduction_test.go")
+	c.Assert(err, qt.IsNil)
 
 	// Process embedded fields to get all fields
 	allFields := processEmbeddedFields(database.EmbeddedFields, database.Fields)
@@ -333,7 +336,8 @@ func TestNestedEmbeddedFieldsWithPrefixes(t *testing.T) {
 	c := qt.New(t)
 
 	// Parse the test file to get the schema
-	database := ParseFile("embedded_bug_reproduction_test.go")
+	database, err := ParseFile("embedded_bug_reproduction_test.go")
+	c.Assert(err, qt.IsNil)
 
 	// Process embedded fields to get all fields
 	allFields := processEmbeddedFields(database.EmbeddedFields, database.Fields)
@@ -450,7 +454,8 @@ type Area struct {
 	c.Assert(err, qt.IsNil)
 
 	// Parse the test file
-	database := ParseFile(testFile)
+	database, err := ParseFile(testFile)
+	c.Assert(err, qt.IsNil)
 
 	// Process embedded fields
 	allFields := processEmbeddedFields(database.EmbeddedFields, database.Fields)

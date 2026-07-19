@@ -56,7 +56,8 @@ func TestPostgreSQLMultiSchemaGenerateApplyReadDiffIntegration(t *testing.T) {
 		RLSPoliciesAdded:      []string{"ptah_ms_users_visible"},
 		RLSEnabledTablesAdded: []string{"ptah_ms_auth.ptah_ms_users"},
 	}
-	nodes := planner.GenerateSchemaDiffAST(diff, generated, "postgres")
+	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, "postgres")
+	c.Assert(err, qt.IsNil)
 	migrationSQL, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	migrationSQLForAssert := legacyRenderedSQL(migrationSQL)

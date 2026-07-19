@@ -620,7 +620,8 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_MultipleSplitCleanly(t 
 	diff := &types.SchemaDiff{
 		ConstraintsRemoved: []string{"first_constraint", "second_constraint"},
 	}
-	statements := planner.GenerateSchemaDiffSQLStatements(diff, &goschema.Database{}, "postgres")
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, &goschema.Database{}, "postgres")
+	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2,
 		qt.Commentf("each DO block must end up as its own statement after SQL splitting; got %d statements:\n%s",
 			len(statements), strings.Join(statements, "\n---\n")))

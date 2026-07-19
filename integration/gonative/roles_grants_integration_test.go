@@ -36,7 +36,8 @@ func TestPostgreSQLRolesGrantsRoundTripAndBehaviorIntegration(t *testing.T) {
 	diff := schemadiff.Compare(target, &dbschematypes.DBSchema{})
 	c.Assert(diff.HasChanges(), qt.IsTrue)
 
-	nodes := planner.GenerateSchemaDiffAST(diff, target, "postgres")
+	nodes, err := planner.GenerateSchemaDiffAST(diff, target, "postgres")
+	c.Assert(err, qt.IsNil)
 	migrationSQL, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	for _, stmt := range migrator.SplitSQLStatements(migrationSQL) {

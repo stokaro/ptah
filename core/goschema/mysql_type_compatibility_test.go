@@ -121,7 +121,8 @@ func TestMySQLMigrationGeneratesCompatibleTypes(t *testing.T) {
 	nodes := planner.GenerateMigrationAST(diff, db)
 
 	// Render to SQL
-	r := renderer.NewRenderer("mysql")
+	r, err := renderer.NewRenderer("mysql")
+	c.Assert(err, qt.IsNil)
 	var sqlStatements []string
 	for _, node := range nodes {
 		sql, err := r.Render(node)

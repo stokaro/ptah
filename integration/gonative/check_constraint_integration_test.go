@@ -155,10 +155,9 @@ func TestFieldLevelCheckConstraint_Removal_Integration(t *testing.T) {
 	c.Assert(diff.HasChanges(), qt.IsTrue)
 	c.Assert(diff.ConstraintsRemoved, qt.Contains, "ptah_test_check_drop_score_check")
 
-	migrationSQL := strings.Join(
-		planner.GenerateSchemaDiffSQLStatements(diff, withoutCheck, "postgres"),
-		";\n",
-	) + ";"
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, withoutCheck, "postgres")
+	c.Assert(err, qt.IsNil)
+	migrationSQL := strings.Join(statements, ";\n") + ";"
 	c.Assert(strings.Contains(migrationSQL, "ptah_test_check_drop_score_check"), qt.IsTrue,
 		qt.Commentf("drop migration must reference the synthesized constraint by its auto-name; got: %s", migrationSQL))
 

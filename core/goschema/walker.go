@@ -173,5 +173,5 @@ func parseDatabaseFile(fsys fs.FS, path string) (Database, error) {
 	}
 	defer file.Close()
 
-	return ParseSource(path, bufio.NewReader(file)), nil
+	return ParseSource(path, bufio.NewReader(file))
 }

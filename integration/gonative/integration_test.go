@@ -35,7 +35,8 @@ func TestGenerateCreateTableFromStubs(t *testing.T) {
 			c := qt.New(t)
 
 			// Parse the entity file
-			database := goschema.ParseFile(file)
+			database, err := goschema.ParseFile(file)
+			c.Assert(err, qt.IsNil)
 
 			// Verify that we got data from the file
 			c.Assert(database.Tables, qt.Not(qt.HasLen), 0, qt.Commentf("No table directives found in %s", file))

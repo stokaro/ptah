@@ -92,7 +92,8 @@ func TestNewRenderer_SupportedDialects(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			r := renderer.NewRenderer(tt.dialect)
+			r, err := renderer.NewRenderer(tt.dialect)
+			c.Assert(err, qt.IsNil)
 			c.Assert(r, qt.IsNotNil)
 			c.Assert(r.GetDialect(), qt.Equals, tt.expected)
 		})
@@ -130,9 +131,9 @@ func TestNewRenderer_UnsupportedDialects(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(func() {
-				renderer.NewRenderer(tt.dialect)
-			}, qt.PanicMatches, "unsupported database dialect: "+tt.dialect)
+			r, err := renderer.NewRenderer(tt.dialect)
+			c.Assert(r, qt.IsNil)
+			c.Assert(err, qt.ErrorMatches, "unsupported database dialect: "+tt.dialect)
 		})
 	}
 }
@@ -173,9 +174,9 @@ func TestRenderSQL_UnsupportedDialect(t *testing.T) {
 
 	comment := &ast.CommentNode{Text: "Test comment"}
 
-	c.Assert(func() {
-		_, _ = renderer.RenderSQL("unsupported", comment)
-	}, qt.PanicMatches, "unsupported database dialect: unsupported")
+	sql, err := renderer.RenderSQL("sqlserver", comment)
+	c.Assert(sql, qt.Equals, "")
+	c.Assert(err, qt.ErrorMatches, "unsupported database dialect: sqlserver")
 }
 
 func TestRenderer_Interface(t *testing.T) {
@@ -186,7 +187,8 @@ func TestRenderer_Interface(t *testing.T) {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			r := renderer.NewRenderer(dialect)
+			r, err := renderer.NewRenderer(dialect)
+			c.Assert(err, qt.IsNil)
 
 			// Test interface methods
 			c.Assert(r.GetDialect(), qt.IsNotNil)
@@ -236,7 +238,8 @@ func TestRenderer_BasicRendering(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			r := renderer.NewRenderer(tt.dialect)
+			r, err := renderer.NewRenderer(tt.dialect)
+			c.Assert(err, qt.IsNil)
 
 			sql, err := r.Render(tt.node)
 			c.Assert(err, qt.IsNil)
@@ -275,7 +278,8 @@ func TestRenderer_CreateTable(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			r := renderer.NewRenderer(tt.dialect)
+			r, err := renderer.NewRenderer(tt.dialect)
+			c.Assert(err, qt.IsNil)
 
 			table := &ast.CreateTableNode{
 				Name: "users",

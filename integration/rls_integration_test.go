@@ -73,7 +73,8 @@ func TestRLSIntegrationFixtures(t *testing.T) {
 			}
 
 			diff := schemadiff.Compare(generated, dbSchema)
-			sql := planner.GenerateSchemaDiffSQL(diff, generated, platform.Postgres)
+			sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.Postgres)
+			c.Assert(err, qt.IsNil)
 
 			// Verify that SQL is generated (non-empty)
 			c.Assert(len(sql) > 0, qt.IsTrue, qt.Commentf("No SQL generated for fixture: %s", tc.fixtureDir))

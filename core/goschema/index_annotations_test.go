@@ -26,9 +26,8 @@ type Event struct {
 	_ int
 }
 `
-	db := goschema.ParseSource("fixture.go", src)
-
 	c := qt.New(t)
+	db := mustParseSource(c, "fixture.go", src)
 	c.Assert(db.Indexes, qt.HasLen, 1)
 	idx := db.Indexes[0]
 	c.Assert(idx.Name, qt.Equals, "idx_e_payload")
@@ -54,11 +53,8 @@ type Event struct {
 }
 `
 	c := qt.New(t)
-	defer func() {
-		r := recover()
-		c.Assert(r, qt.IsNotNil, qt.Commentf("expected parser to panic on unknown index attribute"))
-	}()
-	_ = goschema.ParseSource("fixture.go", src)
+	_, err := goschema.ParseSource("fixture.go", src)
+	c.Assert(err, qt.ErrorMatches, `unknown annotation attribute "granluarity" on //migrator:schema:index at Event`)
 }
 
 // TestParseIndexAnnotation_NoTypeNoGranularity confirms that the new fields
@@ -79,8 +75,8 @@ type User struct {
 	_ int
 }
 `
-	db := goschema.ParseSource("fixture.go", src)
 	c := qt.New(t)
+	db := mustParseSource(c, "fixture.go", src)
 	c.Assert(db.Indexes, qt.HasLen, 1)
 	idx := db.Indexes[0]
 	c.Assert(idx.Type, qt.Equals, "")

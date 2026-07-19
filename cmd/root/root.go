@@ -2,6 +2,7 @@
 package root
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/go-extras/cobraflags"
@@ -74,10 +75,21 @@ func Execute(args ...string) {
 	cmd := NewRootCommand()
 	cmd.SetArgs(args)
 
-	err := cmd.Execute()
+	err := executeWithRecovery(cmd)
 	if err != nil {
 		os.Exit(exitcode.Code(err, 1)) //revive:disable-line:deep-exit
 	}
+}
+
+func executeWithRecovery(cmd *cobra.Command) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("internal error: %v", recovered)
+			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
+		}
+	}()
+
+	return cmd.Execute()
 }
 
 const rootLongDescription = `Ptah generates database schemas from Go entities,

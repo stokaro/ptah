@@ -94,7 +94,8 @@ func TestIssue51ExactReproduction(t *testing.T) {
 	nodes := planner.GenerateMigrationAST(diff, db)
 
 	// Render to SQL
-	r := renderer.NewRenderer("postgresql")
+	r, err := renderer.NewRenderer("postgresql")
+	c.Assert(err, qt.IsNil)
 	var sqlStatements []string
 	for _, node := range nodes {
 		sql, err := r.Render(node)
