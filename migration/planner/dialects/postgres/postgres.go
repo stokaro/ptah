@@ -66,9 +66,9 @@ type Planner struct {
 	caps capability.Capabilities
 	// concurrentIndexes requests CREATE INDEX CONCURRENTLY for new indexes.
 	// It is a POLICY choice (concurrent builds cannot run inside a
-	// transaction, so callers must arrange no-transaction execution — issue
-	// #152), and it only takes effect when the target also has the
-	// capability.CreateIndexConcurrently capability — a future
+	// transaction, so generator callers split such statements into
+	// no_transaction migration files), and it only takes effect when the target
+	// also has the capability.CreateIndexConcurrently capability — a future
 	// postgres-compatible preset without it (CockroachDB, issue #171) keeps
 	// plain CREATE INDEX no matter the policy.
 	concurrentIndexes bool
@@ -110,8 +110,8 @@ func (p *Planner) capabilities() capability.Capabilities {
 // CREATE [UNIQUE] INDEX CONCURRENTLY for newly added indexes, provided the
 // target capability set includes capability.CreateIndexConcurrently. The
 // receiver is not modified. Concurrent index builds cannot run inside a
-// transaction block; the caller owns arranging no-transaction execution for
-// such statements (issue #152 tracks first-class support in the migrator).
+// transaction block; callers must arrange no_transaction execution for such
+// statements.
 func (p *Planner) WithConcurrentIndexes() *Planner {
 	cp := *p
 	cp.concurrentIndexes = true
