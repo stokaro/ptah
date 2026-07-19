@@ -141,7 +141,8 @@ func unsupportedStatementFinding(source Source, statement sourceStatement, opts 
 }
 
 func lintParsedStatement(source Source, statement sourceStatement, opts Options) ([]Finding, error) {
-	stmtList, err := parser.NewParser(statementParserSQL(statement.sql)).Parse()
+	caps := effectiveCapabilities(opts)
+	stmtList, err := parser.NewParser(statementParserSQL(statement.sql), parserOptions(opts, caps)...).Parse()
 	if err != nil {
 		return []Finding{parseErrorFinding(source, statement, opts, err)}, nil
 	}
@@ -151,7 +152,7 @@ func lintParsedStatement(source Source, statement sourceStatement, opts Options)
 		statement:    statement,
 		Dialect:      opts.Dialect,
 		Version:      opts.Version,
-		Capabilities: effectiveCapabilities(opts),
+		Capabilities: caps,
 	}
 	findings := make([]Finding, 0)
 	for _, stmt := range stmtList.Statements {
@@ -163,6 +164,17 @@ func lintParsedStatement(source Source, statement sourceStatement, opts Options)
 		}
 	}
 	return findings, nil
+}
+
+func parserOptions(opts Options, caps capability.Capabilities) []parser.Option {
+	var parseOpts []parser.Option
+	if opts.Dialect != "" {
+		parseOpts = append(parseOpts, parser.WithDialect(opts.Dialect))
+	}
+	if caps != nil {
+		parseOpts = append(parseOpts, parser.WithCapabilities(caps))
+	}
+	return parseOpts
 }
 
 func statementParserSQL(sql string) string {
@@ -322,6 +334,8 @@ func (unsupportedRoutineRule) CheckStatement(ctx Context, stmt ast.Node) []Findi
 			keyword = "raw SQL"
 		}
 		return []Finding{ctx.unsupportedModeledSQLFinding(keyword, keywordOffset)}
+	case *ast.OpaqueRoutineNode:
+		return []Finding{ctx.unsupportedModeledSQLFinding("CREATE "+strings.ToUpper(string(node.Kind)), 0)}
 	case *ast.CreateFunctionNode:
 		return []Finding{ctx.unsupportedModeledSQLFinding("CREATE FUNCTION", 0)}
 	case *ast.CreateTriggerNode:

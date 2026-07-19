@@ -834,6 +834,31 @@ DELIMITER ;`
 	c.Assert(raw.SQL, qt.Contains, "RETURN x+2;")
 }
 
+func TestParser_ParseMySQLDialectCompoundFunctionAsOpaqueRoutine(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `DELIMITER |
+CREATE FUNCTION fn1(x int) RETURNS int DETERMINISTIC
+BEGIN
+       INSERT INTO t1 VALUES (x);
+       RETURN x+2;
+END|
+DELIMITER ;`
+	p := parser.NewParser(sql, parser.WithDialect(platform.MySQL))
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	routine, ok := statements.Statements[0].(*ast.OpaqueRoutineNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(routine.Dialect, qt.Equals, platform.MySQL)
+	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindFunction)
+	c.Assert(routine.SQL, qt.Contains, "CREATE FUNCTION fn1(x int) RETURNS int DETERMINISTIC")
+	c.Assert(routine.SQL, qt.Contains, "INSERT INTO t1 VALUES (x);")
+	c.Assert(routine.SQL, qt.Contains, "RETURN x+2;")
+}
+
 func TestParser_ParseMySQLCreateFunctionWithNestedCompoundBody(t *testing.T) {
 	c := qt.New(t)
 
@@ -1025,7 +1050,7 @@ CREATE TABLE after_fn (id int);`
 	c.Assert(raw.SQL, qt.Not(qt.Contains), "CREATE TABLE after_fn")
 }
 
-func TestParser_ParseSQLServerDialectUnbracketedFunctionAsRawSQL(t *testing.T) {
+func TestParser_ParseSQLServerDialectUnbracketedFunctionAsOpaqueRoutine(t *testing.T) {
 	c := qt.New(t)
 
 	sql := `CREATE FUNCTION dbo.f7 (@a int) RETURNS int AS BEGIN
@@ -1039,11 +1064,13 @@ CREATE TABLE after_fn (id int);`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 2)
 
-	raw, ok := statements.Statements[0].(*ast.RawSQLNode)
+	routine, ok := statements.Statements[0].(*ast.OpaqueRoutineNode)
 	c.Assert(ok, qt.IsTrue)
-	c.Assert(raw.SQL, qt.Contains, "CREATE FUNCTION dbo.f7")
-	c.Assert(raw.SQL, qt.Contains, "RETURN @a")
-	c.Assert(raw.SQL, qt.Not(qt.Contains), "CREATE TABLE after_fn")
+	c.Assert(routine.Dialect, qt.Equals, platform.SQLServer)
+	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindFunction)
+	c.Assert(routine.SQL, qt.Contains, "CREATE FUNCTION dbo.f7")
+	c.Assert(routine.SQL, qt.Contains, "RETURN @a")
+	c.Assert(routine.SQL, qt.Not(qt.Contains), "CREATE TABLE after_fn")
 
 	createTable, ok := statements.Statements[1].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue)
@@ -1061,12 +1088,14 @@ CREATE TABLE after_proc (id int);`
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements.Statements, qt.HasLen, 2)
 
-	raw, ok := statements.Statements[0].(*ast.RawSQLNode)
+	routine, ok := statements.Statements[0].(*ast.OpaqueRoutineNode)
 	c.Assert(ok, qt.IsTrue)
-	c.Assert(raw.SQL, qt.Contains, "CREATE PROCEDURE dbo.p1")
-	c.Assert(raw.SQL, qt.Contains, "SELECT 1")
-	c.Assert(raw.SQL, qt.Not(qt.Contains), "GO")
-	c.Assert(raw.SQL, qt.Not(qt.Contains), "CREATE TABLE after_proc")
+	c.Assert(routine.Dialect, qt.Equals, platform.SQLServer)
+	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindProcedure)
+	c.Assert(routine.SQL, qt.Contains, "CREATE PROCEDURE dbo.p1")
+	c.Assert(routine.SQL, qt.Contains, "SELECT 1")
+	c.Assert(routine.SQL, qt.Not(qt.Contains), "GO")
+	c.Assert(routine.SQL, qt.Not(qt.Contains), "CREATE TABLE after_proc")
 
 	createTable, ok := statements.Statements[1].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue)
@@ -1131,6 +1160,40 @@ CALL proc();`
 	c.Assert(raw.SQL, qt.Contains, "IF(@rows != 1, 's', '')")
 	c.Assert(raw.SQL, qt.Not(qt.Contains), "CALL proc")
 	c.Assert(raw.SQL, qt.Not(qt.Contains), "-- end --")
+}
+
+func TestParser_ParseMySQLDialectDefinerProcedureAsOpaqueRoutine(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `-- atlas:delimiter \n-- end --\n
+
+CREATE DEFINER='boring' PROCEDURE proc ()
+    COMMENT 'ATLAS_DELIMITER'
+    SQL SECURITY INVOKER
+    NOT DETERMINISTIC
+    MODIFIES SQL DATA
+BEGIN
+    SELECT CONCAT('Enabled ', @rows := ROW_COUNT(), ' background thread', IF(@rows != 1, 's', '')) AS summary;
+END
+
+-- end --
+
+CALL proc();`
+	p := parser.NewParser(sql, parser.WithDialect(platform.MySQL))
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	routine, ok := statements.Statements[0].(*ast.OpaqueRoutineNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(routine.Dialect, qt.Equals, platform.MySQL)
+	c.Assert(routine.Kind, qt.Equals, ast.RoutineKindProcedure)
+	c.Assert(routine.SQL, qt.Contains, "CREATE DEFINER='boring' PROCEDURE proc ()")
+	c.Assert(routine.SQL, qt.Contains, "SQL SECURITY INVOKER")
+	c.Assert(routine.SQL, qt.Contains, "IF(@rows != 1, 's', '')")
+	c.Assert(routine.SQL, qt.Not(qt.Contains), "CALL proc")
+	c.Assert(routine.SQL, qt.Not(qt.Contains), "-- end --")
 }
 
 func TestParser_ParseCreateTrigger(t *testing.T) {

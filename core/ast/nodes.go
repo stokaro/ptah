@@ -2302,6 +2302,44 @@ func (n *RawSQLNode) Accept(visitor Visitor) error {
 	return visitor.VisitRawSQL(n)
 }
 
+// RoutineKind identifies which CREATE routine form an opaque routine wraps.
+type RoutineKind string
+
+const (
+	RoutineKindFunction  RoutineKind = "function"
+	RoutineKindProcedure RoutineKind = "procedure"
+)
+
+// OpaqueRoutineNode wraps a dialect-specific routine whose outer boundary is
+// understood but whose body is intentionally preserved verbatim until a
+// dialect-specific routine-body AST exists.
+type OpaqueRoutineNode struct {
+	// SQL is the complete executable routine statement without client batch
+	// separators such as GO or DELIMITER markers.
+	SQL string
+	// Dialect is the normalized SQL dialect that selected this opaque routine
+	// path, for example mysql, mariadb, or sqlserver.
+	Dialect string
+	// Kind identifies whether this is a CREATE FUNCTION or CREATE PROCEDURE.
+	Kind RoutineKind
+}
+
+// NewOpaqueRoutine creates a typed opaque routine wrapper.
+func NewOpaqueRoutine(sql, dialect string, kind RoutineKind) *OpaqueRoutineNode {
+	return &OpaqueRoutineNode{
+		SQL:     strings.TrimSpace(sql),
+		Dialect: dialect,
+		Kind:    kind,
+	}
+}
+
+// Accept renders opaque routines through the raw SQL visitor contract while
+// keeping the AST node type available to parser consumers.
+func (n *OpaqueRoutineNode) Accept(visitor Visitor) error {
+	raw := RawSQLNode{SQL: n.SQL}
+	return visitor.VisitRawSQL(&raw)
+}
+
 // Accept implements the Node interface for StatementList.
 //
 // This method visits each statement in the list in order. If any statement
