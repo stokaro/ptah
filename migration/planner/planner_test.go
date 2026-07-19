@@ -11,6 +11,7 @@ import (
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/platform/capability"
+	"github.com/stokaro/ptah/core/ptaherr"
 	dbtypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/planner/dialects/mysql"
@@ -159,9 +160,38 @@ func TestGetPlannerRejectsFactoryReturningNil(t *testing.T) {
 func TestGenerateSchemaDiffSQL_UnsupportedDialectReturnsError(t *testing.T) {
 	c := qt.New(t)
 
+	nodes, err := planner.GenerateSchemaDiffAST(&types.SchemaDiff{}, &goschema.Database{}, "sqlserver")
+	c.Assert(nodes, qt.IsNil)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
+
+	var astPlanErr *ptaherr.PlanError
+	c.Assert(err, qt.ErrorAs, &astPlanErr)
+	c.Assert(astPlanErr.Dialect, qt.Equals, "sqlserver")
+
 	sql, err := planner.GenerateSchemaDiffSQL(&types.SchemaDiff{}, &goschema.Database{}, "sqlserver")
 	c.Assert(sql, qt.Equals, "")
-	c.Assert(err, qt.ErrorMatches, "unsupported database dialect: sqlserver")
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
+
+	var planErr *ptaherr.PlanError
+	c.Assert(err, qt.ErrorAs, &planErr)
+	c.Assert(planErr.Dialect, qt.Equals, "sqlserver")
+}
+
+func TestGenerateSchemaDiffAST_WrapsPlannerFailures(t *testing.T) {
+	c := qt.New(t)
+
+	diff := &types.SchemaDiff{TablesModified: []types.TableDiff{
+		{TableName: "users", ColumnsRemoved: []string{"name"}},
+	}}
+
+	nodes, err := planner.GenerateSchemaDiffAST(diff, &goschema.Database{}, platform.SQLite)
+
+	c.Assert(nodes, qt.IsNil)
+	var planErr *ptaherr.PlanError
+	c.Assert(err, qt.ErrorAs, &planErr)
+	c.Assert(planErr.Dialect, qt.Equals, platform.SQLite)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, "sqlite: dropping columns from table users requires a table rebuild plan")
 }
 
 func TestRequiresNoTransaction(t *testing.T) {

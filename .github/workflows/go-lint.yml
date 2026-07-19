@@ -34,6 +34,12 @@ jobs:
           ! grep -F "All operations wrapped in transactions" README.md
           ! grep -F "locking prevents double-apply" README.md
 
+      - name: Check public Go API ledger
+        run: scripts/check-public-api.sh
+
+      - name: Check public Go API snapshot
+        run: scripts/check-public-api-snapshot.sh
+
       - name: qtlint
         run: go tool qtlint ./...
 
