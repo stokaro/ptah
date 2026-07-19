@@ -24,6 +24,7 @@ import (
 	"github.com/stokaro/ptah/cmd/migrateup"
 	"github.com/stokaro/ptah/cmd/migratevalidate"
 	"github.com/stokaro/ptah/cmd/readdb"
+	"github.com/stokaro/ptah/cmd/schema"
 	"github.com/stokaro/ptah/cmd/seed"
 	"github.com/stokaro/ptah/cmd/version"
 )
@@ -45,6 +46,7 @@ func NewRootCommand() *cobra.Command {
 
 	cmd.AddCommand(generate.NewGenerateCommand())
 	cmd.AddCommand(readdb.NewReadDBCommand())
+	cmd.AddCommand(schema.NewSchemaCommand())
 	cmd.AddCommand(compare.NewCompareCommand())
 	cmd.AddCommand(drift.NewDriftCommand())
 	cmd.AddCommand(migrate.NewMigrateCommand())
