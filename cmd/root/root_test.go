@@ -52,6 +52,21 @@ func TestNewRootCommand_VersionSubcommandPrintsBuildInfo(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, "Platform: ")
 }
 
+func TestNewRootCommand_SchemaExportSubcommandIsRegistered(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"schema", "export", "--help"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Export one schema source format to another")
+	c.Assert(out.String(), qt.Contains, "--cleanup-go-annotations")
+}
+
 func TestNewRootCommand_VersionFlagWorks(t *testing.T) {
 	c := qt.New(t)
 	cmd := NewRootCommand()

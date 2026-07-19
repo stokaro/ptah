@@ -495,7 +495,10 @@ schema file:
 
 See [YAML Schema Input](docs/yaml_schema.md) for the supported file format,
 validation rules, and examples. See [Atlas HCL Schema Input](docs/atlas_hcl_schema.md)
-for the supported Atlas HCL subset and current limitations.
+for the supported Atlas HCL subset and current limitations. See
+[Go Annotations vs. Atlas HCL](docs/go_annotations_vs_atlas_hcl.md) for
+exporting Go annotations to Atlas HCL and optionally cleaning up source
+annotations after a successful export.
 
 3. **Compare and migrate**:
 
@@ -539,6 +542,23 @@ Generate SQL DDL statements from Go entities without touching the database:
 # Generate from an Atlas HCL schema file instead of Go annotations
 ./ptah generate --schema-file schema.hcl --dialect postgres
 ```
+
+### Export Schema
+
+Export Go annotations to Atlas schema HCL:
+
+```bash
+./ptah schema export --from go --to atlas-hcl --root-dir ./models --out schema.hcl
+
+# Remove Ptah schema annotations after a successful export
+./ptah schema export --root-dir ./models --out schema.hcl --cleanup-go-annotations
+
+# Preview cleanup without modifying Go files
+./ptah schema export --root-dir ./models --out schema.hcl --cleanup-go-annotations --cleanup-diff
+```
+
+See [Go Annotations vs. Atlas HCL](docs/go_annotations_vs_atlas_hcl.md) for
+cleanup semantics, diagnostics, and the currently supported export shape.
 
 ### Database Operations
 
