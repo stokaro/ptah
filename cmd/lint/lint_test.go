@@ -159,6 +159,42 @@ func TestRunLint_ConfigFileDisablesRulesAndSetsDialect(t *testing.T) {
 	}
 }
 
+func TestRunLint_ProjectConfigDisablesRulesAndSetsDialect(t *testing.T) {
+	c := qt.New(t)
+	badDir, err := filepath.Abs("testdata/bad")
+	c.Assert(err, qt.IsNil)
+	dir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(dir, "ptah.yaml"), []byte(`lint:
+  dialect: postgres
+  disabled-rules:
+    - MF
+`), 0o600), qt.IsNil)
+	originalWD, err := os.Getwd()
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.Chdir(dir), qt.IsNil)
+	defer func() {
+		c.Assert(os.Chdir(originalWD), qt.IsNil)
+	}()
+
+	_, stderr, err := execute("--dir", badDir, "--format", "json")
+
+	c.Assert(err, qt.IsNotNil, qt.Commentf("DS errors remain, so the run still fails"))
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+
+	var report struct {
+		Dialect  string         `json:"dialect"`
+		Findings []lint.Finding `json:"findings"`
+	}
+	c.Assert(json.Unmarshal([]byte(stderr), &report), qt.IsNil)
+	c.Assert(report.Dialect, qt.Equals, "postgres")
+	for _, f := range report.Findings {
+		c.Assert(f.Rule, qt.Not(qt.Contains), "MF",
+			qt.Commentf("the MF family is disabled by ptah.yaml; got %v", f))
+		c.Assert(f.Rule, qt.Not(qt.Equals), "MY101",
+			qt.Commentf("dialect: postgres from ptah.yaml must gate MY rules; got %v", f))
+	}
+}
+
 func TestRunLint_ConfigRuleSeverityAndExclude(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

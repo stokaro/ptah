@@ -71,6 +71,7 @@ var migrateStatusFlags = map[string]cobraflags.Flag{
 		Usage: "Output status in JSON format",
 	},
 	dbcli.ConnectTimeoutFlagName:      dbcli.NewConnectTimeoutFlag(),
+	dbcli.ConfigFlagName:              dbcli.NewConfigFlag(),
 	dbcli.EnvFlagName:                 dbcli.NewEnvFlag(),
 	dbcli.MigrationsSchemaFlagName:    dbcli.NewMigrationsSchemaFlag(),
 	dbcli.MigrationsTableFlagName:     dbcli.NewMigrationsTableFlag(),
@@ -97,8 +98,9 @@ func migrateStatusCommand(cmd *cobra.Command, _ []string) error {
 	migrationsSchema := migrateStatusFlags[dbcli.MigrationsSchemaFlagName].GetString()
 	migrationsTable := migrateStatusFlags[dbcli.MigrationsTableFlagName].GetString()
 	revisionFormatValue := migrateStatusFlags[dbcli.RevisionTableFormatFlagName].GetString()
+	configPath := migrateStatusFlags[dbcli.ConfigFlagName].GetString()
 
-	projectCfg, err := dbcli.LoadProjectConfig(cmd, "")
+	projectCfg, err := dbcli.LoadProjectConfig(cmd, configPath)
 	if err != nil {
 		return err
 	}
@@ -107,7 +109,9 @@ func migrateStatusCommand(cmd *cobra.Command, _ []string) error {
 	dirFormatValue = dbcli.EffectiveString(cmd, dirFormatFlag, dirFormatValue, projectCfg.Migration.Format)
 	atlasEnv = dbcli.EffectiveString(cmd, atlasEnvFlag, atlasEnv, projectCfg.EnvName)
 	migrationsSchema = dbcli.EffectiveString(cmd, dbcli.MigrationsSchemaFlagName, migrationsSchema, projectCfg.Migration.RevisionsSchema)
+	migrationsTable = dbcli.EffectiveString(cmd, dbcli.MigrationsTableFlagName, migrationsTable, projectCfg.Migration.RevisionsTable)
 	revisionFormatValue = dbcli.EffectiveString(cmd, dbcli.RevisionTableFormatFlagName, revisionFormatValue, projectCfg.Migration.RevisionFormat)
+	connectTimeoutValue := dbcli.EffectiveString(cmd, dbcli.ConnectTimeoutFlagName, migrateStatusFlags[dbcli.ConnectTimeoutFlagName].GetString(), projectCfg.Migration.ConnectTimeout)
 
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
@@ -126,7 +130,7 @@ func migrateStatusCommand(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	connectTimeout, err := dbcli.ParseConnectTimeout(migrateStatusFlags[dbcli.ConnectTimeoutFlagName].GetString())
+	connectTimeout, err := dbcli.ParseConnectTimeout(connectTimeoutValue)
 	if err != nil {
 		return err
 	}

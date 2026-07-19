@@ -19,7 +19,7 @@ func Load(opts LoadOptions) (Config, error) {
 		atlasPath = AtlasFileName
 	}
 
-	ptah, err := LoadPtahFile(ptahPath)
+	ptah, err := LoadPtahFile(ptahPath, opts.EnvName)
 	if err != nil {
 		return Config{}, err
 	}

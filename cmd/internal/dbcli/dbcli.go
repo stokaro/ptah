@@ -101,6 +101,11 @@ func ParseSchemas(raw string) []string {
 	return schemas
 }
 
+// JoinSchemas formats a project-config schema list as the CLI flag value.
+func JoinSchemas(schemas []string) string {
+	return strings.Join(schemas, ",")
+}
+
 // ParseConnectTimeout parses the raw string value returned by the
 // [ConnectTimeoutFlagName] flag. A zero duration is accepted and signals that
 // callers should not wrap the parent context with a deadline.

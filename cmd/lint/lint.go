@@ -80,7 +80,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 	cmd.Flags().StringVar(&format, "format", formatText, "Output format: text, json, github-actions, sarif")
 	cmd.Flags().StringVar(&configPath, "config", "", "Path to a lint config file (default: <dir>/"+lint.ConfigFileName+" when present)")
 	cmd.Flags().StringVar(&atlasEnv, "atlas-env", "", "Value exposed as .Env when rendering Atlas SQL template migrations")
-	cmd.Flags().StringVar(&envName, dbcli.EnvFlagName, "", "Atlas project env name to read from atlas.hcl")
+	cmd.Flags().StringVar(&envName, dbcli.EnvFlagName, "", "Project env name to read from ptah.yaml or atlas.hcl")
 	cmd.Flags().StringArrayVar(&disabled, "disable", nil, "Disable a rule code or family, for example DS101 or MY (repeatable)")
 	cmd.Flags().StringVar(&failOn, "fail-on", failOnError, "Failure threshold controlling the exit code: error, any or none")
 
@@ -204,6 +204,12 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	cfg, err := loadConfig(opts)
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+	}
+	if cfg.Dialect == "" {
+		cfg.Dialect = projectCfg.Lint.Dialect
+	}
+	if len(cfg.DisabledRules) == 0 {
+		cfg.DisabledRules = append([]string{}, projectCfg.Lint.DisabledRules...)
 	}
 	if !isValidDialect(cfg.Dialect) {
 		msg := fmt.Sprintf("invalid dialect %q in lint config: expected postgres, mysql, mariadb, clickhouse, cockroachdb, yugabytedb, or spanner", cfg.Dialect)

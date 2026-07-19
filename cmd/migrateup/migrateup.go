@@ -155,9 +155,13 @@ func migrateUpCommand(cmd *cobra.Command, _ []string) error {
 	dirFormatValue = dbcli.EffectiveString(cmd, dirFormatFlag, dirFormatValue, projectCfg.Migration.Format)
 	atlasEnv = dbcli.EffectiveString(cmd, atlasEnvFlag, atlasEnv, projectCfg.EnvName)
 	execOrderValue = dbcli.EffectiveString(cmd, execOrderFlag, execOrderValue, projectCfg.Migration.ExecOrder)
+	migrationLockTimeoutValue = dbcli.EffectiveString(cmd, migrationLockTimeoutFlag, migrationLockTimeoutValue, projectCfg.Migration.MigrationLockTimeout)
 	lockTimeout = dbcli.EffectiveString(cmd, lockTimeoutFlag, lockTimeout, projectCfg.Migration.LockTimeout)
+	statementTimeout = dbcli.EffectiveString(cmd, statementTimeoutFlag, statementTimeout, projectCfg.Migration.StatementTimeout)
 	migrationsSchema = dbcli.EffectiveString(cmd, dbcli.MigrationsSchemaFlagName, migrationsSchema, projectCfg.Migration.RevisionsSchema)
+	migrationsTable = dbcli.EffectiveString(cmd, dbcli.MigrationsTableFlagName, migrationsTable, projectCfg.Migration.RevisionsTable)
 	revisionFormatValue = dbcli.EffectiveString(cmd, dbcli.RevisionTableFormatFlagName, revisionFormatValue, projectCfg.Migration.RevisionFormat)
+	connectTimeoutValue := dbcli.EffectiveString(cmd, dbcli.ConnectTimeoutFlagName, migrateUpFlags[dbcli.ConnectTimeoutFlagName].GetString(), projectCfg.Migration.ConnectTimeout)
 
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
@@ -212,7 +216,7 @@ func migrateUpCommand(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	connectTimeout, err := dbcli.ParseConnectTimeout(migrateUpFlags[dbcli.ConnectTimeoutFlagName].GetString())
+	connectTimeout, err := dbcli.ParseConnectTimeout(connectTimeoutValue)
 	if err != nil {
 		return err
 	}
@@ -247,7 +251,7 @@ func migrateUpCommand(cmd *cobra.Command, _ []string) error {
 	// Online-DDL routing: `-- +ptah online_ddl_tool=...` directives always
 	// work; the ptah.yaml online_ddl section adds automatic routing of
 	// ALTERs on tables above the configured row threshold.
-	onlineCfg, err := dbcli.LoadOnlineDDLConfig(configPath)
+	onlineCfg, err := dbcli.LoadOnlineDDLConfigForEnv(configPath, projectCfg.EnvName)
 	if err != nil {
 		return err
 	}

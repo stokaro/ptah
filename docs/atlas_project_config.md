@@ -69,9 +69,10 @@ atlas.hcl contains multiple env blocks; pass --env
 Ptah merges configuration in this order:
 
 1. Explicit CLI flags
-2. `atlas.hcl`
-3. `ptah.yaml`
-4. Built-in command defaults
+2. `PTAH_*` environment variables
+3. `atlas.hcl`
+4. `ptah.yaml`
+5. Built-in command defaults
 
 This means a repo can keep an Atlas-shaped migration setup while still letting
 one-off CLI invocations override any value:

@@ -8,16 +8,16 @@ import (
 )
 
 const (
-	// EnvFlagName selects an env block from atlas.hcl.
+	// EnvFlagName selects an env block from project config.
 	EnvFlagName = "env"
 )
 
-// NewEnvFlag returns the shared Atlas project env selection flag.
+// NewEnvFlag returns the shared project env selection flag.
 func NewEnvFlag() cobraflags.Flag {
 	return &cobraflags.StringFlag{
 		Name:  EnvFlagName,
 		Value: "",
-		Usage: "Atlas project env name to read from atlas.hcl",
+		Usage: "Project env name to read from ptah.yaml or atlas.hcl",
 	}
 }
 

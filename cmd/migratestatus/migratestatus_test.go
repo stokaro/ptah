@@ -17,6 +17,7 @@ func TestMigrateStatusCommand_Creation(t *testing.T) {
 	c.Assert(cmd, qt.IsNotNil)
 	c.Assert(cmd.Use, qt.Equals, "migrate-status")
 	c.Assert(cmd.Short, qt.Contains, "Show current migration status")
+	c.Assert(cmd.Flag(dbcli.ConfigFlagName), qt.IsNotNil)
 	c.Assert(cmd.Flag(dbcli.MigrationsSchemaFlagName), qt.IsNotNil)
 	c.Assert(cmd.Flag(dbcli.MigrationsTableFlagName), qt.IsNotNil)
 }
