@@ -110,6 +110,7 @@ var migrateDownFlags = map[string]cobraflags.Flag{
 	},
 	dbcli.ConnectTimeoutFlagName:      dbcli.NewConnectTimeoutFlag(),
 	dbcli.ConfigFlagName:              dbcli.NewConfigFlag(),
+	dbcli.EnvFlagName:                 dbcli.NewEnvFlag(),
 	dbcli.MigrationsSchemaFlagName:    dbcli.NewMigrationsSchemaFlag(),
 	dbcli.MigrationsTableFlagName:     dbcli.NewMigrationsTableFlag(),
 	dbcli.RevisionTableFormatFlagName: dbcli.NewRevisionTableFormatFlag(),
@@ -125,7 +126,7 @@ func NewMigrateDownCommand() *cobra.Command {
 	return migrateDownCmd
 }
 
-func migrateDownCommand(_ *cobra.Command, _ []string) error {
+func migrateDownCommand(cmd *cobra.Command, _ []string) error {
 	dbURL := migrateDownFlags[dbURLFlag].GetString()
 	migrationsDir := migrateDownFlags[migrationsFlag].GetString()
 	targetVersionValue := migrateDownFlags[targetFlag].GetString()
@@ -141,6 +142,20 @@ func migrateDownCommand(_ *cobra.Command, _ []string) error {
 	migrationsSchema := migrateDownFlags[dbcli.MigrationsSchemaFlagName].GetString()
 	migrationsTable := migrateDownFlags[dbcli.MigrationsTableFlagName].GetString()
 	revisionFormatValue := migrateDownFlags[dbcli.RevisionTableFormatFlagName].GetString()
+	configPath := migrateDownFlags[dbcli.ConfigFlagName].GetString()
+
+	projectCfg, err := dbcli.LoadProjectConfig(cmd, configPath)
+	if err != nil {
+		return err
+	}
+	dbURL = dbcli.EffectiveString(cmd, dbURLFlag, dbURL, projectCfg.DatabaseURL)
+	migrationsDir = dbcli.EffectiveString(cmd, migrationsFlag, migrationsDir, projectCfg.Migration.Dir)
+	dirFormatValue = dbcli.EffectiveString(cmd, dirFormatFlag, dirFormatValue, projectCfg.Migration.Format)
+	atlasEnv = dbcli.EffectiveString(cmd, atlasEnvFlag, atlasEnv, projectCfg.EnvName)
+	execOrderValue = dbcli.EffectiveString(cmd, execOrderFlag, execOrderValue, projectCfg.Migration.ExecOrder)
+	lockTimeout = dbcli.EffectiveString(cmd, lockTimeoutFlag, lockTimeout, projectCfg.Migration.LockTimeout)
+	migrationsSchema = dbcli.EffectiveString(cmd, dbcli.MigrationsSchemaFlagName, migrationsSchema, projectCfg.Migration.RevisionsSchema)
+	revisionFormatValue = dbcli.EffectiveString(cmd, dbcli.RevisionTableFormatFlagName, revisionFormatValue, projectCfg.Migration.RevisionFormat)
 
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
@@ -219,7 +234,7 @@ func migrateDownCommand(_ *cobra.Command, _ []string) error {
 
 	// Online-DDL routing works for down migrations too: a rollback ALTER on
 	// a large table is just as lock-heavy as the forward one.
-	onlineCfg, err := dbcli.LoadOnlineDDLConfig(migrateDownFlags[dbcli.ConfigFlagName].GetString())
+	onlineCfg, err := dbcli.LoadOnlineDDLConfig(configPath)
 	if err != nil {
 		return err
 	}

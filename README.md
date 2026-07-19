@@ -738,6 +738,14 @@ helpers such as `{{ define "shared/users" }}` and are not executed as standalone
 migrations. The template data object exposes `.Env`; CLI commands set it with
 `--atlas-env`, and programmatic callers can pass `WithAtlasTemplateData`.
 
+Ptah can also read a limited Atlas project config subset from `atlas.hcl`.
+Supported `env` blocks can provide `url`, `dev`, `exclude`, `migration { dir,
+format, revisions_schema, lock_timeout, exec_order }`, and `lint { latest }`.
+Project config precedence is explicit CLI flags, then `atlas.hcl`, then
+`ptah.yaml`, then built-in defaults. Use `--env <name>` when multiple `env`
+blocks exist; a single env is selected automatically. See
+[Atlas Project Config](docs/atlas_project_config.md).
+
 `--dir-format` controls only migration-file discovery. To continue a database
 that already uses Atlas's runtime history table, pass `--revision-format atlas`
 to `migrate-up`, `migrate-down`, `migrate-status`, `migrate-repair`, or
@@ -951,6 +959,9 @@ Show current migration status and pending migrations:
 
 # Check Atlas SQL template migrations with .Env set to dev
 ./ptah migrate-status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dir-format atlas --atlas-env dev
+
+# Read db URL, migration directory, and Atlas revision-table settings from atlas.hcl
+./ptah migrate-status --env local --json
 ```
 
 **Output includes:**
