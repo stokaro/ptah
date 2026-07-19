@@ -96,6 +96,7 @@ func TestPresets_AllValid_AndCoverEveryRegisteredCapability(t *testing.T) {
 		"Postgres16":    capability.Postgres16(),
 		"Postgres13":    capability.Postgres13(),
 		"ClickHouse24":  capability.ClickHouse24(),
+		"SQLite3":       capability.SQLite3(),
 		"CockroachDB23": capability.CockroachDB23(),
 		"YugabyteDB25":  capability.YugabyteDB25(),
 		"Spanner":       capability.SpannerPostgres(),
@@ -221,6 +222,10 @@ func TestForDialect(t *testing.T) {
 	c.Assert(capability.ForDialect("postgresql").Has(capability.EnumCustomType), qt.IsTrue)
 	c.Assert(capability.ForDialect("pgx").Has(capability.EnumCustomType), qt.IsTrue)
 	c.Assert(capability.ForDialect("ch").Has(capability.EnumInlineColumn), qt.IsTrue)
+	c.Assert(capability.ForDialect("sqlite3").Has(capability.CheckConstraintsEnforced), qt.IsTrue)
+	c.Assert(capability.ForDialect("sqlite").Has(capability.ForeignKeys), qt.IsTrue)
+	c.Assert(capability.ForDialect("sqlite").Has(capability.EnumInlineColumn), qt.IsFalse)
+	c.Assert(capability.ForDialect("sqlite").Has(capability.EnumCustomType), qt.IsFalse)
 	c.Assert(capability.ForDialect("crdb").Has(capability.CreateIndexConcurrently), qt.IsFalse)
 	c.Assert(capability.ForDialect("yugabyte").Has(capability.CreateIndexConcurrently), qt.IsFalse)
 	c.Assert(capability.ForDialect("spanner").Has(capability.ForeignKeys), qt.IsFalse)

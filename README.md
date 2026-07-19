@@ -34,7 +34,7 @@ capabilities include:
   Supports PostgreSQL RLS policies, roles, grants, and custom functions for multi-tenant data isolation.
 
 - 🔍 **Database Introspection**
-  Reads the current schema directly from PostgreSQL-family targets, MySQL, MariaDB, and ClickHouse for comparison and analysis.
+  Reads the current schema directly from PostgreSQL-family targets, MySQL, MariaDB, SQLite, and ClickHouse for comparison and analysis.
 
 - 🧮 **Schema Diffing**
   Compares code-based schema with the live database schema using AST representations.
@@ -91,7 +91,7 @@ The core package contains all fundamental components for parsing, transforming, 
 
 - **`renderer/`** - Dialect-specific SQL generation from AST
   - Converts AST nodes to database-specific SQL statements
-  - Supports PostgreSQL-family targets, MySQL, MariaDB, ClickHouse, and Spanner dialects
+  - Supports PostgreSQL-family targets, MySQL, MariaDB, SQLite, ClickHouse, and Spanner dialects
   - Implements visitor pattern for extensible rendering
 
 - **`platform/`** - Database platform constants and identifiers
@@ -121,7 +121,7 @@ Provides comprehensive database migration functionality:
 
 - **`planner/`** - Migration planning and SQL generation
   - Converts schema differences into executable SQL statements
-  - Dialect-specific planners for PostgreSQL-family targets, MySQL, MariaDB, and ClickHouse
+  - Dialect-specific planners for PostgreSQL-family targets, MySQL, MariaDB, SQLite, and ClickHouse
   - Handles dependency ordering and safety checks
 
 - **`schemadiff/`** - Schema comparison and difference analysis
@@ -132,9 +132,9 @@ Provides comprehensive database migration functionality:
 #### `dbschema/` - Database Schema Operations
 Handles all database interactions and schema operations:
 
-- **Connection management** for PostgreSQL-family targets, MySQL, MariaDB, ClickHouse, and Spanner
-- **Schema reading and introspection** from live databases (including ClickHouse `system.tables` / `system.columns` / `system.data_skipping_indices`)
-- **Schema writing and migration execution** with dialect-specific transaction semantics (PostgreSQL-family DDL is transactional; MySQL/MariaDB DDL implicitly commits; ClickHouse transaction methods are no-ops)
+- **Connection management** for PostgreSQL-family targets, MySQL, MariaDB, SQLite, ClickHouse, and Spanner
+- **Schema reading and introspection** from live databases (including SQLite `sqlite_schema` / `PRAGMA` metadata and ClickHouse `system.tables` / `system.columns` / `system.data_skipping_indices`)
+- **Schema writing and migration execution** with dialect-specific transaction semantics (PostgreSQL-family and SQLite DDL use normal transactions; MySQL/MariaDB DDL implicitly commits; ClickHouse transaction methods are no-ops)
 - **Database cleaning and schema dropping** capabilities
 - **Type definitions** for database schema representation
 
@@ -483,6 +483,9 @@ type Booking struct {
 
 # Generate for MySQL
 ./ptah generate --root-dir ./models --dialect mysql
+
+# Generate for SQLite
+./ptah generate --root-dir ./models --dialect sqlite
 ```
 
 You can also generate from a language-agnostic YAML schema file or an Atlas HCL
@@ -498,7 +501,8 @@ validation rules, and examples. See [Atlas HCL Schema Input](docs/atlas_hcl_sche
 for the supported Atlas HCL subset and current limitations. See
 [Go Annotations vs. Atlas HCL](docs/go_annotations_vs_atlas_hcl.md) for
 exporting Go annotations to Atlas HCL and optionally cleaning up source
-annotations after a successful export.
+annotations after a successful export. See [SQLite Support](docs/sqlite.md)
+for SQLite URL forms, generated DDL, and ALTER TABLE limitations.
 
 3. **Compare and migrate**:
 
@@ -547,6 +551,7 @@ Generate SQL DDL statements from Go entities without touching the database:
 ./ptah generate --root-dir ./models --dialect postgres
 ./ptah generate --root-dir ./models --dialect mysql
 ./ptah generate --root-dir ./models --dialect mariadb
+./ptah generate --root-dir ./models --dialect sqlite
 ./ptah generate --root-dir ./models --dialect clickhouse
 
 # Generate from a YAML schema file instead of Go annotations
@@ -580,6 +585,7 @@ Read and display the current database schema:
 
 ```bash
 ./ptah read-db --db-url postgres://user:pass@localhost:5432/database
+./ptah read-db --db-url sqlite:///tmp/app.db
 
 # Restrict PostgreSQL introspection to specific schemas
 ./ptah read-db --db-url postgres://user:pass@localhost:5432/database --schemas auth,billing,public
@@ -592,6 +598,7 @@ Compare your Go entities with the current database schema:
 
 ```bash
 ./ptah compare --root-dir ./models --db-url postgres://user:pass@localhost:5432/database
+./ptah compare --root-dir ./models --db-url sqlite:///tmp/app.db
 ./ptah compare --root-dir ./models --db-url postgres://user:pass@localhost:5432/database --schemas auth,billing,public
 
 # Return 1 when the diff is non-empty, 0 when it is empty
@@ -605,6 +612,7 @@ Check whether the live database still matches the schema declared by Go entities
 
 ```bash
 ./ptah drift --root-dir ./models --db-url postgres://user:pass@localhost:5432/database
+./ptah drift --root-dir ./models --db-url sqlite:///tmp/app.db
 ./ptah drift --root-dir ./models --db-url postgres://user:pass@localhost:5432/database --schemas auth,billing,public
 ```
 
@@ -1839,7 +1847,7 @@ This project is part of the Inventario system and follows the same licensing ter
 - [ ] **Performance optimizations** - Optimizations for large schemas and complex migrations
 
 ### 🎯 Planned Features
-- [ ] **Additional database dialects** - SQLite, SQL Server support
+- [ ] **Additional database dialects** - SQL Server support
 - [ ] **Web UI for schema visualization** - Interactive schema browser and migration management
 - [ ] **Import from existing databases** - Reverse engineering existing schemas to Go entities
 - [ ] **Export capabilities** - Export to GraphQL schemas, OpenAPI specs, and other formats

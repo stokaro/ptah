@@ -15,7 +15,7 @@ func TestSupportedDialects(t *testing.T) {
 	c := qt.New(t)
 
 	dialects := renderer.SupportedDialects()
-	expected := []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse", "cockroachdb", "yugabytedb", "spanner"}
+	expected := []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse", "sqlite", "sqlite3", "cockroachdb", "yugabytedb", "spanner"}
 
 	c.Assert(dialects, qt.DeepEquals, expected)
 }
@@ -50,6 +50,16 @@ func TestNewRenderer_SupportedDialects(t *testing.T) {
 			name:     "ClickHouse",
 			dialect:  "clickhouse",
 			expected: "clickhouse",
+		},
+		{
+			name:     "SQLite",
+			dialect:  "sqlite",
+			expected: "sqlite",
+		},
+		{
+			name:     "SQLite alias",
+			dialect:  "sqlite3",
+			expected: "sqlite",
 		},
 		{
 			name:     "CockroachDB",
@@ -105,10 +115,6 @@ func TestNewRenderer_UnsupportedDialects(t *testing.T) {
 		name    string
 		dialect string
 	}{
-		{
-			name:    "SQLite",
-			dialect: "sqlite",
-		},
 		{
 			name:    "Oracle",
 			dialect: "oracle",

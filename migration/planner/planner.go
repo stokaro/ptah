@@ -17,7 +17,8 @@
 //	                       ┌──────────────────┐
 //	                       │ Dialect-Specific │
 //	                       │   Generators     │
-//	                       │ (postgres/mysql) │
+//	                       │ (postgres/mysql/│
+//	                       │  sqlite)         │
 //	                       └──────────────────┘
 //
 // # Core Interface
@@ -39,6 +40,9 @@
 //   - MariaDB: Served by the MySQL planner configured with the MariaDB
 //     capability preset (capability.MariaDB1011), which unlocks
 //     MariaDB-only SQL such as IF EXISTS guards on constraint drops
+//   - SQLite: Conservative support for native CREATE TABLE, ADD COLUMN,
+//     indexes, views, triggers, and drops; table rebuilds are reported for
+//     structural ALTER operations SQLite cannot perform directly
 //
 // # Usage Patterns
 //
@@ -73,6 +77,7 @@ import (
 	"github.com/stokaro/ptah/migration/planner/dialects/clickhouse"
 	"github.com/stokaro/ptah/migration/planner/dialects/mysql"
 	"github.com/stokaro/ptah/migration/planner/dialects/postgres"
+	"github.com/stokaro/ptah/migration/planner/dialects/sqlite"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
@@ -189,6 +194,8 @@ func (o Options) capabilities(dialect string) capability.Capabilities {
 //   - "mariadb": Returns the same MySQL planner configured with the
 //     capability.MariaDB1011 preset, which additionally requests IF EXISTS
 //     guards on constraint drops (issue #226)
+//   - "sqlite": Returns a conservative SQLite planner for native DDL and
+//     explicit errors for table rebuild operations
 //
 // # Parameters
 //
@@ -255,6 +262,8 @@ func GetPlannerWithOptions(dialect string, opts Options) (Planner, error) {
 		return mysql.NewWithCapabilities(caps), nil
 	case platform.ClickHouse:
 		return clickhouse.New(), nil
+	case platform.SQLite:
+		return sqlite.New(), nil
 	default:
 		return nil, fmt.Errorf("unsupported database dialect: %s", dialect)
 	}

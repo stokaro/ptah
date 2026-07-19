@@ -77,7 +77,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 	}
 
 	cmd.Flags().StringVar(&dir, "dir", "./migrations", "Directory containing migration files")
-	cmd.Flags().StringVar(&dialect, "dialect", "", "Target dialect gating dialect-specific rules: postgres, mysql, mariadb, clickhouse, cockroachdb, yugabytedb, or spanner (empty runs every rule)")
+	cmd.Flags().StringVar(&dialect, "dialect", "", "Target dialect gating dialect-specific rules: postgres, mysql, mariadb, sqlite, clickhouse, cockroachdb, yugabytedb, or spanner (empty runs every rule)")
 	cmd.Flags().StringVar(&format, "format", formatText, "Output format: text, json, github-actions, sarif")
 	cmd.Flags().StringVar(&configPath, "config", "", "Path to a lint config file (default: <dir>/"+lint.ConfigFileName+" when present)")
 	cmd.Flags().StringVar(&atlasEnv, "atlas-env", "", "Value exposed as .Env when rendering Atlas SQL template migrations")
@@ -207,7 +207,7 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 		cfg.DisabledRules = append([]string{}, projectCfg.Lint.DisabledRules...)
 	}
 	if !isValidDialect(cfg.Dialect) {
-		msg := fmt.Sprintf("invalid dialect %q in lint config: expected postgres, mysql, mariadb, clickhouse, cockroachdb, yugabytedb, or spanner", cfg.Dialect)
+		msg := fmt.Sprintf("invalid dialect %q in lint config: expected postgres, mysql, mariadb, sqlite, clickhouse, cockroachdb, yugabytedb, or spanner", cfg.Dialect)
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, msg)
 	}
 	// An explicitly passed --dialect wins even when set to "" (run every
@@ -451,12 +451,12 @@ func validateDialect(dialect string) error {
 	if isValidDialect(dialect) {
 		return nil
 	}
-	return fmt.Errorf("invalid --dialect value %q: expected postgres, mysql, mariadb, clickhouse, cockroachdb, yugabytedb, or spanner", dialect)
+	return fmt.Errorf("invalid --dialect value %q: expected postgres, mysql, mariadb, sqlite, clickhouse, cockroachdb, yugabytedb, or spanner", dialect)
 }
 
 func isValidDialect(dialect string) bool {
 	switch dialect {
-	case "", "postgres", "mysql", "mariadb", "clickhouse", "cockroachdb", "yugabytedb", "spanner":
+	case "", "postgres", "mysql", "mariadb", "sqlite", "clickhouse", "cockroachdb", "yugabytedb", "spanner":
 		return true
 	default:
 		return false

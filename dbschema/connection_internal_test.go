@@ -73,6 +73,52 @@ func TestConvertClickHouseURL(t *testing.T) {
 	}
 }
 
+func TestConvertSQLiteURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "relative file host",
+			input:    "sqlite://test.db",
+			expected: "test.db?_pragma=foreign_keys%281%29",
+		},
+		{
+			name:     "relative nested file",
+			input:    "sqlite://data/app.db",
+			expected: "data/app.db?_pragma=foreign_keys%281%29",
+		},
+		{
+			name:     "absolute file path",
+			input:    "sqlite:///tmp/app.db",
+			expected: "/tmp/app.db?_pragma=foreign_keys%281%29",
+		},
+		{
+			name:     "memory database",
+			input:    "sqlite:///:memory:",
+			expected: ":memory:?_pragma=foreign_keys%281%29",
+		},
+		{
+			name:     "uri memory database",
+			input:    "sqlite:file:memdb1?mode=memory&cache=shared",
+			expected: "file:memdb1?_pragma=foreign_keys%281%29&cache=shared&mode=memory",
+		},
+		{
+			name:     "preserves explicit foreign keys pragma",
+			input:    "sqlite:///:memory:?_pragma=foreign_keys(0)",
+			expected: ":memory:?_pragma=foreign_keys%280%29",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(convertSQLiteURL(tt.input), qt.Equals, tt.expected)
+		})
+	}
+}
+
 func TestConvertPostgresWireURL(t *testing.T) {
 	tests := []struct {
 		name     string

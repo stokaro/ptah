@@ -131,12 +131,10 @@ func requireAttributes(kv map[string]string, required []string, directive, locat
 	return nil
 }
 
-func parseFieldComment(
+func (s *schemaParseState) parseFieldComment(
 	comment *ast.Comment,
 	field *ast.Field,
 	structName string,
-	globalEnumsMap map[string]Enum,
-	schemaFields *[]Field,
 ) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 
@@ -165,7 +163,7 @@ func parseFieldComment(
 		fieldType := kv["type"]
 		if len(enumRaw) > 0 && kv["type"] == "ENUM" {
 			enumName := "enum_" + strings.ToLower(structName) + "_" + strings.ToLower(name.Name)
-			globalEnumsMap[enumName] = Enum{
+			s.globalEnumsMap[enumName] = Enum{
 				Name:   enumName,
 				Values: enum,
 			}
@@ -181,7 +179,7 @@ func parseFieldComment(
 			identityGeneration = "BY_DEFAULT"
 		}
 		_, defaultSet := kv["default"]
-		*schemaFields = append(*schemaFields, Field{
+		s.schemaFields = append(s.schemaFields, Field{
 			StructName:         structName,
 			FieldName:          name.Name,
 			Name:               kv["name"],
@@ -216,7 +214,7 @@ func hasIdentitySettings(kv map[string]string) bool {
 	return kv["identity_start"] != "" || kv["identity_increment"] != "" || kv["identity_options"] != ""
 }
 
-func parseEmbeddedComment(comment *ast.Comment, field *ast.Field, structName string, embeddedFields *[]EmbeddedField) {
+func (s *schemaParseState) parseEmbeddedComment(comment *ast.Comment, field *ast.Field, structName string) {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	// Handle embedded fields - get the field type name
 	var fieldTypeName string
@@ -233,7 +231,7 @@ func parseEmbeddedComment(comment *ast.Comment, field *ast.Field, structName str
 		}
 	}
 
-	*embeddedFields = append(*embeddedFields, EmbeddedField{
+	s.embeddedFields = append(s.embeddedFields, EmbeddedField{
 		StructName:       structName,
 		Mode:             kv["mode"],
 		Prefix:           kv["prefix"],
@@ -251,7 +249,7 @@ func parseEmbeddedComment(comment *ast.Comment, field *ast.Field, structName str
 	})
 }
 
-func parseIndexComment(comment *ast.Comment, structName string, schemaIndexes *[]Index) error {
+func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName string) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	if err := validateAttributes(kv, knownIndexAttributes, "//migrator:schema:index", structName); err != nil {
 		return err
@@ -285,7 +283,7 @@ func parseIndexComment(comment *ast.Comment, structName string, schemaIndexes *[
 		granularity = n
 	}
 
-	*schemaIndexes = append(*schemaIndexes, Index{
+	s.schemaIndexes = append(s.schemaIndexes, Index{
 		StructName:  structName,
 		Name:        kv["name"],
 		Fields:      fields,
@@ -303,6 +301,14 @@ func parseIndexComment(comment *ast.Comment, structName string, schemaIndexes *[
 // ParseConstraintComment parses a constraint comment and adds it to the constraints slice.
 // This function is exported for testing purposes.
 func ParseConstraintComment(comment *ast.Comment, structName string, schemaConstraints *[]Constraint) {
+	*schemaConstraints = append(*schemaConstraints, parseConstraintComment(comment, structName))
+}
+
+func (s *schemaParseState) parseConstraintComment(comment *ast.Comment, structName string) {
+	s.schemaConstraints = append(s.schemaConstraints, parseConstraintComment(comment, structName))
+}
+
+func parseConstraintComment(comment *ast.Comment, structName string) Constraint {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 
 	// Parse columns for UNIQUE/PRIMARY KEY constraints
@@ -317,7 +323,7 @@ func ParseConstraintComment(comment *ast.Comment, structName string, schemaConst
 	// Determine target table name - use 'table' attribute if specified, otherwise leave empty for later resolution
 	tableName := kv["table"]
 
-	*schemaConstraints = append(*schemaConstraints, Constraint{
+	return Constraint{
 		StructName: structName,
 		Name:       kv["name"],
 		Type:       strings.ToUpper(kv["type"]), // EXCLUDE, CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY
@@ -341,13 +347,13 @@ func ParseConstraintComment(comment *ast.Comment, structName string, schemaConst
 		OnUpdate:      kv["on_update"],      // ON UPDATE action
 
 		Comment: kv["comment"], // Constraint comment
-	})
+	}
 }
 
-func parseExtensionComment(comment *ast.Comment, extensions *[]Extension) {
+func (s *schemaParseState) parseExtensionComment(comment *ast.Comment) {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 
-	*extensions = append(*extensions, Extension{
+	s.extensions = append(s.extensions, Extension{
 		Name:        kv["name"],
 		IfNotExists: kv["if_not_exists"] == "true",
 		Version:     kv["version"],
@@ -355,7 +361,7 @@ func parseExtensionComment(comment *ast.Comment, extensions *[]Extension) {
 	})
 }
 
-func parseSchemaComment(comment *ast.Comment, schemas *[]Schema) error {
+func (s *schemaParseState) parseSchemaComment(comment *ast.Comment) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	if err := validateAttributes(kv, knownSchemaAttributes, "//migrator:schema:schema", kv["name"]); err != nil {
 		return err
@@ -364,16 +370,16 @@ func parseSchemaComment(comment *ast.Comment, schemas *[]Schema) error {
 		return err
 	}
 
-	*schemas = append(*schemas, Schema{
+	s.schemas = append(s.schemas, Schema{
 		Name:    kv["name"],
 		Comment: kv["comment"],
 	})
 	return nil
 }
 
-func parseTableComment(comment *ast.Comment, structName string, tableDirectives *[]Table) {
+func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName string) {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	*tableDirectives = append(*tableDirectives, Table{
+	s.tableDirectives = append(s.tableDirectives, Table{
 		StructName: structName,
 		Name:       kv["name"],
 		Schema:     kv["schema"],
@@ -432,12 +438,12 @@ func (s *schemaParseState) parseStructFieldComment(comment *ast.Comment, structN
 func (s *schemaParseState) parseFieldScopedComment(comment *ast.Comment, structName string, field *ast.Field) (bool, error) {
 	switch {
 	case strings.HasPrefix(comment.Text, "//migrator:schema:field"):
-		return true, parseFieldComment(comment, field, structName, s.globalEnumsMap, &s.schemaFields)
+		return true, s.parseFieldComment(comment, field, structName)
 	case strings.HasPrefix(comment.Text, "//migrator:embedded"):
-		parseEmbeddedComment(comment, field, structName, &s.embeddedFields)
+		s.parseEmbeddedComment(comment, field, structName)
 		return true, nil
 	case strings.HasPrefix(comment.Text, "//migrator:schema:index"):
-		return true, parseIndexComment(comment, structName, &s.schemaIndexes)
+		return true, s.parseIndexComment(comment, structName)
 	default:
 		return false, nil
 	}
@@ -446,10 +452,10 @@ func (s *schemaParseState) parseFieldScopedComment(comment *ast.Comment, structN
 func (s *schemaParseState) parseStructScopedComment(comment *ast.Comment, structName string) (bool, error) {
 	switch {
 	case strings.HasPrefix(comment.Text, "//migrator:schema:table"):
-		parseTableComment(comment, structName, &s.tableDirectives)
+		s.parseTableComment(comment, structName)
 		return true, nil
 	case strings.HasPrefix(comment.Text, "//migrator:schema:schema"):
-		return true, parseSchemaComment(comment, &s.schemas)
+		return true, s.parseSchemaComment(comment)
 	default:
 		return false, nil
 	}
@@ -458,25 +464,25 @@ func (s *schemaParseState) parseStructScopedComment(comment *ast.Comment, struct
 func (s *schemaParseState) parseSharedComment(comment *ast.Comment, structName string) error {
 	switch {
 	case strings.HasPrefix(comment.Text, "//migrator:schema:constraint"):
-		ParseConstraintComment(comment, structName, &s.schemaConstraints)
+		s.parseConstraintComment(comment, structName)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:extension"):
-		parseExtensionComment(comment, &s.extensions)
+		s.parseExtensionComment(comment)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:function"):
-		parseFunctionComment(comment, structName, &s.functions)
+		s.parseFunctionComment(comment, structName)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:view"):
-		return parseViewComment(comment, structName, &s.views)
+		return s.parseViewComment(comment, structName)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:matview"):
-		return parseMaterializedViewComment(comment, structName, &s.materializedViews)
+		return s.parseMaterializedViewComment(comment, structName)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:trigger"):
-		return parseTriggerComment(comment, structName, &s.triggers)
+		return s.parseTriggerComment(comment, structName)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:rls:policy"):
-		parseRLSPolicyComment(comment, structName, &s.rlsPolicies)
+		s.parseRLSPolicyComment(comment, structName)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:rls:enable"):
-		parseRLSEnableComment(comment, structName, &s.rlsEnabledTables)
+		s.parseRLSEnableComment(comment, structName)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:role"):
-		parseRoleComment(comment, structName, &s.roles)
+		s.parseRoleComment(comment, structName)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:grant"):
-		parseGrantComment(comment, structName, &s.grants)
+		s.parseGrantComment(comment, structName)
 	}
 	return nil
 }
@@ -734,7 +740,7 @@ func processAllFileComments(f *ast.File, tableNameToStructName map[string]string
 	}
 }
 
-func parseFunctionComment(comment *ast.Comment, structName string, functions *[]Function) {
+func (s *schemaParseState) parseFunctionComment(comment *ast.Comment, structName string) {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 
 	fn := Function{
@@ -752,10 +758,10 @@ func parseFunctionComment(comment *ast.Comment, structName string, functions *[]
 	// comparator) sees the same values regardless of how the annotation was
 	// typed. See Function.Canonicalize for the per-field rules.
 	fn.Canonicalize()
-	*functions = append(*functions, fn)
+	s.functions = append(s.functions, fn)
 }
 
-func parseViewComment(comment *ast.Comment, structName string, views *[]View) error {
+func (s *schemaParseState) parseViewComment(comment *ast.Comment, structName string) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	if err := validateAttributes(kv, knownViewAttributes, "//migrator:schema:view", structName); err != nil {
 		return err
@@ -763,7 +769,7 @@ func parseViewComment(comment *ast.Comment, structName string, views *[]View) er
 	if err := requireAttributes(kv, []string{"name", "body"}, "//migrator:schema:view", structName); err != nil {
 		return err
 	}
-	*views = append(*views, View{
+	s.views = append(s.views, View{
 		StructName: structName,
 		Name:       kv["name"],
 		Body:       kv["body"],
@@ -773,7 +779,7 @@ func parseViewComment(comment *ast.Comment, structName string, views *[]View) er
 	return nil
 }
 
-func parseMaterializedViewComment(comment *ast.Comment, structName string, materializedViews *[]MaterializedView) error {
+func (s *schemaParseState) parseMaterializedViewComment(comment *ast.Comment, structName string) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	if err := validateAttributes(kv, knownMaterializedViewAttributes, "//migrator:schema:matview", structName); err != nil {
 		return err
@@ -793,11 +799,11 @@ func parseMaterializedViewComment(comment *ast.Comment, structName string, mater
 		Comment:         kv["comment"],
 	}
 	matView.Canonicalize()
-	*materializedViews = append(*materializedViews, matView)
+	s.materializedViews = append(s.materializedViews, matView)
 	return nil
 }
 
-func parseTriggerComment(comment *ast.Comment, structName string, triggers *[]Trigger) error {
+func (s *schemaParseState) parseTriggerComment(comment *ast.Comment, structName string) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	if err := validateAttributes(kv, knownTriggerAttributes, "//migrator:schema:trigger", structName); err != nil {
 		return err
@@ -816,13 +822,13 @@ func parseTriggerComment(comment *ast.Comment, structName string, triggers *[]Tr
 		Comment:    kv["comment"],
 	}
 	trigger.Canonicalize()
-	*triggers = append(*triggers, trigger)
+	s.triggers = append(s.triggers, trigger)
 	return nil
 }
 
-func parseRLSPolicyComment(comment *ast.Comment, structName string, rlsPolicies *[]RLSPolicy) {
+func (s *schemaParseState) parseRLSPolicyComment(comment *ast.Comment, structName string) {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	*rlsPolicies = append(*rlsPolicies, RLSPolicy{
+	s.rlsPolicies = append(s.rlsPolicies, RLSPolicy{
 		StructName:          structName,
 		Name:                kv["name"],
 		Table:               kv["table"],
@@ -834,18 +840,18 @@ func parseRLSPolicyComment(comment *ast.Comment, structName string, rlsPolicies 
 	})
 }
 
-func parseRLSEnableComment(comment *ast.Comment, structName string, rlsEnabledTables *[]RLSEnabledTable) {
+func (s *schemaParseState) parseRLSEnableComment(comment *ast.Comment, structName string) {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	*rlsEnabledTables = append(*rlsEnabledTables, RLSEnabledTable{
+	s.rlsEnabledTables = append(s.rlsEnabledTables, RLSEnabledTable{
 		StructName: structName,
 		Table:      kv["table"],
 		Comment:    kv["comment"],
 	})
 }
 
-func parseRoleComment(comment *ast.Comment, structName string, roles *[]Role) {
+func (s *schemaParseState) parseRoleComment(comment *ast.Comment, structName string) {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	*roles = append(*roles, Role{
+	s.roles = append(s.roles, Role{
 		StructName:  structName,
 		Name:        kv["name"],
 		Login:       kv["login"] == "true",
@@ -859,7 +865,7 @@ func parseRoleComment(comment *ast.Comment, structName string, roles *[]Role) {
 	})
 }
 
-func parseGrantComment(comment *ast.Comment, structName string, grants *[]Grant) {
+func (s *schemaParseState) parseGrantComment(comment *ast.Comment, structName string) {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	privileges := splitCommaList(kv["privilege"])
 	if len(privileges) == 0 {
@@ -875,7 +881,7 @@ func parseGrantComment(comment *ast.Comment, structName string, grants *[]Grant)
 		Comment:    kv["comment"],
 	}
 	grant.Canonicalize()
-	*grants = append(*grants, grant)
+	s.grants = append(s.grants, grant)
 }
 
 func splitCommaList(value string) []string {

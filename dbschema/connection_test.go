@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -86,11 +87,6 @@ func TestConnectToDatabase_InvalidURL(t *testing.T) {
 			errMsg: "invalid database URL: missing scheme",
 		},
 		{
-			name:   "Unsupported dialect",
-			dbURL:  "sqlite://test.db",
-			errMsg: "unsupported database dialect: sqlite",
-		},
-		{
 			name:   "Empty URL",
 			dbURL:  "",
 			errMsg: "invalid database URL: missing scheme",
@@ -102,29 +98,6 @@ func TestConnectToDatabase_InvalidURL(t *testing.T) {
 			c := qt.New(t)
 			conn, err := dbschema.ConnectToDatabase(context.Background(), tt.dbURL)
 			c.Assert(err, qt.ErrorMatches, ".*"+tt.errMsg+".*")
-			c.Assert(conn, qt.IsNil)
-		})
-	}
-}
-
-func TestConnectToDatabase_UnsupportedDialects(t *testing.T) {
-	tests := []struct {
-		name     string
-		dbURL    string
-		expected string
-	}{
-		{
-			name:     "SQLite not supported",
-			dbURL:    "sqlite://test.db",
-			expected: "unsupported database dialect: sqlite",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-			conn, err := dbschema.ConnectToDatabase(context.Background(), tt.dbURL)
-			c.Assert(err, qt.ErrorMatches, ".*"+tt.expected+".*")
 			c.Assert(conn, qt.IsNil)
 		})
 	}
@@ -145,6 +118,44 @@ func TestPostgreSQLConnection_NoServer(t *testing.T) {
 	// The error should be about connection failure, not about invalid URL or unsupported dialect
 	c.Assert(err.Error(), qt.Not(qt.Contains), "unsupported database dialect")
 	c.Assert(err.Error(), qt.Not(qt.Contains), "invalid database URL")
+}
+
+func TestConnectToDatabase_SQLiteMemory(t *testing.T) {
+	c := qt.New(t)
+
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite:///:memory:")
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	info := conn.Info()
+	c.Assert(info.Dialect, qt.Equals, "sqlite")
+	c.Assert(info.Schema, qt.Equals, "main")
+	c.Assert(info.Version, qt.Not(qt.Equals), "")
+
+	var foreignKeys int
+	err = conn.QueryRowContext(context.Background(), "PRAGMA foreign_keys").Scan(&foreignKeys)
+	c.Assert(err, qt.IsNil)
+	c.Assert(foreignKeys, qt.Equals, 1)
+}
+
+func TestConnectToDatabase_SQLiteFile(t *testing.T) {
+	c := qt.New(t)
+
+	dbPath := filepath.Join(t.TempDir(), "ptah.sqlite")
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(context.Background(), "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL)")
+	c.Assert(err, qt.IsNil)
+	c.Assert(conn.Close(), qt.IsNil)
+
+	reopened, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(reopened)
+
+	schema, err := reopened.Reader().ReadSchema()
+	c.Assert(err, qt.IsNil)
+	c.Assert(schema.Tables, qt.HasLen, 1)
+	c.Assert(schema.Tables[0].Name, qt.Equals, "users")
 }
 
 // stuckPostgresURL spins up a local TCP listener that completes the TCP

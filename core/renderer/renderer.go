@@ -44,12 +44,13 @@ import (
 	"github.com/stokaro/ptah/core/renderer/dialects/mariadb"
 	"github.com/stokaro/ptah/core/renderer/dialects/mysql"
 	"github.com/stokaro/ptah/core/renderer/dialects/postgres"
+	"github.com/stokaro/ptah/core/renderer/dialects/sqlite"
 	"github.com/stokaro/ptah/core/renderer/types"
 )
 
 // SupportedDialects returns a list of all supported database dialects.
 func SupportedDialects() []string {
-	return []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse", "cockroachdb", "yugabytedb", "spanner"}
+	return []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse", "sqlite", "sqlite3", "cockroachdb", "yugabytedb", "spanner"}
 }
 
 // NewRenderer creates a new renderer for the specified database dialect.
@@ -78,6 +79,8 @@ func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (
 		return mariadb.NewWithCapabilities(caps), nil
 	case platform.ClickHouse:
 		return clickhouse.New(), nil
+	case platform.SQLite:
+		return sqlite.New(), nil
 	case platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
 		return postgres.NewWithCapabilities(caps, normalizedDialect), nil
 	default:

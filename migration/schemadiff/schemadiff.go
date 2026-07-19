@@ -57,6 +57,7 @@ func CompareWithDialect(generated *goschema.Database, database *types.DBSchema, 
 func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, opts *config.CompareOptions) *difftypes.SchemaDiff {
 	diff := &difftypes.SchemaDiff{}
 	generated, database = normalizeInlineEnumsForCompare(generated, database, opts)
+	generated = normalizeSQLiteGeneratedColumnsForCompare(generated, opts)
 
 	// Compare tables and their column structures
 	compare.TablesAndColumns(generated, database, diff)
@@ -101,7 +102,7 @@ func normalizeInlineEnumsForCompare(
 	database *types.DBSchema,
 	opts *config.CompareOptions,
 ) (*goschema.Database, *types.DBSchema) {
-	if generated == nil || database == nil || opts == nil || !isMySQLFamily(opts.Dialect) {
+	if generated == nil || database == nil || opts == nil || !isInlineEnumDialect(opts.Dialect) {
 		return generated, database
 	}
 
@@ -111,7 +112,13 @@ func normalizeInlineEnumsForCompare(
 	for i := range normalizedGenerated.Fields {
 		field := &normalizedGenerated.Fields[i]
 		if len(field.Enum) > 0 {
-			field.Type = mysqlInlineEnumType(field.Enum)
+			switch platform.NormalizeDialect(opts.Dialect) {
+			case platform.MySQL, platform.MariaDB:
+				field.Type = mysqlInlineEnumType(field.Enum)
+			case platform.SQLite:
+				field.Type = "TEXT"
+				field.Check = sqliteInlineEnumCheck(*field)
+			}
 		}
 	}
 
@@ -121,13 +128,44 @@ func normalizeInlineEnumsForCompare(
 	return &normalizedGenerated, &normalizedDatabase
 }
 
-func isMySQLFamily(dialect string) bool {
+func normalizeSQLiteGeneratedColumnsForCompare(
+	generated *goschema.Database,
+	opts *config.CompareOptions,
+) *goschema.Database {
+	if generated == nil || opts == nil || platform.NormalizeDialect(opts.Dialect) != platform.SQLite {
+		return generated
+	}
+
+	normalizedGenerated := *generated
+	normalizedGenerated.Fields = append([]goschema.Field(nil), generated.Fields...)
+	for i := range normalizedGenerated.Fields {
+		field := &normalizedGenerated.Fields[i]
+		if field.GeneratedExpression != "" && field.GeneratedKind == "" {
+			field.GeneratedKind = "VIRTUAL"
+		}
+	}
+	return &normalizedGenerated
+}
+
+func isInlineEnumDialect(dialect string) bool {
 	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB:
+	case platform.MySQL, platform.MariaDB, platform.SQLite:
 		return true
 	default:
 		return false
 	}
+}
+
+func sqliteInlineEnumCheck(field goschema.Field) string {
+	quoted := make([]string, 0, len(field.Enum))
+	for _, value := range field.Enum {
+		quoted = append(quoted, "'"+strings.ReplaceAll(value, "'", "''")+"'")
+	}
+	enumCheck := field.Name + " IN (" + strings.Join(quoted, ", ") + ")"
+	if field.Check != "" {
+		return "(" + field.Check + ") AND " + enumCheck
+	}
+	return enumCheck
 }
 
 func mysqlInlineEnumType(values []string) string {
