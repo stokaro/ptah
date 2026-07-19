@@ -92,6 +92,8 @@ func defaultGeneratedKind(field goschema.Field, targetPlatform string) string {
 		return "STORED"
 	case targetPlatform == "mysql" || targetPlatform == "mariadb":
 		return "VIRTUAL"
+	case isSQLiteTarget(targetPlatform):
+		return "VIRTUAL"
 	default:
 		return field.GeneratedKind
 	}
@@ -204,8 +206,7 @@ func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschem
 	return newField
 }
 
-func handleEnumTypesForMySQLLike(field goschema.Field, enums []goschema.Enum, targetPlatform string) goschema.Field {
-	// Handle enum types for MySQL/MariaDB platforms
+func handleEnumTypes(field goschema.Field, enums []goschema.Enum, targetPlatform string) goschema.Field {
 	if !strings.HasPrefix(field.Type, "enum_") {
 		return field
 	}
@@ -216,30 +217,38 @@ func handleEnumTypesForMySQLLike(field goschema.Field, enums []goschema.Enum, ta
 	// Validate enum field
 	validateEnumField(field, enums)
 
-	if targetPlatform != "mysql" && targetPlatform != "mariadb" {
+	if targetPlatform != "mysql" && targetPlatform != "mariadb" && targetPlatform != "sqlite" {
 		return field
 	}
 
-	fieldType := field.Type
-
-	// For MySQL/MariaDB, convert enum type to inline enum values
-	// Find the corresponding global enum
 	for _, enum := range enums {
 		if enum.Name != field.Type {
 			continue
 		}
+		return applyInlineEnumModel(field, enum, targetPlatform)
+	}
 
-		// Convert to inline ENUM syntax for MySQL/MariaDB
-		quotedValues := make([]string, len(enum.Values))
-		for i, value := range enum.Values {
-			quotedValues[i] = escapeSQLStringLiteral(value)
-		}
-		fieldType = fmt.Sprintf("ENUM(%s)", strings.Join(quotedValues, ", "))
-		break
+	return field
+}
+
+func applyInlineEnumModel(field goschema.Field, enum goschema.Enum, targetPlatform string) goschema.Field {
+	quotedValues := make([]string, len(enum.Values))
+	for i, value := range enum.Values {
+		quotedValues[i] = escapeSQLStringLiteral(value)
 	}
 
 	newField := field
-	newField.Type = fieldType
+	switch targetPlatform {
+	case "mysql", "mariadb":
+		newField.Type = fmt.Sprintf("ENUM(%s)", strings.Join(quotedValues, ", "))
+	case "sqlite":
+		newField.Type = "TEXT"
+		enumCheck := fmt.Sprintf("%s IN (%s)", field.Name, strings.Join(quotedValues, ", "))
+		if field.Check != "" {
+			enumCheck = fmt.Sprintf("(%s) AND %s", field.Check, enumCheck)
+		}
+		newField.Check = enumCheck
+	}
 	return newField
 }
 
@@ -326,7 +335,7 @@ func handleEnumTypesForMySQLLike(field goschema.Field, enums []goschema.Enum, ta
 // overrides applied when a matching platform is specified.
 func FromField(field goschema.Field, enums []goschema.Enum, targetPlatform string) *ast.ColumnNode {
 	field = applyPlatformOverrides(field, targetPlatform)
-	field = handleEnumTypesForMySQLLike(field, enums, targetPlatform)
+	field = handleEnumTypes(field, enums, targetPlatform)
 
 	column := ast.NewColumn(field.Name, field.Type)
 
@@ -410,7 +419,7 @@ func FromField(field goschema.Field, enums []goschema.Enum, targetPlatform strin
 func FromFieldWithoutForeignKeys(field goschema.Field, enums []goschema.Enum, targetPlatform string) *ast.ColumnNode {
 	// Apply platform-specific overrides if available
 	field = applyPlatformOverrides(field, targetPlatform)
-	field = handleEnumTypesForMySQLLike(field, enums, targetPlatform)
+	field = handleEnumTypes(field, enums, targetPlatform)
 
 	// Create column with basic properties
 	column := ast.NewColumn(field.Name, field.Type)
@@ -804,14 +813,22 @@ func FromConstraint(constraint goschema.Constraint) *ast.ConstraintNode {
 	}
 }
 
-func addTableConstraints(createTable *ast.CreateTableNode, table goschema.Table, constraints []goschema.Constraint) {
+type tableConstraintMode int
+
+const (
+	tableConstraintsWithoutForeignKeys tableConstraintMode = iota
+	tableConstraintsWithForeignKeys
+)
+
+func addTableConstraints(createTable *ast.CreateTableNode, table goschema.Table, constraints []goschema.Constraint, mode tableConstraintMode) {
 	for _, constraint := range constraints {
 		if !constraintBelongsToTable(constraint, table) {
 			continue
 		}
-		if isForeignKeyConstraint(constraint) {
+		if isForeignKeyConstraint(constraint) && mode != tableConstraintsWithForeignKeys {
 			continue
 		}
+		constraint = withDefaultConstraintForeignKeyName(table.Name, constraint)
 
 		node := FromConstraint(constraint)
 		if node != nil {
@@ -1351,12 +1368,7 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 
 	// 3. Add table definitions (they may be referenced by indexes)
 	// Use the combined field list that includes embedded field expansions
-	for _, table := range database.Tables {
-		tableNode := fromTableWithoutForeignKeys(table, allFields, database.Enums, targetPlatform)
-		addTableConstraints(tableNode, table, database.Constraints)
-		statements.Statements = append(statements.Statements, tableNode)
-	}
-	appendForeignKeyConstraintStatements(statements, database.Tables, allFields, database.Constraints, targetPlatform)
+	appendTableStatements(statements, database, allFields, targetPlatform)
 
 	// 4. Add extension definitions (PostgreSQL-specific)
 	for _, extension := range database.Extensions {
@@ -1366,63 +1378,14 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 
 	// 5. Add PostgreSQL-specific features (functions and RLS)
 	// These features are only supported by PostgreSQL, so we only generate them for PostgreSQL dialects
-	isPostgreSQL := strings.ToLower(targetPlatform) == "postgresql" || strings.ToLower(targetPlatform) == "postgres"
+	isPostgreSQL := isPostgreSQLPlatform(targetPlatform)
 
 	if isPostgreSQL {
-		// Add PostgreSQL roles (they may be referenced by RLS policies)
-		for _, role := range database.Roles {
-			roleNode := FromRole(role)
-			statements.Statements = append(statements.Statements, roleNode)
-		}
-
-		// Add PostgreSQL functions (they may be referenced by RLS policies)
-		for _, function := range database.Functions {
-			functionNode := FromFunction(function)
-			statements.Statements = append(statements.Statements, functionNode)
-		}
-
-		for _, view := range database.Views {
-			viewNode := FromView(view)
-			statements.Statements = append(statements.Statements, viewNode)
-		}
-
-		for _, view := range database.MaterializedViews {
-			viewNode := FromMaterializedView(view)
-			statements.Statements = append(statements.Statements, viewNode)
-		}
-
-		// Add RLS enablement statements (must come before policies)
-		for _, rlsEnabled := range database.RLSEnabledTables {
-			rlsNode := FromRLSEnabledTable(rlsEnabled)
-			statements.Statements = append(statements.Statements, rlsNode)
-		}
-
-		// Add RLS policies (depend on functions and RLS being enabled)
-		for _, rlsPolicy := range database.RLSPolicies {
-			policyNode := FromRLSPolicy(rlsPolicy)
-			statements.Statements = append(statements.Statements, policyNode)
-		}
-
-		for _, grant := range database.Grants {
-			grantNode := FromGrant(grant)
-			statements.Statements = append(statements.Statements, grantNode)
-		}
-
-		for _, trigger := range database.Triggers {
-			triggerNode := FromTrigger(trigger)
-			statements.Statements = append(statements.Statements, triggerNode)
-		}
+		appendPostgreSQLFeatureStatements(statements, database)
 	}
 
-	if !isPostgreSQL && (strings.EqualFold(targetPlatform, "mysql") || strings.EqualFold(targetPlatform, "mariadb")) {
-		for _, view := range database.Views {
-			viewNode := FromView(view)
-			statements.Statements = append(statements.Statements, viewNode)
-		}
-		for _, trigger := range database.Triggers {
-			triggerNode := FromTrigger(trigger)
-			statements.Statements = append(statements.Statements, triggerNode)
-		}
+	if supportsStandaloneViewsAndTriggers(targetPlatform) {
+		appendViewAndTriggerStatements(statements, database)
 	}
 
 	// 7. Add index definitions last
@@ -1434,6 +1397,81 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 	}
 
 	return statements
+}
+
+func appendTableStatements(
+	statements *ast.StatementList,
+	database goschema.Database,
+	allFields []goschema.Field,
+	targetPlatform string,
+) {
+	sqliteTarget := isSQLiteTarget(targetPlatform)
+	mode := tableConstraintsWithoutForeignKeys
+	if sqliteTarget {
+		mode = tableConstraintsWithForeignKeys
+	}
+	for _, table := range database.Tables {
+		tableNode := fromTableWithoutForeignKeys(table, allFields, database.Enums, targetPlatform)
+		if sqliteTarget {
+			tableNode = FromTable(table, allFields, database.Enums, targetPlatform)
+		}
+		addTableConstraints(tableNode, table, database.Constraints, mode)
+		statements.Statements = append(statements.Statements, tableNode)
+	}
+	if !sqliteTarget {
+		appendForeignKeyConstraintStatements(statements, database.Tables, allFields, database.Constraints, targetPlatform)
+	}
+}
+
+func appendPostgreSQLFeatureStatements(statements *ast.StatementList, database goschema.Database) {
+	for _, role := range database.Roles {
+		statements.Statements = append(statements.Statements, FromRole(role))
+	}
+	for _, function := range database.Functions {
+		statements.Statements = append(statements.Statements, FromFunction(function))
+	}
+	for _, view := range database.Views {
+		statements.Statements = append(statements.Statements, FromView(view))
+	}
+	for _, view := range database.MaterializedViews {
+		statements.Statements = append(statements.Statements, FromMaterializedView(view))
+	}
+	for _, rlsEnabled := range database.RLSEnabledTables {
+		statements.Statements = append(statements.Statements, FromRLSEnabledTable(rlsEnabled))
+	}
+	for _, rlsPolicy := range database.RLSPolicies {
+		statements.Statements = append(statements.Statements, FromRLSPolicy(rlsPolicy))
+	}
+	for _, grant := range database.Grants {
+		statements.Statements = append(statements.Statements, FromGrant(grant))
+	}
+	for _, trigger := range database.Triggers {
+		statements.Statements = append(statements.Statements, FromTrigger(trigger))
+	}
+}
+
+func supportsStandaloneViewsAndTriggers(targetPlatform string) bool {
+	switch {
+	case isPostgreSQLPlatform(targetPlatform):
+		return false
+	case strings.EqualFold(targetPlatform, "mysql"), strings.EqualFold(targetPlatform, "mariadb"), isSQLiteTarget(targetPlatform):
+		return true
+	default:
+		return false
+	}
+}
+
+func appendViewAndTriggerStatements(statements *ast.StatementList, database goschema.Database) {
+	for _, view := range database.Views {
+		statements.Statements = append(statements.Statements, FromView(view))
+	}
+	for _, trigger := range database.Triggers {
+		statements.Statements = append(statements.Statements, FromTrigger(trigger))
+	}
+}
+
+func isSQLiteTarget(targetPlatform string) bool {
+	return strings.EqualFold(targetPlatform, "sqlite") || strings.EqualFold(targetPlatform, "sqlite3")
 }
 
 func appendSchemaStatements(statements *ast.StatementList, schemas []goschema.Schema) {

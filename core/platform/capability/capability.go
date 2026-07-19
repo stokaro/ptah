@@ -428,6 +428,30 @@ func ClickHouse24() Capabilities {
 	}
 }
 
+// SQLite3 is the preset for modern SQLite 3.x. SQLite enforces CHECK
+// constraints and declarative foreign keys when PRAGMA foreign_keys is enabled
+// per connection, but it has no native enum, schema, sequence, role, RLS, or
+// advisory-lock surface.
+func SQLite3() Capabilities {
+	return Capabilities{
+		DropConstraintGeneric:    false,
+		DropConstraintIfExists:   false,
+		DropIndexIfExists:        true,
+		CheckConstraintsEnforced: true,
+		DropCheckClause:          false,
+		EnumInlineColumn:         false,
+		EnumCustomType:           false,
+		CreateIndexConcurrently:  false,
+		CreateOrReplaceTrigger:   false,
+		RowLevelSecurity:         false,
+		RoleManagement:           false,
+		ForeignKeys:              true,
+		Sequences:                false,
+		XMLType:                  false,
+		AdvisoryLocks:            false,
+	}
+}
+
 // CockroachDB23 is the preset for CockroachDB's PostgreSQL-compatible surface.
 // CockroachDB runs schema changes online by design, so PostgreSQL's
 // CONCURRENTLY keyword is not a meaningful or portable emission target. It
@@ -488,6 +512,8 @@ func ForDialect(dialect string) Capabilities {
 		return MariaDB1011()
 	case platform.ClickHouse:
 		return ClickHouse24()
+	case platform.SQLite:
+		return SQLite3()
 	case platform.CockroachDB:
 		return CockroachDB23()
 	case platform.YugabyteDB:

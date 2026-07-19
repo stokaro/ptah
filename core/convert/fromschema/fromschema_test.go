@@ -166,6 +166,18 @@ func TestFromField_BasicProperties(t *testing.T) {
 			},
 		},
 		{
+			name: "SQLite generated field defaults to virtual",
+			field: goschema.Field{
+				Name:                "slug",
+				Type:                "TEXT",
+				GeneratedExpression: "lower(name)",
+			},
+			targetPlatform: "sqlite",
+			expected: func(col *ast.ColumnNode) bool {
+				return col.GeneratedExpression == "lower(name)" && col.GeneratedKind == "VIRTUAL"
+			},
+		},
+		{
 			name: "column update expression",
 			field: goschema.Field{
 				Name:             "updated_at",
@@ -368,6 +380,7 @@ func TestFromField_EnumConversion(t *testing.T) {
 		enums          []goschema.Enum
 		targetPlatform string
 		expectedType   string
+		expectedCheck  string
 	}{
 		{
 			name: "PostgreSQL keeps enum type name",
@@ -406,6 +419,33 @@ func TestFromField_EnumConversion(t *testing.T) {
 			expectedType:   "ENUM('active', 'inactive', 'suspended')",
 		},
 		{
+			name: "SQLite converts enum to text with check",
+			field: goschema.Field{
+				Name: "status",
+				Type: "enum_user_status",
+			},
+			enums: []goschema.Enum{
+				{Name: "enum_user_status", Values: []string{"active", "inactive", "suspended"}},
+			},
+			targetPlatform: "sqlite",
+			expectedType:   "TEXT",
+			expectedCheck:  "status IN ('active', 'inactive', 'suspended')",
+		},
+		{
+			name: "SQLite preserves explicit check when adding enum check",
+			field: goschema.Field{
+				Name:  "status",
+				Type:  "enum_user_status",
+				Check: "status <> 'suspended'",
+			},
+			enums: []goschema.Enum{
+				{Name: "enum_user_status", Values: []string{"active", "inactive", "suspended"}},
+			},
+			targetPlatform: "sqlite",
+			expectedType:   "TEXT",
+			expectedCheck:  "(status <> 'suspended') AND status IN ('active', 'inactive', 'suspended')",
+		},
+		{
 			name: "Non-enum field unchanged",
 			field: goschema.Field{
 				Name: "name",
@@ -435,6 +475,7 @@ func TestFromField_EnumConversion(t *testing.T) {
 			result := fromschema.FromField(test.field, test.enums, test.targetPlatform)
 			c.Assert(result, qt.IsNotNil)
 			c.Assert(result.Type, qt.Equals, test.expectedType)
+			c.Assert(result.Check, qt.Equals, test.expectedCheck)
 		})
 	}
 }
@@ -837,6 +878,45 @@ func TestFromDatabase_TableLevelForeignKeysAreTwoPhase(t *testing.T) {
 	c.Assert(addProfilesFK.Constraint.Reference.Table, qt.Equals, "accounts")
 	c.Assert(addProfilesFK.Constraint.Reference.ReferencedColumns(), qt.DeepEquals, []string{"id"})
 	c.Assert(addProfilesFK.Constraint.Reference.OnUpdate, qt.Equals, "RESTRICT")
+}
+
+func TestFromDatabase_SQLiteForeignKeysAreInline(t *testing.T) {
+	c := qt.New(t)
+
+	db := goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "Account", Name: "accounts"},
+			{StructName: "Profile", Name: "profiles"},
+		},
+		Fields: []goschema.Field{
+			{StructName: "Account", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Account", Name: "profile_id", Type: "INTEGER", Foreign: "profiles(id)", OnDelete: "CASCADE"},
+			{StructName: "Profile", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Profile", Name: "account_id", Type: "INTEGER"},
+		},
+		Constraints: []goschema.Constraint{{
+			StructName:    "Profile",
+			Type:          "FOREIGN KEY",
+			Columns:       []string{"account_id"},
+			ForeignTable:  "accounts",
+			ForeignColumn: "id",
+			OnUpdate:      "RESTRICT",
+		}},
+	}
+
+	result := fromschema.FromDatabase(db, "sqlite")
+
+	c.Assert(result.Statements, qt.HasLen, 2)
+	accounts := result.Statements[0].(*ast.CreateTableNode)
+	profiles := result.Statements[1].(*ast.CreateTableNode)
+	c.Assert(accounts.Columns[1].ForeignKey, qt.IsNotNil)
+	c.Assert(accounts.Columns[1].ForeignKey.Name, qt.Equals, "fk_accounts_profile_id")
+	c.Assert(accounts.Columns[1].ForeignKey.OnDelete, qt.Equals, "CASCADE")
+	c.Assert(profiles.Constraints, qt.HasLen, 1)
+	c.Assert(profiles.Constraints[0].Type, qt.Equals, ast.ForeignKeyConstraint)
+	c.Assert(profiles.Constraints[0].Name, qt.Equals, "fk_profiles_account_id")
+	c.Assert(foreignKeyAlterStatementByName(result, "accounts", "fk_accounts_profile_id"), qt.IsNil)
+	c.Assert(foreignKeyAlterStatementByName(result, "profiles", "fk_profiles_account_id"), qt.IsNil)
 }
 
 func TestFromDatabase_Schemas(t *testing.T) {
@@ -1294,6 +1374,35 @@ func TestFromDatabase_MySQLIncludesViewsAndTriggers(t *testing.T) {
 	}
 
 	result := fromschema.FromDatabase(database, "mysql")
+
+	c.Assert(result.Statements, qt.HasLen, 2)
+	viewNode, ok := result.Statements[0].(*ast.CreateViewNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(viewNode.Name, qt.Equals, "active_users")
+	triggerNode, ok := result.Statements[1].(*ast.CreateTriggerNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(triggerNode.Name, qt.Equals, "set_updated_at")
+	c.Assert(triggerNode.Table, qt.Equals, "users")
+}
+
+func TestFromDatabase_SQLiteIncludesViewsAndTriggers(t *testing.T) {
+	c := qt.New(t)
+
+	database := goschema.Database{
+		Views: []goschema.View{{
+			Name: "active_users",
+			Body: "SELECT id FROM users WHERE deleted_at IS NULL",
+		}},
+		Triggers: []goschema.Trigger{{
+			Name:   "set_updated_at",
+			Table:  "users",
+			Timing: "BEFORE",
+			Event:  "UPDATE",
+			Body:   "BEGIN UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id; END",
+		}},
+	}
+
+	result := fromschema.FromDatabase(database, "sqlite")
 
 	c.Assert(result.Statements, qt.HasLen, 2)
 	viewNode, ok := result.Statements[0].(*ast.CreateViewNode)
@@ -2396,10 +2505,11 @@ func TestFromDatabase_EmbeddedFields_ComplexScenario(t *testing.T) {
 // TestFromField_EnumConversion_SQLInjectionPrevention tests that enum values are properly escaped
 func TestFromField_EnumConversion_SQLInjectionPrevention(t *testing.T) {
 	tests := []struct {
-		name         string
-		platform     string
-		enumValues   []string
-		expectedType string
+		name          string
+		platform      string
+		enumValues    []string
+		expectedType  string
+		expectedCheck string
 	}{
 		{
 			name:         "MySQL enum with single quotes",
@@ -2418,6 +2528,13 @@ func TestFromField_EnumConversion_SQLInjectionPrevention(t *testing.T) {
 			platform:     "mysql",
 			enumValues:   []string{"test", "''quoted''"},
 			expectedType: "ENUM('test', '''''quoted''''')",
+		},
+		{
+			name:          "SQLite enum check with SQL injection attempt",
+			platform:      "sqlite",
+			enumValues:    []string{"normal", "'; DROP TABLE users; --"},
+			expectedType:  "TEXT",
+			expectedCheck: "status IN ('normal', '''; DROP TABLE users; --')",
 		},
 	}
 
@@ -2442,6 +2559,7 @@ func TestFromField_EnumConversion_SQLInjectionPrevention(t *testing.T) {
 
 			// Verify the type was properly escaped
 			c.Assert(result.Type, qt.Equals, tt.expectedType)
+			c.Assert(result.Check, qt.Equals, tt.expectedCheck)
 		})
 	}
 }

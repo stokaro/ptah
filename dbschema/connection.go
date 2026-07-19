@@ -16,6 +16,7 @@ import (
 	"github.com/stokaro/ptah/dbschema/clickhouse"
 	"github.com/stokaro/ptah/dbschema/mysql"
 	"github.com/stokaro/ptah/dbschema/postgres"
+	"github.com/stokaro/ptah/dbschema/sqlite"
 	"github.com/stokaro/ptah/dbschema/types"
 )
 
@@ -72,11 +73,17 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 	case platform.ClickHouse:
 		dialectProtocol = "clickhouse"
 		connectionString = convertClickHouseURL(dbURL)
+	case platform.SQLite:
+		dialectProtocol = "sqlite"
+		connectionString = convertSQLiteURL(dbURL)
 	}
 
 	db, err := sql.Open(dialectProtocol, connectionString)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database connection: %w", err)
+	}
+	if dialectProtocol == "sqlite" {
+		db.SetMaxOpenConns(1)
 	}
 
 	// Test the connection — honour the caller-supplied context so a stuck or
@@ -115,6 +122,9 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 	case "clickhouse":
 		reader = clickhouse.NewClickHouseReader(db, info.Schema)
 		writer = clickhouse.NewClickHouseWriter(db, info.Schema)
+	case "sqlite":
+		reader = sqlite.NewSQLiteReader(db, info.Schema)
+		writer = sqlite.NewSQLiteWriter(db, info.Schema)
 	default:
 		_ = db.Close()
 		return nil, fmt.Errorf("no schema reader available for dialect: %s", dialect)
@@ -400,6 +410,13 @@ func getDatabaseInfo(ctx context.Context, db *sql.DB, dialect string, parsedURL 
 			}
 			info.Schema = dbName
 		}
+	case platform.SQLite:
+		var version string
+		if err := db.QueryRowContext(ctx, "SELECT sqlite_version()").Scan(&version); err != nil {
+			return info, fmt.Errorf("failed to get SQLite version: %w", err)
+		}
+		info.Version = version
+		info.Schema = "main"
 	}
 
 	return info, nil
@@ -490,6 +507,50 @@ func convertClickHouseURL(dbURL string) string {
 	// The driver registers as the lowercase scheme "clickhouse". Normalise.
 	parsed.Scheme = "clickhouse"
 	return parsed.String()
+}
+
+func convertSQLiteURL(dbURL string) string {
+	parsed, err := url.Parse(dbURL)
+	if err != nil {
+		return dbURL
+	}
+	if parsed.Scheme == "" {
+		return dbURL
+	}
+
+	var dsn string
+	switch {
+	case parsed.Opaque != "":
+		dsn = parsed.Opaque
+	case parsed.Host != "" && parsed.Path != "":
+		dsn = parsed.Host + parsed.Path
+	case parsed.Host != "":
+		dsn = parsed.Host
+	case parsed.Path == "/:memory:":
+		dsn = ":memory:"
+	case parsed.Path != "":
+		dsn = parsed.Path
+	default:
+		dsn = ":memory:"
+	}
+
+	query := parsed.Query()
+	if !hasSQLiteForeignKeysPragma(query) {
+		query.Add("_pragma", "foreign_keys(1)")
+	}
+	if encoded := query.Encode(); encoded != "" {
+		dsn += "?" + encoded
+	}
+	return dsn
+}
+
+func hasSQLiteForeignKeysPragma(query url.Values) bool {
+	for _, pragma := range query["_pragma"] {
+		if strings.Contains(strings.ToLower(pragma), "foreign_keys") {
+			return true
+		}
+	}
+	return false
 }
 
 // removePostgresPoolParams removes PostgreSQL connection pool parameters from a database URL.
