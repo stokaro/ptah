@@ -2,6 +2,7 @@ package parser
 
 import (
 	"strings"
+	"time"
 
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/platform/capability"
@@ -28,6 +29,16 @@ func WithDialect(dialect string) Option {
 func WithCapabilities(capabilities capability.Capabilities) Option {
 	return func(p *Parser) {
 		p.capabilities = capabilities.Clone()
+	}
+}
+
+// WithTimeout sets the maximum time a Parse call may spend before returning a
+// timeout error. Non-positive values keep the parser's default timeout.
+func WithTimeout(timeout time.Duration) Option {
+	return func(p *Parser) {
+		if timeout > 0 {
+			p.timeout = timeout
+		}
 	}
 }
 

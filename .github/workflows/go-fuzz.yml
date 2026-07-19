@@ -1,0 +1,34 @@
+name: Go Fuzz
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: fuzz
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.5'
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Fuzz lexer
+        run: go test -run '^$' -fuzz=FuzzLexer -fuzztime=10m -timeout=15m ./core/lexer
+
+      - name: Fuzz parser
+        run: go test -run '^$' -fuzz=FuzzParseSQL -fuzztime=10m -timeout=15m ./core/parser
