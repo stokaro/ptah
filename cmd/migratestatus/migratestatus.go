@@ -71,6 +71,7 @@ var migrateStatusFlags = map[string]cobraflags.Flag{
 		Usage: "Output status in JSON format",
 	},
 	dbcli.ConnectTimeoutFlagName:      dbcli.NewConnectTimeoutFlag(),
+	dbcli.EnvFlagName:                 dbcli.NewEnvFlag(),
 	dbcli.MigrationsSchemaFlagName:    dbcli.NewMigrationsSchemaFlag(),
 	dbcli.MigrationsTableFlagName:     dbcli.NewMigrationsTableFlag(),
 	dbcli.RevisionTableFormatFlagName: dbcli.NewRevisionTableFormatFlag(),
@@ -86,7 +87,7 @@ func NewMigrateStatusCommand() *cobra.Command {
 	return migrateStatusCmd
 }
 
-func migrateStatusCommand(_ *cobra.Command, _ []string) error {
+func migrateStatusCommand(cmd *cobra.Command, _ []string) error {
 	dbURL := migrateStatusFlags[dbURLFlag].GetString()
 	migrationsDir := migrateStatusFlags[migrationsFlag].GetString()
 	dirFormatValue := migrateStatusFlags[dirFormatFlag].GetString()
@@ -96,6 +97,17 @@ func migrateStatusCommand(_ *cobra.Command, _ []string) error {
 	migrationsSchema := migrateStatusFlags[dbcli.MigrationsSchemaFlagName].GetString()
 	migrationsTable := migrateStatusFlags[dbcli.MigrationsTableFlagName].GetString()
 	revisionFormatValue := migrateStatusFlags[dbcli.RevisionTableFormatFlagName].GetString()
+
+	projectCfg, err := dbcli.LoadProjectConfig(cmd, "")
+	if err != nil {
+		return err
+	}
+	dbURL = dbcli.EffectiveString(cmd, dbURLFlag, dbURL, projectCfg.DatabaseURL)
+	migrationsDir = dbcli.EffectiveString(cmd, migrationsFlag, migrationsDir, projectCfg.Migration.Dir)
+	dirFormatValue = dbcli.EffectiveString(cmd, dirFormatFlag, dirFormatValue, projectCfg.Migration.Format)
+	atlasEnv = dbcli.EffectiveString(cmd, atlasEnvFlag, atlasEnv, projectCfg.EnvName)
+	migrationsSchema = dbcli.EffectiveString(cmd, dbcli.MigrationsSchemaFlagName, migrationsSchema, projectCfg.Migration.RevisionsSchema)
+	revisionFormatValue = dbcli.EffectiveString(cmd, dbcli.RevisionTableFormatFlagName, revisionFormatValue, projectCfg.Migration.RevisionFormat)
 
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")

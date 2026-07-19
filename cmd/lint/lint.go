@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/migration/lint"
 	"github.com/stokaro/ptah/migration/migrator"
@@ -37,6 +38,7 @@ func NewLintCommand() *cobra.Command {
 	var format string
 	var configPath string
 	var atlasEnv string
+	var envName string
 	var disabled []string
 	var failOn string
 
@@ -75,6 +77,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 	cmd.Flags().StringVar(&format, "format", formatText, "Output format: text, json, github-actions")
 	cmd.Flags().StringVar(&configPath, "config", "", "Path to a lint config file (default: <dir>/"+lint.ConfigFileName+" when present)")
 	cmd.Flags().StringVar(&atlasEnv, "atlas-env", "", "Value exposed as .Env when rendering Atlas SQL template migrations")
+	cmd.Flags().StringVar(&envName, dbcli.EnvFlagName, "", "Atlas project env name to read from atlas.hcl")
 	cmd.Flags().StringArrayVar(&disabled, "disable", nil, "Disable a rule code or family, for example DS101 or MY (repeatable)")
 	cmd.Flags().StringVar(&failOn, "fail-on", failOnError, "Failure threshold controlling the exit code: error, any or none")
 
@@ -125,6 +128,12 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 		msg := fmt.Sprintf("unexpected positional arguments %q: pass the migrations directory via --dir", opts.positional)
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, msg)
 	}
+	projectCfg, err := dbcli.LoadProjectConfig(cmd, "")
+	if err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+	}
+	opts.dir = dbcli.EffectiveString(cmd, "dir", opts.dir, projectCfg.Migration.Dir)
+	opts.atlasEnv = dbcli.EffectiveString(cmd, "atlas-env", opts.atlasEnv, projectCfg.EnvName)
 	if err := validateDir(opts.dir); err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
 	}

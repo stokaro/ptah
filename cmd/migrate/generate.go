@@ -47,6 +47,7 @@ and performs an up/down/up round-trip.`,
 	flags.String(generateReportFormatFlag, "", `Safety report format next to the migration files: "" or html`)
 	flags.String(dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
 	flags.String(dbcli.ConnectTimeoutFlagName, dbcli.DefaultConnectTimeout.String(), "Initial database connection timeout")
+	flags.String(dbcli.EnvFlagName, "", "Atlas project env name to read from atlas.hcl")
 	flags.String(dbcli.SchemasFlagName, "", "Comma-separated schemas to introspect when supported")
 
 	return cmd
@@ -77,10 +78,13 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	shadowDB, err = effectiveMigrateGenerateShadowDB(shadowDB, configPath)
+	projectCfg, err := dbcli.LoadProjectConfig(cmd, configPath)
 	if err != nil {
 		return err
 	}
+	dbURL = dbcli.EffectiveString(cmd, generateDBURLFlag, dbURL, projectCfg.DatabaseURL)
+	migrationsDir = dbcli.EffectiveString(cmd, generateMigrationsDirFlag, migrationsDir, projectCfg.Migration.Dir)
+	shadowDB = dbcli.EffectiveString(cmd, generateShadowDBFlag, shadowDB, projectCfg.DevURL)
 	reportFormat, err := cmd.Flags().GetString(generateReportFormatFlag)
 	if err != nil {
 		return err
@@ -146,15 +150,4 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		fmt.Fprintf(out, "REPORT: %s\n", files.ReportFile)
 	}
 	return nil
-}
-
-func effectiveMigrateGenerateShadowDB(flagValue, configPath string) (string, error) {
-	if flagValue != "" {
-		return flagValue, nil
-	}
-	cfg, err := dbcli.LoadMigrateGenerateConfig(configPath)
-	if err != nil {
-		return "", err
-	}
-	return cfg.ShadowDatabaseURL, nil
 }

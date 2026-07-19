@@ -229,9 +229,10 @@ The Atlas HCL frontend is intentionally conservative. It does not yet model
 Atlas features that Ptah cannot represent without losing semantics, including:
 
 - composite foreign keys
-- Atlas project `env` execution semantics
 - Atlas HCL objects outside direct schema definitions, such as variables,
   realms, extensions, and other dialect-specific object types
 
-Project-level `env` and `variable` blocks may appear next to schema objects, but
-they are not executed by `ptah generate --schema-file`.
+Project-level `env` and `variable` blocks may appear next to schema objects in
+schema HCL files, but they are not executed by `ptah generate --schema-file`.
+Command-level `atlas.hcl` project config support is documented in
+[Atlas Project Config](atlas_project_config.md).
