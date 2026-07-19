@@ -201,13 +201,17 @@ func TestLintSource_SQLServerProcedureWithoutBeginStaysSingleStatement(t *testin
 		Name: "proc.sql",
 		SQL: `CREATE PROCEDURE [dbo].[list_users] AS
 SELECT 1 AS [first];
-SELECT 2 AS [second];`,
+SELECT 2 AS [second];
+GO /* deploy */
+CREATE TABLE after_proc (id int);`,
 	}, Options{Dialect: platform.SQLServer})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(findings, qt.HasLen, 1)
+	c.Assert(findings, qt.HasLen, 2)
 	c.Assert(findings[0].Rule, qt.Equals, RuleUnsupportedStatement)
 	c.Assert(findings[0].Message, qt.Contains, "CREATE PROCEDURE")
+	c.Assert(findings[1].Rule, qt.Equals, RuleTableWithoutPrimaryKey)
+	c.Assert(findings[1].Message, qt.Contains, "after_proc")
 }
 
 func TestLintSource_CapabilityAwareCreateIndexConcurrently(t *testing.T) {

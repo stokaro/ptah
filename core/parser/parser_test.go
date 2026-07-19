@@ -1826,7 +1826,7 @@ func TestParser_ParseSQLServerDialectProcedureStopsAtGoBatch(t *testing.T) {
 
 	sql := `CREATE PROCEDURE dbo.p1 AS
   SELECT 1
-GO
+GO /* deploy */
 CREATE TABLE after_proc (id int);`
 	statements, err := parser.NewParser(sql, parser.WithDialect("mssql")).Parse()
 	c.Assert(err, qt.IsNil)
