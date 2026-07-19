@@ -4,9 +4,11 @@
 // across different database dialects. It implements a factory pattern to create appropriate
 // dialect renderers and provides a unified interface for SQL generation.
 //
-// The package supports multiple database platforms including PostgreSQL, MySQL, MariaDB,
-// and provides a generic fallback for unknown dialects. Each dialect renderer implements
-// the ast.Visitor interface to ensure consistent behavior across different database systems.
+// The package supports multiple database platforms including PostgreSQL, MySQL,
+// MariaDB, and ClickHouse. Unsupported dialects are reported as errors instead
+// of falling back to a generic renderer. Each dialect renderer implements the
+// ast.Visitor interface to ensure consistent behavior across different database
+// systems.
 //
 // Example usage:
 //
@@ -57,29 +59,29 @@ func SupportedDialects() []string {
 // handles common dialect aliases (e.g., "postgres" for "postgresql").
 //
 // Returns an error if the dialect is not supported.
-func NewRenderer(dialect string) types.RenderVisitor {
+func NewRenderer(dialect string) (types.RenderVisitor, error) {
 	return NewRendererWithCapabilities(dialect, capability.ForDialect(dialect))
 }
 
 // NewRendererWithCapabilities creates a renderer for a concrete server
 // capability set. Use this on live database paths where capabilities were
 // resolved from DBInfo.Version; NewRenderer remains the offline default.
-func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) types.RenderVisitor {
+func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (types.RenderVisitor, error) {
 	normalizedDialect := platform.NormalizeDialect(dialect)
 
 	switch normalizedDialect {
 	case platform.Postgres:
-		return postgres.NewWithCapabilities(caps, normalizedDialect)
+		return postgres.NewWithCapabilities(caps, normalizedDialect), nil
 	case platform.MySQL:
-		return mysql.NewWithCapabilities(caps)
+		return mysql.NewWithCapabilities(caps), nil
 	case platform.MariaDB:
-		return mariadb.NewWithCapabilities(caps)
+		return mariadb.NewWithCapabilities(caps), nil
 	case platform.ClickHouse:
-		return clickhouse.New()
+		return clickhouse.New(), nil
 	case platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		return postgres.NewWithCapabilities(caps, normalizedDialect)
+		return postgres.NewWithCapabilities(caps, normalizedDialect), nil
 	default:
-		panic(fmt.Sprintf("unsupported database dialect: %s", dialect))
+		return nil, fmt.Errorf("unsupported database dialect: %s", dialect)
 	}
 }
 
@@ -88,13 +90,19 @@ func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) t
 // This function is useful for one-off SQL generation where you don't need to reuse the renderer.
 // For multiple operations, it's more efficient to create a renderer once and reuse it.
 func RenderSQL(dialect string, nodes ...ast.Node) (string, error) {
-	r := NewRenderer(dialect)
+	r, err := NewRenderer(dialect)
+	if err != nil {
+		return "", err
+	}
 	return VisitorRenderSQL(r, nodes...)
 }
 
 // RenderSQLWithCapabilities renders SQL for a concrete server capability set.
 func RenderSQLWithCapabilities(dialect string, caps capability.Capabilities, nodes ...ast.Node) (string, error) {
-	r := NewRendererWithCapabilities(dialect, caps)
+	r, err := NewRendererWithCapabilities(dialect, caps)
+	if err != nil {
+		return "", err
+	}
 	return VisitorRenderSQL(r, nodes...)
 }
 
@@ -109,7 +117,12 @@ func VisitorRenderSQL(r types.RenderVisitor, nodes ...ast.Node) (string, error) 
 }
 
 func GetOrderedCreateStatements(r *goschema.Database, dialect string) []string {
-	return GetOrderedCreateStatementsWithCapabilities(r, dialect, capability.ForDialect(dialect))
+	statements, _ := GetOrderedCreateStatementsE(r, dialect)
+	return statements
+}
+
+func GetOrderedCreateStatementsE(r *goschema.Database, dialect string) ([]string, error) {
+	return GetOrderedCreateStatementsWithCapabilitiesE(r, dialect, capability.ForDialect(dialect))
 }
 
 // GetOrderedCreateStatementsWithCapabilities renders ordered create statements
@@ -119,16 +132,27 @@ func GetOrderedCreateStatementsWithCapabilities(
 	dialect string,
 	caps capability.Capabilities,
 ) []string {
+	statements, _ := GetOrderedCreateStatementsWithCapabilitiesE(r, dialect, caps)
+	return statements
+}
+
+// GetOrderedCreateStatementsWithCapabilitiesE renders ordered create statements
+// for a concrete server capability set and reports renderer errors.
+func GetOrderedCreateStatementsWithCapabilitiesE(
+	r *goschema.Database,
+	dialect string,
+	caps capability.Capabilities,
+) ([]string, error) {
 	var statements []string
 
 	astNodes := fromschema.FromDatabase(*r, dialect)
 	for _, node := range astNodes.Statements {
 		sql, err := RenderSQLWithCapabilities(dialect, caps, node)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		statements = append(statements, sql)
 	}
 
-	return statements
+	return statements, nil
 }

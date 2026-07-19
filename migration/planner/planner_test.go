@@ -63,17 +63,14 @@ func TestGetPlanner(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
+			plannerInstance, err := planner.GetPlanner(tt.dialect)
 			if tt.wantErr {
-				defer func() {
-					r := recover()
-					c.Assert(r, qt.IsNotNil)
-				}()
-				planner.GetPlanner(tt.dialect)
-				c.Assert(false, qt.IsTrue, qt.Commentf("Expected panic but none occurred"))
-			} else {
-				plannerInstance := planner.GetPlanner(tt.dialect)
-				c.Assert(plannerInstance, qt.IsNotNil)
+				c.Assert(plannerInstance, qt.IsNil)
+				c.Assert(err, qt.ErrorMatches, "unsupported database dialect: "+tt.dialect)
+				return
 			}
+			c.Assert(err, qt.IsNil)
+			c.Assert(plannerInstance, qt.IsNotNil)
 		})
 	}
 }
@@ -81,10 +78,19 @@ func TestGetPlanner(t *testing.T) {
 func TestGetPlanner_MariaDBUsesMySQLPlanner(t *testing.T) {
 	c := qt.New(t)
 
-	plannerInstance := planner.GetPlanner(platform.MariaDB)
+	plannerInstance, err := planner.GetPlanner(platform.MariaDB)
+	c.Assert(err, qt.IsNil)
 	_, ok := plannerInstance.(*mysql.Planner)
 
 	c.Assert(ok, qt.IsTrue)
+}
+
+func TestGenerateSchemaDiffSQL_UnsupportedDialectReturnsError(t *testing.T) {
+	c := qt.New(t)
+
+	sql, err := planner.GenerateSchemaDiffSQL(&types.SchemaDiff{}, &goschema.Database{}, "sqlserver")
+	c.Assert(sql, qt.Equals, "")
+	c.Assert(err, qt.ErrorMatches, "unsupported database dialect: sqlserver")
 }
 
 func TestRequiresNoTransaction(t *testing.T) {
@@ -127,7 +133,8 @@ func TestGeneratedNarrowingTypeChangeIsDestructive(t *testing.T) {
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified[0].Changes["type"], qt.Equals, "VARCHAR(255) -> VARCHAR(100)")
 
-	nodes := planner.GenerateSchemaDiffAST(diff, generated, platform.Postgres)
+	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, platform.Postgres)
+	c.Assert(err, qt.IsNil)
 	assessments, err := safety.AssessRendered(nodes, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	c.Assert(safety.HasDestructiveAssessment(assessments), qt.IsTrue)
@@ -142,7 +149,8 @@ func TestGeneratedRLSPolicyRemovalIsDestructive(t *testing.T) {
 		},
 	}
 
-	nodes := planner.GenerateSchemaDiffAST(diff, &goschema.Database{}, platform.Postgres)
+	nodes, err := planner.GenerateSchemaDiffAST(diff, &goschema.Database{}, platform.Postgres)
+	c.Assert(err, qt.IsNil)
 	assessments, err := safety.AssessRendered(nodes, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	c.Assert(safety.HasDestructiveAssessment(assessments), qt.IsTrue)
@@ -196,18 +204,15 @@ func TestGenerateMigrationAST(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
+			nodes, err := planner.GenerateSchemaDiffAST(tt.diff, tt.generated, tt.dialect)
 			if tt.wantErr {
-				defer func() {
-					r := recover()
-					c.Assert(r, qt.IsNotNil)
-				}()
-				planner.GenerateSchemaDiffAST(tt.diff, tt.generated, tt.dialect)
-				c.Assert(false, qt.IsTrue, qt.Commentf("Expected panic but none occurred"))
-			} else {
-				nodes := planner.GenerateSchemaDiffAST(tt.diff, tt.generated, tt.dialect)
-				c.Assert(nodes, qt.IsNotNil)
-				c.Assert(nodes, qt.HasLen, 1) // Should have one CREATE TABLE statement
+				c.Assert(nodes, qt.IsNil)
+				c.Assert(err, qt.IsNotNil)
+				return
 			}
+			c.Assert(err, qt.IsNil)
+			c.Assert(nodes, qt.IsNotNil)
+			c.Assert(nodes, qt.HasLen, 1) // Should have one CREATE TABLE statement
 		})
 	}
 }

@@ -113,7 +113,10 @@ func generateCommand(_ *cobra.Command, _ []string) error {
 		}
 
 		// Generate table statements
-		statements := renderer.GetOrderedCreateStatements(result, d)
+		statements, err := renderer.GetOrderedCreateStatementsE(result, d)
+		if err != nil {
+			return fmt.Errorf("error rendering %s schema: %w", d, err)
+		}
 
 		for i, statement := range statements {
 			fmt.Printf("-- Statement %d/%d\n", i+1, len(statements))

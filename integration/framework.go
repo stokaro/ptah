@@ -434,8 +434,14 @@ func (vem *VersionedEntityManager) GenerateMigrationSQL(_ctx context.Context, co
 
 	// Generate migration SQL
 	info := conn.Info()
-	nodes := planner.GenerateSchemaDiffASTWithCapabilities(diff, generated, info.Dialect, info.Capabilities)
-	statements := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(diff, generated, info.Dialect, info.Capabilities)
+	nodes, err := planner.GenerateSchemaDiffASTWithCapabilities(diff, generated, info.Dialect, info.Capabilities)
+	if err != nil {
+		return nil, false, fmt.Errorf("error generating migration plan: %w", err)
+	}
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(diff, generated, info.Dialect, info.Capabilities)
+	if err != nil {
+		return nil, false, fmt.Errorf("error generating migration SQL: %w", err)
+	}
 
 	return statements, planner.RequiresNoTransaction(info.Dialect, nodes), nil
 }

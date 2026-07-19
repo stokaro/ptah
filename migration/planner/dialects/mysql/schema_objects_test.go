@@ -63,7 +63,8 @@ func TestPlanner_GenerateSchemaDiffSQLStatements_CompoundTriggerBody(t *testing.
 		}},
 	}
 
-	statements := migrationplanner.GenerateSchemaDiffSQLStatements(diff, generated, "mysql")
+	statements, err := migrationplanner.GenerateSchemaDiffSQLStatements(diff, generated, "mysql")
+	c.Assert(err, qt.IsNil)
 	for i, statement := range statements {
 		statements[i] = legacyRenderedSQL(statement)
 	}
@@ -90,7 +91,11 @@ func TestPlanner_GenerateMigrationAST_RejectsMaterializedViews(t *testing.T) {
 		}},
 	}
 
+	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	c.Assert(nodes, qt.IsNil)
+	c.Assert(err, qt.ErrorMatches, "materialized views are not supported by MySQL or MariaDB.*")
+
 	c.Assert(func() {
-		planner.GenerateMigrationAST(diff, generated)
-	}, qt.PanicMatches, "materialized views are not supported by MySQL or MariaDB.*")
+		_ = planner.GenerateMigrationAST(diff, generated)
+	}, qt.Not(qt.PanicMatches), ".*")
 }

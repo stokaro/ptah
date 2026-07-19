@@ -30,7 +30,8 @@ func TestGetPlanner_CapabilityWiring(t *testing.T) {
 	t.Run("mariadb gets guarded drops", func(t *testing.T) {
 		c := qt.New(t)
 
-		nodes := planner.GenerateSchemaDiffAST(diff, generated, "mariadb")
+		nodes, err := planner.GenerateSchemaDiffAST(diff, generated, "mariadb")
+		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("mariadb", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
@@ -41,7 +42,8 @@ func TestGetPlanner_CapabilityWiring(t *testing.T) {
 	t.Run("mysql stays unguarded", func(t *testing.T) {
 		c := qt.New(t)
 
-		nodes := planner.GenerateSchemaDiffAST(diff, generated, "mysql")
+		nodes, err := planner.GenerateSchemaDiffAST(diff, generated, "mysql")
+		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
@@ -65,7 +67,8 @@ func TestGenerateSchemaDiffSQLStatementsWithCapabilities_UsesServerVersionPreset
 		c := qt.New(t)
 		caps := capability.ForServerVersion("mysql", "5.7.44")
 
-		statements := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(diff, generated, "mysql", caps)
+		statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(diff, generated, "mysql", caps)
+		c.Assert(err, qt.IsNil)
 		sql := legacyRenderedSQL(strings.Join(statements, "\n"))
 
 		c.Assert(sql, qt.Contains, "WARNING: cannot drop CHECK constraint chk_qty")
@@ -76,7 +79,8 @@ func TestGenerateSchemaDiffSQLStatementsWithCapabilities_UsesServerVersionPreset
 		c := qt.New(t)
 		caps := capability.ForServerVersion("mysql", "8.0.17")
 
-		statements := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(diff, generated, "mysql", caps)
+		statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(diff, generated, "mysql", caps)
+		c.Assert(err, qt.IsNil)
 		sql := legacyRenderedSQL(strings.Join(statements, "\n"))
 
 		c.Assert(sql, qt.Contains, "ALTER TABLE things DROP CHECK chk_qty")
@@ -86,7 +90,8 @@ func TestGenerateSchemaDiffSQLStatementsWithCapabilities_UsesServerVersionPreset
 		c := qt.New(t)
 		caps := capability.ForServerVersion("mysql", "8.0.19")
 
-		statements := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(diff, generated, "mysql", caps)
+		statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(diff, generated, "mysql", caps)
+		c.Assert(err, qt.IsNil)
 		sql := legacyRenderedSQL(strings.Join(statements, "\n"))
 
 		c.Assert(sql, qt.Contains, "ALTER TABLE things DROP CONSTRAINT chk_qty")
@@ -104,7 +109,8 @@ func TestGetPlanner_DistributedSQLCapabilityWiring(t *testing.T) {
 		},
 	}
 
-	nodes := planner.GenerateSchemaDiffAST(diff, generated, platform.CockroachDB)
+	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, platform.CockroachDB)
+	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL(platform.CockroachDB, nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)

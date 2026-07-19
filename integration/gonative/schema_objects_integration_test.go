@@ -33,7 +33,8 @@ func TestSchemaObjects_RoundTripAndBodyChange_PostgreSQL_Integration(t *testing.
 	diff := schemadiff.Compare(target, &dbschematypes.DBSchema{})
 	c.Assert(diff.HasChanges(), qt.IsTrue)
 
-	statements := planner.GenerateSchemaDiffSQLStatements(diff, target, "postgres")
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, target, "postgres")
+	c.Assert(err, qt.IsNil)
 	sqlText := strings.Join(statements, ";\n") + ";"
 	_, err = db.Exec(sqlText)
 	c.Assert(err, qt.IsNil, qt.Commentf("generated migration SQL must execute: %s", sqlText))
@@ -56,7 +57,8 @@ func TestSchemaObjects_RoundTripAndBodyChange_PostgreSQL_Integration(t *testing.
 	c.Assert(bodyDiff.MaterializedViewsModified, qt.HasLen, 1)
 	c.Assert(bodyDiff.TriggersModified, qt.HasLen, 1)
 
-	modifiedStatements := planner.GenerateSchemaDiffSQLStatements(bodyDiff, modified, "postgres")
+	modifiedStatements, err := planner.GenerateSchemaDiffSQLStatements(bodyDiff, modified, "postgres")
+	c.Assert(err, qt.IsNil)
 	modifiedSQL := strings.Join(modifiedStatements, ";\n") + ";"
 	_, err = db.Exec(modifiedSQL)
 	c.Assert(err, qt.IsNil, qt.Commentf("modified migration SQL must execute: %s", modifiedSQL))
@@ -76,7 +78,8 @@ func TestSchemaObjects_RoundTripAndBodyChange_PostgreSQL_Integration(t *testing.
 		TableName:   "ptah_schema_objects_users",
 	}})
 
-	removalStatements := planner.GenerateSchemaDiffSQLStatements(removalDiff, tableOnly, "postgres")
+	removalStatements, err := planner.GenerateSchemaDiffSQLStatements(removalDiff, tableOnly, "postgres")
+	c.Assert(err, qt.IsNil)
 	removalSQL := strings.Join(removalStatements, ";\n") + ";"
 	_, err = db.Exec(removalSQL)
 	c.Assert(err, qt.IsNil, qt.Commentf("removal migration SQL must execute: %s", removalSQL))

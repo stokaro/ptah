@@ -131,7 +131,8 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 			c.Assert(diff.HasChanges(), qt.IsTrue, qt.Commentf("Expected schema changes to be detected"))
 
 			// 2. Generate up migration SQL
-			upSQL := planner.GenerateSchemaDiffSQL(diff, tt.generatedSchema, "postgres")
+			upSQL, err := planner.GenerateSchemaDiffSQL(diff, tt.generatedSchema, "postgres")
+			c.Assert(err, qt.IsNil)
 			upSQL = legacyRenderedSQL(upSQL)
 
 			// 3. Generate down migration SQL by reversing the diff
@@ -151,7 +152,8 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 				}
 			}
 
-			downSQL := planner.GenerateSchemaDiffSQL(reverseDiff, dbAsGoSchema, "postgres")
+			downSQL, err := planner.GenerateSchemaDiffSQL(reverseDiff, dbAsGoSchema, "postgres")
+			c.Assert(err, qt.IsNil)
 			downSQL = legacyRenderedSQL(downSQL)
 
 			// 4. Verify up migration SQL

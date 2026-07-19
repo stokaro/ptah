@@ -29,7 +29,8 @@ func TestRLSMigrationGeneration(t *testing.T) {
 	diff := schemadiff.Compare(generated, dbSchema)
 
 	// Generate migration SQL
-	sql := planner.GenerateSchemaDiffSQL(diff, generated, platform.Postgres)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.Postgres)
+	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 
 	t.Logf("Generated SQL:\n%s", sql)

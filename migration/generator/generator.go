@@ -314,7 +314,10 @@ func planGeneratedMigrationSpecs(
 		Capabilities:         info.Capabilities,
 		ConcurrentIndexNames: concurrentIndexNames,
 	}
-	upNodes := planner.GenerateSchemaDiffASTWithOptions(diff, generated, info.Dialect, plannerOpts)
+	upNodes, err := planner.GenerateSchemaDiffASTWithOptions(diff, generated, info.Dialect, plannerOpts)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error generating up migration plan: %w", err)
+	}
 	if len(upNodes) == 0 {
 		return nil, nil, nil
 	}
@@ -419,7 +422,10 @@ func buildGeneratedMigrationSpec(opts generatedMigrationSpecOptions) (generatedM
 		Capabilities:         opts.Capabilities,
 		ConcurrentIndexNames: opts.ConcurrentIndexNames,
 	}
-	upNodes := planner.GenerateSchemaDiffASTWithOptions(opts.Diff, opts.Generated, opts.Dialect, plannerOpts)
+	upNodes, err := planner.GenerateSchemaDiffASTWithOptions(opts.Diff, opts.Generated, opts.Dialect, plannerOpts)
+	if err != nil {
+		return generatedMigrationSpec{}, nil, fmt.Errorf("error generating up migration plan: %w", err)
+	}
 	assessments, err := safety.AssessRenderedWithCapabilities(upNodes, opts.Dialect, opts.Capabilities)
 	if err != nil {
 		return generatedMigrationSpec{}, nil, fmt.Errorf("error assessing migration safety: %w", err)
@@ -706,7 +712,10 @@ func generateUpMigrationSQLWithOptions(
 	if len(capsOverride) > 0 {
 		caps = capsOverride[0]
 	}
-	statements := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(diff, generated, dialect, caps)
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(diff, generated, dialect, caps)
+	if err != nil {
+		return "", fmt.Errorf("error generating up migration SQL: %w", err)
+	}
 
 	if len(statements) == 0 || !hasActualSQLStatements(statements) {
 		// No actual SQL statements generated - this is a successful no-op operation
@@ -754,7 +763,10 @@ func generateDownMigrationSQLWithOptions(
 	if len(capsOverride) > 0 {
 		caps = capsOverride[0]
 	}
-	statements := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(reverseDiff, dbAsGoSchema, dialect, caps)
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(reverseDiff, dbAsGoSchema, dialect, caps)
+	if err != nil {
+		return "", fmt.Errorf("error generating down migration SQL: %w", err)
+	}
 
 	if len(statements) == 0 {
 		// If no statements generated, create a simple comment

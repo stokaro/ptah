@@ -49,10 +49,15 @@ func New() *Planner { return &Planner{} }
 // reduce them to comments anyway, and emitting nothing keeps the output
 // migration small.
 func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	nodes, _ := p.GenerateMigrationASTChecked(diff, generated)
+	return nodes
+}
+
+func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
 	var result []ast.Node
 
 	if diff == nil || generated == nil {
-		return result
+		return result, nil
 	}
 
 	if len(diff.EnumsAdded)+len(diff.EnumsRemoved)+len(diff.EnumsModified) > 0 {
@@ -65,7 +70,7 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	result = p.removeIndexes(result, diff)
 	result = p.removeTables(result, diff)
 
-	return result
+	return result, nil
 }
 
 func (p *Planner) addNewTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
