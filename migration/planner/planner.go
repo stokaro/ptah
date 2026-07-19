@@ -327,11 +327,9 @@ func registerMySQLFamilyPlanner(dialect string) error {
 //   - GenerateSchemaDiffSQLStatements: For individual SQL statements
 //   - GetPlanner: For direct planner access
 func GenerateSchemaDiffAST(diff *types.SchemaDiff, generated *goschema.Database, dialect string) ([]ast.Node, error) {
-	planner, err := GetPlannerWithCapabilities(dialect, capability.ForDialect(dialect))
-	if err != nil {
-		return nil, err
-	}
-	return planner.GenerateMigrationASTChecked(diff, generated)
+	return GenerateSchemaDiffASTWithOptions(diff, generated, dialect, Options{
+		Capabilities: capability.ForDialect(dialect),
+	})
 }
 
 // GenerateSchemaDiffASTWithCapabilities generates AST nodes for a concrete

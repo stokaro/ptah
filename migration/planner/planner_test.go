@@ -170,12 +170,28 @@ func TestGenerateSchemaDiffSQL_UnsupportedDialectReturnsError(t *testing.T) {
 
 	sql, err := planner.GenerateSchemaDiffSQL(&types.SchemaDiff{}, &goschema.Database{}, "sqlserver")
 	c.Assert(sql, qt.Equals, "")
-	c.Assert(err, qt.ErrorMatches, "unsupported database dialect: sqlserver")
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
 
 	var planErr *ptaherr.PlanError
 	c.Assert(err, qt.ErrorAs, &planErr)
 	c.Assert(planErr.Dialect, qt.Equals, "sqlserver")
+}
+
+func TestGenerateSchemaDiffAST_WrapsPlannerFailures(t *testing.T) {
+	c := qt.New(t)
+
+	diff := &types.SchemaDiff{TablesModified: []types.TableDiff{
+		{TableName: "users", ColumnsRemoved: []string{"name"}},
+	}}
+
+	nodes, err := planner.GenerateSchemaDiffAST(diff, &goschema.Database{}, platform.SQLite)
+
+	c.Assert(nodes, qt.IsNil)
+	var planErr *ptaherr.PlanError
+	c.Assert(err, qt.ErrorAs, &planErr)
+	c.Assert(planErr.Dialect, qt.Equals, platform.SQLite)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, "sqlite: dropping columns from table users requires a table rebuild plan")
 }
 
 func TestRequiresNoTransaction(t *testing.T) {

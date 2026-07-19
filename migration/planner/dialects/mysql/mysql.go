@@ -10,6 +10,7 @@ import (
 	"github.com/stokaro/ptah/core/convert/fromschema"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform/capability"
+	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
@@ -633,7 +634,13 @@ func (p *Planner) rejectMaterializedViews(diff *types.SchemaDiff) error {
 		len(diff.MaterializedViewsRemoved) == 0 {
 		return nil
 	}
-	return fmt.Errorf("materialized views are not supported by MySQL or MariaDB; remove matview definitions for this target")
+	message := "materialized views are not supported by MySQL or MariaDB; remove matview definitions for this target"
+	return &ptaherr.CapabilityError{
+		Dialect: DialectName,
+		Feature: "materialized views",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: message,
+	}
 }
 
 func (p *Planner) addNewViews(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {

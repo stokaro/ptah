@@ -8,6 +8,7 @@ import (
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
@@ -144,6 +145,10 @@ func TestPlannerRejectsAddColumnShapesThatNeedRebuild(t *testing.T) {
 
 			nodes, err := planner.GenerateSchemaDiffAST(diff, generated, platform.SQLite)
 			c.Assert(nodes, qt.IsNil)
+			var planErr *ptaherr.PlanError
+			c.Assert(err, qt.ErrorAs, &planErr)
+			c.Assert(planErr.Dialect, qt.Equals, platform.SQLite)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, `sqlite: adding column `+tt.field.Name+` to table users requires a table rebuild plan`)
 		})
 	}
@@ -222,6 +227,10 @@ func TestPlannerRejectsRebuildOnlyTableChanges(t *testing.T) {
 
 			nodes, err := planner.GenerateSchemaDiffAST(tt.diff, generated, platform.SQLite)
 			c.Assert(nodes, qt.IsNil)
+			var planErr *ptaherr.PlanError
+			c.Assert(err, qt.ErrorAs, &planErr)
+			c.Assert(planErr.Dialect, qt.Equals, platform.SQLite)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, tt.want)
 		})
 	}
