@@ -86,7 +86,8 @@ func TestFunctionDiff_BodyAndSecurityChange_Integration(t *testing.T) {
 	c.Assert(mod.Changes["security"], qt.Equals, "DEFINER -> INVOKER")
 
 	// Plan, render, and apply the up migration.
-	statements := planner.GenerateSchemaDiffSQLStatements(diff, target, "postgres")
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, target, "postgres")
+	c.Assert(err, qt.IsNil)
 	c.Assert(len(statements) > 0, qt.IsTrue,
 		qt.Commentf("planner must emit at least one SQL statement for FunctionsModified"))
 
@@ -168,7 +169,8 @@ func TestFunctionDiff_VolatilityChange_Integration(t *testing.T) {
 	c.Assert(diff.FunctionsModified, qt.HasLen, 1)
 	c.Assert(diff.FunctionsModified[0].Changes["volatility"], qt.Equals, "VOLATILE -> STABLE")
 
-	statements := planner.GenerateSchemaDiffSQLStatements(diff, target, "postgres")
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, target, "postgres")
+	c.Assert(err, qt.IsNil)
 	c.Assert(len(statements), qt.Not(qt.Equals), 0)
 	sqlText := strings.Join(statements, ";\n") + ";"
 	c.Assert(strings.Contains(sqlText, "STABLE"), qt.IsTrue)

@@ -26,6 +26,7 @@
 //
 //	type Planner interface {
 //		GenerateMigrationAST(diff *types.SchemaDiff, generated *goschema.Database) []ast.Node
+//		GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error)
 //	}
 //
 // Each implementation handles dialect-specific features, constraints, and SQL generation patterns.
@@ -44,26 +45,25 @@
 // The package provides multiple levels of abstraction for different use cases:
 //
 //	// High-level: Get SQL statements directly
-//	statements := planner.GenerateSchemaDiffSQLStatements(diff, generated, "postgres")
+//	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, "postgres")
 //
 //	// Mid-level: Get complete SQL string
-//	sql := planner.GenerateSchemaDiffSQL(diff, generated, "postgres")
+//	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, "postgres")
 //
 //	// Low-level: Get AST nodes for custom processing
-//	nodes := planner.GenerateSchemaDiffAST(diff, generated, "postgres")
+//	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, "postgres")
 //
 // # Error Handling
 //
-// The package uses panic-based error handling for unrecoverable errors such as:
-//   - Unsupported database dialects
-//   - SQL rendering failures
-//   - Unimplemented dialect features
-//
-// This design choice reflects the fact that these are typically configuration or
-// implementation errors that should be caught during development rather than runtime.
+// Public helpers return errors for user-controlled and configuration-dependent
+// failures, including unsupported dialects, renderer failures, and unsupported
+// dialect features. CLI callers should surface these errors directly instead of
+// relying on panic recovery.
 package planner
 
 import (
+	"fmt"
+
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
@@ -106,7 +106,10 @@ import (
 //
 // # Example Implementation Pattern
 //
-//	func (p *PostgresPlanner) GenerateMigrationAST(diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+//	func (p *PostgresPlanner) GenerateMigrationASTChecked(
+//		diff *types.SchemaDiff,
+//		generated *goschema.Database,
+//	) ([]ast.Node, error) {
 //		var nodes []ast.Node
 //
 //		// 1. Create enum types first (PostgreSQL-specific)
@@ -118,7 +121,7 @@ import (
 //		// 3. Add indexes and constraints
 //		nodes = append(nodes, p.generateIndexCreations(diff, generated)...)
 //
-//		return nodes
+//		return nodes, nil
 //	}
 type Planner interface {
 	// GenerateMigrationAST converts schema differences into database-specific AST nodes.
@@ -146,6 +149,10 @@ type Planner interface {
 	// The returned nodes can be rendered to SQL using the renderer package or
 	// processed further for validation, optimization, or custom transformations.
 	GenerateMigrationAST(diff *types.SchemaDiff, generated *goschema.Database) []ast.Node
+	// GenerateMigrationASTChecked is the error-returning planning path used by public
+	// helpers and CLI flows. Dialect implementations should return user-facing
+	// errors here for unsupported features instead of panicking.
+	GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error)
 }
 
 // Options configures high-level planner helpers.
@@ -189,26 +196,30 @@ func (o Options) capabilities(dialect string) capability.Capabilities {
 //
 // # Return Value
 //
-// Returns a Planner implementation specific to the requested dialect.
-//
-// # Panics
-//
-// This function panics in the following cases:
-//   - Unknown or unsupported dialect is specified
-//   - Empty or invalid dialect string is provided
+// Returns a Planner implementation specific to the requested dialect, or an
+// error for unknown, unsupported, empty, or invalid dialect strings.
 //
 // # Usage Example
 //
 //	import "github.com/stokaro/ptah/core/platform"
 //
 //	// Get PostgreSQL planner
-//	pgPlanner := planner.GetPlanner(platform.Postgres)
+//	pgPlanner, err := planner.GetPlanner(platform.Postgres)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
 //
 //	// Get MySQL planner
-//	mysqlPlanner := planner.GetPlanner(platform.MySQL)
+//	mysqlPlanner, err := planner.GetPlanner(platform.MySQL)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
 //
 //	// Generate migration AST
-//	nodes := pgPlanner.GenerateMigrationAST(diff, generated)
+//	nodes, err := pgPlanner.GenerateMigrationASTChecked(diff, generated)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
 //
 // # Design Rationale
 //
@@ -217,7 +228,7 @@ func (o Options) capabilities(dialect string) capability.Capabilities {
 //   - Allow easy extension for new database dialects
 //   - Centralize dialect validation and error handling
 //   - Enable dependency injection and testing scenarios
-func GetPlanner(dialect string) Planner {
+func GetPlanner(dialect string) (Planner, error) {
 	return GetPlannerWithCapabilities(dialect, capability.ForDialect(dialect))
 }
 
@@ -225,28 +236,27 @@ func GetPlanner(dialect string) Planner {
 // a concrete target capability set. Live database paths should pass
 // DBInfo.Capabilities so planning uses the same server-version preset as
 // readers and renderers. Offline callers should use GetPlanner.
-func GetPlannerWithCapabilities(dialect string, caps capability.Capabilities) Planner {
+func GetPlannerWithCapabilities(dialect string, caps capability.Capabilities) (Planner, error) {
 	return GetPlannerWithOptions(dialect, Options{Capabilities: caps})
 }
 
 // GetPlannerWithOptions returns a dialect-specific migration planner with
 // explicit high-level generation policy.
-func GetPlannerWithOptions(dialect string, opts Options) Planner {
+func GetPlannerWithOptions(dialect string, opts Options) (Planner, error) {
 	caps := opts.capabilities(dialect)
 	switch platform.NormalizeDialect(dialect) {
 	case platform.Postgres:
-		return postgres.NewWithCapabilities(caps).WithConcurrentIndexNames(opts.ConcurrentIndexNames...)
+		return postgres.NewWithCapabilities(caps).WithConcurrentIndexNames(opts.ConcurrentIndexNames...), nil
 	case platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		return postgres.NewWithCapabilities(caps).WithConcurrentIndexNames(opts.ConcurrentIndexNames...)
+		return postgres.NewWithCapabilities(caps).WithConcurrentIndexNames(opts.ConcurrentIndexNames...), nil
 	case platform.MySQL:
-		return mysql.NewWithCapabilities(caps)
+		return mysql.NewWithCapabilities(caps), nil
 	case platform.MariaDB:
-		return mysql.NewWithCapabilities(caps)
+		return mysql.NewWithCapabilities(caps), nil
 	case platform.ClickHouse:
-		return clickhouse.New()
+		return clickhouse.New(), nil
 	default:
-		// For unknown dialects, use a generic generator that doesn't apply dialect-specific transformations
-		panic("not implemented")
+		return nil, fmt.Errorf("unsupported database dialect: %s", dialect)
 	}
 }
 
@@ -290,9 +300,12 @@ func GetPlannerWithOptions(dialect string, opts Options) Planner {
 //   - GenerateSchemaDiffSQL: For complete SQL string generation
 //   - GenerateSchemaDiffSQLStatements: For individual SQL statements
 //   - GetPlanner: For direct planner access
-func GenerateSchemaDiffAST(diff *types.SchemaDiff, generated *goschema.Database, dialect string) []ast.Node {
-	planner := GetPlannerWithCapabilities(dialect, capability.ForDialect(dialect))
-	return planner.GenerateMigrationAST(diff, generated)
+func GenerateSchemaDiffAST(diff *types.SchemaDiff, generated *goschema.Database, dialect string) ([]ast.Node, error) {
+	planner, err := GetPlannerWithCapabilities(dialect, capability.ForDialect(dialect))
+	if err != nil {
+		return nil, err
+	}
+	return planner.GenerateMigrationASTChecked(diff, generated)
 }
 
 // GenerateSchemaDiffASTWithCapabilities generates AST nodes for a concrete
@@ -302,7 +315,7 @@ func GenerateSchemaDiffASTWithCapabilities(
 	generated *goschema.Database,
 	dialect string,
 	caps capability.Capabilities,
-) []ast.Node {
+) ([]ast.Node, error) {
 	return GenerateSchemaDiffASTWithOptions(diff, generated, dialect, Options{Capabilities: caps})
 }
 
@@ -313,9 +326,12 @@ func GenerateSchemaDiffASTWithOptions(
 	generated *goschema.Database,
 	dialect string,
 	opts Options,
-) []ast.Node {
-	planner := GetPlannerWithOptions(dialect, opts)
-	return planner.GenerateMigrationAST(diff, generated)
+) ([]ast.Node, error) {
+	planner, err := GetPlannerWithOptions(dialect, opts)
+	if err != nil {
+		return nil, err
+	}
+	return planner.GenerateMigrationASTChecked(diff, generated)
 }
 
 // NodeRequiresNoTransaction reports whether a single planned AST node must run
@@ -404,10 +420,13 @@ func RequiresNoTransaction(dialect string, nodes []ast.Node) bool {
 //
 //   - GenerateSchemaDiffSQL: For complete SQL string without splitting
 //   - GenerateSchemaDiffAST: For AST nodes without rendering
-func GenerateSchemaDiffSQLStatements(diff *types.SchemaDiff, generated *goschema.Database, dialect string) []string {
-	output := GenerateSchemaDiffSQLWithCapabilities(diff, generated, dialect, capability.ForDialect(dialect))
+func GenerateSchemaDiffSQLStatements(diff *types.SchemaDiff, generated *goschema.Database, dialect string) ([]string, error) {
+	output, err := GenerateSchemaDiffSQLWithCapabilities(diff, generated, dialect, capability.ForDialect(dialect))
+	if err != nil {
+		return nil, err
+	}
 	statements := sqlutil.SplitSQLStatements(output)
-	return statements
+	return statements, nil
 }
 
 // GenerateSchemaDiffSQLStatementsWithCapabilities generates individual SQL
@@ -417,7 +436,7 @@ func GenerateSchemaDiffSQLStatementsWithCapabilities(
 	generated *goschema.Database,
 	dialect string,
 	caps capability.Capabilities,
-) []string {
+) ([]string, error) {
 	return GenerateSchemaDiffSQLStatementsWithOptions(diff, generated, dialect, Options{Capabilities: caps})
 }
 
@@ -428,10 +447,13 @@ func GenerateSchemaDiffSQLStatementsWithOptions(
 	generated *goschema.Database,
 	dialect string,
 	opts Options,
-) []string {
-	output := GenerateSchemaDiffSQLWithOptions(diff, generated, dialect, opts)
+) ([]string, error) {
+	output, err := GenerateSchemaDiffSQLWithOptions(diff, generated, dialect, opts)
+	if err != nil {
+		return nil, err
+	}
 	statements := sqlutil.SplitSQLStatements(output)
-	return statements
+	return statements, nil
 }
 
 // GenerateSchemaDiffSQL generates complete SQL for schema differences as a single string.
@@ -494,7 +516,7 @@ func GenerateSchemaDiffSQLStatementsWithOptions(
 //
 //   - GenerateSchemaDiffSQLStatements: For individual SQL statements
 //   - GenerateSchemaDiffAST: For AST nodes without rendering
-func GenerateSchemaDiffSQL(diff *types.SchemaDiff, generated *goschema.Database, dialect string) string {
+func GenerateSchemaDiffSQL(diff *types.SchemaDiff, generated *goschema.Database, dialect string) (string, error) {
 	return GenerateSchemaDiffSQLWithCapabilities(diff, generated, dialect, capability.ForDialect(dialect))
 }
 
@@ -505,7 +527,7 @@ func GenerateSchemaDiffSQLWithCapabilities(
 	generated *goschema.Database,
 	dialect string,
 	caps capability.Capabilities,
-) string {
+) (string, error) {
 	return GenerateSchemaDiffSQLWithOptions(diff, generated, dialect, Options{Capabilities: caps})
 }
 
@@ -516,12 +538,15 @@ func GenerateSchemaDiffSQLWithOptions(
 	generated *goschema.Database,
 	dialect string,
 	opts Options,
-) string {
+) (string, error) {
 	caps := opts.capabilities(dialect)
-	astNodes := GenerateSchemaDiffASTWithOptions(diff, generated, dialect, opts)
+	astNodes, err := GenerateSchemaDiffASTWithOptions(diff, generated, dialect, opts)
+	if err != nil {
+		return "", err
+	}
 	output, err := renderer.RenderSQLWithCapabilities(dialect, caps, astNodes...)
 	if err != nil {
-		panic(err)
+		return "", err
 	}
-	return output
+	return output, nil
 }

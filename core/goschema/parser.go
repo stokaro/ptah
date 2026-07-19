@@ -97,11 +97,11 @@ var knownSchemaAttributes = map[string]bool{
 	"comment": true,
 }
 
-// validateAttributes panics if kv contains any key the directive does not
-// recognize. Platform-specific overrides (platform.*) are always allowed.
-// This catches typos like default_fn-vs-default_expr at parse time instead of
-// silently dropping them and producing wrong SQL.
-func validateAttributes(kv map[string]string, known map[string]bool, directive, location string) {
+// validateAttributes rejects any key the directive does not recognize.
+// Platform-specific overrides (platform.*) are always allowed. This catches
+// typos like default_fn-vs-default_expr at parse time instead of silently
+// dropping them and producing wrong SQL.
+func validateAttributes(kv map[string]string, known map[string]bool, directive, location string) error {
 	for k := range kv {
 		if known[k] || strings.HasPrefix(k, "platform.") {
 			continue
@@ -111,11 +111,12 @@ func validateAttributes(kv map[string]string, known map[string]bool, directive, 
 			"attribute", k,
 			"location", location,
 		)
-		panic(fmt.Sprintf("unknown annotation attribute %q on %s at %s", k, directive, location))
+		return fmt.Errorf("unknown annotation attribute %q on %s at %s", k, directive, location)
 	}
+	return nil
 }
 
-func requireAttributes(kv map[string]string, required []string, directive, location string) {
+func requireAttributes(kv map[string]string, required []string, directive, location string) error {
 	for _, key := range required {
 		if strings.TrimSpace(kv[key]) != "" {
 			continue
@@ -125,11 +126,18 @@ func requireAttributes(kv map[string]string, required []string, directive, locat
 			"attribute", key,
 			"location", location,
 		)
-		panic(fmt.Sprintf("missing required annotation attribute %q on %s at %s", key, directive, location))
+		return fmt.Errorf("missing required annotation attribute %q on %s at %s", key, directive, location)
 	}
+	return nil
 }
 
-func parseFieldComment(comment *ast.Comment, field *ast.Field, structName string, globalEnumsMap map[string]Enum, schemaFields *[]Field) {
+func parseFieldComment(
+	comment *ast.Comment,
+	field *ast.Field,
+	structName string,
+	globalEnumsMap map[string]Enum,
+	schemaFields *[]Field,
+) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 
 	// Validate the directive itself, not each named carrier. For anonymous /
@@ -139,7 +147,9 @@ func parseFieldComment(comment *ast.Comment, field *ast.Field, structName string
 	if len(field.Names) > 0 {
 		location = structName + "." + field.Names[0].Name
 	}
-	validateAttributes(kv, knownFieldAttributes, "//migrator:schema:field", location)
+	if err := validateAttributes(kv, knownFieldAttributes, "//migrator:schema:field", location); err != nil {
+		return err
+	}
 
 	for _, name := range field.Names {
 		enumRaw := kv["enum"]
@@ -165,7 +175,7 @@ func parseFieldComment(comment *ast.Comment, field *ast.Field, structName string
 
 		identityGeneration := normalizeIdentityGeneration(kv["identity_generation"])
 		if kv["identity_generation"] != "" && identityGeneration == "" {
-			panic(fmt.Sprintf("invalid identity_generation %q on //migrator:schema:field at %s", kv["identity_generation"], location))
+			return fmt.Errorf("invalid identity_generation %q on //migrator:schema:field at %s", kv["identity_generation"], location)
 		}
 		if identityGeneration == "" && hasIdentitySettings(kv) {
 			identityGeneration = "BY_DEFAULT"
@@ -199,6 +209,7 @@ func parseFieldComment(comment *ast.Comment, field *ast.Field, structName string
 			Overrides:          parseutils.ParsePlatformSpecific(kv),
 		})
 	}
+	return nil
 }
 
 func hasIdentitySettings(kv map[string]string) bool {
@@ -240,9 +251,11 @@ func parseEmbeddedComment(comment *ast.Comment, field *ast.Field, structName str
 	})
 }
 
-func parseIndexComment(comment *ast.Comment, structName string, schemaIndexes *[]Index) {
+func parseIndexComment(comment *ast.Comment, structName string, schemaIndexes *[]Index) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	validateAttributes(kv, knownIndexAttributes, "//migrator:schema:index", structName)
+	if err := validateAttributes(kv, knownIndexAttributes, "//migrator:schema:index", structName); err != nil {
+		return err
+	}
 
 	// "columns=" is a legacy synonym for "fields=" (several integration
 	// fixtures still spell it that way); prefer the modern name and fall
@@ -267,7 +280,7 @@ func parseIndexComment(comment *ast.Comment, structName string, schemaIndexes *[
 	if g := strings.TrimSpace(kv["granularity"]); g != "" {
 		n, err := strconv.Atoi(g)
 		if err != nil || n < 0 {
-			panic(fmt.Sprintf("invalid granularity %q on //migrator:schema:index at %s (must be a non-negative integer)", g, structName))
+			return fmt.Errorf("invalid granularity %q on //migrator:schema:index at %s (must be a non-negative integer)", g, structName)
 		}
 		granularity = n
 	}
@@ -284,6 +297,7 @@ func parseIndexComment(comment *ast.Comment, structName string, schemaIndexes *[
 		TableName:   tableName,       // Target table name
 		Granularity: granularity,     // CH only: GRANULARITY n for data-skipping indexes
 	})
+	return nil
 }
 
 // ParseConstraintComment parses a constraint comment and adds it to the constraints slice.
@@ -341,15 +355,20 @@ func parseExtensionComment(comment *ast.Comment, extensions *[]Extension) {
 	})
 }
 
-func parseSchemaComment(comment *ast.Comment, schemas *[]Schema) {
+func parseSchemaComment(comment *ast.Comment, schemas *[]Schema) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	validateAttributes(kv, knownSchemaAttributes, "//migrator:schema:schema", kv["name"])
-	requireAttributes(kv, []string{"name"}, "//migrator:schema:schema", kv["name"])
+	if err := validateAttributes(kv, knownSchemaAttributes, "//migrator:schema:schema", kv["name"]); err != nil {
+		return err
+	}
+	if err := requireAttributes(kv, []string{"name"}, "//migrator:schema:schema", kv["name"]); err != nil {
+		return err
+	}
 
 	*schemas = append(*schemas, Schema{
 		Name:    kv["name"],
 		Comment: kv["comment"],
 	})
+	return nil
 }
 
 func parseTableComment(comment *ast.Comment, structName string, tableDirectives *[]Table) {
@@ -367,258 +386,194 @@ func parseTableComment(comment *ast.Comment, structName string, tableDirectives 
 	})
 }
 
-func parseComment(
-	comment *ast.Comment,
-	structName string,
-	field *ast.Field,
-	globalEnumsMap map[string]Enum,
-	schemaFields *[]Field,
-	embeddedFields *[]EmbeddedField,
-	schemaIndexes *[]Index,
-	schemaConstraints *[]Constraint,
-	extensions *[]Extension,
-	functions *[]Function,
-	views *[]View,
-	materializedViews *[]MaterializedView,
-	triggers *[]Trigger,
-	rlsPolicies *[]RLSPolicy,
-	rlsEnabledTables *[]RLSEnabledTable,
-	roles *[]Role,
-	grants *[]Grant,
-) {
-	switch {
-	case strings.HasPrefix(comment.Text, "//migrator:schema:field"):
-		parseFieldComment(comment, field, structName, globalEnumsMap, schemaFields)
-	case strings.HasPrefix(comment.Text, "//migrator:embedded"):
-		parseEmbeddedComment(comment, field, structName, embeddedFields)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:index"):
-		parseIndexComment(comment, structName, schemaIndexes)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:constraint"):
-		ParseConstraintComment(comment, structName, schemaConstraints)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:extension"):
-		parseExtensionComment(comment, extensions)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:function"):
-		parseFunctionComment(comment, structName, functions)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:view"):
-		parseViewComment(comment, structName, views)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:matview"):
-		parseMaterializedViewComment(comment, structName, materializedViews)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:trigger"):
-		parseTriggerComment(comment, structName, triggers)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:rls:policy"):
-		parseRLSPolicyComment(comment, structName, rlsPolicies)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:rls:enable"):
-		parseRLSEnableComment(comment, structName, rlsEnabledTables)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:role"):
-		parseRoleComment(comment, structName, roles)
-	case strings.HasPrefix(comment.Text, "//migrator:schema:grant"):
-		parseGrantComment(comment, structName, grants)
+type schemaParseState struct {
+	tableNameToStructName map[string]string
+	globalEnumsMap        map[string]Enum
+	embeddedFields        []EmbeddedField
+	schemaFields          []Field
+	schemaIndexes         []Index
+	schemaConstraints     []Constraint
+	tableDirectives       []Table
+	extensions            []Extension
+	functions             []Function
+	views                 []View
+	materializedViews     []MaterializedView
+	triggers              []Trigger
+	rlsPolicies           []RLSPolicy
+	rlsEnabledTables      []RLSEnabledTable
+	roles                 []Role
+	grants                []Grant
+	schemas               []Schema
+}
+
+func newSchemaParseState() *schemaParseState {
+	return &schemaParseState{
+		tableNameToStructName: make(map[string]string),
+		globalEnumsMap:        make(map[string]Enum),
 	}
 }
 
-func processTableComments(
-	structName string,
-	genDecl *ast.GenDecl,
-	tableDirectives *[]Table,
-	schemaConstraints *[]Constraint,
-	extensions *[]Extension,
-	functions *[]Function,
-	views *[]View,
-	materializedViews *[]MaterializedView,
-	triggers *[]Trigger,
-	rlsPolicies *[]RLSPolicy,
-	rlsEnabledTables *[]RLSEnabledTable,
-	roles *[]Role,
-	grants *[]Grant,
-	schemas *[]Schema,
-) {
+func (s *schemaParseState) parseComment(comment *ast.Comment, structName string, field *ast.Field) error {
+	switch {
+	case strings.HasPrefix(comment.Text, "//migrator:schema:field"):
+		return parseFieldComment(comment, field, structName, s.globalEnumsMap, &s.schemaFields)
+	case strings.HasPrefix(comment.Text, "//migrator:embedded"):
+		parseEmbeddedComment(comment, field, structName, &s.embeddedFields)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:index"):
+		return parseIndexComment(comment, structName, &s.schemaIndexes)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:constraint"):
+		ParseConstraintComment(comment, structName, &s.schemaConstraints)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:extension"):
+		parseExtensionComment(comment, &s.extensions)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:function"):
+		parseFunctionComment(comment, structName, &s.functions)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:view"):
+		return parseViewComment(comment, structName, &s.views)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:matview"):
+		return parseMaterializedViewComment(comment, structName, &s.materializedViews)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:trigger"):
+		return parseTriggerComment(comment, structName, &s.triggers)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:rls:policy"):
+		parseRLSPolicyComment(comment, structName, &s.rlsPolicies)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:rls:enable"):
+		parseRLSEnableComment(comment, structName, &s.rlsEnabledTables)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:role"):
+		parseRoleComment(comment, structName, &s.roles)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:grant"):
+		parseGrantComment(comment, structName, &s.grants)
+	}
+	return nil
+}
+
+func (s *schemaParseState) processTableComments(structName string, genDecl *ast.GenDecl) error {
 	if genDecl.Doc == nil {
-		return
+		return nil
 	}
 
 	for _, comment := range genDecl.Doc.List {
 		switch {
 		case strings.HasPrefix(comment.Text, "//migrator:schema:table"):
-			parseTableComment(comment, structName, tableDirectives)
+			parseTableComment(comment, structName, &s.tableDirectives)
 		case strings.HasPrefix(comment.Text, "//migrator:schema:constraint"):
-			ParseConstraintComment(comment, structName, schemaConstraints)
+			ParseConstraintComment(comment, structName, &s.schemaConstraints)
 		case strings.HasPrefix(comment.Text, "//migrator:schema:extension"):
-			parseExtensionComment(comment, extensions)
+			parseExtensionComment(comment, &s.extensions)
 		case strings.HasPrefix(comment.Text, "//migrator:schema:function"):
-			parseFunctionComment(comment, structName, functions)
+			parseFunctionComment(comment, structName, &s.functions)
 		case strings.HasPrefix(comment.Text, "//migrator:schema:view"):
-			parseViewComment(comment, structName, views)
+			if err := parseViewComment(comment, structName, &s.views); err != nil {
+				return err
+			}
 		case strings.HasPrefix(comment.Text, "//migrator:schema:matview"):
-			parseMaterializedViewComment(comment, structName, materializedViews)
+			if err := parseMaterializedViewComment(comment, structName, &s.materializedViews); err != nil {
+				return err
+			}
 		case strings.HasPrefix(comment.Text, "//migrator:schema:trigger"):
-			parseTriggerComment(comment, structName, triggers)
+			if err := parseTriggerComment(comment, structName, &s.triggers); err != nil {
+				return err
+			}
 		case strings.HasPrefix(comment.Text, "//migrator:schema:rls:policy"):
-			parseRLSPolicyComment(comment, structName, rlsPolicies)
+			parseRLSPolicyComment(comment, structName, &s.rlsPolicies)
 		case strings.HasPrefix(comment.Text, "//migrator:schema:rls:enable"):
-			parseRLSEnableComment(comment, structName, rlsEnabledTables)
+			parseRLSEnableComment(comment, structName, &s.rlsEnabledTables)
 		case strings.HasPrefix(comment.Text, "//migrator:schema:role"):
-			parseRoleComment(comment, structName, roles)
+			parseRoleComment(comment, structName, &s.roles)
 		case strings.HasPrefix(comment.Text, "//migrator:schema:grant"):
-			parseGrantComment(comment, structName, grants)
+			parseGrantComment(comment, structName, &s.grants)
 		case strings.HasPrefix(comment.Text, "//migrator:schema:schema"):
-			parseSchemaComment(comment, schemas)
+			if err := parseSchemaComment(comment, &s.schemas); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
-func processFieldComments(
-	structName string,
-	structType *ast.StructType,
-	globalEnumsMap map[string]Enum,
-	schemaFields *[]Field,
-	embeddedFields *[]EmbeddedField,
-	schemaIndexes *[]Index,
-	schemaConstraints *[]Constraint,
-	extensions *[]Extension,
-	functions *[]Function,
-	views *[]View,
-	materializedViews *[]MaterializedView,
-	triggers *[]Trigger,
-	rlsPolicies *[]RLSPolicy,
-	rlsEnabledTables *[]RLSEnabledTable,
-	roles *[]Role,
-	grants *[]Grant,
-) {
+func (s *schemaParseState) processFieldComments(structName string, structType *ast.StructType) error {
 	for _, field := range structType.Fields.List {
 		if field.Doc == nil {
 			continue
 		}
 		for _, comment := range field.Doc.List {
-			parseComment(comment, structName, field, globalEnumsMap, schemaFields, embeddedFields, schemaIndexes, schemaConstraints, extensions, functions, views, materializedViews, triggers, rlsPolicies, rlsEnabledTables, roles, grants)
+			if err := s.parseComment(comment, structName, field); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
-func ParseFile(filename string) Database {
+func ParseFile(filename string) (Database, error) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, filename, nil, parser.ParseComments)
 	if err != nil {
 		slog.Error("Failed to parse file", "error", err)
-		panic("Failed to parse file")
+		return Database{}, fmt.Errorf("parse Go file %q: %w", filename, err)
 	}
 
 	return parseFileAST(f)
 }
 
-// ParseSource parses a Go source string and returns the database schema
-// source can be a string, []byte, or io.Reader
-func ParseSource(filename string, source any) Database {
+// ParseSource parses a Go source string and returns the database schema.
+// source can be a string, []byte, or io.Reader.
+func ParseSource(filename string, source any) (Database, error) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, filename, source, parser.ParseComments)
 	if err != nil {
 		slog.Error("Failed to parse file", "error", err)
-		panic("Failed to parse file")
+		return Database{}, fmt.Errorf("parse Go source %q: %w", filename, err)
 	}
 
 	return parseFileAST(f)
 }
 
-func parseFileAST(f *ast.File) Database {
-	var embeddedFields []EmbeddedField
-	var schemaFields []Field
-	var schemaIndexes []Index
-	var schemaConstraints []Constraint
-	var tableDirectives []Table
-	var extensions []Extension
-	var functions []Function
-	var views []View
-	var materializedViews []MaterializedView
-	var triggers []Trigger
-	var rlsPolicies []RLSPolicy
-	var rlsEnabledTables []RLSEnabledTable
-	var roles []Role
-	var grants []Grant
-	var schemas []Schema
-	globalEnumsMap := make(map[string]Enum)
+func parseFileAST(f *ast.File) (Database, error) {
+	state := newSchemaParseState()
+	if err := state.processFileAST(f); err != nil {
+		return Database{}, err
+	}
 
-	// Single pass: collect table names and process all declarations and comments
-	tableNameToStructName := make(map[string]string)
-	processFileAST(
-		f,
-		tableNameToStructName,
-		globalEnumsMap,
-		&embeddedFields,
-		&schemaFields,
-		&schemaIndexes,
-		&schemaConstraints,
-		&tableDirectives,
-		&extensions,
-		&functions,
-		&views,
-		&materializedViews,
-		&triggers,
-		&rlsPolicies,
-		&rlsEnabledTables,
-		&roles,
-		&grants,
-		&schemas,
-	)
-
-	enums := make([]Enum, 0, len(globalEnumsMap))
-	keys := make([]string, 0, len(globalEnumsMap))
-	for k := range globalEnumsMap {
+	enums := make([]Enum, 0, len(state.globalEnumsMap))
+	keys := make([]string, 0, len(state.globalEnumsMap))
+	for k := range state.globalEnumsMap {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		enums = append(enums, globalEnumsMap[k])
+		enums = append(enums, state.globalEnumsMap[k])
 	}
 
 	// Sort extensions alphabetically for consistent output
-	sort.Slice(extensions, func(i, j int) bool {
-		return extensions[i].Name < extensions[j].Name
+	sort.Slice(state.extensions, func(i, j int) bool {
+		return state.extensions[i].Name < state.extensions[j].Name
 	})
 
 	result := Database{
-		Schemas:           schemas,
-		Tables:            tableDirectives,
-		Fields:            schemaFields,
-		Indexes:           schemaIndexes,
-		Constraints:       schemaConstraints,
+		Schemas:           state.schemas,
+		Tables:            state.tableDirectives,
+		Fields:            state.schemaFields,
+		Indexes:           state.schemaIndexes,
+		Constraints:       state.schemaConstraints,
 		Enums:             enums,
-		EmbeddedFields:    embeddedFields,
-		Extensions:        extensions,
-		Functions:         functions,
-		Views:             views,
-		MaterializedViews: materializedViews,
-		Triggers:          triggers,
-		RLSPolicies:       rlsPolicies,
-		RLSEnabledTables:  rlsEnabledTables,
-		Roles:             roles,
-		Grants:            grants,
+		EmbeddedFields:    state.embeddedFields,
+		Extensions:        state.extensions,
+		Functions:         state.functions,
+		Views:             state.views,
+		MaterializedViews: state.materializedViews,
+		Triggers:          state.triggers,
+		RLSPolicies:       state.rlsPolicies,
+		RLSEnabledTables:  state.rlsEnabledTables,
+		Roles:             state.roles,
+		Grants:            state.grants,
 		Dependencies:      make(map[string][]string),
 	}
 	normalizeTableScopedNames(&result)
 	buildDependencyGraph(&result)
-	return result
+	return result, nil
 }
 
 // processFileAST processes the entire AST file in a single optimized pass
-func processFileAST(
-	f *ast.File,
-	tableNameToStructName map[string]string,
-	globalEnumsMap map[string]Enum,
-	embeddedFields *[]EmbeddedField,
-	schemaFields *[]Field,
-	schemaIndexes *[]Index,
-	schemaConstraints *[]Constraint,
-	tableDirectives *[]Table,
-	extensions *[]Extension,
-	functions *[]Function,
-	views *[]View,
-	materializedViews *[]MaterializedView,
-	triggers *[]Trigger,
-	rlsPolicies *[]RLSPolicy,
-	rlsEnabledTables *[]RLSEnabledTable,
-	roles *[]Role,
-	grants *[]Grant,
-	schemas *[]Schema,
-) {
+func (s *schemaParseState) processFileAST(f *ast.File) error {
 	// First, collect table names from struct declarations
 	for _, decl := range f.Decls {
 		genDecl, ok := decl.(*ast.GenDecl)
@@ -636,34 +591,18 @@ func processFileAST(
 				continue
 			}
 
-			mapTableDirectiveStructNames(genDecl.Doc, structName, tableNameToStructName)
+			mapTableDirectiveStructNames(genDecl.Doc, structName, s.tableNameToStructName)
 		}
 	}
 
 	// Process all struct declarations
-	processDeclarations(
-		f,
-		tableNameToStructName,
-		globalEnumsMap,
-		embeddedFields,
-		schemaFields,
-		schemaIndexes,
-		schemaConstraints,
-		tableDirectives,
-		extensions,
-		functions,
-		views,
-		materializedViews,
-		triggers,
-		rlsPolicies,
-		rlsEnabledTables,
-		roles,
-		grants,
-		schemas,
-	)
+	if err := s.processDeclarations(f); err != nil {
+		return err
+	}
 
 	// Process all file comments for RLS annotations that might not be associated with struct declarations
-	processAllFileComments(f, tableNameToStructName, rlsPolicies, rlsEnabledTables)
+	processAllFileComments(f, s.tableNameToStructName, &s.rlsPolicies, &s.rlsEnabledTables)
+	return nil
 }
 
 func mapTableDirectiveStructNames(doc *ast.CommentGroup, structName string, tableNameToStructName map[string]string) {
@@ -687,26 +626,7 @@ func mapTableDirectiveStructNames(doc *ast.CommentGroup, structName string, tabl
 }
 
 // processDeclarations processes all struct declarations in the file
-func processDeclarations(
-	f *ast.File,
-	tableNameToStructName map[string]string,
-	globalEnumsMap map[string]Enum,
-	embeddedFields *[]EmbeddedField,
-	schemaFields *[]Field,
-	schemaIndexes *[]Index,
-	schemaConstraints *[]Constraint,
-	tableDirectives *[]Table,
-	extensions *[]Extension,
-	functions *[]Function,
-	views *[]View,
-	materializedViews *[]MaterializedView,
-	triggers *[]Trigger,
-	rlsPolicies *[]RLSPolicy,
-	rlsEnabledTables *[]RLSEnabledTable,
-	roles *[]Role,
-	grants *[]Grant,
-	schemas *[]Schema,
-) {
+func (s *schemaParseState) processDeclarations(f *ast.File) error {
 	for _, decl := range f.Decls {
 		genDecl, ok := decl.(*ast.GenDecl)
 		if !ok {
@@ -723,10 +643,15 @@ func processDeclarations(
 				continue
 			}
 
-			processTableComments(structName, genDecl, tableDirectives, schemaConstraints, extensions, functions, views, materializedViews, triggers, rlsPolicies, rlsEnabledTables, roles, grants, schemas)
-			processFieldComments(structName, structType, globalEnumsMap, schemaFields, embeddedFields, schemaIndexes, schemaConstraints, extensions, functions, views, materializedViews, triggers, rlsPolicies, rlsEnabledTables, roles, grants)
+			if err := s.processTableComments(structName, genDecl); err != nil {
+				return err
+			}
+			if err := s.processFieldComments(structName, structType); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
 // processAllFileComments scans all comments in the file for RLS annotations
@@ -825,10 +750,14 @@ func parseFunctionComment(comment *ast.Comment, structName string, functions *[]
 	*functions = append(*functions, fn)
 }
 
-func parseViewComment(comment *ast.Comment, structName string, views *[]View) {
+func parseViewComment(comment *ast.Comment, structName string, views *[]View) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	validateAttributes(kv, knownViewAttributes, "//migrator:schema:view", structName)
-	requireAttributes(kv, []string{"name", "body"}, "//migrator:schema:view", structName)
+	if err := validateAttributes(kv, knownViewAttributes, "//migrator:schema:view", structName); err != nil {
+		return err
+	}
+	if err := requireAttributes(kv, []string{"name", "body"}, "//migrator:schema:view", structName); err != nil {
+		return err
+	}
 	*views = append(*views, View{
 		StructName: structName,
 		Name:       kv["name"],
@@ -836,12 +765,17 @@ func parseViewComment(comment *ast.Comment, structName string, views *[]View) {
 		WithCheck:  kv["with_check"] == "true",
 		Comment:    kv["comment"],
 	})
+	return nil
 }
 
-func parseMaterializedViewComment(comment *ast.Comment, structName string, materializedViews *[]MaterializedView) {
+func parseMaterializedViewComment(comment *ast.Comment, structName string, materializedViews *[]MaterializedView) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	validateAttributes(kv, knownMaterializedViewAttributes, "//migrator:schema:matview", structName)
-	requireAttributes(kv, []string{"name", "body"}, "//migrator:schema:matview", structName)
+	if err := validateAttributes(kv, knownMaterializedViewAttributes, "//migrator:schema:matview", structName); err != nil {
+		return err
+	}
+	if err := requireAttributes(kv, []string{"name", "body"}, "//migrator:schema:matview", structName); err != nil {
+		return err
+	}
 	refreshStrategy := kv["refresh_strategy"]
 	if refreshStrategy == "" {
 		refreshStrategy = "manual"
@@ -855,12 +789,17 @@ func parseMaterializedViewComment(comment *ast.Comment, structName string, mater
 	}
 	matView.Canonicalize()
 	*materializedViews = append(*materializedViews, matView)
+	return nil
 }
 
-func parseTriggerComment(comment *ast.Comment, structName string, triggers *[]Trigger) {
+func parseTriggerComment(comment *ast.Comment, structName string, triggers *[]Trigger) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	validateAttributes(kv, knownTriggerAttributes, "//migrator:schema:trigger", structName)
-	requireAttributes(kv, []string{"name", "table", "timing", "event", "body"}, "//migrator:schema:trigger", structName)
+	if err := validateAttributes(kv, knownTriggerAttributes, "//migrator:schema:trigger", structName); err != nil {
+		return err
+	}
+	if err := requireAttributes(kv, []string{"name", "table", "timing", "event", "body"}, "//migrator:schema:trigger", structName); err != nil {
+		return err
+	}
 	trigger := Trigger{
 		StructName: structName,
 		Name:       kv["name"],
@@ -873,6 +812,7 @@ func parseTriggerComment(comment *ast.Comment, structName string, triggers *[]Tr
 	}
 	trigger.Canonicalize()
 	*triggers = append(*triggers, trigger)
+	return nil
 }
 
 func parseRLSPolicyComment(comment *ast.Comment, structName string, rlsPolicies *[]RLSPolicy) {
@@ -949,10 +889,13 @@ func splitCommaList(value string) []string {
 }
 
 // ParseFileWithDependencies parses a Go file and automatically discovers and parses
-// related files in the same directory to resolve embedded type references
-func ParseFileWithDependencies(filename string) Database {
+// related files in the same directory to resolve embedded type references.
+func ParseFileWithDependencies(filename string) (Database, error) {
 	// Parse the main file
-	database := ParseFile(filename)
+	database, err := ParseFile(filename)
+	if err != nil {
+		return Database{}, err
+	}
 
 	// Get the directory of the main file
 	dir := filepath.Dir(filename)
@@ -961,8 +904,7 @@ func ParseFileWithDependencies(filename string) Database {
 	pattern := filepath.Join(dir, "*.go")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
-		slog.Warn("Failed to find related files", "error", err)
-		return database
+		return Database{}, fmt.Errorf("find related Go files for %q: %w", filename, err)
 	}
 
 	// Collect embedded type names that we need to resolve
@@ -978,7 +920,10 @@ func ParseFileWithDependencies(filename string) Database {
 		}
 
 		// Parse the related file
-		dbmatch := ParseFile(match)
+		dbmatch, err := ParseFile(match)
+		if err != nil {
+			return Database{}, fmt.Errorf("parse related Go file %q: %w", match, err)
+		}
 		relatedFields := dbmatch.Fields
 
 		// Only add fields from embedded types that we actually need
@@ -990,5 +935,5 @@ func ParseFileWithDependencies(filename string) Database {
 	}
 
 	buildDependencyGraph(&database)
-	return database
+	return database, nil
 }

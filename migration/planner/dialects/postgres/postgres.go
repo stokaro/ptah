@@ -942,6 +942,11 @@ func (p *Planner) removeEnums(result []ast.Node, diff *types.SchemaDiff) []ast.N
 // to SQL using a PostgreSQL-specific visitor. Comments and warnings are included
 // as CommentNode instances for documentation and safety.
 func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	nodes, _ := p.GenerateMigrationASTChecked(diff, generated)
+	return nodes
+}
+
+func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
 	var result []ast.Node
 
 	// 0. Add new extensions first (PostgreSQL extensions should be created before other objects)
@@ -1056,7 +1061,7 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	// 16. Remove extensions (dangerous!)
 	result = p.removeExtensions(result, diff)
 
-	return result
+	return result, nil
 }
 
 func (p *Planner) addNewRoles(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {

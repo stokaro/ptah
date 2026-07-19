@@ -14,6 +14,20 @@ import (
 	"github.com/stokaro/ptah/core/goschema/internal/parseutils"
 )
 
+func mustParseSource(c *qt.C, filename string, source any) goschema.Database {
+	c.Helper()
+	db, err := goschema.ParseSource(filename, source)
+	c.Assert(err, qt.IsNil)
+	return db
+}
+
+func mustParseFile(c *qt.C, filename string) goschema.Database {
+	c.Helper()
+	db, err := goschema.ParseFile(filename)
+	c.Assert(err, qt.IsNil)
+	return db
+}
+
 func TestParseKeyValueComment_SimplifiedSyntax(t *testing.T) {
 	c := qt.New(t)
 
@@ -125,7 +139,7 @@ func TestParseKeyValueComment_SimplifiedSyntax(t *testing.T) {
 func TestParseSource_FieldIdentityAttributes(t *testing.T) {
 	c := qt.New(t)
 
-	db := goschema.ParseSource("schema.go", `
+	db := mustParseSource(c, "schema.go", `
 package test
 
 //migrator:schema:table name="users"
@@ -146,8 +160,7 @@ type User struct {
 func TestParseSource_FieldIdentityAttributesRejectInvalidGeneration(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert(func() {
-		goschema.ParseSource("schema.go", `
+	_, err := goschema.ParseSource("schema.go", `
 package test
 
 //migrator:schema:table name="users"
@@ -156,13 +169,13 @@ type User struct {
 	ID int64
 }
 `)
-	}, qt.PanicMatches, `invalid identity_generation "BY_DEFUALT".*`)
+	c.Assert(err, qt.ErrorMatches, `invalid identity_generation "BY_DEFUALT".*`)
 }
 
 func TestParseSource_FieldIdentityOptionsDefaultGeneration(t *testing.T) {
 	c := qt.New(t)
 
-	db := goschema.ParseSource("schema.go", `
+	db := mustParseSource(c, "schema.go", `
 package test
 
 //migrator:schema:table name="users"
@@ -181,7 +194,7 @@ type User struct {
 func TestParseSchemaObjectAnnotations(t *testing.T) {
 	c := qt.New(t)
 
-	db := goschema.ParseSource("schema_objects.go", `
+	db := mustParseSource(c, "schema_objects.go", `
 package test
 
 //migrator:schema:view name="active_users" body="SELECT id FROM users WHERE deleted_at IS NULL" with_check="true" comment="Active users"
@@ -245,13 +258,12 @@ func TestParseSchemaObjectAnnotations_RejectsInvalidAttributes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c.Assert(func() {
-				goschema.ParseSource("schema_object_invalid.go", `
+			_, err := goschema.ParseSource("schema_object_invalid.go", `
 package test
 `+tt.annotation+`
 type User struct{}
 `)
-			}, qt.PanicMatches, ".*"+tt.want+".*")
+			c.Assert(err, qt.ErrorMatches, ".*"+tt.want+".*")
 		})
 	}
 }
@@ -393,7 +405,7 @@ type Product struct {
 	c.Assert(err, qt.IsNil)
 
 	// Parse the file
-	database := goschema.ParseFile(testFile)
+	database := mustParseFile(c, testFile)
 
 	// Should have 4 fields and 1 enum
 	c.Assert(database.Fields, qt.HasLen, 4)
@@ -434,7 +446,7 @@ type User struct {
 	err := os.WriteFile(testFile, []byte(content), 0o600)
 	c.Assert(err, qt.IsNil)
 
-	database := goschema.ParseFile(testFile)
+	database := mustParseFile(c, testFile)
 	c.Assert(database.Tables, qt.HasLen, 1)
 	c.Assert(database.Tables[0].Name, qt.Equals, "users")
 	c.Assert(database.Tables[0].Schema, qt.Equals, "auth")
@@ -474,7 +486,7 @@ type User struct {
 	err := os.WriteFile(testFile, []byte(content), 0o600)
 	c.Assert(err, qt.IsNil)
 
-	database := goschema.ParseFile(testFile)
+	database := mustParseFile(c, testFile)
 	c.Assert(database.Constraints, qt.HasLen, 2)
 	c.Assert(database.Constraints[0].Table, qt.Equals, "auth.users")
 	c.Assert(database.Constraints[1].Table, qt.Equals, "auth.users")
@@ -740,7 +752,7 @@ func TestParseFunctionComment(t *testing.T) {
 			tmp := t.TempDir() + "/fn.go"
 			c.Assert(os.WriteFile(tmp, []byte(src), 0o644), qt.IsNil) //nolint:gosec // 0644 is fine for a test fixture
 
-			db := goschema.ParseFile(tmp)
+			db := mustParseFile(c, tmp)
 			c.Assert(db.Functions, qt.HasLen, 1)
 			c.Assert(db.Functions[0], qt.DeepEquals, tt.expected)
 		})
@@ -987,15 +999,9 @@ type Widget struct {
 			err := os.WriteFile(testFile, []byte(content), 0644) //nolint:gosec // 0644 is fine for tests
 			c.Assert(err, qt.IsNil)
 
-			defer func() {
-				r := recover()
-				c.Assert(r, qt.IsNotNil, qt.Commentf("expected panic for unknown attribute"))
-				msg, _ := r.(string)
-				c.Assert(msg, qt.Contains, "unknown annotation attribute")
-				c.Assert(msg, qt.Contains, tt.mustContain)
-			}()
-
-			_ = goschema.ParseFile(testFile)
+			_, err = goschema.ParseFile(testFile)
+			c.Assert(err, qt.ErrorMatches, ".*unknown annotation attribute.*")
+			c.Assert(err.Error(), qt.Contains, tt.mustContain)
 		})
 	}
 }
@@ -1025,7 +1031,7 @@ type Widget struct {
 	err := os.WriteFile(testFile, []byte(content), 0644) //nolint:gosec // 0644 is fine for tests
 	c.Assert(err, qt.IsNil)
 
-	database := goschema.ParseFile(testFile)
+	database := mustParseFile(c, testFile)
 	c.Assert(database.Fields, qt.HasLen, 3)
 }
 
@@ -1059,7 +1065,7 @@ type CommodityService struct {
 	err := os.WriteFile(testFile, []byte(content), 0644) //nolint:gosec // 0644 is fine for tests
 	c.Assert(err, qt.IsNil)
 
-	database := goschema.ParseFile(testFile)
+	database := mustParseFile(c, testFile)
 
 	var fkField *goschema.Field
 	for i, f := range database.Fields {
@@ -1151,7 +1157,7 @@ type File struct {
 	err := os.WriteFile(testFile, []byte(content), 0644) //nolint:gosec // 0644 is fine for tests
 	c.Assert(err, qt.IsNil)
 
-	database := goschema.ParseFile(testFile)
+	database := mustParseFile(c, testFile)
 
 	var category, typ *goschema.Field
 	for i, f := range database.Fields {

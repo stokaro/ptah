@@ -571,6 +571,11 @@ func (p *Planner) handleEnumRemovals(result []ast.Node, diff *types.SchemaDiff) 
 // to SQL using a MySQL-specific visitor. Comments and warnings are included
 // as CommentNode instances for documentation and safety.
 func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	nodes, _ := p.GenerateMigrationASTChecked(diff, generated)
+	return nodes
+}
+
+func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
 	var result []ast.Node
 
 	// Note: MySQL doesn't use separate enum types like PostgreSQL
@@ -591,7 +596,9 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	// 4.5. Add and modify views/triggers after tables exist.
 	result = p.addNewViews(result, diff, generated)
 	result = p.modifyExistingViews(result, diff, generated)
-	p.rejectMaterializedViews(diff)
+	if err := p.rejectMaterializedViews(diff); err != nil {
+		return nil, err
+	}
 	result = p.addNewTriggers(result, diff, generated)
 	result = p.modifyExistingTriggers(result, diff, generated)
 
@@ -617,16 +624,16 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 	// 8. Handle enum removals (MySQL-specific warnings)
 	result = p.handleEnumRemovals(result, diff)
 
-	return result
+	return result, nil
 }
 
-func (p *Planner) rejectMaterializedViews(diff *types.SchemaDiff) {
+func (p *Planner) rejectMaterializedViews(diff *types.SchemaDiff) error {
 	if len(diff.MaterializedViewsAdded) == 0 &&
 		len(diff.MaterializedViewsModified) == 0 &&
 		len(diff.MaterializedViewsRemoved) == 0 {
-		return
+		return nil
 	}
-	panic("materialized views are not supported by MySQL or MariaDB; remove matview definitions for this target")
+	return fmt.Errorf("materialized views are not supported by MySQL or MariaDB; remove matview definitions for this target")
 }
 
 func (p *Planner) addNewViews(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {

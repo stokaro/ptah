@@ -288,7 +288,7 @@ func parseStringAsGoFile(c *qt.C, content string) goschema.Database {
 	c.Assert(err, qt.IsNil)
 
 	// Parse the file
-	return goschema.ParseFile(tmpFile)
+	return mustParseFile(c, tmpFile)
 }
 
 // Helper function to write content to a file

@@ -287,6 +287,38 @@ func TestParseDir_ErrorHandling(t *testing.T) {
 	}
 }
 
+func TestParseDir_InvalidFieldAttributeReturnsError(t *testing.T) {
+	c := qt.New(t)
+
+	rootDir := c.TempDir()
+	source := `package models
+
+//migrator:schema:table name="users"
+type User struct {
+	//migrator:schema:field name="id" type="int" bogus="y"
+	ID int64
+}
+`
+	err := os.WriteFile(filepath.Join(rootDir, "user.go"), []byte(source), 0o600)
+	c.Assert(err, qt.IsNil)
+
+	result, err := goschema.ParseDir(rootDir)
+	c.Assert(result, qt.IsNil)
+	c.Assert(err, qt.ErrorMatches, `unknown annotation attribute "bogus" on //migrator:schema:field at User.ID`)
+}
+
+func TestParseDir_SyntaxErrorReturnsError(t *testing.T) {
+	c := qt.New(t)
+
+	rootDir := c.TempDir()
+	err := os.WriteFile(filepath.Join(rootDir, "broken.go"), []byte("package models\nfunc broken("), 0o600)
+	c.Assert(err, qt.IsNil)
+
+	result, err := goschema.ParseDir(rootDir)
+	c.Assert(result, qt.IsNil)
+	c.Assert(err, qt.ErrorMatches, `.*parse Go source "broken.go":.*`)
+}
+
 func TestParseDir_Deduplication(t *testing.T) {
 	c := qt.New(t)
 
@@ -728,7 +760,7 @@ func TestParseFS_ErrorCases(t *testing.T) {
 	}
 }
 
-func TestParseFS_PanicCases(t *testing.T) {
+func TestParseFS_SyntaxErrorReturnsError(t *testing.T) {
 	tests := []struct {
 		name  string
 		files map[string]string
@@ -755,10 +787,9 @@ type User struct {
 			// Create test filesystem
 			fsys := createTestFS(tt.files)
 
-			// Expect panic
-			c.Assert(func() {
-				_, _ = goschema.ParseFS(fsys, ".")
-			}, qt.PanicMatches, "Failed to parse file")
+			result, err := goschema.ParseFS(fsys, ".")
+			c.Assert(result, qt.IsNil)
+			c.Assert(err, qt.ErrorMatches, `.*parse Go source "invalid.go":.*`)
 		})
 	}
 }
@@ -1382,7 +1413,7 @@ func TestParseDir_ReflectionGuard(t *testing.T) {
 		full := filepath.Join(fixtureDir, e.Name())
 		content, err := os.ReadFile(full)
 		c.Assert(err, qt.IsNil)
-		db := goschema.ParseSource(e.Name(), string(content))
+		db := mustParseSource(c, e.Name(), string(content))
 		// General reflection merge over ALL slice fields from ParseSource (future-proof, no hard-coded list of 6)
 		fvSrc := reflect.ValueOf(db)
 		fvDst := reflect.ValueOf(&merged).Elem()

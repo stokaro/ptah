@@ -162,7 +162,10 @@ func migrateCommandWithFlags(cmd *cobra.Command, flags map[string]cobraflags.Fla
 
 	// 4. Display differences summary
 	info := conn.Info()
-	astNodes := planner.GenerateSchemaDiffASTWithCapabilities(diff, result, info.Dialect, info.Capabilities)
+	astNodes, err := planner.GenerateSchemaDiffASTWithCapabilities(diff, result, info.Dialect, info.Capabilities)
+	if err != nil {
+		return fmt.Errorf("error generating migration plan: %w", err)
+	}
 	assessments, err := safety.AssessRenderedWithCapabilities(astNodes, info.Dialect, info.Capabilities)
 	if err != nil {
 		return fmt.Errorf("error assessing migration safety: %w", err)

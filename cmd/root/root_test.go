@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/spf13/cobra"
 )
 
 func TestNewRootCommand_UsesPtahBranding(t *testing.T) {
@@ -95,4 +96,22 @@ func TestNewRootCommand_PTAHDBURLFeedsCommandFlag(t *testing.T) {
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Not(qt.Contains), "database URL is required")
 	c.Assert(err.Error(), qt.Contains, "error connecting to database")
+}
+
+func TestExecuteWithRecovery_ConvertsCommandPanicToError(t *testing.T) {
+	c := qt.New(t)
+
+	var stderr bytes.Buffer
+	cmd := &cobra.Command{
+		Use: "panic",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			panic("bad annotation")
+		},
+	}
+	cmd.SetErr(&stderr)
+
+	err := executeWithRecovery(cmd)
+
+	c.Assert(err, qt.ErrorMatches, "internal error: bad annotation")
+	c.Assert(stderr.String(), qt.Contains, "error: internal error: bad annotation")
 }

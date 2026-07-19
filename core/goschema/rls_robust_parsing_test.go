@@ -5,7 +5,6 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/goschema/testutil"
 )
 
@@ -142,7 +141,7 @@ type User struct {
 			defer testutil.RemoveTempFile(t, tempFile)
 
 			// Parse the file
-			database := goschema.ParseFile(tempFile)
+			database := mustParseFile(c, tempFile)
 
 			// Check RLS policies
 			c.Assert(database.RLSPolicies, qt.HasLen, tt.expectedPolicies,

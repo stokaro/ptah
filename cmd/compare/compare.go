@@ -103,7 +103,10 @@ func compareCommand(_ *cobra.Command, _ []string) error {
 	diff := schemadiff.CompareWithDialect(result, dbSchema, info.Dialect)
 
 	// 4. Display differences
-	output := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(diff, result, info.Dialect, info.Capabilities)
+	output, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(diff, result, info.Dialect, info.Capabilities)
+	if err != nil {
+		return fmt.Errorf("error generating schema diff SQL: %w", err)
+	}
 	fmt.Print(output)
 
 	return nil

@@ -25,7 +25,7 @@ tables:
 `))
 	c.Assert(err, qt.IsNil)
 
-	goDB := goschema.ParseSource("schema.go", `
+	goDB, err := goschema.ParseSource("schema.go", `
 package test
 
 //migrator:schema:table name="users"
@@ -40,6 +40,7 @@ type User struct {
 	_ int
 }
 `)
+	c.Assert(err, qt.IsNil)
 
 	yamlSQL := strings.Join(renderer.GetOrderedCreateStatements(yamlDB, "postgres"), "\n")
 	goSQL := strings.Join(renderer.GetOrderedCreateStatements(&goDB, "postgres"), "\n")

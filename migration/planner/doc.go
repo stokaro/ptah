@@ -26,6 +26,7 @@
 //
 //	type Planner interface {
 //		GenerateMigrationAST(diff *types.SchemaDiff, generated *goschema.Database) []ast.Node
+//		GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error)
 //	}
 //
 // # Main Functions
@@ -45,7 +46,10 @@
 //	diff := schemadiff.Compare(generated, database)
 //
 //	// Generate SQL statements for PostgreSQL
-//	statements := planner.GenerateSchemaDiffSQLStatements(diff, generated, "postgres")
+//	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, "postgres")
+//	if err != nil {
+//		log.Fatal(err)
+//	}
 //
 //	// Execute statements
 //	for _, stmt := range statements {

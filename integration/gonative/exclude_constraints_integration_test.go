@@ -159,7 +159,8 @@ func TestExcludeConstraints_EndToEnd_PostgreSQL(t *testing.T) {
 			c.Assert(len(diff.ConstraintsAdded), qt.Equals, len(tt.expectedSQL))
 
 			// Step 3: Generate migration AST using PostgreSQL planner
-			nodes := planner.GenerateSchemaDiffAST(diff, tt.generated, "postgres")
+			nodes, err := planner.GenerateSchemaDiffAST(diff, tt.generated, "postgres")
+			c.Assert(err, qt.IsNil)
 
 			// Step 4: Render AST to SQL
 			sql, err := renderer.RenderSQL("postgres", nodes...)
@@ -229,7 +230,8 @@ func TestExcludeConstraints_EndToEnd_MySQL(t *testing.T) {
 	diff := schemadiff.Compare(generated, database)
 
 	// Step 2: Generate migration AST using MySQL planner
-	nodes := planner.GenerateSchemaDiffAST(diff, generated, "mysql")
+	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, "mysql")
+	c.Assert(err, qt.IsNil)
 
 	// Step 3: Render AST to SQL
 	sql, err := renderer.RenderSQL("mysql", nodes...)
@@ -298,6 +300,7 @@ func TestExcludeConstraints_EmptySchema(t *testing.T) {
 	c.Assert(diff.HasChanges(), qt.IsFalse)
 
 	// Generate migration AST - should be empty
-	nodes := planner.GenerateSchemaDiffAST(diff, generated, "postgres")
+	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, "postgres")
+	c.Assert(err, qt.IsNil)
 	c.Assert(len(nodes), qt.Equals, 0)
 }

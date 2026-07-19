@@ -25,7 +25,11 @@ func DemonstrateASTApproach() {
 		Build()
 
 	// Render for PostgreSQL
-	pgRenderer := renderer.NewRenderer("postgresql")
+	pgRenderer, err := renderer.NewRenderer("postgresql")
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
 	pgSQL, err := pgRenderer.Render(table)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
@@ -36,7 +40,11 @@ func DemonstrateASTApproach() {
 	fmt.Println(pgSQL)
 
 	// Render for MySQL
-	mysqlRenderer := renderer.NewRenderer("mysql")
+	mysqlRenderer, err := renderer.NewRenderer("mysql")
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
 	mysqlSQL, err := mysqlRenderer.Render(table)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
