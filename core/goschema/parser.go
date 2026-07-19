@@ -612,7 +612,7 @@ func (s *schemaParseState) processFileAST(f *ast.File) error {
 	}
 
 	// Process all file comments for RLS annotations that might not be associated with struct declarations
-	processAllFileComments(f, s.tableNameToStructName, &s.rlsPolicies, &s.rlsEnabledTables)
+	s.processAllFileComments(f)
 	return nil
 }
 
@@ -665,79 +665,98 @@ func (s *schemaParseState) processDeclarations(f *ast.File) error {
 	return nil
 }
 
-// processAllFileComments scans all comments in the file for RLS annotations
-// that might not be directly associated with struct declarations due to blank lines
-func processAllFileComments(f *ast.File, tableNameToStructName map[string]string, rlsPolicies *[]RLSPolicy, rlsEnabledTables *[]RLSEnabledTable) {
-	// Create sets to track already processed RLS policies and enabled tables to avoid duplicates
-	existingPolicies := make(map[string]bool)
-	existingEnabledTables := make(map[string]bool)
+// processAllFileComments scans comments for RLS annotations that are separated
+// from struct declarations by blank lines.
+func (s *schemaParseState) processAllFileComments(f *ast.File) {
+	seen := s.newRLSCommentSet()
 
-	for _, policy := range *rlsPolicies {
-		existingPolicies[policy.Name] = true
-	}
-
-	for _, table := range *rlsEnabledTables {
-		existingEnabledTables[table.Table] = true
-	}
-
-	// Scan all comment groups in the file
 	for _, commentGroup := range f.Comments {
 		for _, comment := range commentGroup.List {
-			switch {
-			case strings.HasPrefix(comment.Text, "//migrator:schema:rls:policy"):
-				kv := parseutils.ParseKeyValueComment(comment.Text)
-				policyName := kv["name"]
-				tableName := kv["table"]
-
-				// Skip if we already have this policy, if policy name is empty, or if we can't find the struct name
-				if existingPolicies[policyName] || policyName == "" || tableName == "" {
-					continue
-				}
-
-				structName, exists := tableNameToStructName[tableName]
-				if !exists {
-					continue
-				}
-
-				policy := RLSPolicy{
-					StructName:          structName,
-					Name:                policyName,
-					Table:               tableName,
-					PolicyFor:           kv["for"],
-					ToRoles:             kv["to"],
-					UsingExpression:     kv["using"],
-					WithCheckExpression: kv["with_check"],
-					Comment:             kv["comment"],
-				}
-
-				*rlsPolicies = append(*rlsPolicies, policy)
-				existingPolicies[policyName] = true
-
-			case strings.HasPrefix(comment.Text, "//migrator:schema:rls:enable"):
-				kv := parseutils.ParseKeyValueComment(comment.Text)
-				tableName := kv["table"]
-
-				// Skip if we already have this table enabled or if we can't find the struct name
-				if existingEnabledTables[tableName] || tableName == "" {
-					continue
-				}
-
-				structName, exists := tableNameToStructName[tableName]
-				if !exists {
-					continue
-				}
-
-				rlsEnabled := RLSEnabledTable{
-					StructName: structName,
-					Table:      tableName,
-					Comment:    kv["comment"],
-				}
-
-				*rlsEnabledTables = append(*rlsEnabledTables, rlsEnabled)
-				existingEnabledTables[tableName] = true
-			}
+			s.parseFileScopedRLSComment(comment, seen)
 		}
 	}
+}
+
+type rlsCommentSet struct {
+	policies      map[string]struct{}
+	enabledTables map[string]struct{}
+}
+
+func (s *schemaParseState) newRLSCommentSet() rlsCommentSet {
+	seen := rlsCommentSet{
+		policies:      make(map[string]struct{}, len(s.rlsPolicies)),
+		enabledTables: make(map[string]struct{}, len(s.rlsEnabledTables)),
+	}
+
+	for _, policy := range s.rlsPolicies {
+		seen.policies[policy.Name] = struct{}{}
+	}
+	for _, table := range s.rlsEnabledTables {
+		seen.enabledTables[table.Table] = struct{}{}
+	}
+
+	return seen
+}
+
+func (s *schemaParseState) parseFileScopedRLSComment(comment *ast.Comment, seen rlsCommentSet) {
+	switch {
+	case strings.HasPrefix(comment.Text, "//migrator:schema:rls:policy"):
+		s.parseFileScopedRLSPolicyComment(comment, seen)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:rls:enable"):
+		s.parseFileScopedRLSEnableComment(comment, seen)
+	}
+}
+
+func (s *schemaParseState) parseFileScopedRLSPolicyComment(comment *ast.Comment, seen rlsCommentSet) {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	policyName := kv["name"]
+	tableName := kv["table"]
+	if policyName == "" || tableName == "" {
+		return
+	}
+	if _, exists := seen.policies[policyName]; exists {
+		return
+	}
+
+	structName, exists := s.tableNameToStructName[tableName]
+	if !exists {
+		return
+	}
+
+	s.rlsPolicies = append(s.rlsPolicies, RLSPolicy{
+		StructName:          structName,
+		Name:                policyName,
+		Table:               tableName,
+		PolicyFor:           kv["for"],
+		ToRoles:             kv["to"],
+		UsingExpression:     kv["using"],
+		WithCheckExpression: kv["with_check"],
+		Comment:             kv["comment"],
+	})
+	seen.policies[policyName] = struct{}{}
+}
+
+func (s *schemaParseState) parseFileScopedRLSEnableComment(comment *ast.Comment, seen rlsCommentSet) {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	tableName := kv["table"]
+	if tableName == "" {
+		return
+	}
+	if _, exists := seen.enabledTables[tableName]; exists {
+		return
+	}
+
+	structName, exists := s.tableNameToStructName[tableName]
+	if !exists {
+		return
+	}
+
+	s.rlsEnabledTables = append(s.rlsEnabledTables, RLSEnabledTable{
+		StructName: structName,
+		Table:      tableName,
+		Comment:    kv["comment"],
+	})
+	seen.enabledTables[tableName] = struct{}{}
 }
 
 func (s *schemaParseState) parseFunctionComment(comment *ast.Comment, structName string) {
