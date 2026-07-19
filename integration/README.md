@@ -1,6 +1,6 @@
 # Ptah Migration Library Integration Tests
 
-This directory contains comprehensive integration tests for the Ptah migration library. The tests validate migration functionality across multiple database backends including PostgreSQL, MySQL, MariaDB, ClickHouse, and opt-in PostgreSQL-family distributed SQL targets.
+This directory contains comprehensive integration tests for the Ptah migration library. The tests validate migration functionality across PostgreSQL-family targets, MySQL, MariaDB, and ClickHouse.
 
 ## Overview
 
@@ -22,9 +22,10 @@ The integration test suite covers all aspects of the migration system as outline
 - Re-apply already applied migrations
 - Run migrate up when database is already up-to-date
 
-### 🔀 Concurrency
-- Launch parallel migrate up processes
-- Ensure locking prevents double-apply
+### 🔀 Parallel Execution Smoke
+- Launch two migrate up processes in parallel
+- Verify at least one runner succeeds and the final migration state is consistent
+- Ptah does not yet provide a migration-level lock; enforce a single production runner externally until #124 lands
 
 ### 🧪 Partial Failure Recovery
 - Handle multi-step migrations with intentional failures

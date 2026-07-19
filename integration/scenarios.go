@@ -78,11 +78,11 @@ func GetAllScenarios() []TestScenario {
 			TestFunc:    testIdempotencyUpToDate,
 		},
 
-		// Concurrency
+		// Parallel execution smoke
 		{
-			Name:        "concurrency_parallel_migrate",
-			Description: "Launch two migrate up processes in parallel",
-			TestFunc:    testConcurrencyParallelMigrate,
+			Name:        "parallel_migrate_smoke",
+			Description: "Launch two migrate up processes in parallel and verify final consistency",
+			TestFunc:    testParallelMigrateSmoke,
 		},
 
 		// Partial Failure Recovery
