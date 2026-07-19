@@ -144,10 +144,12 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 
 	out := cmd.OutOrStdout()
 	fmt.Fprintf(out, "Generated migration files for %s:\n", dbschema.FormatDatabaseURL(dbURL))
-	fmt.Fprintf(out, "UP:   %s\n", files.UpFile)
-	fmt.Fprintf(out, "DOWN: %s\n", files.DownFile)
-	if files.ReportFile != "" {
-		fmt.Fprintf(out, "REPORT: %s\n", files.ReportFile)
+	for _, pair := range files.Files {
+		fmt.Fprintf(out, "UP:   %s\n", pair.UpFile)
+		fmt.Fprintf(out, "DOWN: %s\n", pair.DownFile)
+		if pair.ReportFile != "" {
+			fmt.Fprintf(out, "REPORT: %s\n", pair.ReportFile)
+		}
 	}
 	return nil
 }

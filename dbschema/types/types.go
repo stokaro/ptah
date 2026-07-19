@@ -25,12 +25,13 @@ type DBSchema struct {
 
 // DBTable represents a database table
 type DBTable struct {
-	Name       string     `json:"name"`
-	Schema     string     `json:"schema,omitempty"`
-	Type       string     `json:"type"` // TABLE, VIEW, etc.
-	Comment    string     `json:"comment"`
-	Columns    []DBColumn `json:"columns"`
-	RLSEnabled bool       `json:"rls_enabled"` // Whether RLS is enabled on this table (PostgreSQL)
+	Name          string     `json:"name"`
+	Schema        string     `json:"schema,omitempty"`
+	Type          string     `json:"type"` // TABLE, VIEW, etc.
+	Comment       string     `json:"comment"`
+	Columns       []DBColumn `json:"columns"`
+	EstimatedRows int64      `json:"estimated_rows,omitempty"` // Best-effort planner estimate from database statistics
+	RLSEnabled    bool       `json:"rls_enabled"`              // Whether RLS is enabled on this table (PostgreSQL)
 }
 
 // QualifiedName returns schema.table when Schema is set, or Name otherwise.

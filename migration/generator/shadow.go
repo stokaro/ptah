@@ -61,13 +61,17 @@ type shadowMigrationOptions struct {
 	MigrationsDir string
 	Dialect       string
 	Capabilities  capability.Capabilities
-	Version       int64
-	Name          string
-	UpSQL         string
-	DownSQL       string
+	Candidates    []shadowCandidate
 	Generated     *goschema.Database
 	CompareOpts   *config.CompareOptions
 	Schemas       []string
+}
+
+type shadowCandidate struct {
+	Version int64
+	Name    string
+	UpSQL   string
+	DownSQL string
 }
 
 func verifyShadowMigration(ctx context.Context, opts shadowMigrationOptions) error {
@@ -94,10 +98,13 @@ func verifyShadowMigration(ctx context.Context, opts shadowMigrationOptions) err
 		return fmt.Errorf("shadow check failed: load prior migrations: %w", err)
 	}
 
-	candidate := migrator.CreateMigrationFromSQL(opts.Version, opts.Name, opts.UpSQL, opts.DownSQL)
-	migrations := make([]*migrator.Migration, 0, len(prior)+1)
+	migrations := make([]*migrator.Migration, 0, len(prior)+len(opts.Candidates))
 	migrations = append(migrations, prior...)
-	migrations = append(migrations, candidate)
+	for _, candidate := range opts.Candidates {
+		migrations = append(migrations,
+			migrator.CreateMigrationFromSQL(candidate.Version, candidate.Name, candidate.UpSQL, candidate.DownSQL),
+		)
+	}
 
 	mig := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migrations...))
 	if err := mig.MigrateUp(replayCtx); err != nil {
@@ -114,7 +121,7 @@ func verifyShadowMigration(ctx context.Context, opts shadowMigrationOptions) err
 	if err := mig.MigrateDownTo(replayCtx, previousVersion); err != nil {
 		return fmt.Errorf("shadow check failed: round-trip down: %w", err)
 	}
-	if err := mig.MigrateTo(replayCtx, opts.Version); err != nil {
+	if err := mig.MigrateTo(replayCtx, latestMigrationVersion(migrations)); err != nil {
 		return fmt.Errorf("shadow check failed: round-trip up: %w", err)
 	}
 	return assertShadowSchemaMatches(conn, opts)

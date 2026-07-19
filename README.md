@@ -878,6 +878,16 @@ additions that must be used later in the same migration. Ptah rejects migration
 timeouts on `no_transaction` migrations because those statements run as raw
 autocommit SQL instead of through the transaction-bound writer.
 
+Generated PostgreSQL migrations also use this path for indexes on populated
+existing tables. If live introspection reports an existing table with an
+estimated row count greater than zero, `migrate generate` emits
+`CREATE INDEX CONCURRENTLY` for new indexes on that table and writes the file
+with `-- +ptah no_transaction`. When a change set also contains ordinary
+transactional DDL, Ptah splits the output into separate migration versions:
+transactional changes first, then concurrent indexes. PostgreSQL-family targets
+whose capability preset disables concurrent indexes, including YugabyteDB and
+CockroachDB, keep regular `CREATE INDEX` output.
+
 Ptah detects out-of-order migrations from the applied version set. By default,
 `migrate-up` uses `--exec-order=linear` and fails if a pending migration version is
 below the current high-water mark, which catches ordinary branch merge races instead

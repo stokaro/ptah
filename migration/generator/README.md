@@ -228,6 +228,25 @@ type GenerateMigrationOptions struct {
 - `Schemas`: PostgreSQL schema allow-list for database introspection (optional)
 - `ShadowDatabaseURL`: Disposable database URL for pre-write migration replay and round-trip checks (optional)
 
+### PostgreSQL Concurrent Indexes
+
+When Ptah generates a new PostgreSQL index on an existing table whose
+introspected row estimate is greater than zero, it emits `CREATE INDEX
+CONCURRENTLY` and marks that migration file with `-- +ptah no_transaction`.
+This avoids PostgreSQL's `CREATE INDEX CONCURRENTLY cannot run inside a
+transaction block` failure and reduces write blocking on populated tables.
+
+If a generated change set contains both ordinary transactional DDL and
+concurrent index builds, Ptah writes separate migration file pairs: the
+transactional migration first, then the `no_transaction` concurrent-index
+migration at the next version. Rollbacks naturally run in the reverse order, so
+the index is dropped before prerequisite schema changes are reverted.
+
+Ptah only enables this policy when the live target capabilities include
+PostgreSQL `CREATE INDEX CONCURRENTLY`. PostgreSQL-wire engines such as
+YugabyteDB and CockroachDB keep regular `CREATE INDEX` output when their
+capability preset disables the keyword.
+
 ### Database URL Examples
 
 - PostgreSQL: `postgres://user:password@localhost:5432/database`

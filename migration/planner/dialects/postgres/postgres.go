@@ -72,6 +72,11 @@ type Planner struct {
 	// postgres-compatible preset without it (CockroachDB, issue #171) keeps
 	// plain CREATE INDEX no matter the policy.
 	concurrentIndexes bool
+	// concurrentIndexNames requests CREATE INDEX CONCURRENTLY only for the
+	// listed newly added index names. This lets the generator target indexes
+	// on populated existing tables without changing indexes on newly-created
+	// tables.
+	concurrentIndexNames map[string]struct{}
 }
 
 // New returns a planner configured with the current PostgreSQL line preset
@@ -111,6 +116,32 @@ func (p *Planner) WithConcurrentIndexes() *Planner {
 	cp := *p
 	cp.concurrentIndexes = true
 	return &cp
+}
+
+// WithConcurrentIndexNames returns a copy of the planner that emits
+// CREATE [UNIQUE] INDEX CONCURRENTLY only for the listed newly added indexes,
+// provided the target capability set includes capability.CreateIndexConcurrently.
+func (p *Planner) WithConcurrentIndexNames(indexNames ...string) *Planner {
+	cp := *p
+	cp.concurrentIndexNames = maps.Clone(p.concurrentIndexNames)
+	if cp.concurrentIndexNames == nil {
+		cp.concurrentIndexNames = make(map[string]struct{}, len(indexNames))
+	}
+	for _, indexName := range indexNames {
+		indexName = strings.TrimSpace(indexName)
+		if indexName != "" {
+			cp.concurrentIndexNames[indexName] = struct{}{}
+		}
+	}
+	return &cp
+}
+
+func (p *Planner) usesConcurrentIndex(indexName string) bool {
+	if p.concurrentIndexes {
+		return true
+	}
+	_, ok := p.concurrentIndexNames[indexName]
+	return ok
 }
 
 func (p *Planner) addNewEnums(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
@@ -770,7 +801,7 @@ func (p *Planner) addNewIndexes(result []ast.Node, diff *types.SchemaDiff, gener
 				// planner never emits it for a target that rejects it
 				// (issue #226; CockroachDB-style presets keep plain
 				// CREATE INDEX even when the policy is on).
-				if p.concurrentIndexes && p.capabilities().Has(capability.CreateIndexConcurrently) {
+				if p.usesConcurrentIndex(indexName) && p.capabilities().Has(capability.CreateIndexConcurrently) {
 					indexNode.Concurrently = true
 				}
 				result = append(result, indexNode)
