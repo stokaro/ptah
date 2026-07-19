@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/stokaro/ptah/dbschema"
 )
@@ -22,6 +23,7 @@ type MigrationProvider interface {
 
 // RegisteredMigrationProvider is a simple in-memory implementation of MigrationProvider
 type RegisteredMigrationProvider struct {
+	mu         sync.Mutex
 	migrations []*Migration
 	sorted     bool
 }
@@ -30,24 +32,30 @@ type RegisteredMigrationProvider struct {
 // The migrations will be sorted by version when accessed through the Migrations() method.
 func NewRegisteredMigrationProvider(migrations ...*Migration) *RegisteredMigrationProvider {
 	return &RegisteredMigrationProvider{
-		migrations: migrations,
+		migrations: slices.Clone(migrations),
 	}
 }
 
 // Register adds a migration to the provider
 func (p *RegisteredMigrationProvider) Register(migration *Migration) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	p.migrations = append(p.migrations, migration)
 	p.sorted = false
 }
 
 // Migrations returns the list of migrations sorted by version in ascending order
 func (p *RegisteredMigrationProvider) Migrations() []*Migration {
-	p.maybeSort()
-	return p.migrations
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.maybeSortLocked()
+	return slices.Clone(p.migrations)
 }
 
 // maybeSort sorts the migrations if they haven't been sorted yet
-func (p *RegisteredMigrationProvider) maybeSort() {
+func (p *RegisteredMigrationProvider) maybeSortLocked() {
 	if p.sorted {
 		return
 	}
@@ -59,6 +67,7 @@ func (p *RegisteredMigrationProvider) maybeSort() {
 // It scans the filesystem for migration files following the naming convention and
 // automatically creates Migration instances from the SQL files.
 type FSMigrationProvider struct {
+	mu                sync.Mutex
 	fsys              fs.FS
 	migrations        []*Migration
 	interceptor       StatementInterceptor
@@ -118,7 +127,10 @@ func NewFSMigrationProvider(fsys fs.FS, opts ...FSProviderOption) (*FSMigrationP
 
 // Migrations returns the list of migrations loaded from the filesystem, sorted by version in ascending order.
 func (p *FSMigrationProvider) Migrations() []*Migration {
-	return p.migrations
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return slices.Clone(p.migrations)
 }
 
 func (p *FSMigrationProvider) load() error {

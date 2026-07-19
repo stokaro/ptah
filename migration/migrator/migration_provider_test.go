@@ -3,6 +3,7 @@ package migrator_test
 import (
 	"context"
 	"io/fs"
+	"sync"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -109,6 +110,83 @@ func TestRegisteredMigrationProvider_Sorting(t *testing.T) {
 	c.Assert(migrations[2].Version, qt.Equals, int64(3))
 }
 
+func TestRegisteredMigrationProvider_MigrationsReturnsDefensiveCopy(t *testing.T) {
+	c := qt.New(t)
+	provider := migrator.NewRegisteredMigrationProvider(
+		&migrator.Migration{
+			Version:     2,
+			Description: "Second migration",
+			Up:          migrator.NoopMigrationFunc,
+			Down:        migrator.NoopMigrationFunc,
+		},
+		&migrator.Migration{
+			Version:     1,
+			Description: "First migration",
+			Up:          migrator.NoopMigrationFunc,
+			Down:        migrator.NoopMigrationFunc,
+		},
+	)
+
+	migrations := provider.Migrations()
+	c.Assert(migrations[0].Version, qt.Equals, int64(1))
+	migrations[0], migrations[1] = migrations[1], migrations[0]
+	migrations = append(migrations, &migrator.Migration{Version: 3})
+	c.Assert(migrations, qt.HasLen, 3)
+
+	next := provider.Migrations()
+	c.Assert(next, qt.HasLen, 2)
+	c.Assert(next[0].Version, qt.Equals, int64(1))
+	c.Assert(next[1].Version, qt.Equals, int64(2))
+}
+
+func TestRegisteredMigrationProvider_ConcurrentRegisterAndMigrations(t *testing.T) {
+	c := qt.New(t)
+	provider := migrator.NewRegisteredMigrationProvider()
+	const (
+		workers    = 4
+		iterations = 100
+	)
+
+	var wg sync.WaitGroup
+	errs := make(chan string, workers)
+	for worker := range workers {
+		wg.Add(1)
+		go func(worker int) {
+			defer wg.Done()
+			for idx := range iterations {
+				version := int64(worker*iterations + idx + 1)
+				provider.Register(&migrator.Migration{
+					Version:     version,
+					Description: "Concurrent migration",
+					Up:          migrator.NoopMigrationFunc,
+					Down:        migrator.NoopMigrationFunc,
+				})
+			}
+		}(worker)
+	}
+
+	for range workers {
+		wg.Go(func() {
+			for range iterations {
+				migrations := provider.Migrations()
+				for idx := 1; idx < len(migrations); idx++ {
+					if migrations[idx-1].Version > migrations[idx].Version {
+						errs <- "migrations are not sorted"
+						return
+					}
+				}
+			}
+		})
+	}
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		c.Errorf("%s", err)
+	}
+	c.Assert(provider.Migrations(), qt.HasLen, workers*iterations)
+}
+
 func TestNewFSMigrationProvider_Success(t *testing.T) {
 	c := qt.New(t)
 
@@ -138,6 +216,37 @@ func TestNewFSMigrationProvider_Success(t *testing.T) {
 	c.Assert(migrations[0].Description, qt.Equals, "Create Users")
 	c.Assert(migrations[1].Version, qt.Equals, int64(2))
 	c.Assert(migrations[1].Description, qt.Equals, "Add Index")
+}
+
+func TestFSMigrationProvider_MigrationsReturnsDefensiveCopy(t *testing.T) {
+	c := qt.New(t)
+	fsys := fstest.MapFS{
+		"0000000001_create_users.up.sql": &fstest.MapFile{
+			Data: []byte("CREATE TABLE users (id SERIAL PRIMARY KEY);"),
+		},
+		"0000000001_create_users.down.sql": &fstest.MapFile{
+			Data: []byte("DROP TABLE users;"),
+		},
+		"0000000002_add_index.up.sql": &fstest.MapFile{
+			Data: []byte("CREATE INDEX idx_users_id ON users(id);"),
+		},
+		"0000000002_add_index.down.sql": &fstest.MapFile{
+			Data: []byte("DROP INDEX idx_users_id;"),
+		},
+	}
+
+	provider, err := migrator.NewFSMigrationProvider(fsys)
+	c.Assert(err, qt.IsNil)
+
+	migrations := provider.Migrations()
+	migrations[0], migrations[1] = migrations[1], migrations[0]
+	migrations = append(migrations, &migrator.Migration{Version: 3})
+	c.Assert(migrations, qt.HasLen, 3)
+
+	next := provider.Migrations()
+	c.Assert(next, qt.HasLen, 2)
+	c.Assert(next[0].Version, qt.Equals, int64(1))
+	c.Assert(next[1].Version, qt.Equals, int64(2))
 }
 
 func TestNewFSMigrationProvider_IncompleteMigrations(t *testing.T) {
