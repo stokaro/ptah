@@ -9,6 +9,7 @@ import (
 	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/core/atlashcl"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
@@ -57,6 +58,7 @@ func NewGenerateCommand() *cobra.Command {
 		cobraflags.RegisterMap(generateCmd, generateFlags)
 		generateFlagsRegistered = true
 	}
+	cmdutil.ConfigureCommand(generateCmd)
 
 	return generateCmd
 }

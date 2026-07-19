@@ -12,6 +12,47 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 )
 
+const configuredAnnotation = "ptah.exitcode_configured"
+
+// ConfigureCommand installs Ptah's common CLI error contract on cmd. It is
+// idempotent because many command constructors return package-level singletons.
+func ConfigureCommand(cmd *cobra.Command) {
+	ConfigureCommandArgs(cmd, NoPositionalArgs)
+}
+
+// ConfigureCommandArgs installs Ptah's common CLI error contract on cmd while
+// preserving a command-specific Args validator.
+func ConfigureCommandArgs(cmd *cobra.Command, args cobra.PositionalArgs) {
+	if cmd.Annotations != nil && cmd.Annotations[configuredAnnotation] == "true" {
+		return
+	}
+	if cmd.Annotations == nil {
+		cmd.Annotations = make(map[string]string)
+	}
+	cmd.Annotations[configuredAnnotation] = "true"
+
+	cmd.Args = args
+	cmd.SilenceUsage = true
+	cmd.SilenceErrors = true
+	cmd.SetFlagErrorFunc(FlagErrorFunc)
+	if cmd.RunE != nil {
+		cmd.RunE = WrapRunE(cmd.RunE)
+	}
+}
+
+// WrapRunE maps ordinary command failures to exit code 2 while preserving
+// expected-negative results that already carry an explicit exit code.
+func WrapRunE(run func(*cobra.Command, []string) error) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		err := run(cmd, args)
+		if err == nil || exitcode.Code(err, -1) != -1 {
+			return err
+		}
+		fmt.Fprintf(cmd.ErrOrStderr(), "error: %s\n", err)
+		return exitcode.New(2, err)
+	}
+}
+
 // Fail prints err to the command's stderr and returns it as an exit-2 usage
 // error. Commands that set SilenceErrors must route their usage failures
 // through this so the message still reaches the user.

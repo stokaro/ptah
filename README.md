@@ -523,6 +523,19 @@ annotations after a successful export.
 
 ## Command Reference
 
+### CLI Exit Codes
+
+Ptah uses one exit-code contract across native commands:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success. |
+| `1` | Expected negative result: drift, lint findings, migration integrity drift, pending migrations with `--exit-code`, or a non-empty schema diff with `--exit-code`. |
+| `2` | Command or usage error: bad flags, unknown command, invalid input, connection failure, parse failure, unsupported dialect, unwritable output, or recovered internal panic. |
+| `3+` | Reserved. |
+
+Per-command details are documented in [CLI Exit Codes](docs/exit_codes.md).
+
 ### Generate Schema
 Generate SQL DDL statements from Go entities without touching the database:
 
@@ -580,6 +593,9 @@ Compare your Go entities with the current database schema:
 ```bash
 ./ptah compare --root-dir ./models --db-url postgres://user:pass@localhost:5432/database
 ./ptah compare --root-dir ./models --db-url postgres://user:pass@localhost:5432/database --schemas auth,billing,public
+
+# Return 1 when the diff is non-empty, 0 when it is empty
+./ptah compare --root-dir ./models --db-url postgres://user:pass@localhost:5432/database --exit-code
 ```
 
 **Output:** Detailed differences showing what needs to be added, removed, or modified
@@ -591,12 +607,6 @@ Check whether the live database still matches the schema declared by Go entities
 ./ptah drift --root-dir ./models --db-url postgres://user:pass@localhost:5432/database
 ./ptah drift --root-dir ./models --db-url postgres://user:pass@localhost:5432/database --schemas auth,billing,public
 ```
-
-Exit codes are designed for scheduled CI checks:
-
-- `0` - no failing drift for the selected threshold
-- `1` - drift detected
-- `2` - command error, such as a connection or parse failure
 
 Use `--format text|json|github-actions` to choose output, and `--ignore tables=audit_log,sessions` to suppress intentionally unmanaged tables. By default any drift returns `1`; use `--severity destructive` to return `1` only for destructive drift such as dropped tables, dropped columns, removed constraints, disabled RLS, or removed database objects.
 
@@ -658,7 +668,7 @@ Findings carry stable rule codes grouped into families:
 
 `--dialect` both gates the dialect-specific rule families and selects the dialect's SQL syntax for scanning (MySQL `#` comments, `/*!...*/` executable comments and backslash string escapes; PostgreSQL dollar quotes and nested block comments). With no dialect set, every rule runs under a hybrid scanner.
 
-Exit codes mirror `drift`: `0` clean (for the selected threshold), `1` findings above `--fail-on` (`error` by default; `any`, `none`), `2` command error. `--format text|json|github-actions|sarif` selects the output; the GitHub format annotates PR files inline, and SARIF 2.1.0 can be uploaded to GitHub code scanning. Disable rules per code or family with `--disable DS101 --disable MY`, or persistently via `.ptah-lint.yaml` in the migrations directory:
+`--fail-on` controls whether findings become exit code `1`: `error` by default, `any`, or `none`. `--format text|json|github-actions|sarif` selects the output; the GitHub format annotates PR files inline, and SARIF 2.1.0 can be uploaded to GitHub code scanning. Disable rules per code or family with `--disable DS101 --disable MY`, or persistently via `.ptah-lint.yaml` in the migrations directory:
 
 ```yaml
 dialect: postgres
@@ -1010,6 +1020,9 @@ Show current migration status and pending migrations:
 # JSON output for automation
 ./ptah migrate-status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --json
 
+# Return 1 when pending migrations are available, 0 when there are none
+./ptah migrate-status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --exit-code
+
 # Check status from a custom migration state table
 ./ptah migrate-status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --migrations-schema infra --migrations-table ptah_migrations
 
@@ -1061,11 +1074,9 @@ Flags that are part of the Atlas OSS CLI but do not have Ptah behavior yet are
 advertised and rejected explicitly instead of being silently ignored.
 
 The implemented Atlas-compatible commands delegate to native commands after
-flag translation, so their exit codes are the native contracts: `0` for success,
-`1` for drift/findings where a native command documents that content state, and
-`2` for command/usage errors on commands with an explicit 0/1/2 contract
-(`drift`, `lint`, and `migrate-validate`). Other runtime failures continue to
-use the CLI fallback non-zero exit code.
+flag translation, so their exit codes follow the native command contract
+documented in [CLI Exit Codes](docs/exit_codes.md). Unsupported Atlas-compatible
+flags are rejected explicitly and exit `2`.
 
 #### Migration Directory Integrity (`ptah.sum` / `atlas.sum`)
 
@@ -1094,10 +1105,9 @@ and `-- atlas:sum ignore` support. Auto validation reads `atlas.sum` when it is
 the only integrity file present, reads `ptah.sum` otherwise, and errors if both
 files exist so CI does not silently choose the wrong format.
 
-`migrate-validate` exits `0` when clean, `1` on drift (a file added, removed, or
-edited out of band — with a diff on stderr), and `2` when the expected integrity
-file is missing or unreadable. `migrate-up --verify-sum` runs the same check
-before applying and aborts on drift.
+`migrate-validate` exits `1` on integrity drift (a file added, removed, or
+edited out of band, with a diff on stderr). `migrate-up --verify-sum` runs the
+same check before applying and aborts on drift.
 
 ```yaml
 # CI (GitHub Actions)
