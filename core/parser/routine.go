@@ -20,6 +20,9 @@ func (p *Parser) routineParser() routineParser {
 	case platform.SQLServer:
 		return sqlServerRoutineParser{}
 	default:
+		if platform.IsPostgresFamily(p.dialect) {
+			return postgresRoutineParser{}
+		}
 		return compatibilityRoutineParser{}
 	}
 }

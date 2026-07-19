@@ -5,6 +5,78 @@ import (
 	"strings"
 )
 
+// PostgresDoBlockNode represents a PostgreSQL DO statement parsed through the
+// dialect-specific routine layer.
+type PostgresDoBlockNode struct {
+	// SQL is the complete executable DO statement.
+	SQL string
+	// Language stores the optional LANGUAGE clause. Empty means PostgreSQL's
+	// default plpgsql language.
+	Language string
+	// Body is the parsed anonymous routine body.
+	Body PostgresRoutineBody
+}
+
+// PostgresRoutineNode represents a PostgreSQL CREATE PROCEDURE statement parsed
+// through the dialect-specific routine layer.
+type PostgresRoutineNode struct {
+	// SQL is the complete executable routine statement.
+	SQL string
+	// Dialect is the normalized SQL dialect that selected this parser path.
+	Dialect string
+	// Kind identifies whether this is a CREATE FUNCTION or CREATE PROCEDURE.
+	Kind RoutineKind
+	// Name is the routine name, including schema qualifiers or quoting.
+	Name string
+	// Parameters contains the raw parameter list without surrounding
+	// parentheses.
+	Parameters string
+	// Language stores the normalized LANGUAGE clause when present.
+	Language string
+	// Body is the parsed routine body metadata.
+	Body PostgresRoutineBody
+}
+
+// PostgresRoutineBody contains parser metadata for a PostgreSQL function,
+// procedure, or DO body. Expressions remain raw PostgreSQL fragments.
+type PostgresRoutineBody struct {
+	// SQL is the raw body text without string or dollar-quote delimiters.
+	SQL string
+	// Delimiter is the dollar-quote delimiter such as $$ or $tag$. It is empty
+	// for single-quoted and SQL-standard bodies.
+	Delimiter string
+	// Language is the normalized body language known at parse time.
+	Language string
+	// Statements are top-level PL/pgSQL-ish statements when the body is a
+	// block; SQL-language bodies usually remain a single raw statement.
+	Statements []PostgresRoutineStatement
+}
+
+// PostgresRoutineStatementKind identifies a PostgreSQL routine-body statement
+// class.
+type PostgresRoutineStatementKind string
+
+const (
+	PostgresRoutineStatementRaw         PostgresRoutineStatementKind = "raw"
+	PostgresRoutineStatementDeclaration PostgresRoutineStatementKind = "declaration"
+	PostgresRoutineStatementBlock       PostgresRoutineStatementKind = "block"
+	PostgresRoutineStatementException   PostgresRoutineStatementKind = "exception"
+	PostgresRoutineStatementReturn      PostgresRoutineStatementKind = "return"
+	PostgresRoutineStatementPerform     PostgresRoutineStatementKind = "perform"
+	PostgresRoutineStatementExecute     PostgresRoutineStatementKind = "execute"
+	PostgresRoutineStatementRaise       PostgresRoutineStatementKind = "raise"
+	PostgresRoutineStatementIf          PostgresRoutineStatementKind = "if"
+	PostgresRoutineStatementCase        PostgresRoutineStatementKind = "case"
+	PostgresRoutineStatementLoop        PostgresRoutineStatementKind = "loop"
+)
+
+// PostgresRoutineStatement is one top-level statement inside a PostgreSQL
+// routine body.
+type PostgresRoutineStatement struct {
+	Kind PostgresRoutineStatementKind
+	SQL  string
+}
+
 // MySQLRoutineNode represents a MySQL-family CREATE FUNCTION or CREATE
 // PROCEDURE statement parsed through the dialect-specific routine layer.
 type MySQLRoutineNode struct {
@@ -128,6 +200,34 @@ func (n *MySQLRoutineNode) SetCharacteristics(characteristics []string) *MySQLRo
 // Accept renders MySQL routines through the raw SQL visitor contract while
 // keeping the structured routine metadata available to parser consumers.
 func (n *MySQLRoutineNode) Accept(visitor Visitor) error {
+	raw := RawSQLNode{SQL: n.SQL}
+	return visitor.VisitRawSQL(&raw)
+}
+
+// NewPostgresDoBlock creates a PostgreSQL DO block node.
+func NewPostgresDoBlock(sql string) *PostgresDoBlockNode {
+	return &PostgresDoBlockNode{SQL: strings.TrimSpace(sql)}
+}
+
+// NewPostgresRoutine creates a PostgreSQL routine node.
+func NewPostgresRoutine(sql, dialect string, kind RoutineKind) *PostgresRoutineNode {
+	return &PostgresRoutineNode{
+		SQL:     strings.TrimSpace(sql),
+		Dialect: dialect,
+		Kind:    kind,
+	}
+}
+
+// Accept renders PostgreSQL DO blocks through the raw SQL visitor contract
+// while keeping routine-body metadata available to parser consumers.
+func (n *PostgresDoBlockNode) Accept(visitor Visitor) error {
+	raw := RawSQLNode{SQL: n.SQL}
+	return visitor.VisitRawSQL(&raw)
+}
+
+// Accept renders PostgreSQL routines through the raw SQL visitor contract while
+// keeping routine-body metadata available to parser consumers.
+func (n *PostgresRoutineNode) Accept(visitor Visitor) error {
 	raw := RawSQLNode{SQL: n.SQL}
 	return visitor.VisitRawSQL(&raw)
 }
