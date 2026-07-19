@@ -339,6 +339,44 @@ END`,
 	})
 }
 
+func TestSplitSQLStatementsForDialect_SQLServerProcedureWithoutBegin(t *testing.T) {
+	c := qt.New(t)
+
+	input := `CREATE PROCEDURE [dbo].[list_users] AS
+SELECT 1 AS [first];
+SELECT 2 AS [second];
+GO /* deploy */
+CREATE TABLE after_proc (id int);`
+
+	result := sqlutil.SplitSQLStatementsForDialect(input, "sqlserver")
+
+	c.Assert(result, qt.DeepEquals, []string{
+		`CREATE PROCEDURE [dbo].[list_users] AS
+SELECT 1 AS [first];
+SELECT 2 AS [second];`,
+		"CREATE TABLE after_proc (id int)",
+	})
+}
+
+func TestSplitSQLStatementsForDialect_SQLServerCreateOrAlterProc(t *testing.T) {
+	c := qt.New(t)
+
+	input := `CREATE OR ALTER PROC [dbo].[list_users] AS
+SELECT 1 AS [first];
+SELECT 2 AS [second];
+GO
+CREATE TABLE after_proc (id int);`
+
+	result := sqlutil.SplitSQLStatementsForDialect(input, "sqlserver")
+
+	c.Assert(result, qt.DeepEquals, []string{
+		`CREATE OR ALTER PROC [dbo].[list_users] AS
+SELECT 1 AS [first];
+SELECT 2 AS [second];`,
+		"CREATE TABLE after_proc (id int)",
+	})
+}
+
 func TestSplitSQLStatements_CompoundBodiesWithCaseExpressions(t *testing.T) {
 	c := qt.New(t)
 

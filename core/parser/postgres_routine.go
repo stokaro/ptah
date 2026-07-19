@@ -20,6 +20,9 @@ func (postgresRoutineParser) parseCreateRoutine(p *Parser, target string, statem
 		}
 		return parsePostgresRoutineSQL(sql, p.dialect, ast.RoutineKindProcedure), nil
 	}
+	if target == "PROC" {
+		return compatibilityRoutineParser{}.parseCreateRoutine(p, target, statementStart)
+	}
 	return p.parseCreateFunction(statementStart)
 }
 

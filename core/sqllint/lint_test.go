@@ -160,6 +160,24 @@ DELIMITER ;`,
 	}
 }
 
+func TestLintSource_SQLServerRoutineNodesAreExplicitUnsupportedFindings(t *testing.T) {
+	c := qt.New(t)
+
+	findings, err := LintSource(Source{
+		Name: "routine.sql",
+		SQL: `CREATE PROCEDURE [dbo].[p1] AS
+BEGIN
+  SELECT 1;
+END`,
+	}, Options{Dialect: platform.SQLServer})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(findings, qt.HasLen, 1)
+	c.Assert(findings[0].Rule, qt.Equals, RuleUnsupportedStatement)
+	c.Assert(findings[0].Severity, qt.Equals, SeverityError)
+	c.Assert(findings[0].Message, qt.Contains, "CREATE PROCEDURE")
+}
+
 func TestLintSource_UnsupportedStatementDoesNotMaskLaterDDL(t *testing.T) {
 	c := qt.New(t)
 
@@ -174,6 +192,26 @@ CREATE TABLE audit_log (message TEXT NOT NULL);`,
 	c.Assert(findings[0].Rule, qt.Equals, RuleUnsupportedStatement)
 	c.Assert(findings[1].Rule, qt.Equals, RuleTableWithoutPrimaryKey)
 	c.Assert(findings[1].Line, qt.Equals, 2)
+}
+
+func TestLintSource_SQLServerProcedureWithoutBeginStaysSingleStatement(t *testing.T) {
+	c := qt.New(t)
+
+	findings, err := LintSource(Source{
+		Name: "proc.sql",
+		SQL: `CREATE PROCEDURE [dbo].[list_users] AS
+SELECT 1 AS [first];
+SELECT 2 AS [second];
+GO /* deploy */
+CREATE TABLE after_proc (id int);`,
+	}, Options{Dialect: platform.SQLServer})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(findings, qt.HasLen, 2)
+	c.Assert(findings[0].Rule, qt.Equals, RuleUnsupportedStatement)
+	c.Assert(findings[0].Message, qt.Contains, "CREATE PROCEDURE")
+	c.Assert(findings[1].Rule, qt.Equals, RuleTableWithoutPrimaryKey)
+	c.Assert(findings[1].Message, qt.Contains, "after_proc")
 }
 
 func TestLintSource_CapabilityAwareCreateIndexConcurrently(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/stokaro/ptah/core/lexer"
+	"github.com/stokaro/ptah/core/platform"
 )
 
 // StripComments removes all SQL comments from the input string using lexer-based parsing.
@@ -36,6 +37,16 @@ func StripComments(sql string) string {
 // SplitSQLStatements splits a SQL string into individual statements using AST-based parsing.
 // This properly handles semicolons within string literals and comments, unlike simple string splitting.
 func SplitSQLStatements(sql string) []string {
+	return splitSQLStatements(sql, "")
+}
+
+// SplitSQLStatementsForDialect splits SQL using dialect-specific client
+// statement boundaries where the generic splitter would be too aggressive.
+func SplitSQLStatementsForDialect(sql string, dialect string) []string {
+	return splitSQLStatements(sql, platform.NormalizeDialect(dialect))
+}
+
+func splitSQLStatements(sql string, dialect string) []string {
 	if strings.TrimSpace(sql) == "" {
 		return []string{}
 	}
@@ -44,13 +55,32 @@ func SplitSQLStatements(sql string) []string {
 	lexr := lexer.NewLexer(sql)
 	var statements []string
 	var currentStatement strings.Builder
-	var state statementSplitState
+	state := statementSplitState{dialect: dialect}
+	skippingGoBatchLine := false
 
 	for {
 		token := lexr.NextToken()
 
 		if token.Type == lexer.TokenEOF {
 			break
+		}
+		if skippingGoBatchLine {
+			if (token.Type == lexer.TokenWhitespace || token.Type == lexer.TokenComment) &&
+				strings.ContainsAny(token.Value, "\r\n") {
+				skippingGoBatchLine = false
+			}
+			continue
+		}
+		if state.isSQLServer() && token.MatchIdentifierValue("GO") && IsSQLServerGoBatchSeparatorAt(sql, token.Start, token.End) {
+			stmt := strings.TrimSpace(currentStatement.String())
+			if stmt != "" {
+				statements = append(statements, stmt)
+			}
+			currentStatement.Reset()
+			state.reset()
+			state.dialect = dialect
+			skippingGoBatchLine = true
+			continue
 		}
 
 		if token.Type == lexer.TokenSemicolon {
@@ -88,8 +118,11 @@ func SplitSQLStatements(sql string) []string {
 }
 
 type statementSplitState struct {
+	dialect               string
 	createPrefix          createStatementPrefix
+	createObject          string
 	inCompoundCreate      bool
+	sqlServerRoutine      bool
 	compoundDepth         int
 	caseDepth             int
 	pendingEndKeyword     bool
@@ -97,7 +130,8 @@ type statementSplitState struct {
 }
 
 func (s *statementSplitState) reset() {
-	*s = statementSplitState{}
+	dialect := s.dialect
+	*s = statementSplitState{dialect: dialect}
 }
 
 func (s *statementSplitState) observe(token lexer.Token) {
@@ -158,11 +192,12 @@ func (s *statementSplitState) observeCreatePrefix(value string) {
 		return
 
 	case createPrefixCreate:
-		if isCompoundCreateObject(value) {
+		if s.isCompoundCreateObject(value) {
 			s.createPrefix = createPrefixCreateObject
+			s.createObject = value
 			return
 		}
-		if value == "OR" || value == "REPLACE" || value == "DEFINER" {
+		if value == "OR" || value == "ALTER" || value == "REPLACE" || value == "DEFINER" {
 			return
 		}
 		s.createPrefix = createPrefixNone
@@ -173,6 +208,12 @@ func (s *statementSplitState) observeCreatePrefix(value string) {
 		return
 
 	case createPrefixCreateObjectBeforeBody:
+		if s.isSQLServerRoutineObject() && value == "AS" {
+			s.inCompoundCreate = true
+			s.sqlServerRoutine = true
+			s.pendingEndKeyword = false
+			return
+		}
 		if value == "BEGIN" {
 			s.inCompoundCreate = true
 			s.compoundDepth = 1
@@ -182,13 +223,23 @@ func (s *statementSplitState) observeCreatePrefix(value string) {
 	}
 }
 
-func isCompoundCreateObject(value string) bool {
+func (s statementSplitState) isCompoundCreateObject(value string) bool {
 	switch value {
 	case "FUNCTION", "PROCEDURE", "TRIGGER":
 		return true
+	case "PROC":
+		return s.isSQLServer()
 	default:
 		return false
 	}
+}
+
+func (s statementSplitState) isSQLServerRoutineObject() bool {
+	return s.isSQLServer() && (s.createObject == "FUNCTION" || s.createObject == "PROC" || s.createObject == "PROCEDURE")
+}
+
+func (s statementSplitState) isSQLServer() bool {
+	return s.dialect == platform.SQLServer
 }
 
 func isEndContinuationKeyword(value string) bool {
@@ -204,6 +255,9 @@ func (s *statementSplitState) keepSemicolonInsideStatement() bool {
 	if !s.inCompoundCreate {
 		return false
 	}
+	if s.sqlServerRoutine && !s.pendingEndKeyword {
+		return true
+	}
 	if !s.pendingEndKeyword {
 		return true
 	}
@@ -216,4 +270,72 @@ func (s *statementSplitState) keepSemicolonInsideStatement() bool {
 		return false
 	}
 	return true
+}
+
+// IsSQLServerGoBatchSeparatorAt reports whether a GO token is a SQL Server
+// utility batch separator command on its own line. Identifiers such as
+// "AS go" or variables such as "@go" are ordinary T-SQL tokens.
+func IsSQLServerGoBatchSeparatorAt(input string, start, end int) bool {
+	if !sqlServerGoLinePrefixIsEmpty(input, start) {
+		return false
+	}
+	return sqlServerGoTrailerIsBatchSeparator(input, end)
+}
+
+func sqlServerGoLinePrefixIsEmpty(input string, start int) bool {
+	for i := start - 1; i >= 0 && input[i] != '\n' && input[i] != '\r'; i-- {
+		if input[i] != ' ' && input[i] != '\t' {
+			return false
+		}
+	}
+	return true
+}
+
+func sqlServerGoTrailerIsBatchSeparator(input string, pos int) bool {
+	i := pos
+	consumedCount := false
+	for {
+		i = skipSQLServerHorizontalSpace(input, i)
+		if !consumedCount && i < len(input) && input[i] >= '0' && input[i] <= '9' {
+			consumedCount = true
+			i = skipSQLServerDigits(input, i)
+			continue
+		}
+		switch {
+		case i >= len(input) || input[i] == '\n' || input[i] == '\r':
+			return true
+		case strings.HasPrefix(input[i:], "--"):
+			return true
+		case strings.HasPrefix(input[i:], "/*"):
+			next, ok := skipSQLServerBlockComment(input, i)
+			if !ok {
+				return false
+			}
+			i = next
+		default:
+			return false
+		}
+	}
+}
+
+func skipSQLServerHorizontalSpace(input string, pos int) int {
+	for pos < len(input) && (input[pos] == ' ' || input[pos] == '\t') {
+		pos++
+	}
+	return pos
+}
+
+func skipSQLServerDigits(input string, pos int) int {
+	for pos < len(input) && input[pos] >= '0' && input[pos] <= '9' {
+		pos++
+	}
+	return pos
+}
+
+func skipSQLServerBlockComment(input string, pos int) (int, bool) {
+	commentEnd := strings.Index(input[pos+2:], "*/")
+	if commentEnd == -1 {
+		return pos, false
+	}
+	return pos + commentEnd + len("/**/"), true
 }
