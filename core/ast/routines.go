@@ -77,6 +77,70 @@ type PostgresRoutineStatement struct {
 	SQL  string
 }
 
+// SQLServerRoutineNode represents a SQL Server CREATE FUNCTION or CREATE
+// PROCEDURE statement parsed through the dialect-specific routine layer.
+type SQLServerRoutineNode struct {
+	// SQL is the complete executable routine statement without GO separators.
+	SQL string
+	// Dialect is the normalized SQL dialect that selected this parser path.
+	Dialect string
+	// Kind identifies whether this is a CREATE FUNCTION or CREATE PROCEDURE.
+	Kind RoutineKind
+	// Name is the routine name, including bracketed schema qualifiers.
+	Name string
+	// Parameters contains the raw parameter list without surrounding
+	// parentheses.
+	Parameters string
+	// Returns contains the raw T-SQL RETURNS clause for functions.
+	Returns string
+	// Form classifies the SQL Server routine shape.
+	Form SQLServerRoutineForm
+	// Body is parsed routine-body metadata. Expressions remain raw T-SQL.
+	Body SQLServerRoutineBody
+}
+
+// SQLServerRoutineForm identifies SQL Server function and procedure shapes.
+type SQLServerRoutineForm string
+
+const (
+	SQLServerRoutineFormProcedure                   SQLServerRoutineForm = "procedure"
+	SQLServerRoutineFormScalarFunction              SQLServerRoutineForm = "scalar_function"
+	SQLServerRoutineFormInlineTableValuedFunction   SQLServerRoutineForm = "inline_table_valued_function"
+	SQLServerRoutineFormMultiStatementTableFunction SQLServerRoutineForm = "multi_statement_table_valued_function"
+)
+
+// SQLServerRoutineBody contains parser metadata for a T-SQL routine body.
+type SQLServerRoutineBody struct {
+	// SQL is the raw body text after AS.
+	SQL string
+	// Statements are top-level T-SQL routine-body statements when boundaries
+	// are recoverable without parsing scalar expressions.
+	Statements []SQLServerRoutineStatement
+}
+
+// SQLServerRoutineStatementKind identifies a T-SQL routine-body statement
+// class.
+type SQLServerRoutineStatementKind string
+
+const (
+	SQLServerRoutineStatementRaw         SQLServerRoutineStatementKind = "raw"
+	SQLServerRoutineStatementDeclaration SQLServerRoutineStatementKind = "declaration"
+	SQLServerRoutineStatementAssignment  SQLServerRoutineStatementKind = "assignment"
+	SQLServerRoutineStatementBlock       SQLServerRoutineStatementKind = "block"
+	SQLServerRoutineStatementIf          SQLServerRoutineStatementKind = "if"
+	SQLServerRoutineStatementWhile       SQLServerRoutineStatementKind = "while"
+	SQLServerRoutineStatementReturn      SQLServerRoutineStatementKind = "return"
+	SQLServerRoutineStatementInsert      SQLServerRoutineStatementKind = "insert"
+	SQLServerRoutineStatementSelect      SQLServerRoutineStatementKind = "select"
+)
+
+// SQLServerRoutineStatement is one top-level statement inside a T-SQL routine
+// body.
+type SQLServerRoutineStatement struct {
+	Kind SQLServerRoutineStatementKind
+	SQL  string
+}
+
 // MySQLRoutineNode represents a MySQL-family CREATE FUNCTION or CREATE
 // PROCEDURE statement parsed through the dialect-specific routine layer.
 type MySQLRoutineNode struct {
@@ -228,6 +292,22 @@ func (n *PostgresDoBlockNode) Accept(visitor Visitor) error {
 // Accept renders PostgreSQL routines through the raw SQL visitor contract while
 // keeping routine-body metadata available to parser consumers.
 func (n *PostgresRoutineNode) Accept(visitor Visitor) error {
+	raw := RawSQLNode{SQL: n.SQL}
+	return visitor.VisitRawSQL(&raw)
+}
+
+// NewSQLServerRoutine creates a SQL Server routine node.
+func NewSQLServerRoutine(sql, dialect string, kind RoutineKind) *SQLServerRoutineNode {
+	return &SQLServerRoutineNode{
+		SQL:     strings.TrimSpace(sql),
+		Dialect: dialect,
+		Kind:    kind,
+	}
+}
+
+// Accept renders SQL Server routines through the raw SQL visitor contract while
+// keeping routine-body metadata available to parser consumers.
+func (n *SQLServerRoutineNode) Accept(visitor Visitor) error {
 	raw := RawSQLNode{SQL: n.SQL}
 	return visitor.VisitRawSQL(&raw)
 }

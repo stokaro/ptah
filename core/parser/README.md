@@ -129,6 +129,18 @@ PL/pgSQL expressions remain raw; the body parser classifies top-level
 declarations, block statements, exceptions, returns, dynamic execution, raises,
 and control-flow statements.
 
+SQL Server dialect mode parses `CREATE [OR ALTER] FUNCTION`,
+`CREATE [OR ALTER] PROCEDURE`, and `CREATE PROC` through a T-SQL routine layer.
+The parser preserves the executable statement in `ast.SQLServerRoutineNode.SQL`,
+strips line-scoped client `GO` batch separators from the node, and records
+routine metadata for scalar functions, inline table-valued functions,
+multi-statement table-valued functions, and procedures. `Returns` is the raw
+fragment between `RETURNS` and the body `AS`, so SQL Server routine options
+inside that fragment are preserved even when they are not structurally modeled
+yet. T-SQL scalar expressions remain raw; the body parser classifies
+recoverable top-level declarations, assignments, `BEGIN` blocks, `IF`, `WHILE`,
+`RETURN`, and `INSERT` / `SELECT` statements.
+
 When a dialect-aware routine boundary is known but the body sub-language is not
 structured yet, the parser returns an `ast.OpaqueRoutineNode`: renderers emit its
 SQL through the raw-SQL visitor contract, while parser consumers can still
