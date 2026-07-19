@@ -112,15 +112,10 @@ func ParseFS(fsys fs.FS, rootDir string) (*Database, error) {
 			return nil
 		}
 
-		file, err := fsys.Open(path)
+		database, err := parseDatabaseFile(fsys, path)
 		if err != nil {
 			return err
 		}
-		defer file.Close()
-		reader := bufio.NewReader(file)
-
-		// Parse the file
-		database := ParseSource(path, reader)
 
 		// Add to result
 		result.Schemas = append(result.Schemas, database.Schemas...)
@@ -169,4 +164,14 @@ func ParseFS(fsys fs.FS, rootDir string) (*Database, error) {
 	sortFunctionsByDependencies(result)
 
 	return result, nil
+}
+
+func parseDatabaseFile(fsys fs.FS, path string) (Database, error) {
+	file, err := fsys.Open(path)
+	if err != nil {
+		return Database{}, err
+	}
+	defer file.Close()
+
+	return ParseSource(path, bufio.NewReader(file)), nil
 }

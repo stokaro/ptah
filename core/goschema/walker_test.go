@@ -363,6 +363,71 @@ func createTestFS(files map[string]string) fs.FS {
 	return fsys
 }
 
+type countingFS struct {
+	fsys           fs.FS
+	openGoFiles    int
+	maxOpenGoFiles int
+}
+
+func (c *countingFS) Open(name string) (fs.File, error) {
+	file, err := c.fsys.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.HasSuffix(name, ".go") {
+		return file, nil
+	}
+
+	c.openGoFiles++
+	c.maxOpenGoFiles = max(c.maxOpenGoFiles, c.openGoFiles)
+
+	return &countingFile{
+		File: file,
+		onClose: func() {
+			c.openGoFiles--
+		},
+	}, nil
+}
+
+type countingFile struct {
+	fs.File
+	onClose func()
+	closed  bool
+}
+
+func (f *countingFile) Close() error {
+	err := f.File.Close()
+	if !f.closed {
+		f.closed = true
+		f.onClose()
+	}
+	return err
+}
+
+func TestParseFS_ClosesFilesDuringWalk(t *testing.T) {
+	c := qt.New(t)
+
+	files := make(map[string]string)
+	for i := range 100 {
+		files[fmt.Sprintf("model_%03d.go", i)] = fmt.Sprintf(`package models
+
+//migrator:schema:table name="table_%03d"
+type Model%03d struct {
+	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+}
+`, i, i)
+	}
+
+	fsys := &countingFS{fsys: createTestFS(files)}
+
+	result, err := goschema.ParseFS(fsys, ".")
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Tables, qt.HasLen, 100)
+	c.Assert(fsys.openGoFiles, qt.Equals, 0)
+	c.Assert(fsys.maxOpenGoFiles, qt.Equals, 1)
+}
+
 func TestParseFS_HappyPath(t *testing.T) {
 	tests := []struct {
 		name           string
