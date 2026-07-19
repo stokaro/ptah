@@ -10,6 +10,7 @@ const (
 	MariaDB     = "mariadb"
 	ClickHouse  = "clickhouse"
 	SQLite      = "sqlite"
+	SQLServer   = "sqlserver"
 	CockroachDB = "cockroachdb"
 	YugabyteDB  = "yugabytedb"
 	Spanner     = "spanner"
@@ -27,6 +28,8 @@ func NormalizeDialect(dialect string) string {
 		return ClickHouse
 	case "sqlite", "sqlite3":
 		return SQLite
+	case "mssql", "sqlserver", "sql-server", "sql_server", "tsql":
+		return SQLServer
 	case "cockroach", "cockroachdb", "crdb":
 		return CockroachDB
 	case "yugabyte", "yugabytedb", "ysql":

@@ -38,13 +38,21 @@ func TestNormalizeDialect_SQLiteAliases(t *testing.T) {
 	}
 }
 
+func TestNormalizeDialect_SQLServerAliases(t *testing.T) {
+	c := qt.New(t)
+
+	for _, dialect := range []string{"mssql", "sqlserver", "sql-server", "sql_server", "tsql", " SQLServer "} {
+		c.Assert(platform.NormalizeDialect(dialect), qt.Equals, platform.SQLServer)
+	}
+}
+
 func TestIsPostgresFamily(t *testing.T) {
 	c := qt.New(t)
 
 	for _, dialect := range []string{"postgres", "pgx", "cockroachdb", "yugabytedb", "spanner"} {
 		c.Assert(platform.IsPostgresFamily(dialect), qt.IsTrue, qt.Commentf("dialect %q", dialect))
 	}
-	for _, dialect := range []string{"mysql", "mariadb", "clickhouse", "sqlite", "oracle"} {
+	for _, dialect := range []string{"mysql", "mariadb", "clickhouse", "sqlite", "sqlserver", "oracle"} {
 		c.Assert(platform.IsPostgresFamily(dialect), qt.IsFalse, qt.Commentf("dialect %q", dialect))
 	}
 }

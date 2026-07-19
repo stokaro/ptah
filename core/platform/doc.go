@@ -12,6 +12,7 @@
 //   - MySQL: MySQL database platform identifier
 //   - MariaDB: MariaDB database platform identifier
 //   - ClickHouse: ClickHouse database platform identifier
+//   - SQLServer: SQL Server parser dialect identifier
 //   - CockroachDB: CockroachDB PostgreSQL-family platform identifier
 //   - YugabyteDB: YugabyteDB YSQL PostgreSQL-family platform identifier
 //   - Spanner: Cloud Spanner PostgreSQL-interface platform identifier
@@ -21,6 +22,7 @@
 // Platform constants are used throughout the Ptah system for:
 //
 //   - Dialect-specific SQL generation
+//   - Dialect-aware SQL parsing
 //   - Database connection management
 //   - Migration planning and execution
 //   - Schema comparison and validation
