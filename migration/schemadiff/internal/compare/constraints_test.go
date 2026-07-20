@@ -193,6 +193,31 @@ func TestConstraints(t *testing.T) {
 			},
 		},
 		{
+			name: "CHECK constraint MySQL quoted identifier is equivalent",
+			generated: &goschema.Database{
+				Constraints: []goschema.Constraint{
+					{
+						StructName:      "Product",
+						Name:            "products_quantity_check",
+						Type:            "CHECK",
+						Table:           "products",
+						CheckExpression: "quantity > 0",
+					},
+				},
+			},
+			database: &types.DBSchema{
+				Constraints: []types.DBConstraint{
+					{
+						Name:        "products_quantity_check",
+						TableName:   "products",
+						Type:        "CHECK",
+						CheckClause: new("(`quantity` > 0)"),
+					},
+				},
+			},
+			expected: &difftypes.SchemaDiff{},
+		},
+		{
 			name: "UNIQUE constraint added",
 			generated: &goschema.Database{
 				Constraints: []goschema.Constraint{
@@ -342,6 +367,84 @@ func TestConstraints(t *testing.T) {
 			for _, expected := range tt.expected.ConstraintsRemoved {
 				c.Assert(diff.ConstraintsRemoved, qt.Contains, expected)
 			}
+		})
+	}
+}
+
+func TestConstraints_SameNameTypeDriftCarriesAdditionBody(t *testing.T) {
+	tests := []struct {
+		name      string
+		generated *goschema.Database
+		database  *types.DBSchema
+		expected  []difftypes.ConstraintAdditionInfo
+	}{
+		{
+			name: "CHECK to UNIQUE",
+			generated: &goschema.Database{
+				Constraints: []goschema.Constraint{{
+					StructName: "Account",
+					Name:       "accounts_identity",
+					Type:       "UNIQUE",
+					Table:      "accounts",
+					Columns:    []string{"email", "region"},
+				}},
+			},
+			database: &types.DBSchema{
+				Constraints: []types.DBConstraint{{
+					Name:        "accounts_identity",
+					TableName:   "accounts",
+					Type:        "CHECK",
+					CheckClause: new("email <> ''"),
+				}},
+			},
+			expected: []difftypes.ConstraintAdditionInfo{{
+				Name:      "accounts_identity",
+				TableName: "accounts",
+				Type:      "UNIQUE",
+				Columns:   []string{"email", "region"},
+			}},
+		},
+		{
+			name: "UNIQUE to CHECK",
+			generated: &goschema.Database{
+				Constraints: []goschema.Constraint{{
+					StructName:      "Product",
+					Name:            "products_quantity_guard",
+					Type:            "CHECK",
+					Table:           "products",
+					CheckExpression: "quantity > 10",
+				}},
+			},
+			database: &types.DBSchema{
+				Constraints: []types.DBConstraint{{
+					Name:        "products_quantity_guard",
+					TableName:   "products",
+					Type:        "UNIQUE",
+					ColumnNames: []string{"quantity"},
+				}},
+			},
+			expected: []difftypes.ConstraintAdditionInfo{{
+				Name:            "products_quantity_guard",
+				TableName:       "products",
+				Type:            "CHECK",
+				CheckExpression: "quantity > 10",
+			}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff := &difftypes.SchemaDiff{}
+			compare.Constraints(tt.generated, tt.database, diff, nil)
+
+			c.Assert(diff.ConstraintsAdded, qt.DeepEquals, []string{tt.expected[0].Name})
+			c.Assert(diff.ConstraintsRemoved, qt.DeepEquals, []string{tt.expected[0].Name})
+			c.Assert(diff.ConstraintsAddedWithTables, qt.DeepEquals, tt.expected)
+			c.Assert(diff.ConstraintsRemovedWithTables, qt.HasLen, 1)
+			c.Assert(diff.ConstraintsRemovedWithTables[0].Name, qt.Equals, tt.expected[0].Name)
+			c.Assert(diff.ConstraintsRemovedWithTables[0].TableName, qt.Equals, tt.expected[0].TableName)
 		})
 	}
 }

@@ -1097,16 +1097,17 @@ func appendConstraintRemoval(infos []difftypes.ConstraintRemovalInfo, dbConstrai
 // one entry and matches the legacy field-scan behavior.
 func appendConstraintAddition(infos []difftypes.ConstraintAdditionInfo, genConstraint goschema.Constraint) []difftypes.ConstraintAdditionInfo {
 	return append(infos, difftypes.ConstraintAdditionInfo{
-		Name:           genConstraint.Name,
-		TableName:      genConstraint.Table,
-		Type:           genConstraint.Type,
-		Columns:        append([]string(nil), genConstraint.Columns...),
-		NullsDistinct:  cloneBoolPtr(genConstraint.NullsDistinct),
-		ForeignTable:   genConstraint.ForeignTable,
-		ForeignColumn:  genConstraint.ForeignColumn,
-		ForeignColumns: append([]string(nil), genConstraint.ForeignColumnsOrDefault()...),
-		OnDelete:       genConstraint.OnDelete,
-		OnUpdate:       genConstraint.OnUpdate,
+		Name:            genConstraint.Name,
+		TableName:       genConstraint.Table,
+		Type:            genConstraint.Type,
+		Columns:         append([]string(nil), genConstraint.Columns...),
+		NullsDistinct:   cloneBoolPtr(genConstraint.NullsDistinct),
+		CheckExpression: genConstraint.CheckExpression,
+		ForeignTable:    genConstraint.ForeignTable,
+		ForeignColumn:   genConstraint.ForeignColumn,
+		ForeignColumns:  append([]string(nil), genConstraint.ForeignColumnsOrDefault()...),
+		OnDelete:        genConstraint.OnDelete,
+		OnUpdate:        genConstraint.OnUpdate,
 	})
 }
 
@@ -1204,6 +1205,9 @@ func normalizeCheckExpression(expr string) string {
 			continue
 		}
 		if !inString && unicode.IsSpace(rune(ch)) {
+			continue
+		}
+		if !inString && ch == '`' {
 			continue
 		}
 		if !inString && ch >= 'A' && ch <= 'Z' {
