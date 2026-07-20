@@ -1110,23 +1110,44 @@ Show current migration status and pending migrations:
 - Out-of-order pending migrations
 - Migration history and timestamps
 
-#### Atlas-Compatible CLI Namespace And Exit Codes
+#### Native And Atlas-Compatible CLI Namespaces
 
-Ptah keeps the existing kebab-case commands as native commands, and reserves an
-Atlas-compatible command tree under `ptah atlas <command> ...` for scripts that
-expect Atlas OSS command paths. The native command tree remains separate while
-it is redesigned independently.
+Ptah's native command tree is intentionally separate from the Atlas-compatible
+surface. New Ptah scripts should prefer the grouped native commands documented
+in [Native CLI Command Tree](docs/native_cli.md), while scripts that expect
+Atlas OSS command paths should use `ptah atlas <command> ...`.
+
+| Canonical native command | Legacy compatibility command |
+| --- | --- |
+| `ptah schema render` | `ptah generate` |
+| `ptah schema compare` | `ptah compare` |
+| `ptah schema drift` | `ptah drift` |
+| `ptah db read` | `ptah read-db` |
+| `ptah db drop-all` | `ptah drop-all` |
+| `ptah migrations plan` | `ptah migrate` |
+| `ptah migrations generate` | `ptah migrate generate` |
+| `ptah migrations create` | `ptah migrate new` |
+| `ptah migrations up` | `ptah migrate-up` |
+| `ptah migrations down` | `ptah migrate-down` |
+| `ptah migrations status` | `ptah migrate-status` |
+| `ptah migrations baseline` | `ptah migrate-baseline` |
+| `ptah migrations repair` | `ptah migrate-repair` |
+| `ptah migrations hash` | `ptah migrate-hash` |
+| `ptah migrations validate` | `ptah migrate-validate` |
+| `ptah migrations lint` | `ptah lint` |
+
+Atlas-compatible command paths are available only under `ptah atlas`:
 
 | Atlas-compatible command | Native command |
 | --- | --- |
-| `ptah atlas migrate apply` | `ptah migrate-up` |
-| `ptah atlas migrate down` | `ptah migrate-down` |
-| `ptah atlas migrate status` | `ptah migrate-status` |
-| `ptah atlas migrate hash` | `ptah migrate-hash` |
-| `ptah atlas migrate validate` | `ptah migrate-validate` |
-| `ptah atlas migrate lint` | `ptah lint` |
-| `ptah atlas schema inspect` | `ptah read-db` |
-| `ptah atlas schema diff` | `ptah compare` |
+| `ptah atlas migrate apply` | `ptah migrations up` |
+| `ptah atlas migrate down` | `ptah migrations down` |
+| `ptah atlas migrate status` | `ptah migrations status` |
+| `ptah atlas migrate hash` | `ptah migrations hash` |
+| `ptah atlas migrate validate` | `ptah migrations validate` |
+| `ptah atlas migrate lint` | `ptah migrations lint` |
+| `ptah atlas schema inspect` | `ptah db read` |
+| `ptah atlas schema diff` | `ptah schema compare` |
 
 Atlas-compatible aliases accept the Atlas OSS flag names on the compatibility
 surface and translate implemented flags to the native Ptah flags before

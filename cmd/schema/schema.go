@@ -9,6 +9,10 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/compare"
+	"github.com/stokaro/ptah/cmd/drift"
+	"github.com/stokaro/ptah/cmd/generate"
+	"github.com/stokaro/ptah/cmd/internal/cmdalias"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/core/atlashclrender"
 	"github.com/stokaro/ptah/core/goschema"
@@ -28,17 +32,48 @@ const (
 	exportFormatAtlasHCL     = "atlas-hcl"
 )
 
-// NewSchemaCommand returns the schema conversion command tree.
+// NewSchemaCommand returns the native schema command tree.
 func NewSchemaCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "schema",
-		Short: "Convert schema sources",
+		Short: "Work with desired schema definitions",
+		Long: `Work with desired schema definitions.
+
+This is Ptah's native schema namespace. Atlas-compatible schema commands stay
+under ptah atlas, while historical root commands remain available as
+compatibility commands until the native CLI reaches a stable release.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
 	}
-	cmdutil.ConfigureCommandArgs(cmd, nil)
+	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	cmd.AddCommand(newSchemaExportCommand())
+	renderCmd := cmdalias.NewForwardCommandWithTargetHelp(
+		"render",
+		"Render desired schema SQL",
+		"generate",
+		generate.NewGenerateCommand,
+	)
+	renderCmd.Long = "Render desired schema SQL from Go annotations, YAML schema files, or Atlas HCL schema files."
+	cmd.AddCommand(renderCmd)
+
+	compareCmd := cmdalias.NewForwardCommandWithTargetHelp(
+		"compare",
+		"Compare desired schema with a live database",
+		"compare",
+		compare.NewCompareCommand,
+	)
+	compareCmd.Long = "Compare desired schema with a live database."
+	cmd.AddCommand(compareCmd)
+
+	driftCmd := cmdalias.NewForwardCommandWithTargetHelp(
+		"drift",
+		"Check live database drift against desired schema",
+		"drift",
+		drift.NewDriftCommand,
+	)
+	driftCmd.Long = "Check live database drift against desired schema."
+	cmd.AddCommand(driftCmd)
 	return cmd
 }
 
