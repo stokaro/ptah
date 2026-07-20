@@ -399,6 +399,69 @@ func TestGenerateDownMigrationSQL_DropsSchemaQualifiedTableLevelFKChildBeforePar
 	assertSQLBefore(t, downSQL, "DROP TABLE IF EXISTS app.projects", "DROP TABLE IF EXISTS app.accounts")
 }
 
+func TestGenerateDownMigrationSQL_DropsMySQLFamilyFKChainInDependencyOrder(t *testing.T) {
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			schema := fkOrderSchema()
+			goschema.Finalize(schema)
+			upDiff := schemadiff.CompareWithDialect(schema, &dbschematypes.DBSchema{}, dialect)
+
+			downSQL, err := generateDownMigrationSQL(upDiff, schema, &dbschematypes.DBSchema{}, dialect)
+			c.Assert(err, qt.IsNil)
+			downSQL = legacyRenderedSQL(downSQL)
+
+			assertSQLBefore(t, downSQL, "ALTER TABLE ptah_fk_order_tasks DROP FOREIGN KEY", "DROP TABLE IF EXISTS ptah_fk_order_tasks")
+			assertSQLBefore(t, downSQL, "ALTER TABLE ptah_fk_order_projects DROP FOREIGN KEY", "DROP TABLE IF EXISTS ptah_fk_order_projects")
+			assertSQLBefore(t, downSQL, "DROP TABLE IF EXISTS ptah_fk_order_tasks", "DROP TABLE IF EXISTS ptah_fk_order_projects")
+			assertSQLBefore(t, downSQL, "DROP TABLE IF EXISTS ptah_fk_order_projects", "DROP TABLE IF EXISTS ptah_fk_order_accounts")
+		})
+	}
+}
+
+func TestGenerateDownMigrationSQL_DropsMySQLFamilyFKDiamondInDependencyOrder(t *testing.T) {
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			schema := fkOrderSchema()
+			goschema.Finalize(schema)
+			upDiff := schemadiff.CompareWithDialect(schema, &dbschematypes.DBSchema{}, dialect)
+
+			downSQL, err := generateDownMigrationSQL(upDiff, schema, &dbschematypes.DBSchema{}, dialect)
+			c.Assert(err, qt.IsNil)
+			downSQL = legacyRenderedSQL(downSQL)
+
+			assertSQLBefore(t, downSQL, "ALTER TABLE ptah_fk_order_tasks DROP FOREIGN KEY", "DROP TABLE IF EXISTS ptah_fk_order_tasks")
+			assertSQLBefore(t, downSQL, "ALTER TABLE ptah_fk_order_projects DROP FOREIGN KEY", "DROP TABLE IF EXISTS ptah_fk_order_projects")
+			assertSQLBefore(t, downSQL, "ALTER TABLE ptah_fk_order_memberships DROP FOREIGN KEY", "DROP TABLE IF EXISTS ptah_fk_order_memberships")
+			assertSQLBefore(t, downSQL, "DROP TABLE IF EXISTS ptah_fk_order_tasks", "DROP TABLE IF EXISTS ptah_fk_order_projects")
+			assertSQLBefore(t, downSQL, "DROP TABLE IF EXISTS ptah_fk_order_tasks", "DROP TABLE IF EXISTS ptah_fk_order_memberships")
+			assertSQLBefore(t, downSQL, "DROP TABLE IF EXISTS ptah_fk_order_projects", "DROP TABLE IF EXISTS ptah_fk_order_accounts")
+			assertSQLBefore(t, downSQL, "DROP TABLE IF EXISTS ptah_fk_order_memberships", "DROP TABLE IF EXISTS ptah_fk_order_accounts")
+		})
+	}
+}
+
+func TestGenerateDownMigrationSQL_DropsMySQLFamilyMutualFKCycleTogether(t *testing.T) {
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			schema := mutualFKCycleSchema()
+			goschema.Finalize(schema)
+			upDiff := schemadiff.CompareWithDialect(schema, &dbschematypes.DBSchema{}, dialect)
+
+			downSQL, err := generateDownMigrationSQL(upDiff, schema, &dbschematypes.DBSchema{}, dialect)
+			c.Assert(err, qt.IsNil)
+			downSQL = legacyRenderedSQL(downSQL)
+
+			assertSQLBefore(t, downSQL, "ALTER TABLE left_nodes DROP FOREIGN KEY", "DROP TABLE IF EXISTS left_nodes")
+			assertSQLBefore(t, downSQL, "ALTER TABLE right_nodes DROP FOREIGN KEY", "DROP TABLE IF EXISTS right_nodes")
+			c.Assert(downSQL, qt.Contains, "fk_left_nodes_right_id")
+			c.Assert(downSQL, qt.Contains, "fk_right_nodes_left_id")
+		})
+	}
+}
+
 func TestReverseSchemaDiff_GrantOptionUpgradeDownRevokesOnlyOption(t *testing.T) {
 	c := qt.New(t)
 	upDiff := &types.SchemaDiff{
@@ -746,6 +809,58 @@ func TestReverseSchemaDiff_FieldLevelCheckRemovalsWithTables(t *testing.T) {
 	})
 }
 
+// TestReverseSchemaDiff_AddedTableForeignKeyRemovalsWithTables verifies the
+// down metadata required by MySQL/MariaDB when a whole table is created by the
+// up migration. Those dialects cannot rely on DROP TABLE CASCADE, so FKs owned
+// by the added table must be explicitly removed before the table drop even when
+// the comparator does not report them as standalone constraint additions.
+func TestReverseSchemaDiff_AddedTableForeignKeyRemovalsWithTables(t *testing.T) {
+	c := qt.New(t)
+
+	generatedSchema := &goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "Account", Schema: "app", Name: "accounts"},
+			{StructName: "Project", Schema: "app", Name: "projects"},
+			{StructName: "Audit", Schema: "app", Name: "audits"},
+		},
+		Fields: []goschema.Field{
+			{StructName: "Project", Name: "account_id", Type: "INTEGER", Foreign: "app.accounts(id)"},
+			{
+				StructName:     "Project",
+				Name:           "owner_id",
+				Type:           "INTEGER",
+				Foreign:        "app.accounts(id)",
+				ForeignKeyName: "fk_project_owner_id",
+			},
+			{StructName: "Audit", Name: "project_id", Type: "INTEGER", Foreign: "app.projects(id)"},
+		},
+		EmbeddedFields: []goschema.EmbeddedField{
+			{StructName: "Project", Mode: "relation", Field: "owner_id", Ref: "app.accounts(id)"},
+		},
+		Constraints: []goschema.Constraint{
+			{
+				StructName:     "Project",
+				Type:           "FOREIGN KEY",
+				Table:          "app.projects",
+				Columns:        []string{"tenant_id", "reviewer_id"},
+				ForeignTable:   "app.accounts",
+				ForeignColumns: []string{"tenant_id", "id"},
+			},
+		},
+	}
+	upDiff := &types.SchemaDiff{
+		TablesAdded: []string{"app.projects"},
+	}
+
+	result := reverseSchemaDiffWithSchema(upDiff, generatedSchema, nil)
+
+	c.Assert(result.ConstraintsRemovedWithTables, qt.DeepEquals, []types.ConstraintRemovalInfo{
+		{Name: "fk_projects_account_id", TableName: "app.projects", Type: "FOREIGN KEY"},
+		{Name: "fk_project_owner_id", TableName: "app.projects", Type: "FOREIGN KEY"},
+		{Name: "fk_projects_tenant_id_reviewer_id", TableName: "app.projects", Type: "FOREIGN KEY"},
+	})
+}
+
 func TestForeignKeyAdditionFromDBConstraint_DeduplicatesRepeatedIntrospectionColumns(t *testing.T) {
 	c := qt.New(t)
 	foreignTable := "ptah_tenants"
@@ -805,6 +920,33 @@ func fkOrderSchema() *goschema.Database {
 				Type:           "VARCHAR(36)",
 				Foreign:        "ptah_fk_order_memberships(id)",
 				ForeignKeyName: "fk_ptah_fk_order_tasks_membership",
+			},
+		},
+	}
+}
+
+func mutualFKCycleSchema() *goschema.Database {
+	return &goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "LeftNode", Name: "left_nodes"},
+			{StructName: "RightNode", Name: "right_nodes"},
+		},
+		Fields: []goschema.Field{
+			{StructName: "LeftNode", Name: "id", Type: "INTEGER", Primary: true},
+			{
+				StructName:     "LeftNode",
+				Name:           "right_id",
+				Type:           "INTEGER",
+				Foreign:        "right_nodes(id)",
+				ForeignKeyName: "fk_left_nodes_right_id",
+			},
+			{StructName: "RightNode", Name: "id", Type: "INTEGER", Primary: true},
+			{
+				StructName:     "RightNode",
+				Name:           "left_id",
+				Type:           "INTEGER",
+				Foreign:        "left_nodes(id)",
+				ForeignKeyName: "fk_right_nodes_left_id",
 			},
 		},
 	}

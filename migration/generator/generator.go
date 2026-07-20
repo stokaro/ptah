@@ -1188,7 +1188,7 @@ func derefString(s *string) string {
 // still flow through ConstraintsRemoved; only the richer per-table info is
 // omitted.
 func reverseConstraintRemovals(diff *types.SchemaDiff, schema *goschema.Database) []types.ConstraintRemovalInfo {
-	if schema == nil || len(diff.ConstraintsAdded) == 0 {
+	if schema == nil {
 		return nil
 	}
 
@@ -1208,14 +1208,20 @@ func reverseConstraintRemovals(diff *types.SchemaDiff, schema *goschema.Database
 	// FK from exactly the table the up side added it to. Names present here are
 	// recorded so the legacy field-scan fallback below does not double-emit them.
 	var infos []types.ConstraintRemovalInfo
+	seen := make(map[string]struct{})
 	handled := make(map[string]struct{})
 	for _, add := range diff.ConstraintsAddedWithTables {
 		if add.TableName == "" {
 			continue
 		}
-		infos = append(infos, types.ConstraintRemovalInfo{Name: add.Name, TableName: add.TableName, Type: add.Type})
+		infos = appendConstraintRemovalInfo(infos, seen, types.ConstraintRemovalInfo{
+			Name:      add.Name,
+			TableName: add.TableName,
+			Type:      add.Type,
+		})
 		handled[add.Name] = struct{}{}
 	}
+	infos = appendAddedTableForeignKeyRemovals(infos, seen, diff.TablesAdded, schema)
 
 	// Index field-level constraint names to their owning table for the names
 	// that did not arrive with table-qualified info (legacy callers / explicit
@@ -1256,14 +1262,104 @@ func reverseConstraintRemovals(diff *types.SchemaDiff, schema *goschema.Database
 		switch {
 		case tableConstraints[name].Name != "":
 			c := tableConstraints[name]
-			infos = append(infos, types.ConstraintRemovalInfo{Name: name, TableName: c.Table, Type: c.Type})
+			infos = appendConstraintRemovalInfo(infos, seen, types.ConstraintRemovalInfo{Name: name, TableName: c.Table, Type: c.Type})
 		case fkTables[name] != "":
-			infos = append(infos, types.ConstraintRemovalInfo{Name: name, TableName: fkTables[name], Type: "FOREIGN KEY"})
+			infos = appendConstraintRemovalInfo(infos, seen, types.ConstraintRemovalInfo{Name: name, TableName: fkTables[name], Type: "FOREIGN KEY"})
 		case checkTables[name] != "":
-			infos = append(infos, types.ConstraintRemovalInfo{Name: name, TableName: checkTables[name], Type: "CHECK"})
+			infos = appendConstraintRemovalInfo(infos, seen, types.ConstraintRemovalInfo{Name: name, TableName: checkTables[name], Type: "CHECK"})
 		}
 	}
 	return infos
+}
+
+func appendAddedTableForeignKeyRemovals(
+	infos []types.ConstraintRemovalInfo,
+	seen map[string]struct{},
+	tableNames []string,
+	schema *goschema.Database,
+) []types.ConstraintRemovalInfo {
+	addedTables := make(map[string]struct{}, len(tableNames))
+	for _, tableName := range tableNames {
+		addedTables[tableName] = struct{}{}
+	}
+	if len(addedTables) == 0 {
+		return infos
+	}
+
+	for _, field := range schema.Fields {
+		if field.Foreign == "" {
+			continue
+		}
+		table := generatedTableByStructName(schema.Tables, field.StructName)
+		if table == nil || !generatedTableInSet(*table, addedTables) {
+			continue
+		}
+		tableName := table.QualifiedName()
+		name := field.ForeignKeyName
+		if name == "" {
+			name = fromschema.GenerateForeignKeyName(table.Name, field.Name)
+		}
+		infos = appendConstraintRemovalInfo(infos, seen, types.ConstraintRemovalInfo{
+			Name:      name,
+			TableName: tableName,
+			Type:      "FOREIGN KEY",
+		})
+	}
+
+	for _, constraint := range schema.Constraints {
+		if !strings.EqualFold(constraint.Type, "FOREIGN KEY") {
+			continue
+		}
+		table := generatedTableReference(schema.Tables, constraint.StructName, constraint.Table)
+		if table == nil || !generatedTableInSet(*table, addedTables) {
+			continue
+		}
+		tableName := table.QualifiedName()
+		if constraint.Table != "" {
+			tableName = constraint.Table
+		}
+		name := constraint.Name
+		if name == "" {
+			name = defaultForeignKeyConstraintName(table.Name, constraint.Columns)
+		}
+		infos = appendConstraintRemovalInfo(infos, seen, types.ConstraintRemovalInfo{
+			Name:      name,
+			TableName: tableName,
+			Type:      "FOREIGN KEY",
+		})
+	}
+
+	return infos
+}
+
+func generatedTableInSet(table goschema.Table, tableNames map[string]struct{}) bool {
+	_, byName := tableNames[table.Name]
+	_, byQualifiedName := tableNames[table.QualifiedName()]
+	return byName || byQualifiedName
+}
+
+func appendConstraintRemovalInfo(
+	infos []types.ConstraintRemovalInfo,
+	seen map[string]struct{},
+	info types.ConstraintRemovalInfo,
+) []types.ConstraintRemovalInfo {
+	if info.Name == "" || info.TableName == "" {
+		return infos
+	}
+	key := info.TableName + "." + info.Name
+	if _, ok := seen[key]; ok {
+		return infos
+	}
+	seen[key] = struct{}{}
+	return append(infos, info)
+}
+
+func defaultForeignKeyConstraintName(tableName string, columns []string) string {
+	columnName := strings.Join(columns, "_")
+	if columnName == "" {
+		columnName = "foreign_key"
+	}
+	return fromschema.GenerateForeignKeyName(tableName, columnName)
 }
 
 // reverseTableDiffs reverses table modifications for down migrations
