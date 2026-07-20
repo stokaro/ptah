@@ -12,7 +12,7 @@ func TestMigrateRepairCommand_Creation(t *testing.T) {
 	cmd := NewMigrateRepairCommand()
 
 	c.Assert(cmd, qt.IsNotNil)
-	c.Assert(cmd.Use, qt.Equals, "migrate-repair")
+	c.Assert(cmd.Use, qt.Equals, "repair")
 	c.Assert(cmd.Short, qt.Contains, "Repair dirty migration metadata")
 	c.Assert(cmd.Flag(dbURLFlag), qt.IsNotNil)
 	c.Assert(cmd.Flag(migrationsFlag), qt.IsNotNil)

@@ -204,12 +204,11 @@ func newAtlasMigrateCommand() *cobra.Command {
 			},
 		},
 		{
-			use:        "new",
-			short:      "Create a new migration file",
-			native:     "migrations create",
-			factory:    migrate.NewMigrateCommand,
-			prefixArgs: []string{"new"},
-			flags:      []atlasFlag{atlasNativeString("dir", "", "Migration directory", "migrations-dir")},
+			use:     "new",
+			short:   "Create a new migration file",
+			native:  "migrations create",
+			factory: migrate.NewMigrateCreateCommand,
+			flags:   []atlasFlag{atlasNativeString("dir", "", "Migration directory", "migrations-dir")},
 		},
 		{
 			use:     "set",

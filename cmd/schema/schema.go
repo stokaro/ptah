@@ -12,7 +12,6 @@ import (
 	"github.com/stokaro/ptah/cmd/compare"
 	"github.com/stokaro/ptah/cmd/drift"
 	"github.com/stokaro/ptah/cmd/generate"
-	"github.com/stokaro/ptah/cmd/internal/cmdalias"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/core/atlashclrender"
 	"github.com/stokaro/ptah/core/goschema"
@@ -47,30 +46,18 @@ under ptah atlas.`,
 	}
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	cmd.AddCommand(newSchemaExportCommand())
-	renderCmd := cmdalias.NewForwardCommandWithTargetHelp(
-		"render",
-		"Render desired schema SQL",
-		"generate",
-		generate.NewGenerateCommand,
-	)
+	renderCmd := generate.NewGenerateCommand()
+	renderCmd.Short = "Render desired schema SQL"
 	renderCmd.Long = "Render desired schema SQL from Go annotations, YAML schema files, or Atlas HCL schema files."
 	cmd.AddCommand(renderCmd)
 
-	compareCmd := cmdalias.NewForwardCommandWithTargetHelp(
-		"compare",
-		"Compare desired schema with a live database",
-		"compare",
-		compare.NewCompareCommand,
-	)
+	compareCmd := compare.NewCompareCommand()
+	compareCmd.Short = "Compare desired schema with a live database"
 	compareCmd.Long = "Compare desired schema with a live database."
 	cmd.AddCommand(compareCmd)
 
-	driftCmd := cmdalias.NewForwardCommandWithTargetHelp(
-		"drift",
-		"Check live database drift against desired schema",
-		"drift",
-		drift.NewDriftCommand,
-	)
+	driftCmd := drift.NewDriftCommand()
+	driftCmd.Short = "Check live database drift against desired schema"
 	driftCmd.Long = "Check live database drift against desired schema."
 	cmd.AddCommand(driftCmd)
 	return cmd

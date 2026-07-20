@@ -21,7 +21,7 @@ import (
 )
 
 var migrateCmd = &cobra.Command{
-	Use:   "migrate",
+	Use:   "plan",
 	Short: "Generate migration SQL from differences",
 	Long: `Generate migration SQL statements based on differences between Go entities and database schema.
 	
@@ -79,28 +79,8 @@ func NewMigrateCommand() *cobra.Command {
 		cobraflags.RegisterMap(migrateCmd, migrateFlags)
 		migrateFlagsRegistered = true
 	}
-	addMigrateGenerateCommand(migrateCmd)
-	addMigrateNewCommand(migrateCmd)
 	cmdutil.ConfigureCommandArgs(migrateCmd, cmdutil.NoPositionalArgs)
 	return migrateCmd
-}
-
-func addMigrateGenerateCommand(cmd *cobra.Command) {
-	for _, child := range cmd.Commands() {
-		if child.Name() == "generate" {
-			return
-		}
-	}
-	cmd.AddCommand(newMigrateGenerateCommand())
-}
-
-func addMigrateNewCommand(cmd *cobra.Command) {
-	for _, child := range cmd.Commands() {
-		if child.Name() == "new" {
-			return
-		}
-	}
-	cmd.AddCommand(newMigrateNewCommand())
 }
 
 func migrateCommand(cmd *cobra.Command, _ []string) error {

@@ -16,7 +16,7 @@ import (
 )
 
 var migrateRepairCmd = &cobra.Command{
-	Use:   "migrate-repair",
+	Use:   "repair",
 	Short: "Repair dirty migration metadata",
 	Long: `Repair dirty migration metadata after an operator has fixed a
 half-applied migration manually, or resume the migration from a specific

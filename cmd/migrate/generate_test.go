@@ -17,7 +17,7 @@ import (
 func TestMigrateGenerateCommandExposesShadowDBFlag(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := newMigrateGenerateCommand()
+	cmd := NewMigrateGenerateCommand()
 
 	c.Assert(cmd.Name(), qt.Equals, "generate")
 	c.Assert(cmd.Flags().Lookup(generateShadowDBFlag), qt.IsNotNil)
@@ -42,7 +42,7 @@ func TestMigrateGenerateProjectConfigPrecedence(t *testing.T) {
 		c.Assert(os.Chdir(originalWD), qt.IsNil)
 	}()
 
-	cmd := newMigrateGenerateCommand()
+	cmd := NewMigrateGenerateCommand()
 	c.Assert(cmd.ParseFlags([]string{"--shadow-db", "postgres://localhost/flag_shadow"}), qt.IsNil)
 	flagShadow, err := cmd.Flags().GetString(generateShadowDBFlag)
 	c.Assert(err, qt.IsNil)
@@ -53,30 +53,14 @@ func TestMigrateGenerateProjectConfigPrecedence(t *testing.T) {
 
 	c.Assert(shadowDB, qt.Equals, "postgres://localhost/flag_shadow")
 
-	cmd = newMigrateGenerateCommand()
+	cmd = NewMigrateGenerateCommand()
 	cfg, err = dbcli.LoadProjectConfig(cmd, "")
 	c.Assert(err, qt.IsNil)
 	shadowDB = dbcli.EffectiveString(cmd, generateShadowDBFlag, "", cfg.DevURL)
 	c.Assert(shadowDB, qt.Equals, "postgres://localhost/atlas_shadow")
 }
 
-func TestAddMigrateGenerateCommandIsIdempotent(t *testing.T) {
-	c := qt.New(t)
-
-	cmd := NewMigrateCommand()
-	addMigrateGenerateCommand(cmd)
-	addMigrateGenerateCommand(cmd)
-
-	count := 0
-	for _, child := range cmd.Commands() {
-		if child.Name() == "generate" {
-			count++
-		}
-	}
-	c.Assert(count, qt.Equals, 1)
-}
-
-func TestMigrateCommandRejectsAtlasApplyAtRoot(t *testing.T) {
+func TestMigratePlanCommandRejectsAtlasApplyAtRoot(t *testing.T) {
 	c := qt.New(t)
 
 	cmd := NewMigrateCommand()
@@ -122,10 +106,9 @@ func TestMigrateGenerateShadowVerificationWithRealDB(t *testing.T) {
 		prepareMigrateGenerateTargetDB(c, ctx, conn)
 
 		var out bytes.Buffer
-		cmd := NewMigrateCommand()
+		cmd := NewMigrateGenerateCommand()
 		cmd.SetOut(&out)
 		cmd.SetArgs([]string{
-			"generate",
 			"--root-dir", entitiesDir,
 			"--db-url", dbURL,
 			"--migrations-dir", migrationsDir,
@@ -150,10 +133,9 @@ func TestMigrateGenerateShadowVerificationWithRealDB(t *testing.T) {
 		prepareMigrateGenerateTargetDB(c, ctx, conn)
 
 		var out bytes.Buffer
-		cmd := NewMigrateCommand()
+		cmd := NewMigrateGenerateCommand()
 		cmd.SetOut(&out)
 		cmd.SetArgs([]string{
-			"generate",
 			"--root-dir", entitiesDir,
 			"--db-url", dbURL,
 			"--migrations-dir", migrationsDir,

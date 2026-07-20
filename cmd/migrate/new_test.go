@@ -13,7 +13,7 @@ func TestMigrateNewCommandCreatesSkeletonFiles(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 
-	cmd := newMigrateNewCommand()
+	cmd := NewMigrateCreateCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -38,7 +38,7 @@ func TestMigrateNewCommandAcceptsNameFlag(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 
-	cmd := newMigrateNewCommand()
+	cmd := NewMigrateCreateCommand()
 	cmd.SetArgs([]string{"--name", "manual_hotfix", "--migrations-dir", dir})
 
 	err := cmd.Execute()
@@ -75,7 +75,7 @@ func TestMigrateNewCommandValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			cmd := newMigrateNewCommand()
+			cmd := NewMigrateCreateCommand()
 			cmd.SetArgs(tt.args)
 
 			err := cmd.Execute()
@@ -85,18 +85,10 @@ func TestMigrateNewCommandValidation(t *testing.T) {
 	}
 }
 
-func TestAddMigrateNewCommandIsIdempotent(t *testing.T) {
+func TestMigrateCreateCommandUsesNativeName(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := NewMigrateCommand()
-	addMigrateNewCommand(cmd)
-	addMigrateNewCommand(cmd)
+	cmd := NewMigrateCreateCommand()
 
-	count := 0
-	for _, child := range cmd.Commands() {
-		if child.Name() == "new" {
-			count++
-		}
-	}
-	c.Assert(count, qt.Equals, 1)
+	c.Assert(cmd.Name(), qt.Equals, "create")
 }

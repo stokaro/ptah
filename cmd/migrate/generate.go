@@ -24,7 +24,7 @@ const (
 	generateReportFormatFlag     = "report"
 )
 
-func newMigrateGenerateCommand() *cobra.Command {
+func NewMigrateGenerateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "generate",
 		Short: "Generate migration files from schema differences",

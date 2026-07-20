@@ -22,7 +22,7 @@ import (
 )
 
 var migrateUpCmd = &cobra.Command{
-	Use:   "migrate-up",
+	Use:   "up",
 	Short: "Run pending migrations up to the latest version",
 	Long: `Run all pending database migrations up to the latest version.
 

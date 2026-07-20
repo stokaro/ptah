@@ -21,7 +21,7 @@ func NewMigrateValidateCommand() *cobra.Command {
 	var dirFormatValue string
 
 	cmd := &cobra.Command{
-		Use:   "migrate-validate",
+		Use:   "validate",
 		Short: "Verify a migrations directory against its committed ptah.sum",
 		Long: `migrations validate recomputes the integrity hashes of a migrations directory
 and compares them against the committed ptah.sum. It exits:

@@ -18,7 +18,7 @@ import (
 )
 
 var generateCmd = &cobra.Command{
-	Use:   "generate",
+	Use:   "render",
 	Short: "Generate schema from Go entities, YAML schema files, or Atlas HCL schema files",
 	Long: `Generate database schema from Go entities in the specified directory or from a schema file.
 	

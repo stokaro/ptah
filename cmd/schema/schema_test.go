@@ -42,7 +42,7 @@ func TestSchemaExportCommandWritesAtlasHCL(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("schema.hcl:\n%s", string(content)))
 }
 
-func TestSchemaCommand_RegistersNativeAliasPaths(t *testing.T) {
+func TestSchemaCommand_RegistersNativePaths(t *testing.T) {
 	c := qt.New(t)
 
 	cmd := schema.NewSchemaCommand()
@@ -58,7 +58,7 @@ func TestSchemaCommand_RegistersNativeAliasPaths(t *testing.T) {
 	}
 }
 
-func TestSchemaCommand_RenderHelpShowsNativeAlias(t *testing.T) {
+func TestSchemaCommand_RenderHelpShowsNativePath(t *testing.T) {
 	c := qt.New(t)
 
 	cmd := schema.NewSchemaCommand()

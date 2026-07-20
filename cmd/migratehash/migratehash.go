@@ -18,7 +18,7 @@ func NewMigrateHashCommand() *cobra.Command {
 	var dirFormatValue string
 
 	cmd := &cobra.Command{
-		Use:   "migrate-hash",
+		Use:   "hash",
 		Short: "Write or update the ptah.sum integrity file for a migrations directory",
 		Long: `migrations hash recomputes the integrity hashes of every migration file in a
 directory and writes them to ptah.sum. Run it whenever you add, remove, or

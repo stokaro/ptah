@@ -16,7 +16,7 @@ import (
 )
 
 var readDBCmd = &cobra.Command{
-	Use:   "read-db",
+	Use:   "read",
 	Short: "Read schema from database",
 	Long: `Read and display the current schema from the specified database.
 	

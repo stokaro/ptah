@@ -18,7 +18,7 @@ import (
 )
 
 var migrateStatusCmd = &cobra.Command{
-	Use:   "migrate-status",
+	Use:   "status",
 	Short: "Show current migration status",
 	Long: `Show the current migration status of the database.
 

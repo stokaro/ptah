@@ -21,7 +21,7 @@ func TestMigrateBaselineCommandCreation(t *testing.T) {
 
 	cmd := NewMigrateBaselineCommand()
 	c.Assert(cmd, qt.IsNotNil)
-	c.Assert(cmd.Use, qt.Equals, "migrate-baseline")
+	c.Assert(cmd.Use, qt.Equals, "baseline")
 	c.Assert(cmd.Flag(dbURLFlag), qt.IsNotNil)
 	c.Assert(cmd.Flag(migrationsFlag), qt.IsNotNil)
 	c.Assert(cmd.Flag(versionFlag), qt.IsNotNil)

@@ -17,7 +17,7 @@ import (
 )
 
 var migrateDownCmd = &cobra.Command{
-	Use:   "migrate-down",
+	Use:   "down",
 	Short: "Roll back migrations to a specific version",
 	Long: `Roll back database migrations to a specific target version.
 
