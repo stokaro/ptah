@@ -276,6 +276,45 @@ func TestNewAtlasCommand_HelpUsesAtlasPathForForwardedParentedCommand(t *testing
 	c.Assert(out.String(), qt.Not(qt.Contains), "Usage:\n  migrate-up")
 }
 
+func TestNewAtlasCommand_HelpAdvertisesGroupedNativeEquivalents(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		wantNative string
+		legacy     string
+	}{
+		{
+			name:       "migrate_apply",
+			args:       []string{"migrate", "apply", "--help"},
+			wantNative: "ptah migrations up",
+			legacy:     "ptah migrate-up",
+		},
+		{
+			name:       "schema_inspect",
+			args:       []string{"schema", "inspect", "--help"},
+			wantNative: "ptah db read",
+			legacy:     "ptah read-db",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			cmd := NewAtlasCommand()
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&out)
+			cmd.SetArgs(tt.args)
+
+			err := cmd.Execute()
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(out.String(), qt.Contains, tt.wantNative)
+			c.Assert(out.String(), qt.Not(qt.Contains), tt.legacy)
+		})
+	}
+}
+
 func TestNewAtlasCommand_UnsupportedCommandsAreExplicit(t *testing.T) {
 	c := qt.New(t)
 	cmd := NewAtlasCommand()

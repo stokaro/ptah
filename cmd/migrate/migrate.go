@@ -81,7 +81,7 @@ func NewMigrateCommand() *cobra.Command {
 	}
 	addMigrateGenerateCommand(migrateCmd)
 	addMigrateNewCommand(migrateCmd)
-	cmdutil.ConfigureCommandArgs(migrateCmd, nil)
+	cmdutil.ConfigureCommandArgs(migrateCmd, cmdutil.NoPositionalArgs)
 	return migrateCmd
 }
 

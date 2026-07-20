@@ -90,7 +90,7 @@ func newAtlasSchemaCommand() *cobra.Command {
 		{
 			use:     "inspect",
 			short:   "Inspect a database schema",
-			native:  "read-db",
+			native:  "db read",
 			factory: readdb.NewReadDBCommand,
 			flags: []atlasFlag{
 				atlasNativeString("url", "u", "Database URL to inspect", "db-url"),
@@ -115,7 +115,7 @@ func newAtlasSchemaCommand() *cobra.Command {
 		{
 			use:     "diff",
 			short:   "Diff desired schema against a database",
-			native:  "compare",
+			native:  "schema compare",
 			factory: compare.NewCompareCommand,
 			flags: []atlasFlag{
 				atlasUnsupportedStringArray("from", "", "Source schema target"),
@@ -128,7 +128,7 @@ func newAtlasSchemaCommand() *cobra.Command {
 		{
 			use:     "clean",
 			short:   "Clean database schema objects",
-			native:  "drop-all",
+			native:  "db drop-all",
 			factory: dropall.NewDropAllCommand,
 			flags: []atlasFlag{
 				atlasNativeString("url", "u", "Database URL to clean", "db-url"),
@@ -155,7 +155,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 		{
 			use:     "apply",
 			short:   "Apply pending migrations",
-			native:  "migrate-up",
+			native:  "migrations up",
 			factory: migrateup.NewMigrateUpCommand,
 			flags: []atlasFlag{
 				atlasNativeString("url", "u", "Database URL to apply migrations to", "db-url"),
@@ -175,11 +175,11 @@ func newAtlasMigrateCommand() *cobra.Command {
 				atlasString("format", "", "Atlas Go template output format"),
 			},
 		},
-		{use: "down", short: "Roll back migrations", native: "migrate-down", factory: migratedown.NewMigrateDownCommand},
+		{use: "down", short: "Roll back migrations", native: "migrations down", factory: migratedown.NewMigrateDownCommand},
 		{
 			use:     "hash",
 			short:   "Write or update the migration directory checksum",
-			native:  "migrate-hash",
+			native:  "migrations hash",
 			factory: migratehash.NewMigrateHashCommand,
 			flags:   []atlasFlag{atlasNativeString("dir", "", "Migration directory", "dir")},
 		},
@@ -195,7 +195,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 		{
 			use:     "lint",
 			short:   "Lint migration files",
-			native:  "lint",
+			native:  "migrations lint",
 			factory: lint.NewLintCommand,
 			flags: []atlasFlag{
 				atlasUnsupportedString("dev-url", "", "Dev database URL"),
@@ -206,7 +206,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 		{
 			use:        "new",
 			short:      "Create a new migration file",
-			native:     "migrate new",
+			native:     "migrations create",
 			factory:    migrate.NewMigrateCommand,
 			prefixArgs: []string{"new"},
 			flags:      []atlasFlag{atlasNativeString("dir", "", "Migration directory", "migrations-dir")},
@@ -214,7 +214,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 		{
 			use:     "set",
 			short:   "Set migration revision state",
-			native:  "migrate-repair",
+			native:  "migrations repair",
 			factory: migraterepair.NewMigrateRepairCommand,
 			flags: []atlasFlag{
 				atlasNativeString("url", "u", "Database URL", "db-url"),
@@ -224,7 +224,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 		{
 			use:     "status",
 			short:   "Show migration status",
-			native:  "migrate-status",
+			native:  "migrations status",
 			factory: migratestatus.NewMigrateStatusCommand,
 			flags: []atlasFlag{
 				atlasNativeString("url", "u", "Database URL", "db-url"),
@@ -234,7 +234,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 		{
 			use:     "validate",
 			short:   "Validate migration directory integrity",
-			native:  "migrate-validate",
+			native:  "migrations validate",
 			factory: migratevalidate.NewMigrateValidateCommand,
 			flags: []atlasFlag{
 				atlasUnsupportedString("dev-url", "", "Dev database URL"),

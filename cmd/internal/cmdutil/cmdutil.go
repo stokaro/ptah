@@ -72,11 +72,10 @@ func FlagErrorFunc(cmd *cobra.Command, err error) error {
 // argument with a printed message and exit code 2. Unlike cobra.NoArgs, whose
 // error is swallowed under SilenceErrors and degrades to a bare exit 1, this
 // routes through Fail so the failure is visible and carries the usage exit
-// code (e.g. a stray path typed instead of --dir does not masquerade as a
-// success/drift).
+// code, so a stray positional value does not masquerade as success/drift.
 func NoPositionalArgs(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
-		return Fail(cmd, fmt.Errorf("unexpected positional arguments %q: pass the directory via --dir", args))
+		return Fail(cmd, fmt.Errorf("unexpected positional arguments %q", args))
 	}
 	return nil
 }
