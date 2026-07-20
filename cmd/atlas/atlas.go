@@ -9,7 +9,7 @@ import (
 
 	"github.com/stokaro/ptah/cmd/compare"
 	"github.com/stokaro/ptah/cmd/dropall"
-	"github.com/stokaro/ptah/cmd/internal/cmdalias"
+	"github.com/stokaro/ptah/cmd/internal/cmdadapter"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/lint"
 	"github.com/stokaro/ptah/cmd/migrate"
@@ -273,7 +273,7 @@ func newAtlasLicenseCommand() *cobra.Command {
 func newAtlasAdapterCommand(group string, verb atlasVerb) *cobra.Command {
 	mapper := atlasArgMapper(group, verb)
 	if verb.factory != nil {
-		cmd := cmdalias.NewForwardCommandWithArgsMapper(
+		cmd := cmdadapter.NewForwardCommandWithArgsMapper(
 			verb.use,
 			verb.short,
 			verb.native,
@@ -362,7 +362,7 @@ func registerAtlasFlags(cmd *cobra.Command, flags []atlasFlag) {
 	}
 }
 
-func atlasArgMapper(group string, verb atlasVerb) cmdalias.ArgMapper {
+func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 	return func(args []string) ([]string, error) {
 		return mapAtlasArgs(group, verb, args)
 	}
