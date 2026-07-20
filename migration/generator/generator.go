@@ -755,8 +755,8 @@ func generateDownMigrationSQLWithOptions(
 	// Create a reverse diff to generate down migration. We pass the original
 	// generated schema to resolve table names for RLS policies, and the
 	// introspected database schema so the reversed constraint additions can
-	// rebuild the FULL prior FK body (columns, target, on_delete/on_update) from
-	// the pre-change DB state — that is exactly the action the down must restore.
+	// rebuild the full prior body from the pre-change DB state — that is exactly
+	// the definition the down must restore.
 	reverseDiff := reverseSchemaDiffWithSchema(diff, generated, dbSchema)
 
 	caps := capability.ForDialect(dialect)
@@ -823,9 +823,9 @@ func reverseSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 //
 // schema is the generated (target) Go schema, used to resolve table names for
 // RLS policies. dbSchema is the introspected (pre-change) database schema, used
-// to rebuild the prior FK definition for the reversed constraint additions; it
-// may be nil for legacy callers that only have the generated schema (the
-// reversed additions then fall back to the name-only path).
+// to rebuild prior FK/PK/CHECK/UNIQUE definitions for reversed constraint
+// additions; it may be nil for legacy callers that only have the generated
+// schema (the reversed additions then fall back to the name-only path).
 func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Database, dbSchema *dbschematypes.DBSchema) *types.SchemaDiff {
 	return &types.SchemaDiff{
 		// Reverse table operations
@@ -872,19 +872,18 @@ func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Databa
 		// Reverse constraint operations. A modified constraint is expressed by
 		// the comparator as remove + add of the SAME name (e.g. an on_delete
 		// change on a field-level FK, issue #189). Swapping the two slices makes
-		// the down migration drop the new definition and re-add the old one — the
-		// down planner resolves the old definition from the introspected schema
-		// (see dbschematogo.ConvertDBSchemaToGoSchema, which now carries the
-		// FK action), so the prior action is faithfully restored.
+		// the down migration drop the new definition and re-add the old one.
+		// reverseConstraintAdditions restores the prior table-qualified body
+		// from the introspected schema for the constraint types whose down
+		// add-path needs more than a name.
 		//
-		// ConstraintsAddedWithTables carries the table-qualified prior FK body so
-		// the down add-path can fan a mixin-shared FK name out to every host
-		// table. Without it the down add-path falls back to the name-only field
-		// scan, which emits one ADD for a single host while the per-host DROP also
-		// resolves only one host — so the 2nd host's re-add collides with its
-		// still-present old constraint (Postgres 42710, MySQL 1826) and the
-		// rollback aborts half-applied. This is the DOWN mirror of the UP
-		// multi-host fix (issue #197).
+		// ConstraintsAddedWithTables carries the table-qualified prior body so
+		// the down add-path can fan a shared constraint name out to every real
+		// host table. Without it the down add-path falls back to name-only
+		// resolution, which can emit one ADD for a single host while per-host
+		// DROP also resolves only one host; the 2nd host's re-add then collides
+		// with its still-present old constraint (Postgres 42710, MySQL 1826)
+		// and the rollback aborts half-applied.
 		ConstraintsAdded:             diff.ConstraintsRemoved,
 		ConstraintsRemoved:           diff.ConstraintsAdded,
 		ConstraintsRemovedWithTables: reverseConstraintRemovals(diff, schema),
@@ -1074,9 +1073,9 @@ func foreignReferenceTable(ref string) string {
 // reverseConstraintAdditions builds the table-qualified additions for the down
 // migration. In the down direction the constraints to add back are the ones the
 // up migration REMOVED (diff.ConstraintsRemovedWithTables) — restoring their
-// prior definition. The prior FK body (columns, foreign table/column,
-// on_delete/on_update) is read from the introspected (pre-change) database
-// schema, which is the authoritative source for what the down must restore.
+// prior definition. The prior body is read from the introspected (pre-change)
+// database schema, which is the authoritative source for what the down must
+// restore.
 //
 // Carrying the full per-host body here lets both dialect planners' add-paths
 // (which already prefer ConstraintsAddedWithTables) emit one correct ALTER TABLE
@@ -1096,10 +1095,10 @@ func reverseConstraintAdditions(diff *types.SchemaDiff, dbSchema *dbschematypes.
 	// name-only key would collapse them onto one host.
 	dbConstraintByTableName := make(map[string]dbschematypes.DBConstraint)
 	for _, c := range dbSchema.Constraints {
-		if c.Type != "FOREIGN KEY" && c.Type != "PRIMARY KEY" {
+		if c.Type != "FOREIGN KEY" && c.Type != "PRIMARY KEY" && c.Type != "CHECK" && c.Type != "UNIQUE" {
 			continue
 		}
-		dbConstraintByTableName[c.TableName+"."+c.Name] = c
+		dbConstraintByTableName[c.QualifiedTableName()+"."+c.Name] = c
 	}
 
 	var infos []types.ConstraintAdditionInfo
@@ -1110,8 +1109,9 @@ func reverseConstraintAdditions(diff *types.SchemaDiff, dbSchema *dbschematypes.
 		dbConstraint, ok := dbConstraintByTableName[removed.TableName+"."+removed.Name]
 		if !ok {
 			// No introspected body to restore (e.g. the constraint was a
-			// pure-removal not present pre-change, or a non-FK). The name still
-			// rides in ConstraintsAdded for the name-only fallback.
+			// pure-removal not present pre-change, or a type this helper does not
+			// reconstruct). The name still rides in ConstraintsAdded for the
+			// name-only fallback.
 			continue
 		}
 		switch removed.Type {
@@ -1126,9 +1126,36 @@ func reverseConstraintAdditions(diff *types.SchemaDiff, dbSchema *dbschematypes.
 					Columns:   append([]string(nil), columns...),
 				})
 			}
+		case "CHECK":
+			if dbConstraint.CheckClause != nil && *dbConstraint.CheckClause != "" {
+				infos = append(infos, types.ConstraintAdditionInfo{
+					Name:            removed.Name,
+					TableName:       removed.TableName,
+					Type:            "CHECK",
+					CheckExpression: *dbConstraint.CheckClause,
+				})
+			}
+		case "UNIQUE":
+			if columns := dbConstraint.ColumnNamesOrDefault(); len(columns) > 0 {
+				infos = append(infos, types.ConstraintAdditionInfo{
+					Name:          removed.Name,
+					TableName:     removed.TableName,
+					Type:          "UNIQUE",
+					Columns:       append([]string(nil), columns...),
+					NullsDistinct: cloneBoolPtr(dbConstraint.NullsDistinct),
+				})
+			}
 		}
 	}
 	return infos
+}
+
+func cloneBoolPtr(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }
 
 // foreignKeyAdditionFromDBConstraint builds a ConstraintAdditionInfo carrying the

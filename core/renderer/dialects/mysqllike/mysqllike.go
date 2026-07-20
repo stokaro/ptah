@@ -311,6 +311,13 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 		lines = append(lines, line)
 	}
 
+	for _, column := range node.Columns {
+		if !r.rendersNamedColumnCheckAsTableConstraint(column) {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("  CONSTRAINT %s CHECK (%s)", escapeIdentifier(column.CheckName), column.Check))
+	}
+
 	// Render table-level constraints
 	for _, constraint := range node.Constraints {
 		line, err := r.renderConstraint(constraint)
@@ -614,10 +621,9 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 
 	// Check constraint. When `check_name=` is provided, emit the explicit
 	// `CONSTRAINT <name> CHECK (...)` form so the constraint round-trips
-	// stably through MySQL/MariaDB introspection (which otherwise auto-names
-	// CHECKs as `<table>_chk_N` and would not match the drift detector's
-	// expected name).
-	if column.Check != "" {
+	// stably through introspection (which otherwise auto-names CHECKs as
+	// `<table>_chk_N` and would not match the drift detector's expected name).
+	if column.Check != "" && !r.rendersNamedColumnCheckAsTableConstraint(column) {
 		if column.CheckName != "" {
 			parts = append(parts, fmt.Sprintf("CONSTRAINT %s CHECK (%s)", escapeIdentifier(column.CheckName), column.Check))
 		} else {
@@ -629,6 +635,10 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	}
 
 	return strings.Join(parts, " "), nil
+}
+
+func (r *Renderer) rendersNamedColumnCheckAsTableConstraint(column *ast.ColumnNode) bool {
+	return r.dialect == "mariadb" && column.Check != "" && column.CheckName != ""
 }
 
 func (r *Renderer) renderColumnType(column *ast.ColumnNode, columnType string) string {

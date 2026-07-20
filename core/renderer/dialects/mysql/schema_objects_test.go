@@ -87,6 +87,17 @@ func TestMySQLRenderer_JSONColumnRemainsNativeJSON(t *testing.T) {
 	c.Assert(sql, qt.Not(qt.Contains), "json_valid")
 }
 
+func TestMySQLRenderer_NamedColumnCheckRemainsInline(t *testing.T) {
+	c := qt.New(t)
+
+	table := ast.NewCreateTable("products").
+		AddColumn(ast.NewColumn("quantity", "integer").SetNotNull().SetCheck("quantity > 0").SetCheckName("products_quantity_check"))
+
+	sql := renderMySQL(t, table)
+
+	c.Assert(sql, qt.Contains, "`quantity` integer NOT NULL CONSTRAINT `products_quantity_check` CHECK (quantity > 0)")
+}
+
 func TestMySQLRenderer_IndexParts(t *testing.T) {
 	c := qt.New(t)
 
