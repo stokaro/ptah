@@ -73,9 +73,9 @@
 //  3. Adding platform support to migration planners
 //  4. Updating connection management code
 //
-// # Backward Compatibility
+// # Stability
 //
-// Platform constant values are considered stable and will not change
-// in future versions to maintain backward compatibility with existing
-// configurations and code that depends on these values.
+// Platform constant names are the public identifiers callers should use. Ptah is
+// pre-GA, so constant values can still change before a stable release if the
+// platform model needs a cleaner shape.
 package platform

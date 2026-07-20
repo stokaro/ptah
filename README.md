@@ -737,7 +737,7 @@ Findings carry stable rule codes grouped into families:
 
 - `DS` - data safety: `DS101` dropped table, `DS102` dropped column, `DS103` lossy column type change
 - `MF` - migration form: `MF101` missing down file, `MF102` empty migration, `MF103` non-conventional file name
-- `BC` - backward compatibility: `BC101` rename breaking deployed code
+- `BC` - breaking-change safety: `BC101` rename breaking deployed code
 - `PG` - PostgreSQL: `PG101` `CREATE INDEX` without `CONCURRENTLY`, `PG102` `ALTER TYPE ... ADD VALUE` in a transaction
 - `MY` - MySQL/MariaDB: `MY101` lock-heavy `ALTER TABLE` forms
 
@@ -756,7 +756,7 @@ rules:
   DS102:
     severity: error
     exclude:
-      - legacy/**
+      - archived/**
 ```
 
 Inline suppressions apply to the next statement only. Ptah accepts both its
@@ -764,7 +764,7 @@ native directive and Atlas's `atlas:nolint` directive:
 
 ```sql
 -- ptah:nolint DS102
-ALTER TABLE users DROP COLUMN legacy_note;
+ALTER TABLE users DROP COLUMN archived_note;
 
 -- atlas:nolint DS103
 ALTER TABLE users ALTER COLUMN email TYPE VARCHAR(512);
@@ -1232,6 +1232,16 @@ same check before applying and aborts on drift.
 - name: Verify migration integrity
   run: ./ptah migrations validate --dir ./migrations
 ```
+
+Ptah's own CI includes supply-chain and security gates:
+
+- `govulncheck` scans the full module for reachable vulnerable dependency code.
+- `gosec` uploads SARIF to GitHub code scanning, while `golangci-lint` remains
+  the failing gosec enforcement path for source-level findings.
+- `scripts/check-coverage.sh` gates production engine package coverage
+  (`config`, `core`, `migration`, and `dbschema`) at the current 70% baseline.
+- The fuzz workflow runs short PR smoke fuzzing for the SQL lexer and parser,
+  plus longer scheduled/manual fuzzing.
 
 The line-oriented file layout and `h1:` scheme are shared by both formats, but
 the hash algorithm differs. Recompute the integrity file with the selected
