@@ -1,6 +1,10 @@
 name: Go Fuzz
 
 on:
+  push:
+    branches:
+      - master
+  pull_request:
   schedule:
     - cron: '17 2 * * *'
   workflow_dispatch:
@@ -27,8 +31,22 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
+      - name: Verify fuzz targets
+        run: |
+          go test -list '^Fuzz' ./core/lexer | grep '^FuzzLexer$'
+          go test -list '^Fuzz' ./core/parser | grep '^FuzzParseSQL$'
+
+      - name: Select fuzz duration
+        id: fuzz-duration
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "fuzztime=10m" >> "$GITHUB_OUTPUT"
+          else
+            echo "fuzztime=30s" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Fuzz lexer
-        run: go test -run '^$' -fuzz=FuzzLexer -fuzztime=10m -timeout=15m ./core/lexer
+        run: go test -run '^$' -fuzz=FuzzLexer -fuzztime=${{ steps.fuzz-duration.outputs.fuzztime }} -timeout=15m ./core/lexer
 
       - name: Fuzz parser
-        run: go test -run '^$' -fuzz=FuzzParseSQL -fuzztime=10m -timeout=15m ./core/parser
+        run: go test -run '^$' -fuzz=FuzzParseSQL -fuzztime=${{ steps.fuzz-duration.outputs.fuzztime }} -timeout=15m ./core/parser

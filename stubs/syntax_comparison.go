@@ -1,11 +1,11 @@
 package stubs
 
-// This file demonstrates the difference between old verbose syntax and new simplified syntax
+// This file demonstrates the difference between verbose syntax and simplified syntax.
 
-// OLD VERBOSE SYNTAX (still supported for backward compatibility)
+// VERBOSE SYNTAX
 //
-//migrator:schema:table name="old_syntax_users"
-type OldSyntaxUser struct {
+//migrator:schema:table name="verbose_syntax_users"
+type VerboseSyntaxUser struct {
 	//migrator:schema:field name="id" type="SERIAL" primary="true" not_null="true"
 	ID int `db:"id"`
 
@@ -19,7 +19,7 @@ type OldSyntaxUser struct {
 	Description *string `db:"description"`
 }
 
-// NEW SIMPLIFIED SYNTAX (recommended)
+// SIMPLIFIED SYNTAX (recommended)
 //
 //migrator:schema:table name="new_syntax_users"
 type NewSyntaxUser struct {

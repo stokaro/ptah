@@ -271,6 +271,8 @@ type Product struct {
 - Multiple database backend validation
 - Automated migration generation and testing
 - Schema drift detection
+- Supply-chain and security gates with govulncheck, gosec SARIF upload, coverage
+  thresholds, and lexer/parser fuzzing
 
 ## Error Handling and Safety
 
