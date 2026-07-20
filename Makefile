@@ -1,6 +1,6 @@
 # Ptah Migration Library Makefile
 
-.PHONY: help build test integration-test clean docker-build lint lint-qtlint lint-fix install-hooks
+.PHONY: help build test integration-test clean docker-build lint lint-qtlint lint-fix install-hooks conformance
 
 VERSION ?= $(shell git describe --tags --always --dirty)
 COMMIT ?= $(shell git rev-parse --short HEAD)
@@ -19,6 +19,7 @@ help:
 	@echo "  test               Run unit tests"
 	@echo "  integration-test   Run integration tests using Docker Compose"
 	@echo "  lint               Run golangci-lint and qtlint"
+	@echo "  conformance        Show Atlas conformance scoreboard location"
 	@echo "  lint-fix           Run auto-fixable linters"
 	@echo "  install-hooks      Install local Git hooks"
 	@echo "  docker-build       Build Docker images"
@@ -158,6 +159,24 @@ lint-fix:
 	go tool qtlint -fix ./...
 	golangci-lint run --fix ./...
 	$(MAKE) lint
+
+# Atlas parity scoreboard. The executable harness and Apache-2.0 Atlas fixture
+# corpus intentionally live outside this MIT repository, under
+# stokaro/ptah-atlas-conformance. Keep the dependency direction one-way:
+# conformance imports Ptah; Ptah does not import or vendor conformance.
+conformance:
+	@echo "Atlas conformance scoreboard:"
+	@echo "  docs/conformance.md"
+	@echo "  https://github.com/stokaro/ptah-atlas-conformance"
+	@echo ""
+	@echo "Run the harness from that repository:"
+	@echo "  make probe        # offline corpus report"
+	@echo "  make budget       # offline regression budget"
+	@echo "  make gate         # full offline parity gate"
+	@echo "  make probe-live   # live DB round-trip report"
+	@echo "  make budget-live  # live DB regression budget"
+	@echo "  make probe-diff   # Atlas CE differential report"
+	@echo "  make budget-diff  # Atlas CE differential regression budget"
 
 # Format code
 fmt:

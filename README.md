@@ -1162,6 +1162,11 @@ flag translation, so their exit codes follow the native command contract
 documented in [CLI Exit Codes](docs/exit_codes.md). Unsupported Atlas-compatible
 flags are rejected explicitly and exit `2`.
 
+Ptah's current Atlas parity status is tracked in
+[Atlas Conformance](docs/conformance.md), backed by the CI-regenerated
+[`ptah-atlas-conformance`](https://github.com/stokaro/ptah-atlas-conformance)
+scoreboards.
+
 #### Migration Directory Integrity (`ptah.sum` / `atlas.sum`)
 
 Once a migration is committed and applied somewhere, its content must never change.
