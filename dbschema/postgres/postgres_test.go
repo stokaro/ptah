@@ -2,11 +2,15 @@ package postgres
 
 import (
 	"context"
+	"database/sql/driver"
+	"fmt"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/core/platform/capability"
+	"github.com/stokaro/ptah/dbschema/internal/dbtest"
 	"github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/testutils"
 )
@@ -147,6 +151,69 @@ func TestPostgreSQLReader_ReadSchema_NoConnection(t *testing.T) {
 
 	// Note: We don't test ReadSchema() with nil db as it would panic
 	// This is expected behavior - the reader requires a valid database connection
+}
+
+func TestPostgreSQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
+	c := qt.New(t)
+
+	tableRows := make([][]driver.Value, 0, 50)
+	columnRows := make([][]driver.Value, 0, 100)
+	for i := range 50 {
+		tableName := fmt.Sprintf("table_%02d", i)
+		tableRows = append(tableRows, []driver.Value{"public", tableName, "BASE TABLE", "", int64(0), false})
+		columnRows = append(columnRows,
+			[]driver.Value{tableName, "id", "integer", "int4", "NO", nil, nil, nil, nil, int64(1), "", ""},
+			[]driver.Value{tableName, "name", "character varying", "varchar", "NO", nil, int64(255), nil, nil, int64(2), "", ""},
+		)
+	}
+
+	db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		switch {
+		case strings.Contains(query, "FROM information_schema.columns"):
+			return dbtest.QueryResult{
+				Columns: []string{
+					"table_name",
+					"column_name",
+					"data_type",
+					"udt_name",
+					"is_nullable",
+					"column_default",
+					"character_maximum_length",
+					"numeric_precision",
+					"numeric_scale",
+					"ordinal_position",
+					"generated_kind",
+					"generated_expression",
+				},
+				Rows: columnRows,
+			}, nil
+		case strings.Contains(query, "FROM information_schema.tables"):
+			return dbtest.QueryResult{
+				Columns: []string{
+					"table_schema",
+					"table_name",
+					"table_type",
+					"table_comment",
+					"estimated_rows",
+					"rls_enabled",
+				},
+				Rows: tableRows,
+			}, nil
+		default:
+			return dbtest.QueryResult{}, fmt.Errorf("unexpected query: %s", query)
+		}
+	})
+	reader := NewPostgreSQLReader(db.SQL, "public")
+
+	tables, err := reader.readTablesForSchema("public")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.QueryCount(), qt.Equals, 2)
+	c.Assert(tables, qt.HasLen, 50)
+	c.Assert(tables[0].Name, qt.Equals, "table_00")
+	c.Assert(tables[0].Columns, qt.HasLen, 2)
+	c.Assert(tables[0].Columns[1].CharacterMaxLength, qt.IsNotNil)
+	c.Assert(*tables[0].Columns[1].CharacterMaxLength, qt.Equals, 255)
 }
 
 func TestPostgreSQLReader_ExtensionFunctionFiltering(t *testing.T) {

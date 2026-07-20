@@ -1,10 +1,14 @@
 package clickhouse
 
 import (
+	"database/sql/driver"
+	"fmt"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
+	"github.com/stokaro/ptah/dbschema/internal/dbtest"
 	"github.com/stokaro/ptah/dbschema/types"
 )
 
@@ -66,4 +70,50 @@ func TestWriter_DryRun_NoDBRequired(t *testing.T) {
 	// DropAllTables dry-run prints a stub table list and emits no DDL,
 	// so it must succeed without a live DB.
 	c.Assert(w.DropAllTables(), qt.IsNil)
+}
+
+func TestReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
+	c := qt.New(t)
+
+	tableRows := make([][]driver.Value, 0, 50)
+	columnRows := make([][]driver.Value, 0, 100)
+	for i := range 50 {
+		tableName := fmt.Sprintf("table_%02d", i)
+		tableRows = append(tableRows, []driver.Value{tableName, ""})
+		columnRows = append(columnRows,
+			[]driver.Value{tableName, "id", "UInt64", "", "", uint64(1), ""},
+			[]driver.Value{tableName, "payload", "Nullable(String)", "", "", uint64(2), ""},
+		)
+	}
+	columnRows[3][3] = "DEFAULT"
+	columnRows[3][4] = "0"
+
+	db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		switch {
+		case strings.Contains(query, "FROM system.columns"):
+			return dbtest.QueryResult{
+				Columns: []string{"table", "name", "type", "default_kind", "default_expression", "position", "comment"},
+				Rows:    columnRows,
+			}, nil
+		case strings.Contains(query, "FROM system.tables"):
+			return dbtest.QueryResult{
+				Columns: []string{"name", "comment"},
+				Rows:    tableRows,
+			}, nil
+		default:
+			return dbtest.QueryResult{}, fmt.Errorf("unexpected query: %s", query)
+		}
+	})
+	reader := NewClickHouseReader(db.SQL, "default")
+
+	tables, err := reader.readTables("default")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.QueryCount(), qt.Equals, 2)
+	c.Assert(tables, qt.HasLen, 50)
+	c.Assert(tables[0].Name, qt.Equals, "table_00")
+	c.Assert(tables[0].Columns, qt.HasLen, 2)
+	c.Assert(tables[0].Columns[1].IsNullable, qt.Equals, "YES")
+	c.Assert(tables[1].Columns[1].ColumnDefault, qt.IsNotNil)
+	c.Assert(*tables[1].Columns[1].ColumnDefault, qt.Equals, "0")
 }

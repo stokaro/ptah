@@ -8,8 +8,6 @@ import (
 
 	mysqldriver "github.com/go-sql-driver/mysql"
 
-	"github.com/stokaro/ptah/core/ast"
-	coreparser "github.com/stokaro/ptah/core/parser"
 	"github.com/stokaro/ptah/dbschema/types"
 )
 
@@ -86,52 +84,28 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	}
 	schema.Triggers = triggers
 
-	// Reconcile per-column uniqueness against the authoritative index metadata.
-	// The DDL parser collapses every table-level KEY/INDEX clause to a UNIQUE
-	// constraint (it has no dedicated non-unique-index node), so a non-unique
-	// backing index — e.g. the index MySQL/MariaDB auto-creates for a FOREIGN
-	// KEY (`KEY fk_posts_user_id (user_id)`) — would otherwise mark its column
-	// as unique and produce a spurious `unique: true -> false` diff on an
-	// unchanged schema (issue #189 follow-up). information_schema.STATISTICS
-	// (NON_UNIQUE) is authoritative, so a column is unique only when a
-	// single-column unique index actually covers it.
+	// Reconcile per-column flags after all catalog metadata is loaded.
+	// information_schema.KEY_COLUMN_USAGE carries primary-key membership, and
+	// information_schema.STATISTICS (NON_UNIQUE) is authoritative for unique
+	// indexes. Keeping these derived flags in one post-pass avoids depending on
+	// per-column metadata that is either absent or lossy across MySQL/MariaDB
+	// versions.
+	enhanceTablesWithPrimaryKeys(schema.Tables, schema.Constraints)
 	reconcileColumnUniqueness(schema)
 
 	return schema, nil
 }
 
-// readTables reads all tables and their columns using SHOW CREATE TABLE and DDL parsing
+// readTables reads all tables and their columns using bulk information_schema
+// queries.
 func (r *Reader) readTables(dbName string) ([]types.DBTable, error) {
-	// First, get just the table names
-	tableNames, err := r.getTableNames(dbName)
+	columnsByTable, err := r.readColumnsByTable(dbName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get table names: %w", err)
+		return nil, fmt.Errorf("failed to read columns: %w", err)
 	}
 
-	var tables []types.DBTable
-	for _, tableName := range tableNames {
-		// Get DDL for this table using SHOW CREATE TABLE
-		ddl, err := r.getTableDDL(tableName)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get DDL for table %s: %w", tableName, err)
-		}
-
-		// Parse DDL using core parser
-		table, err := r.parseTableFromDDL(ddl)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse DDL for table %s: %w", tableName, err)
-		}
-
-		tables = append(tables, table)
-	}
-
-	return tables, nil
-}
-
-// getTableNames fetches just the table names from the database
-func (r *Reader) getTableNames(dbName string) ([]string, error) {
 	query := `
-		SELECT TABLE_NAME
+		SELECT TABLE_NAME, TABLE_TYPE, COALESCE(TABLE_COMMENT, '')
 		FROM information_schema.TABLES
 		WHERE TABLE_SCHEMA = ?
 		AND TABLE_TYPE = 'BASE TABLE'
@@ -144,84 +118,202 @@ func (r *Reader) getTableNames(dbName string) ([]string, error) {
 	}
 	defer rows.Close()
 
-	var tableNames []string
+	var tables []types.DBTable
 	for rows.Next() {
-		var tableName string
-		if err := rows.Scan(&tableName); err != nil {
+		var table types.DBTable
+		if err := rows.Scan(&table.Name, &table.Type, &table.Comment); err != nil {
 			return nil, err
 		}
-		tableNames = append(tableNames, tableName)
+		table.Columns = columnsByTable[table.Name]
+		tables = append(tables, table)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
-	return tableNames, nil
+	return tables, nil
 }
 
-// getTableDDL gets the DDL for a specific table using SHOW CREATE TABLE.
-// The table name comes from information_schema and cannot be passed as a
-// bind parameter to SHOW CREATE TABLE, so it is routed through quoteIdent
-// (doubling embedded backticks per MySQL conventions) before being
-// interpolated.
-func (r *Reader) getTableDDL(tableName string) (string, error) {
-	query := "SHOW CREATE TABLE " + quoteIdent(tableName)
+func (r *Reader) readColumnsByTable(dbName string) (map[string][]types.DBColumn, error) {
+	query := `
+		SELECT
+			TABLE_NAME,
+			COLUMN_NAME,
+			DATA_TYPE,
+			COLUMN_TYPE,
+			IS_NULLABLE,
+			COLUMN_DEFAULT,
+			CHARACTER_MAXIMUM_LENGTH,
+			NUMERIC_PRECISION,
+			NUMERIC_SCALE,
+			ORDINAL_POSITION,
+			CHARACTER_SET_NAME,
+			COLLATION_NAME,
+			EXTRA,
+			GENERATION_EXPRESSION
+		FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = ?
+		AND TABLE_NAME NOT IN ('schema_migrations')
+		ORDER BY TABLE_NAME, ORDINAL_POSITION`
 
-	var name, ddl string
-	err := r.db.QueryRow(query).Scan(&name, &ddl)
+	rows, err := r.db.Query(query, dbName)
 	if err != nil {
-		return "", fmt.Errorf("failed to get DDL for table %s: %w", tableName, err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	columnsByTable := make(map[string][]types.DBColumn)
+	for rows.Next() {
+		var col types.DBColumn
+		var tableName string
+		var defaultValue sql.NullString
+		var characterMaxLength, numericPrecision, numericScale sql.NullInt64
+		var charset, collate, extra, generatedExpression sql.NullString
+
+		err := rows.Scan(
+			&tableName,
+			&col.Name,
+			&col.DataType,
+			&col.ColumnType,
+			&col.IsNullable,
+			&defaultValue,
+			&characterMaxLength,
+			&numericPrecision,
+			&numericScale,
+			&col.OrdinalPosition,
+			&charset,
+			&collate,
+			&extra,
+			&generatedExpression,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if col.ColumnType != "" {
+			col.DataType = col.ColumnType
+		}
+
+		applyMySQLColumnMetadata(
+			&col,
+			defaultValue,
+			characterMaxLength,
+			numericPrecision,
+			numericScale,
+			charset,
+			collate,
+			extra,
+			generatedExpression,
+		)
+		columnsByTable[tableName] = append(columnsByTable[tableName], col)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
-	return ddl, nil
+	return columnsByTable, nil
 }
 
-// parseTableFromDDL parses a table DDL using the core parser and converts to parsertypes.DBTable
-func (r *Reader) parseTableFromDDL(ddl string) (types.DBTable, error) {
-	// Parse DDL using core parser
-	parser := coreparser.NewParser(ddl)
-	statements, err := parser.Parse()
-	if err != nil {
-		return types.DBTable{}, fmt.Errorf("failed to parse DDL: %w", err)
+func applyMySQLColumnMetadata(
+	col *types.DBColumn,
+	defaultValue sql.NullString,
+	characterMaxLength sql.NullInt64,
+	numericPrecision sql.NullInt64,
+	numericScale sql.NullInt64,
+	charset sql.NullString,
+	collate sql.NullString,
+	extra sql.NullString,
+	generatedExpression sql.NullString,
+) {
+	if defaultValue.Valid {
+		defaultSQL := normalizeMySQLColumnDefault(col, defaultValue.String)
+		col.ColumnDefault = &defaultSQL
 	}
-
-	if len(statements.Statements) == 0 {
-		return types.DBTable{}, fmt.Errorf("no statements found in DDL")
+	if characterMaxLength.Valid {
+		length := int(characterMaxLength.Int64)
+		col.CharacterMaxLength = &length
 	}
-
-	// Should be a CREATE TABLE statement
-	createTableNode, ok := statements.Statements[0].(*ast.CreateTableNode)
-	if !ok {
-		return types.DBTable{}, fmt.Errorf("expected CREATE TABLE statement, got %T", statements.Statements[0])
+	if numericPrecision.Valid {
+		precision := int(numericPrecision.Int64)
+		col.NumericPrecision = &precision
 	}
-
-	// Convert AST to parsertypes.DBTable
-	return r.convertASTToTable(createTableNode), nil
+	if numericScale.Valid {
+		scale := int(numericScale.Int64)
+		col.NumericScale = &scale
+	}
+	if charset.Valid {
+		col.Charset = charset.String
+	}
+	if collate.Valid {
+		col.Collate = collate.String
+	}
+	if extra.Valid {
+		extraValue := strings.ToLower(extra.String)
+		col.IsAutoIncrement = strings.Contains(extraValue, "auto_increment")
+		switch {
+		case strings.Contains(extraValue, "stored generated"):
+			col.GeneratedKind = "STORED"
+		case strings.Contains(extraValue, "virtual generated"):
+			col.GeneratedKind = "VIRTUAL"
+		}
+	}
+	if generatedExpression.Valid && generatedExpression.String != "" {
+		expression := generatedExpression.String
+		col.GeneratedExpression = &expression
+	}
 }
 
-func (r *Reader) applyColumnConstraint(table *types.DBTable, constraint *ast.ConstraintNode, primaryKeyColumns map[string]bool) {
-	switch constraint.Type {
-	case ast.PrimaryKeyConstraint:
-		// Mark columns as primary key
-		for _, colName := range constraint.Columns {
-			colName = strings.Trim(colName, "`")
-			for i := range table.Columns {
-				if table.Columns[i].Name == colName {
-					table.Columns[i].IsPrimaryKey = true
-				}
-			}
-		}
-	case ast.UniqueConstraint:
-		// Mark columns as unique (only if single column unique constraint)
-		// BUT skip if this column is already a primary key (primary keys are inherently unique)
-		if len(constraint.Columns) == 1 {
-			colName := strings.Trim(constraint.Columns[0], "`")
-			if !primaryKeyColumns[colName] {
-				for i := range table.Columns {
-					if table.Columns[i].Name == colName {
-						table.Columns[i].IsUnique = true
-					}
-				}
-			}
-		}
+func normalizeMySQLColumnDefault(col *types.DBColumn, defaultValue string) string {
+	value := strings.TrimSpace(defaultValue)
+	if value == "" || isQuotedMySQLDefault(value) || !mysqlDefaultNeedsLiteralQuotes(col, value) {
+		return defaultValue
 	}
+	return quoteMySQLDefaultLiteral(defaultValue)
+}
+
+func isQuotedMySQLDefault(value string) bool {
+	return len(value) >= 2 &&
+		((strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'")) ||
+			(strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`)))
+}
+
+func mysqlDefaultNeedsLiteralQuotes(col *types.DBColumn, value string) bool {
+	if isMySQLDefaultExpression(value) {
+		return false
+	}
+
+	typeName := strings.ToLower(col.ColumnType)
+	if typeName == "" {
+		typeName = strings.ToLower(col.DataType)
+	}
+	switch {
+	case strings.HasPrefix(typeName, "enum("), strings.HasPrefix(typeName, "set("):
+		return true
+	case strings.Contains(typeName, "char"), strings.Contains(typeName, "text"):
+		return true
+	case strings.Contains(typeName, "date"), strings.Contains(typeName, "time"), strings.Contains(typeName, "year"):
+		return true
+	default:
+		return false
+	}
+}
+
+func isMySQLDefaultExpression(value string) bool {
+	normalized := strings.TrimSpace(strings.ToUpper(value))
+	normalized = strings.TrimSuffix(normalized, "()")
+	switch normalized {
+	case "NULL", "CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME", "LOCALTIME", "LOCALTIMESTAMP", "NOW", "UUID":
+		return true
+	default:
+		return strings.HasPrefix(normalized, "CURRENT_TIMESTAMP(") ||
+			strings.HasPrefix(normalized, "CURRENT_TIME(") ||
+			strings.HasPrefix(normalized, "LOCALTIME(") ||
+			strings.HasPrefix(normalized, "LOCALTIMESTAMP(") ||
+			strings.HasPrefix(normalized, "NOW(")
+	}
+}
+
+func quoteMySQLDefaultLiteral(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
 // reconcileColumnUniqueness recomputes each column's IsUnique flag from the
@@ -251,83 +343,32 @@ func reconcileColumnUniqueness(schema *types.DBSchema) {
 	}
 }
 
-// convertASTToTable converts an AST CreateTableNode to parsertypes.DBTable
-func (r *Reader) convertASTToTable(node *ast.CreateTableNode) types.DBTable {
-	table := types.DBTable{
-		Name:    strings.Trim(node.Name, "`"), // Remove backticks
-		Type:    "BASE TABLE",                 // Default for regular tables
-		Comment: "",                           // Will be extracted from options if present
-	}
-
-	// Convert columns
-	for _, astCol := range node.Columns {
-		// Convert boolean nullable to string format expected by parsertypes
-		isNullable := "YES"
-		if !astCol.Nullable {
-			isNullable = "NO"
-		}
-
-		col := types.DBColumn{
-			Name:            strings.Trim(astCol.Name, "`"),
-			DataType:        astCol.Type,
-			ColumnType:      astCol.Type, // For MySQL, these are often the same
-			IsNullable:      isNullable,
-			Charset:         astCol.Charset,
-			Collate:         astCol.Collate,
-			OrdinalPosition: len(table.Columns) + 1,
-			IsAutoIncrement: astCol.AutoInc,
-			IsPrimaryKey:    astCol.Primary,
-			IsUnique:        astCol.Unique,
-			GeneratedKind:   strings.ToUpper(astCol.GeneratedKind),
-		}
-		if astCol.GeneratedExpression != "" {
-			expression := astCol.GeneratedExpression
-			col.GeneratedExpression = &expression
-		}
-
-		// Handle default values
-		if astCol.Default != nil {
-			if astCol.Default.Expression != "" {
-				col.ColumnDefault = &astCol.Default.Expression
-			} else {
-				col.ColumnDefault = &astCol.Default.Value
-			}
-		}
-
-		// Handle character length, precision, scale if available
-		// These would need to be parsed from the type string for MySQL
-		// For now, we'll leave them as nil since the AST doesn't provide them directly
-
-		table.Columns = append(table.Columns, col)
-	}
-
-	// Handle table-level constraints to update column flags
-	primaryKeyColumns := make(map[string]bool)
-
-	// First pass: identify primary key columns
-	for _, constraint := range node.Constraints {
-		if constraint.Type != ast.PrimaryKeyConstraint {
+func enhanceTablesWithPrimaryKeys(tables []types.DBTable, constraints []types.DBConstraint) {
+	primaryKeys := make(map[string]map[string]struct{})
+	for _, constraint := range constraints {
+		if constraint.Type != "PRIMARY KEY" {
 			continue
 		}
-		for _, colName := range constraint.Columns {
-			colName = strings.Trim(colName, "`")
-			primaryKeyColumns[colName] = true
+		if primaryKeys[constraint.TableName] == nil {
+			primaryKeys[constraint.TableName] = make(map[string]struct{})
+		}
+		for _, column := range constraint.ColumnNamesOrDefault() {
+			primaryKeys[constraint.TableName][column] = struct{}{}
 		}
 	}
 
-	// Second pass: apply constraints
-	for _, constraint := range node.Constraints {
-		r.applyColumnConstraint(&table, constraint, primaryKeyColumns)
-	}
-
-	// Extract table comment from options
-	for key, value := range node.Options {
-		if strings.ToUpper(key) == "COMMENT" {
-			table.Comment = strings.Trim(value, "'\"")
+	for ti := range tables {
+		table := &tables[ti]
+		tablePrimaryKeys := primaryKeys[table.Name]
+		if len(tablePrimaryKeys) == 0 {
+			continue
+		}
+		for ci := range table.Columns {
+			col := &table.Columns[ci]
+			_, primary := tablePrimaryKeys[col.Name]
+			col.IsPrimaryKey = primary
 		}
 	}
-
-	return table
 }
 
 func (r *Reader) readViews(dbName string) ([]types.DBView, error) {

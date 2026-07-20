@@ -71,6 +71,11 @@ func (r *Reader) resolveDatabaseName() (string, error) {
 }
 
 func (r *Reader) readTables(dbName string) ([]types.DBTable, error) {
+	columnsByTable, err := r.readColumnsByTable(dbName)
+	if err != nil {
+		return nil, fmt.Errorf("clickhouse: read columns: %w", err)
+	}
+
 	rows, err := r.db.Query(`
 		SELECT name, comment
 		FROM system.tables
@@ -98,11 +103,7 @@ func (r *Reader) readTables(dbName string) ([]types.DBTable, error) {
 			return nil, err
 		}
 		t := types.DBTable{Name: name, Type: "TABLE", Comment: comment}
-		columns, err := r.readColumns(dbName, name)
-		if err != nil {
-			return nil, fmt.Errorf("clickhouse: read columns for %s: %w", name, err)
-		}
-		t.Columns = columns
+		t.Columns = columnsByTable[name]
 		tables = append(tables, t)
 	}
 	if err := rows.Err(); err != nil {
@@ -111,25 +112,26 @@ func (r *Reader) readTables(dbName string) ([]types.DBTable, error) {
 	return tables, nil
 }
 
-func (r *Reader) readColumns(dbName, table string) ([]types.DBColumn, error) {
+func (r *Reader) readColumnsByTable(dbName string) (map[string][]types.DBColumn, error) {
 	rows, err := r.db.Query(`
-		SELECT name, type, default_kind, default_expression, position, comment
+		SELECT table, name, type, default_kind, default_expression, position, comment
 		FROM system.columns
-		WHERE database = ? AND table = ?
-		ORDER BY position
-	`, dbName, table)
+		WHERE database = ?
+		ORDER BY table, position
+	`, dbName)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var cols []types.DBColumn
+	columnsByTable := make(map[string][]types.DBColumn)
 	for rows.Next() {
 		var (
+			tableName                                         string
 			name, dataType, defaultKind, defaultExpr, comment string
 			position                                          int
 		)
-		if err := rows.Scan(&name, &dataType, &defaultKind, &defaultExpr, &position, &comment); err != nil {
+		if err := rows.Scan(&tableName, &name, &dataType, &defaultKind, &defaultExpr, &position, &comment); err != nil {
 			return nil, err
 		}
 		nullable := "NO"
@@ -164,12 +166,12 @@ func (r *Reader) readColumns(dbName, table string) ([]types.DBColumn, error) {
 			}
 			col.GeneratedKind = defaultKind
 		}
-		cols = append(cols, col)
+		columnsByTable[tableName] = append(columnsByTable[tableName], col)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	return cols, nil
+	return columnsByTable, nil
 }
 
 // skippingIndexTablePresent reports whether system.data_skipping_indices is

@@ -2,12 +2,17 @@ package mysql
 
 import (
 	"context"
+	"database/sql"
+	"database/sql/driver"
+	"fmt"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"github.com/stokaro/ptah/core/sqlutil"
+	"github.com/stokaro/ptah/dbschema/internal/dbtest"
 	"github.com/stokaro/ptah/dbschema/types"
 )
 
@@ -70,20 +75,6 @@ func TestMySQLReader_CheckConstraintIntrospectionErrorClassification(t *testing.
 		Number:  1142,
 		Message: "SELECT command denied to user",
 	}), qt.IsFalse)
-}
-
-func TestMySQLReader_parseTableFromDDLGeneratedColumn(t *testing.T) {
-	c := qt.New(t)
-
-	reader := NewMySQLReader(nil, "")
-	table, err := reader.parseTableFromDDL("CREATE TABLE `users` (`name` varchar(255), `name_lc` varchar(255) GENERATED ALWAYS AS (lower(`name`)) STORED)")
-	c.Assert(err, qt.IsNil)
-
-	nameLC := findColumn(table.Columns, "name_lc")
-	c.Assert(nameLC, qt.IsNotNil)
-	c.Assert(nameLC.GeneratedExpression, qt.IsNotNil)
-	c.Assert(*nameLC.GeneratedExpression, qt.Equals, "lower(`name`)")
-	c.Assert(nameLC.GeneratedKind, qt.Equals, "STORED")
 }
 
 func TestMySQLReader_parseEnumValues(t *testing.T) {
@@ -153,152 +144,6 @@ func TestMySQLReader_parseEnumValues(t *testing.T) {
 	})
 }
 
-// TestMySQLReader_parseTableFromDDL tests the new DDL parsing functionality
-func TestMySQLReader_parseTableFromDDL(t *testing.T) {
-	tests := []struct {
-		name        string
-		ddl         string
-		expectError bool
-		validate    func(c *qt.C, table types.DBTable)
-	}{
-		{
-			name: "simple table with primary key",
-			ddl: "CREATE TABLE `users` (\n" +
-				"  `id` int NOT NULL AUTO_INCREMENT,\n" +
-				"  `name` varchar(255) NOT NULL,\n" +
-				"  `email` varchar(255) DEFAULT NULL,\n" +
-				"  PRIMARY KEY (`id`)\n" +
-				") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
-			expectError: false,
-			validate: func(c *qt.C, table types.DBTable) {
-				c.Assert(table.Name, qt.Equals, "users")
-				c.Assert(table.Type, qt.Equals, "BASE TABLE")
-				c.Assert(table.Columns, qt.HasLen, 3)
-
-				// Check id column
-				idCol := table.Columns[0]
-				c.Assert(idCol.Name, qt.Equals, "id")
-				c.Assert(idCol.DataType, qt.Equals, "int")
-				c.Assert(idCol.IsNullable, qt.Equals, "NO")
-				c.Assert(idCol.IsAutoIncrement, qt.IsTrue)
-				c.Assert(idCol.IsPrimaryKey, qt.IsTrue)
-
-				// Check name column
-				nameCol := table.Columns[1]
-				c.Assert(nameCol.Name, qt.Equals, "name")
-				c.Assert(nameCol.DataType, qt.Equals, "varchar(255)")
-				c.Assert(nameCol.IsNullable, qt.Equals, "NO")
-				c.Assert(nameCol.IsAutoIncrement, qt.IsFalse)
-				c.Assert(nameCol.IsPrimaryKey, qt.IsFalse)
-
-				// Check email column
-				emailCol := table.Columns[2]
-				c.Assert(emailCol.Name, qt.Equals, "email")
-				c.Assert(emailCol.DataType, qt.Equals, "varchar(255)")
-				c.Assert(emailCol.IsNullable, qt.Equals, "YES")
-				c.Assert(emailCol.IsAutoIncrement, qt.IsFalse)
-				c.Assert(emailCol.IsPrimaryKey, qt.IsFalse)
-			},
-		},
-		{
-			name: "table with unique constraint",
-			ddl: "CREATE TABLE `products` (\n" +
-				"  `id` int NOT NULL AUTO_INCREMENT,\n" +
-				"  `sku` varchar(100) NOT NULL,\n" +
-				"  PRIMARY KEY (`id`),\n" +
-				"  UNIQUE KEY `uk_sku` (`sku`)\n" +
-				") ENGINE=InnoDB",
-			expectError: false,
-			validate: func(c *qt.C, table types.DBTable) {
-				c.Assert(table.Name, qt.Equals, "products")
-				c.Assert(table.Columns, qt.HasLen, 2)
-
-				// Check sku column should be marked as unique
-				skuCol := table.Columns[1]
-				c.Assert(skuCol.Name, qt.Equals, "sku")
-				c.Assert(skuCol.IsUnique, qt.IsTrue)
-			},
-		},
-		{
-			name: "real MySQL SHOW CREATE TABLE output",
-			ddl: "CREATE TABLE `test_table` (\n" +
-				"  `id` int NOT NULL AUTO_INCREMENT,\n" +
-				"  `name` varchar(255) NOT NULL,\n" +
-				"  `status` enum('active','inactive') DEFAULT 'active',\n" +
-				"  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,\n" +
-				"  PRIMARY KEY (`id`),\n" +
-				"  UNIQUE KEY `unique_name` (`name`)\n" +
-				") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci",
-			expectError: false,
-			validate: func(c *qt.C, table types.DBTable) {
-				c.Assert(table.Name, qt.Equals, "test_table")
-				c.Assert(table.Columns, qt.HasLen, 4)
-
-				// Check id column
-				idCol := table.Columns[0]
-				c.Assert(idCol.Name, qt.Equals, "id")
-				c.Assert(idCol.IsAutoIncrement, qt.IsTrue)
-				c.Assert(idCol.IsPrimaryKey, qt.IsTrue)
-
-				// Check name column
-				nameCol := table.Columns[1]
-				c.Assert(nameCol.Name, qt.Equals, "name")
-				c.Assert(nameCol.IsUnique, qt.IsTrue)
-
-				// Check status column (enum)
-				statusCol := table.Columns[2]
-				c.Assert(statusCol.Name, qt.Equals, "status")
-				c.Assert(statusCol.DataType, qt.Equals, "enum('active','inactive')")
-
-				// Check created_at column
-				createdCol := table.Columns[3]
-				c.Assert(createdCol.Name, qt.Equals, "created_at")
-				c.Assert(createdCol.DataType, qt.Equals, "timestamp")
-				c.Assert(createdCol.IsNullable, qt.Equals, "YES")
-			},
-		},
-		{
-			name: "column charset and collate",
-			ddl: "CREATE TABLE `users` (\n" +
-				"  `name` varchar(255) CHARACTER SET hebrew COLLATE hebrew_general_ci NOT NULL\n" +
-				") ENGINE=InnoDB",
-			expectError: false,
-			validate: func(c *qt.C, table types.DBTable) {
-				c.Assert(table.Columns, qt.HasLen, 1)
-				nameCol := table.Columns[0]
-				c.Assert(nameCol.Name, qt.Equals, "name")
-				c.Assert(nameCol.Charset, qt.Equals, "hebrew")
-				c.Assert(nameCol.Collate, qt.Equals, "hebrew_general_ci")
-				c.Assert(nameCol.IsNullable, qt.Equals, "NO")
-			},
-		},
-		{
-			name:        "invalid DDL",
-			ddl:         "INVALID SQL STATEMENT",
-			expectError: true,
-			validate:    nil,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			reader := &Reader{}
-
-			table, err := reader.parseTableFromDDL(test.ddl)
-
-			if test.expectError {
-				c.Assert(err, qt.IsNotNil)
-			} else {
-				c.Assert(err, qt.IsNil)
-				if test.validate != nil {
-					test.validate(c, table)
-				}
-			}
-		})
-	}
-}
-
 func TestMySQLReader_ReadSchema_NoConnection(t *testing.T) {
 	c := qt.New(t)
 
@@ -310,6 +155,197 @@ func TestMySQLReader_ReadSchema_NoConnection(t *testing.T) {
 
 	// Note: We don't test ReadSchema() with nil db as it would panic
 	// This is expected behavior - the reader requires a valid database connection
+}
+
+func TestMySQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
+	c := qt.New(t)
+
+	tableRows := make([][]driver.Value, 0, 50)
+	columnRows := make([][]driver.Value, 0, 150)
+	for i := range 50 {
+		tableName := fmt.Sprintf("table_%02d", i)
+		comment := ""
+		if i == 0 {
+			comment = "customer accounts"
+		}
+		tableRows = append(tableRows, []driver.Value{tableName, "BASE TABLE", comment})
+		columnRows = append(columnRows,
+			[]driver.Value{tableName, "id", "int", "int", "NO", nil, nil, int64(10), int64(0), int64(1), nil, nil, "auto_increment", nil},
+			[]driver.Value{tableName, "email", "varchar", "varchar(255)", "NO", nil, int64(255), nil, nil, int64(2), "utf8mb4", "utf8mb4_0900_ai_ci", "", nil},
+			[]driver.Value{tableName, "email_lc", "varchar", "varchar(255)", "YES", nil, int64(255), nil, nil, int64(3), "utf8mb4", "utf8mb4_0900_ai_ci", "STORED GENERATED", "lower(`email`)"},
+		)
+	}
+
+	db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		switch {
+		case strings.Contains(query, "FROM information_schema.COLUMNS"):
+			return dbtest.QueryResult{
+				Columns: []string{
+					"TABLE_NAME",
+					"COLUMN_NAME",
+					"DATA_TYPE",
+					"COLUMN_TYPE",
+					"IS_NULLABLE",
+					"COLUMN_DEFAULT",
+					"CHARACTER_MAXIMUM_LENGTH",
+					"NUMERIC_PRECISION",
+					"NUMERIC_SCALE",
+					"ORDINAL_POSITION",
+					"CHARACTER_SET_NAME",
+					"COLLATION_NAME",
+					"EXTRA",
+					"GENERATION_EXPRESSION",
+				},
+				Rows: columnRows,
+			}, nil
+		case strings.Contains(query, "FROM information_schema.TABLES"):
+			return dbtest.QueryResult{
+				Columns: []string{"TABLE_NAME", "TABLE_TYPE", "TABLE_COMMENT"},
+				Rows:    tableRows,
+			}, nil
+		default:
+			return dbtest.QueryResult{}, fmt.Errorf("unexpected query: %s", query)
+		}
+	})
+	reader := NewMySQLReader(db.SQL, "app")
+
+	tables, err := reader.readTables("app")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.QueryCount(), qt.Equals, 2)
+	c.Assert(tables, qt.HasLen, 50)
+	c.Assert(tables[0].Name, qt.Equals, "table_00")
+	c.Assert(tables[0].Comment, qt.Equals, "customer accounts")
+	c.Assert(tables[0].Columns, qt.HasLen, 3)
+
+	id := tables[0].Columns[0]
+	c.Assert(id.IsAutoIncrement, qt.IsTrue)
+	c.Assert(id.NumericPrecision, qt.IsNotNil)
+	c.Assert(*id.NumericPrecision, qt.Equals, 10)
+	c.Assert(id.NumericScale, qt.IsNotNil)
+	c.Assert(*id.NumericScale, qt.Equals, 0)
+
+	email := tables[0].Columns[1]
+	c.Assert(email.DataType, qt.Equals, "varchar(255)")
+	c.Assert(email.ColumnType, qt.Equals, "varchar(255)")
+	c.Assert(email.CharacterMaxLength, qt.IsNotNil)
+	c.Assert(*email.CharacterMaxLength, qt.Equals, 255)
+	c.Assert(email.Charset, qt.Equals, "utf8mb4")
+	c.Assert(email.Collate, qt.Equals, "utf8mb4_0900_ai_ci")
+
+	emailLC := tables[0].Columns[2]
+	c.Assert(emailLC.GeneratedKind, qt.Equals, "STORED")
+	c.Assert(emailLC.GeneratedExpression, qt.IsNotNil)
+	c.Assert(*emailLC.GeneratedExpression, qt.Equals, "lower(`email`)")
+}
+
+func TestEnhanceTablesWithPrimaryKeys(t *testing.T) {
+	c := qt.New(t)
+
+	tables := []types.DBTable{
+		{
+			Name: "memberships",
+			Columns: []types.DBColumn{
+				{Name: "org_id"},
+				{Name: "user_id"},
+				{Name: "role"},
+			},
+		},
+	}
+	constraints := []types.DBConstraint{
+		{
+			TableName:   "memberships",
+			Type:        "PRIMARY KEY",
+			ColumnNames: []string{"org_id", "user_id"},
+		},
+	}
+
+	enhanceTablesWithPrimaryKeys(tables, constraints)
+
+	c.Assert(tables[0].Columns[0].IsPrimaryKey, qt.IsTrue)
+	c.Assert(tables[0].Columns[1].IsPrimaryKey, qt.IsTrue)
+	c.Assert(tables[0].Columns[2].IsPrimaryKey, qt.IsFalse)
+}
+
+func TestApplyMySQLColumnMetadataKeepsGeneratedExpressionWithoutExtra(t *testing.T) {
+	c := qt.New(t)
+
+	var col types.DBColumn
+	applyMySQLColumnMetadata(
+		&col,
+		sql.NullString{String: "default", Valid: true},
+		sql.NullInt64{Int64: 255, Valid: true},
+		sql.NullInt64{Int64: 10, Valid: true},
+		sql.NullInt64{Int64: 2, Valid: true},
+		sql.NullString{String: "utf8mb4", Valid: true},
+		sql.NullString{String: "utf8mb4_0900_ai_ci", Valid: true},
+		sql.NullString{},
+		sql.NullString{String: "lower(`email`)", Valid: true},
+	)
+
+	c.Assert(col.GeneratedExpression, qt.IsNotNil)
+	c.Assert(*col.GeneratedExpression, qt.Equals, "lower(`email`)")
+	c.Assert(col.GeneratedKind, qt.Equals, "")
+	c.Assert(col.ColumnDefault, qt.IsNotNil)
+	c.Assert(*col.ColumnDefault, qt.Equals, "default")
+}
+
+func TestNormalizeMySQLColumnDefaultQuotesCatalogStringLiterals(t *testing.T) {
+	tests := []struct {
+		name         string
+		columnType   string
+		dataType     string
+		defaultValue string
+		want         string
+	}{
+		{
+			name:         "enum value",
+			columnType:   "enum('draft','active')",
+			dataType:     "enum",
+			defaultValue: "draft",
+			want:         "'draft'",
+		},
+		{
+			name:         "varchar value with quote",
+			columnType:   "varchar(255)",
+			dataType:     "varchar",
+			defaultValue: "owner's draft",
+			want:         "'owner''s draft'",
+		},
+		{
+			name:         "numeric value",
+			columnType:   "int",
+			dataType:     "int",
+			defaultValue: "42",
+			want:         "42",
+		},
+		{
+			name:         "temporal expression",
+			columnType:   "timestamp",
+			dataType:     "timestamp",
+			defaultValue: "current_timestamp()",
+			want:         "current_timestamp()",
+		},
+		{
+			name:         "quoted value preserved",
+			columnType:   "varchar(255)",
+			dataType:     "varchar",
+			defaultValue: "'draft'",
+			want:         "'draft'",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			col := &types.DBColumn{
+				ColumnType: test.columnType,
+				DataType:   test.dataType,
+			}
+
+			c.Assert(normalizeMySQLColumnDefault(col, test.defaultValue), qt.Equals, test.want)
+		})
+	}
 }
 
 func TestNewMySQLWriter(t *testing.T) {
@@ -547,13 +583,4 @@ func TestQuoteIdent(t *testing.T) {
 			c.Assert(quoteIdent(tc.in), qt.Equals, tc.want)
 		})
 	}
-}
-
-func findColumn(columns []types.DBColumn, name string) *types.DBColumn {
-	for i := range columns {
-		if columns[i].Name == name {
-			return &columns[i]
-		}
-	}
-	return nil
 }
