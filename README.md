@@ -16,16 +16,22 @@ The name **Ptah** is also an acronym:
 
 ---
 
-## Independent Atlas-Compatible Implementation
+## Independent, License-Clean Atlas Compatibility
 
 **Ptah does not use Atlas source code.** Ptah is a fully independent
-implementation: this repository does **not** vendor, copy, link, embed, or
+implementation. This repository does **not** vendor, copy, link, embed, or
 execute Atlas code, and Ptah's runtime behavior is implemented in Ptah itself.
 
-Atlas compatibility work is based on publicly observable compatibility inputs:
-Atlas OSS command interfaces, file formats, behavior, and test assets. Test
-assets that originate from Atlas are intentionally kept outside this repository
-in
+Ptah's Atlas-compatible behavior is developed from compatibility inputs, not
+from Atlas implementation code:
+
+- Atlas OSS command interfaces and flags.
+- Publicly observable file formats and runtime behavior.
+- Atlas OSS test assets and fixtures used as external conformance inputs.
+
+The only Atlas-derived materials used for compatibility work are test assets and
+fixtures. For repository and license hygiene, those assets are kept outside this
+repository in
 [`ptah-atlas-conformance`](https://github.com/stokaro/ptah-atlas-conformance).
 That repository measures Ptah against the Atlas fixture corpus without mixing
 Atlas source or Atlas-originated test assets into the main Ptah codebase.
