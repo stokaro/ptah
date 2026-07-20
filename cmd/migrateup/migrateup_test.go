@@ -2,13 +2,18 @@ package migrateup
 
 import (
 	"bytes"
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
+	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/migration/lint"
 	"github.com/stokaro/ptah/migration/migratesum"
 	"github.com/stokaro/ptah/migration/migrator"
@@ -114,6 +119,91 @@ rules:
 	c.Assert(findings[0].Rule, qt.Equals, "DS101")
 }
 
+func TestMigrateUpCommandHonorsLintConfigSeverityWithPostgres(t *testing.T) {
+	dbURL := postgresTestURL()
+	if dbURL == "" {
+		t.Skip("POSTGRES_TEST_DSN, POSTGRES_URL, or TEST_DATABASE_URL is not set")
+	}
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	widenTable := "ptah_migrateup_widen_" + suffix
+	dropTable := "ptah_migrateup_drop_" + suffix
+	widenRevisions := "ptah_migrateup_widen_revisions_" + suffix
+	dropRevisions := "ptah_migrateup_drop_revisions_" + suffix
+	defer cleanupPostgresObjects(t, conn, widenTable, dropTable, widenRevisions, dropRevisions)
+
+	widenDir := t.TempDir()
+	writeMigrateUpFile(c, widenDir, lint.ConfigFileName, `rules:
+  DS103:
+    severity: warning
+`)
+	writeMigrateUpFile(c, widenDir, "0000000001_init.up.sql", fmt.Sprintf("CREATE TABLE %s (id SERIAL PRIMARY KEY, email VARCHAR(255));\n", widenTable))
+	writeMigrateUpFile(c, widenDir, "0000000001_init.down.sql", fmt.Sprintf("DROP TABLE %s;\n", widenTable))
+	writeMigrateUpFile(c, widenDir, "0000000002_widen_email.up.sql", fmt.Sprintf("ALTER TABLE %s ALTER COLUMN email TYPE VARCHAR(512);\n", widenTable))
+	writeMigrateUpFile(c, widenDir, "0000000002_widen_email.down.sql", fmt.Sprintf("ALTER TABLE %s ALTER COLUMN email TYPE VARCHAR(255);\n", widenTable))
+
+	cmd := NewMigrateUpCommand()
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{
+		"--db-url", dbURL,
+		"--migrations-dir", widenDir,
+		"--migrations-table", widenRevisions,
+	})
+
+	err = cmd.Execute()
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr.String()))
+
+	var maxLength int
+	err = conn.QueryRowContext(ctx, `
+		SELECT character_maximum_length
+		FROM information_schema.columns
+		WHERE table_schema = 'public' AND table_name = $1 AND column_name = 'email'
+	`, widenTable).Scan(&maxLength)
+	c.Assert(err, qt.IsNil)
+	c.Assert(maxLength, qt.Equals, 512)
+
+	dropDir := t.TempDir()
+	writeMigrateUpFile(c, dropDir, lint.ConfigFileName, `rules:
+  DS103:
+    severity: warning
+`)
+	writeMigrateUpFile(c, dropDir, "0000000001_init.up.sql", fmt.Sprintf("CREATE TABLE %s (id SERIAL PRIMARY KEY, email VARCHAR(255));\n", dropTable))
+	writeMigrateUpFile(c, dropDir, "0000000001_init.down.sql", fmt.Sprintf("DROP TABLE %s;\n", dropTable))
+	writeMigrateUpFile(c, dropDir, "0000000002_widen_email.up.sql", fmt.Sprintf("ALTER TABLE %s ALTER COLUMN email TYPE VARCHAR(512);\n", dropTable))
+	writeMigrateUpFile(c, dropDir, "0000000002_widen_email.down.sql", fmt.Sprintf("ALTER TABLE %s ALTER COLUMN email TYPE VARCHAR(255);\n", dropTable))
+	writeMigrateUpFile(c, dropDir, "0000000003_drop_table.up.sql", fmt.Sprintf("DROP TABLE %s;\n", dropTable))
+	writeMigrateUpFile(c, dropDir, "0000000003_drop_table.down.sql", fmt.Sprintf("CREATE TABLE %s (id SERIAL PRIMARY KEY, email VARCHAR(512));\n", dropTable))
+
+	cmd = NewMigrateUpCommand()
+	stdout.Reset()
+	stderr.Reset()
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{
+		"--db-url", dbURL,
+		"--migrations-dir", dropDir,
+		"--migrations-table", dropRevisions,
+	})
+
+	err = cmd.Execute()
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "pending migrations contain destructive statements")
+	c.Assert(err.Error(), qt.Contains, "DS101")
+
+	var dropExists bool
+	err = conn.QueryRowContext(ctx, "SELECT to_regclass($1) IS NOT NULL", "public."+dropTable).Scan(&dropExists)
+	c.Assert(err, qt.IsNil)
+	c.Assert(dropExists, qt.IsFalse)
+}
+
 func TestPendingMigrationsForSafetyCheckSkipsOutOfOrderWhenLinearSkip(t *testing.T) {
 	c := qt.New(t)
 
@@ -137,4 +227,33 @@ func TestPendingMigrationsForSafetyCheckSkipsOutOfOrderWhenLinearSkip(t *testing
 		qt.DeepEquals,
 		[]int64{6},
 	)
+}
+
+func postgresTestURL() string {
+	for _, name := range []string{"POSTGRES_TEST_DSN", "POSTGRES_URL", "TEST_DATABASE_URL"} {
+		if value := os.Getenv(name); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func writeMigrateUpFile(c *qt.C, dir, name, content string) {
+	c.Helper()
+	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
+}
+
+func cleanupPostgresObjects(t *testing.T, conn *dbschema.DatabaseConnection, names ...string) {
+	t.Helper()
+	ctx := context.Background()
+	for _, name := range names {
+		if !safePostgresIdentifier(name) {
+			t.Fatalf("unsafe test identifier %q", name)
+		}
+		_, _ = conn.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s CASCADE", name))
+	}
+}
+
+func safePostgresIdentifier(name string) bool {
+	return name != "" && strings.Trim(name, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_") == ""
 }

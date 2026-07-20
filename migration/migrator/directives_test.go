@@ -75,3 +75,43 @@ func TestParseFileDirectives(t *testing.T) {
 		})
 	}
 }
+
+func TestHasAtlasTxModeNoneDirective(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want bool
+	}{
+		{
+			name: "line-start directive",
+			sql:  "-- atlas:txmode none\nCREATE INDEX CONCURRENTLY users_email_idx ON users (email);\n",
+			want: true,
+		},
+		{
+			name: "case-insensitive directive",
+			sql:  "  -- ATLAS:TXMODE NONE\nSELECT 1;\n",
+			want: true,
+		},
+		{
+			name: "trailing comment is not directive",
+			sql:  "SELECT 1; -- atlas:txmode none\n",
+			want: false,
+		},
+		{
+			name: "string literal is not directive",
+			sql:  "INSERT INTO notes (body) VALUES ('runbook:\n-- atlas:txmode none\ndone');\n",
+			want: false,
+		},
+		{
+			name: "other tx mode is transactional",
+			sql:  "-- atlas:txmode file\nSELECT 1;\n",
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(hasAtlasTxModeNoneDirective(tt.sql), qt.Equals, tt.want)
+		})
+	}
+}

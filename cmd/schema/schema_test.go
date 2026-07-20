@@ -38,8 +38,11 @@ func TestSchemaExportCommandWritesAtlasHCL(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(content), qt.Contains, `table "users"`)
 	c.Assert(string(content), qt.Contains, `column "created_at"`)
-	_, err = atlashcl.Parse(content, "schema.hcl")
+	c.Assert(string(content), qt.Contains, `primary_key {`)
+	parsed, err := atlashcl.Parse(content, "schema.hcl")
 	c.Assert(err, qt.IsNil, qt.Commentf("schema.hcl:\n%s", string(content)))
+	c.Assert(parsed.Tables, qt.HasLen, 1)
+	c.Assert(parsed.Tables[0].PrimaryKey, qt.DeepEquals, []string{"id"})
 }
 
 func TestSchemaCommand_RegistersNativePaths(t *testing.T) {

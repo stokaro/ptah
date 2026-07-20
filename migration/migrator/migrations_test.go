@@ -47,6 +47,8 @@ func TestCreateMigrationFromSQL(t *testing.T) {
 	c.Assert(migration.Up, qt.IsNotNil)
 	c.Assert(migration.Down, qt.IsNotNil)
 	c.Assert(migration.NoTransaction, qt.IsFalse)
+	c.Assert(migration.UpNoTransaction, qt.IsFalse)
+	c.Assert(migration.DownNoTransaction, qt.IsFalse)
 
 	// Test that the functions don't panic (we can't test execution without a real DB)
 	c.Assert(migration.Up, qt.IsNotNil)
@@ -62,6 +64,43 @@ func TestCreateMigrationFromSQL_NoTransactionDirective(t *testing.T) {
 	)
 
 	c.Assert(migration.NoTransaction, qt.IsTrue)
+	c.Assert(migration.UpNoTransaction, qt.IsTrue)
+	c.Assert(migration.DownNoTransaction, qt.IsFalse)
+}
+
+func TestCreateMigrationFromSQL_DownNoTransactionDirective(t *testing.T) {
+	c := qt.New(t)
+
+	migration := CreateMigrationFromSQL(1, "Drop concurrent index",
+		"SELECT 1;",
+		"-- +ptah no_transaction\nDROP INDEX CONCURRENTLY users_email_idx;",
+	)
+
+	c.Assert(migration.NoTransaction, qt.IsTrue)
+	c.Assert(migration.UpNoTransaction, qt.IsFalse)
+	c.Assert(migration.DownNoTransaction, qt.IsTrue)
+}
+
+func TestCreateMigrationFromSQL_AtlasTxModeNoneDirective(t *testing.T) {
+	c := qt.New(t)
+
+	migration := CreateMigrationFromSQL(1, "Add concurrent index",
+		"-- atlas:txmode none\nCREATE INDEX CONCURRENTLY users_email_idx ON users (email);",
+		"DROP INDEX users_email_idx;",
+	)
+
+	c.Assert(migration.NoTransaction, qt.IsTrue)
+	c.Assert(migration.UpNoTransaction, qt.IsTrue)
+	c.Assert(migration.DownNoTransaction, qt.IsFalse)
+}
+
+func TestMigration_ExplicitNoTransactionFieldControlsManualMigrations(t *testing.T) {
+	c := qt.New(t)
+
+	migration := &Migration{NoTransaction: true}
+
+	c.Assert(migration.upExecutionMode(), qt.Equals, migrationExecutionNoTransaction)
+	c.Assert(migration.downExecutionMode(), qt.Equals, migrationExecutionNoTransaction)
 }
 
 func TestCreateMigrationFromSQL_InvalidNoTransactionDirective(t *testing.T) {

@@ -94,7 +94,7 @@ settings:
 - `lint`
 - `migrations generate`
 
-Atlas-compatible aliases under `ptah atlas <command> ...` inherit this behavior
+Atlas command paths under `ptah atlas <command> ...` inherit this behavior
 when they forward to one of these native commands.
 
 ## Unsupported Constructs

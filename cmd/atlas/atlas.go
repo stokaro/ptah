@@ -55,12 +55,12 @@ type parsedAtlasFlag struct {
 	ok       bool
 }
 
-// NewAtlasCommand returns the Atlas compatibility namespace.
+// NewAtlasCommand returns the Atlas command namespace.
 func NewAtlasCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "atlas",
-		Short: "Atlas-compatible command namespace",
-		Long: `Atlas-compatible command namespace.
+		Short: "Atlas OSS command namespace",
+		Long: `Atlas OSS command namespace.
 
 These commands reserve the Atlas OSS CLI surface under Ptah. Commands that have
 an existing Ptah equivalent forward to that native command while keeping the
@@ -80,7 +80,7 @@ native Ptah command tree separate for future redesign.`,
 func newAtlasSchemaCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "schema",
-		Short: "Atlas schema command compatibility",
+		Short: "Atlas schema commands",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
@@ -137,7 +137,7 @@ func newAtlasSchemaCommand() *cobra.Command {
 			},
 		},
 	} {
-		cmd.AddCommand(newAtlasAliasCommand("schema", verb))
+		cmd.AddCommand(newAtlasAdapterCommand("schema", verb))
 	}
 	return cmd
 }
@@ -145,7 +145,7 @@ func newAtlasSchemaCommand() *cobra.Command {
 func newAtlasMigrateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "migrate",
-		Short: "Atlas migrate command compatibility",
+		Short: "Atlas migrate commands",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
@@ -241,7 +241,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 			},
 		},
 	} {
-		cmd.AddCommand(newAtlasAliasCommand("migrate", verb))
+		cmd.AddCommand(newAtlasAdapterCommand("migrate", verb))
 	}
 	return cmd
 }
@@ -251,7 +251,7 @@ func newAtlasVersionCommand() *cobra.Command {
 		Use:   "version",
 		Short: "Print Ptah version information",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return fmt.Errorf("atlas version compatibility is not implemented yet; use the native Ptah version command once issue #268 lands")
+			return fmt.Errorf("atlas version is not implemented yet; use the native Ptah version command once issue #268 lands")
 		},
 	}
 	cmdutil.ConfigureCommand(cmd)
@@ -263,14 +263,14 @@ func newAtlasLicenseCommand() *cobra.Command {
 		Use:   "license",
 		Short: "Print license information",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return fmt.Errorf("atlas license compatibility is not implemented yet")
+			return fmt.Errorf("atlas license is not implemented yet")
 		},
 	}
 	cmdutil.ConfigureCommand(cmd)
 	return cmd
 }
 
-func newAtlasAliasCommand(group string, verb atlasVerb) *cobra.Command {
+func newAtlasAdapterCommand(group string, verb atlasVerb) *cobra.Command {
 	mapper := atlasArgMapper(group, verb)
 	if verb.factory != nil {
 		cmd := cmdalias.NewForwardCommandWithArgsMapper(
@@ -287,10 +287,10 @@ func newAtlasAliasCommand(group string, verb atlasVerb) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   verb.use,
 		Short: verb.short,
-		Long:  atlasAliasLong(group, verb),
+		Long:  atlasCommandLong(group, verb),
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if verb.native == "" {
-				return fmt.Errorf("atlas %s %s compatibility is not implemented yet", group, verb.use)
+				return fmt.Errorf("atlas %s %s is not implemented yet", group, verb.use)
 			}
 			return fmt.Errorf("atlas %s %s execution is not implemented yet; use `ptah %s`", group, verb.use, verb.native)
 		},
@@ -300,11 +300,11 @@ func newAtlasAliasCommand(group string, verb atlasVerb) *cobra.Command {
 	return cmd
 }
 
-func atlasAliasLong(group string, verb atlasVerb) string {
+func atlasCommandLong(group string, verb atlasVerb) string {
 	if verb.native == "" {
-		return fmt.Sprintf("Atlas-compatible `atlas %s %s` command path. Runtime compatibility is not implemented yet.", group, verb.use)
+		return fmt.Sprintf("Atlas OSS `atlas %s %s` command path. Runtime behavior is not implemented yet.", group, verb.use)
 	}
-	return fmt.Sprintf("Atlas-compatible `atlas %s %s` command path. The current native Ptah equivalent is `ptah %s`.", group, verb.use, verb.native)
+	return fmt.Sprintf("Atlas OSS `atlas %s %s` command path. The current native Ptah implementation is `ptah %s`.", group, verb.use, verb.native)
 }
 
 func atlasString(name, shorthand, usage string) atlasFlag {

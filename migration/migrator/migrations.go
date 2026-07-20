@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/stokaro/ptah/core/lexer"
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
 )
@@ -226,7 +227,7 @@ func migrationFuncFromSQLStringWithMetadata(filename, sql string, interceptor St
 		return sqlMigrationFile{}, err
 	}
 
-	noTransaction, err := parseNoTransactionDirective(ParseFileDirectives(sql))
+	noTransaction, err := parseNoTransactionDirectiveFromSQL(sql)
 	if err != nil {
 		return sqlMigrationFile{}, fmt.Errorf("invalid migration directives in %s: %w", filename, err)
 	}
@@ -343,15 +344,27 @@ type Migration struct {
 	UpTimeouts      MigrationTimeouts
 	DownTimeouts    MigrationTimeouts
 	downUnavailable bool
-	// NoTransaction runs the migration body and metadata update outside the
-	// normal per-migration transaction. Use this only for statements that cannot
-	// run transactionally; ordinary migrations should leave it false so dry-run,
-	// timeout, and rollback behavior all go through the dialect writer.
-	NoTransaction bool
+	// UpNoTransaction runs the up body and metadata update outside the normal
+	// per-migration transaction. Use this only for statements that cannot run
+	// transactionally.
+	UpNoTransaction bool
+	// DownNoTransaction is the down-direction counterpart to UpNoTransaction.
+	DownNoTransaction bool
+	// NoTransaction reports whether either direction opts out of the normal
+	// per-migration transaction. Execution uses the direction-specific fields.
+	NoTransaction                bool
+	directionalNoTransactionMode bool
 }
 
-func (m *Migration) executionMode() migrationExecutionMode {
-	if m.NoTransaction {
+func (m *Migration) upExecutionMode() migrationExecutionMode {
+	if m.UpNoTransaction || (!m.directionalNoTransactionMode && m.NoTransaction) {
+		return migrationExecutionNoTransaction
+	}
+	return migrationExecutionTransactional
+}
+
+func (m *Migration) downExecutionMode() migrationExecutionMode {
+	if m.DownNoTransaction || (!m.directionalNoTransactionMode && m.NoTransaction) {
 		return migrationExecutionNoTransaction
 	}
 	return migrationExecutionTransactional
@@ -360,29 +373,32 @@ func (m *Migration) executionMode() migrationExecutionMode {
 // CreateMigrationFromSQL creates a migration from SQL strings
 // This is useful for programmatically creating migrations
 func CreateMigrationFromSQL(version int64, description, upSQL, downSQL string) *Migration {
-	upNoTransaction, upDirectiveErr := parseNoTransactionDirective(ParseFileDirectives(upSQL))
-	downNoTransaction, downDirectiveErr := parseNoTransactionDirective(ParseFileDirectives(downSQL))
+	upNoTransaction, upDirectiveErr := parseNoTransactionDirectiveFromSQL(upSQL)
+	downNoTransaction, downDirectiveErr := parseNoTransactionDirectiveFromSQL(downSQL)
 
 	migration := &Migration{
-		Version:       version,
-		Description:   description,
-		UpSQL:         upSQL,
-		DownSQL:       downSQL,
-		NoTransaction: upNoTransaction || downNoTransaction,
+		Version:                      version,
+		Description:                  description,
+		UpSQL:                        upSQL,
+		DownSQL:                      downSQL,
+		UpNoTransaction:              upNoTransaction,
+		DownNoTransaction:            downNoTransaction,
+		NoTransaction:                upNoTransaction || downNoTransaction,
+		directionalNoTransactionMode: true,
 	}
 
 	upFunc := func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 		if upDirectiveErr != nil {
 			return fmt.Errorf("invalid up migration directives: %w", upDirectiveErr)
 		}
-		return executeSQLStatements(ctx, conn, upSQL, migration.executionMode())
+		return executeSQLStatements(ctx, conn, upSQL, migration.upExecutionMode())
 	}
 
 	downFunc := func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 		if downDirectiveErr != nil {
 			return fmt.Errorf("invalid down migration directives: %w", downDirectiveErr)
 		}
-		return executeSQLStatements(ctx, conn, downSQL, migration.executionMode())
+		return executeSQLStatements(ctx, conn, downSQL, migration.downExecutionMode())
 	}
 
 	migration.Up = upFunc
@@ -513,4 +529,36 @@ func parseNoTransactionDirective(directives map[string]string) (bool, error) {
 		return false, fmt.Errorf("invalid +ptah %s value %q: expected true or false", DirectiveNoTransaction, value)
 	}
 	return noTransaction, nil
+}
+
+func parseNoTransactionDirectiveFromSQL(sql string) (bool, error) {
+	noTransaction, err := parseNoTransactionDirective(ParseFileDirectives(sql))
+	if err != nil || noTransaction {
+		return noTransaction, err
+	}
+	return hasAtlasTxModeNoneDirective(sql), nil
+}
+
+func hasAtlasTxModeNoneDirective(sql string) bool {
+	lexr := lexer.NewLexer(sql)
+	for {
+		tok := lexr.NextToken()
+		if tok.Type == lexer.TokenEOF {
+			break
+		}
+		if tok.Type != lexer.TokenComment {
+			continue
+		}
+		comment, ok := strings.CutPrefix(tok.Value, "--")
+		if !ok {
+			continue
+		}
+		if !commentStartsLine(sql, tok.Start) {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(comment), "atlas:txmode none") {
+			return true
+		}
+	}
+	return false
 }

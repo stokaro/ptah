@@ -66,6 +66,26 @@ env "prod" {
 	c.Assert(err, qt.ErrorMatches, `atlas\.hcl contains multiple env blocks; pass --env`)
 }
 
+func TestParseAtlasProjectConfigUsesSingleUnlabeledEnv(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`env {
+  url = "postgres://default/db"
+  migration {
+    dir = "file://migrations"
+  }
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.EnvName, qt.Equals, "")
+	c.Assert(cfg.DatabaseURL, qt.Equals, "postgres://default/db")
+	c.Assert(cfg.Migration.Dir, qt.Equals, "migrations")
+	c.Assert(cfg.Migration.Format, qt.Equals, "atlas")
+	c.Assert(cfg.Migration.RevisionFormat, qt.Equals, "atlas")
+}
+
 func TestParseAtlasProjectConfigRequiresEnvWhenMultipleBlocksExist(t *testing.T) {
 	c := qt.New(t)
 	raw := []byte(`env {

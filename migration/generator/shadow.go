@@ -47,6 +47,7 @@ type ShadowMismatch struct {
 // ShadowVerificationError wraps a structured shadow verification result.
 type ShadowVerificationError struct {
 	Result ShadowVerificationResult `json:"result"`
+	Err    error                    `json:"-"`
 }
 
 func (e *ShadowVerificationError) Error() string {
@@ -54,6 +55,27 @@ func (e *ShadowVerificationError) Error() string {
 		return "shadow check failed: " + e.Result.Mismatches[0].Message
 	}
 	return "shadow check failed: schema differs"
+}
+
+func (e *ShadowVerificationError) Unwrap() error {
+	return e.Err
+}
+
+func newShadowVerificationError(stage, kind, message string, err error) *ShadowVerificationError {
+	if err != nil {
+		message = fmt.Sprintf("%s: %v", message, err)
+	}
+	return &ShadowVerificationError{
+		Result: ShadowVerificationResult{
+			Stage:   stage,
+			Success: false,
+			Mismatches: []ShadowMismatch{{
+				Kind:    kind,
+				Message: message,
+			}},
+		},
+		Err: err,
+	}
 }
 
 type shadowMigrationOptions struct {
@@ -77,25 +99,35 @@ type shadowCandidate struct {
 func verifyShadowMigration(ctx context.Context, opts shadowMigrationOptions) error {
 	conn, err := dbschema.ConnectToDatabase(ctx, opts.DatabaseURL)
 	if err != nil {
-		return fmt.Errorf("shadow check failed: connect to shadow database: %w", err)
+		return newShadowVerificationError("connect", "connect_error", "connect to shadow database", err)
 	}
 	defer dbschema.CloseAndWarn(conn)
 
 	if !sameDialect(opts.Dialect, conn.Info().Dialect) {
-		return fmt.Errorf("shadow check failed: shadow database dialect %q does not match target dialect %q", conn.Info().Dialect, opts.Dialect)
+		return newShadowVerificationError(
+			"dialect-check",
+			"dialect_mismatch",
+			fmt.Sprintf("shadow database dialect %q does not match target dialect %q", conn.Info().Dialect, opts.Dialect),
+			nil,
+		)
 	}
 	if opts.Capabilities != nil && !maps.Equal(opts.Capabilities, conn.Info().Capabilities) {
-		return fmt.Errorf("shadow check failed: shadow database capabilities do not match target %s capabilities", opts.Dialect)
+		return newShadowVerificationError(
+			"capability-check",
+			"capability_mismatch",
+			fmt.Sprintf("shadow database capabilities do not match target %s capabilities", opts.Dialect),
+			nil,
+		)
 	}
 
 	if err := conn.SchemaWriter().DropAllTables(); err != nil {
-		return fmt.Errorf("shadow check failed: drop all objects: %w", err)
+		return newShadowVerificationError("drop-all", "drop_all_error", "drop all objects", err)
 	}
 	replayCtx := context.Background()
 
 	prior, err := loadPriorMigrations(opts.MigrationsDir)
 	if err != nil {
-		return fmt.Errorf("shadow check failed: load prior migrations: %w", err)
+		return newShadowVerificationError("load-prior", "load_prior_error", "load prior migrations", err)
 	}
 
 	migrations := make([]*migrator.Migration, 0, len(prior)+len(opts.Candidates))
@@ -109,9 +141,9 @@ func verifyShadowMigration(ctx context.Context, opts shadowMigrationOptions) err
 	mig := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migrations...))
 	if err := mig.MigrateUp(replayCtx); err != nil {
 		if description := describeReplayError(err); description != "" {
-			return fmt.Errorf("shadow check failed: %s", description)
+			return newShadowVerificationError("replay", "replay_error", description, err)
 		}
-		return fmt.Errorf("shadow check failed: replay migrations: %w", err)
+		return newShadowVerificationError("replay", "replay_error", "replay migrations", err)
 	}
 	if err := assertShadowSchemaMatches(conn, opts); err != nil {
 		return err
@@ -119,10 +151,10 @@ func verifyShadowMigration(ctx context.Context, opts shadowMigrationOptions) err
 
 	previousVersion := latestMigrationVersion(prior)
 	if err := mig.MigrateDownTo(replayCtx, previousVersion); err != nil {
-		return fmt.Errorf("shadow check failed: round-trip down: %w", err)
+		return newShadowVerificationError("round-trip-down", "round_trip_down_error", "round-trip down", err)
 	}
 	if err := mig.MigrateTo(replayCtx, latestMigrationVersion(migrations)); err != nil {
-		return fmt.Errorf("shadow check failed: round-trip up: %w", err)
+		return newShadowVerificationError("round-trip-up", "round_trip_up_error", "round-trip up", err)
 	}
 	return assertShadowSchemaMatches(conn, opts)
 }
@@ -173,7 +205,7 @@ func latestMigrationVersion(migrations []*migrator.Migration) int64 {
 func assertShadowSchemaMatches(conn *dbschema.DatabaseConnection, opts shadowMigrationOptions) error {
 	dbSchema, err := dbschema.ReadSchemaWithSchemas(conn, opts.Schemas)
 	if err != nil {
-		return fmt.Errorf("shadow check failed: re-introspect shadow database: %w", err)
+		return newShadowVerificationError("re-introspect", "re_introspect_error", "re-introspect shadow database", err)
 	}
 
 	diff := schemadiff.CompareWithOptions(opts.Generated, dbSchema, opts.CompareOpts)

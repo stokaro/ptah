@@ -100,7 +100,7 @@ func TestNewRootCommand_NativeCommandTreeIsRegistered(t *testing.T) {
 	}
 }
 
-func TestNewRootCommand_AtlasLookingRootAliasesStayRejected(t *testing.T) {
+func TestNewRootCommand_AtlasLookingRootPathsStayRejected(t *testing.T) {
 	tests := []struct {
 		name string
 		args []string
@@ -279,7 +279,7 @@ func TestZZZRootUsageErrorsExit2WithoutUsage(t *testing.T) {
 	}
 }
 
-func TestNewRootCommand_OldRootCommandSpellingsAreNotRegistered(t *testing.T) {
+func TestNewRootCommand_UngroupedRootCommandSpellingsAreNotRegistered(t *testing.T) {
 	tests := [][]string{
 		{"generate"},
 		{"read-db"},

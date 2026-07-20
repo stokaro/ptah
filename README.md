@@ -758,7 +758,7 @@ rules:
 ```
 
 Inline suppressions apply to the next statement only. Ptah accepts both its
-native directive and the Atlas-compatible alias:
+native directive and Atlas's `atlas:nolint` directive:
 
 ```sql
 -- ptah:nolint DS102
@@ -920,9 +920,11 @@ already-recorded migration using an explicit Ptah `.down.sql` file or an Atlas
 txtar `down.sql` section.
 
 `-- +ptah` directives inside `migration.sql` and `down.sql` are parsed per
-section for timeout and validation purposes. The current `no_transaction` model
-is still migration-level: if either direction opts out of transactions, Ptah
-treats the migration as non-transactional.
+section for timeout, validation, and transaction handling. `no_transaction`
+applies only to the direction whose SQL section contains it, so a
+non-transactional `down.sql` does not force `migration.sql` to run outside a
+transaction. Atlas `-- atlas:txmode none` comments are accepted as the Atlas
+equivalent for the section where they appear.
 
 #### Apply Migrations
 Apply all pending migrations to bring database up to latest version:
@@ -1174,15 +1176,15 @@ Atlas-compatible command paths are available only under `ptah atlas`:
 | `ptah atlas schema inspect` | `ptah db read` |
 | `ptah atlas schema diff` | `ptah schema compare` |
 
-Atlas-compatible aliases accept Atlas OSS flag names under `ptah atlas` and
-translate implemented flags to the native Ptah flags before execution. For
+Atlas command paths accept Atlas OSS flag names under `ptah atlas` and translate
+implemented flags to the native Ptah flags before execution. For
 example, `ptah atlas migrate apply --url ... --dir ...` maps to
 `ptah migrations up --db-url ... --migrations-dir ...`, and
 `ptah atlas schema inspect --url ...` maps to `ptah db read --db-url ...`.
 Flags that are part of the Atlas OSS CLI but do not have Ptah behavior yet are
 advertised and rejected explicitly instead of being silently ignored.
 
-The implemented Atlas-compatible commands delegate to native commands after
+The implemented Atlas command paths delegate to native commands after
 flag translation, so their exit codes follow the native command contract
 documented in [CLI Exit Codes](docs/exit_codes.md). Unsupported Atlas-compatible
 flags are rejected explicitly and exit `2`.

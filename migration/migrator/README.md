@@ -123,9 +123,11 @@ txtar `down.sql` sections revert already-applied migrations, and Atlas dynamic
 `migrate down` would synthesize a downgrade plan from database/dev state.
 
 `-- +ptah` directives inside `migration.sql` and `down.sql` are parsed per
-section for timeout and validation purposes. The current `no_transaction` model
-is still migration-level: if either direction opts out of transactions, Ptah
-treats the migration as non-transactional.
+section for timeout, validation, and transaction handling. `no_transaction`
+applies only to the direction whose SQL section contains it, so a
+non-transactional `down.sql` does not force `migration.sql` to run outside a
+transaction. Atlas `-- atlas:txmode none` comments are accepted as the Atlas
+equivalent for the section where they appear.
 
 ### Migrate Up
 Apply all pending migrations:
