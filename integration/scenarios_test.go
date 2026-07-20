@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/dbschema/types"
 )
 
@@ -47,6 +48,105 @@ func TestGetAllScenarios(t *testing.T) {
 	for _, scenarioName := range originalScenarios {
 		c.Assert(scenarioNames[scenarioName], qt.IsTrue, qt.Commentf("Original scenario %s should still be included", scenarioName))
 	}
+}
+
+func TestRoundTripFixturesCoverIssue147EdgeCases(t *testing.T) {
+	c := qt.New(t)
+
+	fixtures := make(map[string]roundTripFixture, len(roundTripFixtures))
+	for _, fixture := range roundTripFixtures {
+		fixtures[fixture.Name] = fixture
+	}
+
+	expected := map[string][]string{
+		"empty_schema":                          {"024-roundtrip-empty"},
+		"single_table":                          {"025-roundtrip-single-table"},
+		"composite_primary_key":                 {"026-roundtrip-composite-pk"},
+		"self_referencing_fk":                   {"027-roundtrip-self-reference"},
+		"parent_child_fk_drop_order":            {"028-roundtrip-parent-child"},
+		"three_level_fk_chain":                  {"034-roundtrip-fk-chain"},
+		"diamond_fk_graph":                      {"035-roundtrip-fk-diamond"},
+		"mutual_fk_cycle":                       {"029-roundtrip-mutual-cycle"},
+		"same_name_check_drift":                 {"030-roundtrip-check-v1", "031-roundtrip-check-v2"},
+		"same_name_unique_drift":                {"032-roundtrip-unique-v1", "033-roundtrip-unique-v2"},
+		"same_name_check_to_unique_drift":       {"042-roundtrip-check-to-unique-v1", "043-roundtrip-check-to-unique-v2"},
+		"same_name_unique_to_check_drift":       {"044-roundtrip-unique-to-check-v1", "045-roundtrip-unique-to-check-v2"},
+		"composite_primary_key_add_remove":      {"036-roundtrip-pk-base", "037-roundtrip-pk-composite-added", "038-roundtrip-pk-composite-removed"},
+		"enum_value_add":                        {"039-roundtrip-enum-v1", "040-roundtrip-enum-v2-add"},
+		"enum_value_remove":                     {"040-roundtrip-enum-v2-add", "041-roundtrip-enum-v3-remove"},
+		"foreign_key_added_to_existing_columns": {"046-roundtrip-existing-fk-base", "047-roundtrip-existing-fk-added"},
+	}
+	for name, versions := range expected {
+		fixture, ok := fixtures[name]
+		c.Assert(ok, qt.IsTrue, qt.Commentf("missing round-trip fixture %s", name))
+		c.Assert(fixture.Versions, qt.DeepEquals, versions)
+	}
+}
+
+func TestExistingColumnForeignKeyFixtureMetadata(t *testing.T) {
+	c := qt.New(t)
+
+	baseSchema := loadRoundTripFixtureSchema(c, "046-roundtrip-existing-fk-base")
+	addedSchema := loadRoundTripFixtureSchema(c, "047-roundtrip-existing-fk-added")
+
+	baseUsers := findRoundTripTable(c, baseSchema, "users")
+	addedUsers := findRoundTripTable(c, addedSchema, "users")
+
+	baseAccountID := findRoundTripField(c, baseSchema, baseUsers.StructName, "account_id")
+	baseManagerID := findRoundTripField(c, baseSchema, baseUsers.StructName, "manager_id")
+	c.Assert(baseAccountID.Type, qt.Equals, "INTEGER")
+	c.Assert(baseAccountID.Foreign, qt.Equals, "")
+	c.Assert(baseManagerID.Type, qt.Equals, "INTEGER")
+	c.Assert(baseManagerID.Foreign, qt.Equals, "")
+
+	addedAccountID := findRoundTripField(c, addedSchema, addedUsers.StructName, "account_id")
+	addedManagerID := findRoundTripField(c, addedSchema, addedUsers.StructName, "manager_id")
+	c.Assert(addedAccountID.Type, qt.Equals, baseAccountID.Type)
+	c.Assert(addedAccountID.Foreign, qt.Equals, "accounts(id)")
+	c.Assert(addedManagerID.Type, qt.Equals, baseManagerID.Type)
+	c.Assert(addedManagerID.Foreign, qt.Equals, "users(id)")
+}
+
+func loadRoundTripFixtureSchema(c *qt.C, version string) *goschema.Database {
+	c.Helper()
+
+	vem, err := NewVersionedEntityManager(testFixtures)
+	c.Assert(err, qt.IsNil)
+	defer vem.Cleanup()
+
+	c.Assert(vem.LoadEntityVersion(version), qt.IsNil)
+
+	schema, err := vem.GenerateSchemaFromEntities()
+	c.Assert(err, qt.IsNil)
+
+	return schema
+}
+
+func findRoundTripTable(c *qt.C, schema *goschema.Database, name string) *goschema.Table {
+	c.Helper()
+
+	for i := range schema.Tables {
+		if schema.Tables[i].Name == name {
+			return &schema.Tables[i]
+		}
+	}
+
+	c.Fatalf("missing table %s", name)
+	return nil
+}
+
+func findRoundTripField(c *qt.C, schema *goschema.Database, structName, name string) *goschema.Field {
+	c.Helper()
+
+	for i := range schema.Fields {
+		field := &schema.Fields[i]
+		if field.StructName == structName && field.Name == name {
+			return field
+		}
+	}
+
+	c.Fatalf("missing field %s.%s", structName, name)
+	return nil
 }
 
 // TestGetDynamicScenarios verifies the dynamic scenarios function
