@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
+
+	"github.com/stokaro/ptah/dbschema/types"
 )
 
 // quoteIdent returns a safely-backtick-quoted MySQL/MariaDB identifier.
@@ -19,6 +22,12 @@ func quoteIdent(name string) string {
 // Writer writes schemas to MySQL/MariaDB databases
 type Writer struct {
 	db     *sql.DB
+	schema string
+	dryRun bool
+}
+
+type transactionWriter struct {
+	mu     sync.Mutex
 	tx     *sql.Tx
 	schema string
 	dryRun bool
@@ -32,7 +41,7 @@ func NewMySQLWriter(db *sql.DB, schema string) *Writer {
 	}
 }
 
-// ExecuteSQL executes a SQL statement against the active transaction. Values
+// ExecuteSQL executes a standalone SQL statement. Values
 // must be passed via args and referenced through `?` placeholders; the SQL
 // string itself should never be assembled with fmt.Sprintf for value
 // interpolation. Identifiers (table/column names) cannot be parameterized
@@ -42,11 +51,46 @@ func (w *Writer) ExecuteSQL(ctx context.Context, sqlExpr string, args ...any) er
 		slog.Info("[DRY RUN] Would execute SQL", "sql", sqlExpr, "args", args)
 		return nil
 	}
-
-	if w.tx == nil {
-		return fmt.Errorf("no active transaction")
+	if w.db == nil {
+		return fmt.Errorf("no database connection")
 	}
 
+	_, err := w.db.ExecContext(ctx, sqlExpr, args...)
+	if err != nil {
+		return fmt.Errorf("SQL execution failed: %w\nSQL: %s", err, sqlExpr)
+	}
+	return nil
+}
+
+// BeginTransaction starts a transaction and returns a transaction-scoped
+// writer. The parent writer keeps no active transaction state.
+func (w *Writer) BeginTransaction(ctx context.Context) (types.SchemaTransaction, error) {
+	if w.dryRun {
+		slog.Info("[DRY RUN] Would begin transaction")
+		return &transactionWriter{schema: w.schema, dryRun: true}, nil
+	}
+	if w.db == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+
+	tx, err := w.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &transactionWriter{tx: tx, schema: w.schema}, nil
+}
+
+// ExecuteSQL executes SQL against the transaction.
+func (w *transactionWriter) ExecuteSQL(ctx context.Context, sqlExpr string, args ...any) error {
+	if w.dryRun {
+		slog.Info("[DRY RUN] Would execute SQL", "sql", sqlExpr, "args", args)
+		return nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.tx == nil {
+		return fmt.Errorf("transaction is closed")
+	}
 	_, err := w.tx.ExecContext(ctx, sqlExpr, args...)
 	if err != nil {
 		return fmt.Errorf("SQL execution failed: %w\nSQL: %s", err, sqlExpr)
@@ -54,77 +98,61 @@ func (w *Writer) ExecuteSQL(ctx context.Context, sqlExpr string, args ...any) er
 	return nil
 }
 
-// BeginTransaction starts a new transaction
-func (w *Writer) BeginTransaction() error {
-	if w.dryRun {
-		slog.Info("[DRY RUN] Would begin transaction")
-		return nil
-	}
-
-	if w.tx != nil {
-		return fmt.Errorf("transaction already active")
-	}
-
-	tx, err := w.db.Begin()
-	if err != nil {
-		return err
-	}
-	w.tx = tx
-	return nil
-}
-
-// CommitTransaction commits the current transaction
-func (w *Writer) CommitTransaction() error {
+// Commit commits the transaction.
+func (w *transactionWriter) Commit() error {
 	if w.dryRun {
 		slog.Info("[DRY RUN] Would commit transaction")
 		return nil
 	}
-
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if w.tx == nil {
-		return fmt.Errorf("no active transaction")
+		return fmt.Errorf("transaction is closed")
 	}
-
 	err := w.tx.Commit()
 	w.tx = nil
 	return err
 }
 
-// RollbackTransaction rolls back the current transaction
-func (w *Writer) RollbackTransaction() error {
+// Rollback rolls back the transaction.
+func (w *transactionWriter) Rollback() error {
 	if w.dryRun {
 		slog.Info("[DRY RUN] Would rollback transaction")
 		return nil
 	}
-
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if w.tx == nil {
-		return nil // No transaction to rollback
+		return nil
 	}
-
 	err := w.tx.Rollback()
 	w.tx = nil
 	return err
 }
 
+// IsDryRun returns whether dry-run mode is enabled.
+func (w *transactionWriter) IsDryRun() bool { return w.dryRun }
+
 // DropAllTables drops ALL tables in the database (COMPLETE CLEANUP!)
 func (w *Writer) DropAllTables() error {
 	slog.Info("WARNING: This will drop ALL tables in the database!")
 
-	// Start transaction
-	if err := w.BeginTransaction(); err != nil {
+	tx, err := w.BeginTransaction(context.Background())
+	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 
-	// Rollback on error, commit on success
+	committed := false
 	defer func() {
-		if w.tx != nil {
-			w.RollbackTransaction() // TODO: weird - it always rolls back
+		if !committed {
+			_ = tx.Rollback()
 		}
 	}()
 
 	ctx := context.Background()
 
 	// Disable foreign key checks to avoid dependency issues
-	if err := w.ExecuteSQL(ctx, "SET FOREIGN_KEY_CHECKS = 0"); err != nil {
+	if err := tx.ExecuteSQL(ctx, "SET FOREIGN_KEY_CHECKS = 0"); err != nil {
 		return fmt.Errorf("failed to disable foreign key checks: %w", err)
 	}
 
@@ -162,20 +190,20 @@ func (w *Writer) DropAllTables() error {
 	for _, tableName := range tables {
 		dropSQL := "DROP TABLE IF EXISTS " + quoteIdent(tableName)
 		slog.Info("Dropping table", "tableName", tableName)
-		if err := w.ExecuteSQL(ctx, dropSQL); err != nil {
+		if err := tx.ExecuteSQL(ctx, dropSQL); err != nil {
 			return fmt.Errorf("failed to drop table %s: %w", tableName, err)
 		}
 	}
 
 	// Re-enable foreign key checks
-	if err := w.ExecuteSQL(ctx, "SET FOREIGN_KEY_CHECKS = 1"); err != nil {
+	if err := tx.ExecuteSQL(ctx, "SET FOREIGN_KEY_CHECKS = 1"); err != nil {
 		return fmt.Errorf("failed to re-enable foreign key checks: %w", err)
 	}
 
-	// Commit transaction
-	if err := w.CommitTransaction(); err != nil {
+	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
+	committed = true
 
 	slog.Info("Successfully dropped tables", "count", len(tables))
 	return nil

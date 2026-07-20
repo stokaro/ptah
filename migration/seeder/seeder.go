@@ -211,39 +211,41 @@ func applySeed(ctx context.Context, conn *dbschema.DatabaseConnection, fsys fs.F
 		return applySeedWithoutTransaction(ctx, conn, seed, statements, opts)
 	}
 
-	if err := conn.Writer().BeginTransaction(); err != nil {
+	tx, err := conn.SchemaWriter().BeginTransaction(ctx)
+	if err != nil {
 		return fmt.Errorf("begin seed transaction %s: %w", seed.Filename, err)
 	}
+	txConn := conn.WithExecutor(tx)
 	committed := false
 	defer func() {
 		if !committed {
-			_ = conn.Writer().RollbackTransaction()
+			_ = tx.Rollback()
 		}
 	}()
 
 	if opts.Idempotent {
-		if err := conn.Writer().ExecuteSQL(ctx, "SAVEPOINT ptah_seed_file"); err != nil {
+		if err := txConn.Writer().ExecuteSQL(ctx, "SAVEPOINT ptah_seed_file"); err != nil {
 			return fmt.Errorf("create seed savepoint %s: %w", seed.Filename, err)
 		}
 	}
 
-	if err := executeStatements(ctx, conn, statements); err != nil {
+	if err := executeStatements(ctx, txConn, statements); err != nil {
 		if !opts.Idempotent || !IsConflictError(err) {
 			return fmt.Errorf("apply seed %s: %w", seed.Filename, err)
 		}
-		if rbErr := conn.Writer().ExecuteSQL(ctx, "ROLLBACK TO SAVEPOINT ptah_seed_file"); rbErr != nil {
+		if rbErr := txConn.Writer().ExecuteSQL(ctx, "ROLLBACK TO SAVEPOINT ptah_seed_file"); rbErr != nil {
 			return fmt.Errorf("rollback idempotent seed %s: %w", seed.Filename, rbErr)
 		}
 	} else if opts.Idempotent {
-		if err := conn.Writer().ExecuteSQL(ctx, "RELEASE SAVEPOINT ptah_seed_file"); err != nil {
+		if err := txConn.Writer().ExecuteSQL(ctx, "RELEASE SAVEPOINT ptah_seed_file"); err != nil {
 			return fmt.Errorf("release seed savepoint %s: %w", seed.Filename, err)
 		}
 	}
 
-	if err := recordSeed(ctx, conn, seed, opts); err != nil {
+	if err := recordSeed(ctx, txConn, seed, opts); err != nil {
 		return fmt.Errorf("record seed %s: %w", seed.Filename, err)
 	}
-	if err := conn.Writer().CommitTransaction(); err != nil {
+	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit seed %s: %w", seed.Filename, err)
 	}
 	committed = true

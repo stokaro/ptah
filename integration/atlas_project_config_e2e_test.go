@@ -46,18 +46,18 @@ func TestAtlasProjectConfigMigrateStatusAndUpE2E(t *testing.T) {
 	workDir := t.TempDir()
 	writeAtlasProjectConfigFixture(c, workDir, replaceDatabaseName(c, dbURL, testDBName))
 
-	output, err := runPtahInDir(ctx, workDir, binaryPath, "migrate-status", "--env", "local", "--json")
-	c.Assert(err, qt.IsNil, qt.Commentf("migrate-status output:\n%s", output))
+	output, err := runPtahInDir(ctx, workDir, binaryPath, "migrations", "status", "--env", "local", "--json")
+	c.Assert(err, qt.IsNil, qt.Commentf("migrations status output:\n%s", output))
 	c.Assert(readStatusField(c, output, "total_migrations"), qt.Equals, float64(1))
 	c.Assert(readStatusField(c, output, "has_pending_changes"), qt.Equals, true)
 
-	output, err = runPtahInDir(ctx, workDir, binaryPath, "migrate-up", "--env", "local")
-	c.Assert(err, qt.IsNil, qt.Commentf("migrate-up output:\n%s", output))
+	output, err = runPtahInDir(ctx, workDir, binaryPath, "migrations", "up", "--env", "local")
+	c.Assert(err, qt.IsNil, qt.Commentf("migrations up output:\n%s", output))
 	c.Assert(output, qt.Contains, "Migration directory format: atlas")
 	c.Assert(output, qt.Contains, "Database is now at version: 20260719010101")
 
-	output, err = runPtahInDir(ctx, workDir, binaryPath, "migrate-status", "--env", "local", "--json")
-	c.Assert(err, qt.IsNil, qt.Commentf("final migrate-status output:\n%s", output))
+	output, err = runPtahInDir(ctx, workDir, binaryPath, "migrations", "status", "--env", "local", "--json")
+	c.Assert(err, qt.IsNil, qt.Commentf("final migrations status output:\n%s", output))
 	c.Assert(readStatusField(c, output, "current_version"), qt.Equals, float64(20260719010101))
 	c.Assert(readStatusField(c, output, "has_pending_changes"), qt.Equals, false)
 

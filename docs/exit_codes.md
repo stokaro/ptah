@@ -11,31 +11,30 @@ Ptah treats CLI exit codes as a public scripting contract.
 
 ## Native Commands
 
-The grouped command tree is the preferred native surface. Historical kebab-case
-commands remain available as compatibility spellings before GA and use the same
-exit-code contract as the grouped command they map to.
+The grouped command tree is the native Ptah surface. Ptah is pre-GA, so old
+root-level command spellings are removed instead of preserved.
 
 | Command | `0` | `1` | `2` |
 | --- | --- | --- | --- |
 | `ptah introspect` | Annotated Go model files generated. | Not used. | Usage error, invalid output path, connection failure, schema-read failure, render error, or write error. |
-| `ptah schema render` / `ptah generate` | Schema rendered. | Not used. | Usage error, parse error, unsupported dialect, or render error. |
+| `ptah schema render` | Schema rendered. | Not used. | Usage error, parse error, unsupported dialect, or render error. |
 | `ptah schema export` | Schema exported. | Not used. | Usage error, invalid paths, parse error, render error, write error, or cleanup error. |
-| `ptah db read` / `ptah read-db` | Schema read and printed. | Not used. | Usage error, connection failure, or schema-read failure. |
-| `ptah db drop-all` / `ptah drop-all` | Objects dropped, dry-run output printed, or operation canceled by the user. | Not used. | Usage error, connection failure, input read error, or drop failure. |
-| `ptah schema compare` / `ptah compare` | Diff printed, or no diff. | Non-empty diff when `--exit-code` is set. | Usage error, connection failure, parse failure, or diff generation failure. |
-| `ptah schema drift` / `ptah drift` | No drift that meets `--severity`, or `--exit-code=false`. | Drift meets `--severity` while `--exit-code=true`. | Usage error, connection failure, parse failure, or report error. |
-| `ptah migrations lint` / `ptah lint` | No findings above `--fail-on`, or `--fail-on=none`. | Findings meet `--fail-on`. | Usage error, invalid config, unreadable migration directory, or report error. |
+| `ptah db read` | Schema read and printed. | Not used. | Usage error, connection failure, or schema-read failure. |
+| `ptah db drop-all` | Objects dropped, dry-run output printed, or operation canceled by the user. | Not used. | Usage error, connection failure, input read error, or drop failure. |
+| `ptah schema compare` | Diff printed, or no diff. | Non-empty diff when `--exit-code` is set. | Usage error, connection failure, parse failure, or diff generation failure. |
+| `ptah schema drift` | No drift that meets `--severity`, or `--exit-code=false`. | Drift meets `--severity` while `--exit-code=true`. | Usage error, connection failure, parse failure, or report error. |
+| `ptah migrations lint` | No findings above `--fail-on`, or `--fail-on=none`. | Findings meet `--fail-on`. | Usage error, invalid config, unreadable migration directory, or report error. |
 | `ptah sql lint` | No SQL lint findings with `error` severity. | One or more SQL lint findings with `error` severity. | Usage error, unreadable SQL input, unsupported dialect, or report error. |
-| `ptah migrations plan` / `ptah migrate` | Migration SQL generated, or no schema changes. | Not used. | Usage error, connection failure, parse failure, safety check failure, or render error. |
-| `ptah migrations generate` / `ptah migrate generate` | Migration file generated, or no migration needed. | Not used. | Usage error, connection failure, parse failure, shadow verification failure, safety check failure, or write error. |
-| `ptah migrations create` / `ptah migrate new` | Empty migration files created. | Not used. | Usage error, invalid directory, or write error. |
-| `ptah migrations baseline` / `ptah migrate-baseline` | Existing migrations recorded as applied, or dry-run output printed. | Not used. | Usage error, connection failure, migration directory error, verification failure, or write error. |
-| `ptah migrations up` / `ptah migrate-up` | Pending migrations applied, or dry-run output printed. | Not used. | Usage error, connection failure, migration directory error, integrity verification failure, lint/safety gate failure, lock failure, or migration execution failure. |
-| `ptah migrations down` / `ptah migrate-down` | Requested rollback applied, or dry-run output printed. | Not used. | Usage error, connection failure, migration directory error, lock failure, or rollback failure. |
-| `ptah migrations repair` / `ptah migrate-repair` | Migration revision repaired, or dry-run output printed. | Not used. | Usage error, connection failure, revision lookup failure, or repair failure. |
-| `ptah migrations status` / `ptah migrate-status` | Status printed, including pending migrations by default. | Pending migrations exist when `--exit-code` is set. | Usage error, connection failure, migration directory error, or status-read failure. |
-| `ptah migrations hash` / `ptah migrate-hash` | Integrity file written. | Not used. | Usage error, invalid directory, invalid migration format, or write error. |
-| `ptah migrations validate` / `ptah migrate-validate` | Integrity file matches the migration directory. | Migration content drift found. | Usage error, missing or unreadable integrity file, invalid directory, or invalid migration format. |
+| `ptah migrations plan` | Migration SQL generated, or no schema changes. | Not used. | Usage error, connection failure, parse failure, safety check failure, or render error. |
+| `ptah migrations generate` | Migration file generated, or no migration needed. | Not used. | Usage error, connection failure, parse failure, shadow verification failure, safety check failure, or write error. |
+| `ptah migrations create` | Empty migration files created. | Not used. | Usage error, invalid directory, or write error. |
+| `ptah migrations baseline` | Existing migrations recorded as applied, or dry-run output printed. | Not used. | Usage error, connection failure, migration directory error, verification failure, or write error. |
+| `ptah migrations up` | Pending migrations applied, or dry-run output printed. | Not used. | Usage error, connection failure, migration directory error, integrity verification failure, lint/safety gate failure, lock failure, or migration execution failure. |
+| `ptah migrations down` | Requested rollback applied, or dry-run output printed. | Not used. | Usage error, connection failure, migration directory error, lock failure, or rollback failure. |
+| `ptah migrations repair` | Migration revision repaired, or dry-run output printed. | Not used. | Usage error, connection failure, revision lookup failure, or repair failure. |
+| `ptah migrations status` | Status printed, including pending migrations by default. | Pending migrations exist when `--exit-code` is set. | Usage error, connection failure, migration directory error, or status-read failure. |
+| `ptah migrations hash` | Integrity file written. | Not used. | Usage error, invalid directory, invalid migration format, or write error. |
+| `ptah migrations validate` | Integrity file matches the migration directory. | Migration content drift found. | Usage error, missing or unreadable integrity file, invalid directory, or invalid migration format. |
 | `ptah seed` | Seed files applied or already applied. | Not used. | Usage error, protected environment rejection, connection failure, invalid seed files, or seed execution failure. |
 | `ptah version` | Version information printed. | Not used. | Usage error. |
 

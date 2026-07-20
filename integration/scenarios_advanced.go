@@ -659,7 +659,7 @@ func rollbackToVersion(ctx context.Context, conn *dbschema.DatabaseConnection, v
 // rollbackToEmptyState drops all tables to return to an empty database state
 func rollbackToEmptyState(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 	// Drop all tables to return to empty state
-	if err := conn.Writer().DropAllTables(); err != nil {
+	if err := conn.SchemaWriter().DropAllTables(); err != nil {
 		return fmt.Errorf("failed to drop all tables: %w", err)
 	}
 

@@ -91,7 +91,7 @@ func TestGenerateMigrationShadowVerificationWithRealDB(t *testing.T) {
 	releaseLock := acquireShadowTestLock(c, ctx, conn)
 	defer releaseLock()
 	defer func() {
-		c.Assert(conn.Writer().DropAllTables(), qt.IsNil)
+		c.Assert(conn.SchemaWriter().DropAllTables(), qt.IsNil)
 	}()
 
 	c.Run("broken prior migration aborts with missing column", func(c *qt.C) {
@@ -165,10 +165,10 @@ func TestGenerateMigrationConcurrentIndexOnPopulatedPostgresTableWithRealDB(t *t
 	releaseLock := acquireShadowTestLock(c, ctx, conn)
 	defer releaseLock()
 	defer func() {
-		c.Assert(conn.Writer().DropAllTables(), qt.IsNil)
+		c.Assert(conn.SchemaWriter().DropAllTables(), qt.IsNil)
 	}()
 
-	c.Assert(conn.Writer().DropAllTables(), qt.IsNil)
+	c.Assert(conn.SchemaWriter().DropAllTables(), qt.IsNil)
 	_, err = conn.ExecContext(ctx, `
 		CREATE TABLE users (
 			id SERIAL PRIMARY KEY,
@@ -277,7 +277,7 @@ func writePriorMigration(c *qt.C, dir, upSQL string) {
 }
 
 func prepareShadowTargetDB(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnection) {
-	c.Assert(conn.Writer().DropAllTables(), qt.IsNil)
+	c.Assert(conn.SchemaWriter().DropAllTables(), qt.IsNil)
 	_, err := conn.ExecContext(ctx, "CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT NOT NULL)")
 	c.Assert(err, qt.IsNil)
 }

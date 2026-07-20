@@ -154,21 +154,21 @@ Handles all database interactions and schema operations:
 #### `cmd/` - CLI Commands
 Provides command-line interface for all Ptah operations:
 
-- **`generate`** - Generate SQL schema from Go entities without touching database
+- **`schema render`** - Generate SQL schema from Go entities without touching database
 - **`introspect`** - Generate annotated Go models from a live database
-- **`read-db`** - Read and display current database schema
-- **`compare`** - Compare Go entities with current database schema
-- **`drift`** - Check live database drift with CI-friendly exit codes
-- **`lint`** - Lint migration files for production-unsafe patterns (rule-coded, CI-friendly)
+- **`db read`** - Read and display current database schema
+- **`schema compare`** - Compare Go entities with current database schema
+- **`schema drift`** - Check live database drift with CI-friendly exit codes
+- **`migrations lint`** - Lint migration files for production-unsafe patterns (rule-coded, CI-friendly)
 - **`sql lint`** - Lint standalone SQL files or stdin with parser-backed DDL rules
-- **`migrate`** - Generate migration SQL for schema differences
-- **`migrate-up`** - Apply migrations to bring database up to latest version
-- **`migrate-down`** - Roll back migrations to previous versions
-- **`migrate-status`** - Show current migration status and history
-- **`migrate-hash`** - Write/update the `ptah.sum` migration-directory integrity file
-- **`migrate-validate`** - Verify a migrations directory against its committed `ptah.sum`
+- **`migrations plan`** - Generate migration SQL for schema differences
+- **`migrations up`** - Apply migrations to bring database up to latest version
+- **`migrations down`** - Roll back migrations to previous versions
+- **`migrations status`** - Show current migration status and history
+- **`migrations hash`** - Write/update the `ptah.sum` migration-directory integrity file
+- **`migrations validate`** - Verify a migrations directory against its committed `ptah.sum`
 - **`seed`** - Apply environment-scoped SQL seed files with replay tracking
-- **`drop-all`** - Drop ALL tables and enums in database (VERY DANGEROUS!) (supports `--dry-run`)
+- **`db drop-all`** - Drop ALL tables and enums in database (VERY DANGEROUS!) (supports `--dry-run`)
 - **`ptah-integration-test`** - Run comprehensive integration tests across database platforms
 
 ### Supporting Components
@@ -507,7 +507,7 @@ running:
 
 ```bash
 go test ./models
-ptah generate --root-dir ./models --dialect postgres
+ptah schema render --root-dir ./models --dialect postgres
 ```
 
 1. **Define your entities** with schema annotations:
@@ -544,21 +544,21 @@ type Booking struct {
 
 ```bash
 # Generate for PostgreSQL
-./ptah generate --root-dir ./models --dialect postgres
+./ptah schema render --root-dir ./models --dialect postgres
 
 # Generate for MySQL
-./ptah generate --root-dir ./models --dialect mysql
+./ptah schema render --root-dir ./models --dialect mysql
 
 # Generate for SQLite
-./ptah generate --root-dir ./models --dialect sqlite
+./ptah schema render --root-dir ./models --dialect sqlite
 ```
 
 You can also generate from a language-agnostic YAML schema file or an Atlas HCL
 schema file:
 
 ```bash
-./ptah generate --schema-file schema.yaml --dialect postgres
-./ptah generate --schema-file schema.hcl --dialect postgres
+./ptah schema render --schema-file schema.yaml --dialect postgres
+./ptah schema render --schema-file schema.hcl --dialect postgres
 ```
 
 See [YAML Schema Input](docs/yaml_schema.md) for the supported file format,
@@ -573,7 +573,7 @@ for SQLite URL forms, generated DDL, and ALTER TABLE limitations.
 
 ```bash
 # Compare current database with Go entities
-./ptah compare --root-dir ./models --db-url postgres://user:pass@localhost/db
+./ptah schema compare --root-dir ./models --db-url postgres://user:pass@localhost/db
 
 # Generate migration SQL
 ./ptah migrate --root-dir ./models --db-url postgres://user:pass@localhost/db
@@ -585,7 +585,7 @@ for SQLite URL forms, generated DDL, and ALTER TABLE limitations.
 ./ptah migrate --root-dir ./models --db-url postgres://user:pass@localhost/db --schemas auth,billing,public
 
 # Apply migrations to database
-./ptah migrate-up --db-url postgres://user:pass@localhost/db --migrations-dir ./migrations
+./ptah migrations up --db-url postgres://user:pass@localhost/db --migrations-dir ./migrations
 ```
 
 ---
@@ -610,20 +610,20 @@ Generate SQL DDL statements from Go entities without touching the database:
 
 ```bash
 # Generate for all supported dialects
-./ptah generate --root-dir ./models
+./ptah schema render --root-dir ./models
 
 # Generate for specific dialect
-./ptah generate --root-dir ./models --dialect postgres
-./ptah generate --root-dir ./models --dialect mysql
-./ptah generate --root-dir ./models --dialect mariadb
-./ptah generate --root-dir ./models --dialect sqlite
-./ptah generate --root-dir ./models --dialect clickhouse
+./ptah schema render --root-dir ./models --dialect postgres
+./ptah schema render --root-dir ./models --dialect mysql
+./ptah schema render --root-dir ./models --dialect mariadb
+./ptah schema render --root-dir ./models --dialect sqlite
+./ptah schema render --root-dir ./models --dialect clickhouse
 
 # Generate from a YAML schema file instead of Go annotations
-./ptah generate --schema-file schema.yaml --dialect postgres
+./ptah schema render --schema-file schema.yaml --dialect postgres
 
 # Generate from an Atlas HCL schema file instead of Go annotations
-./ptah generate --schema-file schema.hcl --dialect postgres
+./ptah schema render --schema-file schema.hcl --dialect postgres
 ```
 
 ### Export Schema
@@ -649,11 +649,11 @@ cleanup semantics, diagnostics, and the currently supported export shape.
 Read and display the current database schema:
 
 ```bash
-./ptah read-db --db-url postgres://user:pass@localhost:5432/database
-./ptah read-db --db-url sqlite:///tmp/app.db
+./ptah db read --db-url postgres://user:pass@localhost:5432/database
+./ptah db read --db-url sqlite:///tmp/app.db
 
 # Restrict PostgreSQL introspection to specific schemas
-./ptah read-db --db-url postgres://user:pass@localhost:5432/database --schemas auth,billing,public
+./ptah db read --db-url postgres://user:pass@localhost:5432/database --schemas auth,billing,public
 ```
 
 **Output:** Complete schema information including tables, columns, constraints, indexes, and enums
@@ -662,12 +662,12 @@ Read and display the current database schema:
 Compare your Go entities with the current database schema:
 
 ```bash
-./ptah compare --root-dir ./models --db-url postgres://user:pass@localhost:5432/database
-./ptah compare --root-dir ./models --db-url sqlite:///tmp/app.db
-./ptah compare --root-dir ./models --db-url postgres://user:pass@localhost:5432/database --schemas auth,billing,public
+./ptah schema compare --root-dir ./models --db-url postgres://user:pass@localhost:5432/database
+./ptah schema compare --root-dir ./models --db-url sqlite:///tmp/app.db
+./ptah schema compare --root-dir ./models --db-url postgres://user:pass@localhost:5432/database --schemas auth,billing,public
 
 # Return 1 when the diff is non-empty, 0 when it is empty
-./ptah compare --root-dir ./models --db-url postgres://user:pass@localhost:5432/database --exit-code
+./ptah schema compare --root-dir ./models --db-url postgres://user:pass@localhost:5432/database --exit-code
 ```
 
 **Output:** Detailed differences showing what needs to be added, removed, or modified
@@ -676,9 +676,9 @@ Compare your Go entities with the current database schema:
 Check whether the live database still matches the schema declared by Go entities:
 
 ```bash
-./ptah drift --root-dir ./models --db-url postgres://user:pass@localhost:5432/database
-./ptah drift --root-dir ./models --db-url sqlite:///tmp/app.db
-./ptah drift --root-dir ./models --db-url postgres://user:pass@localhost:5432/database --schemas auth,billing,public
+./ptah schema drift --root-dir ./models --db-url postgres://user:pass@localhost:5432/database
+./ptah schema drift --root-dir ./models --db-url sqlite:///tmp/app.db
+./ptah schema drift --root-dir ./models --db-url postgres://user:pass@localhost:5432/database --schemas auth,billing,public
 ```
 
 Use `--format text|json|github-actions` to choose output, and `--ignore tables=audit_log,sessions` to suppress intentionally unmanaged tables. By default any drift returns `1`; use `--severity destructive` to return `1` only for destructive drift such as dropped tables, dropped columns, removed constraints, disabled RLS, or removed database objects.
@@ -707,7 +707,7 @@ jobs:
         id: drift
         continue-on-error: true
         run: |
-          ./ptah drift \
+          ./ptah schema drift \
             --root-dir ./models \
             --db-url "${{ secrets.STAGING_DATABASE_URL }}" \
             --format github-actions
@@ -728,14 +728,14 @@ jobs:
 Inspect a migrations directory for production-unsafe patterns, sqlcheck-style:
 
 ```bash
-./ptah lint --dir ./migrations --dialect postgres
+./ptah migrations lint --dir ./migrations --dialect postgres
 ```
 
 Findings carry stable rule codes grouped into families:
 
 - `DS` - data safety: `DS101` dropped table, `DS102` dropped column, `DS103` lossy column type change
 - `MF` - migration form: `MF101` missing down file, `MF102` empty migration, `MF103` non-conventional file name
-- `BC` - backwards compatibility: `BC101` rename breaking deployed code
+- `BC` - backward compatibility: `BC101` rename breaking deployed code
 - `PG` - PostgreSQL: `PG101` `CREATE INDEX` without `CONCURRENTLY`, `PG102` `ALTER TYPE ... ADD VALUE` in a transaction
 - `MY` - MySQL/MariaDB: `MY101` lock-heavy `ALTER TABLE` forms
 
@@ -862,8 +862,8 @@ Atlas-style timestamp files such as `20220318104614_team_A.sql` or
 `20240112070806.sql`, plus numeric migration names produced by Atlas importers
 such as `1_initial.sql`, `2.sql`, `1_initial.up.sql`, `1_initial.down.sql`, and
 `1.my.sql`. Use
-`--dir-format=ptah` or `--dir-format=atlas` on `migrate-up`, `migrate-down`,
-`migrate-status`, `migrate-hash`, and `migrate-validate` when a directory should
+`--dir-format=ptah` or `--dir-format=atlas` on `migrations up`, `migrations down`,
+`migrations status`, `migrations hash`, and `migrations validate` when a directory should
 be interpreted explicitly. Ordinary Atlas and imported single SQL files are
 forward migrations. Imported `.down.sql` files are paired with their matching
 `.up.sql` version for rollback. Atlas txtar files can also carry an embedded
@@ -880,7 +880,7 @@ DELETE FROM users WHERE id = 1;
 ```
 
 For Atlas txtar migrations, Ptah executes only the `migration.sql` section for
-`migrate-up` and only the `down.sql` section for `migrate-down`. Other embedded
+`migrations up` and only the `down.sql` section for `migrations down`. Other embedded
 txtar files, such as `schema.sql`, are ignored by the migrator; ordinary SQL
 comments that look like `-- keep this comment --` remain comments, not txtar
 section boundaries. Ptah's txtar support is intentionally limited to Atlas SQL
@@ -905,17 +905,17 @@ and [Atlas Project Config](docs/atlas_project_config.md).
 
 `--dir-format` controls only migration-file discovery. To continue a database
 that already uses Atlas's runtime history table, pass `--revision-format atlas`
-to `migrate-up`, `migrate-down`, `migrate-status`, `migrate-repair`, or
-`migrate-baseline`. Atlas revision mode uses `atlas_schema_revisions` by
+to `migrations up`, `migrations down`, `migrations status`, `migrations repair`, or
+`migrations baseline`. Atlas revision mode uses `atlas_schema_revisions` by
 default, stores string migration versions, reads the Atlas `applied`/`total` and
 `error` state fields, and writes the Atlas `hash` value from `atlas.sum` when it
 is available. `--migrations-schema` and `--migrations-table` still override the
 metadata table location when needed.
 
-If an Atlas migration has no embedded `down.sql`, `migrate-down` fails with a
+If an Atlas migration has no embedded `down.sql`, `migrations down` fails with a
 typed error explaining that Atlas dynamic down-plan synthesis is not implemented
 yet. This is different from transaction rollback: transaction rollback undoes a
-failed in-progress migration automatically, while `migrate-down` reverts an
+failed in-progress migration automatically, while `migrations down` reverts an
 already-recorded migration using an explicit Ptah `.down.sql` file or an Atlas
 txtar `down.sql` section.
 
@@ -928,28 +928,28 @@ treats the migration as non-transactional.
 Apply all pending migrations to bring database up to latest version:
 
 ```bash
-./ptah migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations
+./ptah migrations up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations
 
 # Production rollout defaults: fail fast on hot-table locks and runaway statements
-./ptah migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --lock-timeout 3s --statement-timeout 30s --migration-lock-timeout 30s
+./ptah migrations up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --lock-timeout 3s --statement-timeout 30s --migration-lock-timeout 30s
 
 # Dry run to preview what would be applied
-./ptah migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dry-run
+./ptah migrations up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dry-run
 
 # Apply a migration that was merged below the current high-water mark
-./ptah migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --exec-order non-linear
+./ptah migrations up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --exec-order non-linear
 
 # Store migration state in a dedicated schema/table
-./ptah migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --migrations-schema infra --migrations-table ptah_migrations
+./ptah migrations up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --migrations-schema infra --migrations-table ptah_migrations
 
 # Apply an Atlas-style versioned migration directory
-./ptah migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dir-format atlas
+./ptah migrations up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dir-format atlas
 
 # Continue an Atlas-managed database using atlas_schema_revisions
-./ptah migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dir-format atlas --revision-format atlas
+./ptah migrations up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dir-format atlas --revision-format atlas
 
 # Apply Atlas SQL template migrations with .Env set to dev
-./ptah migrate-up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dir-format atlas --atlas-env dev
+./ptah migrations up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dir-format atlas --atlas-env dev
 ```
 
 Migration files can override the CLI defaults with top-of-file directives:
@@ -961,7 +961,7 @@ Migration files can override the CLI defaults with top-of-file directives:
 
 PostgreSQL uses `SET LOCAL lock_timeout` and `SET LOCAL statement_timeout` inside the migration transaction. MySQL and MariaDB use `SET SESSION innodb_lock_wait_timeout`; statement timeouts use `max_execution_time` on MySQL and `max_statement_time` on MariaDB. Generated migrations that contain `ALTER TABLE` include the recommended `3s` lock timeout and `30s` statement timeout directives for supported dialects.
 
-`migrate-up`, `migrate-down`, and programmatic `MigrateTo` acquire a
+`migrations up`, `migrations down`, and programmatic `MigrateTo` acquire a
 session-level migration advisory lock around the planning and apply window for
 PostgreSQL, MySQL, and MariaDB. PostgreSQL uses `pg_advisory_lock`; MySQL and
 MariaDB use `GET_LOCK('ptah_migrate', timeout)`. By default Ptah waits until
@@ -996,7 +996,7 @@ whose capability preset disables concurrent indexes, including YugabyteDB and
 CockroachDB, keep regular `CREATE INDEX` output.
 
 Ptah detects out-of-order migrations from the applied version set. By default,
-`migrate-up` uses `--exec-order=linear` and fails if a pending migration version is
+`migrations up` uses `--exec-order=linear` and fails if a pending migration version is
 below the current high-water mark, which catches ordinary branch merge races instead
 of silently reporting "up to date". Use `--exec-order=non-linear` to apply those
 pending lower versions, or `--exec-order=linear-skip` to leave them unapplied with
@@ -1005,19 +1005,19 @@ a warning.
 Ptah records migration state before executing each migration and marks the row
 `applied` only after the migration finishes. A failed migration leaves a dirty
 `schema_migrations` revision with statement progress, error text, execution
-time, and a SHA-256 checksum of the up SQL. `migrate-up`, `migrate-down`, and
+time, and a SHA-256 checksum of the up SQL. `migrations up`, `migrations down`, and
 `migrate-to` refuse to continue while a dirty revision exists, so operators can
 inspect the database instead of accidentally running later migrations on a
 half-applied schema.
 
-After fixing the database state manually, use `migrate-repair` to mark the
+After fixing the database state manually, use `migrations repair` to mark the
 dirty revision resolved:
 
 ```bash
-./ptah migrate-repair --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --version 12
+./ptah migrations repair --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --version 12
 
 # For non-transactional engines, resume remaining up statements before marking applied.
-./ptah migrate-repair --db-url mysql://user:pass@tcp(localhost:3306)/database --migrations-dir ./migrations --version 12 --resume-from 2
+./ptah migrations repair --db-url mysql://user:pass@tcp(localhost:3306)/database --migrations-dir ./migrations --version 12 --resume-from 2
 ```
 
 Already-applied migrations are also checked against the current up SQL checksum.
@@ -1026,7 +1026,7 @@ new work and reports a checksum mismatch for that version.
 
 #### Baseline an Existing Database
 
-Use `migrate-baseline` when adopting Ptah on a database whose schema already
+Use `migrations baseline` when adopting Ptah on a database whose schema already
 exists. The command initializes the migration metadata table and records every
 migration at or below the baseline version as `applied` without executing those
 migration SQL bodies. By default the baseline version is the highest migration
@@ -1035,20 +1035,20 @@ in the directory.
 ```bash
 # Strong verification: replay migrations on a disposable shadow database, then
 # compare the shadow schema to the existing target schema before writing metadata.
-./ptah migrate-baseline --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --shadow-db postgres://user:pass@localhost:5432/ptah_shadow
+./ptah migrations baseline --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --shadow-db postgres://user:pass@localhost:5432/ptah_shadow
 
 # Preview exactly which rows would be written and which metadata table is used.
-./ptah migrate-baseline --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dry-run
+./ptah migrations baseline --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dry-run
 
 # Baseline through a specific version and use a custom metadata table.
-./ptah migrate-baseline --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --version 20260718120000 --migrations-schema infra --migrations-table ptah_migrations
+./ptah migrations baseline --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --version 20260718120000 --migrations-schema infra --migrations-table ptah_migrations
 ```
 
 Without `--shadow-db`, Ptah falls back to a weaker entity drift check: it parses
 Go entities from `--root-dir`, introspects the target database, and refuses to
 baseline if they differ. This does not prove that the migration files reproduce
 the target schema; use a disposable shadow database for production brownfield
-adoption. `migrate-baseline` refuses to write into a non-empty metadata table
+adoption. `migrations baseline` refuses to write into a non-empty metadata table
 unless `--force` is set. With `--force`, verification failures are treated as
 explicit operator overrides, and existing metadata rows at or below the baseline
 version can be updated. Ptah still refuses to rewrite history if the metadata
@@ -1096,16 +1096,16 @@ privileges, topology flags) and invocation details.
 Roll back migrations to a specific version:
 
 ```bash
-./ptah migrate-down --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --target 5
+./ptah migrations down --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --target 5
 
 # Use the same production safety defaults for rollback DDL
-./ptah migrate-down --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --target 5 --lock-timeout 3s --statement-timeout 30s --migration-lock-timeout 30s
+./ptah migrations down --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --target 5 --lock-timeout 3s --statement-timeout 30s --migration-lock-timeout 30s
 
 # Dry run to preview rollback
-./ptah migrate-down --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --target 5 --dry-run
+./ptah migrations down --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --target 5 --dry-run
 
 # Roll back using the same custom migration state table
-./ptah migrate-down --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --target 5 --migrations-schema infra --migrations-table ptah_migrations
+./ptah migrations down --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --target 5 --migrations-schema infra --migrations-table ptah_migrations
 ```
 
 **Features:**
@@ -1118,28 +1118,28 @@ Roll back migrations to a specific version:
 Show current migration status and pending migrations:
 
 ```bash
-./ptah migrate-status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations
+./ptah migrations status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations
 
 # JSON output for automation
-./ptah migrate-status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --json
+./ptah migrations status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --json
 
 # Return 1 when pending migrations are available, 0 when there are none
-./ptah migrate-status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --exit-code
+./ptah migrations status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --exit-code
 
 # Check status from a custom migration state table
-./ptah migrate-status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --migrations-schema infra --migrations-table ptah_migrations
+./ptah migrations status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --migrations-schema infra --migrations-table ptah_migrations
 
 # Check an Atlas-style versioned migration directory
-./ptah migrate-status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dir-format atlas
+./ptah migrations status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dir-format atlas
 
 # Check an Atlas-managed revisions table
-./ptah migrate-status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dir-format atlas --revision-format atlas
+./ptah migrations status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dir-format atlas --revision-format atlas
 
 # Check Atlas SQL template migrations with .Env set to dev
-./ptah migrate-status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dir-format atlas --atlas-env dev
+./ptah migrations status --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dir-format atlas --atlas-env dev
 
 # Read db URL, migration directory, and Atlas revision-table settings from atlas.hcl
-./ptah migrate-status --env local --json
+./ptah migrations status --env local --json
 ```
 
 **Output includes:**
@@ -1157,24 +1157,9 @@ surface. New Ptah scripts should prefer the grouped native commands documented
 in [Native CLI Command Tree](docs/native_cli.md), while scripts that expect
 Atlas OSS command paths should use `ptah atlas <command> ...`.
 
-| Canonical native command | Legacy compatibility command |
-| --- | --- |
-| `ptah schema render` | `ptah generate` |
-| `ptah schema compare` | `ptah compare` |
-| `ptah schema drift` | `ptah drift` |
-| `ptah db read` | `ptah read-db` |
-| `ptah db drop-all` | `ptah drop-all` |
-| `ptah migrations plan` | `ptah migrate` |
-| `ptah migrations generate` | `ptah migrate generate` |
-| `ptah migrations create` | `ptah migrate new` |
-| `ptah migrations up` | `ptah migrate-up` |
-| `ptah migrations down` | `ptah migrate-down` |
-| `ptah migrations status` | `ptah migrate-status` |
-| `ptah migrations baseline` | `ptah migrate-baseline` |
-| `ptah migrations repair` | `ptah migrate-repair` |
-| `ptah migrations hash` | `ptah migrate-hash` |
-| `ptah migrations validate` | `ptah migrate-validate` |
-| `ptah migrations lint` | `ptah lint` |
+The native Ptah command tree uses grouped command namespaces such as
+`ptah schema`, `ptah db`, and `ptah migrations`. Ptah is pre-GA, so old
+root-level spellings are removed instead of preserved.
 
 Atlas-compatible command paths are available only under `ptah atlas`:
 
@@ -1189,11 +1174,11 @@ Atlas-compatible command paths are available only under `ptah atlas`:
 | `ptah atlas schema inspect` | `ptah db read` |
 | `ptah atlas schema diff` | `ptah schema compare` |
 
-Atlas-compatible aliases accept the Atlas OSS flag names on the compatibility
-surface and translate implemented flags to the native Ptah flags before
-execution. For example, `ptah atlas migrate apply --url ... --dir ...` maps to
-`ptah migrate-up --db-url ... --migrations-dir ...`, and
-`ptah atlas schema inspect --url ...` maps to `ptah read-db --db-url ...`.
+Atlas-compatible aliases accept Atlas OSS flag names under `ptah atlas` and
+translate implemented flags to the native Ptah flags before execution. For
+example, `ptah atlas migrate apply --url ... --dir ...` maps to
+`ptah migrations up --db-url ... --migrations-dir ...`, and
+`ptah atlas schema inspect --url ...` maps to `ptah db read --db-url ...`.
 Flags that are part of the Atlas OSS CLI but do not have Ptah behavior yet are
 advertised and rejected explicitly instead of being silently ignored.
 
@@ -1216,14 +1201,14 @@ caught in CI instead of silently breaking reproducibility.
 
 ```bash
 # Write/update ptah.sum after adding or intentionally editing a migration
-./ptah migrate-hash --dir ./migrations
+./ptah migrations hash --dir ./migrations
 
 # Verify the directory matches its committed ptah.sum (CI gate)
-./ptah migrate-validate --dir ./migrations
+./ptah migrations validate --dir ./migrations
 
 # Hash or validate an Atlas-style migration directory
-./ptah migrate-hash --dir ./migrations --dir-format atlas
-./ptah migrate-validate --dir ./migrations --dir-format atlas
+./ptah migrations hash --dir ./migrations --dir-format atlas
+./ptah migrations validate --dir ./migrations --dir-format atlas
 ```
 
 Ptah-format integrity writes `ptah.sum` and hashes the Ptah migration files that
@@ -1234,14 +1219,14 @@ and `-- atlas:sum ignore` support. Auto validation reads `atlas.sum` when it is
 the only integrity file present, reads `ptah.sum` otherwise, and errors if both
 files exist so CI does not silently choose the wrong format.
 
-`migrate-validate` exits `1` on integrity drift (a file added, removed, or
-edited out of band, with a diff on stderr). `migrate-up --verify-sum` runs the
+`migrations validate` exits `1` on integrity drift (a file added, removed, or
+edited out of band, with a diff on stderr). `migrations up --verify-sum` runs the
 same check before applying and aborts on drift.
 
 ```yaml
 # CI (GitHub Actions)
 - name: Verify migration integrity
-  run: ./ptah migrate-validate --dir ./migrations
+  run: ./ptah migrations validate --dir ./migrations
 ```
 
 The line-oriented file layout and `h1:` scheme are shared by both formats, but
@@ -1381,10 +1366,10 @@ opts := generator.GenerateMigrationOptions{
 Drop ALL tables and enums in the database (VERY DANGEROUS!):
 
 ```bash
-./ptah drop-all --db-url postgres://user:pass@localhost:5432/database
+./ptah db drop-all --db-url postgres://user:pass@localhost:5432/database
 
 # Dry run to see what would be dropped
-./ptah drop-all --db-url postgres://user:pass@localhost:5432/database --dry-run
+./ptah db drop-all --db-url postgres://user:pass@localhost:5432/database --dry-run
 ```
 
 **⚠️ Warning:** This command requires double confirmation - you must type 'DELETE EVERYTHING' and then 'YES I AM SURE' to confirm. This will permanently delete ALL data!
@@ -1647,7 +1632,7 @@ docker run --name test-postgres \
 go test -v ./executor/... -tags=integration
 
 # Test with real database
-./ptah read-db --db-url postgres://postgres:testpass@localhost:5432/testdb
+./ptah db read --db-url postgres://postgres:testpass@localhost:5432/testdb
 ```
 
 #### MySQL Testing
@@ -1659,7 +1644,7 @@ docker run --name test-mysql \
   -p 3306:3306 -d mysql:8.0
 
 # Test with real database
-./ptah read-db --db-url mysql://root:testpass@tcp(localhost:3306)/testdb
+./ptah db read --db-url mysql://root:testpass@tcp(localhost:3306)/testdb
 ```
 
 ---

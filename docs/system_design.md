@@ -54,7 +54,7 @@ The system operates through four main layers:
 
 #### yamlschema Package
 - **Purpose**: Parses language-agnostic YAML schema files into the same `goschema.Database` IR used by Go annotations
-- **Input**: `.yaml` and `.yml` files passed to `ptah generate --schema-file`
+- **Input**: `.yaml` and `.yml` files passed to `ptah schema render --schema-file`
 - **Functionality**:
   - Supports tables, columns, indexes, constraints, enums, extensions, functions, views, materialized views, triggers, row-level security, roles, and dialect overrides
   - Preserves author order for table-local columns, indexes, and constraints while keeping top-level maps deterministic
@@ -62,7 +62,7 @@ The system operates through four main layers:
 
 #### atlashcl Package
 - **Purpose**: Parses Atlas schema HCL files into the same `goschema.Database` IR used by Go annotations
-- **Input**: `.hcl` files passed to `ptah generate --schema-file`
+- **Input**: `.hcl` files passed to `ptah schema render --schema-file`
 - **Functionality**:
   - Uses HashiCorp HCL syntax parsing instead of ad hoc string parsing
   - Supports schema labels, tables, columns, primary keys, indexes, foreign keys, check constraints, defaults, comments, and basic table options

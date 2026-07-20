@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/stokaro/ptah/core/sqlutil"
+	"github.com/stokaro/ptah/dbschema"
 )
 
 const (
@@ -753,25 +754,27 @@ func (m *Migrator) baselineMigrations(ctx context.Context, migrations []*Migrati
 	if m.isClickHouse() {
 		return m.baselineMigrationsNoTransaction(ctx, migrations)
 	}
-	if err := m.conn.Writer().BeginTransaction(); err != nil {
+	tx, err := m.conn.SchemaWriter().BeginTransaction(ctx)
+	if err != nil {
 		return fmt.Errorf("failed to begin baseline transaction: %w", err)
 	}
-	if err := m.writeBaselineMigrations(ctx, migrations); err != nil {
-		_ = m.conn.Writer().RollbackTransaction()
+	txConn := m.conn.WithExecutor(tx)
+	if err := m.writeBaselineMigrations(ctx, txConn, migrations); err != nil {
+		_ = tx.Rollback()
 		return err
 	}
-	if err := m.conn.Writer().CommitTransaction(); err != nil {
+	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit baseline transaction: %w", err)
 	}
 	return nil
 }
 
 func (m *Migrator) baselineMigrationsNoTransaction(ctx context.Context, migrations []*Migration) error {
-	return m.writeBaselineMigrations(ctx, migrations)
+	return m.writeBaselineMigrations(ctx, m.conn, migrations)
 }
 
-func (m *Migrator) writeBaselineMigrations(ctx context.Context, migrations []*Migration) error {
-	return m.writeBaselineMigrationRows(ctx, migrations)
+func (m *Migrator) writeBaselineMigrations(ctx context.Context, conn *dbschema.DatabaseConnection, migrations []*Migration) error {
+	return m.writeBaselineMigrationRows(ctx, conn, migrations)
 }
 
 func (m *Migrator) failIfRevisionAboveBaseline(ctx context.Context, version int64) error {
@@ -786,22 +789,22 @@ func (m *Migrator) failIfRevisionAboveBaseline(ctx context.Context, version int6
 	return nil
 }
 
-func (m *Migrator) writeBaselineMigrationRows(ctx context.Context, migrations []*Migration) error {
+func (m *Migrator) writeBaselineMigrationRows(ctx context.Context, conn *dbschema.DatabaseConnection, migrations []*Migration) error {
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.forceAppliedMigrationSQL())
 	for _, migration := range migrations {
 		if m.forceAppliedConflictClause() == "" {
 			deleteSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteMigrationSQL())
-			if err := m.conn.Writer().ExecuteSQL(ctx, deleteSQL, m.revisionVersionArg(migration.Version)); err != nil {
+			if err := conn.Writer().ExecuteSQL(ctx, deleteSQL, m.revisionVersionArg(migration.Version)); err != nil {
 				return fmt.Errorf("failed to prepare baseline revision %d: %w", migration.Version, err)
 			}
 		}
 		if m.revisionTableFormat.isAtlas() {
-			if err := m.writeAtlasBaselineMigrationRow(ctx, query, migration); err != nil {
+			if err := m.writeAtlasBaselineMigrationRow(ctx, conn, query, migration); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := m.conn.Writer().ExecuteSQL(
+		if err := conn.Writer().ExecuteSQL(
 			ctx,
 			query,
 			migration.Version,
@@ -819,9 +822,14 @@ func (m *Migrator) writeBaselineMigrationRows(ctx context.Context, migrations []
 	return nil
 }
 
-func (m *Migrator) writeAtlasBaselineMigrationRow(ctx context.Context, query string, migration *Migration) error {
+func (m *Migrator) writeAtlasBaselineMigrationRow(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	query string,
+	migration *Migration,
+) error {
 	total := migrationStatementCount(migration.UpSQL)
-	if err := m.conn.Writer().ExecuteSQL(
+	if err := conn.Writer().ExecuteSQL(
 		ctx,
 		query,
 		strconv.FormatInt(migration.Version, 10),

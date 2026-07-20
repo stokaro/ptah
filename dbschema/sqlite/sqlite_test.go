@@ -3,6 +3,7 @@ package sqlite_test
 import (
 	"context"
 	"database/sql"
+	"sync"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -204,16 +205,52 @@ func TestRoundTripGeneratedSchemaThroughSQLite(t *testing.T) {
 	c.Assert(len(statements) > 0, qt.IsTrue)
 
 	writer := sqlite.NewSQLiteWriter(db, "main")
-	c.Assert(writer.BeginTransaction(), qt.IsNil)
+	tx, err := writer.BeginTransaction(context.Background())
+	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {
-		c.Assert(writer.ExecuteSQL(context.Background(), statement), qt.IsNil)
+		c.Assert(tx.ExecuteSQL(context.Background(), statement), qt.IsNil)
 	}
-	c.Assert(writer.CommitTransaction(), qt.IsNil)
+	c.Assert(tx.Commit(), qt.IsNil)
 
 	actual, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
 	c.Assert(err, qt.IsNil)
 	secondDiff := schemadiff.CompareWithDialect(generated, actual, platform.SQLite)
 	c.Assert(secondDiff.HasChanges(), qt.IsFalse, qt.Commentf("unexpected SQLite drift: %+v", secondDiff))
+}
+
+func TestSQLiteWriterConcurrentTransactions(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := sql.Open("sqlite", ":memory:")
+	c.Assert(err, qt.IsNil)
+	defer db.Close()
+	db.SetMaxOpenConns(8)
+
+	writer := sqlite.NewSQLiteWriter(db, "main")
+	const goroutines = 16
+	var wg sync.WaitGroup
+	errs := make(chan error, goroutines)
+	start := make(chan struct{})
+
+	for range goroutines {
+		wg.Go(func() {
+			<-start
+			tx, err := writer.BeginTransaction(context.Background())
+			if err != nil {
+				errs <- err
+				return
+			}
+			errs <- tx.Rollback()
+		})
+	}
+
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		c.Assert(err, qt.IsNil)
+	}
 }
 
 func sqliteRoundTripSchema() *goschema.Database {

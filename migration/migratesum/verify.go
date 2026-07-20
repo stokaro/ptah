@@ -13,7 +13,7 @@ import (
 // ErrSumFileMissing is returned when the migrations directory has no expected
 // integrity file. It is distinct so callers can tell "never hashed" apart from
 // "tampered".
-var ErrSumFileMissing = errors.New("ptah.sum not found; run `ptah migrate-hash` to create it")
+var ErrSumFileMissing = errors.New("ptah.sum not found; run `ptah migrations hash` to create it")
 
 // Result is the outcome of Verify: the lists are empty when the directory
 // matches its recorded sum.
@@ -124,7 +124,7 @@ type sumFileMissingError struct {
 }
 
 func (e sumFileMissingError) Error() string {
-	return fmt.Sprintf("%s not found; run `ptah migrate-hash --dir-format %s` to create it", e.name, e.format)
+	return fmt.Sprintf("%s not found; run `ptah migrations hash --dir-format %s` to create it", e.name, e.format)
 }
 
 func (e sumFileMissingError) Is(target error) bool {

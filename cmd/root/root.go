@@ -9,26 +9,12 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/atlas"
-	"github.com/stokaro/ptah/cmd/compare"
 	"github.com/stokaro/ptah/cmd/db"
-	"github.com/stokaro/ptah/cmd/drift"
-	"github.com/stokaro/ptah/cmd/dropall"
-	"github.com/stokaro/ptah/cmd/generate"
 	"github.com/stokaro/ptah/cmd/internal/buildinfo"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/introspect"
-	"github.com/stokaro/ptah/cmd/lint"
-	"github.com/stokaro/ptah/cmd/migrate"
-	"github.com/stokaro/ptah/cmd/migratebaseline"
-	"github.com/stokaro/ptah/cmd/migratedown"
-	"github.com/stokaro/ptah/cmd/migratehash"
-	"github.com/stokaro/ptah/cmd/migraterepair"
-	"github.com/stokaro/ptah/cmd/migratestatus"
-	"github.com/stokaro/ptah/cmd/migrateup"
-	"github.com/stokaro/ptah/cmd/migratevalidate"
 	"github.com/stokaro/ptah/cmd/migrations"
-	"github.com/stokaro/ptah/cmd/readdb"
 	"github.com/stokaro/ptah/cmd/schema"
 	"github.com/stokaro/ptah/cmd/seed"
 	sqlcmd "github.com/stokaro/ptah/cmd/sql"
@@ -50,25 +36,11 @@ func NewRootCommand() *cobra.Command {
 	}
 	cmdutil.ConfigureCommandArgs(cmd, nil)
 
-	cmd.AddCommand(generate.NewGenerateCommand())
 	cmd.AddCommand(introspect.NewIntrospectCommand())
-	cmd.AddCommand(readdb.NewReadDBCommand())
 	cmd.AddCommand(schema.NewSchemaCommand())
 	cmd.AddCommand(db.NewDBCommand())
-	cmd.AddCommand(compare.NewCompareCommand())
-	cmd.AddCommand(drift.NewDriftCommand())
 	cmd.AddCommand(migrations.NewMigrationsCommand())
-	cmd.AddCommand(migrate.NewMigrateCommand())
-	cmd.AddCommand(migratebaseline.NewMigrateBaselineCommand())
-	cmd.AddCommand(migrateup.NewMigrateUpCommand())
-	cmd.AddCommand(migratedown.NewMigrateDownCommand())
-	cmd.AddCommand(migraterepair.NewMigrateRepairCommand())
-	cmd.AddCommand(migratestatus.NewMigrateStatusCommand())
-	cmd.AddCommand(migratehash.NewMigrateHashCommand())
-	cmd.AddCommand(migratevalidate.NewMigrateValidateCommand())
 	cmd.AddCommand(seed.NewSeedCommand())
-	cmd.AddCommand(dropall.NewDropAllCommand())
-	cmd.AddCommand(lint.NewLintCommand())
 	cmd.AddCommand(sqlcmd.NewSQLCommand())
 	cmd.AddCommand(atlas.NewAtlasCommand())
 	cmd.AddCommand(version.NewVersionCommand())

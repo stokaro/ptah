@@ -140,10 +140,11 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 
 // DatabaseConnection represents a database connection with metadata
 type DatabaseConnection struct {
-	db     *sql.DB
-	info   types.DBInfo
-	reader types.SchemaReader
-	writer types.SchemaWriter
+	db       *sql.DB
+	info     types.DBInfo
+	reader   types.SchemaReader
+	writer   types.SchemaWriter
+	executor types.SchemaExecutor
 }
 
 type schemaScopedReader interface {
@@ -174,9 +175,31 @@ func (dc *DatabaseConnection) Reader() types.SchemaReader {
 	return dc.reader
 }
 
-// Writer returns the schema writer
-func (dc *DatabaseConnection) Writer() types.SchemaWriter {
+// Writer returns the active schema SQL executor. Transaction-scoped connection
+// copies return their transaction executor here; root connections return the
+// root schema writer.
+func (dc *DatabaseConnection) Writer() types.SchemaExecutor {
+	if dc.executor != nil {
+		return dc.executor
+	}
 	return dc.writer
+}
+
+// SchemaWriter returns the root schema writer for administrative operations
+// such as starting transactions, toggling dry-run mode, or dropping all tables.
+func (dc *DatabaseConnection) SchemaWriter() types.SchemaWriter {
+	return dc.writer
+}
+
+// WithExecutor returns a shallow connection copy that uses executor as the active
+// SQL executor while keeping the same database handle, reader, and metadata.
+//
+// This is used to pass transaction-scoped writers into migration callbacks
+// without storing the active transaction on the root writer.
+func (dc *DatabaseConnection) WithExecutor(executor types.SchemaExecutor) *DatabaseConnection {
+	cloned := *dc
+	cloned.executor = executor
+	return &cloned
 }
 
 // Query executes a query and returns the result rows

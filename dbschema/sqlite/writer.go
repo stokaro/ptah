@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
+
+	"github.com/stokaro/ptah/dbschema/types"
 )
 
 func quoteIdent(name string) string {
@@ -15,6 +18,12 @@ func quoteIdent(name string) string {
 // Writer applies schema changes to a SQLite database.
 type Writer struct {
 	db     *sql.DB
+	schema string
+	dryRun bool
+}
+
+type transactionWriter struct {
+	mu     sync.Mutex
 	tx     *sql.Tx
 	schema string
 	dryRun bool
@@ -28,14 +37,47 @@ func NewSQLiteWriter(db *sql.DB, schema string) *Writer {
 	return &Writer{db: db, schema: schema}
 }
 
-// ExecuteSQL executes a SQL statement against the active transaction.
+// ExecuteSQL executes a standalone SQL statement.
 func (w *Writer) ExecuteSQL(ctx context.Context, sqlExpr string, args ...any) error {
 	if w.dryRun {
 		slog.Info("[DRY RUN] Would execute SQL", "sql", sqlExpr, "args", args)
 		return nil
 	}
+	if w.db == nil {
+		return fmt.Errorf("no database connection")
+	}
+	if _, err := w.db.ExecContext(ctx, sqlExpr, args...); err != nil {
+		return fmt.Errorf("sqlite: SQL execution failed: %w\nSQL: %s", err, sqlExpr)
+	}
+	return nil
+}
+
+// BeginTransaction starts a transaction and returns a transaction-scoped writer.
+func (w *Writer) BeginTransaction(ctx context.Context) (types.SchemaTransaction, error) {
+	if w.dryRun {
+		slog.Info("[DRY RUN] Would begin transaction")
+		return &transactionWriter{schema: w.schema, dryRun: true}, nil
+	}
+	if w.db == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+	tx, err := w.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &transactionWriter{tx: tx, schema: w.schema}, nil
+}
+
+// ExecuteSQL executes SQL against the transaction.
+func (w *transactionWriter) ExecuteSQL(ctx context.Context, sqlExpr string, args ...any) error {
+	if w.dryRun {
+		slog.Info("[DRY RUN] Would execute SQL", "sql", sqlExpr, "args", args)
+		return nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if w.tx == nil {
-		return fmt.Errorf("no active transaction")
+		return fmt.Errorf("transaction is closed")
 	}
 	if _, err := w.tx.ExecContext(ctx, sqlExpr, args...); err != nil {
 		return fmt.Errorf("sqlite: SQL execution failed: %w\nSQL: %s", err, sqlExpr)
@@ -43,43 +85,30 @@ func (w *Writer) ExecuteSQL(ctx context.Context, sqlExpr string, args ...any) er
 	return nil
 }
 
-// BeginTransaction starts a transaction.
-func (w *Writer) BeginTransaction() error {
-	if w.dryRun {
-		slog.Info("[DRY RUN] Would begin transaction")
-		return nil
-	}
-	if w.tx != nil {
-		return fmt.Errorf("transaction already active")
-	}
-	tx, err := w.db.Begin()
-	if err != nil {
-		return err
-	}
-	w.tx = tx
-	return nil
-}
-
-// CommitTransaction commits the active transaction.
-func (w *Writer) CommitTransaction() error {
+// Commit commits the transaction.
+func (w *transactionWriter) Commit() error {
 	if w.dryRun {
 		slog.Info("[DRY RUN] Would commit transaction")
 		return nil
 	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if w.tx == nil {
-		return fmt.Errorf("no active transaction")
+		return fmt.Errorf("transaction is closed")
 	}
 	err := w.tx.Commit()
 	w.tx = nil
 	return err
 }
 
-// RollbackTransaction rolls back the active transaction.
-func (w *Writer) RollbackTransaction() error {
+// Rollback rolls back the transaction.
+func (w *transactionWriter) Rollback() error {
 	if w.dryRun {
 		slog.Info("[DRY RUN] Would rollback transaction")
 		return nil
 	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if w.tx == nil {
 		return nil
 	}
@@ -87,6 +116,9 @@ func (w *Writer) RollbackTransaction() error {
 	w.tx = nil
 	return err
 }
+
+// IsDryRun reports whether dry-run mode is active.
+func (w *transactionWriter) IsDryRun() bool { return w.dryRun }
 
 // DropAllTables drops all user tables from the configured SQLite schema.
 func (w *Writer) DropAllTables() error {
@@ -114,24 +146,27 @@ func (w *Writer) DropAllTables() error {
 		}
 	}()
 
-	if err := w.BeginTransaction(); err != nil {
+	tx, err := w.BeginTransaction(ctx)
+	if err != nil {
 		return fmt.Errorf("sqlite: begin drop transaction: %w", err)
 	}
+	committed := false
 	defer func() {
-		if w.tx != nil {
-			_ = w.RollbackTransaction()
+		if !committed {
+			_ = tx.Rollback()
 		}
 	}()
 
 	for _, table := range tables {
 		slog.Info("Dropping table", "tableName", table)
-		if err := w.ExecuteSQL(ctx, "DROP TABLE IF EXISTS "+quoteIdent(table)); err != nil {
+		if err := tx.ExecuteSQL(ctx, "DROP TABLE IF EXISTS "+quoteIdent(table)); err != nil {
 			return fmt.Errorf("sqlite: drop table %s: %w", table, err)
 		}
 	}
-	if err := w.CommitTransaction(); err != nil {
+	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("sqlite: commit drop transaction: %w", err)
 	}
+	committed = true
 
 	slog.Info("Successfully dropped tables", "count", len(tables))
 	return nil

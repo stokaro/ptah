@@ -1,4 +1,4 @@
-// Package migratehash implements the `ptah migrate-hash` command: it writes
+// Package migratehash implements the migration hash command: it writes
 // or updates the ptah.sum integrity file for a migrations directory (#161).
 package migratehash
 
@@ -12,7 +12,7 @@ import (
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
-// NewMigrateHashCommand returns the migrate-hash command.
+// NewMigrateHashCommand returns the migration hash command.
 func NewMigrateHashCommand() *cobra.Command {
 	var dir string
 	var dirFormatValue string
@@ -20,11 +20,11 @@ func NewMigrateHashCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "migrate-hash",
 		Short: "Write or update the ptah.sum integrity file for a migrations directory",
-		Long: `migrate-hash recomputes the integrity hashes of every migration file in a
+		Long: `migrations hash recomputes the integrity hashes of every migration file in a
 directory and writes them to ptah.sum. Run it whenever you add, remove, or
 intentionally edit a migration file, and commit the updated ptah.sum.
 
-CI can then run 'ptah migrate-validate' to fail on any out-of-band change to
+CI can then run 'ptah migrations validate' to fail on any out-of-band change to
 an already-committed migration.`,
 		Args:          cmdutil.NoPositionalArgs,
 		SilenceUsage:  true,

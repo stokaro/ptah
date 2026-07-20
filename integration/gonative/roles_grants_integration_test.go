@@ -241,9 +241,9 @@ func TestGoFixtures_ParseDirForSchemaObjects(t *testing.T) {
 	c.Assert(result.Roles, qt.HasLen, 1)
 	c.Assert(result.Roles[0].Name, qt.Equals, "fixture_app_user")
 
-	// Exercise CLI generate entry point against the fixture (drives real ParseDir path in cmd/generate, per AC3)
+	// Exercise CLI schema render entry point against the fixture (drives real ParseDir path in cmd/generate, per AC3)
 	goMain := filepath.Join(rootDir, "cmd/main.go")
-	genCmd := exec.Command("go", "run", goMain, "generate", "--root-dir", absFixture, "--dialect", "postgres")
+	genCmd := exec.Command("go", "run", goMain, "schema", "render", "--root-dir", absFixture, "--dialect", "postgres")
 	genOut, err := genCmd.CombinedOutput()
 	c.Assert(err, qt.IsNil)
 	outStr := legacyRenderedSQL(string(genOut))

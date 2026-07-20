@@ -98,7 +98,7 @@ func TestGenerateCommand_MutualForeignKeysAreTwoPhase(t *testing.T) {
 	c := qt.New(t)
 
 	fixtureDir := filepath.Join("..", "..", "integration", "fixtures", "entities", "029-roundtrip-mutual-cycle")
-	cmd := exec.Command("go", "run", "../main.go", "generate", "--root-dir", fixtureDir, "--dialect", "postgres")
+	cmd := exec.Command("go", "run", "../main.go", "schema", "render", "--root-dir", fixtureDir, "--dialect", "postgres")
 	output, err := cmd.CombinedOutput()
 	c.Assert(err, qt.IsNil, qt.Commentf("generate output:\n%s", output))
 

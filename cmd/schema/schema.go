@@ -40,8 +40,7 @@ func NewSchemaCommand() *cobra.Command {
 		Long: `Work with desired schema definitions.
 
 This is Ptah's native schema namespace. Atlas-compatible schema commands stay
-under ptah atlas, while historical root commands remain available as
-compatibility commands until the native CLI reaches a stable release.`,
+under ptah atlas.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},

@@ -1,4 +1,4 @@
-// Package lint implements the `ptah lint` command: a sqlcheck-style linter
+// Package lint implements the migration lint command: a sqlcheck-style linter
 // for migration directories with rule-coded findings (issue #151).
 package lint
 
@@ -54,7 +54,7 @@ rule-coded findings, sqlcheck-style:
 
   DS  data safety (dropped tables/columns, lossy type changes)
   MF  migration form (missing down file, empty migration, naming)
-  BC  backwards compatibility (renames breaking deployed code)
+  BC  backward compatibility (renames breaking deployed code)
   PG  PostgreSQL-specific hazards (CREATE INDEX without CONCURRENTLY, ...)
   MY  MySQL/MariaDB-specific hazards (lock-heavy ALTER TABLE forms)
 
@@ -328,7 +328,7 @@ func writeSARIF(w io.Writer, report lintReport) error {
 		Schema:  "https://json.schemastore.org/sarif-2.1.0.json",
 		Runs: []sarifRun{{
 			Tool: sarifTool{Driver: sarifDriver{
-				Name:           "ptah lint",
+				Name:           "ptah migrations lint",
 				InformationURI: "https://github.com/stokaro/ptah",
 				Rules:          rules,
 			}},
