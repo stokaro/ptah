@@ -1,6 +1,6 @@
 # Ptah Migration Library Makefile
 
-.PHONY: help build test integration-test clean docker-build lint lint-qtlint lint-fix install-hooks conformance
+.PHONY: help build test integration-test integration-test-sqlserver db-start-sqlserver clean docker-build lint lint-qtlint lint-fix install-hooks conformance
 
 VERSION ?= $(shell git describe --tags --always --dirty)
 COMMIT ?= $(shell git rev-parse --short HEAD)
@@ -18,6 +18,8 @@ help:
 	@echo "  build              Build all binaries"
 	@echo "  test               Run unit tests"
 	@echo "  integration-test   Run integration tests using Docker Compose"
+	@echo "  integration-test-sqlserver"
+	@echo "                     Run SQL Server opt-in integration smoke tests"
 	@echo "  lint               Run golangci-lint and qtlint"
 	@echo "  conformance        Show Atlas conformance scoreboard location"
 	@echo "  lint-fix           Run auto-fixable linters"
@@ -90,6 +92,13 @@ integration-test-yugabytedb: docker-build
 	@echo "Running integration tests against YugabyteDB only..."
 	docker compose --profile test run --rm ptah-tester --databases=yugabytedb --scenarios=dynamic_yugabytedb_common_subset --report=html --verbose
 
+integration-test-sqlserver: docker-build db-start-sqlserver
+	@echo "Running integration tests against SQL Server only..."
+	docker compose --profile test --profile sqlserver run --rm ptah-tester \
+		--databases=sqlserver \
+		--scenarios=apply_incremental_migrations,rollback_migrations,upgrade_to_specific_version,check_current_version,read_actual_db_schema,dry_run_support,operation_planning,failure_diagnostics,idempotency_reapply,idempotency_up_to_date,parallel_migrate_smoke,cleanup_support,dynamic_sqlserver_identity_schema_bracket_reserved_words \
+		--report=html --verbose
+
 # Run integration tests using Docker Compose with custom arguments
 integration-test-custom: docker-build
 	@echo "Running integration tests with custom arguments..."
@@ -100,6 +109,10 @@ integration-test-custom: docker-build
 db-start:
 	@echo "Starting databases..."
 	docker compose up -d postgres mysql mariadb cockroachdb yugabytedb
+
+db-start-sqlserver:
+	@echo "Starting SQL Server..."
+	docker compose --profile sqlserver up -d --wait sqlserver
 
 # Stop databases
 db-stop:

@@ -100,6 +100,7 @@ func TestPresets_AllValid_AndCoverEveryRegisteredCapability(t *testing.T) {
 		"SQLite3":       capability.SQLite3(),
 		"CockroachDB23": capability.CockroachDB23(),
 		"YugabyteDB25":  capability.YugabyteDB25(),
+		"SQLServer2022": capability.SQLServer2022(),
 		"Spanner":       capability.SpannerPostgres(),
 	}
 	for name, preset := range presets {
@@ -186,6 +187,16 @@ func TestPresets_KeyDifferences(t *testing.T) {
 	c.Assert(spanner.Has(capability.Sequences), qt.IsFalse)
 	c.Assert(spanner.Has(capability.XMLType), qt.IsFalse)
 	c.Assert(spanner.Has(capability.RoleManagement), qt.IsFalse)
+
+	sqlServer := capability.SQLServer2022()
+	c.Assert(sqlServer.Has(capability.DropConstraintGeneric), qt.IsTrue)
+	c.Assert(sqlServer.Has(capability.CheckConstraintsEnforced), qt.IsTrue)
+	c.Assert(sqlServer.Has(capability.ForeignKeys), qt.IsTrue)
+	c.Assert(sqlServer.Has(capability.CreateOrReplaceTrigger), qt.IsTrue)
+	c.Assert(sqlServer.Has(capability.Sequences), qt.IsFalse)
+	c.Assert(sqlServer.Has(capability.EnumInlineColumn), qt.IsFalse)
+	c.Assert(sqlServer.Has(capability.EnumCustomType), qt.IsFalse)
+	c.Assert(sqlServer.Has(capability.RowLevelSecurity), qt.IsFalse)
 }
 
 func TestCapabilities_With_DoesNotMutateReceiver(t *testing.T) {
@@ -234,6 +245,8 @@ func TestForDialect(t *testing.T) {
 	c.Assert(capability.ForDialect("sqlite").Has(capability.EnumCustomType), qt.IsFalse)
 	c.Assert(capability.ForDialect("crdb").Has(capability.CreateIndexConcurrently), qt.IsFalse)
 	c.Assert(capability.ForDialect("yugabyte").Has(capability.CreateIndexConcurrently), qt.IsFalse)
+	c.Assert(capability.ForDialect("mssql").Has(capability.CreateOrReplaceTrigger), qt.IsTrue)
+	c.Assert(capability.ForDialect("sql-server").Has(capability.ForeignKeys), qt.IsTrue)
 	c.Assert(capability.ForDialect("spanner").Has(capability.ForeignKeys), qt.IsFalse)
 	// Unknown dialects get the conservative nil set.
 	c.Assert(capability.ForDialect("oracle"), qt.IsNil)

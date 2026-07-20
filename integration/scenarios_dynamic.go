@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/dbschema/types"
@@ -284,6 +285,7 @@ func GetDynamicScenarios() []TestScenario {
 			EnhancedTestFunc:              testYugabyteDBCommonSubset,
 			PostgresDistributedCompatible: true,
 		},
+		sqlServerDynamicScenario(),
 	}
 }
 
@@ -664,15 +666,21 @@ func clearMigrationRevision(ctx context.Context, conn *dbschema.DatabaseConnecti
 func containsCreateTableStatement(stmt, dialect, tableName string) bool {
 	patterns := []string{fmt.Sprintf("CREATE TABLE %s", tableName)}
 
-	switch dialect {
-	case "postgres", "cockroachdb", "yugabytedb":
+	switch platform.NormalizeDialect(dialect) {
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
 		patterns = append(patterns, fmt.Sprintf("CREATE TABLE \"%s\"", tableName))
-	case "mysql", "mariadb":
+	case platform.MySQL, platform.MariaDB:
 		patterns = append(patterns, fmt.Sprintf("CREATE TABLE `%s`", tableName))
+	case platform.SQLServer:
+		patterns = append(patterns,
+			fmt.Sprintf("CREATE TABLE [%s]", tableName),
+			fmt.Sprintf(".[%s]", tableName),
+		)
 	default:
 		patterns = append(patterns,
 			fmt.Sprintf("CREATE TABLE \"%s\"", tableName),
 			fmt.Sprintf("CREATE TABLE `%s`", tableName),
+			fmt.Sprintf("CREATE TABLE [%s]", tableName),
 		)
 	}
 
