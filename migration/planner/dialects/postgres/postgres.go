@@ -1673,6 +1673,7 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 	handled := make(map[string]struct{})
 	droppedForModify := make(map[string]struct{})
 	result = p.addPrimaryKeyConstraintsWithTables(result, diff.ConstraintsAddedWithTables, removalByTableName, handled, droppedForModify)
+	result = p.addCheckAndUniqueConstraintsWithTables(result, diff.ConstraintsAddedWithTables, removalByTableName, handled, droppedForModify)
 	for _, add := range diff.ConstraintsAddedWithTables {
 		if add.Type != "FOREIGN KEY" || add.TableName == "" {
 			continue
@@ -1717,6 +1718,56 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 		}
 	}
 	return result
+}
+
+func (p *Planner) addCheckAndUniqueConstraintsWithTables(
+	result []ast.Node,
+	additions []types.ConstraintAdditionInfo,
+	removalByTableName map[string]types.ConstraintRemovalInfo,
+	handled map[string]struct{},
+	droppedForModify map[string]struct{},
+) []ast.Node {
+	for _, add := range additions {
+		constraint := constraintAdditionNode(add)
+		if constraint == nil {
+			continue
+		}
+		if _, modified := removalByTableName[add.TableName+"."+add.Name]; modified {
+			result = p.emitModifyDrop(result, add, droppedForModify)
+		}
+		result = append(result, &ast.AlterTableNode{
+			Name:       add.TableName,
+			Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: constraint}},
+		})
+		handled[add.Name] = struct{}{}
+	}
+	return result
+}
+
+func constraintAdditionNode(add types.ConstraintAdditionInfo) *ast.ConstraintNode {
+	if add.TableName == "" {
+		return nil
+	}
+	switch add.Type {
+	case "CHECK":
+		if add.CheckExpression == "" {
+			return nil
+		}
+		return &ast.ConstraintNode{
+			Type:       ast.CheckConstraint,
+			Name:       add.Name,
+			Expression: add.CheckExpression,
+		}
+	case "UNIQUE":
+		if len(add.Columns) == 0 {
+			return nil
+		}
+		constraint := ast.NewUniqueConstraint(add.Name, add.Columns...)
+		constraint.NullsDistinct = cloneBoolPtr(add.NullsDistinct)
+		return constraint
+	default:
+		return nil
+	}
 }
 
 func (p *Planner) addPrimaryKeyConstraintsWithTables(
@@ -1797,12 +1848,12 @@ func (p *Planner) emitModifyDrop(
 //
 // When addedHosts is empty the re-added hosts are unknown — e.g. a down/reverse
 // diff fills ConstraintsRemovedWithTables but not ConstraintsAddedWithTables
-// (reverseConstraintAdditions restores only FOREIGN KEYs, and nothing at all
-// when the schema context is absent). In that case the drop is still scoped to
-// every recorded removal host (the pre-#206 behavior), NOT the name-only DO
-// block — otherwise the reverse direction would regress a known-host drop back
-// to the information_schema LIMIT 1 lookup. Only a name with no recorded removal
-// host at all falls back to the DO block.
+// because the prior definition could not be reconstructed from schema context.
+// In that case the drop is still scoped to every recorded removal host (the
+// pre-#206 behavior), NOT the name-only DO block — otherwise the reverse
+// direction would regress a known-host drop back to the information_schema LIMIT
+// 1 lookup. Only a name with no recorded removal host at all falls back to the
+// DO block.
 func (p *Planner) emitModifyDropForName(
 	result []ast.Node,
 	name string,

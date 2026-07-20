@@ -63,23 +63,21 @@ var roundTripFixtures = []roundTripFixture{
 		Name:        "same_name_check_drift",
 		Description: "same-name CHECK expression changes must be detected by generated migrations",
 		Versions:    []string{"030-roundtrip-check-v1", "031-roundtrip-check-v2"},
-		// blocked on #126: CHECK expression-only drift is intentionally not surfaced yet.
-		BlockedByDialect: map[string]string{
-			"postgres": "#126",
-			"mysql":    "#126",
-			"mariadb":  "#126",
-		},
 	},
 	{
 		Name:        "same_name_unique_drift",
 		Description: "same-name UNIQUE column-set changes must be detected by generated migrations",
 		Versions:    []string{"032-roundtrip-unique-v1", "033-roundtrip-unique-v2"},
-		// blocked on #126: UNIQUE same-name definition drift is not detected yet.
-		BlockedByDialect: map[string]string{
-			"postgres": "#126",
-			"mysql":    "#126",
-			"mariadb":  "#126",
-		},
+	},
+	{
+		Name:        "same_name_check_to_unique_drift",
+		Description: "same-name CHECK to UNIQUE type changes must be detected by generated migrations",
+		Versions:    []string{"042-roundtrip-check-to-unique-v1", "043-roundtrip-check-to-unique-v2"},
+	},
+	{
+		Name:        "same_name_unique_to_check_drift",
+		Description: "same-name UNIQUE to CHECK type changes must be detected by generated migrations",
+		Versions:    []string{"044-roundtrip-unique-to-check-v1", "045-roundtrip-unique-to-check-v2"},
 	},
 	{
 		Name:        "composite_primary_key_add_remove",

@@ -12,13 +12,79 @@ import (
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
+func TestPlanner_GenerateMigrationAST_TableQualifiedCheckAndUniqueAdditions(t *testing.T) {
+	tests := []struct {
+		name     string
+		diff     *types.SchemaDiff
+		wantDrop string
+		wantAdd  string
+	}{
+		{
+			name: "unique to check",
+			diff: &types.SchemaDiff{
+				ConstraintsAdded: []string{"products_quantity_guard"},
+				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+					Name:            "products_quantity_guard",
+					TableName:       "products",
+					Type:            "CHECK",
+					CheckExpression: "quantity > 10",
+				}},
+				ConstraintsRemoved: []string{"products_quantity_guard"},
+				ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{{
+					Name:      "products_quantity_guard",
+					TableName: "products",
+					Type:      "UNIQUE",
+				}},
+			},
+			wantDrop: "ALTER TABLE products DROP CONSTRAINT IF EXISTS products_quantity_guard;",
+			wantAdd:  "ALTER TABLE products ADD CONSTRAINT products_quantity_guard CHECK (quantity > 10);",
+		},
+		{
+			name: "check to unique",
+			diff: &types.SchemaDiff{
+				ConstraintsAdded: []string{"accounts_identity"},
+				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+					Name:      "accounts_identity",
+					TableName: "accounts",
+					Type:      "UNIQUE",
+					Columns:   []string{"email", "region"},
+				}},
+				ConstraintsRemoved: []string{"accounts_identity"},
+				ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{{
+					Name:      "accounts_identity",
+					TableName: "accounts",
+					Type:      "CHECK",
+				}},
+			},
+			wantDrop: "ALTER TABLE accounts DROP CONSTRAINT IF EXISTS accounts_identity;",
+			wantAdd:  "ALTER TABLE accounts ADD CONSTRAINT accounts_identity UNIQUE (email, region);",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			sql, err := renderer.RenderSQL("postgres", postgres.New().GenerateMigrationAST(tt.diff, &goschema.Database{})...)
+			c.Assert(err, qt.IsNil)
+			sql = legacyRenderedSQL(sql)
+
+			dropIdx := strings.Index(sql, tt.wantDrop)
+			addIdx := strings.Index(sql, tt.wantAdd)
+			c.Assert(dropIdx >= 0 && addIdx >= 0 && dropIdx < addIdx, qt.IsTrue,
+				qt.Commentf("drop must precede add; got:\n%s", sql))
+			c.Assert(strings.Count(sql, tt.wantAdd), qt.Equals, 1)
+		})
+	}
+}
+
 // TestPlanner_GenerateMigrationAST_HostlessReAdd_DropsExactlyOnce guards the
 // hostless-re-add ownership rule (issue #229). When a name is re-added with NO
 // recorded addition hosts (ConstraintsAdded carries it but
 // ConstraintsAddedWithTables has no entry — the shape of every reverse/down
-// diff of a non-FK constraint modify, since reverseConstraintAdditions
-// restores FOREIGN KEYs only), the add side drops every recorded removal host
-// BEFORE the re-add, and removeConstraints must skip the name entirely.
+// diff whose old constraint body could not be reconstructed), the add side
+// drops every recorded removal host BEFORE the re-add, and removeConstraints
+// must skip the name entirely.
 //
 // Before the fix removeConstraints emitted a second guarded drop AFTER the
 // re-add — and IF EXISTS is no protection against dropping a constraint that

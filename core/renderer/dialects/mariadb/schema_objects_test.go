@@ -51,6 +51,21 @@ func TestMariaDBRenderer_ColumnOnUpdateExpression(t *testing.T) {
 	c.Assert(sql, qt.Contains, "`updated_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)")
 }
 
+func TestMariaDBRenderer_NamedColumnCheckRendersAsTableConstraint(t *testing.T) {
+	c := qt.New(t)
+
+	table := ast.NewCreateTable("products").
+		AddColumn(ast.NewColumn("id", "int").SetPrimary()).
+		AddColumn(ast.NewColumn("quantity", "integer").SetNotNull().SetCheck("quantity > 0").SetCheckName("products_quantity_check"))
+
+	sql, err := renderer.RenderSQL("mariadb", table)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "`quantity` integer NOT NULL,")
+	c.Assert(sql, qt.Contains, "CONSTRAINT `products_quantity_check` CHECK (quantity > 0)")
+	c.Assert(sql, qt.Not(qt.Contains), "`quantity` integer NOT NULL CONSTRAINT")
+}
+
 func TestMariaDBRenderer_EscapesReservedIdentifiers(t *testing.T) {
 	c := qt.New(t)
 

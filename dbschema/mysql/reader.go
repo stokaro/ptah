@@ -2,8 +2,11 @@ package mysql
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
+
+	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"github.com/stokaro/ptah/core/ast"
 	coreparser "github.com/stokaro/ptah/core/parser"
@@ -14,6 +17,11 @@ import (
 type Reader struct {
 	db     *sql.DB
 	schema string
+}
+
+type checkConstraintClauses struct {
+	byTableName map[string]string
+	byName      map[string]string
 }
 
 // NewMySQLReader creates a new MySQL schema reader
@@ -477,6 +485,10 @@ func (r *Reader) readIndexes(dbName string) ([]types.DBIndex, error) {
 
 // readConstraints reads all constraints
 func (r *Reader) readConstraints(dbName string) ([]types.DBConstraint, error) {
+	checkClauses, err := r.readCheckConstraintClauses(dbName)
+	if err != nil {
+		return nil, fmt.Errorf("read check constraint clauses: %w", err)
+	}
 	query := `
 		SELECT
 			tc.CONSTRAINT_NAME,
@@ -531,26 +543,18 @@ func (r *Reader) readConstraints(dbName string) ([]types.DBConstraint, error) {
 		// Get or create the constraint
 		constraint, exists := constraintMap[key]
 		if !exists {
-			constraint = &types.DBConstraint{
-				Name:      constraintName,
-				TableName: tableName,
-				Type:      constraintType,
-			}
-
-			// Set foreign key references if they exist
-			if referencedTable != "" {
-				constraint.ForeignTable = &referencedTable
-			}
-			if referencedColumn != "" {
-				constraint.ForeignColumn = &referencedColumn
-			}
-			if deleteRule != "" {
-				constraint.DeleteRule = &deleteRule
-			}
-			if updateRule != "" {
-				constraint.UpdateRule = &updateRule
-			}
-
+			constraint = newConstraint(
+				constraintName,
+				tableName,
+				constraintType,
+				constraintRefs{
+					referencedTable:  referencedTable,
+					referencedColumn: referencedColumn,
+					deleteRule:       deleteRule,
+					updateRule:       updateRule,
+				},
+				checkClauses,
+			)
 			constraintMap[key] = constraint
 		}
 
@@ -567,6 +571,9 @@ func (r *Reader) readConstraints(dbName string) ([]types.DBConstraint, error) {
 			constraint.ForeignColumns = append(constraint.ForeignColumns, referencedColumn)
 		}
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	// Convert map to slice
 	var constraints []types.DBConstraint
@@ -575,6 +582,129 @@ func (r *Reader) readConstraints(dbName string) ([]types.DBConstraint, error) {
 	}
 
 	return constraints, nil
+}
+
+type constraintRefs struct {
+	referencedTable  string
+	referencedColumn string
+	deleteRule       string
+	updateRule       string
+}
+
+func newConstraint(name, tableName, constraintType string, refs constraintRefs, checkClauses checkConstraintClauses) *types.DBConstraint {
+	constraint := &types.DBConstraint{
+		Name:      name,
+		TableName: tableName,
+		Type:      constraintType,
+	}
+	if refs.referencedTable != "" {
+		constraint.ForeignTable = &refs.referencedTable
+	}
+	if refs.referencedColumn != "" {
+		constraint.ForeignColumn = &refs.referencedColumn
+	}
+	if refs.deleteRule != "" {
+		constraint.DeleteRule = &refs.deleteRule
+	}
+	if refs.updateRule != "" {
+		constraint.UpdateRule = &refs.updateRule
+	}
+	if checkClause := checkClauses.forConstraint(tableName, name); checkClause != "" {
+		constraint.CheckClause = &checkClause
+	}
+	return constraint
+}
+
+func (c checkConstraintClauses) forConstraint(tableName, constraintName string) string {
+	if checkClause := c.byTableName[tableName+"."+constraintName]; checkClause != "" {
+		return checkClause
+	}
+	return c.byName[constraintName]
+}
+
+func (r *Reader) readCheckConstraintClauses(dbName string) (checkConstraintClauses, error) {
+	clauses := checkConstraintClauses{
+		byTableName: make(map[string]string),
+		byName:      make(map[string]string),
+	}
+	err := r.readTableAwareCheckConstraintClauses(dbName, clauses.byTableName)
+	if err == nil {
+		return clauses, nil
+	}
+	if isMissingCheckConstraintsTable(err) {
+		return clauses, nil
+	}
+	if !isMissingCheckConstraintTableNameColumn(err) {
+		return clauses, err
+	}
+
+	err = r.readNameOnlyCheckConstraintClauses(dbName, clauses.byName)
+	if err == nil {
+		return clauses, nil
+	}
+	if isMissingCheckConstraintsTable(err) {
+		return clauses, nil
+	}
+	return clauses, err
+}
+
+func isMissingCheckConstraintTableNameColumn(err error) bool {
+	var mysqlErr *mysqldriver.MySQLError
+	if !errors.As(err, &mysqlErr) {
+		return false
+	}
+	return mysqlErr.Number == 1054 && strings.Contains(strings.ToUpper(mysqlErr.Message), "TABLE_NAME")
+}
+
+func isMissingCheckConstraintsTable(err error) bool {
+	var mysqlErr *mysqldriver.MySQLError
+	if !errors.As(err, &mysqlErr) {
+		return false
+	}
+	if mysqlErr.Number != 1109 && mysqlErr.Number != 1146 {
+		return false
+	}
+	return strings.Contains(strings.ToUpper(mysqlErr.Message), "CHECK_CONSTRAINTS")
+}
+
+func (r *Reader) readTableAwareCheckConstraintClauses(dbName string, clauses map[string]string) error {
+	rows, err := r.db.Query(`
+		SELECT CONSTRAINT_NAME, TABLE_NAME, CHECK_CLAUSE
+		FROM information_schema.CHECK_CONSTRAINTS
+		WHERE CONSTRAINT_SCHEMA = ?`, dbName)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var constraintName, tableName, checkClause string
+		if err := rows.Scan(&constraintName, &tableName, &checkClause); err != nil {
+			return err
+		}
+		clauses[tableName+"."+constraintName] = checkClause
+	}
+	return rows.Err()
+}
+
+func (r *Reader) readNameOnlyCheckConstraintClauses(dbName string, clauses map[string]string) error {
+	rows, err := r.db.Query(`
+		SELECT CONSTRAINT_NAME, CHECK_CLAUSE
+		FROM information_schema.CHECK_CONSTRAINTS
+		WHERE CONSTRAINT_SCHEMA = ?`, dbName)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var constraintName, checkClause string
+		if err := rows.Scan(&constraintName, &checkClause); err != nil {
+			return err
+		}
+		clauses[constraintName] = checkClause
+	}
+	return rows.Err()
 }
 
 // parseEnumValues parses enum values from MySQL column type

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema/types"
@@ -39,6 +40,36 @@ func TestNewMySQLReader(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestMySQLReader_CheckConstraintIntrospectionErrorClassification(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(isMissingCheckConstraintTableNameColumn(&mysqldriver.MySQLError{
+		Number:  1054,
+		Message: "Unknown column 'TABLE_NAME' in 'field list'",
+	}), qt.IsTrue)
+	c.Assert(isMissingCheckConstraintTableNameColumn(&mysqldriver.MySQLError{
+		Number:  1054,
+		Message: "Unknown column 'table_name' in 'field list'",
+	}), qt.IsTrue)
+	c.Assert(isMissingCheckConstraintTableNameColumn(&mysqldriver.MySQLError{
+		Number:  1054,
+		Message: "Unknown column 'CHECK_CLAUSE' in 'field list'",
+	}), qt.IsFalse)
+
+	c.Assert(isMissingCheckConstraintsTable(&mysqldriver.MySQLError{
+		Number:  1109,
+		Message: "Unknown table 'CHECK_CONSTRAINTS' in information_schema",
+	}), qt.IsTrue)
+	c.Assert(isMissingCheckConstraintsTable(&mysqldriver.MySQLError{
+		Number:  1146,
+		Message: "Table 'information_schema.check_constraints' doesn't exist",
+	}), qt.IsTrue)
+	c.Assert(isMissingCheckConstraintsTable(&mysqldriver.MySQLError{
+		Number:  1142,
+		Message: "SELECT command denied to user",
+	}), qt.IsFalse)
 }
 
 func TestMySQLReader_parseTableFromDDLGeneratedColumn(t *testing.T) {

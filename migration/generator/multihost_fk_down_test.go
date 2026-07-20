@@ -258,6 +258,62 @@ func TestReverseConstraintAdditions_RestoresCompositeForeignKeyBody(t *testing.T
 	})
 }
 
+func TestReverseConstraintAdditions_RestoresCheckConstraintBody(t *testing.T) {
+	c := qt.New(t)
+	checkClause := "quantity > 0"
+	dbSchema := &dbschematypes.DBSchema{
+		Constraints: []dbschematypes.DBConstraint{{
+			Name:        "products_quantity_check",
+			TableName:   "products",
+			Type:        "CHECK",
+			CheckClause: &checkClause,
+		}},
+	}
+	upDiff := &types.SchemaDiff{
+		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+			{Name: "products_quantity_check", TableName: "products", Type: "CHECK"},
+		},
+	}
+
+	additions := reverseConstraintAdditions(upDiff, dbSchema)
+
+	c.Assert(additions, qt.DeepEquals, []types.ConstraintAdditionInfo{{
+		Name:            "products_quantity_check",
+		TableName:       "products",
+		Type:            "CHECK",
+		CheckExpression: "quantity > 0",
+	}})
+}
+
+func TestReverseConstraintAdditions_RestoresUniqueConstraintBody(t *testing.T) {
+	c := qt.New(t)
+	nullsDistinct := false
+	dbSchema := &dbschematypes.DBSchema{
+		Constraints: []dbschematypes.DBConstraint{{
+			Name:          "accounts_identity_unique",
+			TableName:     "accounts",
+			Type:          "UNIQUE",
+			ColumnNames:   []string{"email"},
+			NullsDistinct: &nullsDistinct,
+		}},
+	}
+	upDiff := &types.SchemaDiff{
+		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+			{Name: "accounts_identity_unique", TableName: "accounts", Type: "UNIQUE"},
+		},
+	}
+
+	additions := reverseConstraintAdditions(upDiff, dbSchema)
+
+	c.Assert(additions, qt.HasLen, 1)
+	c.Assert(additions[0].Name, qt.Equals, "accounts_identity_unique")
+	c.Assert(additions[0].TableName, qt.Equals, "accounts")
+	c.Assert(additions[0].Type, qt.Equals, "UNIQUE")
+	c.Assert(additions[0].Columns, qt.DeepEquals, []string{"email"})
+	c.Assert(additions[0].NullsDistinct, qt.IsNotNil)
+	c.Assert(*additions[0].NullsDistinct, qt.Equals, false)
+}
+
 // TestReverseConstraintAdditions_NilDBSchema is the legacy-caller path: with no
 // introspected schema there is no body to restore, so the helper returns nil and
 // the names ride the name-only fallback via ConstraintsAdded.

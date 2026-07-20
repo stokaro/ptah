@@ -828,11 +828,11 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 	}
 
 	// Prefer the table-qualified additions when present. A field-level FK from an
-	// embedded inline-relation mixin shares one name across every host table, so
-	// resolving the table from the field's Go struct name targets the mixin
-	// struct rather than the real tables (issue #197). ConstraintsAddedWithTables
-	// carries the concrete table + full FK definition. Names handled here are
-	// recorded so the legacy name loop skips them.
+	// embedded inline-relation mixin shares one name across every host table, and
+	// down migrations restore modified CHECK/UNIQUE definitions from the
+	// introspected DB schema. ConstraintsAddedWithTables carries the concrete
+	// table + definition. Names handled here are recorded so the legacy name loop
+	// skips them.
 	handled := make(map[string]struct{})
 	droppedForModify := make(map[string]struct{})
 	for _, add := range diff.ConstraintsAddedWithTables {
@@ -848,6 +848,7 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 		})
 		handled[add.Name] = struct{}{}
 	}
+	result = p.addCheckAndUniqueConstraintsWithTables(result, diff.ConstraintsAddedWithTables, removalByTableName, handled, droppedForModify)
 	for _, add := range diff.ConstraintsAddedWithTables {
 		if add.Type != "FOREIGN KEY" || add.TableName == "" {
 			continue
@@ -882,6 +883,54 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 	return result
 }
 
+func (p *Planner) addCheckAndUniqueConstraintsWithTables(
+	result []ast.Node,
+	additions []types.ConstraintAdditionInfo,
+	removalByTableName map[string]types.ConstraintRemovalInfo,
+	handled map[string]struct{},
+	droppedForModify map[string]struct{},
+) []ast.Node {
+	for _, add := range additions {
+		constraint := p.constraintAdditionNode(add)
+		if constraint == nil {
+			continue
+		}
+		if info, modified := removalByTableName[add.TableName+"."+add.Name]; modified {
+			result = p.appendScopedDrop(result, info, droppedForModify)
+		}
+		result = append(result, &ast.AlterTableNode{
+			Name:       add.TableName,
+			Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: constraint}},
+		})
+		handled[add.Name] = struct{}{}
+	}
+	return result
+}
+
+func (p *Planner) constraintAdditionNode(add types.ConstraintAdditionInfo) *ast.ConstraintNode {
+	if add.TableName == "" {
+		return nil
+	}
+	switch add.Type {
+	case "CHECK":
+		if add.CheckExpression == "" || !p.capabilities().Has(capability.CheckConstraintsEnforced) {
+			return nil
+		}
+		return &ast.ConstraintNode{
+			Type:       ast.CheckConstraint,
+			Name:       add.Name,
+			Expression: add.CheckExpression,
+		}
+	case "UNIQUE":
+		if len(add.Columns) == 0 {
+			return nil
+		}
+		return ast.NewUniqueConstraint(add.Name, add.Columns...)
+	default:
+		return nil
+	}
+}
+
 // emitModifyDropForName appends the DROP(s) that must precede the re-ADD of a
 // modified constraint reached via the bare ConstraintsAdded name list (the
 // non-FK and field-level synthesis paths; FK modifies are handled per-host in
@@ -905,12 +954,12 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 //
 // When addedHosts is empty the re-added hosts are unknown — e.g. a
 // reverse/down diff fills ConstraintsRemovedWithTables but not
-// ConstraintsAddedWithTables (reverseConstraintAdditions restores only
-// FOREIGN KEYs, and nothing at all when the introspected schema is absent). In
-// that case every recorded removal host is dropped here and removeConstraints
-// skips the name entirely (its hostless-re-add rule), so each host is still
-// dropped exactly once. A name with no recorded removal host at all emits no
-// drop: MySQL has no anonymous-block equivalent of the postgres
+// ConstraintsAddedWithTables because the prior definition could not be
+// reconstructed from schema context. In that case every recorded removal host
+// is dropped here and removeConstraints skips the name entirely (its
+// hostless-re-add rule), so each host is still dropped exactly once. A name
+// with no recorded removal host at all emits no drop: MySQL has no
+// anonymous-block equivalent of the postgres
 // information_schema DO fallback to resolve the owner at runtime, so the
 // re-add proceeds alone (pre-existing behavior for hand-built diffs).
 func (p *Planner) emitModifyDropForName(

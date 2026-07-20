@@ -69,6 +69,70 @@ func TestPlanner_GenerateMigrationAST_CompositeForeignKeyAddition(t *testing.T) 
 	}
 }
 
+func TestPlanner_GenerateMigrationAST_TableQualifiedCheckAndUniqueAdditions(t *testing.T) {
+	tests := []struct {
+		name     string
+		diff     *types.SchemaDiff
+		wantDrop string
+		wantSQL  string
+	}{
+		{
+			name: "unique to check",
+			diff: &types.SchemaDiff{
+				ConstraintsAdded: []string{"products_quantity_guard"},
+				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+					Name:            "products_quantity_guard",
+					TableName:       "products",
+					Type:            "CHECK",
+					CheckExpression: "quantity > 10",
+				}},
+				ConstraintsRemoved: []string{"products_quantity_guard"},
+				ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{{
+					Name:      "products_quantity_guard",
+					TableName: "products",
+					Type:      "UNIQUE",
+				}},
+			},
+			wantDrop: "ALTER TABLE products DROP INDEX products_quantity_guard;",
+			wantSQL:  "ALTER TABLE products ADD CONSTRAINT products_quantity_guard CHECK (quantity > 10);",
+		},
+		{
+			name: "check to unique",
+			diff: &types.SchemaDiff{
+				ConstraintsAdded: []string{"accounts_identity"},
+				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+					Name:      "accounts_identity",
+					TableName: "accounts",
+					Type:      "UNIQUE",
+					Columns:   []string{"email", "region"},
+				}},
+				ConstraintsRemoved: []string{"accounts_identity"},
+				ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{{
+					Name:      "accounts_identity",
+					TableName: "accounts",
+					Type:      "CHECK",
+				}},
+			},
+			wantDrop: "ALTER TABLE accounts DROP CONSTRAINT accounts_identity;",
+			wantSQL:  "ALTER TABLE accounts ADD CONSTRAINT accounts_identity UNIQUE (email, region);",
+		},
+	}
+
+	for _, dialect := range mysqlFamilyDialects {
+		for _, tt := range tests {
+			t.Run(dialect+"/"+tt.name, func(t *testing.T) {
+				c := qt.New(t)
+
+				sql := renderMySQLFamily(c, dialect, tt.diff, &goschema.Database{})
+
+				assertContainsBefore(c, sql, tt.wantDrop, tt.wantSQL)
+				c.Assert(sql, qt.Contains, tt.wantSQL)
+				c.Assert(strings.Count(sql, tt.wantSQL), qt.Equals, 1)
+			})
+		}
+	}
+}
+
 func TestPlanner_GenerateMigrationAST_DropsFKBeforeRemovingItsTable(t *testing.T) {
 	diff := &types.SchemaDiff{
 		TablesRemoved: []string{"tasks", "projects", "accounts"},
