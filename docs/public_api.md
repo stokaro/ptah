@@ -47,6 +47,7 @@ package-boundary cleanup in
 - `github.com/stokaro/ptah/core/atlashclrender`
 - `github.com/stokaro/ptah/core/convert/dbschematogo`
 - `github.com/stokaro/ptah/core/convert/fromschema`
+- `github.com/stokaro/ptah/core/convert/goschematogo`
 - `github.com/stokaro/ptah/core/convert/toschema`
 - `github.com/stokaro/ptah/core/lexer`
 - `github.com/stokaro/ptah/core/parser`

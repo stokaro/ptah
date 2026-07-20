@@ -24,17 +24,18 @@ import (
 // "columns" is accepted as a legacy synonym for "fields"; several integration
 // fixtures use it. parseIndexComment falls back to it when "fields" is empty.
 var knownIndexAttributes = map[string]bool{
-	"name":        true,
-	"fields":      true,
-	"columns":     true,
-	"unique":      true,
-	"comment":     true,
-	"type":        true,
-	"condition":   true,
-	"where":       true,
-	"ops":         true,
-	"table":       true,
-	"granularity": true,
+	"name":           true,
+	"fields":         true,
+	"columns":        true,
+	"unique":         true,
+	"comment":        true,
+	"type":           true,
+	"condition":      true,
+	"where":          true,
+	"ops":            true,
+	"table":          true,
+	"granularity":    true,
+	"nulls_distinct": true,
 }
 
 // knownFieldAttributes lists every attribute key recognized on a
@@ -100,6 +101,11 @@ var knownTriggerAttributes = map[string]bool{
 var knownSchemaAttributes = map[string]bool{
 	"name":    true,
 	"comment": true,
+}
+
+var knownEnumAttributes = map[string]bool{
+	"name":   true,
+	"values": true,
 }
 
 // validateAttributes rejects any key the directive does not recognize.
@@ -350,16 +356,17 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 	}
 
 	s.schemaIndexes = append(s.schemaIndexes, Index{
-		StructName:  structName,
-		Name:        kv["name"],
-		Fields:      fields,
-		Unique:      kv["unique"] == "true",
-		Comment:     kv["comment"],
-		Type:        kv["type"],                                  // PG: GIN/GIST/BTREE/HASH; CH: minmax/set(N)/bloom_filter/...
-		Condition:   firstNonEmpty(kv["where"], kv["condition"]), // PG/SQLite: WHERE clause for partial indexes
-		Operator:    kv["ops"],                                   // PG only: operator class (gin_trgm_ops, etc.)
-		TableName:   tableName,                                   // Target table name
-		Granularity: granularity,                                 // CH only: GRANULARITY n for data-skipping indexes
+		StructName:    structName,
+		Name:          kv["name"],
+		Fields:        fields,
+		Unique:        kv["unique"] == "true",
+		Comment:       kv["comment"],
+		Type:          kv["type"],                                  // PG: GIN/GIST/BTREE/HASH; CH: minmax/set(N)/bloom_filter/...
+		Condition:     firstNonEmpty(kv["where"], kv["condition"]), // PG/SQLite: WHERE clause for partial indexes
+		Operator:      kv["ops"],                                   // PG only: operator class (gin_trgm_ops, etc.)
+		NullsDistinct: parseBoolPtr(kv["nulls_distinct"]),
+		TableName:     tableName,   // Target table name
+		Granularity:   granularity, // CH only: GRANULARITY n for data-skipping indexes
 	})
 	return nil
 }
@@ -388,6 +395,10 @@ func parseConstraintComment(comment *ast.Comment, structName string) Constraint 
 			columns[i] = strings.TrimSpace(columns[i])
 		}
 	}
+	foreignColumns := splitCommaList(kv["foreign_columns"])
+	if len(foreignColumns) == 0 && kv["foreign_column"] != "" {
+		foreignColumns = []string{kv["foreign_column"]}
+	}
 
 	// Determine target table name - use 'table' attribute if specified, otherwise leave empty for later resolution
 	tableName := kv["table"]
@@ -407,16 +418,26 @@ func parseConstraintComment(comment *ast.Comment, structName string) Constraint 
 		CheckExpression: kv["check"], // Check expression
 
 		// UNIQUE/PRIMARY KEY constraint specific fields
-		Columns: columns, // Column names
+		Columns:       columns, // Column names
+		NullsDistinct: parseBoolPtr(kv["nulls_distinct"]),
 
 		// FOREIGN KEY constraint specific fields
-		ForeignTable:  kv["foreign_table"],  // Referenced table
-		ForeignColumn: kv["foreign_column"], // Referenced column
-		OnDelete:      kv["on_delete"],      // ON DELETE action
-		OnUpdate:      kv["on_update"],      // ON UPDATE action
+		ForeignTable:   kv["foreign_table"],  // Referenced table
+		ForeignColumn:  kv["foreign_column"], // Referenced column
+		ForeignColumns: foreignColumns,
+		OnDelete:       kv["on_delete"], // ON DELETE action
+		OnUpdate:       kv["on_update"], // ON UPDATE action
 
 		Comment: kv["comment"], // Constraint comment
 	}
+}
+
+func parseBoolPtr(value string) *bool {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parsed := strings.EqualFold(value, "true")
+	return &parsed
 }
 
 func (s *schemaParseState) parseExtensionComment(comment *ast.Comment) {
@@ -573,6 +594,8 @@ func (s *schemaParseState) parseSharedComment(comment *ast.Comment, target schem
 	switch {
 	case strings.HasPrefix(comment.Text, "//migrator:schema:constraint"):
 		s.parseConstraintComment(comment, target.structName)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:enum"):
+		return s.parseEnumComment(comment)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:extension"):
 		s.parseExtensionComment(comment)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:function"):
@@ -591,6 +614,30 @@ func (s *schemaParseState) parseSharedComment(comment *ast.Comment, target schem
 		s.parseRoleComment(comment, target.structName)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:grant"):
 		s.parseGrantComment(comment, target.structName)
+	}
+	return nil
+}
+
+func (s *schemaParseState) parseEnumComment(comment *ast.Comment) error {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	if err := validateAttributes(
+		kv,
+		knownEnumAttributes,
+		s.annotationContext(comment, "//migrator:schema:enum", kv["name"]),
+	); err != nil {
+		return err
+	}
+	if err := requireAttributes(
+		kv,
+		[]string{"name", "values"},
+		s.annotationContext(comment, "//migrator:schema:enum", kv["name"]),
+	); err != nil {
+		return err
+	}
+
+	s.globalEnumsMap[kv["name"]] = Enum{
+		Name:   kv["name"],
+		Values: splitCommaList(kv["values"]),
 	}
 	return nil
 }
