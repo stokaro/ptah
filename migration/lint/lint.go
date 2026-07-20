@@ -38,6 +38,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/stokaro/ptah/core/lexer"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/risk"
 )
@@ -421,12 +422,45 @@ func fileNoTransactionDirective(sql string) bool {
 	if value := migrator.ParseFileDirectives(sql)[migrator.DirectiveNoTransaction]; value == "true" {
 		return true
 	}
-	for line := range strings.Lines(sql) {
-		if strings.EqualFold(strings.TrimSpace(line), "-- atlas:txmode none") {
+	return hasAtlasTxModeNoneDirective(sql)
+}
+
+func hasAtlasTxModeNoneDirective(sql string) bool {
+	lexr := lexer.NewLexer(sql)
+	for {
+		tok := lexr.NextToken()
+		if tok.Type == lexer.TokenEOF {
+			break
+		}
+		if tok.Type != lexer.TokenComment {
+			continue
+		}
+		comment, ok := strings.CutPrefix(tok.Value, "--")
+		if !ok {
+			continue
+		}
+		if !commentStartsLine(sql, tok.Start) {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(comment), "atlas:txmode none") {
 			return true
 		}
 	}
 	return false
+}
+
+func commentStartsLine(sql string, pos int) bool {
+	for i := pos - 1; i >= 0; i-- {
+		switch sql[i] {
+		case '\n':
+			return true
+		case ' ', '\t', '\r':
+			continue
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // runRules applies every enabled rule to one prepared file.

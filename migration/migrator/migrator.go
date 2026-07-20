@@ -719,7 +719,7 @@ func (m *Migrator) applyUpMigrations(ctx context.Context, migrations []*Migratio
 		if err := m.beginMigrationRevision(ctx, migration); err != nil {
 			return fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
 		}
-		if migration.UpNoTransaction {
+		if migration.upExecutionMode() == migrationExecutionNoTransaction {
 			if err := m.applyUpMigrationNoTransaction(ctx, migration, startedAt); err != nil {
 				return err
 			}
@@ -827,7 +827,7 @@ func (m *Migrator) rollbackMigration(ctx context.Context, migration *Migration, 
 	if migration.downUnavailable {
 		return m.rollbackMigrationWithoutRegisteredDown(ctx, migration, startedAt, deleteSQL)
 	}
-	if migration.DownNoTransaction {
+	if migration.downExecutionMode() == migrationExecutionNoTransaction {
 		return m.rollbackMigrationNoTransaction(ctx, migration, startedAt, deleteSQL)
 	}
 	return m.rollbackMigrationTransactional(ctx, migration, startedAt, deleteSQL)
