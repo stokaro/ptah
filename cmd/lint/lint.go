@@ -58,7 +58,7 @@ rule-coded findings, sqlcheck-style:
 
   DS  data safety (dropped tables/columns, lossy type changes)
   MF  migration form (missing down file, empty migration, naming)
-  BC  backward compatibility (renames breaking deployed code)
+  BC  breaking-change safety (renames breaking deployed code)
   PG  PostgreSQL-specific hazards (CREATE INDEX without CONCURRENTLY, ...)
   MY  MySQL/MariaDB-specific hazards (lock-heavy ALTER TABLE forms)
 
