@@ -36,15 +36,19 @@ The SQLite renderer and planner support:
 
 ## Introspection
 
-The SQLite reader uses `sqlite_schema` and SQLite PRAGMA metadata:
+The SQLite reader uses `sqlite_schema` and SQLite PRAGMA metadata. It reads
+catalog metadata in fixed batches instead of issuing one query per table or
+index:
 
-- `PRAGMA table_xinfo` for table columns, primary-key membership, defaults, and
-  generated-column kind.
-- `PRAGMA index_list` plus `PRAGMA index_info` and `sqlite_schema.sql` for
-  indexes and unique constraints.
-- `PRAGMA foreign_key_list` for foreign keys.
+- `sqlite_schema` for table, index, view, and trigger definitions.
+- `pragma_table_xinfo(...)` for table columns, primary-key membership,
+  defaults, and generated-column kind.
+- `pragma_index_list(...)` plus `pragma_index_xinfo(...)` for indexes, unique
+  constraints, partial indexes, and expression indexes.
+- `pragma_foreign_key_list(...)` for foreign keys.
 - `sqlite_schema.sql` for generated-column expressions, named `CHECK`
-  constraints, view bodies, trigger headers, and trigger bodies.
+  constraints, named foreign keys, view bodies, trigger headers, and trigger
+  bodies.
 
 System objects whose names start with `sqlite_` and Ptah's `schema_migrations`
 table are ignored.
