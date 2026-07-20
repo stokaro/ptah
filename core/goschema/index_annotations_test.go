@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/ptaherr"
 )
 
 // TestParseIndexAnnotation_TypeAndGranularity exercises the parser's strict
@@ -54,7 +55,11 @@ type Event struct {
 `
 	c := qt.New(t)
 	_, err := goschema.ParseSource("fixture.go", src)
-	c.Assert(err, qt.ErrorMatches, `unknown annotation attribute "granluarity" on //migrator:schema:index at Event`)
+	var parseErr *ptaherr.ParseError
+	c.Assert(err, qt.ErrorAs, &parseErr)
+	c.Assert(parseErr.Directive, qt.Equals, "migrator:schema:index")
+	c.Assert(parseErr.Attribute, qt.Equals, "granluarity")
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnknownAttribute)
 }
 
 // TestParseIndexAnnotation_NoTypeNoGranularity confirms that the new fields

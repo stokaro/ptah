@@ -39,7 +39,10 @@ import (
 //	}
 //
 //	// Generate migration statements in proper order
-//	statements := GetOrderedCreateStatements(result, "postgresql")
+//	statements, err := renderer.GetOrderedCreateStatements(result, "postgresql")
+//	if err != nil {
+//		return fmt.Errorf("failed to render schema: %w", err)
+//	}
 func ParseDir(rootDir string) (*Database, error) {
 	return ParseFS(os.DirFS(rootDir), ".")
 }
@@ -68,7 +71,10 @@ func ParseDir(rootDir string) (*Database, error) {
 //	}
 //
 //	// Generate migration statements in proper order
-//	statements := GetOrderedCreateStatements(result, "postgresql")
+//	statements, err := renderer.GetOrderedCreateStatements(result, "postgresql")
+//	if err != nil {
+//		return fmt.Errorf("failed to render schema: %w", err)
+//	}
 func ParseFS(fsys fs.FS, rootDir string) (*Database, error) {
 	result := &Database{
 		Schemas:                    []Schema{},

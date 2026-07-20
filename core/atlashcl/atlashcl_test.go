@@ -11,6 +11,13 @@ import (
 	"github.com/stokaro/ptah/core/renderer"
 )
 
+func renderStatements(c *qt.C, db *goschema.Database, dialect string) []string {
+	c.Helper()
+	statements, err := renderer.GetOrderedCreateStatements(db, dialect)
+	c.Assert(err, qt.IsNil)
+	return statements
+}
+
 func TestParseTablesColumnsPrimaryKeyAndIndexes(t *testing.T) {
 	c := qt.New(t)
 
@@ -47,7 +54,7 @@ table "users" {
 	c.Assert(db.Indexes, qt.HasLen, 1)
 	c.Assert(db.Indexes[0].Fields, qt.DeepEquals, []string{"email"})
 
-	sql := legacyRenderedSQL(strings.Join(renderer.GetOrderedCreateStatements(db, "postgres"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, `CREATE TABLE main.users`)
 	c.Assert(sql, qt.Contains, `id int PRIMARY KEY`)
 	c.Assert(sql, qt.Contains, `CREATE UNIQUE INDEX`)
@@ -90,7 +97,7 @@ table "metrics" {
 		},
 	})
 
-	sql := legacyRenderedSQL(strings.Join(renderer.GetOrderedCreateStatements(db, "postgres"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, `PARTITION BY RANGE (x, (floor(y)))`)
 }
 
@@ -139,7 +146,7 @@ table "users" {
 	c.Assert(db.Fields[0].Default, qt.Equals, "active")
 	c.Assert(db.Fields[0].DefaultSet, qt.IsTrue)
 
-	sql := legacyRenderedSQL(strings.Join(renderer.GetOrderedCreateStatements(db, "postgres"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, "CREATE TYPE status AS ENUM ('active', 'inactive');")
 	c.Assert(sql, qt.Contains, "status status NOT NULL DEFAULT 'active'")
 }
@@ -190,7 +197,7 @@ table "tokens" {
 		{Name: "tenant_id", Prefix: "1", Desc: true},
 	})
 
-	sql := legacyRenderedSQL(strings.Join(renderer.GetOrderedCreateStatements(db, "mysql"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "mysql"), "\n"))
 	c.Assert(sql, qt.Contains, "PRIMARY KEY (id (7), tenant_id (1) DESC)")
 	c.Assert(sql, qt.Not(qt.Contains), "id tinytext PRIMARY KEY")
 }
@@ -221,7 +228,7 @@ table "users" {
 	c.Assert(db.Tables[0].PrimaryKeyParts, qt.DeepEquals, []goschema.PrimaryKeyPart{{Name: "id"}})
 	c.Assert(db.Tables[0].PrimaryKeyInclude, qt.DeepEquals, []string{"covering"})
 
-	sql := legacyRenderedSQL(strings.Join(renderer.GetOrderedCreateStatements(db, "postgres"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, "PRIMARY KEY (id) INCLUDE (covering)")
 	c.Assert(sql, qt.Not(qt.Contains), "id int PRIMARY KEY")
 }
@@ -247,7 +254,7 @@ table "users" {
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].PrimaryKey, qt.DeepEquals, []string{"id"})
 
-	sql := legacyRenderedSQL(strings.Join(renderer.GetOrderedCreateStatements(db, "mysql"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "mysql"), "\n"))
 	c.Assert(sql, qt.Contains, "id varchar(128) PRIMARY KEY")
 }
 
@@ -319,7 +326,7 @@ table "users" {
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].AutoIncrement, qt.Equals, "1000")
 
-	sql := legacyRenderedSQL(strings.Join(renderer.GetOrderedCreateStatements(db, "mysql"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "mysql"), "\n"))
 	c.Assert(sql, qt.Contains, "AUTO_INCREMENT=1000")
 }
 
@@ -344,7 +351,7 @@ table "users" {
 	c.Assert(db.Tables[0].Charset, qt.Equals, "utf8mb4")
 	c.Assert(db.Tables[0].Collate, qt.Equals, "utf8mb4_bin")
 
-	sql := legacyRenderedSQL(strings.Join(renderer.GetOrderedCreateStatements(db, "mysql"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "mysql"), "\n"))
 	c.Assert(sql, qt.Contains, "CHARSET=utf8mb4")
 	c.Assert(sql, qt.Contains, "COLLATE=utf8mb4_bin")
 }
@@ -367,7 +374,7 @@ table "users" {
 	c.Assert(db.Fields[0].Charset, qt.Equals, "hebrew")
 	c.Assert(db.Fields[0].Collate, qt.Equals, "hebrew_general_ci")
 
-	sql := legacyRenderedSQL(strings.Join(renderer.GetOrderedCreateStatements(db, "mysql"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "mysql"), "\n"))
 	c.Assert(sql, qt.Contains, "name varchar(255) CHARACTER SET hebrew COLLATE hebrew_general_ci NOT NULL")
 }
 
@@ -521,7 +528,7 @@ table "users" {
 	c.Assert(db.Constraints[0].NullsDistinct, qt.IsNotNil)
 	c.Assert(*db.Constraints[0].NullsDistinct, qt.IsFalse)
 
-	sql := legacyRenderedSQL(strings.Join(renderer.GetOrderedCreateStatements(db, "postgres"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, "CREATE UNIQUE INDEX IF NOT EXISTS nulls_not_distinct ON users (c) NULLS NOT DISTINCT")
 	c.Assert(sql, qt.Contains, "CONSTRAINT nulls_not_distinct2 UNIQUE NULLS NOT DISTINCT (c)")
 }
@@ -615,7 +622,7 @@ schema "public" {
 		Comment: "This is a test schema",
 	}})
 
-	sql := legacyRenderedSQL(strings.Join(renderer.GetOrderedCreateStatements(db, "postgres"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, `CREATE SCHEMA IF NOT EXISTS public;`)
 	c.Assert(sql, qt.Contains, `COMMENT ON SCHEMA public IS 'This is a test schema';`)
 }
@@ -636,7 +643,7 @@ schema "app" {
 		Collate: "utf8mb4_0900_ai_ci",
 	}})
 
-	sql := legacyRenderedSQL(strings.Join(renderer.GetOrderedCreateStatements(db, "mysql"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "mysql"), "\n"))
 	c.Assert(sql, qt.Contains, `CREATE SCHEMA IF NOT EXISTS app DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;`)
 }
 
@@ -732,7 +739,7 @@ table "posts" {
 	c.Assert(constraint.OnUpdate, qt.Equals, "NO_ACTION")
 	c.Assert(db.Dependencies["posts"], qt.DeepEquals, []string{"accounts"})
 
-	sql := legacyRenderedSQL(strings.Join(renderer.GetOrderedCreateStatements(db, "mysql"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "mysql"), "\n"))
 	c.Assert(sql, qt.Contains, `CONSTRAINT owner_ref FOREIGN KEY (tenant_id, owner_id) REFERENCES accounts(tenant_id, id) ON DELETE CASCADE ON UPDATE NO_ACTION`)
 }
 

@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/core/ast"
+	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/core/renderer"
 )
 
@@ -79,7 +80,8 @@ func TestRenderAlterTableRebuildRequired(t *testing.T) {
 	}
 
 	_, err := renderer.RenderSQL("sqlite", node)
-	c.Assert(err, qt.ErrorMatches, `sqlite: \*ast\.ModifyColumnOperation requires a table rebuild plan`)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err.Error(), qt.Contains, `sqlite: *ast.ModifyColumnOperation requires a table rebuild plan`)
 }
 
 func TestRenderReplaceTrigger(t *testing.T) {
@@ -108,7 +110,8 @@ func TestRenderStatementTriggerRejected(t *testing.T) {
 		SetBody("BEGIN SELECT 1; END")
 
 	_, err := renderer.RenderSQL("sqlite", trigger)
-	c.Assert(err, qt.ErrorMatches, `sqlite: FOR EACH STATEMENT triggers are not supported`)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err.Error(), qt.Contains, `sqlite: FOR EACH STATEMENT triggers are not supported`)
 }
 
 func TestRenderViewWithCheckRejected(t *testing.T) {
@@ -117,7 +120,8 @@ func TestRenderViewWithCheckRejected(t *testing.T) {
 	view := ast.NewCreateView("active_users").SetBody("SELECT id FROM users").SetWithCheck(true)
 
 	_, err := renderer.RenderSQL("sqlite", view)
-	c.Assert(err, qt.ErrorMatches, `sqlite: WITH CHECK OPTION views are not supported`)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err.Error(), qt.Contains, `sqlite: WITH CHECK OPTION views are not supported`)
 }
 
 func TestRenderAutoIncrementRequiresPrimaryKey(t *testing.T) {
@@ -127,5 +131,6 @@ func TestRenderAutoIncrementRequiresPrimaryKey(t *testing.T) {
 		AddColumn(ast.NewColumn("id", "INTEGER").SetAutoIncrement())
 
 	_, err := renderer.RenderSQL("sqlite", table)
-	c.Assert(err, qt.ErrorMatches, `render column id: sqlite: AUTOINCREMENT requires an INTEGER PRIMARY KEY column`)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err.Error(), qt.Contains, `render column id: unsupported feature: sqlite: AUTOINCREMENT requires an INTEGER PRIMARY KEY column`)
 }
