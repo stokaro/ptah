@@ -35,7 +35,7 @@ const (
 func NewMigrateBaselineCommand() *cobra.Command {
 	flags := newMigrateBaselineFlags()
 	cmd := &cobra.Command{
-		Use:   "migrate-baseline",
+		Use:   "baseline",
 		Short: "Record existing migrations as already applied",
 		Long: `Record existing migrations as already applied without executing their SQL bodies.
 

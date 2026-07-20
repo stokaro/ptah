@@ -17,7 +17,7 @@ func TestMigrateDownCommand_Creation(t *testing.T) {
 
 	cmd := migratedown.NewMigrateDownCommand()
 	c.Assert(cmd, qt.IsNotNil)
-	c.Assert(cmd.Use, qt.Equals, "migrate-down")
+	c.Assert(cmd.Use, qt.Equals, "down")
 	c.Assert(cmd.Short, qt.Contains, "Roll back migrations")
 	c.Assert(cmd.Flag("migration-lock-timeout"), qt.IsNotNil)
 }

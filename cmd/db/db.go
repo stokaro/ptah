@@ -5,7 +5,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/dropall"
-	"github.com/stokaro/ptah/cmd/internal/cmdalias"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/readdb"
 )
@@ -24,21 +23,13 @@ under ptah atlas.`,
 		},
 	}
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
-	readCmd := cmdalias.NewForwardCommandWithTargetHelp(
-		"read",
-		"Read schema from a live database",
-		"read-db",
-		readdb.NewReadDBCommand,
-	)
+	readCmd := readdb.NewReadDBCommand()
+	readCmd.Short = "Read schema from a live database"
 	readCmd.Long = "Read schema from a live database using Ptah's native database namespace."
 	cmd.AddCommand(readCmd)
 
-	dropAllCmd := cmdalias.NewForwardCommandWithTargetHelp(
-		"drop-all",
-		"Drop all schema objects in a live database",
-		"drop-all",
-		dropall.NewDropAllCommand,
-	)
+	dropAllCmd := dropall.NewDropAllCommand()
+	dropAllCmd.Short = "Drop all schema objects in a live database"
 	dropAllCmd.Long = "Drop all schema objects in a live database using Ptah's native database namespace."
 	cmd.AddCommand(dropAllCmd)
 	return cmd
