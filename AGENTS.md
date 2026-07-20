@@ -13,10 +13,15 @@ token. Prefer spellings such as `behavior`, `color`, `canceled`, `initialize`,
 
 Ptah treats `.golangci.yml` as a strict contract. Fix code to satisfy the configured linters instead of relaxing thresholds, disabling checks, or broadening exclusions. In particular, keep `revive` `error-strings` enabled and preserve the current "stricter wins" lint posture unless a maintainer explicitly asks for a config change.
 
-Ptah is pre-GA. Do not add legacy command aliases, compatibility wrappers,
-fallback APIs, or backward-compatibility behavior just to preserve an older
-internal shape. Prefer the cleaner architecture and update callers/tests/docs
-unless a maintainer explicitly asks for a compatibility layer.
+Ptah is pre-GA. Do not preserve old command aliases, compatibility wrappers,
+fallback APIs, or backward-compatibility behavior just to keep an older internal
+shape. Prefer the cleaner architecture and update callers/tests/docs unless a
+maintainer explicitly asks for a compatibility layer.
+
+Atlas OSS command parity belongs under `ptah atlas <command> ...` only. Do not
+add root-level Atlas command spellings or temporary aliases such as
+`ptah migrate apply` / `ptah schema inspect`; remove or redesign old paths
+instead of preserving them.
 
 The `modernize` linter is enabled. Prefer current Go idioms when writing or editing code:
 
