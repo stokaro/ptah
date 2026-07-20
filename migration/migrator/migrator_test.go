@@ -77,6 +77,28 @@ func TestNewFSMigrator_LoadsNoTransactionDirective(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	migration := m.MigrationProvider().Migrations()[0]
 	c.Assert(migration.NoTransaction, qt.IsTrue)
+	c.Assert(migration.UpNoTransaction, qt.IsTrue)
+	c.Assert(migration.DownNoTransaction, qt.IsFalse)
+}
+
+func TestNewFSMigrator_LoadsDirectionalDownNoTransactionDirective(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"0000000001_drop_concurrent_index.up.sql": &fstest.MapFile{
+			Data: []byte("SELECT 1;"),
+		},
+		"0000000001_drop_concurrent_index.down.sql": &fstest.MapFile{
+			Data: []byte("-- +ptah no_transaction\nDROP INDEX CONCURRENTLY idx_users_email;"),
+		},
+	}
+
+	m, err := migrator.NewFSMigrator(nil, fsys)
+	c.Assert(err, qt.IsNil)
+	migration := m.MigrationProvider().Migrations()[0]
+	c.Assert(migration.NoTransaction, qt.IsTrue)
+	c.Assert(migration.UpNoTransaction, qt.IsFalse)
+	c.Assert(migration.DownNoTransaction, qt.IsTrue)
 }
 
 func TestNewFSMigrator_InvalidNoTransactionDirective(t *testing.T) {

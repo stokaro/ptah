@@ -38,7 +38,7 @@ root-level command spellings are removed instead of preserved.
 | `ptah seed` | Seed files applied or already applied. | Not used. | Usage error, protected environment rejection, connection failure, invalid seed files, or seed execution failure. |
 | `ptah version` | Version information printed. | Not used. | Usage error. |
 
-## Atlas-Compatible Aliases
+## Atlas Command Surface
 
 Commands under `ptah atlas <command> ...` translate implemented Atlas-compatible flags and then delegate to the matching native command. Their exit codes therefore follow the native command contract:
 

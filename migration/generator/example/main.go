@@ -73,26 +73,36 @@ func main() {
 
 	// Display results
 	fmt.Printf("✅ Migration generated successfully!\n")
-	fmt.Printf("  Version: %d\n", files.Version)
-	fmt.Printf("  UP file:   %s\n", files.UpFile)
-	fmt.Printf("  DOWN file: %s\n", files.DownFile)
+	for _, pair := range files.Files {
+		fmt.Printf("  Version: %d\n", pair.Version)
+		fmt.Printf("  UP file:   %s\n", pair.UpFile)
+		fmt.Printf("  DOWN file: %s\n", pair.DownFile)
+		if pair.ReportFile != "" {
+			fmt.Printf("  Report:    %s\n", pair.ReportFile)
+		}
+		if pair.NoTransaction {
+			fmt.Println("  Transaction: disabled")
+		}
+	}
 	fmt.Println()
 
 	// Display file contents for review
-	fmt.Println("=== UP MIGRATION ===")
-	upContent, err := os.ReadFile(files.UpFile)
-	if err != nil {
-		log.Printf("Warning: Could not read UP migration file: %v", err)
-	} else {
-		fmt.Println(string(upContent))
-	}
+	for _, pair := range files.Files {
+		fmt.Printf("=== UP MIGRATION %d ===\n", pair.Version)
+		upContent, err := os.ReadFile(pair.UpFile)
+		if err != nil {
+			log.Printf("Warning: Could not read UP migration file: %v", err)
+		} else {
+			fmt.Println(string(upContent))
+		}
 
-	fmt.Println("=== DOWN MIGRATION ===")
-	downContent, err := os.ReadFile(files.DownFile)
-	if err != nil {
-		log.Printf("Warning: Could not read DOWN migration file: %v", err)
-	} else {
-		fmt.Println(string(downContent))
+		fmt.Printf("=== DOWN MIGRATION %d ===\n", pair.Version)
+		downContent, err := os.ReadFile(pair.DownFile)
+		if err != nil {
+			log.Printf("Warning: Could not read DOWN migration file: %v", err)
+		} else {
+			fmt.Println(string(downContent))
+		}
 	}
 
 	fmt.Println("⚠️  Please review the generated SQL carefully before applying the migration!")

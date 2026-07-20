@@ -60,8 +60,10 @@
 //	}
 //
 //	fmt.Printf("Generated migration files:\n")
-//	fmt.Printf("Up:   %s\n", files.UpFile)
-//	fmt.Printf("Down: %s\n", files.DownFile)
+//	for _, pair := range files.Files {
+//		fmt.Printf("Up:   %s\n", pair.UpFile)
+//		fmt.Printf("Down: %s\n", pair.DownFile)
+//	}
 //
 // # Migration File Structure
 //
