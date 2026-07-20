@@ -45,6 +45,60 @@ func TestSchemaExportCommandWritesAtlasHCL(t *testing.T) {
 	c.Assert(parsed.Tables[0].PrimaryKey, qt.DeepEquals, []string{"id"})
 }
 
+func TestSchemaExportCommandPreservesSchemaObjects(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	fixtureDir, err := filepath.Abs("../../integration/fixtures/entities/023-go-annotations-objects")
+	c.Assert(err, qt.IsNil)
+	outPath := filepath.Join(dir, "schema.hcl")
+
+	cmd := schema.NewSchemaCommand()
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{
+		"export",
+		"--from", "go",
+		"--to", "atlas-hcl",
+		"--root-dir", fixtureDir,
+		"--out", outPath,
+	})
+
+	err = cmd.Execute()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr.String()))
+	c.Assert(stdout.String(), qt.Contains, "2 export warning(s) reported")
+	c.Assert(stderr.String(), qt.Contains, "extension if_not_exists")
+	c.Assert(stderr.String(), qt.Contains, "RLS enablement comments cannot be represented")
+	for _, oldObjectWarning := range []string{
+		"extensions cannot be represented",
+		"functions contain raw SQL bodies",
+		"views contain raw SQL bodies",
+		"materialized views contain raw SQL bodies",
+		"triggers contain raw SQL bodies",
+		"RLS policies cannot be represented",
+		"RLS enablement cannot be represented",
+		"roles cannot be represented",
+		"grants cannot be represented",
+	} {
+		c.Assert(stderr.String(), qt.Not(qt.Contains), oldObjectWarning)
+	}
+
+	content, err := os.ReadFile(outPath)
+	c.Assert(err, qt.IsNil)
+	parsed, err := atlashcl.Parse(content, "schema.hcl")
+	c.Assert(err, qt.IsNil, qt.Commentf("schema.hcl:\n%s", string(content)))
+	c.Assert(parsed.Extensions, qt.HasLen, 1)
+	c.Assert(parsed.Functions, qt.HasLen, 1)
+	c.Assert(parsed.Views, qt.HasLen, 1)
+	c.Assert(parsed.MaterializedViews, qt.HasLen, 1)
+	c.Assert(parsed.Triggers, qt.HasLen, 1)
+	c.Assert(parsed.RLSPolicies, qt.HasLen, 1)
+	c.Assert(parsed.RLSEnabledTables, qt.HasLen, 1)
+	c.Assert(parsed.Roles, qt.HasLen, 1)
+	c.Assert(parsed.Grants, qt.HasLen, 3)
+}
+
 func TestSchemaCommand_RegistersNativePaths(t *testing.T) {
 	c := qt.New(t)
 

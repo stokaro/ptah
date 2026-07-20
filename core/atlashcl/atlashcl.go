@@ -55,35 +55,59 @@ type parser struct {
 
 func (p *parser) parseBody(body *hclsyntax.Body) error {
 	for _, block := range body.Blocks {
-		switch block.Type {
-		case "schema":
-			if len(block.Labels) != 1 {
-				return p.blockError(block, "schema block requires exactly one label")
-			}
-			if err := p.rejectUnsupportedSchemaBody(block); err != nil {
-				return err
-			}
-			p.db.Schemas = append(p.db.Schemas, goschema.Schema{
-				Name:    block.Labels[0],
-				Comment: p.optionalString(block.Body.Attributes["comment"]),
-				Charset: p.optionalString(block.Body.Attributes["charset"]),
-				Collate: p.optionalString(block.Body.Attributes["collate"]),
-			})
-		case "enum":
-			if err := p.parseEnum(block); err != nil {
-				return err
-			}
-		case "table":
-			if err := p.parseTable(block); err != nil {
-				return err
-			}
-		case "env", "variable":
-			// Project-level Atlas HCL can carry env/variable blocks next to schema
-			// blocks. They do not define schema objects directly.
-		default:
-			return p.blockError(block, "unsupported top-level block %q", block.Type)
+		if err := p.parseTopLevelBlock(block); err != nil {
+			return err
 		}
 	}
+	return nil
+}
+
+func (p *parser) parseTopLevelBlock(block *hclsyntax.Block) error {
+	switch block.Type {
+	case "schema":
+		return p.parseSchema(block)
+	case "enum":
+		return p.parseEnum(block)
+	case "table":
+		return p.parseTable(block)
+	case "extension":
+		return p.parseExtension(block)
+	case "function":
+		return p.parseFunction(block)
+	case "view":
+		return p.parseView(block)
+	case "materialized":
+		return p.parseMaterializedView(block)
+	case "trigger":
+		return p.parseTrigger(block)
+	case "policy":
+		return p.parsePolicy(block)
+	case "role":
+		return p.parseRole(block)
+	case "permission":
+		return p.parsePermission(block)
+	case "env", "variable":
+		// Project-level Atlas HCL can carry env/variable blocks next to schema
+		// blocks. They do not define schema objects directly.
+		return nil
+	default:
+		return p.blockError(block, "unsupported top-level block %q", block.Type)
+	}
+}
+
+func (p *parser) parseSchema(block *hclsyntax.Block) error {
+	if len(block.Labels) != 1 {
+		return p.blockError(block, "schema block requires exactly one label")
+	}
+	if err := p.rejectUnsupportedSchemaBody(block); err != nil {
+		return err
+	}
+	p.db.Schemas = append(p.db.Schemas, goschema.Schema{
+		Name:    block.Labels[0],
+		Comment: p.optionalString(block.Body.Attributes["comment"]),
+		Charset: p.optionalString(block.Body.Attributes["charset"]),
+		Collate: p.optionalString(block.Body.Attributes["collate"]),
+	})
 	return nil
 }
 
@@ -200,6 +224,12 @@ func (p *parser) parseTableBlock(table *goschema.Table, fieldsStart int, block *
 			return p.blockError(block, "table %q has multiple partition blocks", table.Name)
 		}
 		table.Partition = partition
+	case "row_security":
+		rlsEnabled, err := p.parseRowSecurity(table, block)
+		if err != nil {
+			return err
+		}
+		p.db.RLSEnabledTables = append(p.db.RLSEnabledTables, rlsEnabled)
 	default:
 		return p.blockError(block, "unsupported table block %q", block.Type)
 	}
