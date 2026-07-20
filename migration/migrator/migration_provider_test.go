@@ -488,7 +488,7 @@ DROP TABLE users;
 	c.Assert(err, qt.ErrorMatches, `failed to load Atlas migration 20240305171147_invalid_down_directive.sql: invalid migration directives in 20240305171147_invalid_down_directive.sql#down.sql: invalid \+ptah no_transaction value "maybe": expected true or false`)
 }
 
-func TestNewFSMigrationProvider_AtlasTxtarDownNoTransactionIsMigrationLevel(t *testing.T) {
+func TestNewFSMigrationProvider_AtlasTxtarDownNoTransactionIsDirectional(t *testing.T) {
 	c := qt.New(t)
 
 	fsys := fstest.MapFS{
@@ -508,6 +508,32 @@ DROP TABLE users;
 	migrations := provider.Migrations()
 	c.Assert(migrations, qt.HasLen, 1)
 	c.Assert(migrations[0].NoTransaction, qt.IsTrue)
+	c.Assert(migrations[0].UpNoTransaction, qt.IsFalse)
+	c.Assert(migrations[0].DownNoTransaction, qt.IsTrue)
+}
+
+func TestNewFSMigrationProvider_AtlasTxModeNoneIsNoTransaction(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"20240305171147_concurrent_index.sql": &fstest.MapFile{Data: []byte(`-- atlas:txtar
+
+-- migration.sql --
+-- atlas:txmode none
+CREATE INDEX CONCURRENTLY users_email_idx ON users (email);
+
+-- down.sql --
+DROP INDEX users_email_idx;
+`)},
+	}
+	provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
+	c.Assert(err, qt.IsNil)
+
+	migrations := provider.Migrations()
+	c.Assert(migrations, qt.HasLen, 1)
+	c.Assert(migrations[0].NoTransaction, qt.IsTrue)
+	c.Assert(migrations[0].UpNoTransaction, qt.IsTrue)
+	c.Assert(migrations[0].DownNoTransaction, qt.IsFalse)
 }
 
 func TestNewFSMigrationProvider_UnknownOnlySQLFilesError(t *testing.T) {

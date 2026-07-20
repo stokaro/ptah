@@ -483,11 +483,25 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 		Schema:     kv["schema"],
 		Engine:     kv["engine"],
 		Comment:    kv["comment"],
-		PrimaryKey: strings.Split(kv["primary_key"], ","),
-		Checks:     strings.Split(kv["checks"], ","),
+		PrimaryKey: splitCSVAttribute(kv["primary_key"]),
+		Checks:     splitCSVAttribute(kv["checks"]),
 		CustomSQL:  kv["custom"],
 		Overrides:  parseutils.ParsePlatformSpecific(kv),
 	})
+}
+
+func splitCSVAttribute(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	values := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			values = append(values, part)
+		}
+	}
+	return values
 }
 
 type schemaParseState struct {

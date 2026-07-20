@@ -190,6 +190,26 @@ type User struct {
 	c.Assert(db.Fields[0].IdentityOptions, qt.Equals, "MINVALUE 0 START WITH 0")
 }
 
+func TestParseSource_TableCommentLeavesAbsentCSVAttributesEmpty(t *testing.T) {
+	c := qt.New(t)
+
+	db := mustParseSource(c, "schema.go", `
+package test
+
+//migrator:schema:table name="users"
+type User struct {
+	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+}
+`)
+
+	c.Assert(db.Tables, qt.HasLen, 1)
+	c.Assert(db.Tables[0].PrimaryKey, qt.IsNil)
+	c.Assert(db.Tables[0].Checks, qt.IsNil)
+	c.Assert(db.Fields, qt.HasLen, 1)
+	c.Assert(db.Fields[0].Primary, qt.IsTrue)
+}
+
 func TestParseSchemaObjectAnnotations(t *testing.T) {
 	c := qt.New(t)
 

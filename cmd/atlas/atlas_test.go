@@ -325,5 +325,5 @@ func TestNewAtlasCommand_UnsupportedCommandsAreExplicit(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, "atlas schema apply compatibility is not implemented yet")
+	c.Assert(err, qt.ErrorMatches, "atlas schema apply is not implemented yet")
 }

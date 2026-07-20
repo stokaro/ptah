@@ -71,6 +71,24 @@ func TestLoadPriorMigrationsMissingDir(t *testing.T) {
 	c.Assert(migrations, qt.HasLen, 0)
 }
 
+func TestVerifyShadowMigrationConnectErrorIsStructured(t *testing.T) {
+	c := qt.New(t)
+
+	err := verifyShadowMigration(context.Background(), shadowMigrationOptions{
+		DatabaseURL: "not-a-dsn",
+		Dialect:     "postgres",
+	})
+
+	var shadowErr *ShadowVerificationError
+	c.Assert(err, qt.ErrorAs, &shadowErr)
+	c.Assert(shadowErr.Result.Stage, qt.Equals, "connect")
+	c.Assert(shadowErr.Result.Success, qt.IsFalse)
+	c.Assert(shadowErr.Result.Mismatches, qt.HasLen, 1)
+	c.Assert(shadowErr.Result.Mismatches[0].Kind, qt.Equals, "connect_error")
+	c.Assert(shadowErr.Err, qt.IsNotNil)
+	c.Assert(err, qt.ErrorMatches, `shadow check failed: connect to shadow database: invalid database URL: missing scheme`)
+}
+
 func TestGenerateMigrationShadowVerificationWithRealDB(t *testing.T) {
 	dbURL := shadowTestDatabaseURL()
 	if dbURL == "" {
@@ -112,7 +130,13 @@ func TestGenerateMigrationShadowVerificationWithRealDB(t *testing.T) {
 		})
 
 		c.Assert(files, qt.IsNil)
-		c.Assert(err, qt.ErrorMatches, `shadow check failed: missing column users\.name`)
+		c.Assert(err.Error(), qt.Contains, "shadow check failed: missing column users.name: ")
+		var shadowErr *ShadowVerificationError
+		c.Assert(err, qt.ErrorAs, &shadowErr)
+		c.Assert(shadowErr.Result.Stage, qt.Equals, "replay")
+		c.Assert(shadowErr.Result.Mismatches, qt.HasLen, 1)
+		c.Assert(shadowErr.Result.Mismatches[0].Kind, qt.Equals, "replay_error")
+		c.Assert(shadowErr.Err, qt.IsNotNil)
 		matches, globErr := filepath.Glob(filepath.Join(migrationsDir, "*.sql"))
 		c.Assert(globErr, qt.IsNil)
 		c.Assert(matches, qt.HasLen, 2)
@@ -193,10 +217,11 @@ func TestGenerateMigrationConcurrentIndexOnPopulatedPostgresTableWithRealDB(t *t
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.IsNotNil)
-	c.Assert(files.Files, qt.HasLen, 1)
-	c.Assert(files.Files[0].NoTransaction, qt.IsTrue)
+	c.Assert(files.Files, qt.HasLen, 2)
+	c.Assert(files.Files[0].NoTransaction, qt.IsFalse)
+	c.Assert(files.Files[1].NoTransaction, qt.IsTrue)
 
-	upSQL, err := os.ReadFile(files.UpFile)
+	upSQL, err := os.ReadFile(files.Files[1].UpFile)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(upSQL), qt.Contains, "-- +ptah no_transaction")
 	c.Assert(string(upSQL), qt.Contains, `CREATE INDEX CONCURRENTLY IF NOT EXISTS "idx_users_email" ON "users" ("email");`)
