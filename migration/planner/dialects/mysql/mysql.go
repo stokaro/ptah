@@ -1120,6 +1120,12 @@ func (p *Planner) fieldLevelForeignKeyConstraintNode(constraintName string, gene
 // here would abort the migration. Exactly-once emission per (table, name) —
 // split between the two functions and deduped inside each — is what stands in
 // for postgres's IF EXISTS idempotency guard.
+//
+// FK removals are still emitted when the owning table is also being dropped.
+// MySQL/MariaDB do not support PostgreSQL-style DROP TABLE CASCADE, and mutual
+// FK cycles cannot be solved by table ordering alone. Dropping the FKs first
+// gives both acyclic graphs and cycles a deterministic rollback path. Non-FK
+// constraints on dropped tables stay implicit in the DROP TABLE operation.
 func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 	// (table, name) pairs being re-added — modifications owned by
 	// addNewConstraints — plus, per name, how many hosts were recorded at all.
@@ -1141,9 +1147,6 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 		addedBareNames[name] = struct{}{}
 	}
 
-	// Constraints owned by a table that is itself being dropped do not need an
-	// explicit drop — the DROP TABLE cascades them. Emitting one is at best
-	// redundant and at worst invalid, so skip them.
 	droppedTables := make(map[string]struct{}, len(diff.TablesRemoved))
 	for _, t := range diff.TablesRemoved {
 		droppedTables[t] = struct{}{}
@@ -1166,7 +1169,7 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 			// recorded removal host for this name.
 			continue
 		}
-		if _, droppedTable := droppedTables[info.TableName]; droppedTable {
+		if _, droppedTable := droppedTables[info.TableName]; droppedTable && !strings.EqualFold(info.Type, "FOREIGN KEY") {
 			continue
 		}
 		result = p.appendScopedDrop(result, info, dropped)
