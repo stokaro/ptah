@@ -13,8 +13,8 @@ import (
 	"github.com/stokaro/ptah/cmd/drift"
 	"github.com/stokaro/ptah/cmd/generate"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
-	"github.com/stokaro/ptah/core/atlashclrender"
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/internal/atlashclrender"
 	"github.com/stokaro/ptah/internal/goannotationcleanup"
 	"github.com/stokaro/ptah/internal/pathguard"
 )

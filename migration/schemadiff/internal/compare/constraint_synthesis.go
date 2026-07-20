@@ -1,9 +1,9 @@
 package compare
 
 import (
-	"github.com/stokaro/ptah/core/convert/fromschema"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/convert/fromschema"
 )
 
 // synthesizeFieldLevelCheckConstraints turns each field-level `check=`

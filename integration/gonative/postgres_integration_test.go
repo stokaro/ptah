@@ -10,8 +10,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"github.com/stokaro/ptah/dbschema/postgres"
 	"github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/dbschema/postgres"
 	"github.com/stokaro/ptah/internal/testutils"
 )
 

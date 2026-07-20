@@ -3,7 +3,7 @@ package migrator
 import (
 	"strings"
 
-	"github.com/stokaro/ptah/core/lexer"
+	"github.com/stokaro/ptah/internal/lexer"
 )
 
 // directivePrefix marks a ptah directive inside a SQL line comment:

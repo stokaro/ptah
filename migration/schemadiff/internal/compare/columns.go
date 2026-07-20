@@ -8,9 +8,9 @@ import (
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/migration/internal/typechange"
 	"github.com/stokaro/ptah/migration/schemadiff/internal/normalize"
 	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
-	"github.com/stokaro/ptah/migration/typechange"
 )
 
 // TableColumns performs detailed column-level comparison within a specific table.

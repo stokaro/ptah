@@ -37,18 +37,43 @@ import (
 	"fmt"
 
 	"github.com/stokaro/ptah/core/ast"
-	"github.com/stokaro/ptah/core/convert/fromschema"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/core/ptaherr"
-	"github.com/stokaro/ptah/core/renderer/dialects/clickhouse"
-	"github.com/stokaro/ptah/core/renderer/dialects/mariadb"
-	"github.com/stokaro/ptah/core/renderer/dialects/mysql"
-	"github.com/stokaro/ptah/core/renderer/dialects/postgres"
-	"github.com/stokaro/ptah/core/renderer/dialects/sqlite"
-	"github.com/stokaro/ptah/core/renderer/types"
+	"github.com/stokaro/ptah/core/renderer/internal/dialects/clickhouse"
+	"github.com/stokaro/ptah/core/renderer/internal/dialects/mariadb"
+	"github.com/stokaro/ptah/core/renderer/internal/dialects/mysql"
+	"github.com/stokaro/ptah/core/renderer/internal/dialects/postgres"
+	"github.com/stokaro/ptah/core/renderer/internal/dialects/sqlite"
+	"github.com/stokaro/ptah/internal/convert/fromschema"
 )
+
+// RenderVisitor defines the interface for rendering AST nodes to SQL statements.
+//
+// This interface extends ast.Visitor with methods for managing renderer state
+// and retrieving the generated SQL output.
+type RenderVisitor interface {
+	ast.Visitor
+
+	// Dialect returns the database dialect this renderer targets.
+	Dialect() string
+
+	// Reset clears the internal output buffer.
+	Reset()
+
+	// Output returns the current generated SQL output.
+	Output() string
+
+	// Render renders an AST node to SQL and returns the result.
+	Render(node ast.Node) (string, error)
+
+	// GetDialect returns the database dialect.
+	GetDialect() string
+
+	// GetOutput returns the current generated SQL output.
+	GetOutput() string
+}
 
 // SupportedDialects returns a list of all supported database dialects.
 func SupportedDialects() []string {
@@ -62,14 +87,14 @@ func SupportedDialects() []string {
 // handles common dialect aliases (e.g., "postgres" for "postgresql").
 //
 // Returns an error if the dialect is not supported.
-func NewRenderer(dialect string) (types.RenderVisitor, error) {
+func NewRenderer(dialect string) (RenderVisitor, error) {
 	return NewRendererWithCapabilities(dialect, capability.ForDialect(dialect))
 }
 
 // NewRendererWithCapabilities creates a renderer for a concrete server
 // capability set. Use this on live database paths where capabilities were
 // resolved from DBInfo.Version; NewRenderer remains the offline default.
-func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (types.RenderVisitor, error) {
+func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (RenderVisitor, error) {
 	normalizedDialect := platform.NormalizeDialect(dialect)
 
 	switch normalizedDialect {
@@ -115,7 +140,7 @@ func RenderSQLWithCapabilities(dialect string, caps capability.Capabilities, nod
 	return VisitorRenderSQL(r, nodes...)
 }
 
-func VisitorRenderSQL(r types.RenderVisitor, nodes ...ast.Node) (string, error) {
+func VisitorRenderSQL(r RenderVisitor, nodes ...ast.Node) (string, error) {
 	r.Reset()
 	for _, node := range nodes {
 		if err := node.Accept(r); err != nil {

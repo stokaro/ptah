@@ -667,7 +667,7 @@ func isIdentifierPart(character byte) bool {
 //   - Volatility: empty → "VOLATILE"; otherwise uppercased. pg_proc surfaces
 //     this as "IMMUTABLE", "STABLE", or "VOLATILE".
 //
-// The DB-side read path (dbschema/postgres/reader.go) returns canonical case
+// The DB-side read path (internal/dbschema/postgres/reader.go) returns canonical case
 // by construction, so it does not need to call this. The motivating callers
 // are the annotation parser (which sees raw user-typed text) and any
 // programmatic constructor — test fixtures, downstream API consumers — that

@@ -33,8 +33,8 @@ jobs:
 
       - name: Verify fuzz targets
         run: |
-          go test -list '^Fuzz' ./core/lexer | grep '^FuzzLexer$'
-          go test -list '^Fuzz' ./core/parser | grep '^FuzzParseSQL$'
+          go test -list '^Fuzz' ./internal/lexer | grep '^FuzzLexer$'
+          go test -list '^Fuzz' ./internal/parser | grep '^FuzzParseSQL$'
 
       - name: Select fuzz duration
         id: fuzz-duration
@@ -46,7 +46,7 @@ jobs:
           fi
 
       - name: Fuzz lexer
-        run: go test -run '^$' -fuzz=FuzzLexer -fuzztime=${{ steps.fuzz-duration.outputs.fuzztime }} -timeout=15m ./core/lexer
+        run: go test -run '^$' -fuzz=FuzzLexer -fuzztime=${{ steps.fuzz-duration.outputs.fuzztime }} -timeout=15m ./internal/lexer
 
       - name: Fuzz parser
-        run: go test -run '^$' -fuzz=FuzzParseSQL -fuzztime=${{ steps.fuzz-duration.outputs.fuzztime }} -timeout=15m ./core/parser
+        run: go test -run '^$' -fuzz=FuzzParseSQL -fuzztime=${{ steps.fuzz-duration.outputs.fuzztime }} -timeout=15m ./internal/parser

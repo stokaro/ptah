@@ -2,19 +2,19 @@
 
 ## Overview
 
-I have successfully implemented a comprehensive token-to-AST parsing logic for the Ptah schema management system. The parser converts SQL DDL tokens (from the lexer) into Abstract Syntax Tree (AST) nodes that can be used for schema analysis, migration generation, and SQL rendering.
+Ptah contains a comprehensive token-to-AST parsing logic for the Ptah schema management system. The parser converts SQL DDL tokens (from the lexer) into Abstract Syntax Tree (AST) nodes that can be used for schema analysis, migration generation, and SQL rendering.
 
 ## Implementation Summary
 
 ### Core Components
 
-1. **Parser Package** (`core/parser/`)
+1. **Parser Package** (`internal/parser/`)
    - `parser.go` - Main parser implementation with recursive descent parsing
    - `parser_test.go` - Comprehensive test suite with 100% pass rate
    - `README.md` - Detailed documentation and usage examples
 
 2. **Integration with Existing Components**
-   - **Lexer Integration**: Uses `core/lexer` for tokenization
+   - **Lexer Integration**: Uses `internal/lexer` for tokenization
    - **AST Generation**: Creates `core/ast` nodes
    - **Error Handling**: Provides detailed error messages with position information
 
@@ -135,10 +135,10 @@ The parser integrates seamlessly with:
 ## Files Created/Modified
 
 ### New Files
-- `core/parser/parser.go` - Main parser implementation (1,060+ lines)
-- `core/parser/parser_test.go` - Comprehensive test suite (350+ lines)
-- `core/parser/README.md` - Documentation and examples
-- `examples/parser_demo/main.go` - Working demonstration
+- `internal/parser/parser.go` - Main parser implementation (1,060+ lines)
+- `internal/parser/parser_test.go` - Comprehensive test suite (350+ lines)
+- `internal/parser/README.md` - Documentation and examples
+- `internal/examples/parser_demo/main.go` - Working demonstration
 
 ### Fixed Files
 - `core/ast/mocks/visitor.go` - Fixed import path
@@ -166,4 +166,4 @@ The parser foundation supports easy extension for:
 
 ## Conclusion
 
-The token-to-AST parser implementation is complete, fully tested, and ready for production use. It provides a solid foundation for the Ptah schema management system's SQL parsing needs and integrates seamlessly with the existing codebase architecture.
+The token-to-AST parser implementation is internal, fully tested, and ready for production use. It provides a solid foundation for the Ptah schema management system's SQL parsing needs and integrates seamlessly with the existing codebase architecture.

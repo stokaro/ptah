@@ -14,7 +14,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/core/sqllint"
+	"github.com/stokaro/ptah/internal/sqllint"
 )
 
 const (

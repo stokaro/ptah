@@ -13,9 +13,9 @@ import (
 	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/core/sqlutil"
+	"github.com/stokaro/ptah/migration/internal/typechange"
 	"github.com/stokaro/ptah/migration/risk"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
-	"github.com/stokaro/ptah/migration/typechange"
 )
 
 // Severity is the operational risk level for a schema change.

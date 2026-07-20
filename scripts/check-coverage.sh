@@ -5,8 +5,8 @@ threshold="${PTAH_COVERAGE_THRESHOLD:-70.0}"
 profile="${PTAH_COVERAGE_PROFILE:-coverage.out}"
 
 packages="$(
-	go list ./config/... ./core/... ./migration/... ./dbschema/... |
-		grep -vE '/core/ast/mocks$|/core/goschema/testutil$|/core/renderer/dialects/internal/bufwriter$|/core/renderer/types$|/dbschema/internal/dbtest$|/migration/generator/example$|/migration/planner/registry$|/migration/typechange$'
+	go list ./config/... ./core/... ./migration/... ./dbschema/... ./internal/... |
+		grep -vE '/core/ast/mocks$|/core/goschema/testutil$|/core/renderer/internal/dialects/internal/bufwriter$|/internal/dbschema/dbtest$|/internal/examples(/|$)|/internal/testutils$|/migration/generator/example$|/migration/internal/typechange$'
 )"
 
 go test -covermode=atomic -coverprofile="$profile" $packages

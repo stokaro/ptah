@@ -9,7 +9,7 @@ import (
 	"github.com/go-extras/cobraflags"
 	"go.yaml.in/yaml/v3"
 
-	"github.com/stokaro/ptah/migration/onlineddl"
+	"github.com/stokaro/ptah/internal/onlineddl"
 )
 
 // ConfigFlagName is the CLI flag name exposed by [NewConfigFlag].

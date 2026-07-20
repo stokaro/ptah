@@ -14,8 +14,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/migratesum"
 	"github.com/stokaro/ptah/migration/lint"
-	"github.com/stokaro/ptah/migration/migratesum"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 

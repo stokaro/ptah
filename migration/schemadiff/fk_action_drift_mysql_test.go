@@ -7,7 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/core/renderer"
-	"github.com/stokaro/ptah/migration/planner/dialects/mysql"
+	"github.com/stokaro/ptah/internal/planner/dialects/mysql"
 	"github.com/stokaro/ptah/migration/schemadiff"
 )
 

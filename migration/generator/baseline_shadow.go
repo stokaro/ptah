@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/stokaro/ptah/config"
-	"github.com/stokaro/ptah/core/convert/dbschematogo"
 	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/convert/dbschematogo"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/schemadiff"
 )

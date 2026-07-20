@@ -36,42 +36,11 @@ should support `errors.Is(err, ptaherr.ErrUnsupportedDialect)`.
 
 ## Provisional Surface
 
-These packages are currently importable and therefore tracked by CI, but they
-are not yet a stable API commitment. Before GA, either promote them to the
-stable list above or move them behind `internal/` package boundaries. Track that
-package-boundary cleanup in
-[#426](https://github.com/stokaro/ptah/issues/426).
-
-- `github.com/stokaro/ptah/core/astbuilder`
-- `github.com/stokaro/ptah/core/atlashcl`
-- `github.com/stokaro/ptah/core/atlashclrender`
-- `github.com/stokaro/ptah/core/convert/dbschematogo`
-- `github.com/stokaro/ptah/core/convert/fromschema`
-- `github.com/stokaro/ptah/core/convert/goschematogo`
-- `github.com/stokaro/ptah/core/convert/toschema`
-- `github.com/stokaro/ptah/core/lexer`
-- `github.com/stokaro/ptah/core/parser`
-- `github.com/stokaro/ptah/core/renderer/dialects/clickhouse`
-- `github.com/stokaro/ptah/core/renderer/dialects/mariadb`
-- `github.com/stokaro/ptah/core/renderer/dialects/mysql`
-- `github.com/stokaro/ptah/core/renderer/dialects/mysqllike`
-- `github.com/stokaro/ptah/core/renderer/dialects/postgres`
-- `github.com/stokaro/ptah/core/renderer/dialects/sqlite`
-- `github.com/stokaro/ptah/core/renderer/types`
-- `github.com/stokaro/ptah/core/sqllint`
-- `github.com/stokaro/ptah/core/yamlschema`
-- `github.com/stokaro/ptah/dbschema/clickhouse`
-- `github.com/stokaro/ptah/dbschema/mysql`
-- `github.com/stokaro/ptah/dbschema/postgres`
-- `github.com/stokaro/ptah/dbschema/sqlite`
-- `github.com/stokaro/ptah/migration/migratesum`
-- `github.com/stokaro/ptah/migration/onlineddl`
-- `github.com/stokaro/ptah/migration/planner/dialects/clickhouse`
-- `github.com/stokaro/ptah/migration/planner/dialects/mysql`
-- `github.com/stokaro/ptah/migration/planner/dialects/postgres`
-- `github.com/stokaro/ptah/migration/planner/dialects/sqlite`
-- `github.com/stokaro/ptah/migration/planner/registry`
-- `github.com/stokaro/ptah/migration/typechange`
+There is no provisional public surface. Packages that are not listed under
+Stable Embedder API are either command/example/fixture/test packages or are
+behind Go `internal/` boundaries. Promoting another package to public API must
+be an explicit design decision that updates this document and the snapshot in
+the same reviewed change.
 
 ## Compatibility Guard
 

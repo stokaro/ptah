@@ -38,7 +38,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/stokaro/ptah/core/lexer"
+	"github.com/stokaro/ptah/internal/lexer"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/risk"
 )

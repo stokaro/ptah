@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
-	"github.com/stokaro/ptah/migration/migratesum"
+	"github.com/stokaro/ptah/internal/migratesum"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 

@@ -1,6 +1,6 @@
 package sqlutil
 
-import "github.com/stokaro/ptah/core/lexer"
+import "github.com/stokaro/ptah/internal/lexer"
 
 // IsScalarIFExpressionFragment reports whether fragment starts with a MySQL
 // scalar IF(...) expression tail rather than a procedural IF ... THEN block.

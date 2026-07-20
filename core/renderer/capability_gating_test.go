@@ -8,7 +8,7 @@ import (
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/core/renderer"
-	"github.com/stokaro/ptah/core/renderer/dialects/mysql"
+	"github.com/stokaro/ptah/core/renderer/internal/dialects/mysql"
 )
 
 // TestMySQLFamilyRenderers_ConstraintDropGuardValidity pins the renderer-side

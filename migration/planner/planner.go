@@ -67,6 +67,9 @@ package planner
 
 import (
 	"errors"
+	"fmt"
+	"slices"
+	"strings"
 	"sync"
 
 	"github.com/stokaro/ptah/core/ast"
@@ -76,17 +79,21 @@ import (
 	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/core/sqlutil"
-	"github.com/stokaro/ptah/migration/planner/dialects/clickhouse"
-	"github.com/stokaro/ptah/migration/planner/dialects/mysql"
-	"github.com/stokaro/ptah/migration/planner/dialects/postgres"
-	"github.com/stokaro/ptah/migration/planner/dialects/sqlite"
-	"github.com/stokaro/ptah/migration/planner/registry"
+	"github.com/stokaro/ptah/internal/planner/dialects/clickhouse"
+	"github.com/stokaro/ptah/internal/planner/dialects/mysql"
+	"github.com/stokaro/ptah/internal/planner/dialects/postgres"
+	"github.com/stokaro/ptah/internal/planner/dialects/sqlite"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
 var builtInPlannerRegistration struct {
 	once sync.Once
 	err  error
+}
+
+var plannerRegistry struct {
+	mu        sync.RWMutex
+	factories map[string]Factory
 }
 
 // Planner defines the interface for database-specific migration planning.
@@ -136,13 +143,32 @@ var builtInPlannerRegistration struct {
 //
 //		return nodes, nil
 //	}
-type Planner = registry.Planner
+type Planner interface {
+	GenerateMigrationAST(diff *types.SchemaDiff, generated *goschema.Database) []ast.Node
+	GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error)
+}
 
 // Options configures high-level planner helpers.
-type Options = registry.Options
+type Options struct {
+	// Capabilities describes the concrete target server. Nil means the
+	// dialect's default capability preset.
+	Capabilities capability.Capabilities
+	// ConcurrentIndexNames requests PostgreSQL CREATE INDEX CONCURRENTLY for
+	// exactly these newly added index names when the target supports it.
+	ConcurrentIndexNames []string
+}
+
+// CapabilitiesFor returns the configured capability set, falling back to the
+// default preset for dialect when no explicit set was provided.
+func (o Options) CapabilitiesFor(dialect string) capability.Capabilities {
+	if o.Capabilities != nil {
+		return o.Capabilities
+	}
+	return capability.ForDialect(dialect)
+}
 
 // Factory creates a planner for a dialect from construction options.
-type Factory = registry.Factory
+type Factory func(Options) Planner
 
 // Register registers a planner factory for a dialect. Third-party dialects can
 // call this from init and then use the standard planner helpers.
@@ -150,7 +176,7 @@ func Register(dialect string, factory Factory) error {
 	if err := ensureBuiltInPlannersRegistered(); err != nil {
 		return err
 	}
-	return registry.Register(dialect, factory)
+	return registerPlannerFactory(dialect, factory)
 }
 
 // RegisteredDialects returns the registered planner dialect names.
@@ -158,7 +184,15 @@ func RegisteredDialects() []string {
 	if err := ensureBuiltInPlannersRegistered(); err != nil {
 		return nil
 	}
-	return registry.RegisteredDialects()
+	plannerRegistry.mu.RLock()
+	defer plannerRegistry.mu.RUnlock()
+
+	dialects := make([]string, 0, len(plannerRegistry.factories))
+	for dialect := range plannerRegistry.factories {
+		dialects = append(dialects, dialect)
+	}
+	slices.Sort(dialects)
+	return dialects
 }
 
 // GetPlanner returns a dialect-specific migration planner for the given database dialect.
@@ -238,7 +272,7 @@ func GetPlannerWithOptions(dialect string, opts Options) (Planner, error) {
 	if err := ensureBuiltInPlannersRegistered(); err != nil {
 		return nil, err
 	}
-	return registry.Get(dialect, opts)
+	return getRegisteredPlanner(dialect, opts)
 }
 
 func ensureBuiltInPlannersRegistered() error {
@@ -266,27 +300,84 @@ func registerBuiltInPlanners() error {
 		}
 	}
 
-	if err := registry.Register(platform.ClickHouse, func(Options) Planner {
+	if err := registerPlannerFactory(platform.ClickHouse, func(Options) Planner {
 		return clickhouse.New()
 	}); err != nil {
 		return err
 	}
-	return registry.Register(platform.SQLite, func(Options) Planner {
+	return registerPlannerFactory(platform.SQLite, func(Options) Planner {
 		return sqlite.New()
 	})
 }
 
 func registerPostgresFamilyPlanner(dialect string) error {
-	return registry.Register(dialect, func(opts Options) Planner {
+	return registerPlannerFactory(dialect, func(opts Options) Planner {
 		return postgres.NewWithCapabilities(opts.CapabilitiesFor(dialect)).
 			WithConcurrentIndexNames(opts.ConcurrentIndexNames...)
 	})
 }
 
 func registerMySQLFamilyPlanner(dialect string) error {
-	return registry.Register(dialect, func(opts Options) Planner {
+	return registerPlannerFactory(dialect, func(opts Options) Planner {
 		return mysql.NewWithCapabilities(opts.CapabilitiesFor(dialect))
 	})
+}
+
+func registerPlannerFactory(dialect string, factory Factory) error {
+	normalized := normalizeRegistryDialect(dialect)
+	if normalized == "" {
+		return fmt.Errorf("planner registry: dialect must not be empty")
+	}
+	if factory == nil {
+		return fmt.Errorf("planner registry: factory for dialect %q must not be nil", normalized)
+	}
+
+	plannerRegistry.mu.Lock()
+	defer plannerRegistry.mu.Unlock()
+
+	if plannerRegistry.factories == nil {
+		plannerRegistry.factories = make(map[string]Factory)
+	}
+	if _, exists := plannerRegistry.factories[normalized]; exists {
+		return fmt.Errorf("planner registry: dialect %q is already registered", normalized)
+	}
+	plannerRegistry.factories[normalized] = factory
+	return nil
+}
+
+func getRegisteredPlanner(dialect string, opts Options) (Planner, error) {
+	normalized := normalizeRegistryDialect(dialect)
+	if normalized == "" {
+		return nil, unsupportedDialectPlanError(dialect)
+	}
+
+	plannerRegistry.mu.RLock()
+	factory, exists := plannerRegistry.factories[normalized]
+	plannerRegistry.mu.RUnlock()
+	if !exists {
+		return nil, unsupportedDialectPlanError(dialect)
+	}
+	planner := factory(opts)
+	if planner == nil {
+		return nil, fmt.Errorf("planner registry: factory for dialect %q returned nil", normalized)
+	}
+	return planner, nil
+}
+
+func unsupportedDialectPlanError(dialect string) error {
+	return &ptaherr.PlanError{
+		Dialect: dialect,
+		Err:     ptaherr.ErrUnsupportedDialect,
+		Message: fmt.Sprintf("unsupported database dialect: %s", dialect),
+	}
+}
+
+func normalizeRegistryDialect(dialect string) string {
+	normalized := platform.NormalizeDialect(dialect)
+	if normalized != "" {
+		return normalized
+	}
+	return strings.ToLower(strings.TrimSpace(dialect))
 }
 
 // GenerateSchemaDiffAST generates AST nodes for schema differences using the specified dialect.

@@ -9,7 +9,7 @@ import (
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/renderer"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/migration/planner/dialects/postgres"
+	"github.com/stokaro/ptah/internal/planner/dialects/postgres"
 	"github.com/stokaro/ptah/migration/schemadiff"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )

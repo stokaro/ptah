@@ -3,8 +3,8 @@ package sqlutil
 import (
 	"strings"
 
-	"github.com/stokaro/ptah/core/lexer"
 	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/internal/lexer"
 )
 
 // StripComments removes all SQL comments from the input string using lexer-based parsing.

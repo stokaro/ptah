@@ -179,80 +179,6 @@ type TypeDefinition interface{ ... }
 type TypeOperation interface{ ... }
 type Visitor interface{ ... }
 
-## github.com/stokaro/ptah/core/astbuilder
-
-type ColumnBuilder struct{ ... }
-type ForeignKeyBuilder struct{ ... }
-type IndexBuilder struct{ ... }
-    func NewIndex(name, table string, columns ...string) *IndexBuilder
-type SchemaBuilder struct{ ... }
-    func NewSchema() *SchemaBuilder
-type SchemaColumnBuilder struct{ ... }
-type SchemaForeignKeyBuilder struct{ ... }
-type SchemaIndexBuilder struct{ ... }
-type SchemaTableBuilder struct{ ... }
-type TableBuilder struct{ ... }
-    func NewTable(name string) *TableBuilder
-
-## github.com/stokaro/ptah/core/atlashcl
-
-func Parse(data []byte, filename string) (*goschema.Database, error)
-func ParseFile(path string) (*goschema.Database, error)
-
-## github.com/stokaro/ptah/core/atlashclrender
-
-type Diagnostic struct{ ... }
-type Result struct{ ... }
-    func Render(db *goschema.Database) (Result, error)
-type Severity string
-    const SeverityWarning Severity = "warning"
-
-## github.com/stokaro/ptah/core/convert/dbschematogo
-
-func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Database
-
-## github.com/stokaro/ptah/core/convert/fromschema
-
-func FromConstraint(constraint goschema.Constraint) *ast.ConstraintNode
-func FromDatabase(database goschema.Database, targetPlatform string) *ast.StatementList
-func FromEnum(enum goschema.Enum) *ast.EnumNode
-func FromExtension(extension goschema.Extension) *ast.ExtensionNode
-func FromField(field goschema.Field, enums []goschema.Enum, targetPlatform string) *ast.ColumnNode
-func FromFieldWithoutForeignKeys(field goschema.Field, enums []goschema.Enum, targetPlatform string) *ast.ColumnNode
-func FromFunction(function goschema.Function) *ast.CreateFunctionNode
-func FromGrant(grant goschema.Grant) *ast.GrantPrivilegeNode
-func FromIndex(index goschema.Index) *ast.IndexNode
-func FromIndexWithTableMapping(index goschema.Index, structToTableMap map[string]string) *ast.IndexNode
-func FromMaterializedView(view goschema.MaterializedView) *ast.CreateMaterializedViewNode
-func FromRLSEnabledTable(rlsEnabled goschema.RLSEnabledTable) *ast.AlterTableEnableRLSNode
-func FromRLSPolicy(policy goschema.RLSPolicy) *ast.CreatePolicyNode
-func FromRole(role goschema.Role) *ast.CreateRoleNode
-func FromTable(table goschema.Table, fields []goschema.Field, enums []goschema.Enum, ...) *ast.CreateTableNode
-func FromTrigger(trigger goschema.Trigger) *ast.CreateTriggerNode
-func FromView(view goschema.View) *ast.CreateViewNode
-func GenerateForeignKeyName(tableName, fieldName string) string
-func ParseForeignKeyReference(foreign string) *ast.ForeignKeyRef
-func ProcessEmbeddedFields(embeddedFields []goschema.EmbeddedField, originalFields []goschema.Field) []goschema.Field
-
-## github.com/stokaro/ptah/core/convert/goschematogo
-
-func WriteDir(outDir string, files []File) error
-type File struct{ ... }
-    func Render(db *goschema.Database, opts Options) ([]File, error)
-type Options struct{ ... }
-
-## github.com/stokaro/ptah/core/convert/toschema
-
-func MergeFieldOverrides(baseField goschema.Field, platformFields map[string]goschema.Field) goschema.Field
-func MergeTableOverrides(baseTable goschema.Table, platformTables map[string]goschema.Table) goschema.Table
-func ToConstraint(constraint *ast.ConstraintNode, structName, tableName string) (goschema.Constraint, bool)
-func ToDatabase(statements *ast.StatementList) goschema.Database
-func ToEnum(enum *ast.EnumNode) goschema.Enum
-func ToExtension(extension *ast.ExtensionNode) goschema.Extension
-func ToField(column *ast.ColumnNode, structName, sourcePlatform string) goschema.Field
-func ToIndex(index *ast.IndexNode) goschema.Index
-func ToTable(table *ast.CreateTableNode, sourcePlatform string) goschema.Table
-
 ## github.com/stokaro/ptah/core/goschema
 
 func Deduplicate(r *Database)
@@ -287,23 +213,6 @@ type SelfReferencingFK struct{ ... }
 type Table struct{ ... }
 type Trigger struct{ ... }
 type View struct{ ... }
-
-## github.com/stokaro/ptah/core/lexer
-
-type Lexer struct{ ... }
-    func NewLexer(input string) *Lexer
-type Token struct{ ... }
-type TokenType int
-    const TokenUnknown TokenType = iota ...
-
-## github.com/stokaro/ptah/core/parser
-
-type Option func(*Parser)
-    func WithCapabilities(capabilities capability.Capabilities) Option
-    func WithDialect(dialect string) Option
-    func WithTimeout(timeout time.Duration) Option
-type Parser struct{ ... }
-    func NewParser(input string, opts ...Option) *Parser
 
 ## github.com/stokaro/ptah/core/platform
 
@@ -347,65 +256,13 @@ type RenderError struct{ ... }
 
 func GetOrderedCreateStatements(r *goschema.Database, dialect string) ([]string, error)
 func GetOrderedCreateStatementsWithCapabilities(r *goschema.Database, dialect string, caps capability.Capabilities) ([]string, error)
-func NewRenderer(dialect string) (types.RenderVisitor, error)
-func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (types.RenderVisitor, error)
 func RenderSQL(dialect string, nodes ...ast.Node) (string, error)
 func RenderSQLWithCapabilities(dialect string, caps capability.Capabilities, nodes ...ast.Node) (string, error)
 func SupportedDialects() []string
-func VisitorRenderSQL(r types.RenderVisitor, nodes ...ast.Node) (string, error)
-
-## github.com/stokaro/ptah/core/renderer/dialects/clickhouse
-
-const DialectName = "clickhouse"
-type Renderer struct{ ... }
-    func New() *Renderer
-
-## github.com/stokaro/ptah/core/renderer/dialects/mariadb
-
-type Renderer struct{ ... }
-    func New() *Renderer
-    func NewWithCapabilities(caps capability.Capabilities) *Renderer
-
-## github.com/stokaro/ptah/core/renderer/dialects/mysql
-
-type Renderer struct{ ... }
-    func New() *Renderer
-    func NewWithCapabilities(caps capability.Capabilities) *Renderer
-
-## github.com/stokaro/ptah/core/renderer/dialects/mysqllike
-
-type Renderer struct{ ... }
-    func New(dialect string, buf *bufwriter.Writer) *Renderer
-    func NewWithCapabilities(dialect string, buf *bufwriter.Writer, caps capability.Capabilities) *Renderer
-
-## github.com/stokaro/ptah/core/renderer/dialects/postgres
-
-type Renderer struct{ ... }
-    func New() *Renderer
-    func NewWithCapabilities(caps capability.Capabilities, dialect string) *Renderer
-
-## github.com/stokaro/ptah/core/renderer/dialects/sqlite
-
-const DialectName = "sqlite"
-type Renderer struct{ ... }
-    func New() *Renderer
-
-## github.com/stokaro/ptah/core/renderer/types
-
+func VisitorRenderSQL(r RenderVisitor, nodes ...ast.Node) (string, error)
 type RenderVisitor interface{ ... }
-
-## github.com/stokaro/ptah/core/sqllint
-
-const RuleParseError = "SQL001" ...
-type Context struct{ ... }
-type Finding struct{ ... }
-    func LintSource(source Source, opts Options) ([]Finding, error)
-type Options struct{ ... }
-type Rule interface{ ... }
-    func DefaultRules() []Rule
-type Severity string
-    const SeverityInfo Severity = "info" ...
-type Source struct{ ... }
+    func NewRenderer(dialect string) (RenderVisitor, error)
+    func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (RenderVisitor, error)
 
 ## github.com/stokaro/ptah/core/sqlutil
 
@@ -417,11 +274,6 @@ func SplitSQLStatements(sql string) []string
 func SplitSQLStatementsForDialect(sql string, dialect string) []string
 func StripComments(sql string) string
 
-## github.com/stokaro/ptah/core/yamlschema
-
-func Parse(data []byte) (*goschema.Database, error)
-func ParseFile(path string) (*goschema.Database, error)
-
 ## github.com/stokaro/ptah/dbschema
 
 func CloseAndWarn(conn *DatabaseConnection)
@@ -429,36 +281,6 @@ func FormatDatabaseURL(dbURL string) string
 func ReadSchemaWithSchemas(conn *DatabaseConnection, schemas []string) (*types.DBSchema, error)
 type DatabaseConnection struct{ ... }
     func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, error)
-
-## github.com/stokaro/ptah/dbschema/clickhouse
-
-type Reader struct{ ... }
-    func NewClickHouseReader(db *sql.DB, schema string) *Reader
-type Writer struct{ ... }
-    func NewClickHouseWriter(db *sql.DB, schema string) *Writer
-
-## github.com/stokaro/ptah/dbschema/mysql
-
-type Reader struct{ ... }
-    func NewMySQLReader(db *sql.DB, schema string) *Reader
-type Writer struct{ ... }
-    func NewMySQLWriter(db *sql.DB, schema string) *Writer
-
-## github.com/stokaro/ptah/dbschema/postgres
-
-type ExcludeConstraintDefinition struct{ ... }
-type PostgreSQLWriter struct{ ... }
-    func NewPostgreSQLWriter(db *sql.DB, schema string) *PostgreSQLWriter
-type Reader struct{ ... }
-    func NewPostgreSQLReader(db *sql.DB, schema string) *Reader
-    func NewPostgreSQLReaderWithCapabilities(db *sql.DB, schema string, caps capability.Capabilities) *Reader
-
-## github.com/stokaro/ptah/dbschema/sqlite
-
-type Reader struct{ ... }
-    func NewSQLiteReader(db *sql.DB, schema string) *Reader
-type Writer struct{ ... }
-    func NewSQLiteWriter(db *sql.DB, schema string) *Writer
 
 ## github.com/stokaro/ptah/dbschema/types
 
@@ -516,25 +338,6 @@ type RuleConfig struct{ ... }
 type Severity = risk.Severity
     const SeverityWarning Severity = risk.Warning ...
 type Statement struct{ ... }
-
-## github.com/stokaro/ptah/migration/migratesum
-
-const AtlasFileName = "atlas.sum"
-const FileName = "ptah.sum"
-var ErrSumFileMissing = errors.New("ptah.sum not found; run `ptah migrations hash` to create it")
-func FileNameForFormat(format migrator.MigrationDirFormat) (string, error)
-type Entry struct{ ... }
-type Result struct{ ... }
-    func Verify(fsys fs.FS) (*Result, error)
-    func VerifyDir(dir string) (*Result, error)
-    func VerifyDirWithFormat(dir string, format migrator.MigrationDirFormat) (*Result, error)
-    func VerifyWithFormat(fsys fs.FS, format migrator.MigrationDirFormat) (*Result, error)
-type SumFile struct{ ... }
-    func Compute(fsys fs.FS) (*SumFile, error)
-    func ComputeWithFormat(fsys fs.FS, format migrator.MigrationDirFormat) (*SumFile, error)
-    func Parse(data []byte) (*SumFile, error)
-    func Write(dir string) (*SumFile, error)
-    func WriteWithFormat(dir string, format migrator.MigrationDirFormat) (*SumFile, error)
 
 ## github.com/stokaro/ptah/migration/migrator
 
@@ -603,26 +406,6 @@ type RevisionTableFormat string
     func ParseRevisionTableFormat(value string) (RevisionTableFormat, error)
 type StatementInterceptor interface{ ... }
 
-## github.com/stokaro/ptah/migration/onlineddl
-
-const ToolGhost = "ghost" ...
-const FallbackError = "error" ...
-const ConfigFileName = "ptah.yaml"
-const DirectiveFallback = "online_ddl_fallback"
-const DirectiveNone = "none"
-const DirectiveTool = "online_ddl_tool"
-type AlterTarget struct{ ... }
-    func ParseAlterTable(stmt string) (AlterTarget, bool)
-type CommandRunner func(ctx context.Context, binary string, args []string) error
-type Config struct{ ... }
-    func LoadConfig(path string) (*Config, error)
-    func LoadConfigForEnv(path, envName string) (*Config, error)
-type Conn interface{ ... }
-type DSN struct{ ... }
-    func ParseDatabaseURL(dbURL string) (DSN, error)
-type Executor struct{ ... }
-    func New(cfg Config) *Executor
-
 ## github.com/stokaro/ptah/migration/planner
 
 func GenerateSchemaDiffAST(diff *types.SchemaDiff, generated *goschema.Database, dialect string) ([]ast.Node, error)
@@ -638,46 +421,12 @@ func NodeRequiresNoTransaction(dialect string, node ast.Node) bool
 func Register(dialect string, factory Factory) error
 func RegisteredDialects() []string
 func RequiresNoTransaction(dialect string, nodes []ast.Node) bool
-type Factory = registry.Factory
-type Options = registry.Options
-type Planner = registry.Planner
-    func GetPlanner(dialect string) (Planner, error)
-    func GetPlannerWithCapabilities(dialect string, caps capability.Capabilities) (Planner, error)
-    func GetPlannerWithOptions(dialect string, opts Options) (Planner, error)
-
-## github.com/stokaro/ptah/migration/planner/dialects/clickhouse
-
-type Planner struct{}
-    func New() *Planner
-
-## github.com/stokaro/ptah/migration/planner/dialects/mysql
-
-const DialectName = "mysql"
-type Planner struct{ ... }
-    func New() *Planner
-    func NewWithCapabilities(caps capability.Capabilities) *Planner
-
-## github.com/stokaro/ptah/migration/planner/dialects/postgres
-
-const DialectName = "postgres"
-type Planner struct{ ... }
-    func New() *Planner
-    func NewWithCapabilities(caps capability.Capabilities) *Planner
-
-## github.com/stokaro/ptah/migration/planner/dialects/sqlite
-
-const DialectName = platform.SQLite
-type Planner struct{}
-    func New() *Planner
-
-## github.com/stokaro/ptah/migration/planner/registry
-
-func Register(dialect string, factory Factory) error
-func RegisteredDialects() []string
 type Factory func(Options) Planner
 type Options struct{ ... }
 type Planner interface{ ... }
-    func Get(dialect string, opts Options) (Planner, error)
+    func GetPlanner(dialect string) (Planner, error)
+    func GetPlannerWithCapabilities(dialect string, caps capability.Capabilities) (Planner, error)
+    func GetPlannerWithOptions(dialect string, opts Options) (Planner, error)
 
 ## github.com/stokaro/ptah/migration/risk
 
@@ -746,9 +495,4 @@ type Result struct{ ... }
 type SeedFile struct{ ... }
     func Discover(fsys fs.FS) ([]SeedFile, error)
     func Select(seeds []SeedFile, env string) []SeedFile
-
-## github.com/stokaro/ptah/migration/typechange
-
-func IsNarrowing(oldType, newType string) bool
-func Same(left, right string) bool
 
