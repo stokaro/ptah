@@ -42,7 +42,7 @@ func NewMigrateBaselineCommand() *cobra.Command {
 Use this when adopting Ptah on a database whose schema already exists. Generate
 the initial migration from an empty scratch database, verify the existing
 database matches that migration, then baseline the existing database so future
-migrate-up runs apply only new migrations.`,
+ptah migrations up runs apply only new migrations.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return migrateBaselineCommand(cmd, args, flags)
 		},
@@ -177,7 +177,7 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, flags map[string]cob
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	conn.Writer().SetDryRun(dryRun)
+	conn.SchemaWriter().SetDryRun(dryRun)
 	mig := migrator.NewMigrator(conn, provider).
 		WithMigrationsTable(migrationsSchema, migrationsTable).
 		WithRevisionTableFormat(revisionFormat).

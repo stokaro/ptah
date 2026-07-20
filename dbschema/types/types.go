@@ -215,7 +215,7 @@ type SchemaReader interface {
 	ReadSchema() (*DBSchema, error)
 }
 
-// SchemaWriter interface for writing schemas to databases.
+// SchemaExecutor executes SQL statements produced by schema operations.
 //
 // ExecuteSQL accepts a context and an optional slice of arguments that are
 // bound as native driver parameters, mirroring database/sql's ExecContext.
@@ -224,14 +224,29 @@ type SchemaReader interface {
 // prevents the SQL injection class of bugs that the no-args signature used
 // to invite (see issue #130). Identifiers (table/column names) cannot be
 // parameterized — route them through a validated escape helper instead.
-type SchemaWriter interface {
-	DropAllTables() error
+type SchemaExecutor interface {
 	ExecuteSQL(ctx context.Context, sql string, args ...any) error
-	BeginTransaction() error
-	CommitTransaction() error
-	RollbackTransaction() error
-	SetDryRun(dryRun bool)
 	IsDryRun() bool
+}
+
+// SchemaWriter interface for writing schemas to databases.
+type SchemaWriter interface {
+	SchemaExecutor
+	DropAllTables() error
+	BeginTransaction(ctx context.Context) (SchemaTransaction, error)
+	SetDryRun(dryRun bool)
+}
+
+// SchemaTransaction executes schema changes inside a database transaction.
+//
+// It deliberately owns transaction lifecycle instead of storing the active
+// transaction on the parent SchemaWriter. That keeps dialect writers reentrant:
+// concurrent callers may begin independent transactions without racing over
+// shared writer state.
+type SchemaTransaction interface {
+	SchemaExecutor
+	Commit() error
+	Rollback() error
 }
 
 // DBFunction represents a PostgreSQL custom function read from the database

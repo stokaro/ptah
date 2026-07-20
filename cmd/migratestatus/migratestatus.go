@@ -230,7 +230,7 @@ func outputHuman(status *migrator.MigrationStatus, conn *dbschema.DatabaseConnec
 		if status.DirtyRevision.ErrorStatement != "" {
 			fmt.Printf("Error Statement: %s\n", status.DirtyRevision.ErrorStatement)
 		}
-		fmt.Println("\nRun 'migrate-repair --version <version>' after fixing the database state.")
+		fmt.Println("\nRun 'ptah migrations repair --version <version>' after fixing the database state.")
 		return nil
 	}
 
@@ -250,7 +250,7 @@ func outputHuman(status *migrator.MigrationStatus, conn *dbschema.DatabaseConnec
 			}
 		}
 
-		fmt.Println("\nRun 'migrate-up' to apply pending migrations.")
+		fmt.Println("\nRun 'ptah migrations up' to apply pending migrations.")
 	} else {
 		fmt.Println("Status: ✅ Database is up to date")
 	}

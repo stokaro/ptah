@@ -99,17 +99,18 @@ func testPostgresDistributedCommonSubset(
 	}
 
 	if err := recorder.RecordStep("Apply "+label+" DDL", "Apply rendered common-subset SQL to the live distributed-SQL connection", func() error {
-		writer := conn.Writer()
-		if err := writer.BeginTransaction(); err != nil {
+		writer := conn.SchemaWriter()
+		tx, err := writer.BeginTransaction(ctx)
+		if err != nil {
 			return fmt.Errorf("begin %s transaction: %w", label, err)
 		}
 		defer func() {
-			_ = writer.RollbackTransaction()
+			_ = tx.Rollback()
 		}()
-		if err := writer.ExecuteSQL(ctx, sqlText); err != nil {
+		if err := tx.ExecuteSQL(ctx, sqlText); err != nil {
 			return fmt.Errorf("apply %s SQL: %w", label, err)
 		}
-		if err := writer.CommitTransaction(); err != nil {
+		if err := tx.Commit(); err != nil {
 			return fmt.Errorf("commit %s transaction: %w", label, err)
 		}
 		return nil

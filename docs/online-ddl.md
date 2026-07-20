@@ -7,7 +7,7 @@ to hours. Production teams route such changes through
 which rebuild the table as a shadow copy with row-level catch-up and swap it
 in with a near-instant rename.
 
-`ptah migrate-up` / `ptah migrate-down` can invoke these tools for you
+`ptah migrations up` / `ptah migrations down` can invoke these tools for you
 (issue #173). Routing happens two ways.
 
 ## Per-migration directive

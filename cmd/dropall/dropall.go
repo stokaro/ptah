@@ -92,7 +92,7 @@ func dropAllCommand(_ *cobra.Command, _ []string) error {
 	fmt.Println()
 
 	// Set dry run mode on the writer
-	conn.Writer().SetDryRun(dryRun)
+	conn.SchemaWriter().SetDryRun(dryRun)
 
 	// 2. Show extreme warning and ask for confirmation (skip confirmation in dry run mode)
 	if dryRun {
@@ -137,7 +137,7 @@ func dropAllCommand(_ *cobra.Command, _ []string) error {
 	} else {
 		fmt.Println("Dropping all tables and enums from database...")
 	}
-	err = conn.Writer().DropAllTables()
+	err = conn.SchemaWriter().DropAllTables()
 	if err != nil {
 		return fmt.Errorf("error dropping all tables: %w", err)
 	}

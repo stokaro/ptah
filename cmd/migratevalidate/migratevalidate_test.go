@@ -86,7 +86,7 @@ func TestValidate_MissingSumFileExitsTwo(t *testing.T) {
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 	c.Assert(err, qt.ErrorMatches, ".*ptah.sum not found.*")
 	// The actionable guidance must reach the user, not be swallowed.
-	c.Assert(stderr, qt.Contains, "run `ptah migrate-hash`")
+	c.Assert(stderr, qt.Contains, "run `ptah migrations hash`")
 }
 
 func TestValidate_MissingDirectoryExitsTwo(t *testing.T) {

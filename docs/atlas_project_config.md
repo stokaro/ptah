@@ -78,9 +78,9 @@ This means a repo can keep an Atlas-shaped migration setup while still letting
 one-off CLI invocations override any value:
 
 ```bash
-ptah migrate-status --env local --json
-ptah migrate-up --env local
-ptah migrate-up --env local --db-url postgres://override/db
+ptah migrations status --env local --json
+ptah migrations up --env local
+ptah migrations up --env local --db-url postgres://override/db
 ```
 
 ## Commands
@@ -88,9 +88,9 @@ ptah migrate-up --env local --db-url postgres://override/db
 The project config is currently consumed by commands that need the mapped
 settings:
 
-- `migrate-up`
-- `migrate-down`
-- `migrate-status`
+- `migrations up`
+- `migrations down`
+- `migrations status`
 - `lint`
 - `migrate generate`
 

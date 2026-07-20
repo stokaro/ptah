@@ -51,8 +51,8 @@ func newSQLLintCommand() *cobra.Command {
 		Long: `Lint standalone SQL files using Ptah's SQL parser, AST, and
 target capability presets.
 
-This command is intentionally separate from ptah lint, which is migration
-directory specific.`,
+This command is intentionally separate from ptah migrations lint, which is
+migration directory specific.`,
 		Args:          cobra.ArbitraryArgs,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {

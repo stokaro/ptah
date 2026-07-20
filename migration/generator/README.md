@@ -162,7 +162,7 @@ The generator will return an error if:
 The generated files are compatible with the ptah migration system and can be executed using:
 
 ```bash
-go run ./cmd migrate-up --db-url postgres://user:pass@localhost/db --migrations-dir ./migrations --lock-timeout 3s --statement-timeout 30s
+go run ./cmd migrations up --db-url postgres://user:pass@localhost/db --migrations-dir ./migrations --lock-timeout 3s --statement-timeout 30s
 ```
 
 For PostgreSQL, MySQL, and MariaDB targets, generated migrations containing `ALTER TABLE` automatically include:

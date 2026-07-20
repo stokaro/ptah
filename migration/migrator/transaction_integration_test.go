@@ -63,7 +63,7 @@ func TestMigratorDryRun_PostgresDoesNotCreateMetadataOrMigrationObjects(t *testi
 	cleanupIssue262(t, conn)
 	defer cleanupIssue262(t, conn)
 
-	conn.Writer().SetDryRun(true)
+	conn.SchemaWriter().SetDryRun(true)
 	migration := migrator.CreateMigrationFromSQL(1, "create dry run table",
 		`CREATE TABLE ptah_issue_262_dry_run (id INTEGER PRIMARY KEY);`,
 		`DROP TABLE ptah_issue_262_dry_run;`)

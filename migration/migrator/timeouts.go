@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/dbschema"
 )
 
 const ptahDirectivePrefix = "-- +ptah "
@@ -140,25 +141,29 @@ func (m *Migrator) WithDefaultTimeouts(timeouts MigrationTimeouts) *Migrator {
 	return &tmp
 }
 
-func (m *Migrator) applyTimeoutsWithRestore(ctx context.Context, timeouts MigrationTimeouts) (restoreTimeoutsFunc, error) {
+func (m *Migrator) applyTimeoutsWithRestore(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	timeouts MigrationTimeouts,
+) (restoreTimeoutsFunc, error) {
 	if timeouts.IsZero() {
 		return noopRestoreTimeouts, nil
 	}
 
-	setupStatements, restoreStatements, err := timeoutStatements(m.conn.Info().Dialect, timeouts)
+	setupStatements, restoreStatements, err := timeoutStatements(conn.Info().Dialect, timeouts)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, statement := range setupStatements {
-		if err := m.conn.Writer().ExecuteSQL(ctx, statement); err != nil {
+		if err := conn.Writer().ExecuteSQL(ctx, statement); err != nil {
 			return nil, fmt.Errorf("failed to apply migration timeout: %w", err)
 		}
 	}
 
 	return func(ctx context.Context) error {
 		for _, statement := range restoreStatements {
-			if err := m.conn.Writer().ExecuteSQL(ctx, statement); err != nil {
+			if err := conn.Writer().ExecuteSQL(ctx, statement); err != nil {
 				return fmt.Errorf("failed to restore migration timeout: %w", err)
 			}
 		}

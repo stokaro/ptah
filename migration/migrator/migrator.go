@@ -735,7 +735,8 @@ func (m *Migrator) applyUpMigrations(ctx context.Context, migrations []*Migratio
 }
 
 func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration *Migration, startedAt time.Time) error {
-	if err := m.conn.Writer().BeginTransaction(); err != nil {
+	tx, err := m.conn.SchemaWriter().BeginTransaction(ctx)
+	if err != nil {
 		return m.failMigrationWithDirtyState(
 			ctx,
 			migration,
@@ -745,10 +746,11 @@ func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration 
 			fmt.Sprintf("failed to begin transaction for migration %d", migration.Version),
 		)
 	}
+	txConn := m.conn.WithExecutor(tx)
 
-	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts))
+	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, txConn, mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts))
 	if err != nil {
-		_ = m.conn.Writer().RollbackTransaction()
+		_ = tx.Rollback()
 		return m.failMigrationWithDirtyState(
 			ctx,
 			migration,
@@ -759,9 +761,9 @@ func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration 
 		)
 	}
 
-	if err := migration.Up(ctx, m.conn); err != nil {
+	if err := migration.Up(ctx, txConn); err != nil {
 		err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
-		_ = m.conn.Writer().RollbackTransaction()
+		_ = tx.Rollback()
 		return m.failMigrationWithDirtyState(
 			ctx,
 			migration,
@@ -773,11 +775,11 @@ func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration 
 	}
 
 	if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
-		_ = m.conn.Writer().RollbackTransaction()
+		_ = tx.Rollback()
 		return m.failMigrationWithDirtyState(ctx, migration, startedAt, err, migration.UpSQL, "")
 	}
 
-	if err := m.conn.Writer().CommitTransaction(); err != nil {
+	if err := tx.Commit(); err != nil {
 		return m.failMigrationWithDirtyState(
 			ctx,
 			migration,
@@ -860,7 +862,8 @@ func (m *Migrator) rollbackMigrationTransactional(
 	startedAt time.Time,
 	deleteSQL string,
 ) error {
-	if err := m.conn.Writer().BeginTransaction(); err != nil {
+	tx, err := m.conn.SchemaWriter().BeginTransaction(ctx)
+	if err != nil {
 		return m.failMigrationWithDirtyState(
 			ctx,
 			migration,
@@ -870,10 +873,11 @@ func (m *Migrator) rollbackMigrationTransactional(
 			fmt.Sprintf("failed to begin transaction for migration %d", migration.Version),
 		)
 	}
+	txConn := m.conn.WithExecutor(tx)
 
-	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, mergeMigrationTimeouts(m.defaultTimeouts, migration.DownTimeouts))
+	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, txConn, mergeMigrationTimeouts(m.defaultTimeouts, migration.DownTimeouts))
 	if err != nil {
-		_ = m.conn.Writer().RollbackTransaction()
+		_ = tx.Rollback()
 		return m.failMigrationWithDirtyState(
 			ctx,
 			migration,
@@ -884,9 +888,9 @@ func (m *Migrator) rollbackMigrationTransactional(
 		)
 	}
 
-	if err := migration.Down(ctx, m.conn); err != nil {
+	if err := migration.Down(ctx, txConn); err != nil {
 		err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
-		_ = m.conn.Writer().RollbackTransaction()
+		_ = tx.Rollback()
 		return m.failMigrationWithDirtyState(
 			ctx,
 			migration,
@@ -898,16 +902,16 @@ func (m *Migrator) rollbackMigrationTransactional(
 	}
 
 	if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
-		_ = m.conn.Writer().RollbackTransaction()
+		_ = tx.Rollback()
 		return m.failMigrationWithDirtyState(ctx, migration, startedAt, err, migration.DownSQL, "")
 	}
 
-	if err := m.conn.Writer().ExecuteSQL(ctx, deleteSQL, m.revisionVersionArg(migration.Version)); err != nil {
-		_ = m.conn.Writer().RollbackTransaction()
+	if err := txConn.Writer().ExecuteSQL(ctx, deleteSQL, m.revisionVersionArg(migration.Version)); err != nil {
+		_ = tx.Rollback()
 		return fmt.Errorf("failed to record migration reversion %d: %w", migration.Version, err)
 	}
 
-	if err := m.conn.Writer().CommitTransaction(); err != nil {
+	if err := tx.Commit(); err != nil {
 		return m.failMigrationWithDirtyState(
 			ctx,
 			migration,

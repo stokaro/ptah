@@ -219,7 +219,7 @@ func migrateDownCommand(cmd *cobra.Command, _ []string) error {
 	defer dbschema.CloseAndWarn(conn)
 
 	// Set dry run mode if requested
-	conn.Writer().SetDryRun(dryRun)
+	conn.SchemaWriter().SetDryRun(dryRun)
 
 	if dryRun {
 		fmt.Println("=== DRY RUN MODE ===")

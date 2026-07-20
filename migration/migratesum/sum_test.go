@@ -319,7 +319,7 @@ func TestVerify_MissingAtlasSumFile(t *testing.T) {
 		"1_initial.sql": "CREATE TABLE users (id INT);\n",
 	}), migrator.MigrationDirFormatAtlas)
 	c.Assert(err, qt.ErrorIs, migratesum.ErrSumFileMissing)
-	c.Assert(err, qt.ErrorMatches, "atlas.sum not found; run `ptah migrate-hash --dir-format atlas` to create it")
+	c.Assert(err, qt.ErrorMatches, "atlas.sum not found; run `ptah migrations hash --dir-format atlas` to create it")
 }
 
 func TestVerify_AutoReadsAtlasSum(t *testing.T) {

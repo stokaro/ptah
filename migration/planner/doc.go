@@ -52,11 +52,19 @@
 //		log.Fatal(err)
 //	}
 //
-//	// Execute statements
+//	// Execute statements transactionally
+//	tx, err := conn.SchemaWriter().BeginTransaction(ctx)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
 //	for _, stmt := range statements {
-//		if err := conn.Writer().ExecuteSQL(ctx, stmt); err != nil {
+//		if err := tx.ExecuteSQL(ctx, stmt); err != nil {
+//			tx.Rollback()
 //			log.Fatal(err)
 //		}
+//	}
+//	if err := tx.Commit(); err != nil {
+//		log.Fatal(err)
 //	}
 //
 // # Dialect-Specific Planning

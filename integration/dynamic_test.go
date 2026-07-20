@@ -94,14 +94,14 @@ func TestDynamicScenariosBasic(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	// Clean database
-	err = conn.Writer().DropAllTables()
+	err = conn.SchemaWriter().DropAllTables()
 	c.Assert(err, qt.IsNil)
 
 	t.Run("DynamicBasicEvolution", func(t *testing.T) {
 		c := qt.New(t)
 
 		// Clean database before test
-		err := conn.Writer().DropAllTables()
+		err := conn.SchemaWriter().DropAllTables()
 		c.Assert(err, qt.IsNil)
 
 		// Run the dynamic basic evolution test
@@ -119,7 +119,7 @@ func TestDynamicScenariosBasic(t *testing.T) {
 		c := qt.New(t)
 
 		// Clean database before test
-		err := conn.Writer().DropAllTables()
+		err := conn.SchemaWriter().DropAllTables()
 		c.Assert(err, qt.IsNil)
 
 		// Run the dynamic idempotency test

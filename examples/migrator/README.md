@@ -101,7 +101,7 @@ You can also use these examples with the command line tools by pointing them to 
 # Note: You would need to extract the migrations to a directory first
 # as the CLI tools expect a directory path, not an embedded filesystem
 
-go run ./cmd migrate-status --db-url postgres://user:pass@localhost/db
-go run ./cmd migrate-up --db-url postgres://user:pass@localhost/db
-go run ./cmd migrate-down --db-url postgres://user:pass@localhost/db --target 1
+go run ./cmd migrations status --db-url postgres://user:pass@localhost/db
+go run ./cmd migrations up --db-url postgres://user:pass@localhost/db
+go run ./cmd migrations down --db-url postgres://user:pass@localhost/db --target 1
 ```

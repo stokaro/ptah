@@ -4,6 +4,7 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -61,15 +62,52 @@ func TestWriter_DryRun_NoDBRequired(t *testing.T) {
 	err := w.ExecuteSQL(t.Context(), "SELECT ?", 42)
 	c.Assert(err, qt.IsNil)
 
-	// Begin/Commit/Rollback are documented no-ops on ClickHouse; the
-	// dry-run path simply logs.
-	c.Assert(w.BeginTransaction(), qt.IsNil)
-	c.Assert(w.CommitTransaction(), qt.IsNil)
-	c.Assert(w.RollbackTransaction(), qt.IsNil)
+	// Begin/Commit/Rollback are documented no-ops on ClickHouse; the dry-run
+	// path simply logs.
+	tx, err := w.BeginTransaction(t.Context())
+	c.Assert(err, qt.IsNil)
+	c.Assert(tx.Commit(), qt.IsNil)
+	c.Assert(tx.Rollback(), qt.IsNil)
 
 	// DropAllTables dry-run prints a stub table list and emits no DDL,
 	// so it must succeed without a live DB.
 	c.Assert(w.DropAllTables(), qt.IsNil)
+}
+
+func TestClickHouseWriterConcurrentTransactionNoops(t *testing.T) {
+	c := qt.New(t)
+	w := NewClickHouseWriter(nil, "default")
+	w.SetDryRun(true)
+	ctx := t.Context()
+
+	const goroutines = 64
+	var wg sync.WaitGroup
+	errs := make(chan error, goroutines)
+	start := make(chan struct{})
+
+	for i := range goroutines {
+		wg.Go(func() {
+			<-start
+			tx, err := w.BeginTransaction(ctx)
+			if err != nil {
+				errs <- err
+				return
+			}
+			if i%2 == 0 {
+				errs <- tx.Commit()
+				return
+			}
+			errs <- tx.Rollback()
+		})
+	}
+
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		c.Assert(err, qt.IsNil)
+	}
 }
 
 func TestReaderReadTablesUsesBulkColumnQuery(t *testing.T) {

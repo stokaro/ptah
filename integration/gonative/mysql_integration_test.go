@@ -141,20 +141,20 @@ func TestMySQLWriter_Integration(t *testing.T) {
 
 	t.Run("transaction lifecycle", func(t *testing.T) {
 		// Test successful transaction
-		err := writer.BeginTransaction()
+		tx, err := writer.BeginTransaction(context.Background())
 		c.Assert(err, qt.IsNil)
 
-		err = writer.ExecuteSQL(context.Background(), "SELECT 1")
+		err = tx.ExecuteSQL(context.Background(), "SELECT 1")
 		c.Assert(err, qt.IsNil)
 
-		err = writer.CommitTransaction()
+		err = tx.Commit()
 		c.Assert(err, qt.IsNil)
 
 		// Test rollback transaction
-		err = writer.BeginTransaction()
+		tx, err = writer.BeginTransaction(context.Background())
 		c.Assert(err, qt.IsNil)
 
-		err = writer.RollbackTransaction()
+		err = tx.Rollback()
 		c.Assert(err, qt.IsNil)
 	})
 

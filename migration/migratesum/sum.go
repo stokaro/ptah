@@ -57,7 +57,7 @@ type SumFile struct {
 
 // Compute walks fsys and builds the sum over every migration file the
 // migrator recognizes (NNNNNNNNNN_description.(up|down).sql), so the checksum
-// covers exactly what migrate-up/down would execute. The ptah.sum file itself
+// covers exactly what `ptah migrations up` and `ptah migrations down` execute. The ptah.sum file itself
 // and any non-migration file are excluded.
 func Compute(fsys fs.FS) (*SumFile, error) {
 	return ComputeWithFormat(fsys, migrator.MigrationDirFormatAuto)

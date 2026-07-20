@@ -26,7 +26,7 @@ func TestMigrationGeneratorValidation(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	// Clean database before test
-	err = conn.Writer().DropAllTables()
+	err = conn.SchemaWriter().DropAllTables()
 	c.Assert(err, qt.IsNil)
 
 	// Run the migration generator validation test
@@ -52,7 +52,7 @@ func TestValidateSchemaConsistency(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	// Clean database before test
-	err = conn.Writer().DropAllTables()
+	err = conn.SchemaWriter().DropAllTables()
 	c.Assert(err, qt.IsNil)
 
 	// Create versioned entity manager
@@ -86,7 +86,7 @@ func TestValidateEmptySchema(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	// Clean database before test
-	err = conn.Writer().DropAllTables()
+	err = conn.SchemaWriter().DropAllTables()
 	c.Assert(err, qt.IsNil)
 
 	// Validate empty schema - should pass

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+
+	"github.com/stokaro/ptah/dbschema/types"
 )
 
 // quoteIdent returns a safely-backtick-quoted ClickHouse identifier.
@@ -30,6 +32,10 @@ type Writer struct {
 	dryRun bool
 }
 
+type transactionWriter struct {
+	writer *Writer
+}
+
 // NewClickHouseWriter constructs a Writer.
 func NewClickHouseWriter(db *sql.DB, schema string) *Writer {
 	return &Writer{db: db, schema: schema}
@@ -51,6 +57,9 @@ func (w *Writer) ExecuteSQL(ctx context.Context, sqlExpr string, args ...any) er
 		slog.Info("[DRY RUN] Would execute SQL", "sql", sqlExpr, "args", args)
 		return nil
 	}
+	if w.db == nil {
+		return fmt.Errorf("no database connection")
+	}
 	if _, err := w.db.ExecContext(ctx, sqlExpr, args...); err != nil {
 		return fmt.Errorf("clickhouse: SQL execution failed: %w\nSQL: %s", err, sqlExpr)
 	}
@@ -61,28 +70,36 @@ func (w *Writer) ExecuteSQL(ctx context.Context, sqlExpr string, args ...any) er
 // are experimental and require explicit opt-in per session; the migration
 // engine has no protection model that depends on them, so this is left
 // as a no-op rather than silently enabling experimental flags.
-func (w *Writer) BeginTransaction() error {
+func (w *Writer) BeginTransaction(_ context.Context) (types.SchemaTransaction, error) {
 	if w.dryRun {
 		slog.Info("[DRY RUN] Would begin transaction (no-op on ClickHouse)")
 	}
-	return nil
+	return &transactionWriter{writer: w}, nil
 }
 
-// CommitTransaction is a no-op for ClickHouse — see BeginTransaction.
-func (w *Writer) CommitTransaction() error {
-	if w.dryRun {
+// ExecuteSQL executes SQL through the underlying ClickHouse writer.
+func (w *transactionWriter) ExecuteSQL(ctx context.Context, sqlExpr string, args ...any) error {
+	return w.writer.ExecuteSQL(ctx, sqlExpr, args...)
+}
+
+// Commit is a no-op for ClickHouse — see BeginTransaction.
+func (w *transactionWriter) Commit() error {
+	if w.writer.dryRun {
 		slog.Info("[DRY RUN] Would commit transaction (no-op on ClickHouse)")
 	}
 	return nil
 }
 
-// RollbackTransaction is a no-op for ClickHouse — see BeginTransaction.
-func (w *Writer) RollbackTransaction() error {
-	if w.dryRun {
+// Rollback is a no-op for ClickHouse — see BeginTransaction.
+func (w *transactionWriter) Rollback() error {
+	if w.writer.dryRun {
 		slog.Info("[DRY RUN] Would rollback transaction (no-op on ClickHouse)")
 	}
 	return nil
 }
+
+// IsDryRun reports whether dry-run mode is active.
+func (w *transactionWriter) IsDryRun() bool { return w.writer.IsDryRun() }
 
 // DropAllTables drops every base table in the configured database.
 // Uses DROP TABLE … SYNC so subsequent CREATE TABLE statements don't race

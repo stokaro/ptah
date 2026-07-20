@@ -98,10 +98,10 @@ func main() {
 	fmt.Println("⚠️  Please review the generated SQL carefully before applying the migration!")
 	fmt.Println()
 	fmt.Println("To apply the migration:")
-	fmt.Printf("  go run ./cmd migrate-up --db-url %s --migrations-dir %s\n", databaseURL, outputDir)
+	fmt.Printf("  go run ./cmd migrations up --db-url %s --migrations-dir %s\n", databaseURL, outputDir)
 	fmt.Println()
 	fmt.Println("To rollback the migration:")
-	fmt.Printf("  go run ./cmd migrate-down --db-url %s --migrations-dir %s --target <previous_version>\n", databaseURL, outputDir)
+	fmt.Printf("  go run ./cmd migrations down --db-url %s --migrations-dir %s --target <previous_version>\n", databaseURL, outputDir)
 }
 
 // maskPassword masks the password in a database URL for display purposes

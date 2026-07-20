@@ -52,13 +52,13 @@ The main binary is built as `ptah`:
 ./ptah migrate --root-dir ./models --db-url postgres://user:pass@localhost/db
 
 # Apply migrations
-./ptah migrate-up --db-url postgres://user:pass@localhost/db --migrations-dir ./migrations
+./ptah migrations up --db-url postgres://user:pass@localhost/db --migrations-dir ./migrations
 
 # Rollback migrations
-./ptah migrate-down --db-url postgres://user:pass@localhost/db --migrations-dir ./migrations --target 5
+./ptah migrations down --db-url postgres://user:pass@localhost/db --migrations-dir ./migrations --target 5
 
 # Check migration status
-./ptah migrate-status --db-url postgres://user:pass@localhost/db --migrations-dir ./migrations
+./ptah migrations status --db-url postgres://user:pass@localhost/db --migrations-dir ./migrations
 
 # Print version metadata
 ./ptah version

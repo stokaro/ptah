@@ -88,7 +88,7 @@ func verifyShadowMigration(ctx context.Context, opts shadowMigrationOptions) err
 		return fmt.Errorf("shadow check failed: shadow database capabilities do not match target %s capabilities", opts.Dialect)
 	}
 
-	if err := conn.Writer().DropAllTables(); err != nil {
+	if err := conn.SchemaWriter().DropAllTables(); err != nil {
 		return fmt.Errorf("shadow check failed: drop all objects: %w", err)
 	}
 	replayCtx := context.Background()
