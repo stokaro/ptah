@@ -20,6 +20,36 @@ func tableStatementByName(statements *ast.StatementList, name string) *ast.Creat
 	return nil
 }
 
+func tableStatementIndexByName(statements *ast.StatementList, name string) int {
+	for i, stmt := range statements.Statements {
+		table, ok := stmt.(*ast.CreateTableNode)
+		if ok && table.Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+func extensionStatementIndexByName(statements *ast.StatementList, name string) int {
+	for i, stmt := range statements.Statements {
+		extension, ok := stmt.(*ast.ExtensionNode)
+		if ok && extension.Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+func functionStatementIndexByName(statements *ast.StatementList, name string) int {
+	for i, stmt := range statements.Statements {
+		function, ok := stmt.(*ast.CreateFunctionNode)
+		if ok && function.Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
 func foreignKeyAlterStatementByName(statements *ast.StatementList, tableName, constraintName string) *ast.AlterTableNode {
 	for _, stmt := range statements.Statements {
 		alter, ok := stmt.(*ast.AlterTableNode)
@@ -34,6 +64,32 @@ func foreignKeyAlterStatementByName(statements *ast.StatementList, tableName, co
 		}
 	}
 	return nil
+}
+
+func indexStatementIndexByName(statements *ast.StatementList, name string) int {
+	for i, stmt := range statements.Statements {
+		index, ok := stmt.(*ast.IndexNode)
+		if ok && index.Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+func foreignKeyAlterStatementIndexByName(statements *ast.StatementList, constraintName string) int {
+	for i, stmt := range statements.Statements {
+		alter, ok := stmt.(*ast.AlterTableNode)
+		if !ok {
+			continue
+		}
+		for _, operation := range alter.Operations {
+			add, ok := operation.(*ast.AddConstraintOperation)
+			if ok && add.Constraint.Name == constraintName && add.Constraint.Type == ast.ForeignKeyConstraint {
+				return i
+			}
+		}
+	}
+	return -1
 }
 
 func TestFromField_BasicProperties(t *testing.T) {
@@ -878,6 +934,83 @@ func TestFromDatabase_TableLevelForeignKeysAreTwoPhase(t *testing.T) {
 	c.Assert(addProfilesFK.Constraint.Reference.Table, qt.Equals, "accounts")
 	c.Assert(addProfilesFK.Constraint.Reference.ReferencedColumns(), qt.DeepEquals, []string{"id"})
 	c.Assert(addProfilesFK.Constraint.Reference.OnUpdate, qt.Equals, "RESTRICT")
+}
+
+func TestFromDatabase_ExtensionsPrecedeTablesAndIndexes(t *testing.T) {
+	c := qt.New(t)
+
+	db := goschema.Database{
+		Extensions: []goschema.Extension{{Name: "citext", IfNotExists: true}},
+		Tables: []goschema.Table{{
+			StructName: "User",
+			Name:       "users",
+		}},
+		Fields: []goschema.Field{
+			{StructName: "User", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "User", Name: "email", Type: "CITEXT"},
+		},
+		Indexes: []goschema.Index{{
+			StructName: "User",
+			Name:       "uq_users_email",
+			Fields:     []string{"email"},
+			Unique:     true,
+		}},
+	}
+
+	result := fromschema.FromDatabase(db, "postgres")
+
+	extension := extensionStatementIndexByName(result, "citext")
+	table := tableStatementIndexByName(result, "users")
+	index := indexStatementIndexByName(result, "uq_users_email")
+
+	c.Assert(extension, qt.Not(qt.Equals), -1)
+	c.Assert(table, qt.Not(qt.Equals), -1)
+	c.Assert(index, qt.Not(qt.Equals), -1)
+	c.Assert(extension < table, qt.IsTrue)
+	c.Assert(extension < index, qt.IsTrue)
+}
+
+func TestFromDatabase_UniqueIndexesPrecedeForeignKeys(t *testing.T) {
+	c := qt.New(t)
+
+	db := goschema.Database{
+		Functions: []goschema.Function{{
+			Name:       "normalize_code",
+			Parameters: "value TEXT",
+			Returns:    "TEXT",
+			Language:   "sql",
+			Body:       "SELECT lower(value)",
+		}},
+		Tables: []goschema.Table{
+			{StructName: "Parent", Name: "parents"},
+			{StructName: "Child", Name: "children"},
+		},
+		Fields: []goschema.Field{
+			{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Parent", Name: "code", Type: "TEXT"},
+			{StructName: "Child", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Child", Name: "parent_code", Type: "TEXT", Foreign: "parents(code)", ForeignKeyName: "fk_children_parent_code"},
+		},
+		Indexes: []goschema.Index{
+			{StructName: "Child", Name: "idx_children_parent_code", Fields: []string{"parent_code"}},
+			{StructName: "Parent", Name: "uq_parents_code", Fields: []string{"code"}, Unique: true},
+		},
+	}
+
+	result := fromschema.FromDatabase(db, "postgres")
+
+	function := functionStatementIndexByName(result, "normalize_code")
+	uniqueIndex := indexStatementIndexByName(result, "uq_parents_code")
+	foreignKey := foreignKeyAlterStatementIndexByName(result, "fk_children_parent_code")
+	nonUniqueIndex := indexStatementIndexByName(result, "idx_children_parent_code")
+
+	c.Assert(function, qt.Not(qt.Equals), -1)
+	c.Assert(uniqueIndex, qt.Not(qt.Equals), -1)
+	c.Assert(foreignKey, qt.Not(qt.Equals), -1)
+	c.Assert(nonUniqueIndex, qt.Not(qt.Equals), -1)
+	c.Assert(function < uniqueIndex, qt.IsTrue)
+	c.Assert(uniqueIndex < foreignKey, qt.IsTrue)
+	c.Assert(foreignKey < nonUniqueIndex, qt.IsTrue)
 }
 
 func TestFromDatabase_SQLiteForeignKeysAreInline(t *testing.T) {
