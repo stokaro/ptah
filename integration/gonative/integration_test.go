@@ -11,9 +11,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/convert/fromschema"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/renderer"
+	"github.com/stokaro/ptah/internal/convert/fromschema"
 )
 
 // TestGenerateCreateTableFromStubs tests SQL generation from the sample entity files in stubs directory

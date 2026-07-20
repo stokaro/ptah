@@ -12,8 +12,8 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/onlineddl"
 	"github.com/stokaro/ptah/migration/migrator"
-	"github.com/stokaro/ptah/migration/onlineddl"
 )
 
 var migrateDownCmd = &cobra.Command{

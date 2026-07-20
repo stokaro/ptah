@@ -11,7 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
-	"github.com/stokaro/ptah/core/sqllint"
+	"github.com/stokaro/ptah/internal/sqllint"
 )
 
 func execute(args ...string) (stdout, stderr string, err error) {

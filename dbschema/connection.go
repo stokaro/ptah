@@ -13,11 +13,11 @@ import (
 
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/platform/capability"
-	"github.com/stokaro/ptah/dbschema/clickhouse"
-	"github.com/stokaro/ptah/dbschema/mysql"
-	"github.com/stokaro/ptah/dbschema/postgres"
-	"github.com/stokaro/ptah/dbschema/sqlite"
 	"github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/dbschema/clickhouse"
+	"github.com/stokaro/ptah/internal/dbschema/mysql"
+	"github.com/stokaro/ptah/internal/dbschema/postgres"
+	"github.com/stokaro/ptah/internal/dbschema/sqlite"
 )
 
 // ConnectToDatabase creates a database connection from a URL.

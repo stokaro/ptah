@@ -9,7 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/cmd/schema"
-	"github.com/stokaro/ptah/core/atlashcl"
+	"github.com/stokaro/ptah/internal/atlashcl"
 )
 
 func TestSchemaExportCommandWritesAtlasHCL(t *testing.T) {
