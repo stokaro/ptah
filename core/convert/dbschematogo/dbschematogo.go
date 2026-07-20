@@ -1,6 +1,7 @@
 package dbschematogo
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/stokaro/ptah/core/goschema"
@@ -10,10 +11,41 @@ import (
 // ConvertDBSchemaToGoSchema converts a database schema to goschema format
 // This is needed for down migrations where we use the current DB state as the target
 func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Database {
-	database := &goschema.Database{
+	database := newDatabase()
+	convertEnums(database, dbSchema.Enums)
+
+	// Index single-column FOREIGN KEY constraints by table.column so the
+	// reconstructed fields can carry the foreign reference and its referential
+	// actions. This is what lets a down migration restore the prior ON DELETE /
+	// ON UPDATE action of a field-level FK (issue #189): the down path treats
+	// the introspected (pre-change) database as the target, so the old action
+	// must survive the round-trip into goschema.
+	fkByColumn := indexForeignKeysByColumn(dbSchema)
+	primaryKeysByTable := compositePrimaryKeysByTable(dbSchema)
+	compositePKColumns := compositePrimaryKeyColumns(primaryKeysByTable)
+	tableStructNames := convertTablesAndFields(database, dbSchema, fkByColumn, primaryKeysByTable, compositePKColumns)
+
+	database.Indexes = convertIndexes(dbSchema, tableStructNames)
+	database.Constraints = convertConstraints(dbSchema, tableStructNames)
+	convertExtensions(database, dbSchema.Extensions)
+	convertRLSPolicies(database, dbSchema.RLSPolicies, tableStructNames)
+	convertFunctions(database, dbSchema.Functions)
+	convertViews(database, dbSchema.Views)
+	convertMaterializedViews(database, dbSchema.MatViews)
+	convertTriggers(database, dbSchema.Triggers)
+	convertRoles(database, dbSchema.Roles)
+	database.Grants = convertGrants(dbSchema.Grants)
+	convertRLSEnabledTables(database, dbSchema.Tables, tableStructNames)
+
+	return database
+}
+
+func newDatabase() *goschema.Database {
+	return &goschema.Database{
 		Tables:            make([]goschema.Table, 0),
 		Fields:            make([]goschema.Field, 0),
 		Indexes:           make([]goschema.Index, 0),
+		Constraints:       make([]goschema.Constraint, 0),
 		Enums:             make([]goschema.Enum, 0),
 		Extensions:        make([]goschema.Extension, 0),
 		Functions:         make([]goschema.Function, 0),
@@ -26,33 +58,36 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 		Grants:            make([]goschema.Grant, 0),
 		Dependencies:      make(map[string][]string),
 	}
+}
 
-	// Convert enums
-	for _, dbEnum := range dbSchema.Enums {
+func convertEnums(database *goschema.Database, dbEnums []dbschematypes.DBEnum) {
+	for _, dbEnum := range dbEnums {
 		database.Enums = append(database.Enums, goschema.Enum{
 			Name:   dbEnum.Name,
 			Values: dbEnum.Values,
 		})
 	}
+}
 
-	// Index single-column FOREIGN KEY constraints by table.column so the
-	// reconstructed fields can carry the foreign reference and its referential
-	// actions. This is what lets a down migration restore the prior ON DELETE /
-	// ON UPDATE action of a field-level FK (issue #189): the down path treats
-	// the introspected (pre-change) database as the target, so the old action
-	// must survive the round-trip into goschema.
-	fkByColumn := indexForeignKeysByColumn(dbSchema)
-
-	// Convert tables and their columns
+func convertTablesAndFields(
+	database *goschema.Database,
+	dbSchema *dbschematypes.DBSchema,
+	fkByColumn map[string]foreignKeyInfo,
+	primaryKeysByTable map[string][]string,
+	compositePKColumns map[string]map[string]bool,
+) map[string]string {
+	tableStructNames := make(map[string]string, len(dbSchema.Tables))
 	for _, dbTable := range dbSchema.Tables {
 		// Generate struct name from table name (simple conversion)
 		structName := generateStructName(dbTable.Name)
+		tableStructNames[dbTable.QualifiedName()] = structName
 
 		table := goschema.Table{
 			StructName: structName,
 			Name:       dbTable.Name,
 			Schema:     dbTable.Schema,
 			Comment:    dbTable.Comment,
+			PrimaryKey: primaryKeysByTable[dbTable.QualifiedName()],
 		}
 		database.Tables = append(database.Tables, table)
 
@@ -64,7 +99,7 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 				Name:          dbColumn.Name,
 				Type:          goSchemaFieldType(dbColumn),
 				Nullable:      dbColumn.IsNullable == "YES",
-				Primary:       dbColumn.IsPrimaryKey,
+				Primary:       dbColumn.IsPrimaryKey && !compositePKColumns[dbTable.QualifiedName()][dbColumn.Name],
 				AutoInc:       dbColumn.IsAutoIncrement,
 				Unique:        dbColumn.IsUnique,
 				Charset:       dbColumn.Charset,
@@ -91,27 +126,39 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 			database.Fields = append(database.Fields, field)
 		}
 	}
+	return tableStructNames
+}
 
-	// Convert indexes
+func convertIndexes(dbSchema *dbschematypes.DBSchema, tableStructNames map[string]string) []goschema.Index {
+	constraintBackedIndexes := constraintBackedIndexesByTable(dbSchema)
+	indexes := make([]goschema.Index, 0, len(dbSchema.Indexes))
 	for _, dbIndex := range dbSchema.Indexes {
 		// Skip primary key indexes as they're handled by primary key fields
 		if dbIndex.IsPrimary {
 			continue
 		}
+		if _, ok := constraintBackedIndexes[dbIndex.QualifiedTableName()+"."+dbIndex.Name]; ok {
+			continue
+		}
 
 		index := goschema.Index{
-			StructName: generateStructName(dbIndex.TableName),
-			Name:       dbIndex.Name,
-			TableName:  dbIndex.QualifiedTableName(),
-			Fields:     dbIndex.Columns,
-			Unique:     dbIndex.IsUnique,
-			Condition:  dbIndex.Condition,
+			StructName:    structNameForTable(tableStructNames, dbIndex.QualifiedTableName(), dbIndex.TableName),
+			Name:          dbIndex.Name,
+			TableName:     dbIndex.QualifiedTableName(),
+			Fields:        dbIndex.Columns,
+			Unique:        dbIndex.IsUnique,
+			Condition:     dbIndex.Condition,
+			NullsDistinct: cloneBoolPtr(dbIndex.NullsDistinct),
+			Type:          dbIndex.Type,
+			Granularity:   dbIndex.Granularity,
 		}
-		database.Indexes = append(database.Indexes, index)
+		indexes = append(indexes, index)
 	}
+	return indexes
+}
 
-	// Convert extensions
-	for _, dbExtension := range dbSchema.Extensions {
+func convertExtensions(database *goschema.Database, dbExtensions []dbschematypes.DBExtension) {
+	for _, dbExtension := range dbExtensions {
 		extension := goschema.Extension{
 			Name:        dbExtension.Name,
 			IfNotExists: true, // Default to true for down migrations for safety
@@ -125,11 +172,16 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 
 		database.Extensions = append(database.Extensions, extension)
 	}
+}
 
-	// Convert RLS policies
-	for _, dbPolicy := range dbSchema.RLSPolicies {
+func convertRLSPolicies(
+	database *goschema.Database,
+	dbPolicies []dbschematypes.DBRLSPolicy,
+	tableStructNames map[string]string,
+) {
+	for _, dbPolicy := range dbPolicies {
 		policy := goschema.RLSPolicy{
-			StructName:          generateStructName(dbPolicy.Table),
+			StructName:          structNameForTable(tableStructNames, dbPolicy.Table, dbPolicy.Table),
 			Name:                dbPolicy.Name,
 			Table:               dbPolicy.Table,
 			PolicyFor:           dbPolicy.PolicyFor,
@@ -140,9 +192,10 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 		}
 		database.RLSPolicies = append(database.RLSPolicies, policy)
 	}
+}
 
-	// Convert functions
-	for _, dbFunction := range dbSchema.Functions {
+func convertFunctions(database *goschema.Database, dbFunctions []dbschematypes.DBFunction) {
+	for _, dbFunction := range dbFunctions {
 		function := goschema.Function{
 			StructName: "", // Functions are not associated with specific structs in DB schema
 			Name:       dbFunction.Name,
@@ -156,8 +209,10 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 		}
 		database.Functions = append(database.Functions, function)
 	}
+}
 
-	for _, dbView := range dbSchema.Views {
+func convertViews(database *goschema.Database, dbViews []dbschematypes.DBView) {
+	for _, dbView := range dbViews {
 		database.Views = append(database.Views, goschema.View{
 			Name:      dbView.QualifiedName(),
 			Body:      dbView.Body,
@@ -165,8 +220,10 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 			Comment:   dbView.Comment,
 		})
 	}
+}
 
-	for _, dbView := range dbSchema.MatViews {
+func convertMaterializedViews(database *goschema.Database, dbViews []dbschematypes.DBMatView) {
+	for _, dbView := range dbViews {
 		materializedView := goschema.MaterializedView{
 			Name:            dbView.QualifiedName(),
 			Body:            dbView.Body,
@@ -176,8 +233,10 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 		materializedView.Canonicalize()
 		database.MaterializedViews = append(database.MaterializedViews, materializedView)
 	}
+}
 
-	for _, dbTrigger := range dbSchema.Triggers {
+func convertTriggers(database *goschema.Database, dbTriggers []dbschematypes.DBTrigger) {
+	for _, dbTrigger := range dbTriggers {
 		trigger := goschema.Trigger{
 			Name:    dbTrigger.Name,
 			Table:   dbTrigger.QualifiedTable(),
@@ -190,9 +249,10 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 		trigger.Canonicalize()
 		database.Triggers = append(database.Triggers, trigger)
 	}
+}
 
-	// Convert roles
-	for _, dbRole := range dbSchema.Roles {
+func convertRoles(database *goschema.Database, dbRoles []dbschematypes.DBRole) {
+	for _, dbRole := range dbRoles {
 		role := goschema.Role{
 			StructName:  "", // Roles are not associated with specific structs in DB schema
 			Name:        dbRole.Name,
@@ -207,29 +267,188 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 		}
 		database.Roles = append(database.Roles, role)
 	}
+}
 
-	database.Grants = convertGrants(dbSchema.Grants)
-
-	// Convert RLS enabled tables from tables that have RLS enabled
-	for _, dbTable := range dbSchema.Tables {
+func convertRLSEnabledTables(
+	database *goschema.Database,
+	dbTables []dbschematypes.DBTable,
+	tableStructNames map[string]string,
+) {
+	for _, dbTable := range dbTables {
 		if dbTable.RLSEnabled {
 			rlsEnabledTable := goschema.RLSEnabledTable{
-				StructName: generateStructName(dbTable.Name),
+				StructName: structNameForTable(tableStructNames, dbTable.QualifiedName(), dbTable.Name),
 				Table:      dbTable.Name,
 				Comment:    "", // Comment not available in DBTable for RLS enablement
 			}
 			database.RLSEnabledTables = append(database.RLSEnabledTables, rlsEnabledTable)
 		}
 	}
+}
 
-	return database
+func compositePrimaryKeyColumns(primaryKeysByTable map[string][]string) map[string]map[string]bool {
+	result := make(map[string]map[string]bool, len(primaryKeysByTable))
+	for tableName, columns := range primaryKeysByTable {
+		columnSet := make(map[string]bool, len(columns))
+		for _, column := range columns {
+			columnSet[column] = true
+		}
+		result[tableName] = columnSet
+	}
+	return result
+}
+
+func compositePrimaryKeysByTable(dbSchema *dbschematypes.DBSchema) map[string][]string {
+	result := make(map[string][]string)
+	for _, constraint := range dbSchema.Constraints {
+		if !strings.EqualFold(constraint.Type, "PRIMARY KEY") {
+			continue
+		}
+		columns := constraint.ColumnNamesOrDefault()
+		if len(columns) <= 1 {
+			continue
+		}
+		result[constraint.QualifiedTableName()] = columns
+	}
+	return result
+}
+
+func convertConstraints(dbSchema *dbschematypes.DBSchema, tableStructNames map[string]string) []goschema.Constraint {
+	constraints := make([]goschema.Constraint, 0, len(dbSchema.Constraints))
+	for _, dbConstraint := range dbSchema.Constraints {
+		constraint, ok := convertConstraint(dbConstraint, tableStructNames)
+		if ok {
+			constraints = append(constraints, constraint)
+		}
+	}
+	return constraints
+}
+
+func convertConstraint(dbConstraint dbschematypes.DBConstraint, tableStructNames map[string]string) (goschema.Constraint, bool) {
+	constraintType := strings.ToUpper(dbConstraint.Type)
+	columns := dbConstraint.ColumnNamesOrDefault()
+	switch constraintType {
+	case "PRIMARY KEY":
+		return goschema.Constraint{}, false
+	case "FOREIGN KEY":
+		if len(columns) <= 1 {
+			return goschema.Constraint{}, false
+		}
+	case "UNIQUE":
+		if len(columns) <= 1 {
+			return goschema.Constraint{}, false
+		}
+	case "CHECK":
+		if dbConstraint.CheckClause == nil || strings.TrimSpace(*dbConstraint.CheckClause) == "" {
+			return goschema.Constraint{}, false
+		}
+		if isPostgresSyntheticNotNullCheck(dbConstraint) {
+			return goschema.Constraint{}, false
+		}
+	case "EXCLUDE":
+		if dbConstraint.UsingMethod == nil || dbConstraint.ExcludeElements == nil {
+			return goschema.Constraint{}, false
+		}
+	default:
+		return goschema.Constraint{}, false
+	}
+
+	return goschema.Constraint{
+		StructName:      structNameForTable(tableStructNames, dbConstraint.QualifiedTableName(), dbConstraint.TableName),
+		Name:            dbConstraint.Name,
+		Type:            constraintType,
+		Table:           dbConstraint.QualifiedTableName(),
+		UsingMethod:     derefString(dbConstraint.UsingMethod),
+		ExcludeElements: derefString(dbConstraint.ExcludeElements),
+		WhereCondition:  derefString(dbConstraint.WhereCondition),
+		CheckExpression: derefString(dbConstraint.CheckClause),
+		Columns:         columns,
+		NullsDistinct:   cloneBoolPtr(dbConstraint.NullsDistinct),
+		ForeignTable:    dbConstraint.QualifiedForeignTableName(),
+		ForeignColumn:   firstString(dbConstraint.ForeignColumnsOrDefault()),
+		ForeignColumns:  dbConstraint.ForeignColumnsOrDefault(),
+		OnDelete:        derefString(dbConstraint.DeleteRule),
+		OnUpdate:        derefString(dbConstraint.UpdateRule),
+	}, true
+}
+
+func constraintBackedIndexesByTable(dbSchema *dbschematypes.DBSchema) map[string]struct{} {
+	result := make(map[string]struct{}, len(dbSchema.Constraints))
+	for _, constraint := range dbSchema.Constraints {
+		switch strings.ToUpper(constraint.Type) {
+		case "PRIMARY KEY", "UNIQUE", "EXCLUDE":
+			result[constraint.QualifiedTableName()+"."+constraint.Name] = struct{}{}
+		}
+	}
+	return result
+}
+
+func isPostgresSyntheticNotNullCheck(constraint dbschematypes.DBConstraint) bool {
+	if constraint.CheckClause == nil || !strings.HasSuffix(constraint.Name, "_not_null") {
+		return false
+	}
+	checkClause := strings.TrimSpace(strings.ToUpper(*constraint.CheckClause))
+	if !strings.HasSuffix(checkClause, " IS NOT NULL") {
+		return false
+	}
+	return strings.Count(checkClause, " IS NOT NULL") == 1
+}
+
+func structNameForTable(tableStructNames map[string]string, qualifiedTableName, fallbackTableName string) string {
+	if structName, ok := tableStructNames[qualifiedTableName]; ok {
+		return structName
+	}
+	return generateStructName(fallbackTableName)
+}
+
+func cloneBoolPtr(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+func firstString(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
 }
 
 func goSchemaFieldType(dbColumn dbschematypes.DBColumn) string {
 	if strings.EqualFold(dbColumn.DataType, "USER-DEFINED") && dbColumn.UDTName != "" {
 		return dbColumn.UDTName
 	}
+	if dbColumn.ColumnType != "" {
+		return dbColumn.ColumnType
+	}
+	if sizedType := sizedColumnType(dbColumn); sizedType != "" {
+		return sizedType
+	}
 	return dbColumn.DataType
+}
+
+func sizedColumnType(dbColumn dbschematypes.DBColumn) string {
+	dataType := strings.ToLower(strings.TrimSpace(dbColumn.DataType))
+	switch dataType {
+	case "character varying", "varchar":
+		if dbColumn.CharacterMaxLength != nil {
+			return fmt.Sprintf("VARCHAR(%d)", *dbColumn.CharacterMaxLength)
+		}
+	case "character", "char":
+		if dbColumn.CharacterMaxLength != nil {
+			return fmt.Sprintf("CHAR(%d)", *dbColumn.CharacterMaxLength)
+		}
+	case "numeric", "decimal":
+		if dbColumn.NumericPrecision != nil && dbColumn.NumericScale != nil {
+			return fmt.Sprintf("NUMERIC(%d,%d)", *dbColumn.NumericPrecision, *dbColumn.NumericScale)
+		}
+		if dbColumn.NumericPrecision != nil {
+			return fmt.Sprintf("NUMERIC(%d)", *dbColumn.NumericPrecision)
+		}
+	}
+	return ""
 }
 
 func setFieldDefaultFromDB(field *goschema.Field, defaultSQL string) {

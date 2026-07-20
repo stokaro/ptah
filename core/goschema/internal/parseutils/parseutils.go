@@ -3,10 +3,11 @@ package parseutils
 import (
 	"maps"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
-var keyValuePairRe = regexp.MustCompile(`(\w+(?:\.\w+)*)=(?:"([^"]*)"|([^\s]+))`)
+var keyValuePairRe = regexp.MustCompile(`(\w+(?:\.\w+)*)=("(?:\\.|[^"\\])*"|[^\s]+)`)
 var boolRe = regexp.MustCompile(`\b(\w+(?:\.\w+)*)\b`)
 
 // directiveTokens is the set of bareword tokens that appear in a
@@ -20,6 +21,7 @@ var directiveTokens = map[string]bool{
 	"embed":      true,
 	"embedded":   true,
 	"constraint": true,
+	"enum":       true,
 	"extension":  true,
 	"function":   true,
 	"rls":        true,
@@ -46,12 +48,16 @@ func ParseKeyValueComment(comment string) map[string]string {
 	// First, handle key=value pairs (quoted and unquoted)
 	for _, match := range keyValuePairRe.FindAllStringSubmatch(comment, -1) {
 		key := match[1]
-		// match[2] is the quoted value (if quoted), match[3] is the unquoted value
-		if match[2] != "" {
-			result[key] = match[2] // Use quoted value
-		} else {
-			result[key] = match[3] // Use unquoted value
+		value := match[2]
+		if strings.HasPrefix(value, `"`) {
+			unquoted, err := strconv.Unquote(value)
+			if err == nil {
+				value = unquoted
+			} else {
+				value = strings.Trim(value, `"`)
+			}
 		}
+		result[key] = value
 	}
 
 	// Build the set of barewords to skip for this specific directive line.
