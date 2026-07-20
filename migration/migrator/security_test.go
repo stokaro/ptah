@@ -102,3 +102,54 @@ func TestMetadataTableSchemaName_SQLServerHonorsConnectionSchema(t *testing.T) {
 		})
 	}
 }
+
+func TestMetadataInformationSchemaName_DialectDefaults(t *testing.T) {
+	tests := []struct {
+		name             string
+		dialect          string
+		connectionSchema string
+		configuredSchema string
+		expected         string
+	}{
+		{
+			name:             "mysql uses current database",
+			dialect:          platform.MySQL,
+			connectionSchema: "ptah_test",
+			expected:         "ptah_test",
+		},
+		{
+			name:             "mariadb uses current database",
+			dialect:          platform.MariaDB,
+			connectionSchema: "ptah_test",
+			expected:         "ptah_test",
+		},
+		{
+			name:     "postgres default public schema",
+			dialect:  platform.Postgres,
+			expected: "public",
+		},
+		{
+			name:             "sqlserver uses connection schema",
+			dialect:          platform.SQLServer,
+			connectionSchema: "tenant_a",
+			expected:         "tenant_a",
+		},
+		{
+			name:             "explicit schema wins",
+			dialect:          platform.MySQL,
+			connectionSchema: "ptah_test",
+			configuredSchema: "tenant_a",
+			expected:         "tenant_a",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := metadataInformationSchemaName(tt.dialect, tt.connectionSchema, tt.configuredSchema)
+
+			c.Assert(got, qt.Equals, tt.expected)
+		})
+	}
+}

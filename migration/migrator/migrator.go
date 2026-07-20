@@ -439,11 +439,18 @@ func (m *Migrator) migrationsVersionColumnType(ctx context.Context, query string
 }
 
 func (m *Migrator) metadataSchemaName() string {
-	if schema := m.metadataTableSchemaName(); schema != "" {
+	return metadataInformationSchemaName(m.connectionDialect(), m.connectionSchemaName(), m.migrationsSchema)
+}
+
+func metadataInformationSchemaName(dialect, connectionSchema, configuredSchema string) string {
+	if schema := metadataTableSchemaName(dialect, connectionSchema, configuredSchema); schema != "" {
 		return schema
 	}
-	if m.conn != nil && m.conn.Info().Dialect == "postgres" {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.Postgres:
 		return "public"
+	case platform.MySQL, platform.MariaDB:
+		return strings.TrimSpace(connectionSchema)
 	}
 	return ""
 }
