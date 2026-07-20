@@ -563,7 +563,8 @@ schema file:
 
 See [YAML Schema Input](docs/yaml_schema.md) for the supported file format,
 validation rules, and examples. See [Atlas HCL Schema Input](docs/atlas_hcl_schema.md)
-for the supported Atlas HCL subset and current limitations. See
+for the supported Atlas HCL subset, including PostgreSQL schema objects such as
+functions, triggers, RLS, roles, grants, and extensions. See
 [Go Annotations vs. Atlas HCL](docs/go_annotations_vs_atlas_hcl.md) for
 exporting Go annotations to Atlas HCL and optionally cleaning up source
 annotations after a successful export. See [SQLite Support](docs/sqlite.md)
@@ -642,6 +643,7 @@ Export Go annotations to Atlas schema HCL:
 
 See [Go Annotations vs. Atlas HCL](docs/go_annotations_vs_atlas_hcl.md) for
 cleanup semantics, diagnostics, and the currently supported export shape.
+Export diagnostics report semantic loss, not broad object-kind omissions.
 
 ### Database Operations
 

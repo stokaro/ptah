@@ -1,4 +1,4 @@
-package cmdalias
+package cmdadapter
 
 import (
 	"bytes"
@@ -12,7 +12,7 @@ func TestForwardCommandWithTargetHelpShowsTargetFlags(t *testing.T) {
 	c := qt.New(t)
 
 	target := newTestTargetCommand(nil)
-	cmd := NewForwardCommandWithTargetHelp("alias", "Alias command", "target", func() *cobra.Command {
+	cmd := NewForwardCommandWithTargetHelp("atlas", "Atlas adapter command", "target", func() *cobra.Command {
 		return target
 	})
 	var out bytes.Buffer
@@ -26,11 +26,11 @@ func TestForwardCommandWithTargetHelpShowsTargetFlags(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, "--value")
 }
 
-func TestForwardCommandWithTargetHelpUsesAliasUsage(t *testing.T) {
+func TestForwardCommandWithTargetHelpUsesAdapterUsage(t *testing.T) {
 	c := qt.New(t)
 
 	target := newTestTargetCommand(nil)
-	cmd := NewForwardCommandWithTargetHelp("alias", "Alias command", "target", func() *cobra.Command {
+	cmd := NewForwardCommandWithTargetHelp("atlas", "Atlas adapter command", "target", func() *cobra.Command {
 		return target
 	})
 	var out bytes.Buffer
@@ -41,18 +41,18 @@ func TestForwardCommandWithTargetHelpUsesAliasUsage(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "Usage:\n  alias [flags]")
+	c.Assert(out.String(), qt.Contains, "Usage:\n  atlas [flags]")
 	c.Assert(out.String(), qt.Not(qt.Contains), "Usage:\n  target")
 }
 
-func TestForwardCommandWithTargetHelpUsesAliasUsageForPrefixedChild(t *testing.T) {
+func TestForwardCommandWithTargetHelpUsesAdapterUsageForPrefixedChild(t *testing.T) {
 	c := qt.New(t)
 
 	target := &cobra.Command{Use: "target"}
 	child := newTestTargetCommand(nil)
 	child.Use = "child NAME"
 	target.AddCommand(child)
-	cmd := NewForwardCommandWithTargetHelp("alias", "Alias command", "target child", func() *cobra.Command {
+	cmd := NewForwardCommandWithTargetHelp("atlas", "Atlas adapter command", "target child", func() *cobra.Command {
 		return target
 	}, "child")
 	var out bytes.Buffer
@@ -63,7 +63,7 @@ func TestForwardCommandWithTargetHelpUsesAliasUsageForPrefixedChild(t *testing.T
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "Usage:\n  alias NAME [flags]")
+	c.Assert(out.String(), qt.Contains, "Usage:\n  atlas NAME [flags]")
 	c.Assert(out.String(), qt.Contains, "--value")
 	c.Assert(out.String(), qt.Not(qt.Contains), "target child")
 }
@@ -75,18 +75,18 @@ func TestForwardCommandResetsTargetFlagsAndIO(t *testing.T) {
 	target := newTestTargetCommand(func(value string) {
 		values = append(values, value)
 	})
-	cmd := NewForwardCommandWithTargetHelp("alias", "Alias command", "target", func() *cobra.Command {
+	cmd := NewForwardCommandWithTargetHelp("atlas", "Atlas adapter command", "target", func() *cobra.Command {
 		return target
 	})
-	var aliasOut bytes.Buffer
-	cmd.SetOut(&aliasOut)
-	cmd.SetErr(&aliasOut)
+	var adapterOut bytes.Buffer
+	cmd.SetOut(&adapterOut)
+	cmd.SetErr(&adapterOut)
 	cmd.SetArgs([]string{"--value", "changed"})
 
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(aliasOut.String(), qt.Equals, "changed\n")
+	c.Assert(adapterOut.String(), qt.Equals, "changed\n")
 	c.Assert(values, qt.DeepEquals, []string{"changed"})
 
 	var directOut bytes.Buffer

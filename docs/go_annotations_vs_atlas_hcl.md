@@ -42,11 +42,22 @@ directly from Ptah's IR:
 - check constraints from both field annotations and table constraints
 - defaults and default SQL expressions
 - generated and identity columns where represented by the IR
+- PostgreSQL extensions with version and comments
+- PostgreSQL roles
+- PostgreSQL grants as Atlas `permission` blocks for table and schema targets
+- PostgreSQL functions with body, language, return type, simple argument
+  blocks, security, volatility, and comments
+- PostgreSQL views and materialized views with query bodies and comments
+- PostgreSQL triggers with timing/event blocks, `for`, body, and comments
+- PostgreSQL row-level security enablement as `table.row_security`
+- PostgreSQL row-level security policies
 
 Unsupported or lossy details are reported as export diagnostics on stderr.
-Examples include platform-specific overrides and raw SQL-backed objects such as
-functions, triggers, views, materialized views, RLS policies, roles, grants, and
-extensions. These warnings are intentional; the exporter must not silently drop
+Examples include platform-specific overrides, table custom SQL, extension
+`if_not_exists`, role passwords, grantor metadata, non-manual
+materialized-view refresh strategies, RLS enablement comments, and function
+parameter strings that cannot be split into Atlas `arg` blocks without losing
+meaning. These warnings are intentional; the exporter must not silently drop
 schema intent.
 
 ## Cleanup Mode
@@ -91,3 +102,8 @@ The exporter targets the Atlas schema HCL subset documented in
 structural model, parser, or renderer are not emitted as best-effort SQL blobs.
 They produce diagnostics instead so the caller can decide whether the exported
 HCL is complete enough to replace the original Go annotations.
+
+Some PostgreSQL object blocks documented by Atlas are gated by Atlas plans at
+runtime. Ptah's guarantee here is IR preservation through Atlas-style HCL input
+and export; it does not change which Atlas CLI features are available in Atlas
+OSS or Pro.
