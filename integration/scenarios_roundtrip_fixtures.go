@@ -43,41 +43,21 @@ var roundTripFixtures = []roundTripFixture{
 		Name:        "parent_child_fk_drop_order",
 		Description: "parent/child tables created in one migration roll down to empty through generated down SQL",
 		Versions:    []string{"028-roundtrip-parent-child"},
-		// blocked on #127: MySQL/MariaDB cannot drop the parent before the child.
-		BlockedByDialect: map[string]string{
-			"mysql":   "#127",
-			"mariadb": "#127",
-		},
 	},
 	{
 		Name:        "three_level_fk_chain",
 		Description: "three-table foreign-key chain is generated, applied, introspected, and rolled back",
 		Versions:    []string{"034-roundtrip-fk-chain"},
-		// blocked on #127: MySQL/MariaDB need child-before-parent table drops.
-		BlockedByDialect: map[string]string{
-			"mysql":   "#127",
-			"mariadb": "#127",
-		},
 	},
 	{
 		Name:        "diamond_fk_graph",
 		Description: "diamond-shaped foreign-key graph is generated and verified through the round-trip path",
 		Versions:    []string{"035-roundtrip-fk-diamond"},
-		// blocked on #127: MySQL/MariaDB need topological table drops.
-		BlockedByDialect: map[string]string{
-			"mysql":   "#127",
-			"mariadb": "#127",
-		},
 	},
 	{
 		Name:        "mutual_fk_cycle",
 		Description: "mutual foreign-key cycle is generated, applied, introspected, and rolled back",
 		Versions:    []string{"029-roundtrip-mutual-cycle"},
-		// blocked on #127: MySQL/MariaDB need child-before-parent table drops.
-		BlockedByDialect: map[string]string{
-			"mysql":   "#127",
-			"mariadb": "#127",
-		},
 	},
 	{
 		Name:        "same_name_check_drift",

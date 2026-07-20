@@ -32,6 +32,14 @@ func renderMySQLFamily(c *qt.C, dialect string, diff *types.SchemaDiff, generate
 	return sql
 }
 
+func assertContainsBefore(c *qt.C, sql, earlier, later string) {
+	earlierIndex := strings.Index(sql, earlier)
+	laterIndex := strings.Index(sql, later)
+	c.Assert(earlierIndex >= 0, qt.IsTrue, qt.Commentf("%q not found in SQL:\n%s", earlier, sql))
+	c.Assert(laterIndex >= 0, qt.IsTrue, qt.Commentf("%q not found in SQL:\n%s", later, sql))
+	c.Assert(earlierIndex < laterIndex, qt.IsTrue, qt.Commentf("%q must appear before %q:\n%s", earlier, later, sql))
+}
+
 func TestPlanner_GenerateMigrationAST_CompositeForeignKeyAddition(t *testing.T) {
 	for _, dialect := range mysqlFamilyDialects {
 		t.Run(dialect, func(t *testing.T) {
@@ -57,6 +65,27 @@ func TestPlanner_GenerateMigrationAST_CompositeForeignKeyAddition(t *testing.T) 
 
 			c.Assert(sql, qt.Contains, "ALTER TABLE orders ADD CONSTRAINT fk_orders_accounts FOREIGN KEY (tenant_id, owner_id) REFERENCES accounts(tenant_id, id) ON DELETE CASCADE;",
 				qt.Commentf("composite FK addition must preserve all referenced columns; got:\n%s", sql))
+		})
+	}
+}
+
+func TestPlanner_GenerateMigrationAST_DropsFKBeforeRemovingItsTable(t *testing.T) {
+	diff := &types.SchemaDiff{
+		TablesRemoved: []string{"tasks", "projects", "accounts"},
+		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+			{Name: "fk_tasks_project", TableName: "tasks", Type: "FOREIGN KEY"},
+			{Name: "fk_projects_account", TableName: "projects", Type: "FOREIGN KEY"},
+		},
+	}
+
+	for _, dialect := range mysqlFamilyDialects {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			sql := renderMySQLFamily(c, dialect, diff, &goschema.Database{})
+
+			assertContainsBefore(c, sql, "ALTER TABLE tasks DROP FOREIGN KEY fk_tasks_project;", "DROP TABLE IF EXISTS tasks;")
+			assertContainsBefore(c, sql, "ALTER TABLE projects DROP FOREIGN KEY fk_projects_account;", "DROP TABLE IF EXISTS projects;")
 		})
 	}
 }
@@ -523,9 +552,10 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 
 // TestPlanner_GenerateMigrationAST_PureConstraintRemovals_TableQualified locks
 // the pure-removal path: every removal with a known host is dropped exactly
-// once with the type-correct syntax; constraints on tables that are themselves
-// being dropped are skipped; a duplicate removal entry for the same (table,
-// name) is deduped — MySQL would abort on the second, unguarded drop otherwise.
+// once with the type-correct syntax; non-FK constraints on tables that are
+// themselves being dropped are skipped; a duplicate removal entry for the same
+// (table, name) is deduped — MySQL would abort on the second, unguarded drop
+// otherwise.
 func TestPlanner_GenerateMigrationAST_PureConstraintRemovals_TableQualified(t *testing.T) {
 	for _, dialect := range mysqlFamilyDialects {
 		t.Run(dialect, func(t *testing.T) {
