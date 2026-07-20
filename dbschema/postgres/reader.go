@@ -189,6 +189,11 @@ func (r *Reader) readTables() ([]types.DBTable, error) {
 }
 
 func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error) {
+	columnsByTable, err := r.readColumnsForSchema(schemaName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read columns for schema %s: %w", schemaName, err)
+	}
+
 	// Read tables, excluding system tables like schema_migrations
 	tablesQuery := `
 		SELECT table_schema, table_name, table_type,
@@ -218,13 +223,7 @@ func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error)
 			return nil, fmt.Errorf("failed to scan table: %w", err)
 		}
 		table.Schema = r.outputSchema(table.Schema)
-
-		// Read columns for this table
-		columns, err := r.readColumns(schemaName, table.Name)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read columns for table %s: %w", table.QualifiedName(), err)
-		}
-		table.Columns = columns
+		table.Columns = columnsByTable[table.Name]
 
 		tables = append(tables, table)
 	}
@@ -232,10 +231,12 @@ func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error)
 	return tables, nil
 }
 
-// readColumns reads all columns for a specific table
-func (r *Reader) readColumns(schemaName, tableName string) ([]types.DBColumn, error) {
+// readColumnsForSchema reads all columns in a schema in one catalog query and
+// groups them by table name.
+func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBColumn, error) {
 	columnsQuery := `
 		SELECT
+			col.table_name,
 			column_name,
 			data_type,
 			udt_name,
@@ -254,21 +255,24 @@ func (r *Reader) readColumns(schemaName, tableName string) ([]types.DBColumn, er
 			AND a.attname = col.column_name
 			AND NOT a.attisdropped
 		LEFT JOIN pg_attrdef ad ON ad.adrelid = a.attrelid AND ad.adnum = a.attnum
-		WHERE col.table_schema = $1 AND col.table_name = $2
-		ORDER BY col.ordinal_position`
+		WHERE col.table_schema = $1
+		AND col.table_name NOT IN ('schema_migrations')
+		ORDER BY col.table_name, col.ordinal_position`
 
-	rows, err := r.db.Query(columnsQuery, schemaName, tableName)
+	rows, err := r.db.Query(columnsQuery, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query columns: %w", err)
 	}
 	defer rows.Close()
 
-	var columns []types.DBColumn
+	columnsByTable := make(map[string][]types.DBColumn)
 	for rows.Next() {
 		var col types.DBColumn
 		var generatedKind string
 		var generatedExpression string
+		var tableName string
 		err := rows.Scan(
+			&tableName,
 			&col.Name,
 			&col.DataType,
 			&col.UDTName,
@@ -296,10 +300,13 @@ func (r *Reader) readColumns(schemaName, tableName string) ([]types.DBColumn, er
 				strings.Contains(defaultVal, "_seq")
 		}
 
-		columns = append(columns, col)
+		columnsByTable[tableName] = append(columnsByTable[tableName], col)
 	}
 
-	return columns, nil
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return columnsByTable, nil
 }
 
 func postgresGeneratedKind(code string) string {

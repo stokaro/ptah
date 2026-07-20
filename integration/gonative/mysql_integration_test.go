@@ -20,6 +20,12 @@ func skipIfNoMySQL(t *testing.T) string {
 	return requireReachableTestDSN(t, "MYSQL_TEST_DSN", "mysql", "MySQL")
 }
 
+// skipIfNoMariaDB skips only when MARIADB_TEST_DSN is absent; a bad configured DSN fails.
+func skipIfNoMariaDB(t *testing.T) string {
+	t.Helper()
+	return requireReachableTestDSN(t, "MARIADB_TEST_DSN", "mysql", "MariaDB")
+}
+
 // Helper function to find a column by name
 func findColumn(columns []types.DBColumn, name string) *types.DBColumn {
 	for i := range columns {
@@ -49,6 +55,16 @@ func tableExists(db *sql.DB, tableName string, dryRun bool) bool {
 
 func TestMySQLReader_ReadSchema_Integration(t *testing.T) {
 	dsn := skipIfNoMySQL(t)
+	testMySQLCompatibleReaderReadSchema(t, dsn)
+}
+
+func TestMariaDBReader_ReadSchema_Integration(t *testing.T) {
+	dsn := skipIfNoMariaDB(t)
+	testMySQLCompatibleReaderReadSchema(t, dsn)
+}
+
+func testMySQLCompatibleReaderReadSchema(t *testing.T, dsn string) {
+	t.Helper()
 	c := qt.New(t)
 
 	db, err := sql.Open("mysql", dsn)
@@ -60,6 +76,7 @@ func TestMySQLReader_ReadSchema_Integration(t *testing.T) {
 		CREATE TABLE IF NOT EXISTS test_table (
 			id INT AUTO_INCREMENT PRIMARY KEY,
 			name VARCHAR(255) NOT NULL,
+			name_lc VARCHAR(255) GENERATED ALWAYS AS (lower(name)) STORED,
 			status ENUM('active', 'inactive') DEFAULT 'active',
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE KEY unique_name (name)
@@ -87,7 +104,7 @@ func TestMySQLReader_ReadSchema_Integration(t *testing.T) {
 		}
 	}
 	c.Assert(testTable, qt.IsNotNil)
-	c.Assert(testTable.Columns, qt.HasLen, 4)
+	c.Assert(testTable.Columns, qt.HasLen, 5)
 
 	// Verify column properties
 	idCol := findColumn(testTable.Columns, "id")
@@ -99,6 +116,12 @@ func TestMySQLReader_ReadSchema_Integration(t *testing.T) {
 	c.Assert(nameCol, qt.IsNotNil)
 	c.Assert(nameCol.IsNullable, qt.Equals, "NO")
 	c.Assert(nameCol.IsUnique, qt.IsTrue)
+
+	nameLCCol := findColumn(testTable.Columns, "name_lc")
+	c.Assert(nameLCCol, qt.IsNotNil)
+	c.Assert(nameLCCol.GeneratedKind, qt.Equals, "STORED")
+	c.Assert(nameLCCol.GeneratedExpression, qt.IsNotNil)
+	c.Assert(*nameLCCol.GeneratedExpression, qt.Contains, "name")
 
 	statusCol := findColumn(testTable.Columns, "status")
 	c.Assert(statusCol, qt.IsNotNil)
