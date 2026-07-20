@@ -7,6 +7,8 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+
+	"github.com/stokaro/ptah/core/platform"
 )
 
 func TestMigration_Basic(t *testing.T) {
@@ -220,6 +222,47 @@ BEGIN
 END`,
 		"CALL dorepeat(1000)",
 	})
+}
+
+func TestSplitSQLStatementsForDialect_SQLServerGoBatchSeparator(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `-- create first table
+CREATE TABLE [user] ([id] INT PRIMARY KEY);
+GO
+-- create second table
+CREATE TABLE [order] ([id] INT PRIMARY KEY);
+GO -- trailing client separator comment
+`
+
+	result := splitSQLStatementsForDialect(sql, platform.SQLServer)
+
+	c.Assert(result, qt.DeepEquals, []string{
+		"CREATE TABLE [user] ([id] INT PRIMARY KEY)",
+		"CREATE TABLE [order] ([id] INT PRIMARY KEY)",
+	})
+}
+
+func TestMigrationStatementCountForDialect_SQLServerGoBatchSeparator(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE TABLE [a] ([id] INT PRIMARY KEY);
+GO
+CREATE TABLE [b] ([id] INT PRIMARY KEY);
+GO
+`
+
+	c.Assert(migrationStatementCountForDialect(sql, platform.SQLServer), qt.Equals, 2)
+}
+
+func TestMigrationStatementCountForDialect_SQLServerGoBatchCount(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `INSERT INTO [audit_log] ([message]) VALUES ('repeat');
+GO 3
+`
+
+	c.Assert(migrationStatementCountForDialect(sql, platform.SQLServer), qt.Equals, 3)
 }
 
 func TestMigrationFuncFromSQLFilename_Success(t *testing.T) {

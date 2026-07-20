@@ -59,6 +59,7 @@ import (
 
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/platform"
 )
 
 // escapeSQLStringLiteral properly escapes a string value for use in SQL string literals.
@@ -68,6 +69,10 @@ func escapeSQLStringLiteral(value string) string {
 	// Escape single quotes by doubling them (SQL standard)
 	escaped := strings.ReplaceAll(value, "'", "''")
 	return "'" + escaped + "'"
+}
+
+func sqlServerBracketIdentifier(identifier string) string {
+	return "[" + strings.ReplaceAll(identifier, "]", "]]") + "]"
 }
 
 // GenerateForeignKeyName generates a consistent foreign key constraint name
@@ -92,6 +97,8 @@ func defaultGeneratedKind(field goschema.Field, targetPlatform string) string {
 		return "STORED"
 	case targetPlatform == "mysql" || targetPlatform == "mariadb":
 		return "VIRTUAL"
+	case targetPlatform == "sqlserver":
+		return "PERSISTED"
 	case isSQLiteTarget(targetPlatform):
 		return "VIRTUAL"
 	default:
@@ -104,7 +111,7 @@ func isPostgreSQLPlatform(targetPlatform string) bool {
 }
 
 func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschema.Field {
-	fieldType := field.Type
+	fieldType := platformFieldType(field.Type, targetPlatform)
 	checkConstraint := field.Check
 	checkName := field.CheckName
 	comment := field.Comment
@@ -114,46 +121,36 @@ func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschem
 	defaultSet := field.DefaultSet
 	defaultExpr := field.DefaultExpr
 
-	// Apply built-in platform-specific type conversions for MySQL/MariaDB
-	if targetPlatform == "mysql" || targetPlatform == "mariadb" {
-		switch fieldType {
-		case "SERIAL":
-			fieldType = "INT"
-			// Note: AutoInc flag should already be set for SERIAL fields
-		case "BIGSERIAL":
-			fieldType = "BIGINT"
-			// Note: AutoInc flag should already be set for BIGSERIAL fields
-		}
-	}
-
 	// Apply platform-specific overrides if available
 	if targetPlatform == "" || field.Overrides == nil {
-		newField := field // Shallow copy to avoid modifying original field
-		newField.Type = fieldType
-		newField.Check = checkConstraint
-		newField.CheckName = checkName
-		newField.Comment = comment
-		newField.Charset = charset
-		newField.Collate = collate
-		newField.Default = defaultValue
-		newField.DefaultSet = defaultSet
-		newField.DefaultExpr = defaultExpr
-		return newField
+		return fieldWithPlatformValues(
+			field,
+			fieldType,
+			checkConstraint,
+			checkName,
+			comment,
+			charset,
+			collate,
+			defaultValue,
+			defaultSet,
+			defaultExpr,
+		)
 	}
 
 	platformOverrides, exists := field.Overrides[targetPlatform]
 	if !exists {
-		newField := field // Shallow copy to avoid modifying original field
-		newField.Type = fieldType
-		newField.Check = checkConstraint
-		newField.CheckName = checkName
-		newField.Comment = comment
-		newField.Charset = charset
-		newField.Collate = collate
-		newField.Default = defaultValue
-		newField.DefaultSet = defaultSet
-		newField.DefaultExpr = defaultExpr
-		return newField
+		return fieldWithPlatformValues(
+			field,
+			fieldType,
+			checkConstraint,
+			checkName,
+			comment,
+			charset,
+			collate,
+			defaultValue,
+			defaultSet,
+			defaultExpr,
+		)
 	}
 
 	// Override type if specified
@@ -192,7 +189,68 @@ func applyPlatformOverrides(field goschema.Field, targetPlatform string) goschem
 		defaultSet = false
 	}
 
-	newField := field // Shallow copy to avoid modifying original field
+	return fieldWithPlatformValues(
+		field,
+		fieldType,
+		checkConstraint,
+		checkName,
+		comment,
+		charset,
+		collate,
+		defaultValue,
+		defaultSet,
+		defaultExpr,
+	)
+}
+
+func platformFieldType(fieldType, targetPlatform string) string {
+	switch targetPlatform {
+	case platform.MySQL, platform.MariaDB:
+		return mysqlFamilyFieldType(fieldType)
+	case platform.SQLServer:
+		return sqlServerFieldType(fieldType)
+	default:
+		return fieldType
+	}
+}
+
+func mysqlFamilyFieldType(fieldType string) string {
+	switch fieldType {
+	case "SERIAL":
+		return "INT"
+	case "BIGSERIAL":
+		return "BIGINT"
+	default:
+		return fieldType
+	}
+}
+
+func sqlServerFieldType(fieldType string) string {
+	switch fieldType {
+	case "SERIAL":
+		return "INT"
+	case "BIGSERIAL":
+		return "BIGINT"
+	case "TEXT", "VARCHAR":
+		return "NVARCHAR(MAX)"
+	default:
+		return fieldType
+	}
+}
+
+func fieldWithPlatformValues(
+	field goschema.Field,
+	fieldType string,
+	checkConstraint string,
+	checkName string,
+	comment string,
+	charset string,
+	collate string,
+	defaultValue string,
+	defaultSet bool,
+	defaultExpr string,
+) goschema.Field {
+	newField := field
 	newField.Type = fieldType
 	newField.Check = checkConstraint
 	newField.CheckName = checkName
@@ -217,7 +275,7 @@ func handleEnumTypes(field goschema.Field, enums []goschema.Enum, targetPlatform
 	// Validate enum field
 	validateEnumField(field, enums)
 
-	if targetPlatform != "mysql" && targetPlatform != "mariadb" && targetPlatform != "sqlite" {
+	if targetPlatform != "mysql" && targetPlatform != "mariadb" && targetPlatform != "sqlite" && targetPlatform != "sqlserver" {
 		return field
 	}
 
@@ -244,6 +302,13 @@ func applyInlineEnumModel(field goschema.Field, enum goschema.Enum, targetPlatfo
 	case "sqlite":
 		newField.Type = "TEXT"
 		enumCheck := fmt.Sprintf("%s IN (%s)", field.Name, strings.Join(quotedValues, ", "))
+		if field.Check != "" {
+			enumCheck = fmt.Sprintf("(%s) AND %s", field.Check, enumCheck)
+		}
+		newField.Check = enumCheck
+	case "sqlserver":
+		newField.Type = "NVARCHAR(255)"
+		enumCheck := fmt.Sprintf("%s IN (%s)", sqlServerBracketIdentifier(field.Name), strings.Join(quotedValues, ", "))
 		if field.Check != "" {
 			enumCheck = fmt.Sprintf("(%s) AND %s", field.Check, enumCheck)
 		}
@@ -1494,7 +1559,7 @@ func supportsStandaloneViewsAndTriggers(targetPlatform string) bool {
 	switch {
 	case isPostgreSQLPlatform(targetPlatform):
 		return false
-	case strings.EqualFold(targetPlatform, "mysql"), strings.EqualFold(targetPlatform, "mariadb"), isSQLiteTarget(targetPlatform):
+	case strings.EqualFold(targetPlatform, "mysql"), strings.EqualFold(targetPlatform, "mariadb"), strings.EqualFold(targetPlatform, platform.SQLServer), isSQLiteTarget(targetPlatform):
 		return true
 	default:
 		return false

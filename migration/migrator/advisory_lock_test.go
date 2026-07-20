@@ -2,6 +2,7 @@ package migrator
 
 import (
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -113,6 +114,27 @@ func TestMySQLMigrationLockTimeoutSeconds(t *testing.T) {
 			c := qt.New(t)
 
 			c.Assert(mySQLMigrationLockTimeoutSeconds(tt.dialect, tt.timeout), qt.Equals, tt.want)
+		})
+	}
+}
+
+func TestSQLServerMigrationLockTimeoutMilliseconds(t *testing.T) {
+	tests := []struct {
+		name    string
+		timeout time.Duration
+		want    int
+	}{
+		{name: "default waits indefinitely", want: -1},
+		{name: "submillisecond rounds up", timeout: time.Nanosecond, want: 1},
+		{name: "explicit duration", timeout: 1500 * time.Millisecond, want: 1500},
+		{name: "caps at SQL Server int maximum", timeout: time.Duration(math.MaxInt32+1) * time.Millisecond, want: math.MaxInt32},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(sqlServerMigrationLockTimeoutMilliseconds(tt.timeout), qt.Equals, tt.want)
 		})
 	}
 }

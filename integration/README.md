@@ -1,6 +1,6 @@
 # Ptah Migration Library Integration Tests
 
-This directory contains comprehensive integration tests for the Ptah migration library. The tests validate migration functionality across PostgreSQL-family targets, MySQL, MariaDB, and ClickHouse.
+This directory contains comprehensive integration tests for the Ptah migration library. The tests validate migration functionality across PostgreSQL-family targets, MySQL, MariaDB, ClickHouse, and opt-in SQL Server.
 
 ## Overview
 
@@ -56,8 +56,11 @@ The integration test suite covers all aspects of the migration system as outline
 ### Test Fixtures
 
 - **`fixtures/migrations/basic/`** - Standard migration set for testing
+- **`fixtures/migrations/basic_sqlserver/`** - SQL Server variant of the standard migration set
 - **`fixtures/migrations/failing/`** - Migrations with intentional failures
+- **`fixtures/migrations/failing_sqlserver/`** - SQL Server variant of the intentional failure set
 - **`fixtures/migrations/partial_failure/`** - Multi-step migrations with failures
+- **`fixtures/migrations/partial_failure_sqlserver/`** - SQL Server variant of the partial failure set
 - **`fixtures/entities/`** - Go entity definitions for schema generation tests
 
 ## Running Tests
@@ -152,6 +155,13 @@ docker compose --profile test run --rm ptah-tester --databases=cockroachdb --sce
 
 # Test the YugabyteDB common-subset scenario when a YugabyteDB URL is configured
 docker compose --profile test run --rm ptah-tester --databases=yugabytedb --scenarios=dynamic_yugabytedb_common_subset
+
+# Test SQL Server's opt-in migration and schema-rendering subset
+make integration-test-sqlserver
+
+# Or run the SQL Server acceptance scenario directly
+docker compose --profile sqlserver up -d --wait sqlserver
+docker compose --profile test --profile sqlserver run --rm ptah-tester --databases=sqlserver --scenarios=dynamic_sqlserver_identity_schema_bracket_reserved_words
 ```
 
 ### Combined Options
@@ -172,7 +182,7 @@ docker compose --profile test run --rm ptah-tester --report=json --databases=pos
 ### Main Test Command
 
 - `--report` - Report format: `txt`, `json`, or `html` (default: `txt`)
-- `--databases` - Comma-separated list of databases to test (default: `postgres,mysql,mariadb,cockroachdb,yugabytedb`)
+- `--databases` - Comma-separated list of databases to test (default: `postgres,mysql,mariadb,cockroachdb,yugabytedb`; SQL Server is opt-in via `sqlserver` or `mssql`)
 - `--scenarios` - Comma-separated list of specific scenarios to run (default: all)
 - `--verbose` - Enable verbose output
 
@@ -230,6 +240,13 @@ Rich, interactive report with:
 - Version: 10.11+
 - Required permissions: CREATE, DROP, SELECT, INSERT, UPDATE, DELETE
 - Compatible with MySQL driver
+
+### SQL Server
+- Version: SQL Server 2022 / Azure SQL compatible subset
+- Required permissions: CREATE, DROP, SELECT, INSERT, UPDATE, DELETE in the target database
+- Authentication: `github.com/microsoft/go-mssqldb` with `sqlserver://` URLs
+- Coverage: opt-in migration fixtures plus `dynamic_sqlserver_identity_schema_bracket_reserved_words`
+- Limitations: only scenarios marked `SQLServerCompatible` execute; PostgreSQL-only RLS/functions/roles and unsupported schema-evolution scenarios are skipped before database cleanup
 
 ## Test Data
 

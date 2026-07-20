@@ -16,24 +16,28 @@ func GetAllScenarios() []TestScenario {
 	scenarios := []TestScenario{
 		// Basic Functionality
 		{
-			Name:        "apply_incremental_migrations",
-			Description: "Apply multiple sequential migrations to a fresh database",
-			TestFunc:    testApplyIncrementalMigrations,
+			Name:                "apply_incremental_migrations",
+			Description:         "Apply multiple sequential migrations to a fresh database",
+			TestFunc:            testApplyIncrementalMigrations,
+			SQLServerCompatible: true,
 		},
 		{
-			Name:        "rollback_migrations",
-			Description: "Roll back migrations in reverse order",
-			TestFunc:    testRollbackMigrations,
+			Name:                "rollback_migrations",
+			Description:         "Roll back migrations in reverse order",
+			TestFunc:            testRollbackMigrations,
+			SQLServerCompatible: true,
 		},
 		{
-			Name:        "upgrade_to_specific_version",
-			Description: "Apply migrations up to a defined version",
-			TestFunc:    testUpgradeToSpecificVersion,
+			Name:                "upgrade_to_specific_version",
+			Description:         "Apply migrations up to a defined version",
+			TestFunc:            testUpgradeToSpecificVersion,
+			SQLServerCompatible: true,
 		},
 		{
-			Name:        "check_current_version",
-			Description: "Query current migration version",
-			TestFunc:    testCheckCurrentVersion,
+			Name:                "check_current_version",
+			Description:         "Query current migration version",
+			TestFunc:            testCheckCurrentVersion,
+			SQLServerCompatible: true,
 		},
 		{
 			Name:        "generate_desired_schema",
@@ -41,19 +45,22 @@ func GetAllScenarios() []TestScenario {
 			TestFunc:    testGenerateDesiredSchema,
 		},
 		{
-			Name:        "read_actual_db_schema",
-			Description: "Introspect current schema from the database",
-			TestFunc:    testReadActualDBSchema,
+			Name:                "read_actual_db_schema",
+			Description:         "Introspect current schema from the database",
+			TestFunc:            testReadActualDBSchema,
+			SQLServerCompatible: true,
 		},
 		{
-			Name:        "dry_run_support",
-			Description: "Simulate migrations without executing SQL",
-			TestFunc:    testDryRunSupport,
+			Name:                "dry_run_support",
+			Description:         "Simulate migrations without executing SQL",
+			TestFunc:            testDryRunSupport,
+			SQLServerCompatible: true,
 		},
 		{
-			Name:        "operation_planning",
-			Description: "Generate detailed plan of operations",
-			TestFunc:    testOperationPlanning,
+			Name:                "operation_planning",
+			Description:         "Generate detailed plan of operations",
+			TestFunc:            testOperationPlanning,
+			SQLServerCompatible: true,
 		},
 		{
 			Name:        "schema_diff",
@@ -61,28 +68,32 @@ func GetAllScenarios() []TestScenario {
 			TestFunc:    testSchemaDiff,
 		},
 		{
-			Name:        "failure_diagnostics",
-			Description: "Simulate a failing migration and capture error",
-			TestFunc:    testFailureDiagnostics,
+			Name:                "failure_diagnostics",
+			Description:         "Simulate a failing migration and capture error",
+			TestFunc:            testFailureDiagnostics,
+			SQLServerCompatible: true,
 		},
 
 		// Idempotency
 		{
-			Name:        "idempotency_reapply",
-			Description: "Re-apply already applied migrations",
-			TestFunc:    testIdempotencyReapply,
+			Name:                "idempotency_reapply",
+			Description:         "Re-apply already applied migrations",
+			TestFunc:            testIdempotencyReapply,
+			SQLServerCompatible: true,
 		},
 		{
-			Name:        "idempotency_up_to_date",
-			Description: "Run migrate up when database is already up-to-date",
-			TestFunc:    testIdempotencyUpToDate,
+			Name:                "idempotency_up_to_date",
+			Description:         "Run migrate up when database is already up-to-date",
+			TestFunc:            testIdempotencyUpToDate,
+			SQLServerCompatible: true,
 		},
 
 		// Parallel execution smoke
 		{
-			Name:        "parallel_migrate_smoke",
-			Description: "Launch two migrate up processes in parallel and verify final consistency",
-			TestFunc:    testParallelMigrateSmoke,
+			Name:                "parallel_migrate_smoke",
+			Description:         "Launch two migrate up processes in parallel and verify final consistency",
+			TestFunc:            testParallelMigrateSmoke,
+			SQLServerCompatible: true,
 		},
 
 		// Partial Failure Recovery
@@ -127,9 +138,10 @@ func GetAllScenarios() []TestScenario {
 
 		// Cleanup Support
 		{
-			Name:        "cleanup_support",
-			Description: "Test drop and re-run from empty state",
-			TestFunc:    testCleanupSupport,
+			Name:                "cleanup_support",
+			Description:         "Test drop and re-run from empty state",
+			TestFunc:            testCleanupSupport,
+			SQLServerCompatible: true,
 		},
 	}
 

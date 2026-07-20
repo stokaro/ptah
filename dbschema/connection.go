@@ -9,12 +9,14 @@ import (
 	"regexp"
 	"strings"
 
-	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver
+	_ "github.com/jackc/pgx/v5/stdlib"  // PostgreSQL driver
+	_ "github.com/microsoft/go-mssqldb" // SQL Server driver
 
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/dbschema/clickhouse"
+	"github.com/stokaro/ptah/internal/dbschema/mssql"
 	"github.com/stokaro/ptah/internal/dbschema/mysql"
 	"github.com/stokaro/ptah/internal/dbschema/postgres"
 	"github.com/stokaro/ptah/internal/dbschema/sqlite"
@@ -58,25 +60,7 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 		return nil, fmt.Errorf("unsupported database dialect: %s", rawDialect)
 	}
 
-	// Connect to the database
-	// For MySQL/MariaDB, we need to convert the URL format
-	var connectionString string
-
-	var dialectProtocol string
-	switch dialect {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		dialectProtocol = "pgx"
-		connectionString = convertPostgresWireURL(dbURL)
-	case platform.MySQL, platform.MariaDB:
-		dialectProtocol = "mysql"
-		connectionString = convertMySQLURL(dbURL)
-	case platform.ClickHouse:
-		dialectProtocol = "clickhouse"
-		connectionString = convertClickHouseURL(dbURL)
-	case platform.SQLite:
-		dialectProtocol = "sqlite"
-		connectionString = convertSQLiteURL(dbURL)
-	}
+	dialectProtocol, connectionString := databaseDriverConfig(dialect, dbURL)
 
 	db, err := sql.Open(dialectProtocol, connectionString)
 	if err != nil {
@@ -125,6 +109,9 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 	case "sqlite":
 		reader = sqlite.NewSQLiteReader(db, info.Schema)
 		writer = sqlite.NewSQLiteWriter(db, info.Schema)
+	case "sqlserver":
+		reader = mssql.NewSQLServerReader(db, info.Schema)
+		writer = mssql.NewSQLServerWriter(db, info.Schema)
 	default:
 		_ = db.Close()
 		return nil, fmt.Errorf("no schema reader available for dialect: %s", dialect)
@@ -136,6 +123,23 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 		reader: reader,
 		writer: writer,
 	}, nil
+}
+
+func databaseDriverConfig(dialect, dbURL string) (driverName, dataSourceName string) {
+	switch dialect {
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+		return "pgx", convertPostgresWireURL(dbURL)
+	case platform.MySQL, platform.MariaDB:
+		return "mysql", convertMySQLURL(dbURL)
+	case platform.ClickHouse:
+		return "clickhouse", convertClickHouseURL(dbURL)
+	case platform.SQLite:
+		return "sqlite", convertSQLiteURL(dbURL)
+	case platform.SQLServer:
+		return "sqlserver", convertSQLServerURL(dbURL)
+	default:
+		return "", ""
+	}
 }
 
 // DatabaseConnection represents a database connection with metadata
@@ -440,6 +444,16 @@ func getDatabaseInfo(ctx context.Context, db *sql.DB, dialect string, parsedURL 
 		}
 		info.Version = version
 		info.Schema = "main"
+	case platform.SQLServer:
+		var version string
+		if err := db.QueryRowContext(ctx, "SELECT @@VERSION").Scan(&version); err != nil {
+			return info, fmt.Errorf("failed to get SQL Server version: %w", err)
+		}
+		info.Version = version
+		info.Schema = "dbo"
+		if schema := parsedURL.Query().Get("schema"); schema != "" {
+			info.Schema = schema
+		}
 	}
 
 	return info, nil
@@ -565,6 +579,18 @@ func convertSQLiteURL(dbURL string) string {
 		dsn += "?" + encoded
 	}
 	return dsn
+}
+
+func convertSQLServerURL(dbURL string) string {
+	parsed, err := url.Parse(dbURL)
+	if err != nil || parsed.Scheme == "" {
+		return dbURL
+	}
+	parsed.Scheme = platform.SQLServer
+	query := parsed.Query()
+	query.Del("schema")
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
 }
 
 func hasSQLiteForeignKeysPragma(query url.Values) bool {

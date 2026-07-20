@@ -98,6 +98,24 @@ services:
       timeout: 5s
       retries: 18
 
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    profiles:
+      - sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "Developer"
+      MSSQL_SA_PASSWORD: "P@ssw0rd-ptah-2026"
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "sqlcmd=/opt/mssql-tools18/bin/sqlcmd; if [ ! -x $$sqlcmd ]; then sqlcmd=/opt/mssql-tools/bin/sqlcmd; fi; $$sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -No -Q \"SELECT 1\""]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+
   # Test runner service
   ptah-tester:
     build:
@@ -123,6 +141,7 @@ services:
       CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@clickhouse:9000/ptah_test"
       COCKROACHDB_URL: "cockroachdb://root@cockroachdb:26257/defaultdb?sslmode=disable"
       YUGABYTEDB_URL: "yugabytedb://yugabyte@yugabytedb:5433/yugabyte?sslmode=disable"
+      SQLSERVER_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@sqlserver:1433?database=master&encrypt=disable"
     volumes:
       - ./integration/reports:/app/reports
       - ./integration/fixtures:/app/fixtures
@@ -135,3 +154,4 @@ volumes:
   mariadb_data:
   clickhouse_data:
   cockroachdb_data:
+  sqlserver_data:

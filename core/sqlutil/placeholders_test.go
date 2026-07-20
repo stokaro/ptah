@@ -68,6 +68,24 @@ func TestRebind(t *testing.T) {
 			want:    "SELECT ?",
 		},
 		{
+			name:    "sqlserver numbered parameters",
+			dialect: "sqlserver",
+			query:   "SELECT * FROM t WHERE a = ? AND b = ?",
+			want:    "SELECT * FROM t WHERE a = @p1 AND b = @p2",
+		},
+		{
+			name:    "mssql alias numbered parameters",
+			dialect: "mssql",
+			query:   "INSERT INTO t (a, b) VALUES (?, ?)",
+			want:    "INSERT INTO t (a, b) VALUES (@p1, @p2)",
+		},
+		{
+			name:    "sqlserver preserves bracketed identifier",
+			dialect: "sqlserver",
+			query:   "SELECT [col?name], [weird]]?name] FROM [table?] WHERE x = ?",
+			want:    "SELECT [col?name], [weird]]?name] FROM [table?] WHERE x = @p1",
+		},
+		{
 			name:    "unknown dialect untouched",
 			dialect: "sqlite",
 			query:   "SELECT ?",

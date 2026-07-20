@@ -407,6 +407,22 @@ SELECT 2 AS [second];`,
 	})
 }
 
+func TestSplitSQLStatementsForDialect_SQLServerGoBatchCount(t *testing.T) {
+	c := qt.New(t)
+
+	input := `INSERT INTO audit_log ([message]) VALUES ('repeat me');
+GO 2
+INSERT INTO audit_log ([message]) VALUES ('once');`
+
+	result := sqlutil.SplitSQLStatementsForDialect(input, "sqlserver")
+
+	c.Assert(result, qt.DeepEquals, []string{
+		`INSERT INTO audit_log ([message]) VALUES ('repeat me')`,
+		`INSERT INTO audit_log ([message]) VALUES ('repeat me')`,
+		`INSERT INTO audit_log ([message]) VALUES ('once')`,
+	})
+}
+
 func TestSplitSQLStatementsForDialect_SQLServerCreateOrAlterProc(t *testing.T) {
 	c := qt.New(t)
 
@@ -423,6 +439,31 @@ CREATE TABLE after_proc (id int);`
 SELECT 1 AS [first];
 SELECT 2 AS [second];`,
 		"CREATE TABLE after_proc (id int)",
+	})
+}
+
+func TestSplitSQLStatementsForDialect_SQLServerTriggerWithoutBegin(t *testing.T) {
+	c := qt.New(t)
+
+	input := `CREATE TRIGGER [dbo].[audit_users]
+ON [dbo].[users]
+AFTER INSERT
+AS
+INSERT INTO [dbo].[audit_log] ([message]) VALUES ('first');
+INSERT INTO [dbo].[audit_log] ([message]) VALUES ('second');
+GO
+CREATE TABLE after_trigger (id int);`
+
+	result := sqlutil.SplitSQLStatementsForDialect(input, "sqlserver")
+
+	c.Assert(result, qt.DeepEquals, []string{
+		`CREATE TRIGGER [dbo].[audit_users]
+ON [dbo].[users]
+AFTER INSERT
+AS
+INSERT INTO [dbo].[audit_log] ([message]) VALUES ('first');
+INSERT INTO [dbo].[audit_log] ([message]) VALUES ('second');`,
+		"CREATE TABLE after_trigger (id int)",
 	})
 }
 

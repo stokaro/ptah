@@ -40,6 +40,9 @@
 //   - MariaDB: Served by the MySQL planner configured with the MariaDB
 //     capability preset (capability.MariaDB1011), which unlocks
 //     MariaDB-only SQL such as IF EXISTS guards on constraint drops
+//   - SQL Server: Portable T-SQL subset with schemas, IDENTITY columns,
+//     SQL Server introspection, and explicit errors for unsupported ALTER
+//     shapes that cannot be represented safely yet
 //   - SQLite: Conservative support for native CREATE TABLE, ADD COLUMN,
 //     indexes, views, triggers, and drops; table rebuilds are reported for
 //     structural ALTER operations SQLite cannot perform directly
@@ -80,6 +83,7 @@ import (
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/internal/planner/dialects/clickhouse"
+	"github.com/stokaro/ptah/internal/planner/dialects/mssql"
 	"github.com/stokaro/ptah/internal/planner/dialects/mysql"
 	"github.com/stokaro/ptah/internal/planner/dialects/postgres"
 	"github.com/stokaro/ptah/internal/planner/dialects/sqlite"
@@ -298,6 +302,12 @@ func registerBuiltInPlanners() error {
 		if err := registerMySQLFamilyPlanner(dialect); err != nil {
 			return err
 		}
+	}
+
+	if err := registerPlannerFactory(platform.SQLServer, func(opts Options) Planner {
+		return mssql.NewWithCapabilities(opts.CapabilitiesFor(platform.SQLServer))
+	}); err != nil {
+		return err
 	}
 
 	if err := registerPlannerFactory(platform.ClickHouse, func(Options) Planner {

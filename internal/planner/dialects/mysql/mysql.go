@@ -8,6 +8,7 @@ import (
 
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/internal/convert/fromschema"
@@ -63,6 +64,10 @@ type Planner struct {
 	// this type's own example — behaves exactly like New(). Pass an explicit
 	// preset (e.g. capability.MySQLLegacy()) to restrict emissions.
 	caps capability.Capabilities
+	// dialect is the target conversion platform passed to fromschema. It
+	// defaults to mysql so the zero value and New stay backwards-identical for
+	// the MySQL-family planner.
+	dialect string
 }
 
 // New returns a planner configured with the current MySQL line preset
@@ -79,7 +84,19 @@ func New() *Planner {
 // mutations by the caller cannot affect the planner. A nil set defaults to
 // the capability.MySQL80 preset.
 func NewWithCapabilities(caps capability.Capabilities) *Planner {
-	return &Planner{caps: caps.Clone()}
+	return NewForDialect(DialectName, caps)
+}
+
+// NewForDialect returns a planner that reuses MySQL-family ordering and
+// constraint ownership while converting fields for another close-enough target
+// dialect. SQL Server uses this to share the generic AST planning path while
+// relying on its own renderer for T-SQL syntax.
+func NewForDialect(dialect string, caps capability.Capabilities) *Planner {
+	normalized := platform.NormalizeDialect(dialect)
+	if normalized == "" {
+		normalized = DialectName
+	}
+	return &Planner{caps: caps.Clone(), dialect: normalized}
 }
 
 // capabilities returns the planner's capability set, defaulting the nil zero
@@ -89,14 +106,21 @@ func NewWithCapabilities(caps capability.Capabilities) *Planner {
 // surprises for a zero-value planner. Restriction must be an explicit choice.
 func (p *Planner) capabilities() capability.Capabilities {
 	if p.caps == nil {
-		return capability.MySQL80()
+		return capability.ForDialect(p.targetDialect())
 	}
 	return p.caps
 }
 
+func (p *Planner) targetDialect() string {
+	if p.dialect == "" {
+		return DialectName
+	}
+	return p.dialect
+}
+
 func (p *Planner) addEnumChangeWarnings(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 	if len(diff.EnumsAdded) > 0 {
-		astCommentNode := ast.NewComment(fmt.Sprintf("NOTE: MySQL enums are inline in column definitions. New enums: %v", diff.EnumsAdded))
+		astCommentNode := ast.NewComment(fmt.Sprintf("NOTE: %s enums are handled in column definitions. New enums: %v", p.enumDialectLabel(), diff.EnumsAdded))
 		result = append(result, astCommentNode)
 	}
 	return result
@@ -105,15 +129,24 @@ func (p *Planner) addEnumChangeWarnings(result []ast.Node, diff *types.SchemaDif
 func (p *Planner) handleEnumModifications(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 	for _, enumDiff := range diff.EnumsModified {
 		if len(enumDiff.ValuesAdded) > 0 {
-			astCommentNode := ast.NewComment(fmt.Sprintf("WARNING: MySQL enum modifications require ALTER TABLE for each column using enum %s. Values added: %v", enumDiff.EnumName, enumDiff.ValuesAdded))
+			astCommentNode := ast.NewComment(fmt.Sprintf("WARNING: %s enum modifications require updating each column using enum %s. Values added: %v", p.enumDialectLabel(), enumDiff.EnumName, enumDiff.ValuesAdded))
 			result = append(result, astCommentNode)
 		}
 		if len(enumDiff.ValuesRemoved) > 0 {
-			astCommentNode := ast.NewComment(fmt.Sprintf("WARNING: MySQL cannot remove enum values from %s without recreating the table. Values removed: %v", enumDiff.EnumName, enumDiff.ValuesRemoved))
+			astCommentNode := ast.NewComment(fmt.Sprintf("WARNING: %s cannot remove enum values from %s without recreating or validating affected columns. Values removed: %v", p.enumDialectLabel(), enumDiff.EnumName, enumDiff.ValuesRemoved))
 			result = append(result, astCommentNode)
 		}
 	}
 	return result
+}
+
+func (p *Planner) enumDialectLabel() string {
+	switch p.targetDialect() {
+	case platform.SQLServer:
+		return "SQL Server"
+	default:
+		return "MySQL-family"
+	}
 }
 
 func (p *Planner) addNewTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
@@ -134,7 +167,7 @@ func (p *Planner) createTablesWithoutForeignKeys(result []ast.Node, generated *g
 	allFields := generated.Fields
 
 	for _, table := range tables {
-		astNode := fromschema.FromTable(table, allFields, generated.Enums, DialectName)
+		astNode := fromschema.FromTable(table, allFields, generated.Enums, p.targetDialect())
 		for _, column := range astNode.Columns {
 			column.ForeignKey = nil
 		}
@@ -165,7 +198,7 @@ func (p *Planner) addRegularForeignKeys(result []ast.Node, generated *goschema.D
 		if fkRef != nil && fkRef.Table != table.Name {
 			fkRef.OnDelete = field.OnDelete
 			fkRef.OnUpdate = field.OnUpdate
-			result = append(result, p.createForeignKeyAlterStatement(table.Name, foreignKeyName(table.Name, field), []string{field.Name}, fkRef))
+			result = append(result, p.createForeignKeyAlterStatement(table.QualifiedName(), foreignKeyName(table.Name, field), []string{field.Name}, fkRef))
 		}
 	}
 	return result
@@ -183,7 +216,7 @@ func (p *Planner) addSelfReferencingForeignKeys(result []ast.Node, generated *go
 		if fkRef != nil {
 			fkRef.OnDelete = selfRefFK.OnDelete
 			fkRef.OnUpdate = selfRefFK.OnUpdate
-			result = append(result, p.createForeignKeyAlterStatement(table.Name, selfReferencingForeignKeyName(table.Name, selfRefFK), []string{selfRefFK.FieldName}, fkRef))
+			result = append(result, p.createForeignKeyAlterStatement(table.QualifiedName(), selfReferencingForeignKeyName(table.Name, selfRefFK), []string{selfRefFK.FieldName}, fkRef))
 		}
 	}
 
@@ -236,29 +269,18 @@ func (p *Planner) createForeignKeyAlterStatement(tableName, constraintName strin
 
 func (p *Planner) addNewTableColumns(result []ast.Node, tableDiff *types.TableDiff, generated *goschema.Database) []ast.Node {
 	for _, colName := range tableDiff.ColumnsAdded {
-		// Find the field definition for this column
-		// We need to find the struct name that corresponds to this table name
 		var targetField *goschema.Field
-		var targetStructName string
-
-		// First, find the struct name for this table
-		for _, table := range generated.Tables {
-			if table.Name == tableDiff.TableName {
-				targetStructName = table.StructName
-				break
-			}
-		}
-
-		// Now find the field using the correct struct name
-		for _, field := range generated.Fields {
-			if field.StructName == targetStructName && field.Name == colName {
-				targetField = &field
-				break
+		if targetTable := findGeneratedTable(generated.Tables, tableDiff.TableName); targetTable != nil {
+			for _, field := range generated.Fields {
+				if field.StructName == targetTable.StructName && field.Name == colName {
+					targetField = &field
+					break
+				}
 			}
 		}
 
 		if targetField != nil {
-			columnNode := fromschema.FromField(*targetField, generated.Enums, "mysql")
+			columnNode := fromschema.FromField(*targetField, generated.Enums, p.targetDialect())
 
 			// Create operations list starting with ADD COLUMN
 			operations := []ast.AlterOperation{&ast.AddColumnOperation{Column: columnNode}}
@@ -296,7 +318,7 @@ func (p *Planner) addNewTableColumns(result []ast.Node, tableDiff *types.TableDi
 	return result
 }
 
-func (p *Planner) modifyExistingColumns(result []ast.Node, diff *types.SchemaDiff, tableDiff *types.TableDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) modifyExistingColumns(result []ast.Node, diff *types.SchemaDiff, tableDiff *types.TableDiff, generated *goschema.Database) ([]ast.Node, error) {
 	for _, colDiff := range tableDiff.ColumnsModified {
 		suppressColumnPrimary := false
 		if _, hasPrimaryKeyChange := colDiff.Changes["primary_key"]; hasPrimaryKeyChange &&
@@ -308,25 +330,19 @@ func (p *Planner) modifyExistingColumns(result []ast.Node, diff *types.SchemaDif
 				continue
 			}
 		}
-
-		// Find the target field definition for this column
-		// We need to find the struct name that corresponds to this table name
-		var targetField *goschema.Field
-		var targetStructName string
-
-		// First, find the struct name for this table
-		for _, table := range generated.Tables {
-			if table.Name == tableDiff.TableName {
-				targetStructName = table.StructName
-				break
-			}
+		if err := p.validateColumnModification(tableDiff.TableName, colDiff); err != nil {
+			return result, err
 		}
 
-		// Now find the field using the correct struct name
-		for _, field := range generated.Fields {
-			if field.StructName == targetStructName && field.Name == colDiff.ColumnName {
-				targetField = &field
-				break
+		var targetField *goschema.Field
+		var targetStructName string
+		if targetTable := findGeneratedTable(generated.Tables, tableDiff.TableName); targetTable != nil {
+			targetStructName = targetTable.StructName
+			for _, field := range generated.Fields {
+				if field.StructName == targetStructName && field.Name == colDiff.ColumnName {
+					targetField = &field
+					break
+				}
 			}
 		}
 
@@ -341,7 +357,7 @@ func (p *Planner) modifyExistingColumns(result []ast.Node, diff *types.SchemaDif
 		if suppressColumnPrimary {
 			field.Primary = false
 		}
-		columnNode := fromschema.FromField(field, generated.Enums, "mysql")
+		columnNode := fromschema.FromField(field, generated.Enums, p.targetDialect())
 
 		// Generate ALTER COLUMN statements using AST
 		alterNode := &ast.AlterTableNode{
@@ -365,7 +381,46 @@ func (p *Planner) modifyExistingColumns(result []ast.Node, diff *types.SchemaDif
 		astCommentNode := ast.NewComment(fmt.Sprintf("Modify column %s.%s: %s", tableDiff.TableName, colDiff.ColumnName, strings.Join(changesList, ", ")))
 		result = append(result, astCommentNode)
 	}
-	return result
+	return result, nil
+}
+
+func findGeneratedTable(tables []goschema.Table, tableName string) *goschema.Table {
+	for i := range tables {
+		table := &tables[i]
+		if table.Name == tableName || table.QualifiedName() == tableName || table.StructName == tableName {
+			return table
+		}
+	}
+	return nil
+}
+
+func (p *Planner) validateColumnModification(tableName string, colDiff types.ColumnDiff) error {
+	if p.targetDialect() != platform.SQLServer {
+		return nil
+	}
+	var unsupported []string
+	for changeType := range colDiff.Changes {
+		switch changeType {
+		case "type", "nullable":
+		default:
+			unsupported = append(unsupported, changeType)
+		}
+	}
+	if len(unsupported) == 0 {
+		return nil
+	}
+	slices.Sort(unsupported)
+	return &ptaherr.CapabilityError{
+		Dialect: p.targetDialect(),
+		Feature: "column modification",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf(
+			"SQL Server planner only supports ALTER COLUMN for type/nullability changes on %s.%s; unsupported changes: %s",
+			tableName,
+			colDiff.ColumnName,
+			strings.Join(unsupported, ", "),
+		),
+	}
 }
 
 func primaryKeyColumnChangeOwnedByTableConstraint(diff *types.SchemaDiff, tableName, columnName string) bool {
@@ -384,7 +439,18 @@ func primaryKeyColumnChangeOwnedByTableConstraint(diff *types.SchemaDiff, tableN
 	return false
 }
 
-func (p *Planner) removeColumns(result []ast.Node, tableDiff *types.TableDiff) []ast.Node {
+func (p *Planner) removeColumns(result []ast.Node, tableDiff *types.TableDiff) ([]ast.Node, error) {
+	if p.targetDialect() == platform.SQLServer && len(tableDiff.ColumnsRemoved) > 0 {
+		return result, &ptaherr.CapabilityError{
+			Dialect: p.targetDialect(),
+			Feature: "column removal",
+			Err:     ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf(
+				"SQL Server planner does not support automatic DROP COLUMN for %s; write an explicit migration that drops dependent constraints and indexes first",
+				tableDiff.TableName,
+			),
+		}
+	}
 	for _, colName := range tableDiff.ColumnsRemoved {
 		// Generate DROP COLUMN statement using AST
 		alterNode := &ast.AlterTableNode{
@@ -395,10 +461,10 @@ func (p *Planner) removeColumns(result []ast.Node, tableDiff *types.TableDiff) [
 		astCommentNode := ast.NewComment(fmt.Sprintf("WARNING: Dropping column %s.%s - This will delete data!", tableDiff.TableName, colName))
 		result = append(result, astCommentNode)
 	}
-	return result
+	return result, nil
 }
 
-func (p *Planner) modifyExistingTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) modifyExistingTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
 	for _, tableDiff := range diff.TablesModified {
 		astCommentNode := ast.NewComment(fmt.Sprintf("Modify table: %s", tableDiff.TableName))
 		result = append(result, astCommentNode)
@@ -407,12 +473,19 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *types.SchemaDiff
 		result = p.addNewTableColumns(result, &tableDiff, generated)
 
 		// Modify existing columns
-		result = p.modifyExistingColumns(result, diff, &tableDiff, generated)
+		var err error
+		result, err = p.modifyExistingColumns(result, diff, &tableDiff, generated)
+		if err != nil {
+			return result, err
+		}
 
 		// Remove columns (dangerous!)
-		result = p.removeColumns(result, &tableDiff)
+		result, err = p.removeColumns(result, &tableDiff)
+		if err != nil {
+			return result, err
+		}
 	}
-	return result
+	return result, nil
 }
 
 func (p *Planner) addNewIndexes(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
@@ -420,7 +493,7 @@ func (p *Planner) addNewIndexes(result []ast.Node, diff *types.SchemaDiff, gener
 		// Find the index definition
 		for _, idx := range generated.Indexes {
 			if idx.Name == indexName {
-				indexNode := ast.NewIndex(idx.Name, idx.StructName, idx.Fields...)
+				indexNode := ast.NewIndex(idx.Name, p.indexTableName(idx, generated), idx.Fields...)
 				if idx.Unique {
 					indexNode.Unique = true
 				}
@@ -433,6 +506,18 @@ func (p *Planner) addNewIndexes(result []ast.Node, diff *types.SchemaDiff, gener
 		}
 	}
 	return result
+}
+
+func (p *Planner) indexTableName(index goschema.Index, generated *goschema.Database) string {
+	if index.TableName != "" {
+		return index.TableName
+	}
+	for _, table := range generated.Tables {
+		if table.StructName == index.StructName || table.Name == index.StructName || table.QualifiedName() == index.StructName {
+			return table.QualifiedName()
+		}
+	}
+	return index.StructName
 }
 
 func (p *Planner) removeIndexes(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
@@ -482,7 +567,7 @@ func (p *Planner) removeTables(result []ast.Node, diff *types.SchemaDiff, genera
 
 func (p *Planner) handleEnumRemovals(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 	for _, enumName := range diff.EnumsRemoved {
-		astCommentNode := ast.NewComment(fmt.Sprintf("WARNING: MySQL enum %s removal requires updating all tables that use this enum type!", enumName))
+		astCommentNode := ast.NewComment(fmt.Sprintf("WARNING: %s enum %s removal requires updating all columns that use this enum type!", p.enumDialectLabel(), enumName))
 		result = append(result, astCommentNode)
 	}
 	return result
@@ -579,7 +664,11 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	result = p.addNewTables(result, diff, generated)
 
 	// 4. Modify existing tables
-	result = p.modifyExistingTables(result, diff, generated)
+	var err error
+	result, err = p.modifyExistingTables(result, diff, generated)
+	if err != nil {
+		return nil, err
+	}
 
 	// 4.5. Add and modify views/triggers after tables exist.
 	result = p.addNewViews(result, diff, generated)
@@ -628,8 +717,11 @@ func (p *Planner) rejectMaterializedViews(diff *types.SchemaDiff) error {
 		return nil
 	}
 	message := "materialized views are not supported by MySQL or MariaDB; remove matview definitions for this target"
+	if p.targetDialect() == platform.SQLServer {
+		message = "materialized views are not supported by SQL Server; remove matview definitions for this target"
+	}
 	return &ptaherr.CapabilityError{
-		Dialect: DialectName,
+		Dialect: p.targetDialect(),
 		Feature: "materialized views",
 		Err:     ptaherr.ErrUnsupportedFeature,
 		Message: message,
@@ -1110,7 +1202,7 @@ func (p *Planner) appendAddConstraint(result []ast.Node, constraintName string, 
 		// believes it applied; surface that loudly instead of emitting it
 		// (issue #226).
 		if constraint.Type == "CHECK" && !p.capabilities().Has(capability.CheckConstraintsEnforced) {
-			return append(result, ast.NewComment(fmt.Sprintf("WARNING: CHECK constraint %s skipped - the target parses but does not enforce CHECK constraints (MySQL < 8.0.16)", constraint.Name)))
+			return append(result, ast.NewComment(fmt.Sprintf("WARNING: CHECK constraint %s skipped - %s", constraint.Name, p.checkNotEnforcedMessage())))
 		}
 		if astConstraint := p.convertConstraintToAST(constraint); astConstraint != nil {
 			return append(result, &ast.AlterTableNode{
@@ -1119,7 +1211,7 @@ func (p *Planner) appendAddConstraint(result []ast.Node, constraintName string, 
 			})
 		}
 		if constraint.Type == "EXCLUDE" {
-			return append(result, ast.NewComment(fmt.Sprintf("WARNING: EXCLUDE constraint %s not supported in MySQL (PostgreSQL-specific feature)", constraint.Name)))
+			return append(result, ast.NewComment(fmt.Sprintf("WARNING: EXCLUDE constraint %s not supported in %s (PostgreSQL-specific feature)", constraint.Name, p.constraintDialectLabel())))
 		}
 		return result
 	}
@@ -1164,7 +1256,7 @@ func (p *Planner) fieldLevelCheckConstraintNode(constraintName string, generated
 		// appendAddConstraint: never emit a CHECK the target would silently
 		// ignore (issue #226).
 		if !p.capabilities().Has(capability.CheckConstraintsEnforced) {
-			return ast.NewComment(fmt.Sprintf("WARNING: CHECK constraint %s skipped - the target parses but does not enforce CHECK constraints (MySQL < 8.0.16)", name)), true
+			return ast.NewComment(fmt.Sprintf("WARNING: CHECK constraint %s skipped - %s", name, p.checkNotEnforcedMessage())), true
 		}
 		return &ast.AlterTableNode{
 			Name: tableName,
@@ -1176,6 +1268,24 @@ func (p *Planner) fieldLevelCheckConstraintNode(constraintName string, generated
 		}, true
 	}
 	return nil, false
+}
+
+func (p *Planner) checkNotEnforcedMessage() string {
+	switch p.targetDialect() {
+	case platform.SQLServer:
+		return "the target does not enforce CHECK constraints"
+	default:
+		return "the target parses but does not enforce CHECK constraints (MySQL < 8.0.16)"
+	}
+}
+
+func (p *Planner) constraintDialectLabel() string {
+	switch p.targetDialect() {
+	case platform.SQLServer:
+		return "SQL Server"
+	default:
+		return "MySQL"
+	}
 }
 
 // fieldLevelForeignKeyConstraintNode builds the ADD CONSTRAINT node for a

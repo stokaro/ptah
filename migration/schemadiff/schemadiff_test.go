@@ -92,6 +92,7 @@ func TestCompareWithDialect_GeneratedColumnDefaultKindMatchesDialect(t *testing.
 		{name: "mysql", dialect: "mysql", databaseKind: "VIRTUAL"},
 		{name: "mariadb", dialect: "mariadb", databaseKind: "VIRTUAL"},
 		{name: "sqlite", dialect: "sqlite", databaseKind: "VIRTUAL"},
+		{name: "sqlserver", dialect: "sqlserver", databaseKind: "PERSISTED"},
 	}
 
 	for _, tt := range tests {
@@ -119,6 +120,60 @@ func TestCompareWithDialect_GeneratedColumnDefaultKindMatchesDialect(t *testing.
 			}
 
 			diff := schemadiff.CompareWithDialect(generated, database, tt.dialect)
+			c.Assert(diff.TablesModified, qt.HasLen, 0)
+		})
+	}
+}
+
+func TestCompareWithDialect_SQLServerGeneratedExpressionNormalizesCatalogDefinition(t *testing.T) {
+	for _, tt := range []struct {
+		name                string
+		generatedExpression string
+		databaseExpression  string
+	}{
+		{
+			name:                "bracketed identifier",
+			generatedExpression: "lower(email)",
+			databaseExpression:  "((LOWER([email])))",
+		},
+		{
+			name:                "escaped closing bracket in identifier",
+			generatedExpression: "lower(odd]Name)",
+			databaseExpression:  "((LOWER([odd]]Name])))",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			generatedExpression := tt.generatedExpression
+			databaseExpression := tt.databaseExpression
+			generated := &goschema.Database{
+				Tables: []goschema.Table{{Name: "users", Schema: "dbo", StructName: "User"}},
+				Fields: []goschema.Field{{
+					StructName:          "User",
+					Name:                "email_lc",
+					Type:                "NVARCHAR(320)",
+					Nullable:            true,
+					GeneratedExpression: generatedExpression,
+					GeneratedKind:       "",
+				}},
+			}
+			database := &types.DBSchema{
+				Tables: []types.DBTable{{
+					Name:   "users",
+					Schema: "dbo",
+					Type:   "TABLE",
+					Columns: []types.DBColumn{{
+						Name:                "email_lc",
+						DataType:            "NVARCHAR",
+						ColumnType:          "NVARCHAR(320)",
+						IsNullable:          "YES",
+						GeneratedExpression: &databaseExpression,
+						GeneratedKind:       "PERSISTED",
+					}},
+				}},
+			}
+
+			diff := schemadiff.CompareWithDialect(generated, database, "sqlserver")
 			c.Assert(diff.TablesModified, qt.HasLen, 0)
 		})
 	}
@@ -166,6 +221,59 @@ func TestCompareWithDialect_SQLiteInlineEnumsMatchGeneratedEnumFields(t *testing
 	}
 
 	diff := schemadiff.CompareWithDialect(generated, database, "sqlite")
+	c.Assert(diff.EnumsAdded, qt.HasLen, 0)
+	c.Assert(diff.EnumsRemoved, qt.HasLen, 0)
+	c.Assert(diff.TablesModified, qt.HasLen, 0)
+	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
+	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
+}
+
+func TestCompareWithDialect_SQLServerInlineEnumsMatchGeneratedEnumFields(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Tables: []goschema.Table{{
+			Name:       "products",
+			Schema:     "dbo",
+			StructName: "Product",
+		}},
+		Fields: []goschema.Field{
+			{StructName: "Product", Name: "id", Type: "INT", Primary: true},
+			{
+				StructName: "Product",
+				Name:       "status",
+				Type:       "enum_product_status",
+				Enum:       []string{"draft", "active"},
+				Nullable:   false,
+				CheckName:  "products_status_check",
+			},
+		},
+		Enums: []goschema.Enum{{
+			Name:   "enum_product_status",
+			Values: []string{"draft", "active"},
+		}},
+	}
+	check := "[status] IN ('draft', 'active')"
+	database := &types.DBSchema{
+		Tables: []types.DBTable{{
+			Name:   "products",
+			Schema: "dbo",
+			Type:   "TABLE",
+			Columns: []types.DBColumn{
+				{Name: "id", DataType: "INT", IsNullable: "NO", IsPrimaryKey: true},
+				{Name: "status", DataType: "NVARCHAR", ColumnType: "NVARCHAR(255)", IsNullable: "NO"},
+			},
+		}},
+		Constraints: []types.DBConstraint{{
+			Name:        "products_status_check",
+			Schema:      "dbo",
+			TableName:   "products",
+			Type:        "CHECK",
+			CheckClause: &check,
+		}},
+	}
+
+	diff := schemadiff.CompareWithDialect(generated, database, "sqlserver")
 	c.Assert(diff.EnumsAdded, qt.HasLen, 0)
 	c.Assert(diff.EnumsRemoved, qt.HasLen, 0)
 	c.Assert(diff.TablesModified, qt.HasLen, 0)

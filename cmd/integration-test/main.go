@@ -10,6 +10,7 @@ import (
 	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/integration"
 )
 
@@ -44,7 +45,7 @@ var rootFlags = map[string]cobraflags.Flag{
 	databasesFlag: &cobraflags.StringSliceFlag{
 		Name:  databasesFlag,
 		Value: []string{"postgres", "mysql", "mariadb", "cockroachdb", "yugabytedb"},
-		Usage: "Databases to test against",
+		Usage: "Databases to test against; SQL Server is opt-in via sqlserver",
 	},
 	scenariosFlag: &cobraflags.StringSliceFlag{
 		Name:  scenariosFlag,
@@ -83,8 +84,8 @@ var rootCmd = &cobra.Command{
 	Long: `Run comprehensive integration tests for the Ptah migration library.
 
 This tool tests migration functionality across multiple database backends
-including PostgreSQL, MySQL, and MariaDB. It validates basic functionality,
-idempotency, concurrency, failure recovery, and more.
+including PostgreSQL, MySQL, MariaDB, and opt-in SQL Server. It validates basic
+functionality, idempotency, concurrency, failure recovery, and more.
 
 The tests use Docker containers for database backends and generate detailed
 reports in multiple formats.`,
@@ -270,6 +271,7 @@ func configuredDatabaseConnections() map[string]string {
 		"clickhouse":  os.Getenv("CLICKHOUSE_URL"),
 		"cockroachdb": os.Getenv("COCKROACHDB_URL"),
 		"yugabytedb":  os.Getenv("YUGABYTEDB_URL"),
+		"sqlserver":   os.Getenv("SQLSERVER_URL"),
 	}
 }
 
@@ -277,12 +279,16 @@ func requestedDatabaseConnections(databases []string, dbConnections map[string]s
 	selected := make(map[string]string, len(databases))
 	var missing []string
 	for _, dbName := range databases {
-		url, exists := dbConnections[dbName]
+		canonicalName := platform.NormalizeDialect(dbName)
+		if canonicalName == "" {
+			canonicalName = dbName
+		}
+		url, exists := dbConnections[canonicalName]
 		if !exists || url == "" {
 			missing = append(missing, dbName)
 			continue
 		}
-		selected[dbName] = url
+		selected[canonicalName] = url
 	}
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("missing database URL for requested database(s): %s", strings.Join(missing, ", "))

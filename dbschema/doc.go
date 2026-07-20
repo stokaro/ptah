@@ -9,7 +9,8 @@
 //
 // The dbschema package serves as the primary interface between Ptah and actual databases.
 // It abstracts away database-specific details while providing consistent APIs for schema
-// operations across PostgreSQL, MySQL, and MariaDB platforms.
+// operations across PostgreSQL-family, MySQL, MariaDB, SQLite, ClickHouse, and
+// SQL Server platforms.
 //
 // # Key Features
 //
@@ -37,6 +38,8 @@
 //   - MySQL: Complete support with AUTO_INCREMENT, ENGINE specifications, and charset handling
 //   - MariaDB: Full compatibility using MySQL driver with MariaDB-specific optimizations
 //   - SQLite: Local file, URI, and in-memory databases with PRAGMA-backed introspection
+//   - ClickHouse: MergeTree-family subset with system catalog introspection
+//   - SQL Server: T-SQL subset with schemas, IDENTITY, indexes, and core constraints
 //
 // # Connection Management
 //
@@ -56,6 +59,9 @@
 //
 //	// SQLite
 //	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite:///tmp/app.db")
+//
+//	// SQL Server
+//	conn, err := dbschema.ConnectToDatabase(ctx, "sqlserver://sa:pass@localhost:1433?database=app&encrypt=disable")
 //
 // # Schema Reading
 //
@@ -112,6 +118,9 @@
 //
 //   - postgres/: PostgreSQL-specific reader and writer implementations
 //   - mysql/: MySQL/MariaDB-specific reader and writer implementations
+//   - mssql/: SQL Server-specific reader and writer implementations
+//   - clickhouse/: ClickHouse-specific reader and writer implementations
+//   - sqlite/: SQLite-specific reader and writer implementations
 //   - types/: Common type definitions and interfaces
 //
 // # URL Format Support
@@ -121,6 +130,7 @@
 //   - Standard URLs: postgres://user:pass@host:port/database
 //   - MySQL TCP URLs: mysql://user:pass@tcp(host:port)/database
 //   - SQLite URLs: sqlite:///absolute/path.db, sqlite://relative.db, sqlite:///:memory:
+//   - SQL Server URLs: sqlserver://user:pass@host:1433?database=name&encrypt=disable
 //   - Connection parameters: URLs with query parameters for SSL, charset, etc.
 //
 // # Transaction Safety

@@ -68,6 +68,17 @@ import (
 // Results are sorted alphabetically for consistent output across multiple runs,
 // ensuring deterministic migration generation and reliable testing.
 func TablesAndColumns(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+	TablesAndColumnsWithDialect(generated, database, diff, "")
+}
+
+// TablesAndColumnsWithDialect performs table and column comparison with
+// dialect-aware normalization for surfaces whose catalogs rewrite expressions.
+func TablesAndColumnsWithDialect(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	dialect string,
+) {
 	// Create maps for quick lookup
 	genTables := make(map[string]goschema.Table)
 	for _, table := range generated.Tables {
@@ -95,7 +106,7 @@ func TablesAndColumns(generated *goschema.Database, database *types.DBSchema, di
 	// Find modified tables (compare columns)
 	for tableName, genTable := range genTables {
 		if dbTable, exists := dbTables[tableName]; exists {
-			tableDiff := TableColumns(genTable, dbTable, generated)
+			tableDiff := TableColumnsWithDialect(genTable, dbTable, generated, dialect)
 			if len(tableDiff.ColumnsAdded) > 0 || len(tableDiff.ColumnsRemoved) > 0 || len(tableDiff.ColumnsModified) > 0 {
 				diff.TablesModified = append(diff.TablesModified, tableDiff)
 			}

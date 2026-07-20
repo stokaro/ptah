@@ -64,6 +64,11 @@ func TestFormatDatabaseURL(t *testing.T) {
 			input:    "mysql://root@tcp(localhost:3306)/testdb?callback=https%3A%2F%2Fx%3Ay%40example.test&password=querysecret",
 			expected: "mysql://root@tcp(localhost:3306)/testdb?callback=https%3A%2F%2Fx%3Ay%40example.test&password=redacted",
 		},
+		{
+			name:     "SQL Server URL with password and query secret",
+			input:    "sqlserver://sa:VerySecret@localhost:1433?database=ptah&password=querysecret&encrypt=disable",
+			expected: "sqlserver://sa:***@localhost:1433?database=ptah&encrypt=disable&password=redacted",
+		},
 	}
 
 	for _, tt := range tests {
@@ -116,6 +121,20 @@ func TestPostgreSQLConnection_NoServer(t *testing.T) {
 	c.Assert(conn, qt.IsNil)
 
 	// The error should be about connection failure, not about invalid URL or unsupported dialect
+	c.Assert(err.Error(), qt.Not(qt.Contains), "unsupported database dialect")
+	c.Assert(err.Error(), qt.Not(qt.Contains), "invalid database URL")
+}
+
+func TestSQLServerConnection_NoServer(t *testing.T) {
+	c := qt.New(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, "sqlserver://sa:pass@localhost:1433?database=ptah&encrypt=disable")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(conn, qt.IsNil)
 	c.Assert(err.Error(), qt.Not(qt.Contains), "unsupported database dialect")
 	c.Assert(err.Error(), qt.Not(qt.Contains), "invalid database URL")
 }

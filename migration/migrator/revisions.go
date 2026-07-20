@@ -106,6 +106,17 @@ func migrationStatementCount(sqlText string) int {
 	return len(SplitSQLStatements(sqlText))
 }
 
+func migrationStatementCountForDialect(sqlText, dialect string) int {
+	return len(splitSQLStatementsForDialect(sqlText, dialect))
+}
+
+func (m *Migrator) migrationStatementCount(sqlText string) int {
+	if m.conn == nil {
+		return migrationStatementCount(sqlText)
+	}
+	return migrationStatementCountForDialect(sqlText, m.conn.Info().Dialect)
+}
+
 func migrationExecutionProgress(err error, dialect string) (applied int, total int, stmt string) {
 	var execErr *MigrationExecutionError
 	if !errors.As(err, &execErr) {
@@ -125,11 +136,23 @@ func migrationExecutionProgress(err error, dialect string) (applied int, total i
 
 func (m *Migrator) getDirtyRevisionSQL() string {
 	if m.revisionTableFormat.isAtlas() {
+		if m.isSQLServer() {
+			return fmt.Sprintf(`SELECT TOP (1) version, description, type, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time, hash, executed_at
+FROM %s
+WHERE applied <> total OR COALESCE(error, '') <> ''
+ORDER BY %s`, m.qualifiedMigrationsTable(), m.atlasVersionNumberExpression())
+		}
 		return fmt.Sprintf(`SELECT version, description, type, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time, hash, executed_at
 FROM %s
 WHERE applied <> total OR COALESCE(error, '') <> ''
 ORDER BY %s
 LIMIT 1`, m.qualifiedMigrationsTable(), m.atlasVersionNumberExpression())
+	}
+	if m.isSQLServer() {
+		return fmt.Sprintf(`SELECT TOP (1) version, description, state, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time_ms, checksum, applied_at
+FROM %s
+WHERE state <> ?
+ORDER BY version`, m.qualifiedMigrationsTable())
 	}
 	return fmt.Sprintf(`SELECT version, description, state, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time_ms, checksum, applied_at
 FROM %s
@@ -254,6 +277,25 @@ func (m *Migrator) createAtlasRevisionsTableSQL() string {
 		case "postgres", "cockroachdb", "yugabytedb":
 			partialHashesType = "JSONB"
 		}
+	}
+	if m.isSQLServer() {
+		return fmt.Sprintf(`IF OBJECT_ID(%s, N'U') IS NULL
+BEGIN
+    CREATE TABLE %s (
+        version NVARCHAR(255) PRIMARY KEY,
+        description NVARCHAR(MAX) NOT NULL,
+        type BIGINT NOT NULL DEFAULT 2,
+        applied BIGINT NOT NULL DEFAULT 0,
+        total BIGINT NOT NULL DEFAULT 0,
+        executed_at DATETIME2 NOT NULL,
+        execution_time BIGINT NOT NULL,
+        error NVARCHAR(MAX) NULL,
+        error_stmt NVARCHAR(MAX) NULL,
+        hash NVARCHAR(255) NOT NULL,
+        partial_hashes NVARCHAR(MAX) NULL,
+        operator_version NVARCHAR(255) NOT NULL
+    )
+END`, sqlStringLiteral(m.sqlServerObjectName()), m.qualifiedMigrationsTable())
 	}
 	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
     version VARCHAR(255) PRIMARY KEY,
@@ -502,7 +544,7 @@ func (m *Migrator) beginMigrationRevision(ctx context.Context, migration *Migrat
 		time.Now(),
 		migrationStatePending,
 		0,
-		migrationStatementCount(migration.UpSQL),
+		m.migrationStatementCount(migration.UpSQL),
 		nil,
 		nil,
 		0,
@@ -520,7 +562,7 @@ func (m *Migrator) beginAtlasMigrationRevision(ctx context.Context, migration *M
 		migration.Description,
 		atlasRevisionTypeExecute,
 		0,
-		migrationStatementCount(migration.UpSQL),
+		m.migrationStatementCount(migration.UpSQL),
 		time.Now(),
 		int64(0),
 		nil,
@@ -544,8 +586,8 @@ func (m *Migrator) completeMigrationRevision(ctx context.Context, migration *Mig
 		m.conn,
 		query,
 		migrationStateApplied,
-		migrationStatementCount(migration.UpSQL),
-		migrationStatementCount(migration.UpSQL),
+		m.migrationStatementCount(migration.UpSQL),
+		m.migrationStatementCount(migration.UpSQL),
 		time.Since(startedAt).Milliseconds(),
 		time.Now(),
 		migration.Version,
@@ -554,7 +596,7 @@ func (m *Migrator) completeMigrationRevision(ctx context.Context, migration *Mig
 
 func (m *Migrator) completeAtlasMigrationRevision(ctx context.Context, migration *Migration, startedAt time.Time) error {
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.completeMigrationSQL())
-	total := migrationStatementCount(migration.UpSQL)
+	total := m.migrationStatementCount(migration.UpSQL)
 	return executeSQLOutsideTransaction(
 		ctx,
 		m.conn,
@@ -582,7 +624,7 @@ func (m *Migrator) beginRollbackRevision(ctx context.Context, migration *Migrati
 		query,
 		migrationStatePending,
 		0,
-		migrationStatementCount(migration.DownSQL),
+		m.migrationStatementCount(migration.DownSQL),
 		0,
 		migration.Version,
 	)
@@ -595,7 +637,7 @@ func (m *Migrator) beginAtlasRollbackRevision(ctx context.Context, migration *Mi
 		m.conn,
 		query,
 		0,
-		migrationStatementCount(migration.DownSQL),
+		m.migrationStatementCount(migration.DownSQL),
 		time.Now(),
 		int64(0),
 		ptahOperatorVersion,
@@ -615,7 +657,7 @@ func (m *Migrator) failMigrationRevision(
 	}
 	applied, total, stmt := migrationExecutionProgress(failure, m.conn.Info().Dialect)
 	if total == 0 {
-		total = migrationStatementCount(sqlText)
+		total = m.migrationStatementCount(sqlText)
 	}
 	if m.revisionTableFormat.isAtlas() {
 		return m.failAtlasMigrationRevision(ctx, migration, startedAt, failure, applied, total, stmt)
@@ -811,8 +853,8 @@ func (m *Migrator) writeBaselineMigrationRows(ctx context.Context, conn *dbschem
 			migration.Description,
 			time.Now(),
 			migrationStateApplied,
-			migrationStatementCount(migration.UpSQL),
-			migrationStatementCount(migration.UpSQL),
+			m.migrationStatementCount(migration.UpSQL),
+			m.migrationStatementCount(migration.UpSQL),
 			0,
 			migrationRevisionHash(migration),
 		); err != nil {
@@ -828,7 +870,7 @@ func (m *Migrator) writeAtlasBaselineMigrationRow(
 	query string,
 	migration *Migration,
 ) error {
-	total := migrationStatementCount(migration.UpSQL)
+	total := m.migrationStatementCount(migration.UpSQL)
 	if err := conn.Writer().ExecuteSQL(
 		ctx,
 		query,
@@ -888,7 +930,7 @@ func (m *Migrator) migrationByVersion(version int64) *Migration {
 }
 
 func (m *Migrator) resumeMigration(ctx context.Context, migration *Migration, resumeFrom int) error {
-	statements := SplitSQLStatements(migration.UpSQL)
+	statements := splitSQLStatementsForConnection(m.conn, migration.UpSQL)
 	if resumeFrom < 1 || resumeFrom > len(statements) {
 		return fmt.Errorf("resume-from must be between 1 and %d", len(statements))
 	}
@@ -932,8 +974,8 @@ func (m *Migrator) forceAppliedMigration(ctx context.Context, migration *Migrati
 		migration.Description,
 		time.Now(),
 		migrationStateApplied,
-		migrationStatementCount(migration.UpSQL),
-		migrationStatementCount(migration.UpSQL),
+		m.migrationStatementCount(migration.UpSQL),
+		m.migrationStatementCount(migration.UpSQL),
 		0,
 		migrationRevisionHash(migration),
 	)
@@ -941,7 +983,7 @@ func (m *Migrator) forceAppliedMigration(ctx context.Context, migration *Migrati
 
 func (m *Migrator) forceAppliedAtlasMigration(ctx context.Context, migration *Migration) error {
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.forceAppliedMigrationSQL())
-	total := migrationStatementCount(migration.UpSQL)
+	total := m.migrationStatementCount(migration.UpSQL)
 	return executeSQLOutsideTransaction(
 		ctx,
 		m.conn,
@@ -967,8 +1009,8 @@ func (m *Migrator) forceAppliedMigrationClickHouse(ctx context.Context, migratio
 		migration.Description,
 		time.Now(),
 		migrationStateApplied,
-		migrationStatementCount(migration.UpSQL),
-		migrationStatementCount(migration.UpSQL),
+		m.migrationStatementCount(migration.UpSQL),
+		m.migrationStatementCount(migration.UpSQL),
 		0,
 		migrationRevisionHash(migration),
 		migration.Version,

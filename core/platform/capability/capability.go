@@ -106,10 +106,11 @@ const (
 	// changes behavior (issue #171).
 	CreateIndexConcurrently Capability = "create_index_concurrently"
 
-	// CreateOrReplaceTrigger marks support for CREATE OR REPLACE TRIGGER
-	// (PostgreSQL 14+, MariaDB 10.1.4+; MySQL has no OR REPLACE for
-	// triggers). Trigger renderers use this to choose between
-	// CREATE OR REPLACE TRIGGER and an explicit drop/create sequence.
+	// CreateOrReplaceTrigger marks support for replacing triggers in one
+	// statement (PostgreSQL 14+ and MariaDB 10.1.4+ use
+	// CREATE OR REPLACE TRIGGER; SQL Server uses CREATE OR ALTER TRIGGER;
+	// MySQL has no equivalent). Trigger renderers use this to choose between
+	// replace syntax and an explicit drop/create sequence.
 	CreateOrReplaceTrigger Capability = "create_or_replace_trigger"
 
 	// AlterGeneratedColumnExpression marks support for changing a generated
@@ -188,7 +189,7 @@ var registry = map[Capability]spec{
 		doc: "CREATE [UNIQUE] INDEX CONCURRENTLY (PostgreSQL; a compatibility no-op on CockroachDB)",
 	},
 	CreateOrReplaceTrigger: {
-		doc: "CREATE OR REPLACE TRIGGER (PostgreSQL 14+, MariaDB; not MySQL)",
+		doc: "single-statement trigger replacement (PostgreSQL/MariaDB CREATE OR REPLACE, SQL Server CREATE OR ALTER; not MySQL)",
 	},
 	AlterGeneratedColumnExpression: {
 		doc: "in-place ALTER COLUMN SET EXPRESSION for generated columns (PostgreSQL 17+)",
@@ -472,6 +473,32 @@ func SQLite3() Capabilities {
 	}
 }
 
+// SQLServer2022 is the preset for the portable SQL Server/Azure SQL DDL subset
+// Ptah targets initially: schemas, tables, IDENTITY columns, CHECK/UNIQUE/FK
+// constraints, indexes, views, and triggers are available; standalone sequence
+// objects, native enum, PostgreSQL RLS, extension, and advisory-lock surfaces
+// are not.
+func SQLServer2022() Capabilities {
+	return Capabilities{
+		DropConstraintGeneric:          true,
+		DropConstraintIfExists:         false,
+		DropIndexIfExists:              false,
+		CheckConstraintsEnforced:       true,
+		DropCheckClause:                false,
+		EnumInlineColumn:               false,
+		EnumCustomType:                 false,
+		CreateIndexConcurrently:        false,
+		CreateOrReplaceTrigger:         true,
+		AlterGeneratedColumnExpression: false,
+		RowLevelSecurity:               false,
+		RoleManagement:                 false,
+		ForeignKeys:                    true,
+		Sequences:                      false,
+		XMLType:                        true,
+		AdvisoryLocks:                  false,
+	}
+}
+
 // CockroachDB23 is the preset for CockroachDB's PostgreSQL-compatible surface.
 // CockroachDB runs schema changes online by design, so PostgreSQL's
 // CONCURRENTLY keyword is not a meaningful or portable emission target. It
@@ -534,6 +561,8 @@ func ForDialect(dialect string) Capabilities {
 		return ClickHouse24()
 	case platform.SQLite:
 		return SQLite3()
+	case platform.SQLServer:
+		return SQLServer2022()
 	case platform.CockroachDB:
 		return CockroachDB23()
 	case platform.YugabyteDB:

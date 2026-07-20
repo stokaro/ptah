@@ -155,8 +155,8 @@ func TestGetDynamicScenarios(t *testing.T) {
 
 	scenarios := GetDynamicScenarios()
 
-	// Should have exactly 44 dynamic scenarios (28 original + 5 RLS down migration scenarios + 5 role scenarios + 2 fixture-coverage scenarios for PR #123 / issue #89 + 1 ClickHouse MergeTree scenario for issue #169 + 1 FK action evolution scenario for issue #196 + 2 distributed-SQL common-subset scenarios for issue #171)
-	c.Assert(scenarios, qt.HasLen, 44)
+	// Should have exactly 45 dynamic scenarios (28 original + 5 RLS down migration scenarios + 5 role scenarios + 2 fixture-coverage scenarios for PR #123 / issue #89 + 1 ClickHouse MergeTree scenario for issue #169 + 1 FK action evolution scenario for issue #196 + 2 distributed-SQL common-subset scenarios for issue #171 + 1 SQL Server acceptance scenario for issue #149)
+	c.Assert(scenarios, qt.HasLen, 45)
 
 	// Verify all scenarios have required fields
 	for _, scenario := range scenarios {
@@ -192,10 +192,59 @@ func TestGetDynamicScenarios(t *testing.T) {
 		"dynamic_type_mapping",
 		"dynamic_constraint_validation",
 		"dynamic_foreign_key_cascade",
+		"dynamic_sqlserver_identity_schema_bracket_reserved_words",
 	}
 
 	for _, scenarioName := range newScenarios {
 		c.Assert(scenarioNames[scenarioName], qt.IsTrue, qt.Commentf("New dynamic scenario %s should be included", scenarioName))
+	}
+}
+
+func TestSQLServerCompatibleScenariosAreExplicit(t *testing.T) {
+	c := qt.New(t)
+
+	var sqlServerCompatible []string
+	for _, scenario := range GetAllScenarios() {
+		if scenario.SQLServerCompatible {
+			sqlServerCompatible = append(sqlServerCompatible, scenario.Name)
+		}
+	}
+
+	c.Assert(sqlServerCompatible, qt.DeepEquals, []string{
+		"apply_incremental_migrations",
+		"rollback_migrations",
+		"upgrade_to_specific_version",
+		"check_current_version",
+		"read_actual_db_schema",
+		"dry_run_support",
+		"operation_planning",
+		"failure_diagnostics",
+		"idempotency_reapply",
+		"idempotency_up_to_date",
+		"parallel_migrate_smoke",
+		"cleanup_support",
+		"dynamic_sqlserver_identity_schema_bracket_reserved_words",
+	})
+}
+
+func TestMigrationPathForDialect(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		dialect       string
+		migrationType string
+		expected      string
+	}{
+		{dialect: "postgres", migrationType: "basic", expected: "migrations/basic"},
+		{dialect: "cockroachdb", migrationType: "basic", expected: "migrations/basic"},
+		{dialect: "mysql", migrationType: "basic", expected: "migrations/basic_mysql"},
+		{dialect: "mariadb", migrationType: "failing", expected: "migrations/failing_mysql"},
+		{dialect: "sqlserver", migrationType: "basic", expected: "migrations/basic_sqlserver"},
+		{dialect: "mssql", migrationType: "failing", expected: "migrations/failing_sqlserver"},
+	}
+
+	for _, tt := range tests {
+		c.Assert(migrationPathForDialect(tt.dialect, tt.migrationType), qt.Equals, tt.expected)
 	}
 }
 

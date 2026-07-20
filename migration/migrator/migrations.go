@@ -23,6 +23,28 @@ func SplitSQLStatements(sql string) []string {
 	return sqlutil.SplitSQLStatements(sqlutil.StripComments(normalized))
 }
 
+func splitSQLStatementsForConnection(conn *dbschema.DatabaseConnection, sql string) []string {
+	if conn == nil {
+		return SplitSQLStatements(sql)
+	}
+	return splitSQLStatementsForDialect(sql, conn.Info().Dialect)
+}
+
+func splitSQLStatementsForDialect(sql, dialect string) []string {
+	if strings.TrimSpace(dialect) == "" {
+		return SplitSQLStatements(sql)
+	}
+	statements := sqlutil.SplitSQLStatementsForDialect(sql, dialect)
+	filtered := statements[:0]
+	for _, stmt := range statements {
+		stmt = strings.TrimSpace(sqlutil.StripComments(stmt))
+		if stmt != "" {
+			filtered = append(filtered, stmt)
+		}
+	}
+	return filtered
+}
+
 // StatementInterceptor lets an external executor take over individual
 // migration statements — for example, routing ALTER TABLE statements through
 // an online-DDL tool (gh-ost, pt-online-schema-change) instead of executing
@@ -408,8 +430,7 @@ func CreateMigrationFromSQL(version int64, description, upSQL, downSQL string) *
 
 // executeSQLStatements splits SQL into individual statements and executes them
 func executeSQLStatements(ctx context.Context, conn *dbschema.DatabaseConnection, sql string, mode migrationExecutionMode) error {
-	// Split SQL by semicolons and execute each statement
-	statements := SplitSQLStatements(sql)
+	statements := splitSQLStatementsForConnection(conn, sql)
 
 	for i, stmt := range statements {
 		stmt = strings.TrimSpace(stmt)
@@ -449,7 +470,7 @@ func executeMigrationFileSQL(
 		}
 	}
 
-	statements := SplitSQLStatements(sql)
+	statements := splitSQLStatementsForConnection(conn, sql)
 	for i, stmt := range statements {
 		stmt = strings.TrimSpace(stmt)
 		if stmt == "" {

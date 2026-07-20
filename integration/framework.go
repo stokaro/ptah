@@ -125,6 +125,12 @@ type TestScenario struct {
 	// distributed-SQL subset (functions, RLS, roles, XML, and concurrent
 	// index policy).
 	PostgresDistributedCompatible bool
+	// SQLServerCompatible opts a scenario in to running against SQL Server.
+	// Default false because most legacy scenarios use PostgreSQL/MySQL syntax
+	// or schema-evolution surfaces that SQL Server support has not yet made
+	// portable. Opted-in scenarios must be verified against the T-SQL renderer,
+	// migrator, and reader end to end.
+	SQLServerCompatible bool
 }
 
 // TestRunner manages and executes integration tests
@@ -243,6 +249,19 @@ func (tr *TestRunner) runSingleTest(ctx context.Context, scenario TestScenario, 
 		)
 		result.Skipped = true
 		result.SkipReason = "Scenario has not opted in via PostgresDistributedCompatible; skipping on PostgreSQL-family distributed SQL"
+		result.Steps = recorder.GetSteps()
+		result.Duration = time.Since(start)
+		return result
+	}
+	if platform.NormalizeDialect(conn.Info().Dialect) == platform.SQLServer && !scenario.SQLServerCompatible {
+		recorder := &StepRecorder{}
+		_ = recorder.RecordStep(
+			"Skip Non-SQL-Server-Compatible Scenario",
+			"Scenario has not opted in via SQLServerCompatible; skipping on SQL Server",
+			func() error { return nil },
+		)
+		result.Skipped = true
+		result.SkipReason = "Scenario has not opted in via SQLServerCompatible; skipping on SQL Server"
 		result.Steps = recorder.GetSteps()
 		result.Duration = time.Since(start)
 		return result
@@ -624,19 +643,8 @@ func (dh *DatabaseHelper) IsDryRun() bool {
 
 // GetMigrationsFS returns the appropriate migrations filesystem for the database dialect
 func GetMigrationsFS(fixtures fs.FS, conn *dbschema.DatabaseConnection, migrationType string) (fs.FS, error) {
-	dialect := conn.Info().Dialect
-
 	// Try database-specific migrations first
-	var migrationPath string
-	switch dialect {
-	case platform.MySQL, platform.MariaDB:
-		migrationPath = fmt.Sprintf("migrations/%s_mysql", migrationType)
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		migrationPath = fmt.Sprintf("migrations/%s", migrationType) // PostgreSQL uses the default
-	default:
-		migrationPath = fmt.Sprintf("migrations/%s", migrationType) // Fallback to default
-	}
-
+	migrationPath := migrationPathForDialect(conn.Info().Dialect, migrationType)
 	// Check if database-specific migrations exist
 	if _, err := fs.Stat(fixtures, migrationPath); err == nil {
 		return fs.Sub(fixtures, migrationPath)
@@ -645,4 +653,15 @@ func GetMigrationsFS(fixtures fs.FS, conn *dbschema.DatabaseConnection, migratio
 	// Fallback to default migrations
 	defaultPath := fmt.Sprintf("migrations/%s", migrationType)
 	return fs.Sub(fixtures, defaultPath)
+}
+
+func migrationPathForDialect(dialect, migrationType string) string {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.MySQL, platform.MariaDB:
+		return fmt.Sprintf("migrations/%s_mysql", migrationType)
+	case platform.SQLServer:
+		return fmt.Sprintf("migrations/%s_sqlserver", migrationType)
+	default:
+		return fmt.Sprintf("migrations/%s", migrationType)
+	}
 }

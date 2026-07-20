@@ -2,6 +2,7 @@ package migrator_test
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"strings"
@@ -83,12 +84,47 @@ func TestMigrationAdvisoryLock_PostgresTimeoutIntegration(t *testing.T) {
 
 func TestMigrationAdvisoryLock_MySQLDefaultTimeoutIntegration(t *testing.T) {
 	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
-	runIssue124MySQLFamilyDefaultTimeoutIntegration(t, dbURL)
+	runIssue124AdvisoryLockDefaultTimeoutIntegration(t, dbURL)
 }
 
 func TestMigrationAdvisoryLock_MariaDBDefaultTimeoutIntegration(t *testing.T) {
 	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
-	runIssue124MySQLFamilyDefaultTimeoutIntegration(t, dbURL)
+	runIssue124AdvisoryLockDefaultTimeoutIntegration(t, dbURL)
+}
+
+func TestMigrationAdvisoryLock_SQLServerDefaultTimeoutIntegration(t *testing.T) {
+	dbURL := sqlServerTestURL(t)
+	runIssue124AdvisoryLockDefaultTimeoutIntegration(t, dbURL)
+}
+
+func TestMigrationAdvisoryLock_SQLServerTimeoutIntegration(t *testing.T) {
+	dbURL := sqlServerTestURL(t)
+	c := qt.New(t)
+	ctx := context.Background()
+
+	baseConn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = baseConn.Close() }()
+
+	names := issue124Names(time.Now().UnixNano())
+	cleanupIssue124(t, baseConn, names)
+	defer cleanupIssue124(t, baseConn, names)
+
+	lockConn, err := baseConn.Conn(ctx)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = lockConn.Close() }()
+
+	c.Assert(acquireSQLServerTestMigrationLock(ctx, lockConn), qt.IsNil)
+	defer func() {
+		_ = releaseSQLServerTestMigrationLock(context.Background(), lockConn)
+	}()
+
+	err = issue124Migrator(baseConn, names.migrationsTable, issue124Migrations(names)).
+		WithMigrationLockTimeout(100 * time.Millisecond).
+		MigrateUp(ctx)
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(migrator.IsMigrationLockTimeout(err), qt.IsTrue)
 }
 
 type issue124TestNames struct {
@@ -210,7 +246,7 @@ func cleanupIssue124(t *testing.T, conn *dbschema.DatabaseConnection, names issu
 	}
 }
 
-func runIssue124MySQLFamilyDefaultTimeoutIntegration(t *testing.T, dbURL string) {
+func runIssue124AdvisoryLockDefaultTimeoutIntegration(t *testing.T, dbURL string) {
 	t.Helper()
 
 	c := qt.New(t)
@@ -249,4 +285,55 @@ func mySQLFamilyTestURL(t *testing.T, dialect string, envNames ...string) string
 
 	t.Skipf("%s not set", strings.Join(envNames, " or "))
 	return ""
+}
+
+func sqlServerTestURL(t *testing.T) string {
+	t.Helper()
+
+	dbURL := os.Getenv("PTAH_SQLSERVER_TEST_URL")
+	if dbURL == "" {
+		t.Skip("PTAH_SQLSERVER_TEST_URL not set")
+	}
+	if !strings.HasPrefix(dbURL, "sqlserver://") && !strings.HasPrefix(dbURL, "mssql://") {
+		t.Skip("sqlserver URL required for SQL Server advisory lock integration test")
+	}
+	return dbURL
+}
+
+func acquireSQLServerTestMigrationLock(ctx context.Context, conn interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}) error {
+	var result int
+	if err := conn.QueryRowContext(ctx, `
+DECLARE @result INT;
+EXEC @result = sys.sp_getapplock
+    @Resource = @p1,
+    @LockMode = 'Exclusive',
+    @LockOwner = 'Session',
+    @LockTimeout = 0;
+SELECT @result;`, "ptah_migrate").Scan(&result); err != nil {
+		return err
+	}
+	if result < 0 {
+		return fmt.Errorf("sqlserver test sp_getapplock failed with return code %d", result)
+	}
+	return nil
+}
+
+func releaseSQLServerTestMigrationLock(ctx context.Context, conn interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}) error {
+	var result int
+	if err := conn.QueryRowContext(ctx, `
+DECLARE @result INT;
+EXEC @result = sys.sp_releaseapplock
+    @Resource = @p1,
+    @LockOwner = 'Session';
+SELECT @result;`, "ptah_migrate").Scan(&result); err != nil {
+		return err
+	}
+	if result < 0 {
+		return fmt.Errorf("sqlserver test sp_releaseapplock failed with return code %d", result)
+	}
+	return nil
 }

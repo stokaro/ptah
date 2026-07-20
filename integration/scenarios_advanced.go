@@ -215,8 +215,7 @@ func testIdempotencyUpToDate(ctx context.Context, conn *dbschema.DatabaseConnect
 }
 
 // testParallelMigrateSmoke verifies final consistency when two runners race.
-// It does not assert a migration-level lock; production deployments must
-// enforce a single runner externally until Ptah implements #124.
+// It exercises the migration-level advisory lock for dialects that support it.
 func testParallelMigrateSmoke(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS) error {
 	migrationsFS, err := GetMigrationsFS(fixtures, conn, "basic")
 	if err != nil {

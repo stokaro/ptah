@@ -55,12 +55,16 @@ func CompareWithDialect(generated *goschema.Database, database *types.DBSchema, 
 //	opts := config.WithIgnoredExtensions()
 //	diff := schemadiff.CompareWithOptions(generated, database, opts)
 func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, opts *config.CompareOptions) *difftypes.SchemaDiff {
+	if opts == nil {
+		opts = config.DefaultCompareOptions()
+	}
+
 	diff := &difftypes.SchemaDiff{}
 	generated, database = normalizeInlineEnumsForCompare(generated, database, opts)
 	generated = normalizeGeneratedColumnsForCompare(generated, opts)
 
 	// Compare tables and their column structures
-	compare.TablesAndColumns(generated, database, diff)
+	compare.TablesAndColumnsWithDialect(generated, database, diff, opts.Dialect)
 
 	// Compare enum type definitions and values
 	compare.Enums(generated, database, diff)
@@ -118,6 +122,9 @@ func normalizeInlineEnumsForCompare(
 			case platform.SQLite:
 				field.Type = "TEXT"
 				field.Check = sqliteInlineEnumCheck(*field)
+			case platform.SQLServer:
+				field.Type = "NVARCHAR(255)"
+				field.Check = sqlServerInlineEnumCheck(*field)
 			}
 		}
 	}
@@ -157,6 +164,8 @@ func defaultGeneratedColumnKind(dialect string) string {
 		return "STORED"
 	case platform.MySQL, platform.MariaDB, platform.SQLite:
 		return "VIRTUAL"
+	case platform.SQLServer:
+		return "PERSISTED"
 	default:
 		return ""
 	}
@@ -164,7 +173,7 @@ func defaultGeneratedColumnKind(dialect string) string {
 
 func isInlineEnumDialect(dialect string) bool {
 	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB, platform.SQLite:
+	case platform.MySQL, platform.MariaDB, platform.SQLite, platform.SQLServer:
 		return true
 	default:
 		return false
@@ -172,6 +181,22 @@ func isInlineEnumDialect(dialect string) bool {
 }
 
 func sqliteInlineEnumCheck(field goschema.Field) string {
+	return enumCheck(field)
+}
+
+func sqlServerInlineEnumCheck(field goschema.Field) string {
+	quoted := make([]string, 0, len(field.Enum))
+	for _, value := range field.Enum {
+		quoted = append(quoted, "'"+strings.ReplaceAll(value, "'", "''")+"'")
+	}
+	enumCheck := "[" + strings.ReplaceAll(field.Name, "]", "]]") + "] IN (" + strings.Join(quoted, ", ") + ")"
+	if field.Check != "" {
+		return "(" + field.Check + ") AND " + enumCheck
+	}
+	return enumCheck
+}
+
+func enumCheck(field goschema.Field) string {
 	quoted := make([]string, 0, len(field.Enum))
 	for _, value := range field.Enum {
 		quoted = append(quoted, "'"+strings.ReplaceAll(value, "'", "''")+"'")

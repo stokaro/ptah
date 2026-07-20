@@ -16,16 +16,22 @@ The name **Ptah** is also an acronym:
 
 ---
 
-## Independent Atlas-Compatible Implementation
+## Independent, License-Clean Atlas Compatibility
 
 **Ptah does not use Atlas source code.** Ptah is a fully independent
-implementation: this repository does **not** vendor, copy, link, embed, or
+implementation. This repository does **not** vendor, copy, link, embed, or
 execute Atlas code, and Ptah's runtime behavior is implemented in Ptah itself.
 
-Atlas compatibility work is based on publicly observable compatibility inputs:
-Atlas OSS command interfaces, file formats, behavior, and test assets. Test
-assets that originate from Atlas are intentionally kept outside this repository
-in
+Ptah's Atlas-compatible behavior is developed from compatibility inputs, not
+from Atlas implementation code:
+
+- Atlas OSS command interfaces and flags.
+- Publicly observable file formats and runtime behavior.
+- Atlas OSS test assets and fixtures used as external conformance inputs.
+
+The only Atlas-derived materials used for compatibility work are test assets and
+fixtures. For repository and license hygiene, those assets are kept outside this
+repository in
 [`ptah-atlas-conformance`](https://github.com/stokaro/ptah-atlas-conformance).
 That repository measures Ptah against the Atlas fixture corpus without mixing
 Atlas source or Atlas-originated test assets into the main Ptah codebase.
@@ -52,7 +58,7 @@ capabilities include:
   Supports PostgreSQL RLS policies, roles, grants, and custom functions for multi-tenant data isolation.
 
 - 🔍 **Database Introspection**
-  Reads the current schema directly from PostgreSQL-family targets, MySQL, MariaDB, SQLite, and ClickHouse for comparison and analysis.
+  Reads the current schema directly from PostgreSQL-family targets, MySQL, MariaDB, SQLite, ClickHouse, and SQL Server for comparison and analysis.
 
 - 🧬 **Brownfield Go Import**
   Generates annotated Go model files from a live database with `ptah introspect`, giving existing databases a Ptah source-of-truth starting point.
@@ -97,7 +103,7 @@ The core package contains all fundamental components for parsing, transforming, 
 
 - **`renderer/`** - Dialect-specific SQL generation from AST
   - Converts AST nodes to database-specific SQL statements
-  - Supports PostgreSQL-family targets, MySQL, MariaDB, SQLite, ClickHouse, and Spanner dialects
+  - Supports PostgreSQL-family targets, MySQL, MariaDB, SQLite, ClickHouse, SQL Server, and Spanner dialects
   - Implements visitor pattern for extensible rendering
 
 - **`platform/`** - Database platform constants and identifiers
@@ -132,7 +138,7 @@ Provides comprehensive database migration functionality:
 
 - **`planner/`** - Migration planning and SQL generation
   - Converts schema differences into executable SQL statements
-  - Dialect-specific planners for PostgreSQL-family targets, MySQL, MariaDB, SQLite, and ClickHouse
+  - Dialect-specific planners for PostgreSQL-family targets, MySQL, MariaDB, SQLite, ClickHouse, and SQL Server
   - Handles dependency ordering and safety checks
 
 - **`schemadiff/`** - Schema comparison and difference analysis
@@ -970,13 +976,14 @@ PostgreSQL uses `SET LOCAL lock_timeout` and `SET LOCAL statement_timeout` insid
 
 `migrations up`, `migrations down`, and programmatic `MigrateTo` acquire a
 session-level migration advisory lock around the planning and apply window for
-PostgreSQL, MySQL, and MariaDB. PostgreSQL uses `pg_advisory_lock`; MySQL and
-MariaDB use `GET_LOCK('ptah_migrate', timeout)`. By default Ptah waits until
-the lock is available; MariaDB does not accept MySQL's negative infinite
-timeout, so Ptah uses a long server-side wait there unless an explicit timeout
-is configured. Set `--migration-lock-timeout` to make concurrent runners fail
-with a typed migration lock timeout error that callers can detect with
-`migrator.IsMigrationLockTimeout`.
+PostgreSQL, MySQL, MariaDB, and SQL Server. PostgreSQL uses
+`pg_advisory_lock`; MySQL and MariaDB use `GET_LOCK('ptah_migrate', timeout)`;
+SQL Server uses `sys.sp_getapplock` with `Session` ownership. By default Ptah
+waits until the lock is available; MariaDB does not accept MySQL's negative
+infinite timeout, so Ptah uses a long server-side wait there unless an explicit
+timeout is configured. Set `--migration-lock-timeout` to make concurrent
+runners fail with a typed migration lock timeout error that callers can detect
+with `migrator.IsMigrationLockTimeout`.
 
 Most migrations run inside the normal per-migration transaction. If the database
 rejects transactional execution, use an explicit file directive:
@@ -1402,6 +1409,9 @@ Run comprehensive integration tests across multiple database platforms:
 # Run tests for specific databases
 ./bin/ptah-integration-test --databases postgres,mysql
 
+# Run SQL Server opt-in smoke scenarios
+make integration-test-sqlserver
+
 # Run specific test scenarios
 ./bin/ptah-integration-test --scenarios apply_incremental_migrations,rollback_migrations
 
@@ -1413,11 +1423,12 @@ Run comprehensive integration tests across multiple database platforms:
 ```
 
 **Features:**
-- ✅ Tests across PostgreSQL-family targets, MySQL, MariaDB, and ClickHouse
+- ✅ Tests across PostgreSQL-family targets, MySQL, MariaDB, ClickHouse, and opt-in SQL Server
 - ✅ Comprehensive scenario coverage (basic, parallel execution smoke, idempotency, failure recovery)
 - ✅ Multiple report formats (TXT, JSON, HTML)
 - ✅ Automated database setup and cleanup
 - ✅ ClickHouse scenarios are opt-in per scenario (`ClickHouseCompatible`); incompatible scenarios skip cleanly against a ClickHouse connection
+- ✅ SQL Server scenarios are opt-in per scenario (`SQLServerCompatible`); incompatible scenarios skip cleanly against a SQL Server connection
 - ✅ PostgreSQL-family distributed SQL scenarios are opt-in per scenario (`PostgresDistributedCompatible`), with live common-subset coverage for CockroachDB and YugabyteDB
 
 ---
@@ -1577,7 +1588,7 @@ go test -v ./migration/...
 
 ### Integration Testing Framework
 
-Ptah includes a comprehensive integration testing framework that validates migration functionality across PostgreSQL-family targets, MySQL, MariaDB, and ClickHouse. CockroachDB and YugabyteDB have live common-subset scenarios in CI; Spanner uses capability, planning, and rendering coverage only.
+Ptah includes a comprehensive integration testing framework that validates migration functionality across PostgreSQL-family targets, MySQL, MariaDB, ClickHouse, and opt-in SQL Server. CockroachDB and YugabyteDB have live common-subset scenarios in CI; Spanner uses capability, planning, and rendering coverage only.
 
 #### Run Integration Tests
 
@@ -1587,6 +1598,9 @@ Ptah includes a comprehensive integration testing framework that validates migra
 
 # Run tests for specific databases
 ./bin/ptah-integration-test --databases postgres,mysql
+
+# Run SQL Server opt-in smoke scenarios
+make integration-test-sqlserver
 
 # Run specific test scenarios
 ./bin/ptah-integration-test --scenarios apply_incremental_migrations,rollback_migrations
@@ -1703,7 +1717,11 @@ DDL capability matrix in [docs/capabilities.md](docs/capabilities.md).
 | ClickHouse | Yes, compatible MergeTree subset | Yes | Yes, compatible subset | Yes, compatible subset | No; transaction hooks are no-ops | Yes | Limited to compatible scenarios |
 | CockroachDB | PostgreSQL-family common subset | Yes | Yes, common subset | Yes, common subset | Yes for supported transactional DDL | Yes | Limited to common-subset workflows |
 | YugabyteDB | PostgreSQL-family common subset | Yes | Yes, common subset | Yes, common subset | Yes for supported transactional DDL | Yes | Limited to common-subset workflows |
+| SQL Server | Yes, T-SQL subset | Yes | Yes, supported subset | Yes, supported subset | Yes for supported transactional DDL | Opt-in via `PTAH_SQLSERVER_TEST_URL` | Limited to supported DDL/introspection subset |
 | Spanner | Conservative PostgreSQL-interface routing | Partial/offline-oriented | Partial/offline-oriented | Not production-ready | No verified live apply path | No | No |
+
+See [SQL Server Support](docs/sqlserver.md) for connection URL format,
+supported T-SQL surface, current limitations, and opt-in live test setup.
 
 ---
 
@@ -1754,7 +1772,7 @@ Define enums for type safety:
 Status string
 ```
 
-For PostgreSQL, this creates a proper ENUM type. For MySQL/MariaDB, it uses the ENUM column type. ClickHouse maps `ENUM` fields to inline `Enum8`/`Enum16` column types based on the declared values.
+For PostgreSQL, this creates a proper ENUM type. For MySQL/MariaDB, it uses the ENUM column type. ClickHouse maps `ENUM` fields to inline `Enum8`/`Enum16` column types based on the declared values. SQL Server maps enums to `NVARCHAR(255)` columns with generated `CHECK` constraints.
 
 ### Multi-Tenant Row-Level Security (PostgreSQL)
 
@@ -1947,6 +1965,7 @@ This project is part of the Inventario system and follows the same licensing ter
 - ✅ **Migration versioning and rollback capabilities** - Full migration system with up/down migrations, version tracking, and rollback support
 - ✅ **Comprehensive integration testing** - Multi-database testing framework with PostgreSQL-family, MySQL, MariaDB, and ClickHouse coverage
 - ✅ **ClickHouse dialect** - MergeTree-family engine annotations, data-skipping indexes, and live introspection via `system.tables`
+- ✅ **SQL Server dialect** - T-SQL rendering with bracket-quoted identifiers, `IDENTITY`, `NVARCHAR`, schema-aware introspection, and opt-in live coverage
 - ✅ **CockroachDB and YugabyteDB common-subset support** - PostgreSQL-family rendering, planning, and live integration coverage for supported features
 - ✅ **Spanner capability routing** - Conservative PostgreSQL-interface planning/rendering presets without live production support
 - ✅ **PostgreSQL extensions support** - Support for PostgreSQL extensions in schema definitions
@@ -1968,7 +1987,7 @@ This project is part of the Inventario system and follows the same licensing ter
 - [ ] **Performance optimizations** - Optimizations for large schemas and complex migrations
 
 ### 🎯 Planned Features
-- [ ] **Additional database dialects** - SQL Server support
+- [ ] **Additional database dialects** - Expand production readiness for dialect-specific features not covered by the current common subsets
 - [ ] **Web UI for schema visualization** - Interactive schema browser and migration management
 - [ ] **Import from existing databases** - Reverse engineering existing schemas to Go entities
 - [ ] **Export capabilities** - Export to GraphQL schemas, OpenAPI specs, and other formats
