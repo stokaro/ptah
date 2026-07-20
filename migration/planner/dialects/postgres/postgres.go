@@ -10,6 +10,7 @@ import (
 	"github.com/stokaro/ptah/core/convert/fromschema"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform/capability"
+	"github.com/stokaro/ptah/migration/internal/deporder"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
@@ -331,24 +332,25 @@ func quotePostgresIdentifier(name string) string {
 }
 
 func (p *Planner) addNewTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	tablesToAdd := createTableLookupMap(diff.TablesAdded)
+	orderedTables := deporder.TablesForCreate(generated, diff.TablesAdded)
 
-	result = p.addSchemaPreconditions(result, generated, tablesToAdd)
+	result = p.addSchemaPreconditions(result, orderedTables)
 
 	// Phase 1: Create tables without foreign key constraints
-	result = p.createTablesWithoutForeignKeys(result, generated, tablesToAdd)
-
-	// Phase 2: Add foreign key constraints via ALTER TABLE statements
-	result = p.addForeignKeyConstraints(result, generated, tablesToAdd)
+	result = p.createTablesWithoutForeignKeys(result, generated, orderedTables)
 
 	return result
 }
 
-func (p *Planner) addSchemaPreconditions(result []ast.Node, generated *goschema.Database, tablesToAdd map[string]bool) []ast.Node {
+func (p *Planner) addForeignKeyConstraintsForNewTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	return p.addForeignKeyConstraints(result, generated, deporder.TablesForCreate(generated, diff.TablesAdded))
+}
+
+func (p *Planner) addSchemaPreconditions(result []ast.Node, tables []goschema.Table) []ast.Node {
 	seen := make(map[string]struct{})
-	for _, table := range generated.Tables {
+	for _, table := range tables {
 		schema := strings.TrimSpace(table.Schema)
-		if schema == "" || !tablesToAdd[table.QualifiedName()] {
+		if schema == "" {
 			continue
 		}
 		if _, ok := seen[schema]; ok {
@@ -360,24 +362,11 @@ func (p *Planner) addSchemaPreconditions(result []ast.Node, generated *goschema.
 	return result
 }
 
-// createTableLookupMap creates a map for quick table lookup
-func createTableLookupMap(tableNames []string) map[string]bool {
-	tablesToAdd := make(map[string]bool)
-	for _, tableName := range tableNames {
-		tablesToAdd[tableName] = true
-	}
-	return tablesToAdd
-}
-
 // createTablesWithoutForeignKeys creates all tables without foreign key constraints
-func (p *Planner) createTablesWithoutForeignKeys(result []ast.Node, generated *goschema.Database, tablesToAdd map[string]bool) []ast.Node {
+func (p *Planner) createTablesWithoutForeignKeys(result []ast.Node, generated *goschema.Database, tables []goschema.Table) []ast.Node {
 	allFields := generated.Fields
 
-	for _, table := range generated.Tables {
-		if !tablesToAdd[table.QualifiedName()] {
-			continue
-		}
-
+	for _, table := range tables {
 		astNode := fromschema.FromTable(table, allFields, generated.Enums, DialectName)
 		for _, column := range astNode.Columns {
 			column.ForeignKey = nil
@@ -389,12 +378,8 @@ func (p *Planner) createTablesWithoutForeignKeys(result []ast.Node, generated *g
 }
 
 // addForeignKeyConstraints adds foreign key constraints via ALTER TABLE statements
-func (p *Planner) addForeignKeyConstraints(result []ast.Node, generated *goschema.Database, tablesToAdd map[string]bool) []ast.Node {
-	for _, table := range generated.Tables {
-		if !tablesToAdd[table.QualifiedName()] {
-			continue
-		}
-
+func (p *Planner) addForeignKeyConstraints(result []ast.Node, generated *goschema.Database, tables []goschema.Table) []ast.Node {
+	for _, table := range tables {
 		result = p.addRegularForeignKeys(result, generated, table)
 		result = p.addSelfReferencingForeignKeys(result, generated, table)
 	}
@@ -891,8 +876,8 @@ func stringSet(values []string) map[string]struct{} {
 	return set
 }
 
-func (p *Planner) removeTables(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
-	for _, tableName := range diff.TablesRemoved {
+func (p *Planner) removeTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, tableName := range deporder.TableDropOrder(diff.TablesRemoved, generated) {
 		dropTableNode := ast.NewDropTable(tableName).
 			SetIfExists().
 			SetCascade().
@@ -1032,9 +1017,8 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	result = p.addForeignKeyConstraintsForModifiedTables(result, diff, generated)
 
 	// 6.6. Add and modify views, materialized views, and triggers after their tables/functions exist.
-	result = p.addNewViews(result, diff, generated)
+	result = p.addNewViewLikeObjects(result, diff, generated)
 	result = p.modifyExistingViews(result, diff, generated)
-	result = p.addNewMaterializedViews(result, diff, generated)
 	result = p.modifyExistingMaterializedViews(result, diff, generated)
 	result = p.addNewTriggers(result, diff, generated)
 	result = p.modifyExistingTriggers(result, diff, generated)
@@ -1058,6 +1042,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// 9. Add RLS policies (must be done after RLS is enabled and columns exist)
 	if p.capabilities().Has(capability.RowLevelSecurity) {
 		result = p.addNewRLSPolicies(result, diff, generated)
+		result = p.modifyExistingRLSPolicies(result, diff, generated)
 	}
 
 	// 9.5. Add role privilege grants after roles and target objects exist.
@@ -1070,6 +1055,10 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 
 	// 10.5. Add new constraints (must be done after tables and columns exist)
 	result = p.addNewConstraints(result, diff, generated)
+
+	// 10.6. Add field-level foreign keys for new tables after referenced
+	// unique indexes and constraints have been created.
+	result = p.addForeignKeyConstraintsForNewTables(result, diff, generated)
 
 	// 11. Remove indexes (safe operations)
 	result = p.removeIndexes(result, diff)
@@ -1096,7 +1085,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	result = p.removeViews(result, diff)
 
 	// 13. Remove tables (dangerous!)
-	result = p.removeTables(result, diff)
+	result = p.removeTables(result, diff, generated)
 
 	// 13. Remove functions (must be done after removing policies that might use them)
 	result = p.removeFunctions(result, diff)
@@ -1337,15 +1326,8 @@ func (p *Planner) removeExtensions(result []ast.Node, diff *types.SchemaDiff) []
 }
 
 func (p *Planner) addNewFunctions(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	for _, functionName := range diff.FunctionsAdded {
-		// Find the function definition
-		for _, fn := range generated.Functions {
-			if fn.Name == functionName {
-				functionNode := fromschema.FromFunction(fn)
-				result = append(result, functionNode)
-				break
-			}
-		}
+	for _, fn := range deporder.FunctionsForCreate(generated, diff.FunctionsAdded) {
+		result = append(result, fromschema.FromFunction(fn))
 	}
 	return result
 }
@@ -1389,9 +1371,27 @@ func (p *Planner) removeFunctions(result []ast.Node, diff *types.SchemaDiff) []a
 	return result
 }
 
-func (p *Planner) addNewViews(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) addNewViewLikeObjects(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	objects := make([]deporder.ViewLike, 0, len(diff.ViewsAdded)+len(diff.MaterializedViewsAdded))
 	for _, viewName := range diff.ViewsAdded {
 		if view := findView(generated.Views, viewName); view != nil {
+			objects = append(objects, deporder.ViewLike{Name: view.Name, Body: view.Body})
+		}
+	}
+	for _, viewName := range diff.MaterializedViewsAdded {
+		if view := findMaterializedView(generated.MaterializedViews, viewName); view != nil {
+			objects = append(objects, deporder.ViewLike{Name: view.Name, Body: view.Body, Materialized: true})
+		}
+	}
+
+	for _, object := range deporder.ViewLikesForCreate(objects) {
+		if object.Materialized {
+			if view := findMaterializedView(generated.MaterializedViews, object.Name); view != nil {
+				result = append(result, fromschema.FromMaterializedView(*view))
+			}
+			continue
+		}
+		if view := findView(generated.Views, object.Name); view != nil {
 			result = append(result, fromschema.FromView(*view))
 		}
 	}
@@ -1410,15 +1410,6 @@ func (p *Planner) modifyExistingViews(result []ast.Node, diff *types.SchemaDiff,
 func (p *Planner) removeViews(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 	for _, viewName := range diff.ViewsRemoved {
 		result = append(result, ast.NewDropView(viewName).SetIfExists().SetCascade())
-	}
-	return result
-}
-
-func (p *Planner) addNewMaterializedViews(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	for _, viewName := range diff.MaterializedViewsAdded {
-		if view := findMaterializedView(generated.MaterializedViews, viewName); view != nil {
-			result = append(result, fromschema.FromMaterializedView(*view))
-		}
 	}
 	return result
 }
@@ -1496,6 +1487,15 @@ func findTrigger(triggers []goschema.Trigger, tableName, triggerName string) *go
 	return nil
 }
 
+func findRLSPolicy(policies []goschema.RLSPolicy, tableName, policyName string) *goschema.RLSPolicy {
+	for i := range policies {
+		if policies[i].Table == tableName && policies[i].Name == policyName {
+			return &policies[i]
+		}
+	}
+	return nil
+}
+
 func (p *Planner) enableRLSOnTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
 	// Create a set of tables that need RLS enabled
 	tablesNeedingRLS := make(map[string]bool)
@@ -1551,6 +1551,25 @@ func (p *Planner) addNewRLSPolicies(result []ast.Node, diff *types.SchemaDiff, g
 	return result
 }
 
+func (p *Planner) modifyExistingRLSPolicies(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, policyDiff := range diff.RLSPoliciesModified {
+		if policy := findRLSPolicy(generated.RLSPolicies, policyDiff.TableName, policyDiff.PolicyName); policy != nil {
+			policyNode := fromschema.FromRLSPolicy(*policy).SetReplace()
+			policyNode.SetComment(fmt.Sprintf("Modify RLS policy %s on table %s: %s",
+				policyDiff.PolicyName,
+				policyDiff.TableName,
+				summarizeRLSChanges(policyDiff),
+			))
+			result = append(result, policyNode)
+		}
+	}
+	return result
+}
+
+func summarizeRLSChanges(policyDiff types.RLSPolicyDiff) string {
+	return strings.Join(slices.Sorted(maps.Keys(policyDiff.Changes)), ", ")
+}
+
 func (p *Planner) removeRLSPolicies(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 	for _, policyRef := range diff.RLSPoliciesRemoved {
 		// Now we have both policy name and table name, so we can generate proper DROP POLICY statements
@@ -1595,6 +1614,33 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 		structToTable[t.StructName] = t.QualifiedName()
 	}
 
+	state := newConstraintPlanState(diff)
+
+	result = p.addPrimaryKeyConstraintsWithTables(result, diff.ConstraintsAddedWithTables, state.removalByTableName, state.handled, state.droppedForModify)
+	result = p.addCheckAndUniqueConstraintsWithTables(result, diff.ConstraintsAddedWithTables, state.removalByTableName, state.handled, state.droppedForModify)
+	result = p.addNamedConstraintsByKind(result, diff, generated, structToTable, state, nonForeignKeyConstraints)
+	result = p.addForeignKeyConstraintsWithTables(result, diff.ConstraintsAddedWithTables, state)
+	result = p.addNamedConstraintsByKind(result, diff, generated, structToTable, state, foreignKeyConstraints)
+	return result
+}
+
+type constraintKindFilter int
+
+const (
+	nonForeignKeyConstraints constraintKindFilter = iota
+	foreignKeyConstraints
+)
+
+type constraintPlanState struct {
+	removedNames       map[string]struct{}
+	removalByTableName map[string]types.ConstraintRemovalInfo
+	removalsByName     map[string][]types.ConstraintRemovalInfo
+	addedHostsByName   map[string]map[string]struct{}
+	handled            map[string]struct{}
+	droppedForModify   map[string]struct{}
+}
+
+func newConstraintPlanState(diff *types.SchemaDiff) constraintPlanState {
 	// A constraint name present in BOTH ConstraintsAdded and ConstraintsRemoved
 	// is a modification (the comparator expresses a changed constraint as
 	// remove + add of the same name — e.g. an on_delete change on a field-level
@@ -1670,27 +1716,31 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 		hosts[add.TableName] = struct{}{}
 	}
 
-	handled := make(map[string]struct{})
-	droppedForModify := make(map[string]struct{})
-	result = p.addPrimaryKeyConstraintsWithTables(result, diff.ConstraintsAddedWithTables, removalByTableName, handled, droppedForModify)
-	result = p.addCheckAndUniqueConstraintsWithTables(result, diff.ConstraintsAddedWithTables, removalByTableName, handled, droppedForModify)
-	for _, add := range diff.ConstraintsAddedWithTables {
-		if add.Type != "FOREIGN KEY" || add.TableName == "" {
-			continue
-		}
-		// Only emit the DROP-before-ADD when this exact host's FK is being
-		// modified (its (table, name) is in the removal set). A pure-add host
-		// gets no phantom drop.
-		if _, modified := removalByTableName[add.TableName+"."+add.Name]; modified {
-			result = p.emitModifyDrop(result, add, droppedForModify)
-		}
-		result = append(result, p.foreignKeyAdditionNode(add))
-		handled[add.Name] = struct{}{}
+	return constraintPlanState{
+		removedNames:       removedNames,
+		removalByTableName: removalByTableName,
+		removalsByName:     removalsByName,
+		addedHostsByName:   addedHostsByName,
+		handled:            make(map[string]struct{}),
+		droppedForModify:   make(map[string]struct{}),
 	}
+}
 
+func (p *Planner) addNamedConstraintsByKind(
+	result []ast.Node,
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+	structToTable map[string]string,
+	state constraintPlanState,
+	kind constraintKindFilter,
+) []ast.Node {
+	wantForeignKey := kind == foreignKeyConstraints
 	for _, constraintName := range diff.ConstraintsAdded {
 		// Already emitted via the table-qualified FK path above.
-		if _, done := handled[constraintName]; done {
+		if _, done := state.handled[constraintName]; done {
+			continue
+		}
+		if p.constraintNameIsForeignKey(constraintName, generated, structToTable) != wantForeignKey {
 			continue
 		}
 
@@ -1698,8 +1748,14 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 		// scoped to the constraint's concrete host table when the comparator
 		// recorded it (issue #199) — never a name-only resolution that could drop
 		// a same-named constraint on the wrong table.
-		if _, modified := removedNames[constraintName]; modified {
-			result = p.emitModifyDropForName(result, constraintName, removalsByName, addedHostsByName[constraintName], droppedForModify)
+		if _, modified := state.removedNames[constraintName]; modified {
+			result = p.emitModifyDropForName(
+				result,
+				constraintName,
+				state.removalsByName,
+				state.addedHostsByName[constraintName],
+				state.droppedForModify,
+			)
 		}
 
 		// Resolve the ADD CONSTRAINT node, in precedence order:
@@ -1718,6 +1774,48 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 		}
 	}
 	return result
+}
+
+func (p *Planner) addForeignKeyConstraintsWithTables(
+	result []ast.Node,
+	additions []types.ConstraintAdditionInfo,
+	state constraintPlanState,
+) []ast.Node {
+	for _, add := range additions {
+		if add.Type != "FOREIGN KEY" || add.TableName == "" {
+			continue
+		}
+		// Only emit the DROP-before-ADD when this exact host's FK is being
+		// modified (its (table, name) is in the removal set). A pure-add host
+		// gets no phantom drop.
+		if _, modified := state.removalByTableName[add.TableName+"."+add.Name]; modified {
+			result = p.emitModifyDrop(result, add, state.droppedForModify)
+		}
+		result = append(result, p.foreignKeyAdditionNode(add))
+		state.handled[add.Name] = struct{}{}
+	}
+	return result
+}
+
+func (p *Planner) constraintNameIsForeignKey(constraintName string, generated *goschema.Database, structToTable map[string]string) bool {
+	for _, constraint := range generated.Constraints {
+		if constraint.Name == constraintName {
+			return strings.EqualFold(constraint.Type, "FOREIGN KEY")
+		}
+	}
+	for _, field := range generated.Fields {
+		if field.Foreign == "" {
+			continue
+		}
+		tableName := structToTable[field.StructName]
+		if tableName == "" {
+			tableName = field.StructName
+		}
+		if foreignKeyName(unqualifiedTableName(tableName), field) == constraintName {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *Planner) addCheckAndUniqueConstraintsWithTables(
