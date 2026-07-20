@@ -237,6 +237,7 @@ type Capabilities map[Capability]bool
     func Postgres13() Capabilities
     func Postgres16() Capabilities
     func Postgres17() Capabilities
+    func SQLServer2022() Capabilities
     func SQLite3() Capabilities
     func SpannerPostgres() Capabilities
     func YugabyteDB25() Capabilities
