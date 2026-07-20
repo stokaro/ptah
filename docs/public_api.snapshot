@@ -345,10 +345,8 @@ type RenderError struct{ ... }
 
 ## github.com/stokaro/ptah/core/renderer
 
-func GetOrderedCreateStatements(r *goschema.Database, dialect string) []string
-func GetOrderedCreateStatementsE(r *goschema.Database, dialect string) ([]string, error)
-func GetOrderedCreateStatementsWithCapabilities(r *goschema.Database, dialect string, caps capability.Capabilities) []string
-func GetOrderedCreateStatementsWithCapabilitiesE(r *goschema.Database, dialect string, caps capability.Capabilities) ([]string, error)
+func GetOrderedCreateStatements(r *goschema.Database, dialect string) ([]string, error)
+func GetOrderedCreateStatementsWithCapabilities(r *goschema.Database, dialect string, caps capability.Capabilities) ([]string, error)
 func NewRenderer(dialect string) (types.RenderVisitor, error)
 func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (types.RenderVisitor, error)
 func RenderSQL(dialect string, nodes ...ast.Node) (string, error)

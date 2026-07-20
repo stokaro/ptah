@@ -9,6 +9,7 @@ import (
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/platform/capability"
+	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/core/renderer/dialects/internal/bufwriter"
 	"github.com/stokaro/ptah/core/renderer/types"
 )
@@ -905,10 +906,10 @@ func (r *Renderer) processFieldType(fieldType string, enums []string) (string, e
 	}
 
 	if strings.EqualFold(fieldType, "XML") && !r.capabilities().Has(capability.XMLType) {
-		return "", fmt.Errorf("%s does not support XML columns; use a platform-specific type override", r.dialect)
+		return "", unsupportedFeaturef("%s does not support XML columns; use a platform-specific type override", r.dialect)
 	}
 	if sequenceBackedType(fieldType) && !r.capabilities().Has(capability.Sequences) {
-		return "", fmt.Errorf("%s does not support sequence-backed type %s; use a platform-specific type override", r.dialect, fieldType)
+		return "", unsupportedFeaturef("%s does not support sequence-backed type %s; use a platform-specific type override", r.dialect, fieldType)
 	}
 
 	// Handle other PostgreSQL-specific type mappings if needed
@@ -1898,4 +1899,8 @@ func looksEncrypted(password string) bool {
 
 	// If none of the above, likely plaintext
 	return false
+}
+
+func unsupportedFeaturef(format string, args ...any) error {
+	return fmt.Errorf("%w: %s", ptaherr.ErrUnsupportedFeature, fmt.Sprintf(format, args...))
 }

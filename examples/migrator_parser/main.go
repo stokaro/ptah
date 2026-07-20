@@ -100,7 +100,11 @@ func generateDDLForDialects(database *goschema.Database) {
 	for _, dialect := range supportedDialects {
 		fmt.Printf("\n=== %s ===\n", strings.ToUpper(dialect))
 
-		statements := renderer.GetOrderedCreateStatements(database, dialect)
+		statements, err := renderer.GetOrderedCreateStatements(database, dialect)
+		if err != nil {
+			fmt.Printf("Error generating %s DDL: %v\n", dialect, err)
+			continue
+		}
 		if len(statements) == 0 {
 			fmt.Printf("No statements generated for %s\n", dialect)
 			continue

@@ -8,6 +8,7 @@ import (
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/platform/capability"
+	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/core/renderer/dialects/postgres"
 )
 
@@ -26,7 +27,8 @@ func TestPostgreSQLRenderer_NilCapabilitiesAreConservative(t *testing.T) {
 	xmlTable := ast.NewCreateTable("events").
 		AddColumn(ast.NewColumn("payload", "XML"))
 	_, err = renderer.Render(xmlTable)
-	c.Assert(err, qt.ErrorMatches, `error rendering column payload: cockroachdb does not support XML columns; use a platform-specific type override`)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `error rendering column payload: unsupported feature: cockroachdb does not support XML columns; use a platform-specific type override`)
 }
 
 func TestPostgreSQLRenderer_SequenceCapability(t *testing.T) {
@@ -52,7 +54,8 @@ func TestPostgreSQLRenderer_SequenceCapability(t *testing.T) {
 
 		_, err := renderer.Render(table)
 
-		c.Assert(err, qt.ErrorMatches, `error rendering column id: cockroachdb does not support sequence-backed type SERIAL; use a platform-specific type override`)
+		c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+		c.Assert(err, qt.ErrorMatches, `error rendering column id: unsupported feature: cockroachdb does not support sequence-backed type SERIAL; use a platform-specific type override`)
 	})
 
 	t.Run("spanner rejects auto increment mapping", func(t *testing.T) {
@@ -64,7 +67,8 @@ func TestPostgreSQLRenderer_SequenceCapability(t *testing.T) {
 
 		_, err := renderer.Render(table)
 
-		c.Assert(err, qt.ErrorMatches, `error rendering column id: spanner does not support sequence-backed type BIGINT AUTO_INCREMENT; use a platform-specific type override`)
+		c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+		c.Assert(err, qt.ErrorMatches, `error rendering column id: unsupported feature: spanner does not support sequence-backed type BIGINT AUTO_INCREMENT; use a platform-specific type override`)
 	})
 }
 

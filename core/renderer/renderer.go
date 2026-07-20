@@ -134,29 +134,13 @@ func VisitorRenderSQL(r types.RenderVisitor, nodes ...ast.Node) (string, error) 
 	return r.Output(), nil
 }
 
-func GetOrderedCreateStatements(r *goschema.Database, dialect string) []string {
-	statements, _ := GetOrderedCreateStatementsE(r, dialect)
-	return statements
-}
-
-func GetOrderedCreateStatementsE(r *goschema.Database, dialect string) ([]string, error) {
-	return GetOrderedCreateStatementsWithCapabilitiesE(r, dialect, capability.ForDialect(dialect))
+func GetOrderedCreateStatements(r *goschema.Database, dialect string) ([]string, error) {
+	return GetOrderedCreateStatementsWithCapabilities(r, dialect, capability.ForDialect(dialect))
 }
 
 // GetOrderedCreateStatementsWithCapabilities renders ordered create statements
 // for a concrete server capability set.
 func GetOrderedCreateStatementsWithCapabilities(
-	r *goschema.Database,
-	dialect string,
-	caps capability.Capabilities,
-) []string {
-	statements, _ := GetOrderedCreateStatementsWithCapabilitiesE(r, dialect, caps)
-	return statements
-}
-
-// GetOrderedCreateStatementsWithCapabilitiesE renders ordered create statements
-// for a concrete server capability set and reports renderer errors.
-func GetOrderedCreateStatementsWithCapabilitiesE(
 	r *goschema.Database,
 	dialect string,
 	caps capability.Capabilities,

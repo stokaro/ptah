@@ -115,7 +115,7 @@ func generateCommand(_ *cobra.Command, _ []string) error {
 		}
 
 		// Generate table statements
-		statements, err := renderer.GetOrderedCreateStatementsE(result, d)
+		statements, err := renderer.GetOrderedCreateStatements(result, d)
 		if err != nil {
 			return fmt.Errorf("error rendering %s schema: %w", d, err)
 		}

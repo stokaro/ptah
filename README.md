@@ -1488,7 +1488,10 @@ func main() {
     }
 
     // Generate ordered CREATE TABLE statements
-    statements := renderer.GetOrderedCreateStatements(result, "postgresql")
+    statements, err := renderer.GetOrderedCreateStatements(result, "postgresql")
+    if err != nil {
+        panic(err)
+    }
 
     for _, stmt := range statements {
         fmt.Println(stmt)
@@ -1539,7 +1542,10 @@ func main() {
     diff := schemadiff.Compare(generated, database)
 
     // Generate migration SQL
-    migrationSQL := planner.GenerateSchemaDiffSQLStatements(diff, generated, "postgres")
+    migrationSQL, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, "postgres")
+    if err != nil {
+        panic(err)
+    }
     for _, stmt := range migrationSQL {
         fmt.Println(stmt)
     }

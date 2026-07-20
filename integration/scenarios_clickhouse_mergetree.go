@@ -70,7 +70,10 @@ func testClickHouseMergeTreeEngine(ctx context.Context, conn *dbschema.DatabaseC
 	}
 
 	if err := recorder.RecordStep("Generate + Apply CREATE TABLE", "Render MergeTree DDL from annotations and apply", func() error {
-		statements := renderer.GetOrderedCreateStatements(schema, "clickhouse")
+		statements, err := renderer.GetOrderedCreateStatements(schema, "clickhouse")
+		if err != nil {
+			return fmt.Errorf("render ClickHouse DDL: %w", err)
+		}
 		for _, stmt := range statements {
 			stmt = strings.TrimSpace(stmt)
 			if stmt == "" {

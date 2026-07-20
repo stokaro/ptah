@@ -41,7 +41,9 @@ func TestPostgreSQLGenerateMutualForeignKeysApplyIntegration(t *testing.T) {
 	database, err := goschema.ParseDir(fixtureDir)
 	c.Assert(err, qt.IsNil)
 
-	sqlText := strings.Join(renderer.GetOrderedCreateStatements(database, "postgres"), "\n")
+	statements, err := renderer.GetOrderedCreateStatements(database, "postgres")
+	c.Assert(err, qt.IsNil)
+	sqlText := strings.Join(statements, "\n")
 	c.Assert(sqlText, qt.Contains, `ALTER TABLE "left_nodes" ADD CONSTRAINT "fk_left_nodes_right_id"`)
 	c.Assert(sqlText, qt.Contains, `ALTER TABLE "right_nodes" ADD CONSTRAINT "fk_right_nodes_left_id"`)
 
@@ -103,7 +105,8 @@ func TestPostgreSQLForeignKeyReferencingUniqueIndexApplyIntegration(t *testing.T
 		},
 	}
 
-	statements := renderer.GetOrderedCreateStatements(database, "postgres")
+	statements, err := renderer.GetOrderedCreateStatements(database, "postgres")
+	c.Assert(err, qt.IsNil)
 	uniqueIndexPos := statementIndexContaining(statements, "CREATE UNIQUE INDEX", "uq_ptah_fk_unique_parents_code")
 	foreignKeyPos := statementIndexContaining(statements, "ALTER TABLE", "fk_ptah_fk_unique_children_parent_code")
 	nonUniqueIndexPos := statementIndexContaining(statements, "CREATE INDEX", "idx_ptah_fk_unique_children_parent_code")
