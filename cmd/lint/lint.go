@@ -3,11 +3,15 @@
 package lint
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -117,8 +121,9 @@ type sarifReport struct {
 }
 
 type sarifRun struct {
-	Tool    sarifTool     `json:"tool"`
-	Results []sarifResult `json:"results"`
+	Tool               sarifTool                        `json:"tool"`
+	OriginalURIBaseIDs map[string]sarifArtifactLocation `json:"originalUriBaseIds,omitempty"`
+	Results            []sarifResult                    `json:"results"`
 }
 
 type sarifTool struct {
@@ -143,10 +148,12 @@ type sarifDefaultConfig struct {
 }
 
 type sarifResult struct {
-	RuleID    string          `json:"ruleId"`
-	Level     string          `json:"level"`
-	Message   sarifMessage    `json:"message"`
-	Locations []sarifLocation `json:"locations,omitempty"`
+	RuleID              string            `json:"ruleId"`
+	RuleIndex           int               `json:"ruleIndex"`
+	Level               string            `json:"level"`
+	Message             sarifMessage      `json:"message"`
+	Locations           []sarifLocation   `json:"locations,omitempty"`
+	PartialFingerprints map[string]string `json:"partialFingerprints,omitempty"`
 }
 
 type sarifMessage struct {
@@ -163,7 +170,8 @@ type sarifPhysicalLocation struct {
 }
 
 type sarifArtifactLocation struct {
-	URI string `json:"uri"`
+	URI       string `json:"uri"`
+	URIBaseID string `json:"uriBaseId,omitempty"`
 }
 
 type sarifRegion struct {
@@ -302,22 +310,27 @@ func writeReport(w io.Writer, format string, report lintReport) error {
 }
 
 func writeSARIF(w io.Writer, report lintReport) error {
-	rules := sarifRules(report.Findings)
+	rules, ruleIndexes := sarifRules(report.Findings)
 	results := make([]sarifResult, 0, len(report.Findings))
 	for _, finding := range report.Findings {
+		artifactURI := sarifArtifactURI(finding.File)
+		artifactLocation := sarifArtifactLocation{URI: artifactURI}
+		if isRelativeURI(artifactURI) {
+			artifactLocation.URIBaseID = "%SRCROOT%"
+		}
 		location := sarifLocation{
 			PhysicalLocation: sarifPhysicalLocation{
-				ArtifactLocation: sarifArtifactLocation{URI: finding.File},
+				ArtifactLocation: artifactLocation,
+				Region:           &sarifRegion{StartLine: sarifStartLine(finding.Line)},
 			},
 		}
-		if finding.Line > 0 {
-			location.PhysicalLocation.Region = &sarifRegion{StartLine: finding.Line}
-		}
 		results = append(results, sarifResult{
-			RuleID:    finding.Rule,
-			Level:     sarifLevel(finding.Severity),
-			Message:   sarifMessage{Text: fmt.Sprintf("%s: %s", finding.Title, finding.Message)},
-			Locations: []sarifLocation{location},
+			RuleID:              finding.Rule,
+			RuleIndex:           ruleIndexes[finding.Rule],
+			Level:               sarifLevel(finding.Severity),
+			Message:             sarifMessage{Text: fmt.Sprintf("%s: %s", finding.Title, finding.Message)},
+			Locations:           []sarifLocation{location},
+			PartialFingerprints: sarifPartialFingerprints(finding, artifactURI),
 		})
 	}
 
@@ -332,12 +345,15 @@ func writeSARIF(w io.Writer, report lintReport) error {
 				InformationURI: "https://github.com/stokaro/ptah",
 				Rules:          rules,
 			}},
+			OriginalURIBaseIDs: map[string]sarifArtifactLocation{
+				"%SRCROOT%": {URI: "file:///"},
+			},
 			Results: results,
 		}},
 	})
 }
 
-func sarifRules(findings []lint.Finding) []sarifRule {
+func sarifRules(findings []lint.Finding) ([]sarifRule, map[string]int) {
 	byCode := make(map[string]lint.Finding)
 	for _, finding := range findings {
 		if _, ok := byCode[finding.Rule]; !ok {
@@ -350,7 +366,9 @@ func sarifRules(findings []lint.Finding) []sarifRule {
 	}
 	sort.Strings(codes)
 	rules := make([]sarifRule, 0, len(codes))
-	for _, code := range codes {
+	indexes := make(map[string]int, len(codes))
+	for i, code := range codes {
+		indexes[code] = i
 		finding := byCode[code]
 		rules = append(rules, sarifRule{
 			ID:               code,
@@ -359,11 +377,47 @@ func sarifRules(findings []lint.Finding) []sarifRule {
 			DefaultConfig:    sarifDefaultConfig{Level: sarifLevel(finding.Severity)},
 		})
 	}
-	return rules
+	return rules, indexes
 }
 
 func sarifLevel(severity lint.Severity) string {
 	return risk.SARIFLevel(severity)
+}
+
+func sarifArtifactURI(file string) string {
+	if file == "" {
+		return ""
+	}
+	cleaned := filepath.Clean(file)
+	if filepath.IsAbs(cleaned) {
+		if wd, err := os.Getwd(); err == nil {
+			if rel, err := filepath.Rel(wd, cleaned); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				return filepath.ToSlash(rel)
+			}
+		}
+		return (&url.URL{Scheme: "file", Path: filepath.ToSlash(cleaned)}).String()
+	}
+	return path.Clean(filepath.ToSlash(file))
+}
+
+func isRelativeURI(uri string) bool {
+	parsed, err := url.Parse(uri)
+	return err == nil && parsed.Scheme == "" && !strings.HasPrefix(uri, "/")
+}
+
+func sarifStartLine(line int) int {
+	if line > 0 {
+		return line
+	}
+	return 1
+}
+
+func sarifPartialFingerprints(finding lint.Finding, artifactURI string) map[string]string {
+	hash := sha256.New()
+	fmt.Fprintf(hash, "%s\x00%s\x00%d\x00%s", finding.Rule, artifactURI, sarifStartLine(finding.Line), finding.Message)
+	return map[string]string{
+		"primaryLocationLineHash": hex.EncodeToString(hash.Sum(nil))[:32],
+	}
 }
 
 func writeText(w io.Writer, report lintReport) {

@@ -743,7 +743,7 @@ Findings carry stable rule codes grouped into families:
 
 `--dialect` both gates the dialect-specific rule families and selects the dialect's SQL syntax for scanning (MySQL `#` comments, `/*!...*/` executable comments and backslash string escapes; PostgreSQL dollar quotes and nested block comments). With no dialect set, every rule runs under a hybrid scanner.
 
-`--fail-on` controls whether findings become exit code `1`: `error` by default, `any`, or `none`. `--format text|json|github-actions|sarif` selects the output; the GitHub format annotates PR files inline, and SARIF 2.1.0 can be uploaded to GitHub code scanning. Disable rules per code or family with `--disable DS101 --disable MY`, or persistently via `.ptah-lint.yaml` in the migrations directory:
+`--fail-on` controls whether findings become exit code `1`: `error` by default, `any`, or `none`. `--format text|json|github-actions|sarif` selects the output; the GitHub format annotates PR files inline, and SARIF 2.1.0 can be uploaded to GitHub code scanning. Ptah validates the SARIF writer in CI against the pinned OASIS SARIF 2.1.0 schema fixture in `cmd/lint/testdata/sarif/`, plus GitHub code scanning fields such as rule IDs, levels, messages, artifact URIs, regions, and fingerprints. Disable rules per code or family with `--disable DS101 --disable MY`, or persistently via `.ptah-lint.yaml` in the migrations directory:
 
 ```yaml
 dialect: postgres

@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/migration/lint"
@@ -21,6 +23,52 @@ func execute(args ...string) (stdout, stderr string, err error) {
 	cmd.SetArgs(args)
 	err = cmd.Execute()
 	return out.String(), errOut.String(), err
+}
+
+type sarifForTest struct {
+	Version string `json:"version"`
+	Schema  string `json:"$schema"`
+	Runs    []struct {
+		Tool struct {
+			Driver struct {
+				Name           string             `json:"name"`
+				InformationURI string             `json:"informationUri"`
+				Rules          []sarifRuleForTest `json:"rules"`
+			} `json:"driver"`
+		} `json:"tool"`
+		OriginalURIBaseIDs map[string]sarifArtifactLocationForTest `json:"originalUriBaseIds"`
+		Results            []sarifResultForTest                    `json:"results"`
+	} `json:"runs"`
+}
+
+type sarifRuleForTest struct {
+	ID                   string                 `json:"id"`
+	Name                 string                 `json:"name"`
+	ShortDescription     struct{ Text string }  `json:"shortDescription"`
+	DefaultConfiguration struct{ Level string } `json:"defaultConfiguration"`
+}
+
+type sarifResultForTest struct {
+	RuleID              string                 `json:"ruleId"`
+	RuleIndex           int                    `json:"ruleIndex"`
+	Level               string                 `json:"level"`
+	Message             struct{ Text string }  `json:"message"`
+	Locations           []sarifLocationForTest `json:"locations"`
+	PartialFingerprints map[string]string      `json:"partialFingerprints"`
+}
+
+type sarifLocationForTest struct {
+	PhysicalLocation struct {
+		ArtifactLocation sarifArtifactLocationForTest `json:"artifactLocation"`
+		Region           struct {
+			StartLine int `json:"startLine"`
+		} `json:"region"`
+	} `json:"physicalLocation"`
+}
+
+type sarifArtifactLocationForTest struct {
+	URI       string `json:"uri"`
+	URIBaseID string `json:"uriBaseId"`
 }
 
 func TestNewLintCommand_Creation(t *testing.T) {
@@ -77,52 +125,16 @@ func TestRunLint_SARIFFormat(t *testing.T) {
 	stdout, _, err := execute("--dir", "testdata/bad", "--format", "sarif", "--fail-on", "none")
 
 	c.Assert(err, qt.IsNil)
-	var report struct {
-		Version string `json:"version"`
-		Runs    []struct {
-			Tool struct {
-				Driver struct {
-					Name  string `json:"name"`
-					Rules []struct {
-						ID string `json:"id"`
-					} `json:"rules"`
-				} `json:"driver"`
-			} `json:"tool"`
-			Results []struct {
-				RuleID    string `json:"ruleId"`
-				Level     string `json:"level"`
-				Locations []struct {
-					PhysicalLocation struct {
-						ArtifactLocation struct {
-							URI string `json:"uri"`
-						} `json:"artifactLocation"`
-						Region struct {
-							StartLine int `json:"startLine"`
-						} `json:"region"`
-					} `json:"physicalLocation"`
-				} `json:"locations"`
-			} `json:"results"`
-		} `json:"runs"`
-	}
+	assertSARIFSchemaValid(c, stdout)
+	assertGitHubCodeScanningSARIF(c, stdout)
+	var report sarifForTest
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	c.Assert(report.Version, qt.Equals, "2.1.0")
+	c.Assert(report.Schema, qt.Equals, "https://json.schemastore.org/sarif-2.1.0.json")
 	c.Assert(report.Runs, qt.HasLen, 1)
 	c.Assert(report.Runs[0].Tool.Driver.Name, qt.Equals, "ptah migrations lint")
 	c.Assert(report.Runs[0].Tool.Driver.Rules[0].ID, qt.Not(qt.Equals), "")
-	var dropTableResult struct {
-		RuleID    string `json:"ruleId"`
-		Level     string `json:"level"`
-		Locations []struct {
-			PhysicalLocation struct {
-				ArtifactLocation struct {
-					URI string `json:"uri"`
-				} `json:"artifactLocation"`
-				Region struct {
-					StartLine int `json:"startLine"`
-				} `json:"region"`
-			} `json:"physicalLocation"`
-		} `json:"locations"`
-	}
+	var dropTableResult sarifResultForTest
 	for _, result := range report.Runs[0].Results {
 		if result.RuleID == "DS101" {
 			dropTableResult = result
@@ -130,9 +142,38 @@ func TestRunLint_SARIFFormat(t *testing.T) {
 		}
 	}
 	c.Assert(dropTableResult.RuleID, qt.Equals, "DS101")
+	c.Assert(dropTableResult.RuleIndex, qt.Equals, ruleIndexByID(report.Runs[0].Tool.Driver.Rules, "DS101"))
 	c.Assert(dropTableResult.Level, qt.Equals, "error")
 	c.Assert(dropTableResult.Locations[0].PhysicalLocation.ArtifactLocation.URI, qt.Contains, "testdata/bad/")
+	c.Assert(dropTableResult.Locations[0].PhysicalLocation.ArtifactLocation.URIBaseID, qt.Equals, "%SRCROOT%")
 	c.Assert(dropTableResult.Locations[0].PhysicalLocation.Region.StartLine, qt.Equals, 2)
+}
+
+func TestRunLint_SARIFGoldenOutput(t *testing.T) {
+	c := qt.New(t)
+
+	stdout, _, err := execute("--dir", "testdata/sarif/migrations", "--format", "sarif", "--fail-on", "none")
+
+	c.Assert(err, qt.IsNil)
+	assertSARIFSchemaValid(c, stdout)
+	assertGitHubCodeScanningSARIF(c, stdout)
+	expected, err := os.ReadFile("testdata/sarif/expected.sarif.json")
+	c.Assert(err, qt.IsNil)
+	c.Assert(stdout, qt.Equals, string(expected))
+}
+
+func TestRunLint_SARIFCleanOutputValidatesForUpload(t *testing.T) {
+	c := qt.New(t)
+
+	stdout, _, err := execute("--dir", "testdata/clean", "--format", "sarif", "--fail-on", "none")
+
+	c.Assert(err, qt.IsNil)
+	assertSARIFSchemaValid(c, stdout)
+	var report sarifForTest
+	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
+	assertSARIFCommonGitHubFields(c, report)
+	c.Assert(report.Runs[0].Tool.Driver.Rules, qt.HasLen, 0)
+	c.Assert(report.Runs[0].Results, qt.HasLen, 0)
 }
 
 func TestRunLint_ConfigFileDisablesRulesAndSetsDialect(t *testing.T) {
@@ -361,4 +402,85 @@ func TestShouldFail(t *testing.T) {
 	c.Assert(shouldFail(fatal, failOnError), qt.IsTrue)
 	c.Assert(shouldFail(warning, failOnAny), qt.IsTrue)
 	c.Assert(shouldFail(fatal, failOnNone), qt.IsFalse)
+}
+
+func assertSARIFSchemaValid(c *qt.C, data string) {
+	c.Helper()
+
+	compiler := jsonschema.NewCompiler()
+	compiler.DefaultDraft(jsonschema.Draft4)
+	compiler.AssertFormat()
+	schema, err := compiler.Compile("testdata/sarif/sarif-schema-2.1.0.json")
+	c.Assert(err, qt.IsNil)
+	doc, err := jsonschema.UnmarshalJSON(strings.NewReader(data))
+	c.Assert(err, qt.IsNil)
+	c.Assert(schema.Validate(doc), qt.IsNil)
+}
+
+func assertGitHubCodeScanningSARIF(c *qt.C, data string) {
+	c.Helper()
+
+	var report sarifForTest
+	c.Assert(json.Unmarshal([]byte(data), &report), qt.IsNil)
+	assertSARIFCommonGitHubFields(c, report)
+	run := report.Runs[0]
+	c.Assert(run.Tool.Driver.Rules, qt.Not(qt.HasLen), 0)
+
+	rulesByID := make(map[string]sarifRuleForTest, len(run.Tool.Driver.Rules))
+	for _, rule := range run.Tool.Driver.Rules {
+		c.Assert(rule.ID, qt.Not(qt.Equals), "")
+		c.Assert(rule.Name, qt.Not(qt.Equals), "")
+		c.Assert(rule.ShortDescription.Text, qt.Not(qt.Equals), "")
+		c.Assert(validSARIFLevel(rule.DefaultConfiguration.Level), qt.IsTrue,
+			qt.Commentf("unexpected defaultConfiguration.level for rule %s", rule.ID))
+		rulesByID[rule.ID] = rule
+	}
+
+	for _, result := range run.Results {
+		c.Assert(result.RuleID, qt.Not(qt.Equals), "")
+		c.Assert(rulesByID[result.RuleID].ID, qt.Equals, result.RuleID)
+		c.Assert(result.RuleIndex >= 0 && result.RuleIndex < len(run.Tool.Driver.Rules), qt.IsTrue)
+		c.Assert(run.Tool.Driver.Rules[result.RuleIndex].ID, qt.Equals, result.RuleID)
+		c.Assert(validSARIFLevel(result.Level), qt.IsTrue,
+			qt.Commentf("unexpected level for result %s", result.RuleID))
+		c.Assert(result.Message.Text, qt.Not(qt.Equals), "")
+		c.Assert(result.Locations, qt.Not(qt.HasLen), 0)
+		location := result.Locations[0].PhysicalLocation
+		c.Assert(location.ArtifactLocation.URI, qt.Not(qt.Equals), "")
+		c.Assert(strings.HasPrefix(location.ArtifactLocation.URI, "/"), qt.IsFalse)
+		c.Assert(strings.HasPrefix(location.ArtifactLocation.URI, "file:"), qt.IsFalse)
+		c.Assert(location.ArtifactLocation.URIBaseID, qt.Equals, "%SRCROOT%")
+		c.Assert(location.Region.StartLine, qt.Not(qt.Equals), 0)
+		c.Assert(result.PartialFingerprints["primaryLocationLineHash"], qt.Not(qt.Equals), "")
+	}
+}
+
+func assertSARIFCommonGitHubFields(c *qt.C, report sarifForTest) {
+	c.Helper()
+
+	c.Assert(report.Version, qt.Equals, "2.1.0")
+	c.Assert(report.Schema, qt.Equals, "https://json.schemastore.org/sarif-2.1.0.json")
+	c.Assert(report.Runs, qt.HasLen, 1)
+	run := report.Runs[0]
+	c.Assert(run.Tool.Driver.Name, qt.Not(qt.Equals), "")
+	c.Assert(run.Tool.Driver.InformationURI, qt.Not(qt.Equals), "")
+	c.Assert(run.OriginalURIBaseIDs["%SRCROOT%"].URI, qt.Equals, "file:///")
+}
+
+func ruleIndexByID(rules []sarifRuleForTest, id string) int {
+	for i, rule := range rules {
+		if rule.ID == id {
+			return i
+		}
+	}
+	return -1
+}
+
+func validSARIFLevel(level string) bool {
+	switch level {
+	case "none", "note", "warning", "error":
+		return true
+	default:
+		return false
+	}
 }

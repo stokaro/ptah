@@ -9,6 +9,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  security-events: write
 
 jobs:
   go-lint:
@@ -42,6 +43,19 @@ jobs:
 
       - name: qtlint
         run: go tool qtlint ./...
+
+      - name: Validate lint SARIF output
+        run: go test ./cmd/lint -run 'TestRunLint_SARIF' -count=1
+
+      - name: Generate lint SARIF for code scanning
+        run: go run ./cmd/ptah migrations lint --dir cmd/lint/testdata/clean --format sarif --fail-on none > ptah-lint.sarif
+
+      - name: Upload lint SARIF to code scanning
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: ptah-lint.sarif
+          category: ptah-lint
 
       - name: Golint
         uses: golangci/golangci-lint-action@v9
