@@ -16,9 +16,9 @@ const (
 	newNameFlag          = "name"
 )
 
-func newMigrateNewCommand() *cobra.Command {
+func NewMigrateCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "new [name]",
+		Use:   "create [name]",
 		Short: "Create empty migration files for manual SQL",
 		Long: `Create paired empty migration files for manual SQL authoring.
 

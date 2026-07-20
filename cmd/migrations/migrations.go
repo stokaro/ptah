@@ -4,7 +4,6 @@ package migrations
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/stokaro/ptah/cmd/internal/cmdalias"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/lint"
 	"github.com/stokaro/ptah/cmd/migrate"
@@ -34,56 +33,23 @@ ptah atlas.`,
 	}
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 
-	for _, alias := range []struct {
-		use        string
-		short      string
-		long       string
-		native     string
-		factory    func() *cobra.Command
-		prefixArgs []string
-	}{
-		{
-			use:     "plan",
-			short:   "Plan migration SQL from schema differences",
-			long:    "Plan migration SQL from schema differences without writing migration files.",
-			native:  "migrate",
-			factory: migrate.NewMigrateCommand,
-		},
-		{
-			use:        "generate",
-			short:      "Generate migration files from schema differences",
-			long:       "Generate migration files from schema differences and write them to the migrations directory.",
-			native:     "migrate generate",
-			factory:    migrate.NewMigrateCommand,
-			prefixArgs: []string{"generate"},
-		},
-		{
-			use:        "create",
-			short:      "Create empty migration files for manual SQL",
-			long:       "Create empty migration files for manual SQL.",
-			native:     "migrate new",
-			factory:    migrate.NewMigrateCommand,
-			prefixArgs: []string{"new"},
-		},
-		{use: "up", short: "Run pending migrations", long: "Run pending migrations against a live database.", native: "migrations up", factory: migrateup.NewMigrateUpCommand},
-		{use: "down", short: "Roll back migrations", long: "Roll back migrations against a live database.", native: "migrations down", factory: migratedown.NewMigrateDownCommand},
-		{use: "status", short: "Show migration status", long: "Show migration status for a live database and migrations directory.", native: "migrations status", factory: migratestatus.NewMigrateStatusCommand},
-		{use: "baseline", short: "Record existing migrations as applied", long: "Record existing migrations as already applied in the revision table.", native: "migrations baseline", factory: migratebaseline.NewMigrateBaselineCommand},
-		{use: "repair", short: "Repair migration revision metadata", long: "Repair migration revision metadata after a dirty or partial migration state.", native: "migrations repair", factory: migraterepair.NewMigrateRepairCommand},
-		{use: "hash", short: "Write or update migration directory integrity", long: "Write or update the migration directory integrity file.", native: "migrations hash", factory: migratehash.NewMigrateHashCommand},
-		{use: "validate", short: "Validate migration directory integrity", long: "Validate the migration directory against its integrity file.", native: "migrations validate", factory: migratevalidate.NewMigrateValidateCommand},
-		{use: "lint", short: "Lint migration files", long: "Lint migration files for production-unsafe patterns.", native: "lint", factory: lint.NewLintCommand},
-	} {
-		aliasCmd := cmdalias.NewForwardCommandWithTargetHelp(
-			alias.use,
-			alias.short,
-			alias.native,
-			alias.factory,
-			alias.prefixArgs...,
-		)
-		aliasCmd.Long = alias.long
-		cmd.AddCommand(aliasCmd)
-	}
+	cmd.AddCommand(migrationCommand(migrate.NewMigrateCommand(), "Plan migration SQL from schema differences", "Plan migration SQL from schema differences without writing migration files."))
+	cmd.AddCommand(migrationCommand(migrate.NewMigrateGenerateCommand(), "Generate migration files from schema differences", "Generate migration files from schema differences and write them to the migrations directory."))
+	cmd.AddCommand(migrationCommand(migrate.NewMigrateCreateCommand(), "Create empty migration files for manual SQL", "Create empty migration files for manual SQL."))
+	cmd.AddCommand(migrationCommand(migrateup.NewMigrateUpCommand(), "Run pending migrations", "Run pending migrations against a live database."))
+	cmd.AddCommand(migrationCommand(migratedown.NewMigrateDownCommand(), "Roll back migrations", "Roll back migrations against a live database."))
+	cmd.AddCommand(migrationCommand(migratestatus.NewMigrateStatusCommand(), "Show migration status", "Show migration status for a live database and migrations directory."))
+	cmd.AddCommand(migrationCommand(migratebaseline.NewMigrateBaselineCommand(), "Record existing migrations as applied", "Record existing migrations as already applied in the revision table."))
+	cmd.AddCommand(migrationCommand(migraterepair.NewMigrateRepairCommand(), "Repair migration revision metadata", "Repair migration revision metadata after a dirty or partial migration state."))
+	cmd.AddCommand(migrationCommand(migratehash.NewMigrateHashCommand(), "Write or update migration directory integrity", "Write or update the migration directory integrity file."))
+	cmd.AddCommand(migrationCommand(migratevalidate.NewMigrateValidateCommand(), "Validate migration directory integrity", "Validate the migration directory against its integrity file."))
+	cmd.AddCommand(migrationCommand(lint.NewLintCommand(), "Lint migration files", "Lint migration files for production-unsafe patterns."))
 
+	return cmd
+}
+
+func migrationCommand(cmd *cobra.Command, short string, long string) *cobra.Command {
+	cmd.Short = short
+	cmd.Long = long
 	return cmd
 }

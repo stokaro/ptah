@@ -576,13 +576,13 @@ for SQLite URL forms, generated DDL, and ALTER TABLE limitations.
 ./ptah schema compare --root-dir ./models --db-url postgres://user:pass@localhost/db
 
 # Generate migration SQL
-./ptah migrate --root-dir ./models --db-url postgres://user:pass@localhost/db
+./ptah migrations plan --root-dir ./models --db-url postgres://user:pass@localhost/db
 
 # Create paired empty migration files for manual SQL
-./ptah migrate new add_user_preferences --migrations-dir ./migrations
+./ptah migrations create add_user_preferences --migrations-dir ./migrations
 
 # Generate migration SQL while introspecting specific PostgreSQL schemas
-./ptah migrate --root-dir ./models --db-url postgres://user:pass@localhost/db --schemas auth,billing,public
+./ptah migrations plan --root-dir ./models --db-url postgres://user:pass@localhost/db --schemas auth,billing,public
 
 # Apply migrations to database
 ./ptah migrations up --db-url postgres://user:pass@localhost/db --migrations-dir ./migrations
@@ -798,16 +798,16 @@ and DDL forms that Ptah's parser does not yet model.
 Generate SQL migration statements to synchronize schemas:
 
 ```bash
-./ptah migrate --root-dir ./models --db-url postgres://user:pass@localhost:5432/database
-./ptah migrate --root-dir ./models --db-url postgres://user:pass@localhost:5432/database --schemas auth,billing,public
+./ptah migrations plan --root-dir ./models --db-url postgres://user:pass@localhost:5432/database
+./ptah migrations plan --root-dir ./models --db-url postgres://user:pass@localhost:5432/database --schemas auth,billing,public
 ```
 
 Use `--report json` when CI needs the destructive-safety verdict as structured
 data instead of text:
 
 ```bash
-./ptah migrate --root-dir ./models --db-url postgres://user:pass@localhost:5432/database --report json
-./ptah migrate generate --root-dir ./models --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --report json
+./ptah migrations plan --root-dir ./models --db-url postgres://user:pass@localhost:5432/database --report json
+./ptah migrations generate --root-dir ./models --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --report json
 ```
 
 **Output:** SQL statements to bring the database in sync with Go entities
@@ -816,9 +816,9 @@ data instead of text:
 Create paired `.up.sql` and `.down.sql` files for manual SQL authoring:
 
 ```bash
-./ptah migrate new add_user_preferences --migrations-dir ./migrations
-./ptah migrate new --name hotfix_existing_data --migrations-dir ./migrations
-./ptah atlas migrate new add_user_preferences --migrations-dir ./migrations
+./ptah migrations create add_user_preferences --migrations-dir ./migrations
+./ptah migrations create --name hotfix_existing_data --migrations-dir ./migrations
+./ptah atlas migrate new add_user_preferences --dir ./migrations
 ```
 
 The command creates timestamped files using Ptah's paired migration naming
@@ -987,7 +987,7 @@ autocommit SQL instead of through the transaction-bound writer.
 
 Generated PostgreSQL migrations also use this path for indexes on populated
 existing tables. If live introspection reports an existing table with an
-estimated row count greater than zero, `migrate generate` emits
+estimated row count greater than zero, `migrations generate` emits
 `CREATE INDEX CONCURRENTLY` for new indexes on that table and writes the file
 with `-- +ptah no_transaction`. When a change set also contains ordinary
 transactional DDL, Ptah splits the output into separate migration versions:
@@ -1304,7 +1304,7 @@ files, err := generator.GenerateMigration(ctx, opts)
 **CLI generation with shadow verification:**
 
 ```bash
-ptah migrate generate \
+ptah migrations generate \
   --root-dir ./models \
   --db-url postgres://user:pass@localhost:5432/database \
   --migrations-dir ./migrations \
@@ -1319,7 +1319,7 @@ matches the Go source. A mismatch aborts before writing files with a diagnostic
 such as `shadow check failed: missing column users.email`. Library callers can
 inspect structured shadow mismatches via `generator.ShadowVerificationError`.
 
-You can make this the default for `migrate generate` by configuring the same
+You can make this the default for `migrations generate` by configuring the same
 disposable database in `ptah.yaml`; an explicit `--shadow-db` value still wins:
 
 ```yaml

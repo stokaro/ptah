@@ -34,7 +34,7 @@ The supported attributes map to Ptah settings as follows:
 | Atlas setting | Ptah setting |
 | --- | --- |
 | `env.url` | `--db-url` default |
-| `env.dev` | `migrate generate --shadow-db` default |
+| `env.dev` | `migrations generate --shadow-db` default |
 | `env.exclude` | Project config IR exclude list |
 | `migration.dir` | `--migrations-dir` or `--dir` default |
 | `migration.format` | `--dir-format` default |
@@ -92,7 +92,7 @@ settings:
 - `migrations down`
 - `migrations status`
 - `lint`
-- `migrate generate`
+- `migrations generate`
 
 Atlas-compatible aliases under `ptah atlas <command> ...` inherit this behavior
 when they forward to one of these native commands.
