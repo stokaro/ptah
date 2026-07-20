@@ -1107,6 +1107,210 @@ table "posts" {
 	c.Assert(err, qt.ErrorMatches, `.*foreign_key "owner_id" references unknown local column "owner_id".*`)
 }
 
+func TestParsePostgreSQLSchemaObjects(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+schema "public" {}
+
+extension "pg_trgm" {
+  version = "1.6"
+  comment = "trigram search"
+}
+
+role "app_user" {
+  login   = true
+  inherit = true
+  comment = "application role"
+}
+
+table "users" {
+  schema = schema.public
+
+  column "id" {
+    type = int
+  }
+
+  row_security {
+    enabled = true
+  }
+}
+
+function "get_tenant" {
+  schema     = schema.public
+  lang       = SQL
+  arg "tenant_id" {
+    type = text
+  }
+  return     = text
+  security   = DEFINER
+  volatility = STABLE
+  as         = "SELECT $1"
+  comment    = "tenant helper"
+}
+
+view "active_users" {
+  schema       = schema.public
+  as           = "SELECT id FROM users"
+  check_option = LOCAL
+  comment      = "active users"
+}
+
+materialized "user_stats" {
+  schema  = schema.public
+  as      = "SELECT count(*) FROM users"
+  comment = "user stats"
+}
+
+trigger "users_set_updated_at" {
+  on = table.users
+  before {
+    update = true
+  }
+  for     = ROW
+  as      = "NEW.updated_at = now(); RETURN NEW;"
+  comment = "timestamp trigger"
+}
+
+policy "users_tenant_policy" {
+  on      = table.users
+  for     = SELECT
+  to      = [role.app_user, PUBLIC, "adhoc_role"]
+  using   = "true"
+  check   = "true"
+  comment = "tenant policy"
+}
+
+permission {
+  to         = role.app_user
+  for        = table.users
+  privileges = [SELECT, INSERT]
+  grantable  = true
+  comment    = "table grant"
+}
+
+permission {
+  to         = PUBLIC
+  for        = schema.public
+  privileges = [USAGE]
+}
+`), "schema.hcl")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Extensions, qt.HasLen, 1)
+	c.Assert(db.Extensions[0].Version, qt.Equals, "1.6")
+	c.Assert(db.Roles, qt.HasLen, 1)
+	c.Assert(db.Roles[0].Login, qt.IsTrue)
+	c.Assert(db.Functions, qt.HasLen, 1)
+	c.Assert(db.Functions[0].Name, qt.Equals, "public.get_tenant")
+	c.Assert(db.Functions[0].Parameters, qt.Equals, "tenant_id text")
+	c.Assert(db.Functions[0].Security, qt.Equals, "DEFINER")
+	c.Assert(db.Views, qt.HasLen, 1)
+	c.Assert(db.Views[0].Name, qt.Equals, "public.active_users")
+	c.Assert(db.Views[0].WithCheck, qt.IsTrue)
+	c.Assert(db.MaterializedViews, qt.HasLen, 1)
+	c.Assert(db.MaterializedViews[0].Name, qt.Equals, "public.user_stats")
+	c.Assert(db.Triggers, qt.HasLen, 1)
+	c.Assert(db.Triggers[0].Event, qt.Equals, "UPDATE")
+	c.Assert(db.RLSEnabledTables, qt.HasLen, 1)
+	c.Assert(db.RLSEnabledTables[0].Table, qt.Equals, "public.users")
+	c.Assert(db.RLSPolicies, qt.HasLen, 1)
+	c.Assert(db.RLSPolicies[0].ToRoles, qt.Equals, "app_user,PUBLIC,adhoc_role")
+	c.Assert(db.Grants, qt.HasLen, 2)
+	tableGrant := grantByTable(db.Grants, "users")
+	c.Assert(tableGrant.Privileges, qt.DeepEquals, []string{"SELECT", "INSERT"})
+	c.Assert(tableGrant.WithOption, qt.IsTrue)
+	schemaGrant := grantBySchema(db.Grants, "public")
+	c.Assert(schemaGrant.Role, qt.Equals, "PUBLIC")
+}
+
+func TestParseRejectsUnsupportedExtensionSchema(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := atlashcl.Parse([]byte(`
+extension "pg_trgm" {
+  schema = schema.public
+}
+`), "schema.hcl")
+
+	c.Assert(err, qt.ErrorMatches, `.*unsupported extension attribute "schema".*`)
+}
+
+func TestParseRejectsIncompleteSchemaObjects(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		match string
+	}{
+		{
+			name: "function missing body",
+			input: `
+function "missing_body" {
+  lang = SQL
+}`,
+			match: `.*function "missing_body" requires as.*`,
+		},
+		{
+			name: "permission unsupported target",
+			input: `
+permission {
+  to         = role.app_user
+  for        = function.get_tenant
+  privileges = [EXECUTE]
+}`,
+			match: `.*permission requires table or schema target.*`,
+		},
+		{
+			name: "permission missing privileges",
+			input: `
+permission {
+  to  = role.app_user
+  for = table.users
+}`,
+			match: `.*permission requires privileges.*`,
+		},
+		{
+			name: "permission non-bool grantable",
+			input: `
+permission {
+  to         = role.app_user
+  for        = table.users
+  privileges = [SELECT]
+  grantable  = "true"
+}`,
+			match: `.*permission attribute "grantable" must be a bool.*`,
+		},
+		{
+			name: "role non-bool superuser",
+			input: `
+role "app_user" {
+  superuser = "true"
+}`,
+			match: `.*role attribute "superuser" must be a bool.*`,
+		},
+		{
+			name: "row_security non-bool enabled",
+			input: `
+table "users" {
+  column "id" {
+    type = int
+  }
+  row_security {
+    enabled = "true"
+  }
+}`,
+			match: `.*row_security attribute "enabled" must be a bool.*`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			_, err := atlashcl.Parse([]byte(test.input), "schema.hcl")
+			c.Assert(err, qt.ErrorMatches, test.match)
+		})
+	}
+}
+
 func tableByName(tables []goschema.Table, name string) goschema.Table {
 	for _, table := range tables {
 		if table.Name == name {
@@ -1132,4 +1336,22 @@ func constraintByName(constraints []goschema.Constraint, name string) goschema.C
 		}
 	}
 	return goschema.Constraint{}
+}
+
+func grantByTable(grants []goschema.Grant, table string) goschema.Grant {
+	for _, grant := range grants {
+		if grant.OnTable == table || strings.HasSuffix(grant.OnTable, "."+table) {
+			return grant
+		}
+	}
+	return goschema.Grant{}
+}
+
+func grantBySchema(grants []goschema.Grant, schema string) goschema.Grant {
+	for _, grant := range grants {
+		if grant.OnSchema == schema {
+			return grant
+		}
+	}
+	return goschema.Grant{}
 }

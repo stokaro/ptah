@@ -1,6 +1,6 @@
-// Package cmdalias contains small Cobra forwarding helpers for command paths
-// that delegate to another command implementation.
-package cmdalias
+// Package cmdadapter contains small Cobra forwarding helpers for external
+// command surfaces that delegate to native Ptah command implementations.
+package cmdadapter
 
 import (
 	"fmt"
@@ -20,7 +20,7 @@ type ArgMapper func([]string) ([]string, error)
 type helpBehavior int
 
 const (
-	wrapperHelp helpBehavior = iota
+	adapterHelp helpBehavior = iota
 	targetHelp
 )
 
@@ -66,7 +66,7 @@ func NewForwardCommandWithArgsMapper(
 	mapper ArgMapper,
 	prefixArgs ...string,
 ) *cobra.Command {
-	return newForwardCommandWithArgsMapper(use, short, native, factory, mapper, wrapperHelp, prefixArgs...)
+	return newForwardCommandWithArgsMapper(use, short, native, factory, mapper, adapterHelp, prefixArgs...)
 }
 
 func newForwardCommandWithArgsMapper(
@@ -86,7 +86,7 @@ func newForwardCommandWithArgsMapper(
 		SilenceUsage:       true,
 		SilenceErrors:      true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if help == wrapperHelp && hasHelpArg(args) {
+			if help == adapterHelp && hasHelpArg(args) {
 				return cmd.Help()
 			}
 			if mapper != nil {
@@ -113,7 +113,7 @@ func newForwardCommandWithArgsMapper(
 				if err != nil {
 					return err
 				}
-				return renderTargetHelpWithAliasUsage(cmd, helpCommand)
+				return renderTargetHelpWithAdapterUsage(cmd, helpCommand)
 			}
 			target.SetArgs(forwardArgs)
 			target.SetIn(cmd.InOrStdin())
@@ -175,19 +175,19 @@ func argsWithoutHelp(args []string) []string {
 	return out
 }
 
-func renderTargetHelpWithAliasUsage(alias *cobra.Command, target *cobra.Command) error {
+func renderTargetHelpWithAdapterUsage(adapter *cobra.Command, target *cobra.Command) error {
 	originalUsage := target.UsageFunc()
-	target.SetUsageFunc(aliasUsageFunc(alias.CommandPath(), target))
-	target.SetIn(alias.InOrStdin())
-	target.SetOut(alias.OutOrStdout())
-	target.SetErr(alias.ErrOrStderr())
+	target.SetUsageFunc(adapterUsageFunc(adapter.CommandPath(), target))
+	target.SetIn(adapter.InOrStdin())
+	target.SetOut(adapter.OutOrStdout())
+	target.SetErr(adapter.ErrOrStderr())
 	defer target.SetUsageFunc(originalUsage)
 	defer resetCommandIO(target)
 	return target.Help()
 }
 
-func aliasUsageFunc(aliasPath string, target *cobra.Command) func(*cobra.Command) error {
-	useLine := aliasUseLine(aliasPath, target)
+func adapterUsageFunc(adapterPath string, target *cobra.Command) func(*cobra.Command) error {
+	useLine := adapterUseLine(adapterPath, target)
 	return func(cmd *cobra.Command) error {
 		cmd.Println("Usage:")
 		cmd.Printf("  %s\n", useLine)
@@ -205,8 +205,8 @@ func aliasUsageFunc(aliasPath string, target *cobra.Command) func(*cobra.Command
 	}
 }
 
-func aliasUseLine(aliasPath string, target *cobra.Command) string {
-	useLine := aliasPath
+func adapterUseLine(adapterPath string, target *cobra.Command) string {
+	useLine := adapterPath
 	if suffix := useSuffix(target.Use); suffix != "" {
 		useLine += " " + suffix
 	}
