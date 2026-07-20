@@ -106,11 +106,12 @@ func checkForCircularDependencies(r *Database, sorted *[]Table) {
 // Circular dependency handling:
 //   - If circular dependencies are detected, a warning is logged
 //   - Remaining tables are appended to the end of the sorted list
-//   - This allows migration to proceed, but manual intervention may be needed
+//   - Schema rendering emits foreign keys after table creation, so the resulting
+//     DDL remains executable for supported dialects
 //
 // The method modifies the Tables slice in-place, reordering it according to dependency
-// requirements. This ensures that CREATE TABLE statements can be executed in the
-// returned order without foreign key constraint violations.
+// requirements. Renderers that support post-create foreign keys emit those
+// constraints in a separate phase after all tables exist.
 func sortTablesByDependencies(r *Database) {
 	// Create a map for quick table lookup
 	tableMap := make(map[string]Table)

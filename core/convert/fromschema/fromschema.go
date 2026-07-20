@@ -1293,17 +1293,23 @@ func FromGrant(grant goschema.Grant) *ast.GrantPrivilegeNode {
 //
 // The function generates statements in the following order to respect dependencies:
 //  1. Schema definitions (CREATE SCHEMA statements)
-//  2. Enum type definitions (CREATE TYPE statements)
-//  3. Table definitions (CREATE TABLE statements) with embedded fields processed, but without foreign keys
-//  4. Foreign key constraints (ALTER TABLE statements)
-//  5. Extension definitions
-//  6. Dialect-specific objects such as roles, functions, views, RLS policies, grants, and triggers
-//  7. Index definitions (CREATE INDEX statements)
+//  2. Extension definitions
+//  3. Enum type definitions (CREATE TYPE statements)
+//  4. Table definitions (CREATE TABLE statements) with embedded fields processed, but without foreign keys
+//  5. PostgreSQL roles and functions
+//  6. Unique index definitions (CREATE UNIQUE INDEX statements)
+//  7. Foreign key constraints (ALTER TABLE statements)
+//  8. Dialect-specific objects such as views, RLS policies, grants, and triggers
+//  9. Non-unique index definitions (CREATE INDEX statements)
 //
 // This ordering ensures that:
 //   - Schemas are created before tables that reference them
+//   - Extensions are created before tables, indexes, or functions that may use them
 //   - Enum types are created before tables that reference them
+//   - PostgreSQL functions are created before indexes that may use them
 //   - Tables are created before indexes that reference them
+//   - Unique indexes are created before foreign keys because PostgreSQL can use
+//     a unique index as the referenced key
 //   - Foreign key dependencies are handled after table creation, so cyclic table references remain executable
 //   - Embedded fields are processed and converted to regular fields before table creation
 //
@@ -1360,41 +1366,47 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 	// 1. Add schema definitions first (they may be referenced by tables)
 	appendSchemaStatements(statements, database.Schemas)
 
-	// 2. Add enum definitions (they may be referenced by tables)
-	for _, enum := range database.Enums {
-		enumNode := FromEnum(enum)
-		statements.Statements = append(statements.Statements, enumNode)
-	}
-
-	// 3. Add table definitions (they may be referenced by indexes)
-	// Use the combined field list that includes embedded field expansions
-	appendTableStatements(statements, database, allFields, targetPlatform)
-
-	// 4. Add extension definitions (PostgreSQL-specific)
+	// 2. Add extension definitions (PostgreSQL-specific)
 	for _, extension := range database.Extensions {
 		extensionNode := FromExtension(extension)
 		statements.Statements = append(statements.Statements, extensionNode)
 	}
 
-	// 5. Add PostgreSQL-specific features (functions and RLS)
-	// These features are only supported by PostgreSQL, so we only generate them for PostgreSQL dialects
+	// 3. Add enum definitions (they may be referenced by tables)
+	for _, enum := range database.Enums {
+		enumNode := FromEnum(enum)
+		statements.Statements = append(statements.Statements, enumNode)
+	}
+
+	// 4. Add table definitions (they may be referenced by indexes)
+	// Use the combined field list that includes embedded field expansions
+	appendTableStatements(statements, database, allFields, targetPlatform)
+
 	isPostgreSQL := isPostgreSQLPlatform(targetPlatform)
+	if isPostgreSQL {
+		appendPostgreSQLPreIndexFeatureStatements(statements, database)
+	}
+
+	// 6. Add unique indexes before foreign keys. PostgreSQL accepts a unique
+	// index as the referenced key for a foreign key, so it must exist before
+	// the FK constraint is added.
+	appendUniqueIndexStatements(statements, database.Tables, database.Indexes)
+
+	// 7. Add foreign key constraints after all tables and unique indexes exist.
+	if !isSQLiteTarget(targetPlatform) {
+		appendForeignKeyConstraintStatements(statements, database.Tables, allFields, database.Constraints, targetPlatform)
+	}
 
 	if isPostgreSQL {
-		appendPostgreSQLFeatureStatements(statements, database)
+		appendPostgreSQLPostForeignKeyFeatureStatements(statements, database)
 	}
 
 	if supportsStandaloneViewsAndTriggers(targetPlatform) {
 		appendViewAndTriggerStatements(statements, database)
 	}
 
-	// 7. Add index definitions last
-	// Create a mapping from struct names to table names for proper index table resolution
-	structToTableMap := createStructToTableMap(database.Tables)
-	for _, index := range database.Indexes {
-		indexNode := FromIndexWithTableMapping(index, structToTableMap)
-		statements.Statements = append(statements.Statements, indexNode)
-	}
+	// 9. Add non-unique indexes last.
+	appendNonUniqueIndexStatements(statements, database.Tables, database.Indexes)
 
 	return statements
 }
@@ -1418,18 +1430,46 @@ func appendTableStatements(
 		addTableConstraints(tableNode, table, database.Constraints, mode)
 		statements.Statements = append(statements.Statements, tableNode)
 	}
-	if !sqliteTarget {
-		appendForeignKeyConstraintStatements(statements, database.Tables, allFields, database.Constraints, targetPlatform)
+}
+
+func appendUniqueIndexStatements(statements *ast.StatementList, tables []goschema.Table, indexes []goschema.Index) {
+	appendMatchingIndexStatements(statements, tables, indexes, func(index goschema.Index) bool {
+		return index.Unique
+	})
+}
+
+func appendNonUniqueIndexStatements(statements *ast.StatementList, tables []goschema.Table, indexes []goschema.Index) {
+	appendMatchingIndexStatements(statements, tables, indexes, func(index goschema.Index) bool {
+		return !index.Unique
+	})
+}
+
+func appendMatchingIndexStatements(
+	statements *ast.StatementList,
+	tables []goschema.Table,
+	indexes []goschema.Index,
+	matches func(goschema.Index) bool,
+) {
+	structToTableMap := createStructToTableMap(tables)
+	for _, index := range indexes {
+		if !matches(index) {
+			continue
+		}
+		indexNode := FromIndexWithTableMapping(index, structToTableMap)
+		statements.Statements = append(statements.Statements, indexNode)
 	}
 }
 
-func appendPostgreSQLFeatureStatements(statements *ast.StatementList, database goschema.Database) {
+func appendPostgreSQLPreIndexFeatureStatements(statements *ast.StatementList, database goschema.Database) {
 	for _, role := range database.Roles {
 		statements.Statements = append(statements.Statements, FromRole(role))
 	}
 	for _, function := range database.Functions {
 		statements.Statements = append(statements.Statements, FromFunction(function))
 	}
+}
+
+func appendPostgreSQLPostForeignKeyFeatureStatements(statements *ast.StatementList, database goschema.Database) {
 	for _, view := range database.Views {
 		statements.Statements = append(statements.Statements, FromView(view))
 	}
