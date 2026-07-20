@@ -173,6 +173,41 @@ func TestRenderReportsLossyObjectDetails(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", string(rendered.Data)))
 }
 
+func TestRenderReportsPlatformOverrideDiagnostics(t *testing.T) {
+	c := qt.New(t)
+	db := &goschema.Database{
+		Tables: []goschema.Table{{
+			StructName: "User",
+			Name:       "users",
+			Overrides: map[string]map[string]string{
+				"mysql": {"engine": "InnoDB"},
+			},
+		}},
+		Fields: []goschema.Field{{
+			StructName: "User",
+			FieldName:  "ID",
+			Name:       "id",
+			Type:       "SERIAL",
+			Primary:    true,
+			Overrides: map[string]map[string]string{
+				"mysql": {"type": "INT AUTO_INCREMENT"},
+			},
+		}},
+	}
+
+	rendered, err := atlashclrender.Render(db)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.DeepEquals, []string{
+		"table users",
+		"column User.id",
+	})
+	c.Assert(string(rendered.Data), qt.Contains, `table "users"`)
+	c.Assert(string(rendered.Data), qt.Contains, `column "id"`)
+	_, err = atlashcl.Parse(rendered.Data, "schema.hcl")
+	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", string(rendered.Data)))
+}
+
 func TestRenderPreservesQualifiedTargetsAndRoleInheritance(t *testing.T) {
 	c := qt.New(t)
 	db := &goschema.Database{

@@ -78,7 +78,7 @@ Cleanup removes only Ptah schema annotation comments:
 - `//migrator:schema:*`
 - `//migrator:embedded ...`
 
-It preserves regular Go comments, formats cleaned Go files with `gofmt`, and
+It preserves regular Go comments, leaves unrelated formatting untouched, and
 keeps original file permissions. Cleanup is idempotent: running it again after
 annotations were removed should report no changed files.
 
