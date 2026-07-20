@@ -1,6 +1,7 @@
 package postgres_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -108,4 +109,108 @@ func TestPlanner_GenerateMigrationAST_MaterializedViewRefreshStrategyDoesNotAuto
 	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "CREATE MATERIALIZED VIEW user_stats AS")
 	c.Assert(sql, qt.Not(qt.Contains), "REFRESH MATERIALIZED VIEW CONCURRENTLY")
+}
+
+func TestPlanner_GenerateMigrationAST_OrdersFunctionsByDependencies(t *testing.T) {
+	c := qt.New(t)
+	planner := postgres.New()
+
+	generated := &goschema.Database{
+		Functions: []goschema.Function{
+			{
+				Name:       "a_child",
+				Parameters: "",
+				Returns:    "INTEGER",
+				Language:   "sql",
+				Body:       "SELECT z_parent()",
+			},
+			{
+				Name:       "z_parent",
+				Parameters: "",
+				Returns:    "INTEGER",
+				Language:   "sql",
+				Body:       "SELECT 1",
+			},
+		},
+		FunctionDependencies: map[string][]string{
+			"a_child": {"z_parent"},
+		},
+	}
+	diff := &difftypes.SchemaDiff{
+		FunctionsAdded: []string{"a_child", "z_parent"},
+	}
+
+	nodes := planner.GenerateMigrationAST(diff, generated)
+	sql, err := renderer.RenderSQL("postgres", nodes...)
+	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
+
+	assertBefore(t, sql, "CREATE OR REPLACE FUNCTION z_parent()", "CREATE OR REPLACE FUNCTION a_child()")
+}
+
+func TestPlanner_GenerateMigrationAST_OrdersViewLikeObjectsByDependencies(t *testing.T) {
+	c := qt.New(t)
+	planner := postgres.New()
+
+	generated := &goschema.Database{
+		Views: []goschema.View{{
+			Name: "a_report",
+			Body: "SELECT id FROM z_base",
+		}},
+		MaterializedViews: []goschema.MaterializedView{{
+			Name: "z_base",
+			Body: "SELECT id FROM users",
+		}},
+	}
+	diff := &difftypes.SchemaDiff{
+		ViewsAdded:             []string{"a_report"},
+		MaterializedViewsAdded: []string{"z_base"},
+	}
+
+	nodes := planner.GenerateMigrationAST(diff, generated)
+	sql, err := renderer.RenderSQL("postgres", nodes...)
+	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
+
+	assertBefore(t, sql, "CREATE MATERIALIZED VIEW z_base AS", "CREATE VIEW a_report AS")
+}
+
+func TestPlanner_GenerateMigrationAST_ModifiesRLSPolicies(t *testing.T) {
+	c := qt.New(t)
+	planner := postgres.New()
+
+	generated := &goschema.Database{
+		RLSPolicies: []goschema.RLSPolicy{{
+			Name:            "tenant_isolation",
+			Table:           "accounts",
+			PolicyFor:       "SELECT",
+			ToRoles:         "app_user",
+			UsingExpression: "tenant_id = current_setting('app.tenant_id')::uuid",
+		}},
+	}
+	diff := &difftypes.SchemaDiff{
+		RLSPoliciesModified: []difftypes.RLSPolicyDiff{{
+			PolicyName: "tenant_isolation",
+			TableName:  "accounts",
+			Changes:    map[string]string{"using_expression": "old -> new"},
+		}},
+	}
+
+	nodes := planner.GenerateMigrationAST(diff, generated)
+	sql, err := renderer.RenderSQL("postgres", nodes...)
+	c.Assert(err, qt.IsNil)
+	sql = legacyRenderedSQL(sql)
+
+	c.Assert(sql, qt.Contains, "DROP POLICY IF EXISTS tenant_isolation ON accounts;")
+	c.Assert(sql, qt.Contains, "CREATE POLICY tenant_isolation ON accounts FOR SELECT TO app_user")
+}
+
+func assertBefore(t *testing.T, sql, earlier, later string) {
+	t.Helper()
+	c := qt.New(t)
+	earlierIndex := strings.Index(sql, earlier)
+	laterIndex := strings.Index(sql, later)
+	c.Assert(earlierIndex, qt.Not(qt.Equals), -1, qt.Commentf("missing %q in:\n%s", earlier, sql))
+	c.Assert(laterIndex, qt.Not(qt.Equals), -1, qt.Commentf("missing %q in:\n%s", later, sql))
+	c.Assert(earlierIndex < laterIndex, qt.IsTrue, qt.Commentf("expected %q before %q in:\n%s", earlier, later, sql))
 }
