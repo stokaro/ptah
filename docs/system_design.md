@@ -133,6 +133,24 @@ For a detailed view of the migration workflow, see the [Migration Architecture D
   - Handles dependency ordering
   - Creates both UP and DOWN migration paths
 
+Planner ordering is separate from diff sorting. The schemadiff layer keeps
+change lists deterministic so generated migrations are stable across runs, but
+the planner must not treat that sorted order as a dependency model. Dialect
+planners build graph order from explicit dependency data where it exists:
+foreign-key table dependencies, function dependencies, and reverse
+child-before-parent ordering for table drops. PostgreSQL view-like objects use
+conservative body reference detection for dependencies between managed views and
+materialized views. Grants, RLS policies, triggers, and roles still rely on
+typed phase ordering plus deterministic diff order within each phase.
+Independent operations keep their deterministic diff order.
+
+For table creation, planners create all selected tables without foreign keys
+first, then add foreign keys in a separate phase after the participating tables
+exist. For table removal, planners use reverse dependency order when schema
+dependency data is available; generated down migrations also pre-order the
+reversed diff so callers that only have the diff still receive child-before-parent
+DROP TABLE statements.
+
 #### generator Package
 - **Purpose**: Generates migration files from planned operations
 - **Features**:

@@ -24,6 +24,7 @@ import (
 	"github.com/stokaro/ptah/dbschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/pathguard"
+	"github.com/stokaro/ptah/migration/internal/deporder"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/safety"
@@ -902,8 +903,8 @@ func reverseSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Database, dbSchema *dbschematypes.DBSchema) *types.SchemaDiff {
 	return &types.SchemaDiff{
 		// Reverse table operations
-		TablesAdded:    diff.TablesRemoved,                               // Tables to remove become tables to add
-		TablesRemoved:  rollbackDropTableOrder(diff.TablesAdded, schema), // Tables to add become tables to remove
+		TablesAdded:    diff.TablesRemoved,                                // Tables to remove become tables to add
+		TablesRemoved:  deporder.TableDropOrder(diff.TablesAdded, schema), // Tables to add become tables to remove
 		TablesModified: reverseTableDiffs(diff.TablesModified),
 
 		// Reverse enum operations
@@ -964,107 +965,6 @@ func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Databa
 	}
 }
 
-func rollbackDropTableOrder(tableNames []string, schema *goschema.Database) []string {
-	ordered := append([]string(nil), tableNames...)
-	if schema == nil || len(ordered) < 2 {
-		return ordered
-	}
-
-	candidates := make(map[string]bool, len(ordered))
-	for _, tableName := range ordered {
-		candidates[tableName] = true
-	}
-
-	dependencies := generatedTableDependencies(schema)
-	dependents := make(map[string][]string)
-	for _, child := range ordered {
-		for _, parent := range dependencies[child] {
-			if candidates[parent] && parent != child && !slices.Contains(dependents[parent], child) {
-				dependents[parent] = append(dependents[parent], child)
-			}
-		}
-	}
-
-	result := make([]string, 0, len(ordered))
-	state := make(map[string]int, len(ordered))
-	var visit func(string)
-	visit = func(tableName string) {
-		switch state[tableName] {
-		case 1:
-			return
-		case 2:
-			return
-		}
-		state[tableName] = 1
-		for _, child := range dependents[tableName] {
-			visit(child)
-		}
-		state[tableName] = 2
-		result = append(result, tableName)
-	}
-
-	for _, tableName := range ordered {
-		visit(tableName)
-	}
-	return result
-}
-
-func generatedTableDependencies(schema *goschema.Database) map[string][]string {
-	dependencies := make(map[string][]string, len(schema.Tables))
-	for _, table := range schema.Tables {
-		dependencies[table.QualifiedName()] = append([]string(nil), schema.Dependencies[table.QualifiedName()]...)
-	}
-
-	for _, field := range schema.Fields {
-		if field.Foreign == "" {
-			continue
-		}
-		table := generatedTableByStructName(schema.Tables, field.StructName)
-		if table == nil {
-			continue
-		}
-		addGeneratedTableDependency(dependencies, schema.Tables, *table, foreignReferenceTable(field.Foreign))
-	}
-
-	for _, embedded := range schema.EmbeddedFields {
-		if embedded.Mode != "relation" || embedded.Ref == "" {
-			continue
-		}
-		table := generatedTableByStructName(schema.Tables, embedded.StructName)
-		if table == nil {
-			continue
-		}
-		addGeneratedTableDependency(dependencies, schema.Tables, *table, foreignReferenceTable(embedded.Ref))
-	}
-
-	for _, constraint := range schema.Constraints {
-		if constraint.ForeignTable == "" || !strings.EqualFold(constraint.Type, "FOREIGN KEY") {
-			continue
-		}
-		table := generatedTableReference(schema.Tables, constraint.StructName, constraint.Table)
-		if table == nil {
-			continue
-		}
-		addGeneratedTableDependency(dependencies, schema.Tables, *table, constraint.ForeignTable)
-	}
-
-	return dependencies
-}
-
-func addGeneratedTableDependency(
-	dependencies map[string][]string,
-	tables []goschema.Table,
-	table goschema.Table,
-	refTable string,
-) {
-	tableName := table.QualifiedName()
-	refTable = resolveGeneratedReferenceTableName(tables, table, refTable)
-	if tableName == refTable || slices.Contains(dependencies[tableName], refTable) {
-		return
-	}
-	dependencies[tableName] = append(dependencies[tableName], refTable)
-}
-
 func generatedTableByStructName(tables []goschema.Table, structName string) *goschema.Table {
 	for i := range tables {
 		if tables[i].StructName == structName {
@@ -1108,39 +1008,6 @@ func generatedTableReference(tables []goschema.Table, structName, tableName stri
 		match = &tables[i]
 	}
 	return match
-}
-
-func resolveGeneratedReferenceTableName(tables []goschema.Table, current goschema.Table, refTable string) string {
-	refTable = strings.TrimSpace(refTable)
-	if strings.Contains(refTable, ".") {
-		return refTable
-	}
-	for _, table := range tables {
-		if table.Schema == current.Schema && table.Name == refTable {
-			return table.QualifiedName()
-		}
-	}
-	var match string
-	for _, table := range tables {
-		if table.Name != refTable {
-			continue
-		}
-		if match != "" {
-			return refTable
-		}
-		match = table.QualifiedName()
-	}
-	if match != "" {
-		return match
-	}
-	return refTable
-}
-
-func foreignReferenceTable(ref string) string {
-	if tableName, _, ok := strings.Cut(ref, "("); ok {
-		return strings.TrimSpace(tableName)
-	}
-	return strings.TrimSpace(ref)
 }
 
 // reverseConstraintAdditions builds the table-qualified additions for the down
