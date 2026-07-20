@@ -480,7 +480,7 @@ func mapColumnType(columnType string) string {
 		base = strings.TrimSpace(base[:idx])
 	}
 	switch base {
-	case "SERIAL":
+	case "INTEGER", "INT4", "SERIAL":
 		return "INT"
 	case "BIGSERIAL":
 		return "BIGINT"

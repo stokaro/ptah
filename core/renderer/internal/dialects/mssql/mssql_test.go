@@ -78,6 +78,20 @@ func TestRenderer_AlterTableUsesSQLServerSpelling(t *testing.T) {
 		"ALTER TABLE [dbo].[users] ALTER COLUMN [display_name] NVARCHAR(MAX) NULL;\n")
 }
 
+func TestRenderer_MapsGenericIntegerTypes(t *testing.T) {
+	c := qt.New(t)
+
+	table := ast.NewCreateTable("dbo.metrics").
+		AddColumn(ast.NewColumn("small_id", "INTEGER").SetNotNull()).
+		AddColumn(ast.NewColumn("legacy_id", "INT4").SetNotNull())
+
+	sql, err := New().Render(table)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "  [small_id] INT NOT NULL,\n")
+	c.Assert(sql, qt.Contains, "  [legacy_id] INT NOT NULL\n")
+}
+
 func TestRenderer_IdentifierEscaping(t *testing.T) {
 	c := qt.New(t)
 
