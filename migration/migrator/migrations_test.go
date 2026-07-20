@@ -255,6 +255,16 @@ GO
 	c.Assert(migrationStatementCountForDialect(sql, platform.SQLServer), qt.Equals, 2)
 }
 
+func TestMigrationStatementCountForDialect_SQLServerGoBatchCount(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `INSERT INTO [audit_log] ([message]) VALUES ('repeat');
+GO 3
+`
+
+	c.Assert(migrationStatementCountForDialect(sql, platform.SQLServer), qt.Equals, 3)
+}
+
 func TestMigrationFuncFromSQLFilename_Success(t *testing.T) {
 	c := qt.New(t)
 

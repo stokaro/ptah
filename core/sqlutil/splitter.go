@@ -1,6 +1,8 @@
 package sqlutil
 
 import (
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/stokaro/ptah/core/platform"
@@ -57,6 +59,7 @@ func splitSQLStatements(sql string, dialect string) []string {
 	var currentStatement strings.Builder
 	state := statementSplitState{dialect: dialect}
 	skippingGoBatchLine := false
+	sqlServerBatchStart := 0
 
 	for {
 		token := lexr.NextToken()
@@ -71,14 +74,21 @@ func splitSQLStatements(sql string, dialect string) []string {
 			}
 			continue
 		}
-		if state.isSQLServer() && token.MatchIdentifierValue("GO") && IsSQLServerGoBatchSeparatorAt(sql, token.Start, token.End) {
-			stmt := strings.TrimSpace(currentStatement.String())
-			if stmt != "" {
-				statements = append(statements, stmt)
+		if state.isSQLServer() && token.MatchIdentifierValue("GO") {
+			var handled bool
+			statements, sqlServerBatchStart, handled = handleSQLServerGoBatchSeparator(
+				sql,
+				token,
+				statements,
+				&currentStatement,
+				&state,
+				sqlServerBatchStart,
+			)
+			if !handled {
+				state.observe(token)
+				currentStatement.WriteString(token.Value)
+				continue
 			}
-			currentStatement.Reset()
-			state.reset()
-			state.dialect = dialect
 			skippingGoBatchLine = true
 			continue
 		}
@@ -115,6 +125,41 @@ func splitSQLStatements(sql string, dialect string) []string {
 	}
 
 	return statements
+}
+
+func handleSQLServerGoBatchSeparator(
+	sql string,
+	token lexer.Token,
+	statements []string,
+	currentStatement *strings.Builder,
+	state *statementSplitState,
+	batchStart int,
+) ([]string, int, bool) {
+	repeatCount, ok := sqlServerGoBatchSeparatorRepeatCountAt(sql, token.Start, token.End)
+	if !ok {
+		return statements, batchStart, false
+	}
+	statements, batchStart = appendSQLServerBatch(statements, batchStart, currentStatement.String(), repeatCount)
+	currentStatement.Reset()
+	state.reset()
+	return statements, batchStart, true
+}
+
+func appendSQLServerBatch(statements []string, batchStart int, currentStatement string, repeatCount int) ([]string, int) {
+	stmt := strings.TrimSpace(currentStatement)
+	if stmt != "" {
+		statements = append(statements, stmt)
+	}
+	batch := slices.Clone(statements[batchStart:])
+	switch {
+	case repeatCount == 0:
+		statements = statements[:batchStart]
+	case repeatCount > 1:
+		for range repeatCount - 1 {
+			statements = append(statements, batch...)
+		}
+	}
+	return statements, len(statements)
 }
 
 type statementSplitState struct {
@@ -235,7 +280,8 @@ func (s statementSplitState) isCompoundCreateObject(value string) bool {
 }
 
 func (s statementSplitState) isSQLServerRoutineObject() bool {
-	return s.isSQLServer() && (s.createObject == "FUNCTION" || s.createObject == "PROC" || s.createObject == "PROCEDURE")
+	return s.isSQLServer() &&
+		(s.createObject == "FUNCTION" || s.createObject == "PROC" || s.createObject == "PROCEDURE" || s.createObject == "TRIGGER")
 }
 
 func (s statementSplitState) isSQLServer() bool {
@@ -276,10 +322,19 @@ func (s *statementSplitState) keepSemicolonInsideStatement() bool {
 // utility batch separator command on its own line. Identifiers such as
 // "AS go" or variables such as "@go" are ordinary T-SQL tokens.
 func IsSQLServerGoBatchSeparatorAt(input string, start, end int) bool {
+	_, ok := sqlServerGoBatchSeparatorRepeatCountAt(input, start, end)
+	return ok
+}
+
+// sqlServerGoBatchSeparatorRepeatCountAt reports whether a GO token is a SQL
+// Server utility batch separator and returns the optional GO count. Plain GO
+// has count 1; GO 0 discards the pending batch just like SQL Server client
+// tooling.
+func sqlServerGoBatchSeparatorRepeatCountAt(input string, start, end int) (int, bool) {
 	if !sqlServerGoLinePrefixIsEmpty(input, start) {
-		return false
+		return 0, false
 	}
-	return sqlServerGoTrailerIsBatchSeparator(input, end)
+	return sqlServerGoTrailerRepeatCount(input, end)
 }
 
 func sqlServerGoLinePrefixIsEmpty(input string, start int) bool {
@@ -291,29 +346,36 @@ func sqlServerGoLinePrefixIsEmpty(input string, start int) bool {
 	return true
 }
 
-func sqlServerGoTrailerIsBatchSeparator(input string, pos int) bool {
+func sqlServerGoTrailerRepeatCount(input string, pos int) (int, bool) {
 	i := pos
+	count := 1
 	consumedCount := false
 	for {
 		i = skipSQLServerHorizontalSpace(input, i)
 		if !consumedCount && i < len(input) && input[i] >= '0' && input[i] <= '9' {
 			consumedCount = true
+			countStart := i
 			i = skipSQLServerDigits(input, i)
+			parsedCount, err := strconv.Atoi(input[countStart:i])
+			if err != nil {
+				return 0, false
+			}
+			count = parsedCount
 			continue
 		}
 		switch {
 		case i >= len(input) || input[i] == '\n' || input[i] == '\r':
-			return true
+			return count, true
 		case strings.HasPrefix(input[i:], "--"):
-			return true
+			return count, true
 		case strings.HasPrefix(input[i:], "/*"):
 			next, ok := skipSQLServerBlockComment(input, i)
 			if !ok {
-				return false
+				return 0, false
 			}
 			i = next
 		default:
-			return false
+			return 0, false
 		}
 	}
 }

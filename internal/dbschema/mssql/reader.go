@@ -268,8 +268,10 @@ func (r *Reader) readIndexes() ([]types.DBIndex, error) {
 		  AND i.name IS NOT NULL
 		  AND i.is_primary_key = 0
 		  AND i.is_unique_constraint = 0
+		  AND ic.is_included_column = 0
+		  AND ic.key_ordinal > 0
 		  AND t.name NOT IN ('schema_migrations', 'atlas_schema_revisions')
-			  AND (` + schemaPredicatePlaceholder + `)
+		  AND (` + schemaPredicatePlaceholder + `)
 		ORDER BY s.name, t.name, i.name, ic.key_ordinal`
 	rows, err := r.db.Query(r.queryWithSchemaPredicate(query), r.schemaArgs()...)
 	if err != nil {

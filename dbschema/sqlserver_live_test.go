@@ -53,6 +53,7 @@ func TestSQLServerLiveReadSchema(t *testing.T) {
 			CONSTRAINT [fk_orders_user] FOREIGN KEY ([user_id]) REFERENCES ` + quoteSQLServerIdentifier(schemaName) + `.[users]([id])
 		);`,
 		`CREATE INDEX [idx_orders_user_id] ON ` + quoteSQLServerIdentifier(schemaName) + `.[order] ([user_id]);`,
+		`CREATE INDEX [idx_users_email_covering] ON ` + quoteSQLServerIdentifier(schemaName) + `.[users] ([email]) INCLUDE ([status]);`,
 	}
 	for _, stmt := range statements {
 		_, err = conn.ExecContext(ctx, stmt)
@@ -62,7 +63,7 @@ func TestSQLServerLiveReadSchema(t *testing.T) {
 	schema, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	c.Assert(schema.Tables, qt.HasLen, 2)
-	c.Assert(schema.Indexes, qt.HasLen, 1)
+	c.Assert(schema.Indexes, qt.HasLen, 2)
 	c.Assert(schema.Constraints, qt.Not(qt.HasLen), 0)
 
 	users := findSQLServerTable(schema.Tables, schemaName, "users")
@@ -96,6 +97,9 @@ func TestSQLServerLiveReadSchema(t *testing.T) {
 	index := findSQLServerIndex(schema.Indexes, schemaName, "order", "idx_orders_user_id")
 	c.Assert(index, qt.IsNotNil)
 	c.Assert(index.Columns, qt.DeepEquals, []string{"user_id"})
+	coveringIndex := findSQLServerIndex(schema.Indexes, schemaName, "users", "idx_users_email_covering")
+	c.Assert(coveringIndex, qt.IsNotNil)
+	c.Assert(coveringIndex.Columns, qt.DeepEquals, []string{"email"})
 
 	check := findSQLServerConstraint(schema.Constraints, schemaName, "users", "ck_users_status")
 	c.Assert(check, qt.IsNotNil)
@@ -269,7 +273,11 @@ func TestSQLServerLiveDropAllTablesRejectsExternalForeignKeys(t *testing.T) {
 	externalSchema, err := dbschema.ReadSchemaWithSchemas(scopedConn, []string{externalSchemaName})
 	c.Assert(err, qt.IsNil)
 	c.Assert(externalSchema.Tables, qt.HasLen, 1)
-	c.Assert(externalSchema.Constraints, qt.HasLen, 1)
+	externalFK := findSQLServerConstraint(externalSchema.Constraints, externalSchemaName, "external_child", "fk_external_child_parent")
+	c.Assert(externalFK, qt.IsNotNil)
+	c.Assert(externalFK.ForeignSchema, qt.Equals, schemaName)
+	c.Assert(externalFK.ForeignTable, qt.IsNotNil)
+	c.Assert(*externalFK.ForeignTable, qt.Equals, "parent")
 }
 
 func sqlServerURLWithSchema(dbURL, schemaName string) string {
