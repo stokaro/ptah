@@ -34,91 +34,150 @@ func NewSQLiteReader(db *sql.DB, schema string) *Reader {
 
 // ReadSchema reads user tables, indexes, constraints, views, and triggers.
 func (r *Reader) ReadSchema() (*types.DBSchema, error) {
-	tableNames, ddlByTable, err := r.readTableDefinitions()
+	catalog, err := r.readSchemaCatalog()
+	if err != nil {
+		return nil, err
+	}
+
+	columnsByTable, err := r.readColumnsByTable()
+	if err != nil {
+		return nil, err
+	}
+
+	indexesByTable, uniqueConstraintsByTable, err := r.readIndexesByTable(catalog.indexDDLByName, catalog.tableDDLByName)
+	if err != nil {
+		return nil, err
+	}
+
+	foreignKeysByTable, err := r.readForeignKeysByTable(catalog.tableDDLByName)
 	if err != nil {
 		return nil, err
 	}
 
 	var schema types.DBSchema
-	for _, tableName := range tableNames {
-		table, err := r.readTable(tableName, ddlByTable[tableName])
-		if err != nil {
-			return nil, err
-		}
+	for _, tableName := range catalog.tableNames {
+		ddl := catalog.tableDDLByName[tableName]
+		table := r.readTable(tableName, columnsByTable[tableName])
 		schema.Tables = append(schema.Tables, table)
 
-		indexes, uniqueConstraints, err := r.readIndexes(tableName, ddlByTable[tableName])
-		if err != nil {
-			return nil, fmt.Errorf("sqlite: read indexes for %s: %w", tableName, err)
-		}
-		schema.Indexes = append(schema.Indexes, indexes...)
-		schema.Constraints = append(schema.Constraints, uniqueConstraints...)
+		schema.Indexes = append(schema.Indexes, indexesByTable[tableName]...)
+		schema.Constraints = append(schema.Constraints, uniqueConstraintsByTable[tableName]...)
 
-		constraints, err := r.readTableConstraints(tableName, table.Columns, ddlByTable[tableName])
-		if err != nil {
-			return nil, fmt.Errorf("sqlite: read constraints for %s: %w", tableName, err)
-		}
+		constraints := r.readTableConstraints(tableName, table.Columns, ddl, foreignKeysByTable[tableName])
 		schema.Constraints = append(schema.Constraints, constraints...)
 	}
 
-	views, err := r.readViews()
-	if err != nil {
-		return nil, err
-	}
-	schema.Views = views
-
-	triggers, err := r.readTriggers()
-	if err != nil {
-		return nil, err
-	}
-	schema.Triggers = triggers
+	schema.Views = catalog.views(r.outputSchema())
+	schema.Triggers = catalog.triggers(r.outputSchema())
 	reconcileColumnUniqueness(&schema)
 
 	return &schema, nil
 }
 
-func (r *Reader) readTableDefinitions() ([]string, map[string]string, error) {
-	rows, err := r.db.Query(`
-		SELECT name, sql
-		FROM sqlite_schema
-		WHERE type = 'table'
-		  AND name NOT LIKE 'sqlite_%'
-		  AND name <> 'schema_migrations'
-		ORDER BY name
-	`)
+type sqliteSchemaCatalog struct {
+	tableNames     []string
+	tableDDLByName map[string]string
+	indexDDLByName map[string]string
+	viewObjects    []sqliteSchemaObject
+	triggerObjects []sqliteSchemaObject
+}
+
+type sqliteSchemaObject struct {
+	name      string
+	tableName string
+	ddl       string
+}
+
+func (c sqliteSchemaCatalog) views(schema string) []types.DBView {
+	views := make([]types.DBView, 0, len(c.viewObjects))
+	for _, object := range c.viewObjects {
+		views = append(views, types.DBView{
+			Name:        object.name,
+			Schema:      schema,
+			Body:        viewBody(object.ddl),
+			CheckOption: "NONE",
+		})
+	}
+	return views
+}
+
+func (c sqliteSchemaCatalog) triggers(schema string) []types.DBTrigger {
+	triggers := make([]types.DBTrigger, 0, len(c.triggerObjects))
+	for _, object := range c.triggerObjects {
+		trigger := parseTriggerDDL(object.name, object.tableName, schema, object.ddl)
+		triggers = append(triggers, trigger)
+	}
+	return triggers
+}
+
+func (r *Reader) readSchemaCatalog() (sqliteSchemaCatalog, error) {
+	query := formatSQLiteCatalogQuery(`
+		SELECT type, name, tbl_name, sql
+		FROM %s
+		WHERE type IN ('table', 'index', 'view', 'trigger')
+		  AND NOT (type = 'table' AND name LIKE 'sqlite_%%')
+		  AND NOT (type IN ('table', 'view') AND name = 'schema_migrations')
+		ORDER BY type, tbl_name, name
+	`, r.schemaObject("sqlite_schema"))
+	rows, err := r.db.Query(query)
 	if err != nil {
-		return nil, nil, fmt.Errorf("sqlite: list tables: %w", err)
+		return sqliteSchemaCatalog{}, fmt.Errorf("sqlite: read schema catalog: %w", err)
 	}
 	defer rows.Close()
 
-	var names []string
-	ddlByTable := make(map[string]string)
+	catalog := sqliteSchemaCatalog{
+		tableDDLByName: make(map[string]string),
+		indexDDLByName: make(map[string]string),
+	}
 	for rows.Next() {
-		var name string
+		var objectType, name, tableName string
 		var ddl sql.NullString
-		if err := rows.Scan(&name, &ddl); err != nil {
-			return nil, nil, fmt.Errorf("sqlite: scan table definition: %w", err)
+		if err := rows.Scan(&objectType, &name, &tableName, &ddl); err != nil {
+			return sqliteSchemaCatalog{}, fmt.Errorf("sqlite: scan schema catalog: %w", err)
 		}
-		names = append(names, name)
-		ddlByTable[name] = ddl.String
+		switch objectType {
+		case "table":
+			catalog.tableNames = append(catalog.tableNames, name)
+			catalog.tableDDLByName[name] = ddl.String
+		case "index":
+			catalog.indexDDLByName[name] = ddl.String
+		case "view":
+			catalog.viewObjects = append(catalog.viewObjects, sqliteSchemaObject{
+				name:      name,
+				tableName: tableName,
+				ddl:       ddl.String,
+			})
+		case "trigger":
+			catalog.triggerObjects = append(catalog.triggerObjects, sqliteSchemaObject{
+				name:      name,
+				tableName: tableName,
+				ddl:       ddl.String,
+			})
+		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, nil, fmt.Errorf("sqlite: iterate table definitions: %w", err)
+		return sqliteSchemaCatalog{}, fmt.Errorf("sqlite: iterate schema catalog: %w", err)
 	}
-	return names, ddlByTable, nil
+	sort.Strings(catalog.tableNames)
+	sort.Slice(catalog.viewObjects, func(i, j int) bool {
+		return catalog.viewObjects[i].name < catalog.viewObjects[j].name
+	})
+	sort.Slice(catalog.triggerObjects, func(i, j int) bool {
+		if catalog.triggerObjects[i].tableName != catalog.triggerObjects[j].tableName {
+			return catalog.triggerObjects[i].tableName < catalog.triggerObjects[j].tableName
+		}
+		return catalog.triggerObjects[i].name < catalog.triggerObjects[j].name
+	})
+	return catalog, nil
 }
 
-func (r *Reader) readTable(name, ddl string) (types.DBTable, error) {
-	columns, err := r.readColumns(name, ddl)
-	if err != nil {
-		return types.DBTable{}, fmt.Errorf("sqlite: read columns: %w", err)
-	}
+func (r *Reader) readTable(name string, columns []types.DBColumn) types.DBTable {
 	return types.DBTable{
 		Name:    name,
 		Schema:  r.outputSchema(),
 		Type:    "TABLE",
 		Columns: columns,
-	}, nil
+	}
 }
 
 func (r *Reader) outputSchema() string {
@@ -128,18 +187,47 @@ func (r *Reader) outputSchema() string {
 	return r.schema
 }
 
-func (r *Reader) readColumns(tableName, ddl string) ([]types.DBColumn, error) {
-	rows, err := r.db.Query("PRAGMA table_xinfo(" + quotePragmaString(tableName) + ")")
+func (r *Reader) schemaObject(name string) string {
+	schema := r.schema
+	if schema == "" {
+		schema = "main"
+	}
+	return quoteSQLiteIdentifier(schema) + "." + name
+}
+
+func quoteSQLiteIdentifier(value string) string {
+	return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
+}
+
+func formatSQLiteCatalogQuery(format string, objects ...any) string {
+	return fmt.Sprintf(format, objects...)
+}
+
+func (r *Reader) readColumnsByTable() (map[string][]types.DBColumn, error) {
+	query := formatSQLiteCatalogQuery(`
+		SELECT m.name, x.cid, x.name, x.type, x."notnull", x.dflt_value, x.pk, x.hidden, m.sql
+		FROM %s AS m
+		JOIN %s(m.name) AS x
+		WHERE m.type = 'table'
+		  AND m.name NOT LIKE 'sqlite_%%'
+		  AND m.name <> 'schema_migrations'
+		ORDER BY m.name, x.cid
+	`, r.schemaObject("sqlite_schema"), r.schemaObject("pragma_table_xinfo"))
+	rows, err := r.db.Query(query)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("sqlite: read columns: %w", err)
 	}
 	defer rows.Close()
 
-	autoIncrementColumn := autoincrementColumn(ddl)
-	generatedExpressions := extractGeneratedExpressions(ddl)
-	var columns []types.DBColumn
+	type tableDDLMetadata struct {
+		autoIncrementColumn  string
+		generatedExpressions map[string]string
+	}
+	ddlMetadataByTable := make(map[string]tableDDLMetadata)
+	columnsByTable := make(map[string][]types.DBColumn)
 	for rows.Next() {
 		var (
+			tableName  string
 			cid        int
 			name       string
 			dataType   string
@@ -147,12 +235,21 @@ func (r *Reader) readColumns(tableName, ddl string) ([]types.DBColumn, error) {
 			defaultVal sql.NullString
 			pkOrdinal  int
 			hidden     int
+			ddl        sql.NullString
 		)
-		if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultVal, &pkOrdinal, &hidden); err != nil {
-			return nil, err
+		if err := rows.Scan(&tableName, &cid, &name, &dataType, &notNull, &defaultVal, &pkOrdinal, &hidden, &ddl); err != nil {
+			return nil, fmt.Errorf("sqlite: scan column: %w", err)
 		}
 		if hidden == 1 {
 			continue
+		}
+		ddlMetadata := ddlMetadataByTable[tableName]
+		if ddlMetadata.generatedExpressions == nil {
+			ddlMetadata = tableDDLMetadata{
+				autoIncrementColumn:  autoincrementColumn(ddl.String),
+				generatedExpressions: extractGeneratedExpressions(ddl.String),
+			}
+			ddlMetadataByTable[tableName] = ddlMetadata
 		}
 		column := types.DBColumn{
 			Name:                name,
@@ -161,23 +258,23 @@ func (r *Reader) readColumns(tableName, ddl string) ([]types.DBColumn, error) {
 			IsNullable:          sqliteNullable(notNull, pkOrdinal),
 			OrdinalPosition:     cid + 1,
 			IsPrimaryKey:        pkOrdinal > 0,
-			IsAutoIncrement:     strings.EqualFold(name, autoIncrementColumn),
+			IsAutoIncrement:     strings.EqualFold(name, ddlMetadata.autoIncrementColumn),
 			GeneratedKind:       sqliteGeneratedKind(hidden),
 			GeneratedExpression: nil,
 		}
-		if expression := generatedExpressions[name]; expression != "" {
+		if expression := ddlMetadata.generatedExpressions[name]; expression != "" {
 			column.GeneratedExpression = &expression
 		}
 		if defaultVal.Valid {
 			value := defaultVal.String
 			column.ColumnDefault = &value
 		}
-		columns = append(columns, column)
+		columnsByTable[tableName] = append(columnsByTable[tableName], column)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("sqlite: iterate columns: %w", err)
 	}
-	return columns, nil
+	return columnsByTable, nil
 }
 
 func sqliteNullable(notNull, pkOrdinal int) string {
@@ -220,43 +317,83 @@ func autoincrementColumn(ddl string) string {
 	return ""
 }
 
-func (r *Reader) readIndexes(tableName, ddl string) ([]types.DBIndex, []types.DBConstraint, error) {
-	rows, err := r.db.Query("PRAGMA index_list(" + quotePragmaString(tableName) + ")")
+func (r *Reader) readIndexesByTable(
+	indexDDLByName map[string]string,
+	tableDDLByName map[string]string,
+) (
+	map[string][]types.DBIndex,
+	map[string][]types.DBConstraint,
+	error,
+) {
+	entriesByTable, err := r.readIndexEntriesByTable()
 	if err != nil {
 		return nil, nil, err
 	}
 
-	var entries []sqliteIndexEntry
-	for rows.Next() {
-		var entry sqliteIndexEntry
-		if err := rows.Scan(&entry.seq, &entry.name, &entry.unique, &entry.origin, &entry.partial); err != nil {
-			_ = rows.Close()
-			return nil, nil, err
-		}
-		entries = append(entries, entry)
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return nil, nil, err
-	}
-	if err := rows.Close(); err != nil {
+	columnsByIndex, err := r.readIndexColumnsByIndex()
+	if err != nil {
 		return nil, nil, err
 	}
 
+	indexesByTable := make(map[string][]types.DBIndex, len(entriesByTable))
+	constraintsByTable := make(map[string][]types.DBConstraint, len(entriesByTable))
+	for tableName, entries := range entriesByTable {
+		indexes, constraints := r.buildIndexesForTable(tableName, entries, indexDDLByName, tableDDLByName, columnsByIndex)
+		indexesByTable[tableName] = indexes
+		constraintsByTable[tableName] = constraints
+	}
+	return indexesByTable, constraintsByTable, nil
+}
+
+func (r *Reader) readIndexEntriesByTable() (map[string][]sqliteIndexEntry, error) {
+	query := formatSQLiteCatalogQuery(`
+		SELECT m.name, il.seq, il.name, il."unique", il.origin, il.partial
+		FROM %s AS m
+		JOIN %s(m.name) AS il
+		WHERE m.type = 'table'
+		  AND m.name NOT LIKE 'sqlite_%%'
+		  AND m.name <> 'schema_migrations'
+		ORDER BY m.name, il.seq
+	`, r.schemaObject("sqlite_schema"), r.schemaObject("pragma_index_list"))
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: read indexes: %w", err)
+	}
+	defer rows.Close()
+
+	entriesByTable := make(map[string][]sqliteIndexEntry)
+	for rows.Next() {
+		var tableName string
+		var entry sqliteIndexEntry
+		if err := rows.Scan(&tableName, &entry.seq, &entry.name, &entry.unique, &entry.origin, &entry.partial); err != nil {
+			return nil, fmt.Errorf("sqlite: scan index: %w", err)
+		}
+		entriesByTable[tableName] = append(entriesByTable[tableName], entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sqlite: iterate indexes: %w", err)
+	}
+	return entriesByTable, nil
+}
+
+func (r *Reader) buildIndexesForTable(
+	tableName string,
+	entries []sqliteIndexEntry,
+	indexDDLByName map[string]string,
+	tableDDLByName map[string]string,
+	columnsByIndex map[string]sqliteIndexColumns,
+) ([]types.DBIndex, []types.DBConstraint) {
+	ddl := tableDDLByName[tableName]
 	var indexes []types.DBIndex
 	var constraints []types.DBConstraint
 	uniqueDefs := extractUniqueDefinitions(ddl)
+	uniqueDefsByColumns := uniqueDefinitionsByColumns(uniqueDefs)
 	uniqueOrdinal := 0
 	for _, entry := range entries {
-		columns, err := r.readIndexColumns(entry.name)
-		if err != nil {
-			return nil, nil, err
-		}
-		definition, err := r.schemaSQL(entry.name)
-		if err != nil {
-			return nil, nil, err
-		}
-		if len(columns) == 0 {
+		definition := indexDDLByName[entry.name]
+		indexColumns := columnsByIndex[entry.name]
+		columns := indexColumns.names
+		if indexColumns.needsDDLParsing || len(columns) == 0 {
 			columns = extractIndexColumns(definition)
 		}
 		constraintName := entry.name
@@ -284,6 +421,9 @@ func (r *Reader) readIndexes(tableName, ddl string) ([]types.DBIndex, []types.DB
 		}
 		indexes = append(indexes, index)
 		if entry.origin == "u" {
+			if uniqueDef, ok := uniqueDefsByColumns[strings.Join(columns, ",")]; ok && uniqueDef.name != "" {
+				constraintName = uniqueDef.name
+			}
 			constraints = append(constraints, types.DBConstraint{
 				Name:        constraintName,
 				TableName:   tableName,
@@ -294,7 +434,87 @@ func (r *Reader) readIndexes(tableName, ddl string) ([]types.DBIndex, []types.DB
 			})
 		}
 	}
-	return indexes, constraints, nil
+	return indexes, constraints
+}
+
+func uniqueDefinitionsByColumns(definitions []uniqueDefinition) map[string]uniqueDefinition {
+	out := make(map[string]uniqueDefinition, len(definitions))
+	for _, definition := range definitions {
+		out[strings.Join(definition.columns, ",")] = definition
+	}
+	return out
+}
+
+type sqliteIndexColumns struct {
+	names           []string
+	needsDDLParsing bool
+}
+
+func (r *Reader) readIndexColumnsByIndex() (map[string]sqliteIndexColumns, error) {
+	query := formatSQLiteCatalogQuery(`
+		SELECT il.name, ix.seqno, ix.cid, ix.name, ix.key
+		FROM %s AS m
+		JOIN %s(m.name) AS il
+		JOIN %s(il.name) AS ix
+		WHERE m.type = 'table'
+		  AND m.name NOT LIKE 'sqlite_%%'
+		  AND m.name <> 'schema_migrations'
+		ORDER BY il.name, ix.seqno
+	`, r.schemaObject("sqlite_schema"), r.schemaObject("pragma_index_list"), r.schemaObject("pragma_index_xinfo"))
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: read index columns: %w", err)
+	}
+	defer rows.Close()
+
+	type indexColumn struct {
+		seqno int
+		name  string
+	}
+	columns := make(map[string][]indexColumn)
+	needsDDLParsing := make(map[string]bool)
+	for rows.Next() {
+		var (
+			indexName string
+			seqno     int
+			cid       int
+			name      sql.NullString
+			keyColumn int
+		)
+		if err := rows.Scan(&indexName, &seqno, &cid, &name, &keyColumn); err != nil {
+			return nil, fmt.Errorf("sqlite: scan index column: %w", err)
+		}
+		if keyColumn == 0 {
+			continue
+		}
+		if cid < 0 || !name.Valid || name.String == "" {
+			needsDDLParsing[indexName] = true
+			continue
+		}
+		columns[indexName] = append(columns[indexName], indexColumn{seqno: seqno, name: name.String})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sqlite: iterate index columns: %w", err)
+	}
+
+	out := make(map[string]sqliteIndexColumns, len(columns)+len(needsDDLParsing))
+	for indexName, indexColumns := range columns {
+		sort.Slice(indexColumns, func(i, j int) bool { return indexColumns[i].seqno < indexColumns[j].seqno })
+		names := make([]string, len(indexColumns))
+		for i, column := range indexColumns {
+			names[i] = column.name
+		}
+		out[indexName] = sqliteIndexColumns{
+			names:           names,
+			needsDDLParsing: needsDDLParsing[indexName],
+		}
+	}
+	for indexName := range needsDDLParsing {
+		if _, ok := out[indexName]; !ok {
+			out[indexName] = sqliteIndexColumns{needsDDLParsing: true}
+		}
+	}
+	return out, nil
 }
 
 func extractIndexCondition(definition string) string {
@@ -361,56 +581,20 @@ type sqliteIndexEntry struct {
 	partial int
 }
 
-func (r *Reader) readIndexColumns(indexName string) ([]string, error) {
-	rows, err := r.db.Query("SELECT seqno, cid, name FROM pragma_index_info(?)", indexName)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	type indexColumn struct {
-		seqno int
-		name  string
-	}
-	var columns []indexColumn
-	for rows.Next() {
-		var (
-			seqno int
-			cid   int
-			name  string
-		)
-		if err := rows.Scan(&seqno, &cid, &name); err != nil {
-			return nil, err
-		}
-		if cid < 0 || name == "" {
-			continue
-		}
-		columns = append(columns, indexColumn{seqno: seqno, name: name})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	sort.Slice(columns, func(i, j int) bool { return columns[i].seqno < columns[j].seqno })
-	out := make([]string, len(columns))
-	for i, column := range columns {
-		out[i] = column.name
-	}
-	return out, nil
-}
-
-func (r *Reader) readTableConstraints(tableName string, columns []types.DBColumn, ddl string) ([]types.DBConstraint, error) {
+func (r *Reader) readTableConstraints(
+	tableName string,
+	columns []types.DBColumn,
+	ddl string,
+	foreignKeys []types.DBConstraint,
+) []types.DBConstraint {
 	var constraints []types.DBConstraint
 	if primary := primaryKeyConstraint(tableName, r.outputSchema(), columns, ddl); primary != nil {
 		constraints = append(constraints, *primary)
 	}
 	checks := extractCheckConstraints(tableName, r.outputSchema(), ddl)
 	constraints = append(constraints, checks...)
-	foreignKeys, err := r.readForeignKeys(tableName, ddl)
-	if err != nil {
-		return nil, err
-	}
 	constraints = append(constraints, foreignKeys...)
-	return constraints, nil
+	return constraints
 }
 
 func primaryKeyConstraint(tableName, schema string, columns []types.DBColumn, ddl string) *types.DBConstraint {
@@ -456,28 +640,42 @@ func primaryKeyConstraint(tableName, schema string, columns []types.DBColumn, dd
 	}
 }
 
-func (r *Reader) readForeignKeys(tableName, ddl string) ([]types.DBConstraint, error) {
-	rows, err := r.db.Query("PRAGMA foreign_key_list(" + quotePragmaString(tableName) + ")")
+func (r *Reader) readForeignKeysByTable(tableDDLByName map[string]string) (map[string][]types.DBConstraint, error) {
+	query := formatSQLiteCatalogQuery(`
+		SELECT m.name, fk.id, fk.seq, fk."table", fk."from", fk."to", fk.on_update, fk.on_delete, fk.match
+		FROM %s AS m
+		JOIN %s(m.name) AS fk
+		WHERE m.type = 'table'
+		  AND m.name NOT LIKE 'sqlite_%%'
+		  AND m.name <> 'schema_migrations'
+		ORDER BY m.name, fk.id, fk.seq
+	`, r.schemaObject("sqlite_schema"), r.schemaObject("pragma_foreign_key_list"))
+	rows, err := r.db.Query(query)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("sqlite: read foreign keys: %w", err)
 	}
 	defer rows.Close()
 
-	named := extractForeignKeyNames(ddl)
-	groups := make(map[int]*types.DBConstraint)
+	groupsByTable := make(map[string]map[int]*types.DBConstraint)
 	for rows.Next() {
 		var (
-			id       int
-			seq      int
-			refTable string
-			from     string
-			to       sql.NullString
-			onUpdate string
-			onDelete string
-			match    string
+			tableName string
+			id        int
+			seq       int
+			refTable  string
+			from      string
+			to        sql.NullString
+			onUpdate  string
+			onDelete  string
+			match     string
 		)
-		if err := rows.Scan(&id, &seq, &refTable, &from, &to, &onUpdate, &onDelete, &match); err != nil {
-			return nil, err
+		if err := rows.Scan(&tableName, &id, &seq, &refTable, &from, &to, &onUpdate, &onDelete, &match); err != nil {
+			return nil, fmt.Errorf("sqlite: scan foreign key: %w", err)
+		}
+		groups := groupsByTable[tableName]
+		if groups == nil {
+			groups = make(map[int]*types.DBConstraint)
+			groupsByTable[tableName] = groups
 		}
 		constraint := groups[id]
 		if constraint == nil {
@@ -506,33 +704,38 @@ func (r *Reader) readForeignKeys(tableName, ddl string) ([]types.DBConstraint, e
 		_ = seq
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("sqlite: iterate foreign keys: %w", err)
 	}
 
-	ids := make([]int, 0, len(groups))
-	for id := range groups {
-		ids = append(ids, id)
-	}
-	sort.Ints(ids)
-	constraints := make([]types.DBConstraint, 0, len(ids))
-	for _, id := range ids {
-		constraint := groups[id]
-		if constraint.ForeignTable != nil {
-			signature := foreignKeySignature{
-				columns:        strings.Join(constraint.ColumnNames, ","),
-				foreignTable:   *constraint.ForeignTable,
-				foreignColumns: strings.Join(constraint.ForeignColumns, ","),
-			}
-			if explicitName := named[signature]; explicitName != "" {
-				constraint.Name = explicitName
-			}
+	out := make(map[string][]types.DBConstraint, len(groupsByTable))
+	for tableName, groups := range groupsByTable {
+		named := extractForeignKeyNames(tableDDLByName[tableName])
+		ids := make([]int, 0, len(groups))
+		for id := range groups {
+			ids = append(ids, id)
 		}
-		if constraint.Name == "" {
-			constraint.Name = fromschema.GenerateForeignKeyName(tableName, first(constraint.ColumnNames))
+		sort.Ints(ids)
+		constraints := make([]types.DBConstraint, 0, len(ids))
+		for _, id := range ids {
+			constraint := groups[id]
+			if constraint.ForeignTable != nil {
+				signature := foreignKeySignature{
+					columns:        strings.Join(constraint.ColumnNames, ","),
+					foreignTable:   *constraint.ForeignTable,
+					foreignColumns: strings.Join(constraint.ForeignColumns, ","),
+				}
+				if explicitName := named[signature]; explicitName != "" {
+					constraint.Name = explicitName
+				}
+			}
+			if constraint.Name == "" {
+				constraint.Name = fromschema.GenerateForeignKeyName(tableName, first(constraint.ColumnNames))
+			}
+			constraints = append(constraints, *constraint)
 		}
-		constraints = append(constraints, *constraint)
+		out[tableName] = constraints
 	}
-	return constraints, nil
+	return out, nil
 }
 
 func normalizeSQLiteAction(action string) string {
@@ -543,92 +746,11 @@ func normalizeSQLiteAction(action string) string {
 	return action
 }
 
-func (r *Reader) readViews() ([]types.DBView, error) {
-	rows, err := r.db.Query(`
-		SELECT name, sql
-		FROM sqlite_schema
-		WHERE type = 'view'
-		  AND name <> 'schema_migrations'
-		ORDER BY name
-	`)
-	if err != nil {
-		return nil, fmt.Errorf("sqlite: query views: %w", err)
-	}
-	defer rows.Close()
-
-	var views []types.DBView
-	for rows.Next() {
-		var name string
-		var ddl sql.NullString
-		if err := rows.Scan(&name, &ddl); err != nil {
-			return nil, fmt.Errorf("sqlite: scan view: %w", err)
-		}
-		views = append(views, types.DBView{
-			Name:        name,
-			Schema:      r.outputSchema(),
-			Body:        viewBody(ddl.String),
-			CheckOption: "NONE",
-		})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("sqlite: iterate views: %w", err)
-	}
-	return views, nil
-}
-
-func (r *Reader) readTriggers() ([]types.DBTrigger, error) {
-	rows, err := r.db.Query(`
-		SELECT name, tbl_name, sql
-		FROM sqlite_schema
-		WHERE type = 'trigger'
-		ORDER BY tbl_name, name
-	`)
-	if err != nil {
-		return nil, fmt.Errorf("sqlite: query triggers: %w", err)
-	}
-	defer rows.Close()
-
-	var triggers []types.DBTrigger
-	for rows.Next() {
-		var name, table string
-		var ddl sql.NullString
-		if err := rows.Scan(&name, &table, &ddl); err != nil {
-			return nil, fmt.Errorf("sqlite: scan trigger: %w", err)
-		}
-		trigger := parseTriggerDDL(name, table, r.outputSchema(), ddl.String)
-		triggers = append(triggers, trigger)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("sqlite: iterate triggers: %w", err)
-	}
-	return triggers, nil
-}
-
-func (r *Reader) schemaSQL(name string) (string, error) {
-	var sqlText sql.NullString
-	err := r.db.QueryRow(`
-		SELECT sql
-		FROM sqlite_schema
-		WHERE name = ?
-	`, name).Scan(&sqlText)
-	if err == sql.ErrNoRows {
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	return sqlText.String, nil
-}
-
 func first(values []string) string {
 	if len(values) == 0 {
 		return ""
 	}
 	return values[0]
-}
-
-func quotePragmaString(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
 func reconcileColumnUniqueness(schema *types.DBSchema) {
@@ -875,7 +997,47 @@ func extractIndexColumns(definition string) []string {
 	if open < 0 {
 		return nil
 	}
-	return splitIdentifierList(balancedParenthesized(after[open:]))
+	return splitIndexColumnList(balancedParenthesized(after[open:]))
+}
+
+func splitIndexColumnList(value string) []string {
+	parts := splitTopLevelComma(value)
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if name, ok := simpleIndexColumnName(part); ok {
+			out = append(out, name)
+			continue
+		}
+		out = append(out, part)
+	}
+	return out
+}
+
+func simpleIndexColumnName(value string) (string, bool) {
+	name, ok := leadingIdentifier(value)
+	if !ok {
+		return "", false
+	}
+	rest := strings.TrimSpace(value[len(consumedIdentifierPrefix(value)):])
+	if rest == "" {
+		return name, true
+	}
+	fields := strings.Fields(strings.ToUpper(rest))
+	if len(fields) == 0 {
+		return name, true
+	}
+	switch fields[0] {
+	case "ASC", "DESC":
+		return name, true
+	case "COLLATE":
+		return name, true
+	default:
+		return "", false
+	}
 }
 
 func inferCheckName(tableName, expr string, fallback int) string {

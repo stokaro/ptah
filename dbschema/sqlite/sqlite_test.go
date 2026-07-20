@@ -3,10 +3,15 @@ package sqlite_test
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
+	"fmt"
+	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	moderncsqlite "modernc.org/sqlite"
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
@@ -191,6 +196,115 @@ func TestReaderInlineNamedForeignKey(t *testing.T) {
 	c.Assert(fk.ForeignColumns, qt.DeepEquals, []string{"id"})
 }
 
+func TestReaderExpressionAndPartialIndexes(t *testing.T) {
+	c := qt.New(t)
+	db := openMemoryDB(t)
+
+	execSQL(t, db, `CREATE TABLE users (
+		id INTEGER PRIMARY KEY,
+		account_id INTEGER NOT NULL,
+		email TEXT NOT NULL
+	)`)
+	execSQL(t, db, `CREATE INDEX idx_users_email_expr_active ON users(lower(email), account_id) WHERE account_id > 0`)
+
+	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
+	c.Assert(err, qt.IsNil)
+
+	index := findIndex(schema.Indexes, "idx_users_email_expr_active")
+	c.Assert(index, qt.IsNotNil)
+	c.Assert(index.Columns, qt.DeepEquals, []string{"lower(email)", "account_id"})
+	c.Assert(index.Condition, qt.Equals, "account_id > 0")
+	c.Assert(index.Definition, qt.Contains, "CREATE INDEX idx_users_email_expr_active")
+}
+
+func TestReaderNamedUniqueConstraintsFollowColumns(t *testing.T) {
+	c := qt.New(t)
+	db := openMemoryDB(t)
+
+	execSQL(t, db, `CREATE TABLE users (
+		id INTEGER PRIMARY KEY,
+		email TEXT NOT NULL,
+		username TEXT NOT NULL,
+		CONSTRAINT users_email_uq UNIQUE(email),
+		CONSTRAINT users_username_uq UNIQUE(username)
+	)`)
+
+	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
+	c.Assert(err, qt.IsNil)
+
+	email := findConstraint(schema.Constraints, "users_email_uq")
+	c.Assert(email, qt.IsNotNil)
+	c.Assert(email.Type, qt.Equals, "UNIQUE")
+	c.Assert(email.ColumnNames, qt.DeepEquals, []string{"email"})
+
+	username := findConstraint(schema.Constraints, "users_username_uq")
+	c.Assert(username, qt.IsNotNil)
+	c.Assert(username.Type, qt.Equals, "UNIQUE")
+	c.Assert(username.ColumnNames, qt.DeepEquals, []string{"username"})
+}
+
+func TestReaderUsesBatchedCatalogQueries(t *testing.T) {
+	c := qt.New(t)
+	db := openCountingMemoryDB(t)
+
+	execSQL(t, db.SQL, `CREATE TABLE accounts (
+		tenant_id INTEGER NOT NULL,
+		code TEXT NOT NULL,
+		CONSTRAINT accounts_pkey PRIMARY KEY (tenant_id, code),
+		CONSTRAINT accounts_code_check CHECK (code <> '')
+	)`)
+	for idx := range 50 {
+		tableName := "users_" + strconv.Itoa(idx)
+		execSQL(t, db.SQL, fmt.Sprintf(`CREATE TABLE %s (
+			id INTEGER PRIMARY KEY,
+			tenant_id INTEGER NOT NULL,
+			account_code TEXT NOT NULL,
+			email TEXT NOT NULL,
+			email_norm TEXT GENERATED ALWAYS AS (lower(email)) VIRTUAL,
+			CONSTRAINT %s_account_fk FOREIGN KEY (tenant_id, account_code) REFERENCES accounts(tenant_id, code)
+		)`, tableName, tableName))
+		execSQL(t, db.SQL, fmt.Sprintf(
+			`CREATE INDEX %s_email_active_idx ON %s(lower(email), account_code) WHERE email <> ''`,
+			tableName,
+			tableName,
+		))
+	}
+
+	before := db.QueryCount()
+	schema, err := sqlite.NewSQLiteReader(db.SQL, "main").ReadSchema()
+	c.Assert(err, qt.IsNil)
+	c.Assert(schema.Tables, qt.HasLen, 51)
+	c.Assert(schema.Indexes, qt.HasLen, 51)
+	c.Assert(schema.Constraints, qt.HasLen, 102)
+
+	queryCount := db.QueryCount() - before
+	// Catalog, table_xinfo, index_list, index_xinfo, and foreign_key_list stay
+	// batched regardless of table or index count.
+	c.Assert(queryCount, qt.Equals, 5)
+}
+
+func TestReaderReadsAttachedSchema(t *testing.T) {
+	c := qt.New(t)
+	db := openMemoryDB(t)
+
+	execSQL(t, db, `CREATE TABLE main_users (id INTEGER PRIMARY KEY)`)
+	execSQL(t, db, `ATTACH DATABASE ':memory:' AS tenant`)
+	execSQL(t, db, `CREATE TABLE tenant.users (
+		id INTEGER PRIMARY KEY,
+		email TEXT NOT NULL
+	)`)
+	execSQL(t, db, `CREATE INDEX tenant.users_email_idx ON users(email)`)
+
+	schema, err := sqlite.NewSQLiteReader(db, "tenant").ReadSchema()
+	c.Assert(err, qt.IsNil)
+	c.Assert(schema.Tables, qt.HasLen, 1)
+	c.Assert(schema.Tables[0].Name, qt.Equals, "users")
+	c.Assert(schema.Tables[0].Schema, qt.Equals, "tenant")
+	c.Assert(schema.Indexes, qt.HasLen, 1)
+	c.Assert(schema.Indexes[0].Name, qt.Equals, "users_email_idx")
+	c.Assert(schema.Indexes[0].Schema, qt.Equals, "tenant")
+}
+
 func TestRoundTripGeneratedSchemaThroughSQLite(t *testing.T) {
 	c := qt.New(t)
 	db := openMemoryDB(t)
@@ -216,6 +330,75 @@ func TestRoundTripGeneratedSchemaThroughSQLite(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	secondDiff := schemadiff.CompareWithDialect(generated, actual, platform.SQLite)
 	c.Assert(secondDiff.HasChanges(), qt.IsFalse, qt.Commentf("unexpected SQLite drift: %+v", secondDiff))
+}
+
+type countingSQLiteDB struct {
+	SQL        *sql.DB
+	queryCount *atomic.Int64
+}
+
+func openCountingMemoryDB(t *testing.T) *countingSQLiteDB {
+	t.Helper()
+
+	queryCount := new(atomic.Int64)
+	name := "ptah_sqlite_counting_" + strconv.FormatInt(countingSQLiteDriverID.Add(1), 10)
+	sql.Register(name, &countingSQLiteDriver{queryCount: queryCount})
+
+	db, err := sql.Open(name, ":memory:?_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatalf("open counting sqlite: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = db.Close() })
+	return &countingSQLiteDB{SQL: db, queryCount: queryCount}
+}
+
+func (db *countingSQLiteDB) QueryCount() int {
+	return int(db.queryCount.Load())
+}
+
+var countingSQLiteDriverID atomic.Int64
+
+type countingSQLiteDriver struct {
+	queryCount *atomic.Int64
+}
+
+func (d *countingSQLiteDriver) Open(name string) (driver.Conn, error) {
+	conn, err := new(moderncsqlite.Driver).Open(name)
+	if err != nil {
+		return nil, err
+	}
+	return &countingSQLiteConn{Conn: conn, queryCount: d.queryCount}, nil
+}
+
+type countingSQLiteConn struct {
+	driver.Conn
+	queryCount *atomic.Int64
+}
+
+func (c *countingSQLiteConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	queryer, ok := c.Conn.(driver.QueryerContext)
+	if !ok {
+		return nil, driver.ErrSkip
+	}
+	c.queryCount.Add(1)
+	return queryer.QueryContext(ctx, query, args)
+}
+
+func (c *countingSQLiteConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	execer, ok := c.Conn.(driver.ExecerContext)
+	if !ok {
+		return nil, driver.ErrSkip
+	}
+	return execer.ExecContext(ctx, query, args)
+}
+
+func (c *countingSQLiteConn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
+	beginner, ok := c.Conn.(driver.ConnBeginTx)
+	if !ok {
+		return nil, driver.ErrSkip
+	}
+	return beginner.BeginTx(ctx, opts)
 }
 
 func TestSQLiteWriterConcurrentTransactions(t *testing.T) {
