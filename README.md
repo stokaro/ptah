@@ -16,29 +16,38 @@ The name **Ptah** is also an acronym:
 
 ---
 
-## Independent, License-Clean Atlas Compatibility
+## No Atlas Code: Independent, License-Clean Compatibility
 
-**Ptah does not use Atlas source code.** Ptah is a fully independent
-implementation. This repository does **not** vendor, copy, link, embed, or
-execute Atlas code, and Ptah's runtime behavior is implemented in Ptah itself.
+> **Ptah does not use Atlas source code.**
+>
+> Ptah is not a fork, wrapper, embedded distribution, translation, adaptation,
+> or derived implementation of Atlas. Ptah is a fully independent
+> implementation of Atlas-compatible workflows.
 
-Ptah's Atlas-compatible behavior is developed from compatibility inputs, not
-from Atlas implementation code:
+This repository does **not** vendor, copy, link, embed, translate, adapt, or
+execute Atlas source code or Atlas runtime implementation code. Ptah's runtime
+behavior is implemented in Ptah itself.
 
-- Atlas OSS command interfaces and flags.
-- Publicly observable file formats and runtime behavior.
-- Atlas OSS test assets and fixtures used as external conformance inputs.
+Atlas compatibility work is based on compatibility inputs, not Atlas
+implementation code:
 
-The only Atlas-derived materials used for compatibility work are test assets and
-fixtures. For repository and license hygiene, those assets are kept outside this
-repository in
+- the public Atlas OSS command interface and flags;
+- Atlas-documented and publicly observable file formats;
+- publicly observable behavior needed for drop-in command compatibility;
+- Atlas OSS test assets reused only as external conformance fixtures.
+
+The last item is deliberately limited to tests. Atlas-originated test assets
+are used only to measure compatibility, and they are intentionally kept
+**outside** this repository in the separate
 [`ptah-atlas-conformance`](https://github.com/stokaro/ptah-atlas-conformance).
-That repository measures Ptah against the Atlas fixture corpus without mixing
-Atlas source or Atlas-originated test assets into the main Ptah codebase.
+That repository measures Ptah against the Atlas fixture corpus while keeping
+Atlas source code and Atlas-originated test assets out of the main Ptah
+codebase.
 
-This keeps the Ptah repository license-clean: Ptah stays an independent MIT
-implementation, while borrowed Atlas OSS test assets remain isolated in the
-separate conformance repository with their own provenance boundary.
+This is the project's license-clean boundary: the main Ptah repository remains
+an independent MIT implementation, while reused Atlas OSS test assets stay
+isolated in the conformance repository with their own provenance and license
+tracking.
 
 ## Key Features
 
