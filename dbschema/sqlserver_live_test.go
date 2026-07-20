@@ -139,6 +139,7 @@ func TestSQLServerLiveDropAllTablesDropsForeignKeys(t *testing.T) {
 	_, err = adminConn.ExecContext(ctx, "EXEC('CREATE SCHEMA "+quoteSQLServerIdentifier(schemaName)+"')")
 	c.Assert(err, qt.IsNil)
 	defer func() {
+		_, _ = adminConn.ExecContext(ctx, "DROP TABLE IF EXISTS "+quoteSQLServerIdentifier(schemaName)+".[schema_migrations]")
 		_, _ = adminConn.ExecContext(ctx, "DROP TABLE IF EXISTS "+quoteSQLServerIdentifier(schemaName)+".[child]")
 		_, _ = adminConn.ExecContext(ctx, "DROP TABLE IF EXISTS "+quoteSQLServerIdentifier(schemaName)+".[parent]")
 		_, _ = adminConn.ExecContext(ctx, "DROP SCHEMA IF EXISTS "+quoteSQLServerIdentifier(schemaName))
@@ -155,6 +156,7 @@ func TestSQLServerLiveDropAllTablesDropsForeignKeys(t *testing.T) {
 			[parent_id] INT NOT NULL,
 			CONSTRAINT [fk_child_parent] FOREIGN KEY ([parent_id]) REFERENCES ` + quoteSQLServerIdentifier(schemaName) + `.[parent]([id])
 		);`,
+		`CREATE TABLE ` + quoteSQLServerIdentifier(schemaName) + `.[schema_migrations] ([version] BIGINT NOT NULL PRIMARY KEY);`,
 	}
 	for _, stmt := range statements {
 		_, err = scopedConn.ExecContext(ctx, stmt)
@@ -166,6 +168,7 @@ func TestSQLServerLiveDropAllTablesDropsForeignKeys(t *testing.T) {
 	schema, err := dbschema.ReadSchemaWithSchemas(scopedConn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	c.Assert(schema.Tables, qt.HasLen, 0)
+	c.Assert(sqlServerLiveTableExists(t, scopedConn, schemaName, "schema_migrations"), qt.IsFalse)
 }
 
 func TestSQLServerLiveComputedColumnZeroDiff(t *testing.T) {
@@ -293,6 +296,20 @@ func sqlServerURLWithSchema(dbURL, schemaName string) string {
 
 func quoteSQLServerIdentifier(identifier string) string {
 	return "[" + strings.ReplaceAll(identifier, "]", "]]") + "]"
+}
+
+func sqlServerLiveTableExists(t *testing.T, conn *dbschema.DatabaseConnection, schemaName, tableName string) bool {
+	t.Helper()
+
+	var count int
+	err := conn.QueryRowContext(context.Background(), `
+SELECT COUNT(*)
+FROM sys.tables AS t
+JOIN sys.schemas AS s ON s.schema_id = t.schema_id
+WHERE s.name = @p1 AND t.name = @p2
+`, schemaName, tableName).Scan(&count)
+	qt.Assert(t, err, qt.IsNil)
+	return count > 0
 }
 
 func findSQLServerTable(tables []dbschematypes.DBTable, schemaName, tableName string) *dbschematypes.DBTable {

@@ -211,7 +211,6 @@ func (w *Writer) listTables(ctx context.Context) ([]types.DBTable, error) {
 		FROM sys.tables AS t
 		JOIN sys.schemas AS s ON s.schema_id = t.schema_id
 		WHERE t.is_ms_shipped = 0
-		  AND t.name NOT IN ('schema_migrations', 'atlas_schema_revisions')
 		  AND s.name = @p1
 		ORDER BY s.name, t.name
 	`, w.schema)
