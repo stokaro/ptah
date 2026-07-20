@@ -380,6 +380,49 @@ ALTER TABLE t ADD COLUMN c INT;`,
 	}
 }
 
+func TestLintFS_AtlasTxModeNoneDirectiveRequiresLineComment(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+	}{
+		{
+			name: "string literal",
+			sql: `INSERT INTO notes (body) VALUES ('runbook:
+-- atlas:txmode none
+done');
+CREATE INDEX CONCURRENTLY idx ON t (id);
+ALTER TABLE t ADD COLUMN c INT;`,
+		},
+		{
+			name: "block comment",
+			sql: `/*
+-- atlas:txmode none
+*/
+CREATE INDEX CONCURRENTLY idx ON t (id);
+ALTER TABLE t ADD COLUMN c INT;`,
+		},
+		{
+			name: "trailing comment",
+			sql: `SELECT 1; -- atlas:txmode none
+CREATE INDEX CONCURRENTLY idx ON t (id);
+ALTER TABLE t ADD COLUMN c INT;`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			fsys := fixture(map[string]string{
+				"0000000001_x.up.sql":   tt.sql,
+				"0000000001_x.down.sql": "-- restore\n",
+			})
+			findings, err := lint.LintFS(fsys, lint.Options{Dialect: "postgres"})
+			c.Assert(err, qt.IsNil)
+			c.Assert(rulesOf(findings), qt.DeepEquals, []string{"PG103", "TX101"})
+		})
+	}
+}
+
 func TestLintFS_DialectAwareScanning(t *testing.T) {
 	tests := []struct {
 		name    string
