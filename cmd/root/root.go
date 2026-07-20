@@ -10,6 +10,7 @@ import (
 
 	"github.com/stokaro/ptah/cmd/atlas"
 	"github.com/stokaro/ptah/cmd/compare"
+	"github.com/stokaro/ptah/cmd/db"
 	"github.com/stokaro/ptah/cmd/drift"
 	"github.com/stokaro/ptah/cmd/dropall"
 	"github.com/stokaro/ptah/cmd/generate"
@@ -25,6 +26,7 @@ import (
 	"github.com/stokaro/ptah/cmd/migratestatus"
 	"github.com/stokaro/ptah/cmd/migrateup"
 	"github.com/stokaro/ptah/cmd/migratevalidate"
+	"github.com/stokaro/ptah/cmd/migrations"
 	"github.com/stokaro/ptah/cmd/readdb"
 	"github.com/stokaro/ptah/cmd/schema"
 	"github.com/stokaro/ptah/cmd/seed"
@@ -50,8 +52,10 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(generate.NewGenerateCommand())
 	cmd.AddCommand(readdb.NewReadDBCommand())
 	cmd.AddCommand(schema.NewSchemaCommand())
+	cmd.AddCommand(db.NewDBCommand())
 	cmd.AddCommand(compare.NewCompareCommand())
 	cmd.AddCommand(drift.NewDriftCommand())
+	cmd.AddCommand(migrations.NewMigrationsCommand())
 	cmd.AddCommand(migrate.NewMigrateCommand())
 	cmd.AddCommand(migratebaseline.NewMigrateBaselineCommand())
 	cmd.AddCommand(migrateup.NewMigrateUpCommand())

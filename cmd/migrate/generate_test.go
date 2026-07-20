@@ -87,7 +87,7 @@ func TestMigrateCommandRejectsAtlasApplyAtRoot(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `unknown command "apply" for "migrate"`)
+	c.Assert(err, qt.ErrorMatches, `unexpected positional arguments \["apply"\]`)
 }
 
 func TestMigrateGenerateShadowVerificationWithRealDB(t *testing.T) {

@@ -42,6 +42,40 @@ func TestSchemaExportCommandWritesAtlasHCL(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("schema.hcl:\n%s", string(content)))
 }
 
+func TestSchemaCommand_RegistersNativeAliasPaths(t *testing.T) {
+	c := qt.New(t)
+
+	cmd := schema.NewSchemaCommand()
+	for _, path := range [][]string{
+		{"export"},
+		{"render"},
+		{"compare"},
+		{"drift"},
+	} {
+		found, _, err := cmd.Find(path)
+		c.Assert(err, qt.IsNil)
+		c.Assert(found, qt.IsNotNil)
+	}
+}
+
+func TestSchemaCommand_RenderHelpShowsNativeAlias(t *testing.T) {
+	c := qt.New(t)
+
+	cmd := schema.NewSchemaCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"render", "--help"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Usage:\n  schema render [flags]")
+	c.Assert(out.String(), qt.Not(qt.Contains), "Usage:\n  generate")
+	c.Assert(out.String(), qt.Contains, "--dialect")
+	c.Assert(out.String(), qt.Contains, "--schema-file")
+}
+
 func TestSchemaExportCleanupDryRunAndWrite(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
