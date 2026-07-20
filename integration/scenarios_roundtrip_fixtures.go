@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/stokaro/ptah/dbschema"
@@ -16,6 +17,11 @@ type roundTripFixture struct {
 	Description      string
 	Versions         []string
 	BlockedByDialect map[string]string
+}
+
+type appliedRoundTripMigration struct {
+	Version         string
+	PreviousVersion string
 }
 
 var roundTripFixtures = []roundTripFixture{
@@ -98,6 +104,11 @@ var roundTripFixtures = []roundTripFixture{
 		Description: "enum value removal is carried as an explicit round-trip fixture",
 		Versions:    []string{"040-roundtrip-enum-v2-add", "041-roundtrip-enum-v3-remove"},
 	},
+	{
+		Name:        "foreign_key_added_to_existing_columns",
+		Description: "foreign keys added to existing columns, including a self-reference, round-trip through generated migrations",
+		Versions:    []string{"046-roundtrip-existing-fk-base", "047-roundtrip-existing-fk-added"},
+	},
 }
 
 func testMigrationGeneratorRoundTripFixtures(
@@ -160,30 +171,27 @@ func runRoundTripFixture(
 		return err
 	}
 
-	generatedMigrations := 0
-	for _, version := range fixture.Versions {
+	appliedMigrations := make([]appliedRoundTripMigration, 0, len(fixture.Versions))
+	for versionIndex, version := range fixture.Versions {
 		applied, err := generateAndApplyRoundTripVersion(ctx, conn, vem, dh, migrationsFS, migrationsDir, fixture, version)
 		if err != nil {
 			return err
 		}
 		if applied {
-			generatedMigrations++
+			appliedMigrations = append(appliedMigrations, appliedRoundTripMigration{
+				Version:         version,
+				PreviousVersion: previousRoundTripVersion(fixture.Versions, versionIndex),
+			})
 		}
 		if err := validateSchemaConsistency(ctx, conn, vem, version); err != nil {
 			return fmt.Errorf("%s after %s: %w", fixture.Name, version, err)
 		}
 	}
 
-	if generatedMigrations > 0 {
-		for range generatedMigrations {
-			if err := dh.MigrateDown(ctx, migrationsFS); err != nil {
-				return fmt.Errorf("%s down-to-zero: %w", fixture.Name, err)
-			}
+	if len(appliedMigrations) > 0 {
+		if err := rollbackRoundTripFixtureMigrations(ctx, conn, vem, dh, migrationsFS, fixture, appliedMigrations); err != nil {
+			return err
 		}
-		if err := validateEmptySchema(ctx, conn); err != nil {
-			return fmt.Errorf("%s down-to-zero validation: %w", fixture.Name, err)
-		}
-
 		if err := dh.MigrateUp(ctx, migrationsFS); err != nil {
 			return fmt.Errorf("%s re-apply all generated migrations: %w", fixture.Name, err)
 		}
@@ -194,6 +202,53 @@ func runRoundTripFixture(
 	}
 
 	return resetRoundTripFixtureDatabase(ctx, conn)
+}
+
+func previousRoundTripVersion(versions []string, versionIndex int) string {
+	if versionIndex == 0 {
+		return ""
+	}
+	return versions[versionIndex-1]
+}
+
+func rollbackRoundTripFixtureMigrations(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	vem *VersionedEntityManager,
+	dh *DatabaseHelper,
+	migrationsFS fs.FS,
+	fixture roundTripFixture,
+	appliedMigrations []appliedRoundTripMigration,
+) error {
+	for _, applied := range slices.Backward(appliedMigrations) {
+		if err := dh.MigrateDown(ctx, migrationsFS); err != nil {
+			return fmt.Errorf("%s down from %s: %w", fixture.Name, applied.Version, err)
+		}
+		if err := validateRoundTripRollbackState(ctx, conn, vem, fixture, applied); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateRoundTripRollbackState(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	vem *VersionedEntityManager,
+	fixture roundTripFixture,
+	applied appliedRoundTripMigration,
+) error {
+	if applied.PreviousVersion == "" {
+		if err := validateEmptySchema(ctx, conn); err != nil {
+			return fmt.Errorf("%s down-to-zero validation after %s: %w", fixture.Name, applied.Version, err)
+		}
+		return nil
+	}
+
+	if err := validateSchemaConsistency(ctx, conn, vem, applied.PreviousVersion); err != nil {
+		return fmt.Errorf("%s rollback from %s to %s: %w", fixture.Name, applied.Version, applied.PreviousVersion, err)
+	}
+	return nil
 }
 
 func resetRoundTripFixtureDatabase(ctx context.Context, conn *dbschema.DatabaseConnection) error {

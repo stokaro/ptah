@@ -758,6 +758,7 @@ func generateDownMigrationSQLWithOptions(
 	// rebuild the full prior body from the pre-change DB state — that is exactly
 	// the definition the down must restore.
 	reverseDiff := reverseSchemaDiffWithSchema(diff, generated, dbSchema)
+	addMySQLFamilyForeignKeyBackingIndexRemovals(reverseDiff, diff, dbSchema, dialect)
 
 	caps := capability.ForDialect(dialect)
 	if len(capsOverride) > 0 {
@@ -812,6 +813,78 @@ func supportsGeneratedTimeoutDirectives(dialect string) bool {
 	return slices.Contains([]string{platform.Postgres, platform.MySQL, platform.MariaDB}, normalized)
 }
 
+func addMySQLFamilyForeignKeyBackingIndexRemovals(
+	reverseDiff *types.SchemaDiff,
+	upDiff *types.SchemaDiff,
+	dbSchema *dbschematypes.DBSchema,
+	dialect string,
+) {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.MySQL, platform.MariaDB:
+	default:
+		return
+	}
+
+	priorIndexes := dbIndexByTableName(dbSchema)
+	removedNames := stringSet(reverseDiff.IndexesRemoved)
+	removedWithTables := indexRemovalSet(reverseDiff.IndexesRemovedWithTables)
+	for _, add := range upDiff.ConstraintsAddedWithTables {
+		if add.TableName == "" || add.Name == "" || !strings.EqualFold(add.Type, "FOREIGN KEY") {
+			continue
+		}
+		if priorIndexes[indexKey(add.TableName, add.Name)] {
+			continue
+		}
+		if _, ok := removedNames[add.Name]; !ok {
+			reverseDiff.IndexesRemoved = append(reverseDiff.IndexesRemoved, add.Name)
+			removedNames[add.Name] = struct{}{}
+		}
+		key := indexKey(add.TableName, add.Name)
+		if removedWithTables[key] {
+			continue
+		}
+		reverseDiff.IndexesRemovedWithTables = append(reverseDiff.IndexesRemovedWithTables, types.IndexRemovalInfo{
+			Name:      add.Name,
+			TableName: add.TableName,
+		})
+		removedWithTables[key] = true
+	}
+
+	slices.Sort(reverseDiff.IndexesRemoved)
+	slices.SortFunc(reverseDiff.IndexesRemovedWithTables, func(a, b types.IndexRemovalInfo) int {
+		if byTable := strings.Compare(a.TableName, b.TableName); byTable != 0 {
+			return byTable
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
+}
+
+func dbIndexByTableName(dbSchema *dbschematypes.DBSchema) map[string]bool {
+	out := make(map[string]bool)
+	if dbSchema == nil {
+		return out
+	}
+	for _, index := range dbSchema.Indexes {
+		out[indexKey(index.TableName, index.Name)] = true
+		if index.Schema != "" {
+			out[indexKey(dbschematypes.QualifyTableName(index.Schema, index.TableName), index.Name)] = true
+		}
+	}
+	return out
+}
+
+func indexRemovalSet(indexes []types.IndexRemovalInfo) map[string]bool {
+	out := make(map[string]bool, len(indexes))
+	for _, index := range indexes {
+		out[indexKey(index.TableName, index.Name)] = true
+	}
+	return out
+}
+
+func indexKey(tableName, indexName string) string {
+	return tableName + "." + indexName
+}
+
 // reverseSchemaDiff creates a reverse diff for generating down migrations
 //
 // Deprecated: Use reverseSchemaDiffWithSchema for proper RLS policy table name resolution
@@ -824,8 +897,8 @@ func reverseSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 // schema is the generated (target) Go schema, used to resolve table names for
 // RLS policies. dbSchema is the introspected (pre-change) database schema, used
 // to rebuild prior FK/PK/CHECK/UNIQUE definitions for reversed constraint
-// additions; it may be nil for legacy callers that only have the generated
-// schema (the reversed additions then fall back to the name-only path).
+// additions; it may be nil when callers only have the generated schema (the
+// reversed additions then fall back to the name-only path).
 func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Database, dbSchema *dbschematypes.DBSchema) *types.SchemaDiff {
 	return &types.SchemaDiff{
 		// Reverse table operations
@@ -1082,8 +1155,8 @@ func foreignReferenceTable(ref string) string {
 // per real host table. This is what makes the down of a multi-host mixin FK
 // modify apply cleanly: a name-only down re-adds only one host (and drops only
 // one host), so the others collide on re-add (issue #197 DOWN path). When
-// dbSchema is nil (legacy callers) the names still flow through ConstraintsAdded
-// and the planners fall back to the name-only field scan.
+// dbSchema is nil, the names still flow through ConstraintsAdded and the
+// planners fall back to the name-only field scan.
 func reverseConstraintAdditions(diff *types.SchemaDiff, dbSchema *dbschematypes.DBSchema) []types.ConstraintAdditionInfo {
 	if dbSchema == nil || len(diff.ConstraintsRemovedWithTables) == 0 {
 		return nil
@@ -1211,9 +1284,8 @@ func derefString(s *string) string {
 // are resolved from the generated schema, which is the source the up side
 // synthesized them from. This lets dialect planners that need the table and a
 // type-specific drop syntax (MySQL/MariaDB DROP FOREIGN KEY) emit a real drop in
-// the down migration. When the schema is unavailable (legacy callers) the names
-// still flow through ConstraintsRemoved; only the richer per-table info is
-// omitted.
+// the down migration. When the schema is unavailable, the names still flow
+// through ConstraintsRemoved; only the richer per-table info is omitted.
 func reverseConstraintRemovals(diff *types.SchemaDiff, schema *goschema.Database) []types.ConstraintRemovalInfo {
 	if schema == nil {
 		return nil
@@ -1233,7 +1305,7 @@ func reverseConstraintRemovals(diff *types.SchemaDiff, schema *goschema.Database
 	// from a struct name that does not exist (issue #197). ConstraintsAddedWithTables
 	// carries the concrete table for each addition, so the down side drops the
 	// FK from exactly the table the up side added it to. Names present here are
-	// recorded so the legacy field-scan fallback below does not double-emit them.
+	// recorded so the field-scan fallback below does not double-emit them.
 	var infos []types.ConstraintRemovalInfo
 	seen := make(map[string]struct{})
 	handled := make(map[string]struct{})
@@ -1251,8 +1323,7 @@ func reverseConstraintRemovals(diff *types.SchemaDiff, schema *goschema.Database
 	infos = appendAddedTableForeignKeyRemovals(infos, seen, diff.TablesAdded, schema)
 
 	// Index field-level constraint names to their owning table for the names
-	// that did not arrive with table-qualified info (legacy callers / explicit
-	// table-level constraints).
+	// that did not arrive with table-qualified info.
 	structToTable := make(map[string]string, len(schema.Tables))
 	for _, t := range schema.Tables {
 		structToTable[t.StructName] = t.Name

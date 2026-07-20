@@ -69,6 +69,42 @@ func TestPlanner_GenerateMigrationAST_CompositeForeignKeyAddition(t *testing.T) 
 	}
 }
 
+func TestPlanner_GenerateMigrationAST_ForeignKeyIndexesDropAfterConstraints(t *testing.T) {
+	for _, dialect := range mysqlFamilyDialects {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff := &types.SchemaDiff{
+				ConstraintsRemoved: []string{"fk_users_account_id", "fk_users_manager_id"},
+				ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+					{Name: "fk_users_account_id", TableName: "users", Type: "FOREIGN KEY"},
+					{Name: "fk_users_manager_id", TableName: "users", Type: "FOREIGN KEY"},
+				},
+				IndexesRemoved: []string{"fk_users_account_id", "fk_users_manager_id"},
+				IndexesRemovedWithTables: []types.IndexRemovalInfo{
+					{Name: "fk_users_account_id", TableName: "users"},
+					{Name: "fk_users_manager_id", TableName: "users"},
+				},
+			}
+
+			sql := renderMySQLFamily(c, dialect, diff, &goschema.Database{})
+
+			assertContainsBefore(
+				c,
+				sql,
+				"ALTER TABLE users DROP FOREIGN KEY fk_users_account_id;",
+				"DROP INDEX fk_users_account_id ON users;",
+			)
+			assertContainsBefore(
+				c,
+				sql,
+				"ALTER TABLE users DROP FOREIGN KEY fk_users_manager_id;",
+				"DROP INDEX fk_users_manager_id ON users;",
+			)
+		})
+	}
+}
+
 func TestPlanner_GenerateMigrationAST_TableQualifiedCheckAndUniqueAdditions(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -120,7 +120,17 @@ docker compose --profile test run --rm ptah-tester --scenarios=failure_diagnosti
 
 # Run dynamic scenarios for schema evolution testing
 docker compose --profile test run --rm ptah-tester --scenarios=dynamic_basic_evolution,dynamic_rollback_single
+
+# Run generator round-trip edge-case fixtures
+docker compose --profile test run --rm ptah-tester --scenarios=migration_generator_roundtrip_fixtures
 ```
+
+The `migration_generator_roundtrip_fixtures` scenario validates generated
+migrations through apply, introspect, step-by-step rollback, down-to-zero, and
+re-apply cycles. Its fixtures cover empty schemas, single tables, composite
+primary keys, foreign-key chains and diamonds, cycles, same-name
+`CHECK`/`UNIQUE` changes, enum add/remove transitions, and foreign keys added
+to already-existing columns.
 
 ### Database Selection
 

@@ -470,7 +470,8 @@ func (p *Planner) removeIndexes(result []ast.Node, diff *types.SchemaDiff) []ast
 			result = append(result, dropIndexNode)
 		}
 	} else {
-		// Fallback to the basic removal list (for backward compatibility)
+		// Use name-only diff input when the caller did not populate
+		// table-qualified removals.
 		for _, indexName := range diff.IndexesRemoved {
 			dropIndexNode := ast.NewDropIndex(indexName)
 			if guarded {
@@ -514,8 +515,9 @@ func (p *Planner) handleEnumRemovals(result []ast.Node, diff *types.SchemaDiff) 
 //  1. Create new tables (MySQL handles enums inline, no separate enum creation needed)
 //  2. Modify existing tables (add/modify/remove columns)
 //  3. Add new indexes
-//  4. Remove indexes (safe operations)
-//  5. Remove tables (dangerous - commented out by default)
+//  4. Remove constraints
+//  5. Remove indexes (safe operations)
+//  6. Remove tables (dangerous - commented out by default)
 //
 // # MySQL-Specific Features
 //
@@ -609,15 +611,17 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// 5.5. Add new constraints (must be done after tables and columns exist)
 	result = p.addNewConstraints(result, diff, generated)
 
-	// 6. Remove indexes (safe operations)
-	result = p.removeIndexes(result, diff)
-
-	// 6.5. Remove constraints (must be done before removing tables)
+	// 6. Remove constraints before indexes. MySQL-family servers keep the
+	// backing index after DROP FOREIGN KEY when the index was auto-created, so
+	// rollback plans may need to drop both. The FK must go first.
 	result = p.removeConstraints(result, diff)
 
 	// 6.6. Remove triggers and view-like objects before dependent tables.
 	result = p.removeTriggers(result, diff)
 	result = p.removeViews(result, diff)
+
+	// 6.7. Remove indexes after constraints so FK-backed indexes can be dropped.
+	result = p.removeIndexes(result, diff)
 
 	// 7. Remove tables (dangerous!)
 	result = p.removeTables(result, diff)
@@ -791,7 +795,7 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 		removalByTableName[info.TableName+"."+info.Name] = info
 	}
 
-	// Removal info grouped by bare name, so the legacy ConstraintsAdded loop
+	// Removal info grouped by bare name, so the name-only ConstraintsAdded loop
 	// below can scope a modified non-FK constraint's DROP to its concrete host
 	// table(s). The comparator records every removal in
 	// ConstraintsRemovedWithTables in lockstep with the bare ConstraintsRemoved
@@ -831,7 +835,7 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 	// embedded inline-relation mixin shares one name across every host table, and
 	// down migrations restore modified CHECK/UNIQUE definitions from the
 	// introspected DB schema. ConstraintsAddedWithTables carries the concrete
-	// table + definition. Names handled here are recorded so the legacy name loop
+	// table + definition. Names handled here are recorded so the name-only loop
 	// skips them.
 	handled := make(map[string]struct{})
 	droppedForModify := make(map[string]struct{})

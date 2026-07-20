@@ -1102,3 +1102,68 @@ func TestGenerateDownMigrationSQL_Issue194_DropsFieldLevelCheckMySQLFamily(t *te
 		})
 	}
 }
+
+func TestGenerateDownMigrationSQL_MySQLFamilyDropsGeneratedForeignKeyBackingIndex(t *testing.T) {
+	generatedSchema := &goschema.Database{}
+	upDiff := &types.SchemaDiff{
+		ConstraintsAdded: []string{"fk_users_account_id"},
+		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{
+			{
+				Name:         "fk_users_account_id",
+				TableName:    "users",
+				Type:         "FOREIGN KEY",
+				Columns:      []string{"account_id"},
+				ForeignTable: "accounts",
+			},
+		},
+	}
+
+	tests := []struct {
+		name      string
+		dbSchema  *dbschematypes.DBSchema
+		wantIndex bool
+	}{
+		{
+			name:      "no prior same-named index",
+			dbSchema:  &dbschematypes.DBSchema{},
+			wantIndex: true,
+		},
+		{
+			name: "pre-change DB already had that index",
+			dbSchema: &dbschematypes.DBSchema{
+				Indexes: []dbschematypes.DBIndex{
+					{Name: "fk_users_account_id", TableName: "users"},
+				},
+			},
+			wantIndex: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, dialect := range []string{"mysql", "mariadb"} {
+				t.Run(dialect, func(t *testing.T) {
+					c := qt.New(t)
+
+					downSQL, err := generateDownMigrationSQL(upDiff, generatedSchema, tt.dbSchema, dialect)
+					c.Assert(err, qt.IsNil)
+					downSQL = normalizedRenderedSQL(downSQL)
+
+					dropFK := "ALTER TABLE users DROP FOREIGN KEY fk_users_account_id;"
+					dropIndex := "DROP INDEX fk_users_account_id ON users;"
+					if dialect == "mariadb" {
+						dropFK = "ALTER TABLE users DROP FOREIGN KEY IF EXISTS fk_users_account_id;"
+						dropIndex = "DROP INDEX IF EXISTS fk_users_account_id ON users;"
+					}
+					c.Assert(downSQL, qt.Contains, dropFK)
+					if tt.wantIndex {
+						c.Assert(downSQL, qt.Contains, dropIndex)
+						assertSQLBefore(t, downSQL, dropFK, dropIndex)
+						return
+					}
+					c.Assert(downSQL, qt.Not(qt.Contains), "DROP INDEX",
+						qt.Commentf("pre-existing index must not be dropped:\n%s", downSQL))
+				})
+			}
+		})
+	}
+}
