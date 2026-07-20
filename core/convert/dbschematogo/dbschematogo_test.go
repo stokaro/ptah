@@ -218,6 +218,85 @@ func TestConvertDBSchemaToGoSchema_PostgresUserDefinedColumnUsesUDTName(t *testi
 	c.Assert(result.Fields[0].Type, qt.Equals, "enum_product_status")
 }
 
+func TestConvertDBSchemaToGoSchema_SchemaQualifiedObjectOwnersUseTableStructName(t *testing.T) {
+	c := qt.New(t)
+	checkClause := "tenant_id > 0"
+	notNullCheck := "id IS NOT NULL"
+	dbSchema := &types.DBSchema{
+		Tables: []types.DBTable{
+			{
+				Schema: "tenant_a",
+				Name:   "orders",
+				Columns: []types.DBColumn{
+					{Name: "id", DataType: "integer"},
+				},
+			},
+		},
+		Indexes: []types.DBIndex{
+			{
+				Schema:    "tenant_a",
+				TableName: "orders",
+				Name:      "idx_orders_id",
+				Columns:   []string{"id"},
+			},
+			{
+				Schema:    "tenant_a",
+				TableName: "orders",
+				Name:      "orders_id_unique",
+				Columns:   []string{"id"},
+				IsUnique:  true,
+			},
+		},
+		Constraints: []types.DBConstraint{
+			{
+				Schema:      "tenant_a",
+				TableName:   "orders",
+				Name:        "orders_tenant_check",
+				Type:        "CHECK",
+				CheckClause: &checkClause,
+			},
+			{
+				Schema:      "tenant_a",
+				TableName:   "orders",
+				Name:        "orders_id_not_null",
+				Type:        "CHECK",
+				CheckClause: &notNullCheck,
+			},
+			{
+				Schema:    "tenant_a",
+				TableName: "orders",
+				Name:      "orders_id_unique",
+				Type:      "UNIQUE",
+				ColumnNames: []string{
+					"id",
+				},
+			},
+		},
+		RLSPolicies: []types.DBRLSPolicy{
+			{
+				Name:            "orders_tenant_policy",
+				Table:           "tenant_a.orders",
+				PolicyFor:       "ALL",
+				ToRoles:         "PUBLIC",
+				UsingExpression: "tenant_id > 0",
+			},
+		},
+	}
+
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+
+	c.Assert(result.Tables, qt.HasLen, 1)
+	c.Assert(result.Tables[0].StructName, qt.Equals, "Orders")
+	c.Assert(result.Indexes, qt.HasLen, 1)
+	c.Assert(result.Indexes[0].StructName, qt.Equals, "Orders")
+	c.Assert(result.Indexes[0].Name, qt.Equals, "idx_orders_id")
+	c.Assert(result.Constraints, qt.HasLen, 1)
+	c.Assert(result.Constraints[0].StructName, qt.Equals, "Orders")
+	c.Assert(result.Constraints[0].Name, qt.Equals, "orders_tenant_check")
+	c.Assert(result.RLSPolicies, qt.HasLen, 1)
+	c.Assert(result.RLSPolicies[0].StructName, qt.Equals, "Orders")
+}
+
 func TestConvertDBSchemaToGoSchema_DBDefaultExpression(t *testing.T) {
 	c := qt.New(t)
 	statusDefault := "'draft'::enum_product_status"
@@ -252,7 +331,7 @@ func TestConvertDBSchemaToGoSchema_DBDefaultExpression(t *testing.T) {
 	c.Assert(result.Fields[1].DefaultExpr, qt.Equals, "")
 }
 
-func TestConvertDBSchemaToGoSchema_SkipsCompositeForeignKeys(t *testing.T) {
+func TestConvertDBSchemaToGoSchema_CompositeForeignKeyBecomesTableConstraint(t *testing.T) {
 	c := qt.New(t)
 	dbSchema := &types.DBSchema{
 		Tables: []types.DBTable{
@@ -285,6 +364,83 @@ func TestConvertDBSchemaToGoSchema_SkipsCompositeForeignKeys(t *testing.T) {
 		c.Assert(field.Foreign, qt.Equals, "")
 		c.Assert(field.ForeignKeyName, qt.Equals, "")
 	}
+	c.Assert(result.Constraints, qt.DeepEquals, []goschema.Constraint{{
+		StructName:     "Orders",
+		Name:           "fk_orders_accounts",
+		Type:           "FOREIGN KEY",
+		Table:          "orders",
+		Columns:        []string{"tenant_id", "owner_id"},
+		ForeignTable:   "accounts",
+		ForeignColumn:  "tenant_id",
+		ForeignColumns: []string{"tenant_id", "id"},
+	}})
+}
+
+func TestConvertDBSchemaToGoSchema_TableLevelConstraintsAndSizedTypes(t *testing.T) {
+	c := qt.New(t)
+	varcharLen := 255
+	precision := 10
+	scale := 2
+	checkClause := "price > 0"
+	nullsDistinct := false
+	dbSchema := &types.DBSchema{
+		Tables: []types.DBTable{{
+			Name: "order_items",
+			Columns: []types.DBColumn{
+				{Name: "tenant_id", DataType: "integer", IsPrimaryKey: true},
+				{Name: "order_id", DataType: "integer", IsPrimaryKey: true},
+				{Name: "sku", DataType: "character varying", CharacterMaxLength: &varcharLen},
+				{Name: "price", DataType: "numeric", NumericPrecision: &precision, NumericScale: &scale},
+			},
+		}},
+		Constraints: []types.DBConstraint{
+			{
+				Name:        "order_items_pkey",
+				TableName:   "order_items",
+				Type:        "PRIMARY KEY",
+				ColumnNames: []string{"tenant_id", "order_id"},
+			},
+			{
+				Name:          "order_items_sku_unique",
+				TableName:     "order_items",
+				Type:          "UNIQUE",
+				ColumnNames:   []string{"tenant_id", "sku"},
+				NullsDistinct: &nullsDistinct,
+			},
+			{
+				Name:        "order_items_price_check",
+				TableName:   "order_items",
+				Type:        "CHECK",
+				CheckClause: &checkClause,
+			},
+		},
+	}
+
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+
+	c.Assert(result.Tables, qt.HasLen, 1)
+	c.Assert(result.Tables[0].PrimaryKey, qt.DeepEquals, []string{"tenant_id", "order_id"})
+	c.Assert(result.Fields[0].Primary, qt.IsFalse)
+	c.Assert(result.Fields[1].Primary, qt.IsFalse)
+	c.Assert(result.Fields[2].Type, qt.Equals, "VARCHAR(255)")
+	c.Assert(result.Fields[3].Type, qt.Equals, "NUMERIC(10,2)")
+	c.Assert(result.Constraints, qt.DeepEquals, []goschema.Constraint{
+		{
+			StructName:    "OrderItems",
+			Name:          "order_items_sku_unique",
+			Type:          "UNIQUE",
+			Table:         "order_items",
+			Columns:       []string{"tenant_id", "sku"},
+			NullsDistinct: &nullsDistinct,
+		},
+		{
+			StructName:      "OrderItems",
+			Name:            "order_items_price_check",
+			Type:            "CHECK",
+			Table:           "order_items",
+			CheckExpression: "price > 0",
+		},
+	})
 }
 
 func TestConvertDBSchemaToGoSchema_ColumnCharsetCollate(t *testing.T) {

@@ -17,6 +17,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/buildinfo"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
+	"github.com/stokaro/ptah/cmd/introspect"
 	"github.com/stokaro/ptah/cmd/lint"
 	"github.com/stokaro/ptah/cmd/migrate"
 	"github.com/stokaro/ptah/cmd/migratebaseline"
@@ -50,6 +51,7 @@ func NewRootCommand() *cobra.Command {
 	cmdutil.ConfigureCommandArgs(cmd, nil)
 
 	cmd.AddCommand(generate.NewGenerateCommand())
+	cmd.AddCommand(introspect.NewIntrospectCommand())
 	cmd.AddCommand(readdb.NewReadDBCommand())
 	cmd.AddCommand(schema.NewSchemaCommand())
 	cmd.AddCommand(db.NewDBCommand())

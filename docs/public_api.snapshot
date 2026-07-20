@@ -234,6 +234,13 @@ func GenerateForeignKeyName(tableName, fieldName string) string
 func ParseForeignKeyReference(foreign string) *ast.ForeignKeyRef
 func ProcessEmbeddedFields(embeddedFields []goschema.EmbeddedField, originalFields []goschema.Field) []goschema.Field
 
+## github.com/stokaro/ptah/core/convert/goschematogo
+
+func WriteDir(outDir string, files []File) error
+type File struct{ ... }
+    func Render(db *goschema.Database, opts Options) ([]File, error)
+type Options struct{ ... }
+
 ## github.com/stokaro/ptah/core/convert/toschema
 
 func MergeFieldOverrides(baseField goschema.Field, platformFields map[string]goschema.Field) goschema.Field

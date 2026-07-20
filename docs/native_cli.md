@@ -15,6 +15,7 @@ The native tree uses Ptah-owned noun/verb groups:
 
 | Native command | Purpose | Legacy compatibility command |
 | --- | --- | --- |
+| `ptah introspect` | Generate annotated Go models from a live database. | Same command; already canonical. |
 | `ptah schema render` | Render desired schema SQL from Go, YAML, or Atlas HCL inputs. | `ptah generate` |
 | `ptah schema compare` | Compare desired schema with a live database. | `ptah compare` |
 | `ptah schema drift` | Check live database drift against desired schema. | `ptah drift` |

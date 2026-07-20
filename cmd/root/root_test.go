@@ -79,6 +79,7 @@ func TestNewRootCommand_NativeCommandTreeIsRegistered(t *testing.T) {
 		{"schema", "render"},
 		{"schema", "compare"},
 		{"schema", "drift"},
+		{"introspect"},
 		{"db", "read"},
 		{"db", "drop-all"},
 		{"migrations", "plan"},

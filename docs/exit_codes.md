@@ -17,6 +17,7 @@ exit-code contract as the grouped command they map to.
 
 | Command | `0` | `1` | `2` |
 | --- | --- | --- | --- |
+| `ptah introspect` | Annotated Go model files generated. | Not used. | Usage error, invalid output path, connection failure, schema-read failure, render error, or write error. |
 | `ptah schema render` / `ptah generate` | Schema rendered. | Not used. | Usage error, parse error, unsupported dialect, or render error. |
 | `ptah schema export` | Schema exported. | Not used. | Usage error, invalid paths, parse error, render error, write error, or cleanup error. |
 | `ptah db read` / `ptah read-db` | Schema read and printed. | Not used. | Usage error, connection failure, or schema-read failure. |

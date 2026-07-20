@@ -867,6 +867,7 @@ func TestParseRLSEnableComment(t *testing.T) {
 }
 
 func TestParseSource_ConstraintComment(t *testing.T) {
+	nullsDistinct := false
 	tests := []struct {
 		name     string
 		comment  string
@@ -929,6 +930,30 @@ func TestParseSource_ConstraintComment(t *testing.T) {
 				OnDelete:      "CASCADE",
 			},
 		},
+		{
+			name:    "composite FOREIGN KEY constraint",
+			comment: `//migrator:schema:constraint name="fk_memberships_accounts" type="FOREIGN KEY" columns="tenant_id, account_id" foreign_table="accounts" foreign_columns="tenant_id,id" on_update="RESTRICT"`,
+			expected: goschema.Constraint{
+				StructName:     "TestStruct",
+				Name:           "fk_memberships_accounts",
+				Type:           "FOREIGN KEY",
+				Columns:        []string{"tenant_id", "account_id"},
+				ForeignTable:   "accounts",
+				ForeignColumns: []string{"tenant_id", "id"},
+				OnUpdate:       "RESTRICT",
+			},
+		},
+		{
+			name:    "UNIQUE constraint with NULLS NOT DISTINCT",
+			comment: `//migrator:schema:constraint name="unique_email" type="UNIQUE" columns="email" nulls_distinct="false"`,
+			expected: goschema.Constraint{
+				StructName:    "TestStruct",
+				Name:          "unique_email",
+				Type:          "UNIQUE",
+				Columns:       []string{"email"},
+				NullsDistinct: &nullsDistinct,
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -955,6 +980,22 @@ func TestParseSource_ConstraintComment(t *testing.T) {
 			c.Assert(constraint.Comment, qt.Equals, tt.expected.Comment)
 		})
 	}
+}
+
+func TestParseSource_ExplicitEnumComment(t *testing.T) {
+	c := qt.New(t)
+
+	source := `package test
+
+//migrator:schema:enum name="status_type" values="active,inactive,pending"
+type SchemaObjects struct{}
+`
+	db := mustParseSource(c, "enums.go", source)
+
+	c.Assert(db.Enums, qt.DeepEquals, []goschema.Enum{{
+		Name:   "status_type",
+		Values: []string{"active", "inactive", "pending"},
+	}})
 }
 
 // TestParseField_UnknownAttributePanics verifies that field annotations
