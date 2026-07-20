@@ -1,13 +1,14 @@
 # Dialect capabilities
 
 Ptah maps several real database targets onto shared implementations: MySQL and
-MariaDB share one planner and one renderer family; CockroachDB, YugabyteDB, and
-Spanner share the PostgreSQL family with target-specific capability presets;
-and versions within a single dialect differ in which DDL they accept. Instead
-of forking a new dialect for every variant, planners and renderers consult a
-**capability set** — a validated `map[Capability]bool` describing what the
-concrete target accepts — and restrict or enable individual emissions
-accordingly (issues #225/#226/#171).
+MariaDB share one planner family; CockroachDB, YugabyteDB, and Spanner share
+the PostgreSQL family with target-specific capability presets; SQL Server uses
+its own T-SQL renderer and dbschema implementation while initially reusing the
+closest generic planner path; and versions within a single dialect differ in
+which DDL they accept. Instead of forking a new dialect for every variant,
+capability-aware planners and renderers consult a **capability set** — a
+validated `map[Capability]bool` describing what the concrete target accepts —
+and restrict or enable individual emissions accordingly (issues #225/#226/#171).
 
 Package: `core/platform/capability`.
 
@@ -18,10 +19,13 @@ Two layers cooperate:
 - **Intent (planner).** A planner configured with a capability set records
   intent on AST nodes — e.g. a MariaDB-preset planner sets `IfExists` on
   constraint drops because MariaDB accepts guarded drops.
-- **Validity (renderer).** A renderer checks modifiers against *its own*
-  capability set for the target dialect and drops anything the target would
-  reject — the `mysql` renderer strips `IF EXISTS` from constraint and index
-  drops even if a stray intent flag reaches it.
+- **Validity (renderer).** Capability-aware renderers check modifiers against
+  *their own* target capability set and drop anything the target would reject —
+  the `mysql` renderer strips `IF EXISTS` from constraint and index drops even
+  if a stray intent flag reaches it. Some newer dialect surfaces, including the
+  initial SQL Server renderer, still rely on planner/configuration boundaries
+  for unsupported feature suppression unless the renderer-specific section below
+  says a modifier is validated again.
 
 At the `Capabilities` type level the nil/empty set is valid and reads as
 "everything absent" (`Has` is nil-safe). The **planners** deliberately do NOT
@@ -48,7 +52,7 @@ so typos fail fast. Current registry:
 | `enum_inline_column` | Enums are inline column types (MySQL/MariaDB `ENUM`, ClickHouse `Enum8/16`) |
 | `enum_custom_type` | Enums are separate named types (PostgreSQL `CREATE TYPE … AS ENUM`) |
 | `create_index_concurrently` | `CREATE [UNIQUE] INDEX CONCURRENTLY` (PostgreSQL; a compatibility no-op on CockroachDB) |
-| `create_or_replace_trigger` | `CREATE OR REPLACE TRIGGER` (PostgreSQL 14+, MariaDB; not MySQL). Trigger renderers use this to choose replace vs. drop/create |
+| `create_or_replace_trigger` | Single-statement trigger replacement: `CREATE OR REPLACE TRIGGER` on PostgreSQL 14+/MariaDB and `CREATE OR ALTER TRIGGER` on SQL Server. Not available on MySQL |
 | `alter_generated_column_expression` | In-place `ALTER COLUMN SET EXPRESSION` for generated columns (PostgreSQL 17+) |
 | `row_level_security` | Row-level security policies (PostgreSQL) |
 | `role_management` | PostgreSQL role and object privilege management (`CREATE/ALTER ROLE`, `GRANT`, `REVOKE`) |
@@ -75,24 +79,24 @@ composed sets yourself.
 
 ## Presets
 
-| Capability | MySQL80 | MySQL8016 | MySQLLegacy | MariaDB1011 | MariaDBLegacy | Postgres17 | Postgres16 | Postgres13 | ClickHouse24 | CockroachDB23 | YugabyteDB25 | SQLite3 | SpannerPG |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `drop_constraint_generic` | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ |
-| `drop_constraint_if_exists` | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ |
-| `drop_index_if_exists` | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ |
-| `check_constraints_enforced` | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ |
-| `drop_check_clause` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `enum_inline_column` | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| `enum_custom_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ |
-| `create_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `create_or_replace_trigger` | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
-| `alter_generated_column_expression` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `row_level_security` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `role_management` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ |
-| `foreign_keys` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ |
-| `sequences` | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ |
-| `xml_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ |
-| `advisory_locks` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Capability | MySQL80 | MySQL8016 | MySQLLegacy | MariaDB1011 | MariaDBLegacy | Postgres17 | Postgres16 | Postgres13 | ClickHouse24 | CockroachDB23 | YugabyteDB25 | SQLite3 | SQLServer2022 | SpannerPG |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `drop_constraint_generic` | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| `drop_constraint_if_exists` | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `drop_index_if_exists` | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| `check_constraints_enforced` | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `drop_check_clause` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `enum_inline_column` | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `enum_custom_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `create_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `create_or_replace_trigger` | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| `alter_generated_column_expression` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `row_level_security` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `role_management` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| `foreign_keys` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `sequences` | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| `xml_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ |
+| `advisory_locks` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 Version lines: `MySQL80()` covers MySQL 8.0.19+ and 9.x; `MySQL8016()` covers
 8.0.16–8.0.18; `MySQLLegacy()` anything older. `MariaDB1011()` covers the
@@ -103,6 +107,11 @@ PostgreSQL 17+; `Postgres16()` covers 14–16; `Postgres13()` covers 12–13
 `CockroachDB23()` and `YugabyteDB25()` are PostgreSQL-family presets for the
 common distributed-SQL subset; `SpannerPostgres()` is deliberately conservative
 because Spanner's PostgreSQL interface is not a drop-in PostgreSQL server.
+`SQLServer2022()` covers Ptah's initial portable SQL Server/Azure SQL subset:
+schemas, tables, `IDENTITY`, enforced CHECK/UNIQUE/FK constraints, basic
+indexes, raw-SQL view/trigger rendering, and `XML` columns. Standalone sequence
+objects and drift-safe normalization for SQL Server-specific view, trigger, and
+index metadata are outside the initial SQL Server subset.
 
 ### Composition
 
@@ -199,8 +208,19 @@ value or wants to pin a specific server version in tests/CI.
   unsupported structural changes.
 - **Trigger replacement (#158).** Planners mark modified triggers as replacement
   intent. Renderers emit `CREATE OR REPLACE TRIGGER` only when
-  `create_or_replace_trigger` is present (PostgreSQL 14+ and MariaDB); targets
-  without it use an explicit drop/create sequence.
+  `create_or_replace_trigger` is present. PostgreSQL 14+ and MariaDB use
+  `CREATE OR REPLACE TRIGGER`; SQL Server uses `CREATE OR ALTER TRIGGER`.
+  Targets without it use an explicit drop/create sequence.
+- **SQL Server subset (#149).**
+  `SQLServer2022()` enables generic constraint drops, enforced CHECK
+  constraints, foreign keys, XML, and single-statement trigger replacement. It
+  leaves enum and sequence capabilities disabled because Ptah models SQL Server
+  enums as `NVARCHAR(255)` plus `CHECK` constraints and does not yet expose
+  standalone SQL Server sequence objects. Raw view and trigger definitions can
+  be rendered, but SQL Server catalog readback is not yet normalized enough for
+  full drift-safe round trips. `DROP INDEX IF EXISTS` and `DROP CONSTRAINT IF
+  EXISTS` are disabled in the portable preset, so plans should remain exactly
+  scoped instead of relying on guards.
 
 ## Follow-ups
 

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/migration/internal/typechange"
 	"github.com/stokaro/ptah/migration/schemadiff/internal/normalize"
@@ -82,6 +83,17 @@ import (
 //
 // Column lists are sorted alphabetically for deterministic output and reliable testing.
 func TableColumns(genTable goschema.Table, dbTable types.DBTable, generated *goschema.Database) difftypes.TableDiff {
+	return TableColumnsWithDialect(genTable, dbTable, generated, "")
+}
+
+// TableColumnsWithDialect compares one table's columns with dialect-aware
+// normalization for catalog-rewritten generated expressions.
+func TableColumnsWithDialect(
+	genTable goschema.Table,
+	dbTable types.DBTable,
+	generated *goschema.Database,
+	dialect string,
+) difftypes.TableDiff {
 	tableDiff := difftypes.TableDiff{TableName: genTable.QualifiedName()}
 
 	// Process embedded fields to get the complete field list (same as generators do)
@@ -123,7 +135,7 @@ func TableColumns(genTable goschema.Table, dbTable types.DBTable, generated *gos
 			if columnInTablePrimaryKey(genTable, genCol.Name) {
 				genCol = normalizeTablePrimaryKeyColumn(genCol, dbCol)
 			}
-			colDiff := Columns(genCol, dbCol)
+			colDiff := ColumnsWithDialect(genCol, dbCol, dialect)
 			if len(colDiff.Changes) > 0 {
 				tableDiff.ColumnsModified = append(tableDiff.ColumnsModified, colDiff)
 			}
@@ -224,6 +236,12 @@ func TableColumns(genTable goschema.Table, dbTable types.DBTable, generated *gos
 //   - **MySQL/MariaDB**: TINYINT boolean representation, AUTO_INCREMENT
 //   - **Type mapping**: Intelligent normalization for accurate comparison
 func Columns(genCol goschema.Field, dbCol types.DBColumn) difftypes.ColumnDiff {
+	return ColumnsWithDialect(genCol, dbCol, "")
+}
+
+// ColumnsWithDialect compares two columns using dialect-specific expression
+// normalization where catalog readback rewrites equivalent SQL.
+func ColumnsWithDialect(genCol goschema.Field, dbCol types.DBColumn, dialect string) difftypes.ColumnDiff {
 	colDiff := difftypes.ColumnDiff{
 		ColumnName: genCol.Name,
 		Changes:    make(map[string]string),
@@ -270,7 +288,7 @@ func Columns(genCol goschema.Field, dbCol types.DBColumn) difftypes.ColumnDiff {
 	if genUnique != dbUnique {
 		colDiff.Changes["unique"] = fmt.Sprintf("%t -> %t", dbUnique, genUnique)
 	}
-	if diff := generatedColumnDiff(genCol, dbCol); diff != "" {
+	if diff := generatedColumnDiff(genCol, dbCol, dialect); diff != "" {
 		colDiff.Changes["generated"] = diff
 	}
 
@@ -328,11 +346,11 @@ func tablePrimaryKeyColumns(table goschema.Table) []string {
 	return columns
 }
 
-func generatedColumnDiff(genCol goschema.Field, dbCol types.DBColumn) string {
-	genExpr := strings.TrimSpace(genCol.GeneratedExpression)
+func generatedColumnDiff(genCol goschema.Field, dbCol types.DBColumn, dialect string) string {
+	genExpr := normalizeGeneratedExpression(genCol.GeneratedExpression, dialect)
 	dbExpr := ""
 	if dbCol.GeneratedExpression != nil {
-		dbExpr = strings.TrimSpace(*dbCol.GeneratedExpression)
+		dbExpr = normalizeGeneratedExpression(*dbCol.GeneratedExpression, dialect)
 	}
 	genKind := strings.ToUpper(strings.TrimSpace(genCol.GeneratedKind))
 	dbKind := strings.ToUpper(strings.TrimSpace(dbCol.GeneratedKind))
@@ -340,4 +358,60 @@ func generatedColumnDiff(genCol goschema.Field, dbCol types.DBColumn) string {
 		return ""
 	}
 	return fmt.Sprintf("%s %s -> %s %s", dbKind, dbExpr, genKind, genExpr)
+}
+
+func normalizeGeneratedExpression(expression, dialect string) string {
+	expression = normalize.Expression(expression)
+	if platform.NormalizeDialect(dialect) != platform.SQLServer {
+		return expression
+	}
+
+	var b strings.Builder
+	inString := false
+	for i := 0; i < len(expression); i++ {
+		ch := expression[i]
+		if ch == '\'' {
+			b.WriteByte(ch)
+			if inString && i+1 < len(expression) && expression[i+1] == '\'' {
+				i++
+				b.WriteByte('\'')
+				continue
+			}
+			inString = !inString
+			continue
+		}
+		if !inString && ch == '[' {
+			i = writeSQLServerBracketedIdentifier(&b, expression, i)
+			continue
+		}
+		if !inString && ch >= 'A' && ch <= 'Z' {
+			ch += 'a' - 'A'
+		}
+		if !inString && (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r') {
+			continue
+		}
+		b.WriteByte(ch)
+	}
+	return b.String()
+}
+
+func writeSQLServerBracketedIdentifier(b *strings.Builder, expression string, start int) int {
+	for i := start + 1; i < len(expression); i++ {
+		ch := expression[i]
+		if ch == ']' {
+			if i+1 < len(expression) && expression[i+1] == ']' {
+				b.WriteByte(']')
+				i++
+				continue
+			}
+			return i
+		}
+		if ch >= 'A' && ch <= 'Z' {
+			ch += 'a' - 'A'
+		}
+		b.WriteByte(ch)
+	}
+
+	b.WriteByte('[')
+	return start
 }

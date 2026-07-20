@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
 )
@@ -113,10 +114,11 @@ func (m *Migrator) defaultMigrationsTable() string {
 
 func (m *Migrator) qualifiedMigrationsTable() string {
 	table := m.migrationsTableName()
-	if m.migrationsSchema == "" {
+	schema := m.metadataTableSchemaName()
+	if schema == "" {
 		return m.quoteIdentifier(table)
 	}
-	return m.quoteIdentifier(m.migrationsSchema) + "." + m.quoteIdentifier(table)
+	return m.quoteIdentifier(schema) + "." + m.quoteIdentifier(table)
 }
 
 // MigrationsTableIdentifier returns the dialect-quoted metadata table name.
@@ -125,10 +127,24 @@ func (m *Migrator) MigrationsTableIdentifier() string {
 }
 
 func (m *Migrator) migrationsSchemaStatement() string {
-	if m.migrationsSchema == "" {
+	schema := m.migrationsSchema
+	if m.isSQLServer() {
+		schema = m.metadataTableSchemaName()
+		if strings.EqualFold(schema, "dbo") {
+			return ""
+		}
+	}
+	if schema == "" {
 		return ""
 	}
-	return "CREATE SCHEMA IF NOT EXISTS " + m.quoteIdentifier(m.migrationsSchema)
+	if m.isSQLServer() {
+		return fmt.Sprintf(
+			"IF SCHEMA_ID(%s) IS NULL EXEC(%s)",
+			sqlStringLiteral(schema),
+			sqlStringLiteral("CREATE SCHEMA "+m.quoteIdentifier(schema)),
+		)
+	}
+	return "CREATE SCHEMA IF NOT EXISTS " + m.quoteIdentifier(schema)
 }
 
 func (m *Migrator) quoteIdentifier(identifier string) string {
@@ -138,14 +154,55 @@ func (m *Migrator) quoteIdentifier(identifier string) string {
 	switch m.conn.Info().Dialect {
 	case "mysql", "mariadb", "clickhouse":
 		return "`" + strings.ReplaceAll(identifier, "`", "``") + "`"
+	case platform.SQLServer:
+		return "[" + strings.ReplaceAll(identifier, "]", "]]") + "]"
 	default:
 		return `"` + strings.ReplaceAll(identifier, `"`, `""`) + `"`
 	}
 }
 
+func (m *Migrator) isSQLServer() bool {
+	return m.conn != nil && m.conn.Info().Dialect == platform.SQLServer
+}
+
+func (m *Migrator) connectionDialect() string {
+	if m.conn == nil {
+		return ""
+	}
+	return m.conn.Info().Dialect
+}
+
+func (m *Migrator) connectionSchemaName() string {
+	if m.conn == nil {
+		return ""
+	}
+	return m.conn.Info().Schema
+}
+
+func sqlStringLiteral(value string) string {
+	return "N'" + strings.ReplaceAll(value, "'", "''") + "'"
+}
+
 func (m *Migrator) createMigrationsTableSQL() string {
 	if m.revisionTableFormat.isAtlas() {
 		return m.createAtlasRevisionsTableSQL()
+	}
+	if m.isSQLServer() {
+		return fmt.Sprintf(`IF OBJECT_ID(%s, N'U') IS NULL
+BEGIN
+    CREATE TABLE %s (
+        version BIGINT PRIMARY KEY,
+        description NVARCHAR(MAX) NOT NULL,
+        applied_at DATETIME2 NOT NULL,
+        state NVARCHAR(32) NOT NULL DEFAULT 'applied',
+        applied INT NOT NULL DEFAULT 1,
+        total INT NOT NULL DEFAULT 1,
+        error NVARCHAR(MAX) NULL,
+        error_stmt NVARCHAR(MAX) NULL,
+        execution_time_ms BIGINT NOT NULL DEFAULT 0,
+        checksum NVARCHAR(64) NOT NULL DEFAULT ''
+    )
+END`, sqlStringLiteral(m.sqlServerObjectName()), m.qualifiedMigrationsTable())
 	}
 	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
     version BIGINT PRIMARY KEY,
@@ -257,15 +314,31 @@ func (m *Migrator) ensureMigrationsRevisionColumn(ctx context.Context, name, def
 		return nil
 	}
 	query := fmt.Sprintf(
-		"ALTER TABLE %s ADD COLUMN %s %s",
+		"ALTER TABLE %s ADD %s %s",
 		m.qualifiedMigrationsTable(),
 		m.quoteIdentifier(name),
-		definition,
+		m.migrationsRevisionColumnDefinition(name, definition),
 	)
 	if _, err := m.conn.ExecContext(ctx, query); err != nil {
 		return fmt.Errorf("failed to add migrations metadata column %s: %w", name, err)
 	}
 	return nil
+}
+
+func (m *Migrator) migrationsRevisionColumnDefinition(name, fallback string) string {
+	if !m.isSQLServer() {
+		return fallback
+	}
+	switch name {
+	case "state":
+		return "NVARCHAR(32) NOT NULL DEFAULT 'applied'"
+	case "error", "error_stmt":
+		return "NVARCHAR(MAX) NULL"
+	case "checksum":
+		return "NVARCHAR(64) NOT NULL DEFAULT ''"
+	default:
+		return fallback
+	}
 }
 
 func (m *Migrator) migrationsColumnExists(ctx context.Context, name string) (bool, error) {
@@ -366,13 +439,8 @@ func (m *Migrator) migrationsVersionColumnType(ctx context.Context, query string
 }
 
 func (m *Migrator) metadataSchemaName() string {
-	if m.migrationsSchema != "" {
-		return m.migrationsSchema
-	}
-	if m.conn != nil {
-		if schema := strings.TrimSpace(m.conn.Info().Schema); schema != "" {
-			return schema
-		}
+	if schema := m.metadataTableSchemaName(); schema != "" {
+		return schema
 	}
 	if m.conn != nil && m.conn.Info().Dialect == "postgres" {
 		return "public"
@@ -380,11 +448,35 @@ func (m *Migrator) metadataSchemaName() string {
 	return ""
 }
 
+func (m *Migrator) metadataTableSchemaName() string {
+	return metadataTableSchemaName(m.connectionDialect(), m.connectionSchemaName(), m.migrationsSchema)
+}
+
+func metadataTableSchemaName(dialect, connectionSchema, configuredSchema string) string {
+	if schema := strings.TrimSpace(configuredSchema); schema != "" {
+		return schema
+	}
+	if platform.NormalizeDialect(dialect) != platform.SQLServer {
+		return ""
+	}
+	if schema := strings.TrimSpace(connectionSchema); schema != "" {
+		return schema
+	}
+	return "dbo"
+}
+
 func (m *Migrator) migrationsTableName() string {
 	if m.migrationsTable == "" {
 		return m.defaultMigrationsTable()
 	}
 	return m.migrationsTable
+}
+
+func (m *Migrator) sqlServerObjectName() string {
+	if schema := m.metadataTableSchemaName(); schema != "" {
+		return m.quoteIdentifier(schema) + "." + m.quoteIdentifier(m.migrationsTableName())
+	}
+	return m.quoteIdentifier(m.migrationsTableName())
 }
 
 // GetCurrentVersion returns the current migration version from the database

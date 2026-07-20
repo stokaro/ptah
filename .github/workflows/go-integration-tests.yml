@@ -78,6 +78,20 @@ jobs:
           - 8123:8123
           - 9000:9000
 
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_PID: "Developer"
+          MSSQL_SA_PASSWORD: "P@ssw0rd-ptah-2026"
+        options: >-
+          --health-cmd "sqlcmd=/opt/mssql-tools18/bin/sqlcmd; if [ ! -x $sqlcmd ]; then sqlcmd=/opt/mssql-tools/bin/sqlcmd; fi; $sqlcmd -S localhost -U sa -P \"$MSSQL_SA_PASSWORD\" -No -Q \"SELECT 1\""
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 18
+        ports:
+          - 1433:1433
+
     steps:
       - uses: actions/checkout@v7
       
@@ -154,12 +168,15 @@ jobs:
           MARIADB_TEST_DSN: "ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
           POSTGRES_TEST_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           MYSQL_TEST_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
+          PTAH_SQLSERVER_TEST_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
           POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           MYSQL_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
           MARIADB_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
         run: |
           go test -v ./integration -tags=integration -timeout 15m
           go test -v ./integration/gonative -tags=integration -timeout 15m
+          go test -v ./dbschema -run 'TestSQLServerLive(ReadSchema|DropAllTablesDropsForeignKeys|ComputedColumnZeroDiff|DropAllTablesRejectsExternalForeignKeys)' -timeout 3m
+          go test -v ./migration/migrator -run 'TestSQLServerMigratorHonorsURLSchemaForMetadata|TestMigrationAdvisoryLock_SQLServer(DefaultTimeout|Timeout)Integration' -timeout 3m
 
       - name: Build integration test binary
         run: |
@@ -217,6 +234,12 @@ jobs:
           ./integration-test --databases=cockroachdb --scenarios=dynamic_cockroachdb_common_subset --report=stdout,txt,json,html --verbose --output=./reports
           ./integration-test --databases=yugabytedb --scenarios=dynamic_yugabytedb_common_subset --report=stdout,txt,json,html --verbose --output=./reports
 
+      - name: Run SQL Server live smoke tests
+        env:
+          SQLSERVER_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
+        run: |
+          ./integration-test --databases=sqlserver --scenarios=apply_incremental_migrations,rollback_migrations,upgrade_to_specific_version,check_current_version,read_actual_db_schema,dry_run_support,operation_planning,failure_diagnostics,idempotency_reapply,idempotency_up_to_date,parallel_migrate_smoke,cleanup_support,dynamic_sqlserver_identity_schema_bracket_reserved_words --report=stdout,txt,json,html --verbose --output=./reports
+
       - name: Upload integration test reports
         uses: actions/upload-artifact@v7
         if: always()
@@ -239,5 +262,6 @@ jobs:
           CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
           COCKROACHDB_URL: "cockroachdb://root@localhost:26257/defaultdb?sslmode=disable"
           YUGABYTEDB_URL: "yugabytedb://yugabyte@localhost:5433/yugabyte?sslmode=disable"
+          SQLSERVER_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
         run: |
           go test -v -race ./integration -tags=integration -timeout 30m

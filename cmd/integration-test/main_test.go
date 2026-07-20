@@ -69,7 +69,7 @@ func TestDynamicScenarioIdentification(t *testing.T) {
 	}
 }
 
-func TestConfiguredDatabaseConnectionsIncludesDistributedSQL(t *testing.T) {
+func TestConfiguredDatabaseConnectionsIncludesDistributedSQLAndSQLServer(t *testing.T) {
 	c := qt.New(t)
 
 	t.Setenv("POSTGRES_URL", "postgres://postgres.example/db")
@@ -78,11 +78,13 @@ func TestConfiguredDatabaseConnectionsIncludesDistributedSQL(t *testing.T) {
 	t.Setenv("CLICKHOUSE_URL", "clickhouse://clickhouse.example/db")
 	t.Setenv("COCKROACHDB_URL", "cockroachdb://cockroach.example/defaultdb")
 	t.Setenv("YUGABYTEDB_URL", "yugabytedb://yugabyte.example/yugabyte")
+	t.Setenv("SQLSERVER_URL", "sqlserver://sqlserver.example/db")
 
 	connections := configuredDatabaseConnections()
 
 	c.Assert(connections["cockroachdb"], qt.Equals, "cockroachdb://cockroach.example/defaultdb")
 	c.Assert(connections["yugabytedb"], qt.Equals, "yugabytedb://yugabyte.example/yugabyte")
+	c.Assert(connections["sqlserver"], qt.Equals, "sqlserver://sqlserver.example/db")
 }
 
 func TestRequestedDatabaseConnectionsRejectsMissingRequestedURL(t *testing.T) {
@@ -114,11 +116,28 @@ func TestRequestedDatabaseConnectionsKeepsConfiguredURLs(t *testing.T) {
 	})
 }
 
-func TestDefaultDatabasesIncludeOSSDistributedSQL(t *testing.T) {
+func TestRequestedDatabaseConnectionsNormalizesSQLServerAliases(t *testing.T) {
+	c := qt.New(t)
+
+	selected, err := requestedDatabaseConnections(
+		[]string{"mssql"},
+		map[string]string{
+			"sqlserver": "sqlserver://sqlserver.example/db",
+		},
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(selected, qt.DeepEquals, map[string]string{
+		"sqlserver": "sqlserver://sqlserver.example/db",
+	})
+}
+
+func TestDefaultDatabasesIncludeOSSDistributedSQLButNotSQLServer(t *testing.T) {
 	c := qt.New(t)
 
 	defaultDatabases := rootFlags[databasesFlag].GetStringSlice()
 
 	c.Assert(defaultDatabases, qt.Contains, "cockroachdb")
 	c.Assert(defaultDatabases, qt.Contains, "yugabytedb")
+	c.Assert(defaultDatabases, qt.Not(qt.Contains), "sqlserver")
 }

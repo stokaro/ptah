@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"github.com/stokaro/ptah/core/platform"
 )
 
 // fmtVerbRe matches any Go fmt verb shape (`%s`, `%d`, `%v`, `%+v`, `%5.3f`,
@@ -54,4 +56,49 @@ func TestMigrator_CustomMigrationsTableSQL(t *testing.T) {
 	c.Assert(m.beginMigrationSQL(), qt.Contains, `INSERT INTO "infra"."ptah_migrations"`)
 	c.Assert(m.completeMigrationSQL(), qt.Contains, `UPDATE "infra"."ptah_migrations"`)
 	c.Assert(m.deleteMigrationSQL(), qt.Equals, `DELETE FROM "infra"."ptah_migrations" WHERE version = ?`)
+}
+
+func TestMetadataTableSchemaName_SQLServerHonorsConnectionSchema(t *testing.T) {
+	tests := []struct {
+		name             string
+		dialect          string
+		connectionSchema string
+		configuredSchema string
+		expected         string
+	}{
+		{
+			name:             "sqlserver url schema",
+			dialect:          platform.SQLServer,
+			connectionSchema: "tenant_a",
+			expected:         "tenant_a",
+		},
+		{
+			name:     "sqlserver default schema",
+			dialect:  platform.SQLServer,
+			expected: "dbo",
+		},
+		{
+			name:             "explicit schema wins",
+			dialect:          platform.SQLServer,
+			connectionSchema: "tenant_a",
+			configuredSchema: "audit",
+			expected:         "audit",
+		},
+		{
+			name:             "non sqlserver connection schema does not qualify table",
+			dialect:          platform.Postgres,
+			connectionSchema: "public",
+			expected:         "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := metadataTableSchemaName(tt.dialect, tt.connectionSchema, tt.configuredSchema)
+
+			c.Assert(got, qt.Equals, tt.expected)
+		})
+	}
 }
