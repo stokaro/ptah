@@ -107,7 +107,7 @@ func TestRunLint_SARIFFormat(t *testing.T) {
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	c.Assert(report.Version, qt.Equals, "2.1.0")
 	c.Assert(report.Runs, qt.HasLen, 1)
-	c.Assert(report.Runs[0].Tool.Driver.Name, qt.Equals, "ptah lint")
+	c.Assert(report.Runs[0].Tool.Driver.Name, qt.Equals, "ptah migrations lint")
 	c.Assert(report.Runs[0].Tool.Driver.Rules[0].ID, qt.Not(qt.Equals), "")
 	var dropTableResult struct {
 		RuleID    string `json:"ruleId"`

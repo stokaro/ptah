@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/dbschema/types"
 )
 
 // quoteIdent returns a safely-quoted PostgreSQL identifier. Embedded double
@@ -21,6 +23,12 @@ func quoteIdent(name string) string {
 // PostgreSQLWriter writes schemas to PostgreSQL databases
 type PostgreSQLWriter struct {
 	db     *sql.DB
+	schema string
+	dryRun bool
+}
+
+type postgresTransactionWriter struct {
+	mu     sync.Mutex
 	tx     *sql.Tx
 	schema string
 	dryRun bool
@@ -50,7 +58,7 @@ func (w *PostgreSQLWriter) writeEnums(enums []goschema.Enum) error { //nolint:un
 					WHERE t.typname = $1 AND n.nspname = $2
 				)`
 
-			err := w.tx.QueryRow(checkSQL, enum.Name, w.schema).Scan(&exists)
+			err := w.db.QueryRow(checkSQL, enum.Name, w.schema).Scan(&exists)
 			if err != nil {
 				return fmt.Errorf("failed to check if enum %s exists: %w", enum.Name, err)
 			}
@@ -81,7 +89,7 @@ func (w *PostgreSQLWriter) writeEnums(enums []goschema.Enum) error { //nolint:un
 	return nil
 }
 
-// ExecuteSQL executes a SQL statement against the active transaction. Values
+// ExecuteSQL executes a standalone SQL statement. Values
 // must be passed via args and referenced through `$N` placeholders; the SQL
 // string itself should never be assembled with fmt.Sprintf for value
 // interpolation. Identifiers (table/column names) cannot be parameterized
@@ -91,11 +99,46 @@ func (w *PostgreSQLWriter) ExecuteSQL(ctx context.Context, sqlExpr string, args 
 		slog.Info("[DRY RUN] Would execute SQL", "sql", sqlExpr, "args", args)
 		return nil
 	}
-
-	if w.tx == nil {
-		return fmt.Errorf("no active transaction")
+	if w.db == nil {
+		return fmt.Errorf("no database connection")
 	}
 
+	_, err := w.db.ExecContext(ctx, sqlExpr, args...)
+	if err != nil {
+		return fmt.Errorf("SQL execution failed: %w\nSQL: %s", err, sqlExpr)
+	}
+	return nil
+}
+
+// BeginTransaction starts a transaction and returns a transaction-scoped
+// writer. The parent writer keeps no active transaction state.
+func (w *PostgreSQLWriter) BeginTransaction(ctx context.Context) (types.SchemaTransaction, error) {
+	if w.dryRun {
+		slog.Info("[DRY RUN] Would begin transaction")
+		return &postgresTransactionWriter{schema: w.schema, dryRun: true}, nil
+	}
+	if w.db == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+
+	tx, err := w.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &postgresTransactionWriter{tx: tx, schema: w.schema}, nil
+}
+
+// ExecuteSQL executes SQL against the transaction.
+func (w *postgresTransactionWriter) ExecuteSQL(ctx context.Context, sqlExpr string, args ...any) error {
+	if w.dryRun {
+		slog.Info("[DRY RUN] Would execute SQL", "sql", sqlExpr, "args", args)
+		return nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.tx == nil {
+		return fmt.Errorf("transaction is closed")
+	}
 	_, err := w.tx.ExecContext(ctx, sqlExpr, args...)
 	if err != nil {
 		return fmt.Errorf("SQL execution failed: %w\nSQL: %s", err, sqlExpr)
@@ -103,56 +146,40 @@ func (w *PostgreSQLWriter) ExecuteSQL(ctx context.Context, sqlExpr string, args 
 	return nil
 }
 
-// BeginTransaction starts a new transaction
-func (w *PostgreSQLWriter) BeginTransaction() error {
-	if w.dryRun {
-		slog.Info("[DRY RUN] Would begin transaction")
-		return nil
-	}
-
-	if w.tx != nil {
-		return fmt.Errorf("transaction already active")
-	}
-
-	tx, err := w.db.Begin()
-	if err != nil {
-		return err
-	}
-	w.tx = tx
-	return nil
-}
-
-// CommitTransaction commits the current transaction
-func (w *PostgreSQLWriter) CommitTransaction() error {
+// Commit commits the transaction.
+func (w *postgresTransactionWriter) Commit() error {
 	if w.dryRun {
 		slog.Info("[DRY RUN] Would commit transaction")
 		return nil
 	}
-
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if w.tx == nil {
-		return fmt.Errorf("no active transaction")
+		return fmt.Errorf("transaction is closed")
 	}
-
 	err := w.tx.Commit()
 	w.tx = nil
 	return err
 }
 
-// RollbackTransaction rolls back the current transaction
-func (w *PostgreSQLWriter) RollbackTransaction() error {
+// Rollback rolls back the transaction.
+func (w *postgresTransactionWriter) Rollback() error {
 	if w.dryRun {
 		slog.Info("[DRY RUN] Would rollback transaction")
 		return nil
 	}
-
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if w.tx == nil {
-		return nil // No transaction to rollback
+		return nil
 	}
-
 	err := w.tx.Rollback()
 	w.tx = nil
 	return err
 }
+
+// IsDryRun returns whether dry-run mode is enabled.
+func (w *postgresTransactionWriter) IsDryRun() bool { return w.dryRun }
 
 func (w *PostgreSQLWriter) collectAllObjects() (tables []string, enums []string, sequences []string, err error) { //revive:disable-line:function-result-limit // It's acceptable here
 	if w.dryRun {
@@ -234,15 +261,15 @@ func (w *PostgreSQLWriter) collectAllObjects() (tables []string, enums []string,
 func (w *PostgreSQLWriter) DropAllTables() error {
 	slog.Warn("WARNING: This will drop ALL tables and enums in the database!")
 
-	// Start transaction
-	if err := w.BeginTransaction(); err != nil {
+	tx, err := w.BeginTransaction(context.Background())
+	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 
-	// Rollback on error, commit on success
+	committed := false
 	defer func() {
-		if w.tx != nil {
-			w.RollbackTransaction() // TODO: weird - it always rolls back??
+		if !committed {
+			_ = tx.Rollback()
 		}
 	}()
 
@@ -260,7 +287,7 @@ func (w *PostgreSQLWriter) DropAllTables() error {
 	for _, tableName := range tables {
 		dropSQL := "DROP TABLE IF EXISTS " + quoteIdent(tableName) + " CASCADE"
 		slog.Info("Dropping table...", "tableName", tableName)
-		if err := w.ExecuteSQL(ctx, dropSQL); err != nil {
+		if err := tx.ExecuteSQL(ctx, dropSQL); err != nil {
 			return fmt.Errorf("failed to drop table %s: %w", tableName, err)
 		}
 	}
@@ -269,7 +296,7 @@ func (w *PostgreSQLWriter) DropAllTables() error {
 	for _, enumName := range enums {
 		dropSQL := "DROP TYPE IF EXISTS " + quoteIdent(enumName) + " CASCADE"
 		slog.Info("Dropping enum...", "enumName", enumName)
-		if err := w.ExecuteSQL(ctx, dropSQL); err != nil {
+		if err := tx.ExecuteSQL(ctx, dropSQL); err != nil {
 			return fmt.Errorf("failed to drop enum %s: %w", enumName, err)
 		}
 	}
@@ -278,15 +305,15 @@ func (w *PostgreSQLWriter) DropAllTables() error {
 	for _, sequenceName := range sequences {
 		dropSQL := "DROP SEQUENCE IF EXISTS " + quoteIdent(sequenceName) + " CASCADE"
 		slog.Info("Dropping sequence...", "sequenceName", sequenceName)
-		if err := w.ExecuteSQL(ctx, dropSQL); err != nil {
+		if err := tx.ExecuteSQL(ctx, dropSQL); err != nil {
 			return fmt.Errorf("failed to drop sequence %s: %w", sequenceName, err)
 		}
 	}
 
-	// Commit transaction
-	if err := w.CommitTransaction(); err != nil {
+	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
+	committed = true
 
 	slog.Info("All tables and enums dropped successfully!", "tables", len(tables), "enums", len(enums), "sequences", len(sequences))
 	return nil

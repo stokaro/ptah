@@ -1,4 +1,4 @@
-// Package migratevalidate implements the `ptah migrate-validate` command: it
+// Package migratevalidate implements the migration validation command: it
 // verifies a migrations directory against its committed ptah.sum and exits
 // non-zero on any drift (#161).
 package migratevalidate
@@ -15,7 +15,7 @@ import (
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
-// NewMigrateValidateCommand returns the migrate-validate command.
+// NewMigrateValidateCommand returns the migration validation command.
 func NewMigrateValidateCommand() *cobra.Command {
 	var dir string
 	var dirFormatValue string
@@ -23,7 +23,7 @@ func NewMigrateValidateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "migrate-validate",
 		Short: "Verify a migrations directory against its committed ptah.sum",
-		Long: `migrate-validate recomputes the integrity hashes of a migrations directory
+		Long: `migrations validate recomputes the integrity hashes of a migrations directory
 and compares them against the committed ptah.sum. It exits:
 
   0  the directory matches ptah.sum
@@ -56,7 +56,7 @@ func runValidate(cmd *cobra.Command, dir, dirFormatValue string) error {
 
 	// A missing or unreadable ptah.sum, and any other verify error, is a
 	// usage failure (exit 2) distinct from a content drift (exit 1). Its
-	// message — including the actionable "run ptah migrate-hash" for a
+	// message - including the actionable "run ptah migrations hash" for a
 	// missing sum — must reach the user, so print it here (the command
 	// silences cobra's own error output).
 	result, err := migratesum.VerifyDirWithFormat(dir, dirFormat)

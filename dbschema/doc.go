@@ -78,21 +78,22 @@
 //
 // The package supports transactional schema modifications:
 //
-//	writer := conn.Writer()
+//	writer := conn.SchemaWriter()
 //
-//	// Begin transaction
-//	if err := writer.BeginTransaction(); err != nil {
+//	// Begin a transaction-scoped writer.
+//	tx, err := writer.BeginTransaction(ctx)
+//	if err != nil {
 //		log.Fatal(err)
 //	}
 //
 //	// Execute schema changes
-//	if err := writer.ExecuteSQL(ctx, "CREATE TABLE users (id SERIAL PRIMARY KEY)"); err != nil {
-//		writer.RollbackTransaction()
+//	if err := tx.ExecuteSQL(ctx, "CREATE TABLE users (id SERIAL PRIMARY KEY)"); err != nil {
+//		tx.Rollback()
 //		log.Fatal(err)
 //	}
 //
 //	// Commit changes
-//	if err := writer.CommitTransaction(); err != nil {
+//	if err := tx.Commit(); err != nil {
 //		log.Fatal(err)
 //	}
 //

@@ -54,7 +54,7 @@ func VerifyBaselineShadow(ctx context.Context, opts BaselineShadowVerifyOptions)
 	if opts.Capabilities != nil && !maps.Equal(opts.Capabilities, shadowConn.Info().Capabilities) {
 		return fmt.Errorf("baseline shadow check failed: shadow database capabilities do not match target %s capabilities", opts.Dialect)
 	}
-	if err := shadowConn.Writer().DropAllTables(); err != nil {
+	if err := shadowConn.SchemaWriter().DropAllTables(); err != nil {
 		return fmt.Errorf("baseline shadow check failed: drop all objects: %w", err)
 	}
 	if err := resetBaselineShadowSchemas(ctx, shadowConn, opts.Schemas); err != nil {

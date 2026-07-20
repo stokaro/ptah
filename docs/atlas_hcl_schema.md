@@ -12,7 +12,7 @@ schema source.
 ## Generate SQL
 
 ```bash
-go run ./cmd generate --schema-file schema.hcl --dialect postgres
+go run ./cmd schema render --schema-file schema.hcl --dialect postgres
 ```
 
 `--schema-file` accepts `.hcl` files for Atlas HCL input, plus `.yaml` and
@@ -233,6 +233,6 @@ Atlas features that Ptah cannot represent without losing semantics, including:
   realms, extensions, and other dialect-specific object types
 
 Project-level `env` and `variable` blocks may appear next to schema objects in
-schema HCL files, but they are not executed by `ptah generate --schema-file`.
+schema HCL files, but they are not executed by `ptah schema render --schema-file`.
 Command-level `atlas.hcl` project config support is documented in
 [Atlas Project Config](atlas_project_config.md).

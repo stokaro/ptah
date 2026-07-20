@@ -75,8 +75,8 @@ Atlas-style timestamp files such as `20220318104614_team_A.sql` or
 `20240112070806.sql`, plus numeric migration names produced by Atlas importers
 such as `1_initial.sql`, `2.sql`, `1_initial.up.sql`, `1_initial.down.sql`, and
 `1.my.sql`. Use
-`--dir-format=ptah` or `--dir-format=atlas` on `migrate-up`, `migrate-down`,
-`migrate-status`, `migrate-hash`, and `migrate-validate` when detection should be
+`--dir-format=ptah` or `--dir-format=atlas` on `migrations up`, `migrations down`,
+`migrations status`, `migrations hash`, and `migrations validate` when detection should be
 explicit. Ordinary Atlas and imported single SQL files are forward migrations.
 Imported `.down.sql` files are paired with their matching `.up.sql` version for
 rollback. Atlas txtar files can also embed a `down.sql` section that Ptah
@@ -93,7 +93,7 @@ DELETE FROM users WHERE id = 1;
 ```
 
 For Atlas txtar migrations, Ptah executes only the `migration.sql` section for
-`migrate-up` and only the `down.sql` section for `migrate-down`. Other embedded
+`migrations up` and only the `down.sql` section for `migrations down`. Other embedded
 txtar files, such as `schema.sql`, are ignored by the migrator; ordinary SQL
 comments that look like `-- keep this comment --` remain comments, not txtar
 section boundaries. Ptah's txtar support is intentionally limited to Atlas SQL
@@ -115,7 +115,7 @@ the Atlas `hash` value from `atlas.sum` when it is available. Custom
 `--migrations-schema` / `--migrations-table` values still override the metadata
 table location.
 
-If an Atlas migration does not provide `down.sql`, `migrate-down` returns a typed
+If an Atlas migration does not provide `down.sql`, `migrations down` returns a typed
 error explaining that Atlas dynamic down-plan synthesis is not implemented yet.
 This is distinct from transaction rollback on a failed migration: transaction
 rollback undoes an in-progress failure, Ptah paired `.down.sql` files and Atlas
@@ -130,79 +130,79 @@ treats the migration as non-transactional.
 ### Migrate Up
 Apply all pending migrations:
 ```bash
-go run ./cmd migrate-up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations
+go run ./cmd migrations up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations
 ```
 
 With dry run:
 ```bash
-go run ./cmd migrate-up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dry-run
+go run ./cmd migrations up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dry-run
 ```
 
 Allow applying a migration whose version is below the current high-water mark:
 ```bash
-go run ./cmd migrate-up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --exec-order non-linear
+go run ./cmd migrations up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --exec-order non-linear
 ```
 
 With a custom migration state table:
 ```bash
-go run ./cmd migrate-up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --migrations-schema infra --migrations-table ptah_migrations
+go run ./cmd migrations up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --migrations-schema infra --migrations-table ptah_migrations
 ```
 
 With an Atlas-style versioned migration directory:
 ```bash
-go run ./cmd migrate-up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dir-format atlas
+go run ./cmd migrations up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dir-format atlas
 ```
 
 Continue an Atlas-managed database using `atlas_schema_revisions`:
 ```bash
-go run ./cmd migrate-up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dir-format atlas --revision-format atlas
+go run ./cmd migrations up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dir-format atlas --revision-format atlas
 ```
 
 ### Migrate Down
 Roll back to a specific version:
 ```bash
-go run ./cmd migrate-down --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --target 5
+go run ./cmd migrations down --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --target 5
 ```
 
 With confirmation skip (dangerous!):
 ```bash
-go run ./cmd migrate-down --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --target 5 --confirm
+go run ./cmd migrations down --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --target 5 --confirm
 ```
 
 With a custom migration state table:
 ```bash
-go run ./cmd migrate-down --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --target 5 --migrations-schema infra --migrations-table ptah_migrations
+go run ./cmd migrations down --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --target 5 --migrations-schema infra --migrations-table ptah_migrations
 ```
 
 ### Migration Status
 Check current migration status:
 ```bash
-go run ./cmd migrate-status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations
+go run ./cmd migrations status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations
 ```
 
 Verbose output:
 ```bash
-go run ./cmd migrate-status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --verbose
+go run ./cmd migrations status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --verbose
 ```
 
 JSON output:
 ```bash
-go run ./cmd migrate-status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --json
+go run ./cmd migrations status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --json
 ```
 
 With a custom migration state table:
 ```bash
-go run ./cmd migrate-status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --migrations-schema infra --migrations-table ptah_migrations
+go run ./cmd migrations status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --migrations-schema infra --migrations-table ptah_migrations
 ```
 
 With an Atlas-style versioned migration directory:
 ```bash
-go run ./cmd migrate-status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dir-format atlas
+go run ./cmd migrations status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dir-format atlas
 ```
 
 Check an Atlas-managed revisions table:
 ```bash
-go run ./cmd migrate-status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dir-format atlas --revision-format atlas
+go run ./cmd migrations status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dir-format atlas --revision-format atlas
 ```
 
 ## API Overview
@@ -227,7 +227,7 @@ The default policy is `linear`, which fails loudly when a pending version is bel
 current high-water mark. Use `WithExecOrder(migrator.ExecOrderNonLinear)` or
 `--exec-order=non-linear` to apply the missing migration in version order. Use
 `linear-skip` only when you intentionally want to leave those versions unapplied; Ptah
-logs a warning for each skipped version and `migrate-status` continues to report it as
+logs a warning for each skipped version and `migrations status` continues to report it as
 pending and out of order.
 
 ### Migration Providers
@@ -385,7 +385,7 @@ if err != nil {
 `BaselineWithOptions` refuses to write when the metadata table already contains
 rows unless `Force` is set. `Force` can fill or update metadata at or below the
 baseline version, but it refuses to rewrite history when rows above that version
-already exist. The CLI `migrate-baseline` adds pre-flight schema verification:
+already exist. The CLI `migrations baseline` adds pre-flight schema verification:
 with `--shadow-db`, it replays baselined migrations on a disposable database and
 compares the result to the target; without `--shadow-db`, it uses the weaker
 entity drift check against `--root-dir`.
@@ -412,7 +412,7 @@ CREATE TABLE schema_migrations (
 Rows are written as `pending` before migration SQL executes, then marked
 `applied` after success. Failed or interrupted runs leave a dirty row with
 statement progress and error details; later migration operations refuse to
-continue until `RepairMigration` or the `migrate-repair` CLI resolves it.
+continue until `RepairMigration` or the `migrations repair` CLI resolves it.
 Applied rows store an up-SQL checksum, so editing an already-applied migration
 file is detected before new work starts.
 
@@ -446,7 +446,7 @@ that wait. Timed-out callers receive a typed error that can be detected with
 Set CLI defaults for every pending migration:
 
 ```bash
-go run ./cmd migrate-up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --lock-timeout 3s --statement-timeout 30s --migration-lock-timeout 30s
+go run ./cmd migrations up --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --lock-timeout 3s --statement-timeout 30s --migration-lock-timeout 30s
 ```
 
 Override those defaults in a specific migration file with top-of-file directives:

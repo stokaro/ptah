@@ -28,7 +28,7 @@ func TestNewRootCommand_HelpAdvertisesPtahEnvVars(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"migrate-up", "--help"})
+	cmd.SetArgs([]string{"migrations", "up", "--help"})
 
 	err := cmd.Execute()
 
@@ -109,7 +109,7 @@ func TestNewRootCommand_AtlasLookingRootAliasesStayRejected(t *testing.T) {
 		{
 			name: "migrate apply",
 			args: []string{"migrate", "apply"},
-			want: `unexpected positional arguments ["apply"]`,
+			want: `unknown command "migrate"`,
 		},
 		{
 			name: "schema inspect",
@@ -167,7 +167,7 @@ func TestNewRootCommand_PTAHDBURLFeedsCommandFlag(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"migrate-status", "--migrations-dir", filepath.ToSlash(t.TempDir())})
+	cmd.SetArgs([]string{"migrations", "status", "--migrations-dir", filepath.ToSlash(t.TempDir())})
 
 	err := cmd.Execute()
 
@@ -214,6 +214,7 @@ func TestZZZRootCommandErrorsExit2(t *testing.T) {
 		{
 			name: "compare unreachable database",
 			args: []string{
+				"schema",
 				"compare",
 				"--root-dir", filepath.Join("..", "..", "stubs"),
 				"--db-url", "postgres://u:p@127.0.0.1:1/db?sslmode=disable",
@@ -241,16 +242,12 @@ func TestZZZRootUsageErrorsExit2WithoutUsage(t *testing.T) {
 		name string
 		args []string
 	}{
-		{name: "generate", args: []string{"generate", "--bogus-flag"}},
-		{name: "read-db", args: []string{"read-db", "--bogus-flag"}},
 		{name: "schema export", args: []string{"schema", "export", "--bogus-flag"}},
 		{name: "schema render", args: []string{"schema", "render", "--bogus-flag"}},
 		{name: "schema compare", args: []string{"schema", "compare", "--bogus-flag"}},
 		{name: "schema drift", args: []string{"schema", "drift", "--bogus-flag"}},
 		{name: "db read", args: []string{"db", "read", "--bogus-flag"}},
 		{name: "db drop-all", args: []string{"db", "drop-all", "--bogus-flag"}},
-		{name: "compare", args: []string{"compare", "--bogus-flag"}},
-		{name: "drift", args: []string{"drift", "--bogus-flag"}},
 		{name: "migrations plan", args: []string{"migrations", "plan", "--bogus-flag"}},
 		{name: "migrations generate", args: []string{"migrations", "generate", "--bogus-flag"}},
 		{name: "migrations create", args: []string{"migrations", "create", "--bogus-flag"}},
@@ -262,19 +259,7 @@ func TestZZZRootUsageErrorsExit2WithoutUsage(t *testing.T) {
 		{name: "migrations hash", args: []string{"migrations", "hash", "--bogus-flag"}},
 		{name: "migrations validate", args: []string{"migrations", "validate", "--bogus-flag"}},
 		{name: "migrations lint", args: []string{"migrations", "lint", "--bogus-flag"}},
-		{name: "migrate", args: []string{"migrate", "--bogus-flag"}},
-		{name: "migrate generate", args: []string{"migrate", "generate", "--bogus-flag"}},
-		{name: "migrate new", args: []string{"migrate", "new", "--bogus-flag"}},
-		{name: "migrate-baseline", args: []string{"migrate-baseline", "--bogus-flag"}},
-		{name: "migrate-up", args: []string{"migrate-up", "--bogus-flag"}},
-		{name: "migrate-down", args: []string{"migrate-down", "--bogus-flag"}},
-		{name: "migrate-repair", args: []string{"migrate-repair", "--bogus-flag"}},
-		{name: "migrate-status", args: []string{"migrate-status", "--bogus-flag"}},
-		{name: "migrate-hash", args: []string{"migrate-hash", "--bogus-flag"}},
-		{name: "migrate-validate", args: []string{"migrate-validate", "--bogus-flag"}},
 		{name: "seed", args: []string{"seed", "--bogus-flag"}},
-		{name: "drop-all", args: []string{"drop-all", "--bogus-flag"}},
-		{name: "lint", args: []string{"lint", "--bogus-flag"}},
 		{name: "sql lint", args: []string{"sql", "lint", "--bogus-flag"}},
 		{name: "atlas version", args: []string{"atlas", "version", "--bogus-flag"}},
 		{name: "version", args: []string{"version", "--bogus-flag"}},
@@ -289,6 +274,38 @@ func TestZZZRootUsageErrorsExit2WithoutUsage(t *testing.T) {
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 			c.Assert(stderr, qt.Contains, "error: unknown flag: --bogus-flag")
+			c.Assert(stderr, qt.Not(qt.Contains), "Usage:")
+		})
+	}
+}
+
+func TestNewRootCommand_OldRootCommandSpellingsAreNotRegistered(t *testing.T) {
+	tests := [][]string{
+		{"generate"},
+		{"read-db"},
+		{"compare"},
+		{"drift"},
+		{"lint"},
+		{"migrate"},
+		{"migrate-up"},
+		{"migrate-down"},
+		{"migrate-status"},
+		{"migrate-baseline"},
+		{"migrate-repair"},
+		{"migrate-hash"},
+		{"migrate-validate"},
+		{"drop-all"},
+	}
+
+	for _, args := range tests {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			c := qt.New(t)
+
+			_, stderr, err := executeRoot(args...)
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+			c.Assert(stderr, qt.Contains, `unknown command "`+args[0]+`"`)
 			c.Assert(stderr, qt.Not(qt.Contains), "Usage:")
 		})
 	}

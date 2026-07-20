@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -355,7 +356,6 @@ func TestNewMySQLWriter(t *testing.T) {
 		c.Assert(writer, qt.IsNotNil)
 		c.Assert(writer.schema, qt.Equals, "test_schema")
 		c.Assert(writer.db, qt.IsNil) // We passed nil for testing
-		c.Assert(writer.tx, qt.IsNil) // No transaction initially
 	})
 }
 
@@ -363,22 +363,106 @@ func TestMySQLWriter_TransactionMethods_NoConnection(t *testing.T) {
 	c := qt.New(t)
 	writer := NewMySQLWriter(nil, "test")
 
-	t.Run("ExecuteSQL with no transaction", func(t *testing.T) {
+	t.Run("ExecuteSQL with no connection", func(t *testing.T) {
 		err := writer.ExecuteSQL(context.Background(), "SELECT 1")
 		c.Assert(err, qt.IsNotNil)
-		c.Assert(err.Error(), qt.Equals, "no active transaction")
+		c.Assert(err.Error(), qt.Equals, "no database connection")
 	})
 
-	t.Run("CommitTransaction with no transaction", func(t *testing.T) {
-		err := writer.CommitTransaction()
+	t.Run("BeginTransaction with no connection", func(t *testing.T) {
+		tx, err := writer.BeginTransaction(context.Background())
 		c.Assert(err, qt.IsNotNil)
-		c.Assert(err.Error(), qt.Equals, "no active transaction")
+		c.Assert(err.Error(), qt.Equals, "no database connection")
+		c.Assert(tx, qt.IsNil)
 	})
 
-	t.Run("RollbackTransaction with no transaction", func(t *testing.T) {
-		err := writer.RollbackTransaction()
-		c.Assert(err, qt.IsNil) // Should not error when no transaction
+	t.Run("dry-run transaction", func(t *testing.T) {
+		writer.SetDryRun(true)
+		tx, err := writer.BeginTransaction(context.Background())
+		c.Assert(err, qt.IsNil)
+		c.Assert(tx, qt.IsNotNil)
+		c.Assert(tx.ExecuteSQL(context.Background(), "SELECT 1"), qt.IsNil)
+		c.Assert(tx.Commit(), qt.IsNil)
 	})
+}
+
+func TestMySQLWriterConcurrentTransactions(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.OpenWithExec(t, nil, nil)
+	writer := NewMySQLWriter(db.SQL, "test")
+
+	const goroutines = 64
+	var wg sync.WaitGroup
+	errs := make(chan error, goroutines)
+	start := make(chan struct{})
+
+	for i := range goroutines {
+		wg.Go(func() {
+			<-start
+			tx, err := writer.BeginTransaction(context.Background())
+			if err != nil {
+				errs <- err
+				return
+			}
+			if err := tx.ExecuteSQL(context.Background(), "SELECT 1"); err != nil {
+				_ = tx.Rollback()
+				errs <- err
+				return
+			}
+			if i%2 == 0 {
+				errs <- tx.Commit()
+				return
+			}
+			errs <- tx.Rollback()
+		})
+	}
+
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		c.Assert(err, qt.IsNil)
+	}
+	c.Assert(db.BeginCount(), qt.Equals, goroutines)
+	c.Assert(db.ExecCount(), qt.Equals, goroutines)
+	c.Assert(db.CommitCount()+db.RollbackCount(), qt.Equals, goroutines)
+}
+
+func TestMySQLWriterDropAllTablesCommitsOnSuccess(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.OpenWithExec(t, mysqlDropAllQueryHandler, nil)
+	writer := NewMySQLWriter(db.SQL, "test")
+
+	c.Assert(writer.DropAllTables(), qt.IsNil)
+	c.Assert(db.BeginCount(), qt.Equals, 1)
+	c.Assert(db.ExecCount(), qt.Equals, 3)
+	c.Assert(db.CommitCount(), qt.Equals, 1)
+	c.Assert(db.RollbackCount(), qt.Equals, 0)
+}
+
+func TestMySQLWriterDropAllTablesRollsBackOnFailure(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.OpenWithExec(t, mysqlDropAllQueryHandler, func(query string, _ []driver.NamedValue) (driver.Result, error) {
+		if strings.Contains(query, "DROP TABLE") {
+			return nil, fmt.Errorf("boom")
+		}
+		return driver.RowsAffected(0), nil
+	})
+	writer := NewMySQLWriter(db.SQL, "test")
+
+	err := writer.DropAllTables()
+	c.Assert(err, qt.ErrorMatches, "failed to drop table users: SQL execution failed: boom\nSQL: DROP TABLE IF EXISTS `users`")
+	c.Assert(db.BeginCount(), qt.Equals, 1)
+	c.Assert(db.CommitCount(), qt.Equals, 0)
+	c.Assert(db.RollbackCount(), qt.Equals, 1)
+}
+
+func mysqlDropAllQueryHandler(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+	if !strings.Contains(query, "information_schema.tables") {
+		return dbtest.QueryResult{}, fmt.Errorf("unexpected query: %s", query)
+	}
+	return dbtest.QueryResult{Columns: []string{"table_name"}, Rows: [][]driver.Value{{"users"}}}, nil
 }
 
 func TestMySQLWriter_UtilityMethods(t *testing.T) {

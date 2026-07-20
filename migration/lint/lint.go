@@ -6,7 +6,7 @@
 //
 //   - DS — data safety (dropping tables/columns, lossy type changes)
 //   - MF — migration form (missing down file, empty migration, naming)
-//   - BC — backwards compatibility (renames breaking deployed readers)
+//   - BC - backward compatibility (renames breaking deployed readers)
 //   - PG — PostgreSQL-specific hazards
 //   - MY — MySQL/MariaDB-specific hazards
 //

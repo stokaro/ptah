@@ -281,19 +281,19 @@ func TestNewAtlasCommand_HelpAdvertisesGroupedNativeEquivalents(t *testing.T) {
 		name       string
 		args       []string
 		wantNative string
-		legacy     string
+		oldRoot    string
 	}{
 		{
 			name:       "migrate_apply",
 			args:       []string{"migrate", "apply", "--help"},
 			wantNative: "ptah migrations up",
-			legacy:     "ptah migrate-up",
+			oldRoot:    "ptah migrate-up",
 		},
 		{
 			name:       "schema_inspect",
 			args:       []string{"schema", "inspect", "--help"},
 			wantNative: "ptah db read",
-			legacy:     "ptah read-db",
+			oldRoot:    "ptah read-db",
 		},
 	}
 
@@ -310,7 +310,7 @@ func TestNewAtlasCommand_HelpAdvertisesGroupedNativeEquivalents(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(out.String(), qt.Contains, tt.wantNative)
-			c.Assert(out.String(), qt.Not(qt.Contains), tt.legacy)
+			c.Assert(out.String(), qt.Not(qt.Contains), tt.oldRoot)
 		})
 	}
 }

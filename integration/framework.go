@@ -293,7 +293,7 @@ func isPostgresDistributedSQL(dialect string) bool {
 
 // cleanDatabase drops all scenario-owned objects and resets the database to a clean state.
 func (tr *TestRunner) cleanDatabase(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-	if err := conn.Writer().DropAllTables(); err != nil {
+	if err := conn.SchemaWriter().DropAllTables(); err != nil {
 		return err
 	}
 	if platform.NormalizeDialect(conn.Info().Dialect) == platform.Postgres {
@@ -594,19 +594,18 @@ func (dh *DatabaseHelper) TableExists(tableName string) (bool, error) {
 // rather than interpolating them into the SQL text. The provided context is
 // forwarded to the underlying driver so cancellation/timeouts propagate.
 func (dh *DatabaseHelper) ExecuteSQL(ctx context.Context, sql string, args ...any) error {
-	// Start transaction
-	if err := dh.conn.Writer().BeginTransaction(); err != nil {
+	tx, err := dh.conn.SchemaWriter().BeginTransaction(ctx)
+	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
+	txConn := dh.conn.WithExecutor(tx)
 
-	// Execute SQL
-	if err := dh.conn.Writer().ExecuteSQL(ctx, sql, args...); err != nil {
-		_ = dh.conn.Writer().RollbackTransaction()
+	if err := txConn.Writer().ExecuteSQL(ctx, sql, args...); err != nil {
+		_ = tx.Rollback()
 		return fmt.Errorf("failed to execute SQL: %w", err)
 	}
 
-	// Commit transaction
-	if err := dh.conn.Writer().CommitTransaction(); err != nil {
+	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
@@ -615,7 +614,7 @@ func (dh *DatabaseHelper) ExecuteSQL(ctx context.Context, sql string, args ...an
 
 // SetDryRun enables or disables dry run mode
 func (dh *DatabaseHelper) SetDryRun(dryRun bool) {
-	dh.conn.Writer().SetDryRun(dryRun)
+	dh.conn.SchemaWriter().SetDryRun(dryRun)
 }
 
 // IsDryRun returns whether dry run mode is enabled

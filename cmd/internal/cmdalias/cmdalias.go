@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
-// ArgMapper rewrites compatibility command arguments before they are forwarded
-// to the native command.
+const envPrefix = "PTAH"
+
+// ArgMapper rewrites command arguments before they are forwarded to the target
+// command implementation.
 type ArgMapper func([]string) ([]string, error)
 
 type helpBehavior int
@@ -78,7 +81,7 @@ func newForwardCommandWithArgsMapper(
 	return &cobra.Command{
 		Use:                use,
 		Short:              short,
-		Long:               fmt.Sprintf("Compatibility alias for `ptah %s`.", native),
+		Long:               fmt.Sprintf("Forwards to `ptah %s`.", native),
 		DisableFlagParsing: true,
 		SilenceUsage:       true,
 		SilenceErrors:      true,
@@ -95,6 +98,7 @@ func newForwardCommandWithArgsMapper(
 			}
 			target := factory()
 			resetCommandFlags(target)
+			initializeForwardedTarget(target)
 			defer resetCommandFlags(target)
 			parent := target.Parent()
 			if parent != nil {
@@ -119,6 +123,36 @@ func newForwardCommandWithArgsMapper(
 			return target.Execute()
 		},
 	}
+}
+
+func initializeForwardedTarget(target *cobra.Command) {
+	cobraflags.PostInitCommands(envPrefix, make(map[*pflag.Flag]bool), target)
+	normalizeEnvUsage(target)
+}
+
+func normalizeEnvUsage(cmd *cobra.Command) {
+	cmd.Flags().VisitAll(normalizeFlagEnvUsage)
+	cmd.PersistentFlags().VisitAll(normalizeFlagEnvUsage)
+	for _, child := range cmd.Commands() {
+		normalizeEnvUsage(child)
+	}
+}
+
+func normalizeFlagEnvUsage(flag *pflag.Flag) {
+	flag.Usage = normalizeUsageEnvSuffix(flag.Usage)
+}
+
+func normalizeUsageEnvSuffix(usage string) string {
+	const marker = " [env: "
+	start := strings.Index(usage, marker)
+	if start == -1 {
+		return usage
+	}
+	end := strings.Index(usage[start+len(marker):], "]")
+	if end == -1 {
+		return usage
+	}
+	return usage[:start+len(marker)+end+1]
 }
 
 func hasHelpArg(args []string) bool {

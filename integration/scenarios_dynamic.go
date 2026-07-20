@@ -1496,19 +1496,21 @@ func testDynamicLargeTableMigration(ctx context.Context, conn *dbschema.Database
 	// Insert test data
 	err = recorder.RecordStep("Insert Test Data", "Insert 1000 rows of test data", func() error {
 		// Use a transaction for better performance
-		if err := conn.Writer().BeginTransaction(); err != nil {
+		tx, err := conn.SchemaWriter().BeginTransaction(ctx)
+		if err != nil {
 			return fmt.Errorf("failed to begin transaction: %w", err)
 		}
-		defer conn.Writer().RollbackTransaction()
+		txConn := conn.WithExecutor(tx)
+		defer tx.Rollback()
 
 		insertSQL := sqlutil.Rebind(conn.Info().Dialect, "INSERT INTO large_table (data) VALUES (?)")
 		for i := range 1000 {
-			if err := conn.Writer().ExecuteSQL(ctx, insertSQL, fmt.Sprintf("test_data_%d", i)); err != nil {
+			if err := txConn.Writer().ExecuteSQL(ctx, insertSQL, fmt.Sprintf("test_data_%d", i)); err != nil {
 				return fmt.Errorf("failed to insert row %d: %w", i, err)
 			}
 		}
 
-		return conn.Writer().CommitTransaction()
+		return tx.Commit()
 	})
 	if err != nil {
 		return err
@@ -2182,18 +2184,20 @@ func testDynamicForeignKeyCascade(ctx context.Context, conn *dbschema.DatabaseCo
 		}
 
 		// Verify cascade works by deleting parent and checking result in one transaction
-		if err := conn.Writer().BeginTransaction(); err != nil {
+		tx, err := conn.SchemaWriter().BeginTransaction(ctx)
+		if err != nil {
 			return fmt.Errorf("failed to begin transaction for cascade test: %w", err)
 		}
+		txConn := conn.WithExecutor(tx)
 
 		// Delete parent record
-		if err := conn.Writer().ExecuteSQL(ctx, "DELETE FROM parent_table WHERE id = 1"); err != nil {
-			_ = conn.Writer().RollbackTransaction()
+		if err := txConn.Writer().ExecuteSQL(ctx, "DELETE FROM parent_table WHERE id = 1"); err != nil {
+			_ = tx.Rollback()
 			return fmt.Errorf("failed to delete parent record: %w", err)
 		}
 
 		// Commit the delete
-		if err := conn.Writer().CommitTransaction(); err != nil {
+		if err := tx.Commit(); err != nil {
 			return fmt.Errorf("failed to commit delete transaction: %w", err)
 		}
 
@@ -3155,25 +3159,26 @@ func testDynamicRLSFunctionsDataIntegrity(ctx context.Context, conn *dbschema.Da
 		}
 
 		// Use a transaction for data insertion
-		if err := conn.Writer().BeginTransaction(); err != nil {
+		tx, err := conn.SchemaWriter().BeginTransaction(ctx)
+		if err != nil {
 			return fmt.Errorf("failed to begin transaction: %w", err)
 		}
+		txConn := conn.WithExecutor(tx)
 
 		committed := false
 		defer func() {
-			// Only rollback if transaction is still active (commit may have succeeded)
 			if !committed {
-				conn.Writer().RollbackTransaction()
+				_ = tx.Rollback()
 			}
 		}()
 
 		for _, sql := range testData {
-			if err := conn.Writer().ExecuteSQL(ctx, sql); err != nil {
+			if err := txConn.Writer().ExecuteSQL(ctx, sql); err != nil {
 				return fmt.Errorf("failed to insert test data: %w", err)
 			}
 		}
 
-		if err := conn.Writer().CommitTransaction(); err != nil {
+		if err := tx.Commit(); err != nil {
 			return fmt.Errorf("failed to commit transaction: %w", err)
 		}
 		committed = true
@@ -3284,15 +3289,17 @@ func testDynamicRLSFunctionsErrorHandling(ctx context.Context, conn *dbschema.Da
 		// This should fail because RLS policies depend on this function
 
 		// Use a transaction for the manual drop attempt
-		if err := conn.Writer().BeginTransaction(); err != nil {
+		tx, err := conn.SchemaWriter().BeginTransaction(ctx)
+		if err != nil {
 			return fmt.Errorf("failed to begin transaction: %w", err)
 		}
+		txConn := conn.WithExecutor(tx)
 
 		// Try to drop the function - this should fail
-		err := conn.Writer().ExecuteSQL(ctx, "DROP FUNCTION get_current_tenant_id()")
+		err = txConn.Writer().ExecuteSQL(ctx, "DROP FUNCTION get_current_tenant_id()")
 
 		// Always rollback the transaction (whether it succeeded or failed)
-		rollbackErr := conn.Writer().RollbackTransaction()
+		rollbackErr := tx.Rollback()
 		if rollbackErr != nil {
 			return fmt.Errorf("failed to rollback transaction: %w", rollbackErr)
 		}
@@ -3329,16 +3336,18 @@ func testDynamicRLSFunctionsErrorHandling(ctx context.Context, conn *dbschema.Da
 	err = recorder.RecordStep("Test Missing Object Handling", "Test rollback when objects are already missing", func() error {
 		// Manually drop a policy to simulate partial state
 		// Use a transaction for the manual drop
-		if err := conn.Writer().BeginTransaction(); err != nil {
+		tx, err := conn.SchemaWriter().BeginTransaction(ctx)
+		if err != nil {
 			return fmt.Errorf("failed to begin transaction: %w", err)
 		}
+		txConn := conn.WithExecutor(tx)
 
-		err := conn.Writer().ExecuteSQL(ctx, "DROP POLICY IF EXISTS user_tenant_isolation ON users")
+		err = txConn.Writer().ExecuteSQL(ctx, "DROP POLICY IF EXISTS user_tenant_isolation ON users")
 
 		// Commit the transaction
-		commitErr := conn.Writer().CommitTransaction()
+		commitErr := tx.Commit()
 		if commitErr != nil {
-			conn.Writer().RollbackTransaction()
+			_ = tx.Rollback()
 			return fmt.Errorf("failed to commit transaction: %w", commitErr)
 		}
 
