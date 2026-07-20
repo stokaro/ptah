@@ -261,7 +261,7 @@ type functionAttrs struct {
 
 // readFunctionAttributes pulls body / security / volatility for a function in
 // the current schema, normalized to the same uppercase / lowercase
-// representation that dbschema/postgres/reader.go uses.
+// representation that internal/dbschema/postgres/reader.go uses.
 func readFunctionAttributes(ctx context.Context, conn *dbschema.DatabaseConnection, name string) (functionAttrs, error) {
 	row := conn.QueryRowContext(ctx, `
 		SELECT

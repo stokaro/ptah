@@ -10,9 +10,9 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
-	"github.com/stokaro/ptah/core/convert/dbschematogo"
-	"github.com/stokaro/ptah/core/convert/goschematogo"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/convert/dbschematogo"
+	"github.com/stokaro/ptah/internal/convert/goschematogo"
 	"github.com/stokaro/ptah/internal/pathguard"
 )
 

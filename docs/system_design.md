@@ -52,7 +52,7 @@ The system operates through four main layers:
   - Discovers entity definitions and dependencies
   - Handles embedded structs and topological sorting
 
-#### yamlschema Package
+#### Internal YAML Schema Frontend
 - **Purpose**: Parses language-agnostic YAML schema files into the same `goschema.Database` IR used by Go annotations
 - **Input**: `.yaml` and `.yml` files passed to `ptah schema render --schema-file`
 - **Functionality**:
@@ -60,7 +60,7 @@ The system operates through four main layers:
   - Preserves author order for table-local columns, indexes, and constraints while keeping top-level maps deterministic
   - Applies strict validation for unknown fields, duplicate ordered keys, invalid indexes and constraints, and multiple YAML documents
 
-#### atlashcl Package
+#### Internal Atlas HCL Schema Frontend
 - **Purpose**: Parses Atlas schema HCL files into the same `goschema.Database` IR used by Go annotations
 - **Input**: `.hcl` files passed to `ptah schema render --schema-file`
 - **Functionality**:
@@ -68,11 +68,11 @@ The system operates through four main layers:
   - Supports schema labels, tables, columns, primary keys, indexes, foreign keys, check constraints, defaults, comments, and basic table options
   - Rejects unsupported Atlas HCL schema semantics explicitly instead of silently dropping them from the generated Ptah IR
 
-#### lexer Package
+#### Internal SQL Lexer
 - **Purpose**: Tokenizes SQL statements into structured tokens
 - **Functionality**: Breaks down SQL into keywords, identifiers, operators, and literals
 
-#### parser Package
+#### Internal SQL Parser
 - **Purpose**: Converts SQL tokens into Abstract Syntax Tree nodes
 - **Supported Statements**: CREATE TABLE, ALTER TABLE, CREATE INDEX, CREATE TYPE
 - **Integration**: Works with AST package to generate standardized nodes
@@ -90,13 +90,12 @@ The system operates through four main layers:
   - `EnumNode`: Enum type definitions
 - **Pattern**: Implements visitor pattern for dialect-specific rendering
 
-#### astbuilder Package
-- **Purpose**: Fluent API for building SQL DDL AST nodes
-- **Key Builders**:
-  - `SchemaBuilder`: Entry point for complete schemas
-  - `TableBuilder`: Table construction with method chaining
-  - `ColumnBuilder`: Column definitions with constraints
-  - `IndexBuilder`: Index creation with options
+#### Internal Builder And Parser Helpers
+- **Purpose**: Repository-internal helpers for building and parsing SQL DDL AST nodes
+- **Boundary**: These packages are implementation details behind Go `internal/`
+  boundaries; embedders should use the stable `core/ast`, `core/goschema`,
+  `core/renderer`, and migration packages documented in
+  [Public Go API](public_api.md).
 
 #### renderer Package
 - **Purpose**: Converts AST nodes to dialect-specific SQL statements

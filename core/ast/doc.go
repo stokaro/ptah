@@ -62,10 +62,9 @@
 //		).
 //		AddConstraint(ast.NewUniqueConstraint("uk_users_email", "email"))
 //
-// Rendering with a visitor:
+// Rendering with the public renderer package:
 //
-//	renderer := postgresql.NewRenderer()
-//	sql, err := renderer.Render(table)
+//	sql, err := renderer.RenderSQL("postgres", table)
 //	if err != nil {
 //		log.Fatal(err)
 //	}
@@ -93,8 +92,8 @@
 //   - ptah/core/goschema: Converts parsed Go structs to AST nodes
 //   - ptah/core/renderer: Provides dialect-specific SQL rendering
 //   - ptah/migration/schemadiff: Compares AST representations for migration generation
-//   - ptah/core/astbuilder: Provides fluent APIs for building AST nodes
-//   - ptah/core/parser: Parses SQL DDL into AST nodes
+//   - internal builder helpers: Provide fluent APIs for building AST nodes
+//   - internal parser helpers: Parse SQL DDL into AST nodes
 //
 // The AST serves as the central representation that bridges code parsing,
 // schema comparison, and SQL generation in the Ptah ecosystem.

@@ -10,11 +10,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
-	"github.com/stokaro/ptah/core/atlashcl"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/renderer"
-	"github.com/stokaro/ptah/core/yamlschema"
+	"github.com/stokaro/ptah/internal/atlashcl"
+	"github.com/stokaro/ptah/internal/yamlschema"
 )
 
 var generateCmd = &cobra.Command{

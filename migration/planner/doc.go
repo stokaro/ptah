@@ -69,13 +69,10 @@
 //
 // # Dialect-Specific Planning
 //
-// The package includes dialect-specific planners in the dialects subdirectory:
-//
-//   - dialects/postgres: PostgreSQL and PostgreSQL-family migration planning
-//   - dialects/mysql: MySQL and MariaDB migration planning
-//   - dialects/clickhouse: ClickHouse migration planning
-//
-// Each dialect planner handles platform-specific features and limitations:
+// Built-in dialect planners are implementation details behind internal package
+// boundaries. Use the public registry functions in this package instead of
+// importing dialect implementations directly. Each dialect planner handles
+// platform-specific features and limitations:
 //
 //   - PostgreSQL: ENUM types, SERIAL columns, advanced constraints
 //   - MySQL: AUTO_INCREMENT, ENGINE specifications, charset handling

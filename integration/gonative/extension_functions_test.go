@@ -9,7 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"github.com/stokaro/ptah/dbschema/postgres"
+	"github.com/stokaro/ptah/internal/dbschema/postgres"
 )
 
 // TestPostgreSQLReader_ExtensionFunctionFiltering_Integration tests that extension-owned functions

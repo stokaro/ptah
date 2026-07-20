@@ -16,6 +16,19 @@ The name **Ptah** is also an acronym:
 
 ---
 
+## Independent Atlas-Compatible Implementation
+
+Ptah is an independent implementation. This repository does **not** vendor,
+copy, link, or execute Atlas source code, and Ptah's runtime behavior is
+implemented in Ptah code.
+
+Atlas compatibility work is based on Atlas OSS command interfaces, file formats,
+observable behavior, and test assets. Test assets that originate from Atlas are
+kept outside this repository in
+[`ptah-atlas-conformance`](https://github.com/stokaro/ptah-atlas-conformance),
+where they are used to measure compatibility against Ptah without mixing Atlas
+source or fixture corpus into the main Ptah codebase.
+
 ## Key Features
 
 `ptah` provides a unified workflow to define, evolve, and apply database schemas based on Go code annotations. Its main
@@ -67,33 +80,15 @@ The core package contains all fundamental components for parsing, transforming, 
   - Implements visitor pattern for dialect-specific SQL generation
   - Core node types: `CreateTableNode`, `AlterTableNode`, `ColumnNode`, `ConstraintNode`, `IndexNode`, `EnumNode`
 
-- **`astbuilder/`** - Fluent API for building SQL DDL AST nodes
-  - Provides convenient builder pattern for constructing complex schemas
-  - SchemaBuilder, TableBuilder, ColumnBuilder, IndexBuilder interfaces
-  - Integrates seamlessly with the core AST package
-
 - **`goschema/`** - Go package parsing and entity extraction
   - Recursively parses Go source files to discover entity definitions
   - Extracts table directives, field mappings, indexes, enums, and embedded fields
   - Handles dependency analysis and topological sorting for proper table creation order
 
-- **`yamlschema/`** - Language-agnostic YAML schema frontend
-  - Parses `.yaml` / `.yml` schema files into the same `goschema.Database` IR used by Go annotations
-  - Supports tables, columns, indexes, constraints, enums, extensions, functions, views, materialized views, triggers, RLS, roles, and dialect overrides
+- **Internal schema frontends and helpers**
+  - Parse YAML and Atlas HCL schema files into the same `goschema.Database` IR used by Go annotations.
+  - Keep parser, lexer, conversion, builder, and dialect implementation details behind Go `internal/` boundaries.
   - Uses strict validation for unknown fields, duplicate ordered keys, and invalid constraints
-
-- **`parser/`** - SQL DDL token-to-AST parser
-  - Converts SQL DDL tokens into Abstract Syntax Tree nodes
-  - Supports CREATE TABLE, ALTER TABLE, CREATE INDEX, CREATE TYPE statements
-  - Accepts optional dialect and capability settings for syntax that cannot be parsed correctly in generic best-effort mode
-  - Parses MySQL/MariaDB routine headers and routine-body statement boundaries in dialect-aware mode
-  - Preserves other dialect-aware routine boundaries with typed opaque AST nodes until routine sub-language parsers exist
-  - Provides comprehensive error handling and position information
-
-- **`lexer/`** - SQL tokenization and lexical analysis
-  - Tokenizes SQL input for parser consumption
-  - Handles strings, comments, identifiers, operators, and whitespace
-  - Provides position tracking for error reporting
 
 - **`renderer/`** - Dialect-specific SQL generation from AST
   - Converts AST nodes to database-specific SQL statements
@@ -174,8 +169,11 @@ Provides command-line interface for all Ptah operations:
 ### Supporting Components
 
 #### `examples/` - Usage Examples and Demos
-- **`ast_demo/`** - Demonstrates AST-based SQL generation
 - **`migrator_parser/`** - Shows parsing and generation workflow
+
+#### `internal/examples/` - Repository Development Demos
+- Demonstrates internal parser and builder helpers that are intentionally not
+  part of the public Go API.
 
 #### `integration/` - Comprehensive Integration Testing Framework
 - **`framework.go`** - Core test framework with TestRunner and DatabaseHelper

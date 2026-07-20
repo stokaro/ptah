@@ -7,9 +7,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/stokaro/ptah/core/convert/fromschema"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/renderer"
+	"github.com/stokaro/ptah/internal/convert/fromschema"
 )
 
 func TestPointerEmbeddedFields_EndToEnd(t *testing.T) {
