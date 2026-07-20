@@ -127,7 +127,8 @@ type Product struct {
 	c.Assert(productPolicy.Comment, qt.Equals, "Ensures products are isolated by tenant")
 
 	// Generate PostgreSQL SQL and verify it contains the expected statements
-	statements := renderer.GetOrderedCreateStatements(&database, "postgresql")
+	statements, err := renderer.GetOrderedCreateStatements(&database, "postgresql")
+	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.Not(qt.HasLen), 0)
 
 	sqlOutput := legacyRenderedSQL(strings.Join(statements, "\n"))
@@ -193,7 +194,8 @@ type TestTable struct {
 	c.Assert(database.RLSEnabledTables, qt.HasLen, 1)
 
 	// Generate MySQL SQL - PostgreSQL-specific features should be skipped
-	statements := renderer.GetOrderedCreateStatements(&database, "mysql")
+	statements, err := renderer.GetOrderedCreateStatements(&database, "mysql")
+	c.Assert(err, qt.IsNil)
 	sqlOutput := legacyRenderedSQL(strings.Join(statements, "\n"))
 
 	// Verify that PostgreSQL-specific features are not included in MySQL output

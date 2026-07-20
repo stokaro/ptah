@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/stokaro/ptah/core/ast"
+	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/core/renderer/dialects/internal/bufwriter"
 	"github.com/stokaro/ptah/core/renderer/types"
 )
@@ -119,9 +120,9 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 		case *ast.RenameTableOperation:
 			r.w.WriteLinef("ALTER TABLE %s RENAME TO %s;", escapeQualifiedIdentifier(node.Name), escapeIdentifier(op.NewName))
 		case *ast.DropColumnOperation, *ast.ModifyColumnOperation, *ast.DropConstraintOperation, *ast.AddConstraintOperation:
-			return fmt.Errorf("sqlite: %T requires a table rebuild plan", operation)
+			return unsupportedFeaturef("%T requires a table rebuild plan", operation)
 		default:
-			return fmt.Errorf("sqlite: unsupported alter table operation %T", operation)
+			return unsupportedFeaturef("unsupported alter table operation %T", operation)
 		}
 	}
 	return nil
@@ -227,7 +228,7 @@ func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
 	if node.WithCheck {
-		return fmt.Errorf("sqlite: WITH CHECK OPTION views are not supported")
+		return unsupportedFeaturef("WITH CHECK OPTION views are not supported")
 	}
 	create := "CREATE VIEW"
 	if node.Replace {
@@ -281,7 +282,7 @@ func (r *Renderer) VisitCreateTrigger(node *ast.CreateTriggerNode) error {
 		forEach = "ROW"
 	}
 	if forEach != "ROW" {
-		return fmt.Errorf("sqlite: FOR EACH %s triggers are not supported", forEach)
+		return unsupportedFeaturef("FOR EACH %s triggers are not supported", forEach)
 	}
 
 	if node.Replace {
@@ -384,7 +385,7 @@ func renderColumn(column *ast.ColumnNode) (string, error) {
 	}
 	parts := []string{"  " + escapeIdentifier(column.Name), mapColumnType(column)}
 	if column.AutoInc && !column.Primary {
-		return "", fmt.Errorf("sqlite: AUTOINCREMENT requires an INTEGER PRIMARY KEY column")
+		return "", unsupportedFeaturef("AUTOINCREMENT requires an INTEGER PRIMARY KEY column")
 	}
 	if column.Primary {
 		parts = append(parts, "PRIMARY KEY")
@@ -591,4 +592,8 @@ func splitQualifiedIdentifier(identifier string) []string {
 		parts[len(parts)-1] += string(character)
 	}
 	return parts
+}
+
+func unsupportedFeaturef(format string, args ...any) error {
+	return fmt.Errorf("%w: sqlite: %s", ptaherr.ErrUnsupportedFeature, fmt.Sprintf(format, args...))
 }

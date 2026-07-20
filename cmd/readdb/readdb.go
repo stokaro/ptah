@@ -100,7 +100,7 @@ func readDBCommand(_ *cobra.Command, _ []string) error {
 	// Format and display the schema
 	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema)
 	info := conn.Info()
-	statements, err := renderer.GetOrderedCreateStatementsWithCapabilitiesE(dbsch, info.Dialect, info.Capabilities)
+	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(dbsch, info.Dialect, info.Capabilities)
 	if err != nil {
 		return fmt.Errorf("error rendering schema: %w", err)
 	}

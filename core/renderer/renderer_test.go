@@ -177,7 +177,8 @@ func TestPostgresFamilyRenderer_CapabilityGates(t *testing.T) {
 		AddColumn(ast.NewColumn("id", "INT8").SetPrimary()).
 		AddColumn(ast.NewColumn("payload", "XML"))
 	_, err = renderer.RenderSQL("cockroachdb", xmlTable)
-	c.Assert(err, qt.ErrorMatches, `error rendering column payload: cockroachdb does not support XML columns; use a platform-specific type override`)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `error rendering column payload: unsupported feature: cockroachdb does not support XML columns; use a platform-specific type override`)
 }
 
 func TestRenderSQL_Success(t *testing.T) {
@@ -413,7 +414,8 @@ func TestPlatformSpecificOverrides(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	// Test PostgreSQL (default)
-	postgresStatements := renderer.GetOrderedCreateStatements(result, "postgres")
+	postgresStatements, err := renderer.GetOrderedCreateStatements(result, "postgres")
+	c.Assert(err, qt.IsNil)
 	var postgresArticlesSQL string
 	for _, statement := range postgresStatements {
 		statement = legacyRenderedSQL(statement)
@@ -425,7 +427,8 @@ func TestPlatformSpecificOverrides(t *testing.T) {
 	c.Assert(postgresArticlesSQL, qt.Contains, "meta_data JSONB")
 
 	// Test MySQL (override)
-	mysqlStatements := renderer.GetOrderedCreateStatements(result, "mysql")
+	mysqlStatements, err := renderer.GetOrderedCreateStatements(result, "mysql")
+	c.Assert(err, qt.IsNil)
 	var mysqlArticlesSQL string
 	for _, statement := range mysqlStatements {
 		statement = legacyRenderedSQL(statement)
@@ -437,7 +440,8 @@ func TestPlatformSpecificOverrides(t *testing.T) {
 	c.Assert(mysqlArticlesSQL, qt.Contains, "meta_data JSON")
 
 	// Test MariaDB (override with check constraint)
-	mariadbStatements := renderer.GetOrderedCreateStatements(result, "mariadb")
+	mariadbStatements, err := renderer.GetOrderedCreateStatements(result, "mariadb")
+	c.Assert(err, qt.IsNil)
 	var mariadbArticlesSQL string
 	for _, statement := range mariadbStatements {
 		statement = legacyRenderedSQL(statement)
@@ -457,7 +461,8 @@ func TestEmbeddedFieldsInPackageParser(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	// Find the articles table statement
-	statements := renderer.GetOrderedCreateStatements(result, "postgres")
+	statements, err := renderer.GetOrderedCreateStatements(result, "postgres")
+	c.Assert(err, qt.IsNil)
 	var articlesSQL string
 	for _, statement := range statements {
 		statement = legacyRenderedSQL(statement)
@@ -484,7 +489,8 @@ func TestGetOrderedCreateStatements(t *testing.T) {
 	result, err := goschema.ParseDir("../../stubs")
 	c.Assert(err, qt.IsNil)
 
-	statements := renderer.GetOrderedCreateStatements(result, "postgres")
+	statements, err := renderer.GetOrderedCreateStatements(result, "postgres")
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(statements[0], qt.Contains, "CREATE TYPE")
 
@@ -531,7 +537,8 @@ func TestGetOrderedCreateStatements_MutualForeignKeysAreTwoPhase(t *testing.T) {
 		},
 	}
 
-	statements := renderer.GetOrderedCreateStatements(result, "postgres")
+	statements, err := renderer.GetOrderedCreateStatements(result, "postgres")
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(statements, qt.HasLen, 4)
 	c.Assert(statements[0], qt.Contains, `CREATE TABLE "a"`)
@@ -555,7 +562,9 @@ func TestGenerateSchema_Deterministic(t *testing.T) {
 				result, err := goschema.ParseDir(fixtureDir)
 				c.Assert(err, qt.IsNil)
 
-				sql := strings.Join(renderer.GetOrderedCreateStatements(result, dialect), "\n")
+				statements, err := renderer.GetOrderedCreateStatements(result, dialect)
+				c.Assert(err, qt.IsNil)
+				sql := strings.Join(statements, "\n")
 				if i == 0 {
 					first = sql
 					continue
