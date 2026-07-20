@@ -4,10 +4,8 @@ package goannotationcleanup
 import (
 	"bytes"
 	"fmt"
-	"go/format"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 )
 
@@ -32,6 +30,10 @@ const (
 	cleanModeWrite cleanMode = iota
 	cleanModeDryRun
 )
+
+type removedLine struct {
+	number int
+}
 
 // CleanDir removes Ptah schema annotations from Go files under RootDir.
 func CleanDir(opts Options) ([]Result, error) {
@@ -83,34 +85,32 @@ func cleanFile(path string, mode cleanMode) (Result, error) {
 		return Result{}, fmt.Errorf("read %s: %w", path, err)
 	}
 	after, removed := removeAnnotationLines(before)
-	if removed == 0 {
+	if len(removed) == 0 {
 		return Result{Path: path}, nil
-	}
-	formatted, err := format.Source(after)
-	if err != nil {
-		return Result{}, fmt.Errorf("format cleaned Go file %s: %w", path, err)
 	}
 	result := Result{
 		Path:         path,
-		Changed:      !bytes.Equal(before, formatted),
-		RemovedLines: removed,
-		Diff:         unifiedDiff(path, before, formatted),
+		Changed:      !bytes.Equal(before, after),
+		RemovedLines: len(removed),
+		Diff:         unifiedRemovalDiff(path, before, removed),
 	}
 	if result.Changed && mode == cleanModeWrite {
-		if err := os.WriteFile(path, formatted, info.Mode().Perm()); err != nil {
+		if err := os.WriteFile(path, after, info.Mode().Perm()); err != nil {
 			return Result{}, fmt.Errorf("write cleaned Go file %s: %w", path, err)
 		}
 	}
 	return result, nil
 }
 
-func removeAnnotationLines(data []byte) ([]byte, int) {
+func removeAnnotationLines(data []byte) ([]byte, []removedLine) {
 	lines := bytes.SplitAfter(data, []byte("\n"))
 	filtered := make([][]byte, 0, len(lines))
-	removed := 0
-	for _, line := range lines {
+	removed := make([]removedLine, 0)
+	for i, line := range lines {
 		if isPtahSchemaAnnotationLine(line) {
-			removed++
+			removed = append(removed, removedLine{
+				number: i + 1,
+			})
 			continue
 		}
 		filtered = append(filtered, line)
@@ -124,35 +124,80 @@ func isPtahSchemaAnnotationLine(line []byte) bool {
 		strings.HasPrefix(trimmed, "//migrator:embedded")
 }
 
-func unifiedDiff(path string, before, after []byte) string {
-	if bytes.Equal(before, after) {
+func unifiedRemovalDiff(path string, before []byte, removed []removedLine) string {
+	if len(removed) == 0 {
 		return ""
 	}
 	var builder strings.Builder
 	builder.WriteString("--- " + path + "\n")
 	builder.WriteString("+++ " + path + "\n")
-	builder.WriteString("@@\n")
-	beforeLines := strings.SplitAfter(string(before), "\n")
-	afterLines := strings.SplitAfter(string(after), "\n")
-	for _, line := range beforeLines {
-		if line == "" {
-			continue
-		}
-		if !containsLine(afterLines, line) {
-			builder.WriteString("-" + line)
-		}
+
+	lines := splitLines(before)
+	removedSet := make(map[int]struct{}, len(removed))
+	for _, line := range removed {
+		removedSet[line.number] = struct{}{}
 	}
-	for _, line := range afterLines {
-		if line == "" {
-			continue
+
+	const contextLines = 2
+	removedBefore := 0
+	for i := 0; i < len(removed); {
+		oldStart := max(1, removed[i].number-contextLines)
+		oldEnd := min(len(lines), removed[i].number+contextLines)
+		j := i + 1
+		for j < len(removed) && removed[j].number <= oldEnd+contextLines+1 {
+			oldEnd = min(len(lines), max(oldEnd, removed[j].number+contextLines))
+			j++
 		}
-		if !containsLine(beforeLines, line) {
-			builder.WriteString("+" + line)
+
+		oldCount := oldEnd - oldStart + 1
+		removedInHunk := countRemovedInRange(removed[i:j], oldStart, oldEnd)
+		newStart := max(1, oldStart-removedBefore)
+		newCount := oldCount - removedInHunk
+		fmt.Fprintf(&builder, "@@ -%s +%s @@\n", diffRange(oldStart, oldCount), diffRange(newStart, newCount))
+		for lineNumber := oldStart; lineNumber <= oldEnd; lineNumber++ {
+			line := lines[lineNumber-1]
+			if _, ok := removedSet[lineNumber]; ok {
+				writeDiffLine(&builder, '-', line)
+				continue
+			}
+			writeDiffLine(&builder, ' ', line)
 		}
+
+		removedBefore += j - i
+		i = j
 	}
 	return builder.String()
 }
 
-func containsLine(lines []string, target string) bool {
-	return slices.Contains(lines, target)
+func splitLines(data []byte) []string {
+	lines := strings.SplitAfter(string(data), "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
+}
+
+func countRemovedInRange(lines []removedLine, start, end int) int {
+	count := 0
+	for _, line := range lines {
+		if line.number >= start && line.number <= end {
+			count++
+		}
+	}
+	return count
+}
+
+func diffRange(start, count int) string {
+	if count == 1 {
+		return fmt.Sprintf("%d", start)
+	}
+	return fmt.Sprintf("%d,%d", start, count)
+}
+
+func writeDiffLine(builder *strings.Builder, prefix byte, line string) {
+	builder.WriteByte(prefix)
+	builder.WriteString(line)
+	if !strings.HasSuffix(line, "\n") {
+		builder.WriteByte('\n')
+	}
 }

@@ -3,6 +3,7 @@ package goannotationcleanup_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -61,4 +62,48 @@ type User struct {
 	results, err = goannotationcleanup.CleanDir(goannotationcleanup.Options{RootDir: dir})
 	c.Assert(err, qt.IsNil)
 	c.Assert(results, qt.HasLen, 0)
+}
+
+func TestCleanDirPreservesUnrelatedFormattingByteForByte(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "model.go")
+	original := "package models\n\n// User is business documentation.\n//migrator:schema:table name=\"users\"\ntype User struct{ID int64}\n"
+	expected := "package models\n\n// User is business documentation.\ntype User struct{ID int64}\n"
+	c.Assert(os.WriteFile(path, []byte(original), 0o600), qt.IsNil)
+
+	results, err := goannotationcleanup.CleanDir(goannotationcleanup.Options{RootDir: dir})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(results, qt.HasLen, 1)
+	content, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(content), qt.Equals, expected)
+}
+
+func TestCleanDirDiffReportsDuplicateRemovedLinesByPosition(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "model.go")
+	annotation := "//migrator:schema:field name=\"id\" type=\"SERIAL\"\n"
+	original := "package models\n\ntype User struct {\n" +
+		annotation +
+		"ID int64\n\n" +
+		annotation +
+		"OtherID int64\n}\n"
+	c.Assert(os.WriteFile(path, []byte(original), 0o600), qt.IsNil)
+
+	results, err := goannotationcleanup.CleanDir(goannotationcleanup.Options{
+		RootDir: dir,
+		DryRun:  true,
+		Diff:    true,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(results, qt.HasLen, 1)
+	c.Assert(results[0].RemovedLines, qt.Equals, 2)
+	c.Assert(strings.Count(results[0].Diff, "-"+annotation), qt.Equals, 2)
+	content, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(content), qt.Equals, original)
 }

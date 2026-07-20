@@ -91,7 +91,7 @@ settings:
 - `migrations up`
 - `migrations down`
 - `migrations status`
-- `lint`
+- `migrations lint`
 - `migrations generate`
 
 Atlas command paths under `ptah atlas <command> ...` inherit this behavior
