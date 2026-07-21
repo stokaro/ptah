@@ -69,7 +69,7 @@ executable name.
 | `ptah atlas migrate status` | Forwards to `ptah migrations status`. |
 | `ptah atlas migrate hash` | Forwards to `ptah migrations hash`. |
 | `ptah atlas migrate validate` | Forwards to `ptah migrations validate`. |
-| `ptah atlas migrate lint` | Forwards to `ptah migrations lint`. |
+| `ptah atlas migrate lint` | Forwards to `ptah migrations lint`; maps `--latest N` to native latest-version linting. |
 | `ptah atlas migrate new` | Forwards to `ptah migrations create`. |
 | `ptah atlas migrate set` | Forwards to `ptah migrations repair`. |
 | `ptah atlas migrate down` | Forwards to `ptah migrations down`; maps compatible Atlas flags and fails explicitly for dynamic down-planning and output-format flags that native Ptah does not implement yet. |

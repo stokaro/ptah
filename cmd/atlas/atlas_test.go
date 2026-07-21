@@ -333,6 +333,22 @@ func TestNewAtlasCommand_MigrateDownHelpUsesAtlasFlagKinds(t *testing.T) {
 	c.Assert(help, qt.Contains, "--lock-timeout string")
 }
 
+func TestNewAtlasCommand_MigrateLintHelpUsesAtlasFlagKinds(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"migrate", "lint", "--help"})
+
+	err := cmd.Execute()
+
+	help := out.String()
+	c.Assert(err, qt.IsNil)
+	c.Assert(help, qt.Contains, "--latest uint")
+	c.Assert(help, qt.Not(qt.Contains), "--latest string")
+}
+
 func TestMapAtlasArgs_MigrateDownNativeFlags(t *testing.T) {
 	c := qt.New(t)
 
@@ -353,6 +369,22 @@ func TestMapAtlasArgs_MigrateDownNativeFlags(t *testing.T) {
 		"--dry-run",
 		"--migrations-schema", "atlas_schema_revisions",
 		"--migration-lock-timeout=10s",
+	})
+}
+
+func TestMapAtlasArgs_MigrateLintLatestMapsToNativeFlag(t *testing.T) {
+	c := qt.New(t)
+
+	got, err := mapAtlasArgs("migrate", atlasMigrateLintVerb(), []string{
+		"--dir=file://migrations",
+		"--latest", "2",
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, []string{
+		"--dir=migrations",
+		"--latest",
+		"2",
 	})
 }
 

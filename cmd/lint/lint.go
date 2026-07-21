@@ -3,17 +3,19 @@
 package lint
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/url"
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -35,6 +37,8 @@ const (
 	failOnError = "error"
 	failOnAny   = "any"
 	failOnNone  = "none"
+
+	latestFlag = "latest"
 )
 
 var errLintFindings = errors.New("lint findings exceed the failure threshold")
@@ -49,6 +53,7 @@ func NewLintCommand() *cobra.Command {
 	var envName string
 	var disabled []string
 	var failOn string
+	var latest uint
 
 	cmd := &cobra.Command{
 		Use:   "lint",
@@ -75,6 +80,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 				atlasEnv:   atlasEnv,
 				disabled:   disabled,
 				failOn:     failOn,
+				latest:     latest,
 				positional: args,
 			})
 		},
@@ -88,6 +94,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 	cmd.Flags().StringVar(&envName, dbcli.EnvFlagName, "", "Project env name to read from ptah.yaml or atlas.hcl")
 	cmd.Flags().StringArrayVar(&disabled, "disable", nil, "Disable a rule code or family, for example DS101 or MY (repeatable)")
 	cmd.Flags().StringVar(&failOn, "fail-on", failOnError, "Failure threshold controlling the exit code: error, any or none")
+	cmd.Flags().UintVar(&latest, latestFlag, 0, "Lint only the latest N migration versions")
 
 	cmdutil.ConfigureCommand(cmd)
 	return cmd
@@ -101,6 +108,7 @@ type runOptions struct {
 	atlasEnv   string
 	disabled   []string
 	failOn     string
+	latest     uint
 	positional []string
 }
 
@@ -203,6 +211,10 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	if err := validateDir(opts.dir); err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
 	}
+	versions, err := lintVersions(cmd, opts)
+	if err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+	}
 
 	cfg, err := loadConfig(opts)
 	if err != nil {
@@ -230,6 +242,7 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 		Dialect:           dialect,
 		Disabled:          disabled,
 		PathPrefix:        filepath.ToSlash(opts.dir),
+		Versions:          versions,
 		AtlasTemplateData: migrator.AtlasTemplateData{Env: opts.atlasEnv},
 		RuleConfigs:       cfg.Rules,
 	})
@@ -273,6 +286,114 @@ func loadConfig(opts runOptions) (*lint.Config, error) {
 		return lint.LoadConfig(opts.configPath)
 	}
 	return lint.LoadConfig(filepath.Join(opts.dir, lint.ConfigFileName))
+}
+
+func lintVersions(cmd *cobra.Command, opts runOptions) ([]int64, error) {
+	if !cmd.Flags().Changed(latestFlag) {
+		return nil, nil
+	}
+	if opts.latest == 0 {
+		return nil, fmt.Errorf("--latest must be greater than zero")
+	}
+	return latestMigrationVersions(os.DirFS(opts.dir), opts.latest)
+}
+
+func latestMigrationVersions(fsys fs.FS, latest uint) ([]int64, error) {
+	unversioned, err := unversionedSQLFiles(fsys)
+	if err != nil {
+		return nil, err
+	}
+	if len(unversioned) > 0 {
+		return nil, fmt.Errorf("--latest requires versioned migration files; unversioned SQL files found: %s", strings.Join(unversioned, ", "))
+	}
+	files, err := migrator.DiscoverMigrationFiles(fsys, migrator.MigrationDirFormatAuto)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[int64]struct{})
+	for _, file := range files {
+		if file.Repeatable || file.Version <= 0 {
+			continue
+		}
+		seen[file.Version] = struct{}{}
+	}
+	if len(seen) == 0 {
+		return nil, fmt.Errorf("no versioned migration files found for --latest")
+	}
+	versions := make([]int64, 0, len(seen))
+	for version := range seen {
+		versions = append(versions, version)
+	}
+	slices.SortFunc(versions, func(a, b int64) int {
+		return cmp.Compare(b, a)
+	})
+	if latest < uint(len(versions)) {
+		versions = versions[:int(latest)]
+	}
+	slices.Sort(versions)
+	return versions, nil
+}
+
+func unversionedSQLFiles(fsys fs.FS) ([]string, error) {
+	var names []string
+	hasAtlasSum := false
+	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if path.Base(p) == "atlas.sum" {
+			hasAtlasSum = true
+			return nil
+		}
+		if strings.EqualFold(path.Ext(p), ".sql") {
+			names = append(names, p)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan migration files for --latest: %w", err)
+	}
+
+	var unversioned []string
+	parseAtlasName := migrator.ParseAtlasMigrationFileNameForAutoDetection
+	if hasAtlasSum {
+		parseAtlasName = migrator.ParseAtlasMigrationFileName
+	}
+	for _, name := range names {
+		known, err := knownVersionedMigration(fsys, name, parseAtlasName)
+		if err != nil {
+			return nil, err
+		}
+		if !known {
+			unversioned = append(unversioned, name)
+		}
+	}
+	slices.Sort(unversioned)
+	return unversioned, nil
+}
+
+func knownVersionedMigration(
+	fsys fs.FS,
+	name string,
+	parseAtlasName func(string) (*migrator.MigrationFile, error),
+) (bool, error) {
+	base := path.Base(name)
+	if _, err := migrator.ParseMigrationFileName(base); err == nil {
+		return true, nil
+	}
+	if _, err := parseAtlasName(base); err == nil {
+		return true, nil
+	}
+
+	raw, err := fs.ReadFile(fsys, name)
+	if err != nil {
+		return false, fmt.Errorf("failed to read %s: %w", name, err)
+	}
+	sql := string(raw)
+	return migrator.LooksAtlasTemplateSQL(sql) && strings.Contains(sql, "define "), nil
 }
 
 // shouldFail applies the --fail-on threshold to the findings.
@@ -364,7 +485,7 @@ func sarifRules(findings []lint.Finding) ([]sarifRule, map[string]int) {
 	for code := range byCode {
 		codes = append(codes, code)
 	}
-	sort.Strings(codes)
+	slices.Sort(codes)
 	rules := make([]sarifRule, 0, len(codes))
 	indexes := make(map[string]int, len(codes))
 	for i, code := range codes {

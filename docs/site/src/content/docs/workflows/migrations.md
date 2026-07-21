@@ -78,6 +78,7 @@ Use dry-run and lint before applying to shared environments:
 
 ```bash
 ptah migrations lint --dir ./migrations --dialect postgres
+ptah migrations lint --dir ./migrations --latest 1
 ptah migrations up \
   --db-url "$DATABASE_URL" \
   --migrations-dir ./migrations \
