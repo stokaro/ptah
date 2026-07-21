@@ -63,6 +63,8 @@ executable name.
 
 | Command | Current status |
 | --- | --- |
+| `ptah atlas version` | Prints Ptah build information. |
+| `ptah atlas license` | Prints Ptah MIT license and license-clean Atlas compatibility notice. |
 | `ptah atlas migrate apply` | Forwards to `ptah migrations up`. |
 | `ptah atlas migrate status` | Forwards to `ptah migrations status`. |
 | `ptah atlas migrate hash` | Forwards to `ptah migrations hash`. |

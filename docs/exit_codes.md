@@ -42,12 +42,16 @@ root-level command spellings are removed instead of preserved.
 ## Atlas-Compatible Command Surfaces
 
 Commands under `ptah atlas <command> ...`, `ptah-compat <command> ...`, and a
-copied or symlinked executable named `atlas` translate implemented
-Atlas-compatible flags and then delegate to the matching native command. Their
-exit codes therefore follow the native command contract:
+copied or symlinked executable named `atlas` either translate implemented
+Atlas-compatible flags and delegate to the matching native command, or execute
+a Ptah-owned utility behavior such as the license notice:
 
 | Atlas-compatible command | Native command |
 | --- | --- |
+| `ptah atlas version` | `ptah version` |
+| `ptah-compat version` / `atlas version` | `ptah version` |
+| `ptah atlas license` | Ptah license notice |
+| `ptah-compat license` / `atlas license` | Ptah license notice |
 | `ptah atlas migrate apply` | `ptah migrations up` |
 | `ptah-compat migrate apply` / `atlas migrate apply` | `ptah migrations up` |
 | `ptah atlas migrate down` | `ptah migrations down` |

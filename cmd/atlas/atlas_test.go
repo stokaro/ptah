@@ -112,6 +112,70 @@ func TestNewCompatCommand_RootHelpShowsAtlasCompatibleTree(t *testing.T) {
 	c.Assert(help, qt.Not(qt.Contains), "ptah-compat atlas")
 }
 
+func TestNewAtlasCommand_VersionPrintsBuildInfo(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"version"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Version: ")
+	c.Assert(out.String(), qt.Contains, "Commit: ")
+	c.Assert(out.String(), qt.Contains, "Go: ")
+	c.Assert(out.String(), qt.Not(qt.Contains), "not implemented")
+}
+
+func TestNewCompatCommand_VersionResolvesAtRoot(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"version"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Version: ")
+	c.Assert(out.String(), qt.Not(qt.Contains), "not implemented")
+}
+
+func TestNewAtlasCommand_LicensePrintsPtahNotice(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"license"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "License: MIT")
+	c.Assert(out.String(), qt.Contains, "independent implementation")
+	c.Assert(out.String(), qt.Contains, "does not use Atlas source code")
+	c.Assert(out.String(), qt.Not(qt.Contains), "not implemented")
+}
+
+func TestNewCompatCommand_LicenseResolvesAtRoot(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"license"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "License: MIT")
+	c.Assert(out.String(), qt.Not(qt.Contains), "not implemented")
+}
+
 func TestNewCompatCommand_UnknownNestedCommandFails(t *testing.T) {
 	c := qt.New(t)
 	cmd := NewCompatCommand("ptah-compat")
