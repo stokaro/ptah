@@ -93,6 +93,7 @@ func TestNewRootCommand_NativeCommandTreeIsRegistered(t *testing.T) {
 		{"migrations", "hash"},
 		{"migrations", "validate"},
 		{"migrations", "lint"},
+		{"viz"},
 	} {
 		found, _, err := cmd.Find(path)
 		c.Assert(err, qt.IsNil)
@@ -115,6 +116,11 @@ func TestNewRootCommand_AtlasLookingRootPathsStayRejected(t *testing.T) {
 			name: "schema inspect",
 			args: []string{"schema", "inspect"},
 			want: `unexpected positional arguments ["inspect"]`,
+		},
+		{
+			name: "schema viz",
+			args: []string{"schema", "viz"},
+			want: `unexpected positional arguments ["viz"]`,
 		},
 		{
 			name: "db inspect",
@@ -261,6 +267,7 @@ func TestZZZRootUsageErrorsExit2WithoutUsage(t *testing.T) {
 		{name: "migrations lint", args: []string{"migrations", "lint", "--bogus-flag"}},
 		{name: "seed", args: []string{"seed", "--bogus-flag"}},
 		{name: "sql lint", args: []string{"sql", "lint", "--bogus-flag"}},
+		{name: "viz", args: []string{"viz", "--bogus-flag"}},
 		{name: "atlas version", args: []string{"atlas", "version", "--bogus-flag"}},
 		{name: "version", args: []string{"version", "--bogus-flag"}},
 	}
