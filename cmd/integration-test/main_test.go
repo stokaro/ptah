@@ -135,8 +135,9 @@ func TestRequestedDatabaseConnectionsNormalizesSQLServerAliases(t *testing.T) {
 func TestDefaultDatabasesIncludeOSSDistributedSQLButNotSQLServer(t *testing.T) {
 	c := qt.New(t)
 
-	defaultDatabases := rootFlags[databasesFlag].GetStringSlice()
+	defaultDatabases, err := newRootCommand().Flags().GetStringSlice(databasesFlag)
 
+	c.Assert(err, qt.IsNil)
 	c.Assert(defaultDatabases, qt.Contains, "cockroachdb")
 	c.Assert(defaultDatabases, qt.Contains, "yugabytedb")
 	c.Assert(defaultDatabases, qt.Not(qt.Contains), "sqlserver")

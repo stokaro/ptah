@@ -1,8 +1,8 @@
 package dbcli
 
 import (
-	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/stokaro/ptah/config/projectconfig"
 )
@@ -12,13 +12,9 @@ const (
 	EnvFlagName = "env"
 )
 
-// NewEnvFlag returns the shared project env selection flag.
-func NewEnvFlag() cobraflags.Flag {
-	return &cobraflags.StringFlag{
-		Name:  EnvFlagName,
-		Value: "",
-		Usage: "Project env name to read from ptah.yaml or atlas.hcl",
-	}
+// RegisterEnvFlag registers the shared project env selection flag.
+func RegisterEnvFlag(flags *pflag.FlagSet, target *string) {
+	flags.StringVar(target, EnvFlagName, "", "Project env name to read from ptah.yaml or atlas.hcl")
 }
 
 // LoadProjectConfig loads project-level configuration for a command. The

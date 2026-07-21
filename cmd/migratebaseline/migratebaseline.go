@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
@@ -32,8 +31,26 @@ const (
 	lockTimeoutFlag = "migration-lock-timeout"
 )
 
+type options struct {
+	dbURL               string
+	migrationsDir       string
+	version             string
+	force               bool
+	dryRun              bool
+	shadowDB            string
+	rootDir             string
+	dirFormat           string
+	atlasEnv            string
+	lockTimeout         string
+	connectTimeout      string
+	migrationsSchema    string
+	migrationsTable     string
+	revisionTableFormat string
+	schemas             string
+}
+
 func NewMigrateBaselineCommand() *cobra.Command {
-	flags := newMigrateBaselineFlags()
+	opts := options{}
 	cmd := &cobra.Command{
 		Use:   "baseline",
 		Short: "Record existing migrations as already applied",
@@ -44,115 +61,61 @@ the initial migration from an empty scratch database, verify the existing
 database matches that migration, then baseline the existing database so future
 ptah migrations up runs apply only new migrations.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return migrateBaselineCommand(cmd, args, flags)
+			return migrateBaselineCommand(cmd, args, &opts)
 		},
 	}
-	cobraflags.RegisterMap(cmd, flags)
+	registerFlags(cmd, &opts)
 	cmdutil.ConfigureCommand(cmd)
 	return cmd
 }
 
-func newMigrateBaselineFlags() map[string]cobraflags.Flag {
-	return map[string]cobraflags.Flag{
-		dbURLFlag: &cobraflags.StringFlag{
-			Name:  dbURLFlag,
-			Value: "",
-			Usage: "Database URL (required). Example: postgres://localhost:5432/dbname",
-		},
-		migrationsFlag: &cobraflags.StringFlag{
-			Name:  migrationsFlag,
-			Value: "",
-			Usage: "Directory containing migration files (required)",
-		},
-		versionFlag: &cobraflags.StringFlag{
-			Name:  versionFlag,
-			Value: "",
-			Usage: "Baseline version. Defaults to the highest version in --migrations-dir",
-		},
-		forceFlag: &cobraflags.BoolFlag{
-			Name:  forceFlag,
-			Value: false,
-			Usage: "Proceed despite existing migration metadata or verification drift",
-		},
-		dryRunFlag: &cobraflags.BoolFlag{
-			Name:  dryRunFlag,
-			Value: false,
-			Usage: "Show the metadata rows that would be inserted without writing them",
-		},
-		shadowDBFlag: &cobraflags.StringFlag{
-			Name:  shadowDBFlag,
-			Value: "",
-			Usage: "Disposable shadow database URL used to verify baselined migrations reproduce the target schema",
-		},
-		rootDirFlag: &cobraflags.StringFlag{
-			Name:  rootDirFlag,
-			Value: "./",
-			Usage: "Root directory to scan for Go entities when --shadow-db is not set",
-		},
-		dirFormatFlag: &cobraflags.StringFlag{
-			Name:  dirFormatFlag,
-			Value: string(migrator.MigrationDirFormatAuto),
-			Usage: "Migration directory format: auto, ptah, or atlas",
-		},
-		atlasEnvFlag: &cobraflags.StringFlag{
-			Name:  atlasEnvFlag,
-			Value: "",
-			Usage: "Value exposed as .Env when rendering Atlas SQL template migrations",
-		},
-		lockTimeoutFlag: &cobraflags.StringFlag{
-			Name:  lockTimeoutFlag,
-			Value: "",
-			Usage: "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m",
-		},
-		dbcli.ConnectTimeoutFlagName:      dbcli.NewConnectTimeoutFlag(),
-		dbcli.MigrationsSchemaFlagName:    dbcli.NewMigrationsSchemaFlag(),
-		dbcli.MigrationsTableFlagName:     dbcli.NewMigrationsTableFlag(),
-		dbcli.RevisionTableFormatFlagName: dbcli.NewRevisionTableFormatFlag(),
-		dbcli.SchemasFlagName:             dbcli.NewSchemasFlag(),
-	}
+func registerFlags(cmd *cobra.Command, opts *options) {
+	flags := cmd.Flags()
+	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
+	flags.StringVar(&opts.migrationsDir, migrationsFlag, "", "Directory containing migration files (required)")
+	flags.StringVar(&opts.version, versionFlag, "", "Baseline version. Defaults to the highest version in --migrations-dir")
+	flags.BoolVar(&opts.force, forceFlag, false, "Proceed despite existing migration metadata or verification drift")
+	flags.BoolVar(&opts.dryRun, dryRunFlag, false, "Show the metadata rows that would be inserted without writing them")
+	flags.StringVar(&opts.shadowDB, shadowDBFlag, "", "Disposable shadow database URL used to verify baselined migrations reproduce the target schema")
+	flags.StringVar(&opts.rootDir, rootDirFlag, "./", "Root directory to scan for Go entities when --shadow-db is not set")
+	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
+	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
+	flags.StringVar(&opts.lockTimeout, lockTimeoutFlag, "", "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m")
+	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
+	dbcli.RegisterMigrationsSchemaFlag(flags, &opts.migrationsSchema)
+	dbcli.RegisterMigrationsTableFlag(flags, &opts.migrationsTable)
+	dbcli.RegisterRevisionTableFormatFlag(flags, &opts.revisionTableFormat)
+	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
 }
 
-func migrateBaselineCommand(cmd *cobra.Command, _ []string, flags map[string]cobraflags.Flag) error {
+func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error {
 	ctx := cmd.Context()
-	dbURL := flags[dbURLFlag].GetString()
-	migrationsDir := flags[migrationsFlag].GetString()
-	versionValue := flags[versionFlag].GetString()
-	force := flags[forceFlag].GetBool()
-	dryRun := flags[dryRunFlag].GetBool()
-	shadowDB := flags[shadowDBFlag].GetString()
-	rootDir := flags[rootDirFlag].GetString()
-	dirFormatValue := flags[dirFormatFlag].GetString()
-	atlasEnv := flags[atlasEnvFlag].GetString()
-	lockTimeoutValue := flags[lockTimeoutFlag].GetString()
-	migrationsSchema := flags[dbcli.MigrationsSchemaFlagName].GetString()
-	migrationsTable := flags[dbcli.MigrationsTableFlagName].GetString()
-	revisionFormatValue := flags[dbcli.RevisionTableFormatFlagName].GetString()
-	schemas := dbcli.ParseSchemas(flags[dbcli.SchemasFlagName].GetString())
+	schemas := dbcli.ParseSchemas(opts.schemas)
 
-	if dbURL == "" {
+	if opts.dbURL == "" {
 		return fmt.Errorf("database URL is required")
 	}
-	if migrationsDir == "" {
+	if opts.migrationsDir == "" {
 		return fmt.Errorf("migrations directory is required")
 	}
 
-	dirFormat, err := migrator.ParseMigrationDirFormat(dirFormatValue)
+	dirFormat, err := migrator.ParseMigrationDirFormat(opts.dirFormat)
 	if err != nil {
 		return err
 	}
-	revisionFormat, err := migrator.ParseRevisionTableFormat(revisionFormatValue)
+	revisionFormat, err := migrator.ParseRevisionTableFormat(opts.revisionTableFormat)
 	if err != nil {
 		return err
 	}
 	providerOpts := []migrator.FSProviderOption{
 		migrator.WithMigrationDirFormat(dirFormat),
-		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: atlasEnv}),
+		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: opts.atlasEnv}),
 	}
-	provider, err := migrator.NewFSMigrationProvider(os.DirFS(migrationsDir), providerOpts...)
+	provider, err := migrator.NewFSMigrationProvider(os.DirFS(opts.migrationsDir), providerOpts...)
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
-	version, err := baselineVersion(versionValue, provider.Migrations())
+	version, err := baselineVersion(opts.version, provider.Migrations())
 	if err != nil {
 		return err
 	}
@@ -161,47 +124,47 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, flags map[string]cob
 		return fmt.Errorf("no migrations found at or below baseline version %d", version)
 	}
 
-	connectTimeout, err := dbcli.ParseConnectTimeout(flags[dbcli.ConnectTimeoutFlagName].GetString())
+	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
 	if err != nil {
 		return err
 	}
-	lockTimeout, err := migrator.ParseMigrationLockTimeout(lockTimeoutValue)
+	lockTimeout, err := migrator.ParseMigrationLockTimeout(opts.lockTimeout)
 	if err != nil {
 		return err
 	}
 	connectCtx, cancelConnect := dbcli.ConnectContext(ctx, connectTimeout)
-	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
+	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.dbURL)
 	cancelConnect()
 	if err != nil {
 		return fmt.Errorf("error connecting to database: %w", err)
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	conn.SchemaWriter().SetDryRun(dryRun)
+	conn.SchemaWriter().SetDryRun(opts.dryRun)
 	mig := migrator.NewMigrator(conn, provider).
-		WithMigrationsTable(migrationsSchema, migrationsTable).
+		WithMigrationsTable(opts.migrationsSchema, opts.migrationsTable).
 		WithRevisionTableFormat(revisionFormat).
 		WithMigrationLockTimeout(lockTimeout)
-	if dryRun {
-		printDryRun(dbURL, migrationsDir, version, mig, rows)
+	if opts.dryRun {
+		printDryRun(opts.dbURL, opts.migrationsDir, version, mig, rows)
 		return nil
 	}
 
 	if err := verifyBaseline(ctx, baselineVerifyOptions{
-		dbURL:          dbURL,
-		shadowDB:       shadowDB,
-		rootDir:        rootDir,
+		dbURL:          opts.dbURL,
+		shadowDB:       opts.shadowDB,
+		rootDir:        opts.rootDir,
 		version:        version,
-		force:          force,
+		force:          opts.force,
 		conn:           conn,
 		connectTimeout: connectTimeout,
 		schemas:        schemas,
-		migrationsDir:  migrationsDir,
+		migrationsDir:  opts.migrationsDir,
 		providerOpts:   providerOpts,
 	}); err != nil {
 		return err
 	}
-	if err := mig.BaselineWithOptions(ctx, migrator.BaselineOptions{Version: version, Force: force}); err != nil {
+	if err := mig.BaselineWithOptions(ctx, migrator.BaselineOptions{Version: version, Force: opts.force}); err != nil {
 		return err
 	}
 

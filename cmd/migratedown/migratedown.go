@@ -6,7 +6,6 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
@@ -16,23 +15,6 @@ import (
 	"github.com/stokaro/ptah/internal/preflight"
 	"github.com/stokaro/ptah/migration/migrator"
 )
-
-var migrateDownCmd = &cobra.Command{
-	Use:   "down",
-	Short: "Roll back migrations to a specific version",
-	Long: `Roll back database migrations to a specific target version.
-
-This command applies down migrations to revert the database schema to an earlier
-version. All migrations with versions higher than the target version will be
-rolled back in reverse order.
-
-Each migration rollback is run in a transaction, so if any rollback fails, it will
-be rolled back and the migration process will stop.
-
-⚠️  WARNING: This operation can result in data loss! Make sure you have backups
-before running down migrations in production.`,
-	RunE: migrateDownCommand,
-}
 
 const (
 	dbURLFlag                = "db-url"
@@ -53,129 +35,101 @@ const (
 	webhookFlag              = "webhook"
 )
 
-var migrateDownFlags = map[string]cobraflags.Flag{
-	dbURLFlag: &cobraflags.StringFlag{
-		Name:  dbURLFlag,
-		Value: "",
-		Usage: "Database URL (required). Example: postgres://localhost:5432/dbname",
-	},
-	migrationsFlag: &cobraflags.StringFlag{
-		Name:  migrationsFlag,
-		Value: "",
-		Usage: "Directory containing migration files (required)",
-	},
-	targetFlag: &cobraflags.StringFlag{
-		Name:  targetFlag,
-		Value: "0",
-		Usage: "Target version to migrate down to (required)",
-	},
-	dirFormatFlag: &cobraflags.StringFlag{
-		Name:  dirFormatFlag,
-		Value: string(migrator.MigrationDirFormatAuto),
-		Usage: "Migration directory format: auto, ptah, or atlas",
-	},
-	atlasEnvFlag: &cobraflags.StringFlag{
-		Name:  atlasEnvFlag,
-		Value: "",
-		Usage: "Value exposed as .Env when rendering Atlas SQL template migrations",
-	},
-	dryRunFlag: &cobraflags.BoolFlag{
-		Name:  dryRunFlag,
-		Value: false,
-		Usage: "Show what migrations would be rolled back without actually running them",
-	},
-	verboseFlag: &cobraflags.BoolFlag{
-		Name:  verboseFlag,
-		Value: false,
-		Usage: "Enable verbose output",
-	},
-	confirmFlag: &cobraflags.BoolFlag{
-		Name:  confirmFlag,
-		Value: false,
-		Usage: "Skip confirmation prompt (use with caution!)",
-	},
-	execOrderFlag: &cobraflags.StringFlag{
-		Name:  execOrderFlag,
-		Value: string(migrator.ExecOrderLinear),
-		Usage: "Execution order policy for pending migrations below the current version: linear, linear-skip, or non-linear",
-	},
-	migrationLockTimeoutFlag: &cobraflags.StringFlag{
-		Name:  migrationLockTimeoutFlag,
-		Value: "",
-		Usage: "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m",
-	},
-	lockTimeoutFlag: &cobraflags.StringFlag{
-		Name:  lockTimeoutFlag,
-		Value: "",
-		Usage: "Default per-migration lock timeout, such as 3s or 500ms",
-	},
-	statementTimeoutFlag: &cobraflags.StringFlag{
-		Name:  statementTimeoutFlag,
-		Value: "",
-		Usage: "Default per-migration statement timeout, such as 30s or 2m",
-	},
-	preDownHookFlag: &cobraflags.StringFlag{
-		Name:  preDownHookFlag,
-		Value: "",
-		Usage: "Shell command to run before rolling back migrations; aborts unless it exits 0",
-	},
-	pgDumpToFlag: &cobraflags.StringFlag{
-		Name:  pgDumpToFlag,
-		Value: "",
-		Usage: "Directory where pg_dump writes a custom-format backup before rolling back migrations",
-	},
-	mySQLDumpToFlag: &cobraflags.StringFlag{
-		Name:  mySQLDumpToFlag,
-		Value: "",
-		Usage: "Directory where mysqldump writes a SQL backup before rolling back migrations",
-	},
-	webhookFlag: &cobraflags.StringFlag{
-		Name:  webhookFlag,
-		Value: "",
-		Usage: "Webhook URL to POST migration metadata before rolling back migrations; must return HTTP 200",
-	},
-	dbcli.ConnectTimeoutFlagName:      dbcli.NewConnectTimeoutFlag(),
-	dbcli.ConfigFlagName:              dbcli.NewConfigFlag(),
-	dbcli.EnvFlagName:                 dbcli.NewEnvFlag(),
-	dbcli.MigrationsSchemaFlagName:    dbcli.NewMigrationsSchemaFlag(),
-	dbcli.MigrationsTableFlagName:     dbcli.NewMigrationsTableFlag(),
-	dbcli.RevisionTableFormatFlagName: dbcli.NewRevisionTableFormatFlag(),
+type options struct {
+	dbURL                string
+	migrationsDir        string
+	target               string
+	dirFormat            string
+	atlasEnv             string
+	dryRun               bool
+	verbose              bool
+	skipConfirm          bool
+	execOrder            string
+	migrationLockTimeout string
+	lockTimeout          string
+	statementTimeout     string
+	preDownHook          string
+	pgDumpTo             string
+	mySQLDumpTo          string
+	webhook              string
+	connectTimeout       string
+	configPath           string
+	envName              string
+	migrationsSchema     string
+	migrationsTable      string
+	revisionTableFormat  string
 }
-
-var migrateDownFlagsRegistered bool
 
 func NewMigrateDownCommand() *cobra.Command {
-	if !migrateDownFlagsRegistered {
-		cobraflags.RegisterMap(migrateDownCmd, migrateDownFlags)
-		migrateDownFlagsRegistered = true
+	opts := options{}
+	cmd := &cobra.Command{
+		Use:   "down",
+		Short: "Roll back migrations to a specific version",
+		Long: `Roll back database migrations to a specific target version.
+
+This command applies down migrations to revert the database schema to an earlier
+version. All migrations with versions higher than the target version will be
+rolled back in reverse order.
+
+Each migration rollback is run in a transaction, so if any rollback fails, it will
+be rolled back and the migration process will stop.
+
+⚠️  WARNING: This operation can result in data loss! Make sure you have backups
+before running down migrations in production.`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return migrateDownCommand(cmd, &opts)
+		},
 	}
-	cmdutil.ConfigureCommand(migrateDownCmd)
-	return migrateDownCmd
+	registerFlags(cmd, &opts)
+	cmdutil.ConfigureCommand(cmd)
+	return cmd
 }
 
-func migrateDownCommand(cmd *cobra.Command, _ []string) error {
-	dbURL := migrateDownFlags[dbURLFlag].GetString()
-	migrationsDir := migrateDownFlags[migrationsFlag].GetString()
-	targetVersionValue := migrateDownFlags[targetFlag].GetString()
-	dirFormatValue := migrateDownFlags[dirFormatFlag].GetString()
-	atlasEnv := migrateDownFlags[atlasEnvFlag].GetString()
-	dryRun := migrateDownFlags[dryRunFlag].GetBool()
-	verbose := migrateDownFlags[verboseFlag].GetBool()
-	skipConfirm := migrateDownFlags[confirmFlag].GetBool()
-	execOrderValue := migrateDownFlags[execOrderFlag].GetString()
-	migrationLockTimeoutValue := migrateDownFlags[migrationLockTimeoutFlag].GetString()
-	lockTimeout := migrateDownFlags[lockTimeoutFlag].GetString()
-	statementTimeout := migrateDownFlags[statementTimeoutFlag].GetString()
-	preDownHook := migrateDownFlags[preDownHookFlag].GetString()
-	pgDumpTo := migrateDownFlags[pgDumpToFlag].GetString()
-	mySQLDumpTo := migrateDownFlags[mySQLDumpToFlag].GetString()
-	webhook := migrateDownFlags[webhookFlag].GetString()
-	migrationsSchema := migrateDownFlags[dbcli.MigrationsSchemaFlagName].GetString()
-	migrationsTable := migrateDownFlags[dbcli.MigrationsTableFlagName].GetString()
-	revisionFormatValue := migrateDownFlags[dbcli.RevisionTableFormatFlagName].GetString()
-	configPath := migrateDownFlags[dbcli.ConfigFlagName].GetString()
+func registerFlags(cmd *cobra.Command, opts *options) {
+	flags := cmd.Flags()
+	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
+	flags.StringVar(&opts.migrationsDir, migrationsFlag, "", "Directory containing migration files (required)")
+	flags.StringVar(&opts.target, targetFlag, "0", "Target version to migrate down to (required)")
+	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
+	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
+	flags.BoolVar(&opts.dryRun, dryRunFlag, false, "Show what migrations would be rolled back without actually running them")
+	flags.BoolVar(&opts.verbose, verboseFlag, false, "Enable verbose output")
+	flags.BoolVar(&opts.skipConfirm, confirmFlag, false, "Skip confirmation prompt (use with caution!)")
+	flags.StringVar(&opts.execOrder, execOrderFlag, string(migrator.ExecOrderLinear), "Execution order policy for pending migrations below the current version: linear, linear-skip, or non-linear")
+	flags.StringVar(&opts.migrationLockTimeout, migrationLockTimeoutFlag, "", "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m")
+	flags.StringVar(&opts.lockTimeout, lockTimeoutFlag, "", "Default per-migration lock timeout, such as 3s or 500ms")
+	flags.StringVar(&opts.statementTimeout, statementTimeoutFlag, "", "Default per-migration statement timeout, such as 30s or 2m")
+	flags.StringVar(&opts.preDownHook, preDownHookFlag, "", "Shell command to run before rolling back migrations; aborts unless it exits 0")
+	flags.StringVar(&opts.pgDumpTo, pgDumpToFlag, "", "Directory where pg_dump writes a custom-format backup before rolling back migrations")
+	flags.StringVar(&opts.mySQLDumpTo, mySQLDumpToFlag, "", "Directory where mysqldump writes a SQL backup before rolling back migrations")
+	flags.StringVar(&opts.webhook, webhookFlag, "", "Webhook URL to POST migration metadata before rolling back migrations; must return HTTP 200")
+	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
+	dbcli.RegisterConfigFlag(flags, &opts.configPath)
+	dbcli.RegisterEnvFlag(flags, &opts.envName)
+	dbcli.RegisterMigrationsSchemaFlag(flags, &opts.migrationsSchema)
+	dbcli.RegisterMigrationsTableFlag(flags, &opts.migrationsTable)
+	dbcli.RegisterRevisionTableFormatFlag(flags, &opts.revisionTableFormat)
+}
 
-	projectCfg, err := dbcli.LoadProjectConfig(cmd, configPath)
+func migrateDownCommand(cmd *cobra.Command, opts *options) error {
+	dbURL := opts.dbURL
+	migrationsDir := opts.migrationsDir
+	targetVersionValue := opts.target
+	dirFormatValue := opts.dirFormat
+	atlasEnv := opts.atlasEnv
+	execOrderValue := opts.execOrder
+	migrationLockTimeoutValue := opts.migrationLockTimeout
+	lockTimeout := opts.lockTimeout
+	statementTimeout := opts.statementTimeout
+	preDownHook := opts.preDownHook
+	pgDumpTo := opts.pgDumpTo
+	mySQLDumpTo := opts.mySQLDumpTo
+	webhook := opts.webhook
+	migrationsSchema := opts.migrationsSchema
+	migrationsTable := opts.migrationsTable
+	revisionFormatValue := opts.revisionTableFormat
+
+	projectCfg, err := dbcli.LoadProjectConfig(cmd, opts.configPath)
 	if err != nil {
 		return err
 	}
@@ -194,7 +148,7 @@ func migrateDownCommand(cmd *cobra.Command, _ []string) error {
 	migrationsSchema = dbcli.EffectiveString(cmd, dbcli.MigrationsSchemaFlagName, migrationsSchema, projectCfg.Migration.RevisionsSchema)
 	migrationsTable = dbcli.EffectiveString(cmd, dbcli.MigrationsTableFlagName, migrationsTable, projectCfg.Migration.RevisionsTable)
 	revisionFormatValue = dbcli.EffectiveString(cmd, dbcli.RevisionTableFormatFlagName, revisionFormatValue, projectCfg.Migration.RevisionFormat)
-	connectTimeoutValue := dbcli.EffectiveString(cmd, dbcli.ConnectTimeoutFlagName, migrateDownFlags[dbcli.ConnectTimeoutFlagName].GetString(), projectCfg.Migration.ConnectTimeout)
+	connectTimeoutValue := dbcli.EffectiveString(cmd, dbcli.ConnectTimeoutFlagName, opts.connectTimeout, projectCfg.Migration.ConnectTimeout)
 
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
@@ -221,7 +175,7 @@ func migrateDownCommand(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	if verbose {
+	if opts.verbose {
 		fmt.Printf("Connecting to database: %s\n", dbschema.FormatDatabaseURL(dbURL))
 	}
 
@@ -252,9 +206,9 @@ func migrateDownCommand(cmd *cobra.Command, _ []string) error {
 	defer dbschema.CloseAndWarn(conn)
 
 	// Set dry run mode if requested
-	conn.SchemaWriter().SetDryRun(dryRun)
+	conn.SchemaWriter().SetDryRun(opts.dryRun)
 
-	if dryRun {
+	if opts.dryRun {
 		fmt.Println("=== DRY RUN MODE ===")
 		fmt.Println("No actual changes will be made to the database")
 		fmt.Println()
@@ -273,14 +227,14 @@ func migrateDownCommand(cmd *cobra.Command, _ []string) error {
 
 	// Online-DDL routing works for down migrations too: a rollback ALTER on
 	// a large table is just as lock-heavy as the forward one.
-	onlineCfg, err := dbcli.LoadOnlineDDLConfigForEnv(configPath, projectCfg.EnvName)
+	onlineCfg, err := dbcli.LoadOnlineDDLConfigForEnv(opts.configPath, projectCfg.EnvName)
 	if err != nil {
 		return err
 	}
 	if onlineCfg.Enabled() {
 		fmt.Printf("Online DDL: tool=%s threshold_rows=%d\n", onlineCfg.Tool, onlineCfg.ThresholdRows)
 	}
-	interceptor := onlineddl.New(*onlineCfg).WithDryRun(dryRun)
+	interceptor := onlineddl.New(*onlineCfg).WithDryRun(opts.dryRun)
 
 	// Create migrator to access applied migrations
 	mig, err := migrator.NewFSMigrator(
@@ -329,7 +283,7 @@ func migrateDownCommand(cmd *cobra.Command, _ []string) error {
 
 	fmt.Printf("Migrations to roll back: %d\n", len(migrationsToRollback))
 
-	if verbose {
+	if opts.verbose {
 		fmt.Printf("Will roll back from version %d to %d\n", status.CurrentVersion, targetVersion)
 		if len(migrationsToRollback) > 0 {
 			fmt.Printf("Specific migrations to rollback: %v\n", migrationsToRollback)
@@ -339,7 +293,7 @@ func migrateDownCommand(cmd *cobra.Command, _ []string) error {
 	fmt.Println()
 
 	// Safety confirmation (unless skipped or dry run)
-	if !dryRun && !skipConfirm {
+	if !opts.dryRun && !opts.skipConfirm {
 		fmt.Println("⚠️  WARNING: Rolling back migrations can result in data loss!")
 		fmt.Printf("This will roll back the database from version %d to version %d.\n", status.CurrentVersion, targetVersion)
 		if len(migrationsToRollback) > 0 {
@@ -357,7 +311,7 @@ func migrateDownCommand(cmd *cobra.Command, _ []string) error {
 		fmt.Println()
 	}
 
-	preflightHook := dbcli.LockedMigrationPreflightHook(dryRun, preflight.Options{
+	preflightHook := dbcli.LockedMigrationPreflightHook(opts.dryRun, preflight.Options{
 		Direction:          preflight.DirectionDown,
 		DatabaseURL:        dbURL,
 		DisplayDatabaseURL: dbschema.FormatDatabaseURL(dbURL),
@@ -381,7 +335,7 @@ func migrateDownCommand(cmd *cobra.Command, _ []string) error {
 	}
 
 	fmt.Println()
-	if dryRun {
+	if opts.dryRun {
 		fmt.Println("✅ Dry run completed successfully!")
 		fmt.Printf("Would have rolled back to version: %d\n", targetVersion)
 		if len(migrationsToRollback) > 0 {

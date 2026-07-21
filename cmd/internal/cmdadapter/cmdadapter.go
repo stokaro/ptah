@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"github.com/stokaro/ptah/cmd/internal/cmdflags"
 )
 
 const envPrefix = "PTAH"
@@ -126,7 +127,7 @@ func newForwardCommandWithArgsMapper(
 }
 
 func initializeForwardedTarget(target *cobra.Command) {
-	cobraflags.PostInitCommands(envPrefix, make(map[*pflag.Flag]bool), target)
+	cmdflags.InitializeEnv(envPrefix, target)
 	normalizeEnvUsage(target)
 }
 

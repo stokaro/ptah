@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
@@ -15,60 +14,58 @@ import (
 	"github.com/stokaro/ptah/internal/convert/dbschematogo"
 )
 
-var readDBCmd = &cobra.Command{
-	Use:   "read",
-	Short: "Read schema from database",
-	Long: `Read and display the current schema from the specified database.
-	
-This command connects to the database and reads the existing schema,
-displaying tables, columns, indexes, and constraints in a formatted output.`,
-	RunE: readDBCommand,
-}
-
 const (
 	dbURLFlag = "db-url"
 )
 
-var readDBFlags = map[string]cobraflags.Flag{
-	dbURLFlag: &cobraflags.StringFlag{
-		Name:  dbURLFlag,
-		Value: "",
-		Usage: "Database URL (required). Example: postgres://localhost:5432/dbname",
-	},
-	dbcli.ConnectTimeoutFlagName: dbcli.NewConnectTimeoutFlag(),
-	dbcli.SchemasFlagName:        dbcli.NewSchemasFlag(),
+type options struct {
+	dbURL          string
+	connectTimeout string
+	schemas        string
 }
-
-var readDBFlagsRegistered bool
 
 func NewReadDBCommand() *cobra.Command {
-	if !readDBFlagsRegistered {
-		cobraflags.RegisterMap(readDBCmd, readDBFlags)
-		readDBFlagsRegistered = true
+	opts := options{}
+	cmd := &cobra.Command{
+		Use:   "read",
+		Short: "Read schema from database",
+		Long: `Read and display the current schema from the specified database.
+
+This command connects to the database and reads the existing schema,
+displaying tables, columns, indexes, and constraints in a formatted output.`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return readDBCommand(cmd, &opts)
+		},
 	}
-	cmdutil.ConfigureCommand(readDBCmd)
-	return readDBCmd
+	registerFlags(cmd, &opts)
+	cmdutil.ConfigureCommand(cmd)
+	return cmd
 }
 
-func readDBCommand(_ *cobra.Command, _ []string) error {
-	dbURL := readDBFlags[dbURLFlag].GetString()
+func registerFlags(cmd *cobra.Command, opts *options) {
+	flags := cmd.Flags()
+	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
+	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
+	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
+}
 
-	if dbURL == "" {
+func readDBCommand(_ *cobra.Command, opts *options) error {
+	if opts.dbURL == "" {
 		return fmt.Errorf("database URL is required")
 	}
 
-	fmt.Printf("Reading schema from database: %s\n", dbschema.FormatDatabaseURL(dbURL))
+	fmt.Printf("Reading schema from database: %s\n", dbschema.FormatDatabaseURL(opts.dbURL))
 	fmt.Println("=== DATABASE SCHEMA ===")
 	fmt.Println()
 
-	connectTimeout, err := dbcli.ParseConnectTimeout(readDBFlags[dbcli.ConnectTimeoutFlagName].GetString())
+	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
 	if err != nil {
 		return err
 	}
 
 	// Connect to the database
 	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
-	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
+	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.dbURL)
 	cancelConnect()
 	if err != nil {
 		fmt.Printf("Error connecting to database: %v\n", err)
@@ -91,7 +88,7 @@ func readDBCommand(_ *cobra.Command, _ []string) error {
 	fmt.Println()
 
 	// Read the schema
-	schemas := dbcli.ParseSchemas(readDBFlags[dbcli.SchemasFlagName].GetString())
+	schemas := dbcli.ParseSchemas(opts.schemas)
 	schema, err := dbschema.ReadSchemaWithSchemas(conn, schemas)
 	if err != nil {
 		return fmt.Errorf("error reading schema: %w", err)

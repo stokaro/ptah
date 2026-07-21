@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
@@ -19,69 +18,60 @@ import (
 	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
-var compareCmd = &cobra.Command{
-	Use:   "compare",
-	Short: "Compare generated schema with database",
-	Long: `Compare the schema generated from Go entities with the current database schema.
-	
-This command shows differences between what your Go entities define and what
-currently exists in the database, helping you identify what needs to be migrated.`,
-	RunE: compareCommand,
-}
-
 const (
 	rootDirFlag  = "root-dir"
 	dbURLFlag    = "db-url"
 	exitCodeFlag = "exit-code"
 )
 
-var compareFlags = map[string]cobraflags.Flag{
-	rootDirFlag: &cobraflags.StringFlag{
-		Name:  rootDirFlag,
-		Value: "./",
-		Usage: "Root directory to scan for Go entities",
-	},
-	dbURLFlag: &cobraflags.StringFlag{
-		Name:  dbURLFlag,
-		Value: "",
-		Usage: "Database URL (required). Example: postgres://localhost:5432/dbname",
-	},
-	exitCodeFlag: &cobraflags.BoolFlag{
-		Name:  exitCodeFlag,
-		Value: false,
-		Usage: "Exit with 1 when the schema diff is non-empty",
-	},
-	dbcli.ConnectTimeoutFlagName: dbcli.NewConnectTimeoutFlag(),
-	dbcli.SchemasFlagName:        dbcli.NewSchemasFlag(),
+type options struct {
+	rootDir        string
+	dbURL          string
+	exitOnDiff     bool
+	connectTimeout string
+	schemas        string
 }
-
-var compareFlagsRegistered bool
 
 func NewCompareCommand() *cobra.Command {
-	if !compareFlagsRegistered {
-		cobraflags.RegisterMap(compareCmd, compareFlags)
-		compareFlagsRegistered = true
+	opts := options{}
+	cmd := &cobra.Command{
+		Use:   "compare",
+		Short: "Compare generated schema with database",
+		Long: `Compare the schema generated from Go entities with the current database schema.
+
+This command shows differences between what your Go entities define and what
+currently exists in the database, helping you identify what needs to be migrated.`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return compareCommand(cmd, &opts)
+		},
 	}
-	cmdutil.ConfigureCommand(compareCmd)
-	return compareCmd
+	registerFlags(cmd, &opts)
+	cmdutil.ConfigureCommand(cmd)
+	return cmd
 }
 
-func compareCommand(cmd *cobra.Command, _ []string) error {
-	out := cmd.OutOrStdout()
-	rootDir := compareFlags[rootDirFlag].GetString()
-	dbURL := compareFlags[dbURLFlag].GetString()
-	exitOnDiff := compareFlags[exitCodeFlag].GetBool()
+func registerFlags(cmd *cobra.Command, opts *options) {
+	flags := cmd.Flags()
+	flags.StringVar(&opts.rootDir, rootDirFlag, "./", "Root directory to scan for Go entities")
+	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
+	flags.BoolVar(&opts.exitOnDiff, exitCodeFlag, false, "Exit with 1 when the schema diff is non-empty")
+	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
+	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
+}
 
-	if dbURL == "" {
+func compareCommand(cmd *cobra.Command, opts *options) error {
+	out := cmd.OutOrStdout()
+
+	if opts.dbURL == "" {
 		return fmt.Errorf("database URL is required")
 	}
 
-	fmt.Fprintf(out, "Comparing schema from %s with database %s\n", rootDir, dbschema.FormatDatabaseURL(dbURL))
+	fmt.Fprintf(out, "Comparing schema from %s with database %s\n", opts.rootDir, dbschema.FormatDatabaseURL(opts.dbURL))
 	fmt.Fprintln(out, "=== SCHEMA COMPARISON ===")
 	fmt.Fprintln(out)
 
 	// 1. Parse Go entities
-	absPath, err := filepath.Abs(rootDir)
+	absPath, err := filepath.Abs(opts.rootDir)
 	if err != nil {
 		return fmt.Errorf("error resolving path: %w", err)
 	}
@@ -92,20 +82,20 @@ func compareCommand(cmd *cobra.Command, _ []string) error {
 	}
 
 	// 2. Connect to database and read schema
-	connectTimeout, err := dbcli.ParseConnectTimeout(compareFlags[dbcli.ConnectTimeoutFlagName].GetString())
+	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
 	if err != nil {
 		return err
 	}
 
 	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
-	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
+	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.dbURL)
 	cancelConnect()
 	if err != nil {
 		return fmt.Errorf("error connecting to database: %w", err)
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	schemas := dbcli.ParseSchemas(compareFlags[dbcli.SchemasFlagName].GetString())
+	schemas := dbcli.ParseSchemas(opts.schemas)
 	dbSchema, err := dbschema.ReadSchemaWithSchemas(conn, schemas)
 	if err != nil {
 		return fmt.Errorf("error reading database schema: %w", err)
@@ -122,7 +112,7 @@ func compareCommand(cmd *cobra.Command, _ []string) error {
 	}
 	fmt.Fprint(out, output)
 
-	if exitOnDiff {
+	if opts.exitOnDiff {
 		return nonEmptyDiffExitCode(diff)
 	}
 	return nil
