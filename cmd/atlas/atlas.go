@@ -149,7 +149,6 @@ func newAtlasSchemaCommand() *cobra.Command {
 				atlasUnsupportedString("format", "", "Atlas Go template output format"),
 			},
 		},
-		{use: "fmt", short: "Format schema files", native: ""},
 		{
 			use:     "clean",
 			short:   "Clean database schema objects",
@@ -164,6 +163,7 @@ func newAtlasSchemaCommand() *cobra.Command {
 	} {
 		cmd.AddCommand(newAtlasAdapterCommand("schema", verb))
 	}
+	cmd.AddCommand(newAtlasSchemaFmtCommand())
 	return cmd
 }
 
