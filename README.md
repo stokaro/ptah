@@ -78,6 +78,10 @@ capabilities include:
 - 🪄 **Migration Generation**
   Automatically generates `up` and `down` SQL migrations to bring the database in sync.
 
+- ✅ **Pull Request Migration Checks**
+  Provides an in-repository composite GitHub Action that comments generated
+  migration SQL, safety verdicts, and lint findings on pull requests.
+
 - 🚀 **Migration Execution**
   Applies versioned migrations in both directions, tracking state via a migrations table.
 
@@ -921,7 +925,28 @@ defaults, and online-DDL routing. Project config precedence is explicit CLI
 flags, then `PTAH_*` environment variables, then `atlas.hcl`, then `ptah.yaml`,
 then built-in defaults. Use `--env <name>` when multiple env blocks exist; a
 single env is selected automatically. See [Ptah Project Config](docs/project_config.md)
-and [Atlas Project Config](docs/atlas_project_config.md).
+and [Atlas Project Config](docs/atlas_project_config.md). See
+[Ptah GitHub Action](docs/github_action.md) for pull request migration-plan
+comments and safety gates.
+
+Minimal pull request workflow:
+
+```yaml
+permissions:
+  checks: write
+  contents: read
+  issues: write
+  pull-requests: read
+
+steps:
+  - uses: actions/checkout@v7
+  - uses: stokaro/ptah/.github/actions/ptah@master
+    with:
+      dir: ./internal/models
+      db-url: ${{ secrets.PTAH_DATABASE_URL }}
+      dialect: postgres
+      migration-dir: ./migrations
+```
 
 `--dir-format` controls only migration-file discovery. To continue a database
 that already uses Atlas's runtime history table, pass `--revision-format atlas`
