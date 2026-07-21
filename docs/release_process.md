@@ -50,6 +50,7 @@ Ptah releases are produced by GoReleaser from annotated version tags.
    brew install stokaro/ptah/ptah
    ptah version
    ptah-ls --version
+   ptah-compat migrate --help
    ```
 
 ## Local Snapshot
@@ -60,10 +61,13 @@ Use a snapshot release to validate packaging without publishing:
 goreleaser release --snapshot --clean --skip=sign,docker
 ./dist/ptah_darwin_arm64*/ptah version
 ./dist/ptah_darwin_arm64*/ptah-ls --version
+./dist/ptah_darwin_arm64*/ptah-compat migrate --help
+ln -sf "$(pwd)"/dist/ptah_darwin_arm64*/ptah-compat /tmp/atlas
+/tmp/atlas schema inspect --help
 ```
 
 Snapshot releases should print snapshot version metadata, the current commit,
-the build date, Go version, and platform for both shipped binaries.
+the build date, Go version, and platform for the shipped binaries.
 
 If `syft` is not installed locally, skip SBOM generation for the local packaging
 smoke test only:

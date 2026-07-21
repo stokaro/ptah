@@ -55,7 +55,12 @@ func NewRootCommand() *cobra.Command {
 // Execute runs the root command and exits the process with the command's
 // declared exit-code contract.
 func Execute(args ...string) {
-	cmd := NewRootCommand()
+	ExecuteCommand(NewRootCommand(), args...)
+}
+
+// ExecuteCommand runs cmd and exits the process with Ptah's CLI exit-code
+// contract.
+func ExecuteCommand(cmd *cobra.Command, args ...string) {
 	cmd.SetArgs(args)
 
 	err := executeWithRecovery(cmd)

@@ -39,19 +39,26 @@ root-level command spellings are removed instead of preserved.
 | `ptah seed` | Seed files applied or already applied. | Not used. | Usage error, protected environment rejection, connection failure, invalid seed files, or seed execution failure. |
 | `ptah version` | Version information printed. | Not used. | Usage error. |
 
-## Atlas Command Surface
+## Atlas-Compatible Command Surfaces
 
-Commands under `ptah atlas <command> ...` translate implemented Atlas-compatible flags and then delegate to the matching native command. Their exit codes therefore follow the native command contract:
+Commands under `ptah atlas <command> ...`, `ptah-compat <command> ...`, and a
+copied or symlinked executable named `atlas` translate implemented
+Atlas-compatible flags and then delegate to the matching native command. Their
+exit codes therefore follow the native command contract:
 
 | Atlas-compatible command | Native command |
 | --- | --- |
 | `ptah atlas migrate apply` | `ptah migrations up` |
+| `ptah-compat migrate apply` / `atlas migrate apply` | `ptah migrations up` |
 | `ptah atlas migrate down` | `ptah migrations down` |
+| `ptah-compat migrate down` / `atlas migrate down` | `ptah migrations down` |
 | `ptah atlas migrate status` | `ptah migrations status` |
+| `ptah-compat migrate status` / `atlas migrate status` | `ptah migrations status` |
 | `ptah atlas migrate hash` | `ptah migrations hash` |
 | `ptah atlas migrate validate` | `ptah migrations validate` |
 | `ptah atlas migrate lint` | `ptah migrations lint` |
 | `ptah atlas schema inspect` | `ptah db read` |
+| `ptah-compat schema inspect` / `atlas schema inspect` | `ptah db read` |
 | `ptah atlas schema diff` | `ptah schema compare` |
 
 Unsupported Atlas-compatible flags are rejected explicitly and exit `2`.

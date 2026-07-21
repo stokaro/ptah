@@ -3,6 +3,9 @@ package atlas
 
 import (
 	"fmt"
+	"os"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -10,6 +13,7 @@ import (
 	"github.com/stokaro/ptah/cmd/compare"
 	"github.com/stokaro/ptah/cmd/dropall"
 	"github.com/stokaro/ptah/cmd/internal/cmdadapter"
+	"github.com/stokaro/ptah/cmd/internal/cmdflags"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/lint"
 	"github.com/stokaro/ptah/cmd/migrate"
@@ -58,14 +62,33 @@ type parsedAtlasFlag struct {
 
 // NewAtlasCommand returns the Atlas command namespace.
 func NewAtlasCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "atlas",
-		Short: "Atlas OSS command namespace",
-		Long: `Atlas OSS command namespace.
+	return newAtlasCommand("atlas", "Atlas OSS command namespace", `Atlas OSS command namespace.
 
 These commands reserve the Atlas OSS CLI surface under Ptah. Commands that have
 an existing Ptah equivalent forward to that native command while keeping the
-native Ptah command tree separate for future redesign.`,
+native Ptah command tree separate for future redesign.`)
+}
+
+// NewCompatCommand returns an Atlas-compatible root command.
+func NewCompatCommand(use string) *cobra.Command {
+	use = strings.TrimSpace(use)
+	if use == "" {
+		use = "ptah-compat"
+	}
+	cmd := newAtlasCommand(use, "Atlas-compatible Ptah command tree", `Atlas-compatible Ptah command tree.
+
+This executable exposes Atlas-style commands at process root for scripts that
+expect commands such as migrate apply or schema inspect. Runtime behavior is the
+same compatibility layer used by ptah atlas <command> ...`)
+	cmdflags.InstallEnvBinding("PTAH", cmd)
+	return cmd
+}
+
+func newAtlasCommand(use, short, long string) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   use,
+		Short: short,
+		Long:  long,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
@@ -86,7 +109,7 @@ func newAtlasSchemaCommand() *cobra.Command {
 			return cmd.Help()
 		},
 	}
-	cmdutil.ConfigureCommandArgs(cmd, nil)
+	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	for _, verb := range []atlasVerb{
 		{
 			use:     "inspect",
@@ -151,7 +174,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 			return cmd.Help()
 		},
 	}
-	cmdutil.ConfigureCommandArgs(cmd, nil)
+	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	for _, verb := range []atlasVerb{
 		{
 			use:     "apply",
@@ -408,6 +431,7 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 }
 
 func mapAtlasArgs(group string, verb atlasVerb, args []string) ([]string, error) {
+	args = appendAtlasEnvArgs(verb.flags, args)
 	out := make([]string, 0, len(args))
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -465,6 +489,51 @@ func mapAtlasArgs(group string, verb atlasVerb, args []string) ([]string, error)
 		}
 	}
 	return out, nil
+}
+
+func appendAtlasEnvArgs(flags []atlasFlag, args []string) []string {
+	out := args
+	cloned := false
+	for _, flag := range flags {
+		if atlasFlagPresent(args, flag) {
+			continue
+		}
+		value, ok := os.LookupEnv(cmdflags.EnvName("PTAH", flag.name))
+		if !ok || value == "" {
+			continue
+		}
+		if flag.kind == atlasBoolFlag && atlasBoolEnvFalse(value) {
+			continue
+		}
+		if !cloned {
+			out = slices.Clone(args)
+			cloned = true
+		}
+		out = append(out, "--"+flag.name+"="+value)
+	}
+	return out
+}
+
+func atlasBoolEnvFalse(value string) bool {
+	parsed, err := strconv.ParseBool(value)
+	return err == nil && !parsed
+}
+
+func atlasFlagPresent(args []string, flag atlasFlag) bool {
+	long := "--" + flag.name
+	short := ""
+	if flag.shorthand != "" {
+		short = "-" + flag.shorthand
+	}
+	for _, arg := range args {
+		if arg == long || strings.HasPrefix(arg, long+"=") {
+			return true
+		}
+		if short != "" && (arg == short || strings.HasPrefix(arg, short+"=")) {
+			return true
+		}
+	}
+	return false
 }
 
 func mapAtlasFlagValue(flag atlasFlag, value string) (string, error) {
