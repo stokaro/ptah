@@ -1,3 +1,24 @@
+## github.com/stokaro/ptah/atlascompat
+
+const AtlasSumFileName = "atlas.sum"
+const PtahSumFileName = "ptah.sum"
+func DBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Database
+func ParseAtlasHCL(data []byte, filename string) (*goschema.Database, error)
+func ParseAtlasHCLFile(path string) (*goschema.Database, error)
+func ParseSQL(sql string, opts ParseSQLOptions) (*ast.StatementList, error)
+func SchemaToAST(database goschema.Database, targetPlatform string) *ast.StatementList
+func SumFileNameForFormat(format migrator.MigrationDirFormat) (string, error)
+func WriteSumBytes(dir, name string, sum *SumFile) error
+type ParseSQLOptions struct{ ... }
+type SumEntry struct{ ... }
+type SumFile struct{ ... }
+    func ComputeSum(fsys fs.FS, format migrator.MigrationDirFormat) (*SumFile, error)
+    func ParseSum(data []byte) (*SumFile, error)
+    func WriteSum(dir string, format migrator.MigrationDirFormat) (*SumFile, error)
+type SumResult struct{ ... }
+    func VerifySum(fsys fs.FS, format migrator.MigrationDirFormat) (*SumResult, error)
+    func VerifySumDir(dir string, format migrator.MigrationDirFormat) (*SumResult, error)
+
 ## github.com/stokaro/ptah/config
 
 type CompareOptions struct{ ... }
