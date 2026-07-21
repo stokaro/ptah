@@ -20,6 +20,26 @@ func tableStatementByName(statements *ast.StatementList, name string) *ast.Creat
 	return nil
 }
 
+func countColumns(table *ast.CreateTableNode, name string) int {
+	count := 0
+	for _, column := range table.Columns {
+		if column.Name == name {
+			count++
+		}
+	}
+	return count
+}
+
+func countFields(fields []goschema.Field, structName, name string) int {
+	count := 0
+	for _, field := range fields {
+		if field.StructName == structName && field.Name == name {
+			count++
+		}
+	}
+	return count
+}
+
 func tableStatementIndexByName(statements *ast.StatementList, name string) int {
 	for i, stmt := range statements.Statements {
 		table, ok := stmt.(*ast.CreateTableNode)
@@ -2166,6 +2186,46 @@ func TestFromDatabase_EmbeddedFields_JsonMode(t *testing.T) {
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
 	}
+}
+
+func TestFromDatabase_EmbeddedFields_JsonModeDoesNotDuplicateAlreadyProcessedField(t *testing.T) {
+	c := qt.New(t)
+	database := goschema.Database{
+		Tables: []goschema.Table{{
+			StructName: "User",
+			Name:       "users",
+		}},
+		Fields: []goschema.Field{
+			{
+				StructName: "User",
+				Name:       "id",
+				Type:       "SERIAL",
+				Primary:    true,
+			},
+			{
+				StructName: "User",
+				FieldName:  "UserMeta",
+				Name:       "metadata",
+				Type:       "JSONB",
+				Nullable:   false,
+			},
+		},
+		EmbeddedFields: []goschema.EmbeddedField{{
+			StructName:       "User",
+			Mode:             "json",
+			Name:             "metadata",
+			Type:             "JSONB",
+			EmbeddedTypeName: "UserMeta",
+		}},
+	}
+
+	fields := fromschema.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
+	c.Assert(countFields(fields, "User", "metadata"), qt.Equals, 1)
+
+	statements := fromschema.FromDatabase(database, "postgres")
+	table := tableStatementByName(statements, "users")
+	c.Assert(table, qt.IsNotNil)
+	c.Assert(countColumns(table, "metadata"), qt.Equals, 1)
 }
 
 func TestFromDatabase_EmbeddedFields_RelationMode(t *testing.T) {
