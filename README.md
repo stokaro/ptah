@@ -1693,6 +1693,43 @@ The integration test suite covers:
 
 ### Database Testing
 
+For application tests that need real databases without pulling
+`testcontainers-go` into Ptah's main module graph, use the opt-in
+[`github.com/stokaro/ptah/testkit`](./testkit) module:
+
+```go
+package example_test
+
+import (
+    "embed"
+    "testing"
+
+    "github.com/stokaro/ptah/testkit"
+)
+
+//go:embed migrations/*.sql
+var migrations embed.FS
+
+func TestMigrations(t *testing.T) {
+    db := testkit.StartPostgres(t, testkit.WithReuseByName("my-package-postgres"))
+
+    testkit.ApplyMigrationsFromFS(t, db, migrations)
+    testkit.Seed(t, db, []byte(`INSERT INTO users (email) VALUES ('a@example.com');`))
+
+    t.Log(testkit.Snapshot(t, db))
+}
+```
+
+`testkit` also provides `StartMySQL`, `StartMariaDB`, `StartSQLite`,
+`ApplyMigrationsFromFS`, `Seed`, and `Snapshot`. `Snapshot` returns
+deterministic schema JSON and omits Ptah/Atlas migration metadata tables. Run
+its fast tests with:
+
+```bash
+cd testkit
+GOWORK=off go test ./...
+```
+
 For integration tests, you can use Docker to set up test databases:
 
 #### PostgreSQL Testing

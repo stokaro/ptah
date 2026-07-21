@@ -2,6 +2,7 @@ package migrator
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -342,8 +343,11 @@ func (m *Migrator) migrationsRevisionColumnDefinition(name, fallback string) str
 }
 
 func (m *Migrator) migrationsColumnExists(ctx context.Context, name string) (bool, error) {
-	if m.conn.Info().Dialect == "clickhouse" {
+	switch m.conn.Info().Dialect {
+	case platform.ClickHouse:
 		return m.clickHouseMigrationsColumnExists(ctx, name)
+	case platform.SQLite:
+		return m.sqliteMigrationsColumnExists(ctx, name)
 	}
 	query := sqlutil.Rebind(m.conn.Info().Dialect, `
 SELECT COUNT(*)
@@ -354,6 +358,41 @@ WHERE table_schema = ? AND table_name = ? AND column_name = ?`)
 		return false, fmt.Errorf("failed to inspect migrations metadata column %s: %w", name, err)
 	}
 	return count > 0, nil
+}
+
+func (m *Migrator) sqliteMigrationsColumnExists(ctx context.Context, name string) (bool, error) {
+	conn, err := m.conn.Conn(ctx)
+	if err != nil {
+		return false, fmt.Errorf("failed to inspect migrations metadata column %s: %w", name, err)
+	}
+	defer conn.Close()
+
+	rows, err := conn.QueryContext(ctx, "PRAGMA table_info("+m.quoteIdentifier(m.migrationsTableName())+")")
+	if err != nil {
+		return false, fmt.Errorf("failed to inspect migrations metadata column %s: %w", name, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			cid          int
+			columnName   string
+			dataType     string
+			notNull      int
+			defaultValue sql.NullString
+			primaryKey   int
+		)
+		if err := rows.Scan(&cid, &columnName, &dataType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return false, fmt.Errorf("failed to scan migrations metadata column %s: %w", name, err)
+		}
+		if columnName == name {
+			return true, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, fmt.Errorf("failed to inspect migrations metadata column %s: %w", name, err)
+	}
+	return false, nil
 }
 
 func (m *Migrator) clickHouseMigrationsColumnExists(ctx context.Context, name string) (bool, error) {

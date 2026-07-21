@@ -1,0 +1,35 @@
+name: testkit
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    paths:
+      - "testkit/**"
+      - ".github/workflows/testkit.yml"
+
+env:
+  GOWORK: off
+
+jobs:
+  sqlite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Test testkit SQLite helpers
+        working-directory: testkit
+        run: go test ./...
+
+  containers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Test testkit container helpers
+        working-directory: testkit
+        run: go test -tags=testkitcontainers ./...
