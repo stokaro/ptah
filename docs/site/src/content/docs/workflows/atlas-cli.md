@@ -1,11 +1,18 @@
 ---
 title: Atlas-compatible CLI
-description: Use Atlas-style commands through the ptah atlas command tree.
+description: Use Atlas-style commands through ptah atlas or the ptah-compat binary.
 ---
 
-Atlas-compatible command paths live under `ptah atlas <command> ...`.
+Atlas-compatible command paths are available in two forms:
 
-Ptah does not add root-level Atlas spellings such as `ptah migrate apply` or `ptah schema inspect`. Those paths are intentionally invalid because the native Ptah command tree is being designed separately before GA.
+- `ptah atlas <command> ...` inside the native Ptah CLI tree.
+- `ptah-compat <command> ...` as a binary-level Atlas-compatible entry point.
+
+Ptah does not add root-level Atlas spellings such as `ptah migrate apply` or
+`ptah schema inspect` to the native `ptah` binary. Those paths are intentionally
+invalid because the native Ptah command tree is being designed separately before
+GA. Use `ptah-compat` or a copied/symlinked executable named `atlas` when
+existing scripts expect Atlas-style root commands.
 
 ## Translation model
 
@@ -52,6 +59,25 @@ ptah atlas migrate apply \
 ptah atlas schema inspect --url "$DATABASE_URL"
 ```
 
+For binary-level drop-in usage:
+
+```bash
+ptah-compat migrate apply \
+  --url "$DATABASE_URL" \
+  --dir ./migrations
+
+ptah-compat schema inspect --url "$DATABASE_URL"
+```
+
+For existing scripts that already call `atlas`, install or copy `ptah-compat`
+under that executable name:
+
+```bash
+install_dir="$(go env GOPATH)/bin"
+ln -sf "$(command -v ptah-compat)" "$install_dir/atlas"
+atlas migrate apply --url "$DATABASE_URL" --dir ./migrations
+```
+
 Ptah translates implemented Atlas-style flags and then delegates to native behavior. Unsupported Atlas flags should fail clearly instead of being ignored.
 
 ## Check before migration
@@ -68,6 +94,14 @@ When converting scripts, keep the `atlas` namespace in the Ptah command:
 | --- | --- |
 | `ptah atlas migrate apply --url "$DATABASE_URL" --dir ./migrations` | `ptah migrate apply --url "$DATABASE_URL" --dir ./migrations` |
 | `ptah atlas schema inspect --url "$DATABASE_URL"` | `ptah schema inspect --url "$DATABASE_URL"` |
+
+When replacing an existing Atlas binary in scripts, use the compatibility
+binary instead:
+
+| Do | Do not |
+| --- | --- |
+| `ptah-compat migrate apply --url "$DATABASE_URL" --dir ./migrations` | `ptah migrate apply --url "$DATABASE_URL" --dir ./migrations` |
+| `atlas schema inspect --url "$DATABASE_URL"` where `atlas` is `ptah-compat` renamed or symlinked | `ptah schema inspect --url "$DATABASE_URL"` |
 
 ## Parity expectations
 

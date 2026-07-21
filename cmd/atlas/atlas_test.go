@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/migrateup"
 )
 
@@ -49,6 +50,96 @@ func TestNewAtlasCommand_OSSCommandPathsResolve(t *testing.T) {
 			c.Assert(out.String(), qt.Contains, "atlas "+strings.Join(path, " "))
 		})
 	}
+}
+
+func TestNewCompatCommand_OSSCommandPathsResolveAtRoot(t *testing.T) {
+	paths := [][]string{
+		{"migrate", "apply"},
+		{"migrate", "down"},
+		{"migrate", "status"},
+		{"schema", "inspect"},
+	}
+
+	for _, path := range paths {
+		t.Run(strings.Join(path, "_"), func(t *testing.T) {
+			c := qt.New(t)
+			cmd := NewCompatCommand("ptah-compat")
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&out)
+			cmd.SetArgs(append(path, "--help"))
+
+			err := cmd.Execute()
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(out.String(), qt.Contains, "Usage:")
+			c.Assert(out.String(), qt.Contains, "ptah-compat "+strings.Join(path, " "))
+			c.Assert(out.String(), qt.Not(qt.Contains), "ptah-compat atlas "+strings.Join(path, " "))
+		})
+	}
+}
+
+func TestNewCompatCommand_UsesExecutableNameForAtlasSymlink(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"schema", "inspect", "--help"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "atlas schema inspect")
+	c.Assert(out.String(), qt.Not(qt.Contains), "ptah atlas schema inspect")
+}
+
+func TestNewCompatCommand_RootHelpShowsAtlasCompatibleTree(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewCompatCommand("ptah-compat")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--help"})
+
+	err := cmd.Execute()
+
+	help := out.String()
+	c.Assert(err, qt.IsNil)
+	c.Assert(help, qt.Contains, "Atlas-compatible Ptah command tree")
+	c.Assert(help, qt.Contains, "migrate")
+	c.Assert(help, qt.Contains, "schema")
+	c.Assert(help, qt.Not(qt.Contains), "ptah-compat atlas")
+}
+
+func TestNewCompatCommand_UnknownNestedCommandFails(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewCompatCommand("ptah-compat")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"migrate", "aplly"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `unexpected positional arguments \["aplly"\]`)
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+	c.Assert(out.String(), qt.Contains, `error: unexpected positional arguments ["aplly"]`)
+}
+
+func TestNewAtlasCommand_UnknownNestedCommandFails(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"migrate", "aplly"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `unexpected positional arguments \["aplly"\]`)
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+	c.Assert(out.String(), qt.Contains, `error: unexpected positional arguments ["aplly"]`)
 }
 
 func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
@@ -198,6 +289,42 @@ func TestMapAtlasArgs_MigrateDownNativeFlags(t *testing.T) {
 		"--migrations-schema", "atlas_schema_revisions",
 		"--migration-lock-timeout=10s",
 	})
+}
+
+func TestMapAtlasArgs_AtlasEnvFlagsMapToNativeFlags(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_URL", "postgres://env/db")
+	t.Setenv("PTAH_DIR", "file://env-migrations")
+
+	got, err := mapAtlasArgs("migrate", atlasMigrateDownVerb(), nil)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, []string{
+		"--db-url=postgres://env/db",
+		"--migrations-dir=env-migrations",
+	})
+}
+
+func TestMapAtlasArgs_CLIFlagWinsOverAtlasEnvFlag(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_URL", "postgres://env/db")
+
+	got, err := mapAtlasArgs("migrate", atlasMigrateDownVerb(), []string{
+		"--url", "postgres://cli/db",
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, []string{"--db-url", "postgres://cli/db"})
+}
+
+func TestMapAtlasArgs_FalseBoolEnvDoesNotEnableAtlasFlag(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_PLAN", "false")
+
+	got, err := mapAtlasArgs("migrate", atlasMigrateDownVerb(), nil)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.HasLen, 0)
 }
 
 func TestMapAtlasArgs_MigrateDownRejectsRemoteDir(t *testing.T) {

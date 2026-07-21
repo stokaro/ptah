@@ -11,6 +11,7 @@ Use this page to get a `ptah` binary onto a developer machine or CI runner.
 | --- | --- |
 | You are developing Ptah itself | `GOWORK=off go build -o ./bin/ptah ./cmd/ptah` |
 | You want the latest module version in another project | `go install github.com/stokaro/ptah/cmd/ptah@latest` |
+| You need Atlas-style root commands | `go install github.com/stokaro/ptah/cmd/ptah-compat@latest` |
 | You want a reproducible CI toolchain | Pin a version or pseudo-version in the install command |
 
 Ptah is pre-GA, so pinning is better for automation than relying on `latest`.
@@ -22,6 +23,9 @@ From the repository root:
 ```bash
 GOWORK=off go build -o ./bin/ptah ./cmd/ptah
 ./bin/ptah version
+
+GOWORK=off go build -o ./bin/ptah-compat ./cmd/ptah-compat
+./bin/ptah-compat migrate --help
 ```
 
 Expected shape:
@@ -41,6 +45,9 @@ Use the local binary in examples:
 ```bash
 go install github.com/stokaro/ptah/cmd/ptah@latest
 ptah version
+
+go install github.com/stokaro/ptah/cmd/ptah-compat@latest
+ptah-compat migrate --help
 ```
 
 If `ptah` is not found after `go install`, add `$(go env GOPATH)/bin` to your
@@ -69,11 +76,16 @@ Mermaid and DOT visualization output do not require Graphviz.
 ptah --help
 ptah migrations --help
 ptah atlas migrate --help
+ptah-compat migrate --help
 ```
 
-Atlas-compatible commands are nested under `ptah atlas <command> ...`. Root-level
-Atlas spellings such as `ptah migrate apply` are intentionally not part of the
-supported command tree.
+Atlas-compatible commands are nested under `ptah atlas <command> ...` in the
+native `ptah` binary. Root-level Atlas spellings such as `ptah migrate apply`
+are intentionally not part of that command tree.
+
+Use `ptah-compat <command> ...` when a script needs Atlas-style root commands.
+You can also copy or symlink that executable as `atlas` so existing scripts can
+call commands such as `atlas migrate apply`.
 
 ## Next steps
 

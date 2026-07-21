@@ -75,7 +75,7 @@ dialects, and other command errors use `2`.
 - Pin the Ptah version used by CI.
 - Commit migration files and `ptah.sum` together.
 - Keep database URLs in secrets.
-- Run Atlas-compatible scripts through `ptah atlas ...`, not root-level Atlas
-  aliases.
+- Run Atlas-compatible scripts through `ptah atlas ...`, or use `ptah-compat`
+  renamed or symlinked as `atlas` when preserving existing Atlas scripts.
 - Link CI failures to [Troubleshooting](../../operate/troubleshooting/) so users
   have recovery steps.
