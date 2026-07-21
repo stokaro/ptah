@@ -24,8 +24,15 @@ var (
 	// Match indexes that start with "idx_" or "index_", or end with "_idx" or "_index"
 	customIndexPattern = regexp.MustCompile(`(?i)(^(idx|index)_|_(idx|index)$)`)
 
-	defaultAggregateAliasPattern = regexp.MustCompile(`\b(count|sum|avg|min|max)\(([^)]*)\)\s+as\s+([a-z_][a-z0-9_]*)\b`)
-	schemaQualifierPattern       = regexp.MustCompile(`\b[a-z_][a-z0-9_]*\.`)
+	defaultAggregateAliasPattern       = regexp.MustCompile(`\b(count|sum|avg|min|max)\(([^)]*)\)\s+as\s+([a-z_][a-z0-9_]*)\b`)
+	defaultColumnAliasPattern          = regexp.MustCompile(`\b([a-z_][a-z0-9_]*)\s+as\s+([a-z_][a-z0-9_]*)\b`)
+	simpleComparisonParenthesesPattern = regexp.MustCompile(
+		`\(([a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*\s*` +
+			`(?:=|<>|!=|<=|>=|<|>|like|is(?:\s+not)?)\s*` +
+			`(?:[a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*|[0-9]+(?:\.[0-9]+)?|'[^']*'|true|false|null))\)`,
+	)
+	sqlCommaSpacingPattern = regexp.MustCompile(`\s*,\s*`)
+	schemaQualifierPattern = regexp.MustCompile(`\b[a-z_][a-z0-9_]*\.`)
 )
 
 func nonEmptyNames(names []string) []string {
