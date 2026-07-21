@@ -293,7 +293,7 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 		{
 			name:  "migrate_import",
 			path:  []string{"migrate", "import"},
-			flags: []string{"--from", "--to"},
+			flags: []string{"--from", "--to", "--dir-format"},
 		},
 	}
 
@@ -697,6 +697,68 @@ func TestNewCompatCommand_SchemaFmtResolvesAtRoot(t *testing.T) {
 `)
 }
 
+func TestNewAtlasCommand_MigrateImportConvertsFlywayDirectory(t *testing.T) {
+	c := qt.New(t)
+	source := t.TempDir()
+	target := t.TempDir()
+	writeAtlasTestFile(c, source, "V1__initial.sql", "CREATE TABLE skipped (id int);\n")
+	writeAtlasTestFile(c, source, "B1__baseline.sql", "CREATE TABLE baseline (id int);\n")
+	writeAtlasTestFile(c, source, "V2__add_posts.sql", "CREATE TABLE posts (id int);\n")
+	writeAtlasTestFile(c, source, "U1__initial.sql", "DROP TABLE skipped;\n")
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"migrate", "import", "--from", "file://" + source + "?format=flyway", "--to", "file://" + target})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Imported migration files:")
+	c.Assert(out.String(), qt.Contains, filepath.Join(target, "1_baseline.sql"))
+	c.Assert(out.String(), qt.Contains, filepath.Join(target, "2_add_posts.sql"))
+	c.Assert(out.String(), qt.Contains, filepath.Join(target, "atlas.sum"))
+	c.Assert(readAtlasTestFile(c, target, "1_baseline.sql"), qt.Equals, "CREATE TABLE baseline (id int);\n")
+	c.Assert(readAtlasTestFile(c, target, "2_add_posts.sql"), qt.Equals, "CREATE TABLE posts (id int);\n")
+	c.Assert(readAtlasTestFile(c, target, "atlas.sum"), qt.Contains, "2_add_posts.sql h1:")
+}
+
+func TestNewCompatCommand_MigrateImportResolvesAtRoot(t *testing.T) {
+	c := qt.New(t)
+	source := t.TempDir()
+	target := t.TempDir()
+	writeAtlasTestFile(c, source, "1_initial.up.sql", "CREATE TABLE users (id int);\n")
+	writeAtlasTestFile(c, source, "1_initial.down.sql", "DROP TABLE users;\n")
+
+	cmd := NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"migrate", "import", "--from", "file://" + source + "?format=golang-migrate", "--to", "file://" + target})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, filepath.Join(target, "1_initial.sql"))
+	c.Assert(readAtlasTestFile(c, target, "1_initial.sql"), qt.Equals, "CREATE TABLE users (id int);\n")
+	c.Assert(readAtlasTestFile(c, target, "atlas.sum"), qt.Contains, "1_initial.sql h1:")
+}
+
+func TestNewAtlasCommand_MigrateImportRejectsRemoteSource(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"migrate", "import", "--from", "atlas://repo/migrations?format=flyway"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `import --from: only local file:// migration directories are supported`)
+	c.Assert(out.String(), qt.Contains, "error: import --from: only local file:// migration directories are supported")
+}
+
 func TestNewAtlasCommand_HelpUsesAtlasPathForForwardedParentedCommand(t *testing.T) {
 	c := qt.New(t)
 	root := &cobra.Command{Use: "ptah"}
@@ -764,4 +826,16 @@ func TestNewAtlasCommand_UnsupportedCommandsAreExplicit(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, "atlas schema apply is not implemented yet")
+}
+
+func writeAtlasTestFile(c *qt.C, dir, name, content string) {
+	c.Helper()
+	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
+}
+
+func readAtlasTestFile(c *qt.C, dir, name string) string {
+	c.Helper()
+	data, err := os.ReadFile(filepath.Join(dir, name))
+	c.Assert(err, qt.IsNil)
+	return string(data)
 }
