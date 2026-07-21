@@ -317,6 +317,15 @@ func applyInlineEnumModel(field goschema.Field, enum goschema.Enum, targetPlatfo
 	return newField
 }
 
+func emitsStandaloneEnumDefinitions(targetPlatform string) bool {
+	switch platform.NormalizeDialect(targetPlatform) {
+	case platform.MySQL, platform.MariaDB, platform.SQLite, platform.SQLServer:
+		return false
+	default:
+		return true
+	}
+}
+
 // FromField converts a goschema.Field to an ast.ColumnNode with comprehensive attribute mapping.
 //
 // This function transforms a high-level field definition into a concrete column AST node,
@@ -1437,10 +1446,15 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 		statements.Statements = append(statements.Statements, extensionNode)
 	}
 
-	// 3. Add enum definitions (they may be referenced by tables)
-	for _, enum := range database.Enums {
-		enumNode := FromEnum(enum)
-		statements.Statements = append(statements.Statements, enumNode)
+	// 3. Add enum definitions when the dialect has standalone enum types.
+	// MySQL, MariaDB, SQLite, and SQL Server model enums on the column itself,
+	// so adding top-level enum nodes would render to no executable DDL and
+	// break live apply loops with empty statements.
+	if emitsStandaloneEnumDefinitions(targetPlatform) {
+		for _, enum := range database.Enums {
+			enumNode := FromEnum(enum)
+			statements.Statements = append(statements.Statements, enumNode)
+		}
 	}
 
 	// 4. Add table definitions (they may be referenced by indexes)

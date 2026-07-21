@@ -7,6 +7,7 @@ import (
 
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/internal/convert/fromschema"
 )
 
@@ -34,6 +35,25 @@ func countFields(fields []goschema.Field, structName, name string) int {
 	count := 0
 	for _, field := range fields {
 		if field.StructName == structName && field.Name == name {
+			count++
+		}
+	}
+	return count
+}
+
+func columnByName(table *ast.CreateTableNode, name string) *ast.ColumnNode {
+	for _, column := range table.Columns {
+		if column.Name == name {
+			return column
+		}
+	}
+	return nil
+}
+
+func countEnumStatements(statements *ast.StatementList) int {
+	count := 0
+	for _, statement := range statements.Statements {
+		if _, ok := statement.(*ast.EnumNode); ok {
 			count++
 		}
 	}
@@ -1507,6 +1527,100 @@ func TestFromDatabase_EmptySchema(t *testing.T) {
 
 	c.Assert(result, qt.IsNotNil)
 	c.Assert(result.Statements, qt.HasLen, 0)
+}
+
+func TestFromDatabase_InlineEnumDialectsOmitStandaloneEnumStatements(t *testing.T) {
+	database := goschema.Database{
+		Enums: []goschema.Enum{{
+			Name:   "enum_account_status",
+			Values: []string{"active", "suspended", "deleted"},
+		}},
+		Tables: []goschema.Table{{
+			StructName: "Account",
+			Name:       "accounts",
+		}},
+		Fields: []goschema.Field{{
+			StructName: "Account",
+			Name:       "status",
+			Type:       "enum_account_status",
+			Nullable:   false,
+			Default:    "active",
+			DefaultSet: true,
+		}},
+	}
+
+	tests := []struct {
+		dialect       string
+		expectedType  string
+		expectedCheck string
+	}{
+		{
+			dialect:      platform.MySQL,
+			expectedType: "ENUM('active', 'suspended', 'deleted')",
+		},
+		{
+			dialect:      platform.MariaDB,
+			expectedType: "ENUM('active', 'suspended', 'deleted')",
+		},
+		{
+			dialect:       platform.SQLite,
+			expectedType:  "TEXT",
+			expectedCheck: "status IN ('active', 'suspended', 'deleted')",
+		},
+		{
+			dialect:       platform.SQLServer,
+			expectedType:  "NVARCHAR(255)",
+			expectedCheck: "[status] IN ('active', 'suspended', 'deleted')",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			result := fromschema.FromDatabase(database, test.dialect)
+
+			c.Assert(result, qt.IsNotNil)
+			c.Assert(countEnumStatements(result), qt.Equals, 0)
+			table := tableStatementByName(result, "accounts")
+			c.Assert(table, qt.IsNotNil)
+			status := columnByName(table, "status")
+			c.Assert(status, qt.IsNotNil)
+			c.Assert(status.Type, qt.Equals, test.expectedType)
+			c.Assert(status.Check, qt.Equals, test.expectedCheck)
+		})
+	}
+}
+
+func TestFromDatabase_PostgresKeepsStandaloneEnumStatements(t *testing.T) {
+	c := qt.New(t)
+
+	database := goschema.Database{
+		Enums: []goschema.Enum{{
+			Name:   "enum_account_status",
+			Values: []string{"active", "suspended", "deleted"},
+		}},
+		Tables: []goschema.Table{{
+			StructName: "Account",
+			Name:       "accounts",
+		}},
+		Fields: []goschema.Field{{
+			StructName: "Account",
+			Name:       "status",
+			Type:       "enum_account_status",
+			Nullable:   false,
+		}},
+	}
+
+	result := fromschema.FromDatabase(database, platform.Postgres)
+
+	c.Assert(result, qt.IsNotNil)
+	c.Assert(countEnumStatements(result), qt.Equals, 1)
+	table := tableStatementByName(result, "accounts")
+	c.Assert(table, qt.IsNotNil)
+	status := columnByName(table, "status")
+	c.Assert(status, qt.IsNotNil)
+	c.Assert(status.Type, qt.Equals, "enum_account_status")
 }
 
 func TestFromDatabase_MySQLIncludesViewsAndTriggers(t *testing.T) {
