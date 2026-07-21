@@ -21,7 +21,10 @@ The authoritative current numbers live in the conformance repository reports:
 - [`gaps-diff.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps-diff.md)
 - [`PARITY.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/PARITY.md)
 
-Ptah documentation must not claim full Atlas OSS parity until the full conformance gates are green.
+Green conformance reports mean that the current measured corpus has no red
+results. They do not, by themselves, prove every Atlas OSS command, flag,
+dialect feature, and output mode. Use the comparison gap register for product
+and coverage gaps that are outside the current measured corpus.
 
 ## How to read green and red checks
 
@@ -30,11 +33,16 @@ The conformance repository separates regression budgets from full parity:
 | Gate type | Meaning |
 | --- | --- |
 | Regression budget | No new gaps beyond the accepted budget for that contour. Should stay green. |
-| Full conformance | Every checked case in that contour passes. May stay red while known gaps remain. |
+| Full conformance | Every checked case in that contour passes. May stay red while the measured corpus still has non-OK results. |
 
 A green regression-budget check does not mean Ptah has full Atlas OSS parity.
-A red full-conformance check is expected while the report still lists known
-gaps.
+A red full-conformance check is expected while the report still lists measured
+non-OK results.
+
+Even when both regression-budget and full-conformance checks are green, the
+claim is limited to the corpus represented by the generated reports. Expanding
+live and differential coverage is tracked in
+[`stokaro/ptah-atlas-conformance#167`](https://github.com/stokaro/ptah-atlas-conformance/issues/167).
 
 ## Local commands
 
