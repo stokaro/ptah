@@ -15,6 +15,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/onlineddl"
+	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/internal/preflight"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -172,6 +173,10 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 
 	if migrationsDir == "" {
 		return fmt.Errorf("migrations directory is required")
+	}
+	migrationsDir, err = pathguard.ResolveCLIPath(migrationsDir)
+	if err != nil {
+		return err
 	}
 
 	targetVersion, err := strconv.ParseInt(targetVersionValue, 10, 64)
