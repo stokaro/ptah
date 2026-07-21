@@ -8,6 +8,7 @@ non-fixture packages that may remain importable without an explicit review.
 
 These packages are intended for application and tool embedders:
 
+- `github.com/stokaro/ptah/atlascompat`
 - `github.com/stokaro/ptah/config`
 - `github.com/stokaro/ptah/config/projectconfig`
 - `github.com/stokaro/ptah/core/ast`
@@ -28,6 +29,11 @@ These packages are intended for application and tool embedders:
 - `github.com/stokaro/ptah/migration/schemadiff`
 - `github.com/stokaro/ptah/migration/schemadiff/types`
 - `github.com/stokaro/ptah/migration/seeder`
+
+`atlascompat` is a narrow compatibility surface for external Atlas parity and
+conformance tooling. It intentionally wraps parser, Atlas HCL, schema
+conversion, and migration sum internals without making those implementation
+packages importable directly.
 
 Public failures from these packages should use `core/ptaherr` where the caller
 can reasonably branch on the error. In particular, annotation failures should
