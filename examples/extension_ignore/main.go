@@ -11,7 +11,7 @@
 //		log.Fatalf("Failed to parse Go entities: %v", err)
 //	}
 //
-//	// Connect to database (supply a context so the call can be cancelled).
+//	// Connect to database (supply a context so the call can be canceled).
 //	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 //	defer cancel()
 //	conn, err := dbschema.ConnectToDatabase(ctx, "postgres://user:pass@localhost/db")

@@ -1,6 +1,6 @@
 // Package dbcli holds small helpers shared by the CLI subcommands that connect
 // to a database. Centralising the connect-timeout flag and context
-// construction keeps behaviour consistent across commands.
+// construction keeps behavior consistent across commands.
 //
 // For the close-with-warning idiom used after a successful Connect, prefer
 // [github.com/stokaro/ptah/dbschema.CloseAndWarn] — it lives next to the
@@ -123,7 +123,7 @@ func ParseConnectTimeout(raw string) (time.Duration, error) {
 // ConnectContext derives a context for the initial database connection from
 // the supplied parent. When timeout is zero or negative, the parent is
 // returned unchanged together with a no-op CancelFunc so callers can `defer
-// cancel()` unconditionally; cancelling the returned function in that case
+// cancel()` unconditionally; canceling the returned function in that case
 // does not affect the parent context.
 func ConnectContext(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
 	if timeout <= 0 {

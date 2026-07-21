@@ -117,7 +117,7 @@ func escapeStringLiteral(s string) string {
 // not surprised by silent conversions.
 //
 // `jsonMapped` is set when the original SQL type was JSON/JSONB and was
-// rewritten to a String-based type; the notice for this case is finalised
+// rewritten to a String-based type; the notice for this case is finalized
 // in renderColumnType so it reflects the post-Nullable-wrap final type.
 type typeMapping struct {
 	mapped     string
@@ -146,7 +146,7 @@ var directTypeMap = map[string]string{
 }
 
 // mapColumnType translates a generic SQL column type spelling into the
-// ClickHouse equivalent. Type names not recognised are returned verbatim;
+// ClickHouse equivalent. Type names not recognized are returned verbatim;
 // callers may legitimately write native ClickHouse type names in their
 // annotations (e.g. `LowCardinality(String)`), and this function must not
 // mangle them.
@@ -194,7 +194,7 @@ func mapColumnType(t string) (typeMapping, error) {
 	case "JSON", "JSONB":
 		// Treat JSON as a String; ClickHouse's native JSON type is still
 		// experimental. Users who want it can override via platform.clickhouse.type.
-		// The notice is finalised in renderColumnType so it reflects the
+		// The notice is finalized in renderColumnType so it reflects the
 		// post-Nullable-wrap final type (e.g. Nullable(String)).
 		return typeMapping{
 			mapped:     "String",
@@ -207,12 +207,12 @@ func mapColumnType(t string) (typeMapping, error) {
 	// spelling has been forwarded as-is.
 	mapping := typeMapping{mapped: t}
 	if !looksLikeClickHouseNativeType(t) {
-		mapping.notice = fmt.Sprintf("unrecognised SQL type %q passed through verbatim; verify it is a native ClickHouse type", t)
+		mapping.notice = fmt.Sprintf("unrecognized SQL type %q passed through verbatim; verify it is a native ClickHouse type", t)
 	}
 	return mapping, nil
 }
 
-// looksLikeClickHouseNativeType is a heuristic that recognises common
+// looksLikeClickHouseNativeType is a heuristic that recognizes common
 // ClickHouse-native type spellings (LowCardinality, Array, Map, Nullable,
 // Enum8/16, FixedString, Tuple, Nested, ...). It only needs to avoid
 // false-positively warning on legitimate native types; precise validation is
@@ -232,7 +232,7 @@ func looksLikeClickHouseNativeType(t string) bool {
 	return false
 }
 
-// columnTypeOptions controls renderColumnType's behaviour.
+// columnTypeOptions controls renderColumnType's behavior.
 type columnTypeOptions struct {
 	// forceNotNull disables Nullable(...) wrapping regardless of the
 	// column's declared nullability — used for columns that participate in
@@ -244,7 +244,7 @@ type columnTypeOptions struct {
 // applying Nullable() wrapping for nullable columns subject to opts.
 //
 // If the underlying type mapping was a JSON/JSONB → String rewrite, the
-// advisory notice is finalised here so it mentions the *final* rendered type
+// advisory notice is finalized here so it mentions the *final* rendered type
 // (e.g. `Nullable(String)` when the column ends up nullable) rather than the
 // pre-wrap form.
 func renderColumnType(col *ast.ColumnNode, opts columnTypeOptions) (typeMapping, error) {

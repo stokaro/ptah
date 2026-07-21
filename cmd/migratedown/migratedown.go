@@ -351,7 +351,7 @@ func migrateDownCommand(cmd *cobra.Command, _ []string) error {
 		fmt.Scanln(&confirmation)
 
 		if confirmation != "YES" {
-			fmt.Println("Migration rollback cancelled.")
+			fmt.Println("Migration rollback canceled.")
 			return nil
 		}
 		fmt.Println()

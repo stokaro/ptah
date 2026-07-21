@@ -2,6 +2,7 @@ package migratedown_test
 
 import (
 	"context"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -66,6 +67,41 @@ func TestMigrateDownCommandPreflightHookAbortPreventsRollback(t *testing.T) {
 	c.Assert(count, qt.Equals, 1)
 }
 
+func TestMigrateDownCommandDeclinedConfirmationPrintsCanceled(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+
+	tempDir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(tempDir, "000001_create_declined.up.sql"), []byte("CREATE TABLE declined_down (id INTEGER PRIMARY KEY);"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(tempDir, "000001_create_declined.down.sql"), []byte("DROP TABLE declined_down;"), 0o600), qt.IsNil)
+
+	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	mig, err := migrator.NewFSMigrator(conn, os.DirFS(tempDir))
+	c.Assert(err, qt.IsNil)
+	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
+
+	cmd := migratedown.NewMigrateDownCommand()
+	resetMigrateDownCommandForTest(c, cmd)
+	cmd.SetArgs([]string{
+		"--db-url", dbURL,
+		"--migrations-dir", tempDir,
+		"--target", "0",
+	})
+
+	out, err := captureStdIO(c, "NO\n", cmd.Execute)
+	c.Assert(err, qt.IsNil)
+	c.Assert(out, qt.Contains, "Migration rollback canceled.")
+	resetMigrateDownCommandForTest(c, cmd)
+
+	status, err := mig.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.CurrentVersion, qt.Equals, int64(1))
+}
+
 // TestMigrateDownCommand_Integration tests the actual migration logic
 // This test requires a real database connection and is skipped if no test database is available
 func TestMigrateDownCommand_Integration(t *testing.T) {
@@ -124,6 +160,39 @@ func TestMigrateDownCommand_Integration(t *testing.T) {
 	finalStatus, err := mig.GetMigrationStatus(context.Background())
 	c.Assert(err, qt.IsNil)
 	c.Assert(finalStatus.CurrentVersion, qt.Equals, 0)
+}
+
+func captureStdIO(c *qt.C, input string, run func() error) (string, error) {
+	c.Helper()
+
+	oldStdin := os.Stdin
+	oldStdout := os.Stdout
+	defer func() {
+		os.Stdin = oldStdin
+		os.Stdout = oldStdout
+	}()
+
+	inR, inW, err := os.Pipe()
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Assert(inR.Close(), qt.IsNil) }()
+
+	_, err = inW.WriteString(input)
+	c.Assert(err, qt.IsNil)
+	c.Assert(inW.Close(), qt.IsNil)
+
+	outR, outW, err := os.Pipe()
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Assert(outR.Close(), qt.IsNil) }()
+
+	os.Stdin = inR
+	os.Stdout = outW
+
+	runErr := run()
+	c.Assert(outW.Close(), qt.IsNil)
+
+	output, err := io.ReadAll(outR)
+	c.Assert(err, qt.IsNil)
+	return string(output), runErr
 }
 
 func resetMigrateDownCommandForTest(c *qt.C, cmd interface{ Flag(string) *pflag.Flag }) {
