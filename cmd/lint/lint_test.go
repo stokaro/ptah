@@ -25,6 +25,11 @@ func execute(args ...string) (stdout, stderr string, err error) {
 	return out.String(), errOut.String(), err
 }
 
+func writeLintTestFile(c *qt.C, dir, name, content string) {
+	c.Helper()
+	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
+}
+
 type sarifForTest struct {
 	Version string `json:"version"`
 	Schema  string `json:"$schema"`
@@ -198,6 +203,49 @@ func TestRunLint_ConfigFileDisablesRulesAndSetsDialect(t *testing.T) {
 		c.Assert(f.Rule, qt.Not(qt.Equals), "MY101",
 			qt.Commentf("dialect: postgres from the config must gate MY rules; got %v", f))
 	}
+}
+
+func TestRunLint_LatestRestrictsToLatestMigrationVersions(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	writeLintTestFile(c, dir, "0000000001_old.up.sql", "DROP TABLE old_data;\n")
+	writeLintTestFile(c, dir, "0000000001_old.down.sql", "CREATE TABLE old_data (id INT);\n")
+	writeLintTestFile(c, dir, "0000000002_new.up.sql", "ALTER TABLE users DROP COLUMN legacy;\n")
+	writeLintTestFile(c, dir, "0000000002_new.down.sql", "ALTER TABLE users ADD COLUMN legacy TEXT;\n")
+
+	stdout, _, err := execute("--dir", dir, "--format", "json", "--fail-on", "none", "--latest", "1")
+
+	c.Assert(err, qt.IsNil)
+	var report struct {
+		Findings []lint.Finding `json:"findings"`
+	}
+	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
+	c.Assert(report.Findings, qt.HasLen, 1)
+	c.Assert(report.Findings[0].Rule, qt.Equals, "DS102")
+	c.Assert(report.Findings[0].File, qt.Contains, "0000000002_new.up.sql")
+}
+
+func TestRunLint_LatestRejectsZero(t *testing.T) {
+	c := qt.New(t)
+
+	_, stderr, err := execute("--dir", "testdata/clean", "--latest", "0")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(stderr, qt.Contains, "--latest must be greater than zero")
+}
+
+func TestRunLint_LatestRejectsUnversionedSQLFiles(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	writeLintTestFile(c, dir, "0000000002_new.up.sql", "CREATE TABLE users (id INT);\n")
+	writeLintTestFile(c, dir, "0000000002_new.down.sql", "DROP TABLE users;\n")
+	writeLintTestFile(c, dir, "misnamed.sql", "DROP TABLE hidden;\n")
+
+	_, stderr, err := execute("--dir", dir, "--latest", "1")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(stderr, qt.Contains, "--latest requires versioned migration files")
+	c.Assert(stderr, qt.Contains, "misnamed.sql")
 }
 
 func TestRunLint_ProjectConfigDisablesRulesAndSetsDialect(t *testing.T) {
