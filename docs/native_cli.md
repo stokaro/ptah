@@ -21,6 +21,7 @@ root-level command spellings are removed instead of preserved.
 | `ptah schema compare` | Compare desired schema with a live database. |
 | `ptah schema drift` | Check live database drift against desired schema. |
 | `ptah schema export` | Export one schema source format to another. |
+| `ptah viz` | Render desired schema diagrams as Mermaid, DOT, or SVG. |
 | `ptah db read` | Read schema from a live database. |
 | `ptah db drop-all` | Drop all schema objects in a live database. |
 | `ptah migrations plan` | Print migration SQL from desired/live schema differences. |

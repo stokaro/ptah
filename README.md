@@ -672,6 +672,40 @@ Generate SQL DDL statements from Go entities without touching the database:
 ./ptah schema render --schema-file schema.hcl --dialect postgres
 ```
 
+### Visualize Schema
+
+Render an ER diagram from Go annotations for reviews, documentation, or design
+discussions:
+
+```bash
+# Mermaid erDiagram output, suitable for GitHub Markdown
+./ptah viz --root-dir ./models --format mermaid --include-columns
+
+# Graphviz DOT output
+./ptah viz --root-dir ./models --format dot
+
+# SVG output through Graphviz dot
+./ptah viz --root-dir ./models --format svg --theme dark
+
+# Omit intentionally hidden tables
+./ptah viz --root-dir ./models --exclude-tables audit_logs,sessions
+```
+
+Example Mermaid output:
+
+```mermaid
+erDiagram
+  users {
+    SERIAL id PK
+    TEXT email
+  }
+  posts {
+    SERIAL id PK
+    INTEGER author_id FK
+  }
+  users ||--o{ posts : "fk_posts_author"
+```
+
 ### Export Schema
 
 Export Go annotations to Atlas schema HCL:

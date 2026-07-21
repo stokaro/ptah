@@ -1,0 +1,60 @@
+erDiagram
+  organizations {
+    INTEGER id PK
+    TEXT name
+    TEXT slug
+  }
+  tags {
+    INTEGER id PK
+    INTEGER organization_id FK
+    TEXT name
+  }
+  users {
+    INTEGER id PK
+    INTEGER organization_id FK
+    TEXT email
+    TEXT display_name
+    INTEGER manager_id FK
+  }
+  projects {
+    INTEGER id PK
+    INTEGER organization_id FK
+    INTEGER owner_id FK
+    TEXT key
+    TEXT name
+  }
+  tasks {
+    INTEGER id PK
+    INTEGER project_id FK
+    INTEGER assignee_id FK
+    INTEGER reporter_id FK
+    INTEGER parent_task_id FK
+    TEXT title
+    TEXT status
+  }
+  comments {
+    INTEGER id PK
+    INTEGER task_id FK
+    INTEGER author_id FK
+    TEXT body
+    TEXT created_at
+  }
+  task_tags {
+    INTEGER task_id FK
+    INTEGER tag_id FK
+    INTEGER tagged_by FK
+  }
+  tasks ||--o{ comments : "fk_comments_task_id"
+  users ||--o{ comments : "fk_comments_author_id"
+  organizations ||--o{ projects : "fk_projects_organization_id"
+  users ||--o{ projects : "fk_projects_owner_id"
+  organizations ||--o{ tags : "fk_tags_organization_id"
+  tags ||--o{ task_tags : "fk_task_tags_tag_id"
+  tasks ||--o{ task_tags : "fk_task_tags_task_id"
+  users ||--o{ task_tags : "fk_task_tags_tagged_by"
+  projects ||--o{ tasks : "fk_tasks_project_id"
+  tasks ||--o{ tasks : "fk_tasks_parent_task_id"
+  users ||--o{ tasks : "fk_tasks_assignee_id"
+  users ||--o{ tasks : "fk_tasks_reporter_id"
+  organizations ||--o{ users : "fk_users_organization_id"
+  users ||--o{ users : "fk_users_manager_id"
