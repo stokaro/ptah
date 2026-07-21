@@ -44,7 +44,7 @@ the same reviewed change.
 
 ## Compatibility Guard
 
-CI runs two public API checks:
+CI runs three public API checks:
 
 - `scripts/check-public-api.sh` fails when `go list ./...` finds a
   non-command, non-example, non-fixture package that is importable from outside
@@ -54,9 +54,25 @@ CI runs two public API checks:
   interface method sets, and compares it with `docs/public_api.snapshot`.
   Any exported surface change must update the snapshot in the same reviewed
   change.
+- `scripts/check-public-api-released.sh` compares each stable package against
+  the latest `v0.x` release tag with `apidiff -incompatible`. Until the first
+  `v0.x` tag exists, the script reports that no released baseline is available
+  and exits successfully. Once a `v0.x` tag exists, CI checks out repository
+  tags and uses that real release tag as the baseline.
 
-After the first `v0.x` tag exists, add a released-baseline API compatibility
-check (`apidiff` or `gorelease`) for the stable package list. Until then, there
-is no authoritative released baseline to compare against; the package ledger
-and snapshot are the enforceable pre-release guards. Track the released-baseline
-upgrade in [#427](https://github.com/stokaro/ptah/issues/427).
+## Intentional API Changes Before v1
+
+Ptah is still pre-v1, so maintainers may intentionally approve breaking changes
+to the stable embedder API. Intentional approval must be explicit in the same
+reviewed change:
+
+- update this document if packages move between stable and non-public surfaces;
+- update `docs/public_api.snapshot` when exported symbols or public interface
+  method sets change;
+- add one package-level approval line to `docs/public_api_approvals.txt` when
+  `scripts/check-public-api-released.sh` reports an incompatibility against the
+  latest `v0.x` baseline;
+- include the compatibility rationale in the PR description.
+
+Do not weaken the CI checks, broaden exclusions, or silently remove packages
+from the stable list to hide an API change.
