@@ -6,7 +6,9 @@ description: Native and Atlas-compatible Ptah command surfaces.
 Ptah has two command surfaces:
 
 - Native Ptah commands, owned by Ptah.
-- Atlas-compatible commands, reserved under `ptah atlas <command> ...`.
+- Atlas-compatible commands, reserved under `ptah atlas <command> ...` in the
+  native binary and under `ptah-compat <command> ...` in the compatibility
+  binary.
 
 Reference: [native CLI command tree](https://github.com/stokaro/ptah/blob/master/docs/native_cli.md).
 
@@ -38,13 +40,26 @@ Reference: [native CLI command tree](https://github.com/stokaro/ptah/blob/master
 
 ## Atlas-compatible commands
 
-Use `ptah atlas ...` only. Root-level Atlas aliases are intentionally absent.
+Use `ptah atlas ...` in the native `ptah` binary. Root-level Atlas aliases are
+intentionally absent from that binary.
 
 ```bash
 ptah atlas migrate apply --url "$DATABASE_URL" --dir ./migrations
 ptah atlas migrate status --url "$DATABASE_URL" --dir ./migrations
 ptah atlas schema inspect --url "$DATABASE_URL"
 ```
+
+Use `ptah-compat ...` when a script needs Atlas-style root commands:
+
+```bash
+ptah-compat migrate apply --url "$DATABASE_URL" --dir ./migrations
+ptah-compat migrate status --url "$DATABASE_URL" --dir ./migrations
+ptah-compat schema inspect --url "$DATABASE_URL"
+```
+
+If `ptah-compat` is copied or symlinked as `atlas`, usage and help paths are
+rendered as `atlas <command> ...` where Cobra can derive them from the
+executable name.
 
 | Command | Current status |
 | --- | --- |
@@ -62,4 +77,5 @@ ptah atlas schema inspect --url "$DATABASE_URL"
 | `ptah atlas schema diff` | Forwards to `ptah schema compare`. |
 
 Run `ptah <command> --help` or `ptah atlas <command> --help` for exact flags in
-the version you are using.
+the version you are using. Run `ptah-compat <command> --help` for the same
+Atlas-compatible command tree at process root.

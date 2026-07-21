@@ -1,13 +1,15 @@
 # Native CLI Command Tree
 
-Ptah has two CLI surfaces:
+Ptah has a native CLI surface in the `ptah` binary, plus Atlas-compatible
+command surfaces outside the native tree:
 
 - Native Ptah commands, owned by Ptah and documented here.
-- Atlas-compatible commands, reserved under `ptah atlas <command> ...`.
+- Atlas-compatible commands under `ptah atlas <command> ...`.
+- The separate `ptah-compat` binary, which exposes the Atlas-compatible tree at
+  process root and can be copied or symlinked as `atlas`.
 
 Do not add root-level Atlas spellings such as `ptah migrate apply` or
-`ptah schema inspect`. Those paths belong to `ptah atlas migrate apply` and
-`ptah atlas schema inspect`.
+`ptah schema inspect` to the native `ptah` binary.
 
 ## Canonical Native Tree
 
