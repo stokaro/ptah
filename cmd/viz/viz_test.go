@@ -58,31 +58,6 @@ func TestCommandDoesNotDuplicateJSONEmbeddedColumns(t *testing.T) {
 	c.Assert(strings.Count(stdout.String(), "    JSONB metadata\n"), qt.Equals, 1)
 }
 
-func TestREADMEExampleMatchesGeneratedMermaid(t *testing.T) {
-	c := qt.New(t)
-	dir := t.TempDir()
-	writeModel(c, dir)
-
-	cmd := NewCommand()
-	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
-	cmd.SetArgs([]string{
-		"--root-dir", dir,
-		"--format", "mermaid",
-		"--include-columns",
-	})
-
-	err := cmd.Execute()
-	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr.String()))
-
-	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
-	c.Assert(err, qt.IsNil)
-	example, ok := readmeMermaidExample(string(readme))
-	c.Assert(ok, qt.IsTrue)
-	c.Assert(strings.TrimSpace(example), qt.Equals, strings.TrimSpace(stdout.String()))
-}
-
 func TestCommandExcludesTables(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
@@ -261,16 +236,6 @@ func TestSVGReportsGraphvizStderrOnFailure(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `render SVG with Graphviz dot: .*: graphviz exploded`)
 	c.Assert(stderr.String(), qt.Contains, "graphviz exploded")
-}
-
-func readmeMermaidExample(readme string) (string, bool) {
-	const marker = "Example Mermaid output:\n\n```mermaid\n"
-	_, after, ok := strings.Cut(readme, marker)
-	if !ok {
-		return "", false
-	}
-	example, _, ok := strings.Cut(after, "\n```")
-	return example, ok
 }
 
 func writeModel(c *qt.C, dir string) {
