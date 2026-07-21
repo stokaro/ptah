@@ -25,7 +25,7 @@ fail clearly instead of being ignored.
 | Atlas-compatible command | Native Ptah command |
 | --- | --- |
 | `ptah atlas migrate apply` | `ptah migrations up` |
-| `ptah atlas migrate down` | Registered path; use native `ptah migrations down` for explicit target rollback recipes until the Atlas-compatible flags are documented. |
+| `ptah atlas migrate down` | Ptah extension path; use native `ptah migrations down` for explicit target rollback recipes until the Atlas-compatible path documents the same runtime contract. |
 | `ptah atlas migrate status` | `ptah migrations status` |
 | `ptah atlas migrate hash` | `ptah migrations hash` |
 | `ptah atlas migrate validate` | `ptah migrations validate` |
@@ -72,5 +72,7 @@ When converting scripts, keep the `atlas` namespace in the Ptah command:
 ## Parity expectations
 
 Ptah is not documented as a full Atlas OSS replacement until the external
-conformance gates prove that claim. Use [Conformance](../../operate/conformance/)
-for current evidence and known gaps.
+conformance reports and the comparison gap register support that claim. Use
+[Conformance](../../operate/conformance/) for current evidence and
+[Comparison](../../reference/comparison/) for tracked product, coverage, and
+documentation gaps.

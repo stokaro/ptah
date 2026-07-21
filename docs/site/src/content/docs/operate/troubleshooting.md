@@ -93,6 +93,10 @@ Use the native Ptah command when it has a documented equivalent, or check
 The conformance repo has two kinds of gates:
 
 - Regression-budget gates should stay green when no new gaps appear.
-- Full-conformance gates remain red until the known gaps are closed.
+- Full-conformance gates are red while the measured corpus still has non-OK
+  results.
 
-This is intentional. A green regression gate does not mean Ptah has complete Atlas OSS parity.
+This is intentional. A green regression gate does not mean Ptah has complete
+Atlas OSS parity. Even green full-conformance reports only prove the current
+measured corpus; use [Comparison](../../reference/comparison/) for tracked
+product, coverage, and documentation gaps.
