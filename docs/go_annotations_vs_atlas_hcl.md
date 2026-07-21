@@ -11,6 +11,13 @@ This export path is an IR conversion. Ptah parses Go annotations into the
 `goschema.Database` intermediate representation, then renders that IR as Atlas
 schema HCL. It does not rewrite annotation comments directly into HCL text.
 
+Go annotations remain a first-class Ptah workflow for Go applications. The
+exporter is an escape hatch for projects that outgrow app-owned Go annotations
+or intentionally move to a schema-first workflow. It is not a required final
+state for every Go project. If the Go service owns the schema and the annotation
+model remains expressive enough, keeping Go annotations as the source of truth
+is a supported Ptah workflow.
+
 ## When to Use Each Format
 
 Use Go annotations when the Go model types remain the primary schema source:
@@ -25,6 +32,10 @@ source:
 - schema review can happen without reading Go source
 - generated SQL can be compared against Atlas-style schema files
 - the same schema file can be shared with tools that understand Atlas HCL
+
+Use export as a one-time migration path when a project wants to move from
+app-schema authoring to declarative schema authoring without manually rewriting
+its existing Ptah metadata.
 
 ## Exported Schema Shape
 
