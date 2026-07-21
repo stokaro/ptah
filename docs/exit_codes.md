@@ -19,6 +19,7 @@ root-level command spellings are removed instead of preserved.
 | `ptah introspect` | Annotated Go model files generated. | Not used. | Usage error, invalid output path, connection failure, schema-read failure, render error, or write error. |
 | `ptah schema render` | Schema rendered. | Not used. | Usage error, parse error, unsupported dialect, or render error. |
 | `ptah schema export` | Schema exported. | Not used. | Usage error, invalid paths, parse error, render error, write error, or cleanup error. |
+| `ptah viz` | Schema diagram rendered. | Not used. | Usage error, invalid paths, parse error, unsupported format/theme, missing Graphviz for SVG, SVG render error, or write error. |
 | `ptah db read` | Schema read and printed. | Not used. | Usage error, connection failure, or schema-read failure. |
 | `ptah db drop-all` | Objects dropped, dry-run output printed, or operation canceled by the user. | Not used. | Usage error, connection failure, input read error, or drop failure. |
 | `ptah schema compare` | Diff printed, or no diff. | Non-empty diff when `--exit-code` is set. | Usage error, connection failure, parse failure, or diff generation failure. |

@@ -19,6 +19,7 @@ import (
 	"github.com/stokaro/ptah/cmd/seed"
 	sqlcmd "github.com/stokaro/ptah/cmd/sql"
 	"github.com/stokaro/ptah/cmd/version"
+	"github.com/stokaro/ptah/cmd/viz"
 )
 
 const envPrefix = "PTAH"
@@ -42,6 +43,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(migrations.NewMigrationsCommand())
 	cmd.AddCommand(seed.NewSeedCommand())
 	cmd.AddCommand(sqlcmd.NewSQLCommand())
+	cmd.AddCommand(viz.NewCommand())
 	cmd.AddCommand(atlas.NewAtlasCommand())
 	cmd.AddCommand(version.NewVersionCommand())
 
