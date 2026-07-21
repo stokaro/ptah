@@ -155,7 +155,7 @@ func TestGenerateMigrationAST_IndexUnresolvedStructEmitsWarning(t *testing.T) {
 }
 
 // TestGenerateMigrationAST_IndexExplicitTableNameWins verifies that when an
-// index annotation carries `table=` we honour it without consulting the
+// index annotation carries `table=` we honor it without consulting the
 // struct→table map. This is the supported escape hatch for cross-struct
 // indexes.
 func TestGenerateMigrationAST_IndexExplicitTableNameWins(t *testing.T) {

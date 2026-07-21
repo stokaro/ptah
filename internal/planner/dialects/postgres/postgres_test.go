@@ -53,7 +53,7 @@ func TestPlanner_GenerateMigrationSQL_EnumsAdded(t *testing.T) {
 			generated: &goschema.Database{
 				Enums: []goschema.Enum{
 					{Name: "user_status", Values: []string{"active", "inactive"}},
-					{Name: "order_status", Values: []string{"pending", "completed", "cancelled"}},
+					{Name: "order_status", Values: []string{"pending", "completed", "canceled"}},
 				},
 			},
 			expected: func(nodes []ast.Node) bool {
@@ -73,7 +73,9 @@ func TestPlanner_GenerateMigrationSQL_EnumsAdded(t *testing.T) {
 					return false
 				}
 
-				return true
+				return enum2.Values[0] == "pending" &&
+					enum2.Values[1] == "completed" &&
+					enum2.Values[2] == "canceled"
 			},
 		},
 	}

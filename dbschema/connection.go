@@ -25,7 +25,7 @@ import (
 // ConnectToDatabase creates a database connection from a URL.
 //
 // The provided context governs the initial Ping used to verify the connection
-// and the metadata queries issued to populate [DBInfo]. Cancelling the context
+// and the metadata queries issued to populate [DBInfo]. Canceling the context
 // before or during the call causes ConnectToDatabase to return promptly with
 // the context error wrapped in a descriptive message. The context does not
 // affect the lifetime of the returned *DatabaseConnection; callers are
@@ -70,7 +70,7 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 		db.SetMaxOpenConns(1)
 	}
 
-	// Test the connection — honour the caller-supplied context so a stuck or
+	// Test the connection — honor the caller-supplied context so a stuck or
 	// slow host cannot block ConnectToDatabase indefinitely.
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
@@ -525,11 +525,11 @@ func convertPostgresWireURL(dbURL string) string {
 	}
 }
 
-// convertClickHouseURL normalises a ClickHouse connection URL into the form
+// convertClickHouseURL normalizes a ClickHouse connection URL into the form
 // expected by the clickhouse-go/v2 driver's database/sql registration.
 //
 // The driver accepts either the canonical `clickhouse://user:pass@host:port/db`
-// URL form or the legacy DSN form. We canonicalise to the URL form and pass
+// URL form or the legacy DSN form. We canonicalize to the URL form and pass
 // the query parameters through unchanged. If the input cannot be parsed as a
 // URL we return it as-is so the driver can produce its own (likely better)
 // error message.
@@ -541,7 +541,7 @@ func convertClickHouseURL(dbURL string) string {
 	if parsed.Scheme == "" {
 		return dbURL
 	}
-	// The driver registers as the lowercase scheme "clickhouse". Normalise.
+	// The driver registers as the lowercase scheme "clickhouse". Normalize.
 	parsed.Scheme = "clickhouse"
 	return parsed.String()
 }
