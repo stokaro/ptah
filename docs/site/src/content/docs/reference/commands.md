@@ -55,7 +55,7 @@ ptah atlas schema inspect --url "$DATABASE_URL"
 | `ptah atlas migrate lint` | Forwards to `ptah migrations lint`. |
 | `ptah atlas migrate new` | Forwards to `ptah migrations create`. |
 | `ptah atlas migrate set` | Forwards to `ptah migrations repair`. |
-| `ptah atlas migrate down` | Forwards to `ptah migrations down`; full Atlas dynamic down-planning semantics are tracked as a gap. |
+| `ptah atlas migrate down` | Forwards to `ptah migrations down`; maps compatible Atlas flags and fails explicitly for dynamic down-planning and output-format flags that native Ptah does not implement yet. |
 | `ptah atlas migrate diff` | Registered path; runtime behavior is not implemented yet. |
 | `ptah atlas migrate import` | Registered path; runtime behavior is not implemented yet. |
 | `ptah atlas schema inspect` | Forwards to `ptah db read`. |
