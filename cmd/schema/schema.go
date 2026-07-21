@@ -14,6 +14,7 @@ import (
 	"github.com/stokaro/ptah/cmd/generate"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/internal/annotationschema"
 	"github.com/stokaro/ptah/internal/atlashclrender"
 	"github.com/stokaro/ptah/internal/goannotationcleanup"
 	"github.com/stokaro/ptah/internal/pathguard"
@@ -45,6 +46,7 @@ under ptah atlas.`,
 		},
 	}
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
+	cmd.AddCommand(newSchemaAnnotationsCommand())
 	cmd.AddCommand(newSchemaExportCommand())
 	renderCmd := generate.NewGenerateCommand()
 	renderCmd.Short = "Render desired schema SQL"
@@ -61,6 +63,55 @@ under ptah atlas.`,
 	driftCmd.Long = "Check live database drift against desired schema."
 	cmd.AddCommand(driftCmd)
 	return cmd
+}
+
+func newSchemaAnnotationsCommand() *cobra.Command {
+	var format string
+	var outPath string
+
+	cmd := &cobra.Command{
+		Use:   "annotations",
+		Short: "Export Ptah Go annotation metadata",
+		Long: `Export Ptah Go annotation metadata.
+
+The JSON Schema output describes the parsed representation of every supported
+//migrator directive and attribute:
+
+  ptah schema annotations --format json-schema --out schemas/migrator-annotations.schema.json`,
+		Args:          cmdutil.NoPositionalArgs,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runAnnotations(cmd, format, outPath)
+		},
+	}
+	flags := cmd.Flags()
+	flags.StringVar(&format, "format", "json-schema", "Annotation metadata format: json-schema")
+	flags.StringVar(&outPath, exportOutFlag, "", "Output JSON Schema file")
+	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
+	return cmd
+}
+
+func runAnnotations(cmd *cobra.Command, format, outPath string) error {
+	if strings.TrimSpace(format) != "json-schema" {
+		return cmdutil.Fail(cmd, fmt.Errorf("unsupported --format %q: expected json-schema", format))
+	}
+	data, err := annotationschema.Generate()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if strings.TrimSpace(outPath) == "" {
+		fmt.Fprint(cmd.OutOrStdout(), string(data))
+		return nil
+	}
+	resolved, err := resolveOutputPath(outPath)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if err := os.WriteFile(resolved, data, 0o600); err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("write annotation JSON Schema: %w", err))
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Exported annotation JSON Schema to %s\n", resolved)
+	return nil
 }
 
 func newSchemaExportCommand() *cobra.Command {

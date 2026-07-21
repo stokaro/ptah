@@ -190,6 +190,48 @@ type User struct {
 	c.Assert(db.Fields[0].IdentityOptions, qt.Equals, "MINVALUE 0 START WITH 0")
 }
 
+func TestParseSource_RejectsUnknownAttributesOnAllDirectives(t *testing.T) {
+	tests := []struct {
+		name       string
+		annotation string
+		field      bool
+	}{
+		{name: "table", annotation: `//migrator:schema:table name="users" bogus="x"`},
+		{name: "embedded", annotation: `//migrator:embedded mode="inline" bogus="x"`, field: true},
+		{name: "constraint", annotation: `//migrator:schema:constraint name="users_check" type="CHECK" bogus="x"`},
+		{name: "extension", annotation: `//migrator:schema:extension name="pg_trgm" bogus="x"`},
+		{name: "function", annotation: `//migrator:schema:function name="f" bogus="x"`},
+		{name: "rls_policy", annotation: `//migrator:schema:rls:policy name="p" table="users" bogus="x"`},
+		{name: "rls_enable", annotation: `//migrator:schema:rls:enable table="users" bogus="x"`},
+		{name: "role", annotation: `//migrator:schema:role name="app" bogus="x"`},
+		{name: "grant", annotation: `//migrator:schema:grant role="app" privilege="SELECT" bogus="x"`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			annotation := tt.annotation
+			if tt.field {
+				annotation = ""
+			}
+			fieldAnnotation := `//migrator:schema:field name="id" type="SERIAL" primary="true"`
+			if tt.field {
+				fieldAnnotation = tt.annotation
+			}
+			_, err := goschema.ParseSource("schema.go", `
+package test
+
+`+annotation+`
+type User struct {
+	`+fieldAnnotation+`
+	ID int64
+}
+`)
+			c.Assert(err, qt.ErrorMatches, `unknown annotation attribute "bogus".*`)
+		})
+	}
+}
+
 func TestParseSource_TableCommentLeavesAbsentCSVAttributesEmpty(t *testing.T) {
 	c := qt.New(t)
 

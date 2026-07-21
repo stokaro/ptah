@@ -32,6 +32,7 @@ help:
 build:
 	@echo "Building Ptah binaries..."
 	go build -ldflags "$(LDFLAGS)" -o bin/ptah ./cmd/ptah
+	go build -ldflags "$(LDFLAGS)" -o bin/ptah-ls ./cmd/ptah-ls
 	go build -o bin/ptah-integration-test ./cmd/integration-test
 
 # Run unit tests

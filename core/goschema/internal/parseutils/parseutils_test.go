@@ -25,3 +25,18 @@ func TestParseKeyValueComment_EnumDirectiveTokenIsNotBooleanAttribute(t *testing
 	c.Assert(kv["name"], qt.Equals, "status")
 	c.Assert(kv["values"], qt.Equals, "active,inactive")
 }
+
+func TestParsePlatformSpecificUsesSharedPlatformAttributeShape(t *testing.T) {
+	c := qt.New(t)
+
+	platform := ParsePlatformSpecific(map[string]string{
+		"platform.mysql.type":                   "INT",
+		"platform.postgres.identity.generation": "BY DEFAULT",
+		"platform.mysql":                        "ignored",
+		"platform.mysql.type-name":              "ignored",
+	})
+
+	c.Assert(platform["mysql"]["type"], qt.Equals, "INT")
+	c.Assert(platform["postgres"]["identity.generation"], qt.Equals, "BY DEFAULT")
+	c.Assert(platform["mysql"]["type-name"], qt.Equals, "")
+}
