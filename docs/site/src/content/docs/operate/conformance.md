@@ -23,6 +23,19 @@ The authoritative current numbers live in the conformance repository reports:
 
 Ptah documentation must not claim full Atlas OSS parity until the full conformance gates are green.
 
+## How to read green and red checks
+
+The conformance repository separates regression budgets from full parity:
+
+| Gate type | Meaning |
+| --- | --- |
+| Regression budget | No new gaps beyond the accepted budget for that contour. Should stay green. |
+| Full conformance | Every checked case in that contour passes. May stay red while known gaps remain. |
+
+A green regression-budget check does not mean Ptah has full Atlas OSS parity.
+A red full-conformance check is expected while the report still lists known
+gaps.
+
 ## Local commands
 
 From the Ptah repository:
@@ -44,3 +57,11 @@ make budget-diff
 ```
 
 Live and differential probes require real database URLs. Differential probes also require an Atlas CE binary built from the pinned Atlas version in the conformance repository.
+
+## When to update reports
+
+Update conformance after Ptah changes that affect Atlas command behavior,
+schema parsing/rendering, migration directory semantics, live database
+round-trips, or public compatibility APIs. Bump the Ptah module version in the
+conformance repository, run `go mod tidy`, regenerate the relevant reports, and
+let both regression and full-conformance checks show the expected state.

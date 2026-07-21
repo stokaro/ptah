@@ -16,6 +16,17 @@ ptah                  !-> ptah-atlas-conformance
 
 Ptah can be tested by the conformance repo, but Ptah does not import or vendor that repository.
 
+## What is allowed
+
+Ptah compatibility work may use:
+
+- Atlas public command names, flags, file formats, and documented behavior;
+- observable behavior from running Atlas OSS;
+- Apache-2.0 test assets kept in the separate conformance repository;
+- independently written Ptah code, tests, and documentation.
+
+Ptah must not copy, vendor, or port Atlas source code into this repository.
+
 ## Documentation rule
 
 When documenting Atlas compatibility:
