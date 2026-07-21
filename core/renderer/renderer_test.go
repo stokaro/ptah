@@ -543,6 +543,36 @@ func TestGetOrderedCreateStatements(t *testing.T) {
 	c.Assert(indexes, qt.Equals, 2)
 }
 
+func TestGetOrderedCreateStatements_MySQLFamilyInlineEnumsAreExecutable(t *testing.T) {
+	database, err := goschema.ParseSource("model.go", `package models
+
+//migrator:schema:table name="accounts"
+type Account struct {
+	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+	//migrator:schema:field name="status" type="ENUM" enum="active,suspended,deleted" not_null="true" default="active"
+	Status string
+}
+`)
+	c := qt.New(t)
+	c.Assert(err, qt.IsNil)
+
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := renderer.GetOrderedCreateStatements(&database, dialect)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements, qt.HasLen, 1)
+			for _, statement := range statements {
+				c.Assert(strings.TrimSpace(statement), qt.Not(qt.Equals), "")
+			}
+			c.Assert(statements[0], qt.Contains, "`status` ENUM('active', 'suspended', 'deleted') NOT NULL DEFAULT 'active'")
+		})
+	}
+}
+
 func TestGetOrderedCreateStatements_MutualForeignKeysAreTwoPhase(t *testing.T) {
 	c := qt.New(t)
 
