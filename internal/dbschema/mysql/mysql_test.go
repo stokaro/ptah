@@ -321,6 +321,20 @@ func TestNormalizeMySQLColumnDefaultQuotesCatalogStringLiterals(t *testing.T) {
 			want:         "42",
 		},
 		{
+			name:         "boolean numeric false",
+			columnType:   "tinyint(1)",
+			dataType:     "tinyint",
+			defaultValue: "0",
+			want:         "0",
+		},
+		{
+			name:         "boolean keyword false",
+			columnType:   "tinyint(1)",
+			dataType:     "tinyint",
+			defaultValue: "false",
+			want:         "false",
+		},
+		{
 			name:         "temporal expression",
 			columnType:   "timestamp",
 			dataType:     "timestamp",

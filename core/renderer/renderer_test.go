@@ -573,6 +573,32 @@ type Account struct {
 	}
 }
 
+func TestGetOrderedCreateStatements_MySQLBooleanDefaultsAreExecutable(t *testing.T) {
+	database, err := goschema.ParseSource("model.go", `package models
+
+//migrator:schema:table name="products"
+type Product struct {
+	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+	//migrator:schema:field name="archived" type="BOOLEAN" not_null="true" default="false"
+	Archived bool
+}
+
+//migrator:schema:view name="live_products" body="SELECT id FROM products WHERE archived = false"
+type LiveProductsView struct{}
+`)
+	c := qt.New(t)
+	c.Assert(err, qt.IsNil)
+
+	statements, err := renderer.GetOrderedCreateStatements(&database, "mysql")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.HasLen, 2)
+	c.Assert(statements[0], qt.Contains, "`archived` BOOLEAN NOT NULL DEFAULT 0")
+	c.Assert(statements[0], qt.Not(qt.Contains), "DEFAULT 'false'")
+	c.Assert(statements[1], qt.Contains, "CREATE VIEW `live_products` AS")
+}
+
 func TestGetOrderedCreateStatements_MutualForeignKeysAreTwoPhase(t *testing.T) {
 	c := qt.New(t)
 
