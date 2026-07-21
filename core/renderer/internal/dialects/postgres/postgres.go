@@ -23,6 +23,10 @@ type Renderer struct {
 	w            bufwriter.Writer
 }
 
+func (r *Renderer) VisitUpsert(_ *ast.UpsertNode) error {
+	return unsupportedFeaturef("upsert rendering is not implemented for %s", r.dialect)
+}
+
 func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 	// Build DROP INDEX statement for PostgreSQL
 	var parts []string

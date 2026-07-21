@@ -291,3 +291,11 @@ func (m *MockVisitor) VisitRawSQL(node *ast.RawSQLNode) error {
 	}
 	return nil
 }
+
+func (m *MockVisitor) VisitUpsert(node *ast.UpsertNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "Upsert:"+node.Table)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}

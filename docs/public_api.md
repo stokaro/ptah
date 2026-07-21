@@ -50,9 +50,10 @@ CI runs two public API checks:
   non-command, non-example, non-fixture package that is importable from outside
   this module but not listed here.
 - `scripts/check-public-api-snapshot.sh` regenerates the `go doc -short`
-  exported-symbol snapshot for every package listed here and compares it with
-  `docs/public_api.snapshot`. Any exported surface change must update the
-  snapshot in the same reviewed change.
+  exported-symbol snapshot for every package listed here, expands public
+  interface method sets, and compares it with `docs/public_api.snapshot`.
+  Any exported surface change must update the snapshot in the same reviewed
+  change.
 
 After the first `v0.x` tag exists, add a released-baseline API compatibility
 check (`apidiff` or `gorelease`) for the stable package list. Until then, there

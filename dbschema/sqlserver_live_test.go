@@ -11,7 +11,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/dbschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/migration/schemadiff"
@@ -169,6 +171,56 @@ func TestSQLServerLiveDropAllTablesDropsForeignKeys(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(schema.Tables, qt.HasLen, 0)
 	c.Assert(sqlServerLiveTableExists(t, scopedConn, schemaName, "schema_migrations"), qt.IsFalse)
+}
+
+func TestSQLServerLiveRenderedUpsertMerge(t *testing.T) {
+	dbURL := os.Getenv("PTAH_SQLSERVER_TEST_URL")
+	if dbURL == "" {
+		t.Skip("set PTAH_SQLSERVER_TEST_URL to run SQL Server live schema tests")
+	}
+	c := qt.New(t)
+	ctx := context.Background()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	schemaName := fmt.Sprintf("ptah_upsert_%d", time.Now().UnixNano())
+	_, err = conn.ExecContext(ctx, "EXEC('CREATE SCHEMA "+quoteSQLServerIdentifier(schemaName)+"')")
+	c.Assert(err, qt.IsNil)
+	defer func() {
+		_, _ = conn.ExecContext(ctx, "DROP TABLE IF EXISTS "+quoteSQLServerIdentifier(schemaName)+".[users]")
+		_, _ = conn.ExecContext(ctx, "DROP SCHEMA IF EXISTS "+quoteSQLServerIdentifier(schemaName))
+	}()
+
+	_, err = conn.ExecContext(ctx, `CREATE TABLE `+quoteSQLServerIdentifier(schemaName)+`.[users] (
+		[id] INT NOT NULL PRIMARY KEY,
+		[email] NVARCHAR(320) NOT NULL
+	);`)
+	c.Assert(err, qt.IsNil)
+
+	upsert := ast.NewUpsert(schemaName+".users").
+		SetInsert([]string{"id", "email"}, []string{"@p1", "@p2"}).
+		SetMatchColumns("id").
+		AddUpdateAssignment("email", "source.[email]")
+	upsertSQL, err := renderer.RenderSQL("sqlserver", upsert)
+	c.Assert(err, qt.IsNil)
+	c.Assert(upsertSQL, qt.Contains, "WITH (HOLDLOCK)")
+
+	_, err = conn.ExecContext(ctx, upsertSQL, 7, "first@example.com")
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(ctx, upsertSQL, 7, "second@example.com")
+	c.Assert(err, qt.IsNil)
+
+	var count int
+	var email string
+	err = conn.QueryRowContext(ctx,
+		`SELECT COUNT(*), MAX([email]) FROM `+quoteSQLServerIdentifier(schemaName)+`.[users] WHERE [id] = @p1`,
+		7,
+	).Scan(&count, &email)
+	c.Assert(err, qt.IsNil)
+	c.Assert(count, qt.Equals, 1)
+	c.Assert(email, qt.Equals, "second@example.com")
 }
 
 func TestSQLServerLiveComputedColumnZeroDiff(t *testing.T) {

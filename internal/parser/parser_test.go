@@ -2405,6 +2405,11 @@ func TestParser_ParseSkipsSchemaNeutralStatements(t *testing.T) {
 
 	sql := `
 		INSERT INTO ignored_seed_data (id, name) VALUES (1, 'semi;colon');
+		MERGE INTO ignored_target AS target
+		USING (VALUES (1, 'seed')) AS source (id, name)
+		ON target.id = source.id
+		WHEN MATCHED THEN UPDATE SET name = source.name
+		WHEN NOT MATCHED THEN INSERT (id, name) VALUES (source.id, source.name);
 		CREATE TABLE users (id INTEGER PRIMARY KEY);
 		PRAGMA foreign_keys = off;
 		SELECT * FROM users;

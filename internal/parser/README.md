@@ -49,7 +49,8 @@ The parser supports the following SQL DDL statements:
 
 ### Schema-neutral statements
 - DML and session-control statements such as `INSERT`, `UPDATE`, `DELETE`,
-  `SELECT`, `PRAGMA`, `SET`, `BEGIN`, `COMMIT`, and `ROLLBACK` are skipped.
+  `MERGE`, `SELECT`, `PRAGMA`, `SET`, `BEGIN`, `COMMIT`, and `ROLLBACK` are
+  skipped.
 
 These statements are intentionally not represented in the schema AST. They can
 appear in migration files alongside DDL, but they do not describe the database

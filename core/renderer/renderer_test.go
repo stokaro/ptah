@@ -207,6 +207,28 @@ func TestRenderSQL_UnsupportedDialect(t *testing.T) {
 	c.Assert(renderErr.Dialect, qt.Equals, "oracle")
 }
 
+func TestRenderSQL_UpsertUnsupportedDialects(t *testing.T) {
+	node := ast.NewUpsert("users").
+		AddInsertValue("id", "?").
+		SetMatchColumns("id").
+		AddUpdateAssignment("id", "source.id")
+
+	for _, dialect := range []string{"postgres", "mysql", "mariadb", "sqlite", "clickhouse"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			sql, err := renderer.RenderSQL(dialect, node)
+
+			c.Assert(sql, qt.Equals, "")
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			var renderErr *ptaherr.RenderError
+			c.Assert(err, qt.ErrorAs, &renderErr)
+			c.Assert(renderErr.Dialect, qt.Equals, dialect)
+			c.Assert(renderErr.Node, qt.Equals, node)
+		})
+	}
+}
+
 func TestRenderer_Interface(t *testing.T) {
 	// Test that all dialect renderers implement the RenderVisitor interface
 	dialects := []string{"postgresql", "mysql", "mariadb", "sqlserver"}

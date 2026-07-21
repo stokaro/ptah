@@ -81,6 +81,8 @@ type Visitor interface {
 	// VisitRawSQL renders a literal SQL fragment verbatim. Use sparingly —
 	// reach for structured nodes first.
 	VisitRawSQL(*RawSQLNode) error
+	// VisitUpsert renders a dialect-independent upsert statement.
+	VisitUpsert(*UpsertNode) error
 }
 
 // DefaultValue represents different types of default values for table columns.

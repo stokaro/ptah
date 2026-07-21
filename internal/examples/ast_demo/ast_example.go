@@ -299,6 +299,7 @@ func (a *SchemaAnalyzer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) err
 	return nil
 }
 func (a *SchemaAnalyzer) VisitRawSQL(node *ast.RawSQLNode) error { return nil }
+func (a *SchemaAnalyzer) VisitUpsert(node *ast.UpsertNode) error { return nil }
 
 // AuditTransformer adds audit columns to all tables
 type AuditTransformer struct{}

@@ -57,10 +57,9 @@ The SQL Server support is deliberately conservative:
 - Automatic column removal is rejected because SQL Server requires dependent
   constraints, defaults, and indexes to be dropped in the correct order first.
 - SQL Server metadata repair/baseline paths use SQL Server-compatible revision
-  table SQL, but Ptah does not yet expose a general DML/upsert AST. User-schema
-  `MERGE` generation is tracked separately in
-  [#457](https://github.com/stokaro/ptah/issues/457) and is outside the current
-  DDL renderer surface.
+  table SQL. User-schema upserts can be rendered through Ptah's reusable
+  DML upsert AST as SQL Server `MERGE`; see
+  [DML Upsert AST](dml_upsert.md).
 - View and trigger introspection records SQL Server's persisted definition text,
   but Ptah does not yet normalize it into body-only drift-safe definitions.
 - Index introspection covers key columns but does not yet preserve included
