@@ -1,0 +1,44 @@
+---
+title: Ptah
+description: Documentation for Ptah, a license-clean schema and migration toolkit for Go projects and Atlas-compatible workflows.
+template: splash
+hero:
+  title: Ptah
+  tagline: Schema modeling, migration planning, Atlas-compatible command paths, and database documentation without depending on Atlas code.
+  image:
+    alt: Ptah logo
+    file: ../../assets/logo.svg
+  actions:
+    - text: Quick start
+      link: ./getting-started/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/stokaro/ptah
+      icon: external
+      variant: minimal
+---
+
+import { LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+## What do you need?
+
+<CardGrid>
+  <LinkCard title="Quick start" href="./getting-started/" description="Build Ptah, create a tiny schema, run migrations, verify hashes, and clean up." />
+  <LinkCard title="Go schema workflow" href="./workflows/go-schema/" description="Use annotated Go structs as the application-owned schema source." />
+  <LinkCard title="Schema files" href="./workflows/schema-files/" description="Render and migrate from YAML schema files or Atlas HCL schema files." />
+  <LinkCard title="Migrations" href="./workflows/migrations/" description="Plan, generate, apply, roll back, hash, validate, and inspect migrations." />
+  <LinkCard title="Atlas-compatible CLI" href="./workflows/atlas-cli/" description="Use Atlas-style command paths under ptah atlas without root-level aliases." />
+  <LinkCard title="CI" href="./workflows/ci/" description="Run Ptah checks in pull requests and fail safely on destructive changes." />
+  <LinkCard title="Examples" href="./examples/go-model/" description="Runnable Go, YAML, Atlas HCL, migration-directory, and schema visualization examples." />
+  <LinkCard title="Comparison" href="./reference/comparison/" description="Command parity, feature parity, dialect support, config precedence, and exit behavior." />
+  <LinkCard title="Troubleshooting" href="./operate/troubleshooting/" description="Fix Graphviz, database URL, hash mismatch, unsupported capability, and conformance issues." />
+</CardGrid>
+
+:::caution[Atlas parity status]
+Ptah is working toward Atlas OSS command and behavior parity, but full parity is not claimed here. The current evidence is tracked in the separate conformance repository and summarized in [Conformance](./operate/conformance/).
+:::
+
+## License-clean implementation
+
+Ptah does not use Atlas source code. Atlas interface behavior and Apache-2.0 test assets are evaluated in the separate `ptah-atlas-conformance` repository so the Ptah source tree stays MIT and implementation-independent. See [License boundary](./operate/license-boundary/).
