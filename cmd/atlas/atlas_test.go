@@ -88,6 +88,23 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 			flags: []string{"--url", "--dir", "--dry-run", "--tx-mode"},
 		},
 		{
+			name: "migrate_down",
+			path: []string{"migrate", "down"},
+			flags: []string{
+				"--url",
+				"--dir",
+				"--dev-url",
+				"--to-version",
+				"--to-tag",
+				"--dry-run",
+				"--format",
+				"--revisions-schema",
+				"--lock-timeout",
+				"--skip-checks",
+				"--plan",
+			},
+		},
+		{
 			name:  "migrate_lint",
 			path:  []string{"migrate", "lint"},
 			flags: []string{"--dev-url", "--dir", "--latest"},
@@ -139,6 +156,100 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 			for _, flag := range tt.flags {
 				c.Assert(out.String(), qt.Contains, flag)
 			}
+		})
+	}
+}
+
+func TestNewAtlasCommand_MigrateDownHelpUsesAtlasFlagKinds(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"migrate", "down", "--help"})
+
+	err := cmd.Execute()
+
+	help := out.String()
+	c.Assert(err, qt.IsNil)
+	c.Assert(help, qt.Contains, "--plan")
+	c.Assert(help, qt.Not(qt.Contains), "--plan string")
+	c.Assert(help, qt.Contains, "--lock-timeout string")
+}
+
+func TestMapAtlasArgs_MigrateDownNativeFlags(t *testing.T) {
+	c := qt.New(t)
+
+	got, err := mapAtlasArgs("migrate", atlasMigrateDownVerb(), []string{
+		"--url", "postgres://localhost/db",
+		"--dir=file://migrations",
+		"--to-version", "20260721120000",
+		"--dry-run",
+		"--revisions-schema", "atlas_schema_revisions",
+		"--lock-timeout=10s",
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, []string{
+		"--db-url", "postgres://localhost/db",
+		"--migrations-dir=migrations",
+		"--target", "20260721120000",
+		"--dry-run",
+		"--migrations-schema", "atlas_schema_revisions",
+		"--migration-lock-timeout=10s",
+	})
+}
+
+func TestMapAtlasArgs_MigrateDownRejectsRemoteDir(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := mapAtlasArgs("migrate", atlasMigrateDownVerb(), []string{
+		"--dir", "atlas://repo/migrations",
+	})
+
+	c.Assert(err, qt.ErrorMatches, `atlas migrate down --dir: only local file:// migration directories are supported`)
+}
+
+func TestMapAtlasArgs_MigrateDownUnsupportedFlagsFailExplicitly(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "dev_url",
+			args: []string{"--dev-url", "sqlite://dev"},
+			want: "atlas migrate down accepts --dev-url, but Ptah does not implement its behavior yet",
+		},
+		{
+			name: "skip_checks",
+			args: []string{"--skip-checks"},
+			want: "atlas migrate down accepts --skip-checks, but Ptah does not implement its behavior yet",
+		},
+		{
+			name: "to_tag",
+			args: []string{"--to-tag", "release-v1"},
+			want: "atlas migrate down accepts --to-tag, but Ptah does not implement its behavior yet",
+		},
+		{
+			name: "format",
+			args: []string{"--format", "{{ json . }}"},
+			want: "atlas migrate down accepts --format, but Ptah does not implement its behavior yet",
+		},
+		{
+			name: "plan",
+			args: []string{"--plan"},
+			want: "atlas migrate down accepts --plan, but Ptah does not implement its behavior yet",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := mapAtlasArgs("migrate", atlasMigrateDownVerb(), tt.args)
+
+			c.Assert(err, qt.ErrorMatches, tt.want)
 		})
 	}
 }

@@ -106,6 +106,23 @@ func TestMigrateDownCommandDeclinedConfirmationPrintsCanceled(t *testing.T) {
 	c.Assert(status.CurrentVersion, qt.Equals, int64(1))
 }
 
+func TestMigrateDownCommandRejectsRelativeTraversalDirectory(t *testing.T) {
+	c := qt.New(t)
+	cmd := migratedown.NewMigrateDownCommand()
+	resetMigrateDownCommandForTest(c, cmd)
+	cmd.SetArgs([]string{
+		"--db-url", "sqlite://ignored",
+		"--migrations-dir", "../outside",
+		"--target", "0",
+		"--confirm",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `.*outside allowed root.*`)
+	resetMigrateDownCommandForTest(c, cmd)
+}
+
 // TestMigrateDownCommand_Integration tests the actual migration logic
 // This test requires a real database connection and is skipped if no test database is available
 func TestMigrateDownCommand_Integration(t *testing.T) {

@@ -46,6 +46,7 @@ type atlasFlag struct {
 	kind        atlasFlagKind
 	nativeName  string
 	unsupported bool
+	mapValue    func(string) (string, error)
 }
 
 type parsedAtlasFlag struct {
@@ -159,7 +160,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 			factory: migrateup.NewMigrateUpCommand,
 			flags: []atlasFlag{
 				atlasNativeString("url", "u", "Database URL to apply migrations to", "db-url"),
-				atlasNativeString("dir", "", "Migration directory", "migrations-dir"),
+				atlasNativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
 				atlasNativeBool("dry-run", "", "Show migrations without applying them", "dry-run"),
 				atlasUnsupportedString("tx-mode", "", "Atlas transaction mode"),
 			},
@@ -175,13 +176,13 @@ func newAtlasMigrateCommand() *cobra.Command {
 				atlasString("format", "", "Atlas Go template output format"),
 			},
 		},
-		{use: "down", short: "Roll back migrations", native: "migrations down", factory: migratedown.NewMigrateDownCommand},
+		atlasMigrateDownVerb(),
 		{
 			use:     "hash",
 			short:   "Write or update the migration directory checksum",
 			native:  "migrations hash",
 			factory: migratehash.NewMigrateHashCommand,
-			flags:   []atlasFlag{atlasNativeString("dir", "", "Migration directory", "dir")},
+			flags:   []atlasFlag{atlasNativeLocalDir("dir", "", "Migration directory", "dir")},
 		},
 		{
 			use:    "import",
@@ -199,7 +200,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 			factory: lint.NewLintCommand,
 			flags: []atlasFlag{
 				atlasUnsupportedString("dev-url", "", "Dev database URL"),
-				atlasNativeString("dir", "", "Migration directory", "dir"),
+				atlasNativeLocalDir("dir", "", "Migration directory", "dir"),
 				atlasUnsupportedString("latest", "", "Number of latest migrations to lint"),
 			},
 		},
@@ -208,7 +209,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 			short:   "Create a new migration file",
 			native:  "migrations create",
 			factory: migrate.NewMigrateCreateCommand,
-			flags:   []atlasFlag{atlasNativeString("dir", "", "Migration directory", "migrations-dir")},
+			flags:   []atlasFlag{atlasNativeLocalDir("dir", "", "Migration directory", "migrations-dir")},
 		},
 		{
 			use:     "set",
@@ -217,7 +218,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 			factory: migraterepair.NewMigrateRepairCommand,
 			flags: []atlasFlag{
 				atlasNativeString("url", "u", "Database URL", "db-url"),
-				atlasNativeString("dir", "", "Migration directory", "migrations-dir"),
+				atlasNativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
 			},
 		},
 		{
@@ -227,7 +228,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 			factory: migratestatus.NewMigrateStatusCommand,
 			flags: []atlasFlag{
 				atlasNativeString("url", "u", "Database URL", "db-url"),
-				atlasNativeString("dir", "", "Migration directory", "migrations-dir"),
+				atlasNativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
 			},
 		},
 		{
@@ -237,13 +238,35 @@ func newAtlasMigrateCommand() *cobra.Command {
 			factory: migratevalidate.NewMigrateValidateCommand,
 			flags: []atlasFlag{
 				atlasUnsupportedString("dev-url", "", "Dev database URL"),
-				atlasNativeString("dir", "", "Migration directory", "dir"),
+				atlasNativeLocalDir("dir", "", "Migration directory", "dir"),
 			},
 		},
 	} {
 		cmd.AddCommand(newAtlasAdapterCommand("migrate", verb))
 	}
 	return cmd
+}
+
+func atlasMigrateDownVerb() atlasVerb {
+	return atlasVerb{
+		use:     "down",
+		short:   "Roll back migrations",
+		native:  "migrations down",
+		factory: migratedown.NewMigrateDownCommand,
+		flags: []atlasFlag{
+			atlasNativeString("url", "u", "Database URL", "db-url"),
+			atlasNativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
+			atlasUnsupportedString("dev-url", "", "Dev database URL used by Atlas for dynamic down planning"),
+			atlasNativeString("to-version", "", "Target version to roll back to", "target"),
+			atlasUnsupportedString("to-tag", "", "Target migration tag to roll back to"),
+			atlasNativeBool("dry-run", "", "Show rollback plan without applying it", "dry-run"),
+			atlasUnsupportedString("format", "", "Atlas Go template output format"),
+			atlasNativeString("revisions-schema", "", "Schema for the revision table", "migrations-schema"),
+			atlasNativeString("lock-timeout", "", "Timeout for acquiring migration locks", "migration-lock-timeout"),
+			atlasUnsupportedBool("skip-checks", "", "Skip Atlas down migration safety checks"),
+			atlasUnsupportedBool("plan", "", "Force Atlas dynamic down planning"),
+		},
+	}
 }
 
 func newAtlasVersionCommand() *cobra.Command {
@@ -325,6 +348,12 @@ func atlasNativeString(name, shorthand, usage, nativeName string) atlasFlag {
 	return f
 }
 
+func atlasNativeLocalDir(name, shorthand, usage, nativeName string) atlasFlag {
+	f := atlasNativeString(name, shorthand, usage, nativeName)
+	f.mapValue = atlasLocalDirValue
+	return f
+}
+
 func atlasNativeBool(name, shorthand, usage, nativeName string) atlasFlag {
 	f := atlasBool(name, shorthand, usage)
 	f.nativeName = nativeName
@@ -347,6 +376,16 @@ func atlasUnsupportedBool(name, shorthand, usage string) atlasFlag {
 	f := atlasBool(name, shorthand, usage)
 	f.unsupported = true
 	return f
+}
+
+func atlasLocalDirValue(value string) (string, error) {
+	if after, found := strings.CutPrefix(value, "file://"); found {
+		return after, nil
+	}
+	if strings.Contains(value, "://") {
+		return "", fmt.Errorf("only local file:// migration directories are supported")
+	}
+	return value, nil
 }
 
 func registerAtlasFlags(cmd *cobra.Command, flags []atlasFlag) {
@@ -408,16 +447,31 @@ func mapAtlasArgs(group string, verb atlasVerb, args []string) ([]string, error)
 			continue
 		}
 		if parsed.hasValue {
-			out = append(out, nativeFlag+"="+parsed.value)
+			value, err := mapAtlasFlagValue(flag, parsed.value)
+			if err != nil {
+				return nil, fmt.Errorf("atlas %s %s %s: %w", group, verb.use, displayName, err)
+			}
+			out = append(out, nativeFlag+"="+value)
 			continue
 		}
 		out = append(out, nativeFlag)
 		if i+1 < len(args) {
 			i++
-			out = append(out, args[i])
+			value, err := mapAtlasFlagValue(flag, args[i])
+			if err != nil {
+				return nil, fmt.Errorf("atlas %s %s %s: %w", group, verb.use, displayName, err)
+			}
+			out = append(out, value)
 		}
 	}
 	return out, nil
+}
+
+func mapAtlasFlagValue(flag atlasFlag, value string) (string, error) {
+	if flag.mapValue == nil {
+		return value, nil
+	}
+	return flag.mapValue(value)
 }
 
 func splitAtlasFlag(arg string) parsedAtlasFlag {
