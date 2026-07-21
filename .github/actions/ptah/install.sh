@@ -42,7 +42,7 @@ install_from_source() {
 		ref="master"
 	fi
 	printf 'No Ptah release asset found for %s; installing from source at %s.\n' "$version" "$ref" >&2
-	GOBIN="$install_dir" go install "github.com/stokaro/ptah/cmd/ptah@$ref"
+	GOPROXY=direct GOBIN="$install_dir" go install "github.com/stokaro/ptah/cmd/ptah@$ref"
 	chmod +x "$install_dir/ptah"
 	printf '%s\n' "$install_dir" >>"$GITHUB_PATH"
 	printf 'ptah-bin=%s\n' "$install_dir/ptah" >>"$GITHUB_OUTPUT"

@@ -79,7 +79,7 @@ capabilities include:
   Automatically generates `up` and `down` SQL migrations to bring the database in sync.
 
 - ✅ **Pull Request Migration Checks**
-  Provides an in-repository composite GitHub Action that comments generated
+  Provides a Marketplace GitHub Action that comments generated
   migration SQL, safety verdicts, and lint findings on pull requests.
 
 - 🚀 **Migration Execution**
@@ -936,11 +936,11 @@ permissions:
   checks: write
   contents: read
   issues: write
-  pull-requests: read
+  pull-requests: write
 
 steps:
   - uses: actions/checkout@v7
-  - uses: stokaro/ptah/.github/actions/ptah@master
+  - uses: stokaro/ptah-action@v1
     with:
       dir: ./internal/models
       db-url: ${{ secrets.PTAH_DATABASE_URL }}
