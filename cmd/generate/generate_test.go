@@ -112,3 +112,16 @@ func TestGenerateCommand_MutualForeignKeysAreTwoPhase(t *testing.T) {
 	c.Assert(sql, qt.Contains, `ALTER TABLE "left_nodes" ADD CONSTRAINT "fk_left_nodes_right_id" FOREIGN KEY ("right_id") REFERENCES "right_nodes"("id")`)
 	c.Assert(sql, qt.Contains, `ALTER TABLE "right_nodes" ADD CONSTRAINT "fk_right_nodes_left_id" FOREIGN KEY ("left_id") REFERENCES "left_nodes"("id")`)
 }
+
+func TestGenerateCommand_JsonEmbeddedFieldRendersOnce(t *testing.T) {
+	c := qt.New(t)
+
+	fixtureDir := filepath.Join("..", "..", "integration", "fixtures", "entities", "023-go-annotations-objects")
+	cmd := exec.Command("go", "run", "../main.go", "schema", "render", "--root-dir", fixtureDir, "--dialect", "postgres")
+	output, err := cmd.CombinedOutput()
+	c.Assert(err, qt.IsNil, qt.Commentf("generate output:\n%s", output))
+
+	usersCreate := outputStatementContaining(string(output), `CREATE TABLE "users"`)
+	c.Assert(usersCreate, qt.Not(qt.Equals), "")
+	c.Assert(strings.Count(usersCreate, `"metadata" JSONB NOT NULL`), qt.Equals, 1)
+}
