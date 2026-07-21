@@ -61,10 +61,11 @@ ptah migrations down \
   --confirm
 ```
 
-The `ptah atlas migrate down` command path exists as a Ptah extension path, but
-current conformance does not track it as an Atlas OSS drop-in target. Use the
-native command for rollback recipes until the Atlas-compatible path documents
-the same runtime contract.
+The `ptah atlas migrate down` command path exists and forwards to native Ptah
+rollback behavior. It is an Atlas OSS command path, but Ptah's compatibility
+surface does not yet match every Atlas dynamic down-planning flag and behavior.
+Use the native command for explicit target rollback recipes until the
+Atlas-compatible path documents the same runtime contract.
 
 ## Troubleshooting
 
