@@ -9,6 +9,53 @@ and user-facing CLI output unless preserving an exact external quote or protocol
 token. Prefer spellings such as `behavior`, `color`, `canceled`, `initialize`,
 `normalize`, and `analyze`.
 
+## Documentation Obligations
+
+Before finishing any change that affects external behavior, inspect and update
+the relevant documentation. Do this as a required verification step, not as an
+opportunistic cleanup. Purely code-internal refactors that do not alter public
+behavior, user-facing output, generated artifacts, supported inputs, or
+operational workflows may skip documentation edits, but the self-review should
+still confirm that the change is internal-only.
+
+External behavior includes at least:
+
+- CLI command names, command grouping, flags, environment variables, help
+  output, output formats, and exit codes.
+- Config file formats, accepted keys, validation behavior, environment
+  selection, and precedence rules.
+- Generated SQL, parsed SQL, migration file formats, migration directives,
+  revision table behavior, hash files, and validation/repair semantics.
+- Public Go package APIs and any documented extension points.
+- Atlas-compatible behavior under `ptah atlas <command> ...`.
+- Conformance status, supported/unsupported feature claims, known gaps, and
+  documented limitations.
+- User-facing errors, warnings, diagnostics, logs, safety checks, and failure
+  behavior.
+
+When a change touches any of those areas, build a documentation impact map and
+search the relevant `.md` files before considering the task complete. Check at
+least:
+
+- `README.md`.
+- `docs/README.md`, `docs/*.md`, and the task-oriented docs under
+  `docs/site/src/content/docs/`.
+- `examples/**/README.md` and generated example artifacts when examples change.
+- `integration/*.md` and test-runner docs when test, fixture, or database
+  behavior changes.
+- Package-level READMEs such as `internal/parser/README.md`,
+  `migration/generator/README.md`, and `migration/migrator/README.md` when the
+  corresponding package behavior changes.
+- `AGENTS.md` itself when agent workflow or project rules change.
+
+Search for both old and new terms: command names, aliases, flag names,
+environment variables, config keys, issue numbers, dialect names, conformance
+gap names, generated labels, and exact error strings. Documentation must stay
+aligned with canonical Ptah command paths, especially the rule that Atlas OSS
+command parity belongs only under `ptah atlas <command> ...`; do not document
+root-level Atlas aliases. Do not claim full Atlas parity or drop-in replacement
+status unless the current conformance evidence proves it.
+
 ## Code Style And Linting
 
 Ptah treats `.golangci.yml` as a strict contract. Fix code to satisfy the configured linters instead of relaxing thresholds, disabling checks, or broadening exclusions. In particular, keep `revive` `error-strings` enabled and preserve the current "stricter wins" lint posture unless a maintainer explicitly asks for a config change.
