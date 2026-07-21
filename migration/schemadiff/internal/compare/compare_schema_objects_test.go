@@ -38,6 +38,41 @@ func TestViews_IgnoresDatabaseOnlyQualification(t *testing.T) {
 	c.Assert(diff.ViewsModified, qt.HasLen, 0)
 }
 
+func TestViews_IgnoresMySQLCanonicalViewBody(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{}
+
+	compare.Views(&goschema.Database{
+		Views: []goschema.View{{Name: "live_products", Body: "SELECT id, name FROM products WHERE archived = false"}},
+	}, &dbschematypes.DBSchema{
+		Views: []dbschematypes.DBView{{
+			Name: "live_products",
+			Body: "select `ptah_issue_502`.`products`.`id` AS `id`,`ptah_issue_502`.`products`.`name` AS `name` " +
+				"from `ptah_issue_502`.`products` where (`ptah_issue_502`.`products`.`archived` = false)",
+		}},
+	}, diff)
+
+	c.Assert(diff.ViewsModified, qt.HasLen, 0)
+}
+
+func TestViews_DetectsMySQLCanonicalPredicateChange(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{}
+
+	compare.Views(&goschema.Database{
+		Views: []goschema.View{{Name: "live_products", Body: "SELECT id, name FROM products WHERE archived = false"}},
+	}, &dbschematypes.DBSchema{
+		Views: []dbschematypes.DBView{{
+			Name: "live_products",
+			Body: "select `ptah_issue_502`.`products`.`id` AS `id`,`ptah_issue_502`.`products`.`name` AS `name` " +
+				"from `ptah_issue_502`.`products` where (`ptah_issue_502`.`products`.`archived` = true)",
+		}},
+	}, diff)
+
+	c.Assert(diff.ViewsModified, qt.HasLen, 1)
+	c.Assert(diff.ViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
+}
+
 func TestViews_DetectsExplicitQualifierChange(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}

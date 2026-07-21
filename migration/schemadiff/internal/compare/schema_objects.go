@@ -324,11 +324,11 @@ func schemaObjectBodiesEqual(generatedBody, databaseBody string) bool {
 }
 
 func normalizeSQLBodyPreservingQualifiers(body string) string {
-	return normalizeSQLBody(body)
+	return canonicalizeNormalizedSQLBody(normalizeSQLBody(body))
 }
 
 func normalizeSQLBodyStrippingQualifiers(body string) string {
-	return schemaQualifierPattern.ReplaceAllString(normalizeSQLBody(body), "")
+	return canonicalizeNormalizedSQLBody(schemaQualifierPattern.ReplaceAllString(normalizeSQLBody(body), ""))
 }
 
 func normalizeSQLBody(body string) string {
@@ -339,6 +339,14 @@ func normalizeSQLBody(body string) string {
 	body = strings.ReplaceAll(body, "`", "")
 	body = strings.ToLower(body)
 	body = stripDefaultAggregateAliases(body)
+	body = regexp.MustCompile(`\s+`).ReplaceAllString(body, " ")
+	body = sqlCommaSpacingPattern.ReplaceAllString(body, ",")
+	return strings.TrimSpace(body)
+}
+
+func canonicalizeNormalizedSQLBody(body string) string {
+	body = stripDefaultColumnAliases(body)
+	body = stripSimpleComparisonParentheses(body)
 	body = regexp.MustCompile(`\s+`).ReplaceAllString(body, " ")
 	return strings.TrimSpace(body)
 }
@@ -351,4 +359,18 @@ func stripDefaultAggregateAliases(body string) string {
 		}
 		return parts[1] + "(" + parts[2] + ")"
 	})
+}
+
+func stripDefaultColumnAliases(body string) string {
+	return defaultColumnAliasPattern.ReplaceAllStringFunc(body, func(match string) string {
+		parts := defaultColumnAliasPattern.FindStringSubmatch(match)
+		if len(parts) != 3 || parts[1] != parts[2] {
+			return match
+		}
+		return parts[1]
+	})
+}
+
+func stripSimpleComparisonParentheses(body string) string {
+	return simpleComparisonParenthesesPattern.ReplaceAllString(body, "$1")
 }
