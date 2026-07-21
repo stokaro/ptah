@@ -108,7 +108,7 @@ func (w *transactionWriter) IsDryRun() bool { return w.writer.IsDryRun() }
 // Identifiers cannot be bound as parameters; quoteIdent doubles any
 // embedded backtick so a name harvested from system.tables cannot break
 // out of the quoted identifier. The explicit "contains backtick" rejection
-// below is defence-in-depth — in a real ClickHouse deployment system.tables
+// below is defense-in-depth — in a real ClickHouse deployment system.tables
 // will not contain such names, but rejecting them outright keeps parity
 // with the postgres/mysql writers and makes the safety property obvious.
 func (w *Writer) DropAllTables() error {

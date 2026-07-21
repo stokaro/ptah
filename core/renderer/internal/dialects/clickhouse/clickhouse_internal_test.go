@@ -1,6 +1,6 @@
 package clickhouse
 
-// White-box tests for helpers whose behaviour cannot be observed through the
+// White-box tests for helpers whose behavior cannot be observed through the
 // renderer's public surface alone. The rest of the dialect's test coverage
 // lives in clickhouse_test.go as a black-box package.
 

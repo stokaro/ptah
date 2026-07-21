@@ -114,7 +114,7 @@ func dropAllCommand(_ *cobra.Command, _ []string) error {
 		}
 
 		if confirmation != "DELETE EVERYTHING" {
-			fmt.Println("Operation cancelled.")
+			fmt.Println("Operation canceled.")
 			return nil
 		}
 
@@ -126,7 +126,7 @@ func dropAllCommand(_ *cobra.Command, _ []string) error {
 		}
 
 		if confirmation != "YES I AM SURE" {
-			fmt.Println("Operation cancelled.")
+			fmt.Println("Operation canceled.")
 			return nil
 		}
 	}
