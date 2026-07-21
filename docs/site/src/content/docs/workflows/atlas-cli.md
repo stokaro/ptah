@@ -36,7 +36,7 @@ fail clearly instead of being ignored.
 | `ptah atlas migrate status` | `ptah migrations status` |
 | `ptah atlas migrate hash` | `ptah migrations hash` |
 | `ptah atlas migrate validate` | `ptah migrations validate` |
-| `ptah atlas migrate lint` | `ptah migrations lint` |
+| `ptah atlas migrate lint` | `ptah migrations lint`; supports Atlas-style `--latest N` for latest-version linting. |
 | `ptah atlas migrate new` | `ptah migrations create` |
 | `ptah atlas migrate set` | `ptah migrations repair` |
 | `ptah atlas migrate diff` | Command path registered; runtime behavior is not implemented yet. |
@@ -69,6 +69,8 @@ ptah atlas schema fmt schema.hcl
 ptah atlas migrate import \
   --from "file://flyway?format=flyway" \
   --to "file://migrations"
+
+ptah atlas migrate lint --dir ./migrations --latest 1
 ```
 
 For binary-level drop-in usage:

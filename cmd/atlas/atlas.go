@@ -42,6 +42,7 @@ const (
 	atlasStringFlag atlasFlagKind = iota
 	atlasStringArrayFlag
 	atlasBoolFlag
+	atlasUintFlag
 )
 
 type atlasFlag struct {
@@ -208,17 +209,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 			factory: migratehash.NewMigrateHashCommand,
 			flags:   []atlasFlag{atlasNativeLocalDir("dir", "", "Migration directory", "dir")},
 		},
-		{
-			use:     "lint",
-			short:   "Lint migration files",
-			native:  "migrations lint",
-			factory: lint.NewLintCommand,
-			flags: []atlasFlag{
-				atlasUnsupportedString("dev-url", "", "Dev database URL"),
-				atlasNativeLocalDir("dir", "", "Migration directory", "dir"),
-				atlasUnsupportedString("latest", "", "Number of latest migrations to lint"),
-			},
-		},
+		atlasMigrateLintVerb(),
 		{
 			use:     "new",
 			short:   "Create a new migration file",
@@ -281,6 +272,20 @@ func atlasMigrateDownVerb() atlasVerb {
 			atlasNativeString("lock-timeout", "", "Timeout for acquiring migration locks", "migration-lock-timeout"),
 			atlasUnsupportedBool("skip-checks", "", "Skip Atlas down migration safety checks"),
 			atlasUnsupportedBool("plan", "", "Force Atlas dynamic down planning"),
+		},
+	}
+}
+
+func atlasMigrateLintVerb() atlasVerb {
+	return atlasVerb{
+		use:     "lint",
+		short:   "Lint migration files",
+		native:  "migrations lint",
+		factory: lint.NewLintCommand,
+		flags: []atlasFlag{
+			atlasUnsupportedString("dev-url", "", "Dev database URL"),
+			atlasNativeLocalDir("dir", "", "Migration directory", "dir"),
+			atlasNativeUint("latest", "", "Number of latest migrations to lint", "latest"),
 		},
 	}
 }
@@ -365,8 +370,18 @@ func atlasBool(name, shorthand, usage string) atlasFlag {
 	return atlasFlag{name: name, shorthand: shorthand, usage: usage, kind: atlasBoolFlag}
 }
 
+func atlasUint(name, shorthand, usage string) atlasFlag {
+	return atlasFlag{name: name, shorthand: shorthand, usage: usage, kind: atlasUintFlag}
+}
+
 func atlasNativeString(name, shorthand, usage, nativeName string) atlasFlag {
 	f := atlasString(name, shorthand, usage)
+	f.nativeName = nativeName
+	return f
+}
+
+func atlasNativeUint(name, shorthand, usage, nativeName string) atlasFlag {
+	f := atlasUint(name, shorthand, usage)
 	f.nativeName = nativeName
 	return f
 }
@@ -420,6 +435,8 @@ func registerAtlasFlags(cmd *cobra.Command, flags []atlasFlag) {
 			cmd.Flags().StringArrayP(flag.name, flag.shorthand, nil, flag.usage)
 		case atlasBoolFlag:
 			cmd.Flags().BoolP(flag.name, flag.shorthand, false, flag.usage)
+		case atlasUintFlag:
+			cmd.Flags().UintP(flag.name, flag.shorthand, 0, flag.usage)
 		}
 	}
 }
