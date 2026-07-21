@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"github.com/stokaro/ptah/cmd/internal/cliobs"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/migratestatus"
@@ -24,6 +25,9 @@ func TestMigrateStatusCommand_Creation(t *testing.T) {
 	c.Assert(cmd.Flag(dbcli.MigrationsSchemaFlagName), qt.IsNotNil)
 	c.Assert(cmd.Flag(dbcli.MigrationsTableFlagName), qt.IsNotNil)
 	c.Assert(cmd.Flag("exit-code"), qt.IsNotNil)
+	c.Assert(cmd.Flag(cliobs.LogFormatFlagName), qt.IsNotNil)
+	c.Assert(cmd.Flag(cliobs.LogLevelFlagName), qt.IsNotNil)
+	c.Assert(cmd.Flag(cliobs.MetricsAddrFlagName), qt.IsNotNil)
 }
 
 func TestMigrateStatusCommand_UnreachableDatabaseExits2(t *testing.T) {
