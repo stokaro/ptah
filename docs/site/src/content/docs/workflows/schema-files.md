@@ -3,7 +3,16 @@ title: Schema files
 description: Use YAML schema files or Atlas HCL schema files as Ptah input.
 ---
 
-Ptah can render and migrate from schema files when Go annotations are not the source of truth.
+Ptah can render and migrate from schema files when Go annotations are not the
+source of truth.
+
+## Pick a source format
+
+| Format | Best for | Notes |
+| --- | --- | --- |
+| Ptah YAML | Ptah-owned schema files with compact structure. | Strict parser; unknown keys fail. |
+| Atlas HCL schema | Reusing supported Atlas schema files. | Supported subset only; unsupported constructs fail. |
+| Live database | Introspection, drift checks, and migration planning. | Requires a database URL. |
 
 ## YAML schema
 
@@ -14,15 +23,23 @@ tables:
   users:
     columns:
       id:
-        type: int
-        primary_key: true
+        type: SERIAL
+        primary: true
       email:
-        type: varchar
-        nullable: false
+        type: VARCHAR(255)
+        not_null: true
 ```
 
 ```bash
 ptah schema render --schema-file schema.yaml --dialect postgres
+```
+
+Use the same input to plan against a live database:
+
+```bash
+ptah migrations plan \
+  --schema-file schema.yaml \
+  --db-url "$DATABASE_URL"
 ```
 
 Reference: [YAML schema](https://github.com/stokaro/ptah/blob/master/docs/yaml_schema.md).
@@ -52,8 +69,23 @@ table "users" {
 ptah schema render --schema-file schema.hcl --dialect postgres
 ```
 
+Ptah reads schema HCL as desired schema input. Project configuration HCL is a
+different file type and is described in [Configuration](../../reference/configuration/).
+
 Reference: [Atlas HCL schema](https://github.com/stokaro/ptah/blob/master/docs/atlas_hcl_schema.md).
 
 :::caution[Supported subset]
 Ptah intentionally rejects unsupported Atlas HCL constructs instead of silently guessing. If a construct is not implemented, treat the error as a compatibility gap and check the conformance reports.
 :::
+
+## Validate before applying
+
+Keep schema-file workflows reviewable:
+
+```bash
+ptah schema render --schema-file schema.yaml --dialect postgres >/tmp/schema.sql
+ptah migrations plan --schema-file schema.yaml --db-url "$DATABASE_URL" >/tmp/plan.sql
+```
+
+Review both files. The render output proves Ptah understood the desired schema;
+the plan output proves what would change in the target database.

@@ -3,7 +3,17 @@ title: Go schema workflow
 description: Use annotated Go structs as the desired database schema.
 ---
 
-Use this workflow when your Go application owns the schema and the database should follow the annotated model types.
+Use this workflow when your Go application owns the schema and the database
+should follow annotated model types. Ptah reads comments, not runtime Go tags,
+so the model remains ordinary Go code.
+
+## When to use it
+
+| Use Go annotations when | Use another source when |
+| --- | --- |
+| The application structs already describe the domain. | A database team owns SQL or HCL directly. |
+| You want code review to cover schema changes next to model changes. | You need an Atlas HCL construct Ptah has not implemented yet. |
+| You want generated migrations from desired/live differences. | You only need to apply an existing migration directory. |
 
 ## Model the schema
 
@@ -34,6 +44,13 @@ Render the desired SQL before connecting to a database:
 ptah schema render --root-dir ./models --dialect postgres
 ```
 
+Smoke-check the command before you involve a live database:
+
+```bash
+ptah schema render --root-dir ./models --dialect sqlite >/tmp/ptah-schema.sql
+sed -n '1,80p' /tmp/ptah-schema.sql
+```
+
 ## Compare before changing data
 
 For an existing database, inspect and compare first:
@@ -59,8 +76,35 @@ ptah migrations validate --dir ./migrations
 ptah migrations up --db-url "$DATABASE_URL" --migrations-dir ./migrations --verify-sum
 ```
 
+For shared environments, add these guards:
+
+```bash
+ptah migrations validate --dir ./migrations
+ptah migrations lint --dir ./migrations --dialect postgres
+ptah migrations up \
+  --db-url "$DATABASE_URL" \
+  --migrations-dir ./migrations \
+  --verify-sum \
+  --dry-run
+```
+
+Run without `--dry-run` only after reviewing the generated SQL and committed
+`ptah.sum`.
+
+## Keep generated schema reviewable
+
+When a model change is surprising, render more than one dialect:
+
+```bash
+ptah schema render --root-dir ./models --dialect postgres >/tmp/schema.pg.sql
+ptah schema render --root-dir ./models --dialect mysql >/tmp/schema.mysql.sql
+```
+
+This catches annotations that are valid but map differently across dialects,
+such as enum storage, serial columns, constraints, or generated columns.
+
 ## Keep references close
 
-- Full native command tree: [Commands](../reference/commands/).
+- Full native command tree: [Commands](../../reference/commands/).
 - Annotation comparison with Atlas HCL: [Go annotations vs Atlas HCL](https://github.com/stokaro/ptah/blob/master/docs/go_annotations_vs_atlas_hcl.md).
 - Programmatic parser usage: [Public API](https://github.com/stokaro/ptah/blob/master/docs/public_api.md).

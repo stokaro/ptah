@@ -30,6 +30,7 @@ export default defineConfig({
       ],
       sidebar: [
         { label: 'Start', slug: 'getting-started' },
+        { label: 'Install Ptah', slug: 'install' },
         { label: 'Documentation map', slug: 'documentation-map' },
         {
           label: 'Use Ptah',
