@@ -1,0 +1,85 @@
+digraph ptah_schema {
+  graph [rankdir=LR, pad=0.2, nodesep=0.6, ranksep=0.8];
+  node [shape=plain, margin=0, fontname="Helvetica"];
+  edge [color="#2563eb", fontcolor="#1e3a8a"];
+  "organizations" [label=<
+    <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#64748b">
+      <TR><TD BGCOLOR="#e2e8f0"><FONT COLOR="#0f172a"><B>organizations</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">id : INTEGER PK</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">name : TEXT</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">slug : TEXT</FONT></TD></TR>
+    </TABLE>
+  >];
+  "tags" [label=<
+    <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#64748b">
+      <TR><TD BGCOLOR="#e2e8f0"><FONT COLOR="#0f172a"><B>tags</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">id : INTEGER PK</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">organization_id : INTEGER FK</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">name : TEXT</FONT></TD></TR>
+    </TABLE>
+  >];
+  "users" [label=<
+    <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#64748b">
+      <TR><TD BGCOLOR="#e2e8f0"><FONT COLOR="#0f172a"><B>users</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">id : INTEGER PK</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">organization_id : INTEGER FK</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">email : TEXT</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">display_name : TEXT</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">manager_id : INTEGER FK</FONT></TD></TR>
+    </TABLE>
+  >];
+  "projects" [label=<
+    <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#64748b">
+      <TR><TD BGCOLOR="#e2e8f0"><FONT COLOR="#0f172a"><B>projects</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">id : INTEGER PK</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">organization_id : INTEGER FK</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">owner_id : INTEGER FK</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">key : TEXT</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">name : TEXT</FONT></TD></TR>
+    </TABLE>
+  >];
+  "tasks" [label=<
+    <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#64748b">
+      <TR><TD BGCOLOR="#e2e8f0"><FONT COLOR="#0f172a"><B>tasks</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">id : INTEGER PK</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">project_id : INTEGER FK</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">assignee_id : INTEGER FK</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">reporter_id : INTEGER FK</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">parent_task_id : INTEGER FK</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">title : TEXT</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">status : TEXT</FONT></TD></TR>
+    </TABLE>
+  >];
+  "comments" [label=<
+    <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#64748b">
+      <TR><TD BGCOLOR="#e2e8f0"><FONT COLOR="#0f172a"><B>comments</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">id : INTEGER PK</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">task_id : INTEGER FK</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">author_id : INTEGER FK</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">body : TEXT</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">created_at : TEXT</FONT></TD></TR>
+    </TABLE>
+  >];
+  "task_tags" [label=<
+    <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#64748b">
+      <TR><TD BGCOLOR="#e2e8f0"><FONT COLOR="#0f172a"><B>task_tags</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">task_id : INTEGER FK</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">tag_id : INTEGER FK</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">tagged_by : INTEGER FK</FONT></TD></TR>
+    </TABLE>
+  >];
+  "comments" -> "tasks" [label="fk_comments_task_id"];
+  "comments" -> "users" [label="fk_comments_author_id"];
+  "projects" -> "organizations" [label="fk_projects_organization_id"];
+  "projects" -> "users" [label="fk_projects_owner_id"];
+  "tags" -> "organizations" [label="fk_tags_organization_id"];
+  "task_tags" -> "tags" [label="fk_task_tags_tag_id"];
+  "task_tags" -> "tasks" [label="fk_task_tags_task_id"];
+  "task_tags" -> "users" [label="fk_task_tags_tagged_by"];
+  "tasks" -> "projects" [label="fk_tasks_project_id"];
+  "tasks" -> "tasks" [label="fk_tasks_parent_task_id"];
+  "tasks" -> "users" [label="fk_tasks_assignee_id"];
+  "tasks" -> "users" [label="fk_tasks_reporter_id"];
+  "users" -> "organizations" [label="fk_users_organization_id"];
+  "users" -> "users" [label="fk_users_manager_id"];
+}

@@ -3,6 +3,7 @@ package schemaviz
 
 import (
 	"fmt"
+	"html"
 	"slices"
 	"strings"
 
@@ -246,14 +247,14 @@ func renderDOT(model graphModel, opts Options) string {
 	}
 	b.WriteString("];\n")
 	if opts.Theme == ThemeDark {
-		b.WriteString("  node [shape=record, style=\"rounded,filled\", fillcolor=\"#1f2937\", color=\"#94a3b8\", fontcolor=\"#f9fafb\"];\n")
+		b.WriteString("  node [shape=plain, margin=0, fontname=\"Helvetica\"];\n")
 		b.WriteString("  edge [color=\"#60a5fa\", fontcolor=\"#dbeafe\"];\n")
 	} else {
-		b.WriteString("  node [shape=record, style=\"rounded,filled\", fillcolor=\"#f8fafc\", color=\"#64748b\", fontcolor=\"#0f172a\"];\n")
+		b.WriteString("  node [shape=plain, margin=0, fontname=\"Helvetica\"];\n")
 		b.WriteString("  edge [color=\"#2563eb\", fontcolor=\"#1e3a8a\"];\n")
 	}
 	for _, table := range model.Tables {
-		fmt.Fprintf(&b, "  %q [label=\"%s\"];\n", table.QualifiedName(), dotTableLabel(table, model.FieldsByTable[table.QualifiedName()], opts))
+		fmt.Fprintf(&b, "  %q [label=<\n%s\n  >];\n", table.QualifiedName(), dotTableLabel(table, model.FieldsByTable[table.QualifiedName()], opts))
 	}
 	for _, rel := range model.Relationships {
 		fmt.Fprintf(&b, "  %q -> %q [label=%q];\n", rel.From, rel.To, rel.Label)
@@ -263,14 +264,45 @@ func renderDOT(model graphModel, opts Options) string {
 }
 
 func dotTableLabel(table goschema.Table, fields []goschema.Field, opts Options) string {
-	if !opts.IncludeColumns {
-		return escapeDOTRecord(table.QualifiedName())
+	borderColor := "#64748b"
+	headerColor := "#e2e8f0"
+	rowColor := "#f8fafc"
+	headerTextColor := "#0f172a"
+	rowTextColor := "#334155"
+	if opts.Theme == ThemeDark {
+		borderColor = "#94a3b8"
+		headerColor = "#374151"
+		rowColor = "#1f2937"
+		headerTextColor = "#f9fafb"
+		rowTextColor = "#e5e7eb"
 	}
-	parts := []string{escapeDOTRecord(table.QualifiedName())}
-	for _, field := range fields {
-		parts = append(parts, escapeDOTRecord(fieldLabel(field)))
+
+	var b strings.Builder
+	fmt.Fprintf(
+		&b,
+		"    <TABLE BORDER=\"1\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"6\" COLOR=\"%s\">\n",
+		borderColor,
+	)
+	fmt.Fprintf(
+		&b,
+		"      <TR><TD BGCOLOR=\"%s\"><FONT COLOR=\"%s\"><B>%s</B></FONT></TD></TR>\n",
+		headerColor,
+		headerTextColor,
+		escapeHTML(table.QualifiedName()),
+	)
+	if opts.IncludeColumns {
+		for _, field := range fields {
+			fmt.Fprintf(
+				&b,
+				"      <TR><TD ALIGN=\"LEFT\" BGCOLOR=\"%s\"><FONT COLOR=\"%s\">%s</FONT></TD></TR>\n",
+				rowColor,
+				rowTextColor,
+				escapeHTML(fieldLabel(field)),
+			)
+		}
 	}
-	return "{" + strings.Join(parts, "|") + "}"
+	b.WriteString("    </TABLE>")
+	return b.String()
 }
 
 func renderMermaid(model graphModel, opts Options) string {
@@ -380,17 +412,8 @@ func mermaidIdentifier(name string) string {
 	return value
 }
 
-func escapeDOTRecord(value string) string {
-	replacer := strings.NewReplacer(
-		"\\", "\\\\",
-		"\"", "\\\"",
-		"{", "\\{",
-		"}", "\\}",
-		"|", "\\|",
-		"<", "\\<",
-		">", "\\>",
-	)
-	return replacer.Replace(value)
+func escapeHTML(value string) string {
+	return html.EscapeString(value)
 }
 
 func tableSet(names []string) map[string]struct{} {

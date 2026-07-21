@@ -144,6 +144,57 @@ func TestCommandWritesSVGWhenGraphvizIsInstalled(t *testing.T) {
 	c.Assert(stdout.String(), qt.Contains, "#111827")
 }
 
+func TestExampleArtifactsMatchGeneratedOutput(t *testing.T) {
+	currentDir, err := os.Getwd()
+	c := qt.New(t)
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.Chdir(filepath.Join("..", "..")), qt.IsNil)
+	t.Cleanup(func() {
+		c.Assert(os.Chdir(currentDir), qt.IsNil)
+	})
+
+	exampleDir := filepath.Join("examples", "viz")
+	rootDir := filepath.Join(exampleDir, "models")
+	tests := []struct {
+		name     string
+		format   string
+		wantPath string
+	}{
+		{
+			name:     "mermaid",
+			format:   "mermaid",
+			wantPath: filepath.Join(exampleDir, "schema.mmd"),
+		},
+		{
+			name:     "dot",
+			format:   "dot",
+			wantPath: filepath.Join(exampleDir, "schema.dot"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			cmd := NewCommand()
+			var stdout, stderr bytes.Buffer
+			cmd.SetOut(&stdout)
+			cmd.SetErr(&stderr)
+			cmd.SetArgs([]string{
+				"--root-dir", rootDir,
+				"--format", tt.format,
+				"--include-columns",
+			})
+
+			err := cmd.Execute()
+			c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr.String()))
+
+			want, err := os.ReadFile(tt.wantPath)
+			c.Assert(err, qt.IsNil)
+			c.Assert(stdout.String(), qt.Equals, string(want))
+		})
+	}
+}
+
 func TestSVGReportsFriendlyGraphvizErrorWhenDotIsMissing(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
