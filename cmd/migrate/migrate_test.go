@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/migration/safety"
@@ -88,15 +87,15 @@ type User struct {
 }
 
 func newTestMigratePlanCommand(out *bytes.Buffer) *cobra.Command {
-	flags := newMigrateFlags()
+	opts := options{}
 	cmd := &cobra.Command{
 		Use:          "plan",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return migrateCommandWithFlags(cmd, flags)
+			return migrateCommandWithOptions(cmd, &opts)
 		},
 	}
-	cobraflags.RegisterMap(cmd, flags)
+	registerFlags(cmd, &opts)
 	cmd.SetOut(out)
 	cmd.SetErr(out)
 	return cmd

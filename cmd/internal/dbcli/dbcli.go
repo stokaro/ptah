@@ -14,13 +14,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-extras/cobraflags"
+	"github.com/spf13/pflag"
 )
 
 const (
-	// ConnectTimeoutFlagName is the CLI flag name exposed by [NewConnectTimeoutFlag].
+	// ConnectTimeoutFlagName is the shared initial database connection timeout flag name.
 	ConnectTimeoutFlagName = "connect-timeout"
-	// SchemasFlagName is the CLI flag name exposed by [NewSchemasFlag].
+	// SchemasFlagName is the shared database schema allow-list flag name.
 	SchemasFlagName = "schemas"
 	// MigrationsSchemaFlagName is the CLI flag name for the schema_migrations schema.
 	MigrationsSchemaFlagName = "migrations-schema"
@@ -34,52 +34,32 @@ const (
 // matches the value suggested by issue #139.
 const DefaultConnectTimeout = 10 * time.Second
 
-// NewConnectTimeoutFlag returns a string-valued flag definition that accepts a
+// RegisterConnectTimeoutFlag registers a string-valued flag that accepts a
 // [time.Duration] literal (for example "5s" or "2m"). The flag is intentionally
 // a string so a value of "0" disables the timeout, while still supporting the
 // usual duration suffixes.
-func NewConnectTimeoutFlag() cobraflags.Flag {
-	return &cobraflags.StringFlag{
-		Name:  ConnectTimeoutFlagName,
-		Value: DefaultConnectTimeout.String(),
-		Usage: "Maximum time to wait when establishing the initial database connection (for example 5s or 1m). Use 0 to disable the timeout.",
-	}
+func RegisterConnectTimeoutFlag(flags *pflag.FlagSet, target *string) {
+	flags.StringVar(target, ConnectTimeoutFlagName, DefaultConnectTimeout.String(), "Maximum time to wait when establishing the initial database connection (for example 5s or 1m). Use 0 to disable the timeout.")
 }
 
-// NewSchemasFlag returns a comma-separated schema allow-list flag.
-func NewSchemasFlag() cobraflags.Flag {
-	return &cobraflags.StringFlag{
-		Name:  SchemasFlagName,
-		Value: "",
-		Usage: "Comma-separated database schemas to introspect (PostgreSQL-family only). Empty uses the connection default schema.",
-	}
+// RegisterSchemasFlag registers a comma-separated schema allow-list flag.
+func RegisterSchemasFlag(flags *pflag.FlagSet, target *string) {
+	flags.StringVar(target, SchemasFlagName, "", "Comma-separated database schemas to introspect (PostgreSQL-family only). Empty uses the connection default schema.")
 }
 
-// NewMigrationsSchemaFlag returns the migration tracking table schema flag.
-func NewMigrationsSchemaFlag() cobraflags.Flag {
-	return &cobraflags.StringFlag{
-		Name:  MigrationsSchemaFlagName,
-		Value: "",
-		Usage: "Schema for Ptah's migration tracking table. Empty uses the connection default schema.",
-	}
+// RegisterMigrationsSchemaFlag registers the migration tracking table schema flag.
+func RegisterMigrationsSchemaFlag(flags *pflag.FlagSet, target *string) {
+	flags.StringVar(target, MigrationsSchemaFlagName, "", "Schema for Ptah's migration tracking table. Empty uses the connection default schema.")
 }
 
-// NewMigrationsTableFlag returns the migration tracking table name flag.
-func NewMigrationsTableFlag() cobraflags.Flag {
-	return &cobraflags.StringFlag{
-		Name:  MigrationsTableFlagName,
-		Value: "",
-		Usage: "Table name for the migration tracking table. Empty uses the revision format default.",
-	}
+// RegisterMigrationsTableFlag registers the migration tracking table name flag.
+func RegisterMigrationsTableFlag(flags *pflag.FlagSet, target *string) {
+	flags.StringVar(target, MigrationsTableFlagName, "", "Table name for the migration tracking table. Empty uses the revision format default.")
 }
 
-// NewRevisionTableFormatFlag returns the migration revision table layout flag.
-func NewRevisionTableFormatFlag() cobraflags.Flag {
-	return &cobraflags.StringFlag{
-		Name:  RevisionTableFormatFlagName,
-		Value: "ptah",
-		Usage: "Migration revision table format: ptah or atlas.",
-	}
+// RegisterRevisionTableFormatFlag registers the migration revision table layout flag.
+func RegisterRevisionTableFormatFlag(flags *pflag.FlagSet, target *string) {
+	flags.StringVar(target, RevisionTableFormatFlagName, "ptah", "Migration revision table format: ptah or atlas.")
 }
 
 // ParseSchemas parses a comma-separated schema allow-list.

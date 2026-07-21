@@ -6,7 +6,6 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
@@ -14,15 +13,6 @@ import (
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/migration/migrator"
 )
-
-var migrateRepairCmd = &cobra.Command{
-	Use:   "repair",
-	Short: "Repair dirty migration metadata",
-	Long: `Repair dirty migration metadata after an operator has fixed a
-half-applied migration manually, or resume the migration from a specific
-statement.`,
-	RunE: migrateRepairCommand,
-}
 
 const (
 	dbURLFlag      = "db-url"
@@ -34,105 +24,87 @@ const (
 	resumeFromFlag = "resume-from"
 )
 
-var migrateRepairFlags = map[string]cobraflags.Flag{
-	dbURLFlag: &cobraflags.StringFlag{
-		Name:  dbURLFlag,
-		Value: "",
-		Usage: "Database URL (required). Example: postgres://localhost:5432/dbname",
-	},
-	migrationsFlag: &cobraflags.StringFlag{
-		Name:  migrationsFlag,
-		Value: "",
-		Usage: "Directory containing migration files (required)",
-	},
-	versionFlag: &cobraflags.StringFlag{
-		Name:  versionFlag,
-		Value: "",
-		Usage: "Migration version to repair (required)",
-	},
-	dirFormatFlag: &cobraflags.StringFlag{
-		Name:  dirFormatFlag,
-		Value: string(migrator.MigrationDirFormatAuto),
-		Usage: "Migration directory format: auto, ptah, or atlas",
-	},
-	atlasEnvFlag: &cobraflags.StringFlag{
-		Name:  atlasEnvFlag,
-		Value: "",
-		Usage: "Value exposed as .Env when rendering Atlas SQL template migrations",
-	},
-	forceFlag: &cobraflags.BoolFlag{
-		Name:  forceFlag,
-		Value: false,
-		Usage: "Rewrite or create the revision row even when it is not dirty",
-	},
-	resumeFromFlag: &cobraflags.StringFlag{
-		Name:  resumeFromFlag,
-		Value: "",
-		Usage: "Execute remaining up statements starting from this 1-based statement number before marking applied",
-	},
-	dbcli.ConnectTimeoutFlagName:      dbcli.NewConnectTimeoutFlag(),
-	dbcli.MigrationsSchemaFlagName:    dbcli.NewMigrationsSchemaFlag(),
-	dbcli.MigrationsTableFlagName:     dbcli.NewMigrationsTableFlag(),
-	dbcli.RevisionTableFormatFlagName: dbcli.NewRevisionTableFormatFlag(),
+type options struct {
+	dbURL               string
+	migrationsDir       string
+	version             string
+	dirFormat           string
+	atlasEnv            string
+	force               bool
+	resumeFrom          string
+	connectTimeout      string
+	migrationsSchema    string
+	migrationsTable     string
+	revisionTableFormat string
 }
-
-var migrateRepairFlagsRegistered bool
 
 func NewMigrateRepairCommand() *cobra.Command {
-	if !migrateRepairFlagsRegistered {
-		cobraflags.RegisterMap(migrateRepairCmd, migrateRepairFlags)
-		migrateRepairFlagsRegistered = true
+	opts := options{}
+	cmd := &cobra.Command{
+		Use:   "repair",
+		Short: "Repair dirty migration metadata",
+		Long: `Repair dirty migration metadata after an operator has fixed a
+half-applied migration manually, or resume the migration from a specific
+statement.`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return migrateRepairCommand(cmd, &opts)
+		},
 	}
-	cmdutil.ConfigureCommand(migrateRepairCmd)
+	registerFlags(cmd, &opts)
+	cmdutil.ConfigureCommand(cmd)
 
-	return migrateRepairCmd
+	return cmd
 }
 
-func migrateRepairCommand(_ *cobra.Command, _ []string) error {
-	dbURL := migrateRepairFlags[dbURLFlag].GetString()
-	migrationsDir := migrateRepairFlags[migrationsFlag].GetString()
-	versionValue := migrateRepairFlags[versionFlag].GetString()
-	dirFormatValue := migrateRepairFlags[dirFormatFlag].GetString()
-	atlasEnv := migrateRepairFlags[atlasEnvFlag].GetString()
-	force := migrateRepairFlags[forceFlag].GetBool()
-	resumeFromValue := migrateRepairFlags[resumeFromFlag].GetString()
-	migrationsSchema := migrateRepairFlags[dbcli.MigrationsSchemaFlagName].GetString()
-	migrationsTable := migrateRepairFlags[dbcli.MigrationsTableFlagName].GetString()
-	revisionFormatValue := migrateRepairFlags[dbcli.RevisionTableFormatFlagName].GetString()
+func registerFlags(cmd *cobra.Command, opts *options) {
+	flags := cmd.Flags()
+	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
+	flags.StringVar(&opts.migrationsDir, migrationsFlag, "", "Directory containing migration files (required)")
+	flags.StringVar(&opts.version, versionFlag, "", "Migration version to repair (required)")
+	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
+	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
+	flags.BoolVar(&opts.force, forceFlag, false, "Rewrite or create the revision row even when it is not dirty")
+	flags.StringVar(&opts.resumeFrom, resumeFromFlag, "", "Execute remaining up statements starting from this 1-based statement number before marking applied")
+	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
+	dbcli.RegisterMigrationsSchemaFlag(flags, &opts.migrationsSchema)
+	dbcli.RegisterMigrationsTableFlag(flags, &opts.migrationsTable)
+	dbcli.RegisterRevisionTableFormatFlag(flags, &opts.revisionTableFormat)
+}
 
-	if dbURL == "" {
+func migrateRepairCommand(_ *cobra.Command, opts *options) error {
+	if opts.dbURL == "" {
 		return fmt.Errorf("database URL is required")
 	}
-	if migrationsDir == "" {
+	if opts.migrationsDir == "" {
 		return fmt.Errorf("migrations directory is required")
 	}
-	if versionValue == "" {
+	if opts.version == "" {
 		return fmt.Errorf("migration version is required")
 	}
 
-	version, err := strconv.ParseInt(versionValue, 10, 64)
+	version, err := strconv.ParseInt(opts.version, 10, 64)
 	if err != nil || version <= 0 {
-		return fmt.Errorf("invalid migration version %q", versionValue)
+		return fmt.Errorf("invalid migration version %q", opts.version)
 	}
-	resumeFrom, err := parseResumeFrom(resumeFromValue)
+	resumeFrom, err := parseResumeFrom(opts.resumeFrom)
 	if err != nil {
 		return err
 	}
-	dirFormat, err := migrator.ParseMigrationDirFormat(dirFormatValue)
+	dirFormat, err := migrator.ParseMigrationDirFormat(opts.dirFormat)
 	if err != nil {
 		return err
 	}
-	revisionFormat, err := migrator.ParseRevisionTableFormat(revisionFormatValue)
+	revisionFormat, err := migrator.ParseRevisionTableFormat(opts.revisionTableFormat)
 	if err != nil {
 		return err
 	}
-	connectTimeout, err := dbcli.ParseConnectTimeout(migrateRepairFlags[dbcli.ConnectTimeoutFlagName].GetString())
+	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
 	if err != nil {
 		return err
 	}
 
 	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
-	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
+	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.dbURL)
 	cancelConnect()
 	if err != nil {
 		return fmt.Errorf("error connecting to database: %w", err)
@@ -141,19 +113,19 @@ func migrateRepairCommand(_ *cobra.Command, _ []string) error {
 
 	mig, err := migrator.NewFSMigrator(
 		conn,
-		os.DirFS(migrationsDir),
+		os.DirFS(opts.migrationsDir),
 		migrator.WithMigrationDirFormat(dirFormat),
-		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: atlasEnv}),
+		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: opts.atlasEnv}),
 	)
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
-	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable).
+	mig = mig.WithMigrationsTable(opts.migrationsSchema, opts.migrationsTable).
 		WithRevisionTableFormat(revisionFormat)
 
 	err = mig.RepairMigration(context.Background(), migrator.RepairMigrationOptions{
 		Version:    version,
-		Force:      force,
+		Force:      opts.force,
 		ResumeFrom: resumeFrom,
 	})
 	if err != nil {

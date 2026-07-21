@@ -7,7 +7,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
@@ -15,73 +14,66 @@ import (
 	"github.com/stokaro/ptah/dbschema"
 )
 
-var dropAllCmd = &cobra.Command{
-	Use:   "drop-all",
-	Short: "Drop ALL tables and enums in database (VERY DANGEROUS!)",
-	Long: `Drop ALL tables and enums from the database, not just those defined in Go entities.
-	
-🚨 EXTREME WARNING: This operation will permanently delete EVERYTHING in the database!
-This will delete ALL tables and enums, including those not defined in your Go entities.
-ALL DATA WILL BE LOST!`,
-	RunE: dropAllCommand,
-}
-
 const (
 	dbURLFlag  = "db-url"
 	dryRunFlag = "dry-run"
 )
 
-var dropAllFlags = map[string]cobraflags.Flag{
-	dbURLFlag: &cobraflags.StringFlag{
-		Name:  dbURLFlag,
-		Value: "",
-		Usage: "Database URL (required). Example: postgres://localhost:5432/dbname",
-	},
-	dryRunFlag: &cobraflags.BoolFlag{
-		Name:  dryRunFlag,
-		Value: false,
-		Usage: "Show what would be executed without making actual changes",
-	},
-	dbcli.ConnectTimeoutFlagName: dbcli.NewConnectTimeoutFlag(),
+type options struct {
+	dbURL          string
+	dryRun         bool
+	connectTimeout string
 }
-
-var dropAllFlagsRegistered bool
 
 func NewDropAllCommand() *cobra.Command {
-	if !dropAllFlagsRegistered {
-		cobraflags.RegisterMap(dropAllCmd, dropAllFlags)
-		dropAllFlagsRegistered = true
-	}
-	cmdutil.ConfigureCommand(dropAllCmd)
+	opts := options{}
+	cmd := &cobra.Command{
+		Use:   "drop-all",
+		Short: "Drop ALL tables and enums in database (VERY DANGEROUS!)",
+		Long: `Drop ALL tables and enums from the database, not just those defined in Go entities.
 
-	return dropAllCmd
+🚨 EXTREME WARNING: This operation will permanently delete EVERYTHING in the database!
+This will delete ALL tables and enums, including those not defined in your Go entities.
+ALL DATA WILL BE LOST!`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return dropAllCommand(cmd, &opts)
+		},
+	}
+	registerFlags(cmd, &opts)
+	cmdutil.ConfigureCommand(cmd)
+
+	return cmd
 }
 
-func dropAllCommand(_ *cobra.Command, _ []string) error {
-	dbURL := dropAllFlags[dbURLFlag].GetString()
-	dryRun := dropAllFlags[dryRunFlag].GetBool()
+func registerFlags(cmd *cobra.Command, opts *options) {
+	flags := cmd.Flags()
+	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
+	flags.BoolVar(&opts.dryRun, dryRunFlag, false, "Show what would be executed without making actual changes")
+	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
+}
 
-	if dbURL == "" {
+func dropAllCommand(_ *cobra.Command, opts *options) error {
+	if opts.dbURL == "" {
 		return fmt.Errorf("database URL is required")
 	}
 
-	if dryRun {
-		fmt.Printf("[DRY RUN] Would drop ALL tables and enums from database %s\n", dbschema.FormatDatabaseURL(dbURL))
+	if opts.dryRun {
+		fmt.Printf("[DRY RUN] Would drop ALL tables and enums from database %s\n", dbschema.FormatDatabaseURL(opts.dbURL))
 		fmt.Println("=== DRY RUN: DROP ALL TABLES FROM DATABASE ===")
 	} else {
-		fmt.Printf("Dropping ALL tables and enums from database %s\n", dbschema.FormatDatabaseURL(dbURL))
+		fmt.Printf("Dropping ALL tables and enums from database %s\n", dbschema.FormatDatabaseURL(opts.dbURL))
 		fmt.Println("=== DROP ALL TABLES FROM DATABASE ===")
 	}
 	fmt.Println()
 
 	// 1. Connect to database
-	connectTimeout, err := dbcli.ParseConnectTimeout(dropAllFlags[dbcli.ConnectTimeoutFlagName].GetString())
+	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
 	if err != nil {
 		return err
 	}
 
 	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
-	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
+	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.dbURL)
 	cancelConnect()
 	if err != nil {
 		return fmt.Errorf("error connecting to database: %w", err)
@@ -92,10 +84,10 @@ func dropAllCommand(_ *cobra.Command, _ []string) error {
 	fmt.Println()
 
 	// Set dry run mode on the writer
-	conn.SchemaWriter().SetDryRun(dryRun)
+	conn.SchemaWriter().SetDryRun(opts.dryRun)
 
 	// 2. Show extreme warning and ask for confirmation (skip confirmation in dry run mode)
-	if dryRun {
+	if opts.dryRun {
 		fmt.Println("ℹ️  [DRY RUN] This would permanently delete ALL tables and enums!")
 		fmt.Println("ℹ️  [DRY RUN] This would delete EVERYTHING in the database, not just your Go entities!")
 		fmt.Println("ℹ️  [DRY RUN] This would result in ALL DATA BEING LOST!")
@@ -132,7 +124,7 @@ func dropAllCommand(_ *cobra.Command, _ []string) error {
 	}
 
 	// 3. Drop all tables and enums
-	if dryRun {
+	if opts.dryRun {
 		fmt.Println("[DRY RUN] Would drop all tables and enums from database...")
 	} else {
 		fmt.Println("Dropping all tables and enums from database...")
@@ -142,7 +134,7 @@ func dropAllCommand(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("error dropping all tables: %w", err)
 	}
 
-	if dryRun {
+	if opts.dryRun {
 		fmt.Println("✅ [DRY RUN] Drop all operations completed successfully!")
 		fmt.Println("🔥 [DRY RUN] Database would be completely empty!")
 	} else {

@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/atlas"
 	"github.com/stokaro/ptah/cmd/db"
 	"github.com/stokaro/ptah/cmd/internal/buildinfo"
+	"github.com/stokaro/ptah/cmd/internal/cmdflags"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/introspect"
@@ -45,7 +45,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(atlas.NewAtlasCommand())
 	cmd.AddCommand(version.NewVersionCommand())
 
-	cobraflags.CobraOnInitialize(envPrefix, cmd)
+	cmdflags.InstallEnvBinding(envPrefix, cmd)
 
 	return cmd
 }
