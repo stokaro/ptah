@@ -12,6 +12,7 @@ import (
 
 	"github.com/stokaro/ptah/cmd/compare"
 	"github.com/stokaro/ptah/cmd/dropall"
+	"github.com/stokaro/ptah/cmd/internal/buildinfo"
 	"github.com/stokaro/ptah/cmd/internal/cmdadapter"
 	"github.com/stokaro/ptah/cmd/internal/cmdflags"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
@@ -297,7 +298,8 @@ func newAtlasVersionCommand() *cobra.Command {
 		Use:   "version",
 		Short: "Print Ptah version information",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return fmt.Errorf("atlas version is not implemented yet; use the native Ptah version command once issue #268 lands")
+			buildinfo.Write(cmd.OutOrStdout(), buildinfo.Resolve())
+			return nil
 		},
 	}
 	cmdutil.ConfigureCommand(cmd)
@@ -309,7 +311,13 @@ func newAtlasLicenseCommand() *cobra.Command {
 		Use:   "license",
 		Short: "Print license information",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return fmt.Errorf("atlas license is not implemented yet")
+			out := cmd.OutOrStdout()
+			fmt.Fprintln(out, "Ptah")
+			fmt.Fprintln(out, "License: MIT")
+			fmt.Fprintln(out, "Copyright (c) 2025, 2026 Denis Voytyuk")
+			fmt.Fprintln(out, "Source: https://github.com/stokaro/ptah")
+			fmt.Fprintln(out, "Atlas compatibility: independent implementation; Ptah does not use Atlas source code.")
+			return nil
 		},
 	}
 	cmdutil.ConfigureCommand(cmd)

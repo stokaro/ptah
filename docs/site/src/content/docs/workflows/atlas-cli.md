@@ -42,6 +42,13 @@ fail clearly instead of being ignored.
 | `ptah atlas migrate diff` | Command path registered; runtime behavior is not implemented yet. |
 | `ptah atlas migrate import` | Command path registered; runtime behavior is not implemented yet. |
 
+## Utility commands
+
+| Atlas-compatible command | Ptah behavior |
+| --- | --- |
+| `ptah atlas version` | Prints Ptah build information. |
+| `ptah atlas license` | Prints Ptah MIT license and license-clean Atlas compatibility notice. |
+
 ## Schema commands
 
 | Atlas-compatible command | Native Ptah command |
