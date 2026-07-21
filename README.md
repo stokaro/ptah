@@ -1446,6 +1446,10 @@ make integration-test-sqlserver
 
 ### Using the AST API
 
+The AST API covers schema DDL and selected reusable DML nodes. SQL Server
+upserts can be built with `ast.UpsertNode` and rendered as `MERGE`; see
+[DML Upsert AST](docs/dml_upsert.md).
+
 ```go
 package main
 

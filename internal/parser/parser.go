@@ -127,7 +127,7 @@ func (p *Parser) parseStatement() (ast.Node, error) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("unsupported SQL statement: %s at position %d", keyword, p.current.Start)
-	case "ANALYZE", "BEGIN", "CALL", "COMMIT", "DELETE", "INSERT", "PRAGMA", "REINDEX", "ROLLBACK", "SELECT", "SET", "SHOW", "UPDATE", "USE", "VACUUM", "WITH":
+	case "ANALYZE", "BEGIN", "CALL", "COMMIT", "DELETE", "INSERT", "MERGE", "PRAGMA", "REINDEX", "ROLLBACK", "SELECT", "SET", "SHOW", "UPDATE", "USE", "VACUUM", "WITH":
 		p.skipSchemaNeutralStatement()
 		return nil, nil
 	default:

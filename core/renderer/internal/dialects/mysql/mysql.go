@@ -50,6 +50,10 @@ func (r *Renderer) VisitAlterType(node *ast.AlterTypeNode) error {
 	return r.r.VisitAlterType(node)
 }
 
+func (r *Renderer) VisitUpsert(node *ast.UpsertNode) error {
+	return r.r.VisitUpsert(node)
+}
+
 func (r *Renderer) Dialect() string {
 	return r.r.Dialect()
 }

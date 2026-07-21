@@ -7,6 +7,7 @@ import (
 
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/platform/capability"
+	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/core/renderer/internal/dialects/internal/bufwriter"
 )
 
@@ -262,6 +263,10 @@ func (r *Renderer) GetDialect() string {
 // GetOutput returns the current generated SQL output (alias for Output for compatibility)
 func (r *Renderer) GetOutput() string {
 	return r.Output()
+}
+
+func (r *Renderer) VisitUpsert(_ *ast.UpsertNode) error {
+	return fmt.Errorf("%w: %s: upsert rendering is not implemented", ptaherr.ErrUnsupportedFeature, r.dialect)
 }
 
 // VisitCreateTable renders MariaDB-specific CREATE TABLE statements
