@@ -1019,6 +1019,12 @@ Apply all pending migrations to bring database up to latest version:
 
 # Apply Atlas SQL template migrations with .Env set to dev
 ./ptah migrations up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --dir-format atlas --atlas-env dev
+
+# Run a custom backup gate before applying migrations
+./ptah migrations up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --pre-up-hook './scripts/backup-before-migrate'
+
+# Write a PostgreSQL custom-format dump before applying migrations
+./ptah migrations up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --pg-dump-to ./backups
 ```
 
 Migration files can override the CLI defaults with top-of-file directives:
@@ -1162,6 +1168,36 @@ If the tool is not on PATH, ptah warns and falls back to a plain `ALTER TABLE`.
 See [docs/online-ddl.md](docs/online-ddl.md) for prerequisites (binlog ROW format,
 privileges, topology flags) and invocation details.
 
+**Pre-flight backup hooks:** `migrations up` and `migrations down` can run
+operator-defined checks before changing the schema. Use `--pre-up-hook <cmd>`
+or `--pre-down-hook <cmd>` for a shell command, `--pg-dump-to <dir>` for a
+PostgreSQL-compatible custom-format dump, `--mysqldump-to <dir>` for a MySQL or
+MariaDB SQL dump, and `--webhook <url>` to POST migration metadata to an
+external coordinator. A hook must succeed before Ptah starts applying or
+rolling back migrations; non-zero command exit, dump failure, webhook network
+failure, or a non-200 webhook response aborts the migration.
+
+Custom hook commands receive `PTAH_DB_URL`, `PTAH_DIALECT`,
+`PTAH_CURRENT_VERSION`, and `PTAH_TARGET_VERSION`. Built-in dump files are named
+`ptah_pre_v{from}_to_v{to}_{ts}.dump` for `pg_dump` and
+`ptah_pre_v{from}_to_v{to}_{ts}.sql` for `mysqldump`, with a high-precision UTC
+timestamp. The webhook payload includes direction, dialect, current version, target version,
+and a redacted database URL. Webhooks have a 30-second timeout and redirects are
+not followed, so the configured endpoint itself must return HTTP 200. Dry-run
+mode reports configured pre-flight hooks but skips them because backups and
+webhooks are side effects.
+
+The same settings can live in `ptah.yaml`:
+
+```yaml
+migration:
+  pre_up_hook: ./scripts/backup-before-up
+  pre_down_hook: ./scripts/backup-before-down
+  pg_dump_to: ./backups/postgres
+  mysqldump_to: ./backups/mysql
+  webhook: https://ops.example/hooks/ptah-migration
+```
+
 #### Roll Back Migrations
 Roll back migrations to a specific version:
 
@@ -1176,6 +1212,9 @@ Roll back migrations to a specific version:
 
 # Roll back using the same custom migration state table
 ./ptah migrations down --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --target 5 --migrations-schema infra --migrations-table ptah_migrations
+
+# Run a custom backup gate before rollback
+./ptah migrations down --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --target 5 --pre-down-hook './scripts/backup-before-rollback'
 ```
 
 **Features:**

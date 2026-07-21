@@ -88,6 +88,23 @@ func TestMigrationsToRollbackRequiresAppliedMigrationFile(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `applied migration 5 is above target version 2 but is missing from the migration provider`)
 }
 
+func TestUpTargetVersionKeepsCurrentHighWaterForOutOfOrderMigration(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(upTargetVersion(5, testMigrations(3)), qt.Equals, int64(5))
+	c.Assert(upTargetVersion(5, testMigrations(6, 7)), qt.Equals, int64(7))
+}
+
+func TestDownTargetVersionUsesFinalAppliedVersion(t *testing.T) {
+	c := qt.New(t)
+
+	applied := []int64{1, 3, 5}
+	c.Assert(downTargetVersion(applied, 4), qt.Equals, int64(3))
+	c.Assert(downTargetVersion(applied, 3), qt.Equals, int64(3))
+	c.Assert(downTargetVersion(applied, 2), qt.Equals, int64(1))
+	c.Assert(downTargetVersion(applied, 0), qt.Equals, int64(0))
+}
+
 func testMigrations(versions ...int64) []*Migration {
 	migrations := make([]*Migration, 0, len(versions))
 	for _, version := range versions {
@@ -99,12 +116,4 @@ func testMigrations(versions ...int64) []*Migration {
 		})
 	}
 	return migrations
-}
-
-func migrationVersions(migrations []*Migration) []int64 {
-	versions := make([]int64, 0, len(migrations))
-	for _, migration := range migrations {
-		versions = append(versions, migration.Version)
-	}
-	return versions
 }

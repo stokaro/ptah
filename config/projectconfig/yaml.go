@@ -38,6 +38,11 @@ type yamlMigration struct {
 	ConnectTimeout       string `yaml:"connect_timeout"`
 	MigrationLockTimeout string `yaml:"migration_lock_timeout"`
 	ExecOrder            string `yaml:"exec_order"`
+	PreUpHook            string `yaml:"pre_up_hook"`
+	PreDownHook          string `yaml:"pre_down_hook"`
+	PostgresDumpTo       string `yaml:"pg_dump_to"`
+	MySQLDumpTo          string `yaml:"mysqldump_to"`
+	Webhook              string `yaml:"webhook"`
 }
 
 type yamlLint struct {
@@ -133,6 +138,11 @@ func (c yamlSettings) projectConfig() Config {
 			ConnectTimeout:       c.Migration.ConnectTimeout,
 			MigrationLockTimeout: c.Migration.MigrationLockTimeout,
 			ExecOrder:            c.Migration.ExecOrder,
+			PreUpHook:            c.Migration.PreUpHook,
+			PreDownHook:          c.Migration.PreDownHook,
+			PostgresDumpTo:       c.Migration.PostgresDumpTo,
+			MySQLDumpTo:          c.Migration.MySQLDumpTo,
+			Webhook:              c.Migration.Webhook,
 		},
 		Lint: LintConfig{
 			Dialect: c.Lint.Dialect,
