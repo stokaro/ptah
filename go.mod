@@ -66,6 +66,7 @@ require (
 	go.opentelemetry.io/otel v1.44.0 // indirect
 	go.opentelemetry.io/otel/trace v1.44.0 // indirect
 	golang.org/x/crypto v0.53.0 // indirect
+	golang.org/x/exp v0.0.0-20260718201538-764159d718ef // indirect
 	golang.org/x/mod v0.38.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
@@ -79,5 +80,6 @@ require (
 
 tool (
 	github.com/go-extras/qtlint/cmd/qtlint
+	golang.org/x/exp/cmd/apidiff
 	golang.org/x/vuln/cmd/govulncheck
 )

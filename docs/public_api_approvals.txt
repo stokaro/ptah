@@ -1,0 +1,9 @@
+# Intentional pre-v1 public API incompatibilities.
+#
+# Format:
+# <baseline-v0.x-tag> <stable-package-import-path>
+#
+# Add one line per stable package only when maintainers intentionally approve
+# an incompatible public API change before v1. The PR must explain the
+# compatibility rationale and update docs/public_api.md when the stable package
+# set changes.
