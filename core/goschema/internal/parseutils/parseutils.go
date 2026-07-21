@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/stokaro/ptah/internal/annotationmeta"
 )
 
 var keyValuePairRe = regexp.MustCompile(`(\w+(?:\.\w+)*)=("(?:\\.|[^"\\])*"|[^\s]+)`)
@@ -13,34 +15,16 @@ var boolRe = regexp.MustCompile(`\b(\w+(?:\.\w+)*)\b`)
 // directiveTokens is the set of bareword tokens that appear in a
 // `//migrator:schema:<kind>` annotation header. They are never user-supplied
 // boolean attributes, so we never auto-promote them to `kv[token]="true"`.
-var directiveTokens = map[string]bool{
-	"migrator":   true,
-	"schema":     true,
-	"field":      true,
-	"table":      true,
-	"embed":      true,
-	"embedded":   true,
-	"constraint": true,
-	"enum":       true,
-	"extension":  true,
-	"function":   true,
-	"rls":        true,
-	"policy":     true,
-	"enable":     true,
-	"role":       true,
-}
+var directiveTokens = func() map[string]bool {
+	tokens := annotationmeta.DirectiveTokens()
+	tokens["embed"] = true
+	delete(tokens, "index")
+	return tokens
+}()
 
 // booleanAttrs is the set of bareword keys that, when written without `=`,
 // are auto-promoted to `kv[name]="true"`. See ParseKeyValueComment.
-var booleanAttrs = map[string]bool{
-	"not_null":       true,
-	"nullable":       true,
-	"primary":        true,
-	"unique":         true,
-	"auto_increment": true,
-	"index":          true,
-	"autoincrement":  true,
-}
+var booleanAttrs = annotationmeta.BooleanAttributes()
 
 func ParseKeyValueComment(comment string) map[string]string {
 	result := make(map[string]string)
@@ -130,17 +114,14 @@ func ParsePlatformSpecific(kv map[string]string) map[string]map[string]string {
 	out := make(map[string]map[string]string)
 	for k, v := range kv {
 		// Only use platform. prefix, dropping override. completely
-		if strings.HasPrefix(k, "platform.") {
+		if annotationmeta.IsPlatformAttribute(k) {
 			parts := strings.SplitN(k, ".", 3)
-
-			if len(parts) == 3 {
-				db := parts[1]
-				key := parts[2]
-				if _, ok := out[db]; !ok {
-					out[db] = make(map[string]string)
-				}
-				out[db][key] = v
+			db := parts[1]
+			key := parts[2]
+			if _, ok := out[db]; !ok {
+				out[db] = make(map[string]string)
 			}
+			out[db][key] = v
 		}
 
 		// Move engine and comment to platform-specific attributes

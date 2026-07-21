@@ -104,6 +104,7 @@ func TestSchemaCommand_RegistersNativePaths(t *testing.T) {
 
 	cmd := schema.NewSchemaCommand()
 	for _, path := range [][]string{
+		{"annotations"},
 		{"export"},
 		{"render"},
 		{"compare"},
@@ -113,6 +114,31 @@ func TestSchemaCommand_RegistersNativePaths(t *testing.T) {
 		c.Assert(err, qt.IsNil)
 		c.Assert(found, qt.IsNotNil)
 	}
+}
+
+func TestSchemaAnnotationsCommandWritesJSONSchema(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	outPath := filepath.Join(dir, "migrator-annotations.schema.json")
+
+	cmd := schema.NewSchemaCommand()
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{
+		"annotations",
+		"--format", "json-schema",
+		"--out", outPath,
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr.String()))
+	c.Assert(stdout.String(), qt.Contains, "Exported annotation JSON Schema")
+	content, err := os.ReadFile(outPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(content), qt.Contains, `"migrator.schema.field"`)
+	c.Assert(string(content), qt.Not(qt.Contains), `"defaul"`)
 }
 
 func TestSchemaCommand_RenderHelpShowsNativePath(t *testing.T) {

@@ -46,6 +46,11 @@ jobs:
       - name: Check public Go API released baseline
         run: scripts/check-public-api-released.sh
 
+      - name: Check annotation JSON Schema freshness
+        run: |
+          go run ./cmd/ptah schema annotations --out schemas/migrator-annotations.schema.json
+          git diff --exit-code -- schemas/migrator-annotations.schema.json
+
       - name: qtlint
         run: go tool qtlint ./...
 

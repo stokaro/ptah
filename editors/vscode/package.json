@@ -1,0 +1,43 @@
+{
+  "name": "ptah-annotations",
+  "displayName": "Ptah Annotations",
+  "description": "Language support for Ptah //migrator Go annotations.",
+  "version": "0.1.0",
+  "publisher": "stokaro",
+  "license": "MIT",
+  "categories": [
+    "Programming Languages",
+    "Linters"
+  ],
+  "activationEvents": [
+    "onLanguage:go"
+  ],
+  "main": "./extension.js",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Ptah annotation diagnostics require starting the configured ptah-ls binary.",
+      "restrictedConfigurations": [
+        "ptah.languageServer.path"
+      ]
+    }
+  },
+  "contributes": {
+    "configuration": {
+      "title": "Ptah",
+      "properties": {
+        "ptah.languageServer.path": {
+          "type": "string",
+          "default": "ptah-ls",
+          "description": "Path to the ptah-ls executable."
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}

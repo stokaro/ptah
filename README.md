@@ -222,6 +222,28 @@ Contains sample Go structs with schema annotations for testing and demonstration
 
 Ptah uses structured comments to define database schema information directly in Go structs. Here's the annotation format:
 
+### Annotation Tooling
+
+Ptah publishes a generated JSON Schema for every supported `//migrator`
+directive and attribute at
+[`schemas/migrator-annotations.schema.json`](schemas/migrator-annotations.schema.json).
+Regenerate it from the parser metadata with:
+
+```bash
+ptah schema annotations --format json-schema --out schemas/migrator-annotations.schema.json
+```
+
+Editor integrations should use `ptah-ls`, the Ptah annotation language server.
+It provides diagnostics for unknown directives and attributes, attribute-name
+completions, and hover documentation for Go files. For example,
+`//migrator:schema:field name="x" defaul=...` reports `defaul` as an unknown
+attribute, and hovering `//migrator:schema:rls:policy` shows the supported
+policy attributes.
+
+The thin VS Code wrapper lives in [`editors/vscode`](editors/vscode). It starts
+`ptah-ls` from `PATH` by default; set `ptah.languageServer.path` when the binary
+is installed elsewhere.
+
 ### Table Definition
 ```go
 //migrator:schema:table name="products" platform.mysql.engine="InnoDB" platform.mysql.comment="Product catalog"
@@ -1829,11 +1851,11 @@ type User struct {
     ID int64
 
     // Embedded as separate columns
-    //migrator:schema:embedded mode="columns"
+    //migrator:embedded mode="inline"
     Address Address
 
     // Embedded as JSON
-    //migrator:schema:embedded mode="json" name="address_data" type="JSONB"
+    //migrator:embedded mode="json" name="address_data" type="JSONB"
     Metadata Address
 }
 ```

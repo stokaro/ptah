@@ -28,11 +28,33 @@ builds:
         -X github.com/stokaro/ptah/cmd/internal/buildinfo.Version={{ .Version }}
         -X github.com/stokaro/ptah/cmd/internal/buildinfo.Commit={{ .Commit }}
         -X github.com/stokaro/ptah/cmd/internal/buildinfo.Date={{ .CommitDate }}
+  - id: ptah-ls
+    main: ./cmd/ptah-ls
+    binary: ptah-ls
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+    ldflags:
+      - >-
+        -s -w
+        -X github.com/stokaro/ptah/cmd/internal/buildinfo.Version={{ .Version }}
+        -X github.com/stokaro/ptah/cmd/internal/buildinfo.Commit={{ .Commit }}
+        -X github.com/stokaro/ptah/cmd/internal/buildinfo.Date={{ .CommitDate }}
 
 archives:
   - id: ptah
     ids:
       - ptah
+      - ptah-ls
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats:
       - tar.gz
@@ -126,6 +148,7 @@ brews:
   - name: ptah
     ids:
       - ptah
+      - ptah-ls
     repository:
       owner: stokaro
       name: homebrew-ptah
