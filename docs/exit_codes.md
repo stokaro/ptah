@@ -44,7 +44,7 @@ root-level command spellings are removed instead of preserved.
 Commands under `ptah atlas <command> ...`, `ptah-compat <command> ...`, and a
 copied or symlinked executable named `atlas` either translate implemented
 Atlas-compatible flags and delegate to the matching native command, or execute
-a Ptah-owned utility behavior such as the license notice:
+a Ptah-owned utility behavior such as the license notice or schema formatting:
 
 | Atlas-compatible command | Native command |
 | --- | --- |
@@ -64,5 +64,7 @@ a Ptah-owned utility behavior such as the license notice:
 | `ptah atlas schema inspect` | `ptah db read` |
 | `ptah-compat schema inspect` / `atlas schema inspect` | `ptah db read` |
 | `ptah atlas schema diff` | `ptah schema compare` |
+| `ptah atlas schema fmt` | Format local `.hcl` files |
+| `ptah-compat schema fmt` / `atlas schema fmt` | Format local `.hcl` files |
 
 Unsupported Atlas-compatible flags are rejected explicitly and exit `2`.
