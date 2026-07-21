@@ -16,6 +16,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/pflag"
 
+	"github.com/stokaro/ptah/cmd/internal/cliobs"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/migratesum"
@@ -49,6 +50,9 @@ func TestMigrateUp_VerifySumAbortsOnDriftBeforeConnecting(t *testing.T) {
 	resetMigrateUpCommandForTest(c, cmd)
 	t.Cleanup(func() { resetMigrateUpCommandForTest(c, cmd) })
 	c.Assert(cmd.Flag(migrationLockTimeoutFlag), qt.IsNotNil)
+	c.Assert(cmd.Flag(cliobs.LogFormatFlagName), qt.IsNotNil)
+	c.Assert(cmd.Flag(cliobs.LogLevelFlagName), qt.IsNotNil)
+	c.Assert(cmd.Flag(cliobs.MetricsAddrFlagName), qt.IsNotNil)
 
 	var out, errOut bytes.Buffer
 	cmd.SetOut(&out)
@@ -439,6 +443,9 @@ func resetMigrateUpCommandForTest(c *qt.C, cmd interface{ Flag(string) *pflag.Fl
 	setMigrateUpFlagForTest(c, cmd, pgDumpToFlag, "")
 	setMigrateUpFlagForTest(c, cmd, mySQLDumpToFlag, "")
 	setMigrateUpFlagForTest(c, cmd, webhookFlag, "")
+	setMigrateUpFlagForTest(c, cmd, cliobs.LogFormatFlagName, "text")
+	setMigrateUpFlagForTest(c, cmd, cliobs.LogLevelFlagName, "info")
+	setMigrateUpFlagForTest(c, cmd, cliobs.MetricsAddrFlagName, "")
 	setMigrateUpFlagForTest(c, cmd, dbcli.ConfigFlagName, "")
 	setMigrateUpFlagForTest(c, cmd, dbcli.EnvFlagName, "")
 	setMigrateUpFlagForTest(c, cmd, dbcli.MigrationsSchemaFlagName, "")

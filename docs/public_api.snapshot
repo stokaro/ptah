@@ -666,6 +666,10 @@ type MigrationTimeouts struct{ ... }
 type Migrator struct{ ... }
     func NewFSMigrator(conn *dbschema.DatabaseConnection, fsys fs.FS, opts ...FSProviderOption) (*Migrator, error)
     func NewMigrator(conn *dbschema.DatabaseConnection, provider MigrationProvider) *Migrator
+type NoopObserver struct{}
+type ObservationAttribute struct{ ... }
+type ObservationSpan interface{ ... }
+type Observer interface{ ... }
 type OutOfOrderError struct{ ... }
     func NewOutOfOrderError(currentVersion int64, versions []int64) *OutOfOrderError
 type PreMigrationHook func(ctx context.Context, plan MigrationPlan) error
@@ -686,6 +690,29 @@ type MigrationProvider interface {
     Migrations() []*Migration
 }
     MigrationProvider provides a list of migrations
+
+
+### github.com/stokaro/ptah/migration/migrator.ObservationSpan
+
+package migrator // import "github.com/stokaro/ptah/migration/migrator"
+
+type ObservationSpan interface {
+    SetAttributes(attrs ...ObservationAttribute)
+    End(err error)
+}
+    ObservationSpan is an in-progress observed operation.
+
+
+### github.com/stokaro/ptah/migration/migrator.Observer
+
+package migrator // import "github.com/stokaro/ptah/migration/migrator"
+
+type Observer interface {
+    StartSpan(ctx context.Context, name string, attrs ...ObservationAttribute) (context.Context, ObservationSpan)
+    AddCounter(ctx context.Context, name string, value int64, attrs ...ObservationAttribute)
+    RecordDuration(ctx context.Context, name string, duration time.Duration, attrs ...ObservationAttribute)
+}
+    Observer receives migration tracing and metrics events.
 
 
 ### github.com/stokaro/ptah/migration/migrator.StatementInterceptor

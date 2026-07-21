@@ -6,9 +6,11 @@ import (
 	"io/fs"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/cliobs"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
@@ -63,6 +65,9 @@ type options struct {
 	migrationsSchema     string
 	migrationsTable      string
 	revisionTableFormat  string
+	logFormat            string
+	logLevel             string
+	metricsAddr          string
 }
 
 func NewMigrateUpCommand() *cobra.Command {
@@ -105,6 +110,9 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.pgDumpTo, pgDumpToFlag, "", "Directory where pg_dump writes a custom-format backup before applying migrations")
 	flags.StringVar(&opts.mySQLDumpTo, mySQLDumpToFlag, "", "Directory where mysqldump writes a SQL backup before applying migrations")
 	flags.StringVar(&opts.webhook, webhookFlag, "", "Webhook URL to POST migration metadata before applying migrations; must return HTTP 200")
+	flags.StringVar(&opts.logFormat, cliobs.LogFormatFlagName, "text", "Log format: text or json")
+	flags.StringVar(&opts.logLevel, cliobs.LogLevelFlagName, "info", "Log level: debug, info, warn, or error")
+	flags.StringVar(&opts.metricsAddr, cliobs.MetricsAddrFlagName, "", "Address for the Prometheus /metrics endpoint, such as :9090")
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterConfigFlag(flags, &opts.configPath)
 	dbcli.RegisterEnvFlag(flags, &opts.envName)
@@ -151,6 +159,23 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	revisionFormatValue = dbcli.EffectiveString(cmd, dbcli.RevisionTableFormatFlagName, revisionFormatValue, projectCfg.Migration.RevisionFormat)
 	connectTimeoutValue := dbcli.EffectiveString(cmd, dbcli.ConnectTimeoutFlagName, opts.connectTimeout, projectCfg.Migration.ConnectTimeout)
 
+	logWriter := cmd.ErrOrStderr()
+	if opts.logFormat == "json" {
+		logWriter = cmd.OutOrStdout()
+	}
+	runtime, err := cliobs.Start(context.Background(), cliobs.Options{
+		Command:     "migrations.up",
+		LogFormat:   opts.logFormat,
+		LogLevel:    opts.logLevel,
+		MetricsAddr: opts.metricsAddr,
+		LogWriter:   logWriter,
+	})
+	if err != nil {
+		return err
+	}
+	defer shutdownObservability(runtime)
+	emit := cliobs.NewEmitter(cmd.OutOrStdout(), runtime)
+
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
 	}
@@ -183,12 +208,12 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 			return fmt.Errorf("migration sum verification failed:\n%s", result.Describe())
 		}
 		if opts.verbose {
-			fmt.Printf("%s verified: migrations directory is intact\n", result.SumFileName)
+			emit.Printf("%s verified: migrations directory is intact\n", result.SumFileName)
 		}
 	}
 
 	if opts.verbose {
-		fmt.Printf("Connecting to database: %s\n", dbschema.FormatDatabaseURL(dbURL))
+		emit.Printf("Connecting to database: %s\n", dbschema.FormatDatabaseURL(dbURL))
 	}
 
 	timeouts, err := migrator.ParseMigrationTimeouts(lockTimeout, statementTimeout)
@@ -221,17 +246,17 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	conn.SchemaWriter().SetDryRun(opts.dryRun)
 
 	if opts.dryRun {
-		fmt.Println("=== DRY RUN MODE ===")
-		fmt.Println("No actual changes will be made to the database")
-		fmt.Println()
+		emit.Println("=== DRY RUN MODE ===")
+		emit.Println("No actual changes will be made to the database")
+		emit.Println()
 	}
 
-	fmt.Println("=== MIGRATE UP ===")
-	fmt.Printf("Database: %s\n", dbschema.FormatDatabaseURL(dbURL))
-	fmt.Printf("Dialect: %s\n", conn.Info().Dialect)
-	fmt.Printf("Migrations directory: %s\n", migrationsDir)
-	fmt.Printf("Migration directory format: %s\n", dirFormat)
-	fmt.Println()
+	emit.Println("=== MIGRATE UP ===")
+	emit.Printf("Database: %s\n", dbschema.FormatDatabaseURL(dbURL))
+	emit.Printf("Dialect: %s\n", conn.Info().Dialect)
+	emit.Printf("Migrations directory: %s\n", migrationsDir)
+	emit.Printf("Migration directory format: %s\n", dirFormat)
+	emit.Println()
 
 	// Create filesystem from migrations directory
 	migrationsFS := os.DirFS(migrationsDir)
@@ -244,7 +269,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 	if onlineCfg.Enabled() {
-		fmt.Printf("Online DDL: tool=%s threshold_rows=%d\n", onlineCfg.Tool, onlineCfg.ThresholdRows)
+		emit.Printf("Online DDL: tool=%s threshold_rows=%d\n", onlineCfg.Tool, onlineCfg.ThresholdRows)
 	}
 	interceptor := onlineddl.New(*onlineCfg).WithDryRun(opts.dryRun)
 
@@ -262,7 +287,9 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		WithRevisionTableFormat(revisionFormat).
 		WithDefaultTimeouts(timeouts).
 		WithExecOrder(execOrder).
-		WithMigrationLockTimeout(migrationLockTimeout)
+		WithMigrationLockTimeout(migrationLockTimeout).
+		WithLogger(runtime.Logger()).
+		WithObserver(runtime.Observer())
 
 	// Get migration status before running
 	status, err := mig.GetMigrationStatus(context.Background())
@@ -270,22 +297,29 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("error getting migration status: %w", err)
 	}
 
-	fmt.Printf("Current version: %d\n", status.CurrentVersion)
-	fmt.Printf("Total migrations: %d\n", status.TotalMigrations)
-	fmt.Printf("Pending migrations: %d\n", len(status.PendingMigrations))
+	emit.Printf("Current version: %d\n", status.CurrentVersion)
+	emit.Printf("Total migrations: %d\n", status.TotalMigrations)
+	emit.Printf("Pending migrations: %d\n", len(status.PendingMigrations))
 	if len(status.OutOfOrderMigrations) > 0 {
-		fmt.Printf("Out-of-order migrations: %v\n", status.OutOfOrderMigrations)
+		emit.Printf("Out-of-order migrations: %v\n", status.OutOfOrderMigrations)
 	}
 
 	if !status.HasPendingChanges {
-		fmt.Println("✅ Database is already up to date!")
+		cliobs.ObserveNoopMigration(context.Background(), runtime.Observer(), "ptah.migrate.up",
+			migrator.ObservationAttribute{Key: "db.system", Value: conn.Info().Dialect},
+			migrator.ObservationAttribute{Key: "migration.direction", Value: "up"},
+			migrator.ObservationAttribute{Key: "migration.current_version", Value: status.CurrentVersion},
+			migrator.ObservationAttribute{Key: "migration.target_version", Value: status.CurrentVersion},
+			migrator.ObservationAttribute{Key: "migration.pending_count", Value: 0},
+		)
+		emit.Println("✅ Database is already up to date!")
 		return nil
 	}
 
 	if opts.verbose {
-		fmt.Printf("Pending migration versions: %v\n", status.PendingMigrations)
+		emit.Printf("Pending migration versions: %v\n", status.PendingMigrations)
 		if len(status.OutOfOrderMigrations) > 0 {
-			fmt.Printf("Out-of-order migration versions: %v\n", status.OutOfOrderMigrations)
+			emit.Printf("Out-of-order migration versions: %v\n", status.OutOfOrderMigrations)
 		}
 	}
 	if execOrder == migrator.ExecOrderLinear && len(status.OutOfOrderMigrations) > 0 {
@@ -302,7 +336,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		}
 	}
 
-	fmt.Println()
+	emit.Println()
 	preflightHook := dbcli.LockedMigrationPreflightHook(opts.dryRun, preflight.Options{
 		Direction:          preflight.DirectionUp,
 		DatabaseURL:        dbURL,
@@ -312,7 +346,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		PostgresDumpDir:    pgDumpTo,
 		MySQLDumpDir:       mySQLDumpTo,
 		WebhookURL:         webhook,
-	})
+	}, emit, cliobs.NewOutputWriter(cmd.OutOrStdout(), runtime, "pre-flight output"))
 
 	// Run migrations
 	err = mig.MigrateUpWithPreflight(context.Background(), preflightHook)
@@ -326,16 +360,24 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("error getting final migration status: %w", err)
 	}
 
-	fmt.Println()
+	emit.Println()
 	if opts.dryRun {
-		fmt.Println("✅ Dry run completed successfully!")
-		fmt.Printf("Would have applied %d migrations\n", len(status.PendingMigrations))
+		emit.Println("✅ Dry run completed successfully!")
+		emit.Printf("Would have applied %d migrations\n", len(status.PendingMigrations))
 	} else {
-		fmt.Println("✅ Migrations completed successfully!")
-		fmt.Printf("Database is now at version: %d\n", finalStatus.CurrentVersion)
+		emit.Println("✅ Migrations completed successfully!")
+		emit.Printf("Database is now at version: %d\n", finalStatus.CurrentVersion)
 	}
 
 	return nil
+}
+
+func shutdownObservability(runtime *cliobs.Runtime) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := runtime.Shutdown(ctx); err != nil {
+		runtime.Logger().Warn("failed to shut down observability", "error", err)
+	}
 }
 
 func pendingMigrationsForRun(status *migrator.MigrationStatus, execOrder migrator.ExecOrder) []int64 {

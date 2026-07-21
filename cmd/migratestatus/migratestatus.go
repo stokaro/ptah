@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/cliobs"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
@@ -40,6 +43,9 @@ type options struct {
 	migrationsSchema    string
 	migrationsTable     string
 	revisionTableFormat string
+	logFormat           string
+	logLevel            string
+	metricsAddr         string
 }
 
 func NewMigrateStatusCommand() *cobra.Command {
@@ -75,6 +81,9 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.BoolVar(&opts.verbose, verboseFlag, false, "Enable verbose output with detailed migration information")
 	flags.BoolVar(&opts.jsonOutput, jsonFlag, false, "Output status in JSON format")
 	flags.BoolVar(&opts.exitOnPending, exitCodeFlag, false, "Exit with 1 when pending migrations are available")
+	flags.StringVar(&opts.logFormat, cliobs.LogFormatFlagName, "text", "Log format: text or json")
+	flags.StringVar(&opts.logLevel, cliobs.LogLevelFlagName, "info", "Log level: debug, info, warn, or error")
+	flags.StringVar(&opts.metricsAddr, cliobs.MetricsAddrFlagName, "", "Address for the Prometheus /metrics endpoint, such as :9090")
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterConfigFlag(flags, &opts.configPath)
 	dbcli.RegisterEnvFlag(flags, &opts.envName)
@@ -104,6 +113,23 @@ func migrateStatusCommand(cmd *cobra.Command, opts *options) error {
 	migrationsTable = dbcli.EffectiveString(cmd, dbcli.MigrationsTableFlagName, migrationsTable, projectCfg.Migration.RevisionsTable)
 	revisionFormatValue = dbcli.EffectiveString(cmd, dbcli.RevisionTableFormatFlagName, revisionFormatValue, projectCfg.Migration.RevisionFormat)
 	connectTimeoutValue := dbcli.EffectiveString(cmd, dbcli.ConnectTimeoutFlagName, opts.connectTimeout, projectCfg.Migration.ConnectTimeout)
+
+	logWriter := cmd.ErrOrStderr()
+	if opts.logFormat == "json" && !opts.jsonOutput {
+		logWriter = cmd.OutOrStdout()
+	}
+	runtime, err := cliobs.Start(context.Background(), cliobs.Options{
+		Command:     "migrations.status",
+		LogFormat:   opts.logFormat,
+		LogLevel:    opts.logLevel,
+		MetricsAddr: opts.metricsAddr,
+		LogWriter:   logWriter,
+	})
+	if err != nil {
+		return err
+	}
+	defer shutdownObservability(runtime)
+	emit := cliobs.NewEmitter(cmd.OutOrStdout(), runtime)
 
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
@@ -148,7 +174,9 @@ func migrateStatusCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
 	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable).
-		WithRevisionTableFormat(revisionFormat)
+		WithRevisionTableFormat(revisionFormat).
+		WithLogger(runtime.Logger()).
+		WithObserver(runtime.Observer())
 
 	// Get migration status
 	status, err := mig.GetMigrationStatus(context.Background())
@@ -157,10 +185,10 @@ func migrateStatusCommand(cmd *cobra.Command, opts *options) error {
 	}
 
 	if opts.jsonOutput {
-		if err := outputJSON(status); err != nil {
+		if err := outputJSON(cmd.OutOrStdout(), status); err != nil {
 			return err
 		}
-	} else if err := outputHuman(status, conn, opts.verbose); err != nil {
+	} else if err := outputHuman(emit, status, conn, opts.verbose); err != nil {
 		return err
 	}
 
@@ -170,6 +198,14 @@ func migrateStatusCommand(cmd *cobra.Command, opts *options) error {
 	return nil
 }
 
+func shutdownObservability(runtime *cliobs.Runtime) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := runtime.Shutdown(ctx); err != nil {
+		runtime.Logger().Warn("failed to shut down observability", "error", err)
+	}
+}
+
 func pendingMigrationsExitCode(status *migrator.MigrationStatus) error {
 	if status.HasPendingChanges {
 		return exitcode.New(1, errors.New("pending migrations available"))
@@ -177,28 +213,28 @@ func pendingMigrationsExitCode(status *migrator.MigrationStatus) error {
 	return nil
 }
 
-func outputJSON(status *migrator.MigrationStatus) error {
-	encoder := json.NewEncoder(os.Stdout)
+func outputJSON(w io.Writer, status *migrator.MigrationStatus) error {
+	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(status)
 }
 
-func outputHuman(status *migrator.MigrationStatus, conn *dbschema.DatabaseConnection, verbose bool) error { //revive:disable-line:flag-parameter // it's ok here
-	fmt.Println("=== MIGRATION STATUS ===")
-	fmt.Printf("Database: %s\n", dbschema.FormatDatabaseURL("***"))
-	fmt.Printf("Dialect: %s\n", conn.Info().Dialect)
-	fmt.Printf("Schema: %s\n", conn.Info().Schema)
-	fmt.Println()
+func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *dbschema.DatabaseConnection, verbose bool) error { //revive:disable-line:flag-parameter // it's ok here
+	emit.Println("=== MIGRATION STATUS ===")
+	emit.Printf("Database: %s\n", dbschema.FormatDatabaseURL("***"))
+	emit.Printf("Dialect: %s\n", conn.Info().Dialect)
+	emit.Printf("Schema: %s\n", conn.Info().Schema)
+	emit.Println()
 
-	fmt.Printf("Current Version: %d\n", status.CurrentVersion)
-	fmt.Printf("Total Migrations: %d\n", status.TotalMigrations)
-	fmt.Printf("Applied Migrations: %d\n", len(status.AppliedMigrations))
-	fmt.Printf("Pending Migrations: %d\n", len(status.PendingMigrations))
-	fmt.Printf("Out-of-order Migrations: %d\n", len(status.OutOfOrderMigrations))
+	emit.Printf("Current Version: %d\n", status.CurrentVersion)
+	emit.Printf("Total Migrations: %d\n", status.TotalMigrations)
+	emit.Printf("Applied Migrations: %d\n", len(status.AppliedMigrations))
+	emit.Printf("Pending Migrations: %d\n", len(status.PendingMigrations))
+	emit.Printf("Out-of-order Migrations: %d\n", len(status.OutOfOrderMigrations))
 
 	if status.DirtyRevision != nil {
-		fmt.Println("Status: ❌ Dirty migration state detected")
-		fmt.Printf(
+		emit.Println("Status: ❌ Dirty migration state detected")
+		emit.Printf(
 			"Dirty Migration: version=%d state=%s applied=%d/%d\n",
 			status.DirtyRevision.Version,
 			status.DirtyRevision.State,
@@ -206,46 +242,46 @@ func outputHuman(status *migrator.MigrationStatus, conn *dbschema.DatabaseConnec
 			status.DirtyRevision.Total,
 		)
 		if status.DirtyRevision.Error != "" {
-			fmt.Printf("Error: %s\n", status.DirtyRevision.Error)
+			emit.Printf("Error: %s\n", status.DirtyRevision.Error)
 		}
 		if status.DirtyRevision.ErrorStatement != "" {
-			fmt.Printf("Error Statement: %s\n", status.DirtyRevision.ErrorStatement)
+			emit.Printf("Error Statement: %s\n", status.DirtyRevision.ErrorStatement)
 		}
-		fmt.Println("\nRun 'ptah migrations repair --version <version>' after fixing the database state.")
+		emit.Println("\nRun 'ptah migrations repair --version <version>' after fixing the database state.")
 		return nil
 	}
 
 	if status.HasPendingChanges {
-		fmt.Println("Status: ⚠️  Pending migrations available")
+		emit.Println("Status: ⚠️  Pending migrations available")
 
 		if verbose && len(status.PendingMigrations) > 0 {
-			fmt.Println("\nPending migration versions:")
+			emit.Println("\nPending migration versions:")
 			for _, version := range status.PendingMigrations {
-				fmt.Printf("  - %d\n", version)
+				emit.Printf("  - %d\n", version)
 			}
 		}
 		if verbose && len(status.OutOfOrderMigrations) > 0 {
-			fmt.Println("\nOut-of-order migration versions:")
+			emit.Println("\nOut-of-order migration versions:")
 			for _, version := range status.OutOfOrderMigrations {
-				fmt.Printf("  - %d\n", version)
+				emit.Printf("  - %d\n", version)
 			}
 		}
 
-		fmt.Println("\nRun 'ptah migrations up' to apply pending migrations.")
+		emit.Println("\nRun 'ptah migrations up' to apply pending migrations.")
 	} else {
-		fmt.Println("Status: ✅ Database is up to date")
+		emit.Println("Status: ✅ Database is up to date")
 	}
 
 	if verbose {
-		fmt.Println("\n=== DETAILED INFORMATION ===")
+		emit.Println("\n=== DETAILED INFORMATION ===")
 
 		if status.TotalMigrations == 0 {
-			fmt.Println("No migrations found in the migrations directory.")
+			emit.Println("No migrations found in the migrations directory.")
 		} else {
-			fmt.Printf("Applied migrations: %d\n", len(status.AppliedMigrations))
+			emit.Printf("Applied migrations: %d\n", len(status.AppliedMigrations))
 
 			if len(status.PendingMigrations) > 0 {
-				fmt.Printf("Next migration to apply: %d\n", status.PendingMigrations[0])
+				emit.Printf("Next migration to apply: %d\n", status.PendingMigrations[0])
 			}
 		}
 	}
