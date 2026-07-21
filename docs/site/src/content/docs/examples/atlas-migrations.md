@@ -62,10 +62,12 @@ ptah migrations down \
 ```
 
 The `ptah atlas migrate down` command path exists and forwards to native Ptah
-rollback behavior. It is an Atlas OSS command path, but Ptah's compatibility
-surface does not yet match every Atlas dynamic down-planning flag and behavior.
-Use the native command for explicit target rollback recipes until the
-Atlas-compatible path documents the same runtime contract.
+rollback behavior. It maps compatible Atlas flags such as `--url`, `--dir`,
+`--to-version`, `--dry-run`, `--revisions-schema`, and `--lock-timeout`.
+Atlas dynamic down-planning flags such as `--dev-url`, `--to-tag`,
+`--skip-checks`, and `--plan` fail explicitly until Ptah implements equivalent
+planning behavior. Atlas Go template output formatting via `--format` also fails
+explicitly until Ptah supports that output contract.
 
 ## Troubleshooting
 
