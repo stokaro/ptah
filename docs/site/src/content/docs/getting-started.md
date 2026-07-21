@@ -95,7 +95,7 @@ EOF
 Expected output includes:
 
 ```text
-Migration directory integrity verified
+OK: migrations directory matches ptah.sum
 ```
 
 ## Apply, inspect, status, and roll back
@@ -146,7 +146,7 @@ rm -f ./bin/ptah
 
 ## Next steps
 
-- Use [Go schema workflow](./workflows/go-schema/) when the application owns schema definitions in Go code.
-- Use [Schema files](./workflows/schema-files/) for YAML or Atlas HCL sources.
-- Use [Migrations](./workflows/migrations/) before applying Ptah to shared databases.
-- Use [Comparison](./reference/comparison/) to understand where Ptah currently matches Atlas and where conformance gaps remain.
+- Use [Go schema workflow](../workflows/go-schema/) when the application owns schema definitions in Go code.
+- Use [Schema files](../workflows/schema-files/) for YAML or Atlas HCL sources.
+- Use [Migrations](../workflows/migrations/) before applying Ptah to shared databases.
+- Use [Comparison](../reference/comparison/) to understand where Ptah currently matches Atlas and where conformance gaps remain.
