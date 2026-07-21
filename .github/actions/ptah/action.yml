@@ -1,0 +1,166 @@
+name: Ptah migration plan
+description: Generate and comment Ptah schema migration plans on pull requests.
+inputs:
+  version:
+    description: Ptah release tag to download, or latest.
+    required: false
+    default: latest
+  binary-path:
+    description: Existing Ptah binary path. When set, release download is skipped.
+    required: false
+    default: ""
+  setup-go:
+    description: Set up the Go toolchain before running Ptah.
+    required: false
+    default: "true"
+  go-version:
+    description: Go version passed to actions/setup-go.
+    required: false
+    default: "1.26.5"
+  dir:
+    description: Root directory to scan for Go schema entities.
+    required: false
+    default: "."
+  db-url:
+    description: Target database URL used to read the current schema.
+    required: true
+  dialect:
+    description: Dialect passed to migrations lint. Empty runs every lint rule.
+    required: false
+    default: ""
+  migration-dir:
+    description: Migration directory passed to migrations lint.
+    required: false
+    default: migrations
+  schemas:
+    description: Comma-separated database schemas to inspect.
+    required: false
+    default: ""
+  comment:
+    description: Post or update a sticky pull request comment.
+    required: false
+    default: "true"
+  lint:
+    description: Run ptah migrations lint after planning.
+    required: false
+    default: "true"
+  lint-fail-on:
+    description: "Lint failure threshold: error, any, or none."
+    required: false
+    default: "error"
+  allow-destructive:
+    description: Allow destructive migration plans.
+    required: false
+    default: "false"
+  output-dir:
+    description: Directory for generated action reports.
+    required: false
+    default: ""
+outputs:
+  plan-path:
+    description: Path to the text migration plan report.
+    value: ${{ steps.run.outputs.plan-path }}
+  safety-path:
+    description: Path to the JSON safety report.
+    value: ${{ steps.run.outputs.safety-path }}
+  safety-error-path:
+    description: Path to stderr captured from the safety command.
+    value: ${{ steps.run.outputs.safety-error-path }}
+  lint-path:
+    description: Path to the JSON lint report, when lint is enabled.
+    value: ${{ steps.run.outputs.lint-path }}
+  lint-error-path:
+    description: Path to stderr captured from the lint command.
+    value: ${{ steps.run.outputs.lint-error-path }}
+  destructive:
+    description: "true when the safety report contains destructive statements."
+    value: ${{ steps.run.outputs.destructive }}
+runs:
+  using: composite
+  steps:
+    - name: Set up Go
+      if: inputs.setup-go == 'true'
+      uses: actions/setup-go@v7
+      with:
+        go-version: ${{ inputs.go-version }}
+        cache: false
+
+    - name: Install Ptah
+      id: install
+      shell: bash
+      env:
+        PTAH_VERSION: ${{ inputs.version }}
+        PTAH_BINARY_PATH: ${{ inputs.binary-path }}
+        GITHUB_TOKEN: ${{ github.token }}
+        GITHUB_ACTION_PATH: ${{ github.action_path }}
+      run: "$GITHUB_ACTION_PATH/install.sh"
+
+    - name: Run Ptah checks
+      id: run
+      shell: bash
+      env:
+        PTAH_BIN: ${{ steps.install.outputs.ptah-bin }}
+        INPUT_DIR: ${{ inputs.dir }}
+        INPUT_DB_URL: ${{ inputs.db-url }}
+        INPUT_DIALECT: ${{ inputs.dialect }}
+        INPUT_MIGRATION_DIR: ${{ inputs.migration-dir }}
+        INPUT_SCHEMAS: ${{ inputs.schemas }}
+        INPUT_LINT: ${{ inputs.lint }}
+        INPUT_LINT_FAIL_ON: ${{ inputs.lint-fail-on }}
+        INPUT_ALLOW_DESTRUCTIVE: ${{ inputs.allow-destructive }}
+        INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
+        GITHUB_ACTION_PATH: ${{ github.action_path }}
+      run: "$GITHUB_ACTION_PATH/run.sh"
+
+    - name: Comment on pull request
+      if: inputs.comment == 'true'
+      uses: actions/github-script@v8
+      env:
+        PTAH_PLAN_PATH: ${{ steps.run.outputs.plan-path }}
+        PTAH_SAFETY_PATH: ${{ steps.run.outputs.safety-path }}
+        PTAH_SAFETY_ERROR_PATH: ${{ steps.run.outputs.safety-error-path }}
+        PTAH_LINT_PATH: ${{ steps.run.outputs.lint-path }}
+        PTAH_LINT_ERROR_PATH: ${{ steps.run.outputs.lint-error-path }}
+        PTAH_PLAN_EXIT_CODE: ${{ steps.run.outputs.plan-exit-code }}
+        PTAH_SAFETY_EXIT_CODE: ${{ steps.run.outputs.safety-exit-code }}
+        PTAH_LINT_EXIT_CODE: ${{ steps.run.outputs.lint-exit-code }}
+        PTAH_DESTRUCTIVE: ${{ steps.run.outputs.destructive }}
+        PTAH_ACTION_PATH: ${{ github.action_path }}
+      with:
+        script: |
+          const run = require(`${process.env.PTAH_ACTION_PATH}/comment.js`);
+          await run({ github, context, core });
+
+    - name: Set destructive-change check run
+      uses: actions/github-script@v8
+      env:
+        PTAH_SAFETY_PATH: ${{ steps.run.outputs.safety-path }}
+        PTAH_SAFETY_ERROR_PATH: ${{ steps.run.outputs.safety-error-path }}
+        PTAH_LINT_PATH: ${{ steps.run.outputs.lint-path }}
+        PTAH_LINT_ERROR_PATH: ${{ steps.run.outputs.lint-error-path }}
+        PTAH_PLAN_EXIT_CODE: ${{ steps.run.outputs.plan-exit-code }}
+        PTAH_SAFETY_EXIT_CODE: ${{ steps.run.outputs.safety-exit-code }}
+        PTAH_LINT_EXIT_CODE: ${{ steps.run.outputs.lint-exit-code }}
+        PTAH_DESTRUCTIVE: ${{ steps.run.outputs.destructive }}
+        PTAH_ACTION_PATH: ${{ github.action_path }}
+      with:
+        script: |
+          const run = require(`${process.env.PTAH_ACTION_PATH}/check-run.js`);
+          await run({ github, context, core });
+
+    - name: Fail on Ptah errors
+      shell: bash
+      env:
+        PLAN_EXIT_CODE: ${{ steps.run.outputs.plan-exit-code }}
+        SAFETY_EXIT_CODE: ${{ steps.run.outputs.safety-exit-code }}
+        LINT_EXIT_CODE: ${{ steps.run.outputs.lint-exit-code }}
+      run: |
+        if [[ "$PLAN_EXIT_CODE" != "0" ]]; then
+          exit "$PLAN_EXIT_CODE"
+        fi
+        if [[ "$SAFETY_EXIT_CODE" != "0" ]]; then
+          exit "$SAFETY_EXIT_CODE"
+        fi
+        if [[ "$LINT_EXIT_CODE" != "0" ]]; then
+          exit "$LINT_EXIT_CODE"
+        fi

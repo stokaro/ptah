@@ -14,6 +14,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/renderer"
+	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/safety"
@@ -160,7 +161,6 @@ func migrateCommandWithFlags(cmd *cobra.Command, flags map[string]cobraflags.Fla
 		}
 		return nil
 	}
-	fmt.Fprint(out, astNodes)
 	if err := renderSafetyReport(out, reportFormat, assessments); err != nil {
 		return fmt.Errorf("error rendering safety report: %w", err)
 	}
@@ -176,7 +176,7 @@ func migrateCommandWithFlags(cmd *cobra.Command, flags map[string]cobraflags.Fla
 	fmt.Fprintln(out, "=== MIGRATION SQL ===")
 	fmt.Fprintln(out)
 
-	statements, err := renderer.RenderSQLWithCapabilities(info.Dialect, info.Capabilities, astNodes...)
+	migrationSQL, err := renderer.RenderSQLWithCapabilities(info.Dialect, info.Capabilities, astNodes...)
 	if err != nil {
 		return fmt.Errorf("error rendering SQL: %w", err)
 	}
@@ -187,15 +187,30 @@ func migrateCommandWithFlags(cmd *cobra.Command, flags map[string]cobraflags.Fla
 	fmt.Fprintf(out, "-- Target: %s\n", dbschema.FormatDatabaseURL(dbURL))
 	fmt.Fprintln(out)
 
-	for _, statement := range statements {
-		fmt.Fprintln(out, statement)
+	fmt.Fprint(out, migrationSQL)
+	if !strings.HasSuffix(migrationSQL, "\n") {
+		fmt.Fprintln(out)
 	}
 
 	fmt.Fprintln(out)
-	fmt.Fprintf(out, "Generated %d migration statements.\n", len(statements))
+	fmt.Fprintf(out, "Generated %d migration statements.\n", countRenderedStatements(migrationSQL))
 	fmt.Fprintln(out, "⚠️  Review the SQL carefully before executing!")
 
 	return nil
+}
+
+func countRenderedStatements(sql string) int {
+	statements := sqlutil.SplitSQLStatements(sql)
+	count := 0
+	for _, statement := range statements {
+		if strings.TrimSpace(sqlutil.StripComments(statement)) != "" {
+			count++
+		}
+	}
+	if count == 0 && strings.TrimSpace(sqlutil.StripComments(sql)) != "" {
+		return 1
+	}
+	return count
 }
 
 func renderSafetyReport(w io.Writer, format string, assessments []safety.StatementAssessment) error {
