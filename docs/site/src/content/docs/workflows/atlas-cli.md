@@ -55,6 +55,7 @@ fail clearly instead of being ignored.
 | --- | --- |
 | `ptah atlas schema inspect` | `ptah db read` |
 | `ptah atlas schema diff` | `ptah schema compare` |
+| `ptah atlas schema fmt` | Formats local `.hcl` files using HCL canonical layout. |
 
 ## Example
 
@@ -64,6 +65,7 @@ ptah atlas migrate apply \
   --dir ./migrations
 
 ptah atlas schema inspect --url "$DATABASE_URL"
+ptah atlas schema fmt schema.hcl
 ```
 
 For binary-level drop-in usage:
@@ -74,6 +76,7 @@ ptah-compat migrate apply \
   --dir ./migrations
 
 ptah-compat schema inspect --url "$DATABASE_URL"
+ptah-compat schema fmt schema.hcl
 ```
 
 For existing scripts that already call `atlas`, install or copy `ptah-compat`
