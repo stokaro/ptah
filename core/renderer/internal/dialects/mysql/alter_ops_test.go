@@ -114,7 +114,13 @@ func TestMySQL_ColumnDefaultLiteralQuoting(t *testing.T) {
 	table := ast.NewCreateTable("products").
 		AddColumn(ast.NewColumn("status", "enum('draft','active')").
 			SetNotNull().
-			SetDefault("draft"))
+			SetDefault("draft")).
+		AddColumn(ast.NewColumn("archived", "BOOLEAN").
+			SetNotNull().
+			SetDefault("false")).
+		AddColumn(ast.NewColumn("views", "integer").
+			SetNotNull().
+			SetDefault("42"))
 	alter := &ast.AlterTableNode{
 		Name: "products",
 		Operations: []ast.AlterOperation{
@@ -123,14 +129,29 @@ func TestMySQL_ColumnDefaultLiteralQuoting(t *testing.T) {
 					SetNotNull().
 					SetDefault("'draft'"),
 			},
+			&ast.ModifyColumnOperation{
+				Column: ast.NewColumn("archived", "BOOLEAN").
+					SetNotNull().
+					SetDefault("false"),
+			},
+			&ast.ModifyColumnOperation{
+				Column: ast.NewColumn("views", "integer").
+					SetNotNull().
+					SetDefault("42"),
+			},
 		},
 	}
 
 	out := renderMySQL(t, table, alter)
 
 	c.Assert(out, qt.Contains, "`status` enum('draft','active') NOT NULL DEFAULT 'draft'")
+	c.Assert(out, qt.Contains, "`archived` BOOLEAN NOT NULL DEFAULT 0")
+	c.Assert(out, qt.Contains, "`views` integer NOT NULL DEFAULT 42")
 	c.Assert(out, qt.Contains, "ALTER TABLE `products` MODIFY COLUMN `status` enum('draft','active') NOT NULL DEFAULT 'draft';")
+	c.Assert(out, qt.Contains, "ALTER TABLE `products` MODIFY COLUMN `archived` BOOLEAN NOT NULL DEFAULT 0;")
+	c.Assert(out, qt.Contains, "ALTER TABLE `products` MODIFY COLUMN `views` integer NOT NULL DEFAULT 42;")
 	c.Assert(out, qt.Not(qt.Contains), "DEFAULT ''draft''")
+	c.Assert(out, qt.Not(qt.Contains), "DEFAULT 'false'")
 }
 
 func TestMySQL_AlterTable_ClickHouseOnlyOpsEmitComment(t *testing.T) {
