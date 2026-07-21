@@ -50,11 +50,83 @@ func (r *Renderer) escapeValue(value string) string {
 	return "'" + escaped + "'"
 }
 
-func (r *Renderer) renderDefaultLiteral(value string) string {
+func (r *Renderer) renderDefaultLiteral(column *ast.ColumnNode) string {
+	value := strings.TrimSpace(column.Default.Value)
 	if strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'") {
 		return value
 	}
-	return r.escapeValue(value)
+	if literal, ok := renderBooleanDefaultLiteral(column.Type, value); ok {
+		return literal
+	}
+	if value == "" || mysqlDefaultNeedsLiteralQuotes(column.Type, value) {
+		return r.escapeValue(column.Default.Value)
+	}
+	return column.Default.Value
+}
+
+func renderBooleanDefaultLiteral(columnType, value string) (string, bool) {
+	if !isMySQLBooleanType(columnType) {
+		return "", false
+	}
+	switch strings.ToLower(value) {
+	case "false":
+		return "0", true
+	case "true":
+		return "1", true
+	default:
+		return "", false
+	}
+}
+
+func isMySQLBooleanType(columnType string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(columnType))
+	return normalized == "bool" ||
+		normalized == "boolean" ||
+		strings.HasPrefix(normalized, "tinyint(1)")
+}
+
+func mysqlDefaultNeedsLiteralQuotes(columnType, value string) bool {
+	if isMySQLNullDefault(value) || isMySQLTemporalDefaultExpression(columnType, value) {
+		return false
+	}
+
+	normalizedType := strings.ToLower(strings.TrimSpace(columnType))
+	switch {
+	case strings.HasPrefix(normalizedType, "enum("), strings.HasPrefix(normalizedType, "set("):
+		return true
+	case strings.Contains(normalizedType, "char"), strings.Contains(normalizedType, "text"):
+		return true
+	case strings.Contains(normalizedType, "binary"), strings.Contains(normalizedType, "blob"), normalizedType == "json":
+		return true
+	case strings.Contains(normalizedType, "date"), strings.Contains(normalizedType, "time"), strings.Contains(normalizedType, "year"):
+		return true
+	default:
+		return false
+	}
+}
+
+func isMySQLNullDefault(value string) bool {
+	return strings.EqualFold(strings.TrimSpace(value), "NULL")
+}
+
+func isMySQLTemporalDefaultExpression(columnType, value string) bool {
+	normalizedType := strings.ToLower(strings.TrimSpace(columnType))
+	if !strings.Contains(normalizedType, "date") && !strings.Contains(normalizedType, "time") && !strings.Contains(normalizedType, "year") {
+		return false
+	}
+
+	normalizedValue := strings.ToUpper(strings.TrimSpace(value))
+	normalizedValue = strings.TrimSuffix(normalizedValue, "()")
+	switch normalizedValue {
+	case "CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME", "LOCALTIME", "LOCALTIMESTAMP", "NOW":
+		return true
+	default:
+		return strings.HasPrefix(normalizedValue, "CURRENT_TIMESTAMP(") ||
+			strings.HasPrefix(normalizedValue, "CURRENT_TIME(") ||
+			strings.HasPrefix(normalizedValue, "LOCALTIME(") ||
+			strings.HasPrefix(normalizedValue, "LOCALTIMESTAMP(") ||
+			strings.HasPrefix(normalizedValue, "NOW(")
+	}
 }
 
 func escapeIdentifier(identifier string) string {
@@ -611,7 +683,7 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	case column.Default == nil:
 		// No default value
 	case column.Default.HasLiteral():
-		parts = append(parts, fmt.Sprintf("DEFAULT %s", r.renderDefaultLiteral(column.Default.Value)))
+		parts = append(parts, fmt.Sprintf("DEFAULT %s", r.renderDefaultLiteral(column)))
 	case column.Default.Expression != "":
 		parts = append(parts, fmt.Sprintf("DEFAULT %s", column.Default.Expression))
 	}
@@ -823,7 +895,7 @@ func (r *Renderer) renderColumnWithEnums(column *ast.ColumnNode, enumValues []st
 		if column.Default.Expression != "" {
 			parts = append(parts, fmt.Sprintf("DEFAULT %s", column.Default.Expression))
 		} else if column.Default.HasLiteral() {
-			parts = append(parts, fmt.Sprintf("DEFAULT %s", r.renderDefaultLiteral(column.Default.Value)))
+			parts = append(parts, fmt.Sprintf("DEFAULT %s", r.renderDefaultLiteral(column)))
 		}
 	}
 	if column.UpdateExpression != "" {

@@ -61,6 +61,28 @@ func TestMySQLRenderer_EmptyLiteralDefault(t *testing.T) {
 	c.Assert(sql, qt.Contains, "`name` varchar(255) NOT NULL DEFAULT ''")
 }
 
+func TestMySQLRenderer_TypedLiteralDefaults(t *testing.T) {
+	c := qt.New(t)
+
+	table := ast.NewCreateTable("products").
+		AddColumn(ast.NewColumn("archived", "BOOLEAN").SetNotNull().SetDefault("false")).
+		AddColumn(ast.NewColumn("published", "BOOL").SetNotNull().SetDefault("true")).
+		AddColumn(ast.NewColumn("views", "integer").SetNotNull().SetDefault("42")).
+		AddColumn(ast.NewColumn("status", "enum('draft','active')").SetNotNull().SetDefault("draft")).
+		AddColumn(ast.NewColumn("token", "varbinary(16)").SetDefault("abc")).
+		AddColumn(ast.NewColumn("created_at", "TIMESTAMP").SetNotNull().SetDefault("CURRENT_TIMESTAMP"))
+
+	sql := renderMySQL(t, table)
+
+	c.Assert(sql, qt.Contains, "`archived` BOOLEAN NOT NULL DEFAULT 0")
+	c.Assert(sql, qt.Contains, "`published` BOOL NOT NULL DEFAULT 1")
+	c.Assert(sql, qt.Contains, "`views` integer NOT NULL DEFAULT 42")
+	c.Assert(sql, qt.Contains, "`status` enum('draft','active') NOT NULL DEFAULT 'draft'")
+	c.Assert(sql, qt.Contains, "`token` varbinary(16) DEFAULT 'abc'")
+	c.Assert(sql, qt.Contains, "`created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP")
+	c.Assert(sql, qt.Not(qt.Contains), "DEFAULT 'false'")
+}
+
 func TestMySQLRenderer_ColumnCharsetCollate(t *testing.T) {
 	c := qt.New(t)
 
