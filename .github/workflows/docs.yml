@@ -68,6 +68,8 @@ jobs:
           set -euo pipefail
           cd docs/site
           npm ci
+          npm run check:links:selftest
+          npm run check:links
           npm run build
           mkdir -p "$GITHUB_WORKSPACE/_site/edge"
           cp -r dist/. "$GITHUB_WORKSPACE/_site/edge/"
@@ -81,9 +83,13 @@ jobs:
           set -euo pipefail
           workdir="$(mktemp -d)"
           git worktree add --force "$workdir" origin/master
-          ( cd "$workdir/docs/site" \
-            && DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm ci \
-            && DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run build )
+          (
+            cd "$workdir/docs/site"
+            DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm ci
+            DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:links:selftest
+            DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:links
+            DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run build
+          )
           mkdir -p "$GITHUB_WORKSPACE/_site/edge"
           cp -r "$workdir/docs/site/dist/." "$GITHUB_WORKSPACE/_site/edge/"
           git worktree remove --force "$workdir" || true
@@ -97,9 +103,17 @@ jobs:
             workdir="$(mktemp -d)"
             git worktree add --force "$workdir" "refs/tags/$tag"
             if [ -f "$workdir/docs/site/package.json" ]; then
-              if ( cd "$workdir/docs/site" \
-                   && DOCS_VERSION="$tag" ASTRO_TELEMETRY_DISABLED=1 npm ci \
-                   && DOCS_VERSION="$tag" ASTRO_TELEMETRY_DISABLED=1 npm run build ); then
+              if (
+                cd "$workdir/docs/site"
+                DOCS_VERSION="$tag" ASTRO_TELEMETRY_DISABLED=1 npm ci
+                if [ -f scripts/check-links.mjs ]; then
+                  DOCS_VERSION="$tag" ASTRO_TELEMETRY_DISABLED=1 npm run check:links:selftest
+                  DOCS_VERSION="$tag" ASTRO_TELEMETRY_DISABLED=1 npm run check:links
+                else
+                  echo "::warning::$tag has no docs link checker; skipping link validation"
+                fi
+                DOCS_VERSION="$tag" ASTRO_TELEMETRY_DISABLED=1 npm run build
+              ); then
                 mkdir -p "$GITHUB_WORKSPACE/_site/$tag"
                 cp -r "$workdir/docs/site/dist/." "$GITHUB_WORKSPACE/_site/$tag/"
               else
