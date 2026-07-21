@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"github.com/stokaro/ptah/core/ast"
+	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/core/renderer/internal/dialects/internal/bufwriter"
 )
 
@@ -763,6 +764,10 @@ func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 	}
 	r.w.WriteLinef("ALTER TABLE %s DROP INDEX %s;", node.Table, node.Name)
 	return nil
+}
+
+func (r *Renderer) VisitUpsert(_ *ast.UpsertNode) error {
+	return fmt.Errorf("%w: clickhouse: upsert rendering is not implemented", ptaherr.ErrUnsupportedFeature)
 }
 
 // VisitDropTable emits DROP TABLE [IF EXISTS] name. The SYNC modifier is

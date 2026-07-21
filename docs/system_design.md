@@ -80,7 +80,7 @@ The system operates through four main layers:
 ### 2. Core Processing
 
 #### ast Package
-- **Purpose**: Provides database-agnostic AST representation for SQL DDL
+- **Purpose**: Provides database-agnostic AST representation for schema DDL and selected reusable SQL statement nodes
 - **Key Node Types**:
   - `CreateTableNode`: Table creation with columns and constraints
   - `AlterTableNode`: Table modifications and alterations
@@ -88,10 +88,11 @@ The system operates through four main layers:
   - `ConstraintNode`: Primary keys, foreign keys, unique constraints
   - `IndexNode`: Index creation statements
   - `EnumNode`: Enum type definitions
+  - `UpsertNode`: Reusable DML upsert intent rendered by supporting dialects
 - **Pattern**: Implements visitor pattern for dialect-specific rendering
 
 #### Internal Builder And Parser Helpers
-- **Purpose**: Repository-internal helpers for building and parsing SQL DDL AST nodes
+- **Purpose**: Repository-internal helpers for building and parsing AST nodes
 - **Boundary**: These packages are implementation details behind Go `internal/`
   boundaries; embedders should use the stable `core/ast`, `core/goschema`,
   `core/renderer`, and migration packages documented in
@@ -211,6 +212,14 @@ type ColumnNode struct {
     DataType     string
     Constraints  []ColumnConstraint
     DefaultValue *DefaultValue
+}
+
+type UpsertNode struct {
+    Table             string
+    InsertColumns     []string
+    Values            []string
+    MatchColumns      []string
+    UpdateAssignments []UpsertAssignment
 }
 ```
 

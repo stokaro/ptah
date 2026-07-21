@@ -66,6 +66,11 @@ func TestVisitorInterface_HappyPath(t *testing.T) {
 			node:         &ast.CommentNode{Text: "This is a comment"},
 			expectedCall: "Comment:This is a comment",
 		},
+		{
+			name:         "UpsertNode",
+			node:         &ast.UpsertNode{Table: "users"},
+			expectedCall: "Upsert:users",
+		},
 	}
 
 	for _, tt := range tests {
@@ -126,6 +131,10 @@ func TestVisitorInterface_ErrorPath(t *testing.T) {
 		{
 			name: "CommentNode",
 			node: &ast.CommentNode{Text: "This is a comment"},
+		},
+		{
+			name: "UpsertNode",
+			node: &ast.UpsertNode{Table: "users"},
 		},
 	}
 

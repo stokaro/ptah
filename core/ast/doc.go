@@ -1,9 +1,9 @@
-// Package ast provides an Abstract Syntax Tree (AST) representation for SQL DDL statements.
+// Package ast provides an Abstract Syntax Tree (AST) representation for SQL statements.
 //
 // This package is a core component of the Ptah schema management tool, implementing
 // the visitor pattern to enable dialect-specific SQL generation from a common AST
-// representation. It supports CREATE TABLE, ALTER TABLE, CREATE INDEX, and other
-// DDL operations across multiple database platforms.
+// representation. It supports CREATE TABLE, ALTER TABLE, CREATE INDEX, generic
+// upsert nodes, and other operations across multiple database platforms.
 //
 // # Architecture
 //
@@ -25,6 +25,7 @@
 //   - IndexNode: Represents CREATE INDEX statements
 //   - EnumNode: Represents CREATE TYPE ... AS ENUM statements (PostgreSQL)
 //   - CommentNode: Represents SQL comments
+//   - UpsertNode: Represents a dialect-independent row upsert operation
 //
 // # Visitor Pattern
 //
@@ -39,6 +40,7 @@
 //		VisitIndex(*IndexNode) error
 //		VisitEnum(*EnumNode) error
 //		VisitComment(*CommentNode) error
+//		VisitUpsert(*UpsertNode) error
 //	}
 //
 // # Usage Example

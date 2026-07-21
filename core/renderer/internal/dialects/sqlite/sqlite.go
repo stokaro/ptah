@@ -163,6 +163,10 @@ func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 	return nil
 }
 
+func (r *Renderer) VisitUpsert(_ *ast.UpsertNode) error {
+	return unsupportedFeaturef("upsert rendering is not implemented")
+}
+
 func (r *Renderer) VisitEnum(_ *ast.EnumNode) error {
 	return nil
 }
