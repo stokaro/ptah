@@ -1,0 +1,1098 @@
+{
+  "$defs": {
+    "migrator.embedded": {
+      "additionalProperties": false,
+      "description": "Controls how an embedded Go field contributes schema objects.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "patternProperties": {
+            "^platform\\.[A-Za-z0-9_]+\\.[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)*$": {
+              "description": "Dialect-specific platform override.",
+              "type": "string"
+            }
+          },
+          "properties": {
+            "comment": {
+              "description": "Generated column comment.",
+              "type": "string"
+            },
+            "field": {
+              "description": "Generated relation field name.",
+              "type": "string"
+            },
+            "index": {
+              "description": "Requests an index for generated relation columns.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string",
+              "x-ptah-bare-boolean": true
+            },
+            "mode": {
+              "description": "Embedding mode: inline, json, or relation.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Column name for json embedding.",
+              "type": "string"
+            },
+            "not_null": {
+              "description": "Compatibility flag accepted on embedded annotations.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string",
+              "x-ptah-bare-boolean": true
+            },
+            "nullable": {
+              "description": "Marks generated embedded columns nullable.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string",
+              "x-ptah-bare-boolean": true
+            },
+            "on_delete": {
+              "description": "Generated foreign key ON DELETE action.",
+              "type": "string"
+            },
+            "on_update": {
+              "description": "Generated foreign key ON UPDATE action.",
+              "type": "string"
+            },
+            "prefix": {
+              "description": "Column prefix for inline embedded fields.",
+              "type": "string"
+            },
+            "ref": {
+              "description": "Relation target in table(column) form.",
+              "type": "string"
+            },
+            "type": {
+              "description": "Column type for json embedding.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "directive": {
+          "const": "migrator:embedded"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "migrator.schema.constraint": {
+      "additionalProperties": false,
+      "description": "Declares a table constraint.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "check": {
+              "description": "CHECK expression.",
+              "type": "string"
+            },
+            "columns": {
+              "description": "Comma-separated local columns.",
+              "type": "string"
+            },
+            "comment": {
+              "description": "Constraint comment.",
+              "type": "string"
+            },
+            "condition": {
+              "description": "Constraint WHERE condition.",
+              "type": "string"
+            },
+            "elements": {
+              "description": "EXCLUDE constraint elements.",
+              "type": "string"
+            },
+            "foreign_column": {
+              "description": "Single referenced column for FOREIGN KEY constraints.",
+              "type": "string"
+            },
+            "foreign_columns": {
+              "description": "Comma-separated referenced columns for composite FOREIGN KEY constraints.",
+              "type": "string"
+            },
+            "foreign_table": {
+              "description": "Referenced table for FOREIGN KEY constraints.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Constraint name.",
+              "type": "string"
+            },
+            "nulls_distinct": {
+              "description": "Controls NULLS DISTINCT behavior where supported.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            },
+            "on_delete": {
+              "description": "Foreign key ON DELETE action.",
+              "type": "string"
+            },
+            "on_update": {
+              "description": "Foreign key ON UPDATE action.",
+              "type": "string"
+            },
+            "table": {
+              "description": "Explicit target table.",
+              "type": "string"
+            },
+            "type": {
+              "description": "Constraint type: CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY, or EXCLUDE.",
+              "type": "string"
+            },
+            "using": {
+              "description": "EXCLUDE index method.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "directive": {
+          "const": "migrator:schema:constraint"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "migrator.schema.enum": {
+      "additionalProperties": false,
+      "description": "Declares a reusable enum type.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "description": "Enum type name.",
+              "type": "string"
+            },
+            "values": {
+              "description": "Comma-separated enum values.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "values"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "migrator:schema:enum"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "migrator.schema.extension": {
+      "additionalProperties": false,
+      "description": "Declares a PostgreSQL extension.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "comment": {
+              "description": "Extension comment.",
+              "type": "string"
+            },
+            "if_not_exists": {
+              "description": "Adds IF NOT EXISTS where supported.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "description": "Extension name.",
+              "type": "string"
+            },
+            "version": {
+              "description": "Extension version.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "directive": {
+          "const": "migrator:schema:extension"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "migrator.schema.field": {
+      "additionalProperties": false,
+      "description": "Maps a Go struct field to a database column.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "patternProperties": {
+            "^platform\\.[A-Za-z0-9_]+\\.[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)*$": {
+              "description": "Dialect-specific platform override.",
+              "type": "string"
+            }
+          },
+          "properties": {
+            "auto_increment": {
+              "description": "Marks the column as auto-incrementing.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string",
+              "x-ptah-bare-boolean": true
+            },
+            "autoincrement": {
+              "description": "Legacy auto-increment spelling.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string",
+              "x-ptah-alias-for": "auto_increment",
+              "x-ptah-bare-boolean": true
+            },
+            "check": {
+              "description": "Column CHECK expression.",
+              "type": "string"
+            },
+            "check_name": {
+              "description": "Explicit CHECK constraint name.",
+              "type": "string"
+            },
+            "comment": {
+              "description": "Column comment.",
+              "type": "string"
+            },
+            "default": {
+              "description": "Literal column default.",
+              "type": "string"
+            },
+            "default_expr": {
+              "description": "SQL default expression.",
+              "type": "string"
+            },
+            "enum": {
+              "description": "Comma-separated enum values.",
+              "type": "string"
+            },
+            "foreign": {
+              "description": "Foreign key reference in table(column) form.",
+              "type": "string"
+            },
+            "foreign_key_name": {
+              "description": "Explicit foreign key constraint name.",
+              "type": "string"
+            },
+            "generated": {
+              "description": "Generated column expression.",
+              "type": "string"
+            },
+            "generated_kind": {
+              "description": "Generated column kind, such as STORED or VIRTUAL.",
+              "type": "string"
+            },
+            "identity_generation": {
+              "description": "SQL identity generation mode.",
+              "type": "string"
+            },
+            "identity_increment": {
+              "description": "SQL identity increment value.",
+              "type": "string"
+            },
+            "identity_options": {
+              "description": "Raw SQL identity options.",
+              "type": "string"
+            },
+            "identity_start": {
+              "description": "SQL identity start value.",
+              "type": "string"
+            },
+            "index": {
+              "description": "Bareword compatibility flag accepted by the parser.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string",
+              "x-ptah-bare-boolean": true
+            },
+            "name": {
+              "description": "Column name.",
+              "type": "string"
+            },
+            "not_null": {
+              "description": "Marks the column NOT NULL.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string",
+              "x-ptah-bare-boolean": true
+            },
+            "nullable": {
+              "description": "Bareword compatibility flag accepted by the parser.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string",
+              "x-ptah-bare-boolean": true
+            },
+            "on_delete": {
+              "description": "Foreign key ON DELETE action.",
+              "type": "string"
+            },
+            "on_update": {
+              "description": "Foreign key ON UPDATE action.",
+              "type": "string"
+            },
+            "primary": {
+              "description": "Marks the column as part of the primary key.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string",
+              "x-ptah-bare-boolean": true
+            },
+            "stored": {
+              "description": "Shortcut controlling generated column storage.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            },
+            "type": {
+              "description": "Database column type.",
+              "type": "string"
+            },
+            "unique": {
+              "description": "Adds a single-column unique constraint.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string",
+              "x-ptah-bare-boolean": true
+            },
+            "unique_expr": {
+              "description": "Unique expression for dialects that support expression indexes.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "directive": {
+          "const": "migrator:schema:field"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "migrator.schema.function": {
+      "additionalProperties": false,
+      "description": "Declares a database function.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "body": {
+              "description": "Function body SQL.",
+              "type": "string"
+            },
+            "comment": {
+              "description": "Function comment.",
+              "type": "string"
+            },
+            "language": {
+              "description": "Function language.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Function name.",
+              "type": "string"
+            },
+            "params": {
+              "description": "Function parameter list.",
+              "type": "string"
+            },
+            "returns": {
+              "description": "Return type.",
+              "type": "string"
+            },
+            "security": {
+              "description": "Security mode, such as DEFINER.",
+              "type": "string"
+            },
+            "volatility": {
+              "description": "Volatility class.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "directive": {
+          "const": "migrator:schema:function"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "migrator.schema.grant": {
+      "additionalProperties": false,
+      "description": "Declares database grants.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "comment": {
+              "description": "Grant comment.",
+              "type": "string"
+            },
+            "grant_option": {
+              "description": "Alias for with_option.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string",
+              "x-ptah-alias-for": "with_option"
+            },
+            "on_schema": {
+              "description": "Target schema.",
+              "type": "string"
+            },
+            "on_table": {
+              "description": "Target table.",
+              "type": "string"
+            },
+            "privilege": {
+              "description": "Privilege or comma-separated privileges.",
+              "type": "string"
+            },
+            "privileges": {
+              "description": "Alias for privilege.",
+              "type": "string",
+              "x-ptah-alias-for": "privilege"
+            },
+            "role": {
+              "description": "Target role.",
+              "type": "string"
+            },
+            "with_option": {
+              "description": "Adds WITH GRANT OPTION where supported.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "directive": {
+          "const": "migrator:schema:grant"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "migrator.schema.index": {
+      "additionalProperties": false,
+      "description": "Declares an index for a table.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "patternProperties": {
+            "^platform\\.[A-Za-z0-9_]+\\.[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)*$": {
+              "description": "Dialect-specific platform override.",
+              "type": "string"
+            }
+          },
+          "properties": {
+            "columns": {
+              "description": "Legacy synonym for fields.",
+              "type": "string",
+              "x-ptah-alias-for": "fields"
+            },
+            "comment": {
+              "description": "Index comment.",
+              "type": "string"
+            },
+            "condition": {
+              "description": "Partial index condition.",
+              "type": "string"
+            },
+            "fields": {
+              "description": "Comma-separated Go field or column names.",
+              "type": "string"
+            },
+            "granularity": {
+              "description": "ClickHouse data-skipping index granularity.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Index name.",
+              "type": "string"
+            },
+            "nulls_distinct": {
+              "description": "Controls NULLS DISTINCT behavior where supported.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            },
+            "ops": {
+              "description": "PostgreSQL operator class.",
+              "type": "string"
+            },
+            "table": {
+              "description": "Explicit target table.",
+              "type": "string"
+            },
+            "type": {
+              "description": "Index type or method.",
+              "type": "string"
+            },
+            "unique": {
+              "description": "Creates a unique index.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string",
+              "x-ptah-bare-boolean": true
+            },
+            "where": {
+              "description": "Atlas-style partial index condition alias.",
+              "type": "string",
+              "x-ptah-alias-for": "condition"
+            }
+          },
+          "type": "object"
+        },
+        "directive": {
+          "const": "migrator:schema:index"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "migrator.schema.matview": {
+      "additionalProperties": false,
+      "description": "Declares a materialized view.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "patternProperties": {
+            "^platform\\.[A-Za-z0-9_]+\\.[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)*$": {
+              "description": "Dialect-specific platform override.",
+              "type": "string"
+            }
+          },
+          "properties": {
+            "body": {
+              "description": "Materialized view SELECT body.",
+              "type": "string"
+            },
+            "comment": {
+              "description": "Materialized view comment.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Materialized view name.",
+              "type": "string"
+            },
+            "refresh_strategy": {
+              "description": "Refresh strategy; defaults to manual.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "body",
+            "name"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "migrator:schema:matview"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "migrator.schema.rls.enable": {
+      "additionalProperties": false,
+      "description": "Enables row-level security on a table.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "comment": {
+              "description": "RLS enablement comment.",
+              "type": "string"
+            },
+            "table": {
+              "description": "Target table.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "directive": {
+          "const": "migrator:schema:rls:enable"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "migrator.schema.rls.policy": {
+      "additionalProperties": false,
+      "description": "Declares a row-level security policy.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "comment": {
+              "description": "Policy comment.",
+              "type": "string"
+            },
+            "for": {
+              "description": "Policy command, such as ALL or SELECT.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Policy name.",
+              "type": "string"
+            },
+            "table": {
+              "description": "Target table.",
+              "type": "string"
+            },
+            "to": {
+              "description": "Comma-separated roles.",
+              "type": "string"
+            },
+            "using": {
+              "description": "USING expression.",
+              "type": "string"
+            },
+            "with_check": {
+              "description": "WITH CHECK expression.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "directive": {
+          "const": "migrator:schema:rls:policy"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "migrator.schema.role": {
+      "additionalProperties": false,
+      "description": "Declares a database role.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "comment": {
+              "description": "Role comment.",
+              "type": "string"
+            },
+            "create_db": {
+              "description": "Alias for createdb.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string",
+              "x-ptah-alias-for": "createdb"
+            },
+            "create_role": {
+              "description": "Alias for createrole.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string",
+              "x-ptah-alias-for": "createrole"
+            },
+            "createdb": {
+              "description": "Allows database creation.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            },
+            "createrole": {
+              "description": "Allows role creation.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            },
+            "inherit": {
+              "description": "Controls role inheritance; defaults to true.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            },
+            "login": {
+              "description": "Creates the role with LOGIN.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "description": "Role name.",
+              "type": "string"
+            },
+            "password": {
+              "description": "Role password.",
+              "type": "string"
+            },
+            "replication": {
+              "description": "Allows replication.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            },
+            "superuser": {
+              "description": "Creates the role as SUPERUSER.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "directive": {
+          "const": "migrator:schema:role"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "migrator.schema.schema": {
+      "additionalProperties": false,
+      "description": "Declares a database schema or namespace.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "patternProperties": {
+            "^platform\\.[A-Za-z0-9_]+\\.[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)*$": {
+              "description": "Dialect-specific platform override.",
+              "type": "string"
+            }
+          },
+          "properties": {
+            "comment": {
+              "description": "Schema comment.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Schema name.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "migrator:schema:schema"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "migrator.schema.table": {
+      "additionalProperties": false,
+      "description": "Maps a Go struct to a database table.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "patternProperties": {
+            "^platform\\.[A-Za-z0-9_]+\\.[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)*$": {
+              "description": "Dialect-specific platform override.",
+              "type": "string"
+            }
+          },
+          "properties": {
+            "checks": {
+              "description": "Comma-separated table-level check expressions.",
+              "type": "string"
+            },
+            "comment": {
+              "description": "Table comment.",
+              "type": "string"
+            },
+            "custom": {
+              "description": "Raw custom CREATE TABLE SQL.",
+              "type": "string"
+            },
+            "engine": {
+              "description": "MySQL/MariaDB table engine shortcut.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Table name.",
+              "type": "string"
+            },
+            "primary_key": {
+              "description": "Comma-separated primary key columns.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Database schema name.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "directive": {
+          "const": "migrator:schema:table"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "migrator.schema.trigger": {
+      "additionalProperties": false,
+      "description": "Declares a database trigger.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "patternProperties": {
+            "^platform\\.[A-Za-z0-9_]+\\.[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)*$": {
+              "description": "Dialect-specific platform override.",
+              "type": "string"
+            }
+          },
+          "properties": {
+            "body": {
+              "description": "Trigger body SQL.",
+              "type": "string"
+            },
+            "comment": {
+              "description": "Trigger comment.",
+              "type": "string"
+            },
+            "event": {
+              "description": "Trigger event, such as INSERT or UPDATE.",
+              "type": "string"
+            },
+            "for": {
+              "description": "Trigger granularity; defaults to ROW.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Trigger name.",
+              "type": "string"
+            },
+            "table": {
+              "description": "Target table.",
+              "type": "string"
+            },
+            "timing": {
+              "description": "Trigger timing, such as BEFORE or AFTER.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "body",
+            "event",
+            "name",
+            "table",
+            "timing"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "migrator:schema:trigger"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "migrator.schema.view": {
+      "additionalProperties": false,
+      "description": "Declares a database view.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "patternProperties": {
+            "^platform\\.[A-Za-z0-9_]+\\.[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)*$": {
+              "description": "Dialect-specific platform override.",
+              "type": "string"
+            }
+          },
+          "properties": {
+            "body": {
+              "description": "View SELECT body.",
+              "type": "string"
+            },
+            "comment": {
+              "description": "View comment.",
+              "type": "string"
+            },
+            "name": {
+              "description": "View name.",
+              "type": "string"
+            },
+            "with_check": {
+              "description": "Controls WITH CHECK OPTION where supported.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "body",
+            "name"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "migrator:schema:view"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://stokaro.github.io/ptah/schemas/migrator-annotations.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Schema for parsed Ptah //migrator Go annotation directives.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/migrator.schema.field"
+    },
+    {
+      "$ref": "#/$defs/migrator.embedded"
+    },
+    {
+      "$ref": "#/$defs/migrator.schema.index"
+    },
+    {
+      "$ref": "#/$defs/migrator.schema.table"
+    },
+    {
+      "$ref": "#/$defs/migrator.schema.schema"
+    },
+    {
+      "$ref": "#/$defs/migrator.schema.constraint"
+    },
+    {
+      "$ref": "#/$defs/migrator.schema.enum"
+    },
+    {
+      "$ref": "#/$defs/migrator.schema.extension"
+    },
+    {
+      "$ref": "#/$defs/migrator.schema.function"
+    },
+    {
+      "$ref": "#/$defs/migrator.schema.view"
+    },
+    {
+      "$ref": "#/$defs/migrator.schema.matview"
+    },
+    {
+      "$ref": "#/$defs/migrator.schema.trigger"
+    },
+    {
+      "$ref": "#/$defs/migrator.schema.rls.policy"
+    },
+    {
+      "$ref": "#/$defs/migrator.schema.rls.enable"
+    },
+    {
+      "$ref": "#/$defs/migrator.schema.role"
+    },
+    {
+      "$ref": "#/$defs/migrator.schema.grant"
+    }
+  ],
+  "title": "Ptah Go Annotation Directives"
+}

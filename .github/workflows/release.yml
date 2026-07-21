@@ -10,6 +10,8 @@ on:
       - ".goreleaser.yaml"
       - "Dockerfile"
       - "cmd/**"
+      - "internal/**"
+      - "schemas/**"
       - "go.mod"
       - "go.sum"
       - "docs/release_process.md"
