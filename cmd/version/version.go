@@ -2,8 +2,6 @@
 package version
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/buildinfo"
@@ -16,12 +14,7 @@ func NewVersionCommand() *cobra.Command {
 		Use:   "version",
 		Short: "Print Ptah version information",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			info := buildinfo.Resolve()
-			fmt.Fprintf(cmd.OutOrStdout(), "Version: %s\n", info.Version)
-			fmt.Fprintf(cmd.OutOrStdout(), "Commit: %s\n", info.Commit)
-			fmt.Fprintf(cmd.OutOrStdout(), "Date: %s\n", info.Date)
-			fmt.Fprintf(cmd.OutOrStdout(), "Go: %s\n", info.Go)
-			fmt.Fprintf(cmd.OutOrStdout(), "Platform: %s\n", info.Platform)
+			buildinfo.Write(cmd.OutOrStdout(), buildinfo.Resolve())
 			return nil
 		},
 	}
