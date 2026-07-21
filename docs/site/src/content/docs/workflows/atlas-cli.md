@@ -25,7 +25,7 @@ fail clearly instead of being ignored.
 | Atlas-compatible command | Native Ptah command |
 | --- | --- |
 | `ptah atlas migrate apply` | `ptah migrations up` |
-| `ptah atlas migrate down` | Ptah extension path; use native `ptah migrations down` for explicit target rollback recipes until the Atlas-compatible path documents the same runtime contract. |
+| `ptah atlas migrate down` | Forwards to `ptah migrations down`; full Atlas dynamic down-planning semantics are tracked as a gap. |
 | `ptah atlas migrate status` | `ptah migrations status` |
 | `ptah atlas migrate hash` | `ptah migrations hash` |
 | `ptah atlas migrate validate` | `ptah migrations validate` |

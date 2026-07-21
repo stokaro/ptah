@@ -33,4 +33,5 @@ When documenting Atlas compatibility:
 
 - Say `Atlas-compatible` for implemented command paths and behavior.
 - Link to conformance reports for current evidence.
-- Do not say `full parity`, `drop-in replacement`, or equivalent claims until the full conformance gates prove it.
+- Do not say `full parity`, `drop-in replacement`, or equivalent claims until
+  conformance reports and the documented gap register both support that claim.
