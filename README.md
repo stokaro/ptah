@@ -328,7 +328,7 @@ _ int
 _ int
 ```
 
-`type` and `granularity` are honoured only by the ClickHouse renderer (which falls back to `minmax` / `GRANULARITY 8192` when unset). Other dialects ignore them.
+`type` and `granularity` are honored only by the ClickHouse renderer (which falls back to `minmax` / `GRANULARITY 8192` when unset). Other dialects ignore them.
 
 ### ClickHouse Engine Configuration (ClickHouse only)
 

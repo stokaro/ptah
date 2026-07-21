@@ -219,6 +219,7 @@ func TestColumnTypeMapping(t *testing.T) {
 		{name: "serial errors", col: ast.NewColumn("c", "SERIAL").SetNotNull(), wantErr: true, contains: "auto-increment"},
 		{name: "time errors", col: ast.NewColumn("c", "TIME").SetNotNull(), wantErr: true, contains: "TIME"},
 		{name: "native CH type passthrough", col: ast.NewColumn("c", "LowCardinality(String)").SetNotNull(), want: "c LowCardinality(String)"},
+		{name: "unknown SQL type warns", col: ast.NewColumn("c", "GEOGRAPHY").SetNotNull(), want: "c GEOGRAPHY", contains: `unrecognized SQL type "GEOGRAPHY" passed through verbatim`},
 	}
 
 	for _, tc := range cases {
@@ -235,6 +236,9 @@ func TestColumnTypeMapping(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			out := render(t, tbl)
 			c.Assert(out, qt.Contains, tc.want)
+			if tc.contains != "" {
+				c.Assert(out, qt.Contains, tc.contains)
+			}
 		})
 	}
 }

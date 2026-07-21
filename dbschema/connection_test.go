@@ -183,7 +183,7 @@ func TestConnectToDatabase_SQLiteFile(t *testing.T) {
 // "host accepts but never answers" without depending on routing tables or
 // reserved IP blocks (those behave differently on offline/restricted hosts).
 //
-// The listener and a sentinel "drainer" goroutine are wired to a cancellable
+// The listener and a sentinel "drainer" goroutine are wired to a cancelable
 // context so the test can guarantee the goroutine exits even if the call
 // under test races ahead.
 func stuckPostgresURL(t *testing.T) string {
@@ -219,10 +219,10 @@ func stuckPostgresURL(t *testing.T) string {
 	return fmt.Sprintf("postgres://user:pass@%s/db", ln.Addr())
 }
 
-// TestConnectToDatabase_CancelledContext is the acceptance test for issue #139.
-// A pre-cancelled context must short-circuit the call so that
+// TestConnectToDatabase_CanceledContext is the acceptance test for issue #139.
+// A pre-canceled context must short-circuit the call so that
 // ConnectToDatabase returns promptly with context.Canceled.
-func TestConnectToDatabase_CancelledContext(t *testing.T) {
+func TestConnectToDatabase_CanceledContext(t *testing.T) {
 	c := qt.New(t)
 
 	dbURL := stuckPostgresURL(t)
@@ -242,7 +242,7 @@ func TestConnectToDatabase_CancelledContext(t *testing.T) {
 	// "Promptly" is intentionally loose to avoid flakiness on slow CI runners,
 	// but well below the multi-second TCP timeout the bug describes.
 	c.Assert(elapsed < 2*time.Second, qt.IsTrue,
-		qt.Commentf("ConnectToDatabase took %s with a cancelled context, want <2s", elapsed))
+		qt.Commentf("ConnectToDatabase took %s with a canceled context, want <2s", elapsed))
 }
 
 // TestConnectToDatabase_DeadlineExceeded covers the typical --connect-timeout

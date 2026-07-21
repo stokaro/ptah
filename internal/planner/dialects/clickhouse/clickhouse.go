@@ -1,13 +1,13 @@
 // Package clickhouse implements ClickHouse-specific migration planning.
 //
-// ClickHouse only honours a subset of the schema features expressible
+// ClickHouse only honors a subset of the schema features expressible
 // through Ptah's annotations: tables, columns and a narrow set of
 // constraints (CHECK only). Enums, custom types, extensions, functions,
 // row-level security policies and roles are PostgreSQL-shaped and have no
 // direct equivalent here, so this planner deliberately drops them from
 // the output rather than emitting unrunnable SQL.
 //
-// The renderer is the second line of defence: any AST node this planner
+// The renderer is the second line of defense: any AST node this planner
 // did emit that ClickHouse cannot express is rendered as a
 // `-- CLICKHOUSE: ... is not supported` comment. Keeping both layers
 // honest means the planner stays free to emit dialect-neutral nodes

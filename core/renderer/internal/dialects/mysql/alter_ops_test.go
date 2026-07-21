@@ -23,7 +23,7 @@ func renderMySQL(t *testing.T, nodes ...ast.Node) string {
 
 // MySQL 8.0+ supports `ALTER TABLE x RENAME COLUMN old TO new`; the renderer
 // emits it unconditionally and the runtime DB version is the user's problem
-// (matches the existing dialect behaviour for AUTO_INCREMENT etc.).
+// (matches the existing dialect behavior for AUTO_INCREMENT etc.).
 func TestMySQL_AlterTable_RenameColumn(t *testing.T) {
 	c := qt.New(t)
 	alter := &ast.AlterTableNode{
