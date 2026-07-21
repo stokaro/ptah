@@ -40,7 +40,7 @@ fail clearly instead of being ignored.
 | `ptah atlas migrate new` | `ptah migrations create` |
 | `ptah atlas migrate set` | `ptah migrations repair` |
 | `ptah atlas migrate diff` | Command path registered; runtime behavior is not implemented yet. |
-| `ptah atlas migrate import` | Command path registered; runtime behavior is not implemented yet. |
+| `ptah atlas migrate import` | Imports local `file://` migration directories from Atlas-supported formats into a separate Atlas single-file directory and writes `atlas.sum`. |
 
 ## Utility commands
 
@@ -66,6 +66,9 @@ ptah atlas migrate apply \
 
 ptah atlas schema inspect --url "$DATABASE_URL"
 ptah atlas schema fmt schema.hcl
+ptah atlas migrate import \
+  --from "file://flyway?format=flyway" \
+  --to "file://migrations"
 ```
 
 For binary-level drop-in usage:
@@ -77,6 +80,9 @@ ptah-compat migrate apply \
 
 ptah-compat schema inspect --url "$DATABASE_URL"
 ptah-compat schema fmt schema.hcl
+ptah-compat migrate import \
+  --from "file://goose?format=goose" \
+  --to "file://migrations"
 ```
 
 For existing scripts that already call `atlas`, install or copy `ptah-compat`
@@ -89,6 +95,12 @@ atlas migrate apply --url "$DATABASE_URL" --dir ./migrations
 ```
 
 Ptah translates implemented Atlas-style flags and then delegates to native behavior. Unsupported Atlas flags should fail clearly instead of being ignored.
+
+`ptah atlas migrate import` is intentionally fail-closed: use a destination
+directory different from the source directory, and start with a destination that
+does not already contain `.sql` migration files or `atlas.sum`.
+Flyway repeatable migrations currently fail explicitly because Ptah does not yet
+execute Atlas R-suffixed imported migrations.
 
 ## Check before migration
 

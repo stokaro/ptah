@@ -74,7 +74,7 @@ executable name.
 | `ptah atlas migrate set` | Forwards to `ptah migrations repair`. |
 | `ptah atlas migrate down` | Forwards to `ptah migrations down`; maps compatible Atlas flags and fails explicitly for dynamic down-planning and output-format flags that native Ptah does not implement yet. |
 | `ptah atlas migrate diff` | Registered path; runtime behavior is not implemented yet. |
-| `ptah atlas migrate import` | Registered path; runtime behavior is not implemented yet. |
+| `ptah atlas migrate import` | Imports local `file://` migration directories from `atlas`, `golang-migrate`, `goose`, `flyway`, `liquibase`, or `dbmate` format into a separate Atlas single-file directory and writes `atlas.sum`. Flyway repeatable migrations fail explicitly until Ptah can execute Atlas R-suffixed imported migrations. |
 | `ptah atlas schema inspect` | Forwards to `ptah db read`. |
 | `ptah atlas schema diff` | Forwards to `ptah schema compare`. |
 | `ptah atlas schema fmt` | Formats local `.hcl` files using HCL canonical layout. |

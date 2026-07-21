@@ -209,15 +209,6 @@ func newAtlasMigrateCommand() *cobra.Command {
 			flags:   []atlasFlag{atlasNativeLocalDir("dir", "", "Migration directory", "dir")},
 		},
 		{
-			use:    "import",
-			short:  "Import migrations from another tool",
-			native: "",
-			flags: []atlasFlag{
-				atlasString("from", "", "Source migration directory"),
-				atlasString("to", "", "Destination migration directory"),
-			},
-		},
-		{
 			use:     "lint",
 			short:   "Lint migration files",
 			native:  "migrations lint",
@@ -268,6 +259,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 	} {
 		cmd.AddCommand(newAtlasAdapterCommand("migrate", verb))
 	}
+	cmd.AddCommand(newAtlasMigrateImportCommand())
 	return cmd
 }
 
