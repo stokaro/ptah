@@ -1815,20 +1815,55 @@ func validateEnumField(field goschema.Field, enums []goschema.Enum) {
 //
 // Returns a combined slice of goschema.Field containing both the original fields and
 // the generated fields from embedded field processing. This combined list is ready
-// for use in table creation.
+// for use in table creation. When originalFields already contains an embedded
+// field's generated concrete column, that original field is kept and the duplicate
+// generated field is skipped so callers can safely pass parser-finalized schemas.
 func ProcessEmbeddedFields(embeddedFields []goschema.EmbeddedField, originalFields []goschema.Field) []goschema.Field {
 	// Start with the original fields
 	allFields := make([]goschema.Field, len(originalFields))
 	copy(allFields, originalFields)
+	seenFields := fieldKeySet(originalFields)
 
 	// Process embedded fields for each struct
 	structNames := goschema.UniqueStructNames(embeddedFields)
 	for _, structName := range structNames {
 		generatedFields := processEmbeddedFieldsForStruct(embeddedFields, originalFields, structName)
-		allFields = append(allFields, generatedFields...)
+		allFields = appendNewFields(allFields, generatedFields, seenFields)
 	}
 
 	return allFields
+}
+
+type fieldKey struct {
+	structName string
+	name       string
+}
+
+func fieldKeySet(fields []goschema.Field) map[fieldKey]struct{} {
+	seen := make(map[fieldKey]struct{}, len(fields))
+	for _, field := range fields {
+		seen[fieldKeyFor(field)] = struct{}{}
+	}
+	return seen
+}
+
+func appendNewFields(fields []goschema.Field, newFields []goschema.Field, seen map[fieldKey]struct{}) []goschema.Field {
+	for _, field := range newFields {
+		key := fieldKeyFor(field)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		fields = append(fields, field)
+	}
+	return fields
+}
+
+func fieldKeyFor(field goschema.Field) fieldKey {
+	return fieldKey{
+		structName: field.StructName,
+		name:       field.Name,
+	}
 }
 
 func processEmbeddedInlineMode(generatedFields []goschema.Field, embedded goschema.EmbeddedField, allFields []goschema.Field, allEmbeddedFields []goschema.EmbeddedField, structName string) []goschema.Field {

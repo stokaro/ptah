@@ -37,6 +37,27 @@ func TestCommandWritesMermaid(t *testing.T) {
 	c.Assert(stdout.String(), qt.Contains, `  users ||--o{ posts : "fk_posts_author"`)
 }
 
+func TestCommandDoesNotDuplicateJSONEmbeddedColumns(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	writeJSONEmbeddedModel(c, dir)
+
+	cmd := NewCommand()
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{
+		"--root-dir", dir,
+		"--format", "mermaid",
+		"--include-columns",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr.String()))
+	c.Assert(strings.Count(stdout.String(), "    JSONB metadata\n"), qt.Equals, 1)
+}
+
 func TestREADMEExampleMatchesGeneratedMermaid(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
@@ -272,6 +293,26 @@ type Post struct {
 
 	//migrator:schema:field name="author_id" type="INTEGER" foreign="users(id)" foreign_key_name="fk_posts_author"
 	AuthorID int64
+}
+`
+	c.Assert(os.WriteFile(path, []byte(content), 0o600), qt.IsNil)
+}
+
+func writeJSONEmbeddedModel(c *qt.C, dir string) {
+	path := filepath.Join(dir, "model.go")
+	content := `package models
+
+type UserMetadata struct {
+	TraceID string
+}
+
+//migrator:schema:table name="users"
+type User struct {
+	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+
+	//migrator:embedded mode="json" name="metadata" type="JSONB"
+	Metadata UserMetadata
 }
 `
 	c.Assert(os.WriteFile(path, []byte(content), 0o600), qt.IsNil)
