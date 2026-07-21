@@ -114,7 +114,7 @@ runs:
 
     - name: Comment on pull request
       if: inputs.comment == 'true'
-      uses: actions/github-script@v8
+      uses: actions/github-script@v9
       env:
         PTAH_PLAN_PATH: ${{ steps.run.outputs.plan-path }}
         PTAH_SAFETY_PATH: ${{ steps.run.outputs.safety-path }}
@@ -132,7 +132,7 @@ runs:
           await run({ github, context, core });
 
     - name: Set destructive-change check run
-      uses: actions/github-script@v8
+      uses: actions/github-script@v9
       env:
         PTAH_SAFETY_PATH: ${{ steps.run.outputs.safety-path }}
         PTAH_SAFETY_ERROR_PATH: ${{ steps.run.outputs.safety-error-path }}
