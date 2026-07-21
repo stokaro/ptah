@@ -4,6 +4,8 @@ This directory contains the Astro + Starlight documentation site.
 
 ```bash
 npm ci
+ASTRO_TELEMETRY_DISABLED=1 npm run check:links:selftest
+ASTRO_TELEMETRY_DISABLED=1 npm run check:links
 ASTRO_TELEMETRY_DISABLED=1 npm run build
 npm run versions:selftest
 npm audit --audit-level=low
@@ -16,3 +18,6 @@ ASTRO_TELEMETRY_DISABLED=1 npm run dev
 ```
 
 The site is versioned by `DOCS_VERSION`; `edge` tracks `master`.
+The docs workflow runs internal link validation before building `edge` and
+before building released tags that include `scripts/check-links.mjs`. Older
+historical tags without that checker are still built with a warning.
