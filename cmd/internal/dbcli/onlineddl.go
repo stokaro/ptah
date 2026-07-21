@@ -6,25 +6,21 @@ import (
 	"io/fs"
 	"os"
 
-	"github.com/go-extras/cobraflags"
+	"github.com/spf13/pflag"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/stokaro/ptah/internal/onlineddl"
 )
 
-// ConfigFlagName is the CLI flag name exposed by [NewConfigFlag].
+// ConfigFlagName is the shared Ptah config path flag name.
 const ConfigFlagName = "config"
 
-// NewConfigFlag returns the flag definition for the ptah.yaml config path
+// RegisterConfigFlag registers the flag for the ptah.yaml config path
 // used by the migration commands. Its online_ddl section routes ALTER TABLE
 // statements on large MySQL/MariaDB tables through gh-ost or
 // pt-online-schema-change (issue #173).
-func NewConfigFlag() cobraflags.Flag {
-	return &cobraflags.StringFlag{
-		Name:  ConfigFlagName,
-		Value: "",
-		Usage: "Path to a ptah.yaml config file (default: ./" + onlineddl.ConfigFileName + " when present)",
-	}
+func RegisterConfigFlag(flags *pflag.FlagSet, target *string) {
+	flags.StringVar(target, ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./"+onlineddl.ConfigFileName+" when present)")
 }
 
 // LoadOnlineDDLConfig loads the online_ddl section for a migration command.

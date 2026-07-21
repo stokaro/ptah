@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
@@ -17,58 +16,46 @@ import (
 	"github.com/stokaro/ptah/internal/yamlschema"
 )
 
-var generateCmd = &cobra.Command{
-	Use:   "render",
-	Short: "Generate schema from Go entities, YAML schema files, or Atlas HCL schema files",
-	Long: `Generate database schema from Go entities in the specified directory or from a schema file.
-	
-By default, this command scans the directory recursively for Go files with migrator directives.
-When --schema-file is set, it reads a language-agnostic YAML schema or Atlas HCL schema instead.`,
-	RunE: generateCommand,
-}
-
 const (
 	rootDirFlag    = "root-dir"
 	schemaFileFlag = "schema-file"
 	dialectFlag    = "dialect"
 )
 
-var generateFlags = map[string]cobraflags.Flag{
-	rootDirFlag: &cobraflags.StringFlag{
-		Name:  rootDirFlag,
-		Value: "./",
-		Usage: "Root directory to scan for Go entities",
-	},
-	schemaFileFlag: &cobraflags.StringFlag{
-		Name:  schemaFileFlag,
-		Value: "",
-		Usage: "YAML or Atlas HCL schema file to generate from instead of scanning Go entities",
-	},
-	dialectFlag: &cobraflags.StringFlag{
-		Name:  dialectFlag,
-		Value: "",
-		Usage: "Database dialect (postgres, mysql, mariadb, sqlite, clickhouse, cockroachdb, yugabytedb, spanner). If empty, generates for all dialects",
-	},
+type options struct {
+	rootDir    string
+	schemaFile string
+	dialect    string
 }
-
-var generateFlagsRegistered bool
 
 func NewGenerateCommand() *cobra.Command {
-	if !generateFlagsRegistered {
-		cobraflags.RegisterMap(generateCmd, generateFlags)
-		generateFlagsRegistered = true
-	}
-	cmdutil.ConfigureCommand(generateCmd)
+	opts := options{}
+	cmd := &cobra.Command{
+		Use:   "render",
+		Short: "Generate schema from Go entities, YAML schema files, or Atlas HCL schema files",
+		Long: `Generate database schema from Go entities in the specified directory or from a schema file.
 
-	return generateCmd
+By default, this command scans the directory recursively for Go files with migrator directives.
+When --schema-file is set, it reads a language-agnostic YAML schema or Atlas HCL schema instead.`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return generateCommand(cmd, &opts)
+		},
+	}
+	registerFlags(cmd, &opts)
+	cmdutil.ConfigureCommand(cmd)
+
+	return cmd
 }
 
-func generateCommand(_ *cobra.Command, _ []string) error {
-	rootDir := generateFlags[rootDirFlag].GetString()
-	schemaFile := generateFlags[schemaFileFlag].GetString()
-	dialect := generateFlags[dialectFlag].GetString()
+func registerFlags(cmd *cobra.Command, opts *options) {
+	flags := cmd.Flags()
+	flags.StringVar(&opts.rootDir, rootDirFlag, "./", "Root directory to scan for Go entities")
+	flags.StringVar(&opts.schemaFile, schemaFileFlag, "", "YAML or Atlas HCL schema file to generate from instead of scanning Go entities")
+	flags.StringVar(&opts.dialect, dialectFlag, "", "Database dialect (postgres, mysql, mariadb, sqlite, clickhouse, cockroachdb, yugabytedb, spanner). If empty, generates for all dialects")
+}
 
-	result, err := loadSchema(rootDir, schemaFile)
+func generateCommand(_ *cobra.Command, opts *options) error {
+	result, err := loadSchema(opts.rootDir, opts.schemaFile)
 	if err != nil {
 		return err
 	}
@@ -84,8 +71,8 @@ func generateCommand(_ *cobra.Command, _ []string) error {
 
 	// Determine which dialects to generate
 	dialects := []string{"postgres", "mysql", "mariadb", "sqlite", "clickhouse", "cockroachdb", "yugabytedb", "spanner"}
-	if dialect != "" {
-		dialects = []string{dialect}
+	if opts.dialect != "" {
+		dialects = []string{opts.dialect}
 	}
 
 	// Generate SQL for each dialect

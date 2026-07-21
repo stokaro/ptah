@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/core/platform"
@@ -30,58 +29,26 @@ const (
 	showAllFlag     = "all"
 )
 
-// Root command flags
-var rootFlags = map[string]cobraflags.Flag{
-	reportFormatFlag: &cobraflags.StringFlag{
-		Name:  reportFormatFlag,
-		Value: "stdout",
-		Usage: "Report format: stdout, txt, json, or html (can be multiple separated by comma)",
-	},
-	outputDirFlag: &cobraflags.StringFlag{
-		Name:  outputDirFlag,
-		Value: "/app/reports",
-		Usage: "Output directory for reports",
-	},
-	databasesFlag: &cobraflags.StringSliceFlag{
-		Name:  databasesFlag,
-		Value: []string{"postgres", "mysql", "mariadb", "cockroachdb", "yugabytedb"},
-		Usage: "Databases to test against; SQL Server is opt-in via sqlserver",
-	},
-	scenariosFlag: &cobraflags.StringSliceFlag{
-		Name:  scenariosFlag,
-		Value: []string{},
-		Usage: "Specific scenarios to run (empty = all)",
-	},
-	verboseFlag: &cobraflags.BoolFlag{
-		Name:  verboseFlag,
-		Value: false,
-		Usage: "Enable verbose output",
-	},
+type rootOptions struct {
+	reportFormat string
+	outputDir    string
+	databases    []string
+	scenarios    []string
+	verbose      bool
 }
 
-// List command flags
-var listFlags = map[string]cobraflags.Flag{
-	showStaticFlag: &cobraflags.BoolFlag{
-		Name:  showStaticFlag,
-		Value: false,
-		Usage: "Show only static scenarios",
-	},
-	showDynamicFlag: &cobraflags.BoolFlag{
-		Name:  showDynamicFlag,
-		Value: false,
-		Usage: "Show only dynamic scenarios",
-	},
-	showAllFlag: &cobraflags.BoolFlag{
-		Name:  showAllFlag,
-		Value: true,
-		Usage: "Show all scenarios (default)",
-	},
+type listOptions struct {
+	showStatic  bool
+	showDynamic bool
+	showAll     bool
 }
 
-var rootCmd = &cobra.Command{
-	Use:   "ptah-integration-test",
-	Short: "Run Ptah migration library integration tests",
-	Long: `Run comprehensive integration tests for the Ptah migration library.
+func newRootCommand() *cobra.Command {
+	opts := rootOptions{}
+	cmd := &cobra.Command{
+		Use:   "ptah-integration-test",
+		Short: "Run Ptah migration library integration tests",
+		Long: `Run comprehensive integration tests for the Ptah migration library.
 
 This tool tests migration functionality across multiple database backends
 including PostgreSQL, MySQL, MariaDB, and opt-in SQL Server. It validates basic
@@ -89,46 +56,60 @@ functionality, idempotency, concurrency, failure recovery, and more.
 
 The tests use Docker containers for database backends and generate detailed
 reports in multiple formats.`,
-	RunE: runIntegrationTests,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runIntegrationTests(cmd, args, &opts)
+		},
+	}
+	registerRootFlags(cmd, &opts)
+	cmd.AddCommand(newListCommand())
+	return cmd
 }
 
-var listCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List all available test scenarios",
-	Long: `List all available integration test scenarios with their descriptions.
+func registerRootFlags(cmd *cobra.Command, opts *rootOptions) {
+	flags := cmd.Flags()
+	flags.StringVar(&opts.reportFormat, reportFormatFlag, "stdout", "Report format: stdout, txt, json, or html (can be multiple separated by comma)")
+	flags.StringVar(&opts.outputDir, outputDirFlag, "/app/reports", "Output directory for reports")
+	flags.StringSliceVar(&opts.databases, databasesFlag, []string{"postgres", "mysql", "mariadb", "cockroachdb", "yugabytedb"}, "Databases to test against; SQL Server is opt-in via sqlserver")
+	flags.StringSliceVar(&opts.scenarios, scenariosFlag, []string{}, "Specific scenarios to run (empty = all)")
+	flags.BoolVar(&opts.verbose, verboseFlag, false, "Enable verbose output")
+}
+
+func newListCommand() *cobra.Command {
+	opts := listOptions{}
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List all available test scenarios",
+		Long: `List all available integration test scenarios with their descriptions.
 
 This command displays all static and dynamic test scenarios that can be run
 with the integration test suite. Use this to see what scenarios are available
 before running specific tests with the --scenarios flag.`,
-	RunE: listScenarios,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return listScenarios(cmd, args, &opts)
+		},
+	}
+	registerListFlags(cmd, &opts)
+	return cmd
 }
 
-func init() {
-	// Register flags using cobraflags
-	cobraflags.RegisterMap(rootCmd, rootFlags)
-	cobraflags.RegisterMap(listCmd, listFlags)
-
-	// Add subcommands
-	rootCmd.AddCommand(listCmd)
+func registerListFlags(cmd *cobra.Command, opts *listOptions) {
+	flags := cmd.Flags()
+	flags.BoolVar(&opts.showStatic, showStaticFlag, false, "Show only static scenarios")
+	flags.BoolVar(&opts.showDynamic, showDynamicFlag, false, "Show only dynamic scenarios")
+	flags.BoolVar(&opts.showAll, showAllFlag, true, "Show all scenarios (default)")
 }
 
 func main() {
-	if err := rootCmd.Execute(); err != nil {
+	if err := newRootCommand().Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func runIntegrationTests(cmd *cobra.Command, args []string) error {
+func runIntegrationTests(_ *cobra.Command, _ []string, opts *rootOptions) error {
 	ctx := context.Background()
 
-	// Get flag values
-	reportFormat := rootFlags[reportFormatFlag].GetString()
-	outputDir := rootFlags[outputDirFlag].GetString()
-	databases := rootFlags[databasesFlag].GetStringSlice()
-	scenarios := rootFlags[scenariosFlag].GetStringSlice()
-	verbose := rootFlags[verboseFlag].GetBool()
-	reportFormats := strings.Split(reportFormat, ",")
+	reportFormats := strings.Split(opts.reportFormat, ",")
 
 	// Validate report formats
 	for _, reportFormat := range reportFormats {
@@ -142,7 +123,7 @@ func runIntegrationTests(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create output directory if it doesn't exist
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
+	if err := os.MkdirAll(opts.outputDir, 0755); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
@@ -162,13 +143,13 @@ func runIntegrationTests(cmd *cobra.Command, args []string) error {
 	dbConnections := configuredDatabaseConnections()
 
 	// Filter databases based on command line arguments
-	selectedConnections, err := requestedDatabaseConnections(databases, dbConnections)
+	selectedConnections, err := requestedDatabaseConnections(opts.databases, dbConnections)
 	if err != nil {
 		return err
 	}
 	for dbName, url := range selectedConnections {
 		runner.AddDatabase(dbName, url)
-		if verbose {
+		if opts.verbose {
 			fmt.Printf("Added database: %s\n", dbName)
 		}
 	}
@@ -178,13 +159,13 @@ func runIntegrationTests(cmd *cobra.Command, args []string) error {
 
 	// Filter scenarios if specific ones were requested
 	var scenariosToRun []integration.TestScenario
-	if len(scenarios) > 0 {
+	if len(opts.scenarios) > 0 {
 		scenarioMap := make(map[string]integration.TestScenario)
 		for _, scenario := range allScenarios {
 			scenarioMap[scenario.Name] = scenario
 		}
 
-		for _, scenarioName := range scenarios {
+		for _, scenarioName := range opts.scenarios {
 			scenario, exists := scenarioMap[scenarioName]
 			if !exists {
 				return fmt.Errorf("unknown scenario: %s", scenarioName)
@@ -198,17 +179,17 @@ func runIntegrationTests(cmd *cobra.Command, args []string) error {
 	// Add scenarios to runner
 	for _, scenario := range scenariosToRun {
 		runner.AddScenario(scenario)
-		if verbose {
+		if opts.verbose {
 			fmt.Printf("Added scenario: %s\n", scenario.Name)
 		}
 	}
 
 	fmt.Printf("🏛️  Ptah Migration Library Integration Test Suite\n")
 	fmt.Printf("================================================\n\n")
-	fmt.Printf("Databases: %s\n", strings.Join(databases, ", "))
+	fmt.Printf("Databases: %s\n", strings.Join(opts.databases, ", "))
 	fmt.Printf("Scenarios: %d\n", len(scenariosToRun))
-	fmt.Printf("Report Format: %s\n", reportFormat)
-	fmt.Printf("Output Directory: %s\n\n", outputDir)
+	fmt.Printf("Report Format: %s\n", opts.reportFormat)
+	fmt.Printf("Output Directory: %s\n\n", opts.outputDir)
 
 	// Run all tests
 	fmt.Printf("🚀 Starting integration tests...\n\n")
@@ -226,7 +207,7 @@ func runIntegrationTests(cmd *cobra.Command, args []string) error {
 	reporter := integration.NewReporter(report)
 
 	for _, reportFormat := range reportFormats {
-		if err := reporter.GenerateReport(integration.ReportFormat(reportFormat), outputDir); err != nil {
+		if err := reporter.GenerateReport(integration.ReportFormat(reportFormat), opts.outputDir); err != nil {
 			return fmt.Errorf("failed to generate report: %w", err)
 		}
 	}
@@ -244,7 +225,7 @@ func runIntegrationTests(cmd *cobra.Command, args []string) error {
 		fmt.Printf("   Success Rate: %.1f%%\n", successRate)
 	}
 
-	fmt.Printf("\n📄 Report saved to: %s\n", outputDir)
+	fmt.Printf("\n📄 Report saved to: %s\n", opts.outputDir)
 
 	// Exit with error code if any tests failed
 	if report.FailedTests > 0 {
@@ -296,11 +277,7 @@ func requestedDatabaseConnections(databases []string, dbConnections map[string]s
 	return selected, nil
 }
 
-func listScenarios(cmd *cobra.Command, args []string) error {
-	// Get flag values
-	showStatic := listFlags[showStaticFlag].GetBool()
-	showDynamic := listFlags[showDynamicFlag].GetBool()
-
+func listScenarios(_ *cobra.Command, _ []string, opts *listOptions) error {
 	// Get all scenarios
 	allScenarios := integration.GetAllScenarios()
 	staticScenarios := getStaticScenarios()
@@ -312,15 +289,15 @@ func listScenarios(cmd *cobra.Command, args []string) error {
 
 	// Handle flag combinations
 	switch {
-	case showStatic && showDynamic:
+	case opts.showStatic && opts.showDynamic:
 		// Both flags set - show all
 		scenariosToShow = allScenarios
 		title = "All Test Scenarios"
-	case showStatic:
+	case opts.showStatic:
 		// Only static
 		scenariosToShow = staticScenarios
 		title = "Static Test Scenarios"
-	case showDynamic:
+	case opts.showDynamic:
 		// Only dynamic
 		scenariosToShow = dynamicScenarios
 		title = "Dynamic Test Scenarios"
@@ -335,7 +312,7 @@ func listScenarios(cmd *cobra.Command, args []string) error {
 	fmt.Printf("%s\n\n", strings.Repeat("=", len(title)+35))
 
 	// Group scenarios by type for better organization
-	if !showStatic && !showDynamic {
+	if !opts.showStatic && !opts.showDynamic {
 		// Show both types with grouping
 		fmt.Printf("📋 Static Scenarios (%d):\n", len(staticScenarios))
 		printScenarios(staticScenarios, "  ")

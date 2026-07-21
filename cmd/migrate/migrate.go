@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/go-extras/cobraflags"
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
@@ -21,18 +20,6 @@ import (
 	"github.com/stokaro/ptah/migration/schemadiff"
 )
 
-var migrateCmd = &cobra.Command{
-	Use:   "plan",
-	Short: "Generate migration SQL from differences",
-	Long: `Generate migration SQL statements based on differences between Go entities and database schema.
-	
-This command compares your Go entities with the current database schema and generates
-the SQL statements needed to update the database to match your entities.`,
-	RunE: migrateCommand,
-}
-
-var migrateFlagsRegistered bool
-
 const (
 	rootDirFlag          = "root-dir"
 	dbURLFlag            = "db-url"
@@ -41,75 +28,63 @@ const (
 	reportFormatFlag     = "report"
 )
 
-var migrateFlags = newMigrateFlags()
-
-func newMigrateFlags() map[string]cobraflags.Flag {
-	return map[string]cobraflags.Flag{
-		rootDirFlag: &cobraflags.StringFlag{
-			Name:  rootDirFlag,
-			Value: "./",
-			Usage: "Root directory to scan for Go entities",
-		},
-		dbURLFlag: &cobraflags.StringFlag{
-			Name:  dbURLFlag,
-			Value: "",
-			Usage: "Database URL (required). Example: postgres://localhost:5432/dbname",
-		},
-		checkDestructiveFlag: &cobraflags.BoolFlag{
-			Name:  checkDestructiveFlag,
-			Value: false,
-			Usage: "Fail when generated migration SQL contains destructive statements",
-		},
-		allowDestructiveFlag: &cobraflags.BoolFlag{
-			Name:  allowDestructiveFlag,
-			Value: false,
-			Usage: "Allow destructive statements when --check-destructive is set",
-		},
-		reportFormatFlag: &cobraflags.StringFlag{
-			Name:  reportFormatFlag,
-			Value: "text",
-			Usage: "Safety report format: text, html, or json",
-		},
-		dbcli.ConnectTimeoutFlagName: dbcli.NewConnectTimeoutFlag(),
-		dbcli.SchemasFlagName:        dbcli.NewSchemasFlag(),
-	}
+type options struct {
+	rootDir          string
+	dbURL            string
+	checkDestructive bool
+	allowDestructive bool
+	reportFormat     string
+	connectTimeout   string
+	schemas          string
 }
 
 func NewMigrateCommand() *cobra.Command {
-	if !migrateFlagsRegistered {
-		cobraflags.RegisterMap(migrateCmd, migrateFlags)
-		migrateFlagsRegistered = true
+	opts := options{}
+	cmd := &cobra.Command{
+		Use:   "plan",
+		Short: "Generate migration SQL from differences",
+		Long: `Generate migration SQL statements based on differences between Go entities and database schema.
+
+This command compares your Go entities with the current database schema and generates
+the SQL statements needed to update the database to match your entities.`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return migrateCommandWithOptions(cmd, &opts)
+		},
 	}
-	cmdutil.ConfigureCommandArgs(migrateCmd, cmdutil.NoPositionalArgs)
-	return migrateCmd
+	registerFlags(cmd, &opts)
+	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
+	return cmd
 }
 
-func migrateCommand(cmd *cobra.Command, _ []string) error {
-	return migrateCommandWithFlags(cmd, migrateFlags)
+func registerFlags(cmd *cobra.Command, opts *options) {
+	flags := cmd.Flags()
+	flags.StringVar(&opts.rootDir, rootDirFlag, "./", "Root directory to scan for Go entities")
+	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
+	flags.BoolVar(&opts.checkDestructive, checkDestructiveFlag, false, "Fail when generated migration SQL contains destructive statements")
+	flags.BoolVar(&opts.allowDestructive, allowDestructiveFlag, false, "Allow destructive statements when --check-destructive is set")
+	flags.StringVar(&opts.reportFormat, reportFormatFlag, "text", "Safety report format: text, html, or json")
+	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
+	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
 }
 
-func migrateCommandWithFlags(cmd *cobra.Command, flags map[string]cobraflags.Flag) error {
+func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	out := cmd.OutOrStdout()
-	rootDir := flags[rootDirFlag].GetString()
-	dbURL := flags[dbURLFlag].GetString()
-	checkDestructive := flags[checkDestructiveFlag].GetBool()
-	allowDestructive := flags[allowDestructiveFlag].GetBool()
-	reportFormat := strings.ToLower(strings.TrimSpace(flags[reportFormatFlag].GetString()))
+	reportFormat := strings.ToLower(strings.TrimSpace(opts.reportFormat))
 
-	if dbURL == "" {
+	if opts.dbURL == "" {
 		return fmt.Errorf("database URL is required")
 	}
 	if reportFormat != "text" && reportFormat != "html" && reportFormat != "json" {
 		return fmt.Errorf("unsupported report format %q", reportFormat)
 	}
 	if reportFormat == "text" {
-		fmt.Fprintf(out, "Generating migration from %s to database %s\n", rootDir, dbschema.FormatDatabaseURL(dbURL))
+		fmt.Fprintf(out, "Generating migration from %s to database %s\n", opts.rootDir, dbschema.FormatDatabaseURL(opts.dbURL))
 		fmt.Fprintln(out, "=== GENERATE MIGRATION SQL ===")
 		fmt.Fprintln(out)
 	}
 
 	// 1. Parse Go entities
-	absPath, err := filepath.Abs(rootDir)
+	absPath, err := filepath.Abs(opts.rootDir)
 	if err != nil {
 		return fmt.Errorf("error resolving path: %w", err)
 	}
@@ -120,20 +95,20 @@ func migrateCommandWithFlags(cmd *cobra.Command, flags map[string]cobraflags.Fla
 	}
 
 	// 2. Connect to database and read schema
-	connectTimeout, err := dbcli.ParseConnectTimeout(flags[dbcli.ConnectTimeoutFlagName].GetString())
+	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
 	if err != nil {
 		return err
 	}
 
 	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
-	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
+	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.dbURL)
 	cancelConnect()
 	if err != nil {
 		return fmt.Errorf("error connecting to database: %w", err)
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	schemas := dbcli.ParseSchemas(flags[dbcli.SchemasFlagName].GetString())
+	schemas := dbcli.ParseSchemas(opts.schemas)
 	dbSchema, err := dbschema.ReadSchemaWithSchemas(conn, schemas)
 	if err != nil {
 		return fmt.Errorf("error reading database schema: %w", err)
@@ -156,7 +131,7 @@ func migrateCommandWithFlags(cmd *cobra.Command, flags map[string]cobraflags.Fla
 		if err := renderSafetyReport(out, reportFormat, assessments); err != nil {
 			return fmt.Errorf("error rendering safety report: %w", err)
 		}
-		if checkDestructive && safety.HasDestructiveAssessment(assessments) && !allowDestructive {
+		if opts.checkDestructive && safety.HasDestructiveAssessment(assessments) && !opts.allowDestructive {
 			return fmt.Errorf("destructive migration statements require --allow-destructive")
 		}
 		return nil
@@ -164,7 +139,7 @@ func migrateCommandWithFlags(cmd *cobra.Command, flags map[string]cobraflags.Fla
 	if err := renderSafetyReport(out, reportFormat, assessments); err != nil {
 		return fmt.Errorf("error rendering safety report: %w", err)
 	}
-	if checkDestructive && safety.HasDestructiveAssessment(assessments) && !allowDestructive {
+	if opts.checkDestructive && safety.HasDestructiveAssessment(assessments) && !opts.allowDestructive {
 		return fmt.Errorf("destructive migration statements require --allow-destructive")
 	}
 
@@ -183,8 +158,8 @@ func migrateCommandWithFlags(cmd *cobra.Command, flags map[string]cobraflags.Fla
 
 	fmt.Fprintln(out, "-- Migration generated from schema differences")
 	fmt.Fprintf(out, "-- Generated on: %s\n", "now") // You could add actual timestamp
-	fmt.Fprintf(out, "-- Source: %s\n", rootDir)
-	fmt.Fprintf(out, "-- Target: %s\n", dbschema.FormatDatabaseURL(dbURL))
+	fmt.Fprintf(out, "-- Source: %s\n", opts.rootDir)
+	fmt.Fprintf(out, "-- Target: %s\n", dbschema.FormatDatabaseURL(opts.dbURL))
 	fmt.Fprintln(out)
 
 	fmt.Fprint(out, migrationSQL)
