@@ -36,6 +36,14 @@ ptah db read --db-url sqlite:////tmp/app.db
 
 For PostgreSQL-like databases, include database name and credentials in the URL, or provide them through the environment your driver expects.
 
+If a command also accepts project config, confirm which source won:
+
+```bash
+ptah migrations status --env dev --migrations-dir ./migrations
+```
+
+Explicit flags win over environment variables and config files.
+
 ## Hash validation fails
 
 Regenerate the hash after intentionally changing migrations:
@@ -56,7 +64,7 @@ ptah schema render --root-dir ./models --dialect sqlite
 ptah schema render --root-dir ./models --dialect postgres
 ```
 
-Reference: [Capabilities](../reference/capabilities/).
+Reference: [Capabilities](../../reference/capabilities/).
 
 ## `atlas.hcl` fails to load
 
@@ -67,6 +75,18 @@ unsupported atlas.hcl construct ...
 ```
 
 Reference: [Atlas project config subset](https://github.com/stokaro/ptah/blob/master/docs/atlas_project_config.md).
+
+## Atlas-compatible command is registered but not implemented
+
+Some Atlas-compatible paths exist so scripts fail in the right namespace before
+runtime behavior is complete. Example help text:
+
+```text
+Runtime behavior is not implemented yet.
+```
+
+Use the native Ptah command when it has a documented equivalent, or check
+[Conformance](../conformance/) for the current gap.
 
 ## Conformance reports look red
 

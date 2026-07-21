@@ -3,7 +3,9 @@ title: Migrations
 description: Plan, generate, apply, roll back, hash, validate, and inspect Ptah migrations.
 ---
 
-Ptah migrations are the operational boundary between desired schema and live database state.
+Ptah migrations are the operational boundary between desired schema and live
+database state. Treat migration files as code: review them, hash them, lint
+them, and apply them through a repeatable command.
 
 ## Recommended loop
 
@@ -24,6 +26,18 @@ ptah migrations up \
   --migrations-dir ./migrations \
   --verify-sum
 ```
+
+## Manual migration files
+
+Create an empty pair when you want to write SQL by hand:
+
+```bash
+ptah migrations create add_accounts --migrations-dir ./migrations
+```
+
+Then edit the generated `*.up.sql` and `*.down.sql` files. Keep the rollback
+real even if the first consumer only applies migrations forward; `down` support
+is part of Ptah's migration contract.
 
 ## Rollback
 
@@ -58,6 +72,22 @@ ptah migrations validate --dir ./migrations
 
 Use `--verify-sum` on `migrations up` to block out-of-band migration edits.
 
+## Safety gates
+
+Use dry-run and lint before applying to shared environments:
+
+```bash
+ptah migrations lint --dir ./migrations --dialect postgres
+ptah migrations up \
+  --db-url "$DATABASE_URL" \
+  --migrations-dir ./migrations \
+  --verify-sum \
+  --dry-run
+```
+
+Destructive statements require explicit policy. Use `--allow-destructive` only
+after the plan has been reviewed and the rollback path is understood.
+
 ## Status
 
 ```bash
@@ -71,9 +101,25 @@ Set `--exit-code` in CI when pending migrations should fail the job.
 
 ## Atlas-style directories
 
-Ptah can read Ptah split files and supported Atlas-style migration directories. Use `--dir-format atlas` when auto-detection should not guess:
+Ptah can read Ptah split files and supported Atlas-style migration directories.
+Use `--dir-format atlas` when auto-detection should not guess:
 
 ```bash
 ptah migrations validate --dir ./migrations --dir-format atlas
 ptah migrations up --db-url "$DATABASE_URL" --migrations-dir ./migrations --dir-format atlas
 ```
+
+Atlas-compatible command paths are available under `ptah atlas migrate ...`:
+
+```bash
+ptah atlas migrate hash --dir ./migrations
+ptah atlas migrate apply --url "$DATABASE_URL" --dir ./migrations
+```
+
+## Operational hooks
+
+`ptah.yaml` can configure pre-migration hooks, backup destinations, timeouts,
+revision table settings, and webhooks. Use those for production-like runs
+instead of relying on ad hoc wrapper scripts.
+
+Reference: [Configuration](../../reference/configuration/).

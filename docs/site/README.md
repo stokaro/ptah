@@ -5,6 +5,8 @@ This directory contains the Astro + Starlight documentation site.
 ```bash
 npm ci
 ASTRO_TELEMETRY_DISABLED=1 npm run build
+npm run versions:selftest
+npm audit --audit-level=low
 ```
 
 For local development:

@@ -3,7 +3,11 @@ title: Atlas-style migrations example
 description: Use an Atlas-style migration directory with Ptah.
 ---
 
-Atlas-style migration files can include `migration.sql` and `down.sql` sections inside txtar archives.
+Atlas-style migration files can include `migration.sql` and `down.sql` sections
+inside txtar archives. Ptah executes those known sections and ignores unrelated
+embedded files.
+
+Create an Atlas-style migration:
 
 ```text
 -- atlas:txtar
@@ -16,6 +20,12 @@ CREATE TABLE users (
 
 -- down.sql --
 DROP TABLE users;
+```
+
+Name the file with a migration version, for example:
+
+```text
+migrations/20260721120000_create_users.sql
 ```
 
 Hash and validate the directory:
@@ -35,3 +45,29 @@ ptah migrations up \
 ```
 
 Use `ptah atlas migrate apply --dir ./migrations --url "$DATABASE_URL"` when you need the Atlas-compatible command path.
+
+## Roll back
+
+The `down.sql` section is used by rollback:
+
+Use the native command when you need an explicit rollback target:
+
+```bash
+ptah migrations down \
+  --db-url "$DATABASE_URL" \
+  --migrations-dir ./migrations \
+  --dir-format atlas \
+  --target 0 \
+  --confirm
+```
+
+The Atlas-compatible `ptah atlas migrate down` command path exists, but the
+current help surface does not expose the native rollback flags. Use the native
+command for rollback recipes until the Atlas-compatible path documents the same
+runtime contract.
+
+## Troubleshooting
+
+If validation or apply fails, force Atlas directory parsing with
+`--dir-format atlas` and inspect the migration file for section names. Ptah
+recognizes `migration.sql` and `down.sql`; other section names are not executed.
