@@ -1,16 +1,13 @@
 # Ptah GitHub Action
 
-Ptah ships a composite GitHub Action at `.github/actions/ptah`. The action
-generates a migration plan for a pull request, evaluates the safety verdict,
-optionally lints a migration directory, and updates one sticky pull request
-comment. It also writes a dedicated `Ptah destructive-change verdict` check run
-from the machine-readable safety report.
+Ptah ships a Marketplace GitHub Action as `stokaro/ptah-action@v1` and keeps
+the source composite action at `.github/actions/ptah`. The action generates a
+migration plan for a pull request, evaluates the safety verdict, optionally
+lints a migration directory, and updates one sticky pull request comment. It
+also writes a dedicated `Ptah destructive-change verdict` check run from the
+machine-readable safety report.
 
-Marketplace publication as `stokaro/ptah-action@v1` is tracked separately in
-[#463](https://github.com/stokaro/ptah/issues/463). Until that package is
-published, use the in-repository composite action path shown below.
-
-For local repository use:
+For repository use:
 
 ```yaml
 name: Ptah
@@ -22,7 +19,7 @@ permissions:
   checks: write
   contents: read
   issues: write
-  pull-requests: read
+  pull-requests: write
 
 jobs:
   ptah:
@@ -30,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: stokaro/ptah/.github/actions/ptah@master
+      - uses: stokaro/ptah-action@v1
         with:
           dir: ./internal/models
           db-url: ${{ secrets.PTAH_DATABASE_URL }}
@@ -40,16 +37,22 @@ jobs:
           comment: "true"
 ```
 
+Use `stokaro/ptah/.github/actions/ptah@master` only when validating changes to
+the in-repository composite action before they are published to
+`stokaro/ptah-action`.
+
 The action downloads the requested Ptah release binary by default. Use
 `version` to pin a release tag, or `binary-path` when a workflow builds Ptah
 from source before invoking the action. If a release asset is not available yet,
 the installer falls back to `go install github.com/stokaro/ptah/cmd/ptah@...`
-using `master` for `version: latest`.
+using `master` for `version: latest`. Source fallback uses direct module fetch
+to avoid stale Go module proxy results for moving refs.
 
 The `checks: write` permission is needed for the destructive-change check run.
-The `issues: write` permission is needed for sticky pull request comments. On
-forked pull requests without write-scoped tokens, the action skips the comment
-or check-run write and still completes the local Ptah validation path.
+The `issues: write` and `pull-requests: write` permissions are needed for
+sticky pull request comments. On forked pull requests without write-scoped
+tokens, the action skips the comment or check-run write and still completes the
+local Ptah validation path.
 
 ## Inputs
 
@@ -76,7 +79,9 @@ or check-run write and still completes the local Ptah validation path.
 | --- | --- |
 | `plan-path` | Text migration plan report. |
 | `safety-path` | JSON safety report. |
+| `safety-error-path` | Text stderr captured from the safety report command. |
 | `lint-path` | JSON lint report. |
+| `lint-error-path` | Text stderr captured from the lint command. |
 | `destructive` | `true`, `false`, or `unknown`. |
 
 ## Behavior
