@@ -65,7 +65,26 @@ func (m *Migrator) withMigrationLock(ctx context.Context, operation string, fn f
 		return fn(ctx)
 	}
 
+	dialect := m.conn.Info().Dialect
+	startedAt := time.Now()
+	observer := m.migrationObserver()
+	lockCtx, span := observer.StartSpan(ctx, "ptah.lock.acquire",
+		attr("db.system", dialect),
+		attr("migration.operation", operation),
+		attr("lock.name", migrationAdvisoryLockName),
+		attr("lock.timeout_ms", m.migrationLockTimeout.Milliseconds()),
+	)
 	lock, err := acquireMigrationLock(ctx, m.conn, m.migrationLockTimeout)
+	wait := time.Since(startedAt)
+	span.SetAttributes(attr("lock.wait_ms", wait.Milliseconds()))
+	span.End(err)
+	if root := rootSpanFromContext(ctx); root != nil {
+		root.SetAttributes(attr("lock.wait_ms", wait.Milliseconds()))
+	}
+	observer.RecordDuration(lockCtx, "ptah_migration_lock_wait_seconds", wait,
+		attr("db.system", dialect),
+		attr("migration.operation", operation),
+	)
 	if err != nil {
 		return fmt.Errorf("failed to acquire migration lock for %s: %w", operation, err)
 	}

@@ -207,6 +207,26 @@ Check an Atlas-managed revisions table:
 go run ./cmd migrations status --db-url postgres://user:pass@localhost/db --migrations-dir /path/to/migrations --dir-format atlas --revision-format atlas
 ```
 
+## Observability
+
+The migrator exposes a small observer interface for tracing and metrics without
+binding the core package to a specific telemetry backend. Programmatic callers
+can pass `WithObserver` to receive migration spans, counters, and duration
+measurements. The built-in no-op observer keeps existing library usage silent
+unless a caller explicitly opts in.
+
+CLI migration commands add observability flags on top of this API:
+
+```bash
+ptah migrations up --log-format json --log-level debug --metrics-addr :9090
+```
+
+Text logging preserves the traditional human output. JSON logging emits
+structured log records with a `correlation_id` so automation can parse stdout.
+When `--metrics-addr` is set, Ptah serves Prometheus text metrics on
+`/metrics`. OpenTelemetry OTLP tracing is intentionally behind the
+`observability` build tag so default binaries do not link the OTLP exporter.
+
 ## API Overview
 
 The migrator package provides a clean, modular API with the following key components:

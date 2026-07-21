@@ -148,6 +148,7 @@ Provides comprehensive database migration functionality:
   - Applies and rolls back database migrations
   - Tracks migration history and versions
   - Provides dry-run capabilities, dirty-state tracking, and dialect-aware transaction handling
+  - Exposes dependency-light observer hooks for tracing spans and migration metrics
 
 - **`planner/`** - Migration planning and SQL generation
   - Converts schema differences into executable SQL statements
@@ -1025,7 +1026,28 @@ Apply all pending migrations to bring database up to latest version:
 
 # Write a PostgreSQL custom-format dump before applying migrations
 ./ptah migrations up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --pg-dump-to ./backups
+
+# Emit structured JSON logs and expose migration metrics while applying
+./ptah migrations up --db-url postgres://user:pass@localhost:5432/database --migrations-dir ./migrations --log-format json --metrics-addr :9090
 ```
+
+Migration execution commands support command-scoped observability:
+
+- `--log-format=text|json` and `--log-level=debug|info|warn|error` are
+  available on `migrations up`, `migrations down`, and `migrations status`.
+  JSON mode converts command progress and pre-flight hook output into parseable
+  JSON log lines with a command-scoped `correlation_id`.
+- `--metrics-addr :9090` starts a small Prometheus text endpoint at `/metrics`
+  for migration counters and duration histograms. Metric labels are bounded to
+  dialect, direction, and version; migration descriptions remain trace/span
+  attributes only.
+- The migrator exposes a dependency-light `Observer` hook for spans and
+  metrics. Default binaries use this hook without linking the OTLP exporter
+  dependency tree.
+- Build with `-tags observability` to enable the OTLP HTTP trace exporter. When
+  `OTEL_EXPORTER_OTLP_ENDPOINT` is set, migration commands emit spans such as
+  `ptah.migrate.up`, `ptah.migrate.down`, `ptah.migrate.apply`, and
+  `ptah.lock.acquire`.
 
 Migration files can override the CLI defaults with top-of-file directives:
 

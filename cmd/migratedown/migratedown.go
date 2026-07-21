@@ -3,11 +3,14 @@ package migratedown
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/cliobs"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
@@ -58,6 +61,9 @@ type options struct {
 	migrationsSchema     string
 	migrationsTable      string
 	revisionTableFormat  string
+	logFormat            string
+	logLevel             string
+	metricsAddr          string
 }
 
 func NewMigrateDownCommand() *cobra.Command {
@@ -103,6 +109,9 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.pgDumpTo, pgDumpToFlag, "", "Directory where pg_dump writes a custom-format backup before rolling back migrations")
 	flags.StringVar(&opts.mySQLDumpTo, mySQLDumpToFlag, "", "Directory where mysqldump writes a SQL backup before rolling back migrations")
 	flags.StringVar(&opts.webhook, webhookFlag, "", "Webhook URL to POST migration metadata before rolling back migrations; must return HTTP 200")
+	flags.StringVar(&opts.logFormat, cliobs.LogFormatFlagName, "text", "Log format: text or json")
+	flags.StringVar(&opts.logLevel, cliobs.LogLevelFlagName, "info", "Log level: debug, info, warn, or error")
+	flags.StringVar(&opts.metricsAddr, cliobs.MetricsAddrFlagName, "", "Address for the Prometheus /metrics endpoint, such as :9090")
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterConfigFlag(flags, &opts.configPath)
 	dbcli.RegisterEnvFlag(flags, &opts.envName)
@@ -150,6 +159,13 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	revisionFormatValue = dbcli.EffectiveString(cmd, dbcli.RevisionTableFormatFlagName, revisionFormatValue, projectCfg.Migration.RevisionFormat)
 	connectTimeoutValue := dbcli.EffectiveString(cmd, dbcli.ConnectTimeoutFlagName, opts.connectTimeout, projectCfg.Migration.ConnectTimeout)
 
+	runtime, err := startObservability(cmd, opts)
+	if err != nil {
+		return err
+	}
+	defer shutdownObservability(runtime)
+	emit := cliobs.NewEmitter(cmd.OutOrStdout(), runtime)
+
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
 	}
@@ -176,7 +192,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	}
 
 	if opts.verbose {
-		fmt.Printf("Connecting to database: %s\n", dbschema.FormatDatabaseURL(dbURL))
+		emit.Printf("Connecting to database: %s\n", dbschema.FormatDatabaseURL(dbURL))
 	}
 
 	timeouts, err := migrator.ParseMigrationTimeouts(lockTimeout, statementTimeout)
@@ -209,18 +225,18 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	conn.SchemaWriter().SetDryRun(opts.dryRun)
 
 	if opts.dryRun {
-		fmt.Println("=== DRY RUN MODE ===")
-		fmt.Println("No actual changes will be made to the database")
-		fmt.Println()
+		emit.Println("=== DRY RUN MODE ===")
+		emit.Println("No actual changes will be made to the database")
+		emit.Println()
 	}
 
-	fmt.Println("=== MIGRATE DOWN ===")
-	fmt.Printf("Database: %s\n", dbschema.FormatDatabaseURL(dbURL))
-	fmt.Printf("Dialect: %s\n", conn.Info().Dialect)
-	fmt.Printf("Migrations directory: %s\n", migrationsDir)
-	fmt.Printf("Migration directory format: %s\n", dirFormat)
-	fmt.Printf("Target version: %d\n", targetVersion)
-	fmt.Println()
+	emit.Println("=== MIGRATE DOWN ===")
+	emit.Printf("Database: %s\n", dbschema.FormatDatabaseURL(dbURL))
+	emit.Printf("Dialect: %s\n", conn.Info().Dialect)
+	emit.Printf("Migrations directory: %s\n", migrationsDir)
+	emit.Printf("Migration directory format: %s\n", dirFormat)
+	emit.Printf("Target version: %d\n", targetVersion)
+	emit.Println()
 
 	// Create filesystem from migrations directory
 	migrationsFS := os.DirFS(migrationsDir)
@@ -232,7 +248,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 	if onlineCfg.Enabled() {
-		fmt.Printf("Online DDL: tool=%s threshold_rows=%d\n", onlineCfg.Tool, onlineCfg.ThresholdRows)
+		emit.Printf("Online DDL: tool=%s threshold_rows=%d\n", onlineCfg.Tool, onlineCfg.ThresholdRows)
 	}
 	interceptor := onlineddl.New(*onlineCfg).WithDryRun(opts.dryRun)
 
@@ -251,7 +267,9 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		WithRevisionTableFormat(revisionFormat).
 		WithDefaultTimeouts(timeouts).
 		WithExecOrder(execOrder).
-		WithMigrationLockTimeout(migrationLockTimeout)
+		WithMigrationLockTimeout(migrationLockTimeout).
+		WithLogger(runtime.Logger()).
+		WithObserver(runtime.Observer())
 
 	// Get migration status before running
 	status, err := mig.GetMigrationStatus(context.Background())
@@ -259,11 +277,19 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("error getting migration status: %w", err)
 	}
 
-	fmt.Printf("Current version: %d\n", status.CurrentVersion)
-	fmt.Printf("Total migrations: %d\n", status.TotalMigrations)
+	emit.Printf("Current version: %d\n", status.CurrentVersion)
+	emit.Printf("Total migrations: %d\n", status.TotalMigrations)
 
 	if status.CurrentVersion <= targetVersion {
-		fmt.Printf("✅ Database is already at or below target version %d!\n", targetVersion)
+		cliobs.ObserveNoopMigration(context.Background(), runtime.Observer(), "ptah.migrate.down",
+			migrator.ObservationAttribute{Key: "db.system", Value: conn.Info().Dialect},
+			migrator.ObservationAttribute{Key: "migration.direction", Value: "down"},
+			migrator.ObservationAttribute{Key: "migration.current_version", Value: status.CurrentVersion},
+			migrator.ObservationAttribute{Key: "migration.target_version", Value: status.CurrentVersion},
+			migrator.ObservationAttribute{Key: "migration.requested_target_version", Value: targetVersion},
+			migrator.ObservationAttribute{Key: "migration.pending_count", Value: 0},
+		)
+		emit.Printf("✅ Database is already at or below target version %d!\n", targetVersion)
 		return nil
 	}
 
@@ -281,34 +307,28 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		}
 	}
 
-	fmt.Printf("Migrations to roll back: %d\n", len(migrationsToRollback))
+	emit.Printf("Migrations to roll back: %d\n", len(migrationsToRollback))
 
 	if opts.verbose {
-		fmt.Printf("Will roll back from version %d to %d\n", status.CurrentVersion, targetVersion)
+		emit.Printf("Will roll back from version %d to %d\n", status.CurrentVersion, targetVersion)
 		if len(migrationsToRollback) > 0 {
-			fmt.Printf("Specific migrations to rollback: %v\n", migrationsToRollback)
+			emit.Printf("Specific migrations to rollback: %v\n", migrationsToRollback)
 		}
 	}
 
-	fmt.Println()
+	emit.Println()
 
 	// Safety confirmation (unless skipped or dry run)
-	if !opts.dryRun && !opts.skipConfirm {
-		fmt.Println("⚠️  WARNING: Rolling back migrations can result in data loss!")
-		fmt.Printf("This will roll back the database from version %d to version %d.\n", status.CurrentVersion, targetVersion)
-		if len(migrationsToRollback) > 0 {
-			fmt.Printf("The following %d migration(s) will be rolled back: %v\n", len(migrationsToRollback), migrationsToRollback)
-		}
-		fmt.Print("Are you sure you want to continue? Type 'YES' to confirm: ")
-
-		var confirmation string
-		fmt.Scanln(&confirmation)
-
-		if confirmation != "YES" {
-			fmt.Println("Migration rollback canceled.")
-			return nil
-		}
-		fmt.Println()
+	promptWriter := cmd.OutOrStdout()
+	if opts.logFormat == "json" {
+		promptWriter = cmd.ErrOrStderr()
+	}
+	confirmed, err := confirmRollback(opts, promptWriter, cmd.InOrStdin(), status.CurrentVersion, targetVersion, migrationsToRollback)
+	if err != nil {
+		return err
+	}
+	if !confirmed {
+		return nil
 	}
 
 	preflightHook := dbcli.LockedMigrationPreflightHook(opts.dryRun, preflight.Options{
@@ -320,7 +340,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		PostgresDumpDir:    pgDumpTo,
 		MySQLDumpDir:       mySQLDumpTo,
 		WebhookURL:         webhook,
-	})
+	}, emit, cliobs.NewOutputWriter(cmd.OutOrStdout(), runtime, "pre-flight output"))
 
 	// Run down migrations
 	err = mig.MigrateDownToWithPreflight(context.Background(), targetVersion, preflightHook)
@@ -334,17 +354,64 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("error getting final migration status: %w", err)
 	}
 
-	fmt.Println()
+	emit.Println()
 	if opts.dryRun {
-		fmt.Println("✅ Dry run completed successfully!")
-		fmt.Printf("Would have rolled back to version: %d\n", targetVersion)
+		emit.Println("✅ Dry run completed successfully!")
+		emit.Printf("Would have rolled back to version: %d\n", targetVersion)
 		if len(migrationsToRollback) > 0 {
-			fmt.Printf("Would have rolled back these migrations: %v\n", migrationsToRollback)
+			emit.Printf("Would have rolled back these migrations: %v\n", migrationsToRollback)
 		}
 	} else {
-		fmt.Println("✅ Migration rollback completed successfully!")
-		fmt.Printf("Database is now at version: %d\n", finalStatus.CurrentVersion)
+		emit.Println("✅ Migration rollback completed successfully!")
+		emit.Printf("Database is now at version: %d\n", finalStatus.CurrentVersion)
 	}
 
 	return nil
+}
+
+func startObservability(cmd *cobra.Command, opts *options) (*cliobs.Runtime, error) {
+	logWriter := cmd.ErrOrStderr()
+	if opts.logFormat == "json" {
+		logWriter = cmd.OutOrStdout()
+	}
+	return cliobs.Start(context.Background(), cliobs.Options{
+		Command:     "migrations.down",
+		LogFormat:   opts.logFormat,
+		LogLevel:    opts.logLevel,
+		MetricsAddr: opts.metricsAddr,
+		LogWriter:   logWriter,
+	})
+}
+
+func confirmRollback(opts *options, prompt io.Writer, input io.Reader, currentVersion, targetVersion int64, migrationsToRollback []int64) (bool, error) {
+	if opts.dryRun || opts.skipConfirm {
+		return true, nil
+	}
+
+	fmt.Fprintln(prompt, "⚠️  WARNING: Rolling back migrations can result in data loss!")
+	fmt.Fprintf(prompt, "This will roll back the database from version %d to version %d.\n", currentVersion, targetVersion)
+	if len(migrationsToRollback) > 0 {
+		fmt.Fprintf(prompt, "The following %d migration(s) will be rolled back: %v\n", len(migrationsToRollback), migrationsToRollback)
+	}
+	fmt.Fprint(prompt, "Are you sure you want to continue? Type 'YES' to confirm: ")
+
+	var confirmation string
+	if _, err := fmt.Fscan(input, &confirmation); err != nil {
+		return false, fmt.Errorf("read rollback confirmation: %w", err)
+	}
+
+	if confirmation != "YES" {
+		fmt.Fprintln(prompt, "Migration rollback canceled.")
+		return false, nil
+	}
+	fmt.Fprintln(prompt)
+	return true, nil
+}
+
+func shutdownObservability(runtime *cliobs.Runtime) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := runtime.Shutdown(ctx); err != nil {
+		runtime.Logger().Warn("failed to shut down observability", "error", err)
+	}
 }

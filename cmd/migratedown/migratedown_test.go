@@ -11,6 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/pflag"
 
+	"github.com/stokaro/ptah/cmd/internal/cliobs"
 	"github.com/stokaro/ptah/cmd/migratedown"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/migration/migrator"
@@ -24,6 +25,9 @@ func TestMigrateDownCommand_Creation(t *testing.T) {
 	c.Assert(cmd.Use, qt.Equals, "down")
 	c.Assert(cmd.Short, qt.Contains, "Roll back migrations")
 	c.Assert(cmd.Flag("migration-lock-timeout"), qt.IsNotNil)
+	c.Assert(cmd.Flag(cliobs.LogFormatFlagName), qt.IsNotNil)
+	c.Assert(cmd.Flag(cliobs.LogLevelFlagName), qt.IsNotNil)
+	c.Assert(cmd.Flag(cliobs.MetricsAddrFlagName), qt.IsNotNil)
 }
 
 func TestMigrateDownCommandPreflightHookAbortPreventsRollback(t *testing.T) {
@@ -214,6 +218,9 @@ func resetMigrateDownCommandForTest(c *qt.C, cmd interface{ Flag(string) *pflag.
 		"pg-dump-to":             "",
 		"mysqldump-to":           "",
 		"webhook":                "",
+		"log-format":             "text",
+		"log-level":              "info",
+		"metrics-addr":           "",
 		"connect-timeout":        "10s",
 		"config":                 "",
 		"env":                    "",

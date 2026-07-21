@@ -64,6 +64,7 @@ type Migrator struct {
 	migrationLockTimeout time.Duration
 	initialized          bool
 	logger               *slog.Logger
+	observer             Observer
 }
 
 // NewFSMigrator creates a new migrator that loads migrations from a filesystem.
@@ -88,13 +89,27 @@ func NewMigrator(conn *dbschema.DatabaseConnection, provider MigrationProvider) 
 		revisionTableFormat: RevisionTableFormatPtah,
 		execOrder:           ExecOrderLinear,
 		logger:              slog.Default(),
+		observer:            NoopObserver{},
 	}
 }
 
 // WithLogger sets the logger for the migrator
 func (m *Migrator) WithLogger(l *slog.Logger) *Migrator {
 	tmp := *m
+	if l == nil {
+		l = slog.Default()
+	}
 	tmp.logger = l
+	return &tmp
+}
+
+// WithObserver sets the migration observer used for tracing and metrics.
+func (m *Migrator) WithObserver(observer Observer) *Migrator {
+	tmp := *m
+	if observer == nil {
+		observer = NoopObserver{}
+	}
+	tmp.observer = observer
 	return &tmp
 }
 
@@ -660,7 +675,11 @@ func (m *Migrator) GetPreviousMigrationVersion(ctx context.Context) (int64, erro
 }
 
 // GetMigrationStatus returns information about the current migration status using the provided filesystem
-func (m *Migrator) GetMigrationStatus(ctx context.Context) (*MigrationStatus, error) {
+func (m *Migrator) GetMigrationStatus(ctx context.Context) (status *MigrationStatus, err error) {
+	observer := m.migrationObserver()
+	ctx, span := observer.StartSpan(ctx, "ptah.migrate.status", m.operationAttributes("")...)
+	defer func() { span.End(err) }()
+
 	appliedMigrations, err := m.GetAppliedMigrations(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get applied migrations: %w", err)
@@ -677,7 +696,7 @@ func (m *Migrator) GetMigrationStatus(ctx context.Context) (*MigrationStatus, er
 		}
 	}
 
-	return &MigrationStatus{
+	status = &MigrationStatus{
 		CurrentVersion:       currentVersion,
 		AppliedMigrations:    appliedMigrations,
 		PendingMigrations:    pendingMigrations,
@@ -685,7 +704,14 @@ func (m *Migrator) GetMigrationStatus(ctx context.Context) (*MigrationStatus, er
 		TotalMigrations:      len(m.MigrationProvider().Migrations()),
 		HasPendingChanges:    len(pendingMigrations) > 0 || dirtyRevision != nil,
 		DirtyRevision:        dirtyRevision,
-	}, nil
+	}
+	span.SetAttributes(
+		attr("migration.current_version", status.CurrentVersion),
+		attr("migration.pending_count", len(status.PendingMigrations)),
+		attr("migration.out_of_order_count", len(status.OutOfOrderMigrations)),
+		attr("migration.total_count", status.TotalMigrations),
+	)
+	return status, nil
 }
 
 // MigrateUp migrates the database up to the latest version
@@ -695,7 +721,11 @@ func (m *Migrator) MigrateUp(ctx context.Context) error {
 
 // MigrateUpWithPreflight migrates up after running hook inside the migration
 // advisory lock. A nil hook is equivalent to [Migrator.MigrateUp].
-func (m *Migrator) MigrateUpWithPreflight(ctx context.Context, hook PreMigrationHook) error {
+func (m *Migrator) MigrateUpWithPreflight(ctx context.Context, hook PreMigrationHook) (err error) {
+	observer := m.migrationObserver()
+	ctx, span := observer.StartSpan(ctx, "ptah.migrate.up", m.operationAttributes(MigrationDirectionUp)...)
+	defer func() { span.End(err) }()
+	ctx = contextWithRootSpan(ctx, span)
 	return m.withMigrationLock(ctx, "migrate up", func(ctx context.Context) error {
 		return m.migrateUpLocked(ctx, hook)
 	})
@@ -732,6 +762,13 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, hook PreMigrationHook) e
 	}); err != nil {
 		return err
 	}
+	if span := rootSpanFromContext(ctx); span != nil {
+		span.SetAttributes(
+			attr("migration.current_version", currentVersion),
+			attr("migration.target_version", upTargetVersion(currentVersion, migrationsToApply)),
+			attr("migration.pending_count", len(migrationsToApply)),
+		)
+	}
 
 	m.logger.Info("Migrating up", "currentVersion", currentVersion, "totalMigrations", len(migrations))
 	if err := m.applyUpMigrations(ctx, migrationsToApply); err != nil {
@@ -743,7 +780,11 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, hook PreMigrationHook) e
 }
 
 // MigrateDown migrates the database down to the previous version
-func (m *Migrator) MigrateDown(ctx context.Context) error {
+func (m *Migrator) MigrateDown(ctx context.Context) (err error) {
+	observer := m.migrationObserver()
+	ctx, span := observer.StartSpan(ctx, "ptah.migrate.down", m.operationAttributes(MigrationDirectionDown)...)
+	defer func() { span.End(err) }()
+	ctx = contextWithRootSpan(ctx, span)
 	return m.withMigrationLock(ctx, "migrate down", func(ctx context.Context) error {
 		return m.migrateDownLocked(ctx)
 	})
@@ -773,7 +814,11 @@ func (m *Migrator) MigrateDownTo(ctx context.Context, targetVersion int64) error
 
 // MigrateDownToWithPreflight migrates down after running hook inside the
 // migration advisory lock. A nil hook is equivalent to [Migrator.MigrateDownTo].
-func (m *Migrator) MigrateDownToWithPreflight(ctx context.Context, targetVersion int64, hook PreMigrationHook) error {
+func (m *Migrator) MigrateDownToWithPreflight(ctx context.Context, targetVersion int64, hook PreMigrationHook) (err error) {
+	observer := m.migrationObserver()
+	ctx, span := observer.StartSpan(ctx, "ptah.migrate.down", append(m.operationAttributes(MigrationDirectionDown), attr("migration.requested_target_version", targetVersion))...)
+	defer func() { span.End(err) }()
+	ctx = contextWithRootSpan(ctx, span)
 	return m.withMigrationLock(ctx, "migrate down", func(ctx context.Context) error {
 		return m.migrateDownToLocked(ctx, targetVersion, hook)
 	})
@@ -816,6 +861,13 @@ func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64,
 	}); err != nil {
 		return err
 	}
+	if span := rootSpanFromContext(ctx); span != nil {
+		span.SetAttributes(
+			attr("migration.current_version", currentVersion),
+			attr("migration.target_version", downTargetVersion(appliedMigrations, targetVersion)),
+			attr("migration.pending_count", len(migrationsToRollback)),
+		)
+	}
 
 	m.logger.Info("Migrating down", "targetVersion", targetVersion, "currentVersion", currentVersion, "totalMigrations", len(m.migrationProvider.Migrations()))
 
@@ -834,7 +886,11 @@ func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64,
 }
 
 // MigrateTo migrates the database to a specific version (up or down)
-func (m *Migrator) MigrateTo(ctx context.Context, targetVersion int64) error {
+func (m *Migrator) MigrateTo(ctx context.Context, targetVersion int64) (err error) {
+	observer := m.migrationObserver()
+	ctx, span := observer.StartSpan(ctx, "ptah.migrate.to", append(m.operationAttributes(""), attr("migration.requested_target_version", targetVersion))...)
+	defer func() { span.End(err) }()
+	ctx = contextWithRootSpan(ctx, span)
 	return m.withMigrationLock(ctx, "migrate to", func(ctx context.Context) error {
 		return m.migrateToLocked(ctx, targetVersion)
 	})
@@ -894,6 +950,13 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int64) error {
 	if err != nil {
 		return err
 	}
+	if span := rootSpanFromContext(ctx); span != nil {
+		span.SetAttributes(
+			attr("migration.current_version", currentVersion),
+			attr("migration.target_version", upTargetVersion(currentVersion, migrationsToApply)),
+			attr("migration.pending_count", len(migrationsToApply)),
+		)
+	}
 
 	m.logger.Info("Migrating up", "currentVersion", currentVersion, "targetVersion", targetVersion, "totalMigrations", len(migrations))
 	if err := m.applyUpMigrations(ctx, migrationsToApply); err != nil {
@@ -946,24 +1009,38 @@ func downTargetVersion(applied []int64, targetVersion int64) int64 {
 
 func (m *Migrator) applyUpMigrations(ctx context.Context, migrations []*Migration) error {
 	for _, migration := range migrations {
-		startedAt := time.Now()
-		m.logger.Info("Applying migration", "version", migration.Version, "description", migration.Description)
-		if err := m.beginMigrationRevision(ctx, migration); err != nil {
-			return fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
-		}
-		if migration.upExecutionMode() == migrationExecutionNoTransaction {
-			if err := m.applyUpMigrationNoTransaction(ctx, migration, startedAt); err != nil {
-				return err
-			}
-			continue
-		}
-
-		if err := m.applyUpMigrationTransactional(ctx, migration, startedAt); err != nil {
+		if err := m.applyUpMigrationObserved(ctx, migration); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+func (m *Migrator) applyUpMigrationObserved(ctx context.Context, migration *Migration) (err error) {
+	observer := m.migrationObserver()
+	ctx, span := observer.StartSpan(ctx, "ptah.migrate.apply", m.migrationAttributes(MigrationDirectionUp, migration)...)
+	startedAt := time.Now()
+	defer func() {
+		duration := time.Since(startedAt)
+		span.End(err)
+		metricAttrs := m.migrationMetricAttributes(MigrationDirectionUp, migration)
+		observer.RecordDuration(ctx, "ptah_migration_duration_seconds", duration, metricAttrs...)
+		if err != nil {
+			observer.AddCounter(ctx, "ptah_migrations_failed_total", 1, metricAttrs...)
+			return
+		}
+		observer.AddCounter(ctx, "ptah_migrations_applied_total", 1, metricAttrs...)
+	}()
+
+	m.logger.Info("Applying migration", "version", migration.Version, "description", migration.Description)
+	if err := m.beginMigrationRevision(ctx, migration); err != nil {
+		return fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
+	}
+	if migration.upExecutionMode() == migrationExecutionNoTransaction {
+		return m.applyUpMigrationNoTransaction(ctx, migration, startedAt)
+	}
+	return m.applyUpMigrationTransactional(ctx, migration, startedAt)
 }
 
 func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration *Migration, startedAt time.Time) error {
@@ -1051,7 +1128,25 @@ func (m *Migrator) applyUpMigrationNoTransaction(ctx context.Context, migration 
 }
 
 func (m *Migrator) rollbackMigration(ctx context.Context, migration *Migration, deleteSQL string) error {
+	return m.rollbackMigrationObserved(ctx, migration, deleteSQL)
+}
+
+func (m *Migrator) rollbackMigrationObserved(ctx context.Context, migration *Migration, deleteSQL string) (err error) {
+	observer := m.migrationObserver()
+	ctx, span := observer.StartSpan(ctx, "ptah.migrate.rollback", m.migrationAttributes(MigrationDirectionDown, migration)...)
 	startedAt := time.Now()
+	defer func() {
+		duration := time.Since(startedAt)
+		span.End(err)
+		metricAttrs := m.migrationMetricAttributes(MigrationDirectionDown, migration)
+		observer.RecordDuration(ctx, "ptah_migration_duration_seconds", duration, metricAttrs...)
+		if err != nil {
+			observer.AddCounter(ctx, "ptah_migrations_failed_total", 1, metricAttrs...)
+			return
+		}
+		observer.AddCounter(ctx, "ptah_migrations_rolled_back_total", 1, metricAttrs...)
+	}()
+
 	m.logger.Info("Rolling back migration", "version", migration.Version, "description", migration.Description)
 	if err := m.beginRollbackRevision(ctx, migration); err != nil {
 		return fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
@@ -1063,6 +1158,33 @@ func (m *Migrator) rollbackMigration(ctx context.Context, migration *Migration, 
 		return m.rollbackMigrationNoTransaction(ctx, migration, startedAt, deleteSQL)
 	}
 	return m.rollbackMigrationTransactional(ctx, migration, startedAt, deleteSQL)
+}
+
+func (m *Migrator) operationAttributes(direction MigrationDirection) []ObservationAttribute {
+	attrs := []ObservationAttribute{
+		attr("db.system", m.connectionDialect()),
+	}
+	if direction != "" {
+		attrs = append(attrs, attr("migration.direction", string(direction)))
+	}
+	return attrs
+}
+
+func (m *Migrator) migrationAttributes(direction MigrationDirection, migration *Migration) []ObservationAttribute {
+	return []ObservationAttribute{
+		attr("db.system", m.connectionDialect()),
+		attr("migration.direction", string(direction)),
+		attr("migration.version", migration.Version),
+		attr("migration.description", migration.Description),
+	}
+}
+
+func (m *Migrator) migrationMetricAttributes(direction MigrationDirection, migration *Migration) []ObservationAttribute {
+	return []ObservationAttribute{
+		attr("db.system", m.connectionDialect()),
+		attr("migration.direction", string(direction)),
+		attr("migration.version", migration.Version),
+	}
 }
 
 func (m *Migrator) rollbackMigrationWithoutRegisteredDown(
