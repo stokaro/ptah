@@ -39,11 +39,18 @@ func TestLoadConfig_AllowsProjectConfigEnvelope(t *testing.T) {
 schemas: [public]
 migration:
   dir: ./migrations
+  pre_up_hook: ./scripts/backup-before-up
+  pre_down_hook: ./scripts/backup-before-down
+  pg_dump_to: ./backups/postgres
+  mysqldump_to: ./backups/mysql
+  webhook: https://ops.example/hooks/ptah-migration
 lint:
   dialect: postgres
 env:
   prod:
     url: postgres://prod/db
+    migration:
+      pre_up_hook: ./scripts/prod-backup-before-up
 online_ddl:
   tool: ghost
   threshold_rows: 1000000

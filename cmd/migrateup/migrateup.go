@@ -16,6 +16,7 @@ import (
 	"github.com/stokaro/ptah/internal/migratesum"
 	"github.com/stokaro/ptah/internal/onlineddl"
 	"github.com/stokaro/ptah/internal/pathguard"
+	"github.com/stokaro/ptah/internal/preflight"
 	"github.com/stokaro/ptah/migration/lint"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/risk"
@@ -48,6 +49,10 @@ const (
 	lockTimeoutFlag          = "lock-timeout"
 	statementTimeoutFlag     = "statement-timeout"
 	allowDestructiveFlag     = "allow-destructive"
+	preUpHookFlag            = "pre-up-hook"
+	pgDumpToFlag             = "pg-dump-to"
+	mySQLDumpToFlag          = "mysqldump-to"
+	webhookFlag              = "webhook"
 )
 
 var migrateUpFlags = map[string]cobraflags.Flag{
@@ -111,6 +116,26 @@ var migrateUpFlags = map[string]cobraflags.Flag{
 		Value: false,
 		Usage: "Allow pending migrations that contain destructive statements",
 	},
+	preUpHookFlag: &cobraflags.StringFlag{
+		Name:  preUpHookFlag,
+		Value: "",
+		Usage: "Shell command to run before applying pending migrations; aborts unless it exits 0",
+	},
+	pgDumpToFlag: &cobraflags.StringFlag{
+		Name:  pgDumpToFlag,
+		Value: "",
+		Usage: "Directory where pg_dump writes a custom-format backup before applying migrations",
+	},
+	mySQLDumpToFlag: &cobraflags.StringFlag{
+		Name:  mySQLDumpToFlag,
+		Value: "",
+		Usage: "Directory where mysqldump writes a SQL backup before applying migrations",
+	},
+	webhookFlag: &cobraflags.StringFlag{
+		Name:  webhookFlag,
+		Value: "",
+		Usage: "Webhook URL to POST migration metadata before applying migrations; must return HTTP 200",
+	},
 	dbcli.ConnectTimeoutFlagName:      dbcli.NewConnectTimeoutFlag(),
 	dbcli.ConfigFlagName:              dbcli.NewConfigFlag(),
 	dbcli.EnvFlagName:                 dbcli.NewEnvFlag(),
@@ -143,6 +168,10 @@ func migrateUpCommand(cmd *cobra.Command, _ []string) error {
 	lockTimeout := migrateUpFlags[lockTimeoutFlag].GetString()
 	statementTimeout := migrateUpFlags[statementTimeoutFlag].GetString()
 	allowDestructive := migrateUpFlags[allowDestructiveFlag].GetBool()
+	preUpHook := migrateUpFlags[preUpHookFlag].GetString()
+	pgDumpTo := migrateUpFlags[pgDumpToFlag].GetString()
+	mySQLDumpTo := migrateUpFlags[mySQLDumpToFlag].GetString()
+	webhook := migrateUpFlags[webhookFlag].GetString()
 	migrationsSchema := migrateUpFlags[dbcli.MigrationsSchemaFlagName].GetString()
 	migrationsTable := migrateUpFlags[dbcli.MigrationsTableFlagName].GetString()
 	revisionFormatValue := migrateUpFlags[dbcli.RevisionTableFormatFlagName].GetString()
@@ -160,6 +189,10 @@ func migrateUpCommand(cmd *cobra.Command, _ []string) error {
 	migrationLockTimeoutValue = dbcli.EffectiveString(cmd, migrationLockTimeoutFlag, migrationLockTimeoutValue, projectCfg.Migration.MigrationLockTimeout)
 	lockTimeout = dbcli.EffectiveString(cmd, lockTimeoutFlag, lockTimeout, projectCfg.Migration.LockTimeout)
 	statementTimeout = dbcli.EffectiveString(cmd, statementTimeoutFlag, statementTimeout, projectCfg.Migration.StatementTimeout)
+	preUpHook = dbcli.EffectiveString(cmd, preUpHookFlag, preUpHook, projectCfg.Migration.PreUpHook)
+	pgDumpTo = dbcli.EffectiveString(cmd, pgDumpToFlag, pgDumpTo, projectCfg.Migration.PostgresDumpTo)
+	mySQLDumpTo = dbcli.EffectiveString(cmd, mySQLDumpToFlag, mySQLDumpTo, projectCfg.Migration.MySQLDumpTo)
+	webhook = dbcli.EffectiveString(cmd, webhookFlag, webhook, projectCfg.Migration.Webhook)
 	migrationsSchema = dbcli.EffectiveString(cmd, dbcli.MigrationsSchemaFlagName, migrationsSchema, projectCfg.Migration.RevisionsSchema)
 	migrationsTable = dbcli.EffectiveString(cmd, dbcli.MigrationsTableFlagName, migrationsTable, projectCfg.Migration.RevisionsTable)
 	revisionFormatValue = dbcli.EffectiveString(cmd, dbcli.RevisionTableFormatFlagName, revisionFormatValue, projectCfg.Migration.RevisionFormat)
@@ -307,7 +340,7 @@ func migrateUpCommand(cmd *cobra.Command, _ []string) error {
 	}
 
 	if !allowDestructive {
-		findings, err := lintPendingDestructive(migrationsFS, pendingMigrationsForSafetyCheck(status, execOrder), conn.Info().Dialect)
+		findings, err := lintPendingDestructive(migrationsFS, pendingMigrationsForRun(status, execOrder), conn.Info().Dialect)
 		if err != nil {
 			return fmt.Errorf("error checking pending migration safety: %w", err)
 		}
@@ -317,9 +350,19 @@ func migrateUpCommand(cmd *cobra.Command, _ []string) error {
 	}
 
 	fmt.Println()
+	preflightHook := dbcli.LockedMigrationPreflightHook(dryRun, preflight.Options{
+		Direction:          preflight.DirectionUp,
+		DatabaseURL:        dbURL,
+		DisplayDatabaseURL: dbschema.FormatDatabaseURL(dbURL),
+		Dialect:            conn.Info().Dialect,
+		Command:            preUpHook,
+		PostgresDumpDir:    pgDumpTo,
+		MySQLDumpDir:       mySQLDumpTo,
+		WebhookURL:         webhook,
+	})
 
 	// Run migrations
-	err = mig.MigrateUp(context.Background())
+	err = mig.MigrateUpWithPreflight(context.Background(), preflightHook)
 	if err != nil {
 		return fmt.Errorf("error running migrations: %w", err)
 	}
@@ -342,7 +385,7 @@ func migrateUpCommand(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-func pendingMigrationsForSafetyCheck(status *migrator.MigrationStatus, execOrder migrator.ExecOrder) []int64 {
+func pendingMigrationsForRun(status *migrator.MigrationStatus, execOrder migrator.ExecOrder) []int64 {
 	if execOrder != migrator.ExecOrderLinearSkip {
 		return status.PendingMigrations
 	}

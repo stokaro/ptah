@@ -28,6 +28,30 @@ type MigrationStatus struct {
 	DirtyRevision        *MigrationRevision `json:"dirty_revision,omitempty"`
 }
 
+// MigrationDirection identifies the migration direction in a selected plan.
+type MigrationDirection string
+
+const (
+	// MigrationDirectionUp applies pending migrations.
+	MigrationDirectionUp MigrationDirection = "up"
+	// MigrationDirectionDown rolls applied migrations back.
+	MigrationDirectionDown MigrationDirection = "down"
+)
+
+// MigrationPlan describes the migration work selected while holding the
+// migration lock.
+type MigrationPlan struct {
+	Direction      MigrationDirection
+	CurrentVersion int64
+	TargetVersion  int64
+	Versions       []int64
+}
+
+// PreMigrationHook runs after the migrator has acquired its migration lock and
+// selected the final migration plan, but before it changes schema or revision
+// state.
+type PreMigrationHook func(ctx context.Context, plan MigrationPlan) error
+
 // Migrator handles database migrations for ptah
 type Migrator struct {
 	conn                 *dbschema.DatabaseConnection
@@ -666,10 +690,18 @@ func (m *Migrator) GetMigrationStatus(ctx context.Context) (*MigrationStatus, er
 
 // MigrateUp migrates the database up to the latest version
 func (m *Migrator) MigrateUp(ctx context.Context) error {
-	return m.withMigrationLock(ctx, "migrate up", m.migrateUpLocked)
+	return m.MigrateUpWithPreflight(ctx, nil)
 }
 
-func (m *Migrator) migrateUpLocked(ctx context.Context) error {
+// MigrateUpWithPreflight migrates up after running hook inside the migration
+// advisory lock. A nil hook is equivalent to [Migrator.MigrateUp].
+func (m *Migrator) MigrateUpWithPreflight(ctx context.Context, hook PreMigrationHook) error {
+	return m.withMigrationLock(ctx, "migrate up", func(ctx context.Context) error {
+		return m.migrateUpLocked(ctx, hook)
+	})
+}
+
+func (m *Migrator) migrateUpLocked(ctx context.Context, hook PreMigrationHook) error {
 	// Initialize the migrations table
 	if err := m.Initialize(ctx); err != nil {
 		return fmt.Errorf("failed to initialize migrations table: %w", err)
@@ -690,6 +722,14 @@ func (m *Migrator) migrateUpLocked(ctx context.Context) error {
 	}
 	migrationsToApply, err := m.migrationsToApply(migrations, appliedMigrations, 0)
 	if err != nil {
+		return err
+	}
+	if err := runPreMigrationHook(ctx, hook, MigrationPlan{
+		Direction:      MigrationDirectionUp,
+		CurrentVersion: currentVersion,
+		TargetVersion:  upTargetVersion(currentVersion, migrationsToApply),
+		Versions:       migrationVersions(migrationsToApply),
+	}); err != nil {
 		return err
 	}
 
@@ -723,17 +763,23 @@ func (m *Migrator) migrateDownLocked(ctx context.Context) error {
 		return fmt.Errorf("failed to get previous version: %w", err)
 	}
 
-	return m.migrateDownToLocked(ctx, targetVersion)
+	return m.migrateDownToLocked(ctx, targetVersion, nil)
 }
 
 // MigrateDownTo migrates the database down to the specified target version
 func (m *Migrator) MigrateDownTo(ctx context.Context, targetVersion int64) error {
+	return m.MigrateDownToWithPreflight(ctx, targetVersion, nil)
+}
+
+// MigrateDownToWithPreflight migrates down after running hook inside the
+// migration advisory lock. A nil hook is equivalent to [Migrator.MigrateDownTo].
+func (m *Migrator) MigrateDownToWithPreflight(ctx context.Context, targetVersion int64, hook PreMigrationHook) error {
 	return m.withMigrationLock(ctx, "migrate down", func(ctx context.Context) error {
-		return m.migrateDownToLocked(ctx, targetVersion)
+		return m.migrateDownToLocked(ctx, targetVersion, hook)
 	})
 }
 
-func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64) error {
+func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64, hook PreMigrationHook) error {
 	// Initialize the migrations table
 	if err := m.Initialize(ctx); err != nil {
 		return fmt.Errorf("failed to initialize migrations table: %w", err)
@@ -760,6 +806,14 @@ func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64)
 	}
 	migrationsToRollback, err := migrationsToRollback(migrationMap, appliedMigrations, targetVersion)
 	if err != nil {
+		return err
+	}
+	if err := runPreMigrationHook(ctx, hook, MigrationPlan{
+		Direction:      MigrationDirectionDown,
+		CurrentVersion: currentVersion,
+		TargetVersion:  downTargetVersion(appliedMigrations, targetVersion),
+		Versions:       migrationVersions(migrationsToRollback),
+	}); err != nil {
 		return err
 	}
 
@@ -816,7 +870,7 @@ func (m *Migrator) migrateToLocked(ctx context.Context, targetVersion int64) err
 	}
 
 	// Migrate down to target version
-	return m.migrateDownToLocked(ctx, targetVersion)
+	return m.migrateDownToLocked(ctx, targetVersion, nil)
 }
 
 // MigrationProvider returns the migration provider
@@ -848,6 +902,46 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int64) error {
 
 	m.logger.Info("Migrated successfully", "targetVersion", targetVersion)
 	return nil
+}
+
+func runPreMigrationHook(ctx context.Context, hook PreMigrationHook, plan MigrationPlan) error {
+	if hook == nil || len(plan.Versions) == 0 {
+		return nil
+	}
+	plan.Versions = slices.Clone(plan.Versions)
+	return hook(ctx, plan)
+}
+
+func migrationVersions(migrations []*Migration) []int64 {
+	versions := make([]int64, 0, len(migrations))
+	for _, migration := range migrations {
+		versions = append(versions, migration.Version)
+	}
+	return versions
+}
+
+func maxMigrationVersion(migrations []*Migration) int64 {
+	var maxVersion int64
+	for _, migration := range migrations {
+		if migration.Version > maxVersion {
+			maxVersion = migration.Version
+		}
+	}
+	return maxVersion
+}
+
+func upTargetVersion(currentVersion int64, migrations []*Migration) int64 {
+	return max(currentVersion, maxMigrationVersion(migrations))
+}
+
+func downTargetVersion(applied []int64, targetVersion int64) int64 {
+	var finalVersion int64
+	for _, version := range applied {
+		if version <= targetVersion && version > finalVersion {
+			finalVersion = version
+		}
+	}
+	return finalVersion
 }
 
 func (m *Migrator) applyUpMigrations(ctx context.Context, migrations []*Migration) error {

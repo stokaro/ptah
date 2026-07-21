@@ -95,6 +95,11 @@ type yamlMigration struct {
 	ConnectTimeout       string `yaml:"connect_timeout"`
 	MigrationLockTimeout string `yaml:"migration_lock_timeout"`
 	ExecOrder            string `yaml:"exec_order"`
+	PreUpHook            string `yaml:"pre_up_hook"`
+	PreDownHook          string `yaml:"pre_down_hook"`
+	PostgresDumpTo       string `yaml:"pg_dump_to"`
+	MySQLDumpTo          string `yaml:"mysqldump_to"`
+	Webhook              string `yaml:"webhook"`
 }
 
 type yamlLint struct {

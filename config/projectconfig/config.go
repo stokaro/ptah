@@ -51,6 +51,11 @@ type MigrationConfig struct {
 	ConnectTimeout       string
 	MigrationLockTimeout string
 	ExecOrder            string
+	PreUpHook            string
+	PreDownHook          string
+	PostgresDumpTo       string
+	MySQLDumpTo          string
+	Webhook              string
 }
 
 // LintConfig is the lint section of the project config IR.
@@ -119,6 +124,21 @@ func mergeMigration(base, override MigrationConfig) MigrationConfig {
 	}
 	if override.ExecOrder != "" {
 		result.ExecOrder = override.ExecOrder
+	}
+	if override.PreUpHook != "" {
+		result.PreUpHook = override.PreUpHook
+	}
+	if override.PreDownHook != "" {
+		result.PreDownHook = override.PreDownHook
+	}
+	if override.PostgresDumpTo != "" {
+		result.PostgresDumpTo = override.PostgresDumpTo
+	}
+	if override.MySQLDumpTo != "" {
+		result.MySQLDumpTo = override.MySQLDumpTo
+	}
+	if override.Webhook != "" {
+		result.Webhook = override.Webhook
 	}
 	return result
 }

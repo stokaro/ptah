@@ -644,6 +644,8 @@ type Migration struct{ ... }
 type MigrationDirFormat string
     const MigrationDirFormatAuto MigrationDirFormat = "auto" ...
     func ParseMigrationDirFormat(value string) (MigrationDirFormat, error)
+type MigrationDirection string
+    const MigrationDirectionUp MigrationDirection = "up" ...
 type MigrationExecutionError struct{ ... }
 type MigrationFile struct{ ... }
     func DiscoverMigrationFiles(fsys fs.FS, format MigrationDirFormat) ([]MigrationFile, error)
@@ -655,6 +657,7 @@ type MigrationFunc func(context.Context, *dbschema.DatabaseConnection) error
     func MigrationFuncFromSQLFilenameWithInterceptor(filename string, fsys fs.FS, interceptor StatementInterceptor) MigrationFunc
 type MigrationLockTimeoutError struct{ ... }
 type MigrationPair struct{ ... }
+type MigrationPlan struct{ ... }
 type MigrationProvider interface{ ... }
 type MigrationRevision struct{ ... }
 type MigrationStatus struct{ ... }
@@ -665,6 +668,7 @@ type Migrator struct{ ... }
     func NewMigrator(conn *dbschema.DatabaseConnection, provider MigrationProvider) *Migrator
 type OutOfOrderError struct{ ... }
     func NewOutOfOrderError(currentVersion int64, versions []int64) *OutOfOrderError
+type PreMigrationHook func(ctx context.Context, plan MigrationPlan) error
 type RegisteredMigrationProvider struct{ ... }
     func NewRegisteredMigrationProvider(migrations ...*Migration) *RegisteredMigrationProvider
 type RepairMigrationOptions struct{ ... }

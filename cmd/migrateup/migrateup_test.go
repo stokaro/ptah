@@ -4,15 +4,19 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/spf13/pflag"
 
+	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/migratesum"
 	"github.com/stokaro/ptah/migration/lint"
@@ -24,8 +28,8 @@ import (
 // on the integrity check before ever touching the database, so a bogus,
 // unreachable --db-url is never dialed.
 //
-// The command uses package-global flag state, so this package keeps a single
-// command-level test to avoid re-registering flags.
+// The command uses package-global flag state, so command-level tests reset the
+// relevant flag values before and after execution.
 func TestMigrateUp_VerifySumAbortsOnDriftBeforeConnecting(t *testing.T) {
 	c := qt.New(t)
 
@@ -42,6 +46,8 @@ func TestMigrateUp_VerifySumAbortsOnDriftBeforeConnecting(t *testing.T) {
 	write("0000000001_init.up.sql", "CREATE TABLE t (id BIGINT);\n")
 
 	cmd := NewMigrateUpCommand()
+	resetMigrateUpCommandForTest(c, cmd)
+	t.Cleanup(func() { resetMigrateUpCommandForTest(c, cmd) })
 	c.Assert(cmd.Flag(migrationLockTimeoutFlag), qt.IsNotNil)
 
 	var out, errOut bytes.Buffer
@@ -149,6 +155,8 @@ func TestMigrateUpCommandHonorsLintConfigSeverityWithPostgres(t *testing.T) {
 	writeMigrateUpFile(c, widenDir, "0000000002_widen_email.down.sql", fmt.Sprintf("ALTER TABLE %s ALTER COLUMN email TYPE VARCHAR(255);\n", widenTable))
 
 	cmd := NewMigrateUpCommand()
+	resetMigrateUpCommandForTest(c, cmd)
+	t.Cleanup(func() { resetMigrateUpCommandForTest(c, cmd) })
 	var stdout, stderr bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
@@ -183,6 +191,7 @@ func TestMigrateUpCommandHonorsLintConfigSeverityWithPostgres(t *testing.T) {
 	writeMigrateUpFile(c, dropDir, "0000000003_drop_table.down.sql", fmt.Sprintf("CREATE TABLE %s (id SERIAL PRIMARY KEY, email VARCHAR(512));\n", dropTable))
 
 	cmd = NewMigrateUpCommand()
+	resetMigrateUpCommandForTest(c, cmd)
 	stdout.Reset()
 	stderr.Reset()
 	cmd.SetOut(&stdout)
@@ -204,7 +213,164 @@ func TestMigrateUpCommandHonorsLintConfigSeverityWithPostgres(t *testing.T) {
 	c.Assert(dropExists, qt.IsFalse)
 }
 
-func TestPendingMigrationsForSafetyCheckSkipsOutOfOrderWhenLinearSkip(t *testing.T) {
+func TestMigrateUpCommandPreflightHookAbortPreventsMigration(t *testing.T) {
+	c := qt.New(t)
+
+	dir := t.TempDir()
+	writeMigrateUpFile(c, dir, "0000000001_create_guarded.up.sql", "CREATE TABLE guarded (id INTEGER PRIMARY KEY);\n")
+	writeMigrateUpFile(c, dir, "0000000001_create_guarded.down.sql", "DROP TABLE guarded;\n")
+
+	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
+	cmd := NewMigrateUpCommand()
+	resetMigrateUpCommandForTest(c, cmd)
+	t.Cleanup(func() { resetMigrateUpCommandForTest(c, cmd) })
+	cmd.SetArgs([]string{
+		"--db-url", dbURL,
+		"--migrations-dir", dir,
+		"--pre-up-hook", "echo backup refused; exit 7",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, "(?s).*up pre-flight custom command hook failed: exit status 7\nbackup refused")
+
+	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	var count int
+	err = conn.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'guarded'").Scan(&count)
+	c.Assert(err, qt.IsNil)
+	c.Assert(count, qt.Equals, 0)
+}
+
+func TestMigrateUpCommandReadsPreflightHookFromConfig(t *testing.T) {
+	c := qt.New(t)
+
+	dir := t.TempDir()
+	writeMigrateUpFile(c, dir, "0000000001_create_config_guarded.up.sql", "CREATE TABLE config_guarded (id INTEGER PRIMARY KEY);\n")
+	writeMigrateUpFile(c, dir, "0000000001_create_config_guarded.down.sql", "DROP TABLE config_guarded;\n")
+	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
+	configPath := filepath.Join(t.TempDir(), "ptah.yaml")
+	config := fmt.Appendf(nil, `url: %s
+migration:
+  dir: %s
+  pre_up_hook: "echo config backup refused; exit 9"
+`, dbURL, dir)
+	c.Assert(os.WriteFile(configPath, config, 0o600), qt.IsNil)
+
+	cmd := NewMigrateUpCommand()
+	resetMigrateUpCommandForTest(c, cmd)
+	t.Cleanup(func() { resetMigrateUpCommandForTest(c, cmd) })
+	cmd.SetArgs([]string{"--config", configPath})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, "(?s).*up pre-flight custom command hook failed: exit status 9\nconfig backup refused")
+}
+
+func TestMigrateUpCommandPgDumpHookWritesArtifact(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake pg_dump shell script requires a POSIX shell")
+	}
+	c := qt.New(t)
+	ctx := context.Background()
+	dbURL := postgresTestURL()
+	if dbURL == "" {
+		t.Skip("POSTGRES_TEST_DSN, POSTGRES_URL, or TEST_DATABASE_URL is not set")
+	}
+	tableName := fmt.Sprintf("ptah_preflight_pg_dump_%d", time.Now().UnixNano())
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	cleanupPostgresObjects(t, conn, tableName)
+	defer cleanupPostgresObjects(t, conn, tableName)
+
+	dir := t.TempDir()
+	writeMigrateUpFile(c, dir, "0000000001_create_dump_guarded.up.sql", fmt.Sprintf("CREATE TABLE %s (id BIGINT);\n", tableName))
+	writeMigrateUpFile(c, dir, "0000000001_create_dump_guarded.down.sql", fmt.Sprintf("DROP TABLE %s;\n", tableName))
+
+	argsLog := filepath.Join(t.TempDir(), "pg_dump_args.log")
+	fakeBin := filepath.Join(t.TempDir(), "pg_dump")
+	fakeScript := fmt.Appendf(nil, `#!/bin/sh
+out=""
+: > %[1]q
+while [ "$#" -gt 0 ]; do
+  printf '%%s\n' "$1" >> %[1]q
+  if [ "$1" = "--file" ]; then
+    shift
+    out="$1"
+    printf '%%s\n' "$1" >> %[1]q
+  fi
+  shift
+done
+if [ -z "$out" ]; then
+  echo "missing --file" >&2
+  exit 64
+fi
+printf 'fake custom dump\n' > "$out"
+`, argsLog)
+	c.Assert(os.WriteFile(fakeBin, fakeScript, 0o600), qt.IsNil)
+	c.Assert(os.Chmod(fakeBin, 0o700), qt.IsNil)
+	t.Setenv("PATH", filepath.Dir(fakeBin)+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	dumpDir := t.TempDir()
+	cmd := NewMigrateUpCommand()
+	resetMigrateUpCommandForTest(c, cmd)
+	t.Cleanup(func() { resetMigrateUpCommandForTest(c, cmd) })
+	cmd.SetArgs([]string{
+		"--db-url", dbURL,
+		"--migrations-dir", dir,
+		"--pg-dump-to", dumpDir,
+	})
+
+	err = cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	matches, err := filepath.Glob(filepath.Join(dumpDir, "ptah_pre_v0_to_v1_*.dump"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(matches, qt.HasLen, 1)
+	dumpData, err := os.ReadFile(matches[0])
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(dumpData), qt.Equals, "fake custom dump\n")
+
+	argsData, err := os.ReadFile(argsLog)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(argsData), qt.Contains, "--format=custom\n")
+	c.Assert(string(argsData), qt.Contains, "--file\n"+matches[0]+"\n")
+	if password := databaseURLPasswordForTest(dbURL); password != "" {
+		c.Assert(string(argsData), qt.Not(qt.Contains), password)
+	}
+}
+
+func TestMigrateUpCommandDryRunSkipsPreflightSideEffects(t *testing.T) {
+	c := qt.New(t)
+
+	dir := t.TempDir()
+	writeMigrateUpFile(c, dir, "0000000001_create_dry_guarded.up.sql", "CREATE TABLE dry_guarded (id INTEGER PRIMARY KEY);\n")
+	writeMigrateUpFile(c, dir, "0000000001_create_dry_guarded.down.sql", "DROP TABLE dry_guarded;\n")
+	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
+
+	cmd := NewMigrateUpCommand()
+	resetMigrateUpCommandForTest(c, cmd)
+	t.Cleanup(func() { resetMigrateUpCommandForTest(c, cmd) })
+	cmd.SetArgs([]string{
+		"--db-url", dbURL,
+		"--migrations-dir", dir,
+		"--dry-run",
+		"--pre-up-hook", "echo should not run; exit 97",
+		"--pg-dump-to", filepath.Join(t.TempDir(), "pg"),
+		"--mysqldump-to", filepath.Join(t.TempDir(), "mysql"),
+		"--webhook", "https://ops.example/hooks/ptah",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+}
+
+func TestPendingMigrationsForRunSkipsOutOfOrderWhenLinearSkip(t *testing.T) {
 	c := qt.New(t)
 
 	status := &migrator.MigrationStatus{
@@ -213,17 +379,17 @@ func TestPendingMigrationsForSafetyCheckSkipsOutOfOrderWhenLinearSkip(t *testing
 	}
 
 	c.Assert(
-		pendingMigrationsForSafetyCheck(status, migrator.ExecOrderLinear),
+		pendingMigrationsForRun(status, migrator.ExecOrderLinear),
 		qt.DeepEquals,
 		[]int64{3, 6},
 	)
 	c.Assert(
-		pendingMigrationsForSafetyCheck(status, migrator.ExecOrderNonLinear),
+		pendingMigrationsForRun(status, migrator.ExecOrderNonLinear),
 		qt.DeepEquals,
 		[]int64{3, 6},
 	)
 	c.Assert(
-		pendingMigrationsForSafetyCheck(status, migrator.ExecOrderLinearSkip),
+		pendingMigrationsForRun(status, migrator.ExecOrderLinearSkip),
 		qt.DeepEquals,
 		[]int64{6},
 	)
@@ -241,6 +407,52 @@ func postgresTestURL() string {
 func writeMigrateUpFile(c *qt.C, dir, name, content string) {
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
+}
+
+func databaseURLPasswordForTest(dbURL string) string {
+	parsed, err := url.Parse(dbURL)
+	if err != nil || parsed.User == nil {
+		return ""
+	}
+	password, ok := parsed.User.Password()
+	if !ok {
+		return ""
+	}
+	return password
+}
+
+func resetMigrateUpCommandForTest(c *qt.C, cmd interface{ Flag(string) *pflag.Flag }) {
+	c.Helper()
+	setMigrateUpFlagForTest(c, cmd, dbURLFlag, "")
+	setMigrateUpFlagForTest(c, cmd, migrationsFlag, "")
+	setMigrateUpFlagForTest(c, cmd, dryRunFlag, "false")
+	setMigrateUpFlagForTest(c, cmd, verboseFlag, "false")
+	setMigrateUpFlagForTest(c, cmd, verifySumFlag, "false")
+	setMigrateUpFlagForTest(c, cmd, dirFormatFlag, string(migrator.MigrationDirFormatAuto))
+	setMigrateUpFlagForTest(c, cmd, atlasEnvFlag, "")
+	setMigrateUpFlagForTest(c, cmd, execOrderFlag, string(migrator.ExecOrderLinear))
+	setMigrateUpFlagForTest(c, cmd, migrationLockTimeoutFlag, "")
+	setMigrateUpFlagForTest(c, cmd, lockTimeoutFlag, "")
+	setMigrateUpFlagForTest(c, cmd, statementTimeoutFlag, "")
+	setMigrateUpFlagForTest(c, cmd, allowDestructiveFlag, "false")
+	setMigrateUpFlagForTest(c, cmd, preUpHookFlag, "")
+	setMigrateUpFlagForTest(c, cmd, pgDumpToFlag, "")
+	setMigrateUpFlagForTest(c, cmd, mySQLDumpToFlag, "")
+	setMigrateUpFlagForTest(c, cmd, webhookFlag, "")
+	setMigrateUpFlagForTest(c, cmd, dbcli.ConfigFlagName, "")
+	setMigrateUpFlagForTest(c, cmd, dbcli.EnvFlagName, "")
+	setMigrateUpFlagForTest(c, cmd, dbcli.MigrationsSchemaFlagName, "")
+	setMigrateUpFlagForTest(c, cmd, dbcli.MigrationsTableFlagName, "")
+	setMigrateUpFlagForTest(c, cmd, dbcli.RevisionTableFormatFlagName, string(migrator.RevisionTableFormatPtah))
+	setMigrateUpFlagForTest(c, cmd, dbcli.ConnectTimeoutFlagName, dbcli.DefaultConnectTimeout.String())
+}
+
+func setMigrateUpFlagForTest(c *qt.C, cmd interface{ Flag(string) *pflag.Flag }, name, value string) {
+	c.Helper()
+	flag := cmd.Flag(name)
+	c.Assert(flag, qt.IsNotNil, qt.Commentf("flag %s", name))
+	c.Assert(flag.Value.Set(value), qt.IsNil)
+	flag.Changed = false
 }
 
 func cleanupPostgresObjects(t *testing.T, conn *dbschema.DatabaseConnection, names ...string) {
