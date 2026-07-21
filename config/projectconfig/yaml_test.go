@@ -24,6 +24,11 @@ migration:
   connect_timeout: 3s
   migration_lock_timeout: 4s
   exec_order: linear
+  pre_up_hook: base-backup
+  pre_down_hook: base-rollback-backup
+  pg_dump_to: ./base-pg-dumps
+  mysqldump_to: ./base-mysql-dumps
+  webhook: https://hooks.example/base
 lint:
   dialect: mysql
   disabled-rules: [MF103]
@@ -41,6 +46,11 @@ env:
       connect_timeout: 7s
       migration_lock_timeout: 8s
       exec_order: non-linear
+      pre_up_hook: prod-backup
+      pre_down_hook: prod-rollback-backup
+      pg_dump_to: ./prod-pg-dumps
+      mysqldump_to: ./prod-mysql-dumps
+      webhook: https://hooks.example/prod
     lint:
       dialect: postgres
       disabled-rules: [DS103]
@@ -63,6 +73,11 @@ env:
 	c.Assert(cfg.Migration.ConnectTimeout, qt.Equals, "7s")
 	c.Assert(cfg.Migration.MigrationLockTimeout, qt.Equals, "8s")
 	c.Assert(cfg.Migration.ExecOrder, qt.Equals, "non-linear")
+	c.Assert(cfg.Migration.PreUpHook, qt.Equals, "prod-backup")
+	c.Assert(cfg.Migration.PreDownHook, qt.Equals, "prod-rollback-backup")
+	c.Assert(cfg.Migration.PostgresDumpTo, qt.Equals, "./prod-pg-dumps")
+	c.Assert(cfg.Migration.MySQLDumpTo, qt.Equals, "./prod-mysql-dumps")
+	c.Assert(cfg.Migration.Webhook, qt.Equals, "https://hooks.example/prod")
 	c.Assert(cfg.Lint.Dialect, qt.Equals, "postgres")
 	c.Assert(cfg.Lint.DisabledRules, qt.DeepEquals, []string{"DS103"})
 }
@@ -91,6 +106,16 @@ func TestParsePtahProjectConfigRejectsUnknownOnlineDDLKeys(t *testing.T) {
       tooll: ghost
 `), "ptah.yaml", "prod")
 	c.Assert(err, qt.ErrorMatches, `(?s)failed to parse ptah config ptah\.yaml: .*field tooll not found.*`)
+}
+
+func TestParsePtahProjectConfigRejectsUnknownMigrationPreflightKeys(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := projectconfig.ParsePtah([]byte(`migration:
+  pg_dumpto: ./backups
+`), "ptah.yaml", "")
+
+	c.Assert(err, qt.ErrorMatches, `(?s)failed to parse ptah config ptah\.yaml: .*field pg_dumpto not found.*`)
 }
 
 func TestParsePtahProjectConfigAllowsOnlineDDLSection(t *testing.T) {

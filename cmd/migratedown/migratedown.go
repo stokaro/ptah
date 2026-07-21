@@ -13,6 +13,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/onlineddl"
+	"github.com/stokaro/ptah/internal/preflight"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
@@ -46,6 +47,10 @@ const (
 	migrationLockTimeoutFlag = "migration-lock-timeout"
 	lockTimeoutFlag          = "lock-timeout"
 	statementTimeoutFlag     = "statement-timeout"
+	preDownHookFlag          = "pre-down-hook"
+	pgDumpToFlag             = "pg-dump-to"
+	mySQLDumpToFlag          = "mysqldump-to"
+	webhookFlag              = "webhook"
 )
 
 var migrateDownFlags = map[string]cobraflags.Flag{
@@ -109,6 +114,26 @@ var migrateDownFlags = map[string]cobraflags.Flag{
 		Value: "",
 		Usage: "Default per-migration statement timeout, such as 30s or 2m",
 	},
+	preDownHookFlag: &cobraflags.StringFlag{
+		Name:  preDownHookFlag,
+		Value: "",
+		Usage: "Shell command to run before rolling back migrations; aborts unless it exits 0",
+	},
+	pgDumpToFlag: &cobraflags.StringFlag{
+		Name:  pgDumpToFlag,
+		Value: "",
+		Usage: "Directory where pg_dump writes a custom-format backup before rolling back migrations",
+	},
+	mySQLDumpToFlag: &cobraflags.StringFlag{
+		Name:  mySQLDumpToFlag,
+		Value: "",
+		Usage: "Directory where mysqldump writes a SQL backup before rolling back migrations",
+	},
+	webhookFlag: &cobraflags.StringFlag{
+		Name:  webhookFlag,
+		Value: "",
+		Usage: "Webhook URL to POST migration metadata before rolling back migrations; must return HTTP 200",
+	},
 	dbcli.ConnectTimeoutFlagName:      dbcli.NewConnectTimeoutFlag(),
 	dbcli.ConfigFlagName:              dbcli.NewConfigFlag(),
 	dbcli.EnvFlagName:                 dbcli.NewEnvFlag(),
@@ -141,6 +166,10 @@ func migrateDownCommand(cmd *cobra.Command, _ []string) error {
 	migrationLockTimeoutValue := migrateDownFlags[migrationLockTimeoutFlag].GetString()
 	lockTimeout := migrateDownFlags[lockTimeoutFlag].GetString()
 	statementTimeout := migrateDownFlags[statementTimeoutFlag].GetString()
+	preDownHook := migrateDownFlags[preDownHookFlag].GetString()
+	pgDumpTo := migrateDownFlags[pgDumpToFlag].GetString()
+	mySQLDumpTo := migrateDownFlags[mySQLDumpToFlag].GetString()
+	webhook := migrateDownFlags[webhookFlag].GetString()
 	migrationsSchema := migrateDownFlags[dbcli.MigrationsSchemaFlagName].GetString()
 	migrationsTable := migrateDownFlags[dbcli.MigrationsTableFlagName].GetString()
 	revisionFormatValue := migrateDownFlags[dbcli.RevisionTableFormatFlagName].GetString()
@@ -158,6 +187,10 @@ func migrateDownCommand(cmd *cobra.Command, _ []string) error {
 	migrationLockTimeoutValue = dbcli.EffectiveString(cmd, migrationLockTimeoutFlag, migrationLockTimeoutValue, projectCfg.Migration.MigrationLockTimeout)
 	lockTimeout = dbcli.EffectiveString(cmd, lockTimeoutFlag, lockTimeout, projectCfg.Migration.LockTimeout)
 	statementTimeout = dbcli.EffectiveString(cmd, statementTimeoutFlag, statementTimeout, projectCfg.Migration.StatementTimeout)
+	preDownHook = dbcli.EffectiveString(cmd, preDownHookFlag, preDownHook, projectCfg.Migration.PreDownHook)
+	pgDumpTo = dbcli.EffectiveString(cmd, pgDumpToFlag, pgDumpTo, projectCfg.Migration.PostgresDumpTo)
+	mySQLDumpTo = dbcli.EffectiveString(cmd, mySQLDumpToFlag, mySQLDumpTo, projectCfg.Migration.MySQLDumpTo)
+	webhook = dbcli.EffectiveString(cmd, webhookFlag, webhook, projectCfg.Migration.Webhook)
 	migrationsSchema = dbcli.EffectiveString(cmd, dbcli.MigrationsSchemaFlagName, migrationsSchema, projectCfg.Migration.RevisionsSchema)
 	migrationsTable = dbcli.EffectiveString(cmd, dbcli.MigrationsTableFlagName, migrationsTable, projectCfg.Migration.RevisionsTable)
 	revisionFormatValue = dbcli.EffectiveString(cmd, dbcli.RevisionTableFormatFlagName, revisionFormatValue, projectCfg.Migration.RevisionFormat)
@@ -324,8 +357,19 @@ func migrateDownCommand(cmd *cobra.Command, _ []string) error {
 		fmt.Println()
 	}
 
+	preflightHook := dbcli.LockedMigrationPreflightHook(dryRun, preflight.Options{
+		Direction:          preflight.DirectionDown,
+		DatabaseURL:        dbURL,
+		DisplayDatabaseURL: dbschema.FormatDatabaseURL(dbURL),
+		Dialect:            conn.Info().Dialect,
+		Command:            preDownHook,
+		PostgresDumpDir:    pgDumpTo,
+		MySQLDumpDir:       mySQLDumpTo,
+		WebhookURL:         webhook,
+	})
+
 	// Run down migrations
-	err = mig.MigrateDownTo(context.Background(), targetVersion)
+	err = mig.MigrateDownToWithPreflight(context.Background(), targetVersion, preflightHook)
 	if err != nil {
 		return fmt.Errorf("error running down migrations: %w", err)
 	}

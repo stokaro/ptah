@@ -29,6 +29,11 @@ env:
       connect_timeout: 10s
       migration_lock_timeout: 15s
       exec_order: linear
+      pre_up_hook: ./scripts/backup-before-up
+      pre_down_hook: ./scripts/backup-before-down
+      pg_dump_to: ./backups/postgres
+      mysqldump_to: ./backups/mysql
+      webhook: https://ops.example/hooks/ptah-migration
     lint:
       dialect: postgres
       disabled-rules: [MF103]
@@ -76,6 +81,11 @@ env:
 | `migration.connect_timeout` | Initial database connection timeout |
 | `migration.migration_lock_timeout` | Session-level migration advisory lock timeout |
 | `migration.exec_order` | Pending migration execution policy |
+| `migration.pre_up_hook` | Shell command that must succeed before `migrations up` changes the schema |
+| `migration.pre_down_hook` | Shell command that must succeed before `migrations down` changes the schema |
+| `migration.pg_dump_to` | Directory for a PostgreSQL-compatible pre-migration custom-format dump |
+| `migration.mysqldump_to` | Directory for a MySQL/MariaDB pre-migration SQL dump |
+| `migration.webhook` | URL that receives migration metadata before `migrations up` or `migrations down`; it must return HTTP 200 |
 | `lint.dialect` | Default lint dialect |
 | `lint.disabled-rules` | Default lint disabled rule codes or families |
 | `lint.latest` | Atlas-compatible project config value preserved in the IR |
@@ -83,6 +93,14 @@ env:
 
 `migrate.generate.shadow_db` is also accepted as the older spelling for `dev`.
 When both are present, `dev` wins.
+
+Custom pre-flight hook commands receive the raw `PTAH_DB_URL`, `PTAH_DIALECT`,
+`PTAH_CURRENT_VERSION`, and `PTAH_TARGET_VERSION` environment variables.
+`pg_dump_to` writes files named `ptah_pre_v{from}_to_v{to}_{ts}.dump`, and
+`mysqldump_to` writes `ptah_pre_v{from}_to_v{to}_{ts}.sql`, with a
+high-precision UTC timestamp. Webhooks have a 30-second timeout and redirects
+are not followed. Dry-run migration commands do not execute hooks because
+backups and webhooks are side effects.
 
 ## Precedence
 

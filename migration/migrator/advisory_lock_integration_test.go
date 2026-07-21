@@ -82,6 +82,65 @@ func TestMigrationAdvisoryLock_PostgresTimeoutIntegration(t *testing.T) {
 	c.Assert(migrator.IsMigrationLockTimeout(err), qt.IsTrue)
 }
 
+func TestMigrationPreflightHookRunsInsidePostgresAdvisoryLock(t *testing.T) {
+	dbURL := postgresTestURL(t)
+	c := qt.New(t)
+	ctx := context.Background()
+
+	baseConn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = baseConn.Close() }()
+
+	names := issue124Names(time.Now().UnixNano())
+	cleanupIssue124(t, baseConn, names)
+	defer cleanupIssue124(t, baseConn, names)
+
+	firstConn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = firstConn.Close() }()
+
+	secondConn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = secondConn.Close() }()
+
+	hookStarted := make(chan struct{})
+	releaseHook := make(chan struct{})
+	firstErr := make(chan error, 1)
+	go func() {
+		firstErr <- issue124Migrator(firstConn, names.migrationsTable, issue124Migrations(names)).
+			MigrateUpWithPreflight(ctx, func(ctx context.Context, _ migrator.MigrationPlan) error {
+				close(hookStarted)
+				select {
+				case <-releaseHook:
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			})
+	}()
+
+	select {
+	case <-hookStarted:
+	case <-time.After(5 * time.Second):
+		close(releaseHook)
+		t.Fatal("pre-flight hook did not start")
+	}
+
+	err = issue124Migrator(secondConn, names.migrationsTable, issue124Migrations(names)).
+		WithMigrationLockTimeout(100 * time.Millisecond).
+		MigrateUp(ctx)
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(migrator.IsMigrationLockTimeout(err), qt.IsTrue)
+
+	close(releaseHook)
+	select {
+	case err := <-firstErr:
+		c.Assert(err, qt.IsNil)
+	case <-time.After(5 * time.Second):
+		t.Fatal("first migration did not finish after releasing pre-flight hook")
+	}
+}
+
 func TestMigrationAdvisoryLock_MySQLDefaultTimeoutIntegration(t *testing.T) {
 	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
 	runIssue124AdvisoryLockDefaultTimeoutIntegration(t, dbURL)
