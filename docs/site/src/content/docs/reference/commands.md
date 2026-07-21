@@ -77,6 +77,7 @@ executable name.
 | `ptah atlas migrate import` | Registered path; runtime behavior is not implemented yet. |
 | `ptah atlas schema inspect` | Forwards to `ptah db read`. |
 | `ptah atlas schema diff` | Forwards to `ptah schema compare`. |
+| `ptah atlas schema fmt` | Formats local `.hcl` files using HCL canonical layout. |
 
 Run `ptah <command> --help` or `ptah atlas <command> --help` for exact flags in
 the version you are using. Run `ptah-compat <command> --help` for the same

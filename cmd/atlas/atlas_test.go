@@ -2,6 +2,7 @@ package atlas
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -559,6 +560,141 @@ func TestNewAtlasCommand_MigrateNewAcceptsAtlasDirFlag(t *testing.T) {
 	matches, globErr := filepath.Glob(filepath.Join(dir, "*_manual_hotfix.*.sql"))
 	c.Assert(globErr, qt.IsNil)
 	c.Assert(matches, qt.HasLen, 2)
+}
+
+func TestNewAtlasCommand_SchemaFmtFormatsHCLFiles(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "schema.hcl")
+	c.Assert(os.WriteFile(path, []byte(`schema "main"{}
+table "users"{
+schema=schema.main
+column "id"{
+type=int
+}
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"schema", "fmt", path})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, path+"\n")
+	formatted, readErr := os.ReadFile(path)
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(string(formatted), qt.Contains, `schema "main" {}`)
+	c.Assert(string(formatted), qt.Contains, "schema = schema.main")
+	c.Assert(string(formatted), qt.Not(qt.Contains), "schema=schema.main")
+}
+
+func TestNewAtlasCommand_SchemaFmtWalksDirectoriesAndPrintsOnlyChangedFiles(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	changed := filepath.Join(dir, "changed.hcl")
+	nestedChanged := filepath.Join(dir, "nested", "changed.hcl")
+	unchanged := filepath.Join(dir, "nested", "unchanged.hcl")
+	ignored := filepath.Join(dir, "notes.txt")
+	c.Assert(os.MkdirAll(filepath.Dir(unchanged), 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(changed, []byte(`schema "main"{}`+"\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(nestedChanged, []byte(`schema "nested"{}`+"\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(unchanged, []byte(`schema "main" {}
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(ignored, []byte(`schema "main"{}`+"\n"), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"schema", "fmt", dir})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, changed+"\n"+nestedChanged+"\n")
+	nestedData, readErr := os.ReadFile(nestedChanged)
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(string(nestedData), qt.Equals, `schema "nested" {}
+`)
+	ignoredData, readErr := os.ReadFile(ignored)
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(string(ignoredData), qt.Equals, `schema "main"{}`+"\n")
+}
+
+func TestNewAtlasCommand_SchemaFmtDefaultsToCurrentDirectory(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "schema.hcl")
+	c.Assert(os.WriteFile(path, []byte(`schema "main"{}`+"\n"), 0o600), qt.IsNil)
+	originalDir, getwdErr := os.Getwd()
+	c.Assert(getwdErr, qt.IsNil)
+	t.Cleanup(func() {
+		c.Assert(os.Chdir(originalDir), qt.IsNil)
+	})
+	c.Assert(os.Chdir(dir), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"schema", "fmt"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "schema.hcl\n")
+	formatted, readErr := os.ReadFile(path)
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(string(formatted), qt.Equals, `schema "main" {}
+`)
+}
+
+func TestNewAtlasCommand_SchemaFmtRejectsInvalidHCLWithoutRewriting(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bad.hcl")
+	original := []byte(`schema "main" {
+`)
+	c.Assert(os.WriteFile(path, original, 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"schema", "fmt", path})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `schema fmt .*bad\.hcl: .*`)
+	data, readErr := os.ReadFile(path)
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(data, qt.DeepEquals, original)
+}
+
+func TestNewCompatCommand_SchemaFmtResolvesAtRoot(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "schema.hcl")
+	c.Assert(os.WriteFile(path, []byte(`schema "main"{}`+"\n"), 0o600), qt.IsNil)
+
+	cmd := NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"schema", "fmt", path})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, path+"\n")
+	formatted, readErr := os.ReadFile(path)
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(string(formatted), qt.Equals, `schema "main" {}
+`)
 }
 
 func TestNewAtlasCommand_HelpUsesAtlasPathForForwardedParentedCommand(t *testing.T) {
