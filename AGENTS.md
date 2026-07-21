@@ -56,6 +56,12 @@ command parity belongs only under `ptah atlas <command> ...`; do not document
 root-level Atlas aliases. Do not claim full Atlas parity or drop-in replacement
 status unless the current conformance evidence proves it.
 
+For deep documentation maintenance, use the repo-local skill at
+`.agents/skills/ptah-documentation-maintenance/SKILL.md`. It is Ptah-specific:
+it routes CLI, config, migration, parser/renderer, conformance, public API, and
+example changes to the right documentation surfaces and uses Inventario's docs
+site as the quality reference.
+
 ## Code Style And Linting
 
 Ptah treats `.golangci.yml` as a strict contract. Fix code to satisfy the configured linters instead of relaxing thresholds, disabling checks, or broadening exclusions. In particular, keep `revive` `error-strings` enabled and preserve the current "stricter wins" lint posture unless a maintainer explicitly asks for a config change.
