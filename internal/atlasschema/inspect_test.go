@@ -40,6 +40,23 @@ func TestInspect_HappyPathCustomTemplate(t *testing.T) {
 	c.Assert(rendered, qt.Equals, "1/2/a-b_c/CREATE")
 }
 
+func TestInspect_ExcludeFilter(t *testing.T) {
+	c := qt.New(t)
+	conn := connectSQLite(c, filepath.Join(t.TempDir(), "inspect-exclude.db"))
+	defer dbschema.CloseAndWarn(conn)
+	createInspectSchema(c, conn)
+
+	rendered, err := atlasschema.Inspect(conn, atlasschema.InspectOptions{
+		Format:  "hcl",
+		Exclude: []string{"posts"},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(rendered, qt.Contains, `table "users"`)
+	c.Assert(rendered, qt.Not(qt.Contains), `table "posts"`)
+	c.Assert(rendered, qt.Not(qt.Contains), `posts_user_fk`)
+}
+
 func TestInspect_FailurePath(t *testing.T) {
 	c := qt.New(t)
 

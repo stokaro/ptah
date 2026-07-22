@@ -627,17 +627,37 @@ func TestNewAtlasCommand_SchemaInspectAllowsLiteralUnsupportedFormatWords(t *tes
 	c.Assert(out.String(), qt.Equals, "split/write text only")
 }
 
-func TestNewAtlasCommand_SchemaInspectRejectsUnsupportedFilters(t *testing.T) {
+func TestNewAtlasCommand_SchemaInspectExcludeFiltersResources(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "inspect-exclude.db")
+	createAtlasInspectSQLiteSchema(c, dbPath)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"schema", "inspect", "--url", "sqlite://" + dbPath, "--exclude", "posts"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, `table "users"`)
+	c.Assert(out.String(), qt.Not(qt.Contains), `table "posts"`)
+	c.Assert(out.String(), qt.Not(qt.Contains), `posts_user_fk`)
+}
+
+func TestNewAtlasCommand_SchemaInspectRejectsProInclude(t *testing.T) {
 	c := qt.New(t)
 	cmd := NewAtlasCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"schema", "inspect", "--url", "sqlite://inspect.db", "--exclude", "*.secret"})
+	cmd.SetArgs([]string{"schema", "inspect", "--url", "sqlite://inspect.db", "--include", "users"})
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, "atlas schema inspect accepts --exclude, but Ptah does not implement its behavior yet")
+	c.Assert(err, qt.ErrorMatches, "atlas schema inspect --include is an Atlas Pro feature and is outside Ptah's Atlas OSS drop-in target")
 }
 
 func TestNewAtlasCommand_ForwardsParentedNativeCommand(t *testing.T) {

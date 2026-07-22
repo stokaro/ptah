@@ -31,9 +31,11 @@ func newAtlasSchemaInspectCommand() *cobra.Command {
 Inspects a live database from --url and writes Atlas-compatible schema output to
 stdout without Ptah status banners. The default output is HCL. SQL output is
 supported with --format sql or --format '{{ sql . }}'. JSON output and custom
-Go templates are supported through the same --format flag. Include/exclude
-filters, split/write templates, and Atlas dev-database inference remain explicit
-follow-up gaps.`,
+Go templates are supported through the same --format flag. The OSS --exclude
+filter supports resource-level live database inspection filters. Field-level
+exclude selectors, split/write templates, and Atlas dev-database inference
+remain explicit follow-up gaps. --include is an Atlas Pro feature and is outside
+Ptah's OSS drop-in target.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaInspect(cmd, opts)
 		},
@@ -69,6 +71,7 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 	rendered, err := atlasschema.Inspect(conn, atlasschema.InspectOptions{
 		DevURL:      opts.devURL,
 		Schemas:     opts.schemas,
+		Exclude:     opts.exclude,
 		Format:      format,
 		Diagnostics: cmd.ErrOrStderr(),
 	})
@@ -83,11 +86,8 @@ func validateAtlasSchemaInspectOptions(opts atlasSchemaInspectOptions) error {
 	if strings.TrimSpace(opts.url) == "" {
 		return fmt.Errorf("--url is required")
 	}
-	if len(opts.exclude) > 0 {
-		return fmt.Errorf("atlas schema inspect accepts --exclude, but Ptah does not implement its behavior yet")
-	}
 	if len(opts.include) > 0 {
-		return fmt.Errorf("atlas schema inspect accepts --include, but Ptah does not implement its behavior yet")
+		return fmt.Errorf("atlas schema inspect --include is an Atlas Pro feature and is outside Ptah's Atlas OSS drop-in target")
 	}
 	return nil
 }
