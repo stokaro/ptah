@@ -1,0 +1,77 @@
+package atlasschema
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"strings"
+
+	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/atlasreport"
+	"github.com/stokaro/ptah/internal/atlasurl"
+	"github.com/stokaro/ptah/internal/convert/dbschematogo"
+)
+
+// InspectOptions configures Atlas-compatible schema inspection.
+type InspectOptions struct {
+	DevURL      string
+	Schemas     []string
+	Format      string
+	Diagnostics io.Writer
+}
+
+// NormalizeInspectFormat returns and validates the executable Atlas schema
+// inspect template.
+func NormalizeInspectFormat(format string) (string, error) {
+	normalized, err := atlasreport.NormalizeSchemaInspectFormat(format)
+	if err != nil {
+		return "", err
+	}
+	if err := atlasreport.ValidateSchemaInspectTemplate(normalized); err != nil {
+		return "", err
+	}
+	return normalized, nil
+}
+
+// Inspect reads a live schema and renders it with Atlas-compatible formatting.
+func Inspect(conn *dbschema.DatabaseConnection, opts InspectOptions) (string, error) {
+	format, err := NormalizeInspectFormat(opts.Format)
+	if err != nil {
+		return "", err
+	}
+	if conn == nil {
+		return "", errors.New("schema inspect requires database connection")
+	}
+	if err := atlasurl.ValidateDialectMatch(opts.DevURL, conn.Info().Dialect); err != nil {
+		return "", err
+	}
+
+	schema, err := dbschema.ReadSchemaWithSchemas(conn, SplitSchemaNames(opts.Schemas))
+	if err != nil {
+		return "", fmt.Errorf("read database schema: %w", err)
+	}
+	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema)
+	rendered, err := atlasreport.RenderSchemaInspectFormat(format, atlasreport.NewSchemaInspectReport(
+		dbsch,
+		schema,
+		conn.Info(),
+		opts.Diagnostics,
+	))
+	if err != nil {
+		return "", err
+	}
+	return rendered, nil
+}
+
+// SplitSchemaNames expands repeated and comma-separated Atlas schema filters.
+func SplitSchemaNames(values []string) []string {
+	var schemas []string
+	for _, value := range values {
+		for part := range strings.SplitSeq(value, ",") {
+			if schema := strings.TrimSpace(part); schema != "" {
+				schemas = append(schemas, schema)
+			}
+		}
+	}
+	return schemas
+}
