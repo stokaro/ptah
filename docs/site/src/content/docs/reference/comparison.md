@@ -39,6 +39,9 @@ behavior exists, and some accepted Atlas flags still fail explicitly rather than
 being silently ignored. The gap register below links that work to concrete
 tracking issues.
 
+For a page-by-page crosswalk against the official Atlas documentation, see
+[Atlas docs coverage](../atlas-docs-coverage/).
+
 ## Detailed product comparison
 
 | Area | Ptah | Atlas OSS | Atlas Commercial / Cloud | Evidence |

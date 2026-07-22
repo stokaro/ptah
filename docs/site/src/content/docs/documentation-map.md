@@ -15,6 +15,7 @@ Use this page when you know what you need to do, but not where the relevant Ptah
 | I need Atlas-style commands | [Atlas-compatible CLI](../workflows/atlas-cli/) | [Comparison](../reference/comparison/) |
 | I need to run Ptah in CI | [CI](../workflows/ci/) | [Exit codes](../reference/exit-codes/) |
 | I need dialect behavior | [Capabilities](../reference/capabilities/) | Dialect-specific reference markdown such as `docs/sqlite.md` and `docs/sqlserver.md` |
+| I need Atlas docs coverage | [Atlas docs coverage](../reference/atlas-docs-coverage/) | [Comparison](../reference/comparison/) and [Conformance](../operate/conformance/) |
 | I need the public Go API | [`docs/public_api.md`](https://github.com/stokaro/ptah/blob/master/docs/public_api.md) | Stable packages, snapshots, and public API guard scripts |
 | I need diagrams | [Schema visualization example](../examples/schema-viz/) | [`examples/viz`](https://github.com/stokaro/ptah/tree/master/examples/viz) |
 | A command failed | [Troubleshooting](../operate/troubleshooting/) | The relevant command reference page |
