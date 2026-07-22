@@ -65,7 +65,7 @@ executable name.
 | `ptah atlas migrate status` | Forwards to `ptah migrations status`. |
 | `ptah atlas migrate hash` | Forwards to `ptah migrations hash`. |
 | `ptah atlas migrate validate` | Verifies `ptah.sum` or `atlas.sum`; with `--dev-url`, cleans the dev database and replays the migration directory to validate SQL execution. |
-| `ptah atlas migrate lint` | Forwards to `ptah migrations lint`; maps `--latest N` to native latest-version linting, infers lint dialect from `--dev-url`, and cleans and replays migrations on directly connectable dev databases to validate SQL execution. Docker dev databases remain an explicit gap. |
+| `ptah atlas migrate lint` | Forwards to `ptah migrations lint`; maps `--latest N` and `--git-base/--git-dir` to native changeset linting, infers lint dialect from `--dev-url`, and cleans and replays migrations on directly connectable dev databases to validate SQL execution. Docker dev databases, web reports, and Atlas Go-template lint output remain explicit gaps. |
 | `ptah atlas migrate new` | Forwards to `ptah migrations create`. |
 | `ptah atlas migrate set` | Forwards to `ptah migrations repair`. |
 | `ptah atlas migrate down` | Forwards to `ptah migrations down`; maps compatible Atlas flags and fails explicitly for dynamic down-planning and output-format flags that native Ptah does not implement yet. |

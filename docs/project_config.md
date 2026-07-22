@@ -90,7 +90,7 @@ env:
 | `migration.webhook` | URL that receives migration metadata before `migrations up` or `migrations down`; it must return HTTP 200 |
 | `lint.dialect` | Default lint dialect |
 | `lint.disabled-rules` | Default lint disabled rule codes or families |
-| `lint.latest` | Atlas-compatible project config value preserved in the IR |
+| `lint.latest` | Default latest-version changeset for `migrations lint` |
 | `online_ddl` | Automatic online-DDL routing config for MySQL/MariaDB |
 
 `migrate.generate.shadow_db` is also accepted as the older spelling for `dev`.

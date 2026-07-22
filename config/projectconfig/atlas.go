@@ -53,26 +53,38 @@ func (p atlasParser) parse(body *hclsyntax.Body, envName string) (Config, error)
 		}
 	}
 
+	base := Config{}
 	envs := make([]atlasEnv, 0)
+	seenGlobalLint := false
 	for _, block := range body.Blocks {
-		if block.Type != "env" {
+		switch block.Type {
+		case "env":
+			env, err := p.parseEnv(block)
+			if err != nil {
+				return Config{}, err
+			}
+			envs = append(envs, env)
+		case "lint":
+			if seenGlobalLint {
+				return Config{}, unsupportedBlock(block)
+			}
+			seenGlobalLint = true
+			if err := p.parseLint(block, &base); err != nil {
+				return Config{}, err
+			}
+		default:
 			return Config{}, unsupportedBlock(block)
 		}
-		env, err := p.parseEnv(block)
-		if err != nil {
-			return Config{}, err
-		}
-		envs = append(envs, env)
 	}
 	if len(envs) == 0 {
-		return Config{}, nil
+		return base, nil
 	}
 
 	selected, err := selectAtlasEnv(envs, envName)
 	if err != nil {
 		return Config{}, err
 	}
-	return selected.config, nil
+	return Merge(base, selected.config), nil
 }
 
 type atlasEnv struct {
@@ -243,6 +255,46 @@ func (p atlasParser) parseLint(block *hclsyntax.Block, cfg *Config) error {
 				return err
 			}
 			cfg.Lint.Latest = &value
+		default:
+			return unsupportedAttr(attrName, attr)
+		}
+	}
+	seenGit := false
+	for _, nested := range block.Body.Blocks {
+		switch nested.Type {
+		case "git":
+			if seenGit {
+				return unsupportedBlock(nested)
+			}
+			seenGit = true
+			if err := p.parseLintGit(nested, cfg); err != nil {
+				return err
+			}
+		default:
+			return unsupportedBlock(nested)
+		}
+	}
+	return nil
+}
+
+func (p atlasParser) parseLintGit(block *hclsyntax.Block, cfg *Config) error {
+	if len(block.Labels) > 0 {
+		return unsupportedBlock(block)
+	}
+	for attrName, attr := range block.Body.Attributes {
+		switch attrName {
+		case "base":
+			value, err := stringAttr(attrName, attr)
+			if err != nil {
+				return err
+			}
+			cfg.Lint.GitBase = value
+		case "dir":
+			value, err := stringAttr(attrName, attr)
+			if err != nil {
+				return err
+			}
+			cfg.Lint.GitDir = value
 		default:
 			return unsupportedAttr(attrName, attr)
 		}

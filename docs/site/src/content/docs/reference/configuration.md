@@ -46,7 +46,7 @@ webhooks, lint defaults, and online-DDL policy.
 | Database target | `url`, `src`, `dev`, `schemas` |
 | Migration directory and revisions | `migration.dir`, `migration.format`, `migration.revisions_table`, `migration.revision_format` |
 | Safety and operations | `migration.pre_up_hook`, `migration.pg_dump_to`, `migration.webhook`, `migration.exec_order`, `migration.tx_mode` |
-| Lint defaults | `lint.dialect`, `lint.disabled-rules` |
+| Lint defaults | `lint.dialect`, `lint.disabled-rules`, `lint.latest`, `lint.git.base` |
 | Online DDL | `online_ddl.tool`, `online_ddl.threshold_rows` |
 
 References:

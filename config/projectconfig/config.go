@@ -67,6 +67,8 @@ type LintConfig struct {
 	Dialect       string
 	DisabledRules []string
 	Latest        *int
+	GitBase       string
+	GitDir        string
 }
 
 // Merge returns base overridden by non-zero values from override.
@@ -165,6 +167,15 @@ func mergeLint(base, override LintConfig, presence configPresence) LintConfig {
 	if override.Latest != nil {
 		latest := *override.Latest
 		result.Latest = &latest
+		result.GitBase = ""
+		result.GitDir = ""
+	}
+	if override.GitBase != "" {
+		result.GitBase = override.GitBase
+		result.Latest = nil
+	}
+	if override.GitDir != "" {
+		result.GitDir = override.GitDir
 	}
 	return result
 }

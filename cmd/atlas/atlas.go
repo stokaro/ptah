@@ -203,6 +203,8 @@ func atlasMigrateLintVerb() atlasVerb {
 			atlasargs.NativeString("dev-url", "", "Dev database URL", "dev-url"),
 			atlasargs.NativeLocalDir("dir", "", "Migration directory", "dir"),
 			atlasargs.NativeUint("latest", "", "Number of latest migrations to lint", "latest"),
+			atlasargs.NativeString("git-base", "", "Base Git branch for changeset linting", "git-base"),
+			atlasargs.NativeString("git-dir", "", "Repository working directory for --git-base", "git-dir"),
 		},
 	}
 }

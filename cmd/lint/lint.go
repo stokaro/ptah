@@ -4,6 +4,7 @@ package lint
 
 import (
 	"cmp"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -13,6 +14,7 @@ import (
 	"io/fs"
 	"net/url"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"slices"
@@ -23,6 +25,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
+	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/internal/atlasurl"
 	"github.com/stokaro/ptah/internal/migrationreplay"
 	"github.com/stokaro/ptah/migration/lint"
@@ -40,7 +43,9 @@ const (
 	failOnAny   = "any"
 	failOnNone  = "none"
 
-	latestFlag = "latest"
+	latestFlag  = "latest"
+	gitBaseFlag = "git-base"
+	gitDirFlag  = "git-dir"
 )
 
 var errLintFindings = errors.New("lint findings exceed the failure threshold")
@@ -54,6 +59,8 @@ func NewLintCommand() *cobra.Command {
 	var atlasEnv string
 	var envName string
 	var devURL string
+	var gitBase string
+	var gitDir string
 	var disabled []string
 	var failOn string
 	var latest uint
@@ -82,6 +89,8 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 				configPath: configPath,
 				atlasEnv:   atlasEnv,
 				devURL:     devURL,
+				gitBase:    gitBase,
+				gitDir:     gitDir,
 				disabled:   disabled,
 				failOn:     failOn,
 				latest:     latest,
@@ -97,6 +106,8 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 	cmd.Flags().StringVar(&atlasEnv, "atlas-env", "", "Value exposed as .Env when rendering Atlas SQL template migrations")
 	cmd.Flags().StringVar(&envName, dbcli.EnvFlagName, "", "Project env name to read from ptah.yaml or atlas.hcl")
 	cmd.Flags().StringVar(&devURL, "dev-url", "", "Dev database URL used to clean and replay migrations and infer the lint dialect")
+	cmd.Flags().StringVar(&gitBase, gitBaseFlag, "", "Run analysis against the base Git branch")
+	cmd.Flags().StringVar(&gitDir, gitDirFlag, ".", "Repository working directory for --git-base")
 	cmd.Flags().StringArrayVar(&disabled, "disable", nil, "Disable a rule code or family, for example DS101 or MY (repeatable)")
 	cmd.Flags().StringVar(&failOn, "fail-on", failOnError, "Failure threshold controlling the exit code: error, any or none")
 	cmd.Flags().UintVar(&latest, latestFlag, 0, "Lint only the latest N migration versions")
@@ -112,6 +123,8 @@ type runOptions struct {
 	configPath string
 	atlasEnv   string
 	devURL     string
+	gitBase    string
+	gitDir     string
 	disabled   []string
 	failOn     string
 	latest     uint
@@ -214,6 +227,7 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	}
 	opts.dir = dbcli.EffectiveString(cmd, "dir", opts.dir, projectCfg.Migration.Dir)
 	opts.atlasEnv = dbcli.EffectiveString(cmd, "atlas-env", opts.atlasEnv, projectCfg.EnvName)
+	opts.devURL = dbcli.EffectiveString(cmd, "dev-url", opts.devURL, projectCfg.DevURL)
 	if err := validateDir(opts.dir); err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
 	}
@@ -221,7 +235,7 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
 	}
-	versions, err := lintVersions(cmd, opts)
+	versions, restrictVersions, err := lintVersions(cmd, opts, projectCfg)
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
 	}
@@ -263,19 +277,22 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 			fmt.Sprintf("error validating migration SQL on dev database: %v", err))
 	}
 
-	findings, err := lint.LintFS(os.DirFS(opts.dir), lint.Options{
-		Dialect:           dialect,
-		Disabled:          disabled,
-		PathPrefix:        filepath.ToSlash(opts.dir),
-		Versions:          versions,
-		AtlasTemplateData: migrator.AtlasTemplateData{Env: opts.atlasEnv},
-		RuleConfigs:       cfg.Rules,
-	})
-	if err != nil {
-		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
-	}
-	if findings == nil {
-		findings = []lint.Finding{}
+	findings := []lint.Finding{}
+	if !restrictVersions || len(versions) > 0 {
+		findings, err = lint.LintFS(os.DirFS(opts.dir), lint.Options{
+			Dialect:           dialect,
+			Disabled:          disabled,
+			PathPrefix:        filepath.ToSlash(opts.dir),
+			Versions:          versions,
+			AtlasTemplateData: migrator.AtlasTemplateData{Env: opts.atlasEnv},
+			RuleConfigs:       cfg.Rules,
+		})
+		if err != nil {
+			return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+		}
+		if findings == nil {
+			findings = []lint.Finding{}
+		}
 	}
 
 	failed := shouldFail(findings, opts.failOn)
@@ -323,14 +340,132 @@ func loadConfig(opts runOptions) (*lint.Config, error) {
 	return lint.LoadConfig(filepath.Join(opts.dir, lint.ConfigFileName))
 }
 
-func lintVersions(cmd *cobra.Command, opts runOptions) ([]int64, error) {
-	if !cmd.Flags().Changed(latestFlag) {
-		return nil, nil
+func lintVersions(cmd *cobra.Command, opts runOptions, cfg projectconfig.Config) ([]int64, bool, error) {
+	latest, latestSet := effectiveLatest(cmd, opts, cfg)
+	gitBase, gitDir, gitSet := effectiveGit(cmd, opts, cfg)
+	if !gitSet && gitDirConfigured(cmd, cfg) {
+		return nil, false, fmt.Errorf("--git-dir requires --git-base")
 	}
-	if opts.latest == 0 {
-		return nil, fmt.Errorf("--latest must be greater than zero")
+	if latestSet && gitSet {
+		return nil, false, fmt.Errorf("--latest and --git-base are mutually exclusive")
 	}
-	return latestMigrationVersions(os.DirFS(opts.dir), opts.latest)
+	if latestSet {
+		if latest <= 0 {
+			return nil, false, fmt.Errorf("--latest must be greater than zero")
+		}
+		versions, err := latestMigrationVersions(os.DirFS(opts.dir), uint(latest))
+		return versions, true, err
+	}
+	if gitSet {
+		versions, err := gitChangedMigrationVersions(cmd.Context(), opts.dir, gitBase, gitDir)
+		return versions, true, err
+	}
+	return nil, false, nil
+}
+
+func effectiveLatest(cmd *cobra.Command, opts runOptions, cfg projectconfig.Config) (int, bool) {
+	if cmd.Flags().Changed(latestFlag) {
+		return int(opts.latest), true
+	}
+	if cfg.Lint.Latest != nil {
+		return *cfg.Lint.Latest, true
+	}
+	return 0, false
+}
+
+func effectiveGit(cmd *cobra.Command, opts runOptions, cfg projectconfig.Config) (gitBase, gitDir string, ok bool) {
+	gitBase = opts.gitBase
+	if !cmd.Flags().Changed(gitBaseFlag) {
+		gitBase = cfg.Lint.GitBase
+	}
+	gitDir = opts.gitDir
+	if !cmd.Flags().Changed(gitDirFlag) && cfg.Lint.GitDir != "" {
+		gitDir = cfg.Lint.GitDir
+	}
+	if strings.TrimSpace(gitBase) == "" {
+		return "", gitDir, false
+	}
+	if strings.TrimSpace(gitDir) == "" {
+		gitDir = "."
+	}
+	return gitBase, gitDir, true
+}
+
+func gitDirConfigured(cmd *cobra.Command, cfg projectconfig.Config) bool {
+	return cmd.Flags().Changed(gitDirFlag) || cfg.Lint.GitDir != ""
+}
+
+func gitChangedMigrationVersions(ctx context.Context, migrationsDir, gitBase, gitDir string) ([]int64, error) {
+	repoRoot, err := gitOutput(ctx, gitDir, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return nil, fmt.Errorf("find git repository root: %w", err)
+	}
+	migrationsAbs, err := filepath.Abs(migrationsDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve migrations directory: %w", err)
+	}
+	relDir, err := filepath.Rel(repoRoot, migrationsAbs)
+	if err != nil {
+		return nil, fmt.Errorf("resolve migrations directory relative to git repository: %w", err)
+	}
+	if strings.HasPrefix(relDir, ".."+string(filepath.Separator)) || relDir == ".." || filepath.IsAbs(relDir) {
+		return nil, fmt.Errorf("migrations directory %s is outside git repository %s", migrationsAbs, repoRoot)
+	}
+	changed, err := gitOutput(ctx, repoRoot, "diff", "--name-only", "--diff-filter=ACMR", gitBase+"...HEAD", "--", filepath.ToSlash(relDir))
+	if err != nil {
+		return nil, fmt.Errorf("detect git changeset against %q: %w", gitBase, err)
+	}
+	versions, err := migrationVersionsFromChangedPaths(changed)
+	if err != nil {
+		return nil, err
+	}
+	return versions, nil
+}
+
+func gitOutput(ctx context.Context, dir string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+func migrationVersionsFromChangedPaths(changed string) ([]int64, error) {
+	seen := map[int64]struct{}{}
+	var unversioned []string
+	for name := range strings.Lines(changed) {
+		name = strings.TrimSpace(name)
+		if !strings.EqualFold(path.Ext(name), ".sql") {
+			continue
+		}
+		parsed, err := parseChangedMigrationName(path.Base(name))
+		if err != nil {
+			unversioned = append(unversioned, name)
+			continue
+		}
+		if parsed.Repeatable || parsed.Version <= 0 {
+			continue
+		}
+		seen[parsed.Version] = struct{}{}
+	}
+	if len(unversioned) > 0 {
+		return nil, fmt.Errorf("--git-base requires versioned migration files; unversioned SQL files found: %s", strings.Join(unversioned, ", "))
+	}
+	versions := make([]int64, 0, len(seen))
+	for version := range seen {
+		versions = append(versions, version)
+	}
+	slices.Sort(versions)
+	return versions, nil
+}
+
+func parseChangedMigrationName(name string) (*migrator.MigrationFile, error) {
+	if parsed, err := migrator.ParseMigrationFileName(name); err == nil {
+		return parsed, nil
+	}
+	return migrator.ParseAtlasMigrationFileNameForAutoDetection(name)
 }
 
 func latestMigrationVersions(fsys fs.FS, latest uint) ([]int64, error) {
