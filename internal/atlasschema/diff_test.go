@@ -1,4 +1,4 @@
-package atlasschema
+package atlasschema_test
 
 import (
 	"os"
@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"github.com/stokaro/ptah/internal/atlasschema"
 )
 
 func TestDiffLocalFilesReturnsSchemaDiffReport(t *testing.T) {
@@ -32,7 +34,7 @@ table "users" {
 }
 `), 0o600), qt.IsNil)
 
-	report, err := DiffLocalFiles(DiffOptions{
+	report, err := atlasschema.DiffLocalFiles(atlasschema.DiffOptions{
 		FromURLs: []string{"file://" + from},
 		ToURLs:   []string{"file://" + to},
 		DevURL:   "postgres://localhost/dev",
@@ -48,7 +50,7 @@ table "users" {
 func TestDiffLocalFilesRequiresDevURL(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := DiffLocalFiles(DiffOptions{})
+	_, err := atlasschema.DiffLocalFiles(atlasschema.DiffOptions{})
 
 	c.Assert(err, qt.ErrorMatches, `--dev-url is required for local schema file diffing`)
 }
