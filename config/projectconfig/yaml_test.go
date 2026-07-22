@@ -24,6 +24,7 @@ migration:
   connect_timeout: 3s
   migration_lock_timeout: 4s
   exec_order: linear
+  tx_mode: file
   pre_up_hook: base-backup
   pre_down_hook: base-rollback-backup
   pg_dump_to: ./base-pg-dumps
@@ -46,6 +47,7 @@ env:
       connect_timeout: 7s
       migration_lock_timeout: 8s
       exec_order: non-linear
+      tx_mode: all
       pre_up_hook: prod-backup
       pre_down_hook: prod-rollback-backup
       pg_dump_to: ./prod-pg-dumps
@@ -73,6 +75,7 @@ env:
 	c.Assert(cfg.Migration.ConnectTimeout, qt.Equals, "7s")
 	c.Assert(cfg.Migration.MigrationLockTimeout, qt.Equals, "8s")
 	c.Assert(cfg.Migration.ExecOrder, qt.Equals, "non-linear")
+	c.Assert(cfg.Migration.TxMode, qt.Equals, "all")
 	c.Assert(cfg.Migration.PreUpHook, qt.Equals, "prod-backup")
 	c.Assert(cfg.Migration.PreDownHook, qt.Equals, "prod-rollback-backup")
 	c.Assert(cfg.Migration.PostgresDumpTo, qt.Equals, "./prod-pg-dumps")

@@ -200,6 +200,12 @@ func (p atlasParser) parseMigration(block *hclsyntax.Block, cfg *Config) error {
 				return err
 			}
 			migration.ExecOrder = value
+		case "tx_mode":
+			value, err := stringAttr(attrName, attr)
+			if err != nil {
+				return err
+			}
+			migration.TxMode = value
 		default:
 			return unsupportedAttr(attrName, attr)
 		}

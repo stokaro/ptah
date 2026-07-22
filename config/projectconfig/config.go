@@ -51,6 +51,7 @@ type MigrationConfig struct {
 	ConnectTimeout       string
 	MigrationLockTimeout string
 	ExecOrder            string
+	TxMode               string
 	PreUpHook            string
 	PreDownHook          string
 	PostgresDumpTo       string
@@ -124,6 +125,9 @@ func mergeMigration(base, override MigrationConfig) MigrationConfig {
 	}
 	if override.ExecOrder != "" {
 		result.ExecOrder = override.ExecOrder
+	}
+	if override.TxMode != "" {
+		result.TxMode = override.TxMode
 	}
 	if override.PreUpHook != "" {
 		result.PreUpHook = override.PreUpHook
