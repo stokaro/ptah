@@ -243,6 +243,112 @@ func TestPrepareApply_FailurePath(t *testing.T) {
 	})
 }
 
+func TestParseApplyAmount_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name string
+		args []string
+		want uint64
+	}{
+		{
+			name: "empty",
+			args: nil,
+			want: 0,
+		},
+		{
+			name: "positive amount",
+			args: []string{"2"},
+			want: 2,
+		},
+		{
+			name: "trimmed amount",
+			args: []string{" 3 "},
+			want: 3,
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			got, err := atlasmigrate.ParseApplyAmount(tt.args)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, tt.want)
+		})
+	}
+}
+
+func TestParseApplyAmount_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	c.Run("too many arguments", func(c *qt.C) {
+		got, err := atlasmigrate.ParseApplyAmount([]string{"1", "2"})
+		c.Assert(err, qt.ErrorMatches, "accepts at most one amount argument")
+		c.Assert(got, qt.Equals, uint64(0))
+	})
+
+	c.Run("invalid unsigned integer", func(c *qt.C) {
+		got, err := atlasmigrate.ParseApplyAmount([]string{"nope"})
+		c.Assert(err, qt.ErrorMatches, `amount argument "nope" is not a valid unsigned integer: .*`)
+		c.Assert(got, qt.Equals, uint64(0))
+	})
+}
+
+func TestParseMigrationVersionFlag_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name  string
+		value string
+		want  int64
+	}{
+		{
+			name:  "empty",
+			value: "",
+			want:  0,
+		},
+		{
+			name:  "positive version",
+			value: "42",
+			want:  42,
+		},
+		{
+			name:  "trimmed version",
+			value: " 7 ",
+			want:  7,
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			got, err := atlasmigrate.ParseMigrationVersionFlag("to-version", tt.value)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, tt.want)
+		})
+	}
+}
+
+func TestParseMigrationVersionFlag_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	c.Run("invalid integer", func(c *qt.C) {
+		got, err := atlasmigrate.ParseMigrationVersionFlag("baseline", "nope")
+		c.Assert(err, qt.ErrorMatches, `--baseline "nope" is not a valid migration version: .*`)
+		c.Assert(got, qt.Equals, int64(0))
+	})
+
+	c.Run("zero", func(c *qt.C) {
+		got, err := atlasmigrate.ParseMigrationVersionFlag("to-version", "0")
+		c.Assert(err, qt.ErrorMatches, "--to-version must be greater than zero")
+		c.Assert(got, qt.Equals, int64(0))
+	})
+
+	c.Run("negative", func(c *qt.C) {
+		got, err := atlasmigrate.ParseMigrationVersionFlag("baseline", "-1")
+		c.Assert(err, qt.ErrorMatches, "--baseline must be greater than zero")
+		c.Assert(got, qt.Equals, int64(0))
+	})
+}
+
 func writeAtlasApplyMigrationFile(c *qt.C, dir, name, sql string) {
 	c.Helper()
 	c.Assert(os.MkdirAll(dir, 0755), qt.IsNil)

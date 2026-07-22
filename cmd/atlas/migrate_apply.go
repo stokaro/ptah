@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -72,8 +71,9 @@ Native Ptah equivalent: ptah migrations up.`,
 }
 
 func atlasMigrateApplyArgs(cmd *cobra.Command, args []string) error {
-	if len(args) > 1 {
-		return cmdutil.Fail(cmd, fmt.Errorf("accepts at most one amount argument"))
+	_, err := atlasmigrate.ParseApplyAmount(args)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
 	return nil
 }
@@ -107,15 +107,15 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 		return fmt.Errorf("invalid migration directory: %w", err)
 	}
 
-	amount, err := parseAtlasMigrateApplyAmount(args)
+	amount, err := atlasmigrate.ParseApplyAmount(args)
 	if err != nil {
 		return err
 	}
-	toVersion, err := parseAtlasMigrationVersionFlag("to-version", opts.toVersion)
+	toVersion, err := atlasmigrate.ParseMigrationVersionFlag("to-version", opts.toVersion)
 	if err != nil {
 		return err
 	}
-	baselineVersion, err := parseAtlasMigrationVersionFlag("baseline", opts.baseline)
+	baselineVersion, err := atlasmigrate.ParseMigrationVersionFlag("baseline", opts.baseline)
 	if err != nil {
 		return err
 	}
@@ -207,32 +207,6 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 	}
 	fmt.Fprintf(out, "Migration complete. Current version: %d\n", result.FinalStatus.CurrentVersion)
 	return nil
-}
-
-func parseAtlasMigrateApplyAmount(args []string) (uint64, error) {
-	if len(args) == 0 {
-		return 0, nil
-	}
-	value, err := strconv.ParseUint(strings.TrimSpace(args[0]), 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("amount argument %q is not a valid unsigned integer: %w", args[0], err)
-	}
-	return value, nil
-}
-
-func parseAtlasMigrationVersionFlag(name, value string) (int64, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return 0, nil
-	}
-	parsed, err := strconv.ParseInt(value, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("--%s %q is not a valid migration version: %w", name, value, err)
-	}
-	if parsed <= 0 {
-		return 0, fmt.Errorf("--%s must be greater than zero", name)
-	}
-	return parsed, nil
 }
 
 func writeAtlasMigrateApplyFormat(
