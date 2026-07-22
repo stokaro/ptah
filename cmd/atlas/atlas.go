@@ -23,7 +23,6 @@ import (
 	"github.com/stokaro/ptah/cmd/migratestatus"
 	"github.com/stokaro/ptah/cmd/migrateup"
 	"github.com/stokaro/ptah/cmd/migratevalidate"
-	"github.com/stokaro/ptah/cmd/readdb"
 )
 
 type atlasVerb struct {
@@ -39,7 +38,6 @@ type atlasFlagKind int
 
 const (
 	atlasStringFlag atlasFlagKind = iota
-	atlasStringArrayFlag
 	atlasBoolFlag
 	atlasUintFlag
 )
@@ -112,24 +110,10 @@ func newAtlasSchemaCommand() *cobra.Command {
 		},
 	}
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
-	for _, verb := range []atlasVerb{
-		{
-			use:     "inspect",
-			short:   "Inspect a database schema",
-			native:  "db read",
-			factory: readdb.NewReadDBCommand,
-			flags: []atlasFlag{
-				atlasNativeString("url", "u", "Database URL to inspect", "db-url"),
-				atlasUnsupportedString("dev-url", "", "Dev database URL used by Atlas for file-backed inspection"),
-				atlasNativeString("schema", "", "Schema to inspect; repeat by comma in native Ptah", "schemas"),
-				atlasUnsupportedStringArray("exclude", "", "Schema objects to exclude from inspection"),
-				atlasUnsupportedString("format", "", "Atlas Go template output format"),
-			},
-		},
-		atlasSchemaCleanVerb(),
-	} {
+	for _, verb := range []atlasVerb{atlasSchemaCleanVerb()} {
 		cmd.AddCommand(newAtlasAdapterCommand("schema", verb))
 	}
+	cmd.AddCommand(newAtlasSchemaInspectCommand())
 	cmd.AddCommand(newAtlasSchemaApplyCommand())
 	cmd.AddCommand(newAtlasSchemaDiffCommand())
 	cmd.AddCommand(newAtlasSchemaFmtCommand())
@@ -338,10 +322,6 @@ func atlasString(name, shorthand, usage string) atlasFlag {
 	return atlasFlag{name: name, shorthand: shorthand, usage: usage, kind: atlasStringFlag}
 }
 
-func atlasStringArray(name, shorthand, usage string) atlasFlag {
-	return atlasFlag{name: name, shorthand: shorthand, usage: usage, kind: atlasStringArrayFlag}
-}
-
 func atlasBool(name, shorthand, usage string) atlasFlag {
 	return atlasFlag{name: name, shorthand: shorthand, usage: usage, kind: atlasBoolFlag}
 }
@@ -386,12 +366,6 @@ func atlasUnsupportedString(name, shorthand, usage string) atlasFlag {
 	return f
 }
 
-func atlasUnsupportedStringArray(name, shorthand, usage string) atlasFlag {
-	f := atlasStringArray(name, shorthand, usage)
-	f.unsupported = true
-	return f
-}
-
 func atlasUnsupportedBool(name, shorthand, usage string) atlasFlag {
 	f := atlasBool(name, shorthand, usage)
 	f.unsupported = true
@@ -413,8 +387,6 @@ func registerAtlasFlags(cmd *cobra.Command, flags []atlasFlag) {
 		switch flag.kind {
 		case atlasStringFlag:
 			cmd.Flags().StringP(flag.name, flag.shorthand, "", flag.usage)
-		case atlasStringArrayFlag:
-			cmd.Flags().StringArrayP(flag.name, flag.shorthand, nil, flag.usage)
 		case atlasBoolFlag:
 			cmd.Flags().BoolP(flag.name, flag.shorthand, false, flag.usage)
 		case atlasUintFlag:

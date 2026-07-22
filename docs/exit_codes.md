@@ -65,8 +65,8 @@ a Ptah-owned utility behavior such as the license notice or schema formatting:
 | `ptah atlas migrate hash` | `ptah migrations hash` |
 | `ptah atlas migrate validate` | `ptah migrations validate` |
 | `ptah atlas migrate lint` | `ptah migrations lint` |
-| `ptah atlas schema inspect` | `ptah db read` |
-| `ptah-compat schema inspect` / `atlas schema inspect` | `ptah db read` |
+| `ptah atlas schema inspect` | Atlas-shaped schema inspection |
+| `ptah-compat schema inspect` / `atlas schema inspect` | Atlas-shaped schema inspection |
 | `ptah atlas schema apply` | Local Atlas-style schema apply |
 | `ptah-compat schema apply` / `atlas schema apply` | Local Atlas-style schema apply |
 | `ptah atlas schema diff` | Local Atlas-style schema-file diff |

@@ -75,7 +75,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	if err := validateAtlasSchemaApplyDevURL(opts.devURL, conn.Info().Dialect); err != nil {
+	if err := validateAtlasDevURLDialect(opts.devURL, conn.Info().Dialect); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 
@@ -142,7 +142,7 @@ func validateAtlasSchemaApplyOptions(cmd *cobra.Command, opts atlasSchemaApplyOp
 	return ensureLocalSchemaURLs("--to", opts.toURLs)
 }
 
-func validateAtlasSchemaApplyDevURL(devURL, targetDialect string) error {
+func validateAtlasDevURLDialect(devURL, targetDialect string) error {
 	devDialect, err := dialectFromAtlasURL(devURL)
 	if err != nil {
 		return err
