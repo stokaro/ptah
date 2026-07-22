@@ -3,6 +3,8 @@ package sqlutil_test
 import (
 	"testing"
 
+	qt "github.com/frankban/quicktest"
+
 	"github.com/stokaro/ptah/core/sqlutil"
 )
 
@@ -135,10 +137,9 @@ func TestRebind(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := sqlutil.Rebind(tc.dialect, tc.query)
-			if got != tc.want {
-				t.Errorf("Rebind(%q, %q) = %q, want %q", tc.dialect, tc.query, got, tc.want)
-			}
+			c.Assert(got, qt.Equals, tc.want)
 		})
 	}
 }

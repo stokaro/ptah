@@ -43,12 +43,6 @@
       "count": 3
     },
     {
-      "path": "cmd/compare/compare_test.go",
-      "function": "TestCompareExitCode",
-      "kind": "if",
-      "count": 1
-    },
-    {
       "path": "cmd/internal/cliobs/cliobs_test.go",
       "function": "TestEmitterJSONModeWritesParseableJSONLines",
       "kind": "if",
@@ -83,12 +77,6 @@
       "function": "TestStartRejectsInvalidLogOptions",
       "kind": "if",
       "count": 2
-    },
-    {
-      "path": "cmd/internal/dbcli/dbcli_test.go",
-      "function": "TestParseConnectTimeout",
-      "kind": "if",
-      "count": 1
     },
     {
       "path": "cmd/introspect/introspect_test.go",
@@ -361,12 +349,6 @@
       "count": 3
     },
     {
-      "path": "core/ptaherr/errors_test.go",
-      "function": "TestSentinelErrorsAreDistinct",
-      "kind": "if",
-      "count": 1
-    },
-    {
       "path": "core/renderer/internal/dialects/clickhouse/clickhouse_test.go",
       "function": "TestColumnTypeMapping",
       "kind": "if",
@@ -407,12 +389,6 @@
       "function": "TestPlatformSpecificOverrides",
       "kind": "if",
       "count": 3
-    },
-    {
-      "path": "core/sqlutil/placeholders_test.go",
-      "function": "TestRebind",
-      "kind": "if",
-      "count": 1
     },
     {
       "path": "dbschema/connection_internal_test.go",
@@ -729,12 +705,6 @@
     {
       "path": "internal/lexer/lexer_test.go",
       "function": "TestLexer_NextToken_HappyPath",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "internal/onlineddl/dsn_test.go",
-      "function": "TestParseDatabaseURL",
       "kind": "if",
       "count": 1
     },
@@ -1340,11 +1310,6 @@
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
-      "path": "cmd/compare/compare_test.go",
-      "package": "compare",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
       "path": "cmd/db/db_test.go",
       "package": "db",
       "reason": "same-package test file is not named *_internal_test.go"
@@ -1492,7 +1457,7 @@
     {
       "path": "core/renderer/internal/dialects/clickhouse/clickhouse_internal_test.go",
       "package": "clickhouse",
-      "reason": "missing immediate white-box justification comment"
+      "reason": "missing white-box justification comment after package clause"
     },
     {
       "path": "core/renderer/internal/dialects/mssql/mssql_test.go",
@@ -1502,7 +1467,7 @@
     {
       "path": "dbschema/connection_internal_test.go",
       "package": "dbschema",
-      "reason": "missing immediate white-box justification comment"
+      "reason": "missing white-box justification comment after package clause"
     },
     {
       "path": "dbschema/schema_scope_test.go",

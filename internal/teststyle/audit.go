@@ -212,7 +212,7 @@ func scanWhiteBoxFile(path string, relativePath string, packageName string) []Wh
 	return []WhiteBoxBaseline{{
 		Path:    relativePath,
 		Package: packageName,
-		Reason:  "missing immediate white-box justification comment",
+		Reason:  "missing white-box justification comment after package clause",
 	}}
 }
 
@@ -229,6 +229,9 @@ func hasWhiteBoxJustification(path string) bool {
 		line := strings.TrimSpace(scanner.Text())
 		if !seenPackage {
 			seenPackage = strings.HasPrefix(line, "package ")
+			continue
+		}
+		if line == "" {
 			continue
 		}
 		return strings.HasPrefix(line, whiteBoxJustificationPrefix)
