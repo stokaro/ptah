@@ -12,7 +12,6 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasschema"
-	"github.com/stokaro/ptah/internal/atlasurl"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
@@ -77,11 +76,12 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	if err := atlasurl.ValidateDialectMatch(opts.devURL, conn.Info().Dialect); err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
-
-	plan, err := atlasschema.PlanApply(conn, atlasschema.ApplyOptions{ToURLs: opts.toURLs})
+	plan, err := atlasschema.PrepareApply(conn, atlasschema.ApplyRuntimeOptions{
+		DevURL: opts.devURL,
+		ToURLs: opts.toURLs,
+		TxMode: txMode,
+		DryRun: opts.dryRun,
+	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -104,8 +104,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		return nil
 	}
 
-	conn.SchemaWriter().SetDryRun(false)
-	if err := atlasschema.ApplySQL(cmd.Context(), conn, txMode, sqlText); err != nil {
+	if err := plan.Execute(cmd.Context()); err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("apply schema changes: %w", err))
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), "Schema apply completed successfully.")

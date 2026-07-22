@@ -9,6 +9,7 @@ import (
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/atlasurl"
 	"github.com/stokaro/ptah/internal/schemafile"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/planner"
@@ -21,6 +22,23 @@ type ApplyOptions struct {
 
 type ApplyPlan struct {
 	statements []string
+}
+
+// ApplyRuntimeOptions configures Atlas schema apply planning and execution.
+type ApplyRuntimeOptions struct {
+	DevURL string
+	ToURLs []string
+	TxMode migrator.MigrationTxMode
+	DryRun bool
+}
+
+// ApplyRuntimePlan is a prepared Atlas schema apply operation for one open
+// database connection.
+type ApplyRuntimePlan struct {
+	plan   ApplyPlan
+	dryRun bool
+	conn   *dbschema.DatabaseConnection
+	txMode migrator.MigrationTxMode
 }
 
 func (p ApplyPlan) HasChanges() bool {
@@ -58,6 +76,50 @@ func PlanApply(conn *dbschema.DatabaseConnection, opts ApplyOptions) (ApplyPlan,
 		return ApplyPlan{}, fmt.Errorf("generate schema apply SQL: %w", err)
 	}
 	return ApplyPlan{statements: statements}, nil
+}
+
+// PrepareApply validates Atlas schema apply runtime inputs and builds the
+// executable apply plan for the already-open target database connection.
+func PrepareApply(conn *dbschema.DatabaseConnection, opts ApplyRuntimeOptions) (ApplyRuntimePlan, error) {
+	if conn == nil {
+		return ApplyRuntimePlan{}, errors.New("schema apply requires database connection")
+	}
+	if err := atlasurl.ValidateDialectMatch(opts.DevURL, conn.Info().Dialect); err != nil {
+		return ApplyRuntimePlan{}, err
+	}
+
+	plan, err := PlanApply(conn, ApplyOptions{ToURLs: opts.ToURLs})
+	if err != nil {
+		return ApplyRuntimePlan{}, err
+	}
+	return ApplyRuntimePlan{
+		plan:   plan,
+		dryRun: opts.DryRun,
+		conn:   conn,
+		txMode: opts.TxMode,
+	}, nil
+}
+
+func (p ApplyRuntimePlan) HasChanges() bool {
+	return p.plan.HasChanges()
+}
+
+func (p ApplyRuntimePlan) SQL() string {
+	return p.plan.SQL()
+}
+
+// Execute applies the prepared schema diff. Dry-run and no-op plans return
+// without modifying schema state.
+func (p ApplyRuntimePlan) Execute(ctx context.Context) error {
+	if !p.HasChanges() || p.dryRun {
+		return nil
+	}
+	if p.conn == nil {
+		return errors.New("schema apply execution requires database connection")
+	}
+
+	p.conn.SchemaWriter().SetDryRun(false)
+	return ApplySQL(ctx, p.conn, p.txMode, p.SQL())
 }
 
 func ApplySQL(

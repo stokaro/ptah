@@ -86,6 +86,121 @@ func TestPlanApply_FailurePath(t *testing.T) {
 	})
 }
 
+func TestPrepareApply_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "runtime-apply.db")
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath, []byte(`
+CREATE TABLE runtime_users (
+  id INTEGER PRIMARY KEY,
+  email TEXT NOT NULL
+);
+`), 0o600), qt.IsNil)
+	conn := connectSQLite(c, dbPath)
+
+	plan, err := atlasschema.PrepareApply(conn, atlasschema.ApplyRuntimeOptions{
+		DevURL: "sqlite://dev.db",
+		ToURLs: []string{"file://" + schemaPath},
+		TxMode: migrator.MigrationTxModeAll,
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.HasChanges(), qt.IsTrue)
+	c.Assert(plan.SQL(), qt.Contains, "runtime_users")
+
+	err = plan.Execute(context.Background())
+	dbschema.CloseAndWarn(conn)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sqliteTableExists(c, dbPath, "runtime_users"), qt.IsTrue)
+}
+
+func TestPrepareApply_DryRunDoesNotApply(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "runtime-dry-run.db")
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath, []byte(`
+CREATE TABLE runtime_dry_run (
+  id INTEGER PRIMARY KEY
+);
+`), 0o600), qt.IsNil)
+	conn := connectSQLite(c, dbPath)
+
+	plan, err := atlasschema.PrepareApply(conn, atlasschema.ApplyRuntimeOptions{
+		DevURL: "sqlite://dev.db",
+		ToURLs: []string{"file://" + schemaPath},
+		TxMode: migrator.MigrationTxModeAll,
+		DryRun: true,
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.HasChanges(), qt.IsTrue)
+
+	err = plan.Execute(context.Background())
+	dbschema.CloseAndWarn(conn)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sqliteTableExists(c, dbPath, "runtime_dry_run"), qt.IsFalse)
+}
+
+func TestPrepareApply_Synced(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "runtime-synced.db")
+	schemaPath := filepath.Join(dir, "schema.sql")
+	schemaSQL := `
+CREATE TABLE runtime_synced (
+  id INTEGER PRIMARY KEY
+);
+`
+	c.Assert(os.WriteFile(schemaPath, []byte(schemaSQL), 0o600), qt.IsNil)
+	conn := connectSQLite(c, dbPath)
+	c.Assert(atlasschema.ApplySQL(context.Background(), conn, migrator.MigrationTxModeAll, schemaSQL), qt.IsNil)
+
+	plan, err := atlasschema.PrepareApply(conn, atlasschema.ApplyRuntimeOptions{
+		DevURL: "sqlite://dev.db",
+		ToURLs: []string{"file://" + schemaPath},
+		TxMode: migrator.MigrationTxModeAll,
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.HasChanges(), qt.IsFalse)
+	c.Assert(plan.SQL(), qt.Equals, "")
+
+	err = plan.Execute(context.Background())
+	dbschema.CloseAndWarn(conn)
+
+	c.Assert(err, qt.IsNil)
+}
+
+func TestPrepareApply_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	c.Run("nil connection", func(c *qt.C) {
+		plan, err := atlasschema.PrepareApply(nil, atlasschema.ApplyRuntimeOptions{
+			DevURL: "sqlite://dev.db",
+			ToURLs: []string{"file:///schema.sql"},
+			TxMode: migrator.MigrationTxModeAll,
+		})
+		c.Assert(err, qt.ErrorMatches, "schema apply requires database connection")
+		c.Assert(plan.HasChanges(), qt.IsFalse)
+		c.Assert(plan.SQL(), qt.Equals, "")
+	})
+
+	c.Run("dev URL dialect mismatch", func(c *qt.C) {
+		conn := connectSQLite(c, filepath.Join(t.TempDir(), "runtime-dev-url-mismatch.db"))
+		defer dbschema.CloseAndWarn(conn)
+
+		plan, err := atlasschema.PrepareApply(conn, atlasschema.ApplyRuntimeOptions{
+			DevURL: "postgres://localhost/dev",
+			ToURLs: []string{"file:///schema.sql"},
+			TxMode: migrator.MigrationTxModeAll,
+		})
+		c.Assert(err, qt.ErrorMatches, `--dev-url dialect "postgres" does not match --url dialect "sqlite"`)
+		c.Assert(plan.HasChanges(), qt.IsFalse)
+		c.Assert(plan.SQL(), qt.Equals, "")
+	})
+}
+
 func TestApplySQL_TxModeAllRollsBackOnFailure(t *testing.T) {
 	c := qt.New(t)
 	dbPath := filepath.Join(t.TempDir(), "tx-mode-all.db")
