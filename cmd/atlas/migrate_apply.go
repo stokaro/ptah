@@ -11,6 +11,7 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/atlasargs"
 	"github.com/stokaro/ptah/internal/atlasmigrate"
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/pathguard"
@@ -97,7 +98,7 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 		return fmt.Errorf("migrations directory is required")
 	}
 
-	dir, err := atlasLocalDirValue(opts.dir)
+	dir, err := atlasargs.LocalDirValue(opts.dir)
 	if err != nil {
 		return fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}

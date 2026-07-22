@@ -9,6 +9,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/atlasargs"
 	"github.com/stokaro/ptah/internal/atlasmigrate"
 	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/migrator"
@@ -68,7 +69,7 @@ func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name 
 		return cmdutil.Fail(cmd, err)
 	}
 
-	migrationsDir, err := atlasLocalDirValue(opts.dirURL)
+	migrationsDir, err := atlasargs.LocalDirValue(opts.dirURL)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("--dir %q: %w", opts.dirURL, err))
 	}
