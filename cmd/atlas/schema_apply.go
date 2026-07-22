@@ -13,6 +13,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/atlasurl"
 	"github.com/stokaro/ptah/internal/schemafile"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/planner"
@@ -208,7 +209,7 @@ func executeAtlasSchemaApplyStatements(ctx context.Context, executor atlasSchema
 }
 
 func validateAtlasDevURLDialect(devURL, targetDialect string) error {
-	devDialect, err := dialectFromAtlasURL(devURL)
+	devDialect, err := atlasurl.DialectFromURL(devURL)
 	if err != nil {
 		return err
 	}

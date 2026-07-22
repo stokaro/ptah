@@ -1,18 +1,14 @@
 package atlas
 
 import (
-	"errors"
 	"fmt"
-	"net/url"
-	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
-	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/internal/atlasreport"
+	"github.com/stokaro/ptah/internal/atlasschema"
 	"github.com/stokaro/ptah/internal/schemafile"
-	"github.com/stokaro/ptah/migration/planner"
-	"github.com/stokaro/ptah/migration/schemadiff"
 )
 
 type atlasSchemaDiffOptions struct {
@@ -32,7 +28,7 @@ func newAtlasSchemaDiffCommand() *cobra.Command {
 Calculates SQL statements that migrate the --from schema state to the --to
 schema state. This implementation currently supports local file:// schema files
 with .hcl, .yaml, .yml, or .sql extensions. Database URLs, migration directory
-URLs, Atlas project env:// URLs, exclusion filters, and custom output templates
+URLs, Atlas project env:// URLs, exclusion filters, and Atlas Cloud web output
 are explicit follow-up gaps.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaDiff(cmd, opts)
@@ -52,35 +48,24 @@ are explicit follow-up gaps.`,
 }
 
 func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
+	format := atlasreport.NormalizeSchemaDiffFormat(opts.format)
+	if err := atlasreport.ValidateSchemaDiffTemplate(format); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	if err := validateAtlasSchemaDiffOptions(cmd, opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 
-	dialect, err := atlasSchemaDiffDialect(opts.devURL)
+	report, err := atlasschema.DiffLocalFiles(atlasschema.DiffOptions{
+		FromURLs: opts.fromURLs,
+		ToURLs:   opts.toURLs,
+		DevURL:   opts.devURL,
+	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	from, err := schemafile.LoadAll(opts.fromURLs, schemafile.Options{Dialect: dialect})
-	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("load --from schema: %w", err))
-	}
-	to, err := schemafile.LoadAll(opts.toURLs, schemafile.Options{Dialect: dialect})
-	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("load --to schema: %w", err))
-	}
-
-	diff := schemadiff.CompareWithDialect(to, schemafile.ToDBSchema(from), dialect)
-	if !diff.HasChanges() {
-		fmt.Fprintln(cmd.OutOrStdout(), "Schemas are synced, no changes to be made.")
-		return nil
-	}
-
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, to, dialect)
-	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("generate schema diff SQL: %w", err))
-	}
-	for _, stmt := range statements {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s;\n", strings.TrimSuffix(stmt, ";"))
+	if err := atlasreport.WriteSchemaDiff(cmd.OutOrStdout(), format, report); err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
 	return nil
 }
@@ -91,9 +76,6 @@ func validateAtlasSchemaDiffOptions(cmd *cobra.Command, opts atlasSchemaDiffOpti
 	}
 	if len(opts.toURLs) == 0 {
 		return fmt.Errorf("--to is required")
-	}
-	if strings.TrimSpace(opts.format) != "" {
-		return fmt.Errorf("atlas schema diff accepts --format, but Ptah does not implement its behavior yet")
 	}
 	if web, err := cmd.Flags().GetBool("web"); err == nil && web {
 		return fmt.Errorf("atlas schema diff accepts --web, but Ptah does not implement Atlas Cloud visualization")
@@ -116,54 +98,4 @@ func ensureLocalSchemaURLs(flag string, urls []string) error {
 		}
 	}
 	return nil
-}
-
-func atlasSchemaDiffDialect(devURL string) (string, error) {
-	dialect, err := dialectFromAtlasURL(devURL)
-	if err != nil {
-		return "", err
-	}
-	if dialect == "" {
-		return "", fmt.Errorf("--dev-url is required for local schema file diffing")
-	}
-	return dialect, nil
-}
-
-func dialectFromAtlasURL(rawURL string) (string, error) {
-	rawURL = strings.TrimSpace(rawURL)
-	if rawURL == "" {
-		return "", nil
-	}
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return "", fmt.Errorf("parse --dev-url: %w", err)
-	}
-	switch parsed.Scheme {
-	case "docker":
-		return dialectFromDockerURL(parsed)
-	case "sqlite", "mysql", "mariadb", "postgres", "postgresql", "sqlserver", "mssql", "clickhouse", "cockroach", "cockroachdb", "yugabyte", "yugabytedb":
-		dialect := platform.NormalizeDialect(parsed.Scheme)
-		if dialect != "" {
-			return dialect, nil
-		}
-	}
-	return "", fmt.Errorf("unsupported --dev-url dialect %q", rawURL)
-}
-
-func dialectFromDockerURL(parsed *url.URL) (string, error) {
-	engine := parsed.Host
-	if engine == "" {
-		return "", errors.New("docker --dev-url is missing database engine")
-	}
-	if before, _, found := strings.Cut(engine, "/"); found {
-		engine = before
-	}
-	if before, _, found := strings.Cut(engine, ":"); found {
-		engine = before
-	}
-	dialect := platform.NormalizeDialect(engine)
-	if dialect == "" {
-		return "", fmt.Errorf("unsupported docker --dev-url engine %q", parsed.Host)
-	}
-	return dialect, nil
 }

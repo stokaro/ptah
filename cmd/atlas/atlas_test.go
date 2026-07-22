@@ -981,7 +981,79 @@ func TestNewAtlasCommand_SchemaDiffRejectsUnsupportedRemoteTarget(t *testing.T) 
 	c.Assert(out.String(), qt.Contains, `error: --from "postgres://localhost/db": only local file:// schema files are supported`)
 }
 
-func TestNewAtlasCommand_SchemaDiffRejectsUnsupportedFormat(t *testing.T) {
+func TestNewAtlasCommand_SchemaDiffFormatsCustomSQLTemplate(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	from := filepath.Join(dir, "from.hcl")
+	to := filepath.Join(dir, "to.hcl")
+	c.Assert(os.WriteFile(from, []byte(`
+table "users" {
+  column "id" {
+    type = int
+  }
+}
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(to, []byte(`
+table "users" {
+  column "id" {
+    type = int
+  }
+  column "email" {
+    null = false
+    type = varchar(255)
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "diff",
+		"--from", "file://" + from,
+		"--to", "file://" + to,
+		"--dev-url", "postgres://localhost/dev",
+		"--format", `{{ len .Changes }}|{{ printf "%.2s" (.MarshalSQL) }}|{{ sql . "  " }}`,
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, `1|--|  -- Add/modify columns for table: users --`)
+	c.Assert(out.String(), qt.Contains, `  ALTER TABLE "users" ADD COLUMN "email" varchar(255) NOT NULL;`)
+}
+
+func TestNewAtlasCommand_SchemaDiffFormatsSyncedCustomTemplate(t *testing.T) {
+	c := qt.New(t)
+	path := filepath.Join(t.TempDir(), "schema.hcl")
+	c.Assert(os.WriteFile(path, []byte(`
+table "users" {
+  column "id" {
+    type = int
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "diff",
+		"--from", "file://" + path,
+		"--to", "file://" + path,
+		"--dev-url", "sqlite://dev?mode=memory",
+		"--format", `{{ with .Changes }}changed{{ else }}synced{{ end }}`,
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "synced")
+}
+
+func TestNewAtlasCommand_SchemaDiffRejectsInvalidFormatBeforeLoadingFiles(t *testing.T) {
 	c := qt.New(t)
 	cmd := NewAtlasCommand()
 	var out bytes.Buffer
@@ -992,12 +1064,13 @@ func TestNewAtlasCommand_SchemaDiffRejectsUnsupportedFormat(t *testing.T) {
 		"--from", "file://from.hcl",
 		"--to", "file://to.hcl",
 		"--dev-url", "sqlite://dev?mode=memory",
-		"--format", "{{ sql . }}",
+		"--format", "{{ if }}",
 	})
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `atlas schema diff accepts --format, but Ptah does not implement its behavior yet`)
+	c.Assert(err, qt.ErrorMatches, `parse --format template: .*`)
+	c.Assert(out.String(), qt.Not(qt.Contains), "load --from schema")
 }
 
 func TestNewAtlasCommand_SchemaApplyAppliesLocalSchemaToSQLite(t *testing.T) {
