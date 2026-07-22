@@ -15,7 +15,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/internal/annotationschema"
-	"github.com/stokaro/ptah/internal/atlashclrender"
+	hclrender "github.com/stokaro/ptah/internal/atlashclrender"
 	"github.com/stokaro/ptah/internal/goannotationcleanup"
 	"github.com/stokaro/ptah/internal/graphqlrender"
 	"github.com/stokaro/ptah/internal/openapirender"
@@ -35,7 +35,8 @@ const (
 	cleanupDryRunFlag        = "cleanup-dry-run"
 	cleanupDiffFlag          = "cleanup-diff"
 	exportFormatGo           = "go"
-	exportFormatAtlasHCL     = "atlas-hcl"
+	exportFormatHCL          = "hcl"
+	exportFormatLegacyHCL    = "atlas-hcl"
 	exportFormatOpenAPI      = "openapi-v3"
 	exportFormatGraphQL      = "graphql"
 )
@@ -58,7 +59,7 @@ under ptah atlas.`,
 	cmd.AddCommand(newSchemaExportCommand())
 	renderCmd := generate.NewGenerateCommand()
 	renderCmd.Short = "Render desired schema SQL"
-	renderCmd.Long = "Render desired schema SQL from Go annotations, YAML schema files, or Atlas HCL schema files."
+	renderCmd.Long = "Render desired schema SQL from Go annotations, YAML schema files, or HCL schema files."
 	cmd.AddCommand(renderCmd)
 
 	compareCmd := compare.NewCompareCommand()
@@ -139,10 +140,10 @@ func newSchemaExportCommand() *cobra.Command {
 		Short: "Export one schema source format to another",
 		Long: `Export a Ptah schema to another format.
 
-Convert Go annotations to an Atlas schema HCL, an OpenAPI 3.0 component schema, or
+Convert Go annotations to an HCL schema, an OpenAPI 3.0 component schema, or
 a GraphQL SDL:
 
-  ptah schema export --to atlas-hcl   --root-dir ./models --out schema.hcl
+  ptah schema export --to hcl         --root-dir ./models --out schema.hcl
   ptah schema export --to openapi-v3  --root-dir ./models --out openapi.yaml
   ptah schema export --to graphql     --root-dir ./models --out schema.graphql
 
@@ -169,7 +170,7 @@ exported.`,
 
 	flags := cmd.Flags()
 	flags.StringVar(&from, exportFromFlag, exportFormatGo, "Source schema format: go")
-	flags.StringVar(&to, exportToFlag, exportFormatAtlasHCL, "Target schema format: atlas-hcl, openapi-v3, or graphql")
+	flags.StringVar(&to, exportToFlag, exportFormatHCL, "Target schema format: hcl, openapi-v3, or graphql")
 	flags.StringVar(&rootDir, exportRootDirFlag, ".", "Root directory to scan for Go annotations")
 	flags.StringVar(&outPath, exportOutFlag, "", "Output file (optional for openapi-v3/graphql; writes to stdout when omitted)")
 	flags.StringSliceVar(&includeTables, exportIncludeTablesFlag, nil, "Only export these tables (comma-separated); applies to openapi-v3/graphql")
@@ -200,15 +201,15 @@ func runExport(cmd *cobra.Command, opts exportOptions) error {
 	// untrimmed --to must never fall through routing while still reaching the
 	// annotation-cleanup step below.
 	opts.from = strings.TrimSpace(opts.from)
-	opts.to = strings.TrimSpace(opts.to)
+	opts.to = normalizeExportFormat(opts.to)
 	if err := validateExportOptions(opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if opts.to == exportFormatAtlasHCL &&
+	if opts.to == exportFormatHCL &&
 		(len(opts.includeTables) > 0 || len(opts.excludeTables) > 0 || strings.TrimSpace(opts.title) != "") {
 		fmt.Fprintf(cmd.ErrOrStderr(),
 			"warning: --%s/--%s/--%s are ignored for --%s %s\n",
-			exportIncludeTablesFlag, exportExcludeTablesFlag, exportTitleFlag, exportToFlag, exportFormatAtlasHCL)
+			exportIncludeTablesFlag, exportExcludeTablesFlag, exportTitleFlag, exportToFlag, exportFormatHCL)
 	}
 	rootDir, err := pathguard.ResolveCLIPath(opts.rootDir)
 	if err != nil {
@@ -224,8 +225,8 @@ func runExport(cmd *cobra.Command, opts exportOptions) error {
 	}
 
 	switch opts.to {
-	case exportFormatAtlasHCL:
-		if err := runAtlasHCLExport(cmd, opts, db); err != nil {
+	case exportFormatHCL:
+		if err := runHCLExport(cmd, opts, db); err != nil {
 			return err
 		}
 	case exportFormatOpenAPI:
@@ -281,19 +282,18 @@ func runExport(cmd *cobra.Command, opts exportOptions) error {
 	return nil
 }
 
-// runAtlasHCLExport renders the schema to Atlas HCL and writes it to the required
-// --out file. This is the original export path and its output is unchanged.
-func runAtlasHCLExport(cmd *cobra.Command, opts exportOptions, db *goschema.Database) error {
+// runHCLExport renders the schema to HCL and writes it to the required --out file.
+func runHCLExport(cmd *cobra.Command, opts exportOptions, db *goschema.Database) error {
 	outPath, err := resolveOutputPath(opts.outPath)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	rendered, err := atlashclrender.Render(db)
+	rendered, err := hclrender.Render(db)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if err := os.WriteFile(outPath, rendered.Data, 0o600); err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("write Atlas HCL schema: %w", err))
+		return cmdutil.Fail(cmd, fmt.Errorf("write HCL schema: %w", err))
 	}
 
 	errOut := cmd.ErrOrStderr()
@@ -302,7 +302,7 @@ func runAtlasHCLExport(cmd *cobra.Command, opts exportOptions, db *goschema.Data
 	}
 
 	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "Exported Atlas HCL schema to %s\n", outPath)
+	fmt.Fprintf(out, "Exported HCL schema to %s\n", outPath)
 	fmt.Fprintf(out, "Found %d table(s), %d field(s), %d enum(s)\n", len(db.Tables), len(db.Fields), len(db.Enums))
 	if len(rendered.Diagnostics) > 0 {
 		fmt.Fprintf(out, "%d export warning(s) reported\n", len(rendered.Diagnostics))
@@ -342,24 +342,32 @@ func emitAPISchema(cmd *cobra.Command, opts exportOptions, db *goschema.Database
 	return nil
 }
 
+func normalizeExportFormat(format string) string {
+	trimmed := strings.TrimSpace(format)
+	if trimmed == exportFormatLegacyHCL {
+		return exportFormatHCL
+	}
+	return trimmed
+}
+
 func validateExportOptions(opts exportOptions) error {
-	if strings.TrimSpace(opts.from) != exportFormatGo {
+	if opts.from != exportFormatGo {
 		return fmt.Errorf("unsupported --from %q: expected %s", opts.from, exportFormatGo)
 	}
-	switch strings.TrimSpace(opts.to) {
-	case exportFormatAtlasHCL, exportFormatOpenAPI, exportFormatGraphQL:
+	switch opts.to {
+	case exportFormatHCL, exportFormatOpenAPI, exportFormatGraphQL:
 	default:
 		return fmt.Errorf("unsupported --to %q: expected %s, %s, or %s",
-			opts.to, exportFormatAtlasHCL, exportFormatOpenAPI, exportFormatGraphQL)
+			opts.to, exportFormatHCL, exportFormatOpenAPI, exportFormatGraphQL)
 	}
-	if strings.TrimSpace(opts.to) == exportFormatAtlasHCL && strings.TrimSpace(opts.outPath) == "" {
-		return fmt.Errorf("--out is required for --%s %s", exportToFlag, exportFormatAtlasHCL)
+	if opts.to == exportFormatHCL && strings.TrimSpace(opts.outPath) == "" {
+		return fmt.Errorf("--out is required for --%s %s", exportToFlag, exportFormatHCL)
 	}
 	if (opts.cleanupDryRun || opts.cleanupDiff) && !opts.cleanupAnnotations {
 		return fmt.Errorf("--cleanup-dry-run and --cleanup-diff require --cleanup-go-annotations")
 	}
-	if opts.cleanupAnnotations && strings.TrimSpace(opts.to) != exportFormatAtlasHCL {
-		return fmt.Errorf("--%s is only supported with --%s %s", cleanupGoAnnotationsFlag, exportToFlag, exportFormatAtlasHCL)
+	if opts.cleanupAnnotations && opts.to != exportFormatHCL {
+		return fmt.Errorf("--%s is only supported with --%s %s", cleanupGoAnnotationsFlag, exportToFlag, exportFormatHCL)
 	}
 	return nil
 }

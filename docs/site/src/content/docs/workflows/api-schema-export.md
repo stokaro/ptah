@@ -26,9 +26,9 @@ ptah schema export --to graphql --root-dir ./models > schema.graphql
 
 | Flag | Applies to | Meaning |
 | --- | --- | --- |
-| `--to` | all | `atlas-hcl`, `openapi-v3`, or `graphql`. |
+| `--to` | all | `hcl`, `openapi-v3`, or `graphql`. The old `atlas-hcl` value is accepted as an alias. |
 | `--root-dir` | all | Directory scanned for Go annotations. |
-| `--out` | all | Output file. Optional for `openapi-v3`/`graphql` (stdout when omitted); required for `atlas-hcl`. |
+| `--out` | all | Output file. Optional for `openapi-v3`/`graphql` (stdout when omitted); required for `hcl`. |
 | `--include-tables` | `openapi-v3`, `graphql` | Comma-separated allowlist of tables. |
 | `--exclude-tables` | `openapi-v3`, `graphql` | Comma-separated denylist, applied after the allowlist. |
 | `--title` | `openapi-v3` | Value for `info.title` (default `Ptah Exported Schema`). |

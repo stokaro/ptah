@@ -35,7 +35,7 @@ func NewGenerateCommand() *cobra.Command {
 		Long: `Generate database schema from Go entities in the specified directory or from a schema file.
 
 By default, this command scans the directory recursively for Go files with migrator directives.
-When --schema-file is set, it reads a language-agnostic YAML schema, Atlas HCL
+When --schema-file is set, it reads a language-agnostic YAML schema, HCL
 schema, or SQL schema file instead.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return generateCommand(cmd, &opts)
@@ -50,7 +50,7 @@ schema, or SQL schema file instead.`,
 func registerFlags(cmd *cobra.Command, opts *options) {
 	flags := cmd.Flags()
 	flags.StringVar(&opts.rootDir, rootDirFlag, "./", "Root directory to scan for Go entities")
-	flags.StringVar(&opts.schemaFile, schemaFileFlag, "", "YAML, Atlas HCL, or SQL schema file to generate from instead of scanning Go entities")
+	flags.StringVar(&opts.schemaFile, schemaFileFlag, "", "YAML, HCL, or SQL schema file to generate from instead of scanning Go entities")
 	flags.StringVar(&opts.dialect, dialectFlag, "", "Database dialect (postgres, mysql, mariadb, sqlite, clickhouse, cockroachdb, yugabytedb, spanner). If empty, generates for all dialects")
 }
 

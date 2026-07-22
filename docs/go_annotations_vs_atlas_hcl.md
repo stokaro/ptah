@@ -1,15 +1,15 @@
-# Go Annotations vs. Atlas HCL
+# Go Annotations vs. HCL Schema
 
-Ptah can use both Go source annotations and Atlas schema HCL as schema sources.
-It can also export Go annotations to Atlas schema HCL:
+Ptah can use both Go source annotations and HCL schema files as schema sources.
+It can also export Go annotations to HCL schema:
 
 ```bash
-ptah schema export --from go --to atlas-hcl --root-dir ./models --out schema.hcl
+ptah schema export --from go --to hcl --root-dir ./models --out schema.hcl
 ```
 
 This export path is an IR conversion. Ptah parses Go annotations into the
-`goschema.Database` intermediate representation, then renders that IR as Atlas
-schema HCL. It does not rewrite annotation comments directly into HCL text.
+`goschema.Database` intermediate representation, then renders that IR as HCL
+schema. It does not rewrite annotation comments directly into HCL text.
 
 Go annotations remain a first-class Ptah workflow for Go applications. The
 exporter is an escape hatch for projects that outgrow app-owned Go annotations
@@ -26,12 +26,13 @@ Use Go annotations when the Go model types remain the primary schema source:
 - embedded structs are expanded into concrete columns during parsing
 - platform overrides can remain attached to fields and schema objects
 
-Use Atlas HCL when a language-neutral schema file should become the primary
-source:
+Use HCL schema files when a language-neutral schema file should become the
+primary source:
 
 - schema review can happen without reading Go source
-- generated SQL can be compared against Atlas-style schema files
-- the same schema file can be shared with tools that understand Atlas HCL
+- generated SQL can be compared against Atlas-compatible schema files
+- the same schema file can be shared with tools that understand the supported
+  Atlas HCL schema language subset
 
 Use export as a one-time migration path when a project wants to move from
 app-schema authoring to declarative schema authoring without manually rewriting
@@ -39,7 +40,7 @@ its existing Ptah metadata.
 
 ## Exported Schema Shape
 
-The exporter writes deterministic Atlas HCL for the schema subset that maps
+The exporter writes deterministic HCL for the schema subset that maps
 directly from Ptah's IR:
 
 - schemas
@@ -78,7 +79,7 @@ After a successful export, Ptah can remove Go schema annotations:
 ```bash
 ptah schema export \
   --from go \
-  --to atlas-hcl \
+  --to hcl \
   --root-dir ./models \
   --out schema.hcl \
   --cleanup-go-annotations
@@ -108,13 +109,13 @@ only after the HCL file has been rendered and written successfully.
 
 ## Current Limits
 
-The exporter targets the Atlas schema HCL subset documented in
-[Atlas HCL Schema Input](atlas_hcl_schema.md). Objects that need their own
+The exporter targets the HCL schema subset documented in
+[HCL Schema Input](atlas_hcl_schema.md). Objects that need their own
 structural model, parser, or renderer are not emitted as best-effort SQL blobs.
 They produce diagnostics instead so the caller can decide whether the exported
 HCL is complete enough to replace the original Go annotations.
 
 Some PostgreSQL object blocks documented by Atlas are gated by Atlas plans at
-runtime. Ptah's guarantee here is IR preservation through Atlas-style HCL input
-and export; it does not change which Atlas CLI features are available in Atlas
-OSS or Pro.
+runtime. Ptah's guarantee here is IR preservation through Atlas-compatible HCL
+input and export; it does not change which Atlas CLI features are available in
+Atlas OSS or Pro.

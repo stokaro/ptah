@@ -1,6 +1,6 @@
 ---
 title: Schema files
-description: Use YAML, Atlas HCL, or SQL schema files as Ptah input.
+description: Use YAML, HCL, or SQL schema files as Ptah input.
 ---
 
 Ptah can render and migrate from schema files when Go annotations are not the
@@ -11,13 +11,13 @@ source of truth.
 | Format | Best for | Notes |
 | --- | --- | --- |
 | Ptah YAML | Ptah-owned schema files with compact structure. | Strict parser; unknown keys fail. |
-| Atlas HCL schema | Reusing supported Atlas schema files. | Supported subset only; unsupported constructs fail. |
+| HCL schema | Reusing supported Atlas-compatible schema files. | Supported subset only; unsupported constructs fail. |
 | SQL schema | Reusing local SQL DDL files for render and Atlas-compatible local diff workflows. | Parsed through Ptah's compatibility SQL parser; unsupported DDL fails explicitly. |
 | Live database | Introspection, drift checks, and migration planning. | Requires a database URL. |
 
 ## YAML schema
 
-YAML is Ptah-owned and strict. Use it when you want a compact, explicit schema file without Atlas HCL syntax:
+YAML is Ptah-owned and strict. Use it when you want a compact, explicit schema file without HCL syntax:
 
 ```yaml
 tables:
@@ -45,9 +45,10 @@ ptah migrations plan \
 
 Reference: [YAML schema](https://github.com/stokaro/ptah/blob/master/docs/yaml_schema.md).
 
-## Atlas HCL schema
+## HCL schema
 
-Use Atlas HCL when you already maintain schema files in Atlas syntax and want Ptah to read the supported subset:
+Use HCL schema files when you already maintain schema files in
+Atlas-compatible HCL syntax and want Ptah to read the supported subset:
 
 ```hcl
 schema "public" {}
@@ -73,10 +74,14 @@ ptah schema render --schema-file schema.hcl --dialect postgres
 Ptah reads schema HCL as desired schema input. Project configuration HCL is a
 different file type and is described in [Configuration](../../reference/configuration/).
 
-Reference: [Atlas HCL schema](https://github.com/stokaro/ptah/blob/master/docs/atlas_hcl_schema.md).
+Reference: [HCL schema](https://github.com/stokaro/ptah/blob/master/docs/atlas_hcl_schema.md).
 
 :::caution[Supported subset]
-Ptah intentionally rejects unsupported Atlas HCL constructs instead of silently guessing. If a construct is not implemented, treat the error as a compatibility gap and check the conformance reports.
+Ptah's HCL schema format is compatible with the Atlas HCL schema language for
+the supported subset. Ptah is not affiliated with or endorsed by Ariga or Atlas.
+Unsupported constructs fail explicitly instead of being silently guessed. If a
+construct is not implemented, treat the error as a compatibility gap and check
+the conformance reports.
 :::
 
 ## SQL schema
