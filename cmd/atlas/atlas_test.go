@@ -220,7 +220,7 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 		{
 			name:  "schema_inspect",
 			path:  []string{"schema", "inspect"},
-			flags: []string{"--url", "--dev-url", "--schema", "--exclude", "--format"},
+			flags: []string{"--url", "--dev-url", "--schema", "--exclude", "--include", "--format"},
 		},
 		{
 			name:  "schema_apply",
@@ -581,17 +581,101 @@ func TestNewAtlasCommand_MapsAtlasFlagFormsToNativeFlags(t *testing.T) {
 	}
 }
 
-func TestNewAtlasCommand_UnsupportedAtlasFlagsFailExplicitly(t *testing.T) {
+func TestNewAtlasCommand_SchemaInspectOutputsAtlasHCLWithoutNativeBanners(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "inspect.db")
+	createAtlasInspectSQLiteSchema(c, dbPath)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"schema", "inspect", "--url", "sqlite://" + dbPath})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, `table "users"`)
+	c.Assert(out.String(), qt.Contains, `column "email"`)
+	c.Assert(out.String(), qt.Not(qt.Contains), "Reading schema from database")
+	c.Assert(out.String(), qt.Not(qt.Contains), "Connected to sqlite database successfully")
+}
+
+func TestNewAtlasCommand_SchemaInspectOutputsSQLFormat(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "inspect-sql.db")
+	createAtlasInspectSQLiteSchema(c, dbPath)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "inspect",
+		"--url", "sqlite://" + dbPath,
+		"--format", "{{ sql . }}",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "CREATE TABLE")
+	c.Assert(out.String(), qt.Contains, "users")
+	c.Assert(out.String(), qt.Not(qt.Contains), `table "users"`)
+}
+
+func TestNewCompatCommand_SchemaInspectUsesAtlasRoot(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "compat-inspect.db")
+	createAtlasInspectSQLiteSchema(c, dbPath)
+
+	cmd := NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"schema", "inspect", "--url", "sqlite://" + dbPath})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, `table "users"`)
+}
+
+func TestNewAtlasCommand_SchemaInspectRejectsUnsupportedFormat(t *testing.T) {
 	c := qt.New(t)
 	cmd := NewAtlasCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"schema", "inspect", "--url", "postgres://localhost/db", "--format", "{{ sql . }}"})
+	cmd.SetArgs([]string{"schema", "inspect", "--url", "sqlite://inspect.db", "--format", "{{ json . }}"})
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, "atlas schema inspect accepts --format, but Ptah does not implement its behavior yet")
+	c.Assert(err, qt.ErrorMatches, "atlas schema inspect accepts JSON output, but Ptah does not implement Atlas-compatible JSON yet")
+}
+
+func TestNewAtlasCommand_SchemaInspectRejectsUnsupportedFilters(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"schema", "inspect", "--url", "sqlite://inspect.db", "--exclude", "*.secret"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, "atlas schema inspect accepts --exclude, but Ptah does not implement its behavior yet")
+}
+
+func TestParseAtlasSchemaInspectSchemasAcceptsRepeatedAndCommaValues(t *testing.T) {
+	c := qt.New(t)
+
+	schemas := parseAtlasSchemaInspectSchemas([]string{"public, auth", "tenant"})
+
+	c.Assert(schemas, qt.DeepEquals, []string{"public", "auth", "tenant"})
 }
 
 func TestNewAtlasCommand_ForwardsParentedNativeCommand(t *testing.T) {
@@ -1089,6 +1173,21 @@ func assertSQLiteTableMissing(c *qt.C, dbPath, table string) {
 	c.Assert(sqliteTableExists(c, dbPath, table), qt.IsFalse)
 }
 
+func createAtlasInspectSQLiteSchema(c *qt.C, dbPath string) {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	_, err = conn.ExecContext(context.Background(), `
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY,
+  email TEXT NOT NULL
+);
+CREATE UNIQUE INDEX users_email_key ON users (email);
+`)
+	c.Assert(err, qt.IsNil)
+}
+
 func sqliteTableExists(c *qt.C, dbPath, table string) bool {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
@@ -1290,22 +1389,22 @@ func TestNewAtlasCommand_HelpUsesAtlasPathForForwardedParentedCommand(t *testing
 
 func TestNewAtlasCommand_HelpAdvertisesGroupedNativeEquivalents(t *testing.T) {
 	tests := []struct {
-		name       string
-		args       []string
-		wantNative string
-		oldRoot    string
+		name     string
+		args     []string
+		wantText string
+		oldRoot  string
 	}{
 		{
-			name:       "migrate_apply",
-			args:       []string{"migrate", "apply", "--help"},
-			wantNative: "ptah migrations up",
-			oldRoot:    "ptah migrate-up",
+			name:     "migrate_apply",
+			args:     []string{"migrate", "apply", "--help"},
+			wantText: "ptah migrations up",
+			oldRoot:  "ptah migrate-up",
 		},
 		{
-			name:       "schema_inspect",
-			args:       []string{"schema", "inspect", "--help"},
-			wantNative: "ptah db read",
-			oldRoot:    "ptah read-db",
+			name:     "schema_inspect",
+			args:     []string{"schema", "inspect", "--help"},
+			wantText: "Atlas HCL",
+			oldRoot:  "ptah read-db",
 		},
 	}
 
@@ -1321,7 +1420,7 @@ func TestNewAtlasCommand_HelpAdvertisesGroupedNativeEquivalents(t *testing.T) {
 			err := cmd.Execute()
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(out.String(), qt.Contains, tt.wantNative)
+			c.Assert(out.String(), qt.Contains, tt.wantText)
 			c.Assert(out.String(), qt.Not(qt.Contains), tt.oldRoot)
 		})
 	}

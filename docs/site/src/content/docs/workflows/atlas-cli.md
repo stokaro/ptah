@@ -51,12 +51,27 @@ fail clearly instead of being ignored.
 
 ## Schema commands
 
-| Atlas-compatible command | Native Ptah command |
+| Atlas-compatible command | Ptah behavior |
 | --- | --- |
-| `ptah atlas schema inspect` | `ptah db read` |
+| `ptah atlas schema inspect` | Inspects a live database and writes Atlas-shaped HCL by default, or SQL with `--format sql` / `--format '{{ sql . }}'`. |
 | `ptah atlas schema apply` | Applies local desired schema files to a live database through Ptah schema diff and migration execution. |
 | `ptah atlas schema diff` | Local `file://` schema-file diff for `.hcl`, `.yaml`, `.yml`, and `.sql` sources. |
 | `ptah atlas schema fmt` | Formats local `.hcl` files using HCL canonical layout. |
+
+`ptah atlas schema inspect` accepts a live database `--url` and writes
+machine-oriented schema output without native Ptah status banners. The default
+format is Atlas HCL.
+
+```bash
+ptah atlas schema inspect --url "$DATABASE_URL" > schema.hcl
+ptah atlas schema inspect --url "$DATABASE_URL" --format sql > schema.sql
+```
+
+`--schema` narrows inspection when the underlying database reader supports
+schema scoping. `--dev-url` validates dialect compatibility only today; Ptah
+does not yet run Atlas dev-database inference for inspection. Atlas JSON
+output, custom templates, split/write templates, include/exclude filters, and
+file-backed inspection remain explicit gaps.
 
 `ptah atlas schema apply` accepts one or more local `--to` schema file URLs and
 a live database `--url`. Ptah reads the current database schema, diffs it
