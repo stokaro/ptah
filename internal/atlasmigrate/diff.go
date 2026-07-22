@@ -16,6 +16,7 @@ import (
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/migratesum"
 	"github.com/stokaro/ptah/internal/schemafile"
+	"github.com/stokaro/ptah/internal/schemascope"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/schemadiff"
@@ -31,6 +32,7 @@ type DiffOptions struct {
 	ToURLs      []string
 	Name        string
 	Format      string
+	Schemas     []string
 	LockTimeout time.Duration
 }
 
@@ -53,6 +55,7 @@ func GenerateDiff(ctx context.Context, conn *dbschema.DatabaseConnection, opts D
 	if strings.TrimSpace(opts.Name) == "" {
 		opts.Name = "migration"
 	}
+	schemas := schemascope.SplitNames(opts.Schemas)
 	format := atlasreport.NormalizeMigrateDiffFormat(opts.Format)
 	if err := atlasreport.ValidateSchemaDiffTemplate(format); err != nil {
 		return DiffResult{}, err
@@ -77,17 +80,19 @@ func GenerateDiff(ctx context.Context, conn *dbschema.DatabaseConnection, opts D
 	if err := replayDir(ctx, conn, opts.Dir); err != nil {
 		return DiffResult{}, err
 	}
-	current, err := dbschema.ReadSchemaWithSchemas(conn, nil)
+	current, err := dbschema.ReadSchemaWithSchemas(conn, schemas)
 	if err != nil {
 		return DiffResult{}, fmt.Errorf("read dev database schema: %w", err)
 	}
-	current = withoutRevisionTable(current)
+	defaultSchema := conn.Info().Schema
+	current = schemascope.FilterDatabaseWithDefaultSchema(withoutRevisionTable(current), schemas, defaultSchema)
 
 	dialect := conn.Info().Dialect
 	desired, err := schemafile.LoadAll(opts.ToURLs, schemafile.Options{Dialect: dialect})
 	if err != nil {
 		return DiffResult{}, fmt.Errorf("load --to schema: %w", err)
 	}
+	desired = schemascope.FilterGeneratedWithDefaultSchema(desired, schemas, defaultSchema)
 	diff := schemadiff.CompareWithDialect(desired, current, dialect)
 	if !diff.HasChanges() {
 		return DiffResult{Synced: true}, nil

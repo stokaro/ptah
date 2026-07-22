@@ -241,7 +241,7 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 		{
 			name:  "migrate_diff",
 			path:  []string{"migrate", "diff"},
-			flags: []string{"--to", "--dev-url", "--dir", "--dir-format", "--format"},
+			flags: []string{"--to", "--dev-url", "--dir", "--dir-format", "--format", "--schema"},
 		},
 		{
 			name: "migrate_apply",
@@ -1640,6 +1640,46 @@ CREATE TABLE users (
 	c.Assert(strings.HasPrefix(string(newSQL), "ALTER TABLE"), qt.IsTrue)
 	c.Assert(string(newSQL), qt.Contains, "ADD COLUMN")
 	c.Assert(string(newSQL), qt.Contains, "email")
+}
+
+func TestNewAtlasCommand_MigrateDiffSchemaFilterIgnoresOutOfScopeDesiredSchema(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
+	schemaPath := filepath.Join(dir, "schema.hcl")
+	c.Assert(os.WriteFile(schemaPath, []byte(`
+schema "auth" {}
+
+table "users" {
+  schema = schema.auth
+  column "id" {
+    type = int
+  }
+  primary_key {
+    columns = [column.id]
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "diff",
+		"--dev-url", "sqlite://" + filepath.Join(dir, "dev.db"),
+		"--dir", "file://" + migrationsDir,
+		"--to", "file://" + schemaPath,
+		"--schema", "billing",
+		"out_of_scope",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "The migration directory is synced with the desired state, no changes to be made\n")
+	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 0)
 }
 
 func TestNewAtlasCommand_MigrateDiffRejectsChecksumDrift(t *testing.T) {
