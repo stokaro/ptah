@@ -17,6 +17,8 @@ Schemas are synced, no changes to be made.
 {{ end -}}
 `
 
+const migrateDiffDefaultFormat = `{{ sql . "  " }}`
+
 type SchemaDiff struct {
 	From    *goschema.Database
 	To      *goschema.Database
@@ -70,6 +72,13 @@ func newSchemaDiffTemplate(name, format string) (*template.Template, error) {
 func NormalizeSchemaDiffFormat(format string) string {
 	if strings.TrimSpace(format) == "" {
 		return schemaDiffDefaultFormat
+	}
+	return format
+}
+
+func NormalizeMigrateDiffFormat(format string) string {
+	if strings.TrimSpace(format) == "" {
+		return migrateDiffDefaultFormat
 	}
 	return format
 }
