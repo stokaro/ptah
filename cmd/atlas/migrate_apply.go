@@ -2,8 +2,6 @@ package atlas
 
 import (
 	"fmt"
-	"io"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -12,6 +10,7 @@ import (
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasargs"
 	"github.com/stokaro/ptah/internal/atlasmigrate"
+	"github.com/stokaro/ptah/internal/atlasmigratereport"
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/migrator"
@@ -172,7 +171,7 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 			return err
 		}
 		if formatOutput {
-			return writeAtlasMigrateApplyFormat(out, opts, dir, conn, result)
+			return writeAtlasMigrateApplyFormat(cmd, opts, dir, conn, result)
 		}
 		fmt.Fprintln(out, "No migration files to execute.")
 		return nil
@@ -187,7 +186,7 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 	result, err := plan.Execute(cmd.Context())
 	if err != nil {
 		if formatOutput && result.ApplyError != nil {
-			writeErr := writeAtlasMigrateApplyFormat(out, opts, dir, conn, result)
+			writeErr := writeAtlasMigrateApplyFormat(cmd, opts, dir, conn, result)
 			if writeErr != nil {
 				return fmt.Errorf("%w; additionally failed to write --format output: %v", err, writeErr)
 			}
@@ -197,38 +196,30 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 
 	if opts.dryRun {
 		if formatOutput {
-			return writeAtlasMigrateApplyFormat(out, opts, dir, conn, result)
+			return writeAtlasMigrateApplyFormat(cmd, opts, dir, conn, result)
 		}
 		fmt.Fprintf(out, "Would have applied %d migrations.\n", len(plan.SelectedVersions))
 		return nil
 	}
 	if formatOutput {
-		return writeAtlasMigrateApplyFormat(out, opts, dir, conn, result)
+		return writeAtlasMigrateApplyFormat(cmd, opts, dir, conn, result)
 	}
 	fmt.Fprintf(out, "Migration complete. Current version: %d\n", result.FinalStatus.CurrentVersion)
 	return nil
 }
 
 func writeAtlasMigrateApplyFormat(
-	out io.Writer,
+	cmd *cobra.Command,
 	opts atlasMigrateApplyOptions,
 	resolvedDir string,
 	conn *dbschema.DatabaseConnection,
 	result atlasmigrate.ApplyResult,
 ) error {
-	return atlasreport.WriteMigrateApplyFormat(out, opts.format, atlasreport.MigrateApplyResultOptions{
-		Conn:             conn,
-		FS:               os.DirFS(resolvedDir),
-		Dir:              opts.dir,
-		URL:              opts.url,
-		Status:           result.Status,
-		Migrations:       result.Migrations,
-		SelectedVersions: result.SelectedVersions,
-		CurrentVersion:   result.CurrentVersion,
-		ErrorText:        result.ErrorText,
-		ApplyError:       result.ApplyError,
-		Applied:          result.Applied,
-		StartedAt:        result.StartedAt,
-		EndedAt:          result.EndedAt,
+	return atlasmigratereport.WriteApplyFormat(cmd.OutOrStdout(), opts.format, atlasmigratereport.ApplyFormatOptions{
+		Conn:        conn,
+		ResolvedDir: resolvedDir,
+		Dir:         opts.dir,
+		URL:         opts.url,
+		Result:      result,
 	})
 }
