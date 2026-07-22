@@ -7,8 +7,8 @@ commands, not schema HCL input. Schema HCL input is documented separately in
 
 ## Supported Subset
 
-Ptah accepts top-level `env` and `lint` blocks. `env` blocks may have either
-one label or no label:
+Ptah accepts top-level `variable`, `locals`, `data "hcl_schema"`, `env`, and
+`lint` blocks. `env` blocks may have either one label or no label:
 
 ```hcl
 lint {
@@ -58,10 +58,8 @@ The supported attributes map to Ptah settings as follows:
 | `lint.git.dir` | `migrations lint --git-dir` default |
 
 `env.src` accepts either one string or a list of strings. Ptah currently uses
-literal local schema file sources only, matching the local schema-file boundary
-of `ptah atlas schema apply`. Data-source expressions such as
-`data.hcl_schema.app.url` are rejected until Ptah implements HCL expression
-evaluation for project config files.
+local schema file sources only, matching the local schema-file boundary of
+`ptah atlas schema apply`.
 
 `env.exclude` accepts either one string or a list of strings. `ptah atlas schema
 apply --env <name>` uses it as the default resource exclusion filter unless an
@@ -84,6 +82,48 @@ When an `atlas.hcl` `migration` block is present, Ptah also defaults
 `atlas_schema_revisions` unless an explicit CLI flag overrides it. `file://`
 migration directories are normalized to local paths. Other URI schemes are
 rejected.
+
+## Expression Evaluation
+
+Ptah evaluates a scoped Atlas-compatible expression subset for local project
+config workflows:
+
+- `variable` blocks with `default` values and optional `description` metadata.
+- `locals` blocks referenced as `local.<name>`.
+- `getenv("NAME")` for environment-provided URLs and settings.
+- `file("path")` for local file contents, relative to the `atlas.hcl` file.
+- `fileset("glob")` for local file lists, relative to the `atlas.hcl` file.
+- `data "hcl_schema" "name"` blocks with either `path` or `paths`, exposed as
+  `data.hcl_schema.<name>.url`.
+
+Example:
+
+```hcl
+variable "database_url" {
+  default = getenv("DATABASE_URL")
+}
+
+data "hcl_schema" "app" {
+  paths = fileset("schema/*.hcl")
+}
+
+env "local" {
+  url = var.database_url
+  src = data.hcl_schema.app.url
+  dev = getenv("DEV_DATABASE_URL")
+}
+```
+
+`data.hcl_schema.<name>.url` returns one `file://...` URL when `path` is used
+and a list of `file://...` URLs when `paths` is used. `fileset` returns stable
+slash-separated relative paths sorted lexicographically and supports recursive
+`**` path segments.
+
+Ptah does not expose Atlas CLI variable override flags yet. A `variable` block
+therefore needs a `default` value. Variable `type` and `sensitive` attributes
+are not accepted until Ptah implements their semantics. Unsupported dynamic data
+sources such as external schemas, SQL data sources, registry-backed sources, and
+Cloud-specific sources still fail explicitly.
 
 ## Env Selection
 
@@ -136,9 +176,9 @@ names.
 ## Unsupported Constructs
 
 Ptah intentionally rejects everything outside the documented subset. Unsupported
-attributes, unsupported lint policy/analyzer blocks, duplicate `migration` or
-`lint` blocks, dynamic expressions, and non-file migration directory URI schemes
-fail with a location-aware error:
+attributes, unsupported data sources, unsupported lint policy/analyzer blocks,
+duplicate `migration` or `lint` blocks, variables without defaults, and non-file
+migration directory URI schemes fail with a location-aware error:
 
 ```text
 unsupported atlas.hcl construct "src" at atlas.hcl:2

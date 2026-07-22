@@ -163,6 +163,110 @@ func TestParseAtlasProjectConfigAcceptsSingleSource(t *testing.T) {
 	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://schema.hcl"})
 }
 
+func TestParseAtlasProjectConfigEvaluatesVariablesLocalsAndFunctions(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_TEST_DATABASE_URL", "sqlite://env.db")
+	raw := []byte(`variable "schema_name" {
+  description = "Schema file stem."
+  default     = "app"
+}
+
+locals {
+  schema_source = "file://${var.schema_name}.hcl"
+  dev_url       = local.z_dev_url
+  z_dev_url     = "${getenv("PTAH_TEST_DATABASE_URL")}?mode=dev"
+}
+
+env "local" {
+  url = getenv("PTAH_TEST_DATABASE_URL")
+  dev = local.dev_url
+  src = local.schema_source
+  lint {
+    latest = 3
+  }
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.DatabaseURL, qt.Equals, "sqlite://env.db")
+	c.Assert(cfg.DevURL, qt.Equals, "sqlite://env.db?mode=dev")
+	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://app.hcl"})
+	c.Assert(cfg.Lint.Latest, qt.IsNotNil)
+	c.Assert(*cfg.Lint.Latest, qt.Equals, 3)
+}
+
+func TestLoadAtlasProjectConfigEvaluatesFileFunction(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	atlasPath := filepath.Join(dir, "atlas.hcl")
+	c.Assert(os.WriteFile(filepath.Join(dir, "database-url.txt"), []byte(`sqlite://file-function.db`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(atlasPath, []byte(`locals {
+  database_url = file("database-url.txt")
+}
+
+env "local" {
+  url = local.database_url
+}
+`), 0o600), qt.IsNil)
+
+	cfg, err := projectconfig.LoadAtlasFile(atlasPath, "local")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.DatabaseURL, qt.Equals, "sqlite://file-function.db")
+}
+
+func TestLoadAtlasProjectConfigEvaluatesHCLSchemaDataSourcePath(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	atlasPath := filepath.Join(dir, "atlas.hcl")
+	c.Assert(os.WriteFile(filepath.Join(dir, "schema.hcl"), []byte(`schema "main" {}`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(atlasPath, []byte(`data "hcl_schema" "app" {
+  path = "schema.hcl"
+}
+
+env "local" {
+  src = data.hcl_schema.app.url
+}
+`), 0o600), qt.IsNil)
+
+	cfg, err := projectconfig.LoadAtlasFile(atlasPath, "local")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://schema.hcl"})
+}
+
+func TestLoadAtlasProjectConfigEvaluatesFilesetHCLSchemaDataSource(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	schemaDir := filepath.Join(dir, "schema")
+	c.Assert(os.Mkdir(schemaDir, 0o700), qt.IsNil)
+	c.Assert(os.Mkdir(filepath.Join(schemaDir, "nested"), 0o700), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(schemaDir, "b.hcl"), []byte(`schema "main" {}`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(schemaDir, "a.hcl"), []byte(`schema "main" {}`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(schemaDir, "nested", "c.hcl"), []byte(`schema "main" {}`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "ignored.sql"), []byte(`CREATE TABLE ignored (id int);`), 0o600), qt.IsNil)
+	atlasPath := filepath.Join(dir, "atlas.hcl")
+	c.Assert(os.WriteFile(atlasPath, []byte(`data "hcl_schema" "app" {
+  paths = fileset("schema/**/*.hcl")
+}
+
+env "local" {
+  src = data.hcl_schema.app.url
+}
+`), 0o600), qt.IsNil)
+
+	cfg, err := projectconfig.LoadAtlasFile(atlasPath, "local")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{
+		"file://schema/a.hcl",
+		"file://schema/b.hcl",
+		"file://schema/nested/c.hcl",
+	})
+}
+
 func TestParseAtlasProjectConfigSelectsEnv(t *testing.T) {
 	c := qt.New(t)
 	raw := []byte(`env "dev" {
@@ -181,6 +285,47 @@ env "prod" {
 
 	_, err = projectconfig.ParseAtlas(raw, "atlas.hcl", "")
 	c.Assert(err, qt.ErrorMatches, `atlas\.hcl contains multiple env blocks; pass --env`)
+}
+
+func TestParseAtlasProjectConfigSkipsUnselectedEnvEvaluation(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`env "dev" {
+  url = "sqlite://dev.db"
+}
+env "prod" {
+  url = missing.value
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "dev")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.DatabaseURL, qt.Equals, "sqlite://dev.db")
+
+	_, err = projectconfig.ParseAtlas(raw, "atlas.hcl", "prod")
+	c.Assert(err, qt.ErrorMatches, `unsupported atlas\.hcl construct "url" at atlas\.hcl:5`)
+}
+
+func TestLoadAtlasProjectConfigEmptyEnvURLOverridesPtahFallback(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	atlasPath := filepath.Join(dir, "atlas.hcl")
+	ptahPath := filepath.Join(dir, "ptah.yaml")
+	c.Assert(os.WriteFile(ptahPath, []byte(`url: sqlite://ptah-fallback.db
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(atlasPath, []byte(`env "local" {
+  url = getenv("PTAH_TEST_UNSET_DATABASE_URL")
+}
+`), 0o600), qt.IsNil)
+
+	cfg, err := projectconfig.Load(projectconfig.LoadOptions{
+		PtahPath:  ptahPath,
+		AtlasPath: atlasPath,
+		EnvName:   "local",
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.DatabaseURL, qt.Equals, "")
 }
 
 func TestParseAtlasProjectConfigUsesSingleUnlabeledEnv(t *testing.T) {
@@ -233,12 +378,91 @@ func TestParseAtlasProjectConfigRejectsUnsupportedConstructs(t *testing.T) {
 			err: `unsupported atlas\.hcl construct "atlas" at atlas\.hcl:1`,
 		},
 		{
-			name: "dynamic env source",
-			raw: `env "local" {
-  src = data.hcl_schema.app.url
+			name: "unsupported data source",
+			raw: `data "external" "app" {
+  program = ["echo", "{}"]
 }
 `,
-			err: `unsupported atlas\.hcl construct "src" at atlas\.hcl:2`,
+			err: `unsupported atlas\.hcl construct "data.external" at atlas\.hcl:1`,
+		},
+		{
+			name: "unsupported hcl schema data attribute",
+			raw: `data "hcl_schema" "app" {
+  path  = "schema.hcl"
+  query = "table.users"
+}
+`,
+			err: `unsupported atlas\.hcl construct "query" at atlas\.hcl:3`,
+		},
+		{
+			name: "variable without default",
+			raw: `variable "url" {}
+env "local" {
+  url = var.url
+}
+`,
+			err: `atlas\.hcl variable "url" requires a default because Ptah does not expose Atlas variable flags yet`,
+		},
+		{
+			name: "variable type is unsupported",
+			raw: `variable "url" {
+  type    = string
+  default = "sqlite://typed.db"
+}
+`,
+			err: `unsupported atlas\.hcl construct "type" at atlas\.hcl:2`,
+		},
+		{
+			name: "variable sensitive is unsupported",
+			raw: `variable "url" {
+  sensitive = true
+  default   = "sqlite://typed.db"
+}
+`,
+			err: `unsupported atlas\.hcl construct "sensitive" at atlas\.hcl:2`,
+		},
+		{
+			name: "duplicate local",
+			raw: `locals {
+  url = "sqlite://first.db"
+}
+locals {
+  url = "sqlite://second.db"
+}
+`,
+			err: `duplicate atlas\.hcl local "url" at atlas\.hcl:5`,
+		},
+		{
+			name: "file function rejects parent traversal",
+			raw: `env "local" {
+  url = file("../secret.txt")
+}
+`,
+			err: `unsupported atlas\.hcl construct "url" at atlas\.hcl:2`,
+		},
+		{
+			name: "file function rejects absolute paths",
+			raw: `env "local" {
+  url = file("/tmp/secret.txt")
+}
+`,
+			err: `unsupported atlas\.hcl construct "url" at atlas\.hcl:2`,
+		},
+		{
+			name: "hcl schema data source rejects remote path",
+			raw: `data "hcl_schema" "app" {
+  path = "https://example.com/schema.hcl"
+}
+`,
+			err: `unsupported atlas\.hcl construct "path" at atlas\.hcl:2`,
+		},
+		{
+			name: "fileset rejects parent traversal",
+			raw: `data "hcl_schema" "app" {
+  paths = fileset("../*.hcl")
+}
+`,
+			err: `unsupported atlas\.hcl construct "paths" at atlas\.hcl:2`,
 		},
 		{
 			name: "unknown migration attribute",

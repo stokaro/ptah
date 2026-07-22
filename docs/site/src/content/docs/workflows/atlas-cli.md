@@ -101,14 +101,15 @@ configuration remain explicit gaps.
 
 `ptah atlas schema apply` accepts one or more local `--to` schema file URLs and
 a live database `--url`. With `--env`, Ptah can read `env.url`, `env.src`,
-`env.dev`, and `env.exclude` from the selected `atlas.hcl` environment;
-explicit CLI flags still take precedence. Ptah reads the current database
-schema, diffs it against the desired local schema files, prints the planned SQL,
-and applies it after interactive confirmation. Use `--dry-run` to print the plan
-without applying it, or `--auto-approve` to skip the prompt explicitly. Use
-`--tx-mode=file` or `--tx-mode=all` to execute the generated plan in one
-transaction, or `--tx-mode=none` to execute statements without transaction
-wrapping.
+`env.dev`, and `env.exclude` from the selected `atlas.hcl` environment,
+including local variable defaults, locals, `getenv`, `file`, `fileset`, and
+`data.hcl_schema.<name>.url` references. Explicit CLI flags still take
+precedence. Ptah reads the current database schema, diffs it against the desired
+local schema files, prints the planned SQL, and applies it after interactive
+confirmation. Use `--dry-run` to print the plan without applying it, or
+`--auto-approve` to skip the prompt explicitly. Use `--tx-mode=file` or
+`--tx-mode=all` to execute the generated plan in one transaction, or
+`--tx-mode=none` to execute statements without transaction wrapping.
 
 ```bash
 ptah atlas schema apply \
@@ -118,10 +119,14 @@ ptah atlas schema apply \
 ```
 
 ```hcl
+data "hcl_schema" "app" {
+  paths = fileset("schema/*.hcl")
+}
+
 env "local" {
-  url = "sqlite://app.db"
-  src = "schema.sql"
-  dev = "sqlite://dev.db"
+  url = getenv("DATABASE_URL")
+  src = data.hcl_schema.app.url
+  dev = getenv("DEV_DATABASE_URL")
 }
 ```
 
