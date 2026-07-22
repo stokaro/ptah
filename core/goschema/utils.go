@@ -1166,6 +1166,7 @@ func validateDuplicateConstraints(constraints []Constraint) error {
 			constraint.WhereCondition,
 			constraint.CheckExpression,
 			strings.Join(constraint.Columns, ","),
+			strings.Join(constraint.IncludeColumns, ","),
 			constraint.ForeignTable,
 			strings.Join(constraint.ForeignColumnsOrDefault(), ","),
 			constraint.OnDelete,

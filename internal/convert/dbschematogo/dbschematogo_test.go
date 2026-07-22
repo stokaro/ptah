@@ -401,11 +401,12 @@ func TestConvertDBSchemaToGoSchema_TableLevelConstraintsAndSizedTypes(t *testing
 				ColumnNames: []string{"tenant_id", "order_id"},
 			},
 			{
-				Name:          "order_items_sku_unique",
-				TableName:     "order_items",
-				Type:          "UNIQUE",
-				ColumnNames:   []string{"tenant_id", "sku"},
-				NullsDistinct: &nullsDistinct,
+				Name:           "order_items_sku_unique",
+				TableName:      "order_items",
+				Type:           "UNIQUE",
+				ColumnNames:    []string{"tenant_id", "sku"},
+				IncludeColumns: []string{"created_at"},
+				NullsDistinct:  &nullsDistinct,
 			},
 			{
 				Name:        "order_items_price_check",
@@ -426,12 +427,13 @@ func TestConvertDBSchemaToGoSchema_TableLevelConstraintsAndSizedTypes(t *testing
 	c.Assert(result.Fields[3].Type, qt.Equals, "NUMERIC(10,2)")
 	c.Assert(result.Constraints, qt.DeepEquals, []goschema.Constraint{
 		{
-			StructName:    "OrderItems",
-			Name:          "order_items_sku_unique",
-			Type:          "UNIQUE",
-			Table:         "order_items",
-			Columns:       []string{"tenant_id", "sku"},
-			NullsDistinct: &nullsDistinct,
+			StructName:     "OrderItems",
+			Name:           "order_items_sku_unique",
+			Type:           "UNIQUE",
+			Table:          "order_items",
+			Columns:        []string{"tenant_id", "sku"},
+			IncludeColumns: []string{"created_at"},
+			NullsDistinct:  &nullsDistinct,
 		},
 		{
 			StructName:      "OrderItems",

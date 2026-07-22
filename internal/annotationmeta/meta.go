@@ -349,6 +349,7 @@ var directives = []Directive{
 			attr("condition", "Constraint WHERE condition.", valueSQL, false, false),
 			attr("check", "CHECK expression.", valueSQL, false, false),
 			attr("columns", "Comma-separated local columns.", valueList, false, false),
+			attr("include", "Comma-separated PostgreSQL INCLUDE columns for covering UNIQUE constraints.", valueList, false, false),
 			attr("nulls_distinct", "Controls NULLS DISTINCT behavior where supported.", valueBoolean, false, false),
 			attr("foreign_table", "Referenced table for FOREIGN KEY constraints.", valueString, false, false),
 			attr("foreign_column", "Single referenced column for FOREIGN KEY constraints.", valueString, false, false),

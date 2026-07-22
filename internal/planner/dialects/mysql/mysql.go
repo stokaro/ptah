@@ -651,6 +651,10 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
 	var result []ast.Node
 
+	if err := p.rejectUniqueIncludeConstraints(diff, generated); err != nil {
+		return nil, err
+	}
+
 	// Note: MySQL doesn't use separate enum types like PostgreSQL
 	// Enums are handled inline in column definitions, so we skip enum creation steps
 
@@ -708,6 +712,40 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	result = p.handleEnumRemovals(result, diff)
 
 	return result, nil
+}
+
+func (p *Planner) rejectUniqueIncludeConstraints(diff *types.SchemaDiff, generated *goschema.Database) error {
+	if diff != nil {
+		for _, add := range diff.ConstraintsAddedWithTables {
+			if !strings.EqualFold(add.Type, "UNIQUE") || len(add.IncludeColumns) == 0 {
+				continue
+			}
+			return p.uniqueIncludeUnsupportedError(add.Name)
+		}
+	}
+	if generated == nil {
+		return nil
+	}
+	for _, constraint := range generated.Constraints {
+		if !strings.EqualFold(constraint.Type, "UNIQUE") || len(constraint.IncludeColumns) == 0 {
+			continue
+		}
+		return p.uniqueIncludeUnsupportedError(constraint.Name)
+	}
+	return nil
+}
+
+func (p *Planner) uniqueIncludeUnsupportedError(constraintName string) error {
+	return &ptaherr.CapabilityError{
+		Dialect: p.targetDialect(),
+		Feature: "unique constraint include columns",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf(
+			"%s does not support PostgreSQL INCLUDE columns on UNIQUE constraints; remove include columns from constraint %s or target PostgreSQL",
+			p.enumDialectLabel(),
+			constraintName,
+		),
+	}
 }
 
 func (p *Planner) rejectMaterializedViews(diff *types.SchemaDiff) error {

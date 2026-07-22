@@ -311,6 +311,9 @@ type Constraint struct {
 
 	// UNIQUE/PRIMARY KEY constraint specific fields
 	Columns []string // Column names for UNIQUE/PRIMARY KEY constraints
+	// IncludeColumns carries PostgreSQL INCLUDE columns for covering UNIQUE
+	// constraints.
+	IncludeColumns []string
 	// NullsDistinct carries PostgreSQL UNIQUE NULLS [NOT] DISTINCT state.
 	// Nil means the clause was not specified.
 	NullsDistinct *bool

@@ -44,6 +44,37 @@ func TestPlanner_GenerateMigrationAST_ViewsAndTriggersModified(t *testing.T) {
 	c.Assert(sql, qt.Contains, "CREATE TRIGGER set_updated_at BEFORE UPDATE ON users FOR EACH ROW SET NEW.updated_at = NOW();")
 }
 
+func TestPlanner_GenerateMigrationASTChecked_RejectsUniqueIncludeColumns(t *testing.T) {
+	c := qt.New(t)
+	planner := mysql.New()
+
+	diff := &difftypes.SchemaDiff{
+		ConstraintsAdded: []string{"users_email_key"},
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+			Name:           "users_email_key",
+			TableName:      "users",
+			Type:           "UNIQUE",
+			Columns:        []string{"email"},
+			IncludeColumns: []string{"updated_at"},
+		}},
+	}
+	generated := &goschema.Database{
+		Constraints: []goschema.Constraint{{
+			StructName:     "User",
+			Name:           "users_email_key",
+			Type:           "UNIQUE",
+			Table:          "users",
+			Columns:        []string{"email"},
+			IncludeColumns: []string{"updated_at"},
+		}},
+	}
+
+	_, err := planner.GenerateMigrationASTChecked(diff, generated)
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, "MySQL-family does not support PostgreSQL INCLUDE columns on UNIQUE constraints.*")
+}
+
 func TestPlanner_GenerateSchemaDiffSQLStatements_CompoundTriggerBody(t *testing.T) {
 	c := qt.New(t)
 

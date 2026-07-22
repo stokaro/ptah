@@ -44,10 +44,11 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedCheckAndUniqueAdditions(t *t
 			diff: &types.SchemaDiff{
 				ConstraintsAdded: []string{"accounts_identity"},
 				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
-					Name:      "accounts_identity",
-					TableName: "accounts",
-					Type:      "UNIQUE",
-					Columns:   []string{"email", "region"},
+					Name:           "accounts_identity",
+					TableName:      "accounts",
+					Type:           "UNIQUE",
+					Columns:        []string{"email", "region"},
+					IncludeColumns: []string{"updated_at"},
 				}},
 				ConstraintsRemoved: []string{"accounts_identity"},
 				ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{{
@@ -57,7 +58,7 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedCheckAndUniqueAdditions(t *t
 				}},
 			},
 			wantDrop: "ALTER TABLE accounts DROP CONSTRAINT IF EXISTS accounts_identity;",
-			wantAdd:  "ALTER TABLE accounts ADD CONSTRAINT accounts_identity UNIQUE (email, region);",
+			wantAdd:  "ALTER TABLE accounts ADD CONSTRAINT accounts_identity UNIQUE (email, region) INCLUDE (updated_at);",
 		},
 	}
 

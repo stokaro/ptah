@@ -772,6 +772,24 @@ func TestPostgreSQLRenderer_UniqueConstraintNullsNotDistinct(t *testing.T) {
 	c.Assert(legacyPostgresSQL(result), qt.Contains, "  CONSTRAINT users_c_key UNIQUE NULLS NOT DISTINCT (c)")
 }
 
+func TestPostgreSQLRenderer_UniqueConstraintInclude(t *testing.T) {
+	c := qt.New(t)
+	table := ast.NewCreateTable("users").
+		AddColumn(ast.NewColumn("email", "text")).
+		AddColumn(ast.NewColumn("updated_at", "timestamp")).
+		AddConstraint(&ast.ConstraintNode{
+			Type:           ast.UniqueConstraint,
+			Name:           "users_email_key",
+			Columns:        []string{"email"},
+			IncludeColumns: []string{"updated_at"},
+		})
+
+	result, err := postgres.New().Render(table)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(legacyPostgresSQL(result), qt.Contains, "  CONSTRAINT users_email_key UNIQUE (email) INCLUDE (updated_at)")
+}
+
 func TestPostgreSQLRenderer_RejectsIdentityGeneratedColumnMix(t *testing.T) {
 	c := qt.New(t)
 

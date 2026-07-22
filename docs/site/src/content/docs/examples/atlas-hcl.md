@@ -23,9 +23,18 @@ table "accounts" {
     null = false
   }
 
+  column "created_at" {
+    type = timestamptz
+  }
+
   index "accounts_email_key" {
     unique = true
     columns = [column.email]
+  }
+
+  unique "accounts_email_covering" {
+    columns = [column.email]
+    include = [column.created_at]
   }
 }
 ```

@@ -619,11 +619,15 @@ func ToConstraint(constraint *ast.ConstraintNode, structName, tableName string) 
 	switch constraint.Type {
 	case ast.UniqueConstraint:
 		return goschema.Constraint{
-			StructName:    structName,
-			Name:          constraint.Name,
-			Type:          "UNIQUE",
-			Table:         tableName,
-			Columns:       append([]string(nil), constraint.Columns...),
+			StructName: structName,
+			Name:       constraint.Name,
+			Type:       "UNIQUE",
+			Table:      tableName,
+			Columns:    append([]string(nil), constraint.Columns...),
+			IncludeColumns: append(
+				[]string(nil),
+				constraint.IncludeColumns...,
+			),
 			NullsDistinct: cloneBoolPtr(constraint.NullsDistinct),
 		}, true
 	default:

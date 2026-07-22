@@ -147,6 +147,9 @@ type DBConstraint struct {
 	// NullsDistinct carries PostgreSQL UNIQUE NULLS [NOT] DISTINCT state.
 	// Nil means the clause was not present in the definition.
 	NullsDistinct *bool `json:"nulls_distinct,omitempty"`
+	// IncludeColumns carries PostgreSQL INCLUDE columns for covering UNIQUE
+	// and PRIMARY KEY constraints.
+	IncludeColumns []string `json:"include_columns,omitempty"`
 	// EXCLUDE constraint specific fields (PostgreSQL only)
 	UsingMethod     *string `json:"using_method"`     // Index method: gist, btree, etc.
 	ExcludeElements *string `json:"exclude_elements"` // Elements with operators: "room_id WITH =, during WITH &&"

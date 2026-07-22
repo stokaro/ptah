@@ -478,7 +478,8 @@ type ConstraintNode struct {
 	// ColumnParts contains structured column references for dialect-specific
 	// attributes such as MySQL prefix lengths and DESC ordering.
 	ColumnParts []ConstraintColumn
-	// IncludeColumns contains PostgreSQL INCLUDE columns for primary key constraints.
+	// IncludeColumns contains PostgreSQL INCLUDE columns for primary key and
+	// unique constraints.
 	IncludeColumns []string
 	// NullsDistinct carries PostgreSQL UNIQUE NULLS [NOT] DISTINCT state.
 	// Nil means the clause was not specified.

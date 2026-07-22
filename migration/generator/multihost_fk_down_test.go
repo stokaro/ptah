@@ -290,11 +290,12 @@ func TestReverseConstraintAdditions_RestoresUniqueConstraintBody(t *testing.T) {
 	nullsDistinct := false
 	dbSchema := &dbschematypes.DBSchema{
 		Constraints: []dbschematypes.DBConstraint{{
-			Name:          "accounts_identity_unique",
-			TableName:     "accounts",
-			Type:          "UNIQUE",
-			ColumnNames:   []string{"email"},
-			NullsDistinct: &nullsDistinct,
+			Name:           "accounts_identity_unique",
+			TableName:      "accounts",
+			Type:           "UNIQUE",
+			ColumnNames:    []string{"email"},
+			IncludeColumns: []string{"updated_at"},
+			NullsDistinct:  &nullsDistinct,
 		}},
 	}
 	upDiff := &types.SchemaDiff{
@@ -310,6 +311,7 @@ func TestReverseConstraintAdditions_RestoresUniqueConstraintBody(t *testing.T) {
 	c.Assert(additions[0].TableName, qt.Equals, "accounts")
 	c.Assert(additions[0].Type, qt.Equals, "UNIQUE")
 	c.Assert(additions[0].Columns, qt.DeepEquals, []string{"email"})
+	c.Assert(additions[0].IncludeColumns, qt.DeepEquals, []string{"updated_at"})
 	c.Assert(additions[0].NullsDistinct, qt.IsNotNil)
 	c.Assert(*additions[0].NullsDistinct, qt.Equals, false)
 }

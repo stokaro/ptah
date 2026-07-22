@@ -697,11 +697,13 @@ func TestToDatabase_UniqueConstraintNullsNotDistinct(t *testing.T) {
 	nullsDistinct := false
 	usersTable := ast.NewCreateTable("users").
 		AddColumn(ast.NewColumn("c", "INTEGER")).
+		AddColumn(ast.NewColumn("covering", "INTEGER")).
 		AddConstraint(&ast.ConstraintNode{
-			Type:          ast.UniqueConstraint,
-			Name:          "users_c_key",
-			Columns:       []string{"c"},
-			NullsDistinct: &nullsDistinct,
+			Type:           ast.UniqueConstraint,
+			Name:           "users_c_key",
+			Columns:        []string{"c"},
+			IncludeColumns: []string{"covering"},
+			NullsDistinct:  &nullsDistinct,
 		})
 
 	result := toschema.ToDatabase(&ast.StatementList{Statements: []ast.Node{usersTable}})
@@ -709,6 +711,7 @@ func TestToDatabase_UniqueConstraintNullsNotDistinct(t *testing.T) {
 	c.Assert(result.Constraints, qt.HasLen, 1)
 	c.Assert(result.Constraints[0].Name, qt.Equals, "users_c_key")
 	c.Assert(result.Constraints[0].Type, qt.Equals, "UNIQUE")
+	c.Assert(result.Constraints[0].IncludeColumns, qt.DeepEquals, []string{"covering"})
 	c.Assert(result.Constraints[0].NullsDistinct, qt.IsNotNil)
 	c.Assert(*result.Constraints[0].NullsDistinct, qt.IsFalse)
 }

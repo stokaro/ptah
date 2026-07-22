@@ -35,7 +35,8 @@ current schema IR:
   `on { expr = "..." }`, `desc`, `unique`, `type`, and `where`; PostgreSQL
   indexes also support `include`, BRIN `page_per_range`, and
   `nulls_distinct`
-- `unique` blocks with `columns` and PostgreSQL `nulls_distinct`
+- `unique` blocks with `columns`; PostgreSQL unique constraints also support
+  `include` and `nulls_distinct`
 - `foreign_key` blocks with one local `columns` entry and one table-qualified
   `ref_columns` entry
 - `check` blocks with `expr`
@@ -166,7 +167,12 @@ table "users" {
 
   unique "users_c_key" {
     columns = [column.c]
+    include = [column.covering]
     nulls_distinct = false
+  }
+
+  column "covering" {
+    type = int
   }
 }
 ```

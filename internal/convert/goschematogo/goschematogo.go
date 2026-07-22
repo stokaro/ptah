@@ -425,6 +425,7 @@ func constraintAnnotation(constraint goschema.Constraint) string {
 		attr{name: "type", value: constraint.Type, set: true},
 		attr{name: "table", value: constraint.Table, set: constraint.Table != ""},
 		attr{name: "columns", value: strings.Join(constraint.Columns, ","), set: len(constraint.Columns) > 0},
+		attr{name: "include", value: strings.Join(constraint.IncludeColumns, ","), set: len(constraint.IncludeColumns) > 0},
 		attr{name: "using", value: constraint.UsingMethod, set: constraint.UsingMethod != ""},
 		attr{name: "elements", value: constraint.ExcludeElements, set: constraint.ExcludeElements != ""},
 		attr{name: "condition", value: constraint.WhereCondition, set: constraint.WhereCondition != ""},
