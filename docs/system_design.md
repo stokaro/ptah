@@ -303,7 +303,11 @@ type Product struct {
 ## Error Handling and Safety
 
 ### Transaction Semantics
-- PostgreSQL-family DDL runs in transactions unless a migration opts out with `-- +ptah no_transaction`
+- Default `tx-mode=file` wraps each migration file in its own transaction unless
+  a migration opts out with `-- +ptah no_transaction`
+- `tx-mode=all` wraps all pending up migrations in one transaction on supported
+  dialects; `tx-mode=none` disables migration transaction wrapping and can
+  leave partial statement effects behind a dirty revision
 - MySQL/MariaDB DDL implicitly commits; failed migrations can leave partial DDL applied and must be inspected before repair
 - ClickHouse transaction methods are no-ops in Ptah
 - Dry-run mode is available for validation

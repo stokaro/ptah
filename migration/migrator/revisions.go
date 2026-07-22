@@ -117,7 +117,7 @@ func (m *Migrator) migrationStatementCount(sqlText string) int {
 	return migrationStatementCountForDialect(sqlText, m.conn.Info().Dialect)
 }
 
-func migrationExecutionProgress(err error, dialect string) (applied int, total int, stmt string) {
+func migrationExecutionProgress(err error, dialect string, txMode MigrationTxMode) (applied int, total int, stmt string) {
 	var execErr *MigrationExecutionError
 	if !errors.As(err, &execErr) {
 		return 0, 0, ""
@@ -125,7 +125,8 @@ func migrationExecutionProgress(err error, dialect string) (applied int, total i
 
 	total = execErr.Total
 	applied = execErr.StatementIndex - 1
-	if dialect == "postgres" || dialect == "cockroachdb" || dialect == "yugabytedb" {
+	if txMode == MigrationTxModeAll ||
+		(txMode == MigrationTxModeFile && (dialect == "postgres" || dialect == "cockroachdb" || dialect == "yugabytedb")) {
 		applied = 0
 	}
 	if applied < 0 {
@@ -528,16 +529,24 @@ func (m *Migrator) failIfDirty(ctx context.Context) error {
 }
 
 func (m *Migrator) beginMigrationRevision(ctx context.Context, migration *Migration) error {
+	return m.beginMigrationRevisionOn(ctx, m.conn, migration)
+}
+
+func (m *Migrator) beginMigrationRevisionOn(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	migration *Migration,
+) error {
 	if m.conn.Writer().IsDryRun() {
 		return nil
 	}
 	if m.revisionTableFormat.isAtlas() {
-		return m.beginAtlasMigrationRevision(ctx, migration)
+		return m.beginAtlasMigrationRevisionOn(ctx, conn, migration)
 	}
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.beginMigrationSQL())
-	return executeSQLOutsideTransaction(
+	return executeSQLOn(
 		ctx,
-		m.conn,
+		conn,
 		query,
 		migration.Version,
 		migration.Description,
@@ -552,11 +561,15 @@ func (m *Migrator) beginMigrationRevision(ctx context.Context, migration *Migrat
 	)
 }
 
-func (m *Migrator) beginAtlasMigrationRevision(ctx context.Context, migration *Migration) error {
+func (m *Migrator) beginAtlasMigrationRevisionOn(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	migration *Migration,
+) error {
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.beginMigrationSQL())
-	return executeSQLOutsideTransaction(
+	return executeSQLOn(
 		ctx,
-		m.conn,
+		conn,
 		query,
 		strconv.FormatInt(migration.Version, 10),
 		migration.Description,
@@ -574,16 +587,25 @@ func (m *Migrator) beginAtlasMigrationRevision(ctx context.Context, migration *M
 }
 
 func (m *Migrator) completeMigrationRevision(ctx context.Context, migration *Migration, startedAt time.Time) error {
+	return m.completeMigrationRevisionOn(ctx, m.conn, migration, startedAt)
+}
+
+func (m *Migrator) completeMigrationRevisionOn(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	migration *Migration,
+	startedAt time.Time,
+) error {
 	if m.conn.Writer().IsDryRun() {
 		return nil
 	}
 	if m.revisionTableFormat.isAtlas() {
-		return m.completeAtlasMigrationRevision(ctx, migration, startedAt)
+		return m.completeAtlasMigrationRevisionOn(ctx, conn, migration, startedAt)
 	}
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.completeMigrationSQL())
-	return executeSQLOutsideTransaction(
+	return executeSQLOn(
 		ctx,
-		m.conn,
+		conn,
 		query,
 		migrationStateApplied,
 		m.migrationStatementCount(migration.UpSQL),
@@ -594,12 +616,17 @@ func (m *Migrator) completeMigrationRevision(ctx context.Context, migration *Mig
 	)
 }
 
-func (m *Migrator) completeAtlasMigrationRevision(ctx context.Context, migration *Migration, startedAt time.Time) error {
+func (m *Migrator) completeAtlasMigrationRevisionOn(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	migration *Migration,
+	startedAt time.Time,
+) error {
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.completeMigrationSQL())
 	total := m.migrationStatementCount(migration.UpSQL)
-	return executeSQLOutsideTransaction(
+	return executeSQLOn(
 		ctx,
-		m.conn,
+		conn,
 		query,
 		total,
 		total,
@@ -645,17 +672,18 @@ func (m *Migrator) beginAtlasRollbackRevision(ctx context.Context, migration *Mi
 	)
 }
 
-func (m *Migrator) failMigrationRevision(
+func (m *Migrator) failMigrationRevisionWithMode(
 	ctx context.Context,
 	migration *Migration,
 	startedAt time.Time,
 	failure error,
 	sqlText string,
+	txMode MigrationTxMode,
 ) error {
 	if m.conn.Writer().IsDryRun() {
 		return nil
 	}
-	applied, total, stmt := migrationExecutionProgress(failure, m.conn.Info().Dialect)
+	applied, total, stmt := migrationExecutionProgress(failure, m.conn.Info().Dialect, txMode)
 	if total == 0 {
 		total = m.migrationStatementCount(sqlText)
 	}

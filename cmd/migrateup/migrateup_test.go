@@ -50,6 +50,7 @@ func TestMigrateUp_VerifySumAbortsOnDriftBeforeConnecting(t *testing.T) {
 	resetMigrateUpCommandForTest(c, cmd)
 	t.Cleanup(func() { resetMigrateUpCommandForTest(c, cmd) })
 	c.Assert(cmd.Flag(migrationLockTimeoutFlag), qt.IsNotNil)
+	c.Assert(cmd.Flag(txModeFlag), qt.IsNotNil)
 	c.Assert(cmd.Flag(cliobs.LogFormatFlagName), qt.IsNotNil)
 	c.Assert(cmd.Flag(cliobs.LogLevelFlagName), qt.IsNotNil)
 	c.Assert(cmd.Flag(cliobs.MetricsAddrFlagName), qt.IsNotNil)
@@ -273,6 +274,64 @@ migration:
 	c.Assert(err, qt.ErrorMatches, "(?s).*up pre-flight custom command hook failed: exit status 9\nconfig backup refused")
 }
 
+func TestMigrateUpCommandReadsTxModeFromConfig(t *testing.T) {
+	c := qt.New(t)
+
+	dir := t.TempDir()
+	tableName := "tx_mode_config_keeps_partial_body"
+	writeMigrateUpFile(c, dir, "0000000001_partial.up.sql", fmt.Sprintf(`CREATE TABLE %s (id INTEGER PRIMARY KEY);
+INSERT INTO missing_tx_mode_config_table (id) VALUES (1);
+`, tableName))
+	writeMigrateUpFile(c, dir, "0000000001_partial.down.sql", fmt.Sprintf("DROP TABLE %s;\n", tableName))
+	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
+	configPath := filepath.Join(t.TempDir(), "ptah.yaml")
+	config := fmt.Appendf(nil, `url: %s
+migration:
+  dir: %s
+  tx_mode: none
+`, dbURL, dir)
+	c.Assert(os.WriteFile(configPath, config, 0o600), qt.IsNil)
+
+	cmd := NewMigrateUpCommand()
+	resetMigrateUpCommandForTest(c, cmd)
+	t.Cleanup(func() { resetMigrateUpCommandForTest(c, cmd) })
+	cmd.SetArgs([]string{"--config", configPath})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(sqliteMigrateUpTableExists(c, dbURL, tableName), qt.IsTrue)
+}
+
+func TestMigrateUpCommandTxModeFlagOverridesConfig(t *testing.T) {
+	c := qt.New(t)
+
+	dir := t.TempDir()
+	tableName := "tx_mode_flag_rolls_back_body"
+	writeMigrateUpFile(c, dir, "0000000001_partial.up.sql", fmt.Sprintf(`CREATE TABLE %s (id INTEGER PRIMARY KEY);
+INSERT INTO missing_tx_mode_flag_table (id) VALUES (1);
+`, tableName))
+	writeMigrateUpFile(c, dir, "0000000001_partial.down.sql", fmt.Sprintf("DROP TABLE %s;\n", tableName))
+	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
+	configPath := filepath.Join(t.TempDir(), "ptah.yaml")
+	config := fmt.Appendf(nil, `url: %s
+migration:
+  dir: %s
+  tx_mode: none
+`, dbURL, dir)
+	c.Assert(os.WriteFile(configPath, config, 0o600), qt.IsNil)
+
+	cmd := NewMigrateUpCommand()
+	resetMigrateUpCommandForTest(c, cmd)
+	t.Cleanup(func() { resetMigrateUpCommandForTest(c, cmd) })
+	cmd.SetArgs([]string{"--config", configPath, "--tx-mode", "file"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(sqliteMigrateUpTableExists(c, dbURL, tableName), qt.IsFalse)
+}
+
 func TestMigrateUpCommandPgDumpHookWritesArtifact(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("fake pg_dump shell script requires a POSIX shell")
@@ -413,6 +472,21 @@ func writeMigrateUpFile(c *qt.C, dir, name, content string) {
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 }
 
+func sqliteMigrateUpTableExists(c *qt.C, dbURL string, tableName string) bool {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	var count int
+	err = conn.QueryRow(
+		"SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
+		tableName,
+	).Scan(&count)
+	c.Assert(err, qt.IsNil)
+	return count > 0
+}
+
 func databaseURLPasswordForTest(dbURL string) string {
 	parsed, err := url.Parse(dbURL)
 	if err != nil || parsed.User == nil {
@@ -435,6 +509,7 @@ func resetMigrateUpCommandForTest(c *qt.C, cmd interface{ Flag(string) *pflag.Fl
 	setMigrateUpFlagForTest(c, cmd, dirFormatFlag, string(migrator.MigrationDirFormatAuto))
 	setMigrateUpFlagForTest(c, cmd, atlasEnvFlag, "")
 	setMigrateUpFlagForTest(c, cmd, execOrderFlag, string(migrator.ExecOrderLinear))
+	setMigrateUpFlagForTest(c, cmd, txModeFlag, string(migrator.MigrationTxModeFile))
 	setMigrateUpFlagForTest(c, cmd, migrationLockTimeoutFlag, "")
 	setMigrateUpFlagForTest(c, cmd, lockTimeoutFlag, "")
 	setMigrateUpFlagForTest(c, cmd, statementTimeoutFlag, "")

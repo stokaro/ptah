@@ -684,6 +684,9 @@ type MigrationRevision struct{ ... }
 type MigrationStatus struct{ ... }
 type MigrationTimeouts struct{ ... }
     func ParseMigrationTimeouts(lockTimeout, statementTimeout string) (MigrationTimeouts, error)
+type MigrationTxMode string
+    const MigrationTxModeFile MigrationTxMode = "file" ...
+    func ParseMigrationTxMode(value string) (MigrationTxMode, error)
 type Migrator struct{ ... }
     func NewFSMigrator(conn *dbschema.DatabaseConnection, fsys fs.FS, opts ...FSProviderOption) (*Migrator, error)
     func NewMigrator(conn *dbschema.DatabaseConnection, provider MigrationProvider) *Migrator

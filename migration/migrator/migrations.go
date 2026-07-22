@@ -530,7 +530,7 @@ func executeMigrationStatement(ctx context.Context, conn *dbschema.DatabaseConne
 
 func executeSQLOutsideTransaction(ctx context.Context, conn *dbschema.DatabaseConnection, sql string, args ...any) error {
 	if conn.Writer().IsDryRun() {
-		return conn.Writer().ExecuteSQL(ctx, sql, args...)
+		return executeSQLOn(ctx, conn, sql, args...)
 	}
 
 	// Deliberate transaction escape hatch. This is used only for migrations
@@ -538,6 +538,10 @@ func executeSQLOutsideTransaction(ctx context.Context, conn *dbschema.DatabaseCo
 	// (for example PostgreSQL ALTER TYPE ADD VALUE followed by using that value).
 	_, err := conn.ExecContext(ctx, sql, args...)
 	return err
+}
+
+func executeSQLOn(ctx context.Context, conn *dbschema.DatabaseConnection, sql string, args ...any) error {
+	return conn.Writer().ExecuteSQL(ctx, sql, args...)
 }
 
 func parseNoTransactionDirective(directives map[string]string) (bool, error) {

@@ -482,6 +482,20 @@ ALTER TABLE users ADD COLUMN email TEXT;
 
 PostgreSQL runs `SET LOCAL lock_timeout` and `SET LOCAL statement_timeout` inside the migration transaction. MySQL and MariaDB run `SET SESSION innodb_lock_wait_timeout`; statement timeouts use MySQL `max_execution_time` and MariaDB `max_statement_time`.
 
+### Transaction Modes
+
+`WithTransactionMode` and `ptah migrations up --tx-mode` accept the
+Atlas-compatible values:
+
+- `file` wraps each pending migration file in its own transaction unless the
+  file opts out with `no_transaction`.
+- `all` wraps the pending migration SQL bodies in one transaction. It is
+  limited to dialects where Ptah can safely run DDL transactionally and rejects
+  file-level `no_transaction` directives and migration timeouts.
+- `none` applies pending migrations without creating migration transactions.
+  Failed runs record statement-level dirty progress. Timeouts are rejected
+  until Ptah has a dedicated single-session timeout setup and restore path.
+
 ### Non-Transactional Migrations
 
 Most migrations should stay transactional. When the database rejects
