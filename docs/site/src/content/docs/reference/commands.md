@@ -46,12 +46,14 @@ intentionally absent from that binary.
 ```bash
 ptah atlas migrate apply --url "$DATABASE_URL" --dir ./migrations
 ptah atlas migrate status --url "$DATABASE_URL" --dir ./migrations
+ptah atlas schema apply --url "$DATABASE_URL" --to file://schema.sql --dry-run
 ptah atlas schema inspect --url "$DATABASE_URL"
 ```
 
 Use `ptah-compat ...` when a script needs Atlas-style root commands:
 
 ```bash
+ptah-compat schema apply --url "$DATABASE_URL" --to file://schema.sql --dry-run
 ptah-compat migrate apply --url "$DATABASE_URL" --dir ./migrations
 ptah-compat migrate status --url "$DATABASE_URL" --dir ./migrations
 ptah-compat schema inspect --url "$DATABASE_URL"
@@ -76,6 +78,7 @@ executable name.
 | `ptah atlas migrate diff` | Validates an existing `atlas.sum`, replays a local Atlas migration directory on `--dev-url`, diffs it against local `.hcl`, `.yaml`, `.yml`, or `.sql` `--to` schema files, writes a new Atlas single-file migration, and updates `atlas.sum`. Database desired-state URLs, `env://`, schema filters, lock flags, Docker dev databases, and `--format` templates remain explicit gaps. |
 | `ptah atlas migrate import` | Imports local `file://` migration directories from `atlas`, `golang-migrate`, `goose`, `flyway`, `liquibase`, or `dbmate` format into a separate Atlas single-file directory and writes `atlas.sum`. Flyway repeatable migrations fail explicitly until Ptah can execute Atlas R-suffixed imported migrations. |
 | `ptah atlas schema inspect` | Forwards to `ptah db read`. |
+| `ptah atlas schema apply` | Diffs a live database against local `file://` `.hcl`, `.yaml`, `.yml`, or `.sql` desired schema files, prints the planned SQL, and applies it after interactive confirmation or explicit `--auto-approve`. `--dry-run` prints the plan without applying. Database desired-state URLs, migration directories, `env://`, include/exclude filters, custom format templates, lock flags, and Atlas dev-database simulation remain explicit gaps. |
 | `ptah atlas schema diff` | Diffs local `file://` schema files with `.hcl`, `.yaml`, `.yml`, or `.sql` extensions and prints migration SQL. Database URLs, migration directories, `env://`, include/exclude filters, web output, and custom format templates remain explicit gaps. |
 | `ptah atlas schema fmt` | Formats local `.hcl` files using HCL canonical layout. |
 

@@ -2,6 +2,7 @@ package atlas
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/migrateup"
+	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/migratesum"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -223,7 +225,7 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 		{
 			name:  "schema_apply",
 			path:  []string{"schema", "apply"},
-			flags: []string{"--url", "--to", "--dev-url", "--dry-run", "--auto-approve"},
+			flags: []string{"--url", "--to", "--dev-url", "--dry-run", "--auto-approve", "--format", "--schema", "--exclude", "--include", "--tx-mode"},
 		},
 		{
 			name:  "schema_diff",
@@ -786,6 +788,149 @@ func TestNewAtlasCommand_SchemaDiffRejectsUnsupportedFormat(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `atlas schema diff accepts --format, but Ptah does not implement its behavior yet`)
 }
 
+func TestNewAtlasCommand_SchemaApplyAppliesLocalSchemaToSQLite(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "apply.db")
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath, []byte(`
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY,
+  email TEXT NOT NULL
+);
+`), 0o600), qt.IsNil)
+
+	first := NewAtlasCommand()
+	var firstOut bytes.Buffer
+	first.SetOut(&firstOut)
+	first.SetErr(&firstOut)
+	first.SetArgs([]string{
+		"schema", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--to", "file://" + schemaPath,
+		"--dev-url", "sqlite://dev.db",
+		"--auto-approve",
+	})
+
+	err := first.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(firstOut.String(), qt.Contains, "Planned schema changes:")
+	c.Assert(firstOut.String(), qt.Contains, "CREATE TABLE")
+	c.Assert(firstOut.String(), qt.Contains, "Schema apply completed successfully.")
+	assertSQLiteTableExists(c, dbPath, "users")
+
+	second := NewAtlasCommand()
+	var secondOut bytes.Buffer
+	second.SetOut(&secondOut)
+	second.SetErr(&secondOut)
+	second.SetArgs([]string{
+		"schema", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--to", "file://" + schemaPath,
+	})
+
+	err = second.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(secondOut.String(), qt.Equals, "Schema is synced, no changes to be made.\n")
+}
+
+func TestNewAtlasCommand_SchemaApplyDryRunDoesNotApply(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "dry-run.db")
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath, []byte(`
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY
+);
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--to", "file://" + schemaPath,
+		"--dry-run",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Planned schema changes:")
+	c.Assert(out.String(), qt.Contains, "CREATE TABLE")
+	assertSQLiteTableMissing(c, dbPath, "users")
+}
+
+func TestNewCompatCommand_SchemaApplyDryRunUsesAtlasRoot(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "compat-dry-run.db")
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
+
+	cmd := NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--to", "file://" + schemaPath,
+		"--dry-run",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Planned schema changes:")
+	assertSQLiteTableMissing(c, dbPath, "users")
+}
+
+func TestNewAtlasCommand_SchemaApplyRejectsUnsupportedFormat(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "apply",
+		"--url", "sqlite://apply.db",
+		"--to", "file://schema.sql",
+		"--format", "{{ sql . }}",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `atlas schema apply accepts --format, but Ptah does not implement its behavior yet`)
+}
+
+func TestNewAtlasCommand_SchemaApplyRejectsDevURLDialectMismatch(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "apply",
+		"--url", "sqlite://" + filepath.Join(dir, "apply.db"),
+		"--to", "file://" + schemaPath,
+		"--dev-url", "docker://postgres/16/dev",
+		"--auto-approve",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `--dev-url dialect "postgres" does not match --url dialect "sqlite"`)
+}
+
 func TestNewAtlasCommand_MigrateDiffCreatesAtlasMigrationFromLocalSchema(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
@@ -932,6 +1077,31 @@ func nonInitialAtlasMigration(c *qt.C, files []string) string {
 	}
 	c.Assert(generated, qt.Not(qt.Equals), "", qt.Commentf("generated migration file not found in %v", files))
 	return generated
+}
+
+func assertSQLiteTableExists(c *qt.C, dbPath, table string) {
+	c.Helper()
+	c.Assert(sqliteTableExists(c, dbPath, table), qt.IsTrue)
+}
+
+func assertSQLiteTableMissing(c *qt.C, dbPath, table string) {
+	c.Helper()
+	c.Assert(sqliteTableExists(c, dbPath, table), qt.IsFalse)
+}
+
+func sqliteTableExists(c *qt.C, dbPath, table string) bool {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	schema, err := dbschema.ReadSchemaWithSchemas(conn, nil)
+	c.Assert(err, qt.IsNil)
+	for _, dbTable := range schema.Tables {
+		if dbTable.Name == table {
+			return true
+		}
+	}
+	return false
 }
 
 func TestNewAtlasCommand_SchemaFmtWalksDirectoriesAndPrintsOnlyChangedFiles(t *testing.T) {
@@ -1155,19 +1325,6 @@ func TestNewAtlasCommand_HelpAdvertisesGroupedNativeEquivalents(t *testing.T) {
 			c.Assert(out.String(), qt.Not(qt.Contains), tt.oldRoot)
 		})
 	}
-}
-
-func TestNewAtlasCommand_UnsupportedCommandsAreExplicit(t *testing.T) {
-	c := qt.New(t)
-	cmd := NewAtlasCommand()
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"schema", "apply"})
-
-	err := cmd.Execute()
-
-	c.Assert(err, qt.ErrorMatches, "atlas schema apply is not implemented yet")
 }
 
 func writeAtlasTestFile(c *qt.C, dir, name, content string) {
