@@ -26,7 +26,7 @@ model. Unsupported flags fail clearly instead of being ignored.
 | --- | --- |
 | `--url` | `--db-url` |
 | `--dir` | `--migrations-dir` |
-| `atlas.hcl` env | Project config IR |
+| `atlas.hcl` env | Project config IR, including `schema apply --env` defaults |
 | Atlas revision table mode | Ptah revision format and table settings |
 
 ## Migration commands
@@ -56,7 +56,7 @@ model. Unsupported flags fail clearly instead of being ignored.
 | Atlas-compatible command | Ptah behavior |
 | --- | --- |
 | `ptah atlas schema inspect` | Inspects a live database and writes Atlas-shaped HCL by default, SQL with `--format sql` / `--format '{{ sql . }}'`, JSON with `--format json` / `--format '{{ json . }}'`, or custom Go-template output. |
-| `ptah atlas schema apply` | Applies local desired schema files to a live database through Ptah schema diff and migration execution; supports Atlas-style `--format` templates over the planned changes. |
+| `ptah atlas schema apply` | Applies local desired schema files to a live database through Ptah schema diff and migration execution; supports `--env` project defaults and Atlas-style `--format` templates over the planned changes. |
 | `ptah atlas schema diff` | Local `file://` schema-file diff for `.hcl`, `.yaml`, `.yml`, and `.sql` sources. |
 | `ptah atlas schema fmt` | Formats local `.hcl` files using HCL canonical layout. |
 
@@ -78,19 +78,32 @@ accepts Atlas-style Go templates with `.MarshalHCL`, `sql`, `json`,
 file-backed inspection remain explicit gaps.
 
 `ptah atlas schema apply` accepts one or more local `--to` schema file URLs and
-a live database `--url`. Ptah reads the current database schema, diffs it
-against the desired local schema files, prints the planned SQL, and applies it
-after interactive confirmation. Use `--dry-run` to print the plan without
-applying it, or `--auto-approve` to skip the prompt explicitly. Use
-`--tx-mode=file` or `--tx-mode=all` to execute the generated plan in one
-transaction, or `--tx-mode=none` to execute statements without transaction
-wrapping.
+a live database `--url`. With `--env`, Ptah can read `env.url`, `env.src`, and
+`env.dev` from the selected `atlas.hcl` environment; explicit CLI flags still
+take precedence. Ptah reads the current database schema, diffs it against the
+desired local schema files, prints the planned SQL, and applies it after
+interactive confirmation. Use `--dry-run` to print the plan without applying it,
+or `--auto-approve` to skip the prompt explicitly. Use `--tx-mode=file` or
+`--tx-mode=all` to execute the generated plan in one transaction, or
+`--tx-mode=none` to execute statements without transaction wrapping.
 
 ```bash
 ptah atlas schema apply \
   --url "$DATABASE_URL" \
   --to file://schema.sql \
   --dry-run
+```
+
+```hcl
+env "local" {
+  url = "sqlite://app.db"
+  src = "schema.sql"
+  dev = "sqlite://dev.db"
+}
+```
+
+```bash
+ptah atlas schema apply --env local --dry-run
 ```
 
 `--dev-url` is accepted for dialect validation only in this path today. It must

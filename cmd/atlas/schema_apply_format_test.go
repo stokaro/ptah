@@ -125,6 +125,135 @@ func TestSchemaApplyFormatReportsSynced(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "synced")
 }
 
+func TestSchemaApplyUsesAtlasProjectEnvSource(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	dbPath := filepath.Join(dir, "project-env.db")
+	c.Assert(os.WriteFile("schema.sql", []byte(`CREATE TABLE env_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
+  url = "sqlite://`+dbPath+`"
+  src = "schema.sql"
+  dev = "sqlite://dev.db"
+}
+`), 0o600), qt.IsNil)
+
+	cmd := atlas.NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "apply",
+		"--env", "local",
+		"--auto-approve",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Schema apply completed successfully.")
+	c.Assert(sqliteTableCount(c, dbPath, "env_users"), qt.Equals, 1)
+}
+
+func TestSchemaApplyPrefersExplicitFlagsOverProjectEnv(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	configDBPath := filepath.Join(dir, "config.db")
+	cliDBPath := filepath.Join(dir, "cli.db")
+	c.Assert(os.WriteFile("config.sql", []byte(`CREATE TABLE config_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("cli.sql", []byte(`CREATE TABLE cli_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
+  url = "sqlite://`+configDBPath+`"
+  src = "config.sql"
+}
+`), 0o600), qt.IsNil)
+
+	cmd := atlas.NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "apply",
+		"--env", "local",
+		"--url", "sqlite://" + cliDBPath,
+		"--to", "cli.sql",
+		"--auto-approve",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Schema apply completed successfully.")
+	c.Assert(sqliteTableCount(c, cliDBPath, "cli_users"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, configDBPath, "config_users"), qt.Equals, 0)
+}
+
+func TestSchemaApplyExplicitFlagsIgnoreUnneededAtlasProjectConfig(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	dbPath := filepath.Join(dir, "explicit.db")
+	c.Assert(os.WriteFile("schema.sql", []byte(`CREATE TABLE explicit_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "dev" {
+  url = "sqlite://dev.db"
+}
+env "prod" {
+  url = "sqlite://prod.db"
+}
+`), 0o600), qt.IsNil)
+
+	cmd := atlas.NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--to", "schema.sql",
+		"--auto-approve",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Schema apply completed successfully.")
+	c.Assert(sqliteTableCount(c, dbPath, "explicit_users"), qt.Equals, 1)
+}
+
+func TestSchemaApplyAtlasEnvIgnoresMismatchedPtahEnv(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	dbPath := filepath.Join(dir, "atlas-env.db")
+	c.Assert(os.WriteFile("schema.sql", []byte(`CREATE TABLE atlas_env_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("ptah.yaml", []byte(`env:
+  other:
+    url: sqlite://other.db
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
+  url = "sqlite://`+dbPath+`"
+  src = "schema.sql"
+}
+`), 0o600), qt.IsNil)
+
+	cmd := atlas.NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "apply",
+		"--env", "local",
+		"--auto-approve",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Schema apply completed successfully.")
+	c.Assert(sqliteTableCount(c, dbPath, "atlas_env_users"), qt.Equals, 1)
+}
+
 func TestSchemaApplyRejectsInvalidFormatBeforeLoadingFiles(t *testing.T) {
 	c := qt.New(t)
 	cmd := atlas.NewAtlasCommand()

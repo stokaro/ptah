@@ -13,6 +13,7 @@ Ptah accepts top-level `env` blocks with either one label or no label:
 env "local" {
   url = "postgres://user:pass@localhost:5432/app?sslmode=disable"
   dev = "postgres://user:pass@localhost:5432/app_shadow?sslmode=disable"
+  src = ["file://schema.hcl", "schema.sql"]
   exclude = ["tmp_*"]
 
   migration {
@@ -34,8 +35,9 @@ The supported attributes map to Ptah settings as follows:
 
 | Atlas setting | Ptah setting |
 | --- | --- |
-| `env.url` | `--db-url` default |
-| `env.dev` | `migrations generate --shadow-db` default |
+| `env.url` | `--db-url` or `ptah atlas schema apply --url` default |
+| `env.dev` | `migrations generate --shadow-db` or `ptah atlas schema apply --dev-url` default |
+| `env.src` | `ptah atlas schema apply --to` default |
 | `env.exclude` | Project config IR exclude list |
 | `migration.dir` | `--migrations-dir` or `--dir` default |
 | `migration.format` | `--dir-format` default |
@@ -45,10 +47,16 @@ The supported attributes map to Ptah settings as follows:
 | `migration.tx_mode` | `migrations up --tx-mode` default |
 | `lint.latest` | Project config IR lint setting |
 
+`env.src` accepts either one string or a list of strings. Ptah currently uses
+literal local schema file sources only, matching the local schema-file boundary
+of `ptah atlas schema apply`. Data-source expressions such as
+`data.hcl_schema.app.url` are rejected until Ptah implements Atlas HCL
+evaluation for project config files.
+
 `env.exclude` and `lint.latest` are preserved in the project config IR for
 consumers that understand them. The current CLI wiring uses the connection,
-dev database, migration directory, migration execution, revision-table, and
-template env settings.
+desired schema source, dev database, migration directory, migration execution,
+revision-table, and template env settings.
 
 `migration.tx_mode` accepts `file`, `all`, and `none`, matching
 `ptah atlas migrate apply --tx-mode`. `all` is limited to dialects where Ptah
@@ -102,9 +110,13 @@ settings:
 - `migrations status`
 - `migrations lint`
 - `migrations generate`
+- `ptah atlas schema apply`
 
 Atlas command paths under `ptah atlas <command> ...` inherit this behavior
-when they forward to one of these native commands.
+when they forward to one of these native commands. Dedicated Atlas-compatible
+commands document their own project-config support. `ptah atlas schema apply`
+reads `env.url`, `env.src`, and `env.dev` from the selected `atlas.hcl`
+environment without coupling that selection to `ptah.yaml` env names.
 
 ## Unsupported Constructs
 
