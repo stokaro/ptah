@@ -193,20 +193,36 @@ func TestExcludeDatabase_EmptyTypeSelector(t *testing.T) {
 func TestExcludeDatabase_UnsupportedSelector(t *testing.T) {
 	c := qt.New(t)
 
-	got, err := atlasfilter.ExcludeDatabase(filterFixtureSchema(), []string{"auth.users[owner=app]"})
+	got, err := atlasfilter.ExcludeDatabase(filterFixtureSchema(), []string{"auth.users[owner=app].version"})
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, `unsupported Atlas exclude selector "owner=app"`)
 	c.Assert(got, qt.IsNil)
 }
 
-func TestExcludeDatabase_FieldSelectorFailsClosed(t *testing.T) {
+func TestExcludeDatabase_ExtensionVersionFieldSelector(t *testing.T) {
+	c := qt.New(t)
+	schema := &dbschematypes.DBSchema{
+		Extensions: []dbschematypes.DBExtension{
+			{Name: "pg_trgm", Schema: "public", Version: "1.6"},
+			{Name: "citext", Schema: "public", Version: "1.6"},
+		},
+	}
+
+	got, err := atlasfilter.ExcludeDatabase(schema, []string{"pg_trgm[type=extension].version"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(extensionVersions(got.Extensions), qt.DeepEquals, []string{"pg_trgm:", "citext:1.6"})
+	c.Assert(extensionVersions(schema.Extensions), qt.DeepEquals, []string{"pg_trgm:1.6", "citext:1.6"})
+}
+
+func TestExcludeDatabase_UnsupportedFieldSelector(t *testing.T) {
 	c := qt.New(t)
 
-	got, err := atlasfilter.ExcludeDatabase(filterFixtureSchema(), []string{"*[type=extension].version"})
+	got, err := atlasfilter.ExcludeDatabase(filterFixtureSchema(), []string{"*[type=table].version"})
 
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(err.Error(), qt.Contains, `unsupported Atlas exclude field selector "*[type=extension].version"`)
+	c.Assert(err.Error(), qt.Contains, `unsupported Atlas exclude field selector ".version"`)
 	c.Assert(got, qt.IsNil)
 }
 
@@ -307,6 +323,14 @@ func viewNames(views []dbschematypes.DBView) []string {
 	names := make([]string, 0, len(views))
 	for _, view := range views {
 		names = append(names, view.QualifiedName())
+	}
+	return names
+}
+
+func extensionVersions(extensions []dbschematypes.DBExtension) []string {
+	names := make([]string, 0, len(extensions))
+	for _, extension := range extensions {
+		names = append(names, extension.Name+":"+extension.Version)
 	}
 	return names
 }

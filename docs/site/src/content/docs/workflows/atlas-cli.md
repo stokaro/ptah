@@ -77,12 +77,13 @@ accepts Atlas-style Go templates with `.MarshalHCL`, `sql`, `json`,
 `base64url`, and `mermaid`. `--exclude` accepts repeated or comma-separated
 Atlas-style glob patterns, including `[type=...]` selectors, and removes
 matching resources from HCL, SQL, JSON, and custom-template output. Field-level
-exclude selectors such as `*[type=extension].version` fail explicitly until Ptah
-models those fields as independently filterable resources. Schema-qualified
-function and enum filters remain limited by Ptah's current introspection model,
-which does not retain schema names for those resource types yet. `--include` is
-an Atlas Pro feature and is outside Ptah's OSS drop-in target. Split/write
-templates and file-backed inspection remain explicit gaps.
+exclude selector support includes the Atlas-documented
+`*[type=extension].version` form. Other field-level selectors fail explicitly
+until Ptah models those fields as independently filterable resources.
+Schema-qualified function and enum filters remain limited by Ptah's current
+introspection model, which does not retain schema names for those resource types
+yet. `--include` is an Atlas Pro feature and is outside Ptah's OSS drop-in
+target. Split/write templates and file-backed inspection remain explicit gaps.
 
 `ptah atlas schema apply` accepts one or more local `--to` schema file URLs and
 a live database `--url`. With `--env`, Ptah can read `env.url`, `env.src`, and
