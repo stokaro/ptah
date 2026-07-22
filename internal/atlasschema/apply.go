@@ -1,0 +1,136 @@
+package atlasschema
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/stokaro/ptah/core/sqlutil"
+	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/schemafile"
+	"github.com/stokaro/ptah/migration/migrator"
+	"github.com/stokaro/ptah/migration/planner"
+	"github.com/stokaro/ptah/migration/schemadiff"
+)
+
+type ApplyOptions struct {
+	ToURLs []string
+}
+
+type ApplyPlan struct {
+	statements []string
+}
+
+func (p ApplyPlan) HasChanges() bool {
+	return len(p.statements) > 0
+}
+
+func (p ApplyPlan) SQL() string {
+	return FormatMigrationSQL(p.statements)
+}
+
+func PlanApply(conn *dbschema.DatabaseConnection, opts ApplyOptions) (ApplyPlan, error) {
+	if conn == nil {
+		return ApplyPlan{}, errors.New("schema apply planning requires database connection")
+	}
+	if len(opts.ToURLs) == 0 {
+		return ApplyPlan{}, errors.New("schema apply planning requires desired schema URLs")
+	}
+
+	current, err := dbschema.ReadSchemaWithSchemas(conn, nil)
+	if err != nil {
+		return ApplyPlan{}, fmt.Errorf("read database schema: %w", err)
+	}
+	desired, err := schemafile.LoadAll(opts.ToURLs, schemafile.Options{Dialect: conn.Info().Dialect})
+	if err != nil {
+		return ApplyPlan{}, fmt.Errorf("load --to schema: %w", err)
+	}
+
+	diff := schemadiff.CompareWithDialect(desired, current, conn.Info().Dialect)
+	if !diff.HasChanges() {
+		return ApplyPlan{}, nil
+	}
+
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, conn.Info().Dialect)
+	if err != nil {
+		return ApplyPlan{}, fmt.Errorf("generate schema apply SQL: %w", err)
+	}
+	return ApplyPlan{statements: statements}, nil
+}
+
+func ApplySQL(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	txMode migrator.MigrationTxMode,
+	sqlText string,
+) error {
+	if conn == nil {
+		return errors.New("schema apply execution requires database connection")
+	}
+
+	statements := SplitApplyStatements(sqlText, conn.Info().Dialect)
+	switch txMode {
+	case migrator.MigrationTxModeNone:
+		return executeApplyStatements(ctx, conn.Writer(), statements)
+	case migrator.MigrationTxModeFile, migrator.MigrationTxModeAll:
+		tx, err := conn.SchemaWriter().BeginTransaction(ctx)
+		if err != nil {
+			return fmt.Errorf("begin schema apply transaction: %w", err)
+		}
+		if err := executeApplyStatements(ctx, tx, statements); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit schema apply transaction: %w", err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("invalid tx-mode %q", txMode)
+	}
+}
+
+func SplitApplyStatements(sqlText, dialect string) []string {
+	statements := sqlutil.SplitSQLStatementsForDialect(sqlText, dialect)
+	filtered := statements[:0]
+	for _, stmt := range statements {
+		stmt = strings.TrimSpace(sqlutil.StripComments(stmt))
+		if stmt != "" {
+			filtered = append(filtered, stmt)
+		}
+	}
+	return filtered
+}
+
+func FormatMigrationSQL(statements []string) string {
+	var out strings.Builder
+	for _, stmt := range statements {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			continue
+		}
+		out.WriteString(strings.TrimSuffix(stmt, ";"))
+		out.WriteString(";\n")
+	}
+	return out.String()
+}
+
+func executeApplyStatements(ctx context.Context, executor types.SchemaExecutor, statements []string) error {
+	for i, stmt := range statements {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			continue
+		}
+		if err := executor.ExecuteSQL(ctx, stmt); err != nil {
+			return &migrator.MigrationExecutionError{
+				Err:            fmt.Errorf("failed to execute SQL statement: %w", err),
+				Statement:      stmt,
+				StatementIndex: i + 1,
+				Total:          len(statements),
+			}
+		}
+	}
+	return nil
+}
