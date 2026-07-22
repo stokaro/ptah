@@ -54,6 +54,9 @@ jobs:
       - name: qtlint
         run: go tool qtlint ./...
 
+      - name: Check test style baseline
+        run: scripts/check-test-style.sh
+
       - name: Validate lint SARIF output
         run: go test ./cmd/lint -run 'TestRunLint_SARIF' -count=1
 

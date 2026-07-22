@@ -225,3 +225,24 @@ docker compose down -v
 - `3` - Docker/environment issues
 
 All scripts return appropriate exit codes for CI/CD integration.
+
+# Test Style Baseline
+
+Ptah enforces the current declarative-test and white-box-test baseline while
+issue #541 is being cleaned up:
+
+```bash
+scripts/check-test-style.sh
+```
+
+The check fails when a PR adds a new prohibited conditional in a top-level
+`Test*`, `Fuzz*`, or `Example*` function, adds a same-package test file that is
+not named `*_internal_test.go`, or adds an internal test file without an
+immediate `// White-box testing required:` justification comment after the
+package clause.
+
+Cleanup PRs should reduce `.teststyle-baseline.json` with:
+
+```bash
+GOWORK=off go run ./internal/tools/teststyle -write-baseline
+```

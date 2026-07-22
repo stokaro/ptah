@@ -22,6 +22,9 @@ set -eu
 echo "Running qtlint..."
 go tool qtlint ./...
 
+echo "Running test style baseline check..."
+scripts/check-test-style.sh
+
 echo "Running golangci-lint..."
 golangci-lint run ./...
 HOOK

@@ -119,6 +119,20 @@ Go 1.22 and newer makes range variables per-iteration, so the historical
 `test := test` workaround is not needed when using `c.Run()` closures in
 table-driven tests unless intentionally taking the address of a loop variable.
 
+Run the test-style baseline before finishing test changes:
+
+```bash
+scripts/check-test-style.sh
+```
+
+The baseline records existing violations while issue #541 is being cleaned up.
+New tests must not add entries. Cleanup PRs that intentionally remove entries
+should refresh the baseline with:
+
+```bash
+GOWORK=off go run ./internal/tools/teststyle -write-baseline
+```
+
 Bad:
 
 ```go
