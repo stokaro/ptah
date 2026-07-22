@@ -30,6 +30,26 @@ func DialectFromURL(rawURL string) (string, error) {
 	return "", fmt.Errorf("unsupported --dev-url dialect %q", rawURL)
 }
 
+// ValidateDialectMatch verifies that rawURL resolves to the same dialect as the
+// already-open target database.
+func ValidateDialectMatch(rawURL, targetDialect string) error {
+	dialect, err := DialectFromURL(rawURL)
+	if err != nil {
+		return err
+	}
+	if dialect == "" {
+		return nil
+	}
+	normalizedTarget := platform.NormalizeDialect(targetDialect)
+	if normalizedTarget == "" {
+		normalizedTarget = targetDialect
+	}
+	if dialect != normalizedTarget {
+		return fmt.Errorf("--dev-url dialect %q does not match --url dialect %q", dialect, normalizedTarget)
+	}
+	return nil
+}
+
 func dialectFromDockerURL(parsed *url.URL) (string, error) {
 	engine := parsed.Host
 	if engine == "" {
