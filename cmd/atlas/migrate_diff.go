@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -24,13 +25,15 @@ import (
 )
 
 const atlasRevisionTableName = "atlas_schema_revisions"
+const atlasMigrateDiffLockFileName = ".ptah-migrate-diff.lock"
 
 type atlasMigrateDiffOptions struct {
-	toURLs    []string
-	devURL    string
-	dirURL    string
-	dirFormat string
-	format    string
+	toURLs      []string
+	devURL      string
+	dirURL      string
+	dirFormat   string
+	format      string
+	lockTimeout string
 }
 
 func newAtlasMigrateDiffCommand() *cobra.Command {
@@ -46,7 +49,8 @@ writes a new Atlas-style single-file migration plus atlas.sum when changes are
 found. Use a disposable dev database. This implementation currently supports
 local file:// migration directories and local .hcl, .yaml, .yml, or .sql schema
 files. Database URLs, env:// URLs, custom output templates, schema filters, lock
-flags, and Docker dev databases remain explicit follow-up gaps.`,
+flags other than --lock-timeout, and Docker dev databases remain explicit
+follow-up gaps.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := "migration"
@@ -63,13 +67,17 @@ flags, and Docker dev databases remain explicit follow-up gaps.`,
 	flags.StringVar(&opts.dirFormat, "dir-format", "atlas", "Migration directory format; only atlas is implemented")
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
 	flags.StringArray("schema", nil, "Schemas to diff when database URLs are used")
-	flags.String("lock-timeout", "", "Timeout for acquiring Atlas migration directory locks")
+	flags.StringVar(&opts.lockTimeout, "lock-timeout", "", "Timeout for acquiring Atlas migration directory locks")
 	cmdutil.ConfigureCommandArgs(cmd, nil)
 	return cmd
 }
 
-func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name string) error {
+func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name string) (result error) {
 	if err := validateAtlasMigrateDiffOptions(cmd, opts); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	lockTimeout, err := migrator.ParseMigrationLockTimeout(opts.lockTimeout)
+	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 
@@ -84,6 +92,15 @@ func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name 
 	if err := os.MkdirAll(migrationsDir, 0755); err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("create migration directory: %w", err))
 	}
+	dirLock, err := acquireAtlasMigrateDiffDirLock(cmd.Context(), migrationsDir, lockTimeout)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	defer func() {
+		if err := dirLock.release(); err != nil && result == nil {
+			result = cmdutil.Fail(cmd, err)
+		}
+	}()
 	if err := verifyAtlasMigrationDirSum(migrationsDir); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -150,13 +167,92 @@ func validateAtlasMigrateDiffOptions(cmd *cobra.Command, opts atlasMigrateDiffOp
 	if values, err := cmd.Flags().GetStringArray("schema"); err == nil && len(values) > 0 {
 		return fmt.Errorf("atlas migrate diff accepts --schema, but Ptah only supports local schema files for this command yet")
 	}
-	if value, err := cmd.Flags().GetString("lock-timeout"); err == nil && strings.TrimSpace(value) != "" {
-		return fmt.Errorf("atlas migrate diff accepts --lock-timeout, but Ptah does not implement migration directory locking yet")
-	}
 	if strings.HasPrefix(strings.TrimSpace(opts.devURL), "docker://") {
 		return fmt.Errorf("atlas migrate diff accepts docker --dev-url values, but Ptah requires a directly connectable dev database URL")
 	}
 	return ensureLocalSchemaURLs("--to", opts.toURLs)
+}
+
+type atlasMigrateDiffDirLock struct {
+	path string
+	file *os.File
+}
+
+func acquireAtlasMigrateDiffDirLock(
+	ctx context.Context,
+	migrationsDir string,
+	timeout time.Duration,
+) (*atlasMigrateDiffDirLock, error) {
+	lockPath := filepath.Join(migrationsDir, atlasMigrateDiffLockFileName)
+	startedAt := time.Now()
+	for {
+		lock, err := tryAcquireAtlasMigrateDiffDirLock(lockPath)
+		if err == nil {
+			return lock, nil
+		}
+		if !errors.Is(err, os.ErrExist) {
+			return nil, err
+		}
+		if timeout > 0 && time.Since(startedAt) >= timeout {
+			return nil, fmt.Errorf("migration directory lock timeout after %s: %s", timeout, lockPath)
+		}
+		if err := waitForAtlasMigrateDiffDirLockRetry(ctx, startedAt, timeout); err != nil {
+			return nil, err
+		}
+	}
+}
+
+func tryAcquireAtlasMigrateDiffDirLock(lockPath string) (*atlasMigrateDiffDirLock, error) {
+	file, err := os.OpenFile(lockPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("create migration directory lock: %w", err)
+	}
+	if _, err := fmt.Fprintf(file, "pid=%d\n", os.Getpid()); err != nil {
+		_ = file.Close()
+		_ = os.Remove(lockPath)
+		return nil, fmt.Errorf("write migration directory lock: %w", err)
+	}
+	return &atlasMigrateDiffDirLock{path: lockPath, file: file}, nil
+}
+
+func waitForAtlasMigrateDiffDirLockRetry(ctx context.Context, startedAt time.Time, timeout time.Duration) error {
+	wait := 25 * time.Millisecond
+	if timeout > 0 {
+		remaining := timeout - time.Since(startedAt)
+		if remaining <= 0 {
+			return nil
+		}
+		wait = min(wait, remaining)
+	}
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("acquire migration directory lock: %w", ctx.Err())
+	case <-timer.C:
+		return nil
+	}
+}
+
+func (l *atlasMigrateDiffDirLock) release() error {
+	if l == nil {
+		return nil
+	}
+	closeErr := l.file.Close()
+	removeErr := os.Remove(l.path)
+	if closeErr != nil && removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+		return fmt.Errorf("release migration directory lock: %w", errors.Join(closeErr, removeErr))
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close migration directory lock: %w", closeErr)
+	}
+	if removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+		return fmt.Errorf("remove migration directory lock: %w", removeErr)
+	}
+	return nil
 }
 
 func verifyAtlasMigrationDirSum(migrationsDir string) error {
