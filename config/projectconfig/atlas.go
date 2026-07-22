@@ -99,28 +99,8 @@ func (p atlasParser) parseEnv(block *hclsyntax.Block) (atlasEnv, error) {
 	}
 
 	for attrName, attr := range block.Body.Attributes {
-		switch attrName {
-		case "url":
-			value, err := stringAttr(attrName, attr)
-			if err != nil {
-				return atlasEnv{}, err
-			}
-			env.config.DatabaseURL = value
-		case "dev":
-			value, err := stringAttr(attrName, attr)
-			if err != nil {
-				return atlasEnv{}, err
-			}
-			env.config.DevURL = value
-		case "exclude":
-			values, err := stringListAttr(attrName, attr)
-			if err != nil {
-				return atlasEnv{}, err
-			}
-			env.config.Exclude = values
-			env.config.presence.exclude = true
-		default:
-			return atlasEnv{}, unsupportedAttr(attrName, attr)
+		if err := p.parseEnvAttr(attrName, attr, &env.config); err != nil {
+			return atlasEnv{}, err
 		}
 	}
 
@@ -150,6 +130,40 @@ func (p atlasParser) parseEnv(block *hclsyntax.Block) (atlasEnv, error) {
 	}
 
 	return env, nil
+}
+
+func (p atlasParser) parseEnvAttr(attrName string, attr *hclsyntax.Attribute, cfg *Config) error {
+	switch attrName {
+	case "url":
+		value, err := stringAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		cfg.DatabaseURL = value
+	case "dev":
+		value, err := stringAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		cfg.DevURL = value
+	case "src":
+		values, err := stringOrStringListAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		cfg.SchemaSources = values
+		cfg.presence.schemaSources = true
+	case "exclude":
+		values, err := stringListAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		cfg.Exclude = values
+		cfg.presence.exclude = true
+	default:
+		return unsupportedAttr(attrName, attr)
+	}
+	return nil
 }
 
 func (p atlasParser) parseMigration(block *hclsyntax.Block, cfg *Config) error {
@@ -262,6 +276,17 @@ func stringAttr(name string, attr *hclsyntax.Attribute) (string, error) {
 	return value.AsString(), nil
 }
 
+func stringOrStringListAttr(name string, attr *hclsyntax.Attribute) ([]string, error) {
+	value, diags := attr.Expr.Value(nil)
+	if diags.HasErrors() {
+		return nil, unsupportedAttr(name, attr)
+	}
+	if value.Type() == cty.String {
+		return []string{value.AsString()}, nil
+	}
+	return stringListValue(name, attr, value)
+}
+
 func intAttr(name string, attr *hclsyntax.Attribute) (int, error) {
 	value, diags := attr.Expr.Value(nil)
 	if diags.HasErrors() || value.Type() != cty.Number {
@@ -276,8 +301,15 @@ func intAttr(name string, attr *hclsyntax.Attribute) (int, error) {
 
 func stringListAttr(name string, attr *hclsyntax.Attribute) ([]string, error) {
 	value, diags := attr.Expr.Value(nil)
+	if diags.HasErrors() {
+		return nil, unsupportedAttr(name, attr)
+	}
+	return stringListValue(name, attr, value)
+}
+
+func stringListValue(name string, attr *hclsyntax.Attribute, value cty.Value) ([]string, error) {
 	valueType := value.Type()
-	if diags.HasErrors() || !value.CanIterateElements() || (!valueType.IsTupleType() && !valueType.IsListType()) {
+	if !value.CanIterateElements() || (!valueType.IsTupleType() && !valueType.IsListType()) {
 		return nil, unsupportedAttr(name, attr)
 	}
 	values := make([]string, 0, value.LengthInt())

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -11,6 +12,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdflags"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/atlasschema"
@@ -21,6 +23,7 @@ type atlasSchemaApplyOptions struct {
 	url         string
 	toURLs      []string
 	devURL      string
+	envName     string
 	dryRun      bool
 	autoApprove bool
 	format      string
@@ -35,10 +38,11 @@ func newAtlasSchemaApplyCommand() *cobra.Command {
 		Long: `Atlas OSS ` + "`atlas schema apply`" + ` command path.
 
 Compares a live database from --url with local --to schema files and applies the
-generated schema changes directly to the target database. This implementation
+generated schema changes directly to the target database. When --env is set, the
+selected atlas.hcl env can provide url, src, and dev values. This implementation
 currently supports local file:// schema files with .hcl, .yaml, .yml, or .sql
-extensions. Database desired-state URLs, Atlas project env:// URLs, schema
-filters, and Atlas Cloud planning remain explicit follow-up gaps.`,
+extensions. Database desired-state URLs, env:// URLs, schema filters, and Atlas
+Cloud planning remain explicit follow-up gaps.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaApply(cmd, opts)
 		},
@@ -47,6 +51,7 @@ filters, and Atlas Cloud planning remain explicit follow-up gaps.`,
 	flags.StringVarP(&opts.url, "url", "u", "", "Database URL to apply to")
 	flags.StringArrayVar(&opts.toURLs, "to", nil, "Desired schema target URL")
 	flags.StringVar(&opts.devURL, "dev-url", "", "Dev database URL used by Atlas for planning")
+	dbcli.RegisterEnvFlag(flags, &opts.envName)
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Show planned changes without applying them")
 	flags.BoolVar(&opts.autoApprove, "auto-approve", false, "Skip interactive approval")
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
@@ -71,6 +76,16 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 			return cmdutil.Fail(cmd, err)
 		}
 	}
+	if shouldLoadAtlasSchemaApplyConfig(cmd) {
+		projectCfg, err := loadAtlasSchemaApplyConfig(opts.envName)
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+		opts.url = dbcli.EffectiveString(cmd, "url", opts.url, projectCfg.DatabaseURL)
+		opts.devURL = dbcli.EffectiveString(cmd, "dev-url", opts.devURL, projectCfg.DevURL)
+		opts.toURLs = effectiveStringArray(cmd, "to", opts.toURLs, projectCfg.SchemaSources)
+	}
+
 	if err := validateAtlasSchemaApplyOptions(cmd, opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -147,6 +162,23 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), "Schema apply completed successfully.")
 	return nil
+}
+
+func shouldLoadAtlasSchemaApplyConfig(cmd *cobra.Command) bool {
+	return cmd.Flags().Changed(dbcli.EnvFlagName) ||
+		!cmd.Flags().Changed("url") ||
+		!cmd.Flags().Changed("to")
+}
+
+func loadAtlasSchemaApplyConfig(envName string) (projectconfig.Config, error) {
+	return projectconfig.LoadAtlasFile(projectconfig.AtlasFileName, envName)
+}
+
+func effectiveStringArray(cmd *cobra.Command, flagName string, flagValues, configValues []string) []string {
+	if cmd.Flags().Changed(flagName) || len(configValues) == 0 {
+		return flagValues
+	}
+	return slices.Clone(configValues)
 }
 
 func validateAtlasSchemaApplyOptions(cmd *cobra.Command, opts atlasSchemaApplyOptions) error {
