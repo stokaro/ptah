@@ -10,6 +10,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasreport"
+	"github.com/stokaro/ptah/internal/atlasurl"
 	"github.com/stokaro/ptah/internal/convert/dbschematogo"
 )
 
@@ -70,7 +71,7 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	if err := validateAtlasDevURLDialect(opts.devURL, conn.Info().Dialect); err != nil {
+	if err := atlasurl.ValidateDialectMatch(opts.devURL, conn.Info().Dialect); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 
