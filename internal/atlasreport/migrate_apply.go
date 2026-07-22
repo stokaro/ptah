@@ -1,4 +1,4 @@
-package atlas
+package atlasreport
 
 import (
 	"bytes"
@@ -22,20 +22,20 @@ import (
 
 var atlasMigrateApplyFailedVersionRe = regexp.MustCompile(`failed to apply migration ([0-9]+)`)
 
-type atlasMigrateApplyResultOptions struct {
-	conn             *dbschema.DatabaseConnection
-	fsys             fs.FS
-	dir              string
-	url              string
-	status           *migrator.MigrationStatus
-	migrations       []*migrator.Migration
-	selectedVersions []int64
-	currentVersion   int64
-	errorText        string
-	applyError       error
-	applied          bool
-	startedAt        time.Time
-	endedAt          time.Time
+type MigrateApplyResultOptions struct {
+	Conn             *dbschema.DatabaseConnection
+	FS               fs.FS
+	Dir              string
+	URL              string
+	Status           *migrator.MigrationStatus
+	Migrations       []*migrator.Migration
+	SelectedVersions []int64
+	CurrentVersion   int64
+	ErrorText        string
+	ApplyError       error
+	Applied          bool
+	StartedAt        time.Time
+	EndedAt          time.Time
 }
 
 type atlasMigrateApplyEnv struct {
@@ -90,7 +90,10 @@ type atlasMigrateApplyStatementError struct {
 	Text string `json:"Text,omitempty"`
 }
 
-func writeAtlasMigrateApplyFormat(w io.Writer, format string, opts atlasMigrateApplyResultOptions) error {
+func WriteMigrateApplyFormat(w io.Writer, format string, opts MigrateApplyResultOptions) error {
+	if err := validateMigrateApplyResultOptions(opts); err != nil {
+		return err
+	}
 	result, err := buildAtlasMigrateApplyResult(opts)
 	if err != nil {
 		return err
@@ -98,36 +101,49 @@ func writeAtlasMigrateApplyFormat(w io.Writer, format string, opts atlasMigrateA
 	return renderAtlasGoTemplate(w, "atlas-migrate-apply-format", format, result)
 }
 
-func buildAtlasMigrateApplyResult(opts atlasMigrateApplyResultOptions) (atlasMigrateApplyResult, error) {
-	filesByVersion, err := atlasMigrateApplyFilesByVersion(opts.fsys)
+func validateMigrateApplyResultOptions(opts MigrateApplyResultOptions) error {
+	if opts.Conn == nil {
+		return errors.New("migrate apply format requires database connection")
+	}
+	if opts.FS == nil {
+		return errors.New("migrate apply format requires migration filesystem")
+	}
+	if opts.Status == nil && opts.CurrentVersion <= 0 {
+		return errors.New("migrate apply format requires migration status or current version")
+	}
+	return nil
+}
+
+func buildAtlasMigrateApplyResult(opts MigrateApplyResultOptions) (atlasMigrateApplyResult, error) {
+	filesByVersion, err := atlasMigrateApplyFilesByVersion(opts.FS)
 	if err != nil {
 		return atlasMigrateApplyResult{}, err
 	}
-	migrationsByVersion := atlasMigrateApplyMigrationsByVersion(opts.migrations)
+	migrationsByVersion := atlasMigrateApplyMigrationsByVersion(opts.Migrations)
 	env := atlasMigrateApplyEnv{
-		Driver: opts.conn.Info().Dialect,
-		URL:    atlasMigrateApplyRedactedURL(opts.url),
-		Dir:    opts.dir,
+		Driver: opts.Conn.Info().Dialect,
+		URL:    atlasMigrateApplyRedactedURL(opts.URL),
+		Dir:    opts.Dir,
 	}
 	result := atlasMigrateApplyResult{
 		atlasMigrateApplyEnv: env,
 		Env:                  env,
-		Pending:              atlasMigrateApplyPendingFiles(filesByVersion, opts.selectedVersions),
+		Pending:              atlasMigrateApplyPendingFiles(filesByVersion, opts.SelectedVersions),
 		Current:              atlasMigrateApplyVersionString(atlasMigrateApplyCurrentVersion(opts)),
-		Target:               atlasMigrateApplyTargetVersion(atlasMigrateApplyCurrentVersion(opts), opts.selectedVersions),
-		Start:                opts.startedAt,
-		End:                  opts.endedAt,
-		Error:                opts.errorText,
+		Target:               atlasMigrateApplyTargetVersion(atlasMigrateApplyCurrentVersion(opts), opts.SelectedVersions),
+		Start:                opts.StartedAt,
+		End:                  opts.EndedAt,
+		Error:                opts.ErrorText,
 	}
-	if opts.applied {
+	if opts.Applied {
 		result.Applied = atlasMigrateApplyAppliedFiles(
 			filesByVersion,
 			migrationsByVersion,
-			opts.selectedVersions,
-			opts.conn.Info().Dialect,
-			opts.applyError,
-			opts.startedAt,
-			opts.endedAt,
+			opts.SelectedVersions,
+			opts.Conn.Info().Dialect,
+			opts.ApplyError,
+			opts.StartedAt,
+			opts.EndedAt,
 		)
 	}
 	return result, nil
@@ -270,11 +286,11 @@ func atlasMigrateApplySplitStatements(sql, dialect string) []string {
 	return filtered
 }
 
-func atlasMigrateApplyCurrentVersion(opts atlasMigrateApplyResultOptions) int64 {
-	if opts.currentVersion > 0 {
-		return opts.currentVersion
+func atlasMigrateApplyCurrentVersion(opts MigrateApplyResultOptions) int64 {
+	if opts.CurrentVersion > 0 {
+		return opts.CurrentVersion
 	}
-	return opts.status.CurrentVersion
+	return opts.Status.CurrentVersion
 }
 
 func atlasMigrateApplyTargetVersion(current int64, selectedVersions []int64) string {
@@ -334,6 +350,10 @@ func renderAtlasGoTemplate(w io.Writer, name, format string, data any) error {
 	}
 	_, err = w.Write(out.Bytes())
 	return err
+}
+
+func ValidateMigrateApplyTemplate(format string) error {
+	return validateAtlasGoTemplate("atlas-migrate-apply-format", format)
 }
 
 func validateAtlasGoTemplate(name, format string) error {
