@@ -132,6 +132,44 @@ CREATE TABLE users (
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 1)
 }
 
+func TestGenerateDiff_SchemaFilterIgnoresOutOfScopeDesiredSchema(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
+	schemaPath := filepath.Join(dir, "schema.hcl")
+	c.Assert(os.WriteFile(schemaPath, []byte(`
+schema "auth" {}
+
+table "users" {
+  schema = schema.auth
+  column "id" {
+    type = int
+  }
+  primary_key {
+    columns = [column.id]
+  }
+}
+`), 0o600), qt.IsNil)
+
+	conn := connectSQLite(c, filepath.Join(dir, "dev.db"))
+	defer dbschema.CloseAndWarn(conn)
+
+	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+		Dir:         migrationsDir,
+		ToURLs:      []string{"file://" + schemaPath},
+		Name:        "out_of_scope",
+		Schemas:     []string{"billing"},
+		LockTimeout: time.Second,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Synced, qt.IsTrue)
+	c.Assert(result.MigrationPath, qt.Equals, "")
+	c.Assert(result.SumPath, qt.Equals, "")
+	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 0)
+}
+
 func TestGenerateDiff_RejectsChecksumDrift(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
