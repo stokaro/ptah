@@ -12,6 +12,8 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/migrateup"
+	"github.com/stokaro/ptah/internal/migratesum"
+	"github.com/stokaro/ptah/migration/migrator"
 )
 
 func TestNewAtlasCommand_OSSCommandPathsResolve(t *testing.T) {
@@ -236,7 +238,7 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 		{
 			name:  "migrate_diff",
 			path:  []string{"migrate", "diff"},
-			flags: []string{"--to", "--dev-url", "--dir", "--format"},
+			flags: []string{"--to", "--dev-url", "--dir", "--dir-format", "--format"},
 		},
 		{
 			name:  "migrate_apply",
@@ -782,6 +784,154 @@ func TestNewAtlasCommand_SchemaDiffRejectsUnsupportedFormat(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `atlas schema diff accepts --format, but Ptah does not implement its behavior yet`)
+}
+
+func TestNewAtlasCommand_MigrateDiffCreatesAtlasMigrationFromLocalSchema(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_init.sql"), []byte(`
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY
+);
+`), 0o600), qt.IsNil)
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath, []byte(`
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY,
+  email TEXT NOT NULL DEFAULT ''
+);
+`), 0o600), qt.IsNil)
+	devURL := "sqlite://" + filepath.Join(dir, "dev.db")
+
+	first := NewAtlasCommand()
+	var firstOut bytes.Buffer
+	first.SetOut(&firstOut)
+	first.SetErr(&firstOut)
+	first.SetArgs([]string{
+		"migrate", "diff",
+		"--dev-url", devURL,
+		"--dir", "file://" + migrationsDir,
+		"--to", "file://" + schemaPath,
+		"add_email",
+	})
+
+	err := first.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(firstOut.String(), qt.Contains, "Created migration file:")
+	c.Assert(firstOut.String(), qt.Contains, "Updated migration checksum:")
+	migrationFiles := atlasSQLFiles(c, migrationsDir)
+	c.Assert(migrationFiles, qt.HasLen, 2)
+	newMigration := nonInitialAtlasMigration(c, migrationFiles)
+	newSQL, err := os.ReadFile(newMigration)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(newSQL), qt.Contains, "ADD COLUMN")
+	c.Assert(string(newSQL), qt.Contains, "email")
+	sum, err := os.ReadFile(filepath.Join(migrationsDir, "atlas.sum"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(sum), qt.Contains, filepath.Base(newMigration))
+
+	second := NewAtlasCommand()
+	var secondOut bytes.Buffer
+	second.SetOut(&secondOut)
+	second.SetErr(&secondOut)
+	second.SetArgs([]string{
+		"migrate", "diff",
+		"--dev-url", devURL,
+		"--dir", "file://" + migrationsDir,
+		"--to", "file://" + schemaPath,
+		"add_email",
+	})
+
+	err = second.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(secondOut.String(), qt.Equals, "The migration directory is synced with the desired state, no changes to be made\n")
+	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 2)
+}
+
+func TestNewAtlasCommand_MigrateDiffRejectsChecksumDrift(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_init.sql"), []byte(`
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY
+);
+`), 0o600), qt.IsNil)
+	_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_init.sql"), []byte(`
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY,
+  name TEXT
+);
+`), 0o600), qt.IsNil)
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath, []byte(`
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY,
+  email TEXT NOT NULL DEFAULT ''
+);
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "diff",
+		"--dev-url", "sqlite://" + filepath.Join(dir, "dev.db"),
+		"--dir", "file://" + migrationsDir,
+		"--to", "file://" + schemaPath,
+		"add_email",
+	})
+
+	err = cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `(?s)migration directory checksum verification failed:.*migration directory does not match atlas\.sum:.*changed: 1_init\.sql.*`)
+	c.Assert(out.String(), qt.Contains, "migration directory checksum verification failed:")
+	c.Assert(atlasSQLFiles(c, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
+}
+
+func TestNewAtlasCommand_MigrateDiffRejectsUnsupportedFormat(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "diff",
+		"--dev-url", "sqlite://dev.db",
+		"--dir", "file://migrations",
+		"--to", "file://schema.sql",
+		"--format", "{{ sql . }}",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `atlas migrate diff accepts --format, but Ptah does not implement its behavior yet`)
+}
+
+func atlasSQLFiles(c *qt.C, dir string) []string {
+	files, err := filepath.Glob(filepath.Join(dir, "*.sql"))
+	c.Assert(err, qt.IsNil)
+	return files
+}
+
+func nonInitialAtlasMigration(c *qt.C, files []string) string {
+	var generated string
+	for _, file := range files {
+		if filepath.Base(file) != "1_init.sql" {
+			generated = file
+			break
+		}
+	}
+	c.Assert(generated, qt.Not(qt.Equals), "", qt.Commentf("generated migration file not found in %v", files))
+	return generated
 }
 
 func TestNewAtlasCommand_SchemaFmtWalksDirectoriesAndPrintsOnlyChangedFiles(t *testing.T) {

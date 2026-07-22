@@ -39,7 +39,7 @@ fail clearly instead of being ignored.
 | `ptah atlas migrate lint` | `ptah migrations lint`; supports Atlas-style `--latest N` for latest-version linting. |
 | `ptah atlas migrate new` | `ptah migrations create` |
 | `ptah atlas migrate set` | `ptah migrations repair` |
-| `ptah atlas migrate diff` | Command path registered; runtime behavior is not implemented yet. |
+| `ptah atlas migrate diff` | Replays local Atlas migrations on `--dev-url`, diffs against local schema files, writes an Atlas single-file migration, and updates `atlas.sum`. |
 | `ptah atlas migrate import` | Imports local `file://` migration directories from Atlas-supported formats into a separate Atlas single-file directory and writes `atlas.sum`. |
 
 ## Utility commands
@@ -73,6 +73,28 @@ Remote database URLs, migration directory URLs, `env://` project attributes,
 include/exclude filters, Atlas Cloud web output, and `--format` templates fail
 explicitly until their semantics are implemented.
 
+## Migration Diff
+
+`ptah atlas migrate diff` accepts a local `--dir` migration directory, one or
+more local `--to` schema files, and a directly connectable `--dev-url`. Ptah
+drops all tables in the dev database, replays the migration directory into it,
+compares that state to the desired schema files, and writes an Atlas-style
+single `.sql` migration plus `atlas.sum` when changes exist. Use a disposable
+dev database. If `atlas.sum` already exists, Ptah validates it before replaying
+migrations and fails on checksum drift instead of silently rehashing edited
+files.
+
+```bash
+ptah atlas migrate diff add_users \
+  --dir file://migrations \
+  --to file://schema.sql \
+  --dev-url "sqlite://dev.db"
+```
+
+Database desired-state URLs, `env://` project attributes, schema filters,
+directory locks, Docker dev databases, and `--format` templates fail explicitly
+until their semantics are implemented.
+
 ## Example
 
 ```bash
@@ -85,6 +107,10 @@ ptah atlas schema diff \
   --from file://old.hcl \
   --to file://schema.hcl \
   --dev-url "postgres://localhost/dev"
+ptah atlas migrate diff add_users \
+  --dir file://migrations \
+  --to file://schema.sql \
+  --dev-url "sqlite://dev.db"
 ptah atlas schema fmt schema.hcl
 ptah atlas migrate import \
   --from "file://flyway?format=flyway" \

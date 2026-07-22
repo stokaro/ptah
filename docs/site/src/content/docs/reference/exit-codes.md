@@ -71,6 +71,8 @@ a Ptah-owned utility behavior such as the license notice or schema formatting.
 | `ptah-compat migrate apply` / `atlas migrate apply` | `ptah migrations up` |
 | `ptah atlas migrate down` | `ptah migrations down` |
 | `ptah-compat migrate down` / `atlas migrate down` | `ptah migrations down` |
+| `ptah atlas migrate diff` | Local Atlas-style migration diff and `atlas.sum` update |
+| `ptah-compat migrate diff` / `atlas migrate diff` | Local Atlas-style migration diff and `atlas.sum` update |
 | `ptah atlas migrate import` | Import local migrations into a separate directory and write `atlas.sum` |
 | `ptah-compat migrate import` / `atlas migrate import` | Import local migrations into a separate directory and write `atlas.sum` |
 | `ptah atlas migrate status` | `ptah migrations status` |

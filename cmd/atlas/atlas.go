@@ -172,17 +172,6 @@ func newAtlasMigrateCommand() *cobra.Command {
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	for _, verb := range []atlasVerb{
 		atlasMigrateApplyVerb(),
-		{
-			use:    "diff",
-			short:  "Generate migration SQL from differences",
-			native: "",
-			flags: []atlasFlag{
-				atlasStringArray("to", "", "Desired schema target"),
-				atlasString("dev-url", "", "Dev database URL"),
-				atlasString("dir", "", "Migration directory"),
-				atlasString("format", "", "Atlas Go template output format"),
-			},
-		},
 		atlasMigrateDownVerb(),
 		{
 			use:     "hash",
@@ -232,6 +221,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 	} {
 		cmd.AddCommand(newAtlasAdapterCommand("migrate", verb))
 	}
+	cmd.AddCommand(newAtlasMigrateDiffCommand())
 	cmd.AddCommand(newAtlasMigrateImportCommand())
 	return cmd
 }
