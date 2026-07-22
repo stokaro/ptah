@@ -1572,6 +1572,7 @@ CREATE TABLE users (
 	newMigration := nonInitialAtlasMigration(c, migrationFiles)
 	newSQL, err := os.ReadFile(newMigration)
 	c.Assert(err, qt.IsNil)
+	c.Assert(strings.HasPrefix(string(newSQL), "  ALTER TABLE"), qt.IsTrue)
 	c.Assert(string(newSQL), qt.Contains, "ADD COLUMN")
 	c.Assert(string(newSQL), qt.Contains, "email")
 	sum, err := os.ReadFile(filepath.Join(migrationsDir, "atlas.sum"))
@@ -1595,6 +1596,50 @@ CREATE TABLE users (
 	c.Assert(err, qt.IsNil)
 	c.Assert(secondOut.String(), qt.Equals, "The migration directory is synced with the desired state, no changes to be made\n")
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 2)
+}
+
+func TestNewAtlasCommand_MigrateDiffCustomFormatWritesFormattedMigration(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_init.sql"), []byte(`
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY
+);
+`), 0o600), qt.IsNil)
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath, []byte(`
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY,
+  email TEXT NOT NULL DEFAULT ''
+);
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "diff",
+		"--dev-url", "sqlite://" + filepath.Join(dir, "dev.db"),
+		"--dir", "file://" + migrationsDir,
+		"--to", "file://" + schemaPath,
+		"--format", `{{ sql . "" }}`,
+		"add_email",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	migrationFiles := atlasSQLFiles(c, migrationsDir)
+	c.Assert(migrationFiles, qt.HasLen, 2)
+	newMigration := nonInitialAtlasMigration(c, migrationFiles)
+	newSQL, err := os.ReadFile(newMigration)
+	c.Assert(err, qt.IsNil)
+	c.Assert(strings.HasPrefix(string(newSQL), "ALTER TABLE"), qt.IsTrue)
+	c.Assert(string(newSQL), qt.Contains, "ADD COLUMN")
+	c.Assert(string(newSQL), qt.Contains, "email")
 }
 
 func TestNewAtlasCommand_MigrateDiffRejectsChecksumDrift(t *testing.T) {
@@ -1689,7 +1734,7 @@ func TestNewAtlasCommand_MigrateDiffLockTimeout(t *testing.T) {
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 0)
 }
 
-func TestNewAtlasCommand_MigrateDiffRejectsUnsupportedFormat(t *testing.T) {
+func TestNewAtlasCommand_MigrateDiffRejectsInvalidFormat(t *testing.T) {
 	c := qt.New(t)
 	cmd := NewAtlasCommand()
 	var out bytes.Buffer
@@ -1700,12 +1745,12 @@ func TestNewAtlasCommand_MigrateDiffRejectsUnsupportedFormat(t *testing.T) {
 		"--dev-url", "sqlite://dev.db",
 		"--dir", "file://migrations",
 		"--to", "file://schema.sql",
-		"--format", "{{ sql . }}",
+		"--format", "{{ json . }}",
 	})
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `atlas migrate diff accepts --format, but Ptah does not implement its behavior yet`)
+	c.Assert(err, qt.ErrorMatches, `parse --format template: .*function "json" not defined.*`)
 }
 
 type atlasMigrateApplyJSONResult struct {
