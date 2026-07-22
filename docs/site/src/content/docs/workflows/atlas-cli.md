@@ -37,8 +37,8 @@ model. Unsupported flags fail clearly instead of being ignored.
 | `ptah atlas migrate down` | Forwards to `ptah migrations down`; maps compatible Atlas flags and fails explicitly for dynamic down-planning and output-format flags that native Ptah does not implement yet. |
 | `ptah atlas migrate status` | `ptah migrations status` |
 | `ptah atlas migrate hash` | `ptah migrations hash` |
-| `ptah atlas migrate validate` | Verifies `ptah.sum` or `atlas.sum`; with `--dev-url`, replays migrations on the dev database to validate SQL execution. |
-| `ptah atlas migrate lint` | `ptah migrations lint`; supports Atlas-style `--latest N` for latest-version linting. |
+| `ptah atlas migrate validate` | Verifies `ptah.sum` or `atlas.sum`; with `--dev-url`, cleans and replays migrations on the dev database to validate SQL execution. |
+| `ptah atlas migrate lint` | `ptah migrations lint`; supports Atlas-style `--latest N`, infers lint dialect from `--dev-url`, and cleans and replays migrations on directly connectable dev databases to validate SQL execution. |
 | `ptah atlas migrate new` | `ptah migrations create` |
 | `ptah atlas migrate set` | `ptah migrations repair` |
 | `ptah atlas migrate diff` | Replays local Atlas migrations on `--dev-url`, diffs against local schema files, writes an Atlas single-file migration, and updates `atlas.sum`. |
@@ -194,9 +194,10 @@ dev databases fail explicitly until their semantics are implemented.
 
 `ptah atlas migrate validate` verifies the migration directory against
 `atlas.sum` or `ptah.sum`. When `--dev-url` is set, Ptah first checks integrity
-and then replays the migration directory on the dev database to validate SQL
-execution semantics. If integrity drift is found, Ptah reports the drift and
-does not connect to the dev database.
+and then treats the dev database as scratch space: it drops user tables and
+replays the migration directory to validate SQL execution semantics. If
+integrity drift is found, Ptah reports the drift and does not connect to the dev
+database.
 
 ```bash
 ptah atlas migrate validate \
@@ -230,8 +231,16 @@ ptah atlas migrate import \
   --from "file://flyway?format=flyway" \
   --to "file://migrations"
 
-ptah atlas migrate lint --dir ./migrations --latest 1
+ptah atlas migrate lint \
+  --dir ./migrations \
+  --dev-url "sqlite://dev.db" \
+  --latest 1
 ```
+
+`migrate lint --dev-url` treats the dev database as scratch space: it drops user
+tables, replays the migration directory, and then runs static lint
+reporting. Docker `--dev-url` values remain an explicit gap; use a directly
+connectable database URL.
 
 For existing scripts that already call `atlas`, install or copy the
 `ptah-compat` drop-in replacement under that executable name:

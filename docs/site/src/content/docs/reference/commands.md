@@ -35,8 +35,8 @@ Reference: [native CLI command tree](https://github.com/stokaro/ptah/blob/master
 | `ptah migrations down` | Roll back migrations. |
 | `ptah migrations status` | Show migration status. |
 | `ptah migrations hash` | Write or update migration-directory integrity. |
-| `ptah migrations validate` | Validate migration-directory integrity and, optionally, SQL execution with `--dev-url`. |
-| `ptah migrations lint` | Lint migration files. |
+| `ptah migrations validate` | Validate migration-directory integrity and, optionally, SQL execution by cleaning and replaying migrations on `--dev-url`. |
+| `ptah migrations lint` | Lint migration files and, with `--dev-url`, clean and replay migrations on a directly connectable dev database before static reporting. |
 | `ptah sql lint` | Lint standalone SQL files. |
 | `ptah seed` | Apply environment-scoped SQL seed files. |
 | `ptah version` | Print Ptah build information. |
@@ -64,8 +64,8 @@ executable name.
 | `ptah atlas migrate apply` | Applies Atlas-format migration directories with Atlas-compatible apply flags. |
 | `ptah atlas migrate status` | Forwards to `ptah migrations status`. |
 | `ptah atlas migrate hash` | Forwards to `ptah migrations hash`. |
-| `ptah atlas migrate validate` | Verifies `ptah.sum` or `atlas.sum`; with `--dev-url`, replays the clean migration directory on the dev database to validate SQL execution. |
-| `ptah atlas migrate lint` | Forwards to `ptah migrations lint`; maps `--latest N` to native latest-version linting. |
+| `ptah atlas migrate validate` | Verifies `ptah.sum` or `atlas.sum`; with `--dev-url`, cleans the dev database and replays the migration directory to validate SQL execution. |
+| `ptah atlas migrate lint` | Forwards to `ptah migrations lint`; maps `--latest N` to native latest-version linting, infers lint dialect from `--dev-url`, and cleans and replays migrations on directly connectable dev databases to validate SQL execution. Docker dev databases remain an explicit gap. |
 | `ptah atlas migrate new` | Forwards to `ptah migrations create`. |
 | `ptah atlas migrate set` | Forwards to `ptah migrations repair`. |
 | `ptah atlas migrate down` | Forwards to `ptah migrations down`; maps compatible Atlas flags and fails explicitly for dynamic down-planning and output-format flags that native Ptah does not implement yet. |

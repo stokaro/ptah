@@ -200,7 +200,7 @@ func atlasMigrateLintVerb() atlasVerb {
 		native:  "migrations lint",
 		factory: lint.NewLintCommand,
 		flags: []atlasargs.Flag{
-			atlasargs.UnsupportedString("dev-url", "", "Dev database URL"),
+			atlasargs.NativeString("dev-url", "", "Dev database URL", "dev-url"),
 			atlasargs.NativeLocalDir("dir", "", "Migration directory", "dir"),
 			atlasargs.NativeUint("latest", "", "Number of latest migrations to lint", "latest"),
 		},
