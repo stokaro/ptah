@@ -31,11 +31,13 @@ func newAtlasSchemaInspectCommand() *cobra.Command {
 Inspects a live database from --url and writes Atlas-compatible schema output to
 stdout without Ptah status banners. The default output is HCL. SQL output is
 supported with --format sql or --format '{{ sql . }}'. JSON output and custom
-Go templates are supported through the same --format flag. The OSS --exclude
+Go templates are supported through the same --format flag, including basic
+` + "`{{ hcl . | split | write \"schema\" }}`" + ` and
+` + "`{{ sql . | split | write \"schema\" }}`" + ` exports. The OSS --exclude
 filter supports resource-level live database inspection filters. Field-level
-exclude selectors, split/write templates, and Atlas dev-database inference
-remain explicit follow-up gaps. --include is an Atlas Pro feature and is outside
-Ptah's OSS drop-in target.`,
+exclude selectors beyond the supported extension version selector, file-backed
+inspection, and Atlas dev-database inference remain explicit follow-up gaps.
+--include is an Atlas Pro feature and is outside Ptah's OSS drop-in target.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaInspect(cmd, opts)
 		},

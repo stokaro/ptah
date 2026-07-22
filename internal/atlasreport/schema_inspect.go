@@ -139,11 +139,12 @@ func renderAtlasSchemaInspectTemplate(
 func newAtlasSchemaInspectTemplate(name, format string) (*template.Template, error) {
 	tmpl, err := template.New(name).Funcs(template.FuncMap{
 		"base64url": atlasSchemaInspectBase64URL,
+		"hcl":       atlasSchemaInspectHCL,
 		"json":      atlasTemplateJSON,
 		"mermaid":   atlasSchemaInspectMermaid,
 		"sql":       atlasSchemaInspectSQL,
-		"split":     atlasSchemaInspectUnsupportedFileTemplateFunc,
-		"write":     atlasSchemaInspectUnsupportedFileTemplateFunc,
+		"split":     atlasSchemaInspectSplit,
+		"write":     atlasSchemaInspectWrite,
 	}).Parse(format)
 	if err != nil {
 		return nil, fmt.Errorf("parse --format template: %w", err)
@@ -187,6 +188,10 @@ func (r *SchemaInspectReport) MarshalJSON() ([]byte, error) {
 	return json.Marshal(r.Realm)
 }
 
+func atlasSchemaInspectHCL(report *SchemaInspectReport) (string, error) {
+	return report.MarshalHCL()
+}
+
 func atlasSchemaInspectSQL(report *SchemaInspectReport, indent ...string) (string, error) {
 	return report.MarshalSQL(indent...)
 }
@@ -202,12 +207,8 @@ func atlasSchemaInspectMermaid(report *SchemaInspectReport, _ ...string) (string
 	return string(out), nil
 }
 
-func atlasSchemaInspectUnsupportedFileTemplateFunc(_ ...any) (string, error) {
-	return "", fmt.Errorf("atlas schema inspect accepts split/write templates, but Ptah does not implement their behavior yet")
-}
-
-func atlasSchemaInspectBase64URL(value string) string {
-	return strings.NewReplacer("+", "-", "/", "_", "=", "").Replace(value)
+func atlasSchemaInspectBase64URL(value any) string {
+	return strings.NewReplacer("+", "-", "/", "_", "=", "").Replace(atlasTemplateString(value))
 }
 
 func atlasSchemaInspectJSON(schema *dbschematypes.DBSchema, info dbschematypes.DBInfo) atlasSchemaInspectJSONRealm {
