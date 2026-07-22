@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/stokaro/ptah/core/sqlutil"
@@ -47,6 +48,10 @@ func (p ApplyPlan) HasChanges() bool {
 
 func (p ApplyPlan) SQL() string {
 	return FormatMigrationSQL(p.statements)
+}
+
+func (p ApplyPlan) Statements() []string {
+	return slices.Clone(p.statements)
 }
 
 func PlanApply(conn *dbschema.DatabaseConnection, opts ApplyOptions) (ApplyPlan, error) {
@@ -106,6 +111,10 @@ func (p ApplyRuntimePlan) HasChanges() bool {
 
 func (p ApplyRuntimePlan) SQL() string {
 	return p.plan.SQL()
+}
+
+func (p ApplyRuntimePlan) Statements() []string {
+	return p.plan.Statements()
 }
 
 // Execute applies the prepared schema diff. Dry-run and no-op plans return
