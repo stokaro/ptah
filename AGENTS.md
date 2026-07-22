@@ -403,8 +403,8 @@ Requirements for white-box tests:
 
 - File naming: `*_internal_test.go`.
 - Package name: `package parser` without the `_test` suffix.
-- Include a comment immediately after the `package` line explaining the
-  justification.
+- Include a `// White-box testing required:` comment as the first non-empty line
+  after the `package` line explaining the justification.
 
 Bad:
 

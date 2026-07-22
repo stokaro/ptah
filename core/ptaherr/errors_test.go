@@ -144,23 +144,51 @@ func TestCapabilityErrorFallbackMessages(t *testing.T) {
 	c.Assert(nilErr.Unwrap(), qt.IsNil)
 }
 
+func TestSentinelErrorsMatchThemselves(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{name: "unsupported dialect", err: ptaherr.ErrUnsupportedDialect},
+		{name: "unknown attribute", err: ptaherr.ErrUnknownAttribute},
+		{name: "missing required attribute", err: ptaherr.ErrMissingRequiredAttribute},
+		{name: "invalid attribute value", err: ptaherr.ErrInvalidAttributeValue},
+		{name: "unsupported feature", err: ptaherr.ErrUnsupportedFeature},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			c.Assert(tt.err, qt.ErrorIs, tt.err)
+		})
+	}
+}
+
 func TestSentinelErrorsAreDistinct(t *testing.T) {
 	c := qt.New(t)
 
-	sentinels := []error{
-		ptaherr.ErrUnsupportedDialect,
-		ptaherr.ErrUnknownAttribute,
-		ptaherr.ErrMissingRequiredAttribute,
-		ptaherr.ErrInvalidAttributeValue,
-		ptaherr.ErrUnsupportedFeature,
+	tests := []struct {
+		name  string
+		left  error
+		right error
+	}{
+		{name: "unsupported dialect vs unknown attribute", left: ptaherr.ErrUnsupportedDialect, right: ptaherr.ErrUnknownAttribute},
+		{name: "unsupported dialect vs missing required attribute", left: ptaherr.ErrUnsupportedDialect, right: ptaherr.ErrMissingRequiredAttribute},
+		{name: "unsupported dialect vs invalid attribute value", left: ptaherr.ErrUnsupportedDialect, right: ptaherr.ErrInvalidAttributeValue},
+		{name: "unsupported dialect vs unsupported feature", left: ptaherr.ErrUnsupportedDialect, right: ptaherr.ErrUnsupportedFeature},
+		{name: "unknown attribute vs missing required attribute", left: ptaherr.ErrUnknownAttribute, right: ptaherr.ErrMissingRequiredAttribute},
+		{name: "unknown attribute vs invalid attribute value", left: ptaherr.ErrUnknownAttribute, right: ptaherr.ErrInvalidAttributeValue},
+		{name: "unknown attribute vs unsupported feature", left: ptaherr.ErrUnknownAttribute, right: ptaherr.ErrUnsupportedFeature},
+		{name: "missing required attribute vs invalid attribute value", left: ptaherr.ErrMissingRequiredAttribute, right: ptaherr.ErrInvalidAttributeValue},
+		{name: "missing required attribute vs unsupported feature", left: ptaherr.ErrMissingRequiredAttribute, right: ptaherr.ErrUnsupportedFeature},
+		{name: "invalid attribute value vs unsupported feature", left: ptaherr.ErrInvalidAttributeValue, right: ptaherr.ErrUnsupportedFeature},
 	}
-	for i, left := range sentinels {
-		for j, right := range sentinels {
-			if i == j {
-				c.Assert(left, qt.ErrorIs, right)
-				continue
-			}
-			c.Assert(left, qt.Not(qt.ErrorIs), right)
-		}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			c.Assert(tt.left, qt.Not(qt.ErrorIs), tt.right)
+			c.Assert(tt.right, qt.Not(qt.ErrorIs), tt.left)
+		})
 	}
 }

@@ -54,7 +54,7 @@ func TestMissingComment(t *testing.T) {}
 			{Path: "sample/mixed_test.go", Function: "TestBad", Kind: "switch", Count: 1},
 		},
 		WhiteBoxFiles: []teststyle.WhiteBoxBaseline{
-			{Path: "sample/missing_internal_test.go", Package: "sample", Reason: "missing immediate white-box justification comment"},
+			{Path: "sample/missing_internal_test.go", Package: "sample", Reason: "missing white-box justification comment after package clause"},
 			{Path: "sample/mixed_test.go", Package: "sample", Reason: "same-package test file is not named *_internal_test.go"},
 		},
 	})
@@ -113,7 +113,7 @@ func TestDiffDoesNotMutateInputs(t *testing.T) {
 	}
 	got := teststyle.Baseline{
 		WhiteBoxFiles: []teststyle.WhiteBoxBaseline{
-			{Path: "z_internal_test.go", Package: "sample", Reason: "missing immediate white-box justification comment"},
+			{Path: "z_internal_test.go", Package: "sample", Reason: "missing white-box justification comment after package clause"},
 			{Path: "a_test.go", Package: "sample", Reason: "same-package test file is not named *_internal_test.go"},
 		},
 	}

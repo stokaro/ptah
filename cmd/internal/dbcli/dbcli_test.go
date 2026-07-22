@@ -10,34 +10,46 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 )
 
-func TestParseConnectTimeout(t *testing.T) {
+func TestParseConnectTimeout_HappyPath(t *testing.T) {
 	tests := []struct {
-		name    string
-		raw     string
-		want    time.Duration
-		wantErr bool
-		errSub  string
+		name string
+		raw  string
+		want time.Duration
 	}{
 		{name: "default value", raw: "10s", want: 10 * time.Second},
 		{name: "zero disables timeout", raw: "0", want: 0},
 		{name: "minutes", raw: "2m", want: 2 * time.Minute},
 		{name: "fractional", raw: "1500ms", want: 1500 * time.Millisecond},
-		{name: "empty", raw: "", wantErr: true, errSub: "invalid --connect-timeout"},
-		{name: "garbage", raw: "soon", wantErr: true, errSub: "invalid --connect-timeout"},
-		{name: "negative", raw: "-1s", wantErr: true, errSub: "must not be negative"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			got, err := dbcli.ParseConnectTimeout(tt.raw)
-			if tt.wantErr {
-				c.Assert(err, qt.IsNotNil)
-				c.Assert(err.Error(), qt.Contains, tt.errSub)
-				return
-			}
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, tt.want)
+		})
+	}
+}
+
+func TestParseConnectTimeout_FailurePath(t *testing.T) {
+	tests := []struct {
+		name   string
+		raw    string
+		errSub string
+	}{
+		{name: "empty", raw: "", errSub: "invalid --connect-timeout"},
+		{name: "garbage", raw: "soon", errSub: "invalid --connect-timeout"},
+		{name: "negative", raw: "-1s", errSub: "must not be negative"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			got, err := dbcli.ParseConnectTimeout(tt.raw)
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Contains, tt.errSub)
+			c.Assert(got, qt.Equals, time.Duration(0))
 		})
 	}
 }

@@ -8,12 +8,11 @@ import (
 	"github.com/stokaro/ptah/internal/onlineddl"
 )
 
-func TestParseDatabaseURL(t *testing.T) {
+func TestParseDatabaseURL_HappyPath(t *testing.T) {
 	tests := []struct {
-		name    string
-		url     string
-		want    onlineddl.DSN
-		wantErr string
+		name string
+		url  string
+		want onlineddl.DSN
 	}{
 		//nolint:gosec // fixture URL with a made-up password, not a credential
 		{
@@ -50,6 +49,23 @@ func TestParseDatabaseURL(t *testing.T) {
 			url:  "mysql://app:p%40ss%2Fword@db:3306/shop",
 			want: onlineddl.DSN{Host: "db", Port: "3306", User: "app", Password: "p@ss/word", Database: "shop"},
 		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			dsn, err := onlineddl.ParseDatabaseURL(tt.url)
+			c.Assert(err, qt.IsNil)
+			c.Assert(dsn, qt.DeepEquals, tt.want)
+		})
+	}
+}
+
+func TestParseDatabaseURL_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		wantErr string
+	}{
 		//nolint:gosec // fixture URL with a made-up password, not a credential
 		{
 			name:    "missing database name",
@@ -61,12 +77,8 @@ func TestParseDatabaseURL(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			dsn, err := onlineddl.ParseDatabaseURL(tt.url)
-			if tt.wantErr != "" {
-				c.Assert(err, qt.ErrorMatches, tt.wantErr)
-				return
-			}
-			c.Assert(err, qt.IsNil)
-			c.Assert(dsn, qt.DeepEquals, tt.want)
+			c.Assert(err, qt.ErrorMatches, tt.wantErr)
+			c.Assert(dsn, qt.DeepEquals, onlineddl.DSN{})
 		})
 	}
 }
