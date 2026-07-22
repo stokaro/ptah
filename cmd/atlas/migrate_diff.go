@@ -12,6 +12,7 @@ import (
 	"github.com/stokaro/ptah/internal/atlasargs"
 	"github.com/stokaro/ptah/internal/atlasmigrate"
 	"github.com/stokaro/ptah/internal/atlasreport"
+	"github.com/stokaro/ptah/internal/atlasschema"
 	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -19,6 +20,7 @@ import (
 type atlasMigrateDiffOptions struct {
 	toURLs      []string
 	devURL      string
+	envName     string
 	dirURL      string
 	dirFormat   string
 	format      string
@@ -39,8 +41,11 @@ writes a new Atlas-style single-file migration plus atlas.sum when changes are
 found. Use a disposable dev database. This implementation currently supports
 local file:// migration directories and local .hcl, .yaml, .yml, or .sql schema
 files. Use --schema to limit the comparison to selected schema names. Database
-URLs, env:// URLs, lock flags other than --lock-timeout, and Docker dev
-databases remain explicit follow-up gaps.`,
+URLs, env:// URLs, lock flags other than --lock-timeout, concurrent index
+migration-file metadata, and Docker dev databases remain explicit follow-up
+gaps. When --env is set, the selected atlas.hcl env can provide schema.src,
+dev, migration.dir, format.migrate.diff, and supported non-concurrent diff
+policy values.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := "migration"
@@ -53,6 +58,7 @@ databases remain explicit follow-up gaps.`,
 	flags := cmd.Flags()
 	flags.StringArrayVar(&opts.toURLs, "to", nil, "Desired schema target URL")
 	flags.StringVar(&opts.devURL, "dev-url", "", "Dev database URL used to replay migrations and compute the diff")
+	dbcli.RegisterEnvFlag(flags, &opts.envName)
 	flags.StringVar(&opts.dirURL, "dir", "file://migrations", "Migration directory URL")
 	flags.StringVar(&opts.dirFormat, "dir-format", "atlas", "Migration directory format; only atlas is implemented")
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
@@ -63,6 +69,27 @@ databases remain explicit follow-up gaps.`,
 }
 
 func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name string) error {
+	policy := atlasschema.DiffPolicy{}
+	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd, opts.envName)
+	if needsAtlasMigrateDiffConfig(cmd) {
+		projectCfg, loaded, err = loadRequiredAtlasProjectConfigForCommand(cmd, opts.envName)
+	}
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if loaded {
+		opts.toURLs = effectiveStringArray(cmd, "to", opts.toURLs, projectCfg.SchemaSources)
+		opts.devURL = dbcli.EffectiveString(cmd, "dev-url", opts.devURL, projectCfg.DevURL)
+		opts.dirURL = dbcli.EffectiveString(cmd, "dir", opts.dirURL, projectCfg.Migration.Dir)
+		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, projectCfg.Format.Migrate.Diff)
+		policy, err = atlasDiffPolicy(projectCfg)
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+		if policy.ConcurrentIndexCreate {
+			return cmdutil.Fail(cmd, fmt.Errorf("atlas.hcl diff.concurrent_index.create is not supported by migrate diff yet"))
+		}
+	}
 	if err := validateAtlasMigrateDiffOptions(cmd, opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -99,6 +126,7 @@ func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name 
 		Format:      format,
 		Schemas:     opts.schemas,
 		LockTimeout: lockTimeout,
+		Policy:      policy,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -110,6 +138,11 @@ func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name 
 	fmt.Fprintf(cmd.OutOrStdout(), "Created migration file: %s\n", diffResult.MigrationPath)
 	fmt.Fprintf(cmd.OutOrStdout(), "Updated migration checksum: %s\n", diffResult.SumPath)
 	return nil
+}
+
+func needsAtlasMigrateDiffConfig(cmd *cobra.Command) bool {
+	return !cmd.Flags().Changed("to") ||
+		!cmd.Flags().Changed("dev-url")
 }
 
 func validateAtlasMigrateDiffOptions(cmd *cobra.Command, opts atlasMigrateDiffOptions) error {

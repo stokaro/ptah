@@ -86,6 +86,102 @@ func TestParseAtlasProjectConfigGlobalLint(t *testing.T) {
 	c.Assert(cfg.Lint.GitDir, qt.Equals, "repo")
 }
 
+func TestParseAtlasProjectConfigEnvSchemaFormatAndDiffBlocks(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`env "local" {
+  schema {
+    src = ["file://schema.hcl"]
+    mode {
+      funcs       = false
+      objects     = false
+      tables      = false
+      triggers    = false
+      types       = false
+      views       = false
+      roles       = true
+      permissions = true
+      sensitive   = DENY
+    }
+  }
+  format {
+    schema {
+      apply   = "{{ sql . }}"
+      diff    = "{{ len .Changes }}"
+      inspect = "json"
+    }
+    migrate {
+      apply = "{{ json . }}"
+      diff  = format("{{ json . | json_merge %q }}", jsonencode({ EnvName = "local" }))
+    }
+  }
+  diff {
+    skip {
+      drop_table = true
+    }
+    concurrent_index {
+      create = true
+      drop   = false
+    }
+  }
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://schema.hcl"})
+	c.Assert(cfg.Schema.Mode.Tables, qt.DeepEquals, projectconfig.ConfigBool{Value: false, Set: true})
+	c.Assert(cfg.Schema.Mode.Funcs, qt.DeepEquals, projectconfig.ConfigBool{Value: false, Set: true})
+	c.Assert(cfg.Schema.Mode.Objects, qt.DeepEquals, projectconfig.ConfigBool{Value: false, Set: true})
+	c.Assert(cfg.Schema.Mode.Triggers, qt.DeepEquals, projectconfig.ConfigBool{Value: false, Set: true})
+	c.Assert(cfg.Schema.Mode.Types, qt.DeepEquals, projectconfig.ConfigBool{Value: false, Set: true})
+	c.Assert(cfg.Schema.Mode.Views, qt.DeepEquals, projectconfig.ConfigBool{Value: false, Set: true})
+	c.Assert(cfg.Schema.Mode.Roles, qt.DeepEquals, projectconfig.ConfigBool{Value: true, Set: true})
+	c.Assert(cfg.Schema.Mode.Permissions, qt.DeepEquals, projectconfig.ConfigBool{Value: true, Set: true})
+	c.Assert(cfg.Schema.Mode.ExcludePatterns(), qt.DeepEquals, []string{
+		"*[type=table]",
+		"*[type=view|materialized_view]",
+		"*[type=trigger]",
+		"*[type=function]",
+		"*[type=enum]",
+		"*[type=extension]",
+	})
+	c.Assert(cfg.Format.Schema.Apply, qt.Equals, "{{ sql . }}")
+	c.Assert(cfg.Format.Schema.Diff, qt.Equals, "{{ len .Changes }}")
+	c.Assert(cfg.Format.Schema.Inspect, qt.Equals, "json")
+	c.Assert(cfg.Format.Migrate.Apply, qt.Equals, "{{ json . }}")
+	c.Assert(cfg.Format.Migrate.Diff, qt.Equals, `{{ json . | json_merge "{\"EnvName\":\"local\"}" }}`)
+	c.Assert(cfg.Diff.Skip.DropTable, qt.DeepEquals, projectconfig.ConfigBool{Value: true, Set: true})
+	c.Assert(cfg.Diff.ConcurrentIndex.Create, qt.DeepEquals, projectconfig.ConfigBool{Value: true, Set: true})
+	c.Assert(cfg.Diff.ConcurrentIndex.Drop, qt.DeepEquals, projectconfig.ConfigBool{Value: false, Set: true})
+}
+
+func TestParseAtlasProjectConfigEnvDiffOverridesGlobalDiff(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`diff {
+  skip {
+    drop_table = true
+  }
+  concurrent_index {
+    create = true
+  }
+}
+env "local" {
+  diff {
+    skip {
+      drop_table = false
+    }
+  }
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.Diff.Skip.DropTable, qt.DeepEquals, projectconfig.ConfigBool{Value: false, Set: true})
+	c.Assert(cfg.Diff.ConcurrentIndex.Create, qt.DeepEquals, projectconfig.ConfigBool{Value: true, Set: true})
+}
+
 func TestParseAtlasProjectConfigEnvInheritsGlobalLint(t *testing.T) {
 	c := qt.New(t)
 	raw := []byte(`lint {
@@ -369,6 +465,64 @@ func TestParseAtlasProjectConfigRejectsUnsupportedConstructs(t *testing.T) {
 		raw  string
 		err  string
 	}{
+		{
+			name: "schema repo block",
+			raw: `env "local" {
+  schema {
+    repo {
+      name = "app"
+    }
+  }
+}
+`,
+			err: `unsupported atlas\.hcl construct "repo" at atlas\.hcl:3`,
+		},
+		{
+			name: "schema mode sensitive allow",
+			raw: `env "local" {
+  schema {
+    mode {
+      sensitive = ALLOW
+    }
+  }
+}
+`,
+			err: `unsupported atlas\.hcl construct "sensitive" at atlas\.hcl:4`,
+		},
+		{
+			name: "format migrate lint",
+			raw: `env "local" {
+  format {
+    migrate {
+      lint = "{{ json . }}"
+    }
+  }
+}
+`,
+			err: `unsupported atlas\.hcl construct "lint" at atlas\.hcl:4`,
+		},
+		{
+			name: "format migrate status",
+			raw: `env "local" {
+  format {
+    migrate {
+      status = "{{ json . }}"
+    }
+  }
+}
+`,
+			err: `unsupported atlas\.hcl construct "status" at atlas\.hcl:4`,
+		},
+		{
+			name: "diff skip drop schema",
+			raw: `diff {
+  skip {
+    drop_schema = true
+  }
+}
+`,
+			err: `unsupported atlas\.hcl construct "drop_schema" at atlas\.hcl:3`,
+		},
 		{
 			name: "cloud block",
 			raw: `atlas {

@@ -21,6 +21,7 @@ import (
 type ApplyOptions struct {
 	ToURLs  []string
 	Exclude []string
+	Policy  DiffPolicy
 }
 
 type ApplyPlan struct {
@@ -32,6 +33,7 @@ type ApplyRuntimeOptions struct {
 	DevURL  string
 	ToURLs  []string
 	Exclude []string
+	Policy  DiffPolicy
 	TxMode  migrator.MigrationTxMode
 	DryRun  bool
 }
@@ -82,12 +84,14 @@ func PlanApply(conn *dbschema.DatabaseConnection, opts ApplyOptions) (ApplyPlan,
 		return ApplyPlan{}, fmt.Errorf("apply --exclude to desired schema: %w", err)
 	}
 
-	diff := schemadiff.CompareWithDialect(desired, current, conn.Info().Dialect)
+	diff := applyDiffPolicy(schemadiff.CompareWithDialect(desired, current, conn.Info().Dialect), opts.Policy)
 	if !diff.HasChanges() {
 		return ApplyPlan{}, nil
 	}
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, conn.Info().Dialect)
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, desired, conn.Info().Dialect, planner.Options{
+		ConcurrentIndexes: opts.Policy.ConcurrentIndexCreate,
+	})
 	if err != nil {
 		return ApplyPlan{}, fmt.Errorf("generate schema apply SQL: %w", err)
 	}
@@ -107,6 +111,7 @@ func PrepareApply(conn *dbschema.DatabaseConnection, opts ApplyRuntimeOptions) (
 	plan, err := PlanApply(conn, ApplyOptions{
 		ToURLs:  opts.ToURLs,
 		Exclude: opts.Exclude,
+		Policy:  opts.Policy,
 	})
 	if err != nil {
 		return ApplyRuntimePlan{}, err

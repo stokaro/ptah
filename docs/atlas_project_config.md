@@ -7,8 +7,8 @@ commands, not schema HCL input. Schema HCL input is documented separately in
 
 ## Supported Subset
 
-Ptah accepts top-level `variable`, `locals`, `data "hcl_schema"`, `env`, and
-`lint` blocks. `env` blocks may have either one label or no label:
+Ptah accepts top-level `variable`, `locals`, `data "hcl_schema"`, `env`,
+`lint`, and `diff` blocks. `env` blocks may have either one label or no label:
 
 ```hcl
 lint {
@@ -24,6 +24,16 @@ env "local" {
   src = ["file://schema.hcl", "schema.sql"]
   exclude = ["tmp_*"]
 
+  schema {
+    src = ["file://schema.hcl", "schema.sql"]
+    mode {
+      funcs       = false
+      permissions = false
+      roles       = false
+      triggers    = false
+    }
+  }
+
   migration {
     dir              = "file://migrations"
     format           = "atlas"
@@ -36,6 +46,27 @@ env "local" {
   lint {
     latest = 5
   }
+
+  format {
+    schema {
+      inspect = "json"
+      apply   = "{{ sql . \"  \" }}"
+      diff    = "{{ sql . \"\" }}"
+    }
+    migrate {
+      apply = "{{ json . }}"
+      diff  = "{{ sql . \"\" }}"
+    }
+  }
+
+  diff {
+    skip {
+      drop_table = true
+    }
+    concurrent_index {
+      create = true
+    }
+  }
 }
 ```
 
@@ -43,10 +74,12 @@ The supported attributes map to Ptah settings as follows:
 
 | Atlas setting | Ptah setting |
 | --- | --- |
-| `env.url` | `--db-url` or `ptah atlas schema apply --url` default |
-| `env.dev` | `migrations generate --shadow-db` or `ptah atlas schema apply --dev-url` default |
+| `env.url` | `--db-url`, `ptah atlas schema inspect --url`, `ptah atlas schema apply --url`, or `ptah atlas migrate apply --url` default |
+| `env.dev` | `migrations generate --shadow-db`, `ptah atlas schema inspect --dev-url`, `ptah atlas schema apply --dev-url`, `ptah atlas schema diff --dev-url`, or `ptah atlas migrate diff --dev-url` default |
 | `env.src` | `ptah atlas schema apply --to` default |
-| `env.exclude` | `ptah atlas schema apply --exclude` default |
+| `env.schema.src` | `ptah atlas schema apply --to`, `ptah atlas schema diff --to`, or `ptah atlas migrate diff --to` default |
+| `env.schema.mode.<object>` | Atlas-style exclusion defaults for supported object kinds |
+| `env.exclude` | `ptah atlas schema inspect --exclude`, `ptah atlas schema apply --exclude`, or `ptah atlas schema diff --exclude` default |
 | `migration.dir` | `--migrations-dir` or `--dir` default |
 | `migration.format` | `--dir-format` default |
 | `migration.revisions_schema` | `--migrations-schema` default |
@@ -56,14 +89,50 @@ The supported attributes map to Ptah settings as follows:
 | `lint.latest` | `migrations lint --latest` default |
 | `lint.git.base` | `migrations lint --git-base` default |
 | `lint.git.dir` | `migrations lint --git-dir` default |
+| `format.schema.inspect` | `ptah atlas schema inspect --format` default |
+| `format.schema.apply` | `ptah atlas schema apply --format` default |
+| `format.schema.diff` | `ptah atlas schema diff --format` default |
+| `format.migrate.apply` | `ptah atlas migrate apply --format` default |
+| `format.migrate.diff` | `ptah atlas migrate diff --format` default |
+| `diff.skip.drop_table` | Drop-table suppression for local schema diff/apply planning |
+| `diff.concurrent_index.create` | PostgreSQL concurrent index creation where the command can execute without a surrounding transaction |
 
-`env.src` accepts either one string or a list of strings. Ptah currently uses
-local schema file sources only, matching the local schema-file boundary of
-`ptah atlas schema apply`.
+`env.src` and `env.schema.src` accept either one string or a list of strings.
+The nested `schema.src` form matches Atlas project config syntax. Ptah currently
+uses local schema file sources only, matching the local schema-file boundary of
+`ptah atlas schema apply`, `ptah atlas schema diff`, and
+`ptah atlas migrate diff`.
 
 `env.exclude` accepts either one string or a list of strings. `ptah atlas schema
 apply --env <name>` uses it as the default resource exclusion filter unless an
 explicit `--exclude` flag is provided.
+
+`env.schema.mode` accepts `funcs`, `objects`, `permissions`, `roles`, `tables`,
+`triggers`, `types`, and `views` booleans. Ptah maps disabled values to the
+matching Atlas-style resource exclusions for object kinds represented in Ptah's
+schema IR. `sensitive = DENY` is accepted as a no-op because Ptah does not emit
+sensitive values through the supported local workflows. `sensitive = ALLOW` is
+rejected until Ptah has explicit sensitive-value semantics.
+
+`format` blocks configure the same Atlas Go-template output strings accepted by
+the matching commands. Ptah supports `schema.inspect`, `schema.apply`,
+`schema.diff`, `migrate.apply`, and `migrate.diff`. `migrate.lint` and
+`migrate.status` format blocks are rejected until those command-specific output
+contracts are implemented.
+
+`diff.skip.drop_table = true` removes table drops from supported local
+declarative diff/apply plans and also removes index or constraint drops owned by
+those dropped tables. `diff.skip.drop_schema` is rejected because Ptah does not
+currently model schema dropping as an Atlas-compatible policy decision.
+
+`diff.concurrent_index.create = true` maps to PostgreSQL concurrent index
+creation in schema diff planning. For non-dry-run PostgreSQL `schema apply`
+plans that actually emit `CREATE INDEX CONCURRENTLY`, Ptah requires
+`--tx-mode none` because PostgreSQL does not allow concurrent index creation
+inside a transaction. `ptah atlas migrate diff` rejects this policy for now
+because generated migration files do not yet carry the required no-transaction
+metadata. `diff.concurrent_index.drop` is rejected until Ptah implements
+matching concurrent drop semantics.
 
 `lint.latest` and `lint.git` configure the migration changeset selected by
 `migrations lint` and `ptah atlas migrate lint`. These selectors are mutually
@@ -95,6 +164,8 @@ config workflows:
 - `fileset("glob")` for local file lists, relative to the `atlas.hcl` file.
 - `data "hcl_schema" "name"` blocks with either `path` or `paths`, exposed as
   `data.hcl_schema.<name>.url`.
+- `format(format_string, values...)` and `jsonencode(value)` for Atlas-style
+  local project-config string construction.
 
 Example:
 
@@ -164,21 +235,42 @@ settings:
 - `migrations status`
 - `migrations lint`
 - `migrations generate`
+- `ptah atlas schema inspect`
 - `ptah atlas schema apply`
+- `ptah atlas schema diff`
+- `ptah atlas migrate apply`
+- `ptah atlas migrate diff`
 
 Atlas command paths under `ptah atlas <command> ...` inherit this behavior
 when they forward to one of these native commands. Dedicated Atlas-compatible
-commands document their own project-config support. `ptah atlas schema apply`
-reads `env.url`, `env.src`, `env.dev`, and `env.exclude` from the selected
-`atlas.hcl` environment without coupling that selection to `ptah.yaml` env
-names.
+commands document their own project-config support. The separate `ptah-compat`
+binary exposes the same Atlas-compatible command tree at process root for
+drop-in script migration.
+
+`ptah atlas schema inspect` reads `env.url`, `env.dev`, `env.exclude`,
+`env.schema.mode`, and `format.schema.inspect`.
+
+`ptah atlas schema apply` reads `env.url`, `env.src`, `env.schema.src`,
+`env.dev`, `env.exclude`, `env.schema.mode`, `format.schema.apply`, and
+supported `diff` policy.
+
+`ptah atlas schema diff` reads `env.schema.src`, `env.dev`, `env.exclude`,
+`env.schema.mode`, `format.schema.diff`, and supported `diff` policy.
+
+`ptah atlas migrate apply` reads `env.url`, `migration`, and
+`format.migrate.apply`.
+
+`ptah atlas migrate diff` reads `env.schema.src`, `env.dev`, `migration.dir`,
+`format.migrate.diff`, and supported `diff` policy.
 
 ## Unsupported Constructs
 
 Ptah intentionally rejects everything outside the documented subset. Unsupported
 attributes, unsupported data sources, unsupported lint policy/analyzer blocks,
-duplicate `migration` or `lint` blocks, variables without defaults, and non-file
-migration directory URI schemes fail with a location-aware error:
+Cloud or registry sources such as `schema.repo`, unsupported format blocks,
+unsupported diff policy fields, duplicate `migration` or `lint` blocks,
+variables without defaults, and non-file migration directory URI schemes fail
+with a location-aware error:
 
 ```text
 unsupported atlas.hcl construct "src" at atlas.hcl:2

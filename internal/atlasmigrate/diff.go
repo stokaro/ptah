@@ -14,6 +14,7 @@ import (
 	"github.com/stokaro/ptah/dbschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/atlasreport"
+	"github.com/stokaro/ptah/internal/atlasschema"
 	"github.com/stokaro/ptah/internal/migratesum"
 	"github.com/stokaro/ptah/internal/schemafile"
 	"github.com/stokaro/ptah/internal/schemascope"
@@ -34,6 +35,7 @@ type DiffOptions struct {
 	Format      string
 	Schemas     []string
 	LockTimeout time.Duration
+	Policy      atlasschema.DiffPolicy
 }
 
 type DiffResult struct {
@@ -93,12 +95,14 @@ func GenerateDiff(ctx context.Context, conn *dbschema.DatabaseConnection, opts D
 		return DiffResult{}, fmt.Errorf("load --to schema: %w", err)
 	}
 	desired = schemascope.FilterGeneratedWithDefaultSchema(desired, schemas, defaultSchema)
-	diff := schemadiff.CompareWithDialect(desired, current, dialect)
+	diff := atlasschema.ApplyDiffPolicy(schemadiff.CompareWithDialect(desired, current, dialect), opts.Policy)
 	if !diff.HasChanges() {
 		return DiffResult{Synced: true}, nil
 	}
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, dialect)
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, desired, dialect, planner.Options{
+		ConcurrentIndexes: opts.Policy.ConcurrentIndexCreate,
+	})
 	if err != nil {
 		return DiffResult{}, fmt.Errorf("generate migration SQL: %w", err)
 	}

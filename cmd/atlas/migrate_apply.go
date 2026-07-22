@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
+	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasargs"
 	"github.com/stokaro/ptah/internal/atlasmigrate"
@@ -19,6 +20,7 @@ import (
 type atlasMigrateApplyOptions struct {
 	url             string
 	dir             string
+	envName         string
 	dryRun          bool
 	txMode          string
 	execOrder       string
@@ -54,6 +56,7 @@ Native Ptah equivalent: ptah migrations up.`,
 	flags := cmd.Flags()
 	flags.StringVarP(&opts.url, "url", "u", "", "Database URL to apply migrations to")
 	flags.StringVar(&opts.dir, "dir", "", "Migration directory URL")
+	dbcli.RegisterEnvFlag(flags, &opts.envName)
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Show migrations without applying them")
 	flags.StringVar(&opts.txMode, "tx-mode", opts.txMode, "Transaction mode: file, all, or none")
 	flags.StringVar(&opts.execOrder, "exec-order", opts.execOrder, "Execution order: linear, linear-skip, or non-linear")
@@ -79,6 +82,23 @@ func atlasMigrateApplyArgs(cmd *cobra.Command, args []string) error {
 
 func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, args []string) error {
 	formatOutput := cmd.Flags().Changed("format")
+	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd, opts.envName)
+	if needsAtlasMigrateApplyConfig(cmd) {
+		projectCfg, loaded, err = loadRequiredAtlasProjectConfigForCommand(cmd, opts.envName)
+	}
+	if err != nil {
+		return err
+	}
+	if loaded {
+		opts.url = dbcli.EffectiveString(cmd, "url", opts.url, projectCfg.DatabaseURL)
+		opts.dir = dbcli.EffectiveString(cmd, "dir", opts.dir, projectCfg.Migration.Dir)
+		opts.txMode = dbcli.EffectiveString(cmd, "tx-mode", opts.txMode, projectCfg.Migration.TxMode)
+		opts.execOrder = dbcli.EffectiveString(cmd, "exec-order", opts.execOrder, projectCfg.Migration.ExecOrder)
+		opts.revisionsSchema = dbcli.EffectiveString(cmd, "revisions-schema", opts.revisionsSchema, projectCfg.Migration.RevisionsSchema)
+		opts.lockTimeout = dbcli.EffectiveString(cmd, "lock-timeout", opts.lockTimeout, projectCfg.Migration.LockTimeout)
+		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, projectCfg.Format.Migrate.Apply)
+		formatOutput = formatOutput || projectCfg.Format.Migrate.Apply != ""
+	}
 	if formatOutput && strings.TrimSpace(opts.format) == "" {
 		return fmt.Errorf("--format must not be empty")
 	}
@@ -206,6 +226,11 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 	}
 	fmt.Fprintf(out, "Migration complete. Current version: %d\n", result.FinalStatus.CurrentVersion)
 	return nil
+}
+
+func needsAtlasMigrateApplyConfig(cmd *cobra.Command) bool {
+	return !cmd.Flags().Changed("url") ||
+		!cmd.Flags().Changed("dir")
 }
 
 func writeAtlasMigrateApplyFormat(

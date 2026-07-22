@@ -36,9 +36,18 @@ type Config struct{ ... }
     func Merge(base, override Config) Config
     func ParseAtlas(data []byte, filename, envName string) (Config, error)
     func ParsePtah(data []byte, filename, envName string) (Config, error)
+type ConfigBool struct{ ... }
+type DiffConcurrentIndexConfig struct{ ... }
+type DiffConfig struct{ ... }
+type DiffSkipConfig struct{ ... }
+type FormatConfig struct{ ... }
 type LintConfig struct{ ... }
 type LoadOptions struct{ ... }
+type MigrateFormatConfig struct{ ... }
 type MigrationConfig struct{ ... }
+type SchemaConfig struct{ ... }
+type SchemaFormatConfig struct{ ... }
+type SchemaModeConfig struct{ ... }
 
 ## github.com/stokaro/ptah/core/ast
 

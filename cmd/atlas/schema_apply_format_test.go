@@ -155,6 +155,119 @@ func TestSchemaApplyUsesAtlasProjectEnvSource(t *testing.T) {
 	c.Assert(sqliteTableCount(c, dbPath, "env_users"), qt.Equals, 1)
 }
 
+func TestSchemaApplyUsesAtlasProjectEnvSchemaBlockAndFormat(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	dbPath := filepath.Join(dir, "project-env-schema-format.db")
+	c.Assert(os.WriteFile("schema.sql", []byte(`CREATE TABLE env_schema_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
+  url = "sqlite://`+dbPath+`"
+  schema {
+    src = "schema.sql"
+  }
+  format {
+    schema {
+      apply = "{{ len .Changes }}"
+    }
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := atlas.NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "apply",
+		"--env", "local",
+		"--auto-approve",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "1")
+	c.Assert(sqliteTableCount(c, dbPath, "env_schema_users"), qt.Equals, 1)
+}
+
+func TestSchemaApplyUsesAtlasProjectSchemaMode(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	dbPath := filepath.Join(dir, "project-env-schema-mode.db")
+	c.Assert(os.WriteFile("schema.sql", []byte(`CREATE TABLE env_schema_mode_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
+  url = "sqlite://`+dbPath+`"
+  schema {
+    src = "schema.sql"
+    mode {
+      tables = false
+    }
+  }
+  format {
+    schema {
+      apply = "{{ with .Changes }}changed{{ else }}synced{{ end }}"
+    }
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := atlas.NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "apply",
+		"--env", "local",
+		"--auto-approve",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "synced")
+	c.Assert(sqliteTableCount(c, dbPath, "env_schema_mode_users"), qt.Equals, 0)
+}
+
+func TestSchemaApplyUsesAtlasProjectDefaultsWithExplicitTargetFlags(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	dbPath := filepath.Join(dir, "project-explicit-target-defaults.db")
+	c.Assert(os.WriteFile("schema.sql", []byte(`CREATE TABLE explicit_target_defaults (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
+  schema {
+    mode {
+      tables = false
+    }
+  }
+  format {
+    schema {
+      apply = "{{ with .Changes }}changed{{ else }}synced{{ end }}"
+    }
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := atlas.NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--to", "schema.sql",
+		"--auto-approve",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "synced")
+	c.Assert(sqliteTableCount(c, dbPath, "explicit_target_defaults"), qt.Equals, 0)
+}
+
 func TestSchemaApplyUsesEvaluatedAtlasProjectEnvSource(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
@@ -239,6 +352,88 @@ CREATE TABLE env_skip (id INTEGER PRIMARY KEY);
 	c.Assert(out.String(), qt.Contains, "Schema apply completed successfully.")
 	c.Assert(sqliteTableCount(c, dbPath, "env_keep"), qt.Equals, 1)
 	c.Assert(sqliteTableCount(c, dbPath, "env_skip"), qt.Equals, 0)
+}
+
+func TestSchemaApplyUsesAtlasProjectDiffSkipDropTable(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	dbPath := filepath.Join(dir, "project-env-diff-skip.db")
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(atlasschema.ApplySQL(context.Background(), conn, migrator.MigrationTxModeAll, `CREATE TABLE old_users (id INTEGER PRIMARY KEY);`), qt.IsNil)
+	dbschema.CloseAndWarn(conn)
+	c.Assert(os.WriteFile("schema.hcl", []byte(`schema "main" {}
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
+  url = "sqlite://`+dbPath+`"
+  schema {
+    src = "schema.hcl"
+  }
+  format {
+    schema {
+      apply = "{{ with .Changes }}changed{{ else }}synced{{ end }}"
+    }
+  }
+  diff {
+    skip {
+      drop_table = true
+    }
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := atlas.NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "apply",
+		"--env", "local",
+		"--auto-approve",
+	})
+
+	err = cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "synced")
+	c.Assert(sqliteTableCount(c, dbPath, "old_users"), qt.Equals, 1)
+}
+
+func TestSchemaApplyAllowsAtlasProjectConcurrentIndexPolicyForSQLite(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	dbPath := filepath.Join(dir, "project-env-concurrent-index.db")
+	c.Assert(os.WriteFile("schema.sql", []byte(`CREATE TABLE users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
+  url = "sqlite://`+dbPath+`"
+  schema {
+    src = "schema.sql"
+  }
+  diff {
+    concurrent_index {
+      create = true
+    }
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := atlas.NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "apply",
+		"--env", "local",
+		"--auto-approve",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Schema apply completed successfully.")
+	c.Assert(sqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
 }
 
 func TestSchemaApplyPrefersExplicitFlagsOverProjectEnv(t *testing.T) {
