@@ -51,10 +51,12 @@ least:
 Search for both old and new terms: command names, aliases, flag names,
 environment variables, config keys, issue numbers, dialect names, conformance
 gap names, generated labels, and exact error strings. Documentation must stay
-aligned with canonical Ptah command paths, especially the rule that Atlas OSS
-command parity belongs only under `ptah atlas <command> ...`; do not document
-root-level Atlas aliases. Do not claim full Atlas parity or drop-in replacement
-status unless the current conformance evidence proves it.
+aligned with canonical Ptah command paths. Atlas OSS command parity exists in
+two product surfaces: `ptah atlas <command> ...` inside the full-featured `ptah`
+CLI, and the separate `ptah-compat <command> ...` drop-in binary at process
+root. Do not document root-level Atlas aliases inside the native `ptah` binary
+such as `ptah migrate apply` or `ptah schema inspect`. Do not claim full Atlas
+parity unless the current conformance evidence proves it.
 
 For deep documentation maintenance, use the repo-local skill at
 `.agents/skills/ptah-documentation-maintenance/SKILL.md`. It is Ptah-specific:
@@ -71,10 +73,12 @@ fallback APIs, or backward-compatibility behavior just to keep an older internal
 shape. Prefer the cleaner architecture and update callers/tests/docs unless a
 maintainer explicitly asks for a compatibility layer.
 
-Atlas OSS command parity belongs under `ptah atlas <command> ...` only. Do not
-add root-level Atlas command spellings or temporary aliases such as
-`ptah migrate apply` / `ptah schema inspect`; remove or redesign old paths
-instead of preserving them.
+Atlas OSS command parity belongs under `ptah atlas <command> ...` inside the
+full-featured `ptah` binary. The separate `ptah-compat` binary is the
+Atlas-style root command surface for drop-in script migration. Do not add
+root-level Atlas command spellings or temporary aliases such as
+`ptah migrate apply` / `ptah schema inspect` to the `ptah` binary; remove or
+redesign old native paths instead of preserving them.
 
 The `modernize` linter is enabled. Prefer current Go idioms when writing or editing code:
 

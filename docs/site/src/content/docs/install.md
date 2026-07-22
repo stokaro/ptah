@@ -11,10 +11,11 @@ Use this page to get a `ptah` binary onto a developer machine or CI runner.
 | --- | --- |
 | You are developing Ptah itself | `GOWORK=off go build -o ./bin/ptah ./cmd/ptah` |
 | You want the latest module version in another project | `go install github.com/stokaro/ptah/cmd/ptah@latest` |
-| You need Atlas-style root commands | `go install github.com/stokaro/ptah/cmd/ptah-compat@latest` |
 | You want a reproducible CI toolchain | Pin a version or pseudo-version in the install command |
 
 Ptah is pre-GA, so pinning is better for automation than relying on `latest`.
+Install `github.com/stokaro/ptah/cmd/ptah-compat` separately when replacing an
+Atlas binary in existing scripts.
 
 ## Build from a checkout
 

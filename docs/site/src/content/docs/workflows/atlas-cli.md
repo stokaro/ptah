@@ -254,14 +254,16 @@ When converting scripts, keep the `atlas` namespace in the Ptah command:
 | `ptah atlas migrate apply --url "$DATABASE_URL" --dir ./migrations` | `ptah migrate apply --url "$DATABASE_URL" --dir ./migrations` |
 | `ptah atlas schema inspect --url "$DATABASE_URL"` | `ptah schema inspect --url "$DATABASE_URL"` |
 
-When replacing an existing Atlas binary in scripts, use the compatibility
-binary instead:
+When replacing an existing Atlas binary in scripts, use the compatibility binary
+instead of adding root-level Atlas spellings to `ptah`:
 
-| Do | Do not |
-| --- | --- |
-| `ptah-compat migrate apply --url "$DATABASE_URL" --dir ./migrations` | `ptah migrate apply --url "$DATABASE_URL" --dir ./migrations` |
-| `atlas schema apply --url "$DATABASE_URL" --to file://schema.sql --dry-run` where `atlas` is `ptah-compat` renamed or symlinked | `ptah schema apply --url "$DATABASE_URL" --to file://schema.sql --dry-run` |
-| `atlas schema inspect --url "$DATABASE_URL"` where `atlas` is `ptah-compat` renamed or symlinked | `ptah schema inspect --url "$DATABASE_URL"` |
+```bash
+ptah-compat migrate apply --url "$DATABASE_URL" --dir ./migrations
+
+# Or install/copy ptah-compat as "atlas" for existing scripts.
+atlas schema apply --url "$DATABASE_URL" --to file://schema.sql --dry-run
+atlas schema inspect --url "$DATABASE_URL"
+```
 
 ## Parity expectations
 
