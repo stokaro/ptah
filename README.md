@@ -1,7 +1,7 @@
 # Ptah
 
 Ptah is a schema and migration toolkit for Go projects. It can read annotated Go
-models, YAML schema files, supported Atlas HCL schema files, and live databases;
+models, YAML schema files, supported HCL schema files, and live databases;
 render SQL; plan and run migrations; validate migration hashes; and expose
 Atlas-compatible command paths under `ptah atlas <command> ...`.
 
@@ -14,7 +14,7 @@ architecture is better.
 | --- | --- |
 | First successful local run | [Quick start](docs/site/src/content/docs/getting-started.md) |
 | Application-owned Go schema | [Go schema workflow](docs/site/src/content/docs/workflows/go-schema.md) |
-| YAML or Atlas HCL schema source | [Schema files](docs/site/src/content/docs/workflows/schema-files.md) |
+| YAML or HCL schema source | [Schema files](docs/site/src/content/docs/workflows/schema-files.md) |
 | Migration operations | [Migrations](docs/site/src/content/docs/workflows/migrations.md) |
 | Atlas-compatible CLI paths | [Atlas-compatible CLI](docs/site/src/content/docs/workflows/atlas-cli.md) |
 | CI setup | [CI](docs/site/src/content/docs/workflows/ci.md) |
@@ -135,7 +135,7 @@ the detailed source references:
 - [Native CLI](docs/native_cli.md)
 - [Project configuration](docs/project_config.md)
 - [Atlas project config subset](docs/atlas_project_config.md)
-- [Atlas HCL schema](docs/atlas_hcl_schema.md)
+- [HCL schema](docs/atlas_hcl_schema.md)
 - [YAML schema](docs/yaml_schema.md)
 - [Capabilities](docs/capabilities.md)
 - [Exit codes](docs/exit_codes.md)

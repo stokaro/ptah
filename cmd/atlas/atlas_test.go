@@ -2156,7 +2156,7 @@ func TestNewAtlasCommand_HelpAdvertisesGroupedNativeEquivalents(t *testing.T) {
 		{
 			name:     "schema_inspect",
 			args:     []string{"schema", "inspect", "--help"},
-			wantText: "Atlas HCL",
+			wantText: "The default output is HCL",
 			oldRoot:  "ptah read-db",
 		},
 	}

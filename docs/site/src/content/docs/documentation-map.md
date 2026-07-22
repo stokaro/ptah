@@ -11,7 +11,7 @@ Use this page when you know what you need to do, but not where the relevant Ptah
 | I want to try Ptah locally | [Quick start](../getting-started/) | [Go model example](../examples/go-model/) |
 | My Go app owns the schema | [Go schema workflow](../workflows/go-schema/) | [Migrations](../workflows/migrations/) |
 | My schema lives in YAML | [Schema files](../workflows/schema-files/) | [YAML schema reference](https://github.com/stokaro/ptah/blob/master/docs/yaml_schema.md) |
-| My schema lives in Atlas HCL | [Schema files](../workflows/schema-files/) | [Atlas HCL schema reference](https://github.com/stokaro/ptah/blob/master/docs/atlas_hcl_schema.md) |
+| My schema lives in HCL | [Schema files](../workflows/schema-files/) | [HCL schema reference](https://github.com/stokaro/ptah/blob/master/docs/atlas_hcl_schema.md) |
 | I need Atlas-style commands | [Atlas-compatible CLI](../workflows/atlas-cli/) | [Comparison](../reference/comparison/) |
 | I need to run Ptah in CI | [CI](../workflows/ci/) | [Exit codes](../reference/exit-codes/) |
 | I need dialect behavior | [Capabilities](../reference/capabilities/) | Dialect-specific reference markdown such as `docs/sqlite.md` and `docs/sqlserver.md` |

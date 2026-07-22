@@ -10,7 +10,7 @@ import (
 	"github.com/hashicorp/hcl/v2/hclwrite"
 )
 
-// FormatPaths formats Atlas HCL files under every provided path and returns
+// FormatPaths formats HCL schema files under every provided path and returns
 // the files whose content changed.
 func FormatPaths(paths []string) ([]string, error) {
 	changed := make([]string, 0)
