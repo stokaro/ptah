@@ -9,19 +9,22 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/cmdflags"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
 )
 
 const (
-	dbURLFlag  = "db-url"
-	dryRunFlag = "dry-run"
+	dbURLFlag       = "db-url"
+	dryRunFlag      = "dry-run"
+	autoApproveFlag = "auto-approve"
 )
 
 type options struct {
 	dbURL          string
 	dryRun         bool
+	autoApprove    bool
 	connectTimeout string
 }
 
@@ -49,6 +52,10 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags := cmd.Flags()
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	flags.BoolVar(&opts.dryRun, dryRunFlag, false, "Show what would be executed without making actual changes")
+	flags.BoolVar(&opts.autoApprove, autoApproveFlag, false, "Skip interactive approval for destructive cleanup")
+	if err := cmdflags.DisableEnvBinding(flags, autoApproveFlag); err != nil {
+		panic(err)
+	}
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 }
 
@@ -86,13 +93,17 @@ func dropAllCommand(_ *cobra.Command, opts *options) error {
 	// Set dry run mode on the writer
 	conn.SchemaWriter().SetDryRun(opts.dryRun)
 
-	// 2. Show extreme warning and ask for confirmation (skip confirmation in dry run mode)
-	if opts.dryRun {
+	// 2. Show extreme warning and ask for confirmation (skip confirmation in dry run or auto-approve mode)
+	switch {
+	case opts.dryRun:
 		fmt.Println("ℹ️  [DRY RUN] This would permanently delete ALL tables and enums!")
 		fmt.Println("ℹ️  [DRY RUN] This would delete EVERYTHING in the database, not just your Go entities!")
 		fmt.Println("ℹ️  [DRY RUN] This would result in ALL DATA BEING LOST!")
 		fmt.Println()
-	} else {
+	case opts.autoApprove:
+		fmt.Println("Auto-approval enabled; skipping interactive confirmation.")
+		fmt.Println()
+	default:
 		fmt.Println("🚨 EXTREME WARNING: This operation will permanently delete ALL tables and enums!")
 		fmt.Println("🚨 This will delete EVERYTHING in the database, not just your Go entities!")
 		fmt.Println("🚨 This action cannot be undone!")

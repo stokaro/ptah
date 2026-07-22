@@ -2,6 +2,9 @@ package root
 
 import (
 	"bytes"
+	"io"
+	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -182,6 +185,19 @@ func TestNewRootCommand_PTAHDBURLFeedsCommandFlag(t *testing.T) {
 	c.Assert(err.Error(), qt.Contains, "error connecting to database")
 }
 
+func TestNewRootCommand_PTAHAutoApproveDoesNotBypassDropAllConfirmation(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_AUTO_APPROVE", "true")
+
+	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
+	out, _, err := captureRootStdIO(c, "no\n", "db", "drop-all", "--db-url", dbURL)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out, qt.Contains, "Type 'DELETE EVERYTHING'")
+	c.Assert(out, qt.Contains, "Operation canceled.")
+	c.Assert(out, qt.Not(qt.Contains), "Auto-approval enabled")
+}
+
 func TestExecuteWithRecovery_ConvertsCommandPanicToError(t *testing.T) {
 	c := qt.New(t)
 
@@ -327,4 +343,35 @@ func executeRoot(args ...string) (stdout, stderr string, err error) {
 	cmd.SetArgs(args)
 	err = executeWithRecovery(cmd)
 	return out.String(), errOut.String(), err
+}
+
+func captureRootStdIO(c *qt.C, input string, args ...string) (stdout, stderr string, err error) {
+	c.Helper()
+
+	oldStdin := os.Stdin
+	oldStdout := os.Stdout
+	defer func() {
+		os.Stdin = oldStdin
+		os.Stdout = oldStdout
+	}()
+
+	inR, inW, err := os.Pipe()
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Assert(inR.Close(), qt.IsNil) }()
+	_, err = inW.WriteString(input)
+	c.Assert(err, qt.IsNil)
+	c.Assert(inW.Close(), qt.IsNil)
+
+	outR, outW, err := os.Pipe()
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Assert(outR.Close(), qt.IsNil) }()
+
+	os.Stdin = inR
+	os.Stdout = outW
+	stdout, stderr, err = executeRoot(args...)
+	c.Assert(outW.Close(), qt.IsNil)
+
+	outBytes, readErr := io.ReadAll(outR)
+	c.Assert(readErr, qt.IsNil)
+	return stdout + string(outBytes), stderr, err
 }

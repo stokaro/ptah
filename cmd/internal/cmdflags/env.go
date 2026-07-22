@@ -11,10 +11,26 @@ import (
 	"github.com/spf13/pflag"
 )
 
+const disableEnvAnnotation = "ptah.env.disabled"
+
 var (
 	envOnceMu sync.Mutex
 	envOnce   = make(map[*cobra.Command]*sync.Once)
 )
+
+// DisableEnvBinding makes a flag explicit-only even when the command tree has
+// Ptah environment binding installed.
+func DisableEnvBinding(flags *pflag.FlagSet, name string) error {
+	flag := flags.Lookup(name)
+	if flag == nil {
+		return fmt.Errorf("flag %q does not exist", name)
+	}
+	if flag.Annotations == nil {
+		flag.Annotations = map[string][]string{}
+	}
+	flag.Annotations[disableEnvAnnotation] = []string{"true"}
+	return nil
+}
 
 // InstallEnvBinding installs Ptah's environment variable binding on the command
 // tree. Environment variables follow PTAH_<FLAG_NAME>, with '-' and '.'
@@ -71,6 +87,9 @@ func applyEnv(prefix string, visited map[*pflag.Flag]bool, flags *pflag.FlagSet)
 		if flag.Name == "help" {
 			return
 		}
+		if envBindingDisabled(flag) {
+			return
+		}
 
 		envName := EnvName(prefix, flag.Name)
 		if !usageContainsEnv(flag.Usage) {
@@ -85,6 +104,11 @@ func applyEnv(prefix string, visited map[*pflag.Flag]bool, flags *pflag.FlagSet)
 		}
 		_ = flags.Set(flag.Name, value)
 	})
+}
+
+func envBindingDisabled(flag *pflag.Flag) bool {
+	values := flag.Annotations[disableEnvAnnotation]
+	return len(values) > 0 && values[0] == "true"
 }
 
 // EnvName returns the environment variable name for a Cobra flag.
