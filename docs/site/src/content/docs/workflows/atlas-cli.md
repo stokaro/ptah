@@ -54,8 +54,26 @@ fail clearly instead of being ignored.
 | Atlas-compatible command | Native Ptah command |
 | --- | --- |
 | `ptah atlas schema inspect` | `ptah db read` |
+| `ptah atlas schema apply` | Applies local desired schema files to a live database through Ptah schema diff and migration execution. |
 | `ptah atlas schema diff` | Local `file://` schema-file diff for `.hcl`, `.yaml`, `.yml`, and `.sql` sources. |
 | `ptah atlas schema fmt` | Formats local `.hcl` files using HCL canonical layout. |
+
+`ptah atlas schema apply` accepts one or more local `--to` schema file URLs and
+a live database `--url`. Ptah reads the current database schema, diffs it
+against the desired local schema files, prints the planned SQL, and applies it
+after interactive confirmation. Use `--dry-run` to print the plan without
+applying it, or `--auto-approve` to skip the prompt explicitly.
+
+```bash
+ptah atlas schema apply \
+  --url "$DATABASE_URL" \
+  --to file://schema.sql \
+  --dry-run
+```
+
+`--dev-url` is accepted for dialect validation only in this path today. It must
+match the target database dialect; Ptah does not yet execute Atlas's
+dev-database simulation for declarative apply.
 
 `ptah atlas schema diff` accepts one or more `--from` and `--to` local schema
 file URLs and requires `--dev-url` so Ptah can choose the SQL dialect. The
@@ -70,8 +88,9 @@ ptah atlas schema diff \
 ```
 
 Remote database URLs, migration directory URLs, `env://` project attributes,
-include/exclude filters, Atlas Cloud web output, and `--format` templates fail
-explicitly until their semantics are implemented.
+include/exclude filters, Atlas Cloud web output, custom format templates,
+transaction-mode flags, and lock flags fail explicitly until their semantics
+are implemented.
 
 ## Migration Diff
 
@@ -103,6 +122,10 @@ ptah atlas migrate apply \
   --dir ./migrations
 
 ptah atlas schema inspect --url "$DATABASE_URL"
+ptah atlas schema apply \
+  --url "$DATABASE_URL" \
+  --to file://schema.sql \
+  --dry-run
 ptah atlas schema diff \
   --from file://old.hcl \
   --to file://schema.hcl \
@@ -126,6 +149,10 @@ ptah-compat migrate apply \
   --url "$DATABASE_URL" \
   --dir ./migrations
 
+ptah-compat schema apply \
+  --url "$DATABASE_URL" \
+  --to file://schema.sql \
+  --dry-run
 ptah-compat schema inspect --url "$DATABASE_URL"
 ptah-compat schema fmt schema.hcl
 ptah-compat migrate import \
@@ -171,6 +198,7 @@ binary instead:
 | Do | Do not |
 | --- | --- |
 | `ptah-compat migrate apply --url "$DATABASE_URL" --dir ./migrations` | `ptah migrate apply --url "$DATABASE_URL" --dir ./migrations` |
+| `atlas schema apply --url "$DATABASE_URL" --to file://schema.sql --dry-run` where `atlas` is `ptah-compat` renamed or symlinked | `ptah schema apply --url "$DATABASE_URL" --to file://schema.sql --dry-run` |
 | `atlas schema inspect --url "$DATABASE_URL"` where `atlas` is `ptah-compat` renamed or symlinked | `ptah schema inspect --url "$DATABASE_URL"` |
 
 ## Parity expectations
