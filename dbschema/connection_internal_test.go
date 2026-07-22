@@ -119,6 +119,28 @@ func TestConvertSQLiteURL(t *testing.T) {
 	}
 }
 
+func TestIsSQLiteMemoryDSN(t *testing.T) {
+	tests := []struct {
+		name string
+		dsn  string
+		want bool
+	}{
+		{name: "default empty dsn", dsn: "", want: true},
+		{name: "memory path", dsn: ":memory:?_pragma=foreign_keys%281%29", want: true},
+		{name: "anonymous uri memory path", dsn: "file::memory:?_pragma=foreign_keys%281%29&cache=shared", want: true},
+		{name: "uri memory mode", dsn: "file:memdb1?_pragma=foreign_keys%281%29&cache=shared&mode=memory", want: true},
+		{name: "file path", dsn: "test.db?_pragma=foreign_keys%281%29", want: false},
+		{name: "absolute file path", dsn: "/tmp/app.db?_pragma=foreign_keys%281%29", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(isSQLiteMemoryDSN(tt.dsn), qt.Equals, tt.want)
+		})
+	}
+}
+
 func TestConvertSQLServerURL(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -660,6 +660,7 @@ type FSProviderOption func(*FSMigrationProvider)
     func WithAtlasTemplateData(data any) FSProviderOption
     func WithMigrationDirFormat(format MigrationDirFormat) FSProviderOption
     func WithStatementInterceptor(interceptor StatementInterceptor) FSProviderOption
+type MigrateUpOptions struct{ ... }
 type Migration struct{ ... }
     func CreateMigrationFromSQL(version int64, description, upSQL, downSQL string) *Migration
 type MigrationDirFormat string

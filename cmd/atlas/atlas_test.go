@@ -243,9 +243,22 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 			flags: []string{"--to", "--dev-url", "--dir", "--dir-format", "--format"},
 		},
 		{
-			name:  "migrate_apply",
-			path:  []string{"migrate", "apply"},
-			flags: []string{"--url", "--dir", "--dry-run", "--tx-mode"},
+			name: "migrate_apply",
+			path: []string{"migrate", "apply"},
+			flags: []string{
+				"--url",
+				"--dir",
+				"--dry-run",
+				"--tx-mode",
+				"--exec-order",
+				"--to-version",
+				"--allow-dirty",
+				"--baseline",
+				"--revisions-schema",
+				"--lock-name",
+				"--lock-timeout",
+				"--format",
+			},
 		},
 		{
 			name: "migrate_down",
@@ -373,24 +386,6 @@ func TestMapAtlasArgs_MigrateDownNativeFlags(t *testing.T) {
 		"--dry-run",
 		"--migrations-schema", "atlas_schema_revisions",
 		"--migration-lock-timeout=10s",
-	})
-}
-
-func TestMapAtlasArgs_MigrateApplyTxModeMapsToNativeFlag(t *testing.T) {
-	c := qt.New(t)
-
-	got, err := mapAtlasArgs("migrate", atlasMigrateApplyVerb(), []string{
-		"--url", "postgres://localhost/db",
-		"--dir=file://migrations",
-		"--tx-mode", "none",
-	})
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(got, qt.DeepEquals, []string{
-		"--db-url", "postgres://localhost/db",
-		"--migrations-dir=migrations",
-		"--tx-mode",
-		"none",
 	})
 }
 
@@ -1015,6 +1010,158 @@ func TestNewAtlasCommand_SchemaApplyRejectsDevURLDialectMismatch(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `--dev-url dialect "postgres" does not match --url dialect "sqlite"`)
 }
 
+func TestNewAtlasCommand_MigrateApplyAmountAndToVersionSQLite(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "apply-migrations.db")
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigration(c, migrationsDir, "1_one.sql", "CREATE TABLE apply_one (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "2_two.sql", "CREATE TABLE apply_two (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "3_three.sql", "CREATE TABLE apply_three (id INTEGER PRIMARY KEY);")
+
+	first := NewAtlasCommand()
+	var firstOut bytes.Buffer
+	first.SetOut(&firstOut)
+	first.SetErr(&firstOut)
+	first.SetArgs([]string{
+		"migrate", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"2",
+	})
+
+	err := first.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(firstOut.String(), qt.Contains, "Migrating to version 2 from 2 pending migrations.")
+	c.Assert(firstOut.String(), qt.Contains, "Migration complete. Current version: 2")
+	assertSQLiteTableExists(c, dbPath, "apply_one")
+	assertSQLiteTableExists(c, dbPath, "apply_two")
+	assertSQLiteTableMissing(c, dbPath, "apply_three")
+
+	second := NewAtlasCommand()
+	var secondOut bytes.Buffer
+	second.SetOut(&secondOut)
+	second.SetErr(&secondOut)
+	second.SetArgs([]string{
+		"migrate", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--to-version", "3",
+	})
+
+	err = second.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(secondOut.String(), qt.Contains, "Migrating to version 3 from 1 pending migrations.")
+	c.Assert(secondOut.String(), qt.Contains, "Migration complete. Current version: 3")
+	assertSQLiteTableExists(c, dbPath, "apply_three")
+}
+
+func TestNewAtlasCommand_MigrateApplyBaselineUsesAtlasRevisions(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "baseline.db")
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigration(c, migrationsDir, "1_one.sql", "CREATE TABLE baseline_one (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "2_two.sql", "CREATE TABLE baseline_two (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "3_three.sql", "CREATE TABLE baseline_three (id INTEGER PRIMARY KEY);")
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--baseline", "2",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Migrating to version 3 from 1 pending migrations.")
+	assertSQLiteTableMissing(c, dbPath, "baseline_one")
+	assertSQLiteTableMissing(c, dbPath, "baseline_two")
+	assertSQLiteTableExists(c, dbPath, "baseline_three")
+	c.Assert(sqliteAtlasAppliedVersions(c, dbPath), qt.DeepEquals, []string{"1", "2", "3"})
+}
+
+func TestNewAtlasCommand_MigrateApplyDryRunBaselinePlansRemainingMigrations(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "baseline-dry-run.db")
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigration(c, migrationsDir, "1_one.sql", "CREATE TABLE dry_baseline_one (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "2_two.sql", "CREATE TABLE dry_baseline_two (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "3_three.sql", "CREATE TABLE dry_baseline_three (id INTEGER PRIMARY KEY);")
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--baseline", "2",
+		"--dry-run",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Would baseline migrations at version 2.")
+	c.Assert(out.String(), qt.Contains, "Migrating to version 3 from 1 pending migrations.")
+	c.Assert(out.String(), qt.Contains, "Would have applied 1 migrations.")
+	assertSQLiteTableMissing(c, dbPath, "dry_baseline_one")
+	assertSQLiteTableMissing(c, dbPath, "dry_baseline_two")
+	assertSQLiteTableMissing(c, dbPath, "dry_baseline_three")
+}
+
+func TestNewAtlasCommand_MigrateApplyRejectsFormatAndAmbiguousTarget(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"migrate", "apply", "--format", "{{ json . }}"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `atlas migrate apply accepts --format, but Ptah does not implement its behavior yet`)
+
+	cmd = NewAtlasCommand()
+	out.Reset()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"migrate", "apply", "--lock-name", "custom-lock"})
+
+	err = cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `atlas migrate apply accepts --lock-name, but Ptah does not implement its behavior yet`)
+
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigration(c, migrationsDir, "1_one.sql", "CREATE TABLE ambiguous_one (id INTEGER PRIMARY KEY);")
+	cmd = NewAtlasCommand()
+	out.Reset()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "apply",
+		"--url", "sqlite://" + filepath.Join(dir, "ambiguous.db"),
+		"--dir", "file://" + migrationsDir,
+		"--to-version", "1",
+		"1",
+	})
+
+	err = cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `amount argument and --to-version cannot both be set`)
+}
+
 func TestNewAtlasCommand_MigrateDiffCreatesAtlasMigrationFromLocalSchema(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
@@ -1143,6 +1290,32 @@ func TestNewAtlasCommand_MigrateDiffRejectsUnsupportedFormat(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `atlas migrate diff accepts --format, but Ptah does not implement its behavior yet`)
+}
+
+func writeAtlasApplyMigration(c *qt.C, dir, name, sql string) {
+	c.Helper()
+	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(sql+"\n"), 0o600), qt.IsNil)
+}
+
+func sqliteAtlasAppliedVersions(c *qt.C, dbPath string) []string {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	rows, err := conn.Query("SELECT version FROM atlas_schema_revisions ORDER BY CAST(version AS INTEGER)")
+	c.Assert(err, qt.IsNil)
+	defer rows.Close()
+
+	versions := make([]string, 0)
+	for rows.Next() {
+		var version string
+		c.Assert(rows.Scan(&version), qt.IsNil)
+		versions = append(versions, version)
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return versions
 }
 
 func atlasSQLFiles(c *qt.C, dir string) []string {
