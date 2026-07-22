@@ -77,7 +77,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	if err := validateAtlasDevURLDialect(opts.devURL, conn.Info().Dialect); err != nil {
+	if err := atlasurl.ValidateDialectMatch(opts.devURL, conn.Info().Dialect); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 
@@ -128,20 +128,6 @@ func validateAtlasSchemaApplyOptions(cmd *cobra.Command, opts atlasSchemaApplyOp
 		}
 	}
 	return ensureLocalSchemaURLs("--to", opts.toURLs)
-}
-
-func validateAtlasDevURLDialect(devURL, targetDialect string) error {
-	devDialect, err := atlasurl.DialectFromURL(devURL)
-	if err != nil {
-		return err
-	}
-	if devDialect == "" {
-		return nil
-	}
-	if devDialect != targetDialect {
-		return fmt.Errorf("--dev-url dialect %q does not match --url dialect %q", devDialect, targetDialect)
-	}
-	return nil
 }
 
 func printAtlasSchemaApplyPlan(out io.Writer, sqlText string) {
