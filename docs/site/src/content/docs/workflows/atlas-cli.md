@@ -53,7 +53,7 @@ model. Unsupported flags fail clearly instead of being ignored.
 
 | Atlas-compatible command | Ptah behavior |
 | --- | --- |
-| `ptah atlas schema inspect` | Inspects a live database and writes Atlas-shaped HCL by default, or SQL with `--format sql` / `--format '{{ sql . }}'`. |
+| `ptah atlas schema inspect` | Inspects a live database and writes Atlas-shaped HCL by default, SQL with `--format sql` / `--format '{{ sql . }}'`, JSON with `--format json` / `--format '{{ json . }}'`, or custom Go-template output. |
 | `ptah atlas schema apply` | Applies local desired schema files to a live database through Ptah schema diff and migration execution. |
 | `ptah atlas schema diff` | Local `file://` schema-file diff for `.hcl`, `.yaml`, `.yml`, and `.sql` sources. |
 | `ptah atlas schema fmt` | Formats local `.hcl` files using HCL canonical layout. |
@@ -65,12 +65,14 @@ format is Atlas HCL.
 ```bash
 ptah atlas schema inspect --url "$DATABASE_URL" > schema.hcl
 ptah atlas schema inspect --url "$DATABASE_URL" --format sql > schema.sql
+ptah atlas schema inspect --url "$DATABASE_URL" --format json > schema.json
 ```
 
 `--schema` narrows inspection when the underlying database reader supports
 schema scoping. `--dev-url` validates dialect compatibility only today; Ptah
-does not yet run Atlas dev-database inference for inspection. Atlas JSON
-output, custom templates, split/write templates, include/exclude filters, and
+does not yet run Atlas dev-database inference for inspection. `--format`
+accepts Atlas-style Go templates with `.MarshalHCL`, `sql`, `json`,
+`base64url`, and `mermaid`. Split/write templates, include/exclude filters, and
 file-backed inspection remain explicit gaps.
 
 `ptah atlas schema apply` accepts one or more local `--to` schema file URLs and
