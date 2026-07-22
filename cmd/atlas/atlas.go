@@ -158,8 +158,9 @@ func newAtlasMigrateCommand() *cobra.Command {
 			native:  "migrations validate",
 			factory: migratevalidate.NewMigrateValidateCommand,
 			flags: []atlasargs.Flag{
-				atlasargs.UnsupportedString("dev-url", "", "Dev database URL"),
+				atlasargs.NativeString("dev-url", "", "Dev database URL", "dev-url"),
 				atlasargs.NativeLocalDir("dir", "", "Migration directory", "dir"),
+				atlasargs.NativeString("dir-format", "", "Migration directory format", "dir-format"),
 			},
 		},
 	} {

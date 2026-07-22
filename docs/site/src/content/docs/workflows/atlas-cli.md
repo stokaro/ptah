@@ -35,7 +35,7 @@ model. Unsupported flags fail clearly instead of being ignored.
 | `ptah atlas migrate down` | Forwards to `ptah migrations down`; maps compatible Atlas flags and fails explicitly for dynamic down-planning and output-format flags that native Ptah does not implement yet. |
 | `ptah atlas migrate status` | `ptah migrations status` |
 | `ptah atlas migrate hash` | `ptah migrations hash` |
-| `ptah atlas migrate validate` | `ptah migrations validate` |
+| `ptah atlas migrate validate` | Verifies `ptah.sum` or `atlas.sum`; with `--dev-url`, replays migrations on the dev database to validate SQL execution. |
 | `ptah atlas migrate lint` | `ptah migrations lint`; supports Atlas-style `--latest N` for latest-version linting. |
 | `ptah atlas migrate new` | `ptah migrations create` |
 | `ptah atlas migrate set` | `ptah migrations repair` |
@@ -175,6 +175,21 @@ desired-state URLs, `env://` project attributes, schema filters, Docker dev
 databases, and `--format` templates fail explicitly until their semantics are
 implemented.
 
+## Migration Validate
+
+`ptah atlas migrate validate` verifies the migration directory against
+`atlas.sum` or `ptah.sum`. When `--dev-url` is set, Ptah first checks integrity
+and then replays the migration directory on the dev database to validate SQL
+execution semantics. If integrity drift is found, Ptah reports the drift and
+does not connect to the dev database.
+
+```bash
+ptah atlas migrate validate \
+  --dir file://migrations \
+  --dir-format atlas \
+  --dev-url "sqlite://dev.db"
+```
+
 ## Example
 
 ```bash
@@ -243,7 +258,7 @@ execute Atlas R-suffixed imported migrations.
 
 ```bash
 ptah atlas migrate hash --dir ./migrations
-ptah atlas migrate validate --dir ./migrations
+ptah atlas migrate validate --dir ./migrations --dev-url "sqlite://dev.db"
 ptah atlas migrate status --url "$DATABASE_URL" --dir ./migrations
 ```
 
