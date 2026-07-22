@@ -36,6 +36,8 @@ type Config struct {
 }
 
 type configPresence struct {
+	databaseURL       bool
+	devURL            bool
 	schemaSources     bool
 	schemas           bool
 	exclude           bool
@@ -77,11 +79,13 @@ func Merge(base, override Config) Config {
 	if override.EnvName != "" {
 		result.EnvName = override.EnvName
 	}
-	if override.DatabaseURL != "" {
+	if override.presence.databaseURL || override.DatabaseURL != "" {
 		result.DatabaseURL = override.DatabaseURL
+		result.presence.databaseURL = true
 	}
-	if override.DevURL != "" {
+	if override.presence.devURL || override.DevURL != "" {
 		result.DevURL = override.DevURL
+		result.presence.devURL = true
 	}
 	if override.presence.schemaSources || len(override.SchemaSources) > 0 {
 		result.SchemaSources = slices.Clone(override.SchemaSources)

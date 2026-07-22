@@ -40,6 +40,41 @@ func TestRunLint_DevURLReplaysMigrationAndInfersDialect(t *testing.T) {
 	assertLintDevURLSQLiteTableCount(c, devDBPath, "lint_dev_url", 1)
 }
 
+func TestRunLint_UsesEvaluatedAtlasProjectConfigDevURL(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv("PTAH_LINT_DEV_URL", "sqlite://"+filepath.Join(dir, "config-dev.db"))
+	c.Assert(os.Mkdir("migrations", 0o700), qt.IsNil)
+	writeLintDevURLFile(c, "migrations", "1_create_config_dev_url.sql",
+		"CREATE TABLE lint_config_dev_url (id INTEGER PRIMARY KEY);\n")
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`locals {
+  dev_url = getenv("PTAH_LINT_DEV_URL")
+}
+
+env "local" {
+  dev = local.dev_url
+  migration {
+    dir = "file://migrations"
+  }
+}
+`), 0o600), qt.IsNil)
+
+	stdout, _, err := executeLintCommand(
+		"--env", "local",
+		"--format", "json",
+		"--fail-on", "none",
+	)
+
+	c.Assert(err, qt.IsNil)
+	var report struct {
+		Dialect string `json:"dialect"`
+	}
+	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
+	c.Assert(report.Dialect, qt.Equals, "sqlite")
+	assertLintDevURLSQLiteTableCount(c, filepath.Join(dir, "config-dev.db"), "lint_config_dev_url", 1)
+}
+
 func TestRunLint_DevURLFailureExitsTwo(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := t.TempDir()
