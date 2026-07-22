@@ -16,6 +16,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/atlasschema"
 	"github.com/stokaro/ptah/internal/migratesum"
 	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/internal/schemafile"
@@ -137,7 +138,7 @@ func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name 
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("generate migration SQL: %w", err))
 	}
-	path, err := writeAtlasMigrationFile(migrationsDir, name, atlasMigrationSQL(statements))
+	path, err := writeAtlasMigrationFile(migrationsDir, name, atlasschema.FormatMigrationSQL(statements))
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -313,19 +314,6 @@ func filterByTable[T any](values []T, keep func(T) bool) []T {
 		}
 	}
 	return out
-}
-
-func atlasMigrationSQL(statements []string) string {
-	var out strings.Builder
-	for _, stmt := range statements {
-		stmt = strings.TrimSpace(stmt)
-		if stmt == "" {
-			continue
-		}
-		out.WriteString(strings.TrimSuffix(stmt, ";"))
-		out.WriteString(";\n")
-	}
-	return out.String()
 }
 
 func writeAtlasMigrationFile(dir, name, sql string) (string, error) {
