@@ -79,8 +79,14 @@ func atlasMigrateApplyArgs(cmd *cobra.Command, args []string) error {
 }
 
 func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, args []string) error {
-	if cmd.Flags().Changed("format") {
-		return fmt.Errorf("atlas migrate apply accepts --format, but Ptah does not implement its behavior yet")
+	formatOutput := cmd.Flags().Changed("format")
+	if formatOutput && strings.TrimSpace(opts.format) == "" {
+		return fmt.Errorf("--format must not be empty")
+	}
+	if formatOutput {
+		if err := validateAtlasGoTemplate("atlas-migrate-apply-format", opts.format); err != nil {
+			return err
+		}
 	}
 	if cmd.Flags().Changed("lock-name") && strings.TrimSpace(opts.lockName) == "" {
 		return fmt.Errorf("--lock-name must not be empty")
@@ -149,7 +155,8 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 	}
 
 	out := cmd.OutOrStdout()
-	if opts.dryRun {
+	startedAt := time.Now()
+	if opts.dryRun && !formatOutput {
 		fmt.Fprintln(out, "Dry run mode: no changes will be made.")
 	}
 	var assumedAppliedVersions []int64
@@ -159,7 +166,9 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(out, "Would baseline migrations at version %d.\n", baselineVersion)
+			if !formatOutput {
+				fmt.Fprintf(out, "Would baseline migrations at version %d.\n", baselineVersion)
+			}
 		} else if err := mig.BaselineWithOptions(cmd.Context(), migrator.BaselineOptions{Version: baselineVersion}); err != nil {
 			return fmt.Errorf("error baselining migrations: %w", err)
 		}
@@ -169,16 +178,32 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 	if err != nil {
 		return fmt.Errorf("error getting migration status: %w", err)
 	}
+	plannedCurrentVersion := statusCurrentAfterAssumedApplied(status.CurrentVersion, assumedAppliedVersions)
 	pending := status.PendingMigrations
 	if len(assumedAppliedVersions) > 0 {
 		pending = pendingAfterAssumedApplied(status.PendingMigrations, assumedAppliedVersions)
 	}
 	selected := selectedAtlasApplyVersions(pending, amount, toVersion)
 	if len(selected) == 0 && status.DirtyRevision == nil {
+		if formatOutput {
+			return writeAtlasMigrateApplyFormat(out, opts.format, atlasMigrateApplyResultOptions{
+				conn:             conn,
+				fsys:             os.DirFS(dir),
+				dir:              opts.dir,
+				url:              opts.url,
+				status:           status,
+				migrations:       mig.MigrationProvider().Migrations(),
+				selectedVersions: selected,
+				currentVersion:   plannedCurrentVersion,
+				applied:          false,
+				startedAt:        startedAt,
+				endedAt:          time.Now(),
+			})
+		}
 		fmt.Fprintln(out, "No migration files to execute.")
 		return nil
 	}
-	if len(selected) > 0 {
+	if len(selected) > 0 && !formatOutput {
 		fmt.Fprintf(out, "Migrating to version %d from %d pending migrations.\n", selected[len(selected)-1], len(selected))
 	}
 
@@ -188,16 +213,66 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 		AllowDirty:             opts.allowDirty,
 		AssumedAppliedVersions: assumedAppliedVersions,
 	}); err != nil {
+		if formatOutput {
+			writeErr := writeAtlasMigrateApplyFormat(out, opts.format, atlasMigrateApplyResultOptions{
+				conn:             conn,
+				fsys:             os.DirFS(dir),
+				dir:              opts.dir,
+				url:              opts.url,
+				status:           status,
+				migrations:       mig.MigrationProvider().Migrations(),
+				selectedVersions: selected,
+				currentVersion:   plannedCurrentVersion,
+				errorText:        err.Error(),
+				applyError:       err,
+				applied:          true,
+				startedAt:        startedAt,
+				endedAt:          time.Now(),
+			})
+			if writeErr != nil {
+				return fmt.Errorf("error applying migrations: %w; additionally failed to write --format output: %v", err, writeErr)
+			}
+		}
 		return fmt.Errorf("error applying migrations: %w", err)
 	}
 
 	if opts.dryRun {
+		if formatOutput {
+			return writeAtlasMigrateApplyFormat(out, opts.format, atlasMigrateApplyResultOptions{
+				conn:             conn,
+				fsys:             os.DirFS(dir),
+				dir:              opts.dir,
+				url:              opts.url,
+				status:           status,
+				migrations:       mig.MigrationProvider().Migrations(),
+				selectedVersions: selected,
+				currentVersion:   plannedCurrentVersion,
+				applied:          false,
+				startedAt:        startedAt,
+				endedAt:          time.Now(),
+			})
+		}
 		fmt.Fprintf(out, "Would have applied %d migrations.\n", len(selected))
 		return nil
 	}
 	finalStatus, err := mig.GetMigrationStatus(cmd.Context())
 	if err != nil {
 		return fmt.Errorf("error getting final migration status: %w", err)
+	}
+	if formatOutput {
+		return writeAtlasMigrateApplyFormat(out, opts.format, atlasMigrateApplyResultOptions{
+			conn:             conn,
+			fsys:             os.DirFS(dir),
+			dir:              opts.dir,
+			url:              opts.url,
+			status:           status,
+			migrations:       mig.MigrationProvider().Migrations(),
+			selectedVersions: selected,
+			currentVersion:   plannedCurrentVersion,
+			applied:          true,
+			startedAt:        startedAt,
+			endedAt:          time.Now(),
+		})
 	}
 	fmt.Fprintf(out, "Migration complete. Current version: %d\n", finalStatus.CurrentVersion)
 	return nil
@@ -298,4 +373,13 @@ func selectedAtlasApplyVersions(pending []int64, amount uint64, toVersion int64)
 		}
 	}
 	return selected
+}
+
+func statusCurrentAfterAssumedApplied(current int64, assumedApplied []int64) int64 {
+	for _, version := range assumedApplied {
+		if version > current {
+			current = version
+		}
+	}
+	return current
 }
