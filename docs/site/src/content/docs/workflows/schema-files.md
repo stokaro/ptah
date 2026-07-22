@@ -106,12 +106,13 @@ ptah atlas schema diff \
 
 ## Validate before applying
 
-Keep schema-file workflows reviewable:
+Preview the SQL Ptah derives from your schema file and review it before you apply anything:
 
 ```bash
 ptah schema render --schema-file schema.yaml --dialect postgres >/tmp/schema.sql
-ptah migrations plan --schema-file schema.yaml --db-url "$DATABASE_URL" >/tmp/plan.sql
 ```
 
-Review both files. The render output proves Ptah understood the desired schema;
-the plan output proves what would change in the target database.
+The rendered SQL proves Ptah understood the desired schema. Note that
+`--schema-file` currently feeds `ptah schema render` only — planning and
+generating migrations (`ptah migrations plan` / `ptah migrations generate`) read
+the desired schema from Go entities via `--root-dir`, not from a schema file.
