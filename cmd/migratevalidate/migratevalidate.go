@@ -11,7 +11,7 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
-	"github.com/stokaro/ptah/internal/migratesum"
+	"github.com/stokaro/ptah/internal/migrationvalidate"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
@@ -19,6 +19,7 @@ import (
 func NewMigrateValidateCommand() *cobra.Command {
 	var dir string
 	var dirFormatValue string
+	var devURL string
 
 	cmd := &cobra.Command{
 		Use:   "validate",
@@ -35,16 +36,17 @@ Run it in CI to guarantee already-committed migrations are never changed.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runValidate(cmd, dir, dirFormatValue)
+			return runValidate(cmd, dir, dirFormatValue, devURL)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "./migrations", "Directory containing migration files")
 	cmd.Flags().StringVar(&dirFormatValue, "dir-format", string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
+	cmd.Flags().StringVar(&devURL, "dev-url", "", "Dev database URL used to validate migration SQL execution")
 	cmd.SetFlagErrorFunc(cmdutil.FlagErrorFunc)
 	return cmd
 }
 
-func runValidate(cmd *cobra.Command, dir, dirFormatValue string) error {
+func runValidate(cmd *cobra.Command, dir, dirFormatValue, devURL string) error {
 	if err := cmdutil.StatDir(dir); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -54,21 +56,29 @@ func runValidate(cmd *cobra.Command, dir, dirFormatValue string) error {
 		return cmdutil.Fail(cmd, err)
 	}
 
-	// A missing or unreadable ptah.sum, and any other verify error, is a
+	// A missing or unreadable sum file, and any other verify error, is a
 	// usage failure (exit 2) distinct from a content drift (exit 1). Its
 	// message - including the actionable "run ptah migrations hash" for a
 	// missing sum — must reach the user, so print it here (the command
 	// silences cobra's own error output).
-	result, err := migratesum.VerifyDirWithFormat(dir, dirFormat)
+	result, err := migrationvalidate.Validate(cmd.Context(), migrationvalidate.Options{
+		Dir:       dir,
+		DirFormat: dirFormat,
+		DevURL:    devURL,
+	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 
-	if !result.OK() {
-		fmt.Fprintln(cmd.ErrOrStderr(), result.Describe())
+	if !result.Integrity.OK() {
+		fmt.Fprintln(cmd.ErrOrStderr(), result.Integrity.Describe())
 		return exitcode.New(1, errors.New("migration directory integrity check failed"))
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "OK: migrations directory matches %s\n", result.SumFileName)
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "OK: migrations directory matches %s\n", result.Integrity.SumFileName)
+	if result.DevSQLValidated {
+		fmt.Fprintln(out, "OK: migration SQL validated on dev database")
+	}
 	return nil
 }
