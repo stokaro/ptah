@@ -3,6 +3,7 @@
 package cmdadapter
 
 import (
+	"encoding/csv"
 	"fmt"
 	"strings"
 
@@ -13,6 +14,8 @@ import (
 )
 
 const envPrefix = "PTAH"
+
+const defaultSliceAnnotation = "ptah.cmdadapter.default-slice"
 
 // ArgMapper rewrites command arguments before they are forwarded to the target
 // command implementation.
@@ -109,6 +112,7 @@ func newForwardCommandWithArgsMapper(
 			forwardArgs := make([]string, 0, len(prefixArgs)+len(args))
 			forwardArgs = append(forwardArgs, prefixArgs...)
 			forwardArgs = append(forwardArgs, args...)
+			prepareExplicitSliceFlagsForParse(target, forwardArgs)
 			if help == targetHelp && hasHelpArg(forwardArgs) {
 				helpCommand, _, err := target.Find(argsWithoutHelp(forwardArgs))
 				if err != nil {
@@ -227,16 +231,182 @@ func useSuffix(use string) string {
 
 func resetCommandFlags(cmd *cobra.Command) {
 	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
-		_ = flag.Value.Set(flag.DefValue)
-		flag.Changed = false
+		resetCommandFlag(flag)
 	})
 	cmd.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
-		_ = flag.Value.Set(flag.DefValue)
-		flag.Changed = false
+		resetCommandFlag(flag)
 	})
 	for _, child := range cmd.Commands() {
 		resetCommandFlags(child)
 	}
+}
+
+func resetCommandFlag(flag *pflag.Flag) {
+	if slice, ok := resettableSliceValue(flag); ok {
+		_ = slice.Replace(defaultSliceValue(flag, slice))
+		if resettable, ok := slice.(*resettableSliceFlagValue); ok {
+			resettable.replaceNextSet = true
+		}
+		flag.Changed = false
+		return
+	}
+	_ = flag.Value.Set(flag.DefValue)
+	flag.Changed = false
+}
+
+func resettableSliceValue(flag *pflag.Flag) (pflag.SliceValue, bool) {
+	value, ok := flag.Value.(sliceFlagValue)
+	if !ok {
+		return nil, false
+	}
+	if resettable, ok := flag.Value.(*resettableSliceFlagValue); ok {
+		return resettable, true
+	}
+	resettable := &resettableSliceFlagValue{flag: flag, value: value}
+	flag.Value = resettable
+	return resettable, true
+}
+
+func defaultSliceValue(flag *pflag.Flag, value pflag.SliceValue) []string {
+	if values, ok := flag.Annotations[defaultSliceAnnotation]; ok {
+		return append([]string(nil), values...)
+	}
+	values, err := parseSliceDefault(flag.DefValue)
+	if err != nil {
+		values = value.GetSlice()
+	}
+	if flag.Annotations == nil {
+		flag.Annotations = map[string][]string{}
+	}
+	flag.Annotations[defaultSliceAnnotation] = append([]string(nil), values...)
+	return values
+}
+
+func parseSliceDefault(value string) ([]string, error) {
+	if !strings.HasPrefix(value, "[") || !strings.HasSuffix(value, "]") {
+		return nil, fmt.Errorf("invalid slice default %q", value)
+	}
+	value = strings.TrimSuffix(strings.TrimPrefix(value, "["), "]")
+	if value == "" {
+		return []string{}, nil
+	}
+	return csv.NewReader(strings.NewReader(value)).Read()
+}
+
+func prepareExplicitSliceFlagsForParse(cmd *cobra.Command, args []string) {
+	flagsByName, flagsByShorthand := commandFlagMaps(cmd)
+	for name := range explicitFlagNames(args) {
+		flag := flagsByName[name]
+		if flag == nil {
+			flag = flagsByShorthand[name]
+		}
+		if flag == nil {
+			continue
+		}
+		resettable, ok := flag.Value.(*resettableSliceFlagValue)
+		if ok {
+			resettable.replaceNextSet = true
+		}
+	}
+}
+
+func commandFlagMaps(cmd *cobra.Command) (byName map[string]*pflag.Flag, byShorthand map[string]*pflag.Flag) {
+	byName = map[string]*pflag.Flag{}
+	byShorthand = map[string]*pflag.Flag{}
+	visitCommandFlags(cmd, byName, byShorthand)
+	return byName, byShorthand
+}
+
+func visitCommandFlags(cmd *cobra.Command, byName, byShorthand map[string]*pflag.Flag) {
+	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
+		byName[flag.Name] = flag
+		if flag.Shorthand != "" {
+			byShorthand[flag.Shorthand] = flag
+		}
+	})
+	cmd.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
+		byName[flag.Name] = flag
+		if flag.Shorthand != "" {
+			byShorthand[flag.Shorthand] = flag
+		}
+	})
+	for _, child := range cmd.Commands() {
+		visitCommandFlags(child, byName, byShorthand)
+	}
+}
+
+func explicitFlagNames(args []string) map[string]struct{} {
+	names := map[string]struct{}{}
+	for _, arg := range args {
+		if arg == "--" {
+			break
+		}
+		if name, ok := strings.CutPrefix(arg, "--"); ok {
+			if name == "" || strings.HasPrefix(name, "-") {
+				continue
+			}
+			name, _, _ = strings.Cut(name, "=")
+			names[name] = struct{}{}
+			continue
+		}
+		if strings.HasPrefix(arg, "-") && arg != "-" {
+			name := strings.TrimPrefix(arg, "-")
+			name, _, _ = strings.Cut(name, "=")
+			for _, shorthand := range name {
+				names[string(shorthand)] = struct{}{}
+			}
+		}
+	}
+	return names
+}
+
+type resettableSliceFlagValue struct {
+	flag           *pflag.Flag
+	value          sliceFlagValue
+	replaceNextSet bool
+}
+
+type sliceFlagValue interface {
+	pflag.Value
+	pflag.SliceValue
+}
+
+// pflag slice values keep an internal append-mode bit that is separate from
+// Flag.Changed, so reset must make the next user-provided value replace defaults.
+func (v *resettableSliceFlagValue) Set(value string) error {
+	if v.flag.Changed && !v.replaceNextSet {
+		return v.value.Set(value)
+	}
+	v.replaceNextSet = false
+	previous := v.value.GetSlice()
+	if err := v.value.Replace(nil); err != nil {
+		return err
+	}
+	if err := v.value.Set(value); err != nil {
+		_ = v.value.Replace(previous)
+		return err
+	}
+	return nil
+}
+
+func (v *resettableSliceFlagValue) Type() string {
+	return v.value.Type()
+}
+
+func (v *resettableSliceFlagValue) String() string {
+	return v.value.String()
+}
+
+func (v *resettableSliceFlagValue) Append(value string) error {
+	return v.value.Append(value)
+}
+
+func (v *resettableSliceFlagValue) Replace(values []string) error {
+	return v.value.Replace(values)
+}
+
+func (v *resettableSliceFlagValue) GetSlice() []string {
+	return v.value.GetSlice()
 }
 
 func resetCommandIO(cmd *cobra.Command) {
