@@ -126,22 +126,11 @@ func newAtlasSchemaCommand() *cobra.Command {
 				atlasUnsupportedString("format", "", "Atlas Go template output format"),
 			},
 		},
-		{
-			use:    "apply",
-			short:  "Apply a desired schema to a database",
-			native: "",
-			flags: []atlasFlag{
-				atlasString("url", "u", "Database URL to apply to"),
-				atlasStringArray("to", "", "Desired schema target"),
-				atlasString("dev-url", "", "Dev database URL"),
-				atlasBool("dry-run", "", "Show planned changes without applying them"),
-				atlasBool("auto-approve", "", "Skip interactive approval"),
-			},
-		},
 		atlasSchemaCleanVerb(),
 	} {
 		cmd.AddCommand(newAtlasAdapterCommand("schema", verb))
 	}
+	cmd.AddCommand(newAtlasSchemaApplyCommand())
 	cmd.AddCommand(newAtlasSchemaDiffCommand())
 	cmd.AddCommand(newAtlasSchemaFmtCommand())
 	return cmd
