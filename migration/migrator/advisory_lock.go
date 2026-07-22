@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/stokaro/ptah/core/platform"
@@ -15,10 +17,6 @@ import (
 const migrationAdvisoryLockName = "ptah_migrate"
 const migrationAdvisoryUnlockTimeout = 10 * time.Second
 const mariaDBDefaultAdvisoryLockTimeoutSeconds = 31_536_000
-
-// postgresMigrationAdvisoryLockKey is the stable FNV-1a 64-bit hash of
-// migrationAdvisoryLockName, stored as a signed value for pg_advisory_lock.
-const postgresMigrationAdvisoryLockKey int64 = -7752083082818440098
 
 // MigrationLockTimeoutError reports that another runner held the migration
 // advisory lock longer than this migrator was configured to wait.
@@ -60,21 +58,31 @@ func (m *Migrator) WithMigrationLockTimeout(timeout time.Duration) *Migrator {
 	return &tmp
 }
 
+// WithMigrationLockName returns a copy of the migrator that uses name for the
+// session-level migration advisory lock. Empty or whitespace-only names keep
+// the default lock name.
+func (m *Migrator) WithMigrationLockName(name string) *Migrator {
+	tmp := *m
+	tmp.migrationLockName = normalizeMigrationLockName(name)
+	return &tmp
+}
+
 func (m *Migrator) withMigrationLock(ctx context.Context, operation string, fn func(context.Context) error) error {
 	if m.conn == nil || m.conn.Writer().IsDryRun() {
 		return fn(ctx)
 	}
 
 	dialect := m.conn.Info().Dialect
+	lockName := m.effectiveMigrationLockName()
 	startedAt := time.Now()
 	observer := m.migrationObserver()
 	lockCtx, span := observer.StartSpan(ctx, "ptah.lock.acquire",
 		attr("db.system", dialect),
 		attr("migration.operation", operation),
-		attr("lock.name", migrationAdvisoryLockName),
+		attr("lock.name", lockName),
 		attr("lock.timeout_ms", m.migrationLockTimeout.Milliseconds()),
 	)
-	lock, err := acquireMigrationLock(ctx, m.conn, m.migrationLockTimeout)
+	lock, err := acquireMigrationLock(ctx, m.conn, lockName, m.migrationLockTimeout)
 	wait := time.Since(startedAt)
 	span.SetAttributes(attr("lock.wait_ms", wait.Milliseconds()))
 	span.End(err)
@@ -104,7 +112,13 @@ type migrationLock struct {
 	releaseFunc func(context.Context) error
 }
 
-func acquireMigrationLock(ctx context.Context, conn *dbschema.DatabaseConnection, timeout time.Duration) (*migrationLock, error) {
+func acquireMigrationLock(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	name string,
+	timeout time.Duration,
+) (*migrationLock, error) {
+	name = normalizeMigrationLockName(name)
 	dialect := conn.Info().Dialect
 	switch dialect {
 	case platform.Postgres, platform.MySQL, platform.MariaDB, platform.SQLServer:
@@ -121,14 +135,14 @@ func acquireMigrationLock(ctx context.Context, conn *dbschema.DatabaseConnection
 	var acquireErr error
 	switch dialect {
 	case platform.Postgres:
-		lock.releaseFunc = releasePostgresMigrationLock(session)
-		acquireErr = acquirePostgresMigrationLock(ctx, session, timeout)
+		lock.releaseFunc = releasePostgresMigrationLock(session, name)
+		acquireErr = acquirePostgresMigrationLock(ctx, session, name, timeout)
 	case platform.MySQL, platform.MariaDB:
-		lock.releaseFunc = releaseMySQLMigrationLock(session)
-		acquireErr = acquireMySQLMigrationLock(ctx, session, dialect, timeout)
+		lock.releaseFunc = releaseMySQLMigrationLock(session, name)
+		acquireErr = acquireMySQLMigrationLock(ctx, session, dialect, name, timeout)
 	case platform.SQLServer:
-		lock.releaseFunc = releaseSQLServerMigrationLock(session)
-		acquireErr = acquireSQLServerMigrationLock(ctx, session, timeout)
+		lock.releaseFunc = releaseSQLServerMigrationLock(session, name)
+		acquireErr = acquireSQLServerMigrationLock(ctx, session, name, timeout)
 	}
 	if acquireErr != nil {
 		_ = session.Close()
@@ -145,26 +159,26 @@ func (l *migrationLock) release(ctx context.Context) error {
 	return l.releaseFunc(ctx)
 }
 
-func acquirePostgresMigrationLock(ctx context.Context, conn *sql.Conn, timeout time.Duration) error {
+func acquirePostgresMigrationLock(ctx context.Context, conn *sql.Conn, name string, timeout time.Duration) error {
 	lockCtx := ctx
 	var cancel context.CancelFunc
 	if timeout > 0 {
 		lockCtx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
-	if _, err := conn.ExecContext(lockCtx, "SELECT pg_advisory_lock($1)", postgresMigrationLockKey()); err != nil {
+	if _, err := conn.ExecContext(lockCtx, "SELECT pg_advisory_lock($1)", postgresMigrationLockKey(name)); err != nil {
 		if timeout > 0 && errors.Is(lockCtx.Err(), context.DeadlineExceeded) {
-			return &MigrationLockTimeoutError{Dialect: "postgres", Name: migrationAdvisoryLockName, Timeout: timeout}
+			return &MigrationLockTimeoutError{Dialect: "postgres", Name: name, Timeout: timeout}
 		}
 		return err
 	}
 	return nil
 }
 
-func releasePostgresMigrationLock(conn *sql.Conn) func(context.Context) error {
+func releasePostgresMigrationLock(conn *sql.Conn, name string) func(context.Context) error {
 	return func(ctx context.Context) error {
 		var released bool
-		if err := conn.QueryRowContext(ctx, "SELECT pg_advisory_unlock($1)", postgresMigrationLockKey()).Scan(&released); err != nil {
+		if err := conn.QueryRowContext(ctx, "SELECT pg_advisory_unlock($1)", postgresMigrationLockKey(name)).Scan(&released); err != nil {
 			return err
 		}
 		if !released {
@@ -174,26 +188,26 @@ func releasePostgresMigrationLock(conn *sql.Conn) func(context.Context) error {
 	}
 }
 
-func acquireMySQLMigrationLock(ctx context.Context, conn *sql.Conn, dialect string, timeout time.Duration) error {
+func acquireMySQLMigrationLock(ctx context.Context, conn *sql.Conn, dialect string, name string, timeout time.Duration) error {
 	timeoutSeconds := mySQLMigrationLockTimeoutSeconds(dialect, timeout)
 
 	var acquired sql.NullInt64
-	if err := conn.QueryRowContext(ctx, "SELECT GET_LOCK(?, ?)", migrationAdvisoryLockName, timeoutSeconds).Scan(&acquired); err != nil {
+	if err := conn.QueryRowContext(ctx, "SELECT GET_LOCK(?, ?)", name, timeoutSeconds).Scan(&acquired); err != nil {
 		return err
 	}
 	if !acquired.Valid {
-		return fmt.Errorf("GET_LOCK(%q) returned NULL", migrationAdvisoryLockName)
+		return fmt.Errorf("GET_LOCK(%q) returned NULL", name)
 	}
 	if acquired.Int64 == 0 {
-		return &MigrationLockTimeoutError{Dialect: dialect, Name: migrationAdvisoryLockName, Timeout: timeout}
+		return &MigrationLockTimeoutError{Dialect: dialect, Name: name, Timeout: timeout}
 	}
 	return nil
 }
 
-func releaseMySQLMigrationLock(conn *sql.Conn) func(context.Context) error {
+func releaseMySQLMigrationLock(conn *sql.Conn, name string) func(context.Context) error {
 	return func(ctx context.Context) error {
 		var released sql.NullInt64
-		if err := conn.QueryRowContext(ctx, "SELECT RELEASE_LOCK(?)", migrationAdvisoryLockName).Scan(&released); err != nil {
+		if err := conn.QueryRowContext(ctx, "SELECT RELEASE_LOCK(?)", name).Scan(&released); err != nil {
 			return err
 		}
 		if !released.Valid {
@@ -206,7 +220,7 @@ func releaseMySQLMigrationLock(conn *sql.Conn) func(context.Context) error {
 	}
 }
 
-func acquireSQLServerMigrationLock(ctx context.Context, conn *sql.Conn, timeout time.Duration) error {
+func acquireSQLServerMigrationLock(ctx context.Context, conn *sql.Conn, name string, timeout time.Duration) error {
 	timeoutMilliseconds := sqlServerMigrationLockTimeoutMilliseconds(timeout)
 
 	var result int
@@ -217,19 +231,19 @@ EXEC @result = sys.sp_getapplock
     @LockMode = 'Exclusive',
     @LockOwner = 'Session',
     @LockTimeout = @p2;
-SELECT @result;`, migrationAdvisoryLockName, timeoutMilliseconds).Scan(&result); err != nil {
+SELECT @result;`, name, timeoutMilliseconds).Scan(&result); err != nil {
 		return err
 	}
 	if result >= 0 {
 		return nil
 	}
 	if result == -1 {
-		return &MigrationLockTimeoutError{Dialect: platform.SQLServer, Name: migrationAdvisoryLockName, Timeout: timeout}
+		return &MigrationLockTimeoutError{Dialect: platform.SQLServer, Name: name, Timeout: timeout}
 	}
-	return fmt.Errorf("sqlserver sp_getapplock(%q) failed with return code %d", migrationAdvisoryLockName, result)
+	return fmt.Errorf("sqlserver sp_getapplock(%q) failed with return code %d", name, result)
 }
 
-func releaseSQLServerMigrationLock(conn *sql.Conn) func(context.Context) error {
+func releaseSQLServerMigrationLock(conn *sql.Conn, name string) func(context.Context) error {
 	return func(ctx context.Context) error {
 		var result int
 		if err := conn.QueryRowContext(ctx, `
@@ -237,11 +251,11 @@ DECLARE @result INT;
 EXEC @result = sys.sp_releaseapplock
     @Resource = @p1,
     @LockOwner = 'Session';
-SELECT @result;`, migrationAdvisoryLockName).Scan(&result); err != nil {
+SELECT @result;`, name).Scan(&result); err != nil {
 			return err
 		}
 		if result < 0 {
-			return fmt.Errorf("sqlserver sp_releaseapplock(%q) failed with return code %d", migrationAdvisoryLockName, result)
+			return fmt.Errorf("sqlserver sp_releaseapplock(%q) failed with return code %d", name, result)
 		}
 		return nil
 	}
@@ -268,6 +282,19 @@ func sqlServerMigrationLockTimeoutMilliseconds(timeout time.Duration) int {
 	return int(milliseconds)
 }
 
-func postgresMigrationLockKey() int64 {
-	return postgresMigrationAdvisoryLockKey
+func (m *Migrator) effectiveMigrationLockName() string {
+	return normalizeMigrationLockName(m.migrationLockName)
+}
+
+func normalizeMigrationLockName(name string) string {
+	if trimmed := strings.TrimSpace(name); trimmed != "" {
+		return trimmed
+	}
+	return migrationAdvisoryLockName
+}
+
+func postgresMigrationLockKey(name string) int64 {
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(normalizeMigrationLockName(name)))
+	return int64(hash.Sum32())
 }
