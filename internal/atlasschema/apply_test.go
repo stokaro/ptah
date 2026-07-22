@@ -39,6 +39,62 @@ CREATE TABLE users (
 	c.Assert(plan.SQL(), qt.Contains, "users")
 }
 
+func TestPlanApply_ExcludeFilter(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "exclude.db")
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath, []byte(`
+CREATE TABLE apply_keep (
+  id INTEGER PRIMARY KEY
+);
+CREATE TABLE apply_skip (
+  id INTEGER PRIMARY KEY
+);
+`), 0o600), qt.IsNil)
+	conn := connectSQLite(c, dbPath)
+	defer dbschema.CloseAndWarn(conn)
+
+	plan, err := atlasschema.PlanApply(conn, atlasschema.ApplyOptions{
+		ToURLs:  []string{"file://" + schemaPath},
+		Exclude: []string{"apply_skip"},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.HasChanges(), qt.IsTrue)
+	c.Assert(plan.SQL(), qt.Contains, "apply_keep")
+	c.Assert(plan.SQL(), qt.Not(qt.Contains), "apply_skip")
+}
+
+func TestPlanApply_ExcludeFilterIgnoresCurrentObjects(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "exclude-current.db")
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath, []byte(`
+CREATE TABLE apply_keep (
+  id INTEGER PRIMARY KEY
+);
+`), 0o600), qt.IsNil)
+	conn := connectSQLite(c, dbPath)
+	c.Assert(atlasschema.ApplySQL(context.Background(), conn, migrator.MigrationTxModeAll, `
+CREATE TABLE apply_skip (
+  id INTEGER PRIMARY KEY
+);
+`), qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	plan, err := atlasschema.PlanApply(conn, atlasschema.ApplyOptions{
+		ToURLs:  []string{"file://" + schemaPath},
+		Exclude: []string{"apply_skip"},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.HasChanges(), qt.IsTrue)
+	c.Assert(plan.SQL(), qt.Contains, "apply_keep")
+	c.Assert(plan.SQL(), qt.Not(qt.Contains), "apply_skip")
+}
+
 func TestPlanApply_Synced(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

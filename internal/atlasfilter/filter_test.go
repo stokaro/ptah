@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"github.com/stokaro/ptah/core/goschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/atlasfilter"
 )
@@ -226,6 +227,121 @@ func TestExcludeDatabase_UnsupportedFieldSelector(t *testing.T) {
 	c.Assert(got, qt.IsNil)
 }
 
+func TestExcludeGenerated_RemovesTableAndDependentObjects(t *testing.T) {
+	c := qt.New(t)
+	schema := &goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "User", Schema: "auth", Name: "users", Engine: "InnoDB", PrimaryKey: []string{"id"}},
+			{StructName: "AuditLog", Schema: "auth", Name: "audit_log"},
+		},
+		Fields: []goschema.Field{
+			{StructName: "User", Name: "id", Type: "INTEGER"},
+			{StructName: "User", Name: "email", Type: "TEXT"},
+			{StructName: "AuditLog", Name: "id", Type: "INTEGER"},
+			{StructName: "AuditLog", Name: "user_id", Type: "INTEGER", Foreign: "users(id)"},
+		},
+		Indexes: []goschema.Index{
+			{StructName: "User", Name: "users_email_key", Fields: []string{"email"}},
+			{StructName: "AuditLog", Name: "audit_log_user_idx", Fields: []string{"user_id"}},
+		},
+		Constraints: []goschema.Constraint{
+			{StructName: "AuditLog", Name: "audit_log_user_fk", Type: "FOREIGN KEY", Columns: []string{"user_id"}, ForeignTable: "users", ForeignColumn: "id"},
+		},
+		Triggers: []goschema.Trigger{
+			{StructName: "User", Table: "users", Name: "users_updated_at"},
+			{StructName: "AuditLog", Table: "audit_log", Name: "audit_log_updated_at"},
+		},
+		Grants: []goschema.Grant{
+			{Role: "app", Privileges: []string{"SELECT"}, OnTable: "auth.users"},
+			{Role: "app", Privileges: []string{"SELECT"}, OnTable: "auth.audit_log"},
+		},
+	}
+
+	got, err := atlasfilter.ExcludeGenerated(schema, []string{"auth.audit_log"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(generatedTableNames(got.Tables), qt.DeepEquals, []string{"auth.users"})
+	c.Assert(got.Tables[0].Engine, qt.Equals, "InnoDB")
+	c.Assert(generatedFieldNames(got.Fields), qt.DeepEquals, []string{"User.id", "User.email"})
+	c.Assert(generatedIndexNames(got.Indexes), qt.DeepEquals, []string{"users_email_key"})
+	c.Assert(generatedConstraintNames(got.Constraints), qt.DeepEquals, []string{})
+	c.Assert(generatedTriggerNames(got.Triggers), qt.DeepEquals, []string{"users_updated_at"})
+	c.Assert(generatedGrantTargets(got.Grants), qt.DeepEquals, []string{"auth.users"})
+	c.Assert(generatedTableNames(schema.Tables), qt.DeepEquals, []string{"auth.users", "auth.audit_log"})
+}
+
+func TestExcludeGenerated_ColumnFilterRemovesDependentObjects(t *testing.T) {
+	c := qt.New(t)
+	schema := &goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "User", Schema: "auth", Name: "users", PrimaryKey: []string{"id", "email"}},
+		},
+		Fields: []goschema.Field{
+			{StructName: "User", Name: "id", Type: "INTEGER"},
+			{StructName: "User", Name: "email", Type: "TEXT"},
+		},
+		Indexes: []goschema.Index{
+			{StructName: "User", Name: "users_email_key", Fields: []string{"email"}},
+		},
+		Constraints: []goschema.Constraint{
+			{StructName: "User", Name: "users_email_check", Type: "CHECK", Columns: []string{"email"}},
+		},
+	}
+
+	got, err := atlasfilter.ExcludeGenerated(schema, []string{"auth.users.email[type=column]"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(generatedFieldNames(got.Fields), qt.DeepEquals, []string{"User.id"})
+	c.Assert(got.Tables[0].PrimaryKey, qt.DeepEquals, []string{"id"})
+	c.Assert(generatedIndexNames(got.Indexes), qt.DeepEquals, []string{})
+	c.Assert(generatedConstraintNames(got.Constraints), qt.DeepEquals, []string{})
+}
+
+func TestExcludeGenerated_ReferencedColumnFilterRemovesFieldForeignKey(t *testing.T) {
+	c := qt.New(t)
+	schema := &goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "User", Schema: "auth", Name: "users"},
+			{StructName: "Invoice", Schema: "billing", Name: "invoices"},
+		},
+		Fields: []goschema.Field{
+			{StructName: "User", Name: "id", Type: "INTEGER"},
+			{StructName: "User", Name: "email", Type: "TEXT"},
+			{StructName: "Invoice", Name: "id", Type: "INTEGER"},
+			{StructName: "Invoice", Name: "user_email", Type: "TEXT", Foreign: "auth.users(email)"},
+		},
+	}
+
+	got, err := atlasfilter.ExcludeGenerated(schema, []string{"auth.users.email[type=column]"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(generatedFieldNames(got.Fields), qt.DeepEquals, []string{"User.id", "Invoice.id", "Invoice.user_email"})
+	c.Assert(got.Fields[2].Foreign, qt.Equals, "")
+}
+
+func TestExcludeGenerated_PreservesSelfReferencingForeignKeyMetadata(t *testing.T) {
+	c := qt.New(t)
+	schema := &goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "Node", Name: "nodes"},
+			{StructName: "AuditLog", Name: "audit_log"},
+		},
+		Fields: []goschema.Field{
+			{StructName: "Node", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Node", Name: "parent_id", Type: "INTEGER", Foreign: "nodes(id)", ForeignKeyName: "nodes_parent_fk"},
+			{StructName: "AuditLog", Name: "id", Type: "INTEGER", Primary: true},
+		},
+	}
+
+	got, err := atlasfilter.ExcludeGenerated(schema, []string{"audit_log"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(generatedTableNames(got.Tables), qt.DeepEquals, []string{"nodes"})
+	c.Assert(got.SelfReferencingForeignKeys["nodes"], qt.HasLen, 1)
+	c.Assert(got.SelfReferencingForeignKeys["nodes"][0].FieldName, qt.Equals, "parent_id")
+	c.Assert(got.SelfReferencingForeignKeys["nodes"][0].ForeignKeyName, qt.Equals, "nodes_parent_fk")
+}
+
 func filterFixtureSchema() *dbschematypes.DBSchema {
 	foreignTable := "users"
 	return &dbschematypes.DBSchema{
@@ -275,6 +391,54 @@ func tableNames(tables []dbschematypes.DBTable) []string {
 	names := make([]string, 0, len(tables))
 	for _, table := range tables {
 		names = append(names, table.QualifiedName())
+	}
+	return names
+}
+
+func generatedTableNames(tables []goschema.Table) []string {
+	names := make([]string, 0, len(tables))
+	for _, table := range tables {
+		names = append(names, table.QualifiedName())
+	}
+	return names
+}
+
+func generatedFieldNames(fields []goschema.Field) []string {
+	names := make([]string, 0, len(fields))
+	for _, field := range fields {
+		names = append(names, field.StructName+"."+field.Name)
+	}
+	return names
+}
+
+func generatedIndexNames(indexes []goschema.Index) []string {
+	names := make([]string, 0, len(indexes))
+	for _, index := range indexes {
+		names = append(names, index.Name)
+	}
+	return names
+}
+
+func generatedConstraintNames(constraints []goschema.Constraint) []string {
+	names := make([]string, 0, len(constraints))
+	for _, constraint := range constraints {
+		names = append(names, constraint.Name)
+	}
+	return names
+}
+
+func generatedTriggerNames(triggers []goschema.Trigger) []string {
+	names := make([]string, 0, len(triggers))
+	for _, trigger := range triggers {
+		names = append(names, trigger.Name)
+	}
+	return names
+}
+
+func generatedGrantTargets(grants []goschema.Grant) []string {
+	names := make([]string, 0, len(grants))
+	for _, grant := range grants {
+		names = append(names, grant.OnTable)
 	}
 	return names
 }

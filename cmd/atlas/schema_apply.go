@@ -27,6 +27,7 @@ type atlasSchemaApplyOptions struct {
 	dryRun      bool
 	autoApprove bool
 	format      string
+	exclude     []string
 	txMode      string
 }
 
@@ -41,8 +42,8 @@ Compares a live database from --url with local --to schema files and applies the
 generated schema changes directly to the target database. When --env is set, the
 selected atlas.hcl env can provide url, src, and dev values. This implementation
 currently supports local file:// schema files with .hcl, .yaml, .yml, or .sql
-extensions. Database desired-state URLs, env:// URLs, schema filters, and Atlas
-Cloud planning remain explicit follow-up gaps.`,
+extensions. Database desired-state URLs, env:// URLs, schema/include filters,
+and Atlas Cloud planning remain explicit follow-up gaps.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaApply(cmd, opts)
 		},
@@ -55,9 +56,9 @@ Cloud planning remain explicit follow-up gaps.`,
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Show planned changes without applying them")
 	flags.BoolVar(&opts.autoApprove, "auto-approve", false, "Skip interactive approval")
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
+	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from apply")
 	flags.StringVar(&opts.txMode, "tx-mode", "", "Transaction mode: all, file, or none")
 	flags.StringArray("schema", nil, "Schemas to apply when database URLs are used")
-	flags.StringArray("exclude", nil, "Schema objects to exclude from apply")
 	flags.StringArray("include", nil, "Schema objects to include in apply")
 	if err := cmdflags.DisableEnvBinding(flags, "auto-approve"); err != nil {
 		panic(err)
@@ -84,6 +85,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		opts.url = dbcli.EffectiveString(cmd, "url", opts.url, projectCfg.DatabaseURL)
 		opts.devURL = dbcli.EffectiveString(cmd, "dev-url", opts.devURL, projectCfg.DevURL)
 		opts.toURLs = effectiveStringArray(cmd, "to", opts.toURLs, projectCfg.SchemaSources)
+		opts.exclude = effectiveStringArray(cmd, "exclude", opts.exclude, projectCfg.Exclude)
 	}
 
 	if err := validateAtlasSchemaApplyOptions(cmd, opts); err != nil {
@@ -103,10 +105,11 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	defer dbschema.CloseAndWarn(conn)
 
 	plan, err := atlasschema.PrepareApply(conn, atlasschema.ApplyRuntimeOptions{
-		DevURL: opts.devURL,
-		ToURLs: opts.toURLs,
-		TxMode: txMode,
-		DryRun: opts.dryRun,
+		DevURL:  opts.devURL,
+		ToURLs:  opts.toURLs,
+		Exclude: opts.exclude,
+		TxMode:  txMode,
+		DryRun:  opts.dryRun,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -188,7 +191,7 @@ func validateAtlasSchemaApplyOptions(cmd *cobra.Command, opts atlasSchemaApplyOp
 	if len(opts.toURLs) == 0 {
 		return fmt.Errorf("--to is required")
 	}
-	for _, name := range []string{"schema", "exclude", "include"} {
+	for _, name := range []string{"schema", "include"} {
 		if values, err := cmd.Flags().GetStringArray(name); err == nil && len(values) > 0 {
 			return fmt.Errorf("atlas schema apply accepts --%s, but Ptah only supports local schema files for this command yet", name)
 		}

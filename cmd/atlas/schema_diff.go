@@ -15,6 +15,7 @@ type atlasSchemaDiffOptions struct {
 	fromURLs []string
 	toURLs   []string
 	devURL   string
+	exclude  []string
 	format   string
 }
 
@@ -28,8 +29,8 @@ func newAtlasSchemaDiffCommand() *cobra.Command {
 Calculates SQL statements that migrate the --from schema state to the --to
 schema state. This implementation currently supports local file:// schema files
 with .hcl, .yaml, .yml, or .sql extensions. Database URLs, migration directory
-URLs, Atlas project env:// URLs, exclusion filters, and Atlas Cloud web output
-are explicit follow-up gaps.`,
+URLs, Atlas project env:// URLs, include filters, and Atlas Cloud web output are
+explicit follow-up gaps.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaDiff(cmd, opts)
 		},
@@ -38,9 +39,9 @@ are explicit follow-up gaps.`,
 	flags.StringArrayVar(&opts.fromURLs, "from", nil, "Current schema state URL")
 	flags.StringArrayVar(&opts.toURLs, "to", nil, "Desired schema state URL")
 	flags.StringVar(&opts.devURL, "dev-url", "", "Dev database URL used to choose the SQL dialect for local schema files")
+	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from diffing")
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
 	flags.StringArray("schema", nil, "Schemas to inspect when a database URL is used")
-	flags.StringArray("exclude", nil, "Schema objects to exclude from diffing")
 	flags.StringArray("include", nil, "Schema objects to include in diffing")
 	flags.BoolP("web", "w", false, "Visualize the schema diff on Atlas Cloud")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
@@ -60,6 +61,7 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 		FromURLs: opts.fromURLs,
 		ToURLs:   opts.toURLs,
 		DevURL:   opts.devURL,
+		Exclude:  opts.exclude,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -80,7 +82,7 @@ func validateAtlasSchemaDiffOptions(cmd *cobra.Command, opts atlasSchemaDiffOpti
 	if web, err := cmd.Flags().GetBool("web"); err == nil && web {
 		return fmt.Errorf("atlas schema diff accepts --web, but Ptah does not implement Atlas Cloud visualization")
 	}
-	for _, name := range []string{"schema", "exclude", "include"} {
+	for _, name := range []string{"schema", "include"} {
 		if values, err := cmd.Flags().GetStringArray(name); err == nil && len(values) > 0 {
 			return fmt.Errorf("atlas schema diff accepts --%s, but Ptah only supports local schema files for this command yet", name)
 		}
