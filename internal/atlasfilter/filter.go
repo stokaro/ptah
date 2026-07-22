@@ -41,6 +41,13 @@ func ExcludeDatabase(schema *dbschematypes.DBSchema, patterns []string) (*dbsche
 type resourcePattern struct {
 	glob  string
 	types map[string]struct{}
+	field string
+}
+
+type typeSelector struct {
+	glob  string
+	types map[string]struct{}
+	field string
 }
 
 func parsePatterns(values []string) ([]resourcePattern, error) {
@@ -66,36 +73,40 @@ func parsePattern(value string) (resourcePattern, error) {
 	}
 	glob := raw
 	types := map[string]struct{}{}
+	field := ""
 	if open := strings.LastIndex(raw, "[type="); open >= 0 {
-		parsedGlob, parsedTypes, err := parseTypeSelector(raw, open)
+		selector, err := parseTypeSelector(raw, open)
 		if err != nil {
 			return resourcePattern{}, err
 		}
-		glob = parsedGlob
-		types = parsedTypes
+		glob = selector.glob
+		types = selector.types
+		field = selector.field
 	} else if selector, ok := selectorLikeSuffix(raw); ok {
 		return resourcePattern{}, fmt.Errorf("unsupported Atlas exclude selector %q", selector)
 	}
 	if _, err := path.Match(glob, "ptah_match_probe"); err != nil {
 		return resourcePattern{}, fmt.Errorf("invalid Atlas exclude glob %q: %w", raw, err)
 	}
-	return resourcePattern{glob: glob, types: types}, nil
+	return resourcePattern{glob: glob, types: types, field: field}, nil
 }
 
-func parseTypeSelector(raw string, open int) (glob string, types map[string]struct{}, err error) {
-	if !strings.HasSuffix(raw, "]") {
-		return "", nil, fmt.Errorf("unsupported Atlas exclude field selector %q", raw)
+func parseTypeSelector(raw string, open int) (typeSelector, error) {
+	closeIdx := strings.Index(raw[open:], "]")
+	if closeIdx < 0 {
+		return typeSelector{}, fmt.Errorf("unsupported Atlas exclude selector %q", raw)
 	}
-	selector := raw[open+1 : len(raw)-1]
-	glob = strings.TrimSpace(raw[:open])
+	closeIdx += open
+	selector := raw[open+1 : closeIdx]
+	glob := strings.TrimSpace(raw[:open])
 	if glob == "" {
 		glob = "*"
 	}
 	selectorName, selectorValue, ok := strings.Cut(selector, "=")
 	if !ok || strings.TrimSpace(selectorName) != "type" {
-		return "", nil, fmt.Errorf("unsupported Atlas exclude selector %q", selector)
+		return typeSelector{}, fmt.Errorf("unsupported Atlas exclude selector %q", selector)
 	}
-	types = map[string]struct{}{}
+	types := map[string]struct{}{}
 	for item := range strings.SplitSeq(selectorValue, "|") {
 		item = strings.ToLower(strings.TrimSpace(item))
 		if item != "" {
@@ -103,12 +114,42 @@ func parseTypeSelector(raw string, open int) (glob string, types map[string]stru
 		}
 	}
 	if len(types) == 0 {
-		return "", nil, fmt.Errorf("empty Atlas exclude type selector %q", selector)
+		return typeSelector{}, fmt.Errorf("empty Atlas exclude type selector %q", selector)
 	}
-	return glob, types, nil
+	field, err := parseFieldSelector(raw[closeIdx+1:], types)
+	if err != nil {
+		return typeSelector{}, err
+	}
+	return typeSelector{glob: glob, types: types, field: field}, nil
+}
+
+func parseFieldSelector(suffix string, types map[string]struct{}) (string, error) {
+	if suffix == "" {
+		return "", nil
+	}
+	field, ok := strings.CutPrefix(suffix, ".")
+	if !ok || field == "" {
+		return "", fmt.Errorf("unsupported Atlas exclude field selector suffix %q", suffix)
+	}
+	if field == "version" && hasOnlyType(types, "extension") {
+		return field, nil
+	}
+	return "", fmt.Errorf("unsupported Atlas exclude field selector %q", suffix)
+}
+
+func hasOnlyType(types map[string]struct{}, resourceType string) bool {
+	_, ok := types[resourceType]
+	return ok && len(types) == 1
 }
 
 func (p resourcePattern) matches(resourceType string, names ...string) bool {
+	return p.matchesField(resourceType, "", names...)
+}
+
+func (p resourcePattern) matchesField(resourceType, field string, names ...string) bool {
+	if p.field != field {
+		return false
+	}
 	if len(p.types) > 0 {
 		if _, ok := p.types[strings.ToLower(resourceType)]; !ok {
 			return false
@@ -129,10 +170,15 @@ func globMatch(pattern, name string) bool {
 
 func selectorLikeSuffix(raw string) (selector string, ok bool) {
 	open := strings.LastIndex(raw, "[")
-	if open < 0 || !strings.HasSuffix(raw, "]") {
+	if open < 0 {
 		return "", false
 	}
-	selector = raw[open+1 : len(raw)-1]
+	closeIdx := strings.Index(raw[open:], "]")
+	if closeIdx < 0 {
+		return "", false
+	}
+	closeIdx += open
+	selector = raw[open+1 : closeIdx]
 	return selector, strings.Contains(selector, "=")
 }
 
@@ -207,9 +253,18 @@ func (s *exclusionState) filterConstraints(constraints []dbschematypes.DBConstra
 }
 
 func (s *exclusionState) filterExtensions(extensions []dbschematypes.DBExtension) []dbschematypes.DBExtension {
-	return keep(extensions, func(extension dbschematypes.DBExtension) bool {
-		return !s.matches("extension", qualifiedNameCandidates(extension.Schema, extension.Name)...)
-	})
+	result := make([]dbschematypes.DBExtension, 0, len(extensions))
+	for _, extension := range extensions {
+		names := qualifiedNameCandidates(extension.Schema, extension.Name)
+		if s.matches("extension", names...) {
+			continue
+		}
+		if s.matchesField("extension", "version", names...) {
+			extension.Version = ""
+		}
+		result = append(result, extension)
+	}
+	return result
 }
 
 func (s *exclusionState) filterFunctions(functions []dbschematypes.DBFunction) []dbschematypes.DBFunction {
@@ -274,6 +329,15 @@ func (s *exclusionState) filterGrants(grants []dbschematypes.DBGrant) []dbschema
 
 func (s *exclusionState) matches(resourceType string, names ...string) bool {
 	return s.matchesAny([]string{resourceType}, names...)
+}
+
+func (s *exclusionState) matchesField(resourceType, field string, names ...string) bool {
+	for _, pattern := range s.patterns {
+		if pattern.matchesField(resourceType, field, names...) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *exclusionState) matchesAny(resourceTypes []string, names ...string) bool {
