@@ -14,6 +14,7 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -84,7 +85,7 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 		return fmt.Errorf("--format must not be empty")
 	}
 	if formatOutput {
-		if err := validateAtlasGoTemplate("atlas-migrate-apply-format", opts.format); err != nil {
+		if err := atlasreport.ValidateMigrateApplyTemplate(opts.format); err != nil {
 			return err
 		}
 	}
@@ -186,18 +187,18 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 	selected := selectedAtlasApplyVersions(pending, amount, toVersion)
 	if len(selected) == 0 && status.DirtyRevision == nil {
 		if formatOutput {
-			return writeAtlasMigrateApplyFormat(out, opts.format, atlasMigrateApplyResultOptions{
-				conn:             conn,
-				fsys:             os.DirFS(dir),
-				dir:              opts.dir,
-				url:              opts.url,
-				status:           status,
-				migrations:       mig.MigrationProvider().Migrations(),
-				selectedVersions: selected,
-				currentVersion:   plannedCurrentVersion,
-				applied:          false,
-				startedAt:        startedAt,
-				endedAt:          time.Now(),
+			return atlasreport.WriteMigrateApplyFormat(out, opts.format, atlasreport.MigrateApplyResultOptions{
+				Conn:             conn,
+				FS:               os.DirFS(dir),
+				Dir:              opts.dir,
+				URL:              opts.url,
+				Status:           status,
+				Migrations:       mig.MigrationProvider().Migrations(),
+				SelectedVersions: selected,
+				CurrentVersion:   plannedCurrentVersion,
+				Applied:          false,
+				StartedAt:        startedAt,
+				EndedAt:          time.Now(),
 			})
 		}
 		fmt.Fprintln(out, "No migration files to execute.")
@@ -214,20 +215,20 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 		AssumedAppliedVersions: assumedAppliedVersions,
 	}); err != nil {
 		if formatOutput {
-			writeErr := writeAtlasMigrateApplyFormat(out, opts.format, atlasMigrateApplyResultOptions{
-				conn:             conn,
-				fsys:             os.DirFS(dir),
-				dir:              opts.dir,
-				url:              opts.url,
-				status:           status,
-				migrations:       mig.MigrationProvider().Migrations(),
-				selectedVersions: selected,
-				currentVersion:   plannedCurrentVersion,
-				errorText:        err.Error(),
-				applyError:       err,
-				applied:          true,
-				startedAt:        startedAt,
-				endedAt:          time.Now(),
+			writeErr := atlasreport.WriteMigrateApplyFormat(out, opts.format, atlasreport.MigrateApplyResultOptions{
+				Conn:             conn,
+				FS:               os.DirFS(dir),
+				Dir:              opts.dir,
+				URL:              opts.url,
+				Status:           status,
+				Migrations:       mig.MigrationProvider().Migrations(),
+				SelectedVersions: selected,
+				CurrentVersion:   plannedCurrentVersion,
+				ErrorText:        err.Error(),
+				ApplyError:       err,
+				Applied:          true,
+				StartedAt:        startedAt,
+				EndedAt:          time.Now(),
 			})
 			if writeErr != nil {
 				return fmt.Errorf("error applying migrations: %w; additionally failed to write --format output: %v", err, writeErr)
@@ -238,18 +239,18 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 
 	if opts.dryRun {
 		if formatOutput {
-			return writeAtlasMigrateApplyFormat(out, opts.format, atlasMigrateApplyResultOptions{
-				conn:             conn,
-				fsys:             os.DirFS(dir),
-				dir:              opts.dir,
-				url:              opts.url,
-				status:           status,
-				migrations:       mig.MigrationProvider().Migrations(),
-				selectedVersions: selected,
-				currentVersion:   plannedCurrentVersion,
-				applied:          false,
-				startedAt:        startedAt,
-				endedAt:          time.Now(),
+			return atlasreport.WriteMigrateApplyFormat(out, opts.format, atlasreport.MigrateApplyResultOptions{
+				Conn:             conn,
+				FS:               os.DirFS(dir),
+				Dir:              opts.dir,
+				URL:              opts.url,
+				Status:           status,
+				Migrations:       mig.MigrationProvider().Migrations(),
+				SelectedVersions: selected,
+				CurrentVersion:   plannedCurrentVersion,
+				Applied:          false,
+				StartedAt:        startedAt,
+				EndedAt:          time.Now(),
 			})
 		}
 		fmt.Fprintf(out, "Would have applied %d migrations.\n", len(selected))
@@ -260,18 +261,18 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 		return fmt.Errorf("error getting final migration status: %w", err)
 	}
 	if formatOutput {
-		return writeAtlasMigrateApplyFormat(out, opts.format, atlasMigrateApplyResultOptions{
-			conn:             conn,
-			fsys:             os.DirFS(dir),
-			dir:              opts.dir,
-			url:              opts.url,
-			status:           status,
-			migrations:       mig.MigrationProvider().Migrations(),
-			selectedVersions: selected,
-			currentVersion:   plannedCurrentVersion,
-			applied:          true,
-			startedAt:        startedAt,
-			endedAt:          time.Now(),
+		return atlasreport.WriteMigrateApplyFormat(out, opts.format, atlasreport.MigrateApplyResultOptions{
+			Conn:             conn,
+			FS:               os.DirFS(dir),
+			Dir:              opts.dir,
+			URL:              opts.url,
+			Status:           status,
+			Migrations:       mig.MigrationProvider().Migrations(),
+			SelectedVersions: selected,
+			CurrentVersion:   plannedCurrentVersion,
+			Applied:          true,
+			StartedAt:        startedAt,
+			EndedAt:          time.Now(),
 		})
 	}
 	fmt.Fprintf(out, "Migration complete. Current version: %d\n", finalStatus.CurrentVersion)

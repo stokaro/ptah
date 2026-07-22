@@ -94,3 +94,225 @@ golangci-lint run ./...
 ```
 
 The fix pass can leave second-pass fallout such as unused imports, removed helper functions, or staticcheck suggestions. Clean those manually before considering the lint run complete.
+
+## Testing Standards
+
+### Declarative Tests Only
+
+All tests MUST be purely declarative. The following are prohibited in test
+functions:
+
+- `if` statements.
+- `switch` statements.
+- `goto` statements.
+
+`for` loops are allowed in test functions for table-driven tests that iterate
+over a static list of cases, and are not considered conditional logic for this
+guideline. Keep loop bodies simple and do not use loops to encode branching
+logic.
+
+Go 1.22 and newer makes range variables per-iteration, so the historical
+`test := test` workaround is not needed when using `c.Run()` closures in
+table-driven tests unless intentionally taking the address of a loop variable.
+
+### Do Not Hide Conditionals In Helpers
+
+Avoid helper functions that mask conditional logic, such as choosing between
+`qt.ErrorIs`, `qt.ErrorMatches`, and `qt.IsNil` based on fields in a test case.
+This makes tests harder to read and review.
+
+Instead, write explicit assertions per case, even when it is a bit repetitive.
+
+Bad:
+
+```go
+func checkError(c *qt.C, err error, wantIs error, wantLike string) {
+	if wantIs != nil {
+		c.Check(err, qt.ErrorIs, wantIs)
+		return
+	}
+	if wantLike != "" {
+		c.Check(err, qt.ErrorMatches, wantLike)
+		return
+	}
+	c.Check(err, qt.IsNil)
+}
+```
+
+Good:
+
+```go
+c.Run("unsupported dev url dialect", func(c *qt.C) {
+	got, err := atlasurl.DialectFromURL("spanner://localhost/dev")
+	c.Assert(err, qt.ErrorMatches, `unsupported --dev-url dialect "spanner://localhost/dev"`)
+	c.Assert(got, qt.Equals, "")
+})
+
+c.Run("postgres dev url", func(c *qt.C) {
+	got, err := atlasurl.DialectFromURL("postgres://localhost/dev")
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.Equals, "postgres")
+})
+```
+
+### Separate Happy-Path And Failure-Path Tests
+
+Do not mix success and error cases in the same table. Prefer either:
+
+- `TestXxx_HappyPath` and `TestXxx_FailurePath`.
+- Separate `c.Run("happy ...")` and `c.Run("failure ...")` groups with distinct
+  tables.
+
+Bad:
+
+```go
+tests := []struct {
+	name    string
+	rawURL  string
+	want    string
+	wantErr string
+}{
+	{name: "postgres", rawURL: "postgres://localhost/dev", want: "postgres"},
+	{name: "unsupported", rawURL: "spanner://localhost/dev", wantErr: `unsupported --dev-url dialect "spanner://localhost/dev"`},
+}
+
+for _, test := range tests {
+	c.Run(test.name, func(c *qt.C) {
+		got, err := atlasurl.DialectFromURL(test.rawURL)
+		if test.wantErr != "" {
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			return
+		}
+		c.Assert(err, qt.IsNil)
+		c.Assert(got, qt.Equals, test.want)
+	})
+}
+```
+
+Good:
+
+Use table-driven tests with `c.Run()` for multiple test cases:
+
+```go
+func TestDialectFromURL_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name   string
+		rawURL string
+		want   string
+	}{
+		{name: "postgres", rawURL: "postgres://localhost/dev", want: "postgres"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			got, err := atlasurl.DialectFromURL(test.rawURL)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+func TestDialectFromURL_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name    string
+		rawURL  string
+		wantErr string
+	}{
+		{
+			name:    "unsupported",
+			rawURL:  "spanner://localhost/dev",
+			wantErr: `unsupported --dev-url dialect "spanner://localhost/dev"`,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			got, err := atlasurl.DialectFromURL(test.rawURL)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(got, qt.Equals, "")
+		})
+	}
+}
+```
+
+Error checking patterns:
+
+```go
+// Success case.
+c.Assert(err, qt.IsNil)
+
+// Preferred for sentinel errors because it handles wrapped errors.
+c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidConfig)
+
+// Error type checks.
+var pathErr *os.PathError
+c.Assert(err, qt.ErrorAs, &pathErr)
+
+// Regex match when no sentinel is available.
+c.Assert(err, qt.ErrorMatches, "failed to load schema.*")
+
+// Substring check when matching part of the message is clearer.
+c.Assert(err, qt.IsNotNil)
+c.Assert(err.Error(), qt.Contains, "connection refused")
+```
+
+### Black-Box Testing By Default
+
+By default, all Go tests use black-box testing:
+
+- Test file: `*_test.go`.
+- Package name: `package atlasurl_test` with the `_test` suffix.
+- Test only exported API.
+
+```go
+package atlasurl_test
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+
+	"github.com/stokaro/ptah/internal/atlasurl"
+)
+
+func TestDialectFromURL_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	got, err := atlasurl.DialectFromURL("postgres://localhost/dev")
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.Equals, "postgres")
+}
+```
+
+### White-Box Testing As An Exception
+
+White-box testing, meaning same-package tests with access to unexported symbols,
+is permitted only when:
+
+1. Testing unexported functions critical for correctness.
+2. Testing internal state that cannot be observed through exported API.
+3. There is a clear technical justification.
+
+Requirements for white-box tests:
+
+- File naming: `*_internal_test.go`.
+- Package name: `package parser` without the `_test` suffix.
+- Include a comment immediately after the `package` line explaining the
+  justification.
+
+```go
+package parser
+
+// White-box testing required: this file verifies parser cursor invariants that
+// are not observable through the exported Parse API without making assertions
+// dependent on renderer output.
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+)
+```

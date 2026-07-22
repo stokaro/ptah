@@ -1,4 +1,4 @@
-package atlas
+package atlasreport
 
 import (
 	"encoding/json"
@@ -16,7 +16,7 @@ import (
 	"github.com/stokaro/ptah/internal/schemaviz"
 )
 
-type atlasSchemaInspectReport struct {
+type SchemaInspectReport struct {
 	db          *goschema.Database
 	info        dbschematypes.DBInfo
 	diagnostics io.Writer
@@ -77,7 +77,7 @@ type atlasSchemaInspectJSONForeignKey struct {
 	} `json:"references"`
 }
 
-func renderAtlasSchemaInspectFormat(format string, report *atlasSchemaInspectReport) (string, error) {
+func RenderSchemaInspectFormat(format string, report *SchemaInspectReport) (string, error) {
 	var out strings.Builder
 	if err := renderAtlasSchemaInspectTemplate(&out, "atlas-schema-inspect-format", format, report); err != nil {
 		return "", err
@@ -85,14 +85,14 @@ func renderAtlasSchemaInspectFormat(format string, report *atlasSchemaInspectRep
 	return out.String(), nil
 }
 
-func newAtlasSchemaInspectReport(
+func NewSchemaInspectReport(
 	db *goschema.Database,
 	schema *dbschematypes.DBSchema,
 	info dbschematypes.DBInfo,
 	diagnostics io.Writer,
-) *atlasSchemaInspectReport {
+) *SchemaInspectReport {
 	realm := atlasSchemaInspectJSON(schema, info)
-	return &atlasSchemaInspectReport{
+	return &SchemaInspectReport{
 		db:          db,
 		info:        info,
 		diagnostics: diagnostics,
@@ -101,16 +101,30 @@ func newAtlasSchemaInspectReport(
 	}
 }
 
-func validateAtlasSchemaInspectTemplate(format string) error {
+func ValidateSchemaInspectTemplate(format string) error {
 	_, err := newAtlasSchemaInspectTemplate("atlas-schema-inspect-format", format)
 	return err
+}
+
+func NormalizeSchemaInspectFormat(format string) (string, error) {
+	trimmed := strings.TrimSpace(format)
+	if trimmed == "" || trimmed == "hcl" {
+		return "{{ $.MarshalHCL }}", nil
+	}
+	if trimmed == "sql" {
+		return "{{ sql . }}", nil
+	}
+	if trimmed == "json" {
+		return "{{ json . }}", nil
+	}
+	return format, nil
 }
 
 func renderAtlasSchemaInspectTemplate(
 	out *strings.Builder,
 	name string,
 	format string,
-	report *atlasSchemaInspectReport,
+	report *SchemaInspectReport,
 ) error {
 	tmpl, err := newAtlasSchemaInspectTemplate(name, format)
 	if err != nil {
@@ -137,7 +151,7 @@ func newAtlasSchemaInspectTemplate(name, format string) (*template.Template, err
 	return tmpl, nil
 }
 
-func (r *atlasSchemaInspectReport) MarshalHCL() (string, error) {
+func (r *SchemaInspectReport) MarshalHCL() (string, error) {
 	rendered, err := atlashclrender.Render(r.db)
 	if err != nil {
 		return "", fmt.Errorf("render Atlas HCL: %w", err)
@@ -150,7 +164,7 @@ func (r *atlasSchemaInspectReport) MarshalHCL() (string, error) {
 	return string(rendered.Data), nil
 }
 
-func (r *atlasSchemaInspectReport) MarshalSQL(indent ...string) (string, error) {
+func (r *SchemaInspectReport) MarshalSQL(indent ...string) (string, error) {
 	if len(indent) > 1 {
 		return "", fmt.Errorf("unexpected number of arguments: %d", len(indent))
 	}
@@ -169,15 +183,15 @@ func (r *atlasSchemaInspectReport) MarshalSQL(indent ...string) (string, error) 
 	return indent[0] + strings.ReplaceAll(sql, "\n", "\n"+indent[0]), nil
 }
 
-func (r *atlasSchemaInspectReport) MarshalJSON() ([]byte, error) {
+func (r *SchemaInspectReport) MarshalJSON() ([]byte, error) {
 	return json.Marshal(r.Realm)
 }
 
-func atlasSchemaInspectSQL(report *atlasSchemaInspectReport, indent ...string) (string, error) {
+func atlasSchemaInspectSQL(report *SchemaInspectReport, indent ...string) (string, error) {
 	return report.MarshalSQL(indent...)
 }
 
-func atlasSchemaInspectMermaid(report *atlasSchemaInspectReport, _ ...string) (string, error) {
+func atlasSchemaInspectMermaid(report *SchemaInspectReport, _ ...string) (string, error) {
 	out, err := schemaviz.Render(report.db, schemaviz.Options{
 		Format:         schemaviz.FormatMermaid,
 		IncludeColumns: true,

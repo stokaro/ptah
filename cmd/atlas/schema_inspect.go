@@ -9,6 +9,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/convert/dbschematogo"
 )
 
@@ -50,11 +51,11 @@ follow-up gaps.`,
 }
 
 func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) error {
-	format, err := normalizeAtlasSchemaInspectFormat(opts.format)
+	format, err := atlasreport.NormalizeSchemaInspectFormat(opts.format)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if err := validateAtlasSchemaInspectTemplate(format); err != nil {
+	if err := atlasreport.ValidateSchemaInspectTemplate(format); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if err := validateAtlasSchemaInspectOptions(opts); err != nil {
@@ -78,7 +79,7 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 		return cmdutil.Fail(cmd, fmt.Errorf("read database schema: %w", err))
 	}
 	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema)
-	rendered, err := renderAtlasSchemaInspectFormat(format, newAtlasSchemaInspectReport(
+	rendered, err := atlasreport.RenderSchemaInspectFormat(format, atlasreport.NewSchemaInspectReport(
 		dbsch,
 		schema,
 		conn.Info(),
@@ -102,20 +103,6 @@ func validateAtlasSchemaInspectOptions(opts atlasSchemaInspectOptions) error {
 		return fmt.Errorf("atlas schema inspect accepts --include, but Ptah does not implement its behavior yet")
 	}
 	return nil
-}
-
-func normalizeAtlasSchemaInspectFormat(format string) (string, error) {
-	trimmed := strings.TrimSpace(format)
-	if trimmed == "" || trimmed == "hcl" {
-		return "{{ $.MarshalHCL }}", nil
-	}
-	if trimmed == "sql" {
-		return "{{ sql . }}", nil
-	}
-	if trimmed == "json" {
-		return "{{ json . }}", nil
-	}
-	return format, nil
 }
 
 func parseAtlasSchemaInspectSchemas(values []string) []string {
