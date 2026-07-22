@@ -16,9 +16,9 @@ existing scripts expect Atlas-style root commands.
 
 ## Translation model
 
-Implemented Atlas-compatible commands translate Atlas-style flags into Ptah's
-native command model and then delegate to native behavior. Unsupported flags
-fail clearly instead of being ignored.
+Implemented Atlas-compatible commands either execute dedicated Atlas-shaped
+behavior or translate Atlas-style flags into the closest native Ptah command
+model. Unsupported flags fail clearly instead of being ignored.
 
 | Atlas flag style | Native Ptah concept |
 | --- | --- |
@@ -29,9 +29,9 @@ fail clearly instead of being ignored.
 
 ## Migration commands
 
-| Atlas-compatible command | Native Ptah command |
+| Atlas-compatible command | Ptah behavior |
 | --- | --- |
-| `ptah atlas migrate apply` | `ptah migrations up` |
+| `ptah atlas migrate apply` | Atlas-format apply path equivalent to `ptah migrations up` |
 | `ptah atlas migrate down` | Forwards to `ptah migrations down`; maps compatible Atlas flags and fails explicitly for dynamic down-planning and output-format flags that native Ptah does not implement yet. |
 | `ptah atlas migrate status` | `ptah migrations status` |
 | `ptah atlas migrate hash` | `ptah migrations hash` |
@@ -106,6 +106,31 @@ Remote database URLs, migration directory URLs, `env://` project attributes,
 include/exclude filters, Atlas Cloud web output, custom format templates,
 transaction-mode flags, and lock flags fail explicitly until their semantics
 are implemented.
+
+## Migration Apply
+
+`ptah atlas migrate apply` reads a local Atlas migration directory and records
+runtime history in Atlas revision-table format by default. The optional
+positional `amount` applies only the first N pending migrations. Use
+`--to-version` to apply up to a specific migration version, and `--baseline` to
+mark earlier migration files as applied without executing their SQL bodies
+before applying the remaining pending migrations.
+
+```bash
+ptah atlas migrate apply 2 \
+  --url "$DATABASE_URL" \
+  --dir file://migrations
+
+ptah atlas migrate apply \
+  --url "$DATABASE_URL" \
+  --dir file://migrations \
+  --to-version 20260722093000
+```
+
+Supported Atlas apply flags include `--dry-run`, `--tx-mode`, `--exec-order`,
+`--allow-dirty`, `--baseline`, `--revisions-schema`, and `--lock-timeout`.
+Atlas Go-template output through `--format` and custom lock names through
+`--lock-name` remain explicit gaps.
 
 ## Migration Diff
 
@@ -184,7 +209,8 @@ ln -sf "$(command -v ptah-compat)" "$install_dir/atlas"
 atlas migrate apply --url "$DATABASE_URL" --dir ./migrations
 ```
 
-Ptah translates implemented Atlas-style flags and then delegates to native behavior. Unsupported Atlas flags should fail clearly instead of being ignored.
+Ptah translates or implements supported Atlas-style flags. Unsupported Atlas
+flags should fail clearly instead of being ignored.
 
 `ptah atlas migrate import` is intentionally fail-closed: use a destination
 directory different from the source directory, and start with a destination that

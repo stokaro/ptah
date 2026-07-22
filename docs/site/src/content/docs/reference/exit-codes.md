@@ -59,16 +59,17 @@ root-level command spellings are removed instead of preserved.
 Commands under `ptah atlas <command> ...`, `ptah-compat <command> ...`, and a
 copied or symlinked executable named `atlas` either translate implemented
 Atlas-compatible flags and delegate to the matching native command, or execute
-a Ptah-owned utility behavior such as the license notice or schema formatting.
+Ptah-owned Atlas-shaped behavior such as migration apply, the license notice,
+or schema formatting.
 
-| Atlas-compatible command | Native command |
+| Atlas-compatible command | Behavior |
 | --- | --- |
 | `ptah atlas version` | `ptah version` |
 | `ptah-compat version` / `atlas version` | `ptah version` |
 | `ptah atlas license` | Ptah license notice |
 | `ptah-compat license` / `atlas license` | Ptah license notice |
-| `ptah atlas migrate apply` | `ptah migrations up` |
-| `ptah-compat migrate apply` / `atlas migrate apply` | `ptah migrations up` |
+| `ptah atlas migrate apply` | Atlas-format apply path equivalent to `ptah migrations up` |
+| `ptah-compat migrate apply` / `atlas migrate apply` | Atlas-format apply path equivalent to `ptah migrations up` |
 | `ptah atlas migrate down` | `ptah migrations down` |
 | `ptah-compat migrate down` / `atlas migrate down` | `ptah migrations down` |
 | `ptah atlas migrate diff` | Local Atlas-style migration diff and `atlas.sum` update |

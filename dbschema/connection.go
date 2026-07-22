@@ -66,7 +66,7 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database connection: %w", err)
 	}
-	if dialectProtocol == "sqlite" {
+	if dialectProtocol == "sqlite" && isSQLiteMemoryDSN(connectionString) {
 		db.SetMaxOpenConns(1)
 	}
 
@@ -209,6 +209,11 @@ func (dc *DatabaseConnection) WithExecutor(executor types.SchemaExecutor) *Datab
 // Query executes a query and returns the result rows
 func (dc *DatabaseConnection) Query(query string, args ...any) (*sql.Rows, error) {
 	return dc.db.Query(query, args...)
+}
+
+// QueryContext executes a query using a context and returns the result rows.
+func (dc *DatabaseConnection) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return dc.db.QueryContext(ctx, query, args...)
 }
 
 // QueryRow executes a query that returns a single row
@@ -579,6 +584,21 @@ func convertSQLiteURL(dbURL string) string {
 		dsn += "?" + encoded
 	}
 	return dsn
+}
+
+func isSQLiteMemoryDSN(dsn string) bool {
+	path, rawQuery, _ := strings.Cut(dsn, "?")
+	if path == "" || path == ":memory:" {
+		return true
+	}
+	if strings.EqualFold(path, "file::memory:") {
+		return true
+	}
+	query, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(query.Get("mode"), "memory")
 }
 
 func convertSQLServerURL(dbURL string) string {

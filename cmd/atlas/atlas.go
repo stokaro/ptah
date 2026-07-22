@@ -21,7 +21,6 @@ import (
 	"github.com/stokaro/ptah/cmd/migratehash"
 	"github.com/stokaro/ptah/cmd/migraterepair"
 	"github.com/stokaro/ptah/cmd/migratestatus"
-	"github.com/stokaro/ptah/cmd/migrateup"
 	"github.com/stokaro/ptah/cmd/migratevalidate"
 )
 
@@ -143,8 +142,8 @@ func newAtlasMigrateCommand() *cobra.Command {
 		},
 	}
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
+	cmd.AddCommand(newAtlasMigrateApplyCommand())
 	for _, verb := range []atlasVerb{
-		atlasMigrateApplyVerb(),
 		atlasMigrateDownVerb(),
 		{
 			use:     "hash",
@@ -197,21 +196,6 @@ func newAtlasMigrateCommand() *cobra.Command {
 	cmd.AddCommand(newAtlasMigrateDiffCommand())
 	cmd.AddCommand(newAtlasMigrateImportCommand())
 	return cmd
-}
-
-func atlasMigrateApplyVerb() atlasVerb {
-	return atlasVerb{
-		use:     "apply",
-		short:   "Apply pending migrations",
-		native:  "migrations up",
-		factory: migrateup.NewMigrateUpCommand,
-		flags: []atlasFlag{
-			atlasNativeString("url", "u", "Database URL to apply migrations to", "db-url"),
-			atlasNativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
-			atlasNativeBool("dry-run", "", "Show migrations without applying them", "dry-run"),
-			atlasNativeString("tx-mode", "", "Transaction mode: file, all, or none", "tx-mode"),
-		},
-	}
 }
 
 func atlasMigrateDownVerb() atlasVerb {

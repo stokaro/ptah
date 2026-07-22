@@ -71,6 +71,31 @@ func TestMigrationsToApplyExecOrderPolicies(t *testing.T) {
 	c.Assert(migrationVersions(got), qt.DeepEquals, []int64{3})
 }
 
+func TestValidateMigrateUpOptionsRejectsAmbiguousTarget(t *testing.T) {
+	c := qt.New(t)
+
+	err := validateMigrateUpOptions(MigrateUpOptions{TargetVersion: 2, Amount: 1})
+
+	c.Assert(err, qt.ErrorMatches, `target version and amount cannot both be set`)
+}
+
+func TestLimitMigrationsToApply(t *testing.T) {
+	c := qt.New(t)
+
+	migrations := testMigrations(1, 2, 3)
+
+	c.Assert(migrationVersions(limitMigrationsToApply(migrations, 0)), qt.DeepEquals, []int64{1, 2, 3})
+	c.Assert(migrationVersions(limitMigrationsToApply(migrations, 2)), qt.DeepEquals, []int64{1, 2})
+	c.Assert(migrationVersions(limitMigrationsToApply(migrations, 5)), qt.DeepEquals, []int64{1, 2, 3})
+}
+
+func TestMergeAppliedVersions(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(mergeAppliedVersions([]int64{1, 3}, nil), qt.DeepEquals, []int64{1, 3})
+	c.Assert(mergeAppliedVersions([]int64{3, 1}, []int64{2, 3}), qt.DeepEquals, []int64{1, 2, 3})
+}
+
 func TestMigrationsToRollbackUsesAppliedSet(t *testing.T) {
 	c := qt.New(t)
 

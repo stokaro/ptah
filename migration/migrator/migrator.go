@@ -52,6 +52,26 @@ type MigrationPlan struct {
 // state.
 type PreMigrationHook func(ctx context.Context, plan MigrationPlan) error
 
+// MigrateUpOptions selects the pending up migration plan.
+type MigrateUpOptions struct {
+	// TargetVersion limits the run to pending migrations at or below this
+	// version. Zero means latest.
+	TargetVersion int64
+	// Amount limits the run to the first N pending migrations after exec-order
+	// and target-version filtering. Zero means all selected migrations.
+	Amount uint64
+	// AllowDirty skips the default dirty revision guard. Callers should expose
+	// this only as an explicit recovery escape hatch.
+	AllowDirty bool
+	// AssumedAppliedVersions are treated as applied for plan selection without
+	// reading or writing revision metadata. This is intended for dry-run paths
+	// that need to model metadata-only operations such as baseline.
+	AssumedAppliedVersions []int64
+	// Preflight runs after the migration lock is acquired and the final plan is
+	// selected, but before any schema or revision changes.
+	Preflight PreMigrationHook
+}
+
 // Migrator handles database migrations for ptah
 type Migrator struct {
 	conn                 *dbschema.DatabaseConnection
@@ -599,11 +619,11 @@ func (m *Migrator) GetAppliedMigrations(ctx context.Context) ([]int64, error) {
 	}
 
 	// Query all applied migration versions
-	rows, err := m.conn.Query(m.getAppliedMigrationsSQL())
+	rows, err := m.conn.QueryContext(ctx, m.getAppliedMigrationsSQL())
 	if err != nil {
 		return nil, fmt.Errorf("failed to query applied migrations: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	applied := make([]int64, 0)
 	for rows.Next() {
@@ -732,42 +752,76 @@ func (m *Migrator) MigrateUp(ctx context.Context) error {
 // MigrateUpWithPreflight migrates up after running hook inside the migration
 // advisory lock. A nil hook is equivalent to [Migrator.MigrateUp].
 func (m *Migrator) MigrateUpWithPreflight(ctx context.Context, hook PreMigrationHook) (err error) {
+	return m.MigrateUpWithOptions(ctx, MigrateUpOptions{Preflight: hook})
+}
+
+// MigrateUpWithOptions migrates up using an explicitly selected apply plan.
+func (m *Migrator) MigrateUpWithOptions(ctx context.Context, opts MigrateUpOptions) (err error) {
+	if err := validateMigrateUpOptions(opts); err != nil {
+		return err
+	}
 	observer := m.migrationObserver()
-	ctx, span := observer.StartSpan(ctx, "ptah.migrate.up", m.operationAttributes(MigrationDirectionUp)...)
+	attrs := m.operationAttributes(MigrationDirectionUp)
+	if opts.TargetVersion > 0 {
+		attrs = append(attrs, attr("migration.requested_target_version", opts.TargetVersion))
+	}
+	if opts.Amount > 0 {
+		attrs = append(attrs, attr("migration.requested_amount", opts.Amount))
+	}
+	ctx, span := observer.StartSpan(ctx, "ptah.migrate.up", attrs...)
 	defer func() { span.End(err) }()
 	ctx = contextWithRootSpan(ctx, span)
 	return m.withMigrationLock(ctx, "migrate up", func(ctx context.Context) error {
-		return m.migrateUpLocked(ctx, hook)
+		return m.migrateUpLocked(ctx, opts)
 	})
 }
 
-func (m *Migrator) migrateUpLocked(ctx context.Context, hook PreMigrationHook) error {
+func validateMigrateUpOptions(opts MigrateUpOptions) error {
+	if opts.TargetVersion < 0 {
+		return fmt.Errorf("target version must be greater than or equal to zero")
+	}
+	if opts.TargetVersion > 0 && opts.Amount > 0 {
+		return fmt.Errorf("target version and amount cannot both be set")
+	}
+	return nil
+}
+
+func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) error {
 	// Initialize the migrations table
 	if err := m.Initialize(ctx); err != nil {
 		return fmt.Errorf("failed to initialize migrations table: %w", err)
 	}
-	if err := m.failIfDirty(ctx); err != nil {
-		return err
+	if !opts.AllowDirty {
+		if err := m.failIfDirty(ctx); err != nil {
+			return err
+		}
+	}
+
+	migrations := m.migrationProvider.Migrations()
+	if opts.TargetVersion > 0 && !hasMigrationVersion(migrations, opts.TargetVersion) {
+		return fmt.Errorf("target version %d was not found in the migration provider", opts.TargetVersion)
 	}
 
 	appliedMigrations, err := m.GetAppliedMigrations(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get applied migrations: %w", err)
 	}
+	appliedMigrations = mergeAppliedVersions(appliedMigrations, opts.AssumedAppliedVersions)
 	currentVersion := maxAppliedVersion(appliedMigrations)
 
-	migrations := m.migrationProvider.Migrations()
 	if err := m.verifyAppliedMigrationChecksums(ctx, migrations); err != nil {
 		return err
 	}
-	migrationsToApply, err := m.migrationsToApply(migrations, appliedMigrations, 0)
+
+	migrationsToApply, err := m.migrationsToApply(migrations, appliedMigrations, opts.TargetVersion)
 	if err != nil {
 		return err
 	}
+	migrationsToApply = limitMigrationsToApply(migrationsToApply, opts.Amount)
 	if err := m.validateUpTransactionMode(migrationsToApply); err != nil {
 		return err
 	}
-	if err := runPreMigrationHook(ctx, hook, MigrationPlan{
+	if err := runPreMigrationHook(ctx, opts.Preflight, MigrationPlan{
 		Direction:      MigrationDirectionUp,
 		CurrentVersion: currentVersion,
 		TargetVersion:  upTargetVersion(currentVersion, migrationsToApply),
@@ -790,6 +844,46 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, hook PreMigrationHook) e
 
 	m.logger.Info("All migrations applied successfully")
 	return nil
+}
+
+func hasMigrationVersion(migrations []*Migration, version int64) bool {
+	for _, migration := range migrations {
+		if migration.Version == version {
+			return true
+		}
+	}
+	return false
+}
+
+func limitMigrationsToApply(migrations []*Migration, amount uint64) []*Migration {
+	if amount == 0 || amount >= uint64(len(migrations)) {
+		return migrations
+	}
+	return migrations[:amount]
+}
+
+func mergeAppliedVersions(applied []int64, assumed []int64) []int64 {
+	if len(assumed) == 0 {
+		return applied
+	}
+	merged := make([]int64, 0, len(applied)+len(assumed))
+	seen := make(map[int64]struct{}, len(applied)+len(assumed))
+	for _, version := range applied {
+		if _, ok := seen[version]; ok {
+			continue
+		}
+		seen[version] = struct{}{}
+		merged = append(merged, version)
+	}
+	for _, version := range assumed {
+		if _, ok := seen[version]; ok {
+			continue
+		}
+		seen[version] = struct{}{}
+		merged = append(merged, version)
+	}
+	slices.Sort(merged)
+	return merged
 }
 
 // MigrateDown migrates the database down to the previous version
