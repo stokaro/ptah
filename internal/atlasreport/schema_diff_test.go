@@ -33,6 +33,13 @@ func TestSchemaDiffCustomSQLTemplate(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "1|CREATE TABLE \"users\" (\"id\" integer);\n|  CREATE TABLE \"users\" (\"id\" integer);\n")
 }
 
+func TestNormalizeMigrateDiffFormat_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(atlasreport.NormalizeMigrateDiffFormat(""), qt.Equals, `{{ sql . "  " }}`)
+	c.Assert(atlasreport.NormalizeMigrateDiffFormat(`{{ sql . "" }}`), qt.Equals, `{{ sql . "" }}`)
+}
+
 func TestSchemaDiffTemplateValidationRejectsUnknownHelpers(t *testing.T) {
 	c := qt.New(t)
 

@@ -1,6 +1,7 @@
 package atlasmigrate
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -12,7 +13,7 @@ import (
 
 	"github.com/stokaro/ptah/dbschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/internal/atlasschema"
+	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/migratesum"
 	"github.com/stokaro/ptah/internal/schemafile"
 	"github.com/stokaro/ptah/migration/migrator"
@@ -29,6 +30,7 @@ type DiffOptions struct {
 	Dir         string
 	ToURLs      []string
 	Name        string
+	Format      string
 	LockTimeout time.Duration
 }
 
@@ -50,6 +52,10 @@ func GenerateDiff(ctx context.Context, conn *dbschema.DatabaseConnection, opts D
 	}
 	if strings.TrimSpace(opts.Name) == "" {
 		opts.Name = "migration"
+	}
+	format := atlasreport.NormalizeMigrateDiffFormat(opts.Format)
+	if err := atlasreport.ValidateSchemaDiffTemplate(format); err != nil {
+		return DiffResult{}, err
 	}
 
 	if err := os.MkdirAll(opts.Dir, 0755); err != nil {
@@ -91,7 +97,11 @@ func GenerateDiff(ctx context.Context, conn *dbschema.DatabaseConnection, opts D
 	if err != nil {
 		return DiffResult{}, fmt.Errorf("generate migration SQL: %w", err)
 	}
-	path, err := writeMigrationFile(opts.Dir, opts.Name, atlasschema.FormatMigrationSQL(statements))
+	sqlText, err := renderMigrationDiffSQL(statements, format)
+	if err != nil {
+		return DiffResult{}, err
+	}
+	path, err := writeMigrationFile(opts.Dir, opts.Name, sqlText)
 	if err != nil {
 		return DiffResult{}, err
 	}
@@ -101,6 +111,15 @@ func GenerateDiff(ctx context.Context, conn *dbschema.DatabaseConnection, opts D
 		return DiffResult{}, fmt.Errorf("write atlas.sum: %w", err)
 	}
 	return DiffResult{MigrationPath: path, SumPath: sumPath}, nil
+}
+
+func renderMigrationDiffSQL(statements []string, format string) (string, error) {
+	report := atlasreport.NewSchemaDiff(nil, nil, statements)
+	var out bytes.Buffer
+	if err := atlasreport.WriteSchemaDiff(&out, format, report); err != nil {
+		return "", err
+	}
+	return out.String(), nil
 }
 
 type dirLock struct {

@@ -1,12 +1,14 @@
 ---
 title: Atlas-compatible CLI
-description: Use Atlas-style commands through ptah atlas or the ptah-compat binary.
+description: Use Atlas-style commands through ptah atlas.
 ---
 
-Atlas-compatible command paths are available in two forms:
+Atlas-compatible command paths live under `ptah atlas <command> ...` inside the
+native Ptah CLI tree.
 
-- `ptah atlas <command> ...` inside the native Ptah CLI tree.
-- `ptah-compat <command> ...` as a binary-level Atlas-compatible entry point.
+The separate `ptah-compat` binary is a binary-level drop-in replacement for
+scripts that need Atlas-style root commands, including scripts that call an
+executable named `atlas`.
 
 Ptah does not add root-level Atlas spellings such as `ptah migrate apply` or
 `ptah schema inspect` to the native `ptah` binary. Those paths are intentionally
@@ -170,10 +172,21 @@ ptah atlas migrate diff add_users \
 ```
 
 Use `--lock-timeout` to bound waiting for Ptah's local migration-directory lock
-while the command validates checksums and writes the new migration. Database
-desired-state URLs, `env://` project attributes, schema filters, Docker dev
-databases, and `--format` templates fail explicitly until their semantics are
-implemented.
+while the command validates checksums and writes the new migration. The default
+migration-file format matches Atlas's two-space SQL indentation template. Use
+`--format` to render the generated migration SQL through Atlas-style Go
+templates with `sql` and `.MarshalSQL`, for example to disable indentation:
+
+```bash
+ptah atlas migrate diff add_users \
+  --dir file://migrations \
+  --to file://schema.sql \
+  --dev-url "sqlite://dev.db" \
+  --format '{{ sql . "" }}'
+```
+
+Database desired-state URLs, `env://` project attributes, schema filters, and
+Docker dev databases fail explicitly until their semantics are implemented.
 
 ## Migration Validate
 
@@ -218,26 +231,8 @@ ptah atlas migrate import \
 ptah atlas migrate lint --dir ./migrations --latest 1
 ```
 
-For binary-level drop-in usage:
-
-```bash
-ptah-compat migrate apply \
-  --url "$DATABASE_URL" \
-  --dir ./migrations
-
-ptah-compat schema apply \
-  --url "$DATABASE_URL" \
-  --to file://schema.sql \
-  --dry-run
-ptah-compat schema inspect --url "$DATABASE_URL"
-ptah-compat schema fmt schema.hcl
-ptah-compat migrate import \
-  --from "file://goose?format=goose" \
-  --to "file://migrations"
-```
-
-For existing scripts that already call `atlas`, install or copy `ptah-compat`
-under that executable name:
+For existing scripts that already call `atlas`, install or copy the
+`ptah-compat` drop-in replacement under that executable name:
 
 ```bash
 install_dir="$(go env GOPATH)/bin"
@@ -269,13 +264,10 @@ When converting scripts, keep the `atlas` namespace in the Ptah command:
 | `ptah atlas migrate apply --url "$DATABASE_URL" --dir ./migrations` | `ptah migrate apply --url "$DATABASE_URL" --dir ./migrations` |
 | `ptah atlas schema inspect --url "$DATABASE_URL"` | `ptah schema inspect --url "$DATABASE_URL"` |
 
-When replacing an existing Atlas binary in scripts, use the compatibility binary
-instead of adding root-level Atlas spellings to `ptah`:
+When replacing an existing Atlas binary in scripts, use the `ptah-compat`
+drop-in replacement instead of adding root-level Atlas spellings to `ptah`:
 
 ```bash
-ptah-compat migrate apply --url "$DATABASE_URL" --dir ./migrations
-
-# Or install/copy ptah-compat as "atlas" for existing scripts.
 atlas schema apply --url "$DATABASE_URL" --to file://schema.sql --dry-run
 atlas schema inspect --url "$DATABASE_URL"
 ```
