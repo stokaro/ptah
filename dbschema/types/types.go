@@ -32,6 +32,8 @@ type DBTable struct {
 	Columns       []DBColumn `json:"columns"`
 	EstimatedRows int64      `json:"estimated_rows,omitempty"` // Best-effort planner estimate from database statistics
 	RLSEnabled    bool       `json:"rls_enabled"`              // Whether RLS is enabled on this table (PostgreSQL)
+	Strict        bool       `json:"strict,omitempty"`         // SQLite STRICT table option
+	WithoutRowID  bool       `json:"without_rowid,omitempty"`  // SQLite WITHOUT ROWID table option
 }
 
 // QualifiedName returns schema.table when Schema is set, or Name otherwise.

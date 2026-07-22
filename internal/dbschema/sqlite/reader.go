@@ -57,7 +57,7 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	var schema types.DBSchema
 	for _, tableName := range catalog.tableNames {
 		ddl := catalog.tableDDLByName[tableName]
-		table := r.readTable(tableName, columnsByTable[tableName])
+		table := r.readTable(tableName, columnsByTable[tableName], ddl)
 		schema.Tables = append(schema.Tables, table)
 
 		schema.Indexes = append(schema.Indexes, indexesByTable[tableName]...)
@@ -171,13 +171,25 @@ func (r *Reader) readSchemaCatalog() (sqliteSchemaCatalog, error) {
 	return catalog, nil
 }
 
-func (r *Reader) readTable(name string, columns []types.DBColumn) types.DBTable {
+func (r *Reader) readTable(name string, columns []types.DBColumn, ddl string) types.DBTable {
+	strict, withoutRowID := sqliteTableOptions(ddl)
 	return types.DBTable{
-		Name:    name,
-		Schema:  r.outputSchema(),
-		Type:    "TABLE",
-		Columns: columns,
+		Name:         name,
+		Schema:       r.outputSchema(),
+		Type:         "TABLE",
+		Columns:      columns,
+		Strict:       strict,
+		WithoutRowID: withoutRowID,
 	}
+}
+
+func sqliteTableOptions(ddl string) (strict bool, withoutRowID bool) {
+	idx := strings.LastIndex(ddl, ")")
+	if idx < 0 {
+		return false, false
+	}
+	tail := strings.ToUpper(ddl[idx+1:])
+	return strings.Contains(tail, "STRICT"), strings.Contains(tail, "WITHOUT ROWID")
 }
 
 func (r *Reader) outputSchema() string {
@@ -1347,15 +1359,16 @@ func parseTriggerDDL(name, table, schema, ddl string) types.DBTrigger {
 		ForEach: "ROW",
 		Body:    strings.TrimSpace(ddl),
 	}
-	matches := triggerHeaderPattern.FindStringSubmatch(ddl)
+	matches := triggerHeaderPattern.FindStringSubmatchIndex(ddl)
 	if len(matches) == 0 {
 		return trigger
 	}
-	trigger.Timing = strings.ToUpper(strings.Join(strings.Fields(matches[1]), " "))
-	trigger.Event = strings.ToUpper(matches[2])
-	trigger.Table = strings.Trim(matches[3], `"`)
-	if strings.TrimSpace(matches[4]) != "" {
-		trigger.ForEach = strings.ToUpper(matches[4])
+	trigger.Body = strings.TrimSpace(ddl[matches[1]:])
+	trigger.Timing = strings.ToUpper(strings.Join(strings.Fields(ddl[matches[2]:matches[3]]), " "))
+	trigger.Event = strings.ToUpper(ddl[matches[4]:matches[5]])
+	trigger.Table = strings.Trim(ddl[matches[6]:matches[7]], `"`)
+	if matches[8] >= 0 {
+		trigger.ForEach = strings.ToUpper(ddl[matches[8]:matches[9]])
 	}
 	return trigger
 }
