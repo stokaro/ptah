@@ -59,6 +59,7 @@ export default defineConfig({
             { slug: 'reference/configuration' },
             { slug: 'reference/capabilities' },
             { slug: 'reference/comparison' },
+            { slug: 'reference/atlas-docs-coverage' },
             { slug: 'reference/exit-codes' },
           ],
         },

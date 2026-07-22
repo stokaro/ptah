@@ -37,6 +37,7 @@ import { LinkCard, CardGrid } from '@astrojs/starlight/components';
   <LinkCard title="CI" href="./workflows/ci/" description="Run Ptah checks in pull requests and fail safely on destructive changes." />
   <LinkCard title="Examples" href="./examples/go-model/" description="Runnable Go, YAML, Atlas HCL, migration-directory, and schema visualization examples." />
   <LinkCard title="Comparison" href="./reference/comparison/" description="Command parity, feature parity, dialect support, config precedence, and exit behavior." />
+  <LinkCard title="Atlas docs coverage" href="./reference/atlas-docs-coverage/" description="Crosswalk Atlas documentation areas to Ptah docs, implementation status, conformance, and follow-up issues." />
   <LinkCard title="Troubleshooting" href="./operate/troubleshooting/" description="Fix Graphviz, database URL, hash mismatch, unsupported capability, and conformance issues." />
 </CardGrid>
 
@@ -49,7 +50,7 @@ import { LinkCard, CardGrid } from '@astrojs/starlight/components';
 | An existing migration directory | [Migrations](./workflows/migrations/) |
 | Scripts written for Atlas OSS commands | [Atlas-compatible CLI](./workflows/atlas-cli/) |
 | A pull-request gate to build | [CI](./workflows/ci/) |
-| A compatibility question | [Conformance](./operate/conformance/) |
+| A compatibility question | [Atlas docs coverage](./reference/atlas-docs-coverage/) and [Conformance](./operate/conformance/) |
 
 :::caution[Atlas parity status]
 Ptah is working toward Atlas OSS command and behavior parity, but full parity is not claimed here. The current evidence is tracked in the separate conformance repository and summarized in [Conformance](./operate/conformance/).
