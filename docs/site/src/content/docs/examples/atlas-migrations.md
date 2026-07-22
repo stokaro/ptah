@@ -48,7 +48,8 @@ Use `ptah atlas migrate apply --dir ./migrations --url "$DATABASE_URL"` when
 you need the Atlas-compatible command path. That path uses Atlas revision-table
 metadata by default and supports Atlas-style apply controls such as positional
 `amount`, `--to-version`, `--baseline`, `--allow-dirty`, `--tx-mode`,
-`--exec-order`, `--revisions-schema`, `--lock-timeout`, and `--dry-run`.
+`--exec-order`, `--revisions-schema`, `--lock-timeout`, `--lock-name`,
+`--dry-run`, and Go-template `--format` output.
 
 ## Roll back
 

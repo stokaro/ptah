@@ -3,6 +3,7 @@ package atlas
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1219,17 +1220,205 @@ func TestNewAtlasCommand_MigrateApplyDryRunBaselinePlansRemainingMigrations(t *t
 	assertSQLiteTableMissing(c, dbPath, "dry_baseline_three")
 }
 
-func TestNewAtlasCommand_MigrateApplyRejectsFormatAndAmbiguousTarget(t *testing.T) {
+func TestNewAtlasCommand_MigrateApplyFormatsJSONResult(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "format-json.db")
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigration(c, migrationsDir, "1_create_users.sql", `
+CREATE TABLE format_json_users (id INTEGER PRIMARY KEY);
+CREATE TABLE format_json_posts (id INTEGER PRIMARY KEY);
+`)
+	dbURL := "sqlite://user:secret@" + dbPath + "?password=hidden"
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "apply",
+		"--url", dbURL,
+		"--dir", "file://" + migrationsDir,
+		"--format", "{{ json . }}",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Not(qt.Contains), "Migrating to version")
+	c.Assert(out.String(), qt.Not(qt.Contains), "Migration complete")
+
+	var result atlasMigrateApplyJSONResult
+	c.Assert(json.Unmarshal(out.Bytes(), &result), qt.IsNil)
+	c.Assert(result.Driver, qt.Equals, "sqlite")
+	c.Assert(result.URL, qt.Equals, "sqlite://user@"+dbPath+"?password=xxxxx")
+	c.Assert(result.Current, qt.Equals, "")
+	c.Assert(result.Target, qt.Equals, "1")
+	c.Assert(result.Message, qt.Equals, "Migrated to version 1 from  (1 migrations in total)")
+	c.Assert(result.Pending, qt.HasLen, 1)
+	c.Assert(result.Pending[0].Name, qt.Equals, "1_create_users.sql")
+	c.Assert(result.Pending[0].Version, qt.Equals, "1")
+	c.Assert(result.Pending[0].Description, qt.Equals, "Create Users")
+	c.Assert(result.Applied, qt.HasLen, 1)
+	c.Assert(result.Applied[0].Name, qt.Equals, "1_create_users.sql")
+	c.Assert(result.Applied[0].Applied, qt.DeepEquals, []string{
+		"CREATE TABLE format_json_users (id INTEGER PRIMARY KEY)",
+		"CREATE TABLE format_json_posts (id INTEGER PRIMARY KEY)",
+	})
+	assertSQLiteTableExists(c, dbPath, "format_json_users")
+	assertSQLiteTableExists(c, dbPath, "format_json_posts")
+	c.Assert(sqliteAtlasAppliedVersions(c, dbPath), qt.DeepEquals, []string{"1"})
+}
+
+func TestNewAtlasCommand_MigrateApplyFormatsCustomTemplate(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "format-template.db")
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigration(c, migrationsDir, "1_one.sql", "CREATE TABLE format_template_one (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "2_two.sql", "CREATE TABLE format_template_two (id INTEGER PRIMARY KEY);")
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--format", "{{ .Env.Driver }}/{{ .Driver }}:{{ .Current }}>{{ .Target }}:{{ len .Pending }}:{{ len .Applied }}:{{ (index .Applied 0).Name }}",
+		"1",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "sqlite/sqlite:>1:1:1:1_one.sql")
+	assertSQLiteTableExists(c, dbPath, "format_template_one")
+	assertSQLiteTableMissing(c, dbPath, "format_template_two")
+}
+
+func TestNewAtlasCommand_MigrateApplyFormatsDryRunResult(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "format-dry-run.db")
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigration(c, migrationsDir, "1_dry_run.sql", "CREATE TABLE format_dry_run (id INTEGER PRIMARY KEY);")
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--dry-run",
+		"--format", "{{ json . }}",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Not(qt.Contains), "Dry run mode")
+	var result atlasMigrateApplyJSONResult
+	c.Assert(json.Unmarshal(out.Bytes(), &result), qt.IsNil)
+	c.Assert(result.Target, qt.Equals, "1")
+	c.Assert(result.Pending, qt.HasLen, 1)
+	c.Assert(result.Applied, qt.HasLen, 0)
+	assertSQLiteTableMissing(c, dbPath, "format_dry_run")
+}
+
+func TestNewAtlasCommand_MigrateApplyFormatsDryRunBaselineResult(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "format-dry-baseline.db")
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigration(c, migrationsDir, "1_one.sql", "CREATE TABLE format_dry_baseline_one (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "2_two.sql", "CREATE TABLE format_dry_baseline_two (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyMigration(c, migrationsDir, "3_three.sql", "CREATE TABLE format_dry_baseline_three (id INTEGER PRIMARY KEY);")
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--baseline", "2",
+		"--dry-run",
+		"--format", "{{ json . }}",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	var result atlasMigrateApplyJSONResult
+	c.Assert(json.Unmarshal(out.Bytes(), &result), qt.IsNil)
+	c.Assert(result.Current, qt.Equals, "2")
+	c.Assert(result.Target, qt.Equals, "3")
+	c.Assert(result.Pending, qt.HasLen, 1)
+	c.Assert(result.Pending[0].Name, qt.Equals, "3_three.sql")
+	c.Assert(result.Applied, qt.HasLen, 0)
+	assertSQLiteTableMissing(c, dbPath, "format_dry_baseline_one")
+	assertSQLiteTableMissing(c, dbPath, "format_dry_baseline_two")
+	assertSQLiteTableMissing(c, dbPath, "format_dry_baseline_three")
+}
+
+func TestNewAtlasCommand_MigrateApplyFormatsNoopResult(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "format-noop.db")
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigration(c, migrationsDir, "1_noop.sql", "CREATE TABLE format_noop (id INTEGER PRIMARY KEY);")
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+	})
+	c.Assert(cmd.Execute(), qt.IsNil)
+
+	cmd = NewAtlasCommand()
+	out.Reset()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--format", "{{ json . }}",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Not(qt.Contains), "No migration files to execute.")
+	var result atlasMigrateApplyJSONResult
+	c.Assert(json.Unmarshal(out.Bytes(), &result), qt.IsNil)
+	c.Assert(result.Current, qt.Equals, "1")
+	c.Assert(result.Target, qt.Equals, "1")
+	c.Assert(result.Message, qt.Equals, "No migration files to execute")
+	c.Assert(result.Pending, qt.HasLen, 0)
+	c.Assert(result.Applied, qt.HasLen, 0)
+}
+
+func TestNewAtlasCommand_MigrateApplyRejectsEmptyFormatAndAmbiguousTarget(t *testing.T) {
 	c := qt.New(t)
 	cmd := NewAtlasCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"migrate", "apply", "--format", "{{ json . }}"})
+	cmd.SetArgs([]string{"migrate", "apply", "--format", ""})
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `atlas migrate apply accepts --format, but Ptah does not implement its behavior yet`)
+	c.Assert(err, qt.ErrorMatches, `--format must not be empty`)
 
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
@@ -1249,6 +1438,65 @@ func TestNewAtlasCommand_MigrateApplyRejectsFormatAndAmbiguousTarget(t *testing.
 	err = cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `amount argument and --to-version cannot both be set`)
+}
+
+func TestNewAtlasCommand_MigrateApplyRejectsInvalidFormatBeforeApply(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "invalid-format.db")
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigration(c, migrationsDir, "1_invalid_format.sql", "CREATE TABLE invalid_format_applied (id INTEGER PRIMARY KEY);")
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--format", "{{ if }}",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `parse --format template: .*`)
+	assertSQLiteTableMissing(c, dbPath, "invalid_format_applied")
+}
+
+func TestNewAtlasCommand_MigrateApplyWritesFormatOnApplyError(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "format-error.db")
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigration(c, migrationsDir, "1_error.sql", "CREATE TABLE error_before (id INTEGER PRIMARY KEY); SELECT * FROM missing_table;")
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{
+		"migrate", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--format", "{{ json . }}",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `(?s)error applying migrations: .*missing_table.*`)
+	var result atlasMigrateApplyJSONResult
+	c.Assert(json.Unmarshal(out.Bytes(), &result), qt.IsNil)
+	c.Assert(result.Error, qt.Contains, "missing_table")
+	c.Assert(result.Pending, qt.HasLen, 1)
+	c.Assert(result.Applied, qt.HasLen, 1)
+	c.Assert(result.Applied[0].Applied, qt.DeepEquals, []string{
+		"CREATE TABLE error_before (id INTEGER PRIMARY KEY)",
+	})
+	c.Assert(result.Applied[0].Error.Text, qt.Contains, "missing_table")
+	c.Assert(result.Applied[0].Error.Stmt, qt.Equals, "SELECT * FROM missing_table")
+	assertSQLiteTableMissing(c, dbPath, "error_before")
 }
 
 func TestNewAtlasCommand_MigrateApplyAcceptsLockName(t *testing.T) {
@@ -1469,6 +1717,28 @@ func TestNewAtlasCommand_MigrateDiffRejectsUnsupportedFormat(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `atlas migrate diff accepts --format, but Ptah does not implement its behavior yet`)
+}
+
+type atlasMigrateApplyJSONResult struct {
+	Driver  string
+	URL     string
+	Pending []struct {
+		Name        string
+		Version     string
+		Description string
+	}
+	Applied []struct {
+		Name    string
+		Applied []string
+		Error   struct {
+			Stmt string
+			Text string
+		}
+	}
+	Current string
+	Target  string
+	Error   string
+	Message string
 }
 
 func writeAtlasApplyMigration(c *qt.C, dir, name, sql string) {
