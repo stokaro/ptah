@@ -1,6 +1,7 @@
 package atlas
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdflags"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/schemafile"
 	"github.com/stokaro/ptah/migration/migrator"
@@ -38,8 +40,7 @@ Compares a live database from --url with local --to schema files and applies the
 generated schema changes directly to the target database. This implementation
 currently supports local file:// schema files with .hcl, .yaml, .yml, or .sql
 extensions. Database desired-state URLs, Atlas project env:// URLs, schema
-filters, custom output templates, and transaction-mode control remain explicit
-follow-up gaps.`,
+filters, and custom output templates remain explicit follow-up gaps.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaApply(cmd, opts)
 		},
@@ -64,6 +65,10 @@ follow-up gaps.`,
 
 func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error {
 	if err := validateAtlasSchemaApplyOptions(cmd, opts); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	txMode, err := migrator.ParseMigrationTxMode(opts.txMode)
+	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 
@@ -113,8 +118,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	}
 
 	conn.SchemaWriter().SetDryRun(false)
-	migration := migrator.CreateMigrationFromSQL(0, "atlas schema apply", sqlText, "")
-	if err := migration.Up(cmd.Context(), conn); err != nil {
+	if err := applyAtlasSchemaChanges(cmd.Context(), conn, txMode, sqlText); err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("apply schema changes: %w", err))
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), "Schema apply completed successfully.")
@@ -131,15 +135,76 @@ func validateAtlasSchemaApplyOptions(cmd *cobra.Command, opts atlasSchemaApplyOp
 	if strings.TrimSpace(opts.format) != "" {
 		return fmt.Errorf("atlas schema apply accepts --format, but Ptah does not implement its behavior yet")
 	}
-	if strings.TrimSpace(opts.txMode) != "" {
-		return fmt.Errorf("atlas schema apply accepts --tx-mode, but Ptah does not implement its behavior yet")
-	}
 	for _, name := range []string{"schema", "exclude", "include"} {
 		if values, err := cmd.Flags().GetStringArray(name); err == nil && len(values) > 0 {
 			return fmt.Errorf("atlas schema apply accepts --%s, but Ptah only supports local schema files for this command yet", name)
 		}
 	}
 	return ensureLocalSchemaURLs("--to", opts.toURLs)
+}
+
+type atlasSchemaApplyExecutor interface {
+	ExecuteSQL(ctx context.Context, sql string, args ...any) error
+}
+
+func applyAtlasSchemaChanges(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	txMode migrator.MigrationTxMode,
+	sqlText string,
+) error {
+	statements := splitAtlasSchemaApplyStatements(sqlText, conn.Info().Dialect)
+	switch txMode {
+	case migrator.MigrationTxModeNone:
+		return executeAtlasSchemaApplyStatements(ctx, conn.Writer(), statements)
+	case migrator.MigrationTxModeFile, migrator.MigrationTxModeAll:
+		// Schema apply generates one plan, so Atlas file/all modes both wrap
+		// the complete generated plan in one transaction.
+		tx, err := conn.SchemaWriter().BeginTransaction(ctx)
+		if err != nil {
+			return fmt.Errorf("begin schema apply transaction: %w", err)
+		}
+		if err := executeAtlasSchemaApplyStatements(ctx, tx, statements); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit schema apply transaction: %w", err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("invalid tx-mode %q", txMode)
+	}
+}
+
+func splitAtlasSchemaApplyStatements(sqlText, dialect string) []string {
+	statements := sqlutil.SplitSQLStatementsForDialect(sqlText, dialect)
+	filtered := statements[:0]
+	for _, stmt := range statements {
+		stmt = strings.TrimSpace(sqlutil.StripComments(stmt))
+		if stmt != "" {
+			filtered = append(filtered, stmt)
+		}
+	}
+	return filtered
+}
+
+func executeAtlasSchemaApplyStatements(ctx context.Context, executor atlasSchemaApplyExecutor, statements []string) error {
+	for i, stmt := range statements {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			continue
+		}
+		if err := executor.ExecuteSQL(ctx, stmt); err != nil {
+			return &migrator.MigrationExecutionError{
+				Err:            fmt.Errorf("failed to execute SQL statement: %w", err),
+				Statement:      stmt,
+				StatementIndex: i + 1,
+				Total:          len(statements),
+			}
+		}
+	}
+	return nil
 }
 
 func validateAtlasDevURLDialect(devURL, targetDialect string) error {
