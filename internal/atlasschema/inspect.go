@@ -4,12 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/atlasurl"
 	"github.com/stokaro/ptah/internal/convert/dbschematogo"
+	"github.com/stokaro/ptah/internal/schemascope"
 )
 
 // InspectOptions configures Atlas-compatible schema inspection.
@@ -65,13 +65,5 @@ func Inspect(conn *dbschema.DatabaseConnection, opts InspectOptions) (string, er
 
 // SplitSchemaNames expands repeated and comma-separated Atlas schema filters.
 func SplitSchemaNames(values []string) []string {
-	var schemas []string
-	for _, value := range values {
-		for part := range strings.SplitSeq(value, ",") {
-			if schema := strings.TrimSpace(part); schema != "" {
-				schemas = append(schemas, schema)
-			}
-		}
-	}
-	return schemas
+	return schemascope.SplitNames(values)
 }

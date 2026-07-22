@@ -185,8 +185,10 @@ ptah atlas migrate diff add_users \
   --format '{{ sql . "" }}'
 ```
 
-Database desired-state URLs, `env://` project attributes, schema filters, and
-Docker dev databases fail explicitly until their semantics are implemented.
+`--schema` accepts repeated or comma-separated schema names and narrows the
+replayed dev database state plus local desired schema files before the diff is
+planned. Database desired-state URLs, `env://` project attributes, and Docker
+dev databases fail explicitly until their semantics are implemented.
 
 ## Migration Validate
 

@@ -3,8 +3,7 @@
 Ptah is a schema and migration toolkit for Go projects. It can read annotated Go
 models, YAML schema files, supported Atlas HCL schema files, and live databases;
 render SQL; plan and run migrations; validate migration hashes; and expose
-Atlas-compatible command paths under `ptah atlas <command> ...` and through the
-separate `ptah-compat` binary.
+Atlas-compatible command paths under `ptah atlas <command> ...`.
 
 Ptah is pre-GA. The native command tree is still allowed to change when a cleaner
 architecture is better.
@@ -81,15 +80,17 @@ Ptah has two CLI surfaces:
 
 - Native Ptah commands such as `ptah schema render`, `ptah db read`,
   `ptah migrations up`, and `ptah viz`.
-- Atlas-compatible commands, either under `ptah atlas <command> ...` or through
-  the binary-level `ptah-compat <command> ...` entry point. A copied or
-  symlinked `ptah-compat` executable named `atlas` presents Atlas-style root
-  commands for existing scripts.
+- Atlas-compatible commands under `ptah atlas <command> ...`, such as
+  `ptah atlas migrate apply` and `ptah atlas schema inspect`.
+
+The separate `ptah-compat` binary is the binary-level drop-in replacement for
+scripts that need Atlas-style root commands. A copied or symlinked
+`ptah-compat` executable named `atlas` presents those commands under the
+executable name expected by existing scripts.
 
 Do not use root-level Atlas spellings such as `ptah migrate apply` or
 `ptah schema inspect`; those paths are intentionally absent from the native
-`ptah` binary. Use `ptah-compat migrate apply` or a binary named `atlas` when a
-script needs Atlas-style root commands.
+`ptah` binary.
 
 See [native CLI command tree](docs/native_cli.md) and
 [Atlas-compatible CLI](docs/site/src/content/docs/workflows/atlas-cli.md).

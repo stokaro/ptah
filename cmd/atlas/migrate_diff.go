@@ -22,6 +22,7 @@ type atlasMigrateDiffOptions struct {
 	dirURL      string
 	dirFormat   string
 	format      string
+	schemas     []string
 	lockTimeout string
 }
 
@@ -37,8 +38,9 @@ directory on it, compares the resulting state to local --to schema files, and
 writes a new Atlas-style single-file migration plus atlas.sum when changes are
 found. Use a disposable dev database. This implementation currently supports
 local file:// migration directories and local .hcl, .yaml, .yml, or .sql schema
-files. Database URLs, env:// URLs, schema filters, lock flags other than
---lock-timeout, and Docker dev databases remain explicit follow-up gaps.`,
+files. Use --schema to limit the comparison to selected schema names. Database
+URLs, env:// URLs, lock flags other than --lock-timeout, and Docker dev
+databases remain explicit follow-up gaps.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := "migration"
@@ -54,7 +56,7 @@ files. Database URLs, env:// URLs, schema filters, lock flags other than
 	flags.StringVar(&opts.dirURL, "dir", "file://migrations", "Migration directory URL")
 	flags.StringVar(&opts.dirFormat, "dir-format", "atlas", "Migration directory format; only atlas is implemented")
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
-	flags.StringArray("schema", nil, "Schemas to diff when database URLs are used")
+	flags.StringArrayVar(&opts.schemas, "schema", nil, "Schemas to diff")
 	flags.StringVar(&opts.lockTimeout, "lock-timeout", "", "Timeout for acquiring Atlas migration directory locks")
 	cmdutil.ConfigureCommandArgs(cmd, nil)
 	return cmd
@@ -95,6 +97,7 @@ func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name 
 		ToURLs:      opts.toURLs,
 		Name:        name,
 		Format:      format,
+		Schemas:     opts.schemas,
 		LockTimeout: lockTimeout,
 	})
 	if err != nil {
@@ -119,9 +122,6 @@ func validateAtlasMigrateDiffOptions(cmd *cobra.Command, opts atlasMigrateDiffOp
 	dirFormat := strings.ToLower(strings.TrimSpace(opts.dirFormat))
 	if dirFormat != "" && dirFormat != string(migrator.MigrationDirFormatAtlas) {
 		return fmt.Errorf("atlas migrate diff currently writes Atlas-format migration directories only")
-	}
-	if values, err := cmd.Flags().GetStringArray("schema"); err == nil && len(values) > 0 {
-		return fmt.Errorf("atlas migrate diff accepts --schema, but Ptah only supports local schema files for this command yet")
 	}
 	if strings.HasPrefix(strings.TrimSpace(opts.devURL), "docker://") {
 		return fmt.Errorf("atlas migrate diff accepts docker --dev-url values, but Ptah requires a directly connectable dev database URL")
