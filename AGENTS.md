@@ -115,6 +115,70 @@ Go 1.22 and newer makes range variables per-iteration, so the historical
 `test := test` workaround is not needed when using `c.Run()` closures in
 table-driven tests unless intentionally taking the address of a loop variable.
 
+Bad:
+
+```go
+func TestDialectFromURL(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name    string
+		rawURL  string
+		want    string
+		wantErr string
+	}{
+		{name: "postgres", rawURL: "postgres://localhost/dev", want: "postgres"},
+		{name: "unsupported", rawURL: "spanner://localhost/dev", wantErr: `unsupported --dev-url dialect "spanner://localhost/dev"`},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			got, err := atlasurl.DialectFromURL(test.rawURL)
+			if test.wantErr != "" {
+				c.Assert(err, qt.ErrorMatches, test.wantErr)
+				return
+			}
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+```
+
+Good:
+
+```go
+func TestDialectFromURL_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name   string
+		rawURL string
+		want   string
+	}{
+		{name: "postgres", rawURL: "postgres://localhost/dev", want: "postgres"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			got, err := atlasurl.DialectFromURL(test.rawURL)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+func TestDialectFromURL_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	c.Run("unsupported", func(c *qt.C) {
+		got, err := atlasurl.DialectFromURL("spanner://localhost/dev")
+		c.Assert(err, qt.ErrorMatches, `unsupported --dev-url dialect "spanner://localhost/dev"`)
+		c.Assert(got, qt.Equals, "")
+	})
+}
+```
+
 ### Do Not Hide Conditionals In Helpers
 
 Avoid helper functions that mask conditional logic, such as choosing between
@@ -268,6 +332,27 @@ By default, all Go tests use black-box testing:
 - Package name: `package atlasurl_test` with the `_test` suffix.
 - Test only exported API.
 
+Bad:
+
+```go
+package atlasurl
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+)
+
+func TestDialectFromURL_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	got, err := DialectFromURL("postgres://localhost/dev")
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.Equals, "postgres")
+}
+```
+
+Good:
+
 ```go
 package atlasurl_test
 
@@ -302,6 +387,26 @@ Requirements for white-box tests:
 - Package name: `package parser` without the `_test` suffix.
 - Include a comment immediately after the `package` line explaining the
   justification.
+
+Bad:
+
+```go
+package parser
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+)
+
+func Test_cursor(t *testing.T) {
+	c := qt.New(t)
+	cursor := newCursor("CREATE TABLE users (id BIGINT);")
+	c.Assert(cursor.peek(), qt.Equals, "CREATE")
+}
+```
+
+Good:
 
 ```go
 package parser
