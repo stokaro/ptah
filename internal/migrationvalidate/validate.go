@@ -4,12 +4,9 @@ package migrationvalidate
 import (
 	"context"
 	"fmt"
-	"io"
-	"log/slog"
-	"os"
 
-	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/migratesum"
+	"github.com/stokaro/ptah/internal/migrationreplay"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
@@ -43,37 +40,15 @@ func Validate(ctx context.Context, opts Options) (Result, error) {
 		return result, nil
 	}
 
-	conn, err := dbschema.ConnectToDatabase(ctx, opts.DevURL)
-	if err != nil {
-		return result, fmt.Errorf("error connecting to dev database: %w", err)
-	}
-	defer dbschema.CloseAndWarn(conn)
-
-	if err := replayMigrations(ctx, conn, opts.Dir, migrationFormatForSum(integrity), revisionFormatForSum(integrity)); err != nil {
+	if err := migrationreplay.Replay(ctx, migrationreplay.Options{
+		Dir:       opts.Dir,
+		DirFormat: migrationFormatForSum(integrity),
+		DevURL:    opts.DevURL,
+	}); err != nil {
 		return result, fmt.Errorf("error validating migration SQL on dev database: %w", err)
 	}
 	result.DevSQLValidated = true
 	return result, nil
-}
-
-func replayMigrations(
-	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
-	dir string,
-	dirFormat migrator.MigrationDirFormat,
-	revisionFormat migrator.RevisionTableFormat,
-) error {
-	mig, err := migrator.NewFSMigrator(
-		conn,
-		os.DirFS(dir),
-		migrator.WithMigrationDirFormat(dirFormat),
-	)
-	if err != nil {
-		return fmt.Errorf("error registering migrations: %w", err)
-	}
-	mig = mig.WithRevisionTableFormat(revisionFormat).
-		WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	return mig.MigrateUp(ctx)
 }
 
 func migrationFormatForSum(result *migratesum.Result) migrator.MigrationDirFormat {
@@ -81,11 +56,4 @@ func migrationFormatForSum(result *migratesum.Result) migrator.MigrationDirForma
 		return migrator.MigrationDirFormatAtlas
 	}
 	return migrator.MigrationDirFormatPtah
-}
-
-func revisionFormatForSum(result *migratesum.Result) migrator.RevisionTableFormat {
-	if result != nil && result.SumFileName == migratesum.AtlasFileName {
-		return migrator.RevisionTableFormatAtlas
-	}
-	return migrator.RevisionTableFormatPtah
 }

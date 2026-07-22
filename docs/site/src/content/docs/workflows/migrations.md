@@ -110,8 +110,9 @@ ptah migrations validate --dir ./migrations --dir-format atlas
 ptah migrations up --db-url "$DATABASE_URL" --migrations-dir ./migrations --dir-format atlas
 ```
 
-Add `--dev-url` to `ptah migrations validate` when CI should also replay the
-migration directory on a disposable database and catch SQL execution failures:
+Add `--dev-url` to `ptah migrations validate` when CI should also clean and
+replay the migration directory on a disposable database and catch SQL execution
+failures:
 
 ```bash
 ptah migrations validate \

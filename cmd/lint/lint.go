@@ -23,6 +23,8 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
+	"github.com/stokaro/ptah/internal/atlasurl"
+	"github.com/stokaro/ptah/internal/migrationreplay"
 	"github.com/stokaro/ptah/migration/lint"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/risk"
@@ -51,6 +53,7 @@ func NewLintCommand() *cobra.Command {
 	var configPath string
 	var atlasEnv string
 	var envName string
+	var devURL string
 	var disabled []string
 	var failOn string
 	var latest uint
@@ -78,6 +81,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 				format:     format,
 				configPath: configPath,
 				atlasEnv:   atlasEnv,
+				devURL:     devURL,
 				disabled:   disabled,
 				failOn:     failOn,
 				latest:     latest,
@@ -92,6 +96,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 	cmd.Flags().StringVar(&configPath, "config", "", "Path to a lint config file (default: <dir>/"+lint.ConfigFileName+" when present)")
 	cmd.Flags().StringVar(&atlasEnv, "atlas-env", "", "Value exposed as .Env when rendering Atlas SQL template migrations")
 	cmd.Flags().StringVar(&envName, dbcli.EnvFlagName, "", "Project env name to read from ptah.yaml or atlas.hcl")
+	cmd.Flags().StringVar(&devURL, "dev-url", "", "Dev database URL used to clean and replay migrations and infer the lint dialect")
 	cmd.Flags().StringArrayVar(&disabled, "disable", nil, "Disable a rule code or family, for example DS101 or MY (repeatable)")
 	cmd.Flags().StringVar(&failOn, "fail-on", failOnError, "Failure threshold controlling the exit code: error, any or none")
 	cmd.Flags().UintVar(&latest, latestFlag, 0, "Lint only the latest N migration versions")
@@ -106,6 +111,7 @@ type runOptions struct {
 	format     string
 	configPath string
 	atlasEnv   string
+	devURL     string
 	disabled   []string
 	failOn     string
 	latest     uint
@@ -211,6 +217,10 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	if err := validateDir(opts.dir); err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
 	}
+	devDialect, err := atlasurl.DialectFromURL(opts.devURL)
+	if err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+	}
 	versions, err := lintVersions(cmd, opts)
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
@@ -236,7 +246,22 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	if cmd.Flags().Changed("dialect") {
 		dialect = opts.dialect
 	}
+	if err := validateDevURLDialect(dialect, devDialect); err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+	}
+	if dialect == "" {
+		dialect = devDialect
+	}
 	disabled := append(append([]string{}, cfg.DisabledRules...), opts.disabled...)
+
+	if err := migrationreplay.Replay(cmd.Context(), migrationreplay.Options{
+		Dir:       opts.dir,
+		DirFormat: migrator.MigrationDirFormatAuto,
+		DevURL:    opts.devURL,
+	}); err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn,
+			fmt.Sprintf("error validating migration SQL on dev database: %v", err))
+	}
 
 	findings, err := lint.LintFS(os.DirFS(opts.dir), lint.Options{
 		Dialect:           dialect,
@@ -272,6 +297,16 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	}
 	if failed {
 		return exitcode.New(1, errLintFindings)
+	}
+	return nil
+}
+
+func validateDevURLDialect(dialect, devDialect string) error {
+	if dialect == "" || devDialect == "" {
+		return nil
+	}
+	if dialect != devDialect {
+		return fmt.Errorf("lint dialect %q does not match --dev-url dialect %q", dialect, devDialect)
 	}
 	return nil
 }

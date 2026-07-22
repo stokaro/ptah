@@ -41,7 +41,7 @@ Run it in CI to guarantee already-committed migrations are never changed.`,
 	}
 	cmd.Flags().StringVar(&dir, "dir", "./migrations", "Directory containing migration files")
 	cmd.Flags().StringVar(&dirFormatValue, "dir-format", string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
-	cmd.Flags().StringVar(&devURL, "dev-url", "", "Dev database URL used to validate migration SQL execution")
+	cmd.Flags().StringVar(&devURL, "dev-url", "", "Dev database URL used to clean and replay migrations for SQL validation")
 	cmd.SetFlagErrorFunc(cmdutil.FlagErrorFunc)
 	return cmd
 }
