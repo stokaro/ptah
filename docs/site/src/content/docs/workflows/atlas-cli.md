@@ -107,10 +107,20 @@ ptah atlas schema diff \
   --dev-url "postgres://localhost/dev"
 ```
 
+`--format` accepts Atlas-style Go templates over Ptah's local diff report. The
+supported template surface includes the `sql` helper and `.MarshalSQL`:
+
+```bash
+ptah atlas schema diff \
+  --from file://old.hcl \
+  --to file://schema.hcl \
+  --dev-url "postgres://localhost/dev" \
+  --format '{{ sql . "  " }}'
+```
+
 Remote database URLs, migration directory URLs, `env://` project attributes,
-include/exclude filters, Atlas Cloud web output, custom format templates,
-transaction-mode flags, and lock flags fail explicitly until their semantics
-are implemented.
+include/exclude filters, Atlas Cloud web output, transaction-mode flags, and
+lock flags fail explicitly until their semantics are implemented.
 
 ## Migration Apply
 
