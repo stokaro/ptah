@@ -9,9 +9,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/internal/atlasreport"
-	"github.com/stokaro/ptah/internal/atlasurl"
-	"github.com/stokaro/ptah/internal/convert/dbschematogo"
+	"github.com/stokaro/ptah/internal/atlasschema"
 )
 
 type atlasSchemaInspectOptions struct {
@@ -52,11 +50,8 @@ follow-up gaps.`,
 }
 
 func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) error {
-	format, err := atlasreport.NormalizeSchemaInspectFormat(opts.format)
+	format, err := atlasschema.NormalizeInspectFormat(opts.format)
 	if err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
-	if err := atlasreport.ValidateSchemaInspectTemplate(format); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if err := validateAtlasSchemaInspectOptions(opts); err != nil {
@@ -71,21 +66,12 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	if err := atlasurl.ValidateDialectMatch(opts.devURL, conn.Info().Dialect); err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
-
-	schema, err := dbschema.ReadSchemaWithSchemas(conn, parseAtlasSchemaInspectSchemas(opts.schemas))
-	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("read database schema: %w", err))
-	}
-	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema)
-	rendered, err := atlasreport.RenderSchemaInspectFormat(format, atlasreport.NewSchemaInspectReport(
-		dbsch,
-		schema,
-		conn.Info(),
-		cmd.ErrOrStderr(),
-	))
+	rendered, err := atlasschema.Inspect(conn, atlasschema.InspectOptions{
+		DevURL:      opts.devURL,
+		Schemas:     opts.schemas,
+		Format:      format,
+		Diagnostics: cmd.ErrOrStderr(),
+	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -104,16 +90,4 @@ func validateAtlasSchemaInspectOptions(opts atlasSchemaInspectOptions) error {
 		return fmt.Errorf("atlas schema inspect accepts --include, but Ptah does not implement its behavior yet")
 	}
 	return nil
-}
-
-func parseAtlasSchemaInspectSchemas(values []string) []string {
-	var schemas []string
-	for _, value := range values {
-		for part := range strings.SplitSeq(value, ",") {
-			if schema := strings.TrimSpace(part); schema != "" {
-				schemas = append(schemas, schema)
-			}
-		}
-	}
-	return schemas
 }
