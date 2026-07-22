@@ -1861,6 +1861,7 @@ func constraintAdditionNode(add types.ConstraintAdditionInfo) *ast.ConstraintNod
 			return nil
 		}
 		constraint := ast.NewUniqueConstraint(add.Name, add.Columns...)
+		constraint.IncludeColumns = append([]string(nil), add.IncludeColumns...)
 		constraint.NullsDistinct = cloneBoolPtr(add.NullsDistinct)
 		return constraint
 	default:
@@ -2363,6 +2364,7 @@ func (p *Planner) convertConstraintToAST(constraint goschema.Constraint) *ast.Co
 			return nil // Invalid UNIQUE constraint
 		}
 		astConstraint := ast.NewUniqueConstraint(constraint.Name, constraint.Columns...)
+		astConstraint.IncludeColumns = append([]string(nil), constraint.IncludeColumns...)
 		astConstraint.NullsDistinct = cloneBoolPtr(constraint.NullsDistinct)
 		return astConstraint
 

@@ -862,6 +862,7 @@ func FromConstraint(constraint goschema.Constraint) *ast.ConstraintNode {
 		return ast.NewPrimaryKeyConstraint(constraint.Columns...)
 	case "UNIQUE":
 		node := ast.NewUniqueConstraint(constraint.Name, constraint.Columns...)
+		node.IncludeColumns = append([]string(nil), constraint.IncludeColumns...)
 		node.NullsDistinct = cloneBoolPtr(constraint.NullsDistinct)
 		return node
 	case "FOREIGN KEY":

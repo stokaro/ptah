@@ -316,6 +316,9 @@ func (r *renderer) renderConstraint(table goschema.Table, constraint goschema.Co
 	case "UNIQUE":
 		r.linef(`  unique %s {`, quote(constraint.Name))
 		r.rawAttr(2, "columns", columnRefs(constraint.Columns))
+		if len(constraint.IncludeColumns) > 0 {
+			r.rawAttr(2, "include", columnRefs(constraint.IncludeColumns))
+		}
 		r.boolPtrAttr(2, "nulls_distinct", constraint.NullsDistinct)
 		r.line("  }")
 	case "FOREIGN KEY":

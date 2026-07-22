@@ -341,8 +341,9 @@ func parseConstraintComment(comment *ast.Comment, structName string) Constraint 
 		CheckExpression: kv["check"], // Check expression
 
 		// UNIQUE/PRIMARY KEY constraint specific fields
-		Columns:       columns, // Column names
-		NullsDistinct: parseBoolPtr(kv["nulls_distinct"]),
+		Columns:        columns, // Column names
+		IncludeColumns: splitCommaList(kv["include"]),
+		NullsDistinct:  parseBoolPtr(kv["nulls_distinct"]),
 
 		// FOREIGN KEY constraint specific fields
 		ForeignTable:   kv["foreign_table"],  // Referenced table

@@ -513,7 +513,11 @@ table "users" {
   }
   unique "nulls_not_distinct2" {
     columns = [column.c]
+    include = [column.covering]
     nulls_distinct = false
+  }
+  column "covering" {
+    type = int
   }
 }
 `), "schema.hcl")
@@ -525,12 +529,13 @@ table "users" {
 	c.Assert(db.Constraints, qt.HasLen, 1)
 	c.Assert(db.Constraints[0].Type, qt.Equals, "UNIQUE")
 	c.Assert(db.Constraints[0].Columns, qt.DeepEquals, []string{"c"})
+	c.Assert(db.Constraints[0].IncludeColumns, qt.DeepEquals, []string{"covering"})
 	c.Assert(db.Constraints[0].NullsDistinct, qt.IsNotNil)
 	c.Assert(*db.Constraints[0].NullsDistinct, qt.IsFalse)
 
 	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, "CREATE UNIQUE INDEX IF NOT EXISTS nulls_not_distinct ON users (c) NULLS NOT DISTINCT")
-	c.Assert(sql, qt.Contains, "CONSTRAINT nulls_not_distinct2 UNIQUE NULLS NOT DISTINCT (c)")
+	c.Assert(sql, qt.Contains, "CONSTRAINT nulls_not_distinct2 UNIQUE NULLS NOT DISTINCT (c) INCLUDE (covering)")
 }
 
 func TestParsePostgreSQLIndexNullsDistinctRequiresUnique(t *testing.T) {

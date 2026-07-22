@@ -1353,13 +1353,15 @@ func TestFromConstraint_UniqueNullsNotDistinct(t *testing.T) {
 	nullsDistinct := false
 
 	node := fromschema.FromConstraint(goschema.Constraint{
-		Name:          "users_c_key",
-		Type:          "UNIQUE",
-		Columns:       []string{"c"},
-		NullsDistinct: &nullsDistinct,
+		Name:           "users_c_key",
+		Type:           "UNIQUE",
+		Columns:        []string{"c"},
+		IncludeColumns: []string{"covering"},
+		NullsDistinct:  &nullsDistinct,
 	})
 
 	c.Assert(node.Type, qt.Equals, ast.UniqueConstraint)
+	c.Assert(node.IncludeColumns, qt.DeepEquals, []string{"covering"})
 	c.Assert(node.NullsDistinct, qt.IsNotNil)
 	c.Assert(*node.NullsDistinct, qt.IsFalse)
 }

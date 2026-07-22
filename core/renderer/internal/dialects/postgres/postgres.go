@@ -954,10 +954,14 @@ func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, err
 		if constraint.NullsDistinct != nil {
 			clause += " " + renderNullsDistinctClause(constraint.NullsDistinct)
 		}
-		if constraint.Name != "" {
-			return fmt.Sprintf("  CONSTRAINT %s %s (%s)", r.escapeIdentifier(constraint.Name), clause, strings.Join(r.escapeIdentifierList(constraint.Columns), ", ")), nil
+		columns := fmt.Sprintf("(%s)", strings.Join(r.escapeIdentifierList(constraint.Columns), ", "))
+		if len(constraint.IncludeColumns) > 0 {
+			columns += fmt.Sprintf(" INCLUDE (%s)", strings.Join(r.escapeIdentifierList(constraint.IncludeColumns), ", "))
 		}
-		return fmt.Sprintf("  %s (%s)", clause, strings.Join(r.escapeIdentifierList(constraint.Columns), ", ")), nil
+		if constraint.Name != "" {
+			return fmt.Sprintf("  CONSTRAINT %s %s %s", r.escapeIdentifier(constraint.Name), clause, columns), nil
+		}
+		return fmt.Sprintf("  %s %s", clause, columns), nil
 	case ast.ForeignKeyConstraint:
 		if !r.capabilities().Has(capability.ForeignKeys) {
 			return "", nil

@@ -41,6 +41,7 @@ func TestRenderTablesIndexesConstraintsAndDiagnostics(t *testing.T) {
 		}},
 		Constraints: []goschema.Constraint{
 			{StructName: "User", Name: "users_status_check", Type: "CHECK", Table: "auth.users", CheckExpression: "status <> ''"},
+			{StructName: "User", Name: "users_email_key", Type: "UNIQUE", Table: "auth.users", Columns: []string{"account_id"}, IncludeColumns: []string{"created_at"}, NullsDistinct: &falseValue},
 			{StructName: "User", Name: "users_account_fk", Type: "FOREIGN KEY", Table: "auth.users", Columns: []string{"account_id"}, ForeignTable: "auth.accounts", ForeignColumn: "id", OnDelete: "CASCADE"},
 		},
 		Functions: []goschema.Function{{Name: "set_tenant_context", Body: "BEGIN END;"}},
@@ -58,6 +59,7 @@ func TestRenderTablesIndexesConstraintsAndDiagnostics(t *testing.T) {
 	c.Assert(string(first.Data), qt.Contains, `foreign_key "users_account_fk"`)
 	c.Assert(string(first.Data), qt.Contains, `foreign_key "fk_users_team_id"`)
 	c.Assert(string(first.Data), qt.Contains, `check "users_created_at_check"`)
+	c.Assert(string(first.Data), qt.Contains, `include = [column.created_at]`)
 	c.Assert(string(first.Data), qt.Contains, `nulls_distinct = false`)
 	c.Assert(string(first.Data), qt.Contains, `function "set_tenant_context"`)
 	c.Assert(first.Diagnostics, qt.HasLen, 0)
@@ -66,8 +68,9 @@ func TestRenderTablesIndexesConstraintsAndDiagnostics(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", string(first.Data)))
 	c.Assert(parsed.Tables, qt.HasLen, 3)
 	c.Assert(parsed.Enums, qt.HasLen, 1)
-	c.Assert(parsed.Constraints, qt.HasLen, 2)
+	c.Assert(parsed.Constraints, qt.HasLen, 3)
 	c.Assert(parsed.Functions, qt.HasLen, 1)
+	c.Assert(constraintByName(parsed.Constraints, "users_email_key").IncludeColumns, qt.DeepEquals, []string{"created_at"})
 	c.Assert(fieldByName(parsed.Fields, "account_id").Foreign, qt.Equals, "accounts(id)")
 	c.Assert(fieldByName(parsed.Fields, "account_id").ForeignKeyName, qt.Equals, "users_account_fk")
 	c.Assert(fieldByName(parsed.Fields, "team_id").Foreign, qt.Equals, "teams(id)")
@@ -308,6 +311,15 @@ func fieldByName(fields []goschema.Field, name string) goschema.Field {
 		}
 	}
 	return goschema.Field{}
+}
+
+func constraintByName(constraints []goschema.Constraint, name string) goschema.Constraint {
+	for _, constraint := range constraints {
+		if constraint.Name == name {
+			return constraint
+		}
+	}
+	return goschema.Constraint{}
 }
 
 func diagnosticPaths(diagnostics []atlashclrender.Diagnostic) []string {
