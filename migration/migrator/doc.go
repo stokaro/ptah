@@ -100,7 +100,8 @@
 //
 // PostgreSQL, MySQL, MariaDB, and SQL Server migrations acquire a session-level
 // advisory lock around the planning and apply window. Use
-// WithMigrationLockTimeout to bound the wait for that lock; callers can detect
+// WithMigrationLockName to coordinate on a custom lock name, and use
+// WithMigrationLockTimeout to bound the wait for that lock. Callers can detect
 // acquisition timeouts with IsMigrationLockTimeout.
 //
 // # Migration Operations

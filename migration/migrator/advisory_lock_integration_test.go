@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"hash/fnv"
 	"os"
 	"strings"
 	"sync"
@@ -68,18 +69,27 @@ func TestMigrationAdvisoryLock_PostgresTimeoutIntegration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = lockConn.Close() }()
 
-	_, err = lockConn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", int64(-7752083082818440098))
+	lockName := "ptah-test-migration-lock"
+	lockKey := postgresMigrationLockKeyForTest(lockName)
+	_, err = lockConn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", lockKey)
 	c.Assert(err, qt.IsNil)
 	defer func() {
-		_, _ = lockConn.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", int64(-7752083082818440098))
+		_, _ = lockConn.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", lockKey)
 	}()
 
 	err = issue124Migrator(baseConn, names.migrationsTable, issue124Migrations(names)).
+		WithMigrationLockName(lockName).
 		WithMigrationLockTimeout(100 * time.Millisecond).
 		MigrateUp(ctx)
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(migrator.IsMigrationLockTimeout(err), qt.IsTrue)
+}
+
+func postgresMigrationLockKeyForTest(name string) int64 {
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(name))
+	return int64(hash.Sum32())
 }
 
 func TestMigrationPreflightHookRunsInsidePostgresAdvisoryLock(t *testing.T) {
