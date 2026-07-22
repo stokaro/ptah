@@ -77,7 +77,10 @@ file-backed inspection remain explicit gaps.
 a live database `--url`. Ptah reads the current database schema, diffs it
 against the desired local schema files, prints the planned SQL, and applies it
 after interactive confirmation. Use `--dry-run` to print the plan without
-applying it, or `--auto-approve` to skip the prompt explicitly.
+applying it, or `--auto-approve` to skip the prompt explicitly. Use
+`--tx-mode=file` or `--tx-mode=all` to execute the generated plan in one
+transaction, or `--tx-mode=none` to execute statements without transaction
+wrapping.
 
 ```bash
 ptah atlas schema apply \
