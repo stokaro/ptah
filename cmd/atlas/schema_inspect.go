@@ -8,9 +8,7 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
-	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/dbschema"
-	"github.com/stokaro/ptah/internal/atlashclrender"
 	"github.com/stokaro/ptah/internal/convert/dbschematogo"
 )
 
@@ -23,13 +21,6 @@ type atlasSchemaInspectOptions struct {
 	format  string
 }
 
-type atlasSchemaInspectFormat string
-
-const (
-	atlasSchemaInspectFormatHCL atlasSchemaInspectFormat = "hcl"
-	atlasSchemaInspectFormatSQL atlasSchemaInspectFormat = "sql"
-)
-
 func newAtlasSchemaInspectCommand() *cobra.Command {
 	opts := atlasSchemaInspectOptions{}
 	cmd := &cobra.Command{
@@ -39,9 +30,10 @@ func newAtlasSchemaInspectCommand() *cobra.Command {
 
 Inspects a live database from --url and writes Atlas-shaped schema output to
 stdout without Ptah status banners. The default output is Atlas HCL. SQL output
-is supported with --format sql or --format '{{ sql . }}'. Custom Go templates,
-JSON output, include/exclude filters, and Atlas dev-database inference remain
-explicit follow-up gaps.`,
+is supported with --format sql or --format '{{ sql . }}'. JSON output and
+custom Go templates are supported through the same --format flag. Include/exclude
+filters, split/write templates, and Atlas dev-database inference remain explicit
+follow-up gaps.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaInspect(cmd, opts)
 		},
@@ -52,7 +44,7 @@ explicit follow-up gaps.`,
 	flags.StringArrayVar(&opts.schemas, "schema", nil, "Schema to inspect")
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from inspection")
 	flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in inspection")
-	flags.StringVar(&opts.format, "format", "", "Output format: hcl or sql")
+	flags.StringVar(&opts.format, "format", "", "Output format or Go template: hcl, sql, json, or custom template")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
@@ -60,6 +52,9 @@ explicit follow-up gaps.`,
 func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) error {
 	format, err := normalizeAtlasSchemaInspectFormat(opts.format)
 	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if err := validateAtlasSchemaInspectTemplate(format); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if err := validateAtlasSchemaInspectOptions(opts); err != nil {
@@ -83,26 +78,16 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 		return cmdutil.Fail(cmd, fmt.Errorf("read database schema: %w", err))
 	}
 	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema)
-	switch format {
-	case atlasSchemaInspectFormatHCL:
-		rendered, err := atlashclrender.Render(dbsch)
-		if err != nil {
-			return cmdutil.Fail(cmd, fmt.Errorf("render Atlas HCL: %w", err))
-		}
-		for _, diagnostic := range rendered.Diagnostics {
-			fmt.Fprintf(cmd.ErrOrStderr(), "%s: %s: %s\n", diagnostic.Severity, diagnostic.Path, diagnostic.Message)
-		}
-		fmt.Fprint(cmd.OutOrStdout(), string(rendered.Data))
-	case atlasSchemaInspectFormatSQL:
-		info := conn.Info()
-		statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(dbsch, info.Dialect, info.Capabilities)
-		if err != nil {
-			return cmdutil.Fail(cmd, fmt.Errorf("render SQL: %w", err))
-		}
-		fmt.Fprint(cmd.OutOrStdout(), strings.Join(statements, ";\n")+";\n")
-	default:
-		return cmdutil.Fail(cmd, fmt.Errorf("unsupported schema inspect output format %q", format))
+	rendered, err := renderAtlasSchemaInspectFormat(format, newAtlasSchemaInspectReport(
+		dbsch,
+		schema,
+		conn.Info(),
+		cmd.ErrOrStderr(),
+	))
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
+	fmt.Fprint(cmd.OutOrStdout(), rendered)
 	return nil
 }
 
@@ -119,21 +104,18 @@ func validateAtlasSchemaInspectOptions(opts atlasSchemaInspectOptions) error {
 	return nil
 }
 
-func normalizeAtlasSchemaInspectFormat(format string) (atlasSchemaInspectFormat, error) {
+func normalizeAtlasSchemaInspectFormat(format string) (string, error) {
 	trimmed := strings.TrimSpace(format)
-	if trimmed == "" || trimmed == "hcl" || trimmed == "{{ hcl . }}" {
-		return atlasSchemaInspectFormatHCL, nil
+	if trimmed == "" || trimmed == "hcl" {
+		return "{{ $.MarshalHCL }}", nil
 	}
-	if trimmed == "sql" || trimmed == "{{ sql . }}" {
-		return atlasSchemaInspectFormatSQL, nil
+	if trimmed == "sql" {
+		return "{{ sql . }}", nil
 	}
-	if trimmed == "json" || trimmed == "{{ json . }}" {
-		return "", fmt.Errorf("atlas schema inspect accepts JSON output, but Ptah does not implement Atlas-compatible JSON yet")
+	if trimmed == "json" {
+		return "{{ json . }}", nil
 	}
-	if strings.Contains(trimmed, "split") || strings.Contains(trimmed, "write") {
-		return "", fmt.Errorf("atlas schema inspect accepts split/write templates, but Ptah does not implement their behavior yet")
-	}
-	return "", fmt.Errorf("atlas schema inspect accepts --format, but Ptah only implements hcl and sql output yet")
+	return format, nil
 }
 
 func parseAtlasSchemaInspectSchemas(values []string) []string {

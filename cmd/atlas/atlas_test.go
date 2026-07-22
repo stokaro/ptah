@@ -598,6 +598,30 @@ func TestNewAtlasCommand_SchemaInspectOutputsAtlasHCLWithoutNativeBanners(t *tes
 	c.Assert(out.String(), qt.Not(qt.Contains), "Connected to sqlite database successfully")
 }
 
+func TestNewAtlasCommand_SchemaInspectOutputsHCLFormatAlias(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "inspect-hcl.db")
+	createAtlasInspectSQLiteSchema(c, dbPath)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "inspect",
+		"--url", "sqlite://" + dbPath,
+		"--format", "hcl",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, `table "users"`)
+	c.Assert(out.String(), qt.Contains, `column "email"`)
+	c.Assert(out.String(), qt.Not(qt.Contains), "Reading schema from database")
+}
+
 func TestNewAtlasCommand_SchemaInspectOutputsSQLFormat(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
@@ -622,6 +646,88 @@ func TestNewAtlasCommand_SchemaInspectOutputsSQLFormat(t *testing.T) {
 	c.Assert(out.String(), qt.Not(qt.Contains), `table "users"`)
 }
 
+func TestNewAtlasCommand_SchemaInspectOutputsJSONFormat(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "inspect-json.db")
+	createAtlasInspectSQLiteSchema(c, dbPath)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "inspect",
+		"--url", "sqlite://" + dbPath,
+		"--format", "json",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	var result atlasSchemaInspectJSONResult
+	c.Assert(json.Unmarshal(out.Bytes(), &result), qt.IsNil)
+	c.Assert(result.Schemas, qt.HasLen, 1)
+	c.Assert(result.Schemas[0].Name, qt.Equals, "main")
+	users := atlasSchemaInspectJSONTableByName(c, result.Schemas[0].Tables, "users")
+	c.Assert(users.Columns, qt.HasLen, 2)
+	email := atlasSchemaInspectJSONColumnByName(c, users.Columns, "email")
+	c.Assert(email.Type, qt.Equals, "TEXT")
+	c.Assert(email.Null, qt.IsFalse)
+	c.Assert(users.PrimaryKey, qt.IsNotNil)
+	c.Assert(users.PrimaryKey.Name, qt.Equals, "")
+	c.Assert(users.PrimaryKey.Parts, qt.DeepEquals, []atlasSchemaInspectJSONIndexPartResult{{Column: "id"}})
+	c.Assert(users.Indexes, qt.HasLen, 1)
+	c.Assert(users.Indexes[0].Name, qt.Equals, "users_email_key")
+	c.Assert(users.Indexes[0].Unique, qt.IsTrue)
+	c.Assert(users.Indexes[0].Parts, qt.DeepEquals, []atlasSchemaInspectJSONIndexPartResult{{Column: "email"}})
+	posts := atlasSchemaInspectJSONTableByName(c, result.Schemas[0].Tables, "posts")
+	c.Assert(posts.ForeignKeys, qt.HasLen, 1)
+	c.Assert(posts.ForeignKeys[0].Columns, qt.DeepEquals, []string{"user_id"})
+	c.Assert(posts.ForeignKeys[0].References.Table, qt.Equals, "users")
+	c.Assert(posts.ForeignKeys[0].References.Columns, qt.DeepEquals, []string{"id"})
+}
+
+func TestNewAtlasCommand_SchemaInspectFormatsCustomTemplate(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "inspect-template.db")
+	createAtlasInspectSQLiteSchema(c, dbPath)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "inspect",
+		"--url", "sqlite://" + dbPath,
+		"--format", `{{ len .Realm.Schemas }}/{{ len (index .Schema.Schemas 0).Tables }}/{{ base64url "a+b/c=" }}/{{ printf "%.6s" (sql .) }}`,
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "1/2/a-b_c/CREATE")
+}
+
+func TestNewAtlasCommand_SchemaInspectRejectsInvalidFormatBeforeConnect(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "inspect",
+		"--url", "sqlite://does-not-need-to-exist.db",
+		"--format", "{{ if }}",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `parse --format template: .*`)
+	c.Assert(out.String(), qt.Not(qt.Contains), "connect to --url")
+}
+
 func TestNewCompatCommand_SchemaInspectUsesAtlasRoot(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
@@ -642,15 +748,41 @@ func TestNewCompatCommand_SchemaInspectUsesAtlasRoot(t *testing.T) {
 
 func TestNewAtlasCommand_SchemaInspectRejectsUnsupportedFormat(t *testing.T) {
 	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "inspect-unsupported-format.db")
+	createAtlasInspectSQLiteSchema(c, dbPath)
+
 	cmd := NewAtlasCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"schema", "inspect", "--url", "sqlite://inspect.db", "--format", "{{ json . }}"})
+	cmd.SetArgs([]string{"schema", "inspect", "--url", "sqlite://" + dbPath, "--format", "{{ split . }}"})
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, "atlas schema inspect accepts JSON output, but Ptah does not implement Atlas-compatible JSON yet")
+	c.Assert(err, qt.ErrorMatches, `execute --format template: .*atlas schema inspect accepts split/write templates, but Ptah does not implement their behavior yet`)
+}
+
+func TestNewAtlasCommand_SchemaInspectAllowsLiteralUnsupportedFormatWords(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "inspect-literal-format.db")
+	createAtlasInspectSQLiteSchema(c, dbPath)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "inspect",
+		"--url", "sqlite://" + dbPath,
+		"--format", `{{ printf "split/write text only" }}`,
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "split/write text only")
 }
 
 func TestNewAtlasCommand_SchemaInspectRejectsUnsupportedFilters(t *testing.T) {
@@ -1741,6 +1873,75 @@ type atlasMigrateApplyJSONResult struct {
 	Message string
 }
 
+type atlasSchemaInspectJSONResult struct {
+	Schemas []struct {
+		Name   string
+		Tables []atlasSchemaInspectJSONTableResult
+	}
+}
+
+type atlasSchemaInspectJSONTableResult struct {
+	Name        string
+	Columns     []atlasSchemaInspectJSONColumnResult
+	Indexes     []atlasSchemaInspectJSONIndexResult
+	PrimaryKey  *atlasSchemaInspectJSONIndexResult `json:"primary_key"`
+	ForeignKeys []struct {
+		Name       string
+		Columns    []string
+		References struct {
+			Table   string
+			Columns []string
+		}
+	} `json:"foreign_keys"`
+}
+
+type atlasSchemaInspectJSONColumnResult struct {
+	Name string
+	Type string
+	Null bool
+}
+
+type atlasSchemaInspectJSONIndexResult struct {
+	Name   string
+	Unique bool
+	Parts  []atlasSchemaInspectJSONIndexPartResult
+}
+
+type atlasSchemaInspectJSONIndexPartResult struct {
+	Column string
+	Expr   string
+}
+
+func atlasSchemaInspectJSONTableByName(
+	c *qt.C,
+	tables []atlasSchemaInspectJSONTableResult,
+	name string,
+) atlasSchemaInspectJSONTableResult {
+	c.Helper()
+	for _, table := range tables {
+		if table.Name == name {
+			return table
+		}
+	}
+	c.Fatalf("table %q not found in %+v", name, tables)
+	return atlasSchemaInspectJSONTableResult{}
+}
+
+func atlasSchemaInspectJSONColumnByName(
+	c *qt.C,
+	columns []atlasSchemaInspectJSONColumnResult,
+	name string,
+) atlasSchemaInspectJSONColumnResult {
+	c.Helper()
+	for _, column := range columns {
+		if column.Name == name {
+			return column
+		}
+	}
+	c.Fatalf("column %q not found in %+v", name, columns)
+	return atlasSchemaInspectJSONColumnResult{}
+}
+
 func writeAtlasApplyMigration(c *qt.C, dir, name, sql string) {
 	c.Helper()
 	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
@@ -1804,6 +2005,12 @@ func createAtlasInspectSQLiteSchema(c *qt.C, dbPath string) {
 CREATE TABLE users (
   id INTEGER PRIMARY KEY,
   email TEXT NOT NULL
+);
+CREATE TABLE posts (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  CONSTRAINT posts_user_fk FOREIGN KEY (user_id) REFERENCES users (id)
 );
 CREATE UNIQUE INDEX users_email_key ON users (email);
 `)
