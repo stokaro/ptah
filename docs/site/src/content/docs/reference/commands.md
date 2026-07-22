@@ -73,7 +73,7 @@ executable name.
 | `ptah atlas migrate new` | Forwards to `ptah migrations create`. |
 | `ptah atlas migrate set` | Forwards to `ptah migrations repair`. |
 | `ptah atlas migrate down` | Forwards to `ptah migrations down`; maps compatible Atlas flags and fails explicitly for dynamic down-planning and output-format flags that native Ptah does not implement yet. |
-| `ptah atlas migrate diff` | Registered path; runtime behavior is not implemented yet. |
+| `ptah atlas migrate diff` | Validates an existing `atlas.sum`, replays a local Atlas migration directory on `--dev-url`, diffs it against local `.hcl`, `.yaml`, `.yml`, or `.sql` `--to` schema files, writes a new Atlas single-file migration, and updates `atlas.sum`. Database desired-state URLs, `env://`, schema filters, lock flags, Docker dev databases, and `--format` templates remain explicit gaps. |
 | `ptah atlas migrate import` | Imports local `file://` migration directories from `atlas`, `golang-migrate`, `goose`, `flyway`, `liquibase`, or `dbmate` format into a separate Atlas single-file directory and writes `atlas.sum`. Flyway repeatable migrations fail explicitly until Ptah can execute Atlas R-suffixed imported migrations. |
 | `ptah atlas schema inspect` | Forwards to `ptah db read`. |
 | `ptah atlas schema diff` | Diffs local `file://` schema files with `.hcl`, `.yaml`, `.yml`, or `.sql` extensions and prints migration SQL. Database URLs, migration directories, `env://`, include/exclude filters, web output, and custom format templates remain explicit gaps. |
