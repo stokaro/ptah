@@ -602,7 +602,64 @@ func TestNewAtlasCommand_SchemaInspectRejectsUnsupportedFormat(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `execute --format template: .*atlas schema inspect accepts split/write templates, but Ptah does not implement their behavior yet`)
+	c.Assert(err, qt.ErrorMatches, `execute --format template: .*split requires hcl or sql schema output`)
+}
+
+func TestNewAtlasCommand_SchemaInspectWritesSplitSQLFiles(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "inspect-write-sql.db")
+	outDir := filepath.Join(dir, "schema")
+	createAtlasInspectSQLiteSchema(c, dbPath)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "inspect",
+		"--url", "sqlite://" + dbPath,
+		"--format", `{{ sql . | split | write "` + outDir + `" }}`,
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "")
+	mainSQL := readAtlasTestFile(c, outDir, "main.sql")
+	c.Assert(mainSQL, qt.Contains, "-- atlas:import ./tables/posts.sql")
+	c.Assert(mainSQL, qt.Contains, "-- atlas:import ./tables/users.sql")
+	usersSQL := readAtlasTestFile(c, filepath.Join(outDir, "tables"), "users.sql")
+	c.Assert(usersSQL, qt.Contains, "CREATE TABLE")
+	c.Assert(usersSQL, qt.Contains, "users")
+	postsSQL := readAtlasTestFile(c, filepath.Join(outDir, "tables"), "posts.sql")
+	c.Assert(postsSQL, qt.Contains, "REFERENCES")
+}
+
+func TestNewAtlasCommand_SchemaInspectWritesSplitHCLFiles(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "inspect-write-hcl.db")
+	outDir := filepath.Join(dir, "schema-hcl")
+	createAtlasInspectSQLiteSchema(c, dbPath)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "inspect",
+		"--url", "sqlite://" + dbPath,
+		"--format", `{{ hcl . | split | write "` + outDir + `" }}`,
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "")
+	usersHCL := readAtlasTestFile(c, filepath.Join(outDir, "tables"), "users.hcl")
+	c.Assert(usersHCL, qt.Contains, `table "users"`)
+	c.Assert(usersHCL, qt.Contains, `column "email"`)
 }
 
 func TestNewAtlasCommand_SchemaInspectAllowsLiteralUnsupportedFormatWords(t *testing.T) {

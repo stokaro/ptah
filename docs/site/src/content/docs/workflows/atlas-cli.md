@@ -55,7 +55,7 @@ model. Unsupported flags fail clearly instead of being ignored.
 
 | Atlas-compatible command | Ptah behavior |
 | --- | --- |
-| `ptah atlas schema inspect` | Inspects a live database and writes Atlas-shaped HCL by default, SQL with `--format sql` / `--format '{{ sql . }}'`, JSON with `--format json` / `--format '{{ json . }}'`, or custom Go-template output. The OSS `--exclude` flag filters inspected resources. |
+| `ptah atlas schema inspect` | Inspects a live database and writes Atlas-shaped HCL by default, SQL with `--format sql` / `--format '{{ sql . }}'`, JSON with `--format json` / `--format '{{ json . }}'`, custom Go-template output, or basic `hcl`/`sql` split-write exports. The OSS `--exclude` flag filters inspected resources. |
 | `ptah atlas schema apply` | Applies local desired schema files to a live database through Ptah schema diff and migration execution; supports `--env` project defaults and Atlas-style `--format` templates over the planned changes. |
 | `ptah atlas schema diff` | Local `file://` schema-file diff for `.hcl`, `.yaml`, `.yml`, and `.sql` sources. |
 | `ptah atlas schema fmt` | Formats local `.hcl` files using HCL canonical layout. |
@@ -73,8 +73,21 @@ ptah atlas schema inspect --url "$DATABASE_URL" --format json > schema.json
 `--schema` narrows inspection when the underlying database reader supports
 schema scoping. `--dev-url` validates dialect compatibility only today; Ptah
 does not yet run Atlas dev-database inference for inspection. `--format`
-accepts Atlas-style Go templates with `.MarshalHCL`, `sql`, `json`,
-`base64url`, and `mermaid`. `--exclude` accepts repeated or comma-separated
+accepts Atlas-style Go templates with `.MarshalHCL`, `hcl`, `sql`, `json`,
+`base64url`, `mermaid`, `split`, and `write`. Basic split-write exports are
+supported for HCL and SQL output:
+
+```bash
+ptah atlas schema inspect \
+  --url "$DATABASE_URL" \
+  --format '{{ hcl . | split | write "schema" }}'
+
+ptah atlas schema inspect \
+  --url "$DATABASE_URL" \
+  --format '{{ sql . | split | write "schema" }}'
+```
+
+`--exclude` accepts repeated or comma-separated
 Atlas-style glob patterns, including `[type=...]` selectors, and removes
 matching resources from HCL, SQL, JSON, and custom-template output. Field-level
 exclude selector support includes the Atlas-documented
@@ -83,7 +96,8 @@ until Ptah models those fields as independently filterable resources.
 Schema-qualified function and enum filters remain limited by Ptah's current
 introspection model, which does not retain schema names for those resource types
 yet. `--include` is an Atlas Pro feature and is outside Ptah's OSS drop-in
-target. Split/write templates and file-backed inspection remain explicit gaps.
+target. File-backed inspection, exporter blocks, and advanced split/write
+configuration remain explicit gaps.
 
 `ptah atlas schema apply` accepts one or more local `--to` schema file URLs and
 a live database `--url`. With `--env`, Ptah can read `env.url`, `env.src`, and
