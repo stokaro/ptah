@@ -7,9 +7,17 @@ commands, not schema HCL input. Schema HCL input is documented separately in
 
 ## Supported Subset
 
-Ptah accepts top-level `env` blocks with either one label or no label:
+Ptah accepts top-level `env` and `lint` blocks. `env` blocks may have either
+one label or no label:
 
 ```hcl
+lint {
+  git {
+    base = "origin/master"
+    dir  = "."
+  }
+}
+
 env "local" {
   url = "postgres://user:pass@localhost:5432/app?sslmode=disable"
   dev = "postgres://user:pass@localhost:5432/app_shadow?sslmode=disable"
@@ -45,7 +53,9 @@ The supported attributes map to Ptah settings as follows:
 | `migration.lock_timeout` | `--lock-timeout` default |
 | `migration.exec_order` | `--exec-order` default |
 | `migration.tx_mode` | `migrations up --tx-mode` default |
-| `lint.latest` | Project config IR lint setting |
+| `lint.latest` | `migrations lint --latest` default |
+| `lint.git.base` | `migrations lint --git-base` default |
+| `lint.git.dir` | `migrations lint --git-dir` default |
 
 `env.src` accepts either one string or a list of strings. Ptah currently uses
 literal local schema file sources only, matching the local schema-file boundary
@@ -57,10 +67,10 @@ evaluation for project config files.
 apply --env <name>` uses it as the default resource exclusion filter unless an
 explicit `--exclude` flag is provided.
 
-`lint.latest` is preserved in the project config IR for consumers that
-understand it. The current CLI wiring uses the connection, desired schema
-source, dev database, exclusion filter, migration directory, migration
-execution, revision-table, and template env settings.
+`lint.latest` and `lint.git` configure the migration changeset selected by
+`migrations lint` and `ptah atlas migrate lint`. These selectors are mutually
+exclusive. `lint.git.dir` matches Atlas's working-directory option for Git
+changeset detection and defaults to the current directory when omitted.
 
 `migration.tx_mode` accepts `file`, `all`, and `none`, matching
 `ptah atlas migrate apply --tx-mode`. `all` is limited to dialects where Ptah
@@ -126,8 +136,9 @@ names.
 ## Unsupported Constructs
 
 Ptah intentionally rejects everything outside the documented subset. Unsupported
-attributes, blocks, duplicate `migration` or `lint` blocks, dynamic expressions,
-and non-file migration directory URI schemes fail with a location-aware error:
+attributes, unsupported lint policy/analyzer blocks, duplicate `migration` or
+`lint` blocks, dynamic expressions, and non-file migration directory URI schemes
+fail with a location-aware error:
 
 ```text
 unsupported atlas.hcl construct "src" at atlas.hcl:2

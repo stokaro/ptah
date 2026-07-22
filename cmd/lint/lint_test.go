@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -28,6 +29,14 @@ func execute(args ...string) (stdout, stderr string, err error) {
 func writeLintTestFile(c *qt.C, dir, name, content string) {
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
+}
+
+func runGit(c *qt.C, dir string, args ...string) {
+	c.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	c.Assert(err, qt.IsNil, qt.Commentf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(string(output))))
 }
 
 type sarifForTest struct {
@@ -223,6 +232,160 @@ func TestRunLint_LatestRestrictsToLatestMigrationVersions(t *testing.T) {
 	c.Assert(report.Findings, qt.HasLen, 1)
 	c.Assert(report.Findings[0].Rule, qt.Equals, "DS102")
 	c.Assert(report.Findings[0].File, qt.Contains, "0000000002_new.up.sql")
+}
+
+func TestRunLint_ProjectConfigLatestRestrictsToLatestMigrationVersions(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
+	writeLintTestFile(c, migrationsDir, "0000000001_old.up.sql", "DROP TABLE old_data;\n")
+	writeLintTestFile(c, migrationsDir, "0000000001_old.down.sql", "CREATE TABLE old_data (id INT);\n")
+	writeLintTestFile(c, migrationsDir, "0000000002_new.up.sql", "ALTER TABLE users DROP COLUMN legacy;\n")
+	writeLintTestFile(c, migrationsDir, "0000000002_new.down.sql", "ALTER TABLE users ADD COLUMN legacy TEXT;\n")
+	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(`env "ci" {
+  migration {
+    dir = "file://migrations"
+  }
+  lint {
+    latest = 1
+  }
+}
+`), 0o600), qt.IsNil)
+	originalWD, err := os.Getwd()
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.Chdir(dir), qt.IsNil)
+	defer func() {
+		c.Assert(os.Chdir(originalWD), qt.IsNil)
+	}()
+
+	stdout, _, err := execute("--env", "ci", "--format", "json", "--fail-on", "none")
+
+	c.Assert(err, qt.IsNil)
+	var report struct {
+		Findings []lint.Finding `json:"findings"`
+	}
+	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
+	c.Assert(report.Findings, qt.HasLen, 1)
+	c.Assert(report.Findings[0].Rule, qt.Equals, "DS102")
+	c.Assert(report.Findings[0].File, qt.Contains, "0000000002_new.up.sql")
+}
+
+func TestRunLint_GitBaseRestrictsToChangedMigrationVersions(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
+	runGit(c, dir, "init", "-b", "master")
+	runGit(c, dir, "config", "user.email", "ptah@example.test")
+	runGit(c, dir, "config", "user.name", "Ptah Test")
+	runGit(c, dir, "config", "commit.gpgsign", "false")
+	writeLintTestFile(c, migrationsDir, "0000000001_old.up.sql", "DROP TABLE old_data;\n")
+	writeLintTestFile(c, migrationsDir, "0000000001_old.down.sql", "CREATE TABLE old_data (id INT);\n")
+	runGit(c, dir, "add", ".")
+	runGit(c, dir, "commit", "-m", "base")
+	runGit(c, dir, "checkout", "-b", "feature")
+	writeLintTestFile(c, migrationsDir, "0000000002_new.up.sql", "ALTER TABLE users DROP COLUMN legacy;\n")
+	writeLintTestFile(c, migrationsDir, "0000000002_new.down.sql", "ALTER TABLE users ADD COLUMN legacy TEXT;\n")
+	runGit(c, dir, "add", ".")
+	runGit(c, dir, "commit", "-m", "feature")
+	originalWD, err := os.Getwd()
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.Chdir(dir), qt.IsNil)
+	defer func() {
+		c.Assert(os.Chdir(originalWD), qt.IsNil)
+	}()
+
+	stdout, _, err := execute("--dir", "migrations", "--format", "json", "--fail-on", "none", "--git-base", "master")
+
+	c.Assert(err, qt.IsNil)
+	var report struct {
+		Findings []lint.Finding `json:"findings"`
+	}
+	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
+	c.Assert(report.Findings, qt.HasLen, 1)
+	c.Assert(report.Findings[0].Rule, qt.Equals, "DS102")
+	c.Assert(report.Findings[0].File, qt.Contains, "0000000002_new.up.sql")
+}
+
+func TestRunLint_ProjectConfigGitBaseRestrictsToChangedMigrationVersions(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
+	runGit(c, dir, "init", "-b", "master")
+	runGit(c, dir, "config", "user.email", "ptah@example.test")
+	runGit(c, dir, "config", "user.name", "Ptah Test")
+	runGit(c, dir, "config", "commit.gpgsign", "false")
+	writeLintTestFile(c, migrationsDir, "0000000001_old.up.sql", "DROP TABLE old_data;\n")
+	writeLintTestFile(c, migrationsDir, "0000000001_old.down.sql", "CREATE TABLE old_data (id INT);\n")
+	runGit(c, dir, "add", ".")
+	runGit(c, dir, "commit", "-m", "base")
+	runGit(c, dir, "checkout", "-b", "feature")
+	writeLintTestFile(c, migrationsDir, "0000000002_new.up.sql", "ALTER TABLE users DROP COLUMN legacy;\n")
+	writeLintTestFile(c, migrationsDir, "0000000002_new.down.sql", "ALTER TABLE users ADD COLUMN legacy TEXT;\n")
+	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(`env "ci" {
+  migration {
+    dir = "file://migrations"
+  }
+  lint {
+    git {
+      base = "master"
+      dir  = "."
+    }
+  }
+}
+`), 0o600), qt.IsNil)
+	runGit(c, dir, "add", ".")
+	runGit(c, dir, "commit", "-m", "feature")
+	originalWD, err := os.Getwd()
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.Chdir(dir), qt.IsNil)
+	defer func() {
+		c.Assert(os.Chdir(originalWD), qt.IsNil)
+	}()
+
+	stdout, _, err := execute("--env", "ci", "--format", "json", "--fail-on", "none")
+
+	c.Assert(err, qt.IsNil)
+	var report struct {
+		Findings []lint.Finding `json:"findings"`
+	}
+	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
+	c.Assert(report.Findings, qt.HasLen, 1)
+	c.Assert(report.Findings[0].Rule, qt.Equals, "DS102")
+	c.Assert(report.Findings[0].File, qt.Contains, "0000000002_new.up.sql")
+}
+
+func TestRunLint_GitBaseRejectsUnversionedSQLFiles(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
+	runGit(c, dir, "init", "-b", "master")
+	runGit(c, dir, "config", "user.email", "ptah@example.test")
+	runGit(c, dir, "config", "user.name", "Ptah Test")
+	runGit(c, dir, "config", "commit.gpgsign", "false")
+	writeLintTestFile(c, migrationsDir, "0000000001_base.up.sql", "CREATE TABLE users (id INT);\n")
+	writeLintTestFile(c, migrationsDir, "0000000001_base.down.sql", "DROP TABLE users;\n")
+	runGit(c, dir, "add", ".")
+	runGit(c, dir, "commit", "-m", "base")
+	runGit(c, dir, "checkout", "-b", "feature")
+	writeLintTestFile(c, migrationsDir, "misnamed.sql", "DROP TABLE users;\n")
+	runGit(c, dir, "add", ".")
+	runGit(c, dir, "commit", "-m", "feature")
+	originalWD, err := os.Getwd()
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.Chdir(dir), qt.IsNil)
+	defer func() {
+		c.Assert(os.Chdir(originalWD), qt.IsNil)
+	}()
+
+	_, stderr, err := execute("--dir", "migrations", "--git-base", "master")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(stderr, qt.Contains, "--git-base requires versioned migration files")
+	c.Assert(stderr, qt.Contains, "migrations/misnamed.sql")
 }
 
 func TestRunLint_LatestRejectsZero(t *testing.T) {
