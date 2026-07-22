@@ -155,6 +155,57 @@ func TestSchemaApplyUsesAtlasProjectEnvSource(t *testing.T) {
 	c.Assert(sqliteTableCount(c, dbPath, "env_users"), qt.Equals, 1)
 }
 
+func TestSchemaApplyUsesEvaluatedAtlasProjectEnvSource(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	dbPath := filepath.Join(dir, "project-env-eval.db")
+	schemaDir := filepath.Join(dir, "schema")
+	c.Assert(os.Mkdir(schemaDir, 0o700), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(schemaDir, "users.hcl"), []byte(`schema "main" {}
+
+table "env_eval_users" {
+  schema = schema.main
+  column "id" {
+    type = int
+  }
+  primary_key {
+    columns = [column.id]
+  }
+}
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`variable "db_url" {
+  default = "sqlite://`+dbPath+`"
+}
+
+data "hcl_schema" "app" {
+  paths = fileset("schema/*.hcl")
+}
+
+env "local" {
+  url = var.db_url
+  src = data.hcl_schema.app.url
+  dev = "sqlite://dev.db"
+}
+`), 0o600), qt.IsNil)
+
+	cmd := atlas.NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "apply",
+		"--env", "local",
+		"--auto-approve",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Schema apply completed successfully.")
+	c.Assert(sqliteTableCount(c, dbPath, "env_eval_users"), qt.Equals, 1)
+}
+
 func TestSchemaApplyUsesAtlasProjectEnvExclude(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

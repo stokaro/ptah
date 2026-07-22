@@ -13,7 +13,10 @@ Configuration precedence is:
 | 4 | `ptah.yaml` selected environment |
 | 5 | Built-in defaults |
 
-Use `ptah.yaml` for Ptah-owned configuration and the supported `atlas.hcl` subset for Atlas-compatible project config.
+Use `ptah.yaml` for Ptah-owned configuration and the supported `atlas.hcl`
+subset for Atlas-compatible project config. The supported Atlas subset includes
+local `variable` defaults, `locals`, `getenv`, `file`, `fileset`, and
+`data.hcl_schema.<name>.url` references for local schema-file workflows.
 
 ## Minimal `ptah.yaml`
 
