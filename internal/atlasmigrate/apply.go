@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -157,6 +158,38 @@ func (p ApplyPlan) Execute(ctx context.Context) (ApplyResult, error) {
 	result.FinalStatus = finalStatus
 	result.Applied = true
 	return result, nil
+}
+
+// ParseApplyAmount parses the optional Atlas migrate apply amount argument.
+func ParseApplyAmount(args []string) (uint64, error) {
+	if len(args) == 0 {
+		return 0, nil
+	}
+	if len(args) > 1 {
+		return 0, errors.New("accepts at most one amount argument")
+	}
+	value, err := strconv.ParseUint(strings.TrimSpace(args[0]), 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("amount argument %q is not a valid unsigned integer: %w", args[0], err)
+	}
+	return value, nil
+}
+
+// ParseMigrationVersionFlag parses positive Atlas migration version flags such
+// as --to-version and --baseline.
+func ParseMigrationVersionFlag(name, value string) (int64, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, nil
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("--%s %q is not a valid migration version: %w", name, value, err)
+	}
+	if parsed <= 0 {
+		return 0, fmt.Errorf("--%s must be greater than zero", name)
+	}
+	return parsed, nil
 }
 
 func validateApplyOptions(conn *dbschema.DatabaseConnection, opts ApplyOptions) error {
