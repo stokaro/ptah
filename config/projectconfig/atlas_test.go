@@ -15,6 +15,7 @@ func TestParseAtlasProjectConfig(t *testing.T) {
 	raw := []byte(`env "local" {
   url = "postgres://app@localhost:5432/app?sslmode=disable"
   dev = "docker://postgres/16/dev"
+  src = ["file://schema.hcl", "schema.sql"]
   exclude = ["tmp_*"]
   migration {
     dir              = "file://migrations"
@@ -36,6 +37,7 @@ func TestParseAtlasProjectConfig(t *testing.T) {
 	c.Assert(cfg.EnvName, qt.Equals, "local")
 	c.Assert(cfg.DatabaseURL, qt.Equals, "postgres://app@localhost:5432/app?sslmode=disable")
 	c.Assert(cfg.DevURL, qt.Equals, "docker://postgres/16/dev")
+	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://schema.hcl", "schema.sql"})
 	c.Assert(cfg.Exclude, qt.DeepEquals, []string{"tmp_*"})
 	c.Assert(cfg.Migration.Dir, qt.Equals, "migrations")
 	c.Assert(cfg.Migration.Format, qt.Equals, "atlas")
@@ -46,6 +48,19 @@ func TestParseAtlasProjectConfig(t *testing.T) {
 	c.Assert(cfg.Migration.TxMode, qt.Equals, "none")
 	c.Assert(cfg.Lint.Latest, qt.IsNotNil)
 	c.Assert(*cfg.Lint.Latest, qt.Equals, 5)
+}
+
+func TestParseAtlasProjectConfigAcceptsSingleSource(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`env "local" {
+  src = "file://schema.hcl"
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://schema.hcl"})
 }
 
 func TestParseAtlasProjectConfigSelectsEnv(t *testing.T) {
@@ -118,9 +133,9 @@ func TestParseAtlasProjectConfigRejectsUnsupportedConstructs(t *testing.T) {
 			err: `unsupported atlas\.hcl construct "atlas" at atlas\.hcl:1`,
 		},
 		{
-			name: "unknown env attribute",
+			name: "dynamic env source",
 			raw: `env "local" {
-  src = "schema.hcl"
+  src = data.hcl_schema.app.url
 }
 `,
 			err: `unsupported atlas\.hcl construct "src" at atlas\.hcl:2`,
@@ -178,6 +193,7 @@ migration:
 `), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(atlasPath, []byte(`env "local" {
   url = "postgres://atlas/db"
+  src = []
   exclude = []
   migration {
     dir = "file://atlas-migrations"
@@ -192,6 +208,7 @@ migration:
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(cfg.DatabaseURL, qt.Equals, "postgres://atlas/db")
+	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{})
 	c.Assert(cfg.Exclude, qt.DeepEquals, []string{})
 	c.Assert(cfg.Migration.Dir, qt.Equals, "atlas-migrations")
 	c.Assert(cfg.Migration.ExecOrder, qt.Equals, "non-linear")

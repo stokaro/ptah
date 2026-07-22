@@ -43,7 +43,7 @@ webhooks, lint defaults, and online-DDL policy.
 
 | Setting area | Example keys |
 | --- | --- |
-| Database target | `url`, `dev`, `schemas` |
+| Database target | `url`, `src`, `dev`, `schemas` |
 | Migration directory and revisions | `migration.dir`, `migration.format`, `migration.revisions_table`, `migration.revision_format` |
 | Safety and operations | `migration.pre_up_hook`, `migration.pg_dump_to`, `migration.webhook`, `migration.exec_order`, `migration.tx_mode` |
 | Lint defaults | `lint.dialect`, `lint.disabled-rules` |

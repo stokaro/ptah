@@ -21,6 +21,8 @@ type Config struct {
 	DatabaseURL string
 	// DevURL is the disposable dev/shadow database URL.
 	DevURL string
+	// SchemaSources are desired schema source URLs.
+	SchemaSources []string
 	// Schemas restricts database introspection to selected schemas.
 	Schemas []string
 	// Exclude lists schema patterns excluded by project config.
@@ -34,6 +36,7 @@ type Config struct {
 }
 
 type configPresence struct {
+	schemaSources     bool
 	schemas           bool
 	exclude           bool
 	lintDisabledRules bool
@@ -77,6 +80,10 @@ func Merge(base, override Config) Config {
 	}
 	if override.DevURL != "" {
 		result.DevURL = override.DevURL
+	}
+	if override.presence.schemaSources || len(override.SchemaSources) > 0 {
+		result.SchemaSources = slices.Clone(override.SchemaSources)
+		result.presence.schemaSources = true
 	}
 	if override.presence.schemas || len(override.Schemas) > 0 {
 		result.Schemas = slices.Clone(override.Schemas)
