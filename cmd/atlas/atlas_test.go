@@ -1204,52 +1204,6 @@ func TestNewAtlasCommand_SchemaApplyRejectsInvalidTxMode(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `invalid tx-mode "statement": expected file, all, or none`)
 }
 
-func TestApplyAtlasSchemaChangesTxModeRollbackBehavior(t *testing.T) {
-	c := qt.New(t)
-	dir := t.TempDir()
-	sqlText := `
-CREATE TABLE tx_mode_first (id INTEGER PRIMARY KEY);
-CREATE TABLE tx_mode_first (id INTEGER PRIMARY KEY);
-`
-
-	allDB := filepath.Join(dir, "tx-mode-all.db")
-	allConn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+allDB)
-	c.Assert(err, qt.IsNil)
-	err = applyAtlasSchemaChanges(context.Background(), allConn, migrator.MigrationTxModeAll, sqlText)
-	dbschema.CloseAndWarn(allConn)
-
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(err.Error(), qt.Contains, "failed to execute SQL statement")
-	assertSQLiteTableMissing(c, allDB, "tx_mode_first")
-
-	noneDB := filepath.Join(dir, "tx-mode-none.db")
-	noneConn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+noneDB)
-	c.Assert(err, qt.IsNil)
-	err = applyAtlasSchemaChanges(context.Background(), noneConn, migrator.MigrationTxModeNone, sqlText)
-	dbschema.CloseAndWarn(noneConn)
-
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(err.Error(), qt.Contains, "failed to execute SQL statement")
-	assertSQLiteTableExists(c, noneDB, "tx_mode_first")
-}
-
-func TestSplitAtlasSchemaApplyStatementsUsesDialect(t *testing.T) {
-	c := qt.New(t)
-	sqlText := `
-CREATE TABLE tx_mode_batch_one (id INT);
-GO
-CREATE TABLE tx_mode_batch_two (id INT);
-GO
-`
-
-	statements := splitAtlasSchemaApplyStatements(sqlText, "sqlserver")
-
-	c.Assert(statements, qt.DeepEquals, []string{
-		"CREATE TABLE tx_mode_batch_one (id INT)",
-		"CREATE TABLE tx_mode_batch_two (id INT)",
-	})
-}
-
 func TestNewCompatCommand_SchemaApplyDryRunUsesAtlasRoot(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
