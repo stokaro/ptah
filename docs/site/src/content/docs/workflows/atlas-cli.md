@@ -26,7 +26,7 @@ model. Unsupported flags fail clearly instead of being ignored.
 | --- | --- |
 | `--url` | `--db-url` |
 | `--dir` | `--migrations-dir` |
-| `atlas.hcl` env | Project config IR, including `schema apply --env` defaults |
+| `atlas.hcl` env | Project config IR for supported `ptah atlas ... --env` defaults |
 | Atlas revision table mode | Ptah revision format and table settings |
 
 ## Migration commands
@@ -101,15 +101,17 @@ configuration remain explicit gaps.
 
 `ptah atlas schema apply` accepts one or more local `--to` schema file URLs and
 a live database `--url`. With `--env`, Ptah can read `env.url`, `env.src`,
-`env.dev`, and `env.exclude` from the selected `atlas.hcl` environment,
-including local variable defaults, locals, `getenv`, `file`, `fileset`, and
-`data.hcl_schema.<name>.url` references. Explicit CLI flags still take
-precedence. Ptah reads the current database schema, diffs it against the desired
-local schema files, prints the planned SQL, and applies it after interactive
-confirmation. Use `--dry-run` to print the plan without applying it, or
-`--auto-approve` to skip the prompt explicitly. Use `--tx-mode=file` or
-`--tx-mode=all` to execute the generated plan in one transaction, or
-`--tx-mode=none` to execute statements without transaction wrapping.
+`env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`,
+`format.schema.apply`, and supported `diff` policy from the selected
+`atlas.hcl` environment, including local variable defaults, locals, `getenv`,
+`file`, `fileset`, `format`, `jsonencode`, and `data.hcl_schema.<name>.url`
+references. Explicit CLI flags still take precedence. Ptah reads the current
+database schema, diffs it against the desired local schema files, prints the
+planned SQL, and applies it after interactive confirmation. Use `--dry-run` to
+print the plan without applying it, or `--auto-approve` to skip the prompt
+explicitly. Use `--tx-mode=file` or `--tx-mode=all` to execute the generated
+plan in one transaction, or `--tx-mode=none` to execute statements without
+transaction wrapping.
 
 ```bash
 ptah atlas schema apply \
@@ -125,8 +127,18 @@ data "hcl_schema" "app" {
 
 env "local" {
   url = getenv("DATABASE_URL")
-  src = data.hcl_schema.app.url
   dev = getenv("DEV_DATABASE_URL")
+  schema {
+    src = data.hcl_schema.app.url
+    mode {
+      funcs = false
+    }
+  }
+  format {
+    schema {
+      apply = "{{ sql . \"  \" }}"
+    }
+  }
 }
 ```
 
@@ -143,6 +155,13 @@ including `[type=...]` selectors. Ptah applies the filter to both the current
 live schema and the desired local schema files before planning, so excluded
 objects are ignored rather than dropped.
 
+Disabled `schema.mode` values are mapped to the same resource-exclusion system
+for object kinds represented in Ptah's schema IR. `diff.skip.drop_table = true`
+removes table drops from supported local plans. For non-dry-run PostgreSQL
+`schema apply` plans that actually emit `CREATE INDEX CONCURRENTLY`,
+`diff.concurrent_index.create = true` requires `--tx-mode none`;
+`diff.concurrent_index.drop` and `diff.skip.drop_schema` fail explicitly.
+
 `--format` accepts Atlas-style Go templates over the planned apply changes. The
 supported template surface includes the `sql` helper and `.MarshalSQL`:
 
@@ -155,9 +174,11 @@ ptah atlas schema apply \
 ```
 
 `ptah atlas schema diff` accepts one or more `--from` and `--to` local schema
-file URLs and requires `--dev-url` so Ptah can choose the SQL dialect. The
-current implementation does not execute Atlas's dev-database simulation; it
-uses the dev URL for dialect selection only.
+file URLs and requires `--dev-url` so Ptah can choose the SQL dialect. With
+`--env`, Ptah can read `env.schema.src`, `env.dev`, `env.exclude`,
+`env.schema.mode`, `format.schema.diff`, and supported `diff` policy from
+`atlas.hcl`. The current implementation does not execute Atlas's dev-database
+simulation; it uses the dev URL for dialect selection only.
 
 ```bash
 ptah atlas schema diff \
@@ -179,8 +200,9 @@ ptah atlas schema diff \
 
 Remote database URLs, migration directory URLs, `env://` project attributes,
 include filters, Atlas Cloud web output, transaction-mode flags, and lock flags
-fail explicitly until their semantics are implemented. `--exclude` filters both
-local `--from` and `--to` schema files before diffing.
+fail explicitly until their semantics are implemented. `--exclude` and disabled
+`schema.mode` values filter both local `--from` and `--to` schema files before
+diffing.
 
 ## Migration Apply
 
@@ -209,18 +231,21 @@ by databases that support migration locks. `--format` executes a Go template
 against a Ptah apply result that mirrors Atlas's public apply-template fields:
 `Pending`, `Applied`, `Current`, `Target`, `Start`, `End`, `Driver`, `URL`, and
 `Dir`; `{{ json . }}` emits the same result as JSON with database credentials
-redacted.
+redacted. With `--env`, Ptah can read `env.url`, `migration`, and
+`format.migrate.apply` from `atlas.hcl`.
 
 ## Migration Diff
 
 `ptah atlas migrate diff` accepts a local `--dir` migration directory, one or
-more local `--to` schema files, and a directly connectable `--dev-url`. Ptah
-drops all tables in the dev database, replays the migration directory into it,
-compares that state to the desired schema files, and writes an Atlas-style
-single `.sql` migration plus `atlas.sum` when changes exist. Use a disposable
-dev database. If `atlas.sum` already exists, Ptah validates it before replaying
-migrations and fails on checksum drift instead of silently rehashing edited
-files.
+more local `--to` schema files, and a directly connectable `--dev-url`. With
+`--env`, Ptah can read `env.schema.src`, `env.dev`, `migration.dir`,
+`format.migrate.diff`, and supported non-concurrent `diff` policy from
+`atlas.hcl`. Ptah drops all tables in the dev database, replays the migration
+directory into it, compares that state to the desired schema files, and writes
+an Atlas-style single `.sql` migration plus `atlas.sum` when changes exist. Use
+a disposable dev database. If `atlas.sum` already exists, Ptah validates it
+before replaying migrations and fails on checksum drift instead of silently
+rehashing edited files.
 
 ```bash
 ptah atlas migrate diff add_users \
@@ -245,8 +270,10 @@ ptah atlas migrate diff add_users \
 
 `--schema` accepts repeated or comma-separated schema names and narrows the
 replayed dev database state plus local desired schema files before the diff is
-planned. Database desired-state URLs, `env://` project attributes, and Docker
-dev databases fail explicitly until their semantics are implemented.
+planned. `diff.concurrent_index.create` is rejected in this command until Ptah
+can write matching no-transaction metadata into generated migration files.
+Database desired-state URLs, `env://` project attributes, and Docker dev
+databases fail explicitly until their semantics are implemented.
 
 ## Migration Validate
 

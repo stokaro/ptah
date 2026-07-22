@@ -15,6 +15,7 @@ import (
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/function"
+	"github.com/zclconf/go-cty/cty/function/stdlib"
 )
 
 // LoadAtlasFile loads the supported subset of an Atlas project config file. A
@@ -58,9 +59,11 @@ func newAtlasParser(baseDir string) atlasParser {
 		ctx: &hcl.EvalContext{
 			Variables: map[string]cty.Value{},
 			Functions: map[string]function.Function{
-				"file":    atlasFileFunc(baseDir),
-				"fileset": atlasFilesetFunc(baseDir),
-				"getenv":  atlasGetenvFunc(),
+				"file":       atlasFileFunc(baseDir),
+				"fileset":    atlasFilesetFunc(baseDir),
+				"format":     stdlib.FormatFunc,
+				"getenv":     atlasGetenvFunc(),
+				"jsonencode": stdlib.JSONEncodeFunc,
 			},
 		},
 	}
@@ -74,52 +77,25 @@ func (p atlasParser) parse(body *hclsyntax.Body, envName string) (Config, error)
 	}
 
 	base := Config{}
-	envs := make([]atlasEnvBlock, 0)
-	globalLintBlocks := make([]*hclsyntax.Block, 0, 1)
-	variableBlocks := make([]*hclsyntax.Block, 0)
-	localsBlocks := make([]*hclsyntax.Block, 0)
-	dataBlocks := make([]*hclsyntax.Block, 0)
-
-	for _, block := range body.Blocks {
-		switch block.Type {
-		case "data":
-			dataBlocks = append(dataBlocks, block)
-		case "env":
-			env, err := atlasEnvBlockFromHCL(block)
-			if err != nil {
-				return Config{}, err
-			}
-			envs = append(envs, env)
-		case "lint":
-			globalLintBlocks = append(globalLintBlocks, block)
-		case "locals":
-			localsBlocks = append(localsBlocks, block)
-		case "variable":
-			variableBlocks = append(variableBlocks, block)
-		default:
-			return Config{}, unsupportedBlock(block)
-		}
-	}
-
-	if err := p.configureEvalContext(variableBlocks, localsBlocks, dataBlocks); err != nil {
+	blocks, err := collectAtlasTopBlocks(body.Blocks)
+	if err != nil {
 		return Config{}, err
 	}
 
-	seenGlobalLint := false
-	for _, block := range globalLintBlocks {
-		if seenGlobalLint {
-			return Config{}, unsupportedBlock(block)
-		}
-		seenGlobalLint = true
-		if err := p.parseLint(block, &base); err != nil {
-			return Config{}, err
-		}
+	if err := p.configureEvalContext(blocks.variables, blocks.locals, blocks.data); err != nil {
+		return Config{}, err
 	}
-	if len(envs) == 0 {
+	if err := p.parseSingleAtlasBlock(blocks.globalDiff, &base, p.parseDiff); err != nil {
+		return Config{}, err
+	}
+	if err := p.parseSingleAtlasBlock(blocks.globalLint, &base, p.parseLint); err != nil {
+		return Config{}, err
+	}
+	if len(blocks.envs) == 0 {
 		return base, nil
 	}
 
-	selected, err := selectAtlasEnvBlock(envs, envName)
+	selected, err := selectAtlasEnvBlock(blocks.envs, envName)
 	if err != nil {
 		return Config{}, err
 	}
@@ -128,6 +104,63 @@ func (p atlasParser) parse(body *hclsyntax.Body, envName string) (Config, error)
 		return Config{}, err
 	}
 	return Merge(base, cfg), nil
+}
+
+type atlasTopBlocks struct {
+	data       []*hclsyntax.Block
+	globalDiff []*hclsyntax.Block
+	globalLint []*hclsyntax.Block
+	envs       []atlasEnvBlock
+	locals     []*hclsyntax.Block
+	variables  []*hclsyntax.Block
+}
+
+func collectAtlasTopBlocks(blocks []*hclsyntax.Block) (atlasTopBlocks, error) {
+	collected := atlasTopBlocks{}
+	for _, block := range blocks {
+		if err := collectAtlasTopBlock(block, &collected); err != nil {
+			return atlasTopBlocks{}, err
+		}
+	}
+	return collected, nil
+}
+
+func collectAtlasTopBlock(block *hclsyntax.Block, collected *atlasTopBlocks) error {
+	switch block.Type {
+	case "data":
+		collected.data = append(collected.data, block)
+	case "diff":
+		collected.globalDiff = append(collected.globalDiff, block)
+	case "env":
+		env, err := atlasEnvBlockFromHCL(block)
+		if err != nil {
+			return err
+		}
+		collected.envs = append(collected.envs, env)
+	case "lint":
+		collected.globalLint = append(collected.globalLint, block)
+	case "locals":
+		collected.locals = append(collected.locals, block)
+	case "variable":
+		collected.variables = append(collected.variables, block)
+	default:
+		return unsupportedBlock(block)
+	}
+	return nil
+}
+
+func (p atlasParser) parseSingleAtlasBlock(
+	blocks []*hclsyntax.Block,
+	cfg *Config,
+	parse func(*hclsyntax.Block, *Config) error,
+) error {
+	if len(blocks) > 1 {
+		return unsupportedBlock(blocks[1])
+	}
+	if len(blocks) == 0 {
+		return nil
+	}
+	return parse(blocks[0], cfg)
 }
 
 type atlasEnvBlock struct {
@@ -160,32 +193,111 @@ func (p atlasParser) parseEnv(env atlasEnvBlock) (Config, error) {
 		}
 	}
 
-	seenMigration := false
-	seenLint := false
+	seen := map[string]struct{}{}
 	for _, nested := range env.block.Body.Blocks {
-		switch nested.Type {
-		case "migration":
-			if seenMigration {
-				return Config{}, unsupportedBlock(nested)
-			}
-			seenMigration = true
-			if err := p.parseMigration(nested, &cfg); err != nil {
-				return Config{}, err
-			}
-		case "lint":
-			if seenLint {
-				return Config{}, unsupportedBlock(nested)
-			}
-			seenLint = true
-			if err := p.parseLint(nested, &cfg); err != nil {
-				return Config{}, err
-			}
-		default:
-			return Config{}, unsupportedBlock(nested)
+		if err := p.parseEnvBlock(nested, seen, &cfg); err != nil {
+			return Config{}, err
 		}
 	}
 
 	return cfg, nil
+}
+
+func (p atlasParser) parseEnvBlock(block *hclsyntax.Block, seen map[string]struct{}, cfg *Config) error {
+	if _, ok := seen[block.Type]; ok {
+		return unsupportedBlock(block)
+	}
+	seen[block.Type] = struct{}{}
+
+	switch block.Type {
+	case "diff":
+		return p.parseDiff(block, cfg)
+	case "format":
+		return p.parseFormat(block, cfg)
+	case "lint":
+		return p.parseLint(block, cfg)
+	case "migration":
+		return p.parseMigration(block, cfg)
+	case "schema":
+		return p.parseSchema(block, cfg)
+	default:
+		return unsupportedBlock(block)
+	}
+}
+
+func (p atlasParser) parseSchema(block *hclsyntax.Block, cfg *Config) error {
+	if len(block.Labels) > 0 {
+		return unsupportedBlock(block)
+	}
+	for attrName, attr := range block.Body.Attributes {
+		switch attrName {
+		case "src":
+			values, err := p.stringOrStringListAttr(attrName, attr)
+			if err != nil {
+				return err
+			}
+			cfg.SchemaSources = values
+			cfg.presence.schemaSources = true
+		default:
+			return unsupportedAttr(attrName, attr)
+		}
+	}
+	seenMode := false
+	for _, nested := range block.Body.Blocks {
+		switch nested.Type {
+		case "mode":
+			if seenMode {
+				return unsupportedBlock(nested)
+			}
+			seenMode = true
+			if err := p.parseSchemaMode(nested, cfg); err != nil {
+				return err
+			}
+		default:
+			return unsupportedBlock(nested)
+		}
+	}
+	return nil
+}
+
+func (p atlasParser) parseSchemaMode(block *hclsyntax.Block, cfg *Config) error {
+	if len(block.Labels) > 0 {
+		return unsupportedBlock(block)
+	}
+	for attrName, attr := range block.Body.Attributes {
+		value, err := p.schemaModeAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		switch attrName {
+		case "funcs":
+			cfg.Schema.Mode.Funcs = value
+		case "objects":
+			cfg.Schema.Mode.Objects = value
+		case "permissions":
+			cfg.Schema.Mode.Permissions = value
+		case "roles":
+			cfg.Schema.Mode.Roles = value
+		case "tables":
+			cfg.Schema.Mode.Tables = value
+		case "triggers":
+			cfg.Schema.Mode.Triggers = value
+		case "types":
+			cfg.Schema.Mode.Types = value
+		case "views":
+			cfg.Schema.Mode.Views = value
+		case "sensitive":
+			if value.Value {
+				return unsupportedAttr(attrName, attr)
+			}
+		default:
+			return unsupportedAttr(attrName, attr)
+		}
+	}
+	if len(block.Body.Blocks) > 0 {
+		return unsupportedBlock(block.Body.Blocks[0])
+	}
+	return nil
 }
 
 func (p atlasParser) parseEnvAttr(attrName string, attr *hclsyntax.Attribute, cfg *Config) error {
@@ -341,6 +453,178 @@ func (p atlasParser) parseLintGit(block *hclsyntax.Block, cfg *Config) error {
 				return err
 			}
 			cfg.Lint.GitDir = value
+		default:
+			return unsupportedAttr(attrName, attr)
+		}
+	}
+	if len(block.Body.Blocks) > 0 {
+		return unsupportedBlock(block.Body.Blocks[0])
+	}
+	return nil
+}
+
+func (p atlasParser) parseFormat(block *hclsyntax.Block, cfg *Config) error {
+	if len(block.Labels) > 0 {
+		return unsupportedBlock(block)
+	}
+	if len(block.Body.Attributes) > 0 {
+		for name, attr := range block.Body.Attributes {
+			return unsupportedAttr(name, attr)
+		}
+	}
+	seenMigrate := false
+	seenSchema := false
+	for _, nested := range block.Body.Blocks {
+		switch nested.Type {
+		case "migrate":
+			if seenMigrate {
+				return unsupportedBlock(nested)
+			}
+			seenMigrate = true
+			if err := p.parseMigrateFormat(nested, cfg); err != nil {
+				return err
+			}
+		case "schema":
+			if seenSchema {
+				return unsupportedBlock(nested)
+			}
+			seenSchema = true
+			if err := p.parseSchemaFormat(nested, cfg); err != nil {
+				return err
+			}
+		default:
+			return unsupportedBlock(nested)
+		}
+	}
+	return nil
+}
+
+func (p atlasParser) parseMigrateFormat(block *hclsyntax.Block, cfg *Config) error {
+	if len(block.Labels) > 0 {
+		return unsupportedBlock(block)
+	}
+	for attrName, attr := range block.Body.Attributes {
+		value, err := p.nonEmptyStringAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		switch attrName {
+		case "apply":
+			cfg.Format.Migrate.Apply = value
+		case "diff":
+			cfg.Format.Migrate.Diff = value
+		case "lint", "status":
+			return unsupportedAttr(attrName, attr)
+		default:
+			return unsupportedAttr(attrName, attr)
+		}
+	}
+	if len(block.Body.Blocks) > 0 {
+		return unsupportedBlock(block.Body.Blocks[0])
+	}
+	return nil
+}
+
+func (p atlasParser) parseSchemaFormat(block *hclsyntax.Block, cfg *Config) error {
+	if len(block.Labels) > 0 {
+		return unsupportedBlock(block)
+	}
+	for attrName, attr := range block.Body.Attributes {
+		value, err := p.nonEmptyStringAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		switch attrName {
+		case "apply":
+			cfg.Format.Schema.Apply = value
+		case "diff":
+			cfg.Format.Schema.Diff = value
+		case "inspect":
+			cfg.Format.Schema.Inspect = value
+		default:
+			return unsupportedAttr(attrName, attr)
+		}
+	}
+	if len(block.Body.Blocks) > 0 {
+		return unsupportedBlock(block.Body.Blocks[0])
+	}
+	return nil
+}
+
+func (p atlasParser) parseDiff(block *hclsyntax.Block, cfg *Config) error {
+	if len(block.Labels) > 0 {
+		return unsupportedBlock(block)
+	}
+	if len(block.Body.Attributes) > 0 {
+		for name, attr := range block.Body.Attributes {
+			return unsupportedAttr(name, attr)
+		}
+	}
+	seenSkip := false
+	seenConcurrentIndex := false
+	for _, nested := range block.Body.Blocks {
+		switch nested.Type {
+		case "skip":
+			if seenSkip {
+				return unsupportedBlock(nested)
+			}
+			seenSkip = true
+			if err := p.parseDiffSkip(nested, cfg); err != nil {
+				return err
+			}
+		case "concurrent_index":
+			if seenConcurrentIndex {
+				return unsupportedBlock(nested)
+			}
+			seenConcurrentIndex = true
+			if err := p.parseDiffConcurrentIndex(nested, cfg); err != nil {
+				return err
+			}
+		default:
+			return unsupportedBlock(nested)
+		}
+	}
+	return nil
+}
+
+func (p atlasParser) parseDiffSkip(block *hclsyntax.Block, cfg *Config) error {
+	if len(block.Labels) > 0 {
+		return unsupportedBlock(block)
+	}
+	for attrName, attr := range block.Body.Attributes {
+		value, err := p.configBoolAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		switch attrName {
+		case "drop_table":
+			cfg.Diff.Skip.DropTable = value
+		case "drop_schema":
+			return unsupportedAttr(attrName, attr)
+		default:
+			return unsupportedAttr(attrName, attr)
+		}
+	}
+	if len(block.Body.Blocks) > 0 {
+		return unsupportedBlock(block.Body.Blocks[0])
+	}
+	return nil
+}
+
+func (p atlasParser) parseDiffConcurrentIndex(block *hclsyntax.Block, cfg *Config) error {
+	if len(block.Labels) > 0 {
+		return unsupportedBlock(block)
+	}
+	for attrName, attr := range block.Body.Attributes {
+		value, err := p.configBoolAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		switch attrName {
+		case "create":
+			cfg.Diff.ConcurrentIndex.Create = value
+		case "drop":
+			cfg.Diff.ConcurrentIndex.Drop = value
 		default:
 			return unsupportedAttr(attrName, attr)
 		}
@@ -553,6 +837,75 @@ func (p atlasParser) stringAttr(name string, attr *hclsyntax.Attribute) (string,
 		return "", unsupportedAttr(name, attr)
 	}
 	return value.AsString(), nil
+}
+
+func (p atlasParser) nonEmptyStringAttr(name string, attr *hclsyntax.Attribute) (string, error) {
+	value, err := p.stringAttr(name, attr)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(value) == "" {
+		return "", unsupportedAttr(name, attr)
+	}
+	return value, nil
+}
+
+func (p atlasParser) schemaModeAttr(name string, attr *hclsyntax.Attribute) (ConfigBool, error) {
+	if name == "sensitive" {
+		value, err := p.sensitiveModeAttr(name, attr)
+		if err != nil {
+			return ConfigBool{}, err
+		}
+		return ConfigBool{Value: value, Set: true}, nil
+	}
+	return p.configBoolAttr(name, attr)
+}
+
+func (p atlasParser) sensitiveModeAttr(name string, attr *hclsyntax.Attribute) (bool, error) {
+	value, err := p.identifierOrStringAttr(name, attr)
+	if err != nil {
+		return false, err
+	}
+	switch strings.ToUpper(value) {
+	case "DENY":
+		return false, nil
+	case "ALLOW":
+		return true, nil
+	default:
+		return false, unsupportedAttr(name, attr)
+	}
+}
+
+func (p atlasParser) identifierOrStringAttr(name string, attr *hclsyntax.Attribute) (string, error) {
+	value, diags := attr.Expr.Value(p.ctx)
+	if !diags.HasErrors() && value.Type() == cty.String {
+		return value.AsString(), nil
+	}
+	traversal, ok := attr.Expr.(*hclsyntax.ScopeTraversalExpr)
+	if !ok || len(traversal.Traversal) != 1 {
+		return "", unsupportedAttr(name, attr)
+	}
+	root, ok := traversal.Traversal[0].(hcl.TraverseRoot)
+	if !ok {
+		return "", unsupportedAttr(name, attr)
+	}
+	return root.Name, nil
+}
+
+func (p atlasParser) configBoolAttr(name string, attr *hclsyntax.Attribute) (ConfigBool, error) {
+	value, err := p.boolAttr(name, attr)
+	if err != nil {
+		return ConfigBool{}, err
+	}
+	return ConfigBool{Value: value, Set: true}, nil
+}
+
+func (p atlasParser) boolAttr(name string, attr *hclsyntax.Attribute) (bool, error) {
+	value, diags := attr.Expr.Value(p.ctx)
+	if diags.HasErrors() || value.Type() != cty.Bool {
+		return false, unsupportedAttr(name, attr)
+	}
+	return value.True(), nil
 }
 
 func (p atlasParser) stringOrStringListAttr(name string, attr *hclsyntax.Attribute) ([]string, error) {

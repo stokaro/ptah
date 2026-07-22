@@ -15,6 +15,7 @@ import (
 type atlasSchemaInspectOptions struct {
 	url     string
 	devURL  string
+	envName string
 	schemas []string
 	exclude []string
 	include []string
@@ -45,6 +46,7 @@ inspection, and Atlas dev-database inference remain explicit follow-up gaps.
 	flags := cmd.Flags()
 	flags.StringVarP(&opts.url, "url", "u", "", "Database URL to inspect")
 	flags.StringVar(&opts.devURL, "dev-url", "", "Dev database URL used by Atlas for inference")
+	dbcli.RegisterEnvFlag(flags, &opts.envName)
 	flags.StringArrayVar(&opts.schemas, "schema", nil, "Schema to inspect")
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from inspection")
 	flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in inspection")
@@ -54,6 +56,19 @@ inspection, and Atlas dev-database inference remain explicit follow-up gaps.
 }
 
 func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) error {
+	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd, opts.envName)
+	if needsAtlasSchemaInspectConfig(cmd) {
+		projectCfg, loaded, err = loadRequiredAtlasProjectConfigForCommand(cmd, opts.envName)
+	}
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if loaded {
+		opts.url = dbcli.EffectiveString(cmd, "url", opts.url, projectCfg.DatabaseURL)
+		opts.devURL = dbcli.EffectiveString(cmd, "dev-url", opts.devURL, projectCfg.DevURL)
+		opts.exclude = effectiveAtlasExclude(cmd, opts.exclude, projectCfg)
+		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, projectCfg.Format.Schema.Inspect)
+	}
 	format, err := atlasschema.NormalizeInspectFormat(opts.format)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -82,6 +97,10 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 	}
 	fmt.Fprint(cmd.OutOrStdout(), rendered)
 	return nil
+}
+
+func needsAtlasSchemaInspectConfig(cmd *cobra.Command) bool {
+	return !cmd.Flags().Changed("url")
 }
 
 func validateAtlasSchemaInspectOptions(opts atlasSchemaInspectOptions) error {
