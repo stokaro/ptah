@@ -12,7 +12,40 @@ import (
 	"github.com/stokaro/ptah/internal/atlashcl"
 )
 
-func TestSchemaExportCommandWritesAtlasHCL(t *testing.T) {
+func TestSchemaExportCommandWritesHCL(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	writeModel(c, dir)
+	outPath := filepath.Join(dir, "schema.hcl")
+
+	cmd := schema.NewSchemaCommand()
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{
+		"export",
+		"--from", "go",
+		"--to", "hcl",
+		"--root-dir", dir,
+		"--out", outPath,
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr.String()))
+	c.Assert(stdout.String(), qt.Contains, "Exported HCL schema")
+	content, err := os.ReadFile(outPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(content), qt.Contains, `table "users"`)
+	c.Assert(string(content), qt.Contains, `column "created_at"`)
+	c.Assert(string(content), qt.Contains, `primary_key {`)
+	parsed, err := atlashcl.Parse(content, "schema.hcl")
+	c.Assert(err, qt.IsNil, qt.Commentf("schema.hcl:\n%s", string(content)))
+	c.Assert(parsed.Tables, qt.HasLen, 1)
+	c.Assert(parsed.Tables[0].PrimaryKey, qt.DeepEquals, []string{"id"})
+}
+
+func TestSchemaExportCommandAcceptsLegacyHCLAlias(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	writeModel(c, dir)
@@ -33,16 +66,26 @@ func TestSchemaExportCommandWritesAtlasHCL(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr.String()))
-	c.Assert(stdout.String(), qt.Contains, "Exported Atlas HCL schema")
+	c.Assert(stdout.String(), qt.Contains, "Exported HCL schema")
 	content, err := os.ReadFile(outPath)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(content), qt.Contains, `table "users"`)
-	c.Assert(string(content), qt.Contains, `column "created_at"`)
-	c.Assert(string(content), qt.Contains, `primary_key {`)
-	parsed, err := atlashcl.Parse(content, "schema.hcl")
-	c.Assert(err, qt.IsNil, qt.Commentf("schema.hcl:\n%s", string(content)))
-	c.Assert(parsed.Tables, qt.HasLen, 1)
-	c.Assert(parsed.Tables[0].PrimaryKey, qt.DeepEquals, []string{"id"})
+}
+
+func TestSchemaExportHelpUsesNeutralHCLName(t *testing.T) {
+	c := qt.New(t)
+	cmd := schema.NewSchemaCommand()
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"export", "--help"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr.String()))
+	c.Assert(stdout.String(), qt.Contains, "Target schema format: hcl, openapi-v3, or graphql")
+	c.Assert(stdout.String(), qt.Contains, "ptah schema export --to hcl")
+	c.Assert(stdout.String(), qt.Not(qt.Contains), "atlas-hcl, openapi-v3")
 }
 
 func TestSchemaExportCommandWritesAPISchemas(t *testing.T) {
@@ -81,7 +124,7 @@ func TestSchemaExportCommandTrimsFormatSelector(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
-	cmd.SetArgs([]string{"export", "--to", "atlas-hcl ", "--root-dir", dir, "--out", outPath})
+	cmd.SetArgs([]string{"export", "--to", "hcl ", "--root-dir", dir, "--out", outPath})
 
 	err := cmd.Execute()
 
@@ -105,7 +148,7 @@ func TestSchemaExportCommandPreservesSchemaObjects(t *testing.T) {
 	cmd.SetArgs([]string{
 		"export",
 		"--from", "go",
-		"--to", "atlas-hcl",
+		"--to", "hcl",
 		"--root-dir", fixtureDir,
 		"--out", outPath,
 	})

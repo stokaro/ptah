@@ -1,13 +1,16 @@
-# Atlas HCL Schema Input
+# HCL Schema Input
 
-Ptah can generate SQL from an Atlas schema HCL file instead of scanning Go
-source annotations. The Atlas HCL frontend builds the same `goschema.Database`
+Ptah can generate SQL from an HCL schema file instead of scanning Go source
+annotations. The HCL schema frontend builds the same `goschema.Database`
 intermediate representation as Go annotations and YAML schema input, then runs
 the normal finalization, dependency ordering, AST conversion, and dialect
 renderers.
 
-Use Atlas HCL input when an existing Atlas schema file should be used as a Ptah
-schema source.
+Ptah's HCL schema format is compatible with the Atlas HCL schema language for
+the supported subset. Ptah is not affiliated with or endorsed by Ariga or Atlas.
+
+Use HCL schema input when an existing Atlas-compatible schema file should be
+used as a Ptah schema source.
 
 ## Generate SQL
 
@@ -15,7 +18,7 @@ schema source.
 go run ./cmd schema render --schema-file schema.hcl --dialect postgres
 ```
 
-`--schema-file` accepts `.hcl` files for Atlas HCL input, plus `.yaml` and
+`--schema-file` accepts `.hcl` files for HCL schema input, plus `.yaml` and
 `.yml` files for YAML input. When it is set, `--root-dir` is ignored. If
 `--dialect` is omitted, Ptah renders every supported dialect.
 
@@ -339,7 +342,7 @@ OSS.
 
 ## Current Limitations
 
-The Atlas HCL frontend is intentionally conservative. It does not yet model
+The HCL schema frontend is intentionally conservative. It does not yet model
 Atlas features that Ptah cannot represent without losing semantics, including:
 
 - composite foreign keys
@@ -354,7 +357,7 @@ Atlas features that Ptah cannot represent without losing semantics, including:
 - trigger `execute`, `referencing`, `when`, constraint, and deferrable metadata
 - policy `as`
 - permission targets other than schema and table
-- Atlas HCL objects outside direct schema definitions, such as realms and other
+- HCL objects outside direct schema definitions, such as realms and other
   dialect-specific object types
 
 Project-level `env` and `variable` blocks may appear next to schema objects in

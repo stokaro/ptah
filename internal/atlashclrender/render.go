@@ -1,4 +1,4 @@
-// Package atlashclrender renders Ptah schema IR as Atlas schema HCL.
+// Package atlashclrender renders Ptah schema IR as HCL schema text.
 package atlashclrender
 
 import (
@@ -31,7 +31,7 @@ type Result struct {
 	Diagnostics []Diagnostic
 }
 
-// Render renders a finalized Ptah schema IR as deterministic Atlas schema HCL.
+// Render renders a finalized Ptah schema IR as deterministic HCL schema text.
 func Render(db *goschema.Database) (Result, error) {
 	if db == nil {
 		return Result{}, fmt.Errorf("schema database is nil")
@@ -165,7 +165,7 @@ func (r *renderer) renderTable(
 		r.renderIndex(index)
 	}
 	if table.CustomSQL != "" {
-		r.warn("table "+table.QualifiedName(), "custom SQL cannot be represented in Atlas HCL")
+		r.warn("table "+table.QualifiedName(), "custom SQL cannot be represented in HCL schema output")
 	}
 	r.line("}")
 	r.line("")
@@ -204,7 +204,7 @@ func (r *renderer) renderColumn(field goschema.Field) {
 		r.stringAttr(3, "start", field.IdentityStart)
 		r.stringAttr(3, "increment", field.IdentityIncrement)
 		if field.IdentityOptions != "" {
-			r.warn("column "+field.StructName+"."+field.Name, "identity_options cannot be represented in Atlas HCL")
+			r.warn("column "+field.StructName+"."+field.Name, "identity_options cannot be represented in HCL schema output")
 		}
 		r.line("    }")
 	}
@@ -328,7 +328,7 @@ func (r *renderer) renderConstraint(table goschema.Table, constraint goschema.Co
 		r.rawAttr(2, "columns", columnRefs(constraint.Columns))
 		r.line("  }")
 	case "EXCLUDE":
-		r.warn("constraint "+constraint.Name, "EXCLUDE constraints cannot be represented in the supported Atlas HCL subset")
+		r.warn("constraint "+constraint.Name, "EXCLUDE constraints cannot be represented in the supported HCL subset")
 	default:
 		r.warn("constraint "+constraint.Name, "unknown constraint type "+strconv.Quote(constraint.Type))
 	}
@@ -387,10 +387,10 @@ func (r *renderer) renderIndex(index goschema.Index) {
 		r.warn("index "+index.Name, "legacy index operator field was not exported; use structured index parts")
 	}
 	if index.Granularity != 0 {
-		r.warn("index "+index.Name, "ClickHouse granularity cannot be represented in the supported Atlas HCL subset")
+		r.warn("index "+index.Name, "ClickHouse granularity cannot be represented in the supported HCL subset")
 	}
 	if index.Comment != "" {
-		r.warn("index "+index.Name, "index comments cannot be represented in Atlas HCL")
+		r.warn("index "+index.Name, "index comments cannot be represented in HCL schema output")
 	}
 	r.line("  }")
 }
@@ -399,7 +399,7 @@ func (r *renderer) warnOverrides(path string, overrides map[string]map[string]st
 	if len(overrides) == 0 {
 		return
 	}
-	r.warn(path, "platform overrides cannot be represented exactly in Atlas HCL")
+	r.warn(path, "platform overrides cannot be represented exactly in HCL schema output")
 }
 
 func (r *renderer) warn(path, message string) {

@@ -19,10 +19,10 @@ root-level command spellings are removed instead of preserved.
 | Native command | Purpose |
 | --- | --- |
 | `ptah introspect` | Generate annotated Go models from a live database. |
-| `ptah schema render` | Render desired schema SQL from Go, YAML, or Atlas HCL inputs. |
+| `ptah schema render` | Render desired schema SQL from Go, YAML, or HCL schema inputs. |
 | `ptah schema compare` | Compare desired schema with a live database. |
 | `ptah schema drift` | Check live database drift against desired schema. |
-| `ptah schema export` | Export a schema to Atlas HCL, an OpenAPI 3.0 component schema, or a GraphQL SDL. |
+| `ptah schema export` | Export a schema to HCL, an OpenAPI 3.0 component schema, or a GraphQL SDL. |
 | `ptah viz` | Render desired schema diagrams as Mermaid, DOT, or SVG. |
 | `ptah db read` | Read schema from a live database. |
 | `ptah db drop-all` | Drop all schema objects in a live database. |

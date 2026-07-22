@@ -62,7 +62,7 @@ model. Unsupported flags fail clearly instead of being ignored.
 
 `ptah atlas schema inspect` accepts a live database `--url` and writes
 machine-oriented schema output without native Ptah status banners. The default
-format is Atlas HCL.
+format is Atlas-compatible HCL.
 
 ```bash
 ptah atlas schema inspect --url "$DATABASE_URL" > schema.hcl

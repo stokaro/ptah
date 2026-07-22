@@ -31,7 +31,7 @@ These packages are intended for application and tool embedders:
 - `github.com/stokaro/ptah/migration/seeder`
 
 `atlascompat` is a narrow compatibility surface for external Atlas parity and
-conformance tooling. It intentionally wraps parser, Atlas HCL, schema
+conformance tooling. It intentionally wraps parser, HCL schema,
 conversion, and migration sum internals without making those implementation
 packages importable directly.
 

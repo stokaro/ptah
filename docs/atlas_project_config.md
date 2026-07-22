@@ -3,7 +3,7 @@
 Ptah can read a limited Atlas project config subset from `atlas.hcl` and
 translate it into Ptah's project config IR. This is project configuration for
 commands, not schema HCL input. Schema HCL input is documented separately in
-[Atlas HCL Schema Input](atlas_hcl_schema.md).
+[HCL Schema Input](atlas_hcl_schema.md).
 
 ## Supported Subset
 
@@ -50,7 +50,7 @@ The supported attributes map to Ptah settings as follows:
 `env.src` accepts either one string or a list of strings. Ptah currently uses
 literal local schema file sources only, matching the local schema-file boundary
 of `ptah atlas schema apply`. Data-source expressions such as
-`data.hcl_schema.app.url` are rejected until Ptah implements Atlas HCL
+`data.hcl_schema.app.url` are rejected until Ptah implements HCL expression
 evaluation for project config files.
 
 `env.exclude` and `lint.latest` are preserved in the project config IR for
