@@ -27,9 +27,9 @@ ptah schema export --to graphql --root-dir ./models > schema.graphql
 | Flag | Applies to | Meaning |
 | --- | --- | --- |
 | `--from` | all | Source format. Only `go` is supported. |
-| `--to` | all | Target format: `atlas-hcl`, `openapi-v3`, or `graphql`. |
+| `--to` | all | Target format: `hcl`, `openapi-v3`, or `graphql`. The old `atlas-hcl` value is accepted as an alias. |
 | `--root-dir` | all | Directory scanned for Go annotations. |
-| `--out` | all | Output file. Optional for `openapi-v3`/`graphql` (stdout when omitted); required for `atlas-hcl`. |
+| `--out` | all | Output file. Optional for `openapi-v3`/`graphql` (stdout when omitted); required for `hcl`. |
 | `--include-tables` | `openapi-v3`, `graphql` | Comma-separated allowlist of tables. |
 | `--exclude-tables` | `openapi-v3`, `graphql` | Comma-separated denylist, applied after the allowlist. |
 | `--title` | `openapi-v3` | Value for `info.title` (default `Ptah Exported Schema`). |
@@ -100,5 +100,6 @@ columns, primary keys, foreign keys and enums. Non-column database objects
 indexes) are not part of an API schema and are not emitted. Use `--include-tables`
 / `--exclude-tables` to scope the output to the entities you actually expose.
 
-The Atlas HCL target (`--to atlas-hcl`) is documented in
-[Atlas HCL Schema](atlas_hcl_schema.md).
+The HCL schema target (`--to hcl`) is documented in
+[HCL Schema](atlas_hcl_schema.md). The old `--to atlas-hcl` spelling remains an
+accepted alias for existing scripts.

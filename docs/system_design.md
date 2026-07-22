@@ -60,13 +60,13 @@ The system operates through four main layers:
   - Preserves author order for table-local columns, indexes, and constraints while keeping top-level maps deterministic
   - Applies strict validation for unknown fields, duplicate ordered keys, invalid indexes and constraints, and multiple YAML documents
 
-#### Internal Atlas HCL Schema Frontend
-- **Purpose**: Parses Atlas schema HCL files into the same `goschema.Database` IR used by Go annotations
+#### Internal HCL Schema Frontend
+- **Purpose**: Parses HCL schema files into the same `goschema.Database` IR used by Go annotations
 - **Input**: `.hcl` files passed to `ptah schema render --schema-file`
 - **Functionality**:
   - Uses HashiCorp HCL syntax parsing instead of ad hoc string parsing
   - Supports schema labels, tables, columns, primary keys, indexes, foreign keys, check constraints, defaults, comments, and basic table options
-  - Rejects unsupported Atlas HCL schema semantics explicitly instead of silently dropping them from the generated Ptah IR
+  - Rejects unsupported HCL schema semantics explicitly instead of silently dropping them from the generated Ptah IR
 
 #### Internal SQL Lexer
 - **Purpose**: Tokenizes SQL statements into structured tokens

@@ -154,7 +154,7 @@ func newAtlasSchemaInspectTemplate(name, format string) (*template.Template, err
 func (r *SchemaInspectReport) MarshalHCL() (string, error) {
 	rendered, err := atlashclrender.Render(r.db)
 	if err != nil {
-		return "", fmt.Errorf("render Atlas HCL: %w", err)
+		return "", fmt.Errorf("render HCL schema: %w", err)
 	}
 	if r.diagnostics != nil {
 		for _, diagnostic := range rendered.Diagnostics {

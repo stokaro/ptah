@@ -147,6 +147,6 @@ rm -f ./bin/ptah
 ## Next steps
 
 - Use [Go schema workflow](../workflows/go-schema/) when the application owns schema definitions in Go code.
-- Use [Schema files](../workflows/schema-files/) for YAML, Atlas HCL, or SQL sources.
+- Use [Schema files](../workflows/schema-files/) for YAML, HCL, or SQL sources.
 - Use [Migrations](../workflows/migrations/) before applying Ptah to shared databases.
 - Use [Comparison](../reference/comparison/) to understand where Ptah currently matches Atlas and where conformance gaps remain.

@@ -28,10 +28,10 @@ func newAtlasSchemaInspectCommand() *cobra.Command {
 		Short: "Inspect a database schema",
 		Long: `Atlas OSS ` + "`atlas schema inspect`" + ` command path.
 
-Inspects a live database from --url and writes Atlas-shaped schema output to
-stdout without Ptah status banners. The default output is Atlas HCL. SQL output
-is supported with --format sql or --format '{{ sql . }}'. JSON output and
-custom Go templates are supported through the same --format flag. Include/exclude
+Inspects a live database from --url and writes Atlas-compatible schema output to
+stdout without Ptah status banners. The default output is HCL. SQL output is
+supported with --format sql or --format '{{ sql . }}'. JSON output and custom
+Go templates are supported through the same --format flag. Include/exclude
 filters, split/write templates, and Atlas dev-database inference remain explicit
 follow-up gaps.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {

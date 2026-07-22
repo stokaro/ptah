@@ -18,7 +18,7 @@ func (r *renderer) renderExtensions() {
 		r.stringAttr(1, "version", extension.Version)
 		r.stringAttr(1, "comment", extension.Comment)
 		if extension.IfNotExists {
-			r.warn("extensions."+extension.Name, "extension if_not_exists is migration execution behavior and cannot be represented in Atlas HCL")
+			r.warn("extensions."+extension.Name, "extension if_not_exists is migration execution behavior and cannot be represented in HCL schema output")
 		}
 		r.line("}")
 		r.line("")
@@ -69,7 +69,7 @@ func (r *renderer) renderRowSecurity(rlsEnabled *goschema.RLSEnabledTable) {
 	r.rawAttr(2, "enabled", "true")
 	r.line("  }")
 	if rlsEnabled.Comment != "" {
-		r.warn("rls_enabled_tables."+rlsEnabled.Table, "RLS enablement comments cannot be represented in Atlas HCL row_security")
+		r.warn("rls_enabled_tables."+rlsEnabled.Table, "RLS enablement comments cannot be represented in HCL schema row_security")
 	}
 }
 
@@ -86,7 +86,7 @@ func (r *renderer) renderFunctions() {
 func (r *renderer) renderFunction(function goschema.Function) {
 	function.Canonicalize()
 	if function.Body == "" {
-		r.warn("function "+function.Name, "function body is required for Atlas HCL export")
+		r.warn("function "+function.Name, "function body is required for HCL schema export")
 		return
 	}
 	name := objectNameFromQualified(function.Name)
@@ -110,7 +110,7 @@ func (r *renderer) renderFunction(function goschema.Function) {
 func (r *renderer) renderFunctionArgs(function goschema.Function) {
 	args, ok := splitFunctionArgs(function.Parameters)
 	if !ok {
-		r.warn("function "+function.Name, "function parameters cannot be represented as Atlas HCL arg blocks")
+		r.warn("function "+function.Name, "function parameters cannot be represented as HCL schema arg blocks")
 		return
 	}
 	for _, arg := range args {
@@ -127,7 +127,7 @@ func (r *renderer) renderViews() {
 	})
 	for _, view := range views {
 		if view.Body == "" {
-			r.warn("views."+view.Name, "view body is required for Atlas HCL export")
+			r.warn("views."+view.Name, "view body is required for HCL schema export")
 			continue
 		}
 		name := objectNameFromQualified(view.Name)
@@ -158,7 +158,7 @@ func (r *renderer) renderMaterializedViews() {
 func (r *renderer) renderMaterializedView(view goschema.MaterializedView) {
 	view.Canonicalize()
 	if view.Body == "" {
-		r.warn("materialized_views."+view.Name, "materialized view body is required for Atlas HCL export")
+		r.warn("materialized_views."+view.Name, "materialized view body is required for HCL schema export")
 		return
 	}
 	name := objectNameFromQualified(view.Name)
@@ -169,7 +169,7 @@ func (r *renderer) renderMaterializedView(view goschema.MaterializedView) {
 	r.stringAttr(1, "as", view.Body)
 	r.stringAttr(1, "comment", view.Comment)
 	if view.RefreshStrategy != "" && view.RefreshStrategy != "manual" {
-		r.warn("materialized_views."+view.Name, "materialized view refresh strategy cannot be represented in PostgreSQL Atlas HCL")
+		r.warn("materialized_views."+view.Name, "materialized view refresh strategy cannot be represented in PostgreSQL HCL schema output")
 	}
 	r.line("}")
 	r.line("")
@@ -188,17 +188,17 @@ func (r *renderer) renderTriggers() {
 func (r *renderer) renderTrigger(trigger goschema.Trigger) {
 	trigger.Canonicalize()
 	if trigger.Table == "" || trigger.Body == "" {
-		r.warn("triggers."+trigger.Name, "trigger requires table and body for Atlas HCL export")
+		r.warn("triggers."+trigger.Name, "trigger requires table and body for HCL schema export")
 		return
 	}
 	timing, ok := triggerTimingBlock(trigger.Timing)
 	if !ok {
-		r.warn("triggers."+trigger.Name, "trigger timing cannot be represented in Atlas HCL")
+		r.warn("triggers."+trigger.Name, "trigger timing cannot be represented in HCL schema output")
 		return
 	}
 	event, ok := triggerEventAttr(trigger.Event)
 	if !ok {
-		r.warn("triggers."+trigger.Name, "trigger event cannot be represented in Atlas HCL")
+		r.warn("triggers."+trigger.Name, "trigger event cannot be represented in HCL schema output")
 		return
 	}
 	r.linef(`trigger %s {`, quote(trigger.Name))
@@ -220,7 +220,7 @@ func (r *renderer) renderRLSPolicies() {
 	})
 	for _, policy := range policies {
 		if policy.Table == "" {
-			r.warn("rls_policies."+policy.Name, "RLS policy requires a target table for Atlas HCL export")
+			r.warn("rls_policies."+policy.Name, "RLS policy requires a target table for HCL schema export")
 			continue
 		}
 		r.linef(`policy %s {`, quote(policy.Name))
@@ -262,7 +262,7 @@ func (r *renderer) renderGrants() {
 		}
 		r.stringAttr(1, "comment", grant.Comment)
 		if grant.GrantedBy != "" {
-			r.warn("grants."+grant.Role, "grantor metadata cannot be represented in Atlas HCL permission blocks")
+			r.warn("grants."+grant.Role, "grantor metadata cannot be represented in HCL schema permission blocks")
 		}
 		r.line("}")
 		r.line("")

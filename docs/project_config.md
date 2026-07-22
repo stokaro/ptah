@@ -2,7 +2,7 @@
 
 `ptah.yaml` is Ptah's project-level configuration file. It is command
 configuration, not a schema source. Schema input remains Go annotations, YAML
-schema, Atlas schema HCL, or database introspection depending on the command.
+schema, HCL schema files, or database introspection depending on the command.
 
 Ptah reads `ptah.yaml` strictly: unknown keys are errors. This prevents a typo
 from being silently ignored while migrations run with different settings than

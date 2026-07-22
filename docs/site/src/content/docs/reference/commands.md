@@ -20,11 +20,11 @@ Reference: [native CLI command tree](https://github.com/stokaro/ptah/blob/master
 | Command | Purpose |
 | --- | --- |
 | `ptah introspect` | Generate annotated Go models from a live database. |
-| `ptah schema render` | Render desired schema SQL from Go, YAML, or Atlas HCL inputs. |
+| `ptah schema render` | Render desired schema SQL from Go, YAML, or HCL schema inputs. |
 | `ptah schema annotations` | Export Ptah Go annotation metadata. |
 | `ptah schema compare` | Compare desired schema with a live database. |
 | `ptah schema drift` | Check live database drift against desired schema. |
-| `ptah schema export` | Export a schema to Atlas HCL, an OpenAPI 3.0 component schema, or a GraphQL SDL. |
+| `ptah schema export` | Export a schema to HCL, an OpenAPI 3.0 component schema, or a GraphQL SDL. |
 | `ptah viz` | Render desired schema diagrams as Mermaid, DOT, or SVG. |
 | `ptah db read` | Read schema from a live database. |
 | `ptah db drop-all` | Drop all schema objects in a live database. |
@@ -71,7 +71,7 @@ executable name.
 | `ptah atlas migrate down` | Forwards to `ptah migrations down`; maps compatible Atlas flags and fails explicitly for dynamic down-planning and output-format flags that native Ptah does not implement yet. |
 | `ptah atlas migrate diff` | Validates an existing `atlas.sum`, replays a local Atlas migration directory on `--dev-url`, diffs it against local `.hcl`, `.yaml`, `.yml`, or `.sql` `--to` schema files, writes a new Atlas single-file migration, updates `atlas.sum`, and supports `--lock-timeout` for Ptah's local migration-directory lock. Generated SQL uses Atlas-style two-space indentation by default; `--format` renders it with `sql` and `.MarshalSQL` templates. `--schema` narrows both the replayed dev database state and local desired schema files to selected schema names. Database desired-state URLs, `env://`, and Docker dev databases remain explicit gaps. |
 | `ptah atlas migrate import` | Imports local `file://` migration directories from `atlas`, `golang-migrate`, `goose`, `flyway`, `liquibase`, or `dbmate` format into a separate Atlas single-file directory and writes `atlas.sum`. Flyway repeatable migrations fail explicitly until Ptah can execute Atlas R-suffixed imported migrations. |
-| `ptah atlas schema inspect` | Inspects a live database and writes Atlas-shaped schema output without Ptah status banners. The default output is Atlas HCL; SQL output is supported with `--format sql` or `--format '{{ sql . }}'`; JSON and custom templates are supported through `--format json`, `{{ json . }}`, `{{ .MarshalHCL }}`, `{{ sql . }}`, and `{{ mermaid . }}`. Split/write templates, include/exclude filters, and dev-database inference remain explicit gaps. |
+| `ptah atlas schema inspect` | Inspects a live database and writes Atlas-compatible schema output without Ptah status banners. The default output is HCL; SQL output is supported with `--format sql` or `--format '{{ sql . }}'`; JSON and custom templates are supported through `--format json`, `{{ json . }}`, `{{ .MarshalHCL }}`, `{{ sql . }}`, and `{{ mermaid . }}`. Split/write templates, include/exclude filters, and dev-database inference remain explicit gaps. |
 | `ptah atlas schema apply` | Diffs a live database against local `file://` `.hcl`, `.yaml`, `.yml`, or `.sql` desired schema files, can read `env.url`, `env.src`, and `env.dev` from `atlas.hcl` with `--env`, prints the planned SQL, and applies it after interactive confirmation or explicit `--auto-approve`. `--dry-run` prints the plan without applying. `--tx-mode=file` and `--tx-mode=all` execute the generated plan in one transaction; `--tx-mode=none` executes statements without transaction wrapping. `--format` supports Atlas-style templates over planned changes with `sql` and `.MarshalSQL`. Database desired-state URLs, migration directories, `env://` URL sources, include/exclude filters, lock flags, and Atlas dev-database simulation remain explicit gaps. |
 | `ptah atlas schema diff` | Diffs local `file://` schema files with `.hcl`, `.yaml`, `.yml`, or `.sql` extensions, prints migration SQL, and supports Atlas-style `--format` templates with `sql` and `.MarshalSQL`. Database URLs, migration directories, `env://`, include/exclude filters, and web output remain explicit gaps. |
 | `ptah atlas schema fmt` | Formats local `.hcl` files using HCL canonical layout. |

@@ -1,4 +1,4 @@
-// Package atlashcl parses Atlas schema HCL into Ptah's schema IR.
+// Package atlashcl parses HCL schema files into Ptah's schema IR.
 package atlashcl
 
 import (
@@ -14,18 +14,18 @@ import (
 	"github.com/stokaro/ptah/core/goschema"
 )
 
-// ParseFile parses an Atlas schema HCL file into the same Database IR used by
+// ParseFile parses an HCL schema file into the same Database IR used by
 // Go annotations and YAML schema files.
 func ParseFile(path string) (*goschema.Database, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read Atlas HCL schema file: %w", err)
+		return nil, fmt.Errorf("read HCL schema file: %w", err)
 	}
 
 	return Parse(data, path)
 }
 
-// Parse parses Atlas schema HCL into the same Database IR used by Go
+// Parse parses HCL schema text into the same Database IR used by Go
 // annotations and YAML schema files.
 func Parse(data []byte, filename string) (*goschema.Database, error) {
 	if filename == "" {
@@ -33,11 +33,11 @@ func Parse(data []byte, filename string) (*goschema.Database, error) {
 	}
 	file, diags := hclsyntax.ParseConfig(data, filename, hcl.Pos{Line: 1, Column: 1})
 	if diags.HasErrors() {
-		return nil, fmt.Errorf("parse Atlas HCL schema: %s", diags.Error())
+		return nil, fmt.Errorf("parse HCL schema: %s", diags.Error())
 	}
 	body, ok := file.Body.(*hclsyntax.Body)
 	if !ok {
-		return nil, fmt.Errorf("parse Atlas HCL schema: unsupported body type %T", file.Body)
+		return nil, fmt.Errorf("parse HCL schema: unsupported body type %T", file.Body)
 	}
 
 	p := parser{src: data, db: &goschema.Database{}}
@@ -87,8 +87,8 @@ func (p *parser) parseTopLevelBlock(block *hclsyntax.Block) error {
 	case "permission":
 		return p.parsePermission(block)
 	case "env", "variable":
-		// Project-level Atlas HCL can carry env/variable blocks next to schema
-		// blocks. They do not define schema objects directly.
+		// Project-level HCL can carry env/variable blocks next to schema blocks.
+		// They do not define schema objects directly.
 		return nil
 	default:
 		return p.blockError(block, "unsupported top-level block %q", block.Type)
@@ -1162,7 +1162,7 @@ func (p *parser) rawExprNode(expr hclsyntax.Expression) string {
 }
 
 func (p *parser) blockError(block *hclsyntax.Block, format string, args ...any) error {
-	return fmt.Errorf("parse Atlas HCL schema at %s: %s", block.TypeRange.String(), fmt.Sprintf(format, args...))
+	return fmt.Errorf("parse HCL schema at %s: %s", block.TypeRange.String(), fmt.Sprintf(format, args...))
 }
 
 func refName(raw string) string {

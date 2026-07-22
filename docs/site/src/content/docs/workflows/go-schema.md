@@ -12,7 +12,7 @@ so the model remains ordinary Go code.
 | Use Go annotations when | Use another source when |
 | --- | --- |
 | The application structs already describe the domain. | A database team owns SQL or HCL directly. |
-| You want code review to cover schema changes next to model changes. | You need an Atlas HCL construct Ptah has not implemented yet. |
+| You want code review to cover schema changes next to model changes. | You need an HCL schema construct Ptah has not implemented yet. |
 | You want generated migrations from desired/live differences. | You only need to apply an existing migration directory. |
 
 ## Model the schema
@@ -106,5 +106,5 @@ such as enum storage, serial columns, constraints, or generated columns.
 ## Keep references close
 
 - Full native command tree: [Commands](../../reference/commands/).
-- Annotation comparison with Atlas HCL: [Go annotations vs Atlas HCL](https://github.com/stokaro/ptah/blob/master/docs/go_annotations_vs_atlas_hcl.md).
+- Annotation comparison with HCL schema: [Go annotations vs HCL schema](https://github.com/stokaro/ptah/blob/master/docs/go_annotations_vs_atlas_hcl.md).
 - Programmatic parser usage: [Public API](https://github.com/stokaro/ptah/blob/master/docs/public_api.md).
