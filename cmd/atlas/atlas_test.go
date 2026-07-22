@@ -1231,16 +1231,6 @@ func TestNewAtlasCommand_MigrateApplyRejectsFormatAndAmbiguousTarget(t *testing.
 
 	c.Assert(err, qt.ErrorMatches, `atlas migrate apply accepts --format, but Ptah does not implement its behavior yet`)
 
-	cmd = NewAtlasCommand()
-	out.Reset()
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"migrate", "apply", "--lock-name", "custom-lock"})
-
-	err = cmd.Execute()
-
-	c.Assert(err, qt.ErrorMatches, `atlas migrate apply accepts --lock-name, but Ptah does not implement its behavior yet`)
-
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	writeAtlasApplyMigration(c, migrationsDir, "1_one.sql", "CREATE TABLE ambiguous_one (id INTEGER PRIMARY KEY);")
@@ -1259,6 +1249,44 @@ func TestNewAtlasCommand_MigrateApplyRejectsFormatAndAmbiguousTarget(t *testing.
 	err = cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `amount argument and --to-version cannot both be set`)
+}
+
+func TestNewAtlasCommand_MigrateApplyAcceptsLockName(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "lock-name.db")
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigration(c, migrationsDir, "1_lock_name.sql", "CREATE TABLE lock_name_applied (id INTEGER PRIMARY KEY);")
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--lock-name", "custom-lock",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Migration complete. Current version: 1")
+	assertSQLiteTableExists(c, dbPath, "lock_name_applied")
+}
+
+func TestNewAtlasCommand_MigrateApplyRejectsEmptyLockName(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"migrate", "apply", "--lock-name", " "})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `--lock-name must not be empty`)
 }
 
 func TestNewAtlasCommand_MigrateDiffCreatesAtlasMigrationFromLocalSchema(t *testing.T) {

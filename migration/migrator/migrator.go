@@ -82,6 +82,7 @@ type Migrator struct {
 	revisionTableFormat  RevisionTableFormat
 	execOrder            ExecOrder
 	txMode               MigrationTxMode
+	migrationLockName    string
 	migrationLockTimeout time.Duration
 	initialized          bool
 	logger               *slog.Logger
@@ -110,6 +111,7 @@ func NewMigrator(conn *dbschema.DatabaseConnection, provider MigrationProvider) 
 		revisionTableFormat: RevisionTableFormatPtah,
 		execOrder:           ExecOrderLinear,
 		txMode:              MigrationTxModeFile,
+		migrationLockName:   migrationAdvisoryLockName,
 		logger:              slog.Default(),
 		observer:            NoopObserver{},
 	}
