@@ -32,6 +32,7 @@ const (
 	dirFormatFlag            = "dir-format"
 	atlasEnvFlag             = "atlas-env"
 	execOrderFlag            = "exec-order"
+	txModeFlag               = "tx-mode"
 	migrationLockTimeoutFlag = "migration-lock-timeout"
 	lockTimeoutFlag          = "lock-timeout"
 	statementTimeoutFlag     = "statement-timeout"
@@ -51,6 +52,7 @@ type options struct {
 	dirFormat            string
 	atlasEnv             string
 	execOrder            string
+	txMode               string
 	migrationLockTimeout string
 	lockTimeout          string
 	statementTimeout     string
@@ -70,6 +72,15 @@ type options struct {
 	metricsAddr          string
 }
 
+type parsedMigrationSettings struct {
+	dirFormat            migrator.MigrationDirFormat
+	revisionFormat       migrator.RevisionTableFormat
+	execOrder            migrator.ExecOrder
+	txMode               migrator.MigrationTxMode
+	migrationLockTimeout time.Duration
+	connectTimeout       time.Duration
+}
+
 func NewMigrateUpCommand() *cobra.Command {
 	opts := options{}
 	cmd := &cobra.Command{
@@ -80,9 +91,10 @@ func NewMigrateUpCommand() *cobra.Command {
 This command applies all migrations that haven't been applied yet, bringing
 the database schema up to the latest version defined in the migration files.
 
-Each migration is run in a transaction unless its file explicitly opts out with
--- +ptah no_transaction, so ordinary migration failures are rolled back and the
-migration process stops.`,
+By default, each migration file is run in its own transaction unless the file
+explicitly opts out with -- +ptah no_transaction. Use --tx-mode=all to wrap the
+whole pending up batch in one transaction on supported dialects, or
+--tx-mode=none to run without migration transaction wrapping.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return migrateUpCommand(cmd, &opts)
 		},
@@ -102,6 +114,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
 	flags.StringVar(&opts.execOrder, execOrderFlag, string(migrator.ExecOrderLinear), "Execution order policy for pending migrations below the current version: linear, linear-skip, or non-linear")
+	flags.StringVar(&opts.txMode, txModeFlag, string(migrator.MigrationTxModeFile), "Transaction mode for pending migrations: file, all, or none")
 	flags.StringVar(&opts.migrationLockTimeout, migrationLockTimeoutFlag, "", "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m")
 	flags.StringVar(&opts.lockTimeout, lockTimeoutFlag, "", "Default per-migration lock timeout, such as 3s or 500ms")
 	flags.StringVar(&opts.statementTimeout, statementTimeoutFlag, "", "Default per-migration statement timeout, such as 30s or 2m")
@@ -121,12 +134,55 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterRevisionTableFormatFlag(flags, &opts.revisionTableFormat)
 }
 
+func parseMigrationSettings(
+	dirFormatValue string,
+	revisionFormatValue string,
+	execOrderValue string,
+	txModeValue string,
+	migrationLockTimeoutValue string,
+	connectTimeoutValue string,
+) (parsedMigrationSettings, error) {
+	dirFormat, err := migrator.ParseMigrationDirFormat(dirFormatValue)
+	if err != nil {
+		return parsedMigrationSettings{}, err
+	}
+	revisionFormat, err := migrator.ParseRevisionTableFormat(revisionFormatValue)
+	if err != nil {
+		return parsedMigrationSettings{}, err
+	}
+	execOrder, err := migrator.ParseExecOrder(execOrderValue)
+	if err != nil {
+		return parsedMigrationSettings{}, err
+	}
+	txMode, err := migrator.ParseMigrationTxMode(txModeValue)
+	if err != nil {
+		return parsedMigrationSettings{}, err
+	}
+	migrationLockTimeout, err := migrator.ParseMigrationLockTimeout(migrationLockTimeoutValue)
+	if err != nil {
+		return parsedMigrationSettings{}, err
+	}
+	connectTimeout, err := dbcli.ParseConnectTimeout(connectTimeoutValue)
+	if err != nil {
+		return parsedMigrationSettings{}, err
+	}
+	return parsedMigrationSettings{
+		dirFormat:            dirFormat,
+		revisionFormat:       revisionFormat,
+		execOrder:            execOrder,
+		txMode:               txMode,
+		migrationLockTimeout: migrationLockTimeout,
+		connectTimeout:       connectTimeout,
+	}, nil
+}
+
 func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	dbURL := opts.dbURL
 	migrationsDir := opts.migrationsDir
 	dirFormatValue := opts.dirFormat
 	atlasEnv := opts.atlasEnv
 	execOrderValue := opts.execOrder
+	txModeValue := opts.txMode
 	migrationLockTimeoutValue := opts.migrationLockTimeout
 	lockTimeout := opts.lockTimeout
 	statementTimeout := opts.statementTimeout
@@ -147,6 +203,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	dirFormatValue = dbcli.EffectiveString(cmd, dirFormatFlag, dirFormatValue, projectCfg.Migration.Format)
 	atlasEnv = dbcli.EffectiveString(cmd, atlasEnvFlag, atlasEnv, projectCfg.EnvName)
 	execOrderValue = dbcli.EffectiveString(cmd, execOrderFlag, execOrderValue, projectCfg.Migration.ExecOrder)
+	txModeValue = dbcli.EffectiveString(cmd, txModeFlag, txModeValue, projectCfg.Migration.TxMode)
 	migrationLockTimeoutValue = dbcli.EffectiveString(cmd, migrationLockTimeoutFlag, migrationLockTimeoutValue, projectCfg.Migration.MigrationLockTimeout)
 	lockTimeout = dbcli.EffectiveString(cmd, lockTimeoutFlag, lockTimeout, projectCfg.Migration.LockTimeout)
 	statementTimeout = dbcli.EffectiveString(cmd, statementTimeoutFlag, statementTimeout, projectCfg.Migration.StatementTimeout)
@@ -188,11 +245,14 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("invalid migrations directory: %w", err)
 	}
 
-	dirFormat, err := migrator.ParseMigrationDirFormat(dirFormatValue)
-	if err != nil {
-		return err
-	}
-	revisionFormat, err := migrator.ParseRevisionTableFormat(revisionFormatValue)
+	settings, err := parseMigrationSettings(
+		dirFormatValue,
+		revisionFormatValue,
+		execOrderValue,
+		txModeValue,
+		migrationLockTimeoutValue,
+		connectTimeoutValue,
+	)
 	if err != nil {
 		return err
 	}
@@ -200,7 +260,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	// Integrity gate: refuse to apply if a committed migration was edited
 	// out of band. Runs before connecting so a tampered directory fails fast.
 	if opts.verifySum {
-		result, err := migratesum.VerifyDirWithFormat(migrationsDir, dirFormat)
+		result, err := migratesum.VerifyDirWithFormat(migrationsDir, settings.dirFormat)
 		if err != nil {
 			return fmt.Errorf("migration sum verification failed: %w", err)
 		}
@@ -220,21 +280,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
-	execOrder, err := migrator.ParseExecOrder(execOrderValue)
-	if err != nil {
-		return err
-	}
-	migrationLockTimeout, err := migrator.ParseMigrationLockTimeout(migrationLockTimeoutValue)
-	if err != nil {
-		return err
-	}
-
-	connectTimeout, err := dbcli.ParseConnectTimeout(connectTimeoutValue)
-	if err != nil {
-		return err
-	}
-
-	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
+	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), settings.connectTimeout)
 	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
 	cancelConnect()
 	if err != nil {
@@ -255,7 +301,8 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	emit.Printf("Database: %s\n", dbschema.FormatDatabaseURL(dbURL))
 	emit.Printf("Dialect: %s\n", conn.Info().Dialect)
 	emit.Printf("Migrations directory: %s\n", migrationsDir)
-	emit.Printf("Migration directory format: %s\n", dirFormat)
+	emit.Printf("Migration directory format: %s\n", settings.dirFormat)
+	emit.Printf("Transaction mode: %s\n", settings.txMode)
 	emit.Println()
 
 	// Create filesystem from migrations directory
@@ -277,17 +324,18 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		conn,
 		migrationsFS,
 		migrator.WithStatementInterceptor(interceptor),
-		migrator.WithMigrationDirFormat(dirFormat),
+		migrator.WithMigrationDirFormat(settings.dirFormat),
 		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: atlasEnv}),
 	)
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
 	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable).
-		WithRevisionTableFormat(revisionFormat).
+		WithRevisionTableFormat(settings.revisionFormat).
 		WithDefaultTimeouts(timeouts).
-		WithExecOrder(execOrder).
-		WithMigrationLockTimeout(migrationLockTimeout).
+		WithExecOrder(settings.execOrder).
+		WithTransactionMode(settings.txMode).
+		WithMigrationLockTimeout(settings.migrationLockTimeout).
 		WithLogger(runtime.Logger()).
 		WithObserver(runtime.Observer())
 
@@ -322,12 +370,12 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 			emit.Printf("Out-of-order migration versions: %v\n", status.OutOfOrderMigrations)
 		}
 	}
-	if execOrder == migrator.ExecOrderLinear && len(status.OutOfOrderMigrations) > 0 {
+	if settings.execOrder == migrator.ExecOrderLinear && len(status.OutOfOrderMigrations) > 0 {
 		return migrator.NewOutOfOrderError(status.CurrentVersion, status.OutOfOrderMigrations)
 	}
 
 	if !opts.allowDestructive {
-		findings, err := lintPendingDestructive(migrationsFS, pendingMigrationsForRun(status, execOrder), conn.Info().Dialect)
+		findings, err := lintPendingDestructive(migrationsFS, pendingMigrationsForRun(status, settings.execOrder), conn.Info().Dialect)
 		if err != nil {
 			return fmt.Errorf("error checking pending migration safety: %w", err)
 		}

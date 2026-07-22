@@ -38,6 +38,7 @@ type yamlMigration struct {
 	ConnectTimeout       string `yaml:"connect_timeout"`
 	MigrationLockTimeout string `yaml:"migration_lock_timeout"`
 	ExecOrder            string `yaml:"exec_order"`
+	TxMode               string `yaml:"tx_mode"`
 	PreUpHook            string `yaml:"pre_up_hook"`
 	PreDownHook          string `yaml:"pre_down_hook"`
 	PostgresDumpTo       string `yaml:"pg_dump_to"`
@@ -138,6 +139,7 @@ func (c yamlSettings) projectConfig() Config {
 			ConnectTimeout:       c.Migration.ConnectTimeout,
 			MigrationLockTimeout: c.Migration.MigrationLockTimeout,
 			ExecOrder:            c.Migration.ExecOrder,
+			TxMode:               c.Migration.TxMode,
 			PreUpHook:            c.Migration.PreUpHook,
 			PreDownHook:          c.Migration.PreDownHook,
 			PostgresDumpTo:       c.Migration.PostgresDumpTo,

@@ -22,6 +22,7 @@ func TestParseAtlasProjectConfig(t *testing.T) {
     revisions_schema = "atlas"
     lock_timeout     = "3s"
     exec_order       = "linear"
+    tx_mode          = "none"
   }
   lint {
     latest = 5
@@ -42,6 +43,7 @@ func TestParseAtlasProjectConfig(t *testing.T) {
 	c.Assert(cfg.Migration.RevisionFormat, qt.Equals, "atlas")
 	c.Assert(cfg.Migration.LockTimeout, qt.Equals, "3s")
 	c.Assert(cfg.Migration.ExecOrder, qt.Equals, "linear")
+	c.Assert(cfg.Migration.TxMode, qt.Equals, "none")
 	c.Assert(cfg.Lint.Latest, qt.IsNotNil)
 	c.Assert(*cfg.Lint.Latest, qt.Equals, 5)
 }

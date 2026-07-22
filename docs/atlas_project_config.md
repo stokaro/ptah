@@ -21,6 +21,7 @@ env "local" {
     revisions_schema = "atlas"
     lock_timeout     = "3s"
     exec_order       = "linear"
+    tx_mode          = "file"
   }
 
   lint {
@@ -41,12 +42,20 @@ The supported attributes map to Ptah settings as follows:
 | `migration.revisions_schema` | `--migrations-schema` default |
 | `migration.lock_timeout` | `--lock-timeout` default |
 | `migration.exec_order` | `--exec-order` default |
+| `migration.tx_mode` | `migrations up --tx-mode` default |
 | `lint.latest` | Project config IR lint setting |
 
 `env.exclude` and `lint.latest` are preserved in the project config IR for
 consumers that understand them. The current CLI wiring uses the connection,
 dev database, migration directory, migration execution, revision-table, and
 template env settings.
+
+`migration.tx_mode` accepts `file`, `all`, and `none`, matching
+`ptah atlas migrate apply --tx-mode`. `all` is limited to dialects where Ptah
+can safely wrap DDL in a single transaction and conflicts with file-level
+`no_transaction` directives. `none` intentionally rejects migration timeouts
+because Ptah does not yet apply timeout setup and restore through a dedicated
+single-session executor.
 
 When an `atlas.hcl` `migration` block is present, Ptah also defaults
 `revision-format` to `atlas`, so migration commands use

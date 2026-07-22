@@ -29,6 +29,7 @@ env:
       connect_timeout: 10s
       migration_lock_timeout: 15s
       exec_order: linear
+      tx_mode: file
       pre_up_hook: ./scripts/backup-before-up
       pre_down_hook: ./scripts/backup-before-down
       pg_dump_to: ./backups/postgres
@@ -81,6 +82,7 @@ env:
 | `migration.connect_timeout` | Initial database connection timeout |
 | `migration.migration_lock_timeout` | Session-level migration advisory lock timeout |
 | `migration.exec_order` | Pending migration execution policy |
+| `migration.tx_mode` | Migration transaction mode: `file`, `all`, or `none` |
 | `migration.pre_up_hook` | Shell command that must succeed before `migrations up` changes the schema |
 | `migration.pre_down_hook` | Shell command that must succeed before `migrations down` changes the schema |
 | `migration.pg_dump_to` | Directory for a PostgreSQL-compatible pre-migration custom-format dump |

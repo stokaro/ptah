@@ -372,6 +372,24 @@ func TestMapAtlasArgs_MigrateDownNativeFlags(t *testing.T) {
 	})
 }
 
+func TestMapAtlasArgs_MigrateApplyTxModeMapsToNativeFlag(t *testing.T) {
+	c := qt.New(t)
+
+	got, err := mapAtlasArgs("migrate", atlasMigrateApplyVerb(), []string{
+		"--url", "postgres://localhost/db",
+		"--dir=file://migrations",
+		"--tx-mode", "none",
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, []string{
+		"--db-url", "postgres://localhost/db",
+		"--migrations-dir=migrations",
+		"--tx-mode",
+		"none",
+	})
+}
+
 func TestMapAtlasArgs_MigrateLintLatestMapsToNativeFlag(t *testing.T) {
 	c := qt.New(t)
 

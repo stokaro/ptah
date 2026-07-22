@@ -39,6 +39,7 @@ func TestLoadConfig_AllowsProjectConfigEnvelope(t *testing.T) {
 schemas: [public]
 migration:
   dir: ./migrations
+  tx_mode: none
   pre_up_hook: ./scripts/backup-before-up
   pre_down_hook: ./scripts/backup-before-down
   pg_dump_to: ./backups/postgres
@@ -50,6 +51,7 @@ env:
   prod:
     url: postgres://prod/db
     migration:
+      tx_mode: file
       pre_up_hook: ./scripts/prod-backup-before-up
 online_ddl:
   tool: ghost

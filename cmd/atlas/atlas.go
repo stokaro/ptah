@@ -183,18 +183,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 	}
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	for _, verb := range []atlasVerb{
-		{
-			use:     "apply",
-			short:   "Apply pending migrations",
-			native:  "migrations up",
-			factory: migrateup.NewMigrateUpCommand,
-			flags: []atlasFlag{
-				atlasNativeString("url", "u", "Database URL to apply migrations to", "db-url"),
-				atlasNativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
-				atlasNativeBool("dry-run", "", "Show migrations without applying them", "dry-run"),
-				atlasUnsupportedString("tx-mode", "", "Atlas transaction mode"),
-			},
-		},
+		atlasMigrateApplyVerb(),
 		{
 			use:    "diff",
 			short:  "Generate migration SQL from differences",
@@ -257,6 +246,21 @@ func newAtlasMigrateCommand() *cobra.Command {
 	}
 	cmd.AddCommand(newAtlasMigrateImportCommand())
 	return cmd
+}
+
+func atlasMigrateApplyVerb() atlasVerb {
+	return atlasVerb{
+		use:     "apply",
+		short:   "Apply pending migrations",
+		native:  "migrations up",
+		factory: migrateup.NewMigrateUpCommand,
+		flags: []atlasFlag{
+			atlasNativeString("url", "u", "Database URL to apply migrations to", "db-url"),
+			atlasNativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
+			atlasNativeBool("dry-run", "", "Show migrations without applying them", "dry-run"),
+			atlasNativeString("tx-mode", "", "Transaction mode: file, all, or none", "tx-mode"),
+		},
+	}
 }
 
 func atlasMigrateDownVerb() atlasVerb {

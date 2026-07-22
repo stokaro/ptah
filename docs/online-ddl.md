@@ -135,9 +135,14 @@ enabling:
 
 ## Interaction with migration transactions
 
-The migrator wraps each migration in a transaction, but MySQL DDL commits
-implicitly anyway, and the online tools run on their own connections. A
-tool-routed migration is therefore **not atomic**: if it fails halfway, fix
-the underlying issue (and clean up the tool's shadow/ghost tables if any)
-before re-running. Keep online-DDL migrations minimal — ideally one ALTER
-per migration, with unrelated statements in separate migrations.
+With the default `tx-mode=file`, the migrator wraps each migration file in its
+own transaction unless the file opts out with `-- +ptah no_transaction`.
+`tx-mode=all` wraps the pending up batch in one transaction on supported
+dialects, and `tx-mode=none` disables migration transaction wrapping.
+
+MySQL DDL commits implicitly regardless of Ptah's wrapper, and online tools run
+on their own connections. A tool-routed migration is therefore **not atomic**:
+if it fails halfway, fix the underlying issue (and clean up the tool's
+shadow/ghost tables if any) before re-running. Keep online-DDL migrations
+minimal — ideally one ALTER per migration, with unrelated statements in
+separate migrations.

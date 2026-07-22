@@ -38,14 +38,14 @@ guessing.
 ## Operational settings
 
 Project config can also define timeouts, revision table layout, migration
-directory format, backup destinations, pre-flight hooks, webhooks, lint defaults,
-and online-DDL policy.
+directory format, transaction mode, backup destinations, pre-flight hooks,
+webhooks, lint defaults, and online-DDL policy.
 
 | Setting area | Example keys |
 | --- | --- |
 | Database target | `url`, `dev`, `schemas` |
 | Migration directory and revisions | `migration.dir`, `migration.format`, `migration.revisions_table`, `migration.revision_format` |
-| Safety and operations | `migration.pre_up_hook`, `migration.pg_dump_to`, `migration.webhook`, `migration.exec_order` |
+| Safety and operations | `migration.pre_up_hook`, `migration.pg_dump_to`, `migration.webhook`, `migration.exec_order`, `migration.tx_mode` |
 | Lint defaults | `lint.dialect`, `lint.disabled-rules` |
 | Online DDL | `online_ddl.tool`, `online_ddl.threshold_rows` |
 

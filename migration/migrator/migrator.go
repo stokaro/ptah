@@ -61,6 +61,7 @@ type Migrator struct {
 	migrationsSchema     string
 	revisionTableFormat  RevisionTableFormat
 	execOrder            ExecOrder
+	txMode               MigrationTxMode
 	migrationLockTimeout time.Duration
 	initialized          bool
 	logger               *slog.Logger
@@ -88,6 +89,7 @@ func NewMigrator(conn *dbschema.DatabaseConnection, provider MigrationProvider) 
 		migrationsTable:     defaultPtahMigrationsTable,
 		revisionTableFormat: RevisionTableFormatPtah,
 		execOrder:           ExecOrderLinear,
+		txMode:              MigrationTxModeFile,
 		logger:              slog.Default(),
 		observer:            NoopObserver{},
 	}
@@ -118,6 +120,14 @@ func (m *Migrator) WithObserver(observer Observer) *Migrator {
 func (m *Migrator) WithExecOrder(execOrder ExecOrder) *Migrator {
 	tmp := *m
 	tmp.execOrder = normalizeExecOrder(execOrder)
+	return &tmp
+}
+
+// WithTransactionMode sets how pending up migrations are wrapped in
+// transactions.
+func (m *Migrator) WithTransactionMode(mode MigrationTxMode) *Migrator {
+	tmp := *m
+	tmp.txMode = normalizeMigrationTxMode(mode)
 	return &tmp
 }
 
@@ -754,6 +764,9 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, hook PreMigrationHook) e
 	if err != nil {
 		return err
 	}
+	if err := m.validateUpTransactionMode(migrationsToApply); err != nil {
+		return err
+	}
 	if err := runPreMigrationHook(ctx, hook, MigrationPlan{
 		Direction:      MigrationDirectionUp,
 		CurrentVersion: currentVersion,
@@ -950,6 +963,9 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int64) error {
 	if err != nil {
 		return err
 	}
+	if err := m.validateUpTransactionMode(migrationsToApply); err != nil {
+		return err
+	}
 	if span := rootSpanFromContext(ctx); span != nil {
 		span.SetAttributes(
 			attr("migration.current_version", currentVersion),
@@ -1008,6 +1024,17 @@ func downTargetVersion(applied []int64, targetVersion int64) int64 {
 }
 
 func (m *Migrator) applyUpMigrations(ctx context.Context, migrations []*Migration) error {
+	switch m.txMode {
+	case MigrationTxModeNone:
+		return m.applyUpMigrationsNoTransaction(ctx, migrations)
+	case MigrationTxModeAll:
+		return m.applyUpMigrationsInSingleTransaction(ctx, migrations)
+	default:
+		return m.applyUpMigrationsPerFile(ctx, migrations)
+	}
+}
+
+func (m *Migrator) applyUpMigrationsPerFile(ctx context.Context, migrations []*Migration) error {
 	for _, migration := range migrations {
 		if err := m.applyUpMigrationObserved(ctx, migration); err != nil {
 			return err
@@ -1015,6 +1042,85 @@ func (m *Migrator) applyUpMigrations(ctx context.Context, migrations []*Migratio
 	}
 
 	return nil
+}
+
+func (m *Migrator) applyUpMigrationsNoTransaction(ctx context.Context, migrations []*Migration) error {
+	if err := m.validateUpTransactionMode(migrations); err != nil {
+		return err
+	}
+	for _, migration := range migrations {
+		if err := m.applyUpMigrationForcedNoTransactionObserved(ctx, migration); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, migrations []*Migration) error {
+	if len(migrations) == 0 {
+		return nil
+	}
+	if err := m.validateUpTransactionMode(migrations); err != nil {
+		return err
+	}
+
+	tx, err := m.conn.SchemaWriter().BeginTransaction(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin tx-mode all transaction: %w", err)
+	}
+	txConn := m.conn.WithExecutor(tx)
+	startedAt := make(map[int64]time.Time, len(migrations))
+	for _, migration := range migrations {
+		startedAt[migration.Version] = time.Now()
+		if err := m.applyUpMigrationInExistingTransaction(ctx, txConn, migration, startedAt[migration.Version]); err != nil {
+			_ = tx.Rollback()
+			return m.recordRolledBackBatchFailure(ctx, migration, startedAt[migration.Version], err)
+		}
+		if err := m.recordAppliedMigrationOn(ctx, txConn, migration, startedAt[migration.Version]); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("failed to record migration %d in tx-mode all transaction: %w", migration.Version, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit tx-mode all transaction: %w", err)
+	}
+	m.logger.Info("Applied migrations in one transaction", "count", len(migrations))
+	return nil
+}
+
+func (m *Migrator) validateUpTransactionMode(migrations []*Migration) error {
+	switch m.txMode {
+	case MigrationTxModeAll:
+		if err := m.validateTxModeAllDialect(); err != nil {
+			return err
+		}
+		for _, migration := range migrations {
+			if migration.upExecutionMode() == migrationExecutionNoTransaction {
+				return fmt.Errorf("migration %d is marked no_transaction and cannot run with tx-mode all", migration.Version)
+			}
+			if !mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts).IsZero() {
+				return fmt.Errorf("migration %d has timeouts and cannot run with tx-mode all", migration.Version)
+			}
+		}
+	case MigrationTxModeNone:
+		for _, migration := range migrations {
+			if !mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts).IsZero() {
+				return fmt.Errorf("migration %d has timeouts and cannot run with tx-mode none", migration.Version)
+			}
+		}
+	}
+	return nil
+}
+
+func (m *Migrator) validateTxModeAllDialect() error {
+	dialect := platform.NormalizeDialect(m.conn.Info().Dialect)
+	switch dialect {
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.SQLite:
+		return nil
+	default:
+		return fmt.Errorf("tx-mode all is not supported for dialect %q", m.conn.Info().Dialect)
+	}
 }
 
 func (m *Migrator) applyUpMigrationObserved(ctx context.Context, migration *Migration) (err error) {
@@ -1041,6 +1147,89 @@ func (m *Migrator) applyUpMigrationObserved(ctx context.Context, migration *Migr
 		return m.applyUpMigrationNoTransaction(ctx, migration, startedAt)
 	}
 	return m.applyUpMigrationTransactional(ctx, migration, startedAt)
+}
+
+func (m *Migrator) applyUpMigrationForcedNoTransactionObserved(ctx context.Context, migration *Migration) (err error) {
+	observer := m.migrationObserver()
+	ctx, span := observer.StartSpan(ctx, "ptah.migrate.apply", m.migrationAttributes(MigrationDirectionUp, migration)...)
+	startedAt := time.Now()
+	defer func() {
+		duration := time.Since(startedAt)
+		span.End(err)
+		metricAttrs := m.migrationMetricAttributes(MigrationDirectionUp, migration)
+		observer.RecordDuration(ctx, "ptah_migration_duration_seconds", duration, metricAttrs...)
+		if err != nil {
+			observer.AddCounter(ctx, "ptah_migrations_failed_total", 1, metricAttrs...)
+			return
+		}
+		observer.AddCounter(ctx, "ptah_migrations_applied_total", 1, metricAttrs...)
+	}()
+
+	return m.applyUpMigrationForcedNoTransactionAt(ctx, migration, startedAt)
+}
+
+func (m *Migrator) applyUpMigrationForcedNoTransactionAt(ctx context.Context, migration *Migration, startedAt time.Time) error {
+	if err := m.beginMigrationRevision(ctx, migration); err != nil {
+		return fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
+	}
+	return m.applyUpMigrationNoTransaction(ctx, migration, startedAt)
+}
+
+func (m *Migrator) applyUpMigrationInExistingTransaction(
+	ctx context.Context,
+	txConn *dbschema.DatabaseConnection,
+	migration *Migration,
+	startedAt time.Time,
+) error {
+	m.logger.Info("Applying migration in tx-mode all", "version", migration.Version, "description", migration.Description)
+	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, txConn, mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts))
+	if err != nil {
+		return fmt.Errorf("failed to apply timeouts for migration %d: %w", migration.Version, err)
+	}
+	if err := migration.Up(ctx, txConn); err != nil {
+		err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
+		return fmt.Errorf("failed to apply migration %d: %w", migration.Version, err)
+	}
+	if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
+		return err
+	}
+	m.logger.Info("Applied migration in tx-mode all", "version", migration.Version, "description", migration.Description)
+	return nil
+}
+
+func (m *Migrator) recordRolledBackBatchFailure(
+	ctx context.Context,
+	migration *Migration,
+	startedAt time.Time,
+	failure error,
+) error {
+	if beginErr := m.beginMigrationRevision(ctx, migration); beginErr != nil {
+		return fmt.Errorf("%w; additionally failed to record pending migration %d after tx-mode all rollback: %v", failure, migration.Version, beginErr)
+	}
+	return m.failMigrationWithDirtyStateWithMode(
+		ctx,
+		migration,
+		startedAt,
+		failure,
+		migration.UpSQL,
+		"",
+		MigrationTxModeAll,
+	)
+}
+
+func (m *Migrator) recordAppliedMigrationOn(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	migration *Migration,
+	startedAt time.Time,
+) error {
+	if err := m.beginMigrationRevisionOn(ctx, conn, migration); err != nil {
+		return fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
+	}
+	if err := m.completeMigrationRevisionOn(ctx, conn, migration, startedAt); err != nil {
+		return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)
+	}
+	return nil
 }
 
 func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration *Migration, startedAt time.Time) error {
@@ -1108,16 +1297,17 @@ func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration 
 
 func (m *Migrator) applyUpMigrationNoTransaction(ctx context.Context, migration *Migration, startedAt time.Time) error {
 	if err := ensureNoTransactionHasNoTimeouts(migration.Version, mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts)); err != nil {
-		return m.failMigrationWithDirtyState(ctx, migration, startedAt, err, migration.UpSQL, "")
+		return m.failMigrationWithDirtyStateWithMode(ctx, migration, startedAt, err, migration.UpSQL, "", MigrationTxModeNone)
 	}
 	if err := migration.Up(ctx, m.conn); err != nil {
-		return m.failMigrationWithDirtyState(
+		return m.failMigrationWithDirtyStateWithMode(
 			ctx,
 			migration,
 			startedAt,
 			err,
 			migration.UpSQL,
 			fmt.Sprintf("failed to apply migration %d", migration.Version),
+			MigrationTxModeNone,
 		)
 	}
 	if err := m.completeMigrationRevision(ctx, migration, startedAt); err != nil {
@@ -1287,16 +1477,17 @@ func (m *Migrator) rollbackMigrationNoTransaction(
 	deleteSQL string,
 ) error {
 	if err := ensureNoTransactionHasNoTimeouts(migration.Version, mergeMigrationTimeouts(m.defaultTimeouts, migration.DownTimeouts)); err != nil {
-		return m.failMigrationWithDirtyState(ctx, migration, startedAt, err, migration.DownSQL, "")
+		return m.failMigrationWithDirtyStateWithMode(ctx, migration, startedAt, err, migration.DownSQL, "", MigrationTxModeNone)
 	}
 	if err := migration.Down(ctx, m.conn); err != nil {
-		return m.failMigrationWithDirtyState(
+		return m.failMigrationWithDirtyStateWithMode(
 			ctx,
 			migration,
 			startedAt,
 			err,
 			migration.DownSQL,
 			fmt.Sprintf("failed to revert migration %d", migration.Version),
+			MigrationTxModeNone,
 		)
 	}
 	if err := executeSQLOutsideTransaction(ctx, m.conn, deleteSQL, m.revisionVersionArg(migration.Version)); err != nil {
@@ -1314,7 +1505,19 @@ func (m *Migrator) failMigrationWithDirtyState(
 	sqlText string,
 	prefix string,
 ) error {
-	if revisionErr := m.failMigrationRevision(ctx, migration, startedAt, failure, sqlText); revisionErr != nil {
+	return m.failMigrationWithDirtyStateWithMode(ctx, migration, startedAt, failure, sqlText, prefix, MigrationTxModeFile)
+}
+
+func (m *Migrator) failMigrationWithDirtyStateWithMode(
+	ctx context.Context,
+	migration *Migration,
+	startedAt time.Time,
+	failure error,
+	sqlText string,
+	prefix string,
+	txMode MigrationTxMode,
+) error {
+	if revisionErr := m.failMigrationRevisionWithMode(ctx, migration, startedAt, failure, sqlText, txMode); revisionErr != nil {
 		if prefix == "" {
 			return fmt.Errorf("%w; additionally failed to record dirty migration state: %v", failure, revisionErr)
 		}
