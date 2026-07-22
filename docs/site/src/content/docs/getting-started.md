@@ -43,6 +43,8 @@ type User struct {
 EOF
 ```
 
+Prefer not to annotate Go structs? Ptah also reads the desired schema from an **Atlas HCL** file (or YAML and plain SQL) — see [Atlas HCL schema](../workflows/schema-files/#atlas-hcl-schema), where `ptah schema render --schema-file …` takes a file instead of `--root-dir`.
+
 ## Preview the SQL
 
 Before generating a migration, you can see the SQL your annotations produce:
