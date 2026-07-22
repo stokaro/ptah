@@ -83,11 +83,13 @@ func convertTablesAndFields(
 		tableStructNames[dbTable.QualifiedName()] = structName
 
 		table := goschema.Table{
-			StructName: structName,
-			Name:       dbTable.Name,
-			Schema:     dbTable.Schema,
-			Comment:    dbTable.Comment,
-			PrimaryKey: primaryKeysByTable[dbTable.QualifiedName()],
+			StructName:   structName,
+			Name:         dbTable.Name,
+			Schema:       dbTable.Schema,
+			Comment:      dbTable.Comment,
+			PrimaryKey:   primaryKeysByTable[dbTable.QualifiedName()],
+			Strict:       dbTable.Strict,
+			WithoutRowID: dbTable.WithoutRowID,
 		}
 		database.Tables = append(database.Tables, table)
 

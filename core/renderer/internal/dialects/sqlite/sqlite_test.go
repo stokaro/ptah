@@ -34,6 +34,23 @@ func TestRenderCreateTable(t *testing.T) {
 `)
 }
 
+func TestRenderCreateTableWithStrictAndWithoutRowID(t *testing.T) {
+	c := qt.New(t)
+
+	table := ast.NewCreateTable("users").
+		AddColumn(ast.NewColumn("id", "TEXT").SetPrimary())
+	table.SetOption("STRICT", "true")
+	table.SetOption("WITHOUT_ROWID", "true")
+
+	sql, err := renderer.RenderSQL("sqlite", table)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Equals, `CREATE TABLE "users" (
+  "id" TEXT PRIMARY KEY
+) STRICT, WITHOUT ROWID;
+`)
+}
+
 func TestRenderIndexes(t *testing.T) {
 	c := qt.New(t)
 

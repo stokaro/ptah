@@ -47,7 +47,11 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 		return nil, err
 	}
 	result = append(result, addedTables...)
-	result = append(result, p.modifyTables(diff, generated)...)
+	modifiedTables, err := p.modifyTables(diff, generated)
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, modifiedTables...)
 	result = append(result, p.addViews(diff, generated)...)
 	result = append(result, p.modifyViews(diff, generated)...)
 	result = append(result, p.addTriggers(diff, generated)...)
@@ -76,10 +80,11 @@ func rejectUnsupportedChanges(diff *types.SchemaDiff) error {
 func rejectUnsupportedTableChanges(diff *types.SchemaDiff) error {
 	for _, table := range diff.TablesModified {
 		switch {
-		case len(table.ColumnsRemoved) > 0:
-			return unsupportedFeaturef("dropping columns from table %s requires a table rebuild plan", table.TableName)
 		case len(table.ColumnsModified) > 0:
 			return unsupportedFeaturef("modifying columns on table %s requires a table rebuild plan", table.TableName)
+		case len(table.ColumnsRemoved) > 0 && (len(table.ColumnsAdded) > 0 ||
+			len(table.ConstraintsAdded) > 0 || len(table.ConstraintsRemoved) > 0):
+			return unsupportedFeaturef("combining dropped columns with other table changes on %s requires a manual rebuild plan", table.TableName)
 		case len(table.ConstraintsAdded) > 0 || len(table.ConstraintsRemoved) > 0:
 			return unsupportedFeaturef("changing constraints on table %s requires a table rebuild plan", table.TableName)
 		}
@@ -179,9 +184,17 @@ func withDefaultForeignKeyName(tableName string, constraint goschema.Constraint)
 	return constraint
 }
 
-func (p *Planner) modifyTables(diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) modifyTables(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
 	var result []ast.Node
 	for _, tableDiff := range diff.TablesModified {
+		if len(tableDiff.ColumnsRemoved) > 0 {
+			nodes, err := p.rebuildTableWithoutColumns(tableDiff, diff, generated)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, nodes...)
+			continue
+		}
 		for _, columnName := range tableDiff.ColumnsAdded {
 			if column := findColumn(generated, tableDiff.TableName, columnName); column != nil {
 				result = append(result, &ast.AlterTableNode{
@@ -191,7 +204,191 @@ func (p *Planner) modifyTables(diff *types.SchemaDiff, generated *goschema.Datab
 			}
 		}
 	}
-	return result
+	return result, nil
+}
+
+func (p *Planner) rebuildTableWithoutColumns(
+	tableDiff types.TableDiff,
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+) ([]ast.Node, error) {
+	table := findTable(generated.Tables, tableDiff.TableName)
+	if table == nil {
+		return nil, unsupportedFeaturef("rebuilding table %s requires the retained table definition", tableDiff.TableName)
+	}
+	if err := validateRebuildTablePreconditions(*table, diff, generated); err != nil {
+		return nil, err
+	}
+
+	tempName := rebuildTableName(*table)
+
+	createNode := fromschema.FromTable(*table, generated.Fields, generated.Enums, DialectName)
+	if err := addInlineConstraints(createNode, *table, generated.Constraints); err != nil {
+		return nil, err
+	}
+	createNode.Name = qualifyLikeTable(*table, tempName)
+
+	columns := rebuildColumnNames(*table, generated.Fields)
+	if len(columns) == 0 {
+		return nil, unsupportedFeaturef("rebuilding table %s without retained columns is not supported", table.QualifiedName())
+	}
+
+	nodes := []ast.Node{
+		ast.NewComment("SQLite table rebuild to remove unsupported columns from " + table.QualifiedName()),
+		createNode,
+		ast.NewRawSQL("INSERT INTO " + quoteQualifiedIdentifier(createNode.Name) +
+			" (" + quoteIdentifierList(columns) + ") SELECT " + quoteIdentifierList(columns) +
+			" FROM " + quoteQualifiedIdentifier(table.QualifiedName()) + ";"),
+		ast.NewDropTable(table.QualifiedName()),
+		ast.NewRawSQL("ALTER TABLE " + quoteQualifiedIdentifier(createNode.Name) +
+			" RENAME TO " + quoteIdentifier(table.Name) + ";"),
+	}
+	nodes = append(nodes, p.recreateTableIndexes(*table, generated)...)
+	triggers, err := p.recreateTableTriggers(*table, generated)
+	if err != nil {
+		return nil, err
+	}
+	nodes = append(nodes, triggers...)
+	return nodes, nil
+}
+
+func validateRebuildTablePreconditions(table goschema.Table, diff *types.SchemaDiff, generated *goschema.Database) error {
+	tempName := rebuildTableName(table)
+	if tableNameCollides(generated.Tables, table, tempName) || removedTableNameCollides(diff.TablesRemoved, table, tempName) {
+		return unsupportedFeaturef("rebuilding table %s would collide with existing table %s", table.QualifiedName(), tempName)
+	}
+	if hasInboundForeignKey(table, generated) {
+		return unsupportedFeaturef("rebuilding table %s with inbound foreign keys requires a manual rebuild plan", table.QualifiedName())
+	}
+	return nil
+}
+
+func findTable(tables []goschema.Table, name string) *goschema.Table {
+	for i := range tables {
+		if tables[i].Name == name || tables[i].QualifiedName() == name {
+			return &tables[i]
+		}
+	}
+	return nil
+}
+
+func rebuildTableName(table goschema.Table) string {
+	return "__ptah_rebuild_" + table.Name
+}
+
+func tableNameCollides(tables []goschema.Table, target goschema.Table, name string) bool {
+	for _, table := range tables {
+		if table.Schema == target.Schema && table.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func removedTableNameCollides(removed []string, target goschema.Table, name string) bool {
+	qualified := qualifyLikeTable(target, name)
+	for _, tableName := range removed {
+		if tableName == name || tableName == qualified {
+			return true
+		}
+	}
+	return false
+}
+
+func qualifyLikeTable(table goschema.Table, name string) string {
+	if strings.TrimSpace(table.Schema) == "" {
+		return name
+	}
+	return table.Schema + "." + name
+}
+
+func rebuildColumnNames(table goschema.Table, fields []goschema.Field) []string {
+	var columns []string
+	for _, field := range fields {
+		if field.StructName == table.StructName {
+			columns = append(columns, field.Name)
+		}
+	}
+	return columns
+}
+
+func (p *Planner) recreateTableIndexes(table goschema.Table, generated *goschema.Database) []ast.Node {
+	tableMap := structToTableMap(generated.Tables)
+	var nodes []ast.Node
+	for _, index := range generated.Indexes {
+		tableName := generatedIndexTableName(index, tableMap)
+		if tableName == table.Name || tableName == table.QualifiedName() {
+			nodes = append(nodes, fromschema.FromIndexWithTableMapping(index, tableMap))
+		}
+	}
+	return nodes
+}
+
+func generatedIndexTableName(index goschema.Index, tableMap map[string]string) string {
+	if strings.TrimSpace(index.TableName) != "" {
+		return index.TableName
+	}
+	return tableMap[index.StructName]
+}
+
+func hasInboundForeignKey(table goschema.Table, generated *goschema.Database) bool {
+	for _, field := range generated.Fields {
+		fkRef := fromschema.ParseForeignKeyReference(field.Foreign)
+		if fkRef != nil && tableMatchesName(table, fkRef.Table) {
+			return true
+		}
+	}
+	for _, constraint := range generated.Constraints {
+		if strings.EqualFold(constraint.Type, "FOREIGN KEY") && tableMatchesName(table, constraint.ForeignTable) {
+			return true
+		}
+	}
+	return false
+}
+
+func tableMatchesName(table goschema.Table, name string) bool {
+	return name == table.Name || name == table.QualifiedName()
+}
+
+func (p *Planner) recreateTableTriggers(table goschema.Table, generated *goschema.Database) ([]ast.Node, error) {
+	var nodes []ast.Node
+	for _, trigger := range generated.Triggers {
+		if trigger.Table == table.Name || trigger.Table == table.QualifiedName() {
+			if triggerBodyContainsCreateTrigger(trigger.Body) {
+				return nil, unsupportedFeaturef(
+					"rebuilding table %s with trigger %s requires a manual rebuild plan",
+					table.QualifiedName(),
+					trigger.Name,
+				)
+			}
+			nodes = append(nodes, fromschema.FromTrigger(trigger))
+		}
+	}
+	return nodes, nil
+}
+
+func triggerBodyContainsCreateTrigger(body string) bool {
+	return strings.HasPrefix(strings.ToUpper(strings.TrimSpace(body)), "CREATE TRIGGER")
+}
+
+func quoteIdentifierList(names []string) string {
+	quoted := make([]string, len(names))
+	for i, name := range names {
+		quoted[i] = quoteIdentifier(name)
+	}
+	return strings.Join(quoted, ", ")
+}
+
+func quoteQualifiedIdentifier(name string) string {
+	parts := strings.Split(name, ".")
+	for i, part := range parts {
+		parts[i] = quoteIdentifier(part)
+	}
+	return strings.Join(parts, ".")
+}
+
+func quoteIdentifier(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
 func validateAddedColumns(diff *types.SchemaDiff, generated *goschema.Database) error {

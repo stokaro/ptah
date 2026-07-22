@@ -364,11 +364,15 @@ func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
 }
 
 func (r *Renderer) writeTableOptions(options map[string]string) {
+	var tableOptions []string
 	if strings.EqualFold(options["STRICT"], "true") {
-		r.w.Write(" STRICT")
+		tableOptions = append(tableOptions, "STRICT")
 	}
 	if strings.EqualFold(options["WITHOUT_ROWID"], "true") || strings.EqualFold(options["WITHOUT ROWID"], "true") {
-		r.w.Write(" WITHOUT ROWID")
+		tableOptions = append(tableOptions, "WITHOUT ROWID")
+	}
+	if len(tableOptions) > 0 {
+		r.w.Write(" " + strings.Join(tableOptions, ", "))
 	}
 }
 

@@ -470,6 +470,28 @@ func TestConvertDBSchemaToGoSchema_ColumnCharsetCollate(t *testing.T) {
 	c.Assert(result.Fields[0].Collate, qt.Equals, "hebrew_general_ci")
 }
 
+func TestConvertDBSchemaToGoSchema_SQLiteTableOptions(t *testing.T) {
+	c := qt.New(t)
+	dbSchema := &types.DBSchema{
+		Tables: []types.DBTable{{
+			Name:         "users",
+			Strict:       true,
+			WithoutRowID: true,
+			Columns: []types.DBColumn{{
+				Name:         "id",
+				DataType:     "TEXT",
+				IsPrimaryKey: true,
+			}},
+		}},
+	}
+
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+
+	c.Assert(result.Tables, qt.HasLen, 1)
+	c.Assert(result.Tables[0].Strict, qt.IsTrue)
+	c.Assert(result.Tables[0].WithoutRowID, qt.IsTrue)
+}
+
 func TestConvertDBSchemaToGoSchema_ExtensionDefaultValues(t *testing.T) {
 	c := qt.New(t)
 
