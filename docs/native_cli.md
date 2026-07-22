@@ -35,7 +35,7 @@ root-level command spellings are removed instead of preserved.
 | `ptah migrations baseline` | Record existing migrations as applied. |
 | `ptah migrations repair` | Repair migration revision metadata. |
 | `ptah migrations hash` | Write or update migration directory integrity. |
-| `ptah migrations validate` | Validate migration directory integrity. |
+| `ptah migrations validate` | Validate migration directory integrity and, optionally, SQL execution with `--dev-url`. |
 | `ptah migrations lint` | Lint migration files. |
 | `ptah sql lint` | Lint standalone SQL files. |
 | `ptah seed` | Apply environment-scoped SQL seed files. |
