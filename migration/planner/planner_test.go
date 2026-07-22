@@ -191,7 +191,7 @@ func TestGenerateSchemaDiffAST_WrapsPlannerFailures(t *testing.T) {
 	c.Assert(err, qt.ErrorAs, &planErr)
 	c.Assert(planErr.Dialect, qt.Equals, platform.SQLite)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, "sqlite: dropping columns from table users requires a table rebuild plan")
+	c.Assert(err, qt.ErrorMatches, "sqlite: rebuilding table users requires the retained table definition")
 }
 
 func TestRequiresNoTransaction(t *testing.T) {

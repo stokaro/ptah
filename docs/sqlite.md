@@ -31,6 +31,10 @@ The SQLite renderer and planner support:
 - `DROP INDEX IF EXISTS` and `DROP TABLE IF EXISTS`.
 - `ALTER TABLE ... ADD COLUMN` for SQLite-native column additions, plus
   `RENAME COLUMN` and `RENAME TO`.
+- Simple column-drop plans through a table rebuild: create a temporary table
+  from the retained schema, copy retained columns, drop the original table,
+  rename the rebuilt table, and recreate retained indexes/triggers when their
+  metadata can be round-tripped safely.
 - Views without `WITH CHECK OPTION`.
 - Row-level triggers; SQLite does not support statement-level triggers.
 
@@ -56,10 +60,17 @@ table are ignored.
 ## ALTER TABLE Limits
 
 SQLite cannot add, drop, or modify table constraints in place, and many column
-shape changes require rebuilding the table. Ptah currently reports explicit
-errors for these cases instead of emitting unsafe or partial SQL:
+shape changes require rebuilding the table. Ptah emits a rebuild plan for simple
+column drops, including the down migration generated for SQLite add-column
+changes. Ptah still reports explicit errors instead of emitting unsafe or
+partial SQL for unsupported rebuild shapes:
 
-- dropping columns;
+- combining dropped columns with other table changes in the same diff;
+- dropping columns from tables referenced by inbound foreign keys;
+- dropping columns when the internal rebuild table name would collide with an
+  existing table;
+- dropping columns from tables whose retained triggers use SQLite syntax Ptah
+  cannot round-trip yet, such as `UPDATE OF` trigger columns;
 - modifying column type, nullability, default, primary key, unique, or generated
   column shape;
 - adding or removing table constraints on existing tables;
@@ -67,8 +78,8 @@ errors for these cases instead of emitting unsafe or partial SQL:
 - PostgreSQL-only objects such as extensions, materialized views, row-level
   security, roles, grants, and `EXCLUDE` constraints.
 
-Table rebuild planning is intentionally left as a separate feature. Until that
-exists, SQLite migrations should model rebuild-only changes manually.
+Broader table rebuild planning remains intentionally conservative. SQLite
+migrations should still model complex rebuild-only changes manually.
 
 `ALTER TABLE ... ADD COLUMN` has narrower SQLite rules than `CREATE TABLE`.
 Ptah only emits native add-column migrations for shapes SQLite can apply in

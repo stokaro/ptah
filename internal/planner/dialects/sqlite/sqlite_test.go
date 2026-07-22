@@ -93,6 +93,148 @@ func TestPlannerAddsColumnsAndIndexes(t *testing.T) {
 	c.Assert(sql, qt.Contains, `CREATE UNIQUE INDEX IF NOT EXISTS "idx_users_display_name" ON "users" ("display_name") WHERE display_name IS NOT NULL`)
 }
 
+func TestPlannerRebuildsTableWhenDroppingColumn(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Tables: []goschema.Table{{Name: "users", StructName: "User"}},
+		Fields: []goschema.Field{
+			{Name: "id", Type: "INTEGER", StructName: "User", Primary: true},
+			{Name: "email", Type: "TEXT", StructName: "User", Nullable: false},
+		},
+		Indexes: []goschema.Index{{
+			Name:       "idx_users_email",
+			StructName: "User",
+			Fields:     []string{"email"},
+		}},
+		Triggers: []goschema.Trigger{{
+			Name:    "trg_users_email",
+			Table:   "users",
+			Timing:  "AFTER",
+			Event:   "UPDATE",
+			ForEach: "ROW",
+			Body:    "BEGIN SELECT NEW.email; END",
+		}},
+	}
+	diff := &types.SchemaDiff{TablesModified: []types.TableDiff{{
+		TableName:      "users",
+		ColumnsRemoved: []string{"name"},
+	}}}
+
+	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.SQLite)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users"`)
+	c.Assert(sql, qt.Contains, `INSERT INTO "__ptah_rebuild_users" ("id", "email") SELECT "id", "email" FROM "users";`)
+	c.Assert(sql, qt.Contains, `DROP TABLE "users";`)
+	c.Assert(sql, qt.Contains, `ALTER TABLE "__ptah_rebuild_users" RENAME TO "users";`)
+	c.Assert(sql, qt.Contains, `CREATE INDEX IF NOT EXISTS "idx_users_email" ON "users" ("email");`)
+	c.Assert(sql, qt.Contains, `CREATE TRIGGER "trg_users_email" AFTER UPDATE ON "users" FOR EACH ROW BEGIN SELECT NEW.email; END;`)
+	c.Assert(sql, qt.Not(qt.Contains), "DROP COLUMN")
+}
+
+func TestPlannerRejectsUnsafeTableRebuildPreconditions(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name      string
+		generated *goschema.Database
+		want      string
+	}{
+		{
+			name: "temporary table name collision",
+			generated: &goschema.Database{
+				Tables: []goschema.Table{
+					{Name: "users", StructName: "User"},
+					{Name: "__ptah_rebuild_users", StructName: "RebuildUser"},
+				},
+				Fields: []goschema.Field{{Name: "id", Type: "INTEGER", StructName: "User", Primary: true}},
+			},
+			want: `sqlite: rebuilding table users would collide with existing table __ptah_rebuild_users`,
+		},
+		{
+			name: "inbound field foreign key",
+			generated: &goschema.Database{
+				Tables: []goschema.Table{
+					{Name: "users", StructName: "User"},
+					{Name: "posts", StructName: "Post"},
+				},
+				Fields: []goschema.Field{
+					{Name: "id", Type: "INTEGER", StructName: "User", Primary: true},
+					{Name: "user_id", Type: "INTEGER", StructName: "Post", Foreign: "users(id)"},
+				},
+			},
+			want: `sqlite: rebuilding table users with inbound foreign keys requires a manual rebuild plan`,
+		},
+		{
+			name: "inbound table foreign key",
+			generated: &goschema.Database{
+				Tables: []goschema.Table{
+					{Name: "users", StructName: "User"},
+					{Name: "memberships", StructName: "Membership"},
+				},
+				Fields: []goschema.Field{{Name: "id", Type: "INTEGER", StructName: "User", Primary: true}},
+				Constraints: []goschema.Constraint{{
+					Type:           "FOREIGN KEY",
+					Table:          "memberships",
+					Columns:        []string{"user_id", "tenant_id"},
+					ForeignTable:   "users",
+					ForeignColumns: []string{"id", "tenant_id"},
+				}},
+			},
+			want: `sqlite: rebuilding table users with inbound foreign keys requires a manual rebuild plan`,
+		},
+		{
+			name: "unsupported trigger syntax",
+			generated: &goschema.Database{
+				Tables: []goschema.Table{{Name: "users", StructName: "User"}},
+				Fields: []goschema.Field{{Name: "id", Type: "INTEGER", StructName: "User", Primary: true}},
+				Triggers: []goschema.Trigger{{
+					Name:  "trg_users_email",
+					Table: "users",
+					Body:  "CREATE TRIGGER trg_users_email AFTER UPDATE OF email ON users BEGIN SELECT NEW.email; END",
+				}},
+			},
+			want: `sqlite: rebuilding table users with trigger trg_users_email requires a manual rebuild plan`,
+		},
+	}
+	diff := &types.SchemaDiff{TablesModified: []types.TableDiff{{
+		TableName:      "users",
+		ColumnsRemoved: []string{"name"},
+	}}}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			nodes, err := planner.GenerateSchemaDiffAST(diff, tt.generated, platform.SQLite)
+			c.Assert(nodes, qt.IsNil)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, tt.want)
+		})
+	}
+}
+
+func TestPlannerRejectsTableRebuildTempNameRemovedTableCollision(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Tables: []goschema.Table{{Name: "users", StructName: "User"}},
+		Fields: []goschema.Field{{Name: "id", Type: "INTEGER", StructName: "User", Primary: true}},
+	}
+	diff := &types.SchemaDiff{
+		TablesRemoved: []string{"__ptah_rebuild_users"},
+		TablesModified: []types.TableDiff{{
+			TableName:      "users",
+			ColumnsRemoved: []string{"name"},
+		}},
+	}
+
+	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, platform.SQLite)
+
+	c.Assert(nodes, qt.IsNil)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `sqlite: rebuilding table users would collide with existing table __ptah_rebuild_users`)
+}
+
 func TestPlannerRejectsAddColumnShapesThatNeedRebuild(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -175,13 +317,6 @@ func TestPlannerRejectsRebuildOnlyTableChanges(t *testing.T) {
 		want string
 	}{
 		{
-			name: "drop column",
-			diff: &types.SchemaDiff{TablesModified: []types.TableDiff{
-				{TableName: "users", ColumnsRemoved: []string{"name"}},
-			}},
-			want: "sqlite: dropping columns from table users requires a table rebuild plan",
-		},
-		{
 			name: "modify column",
 			diff: &types.SchemaDiff{TablesModified: []types.TableDiff{
 				{TableName: "users", ColumnsModified: []types.ColumnDiff{{ColumnName: "name"}}},
@@ -200,32 +335,13 @@ func TestPlannerRejectsRebuildOnlyTableChanges(t *testing.T) {
 			diff: &types.SchemaDiff{EnumsModified: []types.EnumDiff{{EnumName: "enum_users_status"}}},
 			want: "sqlite: changing enum-backed CHECK constraints requires a table rebuild plan",
 		},
-		{
-			name: "exclude constraint",
-			diff: &types.SchemaDiff{TablesAdded: []string{"bookings"}},
-			want: "sqlite: EXCLUDE constraints are not supported",
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := &goschema.Database{}
-			if tt.name == "exclude constraint" {
-				generated = &goschema.Database{
-					Tables: []goschema.Table{{Name: "bookings", StructName: "Booking"}},
-					Fields: []goschema.Field{{Name: "id", Type: "INTEGER", StructName: "Booking", Primary: true}},
-					Constraints: []goschema.Constraint{{
-						Name:            "no_overlap",
-						Type:            "EXCLUDE",
-						StructName:      "Booking",
-						UsingMethod:     "gist",
-						ExcludeElements: "room_id WITH =",
-					}},
-				}
-			}
 
-			nodes, err := planner.GenerateSchemaDiffAST(tt.diff, generated, platform.SQLite)
+			nodes, err := planner.GenerateSchemaDiffAST(tt.diff, &goschema.Database{}, platform.SQLite)
 			c.Assert(nodes, qt.IsNil)
 			var planErr *ptaherr.PlanError
 			c.Assert(err, qt.ErrorAs, &planErr)
@@ -234,4 +350,30 @@ func TestPlannerRejectsRebuildOnlyTableChanges(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, tt.want)
 		})
 	}
+}
+
+func TestPlannerRejectsSQLiteExcludeConstraint(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Tables: []goschema.Table{{Name: "bookings", StructName: "Booking"}},
+		Fields: []goschema.Field{{Name: "id", Type: "INTEGER", StructName: "Booking", Primary: true}},
+		Constraints: []goschema.Constraint{{
+			Name:            "no_overlap",
+			Type:            "EXCLUDE",
+			StructName:      "Booking",
+			UsingMethod:     "gist",
+			ExcludeElements: "room_id WITH =",
+		}},
+	}
+	diff := &types.SchemaDiff{TablesAdded: []string{"bookings"}}
+
+	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, platform.SQLite)
+
+	c.Assert(nodes, qt.IsNil)
+	var planErr *ptaherr.PlanError
+	c.Assert(err, qt.ErrorAs, &planErr)
+	c.Assert(planErr.Dialect, qt.Equals, platform.SQLite)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, "sqlite: EXCLUDE constraints are not supported")
 }

@@ -204,8 +204,8 @@ value or wants to pin a specific server version in tests/CI.
   CHECK-drop spelling disabled because SQLite cannot add, drop, or modify
   table constraints in place; those operations require a table rebuild plan.
   The SQLite planner emits native `CREATE TABLE`, `ALTER TABLE ... ADD COLUMN`,
-  indexes, views, triggers, drops, and explicit rebuild-required errors for
-  unsupported structural changes.
+  conservative simple column-drop rebuilds, indexes, views, triggers, drops,
+  and explicit rebuild-required errors for unsupported structural changes.
 - **Trigger replacement (#158).** Planners mark modified triggers as replacement
   intent. Renderers emit `CREATE OR REPLACE TRIGGER` only when
   `create_or_replace_trigger` is present. PostgreSQL 14+ and MariaDB use
