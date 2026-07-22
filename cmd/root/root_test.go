@@ -70,7 +70,7 @@ func TestNewRootCommand_SchemaExportSubcommandIsRegistered(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "Export one schema source format to another")
+	c.Assert(out.String(), qt.Contains, "Export a Ptah schema to another format")
 	c.Assert(out.String(), qt.Contains, "--cleanup-go-annotations")
 }
 

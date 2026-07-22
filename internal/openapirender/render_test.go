@@ -49,7 +49,7 @@ func TestRenderEnvelope(t *testing.T) {
 	c.Assert(info["title"], qt.Equals, "My API")
 	c.Assert(info["version"], qt.Equals, "2.0.0")
 	// A non-empty servers block is required for a clean lint.
-	c.Assert(len(doc["servers"].([]any)), qt.Equals, 1)
+	c.Assert(doc["servers"].([]any), qt.HasLen, 1)
 	c.Assert(doc["paths"], qt.HasLen, 0)
 }
 
@@ -95,7 +95,7 @@ func TestRenderUnknownTypeDiagnostic(t *testing.T) {
 	c := qt.New(t)
 	res, err := openapirender.Render(fixture(), openapirender.Options{})
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(res.Diagnostics), qt.Equals, 1)
+	c.Assert(res.Diagnostics, qt.HasLen, 1)
 	c.Assert(res.Diagnostics[0].Path, qt.Contains, "books.properties.quirk")
 	// The unknown type still renders, as a string.
 	doc := renderMap(c, openapirender.Options{})

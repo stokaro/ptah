@@ -53,7 +53,7 @@ func TestFieldsForAndPrimaryKey(t *testing.T) {
 	books := db.Tables[1]
 
 	fields := schemaexport.FieldsFor(db, books)
-	c.Assert(len(fields), qt.Equals, 3)
+	c.Assert(fields, qt.HasLen, 3)
 	c.Assert(schemaexport.EffectivePrimaryKey(books, fields), qt.DeepEquals, []string{"id"})
 
 	// Composite primary key comes from the table.
