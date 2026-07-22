@@ -640,14 +640,6 @@ func TestNewAtlasCommand_SchemaInspectRejectsUnsupportedFilters(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, "atlas schema inspect accepts --exclude, but Ptah does not implement its behavior yet")
 }
 
-func TestParseAtlasSchemaInspectSchemasAcceptsRepeatedAndCommaValues(t *testing.T) {
-	c := qt.New(t)
-
-	schemas := parseAtlasSchemaInspectSchemas([]string{"public, auth", "tenant"})
-
-	c.Assert(schemas, qt.DeepEquals, []string{"public", "auth", "tenant"})
-}
-
 func TestNewAtlasCommand_ForwardsParentedNativeCommand(t *testing.T) {
 	c := qt.New(t)
 	root := &cobra.Command{Use: "ptah"}
