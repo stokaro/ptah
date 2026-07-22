@@ -133,8 +133,11 @@ ptah atlas migrate apply \
 Supported Atlas apply flags include `--dry-run`, `--tx-mode`, `--exec-order`,
 `--allow-dirty`, `--baseline`, `--revisions-schema`, `--lock-timeout`, and
 `--lock-name`. `--lock-name` changes the session-level advisory lock name used
-by databases that support migration locks. Atlas Go-template output through
-`--format` remains an explicit gap.
+by databases that support migration locks. `--format` executes a Go template
+against a Ptah apply result that mirrors Atlas's public apply-template fields:
+`Pending`, `Applied`, `Current`, `Target`, `Start`, `End`, `Driver`, `URL`, and
+`Dir`; `{{ json . }}` emits the same result as JSON with database credentials
+redacted.
 
 ## Migration Diff
 
