@@ -64,6 +64,24 @@ table "users" {
 	c.Assert(db.Fields[0].Primary, qt.IsTrue)
 }
 
+func TestLoadSchemaFile_SQL(t *testing.T) {
+	c := qt.New(t)
+
+	path := filepath.Join(t.TempDir(), "schema.sql")
+	c.Assert(os.WriteFile(path, []byte(`
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL
+);
+`), 0o600), qt.IsNil)
+
+	db, err := loadSchema("", path)
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Tables, qt.HasLen, 1)
+	c.Assert(db.Tables[0].Name, qt.Equals, "users")
+	c.Assert(db.Fields, qt.HasLen, 2)
+}
+
 func TestLoadSchemaFile_RejectsUnsupportedExtension(t *testing.T) {
 	c := qt.New(t)
 
@@ -71,7 +89,7 @@ func TestLoadSchemaFile_RejectsUnsupportedExtension(t *testing.T) {
 	c.Assert(os.WriteFile(path, []byte(`{}`), 0o600), qt.IsNil)
 
 	_, err := loadSchema("", path)
-	c.Assert(err, qt.ErrorMatches, `unsupported schema file extension ".json": only .yaml, .yml, and .hcl are supported`)
+	c.Assert(err, qt.ErrorMatches, `unsupported schema file extension ".json": only .yaml, .yml, .hcl, and .sql are supported`)
 }
 
 func TestGenerateCommandUnsupportedDialectExits2WithoutPanicTrace(t *testing.T) {

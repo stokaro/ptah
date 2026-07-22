@@ -10,7 +10,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/stokaro/ptah/cmd/compare"
 	"github.com/stokaro/ptah/cmd/dropall"
 	"github.com/stokaro/ptah/cmd/internal/buildinfo"
 	"github.com/stokaro/ptah/cmd/internal/cmdadapter"
@@ -139,22 +138,11 @@ func newAtlasSchemaCommand() *cobra.Command {
 				atlasBool("auto-approve", "", "Skip interactive approval"),
 			},
 		},
-		{
-			use:     "diff",
-			short:   "Diff desired schema against a database",
-			native:  "schema compare",
-			factory: compare.NewCompareCommand,
-			flags: []atlasFlag{
-				atlasUnsupportedStringArray("from", "", "Source schema target"),
-				atlasUnsupportedStringArray("to", "", "Desired schema target"),
-				atlasUnsupportedString("dev-url", "", "Dev database URL"),
-				atlasUnsupportedString("format", "", "Atlas Go template output format"),
-			},
-		},
 		atlasSchemaCleanVerb(),
 	} {
 		cmd.AddCommand(newAtlasAdapterCommand("schema", verb))
 	}
+	cmd.AddCommand(newAtlasSchemaDiffCommand())
 	cmd.AddCommand(newAtlasSchemaFmtCommand())
 	return cmd
 }

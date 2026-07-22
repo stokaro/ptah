@@ -54,8 +54,24 @@ fail clearly instead of being ignored.
 | Atlas-compatible command | Native Ptah command |
 | --- | --- |
 | `ptah atlas schema inspect` | `ptah db read` |
-| `ptah atlas schema diff` | `ptah schema compare` |
+| `ptah atlas schema diff` | Local `file://` schema-file diff for `.hcl`, `.yaml`, `.yml`, and `.sql` sources. |
 | `ptah atlas schema fmt` | Formats local `.hcl` files using HCL canonical layout. |
+
+`ptah atlas schema diff` accepts one or more `--from` and `--to` local schema
+file URLs and requires `--dev-url` so Ptah can choose the SQL dialect. The
+current implementation does not execute Atlas's dev-database simulation; it
+uses the dev URL for dialect selection only.
+
+```bash
+ptah atlas schema diff \
+  --from file://old.hcl \
+  --to file://schema.hcl \
+  --dev-url "postgres://localhost/dev"
+```
+
+Remote database URLs, migration directory URLs, `env://` project attributes,
+include/exclude filters, Atlas Cloud web output, and `--format` templates fail
+explicitly until their semantics are implemented.
 
 ## Example
 
@@ -65,6 +81,10 @@ ptah atlas migrate apply \
   --dir ./migrations
 
 ptah atlas schema inspect --url "$DATABASE_URL"
+ptah atlas schema diff \
+  --from file://old.hcl \
+  --to file://schema.hcl \
+  --dev-url "postgres://localhost/dev"
 ptah atlas schema fmt schema.hcl
 ptah atlas migrate import \
   --from "file://flyway?format=flyway" \

@@ -14,8 +14,9 @@ tool needs to generate a Ptah schema from another language.
 go run ./cmd schema render --schema-file schema.yaml --dialect postgres
 ```
 
-`--schema-file` accepts `.yaml` and `.yml` files. When it is set, `--root-dir`
-is ignored. If `--dialect` is omitted, Ptah renders every supported dialect.
+`--schema-file` accepts `.yaml`, `.yml`, `.hcl`, and `.sql` files. When it is
+set, `--root-dir` is ignored. If `--dialect` is omitted, Ptah renders every
+supported dialect. This page documents Ptah's YAML format only.
 
 ## Minimal Example
 

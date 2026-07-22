@@ -76,7 +76,7 @@ executable name.
 | `ptah atlas migrate diff` | Registered path; runtime behavior is not implemented yet. |
 | `ptah atlas migrate import` | Imports local `file://` migration directories from `atlas`, `golang-migrate`, `goose`, `flyway`, `liquibase`, or `dbmate` format into a separate Atlas single-file directory and writes `atlas.sum`. Flyway repeatable migrations fail explicitly until Ptah can execute Atlas R-suffixed imported migrations. |
 | `ptah atlas schema inspect` | Forwards to `ptah db read`. |
-| `ptah atlas schema diff` | Forwards to `ptah schema compare`. |
+| `ptah atlas schema diff` | Diffs local `file://` schema files with `.hcl`, `.yaml`, `.yml`, or `.sql` extensions and prints migration SQL. Database URLs, migration directories, `env://`, include/exclude filters, web output, and custom format templates remain explicit gaps. |
 | `ptah atlas schema fmt` | Formats local `.hcl` files using HCL canonical layout. |
 
 Run `ptah <command> --help` or `ptah atlas <command> --help` for exact flags in

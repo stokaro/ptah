@@ -12,8 +12,7 @@ import (
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/renderer"
-	"github.com/stokaro/ptah/internal/atlashcl"
-	"github.com/stokaro/ptah/internal/yamlschema"
+	"github.com/stokaro/ptah/internal/schemafile"
 )
 
 const (
@@ -32,11 +31,12 @@ func NewGenerateCommand() *cobra.Command {
 	opts := options{}
 	cmd := &cobra.Command{
 		Use:   "render",
-		Short: "Generate schema from Go entities, YAML schema files, or Atlas HCL schema files",
+		Short: "Generate schema from Go entities or local schema files",
 		Long: `Generate database schema from Go entities in the specified directory or from a schema file.
 
 By default, this command scans the directory recursively for Go files with migrator directives.
-When --schema-file is set, it reads a language-agnostic YAML schema or Atlas HCL schema instead.`,
+When --schema-file is set, it reads a language-agnostic YAML schema, Atlas HCL
+schema, or SQL schema file instead.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return generateCommand(cmd, &opts)
 		},
@@ -50,7 +50,7 @@ When --schema-file is set, it reads a language-agnostic YAML schema or Atlas HCL
 func registerFlags(cmd *cobra.Command, opts *options) {
 	flags := cmd.Flags()
 	flags.StringVar(&opts.rootDir, rootDirFlag, "./", "Root directory to scan for Go entities")
-	flags.StringVar(&opts.schemaFile, schemaFileFlag, "", "YAML or Atlas HCL schema file to generate from instead of scanning Go entities")
+	flags.StringVar(&opts.schemaFile, schemaFileFlag, "", "YAML, Atlas HCL, or SQL schema file to generate from instead of scanning Go entities")
 	flags.StringVar(&opts.dialect, dialectFlag, "", "Database dialect (postgres, mysql, mariadb, sqlite, clickhouse, cockroachdb, yugabytedb, spanner). If empty, generates for all dialects")
 }
 
@@ -164,24 +164,18 @@ func loadSchemaFile(schemaFile string) (*goschema.Database, error) {
 		return nil, fmt.Errorf("schema file is a directory: %s", absPath)
 	}
 
-	switch strings.ToLower(filepath.Ext(absPath)) {
-	case ".yaml", ".yml":
-	case ".hcl":
+	ext := strings.ToLower(filepath.Ext(absPath))
+	switch ext {
+	case ".yaml", ".yml", ".hcl", ".sql":
 	default:
-		return nil, fmt.Errorf("unsupported schema file extension %q: only .yaml, .yml, and .hcl are supported", filepath.Ext(absPath))
+		return nil, fmt.Errorf("unsupported schema file extension %q: only .yaml, .yml, .hcl, and .sql are supported", filepath.Ext(absPath))
 	}
 
 	fmt.Printf("Reading schema file: %s\n", absPath)
 	fmt.Println("=" + strings.Repeat("=", len(absPath)+21))
 	fmt.Println()
 
-	var result *goschema.Database
-	switch strings.ToLower(filepath.Ext(absPath)) {
-	case ".hcl":
-		result, err = atlashcl.ParseFile(absPath)
-	default:
-		result, err = yamlschema.ParseFile(absPath)
-	}
+	result, err := schemafile.LoadPath(absPath, schemafile.Options{})
 	if err != nil {
 		return nil, fmt.Errorf("error parsing schema file: %w", err)
 	}

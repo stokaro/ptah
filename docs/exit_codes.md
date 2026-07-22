@@ -65,7 +65,7 @@ a Ptah-owned utility behavior such as the license notice or schema formatting:
 | `ptah atlas migrate lint` | `ptah migrations lint` |
 | `ptah atlas schema inspect` | `ptah db read` |
 | `ptah-compat schema inspect` / `atlas schema inspect` | `ptah db read` |
-| `ptah atlas schema diff` | `ptah schema compare` |
+| `ptah atlas schema diff` | Local Atlas-style schema-file diff |
 | `ptah atlas schema fmt` | Format local `.hcl` files |
 | `ptah-compat schema fmt` / `atlas schema fmt` | Format local `.hcl` files |
 

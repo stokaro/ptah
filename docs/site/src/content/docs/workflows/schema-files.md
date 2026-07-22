@@ -1,6 +1,6 @@
 ---
 title: Schema files
-description: Use YAML schema files or Atlas HCL schema files as Ptah input.
+description: Use YAML, Atlas HCL, or SQL schema files as Ptah input.
 ---
 
 Ptah can render and migrate from schema files when Go annotations are not the
@@ -12,6 +12,7 @@ source of truth.
 | --- | --- | --- |
 | Ptah YAML | Ptah-owned schema files with compact structure. | Strict parser; unknown keys fail. |
 | Atlas HCL schema | Reusing supported Atlas schema files. | Supported subset only; unsupported constructs fail. |
+| SQL schema | Reusing local SQL DDL files for render and Atlas-compatible local diff workflows. | Parsed through Ptah's compatibility SQL parser; unsupported DDL fails explicitly. |
 | Live database | Introspection, drift checks, and migration planning. | Requires a database URL. |
 
 ## YAML schema
@@ -77,6 +78,31 @@ Reference: [Atlas HCL schema](https://github.com/stokaro/ptah/blob/master/docs/a
 :::caution[Supported subset]
 Ptah intentionally rejects unsupported Atlas HCL constructs instead of silently guessing. If a construct is not implemented, treat the error as a compatibility gap and check the conformance reports.
 :::
+
+## SQL schema
+
+Use SQL schema files when the desired state is already represented as local DDL:
+
+```sql
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY,
+  email TEXT NOT NULL
+);
+```
+
+```bash
+ptah schema render --schema-file schema.sql --dialect sqlite
+```
+
+The same local SQL files can be compared through the Atlas-compatible command
+surface:
+
+```bash
+ptah atlas schema diff \
+  --from file://old.sql \
+  --to file://schema.sql \
+  --dev-url "sqlite://dev?mode=memory"
+```
 
 ## Validate before applying
 
