@@ -1063,24 +1063,6 @@ func TestNewCompatCommand_SchemaApplyDryRunUsesAtlasRoot(t *testing.T) {
 	assertSQLiteTableMissing(c, dbPath, "users")
 }
 
-func TestNewAtlasCommand_SchemaApplyRejectsUnsupportedFormat(t *testing.T) {
-	c := qt.New(t)
-	cmd := NewAtlasCommand()
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs([]string{
-		"schema", "apply",
-		"--url", "sqlite://apply.db",
-		"--to", "file://schema.sql",
-		"--format", "{{ sql . }}",
-	})
-
-	err := cmd.Execute()
-
-	c.Assert(err, qt.ErrorMatches, `atlas schema apply accepts --format, but Ptah does not implement its behavior yet`)
-}
-
 func TestNewAtlasCommand_SchemaApplyRejectsDevURLDialectMismatch(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

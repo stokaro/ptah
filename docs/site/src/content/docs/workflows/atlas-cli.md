@@ -56,7 +56,7 @@ model. Unsupported flags fail clearly instead of being ignored.
 | Atlas-compatible command | Ptah behavior |
 | --- | --- |
 | `ptah atlas schema inspect` | Inspects a live database and writes Atlas-shaped HCL by default, SQL with `--format sql` / `--format '{{ sql . }}'`, JSON with `--format json` / `--format '{{ json . }}'`, or custom Go-template output. |
-| `ptah atlas schema apply` | Applies local desired schema files to a live database through Ptah schema diff and migration execution. |
+| `ptah atlas schema apply` | Applies local desired schema files to a live database through Ptah schema diff and migration execution; supports Atlas-style `--format` templates over the planned changes. |
 | `ptah atlas schema diff` | Local `file://` schema-file diff for `.hcl`, `.yaml`, `.yml`, and `.sql` sources. |
 | `ptah atlas schema fmt` | Formats local `.hcl` files using HCL canonical layout. |
 
@@ -96,6 +96,17 @@ ptah atlas schema apply \
 `--dev-url` is accepted for dialect validation only in this path today. It must
 match the target database dialect; Ptah does not yet execute Atlas's
 dev-database simulation for declarative apply.
+
+`--format` accepts Atlas-style Go templates over the planned apply changes. The
+supported template surface includes the `sql` helper and `.MarshalSQL`:
+
+```bash
+ptah atlas schema apply \
+  --url "$DATABASE_URL" \
+  --to file://schema.sql \
+  --dry-run \
+  --format '{{ sql . "  " }}'
+```
 
 `ptah atlas schema diff` accepts one or more `--from` and `--to` local schema
 file URLs and requires `--dev-url` so Ptah can choose the SQL dialect. The

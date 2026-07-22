@@ -1,6 +1,7 @@
 package atlas
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/atlasschema"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -36,7 +38,7 @@ Compares a live database from --url with local --to schema files and applies the
 generated schema changes directly to the target database. This implementation
 currently supports local file:// schema files with .hcl, .yaml, .yml, or .sql
 extensions. Database desired-state URLs, Atlas project env:// URLs, schema
-filters, and custom output templates remain explicit follow-up gaps.`,
+filters, and Atlas Cloud planning remain explicit follow-up gaps.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaApply(cmd, opts)
 		},
@@ -60,6 +62,15 @@ filters, and custom output templates remain explicit follow-up gaps.`,
 }
 
 func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error {
+	formatOutput := cmd.Flags().Changed("format")
+	if formatOutput && strings.TrimSpace(opts.format) == "" {
+		return cmdutil.Fail(cmd, fmt.Errorf("--format must not be empty"))
+	}
+	if formatOutput {
+		if err := atlasreport.ValidateSchemaApplyTemplate(opts.format); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+	}
 	if err := validateAtlasSchemaApplyOptions(cmd, opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -86,19 +97,43 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		return cmdutil.Fail(cmd, err)
 	}
 	if !plan.HasChanges() {
+		if formatOutput {
+			return writeAtlasSchemaApplyFormat(cmd, opts, plan.Statements())
+		}
 		fmt.Fprintln(cmd.OutOrStdout(), "Schema is synced, no changes to be made.")
 		return nil
 	}
 
+	formattedPlan := ""
 	sqlText := plan.SQL()
-	printAtlasSchemaApplyPlan(cmd.OutOrStdout(), sqlText)
+	if formatOutput {
+		var err error
+		formattedPlan, err = renderAtlasSchemaApplyFormat(opts, plan.Statements())
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+		fmt.Fprint(cmd.OutOrStdout(), formattedPlan)
+	} else {
+		printAtlasSchemaApplyPlan(cmd.OutOrStdout(), sqlText)
+	}
 	if opts.dryRun {
 		return nil
 	}
 
-	ok, err := confirmAtlasSchemaApply(opts, cmd.OutOrStdout(), cmd.InOrStdin())
-	if err != nil {
-		return cmdutil.Fail(cmd, err)
+	ok := true
+	if opts.autoApprove {
+		if !formatOutput {
+			fmt.Fprintln(cmd.OutOrStdout(), "Auto-approval enabled; applying schema changes.")
+		}
+	} else {
+		if formatOutput && !strings.HasSuffix(formattedPlan, "\n") {
+			fmt.Fprintln(cmd.OutOrStdout())
+		}
+		var err error
+		ok, err = promptAtlasSchemaApplyConfirmation(cmd.OutOrStdout(), cmd.InOrStdin())
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
 	}
 	if !ok {
 		return nil
@@ -106,6 +141,9 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 
 	if err := plan.Execute(cmd.Context()); err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("apply schema changes: %w", err))
+	}
+	if formatOutput {
+		return nil
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), "Schema apply completed successfully.")
 	return nil
@@ -117,9 +155,6 @@ func validateAtlasSchemaApplyOptions(cmd *cobra.Command, opts atlasSchemaApplyOp
 	}
 	if len(opts.toURLs) == 0 {
 		return fmt.Errorf("--to is required")
-	}
-	if strings.TrimSpace(opts.format) != "" {
-		return fmt.Errorf("atlas schema apply accepts --format, but Ptah does not implement its behavior yet")
 	}
 	for _, name := range []string{"schema", "exclude", "include"} {
 		if values, err := cmd.Flags().GetStringArray(name); err == nil && len(values) > 0 {
@@ -134,12 +169,25 @@ func printAtlasSchemaApplyPlan(out io.Writer, sqlText string) {
 	fmt.Fprintln(out, strings.TrimSpace(sqlText))
 }
 
-func confirmAtlasSchemaApply(opts atlasSchemaApplyOptions, prompt io.Writer, input io.Reader) (bool, error) {
-	if opts.autoApprove {
-		fmt.Fprintln(prompt, "Auto-approval enabled; applying schema changes.")
-		return true, nil
+func writeAtlasSchemaApplyFormat(cmd *cobra.Command, opts atlasSchemaApplyOptions, statements []string) error {
+	rendered, err := renderAtlasSchemaApplyFormat(opts, statements)
+	if err != nil {
+		return err
 	}
+	_, err = io.WriteString(cmd.OutOrStdout(), rendered)
+	return err
+}
 
+func renderAtlasSchemaApplyFormat(opts atlasSchemaApplyOptions, statements []string) (string, error) {
+	report := atlasreport.NewSchemaApply(statements)
+	var out bytes.Buffer
+	if err := atlasreport.WriteSchemaApply(&out, opts.format, report); err != nil {
+		return "", err
+	}
+	return out.String(), nil
+}
+
+func promptAtlasSchemaApplyConfirmation(prompt io.Writer, input io.Reader) (bool, error) {
 	fmt.Fprint(prompt, "Apply these schema changes? Type 'YES' to confirm: ")
 	var confirmation string
 	if _, err := fmt.Fscan(input, &confirmation); err != nil {
