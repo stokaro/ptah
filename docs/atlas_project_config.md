@@ -38,7 +38,7 @@ The supported attributes map to Ptah settings as follows:
 | `env.url` | `--db-url` or `ptah atlas schema apply --url` default |
 | `env.dev` | `migrations generate --shadow-db` or `ptah atlas schema apply --dev-url` default |
 | `env.src` | `ptah atlas schema apply --to` default |
-| `env.exclude` | Project config IR exclude list |
+| `env.exclude` | `ptah atlas schema apply --exclude` default |
 | `migration.dir` | `--migrations-dir` or `--dir` default |
 | `migration.format` | `--dir-format` default |
 | `migration.revisions_schema` | `--migrations-schema` default |
@@ -53,10 +53,14 @@ of `ptah atlas schema apply`. Data-source expressions such as
 `data.hcl_schema.app.url` are rejected until Ptah implements HCL expression
 evaluation for project config files.
 
-`env.exclude` and `lint.latest` are preserved in the project config IR for
-consumers that understand them. The current CLI wiring uses the connection,
-desired schema source, dev database, migration directory, migration execution,
-revision-table, and template env settings.
+`env.exclude` accepts either one string or a list of strings. `ptah atlas schema
+apply --env <name>` uses it as the default resource exclusion filter unless an
+explicit `--exclude` flag is provided.
+
+`lint.latest` is preserved in the project config IR for consumers that
+understand it. The current CLI wiring uses the connection, desired schema
+source, dev database, exclusion filter, migration directory, migration
+execution, revision-table, and template env settings.
 
 `migration.tx_mode` accepts `file`, `all`, and `none`, matching
 `ptah atlas migrate apply --tx-mode`. `all` is limited to dialects where Ptah
@@ -115,8 +119,9 @@ settings:
 Atlas command paths under `ptah atlas <command> ...` inherit this behavior
 when they forward to one of these native commands. Dedicated Atlas-compatible
 commands document their own project-config support. `ptah atlas schema apply`
-reads `env.url`, `env.src`, and `env.dev` from the selected `atlas.hcl`
-environment without coupling that selection to `ptah.yaml` env names.
+reads `env.url`, `env.src`, `env.dev`, and `env.exclude` from the selected
+`atlas.hcl` environment without coupling that selection to `ptah.yaml` env
+names.
 
 ## Unsupported Constructs
 

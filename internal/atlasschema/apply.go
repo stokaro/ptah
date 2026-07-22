@@ -10,6 +10,7 @@ import (
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/atlasfilter"
 	"github.com/stokaro/ptah/internal/atlasurl"
 	"github.com/stokaro/ptah/internal/schemafile"
 	"github.com/stokaro/ptah/migration/migrator"
@@ -18,7 +19,8 @@ import (
 )
 
 type ApplyOptions struct {
-	ToURLs []string
+	ToURLs  []string
+	Exclude []string
 }
 
 type ApplyPlan struct {
@@ -27,10 +29,11 @@ type ApplyPlan struct {
 
 // ApplyRuntimeOptions configures Atlas schema apply planning and execution.
 type ApplyRuntimeOptions struct {
-	DevURL string
-	ToURLs []string
-	TxMode migrator.MigrationTxMode
-	DryRun bool
+	DevURL  string
+	ToURLs  []string
+	Exclude []string
+	TxMode  migrator.MigrationTxMode
+	DryRun  bool
 }
 
 // ApplyRuntimePlan is a prepared Atlas schema apply operation for one open
@@ -66,9 +69,17 @@ func PlanApply(conn *dbschema.DatabaseConnection, opts ApplyOptions) (ApplyPlan,
 	if err != nil {
 		return ApplyPlan{}, fmt.Errorf("read database schema: %w", err)
 	}
+	current, err = atlasfilter.ExcludeDatabase(current, opts.Exclude)
+	if err != nil {
+		return ApplyPlan{}, fmt.Errorf("apply --exclude to current schema: %w", err)
+	}
 	desired, err := schemafile.LoadAll(opts.ToURLs, schemafile.Options{Dialect: conn.Info().Dialect})
 	if err != nil {
 		return ApplyPlan{}, fmt.Errorf("load --to schema: %w", err)
+	}
+	desired, err = excludeDesiredSchema(desired, opts.Exclude)
+	if err != nil {
+		return ApplyPlan{}, fmt.Errorf("apply --exclude to desired schema: %w", err)
 	}
 
 	diff := schemadiff.CompareWithDialect(desired, current, conn.Info().Dialect)
@@ -93,7 +104,10 @@ func PrepareApply(conn *dbschema.DatabaseConnection, opts ApplyRuntimeOptions) (
 		return ApplyRuntimePlan{}, err
 	}
 
-	plan, err := PlanApply(conn, ApplyOptions{ToURLs: opts.ToURLs})
+	plan, err := PlanApply(conn, ApplyOptions{
+		ToURLs:  opts.ToURLs,
+		Exclude: opts.Exclude,
+	})
 	if err != nil {
 		return ApplyRuntimePlan{}, err
 	}

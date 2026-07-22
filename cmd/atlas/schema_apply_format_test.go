@@ -155,6 +155,41 @@ func TestSchemaApplyUsesAtlasProjectEnvSource(t *testing.T) {
 	c.Assert(sqliteTableCount(c, dbPath, "env_users"), qt.Equals, 1)
 }
 
+func TestSchemaApplyUsesAtlasProjectEnvExclude(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	dbPath := filepath.Join(dir, "project-env-exclude.db")
+	c.Assert(os.WriteFile("schema.sql", []byte(`
+CREATE TABLE env_keep (id INTEGER PRIMARY KEY);
+CREATE TABLE env_skip (id INTEGER PRIMARY KEY);
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
+  url = "sqlite://`+dbPath+`"
+  src = "schema.sql"
+  dev = "sqlite://dev.db"
+  exclude = ["env_skip"]
+}
+`), 0o600), qt.IsNil)
+
+	cmd := atlas.NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "apply",
+		"--env", "local",
+		"--auto-approve",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Schema apply completed successfully.")
+	c.Assert(sqliteTableCount(c, dbPath, "env_keep"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, dbPath, "env_skip"), qt.Equals, 0)
+}
+
 func TestSchemaApplyPrefersExplicitFlagsOverProjectEnv(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

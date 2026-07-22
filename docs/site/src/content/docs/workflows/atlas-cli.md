@@ -56,8 +56,8 @@ model. Unsupported flags fail clearly instead of being ignored.
 | Atlas-compatible command | Ptah behavior |
 | --- | --- |
 | `ptah atlas schema inspect` | Inspects a live database and writes Atlas-shaped HCL by default, SQL with `--format sql` / `--format '{{ sql . }}'`, JSON with `--format json` / `--format '{{ json . }}'`, custom Go-template output, or basic `hcl`/`sql` split-write exports. The OSS `--exclude` flag filters inspected resources. |
-| `ptah atlas schema apply` | Applies local desired schema files to a live database through Ptah schema diff and migration execution; supports `--env` project defaults and Atlas-style `--format` templates over the planned changes. |
-| `ptah atlas schema diff` | Local `file://` schema-file diff for `.hcl`, `.yaml`, `.yml`, and `.sql` sources. |
+| `ptah atlas schema apply` | Applies local desired schema files to a live database through Ptah schema diff and migration execution; supports `--env` project defaults, Atlas-style `--format` templates over the planned changes, and `--exclude` resource filters. |
+| `ptah atlas schema diff` | Local `file://` schema-file diff for `.hcl`, `.yaml`, `.yml`, and `.sql` sources, including `--exclude` resource filters. |
 | `ptah atlas schema fmt` | Formats local `.hcl` files using HCL canonical layout. |
 
 `ptah atlas schema inspect` accepts a live database `--url` and writes
@@ -100,14 +100,15 @@ target. File-backed inspection, exporter blocks, and advanced split/write
 configuration remain explicit gaps.
 
 `ptah atlas schema apply` accepts one or more local `--to` schema file URLs and
-a live database `--url`. With `--env`, Ptah can read `env.url`, `env.src`, and
-`env.dev` from the selected `atlas.hcl` environment; explicit CLI flags still
-take precedence. Ptah reads the current database schema, diffs it against the
-desired local schema files, prints the planned SQL, and applies it after
-interactive confirmation. Use `--dry-run` to print the plan without applying it,
-or `--auto-approve` to skip the prompt explicitly. Use `--tx-mode=file` or
-`--tx-mode=all` to execute the generated plan in one transaction, or
-`--tx-mode=none` to execute statements without transaction wrapping.
+a live database `--url`. With `--env`, Ptah can read `env.url`, `env.src`,
+`env.dev`, and `env.exclude` from the selected `atlas.hcl` environment;
+explicit CLI flags still take precedence. Ptah reads the current database
+schema, diffs it against the desired local schema files, prints the planned SQL,
+and applies it after interactive confirmation. Use `--dry-run` to print the plan
+without applying it, or `--auto-approve` to skip the prompt explicitly. Use
+`--tx-mode=file` or `--tx-mode=all` to execute the generated plan in one
+transaction, or `--tx-mode=none` to execute statements without transaction
+wrapping.
 
 ```bash
 ptah atlas schema apply \
@@ -131,6 +132,11 @@ ptah atlas schema apply --env local --dry-run
 `--dev-url` is accepted for dialect validation only in this path today. It must
 match the target database dialect; Ptah does not yet execute Atlas's
 dev-database simulation for declarative apply.
+
+`--exclude` accepts repeated or comma-separated Atlas-style glob patterns,
+including `[type=...]` selectors. Ptah applies the filter to both the current
+live schema and the desired local schema files before planning, so excluded
+objects are ignored rather than dropped.
 
 `--format` accepts Atlas-style Go templates over the planned apply changes. The
 supported template surface includes the `sql` helper and `.MarshalSQL`:
@@ -167,8 +173,9 @@ ptah atlas schema diff \
 ```
 
 Remote database URLs, migration directory URLs, `env://` project attributes,
-include/exclude filters, Atlas Cloud web output, transaction-mode flags, and
-lock flags fail explicitly until their semantics are implemented.
+include filters, Atlas Cloud web output, transaction-mode flags, and lock flags
+fail explicitly until their semantics are implemented. `--exclude` filters both
+local `--from` and `--to` schema files before diffing.
 
 ## Migration Apply
 

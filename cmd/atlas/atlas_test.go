@@ -231,7 +231,7 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 		{
 			name:  "schema_diff",
 			path:  []string{"schema", "diff"},
-			flags: []string{"--from", "--to", "--dev-url", "--format"},
+			flags: []string{"--from", "--to", "--dev-url", "--format", "--exclude"},
 		},
 		{
 			name:  "schema_clean",

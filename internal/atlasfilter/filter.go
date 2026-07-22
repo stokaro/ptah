@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/stokaro/ptah/core/goschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 )
 
@@ -35,6 +36,42 @@ func ExcludeDatabase(schema *dbschematypes.DBSchema, patterns []string) (*dbsche
 	filtered.RLSPolicies = state.filterRLSPolicies(filtered.RLSPolicies)
 	filtered.Roles = state.filterRoles(filtered.Roles)
 	filtered.Grants = state.filterGrants(filtered.Grants)
+	return filtered, nil
+}
+
+// ExcludeGenerated returns a shallow copy of schema with generated-schema IR
+// resources matching Atlas-style exclude globs removed.
+func ExcludeGenerated(schema *goschema.Database, patterns []string) (*goschema.Database, error) {
+	filters, err := parsePatterns(patterns)
+	if err != nil {
+		return nil, err
+	}
+	if schema == nil || len(filters) == 0 {
+		return schema, nil
+	}
+
+	state := newExclusionState(filters)
+	filtered := cloneGenerated(schema)
+	filtered.Tables = state.filterGeneratedTables(filtered.Tables)
+	tableByStruct := generatedTableByStruct(filtered.Tables)
+	filtered.Fields = state.filterGeneratedFields(tableByStruct, filtered.Fields)
+	filtered.Tables = state.stripGeneratedTableColumnReferences(filtered.Tables)
+	filtered.Indexes = state.filterGeneratedIndexes(tableByStruct, filtered.Indexes)
+	filtered.Constraints = state.filterGeneratedConstraints(tableByStruct, filtered.Constraints)
+	filtered.EmbeddedFields = state.filterGeneratedEmbeddedFields(tableByStruct, filtered.EmbeddedFields)
+	filtered.Extensions = state.filterGeneratedExtensions(filtered.Extensions)
+	filtered.Functions = state.filterGeneratedFunctions(filtered.Functions)
+	filtered.Views = state.filterGeneratedViews(filtered.Views)
+	filtered.MaterializedViews = state.filterGeneratedMaterializedViews(filtered.MaterializedViews)
+	filtered.Triggers = state.filterGeneratedTriggers(tableByStruct, filtered.Triggers)
+	filtered.RLSPolicies = state.filterGeneratedRLSPolicies(tableByStruct, filtered.RLSPolicies)
+	filtered.RLSEnabledTables = state.filterGeneratedRLSEnabledTables(tableByStruct, filtered.RLSEnabledTables)
+	filtered.Roles = state.filterGeneratedRoles(filtered.Roles)
+	filtered.Grants = state.filterGeneratedGrants(filtered.Grants)
+	filtered.Dependencies = nil
+	filtered.FunctionDependencies = nil
+	filtered.SelfReferencingForeignKeys = nil
+	goschema.Finalize(filtered)
 	return filtered, nil
 }
 
@@ -327,6 +364,199 @@ func (s *exclusionState) filterGrants(grants []dbschematypes.DBGrant) []dbschema
 	})
 }
 
+func (s *exclusionState) filterGeneratedTables(tables []goschema.Table) []goschema.Table {
+	return keep(tables, func(table goschema.Table) bool {
+		names := tableNameCandidates(table.Schema, table.Name)
+		if s.matches("table", names...) {
+			s.excludeTable(table.Schema, table.Name)
+			return false
+		}
+		return true
+	})
+}
+
+func (s *exclusionState) filterGeneratedFields(
+	tables map[string]goschema.Table,
+	fields []goschema.Field,
+) []goschema.Field {
+	result := make([]goschema.Field, 0, len(fields))
+	for _, field := range fields {
+		table, ok := tables[field.StructName]
+		if !ok {
+			continue
+		}
+		if s.generatedFieldExcluded(table, field.Name) {
+			s.excludeColumn(table.Schema, table.Name, field.Name)
+			continue
+		}
+		if s.generatedForeignTableExcluded(table.Schema, field.Foreign) {
+			field = stripGeneratedFieldForeignKey(field)
+		}
+		if s.generatedForeignColumnsExcluded(table.Schema, field.Foreign, foreignReferenceColumns(field.Foreign)) {
+			field = stripGeneratedFieldForeignKey(field)
+		}
+		result = append(result, field)
+	}
+	return result
+}
+
+func (s *exclusionState) stripGeneratedTableColumnReferences(tables []goschema.Table) []goschema.Table {
+	out := slices.Clone(tables)
+	for i := range out {
+		out[i].PrimaryKey = s.filterGeneratedColumnNames(out[i], out[i].PrimaryKey)
+		out[i].PrimaryKeyParts = keep(out[i].PrimaryKeyParts, func(part goschema.PrimaryKeyPart) bool {
+			return !s.generatedColumnExcluded(out[i], part.Name)
+		})
+		out[i].PrimaryKeyInclude = s.filterGeneratedColumnNames(out[i], out[i].PrimaryKeyInclude)
+	}
+	return out
+}
+
+func (s *exclusionState) filterGeneratedIndexes(
+	tables map[string]goschema.Table,
+	indexes []goschema.Index,
+) []goschema.Index {
+	return keep(indexes, func(index goschema.Index) bool {
+		table, ok := generatedIndexTable(tables, index)
+		if !ok || s.generatedAnyColumnExcluded(table, generatedIndexColumns(index)) {
+			return false
+		}
+		return !s.matches("index", tableChildNameCandidates(table.Schema, table.Name, index.Name)...)
+	})
+}
+
+func (s *exclusionState) filterGeneratedConstraints(
+	tables map[string]goschema.Table,
+	constraints []goschema.Constraint,
+) []goschema.Constraint {
+	return keep(constraints, func(constraint goschema.Constraint) bool {
+		table, ok := generatedConstraintTable(tables, constraint)
+		if !ok || s.generatedAnyColumnExcluded(table, generatedConstraintColumns(constraint)) {
+			return false
+		}
+		if s.generatedForeignTableExcluded(table.Schema, constraint.ForeignTable) ||
+			s.generatedForeignColumnsExcluded(table.Schema, constraint.ForeignTable, constraint.ForeignColumnsOrDefault()) {
+			return false
+		}
+		return !s.matchesAny(generatedConstraintResourceTypes(constraint), tableChildNameCandidates(table.Schema, table.Name, constraint.Name)...)
+	})
+}
+
+func (s *exclusionState) filterGeneratedEmbeddedFields(
+	tables map[string]goschema.Table,
+	fields []goschema.EmbeddedField,
+) []goschema.EmbeddedField {
+	return keep(fields, func(field goschema.EmbeddedField) bool {
+		table, ok := tables[field.StructName]
+		if !ok {
+			return false
+		}
+		if field.Field != "" && s.generatedFieldExcluded(table, field.Field) {
+			s.excludeColumn(table.Schema, table.Name, field.Field)
+			return false
+		}
+		if s.generatedForeignTableExcluded(table.Schema, field.Ref) {
+			return false
+		}
+		if s.generatedForeignColumnsExcluded(table.Schema, field.Ref, foreignReferenceColumns(field.Ref)) {
+			return false
+		}
+		return true
+	})
+}
+
+func (s *exclusionState) filterGeneratedExtensions(extensions []goschema.Extension) []goschema.Extension {
+	result := make([]goschema.Extension, 0, len(extensions))
+	for _, extension := range extensions {
+		if s.matches("extension", extension.Name) {
+			continue
+		}
+		if s.matchesField("extension", "version", extension.Name) {
+			extension.Version = ""
+		}
+		result = append(result, extension)
+	}
+	return result
+}
+
+func (s *exclusionState) filterGeneratedFunctions(functions []goschema.Function) []goschema.Function {
+	return keep(functions, func(function goschema.Function) bool {
+		return !s.matches("function", function.Name)
+	})
+}
+
+func (s *exclusionState) filterGeneratedViews(views []goschema.View) []goschema.View {
+	return keep(views, func(view goschema.View) bool {
+		excluded := s.matches("view", view.Name)
+		if excluded {
+			s.excludeTable("", view.Name)
+		}
+		return !excluded
+	})
+}
+
+func (s *exclusionState) filterGeneratedMaterializedViews(views []goschema.MaterializedView) []goschema.MaterializedView {
+	return keep(views, func(view goschema.MaterializedView) bool {
+		excluded := s.matches("materialized_view", view.Name)
+		if excluded {
+			s.excludeTable("", view.Name)
+		}
+		return !excluded
+	})
+}
+
+func (s *exclusionState) filterGeneratedTriggers(
+	tables map[string]goschema.Table,
+	triggers []goschema.Trigger,
+) []goschema.Trigger {
+	return keep(triggers, func(trigger goschema.Trigger) bool {
+		table, ok := generatedObjectTable(tables, trigger.StructName, trigger.Table)
+		if !ok {
+			return false
+		}
+		return !s.matches("trigger", tableChildNameCandidates(table.Schema, table.Name, trigger.Name)...)
+	})
+}
+
+func (s *exclusionState) filterGeneratedRLSPolicies(
+	tables map[string]goschema.Table,
+	policies []goschema.RLSPolicy,
+) []goschema.RLSPolicy {
+	return keep(policies, func(policy goschema.RLSPolicy) bool {
+		table, ok := generatedObjectTable(tables, policy.StructName, policy.Table)
+		if !ok {
+			return false
+		}
+		return !s.matches("policy", tableChildNameCandidates(table.Schema, table.Name, policy.Name)...)
+	})
+}
+
+func (s *exclusionState) filterGeneratedRLSEnabledTables(
+	tables map[string]goschema.Table,
+	values []goschema.RLSEnabledTable,
+) []goschema.RLSEnabledTable {
+	return keep(values, func(value goschema.RLSEnabledTable) bool {
+		_, ok := generatedObjectTable(tables, value.StructName, value.Table)
+		return ok
+	})
+}
+
+func (s *exclusionState) filterGeneratedRoles(roles []goschema.Role) []goschema.Role {
+	return keep(roles, func(role goschema.Role) bool {
+		return !s.matches("role", role.Name)
+	})
+}
+
+func (s *exclusionState) filterGeneratedGrants(grants []goschema.Grant) []goschema.Grant {
+	return keep(grants, func(grant goschema.Grant) bool {
+		if grant.OnTable != "" && generatedTableKeyExcluded(s, grant.OnTable) {
+			return false
+		}
+		targets := generatedGrantTargets(grant)
+		return !s.matches("grant", targets...)
+	})
+}
+
 func (s *exclusionState) matches(resourceType string, names ...string) bool {
 	return s.matchesAny([]string{resourceType}, names...)
 }
@@ -383,6 +613,56 @@ func (s *exclusionState) anyColumnExcluded(schema, table string, columns []strin
 	return false
 }
 
+func (s *exclusionState) generatedFieldExcluded(table goschema.Table, column string) bool {
+	return s.matches("column", tableChildNameCandidates(table.Schema, table.Name, column)...)
+}
+
+func (s *exclusionState) generatedColumnExcluded(table goschema.Table, column string) bool {
+	return s.anyColumnExcluded(table.Schema, table.Name, []string{column}) ||
+		s.generatedFieldExcluded(table, column)
+}
+
+func (s *exclusionState) generatedAnyColumnExcluded(table goschema.Table, columns []string) bool {
+	for _, column := range columns {
+		if s.generatedColumnExcluded(table, column) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *exclusionState) filterGeneratedColumnNames(table goschema.Table, columns []string) []string {
+	return keep(columns, func(column string) bool {
+		return !s.generatedColumnExcluded(table, column)
+	})
+}
+
+func (s *exclusionState) generatedForeignTableExcluded(localSchema, reference string) bool {
+	table, _, _ := strings.Cut(strings.TrimSpace(reference), "(")
+	schema, name := splitQualified(table)
+	if schema == "" {
+		schema = localSchema
+	}
+	return s.tableExcluded(schema, name)
+}
+
+func (s *exclusionState) generatedForeignColumnsExcluded(localSchema, reference string, columns []string) bool {
+	table, _, _ := strings.Cut(strings.TrimSpace(reference), "(")
+	schema, name := splitQualified(table)
+	if schema == "" {
+		schema = localSchema
+	}
+	return s.anyColumnExcluded(schema, name, columns)
+}
+
+func stripGeneratedFieldForeignKey(field goschema.Field) goschema.Field {
+	field.Foreign = ""
+	field.ForeignKeyName = ""
+	field.OnDelete = ""
+	field.OnUpdate = ""
+	return field
+}
+
 func cloneDatabase(schema *dbschematypes.DBSchema) *dbschematypes.DBSchema {
 	return &dbschematypes.DBSchema{
 		Tables:      slices.Clone(schema.Tables),
@@ -398,6 +678,27 @@ func cloneDatabase(schema *dbschematypes.DBSchema) *dbschematypes.DBSchema {
 		Roles:       slices.Clone(schema.Roles),
 		Grants:      slices.Clone(schema.Grants),
 	}
+}
+
+func cloneGenerated(schema *goschema.Database) *goschema.Database {
+	filtered := *schema
+	filtered.Schemas = slices.Clone(schema.Schemas)
+	filtered.Tables = slices.Clone(schema.Tables)
+	filtered.Fields = slices.Clone(schema.Fields)
+	filtered.Indexes = slices.Clone(schema.Indexes)
+	filtered.Constraints = slices.Clone(schema.Constraints)
+	filtered.Enums = slices.Clone(schema.Enums)
+	filtered.EmbeddedFields = slices.Clone(schema.EmbeddedFields)
+	filtered.Extensions = slices.Clone(schema.Extensions)
+	filtered.Functions = slices.Clone(schema.Functions)
+	filtered.Views = slices.Clone(schema.Views)
+	filtered.MaterializedViews = slices.Clone(schema.MaterializedViews)
+	filtered.Triggers = slices.Clone(schema.Triggers)
+	filtered.RLSPolicies = slices.Clone(schema.RLSPolicies)
+	filtered.RLSEnabledTables = slices.Clone(schema.RLSEnabledTables)
+	filtered.Roles = slices.Clone(schema.Roles)
+	filtered.Grants = slices.Clone(schema.Grants)
+	return &filtered
 }
 
 func cloneTable(table dbschematypes.DBTable) dbschematypes.DBTable {
@@ -442,6 +743,95 @@ func qualifiedNameCandidates(schema, name string) []string {
 		return []string{name}
 	}
 	return []string{name, qualified}
+}
+
+func generatedTableByStruct(tables []goschema.Table) map[string]goschema.Table {
+	byStruct := make(map[string]goschema.Table, len(tables))
+	for _, table := range tables {
+		byStruct[table.StructName] = table
+	}
+	return byStruct
+}
+
+func generatedIndexTable(tables map[string]goschema.Table, index goschema.Index) (goschema.Table, bool) {
+	return generatedObjectTable(tables, index.StructName, index.TableName)
+}
+
+func generatedConstraintTable(tables map[string]goschema.Table, constraint goschema.Constraint) (goschema.Table, bool) {
+	return generatedObjectTable(tables, constraint.StructName, constraint.Table)
+}
+
+func generatedObjectTable(
+	tables map[string]goschema.Table,
+	structName string,
+	tableName string,
+) (goschema.Table, bool) {
+	if table, ok := tables[structName]; ok && tableMatchesName(table, tableName) {
+		return table, true
+	}
+	if strings.TrimSpace(tableName) == "" {
+		return goschema.Table{}, false
+	}
+	for _, table := range tables {
+		if tableMatchesName(table, tableName) {
+			return table, true
+		}
+	}
+	return goschema.Table{}, false
+}
+
+func generatedIndexColumns(index goschema.Index) []string {
+	columns := slices.Clone(index.Fields)
+	for _, part := range index.Parts {
+		if part.Name != "" {
+			columns = append(columns, part.Name)
+		}
+	}
+	columns = append(columns, index.IncludeColumns...)
+	return columns
+}
+
+func generatedConstraintColumns(constraint goschema.Constraint) []string {
+	columns := slices.Clone(constraint.Columns)
+	columns = append(columns, constraint.IncludeColumns...)
+	return columns
+}
+
+func foreignReferenceColumns(reference string) []string {
+	_, after, ok := strings.Cut(strings.TrimSpace(reference), "(")
+	if !ok {
+		return nil
+	}
+	columns, _, _ := strings.Cut(after, ")")
+	result := make([]string, 0)
+	for column := range strings.SplitSeq(columns, ",") {
+		column = strings.TrimSpace(column)
+		if column != "" {
+			result = append(result, column)
+		}
+	}
+	return result
+}
+
+func tableMatchesName(table goschema.Table, name string) bool {
+	name = strings.TrimSpace(name)
+	return name == "" || name == table.Name || name == table.QualifiedName()
+}
+
+func generatedTableKeyExcluded(s *exclusionState, table string) bool {
+	schema, name := splitQualified(table)
+	return s.tableExcluded(schema, name)
+}
+
+func generatedGrantTargets(grant goschema.Grant) []string {
+	switch {
+	case grant.OnSchema != "":
+		return []string{grant.OnSchema, grant.Role + "." + grant.OnSchema}
+	case grant.OnTable != "":
+		return []string{grant.OnTable, grant.Role + "." + grant.OnTable}
+	default:
+		return nil
+	}
 }
 
 func tableKeys(schema, table string) []string {
@@ -502,6 +892,14 @@ func tableResourceTypes(table dbschematypes.DBTable) []string {
 }
 
 func constraintResourceTypes(constraint dbschematypes.DBConstraint) []string {
+	types := []string{"constraint"}
+	if strings.EqualFold(constraint.Type, "FOREIGN KEY") {
+		types = append(types, "foreign_key", "foreign-key")
+	}
+	return types
+}
+
+func generatedConstraintResourceTypes(constraint goschema.Constraint) []string {
 	types := []string{"constraint"}
 	if strings.EqualFold(constraint.Type, "FOREIGN KEY") {
 		types = append(types, "foreign_key", "foreign-key")
