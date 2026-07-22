@@ -17,6 +17,8 @@ Use `ptah.yaml` for Ptah-owned configuration and the supported `atlas.hcl`
 subset for Atlas-compatible project config. The supported Atlas subset includes
 local `variable` defaults, `locals`, `getenv`, `file`, `fileset`, and
 `data.hcl_schema.<name>.url` references for local schema-file workflows.
+Supported Atlas env blocks can also set `schema.src`, `schema.mode`, `format`,
+and local `diff` policy defaults for `ptah atlas ...` commands.
 
 ## Minimal `ptah.yaml`
 
@@ -46,11 +48,17 @@ webhooks, lint defaults, and online-DDL policy.
 
 | Setting area | Example keys |
 | --- | --- |
-| Database target | `url`, `src`, `dev`, `schemas` |
+| Database target | `url`, `src`, `schema.src`, `dev`, `schemas` |
 | Migration directory and revisions | `migration.dir`, `migration.format`, `migration.revisions_table`, `migration.revision_format` |
 | Safety and operations | `migration.pre_up_hook`, `migration.pg_dump_to`, `migration.webhook`, `migration.exec_order`, `migration.tx_mode` |
 | Lint defaults | `lint.dialect`, `lint.disabled-rules`, `lint.latest`, `lint.git.base` |
 | Online DDL | `online_ddl.tool`, `online_ddl.threshold_rows` |
+| Atlas-compatible output | `format.schema.inspect`, `format.schema.apply`, `format.schema.diff`, `format.migrate.apply`, `format.migrate.diff` |
+| Atlas-compatible diff policy | `diff.skip.drop_table`, `diff.concurrent_index.create` |
+
+The Atlas-compatible command tree lives under `ptah atlas <command> ...`.
+`ptah-compat` is the drop-in replacement binary for scripts that expect
+Atlas-style root commands; it is not a separate configuration surface.
 
 References:
 

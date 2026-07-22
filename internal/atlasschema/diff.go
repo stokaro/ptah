@@ -17,6 +17,7 @@ type DiffOptions struct {
 	ToURLs   []string
 	DevURL   string
 	Exclude  []string
+	Policy   DiffPolicy
 }
 
 func DiffLocalFiles(opts DiffOptions) (atlasreport.SchemaDiff, error) {
@@ -44,10 +45,12 @@ func DiffLocalFiles(opts DiffOptions) (atlasreport.SchemaDiff, error) {
 		return atlasreport.SchemaDiff{}, fmt.Errorf("apply --exclude to --to schema: %w", err)
 	}
 
-	diff := schemadiff.CompareWithDialect(to, schemafile.ToDBSchema(from), dialect)
+	diff := applyDiffPolicy(schemadiff.CompareWithDialect(to, schemafile.ToDBSchema(from), dialect), opts.Policy)
 	var statements []string
 	if diff.HasChanges() {
-		statements, err = planner.GenerateSchemaDiffSQLStatements(diff, to, dialect)
+		statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, to, dialect, planner.Options{
+			ConcurrentIndexes: opts.Policy.ConcurrentIndexCreate,
+		})
 		if err != nil {
 			return atlasreport.SchemaDiff{}, fmt.Errorf("generate schema diff SQL: %w", err)
 		}

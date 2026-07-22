@@ -12,7 +12,6 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdflags"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
-	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/atlasschema"
@@ -40,7 +39,8 @@ func newAtlasSchemaApplyCommand() *cobra.Command {
 
 Compares a live database from --url with local --to schema files and applies the
 generated schema changes directly to the target database. When --env is set, the
-selected atlas.hcl env can provide url, src, and dev values. This implementation
+selected atlas.hcl env can provide url, schema.src, dev, exclude, schema.mode,
+format.schema.apply, and supported diff policy values. This implementation
 currently supports local file:// schema files with .hcl, .yaml, .yml, or .sql
 extensions. Database desired-state URLs, env:// URLs, schema/include filters,
 and Atlas Cloud planning remain explicit follow-up gaps.`,
@@ -69,6 +69,26 @@ and Atlas Cloud planning remain explicit follow-up gaps.`,
 
 func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error {
 	formatOutput := cmd.Flags().Changed("format")
+	policy := atlasschema.DiffPolicy{}
+	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd, opts.envName)
+	if needsAtlasSchemaApplyConfig(cmd) {
+		projectCfg, loaded, err = loadRequiredAtlasProjectConfigForCommand(cmd, opts.envName)
+	}
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if loaded {
+		opts.url = dbcli.EffectiveString(cmd, "url", opts.url, projectCfg.DatabaseURL)
+		opts.devURL = dbcli.EffectiveString(cmd, "dev-url", opts.devURL, projectCfg.DevURL)
+		opts.toURLs = effectiveStringArray(cmd, "to", opts.toURLs, projectCfg.SchemaSources)
+		opts.exclude = effectiveAtlasExclude(cmd, opts.exclude, projectCfg)
+		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, projectCfg.Format.Schema.Apply)
+		formatOutput = formatOutput || projectCfg.Format.Schema.Apply != ""
+		policy, err = atlasDiffPolicy(projectCfg)
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+	}
 	if formatOutput && strings.TrimSpace(opts.format) == "" {
 		return cmdutil.Fail(cmd, fmt.Errorf("--format must not be empty"))
 	}
@@ -76,16 +96,6 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		if err := atlasreport.ValidateSchemaApplyTemplate(opts.format); err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
-	}
-	if shouldLoadAtlasSchemaApplyConfig(cmd) {
-		projectCfg, err := loadAtlasSchemaApplyConfig(opts.envName)
-		if err != nil {
-			return cmdutil.Fail(cmd, err)
-		}
-		opts.url = dbcli.EffectiveString(cmd, "url", opts.url, projectCfg.DatabaseURL)
-		opts.devURL = dbcli.EffectiveString(cmd, "dev-url", opts.devURL, projectCfg.DevURL)
-		opts.toURLs = effectiveStringArray(cmd, "to", opts.toURLs, projectCfg.SchemaSources)
-		opts.exclude = effectiveStringArray(cmd, "exclude", opts.exclude, projectCfg.Exclude)
 	}
 
 	if err := validateAtlasSchemaApplyOptions(cmd, opts); err != nil {
@@ -108,6 +118,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		DevURL:  opts.devURL,
 		ToURLs:  opts.toURLs,
 		Exclude: opts.exclude,
+		Policy:  policy,
 		TxMode:  txMode,
 		DryRun:  opts.dryRun,
 	})
@@ -136,6 +147,9 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	}
 	if opts.dryRun {
 		return nil
+	}
+	if err := validateAtlasSchemaApplyDiffPolicy(txMode, conn, plan); err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
 
 	ok := true
@@ -167,14 +181,31 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	return nil
 }
 
-func shouldLoadAtlasSchemaApplyConfig(cmd *cobra.Command) bool {
-	return cmd.Flags().Changed(dbcli.EnvFlagName) ||
-		!cmd.Flags().Changed("url") ||
+func needsAtlasSchemaApplyConfig(cmd *cobra.Command) bool {
+	return !cmd.Flags().Changed("url") ||
 		!cmd.Flags().Changed("to")
 }
 
-func loadAtlasSchemaApplyConfig(envName string) (projectconfig.Config, error) {
-	return projectconfig.LoadAtlasFile(projectconfig.AtlasFileName, envName)
+func validateAtlasSchemaApplyDiffPolicy(
+	txMode migrator.MigrationTxMode,
+	conn *dbschema.DatabaseConnection,
+	plan atlasschema.ApplyRuntimePlan,
+) error {
+	if !plan.HasChanges() {
+		return nil
+	}
+	if conn.Info().Dialect != "postgres" && conn.Info().Dialect != "postgresql" {
+		return nil
+	}
+	if txMode == migrator.MigrationTxModeNone {
+		return nil
+	}
+	for _, statement := range plan.Statements() {
+		if strings.Contains(strings.ToUpper(statement), "CREATE INDEX CONCURRENTLY") {
+			return fmt.Errorf("atlas.hcl diff.concurrent_index.create requires --tx-mode none for schema apply")
+		}
+	}
+	return nil
 }
 
 func effectiveStringArray(cmd *cobra.Command, flagName string, flagValues, configValues []string) []string {

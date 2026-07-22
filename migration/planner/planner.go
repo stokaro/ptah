@@ -157,6 +157,9 @@ type Options struct {
 	// Capabilities describes the concrete target server. Nil means the
 	// dialect's default capability preset.
 	Capabilities capability.Capabilities
+	// ConcurrentIndexes requests PostgreSQL CREATE INDEX CONCURRENTLY for all
+	// newly added indexes when the target supports it.
+	ConcurrentIndexes bool
 	// ConcurrentIndexNames requests PostgreSQL CREATE INDEX CONCURRENTLY for
 	// exactly these newly added index names when the target supports it.
 	ConcurrentIndexNames []string
@@ -322,8 +325,12 @@ func registerBuiltInPlanners() error {
 
 func registerPostgresFamilyPlanner(dialect string) error {
 	return registerPlannerFactory(dialect, func(opts Options) Planner {
-		return postgres.NewWithCapabilities(opts.CapabilitiesFor(dialect)).
+		plan := postgres.NewWithCapabilities(opts.CapabilitiesFor(dialect)).
 			WithConcurrentIndexNames(opts.ConcurrentIndexNames...)
+		if opts.ConcurrentIndexes {
+			return plan.WithConcurrentIndexes()
+		}
+		return plan
 	})
 }
 

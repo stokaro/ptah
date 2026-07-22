@@ -221,7 +221,7 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 		{
 			name:  "schema_inspect",
 			path:  []string{"schema", "inspect"},
-			flags: []string{"--url", "--dev-url", "--schema", "--exclude", "--include", "--format"},
+			flags: []string{"--url", "--dev-url", "--env", "--schema", "--exclude", "--include", "--format"},
 		},
 		{
 			name:  "schema_apply",
@@ -231,7 +231,7 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 		{
 			name:  "schema_diff",
 			path:  []string{"schema", "diff"},
-			flags: []string{"--from", "--to", "--dev-url", "--format", "--exclude"},
+			flags: []string{"--from", "--to", "--dev-url", "--env", "--format", "--exclude"},
 		},
 		{
 			name:  "schema_clean",
@@ -241,7 +241,7 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 		{
 			name:  "migrate_diff",
 			path:  []string{"migrate", "diff"},
-			flags: []string{"--to", "--dev-url", "--dir", "--dir-format", "--format", "--schema"},
+			flags: []string{"--to", "--dev-url", "--env", "--dir", "--dir-format", "--format", "--schema"},
 		},
 		{
 			name: "migrate_apply",
@@ -249,6 +249,7 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 			flags: []string{
 				"--url",
 				"--dir",
+				"--env",
 				"--dry-run",
 				"--tx-mode",
 				"--exec-order",
@@ -704,6 +705,42 @@ func TestNewAtlasCommand_SchemaInspectExcludeFiltersResources(t *testing.T) {
 	c.Assert(out.String(), qt.Not(qt.Contains), `posts_user_fk`)
 }
 
+func TestNewAtlasCommand_SchemaInspectUsesAtlasProjectFormatAndSchemaMode(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	dbPath := filepath.Join(dir, "inspect-env.db")
+	createAtlasInspectSQLiteSchema(c, dbPath)
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
+  url = "sqlite://`+dbPath+`"
+  schema {
+    mode {
+      tables = false
+    }
+  }
+  format {
+    schema {
+      inspect = "json"
+    }
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "inspect",
+		"--env", "local",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "{}")
+}
+
 func TestNewAtlasCommand_SchemaInspectRejectsProInclude(t *testing.T) {
 	c := qt.New(t)
 	cmd := NewAtlasCommand()
@@ -962,6 +999,134 @@ table "users" {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "synced")
+}
+
+func TestNewAtlasCommand_SchemaDiffUsesAtlasProjectEnvDefaultsAndDiffSkip(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	from := filepath.Join(dir, "from.hcl")
+	to := filepath.Join(dir, "to.hcl")
+	c.Assert(os.WriteFile(from, []byte(`
+table "old_users" {
+  column "id" {
+    type = int
+  }
+}
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(to, []byte(`schema "main" {}
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
+  dev = "sqlite://dev.db"
+  schema {
+    src = "file://to.hcl"
+  }
+  format {
+    schema {
+      diff = "{{ with .Changes }}changed{{ else }}synced{{ end }}"
+    }
+  }
+  diff {
+    skip {
+      drop_table = true
+    }
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "diff",
+		"--env", "local",
+		"--from", "file://" + from,
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "synced")
+}
+
+func TestNewAtlasCommand_SchemaDiffUsesAtlasProjectDefaultsWithExplicitTargetFlags(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	from := filepath.Join(dir, "from.hcl")
+	to := filepath.Join(dir, "to.hcl")
+	c.Assert(os.WriteFile(from, []byte(`
+table "old_users" {
+  column "id" {
+    type = int
+  }
+}
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(to, []byte(`schema "main" {}
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
+  format {
+    schema {
+      diff = "{{ with .Changes }}changed{{ else }}synced{{ end }}"
+    }
+  }
+  diff {
+    skip {
+      drop_table = true
+    }
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "diff",
+		"--from", "file://" + from,
+		"--to", "file://" + to,
+		"--dev-url", "sqlite://dev.db",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "synced")
+}
+
+func TestNewAtlasCommand_SchemaDiffRejectsUnsupportedAtlasProjectDiffPolicy(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
+  dev = "sqlite://dev.db"
+  schema {
+    src = "file://to.hcl"
+  }
+  diff {
+    concurrent_index {
+      drop = true
+    }
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "diff",
+		"--env", "local",
+		"--from", "file://from.hcl",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `atlas\.hcl diff\.concurrent_index\.drop is not supported yet`)
+	c.Assert(out.String(), qt.Contains, `error: atlas.hcl diff.concurrent_index.drop is not supported yet`)
 }
 
 func TestNewAtlasCommand_SchemaDiffRejectsInvalidFormatBeforeLoadingFiles(t *testing.T) {
@@ -1350,6 +1515,77 @@ func TestNewAtlasCommand_MigrateApplyFormatsCustomTemplate(t *testing.T) {
 	assertSQLiteTableMissing(c, dbPath, "format_template_two")
 }
 
+func TestNewAtlasCommand_MigrateApplyUsesAtlasProjectEnvDefaultsAndFormat(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	dbPath := filepath.Join(dir, "migrate-apply-env.db")
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
+	writeAtlasApplyMigration(c, migrationsDir, "1_apply_env.sql", "CREATE TABLE apply_env_users (id INTEGER PRIMARY KEY);")
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
+  url = "sqlite://`+dbPath+`"
+  migration {
+    dir = "file://migrations"
+  }
+  format {
+    migrate {
+      apply = "{{ len .Applied }}"
+    }
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "apply",
+		"--env", "local",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "1")
+	assertSQLiteTableExists(c, dbPath, "apply_env_users")
+}
+
+func TestNewAtlasCommand_MigrateApplyUsesAtlasProjectDefaultsWithExplicitTargetFlags(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	dbPath := filepath.Join(dir, "migrate-apply-explicit-defaults.db")
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
+	writeAtlasApplyMigration(c, migrationsDir, "1_apply_explicit_defaults.sql", "CREATE TABLE apply_explicit_defaults (id INTEGER PRIMARY KEY);")
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
+  format {
+    migrate {
+      apply = "{{ len .Applied }}"
+    }
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "1")
+	assertSQLiteTableExists(c, dbPath, "apply_explicit_defaults")
+}
+
 func TestNewAtlasCommand_MigrateApplyFormatsDryRunResult(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
@@ -1699,6 +1935,197 @@ CREATE TABLE users (
 	c.Assert(strings.HasPrefix(string(newSQL), "ALTER TABLE"), qt.IsTrue)
 	c.Assert(string(newSQL), qt.Contains, "ADD COLUMN")
 	c.Assert(string(newSQL), qt.Contains, "email")
+}
+
+func TestNewAtlasCommand_MigrateDiffUsesAtlasProjectEnvDefaultsAndFormat(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_init.sql"), []byte(`
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY
+);
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("schema.sql", []byte(`
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY,
+  email TEXT NOT NULL DEFAULT ''
+);
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
+  dev = "sqlite://dev.db"
+  schema {
+    src = "file://schema.sql"
+  }
+  migration {
+    dir = "file://migrations"
+  }
+  format {
+    migrate {
+      diff = "{{ sql . \"\" }}"
+    }
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "diff",
+		"--env", "local",
+		"add_email",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Created migration file:")
+	migrationFiles := atlasSQLFiles(c, migrationsDir)
+	c.Assert(migrationFiles, qt.HasLen, 2)
+	newMigration := nonInitialAtlasMigration(c, migrationFiles)
+	newSQL, err := os.ReadFile(newMigration)
+	c.Assert(err, qt.IsNil)
+	c.Assert(strings.HasPrefix(string(newSQL), "ALTER TABLE"), qt.IsTrue)
+	c.Assert(string(newSQL), qt.Contains, "ADD COLUMN")
+	c.Assert(string(newSQL), qt.Contains, "email")
+}
+
+func TestNewAtlasCommand_MigrateDiffUsesAtlasProjectDiffSkipDropTable(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_init.sql"), []byte(`
+CREATE TABLE old_users (
+  id INTEGER PRIMARY KEY
+);
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("schema.hcl", []byte(`schema "main" {}
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
+  dev = "sqlite://dev.db"
+  schema {
+    src = "file://schema.hcl"
+  }
+  migration {
+    dir = "file://migrations"
+  }
+  diff {
+    skip {
+      drop_table = true
+    }
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "diff",
+		"--env", "local",
+		"drop_old_users",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "The migration directory is synced with the desired state, no changes to be made\n")
+	c.Assert(atlasSQLFiles(c, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
+}
+
+func TestNewAtlasCommand_MigrateDiffUsesAtlasProjectDefaultsWithExplicitTargetFlags(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_init.sql"), []byte(`
+CREATE TABLE old_users (
+  id INTEGER PRIMARY KEY
+);
+`), 0o600), qt.IsNil)
+	schemaPath := filepath.Join(dir, "schema.hcl")
+	c.Assert(os.WriteFile(schemaPath, []byte(`schema "main" {}
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
+  format {
+    migrate {
+      diff = "{{ with .Changes }}changed{{ else }}synced{{ end }}"
+    }
+  }
+  diff {
+    skip {
+      drop_table = true
+    }
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "diff",
+		"--dev-url", "sqlite://" + filepath.Join(dir, "dev.db"),
+		"--dir", "file://" + migrationsDir,
+		"--to", "file://" + schemaPath,
+		"drop_old_users",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "The migration directory is synced with the desired state, no changes to be made\n")
+	c.Assert(atlasSQLFiles(c, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
+}
+
+func TestNewAtlasCommand_MigrateDiffRejectsAtlasProjectConcurrentIndexPolicy(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
+	c.Assert(os.WriteFile("schema.sql", []byte(`CREATE TABLE users (id INTEGER PRIMARY KEY);
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
+  dev = "sqlite://dev.db"
+  schema {
+    src = "file://schema.sql"
+  }
+  migration {
+    dir = "file://migrations"
+  }
+  diff {
+    concurrent_index {
+      create = true
+    }
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "diff",
+		"--env", "local",
+		"add_users",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `atlas\.hcl diff\.concurrent_index\.create is not supported by migrate diff yet`)
+	c.Assert(out.String(), qt.Contains, `error: atlas.hcl diff.concurrent_index.create is not supported by migrate diff yet`)
+	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 0)
 }
 
 func TestNewAtlasCommand_MigrateDiffSchemaFilterIgnoresOutOfScopeDesiredSchema(t *testing.T) {
