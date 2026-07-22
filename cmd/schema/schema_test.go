@@ -45,6 +45,52 @@ func TestSchemaExportCommandWritesAtlasHCL(t *testing.T) {
 	c.Assert(parsed.Tables[0].PrimaryKey, qt.DeepEquals, []string{"id"})
 }
 
+func TestSchemaExportCommandWritesAPISchemas(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	writeModel(c, dir)
+
+	for _, tc := range []struct{ format, contains string }{
+		{"openapi-v3", "openapi: 3.0.3"},
+		{"graphql", "type Query {"},
+	} {
+		cmd := schema.NewSchemaCommand()
+		var stdout, stderr bytes.Buffer
+		cmd.SetOut(&stdout)
+		cmd.SetErr(&stderr)
+		// No --out: the schema is written to stdout.
+		cmd.SetArgs([]string{"export", "--to", tc.format, "--root-dir", dir})
+
+		err := cmd.Execute()
+
+		c.Assert(err, qt.IsNil, qt.Commentf("format %s stderr:\n%s", tc.format, stderr.String()))
+		c.Assert(stdout.String(), qt.Contains, tc.contains)
+	}
+}
+
+func TestSchemaExportCommandTrimsFormatSelector(t *testing.T) {
+	// Regression: a whitespace-padded --to must route to the real format rather
+	// than fall through routing (which previously could run annotation cleanup
+	// without exporting, losing source data).
+	c := qt.New(t)
+	dir := t.TempDir()
+	writeModel(c, dir)
+	outPath := filepath.Join(dir, "schema.hcl")
+
+	cmd := schema.NewSchemaCommand()
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"export", "--to", "atlas-hcl ", "--root-dir", dir, "--out", outPath})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr.String()))
+	content, err := os.ReadFile(outPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(content), qt.Contains, `table "users"`)
+}
+
 func TestSchemaExportCommandPreservesSchemaObjects(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

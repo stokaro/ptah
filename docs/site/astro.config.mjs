@@ -37,6 +37,7 @@ export default defineConfig({
           items: [
             { slug: 'workflows/go-schema' },
             { slug: 'workflows/schema-files' },
+            { slug: 'workflows/api-schema-export' },
             { slug: 'workflows/migrations' },
             { slug: 'workflows/atlas-cli' },
             { slug: 'workflows/ci' },

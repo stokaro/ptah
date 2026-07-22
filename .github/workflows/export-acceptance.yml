@@ -1,0 +1,56 @@
+name: Export Acceptance
+
+# Enforces the acceptance criteria for `ptah schema export --to openapi-v3` and
+# `--to graphql` (issue #172): the generated OpenAPI must pass redocly lint and
+# the generated GraphQL must parse (and build) with graphql-js.
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  export-acceptance:
+    name: export-acceptance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.5'
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build ptah
+        run: go build -o bin/ptah ./cmd/ptah
+
+      - name: Generate API schemas from the example models
+        run: |
+          ./bin/ptah schema export --to openapi-v3 --root-dir ./stubs --out artifacts/openapi.yaml
+          ./bin/ptah schema export --to graphql   --root-dir ./stubs --out artifacts/schema.graphql
+
+      - name: OpenAPI passes redocly lint
+        run: npx -y @redocly/cli@1 lint artifacts/openapi.yaml
+
+      - name: GraphQL parses and builds with graphql-js
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install graphql@16 >/dev/null 2>&1
+          node -e "
+            const { parse, buildSchema } = require('graphql');
+            const fs = require('fs');
+            const sdl = fs.readFileSync('artifacts/schema.graphql', 'utf8');
+            parse(sdl);
+            buildSchema(sdl);
+            console.log('graphql-js parse + buildSchema: OK');
+          "
