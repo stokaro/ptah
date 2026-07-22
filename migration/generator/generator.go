@@ -1078,11 +1078,12 @@ func reverseConstraintAdditions(diff *types.SchemaDiff, dbSchema *dbschematypes.
 		case "UNIQUE":
 			if columns := dbConstraint.ColumnNamesOrDefault(); len(columns) > 0 {
 				infos = append(infos, types.ConstraintAdditionInfo{
-					Name:          removed.Name,
-					TableName:     removed.TableName,
-					Type:          "UNIQUE",
-					Columns:       append([]string(nil), columns...),
-					NullsDistinct: cloneBoolPtr(dbConstraint.NullsDistinct),
+					Name:           removed.Name,
+					TableName:      removed.TableName,
+					Type:           "UNIQUE",
+					Columns:        append([]string(nil), columns...),
+					IncludeColumns: append([]string(nil), dbConstraint.IncludeColumns...),
+					NullsDistinct:  cloneBoolPtr(dbConstraint.NullsDistinct),
 				})
 			}
 		}

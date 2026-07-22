@@ -625,6 +625,7 @@ func (r *Reader) readBasicConstraintsForSchema(schemaName string) ([]types.DBCon
 			constraint.CheckClause = &checkClause
 		}
 		constraint.NullsDistinct = postgresNullsDistinctFromDefinition(constraintDefinition)
+		constraint.IncludeColumns = postgresIncludeColumnsFromDefinition(constraintDefinition)
 
 		constraints = append(constraints, constraint)
 	}
@@ -643,6 +644,47 @@ func postgresNullsDistinctFromDefinition(definition string) *bool {
 		return &nullsDistinct
 	}
 	return nil
+}
+
+func postgresIncludeColumnsFromDefinition(definition string) []string {
+	upper := strings.ToUpper(definition)
+	index := strings.Index(upper, "INCLUDE")
+	if index < 0 {
+		return nil
+	}
+	remaining := definition[index+len("INCLUDE"):]
+	remaining = strings.TrimSpace(remaining)
+	if !strings.HasPrefix(remaining, "(") {
+		return nil
+	}
+	depth := 0
+	for i := range remaining {
+		switch remaining[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return unquotePostgresIdentifiers(splitPostgresIndexColumns(remaining[1:i]))
+			}
+		}
+	}
+	return nil
+}
+
+func unquotePostgresIdentifiers(identifiers []string) []string {
+	for i, identifier := range identifiers {
+		identifiers[i] = unquotePostgresIdentifier(identifier)
+	}
+	return identifiers
+}
+
+func unquotePostgresIdentifier(identifier string) string {
+	trimmed := strings.TrimSpace(identifier)
+	if len(trimmed) < 2 || trimmed[0] != '"' || trimmed[len(trimmed)-1] != '"' {
+		return trimmed
+	}
+	return strings.ReplaceAll(trimmed[1:len(trimmed)-1], `""`, `"`)
 }
 
 // readPostgreSQLConstraints reads PostgreSQL-specific constraints from pg_constraint

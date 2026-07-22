@@ -59,6 +59,9 @@ type ConstraintAdditionInfo struct {
 	// Columns are the local columns the constraint covers (UNIQUE columns or FK
 	// source columns).
 	Columns []string `json:"columns,omitempty"`
+	// IncludeColumns carries PostgreSQL INCLUDE columns for covering UNIQUE and
+	// PRIMARY KEY constraints.
+	IncludeColumns []string `json:"include_columns,omitempty"`
 	// NullsDistinct carries PostgreSQL UNIQUE NULLS [NOT] DISTINCT state.
 	// Nil means the clause was not specified.
 	NullsDistinct *bool `json:"nulls_distinct,omitempty"`

@@ -128,6 +128,10 @@
               "description": "Referenced table for FOREIGN KEY constraints.",
               "type": "string"
             },
+            "include": {
+              "description": "Comma-separated PostgreSQL INCLUDE columns for covering UNIQUE constraints.",
+              "type": "string"
+            },
             "name": {
               "description": "Constraint name.",
               "type": "string"

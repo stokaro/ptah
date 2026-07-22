@@ -971,12 +971,13 @@ func TestParseSource_ConstraintComment(t *testing.T) {
 		},
 		{
 			name:    "UNIQUE constraint with multiple columns",
-			comment: `//migrator:schema:constraint name="unique_user_email" type="UNIQUE" columns="user_id, email"`,
+			comment: `//migrator:schema:constraint name="unique_user_email" type="UNIQUE" columns="user_id, email" include="updated_at"`,
 			expected: goschema.Constraint{
-				StructName: "TestStruct",
-				Name:       "unique_user_email",
-				Type:       "UNIQUE",
-				Columns:    []string{"user_id", "email"},
+				StructName:     "TestStruct",
+				Name:           "unique_user_email",
+				Type:           "UNIQUE",
+				Columns:        []string{"user_id", "email"},
+				IncludeColumns: []string{"updated_at"},
 			},
 		},
 		{
@@ -1036,6 +1037,7 @@ func TestParseSource_ConstraintComment(t *testing.T) {
 			c.Assert(constraint.WhereCondition, qt.Equals, tt.expected.WhereCondition)
 			c.Assert(constraint.CheckExpression, qt.Equals, tt.expected.CheckExpression)
 			c.Assert(constraint.Columns, qt.DeepEquals, tt.expected.Columns)
+			c.Assert(constraint.IncludeColumns, qt.DeepEquals, tt.expected.IncludeColumns)
 			c.Assert(constraint.ForeignTable, qt.Equals, tt.expected.ForeignTable)
 			c.Assert(constraint.ForeignColumn, qt.Equals, tt.expected.ForeignColumn)
 			c.Assert(constraint.OnDelete, qt.Equals, tt.expected.OnDelete)

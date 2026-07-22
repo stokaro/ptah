@@ -363,6 +363,7 @@ func convertConstraint(dbConstraint dbschematypes.DBConstraint, tableStructNames
 		WhereCondition:  derefString(dbConstraint.WhereCondition),
 		CheckExpression: derefString(dbConstraint.CheckClause),
 		Columns:         columns,
+		IncludeColumns:  append([]string(nil), dbConstraint.IncludeColumns...),
 		NullsDistinct:   cloneBoolPtr(dbConstraint.NullsDistinct),
 		ForeignTable:    dbConstraint.QualifiedForeignTableName(),
 		ForeignColumn:   firstString(dbConstraint.ForeignColumnsOrDefault()),

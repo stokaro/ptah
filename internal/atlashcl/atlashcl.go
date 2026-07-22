@@ -448,17 +448,22 @@ func (p *parser) parseUnique(structName, tableName string, block *hclsyntax.Bloc
 	if len(columns) == 0 {
 		return goschema.Constraint{}, p.blockError(block, "unique %q requires columns", block.Labels[0])
 	}
+	include, err := p.parseColumnsAttr(block, "include")
+	if err != nil {
+		return goschema.Constraint{}, err
+	}
 	nullsDistinct, err := p.optionalBlockBoolPtr(block, "nulls_distinct", "unique")
 	if err != nil {
 		return goschema.Constraint{}, err
 	}
 	return goschema.Constraint{
-		StructName:    structName,
-		Name:          block.Labels[0],
-		Type:          "UNIQUE",
-		Table:         tableName,
-		Columns:       columns,
-		NullsDistinct: nullsDistinct,
+		StructName:     structName,
+		Name:           block.Labels[0],
+		Type:           "UNIQUE",
+		Table:          tableName,
+		Columns:        columns,
+		IncludeColumns: include,
+		NullsDistinct:  nullsDistinct,
 	}, nil
 }
 
@@ -955,6 +960,7 @@ func (p *parser) rejectUnsupportedIndexAttrs(block *hclsyntax.Block) error {
 func (p *parser) rejectUnsupportedUniqueAttrs(block *hclsyntax.Block) error {
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"columns":        true,
+		"include":        true,
 		"nulls_distinct": true,
 	}, "unique")
 }

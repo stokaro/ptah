@@ -4837,10 +4837,29 @@ func TestParser_TablePrimaryKeyInclude(t *testing.T) {
 	c.Assert(pk.IncludeColumns, qt.DeepEquals, []string{"covering"})
 }
 
-func TestParser_PrimaryKeyIncludeRejectsInvalidLists(t *testing.T) {
+func TestParser_TableUniqueInclude(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE TABLE users (email text NOT NULL, updated_at timestamptz, CONSTRAINT users_email_key UNIQUE (email) INCLUDE (updated_at));`
+	statements, err := parser.NewParser(sql).Parse()
+	c.Assert(err, qt.IsNil)
+
+	createTable := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(createTable.Constraints, qt.HasLen, 1)
+
+	unique := createTable.Constraints[0]
+	c.Assert(unique.Type, qt.Equals, ast.UniqueConstraint)
+	c.Assert(unique.Name, qt.Equals, "users_email_key")
+	c.Assert(unique.Columns, qt.DeepEquals, []string{"email"})
+	c.Assert(unique.IncludeColumns, qt.DeepEquals, []string{"updated_at"})
+}
+
+func TestParser_TableConstraintIncludeRejectsInvalidLists(t *testing.T) {
 	tests := []string{
 		`CREATE TABLE users (id integer NOT NULL, covering integer, PRIMARY KEY (id) INCLUDE ());`,
 		`CREATE TABLE users (id integer NOT NULL, covering integer, PRIMARY KEY (id) INCLUDE (covering,));`,
+		`CREATE TABLE users (email text NOT NULL, covering integer, UNIQUE (email) INCLUDE ());`,
+		`CREATE TABLE users (email text NOT NULL, covering integer, UNIQUE (email) INCLUDE (covering,));`,
 	}
 	for _, sql := range tests {
 		t.Run(sql, func(t *testing.T) {

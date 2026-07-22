@@ -96,6 +96,45 @@ func TestPostgresNullsDistinctFromDefinition(t *testing.T) {
 	}
 }
 
+func TestPostgresIncludeColumnsFromDefinition(t *testing.T) {
+	tests := []struct {
+		name       string
+		definition string
+		expected   []string
+	}{
+		{
+			name:       "unique constraint include",
+			definition: `UNIQUE (email) INCLUDE (updated_at, deleted_at)`,
+			expected:   []string{"updated_at", "deleted_at"},
+		},
+		{
+			name:       "unique nulls distinct with include",
+			definition: `UNIQUE NULLS NOT DISTINCT (email) INCLUDE (updated_at)`,
+			expected:   []string{"updated_at"},
+		},
+		{
+			name:       "quoted include",
+			definition: `UNIQUE ("email") INCLUDE ("updated_at")`,
+			expected:   []string{"updated_at"},
+		},
+		{
+			name:       "escaped quote",
+			definition: `UNIQUE ("email") INCLUDE ("updated""at")`,
+			expected:   []string{`updated"at`},
+		},
+		{
+			name:       "absent",
+			definition: `UNIQUE (email)`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(postgresIncludeColumnsFromDefinition(test.definition), qt.DeepEquals, test.expected)
+		})
+	}
+}
+
 func TestExtractPostgresIndexColumns(t *testing.T) {
 	tests := []struct {
 		name       string

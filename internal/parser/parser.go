@@ -2899,8 +2899,8 @@ func (p *Parser) parseTableColumnList(constraint *ast.ConstraintNode) error {
 	return nil
 }
 
-func (p *Parser) handleTablePrimaryKeyInclude(constraint *ast.ConstraintNode) error {
-	if constraint.Type != ast.PrimaryKeyConstraint {
+func (p *Parser) handleTableConstraintInclude(constraint *ast.ConstraintNode) error {
+	if constraint.Type != ast.PrimaryKeyConstraint && constraint.Type != ast.UniqueConstraint {
 		return nil
 	}
 	p.skipWhitespace()
@@ -2910,13 +2910,13 @@ func (p *Parser) handleTablePrimaryKeyInclude(constraint *ast.ConstraintNode) er
 	p.advance()
 	p.skipWhitespace()
 	if err := p.expect(lexer.TokenOperator, "("); err != nil {
-		return fmt.Errorf("expected '(' after PRIMARY KEY INCLUDE: %w", err)
+		return fmt.Errorf("expected '(' after table constraint INCLUDE: %w", err)
 	}
 	p.skipWhitespace()
 	for {
 		column, err := p.expectIdentifier()
 		if err != nil {
-			return fmt.Errorf("expected PRIMARY KEY INCLUDE column name: %w", err)
+			return fmt.Errorf("expected table constraint INCLUDE column name: %w", err)
 		}
 		constraint.IncludeColumns = append(constraint.IncludeColumns, column)
 		p.skipWhitespace()
@@ -2928,7 +2928,7 @@ func (p *Parser) handleTablePrimaryKeyInclude(constraint *ast.ConstraintNode) er
 		if p.current.MatchOperatorValue(")") {
 			break
 		}
-		return fmt.Errorf("expected ',' or ')' in PRIMARY KEY INCLUDE list at position %d", p.current.Start)
+		return fmt.Errorf("expected ',' or ')' in table constraint INCLUDE list at position %d", p.current.Start)
 	}
 	return p.expect(lexer.TokenOperator, ")")
 }
@@ -3108,7 +3108,7 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, error) {
 		return nil, err
 	}
 
-	err = p.handleTablePrimaryKeyInclude(constraint)
+	err = p.handleTableConstraintInclude(constraint)
 	if err != nil {
 		return nil, err
 	}

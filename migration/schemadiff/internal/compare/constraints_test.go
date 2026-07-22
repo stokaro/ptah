@@ -449,6 +449,91 @@ func TestConstraints_SameNameTypeDriftCarriesAdditionBody(t *testing.T) {
 	}
 }
 
+func TestConstraints_UniqueIncludeDrift(t *testing.T) {
+	tests := []struct {
+		name      string
+		generated goschema.Constraint
+		database  types.DBConstraint
+	}{
+		{
+			name: "missing include column",
+			generated: goschema.Constraint{
+				StructName:     "Account",
+				Name:           "accounts_email_unique",
+				Type:           "UNIQUE",
+				Table:          "accounts",
+				Columns:        []string{"email"},
+				IncludeColumns: []string{"updated_at"},
+			},
+			database: types.DBConstraint{
+				Name:        "accounts_email_unique",
+				TableName:   "accounts",
+				Type:        "UNIQUE",
+				ColumnNames: []string{"email"},
+			},
+		},
+		{
+			name: "changed include column",
+			generated: goschema.Constraint{
+				StructName:     "Account",
+				Name:           "accounts_email_unique",
+				Type:           "UNIQUE",
+				Table:          "accounts",
+				Columns:        []string{"email"},
+				IncludeColumns: []string{"updated_at"},
+			},
+			database: types.DBConstraint{
+				Name:           "accounts_email_unique",
+				TableName:      "accounts",
+				Type:           "UNIQUE",
+				ColumnNames:    []string{"email"},
+				IncludeColumns: []string{"deleted_at"},
+			},
+		},
+		{
+			name: "extra include column",
+			generated: goschema.Constraint{
+				StructName: "Account",
+				Name:       "accounts_email_unique",
+				Type:       "UNIQUE",
+				Table:      "accounts",
+				Columns:    []string{"email"},
+			},
+			database: types.DBConstraint{
+				Name:           "accounts_email_unique",
+				TableName:      "accounts",
+				Type:           "UNIQUE",
+				ColumnNames:    []string{"email"},
+				IncludeColumns: []string{"updated_at"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			generated := &goschema.Database{Constraints: []goschema.Constraint{tt.generated}}
+			database := &types.DBSchema{Constraints: []types.DBConstraint{tt.database}}
+
+			diff := &difftypes.SchemaDiff{}
+			compare.Constraints(generated, database, diff, nil)
+
+			c.Assert(diff.ConstraintsRemovedWithTables, qt.DeepEquals, []difftypes.ConstraintRemovalInfo{{
+				Name:      tt.generated.Name,
+				TableName: tt.generated.Table,
+				Type:      "UNIQUE",
+			}})
+			c.Assert(diff.ConstraintsAddedWithTables, qt.DeepEquals, []difftypes.ConstraintAdditionInfo{{
+				Name:           tt.generated.Name,
+				TableName:      tt.generated.Table,
+				Type:           "UNIQUE",
+				Columns:        append([]string(nil), tt.generated.Columns...),
+				IncludeColumns: append([]string(nil), tt.generated.IncludeColumns...),
+			}})
+		})
+	}
+}
+
 func TestConstraints_HasChanges(t *testing.T) {
 	tests := []struct {
 		name     string

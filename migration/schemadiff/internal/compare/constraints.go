@@ -214,6 +214,7 @@ func appendConstraintAddition(infos []difftypes.ConstraintAdditionInfo, genConst
 		TableName:       genConstraint.Table,
 		Type:            genConstraint.Type,
 		Columns:         append([]string(nil), genConstraint.Columns...),
+		IncludeColumns:  append([]string(nil), genConstraint.IncludeColumns...),
 		NullsDistinct:   cloneBoolPtr(genConstraint.NullsDistinct),
 		CheckExpression: genConstraint.CheckExpression,
 		ForeignTable:    genConstraint.ForeignTable,
@@ -251,7 +252,8 @@ func constraintDefinitionsChanged(genConstraint goschema.Constraint, dbConstrain
 }
 
 func primaryKeyConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint) bool {
-	return !slices.Equal(genConstraint.Columns, dbConstraint.ColumnNamesOrDefault())
+	return !slices.Equal(genConstraint.Columns, dbConstraint.ColumnNamesOrDefault()) ||
+		!stringSetsEqual(genConstraint.IncludeColumns, dbConstraint.IncludeColumns)
 }
 
 // excludeConstraintChanged compares EXCLUDE constraint definitions
@@ -289,5 +291,6 @@ func checkConstraintChanged(genConstraint goschema.Constraint, dbConstraint type
 // uniqueConstraintChanged compares UNIQUE constraint definitions
 func uniqueConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint) bool {
 	return !stringSetsEqual(genConstraint.Columns, dbConstraint.ColumnNamesOrDefault()) ||
+		!stringSetsEqual(genConstraint.IncludeColumns, dbConstraint.IncludeColumns) ||
 		!boolPtrEqual(genConstraint.NullsDistinct, dbConstraint.NullsDistinct)
 }
