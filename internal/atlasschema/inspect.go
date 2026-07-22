@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/atlasfilter"
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/atlasurl"
 	"github.com/stokaro/ptah/internal/convert/dbschematogo"
@@ -16,6 +17,7 @@ import (
 type InspectOptions struct {
 	DevURL      string
 	Schemas     []string
+	Exclude     []string
 	Format      string
 	Diagnostics io.Writer
 }
@@ -49,6 +51,10 @@ func Inspect(conn *dbschema.DatabaseConnection, opts InspectOptions) (string, er
 	schema, err := dbschema.ReadSchemaWithSchemas(conn, SplitSchemaNames(opts.Schemas))
 	if err != nil {
 		return "", fmt.Errorf("read database schema: %w", err)
+	}
+	schema, err = atlasfilter.ExcludeDatabase(schema, opts.Exclude)
+	if err != nil {
+		return "", err
 	}
 	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema)
 	rendered, err := atlasreport.RenderSchemaInspectFormat(format, atlasreport.NewSchemaInspectReport(
