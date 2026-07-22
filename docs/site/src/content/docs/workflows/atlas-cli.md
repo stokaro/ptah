@@ -153,9 +153,11 @@ ptah atlas migrate diff add_users \
   --dev-url "sqlite://dev.db"
 ```
 
-Database desired-state URLs, `env://` project attributes, schema filters,
-directory locks, Docker dev databases, and `--format` templates fail explicitly
-until their semantics are implemented.
+Use `--lock-timeout` to bound waiting for Ptah's local migration-directory lock
+while the command validates checksums and writes the new migration. Database
+desired-state URLs, `env://` project attributes, schema filters, Docker dev
+databases, and `--format` templates fail explicitly until their semantics are
+implemented.
 
 ## Example
 
