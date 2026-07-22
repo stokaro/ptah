@@ -82,8 +82,8 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 	if cmd.Flags().Changed("format") {
 		return fmt.Errorf("atlas migrate apply accepts --format, but Ptah does not implement its behavior yet")
 	}
-	if cmd.Flags().Changed("lock-name") {
-		return fmt.Errorf("atlas migrate apply accepts --lock-name, but Ptah does not implement its behavior yet")
+	if cmd.Flags().Changed("lock-name") && strings.TrimSpace(opts.lockName) == "" {
+		return fmt.Errorf("--lock-name must not be empty")
 	}
 	if opts.url == "" {
 		return fmt.Errorf("database URL is required")
@@ -141,6 +141,7 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 		execOrder:            execOrder,
 		txMode:               txMode,
 		revisionsSchema:      opts.revisionsSchema,
+		migrationLockName:    opts.lockName,
 		migrationLockTimeout: migrationLockTimeout,
 	})
 	if err != nil {
@@ -206,6 +207,7 @@ type atlasApplyMigratorOptions struct {
 	execOrder            migrator.ExecOrder
 	txMode               migrator.MigrationTxMode
 	revisionsSchema      string
+	migrationLockName    string
 	migrationLockTimeout time.Duration
 }
 
@@ -226,6 +228,7 @@ func newAtlasApplyMigrator(
 		WithMigrationsTable(opts.revisionsSchema, "").
 		WithExecOrder(opts.execOrder).
 		WithTransactionMode(opts.txMode).
+		WithMigrationLockName(opts.migrationLockName).
 		WithMigrationLockTimeout(opts.migrationLockTimeout).
 		WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))), nil
 }

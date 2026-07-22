@@ -453,12 +453,14 @@ file is detected before new work starts.
 
 ### Migration Advisory Locks
 
-PostgreSQL, MySQL, and MariaDB migrators acquire a session-level advisory lock
-around the planning and apply window for `MigrateUp`, `MigrateDown`,
-`MigrateDownTo`, and `MigrateTo`. This prevents concurrent runners from reading
-the same pending migration set and applying it more than once.
+PostgreSQL, MySQL, MariaDB, and SQL Server migrators acquire a session-level
+advisory lock around the planning and apply window for `MigrateUp`,
+`MigrateDown`, `MigrateDownTo`, and `MigrateTo`. This prevents concurrent
+runners from reading the same pending migration set and applying it more than
+once.
 
 By default the migrator waits until the lock is available. Use
+`WithMigrationLockName` to coordinate on a custom lock name, and use
 `WithMigrationLockTimeout` or the CLI `--migration-lock-timeout` flag to bound
 that wait. Timed-out callers receive a typed error that can be detected with
 `migrator.IsMigrationLockTimeout`.

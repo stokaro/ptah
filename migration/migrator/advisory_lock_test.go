@@ -75,7 +75,24 @@ func TestIsMigrationLockTimeout(t *testing.T) {
 func TestPostgresMigrationLockKeyStable(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert(postgresMigrationLockKey(), qt.Equals, int64(-7752083082818440098))
+	c.Assert(postgresMigrationLockKey(""), qt.Equals, int64(2705505214))
+	c.Assert(postgresMigrationLockKey(migrationAdvisoryLockName), qt.Equals, int64(2705505214))
+	c.Assert(postgresMigrationLockKey("custom-lock"), qt.Not(qt.Equals), int64(2705505214))
+	c.Assert(postgresMigrationLockKey(" custom-lock "), qt.Equals, postgresMigrationLockKey("custom-lock"))
+}
+
+func TestWithMigrationLockName(t *testing.T) {
+	c := qt.New(t)
+
+	base := NewMigrator(nil, nil)
+	c.Assert(base.effectiveMigrationLockName(), qt.Equals, migrationAdvisoryLockName)
+
+	custom := base.WithMigrationLockName("custom-lock")
+	c.Assert(custom.effectiveMigrationLockName(), qt.Equals, "custom-lock")
+	c.Assert(base.effectiveMigrationLockName(), qt.Equals, migrationAdvisoryLockName)
+
+	blank := custom.WithMigrationLockName(" ")
+	c.Assert(blank.effectiveMigrationLockName(), qt.Equals, migrationAdvisoryLockName)
 }
 
 func TestMySQLMigrationLockTimeoutSeconds(t *testing.T) {
