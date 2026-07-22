@@ -50,6 +50,106 @@ func TestParseAtlasProjectConfig(t *testing.T) {
 	c.Assert(*cfg.Lint.Latest, qt.Equals, 5)
 }
 
+func TestParseAtlasProjectConfigEnvLintGit(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`env "ci" {
+  lint {
+    git {
+      base = "master"
+      dir  = "."
+    }
+  }
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "ci")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.Lint.GitBase, qt.Equals, "master")
+	c.Assert(cfg.Lint.GitDir, qt.Equals, ".")
+}
+
+func TestParseAtlasProjectConfigGlobalLint(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`lint {
+  git {
+    base = "origin/master"
+    dir  = "repo"
+  }
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.Lint.GitBase, qt.Equals, "origin/master")
+	c.Assert(cfg.Lint.GitDir, qt.Equals, "repo")
+}
+
+func TestParseAtlasProjectConfigEnvInheritsGlobalLint(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`lint {
+  latest = 2
+}
+env "ci" {
+  url = "sqlite://app.db"
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "ci")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.EnvName, qt.Equals, "ci")
+	c.Assert(cfg.Lint.Latest, qt.IsNotNil)
+	c.Assert(*cfg.Lint.Latest, qt.Equals, 2)
+	c.Assert(cfg.DatabaseURL, qt.Equals, "sqlite://app.db")
+}
+
+func TestParseAtlasProjectConfigEnvLintGitOverridesGlobalLatest(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`lint {
+  latest = 2
+}
+env "ci" {
+  lint {
+    git {
+      base = "main"
+    }
+  }
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "ci")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.Lint.Latest, qt.IsNil)
+	c.Assert(cfg.Lint.GitBase, qt.Equals, "main")
+}
+
+func TestParseAtlasProjectConfigEnvLintLatestOverridesGlobalGit(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`lint {
+  git {
+    base = "main"
+    dir  = "."
+  }
+}
+env "ci" {
+  lint {
+    latest = 2
+  }
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "ci")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.Lint.Latest, qt.IsNotNil)
+	c.Assert(*cfg.Lint.Latest, qt.Equals, 2)
+	c.Assert(cfg.Lint.GitBase, qt.Equals, "")
+	c.Assert(cfg.Lint.GitDir, qt.Equals, "")
+}
+
 func TestParseAtlasProjectConfigAcceptsSingleSource(t *testing.T) {
 	c := qt.New(t)
 	raw := []byte(`env "local" {
