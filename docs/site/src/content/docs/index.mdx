@@ -31,7 +31,7 @@ import { LinkCard, CardGrid } from '@astrojs/starlight/components';
   <LinkCard title="Quick start" href="./getting-started/" description="Build Ptah, create a tiny schema, run migrations, verify hashes, and clean up." />
   <LinkCard title="Install Ptah" href="./install/" description="Build from source, install with Go, verify the command tree, and add optional tools." />
   <LinkCard title="Go schema workflow" href="./workflows/go-schema/" description="Use annotated Go structs as the application-owned schema source." />
-  <LinkCard title="Schema files" href="./workflows/schema-files/" description="Render and migrate from YAML schema files or Atlas HCL schema files." />
+  <LinkCard title="Schema files" href="./workflows/schema-files/" description="Render and migrate from YAML, Atlas HCL, or SQL schema files." />
   <LinkCard title="Migrations" href="./workflows/migrations/" description="Plan, generate, apply, roll back, hash, validate, and inspect migrations." />
   <LinkCard title="Atlas-compatible CLI" href="./workflows/atlas-cli/" description="Use Atlas-style commands through ptah atlas, ptah-compat, or a renamed atlas binary." />
   <LinkCard title="CI" href="./workflows/ci/" description="Run Ptah checks in pull requests and fail safely on destructive changes." />
@@ -46,7 +46,7 @@ import { LinkCard, CardGrid } from '@astrojs/starlight/components';
 | If you have | Start with |
 | --- | --- |
 | A Go application with schema annotations | [Go schema workflow](./workflows/go-schema/) |
-| YAML or Atlas HCL schema files | [Schema files](./workflows/schema-files/) |
+| YAML, Atlas HCL, or SQL schema files | [Schema files](./workflows/schema-files/) |
 | An existing migration directory | [Migrations](./workflows/migrations/) |
 | Scripts written for Atlas OSS commands | [Atlas-compatible CLI](./workflows/atlas-cli/) |
 | A pull-request gate to build | [CI](./workflows/ci/) |
