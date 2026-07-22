@@ -7,8 +7,11 @@ Ptah has two command surfaces:
 
 - Native Ptah commands, owned by Ptah.
 - Atlas-compatible commands, reserved under `ptah atlas <command> ...` in the
-  native binary and under `ptah-compat <command> ...` in the compatibility
-  binary.
+  native binary.
+
+The separate `ptah-compat` binary is a drop-in replacement for scripts that need
+Atlas-style root commands, including scripts that call an executable named
+`atlas`.
 
 Reference: [native CLI command tree](https://github.com/stokaro/ptah/blob/master/docs/native_cli.md).
 
@@ -50,15 +53,6 @@ ptah atlas schema apply --url "$DATABASE_URL" --to file://schema.sql --dry-run
 ptah atlas schema inspect --url "$DATABASE_URL"
 ```
 
-Use `ptah-compat ...` when a script needs Atlas-style root commands:
-
-```bash
-ptah-compat schema apply --url "$DATABASE_URL" --to file://schema.sql --dry-run
-ptah-compat migrate apply --url "$DATABASE_URL" --dir ./migrations
-ptah-compat migrate status --url "$DATABASE_URL" --dir ./migrations
-ptah-compat schema inspect --url "$DATABASE_URL"
-```
-
 If `ptah-compat` is copied or symlinked as `atlas`, usage and help paths are
 rendered as `atlas <command> ...` where Cobra can derive them from the
 executable name.
@@ -75,7 +69,7 @@ executable name.
 | `ptah atlas migrate new` | Forwards to `ptah migrations create`. |
 | `ptah atlas migrate set` | Forwards to `ptah migrations repair`. |
 | `ptah atlas migrate down` | Forwards to `ptah migrations down`; maps compatible Atlas flags and fails explicitly for dynamic down-planning and output-format flags that native Ptah does not implement yet. |
-| `ptah atlas migrate diff` | Validates an existing `atlas.sum`, replays a local Atlas migration directory on `--dev-url`, diffs it against local `.hcl`, `.yaml`, `.yml`, or `.sql` `--to` schema files, writes a new Atlas single-file migration, updates `atlas.sum`, and supports `--lock-timeout` for Ptah's local migration-directory lock. Database desired-state URLs, `env://`, schema filters, Docker dev databases, and `--format` templates remain explicit gaps. |
+| `ptah atlas migrate diff` | Validates an existing `atlas.sum`, replays a local Atlas migration directory on `--dev-url`, diffs it against local `.hcl`, `.yaml`, `.yml`, or `.sql` `--to` schema files, writes a new Atlas single-file migration, updates `atlas.sum`, and supports `--lock-timeout` for Ptah's local migration-directory lock. Generated SQL uses Atlas-style two-space indentation by default; `--format` renders it with `sql` and `.MarshalSQL` templates. Database desired-state URLs, `env://`, schema filters, and Docker dev databases remain explicit gaps. |
 | `ptah atlas migrate import` | Imports local `file://` migration directories from `atlas`, `golang-migrate`, `goose`, `flyway`, `liquibase`, or `dbmate` format into a separate Atlas single-file directory and writes `atlas.sum`. Flyway repeatable migrations fail explicitly until Ptah can execute Atlas R-suffixed imported migrations. |
 | `ptah atlas schema inspect` | Inspects a live database and writes Atlas-shaped schema output without Ptah status banners. The default output is Atlas HCL; SQL output is supported with `--format sql` or `--format '{{ sql . }}'`; JSON and custom templates are supported through `--format json`, `{{ json . }}`, `{{ .MarshalHCL }}`, `{{ sql . }}`, and `{{ mermaid . }}`. Split/write templates, include/exclude filters, and dev-database inference remain explicit gaps. |
 | `ptah atlas schema apply` | Diffs a live database against local `file://` `.hcl`, `.yaml`, `.yml`, or `.sql` desired schema files, prints the planned SQL, and applies it after interactive confirmation or explicit `--auto-approve`. `--dry-run` prints the plan without applying. `--tx-mode=file` and `--tx-mode=all` execute the generated plan in one transaction; `--tx-mode=none` executes statements without transaction wrapping. Database desired-state URLs, migration directories, `env://`, include/exclude filters, custom format templates, lock flags, and Atlas dev-database simulation remain explicit gaps. |
@@ -83,5 +77,4 @@ executable name.
 | `ptah atlas schema fmt` | Formats local `.hcl` files using HCL canonical layout. |
 
 Run `ptah <command> --help` or `ptah atlas <command> --help` for exact flags in
-the version you are using. Run `ptah-compat <command> --help` for the same
-Atlas-compatible command tree at process root.
+the version you are using.

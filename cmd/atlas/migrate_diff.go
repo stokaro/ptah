@@ -11,6 +11,7 @@ import (
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasargs"
 	"github.com/stokaro/ptah/internal/atlasmigrate"
+	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -36,9 +37,8 @@ directory on it, compares the resulting state to local --to schema files, and
 writes a new Atlas-style single-file migration plus atlas.sum when changes are
 found. Use a disposable dev database. This implementation currently supports
 local file:// migration directories and local .hcl, .yaml, .yml, or .sql schema
-files. Database URLs, env:// URLs, custom output templates, schema filters, lock
-flags other than --lock-timeout, and Docker dev databases remain explicit
-follow-up gaps.`,
+files. Database URLs, env:// URLs, schema filters, lock flags other than
+--lock-timeout, and Docker dev databases remain explicit follow-up gaps.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := "migration"
@@ -62,6 +62,10 @@ follow-up gaps.`,
 
 func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name string) error {
 	if err := validateAtlasMigrateDiffOptions(cmd, opts); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	format := atlasreport.NormalizeMigrateDiffFormat(opts.format)
+	if err := atlasreport.ValidateSchemaDiffTemplate(format); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	lockTimeout, err := migrator.ParseMigrationLockTimeout(opts.lockTimeout)
@@ -90,6 +94,7 @@ func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name 
 		Dir:         migrationsDir,
 		ToURLs:      opts.toURLs,
 		Name:        name,
+		Format:      format,
 		LockTimeout: lockTimeout,
 	})
 	if err != nil {
@@ -110,9 +115,6 @@ func validateAtlasMigrateDiffOptions(cmd *cobra.Command, opts atlasMigrateDiffOp
 	}
 	if strings.TrimSpace(opts.devURL) == "" {
 		return fmt.Errorf("--dev-url is required")
-	}
-	if strings.TrimSpace(opts.format) != "" {
-		return fmt.Errorf("atlas migrate diff accepts --format, but Ptah does not implement its behavior yet")
 	}
 	dirFormat := strings.ToLower(strings.TrimSpace(opts.dirFormat))
 	if dirFormat != "" && dirFormat != string(migrator.MigrationDirFormatAtlas) {
