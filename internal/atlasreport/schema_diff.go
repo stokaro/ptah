@@ -25,15 +25,17 @@ type SchemaDiff struct {
 	Changes []SchemaDiffChange
 }
 
-type SchemaDiffChange struct {
+type SchemaChange struct {
 	Cmd string
 }
+
+type SchemaDiffChange = SchemaChange
 
 func NewSchemaDiff(from, to *goschema.Database, statements []string) SchemaDiff {
 	return SchemaDiff{
 		From:    from,
 		To:      to,
-		Changes: schemaDiffChanges(statements),
+		Changes: schemaChanges(statements),
 	}
 }
 
@@ -83,10 +85,10 @@ func NormalizeMigrateDiffFormat(format string) string {
 	return format
 }
 
-func schemaDiffChanges(statements []string) []SchemaDiffChange {
-	changes := make([]SchemaDiffChange, 0, len(statements))
+func schemaChanges(statements []string) []SchemaChange {
+	changes := make([]SchemaChange, 0, len(statements))
 	for _, statement := range statements {
-		changes = append(changes, SchemaDiffChange{Cmd: schemaDiffStatement(statement)})
+		changes = append(changes, SchemaChange{Cmd: schemaStatement(statement)})
 	}
 	return changes
 }
@@ -95,18 +97,18 @@ func (r SchemaDiff) MarshalSQL(indent ...string) (string, error) {
 	if len(indent) > 1 {
 		return "", fmt.Errorf("unexpected number of arguments: %d", len(indent))
 	}
-	sql := schemaDiffSQLText(r.Changes)
+	sql := schemaChangesSQLText(r.Changes)
 	if len(indent) == 0 || indent[0] == "" || sql == "" {
 		return sql, nil
 	}
-	return schemaDiffIndentSQL(sql, indent[0]), nil
+	return schemaIndentSQL(sql, indent[0]), nil
 }
 
 func schemaDiffSQL(result SchemaDiff, indent ...string) (string, error) {
 	return result.MarshalSQL(indent...)
 }
 
-func schemaDiffSQLText(changes []SchemaDiffChange) string {
+func schemaChangesSQLText(changes []SchemaChange) string {
 	var sql strings.Builder
 	for _, change := range changes {
 		fmt.Fprintf(&sql, "%s;\n", strings.TrimSuffix(change.Cmd, ";"))
@@ -114,11 +116,11 @@ func schemaDiffSQLText(changes []SchemaDiffChange) string {
 	return sql.String()
 }
 
-func schemaDiffStatement(statement string) string {
+func schemaStatement(statement string) string {
 	return strings.TrimSuffix(statement, ";")
 }
 
-func schemaDiffIndentSQL(sql, indent string) string {
+func schemaIndentSQL(sql, indent string) string {
 	trimmed := strings.TrimSuffix(sql, "\n")
 	return indent + strings.ReplaceAll(trimmed, "\n", "\n"+indent) + "\n"
 }
