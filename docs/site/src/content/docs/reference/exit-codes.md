@@ -56,38 +56,29 @@ root-level command spellings are removed instead of preserved.
 
 ## Atlas-Compatible Command Surfaces
 
-Commands under `ptah atlas <command> ...`, `ptah-compat <command> ...`, and a
-copied or symlinked executable named `atlas` either translate implemented
+Commands under `ptah atlas <command> ...` either translate implemented
 Atlas-compatible flags and delegate to the matching native command, or execute
-Ptah-owned Atlas-shaped behavior such as migration apply, the license notice,
-or schema formatting.
+Ptah-owned Atlas-shaped behavior such as migration apply, the license notice, or
+schema formatting. The separate `ptah-compat` binary exposes the same
+Atlas-compatible command tree at process root for drop-in script migration, so it
+shares this exit-code contract.
 
 | Atlas-compatible command | Behavior |
 | --- | --- |
 | `ptah atlas version` | `ptah version` |
-| `ptah-compat version` / `atlas version` | `ptah version` |
 | `ptah atlas license` | Ptah license notice |
-| `ptah-compat license` / `atlas license` | Ptah license notice |
 | `ptah atlas migrate apply` | Atlas-format apply path equivalent to `ptah migrations up` |
-| `ptah-compat migrate apply` / `atlas migrate apply` | Atlas-format apply path equivalent to `ptah migrations up` |
 | `ptah atlas migrate down` | `ptah migrations down` |
-| `ptah-compat migrate down` / `atlas migrate down` | `ptah migrations down` |
 | `ptah atlas migrate diff` | Local Atlas-style migration diff and `atlas.sum` update |
-| `ptah-compat migrate diff` / `atlas migrate diff` | Local Atlas-style migration diff and `atlas.sum` update |
 | `ptah atlas migrate import` | Import local migrations into a separate directory and write `atlas.sum` |
-| `ptah-compat migrate import` / `atlas migrate import` | Import local migrations into a separate directory and write `atlas.sum` |
 | `ptah atlas migrate status` | `ptah migrations status` |
-| `ptah-compat migrate status` / `atlas migrate status` | `ptah migrations status` |
 | `ptah atlas migrate hash` | `ptah migrations hash` |
 | `ptah atlas migrate validate` | `ptah migrations validate` |
 | `ptah atlas migrate lint` | `ptah migrations lint` |
 | `ptah atlas schema inspect` | Atlas-shaped schema inspection |
-| `ptah-compat schema inspect` / `atlas schema inspect` | Atlas-shaped schema inspection |
 | `ptah atlas schema apply` | Local Atlas-style schema apply |
-| `ptah-compat schema apply` / `atlas schema apply` | Local Atlas-style schema apply |
 | `ptah atlas schema diff` | Local Atlas-style schema-file diff |
 | `ptah atlas schema fmt` | Format local `.hcl` files |
-| `ptah-compat schema fmt` / `atlas schema fmt` | Format local `.hcl` files |
 
 Unsupported Atlas-compatible flags are rejected explicitly and exit `2`.
 
