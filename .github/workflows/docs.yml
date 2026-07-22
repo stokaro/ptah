@@ -70,6 +70,7 @@ jobs:
           npm ci
           npm run check:links:selftest
           npm run check:links
+          npm run check:exit-codes
           npm run build
           mkdir -p "$GITHUB_WORKSPACE/_site/edge"
           cp -r dist/. "$GITHUB_WORKSPACE/_site/edge/"
@@ -88,6 +89,7 @@ jobs:
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm ci
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:links:selftest
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:links
+            DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:exit-codes
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run build
           )
           mkdir -p "$GITHUB_WORKSPACE/_site/edge"
@@ -111,6 +113,9 @@ jobs:
                   DOCS_VERSION="$tag" ASTRO_TELEMETRY_DISABLED=1 npm run check:links
                 else
                   echo "::warning::$tag has no docs link checker; skipping link validation"
+                fi
+                if [ -f scripts/check-exit-codes.mjs ]; then
+                  DOCS_VERSION="$tag" ASTRO_TELEMETRY_DISABLED=1 npm run check:exit-codes
                 fi
                 DOCS_VERSION="$tag" ASTRO_TELEMETRY_DISABLED=1 npm run build
               ); then

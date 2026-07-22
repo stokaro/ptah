@@ -10,6 +10,7 @@
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
+    "check:exit-codes": "node scripts/check-exit-codes.mjs",
     "check:links": "node scripts/check-links.mjs",
     "check:links:selftest": "node scripts/check-links.mjs --selftest",
     "versions:selftest": "node scripts/gen-versions.mjs --selftest"
