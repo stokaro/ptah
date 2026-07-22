@@ -53,6 +53,7 @@ type atlasFlag struct {
 	nativeName  string
 	unsupported bool
 	mapValue    func(string) (string, error)
+	envDisabled bool
 }
 
 type parsedAtlasFlag struct {
@@ -150,22 +151,26 @@ func newAtlasSchemaCommand() *cobra.Command {
 				atlasUnsupportedString("format", "", "Atlas Go template output format"),
 			},
 		},
-		{
-			use:     "clean",
-			short:   "Clean database schema objects",
-			native:  "db drop-all",
-			factory: dropall.NewDropAllCommand,
-			flags: []atlasFlag{
-				atlasNativeString("url", "u", "Database URL to clean", "db-url"),
-				atlasNativeBool("dry-run", "", "Show planned cleanup without applying it", "dry-run"),
-				atlasUnsupportedBool("auto-approve", "", "Skip interactive approval"),
-			},
-		},
+		atlasSchemaCleanVerb(),
 	} {
 		cmd.AddCommand(newAtlasAdapterCommand("schema", verb))
 	}
 	cmd.AddCommand(newAtlasSchemaFmtCommand())
 	return cmd
+}
+
+func atlasSchemaCleanVerb() atlasVerb {
+	return atlasVerb{
+		use:     "clean",
+		short:   "Clean database schema objects",
+		native:  "db drop-all",
+		factory: dropall.NewDropAllCommand,
+		flags: []atlasFlag{
+			atlasNativeString("url", "u", "Database URL to clean", "db-url"),
+			atlasNativeBool("dry-run", "", "Show planned cleanup without applying it", "dry-run"),
+			atlasExplicitNativeBool("auto-approve", "", "Skip interactive approval", "auto-approve"),
+		},
+	}
 }
 
 func newAtlasMigrateCommand() *cobra.Command {
@@ -398,6 +403,12 @@ func atlasNativeBool(name, shorthand, usage, nativeName string) atlasFlag {
 	return f
 }
 
+func atlasExplicitNativeBool(name, shorthand, usage, nativeName string) atlasFlag {
+	f := atlasNativeBool(name, shorthand, usage, nativeName)
+	f.envDisabled = true
+	return f
+}
+
 func atlasUnsupportedString(name, shorthand, usage string) atlasFlag {
 	f := atlasString(name, shorthand, usage)
 	f.unsupported = true
@@ -512,6 +523,9 @@ func appendAtlasEnvArgs(flags []atlasFlag, args []string) []string {
 	out := args
 	cloned := false
 	for _, flag := range flags {
+		if flag.envDisabled {
+			continue
+		}
 		if atlasFlagPresent(args, flag) {
 			continue
 		}

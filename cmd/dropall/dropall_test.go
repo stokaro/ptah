@@ -25,6 +25,21 @@ func TestDropAllCommandDeclinedConfirmationPrintsCanceled(t *testing.T) {
 	resetDropAllCommandForTest(c, cmd)
 }
 
+func TestDropAllCommandAutoApproveSkipsConfirmation(t *testing.T) {
+	c := qt.New(t)
+
+	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
+	cmd := NewDropAllCommand()
+	resetDropAllCommandForTest(c, cmd)
+	cmd.SetArgs([]string{"--db-url", dbURL, "--auto-approve"})
+
+	out, err := captureStdIO(c, "", cmd.Execute)
+	c.Assert(err, qt.IsNil)
+	c.Assert(out, qt.Contains, "Auto-approval enabled; skipping interactive confirmation.")
+	c.Assert(out, qt.Not(qt.Contains), "Type 'DELETE EVERYTHING'")
+	resetDropAllCommandForTest(c, cmd)
+}
+
 func captureStdIO(c *qt.C, input string, run func() error) (string, error) {
 	c.Helper()
 
@@ -63,6 +78,7 @@ func resetDropAllCommandForTest(c *qt.C, cmd interface{ Flag(string) *pflag.Flag
 	for name, value := range map[string]string{
 		"db-url":          "",
 		"dry-run":         "false",
+		"auto-approve":    "false",
 		"connect-timeout": "10s",
 	} {
 		flag := cmd.Flag(name)

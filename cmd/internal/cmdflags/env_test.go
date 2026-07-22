@@ -64,6 +64,22 @@ func TestInitializeEnvIgnoresEmptyEnvironmentValues(t *testing.T) {
 	c.Assert(dbURL, qt.Equals, "postgres://default")
 }
 
+func TestInitializeEnvSkipsDisabledEnvironmentBinding(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_AUTO_APPROVE", "true")
+
+	var autoApprove bool
+	cmd := &cobra.Command{Use: "ptah"}
+	cmd.Flags().BoolVar(&autoApprove, "auto-approve", false, "Skip confirmation")
+	c.Assert(DisableEnvBinding(cmd.Flags(), "auto-approve"), qt.IsNil)
+
+	InitializeEnv("PTAH", cmd)
+
+	c.Assert(autoApprove, qt.IsFalse)
+	c.Assert(cmd.Flags().Lookup("auto-approve").Changed, qt.IsFalse)
+	c.Assert(cmd.Flags().Lookup("auto-approve").Usage, qt.Not(qt.Contains), "[env: PTAH_AUTO_APPROVE]")
+}
+
 func TestInitializeEnvAnnotatesUsageOnce(t *testing.T) {
 	c := qt.New(t)
 

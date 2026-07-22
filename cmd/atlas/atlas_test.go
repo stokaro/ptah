@@ -388,6 +388,35 @@ func TestMapAtlasArgs_MigrateLintLatestMapsToNativeFlag(t *testing.T) {
 	})
 }
 
+func TestMapAtlasArgs_SchemaCleanAutoApproveMapsToNativeFlag(t *testing.T) {
+	c := qt.New(t)
+
+	got, err := mapAtlasArgs("schema", atlasSchemaCleanVerb(), []string{
+		"--url", "sqlite://test.db",
+		"--auto-approve",
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, []string{
+		"--db-url", "sqlite://test.db",
+		"--auto-approve",
+	})
+}
+
+func TestMapAtlasArgs_SchemaCleanAutoApproveEnvIsIgnored(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_AUTO_APPROVE", "true")
+
+	got, err := mapAtlasArgs("schema", atlasSchemaCleanVerb(), []string{
+		"--url", "sqlite://test.db",
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, []string{
+		"--db-url", "sqlite://test.db",
+	})
+}
+
 func TestMapAtlasArgs_AtlasEnvFlagsMapToNativeFlags(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv("PTAH_URL", "postgres://env/db")
