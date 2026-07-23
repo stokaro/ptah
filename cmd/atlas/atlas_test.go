@@ -1580,27 +1580,6 @@ func TestNewAtlasCommand_MigrateLintRejectsInvalidFormatBeforeReplay(t *testing.
 	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 }
 
-func TestNewAtlasCommand_SchemaCleanRejectsFormatBeforeConnecting(t *testing.T) {
-	c := qt.New(t)
-	dbPath := filepath.Join(t.TempDir(), "clean-format.db")
-
-	cmd := NewAtlasCommand()
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs([]string{
-		"schema", "clean",
-		"--url", "sqlite://" + dbPath,
-		"--format", "{{ json . }}",
-	})
-
-	err := cmd.Execute()
-
-	c.Assert(err, qt.ErrorMatches, `atlas schema clean accepts --format, but Ptah does not implement its behavior yet`)
-	_, statErr := os.Stat(dbPath)
-	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
-}
-
 func TestNewAtlasCommand_MigrateSetAcceptsRevisionsSchema(t *testing.T) {
 	c := qt.New(t)
 	cmd := NewAtlasCommand()

@@ -102,6 +102,7 @@ The supported attributes map to Ptah settings as follows:
 | `lint.nestedtx.error` | `TX201` lint rule severity |
 | `format.schema.inspect` | `ptah atlas schema inspect --format` default |
 | `format.schema.apply` | `ptah atlas schema apply --format` default |
+| `format.schema.clean` | `ptah atlas schema clean --format` default |
 | `format.schema.diff` | `ptah atlas schema diff --format` default |
 | `format.migrate.apply` | `ptah atlas migrate apply --format` default |
 | `format.migrate.diff` | `ptah atlas migrate diff --format` default |
@@ -292,6 +293,8 @@ supported `diff` policy.
 
 `ptah atlas schema diff` reads `env.schema.src`, `env.dev`, `env.exclude`,
 `env.schema.mode`, `format.schema.diff`, and supported `diff` policy.
+
+`ptah atlas schema clean` reads `env.url` and `format.schema.clean`.
 
 `ptah atlas migrate apply` reads `env.url`, `migration`, and
 `format.migrate.apply`.

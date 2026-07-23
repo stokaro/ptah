@@ -179,6 +179,7 @@ func TestParseAtlasProjectConfigEnvSchemaFormatAndDiffBlocks(t *testing.T) {
   format {
     schema {
       apply   = "{{ sql . }}"
+      clean   = "{{ json . }}"
       diff    = "{{ len .Changes }}"
       inspect = "json"
     }
@@ -222,6 +223,7 @@ func TestParseAtlasProjectConfigEnvSchemaFormatAndDiffBlocks(t *testing.T) {
 		"*[type=extension]",
 	})
 	c.Assert(cfg.Format.Schema.Apply, qt.Equals, "{{ sql . }}")
+	c.Assert(cfg.Format.Schema.Clean, qt.Equals, "{{ json . }}")
 	c.Assert(cfg.Format.Schema.Diff, qt.Equals, "{{ len .Changes }}")
 	c.Assert(cfg.Format.Schema.Inspect, qt.Equals, "json")
 	c.Assert(cfg.Format.Migrate.Apply, qt.Equals, "{{ json . }}")

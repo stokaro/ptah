@@ -1,9 +1,8 @@
 package dropall_test
 
 import (
-	"io"
+	"bytes"
 	"net/url"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -20,10 +19,14 @@ func TestDropAllCommandDeclinedConfirmationPrintsCanceled(t *testing.T) {
 	cmd := dropall.NewDropAllCommand()
 	resetDropAllCommandForTest(c, cmd)
 	cmd.SetArgs([]string{"--db-url", dbURL})
+	cmd.SetIn(bytes.NewBufferString("no\n"))
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
 
-	out, err := captureStdIO(c, "no\n", cmd.Execute)
+	err := cmd.Execute()
 	c.Assert(err, qt.IsNil)
-	c.Assert(out, qt.Contains, "Operation canceled.")
+	c.Assert(out.String(), qt.Contains, "Operation canceled.")
 	resetDropAllCommandForTest(c, cmd)
 }
 
@@ -34,45 +37,33 @@ func TestDropAllCommandAutoApproveSkipsConfirmation(t *testing.T) {
 	cmd := dropall.NewDropAllCommand()
 	resetDropAllCommandForTest(c, cmd)
 	cmd.SetArgs([]string{"--db-url", dbURL, "--auto-approve"})
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
 
-	out, err := captureStdIO(c, "", cmd.Execute)
+	err := cmd.Execute()
 	c.Assert(err, qt.IsNil)
-	c.Assert(out, qt.Contains, "Auto-approval enabled; skipping interactive confirmation.")
-	c.Assert(out, qt.Not(qt.Contains), "Type 'DELETE EVERYTHING'")
+	c.Assert(out.String(), qt.Contains, "Auto-approval enabled; skipping interactive confirmation.")
+	c.Assert(out.String(), qt.Not(qt.Contains), "Type 'DELETE EVERYTHING'")
 	resetDropAllCommandForTest(c, cmd)
 }
 
-func captureStdIO(c *qt.C, input string, run func() error) (string, error) {
-	c.Helper()
+func TestDropAllCommandAcceptsTwoLineConfirmationFromCobraInput(t *testing.T) {
+	c := qt.New(t)
 
-	oldStdin := os.Stdin
-	oldStdout := os.Stdout
-	defer func() {
-		os.Stdin = oldStdin
-		os.Stdout = oldStdout
-	}()
+	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
+	cmd := dropall.NewDropAllCommand()
+	resetDropAllCommandForTest(c, cmd)
+	cmd.SetArgs([]string{"--db-url", dbURL})
+	cmd.SetIn(bytes.NewBufferString("DELETE EVERYTHING\nYES I AM SURE\n"))
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
 
-	inR, inW, err := os.Pipe()
+	err := cmd.Execute()
 	c.Assert(err, qt.IsNil)
-	defer func() { c.Assert(inR.Close(), qt.IsNil) }()
-
-	_, err = inW.WriteString(input)
-	c.Assert(err, qt.IsNil)
-	c.Assert(inW.Close(), qt.IsNil)
-
-	outR, outW, err := os.Pipe()
-	c.Assert(err, qt.IsNil)
-	defer func() { c.Assert(outR.Close(), qt.IsNil) }()
-
-	os.Stdin = inR
-	os.Stdout = outW
-
-	runErr := run()
-	c.Assert(outW.Close(), qt.IsNil)
-
-	output, err := io.ReadAll(outR)
-	c.Assert(err, qt.IsNil)
-	return string(output), runErr
+	c.Assert(out.String(), qt.Contains, "All tables and enums dropped successfully!")
+	resetDropAllCommandForTest(c, cmd)
 }
 
 func resetDropAllCommandForTest(c *qt.C, cmd interface{ Flag(string) *pflag.Flag }) {
