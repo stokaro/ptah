@@ -8,40 +8,130 @@ import (
 func normalizeCheckExpression(expr string) string {
 	expr = trimBalancedCheckParens(strings.TrimSpace(expr))
 
-	var b strings.Builder
-	inString := false
-	for i := 0; i < len(expr); i++ {
-		ch := expr[i]
-		if ch == '\'' {
-			b.WriteByte(ch)
-			if inString && i+1 < len(expr) && expr[i+1] == '\'' {
-				i++
-				b.WriteByte('\'')
-				continue
-			}
-			inString = !inString
-			continue
-		}
-		if !inString && ch == ':' && i+1 < len(expr) && expr[i+1] == ':' && checkCastFollowsLiteral(expr, i) {
-			i += 2
-			for i < len(expr) && isCheckCastChar(rune(expr[i])) {
-				i++
-			}
-			i--
-			continue
-		}
-		if !inString && unicode.IsSpace(rune(ch)) {
-			continue
-		}
-		if !inString && ch == '`' {
-			continue
-		}
-		if !inString && ch >= 'A' && ch <= 'Z' {
-			ch += 'a' - 'A'
-		}
-		b.WriteByte(ch)
+	normalizer := checkExpressionNormalizer{expr: expr}
+	return normalizer.normalize()
+}
+
+type checkExpressionNormalizer struct {
+	expr     string
+	builder  strings.Builder
+	inString bool
+	pos      int
+}
+
+func (n *checkExpressionNormalizer) normalize() string {
+	for n.pos = 0; n.pos < len(n.expr); n.pos++ {
+		n.writeNext()
 	}
-	return b.String()
+	return n.builder.String()
+}
+
+func (n *checkExpressionNormalizer) writeNext() {
+	ch := n.expr[n.pos]
+	if n.writeEscapedQuote(ch) || n.writeStringQuote(ch) || n.skipCharsetIntroducer(ch) || n.skipLiteralCast(ch) {
+		return
+	}
+	if !n.inString && unicode.IsSpace(rune(ch)) {
+		return
+	}
+	if !n.inString && ch == '`' {
+		return
+	}
+	if !n.inString && ch >= 'A' && ch <= 'Z' {
+		ch += 'a' - 'A'
+	}
+	n.builder.WriteByte(ch)
+}
+
+func (n *checkExpressionNormalizer) writeEscapedQuote(ch byte) bool {
+	if ch != '\\' || n.pos+1 >= len(n.expr) || n.expr[n.pos+1] != '\'' {
+		return false
+	}
+	if !n.inString || checkEscapedQuoteClosesString(n.expr, n.pos+1) {
+		return true
+	}
+	n.builder.WriteByte('\'')
+	n.pos++
+	return true
+}
+
+func (n *checkExpressionNormalizer) writeStringQuote(ch byte) bool {
+	if ch != '\'' {
+		return false
+	}
+	n.builder.WriteByte(ch)
+	if n.inString && n.pos+1 < len(n.expr) && n.expr[n.pos+1] == '\'' {
+		n.pos++
+		return true
+	}
+	n.inString = !n.inString
+	return true
+}
+
+func (n *checkExpressionNormalizer) skipCharsetIntroducer(ch byte) bool {
+	if n.inString || ch != '_' || !checkCharsetIntroducerFollows(n.expr, n.pos) {
+		return false
+	}
+	n.pos = skipCheckCharsetIntroducer(n.expr, n.pos)
+	if n.pos < len(n.expr) && n.expr[n.pos] == '\\' {
+		return true
+	}
+	n.pos--
+	return true
+}
+
+func (n *checkExpressionNormalizer) skipLiteralCast(ch byte) bool {
+	if n.inString || ch != ':' || n.pos+1 >= len(n.expr) || n.expr[n.pos+1] != ':' || !checkCastFollowsLiteral(n.expr, n.pos) {
+		return false
+	}
+	n.pos += 2
+	for n.pos < len(n.expr) && isCheckCastChar(rune(n.expr[n.pos])) {
+		n.pos++
+	}
+	n.pos--
+	return true
+}
+
+func checkEscapedQuoteClosesString(expr string, quoteIndex int) bool {
+	next := quoteIndex + 1
+	if next >= len(expr) {
+		return true
+	}
+	return !isCheckStringBodyChar(rune(expr[next]))
+}
+
+func checkCharsetIntroducerFollows(expr string, start int) bool {
+	i := start + 1
+	if i >= len(expr) || !isCheckCharsetNameStart(rune(expr[i])) {
+		return false
+	}
+	for i < len(expr) && isCheckCharsetNameChar(rune(expr[i])) {
+		i++
+	}
+	if i < len(expr) && expr[i] == '\'' {
+		return true
+	}
+	return i+1 < len(expr) && expr[i] == '\\' && expr[i+1] == '\''
+}
+
+func skipCheckCharsetIntroducer(expr string, start int) int {
+	i := start + 1
+	for i < len(expr) && isCheckCharsetNameChar(rune(expr[i])) {
+		i++
+	}
+	return i
+}
+
+func isCheckCharsetNameStart(ch rune) bool {
+	return unicode.IsLetter(ch)
+}
+
+func isCheckCharsetNameChar(ch rune) bool {
+	return unicode.IsLetter(ch) || unicode.IsDigit(ch) || ch == '_'
+}
+
+func isCheckStringBodyChar(ch rune) bool {
+	return unicode.IsLetter(ch) || unicode.IsDigit(ch) || ch == '_'
 }
 
 func trimBalancedCheckParens(expr string) string {
@@ -62,6 +152,12 @@ func checkOuterParensWrap(expr string) bool {
 	inString := false
 	for i := 0; i < len(expr); i++ {
 		ch := expr[i]
+		if ch == '\\' && i+1 < len(expr) && expr[i+1] == '\'' {
+			if inString && !checkEscapedQuoteClosesString(expr, i+1) {
+				i++
+			}
+			continue
+		}
 		if ch == '\'' {
 			if inString && i+1 < len(expr) && expr[i+1] == '\'' {
 				i++

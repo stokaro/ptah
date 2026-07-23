@@ -4,7 +4,6 @@ package gonative_test
 
 import (
 	"database/sql"
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -12,11 +11,7 @@ import (
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/core/renderer"
-	dbschematypes "github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/internal/convert/fromschema"
 	mysqlreader "github.com/stokaro/ptah/internal/dbschema/mysql"
-	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/schemadiff"
 )
 
@@ -32,13 +27,13 @@ func TestDefaultsTypesConformanceFixture_RoundTrip_MySQL(t *testing.T) {
 	defer func() { _, _ = db.Exec("DROP TABLE IF EXISTS invoices") }()
 
 	target := defaultsTypesConformanceSchema()
-	createSQL := renderDefaultsTypesConformanceSQL(c, target, platform.MySQL)
-	execDefaultsTypesConformanceSQL(c, db, createSQL)
+	createSQL := renderConformanceSQL(c, target, platform.MySQL)
+	execConformanceSQL(c, db, createSQL, "defaults/types")
 
 	reader := mysqlreader.NewMySQLReader(db, "")
 	liveSchema, err := reader.ReadSchema()
 	c.Assert(err, qt.IsNil)
-	liveSchema = filterDefaultsTypesConformanceSchema(liveSchema)
+	liveSchema = filterConformanceSchema(liveSchema, defaultsTypesConformanceTables())
 
 	diff := schemadiff.CompareWithDialect(target, liveSchema, platform.MySQL)
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
@@ -92,27 +87,8 @@ func defaultsTypesConformanceSchema() *goschema.Database {
 	}
 }
 
-func renderDefaultsTypesConformanceSQL(c *qt.C, target *goschema.Database, dialect string) string {
-	createAST := fromschema.FromDatabase(*target, dialect)
-	createSQL, err := renderer.RenderSQL(dialect, createAST.Statements...)
-	c.Assert(err, qt.IsNil)
-	return strings.TrimSpace(createSQL)
-}
-
-func execDefaultsTypesConformanceSQL(c *qt.C, db *sql.DB, sqlText string) {
-	for _, stmt := range migrator.SplitSQLStatements(sqlText) {
-		_, err := db.Exec(stmt)
-		c.Assert(err, qt.IsNil, qt.Commentf("defaults/types schema statement must apply: %s", stmt))
-	}
-}
-
-func filterDefaultsTypesConformanceSchema(in *dbschematypes.DBSchema) *dbschematypes.DBSchema {
-	keepTables := map[string]struct{}{
+func defaultsTypesConformanceTables() map[string]struct{} {
+	return map[string]struct{}{
 		"invoices": {},
 	}
-	out := *in
-	out.Tables = filterTables(in.Tables, keepTables)
-	out.Indexes = filterIndexes(in.Indexes, keepTables)
-	out.Constraints = filterConstraints(in.Constraints, keepTables)
-	return &out
 }
