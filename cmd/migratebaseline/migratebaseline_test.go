@@ -74,22 +74,11 @@ func TestBaselineRowsIncludesOnlyVersionsAtOrBelowBaseline(t *testing.T) {
 }
 
 func TestVerifyBaselineShadowPostgresMismatchRequiresForce(t *testing.T) {
-	dbURL := postgresBaselineTestURL()
-	if dbURL == "" {
-		t.Skip("PostgreSQL test database URL is not set")
-	}
-
 	c := qt.New(t)
 	ctx := context.Background()
 
-	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
-	if err != nil {
-		t.Skipf("test database is not available: %v", err)
-	}
+	dbURL, conn := requirePostgresBaselineTestConnection(t, c, ctx, "baseline shadow verification test")
 	defer dbschema.CloseAndWarn(conn)
-	if conn.Info().Dialect != "postgres" {
-		t.Skipf("baseline shadow verification test requires PostgreSQL, got %s", conn.Info().Dialect)
-	}
 
 	suffix := time.Now().UnixNano()
 	schema := fmt.Sprintf("ptah_issue_269_shadow_%d", suffix)
@@ -101,7 +90,7 @@ func TestVerifyBaselineShadowPostgresMismatchRequiresForce(t *testing.T) {
 		_, _ = conn.ExecContext(ctx, "DROP SCHEMA IF EXISTS "+quotePostgresIdent(schema)+" CASCADE")
 	}()
 
-	_, err = conn.ExecContext(ctx, "CREATE SCHEMA "+quotePostgresIdent(schema))
+	_, err := conn.ExecContext(ctx, "CREATE SCHEMA "+quotePostgresIdent(schema))
 	c.Assert(err, qt.IsNil)
 	_, err = conn.ExecContext(ctx, fmt.Sprintf(
 		"CREATE TABLE %s.%s (id INTEGER PRIMARY KEY)",
@@ -129,22 +118,11 @@ func TestVerifyBaselineShadowPostgresMismatchRequiresForce(t *testing.T) {
 }
 
 func TestVerifyBaselineShadowPostgresMatchIgnoresShadowMetadata(t *testing.T) {
-	dbURL := postgresBaselineTestURL()
-	if dbURL == "" {
-		t.Skip("PostgreSQL test database URL is not set")
-	}
-
 	c := qt.New(t)
 	ctx := context.Background()
 
-	adminConn, err := dbschema.ConnectToDatabase(ctx, dbURL)
-	if err != nil {
-		t.Skipf("test database is not available: %v", err)
-	}
+	dbURL, adminConn := requirePostgresBaselineTestConnection(t, c, ctx, "baseline shadow verification test")
 	defer dbschema.CloseAndWarn(adminConn)
-	if adminConn.Info().Dialect != "postgres" {
-		t.Skipf("baseline shadow verification test requires PostgreSQL, got %s", adminConn.Info().Dialect)
-	}
 
 	suffix := time.Now().UnixNano()
 	targetDBName := fmt.Sprintf("ptah_issue_269_target_db_%d", suffix)
@@ -174,22 +152,11 @@ func TestVerifyBaselineShadowPostgresMatchIgnoresShadowMetadata(t *testing.T) {
 }
 
 func TestMigrateBaselineCommandPostgresWritesMetadataWithoutExecutingDDL(t *testing.T) {
-	dbURL := postgresBaselineTestURL()
-	if dbURL == "" {
-		t.Skip("PostgreSQL test database URL is not set")
-	}
-
 	c := qt.New(t)
 	ctx := context.Background()
 
-	adminConn, err := dbschema.ConnectToDatabase(ctx, dbURL)
-	if err != nil {
-		t.Skipf("test database is not available: %v", err)
-	}
+	dbURL, adminConn := requirePostgresBaselineTestConnection(t, c, ctx, "migrate-baseline command test")
 	defer dbschema.CloseAndWarn(adminConn)
-	if adminConn.Info().Dialect != "postgres" {
-		t.Skipf("migrate-baseline command test requires PostgreSQL, got %s", adminConn.Info().Dialect)
-	}
 
 	suffix := time.Now().UnixNano()
 	targetDBName := fmt.Sprintf("ptah_issue_269_cli_target_%d", suffix)
@@ -240,6 +207,32 @@ func postgresBaselineTestURL() string {
 		}
 	}
 	return ""
+}
+
+func requirePostgresBaselineTestConnection(
+	t *testing.T,
+	c *qt.C,
+	ctx context.Context,
+	purpose string,
+) (string, *dbschema.DatabaseConnection) {
+	t.Helper()
+
+	dbURL := postgresBaselineTestURL()
+	if dbURL == "" {
+		t.Skip("PostgreSQL test database URL is not set")
+	}
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	if err != nil {
+		t.Skipf("test database is not available: %v", err)
+	}
+	if conn.Info().Dialect != "postgres" {
+		dbschema.CloseAndWarn(conn)
+		t.Skipf("%s requires PostgreSQL, got %s", purpose, conn.Info().Dialect)
+	}
+
+	c.Assert(conn, qt.IsNotNil)
+	return dbURL, conn
 }
 
 func baselineShadowDatabaseURL(c *qt.C, dbURL, dbName string) string {
