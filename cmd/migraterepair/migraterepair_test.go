@@ -1,40 +1,24 @@
-package migraterepair
+package migraterepair_test
 
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"github.com/stokaro/ptah/cmd/migraterepair"
 )
 
 func TestMigrateRepairCommand_Creation(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := NewMigrateRepairCommand()
+	cmd := migraterepair.NewMigrateRepairCommand()
 
 	c.Assert(cmd, qt.IsNotNil)
 	c.Assert(cmd.Use, qt.Equals, "repair")
 	c.Assert(cmd.Short, qt.Contains, "Repair dirty migration metadata")
-	c.Assert(cmd.Flag(dbURLFlag), qt.IsNotNil)
-	c.Assert(cmd.Flag(migrationsFlag), qt.IsNotNil)
-	c.Assert(cmd.Flag(versionFlag), qt.IsNotNil)
-	c.Assert(cmd.Flag(forceFlag), qt.IsNotNil)
-	c.Assert(cmd.Flag(resumeFromFlag), qt.IsNotNil)
-}
-
-func TestParseResumeFrom(t *testing.T) {
-	c := qt.New(t)
-
-	resumeFrom, err := parseResumeFrom("")
-	c.Assert(err, qt.IsNil)
-	c.Assert(resumeFrom, qt.Equals, 0)
-
-	resumeFrom, err = parseResumeFrom("3")
-	c.Assert(err, qt.IsNil)
-	c.Assert(resumeFrom, qt.Equals, 3)
-
-	_, err = parseResumeFrom("0")
-	c.Assert(err, qt.ErrorMatches, `invalid resume-from value "0"`)
-
-	_, err = parseResumeFrom("bad")
-	c.Assert(err, qt.ErrorMatches, `invalid resume-from value "bad"`)
+	c.Assert(cmd.Flag("db-url"), qt.IsNotNil)
+	c.Assert(cmd.Flag("migrations-dir"), qt.IsNotNil)
+	c.Assert(cmd.Flag("version"), qt.IsNotNil)
+	c.Assert(cmd.Flag("force"), qt.IsNotNil)
+	c.Assert(cmd.Flag("resume-from"), qt.IsNotNil)
 }

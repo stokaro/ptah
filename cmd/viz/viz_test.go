@@ -1,4 +1,4 @@
-package viz
+package viz_test
 
 import (
 	"bytes"
@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"github.com/stokaro/ptah/cmd/viz"
 )
 
 func TestCommandWritesMermaid(t *testing.T) {
@@ -17,7 +19,7 @@ func TestCommandWritesMermaid(t *testing.T) {
 	dir := t.TempDir()
 	writeModel(c, dir)
 
-	cmd := NewCommand()
+	cmd := viz.NewCommand()
 	var stdout, stderr bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
@@ -42,7 +44,7 @@ func TestCommandDoesNotDuplicateJSONEmbeddedColumns(t *testing.T) {
 	dir := t.TempDir()
 	writeJSONEmbeddedModel(c, dir)
 
-	cmd := NewCommand()
+	cmd := viz.NewCommand()
 	var stdout, stderr bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
@@ -63,7 +65,7 @@ func TestCommandExcludesTables(t *testing.T) {
 	dir := t.TempDir()
 	writeModel(c, dir)
 
-	cmd := NewCommand()
+	cmd := viz.NewCommand()
 	var stdout, stderr bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
@@ -84,13 +86,11 @@ func TestCommandExcludesTables(t *testing.T) {
 
 func TestDOTParsesWithGraphvizWhenInstalled(t *testing.T) {
 	c := qt.New(t)
-	if _, err := exec.LookPath("dot"); err != nil {
-		t.Skipf("Graphviz dot not installed: %v", err)
-	}
+	requireGraphvizDot(t)
 	dir := t.TempDir()
 	writeModel(c, dir)
 
-	cmd := NewCommand()
+	cmd := viz.NewCommand()
 	var stdout, stderr bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
@@ -117,13 +117,11 @@ func TestDOTParsesWithGraphvizWhenInstalled(t *testing.T) {
 
 func TestCommandWritesSVGWhenGraphvizIsInstalled(t *testing.T) {
 	c := qt.New(t)
-	if _, err := exec.LookPath("dot"); err != nil {
-		t.Skipf("Graphviz dot not installed: %v", err)
-	}
+	requireGraphvizDot(t)
 	dir := t.TempDir()
 	writeModel(c, dir)
 
-	cmd := NewCommand()
+	cmd := viz.NewCommand()
 	var stdout, stderr bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
@@ -171,7 +169,7 @@ func TestExampleArtifactsMatchGeneratedOutput(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			cmd := NewCommand()
+			cmd := viz.NewCommand()
 			var stdout, stderr bytes.Buffer
 			cmd.SetOut(&stdout)
 			cmd.SetErr(&stderr)
@@ -197,7 +195,7 @@ func TestSVGReportsFriendlyGraphvizErrorWhenDotIsMissing(t *testing.T) {
 	writeModel(c, dir)
 	t.Setenv("PATH", t.TempDir())
 
-	cmd := NewCommand()
+	cmd := viz.NewCommand()
 	var stderr bytes.Buffer
 	cmd.SetErr(&stderr)
 	cmd.SetArgs([]string{
@@ -212,9 +210,7 @@ func TestSVGReportsFriendlyGraphvizErrorWhenDotIsMissing(t *testing.T) {
 }
 
 func TestSVGReportsGraphvizStderrOnFailure(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test uses a POSIX shell script")
-	}
+	skipOnWindows(t)
 	c := qt.New(t)
 	dir := t.TempDir()
 	writeModel(c, dir)
@@ -224,7 +220,7 @@ func TestSVGReportsGraphvizStderrOnFailure(t *testing.T) {
 	c.Assert(os.Chmod(dotPath, 0o700), qt.IsNil)
 	t.Setenv("PATH", binDir)
 
-	cmd := NewCommand()
+	cmd := viz.NewCommand()
 	var stderr bytes.Buffer
 	cmd.SetErr(&stderr)
 	cmd.SetArgs([]string{
@@ -236,6 +232,23 @@ func TestSVGReportsGraphvizStderrOnFailure(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `render SVG with Graphviz dot: .*: graphviz exploded`)
 	c.Assert(stderr.String(), qt.Contains, "graphviz exploded")
+}
+
+func requireGraphvizDot(t *testing.T) {
+	t.Helper()
+
+	_, err := exec.LookPath("dot")
+	if err != nil {
+		t.Skipf("Graphviz dot not installed: %v", err)
+	}
+}
+
+func skipOnWindows(t *testing.T) {
+	t.Helper()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("test uses a POSIX shell script")
+	}
 }
 
 func writeModel(c *qt.C, dir string) {

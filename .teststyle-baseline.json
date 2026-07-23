@@ -49,24 +49,6 @@
       "count": 3
     },
     {
-      "path": "cmd/viz/viz_test.go",
-      "function": "TestCommandWritesSVGWhenGraphvizIsInstalled",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "cmd/viz/viz_test.go",
-      "function": "TestDOTParsesWithGraphvizWhenInstalled",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "cmd/viz/viz_test.go",
-      "function": "TestSVGReportsGraphvizStderrOnFailure",
-      "kind": "if",
-      "count": 1
-    },
-    {
       "path": "core/goschema/dependency_fix_test.go",
       "function": "TestDependencyOrderingWithEmbeddedFields",
       "kind": "if",
@@ -1240,18 +1222,8 @@
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
-      "path": "cmd/migraterepair/migraterepair_test.go",
-      "package": "migraterepair",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
       "path": "cmd/migrateup/migrateup_test.go",
       "package": "migrateup",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
-      "path": "cmd/migratevalidate/migratevalidate_test.go",
-      "package": "migratevalidate",
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
@@ -1265,18 +1237,8 @@
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
-      "path": "cmd/seed/seed_test.go",
-      "package": "seed",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
       "path": "cmd/sql/sql_test.go",
       "package": "sql",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
-      "path": "cmd/viz/viz_test.go",
-      "package": "viz",
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
