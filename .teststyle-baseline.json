@@ -1,42 +1,6 @@
 {
   "test_conditionals": [
     {
-      "path": "cmd/internal/cliobs/cliobs_test.go",
-      "function": "TestEmitterJSONModeWritesParseableJSONLines",
-      "kind": "if",
-      "count": 5
-    },
-    {
-      "path": "cmd/internal/cliobs/cliobs_test.go",
-      "function": "TestJSONOutputWriterFlushesPartialLine",
-      "kind": "if",
-      "count": 6
-    },
-    {
-      "path": "cmd/internal/cliobs/cliobs_test.go",
-      "function": "TestJSONOutputWriterLogsSubprocessLines",
-      "kind": "if",
-      "count": 7
-    },
-    {
-      "path": "cmd/internal/cliobs/cliobs_test.go",
-      "function": "TestMetricsDataRendersPrometheusCountersAndHistograms",
-      "kind": "if",
-      "count": 4
-    },
-    {
-      "path": "cmd/internal/cliobs/cliobs_test.go",
-      "function": "TestMetricsDataWritesTypeOncePerMetricFamily",
-      "kind": "if",
-      "count": 2
-    },
-    {
-      "path": "cmd/internal/cliobs/cliobs_test.go",
-      "function": "TestStartRejectsInvalidLogOptions",
-      "kind": "if",
-      "count": 2
-    },
-    {
       "path": "cmd/lint/lint_test.go",
       "function": "TestRunLint_SARIFFormat",
       "kind": "if",
@@ -99,12 +63,6 @@
     {
       "path": "cmd/viz/viz_test.go",
       "function": "TestSVGReportsGraphvizStderrOnFailure",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "core/ast/ast_test.go",
-      "function": "TestConstraintType_Distinct",
       "kind": "if",
       "count": 1
     },
@@ -293,18 +251,6 @@
       "function": "TestParseFS_PostgreSQLFeatures",
       "kind": "if",
       "count": 3
-    },
-    {
-      "path": "core/renderer/internal/dialects/clickhouse/clickhouse_test.go",
-      "function": "TestColumnTypeMapping",
-      "kind": "if",
-      "count": 2
-    },
-    {
-      "path": "core/renderer/internal/dialects/clickhouse/clickhouse_test.go",
-      "function": "TestVisitDropIndex_RequiresTable",
-      "kind": "if",
-      "count": 1
     },
     {
       "path": "core/renderer/renderer_test.go",
@@ -1266,11 +1212,6 @@
     {
       "path": "cmd/integration-test/main_test.go",
       "package": "main",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
-      "path": "cmd/internal/cliobs/cliobs_test.go",
-      "package": "cliobs",
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {

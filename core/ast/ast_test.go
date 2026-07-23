@@ -375,22 +375,15 @@ func TestConstraintType_Constants(t *testing.T) {
 func TestConstraintType_Distinct(t *testing.T) {
 	c := qt.New(t)
 
-	types := []ast.ConstraintType{
-		ast.PrimaryKeyConstraint,
-		ast.UniqueConstraint,
-		ast.ForeignKeyConstraint,
-		ast.CheckConstraint,
-		ast.ExcludeConstraint,
+	types := map[ast.ConstraintType]bool{
+		ast.PrimaryKeyConstraint: true,
+		ast.UniqueConstraint:     true,
+		ast.ForeignKeyConstraint: true,
+		ast.CheckConstraint:      true,
+		ast.ExcludeConstraint:    true,
 	}
 
-	// Verify all types are different
-	for i, t1 := range types {
-		for j, t2 := range types {
-			if i != j {
-				c.Assert(t1, qt.Not(qt.Equals), t2)
-			}
-		}
-	}
+	c.Assert(types, qt.HasLen, 5)
 }
 
 // Test default value edge cases

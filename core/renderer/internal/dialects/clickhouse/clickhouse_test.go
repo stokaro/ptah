@@ -195,13 +195,11 @@ func TestCreateTable_ForeignKeyAndUniqueAreSilentlyDropped(t *testing.T) {
 	c.Assert(out, qt.Not(qt.Contains), "UNIQUE")
 }
 
-func TestColumnTypeMapping(t *testing.T) {
+func TestColumnTypeMapping_HappyPath(t *testing.T) {
 	cases := []struct {
-		name     string
-		col      *ast.ColumnNode
-		want     string
-		wantErr  bool
-		contains string
+		name string
+		col  *ast.ColumnNode
+		want string
 	}{
 		{name: "varchar to String", col: ast.NewColumn("c", "VARCHAR(255)").SetNotNull(), want: "c String"},
 		{name: "text to String", col: ast.NewColumn("c", "TEXT").SetNotNull(), want: "c String"},
@@ -216,10 +214,7 @@ func TestColumnTypeMapping(t *testing.T) {
 		{name: "numeric(p,s) to Decimal", col: ast.NewColumn("c", "NUMERIC(12,4)").SetNotNull(), want: "c Decimal(12,4)"},
 		{name: "bytea to String", col: ast.NewColumn("c", "BYTEA").SetNotNull(), want: "c String"},
 		{name: "nullable wrapping", col: ast.NewColumn("c", "INTEGER"), want: "c Nullable(Int32)"},
-		{name: "serial errors", col: ast.NewColumn("c", "SERIAL").SetNotNull(), wantErr: true, contains: "auto-increment"},
-		{name: "time errors", col: ast.NewColumn("c", "TIME").SetNotNull(), wantErr: true, contains: "TIME"},
 		{name: "native CH type passthrough", col: ast.NewColumn("c", "LowCardinality(String)").SetNotNull(), want: "c LowCardinality(String)"},
-		{name: "unknown SQL type warns", col: ast.NewColumn("c", "GEOGRAPHY").SetNotNull(), want: "c GEOGRAPHY", contains: `unrecognized SQL type "GEOGRAPHY" passed through verbatim`},
 	}
 
 	for _, tc := range cases {
@@ -228,19 +223,45 @@ func TestColumnTypeMapping(t *testing.T) {
 			tbl := ast.NewCreateTable("t").AddColumn(ast.NewColumn("id", "BIGINT").SetPrimary())
 			tbl.AddColumn(tc.col)
 			err := renderErr(tbl)
-			if tc.wantErr {
-				c.Assert(err, qt.IsNotNil)
-				c.Assert(err.Error(), qt.Contains, tc.contains)
-				return
-			}
 			c.Assert(err, qt.IsNil)
 			out := render(t, tbl)
 			c.Assert(out, qt.Contains, tc.want)
-			if tc.contains != "" {
-				c.Assert(out, qt.Contains, tc.contains)
-			}
 		})
 	}
+}
+
+func TestColumnTypeMapping_FailurePath(t *testing.T) {
+	cases := []struct {
+		name     string
+		col      *ast.ColumnNode
+		contains string
+	}{
+		{name: "serial errors", col: ast.NewColumn("c", "SERIAL").SetNotNull(), contains: "auto-increment"},
+		{name: "time errors", col: ast.NewColumn("c", "TIME").SetNotNull(), contains: "TIME"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			tbl := ast.NewCreateTable("t").AddColumn(ast.NewColumn("id", "BIGINT").SetPrimary())
+			tbl.AddColumn(tc.col)
+			err := renderErr(tbl)
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Contains, tc.contains)
+		})
+	}
+}
+
+func TestColumnTypeMapping_UnknownSQLTypeWarning(t *testing.T) {
+	c := qt.New(t)
+	tbl := ast.NewCreateTable("t").AddColumn(ast.NewColumn("id", "BIGINT").SetPrimary())
+	tbl.AddColumn(ast.NewColumn("c", "GEOGRAPHY").SetNotNull())
+
+	err := renderErr(tbl)
+	c.Assert(err, qt.IsNil)
+	out := render(t, tbl)
+	c.Assert(out, qt.Contains, "c GEOGRAPHY")
+	c.Assert(out, qt.Contains, `unrecognized SQL type "GEOGRAPHY" passed through verbatim`)
 }
 
 func TestAlterTable_Operations(t *testing.T) {
@@ -329,13 +350,7 @@ func TestVisitDropIndex_RequiresTable(t *testing.T) {
 	// `ALTER TABLE ... DROP INDEX` as the required form, so to assert the
 	// absence of a real statement we look for a non-comment line.
 	c.Assert(out, qt.Contains, "-- CLICKHOUSE:")
-	for line := range strings.SplitSeq(strings.TrimSpace(out), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "--") {
-			continue
-		}
-		t.Fatalf("expected only comment output, got executable line: %q", line)
-	}
+	c.Assert(executableLines(out), qt.HasLen, 0)
 }
 
 func TestVisitDropIndex_OnTable(t *testing.T) {
@@ -758,4 +773,16 @@ func TestDialectAndOutputHelpers(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(out, qt.Contains, "-- hello --")
 	c.Assert(r.GetOutput(), qt.Equals, r.Output())
+}
+
+func executableLines(output string) []string {
+	var lines []string
+	for line := range strings.SplitSeq(strings.TrimSpace(output), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "--") {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	return lines
 }
