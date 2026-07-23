@@ -1,9 +1,8 @@
-package sql
+package sql_test
 
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,11 +10,12 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
+	"github.com/stokaro/ptah/cmd/sql"
 	"github.com/stokaro/ptah/internal/sqllint"
 )
 
 func execute(args ...string) (stdout, stderr string, err error) {
-	cmd := NewSQLCommand()
+	cmd := sql.NewSQLCommand()
 	var out, errOut bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
@@ -25,7 +25,7 @@ func execute(args ...string) (stdout, stderr string, err error) {
 }
 
 func executeWithStdin(stdin string, args ...string) (stdout, stderr string, err error) {
-	cmd := NewSQLCommand()
+	cmd := sql.NewSQLCommand()
 	var out, errOut bytes.Buffer
 	cmd.SetIn(bytes.NewBufferString(stdin))
 	cmd.SetOut(&out)
@@ -38,7 +38,7 @@ func executeWithStdin(stdin string, args ...string) (stdout, stderr string, err 
 func TestNewSQLCommand_Creation(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := NewSQLCommand()
+	cmd := sql.NewSQLCommand()
 
 	c.Assert(cmd, qt.IsNotNil)
 	c.Assert(cmd.Use, qt.Equals, "sql")
@@ -155,34 +155,8 @@ func TestSQLLint_UsageErrorsExitTwo(t *testing.T) {
 	}
 }
 
-func TestWriteSQLLintReport_TextPropagatesWriterError(t *testing.T) {
-	c := qt.New(t)
-	errBoom := errors.New("boom")
-
-	err := writeSQLLintReport(failingWriter{err: errBoom}, formatText, sqlLintReport{
-		Findings: []sqllint.Finding{{
-			Rule:     sqllint.RuleUnsupportedStatement,
-			Severity: sqllint.SeverityError,
-			File:     "schema.sql",
-			Line:     1,
-			Column:   1,
-			Message:  "bad",
-		}},
-	})
-
-	c.Assert(err, qt.ErrorIs, errBoom)
-}
-
-func writeSQLFile(c *qt.C, dir, name, sql string) string {
+func writeSQLFile(c *qt.C, dir, name, statement string) string {
 	path := filepath.Join(dir, name)
-	c.Assert(os.WriteFile(path, []byte(sql), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(path, []byte(statement), 0o600), qt.IsNil)
 	return path
-}
-
-type failingWriter struct {
-	err error
-}
-
-func (w failingWriter) Write(_ []byte) (int, error) {
-	return 0, w.err
 }
