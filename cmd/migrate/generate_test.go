@@ -1,4 +1,4 @@
-package migrate
+package migrate_test
 
 import (
 	"bytes"
@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/cmd/migrate"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/dbschema"
 )
@@ -17,11 +18,11 @@ import (
 func TestMigrateGenerateCommandExposesShadowDBFlag(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := NewMigrateGenerateCommand()
+	cmd := migrate.NewMigrateGenerateCommand()
 
 	c.Assert(cmd.Name(), qt.Equals, "generate")
-	c.Assert(cmd.Flags().Lookup(generateShadowDBFlag), qt.IsNotNil)
-	c.Assert(cmd.Flags().Lookup(generateMigrationsDirFlag), qt.IsNotNil)
+	c.Assert(cmd.Flags().Lookup("shadow-db"), qt.IsNotNil)
+	c.Assert(cmd.Flags().Lookup("migrations-dir"), qt.IsNotNil)
 	c.Assert(cmd.Flags().Lookup("config"), qt.IsNotNil)
 	c.Assert(cmd.Flags().Lookup("env"), qt.IsNotNil)
 }
@@ -42,28 +43,28 @@ func TestMigrateGenerateProjectConfigPrecedence(t *testing.T) {
 		c.Assert(os.Chdir(originalWD), qt.IsNil)
 	}()
 
-	cmd := NewMigrateGenerateCommand()
+	cmd := migrate.NewMigrateGenerateCommand()
 	c.Assert(cmd.ParseFlags([]string{"--shadow-db", "postgres://localhost/flag_shadow"}), qt.IsNil)
-	flagShadow, err := cmd.Flags().GetString(generateShadowDBFlag)
+	flagShadow, err := cmd.Flags().GetString("shadow-db")
 	c.Assert(err, qt.IsNil)
 	cfg, err := dbcli.LoadProjectConfig(cmd, "")
 	c.Assert(err, qt.IsNil)
 
-	shadowDB := dbcli.EffectiveString(cmd, generateShadowDBFlag, flagShadow, cfg.DevURL)
+	shadowDB := dbcli.EffectiveString(cmd, "shadow-db", flagShadow, cfg.DevURL)
 
 	c.Assert(shadowDB, qt.Equals, "postgres://localhost/flag_shadow")
 
-	cmd = NewMigrateGenerateCommand()
+	cmd = migrate.NewMigrateGenerateCommand()
 	cfg, err = dbcli.LoadProjectConfig(cmd, "")
 	c.Assert(err, qt.IsNil)
-	shadowDB = dbcli.EffectiveString(cmd, generateShadowDBFlag, "", cfg.DevURL)
+	shadowDB = dbcli.EffectiveString(cmd, "shadow-db", "", cfg.DevURL)
 	c.Assert(shadowDB, qt.Equals, "postgres://localhost/atlas_shadow")
 }
 
 func TestMigratePlanCommandRejectsAtlasApplyAtRoot(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := NewMigrateCommand()
+	cmd := migrate.NewMigrateCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -106,7 +107,7 @@ func TestMigrateGenerateShadowVerificationWithRealDB(t *testing.T) {
 		prepareMigrateGenerateTargetDB(c, ctx, conn)
 
 		var out bytes.Buffer
-		cmd := NewMigrateGenerateCommand()
+		cmd := migrate.NewMigrateGenerateCommand()
 		cmd.SetOut(&out)
 		cmd.SetArgs([]string{
 			"--root-dir", entitiesDir,
@@ -133,7 +134,7 @@ func TestMigrateGenerateShadowVerificationWithRealDB(t *testing.T) {
 		prepareMigrateGenerateTargetDB(c, ctx, conn)
 
 		var out bytes.Buffer
-		cmd := NewMigrateGenerateCommand()
+		cmd := migrate.NewMigrateGenerateCommand()
 		cmd.SetOut(&out)
 		cmd.SetArgs([]string{
 			"--root-dir", entitiesDir,
