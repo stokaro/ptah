@@ -50,8 +50,8 @@ import (
 //	```go
 //	result := compare.TableColumns(genTable, dbTable, generated)
 //	nameDiff := compare.ColumnByName(result.ColumnsModified, "name")
-//	assert.NotNil(t, nameDiff)
-//	assert.Equal(t, "varchar -> text", nameDiff.Changes["type"])
+//	c.Assert(nameDiff, qt.IsNotNil)
+//	c.Assert(nameDiff.Changes["type"], qt.Equals, "varchar -> text")
 //	```
 //
 // **Conditional migration logic**:
