@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io/fs"
+	"net"
 	"net/url"
 	"path/filepath"
 	"slices"
@@ -14,6 +15,8 @@ import (
 	"time"
 	"unicode"
 
+	mysqldriver "github.com/go-sql-driver/mysql"
+	"github.com/moby/moby/api/types/network"
 	"github.com/testcontainers/testcontainers-go"
 	tcmysql "github.com/testcontainers/testcontainers-go/modules/mysql"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -279,7 +282,10 @@ func startMySQLLike(t testing.TB, dialect, defaultImage string, opts ...Option) 
 		tcmysql.WithUsername(cfg.username),
 		tcmysql.WithPassword(cfg.password),
 		tcmysql.WithDatabase(baseDB),
-		testcontainers.WithWaitStrategy(wait.ForListeningPort("3306/tcp")),
+		testcontainers.WithWaitStrategy(
+			wait.ForSQL("3306/tcp", "mysql", mysqlReadinessDSN(cfg.username, cfg.password, baseDB)).
+				WithStartupTimeout(cfg.startupTimeout),
+		),
 		reuseOption(cfg.reuseName),
 	)
 	requireNoError(t, err, "start "+dialect+" container")
@@ -349,6 +355,20 @@ func postgresDatabaseURL(dbURL, database string) string {
 
 func mysqlURL(dialect, dsn string) string {
 	return dialect + "://" + dsn
+}
+
+func mysqlReadinessDSN(username, password, database string) func(host string, port network.Port) string {
+	return func(host string, port network.Port) string {
+		cfg := mysqldriver.NewConfig()
+		cfg.User = username
+		cfg.Passwd = password
+		cfg.Net = "tcp"
+		cfg.Addr = net.JoinHostPort(host, port.Port())
+		cfg.DBName = database
+		cfg.ParseTime = true
+		cfg.MultiStatements = true
+		return cfg.FormatDSN()
+	}
 }
 
 func mysqlDSNDatabase(dsn, database string) string {
