@@ -13,11 +13,11 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
-	lintcmd "github.com/stokaro/ptah/cmd/lint"
 	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/internal/atlasargs"
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/atlasurl"
+	"github.com/stokaro/ptah/internal/migrationlintreport"
 	"github.com/stokaro/ptah/internal/pathguard"
 )
 
@@ -134,15 +134,24 @@ func runAtlasMigrateLint(cmd *cobra.Command, opts atlasMigrateLintOptions) error
 		return exitcode.New(1, errors.New(integrity.Error))
 	}
 
-	report, err := lintcmd.BuildReportWithConfig(cmd, lintcmd.ReportOptions{
+	report, err := migrationlintreport.Build(cmd.Context(), migrationlintreport.Options{
 		Dir:       dir,
 		DirFormat: dirFormat,
 		AtlasEnv:  opts.atlasEnv,
 		DevURL:    opts.devURL,
 		GitBase:   opts.gitBase,
 		GitDir:    opts.gitDir,
-		FailOn:    "error",
+		FailOn:    migrationlintreport.FailOnError,
 		Latest:    opts.latest,
+		Changed: migrationlintreport.ChangedOptions{
+			Dir:       true,
+			DirFormat: true,
+			AtlasEnv:  true,
+			DevURL:    true,
+			GitBase:   cmd.Flags().Changed("git-base"),
+			GitDir:    cmd.Flags().Changed("git-dir"),
+			Latest:    cmd.Flags().Changed("latest"),
+		},
 	}, atlasMigrateLintReportConfig(projectCfg))
 	if err != nil {
 		if formatOutput {
@@ -166,7 +175,7 @@ func runAtlasMigrateLint(cmd *cobra.Command, opts atlasMigrateLintOptions) error
 		}); err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
-	} else if err := lintcmd.WriteReport(lintReportWriter(cmd, report), "text", report); err != nil {
+	} else if err := migrationlintreport.Write(lintReportWriter(cmd, report), migrationlintreport.FormatText, report); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if report.Failed {
@@ -202,7 +211,7 @@ func writeAtlasMigrateLintReplayError(
 	})
 }
 
-func lintReportWriter(cmd *cobra.Command, report lintcmd.Report) io.Writer {
+func lintReportWriter(cmd *cobra.Command, report migrationlintreport.Report) io.Writer {
 	if report.Failed {
 		return cmd.ErrOrStderr()
 	}
