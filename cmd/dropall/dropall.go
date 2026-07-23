@@ -2,9 +2,7 @@ package dropall
 
 import (
 	"bufio"
-	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -13,6 +11,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/schemaclean"
 )
 
 const (
@@ -59,19 +58,20 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 }
 
-func dropAllCommand(_ *cobra.Command, opts *options) error {
+func dropAllCommand(cmd *cobra.Command, opts *options) error {
 	if opts.dbURL == "" {
 		return fmt.Errorf("database URL is required")
 	}
 
+	out := cmd.OutOrStdout()
 	if opts.dryRun {
-		fmt.Printf("[DRY RUN] Would drop ALL tables and enums from database %s\n", dbschema.FormatDatabaseURL(opts.dbURL))
-		fmt.Println("=== DRY RUN: DROP ALL TABLES FROM DATABASE ===")
+		fmt.Fprintf(out, "[DRY RUN] Would drop ALL tables and enums from database %s\n", dbschema.FormatDatabaseURL(opts.dbURL))
+		fmt.Fprintln(out, "=== DRY RUN: DROP ALL TABLES FROM DATABASE ===")
 	} else {
-		fmt.Printf("Dropping ALL tables and enums from database %s\n", dbschema.FormatDatabaseURL(opts.dbURL))
-		fmt.Println("=== DROP ALL TABLES FROM DATABASE ===")
+		fmt.Fprintf(out, "Dropping ALL tables and enums from database %s\n", dbschema.FormatDatabaseURL(opts.dbURL))
+		fmt.Fprintln(out, "=== DROP ALL TABLES FROM DATABASE ===")
 	}
-	fmt.Println()
+	fmt.Fprintln(out)
 
 	// 1. Connect to database
 	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
@@ -79,7 +79,7 @@ func dropAllCommand(_ *cobra.Command, opts *options) error {
 		return err
 	}
 
-	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
+	connectCtx, cancelConnect := dbcli.ConnectContext(cmd.Context(), connectTimeout)
 	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.dbURL)
 	cancelConnect()
 	if err != nil {
@@ -87,77 +87,79 @@ func dropAllCommand(_ *cobra.Command, opts *options) error {
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	fmt.Printf("Connected to %s database successfully!\n", conn.Info().Dialect)
-	fmt.Println()
+	fmt.Fprintf(out, "Connected to %s database successfully!\n", conn.Info().Dialect)
+	fmt.Fprintln(out)
 
-	// Set dry run mode on the writer
-	conn.SchemaWriter().SetDryRun(opts.dryRun)
+	plan, err := schemaclean.Inspect(conn)
+	if err != nil {
+		return err
+	}
 
 	// 2. Show extreme warning and ask for confirmation (skip confirmation in dry run or auto-approve mode)
 	switch {
 	case opts.dryRun:
-		fmt.Println("ℹ️  [DRY RUN] This would permanently delete ALL tables and enums!")
-		fmt.Println("ℹ️  [DRY RUN] This would delete EVERYTHING in the database, not just your Go entities!")
-		fmt.Println("ℹ️  [DRY RUN] This would result in ALL DATA BEING LOST!")
-		fmt.Println()
+		fmt.Fprintln(out, "[DRY RUN] This would permanently delete ALL tables and enums!")
+		fmt.Fprintln(out, "[DRY RUN] This would delete EVERYTHING in the database, not just your Go entities!")
+		fmt.Fprintln(out, "[DRY RUN] This would result in ALL DATA BEING LOST!")
+		fmt.Fprintln(out)
 	case opts.autoApprove:
-		fmt.Println("Auto-approval enabled; skipping interactive confirmation.")
-		fmt.Println()
+		fmt.Fprintln(out, "Auto-approval enabled; skipping interactive confirmation.")
+		fmt.Fprintln(out)
 	default:
-		fmt.Println("🚨 EXTREME WARNING: This operation will permanently delete ALL tables and enums!")
-		fmt.Println("🚨 This will delete EVERYTHING in the database, not just your Go entities!")
-		fmt.Println("🚨 This action cannot be undone!")
-		fmt.Println("🚨 ALL DATA WILL BE LOST!")
-		fmt.Println()
-		fmt.Print("Type 'DELETE EVERYTHING' to confirm this destructive operation: ")
+		reader := bufio.NewReader(cmd.InOrStdin())
+		fmt.Fprintln(out, "EXTREME WARNING: This operation will permanently delete ALL tables and enums!")
+		fmt.Fprintln(out, "This will delete EVERYTHING in the database, not just your Go entities!")
+		fmt.Fprintln(out, "This action cannot be undone!")
+		fmt.Fprintln(out, "ALL DATA WILL BE LOST!")
+		fmt.Fprintln(out)
+		fmt.Fprint(out, "Type 'DELETE EVERYTHING' to confirm this destructive operation: ")
 
-		confirmation, err := readLine()
+		confirmation, err := readLine(reader)
 		if err != nil {
 			return fmt.Errorf("error reading input: %w", err)
 		}
 
 		if confirmation != "DELETE EVERYTHING" {
-			fmt.Println("Operation canceled.")
+			fmt.Fprintln(out, "Operation canceled.")
 			return nil
 		}
 
-		fmt.Println()
-		fmt.Print("⚠️  Last chance! Type 'YES I AM SURE' to proceed: ")
-		confirmation, err = readLine()
+		fmt.Fprintln(out)
+		fmt.Fprint(out, "Last chance! Type 'YES I AM SURE' to proceed: ")
+		confirmation, err = readLine(reader)
 		if err != nil {
 			return fmt.Errorf("error reading input: %w", err)
 		}
 
 		if confirmation != "YES I AM SURE" {
-			fmt.Println("Operation canceled.")
+			fmt.Fprintln(out, "Operation canceled.")
 			return nil
 		}
 	}
 
 	// 3. Drop all tables and enums
 	if opts.dryRun {
-		fmt.Println("[DRY RUN] Would drop all tables and enums from database...")
+		fmt.Fprintf(out, "[DRY RUN] Would drop %d supported schema objects from database...\n", len(plan.Changes))
 	} else {
-		fmt.Println("Dropping all tables and enums from database...")
+		fmt.Fprintf(out, "Dropping %d supported schema objects from database...\n", len(plan.Changes))
 	}
-	err = conn.SchemaWriter().DropAllTables()
+	_, err = schemaclean.Execute(conn, schemaclean.Options{DryRun: opts.dryRun})
 	if err != nil {
 		return fmt.Errorf("error dropping all tables: %w", err)
 	}
 
 	if opts.dryRun {
-		fmt.Println("✅ [DRY RUN] Drop all operations completed successfully!")
-		fmt.Println("🔥 [DRY RUN] Database would be completely empty!")
+		fmt.Fprintln(out, "[DRY RUN] Drop all operations completed successfully!")
+		fmt.Fprintln(out, "[DRY RUN] Database would be empty for supported cleanup object types.")
 	} else {
-		fmt.Println("✅ All tables and enums dropped successfully!")
-		fmt.Println("🔥 Database is now completely empty!")
+		fmt.Fprintln(out, "All tables and enums dropped successfully!")
+		fmt.Fprintln(out, "Database is now empty for supported cleanup object types.")
 	}
 	return nil
 }
 
 // readLine reads a complete line from stdin, including spaces
-func readLine() (string, error) {
-	reader := bufio.NewReader(os.Stdin)
+func readLine(reader *bufio.Reader) (string, error) {
 	line, err := reader.ReadString('\n')
 	if err != nil {
 		return "", err
