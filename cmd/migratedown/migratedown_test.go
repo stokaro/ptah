@@ -126,12 +126,8 @@ func TestMigrateDownCommandRejectsRelativeTraversalDirectory(t *testing.T) {
 // TestMigrateDownCommand_Integration tests the actual migration logic
 // This test requires a real database connection and is skipped if no test database is available
 func TestMigrateDownCommand_Integration(t *testing.T) {
-	dbURL := os.Getenv("TEST_DATABASE_URL")
-	if dbURL == "" {
-		t.Skip("TEST_DATABASE_URL not set, skipping integration test")
-	}
-
 	c := qt.New(t)
+	dbURL := requiredTestDatabaseURL(t)
 
 	// Create a temporary directory for test migrations
 	tempDir := t.TempDir()
@@ -140,10 +136,10 @@ func TestMigrateDownCommand_Integration(t *testing.T) {
 	upSQL := `CREATE TABLE test_table (id INTEGER PRIMARY KEY);`
 	downSQL := `DROP TABLE test_table;`
 
-	err := os.WriteFile(tempDir+"/001_create_test_table.up.sql", []byte(upSQL), 0644) //nolint:gosec // 0644 is fine
+	err := os.WriteFile(tempDir+"/001_create_test_table.up.sql", []byte(upSQL), 0o644) //nolint:gosec // 0o644 is fine
 	c.Assert(err, qt.IsNil)
 
-	err = os.WriteFile(tempDir+"/001_create_test_table.down.sql", []byte(downSQL), 0644) //nolint:gosec // 0644 is fine
+	err = os.WriteFile(tempDir+"/001_create_test_table.down.sql", []byte(downSQL), 0o644) //nolint:gosec // 0o644 is fine
 	c.Assert(err, qt.IsNil)
 
 	// Connect to database
@@ -181,6 +177,16 @@ func TestMigrateDownCommand_Integration(t *testing.T) {
 	finalStatus, err := mig.GetMigrationStatus(context.Background())
 	c.Assert(err, qt.IsNil)
 	c.Assert(finalStatus.CurrentVersion, qt.Equals, 0)
+}
+
+func requiredTestDatabaseURL(t *testing.T) string {
+	t.Helper()
+
+	dbURL := os.Getenv("TEST_DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("TEST_DATABASE_URL not set, skipping integration test")
+	}
+	return dbURL
 }
 
 func captureStdIO(c *qt.C, input string, run func() error) (string, error) {
