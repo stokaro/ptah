@@ -282,7 +282,7 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 		{
 			name:  "migrate_lint",
 			path:  []string{"migrate", "lint"},
-			flags: []string{"--dev-url", "--dir", "--latest", "--git-base", "--git-dir"},
+			flags: []string{"--dev-url", "--dir", "--env", "--latest", "--git-base", "--git-dir"},
 		},
 		{
 			name:  "migrate_hash",

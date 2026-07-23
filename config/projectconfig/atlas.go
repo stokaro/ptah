@@ -417,15 +417,43 @@ func (p atlasParser) parseLint(block *hclsyntax.Block, cfg *Config) error {
 			return unsupportedAttr(attrName, attr)
 		}
 	}
-	seenGit := false
+	seen := map[string]struct{}{}
 	for _, nested := range block.Body.Blocks {
 		switch nested.Type {
-		case "git":
-			if seenGit {
-				return unsupportedBlock(nested)
+		case "concurrent_index":
+			if err := p.parseSingleLintBlock(nested, seen, func() error {
+				return p.parseLintAnalyzer(nested, cfg, "PG101", "PG103")
+			}); err != nil {
+				return err
 			}
-			seenGit = true
-			if err := p.parseLintGit(nested, cfg); err != nil {
+		case "data_depend":
+			if err := p.parseSingleLintBlock(nested, seen, func() error {
+				return p.parseLintAnalyzer(nested, cfg, "DD")
+			}); err != nil {
+				return err
+			}
+		case "destructive":
+			if err := p.parseSingleLintBlock(nested, seen, func() error {
+				return p.parseLintAnalyzer(nested, cfg, "DS")
+			}); err != nil {
+				return err
+			}
+		case "git":
+			if err := p.parseSingleLintBlock(nested, seen, func() error {
+				return p.parseLintGit(nested, cfg)
+			}); err != nil {
+				return err
+			}
+		case "nestedtx":
+			if err := p.parseSingleLintBlock(nested, seen, func() error {
+				return p.parseLintAnalyzer(nested, cfg, "TX201")
+			}); err != nil {
+				return err
+			}
+		case "incompatible":
+			if err := p.parseSingleLintBlock(nested, seen, func() error {
+				return p.parseLintAnalyzer(nested, cfg, "BC")
+			}); err != nil {
 				return err
 			}
 		default:
@@ -433,6 +461,68 @@ func (p atlasParser) parseLint(block *hclsyntax.Block, cfg *Config) error {
 		}
 	}
 	return nil
+}
+
+func (p atlasParser) parseSingleLintBlock(
+	block *hclsyntax.Block,
+	seen map[string]struct{},
+	parse func() error,
+) error {
+	if _, ok := seen[block.Type]; ok {
+		return unsupportedBlock(block)
+	}
+	seen[block.Type] = struct{}{}
+	return parse()
+}
+
+func (p atlasParser) parseLintAnalyzer(block *hclsyntax.Block, cfg *Config, codes ...string) error {
+	if len(block.Labels) > 0 {
+		return unsupportedBlock(block)
+	}
+	for attrName, attr := range block.Body.Attributes {
+		switch attrName {
+		case "error":
+			value, err := p.boolAttr(attrName, attr)
+			if err != nil {
+				return err
+			}
+			severity := "warning"
+			if value {
+				severity = "error"
+			}
+			for _, code := range codes {
+				setLintRuleSeverity(cfg, code, severity)
+			}
+		case "force":
+			return unsupportedAttr(attrName, attr)
+		default:
+			return unsupportedAttr(attrName, attr)
+		}
+	}
+	if len(block.Body.Blocks) > 0 {
+		return unsupportedBlock(block.Body.Blocks[0])
+	}
+	return nil
+}
+
+func setLintRuleSeverity(cfg *Config, code, severity string) {
+	config := lintRuleConfig(cfg, code)
+	config.Severity = severity
+	setLintRuleConfig(cfg, code, config)
+}
+
+func lintRuleConfig(cfg *Config, code string) LintRuleConfig {
+	if cfg.Lint.RuleConfigs == nil {
+		return LintRuleConfig{}
+	}
+	return cfg.Lint.RuleConfigs[code]
+}
+
+func setLintRuleConfig(cfg *Config, code string, config LintRuleConfig) {
+	if cfg.Lint.RuleConfigs == nil {
+		cfg.Lint.RuleConfigs = map[string]LintRuleConfig{}
+	}
+	cfg.Lint.RuleConfigs[code] = config
 }
 
 func (p atlasParser) parseLintGit(block *hclsyntax.Block, cfg *Config) error {
