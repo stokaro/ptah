@@ -58,6 +58,7 @@ export default defineConfig({
           items: [
             { slug: 'reference/commands' },
             { slug: 'reference/configuration' },
+            { slug: 'reference/reusable-components' },
             { slug: 'reference/capabilities' },
             { slug: 'reference/comparison' },
             { slug: 'reference/atlas-docs-coverage' },
