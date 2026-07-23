@@ -53,6 +53,7 @@ var errLintFindings = errors.New("lint findings exceed the failure threshold")
 // NewLintCommand returns the migration-linter command.
 func NewLintCommand() *cobra.Command {
 	var dir string
+	var dirFormat string
 	var dialect string
 	var format string
 	var configPath string
@@ -84,6 +85,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runLint(cmd, runOptions{
 				dir:        dir,
+				dirFormat:  dirFormat,
 				dialect:    dialect,
 				format:     format,
 				configPath: configPath,
@@ -100,6 +102,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 	}
 
 	cmd.Flags().StringVar(&dir, "dir", "./migrations", "Directory containing migration files")
+	cmd.Flags().StringVar(&dirFormat, "dir-format", string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	cmd.Flags().StringVar(&dialect, "dialect", "", "Target dialect gating dialect-specific rules: postgres, mysql, mariadb, sqlite, clickhouse, cockroachdb, yugabytedb, or spanner (empty runs every rule)")
 	cmd.Flags().StringVar(&format, "format", formatText, "Output format: text, json, github-actions, sarif")
 	cmd.Flags().StringVar(&configPath, "config", "", "Path to a lint config file (default: <dir>/"+lint.ConfigFileName+" when present)")
@@ -119,6 +122,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 
 type runOptions struct {
 	dir        string
+	dirFormat  string
 	dialect    string
 	format     string
 	configPath string
@@ -227,9 +231,14 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
 	}
 	opts.dir = dbcli.EffectiveString(cmd, "dir", opts.dir, projectCfg.Migration.Dir)
+	opts.dirFormat = dbcli.EffectiveString(cmd, "dir-format", opts.dirFormat, projectCfg.Migration.Format)
 	opts.atlasEnv = dbcli.EffectiveString(cmd, "atlas-env", opts.atlasEnv, projectCfg.EnvName)
 	opts.devURL = dbcli.EffectiveString(cmd, "dev-url", opts.devURL, projectCfg.DevURL)
 	if err := validateDir(opts.dir); err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+	}
+	dirFormat, err := migrator.ParseMigrationDirFormat(opts.dirFormat)
+	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
 	}
 	devDialect, err := atlasurl.DialectFromURL(opts.devURL)
@@ -272,7 +281,7 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 
 	if err := migrationreplay.Replay(cmd.Context(), migrationreplay.Options{
 		Dir:       opts.dir,
-		DirFormat: migrator.MigrationDirFormatAuto,
+		DirFormat: dirFormat,
 		DevURL:    opts.devURL,
 	}); err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn,
@@ -286,6 +295,7 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 			Disabled:          disabled,
 			PathPrefix:        filepath.ToSlash(opts.dir),
 			Versions:          versions,
+			DirFormat:         dirFormat,
 			AtlasTemplateData: migrator.AtlasTemplateData{Env: opts.atlasEnv},
 			RuleConfigs:       cfg.Rules,
 		})
@@ -378,22 +388,33 @@ func cloneLintRuleConfigs(values map[string]lint.RuleConfig) map[string]lint.Rul
 
 func lintVersions(cmd *cobra.Command, opts runOptions, cfg projectconfig.Config) ([]int64, bool, error) {
 	latest, latestSet := effectiveLatest(cmd, opts, cfg)
-	gitBase, gitDir, gitSet := effectiveGit(cmd, opts, cfg)
-	if !gitSet && gitDirConfigured(cmd, cfg) {
+	git, err := effectiveGit(cmd, opts, cfg)
+	if err != nil {
+		return nil, false, err
+	}
+	if !git.ok && gitDirConfigured(cmd, cfg) {
 		return nil, false, fmt.Errorf("--git-dir requires --git-base")
 	}
-	if latestSet && gitSet {
+	if latestSet && git.ok {
 		return nil, false, fmt.Errorf("--latest and --git-base are mutually exclusive")
 	}
 	if latestSet {
 		if latest <= 0 {
 			return nil, false, fmt.Errorf("--latest must be greater than zero")
 		}
-		versions, err := latestMigrationVersions(os.DirFS(opts.dir), uint(latest))
+		dirFormat, err := migrator.ParseMigrationDirFormat(opts.dirFormat)
+		if err != nil {
+			return nil, false, err
+		}
+		versions, err := latestMigrationVersions(os.DirFS(opts.dir), uint(latest), dirFormat)
 		return versions, true, err
 	}
-	if gitSet {
-		versions, err := gitChangedMigrationVersions(cmd.Context(), opts.dir, gitBase, gitDir)
+	if git.ok {
+		dirFormat, err := migrator.ParseMigrationDirFormat(opts.dirFormat)
+		if err != nil {
+			return nil, false, err
+		}
+		versions, err := gitChangedMigrationVersions(cmd.Context(), opts.dir, git.base, git.dir, dirFormat)
 		return versions, true, err
 	}
 	return nil, false, nil
@@ -409,29 +430,55 @@ func effectiveLatest(cmd *cobra.Command, opts runOptions, cfg projectconfig.Conf
 	return 0, false
 }
 
-func effectiveGit(cmd *cobra.Command, opts runOptions, cfg projectconfig.Config) (gitBase, gitDir string, ok bool) {
-	gitBase = opts.gitBase
+type effectiveGitOptions struct {
+	base string
+	dir  string
+	ok   bool
+}
+
+func effectiveGit(cmd *cobra.Command, opts runOptions, cfg projectconfig.Config) (effectiveGitOptions, error) {
+	gitBase := opts.gitBase
 	if !cmd.Flags().Changed(gitBaseFlag) {
 		gitBase = cfg.Lint.GitBase
 	}
-	gitDir = opts.gitDir
+	gitDir := opts.gitDir
 	if !cmd.Flags().Changed(gitDirFlag) && cfg.Lint.GitDir != "" {
 		gitDir = cfg.Lint.GitDir
 	}
 	if strings.TrimSpace(gitBase) == "" {
-		return "", gitDir, false
+		return effectiveGitOptions{dir: gitDir}, nil
+	}
+	if err := validateGitBaseRef(gitBase); err != nil {
+		return effectiveGitOptions{}, err
 	}
 	if strings.TrimSpace(gitDir) == "" {
 		gitDir = "."
 	}
-	return gitBase, gitDir, true
+	return effectiveGitOptions{base: gitBase, dir: gitDir, ok: true}, nil
+}
+
+func validateGitBaseRef(ref string) error {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return fmt.Errorf("--git-base requires a non-empty ref")
+	}
+	if strings.HasPrefix(ref, "-") || strings.ContainsAny(ref, "\x00\r\n") {
+		return fmt.Errorf("--git-base %q is not a safe Git ref", ref)
+	}
+	return nil
 }
 
 func gitDirConfigured(cmd *cobra.Command, cfg projectconfig.Config) bool {
 	return cmd.Flags().Changed(gitDirFlag) || cfg.Lint.GitDir != ""
 }
 
-func gitChangedMigrationVersions(ctx context.Context, migrationsDir, gitBase, gitDir string) ([]int64, error) {
+func gitChangedMigrationVersions(
+	ctx context.Context,
+	migrationsDir string,
+	gitBase string,
+	gitDir string,
+	dirFormat migrator.MigrationDirFormat,
+) ([]int64, error) {
 	repoRoot, err := gitOutput(ctx, gitDir, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return nil, fmt.Errorf("find git repository root: %w", err)
@@ -447,11 +494,19 @@ func gitChangedMigrationVersions(ctx context.Context, migrationsDir, gitBase, gi
 	if strings.HasPrefix(relDir, ".."+string(filepath.Separator)) || relDir == ".." || filepath.IsAbs(relDir) {
 		return nil, fmt.Errorf("migrations directory %s is outside git repository %s", migrationsAbs, repoRoot)
 	}
-	changed, err := gitOutput(ctx, repoRoot, "diff", "--name-only", "--diff-filter=ACMR", gitBase+"...HEAD", "--", filepath.ToSlash(relDir))
+	changed, err := gitOutput(ctx, repoRoot,
+		"diff",
+		"--name-only",
+		"--diff-filter=ACMR",
+		"--end-of-options",
+		gitBase+"...HEAD",
+		"--",
+		filepath.ToSlash(relDir),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("detect git changeset against %q: %w", gitBase, err)
 	}
-	versions, err := migrationVersionsFromChangedPaths(changed)
+	versions, err := migrationVersionsFromChangedPaths(changed, dirFormat)
 	if err != nil {
 		return nil, err
 	}
@@ -468,7 +523,7 @@ func gitOutput(ctx context.Context, dir string, args ...string) (string, error) 
 	return strings.TrimSpace(string(output)), nil
 }
 
-func migrationVersionsFromChangedPaths(changed string) ([]int64, error) {
+func migrationVersionsFromChangedPaths(changed string, dirFormat migrator.MigrationDirFormat) ([]int64, error) {
 	seen := map[int64]struct{}{}
 	var unversioned []string
 	for name := range strings.Lines(changed) {
@@ -476,7 +531,7 @@ func migrationVersionsFromChangedPaths(changed string) ([]int64, error) {
 		if !strings.EqualFold(path.Ext(name), ".sql") {
 			continue
 		}
-		parsed, err := parseChangedMigrationName(path.Base(name))
+		parsed, err := parseChangedMigrationName(path.Base(name), dirFormat)
 		if err != nil {
 			unversioned = append(unversioned, name)
 			continue
@@ -497,22 +552,28 @@ func migrationVersionsFromChangedPaths(changed string) ([]int64, error) {
 	return versions, nil
 }
 
-func parseChangedMigrationName(name string) (*migrator.MigrationFile, error) {
+func parseChangedMigrationName(name string, dirFormat migrator.MigrationDirFormat) (*migrator.MigrationFile, error) {
+	switch dirFormat {
+	case migrator.MigrationDirFormatPtah:
+		return migrator.ParseMigrationFileName(name)
+	case migrator.MigrationDirFormatAtlas:
+		return migrator.ParseAtlasMigrationFileName(name)
+	}
 	if parsed, err := migrator.ParseMigrationFileName(name); err == nil {
 		return parsed, nil
 	}
 	return migrator.ParseAtlasMigrationFileNameForAutoDetection(name)
 }
 
-func latestMigrationVersions(fsys fs.FS, latest uint) ([]int64, error) {
-	unversioned, err := unversionedSQLFiles(fsys)
+func latestMigrationVersions(fsys fs.FS, latest uint, dirFormat migrator.MigrationDirFormat) ([]int64, error) {
+	unversioned, err := unversionedSQLFiles(fsys, dirFormat)
 	if err != nil {
 		return nil, err
 	}
 	if len(unversioned) > 0 {
 		return nil, fmt.Errorf("--latest requires versioned migration files; unversioned SQL files found: %s", strings.Join(unversioned, ", "))
 	}
-	files, err := migrator.DiscoverMigrationFiles(fsys, migrator.MigrationDirFormatAuto)
+	files, err := migrator.DiscoverMigrationFiles(fsys, dirFormat)
 	if err != nil {
 		return nil, err
 	}
@@ -540,7 +601,7 @@ func latestMigrationVersions(fsys fs.FS, latest uint) ([]int64, error) {
 	return versions, nil
 }
 
-func unversionedSQLFiles(fsys fs.FS) ([]string, error) {
+func unversionedSQLFiles(fsys fs.FS, dirFormat migrator.MigrationDirFormat) ([]string, error) {
 	var names []string
 	hasAtlasSum := false
 	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, walkErr error) error {
@@ -565,11 +626,11 @@ func unversionedSQLFiles(fsys fs.FS) ([]string, error) {
 
 	var unversioned []string
 	parseAtlasName := migrator.ParseAtlasMigrationFileNameForAutoDetection
-	if hasAtlasSum {
+	if hasAtlasSum || dirFormat == migrator.MigrationDirFormatAtlas {
 		parseAtlasName = migrator.ParseAtlasMigrationFileName
 	}
 	for _, name := range names {
-		known, err := knownVersionedMigration(fsys, name, parseAtlasName)
+		known, err := knownVersionedMigration(fsys, name, dirFormat, parseAtlasName)
 		if err != nil {
 			return nil, err
 		}
@@ -584,11 +645,17 @@ func unversionedSQLFiles(fsys fs.FS) ([]string, error) {
 func knownVersionedMigration(
 	fsys fs.FS,
 	name string,
+	dirFormat migrator.MigrationDirFormat,
 	parseAtlasName func(string) (*migrator.MigrationFile, error),
 ) (bool, error) {
 	base := path.Base(name)
-	if _, err := migrator.ParseMigrationFileName(base); err == nil {
-		return true, nil
+	if dirFormat != migrator.MigrationDirFormatAtlas {
+		if _, err := migrator.ParseMigrationFileName(base); err == nil {
+			return true, nil
+		}
+	}
+	if dirFormat == migrator.MigrationDirFormatPtah {
+		return false, nil
 	}
 	if _, err := parseAtlasName(base); err == nil {
 		return true, nil
