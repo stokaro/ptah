@@ -125,6 +125,13 @@ func TestDefaultValue(t *testing.T) {
 		{"double quoted null", "\"NULL\"", "varchar", "NULL"},
 		{"nested quotes", "\"'value'\"", "varchar", "value"},
 		{"special characters", "'special@#$%'", "varchar", "special@#$%"},
+		{"decimal scale-only zeros", "0.0000", "decimal", "0"},
+		{"decimal trailing zeros", "123.4500", "decimal", "123.45"},
+		{"decimal leading zeros", "00123.4500", "decimal", "123.45"},
+		{"negative decimal trailing zeros", "-00123.4500", "decimal", "-123.45"},
+		{"timestamp current timestamp lowercase", "current_timestamp()", "timestamp", "CURRENT_TIMESTAMP"},
+		{"timestamp current timestamp uppercase", "CURRENT_TIMESTAMP", "timestamp", "CURRENT_TIMESTAMP"},
+		{"timestamp current timestamp without type", "CURRENT_TIMESTAMP()", "", "CURRENT_TIMESTAMP"},
 
 		// Edge cases for boolean normalization
 		{"unrecognized boolean value", "maybe", "boolean", "maybe"},

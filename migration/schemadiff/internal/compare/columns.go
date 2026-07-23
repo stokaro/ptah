@@ -313,7 +313,7 @@ func ColumnsWithDialect(genCol goschema.Field, dbCol types.DBColumn, dialect str
 			idxName = "default_expr"
 		}
 
-		normalizeGenDefaultFn := normalize.DefaultValue(genDefault, "")
+		normalizeGenDefaultFn := normalize.DefaultValue(genDefault, genType)
 
 		if normalizeGenDefaultFn != normalizedDbDefault {
 			colDiff.Changes[idxName] = fmt.Sprintf("%s -> %s", dbDefault, genDefault)
