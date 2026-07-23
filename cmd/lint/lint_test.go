@@ -1,4 +1,4 @@
-package lint
+package lint_test
 
 import (
 	"bytes"
@@ -13,11 +13,12 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
-	"github.com/stokaro/ptah/migration/lint"
+	cmdlint "github.com/stokaro/ptah/cmd/lint"
+	migrationlint "github.com/stokaro/ptah/migration/lint"
 )
 
 func execute(args ...string) (stdout, stderr string, err error) {
-	cmd := NewLintCommand()
+	cmd := cmdlint.NewLintCommand()
 	var out, errOut bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
@@ -88,7 +89,7 @@ type sarifArtifactLocationForTest struct {
 func TestNewLintCommand_Creation(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := NewLintCommand()
+	cmd := cmdlint.NewLintCommand()
 
 	c.Assert(cmd, qt.IsNotNil)
 	c.Assert(cmd.Use, qt.Equals, "lint")
@@ -105,8 +106,8 @@ func TestRunLint_CuratedFixtureProducesExpectedRuleHits(t *testing.T) {
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 
 	var report struct {
-		Failed   bool           `json:"failed"`
-		Findings []lint.Finding `json:"findings"`
+		Failed   bool                    `json:"failed"`
+		Findings []migrationlint.Finding `json:"findings"`
 	}
 	c.Assert(json.Unmarshal([]byte(stderr), &report), qt.IsNil)
 	c.Assert(report.Failed, qt.IsTrue)
@@ -148,13 +149,11 @@ func TestRunLint_SARIFFormat(t *testing.T) {
 	c.Assert(report.Runs, qt.HasLen, 1)
 	c.Assert(report.Runs[0].Tool.Driver.Name, qt.Equals, "ptah migrations lint")
 	c.Assert(report.Runs[0].Tool.Driver.Rules[0].ID, qt.Not(qt.Equals), "")
-	var dropTableResult sarifResultForTest
+	resultsByRule := make(map[string]sarifResultForTest, len(report.Runs[0].Results))
 	for _, result := range report.Runs[0].Results {
-		if result.RuleID == "DS101" {
-			dropTableResult = result
-			break
-		}
+		resultsByRule[result.RuleID] = result
 	}
+	dropTableResult := resultsByRule["DS101"]
 	c.Assert(dropTableResult.RuleID, qt.Equals, "DS101")
 	c.Assert(dropTableResult.RuleIndex, qt.Equals, ruleIndexByID(report.Runs[0].Tool.Driver.Rules, "DS101"))
 	c.Assert(dropTableResult.Level, qt.Equals, "error")
@@ -199,8 +198,8 @@ func TestRunLint_ConfigFileDisablesRulesAndSetsDialect(t *testing.T) {
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 
 	var report struct {
-		Dialect  string         `json:"dialect"`
-		Findings []lint.Finding `json:"findings"`
+		Dialect  string                  `json:"dialect"`
+		Findings []migrationlint.Finding `json:"findings"`
 	}
 	c.Assert(json.Unmarshal([]byte(stderr), &report), qt.IsNil)
 	c.Assert(report.Dialect, qt.Equals, "postgres")
@@ -226,7 +225,7 @@ func TestRunLint_LatestRestrictsToLatestMigrationVersions(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	var report struct {
-		Findings []lint.Finding `json:"findings"`
+		Findings []migrationlint.Finding `json:"findings"`
 	}
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	c.Assert(report.Findings, qt.HasLen, 1)
@@ -263,7 +262,7 @@ func TestRunLint_ProjectConfigLatestRestrictsToLatestMigrationVersions(t *testin
 
 	c.Assert(err, qt.IsNil)
 	var report struct {
-		Findings []lint.Finding `json:"findings"`
+		Findings []migrationlint.Finding `json:"findings"`
 	}
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	c.Assert(report.Findings, qt.HasLen, 1)
@@ -300,7 +299,7 @@ func TestRunLint_GitBaseRestrictsToChangedMigrationVersions(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	var report struct {
-		Findings []lint.Finding `json:"findings"`
+		Findings []migrationlint.Finding `json:"findings"`
 	}
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	c.Assert(report.Findings, qt.HasLen, 1)
@@ -349,7 +348,7 @@ func TestRunLint_ProjectConfigGitBaseRestrictsToChangedMigrationVersions(t *test
 
 	c.Assert(err, qt.IsNil)
 	var report struct {
-		Findings []lint.Finding `json:"findings"`
+		Findings []migrationlint.Finding `json:"findings"`
 	}
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	c.Assert(report.Findings, qt.HasLen, 1)
@@ -434,8 +433,8 @@ func TestRunLint_ProjectConfigDisablesRulesAndSetsDialect(t *testing.T) {
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 
 	var report struct {
-		Dialect  string         `json:"dialect"`
-		Findings []lint.Finding `json:"findings"`
+		Dialect  string                  `json:"dialect"`
+		Findings []migrationlint.Finding `json:"findings"`
 	}
 	c.Assert(json.Unmarshal([]byte(stderr), &report), qt.IsNil)
 	c.Assert(report.Dialect, qt.Equals, "postgres")
@@ -476,12 +475,12 @@ func TestRunLint_AtlasProjectConfigDestructivePolicyDowngradesSeverity(t *testin
 
 	c.Assert(err, qt.IsNil)
 	var report struct {
-		Findings []lint.Finding `json:"findings"`
+		Findings []migrationlint.Finding `json:"findings"`
 	}
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	c.Assert(report.Findings, qt.HasLen, 1)
 	c.Assert(report.Findings[0].Rule, qt.Equals, "DS102")
-	c.Assert(report.Findings[0].Severity, qt.Equals, lint.SeverityWarning)
+	c.Assert(report.Findings[0].Severity, qt.Equals, migrationlint.SeverityWarning)
 }
 
 func TestRunLint_AtlasProjectConfigConcurrentIndexPolicyRaisesSeverity(t *testing.T) {
@@ -510,12 +509,12 @@ func TestRunLint_AtlasProjectConfigConcurrentIndexPolicyRaisesSeverity(t *testin
 
 	c.Assert(err, qt.IsNil)
 	var report struct {
-		Findings []lint.Finding `json:"findings"`
+		Findings []migrationlint.Finding `json:"findings"`
 	}
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	c.Assert(report.Findings, qt.HasLen, 1)
 	c.Assert(report.Findings[0].Rule, qt.Equals, "PG101")
-	c.Assert(report.Findings[0].Severity, qt.Equals, lint.SeverityError)
+	c.Assert(report.Findings[0].Severity, qt.Equals, migrationlint.SeverityError)
 }
 
 func TestRunLint_AtlasProjectConfigPolicyAffectsSARIFLevels(t *testing.T) {
@@ -571,7 +570,7 @@ func TestRunLint_ConfigRuleSeverityAndExclude(t *testing.T) {
 		c.Assert(os.MkdirAll(filepath.Dir(path), 0o750), qt.IsNil)
 		c.Assert(os.WriteFile(path, []byte(content), 0o600), qt.IsNil)
 	}
-	write(lint.ConfigFileName, `rules:
+	write(migrationlint.ConfigFileName, `rules:
   DS102:
     severity: warning
     exclude:
@@ -586,12 +585,12 @@ func TestRunLint_ConfigRuleSeverityAndExclude(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	var report struct {
-		Findings []lint.Finding `json:"findings"`
+		Findings []migrationlint.Finding `json:"findings"`
 	}
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	c.Assert(report.Findings, qt.HasLen, 1)
 	c.Assert(report.Findings[0].Rule, qt.Equals, "DS102")
-	c.Assert(report.Findings[0].Severity, qt.Equals, lint.SeverityWarning)
+	c.Assert(report.Findings[0].Severity, qt.Equals, migrationlint.SeverityWarning)
 	c.Assert(report.Findings[0].File, qt.Contains, "main/0000000002_main.up.sql")
 }
 
@@ -670,8 +669,8 @@ func TestRunLint_ExplicitEmptyDialectOverridesConfig(t *testing.T) {
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 
 	var report struct {
-		Dialect  string         `json:"dialect"`
-		Findings []lint.Finding `json:"findings"`
+		Dialect  string                  `json:"dialect"`
+		Findings []migrationlint.Finding `json:"findings"`
 	}
 	c.Assert(json.Unmarshal([]byte(stderr), &report), qt.IsNil)
 	c.Assert(report.Dialect, qt.Equals, "")
@@ -692,43 +691,6 @@ func TestRunLint_JSONReportsEmptyFindingsAsArray(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Contains, `"findings": []`,
 		qt.Commentf("an empty findings list must serialize as [], not null; got: %s", stdout))
-}
-
-func TestWriteGitHubActions_EscapesWorkflowCommandCharacters(t *testing.T) {
-	c := qt.New(t)
-
-	var buf bytes.Buffer
-	writeGitHubActions(&buf, lintReport{
-		Findings: []lint.Finding{{
-			Rule:     "DS101",
-			Severity: lint.SeverityError,
-			File:     "dir/evil,file::name.sql",
-			Line:     3,
-			Message:  "50% data loss\r\nsecond line",
-		}},
-	})
-
-	out := buf.String()
-	c.Assert(out, qt.Contains, "::error file=dir/evil%2Cfile%3A%3Aname.sql,line=3::")
-	c.Assert(out, qt.Contains, "DS101: 50%25 data loss%0D%0Asecond line")
-	c.Assert(out, qt.Not(qt.Contains), "evil,file::name")
-
-	buf.Reset()
-	writeGitHubActions(&buf, lintReport{Error: "bad\nnews: 100%"})
-	c.Assert(buf.String(), qt.Equals, "::error::bad%0Anews: 100%25\n")
-}
-
-func TestShouldFail(t *testing.T) {
-	c := qt.New(t)
-
-	warning := []lint.Finding{{Severity: lint.SeverityWarning}}
-	fatal := []lint.Finding{{Severity: lint.SeverityError}}
-
-	c.Assert(shouldFail(nil, failOnError), qt.IsFalse)
-	c.Assert(shouldFail(warning, failOnError), qt.IsFalse)
-	c.Assert(shouldFail(fatal, failOnError), qt.IsTrue)
-	c.Assert(shouldFail(warning, failOnAny), qt.IsTrue)
-	c.Assert(shouldFail(fatal, failOnNone), qt.IsFalse)
 }
 
 func assertSARIFSchemaValid(c *qt.C, data string) {

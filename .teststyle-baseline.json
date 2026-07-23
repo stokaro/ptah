@@ -1,12 +1,6 @@
 {
   "test_conditionals": [
     {
-      "path": "cmd/lint/lint_test.go",
-      "function": "TestRunLint_SARIFFormat",
-      "kind": "if",
-      "count": 1
-    },
-    {
       "path": "cmd/migrate/generate_test.go",
       "function": "TestMigrateGenerateShadowVerificationWithRealDB",
       "kind": "if",
@@ -1184,11 +1178,6 @@
     {
       "path": "cmd/internal/cmdutil/cmdutil_test.go",
       "package": "cmdutil",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
-      "path": "cmd/lint/lint_test.go",
-      "package": "lint",
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
