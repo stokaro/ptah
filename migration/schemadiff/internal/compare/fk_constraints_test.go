@@ -145,6 +145,30 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 			expected: &difftypes.SchemaDiff{},
 		},
 		{
+			// Atlas-style underscore action spelling is equivalent to the
+			// spaced SQL spelling reported by information_schema.
+			name: "on_delete SET_NULL matches existing SET NULL — no diff (idempotent)",
+			generated: &goschema.Database{
+				Tables: []goschema.Table{{StructName: "Export", Name: "exports"}},
+				Fields: []goschema.Field{
+					{StructName: "Export", Name: "id", Type: "TEXT", Primary: true},
+					{
+						StructName:     "Export",
+						Name:           "file_id",
+						Type:           "TEXT",
+						Foreign:        "files(id)",
+						ForeignKeyName: "fk_export_file",
+						OnDelete:       "SET_NULL",
+					},
+				},
+			},
+			database: &types.DBSchema{
+				Tables:      []types.DBTable{exportsTable},
+				Constraints: []types.DBConstraint{dbFK(new("SET NULL"), new("NO ACTION"))},
+			},
+			expected: &difftypes.SchemaDiff{},
+		},
+		{
 			// Idempotency #2: the model leaves the action empty while Postgres
 			// reports the default as NO ACTION. The normalization ("" == NO
 			// ACTION, trim + upper-case) must make this a no-op, otherwise every
@@ -161,6 +185,30 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 						Foreign:        "files(id)",
 						ForeignKeyName: "fk_export_file",
 						// OnDelete / OnUpdate intentionally empty.
+					},
+				},
+			},
+			database: &types.DBSchema{
+				Tables:      []types.DBTable{exportsTable},
+				Constraints: []types.DBConstraint{dbFK(new("NO ACTION"), new("NO ACTION"))},
+			},
+			expected: &difftypes.SchemaDiff{},
+		},
+		{
+			// Atlas-style underscore action spelling is equivalent to the
+			// spaced SQL spelling reported by information_schema.
+			name: "on_update NO_ACTION matches existing NO ACTION — no diff (idempotent)",
+			generated: &goschema.Database{
+				Tables: []goschema.Table{{StructName: "Export", Name: "exports"}},
+				Fields: []goschema.Field{
+					{StructName: "Export", Name: "id", Type: "TEXT", Primary: true},
+					{
+						StructName:     "Export",
+						Name:           "file_id",
+						Type:           "TEXT",
+						Foreign:        "files(id)",
+						ForeignKeyName: "fk_export_file",
+						OnUpdate:       "NO_ACTION",
 					},
 				},
 			},
