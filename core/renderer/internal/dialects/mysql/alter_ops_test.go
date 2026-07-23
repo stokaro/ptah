@@ -101,11 +101,29 @@ func TestMySQL_CreateTableGeneratedColumn(t *testing.T) {
 		AddColumn(ast.NewColumn("id", "int").SetPrimary()).
 		AddColumn(ast.NewColumn("slug", "varchar(255)").
 			SetNotNull().
-			SetGenerated("lower(name)", "STORED"))
+			SetGenerated("lower(name)", "stored"))
 
 	out := renderMySQL(t, table)
 
-	c.Assert(out, qt.Contains, "`slug` varchar(255) NOT NULL AS (lower(name)) STORED")
+	c.Assert(out, qt.Contains, "`slug` varchar(255) GENERATED ALWAYS AS (lower(name)) STORED NOT NULL")
+}
+
+func TestMySQL_AlterTableAddGeneratedColumn(t *testing.T) {
+	c := qt.New(t)
+	alter := &ast.AlterTableNode{
+		Name: "users",
+		Operations: []ast.AlterOperation{
+			&ast.AddColumnOperation{
+				Column: ast.NewColumn("slug", "varchar(255)").
+					SetNotNull().
+					SetGenerated("lower(name)", "stored"),
+			},
+		},
+	}
+
+	out := renderMySQL(t, alter)
+
+	c.Assert(out, qt.Contains, "ALTER TABLE `users` ADD COLUMN `slug` varchar(255) GENERATED ALWAYS AS (lower(name)) STORED NOT NULL;")
 }
 
 func TestMySQL_ColumnDefaultLiteralQuoting(t *testing.T) {
