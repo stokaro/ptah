@@ -1,4 +1,4 @@
-package dropall
+package dropall_test
 
 import (
 	"io"
@@ -9,13 +9,15 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/pflag"
+
+	"github.com/stokaro/ptah/cmd/dropall"
 )
 
 func TestDropAllCommandDeclinedConfirmationPrintsCanceled(t *testing.T) {
 	c := qt.New(t)
 
 	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
-	cmd := NewDropAllCommand()
+	cmd := dropall.NewDropAllCommand()
 	resetDropAllCommandForTest(c, cmd)
 	cmd.SetArgs([]string{"--db-url", dbURL})
 
@@ -29,7 +31,7 @@ func TestDropAllCommandAutoApproveSkipsConfirmation(t *testing.T) {
 	c := qt.New(t)
 
 	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
-	cmd := NewDropAllCommand()
+	cmd := dropall.NewDropAllCommand()
 	resetDropAllCommandForTest(c, cmd)
 	cmd.SetArgs([]string{"--db-url", dbURL, "--auto-approve"})
 

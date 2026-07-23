@@ -1,4 +1,4 @@
-package migratehash
+package migratehash_test
 
 import (
 	"bytes"
@@ -9,11 +9,12 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
+	"github.com/stokaro/ptah/cmd/migratehash"
 	"github.com/stokaro/ptah/internal/migratesum"
 )
 
 func execute(args ...string) (stdout string, err error) {
-	cmd := NewMigrateHashCommand()
+	cmd := migratehash.NewMigrateHashCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)

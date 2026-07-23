@@ -1,16 +1,18 @@
-package db
+package db_test
 
 import (
 	"bytes"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"github.com/stokaro/ptah/cmd/db"
 )
 
 func TestNewDBCommand_RegistersNativePaths(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := NewDBCommand()
+	cmd := db.NewDBCommand()
 	for _, path := range [][]string{
 		{"read"},
 		{"drop-all"},
@@ -24,7 +26,7 @@ func TestNewDBCommand_RegistersNativePaths(t *testing.T) {
 func TestNewDBCommand_HelpShowsNativeBoundary(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := NewDBCommand()
+	cmd := db.NewDBCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -41,7 +43,7 @@ func TestNewDBCommand_HelpShowsNativeBoundary(t *testing.T) {
 func TestNewDBCommand_RejectsUnknownPositionalCommand(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := NewDBCommand()
+	cmd := db.NewDBCommand()
 	var stderr bytes.Buffer
 	cmd.SetErr(&stderr)
 	cmd.SetArgs([]string{"inspect"})
@@ -55,7 +57,7 @@ func TestNewDBCommand_RejectsUnknownPositionalCommand(t *testing.T) {
 func TestNewDBCommand_ReadHelpShowsTargetFlags(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := NewDBCommand()
+	cmd := db.NewDBCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -72,7 +74,7 @@ func TestNewDBCommand_ReadHelpShowsTargetFlags(t *testing.T) {
 func TestNewDBCommand_ForwardsReadFlagErrors(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := NewDBCommand()
+	cmd := db.NewDBCommand()
 	var stderr bytes.Buffer
 	cmd.SetErr(&stderr)
 	cmd.SetArgs([]string{"read", "--bogus-flag"})
