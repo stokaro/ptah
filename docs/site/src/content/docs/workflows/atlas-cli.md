@@ -41,7 +41,7 @@ model. Unsupported flags fail clearly instead of being ignored.
 | `ptah atlas migrate lint` | `ptah migrations lint`; supports Atlas-style `--latest N`, infers lint dialect from `--dev-url`, and cleans and replays migrations on directly connectable dev databases to validate SQL execution. |
 | `ptah atlas migrate new` | `ptah migrations create` |
 | `ptah atlas migrate set` | `ptah migrations repair` |
-| `ptah atlas migrate diff` | Replays local Atlas migrations on `--dev-url`, diffs against local schema files, writes an Atlas single-file migration, and updates `atlas.sum`. |
+| `ptah atlas migrate diff` | Replays local Atlas migrations on `--dev-url`, diffs against local schema files, writes an Atlas single-file migration, and updates `atlas.sum`; the Atlas-hidden `--dry-run` flag prints the generated SQL instead of writing files. |
 | `ptah atlas migrate import` | Imports local `file://` migration directories from Atlas-supported formats into a separate Atlas single-file directory and writes `atlas.sum`. |
 
 ## Utility commands
@@ -252,6 +252,18 @@ ptah atlas migrate diff add_users \
   --dir file://migrations \
   --to file://schema.sql \
   --dev-url "sqlite://dev.db"
+```
+
+Atlas OSS registers `migrate diff --dry-run` as a hidden flag. Ptah accepts the
+same hidden flag and prints the generated SQL instead of writing a migration
+file or updating `atlas.sum`:
+
+```bash
+ptah atlas migrate diff add_users \
+  --dir file://migrations \
+  --to file://schema.sql \
+  --dev-url "sqlite://dev.db" \
+  --dry-run
 ```
 
 Use `--lock-timeout` to bound waiting for Ptah's local migration-directory lock

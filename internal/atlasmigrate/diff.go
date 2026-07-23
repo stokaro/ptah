@@ -36,10 +36,12 @@ type DiffOptions struct {
 	Schemas     []string
 	LockTimeout time.Duration
 	Policy      atlasschema.DiffPolicy
+	DryRun      bool
 }
 
 type DiffResult struct {
 	Synced        bool
+	SQL           string
 	MigrationPath string
 	SumPath       string
 }
@@ -109,6 +111,9 @@ func GenerateDiff(ctx context.Context, conn *dbschema.DatabaseConnection, opts D
 	sqlText, err := renderMigrationDiffSQL(statements, format)
 	if err != nil {
 		return DiffResult{}, err
+	}
+	if opts.DryRun {
+		return DiffResult{SQL: sqlText}, nil
 	}
 	path, err := writeMigrationFile(opts.Dir, opts.Name, sqlText)
 	if err != nil {

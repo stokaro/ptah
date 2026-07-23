@@ -54,7 +54,7 @@ shares this exit-code contract.
 | `ptah atlas license` | Ptah license notice |
 | `ptah atlas migrate apply` | Atlas-format apply path equivalent to `ptah migrations up` |
 | `ptah atlas migrate down` | `ptah migrations down` |
-| `ptah atlas migrate diff` | Local Atlas-style migration diff and `atlas.sum` update |
+| `ptah atlas migrate diff` | Local Atlas-style migration diff, `atlas.sum` update, or dry-run output printed |
 | `ptah atlas migrate import` | Import local migrations into a separate directory and write `atlas.sum` |
 | `ptah atlas migrate status` | `ptah migrations status` |
 | `ptah atlas migrate hash` | `ptah migrations hash` |

@@ -1893,6 +1893,51 @@ CREATE TABLE users (
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 2)
 }
 
+func TestNewAtlasCommand_MigrateDiffDryRunPrintsMigrationWithoutWritingFiles(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_init.sql"), []byte(`
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY
+);
+`), 0o600), qt.IsNil)
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath, []byte(`
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY,
+  email TEXT NOT NULL DEFAULT ''
+);
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "diff",
+		"--dev-url", "sqlite://" + filepath.Join(dir, "dev.db"),
+		"--dir", "file://" + migrationsDir,
+		"--to", "file://" + schemaPath,
+		"--dry-run",
+		"add_email",
+	})
+
+	err := cmd.Execute()
+	_, statErr := os.Stat(filepath.Join(migrationsDir, "atlas.sum"))
+	_, lockStatErr := os.Stat(filepath.Join(migrationsDir, ".ptah-migrate-diff.lock"))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "ALTER TABLE")
+	c.Assert(out.String(), qt.Contains, "ADD COLUMN")
+	c.Assert(out.String(), qt.Contains, "email")
+	c.Assert(out.String(), qt.Not(qt.Contains), "Created migration file:")
+	c.Assert(atlasSQLFiles(c, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
+	c.Assert(statErr, qt.ErrorIs, os.ErrNotExist)
+	c.Assert(lockStatErr, qt.ErrorIs, os.ErrNotExist)
+}
+
 func TestNewAtlasCommand_MigrateDiffCustomFormatWritesFormattedMigration(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

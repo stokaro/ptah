@@ -98,6 +98,94 @@ CREATE TABLE users (
 	c.Assert(string(newSQL), qt.Contains, "email")
 }
 
+func TestGenerateDiff_DryRunReturnsSQLWithoutWritingMigration(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_init.sql"), []byte(`
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY
+);
+`), 0o600), qt.IsNil)
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath, []byte(`
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY,
+  email TEXT NOT NULL DEFAULT ''
+);
+`), 0o600), qt.IsNil)
+
+	conn := connectSQLite(c, filepath.Join(dir, "dev.db"))
+	defer dbschema.CloseAndWarn(conn)
+
+	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+		Dir:         migrationsDir,
+		ToURLs:      []string{"file://" + schemaPath},
+		Name:        "add_email",
+		LockTimeout: time.Second,
+		DryRun:      true,
+	})
+	_, statErr := os.Stat(filepath.Join(migrationsDir, "atlas.sum"))
+	_, lockStatErr := os.Stat(filepath.Join(migrationsDir, ".ptah-migrate-diff.lock"))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Synced, qt.IsFalse)
+	c.Assert(result.SQL, qt.Contains, "ALTER TABLE")
+	c.Assert(result.SQL, qt.Contains, "ADD COLUMN")
+	c.Assert(result.SQL, qt.Contains, "email")
+	c.Assert(result.MigrationPath, qt.Equals, "")
+	c.Assert(result.SumPath, qt.Equals, "")
+	c.Assert(atlasSQLFiles(c, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
+	c.Assert(statErr, qt.ErrorIs, os.ErrNotExist)
+	c.Assert(lockStatErr, qt.ErrorIs, os.ErrNotExist)
+}
+
+func TestGenerateDiff_DryRunPreservesExistingAtlasSum(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_init.sql"), []byte(`
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY
+);
+`), 0o600), qt.IsNil)
+	_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
+	c.Assert(err, qt.IsNil)
+	sumPath := filepath.Join(migrationsDir, "atlas.sum")
+	beforeSum, err := os.ReadFile(sumPath)
+	c.Assert(err, qt.IsNil)
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath, []byte(`
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY,
+  email TEXT NOT NULL DEFAULT ''
+);
+`), 0o600), qt.IsNil)
+
+	conn := connectSQLite(c, filepath.Join(dir, "dev.db"))
+	defer dbschema.CloseAndWarn(conn)
+
+	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
+		Dir:         migrationsDir,
+		ToURLs:      []string{"file://" + schemaPath},
+		Name:        "add_email",
+		LockTimeout: time.Second,
+		DryRun:      true,
+	})
+	afterSum, readErr := os.ReadFile(sumPath)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Synced, qt.IsFalse)
+	c.Assert(result.SQL, qt.Contains, "email")
+	c.Assert(result.MigrationPath, qt.Equals, "")
+	c.Assert(result.SumPath, qt.Equals, "")
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(string(afterSum), qt.Equals, string(beforeSum))
+	c.Assert(atlasSQLFiles(c, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
+}
+
 func TestGenerateDiff_SyncedReturnsNoChange(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
