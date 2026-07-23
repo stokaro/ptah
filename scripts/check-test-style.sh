@@ -16,4 +16,4 @@ if ! mkdir -p "$go_cache" 2>/dev/null || [ ! -w "$go_cache" ]; then
 	mkdir -p "$GOCACHE"
 fi
 
-GOWORK=off go run ./internal/tools/teststyle -baseline .teststyle-baseline.json -root .
+GOWORK=off go tool teststyle -baseline .teststyle-baseline.json -root .

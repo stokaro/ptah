@@ -62,6 +62,7 @@ require (
 	github.com/rogpeppe/go-internal v1.15.0 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
+	github.com/stokaro/teststyle v0.1.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.44.0 // indirect
 	go.opentelemetry.io/otel/metric v1.44.0 // indirect
@@ -86,6 +87,7 @@ require (
 
 tool (
 	github.com/go-extras/qtlint/cmd/qtlint
+	github.com/stokaro/teststyle/cmd/teststyle
 	golang.org/x/exp/cmd/apidiff
 	golang.org/x/vuln/cmd/govulncheck
 )
