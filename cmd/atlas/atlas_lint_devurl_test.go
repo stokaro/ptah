@@ -92,14 +92,14 @@ func TestNewAtlasCommand_MigrateLintUsesAtlasProjectEnvPolicy(t *testing.T) {
 	cmd.SetArgs([]string{
 		"migrate", "lint",
 		"--env", "ci",
-		"--format", "json",
+		"--format", "{{ json . }}",
 	})
 
 	err = cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, `"rule": "DS102"`)
-	c.Assert(out.String(), qt.Contains, `"severity": "warning"`)
+	c.Assert(out.String(), qt.Contains, `"rule":"DS102"`)
+	c.Assert(out.String(), qt.Contains, `"severity":"warning"`)
 }
 
 func writeAtlasLintDevURLFile(c *qt.C, dir, name, sql string) {

@@ -13,12 +13,10 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdadapter"
 	"github.com/stokaro/ptah/cmd/internal/cmdflags"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
-	"github.com/stokaro/ptah/cmd/lint"
 	"github.com/stokaro/ptah/cmd/migrate"
 	"github.com/stokaro/ptah/cmd/migratedown"
 	"github.com/stokaro/ptah/cmd/migratehash"
 	"github.com/stokaro/ptah/cmd/migraterepair"
-	"github.com/stokaro/ptah/cmd/migratestatus"
 	"github.com/stokaro/ptah/cmd/migratevalidate"
 	"github.com/stokaro/ptah/internal/atlasargs"
 )
@@ -113,6 +111,7 @@ func atlasSchemaCleanVerb() atlasVerb {
 		flags: []atlasargs.Flag{
 			atlasargs.NativeString("url", "u", "Database URL to clean", "db-url"),
 			atlasargs.NativeBool("dry-run", "", "Show planned cleanup without applying it", "dry-run"),
+			atlasargs.UnsupportedString("format", "", "Atlas Go template output format"),
 			atlasargs.ExplicitNativeBool("auto-approve", "", "Skip interactive approval", "auto-approve"),
 		},
 	}
@@ -129,6 +128,8 @@ func newAtlasMigrateCommand() *cobra.Command {
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	registerAtlasProjectFlags(cmd.PersistentFlags(), &atlasProjectFlagValues{})
 	cmd.AddCommand(newAtlasMigrateApplyCommand())
+	cmd.AddCommand(newAtlasMigrateLintCommand())
+	cmd.AddCommand(newAtlasMigrateStatusCommand())
 	for _, verb := range []atlasVerb{
 		atlasMigrateDownVerb(),
 		{
@@ -141,7 +142,6 @@ func newAtlasMigrateCommand() *cobra.Command {
 				atlasMigrateDirFormatFlag("dir-format"),
 			},
 		},
-		atlasMigrateLintVerb(),
 		{
 			use:     "new",
 			short:   "Create a new migration file",
@@ -158,20 +158,6 @@ func newAtlasMigrateCommand() *cobra.Command {
 			native:     "migrations repair",
 			factory:    migraterepair.NewMigrateRepairCommand,
 			prefixArgs: []string{"--revision-format", "atlas"},
-			flags: []atlasargs.Flag{
-				atlasargs.NativeString("url", "u", "Database URL", "db-url"),
-				atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
-				atlasMigrateDirFormatFlag("dir-format"),
-				atlasargs.NativeString("revisions-schema", "", "Schema for the revision table", "migrations-schema"),
-			},
-		},
-		{
-			use:                 "status",
-			short:               "Show migration status",
-			native:              "migrations status",
-			factory:             migratestatus.NewMigrateStatusCommand,
-			prefixArgs:          []string{"--revision-format", "atlas"},
-			nativeProjectConfig: true,
 			flags: []atlasargs.Flag{
 				atlasargs.NativeString("url", "u", "Database URL", "db-url"),
 				atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
@@ -217,24 +203,6 @@ func atlasMigrateDownVerb() atlasVerb {
 			atlasargs.NativeString("lock-timeout", "", "Timeout for acquiring migration locks", "migration-lock-timeout"),
 			atlasargs.UnsupportedBool("skip-checks", "", "Skip Atlas down migration safety checks"),
 			atlasargs.UnsupportedBool("plan", "", "Force Atlas dynamic down planning"),
-		},
-	}
-}
-
-func atlasMigrateLintVerb() atlasVerb {
-	return atlasVerb{
-		use:                 "lint",
-		short:               "Lint migration files",
-		native:              "migrations lint",
-		factory:             lint.NewLintCommand,
-		nativeProjectConfig: true,
-		flags: []atlasargs.Flag{
-			atlasargs.NativeString("dev-url", "", "Dev database URL", "dev-url"),
-			atlasargs.NativeLocalDir("dir", "", "Migration directory", "dir"),
-			atlasMigrateDirFormatFlag("dir-format"),
-			atlasargs.NativeUint("latest", "", "Number of latest migrations to lint", "latest"),
-			atlasargs.NativeString("git-base", "", "Base Git branch for changeset linting", "git-base"),
-			atlasargs.NativeString("git-dir", "", "Repository working directory for --git-base", "git-dir"),
 		},
 	}
 }

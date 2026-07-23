@@ -56,7 +56,7 @@ shares this exit-code contract.
 | `ptah atlas migrate down` | `ptah migrations down` |
 | `ptah atlas migrate diff` | Local Atlas-style migration diff, `atlas.sum` update, or dry-run output printed |
 | `ptah atlas migrate import` | Import local migrations into a separate directory and write `atlas.sum` |
-| `ptah atlas migrate status` | `ptah migrations status` |
+| `ptah atlas migrate status` | Atlas-format migration status with Atlas revision-table metadata |
 | `ptah atlas migrate hash` | `ptah migrations hash` |
 | `ptah atlas migrate validate` | `ptah migrations validate` |
 | `ptah atlas migrate lint` | `ptah migrations lint` |

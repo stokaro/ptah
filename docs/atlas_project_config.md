@@ -80,8 +80,8 @@ The supported attributes map to Ptah settings as follows:
 
 | Atlas setting | Ptah setting |
 | --- | --- |
-| `env.url` | `--db-url`, `ptah atlas schema inspect --url`, `ptah atlas schema apply --url`, or `ptah atlas migrate apply --url` default |
-| `env.dev` | `migrations generate --shadow-db`, `ptah atlas schema inspect --dev-url`, `ptah atlas schema apply --dev-url`, `ptah atlas schema diff --dev-url`, or `ptah atlas migrate diff --dev-url` default |
+| `env.url` | `--db-url`, `ptah atlas schema inspect --url`, `ptah atlas schema apply --url`, `ptah atlas migrate apply --url`, or `ptah atlas migrate status --url` default |
+| `env.dev` | `migrations generate --shadow-db`, `ptah atlas schema inspect --dev-url`, `ptah atlas schema apply --dev-url`, `ptah atlas schema diff --dev-url`, `ptah atlas migrate diff --dev-url`, or `ptah atlas migrate lint --dev-url` default |
 | `env.src` | `ptah atlas schema apply --to` default |
 | `env.schema.src` | `ptah atlas schema apply --to`, `ptah atlas schema diff --to`, or `ptah atlas migrate diff --to` default |
 | `env.schema.mode.<object>` | Atlas-style exclusion defaults for supported object kinds |
@@ -105,6 +105,8 @@ The supported attributes map to Ptah settings as follows:
 | `format.schema.diff` | `ptah atlas schema diff --format` default |
 | `format.migrate.apply` | `ptah atlas migrate apply --format` default |
 | `format.migrate.diff` | `ptah atlas migrate diff --format` default |
+| `format.migrate.lint` | `ptah atlas migrate lint --format` default |
+| `format.migrate.status` | `ptah atlas migrate status --format` default |
 | `diff.skip.drop_table` | Drop-table suppression for local schema diff/apply planning |
 | `diff.concurrent_index.create` | PostgreSQL concurrent index creation where the command can execute without a surrounding transaction |
 
@@ -127,9 +129,9 @@ rejected until Ptah has explicit sensitive-value semantics.
 
 `format` blocks configure the same Atlas Go-template output strings accepted by
 the matching commands. Ptah supports `schema.inspect`, `schema.apply`,
-`schema.diff`, `migrate.apply`, and `migrate.diff`. `migrate.lint` and
-`migrate.status` format blocks are rejected until those command-specific output
-contracts are implemented.
+`schema.diff`, `migrate.apply`, `migrate.diff`, `migrate.lint`, and
+`migrate.status` for the command-specific output contracts documented in the
+Atlas-compatible command reference.
 
 `diff.skip.drop_table = true` removes table drops from supported local
 declarative diff/apply plans and also removes index or constraint drops owned by
