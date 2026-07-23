@@ -76,22 +76,11 @@ func TestMigratePlanCommandRejectsAtlasApplyAtRoot(t *testing.T) {
 }
 
 func TestMigrateGenerateShadowVerificationWithRealDB(t *testing.T) {
-	dbURL := migrateGenerateTestDatabaseURL()
-	if dbURL == "" {
-		t.Skip("PostgreSQL test database URL is not set")
-	}
-
 	c := qt.New(t)
 	ctx := context.Background()
 
-	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
-	if err != nil {
-		t.Skipf("test database is not available: %v", err)
-	}
+	dbURL, conn := requireMigrateGeneratePostgresTestConnection(t, ctx)
 	defer dbschema.CloseAndWarn(conn)
-	if platform.NormalizeDialect(conn.Info().Dialect) != platform.Postgres {
-		t.Skipf("shadow CLI acceptance test requires PostgreSQL, got %s", conn.Info().Dialect)
-	}
 	releaseLock := acquireMigrateGenerateTestLock(c, ctx, conn)
 	defer releaseLock()
 	defer func() {
@@ -161,6 +150,29 @@ func migrateGenerateTestDatabaseURL() string {
 		}
 	}
 	return ""
+}
+
+func requireMigrateGeneratePostgresTestConnection(
+	t *testing.T,
+	ctx context.Context,
+) (string, *dbschema.DatabaseConnection) {
+	t.Helper()
+
+	dbURL := migrateGenerateTestDatabaseURL()
+	if dbURL == "" {
+		t.Skip("PostgreSQL test database URL is not set")
+	}
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	if err != nil {
+		t.Skipf("test database is not available: %v", err)
+	}
+	if platform.NormalizeDialect(conn.Info().Dialect) != platform.Postgres {
+		dbschema.CloseAndWarn(conn)
+		t.Skipf("shadow CLI acceptance test requires PostgreSQL, got %s", conn.Info().Dialect)
+	}
+
+	return dbURL, conn
 }
 
 func acquireMigrateGenerateTestLock(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnection) func() {

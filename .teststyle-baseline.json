@@ -1,12 +1,6 @@
 {
   "test_conditionals": [
     {
-      "path": "cmd/migrate/generate_test.go",
-      "function": "TestMigrateGenerateShadowVerificationWithRealDB",
-      "kind": "if",
-      "count": 3
-    },
-    {
       "path": "core/goschema/dependency_fix_test.go",
       "function": "TestDependencyOrderingWithEmbeddedFields",
       "kind": "if",
