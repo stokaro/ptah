@@ -8,7 +8,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/stokaro/ptah/cmd/dropall"
 	"github.com/stokaro/ptah/cmd/internal/buildinfo"
 	"github.com/stokaro/ptah/cmd/internal/cmdadapter"
 	"github.com/stokaro/ptah/cmd/internal/cmdflags"
@@ -92,29 +91,12 @@ func newAtlasSchemaCommand() *cobra.Command {
 	}
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	registerAtlasProjectFlags(cmd.PersistentFlags(), &atlasProjectFlagValues{})
-	for _, verb := range []atlasVerb{atlasSchemaCleanVerb()} {
-		cmd.AddCommand(newAtlasAdapterCommand("schema", verb))
-	}
+	cmd.AddCommand(newAtlasSchemaCleanCommand())
 	cmd.AddCommand(newAtlasSchemaInspectCommand())
 	cmd.AddCommand(newAtlasSchemaApplyCommand())
 	cmd.AddCommand(newAtlasSchemaDiffCommand())
 	cmd.AddCommand(newAtlasSchemaFmtCommand())
 	return cmd
-}
-
-func atlasSchemaCleanVerb() atlasVerb {
-	return atlasVerb{
-		use:     "clean",
-		short:   "Clean database schema objects",
-		native:  "db drop-all",
-		factory: dropall.NewDropAllCommand,
-		flags: []atlasargs.Flag{
-			atlasargs.NativeString("url", "u", "Database URL to clean", "db-url"),
-			atlasargs.NativeBool("dry-run", "", "Show planned cleanup without applying it", "dry-run"),
-			atlasargs.UnsupportedString("format", "", "Atlas Go template output format"),
-			atlasargs.ExplicitNativeBool("auto-approve", "", "Skip interactive approval", "auto-approve"),
-		},
-	}
 }
 
 func newAtlasMigrateCommand() *cobra.Command {

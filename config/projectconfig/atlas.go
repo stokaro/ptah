@@ -658,6 +658,8 @@ func (p atlasParser) parseSchemaFormat(block *hclsyntax.Block, cfg *Config) erro
 		switch attrName {
 		case "apply":
 			cfg.Format.Schema.Apply = value
+		case "clean":
+			cfg.Format.Schema.Clean = value
 		case "diff":
 			cfg.Format.Schema.Diff = value
 		case "inspect":
