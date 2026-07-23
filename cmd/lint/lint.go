@@ -136,7 +136,8 @@ type runOptions struct {
 	positional []string
 }
 
-type lintReport struct {
+// Report is the structured result produced by the migration linter.
+type Report struct {
 	Failed           bool           `json:"failed"`
 	FailureThreshold string         `json:"failure_threshold"`
 	Dialect          string         `json:"dialect,omitempty"`
@@ -144,6 +145,26 @@ type lintReport struct {
 	DisabledRules    []string       `json:"disabled_rules,omitempty"`
 	Findings         []lint.Finding `json:"findings"`
 	Error            string         `json:"error,omitempty"`
+	Versions         []int64        `json:"-"`
+}
+
+type lintReport = Report
+
+// ReportOptions are the migration lint inputs shared by native and
+// Atlas-compatible commands.
+type ReportOptions struct {
+	Dir        string
+	DirFormat  string
+	Dialect    string
+	ConfigPath string
+	AtlasEnv   string
+	DevURL     string
+	GitBase    string
+	GitDir     string
+	Disabled   []string
+	FailOn     string
+	Latest     uint
+	Positional []string
 }
 
 type sarifReport struct {
@@ -217,42 +238,112 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	if err := validateFailOn(opts.failOn); err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, failOnError, err.Error())
 	}
-	if err := validateDialect(opts.dialect); err != nil {
+	report, err := BuildReport(cmd, ReportOptions{
+		Dir:        opts.dir,
+		DirFormat:  opts.dirFormat,
+		Dialect:    opts.dialect,
+		ConfigPath: opts.configPath,
+		AtlasEnv:   opts.atlasEnv,
+		DevURL:     opts.devURL,
+		GitBase:    opts.gitBase,
+		GitDir:     opts.gitDir,
+		Disabled:   opts.disabled,
+		FailOn:     opts.failOn,
+		Latest:     opts.latest,
+		Positional: opts.positional,
+	})
+	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+	}
+
+	writer := cmd.OutOrStdout()
+	if report.Failed {
+		writer = cmd.ErrOrStderr()
+	}
+	if err := WriteReport(writer, opts.format, report); err != nil {
+		return writeError(cmd.ErrOrStderr(), formatText, opts.failOn, err.Error())
+	}
+	if report.Failed {
+		return exitcode.New(1, errLintFindings)
+	}
+	return nil
+}
+
+// BuildReport returns the migration lint report without rendering it. Atlas
+// compatibility commands use this to render Go-template output over the same
+// lint computation as the native command.
+func BuildReport(cmd *cobra.Command, opts ReportOptions) (Report, error) {
+	if opts.FailOn == "" {
+		opts.FailOn = failOnError
+	}
+	if err := validateFailOn(opts.FailOn); err != nil {
+		return Report{}, err
+	}
+	projectCfg, err := dbcli.LoadProjectConfig(cmd, "")
+	if err != nil {
+		return Report{}, err
+	}
+	return BuildReportWithConfig(cmd, opts, projectCfg)
+}
+
+// BuildReportWithConfig returns the migration lint report using a project
+// config that the caller already loaded and selected.
+func BuildReportWithConfig(cmd *cobra.Command, opts ReportOptions, projectCfg projectconfig.Config) (Report, error) {
+	if opts.FailOn == "" {
+		opts.FailOn = failOnError
+	}
+	if err := validateFailOn(opts.FailOn); err != nil {
+		return Report{}, err
+	}
+	return buildReport(cmd, runOptions{
+		dir:        opts.Dir,
+		dirFormat:  opts.DirFormat,
+		dialect:    opts.Dialect,
+		configPath: opts.ConfigPath,
+		atlasEnv:   opts.AtlasEnv,
+		devURL:     opts.DevURL,
+		gitBase:    opts.GitBase,
+		gitDir:     opts.GitDir,
+		disabled:   opts.Disabled,
+		failOn:     opts.FailOn,
+		latest:     opts.Latest,
+		positional: opts.Positional,
+	}, projectCfg)
+}
+
+func buildReport(cmd *cobra.Command, opts runOptions, projectCfg projectconfig.Config) (Report, error) {
+	if err := validateDialect(opts.dialect); err != nil {
+		return Report{}, err
 	}
 	if len(opts.positional) > 0 {
 		// Silently linting the default --dir while the user pointed at
 		// another directory would be a silent false negative in CI.
 		msg := fmt.Sprintf("unexpected positional arguments %q: pass the migrations directory via --dir", opts.positional)
-		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, msg)
-	}
-	projectCfg, err := dbcli.LoadProjectConfig(cmd, "")
-	if err != nil {
-		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+		return Report{}, errors.New(msg)
 	}
 	opts.dir = dbcli.EffectiveString(cmd, "dir", opts.dir, projectCfg.Migration.Dir)
 	opts.dirFormat = dbcli.EffectiveString(cmd, "dir-format", opts.dirFormat, projectCfg.Migration.Format)
 	opts.atlasEnv = dbcli.EffectiveString(cmd, "atlas-env", opts.atlasEnv, projectCfg.EnvName)
 	opts.devURL = dbcli.EffectiveString(cmd, "dev-url", opts.devURL, projectCfg.DevURL)
 	if err := validateDir(opts.dir); err != nil {
-		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+		return Report{}, err
 	}
 	dirFormat, err := migrator.ParseMigrationDirFormat(opts.dirFormat)
 	if err != nil {
-		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+		return Report{}, err
 	}
 	devDialect, err := atlasurl.DialectFromURL(opts.devURL)
 	if err != nil {
-		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+		return Report{}, err
 	}
 	versions, restrictVersions, err := lintVersions(cmd, opts, projectCfg)
 	if err != nil {
-		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+		return Report{}, err
 	}
 
 	cfg, err := loadConfig(opts)
 	if err != nil {
-		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+		return Report{}, err
 	}
 	if cfg.Dialect == "" {
 		cfg.Dialect = projectCfg.Lint.Dialect
@@ -263,7 +354,7 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	cfg.Rules = effectiveLintRuleConfigs(projectCfg.Lint.RuleConfigs, cfg.Rules)
 	if !isValidDialect(cfg.Dialect) {
 		msg := fmt.Sprintf("invalid dialect %q in lint config: expected postgres, mysql, mariadb, sqlite, clickhouse, cockroachdb, yugabytedb, or spanner", cfg.Dialect)
-		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, msg)
+		return Report{}, errors.New(msg)
 	}
 	// An explicitly passed --dialect wins even when set to "" (run every
 	// rule); an untouched flag defers to the config.
@@ -272,7 +363,7 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 		dialect = opts.dialect
 	}
 	if err := validateDevURLDialect(dialect, devDialect); err != nil {
-		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+		return Report{}, err
 	}
 	if dialect == "" {
 		dialect = devDialect
@@ -284,8 +375,7 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 		DirFormat: dirFormat,
 		DevURL:    opts.devURL,
 	}); err != nil {
-		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn,
-			fmt.Sprintf("error validating migration SQL on dev database: %v", err))
+		return Report{}, fmt.Errorf("error validating migration SQL on dev database: %v", err)
 	}
 
 	findings := []lint.Finding{}
@@ -300,7 +390,7 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 			RuleConfigs:       cfg.Rules,
 		})
 		if err != nil {
-			return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+			return Report{}, err
 		}
 		if findings == nil {
 			findings = []lint.Finding{}
@@ -315,19 +405,9 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 		Dir:              opts.dir,
 		DisabledRules:    disabled,
 		Findings:         findings,
+		Versions:         versions,
 	}
-
-	writer := cmd.OutOrStdout()
-	if failed {
-		writer = cmd.ErrOrStderr()
-	}
-	if err := writeReport(writer, opts.format, report); err != nil {
-		return writeError(cmd.ErrOrStderr(), formatText, opts.failOn, err.Error())
-	}
-	if failed {
-		return exitcode.New(1, errLintFindings)
-	}
-	return nil
+	return report, nil
 }
 
 func validateDevURLDialect(dialect, devDialect string) error {
@@ -686,7 +766,9 @@ func shouldFail(findings []lint.Finding, failOn string) bool {
 	}
 }
 
-func writeReport(w io.Writer, format string, report lintReport) error {
+// WriteReport renders a migration lint report using a native Ptah output
+// format.
+func WriteReport(w io.Writer, format string, report Report) error {
 	switch format {
 	case formatJSON:
 		encoder := json.NewEncoder(w)
@@ -873,7 +955,7 @@ func writeError(w io.Writer, format, failOn, msg string) error {
 		Findings:         []lint.Finding{},
 		Error:            msg,
 	}
-	_ = writeReport(w, format, report)
+	_ = WriteReport(w, format, report)
 	return exitcode.New(2, errors.New(msg))
 }
 

@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/fs"
 	"maps"
-	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -122,7 +121,7 @@ func buildAtlasMigrateApplyResult(opts MigrateApplyResultOptions) (atlasMigrateA
 	migrationsByVersion := atlasMigrateApplyMigrationsByVersion(opts.Migrations)
 	env := atlasMigrateApplyEnv{
 		Driver: opts.Conn.Info().Dialect,
-		URL:    atlasMigrateApplyRedactedURL(opts.URL),
+		URL:    atlasRedactedURL(opts.URL),
 		Dir:    opts.Dir,
 	}
 	result := atlasMigrateApplyResult{
@@ -305,38 +304,6 @@ func atlasMigrateApplyVersionString(version int64) string {
 		return ""
 	}
 	return strconv.FormatInt(version, 10)
-}
-
-func atlasMigrateApplyRedactedURL(raw string) string {
-	parsed, err := url.Parse(raw)
-	if err != nil {
-		return ""
-	}
-	if parsed.User != nil {
-		username := parsed.User.Username()
-		if username != "" {
-			parsed.User = url.User(username)
-		} else {
-			parsed.User = nil
-		}
-	}
-	query := parsed.Query()
-	for key := range query {
-		if isAtlasMigrateApplySensitiveQueryKey(key) {
-			query.Set(key, "xxxxx")
-		}
-	}
-	parsed.RawQuery = query.Encode()
-	return parsed.String()
-}
-
-func isAtlasMigrateApplySensitiveQueryKey(key string) bool {
-	switch strings.ToLower(key) {
-	case "password", "passwd", "pass", "pwd", "token", "secret":
-		return true
-	default:
-		return false
-	}
 }
 
 func renderAtlasGoTemplate(w io.Writer, name, format string, data any) error {

@@ -237,7 +237,7 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 		{
 			name:  "schema_clean",
 			path:  []string{"schema", "clean"},
-			flags: []string{"--url", "--dry-run", "--auto-approve"},
+			flags: []string{"--url", "--dry-run", "--format", "--auto-approve"},
 		},
 		{
 			name:  "migrate_diff",
@@ -283,7 +283,7 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 		{
 			name:  "migrate_lint",
 			path:  []string{"migrate", "lint"},
-			flags: []string{"--dev-url", "--dir", "--dir-format", "--env", "--latest", "--git-base", "--git-dir"},
+			flags: []string{"--dev-url", "--dir", "--dir-format", "--env", "--format", "--latest", "--git-base", "--git-dir"},
 		},
 		{
 			name:  "migrate_hash",
@@ -293,7 +293,7 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 		{
 			name:  "migrate_status",
 			path:  []string{"migrate", "status"},
-			flags: []string{"--url", "--dir", "--dir-format", "--revisions-schema"},
+			flags: []string{"--url", "--dir", "--dir-format", "--revisions-schema", "--format"},
 		},
 		{
 			name:  "migrate_validate",
@@ -842,19 +842,22 @@ env "ci" {
 		"--env", "ci",
 		"--var", "dir=migrations",
 		"lint",
-		"--format", "json",
+		"--format", "{{ json . }}",
 	})
 
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
 	var report struct {
-		Findings []migrationlint.Finding `json:"findings"`
+		Files []struct {
+			Findings []migrationlint.Finding `json:"Findings"`
+		} `json:"Files"`
 	}
 	c.Assert(json.Unmarshal(out.Bytes(), &report), qt.IsNil)
-	c.Assert(report.Findings, qt.HasLen, 1)
-	c.Assert(report.Findings[0].Rule, qt.Equals, "DS102")
-	c.Assert(report.Findings[0].Severity, qt.Equals, migrationlint.SeverityWarning)
+	c.Assert(report.Files, qt.HasLen, 1)
+	c.Assert(report.Files[0].Findings, qt.HasLen, 1)
+	c.Assert(report.Files[0].Findings[0].Rule, qt.Equals, "DS102")
+	c.Assert(report.Files[0].Findings[0].Severity, qt.Equals, migrationlint.SeverityWarning)
 }
 
 func TestNewAtlasCommand_SchemaInspectOutputsAtlasHCLWithoutNativeBanners(t *testing.T) {
@@ -1293,6 +1296,309 @@ func TestNewAtlasCommand_MigrateStatusReadsAtlasRevisionsByDefault(t *testing.T)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statusOut.String(), qt.Contains, "Current Version: 20260723120000")
 	c.Assert(statusOut.String(), qt.Contains, "Database is up to date")
+}
+
+func TestNewAtlasCommand_MigrateStatusFormatRendersAtlasReport(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(t.TempDir(), "status-format.db")
+	writeAtlasApplyMigration(c, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "status",
+		"--url", "sqlite://" + dbPath,
+		"--dir", dir,
+		"--format", "{{ .Status }}|{{ .Current }}|{{ .Next }}|{{ len .Available }}|{{ len .Pending }}|{{ (index .Pending 0).Name }}",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "PENDING|No migration applied yet|20260723120000|1|1|20260723120000_init.sql")
+}
+
+func TestNewAtlasCommand_MigrateStatusUsesDefaultDirWithoutEnvWhenURLExplicit(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	dbPath := filepath.Join(dir, "status-default-dir.db")
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigration(c, migrationsDir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
+  url = "sqlite://local.db"
+}
+env "prod" {
+  url = "sqlite://prod.db"
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "status",
+		"--url", "sqlite://" + dbPath,
+		"--format", "{{ .Status }}|{{ len .Pending }}",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "PENDING|1")
+}
+
+func TestNewAtlasCommand_MigrateStatusUsesAtlasProjectFormat(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	dbPath := filepath.Join(dir, "status-config-format.db")
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigration(c, migrationsDir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
+  url = "sqlite://`+dbPath+`"
+  migration {
+    dir = "file://migrations"
+  }
+  format {
+    migrate {
+      status = "{{ .Status }}|{{ len .Pending }}"
+    }
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "status",
+		"--env", "local",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "PENDING|1")
+}
+
+func TestNewAtlasCommand_MigrateStatusRejectsInvalidFormatBeforeConnecting(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(t.TempDir(), "status-invalid-format.db")
+	writeAtlasApplyMigration(c, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "status",
+		"--url", "sqlite://" + dbPath,
+		"--dir", dir,
+		"--format", "{{ if }}",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `parse --format template: .*`)
+	_, statErr := os.Stat(dbPath)
+	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
+}
+
+func TestNewAtlasCommand_MigrateLintFormatRendersAtlasFiles(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	writeAtlasApplyMigration(c, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "lint",
+		"--dir", dir,
+		"--latest", "1",
+		"--format", "{{ len .Files }}|{{ (index .Files 0).Name }}|{{ printf \"%.6s\" (index .Files 0).Text }}",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "1|20260723120000_init.sql|CREATE")
+}
+
+func TestNewAtlasCommand_MigrateLintUsesAtlasProjectFormat(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigration(c, migrationsDir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
+  migration {
+    dir = "file://migrations"
+  }
+  format {
+    migrate {
+      lint = "{{ len .Files }}|{{ (index .Files 0).Name }}"
+    }
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "lint",
+		"--env", "local",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "1|20260723120000_init.sql")
+}
+
+func TestNewAtlasCommand_MigrateLintUsesConfigRelativeDirOutsideConfigDirectory(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	projectDir := filepath.Join(dir, "project")
+	otherDir := filepath.Join(dir, "other")
+	migrationsDir := filepath.Join(projectDir, "migrations")
+	c.Assert(os.MkdirAll(otherDir, 0o755), qt.IsNil)
+	writeAtlasApplyMigration(c, migrationsDir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
+	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "ci" {
+  migration {
+    dir = "file://migrations"
+  }
+  format {
+    migrate {
+      lint = "{{ len .Files }}|{{ (index .Files 0).Name }}"
+    }
+  }
+}
+`), 0o600), qt.IsNil)
+	t.Chdir(otherDir)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate",
+		"--config", "file://" + filepath.Join(projectDir, "atlas.hcl"),
+		"--env", "ci",
+		"lint",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "1|20260723120000_init.sql")
+}
+
+func TestNewAtlasCommand_MigrateLintFormatRendersReplayFailure(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(t.TempDir(), "lint-replay-failure.db")
+	writeAtlasApplyMigration(c, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key); SELECT * FROM missing_table;")
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "lint",
+		"--dir", dir,
+		"--dev-url", "sqlite://" + dbPath,
+		"--latest", "1",
+		"--format", "{{ len .Steps }}|{{ (index .Steps 1).Text }}|{{ (index .Steps 1).Error }}",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `(?s)error validating migration SQL on dev database: .*`)
+	c.Assert(out.String(), qt.Contains, "2|Failed loading changes on dev database|error validating migration SQL on dev database:")
+}
+
+func TestNewAtlasCommand_MigrateLintFormatReportsInvalidAtlasSum(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(t.TempDir(), "lint-invalid-sum.db")
+	writeAtlasApplyMigration(c, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
+	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.sum"), []byte("stale\n"), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "lint",
+		"--dir", dir,
+		"--dev-url", "sqlite://" + dbPath,
+		"--latest", "1",
+		"--format", "{{ len .Steps }}|{{ (index .Steps 0).Text }}|{{ (index .Files 0).Name }}|{{ (index .Files 0).Error }}",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, "checksum mismatch")
+	c.Assert(out.String(), qt.Equals, "1|File atlas.sum is invalid|atlas.sum|checksum mismatch")
+	_, statErr := os.Stat(dbPath)
+	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
+}
+
+func TestNewAtlasCommand_MigrateLintRejectsInvalidFormatBeforeReplay(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(t.TempDir(), "lint-invalid-format.db")
+	writeAtlasApplyMigration(c, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "lint",
+		"--dir", dir,
+		"--dev-url", "sqlite://" + dbPath,
+		"--latest", "1",
+		"--format", "{{ if }}",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `parse --format template: .*`)
+	_, statErr := os.Stat(dbPath)
+	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
+}
+
+func TestNewAtlasCommand_SchemaCleanRejectsFormatBeforeConnecting(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "clean-format.db")
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "clean",
+		"--url", "sqlite://" + dbPath,
+		"--format", "{{ json . }}",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `atlas schema clean accepts --format, but Ptah does not implement its behavior yet`)
+	_, statErr := os.Stat(dbPath)
+	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 }
 
 func TestNewAtlasCommand_MigrateSetAcceptsRevisionsSchema(t *testing.T) {
