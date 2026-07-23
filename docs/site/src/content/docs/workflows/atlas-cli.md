@@ -51,7 +51,7 @@ SQL paths; prefer `--to` in new Ptah-authored scripts.
 | --- | --- |
 | `ptah atlas migrate apply` | Atlas-format apply path equivalent to `ptah migrations up` |
 | `ptah atlas migrate down` | Forwards to `ptah migrations down`; maps compatible Atlas flags and fails explicitly for dynamic down-planning and output-format flags that native Ptah does not implement yet. |
-| `ptah atlas migrate status` | `ptah migrations status` |
+| `ptah atlas migrate status` | Atlas-format migration status with Atlas revision-table metadata |
 | `ptah atlas migrate hash` | `ptah migrations hash` |
 | `ptah atlas migrate validate` | Verifies `ptah.sum` or `atlas.sum`; with `--dev-url`, cleans and replays migrations on the dev database to validate SQL execution. |
 | `ptah atlas migrate lint` | `ptah migrations lint`; supports Atlas-style `--latest N`, infers lint dialect from `--dev-url`, and cleans and replays migrations on directly connectable dev databases to validate SQL execution. |
@@ -370,6 +370,13 @@ is `atlas`; Atlas's external migration-tool formats (`golang-migrate`, `goose`,
 they are imported with `ptah atlas migrate import` or implemented natively.
 `ptah atlas migrate set` and `status` also accept `--revisions-schema` and run
 against Atlas revision-table metadata.
+
+`ptah atlas migrate status --format` renders Atlas-style Go templates over
+`.Env`, `.Available`, `.Applied`, `.Pending`, `.Current`, `.Next`, and
+`.Status`. `ptah atlas migrate lint --format` renders over `.Env`, `.Steps`,
+and `.Files`, so Atlas-style templates such as `{{ json .Files }}` work for
+the supported local lint subset. Formatted output redacts credentials from URLs
+before rendering.
 
 For existing scripts that already call `atlas`, install or copy the
 `ptah-compat` drop-in replacement under that executable name:

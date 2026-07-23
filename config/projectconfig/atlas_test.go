@@ -183,8 +183,10 @@ func TestParseAtlasProjectConfigEnvSchemaFormatAndDiffBlocks(t *testing.T) {
       inspect = "json"
     }
     migrate {
-      apply = "{{ json . }}"
-      diff  = format("{{ json . | json_merge %q }}", jsonencode({ EnvName = "local" }))
+      apply  = "{{ json . }}"
+      diff   = format("{{ json . | json_merge %q }}", jsonencode({ EnvName = "local" }))
+      lint   = "{{ json .Files }}"
+      status = "{{ json .Pending }}"
     }
   }
   diff {
@@ -224,6 +226,8 @@ func TestParseAtlasProjectConfigEnvSchemaFormatAndDiffBlocks(t *testing.T) {
 	c.Assert(cfg.Format.Schema.Inspect, qt.Equals, "json")
 	c.Assert(cfg.Format.Migrate.Apply, qt.Equals, "{{ json . }}")
 	c.Assert(cfg.Format.Migrate.Diff, qt.Equals, `{{ json . | json_merge "{\"EnvName\":\"local\"}" }}`)
+	c.Assert(cfg.Format.Migrate.Lint, qt.Equals, "{{ json .Files }}")
+	c.Assert(cfg.Format.Migrate.Status, qt.Equals, "{{ json .Pending }}")
 	c.Assert(cfg.Diff.Skip.DropTable, qt.DeepEquals, projectconfig.ConfigBool{Value: true, Set: true})
 	c.Assert(cfg.Diff.ConcurrentIndex.Create, qt.DeepEquals, projectconfig.ConfigBool{Value: true, Set: true})
 	c.Assert(cfg.Diff.ConcurrentIndex.Drop, qt.DeepEquals, projectconfig.ConfigBool{Value: false, Set: true})
@@ -611,30 +615,6 @@ func TestParseAtlasProjectConfigRejectsUnsupportedConstructs(t *testing.T) {
 }
 `,
 			err: `unsupported atlas\.hcl construct "sensitive" at atlas\.hcl:4`,
-		},
-		{
-			name: "format migrate lint",
-			raw: `env "local" {
-  format {
-    migrate {
-      lint = "{{ json . }}"
-    }
-  }
-}
-`,
-			err: `unsupported atlas\.hcl construct "lint" at atlas\.hcl:4`,
-		},
-		{
-			name: "format migrate status",
-			raw: `env "local" {
-  format {
-    migrate {
-      status = "{{ json . }}"
-    }
-  }
-}
-`,
-			err: `unsupported atlas\.hcl construct "status" at atlas\.hcl:4`,
 		},
 		{
 			name: "diff skip drop schema",

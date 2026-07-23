@@ -119,8 +119,10 @@ type FormatConfig struct {
 
 // MigrateFormatConfig holds Atlas env.format.migrate templates.
 type MigrateFormatConfig struct {
-	Apply string
-	Diff  string
+	Apply  string
+	Diff   string
+	Lint   string
+	Status string
 }
 
 // SchemaFormatConfig holds Atlas env.format.schema templates.
@@ -339,6 +341,12 @@ func mergeFormat(base, override FormatConfig) FormatConfig {
 	}
 	if override.Migrate.Diff != "" {
 		result.Migrate.Diff = override.Migrate.Diff
+	}
+	if override.Migrate.Lint != "" {
+		result.Migrate.Lint = override.Migrate.Lint
+	}
+	if override.Migrate.Status != "" {
+		result.Migrate.Status = override.Migrate.Status
 	}
 	if override.Schema.Apply != "" {
 		result.Schema.Apply = override.Schema.Apply

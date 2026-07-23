@@ -111,6 +111,8 @@ env "local" {
 | `format.schema.diff` | Default `schema diff --format`. |
 | `format.migrate.apply` | Default `migrate apply --format`. |
 | `format.migrate.diff` | Default `migrate diff --format`. |
+| `format.migrate.lint` | Default `migrate lint --format`. |
+| `format.migrate.status` | Default `migrate status --format`. |
 | `diff.skip.drop_table` | Suppresses table drops in supported local diff/apply plans. |
 | `diff.concurrent_index.create` | Requests PostgreSQL concurrent index creation where transaction mode allows it. |
 

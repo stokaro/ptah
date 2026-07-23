@@ -54,7 +54,7 @@ webhooks, lint defaults, and online-DDL policy.
 | Safety and operations | `migration.pre_up_hook`, `migration.pg_dump_to`, `migration.webhook`, `migration.exec_order`, `migration.tx_mode` |
 | Lint defaults and policy | `lint.dialect`, `lint.disabled-rules`, `lint.latest`, `lint.git.base`, `lint.destructive.error`, `lint.concurrent_index.error` |
 | Online DDL | `online_ddl.tool`, `online_ddl.threshold_rows` |
-| Atlas-compatible output | `format.schema.inspect`, `format.schema.apply`, `format.schema.diff`, `format.migrate.apply`, `format.migrate.diff` |
+| Atlas-compatible output | `format.schema.inspect`, `format.schema.apply`, `format.schema.diff`, `format.migrate.apply`, `format.migrate.diff`, `format.migrate.lint`, `format.migrate.status` |
 | Atlas-compatible diff policy | `diff.skip.drop_table`, `diff.concurrent_index.create` |
 
 The Atlas-compatible command tree lives under `ptah atlas <command> ...`.

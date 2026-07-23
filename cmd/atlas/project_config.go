@@ -3,6 +3,7 @@ package atlas
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -94,6 +95,25 @@ func loadRequiredAtlasProjectConfigForCommand(
 	cmd *cobra.Command,
 ) (projectconfig.Config, bool, error) {
 	return loadAtlasProjectConfigForCommand(cmd, reportMissingEnvSelection)
+}
+
+func atlasProjectConfigLocalDir(cmd *cobra.Command, raw string) (string, error) {
+	localDir, err := atlasargs.LocalDirValue(raw)
+	if err != nil {
+		return "", err
+	}
+	if filepath.IsAbs(localDir) {
+		return localDir, nil
+	}
+	flags, _, err := atlasProjectFlagsFromCommand(cmd)
+	if err != nil {
+		return "", err
+	}
+	configPath, err := atlasConfigPathValue(flags.configPath)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(configPath), filepath.FromSlash(localDir)), nil
 }
 
 type missingAtlasEnvSelectionMode int

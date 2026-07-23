@@ -632,8 +632,10 @@ func (p atlasParser) parseMigrateFormat(block *hclsyntax.Block, cfg *Config) err
 			cfg.Format.Migrate.Apply = value
 		case "diff":
 			cfg.Format.Migrate.Diff = value
-		case "lint", "status":
-			return unsupportedAttr(attrName, attr)
+		case "lint":
+			cfg.Format.Migrate.Lint = value
+		case "status":
+			cfg.Format.Migrate.Status = value
 		default:
 			return unsupportedAttr(attrName, attr)
 		}
