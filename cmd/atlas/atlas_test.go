@@ -16,6 +16,7 @@ import (
 	"github.com/stokaro/ptah/cmd/migrateup"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/migratesum"
+	migrationlint "github.com/stokaro/ptah/migration/lint"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
@@ -368,6 +369,62 @@ func TestNewAtlasCommand_MigrateLintHelpUsesAtlasFlagKinds(t *testing.T) {
 	c.Assert(help, qt.Not(qt.Contains), "--latest string")
 }
 
+func TestNewAtlasCommand_AdvertisesAtlasProjectFlags(t *testing.T) {
+	tests := []struct {
+		name string
+		path []string
+	}{
+		{
+			name: "schema_parent",
+			path: []string{"schema"},
+		},
+		{
+			name: "schema_inspect",
+			path: []string{"schema", "inspect"},
+		},
+		{
+			name: "schema_clean",
+			path: []string{"schema", "clean"},
+		},
+		{
+			name: "migrate_parent",
+			path: []string{"migrate"},
+		},
+		{
+			name: "migrate_apply",
+			path: []string{"migrate", "apply"},
+		},
+		{
+			name: "migrate_hash",
+			path: []string{"migrate", "hash"},
+		},
+		{
+			name: "migrate_status",
+			path: []string{"migrate", "status"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			cmd := NewAtlasCommand()
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&out)
+			cmd.SetArgs(append(tt.path, "--help"))
+
+			err := cmd.Execute()
+
+			help := out.String()
+			c.Assert(err, qt.IsNil)
+			c.Assert(help, qt.Contains, "--config string")
+			c.Assert(help, qt.Contains, "-c, --config")
+			c.Assert(help, qt.Contains, "--env string")
+			c.Assert(help, qt.Contains, "--var stringArray")
+		})
+	}
+}
+
 func TestNewAtlasCommand_ForwardsSupportedCommands(t *testing.T) {
 	c := qt.New(t)
 	cmd := NewAtlasCommand()
@@ -418,6 +475,153 @@ func TestNewAtlasCommand_MapsAtlasFlagFormsToNativeFlags(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, "migrations directory is required")
 		})
 	}
+}
+
+func TestNewAtlasCommand_AdapterCommandUsesAtlasProjectFlags(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_init.sql"), []byte("CREATE TABLE users (id int);\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("project.hcl", []byte(`variable "dir" {}
+
+env "local" {
+  migration {
+    dir = "file://${var.dir}"
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "hash",
+		"-c", "project.hcl",
+		"--env", "local",
+		"--var", "dir=migrations",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "1 migration file(s) hashed")
+}
+
+func TestNewAtlasCommand_AdapterCommandUsesAttachedConfigShorthand(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_init.sql"), []byte("CREATE TABLE users (id int);\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("project.hcl", []byte(`variable "dir" {}
+
+env "local" {
+  migration {
+    dir = "file://${var.dir}"
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "hash",
+		"-cproject.hcl",
+		"--env", "local",
+		"--var", "dir=migrations",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "1 migration file(s) hashed")
+}
+
+func TestNewAtlasCommand_AdapterCommandUsesParentAtlasProjectFlags(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_init.sql"), []byte("CREATE TABLE users (id int);\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("project.hcl", []byte(`variable "dir" {}
+
+env "local" {
+  migration {
+    dir = "file://${var.dir}"
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate",
+		"-c", "project.hcl",
+		"--env", "local",
+		"--var", "dir=migrations",
+		"hash",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "1 migration file(s) hashed")
+}
+
+func TestNewAtlasCommand_AdapterCommandForwardsAtlasProjectConfigToNativeLoader(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_drop_column.up.sql"), []byte("ALTER TABLE users DROP COLUMN legacy;\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_drop_column.down.sql"), []byte("ALTER TABLE users ADD COLUMN legacy TEXT;\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("project.hcl", []byte(`variable "dir" {}
+
+env "ci" {
+  migration {
+    dir = "file://${var.dir}"
+  }
+  lint {
+    destructive {
+      error = false
+    }
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate",
+		"--config", "project.hcl",
+		"--env", "ci",
+		"--var", "dir=migrations",
+		"lint",
+		"--format", "json",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	var report struct {
+		Findings []migrationlint.Finding `json:"findings"`
+	}
+	c.Assert(json.Unmarshal(out.Bytes(), &report), qt.IsNil)
+	c.Assert(report.Findings, qt.HasLen, 1)
+	c.Assert(report.Findings[0].Rule, qt.Equals, "DS102")
+	c.Assert(report.Findings[0].Severity, qt.Equals, migrationlint.SeverityWarning)
 }
 
 func TestNewAtlasCommand_SchemaInspectOutputsAtlasHCLWithoutNativeBanners(t *testing.T) {
@@ -1048,6 +1252,100 @@ table "old_users" {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "synced")
+}
+
+func TestNewAtlasCommand_SchemaDiffUsesConfigPathAndVariableOverride(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	from := filepath.Join(dir, "from.hcl")
+	to := filepath.Join(dir, "to.hcl")
+	c.Assert(os.WriteFile(from, []byte(`
+table "users" {
+  column "id" {
+    type = int
+  }
+}
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(to, []byte(`
+table "users" {
+  column "id" {
+    type = int
+  }
+  column "email" {
+    null = false
+    type = varchar(255)
+  }
+}
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("custom-atlas.hcl", []byte(`variable "to_path" {
+  default = "wrong.hcl"
+}
+
+env "local" {
+  dev = "postgres://localhost/dev"
+  schema {
+    src = "file://${var.to_path}"
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema",
+		"--config", "custom-atlas.hcl",
+		"--env", "local",
+		"--var", "to_path=to.hcl",
+		"diff",
+		"--from", "file://" + from,
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, `ALTER TABLE "users" ADD COLUMN "email" varchar(255) NOT NULL;`)
+}
+
+func TestNewAtlasCommand_SchemaDiffRejectsMalformedVariableOverride(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	from := filepath.Join(dir, "from.hcl")
+	c.Assert(os.WriteFile(from, []byte(`schema "main" {}
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile("atlas.hcl", []byte(`variable "destructive" {}
+
+env "local" {
+  dev = "postgres://localhost/dev"
+  schema {
+    src = "file://to.hcl"
+  }
+  diff {
+    skip {
+      drop_table = !var.destructive
+    }
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "diff",
+		"--env", "local",
+		"--var", "destructive",
+		"--from", "file://" + from,
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `atlas variable overrides must use name=value, got "destructive"`)
+	c.Assert(out.String(), qt.Contains, `error: atlas variable overrides must use name=value, got "destructive"`)
 }
 
 func TestNewAtlasCommand_SchemaDiffUsesAtlasProjectDefaultsWithExplicitTargetFlags(t *testing.T) {

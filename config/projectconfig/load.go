@@ -5,6 +5,7 @@ type LoadOptions struct {
 	PtahPath  string
 	AtlasPath string
 	EnvName   string
+	AtlasVars []string
 }
 
 // Load reads Ptah and Atlas project config files and merges them with the
@@ -23,7 +24,10 @@ func Load(opts LoadOptions) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	atlas, err := LoadAtlasFile(atlasPath, opts.EnvName)
+	atlas, err := LoadAtlasFileWithOptions(atlasPath, AtlasLoadOptions{
+		EnvName: opts.EnvName,
+		Vars:    opts.AtlasVars,
+	})
 	if err != nil {
 		return Config{}, err
 	}

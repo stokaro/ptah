@@ -23,12 +23,13 @@ import (
 )
 
 type atlasVerb struct {
-	use        string
-	short      string
-	native     string
-	factory    func() *cobra.Command
-	prefixArgs []string
-	flags      []atlasargs.Flag
+	use                 string
+	short               string
+	native              string
+	factory             func() *cobra.Command
+	prefixArgs          []string
+	flags               []atlasargs.Flag
+	nativeProjectConfig bool
 }
 
 // NewAtlasCommand returns the Atlas command namespace.
@@ -81,6 +82,7 @@ func newAtlasSchemaCommand() *cobra.Command {
 		},
 	}
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
+	registerAtlasProjectFlags(cmd.PersistentFlags(), &atlasProjectFlagValues{})
 	for _, verb := range []atlasVerb{atlasSchemaCleanVerb()} {
 		cmd.AddCommand(newAtlasAdapterCommand("schema", verb))
 	}
@@ -114,6 +116,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 		},
 	}
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
+	registerAtlasProjectFlags(cmd.PersistentFlags(), &atlasProjectFlagValues{})
 	cmd.AddCommand(newAtlasMigrateApplyCommand())
 	for _, verb := range []atlasVerb{
 		atlasMigrateDownVerb(),
@@ -143,10 +146,11 @@ func newAtlasMigrateCommand() *cobra.Command {
 			},
 		},
 		{
-			use:     "status",
-			short:   "Show migration status",
-			native:  "migrations status",
-			factory: migratestatus.NewMigrateStatusCommand,
+			use:                 "status",
+			short:               "Show migration status",
+			native:              "migrations status",
+			factory:             migratestatus.NewMigrateStatusCommand,
+			nativeProjectConfig: true,
 			flags: []atlasargs.Flag{
 				atlasargs.NativeString("url", "u", "Database URL", "db-url"),
 				atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
@@ -173,10 +177,11 @@ func newAtlasMigrateCommand() *cobra.Command {
 
 func atlasMigrateDownVerb() atlasVerb {
 	return atlasVerb{
-		use:     "down",
-		short:   "Roll back migrations",
-		native:  "migrations down",
-		factory: migratedown.NewMigrateDownCommand,
+		use:                 "down",
+		short:               "Roll back migrations",
+		native:              "migrations down",
+		factory:             migratedown.NewMigrateDownCommand,
+		nativeProjectConfig: true,
 		flags: []atlasargs.Flag{
 			atlasargs.NativeString("url", "u", "Database URL", "db-url"),
 			atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
@@ -195,14 +200,14 @@ func atlasMigrateDownVerb() atlasVerb {
 
 func atlasMigrateLintVerb() atlasVerb {
 	return atlasVerb{
-		use:     "lint",
-		short:   "Lint migration files",
-		native:  "migrations lint",
-		factory: lint.NewLintCommand,
+		use:                 "lint",
+		short:               "Lint migration files",
+		native:              "migrations lint",
+		factory:             lint.NewLintCommand,
+		nativeProjectConfig: true,
 		flags: []atlasargs.Flag{
 			atlasargs.NativeString("dev-url", "", "Dev database URL", "dev-url"),
 			atlasargs.NativeLocalDir("dir", "", "Migration directory", "dir"),
-			atlasargs.NativeString("env", "", "Project env name to read from atlas.hcl", "env"),
 			atlasargs.NativeUint("latest", "", "Number of latest migrations to lint", "latest"),
 			atlasargs.NativeString("git-base", "", "Base Git branch for changeset linting", "git-base"),
 			atlasargs.NativeString("git-dir", "", "Repository working directory for --git-base", "git-dir"),
@@ -292,7 +297,34 @@ func registerAtlasFlags(cmd *cobra.Command, flags []atlasargs.Flag) {
 }
 
 func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
-	return func(args []string) ([]string, error) {
+	return func(cmd *cobra.Command, args []string) ([]string, error) {
+		parentProjectFlags, parentChanged, err := atlasProjectFlagsFromCommand(cmd)
+		if err != nil {
+			return nil, err
+		}
+		parentProject := atlasProjectArgValues{
+			flags:   parentProjectFlags,
+			changed: parentChanged,
+		}
+		project, remaining, err := extractAtlasProjectArgs(args)
+		if err != nil {
+			return nil, err
+		}
+		project = mergeAtlasProjectArgs(parentProject, project)
+		args = remaining
+		if project.changed {
+			cfg, err := loadRequiredAtlasProjectConfig(project.flags)
+			if err != nil {
+				return nil, err
+			}
+			args = applyAtlasProjectConfigToArgs(verb.flags, args, cfg)
+			if verb.nativeProjectConfig {
+				args, err = applyAtlasProjectConfigToNativeArgs(args, project.flags)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
 		return atlasargs.Map(group, verb.use, verb.flags, args)
 	}
 }

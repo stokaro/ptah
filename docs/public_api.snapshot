@@ -29,12 +29,15 @@ type CompareOptions struct{ ... }
 ## github.com/stokaro/ptah/config/projectconfig
 
 const PtahFileName = "ptah.yaml" ...
+type AtlasLoadOptions struct{ ... }
 type Config struct{ ... }
     func Load(opts LoadOptions) (Config, error)
     func LoadAtlasFile(path, envName string) (Config, error)
+    func LoadAtlasFileWithOptions(path string, opts AtlasLoadOptions) (Config, error)
     func LoadPtahFile(path, envName string) (Config, error)
     func Merge(base, override Config) Config
     func ParseAtlas(data []byte, filename, envName string) (Config, error)
+    func ParseAtlasWithOptions(data []byte, filename string, opts AtlasLoadOptions) (Config, error)
     func ParsePtah(data []byte, filename, envName string) (Config, error)
 type ConfigBool struct{ ... }
 type DiffConcurrentIndexConfig struct{ ... }

@@ -20,7 +20,6 @@ import (
 type atlasMigrateApplyOptions struct {
 	url             string
 	dir             string
-	envName         string
 	dryRun          bool
 	txMode          string
 	execOrder       string
@@ -56,7 +55,6 @@ Native Ptah equivalent: ptah migrations up.`,
 	flags := cmd.Flags()
 	flags.StringVarP(&opts.url, "url", "u", "", "Database URL to apply migrations to")
 	flags.StringVar(&opts.dir, "dir", "", "Migration directory URL")
-	dbcli.RegisterEnvFlag(flags, &opts.envName)
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Show migrations without applying them")
 	flags.StringVar(&opts.txMode, "tx-mode", opts.txMode, "Transaction mode: file, all, or none")
 	flags.StringVar(&opts.execOrder, "exec-order", opts.execOrder, "Execution order: linear, linear-skip, or non-linear")
@@ -82,9 +80,9 @@ func atlasMigrateApplyArgs(cmd *cobra.Command, args []string) error {
 
 func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, args []string) error {
 	formatOutput := cmd.Flags().Changed("format")
-	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd, opts.envName)
+	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
 	if needsAtlasMigrateApplyConfig(cmd) {
-		projectCfg, loaded, err = loadRequiredAtlasProjectConfigForCommand(cmd, opts.envName)
+		projectCfg, loaded, err = loadRequiredAtlasProjectConfigForCommand(cmd)
 	}
 	if err != nil {
 		return err

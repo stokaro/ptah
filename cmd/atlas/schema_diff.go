@@ -16,7 +16,6 @@ type atlasSchemaDiffOptions struct {
 	fromURLs []string
 	toURLs   []string
 	devURL   string
-	envName  string
 	exclude  []string
 	format   string
 }
@@ -43,7 +42,6 @@ output are explicit follow-up gaps.`,
 	flags.StringArrayVar(&opts.fromURLs, "from", nil, "Current schema state URL")
 	flags.StringArrayVar(&opts.toURLs, "to", nil, "Desired schema state URL")
 	flags.StringVar(&opts.devURL, "dev-url", "", "Dev database URL used to choose the SQL dialect for local schema files")
-	dbcli.RegisterEnvFlag(flags, &opts.envName)
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from diffing")
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
 	flags.StringArray("schema", nil, "Schemas to inspect when a database URL is used")
@@ -55,9 +53,9 @@ output are explicit follow-up gaps.`,
 
 func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 	policy := atlasschema.DiffPolicy{}
-	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd, opts.envName)
+	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
 	if needsAtlasSchemaDiffConfig(cmd) {
-		projectCfg, loaded, err = loadRequiredAtlasProjectConfigForCommand(cmd, opts.envName)
+		projectCfg, loaded, err = loadRequiredAtlasProjectConfigForCommand(cmd)
 	}
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

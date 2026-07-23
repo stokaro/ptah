@@ -212,11 +212,22 @@ and a list of `file://...` URLs when `paths` is used. `fileset` returns stable
 slash-separated relative paths sorted lexicographically and supports recursive
 `**` path segments.
 
-Ptah does not expose Atlas CLI variable override flags yet. A `variable` block
-therefore needs a `default` value. Variable `type` and `sensitive` attributes
-are not accepted until Ptah implements their semantics. Unsupported dynamic data
-sources such as external schemas, SQL data sources, registry-backed sources, and
-Cloud-specific sources still fail explicitly.
+Atlas-compatible commands under `ptah atlas schema ...` and
+`ptah atlas migrate ...` accept Atlas project flags:
+
+- `--config path/to/atlas.hcl` or `-c path/to/atlas.hcl` selects the project
+  config file. Ptah also accepts local `file://` config URLs. Other URL schemes
+  fail explicitly.
+- `--env <name>` selects a named Atlas environment.
+- `--var name=value` provides a variable override. The flag can be repeated;
+  repeated values for the same variable become a string list, matching Atlas's
+  local project-variable behavior.
+
+Variable overrides are strings. A `variable` block without a `default` is valid
+when the invocation provides a matching `--var name=value`. Variable `type` and
+`sensitive` attributes are not accepted until Ptah implements their semantics.
+Unsupported dynamic data sources such as external schemas, SQL data sources,
+registry-backed sources, and Cloud-specific sources still fail explicitly.
 
 ## Env Selection
 
@@ -292,8 +303,8 @@ Ptah intentionally rejects everything outside the documented subset. Unsupported
 attributes, unsupported data sources, unsupported lint policy blocks or attributes,
 Cloud or registry sources such as `schema.repo`, unsupported format blocks,
 unsupported diff policy fields, duplicate `migration` or `lint` blocks,
-variables without defaults, and non-file migration directory URI schemes fail
-with a location-aware error:
+variables without defaults that are not supplied through `--var`, and non-file
+migration directory URI schemes fail with a location-aware error:
 
 ```text
 unsupported atlas.hcl construct "src" at atlas.hcl:2

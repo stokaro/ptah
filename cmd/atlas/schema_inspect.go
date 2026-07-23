@@ -15,7 +15,6 @@ import (
 type atlasSchemaInspectOptions struct {
 	url     string
 	devURL  string
-	envName string
 	schemas []string
 	exclude []string
 	include []string
@@ -46,7 +45,6 @@ inspection, and Atlas dev-database inference remain explicit follow-up gaps.
 	flags := cmd.Flags()
 	flags.StringVarP(&opts.url, "url", "u", "", "Database URL to inspect")
 	flags.StringVar(&opts.devURL, "dev-url", "", "Dev database URL used by Atlas for inference")
-	dbcli.RegisterEnvFlag(flags, &opts.envName)
 	flags.StringArrayVar(&opts.schemas, "schema", nil, "Schema to inspect")
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from inspection")
 	flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in inspection")
@@ -56,9 +54,9 @@ inspection, and Atlas dev-database inference remain explicit follow-up gaps.
 }
 
 func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) error {
-	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd, opts.envName)
+	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
 	if needsAtlasSchemaInspectConfig(cmd) {
-		projectCfg, loaded, err = loadRequiredAtlasProjectConfigForCommand(cmd, opts.envName)
+		projectCfg, loaded, err = loadRequiredAtlasProjectConfigForCommand(cmd)
 	}
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

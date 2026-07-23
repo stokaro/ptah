@@ -1,6 +1,7 @@
 package projectconfig
 
 import (
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -18,9 +19,22 @@ import (
 	"github.com/zclconf/go-cty/cty/function/stdlib"
 )
 
+// AtlasLoadOptions selects Atlas project config evaluation settings.
+type AtlasLoadOptions struct {
+	EnvName string
+	Vars    []string
+}
+
 // LoadAtlasFile loads the supported subset of an Atlas project config file. A
 // missing file returns an empty config.
 func LoadAtlasFile(path, envName string) (Config, error) {
+	return LoadAtlasFileWithOptions(path, AtlasLoadOptions{EnvName: envName})
+}
+
+// LoadAtlasFileWithOptions loads the supported subset of an Atlas project
+// config file with Atlas-compatible evaluation options. A missing file returns
+// an empty config.
+func LoadAtlasFileWithOptions(path string, opts AtlasLoadOptions) (Config, error) {
 	raw, err := os.ReadFile(path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
@@ -28,11 +42,17 @@ func LoadAtlasFile(path, envName string) (Config, error) {
 	case err != nil:
 		return Config{}, fmt.Errorf("failed to read atlas config %s: %w", path, err)
 	}
-	return ParseAtlas(raw, path, envName)
+	return ParseAtlasWithOptions(raw, path, opts)
 }
 
 // ParseAtlas parses the supported subset of an Atlas project config file.
 func ParseAtlas(data []byte, filename, envName string) (Config, error) {
+	return ParseAtlasWithOptions(data, filename, AtlasLoadOptions{EnvName: envName})
+}
+
+// ParseAtlasWithOptions parses the supported subset of an Atlas project config
+// file with Atlas-compatible evaluation options.
+func ParseAtlasWithOptions(data []byte, filename string, opts AtlasLoadOptions) (Config, error) {
 	if filename == "" {
 		filename = AtlasFileName
 	}
@@ -46,15 +66,23 @@ func ParseAtlas(data []byte, filename, envName string) (Config, error) {
 	}
 
 	baseDir := filepath.Dir(filename)
-	p := newAtlasParser(baseDir)
-	return p.parse(body, envName)
+	p, err := newAtlasParser(baseDir, opts.Vars)
+	if err != nil {
+		return Config{}, err
+	}
+	return p.parse(body, opts.EnvName)
 }
 
 type atlasParser struct {
-	ctx *hcl.EvalContext
+	ctx         *hcl.EvalContext
+	varOverride map[string]cty.Value
 }
 
-func newAtlasParser(baseDir string) atlasParser {
+func newAtlasParser(baseDir string, rawVars []string) (atlasParser, error) {
+	overrides, err := parseAtlasVarOverrides(rawVars)
+	if err != nil {
+		return atlasParser{}, err
+	}
 	return atlasParser{
 		ctx: &hcl.EvalContext{
 			Variables: map[string]cty.Value{},
@@ -66,7 +94,8 @@ func newAtlasParser(baseDir string) atlasParser {
 				"jsonencode": stdlib.JSONEncodeFunc,
 			},
 		},
-	}
+		varOverride: overrides,
+	}, nil
 }
 
 func (p atlasParser) parse(body *hclsyntax.Body, envName string) (Config, error) {
@@ -749,14 +778,72 @@ func (p atlasParser) configureVariables(blocks []*hclsyntax.Block) error {
 		if _, ok := vars[name]; ok {
 			return fmt.Errorf("duplicate atlas.hcl variable %q at %s:%d", name, block.TypeRange.Filename, block.TypeRange.Start.Line)
 		}
+		if value, ok := p.varOverride[name]; ok {
+			if err := p.validateVariableBlock(block); err != nil {
+				return err
+			}
+			vars[name] = value
+			continue
+		}
 		value, err := p.variableDefault(block)
 		if err != nil {
 			return err
 		}
 		vars[name] = value
 	}
+	for name, value := range p.varOverride {
+		if _, ok := vars[name]; !ok {
+			vars[name] = value
+		}
+	}
 	if len(vars) > 0 {
 		p.ctx.Variables["var"] = cty.ObjectVal(vars)
+	}
+	return nil
+}
+
+func parseAtlasVarOverrides(rawVars []string) (map[string]cty.Value, error) {
+	vars := map[string]cty.Value{}
+	for _, raw := range rawVars {
+		values, err := csv.NewReader(strings.NewReader(raw)).Read()
+		if err != nil {
+			return nil, fmt.Errorf("parse atlas variable override %q: %w", raw, err)
+		}
+		for _, value := range values {
+			name, text, ok := strings.Cut(value, "=")
+			if !ok {
+				return nil, fmt.Errorf("atlas variable overrides must use name=value, got %q", value)
+			}
+			if strings.TrimSpace(name) == "" {
+				return nil, fmt.Errorf("atlas variable override %q has an empty name", value)
+			}
+			value := cty.StringVal(text)
+			if existing, ok := vars[name]; ok {
+				value = appendAtlasVarValue(existing, value)
+			}
+			vars[name] = value
+		}
+	}
+	return vars, nil
+}
+
+func appendAtlasVarValue(existing cty.Value, value cty.Value) cty.Value {
+	if existing.Type().IsListType() {
+		return cty.ListVal(append(existing.AsValueSlice(), value))
+	}
+	return cty.ListVal([]cty.Value{existing, value})
+}
+
+func (p atlasParser) validateVariableBlock(block *hclsyntax.Block) error {
+	for attrName, attr := range block.Body.Attributes {
+		switch attrName {
+		case "default", "description":
+		default:
+			return unsupportedAttr(attrName, attr)
+		}
+	}
+	if len(block.Body.Blocks) > 0 {
+		return unsupportedBlock(block.Body.Blocks[0])
 	}
 	return nil
 }
@@ -782,7 +869,7 @@ func (p atlasParser) variableDefault(block *hclsyntax.Block) (cty.Value, error) 
 		return cty.NilVal, unsupportedBlock(block.Body.Blocks[0])
 	}
 	if !hasDefault {
-		return cty.NilVal, fmt.Errorf("atlas.hcl variable %q requires a default because Ptah does not expose Atlas variable flags yet", block.Labels[0])
+		return cty.NilVal, fmt.Errorf("atlas.hcl variable %q requires a default or --var %s=value", block.Labels[0], block.Labels[0])
 	}
 	return value, nil
 }

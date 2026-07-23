@@ -65,6 +65,43 @@ migration:
 	c.Assert(cfg.Migration.RevisionFormat, qt.Equals, "atlas")
 }
 
+func TestLoadProjectConfigReadsInternalAtlasProjectFlags(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(dir, "custom.hcl"), []byte(`variable "dir" {}
+
+env "local" {
+  migration {
+    dir = "file://${var.dir}"
+  }
+  schema {
+    src = var.schema
+  }
+}
+`), 0o600), qt.IsNil)
+	originalWD, err := os.Getwd()
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.Chdir(dir), qt.IsNil)
+	defer func() {
+		c.Assert(os.Chdir(originalWD), qt.IsNil)
+	}()
+
+	cmd := &cobra.Command{Use: "test"}
+	cmd.Flags().String(dbcli.EnvFlagName, "", "")
+	dbcli.RegisterAtlasProjectInternalFlags(cmd.Flags())
+	c.Assert(cmd.Flags().Set(dbcli.EnvFlagName, "local"), qt.IsNil)
+	c.Assert(cmd.Flags().Set(dbcli.AtlasProjectConfigFlagName, "custom.hcl"), qt.IsNil)
+	c.Assert(cmd.Flags().Set(dbcli.AtlasProjectVarFlagName, "dir=migrations"), qt.IsNil)
+	c.Assert(cmd.Flags().Set(dbcli.AtlasProjectVarFlagName, "schema=file://a.hcl"), qt.IsNil)
+	c.Assert(cmd.Flags().Set(dbcli.AtlasProjectVarFlagName, "schema=file://b.hcl"), qt.IsNil)
+
+	cfg, err := dbcli.LoadProjectConfig(cmd, "")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.Migration.Dir, qt.Equals, "migrations")
+	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://a.hcl", "file://b.hcl"})
+}
+
 func TestLoadProjectConfigReadsNamedPtahEnvRuntimeDefaults(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
