@@ -82,6 +82,4 @@ shares this exit-code contract.
 
 Unsupported Atlas-compatible flags are rejected explicitly and exit `2`.
 
-The repository copy of this contract is maintained in
-[CLI exit codes](https://github.com/stokaro/ptah/blob/master/docs/exit_codes.md),
-but this page is complete enough to use without opening GitHub.
+This page is checked against the repository exit-code contract during docs CI.

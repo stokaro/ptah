@@ -18,7 +18,7 @@ internal platform CLIs, CI gates, schema documentation generators, migration
 automation, and database tooling that should not shell out to `ptah`.
 
 Ptah is pre-GA. The supported embedder surface is the package list in
-[`docs/public_api.md`](https://github.com/stokaro/ptah/blob/master/docs/public_api.md).
+[Public Go API](../public-api/).
 Packages under `internal/...` are not supported embedder APIs, even when a CLI
 uses them internally.
 
@@ -464,7 +464,7 @@ changes and capability-sensitive dialect behavior.
 ## Stability And Boundaries
 
 - Stable embedder packages are listed in
-  [`docs/public_api.md`](https://github.com/stokaro/ptah/blob/master/docs/public_api.md).
+  [Public Go API](../public-api/).
 - There is currently no provisional public package tier.
 - `internal/...` packages are not supported embedder APIs.
 - Ptah is pre-GA. Before a tagged release exists, pin a commit for production

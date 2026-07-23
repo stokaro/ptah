@@ -58,8 +58,13 @@ export default defineConfig({
           items: [
             { slug: 'reference/commands' },
             { slug: 'reference/configuration' },
+            { slug: 'reference/yaml-schema' },
+            { slug: 'reference/hcl-schema' },
+            { slug: 'reference/atlas-project-config' },
+            { slug: 'reference/public-api' },
             { slug: 'reference/reusable-components' },
             { slug: 'reference/capabilities' },
+            { slug: 'reference/dialect-notes' },
             { slug: 'reference/comparison' },
             { slug: 'reference/atlas-docs-coverage' },
             { slug: 'reference/exit-codes' },

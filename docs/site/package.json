@@ -11,6 +11,8 @@
     "preview": "astro preview",
     "astro": "astro",
     "check:exit-codes": "node scripts/check-exit-codes.mjs",
+    "check:core-doc-links": "node scripts/check-core-doc-links.mjs",
+    "check:page-health": "node scripts/check-page-health.mjs",
     "check:links": "node scripts/check-links.mjs",
     "check:links:selftest": "node scripts/check-links.mjs --selftest",
     "versions:selftest": "node scripts/gen-versions.mjs --selftest"
