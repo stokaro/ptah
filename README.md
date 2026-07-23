@@ -17,6 +17,7 @@ architecture is better.
 | YAML or HCL schema source | [Schema files](docs/site/src/content/docs/workflows/schema-files.md) |
 | Migration operations | [Migrations](docs/site/src/content/docs/workflows/migrations.md) |
 | Atlas-compatible CLI paths | [Atlas-compatible CLI](docs/site/src/content/docs/workflows/atlas-cli.md) |
+| Reusable Go packages | [Reusable components](docs/site/src/content/docs/reference/reusable-components.md) |
 | CI setup | [CI](docs/site/src/content/docs/workflows/ci.md) |
 | Command and feature comparison | [Comparison](docs/site/src/content/docs/reference/comparison.md) |
 | Dialect behavior | [Capabilities](docs/site/src/content/docs/reference/capabilities.md) |
