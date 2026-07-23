@@ -25,12 +25,6 @@
       "count": 3
     },
     {
-      "path": "cmd/migratedown/migratedown_test.go",
-      "function": "TestMigrateDownCommand_Integration",
-      "kind": "if",
-      "count": 1
-    },
-    {
       "path": "cmd/migrateup/migrateup_test.go",
       "function": "TestMigrateUpCommandHonorsLintConfigSeverityWithPostgres",
       "kind": "if",
