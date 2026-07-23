@@ -1144,11 +1144,6 @@
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
-      "path": "cmd/ptah-compat/main_test.go",
-      "package": "main",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
       "path": "core/goschema/embedded_bug_reproduction_test.go",
       "package": "goschema",
       "reason": "same-package test file is not named *_internal_test.go"
