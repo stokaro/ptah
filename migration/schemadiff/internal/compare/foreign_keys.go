@@ -77,6 +77,7 @@ func foreignTableRefMatches(generated string, dbConstraint types.DBConstraint) b
 // RESTRICT <-> NO ACTION change the user intended.
 func normalizeReferentialAction(action, dialect string) string {
 	normalized := strings.ToUpper(strings.TrimSpace(action))
+	normalized = strings.ReplaceAll(normalized, "_", " ")
 	if normalized == "" {
 		return "NO ACTION"
 	}

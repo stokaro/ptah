@@ -399,6 +399,162 @@ func TestCompareWithDialect_MySQLDefaultsTypesFixtureMatchesCatalogReadback(t *t
 	c.Assert(diff.TablesModified, qt.HasLen, 0)
 }
 
+func TestCompareWithDialect_MySQLConstraintsActionsFixtureMatchesCatalogReadback(t *testing.T) {
+	c := qt.New(t)
+	statusDefault := "'active'"
+	budgetDefault := "0"
+	budgetCheck := "(`budget_cents` >= 0)"
+	statusCheck := "(`status` in (_latin1\\'active\\',_latin1\\'archived\\'))"
+	deleteRule := "CASCADE"
+	updateRule := "RESTRICT"
+
+	generated := &goschema.Database{
+		Tables: []goschema.Table{
+			{Name: "organizations", StructName: "Organization"},
+			{Name: "projects", StructName: "Project"},
+		},
+		Fields: []goschema.Field{
+			{StructName: "Organization", Name: "id", Type: "SERIAL", Primary: true},
+			{StructName: "Organization", Name: "slug", Type: "VARCHAR(64)", Nullable: false, Unique: true},
+			{StructName: "Project", Name: "id", Type: "SERIAL", Primary: true},
+			{
+				StructName:     "Project",
+				Name:           "organization_id",
+				Type:           "INTEGER",
+				Nullable:       false,
+				Foreign:        "organizations(id)",
+				ForeignKeyName: "fk_projects_organization",
+				OnDelete:       "CASCADE",
+				OnUpdate:       "RESTRICT",
+			},
+			{StructName: "Project", Name: "slug", Type: "VARCHAR(64)", Nullable: false},
+			{
+				StructName: "Project",
+				Name:       "status",
+				Type:       "VARCHAR(16)",
+				Nullable:   false,
+				Default:    "active",
+				DefaultSet: true,
+			},
+			{
+				StructName:  "Project",
+				Name:        "budget_cents",
+				Type:        "INTEGER",
+				Nullable:    false,
+				DefaultExpr: "0",
+				Check:       "budget_cents >= 0",
+				CheckName:   "projects_budget_nonnegative",
+			},
+		},
+		Constraints: []goschema.Constraint{
+			{
+				StructName: "Project",
+				Name:       "projects_org_slug_unique",
+				Type:       "UNIQUE",
+				Table:      "projects",
+				Columns:    []string{"organization_id", "slug"},
+			},
+			{
+				StructName:      "Project",
+				Name:            "projects_status_check",
+				Type:            "CHECK",
+				Table:           "projects",
+				CheckExpression: "status IN ('active', 'archived')",
+			},
+		},
+	}
+	database := &types.DBSchema{
+		Tables: []types.DBTable{
+			{
+				Name: "organizations",
+				Type: "TABLE",
+				Columns: []types.DBColumn{
+					{Name: "id", DataType: "int", ColumnType: "int", IsNullable: "NO", IsPrimaryKey: true, IsAutoIncrement: true},
+					{Name: "slug", DataType: "varchar(64)", ColumnType: "varchar(64)", IsNullable: "NO", IsUnique: true},
+				},
+			},
+			{
+				Name: "projects",
+				Type: "TABLE",
+				Columns: []types.DBColumn{
+					{Name: "id", DataType: "int", ColumnType: "int", IsNullable: "NO", IsPrimaryKey: true, IsAutoIncrement: true},
+					{Name: "organization_id", DataType: "int", ColumnType: "int", IsNullable: "NO"},
+					{Name: "slug", DataType: "varchar(64)", ColumnType: "varchar(64)", IsNullable: "NO"},
+					{Name: "status", DataType: "varchar(16)", ColumnType: "varchar(16)", IsNullable: "NO", ColumnDefault: &statusDefault},
+					{Name: "budget_cents", DataType: "int", ColumnType: "int", IsNullable: "NO", ColumnDefault: &budgetDefault},
+				},
+			},
+		},
+		Constraints: []types.DBConstraint{
+			{Name: "PRIMARY", TableName: "organizations", Type: "PRIMARY KEY", ColumnName: "id", ColumnNames: []string{"id"}},
+			{Name: "slug", TableName: "organizations", Type: "UNIQUE", ColumnName: "slug", ColumnNames: []string{"slug"}},
+			{Name: "PRIMARY", TableName: "projects", Type: "PRIMARY KEY", ColumnName: "id", ColumnNames: []string{"id"}},
+			{
+				Name:           "fk_projects_organization",
+				TableName:      "projects",
+				Type:           "FOREIGN KEY",
+				ColumnName:     "organization_id",
+				ColumnNames:    []string{"organization_id"},
+				ForeignTable:   new("organizations"),
+				ForeignColumn:  new("id"),
+				ForeignColumns: []string{"id"},
+				DeleteRule:     &deleteRule,
+				UpdateRule:     &updateRule,
+			},
+			{
+				Name:        "projects_budget_nonnegative",
+				TableName:   "projects",
+				Type:        "CHECK",
+				CheckClause: &budgetCheck,
+			},
+			{
+				Name:        "projects_org_slug_unique",
+				TableName:   "projects",
+				Type:        "UNIQUE",
+				ColumnName:  "organization_id",
+				ColumnNames: []string{"organization_id", "slug"},
+			},
+			{
+				Name:        "projects_status_check",
+				TableName:   "projects",
+				Type:        "CHECK",
+				CheckClause: &statusCheck,
+			},
+		},
+	}
+
+	diff := schemadiff.CompareWithDialect(generated, database, "mysql")
+	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
+}
+
+func TestCompareWithDialect_MySQLCharsetEscapedStringLiteralMatchesGeneratedEscapes(t *testing.T) {
+	c := qt.New(t)
+	checkClause := "(`name` <> _latin1\\'owner\\'s\\')"
+
+	generated := &goschema.Database{
+		Tables: []goschema.Table{{Name: "projects", StructName: "Project"}},
+		Constraints: []goschema.Constraint{{
+			StructName:      "Project",
+			Name:            "projects_name_check",
+			Type:            "CHECK",
+			Table:           "projects",
+			CheckExpression: "name <> 'owner''s'",
+		}},
+	}
+	database := &types.DBSchema{
+		Tables: []types.DBTable{{Name: "projects", Type: "TABLE"}},
+		Constraints: []types.DBConstraint{{
+			Name:        "projects_name_check",
+			TableName:   "projects",
+			Type:        "CHECK",
+			CheckClause: &checkClause,
+		}},
+	}
+
+	diff := schemadiff.CompareWithDialect(generated, database, "mysql")
+	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
+}
+
 func TestCompareWithDialect_SQLiteInlineEnumsMatchGeneratedEnumFields(t *testing.T) {
 	c := qt.New(t)
 
