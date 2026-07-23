@@ -7,24 +7,6 @@
       "count": 3
     },
     {
-      "path": "cmd/migratebaseline/migratebaseline_test.go",
-      "function": "TestMigrateBaselineCommandPostgresWritesMetadataWithoutExecutingDDL",
-      "kind": "if",
-      "count": 3
-    },
-    {
-      "path": "cmd/migratebaseline/migratebaseline_test.go",
-      "function": "TestVerifyBaselineShadowPostgresMatchIgnoresShadowMetadata",
-      "kind": "if",
-      "count": 3
-    },
-    {
-      "path": "cmd/migratebaseline/migratebaseline_test.go",
-      "function": "TestVerifyBaselineShadowPostgresMismatchRequiresForce",
-      "kind": "if",
-      "count": 3
-    },
-    {
       "path": "core/goschema/dependency_fix_test.go",
       "function": "TestDependencyOrderingWithEmbeddedFields",
       "kind": "if",
