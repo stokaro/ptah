@@ -87,6 +87,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterConfigFlag(flags, &opts.configPath)
 	dbcli.RegisterEnvFlag(flags, &opts.envName)
+	dbcli.RegisterAtlasProjectInternalFlags(flags)
 	dbcli.RegisterMigrationsSchemaFlag(flags, &opts.migrationsSchema)
 	dbcli.RegisterMigrationsTableFlag(flags, &opts.migrationsTable)
 	dbcli.RegisterRevisionTableFormatFlag(flags, &opts.revisionTableFormat)

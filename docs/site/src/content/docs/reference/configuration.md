@@ -15,8 +15,9 @@ Configuration precedence is:
 
 Use `ptah.yaml` for Ptah-owned configuration and the supported `atlas.hcl`
 subset for Atlas-compatible project config. The supported Atlas subset includes
-local `variable` defaults, `locals`, `getenv`, `file`, `fileset`, and
-`data.hcl_schema.<name>.url` references for local schema-file workflows.
+local `variable` defaults and Atlas-style `--var name=value` overrides,
+`locals`, `getenv`, `file`, `fileset`, and `data.hcl_schema.<name>.url`
+references for local schema-file workflows.
 Supported Atlas env blocks can also set `schema.src`, `schema.mode`, `format`,
 and local `diff` policy defaults for `ptah atlas ...` commands.
 
@@ -57,6 +58,8 @@ webhooks, lint defaults, and online-DDL policy.
 | Atlas-compatible diff policy | `diff.skip.drop_table`, `diff.concurrent_index.create` |
 
 The Atlas-compatible command tree lives under `ptah atlas <command> ...`.
+Atlas project flags such as `--config`, `-c`, `--env`, and repeated
+`--var name=value` belong to this tree only.
 `ptah-compat` is the drop-in replacement binary for scripts that expect
 Atlas-style root commands; it is not a separate configuration surface.
 

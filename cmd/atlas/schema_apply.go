@@ -22,7 +22,6 @@ type atlasSchemaApplyOptions struct {
 	url         string
 	toURLs      []string
 	devURL      string
-	envName     string
 	dryRun      bool
 	autoApprove bool
 	format      string
@@ -52,7 +51,6 @@ and Atlas Cloud planning remain explicit follow-up gaps.`,
 	flags.StringVarP(&opts.url, "url", "u", "", "Database URL to apply to")
 	flags.StringArrayVar(&opts.toURLs, "to", nil, "Desired schema target URL")
 	flags.StringVar(&opts.devURL, "dev-url", "", "Dev database URL used by Atlas for planning")
-	dbcli.RegisterEnvFlag(flags, &opts.envName)
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Show planned changes without applying them")
 	flags.BoolVar(&opts.autoApprove, "auto-approve", false, "Skip interactive approval")
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
@@ -70,9 +68,9 @@ and Atlas Cloud planning remain explicit follow-up gaps.`,
 func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error {
 	formatOutput := cmd.Flags().Changed("format")
 	policy := atlasschema.DiffPolicy{}
-	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd, opts.envName)
+	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
 	if needsAtlasSchemaApplyConfig(cmd) {
-		projectCfg, loaded, err = loadRequiredAtlasProjectConfigForCommand(cmd, opts.envName)
+		projectCfg, loaded, err = loadRequiredAtlasProjectConfigForCommand(cmd)
 	}
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

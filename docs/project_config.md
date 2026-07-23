@@ -114,5 +114,8 @@ Runtime values resolve in this order:
 4. `ptah.yaml`
 5. Built-in command defaults
 
-`atlas.hcl` is translated into the same project config IR. See
-[Atlas Project Config](atlas_project_config.md) for the supported Atlas subset.
+`atlas.hcl` is translated into the same project config IR. Atlas-compatible
+commands under `ptah atlas schema ...` and `ptah atlas migrate ...` also accept
+Atlas project flags such as `--config`, `-c`, `--env`, and repeated
+`--var name=value`. See [Atlas Project Config](atlas_project_config.md) for the
+supported Atlas subset.

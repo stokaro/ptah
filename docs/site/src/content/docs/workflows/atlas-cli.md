@@ -27,7 +27,17 @@ model. Unsupported flags fail clearly instead of being ignored.
 | `--url` | `--db-url` |
 | `--dir` | `--migrations-dir` |
 | `atlas.hcl` env | Project config IR for supported `ptah atlas ... --env` defaults |
+| `--config`, `-c` | Local Atlas project config path for `schema` and `migrate` commands |
+| `--var name=value` | Atlas HCL variable override for supported local expressions |
 | Atlas revision table mode | Ptah revision format and table settings |
+
+Atlas project flags are persistent on the Atlas-compatible `schema` and
+`migrate` command groups, so both of these forms are valid:
+
+```bash
+ptah atlas migrate --config project.hcl --env local hash
+ptah atlas migrate hash --config project.hcl --env local
+```
 
 ## Migration commands
 
