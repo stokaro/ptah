@@ -299,6 +299,106 @@ func TestCompareWithDialect_SQLServerGeneratedExpressionNormalizesCatalogDefinit
 	}
 }
 
+func TestCompareWithDialect_MySQLDefaultsTypesFixtureMatchesCatalogReadback(t *testing.T) {
+	c := qt.New(t)
+	subtotalDefault := "0.00"
+	taxRateDefault := "0.0000"
+	issuedAtDefault := "current_timestamp()"
+	paidDefault := "0"
+
+	generated := &goschema.Database{
+		Tables: []goschema.Table{{Name: "invoices", StructName: "Invoice"}},
+		Fields: []goschema.Field{
+			{StructName: "Invoice", Name: "id", Type: "SERIAL", Primary: true},
+			{StructName: "Invoice", Name: "invoice_number", Type: "VARCHAR(32)", Nullable: false, Unique: true},
+			{
+				StructName: "Invoice",
+				Name:       "subtotal",
+				Type:       "DECIMAL(12,2)",
+				Nullable:   false,
+				Default:    "0.00",
+				DefaultSet: true,
+			},
+			{
+				StructName:  "Invoice",
+				Name:        "tax_rate",
+				Type:        "DECIMAL(5,4)",
+				Nullable:    false,
+				DefaultExpr: "0",
+			},
+			{
+				StructName:  "Invoice",
+				Name:        "issued_at",
+				Type:        "TIMESTAMP",
+				Nullable:    false,
+				DefaultExpr: "CURRENT_TIMESTAMP",
+			},
+			{
+				StructName: "Invoice",
+				Name:       "paid",
+				Type:       "BOOLEAN",
+				Nullable:   false,
+				Default:    "false",
+				DefaultSet: true,
+			},
+		},
+	}
+	database := &types.DBSchema{
+		Tables: []types.DBTable{{
+			Name: "invoices",
+			Type: "TABLE",
+			Columns: []types.DBColumn{
+				{
+					Name:            "id",
+					DataType:        "int",
+					ColumnType:      "int",
+					IsNullable:      "NO",
+					IsPrimaryKey:    true,
+					IsAutoIncrement: true,
+				},
+				{
+					Name:       "invoice_number",
+					DataType:   "varchar(32)",
+					ColumnType: "varchar(32)",
+					IsNullable: "NO",
+					IsUnique:   true,
+				},
+				{
+					Name:          "subtotal",
+					DataType:      "decimal(12,2)",
+					ColumnType:    "decimal(12,2)",
+					IsNullable:    "NO",
+					ColumnDefault: &subtotalDefault,
+				},
+				{
+					Name:          "tax_rate",
+					DataType:      "decimal(5,4)",
+					ColumnType:    "decimal(5,4)",
+					IsNullable:    "NO",
+					ColumnDefault: &taxRateDefault,
+				},
+				{
+					Name:          "issued_at",
+					DataType:      "timestamp",
+					ColumnType:    "timestamp",
+					IsNullable:    "NO",
+					ColumnDefault: &issuedAtDefault,
+				},
+				{
+					Name:          "paid",
+					DataType:      "tinyint(1)",
+					ColumnType:    "tinyint(1)",
+					IsNullable:    "NO",
+					ColumnDefault: &paidDefault,
+				},
+			},
+		}},
+	}
+
+	diff := schemadiff.CompareWithDialect(generated, database, "mysql")
+	c.Assert(diff.TablesModified, qt.HasLen, 0)
+}
+
 func TestCompareWithDialect_SQLiteInlineEnumsMatchGeneratedEnumFields(t *testing.T) {
 	c := qt.New(t)
 

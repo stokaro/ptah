@@ -128,8 +128,8 @@ func DefaultValue(defaultValue, typeName string) string {
 		return ""
 	}
 
-	if strings.ToUpper(defaultValue) == "CURRENT_TIMESTAMP()" {
-		return "CURRENT_TIMESTAMP"
+	if normalizedExpression := normalizeTemporalDefaultExpression(defaultValue, typeName); normalizedExpression != "" {
+		return normalizedExpression
 	}
 
 	cleanValue := defaultValue
@@ -161,9 +161,77 @@ func DefaultValue(defaultValue, typeName string) string {
 		// If it's not a recognized boolean value, return as-is
 		return cleanValue
 	}
+	if typeName == "decimal" {
+		return normalizeDecimalDefaultValue(cleanValue)
+	}
 
 	// Return cleaned value for all other types
 	return cleanValue
+}
+
+func normalizeTemporalDefaultExpression(defaultValue, typeName string) string {
+	normalizedType := strings.ToLower(strings.TrimSpace(typeName))
+	if normalizedType != "" && normalizedType != "timestamp" {
+		return ""
+	}
+	normalizedValue := strings.ToUpper(strings.TrimSpace(defaultValue))
+	normalizedValue = strings.TrimSuffix(normalizedValue, "()")
+	switch normalizedValue {
+	case "CURRENT_TIMESTAMP", "NOW", "LOCALTIME", "LOCALTIMESTAMP":
+		return normalizedValue
+	default:
+		return ""
+	}
+}
+
+func normalizeDecimalDefaultValue(value string) string {
+	value = strings.TrimSpace(value)
+	sign := ""
+	if after, ok := strings.CutPrefix(value, "-"); ok {
+		sign = "-"
+		value = after
+	} else if after, ok := strings.CutPrefix(value, "+"); ok {
+		value = after
+	}
+	if value == "" || strings.Count(value, ".") > 1 {
+		return sign + value
+	}
+	parts := strings.Split(value, ".")
+	for _, part := range parts {
+		if !isDecimalDigits(part) {
+			return sign + value
+		}
+	}
+	intPart := strings.TrimLeft(parts[0], "0")
+	if intPart == "" {
+		intPart = "0"
+	}
+	if len(parts) == 1 {
+		if intPart == "0" {
+			return intPart
+		}
+		return sign + intPart
+	}
+	fracPart := strings.TrimRight(parts[1], "0")
+	if fracPart == "" {
+		if intPart == "0" {
+			return intPart
+		}
+		return sign + intPart
+	}
+	return sign + intPart + "." + fracPart
+}
+
+func isDecimalDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func IsDefaultExpr(value string) bool {
