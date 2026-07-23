@@ -658,7 +658,24 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	parts = append(parts, fmt.Sprintf("  %s %s", escapeIdentifier(column.Name), columnType))
 	parts = r.appendColumnCharsetCollate(parts, column)
 
-	// Column constraints
+	parts = r.appendColumnMainClauses(parts, column)
+	return r.renderColumnTail(parts, column), nil
+}
+
+func (r *Renderer) appendColumnMainClauses(parts []string, column *ast.ColumnNode) []string {
+	if column.GeneratedExpression != "" {
+		parts = append(parts, renderGeneratedColumn(column))
+		return appendMySQLColumnConstraints(parts, column)
+	}
+
+	parts = appendMySQLColumnConstraints(parts, column)
+	if column.AutoInc {
+		parts = append(parts, r.renderAutoIncrement())
+	}
+	return parts
+}
+
+func appendMySQLColumnConstraints(parts []string, column *ast.ColumnNode) []string {
 	if column.Primary {
 		parts = append(parts, "PRIMARY KEY")
 	} else {
@@ -669,15 +686,14 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 			parts = append(parts, "UNIQUE")
 		}
 	}
+	return parts
+}
 
-	// Auto increment (dialect-specific)
-	if column.AutoInc {
-		parts = append(parts, r.renderAutoIncrement())
-	}
-	if column.GeneratedExpression != "" {
-		parts = append(parts, renderGeneratedColumn(column))
-	}
+func (r *Renderer) renderColumnTail(parts []string, column *ast.ColumnNode) string {
+	return strings.Join(r.appendColumnTail(parts, column), " ")
+}
 
+func (r *Renderer) appendColumnTail(parts []string, column *ast.ColumnNode) []string {
 	// Default value
 	switch {
 	case column.Default == nil:
@@ -706,7 +722,7 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 		parts = append(parts, fmt.Sprintf("CHECK (json_valid(%s))", escapeIdentifier(column.Name)))
 	}
 
-	return strings.Join(parts, " "), nil
+	return parts
 }
 
 func (r *Renderer) rendersNamedColumnCheckAsTableConstraint(column *ast.ColumnNode) bool {
@@ -749,9 +765,9 @@ func (r *Renderer) needsMariaDBJSONCheck(column *ast.ColumnNode) bool {
 }
 
 func renderGeneratedColumn(column *ast.ColumnNode) string {
-	sql := fmt.Sprintf("AS (%s)", column.GeneratedExpression)
+	sql := fmt.Sprintf("GENERATED ALWAYS AS (%s)", column.GeneratedExpression)
 	if column.GeneratedKind != "" {
-		sql += " " + column.GeneratedKind
+		sql += " " + strings.ToUpper(strings.TrimSpace(column.GeneratedKind))
 	}
 	return sql
 }
@@ -872,46 +888,8 @@ func (r *Renderer) renderColumnWithEnums(column *ast.ColumnNode, enumValues []st
 	parts = append(parts, fmt.Sprintf("  %s %s", escapeIdentifier(column.Name), columnType))
 	parts = r.appendColumnCharsetCollate(parts, column)
 
-	// Column constraints - MariaDB order: PRIMARY KEY, then NOT NULL, then UNIQUE
-	if column.Primary {
-		parts = append(parts, "PRIMARY KEY")
-		if column.AutoInc {
-			parts = append(parts, r.renderAutoIncrement())
-		}
-	} else {
-		if !column.Nullable {
-			parts = append(parts, "NOT NULL")
-		}
-		if column.Unique {
-			parts = append(parts, "UNIQUE")
-		}
-		if column.AutoInc {
-			parts = append(parts, r.renderAutoIncrement())
-		}
-	}
-
-	// Default values
-	if column.Default != nil {
-		if column.Default.Expression != "" {
-			parts = append(parts, fmt.Sprintf("DEFAULT %s", column.Default.Expression))
-		} else if column.Default.HasLiteral() {
-			parts = append(parts, fmt.Sprintf("DEFAULT %s", r.renderDefaultLiteral(column)))
-		}
-	}
-	if column.UpdateExpression != "" {
-		parts = append(parts, "ON UPDATE", column.UpdateExpression)
-	}
-	if column.GeneratedExpression != "" {
-		parts = append(parts, renderGeneratedColumn(column))
-	}
-
-	// Check constraints
-	if column.Check != "" {
-		parts = append(parts, fmt.Sprintf("CHECK (%s)", column.Check))
-	}
-	if r.needsMariaDBJSONCheck(column) {
-		parts = append(parts, fmt.Sprintf("CHECK (json_valid(%s))", escapeIdentifier(column.Name)))
-	}
+	parts = r.appendColumnMainClauses(parts, column)
+	parts = r.appendColumnTail(parts, column)
 
 	// Comments
 	if column.Comment != "" {

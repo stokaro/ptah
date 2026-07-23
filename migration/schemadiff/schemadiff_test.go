@@ -125,6 +125,126 @@ func TestCompareWithDialect_GeneratedColumnDefaultKindMatchesDialect(t *testing.
 	}
 }
 
+func TestCompareWithDialect_GeneratedColumnCatalogExpressionsMatch(t *testing.T) {
+	tests := []struct {
+		name               string
+		dialect            string
+		generatedType      string
+		generatedExpr      string
+		generatedKind      string
+		databaseType       string
+		databaseColumnType string
+		databaseExpr       string
+		databaseKind       string
+	}{
+		{
+			name:               "postgres lower varchar cast",
+			dialect:            "postgres",
+			generatedType:      "VARCHAR(255)",
+			generatedExpr:      "lower(email)",
+			generatedKind:      "stored",
+			databaseType:       "varchar",
+			databaseColumnType: "varchar(255)",
+			databaseExpr:       "lower((email)::text)",
+			databaseKind:       "STORED",
+		},
+		{
+			name:               "mysql backtick identifier",
+			dialect:            "mysql",
+			generatedType:      "VARCHAR(255)",
+			generatedExpr:      "lower(email)",
+			generatedKind:      "stored",
+			databaseType:       "varchar",
+			databaseColumnType: "varchar(255)",
+			databaseExpr:       "lower(`email`)",
+			databaseKind:       "STORED",
+		},
+		{
+			name:               "postgres numeric cast parameters",
+			dialect:            "postgres",
+			generatedType:      "DECIMAL(10,2)",
+			generatedExpr:      "round(amount)",
+			generatedKind:      "stored",
+			databaseType:       "decimal",
+			databaseColumnType: "decimal(10,2)",
+			databaseExpr:       "round((amount)::numeric(10,2))",
+			databaseKind:       "STORED",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			generated := &goschema.Database{
+				Tables: []goschema.Table{{Name: "contacts", StructName: "Contact"}},
+				Fields: []goschema.Field{
+					{
+						StructName:          "Contact",
+						Name:                "email_normalized",
+						Type:                tt.generatedType,
+						Nullable:            true,
+						GeneratedExpression: tt.generatedExpr,
+						GeneratedKind:       tt.generatedKind,
+					},
+				},
+			}
+			database := &types.DBSchema{
+				Tables: []types.DBTable{{
+					Name: "contacts",
+					Type: "TABLE",
+					Columns: []types.DBColumn{{
+						Name:                "email_normalized",
+						DataType:            tt.databaseType,
+						ColumnType:          tt.databaseColumnType,
+						IsNullable:          "YES",
+						GeneratedExpression: &tt.databaseExpr,
+						GeneratedKind:       tt.databaseKind,
+					}},
+				}},
+			}
+
+			diff := schemadiff.CompareWithDialect(generated, database, tt.dialect)
+			c.Assert(diff.TablesModified, qt.HasLen, 0)
+		})
+	}
+}
+
+func TestCompareWithDialect_GeneratedColumnStringLiteralMismatchIsAGap(t *testing.T) {
+	c := qt.New(t)
+	generated := &goschema.Database{
+		Tables: []goschema.Table{{Name: "contacts", StructName: "Contact"}},
+		Fields: []goschema.Field{
+			{
+				StructName:          "Contact",
+				Name:                "email_normalized",
+				Type:                "TEXT",
+				Nullable:            true,
+				GeneratedExpression: "concat(email, 'ACTIVE')",
+				GeneratedKind:       "stored",
+			},
+		},
+	}
+	databaseExpression := "concat(`email`, 'active')"
+	database := &types.DBSchema{
+		Tables: []types.DBTable{{
+			Name: "contacts",
+			Type: "TABLE",
+			Columns: []types.DBColumn{{
+				Name:                "email_normalized",
+				DataType:            "text",
+				IsNullable:          "YES",
+				GeneratedExpression: &databaseExpression,
+				GeneratedKind:       "STORED",
+			}},
+		}},
+	}
+
+	diff := schemadiff.CompareWithDialect(generated, database, "mysql")
+	c.Assert(diff.TablesModified, qt.HasLen, 1)
+	c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
+	c.Assert(diff.TablesModified[0].ColumnsModified[0].Changes["generated"], qt.Contains, "'ACTIVE'")
+}
+
 func TestCompareWithDialect_SQLServerGeneratedExpressionNormalizesCatalogDefinition(t *testing.T) {
 	for _, tt := range []struct {
 		name                string

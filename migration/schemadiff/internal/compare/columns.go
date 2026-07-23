@@ -362,10 +362,19 @@ func generatedColumnDiff(genCol goschema.Field, dbCol types.DBColumn, dialect st
 
 func normalizeGeneratedExpression(expression, dialect string) string {
 	expression = normalize.Expression(expression)
-	if platform.NormalizeDialect(dialect) != platform.SQLServer {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.Postgres:
+		return normalizeCatalogGeneratedExpression(stripPostgresGeneratedTypeCasts(expression))
+	case platform.MySQL, platform.MariaDB:
+		return normalizeCatalogGeneratedExpression(expression)
+	case platform.SQLServer:
+		return normalizeSQLServerGeneratedExpression(expression)
+	default:
 		return expression
 	}
+}
 
+func normalizeSQLServerGeneratedExpression(expression string) string {
 	var b strings.Builder
 	inString := false
 	for i := 0; i < len(expression); i++ {
@@ -393,6 +402,153 @@ func normalizeGeneratedExpression(expression, dialect string) string {
 		b.WriteByte(ch)
 	}
 	return b.String()
+}
+
+func normalizeCatalogGeneratedExpression(expression string) string {
+	var b strings.Builder
+	inString := false
+	for i := 0; i < len(expression); i++ {
+		ch := expression[i]
+		if ch == '\'' {
+			b.WriteByte(ch)
+			if inString && i+1 < len(expression) && expression[i+1] == '\'' {
+				i++
+				b.WriteByte('\'')
+				continue
+			}
+			inString = !inString
+			continue
+		}
+		if inString {
+			b.WriteByte(ch)
+			continue
+		}
+		switch ch {
+		case '`', '"', ' ', '\t', '\n', '\r':
+			continue
+		default:
+			if ch >= 'A' && ch <= 'Z' {
+				ch += 'a' - 'A'
+			}
+			b.WriteByte(ch)
+		}
+	}
+	return collapseParenthesizedIdentifiers(b.String())
+}
+
+func stripPostgresGeneratedTypeCasts(expression string) string {
+	var b strings.Builder
+	inString := false
+	inIdentifier := false
+	for i := 0; i < len(expression); i++ {
+		ch := expression[i]
+		if ch == '\'' && !inIdentifier {
+			b.WriteByte(ch)
+			if inString && i+1 < len(expression) && expression[i+1] == '\'' {
+				i++
+				b.WriteByte('\'')
+				continue
+			}
+			inString = !inString
+			continue
+		}
+		if ch == '"' && !inString {
+			b.WriteByte(ch)
+			if inIdentifier && i+1 < len(expression) && expression[i+1] == '"' {
+				i++
+				b.WriteByte('"')
+				continue
+			}
+			inIdentifier = !inIdentifier
+			continue
+		}
+		if !inString && !inIdentifier && i+1 < len(expression) && ch == ':' && expression[i+1] == ':' {
+			i = skipPostgresGeneratedTypeCast(expression, i)
+			i--
+			continue
+		}
+		b.WriteByte(ch)
+	}
+	return b.String()
+}
+
+func skipPostgresGeneratedTypeCast(expression string, start int) int {
+	i := start + 2
+	for i < len(expression) && isPostgresTypeCastCharacter(expression[i]) {
+		i++
+	}
+	if i >= len(expression) || expression[i] != '(' {
+		return i
+	}
+	depth := 0
+	for i < len(expression) {
+		switch expression[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+		i++
+	}
+	return i
+}
+
+func isPostgresTypeCastCharacter(ch byte) bool {
+	return ch == ' ' || ch == '.' || ch == '_' ||
+		(ch >= '0' && ch <= '9') ||
+		(ch >= 'A' && ch <= 'Z') ||
+		(ch >= 'a' && ch <= 'z')
+}
+
+func collapseParenthesizedIdentifiers(expression string) string {
+	for {
+		next, changed := collapseOneParenthesizedIdentifier(expression)
+		if !changed {
+			return expression
+		}
+		expression = next
+	}
+}
+
+func collapseOneParenthesizedIdentifier(expression string) (string, bool) {
+	for start := 0; start < len(expression); start++ {
+		if expression[start] != '(' {
+			continue
+		}
+		if start > 0 && isIdentifierExpression(expression[start-1:start]) {
+			continue
+		}
+		end := strings.IndexByte(expression[start+1:], ')')
+		if end < 0 {
+			return expression, false
+		}
+		end += start + 1
+		inner := expression[start+1 : end]
+		if !isIdentifierExpression(inner) {
+			continue
+		}
+		return expression[:start] + inner + expression[end+1:], true
+	}
+	return expression, false
+}
+
+func isIdentifierExpression(expression string) bool {
+	if expression == "" {
+		return false
+	}
+	for i := 0; i < len(expression); i++ {
+		ch := expression[i]
+		if ch != '_' && ch != '.' &&
+			(ch < '0' || ch > '9') &&
+			(ch < 'a' || ch > 'z') &&
+			(ch < 'A' || ch > 'Z') {
+			return false
+		}
+	}
+	return true
 }
 
 func writeSQLServerBracketedIdentifier(b *strings.Builder, expression string, start int) int {
