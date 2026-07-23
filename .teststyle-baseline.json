@@ -1192,17 +1192,7 @@
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
-      "path": "cmd/migrate/generate_test.go",
-      "package": "migrate",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
       "path": "cmd/migrate/migrate_test.go",
-      "package": "migrate",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
-      "path": "cmd/migrate/new_test.go",
       "package": "migrate",
       "reason": "same-package test file is not named *_internal_test.go"
     },
