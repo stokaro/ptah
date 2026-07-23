@@ -53,4 +53,4 @@ ptah migrations validate --dir ./migrations
 ```
 
 Use YAML for Ptah-owned schema files. See the full reference in
-[YAML schema](https://github.com/stokaro/ptah/blob/master/docs/yaml_schema.md).
+[YAML schema](../../reference/yaml-schema/).

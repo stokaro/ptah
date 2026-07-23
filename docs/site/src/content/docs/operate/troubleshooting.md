@@ -74,7 +74,7 @@ Ptah supports a subset of Atlas project config. Unsupported constructs fail clea
 unsupported atlas.hcl construct ...
 ```
 
-Reference: [Atlas project config subset](https://github.com/stokaro/ptah/blob/master/docs/atlas_project_config.md).
+Reference: [Atlas project config subset](../../reference/atlas-project-config/).
 
 ## Atlas-compatible command is registered but not implemented
 
