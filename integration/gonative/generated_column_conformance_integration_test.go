@@ -14,9 +14,11 @@ import (
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/renderer"
+	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/convert/fromschema"
 	mysqlreader "github.com/stokaro/ptah/internal/dbschema/mysql"
 	postgresreader "github.com/stokaro/ptah/internal/dbschema/postgres"
+	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/schemadiff"
 )
 
@@ -33,12 +35,12 @@ func TestGeneratedColumnConformanceFixture_RoundTrip_Postgres(t *testing.T) {
 
 	target := generatedColumnConformanceSchema()
 	createSQL := renderGeneratedColumnConformanceSQL(c, target, platform.Postgres)
-	_, err = db.Exec(createSQL)
-	c.Assert(err, qt.IsNil, qt.Commentf("generated-column schema must apply: %s", createSQL))
+	execGeneratedColumnConformanceSQL(c, db, createSQL)
 
 	reader := postgresreader.NewPostgreSQLReader(db, "public")
 	liveSchema, err := reader.ReadSchema()
 	c.Assert(err, qt.IsNil)
+	liveSchema = filterGeneratedColumnConformanceSchema(liveSchema)
 
 	diff := schemadiff.CompareWithDialect(target, liveSchema, platform.Postgres)
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
@@ -57,12 +59,12 @@ func TestGeneratedColumnConformanceFixture_RoundTrip_MySQL(t *testing.T) {
 
 	target := generatedColumnConformanceSchema()
 	createSQL := renderGeneratedColumnConformanceSQL(c, target, platform.MySQL)
-	_, err = db.Exec(createSQL)
-	c.Assert(err, qt.IsNil, qt.Commentf("generated-column schema must apply: %s", createSQL))
+	execGeneratedColumnConformanceSQL(c, db, createSQL)
 
 	reader := mysqlreader.NewMySQLReader(db, "")
 	liveSchema, err := reader.ReadSchema()
 	c.Assert(err, qt.IsNil)
+	liveSchema = filterGeneratedColumnConformanceSchema(liveSchema)
 
 	diff := schemadiff.CompareWithDialect(target, liveSchema, platform.MySQL)
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
@@ -95,4 +97,22 @@ func renderGeneratedColumnConformanceSQL(c *qt.C, target *goschema.Database, dia
 	createSQL, err := renderer.RenderSQL(dialect, createAST.Statements...)
 	c.Assert(err, qt.IsNil)
 	return strings.TrimSpace(createSQL)
+}
+
+func execGeneratedColumnConformanceSQL(c *qt.C, db *sql.DB, sqlText string) {
+	for _, stmt := range migrator.SplitSQLStatements(sqlText) {
+		_, err := db.Exec(stmt)
+		c.Assert(err, qt.IsNil, qt.Commentf("generated-column schema statement must apply: %s", stmt))
+	}
+}
+
+func filterGeneratedColumnConformanceSchema(in *dbschematypes.DBSchema) *dbschematypes.DBSchema {
+	keepTables := map[string]struct{}{
+		"contacts": {},
+	}
+	out := *in
+	out.Tables = filterTables(in.Tables, keepTables)
+	out.Indexes = filterIndexes(in.Indexes, keepTables)
+	out.Constraints = filterConstraints(in.Constraints, keepTables)
+	return &out
 }
