@@ -26,6 +26,7 @@ type atlasMigrateDiffOptions struct {
 	format      string
 	schemas     []string
 	lockTimeout string
+	dryRun      bool
 }
 
 func newAtlasMigrateDiffCommand() *cobra.Command {
@@ -41,11 +42,11 @@ writes a new Atlas-style single-file migration plus atlas.sum when changes are
 found. Use a disposable dev database. This implementation currently supports
 local file:// migration directories and local .hcl, .yaml, .yml, or .sql schema
 files. Use --schema to limit the comparison to selected schema names. Database
-URLs, env:// URLs, lock flags other than --lock-timeout, concurrent index
-migration-file metadata, and Docker dev databases remain explicit follow-up
-gaps. When --env is set, the selected atlas.hcl env can provide schema.src,
-dev, migration.dir, format.migrate.diff, and supported non-concurrent diff
-policy values.`,
+URLs, env:// URLs, lock flags other than --lock-timeout, --edit, qualifier
+metadata, concurrent index migration-file metadata, and Docker dev databases
+remain explicit follow-up gaps. When --env is set, the selected atlas.hcl env
+can provide schema.src, dev, migration.dir, format.migrate.diff, and supported
+non-concurrent diff policy values.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := "migration"
@@ -64,6 +65,10 @@ policy values.`,
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
 	flags.StringArrayVar(&opts.schemas, "schema", nil, "Schemas to diff")
 	flags.StringVar(&opts.lockTimeout, "lock-timeout", "", "Timeout for acquiring Atlas migration directory locks")
+	flags.BoolVar(&opts.dryRun, "dry-run", false, "Print the generated migration file to stdout instead of writing it")
+	if err := flags.MarkHidden("dry-run"); err != nil {
+		panic(err)
+	}
 	cmdutil.ConfigureCommandArgs(cmd, nil)
 	return cmd
 }
@@ -127,12 +132,17 @@ func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name 
 		Schemas:     opts.schemas,
 		LockTimeout: lockTimeout,
 		Policy:      policy,
+		DryRun:      opts.dryRun,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if diffResult.Synced {
 		fmt.Fprintln(cmd.OutOrStdout(), "The migration directory is synced with the desired state, no changes to be made")
+		return nil
+	}
+	if opts.dryRun {
+		fmt.Fprint(cmd.OutOrStdout(), diffResult.SQL)
 		return nil
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Created migration file: %s\n", diffResult.MigrationPath)
