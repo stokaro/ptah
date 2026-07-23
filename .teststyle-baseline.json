@@ -1129,11 +1129,6 @@
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
-      "path": "cmd/migratebaseline/migratebaseline_test.go",
-      "package": "migratebaseline",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
       "path": "cmd/migrateup/migrateup_test.go",
       "package": "migrateup",
       "reason": "same-package test file is not named *_internal_test.go"
