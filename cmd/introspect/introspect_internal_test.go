@@ -1,5 +1,9 @@
 package introspect
 
+// White-box testing required: validateOptions is an unexported validation
+// helper whose exact option error paths are easier to exercise directly than
+// through Cobra command execution.
+
 import (
 	"bytes"
 	"testing"
@@ -9,7 +13,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 )
 
-func TestValidateOptions(t *testing.T) {
+func TestValidateOptions_FailurePath(t *testing.T) {
 	tests := []struct {
 		name string
 		opts options
@@ -35,6 +39,24 @@ func TestValidateOptions(t *testing.T) {
 			opts: options{dbURL: "postgres://localhost/db", outDir: "models", packageName: "models", perTable: true, singleFile: true},
 			want: "--single-file and --per-table are mutually exclusive",
 		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			err := validateOptions(tt.opts)
+
+			c.Assert(err, qt.ErrorMatches, tt.want)
+		})
+	}
+}
+
+func TestValidateOptions_HappyPath(t *testing.T) {
+	tests := []struct {
+		name string
+		opts options
+	}{
 		{
 			name: "valid default per table",
 			opts: options{dbURL: "postgres://localhost/db", outDir: "models", packageName: "models"},
@@ -54,11 +76,8 @@ func TestValidateOptions(t *testing.T) {
 			c := qt.New(t)
 
 			err := validateOptions(tt.opts)
-			if tt.want == "" {
-				c.Assert(err, qt.IsNil)
-				return
-			}
-			c.Assert(err, qt.ErrorMatches, tt.want)
+
+			c.Assert(err, qt.IsNil)
 		})
 	}
 }

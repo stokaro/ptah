@@ -1,48 +1,6 @@
 {
   "test_conditionals": [
     {
-      "path": "atlascompat/atlascompat_test.go",
-      "function": "TestDBSchemaToGoSchema",
-      "kind": "if",
-      "count": 3
-    },
-    {
-      "path": "atlascompat/atlascompat_test.go",
-      "function": "TestParseAtlasHCL",
-      "kind": "if",
-      "count": 3
-    },
-    {
-      "path": "atlascompat/atlascompat_test.go",
-      "function": "TestParseSQL",
-      "kind": "if",
-      "count": 3
-    },
-    {
-      "path": "atlascompat/atlascompat_test.go",
-      "function": "TestSchemaToAST",
-      "kind": "if",
-      "count": 2
-    },
-    {
-      "path": "atlascompat/atlascompat_test.go",
-      "function": "TestSumFileNameConstantsMatchFormats",
-      "kind": "if",
-      "count": 4
-    },
-    {
-      "path": "atlascompat/atlascompat_test.go",
-      "function": "TestSumHelpers",
-      "kind": "if",
-      "count": 7
-    },
-    {
-      "path": "atlascompat/atlascompat_test.go",
-      "function": "TestWriteSumBytes",
-      "kind": "if",
-      "count": 3
-    },
-    {
       "path": "cmd/internal/cliobs/cliobs_test.go",
       "function": "TestEmitterJSONModeWritesParseableJSONLines",
       "kind": "if",
@@ -79,12 +37,6 @@
       "count": 2
     },
     {
-      "path": "cmd/introspect/introspect_test.go",
-      "function": "TestValidateOptions",
-      "kind": "if",
-      "count": 1
-    },
-    {
       "path": "cmd/lint/lint_test.go",
       "function": "TestRunLint_SARIFFormat",
       "kind": "if",
@@ -117,12 +69,6 @@
     {
       "path": "cmd/migratedown/migratedown_test.go",
       "function": "TestMigrateDownCommand_Integration",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "cmd/migratestatus/exitcode_test.go",
-      "function": "TestMigrateStatusExitCode",
       "kind": "if",
       "count": 1
     },
@@ -1201,12 +1147,6 @@
       "count": 1
     },
     {
-      "path": "migration/migrator/tx_mode_test.go",
-      "function": "TestParseMigrationTxMode",
-      "kind": "if",
-      "count": 1
-    },
-    {
       "path": "migration/migrator/util_test.go",
       "function": "TestParseMigrationFileName",
       "kind": "if",
@@ -1360,11 +1300,6 @@
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
-      "path": "cmd/introspect/introspect_test.go",
-      "package": "introspect",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
       "path": "cmd/lint/lint_test.go",
       "package": "lint",
       "reason": "same-package test file is not named *_internal_test.go"
@@ -1397,11 +1332,6 @@
     {
       "path": "cmd/migraterepair/migraterepair_test.go",
       "package": "migraterepair",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
-      "path": "cmd/migratestatus/exitcode_test.go",
-      "package": "migratestatus",
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
