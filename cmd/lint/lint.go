@@ -250,6 +250,7 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	if len(cfg.DisabledRules) == 0 {
 		cfg.DisabledRules = append([]string{}, projectCfg.Lint.DisabledRules...)
 	}
+	cfg.Rules = effectiveLintRuleConfigs(projectCfg.Lint.RuleConfigs, cfg.Rules)
 	if !isValidDialect(cfg.Dialect) {
 		msg := fmt.Sprintf("invalid dialect %q in lint config: expected postgres, mysql, mariadb, sqlite, clickhouse, cockroachdb, yugabytedb, or spanner", cfg.Dialect)
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, msg)
@@ -338,6 +339,40 @@ func loadConfig(opts runOptions) (*lint.Config, error) {
 		return lint.LoadConfig(opts.configPath)
 	}
 	return lint.LoadConfig(filepath.Join(opts.dir, lint.ConfigFileName))
+}
+
+func effectiveLintRuleConfigs(
+	projectRules map[string]projectconfig.LintRuleConfig,
+	configRules map[string]lint.RuleConfig,
+) map[string]lint.RuleConfig {
+	if len(projectRules) == 0 {
+		return cloneLintRuleConfigs(configRules)
+	}
+	merged := make(map[string]lint.RuleConfig, len(projectRules)+len(configRules))
+	for code, rule := range projectRules {
+		converted := lint.RuleConfig{
+			Severity: lint.Severity(rule.Severity),
+			Exclude:  slices.Clone(rule.Exclude),
+		}
+		merged[code] = converted
+	}
+	for code, rule := range configRules {
+		rule.Exclude = slices.Clone(rule.Exclude)
+		merged[code] = rule
+	}
+	return merged
+}
+
+func cloneLintRuleConfigs(values map[string]lint.RuleConfig) map[string]lint.RuleConfig {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]lint.RuleConfig, len(values))
+	for code, rule := range values {
+		rule.Exclude = slices.Clone(rule.Exclude)
+		cloned[code] = rule
+	}
+	return cloned
 }
 
 func lintVersions(cmd *cobra.Command, opts runOptions, cfg projectconfig.Config) ([]int64, bool, error) {

@@ -447,6 +447,122 @@ func TestRunLint_ProjectConfigDisablesRulesAndSetsDialect(t *testing.T) {
 	}
 }
 
+func TestRunLint_AtlasProjectConfigDestructivePolicyDowngradesSeverity(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
+	writeLintTestFile(c, migrationsDir, "0000000001_drop_column.up.sql", "ALTER TABLE users DROP COLUMN legacy;\n")
+	writeLintTestFile(c, migrationsDir, "0000000001_drop_column.down.sql", "ALTER TABLE users ADD COLUMN legacy TEXT;\n")
+	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(`env "ci" {
+  migration {
+    dir = "file://migrations"
+  }
+  lint {
+    destructive {
+      error = false
+    }
+  }
+}
+`), 0o600), qt.IsNil)
+	originalWD, err := os.Getwd()
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.Chdir(dir), qt.IsNil)
+	defer func() {
+		c.Assert(os.Chdir(originalWD), qt.IsNil)
+	}()
+
+	stdout, _, err := execute("--env", "ci", "--format", "json")
+
+	c.Assert(err, qt.IsNil)
+	var report struct {
+		Findings []lint.Finding `json:"findings"`
+	}
+	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
+	c.Assert(report.Findings, qt.HasLen, 1)
+	c.Assert(report.Findings[0].Rule, qt.Equals, "DS102")
+	c.Assert(report.Findings[0].Severity, qt.Equals, lint.SeverityWarning)
+}
+
+func TestRunLint_AtlasProjectConfigConcurrentIndexPolicyRaisesSeverity(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
+	writeLintTestFile(c, migrationsDir, "0000000001_index.up.sql", "CREATE INDEX user_email_idx ON users (email);\n")
+	writeLintTestFile(c, migrationsDir, "0000000001_index.down.sql", "DROP INDEX user_email_idx;\n")
+	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(`env "ci" {
+  lint {
+    concurrent_index {
+      error = true
+    }
+  }
+}
+`), 0o600), qt.IsNil)
+	originalWD, err := os.Getwd()
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.Chdir(dir), qt.IsNil)
+	defer func() {
+		c.Assert(os.Chdir(originalWD), qt.IsNil)
+	}()
+
+	stdout, _, err := execute("--env", "ci", "--dir", migrationsDir, "--dialect", "postgres", "--format", "json", "--fail-on", "none")
+
+	c.Assert(err, qt.IsNil)
+	var report struct {
+		Findings []lint.Finding `json:"findings"`
+	}
+	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
+	c.Assert(report.Findings, qt.HasLen, 1)
+	c.Assert(report.Findings[0].Rule, qt.Equals, "PG101")
+	c.Assert(report.Findings[0].Severity, qt.Equals, lint.SeverityError)
+}
+
+func TestRunLint_AtlasProjectConfigPolicyAffectsSARIFLevels(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
+	writeLintTestFile(c, migrationsDir, "0000000001_policy_levels.up.sql", `ALTER TABLE users DROP COLUMN legacy;
+CREATE INDEX user_email_idx ON users (email);
+`)
+	writeLintTestFile(c, migrationsDir, "0000000001_policy_levels.down.sql", `DROP INDEX user_email_idx;
+ALTER TABLE users ADD COLUMN legacy TEXT;
+`)
+	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(`env "ci" {
+  lint {
+    destructive {
+      error = false
+    }
+    concurrent_index {
+      error = true
+    }
+  }
+}
+`), 0o600), qt.IsNil)
+	originalWD, err := os.Getwd()
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.Chdir(dir), qt.IsNil)
+	defer func() {
+		c.Assert(os.Chdir(originalWD), qt.IsNil)
+	}()
+
+	stdout, _, err := execute("--env", "ci", "--dir", migrationsDir, "--dialect", "postgres", "--format", "sarif", "--fail-on", "none")
+
+	c.Assert(err, qt.IsNil)
+	var report sarifForTest
+	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
+	run := report.Runs[0]
+	rulesByID := make(map[string]sarifRuleForTest, len(run.Tool.Driver.Rules))
+	for _, rule := range run.Tool.Driver.Rules {
+		rulesByID[rule.ID] = rule
+	}
+	c.Assert(rulesByID["DS102"].DefaultConfiguration.Level, qt.Equals, "warning")
+	c.Assert(rulesByID["PG101"].DefaultConfiguration.Level, qt.Equals, "error")
+	c.Assert(run.Results[0].Level, qt.Equals, "warning")
+	c.Assert(run.Results[1].Level, qt.Equals, "error")
+}
+
 func TestRunLint_ConfigRuleSeverityAndExclude(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
