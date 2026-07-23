@@ -9,6 +9,9 @@ Ptah is an independent MIT-licensed implementation. It does not use Atlas source
 code; see [License boundary](../../operate/license-boundary/) for the repository
 and test-asset boundary.
 
+Ptah is also usable as importable Go packages, not only as a CLI. See
+[Reusable components](../reusable-components/) for the stable embedder surface.
+
 Atlas has both open and commercial/cloud feature sets. The current Atlas
 [feature availability](https://atlasgo.io/features) page lists database
 inspection, schema diffing, versioned migrations, and declarative migrations as
