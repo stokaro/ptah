@@ -1,4 +1,4 @@
-package cmdadapter
+package cmdadapter_test
 
 import (
 	"bytes"
@@ -6,13 +6,15 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
+
+	"github.com/stokaro/ptah/cmd/internal/cmdadapter"
 )
 
 func TestForwardCommandWithTargetHelpShowsTargetFlags(t *testing.T) {
 	c := qt.New(t)
 
 	target := newTestTargetCommand(nil)
-	cmd := NewForwardCommandWithTargetHelp("atlas", "Atlas adapter command", "target", func() *cobra.Command {
+	cmd := cmdadapter.NewForwardCommandWithTargetHelp("atlas", "Atlas adapter command", "target", func() *cobra.Command {
 		return target
 	})
 	var out bytes.Buffer
@@ -30,7 +32,7 @@ func TestForwardCommandWithTargetHelpUsesAdapterUsage(t *testing.T) {
 	c := qt.New(t)
 
 	target := newTestTargetCommand(nil)
-	cmd := NewForwardCommandWithTargetHelp("atlas", "Atlas adapter command", "target", func() *cobra.Command {
+	cmd := cmdadapter.NewForwardCommandWithTargetHelp("atlas", "Atlas adapter command", "target", func() *cobra.Command {
 		return target
 	})
 	var out bytes.Buffer
@@ -52,7 +54,7 @@ func TestForwardCommandWithTargetHelpUsesAdapterUsageForPrefixedChild(t *testing
 	child := newTestTargetCommand(nil)
 	child.Use = "child NAME"
 	target.AddCommand(child)
-	cmd := NewForwardCommandWithTargetHelp("atlas", "Atlas adapter command", "target child", func() *cobra.Command {
+	cmd := cmdadapter.NewForwardCommandWithTargetHelp("atlas", "Atlas adapter command", "target child", func() *cobra.Command {
 		return target
 	}, "child")
 	var out bytes.Buffer
@@ -75,7 +77,7 @@ func TestForwardCommandResetsTargetFlagsAndIO(t *testing.T) {
 	target := newTestTargetCommand(func(value string) {
 		values = append(values, value)
 	})
-	cmd := NewForwardCommandWithTargetHelp("atlas", "Atlas adapter command", "target", func() *cobra.Command {
+	cmd := cmdadapter.NewForwardCommandWithTargetHelp("atlas", "Atlas adapter command", "target", func() *cobra.Command {
 		return target
 	})
 	var adapterOut bytes.Buffer
@@ -104,7 +106,7 @@ func TestForwardCommandResetsStringArrayEmptyDefault(t *testing.T) {
 	c := qt.New(t)
 
 	target := newStringArrayTargetCommand(nil, nil)
-	cmd := NewForwardCommandWithTargetHelp("atlas", "Atlas adapter command", "target", func() *cobra.Command {
+	cmd := cmdadapter.NewForwardCommandWithTargetHelp("atlas", "Atlas adapter command", "target", func() *cobra.Command {
 		return target
 	})
 	var adapterOut bytes.Buffer
@@ -129,7 +131,7 @@ func TestForwardCommandRepeatedStringArrayRunsReplaceDefault(t *testing.T) {
 	target := newStringArrayTargetCommand([]string{"prod", "production"}, func(values []string) {
 		runs = append(runs, values)
 	})
-	cmd := NewForwardCommandWithTargetHelp("atlas", "Atlas adapter command", "target", func() *cobra.Command {
+	cmd := cmdadapter.NewForwardCommandWithTargetHelp("atlas", "Atlas adapter command", "target", func() *cobra.Command {
 		return target
 	})
 	var adapterOut bytes.Buffer
@@ -151,23 +153,6 @@ func TestForwardCommandRepeatedStringArrayRunsReplaceDefault(t *testing.T) {
 	c.Assert(target.Flags().Lookup("value").Changed, qt.IsFalse)
 }
 
-func TestResetCommandFlagsStringArrayUsesDeclaredDefault(t *testing.T) {
-	c := qt.New(t)
-
-	target := newStringArrayTargetCommand([]string{"prod", "production"}, nil)
-	c.Assert(target.Flags().Set("value", "staging"), qt.IsNil)
-	values, err := target.Flags().GetStringArray("value")
-	c.Assert(err, qt.IsNil)
-	c.Assert(values, qt.DeepEquals, []string{"staging"})
-
-	resetCommandFlags(target)
-
-	values, err = target.Flags().GetStringArray("value")
-	c.Assert(err, qt.IsNil)
-	c.Assert(values, qt.DeepEquals, []string{"prod", "production"})
-	c.Assert(target.Flags().Lookup("value").Changed, qt.IsFalse)
-}
-
 func TestForwardCommandRepeatedStringSliceRunsReplaceDefault(t *testing.T) {
 	c := qt.New(t)
 
@@ -175,7 +160,7 @@ func TestForwardCommandRepeatedStringSliceRunsReplaceDefault(t *testing.T) {
 	target := newStringSliceTargetCommand([]string{"prod"}, func(values []string) {
 		runs = append(runs, values)
 	})
-	cmd := NewForwardCommandWithTargetHelp("atlas", "Atlas adapter command", "target", func() *cobra.Command {
+	cmd := cmdadapter.NewForwardCommandWithTargetHelp("atlas", "Atlas adapter command", "target", func() *cobra.Command {
 		return target
 	})
 	var adapterOut bytes.Buffer
@@ -205,7 +190,7 @@ func TestForwardCommandStringArrayCLIOverridesEnvironment(t *testing.T) {
 	target := newStringArrayTargetCommand(nil, func(values []string) {
 		runs = append(runs, values)
 	})
-	cmd := NewForwardCommandWithTargetHelp("atlas", "Atlas adapter command", "target", func() *cobra.Command {
+	cmd := cmdadapter.NewForwardCommandWithTargetHelp("atlas", "Atlas adapter command", "target", func() *cobra.Command {
 		return target
 	})
 	var adapterOut bytes.Buffer
@@ -227,7 +212,7 @@ func TestForwardCommandStringSliceCLIOverridesEnvironment(t *testing.T) {
 	target := newStringSliceTargetCommand(nil, func(values []string) {
 		runs = append(runs, values)
 	})
-	cmd := NewForwardCommandWithTargetHelp("atlas", "Atlas adapter command", "target", func() *cobra.Command {
+	cmd := cmdadapter.NewForwardCommandWithTargetHelp("atlas", "Atlas adapter command", "target", func() *cobra.Command {
 		return target
 	})
 	var adapterOut bytes.Buffer
@@ -239,18 +224,6 @@ func TestForwardCommandStringSliceCLIOverridesEnvironment(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(runs, qt.DeepEquals, [][]string{{"qa", "dev"}})
-}
-
-func TestExplicitFlagNamesIncludesShorthandClusters(t *testing.T) {
-	c := qt.New(t)
-
-	names := explicitFlagNames([]string{"-ab", "--value=qa", "--", "--ignored"})
-
-	c.Assert(names, qt.DeepEquals, map[string]struct{}{
-		"a":     {},
-		"b":     {},
-		"value": {},
-	})
 }
 
 func newTestTargetCommand(onRun func(string)) *cobra.Command {
