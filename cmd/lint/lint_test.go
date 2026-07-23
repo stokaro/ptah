@@ -387,6 +387,79 @@ func TestRunLint_GitBaseRejectsUnversionedSQLFiles(t *testing.T) {
 	c.Assert(stderr, qt.Contains, "migrations/misnamed.sql")
 }
 
+func TestRunLint_GitBaseHonorsExplicitAtlasDirFormat(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
+	runGit(c, dir, "init", "-b", "master")
+	runGit(c, dir, "config", "user.email", "ptah@example.test")
+	runGit(c, dir, "config", "user.name", "Ptah Test")
+	runGit(c, dir, "config", "commit.gpgsign", "false")
+	writeLintTestFile(c, migrationsDir, "1_base.sql", "CREATE TABLE users (id INT);\n")
+	runGit(c, dir, "add", ".")
+	runGit(c, dir, "commit", "-m", "base")
+	runGit(c, dir, "checkout", "-b", "feature")
+	writeLintTestFile(c, migrationsDir, "2_drop_users.sql", "DROP TABLE users;\n")
+	runGit(c, dir, "add", ".")
+	runGit(c, dir, "commit", "-m", "feature")
+	originalWD, err := os.Getwd()
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.Chdir(dir), qt.IsNil)
+	defer func() {
+		c.Assert(os.Chdir(originalWD), qt.IsNil)
+	}()
+
+	_, stderr, err := execute("--dir", "migrations", "--dir-format", "atlas", "--git-base", "master")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(stderr, qt.Contains, "DS101")
+	c.Assert(stderr, qt.Contains, "migrations/2_drop_users.sql")
+	c.Assert(stderr, qt.Not(qt.Contains), "migrations/1_base.sql")
+}
+
+func TestRunLint_GitBaseRejectsOptionShapedRef(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	writeLintTestFile(c, dir, "0000000001_base.up.sql", "CREATE TABLE users (id INT);\n")
+
+	_, stderr, err := execute("--dir", dir, "--git-base=-c")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(stderr, qt.Contains, `--git-base "-c" is not a safe Git ref`)
+}
+
+func TestRunLint_ProjectConfigGitBaseRejectsOptionShapedRef(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
+	writeLintTestFile(c, migrationsDir, "0000000001_base.up.sql", "CREATE TABLE users (id INT);\n")
+	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(`env "ci" {
+  migration {
+    dir = "file://migrations"
+  }
+  lint {
+    git {
+      base = "-c"
+      dir  = "."
+    }
+  }
+}
+`), 0o600), qt.IsNil)
+	originalWD, err := os.Getwd()
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.Chdir(dir), qt.IsNil)
+	defer func() {
+		c.Assert(os.Chdir(originalWD), qt.IsNil)
+	}()
+
+	_, stderr, err := execute("--env", "ci")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(stderr, qt.Contains, `--git-base "-c" is not a safe Git ref`)
+}
+
 func TestRunLint_LatestRejectsZero(t *testing.T) {
 	c := qt.New(t)
 
@@ -408,6 +481,20 @@ func TestRunLint_LatestRejectsUnversionedSQLFiles(t *testing.T) {
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(stderr, qt.Contains, "--latest requires versioned migration files")
 	c.Assert(stderr, qt.Contains, "misnamed.sql")
+}
+
+func TestRunLint_LatestHonorsExplicitAtlasDirFormat(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	writeLintTestFile(c, dir, "1_init.sql", "CREATE TABLE users (id INT);\n")
+	writeLintTestFile(c, dir, "2_drop_users.sql", "DROP TABLE users;\n")
+
+	_, stderr, err := execute("--dir", dir, "--dir-format", "atlas", "--latest", "1")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(stderr, qt.Contains, "DS101")
+	c.Assert(stderr, qt.Contains, "2_drop_users.sql")
+	c.Assert(stderr, qt.Not(qt.Contains), "1_init.sql")
 }
 
 func TestRunLint_ProjectConfigDisablesRulesAndSetsDialect(t *testing.T) {

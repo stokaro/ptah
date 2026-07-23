@@ -3,6 +3,7 @@ package atlas
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -30,6 +31,16 @@ type atlasVerb struct {
 	prefixArgs          []string
 	flags               []atlasargs.Flag
 	nativeProjectConfig bool
+}
+
+const atlasDirFormatDefault = "atlas"
+
+var unsupportedAtlasDirFormats = []string{
+	"dbmate",
+	"flyway",
+	"golang-migrate",
+	"goose",
+	"liquibase",
 }
 
 // NewAtlasCommand returns the Atlas command namespace.
@@ -125,7 +136,10 @@ func newAtlasMigrateCommand() *cobra.Command {
 			short:   "Write or update the migration directory checksum",
 			native:  "migrations hash",
 			factory: migratehash.NewMigrateHashCommand,
-			flags:   []atlasargs.Flag{atlasargs.NativeLocalDir("dir", "", "Migration directory", "dir")},
+			flags: []atlasargs.Flag{
+				atlasargs.NativeLocalDir("dir", "", "Migration directory", "dir"),
+				atlasMigrateDirFormatFlag("dir-format"),
+			},
 		},
 		atlasMigrateLintVerb(),
 		{
@@ -133,16 +147,22 @@ func newAtlasMigrateCommand() *cobra.Command {
 			short:   "Create a new migration file",
 			native:  "migrations create",
 			factory: migrate.NewMigrateCreateCommand,
-			flags:   []atlasargs.Flag{atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir")},
+			flags: []atlasargs.Flag{
+				atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
+				atlasMigrateDirFormatFlag("dir-format"),
+			},
 		},
 		{
-			use:     "set",
-			short:   "Set migration revision state",
-			native:  "migrations repair",
-			factory: migraterepair.NewMigrateRepairCommand,
+			use:        "set",
+			short:      "Set migration revision state",
+			native:     "migrations repair",
+			factory:    migraterepair.NewMigrateRepairCommand,
+			prefixArgs: []string{"--revision-format", "atlas"},
 			flags: []atlasargs.Flag{
 				atlasargs.NativeString("url", "u", "Database URL", "db-url"),
 				atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
+				atlasMigrateDirFormatFlag("dir-format"),
+				atlasargs.NativeString("revisions-schema", "", "Schema for the revision table", "migrations-schema"),
 			},
 		},
 		{
@@ -150,10 +170,13 @@ func newAtlasMigrateCommand() *cobra.Command {
 			short:               "Show migration status",
 			native:              "migrations status",
 			factory:             migratestatus.NewMigrateStatusCommand,
+			prefixArgs:          []string{"--revision-format", "atlas"},
 			nativeProjectConfig: true,
 			flags: []atlasargs.Flag{
 				atlasargs.NativeString("url", "u", "Database URL", "db-url"),
 				atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
+				atlasMigrateDirFormatFlag("dir-format"),
+				atlasargs.NativeString("revisions-schema", "", "Schema for the revision table", "migrations-schema"),
 			},
 		},
 		{
@@ -164,7 +187,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 			flags: []atlasargs.Flag{
 				atlasargs.NativeString("dev-url", "", "Dev database URL", "dev-url"),
 				atlasargs.NativeLocalDir("dir", "", "Migration directory", "dir"),
-				atlasargs.NativeString("dir-format", "", "Migration directory format", "dir-format"),
+				atlasMigrateDirFormatFlag("dir-format"),
 			},
 		},
 	} {
@@ -208,11 +231,35 @@ func atlasMigrateLintVerb() atlasVerb {
 		flags: []atlasargs.Flag{
 			atlasargs.NativeString("dev-url", "", "Dev database URL", "dev-url"),
 			atlasargs.NativeLocalDir("dir", "", "Migration directory", "dir"),
+			atlasMigrateDirFormatFlag("dir-format"),
 			atlasargs.NativeUint("latest", "", "Number of latest migrations to lint", "latest"),
 			atlasargs.NativeString("git-base", "", "Base Git branch for changeset linting", "git-base"),
 			atlasargs.NativeString("git-dir", "", "Repository working directory for --git-base", "git-dir"),
 		},
 	}
+}
+
+func atlasMigrateDirFormatFlag(nativeName string) atlasargs.Flag {
+	flag := atlasargs.NativeStringDefault(
+		"dir-format",
+		"",
+		"Migration directory format",
+		nativeName,
+		atlasDirFormatDefault,
+	)
+	flag.MapValue = atlasMigrateDirFormatValue
+	return flag
+}
+
+func atlasMigrateDirFormatValue(value string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if normalized == "" || normalized == atlasDirFormatDefault {
+		return atlasDirFormatDefault, nil
+	}
+	if slices.Contains(unsupportedAtlasDirFormats, normalized) {
+		return "", fmt.Errorf("Atlas accepts --dir-format=%s, but Ptah does not implement that directory format yet", normalized)
+	}
+	return "", fmt.Errorf("unknown Atlas migration directory format %q: expected atlas, golang-migrate, goose, flyway, liquibase, or dbmate", value)
 }
 
 func newAtlasVersionCommand() *cobra.Command {
@@ -287,7 +334,7 @@ func registerAtlasFlags(cmd *cobra.Command, flags []atlasargs.Flag) {
 	for _, flag := range flags {
 		switch flag.Kind {
 		case atlasargs.StringFlag:
-			cmd.Flags().StringP(flag.Name, flag.Shorthand, "", flag.Usage)
+			cmd.Flags().StringP(flag.Name, flag.Shorthand, flag.Default, flag.Usage)
 		case atlasargs.BoolFlag:
 			cmd.Flags().BoolP(flag.Name, flag.Shorthand, false, flag.Usage)
 		case atlasargs.UintFlag:

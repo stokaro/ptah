@@ -47,6 +47,46 @@ func TestMap_HappyPathMigrateLintLatestMapsToNativeFlag(t *testing.T) {
 	})
 }
 
+func TestMap_HappyPathStringDefaultsMapToNativeFlags(t *testing.T) {
+	c := qt.New(t)
+
+	got, err := atlasargs.Map("migrate", "hash", migrateHashFlags(), []string{
+		"--dir=file://migrations",
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, []string{
+		"--dir=migrations",
+		"--dir-format=atlas",
+	})
+}
+
+func TestMap_HappyPathCLIFlagWinsOverStringDefault(t *testing.T) {
+	c := qt.New(t)
+
+	got, err := atlasargs.Map("migrate", "hash", migrateHashFlags(), []string{
+		"--dir=file://migrations",
+		"--dir-format", "ptah",
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, []string{
+		"--dir=migrations",
+		"--dir-format",
+		"ptah",
+	})
+}
+
+func TestMap_HappyPathEnvFlagWinsOverStringDefault(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_DIR_FORMAT", "ptah")
+
+	got, err := atlasargs.Map("migrate", "hash", migrateHashFlags(), nil)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, []string{"--dir-format=ptah"})
+}
+
 func TestMap_HappyPathSchemaCleanAutoApproveMapsToNativeFlag(t *testing.T) {
 	c := qt.New(t)
 
@@ -194,5 +234,12 @@ func migrateLintFlags() []atlasargs.Flag {
 		atlasargs.UnsupportedString("dev-url", "", "Dev database URL"),
 		atlasargs.NativeLocalDir("dir", "", "Migration directory", "dir"),
 		atlasargs.NativeUint("latest", "", "Number of latest migrations to lint", "latest"),
+	}
+}
+
+func migrateHashFlags() []atlasargs.Flag {
+	return []atlasargs.Flag{
+		atlasargs.NativeLocalDir("dir", "", "Migration directory", "dir"),
+		atlasargs.NativeStringDefault("dir-format", "", "Migration directory format", "dir-format", "atlas"),
 	}
 }

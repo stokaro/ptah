@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/stokaro/ptah/internal/convert/dbschematogo"
 	"github.com/stokaro/ptah/internal/convert/fromschema"
 	"github.com/stokaro/ptah/internal/deporder"
+	"github.com/stokaro/ptah/internal/migratesum"
 	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/planner"
@@ -95,22 +97,32 @@ type EmptyMigrationOptions struct {
 	OutputDir string
 	// AllowedOutputRoot constrains OutputDir when set.
 	AllowedOutputRoot string
+	// DirFormat selects the generated migration file layout. Empty generates
+	// Ptah paired up/down files.
+	DirFormat migrator.MigrationDirFormat
 }
 
-// GenerateEmptyMigration creates paired up/down skeleton migration files for
-// manual SQL authoring.
+// GenerateEmptyMigration creates skeleton migration files for manual SQL
+// authoring.
 func GenerateEmptyMigration(opts EmptyMigrationOptions) (*MigrationFiles, error) {
 	name := strings.TrimSpace(opts.MigrationName)
-	if err := validateEmptyMigrationName(name); err != nil {
-		return nil, err
-	}
 	if strings.TrimSpace(opts.OutputDir) == "" {
 		return nil, fmt.Errorf("output directory is required")
+	}
+	dirFormat, err := migrator.ParseMigrationDirFormat(string(opts.DirFormat))
+	if err != nil {
+		return nil, err
 	}
 
 	outputDir, err := pathguard.ResolveWithinRoot(opts.OutputDir, opts.AllowedOutputRoot)
 	if err != nil {
 		return nil, fmt.Errorf("error validating output directory: %w", err)
+	}
+	if dirFormat == migrator.MigrationDirFormatAtlas {
+		return generateEmptyAtlasMigration(name, outputDir)
+	}
+	if err := validateEmptyMigrationName(name); err != nil {
+		return nil, err
 	}
 
 	version := migrator.GetNextMigrationVersion()
@@ -124,6 +136,98 @@ func GenerateEmptyMigration(opts EmptyMigrationOptions) (*MigrationFiles, error)
 		emptyMigrationSQL(name, generatedAt, "UP"),
 		emptyMigrationSQL(name, generatedAt, "DOWN"),
 	)
+}
+
+func generateEmptyAtlasMigration(name, outputDir string) (*MigrationFiles, error) {
+	if err := ensureMigrationOutputDir(outputDir); err != nil {
+		return nil, fmt.Errorf("failed to create output directory: %w", err)
+	}
+	version := nextAvailableAtlasMigrationVersion(outputDir, nextAtlasMigrationVersion())
+	for {
+		filePath := filepath.Join(outputDir, atlasEmptyMigrationFileName(version, name))
+		if err := writeNewMigrationFile(filePath, ""); err != nil {
+			if errors.Is(err, os.ErrExist) {
+				version++
+				continue
+			}
+			return nil, fmt.Errorf("failed to write atlas migration file: %w", err)
+		}
+		if _, err := migratesum.WriteWithFormat(outputDir, migrator.MigrationDirFormatAtlas); err != nil {
+			_ = os.Remove(filePath)
+			return nil, fmt.Errorf("failed to write atlas migration checksum: %w", err)
+		}
+		pair := MigrationFilePair{
+			UpFile:  filePath,
+			Version: version,
+		}
+		return migrationFilesFromPairs([]MigrationFilePair{pair}), nil
+	}
+}
+
+func nextAtlasMigrationVersion() int64 {
+	version, err := strconv.ParseInt(time.Now().UTC().Format("20060102150405"), 10, 64)
+	if err != nil {
+		return migrator.GetNextMigrationVersion()
+	}
+	return version
+}
+
+func nextAvailableAtlasMigrationVersion(outputDir string, version int64) int64 {
+	if latest := latestExistingAtlasMigrationVersion(outputDir); latest >= version {
+		version = latest + 1
+	}
+	for fileExists(filepath.Join(outputDir, atlasEmptyMigrationFileName(version, ""))) {
+		version++
+	}
+	return version
+}
+
+func latestExistingAtlasMigrationVersion(outputDir string) int64 {
+	entries, err := os.ReadDir(outputDir)
+	if err != nil {
+		return 0
+	}
+	var latest int64
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		migrationFile, err := migrator.ParseAtlasMigrationFileName(entry.Name())
+		if err != nil {
+			continue
+		}
+		if migrationFile.Version > latest {
+			latest = migrationFile.Version
+		}
+	}
+	return latest
+}
+
+func atlasEmptyMigrationFileName(version int64, name string) string {
+	name = atlasEmptyMigrationName(name)
+	if name == "" {
+		return fmt.Sprintf("%d.sql", version)
+	}
+	return fmt.Sprintf("%d_%s.sql", version, name)
+}
+
+func atlasEmptyMigrationName(name string) string {
+	name = strings.TrimSpace(name)
+	name = strings.ReplaceAll(name, " ", "-")
+	var b strings.Builder
+	for _, r := range name {
+		if isAtlasMigrationNameChar(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func isAtlasMigrationNameChar(r rune) bool {
+	return r == '-' || r == '_' ||
+		('0' <= r && r <= '9') ||
+		('A' <= r && r <= 'Z') ||
+		('a' <= r && r <= 'z')
 }
 
 func validateEmptyMigrationName(name string) error {

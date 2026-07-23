@@ -253,7 +253,9 @@ against a Ptah apply result that mirrors Atlas's public apply-template fields:
 `Pending`, `Applied`, `Current`, `Target`, `Start`, `End`, `Driver`, `URL`, and
 `Dir`; `{{ json . }}` emits the same result as JSON with database credentials
 redacted. With `--env`, Ptah can read `env.url`, `migration`, and
-`format.migrate.apply` from `atlas.hcl`.
+`format.migrate.apply` from `atlas.hcl`. Atlas OSS does not register
+`migrate apply --dir-format`; Ptah follows that surface and rejects the flag on
+`migrate apply`.
 
 ## Migration Diff
 
@@ -360,6 +362,15 @@ tables, replays the migration directory, and then runs static lint
 reporting. Docker `--dev-url` values remain an explicit gap; use a directly
 connectable database URL.
 
+Atlas-compatible migration metadata commands default to Atlas directory format.
+`ptah atlas migrate hash`, `lint`, `new`, `set`, `status`, and `validate`
+register `--dir-format` with Atlas's default value `atlas`. The supported value
+is `atlas`; Atlas's external migration-tool formats (`golang-migrate`, `goose`,
+`flyway`, `liquibase`, and `dbmate`) fail explicitly on those commands until
+they are imported with `ptah atlas migrate import` or implemented natively.
+`ptah atlas migrate set` and `status` also accept `--revisions-schema` and run
+against Atlas revision-table metadata.
+
 For existing scripts that already call `atlas`, install or copy the
 `ptah-compat` drop-in replacement under that executable name:
 
@@ -382,6 +393,7 @@ execute Atlas R-suffixed imported migrations.
 
 ```bash
 ptah atlas migrate hash --dir ./migrations
+ptah atlas migrate new add_users --dir ./migrations
 ptah atlas migrate validate --dir ./migrations --dev-url "sqlite://dev.db"
 ptah atlas migrate status --url "$DATABASE_URL" --dir ./migrations
 ```
