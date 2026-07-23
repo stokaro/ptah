@@ -98,9 +98,17 @@ type MigrationConfig struct {
 type LintConfig struct {
 	Dialect       string
 	DisabledRules []string
+	RuleConfigs   map[string]LintRuleConfig
 	Latest        *int
 	GitBase       string
 	GitDir        string
+}
+
+// LintRuleConfig holds project-level overrides for one lint rule code or
+// rule-family prefix.
+type LintRuleConfig struct {
+	Severity string
+	Exclude  []string
 }
 
 // FormatConfig holds Atlas env.format command templates.
@@ -272,6 +280,9 @@ func mergeLint(base, override LintConfig, presence configPresence) LintConfig {
 	if presence.lintDisabledRules || len(override.DisabledRules) > 0 {
 		result.DisabledRules = slices.Clone(override.DisabledRules)
 	}
+	if len(override.RuleConfigs) > 0 {
+		result.RuleConfigs = mergeLintRuleConfigs(result.RuleConfigs, override.RuleConfigs)
+	}
 	if override.Latest != nil {
 		latest := *override.Latest
 		result.Latest = &latest
@@ -286,6 +297,39 @@ func mergeLint(base, override LintConfig, presence configPresence) LintConfig {
 		result.GitDir = override.GitDir
 	}
 	return result
+}
+
+func mergeLintRuleConfigs(
+	base map[string]LintRuleConfig,
+	override map[string]LintRuleConfig,
+) map[string]LintRuleConfig {
+	result := cloneLintRuleConfigs(base)
+	if result == nil {
+		result = make(map[string]LintRuleConfig, len(override))
+	}
+	for code, config := range override {
+		baseConfig := result[code]
+		if config.Severity != "" {
+			baseConfig.Severity = config.Severity
+		}
+		if len(config.Exclude) > 0 {
+			baseConfig.Exclude = slices.Clone(config.Exclude)
+		}
+		result[code] = baseConfig
+	}
+	return result
+}
+
+func cloneLintRuleConfigs(values map[string]LintRuleConfig) map[string]LintRuleConfig {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]LintRuleConfig, len(values))
+	for code, config := range values {
+		config.Exclude = slices.Clone(config.Exclude)
+		cloned[code] = config
+	}
+	return cloned
 }
 
 func mergeFormat(base, override FormatConfig) FormatConfig {

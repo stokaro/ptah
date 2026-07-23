@@ -45,6 +45,12 @@ env "local" {
 
   lint {
     latest = 5
+    destructive {
+      error = false
+    }
+    concurrent_index {
+      error = true
+    }
   }
 
   format {
@@ -89,6 +95,11 @@ The supported attributes map to Ptah settings as follows:
 | `lint.latest` | `migrations lint --latest` default |
 | `lint.git.base` | `migrations lint --git-base` default |
 | `lint.git.dir` | `migrations lint --git-dir` default |
+| `lint.destructive.error` | `DS` lint rule-family severity |
+| `lint.concurrent_index.error` | `PG101` and `PG103` lint rule severity |
+| `lint.data_depend.error` | `DD` lint rule-family severity |
+| `lint.incompatible.error` | `BC` lint rule-family severity |
+| `lint.nestedtx.error` | `TX201` lint rule severity |
 | `format.schema.inspect` | `ptah atlas schema inspect --format` default |
 | `format.schema.apply` | `ptah atlas schema apply --format` default |
 | `format.schema.diff` | `ptah atlas schema diff --format` default |
@@ -138,6 +149,17 @@ matching concurrent drop semantics.
 `migrations lint` and `ptah atlas migrate lint`. These selectors are mutually
 exclusive. `lint.git.dir` matches Atlas's working-directory option for Git
 changeset detection and defaults to the current directory when omitted.
+
+The supported lint policy analyzer blocks map the Atlas `error` boolean to
+Ptah lint severity only where the analyzer has a matching Ptah rule family.
+`error = true` sets the mapped findings to error severity; `error = false`
+sets them to warning severity. The supported mappings are `destructive` to the
+`DS` family, `data_depend` to the `DD` family, `incompatible` to the `BC`
+family, `concurrent_index` to `PG101` and `PG103`, and `nestedtx` to `TX201`.
+Atlas `check` blocks are rejected for now because Atlas check IDs and Ptah rule
+IDs are not a stable one-to-one namespace. Analyzer `force` options, allow-list
+blocks such as `allow_table` / `allow_column`, custom `rule` blocks, and
+policy families without a matching Ptah lint engine fail explicitly.
 
 `migration.tx_mode` accepts `file`, `all`, and `none`, matching
 `ptah atlas migrate apply --tx-mode`. `all` is limited to dialects where Ptah
@@ -240,6 +262,7 @@ settings:
 - `ptah atlas schema diff`
 - `ptah atlas migrate apply`
 - `ptah atlas migrate diff`
+- `ptah atlas migrate lint`
 
 Atlas command paths under `ptah atlas <command> ...` inherit this behavior
 when they forward to one of these native commands. Dedicated Atlas-compatible
@@ -266,7 +289,7 @@ supported `diff` policy.
 ## Unsupported Constructs
 
 Ptah intentionally rejects everything outside the documented subset. Unsupported
-attributes, unsupported data sources, unsupported lint policy/analyzer blocks,
+attributes, unsupported data sources, unsupported lint policy blocks or attributes,
 Cloud or registry sources such as `schema.repo`, unsupported format blocks,
 unsupported diff policy fields, duplicate `migration` or `lint` blocks,
 variables without defaults, and non-file migration directory URI schemes fail

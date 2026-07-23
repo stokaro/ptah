@@ -42,6 +42,7 @@ type DiffConfig struct{ ... }
 type DiffSkipConfig struct{ ... }
 type FormatConfig struct{ ... }
 type LintConfig struct{ ... }
+type LintRuleConfig struct{ ... }
 type LoadOptions struct{ ... }
 type MigrateFormatConfig struct{ ... }
 type MigrationConfig struct{ ... }
