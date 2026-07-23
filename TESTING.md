@@ -244,5 +244,5 @@ line after the package clause.
 Cleanup PRs should reduce `.teststyle-baseline.json` with:
 
 ```bash
-GOWORK=off go run ./internal/tools/teststyle -write-baseline
+GOWORK=off go tool teststyle -write-baseline
 ```

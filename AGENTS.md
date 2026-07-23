@@ -130,7 +130,7 @@ New tests must not add entries. Cleanup PRs that intentionally remove entries
 should refresh the baseline with:
 
 ```bash
-GOWORK=off go run ./internal/tools/teststyle -write-baseline
+GOWORK=off go tool teststyle -write-baseline
 ```
 
 Never use `testify` in Ptah code, tests, examples, or documentation snippets.
