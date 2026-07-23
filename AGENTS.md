@@ -133,6 +133,12 @@ should refresh the baseline with:
 GOWORK=off go run ./internal/tools/teststyle -write-baseline
 ```
 
+Never use `testify` in Ptah code, tests, examples, or documentation snippets.
+Use `quicktest` imported as `qt`, the Go standard library `testing` package, or
+existing project-specific test helpers instead. Existing transitive dependency
+metadata from third-party packages is not permission to add direct
+`github.com/stretchr/testify` imports or `assert`/`require` examples.
+
 Bad:
 
 ```go
