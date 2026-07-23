@@ -4,7 +4,6 @@ package gonative_test
 
 import (
 	"database/sql"
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -13,12 +12,8 @@ import (
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
-	"github.com/stokaro/ptah/core/renderer"
-	dbschematypes "github.com/stokaro/ptah/dbschema/types"
-	"github.com/stokaro/ptah/internal/convert/fromschema"
 	mysqlreader "github.com/stokaro/ptah/internal/dbschema/mysql"
 	postgresreader "github.com/stokaro/ptah/internal/dbschema/postgres"
-	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/schemadiff"
 )
 
@@ -34,13 +29,13 @@ func TestGeneratedColumnConformanceFixture_RoundTrip_Postgres(t *testing.T) {
 	defer func() { _, _ = db.Exec(`DROP TABLE IF EXISTS contacts`) }()
 
 	target := generatedColumnConformanceSchema()
-	createSQL := renderGeneratedColumnConformanceSQL(c, target, platform.Postgres)
-	execGeneratedColumnConformanceSQL(c, db, createSQL)
+	createSQL := renderConformanceSQL(c, target, platform.Postgres)
+	execConformanceSQL(c, db, createSQL, "generated-column")
 
 	reader := postgresreader.NewPostgreSQLReader(db, "public")
 	liveSchema, err := reader.ReadSchema()
 	c.Assert(err, qt.IsNil)
-	liveSchema = filterGeneratedColumnConformanceSchema(liveSchema)
+	liveSchema = filterConformanceSchema(liveSchema, generatedColumnConformanceTables())
 
 	diff := schemadiff.CompareWithDialect(target, liveSchema, platform.Postgres)
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
@@ -58,13 +53,13 @@ func TestGeneratedColumnConformanceFixture_RoundTrip_MySQL(t *testing.T) {
 	defer func() { _, _ = db.Exec("DROP TABLE IF EXISTS contacts") }()
 
 	target := generatedColumnConformanceSchema()
-	createSQL := renderGeneratedColumnConformanceSQL(c, target, platform.MySQL)
-	execGeneratedColumnConformanceSQL(c, db, createSQL)
+	createSQL := renderConformanceSQL(c, target, platform.MySQL)
+	execConformanceSQL(c, db, createSQL, "generated-column")
 
 	reader := mysqlreader.NewMySQLReader(db, "")
 	liveSchema, err := reader.ReadSchema()
 	c.Assert(err, qt.IsNil)
-	liveSchema = filterGeneratedColumnConformanceSchema(liveSchema)
+	liveSchema = filterConformanceSchema(liveSchema, generatedColumnConformanceTables())
 
 	diff := schemadiff.CompareWithDialect(target, liveSchema, platform.MySQL)
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
@@ -92,27 +87,8 @@ func generatedColumnConformanceSchema() *goschema.Database {
 	}
 }
 
-func renderGeneratedColumnConformanceSQL(c *qt.C, target *goschema.Database, dialect string) string {
-	createAST := fromschema.FromDatabase(*target, dialect)
-	createSQL, err := renderer.RenderSQL(dialect, createAST.Statements...)
-	c.Assert(err, qt.IsNil)
-	return strings.TrimSpace(createSQL)
-}
-
-func execGeneratedColumnConformanceSQL(c *qt.C, db *sql.DB, sqlText string) {
-	for _, stmt := range migrator.SplitSQLStatements(sqlText) {
-		_, err := db.Exec(stmt)
-		c.Assert(err, qt.IsNil, qt.Commentf("generated-column schema statement must apply: %s", stmt))
-	}
-}
-
-func filterGeneratedColumnConformanceSchema(in *dbschematypes.DBSchema) *dbschematypes.DBSchema {
-	keepTables := map[string]struct{}{
+func generatedColumnConformanceTables() map[string]struct{} {
+	return map[string]struct{}{
 		"contacts": {},
 	}
-	out := *in
-	out.Tables = filterTables(in.Tables, keepTables)
-	out.Indexes = filterIndexes(in.Indexes, keepTables)
-	out.Constraints = filterConstraints(in.Constraints, keepTables)
-	return &out
 }
