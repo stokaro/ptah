@@ -39,6 +39,12 @@ ptah atlas migrate --config project.hcl --env local hash
 ptah atlas migrate hash --config project.hcl --env local
 ```
 
+Atlas OSS shorthand aliases are part of the compatibility surface. Ptah accepts
+`-u` for `--url`, `-c` for `--config`, `-s` for `--schema` on Atlas commands
+that register schema selection, and `-f` for `schema diff --from`. `schema apply`
+also accepts Atlas's hidden deprecated `--file/-f` input alias for local HCL or
+SQL paths; prefer `--to` in new Ptah-authored scripts.
+
 ## Migration commands
 
 | Atlas-compatible command | Ptah behavior |
@@ -51,7 +57,7 @@ ptah atlas migrate hash --config project.hcl --env local
 | `ptah atlas migrate lint` | `ptah migrations lint`; supports Atlas-style `--latest N`, infers lint dialect from `--dev-url`, and cleans and replays migrations on directly connectable dev databases to validate SQL execution. |
 | `ptah atlas migrate new` | `ptah migrations create` |
 | `ptah atlas migrate set` | `ptah migrations repair` |
-| `ptah atlas migrate diff` | Replays local Atlas migrations on `--dev-url`, diffs against local schema files, writes an Atlas single-file migration, and updates `atlas.sum`; the Atlas-hidden `--dry-run` flag prints the generated SQL instead of writing files. |
+| `ptah atlas migrate diff` | Replays local Atlas migrations on `--dev-url`, diffs against local schema files, writes an Atlas single-file migration, and updates `atlas.sum`; `--schema/-s` scopes the diff, and the Atlas-hidden `--dry-run` flag prints the generated SQL instead of writing files. |
 | `ptah atlas migrate import` | Imports local `file://` migration directories from Atlas-supported formats into a separate Atlas single-file directory and writes `atlas.sum`. |
 
 ## Utility commands
@@ -65,9 +71,9 @@ ptah atlas migrate hash --config project.hcl --env local
 
 | Atlas-compatible command | Ptah behavior |
 | --- | --- |
-| `ptah atlas schema inspect` | Inspects a live database and writes Atlas-shaped HCL by default, SQL with `--format sql` / `--format '{{ sql . }}'`, JSON with `--format json` / `--format '{{ json . }}'`, custom Go-template output, or basic `hcl`/`sql` split-write exports. The OSS `--exclude` flag filters inspected resources. |
-| `ptah atlas schema apply` | Applies local desired schema files to a live database through Ptah schema diff and migration execution; supports `--env` project defaults, Atlas-style `--format` templates over the planned changes, and `--exclude` resource filters. |
-| `ptah atlas schema diff` | Local `file://` schema-file diff for `.hcl`, `.yaml`, `.yml`, and `.sql` sources, including `--exclude` resource filters. |
+| `ptah atlas schema inspect` | Inspects a live database and writes Atlas-shaped HCL by default, SQL with `--format sql` / `--format '{{ sql . }}'`, JSON with `--format json` / `--format '{{ json . }}'`, custom Go-template output, or basic `hcl`/`sql` split-write exports. `--schema/-s` narrows inspection, and the OSS `--exclude` flag filters inspected resources. |
+| `ptah atlas schema apply` | Applies local desired schema files to a live database through Ptah schema diff and migration execution; supports `--env` project defaults, Atlas-style `--format` templates over the planned changes, `--schema/-s` parsing, the hidden Atlas `--file/-f` input alias, and `--exclude` resource filters. |
+| `ptah atlas schema diff` | Local `file://` schema-file diff for `.hcl`, `.yaml`, `.yml`, and `.sql` sources, including `--from/-f`, `--schema/-s` parsing, and `--exclude` resource filters. |
 | `ptah atlas schema fmt` | Formats local `.hcl` files using HCL canonical layout. |
 
 `ptah atlas schema inspect` accepts a live database `--url` and writes
@@ -80,7 +86,7 @@ ptah atlas schema inspect --url "$DATABASE_URL" --format sql > schema.sql
 ptah atlas schema inspect --url "$DATABASE_URL" --format json > schema.json
 ```
 
-`--schema` narrows inspection when the underlying database reader supports
+`--schema` / `-s` narrows inspection when the underlying database reader supports
 schema scoping. `--dev-url` validates dialect compatibility only today; Ptah
 does not yet run Atlas dev-database inference for inspection. `--format`
 accepts Atlas-style Go templates with `.MarshalHCL`, `hcl`, `sql`, `json`,
@@ -122,6 +128,11 @@ print the plan without applying it, or `--auto-approve` to skip the prompt
 explicitly. Use `--tx-mode=file` or `--tx-mode=all` to execute the generated
 plan in one transaction, or `--tx-mode=none` to execute statements without
 transaction wrapping.
+
+For Atlas script compatibility, `schema apply` also accepts the hidden
+deprecated `--file/-f` alias for local HCL or SQL paths and maps it to the same
+local desired-schema loading path as `--to`. `--file` and `--to` are mutually
+exclusive.
 
 ```bash
 ptah atlas schema apply \
@@ -192,7 +203,7 @@ simulation; it uses the dev URL for dialect selection only.
 
 ```bash
 ptah atlas schema diff \
-  --from file://old.hcl \
+  -f file://old.hcl \
   --to file://schema.hcl \
   --dev-url "postgres://localhost/dev"
 ```

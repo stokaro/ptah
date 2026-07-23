@@ -20,6 +20,7 @@ import (
 
 type atlasSchemaApplyOptions struct {
 	url         string
+	filePaths   []string
 	toURLs      []string
 	devURL      string
 	dryRun      bool
@@ -27,6 +28,7 @@ type atlasSchemaApplyOptions struct {
 	format      string
 	exclude     []string
 	txMode      string
+	schemas     []string
 }
 
 func newAtlasSchemaApplyCommand() *cobra.Command {
@@ -50,17 +52,22 @@ and Atlas Cloud planning remain explicit follow-up gaps.`,
 	flags := cmd.Flags()
 	flags.StringVarP(&opts.url, "url", "u", "", "Database URL to apply to")
 	flags.StringArrayVar(&opts.toURLs, "to", nil, "Desired schema target URL")
+	flags.StringArrayVarP(&opts.filePaths, atlasFileFlagName, atlasFileFlagShorthand, nil, "File or directory containing HCL or SQL files")
 	flags.StringVar(&opts.devURL, "dev-url", "", "Dev database URL used by Atlas for planning")
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Show planned changes without applying them")
 	flags.BoolVar(&opts.autoApprove, "auto-approve", false, "Skip interactive approval")
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from apply")
 	flags.StringVar(&opts.txMode, "tx-mode", "", "Transaction mode: all, file, or none")
-	flags.StringArray("schema", nil, "Schemas to apply when database URLs are used")
+	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to apply when database URLs are used")
 	flags.StringArray("include", nil, "Schema objects to include in apply")
 	if err := cmdflags.DisableEnvBinding(flags, "auto-approve"); err != nil {
 		panic(err)
 	}
+	if err := flags.MarkHidden(atlasFileFlagName); err != nil {
+		panic(err)
+	}
+	cmd.MarkFlagsMutuallyExclusive(atlasFileFlagName, "to")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
@@ -86,6 +93,9 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
+	}
+	if cmd.Flags().Changed(atlasFileFlagName) {
+		opts.toURLs = opts.filePaths
 	}
 	if formatOutput && strings.TrimSpace(opts.format) == "" {
 		return cmdutil.Fail(cmd, fmt.Errorf("--format must not be empty"))
@@ -181,7 +191,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 
 func needsAtlasSchemaApplyConfig(cmd *cobra.Command) bool {
 	return !cmd.Flags().Changed("url") ||
-		!cmd.Flags().Changed("to")
+		(!cmd.Flags().Changed("to") && !cmd.Flags().Changed(atlasFileFlagName))
 }
 
 func validateAtlasSchemaApplyDiffPolicy(
@@ -220,10 +230,11 @@ func validateAtlasSchemaApplyOptions(cmd *cobra.Command, opts atlasSchemaApplyOp
 	if len(opts.toURLs) == 0 {
 		return fmt.Errorf("--to is required")
 	}
-	for _, name := range []string{"schema", "include"} {
-		if values, err := cmd.Flags().GetStringArray(name); err == nil && len(values) > 0 {
-			return fmt.Errorf("atlas schema apply accepts --%s, but Ptah only supports local schema files for this command yet", name)
-		}
+	if len(opts.schemas) > 0 {
+		return fmt.Errorf("atlas schema apply accepts --schema, but Ptah only supports local schema files for this command yet")
+	}
+	if values, err := cmd.Flags().GetStringArray("include"); err == nil && len(values) > 0 {
+		return fmt.Errorf("atlas schema apply accepts --include, but Ptah only supports local schema files for this command yet")
 	}
 	return ensureLocalSchemaURLs("--to", opts.toURLs)
 }

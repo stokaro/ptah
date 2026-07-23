@@ -232,7 +232,7 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 		{
 			name:  "schema_diff",
 			path:  []string{"schema", "diff"},
-			flags: []string{"--from", "--to", "--dev-url", "--env", "--format", "--exclude"},
+			flags: []string{"--from", "--to", "--dev-url", "--env", "--format", "--schema", "--exclude"},
 		},
 		{
 			name:  "schema_clean",
@@ -334,6 +334,181 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNewAtlasCommand_RegistersAtlasShorthandFlags(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name      string
+		path      []string
+		flag      string
+		shorthand string
+	}{
+		{
+			name:      "schema_inspect_url",
+			path:      []string{"schema", "inspect"},
+			flag:      "url",
+			shorthand: "u",
+		},
+		{
+			name:      "schema_inspect_schema",
+			path:      []string{"schema", "inspect"},
+			flag:      "schema",
+			shorthand: "s",
+		},
+		{
+			name:      "schema_apply_url",
+			path:      []string{"schema", "apply"},
+			flag:      "url",
+			shorthand: "u",
+		},
+		{
+			name:      "schema_apply_schema",
+			path:      []string{"schema", "apply"},
+			flag:      "schema",
+			shorthand: "s",
+		},
+		{
+			name:      "schema_apply_hidden_file",
+			path:      []string{"schema", "apply"},
+			flag:      "file",
+			shorthand: "f",
+		},
+		{
+			name:      "schema_diff_from",
+			path:      []string{"schema", "diff"},
+			flag:      "from",
+			shorthand: "f",
+		},
+		{
+			name:      "schema_diff_schema",
+			path:      []string{"schema", "diff"},
+			flag:      "schema",
+			shorthand: "s",
+		},
+		{
+			name:      "migrate_diff_schema",
+			path:      []string{"migrate", "diff"},
+			flag:      "schema",
+			shorthand: "s",
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			root := NewAtlasCommand()
+			cmd, _, err := root.Find(tt.path)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(cmd.Flags().Lookup(tt.flag), qt.IsNotNil)
+			c.Assert(cmd.Flags().Lookup(tt.flag).Shorthand, qt.Equals, tt.shorthand)
+		})
+	}
+}
+
+func TestNewAtlasCommand_DoesNotRegisterUnsupportedAtlasShorthandFlags(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name string
+		path []string
+		flag string
+	}{
+		{
+			name: "schema_apply_to",
+			path: []string{"schema", "apply"},
+			flag: "to",
+		},
+		{
+			name: "schema_diff_to",
+			path: []string{"schema", "diff"},
+			flag: "to",
+		},
+		{
+			name: "migrate_diff_to",
+			path: []string{"migrate", "diff"},
+			flag: "to",
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			root := NewAtlasCommand()
+			cmd, _, err := root.Find(tt.path)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(cmd.Flags().Lookup(tt.flag), qt.IsNotNil)
+			c.Assert(cmd.Flags().Lookup(tt.flag).Shorthand, qt.Equals, "")
+		})
+	}
+}
+
+func TestNewAtlasCommand_SchemaApplyFileShorthandIsHidden(t *testing.T) {
+	c := qt.New(t)
+	root := NewAtlasCommand()
+	cmd, _, err := root.Find([]string{"schema", "apply"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cmd.Flags().Lookup("file"), qt.IsNotNil)
+	c.Assert(cmd.Flags().Lookup("file").Hidden, qt.IsTrue)
+}
+
+func TestNewAtlasCommand_SchemaApplyFileShorthandConflictsWithTo(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "apply",
+		"--url", "sqlite://schema.db",
+		"--to", "file://schema.sql",
+		"-f", "schema.sql",
+		"--dry-run",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `if any flags in the group \[file to\] are set none of the others can be; \[file to\] were all set`)
+}
+
+func TestNewAtlasCommand_SchemaApplySchemaShorthandParses(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "apply",
+		"--url", "sqlite://schema.db",
+		"--to", "file://schema.sql",
+		"-s", "public",
+		"--dry-run",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `atlas schema apply accepts --schema, but Ptah only supports local schema files for this command yet`)
+	c.Assert(out.String(), qt.Contains, `error: atlas schema apply accepts --schema, but Ptah only supports local schema files for this command yet`)
+}
+
+func TestNewAtlasCommand_SchemaDiffSchemaShorthandParses(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "diff",
+		"-f", "file://from.sql",
+		"--to", "file://schema.sql",
+		"--dev-url", "sqlite://dev.db",
+		"-s", "public",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `atlas schema diff accepts --schema, but Ptah only supports local schema files for this command yet`)
+	c.Assert(out.String(), qt.Contains, `error: atlas schema diff accepts --schema, but Ptah only supports local schema files for this command yet`)
 }
 
 func TestNewAtlasCommand_MigrateDownHelpUsesAtlasFlagKinds(t *testing.T) {
@@ -1075,7 +1250,7 @@ table "users" {
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
 		"schema", "diff",
-		"--from", "file://" + from,
+		"-f", "file://" + from,
 		"--to", "file://" + to,
 		"--dev-url", "postgres://localhost/dev",
 	})
@@ -1514,6 +1689,36 @@ CREATE TABLE users (
 		"schema", "apply",
 		"--url", "sqlite://" + dbPath,
 		"--to", "file://" + schemaPath,
+		"--dry-run",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Planned schema changes:")
+	c.Assert(out.String(), qt.Contains, "CREATE TABLE")
+	assertSQLiteTableMissing(c, dbPath, "users")
+}
+
+func TestNewAtlasCommand_SchemaApplyFileShorthandDryRun(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "file-shorthand-dry-run.db")
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath, []byte(`
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY
+);
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "apply",
+		"--url", "sqlite://" + dbPath,
+		"-f", schemaPath,
 		"--dry-run",
 	})
 
@@ -2121,6 +2326,25 @@ func TestNewAtlasCommand_MigrateApplyRejectsEmptyLockName(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `--lock-name must not be empty`)
+}
+
+func TestNewAtlasCommand_MigrateDiffSchemaShorthandParses(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "diff",
+		"-s", "public",
+		"--to", "file://schema.sql",
+		"--dev-url", "docker://postgres/15/dev",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `atlas migrate diff accepts docker --dev-url values, but Ptah requires a directly connectable dev database URL`)
+	c.Assert(out.String(), qt.Contains, `error: atlas migrate diff accepts docker --dev-url values, but Ptah requires a directly connectable dev database URL`)
 }
 
 func TestNewAtlasCommand_MigrateDiffCreatesAtlasMigrationFromLocalSchema(t *testing.T) {

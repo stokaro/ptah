@@ -45,7 +45,7 @@ inspection, and Atlas dev-database inference remain explicit follow-up gaps.
 	flags := cmd.Flags()
 	flags.StringVarP(&opts.url, "url", "u", "", "Database URL to inspect")
 	flags.StringVar(&opts.devURL, "dev-url", "", "Dev database URL used by Atlas for inference")
-	flags.StringArrayVar(&opts.schemas, "schema", nil, "Schema to inspect")
+	registerAtlasSchemaFlag(flags, &opts.schemas, "Schema to inspect")
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from inspection")
 	flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in inspection")
 	flags.StringVar(&opts.format, "format", "", "Output format or Go template: hcl, sql, json, or custom template")

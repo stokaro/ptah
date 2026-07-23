@@ -61,7 +61,7 @@ non-concurrent diff policy values.`,
 	flags.StringVar(&opts.dirURL, "dir", "file://migrations", "Migration directory URL")
 	flags.StringVar(&opts.dirFormat, "dir-format", "atlas", "Migration directory format; only atlas is implemented")
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
-	flags.StringArrayVar(&opts.schemas, "schema", nil, "Schemas to diff")
+	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to diff")
 	flags.StringVar(&opts.lockTimeout, "lock-timeout", "", "Timeout for acquiring Atlas migration directory locks")
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Print the generated migration file to stdout instead of writing it")
 	if err := flags.MarkHidden("dry-run"); err != nil {
