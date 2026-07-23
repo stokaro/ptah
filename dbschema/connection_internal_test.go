@@ -1,5 +1,9 @@
 package dbschema
 
+// White-box testing required: this file exercises unexported DSN normalization
+// helpers and connection option paths that are not directly observable through
+// the public connection API alone.
+
 import (
 	"strings"
 	"testing"
@@ -11,7 +15,7 @@ import (
 )
 
 func TestConvertClickHouseURL(t *testing.T) {
-	cases := []struct {
+	tests := []struct {
 		name     string
 		input    string
 		expected string
@@ -20,11 +24,6 @@ func TestConvertClickHouseURL(t *testing.T) {
 			name:     "passthrough canonical URL",
 			input:    "clickhouse://default:secret@localhost:9000/analytics",
 			expected: "clickhouse://default:secret@localhost:9000/analytics",
-		},
-		{
-			name:     "preserves query parameters",
-			input:    "clickhouse://default:secret@localhost:9000/analytics?secure=true&dial_timeout=10s",
-			expected: "clickhouse://default:secret@localhost:9000/analytics?secure=true&dial_timeout=10s",
 		},
 		{
 			name:     "rewrites uppercase scheme",
@@ -37,14 +36,41 @@ func TestConvertClickHouseURL(t *testing.T) {
 			expected: "::not-a-url::",
 		},
 		{
-			name:     "preserves secure=true on native port",
-			input:    "clickhouse://default@localhost:9000/analytics?secure=true",
-			expected: "clickhouse://default@localhost:9000/analytics?secure=true",
-		},
-		{
 			name:     "native TLS port 9440 round-trips",
 			input:    "clickhouse://default@localhost:9440/analytics",
 			expected: "clickhouse://default@localhost:9440/analytics",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(convertClickHouseURL(tt.input), qt.Equals, tt.expected)
+		})
+	}
+}
+
+func TestConvertClickHouseURL_PreservesQueryParameters(t *testing.T) {
+	c := qt.New(t)
+
+	got := convertClickHouseURL("clickhouse://default:secret@localhost:9000/analytics?secure=true&dial_timeout=10s")
+
+	c.Assert(got, qt.Contains, "clickhouse://default:secret@localhost:9000/analytics?")
+	for kv := range strings.SplitSeq("secure=true&dial_timeout=10s", "&") {
+		c.Assert(got, qt.Contains, kv)
+	}
+}
+
+func TestConvertClickHouseURL_ExactQueryRoundTrips(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "preserves secure=true on native port",
+			input:    "clickhouse://default@localhost:9000/analytics?secure=true",
+			expected: "clickhouse://default@localhost:9000/analytics?secure=true",
 		},
 		{
 			name:     "HTTP-SSL port 8443 with secure flag round-trips",
@@ -53,22 +79,10 @@ func TestConvertClickHouseURL(t *testing.T) {
 		},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			got := convertClickHouseURL(tc.input)
-			// url.Parse() doesn't always preserve raw query ordering. For the
-			// expected URLs that carry multiple parameters we assert by
-			// fragments; single-param and no-param URLs round-trip exactly.
-			if strings.Count(tc.expected, "&") > 0 {
-				prefix, _, _ := strings.Cut(tc.expected, "?")
-				c.Assert(got, qt.Contains, prefix)
-				for kv := range strings.SplitSeq(tc.expected[strings.Index(tc.expected, "?")+1:], "&") {
-					c.Assert(got, qt.Contains, kv)
-				}
-				return
-			}
-			c.Assert(got, qt.Equals, tc.expected)
+			c.Assert(convertClickHouseURL(tt.input), qt.Equals, tt.expected)
 		})
 	}
 }

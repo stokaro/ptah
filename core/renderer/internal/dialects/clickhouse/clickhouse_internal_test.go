@@ -1,8 +1,9 @@
 package clickhouse
 
-// White-box tests for helpers whose behavior cannot be observed through the
-// renderer's public surface alone. The rest of the dialect's test coverage
-// lives in clickhouse_test.go as a black-box package.
+// White-box testing required: splitColumns is an unexported parser helper whose
+// edge-case behavior cannot be fully observed through the renderer's public
+// surface alone. The rest of the dialect's test coverage lives in
+// clickhouse_test.go as a black-box package.
 
 import (
 	"testing"
