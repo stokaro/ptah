@@ -1,17 +1,19 @@
-package cmdflags
+package cmdflags_test
 
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
+
+	"github.com/stokaro/ptah/cmd/internal/cmdflags"
 )
 
 func TestEnvNameNormalizesFlagName(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert(EnvName("PTAH", "db-url"), qt.Equals, "PTAH_DB_URL")
-	c.Assert(EnvName("PTAH", "migration.lock-timeout"), qt.Equals, "PTAH_MIGRATION_LOCK_TIMEOUT")
+	c.Assert(cmdflags.EnvName("PTAH", "db-url"), qt.Equals, "PTAH_DB_URL")
+	c.Assert(cmdflags.EnvName("PTAH", "migration.lock-timeout"), qt.Equals, "PTAH_MIGRATION_LOCK_TIMEOUT")
 }
 
 func TestInitializeEnvAppliesEnvironmentDefaults(t *testing.T) {
@@ -27,7 +29,7 @@ func TestInitializeEnvAppliesEnvironmentDefaults(t *testing.T) {
 	child.Flags().BoolVar(&verbose, "verbose", false, "Verbose output")
 	root.AddCommand(child)
 
-	InitializeEnv("PTAH", root)
+	cmdflags.InitializeEnv("PTAH", root)
 
 	c.Assert(dbURL, qt.Equals, "postgres://example")
 	c.Assert(verbose, qt.IsTrue)
@@ -46,7 +48,7 @@ func TestInitializeEnvDoesNotOverrideExplicitFlag(t *testing.T) {
 	cmd.Flags().StringVar(&dbURL, "db-url", "", "Database URL")
 	c.Assert(cmd.Flags().Set("db-url", "postgres://cli"), qt.IsNil)
 
-	InitializeEnv("PTAH", cmd)
+	cmdflags.InitializeEnv("PTAH", cmd)
 
 	c.Assert(dbURL, qt.Equals, "postgres://cli")
 }
@@ -59,7 +61,7 @@ func TestInitializeEnvIgnoresEmptyEnvironmentValues(t *testing.T) {
 	cmd := &cobra.Command{Use: "ptah"}
 	cmd.Flags().StringVar(&dbURL, "db-url", "postgres://default", "Database URL")
 
-	InitializeEnv("PTAH", cmd)
+	cmdflags.InitializeEnv("PTAH", cmd)
 
 	c.Assert(dbURL, qt.Equals, "postgres://default")
 }
@@ -71,9 +73,9 @@ func TestInitializeEnvSkipsDisabledEnvironmentBinding(t *testing.T) {
 	var autoApprove bool
 	cmd := &cobra.Command{Use: "ptah"}
 	cmd.Flags().BoolVar(&autoApprove, "auto-approve", false, "Skip confirmation")
-	c.Assert(DisableEnvBinding(cmd.Flags(), "auto-approve"), qt.IsNil)
+	c.Assert(cmdflags.DisableEnvBinding(cmd.Flags(), "auto-approve"), qt.IsNil)
 
-	InitializeEnv("PTAH", cmd)
+	cmdflags.InitializeEnv("PTAH", cmd)
 
 	c.Assert(autoApprove, qt.IsFalse)
 	c.Assert(cmd.Flags().Lookup("auto-approve").Changed, qt.IsFalse)
@@ -87,8 +89,8 @@ func TestInitializeEnvAnnotatesUsageOnce(t *testing.T) {
 	cmd := &cobra.Command{Use: "ptah"}
 	cmd.Flags().StringVar(&dbURL, "db-url", "", "Database URL")
 
-	InitializeEnv("PTAH", cmd)
-	InitializeEnv("PTAH", cmd)
+	cmdflags.InitializeEnv("PTAH", cmd)
+	cmdflags.InitializeEnv("PTAH", cmd)
 
 	c.Assert(cmd.Flags().Lookup("db-url").Usage, qt.Equals, "Database URL [env: PTAH_DB_URL]")
 }
