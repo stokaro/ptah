@@ -20,7 +20,6 @@ import (
 type atlasMigrateDiffOptions struct {
 	toURLs      []string
 	devURL      string
-	envName     string
 	dirURL      string
 	dirFormat   string
 	format      string
@@ -59,7 +58,6 @@ non-concurrent diff policy values.`,
 	flags := cmd.Flags()
 	flags.StringArrayVar(&opts.toURLs, "to", nil, "Desired schema target URL")
 	flags.StringVar(&opts.devURL, "dev-url", "", "Dev database URL used to replay migrations and compute the diff")
-	dbcli.RegisterEnvFlag(flags, &opts.envName)
 	flags.StringVar(&opts.dirURL, "dir", "file://migrations", "Migration directory URL")
 	flags.StringVar(&opts.dirFormat, "dir-format", "atlas", "Migration directory format; only atlas is implemented")
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
@@ -75,9 +73,9 @@ non-concurrent diff policy values.`,
 
 func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name string) error {
 	policy := atlasschema.DiffPolicy{}
-	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd, opts.envName)
+	projectCfg, loaded, err := loadOptionalAtlasProjectConfigForCommand(cmd)
 	if needsAtlasMigrateDiffConfig(cmd) {
-		projectCfg, loaded, err = loadRequiredAtlasProjectConfigForCommand(cmd, opts.envName)
+		projectCfg, loaded, err = loadRequiredAtlasProjectConfigForCommand(cmd)
 	}
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

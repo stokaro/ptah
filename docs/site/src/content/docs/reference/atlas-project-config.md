@@ -119,12 +119,20 @@ defaults.
 
 ## Environment Selection
 
-Use `--env` on Atlas-compatible commands:
+Use Atlas project flags on commands under `ptah atlas schema ...` and
+`ptah atlas migrate ...`:
 
 ```bash
-ptah atlas schema inspect --env local
-ptah atlas migrate apply --env local
+ptah atlas schema inspect --config project.hcl --env local
+ptah atlas migrate apply -c project.hcl --env local
+ptah atlas migrate hash --env local --var dir=migrations
 ```
+
+`--config` and `-c` select a local project config path. `file://` config URLs
+are accepted; other URL schemes fail explicitly. `--var name=value` can be
+repeated. Repeating the same variable name produces a string list for supported
+Atlas HCL expressions. Variable overrides are strings; Atlas variable `type`
+and `sensitive` attributes remain unsupported and fail explicitly.
 
 If an `atlas.hcl` file has exactly one unnamed `env` block, Ptah can use it as
 the default. Ambiguous or unsupported environment layouts fail instead of

@@ -19,7 +19,7 @@ const defaultSliceAnnotation = "ptah.cmdadapter.default-slice"
 
 // ArgMapper rewrites command arguments before they are forwarded to the target
 // command implementation.
-type ArgMapper func([]string) ([]string, error)
+type ArgMapper func(*cobra.Command, []string) ([]string, error)
 
 type helpBehavior int
 
@@ -95,7 +95,7 @@ func newForwardCommandWithArgsMapper(
 			}
 			if mapper != nil {
 				var err error
-				args, err = mapper(args)
+				args, err = mapper(cmd, args)
 				if err != nil {
 					return err
 				}

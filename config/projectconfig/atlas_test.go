@@ -366,6 +366,56 @@ env "local" {
 	c.Assert(*cfg.Lint.Latest, qt.Equals, 3)
 }
 
+func TestParseAtlasProjectConfigVariableOverrideWinsOverDefault(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`variable "schema_name" {
+  default = "app"
+}
+
+env "local" {
+  src = "file://${var.schema_name}.hcl"
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlasWithOptions(raw, "atlas.hcl", projectconfig.AtlasLoadOptions{
+		EnvName: "local",
+		Vars:    []string{"schema_name=tenant"},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://tenant.hcl"})
+}
+
+func TestParseAtlasProjectConfigRepeatedVariableOverrideBecomesList(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`variable "schema" {}
+
+env "local" {
+  src = var.schema
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlasWithOptions(raw, "atlas.hcl", projectconfig.AtlasLoadOptions{
+		EnvName: "local",
+		Vars: []string{
+			"schema=file://a.hcl",
+			"schema=file://b.hcl",
+		},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://a.hcl", "file://b.hcl"})
+}
+
+func TestParseAtlasProjectConfigRejectsMalformedVariableOverride(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := projectconfig.ParseAtlasWithOptions([]byte(`variable "schema" {}
+`), "atlas.hcl", projectconfig.AtlasLoadOptions{Vars: []string{"schema"}})
+
+	c.Assert(err, qt.ErrorMatches, `atlas variable overrides must use name=value, got "schema"`)
+}
+
 func TestLoadAtlasProjectConfigEvaluatesFileFunction(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
@@ -741,7 +791,7 @@ env "local" {
   url = var.url
 }
 `,
-			err: `atlas\.hcl variable "url" requires a default because Ptah does not expose Atlas variable flags yet`,
+			err: `atlas\.hcl variable "url" requires a default or --var url=value`,
 		},
 		{
 			name: "variable type is unsupported",
