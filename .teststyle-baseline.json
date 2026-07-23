@@ -1190,18 +1190,8 @@
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
-      "path": "cmd/db/db_test.go",
-      "package": "db",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
       "path": "cmd/drift/drift_test.go",
       "package": "drift",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
-      "path": "cmd/dropall/dropall_test.go",
-      "package": "dropall",
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
@@ -1250,11 +1240,6 @@
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
-      "path": "cmd/migratehash/migratehash_test.go",
-      "package": "migratehash",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
       "path": "cmd/migraterepair/migraterepair_test.go",
       "package": "migraterepair",
       "reason": "same-package test file is not named *_internal_test.go"
@@ -1267,11 +1252,6 @@
     {
       "path": "cmd/migratevalidate/migratevalidate_test.go",
       "package": "migratevalidate",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
-      "path": "cmd/migrations/migrations_test.go",
-      "package": "migrations",
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {

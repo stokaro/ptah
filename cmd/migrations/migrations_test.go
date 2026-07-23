@@ -1,16 +1,18 @@
-package migrations
+package migrations_test
 
 import (
 	"bytes"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"github.com/stokaro/ptah/cmd/migrations"
 )
 
 func TestNewMigrationsCommand_RegistersNativePaths(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := NewMigrationsCommand()
+	cmd := migrations.NewMigrationsCommand()
 	for _, path := range [][]string{
 		{"plan"},
 		{"generate"},
@@ -33,7 +35,7 @@ func TestNewMigrationsCommand_RegistersNativePaths(t *testing.T) {
 func TestNewMigrationsCommand_HelpShowsNativeBoundary(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := NewMigrationsCommand()
+	cmd := migrations.NewMigrationsCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -50,7 +52,7 @@ func TestNewMigrationsCommand_HelpShowsNativeBoundary(t *testing.T) {
 func TestNewMigrationsCommand_RejectsUnknownPositionalCommand(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := NewMigrationsCommand()
+	cmd := migrations.NewMigrationsCommand()
 	var stderr bytes.Buffer
 	cmd.SetErr(&stderr)
 	cmd.SetArgs([]string{"apply"})
@@ -64,7 +66,7 @@ func TestNewMigrationsCommand_RejectsUnknownPositionalCommand(t *testing.T) {
 func TestNewMigrationsCommand_ForwardsCreateHelpToMigrateNew(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := NewMigrationsCommand()
+	cmd := migrations.NewMigrationsCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -82,7 +84,7 @@ func TestNewMigrationsCommand_ForwardsCreateHelpToMigrateNew(t *testing.T) {
 func TestNewMigrationsCommand_UpHelpShowsTargetFlags(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := NewMigrationsCommand()
+	cmd := migrations.NewMigrationsCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -100,7 +102,7 @@ func TestNewMigrationsCommand_UpHelpShowsTargetFlags(t *testing.T) {
 func TestNewMigrationsCommand_ForwardsUpFlagErrors(t *testing.T) {
 	c := qt.New(t)
 
-	cmd := NewMigrationsCommand()
+	cmd := migrations.NewMigrationsCommand()
 	var stderr bytes.Buffer
 	cmd.SetErr(&stderr)
 	cmd.SetArgs([]string{"up", "--bogus-flag"})
