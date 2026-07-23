@@ -337,12 +337,6 @@
       "count": 3
     },
     {
-      "path": "dbschema/connection_internal_test.go",
-      "function": "TestConvertClickHouseURL",
-      "kind": "if",
-      "count": 1
-    },
-    {
       "path": "dbschema/sqlserver_live_test.go",
       "function": "TestSQLServerLiveComputedColumnZeroDiff",
       "kind": "if",
@@ -1275,11 +1269,6 @@
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
-      "path": "cmd/internal/buildinfo/write_test.go",
-      "package": "buildinfo",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
       "path": "cmd/internal/cliobs/cliobs_test.go",
       "package": "cliobs",
       "reason": "same-package test file is not named *_internal_test.go"
@@ -1287,11 +1276,6 @@
     {
       "path": "cmd/internal/cmdadapter/cmdadapter_test.go",
       "package": "cmdadapter",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
-      "path": "cmd/internal/cmdflags/env_test.go",
-      "package": "cmdflags",
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
@@ -1385,19 +1369,9 @@
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
-      "path": "core/renderer/internal/dialects/clickhouse/clickhouse_internal_test.go",
-      "package": "clickhouse",
-      "reason": "missing white-box justification comment after package clause"
-    },
-    {
       "path": "core/renderer/internal/dialects/mssql/mssql_test.go",
       "package": "mssql",
       "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
-      "path": "dbschema/connection_internal_test.go",
-      "package": "dbschema",
-      "reason": "missing white-box justification comment after package clause"
     },
     {
       "path": "dbschema/schema_scope_test.go",
