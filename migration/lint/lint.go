@@ -161,6 +161,9 @@ type Options struct {
 	// Versions restricts linting to parsed migration versions. Empty means
 	// every migration file is linted.
 	Versions []int64
+	// DirFormat selects the migration filename/parser rules used by file-form
+	// linting. Empty uses auto detection.
+	DirFormat migrator.MigrationDirFormat
 	// AtlasTemplateData supplies data for Atlas SQL template migrations.
 	// When nil, templates render with migrator.AtlasTemplateData{}.
 	AtlasTemplateData any
@@ -208,8 +211,12 @@ func LintFS(fsys fs.FS, opts Options) ([]Finding, error) {
 // packages can call this when they need Ptah-prepared File and Statement
 // values without reimplementing the scanner.
 func PrepareFS(fsys fs.FS, opts Options) ([]*File, error) {
+	dirFormat, err := migrator.ParseMigrationDirFormat(string(opts.DirFormat))
+	if err != nil {
+		return nil, err
+	}
 	var names []string
-	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, walkErr error) error {
+	err = fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -225,8 +232,8 @@ func PrepareFS(fsys fs.FS, opts Options) ([]*File, error) {
 		return nil, fmt.Errorf("no *.sql migration files found")
 	}
 	sort.Strings(names)
-	names = filterNamesByVersion(names, opts.Versions)
-	names, err = filterAtlasTemplateSupportNames(fsys, names)
+	names = filterNamesByVersion(names, opts.Versions, dirFormat)
+	names, err = filterAtlasTemplateSupportNames(fsys, names, dirFormat)
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +251,7 @@ func PrepareFS(fsys fs.FS, opts Options) ([]*File, error) {
 	// description — not by an identical file-name stem.
 	versionDirs := map[int64]map[string]bool{}
 	for _, name := range names {
-		if parsed, err := parseKnownMigrationName(path.Base(name)); err == nil {
+		if parsed, err := parseKnownMigrationName(path.Base(name), dirFormat); err == nil {
 			if versionDirs[parsed.Version] == nil {
 				versionDirs[parsed.Version] = map[string]bool{}
 			}
@@ -255,7 +262,16 @@ func PrepareFS(fsys fs.FS, opts Options) ([]*File, error) {
 	mode := modeForDialect(opts.Dialect)
 	files := make([]*File, 0, len(names))
 	for _, name := range names {
-		file, err := prepareFile(fsys, name, present, versionDirs, opts.PathPrefix, mode, opts.AtlasTemplateData)
+		file, err := prepareFile(
+			fsys,
+			name,
+			present,
+			versionDirs,
+			opts.PathPrefix,
+			mode,
+			opts.AtlasTemplateData,
+			dirFormat,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -264,7 +280,7 @@ func PrepareFS(fsys fs.FS, opts Options) ([]*File, error) {
 	return files, nil
 }
 
-func filterNamesByVersion(names []string, versions []int64) []string {
+func filterNamesByVersion(names []string, versions []int64, dirFormat migrator.MigrationDirFormat) []string {
 	if len(versions) == 0 {
 		return names
 	}
@@ -274,7 +290,7 @@ func filterNamesByVersion(names []string, versions []int64) []string {
 	}
 	var filtered []string
 	for _, name := range names {
-		parsed, err := parseKnownMigrationName(path.Base(name))
+		parsed, err := parseKnownMigrationName(path.Base(name), dirFormat)
 		if err != nil {
 			continue
 		}
@@ -285,15 +301,19 @@ func filterNamesByVersion(names []string, versions []int64) []string {
 	return filtered
 }
 
-func filterAtlasTemplateSupportNames(fsys fs.FS, names []string) ([]string, error) {
-	hasAtlasTemplate, err := hasAtlasTemplateMigration(fsys, names)
+func filterAtlasTemplateSupportNames(
+	fsys fs.FS,
+	names []string,
+	dirFormat migrator.MigrationDirFormat,
+) ([]string, error) {
+	hasAtlasTemplate, err := hasAtlasTemplateMigration(fsys, names, dirFormat)
 	if err != nil || !hasAtlasTemplate {
 		return names, err
 	}
 
 	filtered := make([]string, 0, len(names))
 	for _, name := range names {
-		if _, err := parseKnownMigrationName(path.Base(name)); err == nil {
+		if _, err := parseKnownMigrationName(path.Base(name), dirFormat); err == nil {
 			filtered = append(filtered, name)
 			continue
 		}
@@ -308,9 +328,9 @@ func filterAtlasTemplateSupportNames(fsys fs.FS, names []string) ([]string, erro
 	return filtered, nil
 }
 
-func hasAtlasTemplateMigration(fsys fs.FS, names []string) (bool, error) {
+func hasAtlasTemplateMigration(fsys fs.FS, names []string, dirFormat migrator.MigrationDirFormat) (bool, error) {
 	for _, name := range names {
-		parsed, err := parseKnownMigrationName(path.Base(name))
+		parsed, err := parseKnownMigrationName(path.Base(name), dirFormat)
 		if err != nil || parsed.Format != migrator.MigrationDirFormatAtlas {
 			continue
 		}
@@ -343,6 +363,7 @@ func prepareFile(
 	pathPrefix string,
 	mode scanMode,
 	atlasTemplateData any,
+	dirFormat migrator.MigrationDirFormat,
 ) (*File, error) {
 	raw, err := fs.ReadFile(fsys, name)
 	if err != nil {
@@ -354,7 +375,7 @@ func prepareFile(
 	var version int64
 	hasVersion := false
 	atlasFormat := false
-	if parsed, parseErr := parseKnownMigrationName(base); parseErr == nil {
+	if parsed, parseErr := parseKnownMigrationName(base, dirFormat); parseErr == nil {
 		direction = parsed.Direction
 		version = parsed.Version
 		hasVersion = true
@@ -411,7 +432,13 @@ func prepareFile(
 	return file, nil
 }
 
-func parseKnownMigrationName(name string) (*migrator.MigrationFile, error) {
+func parseKnownMigrationName(name string, dirFormat migrator.MigrationDirFormat) (*migrator.MigrationFile, error) {
+	switch dirFormat {
+	case migrator.MigrationDirFormatPtah:
+		return migrator.ParseMigrationFileName(name)
+	case migrator.MigrationDirFormatAtlas:
+		return migrator.ParseAtlasMigrationFileName(name)
+	}
 	if parsed, err := migrator.ParseMigrationFileName(name); err == nil {
 		return parsed, nil
 	}

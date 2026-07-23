@@ -283,32 +283,32 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 		{
 			name:  "migrate_lint",
 			path:  []string{"migrate", "lint"},
-			flags: []string{"--dev-url", "--dir", "--env", "--latest", "--git-base", "--git-dir"},
+			flags: []string{"--dev-url", "--dir", "--dir-format", "--env", "--latest", "--git-base", "--git-dir"},
 		},
 		{
 			name:  "migrate_hash",
 			path:  []string{"migrate", "hash"},
-			flags: []string{"--dir"},
+			flags: []string{"--dir", "--dir-format"},
 		},
 		{
 			name:  "migrate_status",
 			path:  []string{"migrate", "status"},
-			flags: []string{"--url", "--dir"},
+			flags: []string{"--url", "--dir", "--dir-format", "--revisions-schema"},
 		},
 		{
 			name:  "migrate_validate",
 			path:  []string{"migrate", "validate"},
-			flags: []string{"--dev-url", "--dir"},
+			flags: []string{"--dev-url", "--dir", "--dir-format"},
 		},
 		{
 			name:  "migrate_new",
 			path:  []string{"migrate", "new"},
-			flags: []string{"--dir"},
+			flags: []string{"--dir", "--dir-format"},
 		},
 		{
 			name:  "migrate_set",
 			path:  []string{"migrate", "set"},
-			flags: []string{"--url", "--dir"},
+			flags: []string{"--url", "--dir", "--dir-format", "--revisions-schema"},
 		},
 		{
 			name:  "migrate_import",
@@ -542,6 +542,64 @@ func TestNewAtlasCommand_MigrateLintHelpUsesAtlasFlagKinds(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(help, qt.Contains, "--latest uint")
 	c.Assert(help, qt.Not(qt.Contains), "--latest string")
+}
+
+func TestNewAtlasCommand_MigrateMetadataDirFormatDefaultsToAtlas(t *testing.T) {
+	tests := []struct {
+		name string
+		path []string
+	}{
+		{
+			name: "hash",
+			path: []string{"migrate", "hash"},
+		},
+		{
+			name: "lint",
+			path: []string{"migrate", "lint"},
+		},
+		{
+			name: "new",
+			path: []string{"migrate", "new"},
+		},
+		{
+			name: "set",
+			path: []string{"migrate", "set"},
+		},
+		{
+			name: "status",
+			path: []string{"migrate", "status"},
+		},
+		{
+			name: "validate",
+			path: []string{"migrate", "validate"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			root := NewAtlasCommand()
+
+			cmd, _, err := root.Find(tt.path)
+
+			c.Assert(err, qt.IsNil)
+			flag := cmd.Flags().Lookup("dir-format")
+			c.Assert(flag, qt.IsNotNil)
+			c.Assert(flag.DefValue, qt.Equals, "atlas")
+			c.Assert(flag.Shorthand, qt.Equals, "")
+			c.Assert(flag.Hidden, qt.IsFalse)
+		})
+	}
+}
+
+func TestNewAtlasCommand_MigrateApplyDoesNotRegisterDirFormat(t *testing.T) {
+	c := qt.New(t)
+	root := NewAtlasCommand()
+
+	cmd, _, err := root.Find([]string{"migrate", "apply"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cmd.Flags().Lookup("dir-format"), qt.IsNil)
 }
 
 func TestNewAtlasCommand_AdvertisesAtlasProjectFlags(t *testing.T) {
@@ -1148,25 +1206,7 @@ func TestNewAtlasCommand_ForwardsParentedNativeCommand(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, "database URL is required")
 }
 
-func TestNewAtlasCommand_MigrateNewCreatesSkeletonFiles(t *testing.T) {
-	c := qt.New(t)
-	dir := t.TempDir()
-	cmd := NewAtlasCommand()
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"migrate", "new", "manual_hotfix", "--migrations-dir", dir})
-
-	err := cmd.Execute()
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "Generated empty migration files:")
-	matches, globErr := filepath.Glob(filepath.Join(dir, "*_manual_hotfix.*.sql"))
-	c.Assert(globErr, qt.IsNil)
-	c.Assert(matches, qt.HasLen, 2)
-}
-
-func TestNewAtlasCommand_MigrateNewAcceptsAtlasDirFlag(t *testing.T) {
+func TestNewAtlasCommand_MigrateNewCreatesAtlasSkeletonFileByDefault(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	cmd := NewAtlasCommand()
@@ -1178,10 +1218,153 @@ func TestNewAtlasCommand_MigrateNewAcceptsAtlasDirFlag(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "Generated empty migration files:")
-	matches, globErr := filepath.Glob(filepath.Join(dir, "*_manual_hotfix.*.sql"))
+	c.Assert(out.String(), qt.Contains, "Generated empty migration file:")
+	matches, globErr := filepath.Glob(filepath.Join(dir, "*_manual_hotfix.sql"))
 	c.Assert(globErr, qt.IsNil)
-	c.Assert(matches, qt.HasLen, 2)
+	c.Assert(matches, qt.HasLen, 1)
+	downMatches, globErr := filepath.Glob(filepath.Join(dir, "*.down.sql"))
+	c.Assert(globErr, qt.IsNil)
+	c.Assert(downMatches, qt.HasLen, 0)
+	_, err = os.Stat(filepath.Join(dir, "atlas.sum"))
+	c.Assert(err, qt.IsNil)
+}
+
+func TestNewAtlasCommand_MigrateNewAcceptsExplicitAtlasDirFormat(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"migrate", "new", "manual_hotfix", "--dir", dir, "--dir-format", "atlas"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Generated empty migration file:")
+	matches, globErr := filepath.Glob(filepath.Join(dir, "*_manual_hotfix.sql"))
+	c.Assert(globErr, qt.IsNil)
+	c.Assert(matches, qt.HasLen, 1)
+	_, err = os.Stat(filepath.Join(dir, "atlas.sum"))
+	c.Assert(err, qt.IsNil)
+}
+
+func TestNewAtlasCommand_MigrateHashDefaultsToAtlasSum(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	writeAtlasApplyMigration(c, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"migrate", "hash", "--dir", dir})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "atlas.sum")
+	_, err = os.Stat(filepath.Join(dir, "atlas.sum"))
+	c.Assert(err, qt.IsNil)
+	_, err = os.Stat(filepath.Join(dir, "ptah.sum"))
+	c.Assert(os.IsNotExist(err), qt.IsTrue)
+}
+
+func TestNewAtlasCommand_MigrateStatusReadsAtlasRevisionsByDefault(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(t.TempDir(), "status.db")
+	writeAtlasApplyMigration(c, dir, "20260723120000_init.sql", "CREATE TABLE users (id integer primary key)")
+
+	apply := NewAtlasCommand()
+	var applyOut bytes.Buffer
+	apply.SetOut(&applyOut)
+	apply.SetErr(&applyOut)
+	apply.SetArgs([]string{"migrate", "apply", "--url", "sqlite://" + dbPath, "--dir", dir})
+	err := apply.Execute()
+	c.Assert(err, qt.IsNil)
+
+	status := NewAtlasCommand()
+	var statusOut bytes.Buffer
+	status.SetOut(&statusOut)
+	status.SetErr(&statusOut)
+	status.SetArgs([]string{"migrate", "status", "--url", "sqlite://" + dbPath, "--dir", dir})
+	err = status.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statusOut.String(), qt.Contains, "Current Version: 20260723120000")
+	c.Assert(statusOut.String(), qt.Contains, "Database is up to date")
+}
+
+func TestNewAtlasCommand_MigrateSetAcceptsRevisionsSchema(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"migrate", "set", "--revisions-schema", "custom_revisions"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, "database URL is required")
+	c.Assert(out.String(), qt.Contains, "database URL is required")
+	c.Assert(out.String(), qt.Not(qt.Contains), "unknown flag")
+}
+
+func TestNewAtlasCommand_MigrateMetadataRejectsUnsupportedAtlasDirFormat(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "hash",
+			args: []string{"migrate", "hash", "--dir", t.TempDir(), "--dir-format", "goose"},
+		},
+		{
+			name: "lint",
+			args: []string{"migrate", "lint", "--dir", t.TempDir(), "--dir-format", "flyway"},
+		},
+		{
+			name: "new",
+			args: []string{"migrate", "new", "manual_hotfix", "--dir", t.TempDir(), "--dir-format", "golang-migrate"},
+		},
+		{
+			name: "set",
+			args: []string{"migrate", "set", "20260723120000", "--url", "sqlite://state.db", "--dir", t.TempDir(), "--dir-format", "dbmate"},
+		},
+		{
+			name: "status",
+			args: []string{"migrate", "status", "--url", "sqlite://state.db", "--dir", t.TempDir(), "--dir-format", "liquibase"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			cmd := NewAtlasCommand()
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&out)
+			cmd.SetArgs(tt.args)
+
+			err := cmd.Execute()
+
+			c.Assert(err, qt.ErrorMatches, `atlas migrate .* --dir-format: Atlas accepts --dir-format=.* but Ptah does not implement that directory format yet`)
+		})
+	}
+}
+
+func TestNewAtlasCommand_MigrateApplyRejectsDirFormatFlag(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"migrate", "apply", "--dir-format", "atlas"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, "unknown flag: --dir-format")
+	c.Assert(out.String(), qt.Contains, "unknown flag: --dir-format")
 }
 
 func TestNewAtlasCommand_SchemaFmtFormatsHCLFiles(t *testing.T) {

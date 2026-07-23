@@ -25,6 +25,7 @@ type Flag struct {
 	Name        string
 	Shorthand   string
 	Usage       string
+	Default     string
 	Kind        FlagKind
 	NativeName  string
 	Unsupported bool
@@ -59,6 +60,14 @@ func Uint(name, shorthand, usage string) Flag {
 func NativeString(name, shorthand, usage, nativeName string) Flag {
 	flag := String(name, shorthand, usage)
 	flag.NativeName = nativeName
+	return flag
+}
+
+// NativeStringDefault creates an Atlas string flag with an Atlas-compatible
+// default value that forwards to a native Ptah flag.
+func NativeStringDefault(name, shorthand, usage, nativeName, defaultValue string) Flag {
+	flag := NativeString(name, shorthand, usage, nativeName)
+	flag.Default = defaultValue
 	return flag
 }
 
@@ -126,6 +135,7 @@ func LocalDirValue(value string) (string, error) {
 // descriptors.
 func Map(group, use string, flags []Flag, args []string) ([]string, error) {
 	args = appendEnvArgs(flags, args)
+	args = appendDefaultArgs(flags, args)
 	out := make([]string, 0, len(args))
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -183,6 +193,22 @@ func Map(group, use string, flags []Flag, args []string) ([]string, error) {
 		}
 	}
 	return out, nil
+}
+
+func appendDefaultArgs(flags []Flag, args []string) []string {
+	out := args
+	cloned := false
+	for _, flag := range flags {
+		if flag.Default == "" || flagPresent(args, flag) {
+			continue
+		}
+		if !cloned {
+			out = slices.Clone(args)
+			cloned = true
+		}
+		out = append(out, "--"+flag.Name+"="+flag.Default)
+	}
+	return out
 }
 
 func appendEnvArgs(flags []Flag, args []string) []string {
