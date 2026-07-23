@@ -1172,16 +1172,6 @@
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
-      "path": "cmd/drift/drift_test.go",
-      "package": "drift",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
-      "path": "cmd/generate/generate_test.go",
-      "package": "generate",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
       "path": "cmd/integration-test/main_test.go",
       "package": "main",
       "reason": "same-package test file is not named *_internal_test.go"
@@ -1234,11 +1224,6 @@
     {
       "path": "cmd/root/root_test.go",
       "package": "root",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
-      "path": "cmd/sql/sql_test.go",
-      "package": "sql",
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
