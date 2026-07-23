@@ -467,7 +467,9 @@ func commentStartsLine(sql string, pos int) bool {
 func runRules(file *File, opts Options) []Finding {
 	var findings []Finding
 	for _, rule := range rulesForOptions(opts) {
-		if ruleDisabled(rule.Code, opts.Disabled) || !ruleAppliesToDialect(rule, opts.Dialect) || ruleExcludedForFile(rule.Code, file, opts.RuleConfigs) {
+		if ruleDisabled(rule.Code, opts.Disabled) ||
+			!ruleAppliesToDialect(rule, opts.Dialect) ||
+			ruleExcludedForFile(rule.Code, file, opts.RuleConfigs) {
 			continue
 		}
 		severity := ruleSeverity(rule, opts.RuleConfigs)
@@ -506,7 +508,7 @@ func rulesForOptions(opts Options) []Rule {
 }
 
 func ruleSeverity(rule Rule, configs map[string]RuleConfig) Severity {
-	config, ok := configs[rule.Code]
+	config, ok := ruleConfigForCode(rule.Code, configs)
 	if !ok || config.Severity == "" {
 		return rule.Severity
 	}
@@ -514,7 +516,7 @@ func ruleSeverity(rule Rule, configs map[string]RuleConfig) Severity {
 }
 
 func ruleExcludedForFile(code string, file *File, configs map[string]RuleConfig) bool {
-	config, ok := configs[code]
+	config, ok := ruleConfigForCode(code, configs)
 	if !ok {
 		return false
 	}
@@ -524,6 +526,24 @@ func ruleExcludedForFile(code string, file *File, configs map[string]RuleConfig)
 		}
 	}
 	return false
+}
+
+func ruleConfigForCode(code string, configs map[string]RuleConfig) (RuleConfig, bool) {
+	if len(configs) == 0 {
+		return RuleConfig{}, false
+	}
+	if config, ok := configs[code]; ok {
+		return config, true
+	}
+	bestPrefix := ""
+	var best RuleConfig
+	for prefix, config := range configs {
+		if strings.HasPrefix(code, prefix) && len(prefix) > len(bestPrefix) {
+			bestPrefix = prefix
+			best = config
+		}
+	}
+	return best, bestPrefix != ""
 }
 
 func statementSuppressesRule(stmt *Statement, code string) bool {

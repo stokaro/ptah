@@ -86,6 +86,79 @@ func TestParseAtlasProjectConfigGlobalLint(t *testing.T) {
 	c.Assert(cfg.Lint.GitDir, qt.Equals, "repo")
 }
 
+func TestParseAtlasProjectConfigLintPolicyBlocks(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`lint {
+  destructive {
+    error = false
+  }
+  concurrent_index {
+    error = true
+  }
+  data_depend {
+    error = false
+  }
+  incompatible {
+    error = true
+  }
+  nestedtx {
+    error = true
+  }
+}
+env "ci" {
+  lint {
+    destructive {
+      error = true
+    }
+  }
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "ci")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.Lint.RuleConfigs["DS"].Severity, qt.Equals, "error")
+	c.Assert(cfg.Lint.RuleConfigs["PG101"].Severity, qt.Equals, "error")
+	c.Assert(cfg.Lint.RuleConfigs["PG103"].Severity, qt.Equals, "error")
+	c.Assert(cfg.Lint.RuleConfigs["DD"].Severity, qt.Equals, "warning")
+	c.Assert(cfg.Lint.RuleConfigs["BC"].Severity, qt.Equals, "error")
+	c.Assert(cfg.Lint.RuleConfigs["TX201"].Severity, qt.Equals, "error")
+}
+
+func TestParseAtlasProjectConfigEnvOnlyLintPolicyBlocks(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`env "ci" {
+  lint {
+    destructive {
+      error = false
+    }
+    concurrent_index {
+      error = true
+    }
+    data_depend {
+      error = false
+    }
+    incompatible {
+      error = true
+    }
+    nestedtx {
+      error = true
+    }
+  }
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "ci")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.Lint.RuleConfigs["DS"].Severity, qt.Equals, "warning")
+	c.Assert(cfg.Lint.RuleConfigs["PG101"].Severity, qt.Equals, "error")
+	c.Assert(cfg.Lint.RuleConfigs["PG103"].Severity, qt.Equals, "error")
+	c.Assert(cfg.Lint.RuleConfigs["DD"].Severity, qt.Equals, "warning")
+	c.Assert(cfg.Lint.RuleConfigs["BC"].Severity, qt.Equals, "error")
+	c.Assert(cfg.Lint.RuleConfigs["TX201"].Severity, qt.Equals, "error")
+}
+
 func TestParseAtlasProjectConfigEnvSchemaFormatAndDiffBlocks(t *testing.T) {
 	c := qt.New(t)
 	raw := []byte(`env "local" {
@@ -522,6 +595,119 @@ func TestParseAtlasProjectConfigRejectsUnsupportedConstructs(t *testing.T) {
 }
 `,
 			err: `unsupported atlas\.hcl construct "drop_schema" at atlas\.hcl:3`,
+		},
+		{
+			name: "lint format attr",
+			raw: `lint {
+  format = "{{ json . }}"
+}
+`,
+			err: `unsupported atlas\.hcl construct "format" at atlas\.hcl:2`,
+		},
+		{
+			name: "lint destructive force",
+			raw: `lint {
+  destructive {
+    force = true
+  }
+}
+`,
+			err: `unsupported atlas\.hcl construct "force" at atlas\.hcl:3`,
+		},
+		{
+			name: "lint destructive allow table",
+			raw: `lint {
+  destructive {
+    allow_table {
+      match = "deprecated_.+"
+    }
+  }
+}
+`,
+			err: `unsupported atlas\.hcl construct "allow_table" at atlas\.hcl:3`,
+		},
+		{
+			name: "lint duplicate destructive block",
+			raw: `lint {
+  destructive {
+    error = true
+  }
+  destructive {
+    error = false
+  }
+}
+`,
+			err: `unsupported atlas\.hcl construct "destructive" at atlas\.hcl:5`,
+		},
+		{
+			name: "lint check block",
+			raw: `lint {
+  check "DS102" {
+    error = true
+  }
+}
+`,
+			err: `unsupported atlas\.hcl construct "check" at atlas\.hcl:2`,
+		},
+		{
+			name: "lint custom rule",
+			raw: `lint {
+  rule "hcl" "custom" {
+    src = ["schema.rule.hcl"]
+  }
+}
+`,
+			err: `unsupported atlas\.hcl construct "rule" at atlas\.hcl:2`,
+		},
+		{
+			name: "lint non linear block",
+			raw: `lint {
+  non_linear {
+    error = true
+  }
+}
+`,
+			err: `unsupported atlas\.hcl construct "non_linear" at atlas\.hcl:2`,
+		},
+		{
+			name: "lint naming block",
+			raw: `lint {
+  naming {
+    error = true
+  }
+}
+`,
+			err: `unsupported atlas\.hcl construct "naming" at atlas\.hcl:2`,
+		},
+		{
+			name: "lint ownership block",
+			raw: `lint {
+  ownership "github" {
+    repo = "stokaro/ptah"
+  }
+}
+`,
+			err: `unsupported atlas\.hcl construct "ownership" at atlas\.hcl:2`,
+		},
+		{
+			name: "lint statement block",
+			raw: `lint {
+  statement {
+    error = true
+  }
+}
+`,
+			err: `unsupported atlas\.hcl construct "statement" at atlas\.hcl:2`,
+		},
+		{
+			name: "lint constraint drop block",
+			raw: `lint {
+  condrop {
+    error = true
+  }
+}
+`,
+			err: `unsupported atlas\.hcl construct "condrop" at atlas\.hcl:2`,
 		},
 		{
 			name: "cloud block",
