@@ -1129,11 +1129,6 @@
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
-      "path": "cmd/internal/cmdadapter/cmdadapter_test.go",
-      "package": "cmdadapter",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
       "path": "cmd/migrate/migrate_test.go",
       "package": "migrate",
       "reason": "same-package test file is not named *_internal_test.go"
