@@ -13,7 +13,8 @@ The separate `ptah-compat` binary is a drop-in replacement for scripts that need
 Atlas-style root commands, including scripts that call an executable named
 `atlas`.
 
-Reference: [native CLI command tree](https://github.com/stokaro/ptah/blob/master/docs/native_cli.md).
+This page is the published command reference. Use `ptah <command> --help` for
+the exact flag set in an installed binary.
 
 ## Native commands
 
