@@ -70,6 +70,8 @@ jobs:
           npm ci
           npm run check:links:selftest
           npm run check:links
+          npm run check:core-doc-links
+          npm run check:page-health
           npm run check:exit-codes
           npm run build
           mkdir -p "$GITHUB_WORKSPACE/_site/edge"
@@ -89,6 +91,8 @@ jobs:
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm ci
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:links:selftest
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:links
+            DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:core-doc-links
+            DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:page-health
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:exit-codes
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run build
           )
@@ -116,6 +120,12 @@ jobs:
                 fi
                 if [ -f scripts/check-exit-codes.mjs ]; then
                   DOCS_VERSION="$tag" ASTRO_TELEMETRY_DISABLED=1 npm run check:exit-codes
+                fi
+                if [ -f scripts/check-core-doc-links.mjs ]; then
+                  DOCS_VERSION="$tag" ASTRO_TELEMETRY_DISABLED=1 npm run check:core-doc-links
+                fi
+                if [ -f scripts/check-page-health.mjs ]; then
+                  DOCS_VERSION="$tag" ASTRO_TELEMETRY_DISABLED=1 npm run check:page-health
                 fi
                 DOCS_VERSION="$tag" ASTRO_TELEMETRY_DISABLED=1 npm run build
               ); then

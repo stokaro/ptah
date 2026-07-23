@@ -43,7 +43,7 @@ ptah migrations plan \
   --db-url "$DATABASE_URL"
 ```
 
-Reference: [YAML schema](https://github.com/stokaro/ptah/blob/master/docs/yaml_schema.md).
+Reference: [YAML schema](../../reference/yaml-schema/).
 
 ## HCL schema
 
@@ -74,7 +74,7 @@ ptah schema render --schema-file schema.hcl --dialect postgres
 Ptah reads schema HCL as desired schema input. Project configuration HCL is a
 different file type and is described in [Configuration](../../reference/configuration/).
 
-Reference: [HCL schema](https://github.com/stokaro/ptah/blob/master/docs/atlas_hcl_schema.md).
+Reference: [HCL schema](../../reference/hcl-schema/).
 
 :::caution[Supported subset]
 Ptah's HCL schema format is compatible with the Atlas HCL schema language for

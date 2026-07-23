@@ -34,8 +34,5 @@ Capabilities answer questions that a dialect name alone cannot answer:
 The same parser or planner family can therefore adapt to MySQL versus MariaDB,
 PostgreSQL versus CockroachDB/YugabyteDB/Spanner, and version-specific behavior.
 
-References:
-
-- [Detailed capability matrix](https://github.com/stokaro/ptah/blob/master/docs/capabilities.md)
-- [SQLite notes](https://github.com/stokaro/ptah/blob/master/docs/sqlite.md)
-- [SQL Server notes](https://github.com/stokaro/ptah/blob/master/docs/sqlserver.md)
+Continue with [Dialect notes](../dialect-notes/) for operational differences
+between supported database targets.

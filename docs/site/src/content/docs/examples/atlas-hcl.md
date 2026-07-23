@@ -60,5 +60,5 @@ schema HCL file provides desired schema objects.
 Ptah supports a deliberate HCL schema subset that is compatible with the Atlas
 HCL schema language.
 Unsupported constructs are errors, not silent no-ops. See
-[HCL schema](https://github.com/stokaro/ptah/blob/master/docs/atlas_hcl_schema.md)
-and [Atlas project config subset](https://github.com/stokaro/ptah/blob/master/docs/atlas_project_config.md).
+[HCL schema](../../reference/hcl-schema/)
+and [Atlas project config subset](../../reference/atlas-project-config/).

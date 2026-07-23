@@ -60,10 +60,8 @@ The Atlas-compatible command tree lives under `ptah atlas <command> ...`.
 `ptah-compat` is the drop-in replacement binary for scripts that expect
 Atlas-style root commands; it is not a separate configuration surface.
 
-References:
-
-- [Project configuration](https://github.com/stokaro/ptah/blob/master/docs/project_config.md)
-- [Atlas project config subset](https://github.com/stokaro/ptah/blob/master/docs/atlas_project_config.md)
+Continue with [Atlas project config](../atlas-project-config/) for the supported
+`atlas.hcl` subset.
 
 :::note
 Ptah config parsing is intentionally strict. Unknown `ptah.yaml` keys and unsupported `atlas.hcl` constructs fail instead of being ignored.

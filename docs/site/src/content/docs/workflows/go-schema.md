@@ -106,5 +106,6 @@ such as enum storage, serial columns, constraints, or generated columns.
 ## Keep references close
 
 - Full native command tree: [Commands](../../reference/commands/).
-- Annotation comparison with HCL schema: [Go annotations vs HCL schema](https://github.com/stokaro/ptah/blob/master/docs/go_annotations_vs_atlas_hcl.md).
-- Programmatic parser usage: [Public API](https://github.com/stokaro/ptah/blob/master/docs/public_api.md).
+- HCL authoring and migration path: [Schema files](../schema-files/) and
+  [schema export](../api-schema-export/).
+- Programmatic parser usage: [Public API](../../reference/public-api/).

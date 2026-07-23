@@ -37,8 +37,6 @@ jobs:
           comment: "true"
 ```
 
-Reference: [GitHub Action](https://github.com/stokaro/ptah/blob/master/docs/github_action.md).
-
 ## Minimal shell checks
 
 ```bash
