@@ -25,18 +25,6 @@
       "count": 3
     },
     {
-      "path": "cmd/migrateup/migrateup_test.go",
-      "function": "TestMigrateUpCommandHonorsLintConfigSeverityWithPostgres",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "cmd/migrateup/migrateup_test.go",
-      "function": "TestMigrateUpCommandPgDumpHookWritesArtifact",
-      "kind": "if",
-      "count": 3
-    },
-    {
       "path": "core/goschema/dependency_fix_test.go",
       "function": "TestDependencyOrderingWithEmbeddedFields",
       "kind": "if",

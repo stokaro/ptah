@@ -131,13 +131,9 @@ rules:
 }
 
 func TestMigrateUpCommandHonorsLintConfigSeverityWithPostgres(t *testing.T) {
-	dbURL := postgresTestURL()
-	if dbURL == "" {
-		t.Skip("POSTGRES_TEST_DSN, POSTGRES_URL, or TEST_DATABASE_URL is not set")
-	}
-
 	c := qt.New(t)
 	ctx := context.Background()
+	dbURL := requiredPostgresTestURL(t)
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
@@ -333,15 +329,10 @@ migration:
 }
 
 func TestMigrateUpCommandPgDumpHookWritesArtifact(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("fake pg_dump shell script requires a POSIX shell")
-	}
 	c := qt.New(t)
 	ctx := context.Background()
-	dbURL := postgresTestURL()
-	if dbURL == "" {
-		t.Skip("POSTGRES_TEST_DSN, POSTGRES_URL, or TEST_DATABASE_URL is not set")
-	}
+	skipWindowsForFakeShell(t)
+	dbURL := requiredPostgresTestURL(t)
 	tableName := fmt.Sprintf("ptah_preflight_pg_dump_%d", time.Now().UnixNano())
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
@@ -402,7 +393,7 @@ printf 'fake custom dump\n' > "$out"
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(argsData), qt.Contains, "--format=custom\n")
 	c.Assert(string(argsData), qt.Contains, "--file\n"+matches[0]+"\n")
-	if password := databaseURLPasswordForTest(dbURL); password != "" {
+	for _, password := range databaseURLPasswordsForTest(dbURL) {
 		c.Assert(string(argsData), qt.Not(qt.Contains), password)
 	}
 }
@@ -458,6 +449,15 @@ func TestPendingMigrationsForRunSkipsOutOfOrderWhenLinearSkip(t *testing.T) {
 	)
 }
 
+func TestDatabaseURLPasswordsForTest(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(databaseURLPasswordsForTest("postgres://user:secret@example.test/db"), qt.DeepEquals, []string{"secret"})
+	c.Assert(databaseURLPasswordsForTest("postgres://user:@example.test/db"), qt.IsNil)
+	c.Assert(databaseURLPasswordsForTest("postgres://user@example.test/db"), qt.IsNil)
+	c.Assert(databaseURLPasswordsForTest(":"), qt.IsNil)
+}
+
 func postgresTestURL() string {
 	for _, name := range []string{"POSTGRES_TEST_DSN", "POSTGRES_URL", "TEST_DATABASE_URL"} {
 		if value := os.Getenv(name); value != "" {
@@ -465,6 +465,24 @@ func postgresTestURL() string {
 		}
 	}
 	return ""
+}
+
+func requiredPostgresTestURL(t *testing.T) string {
+	t.Helper()
+
+	dbURL := postgresTestURL()
+	if dbURL == "" {
+		t.Skip("POSTGRES_TEST_DSN, POSTGRES_URL, or TEST_DATABASE_URL is not set")
+	}
+	return dbURL
+}
+
+func skipWindowsForFakeShell(t *testing.T) {
+	t.Helper()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("fake pg_dump shell script requires a POSIX shell")
+	}
 }
 
 func writeMigrateUpFile(c *qt.C, dir, name, content string) {
@@ -487,16 +505,16 @@ func sqliteMigrateUpTableExists(c *qt.C, dbURL string, tableName string) bool {
 	return count > 0
 }
 
-func databaseURLPasswordForTest(dbURL string) string {
+func databaseURLPasswordsForTest(dbURL string) []string {
 	parsed, err := url.Parse(dbURL)
 	if err != nil || parsed.User == nil {
-		return ""
+		return nil
 	}
 	password, ok := parsed.User.Password()
-	if !ok {
-		return ""
+	if !ok || password == "" {
+		return nil
 	}
-	return password
+	return []string{password}
 }
 
 func resetMigrateUpCommandForTest(c *qt.C, cmd interface{ Flag(string) *pflag.Flag }) {
