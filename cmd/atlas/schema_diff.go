@@ -16,6 +16,7 @@ type atlasSchemaDiffOptions struct {
 	fromURLs []string
 	toURLs   []string
 	devURL   string
+	schemas  []string
 	exclude  []string
 	format   string
 }
@@ -39,12 +40,12 @@ output are explicit follow-up gaps.`,
 		},
 	}
 	flags := cmd.Flags()
-	flags.StringArrayVar(&opts.fromURLs, "from", nil, "Current schema state URL")
+	flags.StringArrayVarP(&opts.fromURLs, atlasFromFlagName, atlasFromFlagShorthand, nil, "Current schema state URL")
 	flags.StringArrayVar(&opts.toURLs, "to", nil, "Desired schema state URL")
 	flags.StringVar(&opts.devURL, "dev-url", "", "Dev database URL used to choose the SQL dialect for local schema files")
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from diffing")
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
-	flags.StringArray("schema", nil, "Schemas to inspect when a database URL is used")
+	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to diff when a database URL is used")
 	flags.StringArray("include", nil, "Schema objects to include in diffing")
 	flags.BoolP("web", "w", false, "Visualize the schema diff on Atlas Cloud")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
@@ -108,10 +109,11 @@ func validateAtlasSchemaDiffOptions(cmd *cobra.Command, opts atlasSchemaDiffOpti
 	if web, err := cmd.Flags().GetBool("web"); err == nil && web {
 		return fmt.Errorf("atlas schema diff accepts --web, but Ptah does not implement Atlas Cloud visualization")
 	}
-	for _, name := range []string{"schema", "include"} {
-		if values, err := cmd.Flags().GetStringArray(name); err == nil && len(values) > 0 {
-			return fmt.Errorf("atlas schema diff accepts --%s, but Ptah only supports local schema files for this command yet", name)
-		}
+	if len(opts.schemas) > 0 {
+		return fmt.Errorf("atlas schema diff accepts --schema, but Ptah only supports local schema files for this command yet")
+	}
+	if values, err := cmd.Flags().GetStringArray("include"); err == nil && len(values) > 0 {
+		return fmt.Errorf("atlas schema diff accepts --include, but Ptah only supports local schema files for this command yet")
 	}
 	if err := ensureLocalSchemaURLs("--from", opts.fromURLs); err != nil {
 		return err
