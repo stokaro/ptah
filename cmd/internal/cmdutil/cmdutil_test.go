@@ -1,4 +1,4 @@
-package cmdutil
+package cmdutil_test
 
 import (
 	"bytes"
@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 )
 
@@ -17,7 +18,7 @@ func TestWrapRunEMapsOrdinaryErrorsToExit2(t *testing.T) {
 	var stderr bytes.Buffer
 	cmd := &cobra.Command{Use: "boom"}
 	cmd.SetErr(&stderr)
-	run := WrapRunE(func(_ *cobra.Command, _ []string) error {
+	run := cmdutil.WrapRunE(func(_ *cobra.Command, _ []string) error {
 		return errors.New("boom")
 	})
 
@@ -34,7 +35,7 @@ func TestWrapRunEPreservesExplicitExitCodes(t *testing.T) {
 	var stderr bytes.Buffer
 	cmd := &cobra.Command{Use: "diff"}
 	cmd.SetErr(&stderr)
-	run := WrapRunE(func(_ *cobra.Command, _ []string) error {
+	run := cmdutil.WrapRunE(func(_ *cobra.Command, _ []string) error {
 		return exitcode.New(1, errors.New("diff found"))
 	})
 

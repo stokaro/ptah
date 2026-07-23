@@ -1134,11 +1134,6 @@
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
-      "path": "cmd/internal/cmdutil/cmdutil_test.go",
-      "package": "cmdutil",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
       "path": "cmd/migrate/migrate_test.go",
       "package": "migrate",
       "reason": "same-package test file is not named *_internal_test.go"
