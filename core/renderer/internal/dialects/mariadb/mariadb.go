@@ -191,6 +191,18 @@ func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
 	return r.r.VisitDropFunction(node)
 }
 
+func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
+	return r.r.VisitCreateSequence(node)
+}
+
+func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
+	return r.r.VisitAlterSequence(node)
+}
+
+func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
+	return r.r.VisitDropSequence(node)
+}
+
 func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
 	return r.r.VisitCreateView(node)
 }

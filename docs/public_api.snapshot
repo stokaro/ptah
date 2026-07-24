@@ -64,6 +64,8 @@ type AlterGeneratedColumnExpressionOperation struct{ ... }
 type AlterOperation interface{ ... }
 type AlterRoleNode struct{ ... }
     func NewAlterRole(name string) *AlterRoleNode
+type AlterSequenceNode struct{ ... }
+    func NewAlterSequence(name string) *AlterSequenceNode
 type AlterTableDisableRLSNode struct{ ... }
     func NewAlterTableDisableRLS(table string) *AlterTableDisableRLSNode
 type AlterTableEnableRLSNode struct{ ... }
@@ -98,6 +100,8 @@ type CreateRoleNode struct{ ... }
     func NewCreateRole(name string) *CreateRoleNode
 type CreateSchemaNode struct{ ... }
     func NewCreateSchema(name string) *CreateSchemaNode
+type CreateSequenceNode struct{ ... }
+    func NewCreateSequence(name string) *CreateSequenceNode
 type CreateTableNode struct{ ... }
     func NewCreateTable(name string) *CreateTableNode
 type CreateTriggerNode struct{ ... }
@@ -123,6 +127,8 @@ type DropPolicyNode struct{ ... }
     func NewDropPolicy(name, table string) *DropPolicyNode
 type DropRoleNode struct{ ... }
     func NewDropRole(name string) *DropRoleNode
+type DropSequenceNode struct{ ... }
+    func NewDropSequence(name string) *DropSequenceNode
 type DropTableNode struct{ ... }
     func NewDropTable(name string) *DropTableNode
 type DropTriggerNode struct{ ... }
@@ -336,6 +342,12 @@ type Visitor interface {
     VisitCreateFunction(*CreateFunctionNode) error
     // VisitDropFunction renders a DROP FUNCTION statement (PostgreSQL-specific)
     VisitDropFunction(*DropFunctionNode) error
+    // VisitCreateSequence renders a CREATE SEQUENCE statement (PostgreSQL-specific)
+    VisitCreateSequence(*CreateSequenceNode) error
+    // VisitAlterSequence renders an ALTER SEQUENCE statement (PostgreSQL-specific)
+    VisitAlterSequence(*AlterSequenceNode) error
+    // VisitDropSequence renders a DROP SEQUENCE statement (PostgreSQL-specific)
+    VisitDropSequence(*DropSequenceNode) error
     // VisitCreateView renders a CREATE VIEW statement
     VisitCreateView(*CreateViewNode) error
     // VisitDropView renders a DROP VIEW statement
@@ -391,6 +403,7 @@ type Visitor interface {
 func Deduplicate(r *Database)
 func Finalize(r *Database)
 func GetDependencyInfo(r *Database) string
+func IsValidSequenceType(asType string) bool
 func QualifyTableName(schema, table string) string
 func UniqueStructNames(embeddedFields []EmbeddedField) []string
 type Constraint struct{ ... }
@@ -417,6 +430,7 @@ type RLSPolicy struct{ ... }
 type Role struct{ ... }
 type Schema struct{ ... }
 type SelfReferencingFK struct{ ... }
+type Sequence struct{ ... }
 type Table struct{ ... }
 type Trigger struct{ ... }
 type View struct{ ... }
@@ -540,6 +554,7 @@ type DBRLSPolicy struct{ ... }
 type DBRole struct{ ... }
 type DBSchema struct{ ... }
 type DBSchemaInfo struct{ ... }
+type DBSequence struct{ ... }
 type DBTable struct{ ... }
 type DBTrigger struct{ ... }
 type DBView struct{ ... }
@@ -914,6 +929,7 @@ type RLSPolicyDiff struct{ ... }
 type RLSPolicyRef struct{ ... }
 type RoleDiff struct{ ... }
 type SchemaDiff struct{ ... }
+type SequenceDiff struct{ ... }
 type TableDiff struct{ ... }
 type TriggerDiff struct{ ... }
 type TriggerRef struct{ ... }

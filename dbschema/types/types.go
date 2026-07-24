@@ -16,6 +16,7 @@ type DBSchema struct {
 	Constraints []DBConstraint `json:"constraints"`
 	Extensions  []DBExtension  `json:"extensions"`   // PostgreSQL extensions
 	Functions   []DBFunction   `json:"functions"`    // PostgreSQL custom functions
+	Sequences   []DBSequence   `json:"sequences"`    // PostgreSQL standalone sequences
 	Views       []DBView       `json:"views"`        // Database views
 	MatViews    []DBMatView    `json:"matviews"`     // Database materialized views
 	Triggers    []DBTrigger    `json:"triggers"`     // Database triggers
@@ -215,6 +216,31 @@ type DBExtension struct {
 	InstalledVersion *string `json:"installed_version"` // Currently installed version (may differ from default)
 }
 
+// DBSequence represents a standalone PostgreSQL sequence read from the database.
+//
+// Only user-declared, standalone sequences appear here. Implicit sequences that
+// back SERIAL / BIGSERIAL / identity columns (those OWNED BY a column via an
+// internal/auto dependency) are deliberately excluded so that declaring a plain
+// SERIAL column does not surface as a spurious standalone sequence.
+type DBSequence struct {
+	Name      string `json:"name"`                // Sequence name
+	Schema    string `json:"schema,omitempty"`    // Schema containing the sequence
+	DataType  string `json:"data_type,omitempty"` // Underlying integer type (e.g. "bigint")
+	Start     *int64 `json:"start,omitempty"`     // START WITH value
+	Increment *int64 `json:"increment,omitempty"` // INCREMENT BY value
+	MinValue  *int64 `json:"min_value,omitempty"` // MINVALUE bound
+	MaxValue  *int64 `json:"max_value,omitempty"` // MAXVALUE bound
+	Cache     *int64 `json:"cache,omitempty"`     // CACHE size
+	Cycle     bool   `json:"cycle"`               // Whether the sequence uses CYCLE
+	OwnedBy   string `json:"owned_by,omitempty"`  // Owning table.column, if any
+	Comment   string `json:"comment,omitempty"`   // Sequence comment/description
+}
+
+// QualifiedName returns schema.sequence when Schema is set, or Name otherwise.
+func (s DBSequence) QualifiedName() string {
+	return QualifyTableName(s.Schema, s.Name)
+}
+
 // DBInfo contains connection and metadata information
 type DBInfo struct {
 	Dialect      string                  `json:"dialect"` // postgres, mysql, mariadb
@@ -348,7 +374,7 @@ type DBRole struct {
 type DBGrant struct {
 	Role       string `json:"role"`                 // Role receiving the privilege
 	Privilege  string `json:"privilege"`            // Granted privilege, e.g. SELECT or USAGE
-	ObjectType string `json:"object_type"`          // TABLE or SCHEMA
+	ObjectType string `json:"object_type"`          // TABLE, SCHEMA, or SEQUENCE
 	Schema     string `json:"schema,omitempty"`     // Schema containing the target object
 	ObjectName string `json:"object_name"`          // Target table or schema name
 	WithOption bool   `json:"with_option"`          // Whether the grant has WITH GRANT OPTION

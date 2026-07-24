@@ -1164,6 +1164,66 @@ func FromFunction(function goschema.Function) *ast.CreateFunctionNode {
 	return functionNode
 }
 
+// FromSequence converts a goschema.Sequence into a CreateSequenceNode.
+//
+// The returned node faithfully carries every declared option, including OWNED
+// BY. Callers that generate a full schema (see FromDatabase) deliberately defer
+// the OWNED BY association to a separate post-table ALTER SEQUENCE, because a
+// sequence referenced by a column DEFAULT must be created before its table
+// while OWNED BY requires the table to already exist.
+func FromSequence(sequence goschema.Sequence) *ast.CreateSequenceNode {
+	sequenceNode := ast.NewCreateSequence(sequence.Name)
+	if sequence.Schema != "" {
+		sequenceNode.SetSchema(sequence.Schema)
+	}
+	if sequence.IfNotExists {
+		sequenceNode.SetIfNotExists()
+	}
+	if sequence.AsType != "" {
+		sequenceNode.SetAs(sequence.AsType)
+	}
+	if sequence.Start != nil {
+		sequenceNode.SetStart(*sequence.Start)
+	}
+	if sequence.Increment != nil {
+		sequenceNode.SetIncrement(*sequence.Increment)
+	}
+	if sequence.MinValue != nil {
+		sequenceNode.SetMinValue(*sequence.MinValue)
+	}
+	if sequence.MaxValue != nil {
+		sequenceNode.SetMaxValue(*sequence.MaxValue)
+	}
+	if sequence.Cache != nil {
+		sequenceNode.SetCache(*sequence.Cache)
+	}
+	if sequence.Cycle {
+		sequenceNode.SetCycle(true)
+	}
+	if sequence.OwnedBy != "" {
+		sequenceNode.SetOwnedBy(sequence.OwnedBy)
+	}
+	if sequence.Comment != "" {
+		sequenceNode.SetComment(sequence.Comment)
+	}
+	return sequenceNode
+}
+
+// sequenceOwnershipNode returns an ALTER SEQUENCE ... OWNED BY node for a
+// sequence that declares an owner, or nil when it does not. It exists so schema
+// generation can emit the ownership association after the owning table is
+// created.
+func sequenceOwnershipNode(sequence goschema.Sequence) *ast.AlterSequenceNode {
+	if sequence.OwnedBy == "" {
+		return nil
+	}
+	node := ast.NewAlterSequence(sequence.Name).SetOwnedBy(sequence.OwnedBy)
+	if sequence.Schema != "" {
+		node.SetSchema(sequence.Schema)
+	}
+	return node
+}
+
 // FromView converts a goschema.View to an ast.CreateViewNode.
 func FromView(view goschema.View) *ast.CreateViewNode {
 	viewNode := ast.NewCreateView(view.Name).
@@ -1343,9 +1403,13 @@ func FromGrant(grant goschema.Grant) *ast.GrantPrivilegeNode {
 	grant.Canonicalize()
 	objectType := "TABLE"
 	objectName := grant.OnTable
-	if grant.OnSchema != "" {
+	switch {
+	case grant.OnSchema != "":
 		objectType = "SCHEMA"
 		objectName = grant.OnSchema
+	case grant.OnSequence != "":
+		objectType = "SEQUENCE"
+		objectName = grant.OnSequence
 	}
 	return ast.NewGrantPrivilege(grant.Role, objectType, objectName, grant.Privileges).
 		SetWithOption(grant.WithOption).
@@ -1445,6 +1509,18 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 	for _, extension := range database.Extensions {
 		extensionNode := FromExtension(extension)
 		statements.Statements = append(statements.Statements, extensionNode)
+	}
+
+	// 2b. Add standalone sequence definitions (PostgreSQL-specific) before any
+	// tables, because a sequence may back a column DEFAULT. The OWNED BY
+	// association is emitted later (after tables) via
+	// appendPostgreSQLPostForeignKeyFeatureStatements.
+	if isPostgreSQLPlatform(targetPlatform) {
+		for _, sequence := range database.Sequences {
+			sequenceNode := FromSequence(sequence)
+			sequenceNode.OwnedBy = ""
+			statements.Statements = append(statements.Statements, sequenceNode)
+		}
 	}
 
 	// 3. Add enum definitions when the dialect has standalone enum types.
@@ -1550,6 +1626,13 @@ func appendPostgreSQLPreIndexFeatureStatements(statements *ast.StatementList, da
 }
 
 func appendPostgreSQLPostForeignKeyFeatureStatements(statements *ast.StatementList, database goschema.Database) {
+	// Associate standalone sequences with their owning table.column now that the
+	// tables exist. CREATE SEQUENCE ran earlier (before tables) without OWNED BY.
+	for _, sequence := range database.Sequences {
+		if ownershipNode := sequenceOwnershipNode(sequence); ownershipNode != nil {
+			statements.Statements = append(statements.Statements, ownershipNode)
+		}
+	}
 	for _, view := range database.Views {
 		statements.Statements = append(statements.Statements, FromView(view))
 	}

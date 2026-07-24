@@ -426,6 +426,15 @@ type User struct {
 //
 // Returns:
 //   - fs.FS: An in-memory filesystem containing the specified files
+func grantByOnSequence(grants []goschema.Grant, sequenceName string) goschema.Grant {
+	for _, grant := range grants {
+		if grant.OnSequence == sequenceName {
+			return grant
+		}
+	}
+	return goschema.Grant{}
+}
+
 func createTestFS(files map[string]string) fs.FS {
 	fsys := make(fstest.MapFS)
 	for path, content := range files {
@@ -1416,9 +1425,17 @@ func TestParseDir_SchemaObjectsAndGrants(t *testing.T) {
 	c.Assert(result.RLSEnabledTables, qt.HasLen, 1)
 	c.Assert(result.RLSEnabledTables[0].Table, qt.Equals, "users")
 
-	c.Assert(result.Grants, qt.HasLen, 3, qt.Commentf("table grant, grant-option table grant, and schema grant"))
+	c.Assert(result.Grants, qt.HasLen, 4, qt.Commentf("table grant, grant-option table grant, schema grant, and sequence grant"))
 	c.Assert(result.Constraints, qt.HasLen, 1)
 	c.Assert(result.Constraints[0].Name, qt.Equals, "users_email_check")
+
+	c.Assert(result.Sequences, qt.HasLen, 1)
+	c.Assert(result.Sequences[0].Name, qt.Equals, "fixture_order_seq")
+	c.Assert(result.Sequences[0].AsType, qt.Equals, "bigint")
+
+	sequenceGrant := grantByOnSequence(result.Grants, "fixture_order_seq")
+	c.Assert(sequenceGrant.OnSequence, qt.Equals, "fixture_order_seq")
+	c.Assert(sequenceGrant.Privileges, qt.DeepEquals, []string{"USAGE", "SELECT"})
 
 	c.Assert(result.Roles, qt.HasLen, 1)
 	c.Assert(result.Roles[0].Name, qt.Equals, "fixture_app_user")

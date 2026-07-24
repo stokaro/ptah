@@ -719,6 +719,9 @@ func cloneSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 	clone.FunctionsAdded = slices.Clone(diff.FunctionsAdded)
 	clone.FunctionsRemoved = slices.Clone(diff.FunctionsRemoved)
 	clone.FunctionsModified = slices.Clone(diff.FunctionsModified)
+	clone.SequencesAdded = slices.Clone(diff.SequencesAdded)
+	clone.SequencesRemoved = slices.Clone(diff.SequencesRemoved)
+	clone.SequencesModified = slices.Clone(diff.SequencesModified)
 	clone.ViewsAdded = slices.Clone(diff.ViewsAdded)
 	clone.ViewsRemoved = slices.Clone(diff.ViewsRemoved)
 	clone.ViewsModified = slices.Clone(diff.ViewsModified)
@@ -1028,6 +1031,11 @@ func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Databa
 		FunctionsAdded:    diff.FunctionsRemoved, // Functions to remove become functions to add
 		FunctionsRemoved:  diff.FunctionsAdded,   // Functions to add become functions to remove
 		FunctionsModified: reverseFunctionDiffs(diff.FunctionsModified),
+
+		// Reverse sequence operations
+		SequencesAdded:    diff.SequencesRemoved, // Sequences to remove become sequences to add
+		SequencesRemoved:  diff.SequencesAdded,   // Sequences to add become sequences to remove
+		SequencesModified: reverseSequenceDiffs(diff.SequencesModified),
 
 		// Reverse RLS policy operations
 		RLSPoliciesAdded:    convertRLSPolicyRefsToNames(diff.RLSPoliciesRemoved),                 // Policies to remove become policies to add (convert RLSPolicyRef to string)
@@ -1503,6 +1511,29 @@ func reverseFunctionDiffs(functionDiffs []types.FunctionDiff) []types.FunctionDi
 
 		reversed[i] = types.FunctionDiff{
 			FunctionName: functionDiff.FunctionName,
+			Changes:      reversedChanges,
+		}
+	}
+	return reversed
+}
+
+// reverseSequenceDiffs reverses sequence modifications for down migrations.
+func reverseSequenceDiffs(sequenceDiffs []types.SequenceDiff) []types.SequenceDiff {
+	reversed := make([]types.SequenceDiff, len(sequenceDiffs))
+	for i, sequenceDiff := range sequenceDiffs {
+		reversedChanges := make(map[string]string)
+		for key, change := range sequenceDiff.Changes {
+			// Split "old -> new" and reverse to "new -> old"
+			parts := strings.Split(change, " -> ")
+			if len(parts) == 2 {
+				reversedChanges[key] = parts[1] + " -> " + parts[0]
+			} else {
+				reversedChanges[key] = change
+			}
+		}
+
+		reversed[i] = types.SequenceDiff{
+			SequenceName: sequenceDiff.SequenceName,
 			Changes:      reversedChanges,
 		}
 	}

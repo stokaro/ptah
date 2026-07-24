@@ -38,6 +38,7 @@ type Database struct {
 	EmbeddedFields             []EmbeddedField
 	Extensions                 []Extension                    // PostgreSQL extensions (pg_trgm, postgis, etc.)
 	Functions                  []Function                     // PostgreSQL custom functions
+	Sequences                  []Sequence                     // PostgreSQL standalone sequences (CREATE SEQUENCE)
 	Views                      []View                         // Database views
 	MaterializedViews          []MaterializedView             // Database materialized views
 	Triggers                   []Trigger                      // Database triggers
@@ -535,6 +536,99 @@ type Function struct {
 	Comment    string // Optional comment for documentation
 }
 
+// Sequence represents a standalone PostgreSQL sequence object parsed from Go
+// annotations.
+//
+// A sequence is a distinct schema object created with CREATE SEQUENCE and
+// controlled with ALTER SEQUENCE / DROP SEQUENCE. It is separate from the
+// implicit, table-owned sequences that back SERIAL / BIGSERIAL / SMALLSERIAL
+// columns: those are created and dropped automatically with their owning
+// column and are never emitted as standalone objects.
+//
+// Sequence is created by parsing //migrator:schema:sequence annotations:
+//
+//	//migrator:schema:sequence name="order_number_seq" start="1000" increment="1" cache="20"
+//	type OrderNumberSeq struct{}
+//
+// Supported attributes mirror the PostgreSQL CREATE SEQUENCE options:
+//   - AsType: the underlying integer type (e.g. "bigint", "integer", "smallint")
+//   - Start: the START WITH value
+//   - Increment: the INCREMENT BY value (must be non-zero)
+//   - MinValue / MaxValue: the MINVALUE / MAXVALUE bounds
+//   - Cache: the CACHE size
+//   - Cycle: whether the sequence wraps around (CYCLE vs NO CYCLE)
+//   - OwnedBy: an optional "table.column" association (OWNED BY)
+//
+// Example generated SQL:
+//
+//	CREATE SEQUENCE order_number_seq AS bigint START WITH 1000 INCREMENT BY 1 CACHE 20;
+type Sequence struct {
+	StructName  string // Name of the Go struct this sequence is associated with
+	Name        string // Sequence name (e.g., "order_number_seq")
+	Schema      string // Optional schema/namespace (PostgreSQL-style)
+	AsType      string // Optional underlying integer type (e.g., "bigint")
+	Start       *int64 // Optional START WITH value
+	Increment   *int64 // Optional INCREMENT BY value (must be non-zero)
+	MinValue    *int64 // Optional MINVALUE bound
+	MaxValue    *int64 // Optional MAXVALUE bound
+	Cache       *int64 // Optional CACHE size
+	Cycle       bool   // Whether the sequence uses CYCLE (default NO CYCLE)
+	OwnedBy     string // Optional "table.column" association (OWNED BY)
+	IfNotExists bool   // Whether to use IF NOT EXISTS clause
+	Comment     string // Optional comment for documentation
+}
+
+// sequenceTypeAliases maps accepted spellings of a sequence's underlying
+// integer type to the canonical form that PostgreSQL's format_type reports, so
+// an annotation using an alias (e.g. int8) does not churn against an
+// introspected sequence.
+var sequenceTypeAliases = map[string]string{
+	"smallint": "smallint",
+	"int2":     "smallint",
+	"integer":  "integer",
+	"int":      "integer",
+	"int4":     "integer",
+	"bigint":   "bigint",
+	"int8":     "bigint",
+}
+
+// IsValidSequenceType reports whether asType is an empty (unspecified) or
+// recognized sequence integer type. It backs the parser's fail-fast validation
+// that keeps unvalidated text out of the rendered AS clause.
+func IsValidSequenceType(asType string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(asType))
+	if normalized == "" {
+		return true
+	}
+	_, ok := sequenceTypeAliases[normalized]
+	return ok
+}
+
+// Canonicalize normalizes sequence attributes so every downstream consumer
+// (planner, renderer, comparator) sees the same values regardless of how the
+// annotation was typed. Recognized integer-type aliases are mapped to the
+// canonical form; unrecognized types are left as-is for the parser to reject.
+func (s *Sequence) Canonicalize() {
+	s.Name = strings.TrimSpace(s.Name)
+	s.Schema = strings.TrimSpace(s.Schema)
+	s.AsType = strings.ToLower(strings.TrimSpace(s.AsType))
+	if canonical, ok := sequenceTypeAliases[s.AsType]; ok {
+		s.AsType = canonical
+	}
+	s.OwnedBy = strings.TrimSpace(s.OwnedBy)
+	s.Comment = strings.TrimSpace(s.Comment)
+}
+
+// QualifiedName returns schema.name when Schema is set, or Name otherwise. It
+// is the stable identity used to match a declared sequence against an
+// introspected one.
+func (s Sequence) QualifiedName() string {
+	if strings.TrimSpace(s.Schema) == "" {
+		return strings.TrimSpace(s.Name)
+	}
+	return strings.TrimSpace(s.Schema) + "." + strings.TrimSpace(s.Name)
+}
+
 // View represents a database view definition parsed from Go annotations.
 //
 // View is created by parsing //migrator:schema:view annotations:
@@ -821,8 +915,9 @@ type Grant struct {
 	StructName string   // Name of the Go struct this grant is associated with
 	Role       string   // Role receiving the privilege
 	Privileges []string // Privileges to grant, e.g. SELECT, INSERT, USAGE
-	OnTable    string   // Target table, mutually exclusive with OnSchema
-	OnSchema   string   // Target schema, mutually exclusive with OnTable
+	OnTable    string   // Target table, mutually exclusive with OnSchema/OnSequence
+	OnSchema   string   // Target schema, mutually exclusive with OnTable/OnSequence
+	OnSequence string   // Target sequence, mutually exclusive with OnTable/OnSchema
 	WithOption bool     // Whether the grant includes WITH GRANT OPTION
 	GrantedBy  string   // Grantor reported by database introspection, if available
 	Comment    string   // Optional comment for documentation
@@ -848,6 +943,7 @@ func (g *Grant) Canonicalize() {
 	g.Role = strings.TrimSpace(g.Role)
 	g.OnTable = strings.TrimSpace(g.OnTable)
 	g.OnSchema = strings.TrimSpace(g.OnSchema)
+	g.OnSequence = strings.TrimSpace(g.OnSequence)
 }
 
 // SelfReferencingFK represents a self-referencing foreign key that needs to be

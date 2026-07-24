@@ -227,6 +227,34 @@ func describeShadowDiff(diff *types.SchemaDiff) string {
 	return "schema differs"
 }
 
+// collectModifiedTableMismatch returns the first structural mismatch for a
+// modified table (a missing/extra column or constraint, or a column change), or
+// nil when the table matches. It is split out of collectShadowMismatches to
+// keep that dispatcher's cyclomatic complexity manageable.
+func collectModifiedTableMismatch(table types.TableDiff) []ShadowMismatch {
+	for _, columnName := range sortedStrings(table.ColumnsAdded) {
+		message := fmt.Sprintf("missing column %s.%s", table.TableName, columnName)
+		return []ShadowMismatch{{Kind: "missing_column", Table: table.TableName, Column: columnName, Object: table.TableName + "." + columnName, Message: message}}
+	}
+	for _, constraintName := range sortedStrings(table.ConstraintsAdded) {
+		message := fmt.Sprintf("missing constraint %s.%s", table.TableName, constraintName)
+		return []ShadowMismatch{{Kind: "missing_constraint", Table: table.TableName, Constraint: constraintName, Object: table.TableName + "." + constraintName, Message: message}}
+	}
+	for _, column := range sortedColumnDiffs(table.ColumnsModified) {
+		message := fmt.Sprintf("column mismatch %s.%s: %s", table.TableName, column.ColumnName, describeChanges(column.Changes))
+		return []ShadowMismatch{{Kind: "column_mismatch", Table: table.TableName, Column: column.ColumnName, Object: table.TableName + "." + column.ColumnName, Changes: column.Changes, Message: message}}
+	}
+	for _, columnName := range sortedStrings(table.ColumnsRemoved) {
+		message := fmt.Sprintf("extra column %s.%s", table.TableName, columnName)
+		return []ShadowMismatch{{Kind: "extra_column", Table: table.TableName, Column: columnName, Object: table.TableName + "." + columnName, Message: message}}
+	}
+	for _, constraintName := range sortedStrings(table.ConstraintsRemoved) {
+		message := fmt.Sprintf("extra constraint %s.%s", table.TableName, constraintName)
+		return []ShadowMismatch{{Kind: "extra_constraint", Table: table.TableName, Constraint: constraintName, Object: table.TableName + "." + constraintName, Message: message}}
+	}
+	return nil
+}
+
 func collectShadowMismatches(diff *types.SchemaDiff) []ShadowMismatch {
 	if diff == nil {
 		return []ShadowMismatch{{Kind: "schema", Message: "schema differs"}}
@@ -236,25 +264,8 @@ func collectShadowMismatches(diff *types.SchemaDiff) []ShadowMismatch {
 		return []ShadowMismatch{{Kind: "missing_table", Table: tableName, Object: tableName, Message: "missing table " + tableName}}
 	}
 	for _, table := range sortedTableDiffs(diff.TablesModified) {
-		for _, columnName := range sortedStrings(table.ColumnsAdded) {
-			message := fmt.Sprintf("missing column %s.%s", table.TableName, columnName)
-			return []ShadowMismatch{{Kind: "missing_column", Table: table.TableName, Column: columnName, Object: table.TableName + "." + columnName, Message: message}}
-		}
-		for _, constraintName := range sortedStrings(table.ConstraintsAdded) {
-			message := fmt.Sprintf("missing constraint %s.%s", table.TableName, constraintName)
-			return []ShadowMismatch{{Kind: "missing_constraint", Table: table.TableName, Constraint: constraintName, Object: table.TableName + "." + constraintName, Message: message}}
-		}
-		for _, column := range sortedColumnDiffs(table.ColumnsModified) {
-			message := fmt.Sprintf("column mismatch %s.%s: %s", table.TableName, column.ColumnName, describeChanges(column.Changes))
-			return []ShadowMismatch{{Kind: "column_mismatch", Table: table.TableName, Column: column.ColumnName, Object: table.TableName + "." + column.ColumnName, Changes: column.Changes, Message: message}}
-		}
-		for _, columnName := range sortedStrings(table.ColumnsRemoved) {
-			message := fmt.Sprintf("extra column %s.%s", table.TableName, columnName)
-			return []ShadowMismatch{{Kind: "extra_column", Table: table.TableName, Column: columnName, Object: table.TableName + "." + columnName, Message: message}}
-		}
-		for _, constraintName := range sortedStrings(table.ConstraintsRemoved) {
-			message := fmt.Sprintf("extra constraint %s.%s", table.TableName, constraintName)
-			return []ShadowMismatch{{Kind: "extra_constraint", Table: table.TableName, Constraint: constraintName, Object: table.TableName + "." + constraintName, Message: message}}
+		if mismatch := collectModifiedTableMismatch(table); mismatch != nil {
+			return mismatch
 		}
 	}
 	for _, enumName := range sortedStrings(diff.EnumsAdded) {
@@ -278,6 +289,9 @@ func collectShadowMismatches(diff *types.SchemaDiff) []ShadowMismatch {
 	}
 	for _, functionName := range sortedStrings(diff.FunctionsAdded) {
 		return []ShadowMismatch{{Kind: "missing_function", Object: functionName, Message: "missing function " + functionName}}
+	}
+	for _, sequenceName := range sortedStrings(diff.SequencesAdded) {
+		return []ShadowMismatch{{Kind: "missing_sequence", Object: sequenceName, Message: "missing sequence " + sequenceName}}
 	}
 	for _, policyName := range sortedStrings(diff.RLSPoliciesAdded) {
 		return []ShadowMismatch{{Kind: "missing_rls_policy", Object: policyName, Message: "missing RLS policy " + policyName}}

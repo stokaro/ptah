@@ -25,6 +25,21 @@ func (r *renderer) renderExtensions() {
 	}
 }
 
+// renderSequences reports standalone sequences as a currently-unsupported
+// export path. Atlas HCL sequence blocks are not part of Ptah's HCL surface
+// yet (the atlashcl parser does not read them), so emitting them would produce
+// non-round-trippable output. A diagnostic keeps the loss explicit rather than
+// silently dropping the objects.
+func (r *renderer) renderSequences() {
+	sequences := append([]goschema.Sequence(nil), r.db.Sequences...)
+	slices.SortFunc(sequences, func(a, b goschema.Sequence) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
+	for _, sequence := range sequences {
+		r.warn("sequences."+sequence.Name, "standalone sequence objects are not yet representable in HCL schema output")
+	}
+}
+
 func (r *renderer) renderRoles() {
 	roles := append([]goschema.Role(nil), r.db.Roles...)
 	slices.SortFunc(roles, func(a, b goschema.Role) int {
@@ -248,6 +263,10 @@ func (r *renderer) renderGrants() {
 	})
 	for _, grant := range grants {
 		grant.Canonicalize()
+		if grant.OnSequence != "" {
+			r.warn("grants."+grant.Role, "sequence grants are not yet representable in HCL schema output")
+			continue
+		}
 		target := grantTarget(grant)
 		if grant.Role == "" || target == "" || len(grant.Privileges) == 0 {
 			r.warn("grants."+grant.Role, "grant requires role, table or schema target, and at least one privilege")
