@@ -93,6 +93,18 @@ func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name 
 			return cmdutil.Fail(cmd, fmt.Errorf("atlas.hcl diff.concurrent_index.create is not supported by migrate diff yet"))
 		}
 	}
+	if loaded && !cmd.Flags().Changed("dir") && projectCfg.Migration.Dir != "" {
+		opts.dirURL, err = atlasProjectConfigLocalDir(cmd, opts.dirURL)
+		if err != nil {
+			return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate diff --dir: %w", err))
+		}
+	}
+	if loaded && !cmd.Flags().Changed("to") && len(projectCfg.SchemaSources) > 0 {
+		opts.toURLs, err = atlasProjectConfigSchemaURLs(cmd, opts.toURLs)
+		if err != nil {
+			return cmdutil.Fail(cmd, fmt.Errorf("atlas.hcl schema.src: %w", err))
+		}
+	}
 	if err := validateAtlasMigrateDiffOptions(cmd, opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

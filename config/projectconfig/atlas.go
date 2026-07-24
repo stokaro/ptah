@@ -384,11 +384,7 @@ func (p atlasParser) parseMigration(block *hclsyntax.Block, cfg *Config) error {
 			if err != nil {
 				return err
 			}
-			dir, err := normalizeAtlasMigrationDir(value, attr)
-			if err != nil {
-				return err
-			}
-			migration.Dir = dir
+			migration.Dir = normalizeAtlasMigrationDir(value)
 		case "format":
 			value, err := p.stringAttr(attrName, attr)
 			if err != nil {
@@ -1137,19 +1133,11 @@ func stringListValue(name string, attr *hclsyntax.Attribute, value cty.Value) ([
 	return values, nil
 }
 
-func normalizeAtlasMigrationDir(value string, attr *hclsyntax.Attribute) (string, error) {
-	switch {
-	case strings.HasPrefix(value, "file://"):
-		dir := strings.TrimPrefix(value, "file://")
-		if dir == "" {
-			return "", unsupportedAttr("dir", attr)
-		}
-		return dir, nil
-	case strings.Contains(value, "://"):
-		return "", unsupportedAttr("dir", attr)
-	default:
-		return value, nil
+func normalizeAtlasMigrationDir(value string) string {
+	if path, found := strings.CutPrefix(value, "file://"); found && path != "" {
+		return path
 	}
+	return value
 }
 
 func atlasGetenvFunc() function.Function {

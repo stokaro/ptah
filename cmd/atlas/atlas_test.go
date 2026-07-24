@@ -15,7 +15,9 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/migrateup"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/atlasargs"
 	"github.com/stokaro/ptah/internal/migratesum"
+	"github.com/stokaro/ptah/internal/pathguard"
 	migrationlint "github.com/stokaro/ptah/migration/lint"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -3312,6 +3314,550 @@ func TestNewAtlasCommand_MigrateDiffRejectsInvalidFormat(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `parse --format template: .*function "json" not defined.*`)
+}
+
+func TestNewAtlasCommand_MigrateApplyResolvesProjectRelativeMigrationDir(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	projectDir := filepath.Join(dir, "project")
+	outsideDir := filepath.Join(dir, "outside")
+	migrationsDir := filepath.Join(projectDir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
+	c.Assert(os.MkdirAll(outsideDir, 0755), qt.IsNil)
+	t.Chdir(outsideDir)
+	dbPath := filepath.Join(dir, "apply-relative.db")
+	writeAtlasApplyMigration(c, migrationsDir, "1_apply_relative.sql", "CREATE TABLE apply_relative_users (id INTEGER PRIMARY KEY);")
+	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
+  url = "sqlite://`+dbPath+`"
+  migration {
+    dir = "file://migrations"
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "apply",
+		"--config", "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
+		"--env", "local",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	assertSQLiteTableExists(c, dbPath, "apply_relative_users")
+}
+
+func TestNewAtlasCommand_MigrateStatusResolvesProjectRelativeMigrationDir(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	projectDir := filepath.Join(dir, "project")
+	outsideDir := filepath.Join(dir, "outside")
+	migrationsDir := filepath.Join(projectDir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
+	c.Assert(os.MkdirAll(outsideDir, 0755), qt.IsNil)
+	t.Chdir(outsideDir)
+	dbPath := filepath.Join(dir, "status-relative.db")
+	writeAtlasApplyMigration(c, migrationsDir, "1_status_relative.sql", "CREATE TABLE status_relative_users (id INTEGER PRIMARY KEY);")
+	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
+  url = "sqlite://`+dbPath+`"
+  migration {
+    dir = "file://migrations"
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "status",
+		"--config", "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
+		"--env", "local",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Pending Migrations: 1")
+}
+
+func TestNewAtlasCommand_MigrateValidateResolvesProjectRelativeMigrationDir(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	projectDir := filepath.Join(dir, "project")
+	outsideDir := filepath.Join(dir, "outside")
+	migrationsDir := filepath.Join(projectDir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
+	c.Assert(os.MkdirAll(outsideDir, 0755), qt.IsNil)
+	t.Chdir(outsideDir)
+	writeAtlasApplyMigration(c, migrationsDir, "1_validate_relative.sql", "CREATE TABLE validate_relative_users (id INTEGER PRIMARY KEY);")
+	_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
+  migration {
+    dir = "file://migrations"
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "validate",
+		"--config", "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
+		"--env", "local",
+	})
+
+	err = cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "OK: migrations directory matches atlas.sum")
+}
+
+func TestNewAtlasCommand_MigrateHashResolvesProjectRelativeMigrationDir(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	projectDir := filepath.Join(dir, "project")
+	outsideDir := filepath.Join(dir, "outside")
+	migrationsDir := filepath.Join(projectDir, "migrations")
+	writeAtlasApplyMigration(c, migrationsDir, "1_hash_relative.sql", "CREATE TABLE hash_relative_users (id INTEGER PRIMARY KEY);")
+	c.Assert(os.MkdirAll(outsideDir, 0o755), qt.IsNil)
+	t.Chdir(outsideDir)
+	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
+  migration {
+    dir = "file://migrations"
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "hash",
+		"--config", "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
+		"--env", "local",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "1 migration file(s) hashed")
+	_, err = os.Stat(filepath.Join(migrationsDir, "atlas.sum"))
+	c.Assert(err, qt.IsNil)
+}
+
+func TestNewAtlasCommand_MigrateNewResolvesProjectRelativeMigrationDir(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	projectDir := filepath.Join(dir, "project")
+	outsideDir := filepath.Join(dir, "outside")
+	migrationsDir := filepath.Join(projectDir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
+	c.Assert(os.MkdirAll(outsideDir, 0o755), qt.IsNil)
+	t.Chdir(outsideDir)
+	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
+  migration {
+    dir = "file://migrations"
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "new", "relative_create",
+		"--config", "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
+		"--env", "local",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Generated empty migration file:")
+	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 1)
+	_, err = os.Stat(filepath.Join(migrationsDir, "atlas.sum"))
+	c.Assert(err, qt.IsNil)
+}
+
+func TestAtlasArgMapper_MigrateSetResolvesProjectRelativeMigrationDir(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	projectDir := filepath.Join(dir, "project")
+	migrationsDir := filepath.Join(projectDir, "migrations")
+	writeAtlasApplyMigration(c, migrationsDir, "1_set_relative.sql", "CREATE TABLE set_relative_users (id INTEGER PRIMARY KEY);")
+	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
+  migration {
+    dir = "file://migrations"
+  }
+}
+`), 0o600), qt.IsNil)
+	mapper := atlasArgMapper("migrate", atlasVerb{
+		use: "set",
+		flags: []atlasargs.Flag{
+			atlasargs.NativeString("url", "u", "Database URL", "db-url"),
+			atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
+			atlasMigrateDirFormatFlag("dir-format"),
+			atlasargs.NativeString("revisions-schema", "", "Schema for the revision table", "migrations-schema"),
+		},
+	})
+
+	got, err := mapper(&cobra.Command{Use: "set"}, []string{
+		"--config", "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
+		"--env", "local",
+	})
+	wantMigrationsDir, resolveErr := pathguard.ResolveWithinRoot(migrationsDir, "")
+	c.Assert(resolveErr, qt.IsNil)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, []string{
+		"--migrations-dir", wantMigrationsDir,
+		"--dir-format", "atlas",
+	})
+}
+
+func TestNewAtlasCommand_MigrateDownResolvesProjectRelativeMigrationDir(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	projectDir := filepath.Join(dir, "project")
+	outsideDir := filepath.Join(dir, "outside")
+	migrationsDir := filepath.Join(projectDir, "migrations")
+	dbPath := filepath.Join(dir, "down-relative.db")
+	writeAtlasApplyMigration(c, migrationsDir, "1_down_relative.sql", "CREATE TABLE down_relative_users (id INTEGER PRIMARY KEY);")
+	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_down_relative.down.sql"), []byte("DROP TABLE down_relative_users;\n"), 0o600), qt.IsNil)
+	c.Assert(os.MkdirAll(outsideDir, 0o755), qt.IsNil)
+	t.Chdir(outsideDir)
+	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
+  url = "sqlite://`+dbPath+`"
+  migration {
+    dir = "file://migrations"
+  }
+}
+`), 0o600), qt.IsNil)
+
+	apply := NewAtlasCommand()
+	var applyOut bytes.Buffer
+	apply.SetOut(&applyOut)
+	apply.SetErr(&applyOut)
+	apply.SetArgs([]string{
+		"migrate", "apply",
+		"--config", "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
+		"--env", "local",
+	})
+	err := apply.Execute()
+	c.Assert(err, qt.IsNil)
+	assertSQLiteTableExists(c, dbPath, "down_relative_users")
+
+	down := NewAtlasCommand()
+	var downOut bytes.Buffer
+	down.SetIn(strings.NewReader("YES\n"))
+	down.SetOut(&downOut)
+	down.SetErr(&downOut)
+	down.SetArgs([]string{
+		"migrate", "down",
+		"--config", "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
+		"--env", "local",
+		"--to-version", "0",
+	})
+
+	err = down.Execute()
+
+	c.Assert(err, qt.IsNil)
+	assertSQLiteTableMissing(c, dbPath, "down_relative_users")
+	c.Assert(sqliteAtlasAppliedVersions(c, dbPath), qt.HasLen, 0)
+}
+
+func TestNewAtlasCommand_MigrateStatusAllowsExplicitDirToOverrideUnsupportedProjectDir(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	projectDir := filepath.Join(dir, "project")
+	outsideDir := filepath.Join(dir, "outside")
+	migrationsDir := filepath.Join(dir, "explicit-migrations")
+	writeAtlasApplyMigration(c, migrationsDir, "1_override_relative.sql", "CREATE TABLE override_relative_users (id INTEGER PRIMARY KEY);")
+	c.Assert(os.MkdirAll(projectDir, 0o755), qt.IsNil)
+	c.Assert(os.MkdirAll(outsideDir, 0o755), qt.IsNil)
+	t.Chdir(outsideDir)
+	dbPath := filepath.Join(dir, "status-override-relative.db")
+	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
+  url = "sqlite://`+dbPath+`"
+  migration {
+    dir = "atlas://remote"
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "status",
+		"--config", "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
+		"--env", "local",
+		"--dir", "file://" + filepath.ToSlash(migrationsDir),
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Pending Migrations: 1")
+}
+
+func TestNewAtlasCommand_MigrateStatusRejectsUnsupportedProjectDirWhenUsed(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	projectDir := filepath.Join(dir, "project")
+	outsideDir := filepath.Join(dir, "outside")
+	c.Assert(os.MkdirAll(projectDir, 0o755), qt.IsNil)
+	c.Assert(os.MkdirAll(outsideDir, 0o755), qt.IsNil)
+	t.Chdir(outsideDir)
+	dbPath := filepath.Join(dir, "status-unsupported-relative.db")
+	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
+  url = "sqlite://`+dbPath+`"
+  migration {
+    dir = "atlas://remote"
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "status",
+		"--config", "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
+		"--env", "local",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `atlas migrate status --dir: only local file:// migration directories are supported`)
+}
+
+func TestNewAtlasCommand_MigrateStatusAllowsParentRelativeProjectDir(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	projectDir := filepath.Join(dir, "project")
+	outsideDir := filepath.Join(dir, "outside")
+	migrationsDir := filepath.Join(dir, "shared-migrations")
+	writeAtlasApplyMigration(c, migrationsDir, "1_parent_relative.sql", "CREATE TABLE parent_relative_users (id INTEGER PRIMARY KEY);")
+	c.Assert(os.MkdirAll(projectDir, 0o755), qt.IsNil)
+	c.Assert(os.MkdirAll(outsideDir, 0o755), qt.IsNil)
+	t.Chdir(outsideDir)
+	dbPath := filepath.Join(dir, "status-parent-relative.db")
+	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
+  url = "sqlite://`+dbPath+`"
+  migration {
+    dir = "file://../shared-migrations"
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "status",
+		"--config", "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
+		"--env", "local",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Pending Migrations: 1")
+}
+
+func TestNewAtlasCommand_SchemaApplyResolvesProjectRelativeSchemaSrc(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	projectDir := filepath.Join(dir, "project")
+	outsideDir := filepath.Join(dir, "outside")
+	c.Assert(os.MkdirAll(projectDir, 0755), qt.IsNil)
+	c.Assert(os.MkdirAll(outsideDir, 0755), qt.IsNil)
+	t.Chdir(outsideDir)
+	dbPath := filepath.Join(dir, "schema-apply-relative.db")
+	c.Assert(os.WriteFile(filepath.Join(projectDir, "schema.sql"), []byte(`CREATE TABLE schema_apply_relative (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
+  url = "sqlite://`+dbPath+`"
+  dev = "sqlite://dev.db"
+  schema {
+    src = "file://schema.sql"
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetIn(strings.NewReader("y\n"))
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "apply",
+		"--config", "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
+		"--env", "local",
+		"--auto-approve",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	assertSQLiteTableExists(c, dbPath, "schema_apply_relative")
+}
+
+func TestNewAtlasCommand_SchemaDiffResolvesProjectRelativeSchemaSrc(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	projectDir := filepath.Join(dir, "project")
+	outsideDir := filepath.Join(dir, "outside")
+	c.Assert(os.MkdirAll(projectDir, 0755), qt.IsNil)
+	c.Assert(os.MkdirAll(outsideDir, 0755), qt.IsNil)
+	t.Chdir(outsideDir)
+	fromPath := filepath.Join(dir, "from.sql")
+	c.Assert(os.WriteFile(fromPath, []byte(`CREATE TABLE keep_existing (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(projectDir, "schema.sql"), []byte(`CREATE TABLE schema_diff_relative (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
+  dev = "sqlite://dev.db"
+  schema {
+    src = "file://schema.sql"
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "diff",
+		"--config", "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
+		"--env", "local",
+		"--from", "file://" + filepath.ToSlash(fromPath),
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, `CREATE TABLE "schema_diff_relative"`)
+}
+
+func TestNewAtlasCommand_MigrateDiffResolvesProjectRelativeDirAndSchemaSrc(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	projectDir := filepath.Join(dir, "project")
+	outsideDir := filepath.Join(dir, "outside")
+	migrationsDir := filepath.Join(projectDir, "migrations")
+	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
+	c.Assert(os.MkdirAll(outsideDir, 0755), qt.IsNil)
+	t.Chdir(outsideDir)
+	c.Assert(os.WriteFile(filepath.Join(projectDir, "schema.sql"), []byte(`CREATE TABLE migrate_diff_relative (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
+  dev = "sqlite://`+filepath.ToSlash(filepath.Join(dir, "migrate-diff-relative-dev.db"))+`"
+  schema {
+    src = "file://schema.sql"
+  }
+  migration {
+    dir = "file://migrations"
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "diff",
+		"--config", "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
+		"--env", "local",
+		"relative",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 1)
+}
+
+func TestNewAtlasCommand_ProjectRelativeSchemaSrcRejectsUnsupportedScheme(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	projectDir := filepath.Join(dir, "project")
+	outsideDir := filepath.Join(dir, "outside")
+	c.Assert(os.MkdirAll(projectDir, 0755), qt.IsNil)
+	c.Assert(os.MkdirAll(outsideDir, 0755), qt.IsNil)
+	t.Chdir(outsideDir)
+	fromPath := filepath.Join(dir, "from.sql")
+	c.Assert(os.WriteFile(fromPath, []byte(`CREATE TABLE unsupported_scheme_from (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
+  dev = "sqlite://dev.db"
+  schema {
+    src = "env://src"
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "diff",
+		"--config", "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
+		"--env", "local",
+		"--from", "file://" + filepath.ToSlash(fromPath),
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `atlas.hcl schema.src: only local file:// schema files are supported`)
+}
+
+func TestNewAtlasCommand_ProjectRelativeSchemaSrcRejectsQuery(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	projectDir := filepath.Join(dir, "project")
+	outsideDir := filepath.Join(dir, "outside")
+	c.Assert(os.MkdirAll(projectDir, 0o755), qt.IsNil)
+	c.Assert(os.MkdirAll(outsideDir, 0o755), qt.IsNil)
+	t.Chdir(outsideDir)
+	fromPath := filepath.Join(dir, "from.sql")
+	c.Assert(os.WriteFile(fromPath, []byte(`CREATE TABLE query_from (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(projectDir, "schema.sql"), []byte(`CREATE TABLE query_to (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
+  dev = "sqlite://dev.db"
+  schema {
+    src = "file://schema.sql?format=sql"
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"schema", "diff",
+		"--config", "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
+		"--env", "local",
+		"--from", "file://" + filepath.ToSlash(fromPath),
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `atlas.hcl schema.src: schema file URL query parameters are not supported yet`)
 }
 
 type atlasMigrateApplyJSONResult struct {
