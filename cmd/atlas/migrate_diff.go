@@ -26,6 +26,8 @@ type atlasMigrateDiffOptions struct {
 	schemas     []string
 	lockTimeout string
 	dryRun      bool
+	qualifier   string
+	edit        bool
 }
 
 func newAtlasMigrateDiffCommand() *cobra.Command {
@@ -41,11 +43,11 @@ writes a new Atlas-style single-file migration plus atlas.sum when changes are
 found. Use a disposable dev database. This implementation currently supports
 local file:// migration directories and local .hcl, .yaml, .yml, or .sql schema
 files. Use --schema to limit the comparison to selected schema names. Database
-URLs, env:// URLs, lock flags other than --lock-timeout, --edit, qualifier
-metadata, concurrent index migration-file metadata, and Docker dev databases
-remain explicit follow-up gaps. When --env is set, the selected atlas.hcl env
-can provide schema.src, dev, migration.dir, format.migrate.diff, and supported
-non-concurrent diff policy values.`,
+URLs, env:// URLs, qualifier metadata, editor integration, concurrent index
+migration-file metadata, and Docker dev databases remain explicit follow-up
+gaps. When --env is set, the selected atlas.hcl env can provide schema.src,
+dev, migration.dir, format.migrate.diff, and supported non-concurrent diff
+policy values.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := "migration"
@@ -63,6 +65,8 @@ non-concurrent diff policy values.`,
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to diff")
 	flags.StringVar(&opts.lockTimeout, "lock-timeout", "", "Timeout for acquiring Atlas migration directory locks")
+	flags.StringVar(&opts.qualifier, "qualifier", "", "Qualify tables with a custom qualifier when working on a single schema")
+	flags.BoolVar(&opts.edit, "edit", false, "Edit the generated migration files")
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Print the generated migration file to stdout instead of writing it")
 	if err := flags.MarkHidden("dry-run"); err != nil {
 		panic(err)
@@ -175,6 +179,12 @@ func validateAtlasMigrateDiffOptions(cmd *cobra.Command, opts atlasMigrateDiffOp
 	dirFormat := strings.ToLower(strings.TrimSpace(opts.dirFormat))
 	if dirFormat != "" && dirFormat != string(migrator.MigrationDirFormatAtlas) {
 		return fmt.Errorf("atlas migrate diff currently writes Atlas-format migration directories only")
+	}
+	if opts.edit {
+		return fmt.Errorf("atlas migrate diff accepts --edit, but Ptah does not implement editor integration yet")
+	}
+	if strings.TrimSpace(opts.qualifier) != "" {
+		return fmt.Errorf("atlas migrate diff accepts --qualifier, but Ptah does not implement custom qualifier metadata yet")
 	}
 	if strings.HasPrefix(strings.TrimSpace(opts.devURL), "docker://") {
 		return fmt.Errorf("atlas migrate diff accepts docker --dev-url values, but Ptah requires a directly connectable dev database URL")
