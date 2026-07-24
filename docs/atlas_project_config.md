@@ -115,7 +115,11 @@ The supported attributes map to Ptah settings as follows:
 The nested `schema.src` form matches Atlas project config syntax. Ptah currently
 uses local schema file sources only, matching the local schema-file boundary of
 `ptah atlas schema apply`, `ptah atlas schema diff`, and
-`ptah atlas migrate diff`.
+`ptah atlas migrate diff`. Plain local schema paths and relative `file://`
+schema URLs declared in `atlas.hcl` resolve relative to the directory containing
+that `atlas.hcl` file, not the process working directory. Explicit CLI `--to`
+and `--from` values keep CLI semantics and resolve relative to the process
+working directory unless they are absolute.
 
 `env.exclude` accepts either one string or a list of strings. `ptah atlas schema
 apply --env <name>` uses it as the default resource exclusion filter unless an
@@ -174,8 +178,11 @@ single-session executor.
 When an `atlas.hcl` `migration` block is present, Ptah also defaults
 `revision-format` to `atlas`, so migration commands use
 `atlas_schema_revisions` unless an explicit CLI flag overrides it. `file://`
-migration directories are normalized to local paths. Other URI schemes are
-rejected.
+migration directories are normalized to local paths. Relative migration
+directories declared in `atlas.hcl` resolve relative to the directory containing
+that `atlas.hcl` file, not the process working directory. Explicit CLI `--dir`
+values keep CLI semantics and resolve relative to the process working directory
+unless they are absolute. Other URI schemes are rejected.
 
 ## Expression Evaluation
 
@@ -308,8 +315,8 @@ Ptah intentionally rejects everything outside the documented subset. Unsupported
 attributes, unsupported data sources, unsupported lint policy blocks or attributes,
 Cloud or registry sources such as `schema.repo`, unsupported format blocks,
 unsupported diff policy fields, duplicate `migration` or `lint` blocks,
-variables without defaults that are not supplied through `--var`, and non-file
-migration directory URI schemes fail with a location-aware error:
+variables without defaults that are not supplied through `--var` fail with a
+location-aware error:
 
 ```text
 unsupported atlas.hcl construct "src" at atlas.hcl:2
@@ -317,3 +324,7 @@ unsupported atlas.hcl construct "src" at atlas.hcl:2
 
 This hard-fail policy prevents partially interpreted Atlas project configs from
 silently changing migration behavior.
+
+Non-local URI schemes in `migration.dir` and `schema.src` fail explicitly when
+a command needs that configured value. An explicit CLI path flag still wins over
+the matching `atlas.hcl` value before URI validation.

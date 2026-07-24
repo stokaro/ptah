@@ -71,6 +71,12 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 			return cmdutil.Fail(cmd, err)
 		}
 	}
+	if loaded && !cmd.Flags().Changed("to") && len(projectCfg.SchemaSources) > 0 {
+		opts.toURLs, err = atlasProjectConfigSchemaURLs(cmd, opts.toURLs)
+		if err != nil {
+			return cmdutil.Fail(cmd, fmt.Errorf("atlas.hcl schema.src: %w", err))
+		}
+	}
 	format := atlasreport.NormalizeSchemaDiffFormat(opts.format)
 	if err := atlasreport.ValidateSchemaDiffTemplate(format); err != nil {
 		return cmdutil.Fail(cmd, err)
