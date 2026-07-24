@@ -38,7 +38,10 @@ func TestSchemaCleanFormatDryRunJSONDoesNotApply(t *testing.T) {
 	got := schemaCleanJSONReport{}
 	c.Assert(json.Unmarshal(out.Bytes(), &got), qt.IsNil)
 	c.Assert(got.Env.Driver, qt.Equals, "sqlite")
-	c.Assert(got.Env.URL, qt.Equals, "sqlite://"+dbPath+"?password=xxxxx")
+	c.Assert(got.Env.URL.Scheme, qt.Equals, "sqlite")
+	c.Assert(got.Env.URL.Path, qt.Equals, dbPath)
+	c.Assert(got.Env.URL.RawQuery, qt.Equals, "password=xxxxx")
+	c.Assert(got.Env.URL.Schema, qt.Equals, "main")
 	c.Assert(got.DryRun, qt.Equals, true)
 	c.Assert(got.Applied, qt.Equals, false)
 	c.Assert(got.Objects, qt.DeepEquals, []schemaCleanJSONObject{{Type: "table", Name: "users"}})
@@ -250,12 +253,20 @@ func TestSchemaCleanUsesAtlasProjectEnvURLAndFormat(t *testing.T) {
 type schemaCleanJSONReport struct {
 	Env struct {
 		Driver string
-		URL    string
+		URL    schemaCleanJSONURL
 	}
 	DryRun  bool
 	Applied bool
 	Objects []schemaCleanJSONObject
 	Changes []schemaCleanJSONChange
+}
+
+type schemaCleanJSONURL struct {
+	Scheme   string
+	Host     string
+	Path     string
+	RawQuery string
+	Schema   string
 }
 
 type schemaCleanJSONObject struct {

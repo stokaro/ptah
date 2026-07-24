@@ -16,7 +16,8 @@ type StatusOptions struct {
 }
 
 type StatusResult struct {
-	Status *migrator.MigrationStatus
+	Status           *migrator.MigrationStatus
+	AppliedRevisions []migrator.MigrationRevision
 }
 
 func Status(ctx context.Context, conn *dbschema.DatabaseConnection, opts StatusOptions) (StatusResult, error) {
@@ -41,5 +42,12 @@ func Status(ctx context.Context, conn *dbschema.DatabaseConnection, opts StatusO
 	if err != nil {
 		return StatusResult{}, fmt.Errorf("error getting migration status: %w", err)
 	}
-	return StatusResult{Status: status}, nil
+	appliedRevisions, err := mig.GetAppliedRevisions(ctx)
+	if err != nil {
+		return StatusResult{}, fmt.Errorf("error getting applied migration revisions: %w", err)
+	}
+	return StatusResult{
+		Status:           status,
+		AppliedRevisions: appliedRevisions,
+	}, nil
 }

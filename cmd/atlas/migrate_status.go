@@ -120,11 +120,12 @@ func runAtlasMigrateStatus(cmd *cobra.Command, opts atlasMigrateStatusOptions) e
 	}
 	if formatOutput {
 		err := atlasreport.WriteMigrateStatusFormat(cmd.OutOrStdout(), opts.format, atlasreport.MigrateStatusOptions{
-			Driver: conn.Info().Dialect,
-			URL:    opts.url,
-			Dir:    atlasStatusDirURL(opts.dir),
-			FS:     os.DirFS(dir),
-			Status: result.Status,
+			Driver:           conn.Info().Dialect,
+			URL:              opts.url,
+			Dir:              atlasStatusDirURL(opts.dir),
+			FS:               os.DirFS(dir),
+			Status:           result.Status,
+			AppliedRevisions: result.AppliedRevisions,
 		})
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
