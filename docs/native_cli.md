@@ -51,6 +51,11 @@ AS RANGE (…)` (and their drops) for PostgreSQL user-defined types declared wit
 `//migrator:schema:domain` / `:composite` / `:range`, and `read-db` introspects
 them. See [User-defined types](./user_defined_types.md).
 
+`ptah migrations up` evaluates any `-- +ptah check` pre-migration assertions in a
+migration before applying its statements, aborting (non-zero) if a precondition
+does not hold; `--skip-checks` is an emergency bypass. See
+[Pre-migration checks](./pre-migration-checks.md).
+
 ## Exit Codes
 
 Canonical grouped commands inherit the exit-code contract of the implementation
