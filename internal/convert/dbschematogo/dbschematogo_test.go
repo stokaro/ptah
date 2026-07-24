@@ -169,6 +169,23 @@ func TestConvertDBSchemaToGoSchema_ExtensionsWithOtherElements(t *testing.T) {
 	c.Assert(result.Enums[0].Name, qt.Equals, "status_type")
 }
 
+func TestConvertDBSchemaToGoSchema_Schemas(t *testing.T) {
+	c := qt.New(t)
+	dbSchema := &types.DBSchema{
+		Schemas: []types.DBSchemaInfo{
+			{Name: "auth", Comment: "Authentication objects"},
+			{Name: "billing", Charset: "utf8mb4", Collate: "utf8mb4_0900_ai_ci"},
+		},
+	}
+
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+
+	c.Assert(result.Schemas, qt.DeepEquals, []goschema.Schema{
+		{Name: "auth", Comment: "Authentication objects"},
+		{Name: "billing", Charset: "utf8mb4", Collate: "utf8mb4_0900_ai_ci"},
+	})
+}
+
 func TestConvertDBSchemaToGoSchema_GeneratedColumns(t *testing.T) {
 	c := qt.New(t)
 	expression := "lower(name)"
@@ -295,6 +312,51 @@ func TestConvertDBSchemaToGoSchema_SchemaQualifiedObjectOwnersUseTableStructName
 	c.Assert(result.Constraints[0].Name, qt.Equals, "orders_tenant_check")
 	c.Assert(result.RLSPolicies, qt.HasLen, 1)
 	c.Assert(result.RLSPolicies[0].StructName, qt.Equals, "Orders")
+}
+
+func TestConvertDBSchemaToGoSchema_DuplicateTableNamesUseSchemaQualifiedStructNames(t *testing.T) {
+	c := qt.New(t)
+	dbSchema := &types.DBSchema{
+		Tables: []types.DBTable{
+			{
+				Schema: "auth",
+				Name:   "users",
+				Columns: []types.DBColumn{
+					{Name: "id", DataType: "integer"},
+					{Name: "email", DataType: "text"},
+				},
+			},
+			{
+				Schema: "billing",
+				Name:   "users",
+				Columns: []types.DBColumn{
+					{Name: "id", DataType: "integer"},
+					{Name: "external_id", DataType: "text"},
+				},
+			},
+		},
+		Indexes: []types.DBIndex{
+			{Schema: "auth", TableName: "users", Name: "users_email_key", Columns: []string{"email"}, IsUnique: true},
+			{Schema: "billing", TableName: "users", Name: "users_external_id_key", Columns: []string{"external_id"}, IsUnique: true},
+		},
+	}
+
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+
+	c.Assert(result.Tables, qt.DeepEquals, []goschema.Table{
+		{StructName: "AuthUsers", Schema: "auth", Name: "users"},
+		{StructName: "BillingUsers", Schema: "billing", Name: "users"},
+	})
+	c.Assert(result.Fields, qt.DeepEquals, []goschema.Field{
+		{StructName: "AuthUsers", FieldName: "Id", Name: "id", Type: "integer", Nullable: false},
+		{StructName: "AuthUsers", FieldName: "Email", Name: "email", Type: "text", Nullable: false},
+		{StructName: "BillingUsers", FieldName: "Id", Name: "id", Type: "integer", Nullable: false},
+		{StructName: "BillingUsers", FieldName: "ExternalId", Name: "external_id", Type: "text", Nullable: false},
+	})
+	c.Assert(result.Indexes, qt.DeepEquals, []goschema.Index{
+		{StructName: "AuthUsers", Name: "users_email_key", TableName: "auth.users", Fields: []string{"email"}, Unique: true},
+		{StructName: "BillingUsers", Name: "users_external_id_key", TableName: "billing.users", Fields: []string{"external_id"}, Unique: true},
+	})
 }
 
 func TestConvertDBSchemaToGoSchema_DBDefaultExpression(t *testing.T) {

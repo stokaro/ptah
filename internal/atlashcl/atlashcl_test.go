@@ -112,6 +112,57 @@ table "public" "users" {
 	c.Assert(err, qt.ErrorMatches, `.*table "users" schema label conflicts with schema attribute "audit".*`)
 }
 
+func TestParseAtlasPostgreSQLSchemaQualifiedForeignKeyRefs(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+schema "auth" {}
+schema "billing" {}
+
+table "auth" "users" {
+  schema = schema.auth
+  column "id" {
+    null = false
+    type = serial
+  }
+  primary_key {
+    columns = [column.id]
+  }
+}
+
+table "invoices" {
+  schema = schema.billing
+  column "id" {
+    null = false
+    type = serial
+  }
+  column "user_id" {
+    null = false
+    type = integer
+  }
+  primary_key {
+    columns = [column.id]
+  }
+  foreign_key "fk_invoices_auth_user" {
+    columns     = [column.user_id]
+    ref_columns = [table.auth.users.column.id]
+    on_delete   = CASCADE
+  }
+}
+`), "schema.hcl")
+
+	c.Assert(err, qt.IsNil)
+	authUsers := tableByName(db.Tables, "users")
+	billingInvoices := tableByName(db.Tables, "invoices")
+	c.Assert(authUsers.StructName, qt.Equals, "auth.users")
+	c.Assert(billingInvoices.StructName, qt.Equals, "billing.invoices")
+	userID := fieldByName(db.Fields, "billing.invoices", "user_id")
+	c.Assert(userID.Foreign, qt.Equals, "auth.users(id)")
+	c.Assert(userID.ForeignKeyName, qt.Equals, "fk_invoices_auth_user")
+	c.Assert(userID.OnDelete, qt.Equals, "CASCADE")
+	c.Assert(db.Dependencies["billing.invoices"], qt.DeepEquals, []string{"auth.users"})
+}
+
 func TestParseTablePartition(t *testing.T) {
 	c := qt.New(t)
 
