@@ -133,6 +133,18 @@ func TestDefaultValue(t *testing.T) {
 		{"timestamp current timestamp uppercase", "CURRENT_TIMESTAMP", "timestamp", "CURRENT_TIMESTAMP"},
 		{"timestamp current timestamp without type", "CURRENT_TIMESTAMP()", "", "CURRENT_TIMESTAMP"},
 
+		// Sequence-backed defaults: the introspected ::regclass form must
+		// normalize to the declared nextval('seq') form (issue #675).
+		{"nextval declared", "nextval('order_number_seq')", "integer", "nextval('order_number_seq')"},
+		{"nextval regclass cast", "nextval('order_number_seq'::regclass)", "integer", "nextval('order_number_seq')"},
+		{"nextval quoted regclass cast", "nextval('order_number_seq'::\"regclass\")", "integer", "nextval('order_number_seq')"},
+		{"nextval pg_catalog regclass cast", "nextval('order_number_seq'::pg_catalog.regclass)", "integer", "nextval('order_number_seq')"},
+		// A schema-qualified sequence name is preserved (not collapsed), so a
+		// genuine cross-schema default is not masked.
+		{"nextval schema qualified preserved", "nextval('app.order_number_seq'::regclass)", "integer", "nextval('app.order_number_seq')"},
+		// A dotted, quoted sequence name must not be corrupted.
+		{"nextval dotted quoted name", "nextval('\"my.seq\"'::regclass)", "integer", "nextval('\"my.seq\"')"},
+
 		// Edge cases for boolean normalization
 		{"unrecognized boolean value", "maybe", "boolean", "maybe"},
 		{"numeric string for boolean", "123", "boolean", "123"},
