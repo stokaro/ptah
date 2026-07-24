@@ -177,6 +177,8 @@ type PostgresRoutineNode struct{ ... }
 type PostgresRoutineStatement struct{ ... }
 type PostgresRoutineStatementKind string
     const PostgresRoutineStatementRaw PostgresRoutineStatementKind = "raw" ...
+type RangeTypeDef struct{ ... }
+    func NewRangeTypeDef(subtype string) *RangeTypeDef
 type RawSQLNode struct{ ... }
     func NewRawSQL(sql string) *RawSQLNode
 type RefreshMaterializedViewNode struct{ ... }
@@ -406,6 +408,8 @@ func GetDependencyInfo(r *Database) string
 func IsValidSequenceType(asType string) bool
 func QualifyTableName(schema, table string) string
 func UniqueStructNames(embeddedFields []EmbeddedField) []string
+type CompositeType struct{ ... }
+type CompositeTypeField struct{ ... }
 type Constraint struct{ ... }
 type Database struct{ ... }
     func ParseDir(rootDir string) (*Database, error)
@@ -413,6 +417,7 @@ type Database struct{ ... }
     func ParseFile(filename string) (Database, error)
     func ParseFileWithDependencies(filename string) (Database, error)
     func ParseSource(filename string, source any) (Database, error)
+type Domain struct{ ... }
 type EmbeddedField struct{ ... }
 type Enum struct{ ... }
 type Extension struct{ ... }
@@ -427,6 +432,7 @@ type PartitionSpec struct{ ... }
 type PrimaryKeyPart struct{ ... }
 type RLSEnabledTable struct{ ... }
 type RLSPolicy struct{ ... }
+type Range struct{ ... }
 type Role struct{ ... }
 type Schema struct{ ... }
 type SelfReferencingFK struct{ ... }
@@ -542,7 +548,10 @@ type DatabaseConnection struct{ ... }
 
 func QualifyTableName(schema, table string) string
 type DBColumn struct{ ... }
+type DBComposite struct{ ... }
+type DBCompositeField struct{ ... }
 type DBConstraint struct{ ... }
+type DBDomain struct{ ... }
 type DBEnum struct{ ... }
 type DBExtension struct{ ... }
 type DBFunction struct{ ... }
@@ -551,6 +560,7 @@ type DBIndex struct{ ... }
 type DBInfo struct{ ... }
 type DBMatView struct{ ... }
 type DBRLSPolicy struct{ ... }
+type DBRange struct{ ... }
 type DBRole struct{ ... }
 type DBSchema struct{ ... }
 type DBSchemaInfo struct{ ... }
@@ -918,8 +928,10 @@ func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, 
 ## github.com/stokaro/ptah/migration/schemadiff/types
 
 type ColumnDiff struct{ ... }
+type CompositeTypeDiff struct{ ... }
 type ConstraintAdditionInfo struct{ ... }
 type ConstraintRemovalInfo struct{ ... }
+type DomainDiff struct{ ... }
 type EnumDiff struct{ ... }
 type FunctionDiff struct{ ... }
 type GrantRef struct{ ... }

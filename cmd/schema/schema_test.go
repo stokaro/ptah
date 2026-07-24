@@ -156,7 +156,10 @@ func TestSchemaExportCommandPreservesSchemaObjects(t *testing.T) {
 	err = cmd.Execute()
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr.String()))
-	c.Assert(stdout.String(), qt.Contains, "4 export warning(s) reported")
+	c.Assert(stdout.String(), qt.Contains, "7 export warning(s) reported")
+	c.Assert(stderr.String(), qt.Contains, "domain types are not yet representable")
+	c.Assert(stderr.String(), qt.Contains, "composite types are not yet representable")
+	c.Assert(stderr.String(), qt.Contains, "range types are not yet representable")
 	c.Assert(stderr.String(), qt.Contains, "extension if_not_exists")
 	c.Assert(stderr.String(), qt.Contains, "RLS enablement comments cannot be represented")
 	c.Assert(stderr.String(), qt.Contains, "standalone sequence objects are not yet representable")

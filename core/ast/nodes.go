@@ -1308,8 +1308,17 @@ type DropTypeNode struct {
 	IfExists bool
 	// Cascade indicates whether to use CASCADE option
 	Cascade bool
+	// Domain indicates the object is a domain, so DROP DOMAIN is emitted instead
+	// of DROP TYPE (PostgreSQL requires the domain-specific spelling).
+	Domain bool
 	// Comment is an optional comment for the drop operation
 	Comment string
+}
+
+// SetDomain marks the drop as a DROP DOMAIN (rather than DROP TYPE).
+func (n *DropTypeNode) SetDomain() *DropTypeNode {
+	n.Domain = true
+	return n
 }
 
 // NewDropType creates a new DROP TYPE node with the specified type name.

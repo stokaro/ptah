@@ -39,6 +39,9 @@ type Database struct {
 	Extensions                 []Extension                    // PostgreSQL extensions (pg_trgm, postgis, etc.)
 	Functions                  []Function                     // PostgreSQL custom functions
 	Sequences                  []Sequence                     // PostgreSQL standalone sequences (CREATE SEQUENCE)
+	Domains                    []Domain                       // PostgreSQL domain types (CREATE DOMAIN)
+	CompositeTypes             []CompositeType                // PostgreSQL composite types (CREATE TYPE ... AS (...))
+	Ranges                     []Range                        // PostgreSQL range types (CREATE TYPE ... AS RANGE (...))
 	Views                      []View                         // Database views
 	MaterializedViews          []MaterializedView             // Database materialized views
 	Triggers                   []Trigger                      // Database triggers
@@ -494,6 +497,112 @@ func QualifyTableName(schema, table string) string {
 type Enum struct {
 	Name   string   // The generated enum type name (e.g., "enum_user_status")
 	Values []string // The allowed enum values (e.g., ["active", "inactive", "suspended"])
+}
+
+// Domain represents a PostgreSQL domain type parsed from Go annotations.
+//
+// A domain is a base type constrained with optional NOT NULL, DEFAULT, and CHECK
+// clauses. Domains are defined using //migrator:schema:domain annotations:
+//
+//	//migrator:schema:domain name="email" type="TEXT" check="VALUE ~ '^[^@]+@[^@]+$'"
+//	type EmailDomain struct{}
+type Domain struct {
+	StructName  string // Name of the Go struct this domain is associated with
+	Name        string // Domain name (e.g., "email")
+	Schema      string // Optional schema/namespace (PostgreSQL-style)
+	BaseType    string // Underlying base data type (e.g., "TEXT", "VARCHAR(255)")
+	NotNull     bool   // Whether the domain is NOT NULL
+	Default     string // Optional literal DEFAULT value
+	DefaultExpr string // Optional DEFAULT expression (function call)
+	Check       string // Optional CHECK constraint expression (uses VALUE)
+	Comment     string // Optional comment for documentation
+}
+
+// Canonicalize normalizes domain attributes for downstream consumers.
+func (d *Domain) Canonicalize() {
+	d.Name = strings.TrimSpace(d.Name)
+	d.Schema = strings.TrimSpace(d.Schema)
+	d.BaseType = strings.TrimSpace(d.BaseType)
+	d.Check = strings.TrimSpace(d.Check)
+	d.Comment = strings.TrimSpace(d.Comment)
+}
+
+// QualifiedName returns schema.name when Schema is set, or Name otherwise.
+func (d Domain) QualifiedName() string {
+	if strings.TrimSpace(d.Schema) == "" {
+		return strings.TrimSpace(d.Name)
+	}
+	return strings.TrimSpace(d.Schema) + "." + strings.TrimSpace(d.Name)
+}
+
+// CompositeTypeField is a single named field of a composite type.
+type CompositeTypeField struct {
+	Name string // Field name
+	Type string // Field data type
+}
+
+// CompositeType represents a PostgreSQL composite type parsed from Go annotations.
+//
+// Composite types are defined using //migrator:schema:composite annotations with
+// a comma-separated fields list of "name:type" pairs:
+//
+//	//migrator:schema:composite name="address" fields="street:TEXT,city:TEXT,zip:VARCHAR(10)"
+//	type AddressType struct{}
+type CompositeType struct {
+	StructName string               // Name of the Go struct this type is associated with
+	Name       string               // Composite type name (e.g., "address")
+	Schema     string               // Optional schema/namespace (PostgreSQL-style)
+	Fields     []CompositeTypeField // Ordered fields of the composite type
+	Comment    string               // Optional comment for documentation
+}
+
+// Canonicalize normalizes composite-type attributes for downstream consumers.
+func (c *CompositeType) Canonicalize() {
+	c.Name = strings.TrimSpace(c.Name)
+	c.Schema = strings.TrimSpace(c.Schema)
+	c.Comment = strings.TrimSpace(c.Comment)
+}
+
+// QualifiedName returns schema.name when Schema is set, or Name otherwise.
+func (c CompositeType) QualifiedName() string {
+	if strings.TrimSpace(c.Schema) == "" {
+		return strings.TrimSpace(c.Name)
+	}
+	return strings.TrimSpace(c.Schema) + "." + strings.TrimSpace(c.Name)
+}
+
+// Range represents a PostgreSQL range type parsed from Go annotations.
+//
+// Range types are defined using //migrator:schema:range annotations:
+//
+//	//migrator:schema:range name="floatrange" subtype="float8" subtype_diff="float8mi"
+//	type FloatRange struct{}
+type Range struct {
+	StructName     string // Name of the Go struct this type is associated with
+	Name           string // Range type name (e.g., "floatrange")
+	Schema         string // Optional schema/namespace (PostgreSQL-style)
+	Subtype        string // Required element subtype (e.g., "float8")
+	SubtypeOpClass string // Optional operator class for the subtype
+	Collation      string // Optional collation for the subtype
+	Canonical      string // Optional canonicalization function
+	SubtypeDiff    string // Optional subtype difference function
+	Comment        string // Optional comment for documentation
+}
+
+// Canonicalize normalizes range-type attributes for downstream consumers.
+func (r *Range) Canonicalize() {
+	r.Name = strings.TrimSpace(r.Name)
+	r.Schema = strings.TrimSpace(r.Schema)
+	r.Subtype = strings.TrimSpace(r.Subtype)
+	r.Comment = strings.TrimSpace(r.Comment)
+}
+
+// QualifiedName returns schema.name when Schema is set, or Name otherwise.
+func (r Range) QualifiedName() string {
+	if strings.TrimSpace(r.Schema) == "" {
+		return strings.TrimSpace(r.Name)
+	}
+	return strings.TrimSpace(r.Schema) + "." + strings.TrimSpace(r.Name)
 }
 
 // Function represents a PostgreSQL custom function definition parsed from Go struct annotations.

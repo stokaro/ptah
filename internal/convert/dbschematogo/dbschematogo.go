@@ -32,6 +32,7 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 	convertRLSPolicies(database, dbSchema.RLSPolicies, tableStructNames)
 	convertFunctions(database, dbSchema.Functions)
 	convertSequences(database, dbSchema.Sequences)
+	convertUserTypes(database, dbSchema)
 	convertViews(database, dbSchema.Views)
 	convertMaterializedViews(database, dbSchema.MatViews)
 	convertTriggers(database, dbSchema.Triggers)
@@ -64,6 +65,9 @@ func newDatabase() *goschema.Database {
 		Extensions:        make([]goschema.Extension, 0),
 		Functions:         make([]goschema.Function, 0),
 		Sequences:         make([]goschema.Sequence, 0),
+		Domains:           make([]goschema.Domain, 0),
+		CompositeTypes:    make([]goschema.CompositeType, 0),
+		Ranges:            make([]goschema.Range, 0),
 		Views:             make([]goschema.View, 0),
 		MaterializedViews: make([]goschema.MaterializedView, 0),
 		Triggers:          make([]goschema.Trigger, 0),
@@ -240,6 +244,37 @@ func convertFunctions(database *goschema.Database, dbFunctions []dbschematypes.D
 			Comment:    dbFunction.Comment,
 		}
 		database.Functions = append(database.Functions, function)
+	}
+}
+
+func convertUserTypes(database *goschema.Database, dbSchema *dbschematypes.DBSchema) {
+	for _, domain := range dbSchema.Domains {
+		database.Domains = append(database.Domains, goschema.Domain{
+			Name:     domain.Name,
+			Schema:   domain.Schema,
+			BaseType: domain.BaseType,
+			NotNull:  domain.NotNull,
+			Default:  domain.Default,
+			Check:    domain.Check,
+		})
+	}
+	for _, composite := range dbSchema.Composites {
+		fields := make([]goschema.CompositeTypeField, 0, len(composite.Fields))
+		for _, field := range composite.Fields {
+			fields = append(fields, goschema.CompositeTypeField{Name: field.Name, Type: field.Type})
+		}
+		database.CompositeTypes = append(database.CompositeTypes, goschema.CompositeType{
+			Name:   composite.Name,
+			Schema: composite.Schema,
+			Fields: fields,
+		})
+	}
+	for _, rangeType := range dbSchema.Ranges {
+		database.Ranges = append(database.Ranges, goschema.Range{
+			Name:    rangeType.Name,
+			Schema:  rangeType.Schema,
+			Subtype: rangeType.Subtype,
+		})
 	}
 }
 

@@ -4056,7 +4056,7 @@ func (p *Parser) parseCreateUniqueIndex() (*ast.IndexNode, error) {
 }
 
 // parseCreateType parses CREATE TYPE statements (for enums).
-func (p *Parser) parseCreateType() (*ast.EnumNode, error) {
+func (p *Parser) parseCreateType() (ast.Node, error) {
 	if err := p.expect(lexer.TokenIdentifier, "TYPE"); err != nil {
 		return nil, err
 	}
@@ -4077,13 +4077,26 @@ func (p *Parser) parseCreateType() (*ast.EnumNode, error) {
 
 	p.skipWhitespace()
 
-	if err := p.expect(lexer.TokenIdentifier, "ENUM"); err != nil {
-		return nil, fmt.Errorf("expected ENUM after AS: %w", err)
+	// Dispatch on the form after AS: ENUM (...), RANGE (...), or a bare (...)
+	// composite. Domains take the separate CREATE DOMAIN path.
+	if p.current.Type == lexer.TokenIdentifier && strings.EqualFold(p.current.Value, "ENUM") {
+		p.advance()
+		p.skipWhitespace()
+		return p.parseEnumTypeBody(typeName)
 	}
+	if p.current.Type == lexer.TokenIdentifier && strings.EqualFold(p.current.Value, "RANGE") {
+		p.advance()
+		p.skipWhitespace()
+		return p.parseRangeTypeBody(typeName)
+	}
+	if p.current.MatchOperatorValue("(") {
+		return p.parseCompositeTypeBody(typeName)
+	}
+	return nil, fmt.Errorf("expected ENUM, RANGE, or '(' after AS at position %d", p.current.Start)
+}
 
-	p.skipWhitespace()
-
-	// Parse enum values
+// parseEnumTypeBody parses the `(value, ...)` body of CREATE TYPE ... AS ENUM.
+func (p *Parser) parseEnumTypeBody(typeName string) (*ast.EnumNode, error) {
 	if err := p.expect(lexer.TokenOperator, "("); err != nil {
 		return nil, fmt.Errorf("expected '(' for enum values: %w", err)
 	}
@@ -4127,6 +4140,142 @@ func (p *Parser) parseCreateType() (*ast.EnumNode, error) {
 	}
 
 	return ast.NewEnum(typeName, values...), nil
+}
+
+// parseCompositeTypeBody parses the `(field type, ...)` body of
+// CREATE TYPE ... AS (...).
+func (p *Parser) parseCompositeTypeBody(typeName string) (*ast.CreateTypeNode, error) {
+	if err := p.expect(lexer.TokenOperator, "("); err != nil {
+		return nil, fmt.Errorf("expected '(' for composite fields: %w", err)
+	}
+
+	var fields []*ast.CompositeField
+	for {
+		p.skipWhitespace()
+		if p.current.MatchOperatorValue(")") {
+			break
+		}
+
+		fieldName, err := p.expectIdentifier()
+		if err != nil {
+			return nil, fmt.Errorf("expected composite field name: %w", err)
+		}
+		p.skipWhitespace()
+
+		// The field type is the remaining tokens up to a top-level comma or the
+		// closing paren; collect them verbatim so multi-token and parameterized
+		// types (VARCHAR(10), NUMERIC(10,2), TIMESTAMP WITH TIME ZONE) survive.
+		// Track paren depth so a comma or ')' inside the type's own parameter
+		// list is not mistaken for a field separator.
+		var typeParts []string
+		depth := 0
+		for p.current.Type != lexer.TokenEOF {
+			if depth == 0 && (p.current.MatchOperatorValue(",") || p.current.MatchOperatorValue(")")) {
+				break
+			}
+			if p.current.MatchOperatorValue("(") {
+				depth++
+			} else if p.current.MatchOperatorValue(")") {
+				depth--
+			}
+			typeParts = append(typeParts, p.current.Value)
+			p.advance()
+		}
+		if len(typeParts) == 0 {
+			return nil, fmt.Errorf("expected type for composite field %q at position %d", fieldName, p.current.Start)
+		}
+		fields = append(fields, &ast.CompositeField{Name: fieldName, Type: joinTypeTokens(typeParts)})
+
+		if p.current.MatchOperatorValue(",") {
+			p.advance()
+			continue
+		}
+		if p.current.MatchOperatorValue(")") {
+			break
+		}
+		return nil, fmt.Errorf("expected ',' or ')' in composite fields at position %d", p.current.Start)
+	}
+
+	if err := p.expect(lexer.TokenOperator, ")"); err != nil {
+		return nil, err
+	}
+
+	return ast.NewCreateType(typeName, ast.NewCompositeTypeDef(fields...)), nil
+}
+
+// joinTypeTokens reconstructs a SQL type from its lexed tokens, omitting spaces
+// around parentheses so parameterized types (VARCHAR(10), NUMERIC(10,2)) render
+// without stray whitespace while multi-word types (TIMESTAMP WITH TIME ZONE)
+// keep their separators.
+func joinTypeTokens(parts []string) string {
+	var b strings.Builder
+	for i, part := range parts {
+		if i > 0 && part != "(" && part != ")" && part != "," && parts[i-1] != "(" {
+			b.WriteByte(' ')
+		}
+		b.WriteString(part)
+	}
+	return b.String()
+}
+
+// parseRangeTypeBody parses the `(SUBTYPE = ..., ...)` body of
+// CREATE TYPE ... AS RANGE (...).
+func (p *Parser) parseRangeTypeBody(typeName string) (*ast.CreateTypeNode, error) {
+	if err := p.expect(lexer.TokenOperator, "("); err != nil {
+		return nil, fmt.Errorf("expected '(' for range options: %w", err)
+	}
+
+	rangeDef := &ast.RangeTypeDef{}
+	for {
+		p.skipWhitespace()
+		if p.current.MatchOperatorValue(")") {
+			break
+		}
+
+		optionName, err := p.expectIdentifier()
+		if err != nil {
+			return nil, fmt.Errorf("expected range option name: %w", err)
+		}
+		p.skipWhitespace()
+		if err := p.expect(lexer.TokenOperator, "="); err != nil {
+			return nil, fmt.Errorf("expected '=' after range option %q: %w", optionName, err)
+		}
+		p.skipWhitespace()
+
+		var valueParts []string
+		for !p.current.MatchOperatorValue(",") && !p.current.MatchOperatorValue(")") && p.current.Type != lexer.TokenEOF {
+			valueParts = append(valueParts, p.current.Value)
+			p.advance()
+		}
+		value := strings.TrimSpace(strings.Join(valueParts, " "))
+		switch strings.ToUpper(optionName) {
+		case "SUBTYPE":
+			rangeDef.Subtype = value
+		case "SUBTYPE_OPCLASS":
+			rangeDef.SubtypeOpClass = value
+		case "COLLATION":
+			rangeDef.Collation = value
+		case "CANONICAL":
+			rangeDef.Canonical = value
+		case "SUBTYPE_DIFF":
+			rangeDef.SubtypeDiff = value
+		}
+
+		if p.current.MatchOperatorValue(",") {
+			p.advance()
+			continue
+		}
+		if p.current.MatchOperatorValue(")") {
+			break
+		}
+		return nil, fmt.Errorf("expected ',' or ')' in range options at position %d", p.current.Start)
+	}
+
+	if err := p.expect(lexer.TokenOperator, ")"); err != nil {
+		return nil, err
+	}
+
+	return ast.NewCreateType(typeName, rangeDef), nil
 }
 
 // parseCreateDomain parses CREATE DOMAIN statements (PostgreSQL).
