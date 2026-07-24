@@ -87,6 +87,7 @@ type Migrator struct {
 	initialized          bool
 	logger               *slog.Logger
 	observer             Observer
+	skipChecks           bool
 }
 
 // NewFSMigrator creates a new migrator that loads migrations from a filesystem.
@@ -135,6 +136,50 @@ func (m *Migrator) WithObserver(observer Observer) *Migrator {
 	}
 	tmp.observer = observer
 	return &tmp
+}
+
+// WithSkipChecks controls whether pre-migration `-- +ptah check` assertions are
+// evaluated before applying up migrations. The default (false) enforces checks;
+// pass true as an explicit emergency bypass, mirroring --allow-destructive.
+func (m *Migrator) WithSkipChecks(skip bool) *Migrator {
+	tmp := *m
+	tmp.skipChecks = skip
+	return &tmp
+}
+
+// runMigrationChecks evaluates the pre-migration assertion checks embedded in a
+// migration's up SQL against conn, before any body statement runs. It is a no-op
+// when checks are skipped. A malformed check directive or an unsatisfied
+// assertion returns an error so the caller aborts with nothing applied.
+func (m *Migrator) runMigrationChecks(ctx context.Context, conn *dbschema.DatabaseConnection, migration *Migration) error {
+	if m.skipChecks {
+		return nil
+	}
+	checks, err := ParseChecks(migration.UpSQL)
+	if err != nil {
+		return fmt.Errorf("migration %d has invalid pre-migration check directives: %w", migration.Version, err)
+	}
+	return runChecks(ctx, conn, migration.Version, checks)
+}
+
+// rejectChecksUnderTxModeAll refuses a migration that declares pre-migration
+// checks when running with tx-mode all. Under a single shared transaction a
+// check reads committed pre-batch state on the pool connection and cannot see
+// earlier batched migrations' uncommitted changes, so it would silently
+// evaluate a precondition against stale state. Bypassing checks lifts the
+// restriction.
+func (m *Migrator) rejectChecksUnderTxModeAll(migration *Migration) error {
+	if m.skipChecks {
+		return nil
+	}
+	checks, err := ParseChecks(migration.UpSQL)
+	if err != nil {
+		return fmt.Errorf("migration %d has invalid pre-migration check directives: %w", migration.Version, err)
+	}
+	if len(checks) > 0 {
+		return fmt.Errorf("migration %d declares pre-migration checks, which cannot run with tx-mode all; use the default per-file transaction mode or --skip-checks", migration.Version)
+	}
+	return nil
 }
 
 // WithExecOrder sets how this migrator handles pending migrations whose
@@ -1231,6 +1276,9 @@ func (m *Migrator) validateUpTransactionMode(migrations []*Migration) error {
 			if !mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts).IsZero() {
 				return fmt.Errorf("migration %d has timeouts and cannot run with tx-mode all", migration.Version)
 			}
+			if err := m.rejectChecksUnderTxModeAll(migration); err != nil {
+				return err
+			}
 		}
 	case MigrationTxModeNone:
 		for _, migration := range migrations {
@@ -1311,6 +1359,10 @@ func (m *Migrator) applyUpMigrationInExistingTransaction(
 	startedAt time.Time,
 ) error {
 	m.logger.Info("Applying migration in tx-mode all", "version", migration.Version, "description", migration.Description)
+	// Pre-migration checks are rejected under tx-mode all by
+	// validateUpTransactionMode, because a check on the pool connection cannot
+	// observe earlier batched migrations' uncommitted changes and would evaluate
+	// against stale state. Nothing to run here.
 	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, txConn, mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts))
 	if err != nil {
 		return fmt.Errorf("failed to apply timeouts for migration %d: %w", migration.Version, err)
@@ -1362,6 +1414,23 @@ func (m *Migrator) recordAppliedMigrationOn(
 }
 
 func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration *Migration, startedAt time.Time) error {
+	// Pre-migration checks read committed state and run before the transaction
+	// opens. A check cannot execute inside the migration transaction (the schema
+	// executor exposes no query path), and running it on the pool while the tx
+	// already holds a connection would deadlock a single-connection pool. Running
+	// it first, on the pool, reads the correct pre-migration state and aborts with
+	// nothing applied before any statement or transaction runs.
+	if err := m.runMigrationChecks(ctx, m.conn, migration); err != nil {
+		return m.failMigrationWithDirtyState(
+			ctx,
+			migration,
+			startedAt,
+			err,
+			migration.UpSQL,
+			fmt.Sprintf("pre-migration check failed for migration %d", migration.Version),
+		)
+	}
+
 	tx, err := m.conn.SchemaWriter().BeginTransaction(ctx)
 	if err != nil {
 		return m.failMigrationWithDirtyState(
@@ -1427,6 +1496,17 @@ func (m *Migrator) applyUpMigrationTransactional(ctx context.Context, migration 
 func (m *Migrator) applyUpMigrationNoTransaction(ctx context.Context, migration *Migration, startedAt time.Time) error {
 	if err := ensureNoTransactionHasNoTimeouts(migration.Version, mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts)); err != nil {
 		return m.failMigrationWithDirtyStateWithMode(ctx, migration, startedAt, err, migration.UpSQL, "", MigrationTxModeNone)
+	}
+	if err := m.runMigrationChecks(ctx, m.conn, migration); err != nil {
+		return m.failMigrationWithDirtyStateWithMode(
+			ctx,
+			migration,
+			startedAt,
+			err,
+			migration.UpSQL,
+			fmt.Sprintf("pre-migration check failed for migration %d", migration.Version),
+			MigrationTxModeNone,
+		)
 	}
 	if err := migration.Up(ctx, m.conn); err != nil {
 		return m.failMigrationWithDirtyStateWithMode(

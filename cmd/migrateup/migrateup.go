@@ -2,6 +2,7 @@ package migrateup
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -37,6 +38,7 @@ const (
 	lockTimeoutFlag          = "lock-timeout"
 	statementTimeoutFlag     = "statement-timeout"
 	allowDestructiveFlag     = "allow-destructive"
+	skipChecksFlag           = "skip-checks"
 	preUpHookFlag            = "pre-up-hook"
 	pgDumpToFlag             = "pg-dump-to"
 	mySQLDumpToFlag          = "mysqldump-to"
@@ -57,6 +59,7 @@ type options struct {
 	lockTimeout          string
 	statementTimeout     string
 	allowDestructive     bool
+	skipChecks           bool
 	preUpHook            string
 	pgDumpTo             string
 	mySQLDumpTo          string
@@ -119,6 +122,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.lockTimeout, lockTimeoutFlag, "", "Default per-migration lock timeout, such as 3s or 500ms")
 	flags.StringVar(&opts.statementTimeout, statementTimeoutFlag, "", "Default per-migration statement timeout, such as 30s or 2m")
 	flags.BoolVar(&opts.allowDestructive, allowDestructiveFlag, false, "Allow pending migrations that contain destructive statements")
+	flags.BoolVar(&opts.skipChecks, skipChecksFlag, false, "Emergency bypass: skip pre-migration +ptah check assertion checks")
 	flags.StringVar(&opts.preUpHook, preUpHookFlag, "", "Shell command to run before applying pending migrations; aborts unless it exits 0")
 	flags.StringVar(&opts.pgDumpTo, pgDumpToFlag, "", "Directory where pg_dump writes a custom-format backup before applying migrations")
 	flags.StringVar(&opts.mySQLDumpTo, mySQLDumpToFlag, "", "Directory where mysqldump writes a SQL backup before applying migrations")
@@ -336,6 +340,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		WithExecOrder(settings.execOrder).
 		WithTransactionMode(settings.txMode).
 		WithMigrationLockTimeout(settings.migrationLockTimeout).
+		WithSkipChecks(opts.skipChecks).
 		WithLogger(runtime.Logger()).
 		WithObserver(runtime.Observer())
 
@@ -399,6 +404,10 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	// Run migrations
 	err = mig.MigrateUpWithPreflight(context.Background(), preflightHook)
 	if err != nil {
+		var checkErr *migrator.CheckFailedError
+		if errors.As(err, &checkErr) {
+			return fmt.Errorf("%w\nrerun with --skip-checks to bypass this pre-migration check after review", checkErr)
+		}
 		return fmt.Errorf("error running migrations: %w", err)
 	}
 

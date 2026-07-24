@@ -89,6 +89,23 @@ ptah migrations up \
 Destructive statements require explicit policy. Use `--allow-destructive` only
 after the plan has been reviewed and the rollback path is understood.
 
+### Pre-migration checks
+
+Guard a migration on a data-state precondition with a `-- +ptah check` directive,
+which runs before the migration's statements and aborts if the assertion fails:
+
+```sql
+-- +ptah check name="users_empty" assert="SELECT count(*) = 0 FROM users" on_fail=abort
+DROP TABLE users;
+```
+
+Each check is a separate read against committed state that runs before the
+migration's statements, so a failing assertion leaves nothing applied and exits
+non-zero. Checks are rejected under `--tx-mode all` (a pooled read cannot see the
+batch's uncommitted state), and `ptah migrations up --skip-checks` is an
+emergency bypass. This is the open, local half of Atlas Pro's pre-migration
+checks; the Cloud approval-policy half is intentionally out of scope.
+
 ## Status
 
 ```bash
