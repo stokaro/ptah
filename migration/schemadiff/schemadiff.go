@@ -70,7 +70,7 @@ func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, 
 	compare.Enums(generated, database, diff)
 
 	// Compare database index definitions
-	compare.Indexes(generated, database, diff)
+	compare.IndexesWithDialect(generated, database, diff, opts.Dialect)
 
 	// Compare PostgreSQL extensions with configuration options
 	compare.Extensions(generated, database, diff, opts)

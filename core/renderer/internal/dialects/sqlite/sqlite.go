@@ -487,7 +487,11 @@ func renderConstraint(constraint *ast.ConstraintNode) (string, error) {
 }
 
 func renderInlineForeignKey(ref *ast.ForeignKeyRef) string {
-	return "REFERENCES " + escapeQualifiedIdentifier(ref.Table) + " (" +
+	prefix := ""
+	if ref.Name != "" {
+		prefix = "CONSTRAINT " + escapeIdentifier(ref.Name) + " "
+	}
+	return prefix + "REFERENCES " + escapeQualifiedIdentifier(ref.Table) + " (" +
 		strings.Join(escapeIdentifierList(ref.ReferencedColumns()), ", ") + ")" +
 		renderReferentialActions(ref)
 }
