@@ -311,7 +311,11 @@ func assessNode(node ast.Node) StatementAssessment {
 	case *ast.DropTypeNode:
 		assessment.Subject = n.Name
 		assessment.Severity = Destructive
-		assessment.Reason = "DROP TYPE removes an existing database type"
+		if n.Domain {
+			assessment.Reason = "DROP DOMAIN removes an existing database domain"
+		} else {
+			assessment.Reason = "DROP TYPE removes an existing database type"
+		}
 	case *ast.DropExtensionNode:
 		assessment.Subject = n.Name
 		assessment.Severity = Destructive

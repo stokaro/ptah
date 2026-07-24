@@ -153,6 +153,67 @@ func (td *DomainTypeDef) Accept(visitor Visitor) error {
 // typeDefinition implements the marker method for type safety.
 func (td *DomainTypeDef) typeDefinition() {}
 
+// RangeTypeDef represents a range type definition for CREATE TYPE ... AS RANGE statements.
+//
+// Range types describe a range of values of an ordered subtype (for example an
+// int4range over integer). This is PostgreSQL-specific.
+type RangeTypeDef struct {
+	// Subtype is the required element type the range is built over (e.g. "integer").
+	Subtype string
+	// SubtypeOpClass is an optional operator class for the subtype ordering.
+	SubtypeOpClass string
+	// Collation is an optional collation for the subtype.
+	Collation string
+	// Canonical is an optional canonicalization function.
+	Canonical string
+	// SubtypeDiff is an optional subtype difference function.
+	SubtypeDiff string
+}
+
+// NewRangeTypeDef creates a new range type definition over the specified subtype.
+//
+// Example:
+//
+//	rangeDef := NewRangeTypeDef("integer").SetSubtypeDiff("int4_diff")
+func NewRangeTypeDef(subtype string) *RangeTypeDef {
+	return &RangeTypeDef{
+		Subtype: subtype,
+	}
+}
+
+// SetSubtypeOpClass sets the subtype operator class and returns the range for chaining.
+func (td *RangeTypeDef) SetSubtypeOpClass(opClass string) *RangeTypeDef {
+	td.SubtypeOpClass = opClass
+	return td
+}
+
+// SetCollation sets the subtype collation and returns the range for chaining.
+func (td *RangeTypeDef) SetCollation(collation string) *RangeTypeDef {
+	td.Collation = collation
+	return td
+}
+
+// SetCanonical sets the canonicalization function and returns the range for chaining.
+func (td *RangeTypeDef) SetCanonical(canonical string) *RangeTypeDef {
+	td.Canonical = canonical
+	return td
+}
+
+// SetSubtypeDiff sets the subtype difference function and returns the range for chaining.
+func (td *RangeTypeDef) SetSubtypeDiff(subtypeDiff string) *RangeTypeDef {
+	td.SubtypeDiff = subtypeDiff
+	return td
+}
+
+// Accept implements the Node interface for RangeTypeDef.
+func (td *RangeTypeDef) Accept(visitor Visitor) error {
+	// This is typically handled by the parent CreateTypeNode's visitor
+	return nil
+}
+
+// typeDefinition implements the marker method for type safety.
+func (td *RangeTypeDef) typeDefinition() {}
+
 // AddEnumValueOperation represents an ADD VALUE operation for ALTER TYPE statements.
 //
 // This operation adds a new value to an existing enum type. The position

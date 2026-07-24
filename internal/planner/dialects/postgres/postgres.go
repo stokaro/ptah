@@ -900,6 +900,105 @@ func (p *Planner) removeEnums(result []ast.Node, diff *types.SchemaDiff) []ast.N
 	return result
 }
 
+// addNewUserTypes emits CREATE DOMAIN / CREATE TYPE for newly added domains,
+// ranges, and composite types (in dependency order). It runs before tables so
+// columns can reference them.
+func (p *Planner) addNewUserTypes(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, name := range diff.DomainsAdded {
+		if domain := findDomain(generated.Domains, name); domain != nil {
+			result = append(result, fromschema.FromDomain(*domain))
+		}
+	}
+	for _, name := range diff.RangesAdded {
+		if rangeType := findRange(generated.Ranges, name); rangeType != nil {
+			result = append(result, fromschema.FromRange(*rangeType))
+		}
+	}
+	for _, name := range diff.CompositeTypesAdded {
+		if composite := findCompositeType(generated.CompositeTypes, name); composite != nil {
+			result = append(result, fromschema.FromCompositeType(*composite))
+		}
+	}
+	// A modification with no in-place ALTER is handled as drop + recreate.
+	for _, domainDiff := range diff.DomainsModified {
+		if domain := findDomain(generated.Domains, domainDiff.DomainName); domain != nil {
+			result = append(result, fromschema.FromDomain(*domain).SetComment(fmt.Sprintf("Recreate domain %s", domainDiff.DomainName)))
+		}
+	}
+	for _, compositeDiff := range diff.CompositeTypesModified {
+		if composite := findCompositeType(generated.CompositeTypes, compositeDiff.TypeName); composite != nil {
+			result = append(result, fromschema.FromCompositeType(*composite).SetComment(fmt.Sprintf("Recreate composite type %s", compositeDiff.TypeName)))
+		}
+	}
+	return result
+}
+
+// removeUserTypes emits DROP DOMAIN / DROP TYPE for removed and modified
+// domains, ranges, and composite types. Modified objects are dropped here and
+// recreated by addNewUserTypes (there is no in-place ALTER for these forms).
+func (p *Planner) removeUserTypes(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, name := range diff.DomainsRemoved {
+		result = append(result, ast.NewDropType(name).SetDomain().SetIfExists().SetCascade().
+			SetComment("WARNING: Make sure no columns use this domain!"))
+	}
+	for _, name := range diff.CompositeTypesRemoved {
+		result = append(result, ast.NewDropType(name).SetIfExists().SetCascade().
+			SetComment("WARNING: Make sure no columns use this composite type!"))
+	}
+	for _, name := range diff.RangesRemoved {
+		result = append(result, ast.NewDropType(name).SetIfExists().SetCascade().
+			SetComment("WARNING: Make sure no columns use this range type!"))
+	}
+	return result
+}
+
+// dropModifiedUserTypes drops domains/composites that changed, so
+// addNewUserTypes can recreate them in their new shape.
+//
+// The drop is deliberately NOT CASCADE: a domain/composite that is still in use
+// by a column cannot be dropped, so the migration fails loudly rather than
+// silently dropping dependent columns. Reconciling a modification while the type
+// is in use requires a manual migration (PostgreSQL offers ALTER DOMAIN /
+// ALTER TYPE for the in-place cases).
+func (p *Planner) dropModifiedUserTypes(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, domainDiff := range diff.DomainsModified {
+		result = append(result, ast.NewDropType(domainDiff.DomainName).SetDomain().SetIfExists().
+			SetComment("Recreate modified domain; drop is non-CASCADE and fails if the domain is in use"))
+	}
+	for _, compositeDiff := range diff.CompositeTypesModified {
+		result = append(result, ast.NewDropType(compositeDiff.TypeName).SetIfExists().
+			SetComment("Recreate modified composite type; drop is non-CASCADE and fails if the type is in use"))
+	}
+	return result
+}
+
+func findDomain(domains []goschema.Domain, name string) *goschema.Domain {
+	for i := range domains {
+		if domains[i].QualifiedName() == name {
+			return &domains[i]
+		}
+	}
+	return nil
+}
+
+func findCompositeType(composites []goschema.CompositeType, name string) *goschema.CompositeType {
+	for i := range composites {
+		if composites[i].QualifiedName() == name {
+			return &composites[i]
+		}
+	}
+	return nil
+}
+
+func findRange(ranges []goschema.Range, name string) *goschema.Range {
+	for i := range ranges {
+		if ranges[i].QualifiedName() == name {
+			return &ranges[i]
+		}
+	}
+	return nil
+}
+
 // GenerateMigrationAST generates PostgreSQL-specific migration AST statements from schema differences.
 //
 // This method transforms the schema differences captured in the SchemaDiff into executable
@@ -1008,6 +1107,11 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// 3. Add new enums (PostgreSQL requires enum types to exist before tables use them)
 	result = p.addNewEnums(result, diff, generated)
 
+	// 3c. Recreate changed user-defined types (drop then create), then create
+	// new domains/ranges/composites before tables can reference them.
+	result = p.dropModifiedUserTypes(result, diff)
+	result = p.addNewUserTypes(result, diff, generated)
+
 	// 4. Modify existing enums
 	result = p.modifyExistingEnums(result, diff, generated)
 
@@ -1108,6 +1212,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	}
 
 	// 15. Remove enums (dangerous!)
+	result = p.removeUserTypes(result, diff)
 	result = p.removeEnums(result, diff)
 
 	// 16. Remove extensions (dangerous!)

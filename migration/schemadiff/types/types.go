@@ -183,6 +183,21 @@ type SchemaDiff struct {
 	// schemas but have different options (increment, cache, cycle, ownership, etc.).
 	SequencesModified []SequenceDiff `json:"sequences_modified"`
 
+	// DomainsAdded/Removed/Modified track PostgreSQL domain types.
+	DomainsAdded    []string     `json:"domains_added"`
+	DomainsRemoved  []string     `json:"domains_removed"`
+	DomainsModified []DomainDiff `json:"domains_modified"`
+
+	// CompositeTypesAdded/Removed/Modified track PostgreSQL composite types.
+	CompositeTypesAdded    []string            `json:"composite_types_added"`
+	CompositeTypesRemoved  []string            `json:"composite_types_removed"`
+	CompositeTypesModified []CompositeTypeDiff `json:"composite_types_modified"`
+
+	// RangesAdded/Removed track PostgreSQL range types. Ranges have no in-place
+	// alter, so there is no Modified category (a change is drop + recreate).
+	RangesAdded   []string `json:"ranges_added"`
+	RangesRemoved []string `json:"ranges_removed"`
+
 	// ViewsAdded contains names of views that exist in the target schema
 	// but not in the current database schema.
 	ViewsAdded []string `json:"views_added"`
@@ -327,6 +342,7 @@ func (d *SchemaDiff) HasChanges() bool {
 		d.hasExtensionChanges() ||
 		d.hasFunctionChanges() ||
 		d.hasSequenceChanges() ||
+		d.hasUserTypeChanges() ||
 		d.hasViewChanges() ||
 		d.hasMaterializedViewChanges() ||
 		d.hasTriggerChanges() ||
@@ -373,6 +389,13 @@ func (d *SchemaDiff) hasSequenceChanges() bool {
 	return len(d.SequencesAdded) > 0 ||
 		len(d.SequencesRemoved) > 0 ||
 		len(d.SequencesModified) > 0
+}
+
+// hasUserTypeChanges returns true if there are any domain/composite/range changes.
+func (d *SchemaDiff) hasUserTypeChanges() bool {
+	return len(d.DomainsAdded) > 0 || len(d.DomainsRemoved) > 0 || len(d.DomainsModified) > 0 ||
+		len(d.CompositeTypesAdded) > 0 || len(d.CompositeTypesRemoved) > 0 || len(d.CompositeTypesModified) > 0 ||
+		len(d.RangesAdded) > 0 || len(d.RangesRemoved) > 0
 }
 
 func (d *SchemaDiff) hasViewChanges() bool {
@@ -557,6 +580,18 @@ type FunctionDiff struct {
 	// Changes maps change types to their old->new value transitions
 	// Format: "change_type" -> "old_value -> new_value"
 	Changes map[string]string `json:"changes"`
+}
+
+// DomainDiff represents changes to a PostgreSQL domain type.
+type DomainDiff struct {
+	DomainName string            `json:"domain_name"`
+	Changes    map[string]string `json:"changes"`
+}
+
+// CompositeTypeDiff represents changes to a PostgreSQL composite type.
+type CompositeTypeDiff struct {
+	TypeName string            `json:"type_name"`
+	Changes  map[string]string `json:"changes"`
 }
 
 // SequenceDiff represents changes to a standalone sequence definition.

@@ -722,6 +722,14 @@ func cloneSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 	clone.SequencesAdded = slices.Clone(diff.SequencesAdded)
 	clone.SequencesRemoved = slices.Clone(diff.SequencesRemoved)
 	clone.SequencesModified = slices.Clone(diff.SequencesModified)
+	clone.DomainsAdded = slices.Clone(diff.DomainsAdded)
+	clone.DomainsRemoved = slices.Clone(diff.DomainsRemoved)
+	clone.DomainsModified = slices.Clone(diff.DomainsModified)
+	clone.CompositeTypesAdded = slices.Clone(diff.CompositeTypesAdded)
+	clone.CompositeTypesRemoved = slices.Clone(diff.CompositeTypesRemoved)
+	clone.CompositeTypesModified = slices.Clone(diff.CompositeTypesModified)
+	clone.RangesAdded = slices.Clone(diff.RangesAdded)
+	clone.RangesRemoved = slices.Clone(diff.RangesRemoved)
 	clone.ViewsAdded = slices.Clone(diff.ViewsAdded)
 	clone.ViewsRemoved = slices.Clone(diff.ViewsRemoved)
 	clone.ViewsModified = slices.Clone(diff.ViewsModified)
@@ -1033,6 +1041,16 @@ func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Databa
 		FunctionsModified: reverseFunctionDiffs(diff.FunctionsModified),
 
 		// Reverse sequence operations
+		// Reverse user-defined type operations
+		DomainsAdded:           diff.DomainsRemoved,
+		DomainsRemoved:         diff.DomainsAdded,
+		DomainsModified:        reverseDomainDiffs(diff.DomainsModified),
+		CompositeTypesAdded:    diff.CompositeTypesRemoved,
+		CompositeTypesRemoved:  diff.CompositeTypesAdded,
+		CompositeTypesModified: reverseCompositeTypeDiffs(diff.CompositeTypesModified),
+		RangesAdded:            diff.RangesRemoved,
+		RangesRemoved:          diff.RangesAdded,
+
 		SequencesAdded:    diff.SequencesRemoved, // Sequences to remove become sequences to add
 		SequencesRemoved:  diff.SequencesAdded,   // Sequences to add become sequences to remove
 		SequencesModified: reverseSequenceDiffs(diff.SequencesModified),
@@ -1536,6 +1554,35 @@ func reverseSequenceDiffs(sequenceDiffs []types.SequenceDiff) []types.SequenceDi
 			SequenceName: sequenceDiff.SequenceName,
 			Changes:      reversedChanges,
 		}
+	}
+	return reversed
+}
+
+func reverseChangeMap(changes map[string]string) map[string]string {
+	reversed := make(map[string]string, len(changes))
+	for key, change := range changes {
+		parts := strings.Split(change, " -> ")
+		if len(parts) == 2 {
+			reversed[key] = parts[1] + " -> " + parts[0]
+		} else {
+			reversed[key] = change
+		}
+	}
+	return reversed
+}
+
+func reverseDomainDiffs(domainDiffs []types.DomainDiff) []types.DomainDiff {
+	reversed := make([]types.DomainDiff, len(domainDiffs))
+	for i, domainDiff := range domainDiffs {
+		reversed[i] = types.DomainDiff{DomainName: domainDiff.DomainName, Changes: reverseChangeMap(domainDiff.Changes)}
+	}
+	return reversed
+}
+
+func reverseCompositeTypeDiffs(compositeDiffs []types.CompositeTypeDiff) []types.CompositeTypeDiff {
+	reversed := make([]types.CompositeTypeDiff, len(compositeDiffs))
+	for i, compositeDiff := range compositeDiffs {
+		reversed[i] = types.CompositeTypeDiff{TypeName: compositeDiff.TypeName, Changes: reverseChangeMap(compositeDiff.Changes)}
 	}
 	return reversed
 }

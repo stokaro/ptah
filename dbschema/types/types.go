@@ -17,6 +17,9 @@ type DBSchema struct {
 	Extensions  []DBExtension  `json:"extensions"`   // PostgreSQL extensions
 	Functions   []DBFunction   `json:"functions"`    // PostgreSQL custom functions
 	Sequences   []DBSequence   `json:"sequences"`    // PostgreSQL standalone sequences
+	Domains     []DBDomain     `json:"domains"`      // PostgreSQL domain types
+	Composites  []DBComposite  `json:"composites"`   // PostgreSQL composite types
+	Ranges      []DBRange      `json:"ranges"`       // PostgreSQL range types
 	Views       []DBView       `json:"views"`        // Database views
 	MatViews    []DBMatView    `json:"matviews"`     // Database materialized views
 	Triggers    []DBTrigger    `json:"triggers"`     // Database triggers
@@ -97,6 +100,45 @@ type DBEnum struct {
 	Name   string   `json:"name"`
 	Values []string `json:"values"`
 }
+
+// DBDomain represents a PostgreSQL domain type read from the database.
+type DBDomain struct {
+	Name     string `json:"name"`
+	Schema   string `json:"schema,omitempty"`
+	BaseType string `json:"base_type"`
+	NotNull  bool   `json:"not_null"`
+	Default  string `json:"default,omitempty"`
+	Check    string `json:"check,omitempty"`
+}
+
+// QualifiedName returns schema.name when Schema is set, or Name otherwise.
+func (d DBDomain) QualifiedName() string { return QualifyTableName(d.Schema, d.Name) }
+
+// DBCompositeField is a single field of a composite type read from the database.
+type DBCompositeField struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+// DBComposite represents a PostgreSQL composite type read from the database.
+type DBComposite struct {
+	Name   string             `json:"name"`
+	Schema string             `json:"schema,omitempty"`
+	Fields []DBCompositeField `json:"fields"`
+}
+
+// QualifiedName returns schema.name when Schema is set, or Name otherwise.
+func (c DBComposite) QualifiedName() string { return QualifyTableName(c.Schema, c.Name) }
+
+// DBRange represents a PostgreSQL range type read from the database.
+type DBRange struct {
+	Name    string `json:"name"`
+	Schema  string `json:"schema,omitempty"`
+	Subtype string `json:"subtype"`
+}
+
+// QualifiedName returns schema.name when Schema is set, or Name otherwise.
+func (r DBRange) QualifiedName() string { return QualifyTableName(r.Schema, r.Name) }
 
 // DBIndex represents a database index.
 //

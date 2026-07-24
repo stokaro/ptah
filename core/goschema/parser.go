@@ -453,6 +453,9 @@ type schemaParseState struct {
 	extensions            []Extension
 	functions             []Function
 	sequences             []Sequence
+	domains               []Domain
+	compositeTypes        []CompositeType
+	ranges                []Range
 	views                 []View
 	materializedViews     []MaterializedView
 	triggers              []Trigger
@@ -551,6 +554,12 @@ func (s *schemaParseState) parseSharedComment(comment *ast.Comment, target schem
 		return s.parseFunctionComment(comment, target.structName)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:sequence"):
 		return s.parseSequenceComment(comment, target.structName)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:domain"):
+		return s.parseDomainComment(comment, target.structName)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:composite"):
+		return s.parseCompositeComment(comment, target.structName)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:range"):
+		return s.parseRangeComment(comment, target.structName)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:view"):
 		return s.parseViewComment(comment, target.structName)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:matview"):
@@ -687,6 +696,9 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (Database, 
 		Extensions:        state.extensions,
 		Functions:         state.functions,
 		Sequences:         state.sequences,
+		Domains:           state.domains,
+		CompositeTypes:    state.compositeTypes,
+		Ranges:            state.ranges,
 		Views:             state.views,
 		MaterializedViews: state.materializedViews,
 		Triggers:          state.triggers,
@@ -997,6 +1009,141 @@ func parseOptionalInt64(value string) (*int64, error) {
 		return nil, err
 	}
 	return &n, nil
+}
+
+func (s *schemaParseState) parseDomainComment(comment *ast.Comment, structName string) error {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	ctx := s.annotationContext(comment, "//migrator:schema:domain", kv["name"])
+	if err := validateAttributes(kv, ctx); err != nil {
+		return err
+	}
+	if err := requireAttributes(kv, ctx); err != nil {
+		return err
+	}
+
+	domain := Domain{
+		StructName:  structName,
+		Name:        kv["name"],
+		Schema:      kv["schema"],
+		BaseType:    kv["type"],
+		NotNull:     kv["not_null"] == "true",
+		Default:     kv["default"],
+		DefaultExpr: kv["default_expr"],
+		Check:       kv["check"],
+		Comment:     kv["comment"],
+	}
+	domain.Canonicalize()
+	s.domains = append(s.domains, domain)
+	return nil
+}
+
+func (s *schemaParseState) parseCompositeComment(comment *ast.Comment, structName string) error {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	ctx := s.annotationContext(comment, "//migrator:schema:composite", kv["name"])
+	if err := validateAttributes(kv, ctx); err != nil {
+		return err
+	}
+	if err := requireAttributes(kv, ctx); err != nil {
+		return err
+	}
+
+	fields, err := parseCompositeFields(kv["fields"])
+	if err != nil {
+		return &ptaherr.ParseError{
+			File:      ctx.file,
+			Line:      ctx.line,
+			Directive: strings.TrimPrefix(ctx.directive, "//"),
+			Attribute: "fields",
+			Err:       ptaherr.ErrInvalidAttributeValue,
+			Message:   fmt.Sprintf("%v for \"fields\" on %s at %s; expected \"name:type,name:type\"", err, ctx.directive, ctx.location),
+		}
+	}
+
+	composite := CompositeType{
+		StructName: structName,
+		Name:       kv["name"],
+		Schema:     kv["schema"],
+		Fields:     fields,
+		Comment:    kv["comment"],
+	}
+	composite.Canonicalize()
+	s.compositeTypes = append(s.compositeTypes, composite)
+	return nil
+}
+
+// parseCompositeFields parses a "name:type,name:type" list into ordered fields.
+// Splitting is paren-aware so a parameterized type (e.g. NUMERIC(10,2)) whose
+// own comma would otherwise be read as a field separator survives intact.
+func parseCompositeFields(value string) ([]CompositeTypeField, error) {
+	var fields []CompositeTypeField
+	for _, part := range splitTopLevelCommaList(value) {
+		name, typ, ok := strings.Cut(part, ":")
+		name = strings.TrimSpace(name)
+		typ = strings.TrimSpace(typ)
+		if !ok || name == "" || typ == "" {
+			return nil, fmt.Errorf("invalid composite field %q", part)
+		}
+		fields = append(fields, CompositeTypeField{Name: name, Type: typ})
+	}
+	if len(fields) == 0 {
+		return nil, fmt.Errorf("at least one field is required")
+	}
+	return fields, nil
+}
+
+// splitTopLevelCommaList splits on commas that are not nested inside parentheses,
+// trimming each entry and dropping empties.
+func splitTopLevelCommaList(value string) []string {
+	var parts []string
+	depth := 0
+	start := 0
+	for i, r := range value {
+		switch r {
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		case ',':
+			if depth == 0 {
+				if trimmed := strings.TrimSpace(value[start:i]); trimmed != "" {
+					parts = append(parts, trimmed)
+				}
+				start = i + 1
+			}
+		}
+	}
+	if trimmed := strings.TrimSpace(value[start:]); trimmed != "" {
+		parts = append(parts, trimmed)
+	}
+	return parts
+}
+
+func (s *schemaParseState) parseRangeComment(comment *ast.Comment, structName string) error {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	ctx := s.annotationContext(comment, "//migrator:schema:range", kv["name"])
+	if err := validateAttributes(kv, ctx); err != nil {
+		return err
+	}
+	if err := requireAttributes(kv, ctx); err != nil {
+		return err
+	}
+
+	rangeType := Range{
+		StructName:     structName,
+		Name:           kv["name"],
+		Schema:         kv["schema"],
+		Subtype:        kv["subtype"],
+		SubtypeOpClass: kv["subtype_opclass"],
+		Collation:      kv["collation"],
+		Canonical:      kv["canonical"],
+		SubtypeDiff:    kv["subtype_diff"],
+		Comment:        kv["comment"],
+	}
+	rangeType.Canonicalize()
+	s.ranges = append(s.ranges, rangeType)
+	return nil
 }
 
 func (s *schemaParseState) parseViewComment(comment *ast.Comment, structName string) error {

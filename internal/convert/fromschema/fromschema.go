@@ -1138,6 +1138,76 @@ func FromEnum(enum goschema.Enum) *ast.EnumNode {
 	return ast.NewEnum(enum.Name, enum.Values...)
 }
 
+// qualifyTypeName returns schema.name when schema is set, or name otherwise. The
+// renderer splits on "." to escape each part, so the qualified form is safe to
+// pass as a CreateTypeNode name.
+func qualifyTypeName(schema, name string) string {
+	if schema != "" {
+		return schema + "." + name
+	}
+	return name
+}
+
+// FromDomain converts a goschema.Domain into a CreateTypeNode wrapping a domain
+// type definition.
+func FromDomain(domain goschema.Domain) *ast.CreateTypeNode {
+	domainDef := ast.NewDomainTypeDef(domain.BaseType)
+	if domain.NotNull {
+		domainDef.SetNotNull()
+	}
+	if domain.Default != "" {
+		domainDef.SetDefault(domain.Default)
+	}
+	if domain.DefaultExpr != "" {
+		domainDef.SetDefaultExpression(domain.DefaultExpr)
+	}
+	if domain.Check != "" {
+		domainDef.SetCheck(domain.Check)
+	}
+	node := ast.NewCreateType(qualifyTypeName(domain.Schema, domain.Name), domainDef)
+	if domain.Comment != "" {
+		node.SetComment(domain.Comment)
+	}
+	return node
+}
+
+// FromCompositeType converts a goschema.CompositeType into a CreateTypeNode
+// wrapping a composite type definition.
+func FromCompositeType(composite goschema.CompositeType) *ast.CreateTypeNode {
+	fields := make([]*ast.CompositeField, 0, len(composite.Fields))
+	for _, field := range composite.Fields {
+		fields = append(fields, &ast.CompositeField{Name: field.Name, Type: field.Type})
+	}
+	node := ast.NewCreateType(qualifyTypeName(composite.Schema, composite.Name), ast.NewCompositeTypeDef(fields...))
+	if composite.Comment != "" {
+		node.SetComment(composite.Comment)
+	}
+	return node
+}
+
+// FromRange converts a goschema.Range into a CreateTypeNode wrapping a range
+// type definition.
+func FromRange(rangeType goschema.Range) *ast.CreateTypeNode {
+	rangeDef := ast.NewRangeTypeDef(rangeType.Subtype)
+	if rangeType.SubtypeOpClass != "" {
+		rangeDef.SetSubtypeOpClass(rangeType.SubtypeOpClass)
+	}
+	if rangeType.Collation != "" {
+		rangeDef.SetCollation(rangeType.Collation)
+	}
+	if rangeType.Canonical != "" {
+		rangeDef.SetCanonical(rangeType.Canonical)
+	}
+	if rangeType.SubtypeDiff != "" {
+		rangeDef.SetSubtypeDiff(rangeType.SubtypeDiff)
+	}
+	node := ast.NewCreateType(qualifyTypeName(rangeType.Schema, rangeType.Name), rangeDef)
+	if rangeType.Comment != "" {
+		node.SetComment(rangeType.Comment)
+	}
+	return node
+}
+
 // FromFunction converts a goschema.Function to an ast.CreateFunctionNode.
 //
 // This function creates a PostgreSQL function definition from the parsed function metadata.
@@ -1531,6 +1601,22 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 		for _, enum := range database.Enums {
 			enumNode := FromEnum(enum)
 			statements.Statements = append(statements.Statements, enumNode)
+		}
+	}
+
+	// 3b. Add PostgreSQL user-defined types (domains, ranges, then composites)
+	// before tables so columns can reference them. Ordering within the group:
+	// domains and ranges reference base subtypes; composites may reference
+	// domains/enums, so they come last.
+	if isPostgreSQLPlatform(targetPlatform) {
+		for _, domain := range database.Domains {
+			statements.Statements = append(statements.Statements, FromDomain(domain))
+		}
+		for _, rangeType := range database.Ranges {
+			statements.Statements = append(statements.Statements, FromRange(rangeType))
+		}
+		for _, composite := range database.CompositeTypes {
+			statements.Statements = append(statements.Statements, FromCompositeType(composite))
 		}
 	}
 

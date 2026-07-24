@@ -125,6 +125,23 @@ func (r *Renderer) VisitCreateType(node *ast.CreateTypeNode) error {
 
 		r.w.WriteLinef("%s;", sql)
 
+	case *ast.RangeTypeDef:
+		// CREATE TYPE name AS RANGE (SUBTYPE = ..., [SUBTYPE_OPCLASS = ...], ...)
+		options := []string{fmt.Sprintf("SUBTYPE = %s", typeDef.Subtype)}
+		if typeDef.SubtypeOpClass != "" {
+			options = append(options, fmt.Sprintf("SUBTYPE_OPCLASS = %s", typeDef.SubtypeOpClass))
+		}
+		if typeDef.Collation != "" {
+			options = append(options, fmt.Sprintf("COLLATION = %s", typeDef.Collation))
+		}
+		if typeDef.Canonical != "" {
+			options = append(options, fmt.Sprintf("CANONICAL = %s", typeDef.Canonical))
+		}
+		if typeDef.SubtypeDiff != "" {
+			options = append(options, fmt.Sprintf("SUBTYPE_DIFF = %s", typeDef.SubtypeDiff))
+		}
+		r.w.WriteLinef("CREATE TYPE %s AS RANGE (%s);", r.escapeQualifiedIdentifier(node.Name), strings.Join(options, ", "))
+
 	default:
 		return fmt.Errorf("unsupported type definition: %T", typeDef)
 	}
@@ -769,9 +786,13 @@ func (r *Renderer) VisitDropTable(node *ast.DropTableNode) error {
 
 // VisitDropType renders PostgreSQL-specific DROP TYPE statements
 func (r *Renderer) VisitDropType(node *ast.DropTypeNode) error {
-	// Build DROP TYPE statement (PostgreSQL-specific)
+	// Build DROP TYPE / DROP DOMAIN statement (PostgreSQL-specific)
 	var parts []string
-	parts = append(parts, "DROP TYPE")
+	if node.Domain {
+		parts = append(parts, "DROP DOMAIN")
+	} else {
+		parts = append(parts, "DROP TYPE")
+	}
 
 	if node.IfExists {
 		parts = append(parts, "IF EXISTS")

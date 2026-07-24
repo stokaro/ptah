@@ -87,6 +87,9 @@ func ParseFS(fsys fs.FS, rootDir string) (*Database, error) {
 		Extensions:                 []Extension{},
 		Functions:                  []Function{},
 		Sequences:                  []Sequence{},
+		Domains:                    []Domain{},
+		CompositeTypes:             []CompositeType{},
+		Ranges:                     []Range{},
 		Views:                      []View{},
 		MaterializedViews:          []MaterializedView{},
 		Triggers:                   []Trigger{},
@@ -138,6 +141,9 @@ func ParseFS(fsys fs.FS, rootDir string) (*Database, error) {
 		result.Extensions = append(result.Extensions, database.Extensions...)
 		result.Functions = append(result.Functions, database.Functions...)
 		result.Sequences = append(result.Sequences, database.Sequences...)
+		result.Domains = append(result.Domains, database.Domains...)
+		result.CompositeTypes = append(result.CompositeTypes, database.CompositeTypes...)
+		result.Ranges = append(result.Ranges, database.Ranges...)
 		result.RLSPolicies = append(result.RLSPolicies, database.RLSPolicies...)
 		result.RLSEnabledTables = append(result.RLSEnabledTables, database.RLSEnabledTables...)
 		result.Roles = append(result.Roles, database.Roles...)

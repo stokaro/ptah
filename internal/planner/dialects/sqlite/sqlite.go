@@ -111,6 +111,11 @@ func rejectUnsupportedSchemaObjects(diff *types.SchemaDiff) error {
 	if len(diff.SequencesAdded) > 0 || len(diff.SequencesModified) > 0 || len(diff.SequencesRemoved) > 0 {
 		return unsupportedFeaturef("sequences are not supported")
 	}
+	if len(diff.DomainsAdded) > 0 || len(diff.DomainsRemoved) > 0 || len(diff.DomainsModified) > 0 ||
+		len(diff.CompositeTypesAdded) > 0 || len(diff.CompositeTypesRemoved) > 0 || len(diff.CompositeTypesModified) > 0 ||
+		len(diff.RangesAdded) > 0 || len(diff.RangesRemoved) > 0 {
+		return unsupportedFeaturef("user-defined types are not supported")
+	}
 	return nil
 }
 

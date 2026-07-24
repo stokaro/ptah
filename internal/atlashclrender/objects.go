@@ -40,6 +40,29 @@ func (r *renderer) renderSequences() {
 	}
 }
 
+// renderUserTypes reports PostgreSQL domain, composite, and range types as a
+// currently-unsupported export path. Atlas HCL representations for these objects
+// are not part of Ptah's HCL surface yet (the atlashcl parser does not read
+// them), so emitting them would produce non-round-trippable output. Diagnostics
+// keep the loss explicit rather than silently dropping the objects.
+func (r *renderer) renderUserTypes() {
+	domains := append([]goschema.Domain(nil), r.db.Domains...)
+	slices.SortFunc(domains, func(a, b goschema.Domain) int { return cmp.Compare(a.Name, b.Name) })
+	for _, domain := range domains {
+		r.warn("domains."+domain.Name, "domain types are not yet representable in HCL schema output")
+	}
+	composites := append([]goschema.CompositeType(nil), r.db.CompositeTypes...)
+	slices.SortFunc(composites, func(a, b goschema.CompositeType) int { return cmp.Compare(a.Name, b.Name) })
+	for _, composite := range composites {
+		r.warn("composite_types."+composite.Name, "composite types are not yet representable in HCL schema output")
+	}
+	ranges := append([]goschema.Range(nil), r.db.Ranges...)
+	slices.SortFunc(ranges, func(a, b goschema.Range) int { return cmp.Compare(a.Name, b.Name) })
+	for _, rangeType := range ranges {
+		r.warn("ranges."+rangeType.Name, "range types are not yet representable in HCL schema output")
+	}
+}
+
 func (r *renderer) renderRoles() {
 	roles := append([]goschema.Role(nil), r.db.Roles...)
 	slices.SortFunc(roles, func(a, b goschema.Role) int {
