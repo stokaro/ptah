@@ -4162,18 +4162,29 @@ func (p *Parser) parseCompositeTypeBody(typeName string) (*ast.CreateTypeNode, e
 		}
 		p.skipWhitespace()
 
-		// The field type is the remaining tokens up to a comma or the closing
-		// paren; collect them verbatim so multi-token types (e.g. VARCHAR(10),
-		// TIMESTAMP WITH TIME ZONE) survive.
+		// The field type is the remaining tokens up to a top-level comma or the
+		// closing paren; collect them verbatim so multi-token and parameterized
+		// types (VARCHAR(10), NUMERIC(10,2), TIMESTAMP WITH TIME ZONE) survive.
+		// Track paren depth so a comma or ')' inside the type's own parameter
+		// list is not mistaken for a field separator.
 		var typeParts []string
-		for !p.current.MatchOperatorValue(",") && !p.current.MatchOperatorValue(")") && p.current.Type != lexer.TokenEOF {
+		depth := 0
+		for p.current.Type != lexer.TokenEOF {
+			if depth == 0 && (p.current.MatchOperatorValue(",") || p.current.MatchOperatorValue(")")) {
+				break
+			}
+			if p.current.MatchOperatorValue("(") {
+				depth++
+			} else if p.current.MatchOperatorValue(")") {
+				depth--
+			}
 			typeParts = append(typeParts, p.current.Value)
 			p.advance()
 		}
 		if len(typeParts) == 0 {
 			return nil, fmt.Errorf("expected type for composite field %q at position %d", fieldName, p.current.Start)
 		}
-		fields = append(fields, &ast.CompositeField{Name: fieldName, Type: strings.TrimSpace(strings.Join(typeParts, " "))})
+		fields = append(fields, &ast.CompositeField{Name: fieldName, Type: joinTypeTokens(typeParts)})
 
 		if p.current.MatchOperatorValue(",") {
 			p.advance()
@@ -4190,6 +4201,21 @@ func (p *Parser) parseCompositeTypeBody(typeName string) (*ast.CreateTypeNode, e
 	}
 
 	return ast.NewCreateType(typeName, ast.NewCompositeTypeDef(fields...)), nil
+}
+
+// joinTypeTokens reconstructs a SQL type from its lexed tokens, omitting spaces
+// around parentheses so parameterized types (VARCHAR(10), NUMERIC(10,2)) render
+// without stray whitespace while multi-word types (TIMESTAMP WITH TIME ZONE)
+// keep their separators.
+func joinTypeTokens(parts []string) string {
+	var b strings.Builder
+	for i, part := range parts {
+		if i > 0 && part != "(" && part != ")" && part != "," && parts[i-1] != "(" {
+			b.WriteByte(' ')
+		}
+		b.WriteString(part)
+	}
+	return b.String()
 }
 
 // parseRangeTypeBody parses the `(SUBTYPE = ..., ...)` body of

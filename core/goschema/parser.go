@@ -1072,9 +1072,11 @@ func (s *schemaParseState) parseCompositeComment(comment *ast.Comment, structNam
 }
 
 // parseCompositeFields parses a "name:type,name:type" list into ordered fields.
+// Splitting is paren-aware so a parameterized type (e.g. NUMERIC(10,2)) whose
+// own comma would otherwise be read as a field separator survives intact.
 func parseCompositeFields(value string) ([]CompositeTypeField, error) {
 	var fields []CompositeTypeField
-	for _, part := range splitCommaList(value) {
+	for _, part := range splitTopLevelCommaList(value) {
 		name, typ, ok := strings.Cut(part, ":")
 		name = strings.TrimSpace(name)
 		typ = strings.TrimSpace(typ)
@@ -1087,6 +1089,35 @@ func parseCompositeFields(value string) ([]CompositeTypeField, error) {
 		return nil, fmt.Errorf("at least one field is required")
 	}
 	return fields, nil
+}
+
+// splitTopLevelCommaList splits on commas that are not nested inside parentheses,
+// trimming each entry and dropping empties.
+func splitTopLevelCommaList(value string) []string {
+	var parts []string
+	depth := 0
+	start := 0
+	for i, r := range value {
+		switch r {
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		case ',':
+			if depth == 0 {
+				if trimmed := strings.TrimSpace(value[start:i]); trimmed != "" {
+					parts = append(parts, trimmed)
+				}
+				start = i + 1
+			}
+		}
+	}
+	if trimmed := strings.TrimSpace(value[start:]); trimmed != "" {
+		parts = append(parts, trimmed)
+	}
+	return parts
 }
 
 func (s *schemaParseState) parseRangeComment(comment *ast.Comment, structName string) error {

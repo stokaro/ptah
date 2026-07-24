@@ -954,12 +954,20 @@ func (p *Planner) removeUserTypes(result []ast.Node, diff *types.SchemaDiff) []a
 
 // dropModifiedUserTypes drops domains/composites that changed, so
 // addNewUserTypes can recreate them in their new shape.
+//
+// The drop is deliberately NOT CASCADE: a domain/composite that is still in use
+// by a column cannot be dropped, so the migration fails loudly rather than
+// silently dropping dependent columns. Reconciling a modification while the type
+// is in use requires a manual migration (PostgreSQL offers ALTER DOMAIN /
+// ALTER TYPE for the in-place cases).
 func (p *Planner) dropModifiedUserTypes(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 	for _, domainDiff := range diff.DomainsModified {
-		result = append(result, ast.NewDropType(domainDiff.DomainName).SetDomain().SetIfExists().SetCascade())
+		result = append(result, ast.NewDropType(domainDiff.DomainName).SetDomain().SetIfExists().
+			SetComment("Recreate modified domain; drop is non-CASCADE and fails if the domain is in use"))
 	}
 	for _, compositeDiff := range diff.CompositeTypesModified {
-		result = append(result, ast.NewDropType(compositeDiff.TypeName).SetIfExists().SetCascade())
+		result = append(result, ast.NewDropType(compositeDiff.TypeName).SetIfExists().
+			SetComment("Recreate modified composite type; drop is non-CASCADE and fails if the type is in use"))
 	}
 	return result
 }

@@ -473,7 +473,7 @@ func (r *Reader) readDomainsForSchema(schemaName string) ([]types.DBDomain, erro
 			t.typnotnull AS not_null,
 			COALESCE(t.typdefault, '') AS default_value,
 			COALESCE((
-				SELECT string_agg(pg_get_expr(c.conbin, c.contypid), ' AND ')
+				SELECT string_agg(pg_get_expr(c.conbin, c.conrelid), ' AND ')
 				FROM pg_constraint c
 				WHERE c.contypid = t.oid AND c.contype = 'c'
 			), '') AS check_expr

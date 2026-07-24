@@ -46,6 +46,42 @@ func TestDomains_TypeCaseInsensitiveNoChurn(t *testing.T) {
 	c.Assert(diff.DomainsModified, qt.IsNil)
 }
 
+func TestDomains_CanonicalTypeSpellingNoChurn(t *testing.T) {
+	c := qt.New(t)
+
+	// Declared VARCHAR(255)/float8 must not churn against the catalog's
+	// canonical character varying(255)/double precision spellings.
+	generated := &goschema.Database{Domains: []goschema.Domain{
+		{Name: "code", BaseType: "VARCHAR(255)"},
+		{Name: "amount", BaseType: "float8"},
+	}}
+	database := &types.DBSchema{Domains: []types.DBDomain{
+		{Name: "code", BaseType: "character varying(255)"},
+		{Name: "amount", BaseType: "double precision"},
+	}}
+	diff := &difftypes.SchemaDiff{}
+
+	compare.Domains(generated, database, diff)
+
+	c.Assert(diff.DomainsAdded, qt.IsNil)
+	c.Assert(diff.DomainsRemoved, qt.IsNil)
+	c.Assert(diff.DomainsModified, qt.IsNil)
+}
+
+func TestDomains_CheckIsCreateOnly(t *testing.T) {
+	c := qt.New(t)
+
+	// A declared CHECK vs the PostgreSQL-rewritten readback must NOT be reported
+	// as a modification (create-only), to avoid a phantom drop+recreate.
+	generated := &goschema.Database{Domains: []goschema.Domain{{Name: "email", BaseType: "TEXT", Check: "VALUE ~ '@'"}}}
+	database := &types.DBSchema{Domains: []types.DBDomain{{Name: "email", BaseType: "text", Check: "(VALUE ~ '@'::text)"}}}
+	diff := &difftypes.SchemaDiff{}
+
+	compare.Domains(generated, database, diff)
+
+	c.Assert(diff.DomainsModified, qt.IsNil)
+}
+
 func TestCompositeTypes_AddRemoveModify(t *testing.T) {
 	c := qt.New(t)
 

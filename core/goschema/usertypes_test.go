@@ -58,6 +58,22 @@ type AddressType struct{}
 	c.Assert(comp.Fields[2].Type, qt.Equals, "VARCHAR(10)")
 }
 
+func TestParseCompositeAnnotation_ParameterizedTypesWithCommas(t *testing.T) {
+	const src = `package fixture
+
+//migrator:schema:composite name="money" fields="amount:NUMERIC(10,2),cur:VARCHAR(3)"
+type MoneyType struct{}
+`
+	c := qt.New(t)
+	db := mustParseSource(c, "fixture.go", src)
+	c.Assert(db.CompositeTypes, qt.HasLen, 1)
+	comp := db.CompositeTypes[0]
+	c.Assert(comp.Fields, qt.HasLen, 2)
+	c.Assert(comp.Fields[0].Name, qt.Equals, "amount")
+	c.Assert(comp.Fields[0].Type, qt.Equals, "NUMERIC(10,2)")
+	c.Assert(comp.Fields[1].Type, qt.Equals, "VARCHAR(3)")
+}
+
 func TestParseCompositeAnnotation_InvalidFieldsRejected(t *testing.T) {
 	const src = `package fixture
 

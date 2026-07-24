@@ -23,19 +23,15 @@ func Domains(generated *goschema.Database, database *types.DBSchema, diff *difft
 		databaseDomains[domain.QualifiedName()] = domain
 	}
 
+	added, removed := compareNamedItems(generatedDomains, databaseDomains)
+	diff.DomainsAdded = append(diff.DomainsAdded, added...)
+	diff.DomainsRemoved = append(diff.DomainsRemoved, removed...)
+
 	for name, target := range generatedDomains {
-		current, exists := databaseDomains[name]
-		if !exists {
-			diff.DomainsAdded = append(diff.DomainsAdded, name)
-			continue
-		}
-		if changes := domainChanges(target, current); len(changes) > 0 {
-			diff.DomainsModified = append(diff.DomainsModified, difftypes.DomainDiff{DomainName: name, Changes: changes})
-		}
-	}
-	for name := range databaseDomains {
-		if _, exists := generatedDomains[name]; !exists {
-			diff.DomainsRemoved = append(diff.DomainsRemoved, name)
+		if current, exists := databaseDomains[name]; exists {
+			if changes := domainChanges(target, current); len(changes) > 0 {
+				diff.DomainsModified = append(diff.DomainsModified, difftypes.DomainDiff{DomainName: name, Changes: changes})
+			}
 		}
 	}
 
@@ -46,18 +42,62 @@ func Domains(generated *goschema.Database, database *types.DBSchema, diff *difft
 	})
 }
 
+// domainChanges compares the reconcilable options of a domain: its base type
+// (canonicalized so alias spellings such as VARCHAR vs character varying do not
+// churn) and NOT NULL. CHECK and DEFAULT are intentionally not compared:
+// PostgreSQL rewrites CHECK expressions (adding parentheses and ::casts) on
+// read-back, so a string comparison would report phantom changes, and a phantom
+// change would drive a drop+recreate. They are therefore create-only; changing
+// a domain's CHECK/DEFAULT requires a manual migration.
 func domainChanges(target goschema.Domain, current types.DBDomain) map[string]string {
 	changes := make(map[string]string)
-	if target.BaseType != "" && !strings.EqualFold(target.BaseType, current.BaseType) {
+	if target.BaseType != "" && canonicalizePostgresType(target.BaseType) != canonicalizePostgresType(current.BaseType) {
 		changes["type"] = fmt.Sprintf("%s -> %s", current.BaseType, target.BaseType)
 	}
 	if target.NotNull != current.NotNull {
 		changes["not_null"] = fmt.Sprintf("%t -> %t", current.NotNull, target.NotNull)
 	}
-	if target.Check != "" && !strings.EqualFold(strings.TrimSpace(target.Check), strings.TrimSpace(current.Check)) {
-		changes["check"] = fmt.Sprintf("%s -> %s", current.Check, target.Check)
-	}
 	return changes
+}
+
+// pgTypeAliases maps accepted type spellings to the canonical form PostgreSQL's
+// format_type reports, so a declared type compares equal to its introspected
+// counterpart.
+var pgTypeAliases = map[string]string{
+	"varchar":     "character varying",
+	"char":        "character",
+	"int":         "integer",
+	"int4":        "integer",
+	"int8":        "bigint",
+	"int2":        "smallint",
+	"serial":      "integer",
+	"serial4":     "integer",
+	"serial8":     "bigint",
+	"bigserial":   "bigint",
+	"smallserial": "smallint",
+	"serial2":     "smallint",
+	"float8":      "double precision",
+	"float4":      "real",
+	"bool":        "boolean",
+	"decimal":     "numeric",
+	"timestamptz": "timestamp with time zone",
+	"timestamp":   "timestamp without time zone",
+	"timetz":      "time with time zone",
+}
+
+// canonicalizePostgresType lower-cases a type, normalizes its parameter list,
+// and maps common aliases to the spelling format_type emits.
+func canonicalizePostgresType(t string) string {
+	t = strings.ToLower(strings.TrimSpace(t))
+	base, params := t, ""
+	if i := strings.IndexByte(t, '('); i >= 0 {
+		base = strings.TrimSpace(t[:i])
+		params = strings.ReplaceAll(t[i:], " ", "")
+	}
+	if canonical, ok := pgTypeAliases[base]; ok {
+		base = canonical
+	}
+	return base + params
 }
 
 // CompositeTypes compares PostgreSQL composite types between the target schema
@@ -72,10 +112,13 @@ func CompositeTypes(generated *goschema.Database, database *types.DBSchema, diff
 		databaseTypes[composite.QualifiedName()] = composite
 	}
 
+	added, removed := compareNamedItems(generatedTypes, databaseTypes)
+	diff.CompositeTypesAdded = append(diff.CompositeTypesAdded, added...)
+	diff.CompositeTypesRemoved = append(diff.CompositeTypesRemoved, removed...)
+
 	for name, target := range generatedTypes {
 		current, exists := databaseTypes[name]
 		if !exists {
-			diff.CompositeTypesAdded = append(diff.CompositeTypesAdded, name)
 			continue
 		}
 		if targetFields, currentFields := compositeFieldList(target), dbCompositeFieldList(current); targetFields != currentFields {
@@ -83,11 +126,6 @@ func CompositeTypes(generated *goschema.Database, database *types.DBSchema, diff
 				TypeName: name,
 				Changes:  map[string]string{"fields": fmt.Sprintf("%s -> %s", currentFields, targetFields)},
 			})
-		}
-	}
-	for name := range databaseTypes {
-		if _, exists := generatedTypes[name]; !exists {
-			diff.CompositeTypesRemoved = append(diff.CompositeTypesRemoved, name)
 		}
 	}
 
@@ -101,7 +139,7 @@ func CompositeTypes(generated *goschema.Database, database *types.DBSchema, diff
 func compositeFieldList(composite goschema.CompositeType) string {
 	parts := make([]string, len(composite.Fields))
 	for i, field := range composite.Fields {
-		parts[i] = strings.ToLower(field.Name + " " + field.Type)
+		parts[i] = strings.ToLower(field.Name) + " " + canonicalizePostgresType(field.Type)
 	}
 	return strings.Join(parts, ", ")
 }
@@ -109,7 +147,7 @@ func compositeFieldList(composite goschema.CompositeType) string {
 func dbCompositeFieldList(composite types.DBComposite) string {
 	parts := make([]string, len(composite.Fields))
 	for i, field := range composite.Fields {
-		parts[i] = strings.ToLower(field.Name + " " + field.Type)
+		parts[i] = strings.ToLower(field.Name) + " " + canonicalizePostgresType(field.Type)
 	}
 	return strings.Join(parts, ", ")
 }
@@ -127,16 +165,9 @@ func Ranges(generated *goschema.Database, database *types.DBSchema, diff *diffty
 		databaseRanges[rangeType.QualifiedName()] = struct{}{}
 	}
 
-	for name := range generatedRanges {
-		if _, exists := databaseRanges[name]; !exists {
-			diff.RangesAdded = append(diff.RangesAdded, name)
-		}
-	}
-	for name := range databaseRanges {
-		if _, exists := generatedRanges[name]; !exists {
-			diff.RangesRemoved = append(diff.RangesRemoved, name)
-		}
-	}
+	added, removed := compareNamedItems(generatedRanges, databaseRanges)
+	diff.RangesAdded = append(diff.RangesAdded, added...)
+	diff.RangesRemoved = append(diff.RangesRemoved, removed...)
 
 	sort.Strings(diff.RangesAdded)
 	sort.Strings(diff.RangesRemoved)

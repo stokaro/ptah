@@ -28,7 +28,10 @@ Renders `CREATE DOMAIN "email" AS TEXT NOT NULL CHECK (VALUE ~ '@');`.
 | `check` | `CHECK` expression (uses `VALUE`) |
 | `comment` | Optional comment |
 
-> Round-trip note: PostgreSQL normalizes type spellings (`VARCHAR(n)` reads back as `character varying(n)`) and `CHECK` expressions, so a domain over such a base type or with a `CHECK` may show a spurious diff on re-compare. Domains over canonical types (`TEXT`, `INTEGER`, `BIGINT`) round-trip cleanly.
+> Round-trip and reconciliation notes:
+> - Base types are canonicalized before comparison (`VARCHAR(n)` ↔ `character varying(n)`, `float8` ↔ `double precision`, `int4` ↔ `integer`, etc.), so a domain over any spelling round-trips cleanly.
+> - `check` and `default`/`default_expr` are **create-only**: they are emitted on `CREATE DOMAIN` but not reconciled by the diff engine, because PostgreSQL rewrites `CHECK` expressions on read-back (adding parentheses and `::casts`), which a string comparison would report as a phantom change. Changing a domain's `CHECK` or `DEFAULT` after creation requires a manual migration.
+> - There is no in-place `ALTER` for a base-type change, so a genuine `type` or `not_null` modification is emitted as a **non-`CASCADE`** drop + recreate. If the domain is still used by a column the drop fails loudly rather than dropping the column; reconcile such changes manually.
 
 ## Composite types
 
