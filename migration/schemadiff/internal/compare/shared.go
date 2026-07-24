@@ -31,7 +31,6 @@ var (
 			`(?:=|<>|!=|<=|>=|<|>|like|is(?:\s+not)?)\s*` +
 			`(?:[a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*|[0-9]+(?:\.[0-9]+)?|'[^']*'|true|false|null))\)`,
 	)
-	sqlCommaSpacingPattern = regexp.MustCompile(`\s*,\s*`)
 	schemaQualifierPattern = regexp.MustCompile(`\b[a-z_][a-z0-9_]*\.`)
 )
 

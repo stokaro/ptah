@@ -38,6 +38,41 @@ func TestViews_IgnoresDatabaseOnlyQualification(t *testing.T) {
 	c.Assert(diff.ViewsModified, qt.HasLen, 0)
 }
 
+func TestViews_MatchesGeneratedQualifiedNameToDatabaseSchema(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{}
+
+	compare.Views(&goschema.Database{
+		Views: []goschema.View{{Name: "tenant.active_users", Body: "SELECT id FROM tenant.users WHERE deleted_at IS NULL"}},
+	}, &dbschematypes.DBSchema{
+		Views: []dbschematypes.DBView{{
+			Name:   "active_users",
+			Schema: "tenant",
+			Body:   "SELECT id FROM tenant.users WHERE deleted_at IS NULL",
+		}},
+	}, diff)
+
+	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))
+}
+
+func TestViews_DetectsAmbiguousDatabaseSchemasForUnqualifiedGeneratedView(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{}
+
+	compare.Views(&goschema.Database{
+		Views: []goschema.View{{Name: "active_users", Body: "SELECT id FROM users"}},
+	}, &dbschematypes.DBSchema{
+		Views: []dbschematypes.DBView{
+			{Name: "active_users", Schema: "tenant", Body: "SELECT id FROM tenant.users"},
+			{Name: "active_users", Schema: "other", Body: "SELECT id FROM other.users"},
+		},
+	}, diff)
+
+	c.Assert(diff.ViewsAdded, qt.DeepEquals, []string{"active_users"})
+	c.Assert(diff.ViewsRemoved, qt.DeepEquals, []string{"other.active_users", "tenant.active_users"})
+	c.Assert(diff.ViewsModified, qt.HasLen, 0)
+}
+
 func TestViews_IgnoresMySQLCanonicalViewBody(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
@@ -46,7 +81,8 @@ func TestViews_IgnoresMySQLCanonicalViewBody(t *testing.T) {
 		Views: []goschema.View{{Name: "live_products", Body: "SELECT id, name FROM products WHERE archived = false"}},
 	}, &dbschematypes.DBSchema{
 		Views: []dbschematypes.DBView{{
-			Name: "live_products",
+			Name:   "live_products",
+			Schema: "ptah_issue_502",
 			Body: "select `ptah_issue_502`.`products`.`id` AS `id`,`ptah_issue_502`.`products`.`name` AS `name` " +
 				"from `ptah_issue_502`.`products` where (`ptah_issue_502`.`products`.`archived` = false)",
 		}},

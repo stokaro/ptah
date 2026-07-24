@@ -403,14 +403,18 @@ func normalizeGeneratedExpression(expression, dialect string) string {
 	expression = normalize.Expression(expression)
 	switch platform.NormalizeDialect(dialect) {
 	case platform.Postgres:
-		return normalizeCatalogGeneratedExpression(stripPostgresGeneratedTypeCasts(expression))
+		return normalizeCatalogGeneratedExpression(stripPostgresGeneratedTypeCasts(expression), dialect)
 	case platform.MySQL, platform.MariaDB:
-		return normalizeCatalogGeneratedExpression(expression)
+		return normalizeMySQLGeneratedExpression(normalizeCatalogGeneratedExpression(expression, dialect))
 	case platform.SQLServer:
 		return normalizeSQLServerGeneratedExpression(expression)
 	default:
 		return expression
 	}
+}
+
+func normalizeMySQLGeneratedExpression(expression string) string {
+	return replaceSQLFunctionOutsideSingleQuotedSQL(expression, "lcase(", "lower(")
 }
 
 func normalizeSQLServerGeneratedExpression(expression string) string {
@@ -443,23 +447,13 @@ func normalizeSQLServerGeneratedExpression(expression string) string {
 	return b.String()
 }
 
-func normalizeCatalogGeneratedExpression(expression string) string {
+func normalizeCatalogGeneratedExpression(expression, dialect string) string {
 	var b strings.Builder
-	inString := false
+	mysqlFamily := isMySQLFamilyDialect(dialect)
 	for i := 0; i < len(expression); i++ {
 		ch := expression[i]
-		if ch == '\'' {
-			b.WriteByte(ch)
-			if inString && i+1 < len(expression) && expression[i+1] == '\'' {
-				i++
-				b.WriteByte('\'')
-				continue
-			}
-			inString = !inString
-			continue
-		}
-		if inString {
-			b.WriteByte(ch)
+		if ch == '\'' || (mysqlFamily && ch == '"') {
+			i = copyQuotedSQL(&b, expression, i)
 			continue
 		}
 		switch ch {
