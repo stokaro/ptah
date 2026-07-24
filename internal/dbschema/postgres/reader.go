@@ -104,23 +104,9 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	schema.Enums = enums
 
 	// Read PostgreSQL user-defined types (domains, composites, ranges)
-	domains, err := r.readDomains()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read domains: %w", err)
+	if err := r.readUserTypesInto(schema); err != nil {
+		return nil, err
 	}
-	schema.Domains = domains
-
-	composites, err := r.readComposites()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read composite types: %w", err)
-	}
-	schema.Composites = composites
-
-	ranges, err := r.readRanges()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read range types: %w", err)
-	}
-	schema.Ranges = ranges
 
 	// Read indexes
 	indexes, err := r.readIndexes()
@@ -439,6 +425,30 @@ func (r *Reader) readEnumsForSchema(schemaName string) ([]types.DBEnum, error) {
 	}
 
 	return enums, nil
+}
+
+// readUserTypesInto reads PostgreSQL domains, composite types, and range types
+// and assigns them onto schema. Split out of ReadSchema to keep that method's
+// cyclomatic complexity manageable.
+func (r *Reader) readUserTypesInto(schema *types.DBSchema) error {
+	domains, err := r.readDomains()
+	if err != nil {
+		return fmt.Errorf("failed to read domains: %w", err)
+	}
+	schema.Domains = domains
+
+	composites, err := r.readComposites()
+	if err != nil {
+		return fmt.Errorf("failed to read composite types: %w", err)
+	}
+	schema.Composites = composites
+
+	ranges, err := r.readRanges()
+	if err != nil {
+		return fmt.Errorf("failed to read range types: %w", err)
+	}
+	schema.Ranges = ranges
+	return nil
 }
 
 // readDomains reads PostgreSQL domain types (typtype='d').
