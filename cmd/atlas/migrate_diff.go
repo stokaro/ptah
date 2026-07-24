@@ -31,7 +31,7 @@ type atlasMigrateDiffOptions struct {
 func newAtlasMigrateDiffCommand() *cobra.Command {
 	opts := atlasMigrateDiffOptions{}
 	cmd := &cobra.Command{
-		Use:   "diff [name]",
+		Use:   "diff [flags] [name]",
 		Short: "Compute migration diff against a desired schema",
 		Long: `Atlas OSS ` + "`atlas migrate diff`" + ` command path.
 
