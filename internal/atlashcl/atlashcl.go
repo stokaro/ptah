@@ -160,8 +160,12 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 	}
 
 	fieldsStart := len(p.db.Fields)
+	unlabeledCheckOrdinal := 0
 	for _, nested := range block.Body.Blocks {
-		if err := p.parseTableBlock(&table, fieldsStart, nested); err != nil {
+		if nested.Type == "check" && len(nested.Labels) == 0 {
+			unlabeledCheckOrdinal++
+		}
+		if err := p.parseTableBlock(&table, fieldsStart, unlabeledCheckOrdinal, nested); err != nil {
 			return err
 		}
 	}
@@ -173,7 +177,7 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 	return nil
 }
 
-func (p *parser) parseTableBlock(table *goschema.Table, fieldsStart int, block *hclsyntax.Block) error {
+func (p *parser) parseTableBlock(table *goschema.Table, fieldsStart, unlabeledCheckOrdinal int, block *hclsyntax.Block) error {
 	switch block.Type {
 	case "column":
 		field, err := p.parseColumn(table.StructName, block)
@@ -210,7 +214,7 @@ func (p *parser) parseTableBlock(table *goschema.Table, fieldsStart int, block *
 			return err
 		}
 	case "check":
-		constraint, err := p.parseCheck(table.StructName, table.Name, block)
+		constraint, err := p.parseCheck(table.StructName, table.Name, unlabeledCheckOrdinal, block)
 		if err != nil {
 			return err
 		}
@@ -264,7 +268,7 @@ func (p *parser) parseColumn(structName string, block *hclsyntax.Block) (goschem
 		StructName:          structName,
 		FieldName:           name,
 		Name:                name,
-		Type:                p.columnTypeName(typeAttr),
+		Type:                p.columnTypeName(block, typeAttr),
 		Nullable:            p.optionalBool(block.Body.Attributes["null"], false),
 		AutoInc:             p.optionalBool(block.Body.Attributes["auto_increment"], false) || identity.generation != "",
 		IdentityGeneration:  identity.generation,
@@ -784,20 +788,30 @@ func (p *parser) requireForeignKeyLocalColumns(fieldsStart int, block *hclsyntax
 	return nil
 }
 
-func (p *parser) parseCheck(structName, tableName string, block *hclsyntax.Block) (goschema.Constraint, error) {
-	if len(block.Labels) != 1 {
-		return goschema.Constraint{}, p.blockError(block, "check block requires exactly one label")
+func (p *parser) parseCheck(
+	structName, tableName string,
+	unlabeledOrdinal int,
+	block *hclsyntax.Block,
+) (goschema.Constraint, error) {
+	if len(block.Labels) > 1 {
+		return goschema.Constraint{}, p.blockError(block, "check block accepts at most one label")
 	}
 	if err := p.rejectUnsupportedCheckAttrs(block); err != nil {
 		return goschema.Constraint{}, err
 	}
 	expr := p.optionalString(block.Body.Attributes["expr"])
 	if expr == "" {
-		return goschema.Constraint{}, p.blockError(block, "check %q requires expr", block.Labels[0])
+		return goschema.Constraint{}, p.blockError(block, "check requires expr")
+	}
+	name := tableName + "_check"
+	if len(block.Labels) == 1 {
+		name = block.Labels[0]
+	} else if unlabeledOrdinal > 1 {
+		name = fmt.Sprintf("%s_check_%d", tableName, unlabeledOrdinal)
 	}
 	return goschema.Constraint{
 		StructName:      structName,
-		Name:            block.Labels[0],
+		Name:            name,
 		Type:            "CHECK",
 		Table:           tableName,
 		CheckExpression: expr,
@@ -919,6 +933,7 @@ func (p *parser) rejectUnsupportedColumnAttrs(block *hclsyntax.Block) error {
 		"charset":        true,
 		"collate":        true,
 		"comment":        true,
+		"unsigned":       true,
 	}, "column")
 }
 
@@ -1120,10 +1135,13 @@ func (p *parser) exprString(attr *hclsyntax.Attribute) string {
 	return p.rawExpr(attr)
 }
 
-func (p *parser) columnTypeName(attr *hclsyntax.Attribute) string {
+func (p *parser) columnTypeName(block *hclsyntax.Block, attr *hclsyntax.Attribute) string {
 	typ := p.rawExpr(attr)
 	if enumName, ok := strings.CutPrefix(typ, "enum."); ok {
 		return enumName
+	}
+	if p.optionalBool(block.Body.Attributes["unsigned"], false) && !strings.Contains(strings.ToLower(typ), "unsigned") {
+		return typ + " unsigned"
 	}
 	return typ
 }
