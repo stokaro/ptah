@@ -786,9 +786,13 @@ func (r *Renderer) VisitDropTable(node *ast.DropTableNode) error {
 
 // VisitDropType renders PostgreSQL-specific DROP TYPE statements
 func (r *Renderer) VisitDropType(node *ast.DropTypeNode) error {
-	// Build DROP TYPE statement (PostgreSQL-specific)
+	// Build DROP TYPE / DROP DOMAIN statement (PostgreSQL-specific)
 	var parts []string
-	parts = append(parts, "DROP TYPE")
+	if node.Domain {
+		parts = append(parts, "DROP DOMAIN")
+	} else {
+		parts = append(parts, "DROP TYPE")
+	}
 
 	if node.IfExists {
 		parts = append(parts, "IF EXISTS")
