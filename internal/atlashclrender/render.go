@@ -58,6 +58,7 @@ func (r *renderer) render() {
 	r.renderSchemas()
 	r.renderExtensions()
 	r.renderSequences()
+	r.renderUserTypes()
 	r.renderEnums()
 	r.renderRoles()
 	r.renderTables()

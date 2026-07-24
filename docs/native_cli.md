@@ -46,6 +46,11 @@ The schema-diff commands (`ptah schema render`, `ptah migrations generate`,
 standalone PostgreSQL sequences declared with `//migrator:schema:sequence`. See
 [Sequences](./sequences.md).
 
+The same commands emit `CREATE DOMAIN` / `CREATE TYPE … AS (…)` / `CREATE TYPE …
+AS RANGE (…)` (and their drops) for PostgreSQL user-defined types declared with
+`//migrator:schema:domain` / `:composite` / `:range`, and `read-db` introspects
+them. See [User-defined types](./user_defined_types.md).
+
 ## Exit Codes
 
 Canonical grouped commands inherit the exit-code contract of the implementation

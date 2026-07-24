@@ -95,7 +95,7 @@ func TestRenderFixture023SchemaObjectsRoundTrip(t *testing.T) {
 	c.Assert(hcl, qt.Contains, `trigger "users_set_updated_at"`)
 	c.Assert(hcl, qt.Contains, `policy "users_tenant_policy"`)
 	c.Assert(hcl, qt.Contains, `permission {`)
-	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.DeepEquals, []string{"extensions.pg_trgm", "sequences.fixture_order_seq", "rls_enabled_tables.users", "grants.fixture_app_user"})
+	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.DeepEquals, []string{"extensions.pg_trgm", "sequences.fixture_order_seq", "domains.fixture_email", "composite_types.fixture_address", "ranges.fixture_floatrange", "rls_enabled_tables.users", "grants.fixture_app_user"})
 
 	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", hcl))
