@@ -40,6 +40,15 @@ type AppRoleMarker struct{}
 //migrator:schema:sequence name="fixture_order_seq" as="bigint" start="1000" increment="1" cache="20" comment="Fixture standalone sequence"
 type OrderSeqMarker struct{}
 
+//migrator:schema:domain name="fixture_email" type="TEXT" not_null="true" check="VALUE ~ '@'" comment="Fixture domain"
+type EmailDomainMarker struct{}
+
+//migrator:schema:composite name="fixture_address" fields="street:TEXT,city:TEXT,zip:VARCHAR(10)" comment="Fixture composite type"
+type AddressCompositeMarker struct{}
+
+//migrator:schema:range name="fixture_floatrange" subtype="float8" subtype_diff="float8mi" comment="Fixture range type"
+type FloatRangeMarker struct{}
+
 //migrator:schema:function name="get_fixture_tenant_id" returns="TEXT" language="sql" body="SELECT current_setting('app.tenant_id', true)" comment="Fixture RLS helper"
 //migrator:schema:rls:enable table="users" comment="Enable RLS for fixture users"
 //migrator:schema:rls:policy name="users_tenant_policy" table="users" for="SELECT" to="fixture_app_user" using="get_fixture_tenant_id() IS NOT NULL" comment="Fixture RLS policy"

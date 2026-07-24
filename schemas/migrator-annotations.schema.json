@@ -89,6 +89,46 @@
       ],
       "type": "object"
     },
+    "migrator.schema.composite": {
+      "additionalProperties": false,
+      "description": "Declares a PostgreSQL composite type.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "comment": {
+              "description": "Composite type comment.",
+              "type": "string"
+            },
+            "fields": {
+              "description": "Comma-separated name:type field list.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Composite type name.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Target schema/namespace.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "fields",
+            "name"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "migrator:schema:composite"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
     "migrator.schema.constraint": {
       "additionalProperties": false,
       "description": "Declares a table constraint.",
@@ -169,6 +209,66 @@
         },
         "directive": {
           "const": "migrator:schema:constraint"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
+    "migrator.schema.domain": {
+      "additionalProperties": false,
+      "description": "Declares a PostgreSQL domain type.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "check": {
+              "description": "CHECK constraint expression (uses VALUE).",
+              "type": "string"
+            },
+            "comment": {
+              "description": "Domain comment.",
+              "type": "string"
+            },
+            "default": {
+              "description": "Literal DEFAULT value.",
+              "type": "string"
+            },
+            "default_expr": {
+              "description": "DEFAULT expression.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Domain name.",
+              "type": "string"
+            },
+            "not_null": {
+              "description": "Marks the domain NOT NULL.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            },
+            "schema": {
+              "description": "Target schema/namespace.",
+              "type": "string"
+            },
+            "type": {
+              "description": "Underlying base data type.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "type"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "migrator:schema:domain"
         }
       },
       "required": [
@@ -672,6 +772,62 @@
       ],
       "type": "object"
     },
+    "migrator.schema.range": {
+      "additionalProperties": false,
+      "description": "Declares a PostgreSQL range type.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "canonical": {
+              "description": "Canonicalization function.",
+              "type": "string"
+            },
+            "collation": {
+              "description": "Collation for the subtype.",
+              "type": "string"
+            },
+            "comment": {
+              "description": "Range type comment.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Range type name.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Target schema/namespace.",
+              "type": "string"
+            },
+            "subtype": {
+              "description": "Element subtype the range is built over.",
+              "type": "string"
+            },
+            "subtype_diff": {
+              "description": "Subtype difference function.",
+              "type": "string"
+            },
+            "subtype_opclass": {
+              "description": "Operator class for the subtype.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "subtype"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "migrator:schema:range"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
     "migrator.schema.rls.enable": {
       "additionalProperties": false,
       "description": "Enables row-level security on a table.",
@@ -1161,6 +1317,15 @@
     },
     {
       "$ref": "#/$defs/migrator.schema.sequence"
+    },
+    {
+      "$ref": "#/$defs/migrator.schema.domain"
+    },
+    {
+      "$ref": "#/$defs/migrator.schema.composite"
+    },
+    {
+      "$ref": "#/$defs/migrator.schema.range"
     },
     {
       "$ref": "#/$defs/migrator.schema.view"
