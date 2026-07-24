@@ -47,7 +47,6 @@ output are explicit follow-up gaps.`,
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to diff when a database URL is used")
 	flags.StringArray("include", nil, "Schema objects to include in diffing")
-	flags.BoolP("web", "w", false, "Visualize the schema diff on Atlas Cloud")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
@@ -111,9 +110,6 @@ func validateAtlasSchemaDiffOptions(cmd *cobra.Command, opts atlasSchemaDiffOpti
 	}
 	if len(opts.toURLs) == 0 {
 		return fmt.Errorf("--to is required")
-	}
-	if web, err := cmd.Flags().GetBool("web"); err == nil && web {
-		return fmt.Errorf("atlas schema diff accepts --web, but Ptah does not implement Atlas Cloud visualization")
 	}
 	if len(opts.schemas) > 0 {
 		return fmt.Errorf("atlas schema diff accepts --schema, but Ptah only supports local schema files for this command yet")

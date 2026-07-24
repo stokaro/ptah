@@ -17,7 +17,6 @@ type atlasSchemaInspectOptions struct {
 	devURL  string
 	schemas []string
 	exclude []string
-	include []string
 	format  string
 }
 
@@ -36,8 +35,8 @@ Go templates are supported through the same --format flag, including basic
 ` + "`{{ sql . | split | write \"schema\" }}`" + ` exports. The OSS --exclude
 filter supports resource-level live database inspection filters. Field-level
 exclude selectors beyond the supported extension version selector, file-backed
-inspection, and Atlas dev-database inference remain explicit follow-up gaps.
---include is an Atlas Pro feature and is outside Ptah's OSS drop-in target.`,
+inspection, include filtering, and Atlas dev-database inference remain explicit
+follow-up gaps.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaInspect(cmd, opts)
 		},
@@ -47,7 +46,6 @@ inspection, and Atlas dev-database inference remain explicit follow-up gaps.
 	flags.StringVar(&opts.devURL, "dev-url", "", "Dev database URL used by Atlas for inference")
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schema to inspect")
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from inspection")
-	flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in inspection")
 	flags.StringVar(&opts.format, "format", "", "Output format or Go template: hcl, sql, json, or custom template")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
@@ -104,9 +102,6 @@ func needsAtlasSchemaInspectConfig(cmd *cobra.Command) bool {
 func validateAtlasSchemaInspectOptions(opts atlasSchemaInspectOptions) error {
 	if strings.TrimSpace(opts.url) == "" {
 		return fmt.Errorf("--url is required")
-	}
-	if len(opts.include) > 0 {
-		return fmt.Errorf("atlas schema inspect --include is an Atlas Pro feature and is outside Ptah's Atlas OSS drop-in target")
 	}
 	return nil
 }

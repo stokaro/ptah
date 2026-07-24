@@ -150,6 +150,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 			flags: []atlasargs.Flag{
 				atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
 				atlasMigrateDirFormatFlag("dir-format"),
+				atlasargs.UnsupportedBool("edit", "", "Edit the created migration files"),
 			},
 		},
 		{

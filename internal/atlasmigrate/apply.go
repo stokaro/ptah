@@ -22,10 +22,8 @@ type ApplyOptions struct {
 	ExecOrder            migrator.ExecOrder
 	TxMode               migrator.MigrationTxMode
 	RevisionsSchema      string
-	MigrationLockName    string
 	MigrationLockTimeout time.Duration
 	Amount               uint64
-	ToVersion            int64
 	AllowDirty           bool
 	BaselineVersion      int64
 }
@@ -73,7 +71,6 @@ func PrepareApply(ctx context.Context, conn *dbschema.DatabaseConnection, opts A
 		execOrder:            opts.ExecOrder,
 		txMode:               opts.TxMode,
 		revisionsSchema:      opts.RevisionsSchema,
-		migrationLockName:    opts.MigrationLockName,
 		migrationLockTimeout: opts.MigrationLockTimeout,
 	})
 	if err != nil {
@@ -105,7 +102,7 @@ func PrepareApply(ctx context.Context, conn *dbschema.DatabaseConnection, opts A
 	return ApplyPlan{
 		Status:           status,
 		Migrations:       mig.MigrationProvider().Migrations(),
-		SelectedVersions: selectedApplyVersions(pending, opts.Amount, opts.ToVersion),
+		SelectedVersions: selectedApplyVersions(pending, opts.Amount),
 		CurrentVersion:   plannedCurrentVersion,
 		DryRun:           opts.DryRun,
 		StartedAt:        startedAt,
@@ -137,9 +134,8 @@ func (p ApplyPlan) Execute(ctx context.Context) (ApplyResult, error) {
 	}
 
 	err := p.mig.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{
-		TargetVersion: p.opts.ToVersion,
-		Amount:        p.opts.Amount,
-		AllowDirty:    p.opts.AllowDirty,
+		Amount:     p.opts.Amount,
+		AllowDirty: p.opts.AllowDirty,
 	})
 	result.EndedAt = time.Now()
 	if err != nil {
@@ -176,7 +172,7 @@ func ParseApplyAmount(args []string) (uint64, error) {
 }
 
 // ParseMigrationVersionFlag parses positive Atlas migration version flags such
-// as --to-version and --baseline.
+// as --baseline.
 func ParseMigrationVersionFlag(name, value string) (int64, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -199,12 +195,6 @@ func validateApplyOptions(conn *dbschema.DatabaseConnection, opts ApplyOptions) 
 	if strings.TrimSpace(opts.Dir) == "" {
 		return errors.New("migrate apply requires migration directory")
 	}
-	if opts.Amount > 0 && opts.ToVersion > 0 {
-		return errors.New("amount argument and --to-version cannot both be set")
-	}
-	if opts.ToVersion < 0 {
-		return errors.New("migrate apply target version must be greater than or equal to zero")
-	}
 	if opts.BaselineVersion < 0 {
 		return errors.New("migrate apply baseline version must be greater than or equal to zero")
 	}
@@ -215,7 +205,6 @@ type applyMigratorOptions struct {
 	execOrder            migrator.ExecOrder
 	txMode               migrator.MigrationTxMode
 	revisionsSchema      string
-	migrationLockName    string
 	migrationLockTimeout time.Duration
 }
 
@@ -236,7 +225,6 @@ func newApplyMigrator(
 		WithMigrationsTable(opts.revisionsSchema, "").
 		WithExecOrder(opts.execOrder).
 		WithTransactionMode(opts.txMode).
-		WithMigrationLockName(opts.migrationLockName).
 		WithMigrationLockTimeout(opts.migrationLockTimeout).
 		WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))), nil
 }
@@ -268,12 +256,9 @@ func pendingAfterAssumedApplied(pending []int64, assumedApplied []int64) []int64
 	return filtered
 }
 
-func selectedApplyVersions(pending []int64, amount uint64, toVersion int64) []int64 {
+func selectedApplyVersions(pending []int64, amount uint64) []int64 {
 	selected := make([]int64, 0, len(pending))
 	for _, version := range pending {
-		if toVersion > 0 && version > toVersion {
-			continue
-		}
 		selected = append(selected, version)
 		if amount > 0 && uint64(len(selected)) == amount {
 			break

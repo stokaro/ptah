@@ -29,6 +29,9 @@ type atlasSchemaApplyOptions struct {
 	exclude     []string
 	txMode      string
 	schemas     []string
+	planURL     string
+	lockTimeout string
+	edit        bool
 }
 
 func newAtlasSchemaApplyCommand() *cobra.Command {
@@ -44,7 +47,8 @@ selected atlas.hcl env can provide url, schema.src, dev, exclude, schema.mode,
 format.schema.apply, and supported diff policy values. This implementation
 currently supports local file:// schema files with .hcl, .yaml, .yml, or .sql
 extensions. Database desired-state URLs, env:// URLs, schema/include filters,
-and Atlas Cloud planning remain explicit follow-up gaps.`,
+Atlas Cloud planning, editor integration, and database lock waiting remain
+explicit follow-up gaps.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaApply(cmd, opts)
 		},
@@ -61,6 +65,9 @@ and Atlas Cloud planning remain explicit follow-up gaps.`,
 	flags.StringVar(&opts.txMode, "tx-mode", "", "Transaction mode: all, file, or none")
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to apply when database URLs are used")
 	flags.StringArray("include", nil, "Schema objects to include in apply")
+	flags.StringVar(&opts.planURL, "plan", "", "URL to a pre-planned migration")
+	flags.BoolVar(&opts.edit, "edit", false, "Open the generated SQL in an editor")
+	flags.StringVar(&opts.lockTimeout, "lock-timeout", "", "Timeout for acquiring the database lock")
 	if err := cmdflags.DisableEnvBinding(flags, "auto-approve"); err != nil {
 		panic(err)
 	}
@@ -241,6 +248,15 @@ func validateAtlasSchemaApplyOptions(cmd *cobra.Command, opts atlasSchemaApplyOp
 	}
 	if values, err := cmd.Flags().GetStringArray("include"); err == nil && len(values) > 0 {
 		return fmt.Errorf("atlas schema apply accepts --include, but Ptah only supports local schema files for this command yet")
+	}
+	if strings.TrimSpace(opts.planURL) != "" {
+		return fmt.Errorf("atlas schema apply accepts --plan, but Ptah does not implement Atlas Cloud plan execution yet")
+	}
+	if opts.edit {
+		return fmt.Errorf("atlas schema apply accepts --edit, but Ptah does not implement editor integration yet")
+	}
+	if strings.TrimSpace(opts.lockTimeout) != "" {
+		return fmt.Errorf("atlas schema apply accepts --lock-timeout, but Ptah does not implement database lock waiting yet")
 	}
 	return ensureLocalSchemaURLs("--to", opts.toURLs)
 }

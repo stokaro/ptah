@@ -189,31 +189,6 @@ func TestPrepareApply_FailurePath(t *testing.T) {
 		c.Assert(plan.SelectedVersions, qt.HasLen, 0)
 	})
 
-	c.Run("ambiguous target", func(c *qt.C) {
-		conn := connectSQLite(c, filepath.Join(c.TempDir(), "ambiguous.db"))
-		defer dbschema.CloseAndWarn(conn)
-
-		plan, err := atlasmigrate.PrepareApply(context.Background(), conn, atlasmigrate.ApplyOptions{
-			Dir:       c.TempDir(),
-			Amount:    1,
-			ToVersion: 1,
-		})
-		c.Assert(err, qt.ErrorMatches, "amount argument and --to-version cannot both be set")
-		c.Assert(plan.SelectedVersions, qt.HasLen, 0)
-	})
-
-	c.Run("negative target version", func(c *qt.C) {
-		conn := connectSQLite(c, filepath.Join(c.TempDir(), "negative-target.db"))
-		defer dbschema.CloseAndWarn(conn)
-
-		plan, err := atlasmigrate.PrepareApply(context.Background(), conn, atlasmigrate.ApplyOptions{
-			Dir:       c.TempDir(),
-			ToVersion: -1,
-		})
-		c.Assert(err, qt.ErrorMatches, "migrate apply target version must be greater than or equal to zero")
-		c.Assert(plan.SelectedVersions, qt.HasLen, 0)
-	})
-
 	c.Run("negative baseline version", func(c *qt.C) {
 		conn := connectSQLite(c, filepath.Join(c.TempDir(), "negative-baseline.db"))
 		defer dbschema.CloseAndWarn(conn)
@@ -320,7 +295,7 @@ func TestParseMigrationVersionFlag_HappyPath(t *testing.T) {
 
 	for _, tt := range tests {
 		c.Run(tt.name, func(c *qt.C) {
-			got, err := atlasmigrate.ParseMigrationVersionFlag("to-version", tt.value)
+			got, err := atlasmigrate.ParseMigrationVersionFlag("baseline", tt.value)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, tt.want)
 		})
@@ -337,8 +312,8 @@ func TestParseMigrationVersionFlag_FailurePath(t *testing.T) {
 	})
 
 	c.Run("zero", func(c *qt.C) {
-		got, err := atlasmigrate.ParseMigrationVersionFlag("to-version", "0")
-		c.Assert(err, qt.ErrorMatches, "--to-version must be greater than zero")
+		got, err := atlasmigrate.ParseMigrationVersionFlag("baseline", "0")
+		c.Assert(err, qt.ErrorMatches, "--baseline must be greater than zero")
 		c.Assert(got, qt.Equals, int64(0))
 	})
 

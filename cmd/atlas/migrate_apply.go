@@ -23,11 +23,9 @@ type atlasMigrateApplyOptions struct {
 	dryRun          bool
 	txMode          string
 	execOrder       string
-	toVersion       string
 	allowDirty      bool
 	baseline        string
 	revisionsSchema string
-	lockName        string
 	lockTimeout     string
 	format          string
 }
@@ -43,8 +41,7 @@ func newAtlasMigrateApplyCommand() *cobra.Command {
 		Long: `Apply pending Atlas migrations to the target database.
 
 By default, all pending migrations are applied. The optional amount argument
-limits the run to the first N pending migrations. Use --to-version to apply up
-to a specific migration version instead.
+limits the run to the first N pending migrations.
 
 Native Ptah equivalent: ptah migrations up.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -58,11 +55,9 @@ Native Ptah equivalent: ptah migrations up.`,
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Show migrations without applying them")
 	flags.StringVar(&opts.txMode, "tx-mode", opts.txMode, "Transaction mode: file, all, or none")
 	flags.StringVar(&opts.execOrder, "exec-order", opts.execOrder, "Execution order: linear, linear-skip, or non-linear")
-	flags.StringVar(&opts.toVersion, "to-version", "", "Target migration version to apply up to")
 	flags.BoolVar(&opts.allowDirty, "allow-dirty", false, "Allow applying migrations when the revision table is dirty")
 	flags.StringVar(&opts.baseline, "baseline", "", "Baseline version to mark applied before running pending migrations")
 	flags.StringVar(&opts.revisionsSchema, "revisions-schema", "", "Schema for the Atlas revisions table")
-	flags.StringVar(&opts.lockName, "lock-name", "", "Migration lock name")
 	flags.StringVar(&opts.lockTimeout, "lock-timeout", "", "Timeout for acquiring the migration lock, such as 10s or 2m")
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
 
@@ -111,9 +106,6 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 			return err
 		}
 	}
-	if cmd.Flags().Changed("lock-name") && strings.TrimSpace(opts.lockName) == "" {
-		return fmt.Errorf("--lock-name must not be empty")
-	}
 	if opts.url == "" {
 		return fmt.Errorf("database URL is required")
 	}
@@ -134,16 +126,9 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 	if err != nil {
 		return err
 	}
-	toVersion, err := atlasmigrate.ParseMigrationVersionFlag("to-version", opts.toVersion)
-	if err != nil {
-		return err
-	}
 	baselineVersion, err := atlasmigrate.ParseMigrationVersionFlag("baseline", opts.baseline)
 	if err != nil {
 		return err
-	}
-	if amount > 0 && toVersion > 0 {
-		return fmt.Errorf("amount argument and --to-version cannot both be set")
 	}
 
 	txMode, err := migrator.ParseMigrationTxMode(opts.txMode)
@@ -171,10 +156,8 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 		ExecOrder:            execOrder,
 		TxMode:               txMode,
 		RevisionsSchema:      opts.revisionsSchema,
-		MigrationLockName:    opts.lockName,
 		MigrationLockTimeout: migrationLockTimeout,
 		Amount:               amount,
-		ToVersion:            toVersion,
 		AllowDirty:           opts.allowDirty,
 		BaselineVersion:      baselineVersion,
 	})

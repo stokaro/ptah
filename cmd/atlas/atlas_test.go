@@ -221,24 +221,27 @@ func TestNewAtlasCommand_UnknownNestedCommandFails(t *testing.T) {
 
 func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 	tests := []struct {
-		name  string
-		path  []string
-		flags []string
+		name      string
+		path      []string
+		flags     []string
+		forbidden []string
 	}{
 		{
-			name:  "schema_inspect",
-			path:  []string{"schema", "inspect"},
-			flags: []string{"--url", "--dev-url", "--env", "--schema", "--exclude", "--include", "--format"},
+			name:      "schema_inspect",
+			path:      []string{"schema", "inspect"},
+			flags:     []string{"--url", "--dev-url", "--env", "--schema", "--exclude", "--format"},
+			forbidden: []string{"--include"},
 		},
 		{
 			name:  "schema_apply",
 			path:  []string{"schema", "apply"},
-			flags: []string{"--url", "--to", "--dev-url", "--dry-run", "--auto-approve", "--format", "--schema", "--exclude", "--include", "--tx-mode"},
+			flags: []string{"--url", "--to", "--dev-url", "--dry-run", "--auto-approve", "--format", "--schema", "--exclude", "--include", "--tx-mode", "--plan", "--edit", "--lock-timeout"},
 		},
 		{
-			name:  "schema_diff",
-			path:  []string{"schema", "diff"},
-			flags: []string{"--from", "--to", "--dev-url", "--env", "--format", "--schema", "--exclude"},
+			name:      "schema_diff",
+			path:      []string{"schema", "diff"},
+			flags:     []string{"--from", "--to", "--dev-url", "--env", "--format", "--schema", "--exclude", "--include"},
+			forbidden: []string{"--web"},
 		},
 		{
 			name:  "schema_clean",
@@ -248,7 +251,7 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 		{
 			name:  "migrate_diff",
 			path:  []string{"migrate", "diff"},
-			flags: []string{"--to", "--dev-url", "--env", "--dir", "--dir-format", "--format", "--schema"},
+			flags: []string{"--to", "--dev-url", "--env", "--dir", "--dir-format", "--format", "--schema", "--lock-timeout", "--qualifier", "--edit"},
 		},
 		{
 			name: "migrate_apply",
@@ -260,14 +263,13 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 				"--dry-run",
 				"--tx-mode",
 				"--exec-order",
-				"--to-version",
 				"--allow-dirty",
 				"--baseline",
 				"--revisions-schema",
-				"--lock-name",
 				"--lock-timeout",
 				"--format",
 			},
+			forbidden: []string{"--to-version", "--lock-name"},
 		},
 		{
 			name: "migrate_down",
@@ -309,7 +311,7 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 		{
 			name:  "migrate_new",
 			path:  []string{"migrate", "new"},
-			flags: []string{"--dir", "--dir-format"},
+			flags: []string{"--dir", "--dir-format", "--edit"},
 		},
 		{
 			name:  "migrate_set",
@@ -337,6 +339,9 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			for _, flag := range tt.flags {
 				c.Assert(out.String(), qt.Contains, flag)
+			}
+			for _, flag := range tt.forbidden {
+				c.Assert(out.String(), qt.Not(qt.Contains), flag)
 			}
 		})
 	}
@@ -1187,7 +1192,7 @@ func TestNewAtlasCommand_SchemaInspectUsesAtlasProjectFormatAndSchemaMode(t *tes
 	c.Assert(out.String(), qt.Equals, "{}")
 }
 
-func TestNewAtlasCommand_SchemaInspectRejectsProInclude(t *testing.T) {
+func TestNewAtlasCommand_SchemaInspectRejectsIncludeAsUnknownFlag(t *testing.T) {
 	c := qt.New(t)
 	cmd := NewAtlasCommand()
 	var out bytes.Buffer
@@ -1197,7 +1202,7 @@ func TestNewAtlasCommand_SchemaInspectRejectsProInclude(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, "atlas schema inspect --include is an Atlas Pro feature and is outside Ptah's Atlas OSS drop-in target")
+	c.Assert(err, qt.ErrorMatches, "unknown flag: --include")
 }
 
 func TestNewAtlasCommand_ForwardsParentedNativeCommand(t *testing.T) {
@@ -2382,7 +2387,83 @@ func TestNewAtlasCommand_SchemaApplyRejectsDevURLDialectMismatch(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `--dev-url dialect "postgres" does not match --url dialect "sqlite"`)
 }
 
-func TestNewAtlasCommand_MigrateApplyAmountAndToVersionSQLite(t *testing.T) {
+func TestNewAtlasCommand_FlagSurfaceRejectsUnsupportedAtlasCEBehavior(t *testing.T) {
+	c := qt.New(t)
+
+	c.Run("migrate_diff_edit", func(c *qt.C) {
+		cmd := NewAtlasCommand()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs([]string{"migrate", "diff", "--to", "file://schema.sql", "--dev-url", "sqlite://dev.db", "--edit"})
+
+		err := cmd.Execute()
+
+		c.Assert(err, qt.ErrorMatches, `atlas migrate diff accepts --edit, but Ptah does not implement editor integration yet`)
+	})
+
+	c.Run("migrate_diff_qualifier", func(c *qt.C) {
+		cmd := NewAtlasCommand()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs([]string{"migrate", "diff", "--to", "file://schema.sql", "--dev-url", "sqlite://dev.db", "--qualifier", "tenant"})
+
+		err := cmd.Execute()
+
+		c.Assert(err, qt.ErrorMatches, `atlas migrate diff accepts --qualifier, but Ptah does not implement custom qualifier metadata yet`)
+	})
+
+	c.Run("migrate_new_edit", func(c *qt.C) {
+		cmd := NewAtlasCommand()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs([]string{"migrate", "new", "--edit", "add_users"})
+
+		err := cmd.Execute()
+
+		c.Assert(err, qt.ErrorMatches, `atlas migrate new accepts --edit, but Ptah does not implement its behavior yet`)
+	})
+
+	c.Run("schema_apply_plan", func(c *qt.C) {
+		cmd := NewAtlasCommand()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs([]string{"schema", "apply", "--url", "sqlite://apply.db", "--to", "file://schema.sql", "--plan", "atlas://repo/plans/apply"})
+
+		err := cmd.Execute()
+
+		c.Assert(err, qt.ErrorMatches, `atlas schema apply accepts --plan, but Ptah does not implement Atlas Cloud plan execution yet`)
+	})
+
+	c.Run("schema_apply_edit", func(c *qt.C) {
+		cmd := NewAtlasCommand()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs([]string{"schema", "apply", "--url", "sqlite://apply.db", "--to", "file://schema.sql", "--edit"})
+
+		err := cmd.Execute()
+
+		c.Assert(err, qt.ErrorMatches, `atlas schema apply accepts --edit, but Ptah does not implement editor integration yet`)
+	})
+
+	c.Run("schema_apply_lock_timeout", func(c *qt.C) {
+		cmd := NewAtlasCommand()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs([]string{"schema", "apply", "--url", "sqlite://apply.db", "--to", "file://schema.sql", "--lock-timeout", "10s"})
+
+		err := cmd.Execute()
+
+		c.Assert(err, qt.ErrorMatches, `atlas schema apply accepts --lock-timeout, but Ptah does not implement database lock waiting yet`)
+	})
+}
+
+func TestNewAtlasCommand_MigrateApplyAmountSQLite(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "apply-migrations.db")
@@ -2419,7 +2500,7 @@ func TestNewAtlasCommand_MigrateApplyAmountAndToVersionSQLite(t *testing.T) {
 		"migrate", "apply",
 		"--url", "sqlite://" + dbPath,
 		"--dir", "file://" + migrationsDir,
-		"--to-version", "3",
+		"1",
 	})
 
 	err = second.Execute()
@@ -2751,7 +2832,7 @@ func TestNewAtlasCommand_MigrateApplyFormatsNoopResult(t *testing.T) {
 	c.Assert(result.Applied, qt.HasLen, 0)
 }
 
-func TestNewAtlasCommand_MigrateApplyRejectsEmptyFormatAndAmbiguousTarget(t *testing.T) {
+func TestNewAtlasCommand_MigrateApplyRejectsEmptyFormat(t *testing.T) {
 	c := qt.New(t)
 	cmd := NewAtlasCommand()
 	var out bytes.Buffer
@@ -2762,25 +2843,6 @@ func TestNewAtlasCommand_MigrateApplyRejectsEmptyFormatAndAmbiguousTarget(t *tes
 	err := cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `--format must not be empty`)
-
-	dir := t.TempDir()
-	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyMigration(c, migrationsDir, "1_one.sql", "CREATE TABLE ambiguous_one (id INTEGER PRIMARY KEY);")
-	cmd = NewAtlasCommand()
-	out.Reset()
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs([]string{
-		"migrate", "apply",
-		"--url", "sqlite://" + filepath.Join(dir, "ambiguous.db"),
-		"--dir", "file://" + migrationsDir,
-		"--to-version", "1",
-		"1",
-	})
-
-	err = cmd.Execute()
-
-	c.Assert(err, qt.ErrorMatches, `amount argument and --to-version cannot both be set`)
 }
 
 func TestNewAtlasCommand_MigrateApplyRejectsInvalidFormatBeforeApply(t *testing.T) {
@@ -2842,42 +2904,32 @@ func TestNewAtlasCommand_MigrateApplyWritesFormatOnApplyError(t *testing.T) {
 	assertSQLiteTableMissing(c, dbPath, "error_before")
 }
 
-func TestNewAtlasCommand_MigrateApplyAcceptsLockName(t *testing.T) {
+func TestNewAtlasCommand_MigrateApplyRejectsNonAtlasFlags(t *testing.T) {
 	c := qt.New(t)
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "lock-name.db")
-	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyMigration(c, migrationsDir, "1_lock_name.sql", "CREATE TABLE lock_name_applied (id INTEGER PRIMARY KEY);")
 
-	cmd := NewAtlasCommand()
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs([]string{
-		"migrate", "apply",
-		"--url", "sqlite://" + dbPath,
-		"--dir", "file://" + migrationsDir,
-		"--lock-name", "custom-lock",
+	c.Run("to_version", func(c *qt.C) {
+		cmd := NewAtlasCommand()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs([]string{"migrate", "apply", "--to-version", "1"})
+
+		err := cmd.Execute()
+
+		c.Assert(err, qt.ErrorMatches, `unknown flag: --to-version`)
 	})
 
-	err := cmd.Execute()
+	c.Run("lock_name", func(c *qt.C) {
+		cmd := NewAtlasCommand()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs([]string{"migrate", "apply", "--lock-name", "custom-lock"})
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "Migration complete. Current version: 1")
-	assertSQLiteTableExists(c, dbPath, "lock_name_applied")
-}
+		err := cmd.Execute()
 
-func TestNewAtlasCommand_MigrateApplyRejectsEmptyLockName(t *testing.T) {
-	c := qt.New(t)
-	cmd := NewAtlasCommand()
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"migrate", "apply", "--lock-name", " "})
-
-	err := cmd.Execute()
-
-	c.Assert(err, qt.ErrorMatches, `--lock-name must not be empty`)
+		c.Assert(err, qt.ErrorMatches, `unknown flag: --lock-name`)
+	})
 }
 
 func TestNewAtlasCommand_MigrateDiffSchemaShorthandParses(t *testing.T) {

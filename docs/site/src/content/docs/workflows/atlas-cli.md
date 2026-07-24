@@ -113,9 +113,9 @@ exclude selector support includes the Atlas-documented
 until Ptah models those fields as independently filterable resources.
 Schema-qualified function and enum filters remain limited by Ptah's current
 introspection model, which does not retain schema names for those resource types
-yet. `--include` is an Atlas Pro feature and is outside Ptah's OSS drop-in
-target. File-backed inspection, exporter blocks, and advanced split/write
-configuration remain explicit gaps.
+yet. `--include` is not part of the pinned Atlas CE inspect flag surface.
+File-backed inspection, exporter blocks, and advanced split/write configuration
+remain explicit gaps.
 
 `ptah atlas schema apply` accepts one or more local `--to` schema file URLs and
 a live database `--url`. With `--env`, Ptah can read `env.url`, `env.src`,
@@ -222,41 +222,34 @@ ptah atlas schema diff \
 ```
 
 Remote database URLs, migration directory URLs, `env://` project attributes,
-include filters, Atlas Cloud web output, transaction-mode flags, and lock flags
-fail explicitly until their semantics are implemented. `--exclude` and disabled
-`schema.mode` values filter both local `--from` and `--to` schema files before
-diffing.
+and include filters fail explicitly until their semantics are implemented.
+Non-Atlas-CE flags such as `--tx-mode` are rejected as unknown. `--exclude` and
+disabled `schema.mode` values filter both local `--from` and `--to` schema files
+before diffing.
 
 ## Migration Apply
 
 `ptah atlas migrate apply` reads a local Atlas migration directory and records
 runtime history in Atlas revision-table format by default. The optional
 positional `amount` applies only the first N pending migrations. Use
-`--to-version` to apply up to a specific migration version, and `--baseline` to
-mark earlier migration files as applied without executing their SQL bodies
-before applying the remaining pending migrations.
+`--baseline` to mark earlier migration files as applied without executing their
+SQL bodies before applying the remaining pending migrations.
 
 ```bash
 ptah atlas migrate apply 2 \
   --url "$DATABASE_URL" \
   --dir file://migrations
-
-ptah atlas migrate apply \
-  --url "$DATABASE_URL" \
-  --dir file://migrations \
-  --to-version 20260722093000
 ```
 
 Supported Atlas apply flags include `--dry-run`, `--tx-mode`, `--exec-order`,
 `--allow-dirty`, `--baseline`, `--revisions-schema`, `--lock-timeout`, and
-`--lock-name`. `--lock-name` changes the session-level advisory lock name used
-by databases that support migration locks. `--format` executes a Go template
-against a Ptah apply result that mirrors Atlas's public apply-template fields:
-`Pending`, `Applied`, `Current`, `Target`, `Start`, `End`, `Driver`, `URL`, and
-`Dir`; `{{ json . }}` emits the same result as JSON with database credentials
-redacted. With `--env`, Ptah can read `env.url`, `migration`, and
-`format.migrate.apply` from `atlas.hcl`. Atlas OSS does not register
-`migrate apply --dir-format`; Ptah follows that surface and rejects the flag on
+`--format`. `--format` executes a Go template against a Ptah apply result that
+mirrors Atlas's public apply-template fields: `Pending`, `Applied`, `Current`,
+`Target`, `Start`, `End`, `Driver`, `URL`, and `Dir`; `{{ json . }}` emits the
+same result as JSON with database credentials redacted. With `--env`, Ptah can
+read `env.url`, `migration`, and `format.migrate.apply` from `atlas.hcl`.
+Atlas OSS does not register `migrate apply --dir-format`, `--to-version`, or
+`--lock-name`; Ptah follows that surface and rejects those flags on
 `migrate apply`.
 
 ## Migration Diff
@@ -304,6 +297,10 @@ ptah atlas migrate diff add_users \
   --dev-url "sqlite://dev.db" \
   --format '{{ sql . "" }}'
 ```
+
+Atlas CE also registers `migrate diff --edit` and `--qualifier`. Ptah accepts
+those flag names for surface parity and fails explicitly until editor
+integration and custom qualifier metadata are implemented.
 
 `--schema` accepts repeated or comma-separated schema names and narrows the
 replayed dev database state plus local desired schema files before the diff is
