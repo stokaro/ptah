@@ -26,8 +26,15 @@ type atlasVerb struct {
 	native              string
 	factory             func() *cobra.Command
 	prefixArgs          []string
+	positionals         []atlasPositionalArg
+	nativeOnlyFlags     []string
 	flags               []atlasargs.Flag
 	nativeProjectConfig bool
+}
+
+type atlasPositionalArg struct {
+	name       string
+	nativeName string
 }
 
 const atlasDirFormatDefault = "atlas"
@@ -135,11 +142,24 @@ func newAtlasMigrateCommand() *cobra.Command {
 			},
 		},
 		{
-			use:        "set",
-			short:      "Set migration revision state",
-			native:     "migrations repair",
-			factory:    migraterepair.NewMigrateRepairCommand,
-			prefixArgs: []string{"--revision-format", "atlas"},
+			use:         "set",
+			short:       "Set migration revision state",
+			native:      "migrations repair",
+			factory:     migraterepair.NewMigrateRepairCommand,
+			prefixArgs:  []string{"--revision-format", "atlas", "--force"},
+			positionals: []atlasPositionalArg{{name: "revision", nativeName: "version"}},
+			nativeOnlyFlags: []string{
+				"atlas-env",
+				"connect-timeout",
+				"db-url",
+				"force",
+				"migrations-dir",
+				"migrations-schema",
+				"migrations-table",
+				"resume-from",
+				"revision-format",
+				"version",
+			},
 			flags: []atlasargs.Flag{
 				atlasargs.NativeString("url", "u", "Database URL", "db-url"),
 				atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
@@ -247,7 +267,7 @@ func newAtlasAdapterCommand(group string, verb atlasVerb) *cobra.Command {
 	mapper := atlasArgMapper(group, verb)
 	if verb.factory != nil {
 		cmd := cmdadapter.NewForwardCommandWithArgsMapper(
-			verb.use,
+			atlasAdapterUse(verb),
 			verb.short,
 			verb.native,
 			verb.factory,
@@ -258,7 +278,7 @@ func newAtlasAdapterCommand(group string, verb atlasVerb) *cobra.Command {
 		return cmd
 	}
 	cmd := &cobra.Command{
-		Use:   verb.use,
+		Use:   atlasAdapterUse(verb),
 		Short: verb.short,
 		Long:  atlasCommandLong(group, verb),
 		RunE: func(_ *cobra.Command, _ []string) error {
@@ -271,6 +291,18 @@ func newAtlasAdapterCommand(group string, verb atlasVerb) *cobra.Command {
 	registerAtlasFlags(cmd, verb.flags)
 	cmdutil.ConfigureCommand(cmd)
 	return cmd
+}
+
+func atlasAdapterUse(verb atlasVerb) string {
+	if len(verb.positionals) == 0 {
+		return verb.use
+	}
+	parts := make([]string, 0, 1+len(verb.positionals))
+	parts = append(parts, verb.use)
+	for _, positional := range verb.positionals {
+		parts = append(parts, "<"+positional.name+">")
+	}
+	return strings.Join(parts, " ")
 }
 
 func atlasCommandLong(group string, verb atlasVerb) string {
@@ -325,6 +357,107 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 				}
 			}
 		}
+		if err := rejectNativeOnlyAtlasFlags(group, verb, args); err != nil {
+			return nil, err
+		}
+		args, err = mapAtlasPositionalArgs(group, verb, args)
+		if err != nil {
+			return nil, err
+		}
 		return atlasargs.Map(group, verb.use, verb.flags, args)
+	}
+}
+
+func rejectNativeOnlyAtlasFlags(group string, verb atlasVerb, args []string) error {
+	for _, arg := range args {
+		flagName, found := atlasLongFlagName(arg)
+		if found && slices.Contains(verb.nativeOnlyFlags, flagName) {
+			return fmt.Errorf("atlas %s %s does not accept native Ptah flag --%s", group, verb.use, flagName)
+		}
+	}
+	return nil
+}
+
+func mapAtlasPositionalArgs(group string, verb atlasVerb, args []string) ([]string, error) {
+	if len(verb.positionals) == 0 {
+		return args, nil
+	}
+	if len(verb.positionals) != 1 {
+		return nil, fmt.Errorf("atlas %s %s declares unsupported positional mapping", group, verb.use)
+	}
+	withoutPositionals, positionals := splitAtlasPositionals(verb.flags, args)
+	positional := verb.positionals[0]
+	switch len(positionals) {
+	case 0:
+		return nil, fmt.Errorf("atlas %s %s requires %s argument", group, verb.use, positional.name)
+	case 1:
+		return append(withoutPositionals, "--"+positional.nativeName, positionals[0]), nil
+	default:
+		return nil, fmt.Errorf("atlas %s %s accepts one %s argument, got %q", group, verb.use, positional.name, positionals)
+	}
+}
+
+func splitAtlasPositionals(flags []atlasargs.Flag, args []string) (
+	withoutPositionals []string,
+	positionals []string,
+) {
+	valueFlags := atlasValueFlagNames(flags)
+	withoutPositionals = make([]string, 0, len(args))
+	positionals = make([]string, 0, 1)
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			positionals = append(positionals, args[i+1:]...)
+			break
+		}
+		name, inlineValue, ok := atlasFlagName(arg)
+		if ok {
+			withoutPositionals = append(withoutPositionals, arg)
+			if !inlineValue {
+				if _, found := valueFlags[name]; found && i+1 < len(args) {
+					i++
+					withoutPositionals = append(withoutPositionals, args[i])
+				}
+			}
+			continue
+		}
+		positionals = append(positionals, arg)
+	}
+	return withoutPositionals, positionals
+}
+
+func atlasValueFlagNames(flags []atlasargs.Flag) map[string]struct{} {
+	names := make(map[string]struct{})
+	for _, flag := range flags {
+		if flag.Kind == atlasargs.BoolFlag {
+			continue
+		}
+		names[flag.Name] = struct{}{}
+		if flag.Shorthand != "" {
+			names[flag.Shorthand] = struct{}{}
+		}
+	}
+	return names
+}
+
+func atlasLongFlagName(arg string) (string, bool) {
+	if !strings.HasPrefix(arg, "--") || len(arg) <= len("--") {
+		return "", false
+	}
+	body := strings.TrimPrefix(arg, "--")
+	before, _, _ := strings.Cut(body, "=")
+	return before, true
+}
+
+func atlasFlagName(arg string) (name string, inlineValue bool, ok bool) {
+	switch {
+	case strings.HasPrefix(arg, "--") && len(arg) > len("--"):
+		before, _ := atlasLongFlagName(arg)
+		_, _, found := strings.Cut(strings.TrimPrefix(arg, "--"), "=")
+		return before, found, true
+	case strings.HasPrefix(arg, "-") && len(arg) == 2:
+		return strings.TrimPrefix(arg, "-"), false, true
+	default:
+		return "", false, false
 	}
 }
