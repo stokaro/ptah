@@ -47,6 +47,9 @@ func ParseFileDirectives(sql string) map[string]string {
 		if !ok || (body != "" && body[0] != ' ' && body[0] != '\t') {
 			continue
 		}
+		if isCheckDirectiveBody(body) {
+			continue // `-- +ptah check ...` is an ordered check, parsed by ParseChecks
+		}
 		for token := range strings.FieldsSeq(body) {
 			key, value, found := strings.Cut(token, "=")
 			switch {

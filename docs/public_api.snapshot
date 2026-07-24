@@ -700,6 +700,9 @@ func ValidateMigrationPairs(pairs map[int64]MigrationPair) []int64
 type AtlasDownNotImplementedError struct{ ... }
 type AtlasTemplateData struct{ ... }
 type BaselineOptions struct{ ... }
+type Check struct{ ... }
+    func ParseChecks(sql string) ([]Check, error)
+type CheckFailedError struct{ ... }
 type ChecksumMismatchError struct{ ... }
 type DirtyMigrationError struct{ ... }
 type ExecOrder string
@@ -746,6 +749,8 @@ type NoopObserver struct{}
 type ObservationAttribute struct{ ... }
 type ObservationSpan interface{ ... }
 type Observer interface{ ... }
+type OnFail string
+    const OnFailAbort OnFail = "abort"
 type OutOfOrderError struct{ ... }
     func NewOutOfOrderError(currentVersion int64, versions []int64) *OutOfOrderError
 type PreMigrationHook func(ctx context.Context, plan MigrationPlan) error
