@@ -132,6 +132,10 @@ func DefaultValue(defaultValue, typeName string) string {
 		return normalizedExpression
 	}
 
+	if normalizedSequence := normalizeSequenceDefaultExpression(defaultValue); normalizedSequence != "" {
+		return normalizedSequence
+	}
+
 	cleanValue := defaultValue
 
 	// MariaDB/MySQL returns 'NULL' string for columns without explicit defaults
@@ -182,6 +186,35 @@ func normalizeTemporalDefaultExpression(defaultValue, typeName string) string {
 	default:
 		return ""
 	}
+}
+
+// normalizeSequenceDefaultExpression canonicalizes a nextval(...) column
+// default so a declared nextval('seq') matches the nextval('seq'::regclass)
+// form PostgreSQL stores and reads back. It returns "" when the value is not a
+// nextval call, so the general default handling applies.
+//
+// The general ::type stripping in DefaultValue cannot handle this case: the
+// ::regclass cast is nested inside the call's parentheses, so truncating at the
+// last "::" would drop the closing paren and never match the declared form.
+func normalizeSequenceDefaultExpression(defaultValue string) string {
+	trimmed := strings.TrimSpace(defaultValue)
+	if !strings.HasPrefix(strings.ToLower(trimmed), "nextval(") {
+		return ""
+	}
+	// Remove the regclass cast PostgreSQL adds around the sequence name. The
+	// bare, quoted, and pg_catalog-qualified spellings are all handled. The
+	// sequence name itself is left untouched: PostgreSQL reads the default back
+	// with the sequence spelled exactly as declared for the default schema, so a
+	// genuine cross-schema or dotted name must not be rewritten.
+	for _, cast := range []string{
+		`::pg_catalog."regclass"`,
+		"::pg_catalog.regclass",
+		`::"regclass"`,
+		"::regclass",
+	} {
+		trimmed = strings.ReplaceAll(trimmed, cast, "")
+	}
+	return trimmed
 }
 
 func normalizeDecimalDefaultValue(value string) string {
