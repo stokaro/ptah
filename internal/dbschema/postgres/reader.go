@@ -3,6 +3,7 @@ package postgres
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -81,6 +82,12 @@ func (r *Reader) outputSchema(schemaName string) string {
 // ReadSchema reads the complete database schema
 func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	schema := &types.DBSchema{}
+
+	schemas, err := r.readSchemas()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read schemas: %w", err)
+	}
+	schema.Schemas = schemas
 
 	// Read tables
 	tables, err := r.readTables()
@@ -172,6 +179,40 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	// Enhance tables with primary key information from indexes
 	r.enhanceTablesWithIndexes(schema.Tables, schema.Indexes)
 
+	return schema, nil
+}
+
+func (r *Reader) readSchemas() ([]types.DBSchemaInfo, error) {
+	if !r.scoped {
+		return nil, nil
+	}
+	schemas := make([]types.DBSchemaInfo, 0, len(r.schemasToRead()))
+	for _, schemaName := range r.schemasToRead() {
+		schema, err := r.readSchemaInfo(schemaName)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			return nil, err
+		}
+		schemas = append(schemas, schema)
+	}
+	return schemas, nil
+}
+
+func (r *Reader) readSchemaInfo(schemaName string) (types.DBSchemaInfo, error) {
+	schemasQuery := `
+		SELECT
+			n.nspname,
+			COALESCE(obj_description(n.oid, 'pg_namespace'), '') AS schema_comment
+		FROM pg_namespace n
+		WHERE n.nspname = $1`
+
+	var schema types.DBSchemaInfo
+	err := r.db.QueryRow(schemasQuery, schemaName).Scan(&schema.Name, &schema.Comment)
+	if err != nil {
+		return types.DBSchemaInfo{}, fmt.Errorf("failed to query schema %s: %w", schemaName, err)
+	}
 	return schema, nil
 }
 

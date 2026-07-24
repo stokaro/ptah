@@ -12,6 +12,7 @@ import (
 // This is needed for down migrations where we use the current DB state as the target
 func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Database {
 	database := newDatabase()
+	convertSchemas(database, dbSchema.Schemas)
 	convertEnums(database, dbSchema.Enums)
 
 	// Index single-column FOREIGN KEY constraints by table.column so the
@@ -40,8 +41,20 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 	return database
 }
 
+func convertSchemas(database *goschema.Database, schemas []dbschematypes.DBSchemaInfo) {
+	for _, schema := range schemas {
+		database.Schemas = append(database.Schemas, goschema.Schema{
+			Name:    schema.Name,
+			Comment: schema.Comment,
+			Charset: schema.Charset,
+			Collate: schema.Collate,
+		})
+	}
+}
+
 func newDatabase() *goschema.Database {
 	return &goschema.Database{
+		Schemas:           make([]goschema.Schema, 0),
 		Tables:            make([]goschema.Table, 0),
 		Fields:            make([]goschema.Field, 0),
 		Indexes:           make([]goschema.Index, 0),
@@ -77,9 +90,9 @@ func convertTablesAndFields(
 	compositePKColumns map[string]map[string]bool,
 ) map[string]string {
 	tableStructNames := make(map[string]string, len(dbSchema.Tables))
+	tableNameCounts := tableNameCounts(dbSchema.Tables)
 	for _, dbTable := range dbSchema.Tables {
-		// Generate struct name from table name (simple conversion)
-		structName := generateStructName(dbTable.Name)
+		structName := dbTableStructName(dbTable, tableNameCounts)
 		tableStructNames[dbTable.QualifiedName()] = structName
 
 		table := goschema.Table{
@@ -129,6 +142,21 @@ func convertTablesAndFields(
 		}
 	}
 	return tableStructNames
+}
+
+func tableNameCounts(tables []dbschematypes.DBTable) map[string]int {
+	counts := make(map[string]int, len(tables))
+	for _, table := range tables {
+		counts[table.Name]++
+	}
+	return counts
+}
+
+func dbTableStructName(table dbschematypes.DBTable, tableNameCounts map[string]int) string {
+	if tableNameCounts[table.Name] > 1 && strings.TrimSpace(table.Schema) != "" {
+		return generateStructName(table.Schema + "_" + table.Name)
+	}
+	return generateStructName(table.Name)
 }
 
 func convertIndexes(dbSchema *dbschematypes.DBSchema, tableStructNames map[string]string) []goschema.Index {

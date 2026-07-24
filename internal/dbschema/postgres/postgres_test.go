@@ -256,6 +256,32 @@ func TestPostgreSQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 	c.Assert(*tables[0].Columns[1].CharacterMaxLength, qt.Equals, 255)
 }
 
+func TestPostgreSQLReaderReadSchemasSkipsMissingScopedSchema(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.Open(t, func(_ string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		return dbtest.QueryResult{
+			Columns: []string{"nspname", "schema_comment"},
+		}, nil
+	})
+	reader := NewPostgreSQLReader(db.SQL, "public")
+	reader.SetSchemas([]string{"missing"})
+
+	schemas, err := reader.readSchemas()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(schemas, qt.HasLen, 0)
+}
+
+func TestPostgreSQLReaderReadSchemasUnscopedDoesNotQuery(t *testing.T) {
+	c := qt.New(t)
+	reader := NewPostgreSQLReader(nil, "public")
+
+	schemas, err := reader.readSchemas()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(schemas, qt.IsNil)
+}
+
 func TestPostgreSQLReader_ExtensionFunctionFiltering(t *testing.T) {
 	c := qt.New(t)
 

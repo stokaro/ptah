@@ -9,6 +9,7 @@ import (
 
 // DBSchema represents the complete schema read from a database
 type DBSchema struct {
+	Schemas     []DBSchemaInfo `json:"schemas"`
 	Tables      []DBTable      `json:"tables"`
 	Enums       []DBEnum       `json:"enums"`
 	Indexes     []DBIndex      `json:"indexes"`
@@ -21,6 +22,14 @@ type DBSchema struct {
 	RLSPolicies []DBRLSPolicy  `json:"rls_policies"` // PostgreSQL RLS policies
 	Roles       []DBRole       `json:"roles"`        // PostgreSQL roles
 	Grants      []DBGrant      `json:"grants"`       // PostgreSQL privilege grants
+}
+
+// DBSchemaInfo represents a database schema/namespace.
+type DBSchemaInfo struct {
+	Name    string `json:"name"`
+	Comment string `json:"comment,omitempty"`
+	Charset string `json:"charset,omitempty"`
+	Collate string `json:"collate,omitempty"`
 }
 
 // DBTable represents a database table
