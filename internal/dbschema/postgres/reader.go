@@ -1403,7 +1403,7 @@ func (r *Reader) enhanceTablesWithIndexes(tables []types.DBTable, indexes []type
 		}
 	}
 	for i := range tables {
-		tableName := tables[i].QualifiedName() //nolint:gosec // G602: index bounded by `range tables`
+		tableName := tables[i].QualifiedName()
 		for j := range tables[i].Columns {
 			col := &tables[i].Columns[j]
 			if primaryKeyColumns[tableName][col.Name] {
