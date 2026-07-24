@@ -133,8 +133,9 @@ func (p *parser) parseEnum(block *hclsyntax.Block) error {
 }
 
 func (p *parser) parseTable(block *hclsyntax.Block) error {
-	if len(block.Labels) != 1 {
-		return p.blockError(block, "table block requires exactly one label")
+	labels, err := p.tableLabels(block)
+	if err != nil {
+		return err
 	}
 
 	strict, err := p.optionalTableBool(block, "strict", false)
@@ -147,9 +148,9 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 	}
 
 	table := goschema.Table{
-		StructName:    block.Labels[0],
-		Name:          block.Labels[0],
-		Schema:        p.optionalRefName(block.Body.Attributes["schema"]),
+		StructName:    labels.name,
+		Name:          labels.name,
+		Schema:        labels.schema,
 		Engine:        p.optionalString(block.Body.Attributes["engine"]),
 		AutoIncrement: p.optionalString(block.Body.Attributes["auto_increment"]),
 		Charset:       p.optionalString(block.Body.Attributes["charset"]),
@@ -175,6 +176,26 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 	}
 	p.db.Tables = append(p.db.Tables, table)
 	return nil
+}
+
+type tableLabels struct {
+	schema string
+	name   string
+}
+
+func (p *parser) tableLabels(block *hclsyntax.Block) (tableLabels, error) {
+	schemaAttr := p.optionalRefName(block.Body.Attributes["schema"])
+	switch len(block.Labels) {
+	case 1:
+		return tableLabels{schema: schemaAttr, name: block.Labels[0]}, nil
+	case 2:
+		if schemaAttr != "" && schemaAttr != block.Labels[0] {
+			return tableLabels{}, p.blockError(block, "table %q schema label conflicts with schema attribute %q", block.Labels[1], schemaAttr)
+		}
+		return tableLabels{schema: block.Labels[0], name: block.Labels[1]}, nil
+	default:
+		return tableLabels{}, p.blockError(block, "table block requires one or two labels")
+	}
 }
 
 func (p *parser) parseTableBlock(table *goschema.Table, fieldsStart, unlabeledCheckOrdinal int, block *hclsyntax.Block) error {

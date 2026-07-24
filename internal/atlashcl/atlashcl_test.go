@@ -60,6 +60,58 @@ table "users" {
 	c.Assert(sql, qt.Contains, `CREATE UNIQUE INDEX`)
 }
 
+func TestParseAtlasPostgreSQLTwoLabelTableBlock(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+schema "public" {}
+
+table "public" "users" {
+  column "id" {
+    null = false
+    type = int
+  }
+  column "email" {
+    null = false
+    type = varchar(255)
+  }
+  primary_key {
+    columns = [column.id]
+  }
+  index "idx_users_email" {
+    columns = [column.email]
+  }
+}
+`), "schema.hcl")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Tables, qt.HasLen, 1)
+	c.Assert(db.Tables[0].Schema, qt.Equals, "public")
+	c.Assert(db.Tables[0].Name, qt.Equals, "users")
+	c.Assert(db.Fields, qt.HasLen, 2)
+	c.Assert(db.Indexes, qt.HasLen, 1)
+	c.Assert(db.Indexes[0].StructName, qt.Equals, "users")
+	c.Assert(db.Indexes[0].Fields, qt.DeepEquals, []string{"email"})
+}
+
+func TestParseAtlasPostgreSQLTwoLabelTableRejectsConflictingSchemaAttr(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := atlashcl.Parse([]byte(`
+schema "public" {}
+schema "audit" {}
+
+table "public" "users" {
+  schema = schema.audit
+  column "id" {
+    type = int
+  }
+}
+`), "schema.hcl")
+
+	c.Assert(err, qt.ErrorMatches, `.*table "users" schema label conflicts with schema attribute "audit".*`)
+}
+
 func TestParseTablePartition(t *testing.T) {
 	c := qt.New(t)
 
