@@ -1376,18 +1376,32 @@ func (r *Reader) enhanceTablesWithConstraints(tables []types.DBTable, constraint
 	}
 }
 
-// enhanceTablesWithIndexes adds primary key information from indexes
+// enhanceTablesWithIndexes marks primary-key columns from the actual
+// primary-key indexes.
+//
+// This is authoritative: a real SERIAL primary key has a primary-key index that
+// PostgreSQL creates, so it is detected here. It deliberately does NOT infer a
+// primary key from a column merely being auto-increment: a column that draws
+// its default from a standalone sequence via nextval(...) is auto-increment but
+// is not a primary key, and inferring one produced a phantom primary-key diff
+// on an otherwise clean round-trip (issue #675).
 func (r *Reader) enhanceTablesWithIndexes(tables []types.DBTable, indexes []types.DBIndex) {
-	// For auto-increment integer columns (originally SERIAL), automatically set them as primary keys
-	// This is a PostgreSQL-specific behavior where SERIAL columns become auto-increment integers and are typically primary keys
+	primaryKeyColumns := make(map[string]map[string]bool)
+	for _, index := range indexes {
+		if !index.IsPrimary {
+			continue
+		}
+		if primaryKeyColumns[index.TableName] == nil {
+			primaryKeyColumns[index.TableName] = make(map[string]bool)
+		}
+		for _, column := range index.Columns {
+			primaryKeyColumns[index.TableName][column] = true
+		}
+	}
 	for i := range tables {
 		for j := range tables[i].Columns {
 			col := &tables[i].Columns[j]
-
-			// If it's an auto-increment integer column, assume it's a primary key
-			// PostgreSQL converts SERIAL to integer with auto-increment
-			if col.IsAutoIncrement && (strings.Contains(strings.ToLower(col.DataType), "int") ||
-				strings.Contains(strings.ToLower(col.UDTName), "int")) {
+			if primaryKeyColumns[tables[i].Name][col.Name] {
 				col.IsPrimaryKey = true
 			}
 		}

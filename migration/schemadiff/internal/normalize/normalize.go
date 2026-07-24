@@ -132,6 +132,10 @@ func DefaultValue(defaultValue, typeName string) string {
 		return normalizedExpression
 	}
 
+	if normalizedSequence := normalizeSequenceDefaultExpression(defaultValue); normalizedSequence != "" {
+		return normalizedSequence
+	}
+
 	cleanValue := defaultValue
 
 	// MariaDB/MySQL returns 'NULL' string for columns without explicit defaults
@@ -182,6 +186,38 @@ func normalizeTemporalDefaultExpression(defaultValue, typeName string) string {
 	default:
 		return ""
 	}
+}
+
+// normalizeSequenceDefaultExpression canonicalizes a nextval(...) column
+// default so a declared nextval('seq') matches the nextval('seq'::regclass)
+// form PostgreSQL stores and reads back. It returns "" when the value is not a
+// nextval call, so the general default handling applies.
+//
+// The general ::type stripping in DefaultValue cannot handle this case: the
+// ::regclass cast is nested inside the call's parentheses, so truncating at the
+// last "::" would drop the closing paren and never match the declared form.
+func normalizeSequenceDefaultExpression(defaultValue string) string {
+	trimmed := strings.TrimSpace(defaultValue)
+	if !strings.HasPrefix(strings.ToLower(trimmed), "nextval(") {
+		return ""
+	}
+	// Remove the regclass cast PostgreSQL adds around the sequence name. Both the
+	// bare and quoted spellings are handled.
+	normalized := strings.ReplaceAll(trimmed, `::"regclass"`, "")
+	normalized = strings.ReplaceAll(normalized, "::regclass", "")
+	// Drop an optional schema qualification inside the quoted sequence name so
+	// nextval('public.seq') matches nextval('seq') for the default schema.
+	if open := strings.IndexByte(normalized, '\''); open >= 0 {
+		if end := strings.IndexByte(normalized[open+1:], '\''); end >= 0 {
+			end += open + 1
+			seqName := normalized[open+1 : end]
+			if dot := strings.LastIndexByte(seqName, '.'); dot >= 0 {
+				seqName = seqName[dot+1:]
+			}
+			normalized = normalized[:open+1] + seqName + normalized[end:]
+		}
+	}
+	return normalized
 }
 
 func normalizeDecimalDefaultValue(value string) string {

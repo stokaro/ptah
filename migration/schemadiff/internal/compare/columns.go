@@ -300,10 +300,18 @@ func ColumnsWithDialect(genCol goschema.Field, dbCol types.DBColumn, dialect str
 		dbDefault = *dbCol.ColumnDefault
 	}
 
-	// For auto-increment/SERIAL columns, ignore default value differences
-	// because the database will show the sequence default but the entity expects empty
-	isAutoIncrement := dbCol.IsAutoIncrement || strings.Contains(strings.ToUpper(genCol.Type), "SERIAL")
-	if !isAutoIncrement {
+	// Skip the sequence-backed default only when the desired column declares no
+	// default of its own — a SERIAL/identity column whose type implies the
+	// sequence, so the database's nextval(...) default is expected and not a
+	// difference. When the desired declares an explicit default (e.g. a column
+	// that draws from a standalone sequence via default_expr="nextval('seq')"),
+	// compare it normally; normalize.DefaultValue reconciles the ::regclass
+	// read-back form (issue #675).
+	skipImplicitSequenceDefault := genDefault == "" &&
+		(dbCol.IsAutoIncrement ||
+			strings.Contains(strings.ToUpper(genCol.Type), "SERIAL") ||
+			strings.Contains(strings.ToLower(dbDefault), "nextval("))
+	if !skipImplicitSequenceDefault {
 		normalizedDbDefault := normalize.DefaultValue(dbDefault, dbType)
 
 		idxName := "default"
