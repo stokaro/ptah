@@ -1391,17 +1391,22 @@ func (r *Reader) enhanceTablesWithIndexes(tables []types.DBTable, indexes []type
 		if !index.IsPrimary {
 			continue
 		}
-		if primaryKeyColumns[index.TableName] == nil {
-			primaryKeyColumns[index.TableName] = make(map[string]bool)
+		// Key on the schema-qualified table name (matching
+		// enhanceTablesWithConstraints) so same-named tables in different schemas
+		// do not merge their primary-key columns.
+		tableName := index.QualifiedTableName()
+		if primaryKeyColumns[tableName] == nil {
+			primaryKeyColumns[tableName] = make(map[string]bool)
 		}
 		for _, column := range index.Columns {
-			primaryKeyColumns[index.TableName][column] = true
+			primaryKeyColumns[tableName][column] = true
 		}
 	}
 	for i := range tables {
+		tableName := tables[i].QualifiedName() //nolint:gosec // G602: index bounded by `range tables`
 		for j := range tables[i].Columns {
 			col := &tables[i].Columns[j]
-			if primaryKeyColumns[tables[i].Name][col.Name] {
+			if primaryKeyColumns[tableName][col.Name] {
 				col.IsPrimaryKey = true
 			}
 		}

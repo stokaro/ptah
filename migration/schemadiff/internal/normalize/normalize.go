@@ -201,23 +201,20 @@ func normalizeSequenceDefaultExpression(defaultValue string) string {
 	if !strings.HasPrefix(strings.ToLower(trimmed), "nextval(") {
 		return ""
 	}
-	// Remove the regclass cast PostgreSQL adds around the sequence name. Both the
-	// bare and quoted spellings are handled.
-	normalized := strings.ReplaceAll(trimmed, `::"regclass"`, "")
-	normalized = strings.ReplaceAll(normalized, "::regclass", "")
-	// Drop an optional schema qualification inside the quoted sequence name so
-	// nextval('public.seq') matches nextval('seq') for the default schema.
-	if open := strings.IndexByte(normalized, '\''); open >= 0 {
-		if end := strings.IndexByte(normalized[open+1:], '\''); end >= 0 {
-			end += open + 1
-			seqName := normalized[open+1 : end]
-			if dot := strings.LastIndexByte(seqName, '.'); dot >= 0 {
-				seqName = seqName[dot+1:]
-			}
-			normalized = normalized[:open+1] + seqName + normalized[end:]
-		}
+	// Remove the regclass cast PostgreSQL adds around the sequence name. The
+	// bare, quoted, and pg_catalog-qualified spellings are all handled. The
+	// sequence name itself is left untouched: PostgreSQL reads the default back
+	// with the sequence spelled exactly as declared for the default schema, so a
+	// genuine cross-schema or dotted name must not be rewritten.
+	for _, cast := range []string{
+		`::pg_catalog."regclass"`,
+		"::pg_catalog.regclass",
+		`::"regclass"`,
+		"::regclass",
+	} {
+		trimmed = strings.ReplaceAll(trimmed, cast, "")
 	}
-	return normalized
+	return trimmed
 }
 
 func normalizeDecimalDefaultValue(value string) string {
