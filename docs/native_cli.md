@@ -41,6 +41,11 @@ root-level command spellings are removed instead of preserved.
 | `ptah seed` | Apply environment-scoped SQL seed files. |
 | `ptah version` | Print Ptah build information. |
 
+The schema-diff commands (`ptah schema render`, `ptah migrations generate`,
+`ptah migrate`, `ptah compare`) emit `CREATE`/`ALTER`/`DROP SEQUENCE` for
+standalone PostgreSQL sequences declared with `//migrator:schema:sequence`. See
+[Sequences](./sequences.md).
+
 ## Exit Codes
 
 Canonical grouped commands inherit the exit-code contract of the implementation

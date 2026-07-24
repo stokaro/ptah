@@ -1045,6 +1045,37 @@ func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
 	return fmt.Errorf("DROP FUNCTION is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)
 }
 
+// VisitCreateSequence renders CREATE SEQUENCE for MySQL-like databases (no-op).
+// Standalone sequences are a PostgreSQL-specific object.
+func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- CREATE SEQUENCE %s not supported in %s: %s", node.Name, r.dialect, node.Comment)
+	} else {
+		r.w.WriteLinef("-- CREATE SEQUENCE %s not supported in %s", node.Name, r.dialect)
+	}
+	return nil
+}
+
+// VisitAlterSequence renders ALTER SEQUENCE for MySQL-like databases (no-op).
+func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- ALTER SEQUENCE %s not supported in %s: %s", node.Name, r.dialect, node.Comment)
+	} else {
+		r.w.WriteLinef("-- ALTER SEQUENCE %s not supported in %s", node.Name, r.dialect)
+	}
+	return nil
+}
+
+// VisitDropSequence renders DROP SEQUENCE for MySQL-like databases (no-op).
+func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- DROP SEQUENCE %s not supported in %s: %s", node.Name, r.dialect, node.Comment)
+	} else {
+		r.w.WriteLinef("-- DROP SEQUENCE %s not supported in %s", node.Name, r.dialect)
+	}
+	return nil
+}
+
 // VisitDropPolicy returns an error since RLS policies are not supported in MySQL
 func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
 	return fmt.Errorf("DROP POLICY is not supported in %s (PostgreSQL-specific feature)", r.dialectUpper)

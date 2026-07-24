@@ -57,7 +57,7 @@ so typos fail fast. Current registry:
 | `row_level_security` | Row-level security policies (PostgreSQL) |
 | `role_management` | PostgreSQL role and object privilege management (`CREATE/ALTER ROLE`, `GRANT`, `REVOKE`) |
 | `foreign_keys` | Declarative `FOREIGN KEY` constraints |
-| `sequences` | Database sequence objects (`SERIAL`/`BIGSERIAL` or explicit `CREATE SEQUENCE` support) |
+| `sequences` | Database sequence objects: `SERIAL`/`BIGSERIAL` column backing and first-class standalone sequences via `//migrator:schema:sequence` (`CREATE`/`ALTER`/`DROP SEQUENCE`). See [Sequences](./sequences.md). |
 | `xml_type` | PostgreSQL `XML` column type |
 | `advisory_locks` | PostgreSQL advisory lock functions such as `pg_advisory_lock` |
 
