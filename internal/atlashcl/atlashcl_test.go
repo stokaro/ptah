@@ -782,6 +782,71 @@ table "accounts" {
 	c.Assert(db.Constraints[0].CheckExpression, qt.Equals, "status IN ('active', 'disabled')")
 }
 
+func TestParseColumnUnsignedAttribute(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+table "invoices" {
+  column "subtotal" {
+    type     = decimal(12,2)
+    unsigned = true
+  }
+  column "tax_rate" {
+    type     = decimal(5,4)
+    unsigned = false
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Fields, qt.HasLen, 2)
+	c.Assert(db.Fields[0].Type, qt.Equals, "decimal(12,2) unsigned")
+	c.Assert(db.Fields[1].Type, qt.Equals, "decimal(5,4)")
+}
+
+func TestParseUnlabeledCheckBlock(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+table "accounts" {
+  column "status" {
+    type = text
+  }
+  check {
+    expr = "status IN ('active', 'disabled')"
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Constraints, qt.HasLen, 1)
+	c.Assert(db.Constraints[0].Name, qt.Equals, "accounts_check")
+	c.Assert(db.Constraints[0].Table, qt.Equals, "accounts")
+	c.Assert(db.Constraints[0].CheckExpression, qt.Equals, "status IN ('active', 'disabled')")
+}
+
+func TestParseMultipleUnlabeledCheckBlocks(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
+table "accounts" {
+  column "status" {
+    type = text
+  }
+  check {
+    expr = "status <> ''"
+  }
+  check {
+    expr = "length(status) < 64"
+  }
+}
+`), "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Constraints, qt.HasLen, 2)
+	c.Assert(db.Constraints[0].Name, qt.Equals, "accounts_check")
+	c.Assert(db.Constraints[0].CheckExpression, qt.Equals, "status <> ''")
+	c.Assert(db.Constraints[1].Name, qt.Equals, "accounts_check_2")
+	c.Assert(db.Constraints[1].CheckExpression, qt.Equals, "length(status) < 64")
+}
+
 func TestParseEmptyLiteralDefault(t *testing.T) {
 	c := qt.New(t)
 
