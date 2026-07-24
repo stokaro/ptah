@@ -148,7 +148,7 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 	}
 
 	table := goschema.Table{
-		StructName:    labels.name,
+		StructName:    hclTableStructName(labels.schema, labels.name),
 		Name:          labels.name,
 		Schema:        labels.schema,
 		Engine:        p.optionalString(block.Body.Attributes["engine"]),
@@ -176,6 +176,16 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 	}
 	p.db.Tables = append(p.db.Tables, table)
 	return nil
+}
+
+func hclTableStructName(schema, name string) string {
+	schema = strings.TrimSpace(schema)
+	switch strings.ToLower(schema) {
+	case "", "main", "public":
+		return name
+	default:
+		return schema + "." + name
+	}
 }
 
 type tableLabels struct {

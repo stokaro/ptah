@@ -152,7 +152,11 @@ table "invoices" {
 `), "schema.hcl")
 
 	c.Assert(err, qt.IsNil)
-	userID := fieldByName(db.Fields, "invoices", "user_id")
+	authUsers := tableByName(db.Tables, "users")
+	billingInvoices := tableByName(db.Tables, "invoices")
+	c.Assert(authUsers.StructName, qt.Equals, "auth.users")
+	c.Assert(billingInvoices.StructName, qt.Equals, "billing.invoices")
+	userID := fieldByName(db.Fields, "billing.invoices", "user_id")
 	c.Assert(userID.Foreign, qt.Equals, "auth.users(id)")
 	c.Assert(userID.ForeignKeyName, qt.Equals, "fk_invoices_auth_user")
 	c.Assert(userID.OnDelete, qt.Equals, "CASCADE")

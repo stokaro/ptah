@@ -539,6 +539,7 @@ type DBMatView struct{ ... }
 type DBRLSPolicy struct{ ... }
 type DBRole struct{ ... }
 type DBSchema struct{ ... }
+type DBSchemaInfo struct{ ... }
 type DBTable struct{ ... }
 type DBTrigger struct{ ... }
 type DBView struct{ ... }
