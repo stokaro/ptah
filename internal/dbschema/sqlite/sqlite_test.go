@@ -56,6 +56,10 @@ func TestReaderReadSchema(t *testing.T) {
 		status TEXT CHECK (status IN ('active', 'disabled')),
 		CONSTRAINT fk_users_account_id FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
 	) STRICT`)
+	execSQL(t, db, `CREATE TABLE invoices (
+		id INTEGER PRIMARY KEY,
+		account_id INTEGER CONSTRAINT fk_invoices_account REFERENCES accounts(id) ON DELETE SET NULL
+	)`)
 	execSQL(t, db, `CREATE UNIQUE INDEX idx_users_email_active ON users(email) WHERE status = 'active'`)
 	execSQL(t, db, `CREATE INDEX idx_users_note_where ON users(note) WHERE note = 'contains WHERE token' AND status = 'active'`)
 	execSQL(t, db, `CREATE VIEW active_users AS SELECT id, email FROM users WHERE status = 'active'`)
@@ -66,7 +70,7 @@ func TestReaderReadSchema(t *testing.T) {
 
 	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
 	c.Assert(err, qt.IsNil)
-	c.Assert(schema.Tables, qt.HasLen, 2)
+	c.Assert(schema.Tables, qt.HasLen, 3)
 	c.Assert(schema.Views, qt.HasLen, 1)
 	c.Assert(schema.Triggers, qt.HasLen, 1)
 
@@ -103,6 +107,14 @@ func TestReaderReadSchema(t *testing.T) {
 	c.Assert(*fk.ForeignTable, qt.Equals, "accounts")
 	c.Assert(*fk.ForeignColumn, qt.Equals, "id")
 	c.Assert(*fk.DeleteRule, qt.Equals, "CASCADE")
+
+	inlineFK := findConstraint(schema.Constraints, "fk_invoices_account")
+	c.Assert(inlineFK, qt.IsNotNil)
+	c.Assert(inlineFK.TableName, qt.Equals, "invoices")
+	c.Assert(inlineFK.ColumnNames, qt.DeepEquals, []string{"account_id"})
+	c.Assert(*inlineFK.ForeignTable, qt.Equals, "accounts")
+	c.Assert(*inlineFK.ForeignColumn, qt.Equals, "id")
+	c.Assert(*inlineFK.DeleteRule, qt.Equals, "SET NULL")
 
 	check := findConstraint(schema.Constraints, "users_email_check")
 	c.Assert(check, qt.IsNotNil)
