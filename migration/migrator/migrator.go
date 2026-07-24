@@ -209,6 +209,9 @@ func (m *Migrator) migrationsSchemaStatement() string {
 	if schema == "" {
 		return ""
 	}
+	if platform.NormalizeDialect(m.connectionDialect()) == platform.SQLite {
+		return ""
+	}
 	if m.isSQLServer() {
 		return fmt.Sprintf(
 			"IF SCHEMA_ID(%s) IS NULL EXEC(%s)",

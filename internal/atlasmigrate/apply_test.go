@@ -76,6 +76,33 @@ func TestPrepareApplyExecute_BaselineRecordsAtlasRevisions(t *testing.T) {
 	c.Assert(sqliteAtlasRevisionVersions(c, conn), qt.DeepEquals, []string{"1", "2", "3"})
 }
 
+func TestPrepareApplyExecute_SQLiteMainRevisionsSchema(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigrationFile(c, migrationsDir, "1_one.sql", "CREATE TABLE main_revisions_schema_one (id INTEGER PRIMARY KEY);")
+	conn := connectSQLite(c, filepath.Join(dir, "main-revisions-schema.db"))
+	defer dbschema.CloseAndWarn(conn)
+
+	plan, err := atlasmigrate.PrepareApply(ctx, conn, atlasmigrate.ApplyOptions{
+		Dir:             migrationsDir,
+		ExecOrder:       migrator.ExecOrderLinear,
+		TxMode:          migrator.MigrationTxModeFile,
+		RevisionsSchema: "main",
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.SelectedVersions, qt.DeepEquals, []int64{1})
+
+	result, err := plan.Execute(ctx)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Applied, qt.IsTrue)
+	c.Assert(result.FinalStatus.CurrentVersion, qt.Equals, int64(1))
+	c.Assert(sqliteTableExists(c, conn, "main_revisions_schema_one"), qt.IsTrue)
+	c.Assert(sqliteAtlasRevisionVersions(c, conn), qt.DeepEquals, []string{"1"})
+}
+
 func TestPrepareApplyExecute_DryRunBaselinePlansRemaining(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()
