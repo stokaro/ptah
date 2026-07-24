@@ -19,6 +19,7 @@ The authoritative current numbers live in the conformance repository reports:
 - [`gaps.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps.md)
 - [`gaps-live.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps-live.md)
 - [`gaps-diff.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps-diff.md)
+- [`cli-surface.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/cli-surface.md)
 - [`PARITY.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/PARITY.md)
 
 Green conformance reports mean that the current measured corpus has no red
@@ -62,9 +63,12 @@ make probe-live
 make budget-live
 make probe-diff
 make budget-diff
+make probe-cli-surface
+make budget-cli-surface
+make gate-cli-surface
 ```
 
-Live and differential probes require real database URLs. Differential probes also require an Atlas CE binary built from the pinned Atlas version in the conformance repository.
+Live and differential probes require real database URLs. Differential probes also require an Atlas CE binary built from the pinned Atlas version in the conformance repository. CLI surface probes use the same pinned Atlas CE binary to compare command paths, help boundaries, flags, and runtime classifications.
 
 ## When to update reports
 

@@ -2,7 +2,9 @@
 package atlas
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdadapter"
 	"github.com/stokaro/ptah/cmd/internal/cmdflags"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
+	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/migrate"
 	"github.com/stokaro/ptah/cmd/migratedown"
 	"github.com/stokaro/ptah/cmd/migratehash"
@@ -103,6 +106,11 @@ func newAtlasSchemaCommand() *cobra.Command {
 	cmd.AddCommand(newAtlasSchemaApplyCommand())
 	cmd.AddCommand(newAtlasSchemaDiffCommand())
 	cmd.AddCommand(newAtlasSchemaFmtCommand())
+	addAtlasUnsupportedCommunityCommands(cmd, "schema", []atlasUnsupportedCommunityVerb{
+		{use: "plan", short: "Plan schema changes through Atlas Cloud"},
+		{use: "push", short: "Push schema state to Atlas Cloud"},
+		{use: "test", short: "Test schemas through Atlas Cloud"},
+	})
 	return cmd
 }
 
@@ -183,7 +191,75 @@ func newAtlasMigrateCommand() *cobra.Command {
 	}
 	cmd.AddCommand(newAtlasMigrateDiffCommand())
 	cmd.AddCommand(newAtlasMigrateImportCommand())
+	addAtlasUnsupportedCommunityCommands(cmd, "migrate", []atlasUnsupportedCommunityVerb{
+		{use: "checkpoint", short: "Create migration checkpoint files"},
+		{use: "edit", short: "Edit migration files"},
+		{use: "push", short: "Push migration directory to Atlas Cloud"},
+		{use: "rebase", short: "Rebase migration files"},
+		{use: "rm", short: "Remove migration files"},
+		{use: "test", short: "Test migration files through Atlas Cloud"},
+	})
 	return cmd
+}
+
+type atlasUnsupportedCommunityVerb struct {
+	use   string
+	short string
+}
+
+func addAtlasUnsupportedCommunityCommands(parent *cobra.Command, group string, verbs []atlasUnsupportedCommunityVerb) {
+	for _, verb := range verbs {
+		parent.AddCommand(newAtlasUnsupportedCommunityCommand(group, verb))
+	}
+}
+
+func newAtlasUnsupportedCommunityCommand(group string, verb atlasUnsupportedCommunityVerb) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   verb.use,
+		Short: verb.short,
+		Long:  fmt.Sprintf("Atlas CE `%s` command boundary.", atlasUnsupportedCommunityCommand(group, verb.use)),
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			writeAtlasUnsupportedCommunityCommandAbort(cmd, group, verb.use)
+			return exitcode.New(1, errors.New("atlas community-version unsupported command"))
+		},
+	}
+	cmd.SetHelpFunc(func(cmd *cobra.Command, _ []string) {
+		writeAtlasUnsupportedCommunityCommandHelp(cmd, group, verb.use)
+	})
+	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
+	return cmd
+}
+
+func writeAtlasUnsupportedCommunityCommandHelp(cmd *cobra.Command, group, use string) {
+	out := cmd.OutOrStdout()
+	writeAtlasUnsupportedCommunityNotice(out, atlasUnsupportedCommunityCommand(group, use), "")
+}
+
+func writeAtlasUnsupportedCommunityCommandAbort(cmd *cobra.Command, group, use string) {
+	out := cmd.ErrOrStderr()
+	writeAtlasUnsupportedCommunityNotice(out, atlasUnsupportedCommunityCommand(group, use), "Abort: ")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "You're running the community build of Atlas, which differs from the official version.")
+	fmt.Fprintln(out, "If this error persists, try installing the official version as a troubleshooting step:")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "  curl -sSf https://atlasgo.sh | sh")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "More installation options: https://atlasgo.io/docs#installation")
+}
+
+func writeAtlasUnsupportedCommunityNotice(out io.Writer, command, prefix string) {
+	fmt.Fprintf(out, "%s'%s' is not supported by the community version.\n\n", prefix, command)
+	fmt.Fprintln(out, "To install the non-community version of Atlas, use the following command:")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "\tcurl -sSf https://atlasgo.sh | sh")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Or, visit the website to see all installation options:")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "\thttps://atlasgo.io/docs#installation")
+}
+
+func atlasUnsupportedCommunityCommand(group, use string) string {
+	return "atlas " + group + " " + use
 }
 
 func atlasMigrateDownVerb() atlasVerb {
