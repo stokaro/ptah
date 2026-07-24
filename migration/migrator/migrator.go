@@ -612,35 +612,65 @@ func (m *Migrator) GetCurrentVersion(ctx context.Context) (int64, error) {
 
 // GetAppliedMigrations returns a list of applied migration versions
 func (m *Migrator) GetAppliedMigrations(ctx context.Context) ([]int64, error) {
-	// First ensure the migrations table exists
+	return queryMigrationRows(
+		ctx,
+		m,
+		m.getAppliedMigrationsSQL(),
+		m.scanAppliedVersion,
+		"failed to query applied migrations",
+		"failed to scan migration version",
+		"error iterating migration rows",
+	)
+}
+
+// GetAppliedRevisions returns full metadata rows for applied migrations.
+func (m *Migrator) GetAppliedRevisions(ctx context.Context) ([]MigrationRevision, error) {
+	return queryMigrationRows(
+		ctx,
+		m,
+		m.getAppliedRevisionsSQL(),
+		m.scanRevisionRow,
+		"failed to query applied migration revisions",
+		"failed to scan migration revision",
+		"error iterating migration revision rows",
+	)
+}
+
+func queryMigrationRows[T any](
+	ctx context.Context,
+	m *Migrator,
+	query string,
+	scan func(rowScanner) (T, error),
+	queryErr string,
+	scanErr string,
+	iterErr string,
+) ([]T, error) {
 	if err := m.Initialize(ctx); err != nil {
 		return nil, fmt.Errorf("failed to initialize migrations table: %w", err)
 	}
 	if m.conn.Writer().IsDryRun() {
-		return []int64{}, nil
+		return []T{}, nil
 	}
 
-	// Query all applied migration versions
-	rows, err := m.conn.QueryContext(ctx, m.getAppliedMigrationsSQL())
+	rows, err := m.conn.QueryContext(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query applied migrations: %w", err)
+		return nil, fmt.Errorf("%s: %w", queryErr, err)
 	}
 	defer func() { _ = rows.Close() }()
 
-	applied := make([]int64, 0)
+	items := make([]T, 0)
 	for rows.Next() {
-		version, err := m.scanAppliedVersion(rows)
+		item, err := scan(rows)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan migration version: %w", err)
+			return nil, fmt.Errorf("%s: %w", scanErr, err)
 		}
-		applied = append(applied, version)
+		items = append(items, item)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating migration rows: %w", err)
+		return nil, fmt.Errorf("%s: %w", iterErr, err)
 	}
-
-	return applied, nil
+	return items, nil
 }
 
 func (m *Migrator) scanCurrentVersion(ctx context.Context) (int64, error) {

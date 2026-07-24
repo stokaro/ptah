@@ -382,6 +382,25 @@ and `.Files`, so Atlas-style templates such as `{{ json .Files }}` work for
 the supported local lint subset. Formatted output redacts credentials from URLs
 before rendering.
 
+Atlas-compatible format reports use the same data shape for `ptah atlas` and
+`ptah-compat`. URL fields render as redacted URL strings in Go templates such as
+`{{ .Env.URL }}`, but `{{ json . }}` emits an Atlas-like URL object with
+`Scheme`, `User`, `Host`, `Path`, `RawQuery`, `Fragment`, `RawPath`,
+`RawFragment`, `ForceQuery`, `OmitHost`, and, for SQLite URLs, `Schema`. Query
+keys that look like passwords, tokens, secrets, or API keys are replaced with
+`xxxxx`; URL userinfo passwords are removed.
+
+| Command | Format data fields |
+| --- | --- |
+| `ptah atlas schema inspect --format` | `.Realm`, `.Schema`, `.MarshalHCL`, `.MarshalSQL`, `.MarshalJSON`, plus `hcl`, `sql`, `json`, `base64url`, `mermaid`, `split`, and `write` template helpers. |
+| `ptah atlas schema apply --format` | `.Changes`, `.MarshalSQL`, plus the `sql` helper for the planned SQL statements. |
+| `ptah atlas schema clean --format` | `.Env.Driver`, `.Env.URL`, `.DryRun`, `.Applied`, `.Objects`, and `.Changes`. |
+| `ptah atlas schema diff --format` | `.Changes`, `.MarshalSQL`, plus the `sql` helper for generated migration SQL. |
+| `ptah atlas migrate apply --format` | `.Driver`, `.URL`, `.Dir`, `.Env`, `.Pending`, `.Applied`, `.Current`, `.Target`, `.Start`, `.End`, `.Error`, and JSON `.Message` for successful or no-op reports. `.Pending` and `.Applied` entries expose `.Name`, `.Version`, `.Description`; applied entries also expose `.Applied`, `.Skipped`, `.Checks`, and statement `.Error`. |
+| `ptah atlas migrate diff --format` | `.Changes`, `.MarshalSQL`, plus the `sql` helper for generated migration SQL. |
+| `ptah atlas migrate lint --format` | `.Env.Driver`, `.Env.URL`, `.Env.Dir`, `.Steps`, and `.Files`. Step entries expose `.Name`, `.Text`, `.Error`, and `.Result`; file entries expose `.Name`, `.Text`, `.Error`, and `.Findings`. |
+| `ptah atlas migrate status --format` | `.Env.Driver`, `.Env.URL`, `.Env.Dir`, `.Available`, `.Applied`, `.Pending`, `.Current`, `.Next`, and `.Status`. Available and pending migration file entries expose `.Name`, `.Version`, and `.Description`. Applied revision entries expose `.Version`, `.Description`, `.Type`, `.Applied`, `.Total`, `.ExecutedAt`, `.ExecutionTime`, `.Error`, `.ErrorStmt`, and `.OperatorVersion`. |
+
 For existing scripts that already call `atlas`, install or copy the
 `ptah-compat` drop-in replacement under that executable name:
 

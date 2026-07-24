@@ -35,6 +35,7 @@ type MigrationRevision struct {
 	ExecutionTime   time.Duration `json:"execution_time"`
 	Checksum        string        `json:"checksum,omitempty"`
 	AppliedAt       time.Time     `json:"applied_at"`
+	OperatorVersion string        `json:"operator_version,omitempty"`
 	Dirty           bool          `json:"dirty"`
 	ChecksumCurrent string        `json:"checksum_current,omitempty"`
 }
@@ -138,12 +139,12 @@ func migrationExecutionProgress(err error, dialect string, txMode MigrationTxMod
 func (m *Migrator) getDirtyRevisionSQL() string {
 	if m.revisionTableFormat.isAtlas() {
 		if m.isSQLServer() {
-			return fmt.Sprintf(`SELECT TOP (1) version, description, type, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time, hash, executed_at
+			return fmt.Sprintf(`SELECT TOP (1) version, description, type, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time, hash, executed_at, COALESCE(operator_version, '')
 FROM %s
 WHERE applied <> total OR COALESCE(error, '') <> ''
 ORDER BY %s`, m.qualifiedMigrationsTable(), m.atlasVersionNumberExpression())
 		}
-		return fmt.Sprintf(`SELECT version, description, type, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time, hash, executed_at
+		return fmt.Sprintf(`SELECT version, description, type, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time, hash, executed_at, COALESCE(operator_version, '')
 FROM %s
 WHERE applied <> total OR COALESCE(error, '') <> ''
 ORDER BY %s
@@ -164,13 +165,30 @@ LIMIT 1`, m.qualifiedMigrationsTable())
 
 func (m *Migrator) getRevisionSQL() string {
 	if m.revisionTableFormat.isAtlas() {
-		return fmt.Sprintf(`SELECT version, description, type, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time, hash, executed_at
+		return fmt.Sprintf(`SELECT version, description, type, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time, hash, executed_at, COALESCE(operator_version, '')
 FROM %s
 WHERE version = ?`, m.qualifiedMigrationsTable())
 	}
 	return fmt.Sprintf(`SELECT version, description, state, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time_ms, checksum, applied_at
 FROM %s
 WHERE version = ?`, m.qualifiedMigrationsTable())
+}
+
+func (m *Migrator) getAppliedRevisionsSQL() string {
+	if m.revisionTableFormat.isAtlas() {
+		return fmt.Sprintf(
+			`SELECT version, description, type, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time, hash, executed_at, COALESCE(operator_version, '')
+FROM %s
+WHERE applied = total AND COALESCE(error, '') = ''
+ORDER BY %s`,
+			m.qualifiedMigrationsTable(),
+			m.atlasVersionNumberExpression(),
+		)
+	}
+	return fmt.Sprintf(`SELECT version, description, state, applied, total, COALESCE(error, ''), COALESCE(error_stmt, ''), execution_time_ms, checksum, applied_at
+FROM %s
+WHERE state = 'applied'
+ORDER BY version`, m.qualifiedMigrationsTable())
 }
 
 func (m *Migrator) beginMigrationSQL() string {
@@ -408,7 +426,7 @@ func (m *Migrator) getRevision(ctx context.Context, version int64) (*MigrationRe
 	return &revision, nil
 }
 
-func (m *Migrator) scanRevisionRow(row *sql.Row) (MigrationRevision, error) {
+func (m *Migrator) scanRevisionRow(row rowScanner) (MigrationRevision, error) {
 	if m.revisionTableFormat.isAtlas() {
 		return m.scanAtlasRevisionRow(row)
 	}
@@ -438,7 +456,7 @@ func (m *Migrator) scanRevisionRow(row *sql.Row) (MigrationRevision, error) {
 	return revision, nil
 }
 
-func (m *Migrator) scanAtlasRevisionRow(row *sql.Row) (MigrationRevision, error) {
+func (m *Migrator) scanAtlasRevisionRow(row rowScanner) (MigrationRevision, error) {
 	var revision MigrationRevision
 	var version string
 	var revisionType int
@@ -455,6 +473,7 @@ func (m *Migrator) scanAtlasRevisionRow(row *sql.Row) (MigrationRevision, error)
 		&executionTime,
 		&revision.Checksum,
 		&executedAt,
+		&revision.OperatorVersion,
 	); err != nil {
 		return MigrationRevision{}, err
 	}

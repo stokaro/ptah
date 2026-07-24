@@ -2,19 +2,33 @@ package atlasreport
 
 import (
 	"net/url"
+	"path"
 	"strings"
 )
 
 type atlasEnv struct {
-	Driver string `json:"Driver,omitempty"`
-	URL    string `json:"URL,omitempty"`
-	Dir    string `json:"Dir,omitempty"`
+	Driver string           `json:"Driver,omitempty"`
+	URL    atlasTemplateURL `json:"URL,omitzero"`
+	Dir    string           `json:"Dir,omitempty"`
 }
 
-func atlasRedactedURL(raw string) string {
+type atlasTemplateURL struct {
+	url.URL
+	Schema string `json:"Schema,omitempty"`
+}
+
+func (u atlasTemplateURL) String() string {
+	return u.URL.String()
+}
+
+func (u atlasTemplateURL) IsZero() bool {
+	return u.URL.String() == "" && u.Schema == ""
+}
+
+func atlasRedactedURL(raw string) atlasTemplateURL {
 	parsed, err := url.Parse(raw)
 	if err != nil {
-		return ""
+		return atlasTemplateURL{}
 	}
 	if parsed.User != nil {
 		username := parsed.User.Username()
@@ -31,7 +45,11 @@ func atlasRedactedURL(raw string) string {
 		}
 	}
 	parsed.RawQuery = query.Encode()
-	return parsed.String()
+	result := atlasTemplateURL{URL: *parsed}
+	if parsed.Scheme == "sqlite" {
+		result.Schema = "main"
+	}
+	return result
 }
 
 func isAtlasSensitiveQueryKey(key string) bool {
@@ -47,4 +65,15 @@ func isAtlasSensitiveQueryKey(key string) bool {
 			strings.Contains(compact, "secret") ||
 			strings.Contains(compact, "apikey")
 	}
+}
+
+func atlasMigrationFileDescription(fileName string) string {
+	stem := strings.TrimSuffix(path.Base(fileName), ".sql")
+	stem = strings.TrimSuffix(stem, ".up")
+	stem = strings.TrimSuffix(stem, ".down")
+	_, description, ok := strings.Cut(stem, "_")
+	if !ok {
+		return ""
+	}
+	return description
 }

@@ -38,9 +38,9 @@ type MigrateApplyResultOptions struct {
 }
 
 type atlasMigrateApplyEnv struct {
-	Driver string `json:"Driver,omitempty"`
-	URL    string `json:"URL,omitempty"`
-	Dir    string `json:"Dir,omitempty"`
+	Driver string           `json:"Driver,omitempty"`
+	URL    atlasTemplateURL `json:"URL,omitzero"`
+	Dir    string           `json:"Dir,omitempty"`
 }
 
 type atlasMigrateApplyResult struct {
@@ -161,7 +161,7 @@ func atlasMigrateApplyFilesByVersion(fsys fs.FS) (map[int64]atlasMigrateApplyFil
 		files[file.Version] = atlasMigrateApplyFile{
 			Name:        file.Path,
 			Version:     atlasMigrateApplyVersionString(file.Version),
-			Description: file.Name,
+			Description: atlasMigrationFileDescription(file.Path),
 		}
 	}
 	return files, nil
@@ -357,8 +357,9 @@ func (r atlasMigrateApplyResult) MarshalJSON() ([]byte, error) {
 	}
 	switch {
 	case r.Error != "":
-	case len(r.Applied) == 0:
+	case len(r.Applied) == 0 && len(r.Pending) == 0:
 		value.Message = "No migration files to execute"
+	case len(r.Applied) == 0:
 	default:
 		value.Message = fmt.Sprintf(
 			"Migrated to version %s from %s (%d migrations in total)",
@@ -375,11 +376,12 @@ func (f *atlasMigrateApplyAppliedFile) MarshalJSON() ([]byte, error) {
 		Name        string                           `json:"Name,omitempty"`
 		Version     string                           `json:"Version,omitempty"`
 		Description string                           `json:"Description,omitempty"`
-		Start       time.Time                        `json:"Start,omitzero"`
-		End         time.Time                        `json:"End,omitzero"`
-		Skipped     int                              `json:"Skipped,omitempty"`
-		Applied     []string                         `json:"Applied,omitempty"`
-		Error       *atlasMigrateApplyStatementError `json:"Error,omitempty"`
+		Start       time.Time                        `json:"Start"`
+		End         time.Time                        `json:"End"`
+		Skipped     int                              `json:"Skipped"`
+		Applied     []string                         `json:"Applied"`
+		Checks      []*atlasMigrateApplyFileChecks   `json:"Checks"`
+		Error       *atlasMigrateApplyStatementError `json:"Error"`
 	}
 	return json.Marshal(appliedFile{
 		Name:        f.Name,
@@ -389,6 +391,7 @@ func (f *atlasMigrateApplyAppliedFile) MarshalJSON() ([]byte, error) {
 		End:         f.End,
 		Skipped:     f.Skipped,
 		Applied:     f.Applied,
+		Checks:      f.Checks,
 		Error:       f.Error,
 	})
 }

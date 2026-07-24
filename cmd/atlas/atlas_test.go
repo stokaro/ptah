@@ -1332,6 +1332,36 @@ func TestNewAtlasCommand_MigrateStatusFormatRendersAtlasReport(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "PENDING|No migration applied yet|20260723120000|1|1|20260723120000_init.sql")
 }
 
+func TestNewAtlasCommand_MigrateStatusFormatRendersAppliedRevisionReport(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(t.TempDir(), "status-applied-format.db")
+	writeAtlasApplyMigration(c, dir, "20260723120000_create_users.sql", "CREATE TABLE users (id integer primary key)")
+
+	apply := NewAtlasCommand()
+	var applyOut bytes.Buffer
+	apply.SetOut(&applyOut)
+	apply.SetErr(&applyOut)
+	apply.SetArgs([]string{"migrate", "apply", "--url", "sqlite://" + dbPath, "--dir", dir})
+	err := apply.Execute()
+	c.Assert(err, qt.IsNil)
+
+	status := NewAtlasCommand()
+	var statusOut bytes.Buffer
+	status.SetOut(&statusOut)
+	status.SetErr(&statusOut)
+	status.SetArgs([]string{
+		"migrate", "status",
+		"--url", "sqlite://" + dbPath,
+		"--dir", dir,
+		"--format", "{{ .Status }}|{{ len .Applied }}|{{ (index .Applied 0).Version }}|{{ (index .Applied 0).Description }}|{{ (index .Applied 0).Type }}|{{ (index .Applied 0).Applied }}|{{ (index .Applied 0).Total }}|{{ (index .Applied 0).OperatorVersion }}",
+	})
+	err = status.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statusOut.String(), qt.Equals, "OK|1|20260723120000|create_users|applied|1|1|Ptah")
+}
+
 func TestNewAtlasCommand_MigrateStatusUsesDefaultDirWithoutEnvWhenURLExplicit(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
@@ -2604,14 +2634,17 @@ CREATE TABLE format_json_posts (id INTEGER PRIMARY KEY);
 	var result atlasMigrateApplyJSONResult
 	c.Assert(json.Unmarshal(out.Bytes(), &result), qt.IsNil)
 	c.Assert(result.Driver, qt.Equals, "sqlite")
-	c.Assert(result.URL, qt.Equals, "sqlite://user@"+dbPath+"?password=xxxxx")
+	c.Assert(result.URL.Scheme, qt.Equals, "sqlite")
+	c.Assert(result.URL.Path, qt.Equals, dbPath)
+	c.Assert(result.URL.RawQuery, qt.Equals, "password=xxxxx")
+	c.Assert(result.URL.Schema, qt.Equals, "main")
 	c.Assert(result.Current, qt.Equals, "")
 	c.Assert(result.Target, qt.Equals, "1")
 	c.Assert(result.Message, qt.Equals, "Migrated to version 1 from  (1 migrations in total)")
 	c.Assert(result.Pending, qt.HasLen, 1)
 	c.Assert(result.Pending[0].Name, qt.Equals, "1_create_users.sql")
 	c.Assert(result.Pending[0].Version, qt.Equals, "1")
-	c.Assert(result.Pending[0].Description, qt.Equals, "Create Users")
+	c.Assert(result.Pending[0].Description, qt.Equals, "create_users")
 	c.Assert(result.Applied, qt.HasLen, 1)
 	c.Assert(result.Applied[0].Name, qt.Equals, "1_create_users.sql")
 	c.Assert(result.Applied[0].Applied, qt.DeepEquals, []string{
@@ -2748,6 +2781,7 @@ func TestNewAtlasCommand_MigrateApplyFormatsDryRunResult(t *testing.T) {
 	var result atlasMigrateApplyJSONResult
 	c.Assert(json.Unmarshal(out.Bytes(), &result), qt.IsNil)
 	c.Assert(result.Target, qt.Equals, "1")
+	c.Assert(result.Message, qt.Equals, "")
 	c.Assert(result.Pending, qt.HasLen, 1)
 	c.Assert(result.Applied, qt.HasLen, 0)
 	assertSQLiteTableMissing(c, dbPath, "format_dry_run")
@@ -4071,7 +4105,7 @@ func TestNewAtlasCommand_ProjectRelativeSchemaSrcRejectsQuery(t *testing.T) {
 
 type atlasMigrateApplyJSONResult struct {
 	Driver  string
-	URL     string
+	URL     atlasReportJSONURL
 	Pending []struct {
 		Name        string
 		Version     string
@@ -4089,6 +4123,18 @@ type atlasMigrateApplyJSONResult struct {
 	Target  string
 	Error   string
 	Message string
+}
+
+type atlasReportJSONURL struct {
+	Scheme   string
+	Opaque   string
+	User     map[string]any
+	Host     string
+	Path     string
+	Fragment string
+	RawQuery string
+	RawPath  string
+	Schema   string
 }
 
 type atlasSchemaInspectJSONResult struct {

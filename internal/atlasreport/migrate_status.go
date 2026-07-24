@@ -6,26 +6,32 @@ import (
 	"io/fs"
 	"slices"
 	"strconv"
+	"time"
 
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
 type MigrateStatusOptions struct {
-	Driver string
-	URL    string
-	Dir    string
-	FS     fs.FS
-	Status *migrator.MigrationStatus
+	Driver           string
+	URL              string
+	Dir              string
+	FS               fs.FS
+	Status           *migrator.MigrationStatus
+	AppliedRevisions []migrator.MigrationRevision
 }
 
 type MigrateStatus struct {
-	Env       atlasEnv            `json:"Env"`
-	Available []MigrateStatusFile `json:"Available,omitempty"`
-	Applied   []MigrateStatusFile `json:"Applied,omitempty"`
-	Pending   []MigrateStatusFile `json:"Pending,omitempty"`
-	Current   string              `json:"Current,omitempty"`
-	Next      string              `json:"Next,omitempty"`
-	Status    string              `json:"Status,omitempty"`
+	Env       atlasEnv                `json:"Env"`
+	Available []MigrateStatusFile     `json:"Available,omitempty"`
+	Applied   []MigrateStatusRevision `json:"Applied,omitempty"`
+	Pending   []MigrateStatusFile     `json:"Pending,omitempty"`
+	Current   string                  `json:"Current,omitempty"`
+	Next      string                  `json:"Next,omitempty"`
+	Status    string                  `json:"Status,omitempty"`
+	Count     int                     `json:"Count,omitempty"`
+	Total     int                     `json:"Total,omitempty"`
+	Error     string                  `json:"Error,omitempty"`
+	SQL       string                  `json:"SQL,omitempty"`
 }
 
 type MigrateStatusFile struct {
@@ -33,6 +39,19 @@ type MigrateStatusFile struct {
 	Version     string `json:"Version,omitempty"`
 	Description string `json:"Description,omitempty"`
 	Type        string `json:"Type,omitempty"`
+}
+
+type MigrateStatusRevision struct {
+	Version         string        `json:"Version,omitempty"`
+	Description     string        `json:"Description,omitempty"`
+	Type            string        `json:"Type,omitempty"`
+	Applied         int           `json:"Applied"`
+	Total           int           `json:"Total"`
+	ExecutedAt      time.Time     `json:"ExecutedAt,omitzero"`
+	ExecutionTime   time.Duration `json:"ExecutionTime"`
+	Error           string        `json:"Error,omitempty"`
+	ErrorStmt       string        `json:"ErrorStmt,omitempty"`
+	OperatorVersion string        `json:"OperatorVersion,omitempty"`
 }
 
 func WriteMigrateStatusFormat(w io.Writer, format string, opts MigrateStatusOptions) error {
@@ -62,13 +81,49 @@ func NewMigrateStatus(opts MigrateStatusOptions) (MigrateStatus, error) {
 			Dir:    opts.Dir,
 		},
 		Available: files,
-		Applied:   selectedMigrateStatusFiles(files, opts.Status.AppliedMigrations, "applied"),
+		Applied:   migrateStatusAppliedRevisions(files, opts.AppliedRevisions),
 		Pending:   selectedMigrateStatusFiles(files, opts.Status.PendingMigrations, ""),
 		Current:   migrateStatusCurrent(opts.Status.CurrentVersion),
 		Next:      migrateStatusNext(opts.Status.PendingMigrations),
 		Status:    migrateStatusLabel(opts.Status),
 	}
 	return result, nil
+}
+
+func migrateStatusAppliedRevisions(
+	files []MigrateStatusFile,
+	revisions []migrator.MigrationRevision,
+) []MigrateStatusRevision {
+	out := make([]MigrateStatusRevision, 0, len(revisions))
+	descriptions := migrateStatusFileDescriptions(files)
+	for _, revision := range revisions {
+		version := strconv.FormatInt(revision.Version, 10)
+		description := descriptions[revision.Version]
+		if description == "" {
+			description = revision.Description
+		}
+		out = append(out, MigrateStatusRevision{
+			Version:         version,
+			Description:     description,
+			Type:            "applied",
+			Applied:         revision.Applied,
+			Total:           revision.Total,
+			ExecutedAt:      revision.AppliedAt,
+			ExecutionTime:   revision.ExecutionTime,
+			Error:           revision.Error,
+			ErrorStmt:       revision.ErrorStatement,
+			OperatorVersion: revision.OperatorVersion,
+		})
+	}
+	return out
+}
+
+func migrateStatusFileDescriptions(files []MigrateStatusFile) map[int64]string {
+	descriptions := make(map[int64]string, len(files))
+	for _, file := range files {
+		descriptions[migrateStatusFileVersion(file)] = file.Description
+	}
+	return descriptions
 }
 
 func migrateStatusFiles(fsys fs.FS) ([]MigrateStatusFile, error) {
@@ -84,7 +139,7 @@ func migrateStatusFiles(fsys fs.FS) ([]MigrateStatusFile, error) {
 		files = append(files, MigrateStatusFile{
 			Name:        file.Path,
 			Version:     strconv.FormatInt(file.Version, 10),
-			Description: file.Name,
+			Description: atlasMigrationFileDescription(file.Path),
 		})
 	}
 	return files, nil
