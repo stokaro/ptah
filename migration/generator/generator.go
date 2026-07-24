@@ -27,6 +27,7 @@ import (
 	"github.com/stokaro/ptah/internal/deporder"
 	"github.com/stokaro/ptah/internal/migratesum"
 	"github.com/stokaro/ptah/internal/pathguard"
+	"github.com/stokaro/ptah/migration/diffpolicy"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/safety"
@@ -69,6 +70,23 @@ type GenerateMigrationOptions struct {
 	// migrations from OutputDir, applies the candidate migration, re-introspects
 	// the result, and aborts if it differs from the Go schema.
 	ShadowDatabaseURL string
+	// DiffPolicy controls which changes the planner emits: destructive change
+	// kinds to skip and whether to create new indexes concurrently. The zero
+	// value applies no policy. Skipping a destructive change omits it from the
+	// plan (with a comment in its place), so it never trips the CheckDestructive
+	// gate.
+	DiffPolicy DiffPolicy
+}
+
+// DiffPolicy is the generator-level view of the project diff policy.
+type DiffPolicy struct {
+	// SkipChangeKinds lists destructive change kinds to omit from generated
+	// migrations. Currently honored by the PostgreSQL-family planner.
+	SkipChangeKinds []diffpolicy.ChangeKind
+	// ConcurrentIndex requests CREATE INDEX CONCURRENTLY for every newly added
+	// index, superseding the populated-table heuristic. It remains gated on the
+	// target's CreateIndexConcurrently capability.
+	ConcurrentIndex bool
 }
 
 // MigrationFilePair represents one generated up/down migration file pair.
@@ -328,7 +346,7 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 	slog.Debug("Generated migration version", "version", version)
 
 	info := conn.Info()
-	specs, assessments, err := planGeneratedMigrationSpecs(diff, generated, dbSchema, info, version, opts.MigrationName)
+	specs, assessments, err := planGeneratedMigrationSpecs(diff, generated, dbSchema, info, version, opts.MigrationName, opts.DiffPolicy)
 	if err != nil {
 		return nil, err
 	}
@@ -413,8 +431,21 @@ func planGeneratedMigrationSpecs(
 	info dbschematypes.DBInfo,
 	version int64,
 	migrationName string,
+	policy DiffPolicy,
 ) ([]generatedMigrationSpec, []safety.StatementAssessment, error) {
-	concurrentIndexNames := concurrentIndexNamesForPopulatedTables(diff, generated, dbSchema, info)
+	// Apply the diff policy once, up front, BEFORE any concurrent-index split.
+	// The split separates an index redefinition's added and removed entries into
+	// different sub-diffs; if the skip filter ran per sub-diff after the split,
+	// it would mistake the orphaned removal for a genuine standalone drop and
+	// skip it, silently discarding the redefinition. Filtering here keeps the
+	// added/removed pair together, and downstream planning runs with an empty
+	// planner-level skip. The omitted changes are surfaced as leading comments.
+	var skipped []diffpolicy.SkippedChange
+	if skipSet := diffpolicy.NewSkipSet(policy.SkipChangeKinds...); !skipSet.Empty() {
+		diff, skipped = diffpolicy.Apply(diff, skipSet)
+	}
+
+	concurrentIndexNames := concurrentIndexNamesForPolicy(diff, generated, dbSchema, info, policy)
 	plannerOpts := planner.Options{
 		Capabilities:         info.Capabilities,
 		ConcurrentIndexNames: concurrentIndexNames,
@@ -440,7 +471,7 @@ func planGeneratedMigrationSpecs(
 		if err != nil || spec.UpSQL == "" {
 			return nil, assessments, err
 		}
-		return []generatedMigrationSpec{spec}, assessments, nil
+		return withSkipComments([]generatedMigrationSpec{spec}, skipped), assessments, nil
 	}
 
 	nodeGroups := splitNoTransactionNodes(info.Dialect, upNodes)
@@ -459,7 +490,7 @@ func planGeneratedMigrationSpecs(
 		if err != nil || spec.UpSQL == "" {
 			return nil, assessments, err
 		}
-		return []generatedMigrationSpec{spec}, assessments, nil
+		return withSkipComments([]generatedMigrationSpec{spec}, skipped), assessments, nil
 	}
 	if !allNoTransactionNodesAreConcurrentIndexes(nodeGroups.noTransaction) {
 		return nil, nil, fmt.Errorf("generated migration mixes transactional statements with non-transactional statements that cannot be split automatically")
@@ -507,7 +538,25 @@ func planGeneratedMigrationSpecs(
 			allAssessments = append(allAssessments, assessments...)
 		}
 	}
-	return specs, allAssessments, nil
+	return withSkipComments(specs, skipped), allAssessments, nil
+}
+
+// withSkipComments prepends the diff-policy omission comments to the first
+// generated spec so the audit trail is visible in the migration. When every
+// change was skipped there is no spec to attach to and the comments are dropped
+// along with the (empty) migration.
+func withSkipComments(specs []generatedMigrationSpec, skipped []diffpolicy.SkippedChange) []generatedMigrationSpec {
+	if len(specs) == 0 || len(skipped) == 0 {
+		return specs
+	}
+	var block strings.Builder
+	for _, change := range skipped {
+		block.WriteString("-- ")
+		block.WriteString(change.Comment())
+		block.WriteByte('\n')
+	}
+	specs[0].UpSQL = block.String() + specs[0].UpSQL
+	return specs
 }
 
 type generatedMigrationSpecOptions struct {
@@ -547,6 +596,10 @@ func buildGeneratedMigrationSpec(opts generatedMigrationSpecOptions) (generatedM
 		upSQL = withNoTransactionDirective(upSQL)
 	}
 
+	// opts.Diff is already diff-policy filtered by planGeneratedMigrationSpecs,
+	// so the down migration reverses only what the up migration actually did: a
+	// skipped destructive change is absent from the diff, so its inverse (e.g. a
+	// CREATE TABLE that would collide with the kept table) is never emitted.
 	downSQL, err := generateDownMigrationSQLWithOptions(opts.Diff, opts.Generated, opts.DBSchema, opts.Dialect, directiveOpts, opts.Capabilities)
 	if err != nil {
 		return generatedMigrationSpec{}, nil, fmt.Errorf("error generating down migration SQL: %w", err)
@@ -611,6 +664,28 @@ func allNoTransactionNodesAreConcurrentIndexes(nodes []ast.Node) bool {
 		}
 	}
 	return true
+}
+
+// concurrentIndexNamesForPolicy resolves which newly added indexes are built
+// concurrently. When the diff policy requests it, every newly added index is
+// concurrent (still gated on dialect and the CreateIndexConcurrently
+// capability); otherwise the populated-table heuristic applies.
+func concurrentIndexNamesForPolicy(
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+	dbSchema *dbschematypes.DBSchema,
+	info dbschematypes.DBInfo,
+	policy DiffPolicy,
+) []string {
+	if !policy.ConcurrentIndex {
+		return concurrentIndexNamesForPopulatedTables(diff, generated, dbSchema, info)
+	}
+	if !platform.IsPostgresFamily(info.Dialect) || !info.Capabilities.Has(capability.CreateIndexConcurrently) {
+		return nil
+	}
+	names := slices.Clone(diff.IndexesAdded)
+	slices.Sort(names)
+	return names
 }
 
 func concurrentIndexNamesForPopulatedTables(

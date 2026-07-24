@@ -2,7 +2,11 @@
 // Atlas project config files.
 package projectconfig
 
-import "slices"
+import (
+	"slices"
+
+	"github.com/stokaro/ptah/migration/diffpolicy"
+)
 
 const (
 	// PtahFileName is the conventional Ptah project config file.
@@ -139,9 +143,40 @@ type DiffConfig struct {
 	ConcurrentIndex DiffConcurrentIndexConfig
 }
 
-// DiffSkipConfig holds Atlas diff.skip policy.
+// DiffSkipConfig holds the diff.skip policy: the destructive change kinds a
+// project omits from generated migrations. Each field is a tri-state so an
+// explicit false can override an inherited true.
 type DiffSkipConfig struct {
-	DropTable ConfigBool
+	DropTable  ConfigBool
+	DropColumn ConfigBool
+	DropIndex  ConfigBool
+	DropEnum   ConfigBool
+}
+
+// SkipChangeKinds returns the change kinds this policy skips, in the canonical
+// diffpolicy order. It is the bridge from the config IR to the planner/generator
+// vocabulary.
+func (c DiffConfig) SkipChangeKinds() []diffpolicy.ChangeKind {
+	var kinds []diffpolicy.ChangeKind
+	if c.Skip.DropTable.Value {
+		kinds = append(kinds, diffpolicy.DropTable)
+	}
+	if c.Skip.DropColumn.Value {
+		kinds = append(kinds, diffpolicy.DropColumn)
+	}
+	if c.Skip.DropIndex.Value {
+		kinds = append(kinds, diffpolicy.DropIndex)
+	}
+	if c.Skip.DropEnum.Value {
+		kinds = append(kinds, diffpolicy.DropEnum)
+	}
+	return kinds
+}
+
+// ConcurrentIndexCreate reports whether the policy requests
+// CREATE INDEX CONCURRENTLY for newly added indexes.
+func (c DiffConfig) ConcurrentIndexCreate() bool {
+	return c.ConcurrentIndex.Create.Value
 }
 
 // DiffConcurrentIndexConfig holds Atlas diff.concurrent_index policy.
@@ -367,6 +402,9 @@ func mergeFormat(base, override FormatConfig) FormatConfig {
 func mergeDiff(base, override DiffConfig) DiffConfig {
 	result := base
 	result.Skip.DropTable = mergeBool(result.Skip.DropTable, override.Skip.DropTable)
+	result.Skip.DropColumn = mergeBool(result.Skip.DropColumn, override.Skip.DropColumn)
+	result.Skip.DropIndex = mergeBool(result.Skip.DropIndex, override.Skip.DropIndex)
+	result.Skip.DropEnum = mergeBool(result.Skip.DropEnum, override.Skip.DropEnum)
 	result.ConcurrentIndex.Create = mergeBool(result.ConcurrentIndex.Create, override.ConcurrentIndex.Create)
 	result.ConcurrentIndex.Drop = mergeBool(result.ConcurrentIndex.Drop, override.ConcurrentIndex.Drop)
 	return result

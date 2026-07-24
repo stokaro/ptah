@@ -138,6 +138,10 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		AllowDestructive:  allowDestructive,
 		ReportFormat:      reportFormat,
 		ShadowDatabaseURL: shadowDB,
+		DiffPolicy: generator.DiffPolicy{
+			SkipChangeKinds: projectCfg.Diff.SkipChangeKinds(),
+			ConcurrentIndex: projectCfg.Diff.ConcurrentIndexCreate(),
+		},
 	})
 	if err != nil {
 		return err

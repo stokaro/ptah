@@ -9,6 +9,8 @@ import (
 	"slices"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/stokaro/ptah/migration/diffpolicy"
 )
 
 type yamlDocument struct {
@@ -25,6 +27,16 @@ type yamlSettings struct {
 	Lint      yamlLint          `yaml:"lint"`
 	Migrate   yamlMigrateConfig `yaml:"migrate"`
 	OnlineDDL yamlOnlineDDL     `yaml:"online_ddl"`
+	Diff      yamlDiff          `yaml:"diff"`
+}
+
+// yamlDiff is the ptah.yaml diff policy block. skip lists destructive change
+// kinds to omit from generated migrations; concurrent_index requests
+// CREATE INDEX CONCURRENTLY for newly added indexes. concurrent_index is a
+// pointer so an explicit false is distinguishable from an unset value.
+type yamlDiff struct {
+	Skip            []string `yaml:"skip"`
+	ConcurrentIndex *bool    `yaml:"concurrent_index"`
 }
 
 type yamlMigration struct {
@@ -96,7 +108,10 @@ func ParsePtah(data []byte, filename, envName string) (Config, error) {
 }
 
 func selectPtahEnv(doc yamlDocument, envName string) (Config, error) {
-	base := doc.yamlSettings.projectConfig()
+	base, err := doc.yamlSettings.projectConfig()
+	if err != nil {
+		return Config{}, err
+	}
 	if len(doc.Env) == 0 {
 		return base, nil
 	}
@@ -105,7 +120,10 @@ func selectPtahEnv(doc yamlDocument, envName string) (Config, error) {
 		if !ok {
 			return Config{}, fmt.Errorf("ptah env %q not found", envName)
 		}
-		selected := env.projectConfig()
+		selected, err := env.projectConfig()
+		if err != nil {
+			return Config{}, err
+		}
 		selected.EnvName = envName
 		return Merge(base, selected), nil
 	}
@@ -113,14 +131,17 @@ func selectPtahEnv(doc yamlDocument, envName string) (Config, error) {
 		return Config{}, fmt.Errorf("ptah.yaml contains multiple env blocks; pass --env")
 	}
 	for name, env := range doc.Env {
-		selected := env.projectConfig()
+		selected, err := env.projectConfig()
+		if err != nil {
+			return Config{}, err
+		}
 		selected.EnvName = name
 		return Merge(base, selected), nil
 	}
 	return base, nil
 }
 
-func (c yamlSettings) projectConfig() Config {
+func (c yamlSettings) projectConfig() (Config, error) {
 	dev := c.Dev
 	if dev == "" {
 		dev = c.Migrate.Generate.ShadowDatabaseURL
@@ -163,5 +184,41 @@ func (c yamlSettings) projectConfig() Config {
 		cfg.Lint.DisabledRules = slices.Clone(*c.Lint.DisabledRules)
 		cfg.presence.lintDisabledRules = true
 	}
-	return cfg
+	diff, err := c.Diff.diffConfig()
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.Diff = diff
+	return cfg, nil
+}
+
+// diffConfig maps the ptah.yaml diff block onto the DiffConfig IR, validating
+// skip kinds against the shared diffpolicy vocabulary.
+func (d yamlDiff) diffConfig() (DiffConfig, error) {
+	var cfg DiffConfig
+	for _, raw := range d.Skip {
+		kind, err := diffpolicy.ParseChangeKind(raw)
+		if err != nil {
+			return DiffConfig{}, fmt.Errorf("ptah.yaml diff.skip: %w", err)
+		}
+		setDiffSkipKind(&cfg.Skip, kind)
+	}
+	if d.ConcurrentIndex != nil {
+		cfg.ConcurrentIndex.Create = ConfigBool{Value: *d.ConcurrentIndex, Set: true}
+	}
+	return cfg, nil
+}
+
+func setDiffSkipKind(skip *DiffSkipConfig, kind diffpolicy.ChangeKind) {
+	enabled := ConfigBool{Value: true, Set: true}
+	switch kind {
+	case diffpolicy.DropTable:
+		skip.DropTable = enabled
+	case diffpolicy.DropColumn:
+		skip.DropColumn = enabled
+	case diffpolicy.DropIndex:
+		skip.DropIndex = enabled
+	case diffpolicy.DropEnum:
+		skip.DropEnum = enabled
+	}
 }

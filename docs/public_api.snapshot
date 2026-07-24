@@ -632,10 +632,22 @@ type SchemaWriter interface {
     SchemaWriter interface for writing schemas to databases.
 
 
+## github.com/stokaro/ptah/migration/diffpolicy
+
+type ChangeKind string
+    const DropTable ChangeKind = "drop_table" ...
+    func AllChangeKinds() []ChangeKind
+    func ParseChangeKind(raw string) (ChangeKind, error)
+type SkipSet map[ChangeKind]struct{}
+    func NewSkipSet(kinds ...ChangeKind) SkipSet
+type SkippedChange struct{ ... }
+    func Apply(diff *types.SchemaDiff, skip SkipSet) (*types.SchemaDiff, []SkippedChange)
+
 ## github.com/stokaro/ptah/migration/generator
 
 func VerifyBaselineShadow(ctx context.Context, opts BaselineShadowVerifyOptions) error
 type BaselineShadowVerifyOptions struct{ ... }
+type DiffPolicy struct{ ... }
 type EmptyMigrationOptions struct{ ... }
 type GenerateMigrationOptions struct{ ... }
 type MigrationFilePair struct{ ... }
