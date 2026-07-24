@@ -38,7 +38,7 @@ func newAtlasMigrateApplyCommand() *cobra.Command {
 		execOrder: string(migrator.ExecOrderLinear),
 	}
 	cmd := &cobra.Command{
-		Use:   "apply [amount]",
+		Use:   "apply [flags] [amount]",
 		Short: "Apply pending migrations",
 		Long: `Apply pending Atlas migrations to the target database.
 

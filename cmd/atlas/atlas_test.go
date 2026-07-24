@@ -1,5 +1,9 @@
 package atlas
 
+// White-box testing required: this file covers Atlas compatibility helpers,
+// argument mappers, and command constructors whose correctness cannot be fully
+// exercised through the exported CLI command tree alone.
+
 import (
 	"bytes"
 	"context"
@@ -1621,7 +1625,7 @@ func TestNewAtlasCommand_MigrateSetMapsPositionalRevision(t *testing.T) {
 	c.Assert(sqliteAtlasAppliedVersions(c, dbPath), qt.DeepEquals, []string{"1"})
 }
 
-func TestNewAtlasCommand_MigrateSetHelpShowsRevisionArgument(t *testing.T) {
+func TestNewAtlasCommand_MigrateSetHelpShowsAtlasVersionArgument(t *testing.T) {
 	c := qt.New(t)
 	cmd := NewAtlasCommand()
 	var out bytes.Buffer
@@ -1632,13 +1636,13 @@ func TestNewAtlasCommand_MigrateSetHelpShowsRevisionArgument(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "atlas migrate set <revision>")
+	c.Assert(out.String(), qt.Contains, "atlas migrate set [flags] [version]")
 }
 
-func TestNewAtlasCommand_MigrateSetFailurePathRevisionArgument(t *testing.T) {
+func TestNewAtlasCommand_MigrateSetFailurePathVersionArgument(t *testing.T) {
 	c := qt.New(t)
 
-	c.Run("missing revision", func(c *qt.C) {
+	c.Run("missing version", func(c *qt.C) {
 		cmd := NewAtlasCommand()
 		var out bytes.Buffer
 		cmd.SetOut(&out)
@@ -1647,10 +1651,10 @@ func TestNewAtlasCommand_MigrateSetFailurePathRevisionArgument(t *testing.T) {
 
 		err := cmd.Execute()
 
-		c.Assert(err, qt.ErrorMatches, "atlas migrate set requires revision argument")
+		c.Assert(err, qt.ErrorMatches, "atlas migrate set requires version argument")
 	})
 
-	c.Run("multiple revisions", func(c *qt.C) {
+	c.Run("multiple versions", func(c *qt.C) {
 		cmd := NewAtlasCommand()
 		var out bytes.Buffer
 		cmd.SetOut(&out)
@@ -1659,7 +1663,7 @@ func TestNewAtlasCommand_MigrateSetFailurePathRevisionArgument(t *testing.T) {
 
 		err := cmd.Execute()
 
-		c.Assert(err, qt.ErrorMatches, `atlas migrate set accepts one revision argument, got \["1" "2"\]`)
+		c.Assert(err, qt.ErrorMatches, `atlas migrate set accepts one version argument, got \["1" "2"\]`)
 	})
 
 	c.Run("native version flag", func(c *qt.C) {
@@ -4374,7 +4378,7 @@ func TestNewAtlasCommand_HelpUsesAtlasPathForForwardedParentedCommand(t *testing
 	err := root.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "ptah atlas migrate apply")
+	c.Assert(out.String(), qt.Contains, "ptah atlas migrate apply [flags] [amount]")
 	c.Assert(out.String(), qt.Not(qt.Contains), "Usage:\n  migrate-up")
 }
 

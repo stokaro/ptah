@@ -56,7 +56,7 @@ SQL paths; prefer `--to` in new Ptah-authored scripts.
 | `ptah atlas migrate validate` | Verifies `ptah.sum` or `atlas.sum`; with `--dev-url`, cleans and replays migrations on the dev database to validate SQL execution. |
 | `ptah atlas migrate lint` | `ptah migrations lint`; supports Atlas-style `--latest N`, infers lint dialect from `--dev-url`, and cleans and replays migrations on directly connectable dev databases to validate SQL execution. |
 | `ptah atlas migrate new` | `ptah migrations create` |
-| `ptah atlas migrate set <revision>` | `ptah migrations repair` with Atlas revision metadata |
+| `ptah atlas migrate set [version]` | `ptah migrations repair` with Atlas revision metadata |
 | `ptah atlas migrate diff` | Replays local Atlas migrations on `--dev-url`, diffs against local schema files, writes an Atlas single-file migration, and updates `atlas.sum`; `--schema/-s` scopes the diff, and the Atlas-hidden `--dry-run` flag prints the generated SQL instead of writing files. |
 | `ptah atlas migrate import` | Imports local `file://` migration directories from Atlas-supported formats into a separate Atlas single-file directory and writes `atlas.sum`. |
 | `ptah atlas migrate checkpoint`, `edit`, `push`, `rebase`, `rm`, `test` | Registered Atlas CE boundary stubs for community-version unsupported commands. `--help` prints the Atlas CE unsupported notice and exits 0; direct execution prints the Atlas CE abort text and exits 1. These are explicit compatibility boundaries, not implemented Ptah features. |
@@ -370,7 +370,7 @@ register `--dir-format` with Atlas's default value `atlas`. The supported value
 is `atlas`; Atlas's external migration-tool formats (`golang-migrate`, `goose`,
 `flyway`, `liquibase`, and `dbmate`) fail explicitly on those commands until
 they are imported with `ptah atlas migrate import` or implemented natively.
-`ptah atlas migrate set <revision>` maps the positional revision to Ptah's
+`ptah atlas migrate set [version]` maps the positional version to Ptah's
 native repair version, uses Atlas revision-table metadata, and internally
 rewrites or creates the revision row for that version. With `--env`, it reads
 `env.url`, `migration.dir`, and `migration.revisions_schema` from `atlas.hcl`;
