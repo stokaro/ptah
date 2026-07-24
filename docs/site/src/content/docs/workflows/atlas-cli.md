@@ -59,6 +59,7 @@ SQL paths; prefer `--to` in new Ptah-authored scripts.
 | `ptah atlas migrate set <revision>` | `ptah migrations repair` with Atlas revision metadata |
 | `ptah atlas migrate diff` | Replays local Atlas migrations on `--dev-url`, diffs against local schema files, writes an Atlas single-file migration, and updates `atlas.sum`; `--schema/-s` scopes the diff, and the Atlas-hidden `--dry-run` flag prints the generated SQL instead of writing files. |
 | `ptah atlas migrate import` | Imports local `file://` migration directories from Atlas-supported formats into a separate Atlas single-file directory and writes `atlas.sum`. |
+| `ptah atlas migrate checkpoint`, `edit`, `push`, `rebase`, `rm`, `test` | Registered Atlas CE boundary stubs for community-version unsupported commands. `--help` prints the Atlas CE unsupported notice and exits 0; direct execution prints the Atlas CE abort text and exits 1. These are explicit compatibility boundaries, not implemented Ptah features. |
 
 ## Utility commands
 
@@ -75,6 +76,7 @@ SQL paths; prefer `--to` in new Ptah-authored scripts.
 | `ptah atlas schema apply` | Applies local desired schema files to a live database through Ptah schema diff and migration execution; supports `--env` project defaults, Atlas-style `--format` templates over the planned changes, `--schema/-s` parsing, the hidden Atlas `--file/-f` input alias, and `--exclude` resource filters. |
 | `ptah atlas schema diff` | Local `file://` schema-file diff for `.hcl`, `.yaml`, `.yml`, and `.sql` sources, including `--from/-f`, `--schema/-s` parsing, and `--exclude` resource filters. |
 | `ptah atlas schema fmt` | Formats local `.hcl` files using HCL canonical layout. |
+| `ptah atlas schema plan`, `push`, `test` | Registered Atlas CE boundary stubs for community-version unsupported commands. `--help` prints the Atlas CE unsupported notice and exits 0; direct execution prints the Atlas CE abort text and exits 1. These are explicit compatibility boundaries, not implemented Ptah features. |
 
 `ptah atlas schema inspect` accepts a live database `--url` and writes
 machine-oriented schema output without native Ptah status banners. The default

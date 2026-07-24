@@ -64,5 +64,10 @@ shares this exit-code contract.
 | `ptah atlas schema apply` | Local Atlas-style schema apply |
 | `ptah atlas schema diff` | Local Atlas-style schema-file diff |
 | `ptah atlas schema fmt` | Format local `.hcl` files |
+| `ptah atlas migrate checkpoint`, `edit`, `push`, `rebase`, `rm`, `test` | Atlas CE community-version unsupported boundary stub |
+| `ptah atlas schema plan`, `push`, `test` | Atlas CE community-version unsupported boundary stub |
 
-Unsupported Atlas-compatible flags are rejected explicitly and exit `2`.
+Atlas CE community-version unsupported boundary stubs mirror Atlas CE: `--help`
+prints the unsupported notice and exits `0`, while direct execution prints the
+Atlas CE abort text and exits `1`. Unsupported Atlas-compatible flags are
+rejected explicitly and exit `2`.
