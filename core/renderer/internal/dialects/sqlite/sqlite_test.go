@@ -51,6 +51,25 @@ func TestRenderCreateTableWithStrictAndWithoutRowID(t *testing.T) {
 `)
 }
 
+func TestRenderColumnForeignKeyPreservesConstraintName(t *testing.T) {
+	c := qt.New(t)
+
+	table := ast.NewCreateTable("projects").
+		AddColumn(ast.NewColumn("id", "INTEGER").SetPrimary()).
+		AddColumn(ast.NewColumn("organization_id", "INTEGER").
+			SetForeignKey("organizations", "id", "fk_projects_organization"))
+	table.Columns[1].ForeignKey.OnDelete = "CASCADE"
+
+	sql, err := renderer.RenderSQL("sqlite", table)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Equals, `CREATE TABLE "projects" (
+  "id" INTEGER PRIMARY KEY,
+  "organization_id" INTEGER CONSTRAINT "fk_projects_organization" REFERENCES "organizations" ("id") ON DELETE CASCADE
+);
+`)
+}
+
 func TestRenderIndexes(t *testing.T) {
 	c := qt.New(t)
 

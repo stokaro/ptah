@@ -254,14 +254,12 @@ func ColumnsWithDialect(genCol goschema.Field, dbCol types.DBColumn, dialect str
 		return colDiff
 	}
 
-	// Compare data types (simplified)
-	genType := normalize.Type(genCol.Type)
 	dbRawType := rawDBColumnType(dbCol)
-	dbType := normalize.Type(dbRawType)
+	genType, dbType := normalizeColumnTypesForDialect(genCol.Type, dbRawType, dialect)
 
 	if genType != dbType {
 		colDiff.Changes["type"] = fmt.Sprintf("%s -> %s", dbType, genType)
-	} else if typechange.IsNarrowing(dbRawType, genCol.Type) {
+	} else if shouldReportNarrowingTypeChange(dbRawType, genCol.Type, dialect) {
 		colDiff.Changes["type"] = fmt.Sprintf("%s -> %s", dbRawType, genCol.Type)
 	}
 
@@ -321,6 +319,47 @@ func ColumnsWithDialect(genCol goschema.Field, dbCol types.DBColumn, dialect str
 	}
 
 	return colDiff
+}
+
+func normalizeColumnTypesForDialect(genType, dbType, dialect string) (generatedType, databaseType string) {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.SQLite:
+		return normalize.Type(sqliteRenderedColumnType(genType)), normalize.Type(dbType)
+	default:
+		return normalize.Type(genType), normalize.Type(dbType)
+	}
+}
+
+func shouldReportNarrowingTypeChange(dbType, genType, dialect string) bool {
+	if platform.NormalizeDialect(dialect) == platform.SQLite &&
+		normalize.Type(dbType) == normalize.Type(sqliteRenderedColumnType(genType)) {
+		return false
+	}
+	return typechange.IsNarrowing(dbType, genType)
+}
+
+func sqliteRenderedColumnType(rawType string) string {
+	upper := strings.ToUpper(strings.TrimSpace(rawType))
+	base := upper
+	if idx := strings.Index(base, "("); idx >= 0 {
+		base = strings.TrimSpace(base[:idx])
+	}
+	switch base {
+	case "":
+		return "blob"
+	case "BOOLEAN", "BOOL":
+		return "integer"
+	case "SERIAL", "BIGSERIAL", "SMALLSERIAL", "AUTO_INCREMENT":
+		return "integer"
+	case "VARCHAR", "CHARACTER VARYING", "CHAR", "CHARACTER", "TEXT", "CITEXT", "ENUM":
+		return "text"
+	case "BYTEA", "BLOB":
+		return "blob"
+	case "DOUBLE PRECISION":
+		return "real"
+	default:
+		return rawType
+	}
 }
 
 func normalizeTablePrimaryKeyColumn(genCol goschema.Field, dbCol types.DBColumn) goschema.Field {

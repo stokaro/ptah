@@ -604,6 +604,148 @@ func TestCompareWithDialect_SQLiteInlineEnumsMatchGeneratedEnumFields(t *testing
 	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
 }
 
+func TestCompareWithDialect_SQLiteRenderedColumnTypesMatchCatalogReadback(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name          string
+		generatedType string
+		databaseType  string
+	}{
+		{name: "varchar renders as text", generatedType: "VARCHAR(255)", databaseType: "TEXT"},
+		{name: "char renders as text", generatedType: "CHAR(2)", databaseType: "TEXT"},
+		{name: "boolean renders as integer", generatedType: "BOOLEAN", databaseType: "INTEGER"},
+		{name: "serial renders as integer", generatedType: "SERIAL", databaseType: "INTEGER"},
+		{name: "bytea renders as blob", generatedType: "BYTEA", databaseType: "BLOB"},
+		{name: "double precision renders as real", generatedType: "DOUBLE PRECISION", databaseType: "REAL"},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			diff := schemadiff.CompareWithDialect(
+				sqliteColumnGeneratedSchema(tt.generatedType),
+				sqliteColumnDatabaseSchema(tt.databaseType),
+				"sqlite",
+			)
+			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
+		})
+	}
+}
+
+func TestCompareWithDialect_SQLiteDistinctColumnTypesStillDiff(t *testing.T) {
+	c := qt.New(t)
+
+	diff := schemadiff.CompareWithDialect(
+		sqliteColumnGeneratedSchema("INTEGER"),
+		sqliteColumnDatabaseSchema("TEXT"),
+		"sqlite",
+	)
+
+	c.Assert(diff.TablesModified, qt.HasLen, 1)
+	c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
+	c.Assert(diff.TablesModified[0].ColumnsModified[0].Changes["type"], qt.Equals, "text -> integer")
+}
+
+func TestCompareWithDialect_SQLiteDeclaredTypeDriftStillDiffs(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name          string
+		generatedType string
+		databaseType  string
+		wantChange    string
+	}{
+		{name: "database boolean is not rendered integer", generatedType: "INTEGER", databaseType: "BOOLEAN", wantChange: "boolean -> integer"},
+		{name: "database varchar is not rendered text", generatedType: "TEXT", databaseType: "VARCHAR(255)", wantChange: "varchar -> text"},
+		{name: "database empty type is not rendered blob", generatedType: "BLOB", databaseType: "", wantChange: " -> blob"},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			diff := schemadiff.CompareWithDialect(
+				sqliteColumnGeneratedSchema(tt.generatedType),
+				sqliteColumnDatabaseSchema(tt.databaseType),
+				"sqlite",
+			)
+			c.Assert(diff.TablesModified, qt.HasLen, 1)
+			c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
+			c.Assert(diff.TablesModified[0].ColumnsModified[0].Changes["type"], qt.Equals, tt.wantChange)
+		})
+	}
+}
+
+func TestCompareWithDialect_SQLiteUniqueConstraintAutoindexIsIgnored(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Tables: []goschema.Table{{
+			Name:       "projects",
+			StructName: "Project",
+		}},
+		Fields: []goschema.Field{
+			{StructName: "Project", Name: "organization_id", Type: "INTEGER", Nullable: false},
+			{StructName: "Project", Name: "slug", Type: "VARCHAR(64)", Nullable: false},
+		},
+		Constraints: []goschema.Constraint{{
+			Name:       "projects_org_slug_unique",
+			Type:       "UNIQUE",
+			Table:      "projects",
+			StructName: "Project",
+			Columns:    []string{"organization_id", "slug"},
+		}},
+	}
+	database := &types.DBSchema{
+		Tables: []types.DBTable{{
+			Name: "projects",
+			Type: "TABLE",
+			Columns: []types.DBColumn{
+				{Name: "organization_id", DataType: "INTEGER", ColumnType: "INTEGER", IsNullable: "NO"},
+				{Name: "slug", DataType: "TEXT", ColumnType: "TEXT", IsNullable: "NO"},
+			},
+		}},
+		Indexes: []types.DBIndex{{
+			Name:      "sqlite_autoindex_projects_1",
+			TableName: "projects",
+			Columns:   []string{"organization_id", "slug"},
+			IsUnique:  true,
+		}},
+		Constraints: []types.DBConstraint{{
+			Name:        "projects_org_slug_unique",
+			TableName:   "projects",
+			Type:        "UNIQUE",
+			ColumnName:  "organization_id",
+			ColumnNames: []string{"organization_id", "slug"},
+		}},
+	}
+
+	diff := schemadiff.CompareWithDialect(generated, database, "sqlite")
+
+	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
+}
+
+func TestCompareWithDialect_NonSQLiteAutoindexNameIsCompared(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Tables: []goschema.Table{{Name: "projects", StructName: "Project"}},
+	}
+	database := &types.DBSchema{
+		Tables: []types.DBTable{{Name: "projects", Type: "TABLE"}},
+		Indexes: []types.DBIndex{{
+			Name:      "sqlite_autoindex_projects_1",
+			TableName: "projects",
+			Columns:   []string{"slug"},
+			IsUnique:  true,
+		}},
+	}
+
+	diff := schemadiff.CompareWithDialect(generated, database, "postgres")
+
+	c.Assert(diff.IndexesRemoved, qt.DeepEquals, []string{"sqlite_autoindex_projects_1"})
+	c.Assert(diff.IndexesRemovedWithTables, qt.HasLen, 1)
+	c.Assert(diff.IndexesRemovedWithTables[0].TableName, qt.Equals, "projects")
+}
+
 func TestCompareWithDialect_SQLServerInlineEnumsMatchGeneratedEnumFields(t *testing.T) {
 	c := qt.New(t)
 
@@ -655,6 +797,32 @@ func TestCompareWithDialect_SQLServerInlineEnumsMatchGeneratedEnumFields(t *test
 	c.Assert(diff.TablesModified, qt.HasLen, 0)
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
 	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
+}
+
+func sqliteColumnGeneratedSchema(columnType string) *goschema.Database {
+	return &goschema.Database{
+		Tables: []goschema.Table{{
+			Name:       "users",
+			StructName: "User",
+		}},
+		Fields: []goschema.Field{
+			{StructName: "User", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "User", Name: "value", Type: columnType, Nullable: false},
+		},
+	}
+}
+
+func sqliteColumnDatabaseSchema(columnType string) *types.DBSchema {
+	return &types.DBSchema{
+		Tables: []types.DBTable{{
+			Name: "users",
+			Type: "TABLE",
+			Columns: []types.DBColumn{
+				{Name: "id", DataType: "INTEGER", ColumnType: "INTEGER", IsNullable: "NO", IsPrimaryKey: true},
+				{Name: "value", DataType: columnType, ColumnType: columnType, IsNullable: "NO"},
+			},
+		}},
+	}
 }
 
 func TestCompareWithOptions_CustomIgnoreList(t *testing.T) {

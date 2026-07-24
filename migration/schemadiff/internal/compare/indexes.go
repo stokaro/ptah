@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/dbschema/types"
 	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
 )
@@ -172,6 +173,10 @@ func isMySQLConstraintBasedUniqueIndex(indexName, tableName string) bool {
 // - Space Complexity: O(n + m) for the boolean maps
 // - Index operations can be expensive on large tables in production
 func Indexes(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+	IndexesWithDialect(generated, database, diff, "")
+}
+
+func IndexesWithDialect(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff, dialect string) {
 	// Create sets for comparison
 	genIndexes := make(map[string]goschema.Index)
 	for _, index := range generated.Indexes {
@@ -201,6 +206,9 @@ func Indexes(generated *goschema.Database, database *types.DBSchema, diff *difft
 	for _, index := range database.Indexes {
 		// Skip primary key indexes as they're handled with tables
 		if index.IsPrimary {
+			continue
+		}
+		if isSQLiteInternalAutoindex(index.Name, dialect) {
 			continue
 		}
 
@@ -256,6 +264,11 @@ func Indexes(generated *goschema.Database, database *types.DBSchema, diff *difft
 	sort.Slice(diff.IndexesRemovedWithTables, func(i, j int) bool {
 		return diff.IndexesRemovedWithTables[i].Name < diff.IndexesRemovedWithTables[j].Name
 	})
+}
+
+func isSQLiteInternalAutoindex(indexName, dialect string) bool {
+	return platform.NormalizeDialect(dialect) == platform.SQLite &&
+		strings.HasPrefix(indexName, "sqlite_autoindex_")
 }
 
 func indexDefinitionsChanged(genIndex goschema.Index, dbIndex types.DBIndex) bool {
