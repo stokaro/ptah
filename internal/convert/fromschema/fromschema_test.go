@@ -90,6 +90,36 @@ func functionStatementIndexByName(statements *ast.StatementList, name string) in
 	return -1
 }
 
+func createSequenceStatementByName(statements *ast.StatementList, name string) *ast.CreateSequenceNode {
+	for _, stmt := range statements.Statements {
+		sequence, ok := stmt.(*ast.CreateSequenceNode)
+		if ok && sequence.Name == name {
+			return sequence
+		}
+	}
+	return nil
+}
+
+func createSequenceStatementIndexByName(statements *ast.StatementList, name string) int {
+	for i, stmt := range statements.Statements {
+		sequence, ok := stmt.(*ast.CreateSequenceNode)
+		if ok && sequence.Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+func alterSequenceStatementIndexByName(statements *ast.StatementList, name string) int {
+	for i, stmt := range statements.Statements {
+		sequence, ok := stmt.(*ast.AlterSequenceNode)
+		if ok && sequence.Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
 func foreignKeyAlterStatementByName(statements *ast.StatementList, tableName, constraintName string) *ast.AlterTableNode {
 	for _, stmt := range statements.Statements {
 		alter, ok := stmt.(*ast.AlterTableNode)

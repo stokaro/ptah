@@ -148,6 +148,30 @@ func (m *MockVisitor) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 	return nil
 }
 
+func (m *MockVisitor) VisitCreateSequence(node *ast.CreateSequenceNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "CreateSequence:"+node.Name)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
+func (m *MockVisitor) VisitAlterSequence(node *ast.AlterSequenceNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "AlterSequence:"+node.Name)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
+func (m *MockVisitor) VisitDropSequence(node *ast.DropSequenceNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "DropSequence:"+node.Name)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
 func (m *MockVisitor) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
 	m.VisitedNodes = append(m.VisitedNodes, "CreatePolicy:"+node.Name)
 	if m.ReturnError {

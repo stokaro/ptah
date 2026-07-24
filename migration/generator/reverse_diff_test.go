@@ -1167,3 +1167,44 @@ func TestGenerateDownMigrationSQL_MySQLFamilyDropsGeneratedForeignKeyBackingInde
 		})
 	}
 }
+
+func TestReverseSchemaDiff_Sequences(t *testing.T) {
+	c := qt.New(t)
+
+	input := &types.SchemaDiff{
+		SequencesAdded:   []string{"added_seq"},
+		SequencesRemoved: []string{"removed_seq"},
+		SequencesModified: []types.SequenceDiff{
+			{SequenceName: "changed_seq", Changes: map[string]string{"increment": "1 -> 2"}},
+		},
+	}
+
+	result := reverseSchemaDiff(input)
+
+	c.Assert(result.SequencesAdded, qt.DeepEquals, []string{"removed_seq"})
+	c.Assert(result.SequencesRemoved, qt.DeepEquals, []string{"added_seq"})
+	c.Assert(result.SequencesModified, qt.HasLen, 1)
+	c.Assert(result.SequencesModified[0].SequenceName, qt.Equals, "changed_seq")
+	c.Assert(result.SequencesModified[0].Changes["increment"], qt.Equals, "2 -> 1")
+}
+
+func TestGenerateDownMigrationSQL_SequenceAdded(t *testing.T) {
+	c := qt.New(t)
+
+	// The up migration added a standalone sequence, so the down migration must
+	// drop it. The post-up database state carries the sequence.
+	upDiff := &types.SchemaDiff{
+		SequencesAdded: []string{"order_seq"},
+	}
+	dbSchema := &dbschematypes.DBSchema{
+		Sequences: []dbschematypes.DBSequence{{Name: "order_seq", DataType: "bigint"}},
+	}
+	generatedSchema := &goschema.Database{
+		Sequences: []goschema.Sequence{{Name: "order_seq", AsType: "bigint"}},
+	}
+
+	downSQL, err := generateDownMigrationSQL(upDiff, generatedSchema, dbSchema, "postgres")
+	c.Assert(err, qt.IsNil)
+	downSQL = legacyRenderedSQL(downSQL)
+	c.Assert(downSQL, qt.Contains, "DROP SEQUENCE IF EXISTS order_seq")
+}

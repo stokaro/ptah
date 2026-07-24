@@ -37,6 +37,9 @@ type User struct {
 //migrator:schema:role name="fixture_app_user" login="false" inherit="true" comment="App role for grants demo"
 type AppRoleMarker struct{}
 
+//migrator:schema:sequence name="fixture_order_seq" as="bigint" start="1000" increment="1" cache="20" comment="Fixture standalone sequence"
+type OrderSeqMarker struct{}
+
 //migrator:schema:function name="get_fixture_tenant_id" returns="TEXT" language="sql" body="SELECT current_setting('app.tenant_id', true)" comment="Fixture RLS helper"
 //migrator:schema:rls:enable table="users" comment="Enable RLS for fixture users"
 //migrator:schema:rls:policy name="users_tenant_policy" table="users" for="SELECT" to="fixture_app_user" using="get_fixture_tenant_id() IS NOT NULL" comment="Fixture RLS policy"
@@ -54,6 +57,7 @@ type UserTrigger struct{}
 //migrator:schema:grant role="fixture_app_user" privilege="SELECT,INSERT,UPDATE,DELETE" on_table="users" comment="DML grants to fixture_app_user"
 //migrator:schema:grant role="fixture_app_user" privileges="SELECT, INSERT" on_table="users" with_option="true" comment="Grant option fixture"
 //migrator:schema:grant role="fixture_app_user" privilege="USAGE" on_schema="public" comment="Schema usage"
+//migrator:schema:grant role="fixture_app_user" privilege="USAGE,SELECT" on_sequence="fixture_order_seq" comment="Sequence usage for fixture_app_user"
 type AccessControlMarker struct{}
 
 type UserMetadata struct {

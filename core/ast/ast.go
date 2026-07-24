@@ -46,6 +46,12 @@ type Visitor interface {
 	VisitCreateFunction(*CreateFunctionNode) error
 	// VisitDropFunction renders a DROP FUNCTION statement (PostgreSQL-specific)
 	VisitDropFunction(*DropFunctionNode) error
+	// VisitCreateSequence renders a CREATE SEQUENCE statement (PostgreSQL-specific)
+	VisitCreateSequence(*CreateSequenceNode) error
+	// VisitAlterSequence renders an ALTER SEQUENCE statement (PostgreSQL-specific)
+	VisitAlterSequence(*AlterSequenceNode) error
+	// VisitDropSequence renders a DROP SEQUENCE statement (PostgreSQL-specific)
+	VisitDropSequence(*DropSequenceNode) error
 	// VisitCreateView renders a CREATE VIEW statement
 	VisitCreateView(*CreateViewNode) error
 	// VisitDropView renders a DROP VIEW statement

@@ -713,6 +713,265 @@ func (n *DropExtensionNode) Accept(visitor Visitor) error {
 	return visitor.VisitDropExtension(n)
 }
 
+// CreateSequenceNode represents a CREATE SEQUENCE statement (PostgreSQL).
+//
+// A sequence is a standalone schema object, distinct from the implicit,
+// table-owned sequences that back SERIAL / BIGSERIAL columns. Optional numeric
+// options use pointers so an unset option is distinguishable from an explicit
+// zero (which callers must never rely on for INCREMENT, since zero is invalid).
+type CreateSequenceNode struct {
+	// Name is the sequence name.
+	Name string
+	// Schema is an optional schema/namespace qualifier.
+	Schema string
+	// IfNotExists indicates whether to use IF NOT EXISTS.
+	IfNotExists bool
+	// AsType is the optional underlying integer type (e.g. "bigint").
+	AsType string
+	// Start is the optional START WITH value.
+	Start *int64
+	// Increment is the optional INCREMENT BY value (must be non-zero).
+	Increment *int64
+	// MinValue is the optional MINVALUE bound.
+	MinValue *int64
+	// MaxValue is the optional MAXVALUE bound.
+	MaxValue *int64
+	// Cache is the optional CACHE size.
+	Cache *int64
+	// Cycle indicates whether the sequence uses CYCLE (default NO CYCLE).
+	Cycle bool
+	// OwnedBy is an optional "table.column" association (OWNED BY). Because a
+	// sequence referenced by a column DEFAULT must be created before its table
+	// while OWNED BY requires the table to already exist, planners typically
+	// emit OWNED BY as a separate ALTER SEQUENCE after table creation rather
+	// than inline here.
+	OwnedBy string
+	// Comment is an optional comment for the sequence.
+	Comment string
+}
+
+// NewCreateSequence creates a new CREATE SEQUENCE node with the specified name.
+func NewCreateSequence(name string) *CreateSequenceNode {
+	return &CreateSequenceNode{Name: name}
+}
+
+// SetSchema sets the schema/namespace qualifier.
+func (n *CreateSequenceNode) SetSchema(schema string) *CreateSequenceNode {
+	n.Schema = schema
+	return n
+}
+
+// SetIfNotExists marks the sequence to use IF NOT EXISTS.
+func (n *CreateSequenceNode) SetIfNotExists() *CreateSequenceNode {
+	n.IfNotExists = true
+	return n
+}
+
+// SetAs sets the underlying integer type.
+func (n *CreateSequenceNode) SetAs(asType string) *CreateSequenceNode {
+	n.AsType = asType
+	return n
+}
+
+// SetStart sets the START WITH value.
+func (n *CreateSequenceNode) SetStart(start int64) *CreateSequenceNode {
+	n.Start = &start
+	return n
+}
+
+// SetIncrement sets the INCREMENT BY value.
+func (n *CreateSequenceNode) SetIncrement(increment int64) *CreateSequenceNode {
+	n.Increment = &increment
+	return n
+}
+
+// SetMinValue sets the MINVALUE bound.
+func (n *CreateSequenceNode) SetMinValue(minValue int64) *CreateSequenceNode {
+	n.MinValue = &minValue
+	return n
+}
+
+// SetMaxValue sets the MAXVALUE bound.
+func (n *CreateSequenceNode) SetMaxValue(maxValue int64) *CreateSequenceNode {
+	n.MaxValue = &maxValue
+	return n
+}
+
+// SetCache sets the CACHE size.
+func (n *CreateSequenceNode) SetCache(cache int64) *CreateSequenceNode {
+	n.Cache = &cache
+	return n
+}
+
+// SetCycle sets whether the sequence uses CYCLE.
+func (n *CreateSequenceNode) SetCycle(cycle bool) *CreateSequenceNode {
+	n.Cycle = cycle
+	return n
+}
+
+// SetOwnedBy sets the OWNED BY association ("table.column").
+func (n *CreateSequenceNode) SetOwnedBy(ownedBy string) *CreateSequenceNode {
+	n.OwnedBy = ownedBy
+	return n
+}
+
+// SetComment sets a comment for the sequence.
+func (n *CreateSequenceNode) SetComment(comment string) *CreateSequenceNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for CreateSequenceNode.
+func (n *CreateSequenceNode) Accept(visitor Visitor) error {
+	return visitor.VisitCreateSequence(n)
+}
+
+// AlterSequenceNode represents an ALTER SEQUENCE statement (PostgreSQL). Only
+// the set (non-nil / non-empty) options are emitted, so it can express either a
+// targeted change from a diff or a post-table OWNED BY association.
+type AlterSequenceNode struct {
+	// Name is the sequence name.
+	Name string
+	// Schema is an optional schema/namespace qualifier.
+	Schema string
+	// AsType changes the underlying integer type when non-empty.
+	AsType string
+	// Start changes the START WITH value when non-nil.
+	Start *int64
+	// Increment changes the INCREMENT BY value when non-nil.
+	Increment *int64
+	// MinValue changes the MINVALUE bound when non-nil.
+	MinValue *int64
+	// MaxValue changes the MAXVALUE bound when non-nil.
+	MaxValue *int64
+	// Cache changes the CACHE size when non-nil.
+	Cache *int64
+	// Cycle sets CYCLE / NO CYCLE when non-nil.
+	Cycle *bool
+	// OwnedBy sets the OWNED BY association when non-empty (use "NONE" to detach).
+	OwnedBy string
+	// Comment is an optional comment for the operation.
+	Comment string
+}
+
+// NewAlterSequence creates a new ALTER SEQUENCE node with the specified name.
+func NewAlterSequence(name string) *AlterSequenceNode {
+	return &AlterSequenceNode{Name: name}
+}
+
+// SetSchema sets the schema/namespace qualifier.
+func (n *AlterSequenceNode) SetSchema(schema string) *AlterSequenceNode {
+	n.Schema = schema
+	return n
+}
+
+// SetAs sets the underlying integer type.
+func (n *AlterSequenceNode) SetAs(asType string) *AlterSequenceNode {
+	n.AsType = asType
+	return n
+}
+
+// SetStart sets the START WITH value.
+func (n *AlterSequenceNode) SetStart(start int64) *AlterSequenceNode {
+	n.Start = &start
+	return n
+}
+
+// SetIncrement sets the INCREMENT BY value.
+func (n *AlterSequenceNode) SetIncrement(increment int64) *AlterSequenceNode {
+	n.Increment = &increment
+	return n
+}
+
+// SetMinValue sets the MINVALUE bound.
+func (n *AlterSequenceNode) SetMinValue(minValue int64) *AlterSequenceNode {
+	n.MinValue = &minValue
+	return n
+}
+
+// SetMaxValue sets the MAXVALUE bound.
+func (n *AlterSequenceNode) SetMaxValue(maxValue int64) *AlterSequenceNode {
+	n.MaxValue = &maxValue
+	return n
+}
+
+// SetCache sets the CACHE size.
+func (n *AlterSequenceNode) SetCache(cache int64) *AlterSequenceNode {
+	n.Cache = &cache
+	return n
+}
+
+// SetCycle sets CYCLE / NO CYCLE.
+func (n *AlterSequenceNode) SetCycle(cycle bool) *AlterSequenceNode {
+	n.Cycle = &cycle
+	return n
+}
+
+// SetOwnedBy sets the OWNED BY association ("table.column" or "NONE").
+func (n *AlterSequenceNode) SetOwnedBy(ownedBy string) *AlterSequenceNode {
+	n.OwnedBy = ownedBy
+	return n
+}
+
+// SetComment sets a comment for the operation.
+func (n *AlterSequenceNode) SetComment(comment string) *AlterSequenceNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for AlterSequenceNode.
+func (n *AlterSequenceNode) Accept(visitor Visitor) error {
+	return visitor.VisitAlterSequence(n)
+}
+
+// DropSequenceNode represents a DROP SEQUENCE statement (PostgreSQL).
+type DropSequenceNode struct {
+	// Name is the sequence name to drop.
+	Name string
+	// Schema is an optional schema/namespace qualifier.
+	Schema string
+	// IfExists indicates whether to use IF EXISTS.
+	IfExists bool
+	// Cascade indicates whether to use CASCADE (removes dependent objects).
+	Cascade bool
+	// Comment is an optional comment for the drop operation.
+	Comment string
+}
+
+// NewDropSequence creates a new DROP SEQUENCE node with the specified name.
+func NewDropSequence(name string) *DropSequenceNode {
+	return &DropSequenceNode{Name: name}
+}
+
+// SetSchema sets the schema/namespace qualifier.
+func (n *DropSequenceNode) SetSchema(schema string) *DropSequenceNode {
+	n.Schema = schema
+	return n
+}
+
+// SetIfExists marks the drop to use IF EXISTS.
+func (n *DropSequenceNode) SetIfExists() *DropSequenceNode {
+	n.IfExists = true
+	return n
+}
+
+// SetCascade marks the drop to use CASCADE.
+func (n *DropSequenceNode) SetCascade() *DropSequenceNode {
+	n.Cascade = true
+	return n
+}
+
+// SetComment sets a comment for the DROP SEQUENCE operation.
+func (n *DropSequenceNode) SetComment(comment string) *DropSequenceNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for DropSequenceNode.
+func (n *DropSequenceNode) Accept(visitor Visitor) error {
+	return visitor.VisitDropSequence(n)
+}
+
 // NewIndex creates a new index node with the specified name, table, and columns.
 //
 // Example:
@@ -2077,7 +2336,7 @@ type GrantPrivilegeNode struct {
 	Role string
 	// Privileges contains one or more privileges, e.g. SELECT, INSERT, USAGE.
 	Privileges []string
-	// ObjectType is the target kind, currently TABLE or SCHEMA.
+	// ObjectType is the target kind, such as TABLE, SCHEMA, or SEQUENCE.
 	ObjectType string
 	// ObjectName is the target table or schema name.
 	ObjectName string
@@ -2120,7 +2379,7 @@ type RevokePrivilegeNode struct {
 	Role string
 	// Privileges contains one or more privileges, e.g. SELECT, INSERT, USAGE.
 	Privileges []string
-	// ObjectType is the target kind, currently TABLE or SCHEMA.
+	// ObjectType is the target kind, such as TABLE, SCHEMA, or SEQUENCE.
 	ObjectType string
 	// ObjectName is the target table or schema name.
 	ObjectName string

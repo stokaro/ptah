@@ -108,6 +108,9 @@ func rejectUnsupportedSchemaObjects(diff *types.SchemaDiff) error {
 	if len(diff.FunctionsAdded) > 0 || len(diff.FunctionsModified) > 0 || len(diff.FunctionsRemoved) > 0 {
 		return unsupportedFeaturef("functions are not supported")
 	}
+	if len(diff.SequencesAdded) > 0 || len(diff.SequencesModified) > 0 || len(diff.SequencesRemoved) > 0 {
+		return unsupportedFeaturef("sequences are not supported")
+	}
 	return nil
 }
 

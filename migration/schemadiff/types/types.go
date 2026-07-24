@@ -171,6 +171,18 @@ type SchemaDiff struct {
 	// schemas but have different definitions (parameters, body, attributes, etc.)
 	FunctionsModified []FunctionDiff `json:"functions_modified"`
 
+	// SequencesAdded contains names of standalone sequences that exist in the target
+	// schema but not in the current database schema.
+	SequencesAdded []string `json:"sequences_added"`
+
+	// SequencesRemoved contains names of standalone sequences that exist in the current
+	// database but not in the target schema (potentially dangerous - may break defaults).
+	SequencesRemoved []string `json:"sequences_removed"`
+
+	// SequencesModified contains detailed information about sequences that exist in both
+	// schemas but have different options (increment, cache, cycle, ownership, etc.).
+	SequencesModified []SequenceDiff `json:"sequences_modified"`
+
 	// ViewsAdded contains names of views that exist in the target schema
 	// but not in the current database schema.
 	ViewsAdded []string `json:"views_added"`
@@ -314,6 +326,7 @@ func (d *SchemaDiff) HasChanges() bool {
 		d.hasIndexChanges() ||
 		d.hasExtensionChanges() ||
 		d.hasFunctionChanges() ||
+		d.hasSequenceChanges() ||
 		d.hasViewChanges() ||
 		d.hasMaterializedViewChanges() ||
 		d.hasTriggerChanges() ||
@@ -353,6 +366,13 @@ func (d *SchemaDiff) hasFunctionChanges() bool {
 	return len(d.FunctionsAdded) > 0 ||
 		len(d.FunctionsRemoved) > 0 ||
 		len(d.FunctionsModified) > 0
+}
+
+// hasSequenceChanges returns true if there are any sequence-related changes
+func (d *SchemaDiff) hasSequenceChanges() bool {
+	return len(d.SequencesAdded) > 0 ||
+		len(d.SequencesRemoved) > 0 ||
+		len(d.SequencesModified) > 0
 }
 
 func (d *SchemaDiff) hasViewChanges() bool {
@@ -539,6 +559,16 @@ type FunctionDiff struct {
 	Changes map[string]string `json:"changes"`
 }
 
+// SequenceDiff represents changes to a standalone sequence definition.
+type SequenceDiff struct {
+	// SequenceName is the (optionally schema-qualified) name of the sequence.
+	SequenceName string `json:"sequence_name"`
+
+	// Changes maps change types to their old->new value transitions
+	// Format: "change_type" -> "old_value -> new_value"
+	Changes map[string]string `json:"changes"`
+}
+
 // ViewDiff represents changes to a view definition.
 type ViewDiff struct {
 	ViewName string            `json:"view_name"`
@@ -664,7 +694,7 @@ type GrantRef struct {
 	// Privilege is the individual privilege, e.g. SELECT, INSERT, or USAGE.
 	Privilege string `json:"privilege"`
 
-	// ObjectType is the target kind, currently TABLE or SCHEMA.
+	// ObjectType is the target kind: TABLE, SCHEMA, or SEQUENCE.
 	ObjectType string `json:"object_type"`
 
 	// ObjectName is the target table or schema name.

@@ -857,6 +857,24 @@ func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
 	return nil
 }
 
+// VisitCreateSequence is a no-op for ClickHouse (no standalone sequences).
+func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
+	r.notSupported("CREATE SEQUENCE", node.Name)
+	return nil
+}
+
+// VisitAlterSequence mirrors VisitCreateSequence.
+func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
+	r.notSupported("ALTER SEQUENCE", node.Name)
+	return nil
+}
+
+// VisitDropSequence mirrors VisitCreateSequence.
+func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
+	r.notSupported("DROP SEQUENCE", node.Name)
+	return nil
+}
+
 func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
 	r.notSupported("CREATE VIEW", node.Name)
 	return nil

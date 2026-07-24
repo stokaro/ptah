@@ -63,10 +63,25 @@ type AccessControl struct{}
 - `privilege` or `privileges`: One privilege or a comma-separated privilege list
 - `on_table`: Target table for table privileges
 - `on_schema`: Target schema for schema privileges such as `USAGE`
+- `on_sequence`: Target sequence for sequence privileges (`USAGE`, `SELECT`, `UPDATE`)
 - `with_option`: Whether to emit `WITH GRANT OPTION` (default: `false`)
 - `comment`: Optional comment describing the grant
 
-`on_table` and `on_schema` are mutually exclusive. Table grants are compared at the individual privilege level, so `privilege="SELECT,INSERT"` round-trips with PostgreSQL introspection, which reports one row per privilege.
+`on_table`, `on_schema`, and `on_sequence` are mutually exclusive. Table grants are compared at the individual privilege level, so `privilege="SELECT,INSERT"` round-trips with PostgreSQL introspection, which reports one row per privilege.
+
+### Sequence grants
+
+Grant privileges on a standalone sequence (see the [sequences guide](./sequences.md)) with `on_sequence`. The valid sequence privileges are `USAGE`, `SELECT`, and `UPDATE`:
+
+```go
+//migrator:schema:sequence name="order_number_seq" start="1000"
+type OrderNumberSeq struct{}
+
+//migrator:schema:grant role="app_writer" privilege="USAGE,SELECT" on_sequence="order_number_seq"
+type AccessControl struct{}
+```
+
+This renders `GRANT USAGE, SELECT ON SEQUENCE order_number_seq TO app_writer;`.
 
 ## Advanced Role Configurations
 

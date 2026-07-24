@@ -67,9 +67,13 @@ func grantRefsFromGenerated(grant goschema.Grant) []difftypes.GrantRef {
 	grant.Canonicalize()
 	objectType := "TABLE"
 	objectName := grant.OnTable
-	if grant.OnSchema != "" {
+	switch {
+	case grant.OnSchema != "":
 		objectType = "SCHEMA"
 		objectName = grant.OnSchema
+	case grant.OnSequence != "":
+		objectType = "SEQUENCE"
+		objectName = grant.OnSequence
 	}
 	refs := make([]difftypes.GrantRef, 0, len(grant.Privileges))
 	for _, privilege := range grant.Privileges {

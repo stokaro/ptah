@@ -31,6 +31,7 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 	convertExtensions(database, dbSchema.Extensions)
 	convertRLSPolicies(database, dbSchema.RLSPolicies, tableStructNames)
 	convertFunctions(database, dbSchema.Functions)
+	convertSequences(database, dbSchema.Sequences)
 	convertViews(database, dbSchema.Views)
 	convertMaterializedViews(database, dbSchema.MatViews)
 	convertTriggers(database, dbSchema.Triggers)
@@ -62,6 +63,7 @@ func newDatabase() *goschema.Database {
 		Enums:             make([]goschema.Enum, 0),
 		Extensions:        make([]goschema.Extension, 0),
 		Functions:         make([]goschema.Function, 0),
+		Sequences:         make([]goschema.Sequence, 0),
 		Views:             make([]goschema.View, 0),
 		MaterializedViews: make([]goschema.MaterializedView, 0),
 		Triggers:          make([]goschema.Trigger, 0),
@@ -238,6 +240,24 @@ func convertFunctions(database *goschema.Database, dbFunctions []dbschematypes.D
 			Comment:    dbFunction.Comment,
 		}
 		database.Functions = append(database.Functions, function)
+	}
+}
+
+func convertSequences(database *goschema.Database, dbSequences []dbschematypes.DBSequence) {
+	for _, dbSequence := range dbSequences {
+		database.Sequences = append(database.Sequences, goschema.Sequence{
+			Name:      dbSequence.Name,
+			Schema:    dbSequence.Schema,
+			AsType:    dbSequence.DataType,
+			Start:     dbSequence.Start,
+			Increment: dbSequence.Increment,
+			MinValue:  dbSequence.MinValue,
+			MaxValue:  dbSequence.MaxValue,
+			Cache:     dbSequence.Cache,
+			Cycle:     dbSequence.Cycle,
+			OwnedBy:   dbSequence.OwnedBy,
+			Comment:   dbSequence.Comment,
+		})
 	}
 }
 

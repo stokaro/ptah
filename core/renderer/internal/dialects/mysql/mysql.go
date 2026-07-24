@@ -191,6 +191,21 @@ func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
 	return r.r.VisitDropFunction(node)
 }
 
+// VisitCreateSequence delegates to the mysqllike renderer (no-op)
+func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
+	return r.r.VisitCreateSequence(node)
+}
+
+// VisitAlterSequence delegates to the mysqllike renderer (no-op)
+func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
+	return r.r.VisitAlterSequence(node)
+}
+
+// VisitDropSequence delegates to the mysqllike renderer (no-op)
+func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
+	return r.r.VisitDropSequence(node)
+}
+
 func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
 	return r.r.VisitCreateView(node)
 }

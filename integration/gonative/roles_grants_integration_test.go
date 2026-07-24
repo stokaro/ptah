@@ -234,9 +234,12 @@ func TestGoFixtures_ParseDirForSchemaObjects(t *testing.T) {
 	c.Assert(result.Triggers, qt.HasLen, 1)
 	c.Assert(result.Triggers[0].Name, qt.Equals, "users_set_updated_at")
 
-	c.Assert(result.Grants, qt.HasLen, 3)
+	c.Assert(result.Grants, qt.HasLen, 4)
 	c.Assert(result.Constraints, qt.HasLen, 1)
 	c.Assert(result.Constraints[0].Name, qt.Equals, "users_email_check")
+
+	c.Assert(result.Sequences, qt.HasLen, 1)
+	c.Assert(result.Sequences[0].Name, qt.Equals, "fixture_order_seq")
 
 	c.Assert(result.Roles, qt.HasLen, 1)
 	c.Assert(result.Roles[0].Name, qt.Equals, "fixture_app_user")
@@ -250,6 +253,8 @@ func TestGoFixtures_ParseDirForSchemaObjects(t *testing.T) {
 	c.Assert(outStr, qt.Contains, "CREATE VIEW active_users")
 	c.Assert(outStr, qt.Contains, "CREATE MATERIALIZED VIEW user_stats")
 	c.Assert(outStr, qt.Contains, "CREATE TRIGGER")
+	c.Assert(outStr, qt.Contains, "CREATE SEQUENCE fixture_order_seq")
+	c.Assert(outStr, qt.Contains, "ON SEQUENCE")
 	c.Assert(outStr, qt.Contains, "GRANT ")
 	c.Assert(outStr, qt.Contains, "WITH GRANT OPTION")
 	c.Assert(outStr, qt.Contains, "CREATE ROLE fixture_app_user")

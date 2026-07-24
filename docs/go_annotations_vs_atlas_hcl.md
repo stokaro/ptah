@@ -67,7 +67,8 @@ directly from Ptah's IR:
 Unsupported or lossy details are reported as export diagnostics on stderr.
 Examples include platform-specific overrides, table custom SQL, extension
 `if_not_exists`, role passwords, grantor metadata, non-manual
-materialized-view refresh strategies, RLS enablement comments, and function
+materialized-view refresh strategies, RLS enablement comments, standalone
+sequence objects (`//migrator:schema:sequence`) and their grants, and function
 parameter strings that cannot be split into Atlas `arg` blocks without losing
 meaning. These warnings are intentional; the exporter must not silently drop
 schema intent.

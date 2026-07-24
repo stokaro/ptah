@@ -1334,6 +1334,133 @@ func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
 	return nil
 }
 
+// sequenceIdentifier returns the escaped, optionally schema-qualified sequence
+// identifier for name and schema.
+func (r *Renderer) sequenceIdentifier(name, schema string) string {
+	if schema != "" {
+		return r.escapeQualifiedIdentifier(schema + "." + name)
+	}
+	return r.escapeQualifiedIdentifier(name)
+}
+
+// sequenceOwnedByClause renders the OWNED BY target: either NONE or a
+// schema-qualified table.column reference.
+func (r *Renderer) sequenceOwnedByClause(ownedBy string) string {
+	if strings.EqualFold(strings.TrimSpace(ownedBy), "NONE") {
+		return "NONE"
+	}
+	return r.escapeQualifiedIdentifier(ownedBy)
+}
+
+// sequenceOptions renders the shared CREATE/ALTER SEQUENCE option clauses in a
+// stable order. Only set options are emitted.
+func sequenceOptions(asType string, start, increment, minValue, maxValue, cache *int64, cycle *bool) []string {
+	var parts []string
+	if asType != "" {
+		parts = append(parts, "AS "+asType)
+	}
+	if increment != nil {
+		parts = append(parts, fmt.Sprintf("INCREMENT BY %d", *increment))
+	}
+	if minValue != nil {
+		parts = append(parts, fmt.Sprintf("MINVALUE %d", *minValue))
+	}
+	if maxValue != nil {
+		parts = append(parts, fmt.Sprintf("MAXVALUE %d", *maxValue))
+	}
+	if start != nil {
+		parts = append(parts, fmt.Sprintf("START WITH %d", *start))
+	}
+	if cache != nil {
+		parts = append(parts, fmt.Sprintf("CACHE %d", *cache))
+	}
+	if cycle != nil {
+		if *cycle {
+			parts = append(parts, "CYCLE")
+		} else {
+			parts = append(parts, "NO CYCLE")
+		}
+	}
+	return parts
+}
+
+// VisitCreateSequence renders a CREATE SEQUENCE statement for PostgreSQL.
+func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
+	if !r.capabilities().Has(capability.Sequences) {
+		r.w.WriteLinef("-- %s: sequence %s is not supported by this target; skipped.", r.dialectUpper, node.Name)
+		return nil
+	}
+
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	parts := []string{"CREATE SEQUENCE"}
+	if node.IfNotExists {
+		parts = append(parts, "IF NOT EXISTS")
+	}
+	parts = append(parts, r.sequenceIdentifier(node.Name, node.Schema))
+
+	var cycle *bool
+	if node.Cycle {
+		cycle = &node.Cycle
+	}
+	parts = append(parts, sequenceOptions(node.AsType, node.Start, node.Increment, node.MinValue, node.MaxValue, node.Cache, cycle)...)
+
+	if node.OwnedBy != "" {
+		parts = append(parts, "OWNED BY "+r.sequenceOwnedByClause(node.OwnedBy))
+	}
+
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	return nil
+}
+
+// VisitAlterSequence renders an ALTER SEQUENCE statement for PostgreSQL. Only
+// the set options are emitted; a node with no set options renders nothing.
+func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
+	if !r.capabilities().Has(capability.Sequences) {
+		r.w.WriteLinef("-- %s: sequence %s is not supported by this target; skipped.", r.dialectUpper, node.Name)
+		return nil
+	}
+
+	options := sequenceOptions(node.AsType, node.Start, node.Increment, node.MinValue, node.MaxValue, node.Cache, node.Cycle)
+	if node.OwnedBy != "" {
+		options = append(options, "OWNED BY "+r.sequenceOwnedByClause(node.OwnedBy))
+	}
+	if len(options) == 0 {
+		return nil
+	}
+
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	r.w.WriteLinef("ALTER SEQUENCE %s %s;", r.sequenceIdentifier(node.Name, node.Schema), strings.Join(options, " "))
+	return nil
+}
+
+// VisitDropSequence renders a DROP SEQUENCE statement for PostgreSQL.
+func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
+	if !r.capabilities().Has(capability.Sequences) {
+		r.w.WriteLinef("-- %s: sequence %s is not supported by this target; skipped.", r.dialectUpper, node.Name)
+		return nil
+	}
+
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	parts := []string{"DROP SEQUENCE"}
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+	parts = append(parts, r.sequenceIdentifier(node.Name, node.Schema))
+	if node.Cascade {
+		parts = append(parts, "CASCADE")
+	}
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	return nil
+}
+
 // VisitCreateView renders a CREATE VIEW statement.
 func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
 	if node.Comment != "" {

@@ -149,6 +149,15 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	}
 	schema.Triggers = triggers
 
+	if r.caps.Has(capability.Sequences) {
+		// Read standalone sequences (PostgreSQL-specific)
+		sequences, err := r.readSequences()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read sequences: %w", err)
+		}
+		schema.Sequences = sequences
+	}
+
 	if r.caps.Has(capability.RowLevelSecurity) {
 		// Read RLS policies (PostgreSQL-specific)
 		rlsPolicies, err := r.readRLSPolicies()
@@ -166,7 +175,7 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 		}
 		schema.Roles = roles
 
-		grants, err := r.readGrants()
+		grants, err := r.readGrants(standaloneSequenceSet(schema.Sequences))
 		if err != nil {
 			return nil, fmt.Errorf("failed to read grants: %w", err)
 		}
@@ -939,6 +948,199 @@ func (r *Reader) readExtensions() ([]types.DBExtension, error) {
 	return extensions, nil
 }
 
+// readSequences reads standalone PostgreSQL sequences.
+//
+// It deliberately excludes implicit sequences that back a SERIAL / BIGSERIAL /
+// identity column. PostgreSQL makes a SERIAL-generated sequence and a manually
+// created sequence attached with OWNED BY catalog-identical at the ownership
+// level (both carry an auto pg_depend edge to a column), and pg_get_serial_sequence
+// keys on that same ownership edge — so neither deptype nor pg_get_serial_sequence
+// alone can separate them. The distinguishing signal is the owning column's
+// DEFAULT: a sequence is implicit exactly when it is an identity sequence
+// (INTERNAL dependency) or is owned by a column whose DEFAULT draws from that
+// very sequence (the SERIAL shape). This means:
+//   - a standalone sequence merely consumed via DEFAULT nextval(...) but not
+//     owned by any column is surfaced (the common shared-sequence case);
+//   - a sequence with a lifecycle-only OWNED BY (owner column does not draw its
+//     default from it) is surfaced, with OwnedBy populated;
+//   - only genuine SERIAL/identity backing sequences are excluded.
+func (r *Reader) readSequences() ([]types.DBSequence, error) {
+	var sequences []types.DBSequence
+	for _, schemaName := range r.schemasToRead() {
+		schemaSequences, err := r.readSequencesForSchema(schemaName)
+		if err != nil {
+			return nil, err
+		}
+		sequences = append(sequences, schemaSequences...)
+	}
+	return sequences, nil
+}
+
+func (r *Reader) readSequencesForSchema(schemaName string) ([]types.DBSequence, error) {
+	const query = `
+		SELECT
+			n.nspname AS schema_name,
+			c.relname AS sequence_name,
+			format_type(s.seqtypid, NULL) AS data_type,
+			s.seqstart AS start_value,
+			s.seqincrement AS increment_by,
+			s.seqmin AS min_value,
+			s.seqmax AS max_value,
+			s.seqcache AS cache_size,
+			s.seqcycle AS is_cycled,
+			owner_ns.nspname AS owned_schema,
+			owner_tbl.relname AS owned_table,
+			owner_col.attname AS owned_column,
+			obj_description(c.oid, 'pg_class') AS comment,
+			CASE
+				WHEN dep.refobjid IS NULL THEN false
+				WHEN dep.deptype = 'i' THEN true
+				ELSE EXISTS (
+					SELECT 1
+					FROM pg_attrdef ad
+					JOIN pg_depend dd ON dd.classid = 'pg_attrdef'::regclass
+						AND dd.objid = ad.oid
+						AND dd.refclassid = 'pg_class'::regclass
+						AND dd.refobjid = c.oid
+						AND dd.deptype = 'n'
+					WHERE ad.adrelid = dep.refobjid AND ad.adnum = dep.refobjsubid
+				)
+			END AS is_implicit
+		FROM pg_sequence s
+		JOIN pg_class c ON c.oid = s.seqrelid
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		LEFT JOIN pg_depend dep ON dep.objid = c.oid
+			AND dep.classid = 'pg_class'::regclass
+			AND dep.refclassid = 'pg_class'::regclass
+			AND dep.deptype IN ('a', 'i')
+			AND dep.refobjsubid > 0
+		LEFT JOIN pg_class owner_tbl ON owner_tbl.oid = dep.refobjid
+		LEFT JOIN pg_namespace owner_ns ON owner_ns.oid = owner_tbl.relnamespace
+		LEFT JOIN pg_attribute owner_col ON owner_col.attrelid = dep.refobjid AND owner_col.attnum = dep.refobjsubid
+		WHERE n.nspname = $1
+		ORDER BY n.nspname, c.relname`
+
+	rows, err := r.db.Query(query, schemaName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sequences for schema %s: %w", schemaName, err)
+	}
+	defer rows.Close()
+
+	var sequences []types.DBSequence
+	for rows.Next() {
+		var (
+			seq         types.DBSequence
+			rawSchema   string
+			start       int64
+			increment   int64
+			minValue    int64
+			maxValue    int64
+			cache       int64
+			ownedSchema sql.NullString
+			ownedTable  sql.NullString
+			ownedColumn sql.NullString
+			comment     sql.NullString
+			isImplicit  bool
+		)
+		if err := rows.Scan(
+			&rawSchema,
+			&seq.Name,
+			&seq.DataType,
+			&start,
+			&increment,
+			&minValue,
+			&maxValue,
+			&cache,
+			&seq.Cycle,
+			&ownedSchema,
+			&ownedTable,
+			&ownedColumn,
+			&comment,
+			&isImplicit,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan sequence for schema %s: %w", schemaName, err)
+		}
+		if isImplicit {
+			// Sequence is a SERIAL/identity backing sequence; it is managed by
+			// its owning column, not as a standalone object.
+			continue
+		}
+		seq.Schema = r.outputSchema(rawSchema)
+		seq.Start = &start
+		seq.Increment = &increment
+		seq.MinValue = &minValue
+		seq.MaxValue = &maxValue
+		seq.Cache = &cache
+		if ownedTable.Valid && ownedColumn.Valid {
+			// Qualify the owner with its schema only when it differs from the
+			// sequence's own schema, so same-schema owners round-trip against
+			// the common unqualified `owned_by="table.column"` annotation.
+			owner := ownedTable.String + "." + ownedColumn.String
+			if ownedSchema.Valid && ownedSchema.String != rawSchema {
+				owner = ownedSchema.String + "." + owner
+			}
+			seq.OwnedBy = owner
+		}
+		if comment.Valid {
+			seq.Comment = comment.String
+		}
+		sequences = append(sequences, seq)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read sequences for schema %s: %w", schemaName, err)
+	}
+	return sequences, nil
+}
+
+// readSequenceGrantsForSchema reads GRANTs on standalone sequences. standalone
+// holds the qualified names (schema.name, as introspected) of sequences that
+// readSequences classified as standalone, so grants on implicit serial/identity
+// sequences are not surfaced as spurious diffs.
+func (r *Reader) readSequenceGrantsForSchema(schemaName string, standalone map[string]bool) ([]types.DBGrant, error) {
+	const query = `
+		SELECT
+			COALESCE(grantee.rolname, 'PUBLIC') AS grantee,
+			acl.privilege_type,
+			n.nspname AS schema_name,
+			c.relname AS object_name,
+			acl.is_grantable AS with_option,
+			grantor.rolname AS grantor
+		FROM pg_class c
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		CROSS JOIN LATERAL aclexplode(c.relacl) acl
+		LEFT JOIN pg_roles grantee ON grantee.oid = acl.grantee
+		JOIN pg_roles grantor ON grantor.oid = acl.grantor
+		WHERE c.relkind = 'S'
+		AND n.nspname = $1
+		AND COALESCE(grantee.rolname, 'PUBLIC') NOT LIKE 'pg_%'
+		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'
+		ORDER BY n.nspname, c.relname, COALESCE(grantee.rolname, 'PUBLIC'), acl.privilege_type`
+
+	rows, err := r.db.Query(query, schemaName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sequence grants for schema %s: %w", schemaName, err)
+	}
+	defer rows.Close()
+
+	var grants []types.DBGrant
+	for rows.Next() {
+		grant := types.DBGrant{ObjectType: "SEQUENCE"}
+		var rawSchema string
+		if err := rows.Scan(&grant.Role, &grant.Privilege, &rawSchema, &grant.ObjectName, &grant.WithOption, &grant.GrantedBy); err != nil {
+			return nil, fmt.Errorf("failed to scan sequence grant for schema %s: %w", schemaName, err)
+		}
+		if !standalone[types.QualifyTableName(r.outputSchema(rawSchema), grant.ObjectName)] {
+			continue
+		}
+		grant.Schema = r.outputSchema(rawSchema)
+		grants = append(grants, grant)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read sequence grants for schema %s: %w", schemaName, err)
+	}
+	return grants, nil
+}
+
 // enhanceTablesWithConstraints adds constraint information to table columns
 func (r *Reader) enhanceTablesWithConstraints(tables []types.DBTable, constraints []types.DBConstraint) {
 	// Create maps for quick lookup
@@ -1368,7 +1570,7 @@ func (r *Reader) readRoles() ([]types.DBRole, error) {
 	return roles, nil
 }
 
-func (r *Reader) readGrants() ([]types.DBGrant, error) {
+func (r *Reader) readGrants(standaloneSequences map[string]bool) ([]types.DBGrant, error) {
 	var grants []types.DBGrant
 	for _, schemaName := range r.schemasToRead() {
 		tableGrants, err := r.readTableGrantsForSchema(schemaName)
@@ -1382,8 +1584,27 @@ func (r *Reader) readGrants() ([]types.DBGrant, error) {
 			return nil, err
 		}
 		grants = append(grants, schemaGrants...)
+
+		if r.caps.Has(capability.Sequences) {
+			sequenceGrants, err := r.readSequenceGrantsForSchema(schemaName, standaloneSequences)
+			if err != nil {
+				return nil, err
+			}
+			grants = append(grants, sequenceGrants...)
+		}
 	}
 	return grants, nil
+}
+
+// standaloneSequenceSet returns a lookup keyed by each sequence's qualified
+// name, used to keep sequence-grant introspection scoped to standalone
+// sequences (excluding implicit serial/identity sequences).
+func standaloneSequenceSet(sequences []types.DBSequence) map[string]bool {
+	set := make(map[string]bool, len(sequences))
+	for _, sequence := range sequences {
+		set[sequence.QualifiedName()] = true
+	}
+	return set
 }
 
 func (r *Reader) readTableGrantsForSchema(schemaName string) ([]types.DBGrant, error) {

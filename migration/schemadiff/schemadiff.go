@@ -78,6 +78,9 @@ func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, 
 	// Compare PostgreSQL functions (PostgreSQL-specific feature)
 	compare.Functions(generated, database, diff)
 
+	// Compare PostgreSQL standalone sequences (PostgreSQL-specific feature)
+	compare.Sequences(generated, database, diff)
+
 	// Compare views, materialized views, and triggers
 	compare.ViewsWithDialect(generated, database, diff, opts.Dialect)
 	compare.MaterializedViews(generated, database, diff)

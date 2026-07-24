@@ -499,6 +499,10 @@
               "description": "Target schema.",
               "type": "string"
             },
+            "on_sequence": {
+              "description": "Target sequence.",
+              "type": "string"
+            },
             "on_table": {
               "description": "Target table.",
               "type": "string"
@@ -879,6 +883,85 @@
       ],
       "type": "object"
     },
+    "migrator.schema.sequence": {
+      "additionalProperties": false,
+      "description": "Declares a standalone PostgreSQL sequence.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "as": {
+              "description": "Underlying integer type, such as bigint.",
+              "type": "string"
+            },
+            "cache": {
+              "description": "CACHE size.",
+              "type": "string"
+            },
+            "comment": {
+              "description": "Sequence comment.",
+              "type": "string"
+            },
+            "cycle": {
+              "description": "Enables CYCLE wrap-around.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            },
+            "if_not_exists": {
+              "description": "Adds IF NOT EXISTS where supported.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            },
+            "increment": {
+              "description": "INCREMENT BY value; must be non-zero.",
+              "type": "string"
+            },
+            "maxvalue": {
+              "description": "MAXVALUE bound.",
+              "type": "string"
+            },
+            "minvalue": {
+              "description": "MINVALUE bound.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Sequence name.",
+              "type": "string"
+            },
+            "owned_by": {
+              "description": "Owning table.column association (OWNED BY).",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Target schema/namespace.",
+              "type": "string"
+            },
+            "start": {
+              "description": "START WITH value.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "migrator:schema:sequence"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
     "migrator.schema.table": {
       "additionalProperties": false,
       "description": "Maps a Go struct to a database table.",
@@ -1075,6 +1158,9 @@
     },
     {
       "$ref": "#/$defs/migrator.schema.function"
+    },
+    {
+      "$ref": "#/$defs/migrator.schema.sequence"
     },
     {
       "$ref": "#/$defs/migrator.schema.view"

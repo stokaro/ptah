@@ -452,6 +452,7 @@ type schemaParseState struct {
 	tableDirectives       []Table
 	extensions            []Extension
 	functions             []Function
+	sequences             []Sequence
 	views                 []View
 	materializedViews     []MaterializedView
 	triggers              []Trigger
@@ -548,6 +549,8 @@ func (s *schemaParseState) parseSharedComment(comment *ast.Comment, target schem
 		return s.parseExtensionComment(comment)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:function"):
 		return s.parseFunctionComment(comment, target.structName)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:sequence"):
+		return s.parseSequenceComment(comment, target.structName)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:view"):
 		return s.parseViewComment(comment, target.structName)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:matview"):
@@ -683,6 +686,7 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (Database, 
 		EmbeddedFields:    state.embeddedFields,
 		Extensions:        state.extensions,
 		Functions:         state.functions,
+		Sequences:         state.sequences,
 		Views:             state.views,
 		MaterializedViews: state.materializedViews,
 		Triggers:          state.triggers,
@@ -920,6 +924,81 @@ func (s *schemaParseState) parseFunctionComment(comment *ast.Comment, structName
 	return nil
 }
 
+func (s *schemaParseState) parseSequenceComment(comment *ast.Comment, structName string) error {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	ctx := s.annotationContext(comment, "//migrator:schema:sequence", kv["name"])
+	if err := validateAttributes(kv, ctx); err != nil {
+		return err
+	}
+	if err := requireAttributes(kv, ctx); err != nil {
+		return err
+	}
+
+	seq := Sequence{
+		StructName:  structName,
+		Name:        kv["name"],
+		Schema:      kv["schema"],
+		AsType:      kv["as"],
+		Cycle:       kv["cycle"] == "true",
+		OwnedBy:     kv["owned_by"],
+		IfNotExists: kv["if_not_exists"] == "true",
+		Comment:     kv["comment"],
+	}
+
+	for _, opt := range []struct {
+		key    string
+		target **int64
+	}{
+		{"start", &seq.Start},
+		{"increment", &seq.Increment},
+		{"minvalue", &seq.MinValue},
+		{"maxvalue", &seq.MaxValue},
+		{"cache", &seq.Cache},
+	} {
+		value, err := parseOptionalInt64(kv[opt.key])
+		if err != nil {
+			return &ptaherr.ParseError{
+				File:      ctx.file,
+				Line:      ctx.line,
+				Directive: strings.TrimPrefix(ctx.directive, "//"),
+				Attribute: opt.key,
+				Err:       ptaherr.ErrInvalidAttributeValue,
+				Message:   fmt.Sprintf("invalid integer value %q for %q on %s at %s", kv[opt.key], opt.key, ctx.directive, ctx.location),
+			}
+		}
+		*opt.target = value
+	}
+
+	seq.Canonicalize()
+	if !IsValidSequenceType(seq.AsType) {
+		return &ptaherr.ParseError{
+			File:      ctx.file,
+			Line:      ctx.line,
+			Directive: strings.TrimPrefix(ctx.directive, "//"),
+			Attribute: "as",
+			Err:       ptaherr.ErrInvalidAttributeValue,
+			Message:   fmt.Sprintf("invalid sequence type %q for \"as\" on %s at %s; expected smallint, integer, or bigint", kv["as"], ctx.directive, ctx.location),
+		}
+	}
+	s.sequences = append(s.sequences, seq)
+	return nil
+}
+
+// parseOptionalInt64 parses a decimal integer attribute value. An empty string
+// yields a nil pointer (attribute absent), so callers can distinguish "not set"
+// from an explicit zero.
+func parseOptionalInt64(value string) (*int64, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil, nil //nolint:nilnil // nil pointer + nil error means "attribute absent"
+	}
+	n, err := strconv.ParseInt(trimmed, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	return &n, nil
+}
+
 func (s *schemaParseState) parseViewComment(comment *ast.Comment, structName string) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	if err := validateAttributes(
@@ -1081,6 +1160,7 @@ func (s *schemaParseState) parseGrantComment(comment *ast.Comment, structName st
 		Privileges: privileges,
 		OnTable:    kv["on_table"],
 		OnSchema:   kv["on_schema"],
+		OnSequence: kv["on_sequence"],
 		WithOption: kv["with_option"] == "true" || kv["grant_option"] == "true",
 		Comment:    kv["comment"],
 	}

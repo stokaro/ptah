@@ -1001,6 +1001,10 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// without affecting policies or triggers that reference the function.
 	result = p.modifyExistingFunctions(result, diff, generated)
 
+	// 2c. Add new sequences before tables, since a table column may draw its
+	// DEFAULT from a sequence. OWNED BY is applied later, after tables exist.
+	result = p.addNewSequences(result, diff, generated)
+
 	// 3. Add new enums (PostgreSQL requires enum types to exist before tables use them)
 	result = p.addNewEnums(result, diff, generated)
 
@@ -1015,6 +1019,11 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 
 	// 6.5. Add foreign key constraints for newly added columns (must be done after all columns exist)
 	result = p.addForeignKeyConstraintsForModifiedTables(result, diff, generated)
+
+	// 6.7. Associate added sequences with their owning table.column and apply
+	// option changes to existing sequences, now that tables exist.
+	result = p.addSequenceOwnership(result, diff, generated)
+	result = p.modifyExistingSequences(result, diff, generated)
 
 	// 6.6. Add and modify views, materialized views, and triggers after their tables/functions exist.
 	result = p.addNewViewLikeObjects(result, diff, generated)
@@ -1086,6 +1095,9 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 
 	// 13. Remove tables (dangerous!)
 	result = p.removeTables(result, diff, generated)
+
+	// 13.5. Remove standalone sequences after tables that may default from them.
+	result = p.removeSequences(result, diff)
 
 	// 13. Remove functions (must be done after removing policies that might use them)
 	result = p.removeFunctions(result, diff)
@@ -1369,6 +1381,132 @@ func (p *Planner) removeFunctions(result []ast.Node, diff *types.SchemaDiff) []a
 		result = append(result, dropFunctionNode)
 	}
 	return result
+}
+
+// findSequence returns the generated sequence whose qualified name matches name.
+func findSequence(sequences []goschema.Sequence, name string) *goschema.Sequence {
+	for i := range sequences {
+		if sequences[i].QualifiedName() == name {
+			return &sequences[i]
+		}
+	}
+	return nil
+}
+
+// addNewSequences emits CREATE SEQUENCE for newly added sequences. The OWNED BY
+// association is deliberately omitted here and emitted later by
+// addSequenceOwnership, because a sequence referenced by a column DEFAULT must
+// be created before its table while OWNED BY requires the table to already
+// exist.
+func (p *Planner) addNewSequences(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, name := range diff.SequencesAdded {
+		sequence := findSequence(generated.Sequences, name)
+		if sequence == nil {
+			continue
+		}
+		sequenceNode := fromschema.FromSequence(*sequence)
+		sequenceNode.OwnedBy = ""
+		result = append(result, sequenceNode)
+	}
+	return result
+}
+
+// addSequenceOwnership emits ALTER SEQUENCE ... OWNED BY for newly added
+// sequences that declare an owner, after their owning tables exist.
+func (p *Planner) addSequenceOwnership(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, name := range diff.SequencesAdded {
+		sequence := findSequence(generated.Sequences, name)
+		if sequence == nil || sequence.OwnedBy == "" {
+			continue
+		}
+		node := ast.NewAlterSequence(sequence.Name).SetOwnedBy(sequence.OwnedBy)
+		if sequence.Schema != "" {
+			node.SetSchema(sequence.Schema)
+		}
+		result = append(result, node)
+	}
+	return result
+}
+
+// modifyExistingSequences emits ALTER SEQUENCE for sequences whose options
+// changed. Only the changed options (per the diff) are emitted.
+func (p *Planner) modifyExistingSequences(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, sequenceDiff := range diff.SequencesModified {
+		sequence := findSequence(generated.Sequences, sequenceDiff.SequenceName)
+		if sequence == nil {
+			continue
+		}
+		node := alterSequenceFromDiff(*sequence, sequenceDiff.Changes)
+		node.SetComment(fmt.Sprintf("Modify sequence %s: %s", sequenceDiff.SequenceName, summarizeSequenceChanges(sequenceDiff)))
+		result = append(result, node)
+	}
+	return result
+}
+
+// alterSequenceFromDiff builds an ALTER SEQUENCE node carrying only the options
+// that the diff reports as changed, sourced from the target definition.
+func alterSequenceFromDiff(target goschema.Sequence, changes map[string]string) *ast.AlterSequenceNode {
+	node := ast.NewAlterSequence(target.Name)
+	if target.Schema != "" {
+		node.SetSchema(target.Schema)
+	}
+	if _, ok := changes["as"]; ok && target.AsType != "" {
+		node.SetAs(target.AsType)
+	}
+	if _, ok := changes["start"]; ok && target.Start != nil {
+		node.SetStart(*target.Start)
+	}
+	if _, ok := changes["increment"]; ok && target.Increment != nil {
+		node.SetIncrement(*target.Increment)
+	}
+	if _, ok := changes["minvalue"]; ok && target.MinValue != nil {
+		node.SetMinValue(*target.MinValue)
+	}
+	if _, ok := changes["maxvalue"]; ok && target.MaxValue != nil {
+		node.SetMaxValue(*target.MaxValue)
+	}
+	if _, ok := changes["cache"]; ok && target.Cache != nil {
+		node.SetCache(*target.Cache)
+	}
+	if _, ok := changes["cycle"]; ok {
+		node.SetCycle(target.Cycle)
+	}
+	if _, ok := changes["owned_by"]; ok && target.OwnedBy != "" {
+		node.SetOwnedBy(target.OwnedBy)
+	}
+	return node
+}
+
+// summarizeSequenceChanges produces a deterministic one-line summary of the
+// changed options for use as a SQL comment.
+func summarizeSequenceChanges(sequenceDiff types.SequenceDiff) string {
+	return strings.Join(slices.Sorted(maps.Keys(sequenceDiff.Changes)), ", ")
+}
+
+// removeSequences emits DROP SEQUENCE for sequences no longer present in the
+// target schema. It runs after table removal so a table that draws a column
+// default from the sequence is gone first.
+func (p *Planner) removeSequences(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, name := range diff.SequencesRemoved {
+		schemaName, sequenceName := splitQualifiedSequenceName(name)
+		dropSequence := ast.NewDropSequence(sequenceName).
+			SetIfExists().
+			SetComment("WARNING: Ensure no column default still draws from this sequence")
+		if schemaName != "" {
+			dropSequence.SetSchema(schemaName)
+		}
+		result = append(result, dropSequence)
+	}
+	return result
+}
+
+// splitQualifiedSequenceName splits a "schema.name" qualified sequence name into
+// its parts. An unqualified name yields an empty schema.
+func splitQualifiedSequenceName(name string) (schema, sequence string) {
+	if idx := strings.LastIndex(name, "."); idx >= 0 {
+		return name[:idx], name[idx+1:]
+	}
+	return "", name
 }
 
 func (p *Planner) addNewViewLikeObjects(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {

@@ -224,6 +224,21 @@ func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
 	return nil
 }
 
+func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
+	r.notSupported("CREATE SEQUENCE", node.Name)
+	return nil
+}
+
+func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
+	r.notSupported("ALTER SEQUENCE", node.Name)
+	return nil
+}
+
+func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
+	r.notSupported("DROP SEQUENCE", node.Name)
+	return nil
+}
+
 func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)

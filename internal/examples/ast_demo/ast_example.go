@@ -263,6 +263,9 @@ func (a *SchemaAnalyzer) VisitDropType(node *ast.DropTypeNode) error            
 func (a *SchemaAnalyzer) VisitExtension(node *ast.ExtensionNode) error           { return nil }
 func (a *SchemaAnalyzer) VisitDropExtension(node *ast.DropExtensionNode) error   { return nil }
 func (a *SchemaAnalyzer) VisitCreateFunction(node *ast.CreateFunctionNode) error { return nil }
+func (a *SchemaAnalyzer) VisitCreateSequence(node *ast.CreateSequenceNode) error { return nil }
+func (a *SchemaAnalyzer) VisitAlterSequence(node *ast.AlterSequenceNode) error   { return nil }
+func (a *SchemaAnalyzer) VisitDropSequence(node *ast.DropSequenceNode) error     { return nil }
 func (a *SchemaAnalyzer) VisitCreatePolicy(node *ast.CreatePolicyNode) error     { return nil }
 func (a *SchemaAnalyzer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
 	return nil
