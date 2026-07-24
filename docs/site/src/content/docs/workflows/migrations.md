@@ -39,6 +39,23 @@ Then edit the generated `*.up.sql` and `*.down.sql` files. Keep the rollback
 real even if the first consumer only applies migrations forward; `down` support
 is part of Ptah's migration contract.
 
+## Importing from another tool
+
+Adopt Ptah from an existing migration directory without hand-rewriting history:
+
+```bash
+ptah migrations import --source-dir ./db/migrations --migrations-dir ./migrations
+```
+
+`ptah migrations import` converts the source tool's files into Ptah's native
+`NNNNNNNNNN_name.up.sql` / `.down.sql` layout, preserving version order and
+rewriting `ptah.sum` so `ptah migrations validate` passes immediately. It
+auto-detects the source tool (or set `--from`), writes a placeholder down for a
+migration with no rollback, refuses to overwrite existing files, and supports
+`--dry-run`. Phase 1 supports golang-migrate; Goose, Flyway, and Liquibase are
+planned. This is native Ptah-format import, distinct from the Atlas-compatible
+`ptah atlas migrate import`.
+
 ## Rollback
 
 Rollback requires an explicit target and confirmation:
