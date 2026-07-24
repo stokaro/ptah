@@ -1588,13 +1588,91 @@ func TestNewAtlasCommand_MigrateSetAcceptsRevisionsSchema(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"migrate", "set", "--revisions-schema", "custom_revisions"})
+	cmd.SetArgs([]string{"migrate", "set", "1", "--revisions-schema", "custom_revisions"})
 
 	err := cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, "database URL is required")
 	c.Assert(out.String(), qt.Contains, "database URL is required")
 	c.Assert(out.String(), qt.Not(qt.Contains), "unknown flag")
+}
+
+func TestNewAtlasCommand_MigrateSetMapsPositionalRevision(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	dbPath := filepath.Join(dir, "set-positional.db")
+	writeAtlasApplyMigration(c, migrationsDir, "1_set_positional.sql", "CREATE TABLE set_positional_users (id INTEGER PRIMARY KEY);")
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "set", "1",
+		"--url", "sqlite://" + dbPath,
+		"--dir", migrationsDir,
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Repaired migration 1")
+	c.Assert(sqliteAtlasAppliedVersions(c, dbPath), qt.DeepEquals, []string{"1"})
+}
+
+func TestNewAtlasCommand_MigrateSetHelpShowsRevisionArgument(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"migrate", "set", "--help"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "atlas migrate set <revision>")
+}
+
+func TestNewAtlasCommand_MigrateSetFailurePathRevisionArgument(t *testing.T) {
+	c := qt.New(t)
+
+	c.Run("missing revision", func(c *qt.C) {
+		cmd := NewAtlasCommand()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs([]string{"migrate", "set", "--url", "sqlite://state.db", "--dir", t.TempDir()})
+
+		err := cmd.Execute()
+
+		c.Assert(err, qt.ErrorMatches, "atlas migrate set requires revision argument")
+	})
+
+	c.Run("multiple revisions", func(c *qt.C) {
+		cmd := NewAtlasCommand()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs([]string{"migrate", "set", "1", "2", "--url", "sqlite://state.db", "--dir", t.TempDir()})
+
+		err := cmd.Execute()
+
+		c.Assert(err, qt.ErrorMatches, `atlas migrate set accepts one revision argument, got \["1" "2"\]`)
+	})
+
+	c.Run("native version flag", func(c *qt.C) {
+		cmd := NewAtlasCommand()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs([]string{"migrate", "set", "--version", "1", "--url", "sqlite://state.db", "--dir", t.TempDir()})
+
+		err := cmd.Execute()
+
+		c.Assert(err, qt.ErrorMatches, "atlas migrate set does not accept native Ptah flag --version")
+	})
 }
 
 func TestNewAtlasCommand_MigrateMetadataRejectsUnsupportedAtlasDirFormat(t *testing.T) {
@@ -3503,7 +3581,8 @@ func TestAtlasArgMapper_MigrateSetResolvesProjectRelativeMigrationDir(t *testing
 }
 `), 0o600), qt.IsNil)
 	mapper := atlasArgMapper("migrate", atlasVerb{
-		use: "set",
+		use:         "set",
+		positionals: []atlasPositionalArg{{name: "revision", nativeName: "version"}},
 		flags: []atlasargs.Flag{
 			atlasargs.NativeString("url", "u", "Database URL", "db-url"),
 			atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
@@ -3513,6 +3592,7 @@ func TestAtlasArgMapper_MigrateSetResolvesProjectRelativeMigrationDir(t *testing
 	})
 
 	got, err := mapper(&cobra.Command{Use: "set"}, []string{
+		"1",
 		"--config", "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
 		"--env", "local",
 	})
@@ -3523,7 +3603,80 @@ func TestAtlasArgMapper_MigrateSetResolvesProjectRelativeMigrationDir(t *testing
 	c.Assert(got, qt.DeepEquals, []string{
 		"--migrations-dir", wantMigrationsDir,
 		"--dir-format", "atlas",
+		"--version", "1",
 	})
+}
+
+func TestNewAtlasCommand_MigrateSetResolvesProjectRelativeMigrationDir(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	projectDir := filepath.Join(dir, "project")
+	outsideDir := filepath.Join(dir, "outside")
+	migrationsDir := filepath.Join(projectDir, "migrations")
+	dbPath := filepath.Join(dir, "set-relative.db")
+	writeAtlasApplyMigration(c, migrationsDir, "1_set_relative.sql", "CREATE TABLE set_relative_users (id INTEGER PRIMARY KEY);")
+	c.Assert(os.MkdirAll(outsideDir, 0o755), qt.IsNil)
+	t.Chdir(outsideDir)
+	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
+  url = "sqlite://`+dbPath+`"
+  migration {
+    dir = "file://migrations"
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "set", "1",
+		"--config", "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
+		"--env", "local",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Repaired migration 1")
+	c.Assert(sqliteAtlasAppliedVersions(c, dbPath), qt.DeepEquals, []string{"1"})
+}
+
+func TestNewAtlasCommand_MigrateSetAllowsExplicitDirToOverrideProjectDir(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	projectDir := filepath.Join(dir, "project")
+	outsideDir := filepath.Join(dir, "outside")
+	migrationsDir := filepath.Join(dir, "explicit-migrations")
+	dbPath := filepath.Join(dir, "set-explicit-dir.db")
+	writeAtlasApplyMigration(c, migrationsDir, "1_set_explicit.sql", "CREATE TABLE set_explicit_users (id INTEGER PRIMARY KEY);")
+	c.Assert(os.MkdirAll(projectDir, 0o755), qt.IsNil)
+	c.Assert(os.MkdirAll(outsideDir, 0o755), qt.IsNil)
+	t.Chdir(outsideDir)
+	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
+  url = "sqlite://`+dbPath+`"
+  migration {
+    dir = "atlas://remote"
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "set", "1",
+		"--config", "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
+		"--env", "local",
+		"--dir", migrationsDir,
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Repaired migration 1")
+	c.Assert(sqliteAtlasAppliedVersions(c, dbPath), qt.DeepEquals, []string{"1"})
 }
 
 func TestNewAtlasCommand_MigrateDownResolvesProjectRelativeMigrationDir(t *testing.T) {

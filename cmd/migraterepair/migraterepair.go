@@ -71,7 +71,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterRevisionTableFormatFlag(flags, &opts.revisionTableFormat)
 }
 
-func migrateRepairCommand(_ *cobra.Command, opts *options) error {
+func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
 	if opts.dbURL == "" {
 		return fmt.Errorf("database URL is required")
 	}
@@ -132,7 +132,7 @@ func migrateRepairCommand(_ *cobra.Command, opts *options) error {
 		return err
 	}
 
-	fmt.Printf("Repaired migration %d\n", version)
+	fmt.Fprintf(cmd.OutOrStdout(), "Repaired migration %d\n", version)
 	return nil
 }
 
