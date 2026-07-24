@@ -103,6 +103,25 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	}
 	schema.Enums = enums
 
+	// Read PostgreSQL user-defined types (domains, composites, ranges)
+	domains, err := r.readDomains()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read domains: %w", err)
+	}
+	schema.Domains = domains
+
+	composites, err := r.readComposites()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read composite types: %w", err)
+	}
+	schema.Composites = composites
+
+	ranges, err := r.readRanges()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read range types: %w", err)
+	}
+	schema.Ranges = ranges
+
 	// Read indexes
 	indexes, err := r.readIndexes()
 	if err != nil {
@@ -420,6 +439,170 @@ func (r *Reader) readEnumsForSchema(schemaName string) ([]types.DBEnum, error) {
 	}
 
 	return enums, nil
+}
+
+// readDomains reads PostgreSQL domain types (typtype='d').
+func (r *Reader) readDomains() ([]types.DBDomain, error) {
+	var domains []types.DBDomain
+	for _, schemaName := range r.schemasToRead() {
+		schemaDomains, err := r.readDomainsForSchema(schemaName)
+		if err != nil {
+			return nil, err
+		}
+		domains = append(domains, schemaDomains...)
+	}
+	return domains, nil
+}
+
+func (r *Reader) readDomainsForSchema(schemaName string) ([]types.DBDomain, error) {
+	const query = `
+		SELECT
+			n.nspname AS schema_name,
+			t.typname AS domain_name,
+			format_type(t.typbasetype, t.typtypmod) AS base_type,
+			t.typnotnull AS not_null,
+			COALESCE(t.typdefault, '') AS default_value,
+			COALESCE((
+				SELECT string_agg(pg_get_expr(c.conbin, c.contypid), ' AND ')
+				FROM pg_constraint c
+				WHERE c.contypid = t.oid AND c.contype = 'c'
+			), '') AS check_expr
+		FROM pg_type t
+		JOIN pg_namespace n ON n.oid = t.typnamespace
+		WHERE t.typtype = 'd' AND n.nspname = $1
+		ORDER BY t.typname`
+
+	rows, err := r.db.Query(query, schemaName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query domains for schema %s: %w", schemaName, err)
+	}
+	defer rows.Close()
+
+	var domains []types.DBDomain
+	for rows.Next() {
+		var domain types.DBDomain
+		var rawSchema string
+		if err := rows.Scan(&rawSchema, &domain.Name, &domain.BaseType, &domain.NotNull, &domain.Default, &domain.Check); err != nil {
+			return nil, fmt.Errorf("failed to scan domain for schema %s: %w", schemaName, err)
+		}
+		domain.Schema = r.outputSchema(rawSchema)
+		domains = append(domains, domain)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read domains for schema %s: %w", schemaName, err)
+	}
+	return domains, nil
+}
+
+// readComposites reads PostgreSQL composite types (typtype='c'), excluding the
+// implicit row types of tables (relkind other than 'c').
+func (r *Reader) readComposites() ([]types.DBComposite, error) {
+	var composites []types.DBComposite
+	for _, schemaName := range r.schemasToRead() {
+		schemaComposites, err := r.readCompositesForSchema(schemaName)
+		if err != nil {
+			return nil, err
+		}
+		composites = append(composites, schemaComposites...)
+	}
+	return composites, nil
+}
+
+func (r *Reader) readCompositesForSchema(schemaName string) ([]types.DBComposite, error) {
+	const query = `
+		SELECT
+			n.nspname AS schema_name,
+			t.typname AS type_name,
+			a.attname AS field_name,
+			format_type(a.atttypid, a.atttypmod) AS field_type,
+			a.attnum
+		FROM pg_type t
+		JOIN pg_namespace n ON n.oid = t.typnamespace
+		JOIN pg_class c ON c.oid = t.typrelid AND c.relkind = 'c'
+		JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+		WHERE t.typtype = 'c' AND n.nspname = $1
+		ORDER BY t.typname, a.attnum`
+
+	rows, err := r.db.Query(query, schemaName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query composite types for schema %s: %w", schemaName, err)
+	}
+	defer rows.Close()
+
+	type key struct{ schema, name string }
+	order := make([]key, 0)
+	byName := make(map[key]*types.DBComposite)
+	for rows.Next() {
+		var rawSchema, typeName, fieldName, fieldType string
+		var attNum int
+		if err := rows.Scan(&rawSchema, &typeName, &fieldName, &fieldType, &attNum); err != nil {
+			return nil, fmt.Errorf("failed to scan composite type for schema %s: %w", schemaName, err)
+		}
+		k := key{r.outputSchema(rawSchema), typeName}
+		composite, ok := byName[k]
+		if !ok {
+			composite = &types.DBComposite{Name: typeName, Schema: k.schema}
+			byName[k] = composite
+			order = append(order, k)
+		}
+		composite.Fields = append(composite.Fields, types.DBCompositeField{Name: fieldName, Type: fieldType})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read composite types for schema %s: %w", schemaName, err)
+	}
+
+	composites := make([]types.DBComposite, 0, len(order))
+	for _, k := range order {
+		composites = append(composites, *byName[k])
+	}
+	return composites, nil
+}
+
+// readRanges reads PostgreSQL range types (typtype='r').
+func (r *Reader) readRanges() ([]types.DBRange, error) {
+	var ranges []types.DBRange
+	for _, schemaName := range r.schemasToRead() {
+		schemaRanges, err := r.readRangesForSchema(schemaName)
+		if err != nil {
+			return nil, err
+		}
+		ranges = append(ranges, schemaRanges...)
+	}
+	return ranges, nil
+}
+
+func (r *Reader) readRangesForSchema(schemaName string) ([]types.DBRange, error) {
+	const query = `
+		SELECT
+			n.nspname AS schema_name,
+			t.typname AS range_name,
+			format_type(rng.rngsubtype, NULL) AS subtype
+		FROM pg_type t
+		JOIN pg_namespace n ON n.oid = t.typnamespace
+		JOIN pg_range rng ON rng.rngtypid = t.oid
+		WHERE t.typtype = 'r' AND n.nspname = $1
+		ORDER BY t.typname`
+
+	rows, err := r.db.Query(query, schemaName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query range types for schema %s: %w", schemaName, err)
+	}
+	defer rows.Close()
+
+	var ranges []types.DBRange
+	for rows.Next() {
+		var rangeType types.DBRange
+		var rawSchema string
+		if err := rows.Scan(&rawSchema, &rangeType.Name, &rangeType.Subtype); err != nil {
+			return nil, fmt.Errorf("failed to scan range type for schema %s: %w", schemaName, err)
+		}
+		rangeType.Schema = r.outputSchema(rawSchema)
+		ranges = append(ranges, rangeType)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read range types for schema %s: %w", schemaName, err)
+	}
+	return ranges, nil
 }
 
 // readIndexes reads all indexes
