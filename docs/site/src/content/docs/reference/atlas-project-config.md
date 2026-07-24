@@ -119,6 +119,23 @@ env "local" {
 Explicit CLI flags win over `atlas.hcl`, and `atlas.hcl` wins over built-in
 defaults.
 
+`env.src` and `env.schema.src` accept local schema-file sources for
+`schema apply`, `schema diff`, and `migrate diff`. Plain local schema paths and
+relative `file://` schema URLs declared in `atlas.hcl` resolve relative to the
+directory containing that `atlas.hcl` file, not the process working directory.
+Explicit CLI `--to` and `--from` values keep CLI semantics and resolve relative
+to the process working directory unless they are absolute.
+
+When an `atlas.hcl` `migration` block is present, Ptah defaults
+`revision-format` to `atlas`, so migration commands use
+`atlas_schema_revisions` unless an explicit CLI flag overrides it. Relative
+`migration.dir` values declared in `atlas.hcl` resolve relative to the directory
+containing that `atlas.hcl` file. Explicit CLI `--dir` values keep CLI semantics
+and resolve relative to the process working directory unless they are absolute.
+Non-local URI schemes in `migration.dir` and `schema.src` fail explicitly when a
+command needs that configured value; an explicit CLI path flag still wins before
+URI validation.
+
 ## Environment Selection
 
 Use Atlas project flags on commands under `ptah atlas schema ...` and

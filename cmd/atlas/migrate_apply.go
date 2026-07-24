@@ -97,6 +97,12 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, projectCfg.Format.Migrate.Apply)
 		formatOutput = formatOutput || projectCfg.Format.Migrate.Apply != ""
 	}
+	if loaded && !cmd.Flags().Changed("dir") && projectCfg.Migration.Dir != "" {
+		opts.dir, err = atlasProjectConfigLocalDir(cmd, opts.dir)
+		if err != nil {
+			return fmt.Errorf("atlas migrate apply --dir: %w", err)
+		}
+	}
 	if formatOutput && strings.TrimSpace(opts.format) == "" {
 		return fmt.Errorf("--format must not be empty")
 	}

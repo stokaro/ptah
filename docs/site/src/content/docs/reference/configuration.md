@@ -21,6 +21,12 @@ references for local schema-file workflows.
 Supported Atlas env blocks can also set `schema.src`, `schema.mode`, `format`,
 and local `diff` policy defaults for `ptah atlas ...` commands.
 
+For Atlas-compatible commands, plain local schema paths, relative `file://`
+schema URLs, and relative `migration.dir` values declared in `atlas.hcl` resolve
+relative to the directory containing that `atlas.hcl` file. Explicit CLI path
+flags such as `--to`, `--from`, and `--dir` keep CLI semantics and resolve
+relative to the process working directory unless they are absolute.
+
 ## Minimal `ptah.yaml`
 
 ```yaml

@@ -314,7 +314,10 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 			if err != nil {
 				return nil, err
 			}
-			args = applyAtlasProjectConfigToArgs(verb.flags, args, cfg)
+			args, err = applyAtlasProjectConfigToArgs(verb.flags, args, cfg, project.flags)
+			if err != nil {
+				return nil, err
+			}
 			if verb.nativeProjectConfig {
 				args, err = applyAtlasProjectConfigToNativeArgs(args, project.flags)
 				if err != nil {

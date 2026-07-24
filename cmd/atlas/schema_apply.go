@@ -94,6 +94,12 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 			return cmdutil.Fail(cmd, err)
 		}
 	}
+	if loaded && !cmd.Flags().Changed("to") && !cmd.Flags().Changed(atlasFileFlagName) && len(projectCfg.SchemaSources) > 0 {
+		opts.toURLs, err = atlasProjectConfigSchemaURLs(cmd, opts.toURLs)
+		if err != nil {
+			return cmdutil.Fail(cmd, fmt.Errorf("atlas.hcl schema.src: %w", err))
+		}
+	}
 	if cmd.Flags().Changed(atlasFileFlagName) {
 		opts.toURLs = opts.filePaths
 	}
