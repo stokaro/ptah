@@ -25,6 +25,7 @@ import (
 
 type atlasVerb struct {
 	use                 string
+	displayUse          string
 	short               string
 	native              string
 	factory             func() *cobra.Command
@@ -52,7 +53,7 @@ var unsupportedAtlasDirFormats = []string{
 
 // NewAtlasCommand returns the Atlas command namespace.
 func NewAtlasCommand() *cobra.Command {
-	return newAtlasCommand("atlas", "Atlas OSS command namespace", `Atlas OSS command namespace.
+	return newAtlasCommand("atlas [command]", "Atlas OSS command namespace", `Atlas OSS command namespace.
 
 These commands reserve the Atlas OSS CLI surface under Ptah. Commands that have
 an existing Ptah equivalent forward to that native command while keeping the
@@ -65,7 +66,7 @@ func NewCompatCommand(use string) *cobra.Command {
 	if use == "" {
 		use = "ptah-compat"
 	}
-	cmd := newAtlasCommand(use, "Atlas-compatible Ptah command tree", `Atlas-compatible Ptah command tree.
+	cmd := newAtlasCommand(use+" [command]", "Atlas-compatible Ptah command tree", `Atlas-compatible Ptah command tree.
 
 This executable exposes Atlas-style commands at process root for scripts that
 expect commands such as migrate apply or schema inspect. Runtime behavior is the
@@ -88,12 +89,13 @@ func newAtlasCommand(use, short, long string) *cobra.Command {
 	cmd.AddCommand(newAtlasLicenseCommand())
 	cmd.AddCommand(newAtlasSchemaCommand())
 	cmd.AddCommand(newAtlasMigrateCommand())
+	installAtlasUsageTree(cmd)
 	return cmd
 }
 
 func newAtlasSchemaCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "schema",
+		Use:   "schema [command]",
 		Short: "Atlas schema commands",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
@@ -116,7 +118,7 @@ func newAtlasSchemaCommand() *cobra.Command {
 
 func newAtlasMigrateCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "migrate",
+		Use:   "migrate [command]",
 		Short: "Atlas migrate commands",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
@@ -140,10 +142,11 @@ func newAtlasMigrateCommand() *cobra.Command {
 			},
 		},
 		{
-			use:     "new",
-			short:   "Create a new migration file",
-			native:  "migrations create",
-			factory: migrate.NewMigrateCreateCommand,
+			use:        "new",
+			displayUse: "new [flags] [name]",
+			short:      "Create a new migration file",
+			native:     "migrations create",
+			factory:    migrate.NewMigrateCreateCommand,
 			flags: []atlasargs.Flag{
 				atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
 				atlasMigrateDirFormatFlag("dir-format"),
@@ -151,11 +154,12 @@ func newAtlasMigrateCommand() *cobra.Command {
 		},
 		{
 			use:         "set",
+			displayUse:  "set [flags] [version]",
 			short:       "Set migration revision state",
 			native:      "migrations repair",
 			factory:     migraterepair.NewMigrateRepairCommand,
 			prefixArgs:  []string{"--revision-format", "atlas", "--force"},
-			positionals: []atlasPositionalArg{{name: "revision", nativeName: "version"}},
+			positionals: []atlasPositionalArg{{name: "version", nativeName: "version"}},
 			nativeOnlyFlags: []string{
 				"atlas-env",
 				"connect-timeout",
@@ -226,6 +230,7 @@ func newAtlasUnsupportedCommunityCommand(group string, verb atlasUnsupportedComm
 	cmd.SetHelpFunc(func(cmd *cobra.Command, _ []string) {
 		writeAtlasUnsupportedCommunityCommandHelp(cmd, group, verb.use)
 	})
+	cmd.Annotations = map[string]string{atlasPreserveHelpAnnotation: "true"}
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
@@ -370,6 +375,9 @@ func newAtlasAdapterCommand(group string, verb atlasVerb) *cobra.Command {
 }
 
 func atlasAdapterUse(verb atlasVerb) string {
+	if verb.displayUse != "" {
+		return verb.displayUse
+	}
 	if len(verb.positionals) == 0 {
 		return verb.use
 	}
