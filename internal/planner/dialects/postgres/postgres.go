@@ -11,6 +11,7 @@ import (
 	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/internal/convert/fromschema"
 	"github.com/stokaro/ptah/internal/deporder"
+	"github.com/stokaro/ptah/migration/diffpolicy"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
@@ -79,6 +80,9 @@ type Planner struct {
 	// on populated existing tables without changing indexes on newly-created
 	// tables.
 	concurrentIndexNames map[string]struct{}
+	// skip lists destructive change kinds this planner omits from the plan,
+	// emitting a clearly-marked comment in their place. See diffpolicy.
+	skip diffpolicy.SkipSet
 }
 
 // New returns a planner configured with the current PostgreSQL line preset
@@ -134,6 +138,23 @@ func (p *Planner) WithConcurrentIndexNames(indexNames ...string) *Planner {
 		if indexName != "" {
 			cp.concurrentIndexNames[indexName] = struct{}{}
 		}
+	}
+	return &cp
+}
+
+// WithSkipChangeKinds returns a copy of the planner that omits the listed
+// destructive change kinds from the plan, emitting a clearly-marked comment in
+// their place instead of the DDL. The receiver is not modified. Passing no
+// kinds returns the receiver unchanged.
+func (p *Planner) WithSkipChangeKinds(kinds ...diffpolicy.ChangeKind) *Planner {
+	if len(kinds) == 0 {
+		return p
+	}
+	cp := *p
+	cp.skip = make(diffpolicy.SkipSet, len(p.skip)+len(kinds))
+	maps.Copy(cp.skip, p.skip)
+	for _, kind := range kinds {
+		cp.skip[kind] = struct{}{}
 	}
 	return &cp
 }
@@ -876,6 +897,16 @@ func stringSet(values []string) map[string]struct{} {
 	return set
 }
 
+// appendSkipComments emits one clearly-marked comment per change omitted by the
+// diff policy, so the omission is visible in the generated migration rather than
+// silent.
+func appendSkipComments(result []ast.Node, skipped []diffpolicy.SkippedChange) []ast.Node {
+	for _, change := range skipped {
+		result = append(result, ast.NewComment(change.Comment()))
+	}
+	return result
+}
+
 func (p *Planner) removeTables(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
 	for _, tableName := range deporder.TableDropOrder(diff.TablesRemoved, generated) {
 		dropTableNode := ast.NewDropTable(tableName).
@@ -1083,6 +1114,15 @@ func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *gosche
 
 func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
 	var result []ast.Node
+
+	// Apply the diff policy first so skipped destructive changes never reach the
+	// per-object emission below (and so a skipped DROP never trips the coarse
+	// destructive gate downstream). The omissions are surfaced as comments.
+	if !p.skip.Empty() {
+		var skipped []diffpolicy.SkippedChange
+		diff, skipped = diffpolicy.Apply(diff, p.skip)
+		result = appendSkipComments(result, skipped)
+	}
 
 	// 0. Add new extensions first (PostgreSQL extensions should be created before other objects)
 	result = p.addNewExtensions(result, diff, generated)

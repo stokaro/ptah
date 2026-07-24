@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/config/projectconfig"
+	"github.com/stokaro/ptah/migration/diffpolicy"
 )
 
 func TestParsePtahProjectConfigNamedEnv(t *testing.T) {
@@ -200,4 +201,73 @@ func TestParsePtahProjectConfigMissingEnv(t *testing.T) {
 	_, err := projectconfig.ParsePtah(raw, "ptah.yaml", "prod")
 
 	c.Assert(err, qt.ErrorMatches, `ptah env "prod" not found`)
+}
+
+func TestParsePtahDiffPolicy(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`url: postgres://base/db
+diff:
+  skip: [drop_table, drop_column, drop_index, drop_enum]
+  concurrent_index: true
+`)
+
+	cfg, err := projectconfig.ParsePtah(raw, "ptah.yaml", "")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.Diff.Skip.DropTable.Value, qt.IsTrue)
+	c.Assert(cfg.Diff.Skip.DropColumn.Value, qt.IsTrue)
+	c.Assert(cfg.Diff.Skip.DropIndex.Value, qt.IsTrue)
+	c.Assert(cfg.Diff.Skip.DropEnum.Value, qt.IsTrue)
+	c.Assert(cfg.Diff.ConcurrentIndex.Create.Value, qt.IsTrue)
+	c.Assert(cfg.Diff.ConcurrentIndex.Create.Set, qt.IsTrue)
+	c.Assert(cfg.Diff.SkipChangeKinds(), qt.DeepEquals, []diffpolicy.ChangeKind{
+		diffpolicy.DropTable, diffpolicy.DropColumn, diffpolicy.DropIndex, diffpolicy.DropEnum,
+	})
+	c.Assert(cfg.Diff.ConcurrentIndexCreate(), qt.IsTrue)
+}
+
+func TestParsePtahDiffPolicyConcurrentIndexExplicitFalse(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`url: postgres://base/db
+diff:
+  concurrent_index: false
+`)
+
+	cfg, err := projectconfig.ParsePtah(raw, "ptah.yaml", "")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.Diff.ConcurrentIndex.Create.Set, qt.IsTrue)
+	c.Assert(cfg.Diff.ConcurrentIndex.Create.Value, qt.IsFalse)
+	c.Assert(cfg.Diff.SkipChangeKinds(), qt.HasLen, 0)
+}
+
+func TestParsePtahDiffPolicyUnknownSkipKind(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`url: postgres://base/db
+diff:
+  skip: [drop_universe]
+`)
+
+	_, err := projectconfig.ParsePtah(raw, "ptah.yaml", "")
+
+	c.Assert(err, qt.ErrorMatches, `.*diff.skip: unknown diff skip change kind "drop_universe".*`)
+}
+
+func TestParsePtahDiffPolicyEnvOverride(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`url: postgres://base/db
+diff:
+  skip: [drop_table]
+env:
+  prod:
+    diff:
+      skip: [drop_column]
+`)
+
+	cfg, err := projectconfig.ParsePtah(raw, "ptah.yaml", "prod")
+
+	c.Assert(err, qt.IsNil)
+	// Base drop_table is inherited; prod adds drop_column.
+	c.Assert(cfg.Diff.Skip.DropTable.Value, qt.IsTrue)
+	c.Assert(cfg.Diff.Skip.DropColumn.Value, qt.IsTrue)
 }
