@@ -87,6 +87,7 @@ import (
 	"github.com/stokaro/ptah/internal/planner/dialects/mysql"
 	"github.com/stokaro/ptah/internal/planner/dialects/postgres"
 	"github.com/stokaro/ptah/internal/planner/dialects/sqlite"
+	"github.com/stokaro/ptah/migration/diffpolicy"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
@@ -163,6 +164,11 @@ type Options struct {
 	// ConcurrentIndexNames requests PostgreSQL CREATE INDEX CONCURRENTLY for
 	// exactly these newly added index names when the target supports it.
 	ConcurrentIndexNames []string
+	// SkipChangeKinds lists destructive change kinds the planner must omit from
+	// the plan (emitting a clearly-marked comment in their place) instead of
+	// deferring to the coarse destructive gate. Currently honored by the
+	// PostgreSQL-family planner.
+	SkipChangeKinds []diffpolicy.ChangeKind
 }
 
 // CapabilitiesFor returns the configured capability set, falling back to the
@@ -326,7 +332,8 @@ func registerBuiltInPlanners() error {
 func registerPostgresFamilyPlanner(dialect string) error {
 	return registerPlannerFactory(dialect, func(opts Options) Planner {
 		plan := postgres.NewWithCapabilities(opts.CapabilitiesFor(dialect)).
-			WithConcurrentIndexNames(opts.ConcurrentIndexNames...)
+			WithConcurrentIndexNames(opts.ConcurrentIndexNames...).
+			WithSkipChangeKinds(opts.SkipChangeKinds...)
 		if opts.ConcurrentIndexes {
 			return plan.WithConcurrentIndexes()
 		}
