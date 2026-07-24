@@ -160,6 +160,17 @@ func TestCompareWithDialect_GeneratedColumnCatalogExpressionsMatch(t *testing.T)
 			databaseKind:       "STORED",
 		},
 		{
+			name:               "mariadb lower alias",
+			dialect:            "mariadb",
+			generatedType:      "VARCHAR(255)",
+			generatedExpr:      "lower(email)",
+			generatedKind:      "stored",
+			databaseType:       "varchar",
+			databaseColumnType: "varchar(255)",
+			databaseExpr:       "lcase(`email`)",
+			databaseKind:       "STORED",
+		},
+		{
 			name:               "postgres numeric cast parameters",
 			dialect:            "postgres",
 			generatedType:      "DECIMAL(10,2)",
@@ -243,6 +254,241 @@ func TestCompareWithDialect_GeneratedColumnStringLiteralMismatchIsAGap(t *testin
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified[0].Changes["generated"], qt.Contains, "'ACTIVE'")
+}
+
+func TestCompareWithDialect_GeneratedColumnEscapedStringLiteralMismatchIsAGap(t *testing.T) {
+	c := qt.New(t)
+	generated := &goschema.Database{
+		Tables: []goschema.Table{{Name: "contacts", StructName: "Contact"}},
+		Fields: []goschema.Field{
+			{
+				StructName:          "Contact",
+				Name:                "email_normalized",
+				Type:                "TEXT",
+				Nullable:            true,
+				GeneratedExpression: `concat(email, 'can\'t lcase(email)')`,
+				GeneratedKind:       "stored",
+			},
+		},
+	}
+	databaseExpression := `concat(` + "`email`" + `, 'can\'t lower(email)')`
+	database := &types.DBSchema{
+		Tables: []types.DBTable{{
+			Name: "contacts",
+			Type: "TABLE",
+			Columns: []types.DBColumn{{
+				Name:                "email_normalized",
+				DataType:            "text",
+				IsNullable:          "YES",
+				GeneratedExpression: &databaseExpression,
+				GeneratedKind:       "STORED",
+			}},
+		}},
+	}
+
+	diff := schemadiff.CompareWithDialect(generated, database, "mariadb")
+
+	c.Assert(diff.TablesModified, qt.HasLen, 1)
+	c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
+	c.Assert(diff.TablesModified[0].ColumnsModified[0].Changes["generated"], qt.Contains, `lcase`)
+}
+
+func TestCompareWithDialect_GeneratedColumnDoubleQuotedStringLiteralMismatchIsAGap(t *testing.T) {
+	c := qt.New(t)
+	generated := &goschema.Database{
+		Tables: []goschema.Table{{Name: "contacts", StructName: "Contact"}},
+		Fields: []goschema.Field{
+			{
+				StructName:          "Contact",
+				Name:                "email_normalized",
+				Type:                "TEXT",
+				Nullable:            true,
+				GeneratedExpression: `concat(email, "lcase(email)")`,
+				GeneratedKind:       "stored",
+			},
+		},
+	}
+	databaseExpression := `concat(` + "`email`" + `, "lower(email)")`
+	database := &types.DBSchema{
+		Tables: []types.DBTable{{
+			Name: "contacts",
+			Type: "TABLE",
+			Columns: []types.DBColumn{{
+				Name:                "email_normalized",
+				DataType:            "text",
+				IsNullable:          "YES",
+				GeneratedExpression: &databaseExpression,
+				GeneratedKind:       "STORED",
+			}},
+		}},
+	}
+
+	diff := schemadiff.CompareWithDialect(generated, database, "mariadb")
+
+	c.Assert(diff.TablesModified, qt.HasLen, 1)
+	c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
+	c.Assert(diff.TablesModified[0].ColumnsModified[0].Changes["generated"], qt.Contains, `lcase`)
+}
+
+func TestCompareWithDialect_MariaDBViewBodyMatchesCatalogReadback(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Views: []goschema.View{{
+			Name: "live_products",
+			Body: "SELECT id, name FROM products WHERE archived = false",
+		}},
+	}
+	database := &types.DBSchema{
+		Views: []types.DBView{{
+			Name:   "live_products",
+			Schema: "conf",
+			Body: "select `conf`.`products`.`id` AS `id`,`conf`.`products`.`name` AS `name` " +
+				"from `conf`.`products` where `conf`.`products`.`archived` = 0",
+		}},
+	}
+
+	diff := schemadiff.CompareWithDialect(generated, database, "mariadb")
+
+	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
+}
+
+func TestCompareWithDialect_MariaDBViewPredicateDriftStillDiffs(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Views: []goschema.View{{
+			Name: "live_products",
+			Body: "SELECT id, name FROM products WHERE archived = false",
+		}},
+	}
+	database := &types.DBSchema{
+		Views: []types.DBView{{
+			Name:   "live_products",
+			Schema: "conf",
+			Body: "select `conf`.`products`.`id` AS `id`,`conf`.`products`.`name` AS `name` " +
+				"from `conf`.`products` where `conf`.`products`.`archived` = 1",
+		}},
+	}
+
+	diff := schemadiff.CompareWithDialect(generated, database, "mariadb")
+
+	c.Assert(diff.ViewsModified, qt.HasLen, 1)
+	c.Assert(diff.ViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
+}
+
+func TestCompareWithDialect_MariaDBViewWrongSchemaQualifierStillDiffs(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Views: []goschema.View{{
+			Name: "live_products",
+			Body: "SELECT id, name FROM products WHERE archived = false",
+		}},
+	}
+	database := &types.DBSchema{
+		Views: []types.DBView{{
+			Name:   "live_products",
+			Schema: "conf",
+			Body: "select `otherdb`.`products`.`id` AS `id`,`otherdb`.`products`.`name` AS `name` " +
+				"from `otherdb`.`products` where `otherdb`.`products`.`archived` = 0",
+		}},
+	}
+
+	diff := schemadiff.CompareWithDialect(generated, database, "mariadb")
+
+	c.Assert(diff.ViewsModified, qt.HasLen, 1)
+	c.Assert(diff.ViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
+}
+
+func TestCompareWithDialect_MariaDBViewWrongSchemaRelationStillDiffs(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Views: []goschema.View{{
+			Name: "live_products",
+			Body: "SELECT id, name FROM products WHERE archived = false",
+		}},
+	}
+	database := &types.DBSchema{
+		Views: []types.DBView{{
+			Name:   "live_products",
+			Schema: "conf",
+			Body: "select `products`.`id` AS `id`,`products`.`name` AS `name` " +
+				"from `otherdb`.`products` where `products`.`archived` = 0",
+		}},
+	}
+
+	diff := schemadiff.CompareWithDialect(generated, database, "mariadb")
+
+	c.Assert(diff.ViewsModified, qt.HasLen, 1)
+	c.Assert(diff.ViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
+}
+
+func TestCompareWithDialect_MariaDBViewStringLiteralDriftStillDiffs(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Views: []goschema.View{{
+			Name: "view_notes",
+			Body: "SELECT 'archived = false' AS note",
+		}},
+	}
+	database := &types.DBSchema{
+		Views: []types.DBView{{
+			Name: "view_notes",
+			Body: "select 'archived = 0' AS `note`",
+		}},
+	}
+
+	diff := schemadiff.CompareWithDialect(generated, database, "mariadb")
+
+	c.Assert(diff.ViewsModified, qt.HasLen, 1)
+	c.Assert(diff.ViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
+}
+
+func TestCompareWithDialect_MariaDBViewEscapedStringLiteralDriftStillDiffs(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Views: []goschema.View{{
+			Name: "view_notes",
+			Body: `SELECT 'can\'t = false' AS note`,
+		}},
+	}
+	database := &types.DBSchema{
+		Views: []types.DBView{{
+			Name: "view_notes",
+			Body: `select 'can\'t = 0' AS ` + "`note`",
+		}},
+	}
+
+	diff := schemadiff.CompareWithDialect(generated, database, "mariadb")
+
+	c.Assert(diff.ViewsModified, qt.HasLen, 1)
+	c.Assert(diff.ViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
+}
+
+func TestCompareWithDialect_MariaDBViewDoubleQuotedStringLiteralDriftStillDiffs(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Views: []goschema.View{{
+			Name: "view_notes",
+			Body: `SELECT "archived = false" AS note`,
+		}},
+	}
+	database := &types.DBSchema{
+		Views: []types.DBView{{
+			Name: "view_notes",
+			Body: `select "archived = 0" AS ` + "`note`",
+		}},
+	}
+
+	diff := schemadiff.CompareWithDialect(generated, database, "mariadb")
+
+	c.Assert(diff.ViewsModified, qt.HasLen, 1)
+	c.Assert(diff.ViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
 }
 
 func TestCompareWithDialect_SQLServerGeneratedExpressionNormalizesCatalogDefinition(t *testing.T) {

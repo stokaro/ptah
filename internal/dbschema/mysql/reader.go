@@ -392,6 +392,7 @@ func (r *Reader) readViews(dbName string) ([]types.DBView, error) {
 		if err != nil {
 			return nil, err
 		}
+		view.Schema = dbName
 		views = append(views, view)
 	}
 	return views, nil

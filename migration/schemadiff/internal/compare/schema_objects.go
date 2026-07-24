@@ -116,27 +116,49 @@ func Functions(generated *goschema.Database, database *types.DBSchema, diff *dif
 
 // Views compares view definitions between generated and database schemas.
 func Views(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
-	generatedViews := make(map[string]goschema.View)
+	ViewsWithDialect(generated, database, diff, "")
+}
+
+// ViewsWithDialect compares view definitions with dialect-aware normalization
+// for catalog readback forms that are semantically equivalent to Ptah-rendered
+// view SQL.
+func ViewsWithDialect(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff, dialect string) {
+	generatedViews := make(map[string]goschema.View, len(generated.Views))
 	for _, view := range generated.Views {
 		generatedViews[view.Name] = view
 	}
 
-	databaseViews := make(map[string]types.DBView)
+	databaseViewsByName := make(map[string][]types.DBView, len(database.Views))
+	databaseViewsByQualifiedName := make(map[string]types.DBView, len(database.Views))
 	for _, view := range database.Views {
-		databaseViews[view.QualifiedName()] = view
+		databaseViewsByName[view.Name] = append(databaseViewsByName[view.Name], view)
+		databaseViewsByQualifiedName[view.QualifiedName()] = view
 	}
 
-	addedViews, removedViews := compareNamedItems(generatedViews, databaseViews)
-	diff.ViewsAdded = append(diff.ViewsAdded, addedViews...)
-	diff.ViewsRemoved = append(diff.ViewsRemoved, removedViews...)
-
+	matchedDatabaseViews := make(map[string]struct{}, len(database.Views))
 	for viewName, generatedView := range generatedViews {
-		if databaseView, exists := databaseViews[viewName]; exists {
-			viewDiff := ViewDefinitions(generatedView, databaseView)
-			if len(viewDiff.Changes) > 0 {
-				diff.ViewsModified = append(diff.ViewsModified, viewDiff)
-			}
+		databaseView, exists := findDatabaseViewForGeneratedView(
+			generatedView,
+			databaseViewsByName,
+			databaseViewsByQualifiedName,
+		)
+		if !exists {
+			diff.ViewsAdded = append(diff.ViewsAdded, viewName)
+			continue
 		}
+
+		matchedDatabaseViews[databaseView.QualifiedName()] = struct{}{}
+		viewDiff := ViewDefinitionsWithDialect(generatedView, databaseView, dialect)
+		if len(viewDiff.Changes) > 0 {
+			diff.ViewsModified = append(diff.ViewsModified, viewDiff)
+		}
+	}
+
+	for _, view := range database.Views {
+		if _, ok := matchedDatabaseViews[view.QualifiedName()]; ok {
+			continue
+		}
+		diff.ViewsRemoved = append(diff.ViewsRemoved, viewNameForDiff(view))
 	}
 
 	sort.Strings(diff.ViewsAdded)
@@ -144,6 +166,34 @@ func Views(generated *goschema.Database, database *types.DBSchema, diff *difftyp
 	sort.Slice(diff.ViewsModified, func(i, j int) bool {
 		return diff.ViewsModified[i].ViewName < diff.ViewsModified[j].ViewName
 	})
+}
+
+func findDatabaseViewForGeneratedView(
+	generatedView goschema.View,
+	databaseViewsByName map[string][]types.DBView,
+	databaseViewsByQualifiedName map[string]types.DBView,
+) (types.DBView, bool) {
+	if viewNameHasSchema(generatedView.Name) {
+		view, ok := databaseViewsByQualifiedName[generatedView.Name]
+		return view, ok
+	}
+	candidates := databaseViewsByName[generatedView.Name]
+	if len(candidates) != 1 {
+		return types.DBView{}, false
+	}
+	return candidates[0], true
+}
+
+func viewNameHasSchema(name string) bool {
+	schema, viewName, ok := strings.Cut(name, ".")
+	return ok && strings.TrimSpace(schema) != "" && strings.TrimSpace(viewName) != ""
+}
+
+func viewNameForDiff(view types.DBView) string {
+	if view.Schema == "" {
+		return view.Name
+	}
+	return view.QualifiedName()
 }
 
 // MaterializedViews compares materialized view definitions between generated
@@ -280,12 +330,18 @@ func FunctionDefinitions(genFunction goschema.Function, dbFunction types.DBFunct
 
 // ViewDefinitions performs detailed comparison between generated and database view definitions.
 func ViewDefinitions(genView goschema.View, dbView types.DBView) difftypes.ViewDiff {
+	return ViewDefinitionsWithDialect(genView, dbView, "")
+}
+
+// ViewDefinitionsWithDialect performs detailed comparison between generated and
+// database view definitions with dialect-aware catalog readback normalization.
+func ViewDefinitionsWithDialect(genView goschema.View, dbView types.DBView, dialect string) difftypes.ViewDiff {
 	viewDiff := difftypes.ViewDiff{
 		ViewName: genView.Name,
 		Changes:  make(map[string]string),
 	}
 
-	if !schemaObjectBodiesEqual(genView.Body, dbView.Body) {
+	if !schemaObjectBodiesEqual(genView.Body, dbView.Body, dialect, dbView.Schema) {
 		viewDiff.Changes["body"] = fmt.Sprintf("%s -> %s", strings.TrimSpace(dbView.Body), strings.TrimSpace(genView.Body))
 	}
 
@@ -305,50 +361,59 @@ func MaterializedViewDefinitions(genView goschema.MaterializedView, dbView types
 		Changes:  make(map[string]string),
 	}
 
-	if !schemaObjectBodiesEqual(genView.Body, dbView.Body) {
+	if !schemaObjectBodiesEqual(genView.Body, dbView.Body, "", "") {
 		viewDiff.Changes["body"] = fmt.Sprintf("%s -> %s", strings.TrimSpace(dbView.Body), strings.TrimSpace(genView.Body))
 	}
 
 	return viewDiff
 }
 
-func schemaObjectBodiesEqual(generatedBody, databaseBody string) bool {
-	if normalizeSQLBodyPreservingQualifiers(generatedBody) == normalizeSQLBodyPreservingQualifiers(databaseBody) {
+func schemaObjectBodiesEqual(generatedBody, databaseBody, dialect, databaseSchema string) bool {
+	if normalizeSQLBodyPreservingQualifiers(generatedBody, dialect) == normalizeSQLBodyPreservingQualifiers(databaseBody, dialect) {
 		return true
 	}
 
 	if schemaQualifierPattern.MatchString(strings.ToLower(generatedBody)) {
 		return false
 	}
-	return normalizeSQLBodyPreservingQualifiers(generatedBody) == normalizeSQLBodyStrippingQualifiers(databaseBody)
+	return normalizeSQLBodyPreservingQualifiers(generatedBody, dialect) ==
+		normalizeSQLBodyStrippingQualifiers(databaseBody, dialect, databaseSchema)
 }
 
-func normalizeSQLBodyPreservingQualifiers(body string) string {
-	return canonicalizeNormalizedSQLBody(normalizeSQLBody(body))
+func normalizeSQLBodyPreservingQualifiers(body, dialect string) string {
+	return canonicalizeNormalizedSQLBody(normalizeSQLBody(body, dialect), dialect)
 }
 
-func normalizeSQLBodyStrippingQualifiers(body string) string {
-	return canonicalizeNormalizedSQLBody(schemaQualifierPattern.ReplaceAllString(normalizeSQLBody(body), ""))
+func normalizeSQLBodyStrippingQualifiers(body, dialect, schema string) string {
+	return canonicalizeNormalizedSQLBody(stripSQLQualifiers(normalizeSQLBody(body, dialect), schema), dialect)
 }
 
-func normalizeSQLBody(body string) string {
+func normalizeSQLBody(body, dialect string) string {
 	body = strings.TrimSpace(body)
 	body = strings.TrimSuffix(body, ";")
 	body = strings.TrimSpace(body)
-	body = strings.ReplaceAll(body, "\"", "")
-	body = strings.ReplaceAll(body, "`", "")
-	body = strings.ToLower(body)
+	body = normalizeSQLCaseAndIdentifierQuotes(body, dialect)
 	body = stripDefaultAggregateAliases(body)
-	body = regexp.MustCompile(`\s+`).ReplaceAllString(body, " ")
-	body = sqlCommaSpacingPattern.ReplaceAllString(body, ",")
+	body = collapseWhitespaceOutsideQuotedSQL(body)
+	body = normalizeCommaSpacingOutsideQuotedSQL(body)
 	return strings.TrimSpace(body)
 }
 
-func canonicalizeNormalizedSQLBody(body string) string {
+func canonicalizeNormalizedSQLBody(body, dialect string) string {
 	body = stripDefaultColumnAliases(body)
 	body = stripSimpleComparisonParentheses(body)
 	body = regexp.MustCompile(`\s+`).ReplaceAllString(body, " ")
+	if isMySQLFamilyDialect(dialect) {
+		body = normalizeMySQLBooleanViewPredicates(body)
+	}
 	return strings.TrimSpace(body)
+}
+
+func normalizeMySQLBooleanViewPredicates(body string) string {
+	body = replaceSQLLiteralOutsideSingleQuotedSQL(body, " = false", " = 0")
+	body = replaceSQLLiteralOutsideSingleQuotedSQL(body, "= false", "= 0")
+	body = replaceSQLLiteralOutsideSingleQuotedSQL(body, " = true", " = 1")
+	return replaceSQLLiteralOutsideSingleQuotedSQL(body, "= true", "= 1")
 }
 
 func stripDefaultAggregateAliases(body string) string {

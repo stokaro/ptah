@@ -19,10 +19,10 @@ func Compare(generated *goschema.Database, database *types.DBSchema) *difftypes.
 }
 
 // CompareWithDialect performs schema comparison using default options plus the
-// supplied target dialect. The dialect drives dialect-specific normalization —
-// currently the MySQL/MariaDB RESTRICT == NO ACTION fold for foreign-key
-// referential actions (see config.CompareOptions.Dialect). Pass an empty
-// dialect for dialect-neutral comparison (equivalent to Compare).
+// supplied target dialect. The dialect drives dialect-specific normalization,
+// such as MySQL-family catalog spellings and referential-action folds (see
+// config.CompareOptions.Dialect). Pass an empty dialect for dialect-neutral
+// comparison (equivalent to Compare).
 func CompareWithDialect(generated *goschema.Database, database *types.DBSchema, dialect string) *difftypes.SchemaDiff {
 	opts := config.DefaultCompareOptions()
 	opts.Dialect = dialect
@@ -79,7 +79,7 @@ func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, 
 	compare.Functions(generated, database, diff)
 
 	// Compare views, materialized views, and triggers
-	compare.Views(generated, database, diff)
+	compare.ViewsWithDialect(generated, database, diff, opts.Dialect)
 	compare.MaterializedViews(generated, database, diff)
 	compare.Triggers(generated, database, diff)
 

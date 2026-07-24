@@ -105,7 +105,7 @@ func TriggerDefinitions(genTrigger goschema.Trigger, dbTrigger types.DBTrigger) 
 }
 
 func normalizeTriggerBody(body string) string {
-	body = normalizeSQLBodyPreservingQualifiers(body)
+	body = normalizeSQLBodyPreservingQualifiers(body, "")
 	body = strings.TrimPrefix(body, "begin ")
 	body = strings.TrimPrefix(body, "begin")
 	body = strings.TrimSpace(body)
