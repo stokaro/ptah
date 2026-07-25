@@ -29,6 +29,7 @@ root-level command spellings are removed instead of preserved.
 | `ptah migrations plan` | Print migration SQL from desired/live schema differences. |
 | `ptah migrations generate` | Generate migration files from desired/live schema differences. |
 | `ptah migrations create` | Create empty migration files for manual SQL. |
+| `ptah migrations import` | Convert another tool's migration directory to Ptah format. |
 | `ptah migrations up` | Run pending migrations. |
 | `ptah migrations down` | Roll back migrations. |
 | `ptah migrations status` | Show migration status. |
@@ -55,6 +56,11 @@ them. See [User-defined types](./user_defined_types.md).
 migration before applying its statements, aborting (non-zero) if a precondition
 does not hold; `--skip-checks` is an emergency bypass. See
 [Pre-migration checks](./pre-migration-checks.md).
+
+`ptah migrations import` converts an existing migration directory from another
+versioned-migration tool into Ptah's native format, preserving version order and
+rewriting `ptah.sum`, so a team can adopt Ptah without hand-rewriting its
+history. See [Importing migrations](./migrations-import.md).
 
 ## Exit Codes
 

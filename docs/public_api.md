@@ -25,6 +25,7 @@ These packages are intended for application and tool embedders:
 - `github.com/stokaro/ptah/dbschema/types`
 - `github.com/stokaro/ptah/migration/diffpolicy`
 - `github.com/stokaro/ptah/migration/generator`
+- `github.com/stokaro/ptah/migration/importer`
 - `github.com/stokaro/ptah/migration/lint`
 - `github.com/stokaro/ptah/migration/migrator`
 - `github.com/stokaro/ptah/migration/planner`
