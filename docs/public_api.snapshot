@@ -658,6 +658,38 @@ type ShadowMismatch struct{ ... }
 type ShadowVerificationError struct{ ... }
 type ShadowVerificationResult struct{ ... }
 
+## github.com/stokaro/ptah/migration/importer
+
+type EmitResult struct{ ... }
+    func Emit(outDir string, migrations []SourceMigration, opts Options) (*EmitResult, error)
+    func Import(sourceFS fs.FS, parser Parser, outDir string, opts Options) (*EmitResult, error)
+type Options struct{ ... }
+type Parser interface{ ... }
+    func DetectParser(fsys fs.FS) (Parser, error)
+    func ParserByName(tool string) (Parser, error)
+    func Parsers() []Parser
+type SourceMigration struct{ ... }
+    func Normalize(migrations []SourceMigration) ([]SourceMigration, error)
+
+### github.com/stokaro/ptah/migration/importer.Parser
+
+package importer // import "github.com/stokaro/ptah/migration/importer"
+
+type Parser interface {
+    // Name is the stable tool identifier used by the --from flag.
+    Name() string
+    // Detect reports whether fsys looks like this tool's migration directory.
+    Detect(fsys fs.FS) bool
+    // Parse reads every migration in fsys into SourceMigrations. It does not
+    // order or validate them — Normalize does.
+    Parse(fsys fs.FS) ([]SourceMigration, error)
+}
+    Parser reads a specific source tool's migration directory.
+
+func DetectParser(fsys fs.FS) (Parser, error)
+func ParserByName(tool string) (Parser, error)
+func Parsers() []Parser
+
 ## github.com/stokaro/ptah/migration/lint
 
 const ConfigFileName = ".ptah-lint.yaml"
