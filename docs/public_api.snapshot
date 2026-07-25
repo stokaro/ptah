@@ -660,6 +660,7 @@ type ShadowVerificationResult struct{ ... }
 
 ## github.com/stokaro/ptah/migration/importer
 
+func SupportedTools() []string
 type EmitResult struct{ ... }
     func Emit(outDir string, migrations []SourceMigration, opts Options) (*EmitResult, error)
     func Import(sourceFS fs.FS, parser Parser, outDir string, opts Options) (*EmitResult, error)

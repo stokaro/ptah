@@ -105,6 +105,29 @@ func TestImportFallsBackForEmptySanitizedName(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 }
 
+// TestEmitRepeatableImportedAsOneTime checks that a repeatable source migration
+// (which Ptah has no concept of) is emitted as a one-time migration ordered
+// after every versioned one, named "repeatable_<name>".
+func TestEmitRepeatableImportedAsOneTime(t *testing.T) {
+	c := qt.New(t)
+	out := t.TempDir()
+
+	normalized, err := importer.Normalize([]importer.SourceMigration{
+		{Version: 1, Name: "init", UpSQL: "CREATE TABLE t (id int);"},
+		{Repeatable: true, Name: "view", UpSQL: "CREATE VIEW v AS SELECT 1;"},
+	})
+	c.Assert(err, qt.IsNil)
+
+	result, err := importer.Emit(out, normalized, importer.Options{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Files, qt.Contains, "0000000001_init.up.sql")
+	c.Assert(result.Files, qt.Contains, "0000000002_repeatable_view.up.sql")
+
+	up, err := os.ReadFile(filepath.Join(out, "0000000002_repeatable_view.up.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(up), qt.Contains, "CREATE VIEW v")
+}
+
 func TestImportUnknownToolViaDetect(t *testing.T) {
 	c := qt.New(t)
 	_, err := importer.Import(fstest.MapFS{"x.txt": {Data: []byte("hi")}}, nil, t.TempDir(), importer.Options{DryRun: true})
