@@ -183,6 +183,76 @@ func TestColumns_HappyPath(t *testing.T) {
 			},
 		},
 		{
+			name: "varchar widening preserves raw type",
+			genCol: goschema.Field{
+				Name: "name",
+				Type: "VARCHAR(255)",
+			},
+			dbCol: types.DBColumn{
+				Name:     "name",
+				DataType: "VARCHAR(100)",
+			},
+			expected: difftypes.ColumnDiff{
+				ColumnName: "name",
+				Changes: map[string]string{
+					"type": "VARCHAR(100) -> VARCHAR(255)",
+				},
+			},
+		},
+		{
+			name: "postgres varchar widening uses length metadata",
+			genCol: goschema.Field{
+				Name: "name",
+				Type: "VARCHAR(255)",
+			},
+			dbCol: types.DBColumn{
+				Name:               "name",
+				DataType:           "character varying",
+				UDTName:            "varchar",
+				CharacterMaxLength: func() *int { value := 100; return &value }(),
+			},
+			expected: difftypes.ColumnDiff{
+				ColumnName: "name",
+				Changes: map[string]string{
+					"type": "varchar(100) -> VARCHAR(255)",
+				},
+			},
+		},
+		{
+			name: "integer widening preserves raw type",
+			genCol: goschema.Field{
+				Name: "count",
+				Type: "bigint",
+			},
+			dbCol: types.DBColumn{
+				Name:     "count",
+				DataType: "integer",
+			},
+			expected: difftypes.ColumnDiff{
+				ColumnName: "count",
+				Changes: map[string]string{
+					"type": "integer -> bigint",
+				},
+			},
+		},
+		{
+			name: "decimal widening preserves raw type",
+			genCol: goschema.Field{
+				Name: "price",
+				Type: "NUMERIC(12,2)",
+			},
+			dbCol: types.DBColumn{
+				Name:     "price",
+				DataType: "NUMERIC(10,2)",
+			},
+			expected: difftypes.ColumnDiff{
+				ColumnName: "price",
+				Changes: map[string]string{
+					"type": "NUMERIC(10,2) -> NUMERIC(12,2)",
+				},
+			},
+		},
+		{
 			name: "primary key change",
 			genCol: goschema.Field{
 				Name:    "id",
@@ -1126,8 +1196,9 @@ func TestTableColumns_EdgeCases(t *testing.T) {
 	c.Assert(result.TableName, qt.Equals, "users")
 	c.Assert(result.ColumnsModified, qt.HasLen, 1)
 	c.Assert(result.ColumnsModified[0].ColumnName, qt.Equals, "name")
-	c.Assert(result.ColumnsModified[0].Changes, qt.HasLen, 1) // Only nullable should change (types are both varchar)
+	c.Assert(result.ColumnsModified[0].Changes, qt.HasLen, 2) // nullable tightens and the varchar length widens 100 -> 255
 	c.Assert(result.ColumnsModified[0].Changes["nullable"], qt.Equals, "true -> false")
+	c.Assert(result.ColumnsModified[0].Changes["type"], qt.Equals, "VARCHAR(100) -> VARCHAR(255)")
 }
 
 func TestTablesAndColumns_SortingConsistency(t *testing.T) {
