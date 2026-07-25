@@ -33,7 +33,7 @@ The source tool is auto-detected; pass `--from` to be explicit or to disambiguat
 | --- | --- | --- |
 | golang-migrate | **Supported** | `<version>_<name>.up.sql` / `.down.sql`; integer or timestamp versions. |
 | Goose | **Supported** | Single-file `<version>_<name>.sql` split by `-- +goose Up` / `-- +goose Down` (SQL only; `StatementBegin/End` and `NO TRANSACTION` directives are stripped; Go-based migrations are rejected). |
-| Flyway | Planned | `V<version>__<desc>.sql`, repeatable `R__`, undo `U<version>__`. |
+| Flyway | **Supported** | Versioned `V<version>__<desc>.sql` (dotted versions such as `V2.1` are supported), undo `U<version>__<desc>.sql` (paired to its versioned migration by version and imported as the down), and repeatable `R__<desc>.sql` (imported as a one-time migration ordered after the versioned ones). |
 | Liquibase | Planned | Formatted-SQL changelogs first; XML/YAML/JSON changelogs later. |
 
 ## Behavior
@@ -49,6 +49,15 @@ The source tool is auto-detected; pass `--from` to be explicit or to disambiguat
   import loudly rather than silently dropping or reordering history.
 - **Missing rollbacks** get a placeholder down migration, so every imported
   migration is a complete up/down pair.
+- **Flyway specifics.** Dotted versions (`V2.1`) have no single-integer Ptah
+  equivalent, so a Flyway directory that uses any dotted version is reassigned to
+  sequential Ptah versions with the original version folded into the name
+  (`0000000002_v2_1_add_email...`); a directory whose versions are all plain
+  integers keeps them. An undo (`U<version>__…`) migration becomes the down of
+  the versioned migration with the same version. A repeatable (`R__…`) migration
+  is imported as a one-time migration ordered after every versioned one (named
+  `repeatable_<desc>`), because Ptah has no repeatable concept — a later change
+  to its source becomes a new Ptah migration rather than an automatic re-run.
 - **No clobbering.** The import refuses to overwrite an existing migration file
   in the output directory — point `--migrations-dir` at an empty or new
   directory.

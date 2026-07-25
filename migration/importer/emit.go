@@ -52,7 +52,9 @@ type plannedFile struct {
 // if any is too wide (for example a 14-digit golang-migrate timestamp), all
 // migrations are reassigned to sequential Ptah versions in their existing order,
 // carrying the original version into the description so history stays traceable.
-// A source name that sanitizes to empty falls back to "migration".
+// A source name that sanitizes to empty falls back to "migration". A repeatable
+// source migration (Ptah has no such concept) is imported as a one-time
+// migration ordered after every versioned one, named "repeatable_<name>".
 //
 // The whole plan is validated (every generated file name round-trips through
 // Ptah's reader) BEFORE any file is written, and a mid-write failure removes the
@@ -64,18 +66,28 @@ func Emit(outDir string, migrations []SourceMigration, opts Options) (*EmitResul
 	result := &EmitResult{Remapped: remap}
 
 	planned := make([]plannedFile, 0, len(migrations)*2)
+	var maxVersion int64 // highest output version assigned so far (versioned sort first)
 	for index, migration := range migrations {
-		if migration.Repeatable {
-			return nil, fmt.Errorf("repeatable migration %q cannot be imported yet (no versioned target)", migration.Name)
-		}
 		// Preserve the source version when it fits Ptah's 10-digit format;
 		// otherwise reassign sequentially (order is already normalized), folding
 		// the original version into the description so history stays traceable.
 		version := migration.Version
 		description := migration.Name
-		if remap {
+		switch {
+		case migration.Repeatable:
+			// Ptah has no repeatable-migration concept, so a source repeatable is
+			// imported as a one-time migration ordered after every versioned one
+			// (Normalize sorts repeatables last). A later content change in the
+			// source becomes a new Ptah migration rather than a re-run.
+			maxVersion++
+			version = maxVersion
+			description = "repeatable_" + migration.Name
+		case remap:
 			version = int64(index + 1)
 			description = fmt.Sprintf("v%d_%s", migration.Version, migration.Name)
+			maxVersion = version
+		default:
+			maxVersion = max(maxVersion, version)
 		}
 		if sanitizedDescriptionIsEmpty(description) {
 			description = fallbackMigrationName
