@@ -77,7 +77,47 @@ func ParseDir(rootDir string) (*Database, error) {
 //	}
 func ParseFS(fsys fs.FS, rootDir string) (*Database, error) {
 	result := newDatabase()
+	if err := accumulateGoFiles(result, fsys, rootDir); err != nil {
+		return nil, err
+	}
+	if err := finalizeDatabase(result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
 
+// ParseDirs parses several Go entity roots into a single composite schema.
+//
+// Each root is walked like ParseDir, every file's schema objects from every root
+// are accumulated together, and the finalize pipeline (deduplicate, expand
+// embedded fields, build the dependency graph, sort) runs once over the combined
+// set — so a table in one root can reference a table in another. It is the
+// multi-root form of ParseDir, for a composite desired-state schema assembled
+// from several Go packages (for example a shared "common" package plus
+// per-service tables).
+//
+// Identical definitions across roots are deduplicated; conflicting definitions
+// of a named schema, view, materialized view, trigger, constraint, or role are
+// an error, matching ParseDir's cross-file behavior. With a single root it is
+// equivalent to ParseDir.
+func ParseDirs(roots ...string) (*Database, error) {
+	result := newDatabase()
+	for _, root := range roots {
+		if err := accumulateGoFiles(result, os.DirFS(root), "."); err != nil {
+			return nil, err
+		}
+	}
+	if err := finalizeDatabase(result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// accumulateGoFiles walks the non-test, non-vendor Go source files under rootDir
+// in fsys and appends each parsed file's schema objects onto result without
+// finalizing. It is the shared, pre-finalize body of ParseFS and ParseDirs, so
+// multiple roots can accumulate into one result before a single finalize pass.
+func accumulateGoFiles(result *Database, fsys fs.FS, rootDir string) error {
 	var parseErrors []error
 
 	// Walk through all directories recursively
@@ -114,17 +154,9 @@ func ParseFS(fsys fs.FS, rootDir string) (*Database, error) {
 	})
 
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if err := errors.Join(parseErrors...); err != nil {
-		return nil, err
-	}
-
-	if err := finalizeDatabase(result); err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	return errors.Join(parseErrors...)
 }
 
 func parseDatabaseFile(fsys fs.FS, path string) (Database, error) {

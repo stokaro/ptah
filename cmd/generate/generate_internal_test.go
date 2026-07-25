@@ -26,7 +26,7 @@ tables:
 		qt.IsNil,
 	)
 
-	db, err := loadSchema("", path)
+	db, err := loadSchema(nil, path)
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Name, qt.Equals, "users")
@@ -47,7 +47,7 @@ table "users" {
 }
 `), 0o600), qt.IsNil)
 
-	db, err := loadSchema("", path)
+	db, err := loadSchema(nil, path)
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Name, qt.Equals, "users")
@@ -65,7 +65,7 @@ CREATE TABLE users (
 );
 `), 0o600), qt.IsNil)
 
-	db, err := loadSchema("", path)
+	db, err := loadSchema(nil, path)
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Name, qt.Equals, "users")
@@ -78,6 +78,40 @@ func TestLoadSchemaFile_RejectsUnsupportedExtension(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "schema.json")
 	c.Assert(os.WriteFile(path, []byte(`{}`), 0o600), qt.IsNil)
 
-	_, err := loadSchema("", path)
+	_, err := loadSchema(nil, path)
 	c.Assert(err, qt.ErrorMatches, `unsupported schema file extension ".json": only .yaml, .yml, .hcl, and .sql are supported`)
+}
+
+func TestLoadSchemaMergesMultipleRoots(t *testing.T) {
+	c := qt.New(t)
+
+	rootA := t.TempDir()
+	rootB := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(rootA, "users.go"), []byte(`package entities
+
+//migrator:schema:table name="users"
+type User struct {
+	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+}
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(rootB, "orders.go"), []byte(`package entities
+
+//migrator:schema:table name="orders"
+type Order struct {
+	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+}
+`), 0o600), qt.IsNil)
+
+	db, err := loadSchema([]string{rootA, rootB}, "")
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Tables, qt.HasLen, 2)
+}
+
+func TestLoadSchemaRejectsMissingRoot(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := loadSchema([]string{filepath.Join(t.TempDir(), "does-not-exist")}, "")
+	c.Assert(err, qt.ErrorMatches, `directory does not exist: .*does-not-exist`)
 }

@@ -22,7 +22,7 @@ const (
 )
 
 type options struct {
-	rootDir    string
+	rootDirs   []string
 	schemaFile string
 	dialect    string
 }
@@ -49,13 +49,13 @@ schema, or SQL schema file instead.`,
 
 func registerFlags(cmd *cobra.Command, opts *options) {
 	flags := cmd.Flags()
-	flags.StringVar(&opts.rootDir, rootDirFlag, "./", "Root directory to scan for Go entities")
+	flags.StringArrayVar(&opts.rootDirs, rootDirFlag, nil, "Root directory to scan for Go entities (repeatable; multiple roots merge into one composite schema; defaults to ./)")
 	flags.StringVar(&opts.schemaFile, schemaFileFlag, "", "YAML, HCL, or SQL schema file to generate from instead of scanning Go entities")
 	flags.StringVar(&opts.dialect, dialectFlag, "", "Database dialect (postgres, mysql, mariadb, sqlite, clickhouse, cockroachdb, yugabytedb, spanner). If empty, generates for all dialects")
 }
 
 func generateCommand(_ *cobra.Command, opts *options) error {
-	result, err := loadSchema(opts.rootDir, opts.schemaFile)
+	result, err := loadSchema(opts.rootDirs, opts.schemaFile)
 	if err != nil {
 		return err
 	}
@@ -119,30 +119,37 @@ func generateCommand(_ *cobra.Command, opts *options) error {
 	return nil
 }
 
-func loadSchema(rootDir, schemaFile string) (*goschema.Database, error) {
+func loadSchema(rootDirs []string, schemaFile string) (*goschema.Database, error) {
 	if schemaFile != "" {
 		return loadSchemaFile(schemaFile)
 	}
 
-	// Convert to absolute path
-	absPath, err := filepath.Abs(rootDir)
-	if err != nil {
-		return nil, fmt.Errorf("error resolving path: %w", err)
+	if len(rootDirs) == 0 {
+		rootDirs = []string{"./"}
 	}
 
-	// Check if directory exists
-	if _, err := os.Stat(absPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("directory does not exist: %s", absPath)
+	// Resolve and validate every root before parsing so a bad path fails fast.
+	absRoots := make([]string, 0, len(rootDirs))
+	for _, rootDir := range rootDirs {
+		absPath, err := filepath.Abs(rootDir)
+		if err != nil {
+			return nil, fmt.Errorf("error resolving path: %w", err)
+		}
+		if _, err := os.Stat(absPath); os.IsNotExist(err) {
+			return nil, fmt.Errorf("directory does not exist: %s", absPath)
+		}
+		absRoots = append(absRoots, absPath)
 	}
 
-	fmt.Printf("Scanning directory: %s\n", absPath)
-	fmt.Println("=" + strings.Repeat("=", len(absPath)+19))
+	for _, absPath := range absRoots {
+		fmt.Printf("Scanning directory: %s\n", absPath)
+	}
 	fmt.Println()
 
-	// Parse the entire package recursively
-	result, err := goschema.ParseDir(absPath)
+	// Parse every root into one composite schema (merged and finalized together).
+	result, err := goschema.ParseDirs(absRoots...)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing package: %w", err)
+		return nil, fmt.Errorf("error parsing packages: %w", err)
 	}
 	return result, nil
 }
