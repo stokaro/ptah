@@ -37,6 +37,9 @@ the exact flag set in an installed binary.
 | `ptah migrations status` | Show migration status. |
 | `ptah migrations hash` | Write or update migration-directory integrity. |
 | `ptah migrations validate` | Validate migration-directory integrity and, optionally, SQL execution by cleaning and replaying migrations on `--dev-url`. |
+| `ptah migrations edit` | Edit a migration's SQL (via `$EDITOR` or `--up-file`/`--down-file`) and rewrite the integrity file, refusing already-applied migrations unless `--force`. |
+| `ptah migrations rebase` | Move a migration to the end of history by re-timestamping it, and rewrite the integrity file, refusing already-applied migrations unless `--force`. |
+| `ptah migrations rm` | Delete a migration's up/down pair and rewrite the integrity file, refusing already-applied migrations unless `--force`. |
 | `ptah migrations lint` | Lint migration files and, with `--dev-url`, clean and replay migrations on a directly connectable dev database before static reporting. |
 | `ptah sql lint` | Lint standalone SQL files. |
 | `ptah seed` | Apply environment-scoped SQL seed files. |
