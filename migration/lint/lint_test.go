@@ -218,11 +218,16 @@ func TestLintFS_OptionalKeywordForms(t *testing.T) {
 		{"convert to charset synonym", "ALTER TABLE users CONVERT TO CHARSET utf8mb4;", []string{"MY101"}},
 
 		// Data-protection drops are destructive; storage-only drops stay silent.
-		{"drop constraint", "ALTER TABLE users DROP CONSTRAINT uq_users_email;", []string{"DS105"}},
-		{"drop foreign key", "ALTER TABLE orders DROP FOREIGN KEY fk_orders_user;", []string{"DS105"}},
-		{"drop primary key", "ALTER TABLE users DROP PRIMARY KEY;", []string{"DS105"}},
+		// The untyped ANSI DROP CONSTRAINT <name> form stays DS105; the typed
+		// MySQL-family forms get their per-type CD codes without double-flagging.
+		{"drop named constraint", "ALTER TABLE users DROP CONSTRAINT uq_users_email;", []string{"DS105"}},
+		{"drop foreign key", "ALTER TABLE orders DROP FOREIGN KEY fk_orders_user;", []string{"CD101"}},
+		{"drop primary key", "ALTER TABLE users DROP PRIMARY KEY;", []string{"CD103"}},
 		{"drop index", "ALTER TABLE users DROP INDEX idx_users_email;", nil},
-		{"drop check", "ALTER TABLE users DROP CHECK chk_age;", []string{"DS105"}},
+		{"drop check", "ALTER TABLE users DROP CHECK chk_age;", []string{"CD102"}},
+		{"drop foreign key schema-qualified", "ALTER TABLE shop.orders DROP FOREIGN KEY fk_orders_user;", []string{"CD101"}},
+		{"drop foreign key if exists", "ALTER TABLE orders DROP FOREIGN KEY IF EXISTS fk_orders_user;", []string{"CD101"}},
+		{"drop named constraint cascade", "ALTER TABLE users DROP CONSTRAINT uq_users_email CASCADE;", []string{"DS105"}},
 		{"drop default attribute", "ALTER TABLE users ALTER COLUMN a DROP DEFAULT;", nil},
 		{"drop not null attribute", "ALTER TABLE users ALTER COLUMN a DROP NOT NULL;", []string{"DS104"}},
 		{"drop identity attribute", "ALTER TABLE users ALTER COLUMN a DROP IDENTITY IF EXISTS;", nil},
@@ -872,6 +877,48 @@ CREATE INDEX i ON b (c);
 	findings, err = lint.LintFS(fsys, lint.Options{Disabled: []string{""}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DS101", "DS102", "PG101"})
+}
+
+func TestLintFS_ConstraintDeletionFamily(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fixture(map[string]string{
+		"0000000001_drops.up.sql": `ALTER TABLE orders DROP FOREIGN KEY fk_orders_user;
+ALTER TABLE users DROP CHECK chk_age;
+ALTER TABLE users DROP PRIMARY KEY;
+ALTER TABLE users DROP CONSTRAINT uq_email;
+`,
+		"0000000001_drops.down.sql": "-- restore\n",
+	})
+
+	// Each typed drop gets its own CD code; the untyped ANSI DROP CONSTRAINT
+	// stays DS105. No statement is flagged by both a CD code and DS105.
+	findings, err := lint.LintFS(fsys, lint.Options{})
+	c.Assert(err, qt.IsNil)
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"CD101", "CD102", "CD103", "DS105"})
+
+	// Disabling the CD family silences the typed codes but keeps the DS105 fallback.
+	findings, err = lint.LintFS(fsys, lint.Options{Disabled: []string{"CD"}})
+	c.Assert(err, qt.IsNil)
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DS105"})
+
+	// Disabling one CD code silences only that constraint type.
+	findings, err = lint.LintFS(fsys, lint.Options{Disabled: []string{"CD101"}})
+	c.Assert(err, qt.IsNil)
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"CD102", "CD103", "DS105"})
+
+	// A per-code RuleConfig.Severity override applies to a CD code.
+	fkOnly := fixture(map[string]string{
+		"0000000001_fk.up.sql":   "ALTER TABLE orders DROP FOREIGN KEY fk_orders_user;\n",
+		"0000000001_fk.down.sql": "-- restore\n",
+	})
+	findings, err = lint.LintFS(fkOnly, lint.Options{
+		RuleConfigs: map[string]lint.RuleConfig{"CD101": {Severity: lint.SeverityWarning}},
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(findings, qt.HasLen, 1)
+	c.Assert(findings[0].Rule, qt.Equals, "CD101")
+	c.Assert(findings[0].Severity, qt.Equals, lint.SeverityWarning)
 }
 
 func TestLintFS_DollarQuotedBodiesDoNotSplitStatements(t *testing.T) {

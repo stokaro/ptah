@@ -44,6 +44,7 @@ func Rules() []Rule {
 func builtinRules() []Rule {
 	var rules []Rule
 	rules = append(rules, dataSafetyRules()...)
+	rules = append(rules, constraintDeletionRules()...)
 	rules = append(rules, dataDependentRules()...)
 	rules = append(rules, migrationFormRules()...)
 	rules = append(rules, compatibilityRules()...)
@@ -98,6 +99,18 @@ func dataSafetyRules() []Rule {
 		databaseObjectDroppedRule(),
 		tableTruncatedRule(),
 		rlsDisabledRule(),
+	}
+}
+
+// constraintDeletionRules covers the CD family: dropping a constraint whose type
+// is recoverable from the SQL, split by constraint type so operators get a
+// precise per-type signal. The untyped ANSI DROP CONSTRAINT <name> form stays in
+// DS105 (dataSafetyRules) because its type is not determinable from the SQL.
+func constraintDeletionRules() []Rule {
+	return []Rule{
+		foreignKeyDroppedRule(),
+		checkConstraintDroppedRule(),
+		primaryKeyDroppedRule(),
 	}
 }
 
@@ -183,18 +196,54 @@ func notNullDroppedRule() Rule {
 	}
 }
 
+// constraintDroppedRule (DS105) is the untyped fallback for the ANSI
+// DROP CONSTRAINT <name> form, whose constraint type is not recoverable from the
+// SQL. The typed MySQL-family forms (DROP FOREIGN KEY / CHECK / PRIMARY KEY) are
+// reported by the more specific CD family, so a statement is never double-flagged.
 func constraintDroppedRule() Rule {
 	return Rule{
 		Code:     "DS105",
 		Title:    "constraint dropped",
 		Severity: SeverityError,
 		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !isAlterTable(stmt.Words) || !scanDropConstraint(stmt.Words) {
+			if !isAlterTable(stmt.Words) || !scanDropNamedConstraint(stmt.Words) {
 				return false, ""
 			}
 			return true, "dropping a constraint removes an existing data protection; verify the replacement safety invariant before applying"
 		},
 	}
+}
+
+// alterTableDropRule builds an all-dialect, error-severity rule that fires when
+// an ALTER TABLE statement matches the given typed constraint-drop predicate. It
+// is the DROP-side analogue of postgresAlterRule and backs the CD family.
+func alterTableDropRule(code, title string, scan func([]string) bool, message string) Rule {
+	return Rule{
+		Code:     code,
+		Title:    title,
+		Severity: SeverityError,
+		CheckStatement: func(stmt *Statement) (bool, string) {
+			if !isAlterTable(stmt.Words) || !scan(stmt.Words) {
+				return false, ""
+			}
+			return true, message
+		},
+	}
+}
+
+func foreignKeyDroppedRule() Rule {
+	return alterTableDropRule("CD101", "foreign key dropped", scanDropForeignKey,
+		"dropping a foreign key removes referential-integrity enforcement; verify no application invariant relies on the database rejecting orphan rows before applying")
+}
+
+func checkConstraintDroppedRule() Rule {
+	return alterTableDropRule("CD102", "check constraint dropped", scanDropCheck,
+		"dropping a check constraint removes a value-validation guarantee; verify no data invariant depends on it before applying")
+}
+
+func primaryKeyDroppedRule() Rule {
+	return alterTableDropRule("CD103", "primary key dropped", scanDropPrimaryKey,
+		"dropping a primary key removes row-uniqueness and identity enforcement and can break replication; verify a replacement key exists before applying")
 }
 
 func enumValueRemovedRule() Rule {
@@ -937,26 +986,36 @@ func scanDropNotNull(w []string) bool {
 	return false
 }
 
-// scanDropConstraint reports whether an ALTER TABLE statement removes a data
-// protection constraint. Index/key/partition drops stay out of this rule.
-func scanDropConstraint(w []string) bool {
+// scanDropClause reports whether any clause of an ALTER TABLE statement begins
+// with the given word sequence, anchoring on the clause heads so that only a
+// top-level DROP form matches. It backs the typed constraint-drop predicates.
+func scanDropClause(w []string, prefix ...string) bool {
 	for _, i := range clauseStarts(w) {
-		if i >= len(w) || w[i] != "DROP" {
-			continue
-		}
-		switch {
-		case hasWordPrefix(w[i:], "DROP", "CONSTRAINT"):
-			return true
-		case hasWordPrefix(w[i:], "DROP", "FOREIGN", "KEY"):
-			return true
-		case hasWordPrefix(w[i:], "DROP", "PRIMARY", "KEY"):
-			return true
-		case hasWordPrefix(w[i:], "DROP", "CHECK"):
+		if hasWordPrefix(w[i:], prefix...) {
 			return true
 		}
 	}
 	return false
 }
+
+// scanDropForeignKey reports whether an ALTER TABLE statement drops a foreign
+// key via the MySQL-family DROP FOREIGN KEY form. The ANSI DROP CONSTRAINT
+// <name> form does not encode the constraint type, so it is not matched here.
+func scanDropForeignKey(w []string) bool { return scanDropClause(w, "DROP", "FOREIGN", "KEY") }
+
+// scanDropCheck reports whether an ALTER TABLE statement drops a check
+// constraint via the DROP CHECK form.
+func scanDropCheck(w []string) bool { return scanDropClause(w, "DROP", "CHECK") }
+
+// scanDropPrimaryKey reports whether an ALTER TABLE statement drops a primary
+// key via the DROP PRIMARY KEY form.
+func scanDropPrimaryKey(w []string) bool { return scanDropClause(w, "DROP", "PRIMARY", "KEY") }
+
+// scanDropNamedConstraint reports whether an ALTER TABLE statement drops a
+// constraint by name via the ANSI DROP CONSTRAINT <name> form, whose constraint
+// type is not recoverable from the SQL. This is the untyped fallback (DS105);
+// the typed forms above are reported by the CD family.
+func scanDropNamedConstraint(w []string) bool { return scanDropClause(w, "DROP", "CONSTRAINT") }
 
 func scanEnumValueRemoval(w []string) bool {
 	return hasWordSeq(w, "DELETE", "FROM", "PG_ENUM") ||
