@@ -2,6 +2,7 @@
 package typechange
 
 import (
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -20,8 +21,12 @@ func IsNarrowing(oldType, newType string) bool {
 	if isTextType(oldSpec.name) && isSizedString(newSpec.name) {
 		return true
 	}
-	if oldSpec.kind == "string" && newSpec.kind == "string" && oldSpec.arg > 0 && newSpec.arg > 0 {
-		return newSpec.arg < oldSpec.arg
+	if oldSpec.kind == "string" && newSpec.kind == "string" {
+		oldLen, oldOK := stringLength(oldSpec)
+		newLen, newOK := stringLength(newSpec)
+		if oldOK && newOK {
+			return newLen < oldLen
+		}
 	}
 	if oldSpec.kind == "integer" && newSpec.kind == "integer" {
 		return integerRank(newSpec.name) < integerRank(oldSpec.name)
@@ -49,8 +54,12 @@ func IsWidening(oldType, newType string) bool {
 	if oldSpec.name == "" || newSpec.name == "" || oldSpec.name == newSpec.name && oldSpec.arg == 0 && newSpec.arg == 0 {
 		return false
 	}
-	if oldSpec.kind == "string" && newSpec.kind == "string" && oldSpec.arg > 0 && newSpec.arg > 0 {
-		return newSpec.arg > oldSpec.arg
+	if oldSpec.kind == "string" && newSpec.kind == "string" {
+		oldLen, oldOK := stringLength(oldSpec)
+		newLen, newOK := stringLength(newSpec)
+		if oldOK && newOK {
+			return newLen > oldLen
+		}
 	}
 	if oldSpec.kind == "integer" && newSpec.kind == "integer" {
 		return integerRank(newSpec.name) > integerRank(oldSpec.name)
@@ -139,35 +148,57 @@ func integerRank(name string) int {
 }
 
 func decimalNarrows(oldArgs, newArgs []int) bool {
-	if len(oldArgs) == 0 || len(newArgs) == 0 {
+	oldP, oldS, oldOK := decimalPrecisionScale(oldArgs)
+	newP, newS, newOK := decimalPrecisionScale(newArgs)
+	if !oldOK || !newOK {
 		return false
 	}
-	if newArgs[0] < oldArgs[0] {
-		return true
-	}
-	if len(oldArgs) < 2 || len(newArgs) < 2 {
-		return false
-	}
-	oldScale := oldArgs[1]
-	newScale := newArgs[1]
-	oldIntegerDigits := oldArgs[0] - oldScale
-	newIntegerDigits := newArgs[0] - newScale
-	return newScale < oldScale || newIntegerDigits < oldIntegerDigits
+	oldIntegerDigits := oldP - oldS
+	newIntegerDigits := newP - newS
+	return newP < oldP || newS < oldS || newIntegerDigits < oldIntegerDigits
 }
 
 func decimalWidens(oldArgs, newArgs []int) bool {
-	if len(oldArgs) == 0 || len(newArgs) == 0 {
+	oldP, oldS, oldOK := decimalPrecisionScale(oldArgs)
+	newP, newS, newOK := decimalPrecisionScale(newArgs)
+	if !oldOK || !newOK {
 		return false
 	}
-	if newArgs[0] > oldArgs[0] {
-		return true
+	oldIntegerDigits := oldP - oldS
+	newIntegerDigits := newP - newS
+	return newP > oldP || newS > oldS || newIntegerDigits > oldIntegerDigits
+}
+
+// decimalPrecisionScale returns the precision and scale carried by a decimal
+// type's parsed arguments. A precision given without a scale defaults the scale
+// to 0 (NUMERIC(10) is NUMERIC(10,0)), so a later scale addition or removal is
+// still a comparable change. ok is false for a bare NUMERIC with no precision at
+// all, whose unbounded precision cannot be compared against a sized one.
+func decimalPrecisionScale(args []int) (precision, scale int, ok bool) {
+	switch len(args) {
+	case 0:
+		return 0, 0, false
+	case 1:
+		return args[0], 0, true
+	default:
+		return args[0], args[1], true
 	}
-	if len(oldArgs) < 2 || len(newArgs) < 2 {
-		return false
+}
+
+// unboundedStringLength is the effective length of a bare VARCHAR (no declared
+// limit); it compares greater than any real column length.
+const unboundedStringLength = math.MaxInt
+
+// stringLength returns the effective character length of a sized-string spec.
+// A declared length is used as-is; a bare VARCHAR is unbounded. ok is false for
+// a bare CHAR / CHARACTER, whose implicit length is dialect-defined, so such a
+// type is not compared on length.
+func stringLength(s spec) (length int, ok bool) {
+	if s.arg > 0 {
+		return s.arg, true
 	}
-	oldScale := oldArgs[1]
-	newScale := newArgs[1]
-	oldIntegerDigits := oldArgs[0] - oldScale
-	newIntegerDigits := newArgs[0] - newScale
-	return newScale > oldScale || newIntegerDigits > oldIntegerDigits
+	if s.name == "varchar" {
+		return unboundedStringLength, true
+	}
+	return 0, false
 }
