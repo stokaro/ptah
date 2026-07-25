@@ -58,7 +58,7 @@ func TestMergeCombinesDistinctSourcesAndOrdersForeignKeys(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	// Both tables are present.
-	c.Assert(len(merged.Tables), qt.Equals, 2)
+	c.Assert(merged.Tables, qt.HasLen, 2)
 	usersIdx := tableIndex(merged, "users")
 	ordersIdx := tableIndex(merged, "orders")
 	c.Assert(usersIdx >= 0, qt.IsTrue)
@@ -68,7 +68,7 @@ func TestMergeCombinesDistinctSourcesAndOrdersForeignKeys(t *testing.T) {
 	c.Assert(usersIdx < ordersIdx, qt.IsTrue)
 
 	// Fields from both sources survive the merge.
-	c.Assert(len(merged.Fields), qt.Equals, 4)
+	c.Assert(merged.Fields, qt.HasLen, 4)
 }
 
 func TestMergeDeduplicatesIdenticalObjects(t *testing.T) {
@@ -82,9 +82,9 @@ func TestMergeDeduplicatesIdenticalObjects(t *testing.T) {
 	merged, err := goschema.Merge(first, second)
 	c.Assert(err, qt.IsNil)
 
-	c.Assert(len(merged.Tables), qt.Equals, 1)
+	c.Assert(merged.Tables, qt.HasLen, 1)
 	c.Assert(tableIndex(merged, "users") >= 0, qt.IsTrue)
-	c.Assert(len(merged.Fields), qt.Equals, 2)
+	c.Assert(merged.Fields, qt.HasLen, 2)
 }
 
 func TestMergeErrorsOnConflictingDefinitions(t *testing.T) {
@@ -114,7 +114,7 @@ func TestMergeIdenticalViewsAcrossSourcesDeduplicate(t *testing.T) {
 
 	merged, err := goschema.Merge(first, second)
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(merged.Views), qt.Equals, 1)
+	c.Assert(merged.Views, qt.HasLen, 1)
 }
 
 func TestMergeSkipsNilSources(t *testing.T) {
@@ -124,7 +124,7 @@ func TestMergeSkipsNilSources(t *testing.T) {
 
 	merged, err := goschema.Merge(nil, users, nil)
 	c.Assert(err, qt.IsNil)
-	c.Assert(len(merged.Tables), qt.Equals, 1)
+	c.Assert(merged.Tables, qt.HasLen, 1)
 	c.Assert(tableIndex(merged, "users") >= 0, qt.IsTrue)
 }
 
@@ -134,5 +134,5 @@ func TestMergeNoSourcesReturnsEmpty(t *testing.T) {
 	merged, err := goschema.Merge()
 	c.Assert(err, qt.IsNil)
 	c.Assert(merged, qt.IsNotNil)
-	c.Assert(len(merged.Tables), qt.Equals, 0)
+	c.Assert(merged.Tables, qt.HasLen, 0)
 }
