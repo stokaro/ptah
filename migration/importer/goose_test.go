@@ -1,0 +1,171 @@
+package importer_test
+
+import (
+	"testing"
+	"testing/fstest"
+
+	qt "github.com/frankban/quicktest"
+
+	"github.com/stokaro/ptah/migration/importer"
+)
+
+const gooseInitSQL = `-- +goose Up
+-- +goose StatementBegin
+CREATE TABLE users (id int);
+-- +goose StatementEnd
+CREATE INDEX idx_users ON users (id);
+
+-- +goose Down
+DROP INDEX idx_users;
+DROP TABLE users;
+`
+
+const gooseUpOnlySQL = `-- +goose NO TRANSACTION
+-- +goose Up
+CREATE INDEX CONCURRENTLY idx2 ON users (id);
+`
+
+func gooseFS() fstest.MapFS {
+	return fstest.MapFS{
+		"20230101_init.sql":    {Data: []byte(gooseInitSQL)},
+		"20230102_up_only.sql": {Data: []byte(gooseUpOnlySQL)},
+		"README.md":            {Data: []byte("# migrations")},
+	}
+}
+
+func TestGooseDetectAndResolve(t *testing.T) {
+	c := qt.New(t)
+
+	parser, err := importer.DetectParser(gooseFS())
+	c.Assert(err, qt.IsNil)
+	c.Assert(parser.Name(), qt.Equals, "goose")
+
+	byName, err := importer.ParserByName("goose")
+	c.Assert(err, qt.IsNil)
+	c.Assert(byName.Name(), qt.Equals, "goose")
+}
+
+func TestGooseParse(t *testing.T) {
+	c := qt.New(t)
+	parser, _ := importer.ParserByName("goose")
+
+	migrations, err := parser.Parse(gooseFS())
+	c.Assert(err, qt.IsNil)
+	normalized, err := importer.Normalize(migrations)
+	c.Assert(err, qt.IsNil)
+	c.Assert(normalized, qt.HasLen, 2)
+
+	// Up section: StatementBegin/End markers stripped, both statements kept.
+	c.Assert(normalized[0].Version, qt.Equals, int64(20230101))
+	c.Assert(normalized[0].Name, qt.Equals, "init")
+	c.Assert(normalized[0].UpSQL, qt.Contains, "CREATE TABLE users (id int);")
+	c.Assert(normalized[0].UpSQL, qt.Contains, "CREATE INDEX idx_users ON users (id);")
+	c.Assert(normalized[0].UpSQL, qt.Not(qt.Contains), "+goose")
+	c.Assert(normalized[0].DownSQL, qt.Contains, "DROP TABLE users;")
+
+	// Second migration: NO TRANSACTION directive dropped, no down section.
+	c.Assert(normalized[1].Version, qt.Equals, int64(20230102))
+	c.Assert(normalized[1].UpSQL, qt.Contains, "CREATE INDEX CONCURRENTLY idx2 ON users (id);")
+	c.Assert(normalized[1].UpSQL, qt.Not(qt.Contains), "+goose")
+	c.Assert(normalized[1].DownSQL, qt.Equals, "")
+}
+
+// TestGooseParseStatementBlockKeepsBodyVerbatim guards against a `-- +goose`
+// line inside a StatementBegin/End block flipping the section mid-statement: the
+// function body (including a `-- +goose Down` comment) must stay in the up
+// section, and the real down section must start only at the top-level marker.
+func TestGooseParseStatementBlockKeepsBodyVerbatim(t *testing.T) {
+	c := qt.New(t)
+	const sql = `-- +goose Up
+-- +goose StatementBegin
+CREATE FUNCTION f() RETURNS int AS $$
+BEGIN
+  -- +goose Down
+  RETURN 1;
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
+-- +goose Down
+DROP FUNCTION f();
+`
+	parser, _ := importer.ParserByName("goose")
+	migrations, err := parser.Parse(fstest.MapFS{"1_fn.sql": {Data: []byte(sql)}})
+	c.Assert(err, qt.IsNil)
+	c.Assert(migrations, qt.HasLen, 1)
+
+	// The whole function body (with the internal -- +goose Down comment) stays up.
+	c.Assert(migrations[0].UpSQL, qt.Contains, "CREATE FUNCTION f() RETURNS int AS $$")
+	c.Assert(migrations[0].UpSQL, qt.Contains, "END;")
+	c.Assert(migrations[0].UpSQL, qt.Contains, "$$ LANGUAGE plpgsql;")
+	c.Assert(migrations[0].UpSQL, qt.Contains, "-- +goose Down") // the body comment is preserved verbatim
+	// The real down is only the top-level statement.
+	c.Assert(migrations[0].DownSQL, qt.Equals, "DROP FUNCTION f();")
+	// The StatementBegin/End annotations themselves are stripped.
+	c.Assert(migrations[0].UpSQL, qt.Not(qt.Contains), "StatementBegin")
+	c.Assert(migrations[0].UpSQL, qt.Not(qt.Contains), "StatementEnd")
+}
+
+func TestGooseParseErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		fsys fstest.MapFS
+		re   string
+	}{
+		{
+			name: "go-based migration rejected",
+			fsys: fstest.MapFS{
+				"1_init.sql": {Data: []byte("-- +goose Up\nSELECT 1;")},
+				"2_seed.go":  {Data: []byte("package migrations")},
+			},
+			re: `.*Go-based Goose migration.*not supported.*`,
+		},
+		{
+			name: "no goose files",
+			fsys: fstest.MapFS{"1_init.sql": {Data: []byte("CREATE TABLE t (id int);")}},
+			re:   `.*no goose migration files.*`,
+		},
+		{
+			name: "empty up section",
+			fsys: fstest.MapFS{"1_init.sql": {Data: []byte("-- +goose Up\n-- +goose Down\nDROP TABLE t;")}},
+			re:   `.*empty up section.*`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			parser, _ := importer.ParserByName("goose")
+			_, err := parser.Parse(tt.fsys)
+			c.Assert(err, qt.ErrorMatches, tt.re)
+		})
+	}
+}
+
+// TestGooseAndGolangMigrateAreDistinguished proves auto-detect picks the right
+// parser for each layout and does not treat one as the other.
+func TestGooseAndGolangMigrateAreDistinguished(t *testing.T) {
+	c := qt.New(t)
+
+	goose, err := importer.DetectParser(gooseFS())
+	c.Assert(err, qt.IsNil)
+	c.Assert(goose.Name(), qt.Equals, "goose")
+
+	glm, err := importer.DetectParser(golangMigrateFS())
+	c.Assert(err, qt.IsNil)
+	c.Assert(glm.Name(), qt.Equals, "golang-migrate")
+}
+
+func TestGooseImportEndToEnd(t *testing.T) {
+	c := qt.New(t)
+	out := t.TempDir()
+
+	result, err := importer.Import(gooseFS(), nil, out, importer.Options{})
+	c.Assert(err, qt.IsNil)
+	// Two goose migrations -> two up + two down Ptah files.
+	c.Assert(result.Files, qt.HasLen, 4)
+	// 8-digit versions fit Ptah's 10-digit format, so they are preserved (padded).
+	c.Assert(result.Files, qt.Contains, "0020230101_init.up.sql")
+	c.Assert(result.Files, qt.Contains, "0020230101_init.down.sql")
+	c.Assert(result.Remapped, qt.IsFalse)
+	c.Assert(result.SumFile, qt.Equals, "ptah.sum")
+}

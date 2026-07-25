@@ -32,7 +32,7 @@ The source tool is auto-detected; pass `--from` to be explicit or to disambiguat
 | Tool | Status | Notes |
 | --- | --- | --- |
 | golang-migrate | **Supported** | `<version>_<name>.up.sql` / `.down.sql`; integer or timestamp versions. |
-| Goose | Planned | Single-file `-- +goose Up` / `Down` (SQL only; Go migrations unsupported). |
+| Goose | **Supported** | Single-file `<version>_<name>.sql` split by `-- +goose Up` / `-- +goose Down` (SQL only; `StatementBegin/End` and `NO TRANSACTION` directives are stripped; Go-based migrations are rejected). |
 | Flyway | Planned | `V<version>__<desc>.sql`, repeatable `R__`, undo `U<version>__`. |
 | Liquibase | Planned | Formatted-SQL changelogs first; XML/YAML/JSON changelogs later. |
 

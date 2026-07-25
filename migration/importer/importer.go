@@ -44,6 +44,7 @@ type Parser interface {
 func Parsers() []Parser {
 	return []Parser{
 		golangMigrateParser{},
+		gooseParser{},
 	}
 }
 
