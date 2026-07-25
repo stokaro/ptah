@@ -259,7 +259,7 @@ func ColumnsWithDialect(genCol goschema.Field, dbCol types.DBColumn, dialect str
 
 	if genType != dbType {
 		colDiff.Changes["type"] = fmt.Sprintf("%s -> %s", dbType, genType)
-	} else if shouldReportNarrowingTypeChange(dbRawType, genCol.Type, dialect) {
+	} else if shouldReportSizedTypeChange(dbRawType, genCol.Type, dialect) {
 		colDiff.Changes["type"] = fmt.Sprintf("%s -> %s", dbRawType, genCol.Type)
 	}
 
@@ -338,12 +338,19 @@ func normalizeColumnTypesForDialect(genType, dbType, dialect string) (generatedT
 	}
 }
 
-func shouldReportNarrowingTypeChange(dbType, genType, dialect string) bool {
+// shouldReportSizedTypeChange reports a within-category change that the type
+// normalizer folds away — a change in integer width, string length, or decimal
+// precision, in either direction. Narrowing (e.g. BIGINT -> INTEGER) can lose
+// data; widening (e.g. INTEGER -> BIGINT, VARCHAR(50) -> VARCHAR(100)) cannot,
+// but it is still a real ALTER that a database built directly from the desired
+// schema would carry, so both are reported. The SQLite guard suppresses these
+// for SQLite's type affinity, where such distinctions do not exist.
+func shouldReportSizedTypeChange(dbType, genType, dialect string) bool {
 	if platform.NormalizeDialect(dialect) == platform.SQLite &&
 		normalize.Type(dbType) == normalize.Type(sqliteRenderedColumnType(genType)) {
 		return false
 	}
-	return typechange.IsNarrowing(dbType, genType)
+	return typechange.IsNarrowing(dbType, genType) || typechange.IsWidening(dbType, genType)
 }
 
 func sqliteRenderedColumnType(rawType string) string {

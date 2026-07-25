@@ -11,7 +11,7 @@ type Post struct {
 	//migrator:schema:field name="content" type="TEXT" not_null="true"
 	Content string
 
-	//migrator:schema:field name="user_id" type="BIGINT" not_null="true"
+	//migrator:schema:field name="user_id" type="INTEGER" not_null="true"
 	UserID int64
 
 	//migrator:schema:field name="status" type="ENUM" enum="draft,published,archived" not_null="true" default="draft"
