@@ -29,7 +29,7 @@ const (
 )
 
 type options struct {
-	rootDir          string
+	rootDirs         []string
 	dbURL            string
 	checkDestructive bool
 	allowDestructive bool
@@ -58,7 +58,7 @@ the SQL statements needed to update the database to match your entities.`,
 
 func registerFlags(cmd *cobra.Command, opts *options) {
 	flags := cmd.Flags()
-	flags.StringVar(&opts.rootDir, rootDirFlag, "./", "Root directory to scan for Go entities")
+	flags.StringArrayVar(&opts.rootDirs, rootDirFlag, nil, "Root directory to scan for Go entities (repeatable; multiple roots merge into one composite schema; defaults to ./)")
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	flags.BoolVar(&opts.checkDestructive, checkDestructiveFlag, false, "Fail when generated migration SQL contains destructive statements")
 	flags.BoolVar(&opts.allowDestructive, allowDestructiveFlag, false, "Allow destructive statements when --check-destructive is set")
@@ -77,19 +77,29 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	if reportFormat != "text" && reportFormat != "html" && reportFormat != "json" {
 		return fmt.Errorf("unsupported report format %q", reportFormat)
 	}
+	roots := opts.rootDirs
+	if len(roots) == 0 {
+		roots = []string{"./"}
+	}
+	rootsDisplay := strings.Join(roots, ", ")
+
 	if reportFormat == "text" {
-		fmt.Fprintf(out, "Generating migration from %s to database %s\n", opts.rootDir, dbschema.FormatDatabaseURL(opts.dbURL))
+		fmt.Fprintf(out, "Generating migration from %s to database %s\n", rootsDisplay, dbschema.FormatDatabaseURL(opts.dbURL))
 		fmt.Fprintln(out, "=== GENERATE MIGRATION SQL ===")
 		fmt.Fprintln(out)
 	}
 
-	// 1. Parse Go entities
-	absPath, err := filepath.Abs(opts.rootDir)
-	if err != nil {
-		return fmt.Errorf("error resolving path: %w", err)
+	// 1. Parse Go entities from every root into one composite schema
+	absRoots := make([]string, 0, len(roots))
+	for _, root := range roots {
+		absPath, err := filepath.Abs(root)
+		if err != nil {
+			return fmt.Errorf("error resolving path: %w", err)
+		}
+		absRoots = append(absRoots, absPath)
 	}
 
-	result, err := goschema.ParseDir(absPath)
+	result, err := goschema.ParseDirs(absRoots...)
 	if err != nil {
 		return fmt.Errorf("error parsing Go entities: %w", err)
 	}
@@ -158,7 +168,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 
 	fmt.Fprintln(out, "-- Migration generated from schema differences")
 	fmt.Fprintf(out, "-- Generated on: %s\n", "now") // You could add actual timestamp
-	fmt.Fprintf(out, "-- Source: %s\n", opts.rootDir)
+	fmt.Fprintf(out, "-- Source: %s\n", rootsDisplay)
 	fmt.Fprintf(out, "-- Target: %s\n", dbschema.FormatDatabaseURL(opts.dbURL))
 	fmt.Fprintln(out)
 
