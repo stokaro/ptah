@@ -414,6 +414,7 @@ type Constraint struct{ ... }
 type Database struct{ ... }
     func Merge(dbs ...*Database) (*Database, error)
     func ParseDir(rootDir string) (*Database, error)
+    func ParseDirRaw(roots ...string) (*Database, error)
     func ParseDirs(roots ...string) (*Database, error)
     func ParseFS(fsys fs.FS, rootDir string) (*Database, error)
     func ParseFile(filename string) (Database, error)

@@ -113,6 +113,26 @@ func ParseDirs(roots ...string) (*Database, error) {
 	return result, nil
 }
 
+// ParseDirRaw parses one or more Go entity roots into a single un-finalized
+// schema: it accumulates every file's schema objects but does NOT run the
+// finalize pipeline (deduplication, embedded-field expansion, dependency
+// ordering).
+//
+// It exists to feed goschema.Merge when composing a Go schema with schemas from
+// other source kinds (YAML, HCL): Merge runs the finalize pass once over the
+// combined set, and since the embedded-field expansion is not idempotent the Go
+// side must arrive un-finalized. For a directly usable, finalized schema use
+// ParseDir or ParseDirs instead.
+func ParseDirRaw(roots ...string) (*Database, error) {
+	result := newDatabase()
+	for _, root := range roots {
+		if err := accumulateGoFiles(result, os.DirFS(root), "."); err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
+}
+
 // accumulateGoFiles walks the non-test, non-vendor Go source files under rootDir
 // in fsys and appends each parsed file's schema objects onto result without
 // finalizing. It is the shared, pre-finalize body of ParseFS and ParseDirs, so

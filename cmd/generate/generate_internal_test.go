@@ -26,7 +26,7 @@ tables:
 		qt.IsNil,
 	)
 
-	db, err := loadSchema(nil, path)
+	db, err := loadSchema(nil, []string{path})
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Name, qt.Equals, "users")
@@ -47,7 +47,7 @@ table "users" {
 }
 `), 0o600), qt.IsNil)
 
-	db, err := loadSchema(nil, path)
+	db, err := loadSchema(nil, []string{path})
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Name, qt.Equals, "users")
@@ -65,7 +65,7 @@ CREATE TABLE users (
 );
 `), 0o600), qt.IsNil)
 
-	db, err := loadSchema(nil, path)
+	db, err := loadSchema(nil, []string{path})
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Name, qt.Equals, "users")
@@ -78,7 +78,7 @@ func TestLoadSchemaFile_RejectsUnsupportedExtension(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "schema.json")
 	c.Assert(os.WriteFile(path, []byte(`{}`), 0o600), qt.IsNil)
 
-	_, err := loadSchema(nil, path)
+	_, err := loadSchema(nil, []string{path})
 	c.Assert(err, qt.ErrorMatches, `unsupported schema file extension ".json": only .yaml, .yml, .hcl, and .sql are supported`)
 }
 
@@ -104,7 +104,7 @@ type Order struct {
 }
 `), 0o600), qt.IsNil)
 
-	db, err := loadSchema([]string{rootA, rootB}, "")
+	db, err := loadSchema([]string{rootA, rootB}, nil)
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 2)
 }
@@ -112,6 +112,32 @@ type Order struct {
 func TestLoadSchemaRejectsMissingRoot(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := loadSchema([]string{filepath.Join(t.TempDir(), "does-not-exist")}, "")
+	_, err := loadSchema([]string{filepath.Join(t.TempDir(), "does-not-exist")}, nil)
 	c.Assert(err, qt.ErrorMatches, `directory does not exist: .*does-not-exist`)
+}
+
+func TestLoadSchemaMergesGoRootAndSchemaFile(t *testing.T) {
+	c := qt.New(t)
+
+	root := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(root, "users.go"), []byte(`package entities
+
+//migrator:schema:table name="users"
+type User struct {
+	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+}
+`), 0o600), qt.IsNil)
+
+	yamlPath := filepath.Join(t.TempDir(), "orders.yaml")
+	c.Assert(os.WriteFile(yamlPath, []byte(`
+tables:
+  orders:
+    columns:
+      id: { type: SERIAL, primary: true }
+`), 0o600), qt.IsNil)
+
+	db, err := loadSchema([]string{root}, []string{yamlPath})
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Tables, qt.HasLen, 2)
 }
