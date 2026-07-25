@@ -9,8 +9,11 @@ import (
 	"github.com/stokaro/ptah/cmd/migrate"
 	"github.com/stokaro/ptah/cmd/migratebaseline"
 	"github.com/stokaro/ptah/cmd/migratedown"
+	"github.com/stokaro/ptah/cmd/migrateedit"
 	"github.com/stokaro/ptah/cmd/migratehash"
+	"github.com/stokaro/ptah/cmd/migraterebase"
 	"github.com/stokaro/ptah/cmd/migraterepair"
+	"github.com/stokaro/ptah/cmd/migraterm"
 	"github.com/stokaro/ptah/cmd/migratestatus"
 	"github.com/stokaro/ptah/cmd/migrateup"
 	"github.com/stokaro/ptah/cmd/migratevalidate"
@@ -46,6 +49,9 @@ ptah atlas.`,
 	cmd.AddCommand(migrationCommand(migratehash.NewMigrateHashCommand(), "Write or update migration directory integrity", "Write or update the migration directory integrity file."))
 	cmd.AddCommand(migrationCommand(migratevalidate.NewMigrateValidateCommand(), "Validate migration directory integrity", "Validate the migration directory against its integrity file."))
 	cmd.AddCommand(migrationCommand(lint.NewLintCommand(), "Lint migration files", "Lint migration files for production-unsafe patterns."))
+	cmd.AddCommand(migrationCommand(migrateedit.NewMigrateEditCommand(), "Edit a migration and re-hash", "Edit a migration's SQL and rewrite the integrity file, refusing already-applied migrations."))
+	cmd.AddCommand(migrationCommand(migraterebase.NewMigrateRebaseCommand(), "Move a migration to the end of history", "Re-timestamp a migration to the end of history and rewrite the integrity file, refusing already-applied migrations."))
+	cmd.AddCommand(migrationCommand(migraterm.NewMigrateRmCommand(), "Delete a migration and re-hash", "Delete a migration's up/down pair and rewrite the integrity file, refusing already-applied migrations."))
 
 	return cmd
 }
