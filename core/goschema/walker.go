@@ -76,31 +76,7 @@ func ParseDir(rootDir string) (*Database, error) {
 //		return fmt.Errorf("failed to render schema: %w", err)
 //	}
 func ParseFS(fsys fs.FS, rootDir string) (*Database, error) {
-	result := &Database{
-		Schemas:                    []Schema{},
-		Tables:                     []Table{},
-		Fields:                     []Field{},
-		Indexes:                    []Index{},
-		Constraints:                []Constraint{},
-		Enums:                      []Enum{},
-		EmbeddedFields:             []EmbeddedField{},
-		Extensions:                 []Extension{},
-		Functions:                  []Function{},
-		Sequences:                  []Sequence{},
-		Domains:                    []Domain{},
-		CompositeTypes:             []CompositeType{},
-		Ranges:                     []Range{},
-		Views:                      []View{},
-		MaterializedViews:          []MaterializedView{},
-		Triggers:                   []Trigger{},
-		RLSPolicies:                []RLSPolicy{},
-		RLSEnabledTables:           []RLSEnabledTable{},
-		Roles:                      []Role{},
-		Grants:                     []Grant{},
-		Dependencies:               make(map[string][]string),
-		FunctionDependencies:       make(map[string][]string),
-		SelfReferencingForeignKeys: make(map[string][]SelfReferencingFK),
-	}
+	result := newDatabase()
 
 	var parseErrors []error
 
@@ -131,27 +107,8 @@ func ParseFS(fsys fs.FS, rootDir string) (*Database, error) {
 			return nil
 		}
 
-		// Add to result
-		result.Schemas = append(result.Schemas, database.Schemas...)
-		result.EmbeddedFields = append(result.EmbeddedFields, database.EmbeddedFields...)
-		result.Fields = append(result.Fields, database.Fields...)
-		result.Indexes = append(result.Indexes, database.Indexes...)
-		result.Tables = append(result.Tables, database.Tables...)
-		result.Enums = append(result.Enums, database.Enums...)
-		result.Extensions = append(result.Extensions, database.Extensions...)
-		result.Functions = append(result.Functions, database.Functions...)
-		result.Sequences = append(result.Sequences, database.Sequences...)
-		result.Domains = append(result.Domains, database.Domains...)
-		result.CompositeTypes = append(result.CompositeTypes, database.CompositeTypes...)
-		result.Ranges = append(result.Ranges, database.Ranges...)
-		result.RLSPolicies = append(result.RLSPolicies, database.RLSPolicies...)
-		result.RLSEnabledTables = append(result.RLSEnabledTables, database.RLSEnabledTables...)
-		result.Roles = append(result.Roles, database.Roles...)
-		result.Constraints = append(result.Constraints, database.Constraints...)
-		result.Views = append(result.Views, database.Views...)
-		result.MaterializedViews = append(result.MaterializedViews, database.MaterializedViews...)
-		result.Triggers = append(result.Triggers, database.Triggers...)
-		result.Grants = append(result.Grants, database.Grants...)
+		// Add this file's schema objects to the accumulator.
+		appendDatabase(result, &database)
 
 		return nil
 	})
@@ -163,26 +120,9 @@ func ParseFS(fsys fs.FS, rootDir string) (*Database, error) {
 		return nil, err
 	}
 
-	if err := validateDuplicateSchemaObjectDefinitions(result); err != nil {
+	if err := finalizeDatabase(result); err != nil {
 		return nil, err
 	}
-
-	// deduplicate entities (same table/field defined in multiple files)
-	Deduplicate(result)
-	normalizeTableScopedNames(result)
-
-	// Process embedded fields BEFORE building dependency graph
-	// This ensures that foreign keys from embedded fields are included in dependency analysis
-	result.Fields = processEmbeddedFields(result.EmbeddedFields, result.Fields)
-
-	// Build dependency graph for foreign key ordering
-	buildDependencyGraph(result)
-
-	// Sort tables by dependency order
-	sortTablesByDependencies(result)
-
-	// Sort functions by dependency order
-	sortFunctionsByDependencies(result)
 
 	return result, nil
 }
