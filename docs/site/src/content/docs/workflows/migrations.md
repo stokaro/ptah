@@ -52,10 +52,11 @@ ptah migrations import --source-dir ./db/migrations --migrations-dir ./migration
 rewriting `ptah.sum` so `ptah migrations validate` passes immediately. It
 auto-detects the source tool (or set `--from`), writes a placeholder down for a
 migration with no rollback, refuses to overwrite existing files, and supports
-`--dry-run`. Import supports golang-migrate, Goose, and Flyway (including its
-dotted versions, undo `U__` scripts, and repeatable `R__` scripts); Liquibase is
-planned. This is native Ptah-format import, distinct from the Atlas-compatible
-`ptah atlas migrate import`.
+`--dry-run`. Import supports golang-migrate, Goose, Flyway (including its dotted
+versions, undo `U__` scripts, and repeatable `R__` scripts), and Liquibase
+formatted-SQL changelogs (`--changeset` / `--rollback`; XML/YAML/JSON changelogs
+are rejected with a message). This is native Ptah-format import, distinct from
+the Atlas-compatible `ptah atlas migrate import`.
 
 ## Rollback
 

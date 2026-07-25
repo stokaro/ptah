@@ -46,6 +46,7 @@ func Parsers() []Parser {
 		golangMigrateParser{},
 		gooseParser{},
 		flywayParser{},
+		liquibaseParser{},
 	}
 }
 
