@@ -1,6 +1,6 @@
 // Package migrationsimport implements the migrations import command: it converts
 // a migration directory produced by another versioned-migration tool
-// (golang-migrate, and in later phases Goose, Flyway, Liquibase) into Ptah's
+// (golang-migrate and Goose; Flyway and Liquibase planned) into Ptah's
 // native NNNNNNNNNN_description.up.sql / .down.sql layout, preserving version
 // order and history (#667).
 package migrationsimport
@@ -34,7 +34,7 @@ versioned-migration tool into Ptah's native NNNNNNNNNN_description.up.sql /
 .down.sql layout, preserving version order and rewriting ptah.sum, so a team can
 adopt Ptah without hand-rewriting its migration history.
 
-Supported source tools: golang-migrate. (Goose, Flyway, and Liquibase are
+Supported source tools: golang-migrate and Goose. (Flyway and Liquibase are
 planned.) The source tool is auto-detected from the directory layout, or set it
 explicitly with --from.
 
@@ -48,7 +48,7 @@ command refuses to overwrite an existing migration file in the output directory.
 		},
 	}
 	flags := cmd.Flags()
-	flags.StringVar(&opts.from, "from", "", "Source migration tool (auto-detected when omitted). Supported: golang-migrate")
+	flags.StringVar(&opts.from, "from", "", "Source migration tool (auto-detected when omitted). Supported: golang-migrate, goose")
 	flags.StringVar(&opts.sourceDir, "source-dir", "", "Directory containing the source tool's migrations (required)")
 	flags.StringVar(&opts.migrationsDir, "migrations-dir", "./migrations", "Output directory for the generated Ptah migrations")
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Print the migrations that would be written without writing them")
