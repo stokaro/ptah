@@ -32,6 +32,35 @@ func IsNarrowing(oldType, newType string) bool {
 	return false
 }
 
+// IsWidening reports whether changing from oldType to newType keeps the same
+// type category but increases the representable range, length, or precision.
+//
+// It is the widening counterpart to IsNarrowing. The schema-diff normalizer
+// deliberately folds together members of a category (for example INTEGER and
+// BIGINT both normalize to "integer", and VARCHAR loses its length) so that
+// harmless dialect aliases do not surface as spurious changes. That folding also
+// hides genuine widenings — INTEGER -> BIGINT or VARCHAR(50) -> VARCHAR(100) —
+// which are real ALTERs that a database built directly from the desired schema
+// would apply. Reusing integerRank keeps the alias folding intact: INT, INTEGER
+// and INT4 share a rank, so widening compares range, not spelling.
+func IsWidening(oldType, newType string) bool {
+	oldSpec := parseSpec(oldType)
+	newSpec := parseSpec(newType)
+	if oldSpec.name == "" || newSpec.name == "" || oldSpec.name == newSpec.name && oldSpec.arg == 0 && newSpec.arg == 0 {
+		return false
+	}
+	if oldSpec.kind == "string" && newSpec.kind == "string" && oldSpec.arg > 0 && newSpec.arg > 0 {
+		return newSpec.arg > oldSpec.arg
+	}
+	if oldSpec.kind == "integer" && newSpec.kind == "integer" {
+		return integerRank(newSpec.name) > integerRank(oldSpec.name)
+	}
+	if oldSpec.kind == "decimal" && newSpec.kind == "decimal" {
+		return decimalWidens(oldSpec.args, newSpec.args)
+	}
+	return false
+}
+
 // Same reports whether two type names normalize to the same semantic type.
 func Same(left, right string) bool {
 	return normalizeName(left) == normalizeName(right)
@@ -124,4 +153,21 @@ func decimalNarrows(oldArgs, newArgs []int) bool {
 	oldIntegerDigits := oldArgs[0] - oldScale
 	newIntegerDigits := newArgs[0] - newScale
 	return newScale < oldScale || newIntegerDigits < oldIntegerDigits
+}
+
+func decimalWidens(oldArgs, newArgs []int) bool {
+	if len(oldArgs) == 0 || len(newArgs) == 0 {
+		return false
+	}
+	if newArgs[0] > oldArgs[0] {
+		return true
+	}
+	if len(oldArgs) < 2 || len(newArgs) < 2 {
+		return false
+	}
+	oldScale := oldArgs[1]
+	newScale := newArgs[1]
+	oldIntegerDigits := oldArgs[0] - oldScale
+	newIntegerDigits := newArgs[0] - newScale
+	return newScale > oldScale || newIntegerDigits > oldIntegerDigits
 }
