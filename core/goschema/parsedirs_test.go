@@ -55,3 +55,24 @@ func TestParseDirsNoRootsReturnsEmpty(t *testing.T) {
 	c.Assert(db, qt.IsNotNil)
 	c.Assert(db.Tables, qt.HasLen, 0)
 }
+
+func TestParseDirRawFeedsMerge(t *testing.T) {
+	c := qt.New(t)
+
+	rootA := t.TempDir()
+	rootB := t.TempDir()
+	writeGoFile(c, rootA, "users.go", usersSource)
+	writeGoFile(c, rootB, "orders.go", ordersSource)
+
+	// ParseDirRaw yields un-finalized sources suitable for Merge to combine and
+	// finalize once, matching a single finalized ParseDirs over both roots.
+	rawA, err := goschema.ParseDirRaw(rootA)
+	c.Assert(err, qt.IsNil)
+	rawB, err := goschema.ParseDirRaw(rootB)
+	c.Assert(err, qt.IsNil)
+
+	merged, err := goschema.Merge(rawA, rawB)
+	c.Assert(err, qt.IsNil)
+	c.Assert(merged.Tables, qt.HasLen, 2)
+	c.Assert(tableIndex(merged, "users") < tableIndex(merged, "orders"), qt.IsTrue)
+}

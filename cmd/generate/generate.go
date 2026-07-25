@@ -22,9 +22,9 @@ const (
 )
 
 type options struct {
-	rootDirs   []string
-	schemaFile string
-	dialect    string
+	rootDirs    []string
+	schemaFiles []string
+	dialect     string
 }
 
 func NewGenerateCommand() *cobra.Command {
@@ -50,12 +50,12 @@ schema, or SQL schema file instead.`,
 func registerFlags(cmd *cobra.Command, opts *options) {
 	flags := cmd.Flags()
 	flags.StringArrayVar(&opts.rootDirs, rootDirFlag, nil, "Root directory to scan for Go entities (repeatable; multiple roots merge into one composite schema; defaults to ./)")
-	flags.StringVar(&opts.schemaFile, schemaFileFlag, "", "YAML, HCL, or SQL schema file to generate from instead of scanning Go entities")
+	flags.StringArrayVar(&opts.schemaFiles, schemaFileFlag, nil, "YAML, HCL, or SQL schema file to generate from instead of, or combined with, Go entities (repeatable; multiple sources merge into one composite schema)")
 	flags.StringVar(&opts.dialect, dialectFlag, "", "Database dialect (postgres, mysql, mariadb, sqlite, clickhouse, cockroachdb, yugabytedb, spanner). If empty, generates for all dialects")
 }
 
 func generateCommand(_ *cobra.Command, opts *options) error {
-	result, err := loadSchema(opts.rootDirs, opts.schemaFile)
+	result, err := loadSchema(opts.rootDirs, opts.schemaFiles)
 	if err != nil {
 		return err
 	}
@@ -119,16 +119,79 @@ func generateCommand(_ *cobra.Command, opts *options) error {
 	return nil
 }
 
-func loadSchema(rootDirs []string, schemaFile string) (*goschema.Database, error) {
-	if schemaFile != "" {
-		return loadSchemaFile(schemaFile)
-	}
-
-	if len(rootDirs) == 0 {
+func loadSchema(rootDirs, schemaFiles []string) (*goschema.Database, error) {
+	// With no source of any kind, default to scanning the current directory for
+	// Go entities (the historical behavior).
+	if len(rootDirs) == 0 && len(schemaFiles) == 0 {
 		rootDirs = []string{"./"}
 	}
 
-	// Resolve and validate every root before parsing so a bad path fails fast.
+	// Single-source fast paths, unchanged from before: Go roots only, or exactly
+	// one schema file.
+	if len(schemaFiles) == 0 {
+		return loadGoRoots(rootDirs)
+	}
+	if len(rootDirs) == 0 && len(schemaFiles) == 1 {
+		return loadSchemaFile(schemaFiles[0])
+	}
+
+	// Composite: merge the Go roots (parsed un-finalized so Merge can run the
+	// single finalize pass) with each schema file.
+	var sources []*goschema.Database
+	if len(rootDirs) > 0 {
+		absRoots, err := resolveRootDirs(rootDirs)
+		if err != nil {
+			return nil, err
+		}
+		for _, absPath := range absRoots {
+			fmt.Printf("Scanning directory: %s\n", absPath)
+		}
+		goDB, err := goschema.ParseDirRaw(absRoots...)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing packages: %w", err)
+		}
+		sources = append(sources, goDB)
+	}
+	for _, schemaFile := range schemaFiles {
+		fmt.Printf("Loading schema file: %s\n", schemaFile)
+		fileDB, err := loadSchemaFile(schemaFile)
+		if err != nil {
+			return nil, err
+		}
+		sources = append(sources, fileDB)
+	}
+	fmt.Println()
+
+	result, err := goschema.Merge(sources...)
+	if err != nil {
+		return nil, fmt.Errorf("error merging composite schema: %w", err)
+	}
+	return result, nil
+}
+
+// loadGoRoots parses one or more Go entity roots into a finalized composite
+// schema.
+func loadGoRoots(rootDirs []string) (*goschema.Database, error) {
+	absRoots, err := resolveRootDirs(rootDirs)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, absPath := range absRoots {
+		fmt.Printf("Scanning directory: %s\n", absPath)
+	}
+	fmt.Println()
+
+	result, err := goschema.ParseDirs(absRoots...)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing packages: %w", err)
+	}
+	return result, nil
+}
+
+// resolveRootDirs turns each root into an absolute path and fails fast if any
+// does not exist.
+func resolveRootDirs(rootDirs []string) ([]string, error) {
 	absRoots := make([]string, 0, len(rootDirs))
 	for _, rootDir := range rootDirs {
 		absPath, err := filepath.Abs(rootDir)
@@ -140,18 +203,7 @@ func loadSchema(rootDirs []string, schemaFile string) (*goschema.Database, error
 		}
 		absRoots = append(absRoots, absPath)
 	}
-
-	for _, absPath := range absRoots {
-		fmt.Printf("Scanning directory: %s\n", absPath)
-	}
-	fmt.Println()
-
-	// Parse every root into one composite schema (merged and finalized together).
-	result, err := goschema.ParseDirs(absRoots...)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing packages: %w", err)
-	}
-	return result, nil
+	return absRoots, nil
 }
 
 func loadSchemaFile(schemaFile string) (*goschema.Database, error) {
