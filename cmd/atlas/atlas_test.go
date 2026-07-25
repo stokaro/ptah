@@ -219,6 +219,37 @@ func TestNewAtlasCommand_UnknownNestedCommandFails(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, `error: unexpected positional arguments ["aplly"]`)
 }
 
+// TestNewAtlasCommand_UnknownTopLevelCommandFails guards #687: `ptah atlas
+// <unknown>` must fail (exit non-zero), not silently print help and exit 0, so a
+// script with a typo does not masquerade as success.
+func TestNewAtlasCommand_UnknownTopLevelCommandFails(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"definitely-not-a-command"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `unexpected positional arguments \["definitely-not-a-command"\]`)
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+}
+
+func TestNewCompatCommand_UnknownTopLevelCommandFails(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewCompatCommand("ptah-compat")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"definitely-not-a-command"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+}
+
 func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 	tests := []struct {
 		name      string
