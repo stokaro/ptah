@@ -34,7 +34,7 @@ The source tool is auto-detected; pass `--from` to be explicit or to disambiguat
 | golang-migrate | **Supported** | `<version>_<name>.up.sql` / `.down.sql`; integer or timestamp versions. |
 | Goose | **Supported** | Single-file `<version>_<name>.sql` split by `-- +goose Up` / `-- +goose Down` (SQL only; `StatementBegin/End` and `NO TRANSACTION` directives are stripped; Go-based migrations are rejected). |
 | Flyway | **Supported** | Versioned `V<version>__<desc>.sql` (dotted versions such as `V2.1` are supported), undo `U<version>__<desc>.sql` (paired to its versioned migration by version and imported as the down), and repeatable `R__<desc>.sql` (imported as a one-time migration ordered after the versioned ones). |
-| Liquibase | Planned | Formatted-SQL changelogs first; XML/YAML/JSON changelogs later. |
+| Liquibase | **Supported** (formatted SQL) | Formatted-SQL changelogs (a `.sql` file beginning with `--liquibase formatted sql`): each `--changeset <author>:<id>` becomes a migration, and its `--rollback` lines become the down. XML, YAML, and JSON changelogs are detected and rejected with a message — they are a follow-up. |
 
 ## Behavior
 
@@ -58,6 +58,14 @@ The source tool is auto-detected; pass `--from` to be explicit or to disambiguat
   is imported as a one-time migration ordered after every versioned one (named
   `repeatable_<desc>`), because Ptah has no repeatable concept — a later change
   to its source becomes a new Ptah migration rather than an automatic re-run.
+- **Liquibase specifics.** Only formatted-SQL changelogs are read. A changeset
+  has no numeric version (it is identified by `author:id` and applied in changelog
+  order), so changesets are assigned sequential Ptah versions in file order — files
+  are ordered by name, changesets within a file by appearance — with the
+  `author:id` carried into the name (`0000000001_alice_create_users...`). Each
+  `--rollback` line contributes the down; a normal `--` SQL comment is kept in the
+  up. XML, YAML, and JSON changelogs are detected and rejected with an actionable
+  message rather than silently skipped.
 - **No clobbering.** The import refuses to overwrite an existing migration file
   in the output directory — point `--migrations-dir` at an empty or new
   directory.
