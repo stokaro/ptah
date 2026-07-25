@@ -62,6 +62,17 @@ versioned-migration tool into Ptah's native format, preserving version order and
 rewriting `ptah.sum`, so a team can adopt Ptah without hand-rewriting its
 history. See [Importing migrations](./migrations-import.md).
 
+`ptah migrations lint` and `ptah sql lint` report findings by rule code, grouped
+into families (`DS` data-safety, `PG`/`MY` dialect-specific, `TX` transaction,
+and others). Alongside `DS`, the `CD` (constraint-deletion) family flags dropping
+a constraint whose type is recoverable from the SQL — `CD101` foreign key,
+`CD102` check, `CD103` primary key (all `SeverityError`). `DS105` remains the
+fallback for the ANSI `DROP CONSTRAINT <name>` form, whose constraint type the
+SQL does not encode, so a typed drop yields exactly one finding (its `CD` code,
+never also `DS105`). Individual codes and whole families are disabled by code or
+prefix (for example `CD`, or a single `CD101`) and re-severitied per code through
+lint configuration, the same as every other family.
+
 ## Exit Codes
 
 Canonical grouped commands inherit the exit-code contract of the implementation
