@@ -37,6 +37,9 @@ root-level command spellings are removed instead of preserved.
 | `ptah migrations repair` | Repair migration revision metadata. |
 | `ptah migrations hash` | Write or update migration directory integrity. |
 | `ptah migrations validate` | Validate migration directory integrity and, optionally, SQL execution with `--dev-url`. |
+| `ptah migrations edit` | Edit a migration's SQL (via `$EDITOR` or `--up-file`/`--down-file`) and rewrite the integrity file. |
+| `ptah migrations rebase` | Move a migration to the end of history by re-timestamping it, and rewrite the integrity file. |
+| `ptah migrations rm` | Delete a migration's up/down pair and rewrite the integrity file. |
 | `ptah migrations lint` | Lint migration files. |
 | `ptah sql lint` | Lint standalone SQL files. |
 | `ptah seed` | Apply environment-scoped SQL seed files. |
@@ -61,6 +64,18 @@ does not hold; `--skip-checks` is an emergency bypass. See
 versioned-migration tool into Ptah's native format, preserving version order and
 rewriting `ptah.sum`, so a team can adopt Ptah without hand-rewriting its
 history. See [Importing migrations](./migrations-import.md).
+
+`ptah migrations edit`, `rebase`, and `rm` safely maintain an existing migration
+directory: `edit` changes a migration's SQL, `rebase` re-timestamps a migration
+to the end of history so it applies after concurrently-merged work, and `rm`
+deletes a migration. Each rewrites the integrity file (`ptah.sum` or `atlas.sum`)
+atomically, so `ptah migrations validate` passes immediately afterward — no
+separate `hash` step. All three take `--migrations-dir`, `--version`, and
+`--dir-format`. To protect deployed history, they refuse to modify a migration
+that is already applied in the database given by `--db-url` unless `--force` is
+passed; without `--db-url` they warn that applied state could not be verified.
+These are directory-maintenance commands Atlas keeps in its proprietary (Pro)
+build; Ptah provides them natively and for free.
 
 `ptah migrations lint` and `ptah sql lint` report findings by rule code, grouped
 into families (`DS` data-safety, `PG`/`MY` dialect-specific, `TX` transaction,
