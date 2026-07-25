@@ -84,7 +84,7 @@ func newAtlasCommand(use, short, long string) *cobra.Command {
 			return cmd.Help()
 		},
 	}
-	cmdutil.ConfigureCommandArgs(cmd, nil)
+	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	cmd.AddCommand(newAtlasVersionCommand())
 	cmd.AddCommand(newAtlasLicenseCommand())
 	cmd.AddCommand(newAtlasSchemaCommand())
