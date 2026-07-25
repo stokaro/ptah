@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -25,7 +26,7 @@ const (
 )
 
 type options struct {
-	rootDir        string
+	rootDirs       []string
 	dbURL          string
 	exitOnDiff     bool
 	connectTimeout string
@@ -52,7 +53,7 @@ currently exists in the database, helping you identify what needs to be migrated
 
 func registerFlags(cmd *cobra.Command, opts *options) {
 	flags := cmd.Flags()
-	flags.StringVar(&opts.rootDir, rootDirFlag, "./", "Root directory to scan for Go entities")
+	flags.StringArrayVar(&opts.rootDirs, rootDirFlag, nil, "Root directory to scan for Go entities (repeatable; multiple roots merge into one composite schema; defaults to ./)")
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	flags.BoolVar(&opts.exitOnDiff, exitCodeFlag, false, "Exit with 1 when the schema diff is non-empty")
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
@@ -66,17 +67,26 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("database URL is required")
 	}
 
-	fmt.Fprintf(out, "Comparing schema from %s with database %s\n", opts.rootDir, dbschema.FormatDatabaseURL(opts.dbURL))
+	roots := opts.rootDirs
+	if len(roots) == 0 {
+		roots = []string{"./"}
+	}
+
+	fmt.Fprintf(out, "Comparing schema from %s with database %s\n", strings.Join(roots, ", "), dbschema.FormatDatabaseURL(opts.dbURL))
 	fmt.Fprintln(out, "=== SCHEMA COMPARISON ===")
 	fmt.Fprintln(out)
 
-	// 1. Parse Go entities
-	absPath, err := filepath.Abs(opts.rootDir)
-	if err != nil {
-		return fmt.Errorf("error resolving path: %w", err)
+	// 1. Parse Go entities from every root into one composite schema
+	absRoots := make([]string, 0, len(roots))
+	for _, root := range roots {
+		absPath, err := filepath.Abs(root)
+		if err != nil {
+			return fmt.Errorf("error resolving path: %w", err)
+		}
+		absRoots = append(absRoots, absPath)
 	}
 
-	result, err := goschema.ParseDir(absPath)
+	result, err := goschema.ParseDirs(absRoots...)
 	if err != nil {
 		return fmt.Errorf("error parsing Go entities: %w", err)
 	}
