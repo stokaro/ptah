@@ -45,6 +45,7 @@ func Parsers() []Parser {
 	return []Parser{
 		golangMigrateParser{},
 		gooseParser{},
+		flywayParser{},
 	}
 }
 
@@ -84,12 +85,19 @@ func DetectParser(fsys fs.FS) (Parser, error) {
 	}
 }
 
-func supportedTools() string {
+// SupportedTools lists the source-tool identifiers accepted by --from, in
+// detection-preference order. It is the single source of truth for the set of
+// tools the importer understands.
+func SupportedTools() []string {
 	names := make([]string, 0, len(Parsers()))
 	for _, parser := range Parsers() {
 		names = append(names, parser.Name())
 	}
-	return strings.Join(names, ", ")
+	return names
+}
+
+func supportedTools() string {
+	return strings.Join(SupportedTools(), ", ")
 }
 
 // Options configures an import run.

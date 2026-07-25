@@ -1,13 +1,14 @@
 // Package migrationsimport implements the migrations import command: it converts
 // a migration directory produced by another versioned-migration tool
-// (golang-migrate and Goose; Flyway and Liquibase planned) into Ptah's
-// native NNNNNNNNNN_description.up.sql / .down.sql layout, preserving version
-// order and history (#667).
+// (golang-migrate, Goose, and Flyway; Liquibase planned) into Ptah's native
+// NNNNNNNNNN_description.up.sql / .down.sql layout, preserving version order and
+// history (#667).
 package migrationsimport
 
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -34,12 +35,14 @@ versioned-migration tool into Ptah's native NNNNNNNNNN_description.up.sql /
 .down.sql layout, preserving version order and rewriting ptah.sum, so a team can
 adopt Ptah without hand-rewriting its migration history.
 
-Supported source tools: golang-migrate and Goose. (Flyway and Liquibase are
+Supported source tools: golang-migrate, Goose, and Flyway. (Liquibase is
 planned.) The source tool is auto-detected from the directory layout, or set it
 explicitly with --from.
 
-A source migration with no rollback file gets a placeholder down migration. The
-command refuses to overwrite an existing migration file in the output directory.`,
+A source migration with no rollback file gets a placeholder down migration. A
+Flyway repeatable (R__) migration is imported as a one-time migration ordered
+after the versioned ones, since Ptah has no repeatable concept. The command
+refuses to overwrite an existing migration file in the output directory.`,
 		Args:          cmdutil.NoPositionalArgs,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -48,7 +51,7 @@ command refuses to overwrite an existing migration file in the output directory.
 		},
 	}
 	flags := cmd.Flags()
-	flags.StringVar(&opts.from, "from", "", "Source migration tool (auto-detected when omitted). Supported: golang-migrate, goose")
+	flags.StringVar(&opts.from, "from", "", fmt.Sprintf("Source migration tool (auto-detected when omitted). Supported: %s", strings.Join(importer.SupportedTools(), ", ")))
 	flags.StringVar(&opts.sourceDir, "source-dir", "", "Directory containing the source tool's migrations (required)")
 	flags.StringVar(&opts.migrationsDir, "migrations-dir", "./migrations", "Output directory for the generated Ptah migrations")
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Print the migrations that would be written without writing them")
