@@ -649,6 +649,7 @@ type SkippedChange struct{ ... }
 
 ## github.com/stokaro/ptah/migration/generator
 
+func GenerateCheckpoint(schema *goschema.Database, dialect string) (upSQL, downSQL string, err error)
 func VerifyBaselineShadow(ctx context.Context, opts BaselineShadowVerifyOptions) error
 type BaselineShadowVerifyOptions struct{ ... }
 type DiffPolicy struct{ ... }
