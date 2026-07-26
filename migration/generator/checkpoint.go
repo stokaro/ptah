@@ -1,13 +1,17 @@
 package generator
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform/capability"
+	"github.com/stokaro/ptah/dbschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/convert/dbschematogo"
 	"github.com/stokaro/ptah/internal/migratesum"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/schemadiff"
@@ -71,4 +75,84 @@ func WriteCheckpointFiles(outputDir string, version int64, description, upSQL, d
 		return "", "", fmt.Errorf("failed to rewrite ptah.sum: %w", err)
 	}
 	return upPath, downPath, nil
+}
+
+// CheckpointFromShadowOptions configures GenerateCheckpointFromShadow.
+type CheckpointFromShadowOptions struct {
+	// ShadowDatabaseURL is an ephemeral database the generator drops clean and
+	// replays the migration directory into. Its contents are discarded.
+	ShadowDatabaseURL string
+	// MigrationsDir is the directory whose entire history is replayed.
+	MigrationsDir string
+	// Dialect, when set, must match the shadow database dialect. When empty the
+	// shadow database's dialect is used.
+	Dialect string
+	// Schemas restricts introspection to the listed schemas where supported.
+	Schemas []string
+	// ProviderOptions are passed to the migration provider (e.g. dir format).
+	ProviderOptions []migrator.FSProviderOption
+	// ConnectTimeout bounds the shadow database connection attempt.
+	ConnectTimeout time.Duration
+}
+
+// GenerateCheckpointFromShadow replays the entire migration directory on a fresh
+// shadow database, introspects the resulting cumulative schema, and renders it
+// as a checkpoint migration body pair (up creates everything, down drops it).
+// The migration directory is the source of truth, so no target database is
+// needed. The shadow database is dropped clean before the replay and its
+// migration metadata is removed before introspection.
+func GenerateCheckpointFromShadow(ctx context.Context, opts CheckpointFromShadowOptions) (upSQL, downSQL string, err error) {
+	connectCtx, cancelConnect := baselineShadowConnectContext(ctx, opts.ConnectTimeout)
+	shadowConn, err := dbschema.ConnectToDatabase(connectCtx, opts.ShadowDatabaseURL)
+	cancelConnect()
+	if err != nil {
+		return "", "", fmt.Errorf("checkpoint generation failed: connect to shadow database: %w", err)
+	}
+	defer dbschema.CloseAndWarn(shadowConn)
+
+	return generateCheckpointFromConn(ctx, shadowConn, opts)
+}
+
+// generateCheckpointFromConn holds the database-facing core of checkpoint
+// generation so it can be exercised against any connection, including an
+// in-memory one, without a live server.
+func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.DatabaseConnection, opts CheckpointFromShadowOptions) (upSQL, downSQL string, err error) {
+	dialect := opts.Dialect
+	if dialect == "" {
+		dialect = shadowConn.Info().Dialect
+	} else if !sameDialect(dialect, shadowConn.Info().Dialect) {
+		return "", "", fmt.Errorf("checkpoint generation failed: shadow database dialect %q does not match target dialect %q", shadowConn.Info().Dialect, dialect)
+	}
+
+	if err := shadowConn.SchemaWriter().DropAllTables(); err != nil {
+		return "", "", fmt.Errorf("checkpoint generation failed: drop all objects: %w", err)
+	}
+	if err := resetBaselineShadowSchemas(ctx, shadowConn, opts.Schemas); err != nil {
+		return "", "", err
+	}
+
+	migrations, err := loadPriorMigrations(opts.MigrationsDir, opts.ProviderOptions...)
+	if err != nil {
+		return "", "", fmt.Errorf("checkpoint generation failed: load migrations: %w", err)
+	}
+	if len(migrations) == 0 {
+		return "", "", fmt.Errorf("checkpoint generation failed: no migrations found in %s", opts.MigrationsDir)
+	}
+
+	mig := migrator.NewMigrator(shadowConn, migrator.NewRegisteredMigrationProvider(migrations...))
+	if err := mig.MigrateUp(ctx); err != nil {
+		if description := describeReplayError(err); description != "" {
+			return "", "", fmt.Errorf("checkpoint generation failed: %s", description)
+		}
+		return "", "", fmt.Errorf("checkpoint generation failed: replay migrations: %w", err)
+	}
+	if err := dropBaselineShadowMetadata(ctx, shadowConn, mig.MigrationsTableIdentifier()); err != nil {
+		return "", "", err
+	}
+
+	shadowSchema, err := dbschema.ReadSchemaWithSchemas(shadowConn, opts.Schemas)
+	if err != nil {
+		return "", "", fmt.Errorf("checkpoint generation failed: read shadow schema: %w", err)
+	}
+	return GenerateCheckpoint(dbschematogo.ConvertDBSchemaToGoSchema(shadowSchema), dialect)
 }
