@@ -636,6 +636,19 @@ type SchemaWriter interface {
     SchemaWriter interface for writing schemas to databases.
 
 
+## github.com/stokaro/ptah/migration/dbtest
+
+type Assertion struct{ ... }
+type Case struct{ ... }
+    func LoadCases(dir string) ([]Case, error)
+    func ParseCases(data []byte) ([]Case, error)
+type CaseResult struct{ ... }
+type Options struct{ ... }
+type Report struct{ ... }
+    func RunMigrationTest(ctx context.Context, opts Options) (*Report, error)
+type Step struct{ ... }
+type StepResult struct{ ... }
+
 ## github.com/stokaro/ptah/migration/diffpolicy
 
 type ChangeKind string
