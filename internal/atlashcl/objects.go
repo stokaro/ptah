@@ -19,10 +19,15 @@ func (p *parser) parseExtension(block *hclsyntax.Block) error {
 	if err := p.rejectUnsupportedExtensionAttrs(block); err != nil {
 		return err
 	}
+	ifNotExists, err := p.boolAttr(block, "if_not_exists", "extension", false)
+	if err != nil {
+		return err
+	}
 	p.db.Extensions = append(p.db.Extensions, goschema.Extension{
-		Name:    name,
-		Version: p.optionalString(block.Body.Attributes["version"]),
-		Comment: p.optionalString(block.Body.Attributes["comment"]),
+		Name:        name,
+		IfNotExists: ifNotExists,
+		Version:     p.optionalString(block.Body.Attributes["version"]),
+		Comment:     p.optionalString(block.Body.Attributes["comment"]),
 	})
 	return nil
 }
@@ -390,8 +395,9 @@ func (p *parser) rejectUnsupportedExtensionAttrs(block *hclsyntax.Block) error {
 		return p.blockError(block.Body.Blocks[0], "unsupported extension block %q", block.Body.Blocks[0].Type)
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
-		"version": true,
-		"comment": true,
+		"if_not_exists": true,
+		"version":       true,
+		"comment":       true,
 	}, "extension")
 }
 
