@@ -23,7 +23,6 @@ const (
 	versionFlag     = "version"
 	dryRunFlag      = "dry-run"
 	dirFormatFlag   = "dir-format"
-	schemasFlag     = "schemas"
 )
 
 type options struct {
@@ -70,7 +69,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.version, versionFlag, "", "Checkpoint version; defaults to one above the newest migration")
 	flags.BoolVar(&opts.dryRun, dryRunFlag, false, "Print the checkpoint SQL instead of writing files")
 	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrator.MigrationDirFormatPtah), "Migration directory format")
-	flags.StringVar(&opts.schemas, schemasFlag, "", "Comma-separated schemas to introspect")
+	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 }
 
@@ -126,17 +125,19 @@ func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) err
 	return nil
 }
 
-// resolveCheckpointVersion returns the explicit version when provided, otherwise
-// one above the newest migration so the checkpoint sorts after and covers the
-// whole existing history.
+// maxMigrationVersion is the largest value the 10-digit NNNNNNNNNN file-name
+// prefix can hold. A larger version would produce a file name the migration
+// parser cannot recognize, so the checkpoint would be silently invisible.
+const maxMigrationVersion = 9999999999
+
+// resolveCheckpointVersion returns the checkpoint version. Without --version it
+// is one above the newest migration so the checkpoint sorts after and covers
+// the whole existing history. An explicit --version must be a positive value
+// that fits the file-name width and is above every existing migration —
+// otherwise the checkpoint would overwrite history, collide with an ordinary
+// migration, or fail to squash it — so those are rejected up front rather than
+// producing a directory that only breaks on a later command.
 func resolveCheckpointVersion(explicit, migrationsDir string, dirFormat migrator.MigrationDirFormat) (int64, error) {
-	if explicit != "" {
-		v, err := strconv.ParseInt(explicit, 10, 64)
-		if err != nil {
-			return 0, fmt.Errorf("invalid version %q: %w", explicit, err)
-		}
-		return v, nil
-	}
 	files, err := migrator.DiscoverMigrationFiles(os.DirFS(migrationsDir), dirFormat)
 	if err != nil {
 		return 0, fmt.Errorf("failed to scan migrations directory: %w", err)
@@ -147,5 +148,23 @@ func resolveCheckpointVersion(explicit, migrationsDir string, dirFormat migrator
 			latest = file.Version
 		}
 	}
-	return latest + 1, nil
+
+	if explicit == "" {
+		return latest + 1, nil
+	}
+
+	version, err := strconv.ParseInt(explicit, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid --%s value %q: %w", versionFlag, explicit, err)
+	}
+	if version <= 0 {
+		return 0, fmt.Errorf("invalid --%s value %d: must be a positive version", versionFlag, version)
+	}
+	if version > maxMigrationVersion {
+		return 0, fmt.Errorf("invalid --%s value %d: exceeds the maximum migration version %d", versionFlag, version, int64(maxMigrationVersion))
+	}
+	if version <= latest {
+		return 0, fmt.Errorf("invalid --%s value %d: must be above the newest existing migration version %d so the checkpoint covers the whole history", versionFlag, version, latest)
+	}
+	return version, nil
 }

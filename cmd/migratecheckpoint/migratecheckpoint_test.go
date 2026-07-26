@@ -78,3 +78,32 @@ func TestMigrateCheckpointCommand_RequiresShadowDB(t *testing.T) {
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(out, qt.Contains, "shadow database URL is required")
 }
+
+func TestMigrateCheckpointCommand_RejectsVersionAtOrBelowHistory(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	seedMigrations(c, dir) // versions 1 and 2
+	shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
+
+	// A version that collides with an existing ordinary migration would poison
+	// the directory (mixed checkpoint/non-checkpoint) and must be refused up
+	// front, not written and then broken on the next command.
+	out, err := runCheckpoint("--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite", "--version", "2")
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out, qt.Contains, "must be above the newest existing migration version 2")
+
+	written, err := filepath.Glob(filepath.Join(dir, "*checkpoint*"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(written, qt.HasLen, 0)
+}
+
+func TestMigrateCheckpointCommand_RejectsNonPositiveVersion(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	seedMigrations(c, dir)
+	shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
+
+	out, err := runCheckpoint("--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite", "--version", "0")
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out, qt.Contains, "must be a positive version")
+}
