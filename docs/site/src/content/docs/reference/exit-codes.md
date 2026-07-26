@@ -82,7 +82,7 @@ shares this exit-code contract.
 | `ptah atlas migrate import` | Import local migrations into a separate directory and write `atlas.sum` |
 | `ptah atlas migrate status` | Atlas-format migration status with Atlas revision-table metadata |
 | `ptah atlas migrate hash` | `ptah migrations hash` |
-| `ptah atlas migrate validate` | `ptah migrations validate` |
+| `ptah atlas migrate validate` | Atlas-format integrity validation with Atlas checksum diagnostics |
 | `ptah atlas migrate lint` | `ptah migrations lint` |
 | `ptah atlas schema inspect` | Atlas-shaped schema inspection |
 | `ptah atlas schema apply` | Local Atlas-style schema apply |
@@ -98,5 +98,12 @@ Atlas CE abort text and exits `1`. All other reported failures on
 input, missing files, configuration errors, and database failures, also exit
 `1`. This normalization applies only to the compatibility trees; equivalent
 native Ptah command failures keep exit code `2`.
+
+For `migrate validate`, checksum mismatches exit `1`, write Atlas's guidance to
+stdout, and write `Error: checksum mismatch` to stderr. Entry-level drift also
+identifies the first mismatched `atlas.sum` line, file, and reason. The native
+`ptah migrations validate` command keeps its own diagnostics: malformed sum
+files are usage failures with exit `2`, while valid integrity drift exits `1`
+with Ptah's native drift report.
 
 This page is checked against the repository exit-code contract during docs CI.

@@ -53,7 +53,7 @@ SQL paths; prefer `--to` in new Ptah-authored scripts.
 | `ptah atlas migrate down` | Forwards to `ptah migrations down`; maps compatible Atlas flags and fails explicitly for dynamic down-planning and output-format flags that native Ptah does not implement yet. |
 | `ptah atlas migrate status` | Atlas-format migration status with Atlas revision-table metadata |
 | `ptah atlas migrate hash` | `ptah migrations hash` |
-| `ptah atlas migrate validate` | Verifies `ptah.sum` or `atlas.sum`; with `--dev-url`, cleans and replays migrations on the dev database to validate SQL execution. |
+| `ptah atlas migrate validate` | Verifies `atlas.sum` with Atlas-compatible checksum diagnostics; with `--dev-url`, cleans and replays migrations on the dev database to validate SQL execution. |
 | `ptah atlas migrate lint` | `ptah migrations lint`; supports Atlas-style `--latest N`, infers lint dialect from `--dev-url`, and cleans and replays migrations on directly connectable dev databases to validate SQL execution. |
 | `ptah atlas migrate new` | `ptah migrations create` |
 | `ptah atlas migrate set [version]` | `ptah migrations repair` with Atlas revision metadata |
@@ -312,11 +312,19 @@ databases fail explicitly until their semantics are implemented.
 ## Migration Validate
 
 `ptah atlas migrate validate` verifies the migration directory against
-`atlas.sum` or `ptah.sum`. When `--dev-url` is set, Ptah first checks integrity
+`atlas.sum`. When `--dev-url` is set, Ptah first checks integrity
 and then treats the dev database as scratch space: it drops user tables and
 replays the migration directory to validate SQL execution semantics. If
 integrity drift is found, Ptah reports the drift and does not connect to the dev
 database.
+
+Checksum mismatches exit `1`, print Atlas-compatible recovery guidance to
+stdout, and print `Error: checksum mismatch` to stderr. For added, edited, or
+removed migration files, the stdout guidance includes the first mismatched
+`atlas.sum` line, file name, and reason. This compatibility behavior is scoped
+to `ptah atlas` and `ptah-compat`; native `ptah migrations validate` keeps
+Ptah's native output and treats a malformed sum file as an exit-`2` usage
+failure.
 
 ```bash
 ptah atlas migrate validate \

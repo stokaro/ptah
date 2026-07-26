@@ -217,6 +217,15 @@ func TestParse_Malformed(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, "malformed entry line.*")
 }
 
+func TestParse_DuplicateEntry(t *testing.T) {
+	c := qt.New(t)
+
+	validHash := "h1:" + base64.StdEncoding.EncodeToString(make([]byte, 32))
+	entry := "0000000001_x.up.sql " + validHash + "\n"
+	_, err := migratesum.Parse([]byte(validHash + "\n" + entry + entry))
+	c.Assert(err, qt.ErrorMatches, `duplicate entry for "0000000001_x\.up\.sql"`)
+}
+
 func TestBytesParseRoundTrip_NameWithSpaces(t *testing.T) {
 	c := qt.New(t)
 
@@ -286,6 +295,11 @@ func TestVerify_CleanAddedRemovedChanged(t *testing.T) {
 	c.Assert(res.OK(), qt.IsFalse)
 	c.Assert(res.Changed, qt.DeepEquals, []string{"0000000001_init.up.sql"})
 	c.Assert(res.Describe(), qt.Contains, "changed: 0000000001_init.up.sql")
+	c.Assert(res.FirstMismatch(), qt.DeepEquals, &migratesum.Mismatch{
+		Line:   3,
+		File:   "0000000001_init.up.sql",
+		Reason: migratesum.MismatchReasonEdited,
+	})
 
 	// Added: a new migration not yet hashed.
 	fsys["0000000001_init.up.sql"] = &fstest.MapFile{Data: []byte(files["0000000001_init.up.sql"])}
@@ -293,6 +307,11 @@ func TestVerify_CleanAddedRemovedChanged(t *testing.T) {
 	res, err = migratesum.Verify(fsys)
 	c.Assert(err, qt.IsNil)
 	c.Assert(res.Added, qt.DeepEquals, []string{"0000000002_more.up.sql"})
+	c.Assert(res.FirstMismatch(), qt.DeepEquals, &migratesum.Mismatch{
+		Line:   4,
+		File:   "0000000002_more.up.sql",
+		Reason: migratesum.MismatchReasonAdded,
+	})
 
 	// Removed: delete a hashed file.
 	delete(fsys, "0000000002_more.up.sql")
@@ -300,6 +319,11 @@ func TestVerify_CleanAddedRemovedChanged(t *testing.T) {
 	res, err = migratesum.Verify(fsys)
 	c.Assert(err, qt.IsNil)
 	c.Assert(res.Removed, qt.DeepEquals, []string{"0000000001_init.down.sql"})
+	c.Assert(res.FirstMismatch(), qt.DeepEquals, &migratesum.Mismatch{
+		Line:   2,
+		File:   "0000000001_init.down.sql",
+		Reason: migratesum.MismatchReasonRemoved,
+	})
 }
 
 func TestVerify_MissingSumFile(t *testing.T) {
@@ -320,6 +344,17 @@ func TestVerify_MissingAtlasSumFile(t *testing.T) {
 	}), migrator.MigrationDirFormatAtlas)
 	c.Assert(err, qt.ErrorIs, migratesum.ErrSumFileMissing)
 	c.Assert(err, qt.ErrorMatches, "atlas.sum not found; run `ptah migrations hash --dir-format atlas` to create it")
+}
+
+func TestVerify_MalformedAtlasSumFile(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := migratesum.VerifyWithFormat(fixture(map[string]string{
+		"1_initial.sql": "CREATE TABLE users (id INT);\n",
+		"atlas.sum":     "h1:tampered\n",
+	}), migrator.MigrationDirFormatAtlas)
+	c.Assert(err, qt.ErrorIs, migratesum.ErrSumFileMalformed)
+	c.Assert(err, qt.ErrorMatches, `failed to parse atlas\.sum: malformed directory hash line: "h1:tampered"`)
 }
 
 func TestVerify_AutoReadsAtlasSum(t *testing.T) {
@@ -372,5 +407,6 @@ func TestVerify_HandEditedSumFileDirHashMismatch(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(res.OK(), qt.IsFalse)
 	c.Assert(res.DirHashMismatch, qt.IsTrue)
+	c.Assert(res.FirstMismatch(), qt.IsNil)
 	c.Assert(res.Describe(), qt.Contains, "directory hash mismatch")
 }
