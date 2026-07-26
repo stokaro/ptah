@@ -113,6 +113,45 @@ func TestParseMigrationFileName(t *testing.T) {
 			expectError: false,
 		},
 		{
+			name:     "checkpoint up migration",
+			filename: "0000000005_baseline.checkpoint.up.sql",
+			expected: &MigrationFile{
+				Version:      5,
+				Name:         "Baseline",
+				Direction:    "up",
+				Extension:    ".sql",
+				IsCheckpoint: true,
+			},
+			expectError: false,
+		},
+		{
+			name:     "checkpoint down migration",
+			filename: "0000000005_baseline.checkpoint.down.sql",
+			expected: &MigrationFile{
+				Version:      5,
+				Name:         "Baseline",
+				Direction:    "down",
+				Extension:    ".sql",
+				IsCheckpoint: true,
+			},
+			expectError: false,
+		},
+		{
+			// The checkpoint marker only counts immediately before the
+			// direction; a description that merely contains "checkpoint" is an
+			// ordinary migration.
+			name:     "description containing checkpoint is not a checkpoint",
+			filename: "0000000006_add_checkpoint_column.up.sql",
+			expected: &MigrationFile{
+				Version:      6,
+				Name:         "Add Checkpoint Column",
+				Direction:    "up",
+				Extension:    ".sql",
+				IsCheckpoint: false,
+			},
+			expectError: false,
+		},
+		{
 			// Only a literal dot separates description from direction: a
 			// lenient-separator pattern ([._]) must not sneak back in.
 			name:        "underscore before direction is not a separator",
@@ -162,6 +201,7 @@ func TestParseMigrationFileName(t *testing.T) {
 				c.Assert(result.Name, qt.Equals, tt.expected.Name)
 				c.Assert(result.Direction, qt.Equals, tt.expected.Direction)
 				c.Assert(result.Extension, qt.Equals, tt.expected.Extension)
+				c.Assert(result.IsCheckpoint, qt.Equals, tt.expected.IsCheckpoint)
 			}
 		})
 	}
@@ -340,6 +380,43 @@ func TestDiscoverMigrationFilesRecognizesAtlasImportedFlywayRepeatables(t *testi
 	c.Assert(files[1].Version, qt.Equals, int64(2))
 	c.Assert(files[2].Path, qt.Equals, "3_third_migration.sql")
 	c.Assert(files[2].Version, qt.Equals, int64(3))
+}
+
+func TestDiscoverMigrationFilesRecognizesCheckpoints(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"0000000001_init.up.sql":                  &fstest.MapFile{Data: []byte("CREATE TABLE post (id INT);\n")},
+		"0000000001_init.down.sql":                &fstest.MapFile{Data: []byte("DROP TABLE post;\n")},
+		"0000000002_snapshot.checkpoint.up.sql":   &fstest.MapFile{Data: []byte("CREATE TABLE post (id INT, title TEXT);\n")},
+		"0000000002_snapshot.checkpoint.down.sql": &fstest.MapFile{Data: []byte("DROP TABLE post;\n")},
+	}
+
+	files, err := DiscoverMigrationFiles(fsys, MigrationDirFormatPtah)
+	c.Assert(err, qt.IsNil)
+	c.Assert(files, qt.HasLen, 4)
+
+	initUp := migrationFileByPath(files, "0000000001_init.up.sql")
+	c.Assert(initUp.IsCheckpoint, qt.IsFalse)
+
+	checkpointUp := migrationFileByPath(files, "0000000002_snapshot.checkpoint.up.sql")
+	c.Assert(checkpointUp.IsCheckpoint, qt.IsTrue)
+	c.Assert(checkpointUp.Version, qt.Equals, int64(2))
+	c.Assert(checkpointUp.Direction, qt.Equals, "up")
+	c.Assert(checkpointUp.Name, qt.Equals, "Snapshot")
+
+	checkpointDown := migrationFileByPath(files, "0000000002_snapshot.checkpoint.down.sql")
+	c.Assert(checkpointDown.IsCheckpoint, qt.IsTrue)
+	c.Assert(checkpointDown.Direction, qt.Equals, "down")
+}
+
+func migrationFileByPath(files []MigrationFile, wantPath string) MigrationFile {
+	for _, f := range files {
+		if f.Path == wantPath {
+			return f
+		}
+	}
+	return MigrationFile{}
 }
 
 func TestDiscoverMigrationFilesAutoDetectsAtlasImportedNames(t *testing.T) {
