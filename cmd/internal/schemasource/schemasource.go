@@ -81,6 +81,23 @@ func CommandsFromCLI(cmdLine, format, dialect string) []Command {
 	}}
 }
 
+// CommandsFromConfig builds the external-command sources from a configuration
+// block that already provides an explicit argument list (for example a
+// ptah.yaml external_schema block). The list is used verbatim — no whitespace
+// splitting — so arguments may contain spaces. It returns nil when program is
+// empty.
+func CommandsFromConfig(program []string, format, dir string, env []string) []Command {
+	if len(program) == 0 {
+		return nil
+	}
+	return []Command{{
+		Args:   program,
+		Format: format,
+		Dir:    dir,
+		Env:    env,
+	}}
+}
+
 // Run executes cmd and parses its standard output into a desired schema. It
 // bounds execution with a timeout, and on failure surfaces the program's stderr.
 func Run(ctx context.Context, cmd Command) (*goschema.Database, error) {

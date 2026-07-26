@@ -184,3 +184,21 @@ ptah schema render \
 
 This is Ptah's open, local, MIT equivalent of Atlas's `data "external_schema"`
 source and its ORM provider loaders.
+
+### Configure it in `ptah.yaml`
+
+Instead of the flag, declare the loader once in an `external_schema` block. Unlike
+`--schema-cmd` — which is a single string split on whitespace — the config form
+takes an explicit argument list, so arguments may contain spaces:
+
+```yaml
+external_schema:
+  program: ["go", "run", "ariga.io/atlas-provider-gorm", "load", "--path", "./models"]
+  format: sql          # optional, defaults to sql
+  working_dir: ./app   # optional; defaults to the current directory
+  env: ["APP_ENV=dev"] # optional extra KEY=VALUE entries
+```
+
+`ptah migrations generate` reads this block when `--schema-cmd` is not passed
+(the flag always wins). This mirrors Atlas's `data "external_schema"` block: the
+program must print the complete desired schema — currently SQL DDL — to stdout.

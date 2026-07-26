@@ -80,14 +80,6 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	generated, err := schemaload.LoadContext(cmd.Context(), schemaload.Options{
-		RootDirs:    rootDirs,
-		SchemaFiles: schemaFiles,
-		Commands:    schemasource.CommandsFromCLI(schemaCmd, schemaFormat, ""),
-	})
-	if err != nil {
-		return err
-	}
 	dbURL, err := cmd.Flags().GetString(generateDBURLFlag)
 	if err != nil {
 		return err
@@ -112,6 +104,27 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+
+	// Resolve the external schema command from the --schema-cmd flag, falling
+	// back to the ptah.yaml external_schema block when the flag is unset.
+	commands := schemasource.CommandsFromCLI(schemaCmd, schemaFormat, "")
+	if commands == nil {
+		commands = schemasource.CommandsFromConfig(
+			projectCfg.ExternalSchema.Program,
+			projectCfg.ExternalSchema.Format,
+			projectCfg.ExternalSchema.WorkingDir,
+			projectCfg.ExternalSchema.Env,
+		)
+	}
+	generated, err := schemaload.LoadContext(cmd.Context(), schemaload.Options{
+		RootDirs:    rootDirs,
+		SchemaFiles: schemaFiles,
+		Commands:    commands,
+	})
+	if err != nil {
+		return err
+	}
+
 	dbURL = dbcli.EffectiveString(cmd, generateDBURLFlag, dbURL, projectCfg.DatabaseURL)
 	migrationsDir = dbcli.EffectiveString(cmd, generateMigrationsDirFlag, migrationsDir, projectCfg.Migration.Dir)
 	shadowDB = dbcli.EffectiveString(cmd, generateShadowDBFlag, shadowDB, projectCfg.DevURL)

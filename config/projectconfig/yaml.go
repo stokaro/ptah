@@ -19,15 +19,28 @@ type yamlDocument struct {
 }
 
 type yamlSettings struct {
-	URL       string            `yaml:"url"`
-	Dev       string            `yaml:"dev"`
-	Schemas   *[]string         `yaml:"schemas"`
-	Exclude   *[]string         `yaml:"exclude"`
-	Migration yamlMigration     `yaml:"migration"`
-	Lint      yamlLint          `yaml:"lint"`
-	Migrate   yamlMigrateConfig `yaml:"migrate"`
-	OnlineDDL yamlOnlineDDL     `yaml:"online_ddl"`
-	Diff      yamlDiff          `yaml:"diff"`
+	URL            string             `yaml:"url"`
+	Dev            string             `yaml:"dev"`
+	Schemas        *[]string          `yaml:"schemas"`
+	Exclude        *[]string          `yaml:"exclude"`
+	Migration      yamlMigration      `yaml:"migration"`
+	Lint           yamlLint           `yaml:"lint"`
+	Migrate        yamlMigrateConfig  `yaml:"migrate"`
+	OnlineDDL      yamlOnlineDDL      `yaml:"online_ddl"`
+	Diff           yamlDiff           `yaml:"diff"`
+	ExternalSchema yamlExternalSchema `yaml:"external_schema"`
+}
+
+// yamlExternalSchema is the ptah.yaml external_schema block: program is an
+// explicit argv list (first element is the executable, run without a shell),
+// format is the stdout format (default sql), working_dir is the program's
+// working directory, and env holds extra "KEY=VALUE" entries. program and env
+// are pointers so an explicit empty list is distinguishable from an unset value.
+type yamlExternalSchema struct {
+	Program    *[]string `yaml:"program"`
+	Format     string    `yaml:"format"`
+	WorkingDir string    `yaml:"working_dir"`
+	Env        *[]string `yaml:"env"`
 }
 
 // yamlDiff is the ptah.yaml diff policy block. skip lists destructive change
@@ -171,6 +184,18 @@ func (c yamlSettings) projectConfig() (Config, error) {
 			Dialect: c.Lint.Dialect,
 			Latest:  c.Lint.Latest,
 		},
+		ExternalSchema: ExternalSchemaConfig{
+			Format:     c.ExternalSchema.Format,
+			WorkingDir: c.ExternalSchema.WorkingDir,
+		},
+	}
+	if c.ExternalSchema.Program != nil {
+		cfg.ExternalSchema.Program = slices.Clone(*c.ExternalSchema.Program)
+		cfg.presence.externalSchemaProgram = true
+	}
+	if c.ExternalSchema.Env != nil {
+		cfg.ExternalSchema.Env = slices.Clone(*c.ExternalSchema.Env)
+		cfg.presence.externalSchemaEnv = true
 	}
 	if c.Schemas != nil {
 		cfg.Schemas = slices.Clone(*c.Schemas)

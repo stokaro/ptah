@@ -43,6 +43,7 @@ type ConfigBool struct{ ... }
 type DiffConcurrentIndexConfig struct{ ... }
 type DiffConfig struct{ ... }
 type DiffSkipConfig struct{ ... }
+type ExternalSchemaConfig struct{ ... }
 type FormatConfig struct{ ... }
 type LintConfig struct{ ... }
 type LintRuleConfig struct{ ... }

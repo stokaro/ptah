@@ -167,3 +167,29 @@ func TestCommandsFromCLI_ReturnsNilWhenEmpty(t *testing.T) {
 	c.Assert(schemasource.CommandsFromCLI("", "sql", ""), qt.IsNil)
 	c.Assert(schemasource.CommandsFromCLI("   ", "sql", ""), qt.IsNil)
 }
+
+func TestCommandsFromConfig_UsesArgsVerbatim(t *testing.T) {
+	c := qt.New(t)
+
+	commands := schemasource.CommandsFromConfig(
+		[]string{"go", "run", "./loader", "--path", "./models with spaces"},
+		"sql",
+		"./project",
+		[]string{"FOO=bar"},
+	)
+
+	c.Assert(commands, qt.HasLen, 1)
+	// The explicit argument list is used verbatim — no whitespace splitting — so
+	// an argument containing spaces survives intact.
+	c.Assert(commands[0].Args, qt.DeepEquals, []string{"go", "run", "./loader", "--path", "./models with spaces"})
+	c.Assert(commands[0].Format, qt.Equals, "sql")
+	c.Assert(commands[0].Dir, qt.Equals, "./project")
+	c.Assert(commands[0].Env, qt.DeepEquals, []string{"FOO=bar"})
+}
+
+func TestCommandsFromConfig_ReturnsNilWhenEmpty(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(schemasource.CommandsFromConfig(nil, "sql", "", nil), qt.IsNil)
+	c.Assert(schemasource.CommandsFromConfig([]string{}, "sql", "", nil), qt.IsNil)
+}
