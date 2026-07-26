@@ -34,6 +34,7 @@ root-level command spellings are removed instead of preserved.
 | `ptah migrations down` | Roll back migrations. |
 | `ptah migrations status` | Show migration status. |
 | `ptah migrations baseline` | Record existing migrations as applied. |
+| `ptah migrations checkpoint` | Squash history into a cumulative-schema checkpoint fresh databases bootstrap from. |
 | `ptah migrations repair` | Repair migration revision metadata. |
 | `ptah migrations hash` | Write or update migration directory integrity. |
 | `ptah migrations validate` | Validate migration directory integrity and, optionally, SQL execution with `--dev-url`. |
