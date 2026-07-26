@@ -183,7 +183,8 @@ ptah schema render \
 ```
 
 This is Ptah's open, local, MIT equivalent of Atlas's `data "external_schema"`
-source and its ORM provider loaders.
+source and its ORM provider loaders. For ready-made loaders — including a
+verified GORM example — see [ORM loaders](../orm-loaders/).
 
 ### Configure it in `ptah.yaml`
 
