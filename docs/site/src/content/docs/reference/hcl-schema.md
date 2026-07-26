@@ -63,7 +63,7 @@ table "users" {
 | `check` | `expr`. |
 | `extension` | PostgreSQL `version` and comments. |
 | `role` | PostgreSQL role attributes such as `login`, `superuser`, `create_db`, and `inherit`. |
-| `permission` | PostgreSQL table and schema permissions. |
+| `permission` | PostgreSQL table, schema, and sequence permissions. |
 | `function` | PostgreSQL function metadata and raw body. |
 | `view` / `materialized` | SQL body plus schema and comments. |
 | `trigger` | Trigger timing, target, execution mode, function body, and comments. |

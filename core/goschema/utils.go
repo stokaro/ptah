@@ -1060,11 +1060,11 @@ func constraintDedupKey(c Constraint) string {
 	return scope + "." + c.Name
 }
 
-// deduplicateGrants dedups by role + privileges + target (table or schema).
-// The grant option is part of identity: a plain grant and a grant WITH GRANT
-// OPTION must both survive. Privilege order is normalized only for the key, so
-// logically identical grants deduplicate even when annotations list privileges
-// in a different order.
+// deduplicateGrants dedups by role + privileges + target (table, schema, or
+// sequence). The grant option is part of identity: a plain grant and a grant
+// WITH GRANT OPTION must both survive. Privilege order is normalized only for
+// the key, so logically identical grants deduplicate even when annotations list
+// privileges in a different order.
 func deduplicateGrants(grants []Grant) []Grant {
 	seen := make(map[string]bool)
 	deduplicated := make([]Grant, 0, len(grants))
@@ -1073,7 +1073,7 @@ func deduplicateGrants(grants []Grant) []Grant {
 		privileges := append([]string(nil), g.Privileges...)
 		sort.Strings(privileges)
 		privs := strings.Join(privileges, ",")
-		key := g.Role + "|" + privs + "|t:" + g.OnTable + "|s:" + g.OnSchema + "|o:" + strconv.FormatBool(g.WithOption)
+		key := g.Role + "|" + privs + "|t:" + g.OnTable + "|s:" + g.OnSchema + "|q:" + g.OnSequence + "|o:" + strconv.FormatBool(g.WithOption)
 		if !seen[key] {
 			seen[key] = true
 			deduplicated = append(deduplicated, g)
