@@ -30,8 +30,9 @@ current schema IR:
 - `schema` labels and `comment`, for table namespace references such as
   `schema = schema.main`
 - `table` blocks
-- `column` blocks with `type`, `null`, `auto_increment`, `unique`, `default`,
-  `identity`, and `comment`
+- `column` blocks with `type`, `null`, `auto_increment`, `unique`,
+  `unique_expr`, `default`, `check`, `check_name`, `identity` (including its
+  `options`), and `comment`
 - `primary_key` blocks with `columns`; PostgreSQL primary keys also support
   `include`
 - `index` blocks with `columns`, `on { column = ..., prefix = ... }`,
@@ -251,9 +252,10 @@ table "users" {
 ```
 
 `generated` accepts `ALWAYS` or `BY_DEFAULT`. When omitted, Ptah follows
-PostgreSQL and Atlas defaults and renders `BY DEFAULT`. Ptah currently supports
-the Atlas `start` and `increment` identity options in HCL input. Other identity
-block attributes are rejected instead of being silently dropped.
+PostgreSQL and Atlas defaults and renders `BY DEFAULT`. The identity block
+supports `start`, `increment`, and an `options` string for raw sequence options
+(rendered inside `GENERATED ... AS IDENTITY (...)`). Other identity block
+attributes are rejected instead of being silently dropped.
 
 ## PostgreSQL Schema Objects
 

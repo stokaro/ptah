@@ -317,6 +317,10 @@ func (p *parser) parseColumn(structName string, block *hclsyntax.Block) (goschem
 		GeneratedExpression: generated.expression,
 		GeneratedKind:       generated.kind,
 		UpdateExpression:    p.optionalSQLExpression(block.Body.Attributes["on_update"]),
+		UniqueExpr:          p.optionalSQLExpression(block.Body.Attributes["unique_expr"]),
+		Check:               p.optionalSQLExpression(block.Body.Attributes["check"]),
+		CheckName:           p.optionalString(block.Body.Attributes["check_name"]),
+		IdentityOptions:     identity.options,
 		Charset:             p.optionalString(block.Body.Attributes["charset"]),
 		Collate:             p.optionalString(block.Body.Attributes["collate"]),
 		Comment:             p.optionalString(block.Body.Attributes["comment"]),
@@ -376,6 +380,7 @@ type identityColumnSpec struct {
 	generation string
 	start      string
 	increment  string
+	options    string
 }
 
 func (p *parser) parseIdentityColumn(block *hclsyntax.Block) (identityColumnSpec, error) {
@@ -413,6 +418,7 @@ func (p *parser) parseIdentityColumn(block *hclsyntax.Block) (identityColumnSpec
 		generation: generation,
 		start:      p.optionalString(identityBlock.Body.Attributes["start"]),
 		increment:  p.optionalString(identityBlock.Body.Attributes["increment"]),
+		options:    p.optionalString(identityBlock.Body.Attributes["options"]),
 	}, nil
 }
 
@@ -966,8 +972,11 @@ func (p *parser) rejectUnsupportedColumnAttrs(block *hclsyntax.Block) error {
 		"null":           true,
 		"auto_increment": true,
 		"unique":         true,
+		"unique_expr":    true,
 		"default":        true,
 		"on_update":      true,
+		"check":          true,
+		"check_name":     true,
 		"as":             true,
 		"charset":        true,
 		"collate":        true,
@@ -994,6 +1003,7 @@ func (p *parser) rejectUnsupportedIdentityColumnAttrs(block *hclsyntax.Block) er
 		"generated": true,
 		"start":     true,
 		"increment": true,
+		"options":   true,
 	}, "column identity")
 }
 

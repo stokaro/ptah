@@ -10,6 +10,40 @@ import (
 	"github.com/stokaro/ptah/internal/atlashclrender"
 )
 
+func TestRenderColumnUniqueExprAndIdentityOptionsRoundTrip(t *testing.T) {
+	c := qt.New(t)
+	db := &goschema.Database{
+		Tables: []goschema.Table{{StructName: "T", Name: "t"}},
+		Fields: []goschema.Field{
+			{
+				StructName:         "T",
+				Name:               "id",
+				Type:               "bigint",
+				IdentityGeneration: "ALWAYS",
+				IdentityOptions:    "START WITH 100 INCREMENT BY 5",
+			},
+			{
+				StructName: "T",
+				Name:       "email",
+				Type:       "text",
+				UniqueExpr: "lower(email)",
+			},
+		},
+	}
+	goschema.Finalize(db)
+
+	rendered, err := atlashclrender.Render(db)
+	c.Assert(err, qt.IsNil)
+	hcl := string(rendered.Data)
+	c.Assert(hcl, qt.Contains, `options = "START WITH 100 INCREMENT BY 5"`)
+	c.Assert(hcl, qt.Contains, `unique_expr = "lower(email)"`)
+
+	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", hcl))
+	c.Assert(fieldByName(parsed.Fields, "id").IdentityOptions, qt.Equals, "START WITH 100 INCREMENT BY 5")
+	c.Assert(fieldByName(parsed.Fields, "email").UniqueExpr, qt.Equals, "lower(email)")
+}
+
 func TestRenderTablesIndexesConstraintsAndDiagnostics(t *testing.T) {
 	c := qt.New(t)
 	falseValue := false
