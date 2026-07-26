@@ -1,6 +1,8 @@
 package schemaload_test
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -8,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/cmd/internal/schemaload"
+	"github.com/stokaro/ptah/cmd/internal/schemasource"
 )
 
 func TestLoad_YAMLSchemaFile(t *testing.T) {
@@ -182,4 +185,60 @@ tables:
 	c.Assert(err, qt.IsNil)
 	c.Assert(messages, qt.HasLen, 1)
 	c.Assert(messages[0], qt.Equals, "Reading schema file: %s")
+}
+
+// runHelperProcess emits a fixed SQL schema when this test binary is re-executed
+// as an external schema command. It is not itself a test, which keeps
+// TestHelperProcess free of control flow.
+func runHelperProcess() {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
+		return
+	}
+	fmt.Fprint(os.Stdout, "CREATE TABLE orders (\n  id INTEGER PRIMARY KEY\n);\n")
+	os.Exit(0)
+}
+
+// TestHelperProcess is not a real test; the command tests re-execute this binary
+// with -test.run=TestHelperProcess to stand in for an external schema program.
+func TestHelperProcess(t *testing.T) {
+	runHelperProcess()
+}
+
+func schemaCommand() schemasource.Command {
+	return schemasource.Command{
+		Args: []string{os.Args[0], "-test.run=TestHelperProcess"},
+		Env:  []string{"GO_WANT_HELPER_PROCESS=1"},
+	}
+}
+
+func TestLoad_RunsSchemaCommand(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := schemaload.LoadContext(context.Background(), schemaload.Options{
+		Commands: []schemasource.Command{schemaCommand()},
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Tables, qt.HasLen, 1)
+	c.Assert(db.Tables[0].Name, qt.Equals, "orders")
+}
+
+func TestLoad_MergesGoRootAndSchemaCommand(t *testing.T) {
+	c := qt.New(t)
+
+	root := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(root, "users.go"), []byte(`package entities
+
+//migrator:schema:table name="users"
+type User struct {
+	//migrator:schema:field name="id" type="SERIAL" primary="true"
+	ID int64
+}
+`), 0o600), qt.IsNil)
+
+	db, err := schemaload.LoadContext(context.Background(), schemaload.Options{
+		RootDirs: []string{root},
+		Commands: []schemasource.Command{schemaCommand()},
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Tables, qt.HasLen, 2)
 }

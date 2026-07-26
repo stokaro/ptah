@@ -6,11 +6,13 @@
 package schemaload
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/stokaro/ptah/cmd/internal/schemasource"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/internal/schemafile"
 )
@@ -21,6 +23,9 @@ type Options struct {
 	RootDirs []string
 	// SchemaFiles are YAML, HCL, or SQL schema files (repeatable).
 	SchemaFiles []string
+	// Commands are external programs whose stdout is a desired schema
+	// (repeatable). Each runs directly without a shell.
+	Commands []schemasource.Command
 	// Dialect is an optional dialect hint used when parsing SQL schema files.
 	Dialect string
 	// Logf, when non-nil, receives human-readable progress messages. Commands
@@ -40,38 +45,54 @@ func (o Options) logf(format string, args ...any) {
 // applies when nothing is configured. It is intended for progress and report
 // headers.
 func (o Options) Sources() string {
-	parts := make([]string, 0, len(o.RootDirs)+len(o.SchemaFiles))
+	parts := make([]string, 0, len(o.RootDirs)+len(o.SchemaFiles)+len(o.Commands))
 	parts = append(parts, o.RootDirs...)
 	parts = append(parts, o.SchemaFiles...)
+	for _, command := range o.Commands {
+		parts = append(parts, "$("+strings.Join(command.Args, " ")+")")
+	}
 	if len(parts) == 0 {
 		parts = append(parts, "./")
 	}
 	return strings.Join(parts, ", ")
 }
 
-// Load resolves the desired schema described by opts. With no source at all it
-// defaults to scanning the current directory for Go entities (the historical
-// behavior). Multiple sources of any kind are merged into one composite schema.
+// Load resolves the desired schema described by opts using a background context.
+// It is a convenience wrapper over LoadContext for callers that do not run
+// external schema commands or do not need cancellation.
 func Load(opts Options) (*goschema.Database, error) {
+	return LoadContext(context.Background(), opts)
+}
+
+// LoadContext resolves the desired schema described by opts. With no source at
+// all it defaults to scanning the current directory for Go entities (the
+// historical behavior). Multiple sources of any kind are merged into one
+// composite schema. Any external schema commands are run under ctx.
+func LoadContext(ctx context.Context, opts Options) (*goschema.Database, error) {
 	rootDirs := opts.RootDirs
 	schemaFiles := opts.SchemaFiles
+	commands := opts.Commands
 
 	// With no source of any kind, default to scanning the current directory for
 	// Go entities.
-	if len(rootDirs) == 0 && len(schemaFiles) == 0 {
+	if len(rootDirs) == 0 && len(schemaFiles) == 0 && len(commands) == 0 {
 		rootDirs = []string{"./"}
 	}
 
-	// Single-source fast paths: Go roots only, or exactly one schema file.
-	if len(schemaFiles) == 0 {
+	// Single-source fast paths: Go roots only, exactly one schema file, or
+	// exactly one command.
+	if len(schemaFiles) == 0 && len(commands) == 0 {
 		return opts.loadGoRoots(rootDirs)
 	}
-	if len(rootDirs) == 0 && len(schemaFiles) == 1 {
+	if len(rootDirs) == 0 && len(commands) == 0 && len(schemaFiles) == 1 {
 		return opts.loadSchemaFile(schemaFiles[0])
+	}
+	if len(rootDirs) == 0 && len(schemaFiles) == 0 && len(commands) == 1 {
+		return opts.loadCommand(ctx, commands[0])
 	}
 
 	// Composite: merge the Go roots (parsed un-finalized so Merge runs a single
-	// finalize pass) with each schema file.
+	// finalize pass) with each schema file and command output.
 	var sources []*goschema.Database
 	if len(rootDirs) > 0 {
 		absRoots, err := resolveRootDirs(rootDirs)
@@ -93,6 +114,13 @@ func Load(opts Options) (*goschema.Database, error) {
 			return nil, err
 		}
 		sources = append(sources, fileDB)
+	}
+	for _, command := range commands {
+		commandDB, err := opts.loadCommand(ctx, command)
+		if err != nil {
+			return nil, err
+		}
+		sources = append(sources, commandDB)
 	}
 
 	result, err := goschema.Merge(sources...)
@@ -119,6 +147,16 @@ func (o Options) loadGoRoots(rootDirs []string) (*goschema.Database, error) {
 		return nil, fmt.Errorf("error parsing packages: %w", err)
 	}
 	return result, nil
+}
+
+// loadCommand runs an external schema command and returns its parsed output. The
+// resolver's dialect hint is applied when the command does not set its own.
+func (o Options) loadCommand(ctx context.Context, command schemasource.Command) (*goschema.Database, error) {
+	if command.Dialect == "" {
+		command.Dialect = o.Dialect
+	}
+	o.logf("Running schema command: %s", strings.Join(command.Args, " "))
+	return schemasource.Run(ctx, command)
 }
 
 // resolveRootDirs turns each root into an absolute path and fails fast if any
