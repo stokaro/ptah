@@ -67,6 +67,20 @@ func ParseCommandLine(line string) []string {
 	return strings.Fields(line)
 }
 
+// CommandsFromCLI builds the external-command sources from command-line flag
+// values. It returns nil when no command is configured, so callers can pass the
+// result straight into a resolver's command list.
+func CommandsFromCLI(cmdLine, format, dialect string) []Command {
+	if strings.TrimSpace(cmdLine) == "" {
+		return nil
+	}
+	return []Command{{
+		Args:    ParseCommandLine(cmdLine),
+		Format:  format,
+		Dialect: dialect,
+	}}
+}
+
 // Run executes cmd and parses its standard output into a desired schema. It
 // bounds execution with a timeout, and on failure surfaces the program's stderr.
 func Run(ctx context.Context, cmd Command) (*goschema.Database, error) {
