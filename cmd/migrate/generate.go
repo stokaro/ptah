@@ -3,11 +3,13 @@ package migrate
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/generator"
@@ -38,7 +40,7 @@ and performs an up/down/up round-trip.`,
 	}
 
 	flags := cmd.Flags()
-	flags.String(generateRootDirFlag, "./", "Root directory to scan for Go entities")
+	flags.StringArray(generateRootDirFlag, nil, "Root directory to scan for Go entities (repeatable; multiple roots merge into one composite schema; defaults to ./)")
 	flags.String(generateDBURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	flags.String(generateMigrationsDirFlag, "", "Directory containing existing migrations and receiving generated files (required)")
 	flags.String(generateNameFlag, "migration", "Migration name")
@@ -56,9 +58,24 @@ and performs an up/down/up round-trip.`,
 }
 
 func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
-	rootDir, err := cmd.Flags().GetString(generateRootDirFlag)
+	rootDirs, err := cmd.Flags().GetStringArray(generateRootDirFlag)
 	if err != nil {
 		return err
+	}
+	if len(rootDirs) == 0 {
+		rootDirs = []string{"./"}
+	}
+	absRoots := make([]string, 0, len(rootDirs))
+	for _, root := range rootDirs {
+		absPath, err := filepath.Abs(root)
+		if err != nil {
+			return fmt.Errorf("error resolving root directory: %w", err)
+		}
+		absRoots = append(absRoots, absPath)
+	}
+	generated, err := goschema.ParseDirs(absRoots...)
+	if err != nil {
+		return fmt.Errorf("error parsing Go entities: %w", err)
 	}
 	dbURL, err := cmd.Flags().GetString(generateDBURLFlag)
 	if err != nil {
@@ -129,7 +146,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	defer cancelConnect()
 
 	files, err := generator.GenerateMigration(connectCtx, generator.GenerateMigrationOptions{
-		GoEntitiesDir:     rootDir,
+		Generated:         generated,
 		DatabaseURL:       dbURL,
 		MigrationName:     name,
 		OutputDir:         migrationsDir,
