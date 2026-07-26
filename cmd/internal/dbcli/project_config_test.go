@@ -156,3 +156,39 @@ func TestLoadProjectConfigReadsNamedPtahEnvRuntimeDefaults(t *testing.T) {
 	c.Assert(cfg.Lint.Dialect, qt.Equals, "postgres")
 	c.Assert(cfg.Lint.DisabledRules, qt.DeepEquals, []string{"MF103"})
 }
+
+func TestExternalSchemaCommandsPrefersFlag(t *testing.T) {
+	c := qt.New(t)
+
+	cfg := projectconfig.Config{
+		ExternalSchema: projectconfig.ExternalSchemaConfig{Program: []string{"config-loader"}},
+	}
+	commands := dbcli.ExternalSchemaCommands("go run ./flag-loader", "sql", cfg)
+
+	c.Assert(commands, qt.HasLen, 1)
+	c.Assert(commands[0].Args, qt.DeepEquals, []string{"go", "run", "./flag-loader"})
+}
+
+func TestExternalSchemaCommandsFallsBackToConfig(t *testing.T) {
+	c := qt.New(t)
+
+	cfg := projectconfig.Config{
+		ExternalSchema: projectconfig.ExternalSchemaConfig{
+			Program:    []string{"go", "run", "./config-loader"},
+			WorkingDir: "./app",
+			Env:        []string{"K=V"},
+		},
+	}
+	commands := dbcli.ExternalSchemaCommands("", "sql", cfg)
+
+	c.Assert(commands, qt.HasLen, 1)
+	c.Assert(commands[0].Args, qt.DeepEquals, []string{"go", "run", "./config-loader"})
+	c.Assert(commands[0].Dir, qt.Equals, "./app")
+	c.Assert(commands[0].Env, qt.DeepEquals, []string{"K=V"})
+}
+
+func TestExternalSchemaCommandsNilWhenNeitherSet(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(dbcli.ExternalSchemaCommands("", "sql", projectconfig.Config{}), qt.IsNil)
+}

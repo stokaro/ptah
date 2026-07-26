@@ -11,7 +11,6 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/internal/schemaload"
-	"github.com/stokaro/ptah/cmd/internal/schemasource"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/schemadiff"
@@ -64,6 +63,8 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.schemaFormat, schemaFormatFlag, "sql", "Format of the --schema-cmd output: sql")
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	flags.BoolVar(&opts.exitOnDiff, exitCodeFlag, false, "Exit with 1 when the schema diff is non-empty")
+	flags.String(dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
+	flags.String(dbcli.EnvFlagName, "", "Project env name to read from ptah.yaml or atlas.hcl")
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
 }
@@ -71,17 +72,28 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 func compareCommand(cmd *cobra.Command, opts *options) error {
 	out := cmd.OutOrStdout()
 
-	if opts.dbURL == "" {
+	configPath, err := cmd.Flags().GetString(dbcli.ConfigFlagName)
+	if err != nil {
+		return err
+	}
+	projectCfg, err := dbcli.LoadProjectConfig(cmd, configPath)
+	if err != nil {
+		return err
+	}
+	dbURL := dbcli.EffectiveString(cmd, dbURLFlag, opts.dbURL, projectCfg.DatabaseURL)
+	schemasValue := dbcli.EffectiveString(cmd, dbcli.SchemasFlagName, opts.schemas, dbcli.JoinSchemas(projectCfg.Schemas))
+
+	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
 	}
 
 	loadOpts := schemaload.Options{
 		RootDirs:    opts.rootDirs,
 		SchemaFiles: opts.schemaFiles,
-		Commands:    schemasource.CommandsFromCLI(opts.schemaCmd, opts.schemaFormat, ""),
+		Commands:    dbcli.ExternalSchemaCommands(opts.schemaCmd, opts.schemaFormat, projectCfg),
 	}
 
-	fmt.Fprintf(out, "Comparing schema from %s with database %s\n", loadOpts.Sources(), dbschema.FormatDatabaseURL(opts.dbURL))
+	fmt.Fprintf(out, "Comparing schema from %s with database %s\n", loadOpts.Sources(), dbschema.FormatDatabaseURL(dbURL))
 	fmt.Fprintln(out, "=== SCHEMA COMPARISON ===")
 	fmt.Fprintln(out)
 
@@ -99,14 +111,14 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	}
 
 	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
-	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.dbURL)
+	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
 	cancelConnect()
 	if err != nil {
 		return fmt.Errorf("error connecting to database: %w", err)
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	schemas := dbcli.ParseSchemas(opts.schemas)
+	schemas := dbcli.ParseSchemas(schemasValue)
 	dbSchema, err := dbschema.ReadSchemaWithSchemas(conn, schemas)
 	if err != nil {
 		return fmt.Errorf("error reading database schema: %w", err)
