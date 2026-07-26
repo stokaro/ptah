@@ -81,9 +81,9 @@ migrations, so the same directory does the right thing everywhere.
   ignored entirely and history is applied unchanged. A checkpoint never runs on
   a database that already has migrations applied.
 
-`ptah migrations status` reflects the same decision, so a fresh database reports
-the checkpoint plus post-checkpoint migrations as pending, and an existing
-database reports the checkpoint as not applicable.
+`ptah migrations status` reflects the same decision, so a fresh database lists
+the checkpoint plus post-checkpoint migrations as pending, and an already-migrated
+database does not list the checkpoint as pending.
 
 Because selection is driven by the checkpoint's own applied state rather than a
 separately written baseline, the model is crash-safe: an interrupted bootstrap
@@ -100,9 +100,11 @@ files and the updated `ptah.sum` together.
 
 A checkpoint's down body is meaningful only for a database that bootstrapped
 from it. History below the checkpoint boundary no longer has individually
-applied migrations to reverse, so `ptah migrations down` past the boundary fails
-with a clear error rather than silently doing nothing. Roll back to the
-checkpoint boundary at most; to go further, restore from a backup or rebuild.
+applied migrations to reverse, so `ptah migrations down` to a version between
+the checkpoint and the squashed history fails with a clear error rather than
+silently doing nothing. You can roll back to the checkpoint boundary, or all the
+way to `0` to drop everything (which runs the checkpoint's down body); to land on
+an intermediate pre-checkpoint version, restore from a backup or rebuild.
 
 ## Checkpoint versus baseline
 
