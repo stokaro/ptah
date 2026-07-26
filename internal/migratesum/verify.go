@@ -4,16 +4,45 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
-// ErrSumFileMissing is returned when the migrations directory has no expected
-// integrity file. It is distinct so callers can tell "never hashed" apart from
-// "tampered".
-var ErrSumFileMissing = errors.New("ptah.sum not found; run `ptah migrations hash` to create it")
+var (
+	// ErrSumFileMissing is returned when the migrations directory has no
+	// expected integrity file. It is distinct so callers can tell "never
+	// hashed" apart from "tampered".
+	ErrSumFileMissing = errors.New("ptah.sum not found; run `ptah migrations hash` to create it")
+
+	// ErrSumFileMalformed identifies an integrity file that cannot be parsed.
+	// The concrete error preserves the file name and parser detail.
+	ErrSumFileMalformed = errors.New("migration sum file is malformed")
+)
+
+// MismatchReason describes why the recorded and computed entry sequences first
+// diverge.
+type MismatchReason string
+
+const (
+	// MismatchReasonAdded means a migration exists on disk but not at the
+	// corresponding position in the integrity file.
+	MismatchReasonAdded MismatchReason = "added"
+	// MismatchReasonEdited means a migration is in the expected position but
+	// its content hash differs.
+	MismatchReasonEdited MismatchReason = "edited"
+	// MismatchReasonRemoved means an integrity-file entry has no matching file.
+	MismatchReasonRemoved MismatchReason = "removed"
+)
+
+// Mismatch identifies the first integrity-file entry divergence.
+type Mismatch struct {
+	Line   int
+	File   string
+	Reason MismatchReason
+}
 
 // Result is the outcome of Verify: the lists are empty when the directory
 // matches its recorded sum.
@@ -29,11 +58,22 @@ type Result struct {
 	DirHashMismatch bool
 	// SumFileName is the integrity file this result was compared against.
 	SumFileName string
+	mismatch    *Mismatch
 }
 
 // OK reports whether the directory matches its recorded sum exactly.
 func (r *Result) OK() bool {
 	return len(r.Added) == 0 && len(r.Removed) == 0 && len(r.Changed) == 0 && !r.DirHashMismatch
+}
+
+// FirstMismatch returns a copy of the first entry-level mismatch, or nil when
+// the entry sequence matches.
+func (r *Result) FirstMismatch() *Mismatch {
+	if r.mismatch == nil {
+		return nil
+	}
+	mismatch := *r.mismatch
+	return &mismatch
 }
 
 // Verify recomputes the sum of fsys and compares it against the ptah.sum
@@ -60,7 +100,7 @@ func VerifyWithFormat(fsys fs.FS, format migrator.MigrationDirFormat) (*Result, 
 	}
 	recorded, err := Parse(recordedRaw)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse %s: %w", name, err)
+		return nil, malformedSumFileError{name: name, err: err}
 	}
 
 	computeFormat := formatForSumFile(format, name)
@@ -131,6 +171,23 @@ func (e sumFileMissingError) Is(target error) bool {
 	return target == ErrSumFileMissing
 }
 
+type malformedSumFileError struct {
+	name string
+	err  error
+}
+
+func (e malformedSumFileError) Error() string {
+	return fmt.Sprintf("failed to parse %s: %v", e.name, e.err)
+}
+
+func (e malformedSumFileError) Unwrap() error {
+	return e.err
+}
+
+func (e malformedSumFileError) Is(target error) bool {
+	return target == ErrSumFileMalformed
+}
+
 // diff compares the recorded sum against the freshly computed one.
 func diff(recorded, current *SumFile) *Result {
 	recordedByName := make(map[string]string, len(recorded.Entries))
@@ -160,6 +217,7 @@ func diff(recorded, current *SumFile) *Result {
 	sort.Strings(res.Added)
 	sort.Strings(res.Removed)
 	sort.Strings(res.Changed)
+	res.mismatch = firstMismatch(recorded, current)
 
 	// Per-file entries match, yet the recorded directory-hash line does not
 	// equal the hash recomputed over those entries: the dir line was
@@ -170,6 +228,39 @@ func diff(recorded, current *SumFile) *Result {
 		res.DirHashMismatch = true
 	}
 	return &res
+}
+
+func firstMismatch(recorded, current *SumFile) *Mismatch {
+	for i, entry := range recorded.Entries {
+		if len(current.Entries) > i && current.Entries[i] == entry {
+			continue
+		}
+
+		mismatch := &Mismatch{
+			Line: i + 2,
+			File: entry.Name,
+		}
+		switch idx := slices.IndexFunc(current.Entries, func(candidate Entry) bool {
+			return candidate.Name == entry.Name
+		}); {
+		case idx < 0 || i >= len(current.Entries):
+			mismatch.Reason = MismatchReasonRemoved
+		case idx == i:
+			mismatch.Reason = MismatchReasonEdited
+		default:
+			mismatch.File = current.Entries[i].Name
+			mismatch.Reason = MismatchReasonAdded
+		}
+		return mismatch
+	}
+	if len(current.Entries) > len(recorded.Entries) {
+		return &Mismatch{
+			Line:   len(recorded.Entries) + 2,
+			File:   current.Entries[len(recorded.Entries)].Name,
+			Reason: MismatchReasonAdded,
+		}
+	}
+	return nil
 }
 
 // Describe renders a drift Result as human-readable lines. It returns "" when

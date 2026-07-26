@@ -138,6 +138,7 @@ func Parse(data []byte) (*SumFile, error) {
 		return nil, fmt.Errorf("malformed directory hash line: %q", dirLine)
 	}
 	sum := &SumFile{DirHash: dirLine}
+	seen := make(map[string]struct{}, len(lines)-1)
 	for _, line := range lines[1:] {
 		line = strings.TrimRight(line, "\r")
 		if line == "" {
@@ -155,6 +156,10 @@ func Parse(data []byte) (*SumFile, error) {
 		if !validHash(hash) {
 			return nil, fmt.Errorf("malformed entry line: %q", line)
 		}
+		if _, ok := seen[name]; ok {
+			return nil, fmt.Errorf("duplicate entry for %q", name)
+		}
+		seen[name] = struct{}{}
 		sum.Entries = append(sum.Entries, Entry{Name: name, Hash: hash})
 	}
 	return sum, nil
