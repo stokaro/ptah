@@ -31,7 +31,8 @@ var errDriftDetected = errors.New("schema drift detected")
 
 // NewDriftCommand returns the drift-check command.
 func NewDriftCommand() *cobra.Command {
-	var rootDir string
+	var rootDirs []string
+	var schemaFiles []string
 	var dbURL string
 	var format string
 	var severity string
@@ -42,12 +43,13 @@ func NewDriftCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:           "drift",
-		Short:         "Check live database drift against Go entities",
+		Short:         "Check live database drift against a desired schema",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runDrift(cmd, runOptions{
-				rootDir:           rootDir,
+				rootDirs:          rootDirs,
+				schemaFiles:       schemaFiles,
 				dbURL:             dbURL,
 				format:            format,
 				severity:          severity,
@@ -59,7 +61,8 @@ func NewDriftCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&rootDir, "root-dir", "./", "Root directory to scan for Go entities")
+	cmd.Flags().StringArrayVar(&rootDirs, "root-dir", nil, "Root directory to scan for Go entities (repeatable; multiple roots merge into one composite schema; defaults to ./)")
+	cmd.Flags().StringArrayVar(&schemaFiles, "schema-file", nil, "YAML, HCL, or SQL schema file to check drift against instead of, or combined with, Go entities (repeatable; multiple sources merge into one composite schema)")
 	cmd.Flags().StringVar(&dbURL, "db-url", "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	cmd.Flags().StringVar(&format, "format", formatText, "Output format: text, json, github-actions")
 	cmd.Flags().StringVar(&severity, "severity", severityAll, "Failing drift threshold: all or destructive")
@@ -78,7 +81,8 @@ func NewDriftCommand() *cobra.Command {
 }
 
 type runOptions struct {
-	rootDir           string
+	rootDirs          []string
+	schemaFiles       []string
 	dbURL             string
 	format            string
 	severity          string
@@ -94,7 +98,7 @@ type driftReport struct {
 	FailureThreshold string                `json:"failure_threshold"`
 	HighestSeverity  safety.Severity       `json:"highest_severity"`
 	Dialect          string                `json:"dialect,omitempty"`
-	RootDir          string                `json:"root_dir,omitempty"`
+	Sources          string                `json:"sources,omitempty"`
 	DatabaseURL      string                `json:"database_url,omitempty"`
 	IgnoredTables    []string              `json:"ignored_tables,omitempty"`
 	Findings         []safety.Finding      `json:"findings,omitempty"`
@@ -124,7 +128,8 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 	schemas := dbcli.ParseSchemas(opts.schemasRaw)
 
 	result, err := schemaops.Compare(cmd.Context(), schemaops.CompareOptions{
-		RootDir:        opts.rootDir,
+		RootDirs:       opts.rootDirs,
+		SchemaFiles:    opts.schemaFiles,
 		DatabaseURL:    opts.dbURL,
 		ConnectTimeout: connectTimeout,
 		IgnoredTables:  ignoredTables,
@@ -144,7 +149,7 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 		FailureThreshold: opts.severity,
 		HighestSeverity:  highest,
 		Dialect:          result.Dialect,
-		RootDir:          result.RootDir,
+		Sources:          result.Sources,
 		DatabaseURL:      result.DatabaseURL,
 		IgnoredTables:    ignoredTables,
 		Findings:         findings,

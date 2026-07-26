@@ -20,6 +20,20 @@ func TestNewDriftCommand_Creation(t *testing.T) {
 	c.Assert(cmd.Short, qt.Contains, "drift")
 }
 
+func TestNewDriftCommand_ExposesRepeatableSchemaSources(t *testing.T) {
+	c := qt.New(t)
+
+	cmd := drift.NewDriftCommand()
+
+	rootDir := cmd.Flags().Lookup("root-dir")
+	c.Assert(rootDir, qt.IsNotNil)
+	c.Assert(rootDir.Value.Type(), qt.Equals, "stringArray")
+
+	schemaFile := cmd.Flags().Lookup("schema-file")
+	c.Assert(schemaFile, qt.IsNotNil)
+	c.Assert(schemaFile.Value.Type(), qt.Equals, "stringArray")
+}
+
 func TestRunDrift_MissingDatabaseURLReturnsCode2(t *testing.T) {
 	c := qt.New(t)
 
