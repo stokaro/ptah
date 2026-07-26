@@ -3,6 +3,7 @@ package migratesum_test
 import (
 	"bytes"
 	"encoding/base64"
+	"maps"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -51,6 +52,36 @@ func TestCompute_HashesOnlyMigrationFilesSortedByName(t *testing.T) {
 		"nested/0000000004_x.up.sql",
 	}, qt.Commentf("only recognized migration files, sorted; README/ptah.sum/.txt excluded"))
 	c.Assert(sum.DirHash, qt.Matches, "h1:.+")
+}
+
+func TestCompute_CoversCheckpointFiles(t *testing.T) {
+	c := qt.New(t)
+
+	base := map[string]string{
+		"0000000001_init.up.sql":                  "CREATE TABLE t (id INT);\n",
+		"0000000001_init.down.sql":                "DROP TABLE t;\n",
+		"0000000002_snapshot.checkpoint.up.sql":   "CREATE TABLE t (id INT, name TEXT);\n",
+		"0000000002_snapshot.checkpoint.down.sql": "DROP TABLE t;\n",
+	}
+
+	sum, err := migratesum.Compute(fixture(base))
+	c.Assert(err, qt.IsNil)
+
+	var names []string
+	for _, e := range sum.Entries {
+		names = append(names, e.Name)
+	}
+	// A checkpoint pair is integrity-protected exactly like ordinary
+	// migrations, so a tampered checkpoint fails `ptah migrations validate`.
+	c.Assert(names, qt.Contains, "0000000002_snapshot.checkpoint.up.sql")
+	c.Assert(names, qt.Contains, "0000000002_snapshot.checkpoint.down.sql")
+
+	tampered := make(map[string]string, len(base))
+	maps.Copy(tampered, base)
+	tampered["0000000002_snapshot.checkpoint.up.sql"] = "CREATE TABLE t (id INT, name TEXT, extra INT);\n"
+	tamperedSum, err := migratesum.Compute(fixture(tampered))
+	c.Assert(err, qt.IsNil)
+	c.Assert(tamperedSum.DirHash, qt.Not(qt.Equals), sum.DirHash)
 }
 
 func TestComputeWithFormat_HashesAtlasMigrationFiles(t *testing.T) {
