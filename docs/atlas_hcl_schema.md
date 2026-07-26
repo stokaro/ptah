@@ -62,6 +62,11 @@ current schema IR:
   `max_value`, `cache`, `cycle`, `owned_by`, `if_not_exists`, and `comment`
 - PostgreSQL `domain` blocks with `type`, `null`, `default`, `check`, and
   `comment`
+- PostgreSQL `composite` blocks with ordered `field` sub-blocks (each a name
+  label and a `type`; quote multi-word types, e.g. `type = "double precision"`)
+  and `comment`
+- PostgreSQL `range` blocks with `subtype`, `subtype_opclass`, `collation`,
+  `canonical`, `subtype_diff`, and `comment`
 
 Unsupported schema semantics are rejected with an explicit parse error instead
 of being silently dropped from the generated Ptah IR.
@@ -280,6 +285,22 @@ domain "email" {
   check  = "VALUE ~ '@'"
 }
 
+composite "address" {
+  schema = schema.public
+  field "street" {
+    type = text
+  }
+  field "zip" {
+    type = integer
+  }
+}
+
+range "floatrange" {
+  schema       = schema.public
+  subtype      = float8
+  subtype_diff = float8mi
+}
+
 role "app_user" {
   login   = true
   inherit = true
@@ -377,8 +398,6 @@ Atlas features that Ptah cannot represent without losing semantics, including:
 - trigger `execute`, `referencing`, `when`, constraint, and deferrable metadata
 - policy `as`
 - permission targets other than schema and table
-- PostgreSQL `composite` and `range` custom types (only `enum` custom types are
-  modeled so far)
 - HCL objects outside direct schema definitions, such as realms and other
   dialect-specific object types
 
