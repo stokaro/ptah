@@ -91,6 +91,13 @@ ptah migrations validate --dir ./migrations
 
 Use `--verify-sum` on `migrations up` to block out-of-band migration edits.
 
+## Squashing history
+
+As history grows, replaying every migration on each fresh database gets slow and
+keeps long-dead DDL executable forever. Squash it into a cumulative-schema
+checkpoint that fresh databases bootstrap from while already-migrated databases
+ignore it — see [Checkpoints](../checkpoints/).
+
 ## Safety gates
 
 Use dry-run and lint before applying to shared environments:
