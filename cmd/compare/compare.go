@@ -4,15 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
-	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
-	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/cmd/internal/schemaload"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/schemadiff"
@@ -20,13 +18,15 @@ import (
 )
 
 const (
-	rootDirFlag  = "root-dir"
-	dbURLFlag    = "db-url"
-	exitCodeFlag = "exit-code"
+	rootDirFlag    = "root-dir"
+	schemaFileFlag = "schema-file"
+	dbURLFlag      = "db-url"
+	exitCodeFlag   = "exit-code"
 )
 
 type options struct {
 	rootDirs       []string
+	schemaFiles    []string
 	dbURL          string
 	exitOnDiff     bool
 	connectTimeout string
@@ -54,6 +54,7 @@ currently exists in the database, helping you identify what needs to be migrated
 func registerFlags(cmd *cobra.Command, opts *options) {
 	flags := cmd.Flags()
 	flags.StringArrayVar(&opts.rootDirs, rootDirFlag, nil, "Root directory to scan for Go entities (repeatable; multiple roots merge into one composite schema; defaults to ./)")
+	flags.StringArrayVar(&opts.schemaFiles, schemaFileFlag, nil, "YAML, HCL, or SQL schema file to compare instead of, or combined with, Go entities (repeatable; multiple sources merge into one composite schema)")
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	flags.BoolVar(&opts.exitOnDiff, exitCodeFlag, false, "Exit with 1 when the schema diff is non-empty")
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
@@ -67,28 +68,20 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("database URL is required")
 	}
 
-	roots := opts.rootDirs
-	if len(roots) == 0 {
-		roots = []string{"./"}
+	loadOpts := schemaload.Options{
+		RootDirs:    opts.rootDirs,
+		SchemaFiles: opts.schemaFiles,
 	}
 
-	fmt.Fprintf(out, "Comparing schema from %s with database %s\n", strings.Join(roots, ", "), dbschema.FormatDatabaseURL(opts.dbURL))
+	fmt.Fprintf(out, "Comparing schema from %s with database %s\n", loadOpts.Sources(), dbschema.FormatDatabaseURL(opts.dbURL))
 	fmt.Fprintln(out, "=== SCHEMA COMPARISON ===")
 	fmt.Fprintln(out)
 
-	// 1. Parse Go entities from every root into one composite schema
-	absRoots := make([]string, 0, len(roots))
-	for _, root := range roots {
-		absPath, err := filepath.Abs(root)
-		if err != nil {
-			return fmt.Errorf("error resolving path: %w", err)
-		}
-		absRoots = append(absRoots, absPath)
-	}
-
-	result, err := goschema.ParseDirs(absRoots...)
+	// 1. Resolve the desired schema from Go entities and/or schema files into one
+	// composite schema.
+	result, err := schemaload.Load(loadOpts)
 	if err != nil {
-		return fmt.Errorf("error parsing Go entities: %w", err)
+		return err
 	}
 
 	// 2. Connect to database and read schema

@@ -4,14 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
-	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/cmd/internal/schemaload"
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
@@ -22,6 +21,7 @@ import (
 
 const (
 	rootDirFlag          = "root-dir"
+	schemaFileFlag       = "schema-file"
 	dbURLFlag            = "db-url"
 	checkDestructiveFlag = "check-destructive"
 	allowDestructiveFlag = "allow-destructive"
@@ -30,6 +30,7 @@ const (
 
 type options struct {
 	rootDirs         []string
+	schemaFiles      []string
 	dbURL            string
 	checkDestructive bool
 	allowDestructive bool
@@ -59,6 +60,7 @@ the SQL statements needed to update the database to match your entities.`,
 func registerFlags(cmd *cobra.Command, opts *options) {
 	flags := cmd.Flags()
 	flags.StringArrayVar(&opts.rootDirs, rootDirFlag, nil, "Root directory to scan for Go entities (repeatable; multiple roots merge into one composite schema; defaults to ./)")
+	flags.StringArrayVar(&opts.schemaFiles, schemaFileFlag, nil, "YAML, HCL, or SQL schema file to migrate toward instead of, or combined with, Go entities (repeatable; multiple sources merge into one composite schema)")
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	flags.BoolVar(&opts.checkDestructive, checkDestructiveFlag, false, "Fail when generated migration SQL contains destructive statements")
 	flags.BoolVar(&opts.allowDestructive, allowDestructiveFlag, false, "Allow destructive statements when --check-destructive is set")
@@ -77,11 +79,11 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	if reportFormat != "text" && reportFormat != "html" && reportFormat != "json" {
 		return fmt.Errorf("unsupported report format %q", reportFormat)
 	}
-	roots := opts.rootDirs
-	if len(roots) == 0 {
-		roots = []string{"./"}
+	loadOpts := schemaload.Options{
+		RootDirs:    opts.rootDirs,
+		SchemaFiles: opts.schemaFiles,
 	}
-	rootsDisplay := strings.Join(roots, ", ")
+	rootsDisplay := loadOpts.Sources()
 
 	if reportFormat == "text" {
 		fmt.Fprintf(out, "Generating migration from %s to database %s\n", rootsDisplay, dbschema.FormatDatabaseURL(opts.dbURL))
@@ -89,19 +91,11 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 		fmt.Fprintln(out)
 	}
 
-	// 1. Parse Go entities from every root into one composite schema
-	absRoots := make([]string, 0, len(roots))
-	for _, root := range roots {
-		absPath, err := filepath.Abs(root)
-		if err != nil {
-			return fmt.Errorf("error resolving path: %w", err)
-		}
-		absRoots = append(absRoots, absPath)
-	}
-
-	result, err := goschema.ParseDirs(absRoots...)
+	// 1. Resolve the desired schema from Go entities and/or schema files into one
+	// composite schema.
+	result, err := schemaload.Load(loadOpts)
 	if err != nil {
-		return fmt.Errorf("error parsing Go entities: %w", err)
+		return err
 	}
 
 	// 2. Connect to database and read schema
