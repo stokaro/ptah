@@ -8,21 +8,30 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/schemaload"
+	"github.com/stokaro/ptah/cmd/internal/schemasource"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/renderer"
 )
 
 const (
-	rootDirFlag    = "root-dir"
-	schemaFileFlag = "schema-file"
-	dialectFlag    = "dialect"
+	rootDirFlag      = "root-dir"
+	schemaFileFlag   = "schema-file"
+	schemaCmdFlag    = "schema-cmd"
+	schemaFormatFlag = "schema-format"
+	dialectFlag      = "dialect"
 )
 
+const schemaCmdUsage = "External program whose stdout is the desired schema " +
+	"(for example an ORM exporter). Run directly without a shell, split on " +
+	`whitespace, so arguments cannot contain spaces. Example: "go run ./loader"`
+
 type options struct {
-	rootDirs    []string
-	schemaFiles []string
-	dialect     string
+	rootDirs     []string
+	schemaFiles  []string
+	schemaCmd    string
+	schemaFormat string
+	dialect      string
 }
 
 func NewGenerateCommand() *cobra.Command {
@@ -49,13 +58,27 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags := cmd.Flags()
 	flags.StringArrayVar(&opts.rootDirs, rootDirFlag, nil, "Root directory to scan for Go entities (repeatable; multiple roots merge into one composite schema; defaults to ./)")
 	flags.StringArrayVar(&opts.schemaFiles, schemaFileFlag, nil, "YAML, HCL, or SQL schema file to generate from instead of, or combined with, Go entities (repeatable; multiple sources merge into one composite schema)")
+	flags.StringVar(&opts.schemaCmd, schemaCmdFlag, "", schemaCmdUsage)
+	flags.StringVar(&opts.schemaFormat, schemaFormatFlag, "sql", "Format of the --schema-cmd output: sql")
 	flags.StringVar(&opts.dialect, dialectFlag, "", "Database dialect (postgres, mysql, mariadb, sqlite, clickhouse, cockroachdb, yugabytedb, spanner). If empty, generates for all dialects")
 }
 
-func generateCommand(_ *cobra.Command, opts *options) error {
-	result, err := schemaload.Load(schemaload.Options{
+func generateCommand(cmd *cobra.Command, opts *options) error {
+	var commands []schemasource.Command
+	if strings.TrimSpace(opts.schemaCmd) != "" {
+		commands = append(commands, schemasource.Command{
+			Args:   schemasource.ParseCommandLine(opts.schemaCmd),
+			Format: opts.schemaFormat,
+		})
+	}
+
+	// The render dialect also hints SQL parsing for both schema files and command
+	// output, so the two SQL sources are treated consistently.
+	result, err := schemaload.LoadContext(cmd.Context(), schemaload.Options{
 		RootDirs:    opts.rootDirs,
 		SchemaFiles: opts.schemaFiles,
+		Commands:    commands,
+		Dialect:     opts.dialect,
 		Logf:        func(format string, args ...any) { fmt.Printf(format+"\n", args...) },
 	})
 	if err != nil {
