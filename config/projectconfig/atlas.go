@@ -386,7 +386,7 @@ func (p atlasParser) parseMigration(block *hclsyntax.Block, cfg *Config) error {
 			}
 			migration.Dir = normalizeAtlasMigrationDir(value)
 		case "format":
-			value, err := p.stringAttr(attrName, attr)
+			value, err := p.identifierOrStringAttr(attrName, attr)
 			if err != nil {
 				return err
 			}
@@ -404,13 +404,13 @@ func (p atlasParser) parseMigration(block *hclsyntax.Block, cfg *Config) error {
 			}
 			migration.LockTimeout = value
 		case "exec_order":
-			value, err := p.stringAttr(attrName, attr)
+			value, err := p.identifierOrStringAttr(attrName, attr)
 			if err != nil {
 				return err
 			}
 			migration.ExecOrder = value
 		case "tx_mode":
-			value, err := p.stringAttr(attrName, attr)
+			value, err := p.identifierOrStringAttr(attrName, attr)
 			if err != nil {
 				return err
 			}

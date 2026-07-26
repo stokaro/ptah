@@ -50,6 +50,41 @@ func TestParseAtlasProjectConfig(t *testing.T) {
 	c.Assert(*cfg.Lint.Latest, qt.Equals, 5)
 }
 
+func TestParseAtlasProjectConfigMigrationEnumIdentifiers(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`env "local" {
+  migration {
+    dir        = "file://migrations"
+    format     = atlas
+    exec_order = linear
+    tx_mode    = file
+  }
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.Migration.Dir, qt.Equals, "migrations")
+	c.Assert(cfg.Migration.Format, qt.Equals, "atlas")
+	c.Assert(cfg.Migration.ExecOrder, qt.Equals, "linear")
+	c.Assert(cfg.Migration.TxMode, qt.Equals, "file")
+}
+
+func TestParseAtlasProjectConfigRejectsMigrationEnumTraversal(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`env "local" {
+  migration {
+    format = local.format
+  }
+}
+`)
+
+	_, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
+
+	c.Assert(err, qt.ErrorMatches, `unsupported atlas\.hcl construct "format" at atlas\.hcl:3`)
+}
+
 func TestParseAtlasProjectConfigEnvLintGit(t *testing.T) {
 	c := qt.New(t)
 	raw := []byte(`env "ci" {
