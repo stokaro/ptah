@@ -1,8 +1,4 @@
-package generate
-
-// White-box testing required: loadSchema is the command package's internal
-// schema-source dispatcher, and its extension routing can be verified directly
-// without invoking the whole CLI command.
+package schemaload_test
 
 import (
 	"os"
@@ -10,9 +6,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"github.com/stokaro/ptah/cmd/internal/schemaload"
 )
 
-func TestLoadSchemaFile_YAML(t *testing.T) {
+func TestLoad_YAMLSchemaFile(t *testing.T) {
 	c := qt.New(t)
 
 	path := filepath.Join(t.TempDir(), "schema.yaml")
@@ -26,13 +24,13 @@ tables:
 		qt.IsNil,
 	)
 
-	db, err := loadSchema(nil, []string{path})
+	db, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Name, qt.Equals, "users")
 }
 
-func TestLoadSchemaFile_AtlasHCL(t *testing.T) {
+func TestLoad_AtlasHCLSchemaFile(t *testing.T) {
 	c := qt.New(t)
 
 	path := filepath.Join(t.TempDir(), "schema.hcl")
@@ -47,14 +45,14 @@ table "users" {
 }
 `), 0o600), qt.IsNil)
 
-	db, err := loadSchema(nil, []string{path})
+	db, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Name, qt.Equals, "users")
 	c.Assert(db.Fields[0].Primary, qt.IsTrue)
 }
 
-func TestLoadSchemaFile_SQL(t *testing.T) {
+func TestLoad_SQLSchemaFile(t *testing.T) {
 	c := qt.New(t)
 
 	path := filepath.Join(t.TempDir(), "schema.sql")
@@ -65,24 +63,24 @@ CREATE TABLE users (
 );
 `), 0o600), qt.IsNil)
 
-	db, err := loadSchema(nil, []string{path})
+	db, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Name, qt.Equals, "users")
 	c.Assert(db.Fields, qt.HasLen, 2)
 }
 
-func TestLoadSchemaFile_RejectsUnsupportedExtension(t *testing.T) {
+func TestLoad_RejectsUnsupportedExtension(t *testing.T) {
 	c := qt.New(t)
 
 	path := filepath.Join(t.TempDir(), "schema.json")
 	c.Assert(os.WriteFile(path, []byte(`{}`), 0o600), qt.IsNil)
 
-	_, err := loadSchema(nil, []string{path})
+	_, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
 	c.Assert(err, qt.ErrorMatches, `unsupported schema file extension ".json": only .yaml, .yml, .hcl, and .sql are supported`)
 }
 
-func TestLoadSchemaMergesMultipleRoots(t *testing.T) {
+func TestLoad_MergesMultipleRoots(t *testing.T) {
 	c := qt.New(t)
 
 	rootA := t.TempDir()
@@ -104,19 +102,19 @@ type Order struct {
 }
 `), 0o600), qt.IsNil)
 
-	db, err := loadSchema([]string{rootA, rootB}, nil)
+	db, err := schemaload.Load(schemaload.Options{RootDirs: []string{rootA, rootB}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 2)
 }
 
-func TestLoadSchemaRejectsMissingRoot(t *testing.T) {
+func TestLoad_RejectsMissingRoot(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := loadSchema([]string{filepath.Join(t.TempDir(), "does-not-exist")}, nil)
+	_, err := schemaload.Load(schemaload.Options{RootDirs: []string{filepath.Join(t.TempDir(), "does-not-exist")}})
 	c.Assert(err, qt.ErrorMatches, `directory does not exist: .*does-not-exist`)
 }
 
-func TestLoadSchemaMergesGoRootAndSchemaFile(t *testing.T) {
+func TestLoad_MergesGoRootAndSchemaFile(t *testing.T) {
 	c := qt.New(t)
 
 	root := t.TempDir()
@@ -137,7 +135,51 @@ tables:
       id: { type: SERIAL, primary: true }
 `), 0o600), qt.IsNil)
 
-	db, err := loadSchema([]string{root}, []string{yamlPath})
+	db, err := schemaload.Load(schemaload.Options{RootDirs: []string{root}, SchemaFiles: []string{yamlPath}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 2)
+}
+
+func TestLoad_MergesMultipleSchemaFiles(t *testing.T) {
+	c := qt.New(t)
+
+	dir := t.TempDir()
+	usersPath := filepath.Join(dir, "users.yaml")
+	c.Assert(os.WriteFile(usersPath, []byte(`
+tables:
+  users:
+    columns:
+      id: { type: SERIAL, primary: true }
+`), 0o600), qt.IsNil)
+	ordersPath := filepath.Join(dir, "orders.sql")
+	c.Assert(os.WriteFile(ordersPath, []byte(`
+CREATE TABLE orders (
+  id INTEGER PRIMARY KEY
+);
+`), 0o600), qt.IsNil)
+
+	db, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{usersPath, ordersPath}})
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Tables, qt.HasLen, 2)
+}
+
+func TestLoad_ReportsProgressThroughLogf(t *testing.T) {
+	c := qt.New(t)
+
+	path := filepath.Join(t.TempDir(), "schema.yaml")
+	c.Assert(os.WriteFile(path, []byte(`
+tables:
+  users:
+    columns:
+      id: { type: SERIAL, primary: true }
+`), 0o600), qt.IsNil)
+
+	var messages []string
+	_, err := schemaload.Load(schemaload.Options{
+		SchemaFiles: []string{path},
+		Logf:        func(format string, args ...any) { messages = append(messages, format) },
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(messages, qt.HasLen, 1)
+	c.Assert(messages[0], qt.Equals, "Reading schema file: %s")
 }
