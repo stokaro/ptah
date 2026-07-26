@@ -41,6 +41,10 @@ type GenerateMigrationOptions struct {
 	GoEntitiesDir string
 	// GoEntitiesFS is the filesystem to use for reading entities (optional, defaults to os.DirFS)
 	GoEntitiesFS fs.FS
+	// Generated is a pre-parsed desired schema (optional). When set, it is used
+	// directly and GoEntitiesDir/GoEntitiesFS are ignored, letting a caller supply
+	// a composite schema merged from several sources.
+	Generated *goschema.Database
 	// DatabaseURL is the connection string for the database
 	DatabaseURL string
 	// DBConn is the database connection (optional, if not provided, a new connection will be created)
@@ -284,29 +288,34 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 		return nil, err
 	}
 
-	var entitiesDir string
+	// 1. Determine the desired schema: use a pre-merged one when provided (for a
+	// composite desired-state assembled from several sources), otherwise parse the
+	// Go entities directory.
+	generated := opts.Generated
+	if generated == nil {
+		var entitiesDir string
 
-	if opts.GoEntitiesFS == nil {
-		// Default to using the real filesystem
-		// We need to set up the filesystem root and relative path correctly
-		absPath, err := filepath.Abs(opts.GoEntitiesDir)
-		if err != nil {
-			return nil, fmt.Errorf("error resolving root directory path: %w", err)
+		if opts.GoEntitiesFS == nil {
+			// Default to using the real filesystem
+			// We need to set up the filesystem root and relative path correctly
+			absPath, err := filepath.Abs(opts.GoEntitiesDir)
+			if err != nil {
+				return nil, fmt.Errorf("error resolving root directory path: %w", err)
+			}
+
+			// Use the parent directory as filesystem root and the basename as the path
+			fsRoot := filepath.Dir(absPath)
+			entitiesDir = filepath.Base(absPath)
+			opts.GoEntitiesFS = os.DirFS(fsRoot)
+		} else {
+			// For custom filesystems, use the path as-is
+			entitiesDir = opts.GoEntitiesDir
 		}
 
-		// Use the parent directory as filesystem root and the basename as the path
-		fsRoot := filepath.Dir(absPath)
-		entitiesDir = filepath.Base(absPath)
-		opts.GoEntitiesFS = os.DirFS(fsRoot)
-	} else {
-		// For custom filesystems, use the path as-is
-		entitiesDir = opts.GoEntitiesDir
-	}
-
-	// 1. Parse Go entities to get desired schema
-	generated, err := goschema.ParseFS(opts.GoEntitiesFS, entitiesDir)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing Go entities: %w", err)
+		generated, err = goschema.ParseFS(opts.GoEntitiesFS, entitiesDir)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing Go entities: %w", err)
+		}
 	}
 
 	// 2. Connect to database and read current schema
