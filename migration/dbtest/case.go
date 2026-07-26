@@ -1,9 +1,18 @@
-// Package dbtest is a Ptah-native, declarative migration test runner.
+// Package dbtest is a Ptah-native, declarative database test runner.
 //
-// It applies a project's migrations to an ephemeral (or explicitly throwaway)
-// database and asserts on the result, so migration behavior can be exercised in
-// CI without a bespoke test harness. Test cases are authored either in Go using
-// the exported [Case]/[Step]/[Assertion] types, or as YAML loaded with
+// It provides two entry points that share the same [Case]/[Step]/[Assertion]
+// model and database isolation:
+//
+//   - [RunMigrationTest] applies a project's migrations to an ephemeral (or
+//     explicitly throwaway) database and asserts on the result, so migration
+//     behavior can be exercised in CI without a bespoke test harness.
+//   - [RunSchemaTest] applies a desired schema (rendered from Go entity
+//     annotations) to a fresh database once per case and then asserts on the
+//     result, so a schema definition can be exercised without authoring
+//     migrations.
+//
+// Test cases are authored either in Go using the exported
+// [Case]/[Step]/[Assertion] types, or as YAML loaded with
 // [ParseCases]/[LoadCases].
 //
 // # YAML format
@@ -40,12 +49,19 @@
 //	          query: SELECT * FROM does_not_exist
 //	          error_contains: does_not_exist
 //
-// # Phase 1 scope
+// # Schema tests
 //
-// Phase 1 supports only the migrate_to, exec, and assert step kinds and the
-// row_count, scalar, and error_contains assertions listed above. Seed steps,
-// desired-schema application, and structured (HTML/JSON) reporting are out of
-// scope. Reporting is text only via [Report.Text].
+// [RunSchemaTest] reuses the same step and assertion vocabulary but applies a
+// desired schema instead of migrations. A migrate_to step is invalid in a
+// schema test — there are no migrations to move between — and fails with an
+// explanatory detail rather than being silently skipped.
+//
+// # Scope
+//
+// The supported step kinds are migrate_to (migration tests only), exec, and
+// assert, with the row_count, scalar, and error_contains assertions listed
+// above. Seed steps and structured (HTML/JSON) reporting are out of scope;
+// reporting is text only via [Report.Text].
 //
 // # Database isolation
 //
