@@ -594,10 +594,16 @@ func ToDatabase(statements *ast.StatementList) goschema.Database {
 			database.Tables = append(database.Tables, tableSchema)
 
 			// Extract fields from table columns
+			fieldsStart := len(database.Fields)
 			for _, column := range node.Columns {
 				fieldSchema := ToField(column, tableSchema.StructName, "")
 				database.Fields = append(database.Fields, fieldSchema)
 			}
+			// A single-column table-level PRIMARY KEY (col) renders inline on the
+			// column, matching how it is expressed as an inline primary key and how
+			// the HCL loader treats it; a composite key stays on Table.PrimaryKey and
+			// renders as a table constraint.
+			markPrimaryFields(database.Fields[fieldsStart:], tableSchema.PrimaryKey)
 			for _, constraint := range node.Constraints {
 				constraintSchema, ok := ToConstraint(constraint, tableSchema.StructName, tableSchema.Name)
 				if ok {
@@ -609,10 +615,42 @@ func ToDatabase(statements *ast.StatementList) goschema.Database {
 			// Convert index definitions
 			indexSchema := ToIndex(node)
 			database.Indexes = append(database.Indexes, indexSchema)
+
+		case *ast.AlterTableNode:
+			// Capture constraints added by ALTER TABLE ... ADD CONSTRAINT, such
+			// as the foreign keys ORM schema exporters emit as separate
+			// statements after the CREATE TABLEs.
+			structName := generateStructName(node.Name)
+			for _, op := range node.Operations {
+				add, ok := op.(*ast.AddConstraintOperation)
+				if !ok || add.Constraint == nil {
+					continue
+				}
+				constraintSchema, ok := ToConstraint(add.Constraint, structName, node.Name)
+				if ok {
+					database.Constraints = append(database.Constraints, constraintSchema)
+				}
+			}
 		}
 	}
 
 	return database
+}
+
+// markPrimaryFields marks the field backing a single-column table-level primary
+// key as the column primary key, so it renders inline. Composite keys (len != 1)
+// are left on Table.PrimaryKey and render as a table constraint.
+func markPrimaryFields(fields []goschema.Field, columns []string) {
+	if len(columns) != 1 {
+		return
+	}
+	for i := range fields {
+		if fields[i].Name == columns[0] {
+			fields[i].Primary = true
+			fields[i].Nullable = false
+			return
+		}
+	}
 }
 
 func ToConstraint(constraint *ast.ConstraintNode, structName, tableName string) (goschema.Constraint, bool) {
@@ -630,6 +668,22 @@ func ToConstraint(constraint *ast.ConstraintNode, structName, tableName string) 
 			),
 			NullsDistinct: cloneBoolPtr(constraint.NullsDistinct),
 		}, true
+	case ast.ForeignKeyConstraint:
+		fk := goschema.Constraint{
+			StructName: structName,
+			Name:       constraint.Name,
+			Type:       "FOREIGN KEY",
+			Table:      tableName,
+			Columns:    append([]string(nil), constraint.Columns...),
+		}
+		if ref := constraint.Reference; ref != nil {
+			fk.ForeignTable = ref.Table
+			fk.ForeignColumn = ref.Column
+			fk.ForeignColumns = append([]string(nil), ref.Columns...)
+			fk.OnDelete = ref.OnDelete
+			fk.OnUpdate = ref.OnUpdate
+		}
+		return fk, true
 	default:
 		return goschema.Constraint{}, false
 	}
