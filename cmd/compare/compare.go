@@ -11,6 +11,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/internal/schemaload"
+	"github.com/stokaro/ptah/cmd/internal/schemasource"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/schemadiff"
@@ -18,15 +19,19 @@ import (
 )
 
 const (
-	rootDirFlag    = "root-dir"
-	schemaFileFlag = "schema-file"
-	dbURLFlag      = "db-url"
-	exitCodeFlag   = "exit-code"
+	rootDirFlag      = "root-dir"
+	schemaFileFlag   = "schema-file"
+	schemaCmdFlag    = "schema-cmd"
+	schemaFormatFlag = "schema-format"
+	dbURLFlag        = "db-url"
+	exitCodeFlag     = "exit-code"
 )
 
 type options struct {
 	rootDirs       []string
 	schemaFiles    []string
+	schemaCmd      string
+	schemaFormat   string
 	dbURL          string
 	exitOnDiff     bool
 	connectTimeout string
@@ -55,6 +60,8 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags := cmd.Flags()
 	flags.StringArrayVar(&opts.rootDirs, rootDirFlag, nil, "Root directory to scan for Go entities (repeatable; multiple roots merge into one composite schema; defaults to ./)")
 	flags.StringArrayVar(&opts.schemaFiles, schemaFileFlag, nil, "YAML, HCL, or SQL schema file to compare instead of, or combined with, Go entities (repeatable; multiple sources merge into one composite schema)")
+	flags.StringVar(&opts.schemaCmd, schemaCmdFlag, "", `External program whose stdout is the desired schema; run without a shell, split on whitespace. Example: "go run ./loader"`)
+	flags.StringVar(&opts.schemaFormat, schemaFormatFlag, "sql", "Format of the --schema-cmd output: sql")
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	flags.BoolVar(&opts.exitOnDiff, exitCodeFlag, false, "Exit with 1 when the schema diff is non-empty")
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
@@ -71,15 +78,16 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	loadOpts := schemaload.Options{
 		RootDirs:    opts.rootDirs,
 		SchemaFiles: opts.schemaFiles,
+		Commands:    schemasource.CommandsFromCLI(opts.schemaCmd, opts.schemaFormat, ""),
 	}
 
 	fmt.Fprintf(out, "Comparing schema from %s with database %s\n", loadOpts.Sources(), dbschema.FormatDatabaseURL(opts.dbURL))
 	fmt.Fprintln(out, "=== SCHEMA COMPARISON ===")
 	fmt.Fprintln(out)
 
-	// 1. Resolve the desired schema from Go entities and/or schema files into one
-	// composite schema.
-	result, err := schemaload.Load(loadOpts)
+	// 1. Resolve the desired schema from Go entities, schema files, and/or an
+	// external command into one composite schema.
+	result, err := schemaload.LoadContext(cmd.Context(), loadOpts)
 	if err != nil {
 		return err
 	}

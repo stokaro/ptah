@@ -27,3 +27,21 @@ func TestMigrateGenerateCommandExposesRepeatableSchemaFileFlag(t *testing.T) {
 	c.Assert(schemaFile, qt.IsNotNil)
 	c.Assert(schemaFile.Value.Type(), qt.Equals, "stringArray")
 }
+
+func TestMigratePlanCommandExposesSchemaCommandFlags(t *testing.T) {
+	c := qt.New(t)
+
+	cmd := migrate.NewMigrateCommand()
+
+	c.Assert(cmd.Flags().Lookup("schema-cmd"), qt.IsNotNil)
+	c.Assert(cmd.Flags().Lookup("schema-format"), qt.IsNotNil)
+}
+
+func TestMigrateGenerateCommandExposesSchemaCommandFlags(t *testing.T) {
+	c := qt.New(t)
+
+	cmd := migrate.NewMigrateGenerateCommand()
+
+	c.Assert(cmd.Flags().Lookup("schema-cmd"), qt.IsNotNil)
+	c.Assert(cmd.Flags().Lookup("schema-format"), qt.IsNotNil)
+}

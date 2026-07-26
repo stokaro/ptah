@@ -9,6 +9,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/schemaload"
+	"github.com/stokaro/ptah/cmd/internal/schemasource"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/generator"
@@ -17,6 +18,8 @@ import (
 const (
 	generateRootDirFlag          = "root-dir"
 	generateSchemaFileFlag       = "schema-file"
+	generateSchemaCmdFlag        = "schema-cmd"
+	generateSchemaFormatFlag     = "schema-format"
 	generateDBURLFlag            = "db-url"
 	generateMigrationsDirFlag    = "migrations-dir"
 	generateNameFlag             = "name"
@@ -42,6 +45,8 @@ and performs an up/down/up round-trip.`,
 	flags := cmd.Flags()
 	flags.StringArray(generateRootDirFlag, nil, "Root directory to scan for Go entities (repeatable; multiple roots merge into one composite schema; defaults to ./)")
 	flags.StringArray(generateSchemaFileFlag, nil, "YAML, HCL, or SQL schema file to generate a migration toward instead of, or combined with, Go entities (repeatable; multiple sources merge into one composite schema)")
+	flags.String(generateSchemaCmdFlag, "", `External program whose stdout is the desired schema; run without a shell, split on whitespace. Example: "go run ./loader"`)
+	flags.String(generateSchemaFormatFlag, "sql", "Format of the --schema-cmd output: sql")
 	flags.String(generateDBURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	flags.String(generateMigrationsDirFlag, "", "Directory containing existing migrations and receiving generated files (required)")
 	flags.String(generateNameFlag, "migration", "Migration name")
@@ -67,9 +72,18 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	generated, err := schemaload.Load(schemaload.Options{
+	schemaCmd, err := cmd.Flags().GetString(generateSchemaCmdFlag)
+	if err != nil {
+		return err
+	}
+	schemaFormat, err := cmd.Flags().GetString(generateSchemaFormatFlag)
+	if err != nil {
+		return err
+	}
+	generated, err := schemaload.LoadContext(cmd.Context(), schemaload.Options{
 		RootDirs:    rootDirs,
 		SchemaFiles: schemaFiles,
+		Commands:    schemasource.CommandsFromCLI(schemaCmd, schemaFormat, ""),
 	})
 	if err != nil {
 		return err

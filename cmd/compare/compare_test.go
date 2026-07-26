@@ -21,3 +21,12 @@ func TestCompareCommandExposesRepeatableSchemaFileFlag(t *testing.T) {
 	c.Assert(rootDir, qt.IsNotNil)
 	c.Assert(rootDir.Value.Type(), qt.Equals, "stringArray")
 }
+
+func TestCompareCommandExposesSchemaCommandFlags(t *testing.T) {
+	c := qt.New(t)
+
+	cmd := compare.NewCompareCommand()
+
+	c.Assert(cmd.Flags().Lookup("schema-cmd"), qt.IsNotNil)
+	c.Assert(cmd.Flags().Lookup("schema-format"), qt.IsNotNil)
+}

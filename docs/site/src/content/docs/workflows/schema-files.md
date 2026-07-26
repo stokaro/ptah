@@ -148,13 +148,21 @@ commands — see [Go schema](../go-schema/).
 ## Load from an external program
 
 When the desired schema lives in an ORM or framework rather than in Go
-annotations or a static file, `ptah schema render --schema-cmd` runs an external
-program and reads its standard output as the desired schema. The program is
-executed directly — never through a shell — so an ORM's own schema exporter can
-feed Ptah's engine:
+annotations or a static file, `--schema-cmd` runs an external program and reads
+its standard output as the desired schema. The program is executed directly —
+never through a shell — so an ORM's own schema exporter can feed Ptah's engine:
 
 ```bash
 ptah schema render --schema-cmd "./scripts/export-schema" --dialect postgres
+```
+
+`--schema-cmd` is accepted wherever Ptah needs a desired schema —
+`ptah schema render`, `ptah schema compare`, `ptah schema drift`, and the
+migration commands (`ptah migrations plan` / `ptah migrations generate`) — so you
+can diff, plan, migrate, and drift-check a live database against an ORM's schema:
+
+```bash
+ptah schema drift --schema-cmd "./scripts/export-schema" --db-url "$DATABASE_URL"
 ```
 
 The command's stdout is parsed as SQL by default; set `--schema-format sql`
@@ -175,6 +183,4 @@ ptah schema render \
 ```
 
 This is Ptah's open, local, MIT equivalent of Atlas's `data "external_schema"`
-source and its ORM provider loaders. External-command support currently lands on
-`ptah schema render`; the other commands gain it as the shared resolver is
-extended.
+source and its ORM provider loaders.
