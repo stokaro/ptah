@@ -1,6 +1,7 @@
 package projectconfig_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -52,37 +53,123 @@ func TestParseAtlasProjectConfig(t *testing.T) {
 
 func TestParseAtlasProjectConfigMigrationEnumIdentifiers(t *testing.T) {
 	c := qt.New(t)
-	raw := []byte(`env "local" {
+	tests := []struct {
+		name          string
+		format        string
+		execOrder     string
+		wantFormat    string
+		wantExecOrder string
+	}{
+		{
+			name:          "atlas linear",
+			format:        "atlas",
+			execOrder:     "LINEAR",
+			wantFormat:    "atlas",
+			wantExecOrder: "linear",
+		},
+		{
+			name:          "golang migrate linear skip",
+			format:        "golang-migrate",
+			execOrder:     "LINEAR_SKIP",
+			wantFormat:    "golang-migrate",
+			wantExecOrder: "linear-skip",
+		},
+		{
+			name:          "goose non linear",
+			format:        "goose",
+			execOrder:     "NON_LINEAR",
+			wantFormat:    "goose",
+			wantExecOrder: "non-linear",
+		},
+		{
+			name:          "flyway",
+			format:        "flyway",
+			execOrder:     "LINEAR",
+			wantFormat:    "flyway",
+			wantExecOrder: "linear",
+		},
+		{
+			name:          "liquibase",
+			format:        "liquibase",
+			execOrder:     "LINEAR",
+			wantFormat:    "liquibase",
+			wantExecOrder: "linear",
+		},
+		{
+			name:          "dbmate",
+			format:        "dbmate",
+			execOrder:     "LINEAR",
+			wantFormat:    "dbmate",
+			wantExecOrder: "linear",
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			raw := fmt.Appendf(nil, `env "local" {
   migration {
     dir        = "file://migrations"
-    format     = atlas
-    exec_order = linear
-    tx_mode    = file
+    format     = %s
+    exec_order = %s
+    tx_mode    = "file"
   }
 }
-`)
+`, tt.format, tt.execOrder)
 
-	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
+			cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
 
-	c.Assert(err, qt.IsNil)
-	c.Assert(cfg.Migration.Dir, qt.Equals, "migrations")
-	c.Assert(cfg.Migration.Format, qt.Equals, "atlas")
-	c.Assert(cfg.Migration.ExecOrder, qt.Equals, "linear")
-	c.Assert(cfg.Migration.TxMode, qt.Equals, "file")
+			c.Assert(err, qt.IsNil)
+			c.Assert(cfg.Migration.Dir, qt.Equals, "migrations")
+			c.Assert(cfg.Migration.Format, qt.Equals, tt.wantFormat)
+			c.Assert(cfg.Migration.ExecOrder, qt.Equals, tt.wantExecOrder)
+			c.Assert(cfg.Migration.TxMode, qt.Equals, "file")
+		})
+	}
 }
 
-func TestParseAtlasProjectConfigRejectsMigrationEnumTraversal(t *testing.T) {
+func TestParseAtlasProjectConfigMigrationEnumIdentifiersFailurePath(t *testing.T) {
 	c := qt.New(t)
-	raw := []byte(`env "local" {
+	tests := []struct {
+		name    string
+		attr    string
+		wantErr string
+	}{
+		{
+			name:    "unknown format",
+			attr:    "format = atals",
+			wantErr: `unsupported atlas\.hcl construct "format" at atlas\.hcl:3`,
+		},
+		{
+			name:    "unknown execution order",
+			attr:    "exec_order = LINER",
+			wantErr: `unsupported atlas\.hcl construct "exec_order" at atlas\.hcl:3`,
+		},
+		{
+			name:    "bare transaction mode",
+			attr:    "tx_mode = file",
+			wantErr: `unsupported atlas\.hcl construct "tx_mode" at atlas\.hcl:3`,
+		},
+		{
+			name:    "enum traversal",
+			attr:    "format = local.format",
+			wantErr: `unsupported atlas\.hcl construct "format" at atlas\.hcl:3`,
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			raw := fmt.Appendf(nil, `env "local" {
   migration {
-    format = local.format
+    %s
   }
 }
-`)
+`, tt.attr)
 
-	_, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
+			_, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
 
-	c.Assert(err, qt.ErrorMatches, `unsupported atlas\.hcl construct "format" at atlas\.hcl:3`)
+			c.Assert(err, qt.ErrorMatches, tt.wantErr)
+		})
+	}
 }
 
 func TestParseAtlasProjectConfigEnvLintGit(t *testing.T) {
