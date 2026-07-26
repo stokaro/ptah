@@ -118,6 +118,27 @@ ptah schema render --schema-file schema.yaml --dialect postgres >/tmp/schema.sql
 ```
 
 The rendered SQL proves Ptah understood the desired schema. Note that
-`--schema-file` currently feeds `ptah schema render` only — planning and
-generating migrations (`ptah migrations plan` / `ptah migrations generate`) read
-the desired schema from Go entities via `--root-dir`, not from a schema file.
+`--schema-file` feeds `ptah schema render` only — planning and generating
+migrations (`ptah migrations plan` / `ptah migrations generate`) read the desired
+schema from Go entities via `--root-dir`, not from a schema file.
+
+## Compose multiple sources
+
+`--schema-file` is repeatable, and `ptah schema render` can combine several
+schema files — and Go roots — into one desired schema. Mix formats freely: a Go
+package for app tables, a vendored HCL file for third-party tables, and a YAML
+file for shared lookups all merge into a single render:
+
+```bash
+ptah schema render \
+  --root-dir ./models \
+  --schema-file ./vendor/thirdparty.hcl \
+  --schema-file ./shared/lookups.yaml \
+  --dialect postgres
+```
+
+Sources are merged and finalized together; identical objects are deduplicated and
+conflicting definitions are an error. This is Ptah's open, local, no-account
+equivalent of Atlas's Pro-only `composite_schema` data source. For composing
+multiple Go packages — including on `ptah schema compare` and the migration
+commands — see [Go schema](../go-schema/).

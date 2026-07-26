@@ -91,6 +91,30 @@ ptah migrations up \
 Run without `--dry-run` only after reviewing the generated SQL and committed
 `ptah.sum`.
 
+## Compose multiple sources
+
+`--root-dir` is repeatable, so a desired schema can be assembled from several Go
+packages — a shared `common` package plus per-service tables, for example. Every
+root is parsed, merged, and finalized together, so a table in one root can
+reference a table in another:
+
+```bash
+ptah schema render \
+  --root-dir ./common \
+  --root-dir ./services/orders \
+  --dialect postgres
+```
+
+The same repeatable `--root-dir` works on `ptah schema compare`,
+`ptah migrations plan`, and `ptah migrations generate`. Identical definitions
+across roots are deduplicated; two roots that define the same object differently
+are an error.
+
+This is Ptah's open, local, no-account equivalent of Atlas's Pro-only
+`composite_schema` data source. `ptah schema render` also accepts repeatable
+`--schema-file` and can mix Go roots with YAML, HCL, and SQL schema files in one
+render — see [Schema files](../schema-files/).
+
 ## Keep generated schema reviewable
 
 When a model change is surprising, render more than one dialect:
