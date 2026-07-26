@@ -99,11 +99,21 @@ input, missing files, configuration errors, and database failures, also exit
 `1`. This normalization applies only to the compatibility trees; equivalent
 native Ptah command failures keep exit code `2`.
 
-For `migrate validate`, checksum mismatches exit `1`, write Atlas's guidance to
-stdout, and write `Error: checksum mismatch` to stderr. Entry-level drift also
-identifies the first mismatched `atlas.sum` line, file, and reason. The native
-`ptah migrations validate` command keeps its own diagnostics: malformed sum
-files are usage failures with exit `2`, while valid integrity drift exits `1`
-with Ptah's native drift report.
+An unknown root command exits `1` and writes Atlas's `unknown command`
+diagnostic plus `atlas --help` guidance to stderr. Atlas CE treats an extra
+token under the `migrate` or `schema` command group differently: it prints that
+group's help to stdout and exits `0`. Both compatibility surfaces preserve this
+distinction. The same group behavior applies to `completion`; an extra token
+after a concrete shell command exits `1` with Atlas's leaf-command diagnostic.
+
+Successful `migrate validate` runs are silent, including successful
+`--dev-url` SQL replay. Checksum mismatches exit `1`, write Atlas's recovery
+guidance to stdout, and write `Error: checksum mismatch` to stderr. A missing
+`atlas.sum` uses the same stdout guidance and writes
+`Error: checksum file not found` to stderr. Entry-level drift also identifies
+the first mismatched `atlas.sum` line, file, and reason. The native
+`ptah migrations validate` command keeps its own success and error diagnostics:
+malformed or missing sum files are usage failures with exit `2`, while valid
+integrity drift exits `1` with Ptah's native drift report.
 
 This page is checked against the repository exit-code contract during docs CI.
