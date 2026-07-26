@@ -19,6 +19,7 @@ import (
 	"github.com/stokaro/ptah/cmd/migrateup"
 	"github.com/stokaro/ptah/cmd/migratevalidate"
 	"github.com/stokaro/ptah/cmd/migrationsimport"
+	"github.com/stokaro/ptah/cmd/migrationstest"
 )
 
 // NewMigrationsCommand returns the native migration command namespace.
@@ -54,6 +55,7 @@ ptah atlas.`,
 	cmd.AddCommand(migrationCommand(migrateedit.NewMigrateEditCommand(), "Edit a migration and re-hash", "Edit a migration's SQL and rewrite the integrity file, refusing already-applied migrations."))
 	cmd.AddCommand(migrationCommand(migraterebase.NewMigrateRebaseCommand(), "Move a migration to the end of history", "Re-timestamp a migration to the end of history and rewrite the integrity file, refusing already-applied migrations."))
 	cmd.AddCommand(migrationCommand(migraterm.NewMigrateRmCommand(), "Delete a migration and re-hash", "Delete a migration's up/down pair and rewrite the integrity file, refusing already-applied migrations."))
+	cmd.AddCommand(migrationCommand(migrationstest.NewMigrationsTestCommand(), "Run declarative migration tests", "Run declarative YAML migration test cases against an ephemeral or throwaway database."))
 
 	return cmd
 }
