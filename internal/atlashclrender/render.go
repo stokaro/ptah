@@ -200,22 +200,20 @@ func (r *renderer) renderColumn(field goschema.Field) {
 		r.stringAttr(3, "type", field.GeneratedKind)
 		r.line("    }")
 	}
-	if field.IdentityGeneration != "" || field.IdentityStart != "" || field.IdentityIncrement != "" {
+	if field.IdentityGeneration != "" || field.IdentityStart != "" || field.IdentityIncrement != "" || field.IdentityOptions != "" {
 		r.line("    identity {")
 		r.stringAttr(3, "generated", field.IdentityGeneration)
 		r.stringAttr(3, "start", field.IdentityStart)
 		r.stringAttr(3, "increment", field.IdentityIncrement)
-		if field.IdentityOptions != "" {
-			r.warn("column "+field.StructName+"."+field.Name, "identity_options cannot be represented in HCL schema output")
-		}
+		r.stringAttr(3, "options", field.IdentityOptions)
 		r.line("    }")
+	}
+	if field.UniqueExpr != "" {
+		r.stringAttr(2, "unique_expr", field.UniqueExpr)
 	}
 	r.stringAttr(2, "charset", field.Charset)
 	r.stringAttr(2, "collate", field.Collate)
 	r.stringAttr(2, "comment", field.Comment)
-	if field.UniqueExpr != "" {
-		r.warn("column "+field.StructName+"."+field.Name, "unique expression cannot be represented as a column unique attribute")
-	}
 	r.line("  }")
 }
 
