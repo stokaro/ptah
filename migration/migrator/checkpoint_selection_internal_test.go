@@ -113,6 +113,33 @@ func TestPendingMigrationVersions_NormalHistoryIgnoresUnrunCheckpoint(t *testing
 	c.Assert(pending, qt.DeepEquals, []int64{7, 9})
 }
 
+func TestCheckpointRollbackBoundary_BlocksBelowAppliedCheckpoint(t *testing.T) {
+	c := qt.New(t)
+	migrations := checkpointSampleMigrations()
+	// Bootstrapped DB (checkpoint 5 applied). Rolling back to a squashed
+	// version is blocked and reports the checkpoint boundary.
+	c.Assert(checkpointRollbackBoundary(migrations, []int64{5, 7}, 3), qt.Equals, int64(5))
+	c.Assert(checkpointRollbackBoundary(migrations, []int64{5, 7}, 4), qt.Equals, int64(5))
+}
+
+func TestCheckpointRollbackBoundary_AllowsCheckpointAndTeardown(t *testing.T) {
+	c := qt.New(t)
+	migrations := checkpointSampleMigrations()
+	// Rolling back to the checkpoint version itself is allowed.
+	c.Assert(checkpointRollbackBoundary(migrations, []int64{5, 7}, 5), qt.Equals, int64(0))
+	// A full teardown (target 0) is allowed.
+	c.Assert(checkpointRollbackBoundary(migrations, []int64{5, 7}, 0), qt.Equals, int64(0))
+	// A target above the checkpoint is allowed.
+	c.Assert(checkpointRollbackBoundary(migrations, []int64{5, 7, 9}, 7), qt.Equals, int64(0))
+}
+
+func TestCheckpointRollbackBoundary_NoCheckpointAllows(t *testing.T) {
+	c := qt.New(t)
+	migrations := checkpointSampleMigrations()
+	// Ordinary history with no applied checkpoint: rollback is never blocked.
+	c.Assert(checkpointRollbackBoundary(migrations, []int64{1, 2, 3}, 1), qt.Equals, int64(0))
+}
+
 func TestCheckpointRunnable(t *testing.T) {
 	c := qt.New(t)
 	bootstrap := checkpointMig(5, true)
