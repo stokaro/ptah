@@ -2,17 +2,15 @@ package generate
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
+	"github.com/stokaro/ptah/cmd/internal/schemaload"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/renderer"
-	"github.com/stokaro/ptah/internal/schemafile"
 )
 
 const (
@@ -55,7 +53,11 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 }
 
 func generateCommand(_ *cobra.Command, opts *options) error {
-	result, err := loadSchema(opts.rootDirs, opts.schemaFiles)
+	result, err := schemaload.Load(schemaload.Options{
+		RootDirs:    opts.rootDirs,
+		SchemaFiles: opts.schemaFiles,
+		Logf:        func(format string, args ...any) { fmt.Printf(format+"\n", args...) },
+	})
 	if err != nil {
 		return err
 	}
@@ -117,126 +119,4 @@ func generateCommand(_ *cobra.Command, opts *options) error {
 	}
 
 	return nil
-}
-
-func loadSchema(rootDirs, schemaFiles []string) (*goschema.Database, error) {
-	// With no source of any kind, default to scanning the current directory for
-	// Go entities (the historical behavior).
-	if len(rootDirs) == 0 && len(schemaFiles) == 0 {
-		rootDirs = []string{"./"}
-	}
-
-	// Single-source fast paths, unchanged from before: Go roots only, or exactly
-	// one schema file.
-	if len(schemaFiles) == 0 {
-		return loadGoRoots(rootDirs)
-	}
-	if len(rootDirs) == 0 && len(schemaFiles) == 1 {
-		return loadSchemaFile(schemaFiles[0])
-	}
-
-	// Composite: merge the Go roots (parsed un-finalized so Merge can run the
-	// single finalize pass) with each schema file.
-	var sources []*goschema.Database
-	if len(rootDirs) > 0 {
-		absRoots, err := resolveRootDirs(rootDirs)
-		if err != nil {
-			return nil, err
-		}
-		for _, absPath := range absRoots {
-			fmt.Printf("Scanning directory: %s\n", absPath)
-		}
-		goDB, err := goschema.ParseDirRaw(absRoots...)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing packages: %w", err)
-		}
-		sources = append(sources, goDB)
-	}
-	for _, schemaFile := range schemaFiles {
-		fmt.Printf("Loading schema file: %s\n", schemaFile)
-		fileDB, err := loadSchemaFile(schemaFile)
-		if err != nil {
-			return nil, err
-		}
-		sources = append(sources, fileDB)
-	}
-	fmt.Println()
-
-	result, err := goschema.Merge(sources...)
-	if err != nil {
-		return nil, fmt.Errorf("error merging composite schema: %w", err)
-	}
-	return result, nil
-}
-
-// loadGoRoots parses one or more Go entity roots into a finalized composite
-// schema.
-func loadGoRoots(rootDirs []string) (*goschema.Database, error) {
-	absRoots, err := resolveRootDirs(rootDirs)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, absPath := range absRoots {
-		fmt.Printf("Scanning directory: %s\n", absPath)
-	}
-	fmt.Println()
-
-	result, err := goschema.ParseDirs(absRoots...)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing packages: %w", err)
-	}
-	return result, nil
-}
-
-// resolveRootDirs turns each root into an absolute path and fails fast if any
-// does not exist.
-func resolveRootDirs(rootDirs []string) ([]string, error) {
-	absRoots := make([]string, 0, len(rootDirs))
-	for _, rootDir := range rootDirs {
-		absPath, err := filepath.Abs(rootDir)
-		if err != nil {
-			return nil, fmt.Errorf("error resolving path: %w", err)
-		}
-		if _, err := os.Stat(absPath); os.IsNotExist(err) {
-			return nil, fmt.Errorf("directory does not exist: %s", absPath)
-		}
-		absRoots = append(absRoots, absPath)
-	}
-	return absRoots, nil
-}
-
-func loadSchemaFile(schemaFile string) (*goschema.Database, error) {
-	absPath, err := filepath.Abs(schemaFile)
-	if err != nil {
-		return nil, fmt.Errorf("error resolving schema file: %w", err)
-	}
-
-	info, err := os.Stat(absPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("schema file does not exist: %s", absPath)
-		}
-		return nil, fmt.Errorf("stat schema file: %w", err)
-	}
-	if info.IsDir() {
-		return nil, fmt.Errorf("schema file is a directory: %s", absPath)
-	}
-
-	ext := strings.ToLower(filepath.Ext(absPath))
-	switch ext {
-	case ".yaml", ".yml", ".hcl", ".sql":
-	default:
-		return nil, fmt.Errorf("unsupported schema file extension %q: only .yaml, .yml, .hcl, and .sql are supported", filepath.Ext(absPath))
-	}
-
-	fmt.Printf("Reading schema file: %s\n", absPath)
-	fmt.Println("=" + strings.Repeat("=", len(absPath)+21))
-	fmt.Println()
-
-	result, err := schemafile.LoadPath(absPath, schemafile.Options{})
-	if err != nil {
-		return nil, fmt.Errorf("error parsing schema file: %w", err)
-	}
-	return result, nil
 }

@@ -3,13 +3,12 @@ package migrate
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
-	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/cmd/internal/schemaload"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/generator"
@@ -17,6 +16,7 @@ import (
 
 const (
 	generateRootDirFlag          = "root-dir"
+	generateSchemaFileFlag       = "schema-file"
 	generateDBURLFlag            = "db-url"
 	generateMigrationsDirFlag    = "migrations-dir"
 	generateNameFlag             = "name"
@@ -41,6 +41,7 @@ and performs an up/down/up round-trip.`,
 
 	flags := cmd.Flags()
 	flags.StringArray(generateRootDirFlag, nil, "Root directory to scan for Go entities (repeatable; multiple roots merge into one composite schema; defaults to ./)")
+	flags.StringArray(generateSchemaFileFlag, nil, "YAML, HCL, or SQL schema file to generate a migration toward instead of, or combined with, Go entities (repeatable; multiple sources merge into one composite schema)")
 	flags.String(generateDBURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	flags.String(generateMigrationsDirFlag, "", "Directory containing existing migrations and receiving generated files (required)")
 	flags.String(generateNameFlag, "migration", "Migration name")
@@ -62,20 +63,16 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	if len(rootDirs) == 0 {
-		rootDirs = []string{"./"}
-	}
-	absRoots := make([]string, 0, len(rootDirs))
-	for _, root := range rootDirs {
-		absPath, err := filepath.Abs(root)
-		if err != nil {
-			return fmt.Errorf("error resolving root directory: %w", err)
-		}
-		absRoots = append(absRoots, absPath)
-	}
-	generated, err := goschema.ParseDirs(absRoots...)
+	schemaFiles, err := cmd.Flags().GetStringArray(generateSchemaFileFlag)
 	if err != nil {
-		return fmt.Errorf("error parsing Go entities: %w", err)
+		return err
+	}
+	generated, err := schemaload.Load(schemaload.Options{
+		RootDirs:    rootDirs,
+		SchemaFiles: schemaFiles,
+	})
+	if err != nil {
+		return err
 	}
 	dbURL, err := cmd.Flags().GetString(generateDBURLFlag)
 	if err != nil {
