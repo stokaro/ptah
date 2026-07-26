@@ -72,6 +72,10 @@ func (p *parser) parseTopLevelBlock(block *hclsyntax.Block) error {
 		return p.parseSequence(block)
 	case "domain":
 		return p.parseDomain(block)
+	case "composite":
+		return p.parseComposite(block)
+	case "range":
+		return p.parseRange(block)
 	case "table":
 		return p.parseTable(block)
 	case "extension":
