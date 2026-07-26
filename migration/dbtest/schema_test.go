@@ -105,6 +105,41 @@ func TestRunSchemaTest_EphemeralCasesAreIsolated(t *testing.T) {
 	c.Assert(report.Cases[1].Passed, qt.IsTrue)
 }
 
+func TestRunSchemaTest_SharedDBURLAppliesSchemaOnce(t *testing.T) {
+	c := qt.New(t)
+	rootDir := writeUsersEntity(c)
+	shared := "sqlite://" + filepath.Join(c.TempDir(), "shared.db")
+
+	// With an explicit shared database, the desired schema must be applied once
+	// for the connection, not per case; a per-case re-apply would fail the second
+	// case with a "table already exists" error and abort the whole run. On a
+	// shared database cases accumulate state, so the second case sees the first
+	// case's row.
+	cases := []dbtest.Case{
+		{
+			Name: "first case inserts a row",
+			Steps: []dbtest.Step{
+				{Name: "insert", Exec: "INSERT INTO users (id, name) VALUES (1, 'ada')"},
+				{Name: "one row present", Assert: &dbtest.Assertion{Query: "SELECT * FROM users", RowCount: new(1)}},
+			},
+		},
+		{
+			Name: "second case shares the same database",
+			Steps: []dbtest.Step{
+				{Name: "row still present", Assert: &dbtest.Assertion{Query: "SELECT name FROM users WHERE id = 1", Scalar: new("ada")}},
+			},
+		},
+	}
+
+	report, err := dbtest.RunSchemaTest(context.Background(), dbtest.SchemaOptions{Cases: cases, RootDir: rootDir, DBURL: shared})
+	c.Assert(err, qt.IsNil)
+	c.Assert(report, qt.IsNotNil)
+	c.Assert(report.Failed(), qt.IsFalse, qt.Commentf("%s", report.Text()))
+	c.Assert(report.Cases, qt.HasLen, 2)
+	c.Assert(report.Cases[0].Passed, qt.IsTrue)
+	c.Assert(report.Cases[1].Passed, qt.IsTrue)
+}
+
 func TestRunSchemaTest_InvalidCasesError(t *testing.T) {
 	c := qt.New(t)
 	rootDir := writeUsersEntity(c)

@@ -127,7 +127,9 @@ func RunMigrationTest(ctx context.Context, opts Options) (*Report, error) {
 		r.migrateTo = r.runMigrateTo
 		return r.runCase(ctx, c), nil
 	}
-	return runCases(ctx, opts.DBURL, "MIGRATION", opts.Cases, run)
+	// Migration tests need no per-database provisioning: each case applies its
+	// own migrations via migrate_to.
+	return runCases(ctx, opts.DBURL, "MIGRATION", opts.Cases, nil, run)
 }
 
 // caseRunner runs a single case against a freshly provisioned connection.
@@ -137,13 +139,24 @@ func RunMigrationTest(ctx context.Context, opts Options) (*Report, error) {
 // [CaseResult].
 type caseRunner func(ctx context.Context, conn *dbschema.DatabaseConnection, c Case) (CaseResult, error)
 
+// provisionFunc sets up a freshly connected database once, before any case runs
+// against it. It is called once per shared connection or once per ephemeral
+// database.
+type provisionFunc func(ctx context.Context, conn *dbschema.DatabaseConnection) error
+
 // runCases drives every case with the database isolation both public entry
 // points ([RunMigrationTest] and [RunSchemaTest]) share. An explicit database
 // URL is a single throwaway the caller owns, so all cases share one connection
 // and the caller is responsible for isolating them. The default (ephemeral) mode
 // instead gives each case its own fresh SQLite database so cases cannot
 // contaminate one another.
-func runCases(ctx context.Context, dbURL, kind string, cases []Case, run caseRunner) (*Report, error) {
+//
+// provision, when non-nil, sets up a database once after it is connected and
+// before any case runs against it: once per shared connection, or once per fresh
+// ephemeral database. Schema tests use it to create the desired schema exactly
+// once per database; migration tests pass nil because each case applies its own
+// migrations.
+func runCases(ctx context.Context, dbURL, kind string, cases []Case, provision provisionFunc, run caseRunner) (*Report, error) {
 	report := &Report{Cases: make([]CaseResult, 0, len(cases)), kind: kind}
 
 	if dbURL != "" {
@@ -153,6 +166,11 @@ func runCases(ctx context.Context, dbURL, kind string, cases []Case, run caseRun
 		}
 		defer dbschema.CloseAndWarn(conn)
 
+		if provision != nil {
+			if err := provision(ctx, conn); err != nil {
+				return nil, err
+			}
+		}
 		for i := range cases {
 			result, err := run(ctx, conn, cases[i])
 			if err != nil {
@@ -164,7 +182,7 @@ func runCases(ctx context.Context, dbURL, kind string, cases []Case, run caseRun
 	}
 
 	for i := range cases {
-		result, err := runEphemeralCase(ctx, cases[i], run)
+		result, err := runEphemeralCase(ctx, cases[i], provision, run)
 		if err != nil {
 			return nil, err
 		}
@@ -175,7 +193,7 @@ func runCases(ctx context.Context, dbURL, kind string, cases []Case, run caseRun
 
 // runEphemeralCase runs one case against a fresh SQLite database that exists
 // only for that case, so state created by one case is never visible to another.
-func runEphemeralCase(ctx context.Context, c Case, run caseRunner) (CaseResult, error) {
+func runEphemeralCase(ctx context.Context, c Case, provision provisionFunc, run caseRunner) (CaseResult, error) {
 	tmpDir, err := os.MkdirTemp("", "ptah-dbtest-*")
 	if err != nil {
 		return CaseResult{}, fmt.Errorf("create ephemeral database directory: %w", err)
@@ -189,6 +207,11 @@ func runEphemeralCase(ctx context.Context, c Case, run caseRunner) (CaseResult, 
 	}
 	defer dbschema.CloseAndWarn(conn)
 
+	if provision != nil {
+		if err := provision(ctx, conn); err != nil {
+			return CaseResult{}, err
+		}
+	}
 	return run(ctx, conn, c)
 }
 

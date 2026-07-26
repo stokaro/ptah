@@ -17,8 +17,9 @@ type SchemaOptions struct {
 	Cases []Case
 	// RootDir is a directory of Go entity annotations describing the desired
 	// schema. It is parsed with goschema.ParseDir, rendered to dependency-ordered
-	// CREATE DDL for the target dialect, and applied to each case's fresh database
-	// before that case's steps run.
+	// CREATE DDL for the target dialect, and applied once per database before any
+	// case runs against it (once per ephemeral per-case database, or once for a
+	// shared explicit database).
 	RootDir string
 	// DBURL is an optional database URL to run the tests against. It must point at
 	// a throwaway database, because tests mutate schema and data. When empty, an
@@ -52,15 +53,19 @@ func RunSchemaTest(ctx context.Context, opts SchemaOptions) (*Report, error) {
 		return nil, fmt.Errorf("parse desired schema from %s: %w", opts.RootDir, err)
 	}
 
+	// Provision the desired schema once per database — once per ephemeral
+	// per-case database, or once for a shared explicit database — rather than
+	// per case, so re-creating already-created objects never collides on the
+	// shared-database path.
+	provision := func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+		return applyDesiredSchema(ctx, conn, schema)
+	}
 	run := func(ctx context.Context, conn *dbschema.DatabaseConnection, c Case) (CaseResult, error) {
-		if err := applyDesiredSchema(ctx, conn, schema); err != nil {
-			return CaseResult{}, err
-		}
 		r := &runner{conn: conn}
 		r.migrateTo = rejectMigrateToInSchemaTest
 		return r.runCase(ctx, c), nil
 	}
-	return runCases(ctx, opts.DBURL, "SCHEMA", opts.Cases, run)
+	return runCases(ctx, opts.DBURL, "SCHEMA", opts.Cases, provision, run)
 }
 
 // applyDesiredSchema renders schema to CREATE DDL for conn's dialect and applies
