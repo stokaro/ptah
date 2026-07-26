@@ -12,6 +12,7 @@ import (
 
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/migration/migrator"
+	"github.com/stokaro/ptah/migration/seeder"
 )
 
 // Options configures a single [RunMigrationTest] invocation.
@@ -251,6 +252,8 @@ func (r *runner) execStep(ctx context.Context, step Step) (passed bool, detail s
 		return r.migrateTo(ctx, step.MigrateTo)
 	case stepKindExec:
 		return r.runExec(ctx, step.Exec)
+	case stepKindSeed:
+		return r.runSeed(ctx, step.Seed)
 	case stepKindAssert:
 		return r.runAssert(ctx, step.Assert)
 	default:
@@ -304,6 +307,20 @@ func (r *runner) runExec(ctx context.Context, sql string) (passed bool, detail s
 		return false, fmt.Sprintf("exec failed: %v", err)
 	}
 	return true, "exec ok"
+}
+
+func (r *runner) runSeed(ctx context.Context, seed *SeedStep) (passed bool, detail string) {
+	// The test database is a throwaway, so AllowProd bypasses the seeder's
+	// protected-environment and protected-table guards, which exist to stop
+	// accidental seeding of real environments.
+	result, err := seeder.Apply(ctx, r.conn, os.DirFS(seed.Dir), seeder.Options{
+		Env:       seed.Env,
+		AllowProd: true,
+	})
+	if err != nil {
+		return false, fmt.Sprintf("seed failed: %v", err)
+	}
+	return true, fmt.Sprintf("seeded %d file(s)", len(result.Applied))
 }
 
 func (r *runner) runAssert(ctx context.Context, a *Assertion) (passed bool, detail string) {

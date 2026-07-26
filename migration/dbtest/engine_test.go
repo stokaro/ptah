@@ -187,6 +187,39 @@ func TestRunMigrationTest_EphemeralCasesAreIsolated(t *testing.T) {
 	c.Assert(report.Cases[1].Passed, qt.IsTrue)
 }
 
+func TestRunMigrationTest_SeedStep(t *testing.T) {
+	c := qt.New(t)
+	migrationsDir := t.TempDir()
+	c.Assert(os.WriteFile(
+		filepath.Join(migrationsDir, "0000000001_create_widgets.up.sql"),
+		[]byte("CREATE TABLE widgets (id INTEGER PRIMARY KEY, name TEXT NOT NULL);"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(
+		filepath.Join(migrationsDir, "0000000001_create_widgets.down.sql"),
+		[]byte("DROP TABLE widgets;"), 0o600), qt.IsNil)
+
+	seedsDir := t.TempDir()
+	// .all.sql applies for any env; the .dev.sql file only applies when env=dev.
+	c.Assert(os.WriteFile(filepath.Join(seedsDir, "010_widgets.all.sql"),
+		[]byte("INSERT INTO widgets (name) VALUES ('gear');"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(seedsDir, "020_widgets.dev.sql"),
+		[]byte("INSERT INTO widgets (name) VALUES ('cog');"), 0o600), qt.IsNil)
+
+	cases := []dbtest.Case{{
+		Name: "seed applies matching environment files",
+		Steps: []dbtest.Step{
+			{Name: "migrate", MigrateTo: "latest"},
+			{Name: "seed dev", Seed: &dbtest.SeedStep{Dir: seedsDir, Env: "dev"}},
+			{Name: "both seed rows present", Assert: &dbtest.Assertion{Query: "SELECT id FROM widgets", RowCount: new(2)}},
+		},
+	}}
+
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Cases: cases, MigrationsDir: migrationsDir})
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Failed(), qt.IsFalse, qt.Commentf("%s", report.Text()))
+	c.Assert(report.Cases[0].Steps, qt.HasLen, 3)
+	c.Assert(report.Cases[0].Steps[1].Detail, qt.Contains, "seeded 2 file(s)")
+}
+
 func TestRunMigrationTest_MigrateToWithoutDir(t *testing.T) {
 	c := qt.New(t)
 	cases := []dbtest.Case{{
