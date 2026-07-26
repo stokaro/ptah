@@ -187,6 +187,47 @@ func TestRegisteredMigrationProvider_ConcurrentRegisterAndMigrations(t *testing.
 	c.Assert(provider.Migrations(), qt.HasLen, workers*iterations)
 }
 
+func TestNewFSMigrationProvider_LoadsCheckpoint(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"0000000001_init.up.sql":                  &fstest.MapFile{Data: []byte("CREATE TABLE users (id SERIAL PRIMARY KEY);")},
+		"0000000001_init.down.sql":                &fstest.MapFile{Data: []byte("DROP TABLE users;")},
+		"0000000002_snapshot.checkpoint.up.sql":   &fstest.MapFile{Data: []byte("CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT);")},
+		"0000000002_snapshot.checkpoint.down.sql": &fstest.MapFile{Data: []byte("DROP TABLE users;")},
+	}
+
+	provider, err := migrator.NewFSMigrationProvider(fsys)
+	c.Assert(err, qt.IsNil)
+
+	migrations := provider.Migrations()
+	c.Assert(migrations, qt.HasLen, 2)
+	c.Assert(findMigrationByVersion(migrations, 1).IsCheckpoint, qt.IsFalse)
+	c.Assert(findMigrationByVersion(migrations, 2).IsCheckpoint, qt.IsTrue)
+	c.Assert(findMigrationByVersion(migrations, 2).Description, qt.Equals, "Snapshot")
+}
+
+func TestNewFSMigrationProvider_RejectsMixedCheckpointPair(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"0000000002_snapshot.checkpoint.up.sql": &fstest.MapFile{Data: []byte("CREATE TABLE users (id SERIAL PRIMARY KEY);")},
+		"0000000002_snapshot.down.sql":          &fstest.MapFile{Data: []byte("DROP TABLE users;")},
+	}
+
+	_, err := migrator.NewFSMigrationProvider(fsys)
+	c.Assert(err, qt.ErrorMatches, `.*mixes checkpoint and non-checkpoint files.*`)
+}
+
+func findMigrationByVersion(migrations []*migrator.Migration, version int64) *migrator.Migration {
+	for _, m := range migrations {
+		if m.Version == version {
+			return m
+		}
+	}
+	return &migrator.Migration{}
+}
+
 func TestNewFSMigrationProvider_Success(t *testing.T) {
 	c := qt.New(t)
 

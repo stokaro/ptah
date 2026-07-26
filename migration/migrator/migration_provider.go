@@ -156,10 +156,11 @@ func (p *FSMigrationProvider) loadPtah(files []MigrationFile) error {
 		migrationFile := files[i]
 		if _, exists := migrationsMap[migrationFile.Version]; !exists {
 			migrationsMap[migrationFile.Version] = &Migration{
-				Version:     migrationFile.Version,
-				Description: migrationFile.Name,
-				Up:          NoopMigrationFunc,
-				Down:        NoopMigrationFunc,
+				Version:      migrationFile.Version,
+				Description:  migrationFile.Name,
+				Up:           NoopMigrationFunc,
+				Down:         NoopMigrationFunc,
+				IsCheckpoint: migrationFile.IsCheckpoint,
 			}
 			foundFiles[migrationFile.Version] = make(map[string]bool)
 		}
@@ -167,6 +168,11 @@ func (p *FSMigrationProvider) loadPtah(files []MigrationFile) error {
 		foundFiles[migrationFile.Version][migrationFile.Direction] = true
 
 		migration := migrationsMap[migrationFile.Version]
+		// The up and down halves of one version must agree on whether they are
+		// a checkpoint; a mixed pair is a malformed directory.
+		if migration.IsCheckpoint != migrationFile.IsCheckpoint {
+			return fmt.Errorf("migration version %d mixes checkpoint and non-checkpoint files", migrationFile.Version)
+		}
 		switch migrationFile.Direction {
 		case "up":
 			up, err := migrationFuncFromSQLFilenameWithMetadata(migrationFile.Path, p.fsys, p.interceptor, nil)
