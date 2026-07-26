@@ -200,9 +200,10 @@ func TestNewCompatCommand_UnknownNestedCommandFails(t *testing.T) {
 
 	err := executeAtlasCommandForTest(cmd)
 
-	c.Assert(err, qt.ErrorMatches, `unexpected positional arguments \["aplly"\]`)
+	c.Assert(err, qt.ErrorMatches, `unknown command "aplly" for "ptah-compat migrate"`)
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-	c.Assert(out.String(), qt.Contains, `error: unexpected positional arguments ["aplly"]`)
+	c.Assert(out.String(), qt.Contains, `Error: unknown command "aplly" for "ptah-compat migrate"`)
+	c.Assert(out.String(), qt.Contains, `Run 'ptah-compat migrate --help' for usage.`)
 }
 
 func TestNewAtlasCommand_UnknownNestedCommandFails(t *testing.T) {
@@ -215,9 +216,10 @@ func TestNewAtlasCommand_UnknownNestedCommandFails(t *testing.T) {
 
 	err := executeAtlasCommandForTest(cmd)
 
-	c.Assert(err, qt.ErrorMatches, `unexpected positional arguments \["aplly"\]`)
+	c.Assert(err, qt.ErrorMatches, `unknown command "aplly" for "atlas migrate"`)
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-	c.Assert(out.String(), qt.Contains, `error: unexpected positional arguments ["aplly"]`)
+	c.Assert(out.String(), qt.Contains, `Error: unknown command "aplly" for "atlas migrate"`)
+	c.Assert(out.String(), qt.Contains, `Run 'atlas migrate --help' for usage.`)
 }
 
 // TestNewAtlasCommand_UnknownTopLevelCommandFails guards #687: `ptah atlas
@@ -233,8 +235,10 @@ func TestNewAtlasCommand_UnknownTopLevelCommandFails(t *testing.T) {
 
 	err := executeAtlasCommandForTest(cmd)
 
-	c.Assert(err, qt.ErrorMatches, `unexpected positional arguments \["definitely-not-a-command"\]`)
+	c.Assert(err, qt.ErrorMatches, `unknown command "definitely-not-a-command" for "atlas"`)
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(out.String(), qt.Contains, `Error: unknown command "definitely-not-a-command" for "atlas"`)
+	c.Assert(out.String(), qt.Contains, `Run 'atlas --help' for usage.`)
 }
 
 func TestNewCompatCommand_UnknownTopLevelCommandFails(t *testing.T) {
@@ -247,8 +251,31 @@ func TestNewCompatCommand_UnknownTopLevelCommandFails(t *testing.T) {
 
 	err := executeAtlasCommandForTest(cmd)
 
-	c.Assert(err, qt.IsNotNil)
+	c.Assert(err, qt.ErrorMatches, `unknown command "definitely-not-a-command" for "ptah-compat"`)
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(out.String(), qt.Contains, `Error: unknown command "definitely-not-a-command" for "ptah-compat"`)
+	c.Assert(out.String(), qt.Contains, `Run 'ptah-compat --help' for usage.`)
+}
+
+func TestAtlasUnknownCommandArgs_ConstructionAndQuoting(t *testing.T) {
+	c := qt.New(t)
+	cmd := NewAtlasCommand() // standalone command path is "atlas"
+	var out bytes.Buffer
+	cmd.SetErr(&out)
+
+	// No positional argument is not an unknown command.
+	c.Assert(atlasUnknownCommandArgs(cmd, nil), qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "")
+
+	// The unknown token is quoted (and escaped) with %q exactly as cobra/Atlas.
+	err := atlasUnknownCommandArgs(cmd, []string{`a"b`, "ignored"})
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Equals, `unknown command "a\"b" for "atlas"`)
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+
+	want := `Error: unknown command "a\"b" for "atlas"` + "\n" +
+		`Run 'atlas --help' for usage.` + "\n"
+	c.Assert(out.String(), qt.Equals, want)
 }
 
 func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {

@@ -61,6 +61,14 @@ func TestCompatBinaryCommandFailuresExit1(t *testing.T) {
 			},
 			wantStderr: "error: unknown command \"extra\" for \"atlas completion bash\"\n",
 		},
+		{
+			name: "unknown root command",
+			command: func(binPath string) *exec.Cmd {
+				return exec.Command(binPath, "definitely-not-a-command")
+			},
+			wantStderr: "Error: unknown command \"definitely-not-a-command\" for \"atlas\"\n" +
+				"Run 'atlas --help' for usage.\n",
+		},
 	}
 
 	for _, tt := range tests {

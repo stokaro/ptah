@@ -54,6 +54,26 @@ var unsupportedAtlasDirFormats = []string{
 	"liquibase",
 }
 
+// atlasUnknownCommandArgs is the positional-args validator for an
+// Atlas-compatible command group. A stray positional argument on a group means
+// an unknown subcommand, so it emits Atlas CE's cobra-style diagnostic
+//
+//	Error: unknown command "<arg>" for "<command path>"
+//	Run '<command path> --help' for usage.
+//
+// on stderr and fails, instead of the native "unexpected positional arguments"
+// message. The unknown token is quoted with %q exactly as cobra (and therefore
+// Atlas) does. The command's error-code policy maps the failure to Atlas's
+// exit code 1; native Ptah commands keep NoPositionalArgs and are unaffected.
+func atlasUnknownCommandArgs(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+	path := cmd.CommandPath()
+	fmt.Fprintf(cmd.ErrOrStderr(), "Error: unknown command %q for %q\nRun '%s --help' for usage.\n", args[0], path, path)
+	return exitcode.New(atlasErrorExitCode, fmt.Errorf("unknown command %q for %q", args[0], path))
+}
+
 // NewAtlasCommand returns the Atlas command namespace.
 func NewAtlasCommand() *cobra.Command {
 	cmd := newAtlasCommand("atlas [command]", "Atlas OSS command namespace", `Atlas OSS command namespace.
@@ -90,7 +110,7 @@ func newAtlasCommand(use, short, long string) *cobra.Command {
 			return cmd.Help()
 		},
 	}
-	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
+	cmdutil.ConfigureCommandArgs(cmd, atlasUnknownCommandArgs)
 	cmd.AddCommand(newAtlasVersionCommand())
 	cmd.AddCommand(newAtlasLicenseCommand())
 	cmd.AddCommand(newAtlasSchemaCommand())
@@ -107,7 +127,7 @@ func newAtlasSchemaCommand() *cobra.Command {
 			return cmd.Help()
 		},
 	}
-	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
+	cmdutil.ConfigureCommandArgs(cmd, atlasUnknownCommandArgs)
 	registerAtlasProjectFlags(cmd.PersistentFlags(), &atlasProjectFlagValues{})
 	cmd.AddCommand(newAtlasSchemaCleanCommand())
 	cmd.AddCommand(newAtlasSchemaInspectCommand())
@@ -130,7 +150,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 			return cmd.Help()
 		},
 	}
-	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
+	cmdutil.ConfigureCommandArgs(cmd, atlasUnknownCommandArgs)
 	registerAtlasProjectFlags(cmd.PersistentFlags(), &atlasProjectFlagValues{})
 	cmd.AddCommand(newAtlasMigrateApplyCommand())
 	cmd.AddCommand(newAtlasMigrateLintCommand())
