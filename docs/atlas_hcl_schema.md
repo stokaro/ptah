@@ -45,7 +45,7 @@ current schema IR:
 - `check` blocks with `expr`
 - `default = sql("...")` as a default expression
 - `row_security` blocks inside `table` with `enabled = true`
-- PostgreSQL `extension` blocks with `version` and `comment`
+- PostgreSQL `extension` blocks with `if_not_exists`, `version`, and `comment`
 - PostgreSQL `role` blocks with `login`, `superuser`, `create_db`,
   `create_role`, `inherit`, `replication`, and `comment`
 - PostgreSQL `permission` blocks for table, schema, and sequence targets with
@@ -265,8 +265,9 @@ rendering.
 schema "public" {}
 
 extension "pg_trgm" {
-  version = "1.6"
-  comment = "trigram search"
+  if_not_exists = true
+  version       = "1.6"
+  comment       = "trigram search"
 }
 
 sequence "order_number_seq" {
