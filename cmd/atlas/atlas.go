@@ -16,6 +16,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/migrate"
+	"github.com/stokaro/ptah/cmd/migratecheckpoint"
 	"github.com/stokaro/ptah/cmd/migratedown"
 	"github.com/stokaro/ptah/cmd/migratehash"
 	"github.com/stokaro/ptah/cmd/migraterepair"
@@ -31,6 +32,7 @@ type atlasVerb struct {
 	factory             func() *cobra.Command
 	prefixArgs          []string
 	positionals         []atlasPositionalArg
+	positionalOptional  bool
 	nativeOnlyFlags     []string
 	flags               []atlasargs.Flag
 	nativeProjectConfig bool
@@ -158,6 +160,20 @@ func newAtlasMigrateCommand() *cobra.Command {
 	for _, verb := range []atlasVerb{
 		atlasMigrateDownVerb(),
 		{
+			use:                "checkpoint",
+			displayUse:         "checkpoint [flags] [name]",
+			short:              "Squash migration history into a cumulative-schema checkpoint",
+			native:             "migrations checkpoint",
+			factory:            migratecheckpoint.NewMigrateCheckpointCommand,
+			positionals:        []atlasPositionalArg{{name: "name", nativeName: "description"}},
+			positionalOptional: true,
+			flags: []atlasargs.Flag{
+				atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
+				atlasargs.NativeString("dev-url", "", "URL of the dev database the directory is replayed into", "shadow-db"),
+				atlasMigrateDirFormatFlag("dir-format"),
+			},
+		},
+		{
 			use:     "hash",
 			short:   "Write or update the migration directory checksum",
 			native:  "migrations hash",
@@ -223,7 +239,6 @@ func newAtlasMigrateCommand() *cobra.Command {
 	cmd.AddCommand(newAtlasMigrateDiffCommand())
 	cmd.AddCommand(newAtlasMigrateImportCommand())
 	addAtlasUnsupportedCommunityCommands(cmd, "migrate", []atlasUnsupportedCommunityVerb{
-		{use: "checkpoint", short: "Create migration checkpoint files"},
 		{use: "edit", short: "Edit migration files"},
 		{use: "push", short: "Push migration directory to Atlas Cloud"},
 		{use: "rebase", short: "Rebase migration files"},
@@ -500,6 +515,9 @@ func mapAtlasPositionalArgs(group string, verb atlasVerb, args []string) ([]stri
 	positional := verb.positionals[0]
 	switch len(positionals) {
 	case 0:
+		if verb.positionalOptional {
+			return withoutPositionals, nil
+		}
 		return nil, fmt.Errorf("atlas %s %s requires %s argument", group, verb.use, positional.name)
 	case 1:
 		return append(withoutPositionals, "--"+positional.nativeName, positionals[0]), nil

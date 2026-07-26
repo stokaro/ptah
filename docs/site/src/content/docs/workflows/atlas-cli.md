@@ -59,7 +59,8 @@ SQL paths; prefer `--to` in new Ptah-authored scripts.
 | `ptah atlas migrate set [version]` | `ptah migrations repair` with Atlas revision metadata |
 | `ptah atlas migrate diff` | Replays local Atlas migrations on `--dev-url`, diffs against local schema files, writes an Atlas single-file migration, and updates `atlas.sum`; `--schema/-s` scopes the diff, and the Atlas-hidden `--dry-run` flag prints the generated SQL instead of writing files. |
 | `ptah atlas migrate import` | Imports local `file://` migration directories from Atlas-supported formats into a separate Atlas single-file directory and writes `atlas.sum`. |
-| `ptah atlas migrate checkpoint`, `edit`, `push`, `rebase`, `rm`, `test` | Registered Atlas CE boundary stubs for community-version unsupported commands. `--help` prints the Atlas CE unsupported notice and exits 0; direct execution prints the Atlas CE abort text and exits 1. These are explicit compatibility boundaries, not implemented Ptah features. |
+| `ptah atlas migrate checkpoint [name]` | Forwards to `ptah migrations checkpoint`: replays the migration directory on the `--dev-url` dev database and writes a cumulative-schema checkpoint pair. `--dir` maps to the native migrations directory and the optional positional name to the checkpoint description. Atlas keeps `migrate checkpoint` in its Pro build; Ptah provides it free. |
+| `ptah atlas migrate edit`, `push`, `rebase`, `rm`, `test` | Registered Atlas CE boundary stubs for community-version unsupported commands. `--help` prints the Atlas CE unsupported notice and exits 0; direct execution prints the Atlas CE abort text and exits 1. These are explicit compatibility boundaries, not implemented Ptah features. |
 
 ## Utility commands
 

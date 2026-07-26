@@ -780,6 +780,54 @@ func TestNewAtlasCommand_MapsAtlasFlagFormsToNativeFlags(t *testing.T) {
 	}
 }
 
+func TestNewAtlasCommand_MigrateCheckpointForwardsToNative(t *testing.T) {
+	c := qt.New(t)
+	migrationsDir := t.TempDir()
+	writePair := func(name, up, down string) {
+		c.Assert(os.WriteFile(filepath.Join(migrationsDir, name+".up.sql"), []byte(up), 0o600), qt.IsNil)
+		c.Assert(os.WriteFile(filepath.Join(migrationsDir, name+".down.sql"), []byte(down), 0o600), qt.IsNil)
+	}
+	writePair("0000000001_init", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n", "DROP TABLE users;\n")
+	writePair("0000000002_email", "ALTER TABLE users ADD COLUMN email TEXT;\n", "ALTER TABLE users DROP COLUMN email;\n")
+	shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"migrate", "checkpoint", "--dir", migrationsDir, "--dev-url", shadow, "snapshot"})
+
+	err := cmd.Execute()
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
+
+	// The Atlas verb forwards to `ptah migrations checkpoint`: --dir maps to the
+	// native --migrations-dir, --dev-url to --shadow-db (the dialect is inferred
+	// from it), and the positional tag maps to --description, so the checkpoint
+	// pair carries that name and the cumulative schema (users with email).
+	up, err := os.ReadFile(filepath.Join(migrationsDir, "0000000003_snapshot.checkpoint.up.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(up), qt.Contains, "CREATE TABLE")
+	c.Assert(string(up), qt.Contains, "email")
+	_, err = os.Stat(filepath.Join(migrationsDir, "0000000003_snapshot.checkpoint.down.sql"))
+	c.Assert(err, qt.IsNil)
+}
+
+func TestNewAtlasCommand_MigrateCheckpointRequiresDevURL(t *testing.T) {
+	c := qt.New(t)
+
+	cmd := NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"migrate", "checkpoint", "--dir", t.TempDir()})
+
+	// Forwarding reaches the native command, which reports the missing shadow
+	// database rather than the old community-unsupported stub message.
+	err := cmd.Execute()
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out.String(), qt.Contains, "shadow database URL is required")
+}
+
 func TestNewAtlasCommand_AdapterCommandUsesAtlasProjectFlags(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

@@ -84,11 +84,12 @@ shares this exit-code contract.
 | `ptah atlas migrate hash` | `ptah migrations hash` |
 | `ptah atlas migrate validate` | Atlas-format integrity validation with Atlas checksum diagnostics |
 | `ptah atlas migrate lint` | `ptah migrations lint` |
+| `ptah atlas migrate checkpoint` | `ptah migrations checkpoint` |
 | `ptah atlas schema inspect` | Atlas-shaped schema inspection |
 | `ptah atlas schema apply` | Local Atlas-style schema apply |
 | `ptah atlas schema diff` | Local Atlas-style schema-file diff |
 | `ptah atlas schema fmt` | Format local `.hcl` files |
-| `ptah atlas migrate checkpoint`, `edit`, `push`, `rebase`, `rm`, `test` | Atlas CE community-version unsupported boundary stub |
+| `ptah atlas migrate edit`, `push`, `rebase`, `rm`, `test` | Atlas CE community-version unsupported boundary stub |
 | `ptah atlas schema plan`, `push`, `test` | Atlas CE community-version unsupported boundary stub |
 
 Atlas CE community-version unsupported boundary stubs mirror Atlas CE: `--help`

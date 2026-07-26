@@ -104,7 +104,6 @@ type unsupportedCommunityCommandTest struct {
 
 func unsupportedCommunityCommandTests() []unsupportedCommunityCommandTest {
 	return []unsupportedCommunityCommandTest{
-		{name: "migrate_checkpoint", path: []string{"migrate", "checkpoint"}},
 		{name: "migrate_edit", path: []string{"migrate", "edit"}},
 		{name: "migrate_push", path: []string{"migrate", "push"}},
 		{name: "migrate_rebase", path: []string{"migrate", "rebase"}},
