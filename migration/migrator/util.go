@@ -67,12 +67,24 @@ type MigrationFile struct {
 	// They are visible to discovery and linting, but they are not part of
 	// Ptah's ordered versioned execution model.
 	Repeatable bool
+	// IsCheckpoint marks a checkpoint migration whose up body is the full
+	// cumulative schema at its version. A fresh database bootstraps from the
+	// newest checkpoint instead of replaying pre-checkpoint history; an
+	// already-migrated database ignores it. The marker is spelled
+	// NNNNNNNNNN_description.checkpoint.(up|down).sql.
+	IsCheckpoint bool
 }
 
 // ParseMigrationFileName parses a migration filename into its components
 // Expected format: NNNNNNNNNN_description.up.sql or NNNNNNNNNN_description.down.sql
 // where NNNNNNNNNN is a 10-digit version number
 func ParseMigrationFileName(filename string) (*MigrationFile, error) {
+	// A checkpoint file carries a ".checkpoint" marker between the description
+	// and the direction (NNNN_desc.checkpoint.up.sql). Strip it before applying
+	// the ordinary name regex so existing up/down parsing is untouched, and
+	// remember it on the parsed file.
+	isCheckpoint, filename := stripCheckpointMarker(filename)
+
 	matches := fileNameRe.FindStringSubmatch(filename)
 
 	if matches == nil || len(matches) != 5 {
@@ -97,12 +109,28 @@ func ParseMigrationFileName(filename string) (*MigrationFile, error) {
 	extension := matches[4]
 
 	return &MigrationFile{
-		Version:   version,
-		Name:      name,
-		Direction: direction,
-		Extension: extension,
-		Format:    MigrationDirFormatPtah,
+		Version:      version,
+		Name:         name,
+		Direction:    direction,
+		Extension:    extension,
+		Format:       MigrationDirFormatPtah,
+		IsCheckpoint: isCheckpoint,
 	}, nil
+}
+
+// stripCheckpointMarker removes the ".checkpoint" marker that a checkpoint
+// migration carries immediately before its direction, returning whether the
+// marker was present and the filename with the marker removed so the ordinary
+// migration name regex can parse it. NNNN_desc.checkpoint.up.sql becomes
+// NNNN_desc.up.sql; a filename without the marker is returned unchanged.
+func stripCheckpointMarker(filename string) (bool, string) {
+	for _, direction := range []string{"up", "down"} {
+		marker := ".checkpoint." + direction + ".sql"
+		if stem, ok := strings.CutSuffix(filename, marker); ok {
+			return true, stem + "." + direction + ".sql"
+		}
+	}
+	return false, filename
 }
 
 // ParseAtlasMigrationFileName parses an Atlas versioned migration file name.
