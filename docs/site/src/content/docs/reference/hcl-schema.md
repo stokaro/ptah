@@ -61,7 +61,7 @@ table "users" {
 | `unique` | `columns`; PostgreSQL also supports `include` and `nulls_distinct`. |
 | `foreign_key` | One local `columns` entry and one table-qualified `ref_columns` entry. |
 | `check` | `expr`. |
-| `extension` | PostgreSQL `version` and comments. |
+| `extension` | PostgreSQL `if_not_exists`, `version`, and comments. |
 | `role` | PostgreSQL role attributes such as `login`, `superuser`, `create_db`, and `inherit`. |
 | `permission` | PostgreSQL table, schema, and sequence permissions. |
 | `function` | PostgreSQL function metadata and raw body. |
