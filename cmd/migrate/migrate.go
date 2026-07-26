@@ -11,6 +11,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/schemaload"
+	"github.com/stokaro/ptah/cmd/internal/schemasource"
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
@@ -22,6 +23,8 @@ import (
 const (
 	rootDirFlag          = "root-dir"
 	schemaFileFlag       = "schema-file"
+	schemaCmdFlag        = "schema-cmd"
+	schemaFormatFlag     = "schema-format"
 	dbURLFlag            = "db-url"
 	checkDestructiveFlag = "check-destructive"
 	allowDestructiveFlag = "allow-destructive"
@@ -31,6 +34,8 @@ const (
 type options struct {
 	rootDirs         []string
 	schemaFiles      []string
+	schemaCmd        string
+	schemaFormat     string
 	dbURL            string
 	checkDestructive bool
 	allowDestructive bool
@@ -61,6 +66,8 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags := cmd.Flags()
 	flags.StringArrayVar(&opts.rootDirs, rootDirFlag, nil, "Root directory to scan for Go entities (repeatable; multiple roots merge into one composite schema; defaults to ./)")
 	flags.StringArrayVar(&opts.schemaFiles, schemaFileFlag, nil, "YAML, HCL, or SQL schema file to migrate toward instead of, or combined with, Go entities (repeatable; multiple sources merge into one composite schema)")
+	flags.StringVar(&opts.schemaCmd, schemaCmdFlag, "", `External program whose stdout is the desired schema; run without a shell, split on whitespace. Example: "go run ./loader"`)
+	flags.StringVar(&opts.schemaFormat, schemaFormatFlag, "sql", "Format of the --schema-cmd output: sql")
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	flags.BoolVar(&opts.checkDestructive, checkDestructiveFlag, false, "Fail when generated migration SQL contains destructive statements")
 	flags.BoolVar(&opts.allowDestructive, allowDestructiveFlag, false, "Allow destructive statements when --check-destructive is set")
@@ -82,6 +89,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	loadOpts := schemaload.Options{
 		RootDirs:    opts.rootDirs,
 		SchemaFiles: opts.schemaFiles,
+		Commands:    schemasource.CommandsFromCLI(opts.schemaCmd, opts.schemaFormat, ""),
 	}
 	rootsDisplay := loadOpts.Sources()
 
@@ -91,9 +99,9 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 		fmt.Fprintln(out)
 	}
 
-	// 1. Resolve the desired schema from Go entities and/or schema files into one
-	// composite schema.
-	result, err := schemaload.Load(loadOpts)
+	// 1. Resolve the desired schema from Go entities, schema files, and/or an
+	// external command into one composite schema.
+	result, err := schemaload.LoadContext(cmd.Context(), loadOpts)
 	if err != nil {
 		return err
 	}

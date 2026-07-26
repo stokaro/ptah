@@ -9,6 +9,7 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/schemaload"
+	"github.com/stokaro/ptah/cmd/internal/schemasource"
 	"github.com/stokaro/ptah/config"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/dbschema"
@@ -21,6 +22,7 @@ import (
 type CompareOptions struct {
 	RootDirs       []string
 	SchemaFiles    []string
+	Commands       []schemasource.Command
 	DatabaseURL    string
 	ConnectTimeout time.Duration
 	IgnoredTables  []string
@@ -37,9 +39,9 @@ type CompareResult struct {
 	Diff        *difftypes.SchemaDiff
 }
 
-// Compare resolves the desired schema from Go entities and/or schema files,
-// reads the live database schema, applies command filters, and returns a
-// dialect-aware schema diff.
+// Compare resolves the desired schema from Go entities, schema files, and/or an
+// external command, reads the live database schema, applies command filters, and
+// returns a dialect-aware schema diff.
 func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 	if opts.DatabaseURL == "" {
 		return nil, fmt.Errorf("database URL is required")
@@ -48,8 +50,9 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 	loadOpts := schemaload.Options{
 		RootDirs:    opts.RootDirs,
 		SchemaFiles: opts.SchemaFiles,
+		Commands:    opts.Commands,
 	}
-	generated, err := schemaload.Load(loadOpts)
+	generated, err := schemaload.LoadContext(ctx, loadOpts)
 	if err != nil {
 		return nil, err
 	}

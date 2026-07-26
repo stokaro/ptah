@@ -149,3 +149,21 @@ func TestParseCommandLine_SplitsOnWhitespace(t *testing.T) {
 	c.Assert(schemasource.ParseCommandLine("go run ./loader"), qt.DeepEquals, []string{"go", "run", "./loader"})
 	c.Assert(schemasource.ParseCommandLine("   "), qt.HasLen, 0)
 }
+
+func TestCommandsFromCLI_BuildsCommand(t *testing.T) {
+	c := qt.New(t)
+
+	commands := schemasource.CommandsFromCLI("go run ./loader", "sql", "postgres")
+
+	c.Assert(commands, qt.HasLen, 1)
+	c.Assert(commands[0].Args, qt.DeepEquals, []string{"go", "run", "./loader"})
+	c.Assert(commands[0].Format, qt.Equals, "sql")
+	c.Assert(commands[0].Dialect, qt.Equals, "postgres")
+}
+
+func TestCommandsFromCLI_ReturnsNilWhenEmpty(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(schemasource.CommandsFromCLI("", "sql", ""), qt.IsNil)
+	c.Assert(schemasource.CommandsFromCLI("   ", "sql", ""), qt.IsNil)
+}

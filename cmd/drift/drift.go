@@ -14,6 +14,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/internal/schemaops"
+	"github.com/stokaro/ptah/cmd/internal/schemasource"
 	"github.com/stokaro/ptah/migration/safety"
 	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
 )
@@ -33,6 +34,8 @@ var errDriftDetected = errors.New("schema drift detected")
 func NewDriftCommand() *cobra.Command {
 	var rootDirs []string
 	var schemaFiles []string
+	var schemaCmd string
+	var schemaFormat string
 	var dbURL string
 	var format string
 	var severity string
@@ -50,6 +53,8 @@ func NewDriftCommand() *cobra.Command {
 			return runDrift(cmd, runOptions{
 				rootDirs:          rootDirs,
 				schemaFiles:       schemaFiles,
+				schemaCmd:         schemaCmd,
+				schemaFormat:      schemaFormat,
 				dbURL:             dbURL,
 				format:            format,
 				severity:          severity,
@@ -63,6 +68,8 @@ func NewDriftCommand() *cobra.Command {
 
 	cmd.Flags().StringArrayVar(&rootDirs, "root-dir", nil, "Root directory to scan for Go entities (repeatable; multiple roots merge into one composite schema; defaults to ./)")
 	cmd.Flags().StringArrayVar(&schemaFiles, "schema-file", nil, "YAML, HCL, or SQL schema file to check drift against instead of, or combined with, Go entities (repeatable; multiple sources merge into one composite schema)")
+	cmd.Flags().StringVar(&schemaCmd, "schema-cmd", "", `External program whose stdout is the desired schema; run without a shell, split on whitespace. Example: "go run ./loader"`)
+	cmd.Flags().StringVar(&schemaFormat, "schema-format", "sql", "Format of the --schema-cmd output: sql")
 	cmd.Flags().StringVar(&dbURL, "db-url", "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	cmd.Flags().StringVar(&format, "format", formatText, "Output format: text, json, github-actions")
 	cmd.Flags().StringVar(&severity, "severity", severityAll, "Failing drift threshold: all or destructive")
@@ -83,6 +90,8 @@ func NewDriftCommand() *cobra.Command {
 type runOptions struct {
 	rootDirs          []string
 	schemaFiles       []string
+	schemaCmd         string
+	schemaFormat      string
 	dbURL             string
 	format            string
 	severity          string
@@ -130,6 +139,7 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 	result, err := schemaops.Compare(cmd.Context(), schemaops.CompareOptions{
 		RootDirs:       opts.rootDirs,
 		SchemaFiles:    opts.schemaFiles,
+		Commands:       schemasource.CommandsFromCLI(opts.schemaCmd, opts.schemaFormat, ""),
 		DatabaseURL:    opts.dbURL,
 		ConnectTimeout: connectTimeout,
 		IgnoredTables:  ignoredTables,
