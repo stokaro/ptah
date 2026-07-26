@@ -41,7 +41,10 @@ type atlasPositionalArg struct {
 	nativeName string
 }
 
-const atlasDirFormatDefault = "atlas"
+const (
+	atlasDirFormatDefault = "atlas"
+	atlasErrorExitCode    = 1
+)
 
 var unsupportedAtlasDirFormats = []string{
 	"dbmate",
@@ -53,11 +56,13 @@ var unsupportedAtlasDirFormats = []string{
 
 // NewAtlasCommand returns the Atlas command namespace.
 func NewAtlasCommand() *cobra.Command {
-	return newAtlasCommand("atlas [command]", "Atlas OSS command namespace", `Atlas OSS command namespace.
+	cmd := newAtlasCommand("atlas [command]", "Atlas OSS command namespace", `Atlas OSS command namespace.
 
 These commands reserve the Atlas OSS CLI surface under Ptah. Commands that have
 an existing Ptah equivalent forward to that native command while keeping the
 native Ptah command tree separate for future redesign.`)
+	cmdutil.SetErrorCodePolicy(cmd, atlasErrorExitCode)
+	return cmd
 }
 
 // NewCompatCommand returns an Atlas-compatible root command.
@@ -72,6 +77,7 @@ This executable exposes Atlas-style commands at process root for scripts that
 expect commands such as migrate apply or schema inspect. Runtime behavior is the
 same compatibility layer used by ptah atlas <command> ...`)
 	cmdflags.InstallEnvBinding("PTAH", cmd)
+	cmdutil.SetErrorCodePolicy(cmd, atlasErrorExitCode)
 	return cmd
 }
 

@@ -16,6 +16,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
+	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/migrateup"
 	"github.com/stokaro/ptah/dbschema"
@@ -197,10 +198,10 @@ func TestNewCompatCommand_UnknownNestedCommandFails(t *testing.T) {
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{"migrate", "aplly"})
 
-	err := cmd.Execute()
+	err := executeAtlasCommandForTest(cmd)
 
 	c.Assert(err, qt.ErrorMatches, `unexpected positional arguments \["aplly"\]`)
-	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 	c.Assert(out.String(), qt.Contains, `error: unexpected positional arguments ["aplly"]`)
 }
 
@@ -212,10 +213,10 @@ func TestNewAtlasCommand_UnknownNestedCommandFails(t *testing.T) {
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{"migrate", "aplly"})
 
-	err := cmd.Execute()
+	err := executeAtlasCommandForTest(cmd)
 
 	c.Assert(err, qt.ErrorMatches, `unexpected positional arguments \["aplly"\]`)
-	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 	c.Assert(out.String(), qt.Contains, `error: unexpected positional arguments ["aplly"]`)
 }
 
@@ -230,10 +231,10 @@ func TestNewAtlasCommand_UnknownTopLevelCommandFails(t *testing.T) {
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{"definitely-not-a-command"})
 
-	err := cmd.Execute()
+	err := executeAtlasCommandForTest(cmd)
 
 	c.Assert(err, qt.ErrorMatches, `unexpected positional arguments \["definitely-not-a-command"\]`)
-	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 }
 
 func TestNewCompatCommand_UnknownTopLevelCommandFails(t *testing.T) {
@@ -244,10 +245,10 @@ func TestNewCompatCommand_UnknownTopLevelCommandFails(t *testing.T) {
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{"definitely-not-a-command"})
 
-	err := cmd.Execute()
+	err := executeAtlasCommandForTest(cmd)
 
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 }
 
 func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
@@ -4553,6 +4554,11 @@ func TestNewAtlasCommand_HelpAdvertisesGroupedNativeEquivalents(t *testing.T) {
 func writeAtlasTestFile(c *qt.C, dir, name, content string) {
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
+}
+
+func executeAtlasCommandForTest(cmd *cobra.Command) error {
+	executed, err := cmd.ExecuteC()
+	return cmdutil.NormalizeCommandError(executed, err, 2)
 }
 
 func readAtlasTestFile(c *qt.C, dir, name string) string {

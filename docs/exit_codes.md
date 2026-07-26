@@ -1,6 +1,6 @@
 # CLI Exit Codes
 
-Ptah treats CLI exit codes as a public scripting contract.
+Native Ptah commands treat CLI exit codes as a public scripting contract.
 
 | Code | Meaning |
 | --- | --- |
@@ -8,6 +8,11 @@ Ptah treats CLI exit codes as a public scripting contract.
 | `1` | Expected negative result. A check found drift, lint findings, integrity drift, pending migrations, or a non-empty diff when that behavior is enabled. |
 | `2` | Command or usage error. Examples: bad flags, unknown commands, invalid input, connection failure, parse failure, unsupported dialect, unwritable output, or an internal panic recovered by the root command. |
 | `3+` | Reserved. Do not rely on these codes until Ptah documents a specific use. |
+
+This four-level contract applies to native Ptah commands. The Atlas-compatible
+surfaces intentionally use Atlas CE's narrower process contract: `0` for
+success and help, and `1` for command, usage, validation, and runtime failures.
+An internal panic recovered by Ptah's process boundary still exits `2`.
 
 ## Native Commands
 
@@ -72,5 +77,8 @@ shares this exit-code contract.
 
 Atlas CE community-version unsupported boundary stubs mirror Atlas CE: `--help`
 prints the unsupported notice and exits `0`, while direct execution prints the
-Atlas CE abort text and exits `1`. Unsupported Atlas-compatible flags are
-rejected explicitly and exit `2`.
+Atlas CE abort text and exits `1`. All other reported failures on
+`ptah atlas ...` and `ptah-compat`, including unsupported flags, malformed
+input, missing files, configuration errors, and database failures, also exit
+`1`. This normalization applies only to the compatibility trees; equivalent
+native Ptah command failures keep exit code `2`.

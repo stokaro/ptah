@@ -62,11 +62,14 @@ pull-request job at a production database.
 
 ## Exit behavior
 
-See [Exit codes](../../reference/exit-codes/) before using Ptah as a gate. `0`
-means success, `1` is reserved for command-specific negative check results such
-as drift, lint findings, pending migrations with `--exit-code`, or migration
-hash drift. Usage errors, parse failures, connection failures, unsupported
-dialects, and other command errors use `2`.
+See [Exit codes](../../reference/exit-codes/) before using Ptah as a gate. For
+native Ptah commands, `0` means success, `1` is reserved for command-specific
+negative check results such as drift, lint findings, pending migrations with
+`--exit-code`, or migration hash drift, and `2` means a usage, parse,
+connection, unsupported-dialect, or other command failure. Atlas-compatible
+surfaces use `1` for both negative results and command failures to match Atlas
+CE. A recovered internal panic remains exit `2` on either surface, so scripts
+should interpret the code according to the selected CLI surface.
 
 ## Keep CI deterministic
 

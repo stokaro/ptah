@@ -54,9 +54,9 @@ func TestNewAtlasCommand_MigrateLintRejectsDockerDevURL(t *testing.T) {
 		"--dev-url", "docker://postgres/16/dev",
 	})
 
-	err := cmd.Execute()
+	err := executeAtlasTestCommand(cmd)
 
-	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 	c.Assert(out.String(), qt.Contains, "docker --dev-url values are accepted by Atlas, but Ptah requires a directly connectable dev database URL for migration SQL replay")
 }
 
