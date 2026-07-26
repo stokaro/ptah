@@ -18,12 +18,27 @@ func TestMigrateNewWithAtlasProjectEnumIdentifiers(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	c.Assert(os.Mkdir("migrations", 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(
+		filepath.Join("migrations", "20260101000000_existing.sql"),
+		[]byte("CREATE TABLE existing (id INTEGER PRIMARY KEY);\n"),
+		0o600,
+	), qt.IsNil)
+	initialSum, sumErr := atlascompat.ComputeSum(os.DirFS("migrations"), migrator.MigrationDirFormatAtlas)
+	c.Assert(sumErr, qt.IsNil)
+	c.Assert(
+		os.WriteFile(
+			filepath.Join("migrations", atlascompat.AtlasSumFileName),
+			initialSum.Bytes(),
+			0o600,
+		),
+		qt.IsNil,
+	)
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
   migration {
     dir        = "file://migrations"
     format     = atlas
-    exec_order = linear
-    tx_mode    = file
+    exec_order = LINEAR_SKIP
+    tx_mode    = "file"
   }
 }
 `), 0o600), qt.IsNil)

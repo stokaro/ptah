@@ -9,6 +9,7 @@ import (
 	"os"
 	pathpkg "path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -386,7 +387,16 @@ func (p atlasParser) parseMigration(block *hclsyntax.Block, cfg *Config) error {
 			}
 			migration.Dir = normalizeAtlasMigrationDir(value)
 		case "format":
-			value, err := p.identifierOrStringAttr(attrName, attr)
+			value, err := p.scopedEnumOrStringAttr(
+				attrName,
+				attr,
+				"atlas",
+				"golang-migrate",
+				"goose",
+				"flyway",
+				"liquibase",
+				"dbmate",
+			)
 			if err != nil {
 				return err
 			}
@@ -404,13 +414,13 @@ func (p atlasParser) parseMigration(block *hclsyntax.Block, cfg *Config) error {
 			}
 			migration.LockTimeout = value
 		case "exec_order":
-			value, err := p.identifierOrStringAttr(attrName, attr)
+			value, err := p.scopedEnumOrStringAttr(attrName, attr, "LINEAR", "LINEAR_SKIP", "NON_LINEAR")
 			if err != nil {
 				return err
 			}
-			migration.ExecOrder = value
+			migration.ExecOrder = strings.ReplaceAll(strings.ToLower(value), "_", "-")
 		case "tx_mode":
-			value, err := p.identifierOrStringAttr(attrName, attr)
+			value, err := p.stringAttr(attrName, attr)
 			if err != nil {
 				return err
 			}
@@ -1064,6 +1074,26 @@ func (p atlasParser) identifierOrStringAttr(name string, attr *hclsyntax.Attribu
 	}
 	root, ok := traversal.Traversal[0].(hcl.TraverseRoot)
 	if !ok {
+		return "", unsupportedAttr(name, attr)
+	}
+	return root.Name, nil
+}
+
+func (p atlasParser) scopedEnumOrStringAttr(
+	name string,
+	attr *hclsyntax.Attribute,
+	allowed ...string,
+) (string, error) {
+	value, diags := attr.Expr.Value(p.ctx)
+	if !diags.HasErrors() && value.Type() == cty.String {
+		return value.AsString(), nil
+	}
+	traversal, ok := attr.Expr.(*hclsyntax.ScopeTraversalExpr)
+	if !ok || len(traversal.Traversal) != 1 {
+		return "", unsupportedAttr(name, attr)
+	}
+	root, ok := traversal.Traversal[0].(hcl.TraverseRoot)
+	if !ok || !slices.Contains(allowed, root.Name) {
 		return "", unsupportedAttr(name, attr)
 	}
 	return root.Name, nil
