@@ -1165,6 +1165,10 @@ func stringListValue(name string, attr *hclsyntax.Attribute, value cty.Value) ([
 
 func normalizeAtlasMigrationDir(value string) string {
 	if path, found := strings.CutPrefix(value, "file://"); found && path != "" {
+		// Preserve URL spelling when later resolution needs query or escape semantics.
+		if strings.ContainsAny(path, "?%") {
+			return value
+		}
 		return path
 	}
 	return value

@@ -1,12 +1,103 @@
 package atlasargs_test
 
 import (
+	"net/url"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/internal/atlasargs"
 )
+
+func TestParseLocalDir_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name      string
+		input     string
+		wantPath  string
+		wantQuery url.Values
+	}{
+		{
+			name:      "plain path",
+			input:     "migrations",
+			wantPath:  "migrations",
+			wantQuery: url.Values{},
+		},
+		{
+			name:      "plain path preserves URL escapes",
+			input:     "migrations%2Farchive",
+			wantPath:  "migrations%2Farchive",
+			wantQuery: url.Values{},
+		},
+		{
+			name:      "plain path preserves trailing question mark",
+			input:     "migrations?",
+			wantPath:  "migrations?",
+			wantQuery: url.Values{},
+		},
+		{
+			name:      "plain path preserves query-like suffix",
+			input:     "migrations?format=atlas",
+			wantPath:  "migrations?format=atlas",
+			wantQuery: url.Values{},
+		},
+		{
+			name:      "file URL",
+			input:     "file://migrations",
+			wantPath:  "migrations",
+			wantQuery: url.Values{},
+		},
+		{
+			name:      "empty file URL",
+			input:     "file://",
+			wantPath:  "",
+			wantQuery: url.Values{},
+		},
+		{
+			name:      "encoded path and format",
+			input:     "file://migration%20files?format=atlas",
+			wantPath:  "migration files",
+			wantQuery: url.Values{"format": []string{"atlas"}},
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			got, err := atlasargs.ParseLocalDir(tt.input)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got.Path, qt.Equals, tt.wantPath)
+			c.Assert(got.Query, qt.DeepEquals, tt.wantQuery)
+		})
+	}
+}
+
+func TestParseLocalDir_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	c.Run("remote URL", func(c *qt.C) {
+		got, err := atlasargs.ParseLocalDir("atlas://repo/migrations")
+
+		c.Assert(err, qt.ErrorMatches, "only local file:// migration directories are supported")
+		c.Assert(got, qt.DeepEquals, atlasargs.LocalDir{})
+	})
+
+	c.Run("malformed query", func(c *qt.C) {
+		got, err := atlasargs.ParseLocalDir("file://migrations?format=%zz")
+
+		c.Assert(err, qt.ErrorMatches, `parse migration directory URL query:.*invalid URL escape.*`)
+		c.Assert(got, qt.DeepEquals, atlasargs.LocalDir{})
+	})
+}
+
+func TestLocalDirValue_FailurePathRejectsQuery(t *testing.T) {
+	c := qt.New(t)
+
+	got, err := atlasargs.LocalDirValue("file://migrations?format=atlas")
+
+	c.Assert(err, qt.ErrorMatches, "migration directory URL query parameters are not supported for this command")
+	c.Assert(got, qt.Equals, "")
+}
 
 func TestMap_HappyPathMigrateDownNativeFlags(t *testing.T) {
 	c := qt.New(t)
@@ -57,6 +148,20 @@ func TestMap_HappyPathStringDefaultsMapToNativeFlags(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.DeepEquals, []string{
 		"--dir=migrations",
+		"--dir-format=atlas",
+	})
+}
+
+func TestMap_HappyPathPlainQuestionMarkDirIsPreserved(t *testing.T) {
+	c := qt.New(t)
+
+	got, err := atlasargs.Map("migrate", "hash", migrateHashFlags(), []string{
+		"--dir=migrations?format=atlas",
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, []string{
+		"--dir=migrations?format=atlas",
 		"--dir-format=atlas",
 	})
 }

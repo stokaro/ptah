@@ -1,6 +1,7 @@
 package atlasprojectpath_test
 
 import (
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -23,6 +24,22 @@ func TestLocalDir_HappyPath(t *testing.T) {
 	c.Assert(resolved, qt.Equals, want)
 }
 
+func TestLocalDirWithQuery_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	baseDir := t.TempDir()
+	want, err := pathguard.ResolveWithinRoot(filepath.Join(baseDir, "migration files"), baseDir)
+	c.Assert(err, qt.IsNil)
+
+	resolved, query, err := atlasprojectpath.LocalDirWithQuery(
+		"file://migration%20files?format=atlas",
+		baseDir,
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(resolved, qt.Equals, want)
+	c.Assert(query, qt.DeepEquals, url.Values{"format": []string{"atlas"}})
+}
+
 func TestLocalDir_PreservesAbsolutePath(t *testing.T) {
 	c := qt.New(t)
 	baseDir := t.TempDir()
@@ -34,6 +51,31 @@ func TestLocalDir_PreservesAbsolutePath(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(resolved, qt.Equals, want)
+}
+
+func TestLocalDir_PreservesPlainPathURLCharacters(t *testing.T) {
+	c := qt.New(t)
+	baseDir := t.TempDir()
+	want, err := pathguard.ResolveWithinRoot(filepath.Join(baseDir, "migrations%2Farchive"), "")
+	c.Assert(err, qt.IsNil)
+
+	resolved, err := atlasprojectpath.LocalDir("migrations%2Farchive", baseDir)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(resolved, qt.Equals, want)
+}
+
+func TestLocalDirWithQuery_PreservesPlainPathQueryLikeSuffix(t *testing.T) {
+	c := qt.New(t)
+	baseDir := t.TempDir()
+	want, err := pathguard.ResolveWithinRoot(filepath.Join(baseDir, "migrations?format=atlas"), "")
+	c.Assert(err, qt.IsNil)
+
+	resolved, query, err := atlasprojectpath.LocalDirWithQuery("migrations?format=atlas", baseDir)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(resolved, qt.Equals, want)
+	c.Assert(query, qt.HasLen, 0)
 }
 
 func TestLocalDir_AllowsParentRelativePath(t *testing.T) {

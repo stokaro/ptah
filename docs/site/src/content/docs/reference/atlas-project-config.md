@@ -97,7 +97,7 @@ env "local" {
 | `env.schema.mode.<object>` | Default object-kind exclusions for supported schema object kinds. |
 | `env.exclude` | Default Atlas-style resource exclusion filters. |
 | `migration.dir` | Default migration directory. |
-| `migration.format` | Default migration directory format. |
+| `migration.format` | Default migration directory format where supported; safety gate for `migrate apply`. |
 | `migration.revisions_schema` | Default revision metadata schema. |
 | `migration.lock_timeout` | Default migration lock timeout. |
 | `migration.exec_order` | Default migration execution order. |
@@ -118,6 +118,29 @@ env "local" {
 
 Explicit CLI flags win over `atlas.hcl`, and `atlas.hcl` wins over built-in
 defaults.
+
+Ptah accepts Atlas's `atlas`, `golang-migrate`, `goose`, `flyway`, `liquibase`,
+and `dbmate` values while evaluating `atlas.hcl`. Command support is narrower
+than config parsing: `ptah atlas migrate apply` currently executes only
+`atlas` directories. It rejects every other value before opening the target
+database instead of risking execution under the wrong file semantics. An
+explicit `?format=` query on the effective directory URL, whether declared by
+`migration.dir` or passed with CLI `--dir`, overrides this project default,
+matching Atlas's URL precedence. An empty query value selects the native
+`atlas` format.
+
+Convert an external directory before applying it:
+
+```bash
+ptah atlas migrate import \
+  --from "file://legacy-migrations?format=goose" \
+  --to file://migrations
+ptah atlas migrate apply --env local \
+  --dir "file://migrations?format=atlas"
+```
+
+Native apply support for all Atlas OSS directory formats is tracked in
+[`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742).
 
 `env.src` and `env.schema.src` accept local schema-file sources for
 `schema apply`, `schema diff`, and `migrate diff`. Plain local schema paths and

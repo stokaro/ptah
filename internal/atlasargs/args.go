@@ -3,11 +3,19 @@ package atlasargs
 
 import (
 	"fmt"
+	"net/url"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 )
+
+// LocalDir describes a parsed local Atlas migration directory URL.
+type LocalDir struct {
+	Path  string
+	Query url.Values
+}
 
 type FlagKind int
 
@@ -122,13 +130,43 @@ func UnsupportedBool(name, shorthand, usage string) Flag {
 // LocalDirValue converts a local Atlas file:// directory URL to a native local
 // path and rejects remote migration directory URLs.
 func LocalDirValue(value string) (string, error) {
-	if after, found := strings.CutPrefix(value, "file://"); found {
-		return after, nil
+	dir, err := ParseLocalDir(value)
+	if err != nil {
+		return "", err
 	}
-	if strings.Contains(value, "://") {
-		return "", fmt.Errorf("only local file:// migration directories are supported")
+	if len(dir.Query) > 0 {
+		return "", fmt.Errorf("migration directory URL query parameters are not supported for this command")
 	}
-	return value, nil
+	return dir.Path, nil
+}
+
+// ParseLocalDir parses a local Atlas file:// migration directory URL while
+// preserving its query parameters for command-specific validation. Plain
+// filesystem paths are preserved verbatim and do not have query semantics.
+func ParseLocalDir(value string) (LocalDir, error) {
+	if !strings.HasPrefix(value, "file://") {
+		if strings.Contains(value, "://") {
+			return LocalDir{}, fmt.Errorf("only local file:// migration directories are supported")
+		}
+		return LocalDir{Path: value, Query: url.Values{}}, nil
+	}
+	base, rawQuery, _ := strings.Cut(value, "?")
+	query, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		return LocalDir{}, fmt.Errorf("parse migration directory URL query: %w", err)
+	}
+	path := strings.TrimPrefix(base, "file://")
+	if path == "" {
+		return LocalDir{Query: query}, nil
+	}
+	path, err = url.PathUnescape(path)
+	if err != nil {
+		return LocalDir{}, fmt.Errorf("decode migration directory URL path: %w", err)
+	}
+	return LocalDir{
+		Path:  filepath.Clean(filepath.FromSlash(path)),
+		Query: query,
+	}, nil
 }
 
 // Map translates Atlas-style args to native Ptah args using the provided flag

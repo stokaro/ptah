@@ -66,7 +66,7 @@ executable name.
 | `ptah atlas version` | Prints Ptah build information. |
 | `ptah atlas license` | Prints Ptah MIT license and license-clean Atlas compatibility notice. |
 | `ptah atlas completion <shell>` | Generates shell completion output for the full `ptah` command tree, including the Atlas-compatible namespace. |
-| `ptah atlas migrate apply` | Applies Atlas-format migration directories with Atlas-compatible apply flags. With `--env`, reads `env.url`, `migration`, and `format.migrate.apply` from `atlas.hcl`. |
+| `ptah atlas migrate apply` | Applies Atlas-format migration directories with Atlas-compatible apply flags. With `--env`, reads `env.url`, `migration`, and `format.migrate.apply` from `atlas.hcl`. External migration-tool formats are rejected before the target database is opened and must first be converted with `ptah atlas migrate import`. |
 | `ptah atlas migrate status` | Reports Atlas-format migration status with Atlas revision-table metadata and Atlas-format migration directories by default; supports `--dir-format atlas`, `--revisions-schema`, and Atlas Go-template `--format` output over `.Env`, `.Available`, `.Applied`, `.Pending`, `.Current`, `.Next`, and `.Status`. |
 | `ptah atlas migrate hash` | Forwards to `ptah migrations hash` with Atlas `--dir-format` defaulting to `atlas`, so the compatibility path writes `atlas.sum` by default. |
 | `ptah atlas migrate validate` | Silently verifies `atlas.sum` on success; missing or mismatched checksum files use Atlas-compatible exit-1 stdout/stderr diagnostics, and `--dev-url` cleans the dev database and replays the migration directory to validate SQL execution. |
