@@ -144,3 +144,37 @@ conflicting definitions are an error. This is Ptah's open, local, no-account
 equivalent of Atlas's Pro-only `composite_schema` data source. For composing
 multiple Go packages — including on `ptah schema compare` and the migration
 commands — see [Go schema](../go-schema/).
+
+## Load from an external program
+
+When the desired schema lives in an ORM or framework rather than in Go
+annotations or a static file, `ptah schema render --schema-cmd` runs an external
+program and reads its standard output as the desired schema. The program is
+executed directly — never through a shell — so an ORM's own schema exporter can
+feed Ptah's engine:
+
+```bash
+ptah schema render --schema-cmd "./scripts/export-schema" --dialect postgres
+```
+
+The command's stdout is parsed as SQL by default; set `--schema-format sql`
+explicitly if you prefer. Execution is bounded by a timeout, and if the program
+exits non-zero its stderr is surfaced in the error. Because the program is run
+with an explicit argument vector split on whitespace, arguments cannot contain
+spaces — wrap a more complex invocation in a small script and point
+`--schema-cmd` at that.
+
+An external command composes with the other sources, so you can, for example,
+merge an ORM export with a vendored HCL file:
+
+```bash
+ptah schema render \
+  --schema-cmd "./scripts/export-schema" \
+  --schema-file ./vendor/thirdparty.hcl \
+  --dialect postgres
+```
+
+This is Ptah's open, local, MIT equivalent of Atlas's `data "external_schema"`
+source and its ORM provider loaders. External-command support currently lands on
+`ptah schema render`; the other commands gain it as the shared resolver is
+extended.
