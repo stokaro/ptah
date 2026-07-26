@@ -195,7 +195,7 @@ func TestZZZAtlasUsageErrorsExit1WithoutUsage(t *testing.T) {
 		{
 			name:       "lazy completion command",
 			args:       []string{"atlas", "completion", "bash", "extra"},
-			wantStderr: "error: unexpected positional arguments [\"completion\" \"bash\" \"extra\"]\n",
+			wantStderr: "Error: unknown command \"completion\" for \"ptah atlas\"\nRun 'ptah atlas --help' for usage.\n",
 		},
 	}
 
