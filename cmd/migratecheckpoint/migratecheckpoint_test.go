@@ -97,6 +97,23 @@ func TestMigrateCheckpointCommand_RejectsVersionAtOrBelowHistory(t *testing.T) {
 	c.Assert(written, qt.HasLen, 0)
 }
 
+func TestMigrateCheckpointCommand_RejectsNonPtahDirFormat(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	seedMigrations(c, dir)
+	shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
+
+	// Checkpoint files are ptah-format only; the atlas format would leave a
+	// mixed directory with a stale integrity file, so it is refused up front.
+	out, err := runCheckpoint("--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite", "--dir-format", "atlas")
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out, qt.Contains, "supports only the")
+
+	written, err := filepath.Glob(filepath.Join(dir, "*checkpoint*"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(written, qt.HasLen, 0)
+}
+
 func TestMigrateCheckpointCommand_RejectsNonPositiveVersion(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

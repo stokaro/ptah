@@ -88,6 +88,14 @@ func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) err
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	// Checkpoint files and their integrity entry are written only in the ptah
+	// two-file convention (NNNNNNNNNN_name.checkpoint.up.sql / .down.sql plus
+	// ptah.sum). Writing them into a directory read as another format would
+	// leave a mixed-format directory with a stale integrity file, so refuse any
+	// non-ptah format up front rather than reporting success and corrupting it.
+	if dirFormat != migrator.MigrationDirFormatPtah {
+		return cmdutil.Fail(cmd, fmt.Errorf("checkpoint supports only the %q migration directory format, not %q", migrator.MigrationDirFormatPtah, dirFormat))
+	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

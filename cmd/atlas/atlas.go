@@ -167,10 +167,13 @@ func newAtlasMigrateCommand() *cobra.Command {
 			factory:            migratecheckpoint.NewMigrateCheckpointCommand,
 			positionals:        []atlasPositionalArg{{name: "name", nativeName: "description"}},
 			positionalOptional: true,
+			// No --dir-format flag: checkpoint output is ptah-format only (see the
+			// native command's format guard), so the directory is read and written
+			// with the native ptah default rather than the atlas default the other
+			// migrate verbs use.
 			flags: []atlasargs.Flag{
 				atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
 				atlasargs.NativeString("dev-url", "", "URL of the dev database the directory is replayed into", "shadow-db"),
-				atlasMigrateDirFormatFlag("dir-format"),
 			},
 		},
 		{
