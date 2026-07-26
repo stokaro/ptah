@@ -90,6 +90,81 @@ func TestCompareWithDialect_BlankTablePrimaryKeyDoesNotSynthesizeConstraint(t *t
 	c.Assert(diff.ConstraintsAddedWithTables, qt.HasLen, 0, qt.Commentf("diff: %#v", diff))
 }
 
+func TestCompareWithDialect_SingleColumnFieldLevelPrimaryKeyIsNotDuplicated(t *testing.T) {
+	c := qt.New(t)
+
+	// A single-column table-level PRIMARY KEY that is also carried as a column
+	// primary key (Field.Primary) — the shape the SQL and HCL loaders produce —
+	// must be compared field-to-field, not synthesized as a separate table
+	// constraint. Otherwise an already-existing primary key is reported as a
+	// spurious ADD PRIMARY KEY (#708).
+	generated := &goschema.Database{
+		Tables: []goschema.Table{{
+			StructName: "Pet",
+			Name:       "pets",
+			PrimaryKey: []string{"id"},
+		}},
+		Fields: []goschema.Field{
+			{StructName: "Pet", Name: "id", Type: "BIGINT", Primary: true, Nullable: false},
+			{StructName: "Pet", Name: "name", Type: "TEXT", Nullable: false},
+		},
+	}
+	database := &types.DBSchema{
+		Tables: []types.DBTable{{
+			Name: "pets",
+			Type: "TABLE",
+			Columns: []types.DBColumn{
+				{Name: "id", DataType: "bigint", IsNullable: "NO", IsPrimaryKey: true},
+				{Name: "name", DataType: "text", IsNullable: "NO"},
+			},
+		}},
+		Constraints: []types.DBConstraint{{
+			Name:        "pets_pkey",
+			TableName:   "pets",
+			Type:        "PRIMARY KEY",
+			ColumnNames: []string{"id"},
+		}},
+	}
+
+	diff := schemadiff.CompareWithDialect(generated, database, "postgres")
+	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0, qt.Commentf("diff: %#v", diff))
+	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))
+}
+
+func TestCompareWithDialect_SingleColumnFieldLevelPrimaryKeyMissingFromDBIsDetected(t *testing.T) {
+	c := qt.New(t)
+
+	// The mirror of the previous test: when the database is missing the primary
+	// key, comparison must still detect it (via the field-level path, since the
+	// table-level constraint is not synthesized for a field-level PK). It must
+	// not be silently dropped (#708).
+	generated := &goschema.Database{
+		Tables: []goschema.Table{{
+			StructName: "Pet",
+			Name:       "pets",
+			PrimaryKey: []string{"id"},
+		}},
+		Fields: []goschema.Field{
+			{StructName: "Pet", Name: "id", Type: "BIGINT", Primary: true, Nullable: false},
+			{StructName: "Pet", Name: "name", Type: "TEXT", Nullable: false},
+		},
+	}
+	database := &types.DBSchema{
+		Tables: []types.DBTable{{
+			Name: "pets",
+			Type: "TABLE",
+			Columns: []types.DBColumn{
+				{Name: "id", DataType: "bigint", IsNullable: "NO"},
+				{Name: "name", DataType: "text", IsNullable: "NO"},
+			},
+		}},
+	}
+
+	diff := schemadiff.CompareWithDialect(generated, database, "postgres")
+	c.Assert(diff.HasChanges(), qt.IsTrue, qt.Commentf("diff: %#v", diff))
+	c.Assert(diff.ConstraintsAdded, qt.Contains, "pets_pkey", qt.Commentf("diff: %#v", diff))
+}
+
 func compositePrimaryKeySchema() *goschema.Database {
 	return &goschema.Database{
 		Tables: []goschema.Table{{

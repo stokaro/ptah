@@ -18,9 +18,27 @@ import (
 // foreignKeyConstraintChanged (issue #189). FKs without a synthesized
 // counterpart (e.g. a column that is not yet in the database, which never gets
 // synthesized) keep the previous filter-out behavior.
+// buildTablePrimaryKeyColumnSets maps each generated table's qualified name to
+// the set of columns in its table-level primary key.
+func buildTablePrimaryKeyColumnSets(generated *goschema.Database) map[string]map[string]struct{} {
+	result := make(map[string]map[string]struct{}, len(generated.Tables))
+	for _, table := range generated.Tables {
+		columns := make(map[string]struct{})
+		for _, column := range tablePrimaryKeyColumns(table) {
+			columns[column] = struct{}{}
+		}
+		result[table.QualifiedName()] = columns
+	}
+	return result
+}
+
 func isFieldLevelConstraint(dbConstraint types.DBConstraint, generated *goschema.Database, synthesizedFKKeys map[string]struct{}) bool {
 	// Create a map of table.column -> field for quick lookup
 	fieldMap := make(map[string]goschema.Field)
+	// tablePKColumns maps a qualified table name to the set of columns in its
+	// table-level primary key (Table.PrimaryKey), which are synthesized as a
+	// table-level PRIMARY KEY constraint.
+	tablePKColumns := buildTablePrimaryKeyColumnSets(generated)
 	for _, field := range generated.Fields {
 		// Get table name for this field
 		tableName := field.StructName // default to struct name
@@ -43,10 +61,18 @@ func isFieldLevelConstraint(dbConstraint types.DBConstraint, generated *goschema
 			return true
 		}
 	case "PRIMARY KEY":
-		// Check if there's a field with primary=true for this column
-		key := dbConstraint.QualifiedTableName() + "." + getConstraintColumn(dbConstraint)
+		// Treat as field-level only when the column is a column-level primary key
+		// that is NOT also part of the table's PrimaryKey. A single-column
+		// table-level PK is normalized to carry both Field.Primary and
+		// Table.PrimaryKey; it is synthesized as a table-level constraint, so the
+		// database constraint must stay in the comparison to match/add correctly
+		// (#708).
+		column := getConstraintColumn(dbConstraint)
+		key := dbConstraint.QualifiedTableName() + "." + column
 		if field, exists := fieldMap[key]; exists && field.Primary {
-			return true
+			if _, synthesized := tablePKColumns[dbConstraint.QualifiedTableName()][column]; !synthesized {
+				return true
+			}
 		}
 	case "UNIQUE":
 		// Check if there's a field with unique=true for this column
