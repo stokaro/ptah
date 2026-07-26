@@ -58,6 +58,10 @@ current schema IR:
   `for` or `foreach`, `as`, and `comment`
 - PostgreSQL `policy` blocks with `on`, `for`, `to`, `using`, `check`, and
   `comment`
+- PostgreSQL `sequence` blocks with `type`, `start`, `increment`, `min_value`,
+  `max_value`, `cache`, `cycle`, `owned_by`, `if_not_exists`, and `comment`
+- PostgreSQL `domain` blocks with `type`, `null`, `default`, `check`, and
+  `comment`
 
 Unsupported schema semantics are rejected with an explicit parse error instead
 of being silently dropped from the generated Ptah IR.
@@ -260,6 +264,22 @@ extension "pg_trgm" {
   comment = "trigram search"
 }
 
+sequence "order_number_seq" {
+  schema    = schema.public
+  type      = bigint
+  start     = 1000
+  increment = 1
+  cache     = 10
+  cycle     = false
+}
+
+domain "email" {
+  schema = schema.public
+  type   = text
+  null   = false
+  check  = "VALUE ~ '@'"
+}
+
 role "app_user" {
   login   = true
   inherit = true
@@ -357,6 +377,8 @@ Atlas features that Ptah cannot represent without losing semantics, including:
 - trigger `execute`, `referencing`, `when`, constraint, and deferrable metadata
 - policy `as`
 - permission targets other than schema and table
+- PostgreSQL `composite` and `range` custom types (only `enum` custom types are
+  modeled so far)
 - HCL objects outside direct schema definitions, such as realms and other
   dialect-specific object types
 
