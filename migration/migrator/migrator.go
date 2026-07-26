@@ -1747,7 +1747,9 @@ func ensureNoTransactionHasNoTimeouts(version int64, timeouts MigrationTimeouts)
 
 func (m *Migrator) migrationsToApply(migrations []*Migration, applied []int64, targetVersion int64) ([]*Migration, error) {
 	currentVersion := maxAppliedVersion(applied)
-	pendingVersions := pendingMigrationVersions(migrations, applied)
+	bootstrap := checkpointBootstrap(migrations, applied, targetVersion)
+	floor := checkpointFloor(migrations, applied, bootstrap)
+	pendingVersions := pendingMigrationVersionsFloored(migrations, applied, bootstrap, floor)
 	outOfOrderVersions := outOfOrderMigrationVersions(pendingVersions, currentVersion)
 	execOrder := normalizeExecOrder(m.execOrder)
 
@@ -1758,6 +1760,9 @@ func (m *Migrator) migrationsToApply(migrations []*Migration, applied []int64, t
 	appliedSet := versionSet(applied)
 	migrationsToApply := make([]*Migration, 0, len(pendingVersions))
 	for _, migration := range migrations {
+		if !checkpointRunnable(migration, bootstrap, floor) {
+			continue
+		}
 		if _, ok := appliedSet[migration.Version]; ok {
 			continue
 		}
@@ -1774,10 +1779,78 @@ func (m *Migrator) migrationsToApply(migrations []*Migration, applied []int64, t
 	return migrationsToApply, nil
 }
 
+// checkpointBootstrap returns the newest checkpoint the migrator runs to
+// bootstrap a fresh database, or nil. A checkpoint only bootstraps a database
+// with no applied migrations; an already-migrated database never runs one.
+func checkpointBootstrap(migrations []*Migration, applied []int64, targetVersion int64) *Migration {
+	if len(applied) != 0 {
+		return nil
+	}
+	var best *Migration
+	for _, migration := range migrations {
+		if !migration.IsCheckpoint {
+			continue
+		}
+		if targetVersion > 0 && migration.Version > targetVersion {
+			continue
+		}
+		if best == nil || migration.Version > best.Version {
+			best = migration
+		}
+	}
+	return best
+}
+
+// checkpointFloor returns the version below which migrations are squashed by a
+// checkpoint and must not be applied individually: the bootstrap checkpoint's
+// version on a fresh database, otherwise the highest applied checkpoint's
+// version (0 when no checkpoint applies).
+func checkpointFloor(migrations []*Migration, applied []int64, bootstrap *Migration) int64 {
+	if bootstrap != nil {
+		return bootstrap.Version
+	}
+	appliedSet := versionSet(applied)
+	var floor int64
+	for _, migration := range migrations {
+		if !migration.IsCheckpoint {
+			continue
+		}
+		if _, ok := appliedSet[migration.Version]; ok && migration.Version > floor {
+			floor = migration.Version
+		}
+	}
+	return floor
+}
+
+// checkpointRunnable reports whether a migration is eligible to run given the
+// checkpoint bootstrap decision. Only the bootstrap checkpoint runs; other
+// checkpoints never do, and ordinary migrations below the squash floor are
+// covered by the checkpoint and skipped.
+func checkpointRunnable(migration *Migration, bootstrap *Migration, floor int64) bool {
+	if migration.IsCheckpoint {
+		return migration == bootstrap
+	}
+	return migration.Version >= floor
+}
+
 func pendingMigrationVersions(migrations []*Migration, applied []int64) []int64 {
+	bootstrap := checkpointBootstrap(migrations, applied, 0)
+	floor := checkpointFloor(migrations, applied, bootstrap)
+	return pendingMigrationVersionsFloored(migrations, applied, bootstrap, floor)
+}
+
+// pendingMigrationVersionsFloored computes the versions that would be applied
+// next given a checkpoint bootstrap decision: the bootstrap checkpoint (on a
+// fresh database) plus any ordinary migration at or above the squash floor that
+// is not yet applied. Squashed history and non-bootstrap checkpoints are not
+// pending.
+func pendingMigrationVersionsFloored(migrations []*Migration, applied []int64, bootstrap *Migration, floor int64) []int64 {
 	appliedSet := versionSet(applied)
 	pending := make([]int64, 0, len(migrations))
 	for _, migration := range migrations {
+		if !checkpointRunnable(migration, bootstrap, floor) {
+			continue
+		}
 		if _, ok := appliedSet[migration.Version]; ok {
 			continue
 		}
