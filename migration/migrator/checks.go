@@ -132,7 +132,7 @@ func parseCheckArgs(args string) (Check, error) {
 		return Check{}, fmt.Errorf("+ptah check assert must be a single statement, got %d", len(statements))
 	}
 	// Drop any trailing statement terminator(s) and whitespace so drivers that
-	// reject a trailing ';' on a prepared query (MySQL) accept the assert.
+	// reject a trailing ';' on a prepared query (MySQL) accept the predicate.
 	check.Assert = strings.TrimRight(strings.TrimSpace(check.Assert), "; \t")
 	return check, nil
 }
