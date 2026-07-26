@@ -15,6 +15,7 @@ architecture is better.
 | First successful local run | [Quick start](docs/site/src/content/docs/getting-started.md) |
 | Application-owned Go schema | [Go schema workflow](docs/site/src/content/docs/workflows/go-schema.md) |
 | YAML or HCL schema source | [Schema files](docs/site/src/content/docs/workflows/schema-files.md) |
+| Compose one schema from several packages or files | [Go schema workflow](docs/site/src/content/docs/workflows/go-schema.md) |
 | Migration operations | [Migrations](docs/site/src/content/docs/workflows/migrations.md) |
 | Atlas-compatible CLI paths | [Atlas-compatible CLI](docs/site/src/content/docs/workflows/atlas-cli.md) |
 | Reusable Go packages | [Reusable components](docs/site/src/content/docs/reference/reusable-components.md) |
