@@ -153,7 +153,6 @@ func TestZZZRootUsageErrorsExit2WithoutUsage(t *testing.T) {
 		{name: "seed", args: []string{"seed", "--bogus-flag"}},
 		{name: "sql lint", args: []string{"sql", "lint", "--bogus-flag"}},
 		{name: "viz", args: []string{"viz", "--bogus-flag"}},
-		{name: "atlas version", args: []string{"atlas", "version", "--bogus-flag"}},
 		{name: "version", args: []string{"version", "--bogus-flag"}},
 	}
 
@@ -167,6 +166,48 @@ func TestZZZRootUsageErrorsExit2WithoutUsage(t *testing.T) {
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 			c.Assert(stderr, qt.Contains, "error: unknown flag: --bogus-flag")
 			c.Assert(stderr, qt.Not(qt.Contains), "Usage:")
+		})
+	}
+}
+
+func TestZZZAtlasUsageErrorsExit1WithoutUsage(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		wantStderr string
+	}{
+		{
+			name:       "unknown flag",
+			args:       []string{"atlas", "version", "--bogus-flag"},
+			wantStderr: "error: unknown flag: --bogus-flag\n",
+		},
+		{
+			name: "mutually exclusive flags",
+			args: []string{
+				"atlas", "schema", "apply",
+				"--url", "sqlite://schema.db",
+				"--to", "file://schema.sql",
+				"--file", "schema.sql",
+				"--dry-run",
+			},
+			wantStderr: "error: if any flags in the group [file to] are set none of the others can be; [file to] were all set\n",
+		},
+		{
+			name:       "lazy completion command",
+			args:       []string{"atlas", "completion", "bash", "extra"},
+			wantStderr: "error: unexpected positional arguments [\"completion\" \"bash\" \"extra\"]\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, stderr, err := executeRoot(tt.args...)
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+			c.Assert(stderr, qt.Equals, tt.wantStderr)
 		})
 	}
 }

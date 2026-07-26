@@ -77,12 +77,11 @@ func executeWithRecovery(cmd *cobra.Command) (err error) {
 		}
 	}()
 
-	err = cmd.Execute()
-	if err == nil || exitcode.Code(err, -1) != -1 {
-		return err
+	executed, err := cmd.ExecuteC()
+	if executed == nil {
+		executed = cmd
 	}
-	fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
-	return exitcode.New(2, err)
+	return cmdutil.NormalizeCommandError(executed, err, 2)
 }
 
 const rootLongDescription = `Ptah generates database schemas from Go entities,

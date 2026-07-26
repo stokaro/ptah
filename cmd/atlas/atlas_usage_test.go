@@ -2,12 +2,15 @@ package atlas_test
 
 import (
 	"bytes"
+	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/atlas"
+	"github.com/stokaro/ptah/cmd/internal/cmdutil"
+	"github.com/stokaro/ptah/cmd/internal/exitcode"
 )
 
 func TestNewAtlasCommand_UsageMatchesAtlasCE(t *testing.T) {
@@ -125,11 +128,32 @@ func TestNewCompatCommandNamedAtlas_UsageMatchesAtlasCE(t *testing.T) {
 	}
 }
 
+func TestNewAtlasCommand_ForwardedNativeFailureExits1(t *testing.T) {
+	c := qt.New(t)
+	missingDir := filepath.Join(t.TempDir(), "missing")
+	cmd := atlas.NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"migrate", "hash", "--dir", "file://" + missingDir})
+
+	err := executeAtlasTestCommand(cmd)
+
+	c.Assert(err, qt.ErrorMatches, "migrations directory .*")
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(out.String(), qt.Contains, "error: migrations directory")
+}
+
 func executeAtlasUsageTestCommand(cmd *cobra.Command, args []string) (string, error) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetArgs(args)
-	err := cmd.Execute()
+	err := executeAtlasTestCommand(cmd)
 	return out.String(), err
+}
+
+func executeAtlasTestCommand(cmd *cobra.Command) error {
+	executed, err := cmd.ExecuteC()
+	return cmdutil.NormalizeCommandError(executed, err, 2)
 }

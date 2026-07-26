@@ -1,18 +1,23 @@
 // Package cmdutil holds small helpers shared by CLI subcommands: consistent
-// usage-error reporting (exit code 2 with a printed message) and directory
-// validation.
+// usage-error reporting, command-tree error policies, and directory validation.
 package cmdutil
 
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 )
 
-const configuredAnnotation = "ptah.exitcode_configured"
+const (
+	configuredAnnotation      = "ptah.exitcode_configured"
+	errorCodePolicyAnnotation = "ptah.error_code_policy"
+	unconfiguredErrorCode     = -1
+	nativeCommandErrorCode    = 2
+)
 
 // ConfigureCommand installs Ptah's common CLI error contract on cmd. It is
 // idempotent because many command constructors return package-level singletons.
@@ -40,16 +45,66 @@ func ConfigureCommandArgs(cmd *cobra.Command, args cobra.PositionalArgs) {
 	}
 }
 
+// SetErrorCodePolicy marks cmd and its future descendants with an inherited
+// process exit code. [NormalizeCommandError] applies the policy after Cobra
+// finishes command execution and validation.
+func SetErrorCodePolicy(cmd *cobra.Command, code int) {
+	if cmd.Annotations == nil {
+		cmd.Annotations = make(map[string]string)
+	}
+	cmd.Annotations[errorCodePolicyAnnotation] = strconv.Itoa(code)
+	cmd.SilenceErrors = true
+	cmd.SilenceUsage = true
+}
+
+// NormalizeCommandError applies the nearest configured ancestor error policy
+// to err. Commands without a configured policy preserve explicit exit codes
+// and map an ordinary error to fallback.
+func NormalizeCommandError(cmd *cobra.Command, err error, fallback int) error {
+	if err == nil {
+		return nil
+	}
+	if code, ok := commandErrorCode(cmd); ok {
+		currentCode := exitcode.Code(err, unconfiguredErrorCode)
+		switch currentCode {
+		case code:
+			return err
+		case unconfiguredErrorCode:
+			fmt.Fprintf(cmd.ErrOrStderr(), "error: %s\n", err)
+		}
+		return exitcode.New(code, err)
+	}
+	if exitcode.Code(err, unconfiguredErrorCode) != unconfiguredErrorCode {
+		return err
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(), "error: %s\n", err)
+	return exitcode.New(fallback, err)
+}
+
+func commandErrorCode(cmd *cobra.Command) (int, bool) {
+	for current := cmd; current != nil; current = current.Parent() {
+		policy, ok := current.Annotations[errorCodePolicyAnnotation]
+		if !ok {
+			continue
+		}
+		code, err := strconv.Atoi(policy)
+		if err == nil {
+			return code, true
+		}
+	}
+	return 0, false
+}
+
 // WrapRunE maps ordinary command failures to exit code 2 while preserving
 // expected-negative results that already carry an explicit exit code.
 func WrapRunE(run func(*cobra.Command, []string) error) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		err := run(cmd, args)
-		if err == nil || exitcode.Code(err, -1) != -1 {
+		if err == nil || exitcode.Code(err, unconfiguredErrorCode) != unconfiguredErrorCode {
 			return err
 		}
 		fmt.Fprintf(cmd.ErrOrStderr(), "error: %s\n", err)
-		return exitcode.New(2, err)
+		return exitcode.New(nativeCommandErrorCode, err)
 	}
 }
 
@@ -58,7 +113,7 @@ func WrapRunE(run func(*cobra.Command, []string) error) func(*cobra.Command, []s
 // through this so the message still reaches the user.
 func Fail(cmd *cobra.Command, err error) error {
 	fmt.Fprintf(cmd.ErrOrStderr(), "error: %s\n", err)
-	return exitcode.New(2, err)
+	return exitcode.New(nativeCommandErrorCode, err)
 }
 
 // FlagErrorFunc reports a cobra flag-parse error (unknown flag, bad value)
