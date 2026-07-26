@@ -68,6 +68,8 @@ table "users" {
 | `view` / `materialized` | SQL body plus schema and comments. |
 | `trigger` | Trigger timing, target, execution mode, function body, and comments. |
 | `policy` | PostgreSQL RLS policy fields. |
+| `sequence` | PostgreSQL `type`, `start`, `increment`, `min_value`, `max_value`, `cache`, `cycle`, `owned_by`, and `if_not_exists`. |
+| `domain` | PostgreSQL `type`, `null`, `default`, and `check`. |
 
 Unsupported semantics fail explicitly. Ptah does not silently drop HCL objects
 that it cannot represent in the schema IR.

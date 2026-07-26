@@ -1,6 +1,7 @@
 package atlashcl
 
 import (
+	"math/big"
 	"strconv"
 	"strings"
 
@@ -614,4 +615,190 @@ func bracketObjectRefName(raw, kind string) (string, bool) {
 		return "", false
 	}
 	return unquoted, true
+}
+
+// parseSequence parses a top-level sequence block into a goschema.Sequence.
+//
+// The name and optional schema come from the block labels (one label = name,
+// two labels = schema and name) or from a schema attribute. The integer bounds
+// (start, increment, min_value, max_value, cache) are optional integer
+// attributes; cycle and if_not_exists are optional booleans.
+func (p *parser) parseSequence(block *hclsyntax.Block) error {
+	schema, name, err := p.objectSchemaAndName(block, "sequence")
+	if err != nil {
+		return err
+	}
+	if err := p.rejectUnsupportedSequenceAttrs(block); err != nil {
+		return err
+	}
+	start, err := p.optionalInt64(block, "start", "sequence")
+	if err != nil {
+		return err
+	}
+	increment, err := p.optionalInt64(block, "increment", "sequence")
+	if err != nil {
+		return err
+	}
+	minValue, err := p.optionalInt64(block, "min_value", "sequence")
+	if err != nil {
+		return err
+	}
+	maxValue, err := p.optionalInt64(block, "max_value", "sequence")
+	if err != nil {
+		return err
+	}
+	cache, err := p.optionalInt64(block, "cache", "sequence")
+	if err != nil {
+		return err
+	}
+	cycle, err := p.boolAttr(block, "cycle", "sequence", false)
+	if err != nil {
+		return err
+	}
+	ifNotExists, err := p.boolAttr(block, "if_not_exists", "sequence", false)
+	if err != nil {
+		return err
+	}
+	seq := goschema.Sequence{
+		Name:        name,
+		Schema:      schema,
+		AsType:      p.optionalString(block.Body.Attributes["type"]),
+		Start:       start,
+		Increment:   increment,
+		MinValue:    minValue,
+		MaxValue:    maxValue,
+		Cache:       cache,
+		Cycle:       cycle,
+		OwnedBy:     p.optionalString(block.Body.Attributes["owned_by"]),
+		IfNotExists: ifNotExists,
+		Comment:     p.optionalString(block.Body.Attributes["comment"]),
+	}
+	// Canonicalize before validating so recognized integer-type aliases (int8,
+	// int4, ...) map to their canonical spelling, matching the Go-annotation
+	// path and keeping the AS clause from churning against introspection.
+	seq.Canonicalize()
+	if !goschema.IsValidSequenceType(seq.AsType) {
+		return p.blockError(block, "sequence %q type %q is invalid; expected smallint, integer, or bigint", name, seq.AsType)
+	}
+	p.db.Sequences = append(p.db.Sequences, seq)
+	return nil
+}
+
+func (p *parser) rejectUnsupportedSequenceAttrs(block *hclsyntax.Block) error {
+	if len(block.Body.Blocks) > 0 {
+		return p.blockError(block.Body.Blocks[0], "unsupported sequence block %q", block.Body.Blocks[0].Type)
+	}
+	return p.rejectUnsupportedAttrs(block, map[string]bool{
+		"schema":        true,
+		"type":          true,
+		"start":         true,
+		"increment":     true,
+		"min_value":     true,
+		"max_value":     true,
+		"cache":         true,
+		"cycle":         true,
+		"owned_by":      true,
+		"if_not_exists": true,
+		"comment":       true,
+	}, "sequence")
+}
+
+// parseDomain parses a top-level domain block into a goschema.Domain.
+//
+// The base type is required. Nullability follows the column convention: null
+// defaults to true, so NOT NULL is expressed as null = false. A default may be
+// a literal or an sql("...") expression, and check carries the domain's CHECK
+// expression (which references VALUE).
+func (p *parser) parseDomain(block *hclsyntax.Block) error {
+	schema, name, err := p.objectSchemaAndName(block, "domain")
+	if err != nil {
+		return err
+	}
+	if err := p.rejectUnsupportedDomainAttrs(block); err != nil {
+		return err
+	}
+	baseType := p.optionalString(block.Body.Attributes["type"])
+	if baseType == "" {
+		return p.blockError(block, "domain %q requires type", name)
+	}
+	nullable, err := p.boolAttr(block, "null", "domain", true)
+	if err != nil {
+		return err
+	}
+	domain := goschema.Domain{
+		Name:     name,
+		Schema:   schema,
+		BaseType: baseType,
+		NotNull:  !nullable,
+		Check:    p.optionalSQLExpression(block.Body.Attributes["check"]),
+		Comment:  p.optionalString(block.Body.Attributes["comment"]),
+	}
+	if defAttr := block.Body.Attributes["default"]; defAttr != nil {
+		if value, ok := p.sqlExpression(defAttr); ok {
+			domain.DefaultExpr = value
+		} else {
+			domain.Default = p.exprString(defAttr)
+		}
+	}
+	domain.Canonicalize()
+	p.db.Domains = append(p.db.Domains, domain)
+	return nil
+}
+
+func (p *parser) rejectUnsupportedDomainAttrs(block *hclsyntax.Block) error {
+	if len(block.Body.Blocks) > 0 {
+		return p.blockError(block.Body.Blocks[0], "unsupported domain block %q", block.Body.Blocks[0].Type)
+	}
+	return p.rejectUnsupportedAttrs(block, map[string]bool{
+		"schema":  true,
+		"type":    true,
+		"null":    true,
+		"default": true,
+		"check":   true,
+		"comment": true,
+	}, "domain")
+}
+
+// objectSchemaAndName resolves an object's bare name and optional schema from
+// the block labels and an optional schema attribute. One label is the name; two
+// labels are schema and name. A schema attribute that disagrees with a
+// two-label schema is a conflict. Unlike qualifyObjectName (which folds the
+// schema into the name), this keeps them separate for objects whose IR carries
+// a dedicated Schema field.
+func (p *parser) objectSchemaAndName(block *hclsyntax.Block, blockType string) (schema, name string, err error) {
+	qualified, err := p.objectName(block, blockType)
+	if err != nil {
+		return "", "", err
+	}
+	schemaAttr := p.optionalRefName(block.Body.Attributes["schema"])
+	if idx := strings.LastIndex(qualified, "."); idx >= 0 {
+		labelSchema, bare := qualified[:idx], qualified[idx+1:]
+		if schemaAttr != "" && schemaAttr != labelSchema {
+			return "", "", p.blockError(block, "%s %q schema label conflicts with schema attribute %q", blockType, bare, schemaAttr)
+		}
+		return labelSchema, bare, nil
+	}
+	return schemaAttr, qualified, nil
+}
+
+// optionalInt64 reads an optional integer attribute, returning nil when absent.
+// A non-integer value (including a fractional number) is an error.
+func (p *parser) optionalInt64(block *hclsyntax.Block, name, label string) (*int64, error) {
+	attr := block.Body.Attributes[name]
+	if attr == nil {
+		return nil, nil
+	}
+	value, diags := attr.Expr.Value(nil)
+	if diags.HasErrors() || value.Type() != cty.Number {
+		return nil, p.blockError(block, "%s attribute %q must be an integer", label, name)
+	}
+	// Int64 reports big.Exact only when the value is a whole number that fits in
+	// an int64; a fractional or out-of-range value would otherwise be silently
+	// truncated or clamped, diverging from the Go-annotation path's ParseInt.
+	f := value.AsBigFloat()
+	result, accuracy := f.Int64()
+	if !f.IsInt() || accuracy != big.Exact {
+		return nil, p.blockError(block, "%s attribute %q must be an integer within the int64 range", label, name)
+	}
+	return &result, nil
 }
