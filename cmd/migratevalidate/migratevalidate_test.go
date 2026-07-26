@@ -52,9 +52,10 @@ func migrationsDir(c *qt.C) string {
 func TestValidate_CleanDirectoryExitsZero(t *testing.T) {
 	c := qt.New(t)
 
-	stdout, _, err := execute("--dir", migrationsDir(c))
+	stdout, stderr, err := execute("--dir", migrationsDir(c))
 	c.Assert(err, qt.IsNil)
-	c.Assert(stdout, qt.Contains, "OK: migrations directory matches ptah.sum")
+	c.Assert(stdout, qt.Equals, "OK: migrations directory matches ptah.sum\n")
+	c.Assert(stderr, qt.Equals, "")
 }
 
 func TestValidate_AutoReadsAtlasSum(t *testing.T) {
@@ -151,6 +152,46 @@ func TestValidate_AtlasMalformedSumMatchesAtlasStreams(t *testing.T) {
 	c.Assert(stderr, qt.Equals, "Error: checksum mismatch\n")
 }
 
+func TestValidate_AtlasCleanDirectoryIsSilent(t *testing.T) {
+	c := qt.New(t)
+	dir := cleanAtlasDirectory(c)
+
+	stdout, stderr, err := executeAtlas("--dir", dir, "--dir-format", "atlas")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals, "")
+}
+
+func TestValidate_AtlasDevReplayIsSilent(t *testing.T) {
+	c := qt.New(t)
+	dir := cleanAtlasDirectory(c)
+	devDBPath := filepath.Join(t.TempDir(), "dev.db")
+
+	stdout, stderr, err := executeAtlas(
+		"--dir", dir,
+		"--dir-format", "atlas",
+		"--dev-url", "sqlite://"+devDBPath,
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals, "")
+}
+
+func TestValidate_AtlasMissingSumMatchesAtlasStreams(t *testing.T) {
+	c := qt.New(t)
+	dir := atlasDirectoryWithoutSum(c)
+
+	stdout, stderr, err := executeAtlas("--dir", dir, "--dir-format", "atlas")
+
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(err, qt.ErrorMatches, "checksum file not found")
+	c.Assert(stdout, qt.Equals, "You have a checksum error in your migration directory.\n"+
+		"Please check your migration files and run 'atlas migrate hash' to re-hash the contents\n\n")
+	c.Assert(stderr, qt.Equals, "Error: checksum file not found\n")
+}
+
 func TestValidate_AtlasIntegrityDriftMatchesAtlasStreams(t *testing.T) {
 	c := qt.New(t)
 
@@ -234,6 +275,20 @@ func TestValidate_NativeDuplicateSumEntryExitsTwo(t *testing.T) {
 	c.Assert(stderr, qt.Contains, `duplicate entry for "1_initial.sql"`)
 }
 
+func TestValidate_NativeSuccessStdoutWriteFailure(t *testing.T) {
+	c := qt.New(t)
+	dir := migrationsDir(c)
+	cmd := migratevalidate.NewMigrateValidateCommand()
+	cmd.SetOut(failingWriter{})
+	cmd.SetArgs([]string{"--dir", dir})
+
+	err := cmd.Execute()
+
+	c.Assert(exitcode.Code(err, 2), qt.Equals, 2)
+	c.Assert(err, qt.ErrorIs, errWriteFailed)
+	c.Assert(err, qt.ErrorMatches, "write validation success: write failed")
+}
+
 func TestValidate_AtlasChecksumStdoutWriteFailure(t *testing.T) {
 	c := qt.New(t)
 	dir := malformedAtlasDirectory(c)
@@ -267,13 +322,62 @@ func TestValidate_AtlasChecksumStderrWriteFailure(t *testing.T) {
 		"Please check your migration files and run 'atlas migrate hash' to re-hash the contents\n\n")
 }
 
+func TestValidate_AtlasMissingSumStdoutWriteFailure(t *testing.T) {
+	c := qt.New(t)
+	dir := atlasDirectoryWithoutSum(c)
+	cmd := migratevalidate.NewAtlasMigrateValidateCommand()
+	var stderr bytes.Buffer
+	cmd.SetOut(failingWriter{})
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"--dir", dir, "--dir-format", "atlas"})
+
+	err := cmd.Execute()
+
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(err, qt.ErrorIs, errWriteFailed)
+	c.Assert(err, qt.ErrorMatches, "checksum file not found: failed to write checksum output: write checksum guidance: write failed")
+	c.Assert(stderr.String(), qt.Equals, "Error: checksum file not found\n")
+}
+
+func TestValidate_AtlasMissingSumStderrWriteFailure(t *testing.T) {
+	c := qt.New(t)
+	dir := atlasDirectoryWithoutSum(c)
+	cmd := migratevalidate.NewAtlasMigrateValidateCommand()
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(failingWriter{})
+	cmd.SetArgs([]string{"--dir", dir, "--dir-format", "atlas"})
+
+	err := cmd.Execute()
+
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(err, qt.ErrorIs, errWriteFailed)
+	c.Assert(err, qt.ErrorMatches, "checksum file not found: failed to write checksum output: write checksum error: write failed")
+	c.Assert(stdout.String(), qt.Equals, "You have a checksum error in your migration directory.\n"+
+		"Please check your migration files and run 'atlas migrate hash' to re-hash the contents\n\n")
+}
+
 func malformedAtlasDirectory(c *qt.C) string {
+	c.Helper()
+	dir := atlasDirectoryWithoutSum(c)
+	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.sum"),
+		[]byte("h1:tampered\n"), 0o600), qt.IsNil)
+	return dir
+}
+
+func cleanAtlasDirectory(c *qt.C) string {
+	c.Helper()
+	dir := atlasDirectoryWithoutSum(c)
+	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	c.Assert(err, qt.IsNil)
+	return dir
+}
+
+func atlasDirectoryWithoutSum(c *qt.C) string {
 	c.Helper()
 	dir := c.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(dir, "1_initial.sql"),
 		[]byte("CREATE TABLE t (id INT);\n"), 0o600), qt.IsNil)
-	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.sum"),
-		[]byte("h1:tampered\n"), 0o600), qt.IsNil)
 	return dir
 }
 

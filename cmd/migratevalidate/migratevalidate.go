@@ -24,7 +24,10 @@ const (
 	atlasChecksumFooter = "Please check your migration files and run 'atlas migrate hash' to re-hash the contents\n\n"
 )
 
-var errAtlasChecksumMismatch = errors.New("checksum mismatch")
+var (
+	errAtlasChecksumMismatch     = errors.New("checksum mismatch")
+	errAtlasChecksumFileNotFound = errors.New("checksum file not found")
+)
 
 // NewMigrateValidateCommand returns the migration validation command.
 func NewMigrateValidateCommand() *cobra.Command {
@@ -82,23 +85,25 @@ func runNativeValidate(cmd *cobra.Command, dir, dirFormatValue, devURL string) e
 		return exitcode.New(1, errors.New("migration directory integrity check failed"))
 	}
 
-	return writeValidationSuccess(cmd, result)
+	return writeNativeValidationSuccess(cmd, result)
 }
 
 func runAtlasValidate(cmd *cobra.Command, dir, dirFormatValue, devURL string) error {
 	result, err := validate(cmd.Context(), dir, dirFormatValue, devURL)
-	if errors.Is(err, migratesum.ErrSumFileMalformed) {
-		return failAtlasChecksum(cmd, nil)
-	}
-	if err != nil {
+	switch {
+	case errors.Is(err, migratesum.ErrSumFileMissing):
+		return failAtlasChecksum(cmd, nil, errAtlasChecksumFileNotFound)
+	case errors.Is(err, migratesum.ErrSumFileMalformed):
+		return failAtlasChecksum(cmd, nil, errAtlasChecksumMismatch)
+	case err != nil:
 		return cmdutil.Fail(cmd, err)
 	}
 
 	if !result.Integrity.OK() {
-		return failAtlasChecksum(cmd, result.Integrity.FirstMismatch())
+		return failAtlasChecksum(cmd, result.Integrity.FirstMismatch(), errAtlasChecksumMismatch)
 	}
 
-	return writeValidationSuccess(cmd, result)
+	return nil
 }
 
 func validate(
@@ -121,24 +126,31 @@ func validate(
 	})
 }
 
-func writeValidationSuccess(cmd *cobra.Command, result migrationvalidate.Result) error {
-	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "OK: migrations directory matches %s\n", result.Integrity.SumFileName)
+func writeNativeValidationSuccess(cmd *cobra.Command, result migrationvalidate.Result) error {
+	var message strings.Builder
+	fmt.Fprintf(&message, "OK: migrations directory matches %s\n", result.Integrity.SumFileName)
 	if result.DevSQLValidated {
-		fmt.Fprintln(out, "OK: migration SQL validated on dev database")
+		message.WriteString("OK: migration SQL validated on dev database\n")
+	}
+	if _, err := io.WriteString(cmd.OutOrStdout(), message.String()); err != nil {
+		return fmt.Errorf("write validation success: %w", err)
 	}
 	return nil
 }
 
-func failAtlasChecksum(cmd *cobra.Command, mismatch *migratesum.Mismatch) error {
+func failAtlasChecksum(
+	cmd *cobra.Command,
+	mismatch *migratesum.Mismatch,
+	atlasErr error,
+) error {
 	writeErr := errors.Join(
 		writeAtlasChecksumGuidance(cmd.OutOrStdout(), mismatch),
-		writeAtlasChecksumError(cmd.ErrOrStderr()),
+		writeAtlasChecksumError(cmd.ErrOrStderr(), atlasErr),
 	)
 	if writeErr != nil {
-		return exitcode.New(1, fmt.Errorf("%w: failed to write checksum output: %w", errAtlasChecksumMismatch, writeErr))
+		return exitcode.New(1, fmt.Errorf("%w: failed to write checksum output: %w", atlasErr, writeErr))
 	}
-	return exitcode.New(1, errAtlasChecksumMismatch)
+	return exitcode.New(1, atlasErr)
 }
 
 func writeAtlasChecksumGuidance(w io.Writer, mismatch *migratesum.Mismatch) error {
@@ -154,8 +166,8 @@ func writeAtlasChecksumGuidance(w io.Writer, mismatch *migratesum.Mismatch) erro
 	return nil
 }
 
-func writeAtlasChecksumError(w io.Writer) error {
-	if _, err := fmt.Fprintln(w, "Error: checksum mismatch"); err != nil {
+func writeAtlasChecksumError(w io.Writer, atlasErr error) error {
+	if _, err := fmt.Fprintf(w, "Error: %s\n", atlasErr); err != nil {
 		return fmt.Errorf("write checksum error: %w", err)
 	}
 	return nil

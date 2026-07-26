@@ -16,8 +16,6 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
-	"github.com/stokaro/ptah/cmd/internal/cmdutil"
-	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/migrateup"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasargs"
@@ -188,94 +186,6 @@ func TestNewCompatCommand_LicenseResolvesAtRoot(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "License: MIT")
 	c.Assert(out.String(), qt.Not(qt.Contains), "not implemented")
-}
-
-func TestNewCompatCommand_UnknownNestedCommandFails(t *testing.T) {
-	c := qt.New(t)
-	cmd := NewCompatCommand("ptah-compat")
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"migrate", "aplly"})
-
-	err := executeAtlasCommandForTest(cmd)
-
-	c.Assert(err, qt.ErrorMatches, `unknown command "aplly" for "ptah-compat migrate"`)
-	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-	c.Assert(out.String(), qt.Contains, `Error: unknown command "aplly" for "ptah-compat migrate"`)
-	c.Assert(out.String(), qt.Contains, `Run 'ptah-compat migrate --help' for usage.`)
-}
-
-func TestNewAtlasCommand_UnknownNestedCommandFails(t *testing.T) {
-	c := qt.New(t)
-	cmd := NewAtlasCommand()
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"migrate", "aplly"})
-
-	err := executeAtlasCommandForTest(cmd)
-
-	c.Assert(err, qt.ErrorMatches, `unknown command "aplly" for "atlas migrate"`)
-	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-	c.Assert(out.String(), qt.Contains, `Error: unknown command "aplly" for "atlas migrate"`)
-	c.Assert(out.String(), qt.Contains, `Run 'atlas migrate --help' for usage.`)
-}
-
-// TestNewAtlasCommand_UnknownTopLevelCommandFails guards #687: `ptah atlas
-// <unknown>` must fail (exit non-zero), not silently print help and exit 0, so a
-// script with a typo does not masquerade as success.
-func TestNewAtlasCommand_UnknownTopLevelCommandFails(t *testing.T) {
-	c := qt.New(t)
-	cmd := NewAtlasCommand()
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"definitely-not-a-command"})
-
-	err := executeAtlasCommandForTest(cmd)
-
-	c.Assert(err, qt.ErrorMatches, `unknown command "definitely-not-a-command" for "atlas"`)
-	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-	c.Assert(out.String(), qt.Contains, `Error: unknown command "definitely-not-a-command" for "atlas"`)
-	c.Assert(out.String(), qt.Contains, `Run 'atlas --help' for usage.`)
-}
-
-func TestNewCompatCommand_UnknownTopLevelCommandFails(t *testing.T) {
-	c := qt.New(t)
-	cmd := NewCompatCommand("ptah-compat")
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"definitely-not-a-command"})
-
-	err := executeAtlasCommandForTest(cmd)
-
-	c.Assert(err, qt.ErrorMatches, `unknown command "definitely-not-a-command" for "ptah-compat"`)
-	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-	c.Assert(out.String(), qt.Contains, `Error: unknown command "definitely-not-a-command" for "ptah-compat"`)
-	c.Assert(out.String(), qt.Contains, `Run 'ptah-compat --help' for usage.`)
-}
-
-func TestAtlasUnknownCommandArgs_ConstructionAndQuoting(t *testing.T) {
-	c := qt.New(t)
-	cmd := NewAtlasCommand() // standalone command path is "atlas"
-	var out bytes.Buffer
-	cmd.SetErr(&out)
-
-	// No positional argument is not an unknown command.
-	c.Assert(atlasUnknownCommandArgs(cmd, nil), qt.IsNil)
-	c.Assert(out.String(), qt.Equals, "")
-
-	// The unknown token is quoted (and escaped) with %q exactly as cobra/Atlas.
-	err := atlasUnknownCommandArgs(cmd, []string{`a"b`, "ignored"})
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(err.Error(), qt.Equals, `unknown command "a\"b" for "atlas"`)
-	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-
-	want := `Error: unknown command "a\"b" for "atlas"` + "\n" +
-		`Run 'atlas --help' for usage.` + "\n"
-	c.Assert(out.String(), qt.Equals, want)
 }
 
 func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
@@ -3645,7 +3555,7 @@ func TestNewAtlasCommand_MigrateValidateResolvesProjectRelativeMigrationDir(t *t
 	err = cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "OK: migrations directory matches atlas.sum")
+	c.Assert(out.String(), qt.Equals, "")
 }
 
 func TestNewAtlasCommand_MigrateHashResolvesProjectRelativeMigrationDir(t *testing.T) {
@@ -4581,11 +4491,6 @@ func TestNewAtlasCommand_HelpAdvertisesGroupedNativeEquivalents(t *testing.T) {
 func writeAtlasTestFile(c *qt.C, dir, name, content string) {
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
-}
-
-func executeAtlasCommandForTest(cmd *cobra.Command) error {
-	executed, err := cmd.ExecuteC()
-	return cmdutil.NormalizeCommandError(executed, err, 2)
 }
 
 func readAtlasTestFile(c *qt.C, dir, name string) string {

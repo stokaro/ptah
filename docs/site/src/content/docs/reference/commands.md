@@ -65,10 +65,11 @@ executable name.
 | --- | --- |
 | `ptah atlas version` | Prints Ptah build information. |
 | `ptah atlas license` | Prints Ptah MIT license and license-clean Atlas compatibility notice. |
+| `ptah atlas completion <shell>` | Generates shell completion output for the full `ptah` command tree, including the Atlas-compatible namespace. |
 | `ptah atlas migrate apply` | Applies Atlas-format migration directories with Atlas-compatible apply flags. With `--env`, reads `env.url`, `migration`, and `format.migrate.apply` from `atlas.hcl`. |
 | `ptah atlas migrate status` | Reports Atlas-format migration status with Atlas revision-table metadata and Atlas-format migration directories by default; supports `--dir-format atlas`, `--revisions-schema`, and Atlas Go-template `--format` output over `.Env`, `.Available`, `.Applied`, `.Pending`, `.Current`, `.Next`, and `.Status`. |
 | `ptah atlas migrate hash` | Forwards to `ptah migrations hash` with Atlas `--dir-format` defaulting to `atlas`, so the compatibility path writes `atlas.sum` by default. |
-| `ptah atlas migrate validate` | Verifies `atlas.sum`; checksum mismatches use Atlas-compatible exit-1 stdout/stderr diagnostics, and `--dev-url` cleans the dev database and replays the migration directory to validate SQL execution. |
+| `ptah atlas migrate validate` | Silently verifies `atlas.sum` on success; missing or mismatched checksum files use Atlas-compatible exit-1 stdout/stderr diagnostics, and `--dev-url` cleans the dev database and replays the migration directory to validate SQL execution. |
 | `ptah atlas migrate lint` | Runs Ptah migration linting with Atlas `--dir-format` defaulting to `atlas`; maps `--latest N` and `--git-base/--git-dir` to native changeset linting, infers lint dialect from `--dev-url`, cleans and replays migrations on directly connectable dev databases, and supports Atlas Go-template `--format` output over `.Env`, `.Steps`, and `.Files`. Docker dev databases and web reports remain explicit gaps. |
 | `ptah atlas migrate new` | Creates an Atlas single-file skeleton migration and updates `atlas.sum` by default; supports `--dir-format atlas`. |
 | `ptah atlas migrate set [version]` | Sets or rewrites the Atlas-format revision row for the positional version by forwarding to `ptah migrations repair` with Atlas revision-table metadata and Atlas-format migration directories by default. With `--env`, reads `env.url`, `migration.dir`, and `migration.revisions_schema` from `atlas.hcl`; explicit `--dir`, `--url`, and `--revisions-schema` flags keep CLI precedence. |

@@ -36,8 +36,7 @@ func TestNewAtlasCommand_MigrateValidateDevURLReplaysAtlasMigration(t *testing.T
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "OK: migrations directory matches atlas.sum")
-	c.Assert(out.String(), qt.Contains, "OK: migration SQL validated on dev database")
+	c.Assert(out.String(), qt.Equals, "")
 	assertSQLiteTableCount(c, devDBPath, "atlas_validate_dev_url", 1)
 }
 
@@ -62,8 +61,7 @@ func TestNewCompatCommand_MigrateValidateDevURLReplaysAtlasMigration(t *testing.
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "OK: migrations directory matches atlas.sum")
-	c.Assert(out.String(), qt.Contains, "OK: migration SQL validated on dev database")
+	c.Assert(out.String(), qt.Equals, "")
 	assertSQLiteTableCount(c, devDBPath, "compat_validate_dev_url", 1)
 }
 

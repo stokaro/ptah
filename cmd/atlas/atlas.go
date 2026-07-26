@@ -54,26 +54,6 @@ var unsupportedAtlasDirFormats = []string{
 	"liquibase",
 }
 
-// atlasUnknownCommandArgs is the positional-args validator for an
-// Atlas-compatible command group. A stray positional argument on a group means
-// an unknown subcommand, so it emits Atlas CE's cobra-style diagnostic
-//
-//	Error: unknown command "<arg>" for "<command path>"
-//	Run '<command path> --help' for usage.
-//
-// on stderr and fails, instead of the native "unexpected positional arguments"
-// message. The unknown token is quoted with %q exactly as cobra (and therefore
-// Atlas) does. The command's error-code policy maps the failure to Atlas's
-// exit code 1; native Ptah commands keep NoPositionalArgs and are unaffected.
-func atlasUnknownCommandArgs(cmd *cobra.Command, args []string) error {
-	if len(args) == 0 {
-		return nil
-	}
-	path := cmd.CommandPath()
-	fmt.Fprintf(cmd.ErrOrStderr(), "Error: unknown command %q for %q\nRun '%s --help' for usage.\n", args[0], path, path)
-	return exitcode.New(atlasErrorExitCode, fmt.Errorf("unknown command %q for %q", args[0], path))
-}
-
 // NewAtlasCommand returns the Atlas command namespace.
 func NewAtlasCommand() *cobra.Command {
 	cmd := newAtlasCommand("atlas [command]", "Atlas OSS command namespace", `Atlas OSS command namespace.
@@ -106,15 +86,14 @@ func newAtlasCommand(use, short, long string) *cobra.Command {
 		Use:   use,
 		Short: short,
 		Long:  long,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return cmd.Help()
-		},
+		RunE:  runAtlasGroupHelp,
 	}
-	cmdutil.ConfigureCommandArgs(cmd, atlasUnknownCommandArgs)
+	cmdutil.ConfigureCommandArgs(cmd, atlasRootArgs)
 	cmd.AddCommand(newAtlasVersionCommand())
 	cmd.AddCommand(newAtlasLicenseCommand())
 	cmd.AddCommand(newAtlasSchemaCommand())
 	cmd.AddCommand(newAtlasMigrateCommand())
+	installAtlasCompletionCommand(cmd)
 	installAtlasUsageTree(cmd)
 	return cmd
 }
@@ -123,11 +102,11 @@ func newAtlasSchemaCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "schema [command]",
 		Short: "Atlas schema commands",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return cmd.Help()
-		},
+		RunE:  runAtlasGroupHelp,
 	}
-	cmdutil.ConfigureCommandArgs(cmd, atlasUnknownCommandArgs)
+	// Atlas CE treats an extra token on a command group as a request for that
+	// group's help, so the group intentionally accepts positional arguments.
+	cmdutil.ConfigureCommandArgs(cmd, nil)
 	registerAtlasProjectFlags(cmd.PersistentFlags(), &atlasProjectFlagValues{})
 	cmd.AddCommand(newAtlasSchemaCleanCommand())
 	cmd.AddCommand(newAtlasSchemaInspectCommand())
@@ -146,11 +125,11 @@ func newAtlasMigrateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "migrate [command]",
 		Short: "Atlas migrate commands",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return cmd.Help()
-		},
+		RunE:  runAtlasGroupHelp,
 	}
-	cmdutil.ConfigureCommandArgs(cmd, atlasUnknownCommandArgs)
+	// Atlas CE treats an extra token on a command group as a request for that
+	// group's help, so the group intentionally accepts positional arguments.
+	cmdutil.ConfigureCommandArgs(cmd, nil)
 	registerAtlasProjectFlags(cmd.PersistentFlags(), &atlasProjectFlagValues{})
 	cmd.AddCommand(newAtlasMigrateApplyCommand())
 	cmd.AddCommand(newAtlasMigrateLintCommand())
@@ -231,6 +210,66 @@ func newAtlasMigrateCommand() *cobra.Command {
 		{use: "test", short: "Test migration files through Atlas Cloud"},
 	})
 	return cmd
+}
+
+func atlasRootArgs(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+
+	unknownErr := fmt.Errorf("unknown command %q for %q", args[0], "atlas")
+	var diagnostic strings.Builder
+	fmt.Fprintf(&diagnostic, "Error: %s\n", unknownErr)
+
+	suggestions := cmd.SuggestionsFor(args[0])
+	if len(suggestions) > 0 {
+		diagnostic.WriteString("\nDid you mean this?\n")
+		for _, suggestion := range suggestions {
+			fmt.Fprintf(&diagnostic, "\t%s\n", suggestion)
+		}
+		diagnostic.WriteString("\n")
+	}
+	diagnostic.WriteString("Run 'atlas --help' for usage.\n")
+
+	if _, err := fmt.Fprint(cmd.ErrOrStderr(), diagnostic.String()); err != nil {
+		return exitcode.New(atlasErrorExitCode, fmt.Errorf("%w: write diagnostic: %w", unknownErr, err))
+	}
+	return exitcode.New(atlasErrorExitCode, unknownErr)
+}
+
+func installAtlasCompletionCommand(cmd *cobra.Command) {
+	cmd.InitDefaultCompletionCmd()
+	for _, child := range cmd.Commands() {
+		if child.Name() != "completion" {
+			continue
+		}
+		child.Use = "completion [command]"
+		child.RunE = runAtlasGroupHelp
+		cmdutil.ConfigureCommandArgs(child, nil)
+		for _, shell := range child.Commands() {
+			shell.Args = atlasCompletionShellArgs
+		}
+		return
+	}
+}
+
+func runAtlasGroupHelp(cmd *cobra.Command, _ []string) error {
+	if err := renderAtlasHelp(cmd); err != nil {
+		return exitcode.New(atlasErrorExitCode, err)
+	}
+	return nil
+}
+
+func atlasCompletionShellArgs(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+
+	unknownErr := fmt.Errorf("unknown command %q for %q", args[0], "atlas completion "+cmd.Name())
+	if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Error: %s\n", unknownErr); err != nil {
+		return exitcode.New(atlasErrorExitCode, fmt.Errorf("%w: write diagnostic: %w", unknownErr, err))
+	}
+	return exitcode.New(atlasErrorExitCode, unknownErr)
 }
 
 type atlasUnsupportedCommunityVerb struct {

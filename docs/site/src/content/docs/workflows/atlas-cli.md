@@ -53,7 +53,7 @@ SQL paths; prefer `--to` in new Ptah-authored scripts.
 | `ptah atlas migrate down` | Forwards to `ptah migrations down`; maps compatible Atlas flags and fails explicitly for dynamic down-planning and output-format flags that native Ptah does not implement yet. |
 | `ptah atlas migrate status` | Atlas-format migration status with Atlas revision-table metadata |
 | `ptah atlas migrate hash` | `ptah migrations hash` |
-| `ptah atlas migrate validate` | Verifies `atlas.sum` with Atlas-compatible checksum diagnostics; with `--dev-url`, cleans and replays migrations on the dev database to validate SQL execution. |
+| `ptah atlas migrate validate` | Silently verifies `atlas.sum` on success; checksum failures use Atlas-compatible stdout/stderr diagnostics, and `--dev-url` cleans and replays migrations on the dev database to validate SQL execution. |
 | `ptah atlas migrate lint` | `ptah migrations lint`; supports Atlas-style `--latest N`, infers lint dialect from `--dev-url`, and cleans and replays migrations on directly connectable dev databases to validate SQL execution. |
 | `ptah atlas migrate new` | `ptah migrations create` |
 | `ptah atlas migrate set [version]` | `ptah migrations repair` with Atlas revision metadata |
@@ -67,6 +67,7 @@ SQL paths; prefer `--to` in new Ptah-authored scripts.
 | --- | --- |
 | `ptah atlas version` | Prints Ptah build information. |
 | `ptah atlas license` | Prints Ptah MIT license and license-clean Atlas compatibility notice. |
+| `ptah atlas completion <shell>` | Generates Cobra completion output for the full `ptah` command tree, including the Atlas-compatible namespace. |
 
 ## Schema commands
 
@@ -318,13 +319,17 @@ replays the migration directory to validate SQL execution semantics. If
 integrity drift is found, Ptah reports the drift and does not connect to the dev
 database.
 
+A successful validation is silent, including a successful `--dev-url` replay.
 Checksum mismatches exit `1`, print Atlas-compatible recovery guidance to
-stdout, and print `Error: checksum mismatch` to stderr. For added, edited, or
-removed migration files, the stdout guidance includes the first mismatched
-`atlas.sum` line, file name, and reason. This compatibility behavior is scoped
-to `ptah atlas` and `ptah-compat`; native `ptah migrations validate` keeps
-Ptah's native output and treats a malformed sum file as an exit-`2` usage
-failure.
+stdout, and print `Error: checksum mismatch` to stderr. If `atlas.sum` is
+missing, the command prints the same recovery guidance and writes
+`Error: checksum file not found` to stderr. For added, edited, or removed
+migration files, the stdout guidance includes the first mismatched `atlas.sum`
+line, file name, and reason.
+
+This compatibility behavior is scoped to `ptah atlas` and `ptah-compat`.
+Native `ptah migrations validate` keeps Ptah's success banner and native error
+output; missing or malformed sum files remain exit-`2` usage failures.
 
 ```bash
 ptah atlas migrate validate \
