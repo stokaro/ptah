@@ -59,10 +59,10 @@
 //
 // # Scope
 //
-// The supported step kinds are migrate_to (migration tests only), exec, and
-// assert, with the row_count, scalar, and error_contains assertions listed
-// above. Seed steps and structured (HTML/JSON) reporting are out of scope;
-// reporting is text only via [Report.Text].
+// The supported step kinds are migrate_to (migration tests only), exec, seed,
+// and assert, with the row_count, scalar, and error_contains assertions listed
+// above. Structured (HTML/JSON) reporting is out of scope; reporting is text
+// only via [Report.Text].
 //
 // # Database isolation
 //
@@ -108,8 +108,8 @@ type Step struct {
 type SeedStep struct {
 	// Dir is the directory of seed files. It is required.
 	Dir string `yaml:"dir"`
-	// Env is the seed environment to apply (for example dev or test). When empty,
-	// only .all.sql files are applied.
+	// Env is the seed environment to apply (for example dev or test). It is
+	// required; files matching Env plus files ending in .all.sql are applied.
 	Env string `yaml:"env"`
 }
 
@@ -212,6 +212,9 @@ func (s Step) validate() error {
 func (s *SeedStep) validate() error {
 	if strings.TrimSpace(s.Dir) == "" {
 		return fmt.Errorf("seed requires a dir")
+	}
+	if strings.TrimSpace(s.Env) == "" {
+		return fmt.Errorf("seed requires an env")
 	}
 	return nil
 }

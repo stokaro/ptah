@@ -220,6 +220,21 @@ func TestRunMigrationTest_SeedStep(t *testing.T) {
 	c.Assert(report.Cases[0].Steps[1].Detail, qt.Contains, "seeded 2 file(s)")
 }
 
+func TestRunMigrationTest_SeedRequiresEnv(t *testing.T) {
+	c := qt.New(t)
+	// A seed step without an env must be rejected at validation, not accepted and
+	// then failed at run time by the seeder's "environment is required" guard.
+	cases := []dbtest.Case{{
+		Name:  "seed without env",
+		Steps: []dbtest.Step{{Name: "seed", Seed: &dbtest.SeedStep{Dir: t.TempDir()}}},
+	}}
+
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Cases: cases})
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(report, qt.IsNil)
+	c.Assert(err.Error(), qt.Contains, "seed requires an env")
+}
+
 func TestRunMigrationTest_MigrateToWithoutDir(t *testing.T) {
 	c := qt.New(t)
 	cases := []dbtest.Case{{
