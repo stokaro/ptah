@@ -190,7 +190,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 			use:     "validate",
 			short:   "Validate migration directory integrity",
 			native:  "migrations validate",
-			factory: migratevalidate.NewMigrateValidateCommand,
+			factory: migratevalidate.NewAtlasMigrateValidateCommand,
 			flags: []atlasargs.Flag{
 				atlasargs.NativeString("dev-url", "", "Dev database URL", "dev-url"),
 				atlasargs.NativeLocalDir("dir", "", "Migration directory", "dir"),
