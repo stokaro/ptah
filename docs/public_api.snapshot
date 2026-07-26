@@ -651,6 +651,7 @@ type SkippedChange struct{ ... }
 
 func GenerateCheckpoint(schema *goschema.Database, dialect string) (upSQL, downSQL string, err error)
 func VerifyBaselineShadow(ctx context.Context, opts BaselineShadowVerifyOptions) error
+func WriteCheckpointFiles(outputDir string, version int64, description, upSQL, downSQL string) (upPath, downPath string, err error)
 type BaselineShadowVerifyOptions struct{ ... }
 type DiffPolicy struct{ ... }
 type EmptyMigrationOptions struct{ ... }
@@ -720,6 +721,7 @@ type Statement struct{ ... }
 
 const DirectiveNoTransaction = "no_transaction"
 func FindMigrationGaps(versions []int64) []int64
+func GenerateCheckpointMigrationFileName(version int64, description, direction string) string
 func GenerateMigrationFileName(version int64, description, direction string) string
 func GetNextMigrationVersion() int64
 func GroupMigrationFiles(files []MigrationFile) map[int64]MigrationPair
