@@ -195,7 +195,7 @@ func TestZZZAtlasUsageErrorsExit1WithoutUsage(t *testing.T) {
 		{
 			name:       "lazy completion command",
 			args:       []string{"atlas", "completion", "bash", "extra"},
-			wantStderr: "Error: unknown command \"completion\" for \"ptah atlas\"\nRun 'ptah atlas --help' for usage.\n",
+			wantStderr: "Error: unknown command \"extra\" for \"atlas completion bash\"\n",
 		},
 	}
 

@@ -2,6 +2,7 @@ package atlas
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -25,7 +26,8 @@ func installAtlasUsageTree(cmd *cobra.Command) {
 }
 
 func renderAtlasUsage(cmd *cobra.Command) error {
-	out := cmd.OutOrStderr()
+	var usage strings.Builder
+	out := &usage
 	useLine := atlasUseLine(cmd)
 	fmt.Fprint(out, "Usage:")
 	if cmd.Runnable() {
@@ -35,11 +37,15 @@ func renderAtlasUsage(cmd *cobra.Command) error {
 		fmt.Fprintf(out, "\n  %s [command]", atlasDisplayPath(cmd))
 	}
 	fmt.Fprintln(out)
+	if _, err := io.WriteString(cmd.ErrOrStderr(), usage.String()); err != nil {
+		return fmt.Errorf("write Atlas usage: %w", err)
+	}
 	return nil
 }
 
 func renderAtlasHelp(cmd *cobra.Command) error {
-	out := cmd.OutOrStdout()
+	var help strings.Builder
+	out := &help
 	description := strings.TrimSpace(cmd.Long)
 	if description == "" {
 		description = strings.TrimSpace(cmd.Short)
@@ -89,6 +95,9 @@ func renderAtlasHelp(cmd *cobra.Command) error {
 		fmt.Fprintf(out, "\n\nUse \"%s [command] --help\" for more information about a command.", atlasDisplayPath(cmd))
 	}
 	fmt.Fprintln(out)
+	if _, err := io.WriteString(cmd.OutOrStdout(), help.String()); err != nil {
+		return fmt.Errorf("write Atlas help: %w", err)
+	}
 	return nil
 }
 

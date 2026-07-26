@@ -8,13 +8,16 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"github.com/stokaro/ptah/internal/migratesum"
+	"github.com/stokaro/ptah/migration/migrator"
 )
 
 func TestCompatBinaryNamedAtlasResolvesRootCommands(t *testing.T) {
 	c := qt.New(t)
 	binPath := buildCompatBinary(c)
 
-	run := exec.Command(binPath, "migrate", "down", "--help")
+	run := newCompatProcess(binPath, "migrate", "down", "--help")
 	runOut, err := run.CombinedOutput()
 
 	output := string(runOut)
@@ -36,14 +39,14 @@ func TestCompatBinaryCommandFailuresExit1(t *testing.T) {
 		{
 			name: "unknown flag",
 			command: func(binPath string) *exec.Cmd {
-				return exec.Command(binPath, "version", "--bogus-flag")
+				return newCompatProcess(binPath, "version", "--bogus-flag")
 			},
 			wantStderr: "error: unknown flag: --bogus-flag\n",
 		},
 		{
 			name: "mutually exclusive flags",
 			command: func(binPath string) *exec.Cmd {
-				return exec.Command(
+				return newCompatProcess(
 					binPath,
 					"schema", "apply",
 					"--url", "sqlite://schema.db",
@@ -57,9 +60,9 @@ func TestCompatBinaryCommandFailuresExit1(t *testing.T) {
 		{
 			name: "lazy completion command",
 			command: func(binPath string) *exec.Cmd {
-				return exec.Command(binPath, "completion", "bash", "extra")
+				return newCompatProcess(binPath, "completion", "bash", "extra")
 			},
-			wantStderr: "error: unknown command \"extra\" for \"atlas completion bash\"\n",
+			wantStderr: "Error: unknown command \"extra\" for \"atlas completion bash\"\n",
 		},
 		{
 			name: "unknown root command",
@@ -84,23 +87,116 @@ func TestCompatBinaryCommandFailuresExit1(t *testing.T) {
 	}
 }
 
-func TestCompatBinaryChecksumMismatchMatchesAtlasStreams(t *testing.T) {
+func TestCompatBinaryAtlasSuccessPaths(t *testing.T) {
 	c := qt.New(t)
 	binPath := buildCompatBinary(c)
-	dir := malformedAtlasDir(c)
 
-	run := exec.Command(binPath, "migrate", "validate", "--dir", dir)
-	var stdout, stderr bytes.Buffer
-	run.Stdout = &stdout
-	run.Stderr = &stderr
-	err := run.Run()
-	var exitErr *exec.ExitError
+	c.Run("clean validation is silent", func(c *qt.C) {
+		dir := cleanAtlasDir(c)
+		run := newCompatProcess(binPath, "migrate", "validate", "--dir", "file://"+dir)
+		var stdout, stderr bytes.Buffer
+		run.Stdout = &stdout
+		run.Stderr = &stderr
 
-	c.Assert(err, qt.ErrorAs, &exitErr)
-	c.Assert(exitErr.ExitCode(), qt.Equals, 1)
-	c.Assert(stdout.String(), qt.Equals, "You have a checksum error in your migration directory.\n"+
-		"Please check your migration files and run 'atlas migrate hash' to re-hash the contents\n\n")
-	c.Assert(stderr.String(), qt.Equals, "Error: checksum mismatch\n")
+		err := run.Run()
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(stdout.String(), qt.Equals, "")
+		c.Assert(stderr.String(), qt.Equals, "")
+	})
+
+	c.Run("nested extra token prints help", func(c *qt.C) {
+		run := newCompatProcess(binPath, "migrate", "aplly")
+		var stdout, stderr bytes.Buffer
+		run.Stdout = &stdout
+		run.Stderr = &stderr
+
+		err := run.Run()
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(stdout.String(), qt.Contains, "Usage:\n  atlas migrate [command]")
+		c.Assert(stderr.String(), qt.Equals, "")
+	})
+
+	c.Run("completion group extra token prints help", func(c *qt.C) {
+		run := newCompatProcess(binPath, "completion", "sh")
+		var stdout, stderr bytes.Buffer
+		run.Stdout = &stdout
+		run.Stderr = &stderr
+
+		err := run.Run()
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(stdout.String(), qt.Contains, "Usage:\n  atlas completion [command]")
+		c.Assert(stderr.String(), qt.Equals, "")
+	})
+
+	c.Run("completion script is generated for the Atlas executable", func(c *qt.C) {
+		run := newCompatProcess(binPath, "completion", "bash")
+		var stdout, stderr bytes.Buffer
+		run.Stdout = &stdout
+		run.Stderr = &stderr
+
+		err := run.Run()
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(stdout.String(), qt.Contains, "# bash completion V2 for atlas")
+		c.Assert(stdout.String(), qt.Contains, "__start_atlas")
+		c.Assert(stderr.String(), qt.Equals, "")
+	})
+}
+
+func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
+	c := qt.New(t)
+	binPath := buildCompatBinary(c)
+
+	c.Run("checksum mismatch", func(c *qt.C) {
+		dir := malformedAtlasDir(c)
+		run := newCompatProcess(binPath, "migrate", "validate", "--dir", "file://"+dir)
+		var stdout, stderr bytes.Buffer
+		run.Stdout = &stdout
+		run.Stderr = &stderr
+		err := run.Run()
+		var exitErr *exec.ExitError
+
+		c.Assert(err, qt.ErrorAs, &exitErr)
+		c.Assert(exitErr.ExitCode(), qt.Equals, 1)
+		c.Assert(stdout.String(), qt.Equals, "You have a checksum error in your migration directory.\n"+
+			"Please check your migration files and run 'atlas migrate hash' to re-hash the contents\n\n")
+		c.Assert(stderr.String(), qt.Equals, "Error: checksum mismatch\n")
+	})
+
+	c.Run("missing checksum file", func(c *qt.C) {
+		dir := atlasDirWithoutSum(c)
+		run := newCompatProcess(binPath, "migrate", "validate", "--dir", "file://"+dir)
+		var stdout, stderr bytes.Buffer
+		run.Stdout = &stdout
+		run.Stderr = &stderr
+		err := run.Run()
+		var exitErr *exec.ExitError
+
+		c.Assert(err, qt.ErrorAs, &exitErr)
+		c.Assert(exitErr.ExitCode(), qt.Equals, 1)
+		c.Assert(stdout.String(), qt.Equals, "You have a checksum error in your migration directory.\n"+
+			"Please check your migration files and run 'atlas migrate hash' to re-hash the contents\n\n")
+		c.Assert(stderr.String(), qt.Equals, "Error: checksum file not found\n")
+	})
+
+	c.Run("unknown root command", func(c *qt.C) {
+		run := newCompatProcess(binPath, "definitely-not-a-command")
+		var stdout, stderr bytes.Buffer
+		run.Stdout = &stdout
+		run.Stderr = &stderr
+		err := run.Run()
+		var exitErr *exec.ExitError
+
+		c.Assert(err, qt.ErrorAs, &exitErr)
+		c.Assert(exitErr.ExitCode(), qt.Equals, 1)
+		c.Assert(stdout.String(), qt.Equals, "")
+		c.Assert(stderr.String(), qt.Equals,
+			"Error: unknown command \"definitely-not-a-command\" for \"atlas\"\n"+
+				"Run 'atlas --help' for usage.\n")
+	})
 }
 
 func buildCompatBinary(c *qt.C) string {
@@ -113,12 +209,30 @@ func buildCompatBinary(c *qt.C) string {
 	return binPath
 }
 
+func newCompatProcess(binPath string, args ...string) *exec.Cmd {
+	return exec.Command(binPath, args...)
+}
+
 func malformedAtlasDir(c *qt.C) string {
+	c.Helper()
+	dir := atlasDirWithoutSum(c)
+	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.sum"),
+		[]byte("h1:tampered\n"), 0o600), qt.IsNil)
+	return dir
+}
+
+func cleanAtlasDir(c *qt.C) string {
+	c.Helper()
+	dir := atlasDirWithoutSum(c)
+	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
+	c.Assert(err, qt.IsNil)
+	return dir
+}
+
+func atlasDirWithoutSum(c *qt.C) string {
 	c.Helper()
 	dir := c.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(dir, "1_initial.sql"),
 		[]byte("CREATE TABLE t (id INT);\n"), 0o600), qt.IsNil)
-	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.sum"),
-		[]byte("h1:tampered\n"), 0o600), qt.IsNil)
 	return dir
 }
