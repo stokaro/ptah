@@ -55,7 +55,7 @@ table "users" {
 | --- | --- |
 | `schema` | Labels and comments for table namespace references. |
 | `table` | Table blocks with columns, primary keys, indexes, uniques, foreign keys, checks, and row security. |
-| `column` | `type`, `null`, `auto_increment`, `unique`, `default`, `identity`, and comments. |
+| `column` | `type`, `null`, `auto_increment`, `unique`, `unique_expr`, `default`, `check`, `check_name`, `identity` (with `options`), and comments. |
 | `primary_key` | `columns`; PostgreSQL also supports `include`. |
 | `index` | `columns`, `on { column = ... }`, `on { expr = ... }`, `desc`, `unique`, `type`, `where`, and PostgreSQL include/storage options. |
 | `unique` | `columns`; PostgreSQL also supports `include` and `nulls_distinct`. |
