@@ -376,6 +376,12 @@ type Migration struct {
 	// per-migration transaction. Execution uses the direction-specific fields.
 	NoTransaction                bool
 	directionalNoTransactionMode bool
+	// IsCheckpoint marks a checkpoint migration whose up body is the full
+	// cumulative schema at its version. On a fresh database the migrator
+	// bootstraps from the newest checkpoint and records all lower versions as
+	// applied instead of replaying them; an already-migrated database ignores
+	// the checkpoint and applies history normally.
+	IsCheckpoint bool
 }
 
 func (m *Migration) upExecutionMode() migrationExecutionMode {
