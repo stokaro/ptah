@@ -205,7 +205,7 @@ func verifyBaseline(ctx context.Context, opts baselineVerifyOptions) error {
 
 	fmt.Println("No --shadow-db provided; using weaker entity drift verification.")
 	result, err := schemaops.Compare(ctx, schemaops.CompareOptions{
-		RootDir:        opts.rootDir,
+		RootDirs:       []string{opts.rootDir},
 		DatabaseURL:    opts.dbURL,
 		ConnectTimeout: opts.connectTimeout,
 		Schemas:        opts.schemas,

@@ -4,11 +4,11 @@ package schemaops
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/cmd/internal/schemaload"
 	"github.com/stokaro/ptah/config"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/dbschema"
@@ -19,7 +19,8 @@ import (
 
 // CompareOptions configures a live schema comparison.
 type CompareOptions struct {
-	RootDir        string
+	RootDirs       []string
+	SchemaFiles    []string
 	DatabaseURL    string
 	ConnectTimeout time.Duration
 	IgnoredTables  []string
@@ -28,7 +29,7 @@ type CompareOptions struct {
 
 // CompareResult is the output of a live schema comparison.
 type CompareResult struct {
-	RootDir     string
+	Sources     string
 	DatabaseURL string
 	Dialect     string
 	Generated   *goschema.Database
@@ -36,24 +37,21 @@ type CompareResult struct {
 	Diff        *difftypes.SchemaDiff
 }
 
-// Compare parses Go entities, reads the live database schema, applies command
-// filters, and returns a dialect-aware schema diff.
+// Compare resolves the desired schema from Go entities and/or schema files,
+// reads the live database schema, applies command filters, and returns a
+// dialect-aware schema diff.
 func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
-	if opts.RootDir == "" {
-		opts.RootDir = "."
-	}
 	if opts.DatabaseURL == "" {
 		return nil, fmt.Errorf("database URL is required")
 	}
 
-	absPath, err := filepath.Abs(opts.RootDir)
-	if err != nil {
-		return nil, fmt.Errorf("error resolving path: %w", err)
+	loadOpts := schemaload.Options{
+		RootDirs:    opts.RootDirs,
+		SchemaFiles: opts.SchemaFiles,
 	}
-
-	generated, err := goschema.ParseDir(absPath)
+	generated, err := schemaload.Load(loadOpts)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing Go entities: %w", err)
+		return nil, err
 	}
 
 	connectCtx, cancelConnect := dbcli.ConnectContext(ctx, opts.ConnectTimeout)
@@ -79,7 +77,7 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 	diff := schemadiff.CompareWithOptions(generated, dbSchema, compareOpts)
 
 	return &CompareResult{
-		RootDir:     absPath,
+		Sources:     loadOpts.Sources(),
 		DatabaseURL: dbschema.FormatDatabaseURL(opts.DatabaseURL),
 		Dialect:     conn.Info().Dialect,
 		Generated:   generated,
