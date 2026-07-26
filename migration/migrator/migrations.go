@@ -126,6 +126,21 @@ func (e *AtlasDownNotImplementedError) Error() string {
 	)
 }
 
+// CheckpointRollbackError reports a rollback that targets a version below an
+// applied checkpoint. The checkpoint squashed the intermediate history into a
+// single snapshot, so that state cannot be reconstructed by rolling back.
+type CheckpointRollbackError struct {
+	TargetVersion     int64
+	CheckpointVersion int64
+}
+
+func (e *CheckpointRollbackError) Error() string {
+	return fmt.Sprintf(
+		"cannot roll back to version %d: it is below checkpoint %d, whose squashed history cannot be reconstructed; roll back to version %d (the checkpoint) or to 0 (drop everything) instead",
+		e.TargetVersion, e.CheckpointVersion, e.CheckpointVersion,
+	)
+}
+
 // MigrationFuncFromSQLFilename returns a migration function that reads SQL from a file
 // in the provided filesystem and executes it using the database connection
 func MigrationFuncFromSQLFilename(filename string, fsys fs.FS) MigrationFunc {

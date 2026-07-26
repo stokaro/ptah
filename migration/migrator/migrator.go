@@ -1032,6 +1032,10 @@ func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64,
 		return nil
 	}
 
+	if boundary := checkpointRollbackBoundary(m.migrationProvider.Migrations(), appliedMigrations, targetVersion); boundary > 0 {
+		return &CheckpointRollbackError{TargetVersion: targetVersion, CheckpointVersion: boundary}
+	}
+
 	migrationMap := migrationsByVersion(m.migrationProvider.Migrations())
 	if err := m.verifyAppliedMigrationChecksums(ctx, m.migrationProvider.Migrations()); err != nil {
 		return err
@@ -1831,6 +1835,23 @@ func checkpointRunnable(migration *Migration, bootstrap *Migration, floor int64)
 		return migration == bootstrap
 	}
 	return migration.Version >= floor
+}
+
+// checkpointRollbackBoundary returns the applied checkpoint version that blocks
+// a rollback to targetVersion, or 0 when the rollback is allowed. A checkpoint
+// squashes the history below its version into a single snapshot, so rolling
+// back to a version between 1 and that boundary cannot reconstruct the
+// intermediate pre-checkpoint state. Rolling back to the checkpoint version
+// itself, or all the way to 0 (drop everything), stays allowed.
+func checkpointRollbackBoundary(migrations []*Migration, applied []int64, targetVersion int64) int64 {
+	if targetVersion <= 0 {
+		return 0
+	}
+	boundary := checkpointFloor(migrations, applied, nil)
+	if boundary > 0 && targetVersion < boundary {
+		return boundary
+	}
+	return 0
 }
 
 func pendingMigrationVersions(migrations []*Migration, applied []int64) []int64 {
