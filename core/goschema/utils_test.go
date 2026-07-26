@@ -236,6 +236,27 @@ func TestDeduplicate_GrantsKeepGrantOptionAndIgnorePrivilegeOrder(t *testing.T) 
 	c.Assert(db.Grants[1].Privileges, qt.DeepEquals, []string{"SELECT", "INSERT"})
 }
 
+func TestDeduplicate_GrantsDistinguishSequenceTargets(t *testing.T) {
+	c := qt.New(t)
+
+	// Grants that differ only by their sequence target must both survive; the
+	// sequence name is part of the grant's identity. A duplicate sequence grant
+	// still deduplicates.
+	db := &goschema.Database{
+		Grants: []goschema.Grant{
+			{Role: "app", Privileges: []string{"USAGE"}, OnSequence: "seq_a"},
+			{Role: "app", Privileges: []string{"USAGE"}, OnSequence: "seq_b"},
+			{Role: "app", Privileges: []string{"USAGE"}, OnSequence: "seq_a"},
+		},
+	}
+
+	goschema.Deduplicate(db)
+
+	c.Assert(db.Grants, qt.HasLen, 2)
+	c.Assert(db.Grants[0].OnSequence, qt.Equals, "seq_a")
+	c.Assert(db.Grants[1].OnSequence, qt.Equals, "seq_b")
+}
+
 func TestDeduplicate_ConstraintsUseExplicitTableScope(t *testing.T) {
 	c := qt.New(t)
 

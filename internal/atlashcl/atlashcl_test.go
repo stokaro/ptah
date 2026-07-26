@@ -1438,7 +1438,7 @@ permission {
   for        = function.get_tenant
   privileges = [EXECUTE]
 }`,
-			match: `.*permission requires table or schema target.*`,
+			match: `.*permission requires table, schema, or sequence target.*`,
 		},
 		{
 			name: "permission missing privileges",

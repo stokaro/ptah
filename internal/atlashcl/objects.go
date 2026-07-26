@@ -330,8 +330,10 @@ func (p *parser) parsePermission(block *hclsyntax.Block) error {
 		grant.OnTable = table
 	} else if schema := objectRefName(target, "schema"); schema != "" {
 		grant.OnSchema = schema
+	} else if sequence := objectRefName(target, "sequence"); sequence != "" {
+		grant.OnSequence = sequence
 	} else {
-		return p.blockError(block, "permission requires table or schema target")
+		return p.blockError(block, "permission requires table, schema, or sequence target")
 	}
 	if grant.Role == "" {
 		return p.blockError(block, "permission requires to")
