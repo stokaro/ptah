@@ -68,6 +68,10 @@ func (p *parser) parseTopLevelBlock(block *hclsyntax.Block) error {
 		return p.parseSchema(block)
 	case "enum":
 		return p.parseEnum(block)
+	case "sequence":
+		return p.parseSequence(block)
+	case "domain":
+		return p.parseDomain(block)
 	case "table":
 		return p.parseTable(block)
 	case "extension":
