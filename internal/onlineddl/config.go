@@ -74,14 +74,32 @@ type ptahConfig struct {
 }
 
 type ptahSettings struct {
-	URL       string        `yaml:"url"`
-	Dev       string        `yaml:"dev"`
-	Schemas   []string      `yaml:"schemas"`
-	Exclude   []string      `yaml:"exclude"`
-	Migration yamlMigration `yaml:"migration"`
-	Lint      yamlLint      `yaml:"lint"`
-	Migrate   yamlMigrate   `yaml:"migrate"`
-	OnlineDDL yamlOnlineDDL `yaml:"online_ddl"`
+	URL            string             `yaml:"url"`
+	Dev            string             `yaml:"dev"`
+	Schemas        []string           `yaml:"schemas"`
+	Exclude        []string           `yaml:"exclude"`
+	Migration      yamlMigration      `yaml:"migration"`
+	Lint           yamlLint           `yaml:"lint"`
+	Migrate        yamlMigrate        `yaml:"migrate"`
+	OnlineDDL      yamlOnlineDDL      `yaml:"online_ddl"`
+	Diff           yamlDiff           `yaml:"diff"`
+	ExternalSchema yamlExternalSchema `yaml:"external_schema"`
+}
+
+// yamlDiff and yamlExternalSchema mirror the diff and external_schema blocks of
+// ptah.yaml so this package's strict YAML decoder accepts them. The online-DDL
+// loader does not use either block; they are declared only so those keys do not
+// fail KnownFields decoding of the shared ptah.yaml.
+type yamlDiff struct {
+	Skip            []string `yaml:"skip"`
+	ConcurrentIndex *bool    `yaml:"concurrent_index"`
+}
+
+type yamlExternalSchema struct {
+	Program    []string `yaml:"program"`
+	Format     string   `yaml:"format"`
+	WorkingDir string   `yaml:"working_dir"`
+	Env        []string `yaml:"env"`
 }
 
 type yamlMigration struct {

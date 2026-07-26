@@ -64,6 +64,46 @@ online_ddl:
 	c.Assert(cfg.Enabled(), qt.IsTrue)
 }
 
+func TestLoadConfig_AllowsExternalSchemaBlock(t *testing.T) {
+	c := qt.New(t)
+
+	// The online-DDL loader parses the whole ptah.yaml strictly; an
+	// external_schema block it does not use must not fail decoding.
+	path := writeConfig(t, `url: postgres://app/db
+external_schema:
+  program: ["go", "run", "./loader"]
+  format: sql
+  working_dir: ./project
+  env: ["FOO=bar"]
+online_ddl:
+  tool: ghost
+  threshold_rows: 1000000
+`)
+	cfg, err := onlineddl.LoadConfig(path)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.Tool, qt.Equals, onlineddl.ToolGhost)
+}
+
+func TestLoadConfig_AllowsDiffBlock(t *testing.T) {
+	c := qt.New(t)
+
+	// A diff block (a shipped ptah.yaml feature) must not fail this package's
+	// strict decoding of the shared ptah.yaml.
+	path := writeConfig(t, `url: postgres://app/db
+diff:
+  skip: [drop_table]
+  concurrent_index: true
+online_ddl:
+  tool: ghost
+  threshold_rows: 1000000
+`)
+	cfg, err := onlineddl.LoadConfig(path)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.Tool, qt.Equals, onlineddl.ToolGhost)
+}
+
 func TestLoadConfigForEnv_MergesNamedEnvironment(t *testing.T) {
 	c := qt.New(t)
 

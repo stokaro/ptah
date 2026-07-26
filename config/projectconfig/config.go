@@ -41,17 +41,39 @@ type Config struct {
 	Format FormatConfig
 	// Diff holds Atlas-compatible schema diff policy.
 	Diff DiffConfig
+	// ExternalSchema configures an external program that emits the desired
+	// schema to stdout.
+	ExternalSchema ExternalSchemaConfig
 
 	presence configPresence
 }
 
 type configPresence struct {
-	databaseURL       bool
-	devURL            bool
-	schemaSources     bool
-	schemas           bool
-	exclude           bool
-	lintDisabledRules bool
+	databaseURL           bool
+	devURL                bool
+	schemaSources         bool
+	schemas               bool
+	exclude               bool
+	lintDisabledRules     bool
+	externalSchemaProgram bool
+	externalSchemaEnv     bool
+}
+
+// ExternalSchemaConfig configures an external program whose standard output is
+// the desired schema. It is Ptah's open equivalent of Atlas's external_schema
+// data source: Program is run directly (no shell) and must print the complete
+// desired schema — currently SQL DDL — to stdout.
+type ExternalSchemaConfig struct {
+	// Program is the executable and its arguments as an explicit argv list.
+	// Program[0] is the command; it is run without a shell.
+	Program []string
+	// Format is the stdout format (default "sql").
+	Format string
+	// WorkingDir is the directory the program runs in; empty uses the current
+	// working directory.
+	WorkingDir string
+	// Env holds extra "KEY=VALUE" entries passed to the program.
+	Env []string
 }
 
 // ConfigBool preserves whether a boolean project config value was set
@@ -238,8 +260,32 @@ func Merge(base, override Config) Config {
 	result.Lint = mergeLint(result.Lint, override.Lint, override.presence)
 	result.Format = mergeFormat(result.Format, override.Format)
 	result.Diff = mergeDiff(result.Diff, override.Diff)
+	result.ExternalSchema = mergeExternalSchema(result.ExternalSchema, override.ExternalSchema, override.presence)
 	if override.presence.lintDisabledRules || len(override.Lint.DisabledRules) > 0 {
 		result.presence.lintDisabledRules = true
+	}
+	if override.presence.externalSchemaProgram || len(override.ExternalSchema.Program) > 0 {
+		result.presence.externalSchemaProgram = true
+	}
+	if override.presence.externalSchemaEnv || len(override.ExternalSchema.Env) > 0 {
+		result.presence.externalSchemaEnv = true
+	}
+	return result
+}
+
+func mergeExternalSchema(base, override ExternalSchemaConfig, presence configPresence) ExternalSchemaConfig {
+	result := base
+	if presence.externalSchemaProgram || len(override.Program) > 0 {
+		result.Program = slices.Clone(override.Program)
+	}
+	if override.Format != "" {
+		result.Format = override.Format
+	}
+	if override.WorkingDir != "" {
+		result.WorkingDir = override.WorkingDir
+	}
+	if presence.externalSchemaEnv || len(override.Env) > 0 {
+		result.Env = slices.Clone(override.Env)
 	}
 	return result
 }
