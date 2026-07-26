@@ -29,6 +29,25 @@ func TestPtahAtlasChecksumMismatchMatchesAtlasStreams(t *testing.T) {
 	c.Assert(stderr.String(), qt.Equals, "Error: checksum mismatch\n")
 }
 
+func TestPtahAtlasUnknownCommandMatchesAtlasDiagnostic(t *testing.T) {
+	c := qt.New(t)
+	binPath := buildPtahBinary(c)
+
+	run := exec.Command(binPath, "atlas", "definitely-not-a-command")
+	var stdout, stderr bytes.Buffer
+	run.Stdout = &stdout
+	run.Stderr = &stderr
+	err := run.Run()
+	var exitErr *exec.ExitError
+
+	c.Assert(err, qt.ErrorAs, &exitErr)
+	c.Assert(exitErr.ExitCode(), qt.Equals, 1)
+	c.Assert(stdout.String(), qt.Equals, "")
+	c.Assert(stderr.String(), qt.Equals,
+		"Error: unknown command \"definitely-not-a-command\" for \"ptah atlas\"\n"+
+			"Run 'ptah atlas --help' for usage.\n")
+}
+
 func buildPtahBinary(c *qt.C) string {
 	c.Helper()
 	binPath := filepath.Join(c.TempDir(), "ptah")
