@@ -70,6 +70,8 @@ table "users" {
 | `policy` | PostgreSQL RLS policy fields. |
 | `sequence` | PostgreSQL `type`, `start`, `increment`, `min_value`, `max_value`, `cache`, `cycle`, `owned_by`, and `if_not_exists`. |
 | `domain` | PostgreSQL `type`, `null`, `default`, and `check`. |
+| `composite` | PostgreSQL composite type with ordered `field` sub-blocks. |
+| `range` | PostgreSQL `subtype`, `subtype_opclass`, `collation`, `canonical`, and `subtype_diff`. |
 
 Unsupported semantics fail explicitly. Ptah does not silently drop HCL objects
 that it cannot represent in the schema IR.

@@ -759,6 +759,117 @@ func (p *parser) rejectUnsupportedDomainAttrs(block *hclsyntax.Block) error {
 	}, "domain")
 }
 
+// parseComposite parses a top-level composite block into a
+// goschema.CompositeType. The ordered fields come from nested field blocks,
+// each carrying a name label and a type attribute.
+func (p *parser) parseComposite(block *hclsyntax.Block) error {
+	schema, name, err := p.objectSchemaAndName(block, "composite")
+	if err != nil {
+		return err
+	}
+	if err := p.rejectUnsupportedCompositeAttrs(block); err != nil {
+		return err
+	}
+	fields, err := p.parseCompositeFields(block)
+	if err != nil {
+		return err
+	}
+	if len(fields) == 0 {
+		return p.blockError(block, "composite %q requires at least one field", name)
+	}
+	composite := goschema.CompositeType{
+		Name:    name,
+		Schema:  schema,
+		Fields:  fields,
+		Comment: p.optionalString(block.Body.Attributes["comment"]),
+	}
+	composite.Canonicalize()
+	p.db.CompositeTypes = append(p.db.CompositeTypes, composite)
+	return nil
+}
+
+func (p *parser) parseCompositeFields(block *hclsyntax.Block) ([]goschema.CompositeTypeField, error) {
+	var fields []goschema.CompositeTypeField
+	for _, nested := range block.Body.Blocks {
+		if nested.Type != "field" {
+			return nil, p.blockError(nested, "unsupported composite block %q", nested.Type)
+		}
+		if len(nested.Labels) != 1 {
+			return nil, p.blockError(nested, "composite field requires exactly one name label")
+		}
+		if len(nested.Body.Blocks) > 0 {
+			return nil, p.blockError(nested.Body.Blocks[0], "unsupported composite field block %q", nested.Body.Blocks[0].Type)
+		}
+		if err := p.rejectUnsupportedAttrs(nested, map[string]bool{"type": true}, "composite field"); err != nil {
+			return nil, err
+		}
+		typeAttr := nested.Body.Attributes["type"]
+		if typeAttr == nil {
+			return nil, p.blockError(nested, "composite field %q requires type", nested.Labels[0])
+		}
+		// exprString (not rawExpr) so a quoted string literal is unquoted:
+		// multi-word types like "double precision" have no bare HCL spelling,
+		// so they must be written as a string, while bare references (text) and
+		// function-call shapes (numeric(10,2)) fall back to the raw source.
+		fields = append(fields, goschema.CompositeTypeField{
+			Name: nested.Labels[0],
+			Type: p.exprString(typeAttr),
+		})
+	}
+	return fields, nil
+}
+
+func (p *parser) rejectUnsupportedCompositeAttrs(block *hclsyntax.Block) error {
+	return p.rejectUnsupportedAttrs(block, map[string]bool{
+		"schema":  true,
+		"comment": true,
+	}, "composite")
+}
+
+// parseRange parses a top-level range block into a goschema.Range. The subtype
+// is required; the remaining attributes are optional PostgreSQL range options.
+func (p *parser) parseRange(block *hclsyntax.Block) error {
+	schema, name, err := p.objectSchemaAndName(block, "range")
+	if err != nil {
+		return err
+	}
+	if err := p.rejectUnsupportedRangeAttrs(block); err != nil {
+		return err
+	}
+	subtype := p.optionalString(block.Body.Attributes["subtype"])
+	if subtype == "" {
+		return p.blockError(block, "range %q requires subtype", name)
+	}
+	rng := goschema.Range{
+		Name:           name,
+		Schema:         schema,
+		Subtype:        subtype,
+		SubtypeOpClass: p.optionalString(block.Body.Attributes["subtype_opclass"]),
+		Collation:      p.optionalString(block.Body.Attributes["collation"]),
+		Canonical:      p.optionalString(block.Body.Attributes["canonical"]),
+		SubtypeDiff:    p.optionalString(block.Body.Attributes["subtype_diff"]),
+		Comment:        p.optionalString(block.Body.Attributes["comment"]),
+	}
+	rng.Canonicalize()
+	p.db.Ranges = append(p.db.Ranges, rng)
+	return nil
+}
+
+func (p *parser) rejectUnsupportedRangeAttrs(block *hclsyntax.Block) error {
+	if len(block.Body.Blocks) > 0 {
+		return p.blockError(block.Body.Blocks[0], "unsupported range block %q", block.Body.Blocks[0].Type)
+	}
+	return p.rejectUnsupportedAttrs(block, map[string]bool{
+		"schema":          true,
+		"subtype":         true,
+		"subtype_opclass": true,
+		"collation":       true,
+		"canonical":       true,
+		"subtype_diff":    true,
+		"comment":         true,
+	}, "range")
+}
+
 // objectSchemaAndName resolves an object's bare name and optional schema from
 // the block labels and an optional schema attribute. One label is the name; two
 // labels are schema and name. A schema attribute that disagrees with a
