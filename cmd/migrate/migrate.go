@@ -11,7 +11,6 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/schemaload"
-	"github.com/stokaro/ptah/cmd/internal/schemasource"
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
@@ -72,6 +71,8 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.BoolVar(&opts.checkDestructive, checkDestructiveFlag, false, "Fail when generated migration SQL contains destructive statements")
 	flags.BoolVar(&opts.allowDestructive, allowDestructiveFlag, false, "Allow destructive statements when --check-destructive is set")
 	flags.StringVar(&opts.reportFormat, reportFormatFlag, "text", "Safety report format: text, html, or json")
+	flags.String(dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
+	flags.String(dbcli.EnvFlagName, "", "Project env name to read from ptah.yaml or atlas.hcl")
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
 }
@@ -80,7 +81,18 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	out := cmd.OutOrStdout()
 	reportFormat := strings.ToLower(strings.TrimSpace(opts.reportFormat))
 
-	if opts.dbURL == "" {
+	configPath, err := cmd.Flags().GetString(dbcli.ConfigFlagName)
+	if err != nil {
+		return err
+	}
+	projectCfg, err := dbcli.LoadProjectConfig(cmd, configPath)
+	if err != nil {
+		return err
+	}
+	dbURL := dbcli.EffectiveString(cmd, dbURLFlag, opts.dbURL, projectCfg.DatabaseURL)
+	schemasValue := dbcli.EffectiveString(cmd, dbcli.SchemasFlagName, opts.schemas, dbcli.JoinSchemas(projectCfg.Schemas))
+
+	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
 	}
 	if reportFormat != "text" && reportFormat != "html" && reportFormat != "json" {
@@ -89,12 +101,12 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	loadOpts := schemaload.Options{
 		RootDirs:    opts.rootDirs,
 		SchemaFiles: opts.schemaFiles,
-		Commands:    schemasource.CommandsFromCLI(opts.schemaCmd, opts.schemaFormat, ""),
+		Commands:    dbcli.ExternalSchemaCommands(opts.schemaCmd, opts.schemaFormat, projectCfg),
 	}
 	rootsDisplay := loadOpts.Sources()
 
 	if reportFormat == "text" {
-		fmt.Fprintf(out, "Generating migration from %s to database %s\n", rootsDisplay, dbschema.FormatDatabaseURL(opts.dbURL))
+		fmt.Fprintf(out, "Generating migration from %s to database %s\n", rootsDisplay, dbschema.FormatDatabaseURL(dbURL))
 		fmt.Fprintln(out, "=== GENERATE MIGRATION SQL ===")
 		fmt.Fprintln(out)
 	}
@@ -113,14 +125,14 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	}
 
 	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
-	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.dbURL)
+	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
 	cancelConnect()
 	if err != nil {
 		return fmt.Errorf("error connecting to database: %w", err)
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	schemas := dbcli.ParseSchemas(opts.schemas)
+	schemas := dbcli.ParseSchemas(schemasValue)
 	dbSchema, err := dbschema.ReadSchemaWithSchemas(conn, schemas)
 	if err != nil {
 		return fmt.Errorf("error reading database schema: %w", err)
@@ -171,7 +183,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	fmt.Fprintln(out, "-- Migration generated from schema differences")
 	fmt.Fprintf(out, "-- Generated on: %s\n", "now") // You could add actual timestamp
 	fmt.Fprintf(out, "-- Source: %s\n", rootsDisplay)
-	fmt.Fprintf(out, "-- Target: %s\n", dbschema.FormatDatabaseURL(opts.dbURL))
+	fmt.Fprintf(out, "-- Target: %s\n", dbschema.FormatDatabaseURL(dbURL))
 	fmt.Fprintln(out)
 
 	fmt.Fprint(out, migrationSQL)

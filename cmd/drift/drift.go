@@ -14,7 +14,6 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/internal/schemaops"
-	"github.com/stokaro/ptah/cmd/internal/schemasource"
 	"github.com/stokaro/ptah/migration/safety"
 	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
 )
@@ -43,6 +42,7 @@ func NewDriftCommand() *cobra.Command {
 	var useExitCode bool
 	var connectTimeoutRaw string
 	var schemasRaw string
+	var configPath string
 
 	cmd := &cobra.Command{
 		Use:           "drift",
@@ -62,6 +62,7 @@ func NewDriftCommand() *cobra.Command {
 				useExitCode:       useExitCode,
 				connectTimeoutRaw: connectTimeoutRaw,
 				schemasRaw:        schemasRaw,
+				configPath:        configPath,
 			})
 		},
 	}
@@ -82,6 +83,8 @@ func NewDriftCommand() *cobra.Command {
 		dbcli.DefaultConnectTimeout.String(),
 		"Maximum time to wait when establishing the initial database connection (for example 5s or 1m). Use 0 to disable the timeout.",
 	)
+	cmd.Flags().StringVar(&configPath, dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
+	cmd.Flags().String(dbcli.EnvFlagName, "", "Project env name to read from ptah.yaml or atlas.hcl")
 
 	cmdutil.ConfigureCommand(cmd)
 	return cmd
@@ -99,6 +102,7 @@ type runOptions struct {
 	useExitCode       bool
 	connectTimeoutRaw string
 	schemasRaw        string
+	configPath        string
 }
 
 type driftReport struct {
@@ -116,14 +120,22 @@ type driftReport struct {
 }
 
 func runDrift(cmd *cobra.Command, opts runOptions) error {
-	if opts.dbURL == "" {
-		return writeError(cmd.ErrOrStderr(), opts.format, "database URL is required")
-	}
 	if err := validateFormat(opts.format); err != nil {
 		return writeError(cmd.ErrOrStderr(), formatText, err.Error())
 	}
 	if err := validateSeverity(opts.severity); err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
+	}
+
+	projectCfg, err := dbcli.LoadProjectConfig(cmd, opts.configPath)
+	if err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
+	}
+	dbURL := dbcli.EffectiveString(cmd, "db-url", opts.dbURL, projectCfg.DatabaseURL)
+	schemasValue := dbcli.EffectiveString(cmd, dbcli.SchemasFlagName, opts.schemasRaw, dbcli.JoinSchemas(projectCfg.Schemas))
+
+	if dbURL == "" {
+		return writeError(cmd.ErrOrStderr(), opts.format, "database URL is required")
 	}
 
 	ignoredTables, err := parseIgnoredTables(opts.ignored)
@@ -134,13 +146,13 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
 	}
-	schemas := dbcli.ParseSchemas(opts.schemasRaw)
+	schemas := dbcli.ParseSchemas(schemasValue)
 
 	result, err := schemaops.Compare(cmd.Context(), schemaops.CompareOptions{
 		RootDirs:       opts.rootDirs,
 		SchemaFiles:    opts.schemaFiles,
-		Commands:       schemasource.CommandsFromCLI(opts.schemaCmd, opts.schemaFormat, ""),
-		DatabaseURL:    opts.dbURL,
+		Commands:       dbcli.ExternalSchemaCommands(opts.schemaCmd, opts.schemaFormat, projectCfg),
+		DatabaseURL:    dbURL,
 		ConnectTimeout: connectTimeout,
 		IgnoredTables:  ignoredTables,
 		Schemas:        schemas,
