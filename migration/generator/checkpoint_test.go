@@ -1,6 +1,8 @@
 package generator_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -8,7 +10,41 @@ import (
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/migration/generator"
+	"github.com/stokaro/ptah/migration/migrator"
 )
+
+func TestWriteCheckpointFiles(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+
+	// Seed an ordinary migration so ptah.sum starts with prior content.
+	c.Assert(os.WriteFile(filepath.Join(dir, "0000000001_init.up.sql"), []byte("CREATE TABLE t (id INT);\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "0000000001_init.down.sql"), []byte("DROP TABLE t;\n"), 0o600), qt.IsNil)
+
+	upPath, downPath, err := generator.WriteCheckpointFiles(dir, 2, "snapshot",
+		"CREATE TABLE t (id INT, name TEXT);\n", "DROP TABLE t;\n")
+	c.Assert(err, qt.IsNil)
+	c.Assert(filepath.Base(upPath), qt.Equals, "0000000002_snapshot.checkpoint.up.sql")
+	c.Assert(filepath.Base(downPath), qt.Equals, "0000000002_snapshot.checkpoint.down.sql")
+
+	upContent, err := os.ReadFile(upPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(upContent), qt.Contains, "name TEXT")
+
+	parsed, err := migrator.ParseMigrationFileName(filepath.Base(upPath))
+	c.Assert(err, qt.IsNil)
+	c.Assert(parsed.IsCheckpoint, qt.IsTrue)
+
+	// ptah.sum was rewritten and now covers the checkpoint pair.
+	sum, err := os.ReadFile(filepath.Join(dir, "ptah.sum"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(sum), qt.Contains, "0000000002_snapshot.checkpoint.up.sql")
+	c.Assert(string(sum), qt.Contains, "0000000002_snapshot.checkpoint.down.sql")
+
+	// Writing the same version again refuses rather than overwriting.
+	_, _, err = generator.WriteCheckpointFiles(dir, 2, "snapshot", "x", "y")
+	c.Assert(err, qt.ErrorMatches, `checkpoint files for version 2 already exist`)
+}
 
 func checkpointSampleSchema() *goschema.Database {
 	return &goschema.Database{

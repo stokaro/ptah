@@ -207,6 +207,23 @@ func TestParseMigrationFileName(t *testing.T) {
 	}
 }
 
+func TestGenerateCheckpointMigrationFileName(t *testing.T) {
+	c := qt.New(t)
+
+	up := GenerateCheckpointMigrationFileName(5, "Cumulative Snapshot", "up")
+	c.Assert(up, qt.Equals, "0000000005_cumulative_snapshot.checkpoint.up.sql")
+	down := GenerateCheckpointMigrationFileName(5, "Cumulative Snapshot", "down")
+	c.Assert(down, qt.Equals, "0000000005_cumulative_snapshot.checkpoint.down.sql")
+
+	// A generated checkpoint name round-trips through the parser as a checkpoint.
+	parsed, err := ParseMigrationFileName(up)
+	c.Assert(err, qt.IsNil)
+	c.Assert(parsed.Version, qt.Equals, int64(5))
+	c.Assert(parsed.Direction, qt.Equals, "up")
+	c.Assert(parsed.Name, qt.Equals, "Cumulative Snapshot")
+	c.Assert(parsed.IsCheckpoint, qt.IsTrue)
+}
+
 func TestParseAtlasMigrationFileName(t *testing.T) {
 	c := qt.New(t)
 

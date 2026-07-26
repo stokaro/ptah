@@ -275,12 +275,24 @@ func ValidateMigrationFileName(filename string) bool {
 
 // GenerateMigrationFileName generates a migration filename from components
 func GenerateMigrationFileName(version int64, description, direction string) string {
-	// Convert description to snake_case
+	return fmt.Sprintf("%010d_%s.%s.sql", version, normalizeMigrationDescription(description), direction)
+}
+
+// GenerateCheckpointMigrationFileName returns the file name for one direction of
+// a checkpoint migration: NNNNNNNNNN_description.checkpoint.(up|down).sql. It
+// mirrors GenerateMigrationFileName but carries the checkpoint marker that
+// ParseMigrationFileName recognizes, so a written checkpoint file round-trips.
+func GenerateCheckpointMigrationFileName(version int64, description, direction string) string {
+	return fmt.Sprintf("%010d_%s.checkpoint.%s.sql", version, normalizeMigrationDescription(description), direction)
+}
+
+// normalizeMigrationDescription lower-cases the description, replaces spaces
+// with underscores, and strips any remaining non [a-z0-9_] characters, matching
+// the snake_case stem the file name regex accepts.
+func normalizeMigrationDescription(description string) string {
 	desc := strings.ToLower(description)
 	desc = strings.ReplaceAll(desc, " ", "_")
-	desc = regexp.MustCompile(`[^a-z0-9_]`).ReplaceAllString(desc, "")
-
-	return fmt.Sprintf("%010d_%s.%s.sql", version, desc, direction)
+	return regexp.MustCompile(`[^a-z0-9_]`).ReplaceAllString(desc, "")
 }
 
 // GetNextMigrationVersion generates the next migration version number
