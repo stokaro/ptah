@@ -203,6 +203,7 @@ func TestSchemaCommand_RegistersNativePaths(t *testing.T) {
 		{"render"},
 		{"compare"},
 		{"drift"},
+		{"test"},
 	} {
 		found, _, err := cmd.Find(path)
 		c.Assert(err, qt.IsNil)

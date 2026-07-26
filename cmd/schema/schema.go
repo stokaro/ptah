@@ -71,6 +71,8 @@ under ptah atlas.`,
 	driftCmd.Short = "Check live database drift against desired schema"
 	driftCmd.Long = "Check live database drift against desired schema."
 	cmd.AddCommand(driftCmd)
+
+	cmd.AddCommand(NewSchemaTestCommand())
 	return cmd
 }
 

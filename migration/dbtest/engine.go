@@ -32,9 +32,13 @@ type Options struct {
 	DirFormat migrator.MigrationDirFormat
 }
 
-// Report is the outcome of a [RunMigrationTest] run.
+// Report is the outcome of a [RunMigrationTest] or [RunSchemaTest] run.
 type Report struct {
 	Cases []CaseResult
+
+	// kind labels the report header ("MIGRATION" or "SCHEMA"). It defaults to
+	// "MIGRATION" so a zero-value Report still renders sensibly.
+	kind string
 }
 
 // CaseResult is the outcome of a single [Case]. Passed is true only when every
@@ -66,7 +70,11 @@ func (r *Report) Failed() bool {
 // Text renders a human-readable summary of the report.
 func (r *Report) Text() string {
 	var b strings.Builder
-	b.WriteString("=== MIGRATION TEST ===\n")
+	kind := r.kind
+	if kind == "" {
+		kind = "MIGRATION"
+	}
+	fmt.Fprintf(&b, "=== %s TEST ===\n", kind)
 
 	passed := 0
 	for i := range r.Cases {
@@ -114,28 +122,67 @@ func RunMigrationTest(ctx context.Context, opts Options) (*Report, error) {
 		dirFormat = migrator.MigrationDirFormatPtah
 	}
 
-	report := &Report{Cases: make([]CaseResult, 0, len(opts.Cases))}
+	run := func(ctx context.Context, conn *dbschema.DatabaseConnection, c Case) (CaseResult, error) {
+		r := &runner{conn: conn, migrationsDir: opts.MigrationsDir, dirFormat: dirFormat}
+		r.migrateTo = r.runMigrateTo
+		return r.runCase(ctx, c), nil
+	}
+	// Migration tests need no per-database provisioning: each case applies its
+	// own migrations via migrate_to.
+	return runCases(ctx, opts.DBURL, "MIGRATION", opts.Cases, nil, run)
+}
 
-	// An explicit database URL is a single throwaway the caller owns, so all
-	// cases share one connection and the caller is responsible for isolating
-	// them. The default (ephemeral) mode instead gives each case its own fresh
-	// SQLite database so cases cannot contaminate one another.
-	if opts.DBURL != "" {
-		conn, err := dbschema.ConnectToDatabase(ctx, opts.DBURL)
+// caseRunner runs a single case against a freshly provisioned connection.
+// Returning an error aborts the whole run: it signals the test bed itself could
+// not be set up (for example, a desired schema that fails to render or apply),
+// which is distinct from an ordinary assertion failure captured in the
+// [CaseResult].
+type caseRunner func(ctx context.Context, conn *dbschema.DatabaseConnection, c Case) (CaseResult, error)
+
+// provisionFunc sets up a freshly connected database once, before any case runs
+// against it. It is called once per shared connection or once per ephemeral
+// database.
+type provisionFunc func(ctx context.Context, conn *dbschema.DatabaseConnection) error
+
+// runCases drives every case with the database isolation both public entry
+// points ([RunMigrationTest] and [RunSchemaTest]) share. An explicit database
+// URL is a single throwaway the caller owns, so all cases share one connection
+// and the caller is responsible for isolating them. The default (ephemeral) mode
+// instead gives each case its own fresh SQLite database so cases cannot
+// contaminate one another.
+//
+// provision, when non-nil, sets up a database once after it is connected and
+// before any case runs against it: once per shared connection, or once per fresh
+// ephemeral database. Schema tests use it to create the desired schema exactly
+// once per database; migration tests pass nil because each case applies its own
+// migrations.
+func runCases(ctx context.Context, dbURL, kind string, cases []Case, provision provisionFunc, run caseRunner) (*Report, error) {
+	report := &Report{Cases: make([]CaseResult, 0, len(cases)), kind: kind}
+
+	if dbURL != "" {
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 		if err != nil {
 			return nil, fmt.Errorf("connect to test database: %w", err)
 		}
 		defer dbschema.CloseAndWarn(conn)
 
-		r := &runner{conn: conn, migrationsDir: opts.MigrationsDir, dirFormat: dirFormat}
-		for i := range opts.Cases {
-			report.Cases = append(report.Cases, r.runCase(ctx, opts.Cases[i]))
+		if provision != nil {
+			if err := provision(ctx, conn); err != nil {
+				return nil, err
+			}
+		}
+		for i := range cases {
+			result, err := run(ctx, conn, cases[i])
+			if err != nil {
+				return nil, err
+			}
+			report.Cases = append(report.Cases, result)
 		}
 		return report, nil
 	}
 
-	for i := range opts.Cases {
-		result, err := runEphemeralCase(ctx, opts.Cases[i], opts.MigrationsDir, dirFormat)
+	for i := range cases {
+		result, err := runEphemeralCase(ctx, cases[i], provision, run)
 		if err != nil {
 			return nil, err
 		}
@@ -146,7 +193,7 @@ func RunMigrationTest(ctx context.Context, opts Options) (*Report, error) {
 
 // runEphemeralCase runs one case against a fresh SQLite database that exists
 // only for that case, so state created by one case is never visible to another.
-func runEphemeralCase(ctx context.Context, c Case, migrationsDir string, dirFormat migrator.MigrationDirFormat) (CaseResult, error) {
+func runEphemeralCase(ctx context.Context, c Case, provision provisionFunc, run caseRunner) (CaseResult, error) {
 	tmpDir, err := os.MkdirTemp("", "ptah-dbtest-*")
 	if err != nil {
 		return CaseResult{}, fmt.Errorf("create ephemeral database directory: %w", err)
@@ -160,8 +207,12 @@ func runEphemeralCase(ctx context.Context, c Case, migrationsDir string, dirForm
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	r := &runner{conn: conn, migrationsDir: migrationsDir, dirFormat: dirFormat}
-	return r.runCase(ctx, c), nil
+	if provision != nil {
+		if err := provision(ctx, conn); err != nil {
+			return CaseResult{}, err
+		}
+	}
+	return run(ctx, conn, c)
 }
 
 // runner executes steps against a single shared database connection.
@@ -169,6 +220,11 @@ type runner struct {
 	conn          *dbschema.DatabaseConnection
 	migrationsDir string
 	dirFormat     migrator.MigrationDirFormat
+	// migrateTo handles a migrate_to step. Migration tests wire it to
+	// [runner.runMigrateTo]; schema tests wire it to a rejection because a schema
+	// test applies a desired schema directly and has no migrations to move
+	// between. It must be set before [runner.execStep] is called.
+	migrateTo func(ctx context.Context, target string) (passed bool, detail string)
 }
 
 func (r *runner) runCase(ctx context.Context, c Case) CaseResult {
@@ -192,7 +248,7 @@ func (r *runner) execStep(ctx context.Context, step Step) (passed bool, detail s
 	kind, _ := step.kind()
 	switch kind {
 	case stepKindMigrateTo:
-		return r.runMigrateTo(ctx, step.MigrateTo)
+		return r.migrateTo(ctx, step.MigrateTo)
 	case stepKindExec:
 		return r.runExec(ctx, step.Exec)
 	case stepKindAssert:
