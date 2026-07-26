@@ -48,8 +48,8 @@ current schema IR:
 - PostgreSQL `extension` blocks with `version` and `comment`
 - PostgreSQL `role` blocks with `login`, `superuser`, `create_db`,
   `create_role`, `inherit`, `replication`, and `comment`
-- PostgreSQL `permission` blocks for table and schema targets with `to`,
-  `for`, `privileges`, `grantable`, and `comment`
+- PostgreSQL `permission` blocks for table, schema, and sequence targets with
+  `to`, `for`, `privileges`, `grantable`, and `comment`
 - PostgreSQL `function` blocks with `schema`, `lang`, `arg`, `return`,
   `security`, `volatility`, `as`, and `comment`
 - PostgreSQL `view` blocks with `schema`, `as`, `check_option`, and `comment`
@@ -372,7 +372,8 @@ permission {
 Ptah intentionally supports the subset it can round-trip through its IR. For
 example, `extension.schema`, `row_security.enforced`, materialized-view column
 blocks, trigger `execute` blocks, policy `as`, and permission targets other
-than `table` or `schema` are rejected instead of being accepted and dropped.
+than `table`, `schema`, or `sequence` are rejected instead of being accepted and
+dropped.
 Function arguments are accepted as Atlas `arg` blocks; export diagnostics are
 reported when a Go annotation `params` string cannot be represented this way.
 
@@ -397,7 +398,7 @@ Atlas features that Ptah cannot represent without losing semantics, including:
 - view/materialized-view column metadata
 - trigger `execute`, `referencing`, `when`, constraint, and deferrable metadata
 - policy `as`
-- permission targets other than schema and table
+- permission targets other than schema, table, and sequence
 - HCL objects outside direct schema definitions, such as realms and other
   dialect-specific object types
 
