@@ -24,6 +24,7 @@
 //     integer version, the string "latest" (migrate up to the newest
 //     migration), or the string "0" (roll everything back).
 //   - exec: run raw SQL against the database.
+//   - seed: apply environment-scoped SQL seed files from a directory.
 //   - assert: run a query and check exactly one condition (row_count, scalar,
 //     or error_contains).
 //
@@ -58,10 +59,10 @@
 //
 // # Scope
 //
-// The supported step kinds are migrate_to (migration tests only), exec, and
-// assert, with the row_count, scalar, and error_contains assertions listed
-// above. Seed steps and structured (HTML/JSON) reporting are out of scope;
-// reporting is text only via [Report.Text].
+// The supported step kinds are migrate_to (migration tests only), exec, seed,
+// and assert, with the row_count, scalar, and error_contains assertions listed
+// above. Structured (HTML/JSON) reporting is out of scope; reporting is text
+// only via [Report.Text].
 //
 // # Database isolation
 //
@@ -94,8 +95,22 @@ type Step struct {
 	MigrateTo string `yaml:"migrate_to"`
 	// Exec runs raw SQL against the database.
 	Exec string `yaml:"exec"`
+	// Seed applies environment-scoped SQL seed files from a directory.
+	Seed *SeedStep `yaml:"seed"`
 	// Assert runs a query and checks a single condition on the result.
 	Assert *Assertion `yaml:"assert"`
+}
+
+// SeedStep applies SQL seed files from Dir using the seeder's
+// NNN_description.env.sql convention: files matching Env plus files ending in
+// .all.sql are applied in version order. Because the target is a throwaway test
+// database, protected-environment and protected-table guards do not apply.
+type SeedStep struct {
+	// Dir is the directory of seed files. It is required.
+	Dir string `yaml:"dir"`
+	// Env is the seed environment to apply (for example dev or test). It is
+	// required; files matching Env plus files ending in .all.sql are applied.
+	Env string `yaml:"env"`
 }
 
 // Assertion runs Query and checks exactly one of RowCount, Scalar, or
@@ -126,6 +141,7 @@ const (
 	stepKindNone stepKind = iota
 	stepKindMigrateTo
 	stepKindExec
+	stepKindSeed
 	stepKindAssert
 )
 
@@ -138,6 +154,10 @@ func (s Step) kind() (kind stepKind, setCount int) {
 	}
 	if strings.TrimSpace(s.Exec) != "" {
 		kind = stepKindExec
+		setCount++
+	}
+	if s.Seed != nil {
+		kind = stepKindSeed
 		setCount++
 	}
 	if s.Assert != nil {
@@ -175,13 +195,26 @@ func (c Case) validate() error {
 func (s Step) validate() error {
 	_, setCount := s.kind()
 	if setCount == 0 {
-		return fmt.Errorf("step must set exactly one of migrate_to, exec, or assert, but none is set")
+		return fmt.Errorf("step must set exactly one of migrate_to, exec, seed, or assert, but none is set")
 	}
 	if setCount > 1 {
-		return fmt.Errorf("step must set exactly one of migrate_to, exec, or assert, but %d are set", setCount)
+		return fmt.Errorf("step must set exactly one of migrate_to, exec, seed, or assert, but %d are set", setCount)
+	}
+	if s.Seed != nil {
+		return s.Seed.validate()
 	}
 	if s.Assert != nil {
 		return s.Assert.validate()
+	}
+	return nil
+}
+
+func (s *SeedStep) validate() error {
+	if strings.TrimSpace(s.Dir) == "" {
+		return fmt.Errorf("seed requires a dir")
+	}
+	if strings.TrimSpace(s.Env) == "" {
+		return fmt.Errorf("seed requires an env")
 	}
 	return nil
 }

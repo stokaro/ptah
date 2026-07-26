@@ -648,6 +648,7 @@ type Report struct{ ... }
     func RunMigrationTest(ctx context.Context, opts Options) (*Report, error)
     func RunSchemaTest(ctx context.Context, opts SchemaOptions) (*Report, error)
 type SchemaOptions struct{ ... }
+type SeedStep struct{ ... }
 type Step struct{ ... }
 type StepResult struct{ ... }
 
