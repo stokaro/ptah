@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"github.com/stokaro/ptah/cmd/internal/schemasource"
 	"github.com/stokaro/ptah/config/projectconfig"
 )
 
@@ -72,6 +73,22 @@ func EffectiveString(cmd *cobra.Command, flagName, flagValue, configValue string
 		return flagValue
 	}
 	return configValue
+}
+
+// ExternalSchemaCommands resolves the external-command schema source for a
+// command, preferring the --schema-cmd flag value and falling back to the
+// ptah.yaml external_schema block when the flag is empty. It returns nil when
+// neither is configured.
+func ExternalSchemaCommands(schemaCmd, schemaFormat string, cfg projectconfig.Config) []schemasource.Command {
+	if commands := schemasource.CommandsFromCLI(schemaCmd, schemaFormat, ""); commands != nil {
+		return commands
+	}
+	return schemasource.CommandsFromConfig(
+		cfg.ExternalSchema.Program,
+		cfg.ExternalSchema.Format,
+		cfg.ExternalSchema.WorkingDir,
+		cfg.ExternalSchema.Env,
+	)
 }
 
 func stringFlag(cmd *cobra.Command, name string) (string, error) {

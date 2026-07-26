@@ -9,7 +9,6 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/schemaload"
-	"github.com/stokaro/ptah/cmd/internal/schemasource"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/generator"
@@ -105,21 +104,10 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	// Resolve the external schema command from the --schema-cmd flag, falling
-	// back to the ptah.yaml external_schema block when the flag is unset.
-	commands := schemasource.CommandsFromCLI(schemaCmd, schemaFormat, "")
-	if commands == nil {
-		commands = schemasource.CommandsFromConfig(
-			projectCfg.ExternalSchema.Program,
-			projectCfg.ExternalSchema.Format,
-			projectCfg.ExternalSchema.WorkingDir,
-			projectCfg.ExternalSchema.Env,
-		)
-	}
 	generated, err := schemaload.LoadContext(cmd.Context(), schemaload.Options{
 		RootDirs:    rootDirs,
 		SchemaFiles: schemaFiles,
-		Commands:    commands,
+		Commands:    dbcli.ExternalSchemaCommands(schemaCmd, schemaFormat, projectCfg),
 	})
 	if err != nil {
 		return err

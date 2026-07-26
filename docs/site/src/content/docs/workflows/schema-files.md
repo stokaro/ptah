@@ -199,6 +199,10 @@ external_schema:
   env: ["APP_ENV=dev"] # optional extra KEY=VALUE entries
 ```
 
-`ptah migrations generate` reads this block when `--schema-cmd` is not passed
-(the flag always wins). This mirrors Atlas's `data "external_schema"` block: the
-program must print the complete desired schema — currently SQL DDL — to stdout.
+`ptah schema compare`, `ptah schema drift`, `ptah migrations plan`, and
+`ptah migrations generate` read this block when `--schema-cmd` is not passed (the
+flag always wins). Those commands also read `url` (the database) and `schemas`
+from `ptah.yaml`, and honor `--env` to select an env block — so a drift check can
+be as short as `ptah schema drift --config ptah.yaml`. This mirrors Atlas's
+`data "external_schema"` block: the program must print the complete desired
+schema — currently SQL DDL — to stdout.
