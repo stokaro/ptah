@@ -117,10 +117,12 @@ Preview the SQL Ptah derives from your schema file and review it before you appl
 ptah schema render --schema-file schema.yaml --dialect postgres >/tmp/schema.sql
 ```
 
-The rendered SQL proves Ptah understood the desired schema. Note that
-`--schema-file` feeds `ptah schema render` only — planning and generating
-migrations (`ptah migrations plan` / `ptah migrations generate`) read the desired
-schema from Go entities via `--root-dir`, not from a schema file.
+The rendered SQL proves Ptah understood the desired schema. `--schema-file` is
+accepted wherever Ptah needs a desired schema: `ptah schema render`,
+`ptah schema compare`, `ptah schema drift`, and the migration commands
+(`ptah migrations plan` / `ptah migrations generate`). Each command reads the
+desired schema from Go entities (`--root-dir`), schema files (`--schema-file`),
+or any combination of the two.
 
 ## Compose multiple sources
 
