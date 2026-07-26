@@ -18,25 +18,32 @@ type caseFile struct {
 	Cases []Case `yaml:"cases"`
 }
 
-// ParseCases parses a YAML document containing a top-level cases: list and
-// validates the result. Unknown fields are rejected so typos in step or
-// assertion keys surface as errors rather than being silently ignored. An empty
-// document yields no cases and no error.
+// ParseCases parses YAML containing a top-level cases: list and validates the
+// result. Every ---separated document in the input is decoded and its cases are
+// concatenated, so a multi-document file contributes all of its cases rather
+// than silently only the first. Unknown fields are rejected so typos in step or
+// assertion keys surface as errors rather than being silently ignored. Empty
+// input yields no cases and no error.
 func ParseCases(data []byte) ([]Case, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 
-	var file caseFile
-	if err := dec.Decode(&file); err != nil {
+	var cases []Case
+	for {
+		var file caseFile
+		err := dec.Decode(&file)
 		if errors.Is(err, io.EOF) {
-			return nil, nil
+			break
 		}
-		return nil, fmt.Errorf("parse test cases: %w", err)
+		if err != nil {
+			return nil, fmt.Errorf("parse test cases: %w", err)
+		}
+		cases = append(cases, file.Cases...)
 	}
-	if err := validateCases(file.Cases); err != nil {
+	if err := validateCases(cases); err != nil {
 		return nil, err
 	}
-	return file.Cases, nil
+	return cases, nil
 }
 
 // LoadCases reads every *.yaml and *.yml file in dir (non-recursively), parses

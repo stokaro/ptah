@@ -85,12 +85,18 @@ type Step struct {
 // Assertion runs Query and checks exactly one of RowCount, Scalar, or
 // ErrorContains.
 type Assertion struct {
-	// Query is the SQL executed by the assertion. It is always required.
+	// Query is the SQL executed by the assertion. It is always required and
+	// should be a SELECT: with row_count and scalar it is run as a query, and
+	// with error_contains it is run and expected to fail, so a non-SELECT
+	// statement would execute its side effects.
 	Query string `yaml:"query"`
 	// RowCount asserts that Query returns exactly this many rows.
 	RowCount *int `yaml:"row_count"`
 	// Scalar asserts that the first column of the first row of Query, formatted
-	// as a string, equals this value.
+	// as a string, equals this value. Values are formatted deterministically:
+	// []byte and text as their string, time.Time as RFC3339, SQL NULL as
+	// "<nil>", and other types via fmt's default. Select a column as text (for
+	// example CAST(col AS TEXT)) to compare its raw stored form.
 	Scalar *string `yaml:"scalar"`
 	// ErrorContains asserts that running Query fails with an error message that
 	// contains this substring.
@@ -110,11 +116,11 @@ const (
 // kind reports which single action the step performs and how many actions are
 // set. A well-formed step has exactly one action set.
 func (s Step) kind() (kind stepKind, setCount int) {
-	if s.MigrateTo != "" {
+	if strings.TrimSpace(s.MigrateTo) != "" {
 		kind = stepKindMigrateTo
 		setCount++
 	}
-	if s.Exec != "" {
+	if strings.TrimSpace(s.Exec) != "" {
 		kind = stepKindExec
 		setCount++
 	}

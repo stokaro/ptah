@@ -10,6 +10,27 @@ import (
 	"github.com/stokaro/ptah/migration/dbtest"
 )
 
+func TestParseCases_MultiDocument(t *testing.T) {
+	c := qt.New(t)
+	// Two ---separated documents must both contribute their cases; the second
+	// one must not be silently dropped.
+	doc := "cases:\n" +
+		"  - name: first\n" +
+		"    steps:\n" +
+		"      - exec: SELECT 1\n" +
+		"---\n" +
+		"cases:\n" +
+		"  - name: second\n" +
+		"    steps:\n" +
+		"      - exec: SELECT 1\n"
+
+	cases, err := dbtest.ParseCases([]byte(doc))
+	c.Assert(err, qt.IsNil)
+	c.Assert(cases, qt.HasLen, 2)
+	c.Assert(cases[0].Name, qt.Equals, "first")
+	c.Assert(cases[1].Name, qt.Equals, "second")
+}
+
 func TestParseCases_Valid(t *testing.T) {
 	tests := []struct {
 		name string

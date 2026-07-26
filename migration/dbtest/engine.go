@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/migration/migrator"
@@ -26,7 +27,8 @@ type Options struct {
 	// removed afterwards.
 	DBURL string
 	// DirFormat selects how MigrationsDir is parsed. The zero value defaults to
-	// the Ptah directory format.
+	// the Ptah directory format (not the migrator's own "auto" default), so a
+	// direct caller that wants format auto-detection must set it explicitly.
 	DirFormat migrator.MigrationDirFormat
 }
 
@@ -342,9 +344,19 @@ func (r *runner) runExpectingError(ctx context.Context, query string) error {
 	return rows.Err()
 }
 
+// normalizeScalar renders a scanned value as the string an assertion compares
+// against. time.Time is formatted with a fixed layout so date/time columns —
+// which some drivers surface as time.Time rather than the stored text — compare
+// deterministically instead of via time.Time's default String form (which
+// appends " +0000 UTC"). To compare the raw stored text of a date/time column,
+// select it as text (for example `CAST(col AS TEXT)`).
 func normalizeScalar(v any) string {
-	if b, ok := v.([]byte); ok {
-		return string(b)
+	switch val := v.(type) {
+	case []byte:
+		return string(val)
+	case time.Time:
+		return val.Format(time.RFC3339Nano)
+	default:
+		return fmt.Sprintf("%v", v)
 	}
-	return fmt.Sprintf("%v", v)
 }
