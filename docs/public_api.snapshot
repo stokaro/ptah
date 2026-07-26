@@ -740,6 +740,7 @@ type BaselineOptions struct{ ... }
 type Check struct{ ... }
     func ParseChecks(sql string) ([]Check, error)
 type CheckFailedError struct{ ... }
+type CheckpointRollbackError struct{ ... }
 type ChecksumMismatchError struct{ ... }
 type DirtyMigrationError struct{ ... }
 type ExecOrder string
