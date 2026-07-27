@@ -64,6 +64,24 @@ refreshes `ptah.sum`, so the data migration applies and rolls back like any othe
 `--dry-run` prints the SQL instead of writing files; a run with no drift writes
 nothing.
 
+## Safety gates
+
+A data migration is applied through the ordinary migration path, where neither
+the lint nor the safety gate classifies row `INSERT`/`UPDATE`/`DELETE` as
+destructive. So `ptah migrations data` gates destructive changes when it
+generates them:
+
+- Unless `--allow-destructive` is set, a migration that would `UPDATE` or
+  `DELETE` existing rows is refused with a per-table summary of the volume.
+  Insert-only migrations are additive and are always allowed.
+- Naming a table with `--protected-table` refuses any change to it — insert,
+  update, or delete — unless `--allow-prod` is also set, mirroring the
+  protected-target posture of `ptah seed`.
+
+Both gates run before any SQL is emitted, so they apply to `--dry-run` too:
+combine `--allow-destructive --dry-run` to preview a destructive change without
+writing files.
+
 ## Reversibility
 
 The generated `down` is the exact inverse of `up`: an inserted row's down is a
