@@ -463,6 +463,7 @@ type schemaParseState struct {
 	rlsEnabledTables      []RLSEnabledTable
 	roles                 []Role
 	grants                []Grant
+	managedData           []ManagedData
 	schemas               []Schema
 }
 
@@ -574,6 +575,8 @@ func (s *schemaParseState) parseSharedComment(comment *ast.Comment, target schem
 		return s.parseRoleComment(comment, target.structName)
 	case strings.HasPrefix(comment.Text, "//migrator:schema:grant"):
 		return s.parseGrantComment(comment, target.structName)
+	case strings.HasPrefix(comment.Text, "//migrator:schema:data"):
+		return s.parseManagedDataComment(comment, target.structName)
 	}
 	return nil
 }
@@ -706,6 +709,7 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (Database, 
 		RLSEnabledTables:  state.rlsEnabledTables,
 		Roles:             state.roles,
 		Grants:            state.grants,
+		ManagedData:       state.managedData,
 		Dependencies:      make(map[string][]string),
 	}
 	normalizeTableScopedNames(&result)
@@ -1313,6 +1317,38 @@ func (s *schemaParseState) parseGrantComment(comment *ast.Comment, structName st
 	}
 	grant.Canonicalize()
 	s.grants = append(s.grants, grant)
+	return nil
+}
+
+func (s *schemaParseState) parseManagedDataComment(comment *ast.Comment, structName string) error {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	ctx := s.annotationContext(comment, "//migrator:schema:data", kv["table"])
+	if err := validateAttributes(kv, ctx); err != nil {
+		return err
+	}
+	if err := requireAttributes(kv, ctx); err != nil {
+		return err
+	}
+
+	keys := splitCommaList(kv["key"])
+	if len(keys) == 0 {
+		return &ptaherr.ParseError{
+			File:      ctx.file,
+			Line:      ctx.line,
+			Directive: strings.TrimPrefix(ctx.directive, "//"),
+			Attribute: "key",
+			Err:       ptaherr.ErrInvalidAttributeValue,
+			Message:   fmt.Sprintf("empty key list for \"key\" on %s at %s; expected one or more comma-separated key columns", ctx.directive, ctx.location),
+		}
+	}
+
+	s.managedData = append(s.managedData, ManagedData{
+		StructName: structName,
+		Table:      kv["table"],
+		Keys:       keys,
+		File:       kv["file"],
+		SourceDir:  filepath.Dir(s.filename),
+	})
 	return nil
 }
 

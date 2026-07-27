@@ -69,6 +69,9 @@ type UserTrigger struct{}
 //migrator:schema:grant role="fixture_app_user" privilege="USAGE,SELECT" on_sequence="fixture_order_seq" comment="Sequence usage for fixture_app_user"
 type AccessControlMarker struct{}
 
+//migrator:schema:data table="users" key="id" file="users.yaml"
+type UserSeedDataMarker struct{}
+
 type UserMetadata struct {
 	TraceID string
 }

@@ -205,6 +205,7 @@ func TestParseSource_RejectsUnknownAttributesOnAllDirectives(t *testing.T) {
 		{name: "rls_enable", annotation: `//migrator:schema:rls:enable table="users" bogus="x"`},
 		{name: "role", annotation: `//migrator:schema:role name="app" bogus="x"`},
 		{name: "grant", annotation: `//migrator:schema:grant role="app" privilege="SELECT" bogus="x"`},
+		{name: "data", annotation: `//migrator:schema:data table="countries" key="code" file="countries.yaml" bogus="x"`},
 	}
 
 	for _, tt := range tests {
