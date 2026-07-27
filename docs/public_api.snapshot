@@ -77,6 +77,7 @@ type AlterTableEnableRLSNode struct{ ... }
 type AlterTableNode struct{ ... }
 type AlterTypeNode struct{ ... }
     func NewAlterType(name string) *AlterTypeNode
+type Assignment struct{ ... }
 type BoundValue struct{ ... }
 type ColumnNode struct{ ... }
     func NewColumn(name, dataType string) *ColumnNode
@@ -120,6 +121,7 @@ type CreateTypeNode struct{ ... }
 type CreateViewNode struct{ ... }
     func NewCreateView(name string) *CreateViewNode
 type DefaultValue struct{ ... }
+type DeleteStatement struct{ ... }
 type DomainTypeDef struct{ ... }
     func NewDomainTypeDef(baseType string) *DomainTypeDef
 type DropColumnOperation struct{ ... }
@@ -163,6 +165,7 @@ type InExpr struct{ ... }
 type IndexNode struct{ ... }
     func NewIndex(name, table string, columns ...string) *IndexNode
 type IndexPart struct{ ... }
+type InsertStatement struct{ ... }
 type JoinClause struct{ ... }
 type JoinType int
     const JoinInner JoinType = iota ...
@@ -244,6 +247,7 @@ type SortDirection int
 type StatementList struct{ ... }
 type TypeDefinition interface{ ... }
 type TypeOperation interface{ ... }
+type UpdateStatement struct{ ... }
 type UpsertAssignment struct{ ... }
 type UpsertNode struct{ ... }
     func NewUpsert(table string) *UpsertNode
@@ -552,18 +556,27 @@ func Or(exprs ...ast.Expression) ast.Expression
 func Sum(column string) ast.Expression
 type Column struct{ ... }
     func Col(qualifier, name string) Column
+type DeleteBuilder struct{ ... }
+    func DeleteFrom(table string) *DeleteBuilder
 type ExprCompare struct{ ... }
     func Expr(left ast.Expression) ExprCompare
+type InsertBuilder struct{ ... }
+    func InsertInto(table string) *InsertBuilder
 type SelectBuilder struct{ ... }
     func Select(columns ...string) *SelectBuilder
+type UpdateBuilder struct{ ... }
+    func Update(table string) *UpdateBuilder
 
 ## github.com/stokaro/ptah/core/renderer
 
 func GetOrderedCreateStatements(r *goschema.Database, dialect string) ([]string, error)
 func GetOrderedCreateStatementsWithCapabilities(r *goschema.Database, dialect string, caps capability.Capabilities) ([]string, error)
+func RenderDelete(stmt *ast.DeleteStatement, dialect string) (string, []any, error)
+func RenderInsert(stmt *ast.InsertStatement, dialect string) (string, []any, error)
 func RenderSQL(dialect string, nodes ...ast.Node) (string, error)
 func RenderSQLWithCapabilities(dialect string, caps capability.Capabilities, nodes ...ast.Node) (string, error)
 func RenderSelect(stmt *ast.SelectStatement, dialect string) (string, []any, error)
+func RenderUpdate(stmt *ast.UpdateStatement, dialect string) (string, []any, error)
 func SupportedDialects() []string
 func VisitorRenderSQL(r RenderVisitor, nodes ...ast.Node) (string, error)
 type RenderVisitor interface{ ... }
