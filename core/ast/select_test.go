@@ -52,6 +52,28 @@ func TestLogicalOperatorString(t *testing.T) {
 	}
 }
 
+func TestJoinTypeString(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name string
+		jt   ast.JoinType
+		want string
+	}{
+		{name: "inner", jt: ast.JoinInner, want: "INNER JOIN"},
+		{name: "left", jt: ast.JoinLeft, want: "LEFT JOIN"},
+		{name: "right", jt: ast.JoinRight, want: "RIGHT JOIN"},
+		{name: "full", jt: ast.JoinFull, want: "FULL OUTER JOIN"},
+		{name: "out of range yields empty", jt: ast.JoinType(42), want: ""},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			c.Assert(tt.jt.String(), qt.Equals, tt.want)
+		})
+	}
+}
+
 func TestSortDirectionString(t *testing.T) {
 	c := qt.New(t)
 

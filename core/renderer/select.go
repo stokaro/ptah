@@ -14,20 +14,24 @@ import (
 // RenderSelect renders a SELECT statement to parameterized SQL for the given
 // dialect, returning the SQL text and its positional arguments.
 //
-// Every value in the statement — comparison operands, IN list elements, and the
-// LIMIT/OFFSET bounds — is emitted as a placeholder and returned in args, never
-// interpolated into the SQL. Placeholder style follows the dialect: $1, $2, …
-// for the PostgreSQL family and ? for MySQL, MariaDB, and SQLite. Placeholders
-// are numbered in a single left-to-right pass, so args are ordered to match.
+// Every value in the statement — comparison operands (including those inside a
+// JOIN ON), IN list elements, and the LIMIT/OFFSET bounds — is emitted as a
+// placeholder and returned in args, never interpolated into the SQL. Placeholder
+// style follows the dialect: $1, $2, … for the PostgreSQL family and ? for
+// MySQL, MariaDB, and SQLite. Placeholders are numbered in a single
+// left-to-right pass over FROM, the joins, WHERE, then LIMIT/OFFSET, so args are
+// ordered to match; a JOIN ON value is numbered before any WHERE value.
 //
-// Identifiers (the table and column names) are quoted for the dialect via
+// Identifiers (table, alias, and column names) are quoted for the dialect via
 // internal/sqlident, so a value can never be rendered as an identifier and an
-// attacker-shaped identifier cannot break out of its quotes.
+// attacker-shaped identifier or alias cannot break out of its quotes. A
+// qualified column renders as "alias"."col" with each part quoted independently.
 //
 // Supported dialects are PostgreSQL (including CockroachDB and YugabyteDB),
 // MySQL, MariaDB, and SQLite. Any other dialect returns an error, as does a nil
-// statement, a statement without a FROM table, an empty IN list, or a malformed
-// operator.
+// statement, a statement without a FROM table, an empty IN list, a malformed
+// operator, a join without a table or ON condition, or a RIGHT/FULL join on
+// SQLite (which cannot express one before version 3.39).
 func RenderSelect(stmt *ast.SelectStatement, dialect string) (string, []any, error) {
 	if stmt == nil {
 		return "", nil, errors.New("renderer: nil select statement")
@@ -95,6 +99,28 @@ func (r *selectRenderer) quote(identifier string) string {
 	return sqlident.Quote(r.dialect, identifier)
 }
 
+// writeQualifiedIdent writes name quoted for the dialect, prefixed by a quoted
+// qualifier and a dot when qualifier is non-empty, as in "alias"."col". Each
+// part is quoted independently so neither can break out of its quotes.
+func (r *selectRenderer) writeQualifiedIdent(qualifier, name string) {
+	if strings.TrimSpace(qualifier) != "" {
+		r.buf.WriteString(r.quote(qualifier))
+		r.buf.WriteString(".")
+	}
+	r.buf.WriteString(r.quote(name))
+}
+
+// writeTableRef writes a quoted table name followed by an optional quoted alias,
+// as in "t" or "t" "a". The bare "table alias" form is used rather than "table
+// AS alias" because every supported dialect accepts it.
+func (r *selectRenderer) writeTableRef(table, alias string) {
+	r.buf.WriteString(r.quote(table))
+	if strings.TrimSpace(alias) != "" {
+		r.buf.WriteString(" ")
+		r.buf.WriteString(r.quote(alias))
+	}
+}
+
 func (r *selectRenderer) render(stmt *ast.SelectStatement) error {
 	if strings.TrimSpace(stmt.From) == "" {
 		return errors.New("renderer: select statement requires a FROM table")
@@ -106,7 +132,11 @@ func (r *selectRenderer) render(stmt *ast.SelectStatement) error {
 	}
 
 	r.buf.WriteString(" FROM ")
-	r.buf.WriteString(r.quote(stmt.From))
+	r.writeTableRef(stmt.From, stmt.FromAlias)
+
+	if err := r.renderJoins(stmt.Joins); err != nil {
+		return err
+	}
 
 	if stmt.Where != nil {
 		r.buf.WriteString(" WHERE ")
@@ -139,9 +169,61 @@ func (r *selectRenderer) renderColumns(columns []ast.ResultColumn) error {
 		if strings.TrimSpace(col.Name) == "" {
 			return errors.New("renderer: result column has an empty name")
 		}
-		r.buf.WriteString(r.quote(col.Name))
+		r.writeQualifiedIdent(col.Qualifier, col.Name)
 	}
 	return nil
+}
+
+// renderJoins appends each join after the FROM clause in declared order. Their
+// ON conditions bind their placeholders before the WHERE clause, because they
+// render first.
+func (r *selectRenderer) renderJoins(joins []ast.JoinClause) error {
+	for i := range joins {
+		if err := r.renderJoin(&joins[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// renderJoin appends a single join: " <TYPE> JOIN <table> [alias] ON <cond>".
+func (r *selectRenderer) renderJoin(join *ast.JoinClause) error {
+	keyword := join.Type.String()
+	if keyword == "" {
+		return fmt.Errorf("renderer: unknown join type %d", join.Type)
+	}
+	if err := r.checkJoinDialect(join.Type); err != nil {
+		return err
+	}
+	if strings.TrimSpace(join.Table) == "" {
+		return errors.New("renderer: join requires a table")
+	}
+	if join.On == nil {
+		return errors.New("renderer: join requires an ON condition")
+	}
+	r.buf.WriteString(" ")
+	r.buf.WriteString(keyword)
+	r.buf.WriteString(" ")
+	r.writeTableRef(join.Table, join.Alias)
+	r.buf.WriteString(" ON ")
+	return r.renderExpr(join.On)
+}
+
+// checkJoinDialect rejects join types a dialect cannot express. SQLite gained
+// RIGHT and FULL [OUTER] JOIN only in version 3.39 (2022); because Ptah targets
+// a range of SQLite versions and cannot assume 3.39+, it rejects those at render
+// time rather than emit SQL that fails at execution time on an older engine.
+// INNER and LEFT joins are accepted by every supported dialect.
+func (r *selectRenderer) checkJoinDialect(t ast.JoinType) error {
+	if r.dialect != platform.SQLite {
+		return nil
+	}
+	switch t {
+	case ast.JoinRight, ast.JoinFull:
+		return fmt.Errorf("renderer: SQLite does not support %s", t)
+	default:
+		return nil
+	}
 }
 
 // renderExpr dispatches over the sealed ast.Expression sum type. Each case
@@ -178,7 +260,7 @@ func (r *selectRenderer) renderColumnRef(ref *ast.ColumnRef) error {
 	if strings.TrimSpace(ref.Name) == "" {
 		return errors.New("renderer: column reference has an empty name")
 	}
-	r.buf.WriteString(r.quote(ref.Name))
+	r.writeQualifiedIdent(ref.Qualifier, ref.Name)
 	return nil
 }
 
@@ -294,7 +376,7 @@ func (r *selectRenderer) renderOrderBy(terms []ast.OrderByClause) error {
 		if direction == "" {
 			return fmt.Errorf("renderer: unknown sort direction %d", term.Direction)
 		}
-		r.buf.WriteString(r.quote(term.Column))
+		r.writeQualifiedIdent(term.Qualifier, term.Column)
 		r.buf.WriteString(" ")
 		r.buf.WriteString(direction)
 	}
