@@ -42,6 +42,7 @@ export default defineConfig({
             { slug: 'workflows/migrations' },
             { slug: 'workflows/checkpoints' },
             { slug: 'workflows/testing' },
+            { slug: 'workflows/reference-data' },
             { slug: 'workflows/atlas-cli' },
             { slug: 'workflows/ci' },
           ],
