@@ -106,9 +106,14 @@ definition by qualified name, falling back to the bare table name when the
 `schema` attributes are not both set; tables with no matching definition fall
 back to alphabetical order.
 
-Known limit (tracked follow-up): only the managed columns are reconciled and
-restored, so emptying a populated table's desired set is refused rather than
-generating a rollback that could not restore the non-key columns.
+Emptying a populated table's desired set generates a reversible full-table
+delete: `up` deletes every live row and `down` re-inserts it from the table's
+complete column set, read from the live schema so the rollback restores whole
+rows rather than the key columns alone. Generated/computed columns are excluded
+from the re-insert because the database recomputes them and inserting an explicit
+value for them errors; on rollback they recompute from the restored base columns.
+The all-delete change is destructive, so it still requires `--allow-destructive`,
+and `--protected-table` still applies.
 
 ## Declarative data versus `ptah seed`
 
