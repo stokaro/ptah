@@ -85,7 +85,7 @@ func TestMigrateDataCommand_WritesPair(t *testing.T) {
 	writeRegionsFixture(t, root, desiredRows)
 	migrationsDir := t.TempDir()
 
-	out, err := runData("--root-dir", root, "--db-url", dbURL, "--migrations-dir", migrationsDir)
+	out, err := runData("--root-dir", root, "--db-url", dbURL, "--migrations-dir", migrationsDir, "--allow-destructive")
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 
 	// The migrations directory was empty, so the version is 1.
@@ -114,7 +114,7 @@ func TestMigrateDataCommand_DryRunWritesNothing(t *testing.T) {
 	writeRegionsFixture(t, root, desiredRows)
 	migrationsDir := t.TempDir()
 
-	out, err := runData("--root-dir", root, "--db-url", dbURL, "--migrations-dir", migrationsDir, "--dry-run")
+	out, err := runData("--root-dir", root, "--db-url", dbURL, "--migrations-dir", migrationsDir, "--dry-run", "--allow-destructive")
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "dry run")
 	c.Assert(out, qt.Contains, `INSERT INTO "regions"`)
@@ -140,6 +140,67 @@ func TestMigrateDataCommand_NoChanges(t *testing.T) {
 	out, err := runData("--root-dir", root, "--db-url", dbURL, "--migrations-dir", migrationsDir)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "no data changes")
+
+	written, err := filepath.Glob(filepath.Join(migrationsDir, "*.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(written, qt.HasLen, 0)
+}
+
+func TestMigrateDataCommand_DestructiveRefusedByDefault(t *testing.T) {
+	c := qt.New(t)
+
+	// The CZ name change is an UPDATE, so without --allow-destructive the command
+	// refuses and writes nothing.
+	dbURL := seedLiveDB(t, [][2]string{{"CZ", "Czech Republic"}})
+	root := t.TempDir()
+	writeRegionsFixture(t, root, desiredRows)
+	migrationsDir := t.TempDir()
+
+	out, err := runData("--root-dir", root, "--db-url", dbURL, "--migrations-dir", migrationsDir)
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out, qt.Contains, "destructive")
+	c.Assert(out, qt.Contains, "--allow-destructive")
+
+	written, err := filepath.Glob(filepath.Join(migrationsDir, "*.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(written, qt.HasLen, 0)
+}
+
+func TestMigrateDataCommand_DryRunAlsoGatesDestructive(t *testing.T) {
+	c := qt.New(t)
+
+	// The gates run before any SQL is emitted, so --dry-run is refused too and
+	// prints no SQL — the documented "combine --allow-destructive --dry-run to
+	// preview" behavior depends on this.
+	dbURL := seedLiveDB(t, [][2]string{{"CZ", "Czech Republic"}})
+	root := t.TempDir()
+	writeRegionsFixture(t, root, desiredRows)
+	migrationsDir := t.TempDir()
+
+	out, err := runData("--root-dir", root, "--db-url", dbURL, "--migrations-dir", migrationsDir, "--dry-run")
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out, qt.Contains, "destructive")
+	c.Assert(out, qt.Not(qt.Contains), "INSERT INTO")
+
+	written, err := filepath.Glob(filepath.Join(migrationsDir, "*.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(written, qt.HasLen, 0)
+}
+
+func TestMigrateDataCommand_ProtectedTableRefused(t *testing.T) {
+	c := qt.New(t)
+
+	// The US insert is additive (not destructive), so --protected-table is the
+	// only gate that can refuse this run.
+	dbURL := seedLiveDB(t, [][2]string{{"CZ", "Czechia"}})
+	root := t.TempDir()
+	writeRegionsFixture(t, root, desiredRows)
+	migrationsDir := t.TempDir()
+
+	out, err := runData("--root-dir", root, "--db-url", dbURL, "--migrations-dir", migrationsDir, "--protected-table", "regions")
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out, qt.Contains, "protected table(s) regions")
+	c.Assert(out, qt.Contains, "--allow-prod")
 
 	written, err := filepath.Glob(filepath.Join(migrationsDir, "*.sql"))
 	c.Assert(err, qt.IsNil)

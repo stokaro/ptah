@@ -20,22 +20,28 @@ import (
 )
 
 const (
-	rootDirFlag     = "root-dir"
-	dbURLFlag       = "db-url"
-	migrationsFlag  = "migrations-dir"
-	versionFlag     = "version"
-	descriptionFlag = "description"
-	dryRunFlag      = "dry-run"
+	rootDirFlag          = "root-dir"
+	dbURLFlag            = "db-url"
+	migrationsFlag       = "migrations-dir"
+	versionFlag          = "version"
+	descriptionFlag      = "description"
+	dryRunFlag           = "dry-run"
+	allowDestructiveFlag = "allow-destructive"
+	protectedTableFlag   = "protected-table"
+	allowProdFlag        = "allow-prod"
 )
 
 type options struct {
-	rootDir        string
-	dbURL          string
-	migrationsDir  string
-	version        string
-	description    string
-	dryRun         bool
-	connectTimeout string
+	rootDir          string
+	dbURL            string
+	migrationsDir    string
+	version          string
+	description      string
+	dryRun           bool
+	allowDestructive bool
+	protectedTables  []string
+	allowProd        bool
+	connectTimeout   string
 }
 
 // NewMigrateDataCommand returns the `data` command.
@@ -55,10 +61,15 @@ combined difference is written as an ordinary migration pair
 body inserts, updates, and deletes rows to reach the desired state; the down
 body reverses it. When nothing has drifted, no files are written.
 
-The generated migration is meant to be reviewed before it is applied, and it is
-applied through the normal migration path, so this command performs no
-safety/risk gating of its own: destructive UPDATE/DELETE volume gating and
-protected-table guards are a deferred follow-up.`,
+The generated migration is applied through the normal migration path, where
+neither the lint nor the safety gate classifies row INSERT/UPDATE/DELETE as
+destructive, so this command gates destructive changes at generation time.
+Unless --allow-destructive is set, a migration that would update or delete
+existing rows is refused with a per-table summary; insert-only migrations are
+always allowed. Naming a table with --protected-table refuses any change to it
+unless --allow-prod is also set. Both gates apply to --dry-run as well, so
+combine --allow-destructive --dry-run to preview a destructive change without
+writing files.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return migrateDataCommand(cmd, &opts)
 		},
@@ -76,6 +87,9 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.version, versionFlag, "", "Migration version; defaults to one above the newest migration")
 	flags.StringVar(&opts.description, descriptionFlag, "data", "Migration description used in the file name")
 	flags.BoolVar(&opts.dryRun, dryRunFlag, false, "Print the migration SQL instead of writing files")
+	flags.BoolVar(&opts.allowDestructive, allowDestructiveFlag, false, "Allow generating a data migration that updates or deletes existing rows")
+	flags.StringArrayVar(&opts.protectedTables, protectedTableFlag, nil, "Managed table that requires --allow-prod to modify; repeat to add more")
+	flags.BoolVar(&opts.allowProd, allowProdFlag, false, "Allow generating a data migration that modifies a protected table")
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 }
 
@@ -110,7 +124,12 @@ func migrateDataCommand(cmd *cobra.Command, opts *options) error {
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	upSQL, downSQL, err := datamigrate.Generate(ctx, conn, datamigrate.Options{RootDir: opts.rootDir})
+	upSQL, downSQL, err := datamigrate.Generate(ctx, conn, datamigrate.Options{
+		RootDir:          opts.rootDir,
+		AllowDestructive: opts.allowDestructive,
+		ProtectedTables:  opts.protectedTables,
+		AllowProd:        opts.allowProd,
+	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
