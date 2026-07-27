@@ -19,6 +19,7 @@ packages, examples, fixtures, tests, or implementation details.
 | `core/platform` | Dialect and platform constants. |
 | `core/platform/capability` | Capability flags for dialect/version behavior. |
 | `core/ptaherr` | Typed public errors and sentinel errors. |
+| `core/query` | Fluent builder for parameterized, dialect-aware SELECT statements. |
 | `core/renderer` | Dialect-aware SQL rendering from AST/schema IR. |
 | `core/sqlutil` | SQL utility helpers used by public paths. |
 | `dbschema` | Live database schema introspection connection layer. |
