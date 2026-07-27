@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/internal/sqlident"
@@ -268,6 +269,9 @@ func joinStatements(stmts []string) string {
 //   - float32/float64 -> strconv.FormatFloat(f, 'g', -1, bitSize); NaN and
 //     infinities are rejected as they have no SQL literal
 //   - string, []byte -> a single-quoted literal (see below)
+//   - time.Time      -> a quoted timestamp literal (see [timeLiteral]); drivers
+//     scan timestamp columns as time.Time, so a managed timestamp column's live
+//     value reaches the renderer here
 //
 // Any other Go type is rejected with an error naming the type rather than being
 // formatted into SQL, which would be an injection risk. A []byte is treated as
@@ -301,32 +305,82 @@ func renderLiteral(dialect string, v any) (string, error) {
 		return stringLiteral(dialect, val)
 	case []byte:
 		return stringLiteral(dialect, string(val))
+	case time.Time:
+		return timeLiteral(dialect, val), nil
+	}
+	if lit, ok, err := numericLiteral(v); ok {
+		return lit, err
+	}
+	return "", fmt.Errorf(
+		"datadiff: cannot render a SQL literal for a value of Go type %T; this data migration reads a value the renderer does not know how to represent safely — declare it in the desired rows or exclude the column",
+		v)
+}
+
+// numericLiteral renders the Go numeric types as SQL numeric literals. The
+// boolean return reports whether v was a recognized numeric type; when false the
+// caller treats v as unsupported. Signed and unsigned integers render as decimal
+// digits; floats use the shortest round-tripping form and reject NaN/infinities
+// (see [floatLiteral]).
+func numericLiteral(v any) (string, bool, error) {
+	switch val := v.(type) {
 	case int:
-		return strconv.FormatInt(int64(val), 10), nil
+		return strconv.FormatInt(int64(val), 10), true, nil
 	case int8:
-		return strconv.FormatInt(int64(val), 10), nil
+		return strconv.FormatInt(int64(val), 10), true, nil
 	case int16:
-		return strconv.FormatInt(int64(val), 10), nil
+		return strconv.FormatInt(int64(val), 10), true, nil
 	case int32:
-		return strconv.FormatInt(int64(val), 10), nil
+		return strconv.FormatInt(int64(val), 10), true, nil
 	case int64:
-		return strconv.FormatInt(val, 10), nil
+		return strconv.FormatInt(val, 10), true, nil
 	case uint:
-		return strconv.FormatUint(uint64(val), 10), nil
+		return strconv.FormatUint(uint64(val), 10), true, nil
 	case uint8:
-		return strconv.FormatUint(uint64(val), 10), nil
+		return strconv.FormatUint(uint64(val), 10), true, nil
 	case uint16:
-		return strconv.FormatUint(uint64(val), 10), nil
+		return strconv.FormatUint(uint64(val), 10), true, nil
 	case uint32:
-		return strconv.FormatUint(uint64(val), 10), nil
+		return strconv.FormatUint(uint64(val), 10), true, nil
 	case uint64:
-		return strconv.FormatUint(val, 10), nil
+		return strconv.FormatUint(val, 10), true, nil
 	case float32:
-		return floatLiteral(float64(val), 32)
+		lit, err := floatLiteral(float64(val), 32)
+		return lit, true, err
 	case float64:
-		return floatLiteral(val, 64)
+		lit, err := floatLiteral(val, 64)
+		return lit, true, err
 	default:
-		return "", fmt.Errorf("datadiff: unsupported value type %T for SQL literal", v)
+		return "", false, nil
+	}
+}
+
+// timeLiteral renders t as a quoted SQL timestamp literal. The layout uses a
+// space separator, fractional seconds (trailing zeros trimmed), and the numeric
+// UTC offset for dialects whose timestamp literals accept one, so both
+// timestamp-with-time-zone and plain-timestamp columns round-trip: PostgreSQL and
+// SQLite preserve the instant from the offset (verified against the driver), a
+// PostgreSQL "timestamp without time zone" simply ignores the offset, and SQLite
+// stores the text verbatim. For MySQL, MariaDB, ClickHouse, SQL Server, and any
+// unrecognized dialect the offset is omitted, because their DATETIME/datetime2
+// literal grammars do not accept a trailing offset; the wall-clock rendering
+// round-trips within the connection's session time zone. The layout produces only
+// digits and the punctuation ' - : . + space', so no escaping is required and the
+// value can never break out of its literal.
+func timeLiteral(dialect string, t time.Time) string {
+	if usesTimeZoneOffsetLiteral(dialect) {
+		return "'" + t.Format("2006-01-02 15:04:05.999999999-07:00") + "'"
+	}
+	return "'" + t.Format("2006-01-02 15:04:05.999999999") + "'"
+}
+
+// usesTimeZoneOffsetLiteral reports whether dialect accepts (and round-trips) a
+// numeric time-zone offset inside a timestamp literal. See [timeLiteral].
+func usesTimeZoneOffsetLiteral(dialect string) bool {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner, platform.SQLite:
+		return true
+	default:
+		return false
 	}
 }
 

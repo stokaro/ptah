@@ -21,7 +21,9 @@ import (
 	"strings"
 
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/migration/datadiff"
 	"github.com/stokaro/ptah/migration/safety"
 )
@@ -62,8 +64,12 @@ type Options struct {
 // It parses the Go annotations under opts.RootDir and, for each declared
 // //migrator:schema:data table, loads the desired rows, reads the live rows
 // projected onto the managed column set (the union of the desired rows' columns
-// plus the key columns), and computes the row-level diff. Tables whose diff is
-// empty contribute nothing.
+// plus the key columns), and computes the row-level diff. When a table's desired
+// set is empty but the live table is populated, every live row becomes a full
+// DELETE; the projection then widens to the table's complete non-generated column
+// set so the generated down can re-insert whole rows (generated/computed columns
+// are excluded because the database recomputes them on insert). Tables whose diff
+// is empty contribute nothing.
 //
 // The generated migration is phase-separated and ordered by the schema's
 // foreign-key dependency graph so that foreign keys hold at apply time: up runs
@@ -185,34 +191,211 @@ func mergeByTable(changes []tableChange) []tableChange {
 }
 
 // computeTable runs the read-and-diff half of the pipeline for a single managed
-// table: load desired rows, read the live rows for the managed columns, and
-// compute the row-level diff. Rendering happens later, in composeByPhase, once
-// every table's diff is known and can be ordered by dependency.
+// table: load desired rows, read the live rows for the appropriate column
+// projection, and compute the row-level diff. Rendering happens later, in
+// composeByPhase, once every table's diff is known and can be ordered by
+// dependency.
 func computeTable(ctx context.Context, conn *dbschema.DatabaseConnection, rootDir string, md goschema.ManagedData) (*datadiff.DataDiff, error) {
 	desired, err := goschema.LoadManagedRows(rootDir, md)
 	if err != nil {
 		return nil, err
 	}
 
-	live, err := dbschema.ReadTableRows(ctx, conn, md.Schema, md.Table, managedColumns(desired, md.Keys))
+	columns, err := readColumns(conn, md, desired)
 	if err != nil {
 		return nil, err
 	}
 
-	// With no desired rows the managed column set is just the keys, so every
-	// live row becomes a DELETE whose down re-inserts only the key columns —
-	// a rollback that drops (or, under NOT NULL, cannot restore) every other
-	// column. Rather than emit a knowingly-irreversible migration, refuse the
-	// empty-desired-but-populated-table case. Reconstructing the full row on
-	// rollback needs the table's whole column set and is a tracked follow-up;
-	// an empty desired set against an empty table is still a clean no-op.
-	if len(desired) == 0 && len(live) > 0 {
-		return nil, fmt.Errorf(
-			"datamigrate: managed table %q has an empty desired row set but %d live row(s); a reversible full delete cannot be generated from the key columns alone — provide the desired rows or remove the annotation",
-			md.Table, len(live))
+	live, err := dbschema.ReadTableRows(ctx, conn, md.Schema, md.Table, columns)
+	if err != nil {
+		return nil, err
 	}
 
 	return datadiff.Compute(md.Schema, md.Table, md.Keys, desired, live)
+}
+
+// readColumns selects which live columns to read for a managed table's diff.
+//
+// With desired rows present, Ptah reconciles only the managed columns (the union
+// of the desired rows' columns and the keys), so that is the projection.
+//
+// With an empty desired set, every live row will become a DELETE, and the
+// reversible down re-inserts each deleted row. Reading only the keys would make
+// that rollback restore the keys alone, dropping — or, under NOT NULL, failing to
+// restore — every other column. So the projection widens to the table's full
+// non-generated column set (see [fullNonGeneratedColumns]); an empty desired set
+// against an empty table stays a clean no-op because the read returns no rows.
+func readColumns(conn *dbschema.DatabaseConnection, md goschema.ManagedData, desired []map[string]any) ([]string, error) {
+	if len(desired) == 0 {
+		return fullNonGeneratedColumns(conn, md.Schema, md.Table, md.Keys)
+	}
+	return managedColumns(desired, md.Keys), nil
+}
+
+// fullNonGeneratedColumns introspects the live schema for the managed table and
+// returns the columns to read and re-insert for an empty-desired full delete.
+//
+// It backs the empty-desired case: when a managed table's desired row set is
+// empty but the table is populated, every live row becomes a DELETE, and the
+// reversible down re-inserts the row from exactly the columns returned here. The
+// column selection and its safety refusals live in the pure [insertableColumns];
+// this function only performs the introspection and locates the table. A table
+// that cannot be found in the introspected schema is surfaced as an error.
+func fullNonGeneratedColumns(conn *dbschema.DatabaseConnection, schema, table string, keys []string) ([]string, error) {
+	dbSchema, err := dbschema.ReadSchemaWithSchemas(conn, schemaScope(schema, conn.Info().Schema))
+	if err != nil {
+		return nil, fmt.Errorf("datamigrate: introspect columns of table %q: %w", qualifiedName(schema, table), err)
+	}
+
+	dbTable, ok := findManagedTable(dbSchema, schema, conn.Info().Schema, table)
+	if !ok {
+		return nil, fmt.Errorf(
+			"datamigrate: cannot read the columns of managed table %q: it was not found in the live schema; create the table or remove the annotation",
+			qualifiedName(schema, table))
+	}
+
+	return insertableColumns(conn.Info().Dialect, qualifiedName(schema, table), dbTable, keys)
+}
+
+// insertableColumns returns the sorted set of columns to read and re-insert for
+// an empty-desired full delete: every column the database will accept in an
+// explicit INSERT, so the reversible down restores complete rows.
+//
+// Two column classes are dropped because the database rejects or ignores an
+// explicit value for them:
+//   - generated/computed columns (GeneratedKind set) are excluded and recompute
+//     from the re-inserted base columns on rollback;
+//   - identity columns that reject explicit inserts (SQL Server IDENTITY,
+//     PostgreSQL GENERATED ALWAYS AS IDENTITY — see [rejectsExplicitInsert])
+//     cannot be restored to their original value, so rather than emit a migration
+//     whose down fails at apply time (or silently re-inserts a different value),
+//     the whole empty-desired case is refused, naming the offending column(s).
+//
+// Auto-increment/serial columns that DO accept explicit inserts (MySQL
+// AUTO_INCREMENT, SQLite AUTOINCREMENT, PostgreSQL SERIAL and GENERATED BY DEFAULT
+// AS IDENTITY) are kept, so re-inserting them preserves the original identity
+// values. Every key column must survive both filters, since a key drives the
+// DELETE predicate and the rollback INSERT; a key that is generated, absent, or
+// reject-on-insert is an error.
+func insertableColumns(dialect, qualified string, dbTable types.DBTable, keys []string) ([]string, error) {
+	present := make(map[string]struct{}, len(dbTable.Columns))
+	cols := make([]string, 0, len(dbTable.Columns))
+	var rejected []string
+	for _, col := range dbTable.Columns {
+		if col.GeneratedKind != "" {
+			continue
+		}
+		if rejectsExplicitInsert(dialect, col) {
+			rejected = append(rejected, col.Name)
+			continue
+		}
+		present[col.Name] = struct{}{}
+		cols = append(cols, col.Name)
+	}
+
+	if len(rejected) > 0 {
+		slices.Sort(rejected)
+		return nil, fmt.Errorf(
+			"datamigrate: cannot generate a reversible full delete for table %q: column(s) %s reject explicit inserts (identity/auto-generated) and cannot be restored on rollback; keep at least one desired row or remove the annotation",
+			qualified, quoteAll(rejected))
+	}
+
+	for _, k := range keys {
+		if _, ok := present[k]; !ok {
+			return nil, fmt.Errorf(
+				"datamigrate: key column %q of managed table %q is not a writable, non-generated column; a reversible full delete needs every key column",
+				k, qualified)
+		}
+	}
+
+	slices.Sort(cols)
+	return cols, nil
+}
+
+// rejectsExplicitInsert reports whether the database rejects an explicit value
+// for col in an INSERT, so re-inserting it on rollback would fail at apply time.
+// It is true for SQL Server IDENTITY columns and PostgreSQL GENERATED ALWAYS AS
+// IDENTITY columns, and deliberately false for auto-increment/serial columns that
+// accept explicit inserts (MySQL AUTO_INCREMENT, SQLite AUTOINCREMENT, PostgreSQL
+// SERIAL and GENERATED BY DEFAULT AS IDENTITY), so those round-trip with their
+// original values preserved.
+func rejectsExplicitInsert(dialect string, col types.DBColumn) bool {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.SQLServer:
+		// The SQL Server reader sets IsAutoIncrement only for IDENTITY columns,
+		// which reject explicit inserts unless SET IDENTITY_INSERT is toggled on.
+		return col.IsAutoIncrement
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
+		return strings.EqualFold(col.IdentityGeneration, "ALWAYS")
+	default:
+		// MySQL/MariaDB AUTO_INCREMENT, SQLite AUTOINCREMENT, and ClickHouse accept
+		// explicit inserts, so re-inserting preserves the original value.
+		return false
+	}
+}
+
+// quoteAll renders names as a comma-separated list of double-quoted identifiers
+// for an error message (for example `"a", "b"`).
+func quoteAll(names []string) string {
+	quoted := make([]string, len(names))
+	for i, name := range names {
+		quoted[i] = fmt.Sprintf("%q", name)
+	}
+	return strings.Join(quoted, ", ")
+}
+
+// schemaScope returns the schema allow-list to introspect for a managed table:
+// the table's declared schema, or the connection's default schema when the
+// annotation omits it. Readers that support schema scoping narrow to it; readers
+// that do not (for example SQLite) ignore it and read their configured schema,
+// which is already the default schema.
+func schemaScope(managedSchema, defaultSchema string) []string {
+	if s := strings.TrimSpace(managedSchema); s != "" {
+		return []string{s}
+	}
+	if s := strings.TrimSpace(defaultSchema); s != "" {
+		return []string{s}
+	}
+	return nil
+}
+
+// findManagedTable locates the introspected table for a managed annotation. A
+// declared schema requires a schema match — either the introspected schema
+// literally, or a blank introspected schema when the declared schema is the
+// connection's default, since readers blank the schema of default-schema tables
+// (PostgreSQL public, SQLite main). An omitted declared schema matches a
+// uniquely-named table, or otherwise the one in the default schema.
+func findManagedTable(dbSchema *types.DBSchema, wantSchema, defaultSchema, table string) (types.DBTable, bool) {
+	wantSchema = strings.TrimSpace(wantSchema)
+	defaultSchema = strings.TrimSpace(defaultSchema)
+
+	var candidates []types.DBTable
+	for _, t := range dbSchema.Tables {
+		if t.Name == table {
+			candidates = append(candidates, t)
+		}
+	}
+
+	if wantSchema != "" {
+		for _, t := range candidates {
+			ts := strings.TrimSpace(t.Schema)
+			if ts == wantSchema || (ts == "" && wantSchema == defaultSchema) {
+				return t, true
+			}
+		}
+		return types.DBTable{}, false
+	}
+
+	if len(candidates) == 1 {
+		return candidates[0], true
+	}
+	for _, t := range candidates {
+		ts := strings.TrimSpace(t.Schema)
+		if ts == "" || ts == defaultSchema {
+			return t, true
+		}
+	}
+	return types.DBTable{}, false
 }
 
 // orderByDependency reorders diffs in place so a table appears before every
@@ -432,9 +615,10 @@ func addFinding(findings *[]safety.Finding, category string, count int) {
 
 // managedColumns returns the distinct, sorted set of columns Ptah manages for a
 // table: every column that appears in any desired row plus the key columns. The
-// keys are always included so a table with no desired rows still reads its live
-// rows (which then all become deletes) and so a key that never appears as a
-// data column is still projected. The result is deduplicated and sorted because
+// keys are always included so a key that never appears as a data column is still
+// projected. It is used for the drift path where desired rows are present; the
+// empty-desired path reads the table's full non-generated column set instead (see
+// [readColumns]). The result is deduplicated and sorted because
 // dbschema.ReadTableRows rejects duplicate columns and a stable order keeps the
 // generated SQL deterministic.
 func managedColumns(rows []map[string]any, keys []string) []string {

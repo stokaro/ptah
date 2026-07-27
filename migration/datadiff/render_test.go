@@ -3,6 +3,7 @@ package datadiff_test
 import (
 	"math"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
@@ -311,6 +312,40 @@ func TestRenderLiterals(t *testing.T) {
 			dialect: "mysql",
 			value:   `a\b`,
 			wantUp:  "INSERT INTO `t` (`id`, `v`) VALUES ('r1', 'a\\\\b');\n",
+		},
+		{
+			// Drivers scan timestamp columns as time.Time; postgres timestamp
+			// literals carry the numeric UTC offset so timestamptz round-trips.
+			name:    "time postgres includes offset",
+			dialect: "postgres",
+			value:   time.Date(2024, 3, 5, 6, 7, 8, 0, time.UTC),
+			wantUp:  "INSERT INTO \"t\" (\"id\", \"v\") VALUES ('r1', '2024-03-05 06:07:08+00:00');\n",
+		},
+		{
+			name:    "time postgres keeps fractional seconds",
+			dialect: "postgres",
+			value:   time.Date(2024, 3, 5, 6, 7, 8, 123456789, time.UTC),
+			wantUp:  "INSERT INTO \"t\" (\"id\", \"v\") VALUES ('r1', '2024-03-05 06:07:08.123456789+00:00');\n",
+		},
+		{
+			name:    "time postgres renders non-utc offset",
+			dialect: "postgres",
+			value:   time.Date(2024, 3, 5, 6, 7, 8, 0, time.FixedZone("", 2*3600)),
+			wantUp:  "INSERT INTO \"t\" (\"id\", \"v\") VALUES ('r1', '2024-03-05 06:07:08+02:00');\n",
+		},
+		{
+			// MySQL/MariaDB DATETIME literals do not accept a trailing offset, so
+			// the wall-clock form is emitted instead.
+			name:    "time mysql omits offset",
+			dialect: "mysql",
+			value:   time.Date(2024, 3, 5, 6, 7, 8, 0, time.UTC),
+			wantUp:  "INSERT INTO `t` (`id`, `v`) VALUES ('r1', '2024-03-05 06:07:08');\n",
+		},
+		{
+			name:    "time sqlite includes offset",
+			dialect: "sqlite",
+			value:   time.Date(2024, 3, 5, 6, 7, 8, 0, time.UTC),
+			wantUp:  "INSERT INTO \"t\" (\"id\", \"v\") VALUES ('r1', '2024-03-05 06:07:08+00:00');\n",
 		},
 	}
 
