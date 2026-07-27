@@ -53,6 +53,11 @@ type RowUpdate struct {
 // in both whose managed columns differ. Inserts, Updates, and Deletes are each
 // sorted by their composite key so the output is deterministic and testable.
 type DataDiff struct {
+	// Schema is the database schema the table belongs to, or empty for the
+	// connection's default schema. It does not affect the diff computation (rows
+	// are matched by key regardless of schema); it identifies the target table so
+	// [Render] can emit a schema-qualified name.
+	Schema  string
 	Table   string
 	Keys    []string
 	Inserts []Row
@@ -60,8 +65,10 @@ type DataDiff struct {
 	Deletes []Row
 }
 
-// Compute computes the row-level diff for table between the desired rows and the
-// live rows, keyed by the key columns in keys.
+// Compute computes the row-level diff for schema.table between the desired rows
+// and the live rows, keyed by the key columns in keys. schema may be empty for
+// the connection's default schema; it is recorded on the returned diff so
+// [Render] can emit a schema-qualified name but does not affect matching.
 //
 // keys must be non-empty and every desired and live row must contain a value
 // for each key column; a missing key column is a validation error. Rows are
@@ -76,7 +83,7 @@ type DataDiff struct {
 //
 // If two rows on the same side share a composite key, the later one in input
 // order wins; keys should be chosen so this does not occur.
-func Compute(table string, keys []string, desired, live []Row) (*DataDiff, error) {
+func Compute(schema, table string, keys []string, desired, live []Row) (*DataDiff, error) {
 	if len(keys) == 0 {
 		return nil, errors.New("datadiff: keys must be non-empty")
 	}
@@ -91,8 +98,9 @@ func Compute(table string, keys []string, desired, live []Row) (*DataDiff, error
 	}
 
 	diff := &DataDiff{
-		Table: table,
-		Keys:  slices.Clone(keys),
+		Schema: schema,
+		Table:  table,
+		Keys:   slices.Clone(keys),
 	}
 
 	for _, k := range sortedKeys(desiredByKey) {
