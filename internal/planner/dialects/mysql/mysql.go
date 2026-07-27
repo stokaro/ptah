@@ -827,7 +827,10 @@ func (p *Planner) addNewIndexes(
 	diff *types.SchemaDiff,
 	indexes *indexscope.Resolver,
 ) ([]ast.Node, error) {
-	replacements := indexscope.NewConflictSet(p.targetDialect(), diff.IndexRemovals())
+	replacements := indexscope.NewConflictSetWithSemantics(
+		diff.EffectiveIdentifierSemantics(p.targetDialect()),
+		diff.IndexRemovals(),
+	)
 	guardedDrops := p.capabilities().Has(capability.DropIndexIfExists)
 	for _, ref := range diff.IndexAdditions() {
 		index, err := indexes.Resolve(ref)
@@ -841,13 +844,9 @@ func (p *Planner) addNewIndexes(
 			}
 			result = append(result, dropIndexNode)
 		}
-		indexNode := ast.NewIndex(index.Name, ref.TableName, index.Fields...)
-		if index.Unique {
-			indexNode.Unique = true
-		}
-		if index.Comment != "" {
-			indexNode.Comment = index.Comment
-		}
+		indexNode := fromschema.FromIndex(index)
+		indexNode.Table = ref.TableName
+		indexNode.IfNotExists = false
 		result = append(result, indexNode)
 	}
 	return result, nil
@@ -864,7 +863,10 @@ func (p *Planner) removeIndexes(
 	// always setting the flag) keeps the capability composable — disabling
 	// capability.DropIndexIfExists on a planner actually changes the plan.
 	guarded := p.capabilities().Has(capability.DropIndexIfExists)
-	replacements := indexscope.NewConflictSet(p.targetDialect(), diff.IndexAdditions())
+	replacements := indexscope.NewConflictSetWithSemantics(
+		diff.EffectiveIdentifierSemantics(p.targetDialect()),
+		diff.IndexAdditions(),
+	)
 	for _, ref := range diff.IndexRemovals() {
 		if replacements.Contains(ref) {
 			continue
@@ -976,7 +978,12 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	if generated == nil {
 		generated = &goschema.Database{}
 	}
-	indexes, err := indexscope.NewResolver(p.targetDialect(), diff, generated)
+	indexes, err := indexscope.NewResolverWithSemantics(
+		p.targetDialect(),
+		diff.EffectiveIdentifierSemantics(p.targetDialect()),
+		diff,
+		generated,
+	)
 	if err != nil {
 		return nil, err
 	}

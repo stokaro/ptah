@@ -270,7 +270,8 @@ func TestSQLServerLiveComputedColumnZeroDiff(t *testing.T) {
 		},
 	}
 
-	diff := schemadiff.CompareWithDialect(generated, liveSchema, "sqlserver")
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, generated, liveSchema, nil)
+	c.Assert(err, qt.IsNil)
 	c.Assert(diff.TablesModified, qt.HasLen, 0)
 }
 

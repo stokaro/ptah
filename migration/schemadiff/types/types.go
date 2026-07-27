@@ -3,6 +3,8 @@ package types
 import (
 	"slices"
 	"strings"
+
+	"github.com/stokaro/ptah/core/platform/identifier"
 )
 
 // IndexRef identifies an index together with its owning table.
@@ -119,6 +121,11 @@ type ConstraintAdditionInfo struct {
 //		fmt.Printf("Found %d new tables\n", len(diff.TablesAdded))
 //	}
 type SchemaDiff struct {
+	// IdentifierSemantics records live catalog identifier rules used to produce
+	// this diff. It is absent for dialect-only comparisons, whose planners use
+	// conservative offline defaults.
+	IdentifierSemantics *identifier.Semantics `json:"identifier_semantics,omitempty"`
+
 	// TablesAdded contains names of tables that exist in the target schema
 	// but not in the current database schema
 	TablesAdded []string `json:"tables_added"`
@@ -305,6 +312,15 @@ type SchemaDiff struct {
 	// (ConstraintsRemoved by name, this one by table then name), so consumers must
 	// correlate entries by constraint name, never by position.
 	ConstraintsRemovedWithTables []ConstraintRemovalInfo `json:"constraints_removed_with_tables"`
+}
+
+// EffectiveIdentifierSemantics returns live semantics stored on the diff, or
+// conservative offline rules for dialect when the diff has no live metadata.
+func (d *SchemaDiff) EffectiveIdentifierSemantics(dialect string) identifier.Semantics {
+	if d != nil && d.IdentifierSemantics != nil {
+		return d.IdentifierSemantics.Normalize(dialect)
+	}
+	return identifier.ForDialect(dialect)
 }
 
 // HasChanges returns true if the diff contains any schema changes requiring migration.

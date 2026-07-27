@@ -305,6 +305,10 @@ func (r *Reader) readIndexes() ([]types.DBIndex, error) {
 			order = append(order, key)
 		}
 		index.Columns = append(index.Columns, columnName)
+		index.Parts = append(index.Parts, types.DBIndexPart{
+			Name: columnName,
+			Desc: desc,
+		})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

@@ -168,7 +168,10 @@ func apply(
 		filtered.TablesModified, skipped = skipColumnRemovals(filtered.TablesModified, skipped)
 	}
 	if skip.Has(DropIndex) {
-		additions := indexscope.NewConflictSet(dialect, filtered.IndexAdditions())
+		additions := indexscope.NewConflictSetWithSemantics(
+			filtered.EffectiveIdentifierSemantics(dialect),
+			filtered.IndexAdditions(),
+		)
 		var kept []types.IndexRef
 		for _, ref := range filtered.IndexRemovals() {
 			// Preserve replacements (dropped then recreated under the same

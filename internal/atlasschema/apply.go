@@ -59,7 +59,11 @@ func (p ApplyPlan) Statements() []string {
 	return slices.Clone(p.statements)
 }
 
-func PlanApply(conn *dbschema.DatabaseConnection, opts ApplyOptions) (ApplyPlan, error) {
+func PlanApply(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	opts ApplyOptions,
+) (ApplyPlan, error) {
 	if conn == nil {
 		return ApplyPlan{}, errors.New("schema apply planning requires database connection")
 	}
@@ -84,12 +88,18 @@ func PlanApply(conn *dbschema.DatabaseConnection, opts ApplyOptions) (ApplyPlan,
 		return ApplyPlan{}, fmt.Errorf("apply --exclude to desired schema: %w", err)
 	}
 
-	diff := applyDiffPolicy(schemadiff.CompareWithDialect(desired, current, conn.Info().Dialect), opts.Policy)
+	info := conn.Info()
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, current, nil)
+	if err != nil {
+		return ApplyPlan{}, fmt.Errorf("compare database schema: %w", err)
+	}
+	diff = applyDiffPolicy(diff, opts.Policy)
 	if !diff.HasChanges() {
 		return ApplyPlan{}, nil
 	}
 
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, desired, conn.Info().Dialect, planner.Options{
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, desired, info.Dialect, planner.Options{
+		Capabilities:      info.Capabilities,
 		ConcurrentIndexes: opts.Policy.ConcurrentIndexCreate,
 	})
 	if err != nil {
@@ -100,7 +110,11 @@ func PlanApply(conn *dbschema.DatabaseConnection, opts ApplyOptions) (ApplyPlan,
 
 // PrepareApply validates Atlas schema apply runtime inputs and builds the
 // executable apply plan for the already-open target database connection.
-func PrepareApply(conn *dbschema.DatabaseConnection, opts ApplyRuntimeOptions) (ApplyRuntimePlan, error) {
+func PrepareApply(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	opts ApplyRuntimeOptions,
+) (ApplyRuntimePlan, error) {
 	if conn == nil {
 		return ApplyRuntimePlan{}, errors.New("schema apply requires database connection")
 	}
@@ -108,7 +122,7 @@ func PrepareApply(conn *dbschema.DatabaseConnection, opts ApplyRuntimeOptions) (
 		return ApplyRuntimePlan{}, err
 	}
 
-	plan, err := PlanApply(conn, ApplyOptions{
+	plan, err := PlanApply(ctx, conn, ApplyOptions{
 		ToURLs:  opts.ToURLs,
 		Exclude: opts.Exclude,
 		Policy:  opts.Policy,

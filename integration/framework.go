@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/stokaro/ptah/config"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/dbschema"
@@ -19,16 +18,6 @@ import (
 	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/schemadiff"
 )
-
-// dialectCompareOptions builds schemadiff comparison options carrying the
-// connection's dialect, so dialect-specific normalization (e.g. MySQL/MariaDB
-// RESTRICT == NO ACTION for foreign-key referential actions) is applied during
-// integration validation.
-func dialectCompareOptions(conn *dbschema.DatabaseConnection) *config.CompareOptions {
-	opts := config.DefaultCompareOptions()
-	opts.Dialect = conn.Info().Dialect
-	return opts
-}
 
 // TestStep represents a single step within a test scenario
 type TestStep struct {
@@ -435,7 +424,7 @@ func (vem *VersionedEntityManager) GenerateSchemaFromEntities() (*goschema.Datab
 }
 
 // GenerateMigrationSQL compares current entities with database and generates migration SQL.
-func (vem *VersionedEntityManager) GenerateMigrationSQL(_ctx context.Context, conn *dbschema.DatabaseConnection) ([]string, bool, error) {
+func (vem *VersionedEntityManager) GenerateMigrationSQL(ctx context.Context, conn *dbschema.DatabaseConnection) ([]string, bool, error) {
 	// Parse current entities
 	generated, err := vem.GenerateSchemaFromEntities()
 	if err != nil {
@@ -448,8 +437,10 @@ func (vem *VersionedEntityManager) GenerateMigrationSQL(_ctx context.Context, co
 		return nil, false, fmt.Errorf("failed to read database schema: %w", err)
 	}
 
-	// Compare schemas (dialect-aware so MySQL/MariaDB RESTRICT == NO ACTION)
-	diff := schemadiff.CompareWithOptions(generated, dbSchema, dialectCompareOptions(conn))
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, generated, dbSchema, nil)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to compare schemas: %w", err)
+	}
 
 	// Generate migration SQL
 	info := conn.Info()

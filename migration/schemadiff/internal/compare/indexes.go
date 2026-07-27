@@ -5,6 +5,7 @@ import (
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/core/platform/identifier"
 	"github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/indexscope"
 	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
@@ -190,100 +191,185 @@ type databaseIndexEntry struct {
 }
 
 func IndexesWithDialect(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff, dialect string) {
-	// Create sets for comparison
-	genIndexes := make(map[difftypes.IndexRef]generatedIndexEntry)
+	IndexesWithSemantics(generated, database, diff, dialect, identifier.ForDialect(dialect))
+}
+
+// IndexesWithSemantics compares indexes using explicit identifier semantics.
+func IndexesWithSemantics(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	dialect string,
+	semantics identifier.Semantics,
+) {
+	genIndexes, ambiguousGenerated := collectGeneratedIndexes(generated, semantics)
+	fkBackedIndexes, uniqueConstraintIndexes := constraintBackedIndexIdentities(
+		database,
+		dialect,
+		semantics,
+	)
+	dbIndexes := collectDatabaseIndexes(
+		database,
+		dialect,
+		semantics,
+		fkBackedIndexes,
+		uniqueConstraintIndexes,
+	)
+	appendIndexDifferences(
+		diff,
+		genIndexes,
+		ambiguousGenerated,
+		dbIndexes,
+		dialect,
+		semantics,
+	)
+	diff.SetIndexAdditions(diff.IndexAdditions())
+	diff.SetIndexRemovals(diff.IndexRemovals())
+}
+
+func collectGeneratedIndexes(
+	generated *goschema.Database,
+	semantics identifier.Semantics,
+) (
+	map[difftypes.IndexRef]generatedIndexEntry,
+	map[difftypes.IndexRef][]difftypes.IndexRef,
+) {
+	indexes := make(map[difftypes.IndexRef]generatedIndexEntry)
+	ambiguous := make(map[difftypes.IndexRef][]difftypes.IndexRef)
 	tableNames := goschema.ResolveIndexTableNames(generated.Indexes, generated.Tables)
 	for position, index := range generated.Indexes {
 		ref := difftypes.IndexRef{
 			Name:      index.Name,
 			TableName: tableNames[position],
 		}
-		genIndexes[indexscope.IdentityKey(dialect, ref)] = generatedIndexEntry{
+		identity := indexscope.IdentityKeyWithSemantics(semantics, ref)
+		if previous, exists := indexes[identity]; exists {
+			refs := ambiguous[identity]
+			if len(refs) == 0 {
+				refs = append(refs, previous.ref)
+			}
+			ambiguous[identity] = append(refs, ref)
+		}
+		indexes[identity] = generatedIndexEntry{
 			ref:   ref,
 			index: index,
 		}
 	}
+	return indexes, ambiguous
+}
 
-	// MySQL/MariaDB transparently create a backing index for every FOREIGN KEY,
-	// named after the constraint, when no usable index already exists on the
-	// referencing column. That index is owned by the FK, not by the user's
-	// schema, so it must not be reported as a removable index — otherwise an
-	// unchanged field-level FK round-trips to a spurious DROP INDEX (issue #189
-	// follow-up). PostgreSQL does not auto-create FK indexes, so this set is
-	// naturally empty there and the filter is a no-op. Structured
-	// table-qualified identity ensures a constraint name only suppresses the
-	// index on its own table.
-	fkBackedIndexes := make(map[difftypes.IndexRef]struct{}, len(database.Constraints))
-	uniqueConstraintIndexes := make(map[difftypes.IndexRef]struct{}, len(database.Constraints))
-	for _, c := range database.Constraints {
-		ref := indexscope.IdentityKey(dialect, difftypes.IndexRef{
-			Name:      c.Name,
-			TableName: c.QualifiedTableName(),
+func constraintBackedIndexIdentities(
+	database *types.DBSchema,
+	dialect string,
+	semantics identifier.Semantics,
+) (
+	foreignKeys map[difftypes.IndexRef]struct{},
+	uniqueConstraints map[difftypes.IndexRef]struct{},
+) {
+	// MySQL/MariaDB transparently create a backing index for every FOREIGN KEY
+	// named after the constraint. Structured identities ensure the filter only
+	// suppresses the backing index on its owning table.
+	foreignKeys = make(map[difftypes.IndexRef]struct{}, len(database.Constraints))
+	uniqueConstraints = make(map[difftypes.IndexRef]struct{}, len(database.Constraints))
+	normalizedDialect := platform.NormalizeDialect(dialect)
+	for _, constraint := range database.Constraints {
+		ref := indexscope.IdentityKeyWithSemantics(semantics, difftypes.IndexRef{
+			Name:      constraint.Name,
+			TableName: constraint.QualifiedTableName(),
 		})
-		switch c.Type {
+		switch constraint.Type {
 		case "FOREIGN KEY":
-			fkBackedIndexes[ref] = struct{}{}
+			if normalizedDialect == platform.MySQL ||
+				normalizedDialect == platform.MariaDB {
+				foreignKeys[ref] = struct{}{}
+			}
 		case "UNIQUE":
-			uniqueConstraintIndexes[ref] = struct{}{}
+			if normalizedDialect != platform.SQLServer {
+				uniqueConstraints[ref] = struct{}{}
+			}
 		}
 	}
+	return foreignKeys, uniqueConstraints
+}
 
-	dbIndexes := make(map[difftypes.IndexRef]databaseIndexEntry)
+func collectDatabaseIndexes(
+	database *types.DBSchema,
+	dialect string,
+	semantics identifier.Semantics,
+	foreignKeys map[difftypes.IndexRef]struct{},
+	uniqueConstraints map[difftypes.IndexRef]struct{},
+) map[difftypes.IndexRef]databaseIndexEntry {
+	indexes := make(map[difftypes.IndexRef]databaseIndexEntry)
 	for _, index := range database.Indexes {
-		// Skip primary key indexes as they're handled with tables
-		if index.IsPrimary {
-			continue
-		}
-		if isSQLiteInternalAutoindex(index.Name, dialect) {
-			continue
-		}
-
-		// Skip constraint-based unique indexes (automatically created by UNIQUE constraints)
-		// but allow explicitly defined unique indexes (created via schema annotations)
-		if index.IsUnique && isConstraintBasedUniqueIndex(index.Name, index.TableName, index.Columns) {
+		if ignoreDatabaseIndex(index, dialect) {
 			continue
 		}
 		ref := difftypes.IndexRef{
 			Name:      index.Name,
 			TableName: index.QualifiedTableName(),
 		}
-		identity := indexscope.IdentityKey(dialect, ref)
-		if _, ok := uniqueConstraintIndexes[identity]; ok {
+		identity := indexscope.IdentityKeyWithSemantics(semantics, ref)
+		if _, constraintBacked := uniqueConstraints[identity]; constraintBacked {
 			continue
 		}
-
-		// Skip MySQL/MariaDB FK-backing indexes (named after the FK constraint
-		// on the same table). They are auto-managed by the foreign key.
-		if _, ok := fkBackedIndexes[identity]; ok {
+		if _, foreignKeyBacked := foreignKeys[identity]; foreignKeyBacked {
 			continue
 		}
-
-		dbIndexes[identity] = databaseIndexEntry{
+		indexes[identity] = databaseIndexEntry{
 			ref:   ref,
 			index: index,
 		}
 	}
+	return indexes
+}
 
-	// Find added and removed indexes
-	for identity, generatedEntry := range genIndexes {
-		databaseEntry, exists := dbIndexes[identity]
+func ignoreDatabaseIndex(index types.DBIndex, dialect string) bool {
+	if index.IsPrimary || isSQLiteInternalAutoindex(index.Name, dialect) {
+		return true
+	}
+	return platform.NormalizeDialect(dialect) != platform.SQLServer &&
+		index.IsUnique &&
+		isConstraintBasedUniqueIndex(index.Name, index.TableName, index.Columns)
+}
+
+func appendIndexDifferences(
+	diff *difftypes.SchemaDiff,
+	generated map[difftypes.IndexRef]generatedIndexEntry,
+	ambiguousGenerated map[difftypes.IndexRef][]difftypes.IndexRef,
+	database map[difftypes.IndexRef]databaseIndexEntry,
+	dialect string,
+	semantics identifier.Semantics,
+) {
+	for identity, refs := range ambiguousGenerated {
+		for _, ref := range refs {
+			appendIndexAddition(diff, ref)
+		}
+		delete(generated, identity)
+	}
+	for identity, generatedEntry := range generated {
+		databaseEntry, exists := database[identity]
 		switch {
 		case !exists:
 			appendIndexAddition(diff, generatedEntry.ref)
-		case indexDefinitionsChanged(generatedEntry.index, databaseEntry.index):
+		case indexReplacementRequired(
+			generatedEntry,
+			databaseEntry,
+			dialect,
+			semantics,
+		):
 			appendIndexAddition(diff, generatedEntry.ref)
 			appendIndexRemoval(diff, databaseEntry.ref)
 		}
 	}
 
-	for identity, entry := range dbIndexes {
-		if _, exists := genIndexes[identity]; !exists {
+	for identity, entry := range database {
+		if _, ambiguous := ambiguousGenerated[identity]; ambiguous {
+			continue
+		}
+		if _, exists := generated[identity]; !exists {
 			appendIndexRemoval(diff, entry.ref)
 		}
 	}
-
-	diff.SetIndexAdditions(diff.IndexAdditions())
-	diff.SetIndexRemovals(diff.IndexRemovals())
 }
 
 func appendIndexAddition(diff *difftypes.SchemaDiff, ref difftypes.IndexRef) {
@@ -299,9 +385,77 @@ func isSQLiteInternalAutoindex(indexName, dialect string) bool {
 		strings.HasPrefix(indexName, "sqlite_autoindex_")
 }
 
-func indexDefinitionsChanged(genIndex goschema.Index, dbIndex types.DBIndex) bool {
-	return !boolPtrEqual(genIndex.NullsDistinct, dbIndex.NullsDistinct) ||
-		indexPredicateChanged(genIndex.Condition, dbIndex.Condition)
+func indexReplacementRequired(
+	generated generatedIndexEntry,
+	database databaseIndexEntry,
+	dialect string,
+	semantics identifier.Semantics,
+) bool {
+	if platform.NormalizeDialect(dialect) == platform.SQLServer &&
+		generated.ref.Name != database.ref.Name {
+		return true
+	}
+	return indexDefinitionsChanged(generated.index, database.index, dialect, semantics)
+}
+
+func indexDefinitionsChanged(
+	generated goschema.Index,
+	database types.DBIndex,
+	dialect string,
+	semantics identifier.Semantics,
+) bool {
+	if !boolPtrEqual(generated.NullsDistinct, database.NullsDistinct) ||
+		indexPredicateChanged(generated.Condition, database.Condition) {
+		return true
+	}
+	if platform.NormalizeDialect(dialect) != platform.SQLServer {
+		return false
+	}
+	return generated.Unique != database.IsUnique ||
+		indexKeyPartsChanged(generated, database, semantics)
+}
+
+func indexKeyPartsChanged(
+	generated goschema.Index,
+	database types.DBIndex,
+	semantics identifier.Semantics,
+) bool {
+	generatedParts := effectiveGeneratedIndexParts(generated)
+	databaseParts := effectiveDatabaseIndexParts(database)
+	if len(generatedParts) != len(databaseParts) {
+		return true
+	}
+	for position, generatedPart := range generatedParts {
+		databasePart := databaseParts[position]
+		if semantics.ColumnIdentityKey(generatedPart.Name) !=
+			semantics.ColumnIdentityKey(databasePart.Name) ||
+			generatedPart.Desc != databasePart.Desc {
+			return true
+		}
+	}
+	return false
+}
+
+func effectiveGeneratedIndexParts(index goschema.Index) []goschema.IndexPart {
+	if len(index.Parts) > 0 {
+		return index.Parts
+	}
+	parts := make([]goschema.IndexPart, len(index.Fields))
+	for position, field := range index.Fields {
+		parts[position] = goschema.IndexPart{Name: field}
+	}
+	return parts
+}
+
+func effectiveDatabaseIndexParts(index types.DBIndex) []types.DBIndexPart {
+	if len(index.Parts) > 0 {
+		return index.Parts
+	}
+	parts := make([]types.DBIndexPart, len(index.Columns))
+	for position, column := range index.Columns {
+		parts[position] = types.DBIndexPart{Name: column}
+	}
+	return parts
 }
 
 func indexPredicateChanged(generated, database string) bool {

@@ -75,14 +75,23 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 		dbSchema = FilterDatabaseTables(dbSchema, opts.IgnoredTables)
 	}
 
+	info := conn.Info()
 	compareOpts := config.DefaultCompareOptions()
-	compareOpts.Dialect = conn.Info().Dialect
-	diff := schemadiff.CompareWithOptions(generated, dbSchema, compareOpts)
+	diff, err := schemadiff.CompareWithDatabase(
+		ctx,
+		conn,
+		generated,
+		dbSchema,
+		compareOpts,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error comparing schemas: %w", err)
+	}
 
 	return &CompareResult{
 		Sources:     loadOpts.Sources(),
 		DatabaseURL: dbschema.FormatDatabaseURL(opts.DatabaseURL),
-		Dialect:     conn.Info().Dialect,
+		Dialect:     info.Dialect,
 		Generated:   generated,
 		Database:    dbSchema,
 		Diff:        diff,

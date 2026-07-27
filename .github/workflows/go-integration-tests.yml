@@ -178,8 +178,9 @@ jobs:
         run: |
           go test -v ./integration -tags=integration -timeout 15m
           go test -v ./integration/gonative -tags=integration -timeout 15m
-          go test -v ./dbschema -run 'TestSQLServerLive(ReadSchema|DropAllTablesDropsForeignKeys|ComputedColumnZeroDiff|DropAllTablesRejectsExternalForeignKeys)' -timeout 3m
+          go test -v ./dbschema -run 'TestSQLServerLive(ReadSchema|DropAllTablesDropsForeignKeys|ComputedColumnZeroDiff|DropAllTablesRejectsExternalForeignKeys|IdentifierSemantics_)' -timeout 3m
           go test -v ./migration/migrator -run 'TestSQLServerMigratorHonorsURLSchemaForMetadata|TestMigrationAdvisoryLock_SQLServer(DefaultTimeout|Timeout)Integration' -timeout 3m
+          go test -v ./migration/generator -run 'TestGenerateMigration_SQLServerIndexDirectionRoundTrip|TestShadowIdentifierSemanticsMatch_SQLServerLive' -timeout 5m
 
       - name: Build integration test binary
         run: |

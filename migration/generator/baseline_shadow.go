@@ -10,6 +10,7 @@ import (
 	"github.com/stokaro/ptah/config"
 	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/dbschema"
+	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/convert/dbschematogo"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/schemadiff"
@@ -54,6 +55,15 @@ func VerifyBaselineShadow(ctx context.Context, opts BaselineShadowVerifyOptions)
 	if opts.Capabilities != nil && !maps.Equal(opts.Capabilities, shadowConn.Info().Capabilities) {
 		return fmt.Errorf("baseline shadow check failed: shadow database capabilities do not match target %s capabilities", opts.Dialect)
 	}
+
+	targetSchema, err := validateBaselineTargetIdentifierSemantics(
+		ctx,
+		shadowConn,
+		opts,
+	)
+	if err != nil {
+		return err
+	}
 	if err := shadowConn.SchemaWriter().DropAllTables(ctx); err != nil {
 		return fmt.Errorf("baseline shadow check failed: drop all objects: %w", err)
 	}
@@ -81,20 +91,86 @@ func VerifyBaselineShadow(ctx context.Context, opts BaselineShadowVerifyOptions)
 		return err
 	}
 
-	targetSchema, err := dbschema.ReadSchemaWithSchemas(opts.TargetConn, opts.Schemas)
-	if err != nil {
-		return fmt.Errorf("baseline shadow check failed: read target schema: %w", err)
-	}
 	shadowSchema, err := dbschema.ReadSchemaWithSchemas(shadowConn, opts.Schemas)
 	if err != nil {
 		return fmt.Errorf("baseline shadow check failed: read shadow schema: %w", err)
 	}
-	compareOpts := withDialect(opts.CompareOptions, opts.Dialect)
-	diff := schemadiff.CompareWithOptions(dbschematogo.ConvertDBSchemaToGoSchema(shadowSchema), targetSchema, compareOpts)
+	diff, err := schemadiff.CompareWithDatabase(
+		ctx,
+		opts.TargetConn,
+		dbschematogo.ConvertDBSchemaToGoSchema(shadowSchema),
+		targetSchema,
+		opts.CompareOptions,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"baseline shadow check failed: resolve target identifier semantics: %w",
+			err,
+		)
+	}
+	identifierSemanticsMatch, err := shadowIdentifierSemanticsMatch(
+		ctx,
+		shadowConn,
+		opts.Dialect,
+		*diff.IdentifierSemantics,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"baseline shadow check failed: resolve replayed shadow identifier semantics: %w",
+			err,
+		)
+	}
+	if !identifierSemanticsMatch {
+		return fmt.Errorf("baseline shadow check failed: replayed shadow identifier semantics do not match target %s catalog semantics", opts.Dialect)
+	}
 	if !diff.HasChanges() {
 		return nil
 	}
 	return fmt.Errorf("baseline shadow check failed: %s", describeShadowDiff(diff))
+}
+
+func validateBaselineTargetIdentifierSemantics(
+	ctx context.Context,
+	shadowConn *dbschema.DatabaseConnection,
+	opts BaselineShadowVerifyOptions,
+) (*dbschematypes.DBSchema, error) {
+	targetSchema, err := dbschema.ReadSchemaWithSchemas(opts.TargetConn, opts.Schemas)
+	if err != nil {
+		return nil, fmt.Errorf("baseline shadow check failed: read target schema: %w", err)
+	}
+	targetGenerated := dbschematogo.ConvertDBSchemaToGoSchema(targetSchema)
+	targetDiff, err := schemadiff.CompareWithDatabase(
+		ctx,
+		opts.TargetConn,
+		targetGenerated,
+		targetSchema,
+		opts.CompareOptions,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"baseline shadow check failed: resolve target identifier semantics: %w",
+			err,
+		)
+	}
+	identifierSemanticsMatch, err := shadowIdentifierSemanticsMatch(
+		ctx,
+		shadowConn,
+		opts.Dialect,
+		*targetDiff.IdentifierSemantics,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"baseline shadow check failed: resolve shadow identifier semantics: %w",
+			err,
+		)
+	}
+	if !identifierSemanticsMatch {
+		return nil, fmt.Errorf(
+			"baseline shadow check failed: shadow database identifier semantics do not match target %s catalog semantics",
+			opts.Dialect,
+		)
+	}
+	return targetSchema, nil
 }
 
 func baselineShadowConnectContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {

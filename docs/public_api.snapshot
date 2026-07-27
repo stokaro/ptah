@@ -124,6 +124,11 @@ type CompareOptions struct {
     // unchanged foreign key. PostgreSQL distinguishes the two at DDL, so the
     // fold is deliberately NOT applied there.
     Dialect string
+
+    // IdentifierSemantics overrides the dialect's offline identifier rules.
+    // Catalog-sensitive callers must provide a complete resolved snapshot;
+    // first-party live operations obtain one through schemadiff.
+    IdentifierSemantics *identifier.Semantics
 }
     CompareOptions contains configuration options for schema comparison
     operations. These options control how schema differences are calculated and
@@ -3866,7 +3871,7 @@ type Index struct {
     Type string
     // Parser carries a MySQL FULLTEXT parser name, for example ngram.
     Parser string
-    // Condition is the WHERE clause for partial indexes (PostgreSQL only).
+    // Condition is the WHERE clause for partial or filtered indexes.
     Condition string
     // Operator is the operator class (PostgreSQL only, e.g. "gin_trgm_ops").
     Operator string
@@ -4507,6 +4512,84 @@ type Capability string
 const DropConstraintGeneric Capability = "drop_constraint_generic" ...
 func All() []Capability
 
+## github.com/stokaro/ptah/core/platform/identifier
+
+type Comparison string
+    const ComparisonExact Comparison = "exact" ...
+type IndexNamespace string
+    const IndexNamespaceTable IndexNamespace = "table" ...
+type ResolvedName struct{ ... }
+type Semantics struct{ ... }
+    func ForDialect(dialect string) Semantics
+    func ForSQLServerCatalog(catalogCollation string) Semantics
+
+### github.com/stokaro/ptah/core/platform/identifier.Comparison
+
+package identifier // import "github.com/stokaro/ptah/core/platform/identifier"
+
+type Comparison string
+    Comparison describes how a database compares identifiers.
+
+const ComparisonExact Comparison = "exact" ...
+func (c Comparison) ConflictKey(value string) string
+func (c Comparison) IdentityKey(value string) string
+
+### github.com/stokaro/ptah/core/platform/identifier.IndexNamespace
+
+package identifier // import "github.com/stokaro/ptah/core/platform/identifier"
+
+type IndexNamespace string
+    IndexNamespace describes where index names must be unique.
+
+const IndexNamespaceTable IndexNamespace = "table" ...
+
+### github.com/stokaro/ptah/core/platform/identifier.ResolvedName
+
+package identifier // import "github.com/stokaro/ptah/core/platform/identifier"
+
+type ResolvedName struct {
+    Name string `json:"name"`
+    Key  string `json:"key"`
+}
+    ResolvedName maps one raw identifier to a deterministic catalog-equivalence
+    key. Names with the same key compare equal in the target database.
+
+
+### github.com/stokaro/ptah/core/platform/identifier.Semantics
+
+package identifier // import "github.com/stokaro/ptah/core/platform/identifier"
+
+type Semantics struct {
+    DefaultSchema    string         `json:"default_schema,omitempty"`
+    IndexNamespace   IndexNamespace `json:"index_namespace,omitempty"`
+    IndexNames       Comparison     `json:"index_names,omitempty"`
+    TableNames       Comparison     `json:"table_names,omitempty"`
+    ColumnNames      Comparison     `json:"column_names,omitempty"`
+    CatalogCollation string         `json:"catalog_collation,omitempty"`
+    ResolvedNames    []ResolvedName `json:"resolved_names,omitempty"`
+}
+    Semantics contains the identifier rules needed by schema comparison and
+    migration planning. CatalogCollation is diagnostic metadata; the comparison
+    fields are the authoritative rules.
+
+func ForDialect(dialect string) Semantics
+func ForSQLServerCatalog(catalogCollation string) Semantics
+func (s Semantics) Clone() Semantics
+func (s Semantics) ColumnConflictKey(value string) string
+func (s Semantics) ColumnIdentityKey(value string) string
+func (s Semantics) Equal(other Semantics) bool
+func (s Semantics) IndexConflictKey(value string) string
+func (s Semantics) IndexIdentityKey(value string) string
+func (s Semantics) IsZero() bool
+func (s Semantics) Normalize(dialect string) Semantics
+func (s Semantics) QualifiedTableConflictKey(value string) string
+func (s Semantics) QualifiedTableIdentityKey(value string) string
+func (s Semantics) Resolves(value string) bool
+func (s Semantics) ResolvesQualifiedTable(value string) bool
+func (s Semantics) TableConflictKey(value string) string
+func (s Semantics) TableIdentityKey(value string) string
+func (s Semantics) WithResolvedNames(names []ResolvedName) Semantics
+
 ## github.com/stokaro/ptah/core/ptaherr
 
 var ErrUnsupportedDialect = errors.New("unsupported database dialect") ...
@@ -4842,6 +4925,7 @@ func (dc *DatabaseConnection) QueryContext(ctx context.Context, query string, ar
 func (dc *DatabaseConnection) QueryRow(query string, args ...any) *sql.Row
 func (dc *DatabaseConnection) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 func (dc *DatabaseConnection) Reader() types.SchemaReader
+func (dc *DatabaseConnection) ResolveIdentifierSemantics(ctx context.Context, names []string) (identifier.Semantics, error)
 func (dc *DatabaseConnection) SchemaWriter() types.SchemaWriter
 func (dc *DatabaseConnection) WithExecutor(executor types.SchemaExecutor) *DatabaseConnection
 func (dc *DatabaseConnection) Writer() types.SchemaExecutor
@@ -4859,6 +4943,7 @@ type DBExtension struct{ ... }
 type DBFunction struct{ ... }
 type DBGrant struct{ ... }
 type DBIndex struct{ ... }
+type DBIndexPart struct{ ... }
 type DBInfo struct{ ... }
 type DBMatView struct{ ... }
 type DBRLSPolicy struct{ ... }
@@ -5061,13 +5146,16 @@ func (g DBGrant) QualifiedTarget() string
 package types // import "github.com/stokaro/ptah/dbschema/types"
 
 type DBIndex struct {
-    Name       string   `json:"name"`
-    TableName  string   `json:"table_name"`
-    Schema     string   `json:"schema,omitempty"`
-    Columns    []string `json:"columns"`
-    IsUnique   bool     `json:"is_unique"`
-    IsPrimary  bool     `json:"is_primary"`
-    Definition string   `json:"definition"` // Full index definition
+    Name      string   `json:"name"`
+    TableName string   `json:"table_name"`
+    Schema    string   `json:"schema,omitempty"`
+    Columns   []string `json:"columns"`
+    // Parts preserves key order and direction when the database exposes it.
+    // Empty means the reader supplied only the legacy ascending Columns form.
+    Parts      []DBIndexPart `json:"parts,omitempty"`
+    IsUnique   bool          `json:"is_unique"`
+    IsPrimary  bool          `json:"is_primary"`
+    Definition string        `json:"definition"` // Full index definition
     // Condition is the WHERE clause for partial indexes when the dialect
     // exposes one structurally.
     Condition string `json:"condition,omitempty"`
@@ -5099,16 +5187,28 @@ type DBIndex struct {
 
 func (i DBIndex) QualifiedTableName() string
 
+### github.com/stokaro/ptah/dbschema/types.DBIndexPart
+
+package types // import "github.com/stokaro/ptah/dbschema/types"
+
+type DBIndexPart struct {
+    Name string `json:"name"`
+    Desc bool   `json:"desc,omitempty"`
+}
+    DBIndexPart represents one ordered key column in an introspected index.
+
+
 ### github.com/stokaro/ptah/dbschema/types.DBInfo
 
 package types // import "github.com/stokaro/ptah/dbschema/types"
 
 type DBInfo struct {
-    Dialect      string                  `json:"dialect"` // postgres, mysql, mariadb
-    Version      string                  `json:"version"`
-    Schema       string                  `json:"schema"`       // public, database name, etc.
-    URL          string                  `json:"url"`          // database connection URL (for reference)
-    Capabilities capability.Capabilities `json:"capabilities"` // resolved from Dialect + Version for live connections
+    Dialect             string                  `json:"dialect"` // postgres, mysql, mariadb
+    Version             string                  `json:"version"`
+    Schema              string                  `json:"schema"`               // public, database name, etc.
+    URL                 string                  `json:"url"`                  // database connection URL (for reference)
+    Capabilities        capability.Capabilities `json:"capabilities"`         // resolved from Dialect + Version for live connections
+    IdentifierSemantics identifier.Semantics    `json:"identifier_semantics"` // catalog identifier metadata and static rules
 }
     DBInfo contains connection and metadata information
 
@@ -5657,6 +5757,8 @@ func (c SkippedChange) Comment() string
 
 func GenerateCheckpoint(schema *goschema.Database, dialect string) (upSQL, downSQL string, err error)
 func GenerateCheckpointFromShadow(ctx context.Context, opts CheckpointFromShadowOptions) (upSQL, downSQL string, err error)
+func GenerateCheckpointWithDatabase(ctx context.Context, conn *dbschema.DatabaseConnection, ...) (upSQL, downSQL string, err error)
+func GenerateCheckpointWithDatabaseInfo(schema *goschema.Database, info dbschematypes.DBInfo) (upSQL, downSQL string, err error)
 func VerifyBaselineShadow(ctx context.Context, opts BaselineShadowVerifyOptions) error
 func WriteCheckpointFiles(outputDir string, version int64, description, upSQL, downSQL string) (upPath, downPath string, err error)
 func WriteDataMigrationFiles(outputDir string, version int64, description, upSQL, downSQL string) (upPath, downPath string, err error)
@@ -7299,6 +7401,8 @@ func AssessSQL(statement string) StatementAssessment
 ## github.com/stokaro/ptah/migration/schemadiff
 
 func Compare(generated *goschema.Database, database *types.DBSchema) *difftypes.SchemaDiff
+func CompareWithDatabase(ctx context.Context, conn *dbschema.DatabaseConnection, ...) (*difftypes.SchemaDiff, error)
+func CompareWithDatabaseInfo(generated *goschema.Database, database *types.DBSchema, info types.DBInfo, ...) (*difftypes.SchemaDiff, error)
 func CompareWithDialect(generated *goschema.Database, database *types.DBSchema, dialect string) *difftypes.SchemaDiff
 func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, ...) *difftypes.SchemaDiff
 
@@ -7713,6 +7817,11 @@ type RoleDiff struct {
 package types // import "github.com/stokaro/ptah/migration/schemadiff/types"
 
 type SchemaDiff struct {
+    // IdentifierSemantics records live catalog identifier rules used to produce
+    // this diff. It is absent for dialect-only comparisons, whose planners use
+    // conservative offline defaults.
+    IdentifierSemantics *identifier.Semantics `json:"identifier_semantics,omitempty"`
+
     // TablesAdded contains names of tables that exist in the target schema
     // but not in the current database schema
     TablesAdded []string `json:"tables_added"`
@@ -7934,6 +8043,7 @@ type SchemaDiff struct {
             fmt.Printf("Found %d new tables\n", len(diff.TablesAdded))
         }
 
+func (d *SchemaDiff) EffectiveIdentifierSemantics(dialect string) identifier.Semantics
 func (d *SchemaDiff) HasChanges() bool
 func (d *SchemaDiff) IndexAdditions() []IndexRef
 func (d *SchemaDiff) IndexRemovals() []IndexRef

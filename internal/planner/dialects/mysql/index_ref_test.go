@@ -1,6 +1,7 @@
 package mysql_test
 
 import (
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -9,6 +10,7 @@ import (
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/platform/capability"
+	"github.com/stokaro/ptah/core/platform/identifier"
 	"github.com/stokaro/ptah/internal/planner/dialects/mysql"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
@@ -187,7 +189,15 @@ func TestPlanner_IndexRefs_MySQLFamilyCaseInsensitiveReplacementDropsFirst(t *te
 
 func TestPlanner_IndexRefs_SQLServerSharedPlannerRoutesDuplicateAdditions(t *testing.T) {
 	c := qt.New(t)
+	semantics := sqlServerIndexSemantics(
+		"SQL_Latin1_General_CP1_CI_AS",
+		[]string{"audit"},
+		[]string{"dbo"},
+		[]string{"records"},
+		[]string{"idx_shared"},
+	)
 	diff := &types.SchemaDiff{
+		IdentifierSemantics: &semantics,
 		IndexesAdded: []types.IndexRef{
 			{Name: "idx_shared", TableName: "audit.records"},
 			{Name: "idx_shared", TableName: "dbo.records"},
@@ -213,7 +223,71 @@ func TestPlanner_IndexRefs_SQLServerSharedPlannerRoutesDuplicateAdditions(t *tes
 	c.Assert(dboIndex.Columns, qt.DeepEquals, []string{"external_id"})
 }
 
-func TestPlanner_IndexRefs_SQLServerDoesNotAssumeCaseInsensitiveCollation(t *testing.T) {
+func TestPlanner_IndexRefs_SQLServerPreservesIndexPartDirection(t *testing.T) {
+	c := qt.New(t)
+	diff := &types.SchemaDiff{
+		IndexesAdded: []types.IndexRef{
+			{Name: "idx_users_lookup", TableName: "dbo.users"},
+		},
+	}
+	generated := &goschema.Database{Indexes: []goschema.Index{
+		{
+			Name:      "idx_users_lookup",
+			TableName: "dbo.users",
+			Fields:    []string{"email", "status"},
+			Parts: []goschema.IndexPart{
+				{Name: "email", Desc: true},
+				{Name: "status"},
+			},
+		},
+	}}
+
+	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
+		GenerateMigrationASTChecked(diff, generated)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 1)
+	index, ok := nodes[0].(*ast.IndexNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(index.EffectiveParts(), qt.DeepEquals, []ast.IndexPart{
+		{Name: "email", Desc: true},
+		{Name: "status"},
+	})
+}
+
+func TestPlanner_IndexRefs_SQLServerPreservesFilteredIndexPredicate(t *testing.T) {
+	c := qt.New(t)
+	diff := &types.SchemaDiff{
+		IndexesAdded: []types.IndexRef{
+			{Name: "idx_active_users", TableName: "dbo.users"},
+		},
+		IndexesRemoved: []types.IndexRef{
+			{Name: "idx_active_users", TableName: "dbo.users"},
+		},
+	}
+	generated := &goschema.Database{Indexes: []goschema.Index{
+		{
+			Name:      "idx_active_users",
+			TableName: "dbo.users",
+			Fields:    []string{"status"},
+			Condition: "[status] = 2",
+		},
+	}}
+
+	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
+		GenerateMigrationASTChecked(diff, generated)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 2)
+	drop, ok := nodes[0].(*ast.DropIndexNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(drop.Name, qt.Equals, "idx_active_users")
+	create, ok := nodes[1].(*ast.IndexNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(create.Condition, qt.Equals, "[status] = 2")
+}
+
+func TestPlanner_IndexRefs_SQLServerUnknownCollationOrdersPotentialReplacementSafely(t *testing.T) {
 	c := qt.New(t)
 	diff := &types.SchemaDiff{
 		IndexesAdded: []types.IndexRef{
@@ -234,10 +308,96 @@ func TestPlanner_IndexRefs_SQLServerDoesNotAssumeCaseInsensitiveCollation(t *tes
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
 
+	drop, ok := nodes[0].(*ast.DropIndexNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(drop.Name, qt.Equals, "idx_email")
+	create, ok := nodes[1].(*ast.IndexNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(create.Name, qt.Equals, "IDX_Email")
+}
+
+func TestPlanner_IndexRefs_SQLServerCaseInsensitiveReplacementDropsFirst(t *testing.T) {
+	c := qt.New(t)
+	semantics := sqlServerIndexSemantics(
+		"SQL_Latin1_General_CP1_CI_AS",
+		[]string{"dbo"},
+		[]string{"users"},
+		[]string{"idx_email", "IDX_Email"},
+	)
+	diff := &types.SchemaDiff{
+		IdentifierSemantics: &semantics,
+		IndexesAdded: []types.IndexRef{
+			{Name: "IDX_Email", TableName: "dbo.users"},
+		},
+		IndexesRemoved: []types.IndexRef{
+			{Name: "idx_email", TableName: "dbo.users"},
+		},
+	}
+	generated := &goschema.Database{Indexes: []goschema.Index{
+		{Name: "IDX_Email", TableName: "dbo.users", Fields: []string{"email"}},
+	}}
+
+	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
+		GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 2)
+
+	drop, ok := nodes[0].(*ast.DropIndexNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(drop.Name, qt.Equals, "idx_email")
+	create, ok := nodes[1].(*ast.IndexNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(create.Name, qt.Equals, "IDX_Email")
+}
+
+func TestPlanner_IndexRefs_SQLServerCaseSensitiveVariantsRemainIndependent(t *testing.T) {
+	c := qt.New(t)
+	semantics := sqlServerIndexSemantics(
+		"SQL_Latin1_General_CP1_CS_AS",
+		[]string{"dbo"},
+		[]string{"users"},
+		[]string{"idx_email"},
+		[]string{"IDX_Email"},
+	)
+	diff := &types.SchemaDiff{
+		IdentifierSemantics: &semantics,
+		IndexesAdded: []types.IndexRef{
+			{Name: "IDX_Email", TableName: "dbo.users"},
+		},
+		IndexesRemoved: []types.IndexRef{
+			{Name: "idx_email", TableName: "dbo.users"},
+		},
+	}
+	generated := &goschema.Database{Indexes: []goschema.Index{
+		{Name: "IDX_Email", TableName: "dbo.users", Fields: []string{"email"}},
+	}}
+
+	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
+		GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 2)
+
 	create, ok := nodes[0].(*ast.IndexNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(create.Name, qt.Equals, "IDX_Email")
 	drop, ok := nodes[1].(*ast.DropIndexNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(drop.Name, qt.Equals, "idx_email")
+}
+
+func sqlServerIndexSemantics(
+	collation string,
+	groups ...[]string,
+) identifier.Semantics {
+	resolved := make([]identifier.ResolvedName, 0)
+	for _, group := range groups {
+		key := slices.Min(group)
+		for _, name := range group {
+			resolved = append(resolved, identifier.ResolvedName{
+				Name: name,
+				Key:  key,
+			})
+		}
+	}
+	return identifier.ForSQLServerCatalog(collation).WithResolvedNames(resolved)
 }

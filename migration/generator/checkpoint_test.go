@@ -10,6 +10,10 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/platform/capability"
+	"github.com/stokaro/ptah/core/platform/identifier"
+	"github.com/stokaro/ptah/core/ptaherr"
+	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/migration/generator"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -147,6 +151,106 @@ func TestGenerateCheckpoint_NilAndEmpty(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Equals, "")
 	c.Assert(down, qt.Equals, "")
+}
+
+func TestGenerateCheckpointWithDatabaseInfo_SQLServerCaseSensitiveVariants(t *testing.T) {
+	c := qt.New(t)
+	semantics := identifier.ForSQLServerCatalog("SQL_Latin1_General_CP1_CS_AS").
+		WithResolvedNames([]identifier.ResolvedName{
+			{Name: "dbo", Key: "dbo"},
+			{Name: "users", Key: "users"},
+			{Name: "email", Key: "email"},
+			{Name: "status", Key: "status"},
+			{Name: "idx_email", Key: "idx_email"},
+			{Name: "IDX_Email", Key: "IDX_Email"},
+		})
+	schema := sqlServerCaseVariantIndexSchema()
+
+	up, down, err := generator.GenerateCheckpointWithDatabaseInfo(schema, dbschematypes.DBInfo{
+		Dialect:             "sqlserver",
+		Capabilities:        capability.SQLServer2022(),
+		IdentifierSemantics: semantics,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(up, qt.Contains, "CREATE INDEX [idx_email]")
+	c.Assert(up, qt.Contains, "CREATE INDEX [IDX_Email]")
+	c.Assert(down, qt.Contains, "DROP INDEX [idx_email]")
+	c.Assert(down, qt.Contains, "DROP INDEX [IDX_Email]")
+}
+
+func TestGenerateCheckpoint_SQLServerUnknownRejectsCaseVariants(t *testing.T) {
+	c := qt.New(t)
+
+	_, _, err := generator.GenerateCheckpoint(
+		sqlServerCaseVariantIndexSchema(),
+		"sqlserver",
+	)
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+}
+
+func TestGenerateCheckpointWithDatabaseInfo_SQLServerTableCollision_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	semantics := identifier.ForSQLServerCatalog("SQL_Latin1_General_CP1_CI_AS").
+		WithResolvedNames([]identifier.ResolvedName{
+			{Name: "Users", Key: "Users"},
+			{Name: "dbo", Key: "dbo"},
+			{Name: "users", Key: "Users"},
+		})
+	schema := &goschema.Database{Tables: []goschema.Table{
+		{StructName: "UpperUser", Schema: "dbo", Name: "Users"},
+		{StructName: "LowerUser", Schema: "dbo", Name: "users"},
+	}}
+
+	up, down, err := generator.GenerateCheckpointWithDatabaseInfo(schema, dbschematypes.DBInfo{
+		Dialect:             "sqlserver",
+		Capabilities:        capability.SQLServer2022(),
+		IdentifierSemantics: semantics,
+	})
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+	c.Assert(err, qt.ErrorMatches, `.*target tables dbo\.Users and dbo\.users may have the same catalog identity.*`)
+	c.Assert(up, qt.Equals, "")
+	c.Assert(down, qt.Equals, "")
+}
+
+func TestGenerateCheckpointWithDatabaseInfo_SQLServerIncompleteSnapshot_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	semantics := identifier.ForSQLServerCatalog("SQL_Latin1_General_CP1_CI_AS").
+		WithResolvedNames([]identifier.ResolvedName{
+			{Name: "dbo", Key: "dbo"},
+		})
+	schema := &goschema.Database{Tables: []goschema.Table{
+		{StructName: "User", Schema: "dbo", Name: "users"},
+	}}
+
+	up, down, err := generator.GenerateCheckpointWithDatabaseInfo(schema, dbschematypes.DBInfo{
+		Dialect:             "sqlserver",
+		Capabilities:        capability.SQLServer2022(),
+		IdentifierSemantics: semantics,
+	})
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+	c.Assert(err, qt.ErrorMatches, `.*snapshot does not resolve "users".*`)
+	c.Assert(up, qt.Equals, "")
+	c.Assert(down, qt.Equals, "")
+}
+
+func sqlServerCaseVariantIndexSchema() *goschema.Database {
+	return &goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "User", Schema: "dbo", Name: "users"},
+		},
+		Fields: []goschema.Field{
+			{StructName: "User", Name: "email", Type: "NVARCHAR(320)"},
+			{StructName: "User", Name: "status", Type: "INT"},
+		},
+		Indexes: []goschema.Index{
+			{StructName: "User", Name: "idx_email", Fields: []string{"email"}},
+			{StructName: "User", Name: "IDX_Email", Fields: []string{"status"}},
+		},
+	}
 }
 
 func stripGeneratedOn(sql string) string {

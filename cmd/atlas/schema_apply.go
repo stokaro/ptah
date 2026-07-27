@@ -135,7 +135,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	plan, err := atlasschema.PrepareApply(conn, atlasschema.ApplyRuntimeOptions{
+	plan, err := atlasschema.PrepareApply(cmd.Context(), conn, atlasschema.ApplyRuntimeOptions{
 		DevURL:  opts.devURL,
 		ToURLs:  opts.toURLs,
 		Exclude: opts.exclude,

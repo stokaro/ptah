@@ -18,6 +18,7 @@ These packages are intended for application and tool embedders:
 - `github.com/stokaro/ptah/core/goschema`
 - `github.com/stokaro/ptah/core/platform`
 - `github.com/stokaro/ptah/core/platform/capability`
+- `github.com/stokaro/ptah/core/platform/identifier`
 - `github.com/stokaro/ptah/core/ptaherr`
 - `github.com/stokaro/ptah/core/query`
 - `github.com/stokaro/ptah/core/renderer`
@@ -68,6 +69,15 @@ handle, so they cannot alter the migrator execution path.
 
 `migration/schemadiff/types.SchemaDiff` stores index additions and removals as
 canonical `[]IndexRef` fields. Every index reference includes its owning table.
+Live comparisons also snapshot catalog identifier semantics into the diff so
+comparison, destructive-change policy, forward planning, and reverse planning
+use one source of truth. `core/platform/identifier` exposes the reusable value
+types and conservative dialect defaults behind that contract.
+`migration/generator.GenerateCheckpointWithDatabaseInfo` preserves the same
+live semantics when an introspected schema is rendered as a checkpoint, but
+SQL Server callers should use `GenerateCheckpointWithDatabase` so Ptah resolves
+the complete candidate identifier set under the target catalog collation.
+`GenerateCheckpoint` remains the conservative dialect-only entry point.
 `migration/planner.Planner` exposes only checked planning; malformed references,
 unresolved additions, and target index-namespace conflicts fail before SQL is
 returned.

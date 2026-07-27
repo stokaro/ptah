@@ -27,7 +27,12 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	if generated == nil {
 		generated = &goschema.Database{}
 	}
-	indexes, err := indexscope.NewResolver(DialectName, diff, generated)
+	indexes, err := indexscope.NewResolverWithSemantics(
+		DialectName,
+		diff.EffectiveIdentifierSemantics(DialectName),
+		diff,
+		generated,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -496,7 +501,10 @@ func (p *Planner) addIndexes(
 	indexes *indexscope.Resolver,
 ) ([]ast.Node, error) {
 	var result []ast.Node
-	indexRemovals := indexscope.NewConflictSet(platform.SQLite, diff.IndexRemovals())
+	indexRemovals := indexscope.NewConflictSetWithSemantics(
+		diff.EffectiveIdentifierSemantics(platform.SQLite),
+		diff.IndexRemovals(),
+	)
 	for _, ref := range diff.IndexAdditions() {
 		index, err := indexes.Resolve(ref)
 		if err != nil {
@@ -513,7 +521,10 @@ func (p *Planner) addIndexes(
 
 func (p *Planner) removeIndexes(diff *types.SchemaDiff) []ast.Node {
 	var result []ast.Node
-	indexAdditions := indexscope.NewConflictSet(platform.SQLite, diff.IndexAdditions())
+	indexAdditions := indexscope.NewConflictSetWithSemantics(
+		diff.EffectiveIdentifierSemantics(platform.SQLite),
+		diff.IndexAdditions(),
+	)
 	for _, ref := range diff.IndexRemovals() {
 		if indexAdditions.Contains(ref) {
 			continue

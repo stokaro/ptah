@@ -139,10 +139,13 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	}
 
 	// 3. Compare schemas (dialect-aware: MySQL/MariaDB RESTRICT == NO ACTION)
-	diff := schemadiff.CompareWithDialect(result, dbSchema, conn.Info().Dialect)
+	info := conn.Info()
+	diff, err := schemadiff.CompareWithDatabase(cmd.Context(), conn, result, dbSchema, nil)
+	if err != nil {
+		return fmt.Errorf("error comparing schemas: %w", err)
+	}
 
 	// 4. Display differences summary
-	info := conn.Info()
 	astNodes, err := planner.GenerateSchemaDiffASTWithCapabilities(diff, result, info.Dialect, info.Capabilities)
 	if err != nil {
 		return fmt.Errorf("error generating migration plan: %w", err)
