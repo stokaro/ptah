@@ -166,6 +166,27 @@ func TestMigrateDataCommand_DestructiveRefusedByDefault(t *testing.T) {
 	c.Assert(written, qt.HasLen, 0)
 }
 
+func TestMigrateDataCommand_DryRunAlsoGatesDestructive(t *testing.T) {
+	c := qt.New(t)
+
+	// The gates run before any SQL is emitted, so --dry-run is refused too and
+	// prints no SQL — the documented "combine --allow-destructive --dry-run to
+	// preview" behavior depends on this.
+	dbURL := seedLiveDB(t, [][2]string{{"CZ", "Czech Republic"}})
+	root := t.TempDir()
+	writeRegionsFixture(t, root, desiredRows)
+	migrationsDir := t.TempDir()
+
+	out, err := runData("--root-dir", root, "--db-url", dbURL, "--migrations-dir", migrationsDir, "--dry-run")
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out, qt.Contains, "destructive")
+	c.Assert(out, qt.Not(qt.Contains), "INSERT INTO")
+
+	written, err := filepath.Glob(filepath.Join(migrationsDir, "*.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(written, qt.HasLen, 0)
+}
+
 func TestMigrateDataCommand_ProtectedTableRefused(t *testing.T) {
 	c := qt.New(t)
 

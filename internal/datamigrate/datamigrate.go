@@ -138,7 +138,7 @@ func Generate(ctx context.Context, conn *dbschema.DatabaseConnection, opts Optio
 		return "", "", nil
 	}
 
-	if err := checkPolicy(changes, opts); err != nil {
+	if err := checkPolicy(mergeByTable(changes), opts); err != nil {
 		return "", "", err
 	}
 
@@ -153,6 +153,25 @@ type tableChange struct {
 	table   string
 	updates int
 	deletes int
+}
+
+// mergeByTable folds multiple change entries for the same table into one,
+// summing their volumes and preserving first-seen order. More than one
+// //migrator:schema:data annotation can target the same table, which would
+// otherwise make the gates report and count that table twice.
+func mergeByTable(changes []tableChange) []tableChange {
+	merged := make([]tableChange, 0, len(changes))
+	index := make(map[string]int, len(changes))
+	for _, change := range changes {
+		if i, ok := index[change.table]; ok {
+			merged[i].updates += change.updates
+			merged[i].deletes += change.deletes
+			continue
+		}
+		index[change.table] = len(merged)
+		merged = append(merged, change)
+	}
+	return merged
 }
 
 // tableRender is a single managed table's rendered migration together with the
@@ -243,9 +262,10 @@ func checkProtected(changes []tableChange, opts Options) error {
 }
 
 // checkDestructive refuses a change set that updates or deletes existing rows
-// unless opts.AllowDestructive is set. The destructive volume is expressed in
-// the shared migration/safety vocabulary so the gate reuses the same
-// destructive-severity definition as the DDL safety report.
+// unless opts.AllowDestructive is set. The row-change volume is expressed as
+// migration/safety findings so the gate speaks the same severity vocabulary as
+// the DDL safety report and defers the destructive verdict to
+// safety.HasDestructive.
 func checkDestructive(changes []tableChange, opts Options) error {
 	if opts.AllowDestructive {
 		return nil
@@ -270,10 +290,14 @@ func checkDestructive(changes []tableChange, opts Options) error {
 		strings.Join(details, ", "))
 }
 
-// destructiveFindings expresses the destructive row-change volume in the shared
-// migration/safety vocabulary, mirroring safety.ClassifySchemaDiff for DDL: an
-// UPDATE overwrites existing row data and a DELETE removes rows, so both are
-// destructive; INSERTs are additive and contribute no finding.
+// destructiveFindings expresses the row-change volume as migration/safety
+// findings, the same shape safety.ClassifySchemaDiff produces for DDL. A DELETE
+// removes rows and an UPDATE overwrites existing row values, so both are marked
+// Destructive here. This is deliberately stricter than the DDL classifier,
+// which treats in-place value rewrites (for example SET EXPRESSION) as a
+// Warning: row data a data migration overwrites in a live database cannot be
+// recovered from the migration alone, so the stricter default is intentional.
+// INSERTs are additive and contribute no finding.
 func destructiveFindings(updates, deletes int) []safety.Finding {
 	var findings []safety.Finding
 	addFinding(&findings, "data_rows_updated", updates)
