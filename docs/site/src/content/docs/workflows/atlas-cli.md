@@ -416,6 +416,15 @@ selecting `--latest` versions, replaying migrations, and rendering reports.
 Checksum status, findings, statement metadata, and formatted output therefore
 describe the same immutable inputs.
 
+The `Replay Migration Files` step reports the number of semantic schema changes
+the selected migrations express, recovered from Ptah's dialect-aware parse of
+their DDL — the same parser the replay and planner use — not a count of
+statements or files. One statement can contribute zero changes (an operational
+`INSERT`/`SELECT` or a construct outside the DDL grammar), exactly one (a single
+`CREATE`), or several (a multi-action `ALTER TABLE`, or a `DROP TABLE` naming
+several tables), so this change count and the new-migration-file count differ in
+general.
+
 Ptah also validates and fully loads the migration provider, including Atlas
 templates, before dropping any objects from the dev database. A malformed
 migration directory therefore leaves the existing dev database state intact;

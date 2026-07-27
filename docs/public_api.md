@@ -52,7 +52,10 @@ execution without a second configuration-file read.
 integrity metadata, and `.ptah-lint.yaml`. It returns deep-copy views of
 prepared files and findings together with a read-only source snapshot. Finding
 contexts identify the exact statement and affected tables or columns; column
-subjects can also carry the parent table and declared data type. Atlas-ignored
+subjects can also carry the parent table and declared data type. Each prepared
+up-migration file also carries the semantic schema changes it expresses
+(`File.Changes`, typed `SchemaChange`), recovered from Ptah's dialect-aware SQL
+parser so one statement can map to zero, one, or several changes. Atlas-ignored
 files are marked explicitly without changing version selection.
 Compatibility-specific directive behavior must be selected explicitly; native
 Ptah behavior is the zero-value default.
