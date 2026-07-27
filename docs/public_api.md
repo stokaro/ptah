@@ -19,6 +19,7 @@ These packages are intended for application and tool embedders:
 - `github.com/stokaro/ptah/core/platform`
 - `github.com/stokaro/ptah/core/platform/capability`
 - `github.com/stokaro/ptah/core/ptaherr`
+- `github.com/stokaro/ptah/core/query`
 - `github.com/stokaro/ptah/core/renderer`
 - `github.com/stokaro/ptah/core/sqlutil`
 - `github.com/stokaro/ptah/dbschema`

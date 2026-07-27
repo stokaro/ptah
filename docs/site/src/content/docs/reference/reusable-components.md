@@ -27,6 +27,7 @@ uses them internally.
 | Need | Stable package(s) | What it gives you |
 | --- | --- | --- |
 | Build SQL DDL programmatically | `core/ast`, `core/renderer` | Dialect-aware SQL from structured AST nodes. |
+| Build parameterized SELECT queries | `core/query`, `core/renderer` | Fluent, dialect-aware SELECT/WHERE/ORDER BY/LIMIT with bound parameters. See [Query Builder](../query-builder/). |
 | Parse Go schema annotations | `core/goschema` | Go source comments to Ptah's schema IR. |
 | Parse Atlas HCL schema files | `atlascompat` | Atlas-style HCL schema files to Ptah's schema IR through a stable compatibility wrapper. |
 | Parse YAML schema files | Native CLI and schema-file workflows | YAML schema parsing is currently an implementation detail, not a stable public package. Use the CLI or create a follow-up API proposal before embedding it. |
@@ -67,9 +68,15 @@ The AST is mature for DDL objects that Ptah currently renders and plans: tables,
 columns, constraints, indexes, enums, extensions, views, materialized views,
 triggers, row-level security policies, roles, grants, and routine placeholders
 where supported. It is not a full SQL parser for every dialect-specific
-sub-language. It is also not a DML query builder; SELECT/WHERE/JOIN style query
-builder work belongs to issue
-[`#98`](https://github.com/stokaro/ptah/issues/98) or follow-up design.
+sub-language.
+
+DML query building has a first, bounded slice: `core/query` builds
+parameterized single-table `SELECT` statements with a composable `WHERE`
+expression tree, `ORDER BY`, and `LIMIT`/`OFFSET`, rendered through
+`renderer.RenderSelect`. `JOIN`, `GROUP BY`, `HAVING`, subqueries, and the
+`INSERT`/`UPDATE`/`DELETE` family are follow-up phases of issue
+[`#98`](https://github.com/stokaro/ptah/issues/98). See the
+[Query Builder](../query-builder/) reference for the full API.
 
 This complete example uses only public packages. The same AST/rendering path is
 validated by

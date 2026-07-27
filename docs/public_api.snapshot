@@ -77,10 +77,15 @@ type AlterTableEnableRLSNode struct{ ... }
 type AlterTableNode struct{ ... }
 type AlterTypeNode struct{ ... }
     func NewAlterType(name string) *AlterTypeNode
+type BoundValue struct{ ... }
 type ColumnNode struct{ ... }
     func NewColumn(name, dataType string) *ColumnNode
+type ColumnRef struct{ ... }
 type CommentNode struct{ ... }
     func NewComment(text string) *CommentNode
+type Comparison struct{ ... }
+type ComparisonOperator int
+    const OpEqual ComparisonOperator = iota ...
 type CompositeField struct{ ... }
 type CompositeTypeDef struct{ ... }
     func NewCompositeTypeDef(fields ...*CompositeField) *CompositeTypeDef
@@ -145,6 +150,7 @@ type EnumNode struct{ ... }
     func NewEnum(name string, values ...string) *EnumNode
 type EnumTypeDef struct{ ... }
     func NewEnumTypeDef(values ...string) *EnumTypeDef
+type Expression interface{ ... }
 type ExtensionNode struct{ ... }
     func NewExtension(name string) *ExtensionNode
 type ForeignKeyRef struct{ ... }
@@ -152,9 +158,13 @@ type FunctionBodyKind string
     const FunctionBodyQuoted FunctionBodyKind = "quoted" ...
 type GrantPrivilegeNode struct{ ... }
     func NewGrantPrivilege(role, objectType, objectName string, privileges []string) *GrantPrivilegeNode
+type InExpr struct{ ... }
 type IndexNode struct{ ... }
     func NewIndex(name, table string, columns ...string) *IndexNode
 type IndexPart struct{ ... }
+type LogicalExpr struct{ ... }
+type LogicalOperator int
+    const LogicalAnd LogicalOperator = iota ...
 type ModifyColumnOperation struct{ ... }
 type ModifyTTLOperation struct{ ... }
 type MySQLRoutineBody struct{ ... }
@@ -169,8 +179,11 @@ type MySQLRoutineStatement struct{ ... }
 type MySQLRoutineStatementKind string
     const MySQLRoutineStatementRaw MySQLRoutineStatementKind = "raw" ...
 type Node interface{ ... }
+type NotExpr struct{ ... }
+type NullTest struct{ ... }
 type OpaqueRoutineNode struct{ ... }
     func NewOpaqueRoutine(sql, dialect string, kind RoutineKind) *OpaqueRoutineNode
+type OrderByClause struct{ ... }
 type PartitionPart struct{ ... }
 type PartitionSpec struct{ ... }
 type PostgresDoBlockNode struct{ ... }
@@ -193,6 +206,7 @@ type RenameEnumValueOperation struct{ ... }
 type RenameTableOperation struct{ ... }
 type RenameTypeOperation struct{ ... }
     func NewRenameTypeOperation(newName string) *RenameTypeOperation
+type ResultColumn struct{ ... }
 type RevokePrivilegeNode struct{ ... }
     func NewRevokePrivilege(role, objectType, objectName string, privileges []string) *RevokePrivilegeNode
 type RoleOperation interface{ ... }
@@ -206,6 +220,7 @@ type SQLServerRoutineNode struct{ ... }
 type SQLServerRoutineStatement struct{ ... }
 type SQLServerRoutineStatementKind string
     const SQLServerRoutineStatementRaw SQLServerRoutineStatementKind = "raw" ...
+type SelectStatement struct{ ... }
 type SetCreateDBOperation struct{ ... }
     func NewSetCreateDBOperation(createDB bool) *SetCreateDBOperation
 type SetCreateRoleOperation struct{ ... }
@@ -220,6 +235,8 @@ type SetReplicationOperation struct{ ... }
     func NewSetReplicationOperation(replication bool) *SetReplicationOperation
 type SetSuperuserOperation struct{ ... }
     func NewSetSuperuserOperation(superuser bool) *SetSuperuserOperation
+type SortDirection int
+    const SortAscending SortDirection = iota ...
 type StatementList struct{ ... }
 type TypeDefinition interface{ ... }
 type TypeOperation interface{ ... }
@@ -242,6 +259,23 @@ type AlterOperation interface {
     This interface extends the Node interface and includes a marker method to
     ensure type safety. All ALTER operations must implement both the visitor
     pattern and the marker method.
+
+
+### github.com/stokaro/ptah/core/ast.Expression
+
+package ast // import "github.com/stokaro/ptah/core/ast"
+
+type Expression interface {
+    // Has unexported methods.
+}
+    Expression is a boolean or scalar expression used in DML statements such as
+    the WHERE clause of a SELECT.
+
+    Expression is a sealed sum type: only the node types declared in this
+    package implement it. Sealing serves the query builder's core safety
+    property — a caller cannot smuggle a raw SQL string in as an expression,
+    and every value reaches the SQL through a BoundValue node (a placeholder),
+    never inlined.
 
 
 ### github.com/stokaro/ptah/core/ast.Node
@@ -489,12 +523,32 @@ type ParseError struct{ ... }
 type PlanError struct{ ... }
 type RenderError struct{ ... }
 
+## github.com/stokaro/ptah/core/query
+
+func And(exprs ...ast.Expression) ast.Expression
+func Asc(column string) ast.OrderByClause
+func Desc(column string) ast.OrderByClause
+func Eq(column string, value any) ast.Expression
+func Ge(column string, value any) ast.Expression
+func Gt(column string, value any) ast.Expression
+func In[T any](column string, values []T) ast.Expression
+func IsNotNull(column string) ast.Expression
+func IsNull(column string) ast.Expression
+func Le(column string, value any) ast.Expression
+func Lt(column string, value any) ast.Expression
+func Ne(column string, value any) ast.Expression
+func Not(expr ast.Expression) ast.Expression
+func Or(exprs ...ast.Expression) ast.Expression
+type SelectBuilder struct{ ... }
+    func Select(columns ...string) *SelectBuilder
+
 ## github.com/stokaro/ptah/core/renderer
 
 func GetOrderedCreateStatements(r *goschema.Database, dialect string) ([]string, error)
 func GetOrderedCreateStatementsWithCapabilities(r *goschema.Database, dialect string, caps capability.Capabilities) ([]string, error)
 func RenderSQL(dialect string, nodes ...ast.Node) (string, error)
 func RenderSQLWithCapabilities(dialect string, caps capability.Capabilities, nodes ...ast.Node) (string, error)
+func RenderSelect(stmt *ast.SelectStatement, dialect string) (string, []any, error)
 func SupportedDialects() []string
 func VisitorRenderSQL(r RenderVisitor, nodes ...ast.Node) (string, error)
 type RenderVisitor interface{ ... }

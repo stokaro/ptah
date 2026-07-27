@@ -67,6 +67,7 @@ export default defineConfig({
             { slug: 'reference/atlas-project-config' },
             { slug: 'reference/public-api' },
             { slug: 'reference/reusable-components' },
+            { slug: 'reference/query-builder' },
             { slug: 'reference/capabilities' },
             { slug: 'reference/dialect-notes' },
             { slug: 'reference/comparison' },
