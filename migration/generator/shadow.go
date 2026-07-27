@@ -281,8 +281,19 @@ func collectShadowMismatches(diff *types.SchemaDiff) []ShadowMismatch {
 			return []ShadowMismatch{{Kind: "extra_enum_value", Object: enum.EnumName + "." + value, Message: message}}
 		}
 	}
-	for _, indexName := range sortedStrings(diff.IndexesAdded) {
-		return []ShadowMismatch{{Kind: "missing_index", Object: indexName, Message: "missing index " + indexName}}
+	indexAdditions := sortedIndexRefs(diff.IndexAdditions())
+	if len(indexAdditions) > 0 {
+		ref := indexAdditions[0]
+		object := ref.Name
+		if ref.TableName != "" {
+			object = ref.TableName + "." + ref.Name
+		}
+		return []ShadowMismatch{{
+			Kind:    "missing_index",
+			Table:   ref.TableName,
+			Object:  object,
+			Message: "missing index " + object,
+		}}
 	}
 	for _, extensionName := range sortedStrings(diff.ExtensionsAdded) {
 		return []ShadowMismatch{{Kind: "missing_extension", Object: extensionName, Message: "missing extension " + extensionName}}
@@ -307,6 +318,17 @@ func collectShadowMismatches(diff *types.SchemaDiff) []ShadowMismatch {
 	}
 
 	return []ShadowMismatch{{Kind: "schema", Message: "schema differs"}}
+}
+
+func sortedIndexRefs(refs []types.IndexRef) []types.IndexRef {
+	sorted := append([]types.IndexRef(nil), refs...)
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].TableName != sorted[j].TableName {
+			return sorted[i].TableName < sorted[j].TableName
+		}
+		return sorted[i].Name < sorted[j].Name
+	})
+	return sorted
 }
 
 func sortedStrings(values []string) []string {

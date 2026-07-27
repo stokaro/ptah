@@ -450,6 +450,7 @@ func GetDependencyInfo(r *Database) string
 func IsValidSequenceType(asType string) bool
 func LoadManagedRows(rootDir string, md ManagedData) ([]map[string]any, error)
 func QualifyTableName(schema, table string) string
+func ResolveIndexTableNames(indexes []Index, tables []Table) []string
 func UniqueStructNames(embeddedFields []EmbeddedField) []string
 type CompositeType struct{ ... }
 type CompositeTypeField struct{ ... }
@@ -749,6 +750,7 @@ type SkipSet map[ChangeKind]struct{}
     func NewSkipSet(kinds ...ChangeKind) SkipSet
 type SkippedChange struct{ ... }
     func Apply(diff *types.SchemaDiff, skip SkipSet) (*types.SchemaDiff, []SkippedChange)
+    func ApplyForDialect(diff *types.SchemaDiff, skip SkipSet, dialect string) (*types.SchemaDiff, []SkippedChange)
 
 ## github.com/stokaro/ptah/migration/generator
 
@@ -1021,7 +1023,6 @@ type Planner interface{ ... }
 package planner // import "github.com/stokaro/ptah/migration/planner"
 
 type Planner interface {
-    GenerateMigrationAST(diff *types.SchemaDiff, generated *goschema.Database) []ast.Node
     GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error)
 }
     Planner defines the interface for database-specific migration planning.
@@ -1126,7 +1127,7 @@ type DomainDiff struct{ ... }
 type EnumDiff struct{ ... }
 type FunctionDiff struct{ ... }
 type GrantRef struct{ ... }
-type IndexRemovalInfo struct{ ... }
+type IndexRef struct{ ... }
 type MaterializedViewDiff struct{ ... }
 type RLSPolicyDiff struct{ ... }
 type RLSPolicyRef struct{ ... }

@@ -219,13 +219,13 @@ func (r *Reader) readColumnsByTable() (map[string][]types.DBColumn, error) {
 	query := formatSQLiteCatalogQuery(`
 		SELECT m.name, x.cid, x.name, x.type, x."notnull", x.dflt_value, x.pk, x.hidden, m.sql
 		FROM %s AS m
-		JOIN %s(m.name) AS x
+		JOIN pragma_table_xinfo(m.name, ?) AS x
 		WHERE m.type = 'table'
 		  AND m.name NOT LIKE 'sqlite_%%'
 		  AND m.name <> 'schema_migrations'
 		ORDER BY m.name, x.cid
-	`, r.schemaObject("sqlite_schema"), r.schemaObject("pragma_table_xinfo"))
-	rows, err := r.db.Query(query)
+	`, r.schemaObject("sqlite_schema"))
+	rows, err := r.db.Query(query, r.schema)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: read columns: %w", err)
 	}
@@ -361,13 +361,13 @@ func (r *Reader) readIndexEntriesByTable() (map[string][]sqliteIndexEntry, error
 	query := formatSQLiteCatalogQuery(`
 		SELECT m.name, il.seq, il.name, il."unique", il.origin, il.partial
 		FROM %s AS m
-		JOIN %s(m.name) AS il
+		JOIN pragma_index_list(m.name, ?) AS il
 		WHERE m.type = 'table'
 		  AND m.name NOT LIKE 'sqlite_%%'
 		  AND m.name <> 'schema_migrations'
 		ORDER BY m.name, il.seq
-	`, r.schemaObject("sqlite_schema"), r.schemaObject("pragma_index_list"))
-	rows, err := r.db.Query(query)
+	`, r.schemaObject("sqlite_schema"))
+	rows, err := r.db.Query(query, r.schema)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: read indexes: %w", err)
 	}
@@ -466,14 +466,14 @@ func (r *Reader) readIndexColumnsByIndex() (map[string]sqliteIndexColumns, error
 	query := formatSQLiteCatalogQuery(`
 		SELECT il.name, ix.seqno, ix.cid, ix.name, ix.key
 		FROM %s AS m
-		JOIN %s(m.name) AS il
-		JOIN %s(il.name) AS ix
+		JOIN pragma_index_list(m.name, ?) AS il
+		JOIN pragma_index_xinfo(il.name, ?) AS ix
 		WHERE m.type = 'table'
 		  AND m.name NOT LIKE 'sqlite_%%'
 		  AND m.name <> 'schema_migrations'
 		ORDER BY il.name, ix.seqno
-	`, r.schemaObject("sqlite_schema"), r.schemaObject("pragma_index_list"), r.schemaObject("pragma_index_xinfo"))
-	rows, err := r.db.Query(query)
+	`, r.schemaObject("sqlite_schema"))
+	rows, err := r.db.Query(query, r.schema, r.schema)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: read index columns: %w", err)
 	}
@@ -656,13 +656,13 @@ func (r *Reader) readForeignKeysByTable(tableDDLByName map[string]string) (map[s
 	query := formatSQLiteCatalogQuery(`
 		SELECT m.name, fk.id, fk.seq, fk."table", fk."from", fk."to", fk.on_update, fk.on_delete, fk.match
 		FROM %s AS m
-		JOIN %s(m.name) AS fk
+		JOIN pragma_foreign_key_list(m.name, ?) AS fk
 		WHERE m.type = 'table'
 		  AND m.name NOT LIKE 'sqlite_%%'
 		  AND m.name <> 'schema_migrations'
 		ORDER BY m.name, fk.id, fk.seq
-	`, r.schemaObject("sqlite_schema"), r.schemaObject("pragma_foreign_key_list"))
-	rows, err := r.db.Query(query)
+	`, r.schemaObject("sqlite_schema"))
+	rows, err := r.db.Query(query, r.schema)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: read foreign keys: %w", err)
 	}

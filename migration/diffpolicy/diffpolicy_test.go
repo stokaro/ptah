@@ -69,8 +69,7 @@ func TestApplyDropTableRemovesDependents(t *testing.T) {
 		TablesModified: []types.TableDiff{
 			{TableName: "orders", ColumnsRemoved: []string{"note"}},
 		},
-		IndexesRemoved: []string{"idx_users_email", "idx_orders_total"},
-		IndexesRemovedWithTables: []types.IndexRemovalInfo{
+		IndexesRemoved: []types.IndexRef{
 			{Name: "idx_users_email", TableName: "users"},
 			{Name: "idx_orders_total", TableName: "orders"},
 		},
@@ -100,9 +99,9 @@ func TestApplyDropTableRemovesDependents(t *testing.T) {
 	// The dropped table and only its dependents are removed; the kept table's
 	// removals (orders) and the schema-level grant survive.
 	c.Assert(got.TablesRemoved, qt.HasLen, 0)
-	c.Assert(got.IndexesRemoved, qt.DeepEquals, []string{"idx_orders_total"})
-	c.Assert(got.IndexesRemovedWithTables, qt.HasLen, 1)
-	c.Assert(got.IndexesRemovedWithTables[0].TableName, qt.Equals, "orders")
+	c.Assert(got.IndexesRemoved, qt.DeepEquals, []types.IndexRef{
+		{Name: "idx_orders_total", TableName: "orders"},
+	})
 	c.Assert(got.ConstraintsRemoved, qt.DeepEquals, []string{"chk_orders_total"})
 	c.Assert(got.ConstraintsRemovedWithTables, qt.HasLen, 1)
 	c.Assert(got.TriggersRemoved, qt.HasLen, 1)
@@ -147,16 +146,23 @@ func TestApplyDropIndexPreservesReplacements(t *testing.T) {
 	diff := &types.SchemaDiff{
 		// idx_rebuild is dropped and recreated (a replacement); idx_gone is a
 		// genuine standalone removal.
-		IndexesAdded:   []string{"idx_rebuild"},
-		IndexesRemoved: []string{"idx_rebuild", "idx_gone"},
+		IndexesAdded: []types.IndexRef{
+			{Name: "idx_rebuild", TableName: "users"},
+		},
+		IndexesRemoved: []types.IndexRef{
+			{Name: "idx_rebuild", TableName: "users"},
+			{Name: "idx_gone", TableName: "legacy"},
+		},
 	}
 
 	got, skipped := diffpolicy.Apply(diff, diffpolicy.NewSkipSet(diffpolicy.DropIndex))
 
-	c.Assert(got.IndexesRemoved, qt.DeepEquals, []string{"idx_rebuild"})
+	c.Assert(got.IndexesRemoved, qt.DeepEquals, []types.IndexRef{
+		{Name: "idx_rebuild", TableName: "users"},
+	})
 	c.Assert(skipped, qt.HasLen, 1)
 	c.Assert(skipped[0].Kind, qt.Equals, diffpolicy.DropIndex)
-	c.Assert(skipped[0].Object, qt.Equals, "idx_gone")
+	c.Assert(skipped[0].Object, qt.Equals, "legacy.idx_gone")
 }
 
 func TestApplyDropEnum(t *testing.T) {

@@ -25,7 +25,6 @@
 // The package provides a Planner interface for extensible dialect support:
 //
 //	type Planner interface {
-//		GenerateMigrationAST(diff *types.SchemaDiff, generated *goschema.Database) []ast.Node
 //		GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error)
 //	}
 //

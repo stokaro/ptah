@@ -25,7 +25,9 @@ func TestClassifySchemaDiff_HighestSeverity(t *testing.T) {
 				ColumnsRemoved: []string{"legacy_code"},
 			},
 		},
-		IndexesRemoved: []string{"idx_products_old"},
+		IndexesRemoved: []types.IndexRef{
+			{Name: "idx_products_old", TableName: "products"},
+		},
 		RLSPoliciesRemoved: []types.RLSPolicyRef{
 			{PolicyName: "tenant_isolation", TableName: "accounts"},
 		},

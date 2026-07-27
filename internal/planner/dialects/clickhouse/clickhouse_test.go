@@ -7,6 +7,7 @@ import (
 
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/internal/planner/dialects/clickhouse"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
@@ -58,7 +59,8 @@ func TestGenerateMigrationAST_AddTableDropTableAndAlter(t *testing.T) {
 	)
 
 	p := clickhouse.New()
-	nodes := p.GenerateMigrationAST(diff, gen)
+	nodes, err := p.GenerateMigrationASTChecked(diff, gen)
+	c.Assert(err, qt.IsNil)
 
 	// Expected order: CREATE events, ALTER existing (add), ALTER existing (modify),
 	// ALTER existing (drop), DROP legacy.
@@ -97,14 +99,17 @@ func TestGenerateMigrationAST_IndexAddRemove(t *testing.T) {
 		{StructName: "Event", Name: "idx_e_payload", Fields: []string{"payload"}},
 	}
 	diff := &types.SchemaDiff{
-		IndexesAdded: []string{"idx_e_payload"},
-		IndexesRemovedWithTables: []types.IndexRemovalInfo{
+		IndexesAdded: []types.IndexRef{
+			{Name: "idx_e_payload", TableName: "events"},
+		},
+		IndexesRemoved: []types.IndexRef{
 			{Name: "idx_old", TableName: "events"},
 		},
 	}
 
 	p := clickhouse.New()
-	nodes := p.GenerateMigrationAST(diff, gen)
+	nodes, err := p.GenerateMigrationASTChecked(diff, gen)
+	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
 	idx, ok := nodes[0].(*ast.IndexNode)
 	c.Assert(ok, qt.IsTrue, qt.Commentf("expected IndexNode, got %T", nodes[0]))
@@ -122,36 +127,29 @@ func TestGenerateMigrationAST_EnumChangesAreSurfacedAsComment(t *testing.T) {
 		EnumsAdded: []string{"status"},
 	}
 	p := clickhouse.New()
-	nodes := p.GenerateMigrationAST(diff, mkDB())
+	nodes, err := p.GenerateMigrationASTChecked(diff, mkDB())
+	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
 	comment, ok := nodes[0].(*ast.CommentNode)
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(comment.Text, qt.Contains, "enum changes")
 }
 
-// TestGenerateMigrationAST_IndexUnresolvedStructEmitsWarning covers the
-// planner's index-fallback fix: when the struct→table map can't resolve the
-// owning struct AND the annotation didn't carry an explicit `table=`, the
-// planner must NOT silently emit `ALTER TABLE <struct-name> ADD INDEX ...`
-// (which would reference a non-existent table). It must instead emit a
-// CommentNode warning and skip the index.
-func TestGenerateMigrationAST_IndexUnresolvedStructEmitsWarning(t *testing.T) {
+func TestGenerateMigrationASTChecked_IndexUnresolvedStructRejected(t *testing.T) {
 	c := qt.New(t)
 	gen := mkDB()
 	gen.Indexes = []goschema.Index{
 		{StructName: "GhostStruct", Name: "idx_orphan", Fields: []string{"x"}},
 	}
-	diff := &types.SchemaDiff{IndexesAdded: []string{"idx_orphan"}}
+	diff := &types.SchemaDiff{IndexesAdded: []types.IndexRef{
+		{Name: "idx_orphan", TableName: "ghosts"},
+	}}
 
 	p := clickhouse.New()
-	nodes := p.GenerateMigrationAST(diff, gen)
+	nodes, err := p.GenerateMigrationASTChecked(diff, gen)
 
-	c.Assert(nodes, qt.HasLen, 1)
-	comment, ok := nodes[0].(*ast.CommentNode)
-	c.Assert(ok, qt.IsTrue, qt.Commentf("expected CommentNode, got %T", nodes[0]))
-	c.Assert(comment.Text, qt.Contains, "WARNING")
-	c.Assert(comment.Text, qt.Contains, "idx_orphan")
-	c.Assert(comment.Text, qt.Contains, "GhostStruct")
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+	c.Assert(nodes, qt.IsNil)
 }
 
 // TestGenerateMigrationAST_IndexExplicitTableNameWins verifies that when an
@@ -164,10 +162,13 @@ func TestGenerateMigrationAST_IndexExplicitTableNameWins(t *testing.T) {
 	gen.Indexes = []goschema.Index{
 		{StructName: "DoesNotMatter", Name: "idx_cross", Fields: []string{"x"}, TableName: "events"},
 	}
-	diff := &types.SchemaDiff{IndexesAdded: []string{"idx_cross"}}
+	diff := &types.SchemaDiff{IndexesAdded: []types.IndexRef{
+		{Name: "idx_cross", TableName: "events"},
+	}}
 
 	p := clickhouse.New()
-	nodes := p.GenerateMigrationAST(diff, gen)
+	nodes, err := p.GenerateMigrationASTChecked(diff, gen)
+	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
 	idx, ok := nodes[0].(*ast.IndexNode)
 	c.Assert(ok, qt.IsTrue)
@@ -189,10 +190,13 @@ func TestGenerateMigrationAST_IndexTypeAndGranularityPropagate(t *testing.T) {
 			Granularity: 64,
 		},
 	}
-	diff := &types.SchemaDiff{IndexesAdded: []string{"idx_e_payload"}}
+	diff := &types.SchemaDiff{IndexesAdded: []types.IndexRef{
+		{Name: "idx_e_payload", TableName: "events"},
+	}}
 
 	p := clickhouse.New()
-	nodes := p.GenerateMigrationAST(diff, gen)
+	nodes, err := p.GenerateMigrationASTChecked(diff, gen)
+	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
 	idx, ok := nodes[0].(*ast.IndexNode)
 	c.Assert(ok, qt.IsTrue)
@@ -200,10 +204,32 @@ func TestGenerateMigrationAST_IndexTypeAndGranularityPropagate(t *testing.T) {
 	c.Assert(idx.Granularity, qt.Equals, 64)
 }
 
-func TestGenerateMigrationAST_NilDiffOrSchemaReturnsEmpty(t *testing.T) {
+func TestGenerateMigrationASTChecked_NilSchemaHappyPath(t *testing.T) {
 	c := qt.New(t)
 	p := clickhouse.New()
-	c.Assert(p.GenerateMigrationAST(nil, nil), qt.HasLen, 0)
-	c.Assert(p.GenerateMigrationAST(&types.SchemaDiff{}, nil), qt.HasLen, 0)
-	c.Assert(p.GenerateMigrationAST(nil, &goschema.Database{}), qt.HasLen, 0)
+
+	nodes, err := p.GenerateMigrationASTChecked(&types.SchemaDiff{}, nil)
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 0)
+}
+
+func TestGenerateMigrationASTChecked_NilDiffFailurePath(t *testing.T) {
+	c := qt.New(t)
+	p := clickhouse.New()
+	tests := []struct {
+		name      string
+		generated *goschema.Database
+	}{
+		{name: "nil target"},
+		{name: "empty target", generated: &goschema.Database{}},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			nodes, err := p.GenerateMigrationASTChecked(nil, test.generated)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+			c.Assert(nodes, qt.IsNil)
+		})
+	}
 }

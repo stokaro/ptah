@@ -739,14 +739,16 @@ func TestIndexes_HappyPath(t *testing.T) {
 			name: "index added",
 			generated: &goschema.Database{
 				Indexes: []goschema.Index{
-					{Name: "idx_user_email"},
+					{Name: "idx_user_email", TableName: "users"},
 				},
 			},
 			database: &types.DBSchema{
 				Indexes: []types.DBIndex{},
 			},
 			expected: &difftypes.SchemaDiff{
-				IndexesAdded: []string{"idx_user_email"},
+				IndexesAdded: []difftypes.IndexRef{
+					{Name: "idx_user_email", TableName: "users"},
+				},
 			},
 		},
 		{
@@ -756,11 +758,13 @@ func TestIndexes_HappyPath(t *testing.T) {
 			},
 			database: &types.DBSchema{
 				Indexes: []types.DBIndex{
-					{Name: "old_index", IsPrimary: false, IsUnique: false},
+					{Name: "old_index", TableName: "users", IsPrimary: false, IsUnique: false},
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				IndexesRemoved: []string{"old_index"},
+				IndexesRemoved: []difftypes.IndexRef{
+					{Name: "old_index", TableName: "users"},
+				},
 			},
 		},
 		{
@@ -791,20 +795,24 @@ func TestIndexes_HappyPath(t *testing.T) {
 			name: "multiple index changes",
 			generated: &goschema.Database{
 				Indexes: []goschema.Index{
-					{Name: "idx_user_email"},
-					{Name: "idx_user_name"},
+					{Name: "idx_user_email", TableName: "users"},
+					{Name: "idx_user_name", TableName: "users"},
 				},
 			},
 			database: &types.DBSchema{
 				Indexes: []types.DBIndex{
-					{Name: "idx_user_email", IsPrimary: false, IsUnique: false},
-					{Name: "old_index", IsPrimary: false, IsUnique: false},
-					{Name: "users_pkey", IsPrimary: true, IsUnique: false}, // Should be ignored
+					{Name: "idx_user_email", TableName: "users", IsPrimary: false, IsUnique: false},
+					{Name: "old_index", TableName: "users", IsPrimary: false, IsUnique: false},
+					{Name: "users_pkey", TableName: "users", IsPrimary: true, IsUnique: false}, // Should be ignored
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				IndexesAdded:   []string{"idx_user_name"},
-				IndexesRemoved: []string{"old_index"},
+				IndexesAdded: []difftypes.IndexRef{
+					{Name: "idx_user_name", TableName: "users"},
+				},
+				IndexesRemoved: []difftypes.IndexRef{
+					{Name: "old_index", TableName: "users"},
+				},
 			},
 		},
 		{
@@ -813,7 +821,7 @@ func TestIndexes_HappyPath(t *testing.T) {
 				nullsDistinct := false
 				return &goschema.Database{
 					Indexes: []goschema.Index{
-						{Name: "idx_users_c", StructName: "users", Fields: []string{"c"}, Unique: true, NullsDistinct: &nullsDistinct},
+						{Name: "idx_users_c", StructName: "users", TableName: "users", Fields: []string{"c"}, Unique: true, NullsDistinct: &nullsDistinct},
 					},
 				}
 			}(),
@@ -823,15 +831,19 @@ func TestIndexes_HappyPath(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				IndexesAdded:   []string{"idx_users_c"},
-				IndexesRemoved: []string{"idx_users_c"},
+				IndexesAdded: []difftypes.IndexRef{
+					{Name: "idx_users_c", TableName: "users"},
+				},
+				IndexesRemoved: []difftypes.IndexRef{
+					{Name: "idx_users_c", TableName: "users"},
+				},
 			},
 		},
 		{
 			name: "partial index condition changed",
 			generated: &goschema.Database{
 				Indexes: []goschema.Index{
-					{Name: "idx_users_email_active", StructName: "users", Fields: []string{"email"}, Condition: "deleted_at IS NULL"},
+					{Name: "idx_users_email_active", StructName: "users", TableName: "users", Fields: []string{"email"}, Condition: "deleted_at IS NULL"},
 				},
 			},
 			database: &types.DBSchema{
@@ -845,15 +857,19 @@ func TestIndexes_HappyPath(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				IndexesAdded:   []string{"idx_users_email_active"},
-				IndexesRemoved: []string{"idx_users_email_active"},
+				IndexesAdded: []difftypes.IndexRef{
+					{Name: "idx_users_email_active", TableName: "users"},
+				},
+				IndexesRemoved: []difftypes.IndexRef{
+					{Name: "idx_users_email_active", TableName: "users"},
+				},
 			},
 		},
 		{
 			name: "partial index condition outer parentheses match",
 			generated: &goschema.Database{
 				Indexes: []goschema.Index{
-					{Name: "idx_users_email_active", StructName: "users", Fields: []string{"email"}, Condition: "deleted_at IS NULL"},
+					{Name: "idx_users_email_active", StructName: "users", TableName: "users", Fields: []string{"email"}, Condition: "deleted_at IS NULL"},
 				},
 			},
 			database: &types.DBSchema{
@@ -872,7 +888,7 @@ func TestIndexes_HappyPath(t *testing.T) {
 			name: "partial index condition whitespace outside literals matches",
 			generated: &goschema.Database{
 				Indexes: []goschema.Index{
-					{Name: "idx_users_email_active", StructName: "users", Fields: []string{"email"}, Condition: "deleted_at   IS\nNULL"},
+					{Name: "idx_users_email_active", StructName: "users", TableName: "users", Fields: []string{"email"}, Condition: "deleted_at   IS\nNULL"},
 				},
 			},
 			database: &types.DBSchema{
@@ -891,7 +907,7 @@ func TestIndexes_HappyPath(t *testing.T) {
 			name: "partial index condition whitespace inside string literal differs",
 			generated: &goschema.Database{
 				Indexes: []goschema.Index{
-					{Name: "idx_users_email_active", StructName: "users", Fields: []string{"email"}, Condition: "status = 'a  b'"},
+					{Name: "idx_users_email_active", StructName: "users", TableName: "users", Fields: []string{"email"}, Condition: "status = 'a  b'"},
 				},
 			},
 			database: &types.DBSchema{
@@ -905,15 +921,19 @@ func TestIndexes_HappyPath(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				IndexesAdded:   []string{"idx_users_email_active"},
-				IndexesRemoved: []string{"idx_users_email_active"},
+				IndexesAdded: []difftypes.IndexRef{
+					{Name: "idx_users_email_active", TableName: "users"},
+				},
+				IndexesRemoved: []difftypes.IndexRef{
+					{Name: "idx_users_email_active", TableName: "users"},
+				},
 			},
 		},
 		{
 			name: "partial index condition postgres IN rewrite does not drift",
 			generated: &goschema.Database{
 				Indexes: []goschema.Index{
-					{Name: "idx_users_status", StructName: "users", Fields: []string{"status"}, Condition: "status IN ('active','pending')"},
+					{Name: "idx_users_status", StructName: "users", TableName: "users", Fields: []string{"status"}, Condition: "status IN ('active','pending')"},
 				},
 			},
 			database: &types.DBSchema{
@@ -987,8 +1007,8 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 			name: "explicitly defined unique indexes should be compared",
 			generated: &goschema.Database{
 				Indexes: []goschema.Index{
-					{Name: "tenants_slug_idx"},
-					{Name: "users_tenant_email_idx"},
+					{Name: "tenants_slug_idx", TableName: "tenants"},
+					{Name: "users_tenant_email_idx", TableName: "users"},
 				},
 			},
 			database: &types.DBSchema{
@@ -1003,8 +1023,8 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 			name: "missing explicitly defined unique indexes should be added",
 			generated: &goschema.Database{
 				Indexes: []goschema.Index{
-					{Name: "tenants_slug_idx"},
-					{Name: "users_tenant_email_idx"},
+					{Name: "tenants_slug_idx", TableName: "tenants"},
+					{Name: "users_tenant_email_idx", TableName: "users"},
 				},
 			},
 			database: &types.DBSchema{
@@ -1015,7 +1035,10 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				IndexesAdded: []string{"tenants_slug_idx", "users_tenant_email_idx"},
+				IndexesAdded: []difftypes.IndexRef{
+					{Name: "tenants_slug_idx", TableName: "tenants"},
+					{Name: "users_tenant_email_idx", TableName: "users"},
+				},
 			},
 		},
 		{
@@ -1056,8 +1079,8 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 			name: "mixed constraint-based and explicitly defined unique indexes",
 			generated: &goschema.Database{
 				Indexes: []goschema.Index{
-					{Name: "idx_users_custom_unique"},
-					{Name: "tenants_slug_idx"},
+					{Name: "idx_users_custom_unique", TableName: "users"},
+					{Name: "tenants_slug_idx", TableName: "tenants"},
 				},
 			},
 			database: &types.DBSchema{
@@ -1071,7 +1094,9 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				IndexesAdded: []string{"tenants_slug_idx"},
+				IndexesAdded: []difftypes.IndexRef{
+					{Name: "tenants_slug_idx", TableName: "tenants"},
+				},
 			},
 		},
 	}

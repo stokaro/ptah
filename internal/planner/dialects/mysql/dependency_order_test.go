@@ -85,8 +85,10 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyAddsReferencedUniqueIndexBefore
 			c := qt.New(t)
 			generated := referencedUniqueKeySchema()
 			diff := &types.SchemaDiff{
-				TablesAdded:  []string{"ptah_fk_order_children", "ptah_fk_order_parents"},
-				IndexesAdded: []string{"uq_ptah_fk_order_parents_code_idx"},
+				TablesAdded: []string{"ptah_fk_order_children", "ptah_fk_order_parents"},
+				IndexesAdded: []types.IndexRef{
+					{Name: "uq_ptah_fk_order_parents_code_idx", TableName: "ptah_fk_order_parents"},
+				},
 			}
 
 			sql := renderMySQLFamily(c, dialect, diff, generated)

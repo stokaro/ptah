@@ -24,7 +24,9 @@ func TestPlanGeneratedMigrationSpecs_SkipDropTable(t *testing.T) {
 	// migration is non-empty and we can assert the drop was omitted in place.
 	diff := &types.SchemaDiff{
 		TablesRemoved: []string{"legacy"},
-		IndexesAdded:  []string{"idx_users_email"},
+		IndexesAdded: []types.IndexRef{
+			{Name: "idx_users_email", TableName: "users"},
+		},
 	}
 
 	specs, assessments, err := planGeneratedMigrationSpecs(
@@ -67,7 +69,9 @@ func TestPlanGeneratedMigrationSpecs_SkipDropTableAlsoFiltersDown(t *testing.T) 
 	}
 	diff := &types.SchemaDiff{
 		TablesRemoved: []string{"legacy"},
-		IndexesAdded:  []string{"idx_users_email"},
+		IndexesAdded: []types.IndexRef{
+			{Name: "idx_users_email", TableName: "users"},
+		},
 	}
 
 	specs, _, err := planGeneratedMigrationSpecs(
@@ -99,12 +103,21 @@ func TestPlanGeneratedMigrationSpecs_SkipDropIndexKeepsRedefinition(t *testing.T
 	c := qt.New(t)
 
 	diff := &types.SchemaDiff{
-		IndexesAdded:   []string{"idx_users_email"},
-		IndexesRemoved: []string{"idx_users_email"},
+		IndexesAdded: []types.IndexRef{
+			{Name: "idx_users_email", TableName: "users"},
+		},
+		IndexesRemoved: []types.IndexRef{
+			{Name: "idx_users_email", TableName: "users"},
+		},
 	}
 	// users is populated, so the recreate is built concurrently and the split fires.
 	dbSchema := &dbschematypes.DBSchema{
 		Tables: []dbschematypes.DBTable{{Name: "users", Type: "BASE TABLE", EstimatedRows: 100}},
+		Indexes: []dbschematypes.DBIndex{{
+			Name:      "idx_users_email",
+			TableName: "users",
+			Columns:   []string{"email"},
+		}},
 	}
 
 	specs, _, err := planGeneratedMigrationSpecs(

@@ -68,14 +68,18 @@ func TestSchemaDiff_HasChanges(t *testing.T) {
 		{
 			name: "indexes added",
 			diff: &types.SchemaDiff{
-				IndexesAdded: []string{"idx_user_email"},
+				IndexesAdded: []types.IndexRef{
+					{Name: "idx_user_email", TableName: "users"},
+				},
 			},
 			expected: true,
 		},
 		{
 			name: "indexes removed",
 			diff: &types.SchemaDiff{
-				IndexesRemoved: []string{"old_index"},
+				IndexesRemoved: []types.IndexRef{
+					{Name: "old_index", TableName: "users"},
+				},
 			},
 			expected: true,
 		},

@@ -1028,12 +1028,6 @@
     },
     {
       "path": "migration/planner/planner_test.go",
-      "function": "TestGenerateMigrationAST",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "migration/planner/planner_test.go",
       "function": "TestGetPlanner",
       "kind": "if",
       "count": 1

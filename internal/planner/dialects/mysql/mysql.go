@@ -13,6 +13,7 @@ import (
 	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/internal/convert/fromschema"
 	"github.com/stokaro/ptah/internal/deporder"
+	"github.com/stokaro/ptah/internal/indexscope"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
@@ -47,7 +48,10 @@ const (
 //	}
 //
 //	// Generate migration AST nodes
-//	nodes := planner.GenerateMigrationAST(diff, generated)
+//	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+//	if err != nil {
+//		return err
+//	}
 //
 // # Thread Safety
 //
@@ -818,39 +822,41 @@ func foreignKeyTouchesTypeChange(fk affectedForeignKey, typeChanged map[string]m
 	return false
 }
 
-func (p *Planner) addNewIndexes(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	for _, indexName := range diff.IndexesAdded {
-		// Find the index definition
-		for _, idx := range generated.Indexes {
-			if idx.Name == indexName {
-				indexNode := ast.NewIndex(idx.Name, p.indexTableName(idx, generated), idx.Fields...)
-				if idx.Unique {
-					indexNode.Unique = true
-				}
-				if idx.Comment != "" {
-					indexNode.Comment = idx.Comment
-				}
-				result = append(result, indexNode)
-				break
+func (p *Planner) addNewIndexes(
+	result []ast.Node,
+	diff *types.SchemaDiff,
+	indexes *indexscope.Resolver,
+) ([]ast.Node, error) {
+	replacements := indexscope.NewConflictSet(p.targetDialect(), diff.IndexRemovals())
+	guardedDrops := p.capabilities().Has(capability.DropIndexIfExists)
+	for _, ref := range diff.IndexAdditions() {
+		index, err := indexes.Resolve(ref)
+		if err != nil {
+			return nil, err
+		}
+		for removal := range replacements.Matches(ref) {
+			dropIndexNode := ast.NewDropIndex(removal.Name).SetTable(removal.TableName)
+			if guardedDrops {
+				dropIndexNode.SetIfExists()
 			}
+			result = append(result, dropIndexNode)
 		}
+		indexNode := ast.NewIndex(index.Name, ref.TableName, index.Fields...)
+		if index.Unique {
+			indexNode.Unique = true
+		}
+		if index.Comment != "" {
+			indexNode.Comment = index.Comment
+		}
+		result = append(result, indexNode)
 	}
-	return result
+	return result, nil
 }
 
-func (p *Planner) indexTableName(index goschema.Index, generated *goschema.Database) string {
-	if index.TableName != "" {
-		return index.TableName
-	}
-	for _, table := range generated.Tables {
-		if table.StructName == index.StructName || table.Name == index.StructName || table.QualifiedName() == index.StructName {
-			return table.QualifiedName()
-		}
-	}
-	return index.StructName
-}
-
-func (p *Planner) removeIndexes(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeIndexes(
+	result []ast.Node,
+	diff *types.SchemaDiff,
+) []ast.Node {
 	// The IF EXISTS guard on DROP INDEX is capability-gated INTENT (issue
 	// #226): MariaDB accepts it, MySQL has no such form. The renderer
 	// additionally validates the flag against its own target set, so the
@@ -858,27 +864,16 @@ func (p *Planner) removeIndexes(result []ast.Node, diff *types.SchemaDiff) []ast
 	// always setting the flag) keeps the capability composable — disabling
 	// capability.DropIndexIfExists on a planner actually changes the plan.
 	guarded := p.capabilities().Has(capability.DropIndexIfExists)
-
-	// Use the detailed removal info if available (includes table names for MySQL/MariaDB)
-	if len(diff.IndexesRemovedWithTables) > 0 {
-		for _, indexInfo := range diff.IndexesRemovedWithTables {
-			dropIndexNode := ast.NewDropIndex(indexInfo.Name).
-				SetTable(indexInfo.TableName)
-			if guarded {
-				dropIndexNode.SetIfExists()
-			}
-			result = append(result, dropIndexNode)
+	replacements := indexscope.NewConflictSet(p.targetDialect(), diff.IndexAdditions())
+	for _, ref := range diff.IndexRemovals() {
+		if replacements.Contains(ref) {
+			continue
 		}
-	} else {
-		// Use name-only diff input when the caller did not populate
-		// table-qualified removals.
-		for _, indexName := range diff.IndexesRemoved {
-			dropIndexNode := ast.NewDropIndex(indexName)
-			if guarded {
-				dropIndexNode.SetIfExists()
-			}
-			result = append(result, dropIndexNode)
+		dropIndexNode := ast.NewDropIndex(ref.Name).SetTable(ref.TableName)
+		if guarded {
+			dropIndexNode.SetIfExists()
 		}
+		result = append(result, dropIndexNode)
 	}
 	return result
 }
@@ -903,7 +898,7 @@ func (p *Planner) handleEnumRemovals(result []ast.Node, diff *types.SchemaDiff) 
 	return result
 }
 
-// GenerateMigrationAST generates MySQL-specific migration AST statements from schema differences.
+// GenerateMigrationASTChecked generates MySQL-specific migration AST statements from schema differences.
 //
 // This method transforms the schema differences captured in the SchemaDiff into executable
 // MySQL AST statements that can be applied to bring the database schema in line with the target
@@ -949,7 +944,10 @@ func (p *Planner) handleEnumRemovals(result []ast.Node, diff *types.SchemaDiff) 
 //		},
 //	}
 //
-//	nodes := planner.GenerateMigrationAST(diff, generated)
+//	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+//	if err != nil {
+//		return err
+//	}
 //	// Results in:
 //	// CREATE TABLE users (id INT AUTO_INCREMENT PRIMARY KEY, status ENUM('active','inactive'));
 //
@@ -970,16 +968,18 @@ func (p *Planner) handleEnumRemovals(result []ast.Node, diff *types.SchemaDiff) 
 //
 // # Return Value
 //
-// Returns a slice of AST nodes representing SQL statements. Each node can be rendered
-// to SQL using a MySQL-specific visitor. Comments and warnings are included
-// as CommentNode instances for documentation and safety.
-func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	nodes, _ := p.GenerateMigrationASTChecked(diff, generated)
-	return nodes
-}
-
+// Returns a slice of AST nodes representing SQL statements or an error when
+// the diff cannot be planned safely. Each node can be rendered to SQL using a
+// MySQL-specific visitor.
 func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
 	var result []ast.Node
+	if generated == nil {
+		generated = &goschema.Database{}
+	}
+	indexes, err := indexscope.NewResolver(p.targetDialect(), diff, generated)
+	if err != nil {
+		return nil, err
+	}
 
 	if err := p.rejectUniqueIncludeConstraints(diff, generated); err != nil {
 		return nil, err
@@ -1012,7 +1012,6 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	fkPlan := p.planColumnTypeForeignKeyChanges(diff, generated)
 	result = append(result, fkPlan.drops...)
 
-	var err error
 	result, err = p.modifyExistingTables(result, diff, generated)
 	if err != nil {
 		return nil, err
@@ -1030,7 +1029,10 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	result = p.modifyExistingTriggers(result, diff, generated)
 
 	// 5. Add new indexes
-	result = p.addNewIndexes(result, diff, generated)
+	result, err = p.addNewIndexes(result, diff, indexes)
+	if err != nil {
+		return nil, err
+	}
 
 	// 5.5. Add new constraints (must be done after tables and columns exist).
 	// fkPlan.dropped suppresses the drop half of any FK modification whose

@@ -256,12 +256,16 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 
 	// Test that all fields are properly reversed
 	input := &types.SchemaDiff{
-		TablesAdded:       []string{"users", "posts"},
-		TablesRemoved:     []string{"old_table"},
-		EnumsAdded:        []string{"status_type"},
-		EnumsRemoved:      []string{"old_enum"},
-		IndexesAdded:      []string{"idx_users_email"},
-		IndexesRemoved:    []string{"idx_old"},
+		TablesAdded:   []string{"users", "posts"},
+		TablesRemoved: []string{"old_table"},
+		EnumsAdded:    []string{"status_type"},
+		EnumsRemoved:  []string{"old_enum"},
+		IndexesAdded: []types.IndexRef{
+			{Name: "idx_users_email", TableName: "users"},
+		},
+		IndexesRemoved: []types.IndexRef{
+			{Name: "idx_old", TableName: "old_table"},
+		},
 		ExtensionsAdded:   []string{"pg_trgm", "btree_gin"},
 		ExtensionsRemoved: []string{"postgis"},
 		FunctionsAdded:    []string{"get_tenant_id", "set_tenant_context"},
@@ -471,8 +475,9 @@ func TestReverseSchemaDiff_GrantOptionUpgradeDownRevokesOnlyOption(t *testing.T)
 	}
 
 	downDiff := reverseSchemaDiff(upDiff)
-	downSQL, err := renderer.RenderSQL("postgres", postgres.New().GenerateMigrationAST(downDiff, &goschema.Database{})...)
-
+	nodes, err := postgres.New().GenerateMigrationASTChecked(downDiff, &goschema.Database{})
+	c.Assert(err, qt.IsNil)
+	downSQL, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	downSQL = legacyRenderedSQL(downSQL)
 	c.Assert(downSQL, qt.Contains, "REVOKE GRANT OPTION FOR SELECT ON TABLE users FROM app_role;")

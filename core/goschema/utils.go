@@ -287,6 +287,109 @@ func resolveTableReference(tables []Table, structName, tableName string) *Table 
 	return match
 }
 
+type indexTableRefKey struct {
+	structName string
+	tableName  string
+}
+
+type indexTableMatch struct {
+	qualifiedName string
+	ambiguous     bool
+}
+
+type indexTableResolver struct {
+	empty             bool
+	firstByStruct     map[string]indexTableMatch
+	byStructReference map[indexTableRefKey]indexTableMatch
+	byPlainName       map[string]indexTableMatch
+	byQualifiedName   map[string]indexTableMatch
+}
+
+func newIndexTableResolver(tables []Table) *indexTableResolver {
+	resolver := &indexTableResolver{
+		empty:             len(tables) == 0,
+		firstByStruct:     make(map[string]indexTableMatch, len(tables)),
+		byStructReference: make(map[indexTableRefKey]indexTableMatch, len(tables)*2),
+		byPlainName:       make(map[string]indexTableMatch, len(tables)),
+		byQualifiedName:   make(map[string]indexTableMatch, len(tables)),
+	}
+	for _, table := range tables {
+		qualifiedName := table.QualifiedName()
+		addIndexTableMatch(resolver.firstByStruct, table.StructName, qualifiedName)
+		resolver.addStructReference(table.StructName, table.Name, qualifiedName)
+		resolver.addStructReference(table.StructName, qualifiedName, qualifiedName)
+		addIndexTableMatch(resolver.byPlainName, table.Name, qualifiedName)
+		addIndexTableMatch(resolver.byQualifiedName, qualifiedName, qualifiedName)
+	}
+	return resolver
+}
+
+func (r *indexTableResolver) addStructReference(structName, tableName, qualifiedName string) {
+	key := indexTableRefKey{structName: structName, tableName: tableName}
+	match, exists := r.byStructReference[key]
+	if !exists {
+		r.byStructReference[key] = indexTableMatch{qualifiedName: qualifiedName}
+		return
+	}
+	if match.qualifiedName == qualifiedName {
+		return
+	}
+	match.ambiguous = true
+	r.byStructReference[key] = match
+}
+
+func addIndexTableMatch(matches map[string]indexTableMatch, key, qualifiedName string) {
+	match, exists := matches[key]
+	if !exists {
+		matches[key] = indexTableMatch{qualifiedName: qualifiedName}
+		return
+	}
+	match.ambiguous = true
+	matches[key] = match
+}
+
+func (r *indexTableResolver) resolve(index Index) string {
+	tableName := strings.TrimSpace(index.TableName)
+	if tableName == "" {
+		match := r.firstByStruct[index.StructName]
+		if match.ambiguous {
+			return ""
+		}
+		return match.qualifiedName
+	}
+	key := indexTableRefKey{structName: index.StructName, tableName: tableName}
+	if match, exists := r.byStructReference[key]; exists {
+		if match.ambiguous {
+			return ""
+		}
+		return match.qualifiedName
+	}
+	if r.empty {
+		return tableName
+	}
+	match := r.byPlainName[tableName]
+	if strings.Contains(tableName, ".") {
+		match = r.byQualifiedName[tableName]
+	}
+	if match.ambiguous {
+		return ""
+	}
+	return match.qualifiedName
+}
+
+// ResolveIndexTableNames resolves every index owner in one indexed pass.
+// Explicit table references and struct-based associations are matched against
+// tables. An empty result entry means the owner is missing or ambiguous.
+// When tables is empty, an explicit owner is retained for indexes-only inputs.
+func ResolveIndexTableNames(indexes []Index, tables []Table) []string {
+	resolver := newIndexTableResolver(tables)
+	owners := make([]string, len(indexes))
+	for position, index := range indexes {
+		owners[position] = resolver.resolve(index)
+	}
+	return owners
+}
+
 // initializeDependencyMaps initializes the dependency tracking maps
 func initializeDependencyMaps(r *Database) {
 	// Initialize dependencies map for all tables
@@ -841,7 +944,7 @@ func isFunctionInSorted(function Function, sorted []Function) bool {
 // The deduplication process handles:
 //   - Tables: Deduplicated by table name
 //   - Fields: Deduplicated by struct name + field name combination
-//   - Indexes: Deduplicated by struct name + index name combination
+//   - Indexes: Deduplicated by resolved table + index name combination
 //   - Enums: Deduplicated by enum name
 //   - Embedded Fields: Deduplicated by struct name + embedded type name combination
 //   - Views and materialized views: Deduplicated by name
@@ -885,17 +988,7 @@ func Deduplicate(r *Database) {
 	}
 	r.Fields = deduplicatedFields
 
-	// Deduplicate indexes by struct name and index name - preserve order
-	indexSeen := make(map[string]bool)
-	var deduplicatedIndexes []Index
-	for _, index := range r.Indexes {
-		key := index.StructName + "." + index.Name
-		if !indexSeen[key] {
-			indexSeen[key] = true
-			deduplicatedIndexes = append(deduplicatedIndexes, index)
-		}
-	}
-	r.Indexes = deduplicatedIndexes
+	r.Indexes = deduplicateIndexes(r.Indexes, r.Tables)
 
 	// Deduplicate enums by name - preserve order
 	enumSeen := make(map[string]bool)
@@ -992,6 +1085,30 @@ func deduplicateSchemas(schemas []Schema) []Schema {
 			seen[schema.Name] = true
 			deduplicated = append(deduplicated, schema)
 		}
+	}
+	return deduplicated
+}
+
+func deduplicateIndexes(indexes []Index, tables []Table) []Index {
+	type identity struct {
+		tableName string
+		indexName string
+	}
+
+	seen := make(map[identity]struct{}, len(indexes))
+	deduplicated := make([]Index, 0, len(indexes))
+	tableNames := ResolveIndexTableNames(indexes, tables)
+	for position, index := range indexes {
+		tableName := tableNames[position]
+		if tableName == "" {
+			tableName = index.StructName
+		}
+		key := identity{tableName: tableName, indexName: index.Name}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		deduplicated = append(deduplicated, index)
 	}
 	return deduplicated
 }

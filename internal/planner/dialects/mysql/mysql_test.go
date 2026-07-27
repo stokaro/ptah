@@ -48,7 +48,8 @@ func TestPlanner_GenerateMigrationAST_EnumsAdded(t *testing.T) {
 			c := qt.New(t)
 
 			planner := mysql.New()
-			nodes := planner.GenerateMigrationAST(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.generated)
+			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
 		})
@@ -97,7 +98,8 @@ func TestPlanner_GenerateMigrationAST_EnumsModified(t *testing.T) {
 			c := qt.New(t)
 
 			planner := mysql.New()
-			nodes := planner.GenerateMigrationAST(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.generated)
+			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
 		})
@@ -169,7 +171,8 @@ func TestPlanner_GenerateMigrationAST_TablesAdded(t *testing.T) {
 			c := qt.New(t)
 
 			planner := mysql.New()
-			nodes := planner.GenerateMigrationAST(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.generated)
+			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
 		})
@@ -302,7 +305,8 @@ func TestPlanner_GenerateMigrationAST_TablesModified(t *testing.T) {
 			c := qt.New(t)
 
 			planner := mysql.New()
-			nodes := planner.GenerateMigrationAST(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.generated)
+			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
 		})
@@ -319,11 +323,13 @@ func TestPlanner_GenerateMigrationAST_IndexesAdded(t *testing.T) {
 		{
 			name: "single index added",
 			diff: &types.SchemaDiff{
-				IndexesAdded: []string{"idx_users_email"},
+				IndexesAdded: []types.IndexRef{
+					{Name: "idx_users_email", TableName: "users"},
+				},
 			},
 			generated: &goschema.Database{
 				Indexes: []goschema.Index{
-					{Name: "idx_users_email", StructName: "users", Fields: []string{"email"}},
+					{Name: "idx_users_email", StructName: "users", TableName: "users", Fields: []string{"email"}},
 				},
 			},
 			expected: func(nodes []ast.Node) bool {
@@ -346,7 +352,8 @@ func TestPlanner_GenerateMigrationAST_IndexesAdded(t *testing.T) {
 			c := qt.New(t)
 
 			planner := mysql.New()
-			nodes := planner.GenerateMigrationAST(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.generated)
+			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
 		})
@@ -384,7 +391,8 @@ func TestPlanner_GenerateMigrationAST_EnumsRemoved(t *testing.T) {
 			c := qt.New(t)
 
 			planner := mysql.New()
-			nodes := planner.GenerateMigrationAST(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.generated)
+			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
 		})
@@ -421,7 +429,8 @@ func TestPlanner_AddNewTables_WithEmbeddedFields(t *testing.T) {
 	}
 
 	planner := mysql.New()
-	result := planner.GenerateMigrationAST(diff, generated)
+	result, err := planner.GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(result, qt.HasLen, 1)
 

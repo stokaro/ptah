@@ -63,10 +63,18 @@ interceptor, splitter, directive, or transaction path. Observers receive
 structured source and statement metadata after execution but no connection
 handle, so they cannot alter the migrator execution path.
 
+`migration/schemadiff/types.SchemaDiff` stores index additions and removals as
+canonical `[]IndexRef` fields. Every index reference includes its owning table.
+`migration/planner.Planner` exposes only checked planning; malformed references,
+unresolved additions, and target index-namespace conflicts fail before SQL is
+returned.
+
 Public failures from these packages should use `core/ptaherr` where the caller
 can reasonably branch on the error. In particular, annotation failures should
 support `errors.As(err, *ptaherr.ParseError)`, and unsupported dialect failures
-should support `errors.Is(err, ptaherr.ErrUnsupportedDialect)`.
+should support `errors.Is(err, ptaherr.ErrUnsupportedDialect)`. Invalid schema
+diffs rejected during planning support
+`errors.Is(err, ptaherr.ErrInvalidSchemaDiff)`.
 
 ## Provisional Surface
 

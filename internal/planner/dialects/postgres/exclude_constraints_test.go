@@ -32,7 +32,8 @@ func TestPlanner_GenerateMigrationAST_CompositeForeignKeyAddition(t *testing.T) 
 		},
 	}
 
-	nodes := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &goschema.Database{})
+	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
@@ -190,7 +191,8 @@ func TestPlanner_GenerateMigrationAST_ConstraintsAdded(t *testing.T) {
 			c := qt.New(t)
 
 			planner := postgres.New()
-			nodes := planner.GenerateMigrationAST(tt.diff, tt.generated)
+			nodes, err := planner.GenerateMigrationASTChecked(tt.diff, tt.generated)
+			c.Assert(err, qt.IsNil)
 
 			// Convert AST nodes to SQL for verification
 			sql, err := renderer.RenderSQL("postgres", nodes...)
@@ -251,7 +253,8 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_ScopesDropToHostTable(t *testin
 			},
 		}
 
-		nodes := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
+		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &goschema.Database{})
+		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
@@ -304,7 +307,8 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_ScopesDropToHostTable(t *testin
 			},
 		}
 
-		nodes := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
+		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &goschema.Database{})
+		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
@@ -351,7 +355,8 @@ func TestPlanner_GenerateMigrationAST_ModifiedNonFKConstraint_ScopesDropToHostTa
 			},
 		}
 
-		nodes := postgres.New().GenerateMigrationAST(diff, generated)
+		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
@@ -393,7 +398,8 @@ func TestPlanner_GenerateMigrationAST_ModifiedNonFKConstraint_ScopesDropToHostTa
 			},
 		}
 
-		nodes := postgres.New().GenerateMigrationAST(diff, generated)
+		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
@@ -447,7 +453,8 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 			},
 		}
 
-		nodes := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
+		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &goschema.Database{})
+		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
@@ -500,7 +507,8 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 			},
 		}
 
-		nodes := postgres.New().GenerateMigrationAST(diff, generated)
+		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
@@ -557,7 +565,8 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_ScopesToHostWhenAddedHostsAbsen
 		},
 	}
 
-	nodes := postgres.New().GenerateMigrationAST(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
@@ -584,7 +593,8 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved(t *testing.T) {
 	generated := &goschema.Database{}
 
 	pl := postgres.New()
-	nodes := pl.GenerateMigrationAST(diff, generated)
+	nodes, err := pl.GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
 
 	// One DO block per removed constraint. The previous implementation emitted
 	// four nodes (create/exec/drop/drop) but none of them actually invoked the
@@ -640,7 +650,8 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_EscapesSingleQuoteInNam
 		ConstraintsRemoved: []string{"don't_drop"},
 	}
 
-	nodes := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &goschema.Database{})
+	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
 
 	sql, err := renderer.RenderSQL("postgres", nodes[0])
@@ -682,7 +693,8 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved_RejectsUnsafeName(t *te
 		t.Run(tc.input, func(t *testing.T) {
 			c := qt.New(t)
 			diff := &types.SchemaDiff{ConstraintsRemoved: []string{tc.input}}
-			nodes := postgres.New().GenerateMigrationAST(diff, &goschema.Database{})
+			nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &goschema.Database{})
+			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)
 
 			sql, err := renderer.RenderSQL("postgres", nodes[0])

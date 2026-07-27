@@ -168,7 +168,8 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 				diff = &types.SchemaDiff{TablesAdded: tablesAdded}
 			}
 
-			nodes := postgres.New().GenerateMigrationAST(diff, tt.generated)
+			nodes, err := postgres.New().GenerateMigrationASTChecked(diff, tt.generated)
+			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
 			sql = legacyRenderedSQL(sql)

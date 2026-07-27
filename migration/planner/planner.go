@@ -26,7 +26,6 @@
 // The Planner interface defines the contract for all dialect-specific migration generators:
 //
 //	type Planner interface {
-//		GenerateMigrationAST(diff *types.SchemaDiff, generated *goschema.Database) []ast.Node
 //		GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error)
 //	}
 //
@@ -149,7 +148,6 @@ var plannerRegistry struct {
 //		return nodes, nil
 //	}
 type Planner interface {
-	GenerateMigrationAST(diff *types.SchemaDiff, generated *goschema.Database) []ast.Node
 	GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error)
 }
 
@@ -161,9 +159,10 @@ type Options struct {
 	// ConcurrentIndexes requests PostgreSQL CREATE INDEX CONCURRENTLY for all
 	// newly added indexes when the target supports it.
 	ConcurrentIndexes bool
-	// ConcurrentIndexNames requests PostgreSQL CREATE INDEX CONCURRENTLY for
-	// exactly these newly added index names when the target supports it.
-	ConcurrentIndexNames []string
+	// ConcurrentIndexRefs requests PostgreSQL CREATE INDEX CONCURRENTLY for
+	// exactly these table-qualified newly added indexes when the target
+	// supports it.
+	ConcurrentIndexRefs []types.IndexRef
 	// SkipChangeKinds lists destructive change kinds the planner must omit from
 	// the plan (emitting a clearly-marked comment in their place) instead of
 	// deferring to the coarse destructive gate. Currently honored by the
@@ -331,8 +330,8 @@ func registerBuiltInPlanners() error {
 
 func registerPostgresFamilyPlanner(dialect string) error {
 	return registerPlannerFactory(dialect, func(opts Options) Planner {
-		plan := postgres.NewWithCapabilities(opts.CapabilitiesFor(dialect)).
-			WithConcurrentIndexNames(opts.ConcurrentIndexNames...).
+		plan := postgres.NewForDialect(dialect, opts.CapabilitiesFor(dialect)).
+			WithConcurrentIndexRefs(opts.ConcurrentIndexRefs...).
 			WithSkipChangeKinds(opts.SkipChangeKinds...)
 		if opts.ConcurrentIndexes {
 			return plan.WithConcurrentIndexes()
@@ -343,7 +342,7 @@ func registerPostgresFamilyPlanner(dialect string) error {
 
 func registerMySQLFamilyPlanner(dialect string) error {
 	return registerPlannerFactory(dialect, func(opts Options) Planner {
-		return mysql.NewWithCapabilities(opts.CapabilitiesFor(dialect))
+		return mysql.NewForDialect(dialect, opts.CapabilitiesFor(dialect))
 	})
 }
 
@@ -408,7 +407,7 @@ func normalizeRegistryDialect(dialect string) string {
 //
 // This is a convenience function that combines planner creation and AST generation
 // into a single call. It internally uses GetPlanner to obtain the appropriate
-// dialect-specific planner and then calls GenerateMigrationAST on it.
+// dialect-specific planner and then calls GenerateMigrationASTChecked on it.
 //
 // # Parameters
 //

@@ -1,14 +1,19 @@
 package types
 
-// IndexRemovalInfo contains information about an index that needs to be removed,
-// including both the index name and the table it belongs to.
-// This is needed for databases like MySQL/MariaDB that require the table name
-// in DROP INDEX statements.
-type IndexRemovalInfo struct {
-	// Name is the name of the index to be removed
+import (
+	"slices"
+	"strings"
+)
+
+// IndexRef identifies an index together with its owning table.
+// Table-qualified identity is required for dialects such as MySQL and MariaDB,
+// where index names are scoped to a table rather than the database.
+type IndexRef struct {
+	// Name is the raw, unqualified index identifier. TableName carries the
+	// namespace used by schema-scoped dialects.
 	Name string `json:"name"`
 
-	// TableName is the name of the table that the index belongs to
+	// TableName is the qualified name of the table that owns the index.
 	TableName string `json:"table_name"`
 }
 
@@ -20,7 +25,7 @@ type IndexRemovalInfo struct {
 // dropped with `ALTER TABLE <table> DROP FOREIGN KEY <name>` rather than
 // `DROP CONSTRAINT`. The plain ConstraintsRemoved name list discards the table
 // name, which the comparator does know at diff time, so it is preserved here in
-// parallel (mirroring IndexesRemovedWithTables).
+// parallel.
 type ConstraintRemovalInfo struct {
 	// Name is the name of the constraint to be removed
 	Name string `json:"name"`
@@ -138,18 +143,14 @@ type SchemaDiff struct {
 	// schemas but have different values (additions/removals)
 	EnumsModified []EnumDiff `json:"enums_modified"`
 
-	// IndexesAdded contains names of indexes that exist in the target schema
-	// but not in the current database schema
-	IndexesAdded []string `json:"indexes_added"`
+	// IndexesAdded contains table-qualified indexes that exist in the target
+	// schema but not in the current database schema.
+	IndexesAdded []IndexRef `json:"indexes_added"`
 
-	// IndexesRemoved contains names of indexes that exist in the current database
-	// but not in the target schema (may affect query plans or uniqueness protections)
-	IndexesRemoved []string `json:"indexes_removed"`
-
-	// IndexesRemovedWithTables contains detailed information about indexes that need to be removed,
-	// including both index name and table name. This is used by database dialects that require
-	// table names in DROP INDEX statements (e.g., MySQL/MariaDB).
-	IndexesRemovedWithTables []IndexRemovalInfo `json:"indexes_removed_with_tables"`
+	// IndexesRemoved contains table-qualified indexes that exist in the current
+	// database but not in the target schema. Removing them may affect query
+	// plans or uniqueness protections.
+	IndexesRemoved []IndexRef `json:"indexes_removed"`
 
 	// ExtensionsAdded contains names of PostgreSQL extensions that exist in the target schema
 	// but not in the current database schema
@@ -330,7 +331,10 @@ type SchemaDiff struct {
 //	diff := CompareSchemas(generated, database)
 //	if diff.HasChanges() {
 //		log.Println("Schema changes detected, generating migration...")
-//		statements := diff.GenerateMigrationAST(generated, "postgres")
+//		statements, err := planner.GenerateSchemaDiffAST(diff, generated, "postgres")
+//		if err != nil {
+//			return err
+//		}
 //		// Apply migration statements...
 //	} else {
 //		log.Println("No schema changes detected")
@@ -369,6 +373,40 @@ func (d *SchemaDiff) hasEnumChanges() bool {
 func (d *SchemaDiff) hasIndexChanges() bool {
 	return len(d.IndexesAdded) > 0 ||
 		len(d.IndexesRemoved) > 0
+}
+
+// IndexAdditions returns a copy of the added index references.
+func (d *SchemaDiff) IndexAdditions() []IndexRef {
+	return slices.Clone(d.IndexesAdded)
+}
+
+// IndexRemovals returns a copy of the removed index references.
+func (d *SchemaDiff) IndexRemovals() []IndexRef {
+	return slices.Clone(d.IndexesRemoved)
+}
+
+// SetIndexAdditions replaces the added index references with a sorted copy.
+func (d *SchemaDiff) SetIndexAdditions(refs []IndexRef) {
+	d.IndexesAdded = sortedIndexRefs(refs)
+}
+
+// SetIndexRemovals replaces the removed index references with a sorted copy.
+func (d *SchemaDiff) SetIndexRemovals(refs []IndexRef) {
+	d.IndexesRemoved = sortedIndexRefs(refs)
+}
+
+func sortedIndexRefs(refs []IndexRef) []IndexRef {
+	if len(refs) == 0 {
+		return nil
+	}
+	sorted := slices.Clone(refs)
+	slices.SortFunc(sorted, func(a, b IndexRef) int {
+		if byTable := strings.Compare(a.TableName, b.TableName); byTable != 0 {
+			return byTable
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
+	return sorted
 }
 
 // hasExtensionChanges returns true if there are any extension-related changes

@@ -25,7 +25,8 @@ var mysqlFamilyDialects = []string{"mysql", "mariadb"}
 // renderMySQLFamily generates the migration AST once per invocation and
 // renders it with the given dialect.
 func renderMySQLFamily(c *qt.C, dialect string, diff *types.SchemaDiff, generated *goschema.Database) string {
-	nodes := mysql.New().GenerateMigrationAST(diff, generated)
+	nodes, err := mysql.New().GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL(dialect, nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
@@ -80,8 +81,7 @@ func TestPlanner_GenerateMigrationAST_ForeignKeyIndexesDropAfterConstraints(t *t
 					{Name: "fk_users_account_id", TableName: "users", Type: "FOREIGN KEY"},
 					{Name: "fk_users_manager_id", TableName: "users", Type: "FOREIGN KEY"},
 				},
-				IndexesRemoved: []string{"fk_users_account_id", "fk_users_manager_id"},
-				IndexesRemovedWithTables: []types.IndexRemovalInfo{
+				IndexesRemoved: []types.IndexRef{
 					{Name: "fk_users_account_id", TableName: "users"},
 					{Name: "fk_users_manager_id", TableName: "users"},
 				},

@@ -529,9 +529,10 @@ func (p IndexPart) Reference() string {
 // depending on the database system capabilities. PostgreSQL-specific
 // features like partial indexes and operator classes are also supported.
 type IndexNode struct {
-	// Name is the index name
+	// Name is the raw, unqualified index identifier. Dialect renderers derive
+	// its namespace from Table.
 	Name string
-	// Table is the name of the table to index
+	// Table is the qualified name of the table to index.
 	Table string
 	// Columns contains the list of column names to include in the index
 	Columns []string
@@ -1040,9 +1041,11 @@ func (n *IndexNode) SetIfNotExists() *IndexNode {
 // and dialect-specific features. Different databases have different
 // syntax for dropping indexes (some require table name, others don't).
 type DropIndexNode struct {
-	// Name is the name of the index to drop
+	// Name is the raw, unqualified index identifier. Dialect renderers derive
+	// its namespace from Table.
 	Name string
-	// Table is the name of the table (required for some databases like MySQL)
+	// Table is the qualified owning table. It is required for every planned
+	// index drop even when the target SQL names the index by schema.
 	Table string
 	// IfExists indicates whether to use IF EXISTS clause
 	IfExists bool

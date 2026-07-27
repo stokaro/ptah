@@ -84,7 +84,9 @@ func TestPlannerAddsColumnsAndIndexes(t *testing.T) {
 		TablesModified: []types.TableDiff{
 			{TableName: "users", ColumnsAdded: []string{"display_name"}},
 		},
-		IndexesAdded: []string{"idx_users_display_name"},
+		IndexesAdded: []types.IndexRef{
+			{Name: "idx_users_display_name", TableName: "users"},
+		},
 	}
 
 	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.SQLite)
@@ -300,8 +302,10 @@ func TestPlannerDropsIndexesAndTables(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &types.SchemaDiff{
-		IndexesRemovedWithTables: []types.IndexRemovalInfo{{Name: "idx_users_email", TableName: "users"}},
-		TablesRemoved:            []string{"old_users"},
+		IndexesRemoved: []types.IndexRef{
+			{Name: "idx_users_email", TableName: "users"},
+		},
+		TablesRemoved: []string{"old_users"},
 	}
 
 	sql, err := planner.GenerateSchemaDiffSQL(diff, &goschema.Database{}, platform.SQLite)

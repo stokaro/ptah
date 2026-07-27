@@ -8,9 +8,11 @@ import (
 
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/internal/convert/fromschema"
 	"github.com/stokaro/ptah/internal/deporder"
+	"github.com/stokaro/ptah/internal/indexscope"
 	"github.com/stokaro/ptah/migration/diffpolicy"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
@@ -50,7 +52,10 @@ const (
 //	}
 //
 //	// Generate migration AST nodes
-//	nodes := planner.GenerateMigrationAST(diff, generated)
+//	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+//	if err != nil {
+//		return err
+//	}
 //
 // # Thread Safety
 //
@@ -60,13 +65,12 @@ const (
 // without shared state.
 type Planner struct {
 	// caps describes what the concrete target accepts (issue #225/#226); the
-	// nil zero value defaults to the current PostgreSQL line preset
-	// (capability.Postgres17) via the capabilities accessor, so a bare
-	// &Planner{} behaves exactly like New(). Version presets live in the
-	// capability package — capability.Postgres17 for PostgreSQL 17+,
-	// capability.Postgres16 for PostgreSQL 14–16,
-	// capability.Postgres13 for 12–13.
+	// nil zero value defaults to the current target-dialect preset via the
+	// capabilities accessor. Version presets live in the capability package.
 	caps capability.Capabilities
+	// dialect selects namespace and diff-policy semantics within the shared
+	// PostgreSQL-family planner. The zero value defaults to PostgreSQL.
+	dialect string
 	// concurrentIndexes requests CREATE INDEX CONCURRENTLY for new indexes.
 	// It is a POLICY choice (concurrent builds cannot run inside a
 	// transaction, so generator callers split such statements into
@@ -75,11 +79,10 @@ type Planner struct {
 	// postgres-compatible preset without it (CockroachDB, issue #171) keeps
 	// plain CREATE INDEX no matter the policy.
 	concurrentIndexes bool
-	// concurrentIndexNames requests CREATE INDEX CONCURRENTLY only for the
-	// listed newly added index names. This lets the generator target indexes
-	// on populated existing tables without changing indexes on newly-created
-	// tables.
-	concurrentIndexNames map[string]struct{}
+	// concurrentIndexRefs requests CREATE INDEX CONCURRENTLY only for the
+	// listed newly added indexes. Table-qualified identity lets the generator
+	// target one of two same-named indexes in different schemas.
+	concurrentIndexRefs map[types.IndexRef]struct{}
 	// skip lists destructive change kinds this planner omits from the plan,
 	// emitting a clearly-marked comment in their place. See diffpolicy.
 	skip diffpolicy.SkipSet
@@ -98,7 +101,18 @@ func New() *Planner {
 // cloned, so later mutations by the caller cannot affect the planner. A nil
 // set defaults to the capability.Postgres17 preset.
 func NewWithCapabilities(caps capability.Capabilities) *Planner {
-	return &Planner{caps: caps.Clone()}
+	return NewForDialect(DialectName, caps)
+}
+
+// NewForDialect returns a PostgreSQL-family planner for one concrete dialect.
+// The dialect controls object namespace and diff-policy semantics while caps
+// control the SQL features available on the selected server version.
+func NewForDialect(dialect string, caps capability.Capabilities) *Planner {
+	normalized := platform.NormalizeDialect(dialect)
+	if normalized == "" {
+		normalized = DialectName
+	}
+	return &Planner{caps: caps.Clone(), dialect: normalized}
 }
 
 // capabilities returns the planner's capability set, defaulting the nil zero
@@ -107,9 +121,16 @@ func NewWithCapabilities(caps capability.Capabilities) *Planner {
 // zero-value surprise.
 func (p *Planner) capabilities() capability.Capabilities {
 	if p.caps == nil {
-		return capability.Postgres17()
+		return capability.ForDialect(p.targetDialect())
 	}
 	return p.caps
+}
+
+func (p *Planner) targetDialect() string {
+	if p.dialect == "" {
+		return DialectName
+	}
+	return p.dialect
 }
 
 // WithConcurrentIndexes returns a copy of the planner that emits
@@ -124,19 +145,18 @@ func (p *Planner) WithConcurrentIndexes() *Planner {
 	return &cp
 }
 
-// WithConcurrentIndexNames returns a copy of the planner that emits
+// WithConcurrentIndexRefs returns a copy of the planner that emits
 // CREATE [UNIQUE] INDEX CONCURRENTLY only for the listed newly added indexes,
 // provided the target capability set includes capability.CreateIndexConcurrently.
-func (p *Planner) WithConcurrentIndexNames(indexNames ...string) *Planner {
+func (p *Planner) WithConcurrentIndexRefs(indexRefs ...types.IndexRef) *Planner {
 	cp := *p
-	cp.concurrentIndexNames = maps.Clone(p.concurrentIndexNames)
-	if cp.concurrentIndexNames == nil {
-		cp.concurrentIndexNames = make(map[string]struct{}, len(indexNames))
+	cp.concurrentIndexRefs = maps.Clone(p.concurrentIndexRefs)
+	if cp.concurrentIndexRefs == nil {
+		cp.concurrentIndexRefs = make(map[types.IndexRef]struct{}, len(indexRefs))
 	}
-	for _, indexName := range indexNames {
-		indexName = strings.TrimSpace(indexName)
-		if indexName != "" {
-			cp.concurrentIndexNames[indexName] = struct{}{}
+	for _, ref := range indexRefs {
+		if strings.TrimSpace(ref.Name) != "" && strings.TrimSpace(ref.TableName) != "" {
+			cp.concurrentIndexRefs[ref] = struct{}{}
 		}
 	}
 	return &cp
@@ -159,11 +179,11 @@ func (p *Planner) WithSkipChangeKinds(kinds ...diffpolicy.ChangeKind) *Planner {
 	return &cp
 }
 
-func (p *Planner) usesConcurrentIndex(indexName string) bool {
+func (p *Planner) usesConcurrentIndex(ref types.IndexRef) bool {
 	if p.concurrentIndexes {
 		return true
 	}
-	_, ok := p.concurrentIndexNames[indexName]
+	_, ok := p.concurrentIndexRefs[ref]
 	return ok
 }
 
@@ -832,69 +852,66 @@ func (p *Planner) removeTableColumns(result []ast.Node, diff *types.SchemaDiff) 
 	return result
 }
 
-func (p *Planner) addNewIndexes(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	// Create a mapping from struct names to table names for proper index table resolution
-	structToTableMap := make(map[string]string)
-	for _, table := range generated.Tables {
-		structToTableMap[table.StructName] = table.QualifiedName()
-	}
-	replacementIndexes := stringSet(diff.IndexesRemoved)
+func (p *Planner) addNewIndexes(
+	result []ast.Node,
+	diff *types.SchemaDiff,
+	indexes *indexscope.Resolver,
+) ([]ast.Node, error) {
+	indexRemovals := indexscope.NewConflictSet(p.targetDialect(), diff.IndexRemovals())
 	guardedDrops := p.capabilities().Has(capability.DropIndexIfExists)
 
-	for _, indexName := range diff.IndexesAdded {
-		// Find the index definition
-		for _, idx := range generated.Indexes {
-			if idx.Name == indexName {
-				if _, replacing := replacementIndexes[indexName]; replacing {
-					dropIndexNode := ast.NewDropIndex(indexName)
-					if guardedDrops {
-						dropIndexNode.SetIfExists()
-					}
-					result = append(result, dropIndexNode)
-				}
-				// Use enhanced index creation with PostgreSQL features
-				indexNode := fromschema.FromIndexWithTableMapping(idx, structToTableMap)
-				// CONCURRENTLY is opt-in policy AND capability-gated: the
-				// planner never emits it for a target that rejects it
-				// (issue #226; CockroachDB-style presets keep plain
-				// CREATE INDEX even when the policy is on).
-				if p.usesConcurrentIndex(indexName) && p.capabilities().Has(capability.CreateIndexConcurrently) {
-					indexNode.Concurrently = true
-				}
-				result = append(result, indexNode)
-				break
-			}
+	for _, ref := range diff.IndexAdditions() {
+		index, err := indexes.Resolve(ref)
+		if err != nil {
+			return nil, err
 		}
+		for removal := range indexRemovals.Matches(ref) {
+			dropIndexNode := ast.NewDropIndex(removal.Name).
+				SetTable(removal.TableName)
+			if guardedDrops {
+				dropIndexNode.SetIfExists()
+			}
+			result = append(result, dropIndexNode)
+		}
+		// IndexRef is the validated owner identity. Apply it to the local copy
+		// before conversion so source metadata cannot reintroduce an
+		// unqualified or ambiguous table association.
+		index.TableName = ref.TableName
+		indexNode := fromschema.FromIndex(index)
+		// CONCURRENTLY is opt-in policy AND capability-gated: the
+		// planner never emits it for a target that rejects it
+		// (issue #226; CockroachDB-style presets keep plain
+		// CREATE INDEX even when the policy is on).
+		if p.usesConcurrentIndex(ref) && p.capabilities().Has(capability.CreateIndexConcurrently) {
+			indexNode.Concurrently = true
+		}
+		result = append(result, indexNode)
 	}
-	return result
+	return result, nil
 }
 
-func (p *Planner) removeIndexes(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeIndexes(
+	result []ast.Node,
+	diff *types.SchemaDiff,
+) []ast.Node {
 	// IF EXISTS on DROP INDEX is capability-gated intent, mirroring the MySQL
 	// planner (issue #226). Every supported PostgreSQL line has the guard, so
 	// the default preset keeps today's output; a preset without it (or a
 	// composed set) actually changes the plan.
 	guarded := p.capabilities().Has(capability.DropIndexIfExists)
-	replacementIndexes := stringSet(diff.IndexesAdded)
-	for _, indexName := range diff.IndexesRemoved {
-		if _, replaced := replacementIndexes[indexName]; replaced {
+	indexAdditions := indexscope.NewConflictSet(p.targetDialect(), diff.IndexAdditions())
+	for _, ref := range diff.IndexRemovals() {
+		if indexAdditions.Contains(ref) {
 			continue
 		}
-		dropIndexNode := ast.NewDropIndex(indexName)
+		dropIndexNode := ast.NewDropIndex(ref.Name).
+			SetTable(ref.TableName)
 		if guarded {
 			dropIndexNode.SetIfExists()
 		}
 		result = append(result, dropIndexNode)
 	}
 	return result
-}
-
-func stringSet(values []string) map[string]struct{} {
-	set := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		set[value] = struct{}{}
-	}
-	return set
 }
 
 // appendSkipComments emits one clearly-marked comment per change omitted by the
@@ -1030,7 +1047,7 @@ func findRange(ranges []goschema.Range, name string) *goschema.Range {
 	return nil
 }
 
-// GenerateMigrationAST generates PostgreSQL-specific migration AST statements from schema differences.
+// GenerateMigrationASTChecked generates PostgreSQL-specific migration AST statements from schema differences.
 //
 // This method transforms the schema differences captured in the SchemaDiff into executable
 // PostgreSQL AST statements that can be applied to bring the database schema in line with the target
@@ -1082,7 +1099,10 @@ func findRange(ranges []goschema.Range, name string) *goschema.Range {
 //		},
 //	}
 //
-//	nodes := planner.GenerateMigrationAST(diff, generated)
+//	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+//	if err != nil {
+//		return err
+//	}
 //	// Results in:
 //	// 1. CREATE TYPE user_status AS ENUM ('active', 'inactive');
 //	// 2. CREATE TABLE users (id SERIAL PRIMARY KEY, status user_status);
@@ -1104,23 +1124,25 @@ func findRange(ranges []goschema.Range, name string) *goschema.Range {
 //
 // # Return Value
 //
-// Returns a slice of AST nodes representing SQL statements. Each node can be rendered
-// to SQL using a PostgreSQL-specific visitor. Comments and warnings are included
-// as CommentNode instances for documentation and safety.
-func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	nodes, _ := p.GenerateMigrationASTChecked(diff, generated)
-	return nodes
-}
-
+// Returns a slice of AST nodes representing SQL statements or an error when
+// the diff cannot be planned safely. Each node can be rendered to SQL using a
+// PostgreSQL-specific visitor.
 func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
 	var result []ast.Node
+	if generated == nil {
+		generated = &goschema.Database{}
+	}
+	indexes, err := indexscope.NewResolver(p.targetDialect(), diff, generated)
+	if err != nil {
+		return nil, err
+	}
 
 	// Apply the diff policy first so skipped destructive changes never reach the
 	// per-object emission below (and so a skipped DROP never trips the coarse
 	// destructive gate downstream). The omissions are surfaced as comments.
 	if !p.skip.Empty() {
 		var skipped []diffpolicy.SkippedChange
-		diff, skipped = diffpolicy.Apply(diff, p.skip)
+		diff, skipped = diffpolicy.ApplyForDialect(diff, p.skip, p.targetDialect())
 		result = appendSkipComments(result, skipped)
 	}
 
@@ -1204,7 +1226,10 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	}
 
 	// 10. Add new indexes
-	result = p.addNewIndexes(result, diff, generated)
+	result, err = p.addNewIndexes(result, diff, indexes)
+	if err != nil {
+		return nil, err
+	}
 
 	// 10.5. Add new constraints (must be done after tables and columns exist)
 	result = p.addNewConstraints(result, diff, generated)

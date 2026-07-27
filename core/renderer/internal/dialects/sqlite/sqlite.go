@@ -133,6 +133,7 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
+	indexName, tableName := sqliteIndexTarget(node.Name, node.Table)
 	parts := []string{"CREATE"}
 	if node.Unique {
 		parts = append(parts, "UNIQUE")
@@ -141,7 +142,7 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	if node.IfNotExists {
 		parts = append(parts, "IF NOT EXISTS")
 	}
-	parts = append(parts, escapeIdentifier(node.Name), "ON", escapeQualifiedIdentifier(node.Table))
+	parts = append(parts, indexName, "ON", tableName)
 	parts = append(parts, "("+strings.Join(renderIndexParts(node.EffectiveParts()), ", ")+")")
 	if strings.TrimSpace(node.Condition) != "" {
 		parts = append(parts, "WHERE", strings.TrimSpace(node.Condition))
@@ -154,13 +155,24 @@ func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
+	indexName, _ := sqliteIndexTarget(node.Name, node.Table)
 	parts := []string{"DROP INDEX"}
 	if node.IfExists {
 		parts = append(parts, "IF EXISTS")
 	}
-	parts = append(parts, escapeIdentifier(node.Name))
+	parts = append(parts, indexName)
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
+}
+
+func sqliteIndexTarget(indexName, tableName string) (renderedIndexName, renderedTableName string) {
+	tableParts := splitQualifiedIdentifier(tableName)
+	if len(tableParts) < 2 {
+		return escapeIdentifier(indexName), escapeIdentifier(tableName)
+	}
+	schema := strings.Join(tableParts[:len(tableParts)-1], ".")
+	return escapeQualifiedIdentifier(schema) + "." + escapeIdentifier(indexName),
+		escapeIdentifier(tableParts[len(tableParts)-1])
 }
 
 func (r *Renderer) VisitUpsert(_ *ast.UpsertNode) error {
