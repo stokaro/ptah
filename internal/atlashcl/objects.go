@@ -117,11 +117,19 @@ func (p *parser) parseMaterializedView(block *hclsyntax.Block) error {
 	if body == "" {
 		return p.blockError(block, "materialized %q requires as", name)
 	}
-	p.db.MaterializedViews = append(p.db.MaterializedViews, goschema.MaterializedView{
-		Name:    qualifyObjectName(p.optionalRefName(block.Body.Attributes["schema"]), name),
-		Body:    body,
-		Comment: p.optionalString(block.Body.Attributes["comment"]),
-	})
+	view := goschema.MaterializedView{
+		Name:            qualifyObjectName(p.optionalRefName(block.Body.Attributes["schema"]), name),
+		Body:            body,
+		RefreshStrategy: p.optionalString(block.Body.Attributes["refresh_strategy"]),
+		Comment:         p.optionalString(block.Body.Attributes["comment"]),
+	}
+	// Canonicalize lowercases refresh_strategy and defaults it to "manual",
+	// mirroring the Go-annotation path (parseMatViewComment). The Go path applies
+	// no further validation, so neither does this one: any strategy string is
+	// accepted, keeping both frontends' MaterializedView identical for the same
+	// schema.
+	view.Canonicalize()
+	p.db.MaterializedViews = append(p.db.MaterializedViews, view)
 	return nil
 }
 
@@ -439,9 +447,10 @@ func (p *parser) rejectUnsupportedMaterializedAttrs(block *hclsyntax.Block) erro
 		return p.blockError(block.Body.Blocks[0], "unsupported materialized block %q", block.Body.Blocks[0].Type)
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
-		"schema":  true,
-		"as":      true,
-		"comment": true,
+		"schema":           true,
+		"as":               true,
+		"refresh_strategy": true,
+		"comment":          true,
 	}, "materialized")
 }
 

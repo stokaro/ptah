@@ -65,7 +65,7 @@ table "users" {
 | `role` | PostgreSQL role attributes such as `login`, `superuser`, `create_db`, and `inherit`. |
 | `permission` | PostgreSQL table, schema, and sequence permissions. |
 | `function` | PostgreSQL function metadata and raw body. |
-| `view` / `materialized` | SQL body plus schema and comments. |
+| `view` / `materialized` | SQL body plus schema and comments; `materialized` also supports `refresh_strategy`. |
 | `trigger` | Trigger timing, target, execution mode, function body, and comments. |
 | `policy` | PostgreSQL RLS policy fields. |
 | `sequence` | PostgreSQL `type`, `start`, `increment`, `min_value`, `max_value`, `cache`, `cycle`, `owned_by`, and `if_not_exists`. |
