@@ -17,18 +17,21 @@ placeholder counters.
 
 Implemented so far:
 
-- `SELECT` with an explicit column list or `*`;
+- `SELECT` with an explicit column list or `*`, and `SELECT DISTINCT`;
 - `INNER`, `LEFT`, `RIGHT`, and `FULL OUTER` joins, with table aliases and
   columns qualified by a table or alias (see [Joins](#joins));
 - a composable `WHERE` (and join `ON`) expression tree: `=`, `<>`, `<`, `<=`,
   `>`, `>=`, `IN`, `IS NULL`, `IS NOT NULL`, and the boolean combinators `AND`,
   `OR`, `NOT`;
+- aggregate functions — `COUNT(*)`, `COUNT`, `COUNT(DISTINCT …)`, `SUM`, `AVG`,
+  `MIN`, `MAX` — in the projection and in `HAVING` (see
+  [Aggregates, GROUP BY, and HAVING](#aggregates-group-by-and-having));
+- `GROUP BY` (bare or qualified columns) and `HAVING`;
 - `ORDER BY` with per-column `ASC`/`DESC`;
 - `LIMIT` and `OFFSET`.
 
-Not yet implemented (follow-up phases): `GROUP BY`, `HAVING`, `DISTINCT`,
-subqueries, function calls, arithmetic, `LIKE`, and the `INSERT`/`UPDATE`/
-`DELETE` family.
+Not yet implemented (follow-up phases): non-aggregate function calls, arithmetic,
+`LIKE`, subqueries, window functions, and the `INSERT`/`UPDATE`/`DELETE` family.
 
 ## Safety model
 
@@ -180,24 +183,101 @@ that fails at execution time against the database.
 - The **PostgreSQL family** (including CockroachDB and YugabyteDB) supports all
   four.
 
+## Aggregates, GROUP BY, and HAVING
+
+`Distinct()` renders `SELECT DISTINCT`. `GroupBy` adds `GROUP BY` columns — pass
+`Col(table, name)` for a qualified column across joins, or `Col("", name)` for a
+bare column. GROUP BY carries only identifiers, so it never binds a placeholder.
+
+Aggregates are built with `CountStar`, `Count`, `CountDistinct`, `Sum`, `Avg`,
+`Min`, and `Max` (bare-column free functions), or the matching methods on a
+qualified column: `Col("o", "total").Sum()`, `Col("u", "id").Count()`, and so on.
+Each returns an expression usable in two places:
+
+- **the projection**, via `Exprs` (no alias) or `ExprAs` (with an `AS` alias);
+- **a `HAVING` predicate**, by wrapping it with `Expr` to reach the comparison
+  helpers — `Expr(query.CountStar()).Gt(int64(5))` — which compose with `And`,
+  `Or`, and `Not` like any other expression.
+
+A function name (`COUNT`, `SUM`, …) is a keyword emitted verbatim and never
+quoted; its column arguments are quoted, and any value it is compared against is
+bound. The renderer rejects a function name that is not a simple identifier
+rather than emit it.
+
+```go
+stmt := query.Select("status").
+	ExprAs(query.CountStar(), "n").
+	From("orders").
+	Where(query.Eq("tenant_id", tenantID)).
+	GroupBy(query.Col("", "status")).
+	Having(query.Expr(query.CountStar()).Gt(int64(5))).
+	OrderBy(query.Asc("status")).
+	Limit(10).
+	Build()
+
+sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+```
+
+The PostgreSQL output is:
+
+```sql
+SELECT "status", COUNT(*) AS "n"
+FROM "orders"
+WHERE "tenant_id" = $1
+GROUP BY "status"
+HAVING COUNT(*) > $2
+ORDER BY "status" ASC
+LIMIT $3
+```
+
+with `args` equal to `[]any{tenantID, int64(5), int64(10)}`. A `HAVING` value is
+bound **after** every `WHERE` value and **before** `LIMIT`/`OFFSET`, so
+placeholder numbering still follows left-to-right emission order across `WHERE`,
+`HAVING`, and `LIMIT`/`OFFSET`.
+
+Aggregates work over qualified columns in join queries too:
+
+```go
+stmt := query.Select().
+	Columns(query.Col("u", "name")).
+	ExprAs(query.Col("o", "id").Count(), "orders").
+	ExprAs(query.Col("o", "total").Sum(), "spent").
+	FromAs("users", "u").
+	InnerJoin("orders", "o", query.Col("o", "user_id").EqCol(query.Col("u", "id"))).
+	GroupBy(query.Col("u", "name")).
+	Build()
+
+// SELECT "u"."name", COUNT("o"."id") AS "orders", SUM("o"."total") AS "spent"
+// FROM "users" "u" INNER JOIN "orders" "o" ON "o"."user_id" = "u"."id"
+// GROUP BY "u"."name"
+```
+
 ## Builder reference
 
 | Function | Result |
 | --- | --- |
 | `Select(cols ...string)` | Start a builder; `"*"` or no columns selects all. |
+| `.Distinct()` | Render `SELECT DISTINCT`. |
 | `.Columns(cols ...Column)` | Append qualified columns (from `Col`) to the projection. |
+| `.Exprs(exprs ...ast.Expression)` | Append expression projections (for example aggregates). |
+| `.ExprAs(expr, alias)` | Append one expression projection with an `AS` alias. |
 | `.From(table)` | Set the source table (required); clears any alias. |
 | `.FromAs(table, alias)` | Set the source table with an alias. |
 | `.InnerJoin` / `.LeftJoin` / `.RightJoin` / `.FullJoin` `(table, alias, on)` | Append a join with an `ON` condition. |
 | `.Where(expr)` | Set the filter expression; a later call replaces the earlier one. |
+| `.GroupBy(cols ...Column)` | Append `GROUP BY` columns across calls. |
+| `.Having(expr)` | Set the `HAVING` predicate; a later call replaces the earlier one. |
 | `.OrderBy(terms ...)` | Append sort terms across calls. |
 | `.Limit(n)` / `.Offset(n)` | Set bound row limit/offset. |
 | `.Build()` | Produce the `*ast.SelectStatement`. |
 
 Expression helpers: `Eq`, `Ne`, `Lt`, `Le`, `Gt`, `Ge`, `In`, `IsNull`,
-`IsNotNull`, `And`, `Or`, `Not`. Ordering helpers: `Asc`, `Desc`. Qualified
-columns: `Col(table, name)`, with `.Eq`/`.Ne`/`.Lt`/`.Le`/`.Gt`/`.Ge`,
-`.EqCol` (column-to-column, for `ON`), `.IsNull`/`.IsNotNull`, and `.Asc`/`.Desc`.
+`IsNotNull`, `And`, `Or`, `Not`. Ordering helpers: `Asc`, `Desc`. Aggregate
+helpers: `CountStar`, `Count`, `CountDistinct`, `Sum`, `Avg`, `Min`, `Max`, and
+`Expr(expr)` with `.Eq`/`.Ne`/`.Lt`/`.Le`/`.Gt`/`.Ge` for `HAVING` comparisons.
+Qualified columns: `Col(table, name)`, with `.Eq`/`.Ne`/`.Lt`/`.Le`/`.Gt`/`.Ge`,
+`.EqCol` (column-to-column, for `ON`), `.IsNull`/`.IsNotNull`, `.Asc`/`.Desc`, and
+the aggregate methods `.Count`/`.CountDistinct`/`.Sum`/`.Avg`/`.Min`/`.Max`.
 
 `renderer.RenderSelect(stmt, dialect)` returns `(sql string, args []any, err error)`.
 It returns an error for an unsupported dialect, a missing `FROM` table, an empty

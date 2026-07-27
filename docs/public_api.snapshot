@@ -154,6 +154,7 @@ type Expression interface{ ... }
 type ExtensionNode struct{ ... }
     func NewExtension(name string) *ExtensionNode
 type ForeignKeyRef struct{ ... }
+type FuncCall struct{ ... }
 type FunctionBodyKind string
     const FunctionBodyQuoted FunctionBodyKind = "quoted" ...
 type GrantPrivilegeNode struct{ ... }
@@ -530,6 +531,10 @@ type RenderError struct{ ... }
 
 func And(exprs ...ast.Expression) ast.Expression
 func Asc(column string) ast.OrderByClause
+func Avg(column string) ast.Expression
+func Count(column string) ast.Expression
+func CountDistinct(column string) ast.Expression
+func CountStar() ast.Expression
 func Desc(column string) ast.OrderByClause
 func Eq(column string, value any) ast.Expression
 func Ge(column string, value any) ast.Expression
@@ -539,11 +544,16 @@ func IsNotNull(column string) ast.Expression
 func IsNull(column string) ast.Expression
 func Le(column string, value any) ast.Expression
 func Lt(column string, value any) ast.Expression
+func Max(column string) ast.Expression
+func Min(column string) ast.Expression
 func Ne(column string, value any) ast.Expression
 func Not(expr ast.Expression) ast.Expression
 func Or(exprs ...ast.Expression) ast.Expression
+func Sum(column string) ast.Expression
 type Column struct{ ... }
     func Col(qualifier, name string) Column
+type ExprCompare struct{ ... }
+    func Expr(left ast.Expression) ExprCompare
 type SelectBuilder struct{ ... }
     func Select(columns ...string) *SelectBuilder
 
