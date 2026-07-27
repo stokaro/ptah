@@ -35,7 +35,10 @@ type sqlServerRoutineTokenizer struct {
 }
 
 func newSQLServerRoutineTokenizer(sql string) sqlServerRoutineTokenizer {
-	return sqlServerRoutineTokenizer{lexer: lexer.NewLexer(sql)}
+	return sqlServerRoutineTokenizer{lexer: lexer.NewLexerWithOptions(sql, lexer.Options{
+		BracketIdentifiers:  true,
+		DisableHashComments: true,
+	})}
 }
 
 func (t sqlServerRoutineTokenizer) tokens() []lexer.Token {

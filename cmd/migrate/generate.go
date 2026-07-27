@@ -10,6 +10,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/schemaload"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/atlasurl"
 	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/generator"
 )
@@ -45,7 +46,7 @@ and performs an up/down/up round-trip.`,
 	flags.StringArray(generateRootDirFlag, nil, "Root directory to scan for Go entities (repeatable; multiple roots merge into one composite schema; defaults to ./)")
 	flags.StringArray(generateSchemaFileFlag, nil, "YAML, HCL, or SQL schema file to generate a migration toward instead of, or combined with, Go entities (repeatable; multiple sources merge into one composite schema)")
 	flags.String(generateSchemaCmdFlag, "", `External program whose stdout is the desired schema; run without a shell, split on whitespace. Example: "go run ./loader"`)
-	flags.String(generateSchemaFormatFlag, "sql", "Format of the --schema-cmd output: sql")
+	flags.String(generateSchemaFormatFlag, "sql", "Format of the --schema-cmd output: sql, hcl, or yaml")
 	flags.String(generateDBURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	flags.String(generateMigrationsDirFlag, "", "Directory containing existing migrations and receiving generated files (required)")
 	flags.String(generateNameFlag, "migration", "Migration name")
@@ -57,6 +58,7 @@ and performs an up/down/up round-trip.`,
 	flags.String(dbcli.ConnectTimeoutFlagName, dbcli.DefaultConnectTimeout.String(), "Initial database connection timeout")
 	flags.String(dbcli.EnvFlagName, "", "Project env name to read from ptah.yaml or atlas.hcl")
 	flags.String(dbcli.SchemasFlagName, "", "Comma-separated schemas to introspect when supported")
+	dbcli.RegisterExternalSchemaOptInFlag(flags)
 
 	cmdutil.ConfigureCommand(cmd)
 	return cmd
@@ -103,12 +105,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-
-	generated, err := schemaload.LoadContext(cmd.Context(), schemaload.Options{
-		RootDirs:    rootDirs,
-		SchemaFiles: schemaFiles,
-		Commands:    dbcli.ExternalSchemaCommands(schemaCmd, schemaFormat, projectCfg),
-	})
+	commands, err := dbcli.ResolveExternalSchemaCommands(cmd, schemaCmd, schemaFormat, projectCfg)
 	if err != nil {
 		return err
 	}
@@ -119,6 +116,9 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	reportFormat, err := cmd.Flags().GetString(generateReportFormatFlag)
 	if err != nil {
 		return err
+	}
+	if reportFormat != "" && reportFormat != "html" && reportFormat != "json" {
+		return fmt.Errorf("unsupported safety report format %q", reportFormat)
 	}
 	checkDestructive, err := cmd.Flags().GetBool(generateCheckDestructiveFlag)
 	if err != nil {
@@ -149,11 +149,25 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("invalid migrations directory: %w", err)
 	}
-
+	dialect, err := atlasurl.DialectFromURL(dbURL)
+	if err != nil {
+		return err
+	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(connectTimeoutValue)
 	if err != nil {
 		return err
 	}
+
+	generated, err := schemaload.LoadContext(cmd.Context(), schemaload.Options{
+		RootDirs:    rootDirs,
+		SchemaFiles: schemaFiles,
+		Commands:    commands,
+		Dialect:     dialect,
+	})
+	if err != nil {
+		return err
+	}
+
 	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
 	defer cancelConnect()
 

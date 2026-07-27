@@ -13,11 +13,25 @@ import (
 // This properly handles comments within string literals and preserves the structure of the SQL.
 // Both line comments (-- comment) and block comments (/* comment */) are removed.
 func StripComments(sql string) string {
+	return stripComments(sql, "")
+}
+
+// StripCommentsForDialect removes SQL comments while preserving constructs
+// whose lexical meaning depends on dialect, including SQL Server bracketed
+// identifiers containing comment markers.
+func StripCommentsForDialect(sql, dialect string) string {
+	return stripComments(sql, platform.NormalizeDialect(dialect))
+}
+
+func stripComments(sql, dialect string) string {
 	if strings.TrimSpace(sql) == "" {
 		return sql
 	}
 
-	lexr := lexer.NewLexer(sql)
+	lexr := lexer.NewLexerWithOptions(sql, lexer.Options{
+		BracketIdentifiers:  dialect == platform.SQLServer,
+		DisableHashComments: dialect == platform.SQLServer,
+	})
 	var result strings.Builder
 
 	for {
@@ -74,8 +88,10 @@ func splitSQLStatements(sql string, dialect string) []string {
 	// escapes are only honored for the dialects that actually process them;
 	// the no-dialect path stays PostgreSQL-safe (backslash is literal).
 	lexr := lexer.NewLexerWithOptions(sql, lexer.Options{
-		StandardStrings:  true,
-		BackslashEscapes: dialectUsesBackslashEscapes(dialect),
+		StandardStrings:     true,
+		BackslashEscapes:    dialectUsesBackslashEscapes(dialect),
+		BracketIdentifiers:  dialect == platform.SQLServer,
+		DisableHashComments: dialect == platform.SQLServer,
 	})
 	var statements []string
 	var currentStatement strings.Builder

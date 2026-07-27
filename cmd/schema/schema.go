@@ -63,7 +63,7 @@ under ptah atlas.`,
 	cmd.AddCommand(schemapull.NewSchemaPullCommand())
 	renderCmd := generate.NewGenerateCommand()
 	renderCmd.Short = "Render desired schema SQL"
-	renderCmd.Long = "Render desired schema SQL from Go annotations, YAML schema files, or HCL schema files."
+	renderCmd.Long = "Render desired schema SQL from Go annotations, YAML, HCL, or SQL schema files, or an external schema command."
 	cmd.AddCommand(renderCmd)
 
 	compareCmd := compare.NewCompareCommand()

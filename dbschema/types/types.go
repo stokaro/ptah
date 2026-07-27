@@ -6,6 +6,7 @@ import (
 
 	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/core/platform/identifier"
+	"github.com/stokaro/ptah/internal/tableref"
 )
 
 // DBSchema represents the complete schema read from a database
@@ -55,15 +56,9 @@ func (t DBTable) QualifiedName() string {
 	return QualifyTableName(t.Schema, t.Name)
 }
 
-// QualifyTableName joins schema and table without quoting. Dialect renderers
-// remain responsible for escaping identifiers.
+// QualifyTableName returns an unambiguous schema-qualified table reference.
 func QualifyTableName(schema, table string) string {
-	schema = strings.TrimSpace(schema)
-	table = strings.TrimSpace(table)
-	if schema == "" {
-		return table
-	}
-	return schema + "." + table
+	return tableref.Canonical(schema, table)
 }
 
 // DBColumn represents a database column.

@@ -13,6 +13,8 @@ import (
 	"github.com/stokaro/ptah/internal/convert/fromschema"
 	"github.com/stokaro/ptah/internal/deporder"
 	"github.com/stokaro/ptah/internal/indexscope"
+	"github.com/stokaro/ptah/internal/planner/tablelookup"
+	"github.com/stokaro/ptah/internal/tableref"
 	"github.com/stokaro/ptah/migration/diffpolicy"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
@@ -321,14 +323,19 @@ func postgresEnumValueRemovalSQL(enumName string, values []string, usages []post
 }
 
 func postgresTemporaryEnumName(enumName string) string {
-	parts := strings.Split(enumName, ".")
-	parts[len(parts)-1] += "__ptah_old"
-	return strings.Join(parts, ".")
+	ref, ok := tableref.Parse(enumName)
+	if !ok {
+		return enumName + "__ptah_old"
+	}
+	return tableref.Canonical(ref.Schema, ref.Name+"__ptah_old")
 }
 
 func postgresBaseName(name string) string {
-	parts := strings.Split(name, ".")
-	return parts[len(parts)-1]
+	ref, ok := tableref.Parse(name)
+	if !ok {
+		return name
+	}
+	return ref.Name
 }
 
 func postgresEnumValueList(values []string) string {
@@ -361,11 +368,14 @@ func quotePostgresLiteral(value string) string {
 }
 
 func quotePostgresIdentifierPath(name string) string {
-	parts := strings.Split(name, ".")
-	for i, part := range parts {
-		parts[i] = quotePostgresIdentifier(part)
+	ref, ok := tableref.Parse(name)
+	if !ok {
+		return quotePostgresIdentifier(name)
 	}
-	return strings.Join(parts, ".")
+	if !ref.Qualified {
+		return quotePostgresIdentifier(ref.Name)
+	}
+	return quotePostgresIdentifier(ref.Schema) + "." + quotePostgresIdentifier(ref.Name)
 }
 
 func quotePostgresIdentifier(name string) string {
@@ -436,44 +446,26 @@ func (p *Planner) addRegularForeignKeys(result []ast.Node, generated *goschema.D
 		}
 
 		fkRef := fromschema.ParseForeignKeyReference(field.Foreign)
-		if fkRef != nil && !foreignKeyTargetsTable(fkRef, table) {
-			qualifyForeignKeyRef(generated, table, fkRef)
-			fkRef.OnDelete = field.OnDelete
-			fkRef.OnUpdate = field.OnUpdate
-			result = append(result, p.createForeignKeyAlterStatement(table.QualifiedName(), foreignKeyName(table.Name, field), []string{field.Name}, fkRef))
+		if fkRef == nil {
+			continue
 		}
+		qualifyForeignKeyRef(generated, table, fkRef)
+		if foreignKeyTargetsTable(fkRef, table) {
+			continue
+		}
+		fkRef.OnDelete = field.OnDelete
+		fkRef.OnUpdate = field.OnUpdate
+		result = append(result, p.createForeignKeyAlterStatement(table.QualifiedName(), foreignKeyName(table.Name, field), []string{field.Name}, fkRef))
 	}
 	return result
 }
 
 func foreignKeyTargetsTable(fkRef *ast.ForeignKeyRef, table goschema.Table) bool {
-	return fkRef.Table == table.Name || fkRef.Table == table.QualifiedName()
+	return fkRef.Table == table.QualifiedName()
 }
 
 func qualifyForeignKeyRef(generated *goschema.Database, current goschema.Table, fkRef *ast.ForeignKeyRef) {
-	if strings.Contains(fkRef.Table, ".") {
-		return
-	}
-	currentSchema := strings.TrimSpace(current.Schema)
-	for _, table := range generated.Tables {
-		if strings.TrimSpace(table.Schema) == currentSchema && table.Name == fkRef.Table {
-			fkRef.Table = table.QualifiedName()
-			return
-		}
-	}
-	matchedName := ""
-	for _, table := range generated.Tables {
-		if table.Name != fkRef.Table {
-			continue
-		}
-		if matchedName != "" {
-			return
-		}
-		matchedName = table.QualifiedName()
-	}
-	if matchedName != "" {
-		fkRef.Table = matchedName
-	}
+	fkRef.Table = tablelookup.ResolveReference(generated.Tables, current, fkRef.Table)
 }
 
 // addSelfReferencingForeignKeys adds self-referencing foreign key constraints
@@ -745,7 +737,7 @@ func isGeneratedColumnChange(colDiff types.ColumnDiff) bool {
 func findGeneratedTableByDiffName(generated *goschema.Database, tableName string) *goschema.Table {
 	for i := range generated.Tables {
 		table := &generated.Tables[i]
-		if table.Name == tableName || table.QualifiedName() == tableName {
+		if table.QualifiedName() == tableName {
 			return table
 		}
 	}
@@ -1684,10 +1676,11 @@ func (p *Planner) removeSequences(result []ast.Node, diff *types.SchemaDiff) []a
 // splitQualifiedSequenceName splits a "schema.name" qualified sequence name into
 // its parts. An unqualified name yields an empty schema.
 func splitQualifiedSequenceName(name string) (schema, sequence string) {
-	if idx := strings.LastIndex(name, "."); idx >= 0 {
-		return name[:idx], name[idx+1:]
+	ref, ok := tableref.Parse(name)
+	if !ok {
+		return "", name
 	}
-	return "", name
+	return ref.Schema, ref.Name
 }
 
 func (p *Planner) addNewViewLikeObjects(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
@@ -1952,11 +1945,16 @@ const (
 
 type constraintPlanState struct {
 	removedNames       map[string]struct{}
-	removalByTableName map[string]types.ConstraintRemovalInfo
+	removalByTableName map[constraintHostKey]types.ConstraintRemovalInfo
 	removalsByName     map[string][]types.ConstraintRemovalInfo
 	addedHostsByName   map[string]map[string]struct{}
 	handled            map[string]struct{}
-	droppedForModify   map[string]struct{}
+	droppedForModify   map[constraintHostKey]struct{}
+}
+
+type constraintHostKey struct {
+	table string
+	name  string
 }
 
 func newConstraintPlanState(diff *types.SchemaDiff) constraintPlanState {
@@ -1991,9 +1989,9 @@ func newConstraintPlanState(diff *types.SchemaDiff) constraintPlanState {
 	// `ALTER TABLE B DROP CONSTRAINT IF EXISTS <name>` for the pure-add host.
 	// Keying the drop decision on (table, name) — mirroring MySQL's
 	// removalByTableName — gives the pure-add host no drop.
-	removalByTableName := make(map[string]types.ConstraintRemovalInfo, len(diff.ConstraintsRemovedWithTables))
+	removalByTableName := make(map[constraintHostKey]types.ConstraintRemovalInfo, len(diff.ConstraintsRemovedWithTables))
 	for _, info := range diff.ConstraintsRemovedWithTables {
-		removalByTableName[info.TableName+"."+info.Name] = info
+		removalByTableName[constraintHostKey{table: info.TableName, name: info.Name}] = info
 	}
 
 	// Index removals by bare name as well, so the legacy ConstraintsAdded loop
@@ -2041,7 +2039,7 @@ func newConstraintPlanState(diff *types.SchemaDiff) constraintPlanState {
 		removalsByName:     removalsByName,
 		addedHostsByName:   addedHostsByName,
 		handled:            make(map[string]struct{}),
-		droppedForModify:   make(map[string]struct{}),
+		droppedForModify:   make(map[constraintHostKey]struct{}),
 	}
 }
 
@@ -2107,7 +2105,8 @@ func (p *Planner) addForeignKeyConstraintsWithTables(
 		// Only emit the DROP-before-ADD when this exact host's FK is being
 		// modified (its (table, name) is in the removal set). A pure-add host
 		// gets no phantom drop.
-		if _, modified := state.removalByTableName[add.TableName+"."+add.Name]; modified {
+		key := constraintHostKey{table: add.TableName, name: add.Name}
+		if _, modified := state.removalByTableName[key]; modified {
 			result = p.emitModifyDrop(result, add, state.droppedForModify)
 		}
 		result = append(result, p.foreignKeyAdditionNode(add))
@@ -2140,16 +2139,17 @@ func (p *Planner) constraintNameIsForeignKey(constraintName string, generated *g
 func (p *Planner) addCheckAndUniqueConstraintsWithTables(
 	result []ast.Node,
 	additions []types.ConstraintAdditionInfo,
-	removalByTableName map[string]types.ConstraintRemovalInfo,
+	removalByTableName map[constraintHostKey]types.ConstraintRemovalInfo,
 	handled map[string]struct{},
-	droppedForModify map[string]struct{},
+	droppedForModify map[constraintHostKey]struct{},
 ) []ast.Node {
 	for _, add := range additions {
 		constraint := constraintAdditionNode(add)
 		if constraint == nil {
 			continue
 		}
-		if _, modified := removalByTableName[add.TableName+"."+add.Name]; modified {
+		key := constraintHostKey{table: add.TableName, name: add.Name}
+		if _, modified := removalByTableName[key]; modified {
 			result = p.emitModifyDrop(result, add, droppedForModify)
 		}
 		result = append(result, &ast.AlterTableNode{
@@ -2191,15 +2191,16 @@ func constraintAdditionNode(add types.ConstraintAdditionInfo) *ast.ConstraintNod
 func (p *Planner) addPrimaryKeyConstraintsWithTables(
 	result []ast.Node,
 	additions []types.ConstraintAdditionInfo,
-	removalByTableName map[string]types.ConstraintRemovalInfo,
+	removalByTableName map[constraintHostKey]types.ConstraintRemovalInfo,
 	handled map[string]struct{},
-	droppedForModify map[string]struct{},
+	droppedForModify map[constraintHostKey]struct{},
 ) []ast.Node {
 	for _, add := range additions {
 		if add.Type != "PRIMARY KEY" || add.TableName == "" || len(add.Columns) == 0 {
 			continue
 		}
-		if _, modified := removalByTableName[add.TableName+"."+add.Name]; modified {
+		key := constraintHostKey{table: add.TableName, name: add.Name}
+		if _, modified := removalByTableName[key]; modified {
 			result = p.emitModifyDrop(result, add, droppedForModify)
 		}
 		result = append(result, &ast.AlterTableNode{
@@ -2240,7 +2241,7 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 func (p *Planner) emitModifyDrop(
 	result []ast.Node,
 	add types.ConstraintAdditionInfo,
-	droppedForModify map[string]struct{},
+	droppedForModify map[constraintHostKey]struct{},
 ) []ast.Node {
 	return p.appendScopedDrop(result, add.TableName, add.Name, droppedForModify)
 }
@@ -2277,7 +2278,7 @@ func (p *Planner) emitModifyDropForName(
 	name string,
 	removalsByName map[string][]types.ConstraintRemovalInfo,
 	addedHosts map[string]struct{},
-	droppedForModify map[string]struct{},
+	droppedForModify map[constraintHostKey]struct{},
 ) []ast.Node {
 	if len(addedHosts) > 0 {
 		// Re-added hosts are known: drop ONLY those. A removal host that is not
@@ -2309,10 +2310,11 @@ func (p *Planner) emitModifyDropForName(
 		return result
 	}
 	// No host recorded for this name — fall back to the runtime DO block.
-	if _, done := droppedForModify[name]; done {
+	fallbackKey := constraintHostKey{name: name}
+	if _, done := droppedForModify[fallbackKey]; done {
 		return result
 	}
-	droppedForModify[name] = struct{}{}
+	droppedForModify[fallbackKey] = struct{}{}
 	return append(result, p.dropConstraintNode(name))
 }
 
@@ -2320,8 +2322,12 @@ func (p *Planner) emitModifyDropForName(
 // ALTER TABLE <table> DROP CONSTRAINT IF EXISTS <name>, deduped per (table, name)
 // via droppedForModify so a constraint name shared across host tables is dropped
 // once per host and never twice for the same host.
-func (p *Planner) appendScopedDrop(result []ast.Node, table, name string, droppedForModify map[string]struct{}) []ast.Node {
-	dedupKey := table + "." + name
+func (p *Planner) appendScopedDrop(
+	result []ast.Node,
+	table, name string,
+	droppedForModify map[constraintHostKey]struct{},
+) []ast.Node {
+	dedupKey := constraintHostKey{table: table, name: name}
 	if _, done := droppedForModify[dedupKey]; done {
 		return result
 	}
@@ -2447,10 +2453,11 @@ func (p *Planner) fieldLevelForeignKeyConstraintNode(constraintName string, gene
 }
 
 func unqualifiedTableName(tableName string) string {
-	if idx := strings.LastIndex(tableName, "."); idx >= 0 {
-		return tableName[idx+1:]
+	ref, ok := tableref.Parse(tableName)
+	if !ok {
+		return tableName
 	}
-	return tableName
+	return ref.Name
 }
 
 // removeConstraints removes table-level constraints via ALTER TABLE statements.
@@ -2502,7 +2509,7 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 	// (issue #206). The comparator records every addition's host in
 	// ConstraintsAddedWithTables in lockstep with the bare list, so the modify
 	// owner is always known per host.
-	modifySet := make(map[string]struct{}, len(diff.ConstraintsAddedWithTables))
+	modifySet := make(map[constraintHostKey]struct{}, len(diff.ConstraintsAddedWithTables))
 	addedHostCounts := make(map[string]int, len(diff.ConstraintsAddedWithTables))
 	for _, add := range diff.ConstraintsAddedWithTables {
 		if add.TableName == "" {
@@ -2511,7 +2518,7 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 			// hostless-re-add rule below still engages (issue #229).
 			continue
 		}
-		modifySet[add.TableName+"."+add.Name] = struct{}{}
+		modifySet[constraintHostKey{table: add.TableName, name: add.Name}] = struct{}{}
 		addedHostCounts[add.Name]++
 	}
 
@@ -2540,7 +2547,7 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 	// rest. Names that carried at least one host are recorded so the bare
 	// fallback below — which exists only for synthetic diffs — does not re-emit
 	// the name-only DO block for them.
-	dropped := make(map[string]struct{})
+	dropped := make(map[constraintHostKey]struct{})
 	namesWithHost := make(map[string]struct{})
 	for _, info := range diff.ConstraintsRemovedWithTables {
 		if info.TableName == "" {
@@ -2548,7 +2555,8 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 			continue
 		}
 		namesWithHost[info.Name] = struct{}{}
-		if _, modified := modifySet[info.TableName+"."+info.Name]; modified {
+		key := constraintHostKey{table: info.TableName, name: info.Name}
+		if _, modified := modifySet[key]; modified {
 			// addNewConstraints owns this host's DROP-then-ADD; do not re-drop.
 			continue
 		}

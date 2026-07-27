@@ -1161,11 +1161,6 @@
       "reason": "same-package test file is not named *_internal_test.go"
     },
     {
-      "path": "internal/dbschema/mssql/reader_test.go",
-      "package": "mssql",
-      "reason": "same-package test file is not named *_internal_test.go"
-    },
-    {
       "path": "internal/dbschema/mysql/mysql_test.go",
       "package": "mysql",
       "reason": "same-package test file is not named *_internal_test.go"

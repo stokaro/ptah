@@ -14,8 +14,8 @@ import (
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
-	"github.com/stokaro/ptah/cmd/internal/schemasource"
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/schemasource"
 	"github.com/stokaro/ptah/internal/ociartifact"
 	"github.com/stokaro/ptah/internal/schemaartifact"
 	"github.com/stokaro/ptah/internal/schemafile"
@@ -70,7 +70,7 @@ func (o Options) Sources() string {
 	parts = append(parts, o.RootDirs...)
 	parts = append(parts, o.SchemaFiles...)
 	for _, command := range o.Commands {
-		parts = append(parts, "$("+strings.Join(command.Args, " ")+")")
+		parts = append(parts, commandDisplay(command))
 	}
 	if len(parts) == 0 {
 		parts = append(parts, "./")
@@ -207,8 +207,19 @@ func (o Options) loadCommand(ctx context.Context, command schemasource.Command) 
 	if command.Dialect == "" {
 		command.Dialect = o.Dialect
 	}
-	o.logf("Running schema command: %s", strings.Join(command.Args, " "))
+	o.logf("Running schema command: %s", commandDisplay(command))
 	return schemasource.Run(ctx, command)
+}
+
+func commandDisplay(command schemasource.Command) string {
+	if len(command.Args) == 0 {
+		return "external command"
+	}
+	name := filepath.Base(command.Args[0])
+	if len(command.Args) == 1 {
+		return "$(" + name + ")"
+	}
+	return fmt.Sprintf("$(%s + %d args)", name, len(command.Args)-1)
 }
 
 // resolveRootDirs turns each root into an absolute path and fails fast if any

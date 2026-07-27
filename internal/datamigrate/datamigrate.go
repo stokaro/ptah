@@ -640,17 +640,10 @@ func managedColumns(rows []map[string]any, keys []string) []string {
 	return cols
 }
 
-// qualifiedName renders a table name for the block comment, prefixing the
-// schema when one is declared (schema.table) and returning just the table
-// otherwise. It is display-only; the actual SQL identifiers are quoted by the
-// renderer.
+// qualifiedName returns the canonical table identity used for lookups and
+// human-readable block labels.
 func qualifiedName(schema, table string) string {
-	// Trim so the display and gate keys treat a blank schema the same way
-	// sqlident.Qualified does when rendering the actual SQL identifier.
-	if schema = strings.TrimSpace(schema); schema == "" {
-		return table
-	}
-	return schema + "." + table
+	return goschema.QualifyTableName(schema, table)
 }
 
 // tableBlock prefixes a rendered script with a "-- data: <label>" comment (the

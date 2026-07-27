@@ -1,0 +1,8 @@
+external_schema:
+  program:
+    - .venv/bin/atlas-provider-sqlalchemy
+    - --path
+    - ./models
+    - --dialect
+    - postgresql
+  format: sql

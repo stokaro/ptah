@@ -49,6 +49,8 @@ does not expose the native runner as a root-level Atlas alias.
   [`gaps-live.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps-live.md)
 - Atlas CE differential report:
   [`gaps-diff.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps-diff.md)
+- External ORM provider report:
+  [`gaps-orm-providers.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps-orm-providers.md)
 - CLI surface report:
   [`cli-surface.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/cli-surface.md)
 - Parity scope:
@@ -70,8 +72,12 @@ make budget       # offline regression budget
 make gate         # full offline parity gate
 make probe-live   # live DB round-trip report
 make budget-live  # live DB regression budget
+make gate-live    # full live parity gate
 make probe-diff   # Atlas CE differential report
 make budget-diff  # Atlas CE differential regression budget
+make probe-orm-providers   # pinned GORM and SQLAlchemy provider report
+make budget-orm-providers  # ORM provider regression budget
+make gate-orm-providers    # full ORM provider gate
 make probe-cli-surface   # Atlas CE CLI surface report
 make budget-cli-surface  # Atlas CE CLI surface regression budget
 make gate-cli-surface    # full CLI surface parity gate
@@ -80,3 +86,23 @@ make gate-cli-surface    # full CLI surface parity gate
 Live and differential commands require real database URLs, and the differential
 tier also requires an Atlas CE binary built from the pinned `atlas.version` in
 the conformance repository.
+
+## External Schema Coverage
+
+The deterministic offline report includes a 20-observation external-schema
+workflow. It covers static SQL files; external programs that emit SQL, HCL, and
+YAML; the opt-in trust boundary for render, compare, drift, plan, and generate;
+configuration and explicit CLI sources; migration generation and application
+to an ephemeral SQLite database; table, primary-key, unique-index, and
+cascading-foreign-key facts; and converged compare, drift, plan, and generate
+results.
+
+A separate ORM-provider tier installs pinned GORM and SQLAlchemy providers in
+temporary isolated environments. Its regression-budget job requires the
+committed report to remain current without adding non-OK results, while its
+independent full gate requires every provider-output and Ptah-render
+observation to pass.
+
+This evidence applies to Ptah's native external-program source. It does not
+claim evaluation of Atlas HCL `data.external_schema`, which remains a distinct
+Atlas project-language feature.

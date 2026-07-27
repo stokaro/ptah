@@ -5,10 +5,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/zclconf/go-cty/cty"
 
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/internal/tableref"
 )
 
 func (p *parser) parseExtension(block *hclsyntax.Block) error {
@@ -33,7 +35,7 @@ func (p *parser) parseExtension(block *hclsyntax.Block) error {
 }
 
 func (p *parser) parseFunction(block *hclsyntax.Block) error {
-	name, err := p.objectName(block, "function")
+	schema, name, err := p.objectSchemaAndName(block, "function")
 	if err != nil {
 		return err
 	}
@@ -49,7 +51,7 @@ func (p *parser) parseFunction(block *hclsyntax.Block) error {
 		return p.blockError(block, "function %q requires as", name)
 	}
 	function := goschema.Function{
-		Name:       qualifyObjectName(p.optionalRefName(block.Body.Attributes["schema"]), name),
+		Name:       tableref.Canonical(schema, name),
 		Parameters: strings.Join(args, ", "),
 		Returns:    p.optionalRawExpr(block.Body.Attributes["return"]),
 		Language:   p.optionalString(block.Body.Attributes["lang"]),
@@ -85,7 +87,7 @@ func (p *parser) parseFunctionArgs(block *hclsyntax.Block) ([]string, error) {
 }
 
 func (p *parser) parseView(block *hclsyntax.Block) error {
-	name, err := p.objectName(block, "view")
+	schema, name, err := p.objectSchemaAndName(block, "view")
 	if err != nil {
 		return err
 	}
@@ -97,7 +99,7 @@ func (p *parser) parseView(block *hclsyntax.Block) error {
 		return p.blockError(block, "view %q requires as", name)
 	}
 	p.db.Views = append(p.db.Views, goschema.View{
-		Name:      qualifyObjectName(p.optionalRefName(block.Body.Attributes["schema"]), name),
+		Name:      tableref.Canonical(schema, name),
 		Body:      body,
 		WithCheck: block.Body.Attributes["check_option"] != nil,
 		Comment:   p.optionalString(block.Body.Attributes["comment"]),
@@ -106,7 +108,7 @@ func (p *parser) parseView(block *hclsyntax.Block) error {
 }
 
 func (p *parser) parseMaterializedView(block *hclsyntax.Block) error {
-	name, err := p.objectName(block, "materialized")
+	schema, name, err := p.objectSchemaAndName(block, "materialized")
 	if err != nil {
 		return err
 	}
@@ -118,7 +120,7 @@ func (p *parser) parseMaterializedView(block *hclsyntax.Block) error {
 		return p.blockError(block, "materialized %q requires as", name)
 	}
 	view := goschema.MaterializedView{
-		Name:            qualifyObjectName(p.optionalRefName(block.Body.Attributes["schema"]), name),
+		Name:            tableref.Canonical(schema, name),
 		Body:            body,
 		RefreshStrategy: p.optionalString(block.Body.Attributes["refresh_strategy"]),
 		Comment:         p.optionalString(block.Body.Attributes["comment"]),
@@ -571,30 +573,62 @@ func (p *parser) boolAttr(block *hclsyntax.Block, name, label string, fallback b
 	return value.True(), nil
 }
 
-func qualifyObjectName(schema, name string) string {
-	if schema == "" || strings.Contains(name, ".") {
-		return name
-	}
-	return schema + "." + name
-}
-
 func objectRefName(raw, kind string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return ""
 	}
-	raw = rawIdentifierOrString(raw)
-	prefix := kind + "."
-	if name, ok := strings.CutPrefix(raw, prefix); ok {
-		return name
+	if unquoted, err := strconv.Unquote(raw); err == nil {
+		return unquoted
 	}
-	if name, ok := bracketObjectRefName(raw, kind); ok {
+	if name, ok := traversalObjectRefName(raw, kind); ok {
 		return name
 	}
 	if strings.Contains(raw, ".") || strings.HasPrefix(raw, kind+"[") {
 		return ""
 	}
 	return raw
+}
+
+func traversalObjectRefName(raw, kind string) (string, bool) {
+	expr, diags := hclsyntax.ParseExpression([]byte(raw), "object-reference.hcl", hcl.InitialPos)
+	if diags.HasErrors() {
+		return "", false
+	}
+	traversal, diags := hcl.AbsTraversalForExpr(expr)
+	if diags.HasErrors() || len(traversal) < 2 || len(traversal) > 3 {
+		return "", false
+	}
+	root, ok := traversal[0].(hcl.TraverseRoot)
+	if !ok || root.Name != kind {
+		return "", false
+	}
+	parts := make([]string, 0, len(traversal)-1)
+	for _, step := range traversal[1:] {
+		part, ok := traversalPart(step)
+		if !ok {
+			return "", false
+		}
+		parts = append(parts, part)
+	}
+	if len(parts) == 1 {
+		return tableref.Canonical("", parts[0]), true
+	}
+	return tableref.Canonical(parts[0], parts[1]), true
+}
+
+func traversalPart(step hcl.Traverser) (string, bool) {
+	switch step := step.(type) {
+	case hcl.TraverseAttr:
+		return step.Name, true
+	case hcl.TraverseIndex:
+		if !step.Key.IsKnown() || step.Key.IsNull() || step.Key.Type() != cty.String {
+			return "", false
+		}
+		return step.Key.AsString(), true
+	default:
+		return "", false
+	}
 }
 
 func roleTargetName(raw string) string {
@@ -896,19 +930,24 @@ func (p *parser) rejectUnsupportedRangeAttrs(block *hclsyntax.Block) error {
 // schema into the name), this keeps them separate for objects whose IR carries
 // a dedicated Schema field.
 func (p *parser) objectSchemaAndName(block *hclsyntax.Block, blockType string) (schema, name string, err error) {
-	qualified, err := p.objectName(block, blockType)
-	if err != nil {
-		return "", "", err
-	}
 	schemaAttr := p.optionalRefName(block.Body.Attributes["schema"])
-	if idx := strings.LastIndex(qualified, "."); idx >= 0 {
-		labelSchema, bare := qualified[:idx], qualified[idx+1:]
-		if schemaAttr != "" && schemaAttr != labelSchema {
-			return "", "", p.blockError(block, "%s %q schema label conflicts with schema attribute %q", blockType, bare, schemaAttr)
+	switch len(block.Labels) {
+	case 1:
+		return schemaAttr, block.Labels[0], nil
+	case 2:
+		if schemaAttr != "" && schemaAttr != block.Labels[0] {
+			return "", "", p.blockError(
+				block,
+				"%s %q schema label conflicts with schema attribute %q",
+				blockType,
+				block.Labels[1],
+				schemaAttr,
+			)
 		}
-		return labelSchema, bare, nil
+		return block.Labels[0], block.Labels[1], nil
+	default:
+		return "", "", p.blockError(block, "%s block requires one or two name labels", blockType)
 	}
-	return schemaAttr, qualified, nil
 }
 
 // optionalInt64 reads an optional integer attribute, returning nil when absent.

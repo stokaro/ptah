@@ -72,7 +72,7 @@ func NewDriftCommand() *cobra.Command {
 	cmd.Flags().StringArrayVar(&rootDirs, "root-dir", nil, "Root directory to scan for Go entities (repeatable; multiple roots merge into one composite schema; defaults to ./)")
 	cmd.Flags().StringArrayVar(&schemaFiles, "schema-file", nil, "YAML, HCL, or SQL schema file to check drift against instead of, or combined with, Go entities (repeatable; multiple sources merge into one composite schema)")
 	cmd.Flags().StringVar(&schemaCmd, "schema-cmd", "", `External program whose stdout is the desired schema; run without a shell, split on whitespace. Example: "go run ./loader"`)
-	cmd.Flags().StringVar(&schemaFormat, "schema-format", "sql", "Format of the --schema-cmd output: sql")
+	cmd.Flags().StringVar(&schemaFormat, "schema-format", "sql", "Format of the --schema-cmd output: sql, hcl, or yaml")
 	cmd.Flags().StringVar(&dbURL, "db-url", "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	cmd.Flags().StringVar(&format, "format", formatText, "Output format: text, json, github-actions")
 	cmd.Flags().StringVar(&severity, "severity", severityAll, "Failing drift threshold: all or destructive")
@@ -88,6 +88,7 @@ func NewDriftCommand() *cobra.Command {
 	cmd.Flags().StringVar(&configPath, dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
 	cmd.Flags().String(dbcli.EnvFlagName, "", "Project env name to read from ptah.yaml or atlas.hcl")
 	cmd.Flags().BoolVar(&plainHTTP, "plain-http", false, "Use plain HTTP for OCI registry access")
+	dbcli.RegisterExternalSchemaOptInFlag(cmd.Flags())
 
 	cmdutil.ConfigureCommand(cmd)
 	return cmd
@@ -135,6 +136,15 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
 	}
+	commands, err := dbcli.ResolveExternalSchemaCommands(
+		cmd,
+		opts.schemaCmd,
+		opts.schemaFormat,
+		projectCfg,
+	)
+	if err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
+	}
 	dbURL := dbcli.EffectiveString(cmd, "db-url", opts.dbURL, projectCfg.DatabaseURL)
 	schemasValue := dbcli.EffectiveString(cmd, dbcli.SchemasFlagName, opts.schemasRaw, dbcli.JoinSchemas(projectCfg.Schemas))
 
@@ -155,7 +165,7 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 	result, err := schemaops.Compare(cmd.Context(), schemaops.CompareOptions{
 		RootDirs:       opts.rootDirs,
 		SchemaFiles:    opts.schemaFiles,
-		Commands:       dbcli.ExternalSchemaCommands(opts.schemaCmd, opts.schemaFormat, projectCfg),
+		Commands:       commands,
 		DatabaseURL:    dbURL,
 		ConnectTimeout: connectTimeout,
 		IgnoredTables:  ignoredTables,

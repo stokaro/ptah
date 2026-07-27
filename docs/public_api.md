@@ -22,6 +22,7 @@ These packages are intended for application and tool embedders:
 - `github.com/stokaro/ptah/core/ptaherr`
 - `github.com/stokaro/ptah/core/query`
 - `github.com/stokaro/ptah/core/renderer`
+- `github.com/stokaro/ptah/core/schemasource`
 - `github.com/stokaro/ptah/core/sqlutil`
 - `github.com/stokaro/ptah/dbschema`
 - `github.com/stokaro/ptah/dbschema/types`
@@ -73,6 +74,14 @@ handle, so they cannot alter the migrator execution path.
 `FilterCases`, run against an ephemeral or explicit throwaway database, and
 render text, JSON, or HTML reports. See [Declarative database
 testing](testing.md).
+
+`core/schemasource` executes an explicitly configured program without a shell,
+bounds its runtime and captured output, cleans up descendant processes, and
+parses SQL, HCL, or YAML stdout into Ptah's schema IR. Empty output is rejected
+to prevent an accidentally broken provider from becoming an empty desired
+schema, and displayed stderr/parser diagnostics are bounded, secret-redacted,
+and terminal-safe. Embedders can use the same external desired-schema contract
+as the CLI without depending on Cobra or any `cmd/internal` package.
 
 `migration/schemadiff/types.SchemaDiff` stores index additions and removals as
 canonical `[]IndexRef` fields. Every index reference includes its owning table.

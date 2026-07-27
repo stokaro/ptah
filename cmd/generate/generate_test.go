@@ -2,8 +2,12 @@ package generate_test
 
 import (
 	"bytes"
+	"fmt"
+	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -13,6 +17,41 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 )
 
+func runGenerateHelperProcess() {
+	if os.Getenv("GO_WANT_GENERATE_HELPER_PROCESS") != "1" {
+		return
+	}
+	fmt.Fprint(os.Stdout, "tables:\n  configured_widgets:\n    columns:\n      id: {type: INTEGER, primary: true}\n")
+	os.Exit(0)
+}
+
+// TestGenerateHelperProcess is not a real test; the config integration test
+// re-executes this binary as an external schema loader.
+func TestGenerateHelperProcess(t *testing.T) {
+	runGenerateHelperProcess()
+}
+
+func captureGenerateStdout(c *qt.C, run func() error) (string, error) {
+	c.Helper()
+
+	oldStdout := os.Stdout
+	outR, outW, err := os.Pipe()
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		os.Stdout = oldStdout
+		c.Assert(outR.Close(), qt.IsNil)
+	})
+
+	os.Stdout = outW
+	runErr := run()
+	c.Assert(outW.Close(), qt.IsNil)
+	os.Stdout = oldStdout
+
+	output, err := io.ReadAll(outR)
+	c.Assert(err, qt.IsNil)
+	return string(output), runErr
+}
+
 func outputStatementContaining(output, marker string) string {
 	for statement := range strings.SplitSeq(output, "-- Statement ") {
 		if strings.Contains(statement, marker) {
@@ -20,6 +59,57 @@ func outputStatementContaining(output, marker string) string {
 		}
 	}
 	return ""
+}
+
+func TestGenerateCommand_UsesExternalSchemaFromPtahConfigEnv(t *testing.T) {
+	c := qt.New(t)
+
+	configPath := filepath.Join(t.TempDir(), "ptah.yaml")
+	config := fmt.Sprintf(`env:
+  verified:
+    external_schema:
+      program: [%s, "-test.run=TestGenerateHelperProcess"]
+      format: yaml
+      env: ["GO_WANT_GENERATE_HELPER_PROCESS=1"]
+`, strconv.Quote(os.Args[0]))
+	// configPath is rooted in t.TempDir and is not influenced by production input.
+	c.Assert(os.WriteFile(configPath, []byte(config), 0o600), qt.IsNil) //nolint:gosec // controlled test-only path
+
+	cmd := generate.NewGenerateCommand()
+	cmd.SetArgs([]string{
+		"--config", configPath,
+		"--env", "verified",
+		"--allow-external-schema",
+		"--dialect", "postgres",
+	})
+
+	output, err := captureGenerateStdout(c, cmd.Execute)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(output, qt.Contains, "Found 1 tables")
+	c.Assert(output, qt.Contains, `CREATE TABLE "configured_widgets"`)
+}
+
+func TestGenerateCommand_RejectsImplicitExternalSchemaFromConfig(t *testing.T) {
+	c := qt.New(t)
+
+	configPath := filepath.Join(t.TempDir(), "ptah.yaml")
+	config := fmt.Sprintf(`external_schema:
+  program: [%s, "-test.run=TestGenerateHelperProcess"]
+  format: yaml
+  env: ["GO_WANT_GENERATE_HELPER_PROCESS=1"]
+`, strconv.Quote(os.Args[0]))
+	c.Assert(
+		os.WriteFile(configPath, []byte(config), 0o600), //nolint:gosec // controlled test-only path
+		qt.IsNil,
+	)
+
+	cmd := generate.NewGenerateCommand()
+	cmd.SetArgs([]string{"--config", configPath, "--dialect", "postgres"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, "ptah.yaml external_schema is disabled by default; pass --allow-external-schema to execute it")
 }
 
 func TestGenerateCommandUnsupportedDialectExits2WithoutPanicTrace(t *testing.T) {

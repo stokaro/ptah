@@ -5,6 +5,8 @@ import (
 	"path"
 	"reflect"
 	"strings"
+
+	"github.com/stokaro/ptah/internal/tableref"
 )
 
 const ambiguousTableScope = "\x00"
@@ -55,13 +57,17 @@ func (r tableScopeResolver) resolve(structName, explicitTable string) string {
 	if qualifiedName, exists := r.byQualified[explicitTable]; exists {
 		return qualifiedName
 	}
+	explicitRef, ok := tableref.Parse(explicitTable)
+	if !ok || explicitRef.Qualified {
+		return explicitTable
+	}
 	if qualifiedName := resolvedTableScope(r.byStruct, structName, ""); qualifiedName != "" {
-		tableName := strings.TrimPrefix(qualifiedName, tableSchemaPrefix(qualifiedName))
-		if explicitTable == tableName || explicitTable == qualifiedName {
+		tableRef, valid := tableref.Parse(qualifiedName)
+		if valid && explicitRef.Name == tableRef.Name {
 			return qualifiedName
 		}
 	}
-	return resolvedTableScope(r.byPlainName, explicitTable, explicitTable)
+	return resolvedTableScope(r.byPlainName, explicitRef.Name, explicitTable)
 }
 
 func resolvedTableScope(scopes map[string]string, key, fallback string) string {
@@ -70,14 +76,6 @@ func resolvedTableScope(scopes map[string]string, key, fallback string) string {
 		return fallback
 	}
 	return scope
-}
-
-func tableSchemaPrefix(qualifiedName string) string {
-	position := strings.LastIndex(qualifiedName, ".")
-	if position < 0 {
-		return ""
-	}
-	return qualifiedName[:position+1]
 }
 
 // reconcileTableOwners maps source-local Go struct names onto one stable owner

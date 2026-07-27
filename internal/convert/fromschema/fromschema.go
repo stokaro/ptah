@@ -60,6 +60,7 @@ import (
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/internal/sqlident"
 )
 
 // escapeSQLStringLiteral properly escapes a string value for use in SQL string literals.
@@ -727,7 +728,7 @@ func fromTableWithFieldConverter(
 	targetPlatform string,
 	convertField fieldConverter,
 ) *ast.CreateTableNode {
-	createTable := ast.NewCreateTable(table.QualifiedName())
+	createTable := ast.NewCreateTable(renderTableName(table, targetPlatform))
 
 	newTable := applyTablePlatformOverrides(createTable, table, targetPlatform)
 
@@ -782,6 +783,13 @@ func fromTableWithFieldConverter(
 	}
 
 	return createTable
+}
+
+func renderTableName(table goschema.Table, targetPlatform string) string {
+	if strings.Contains(table.Schema, ".") || strings.Contains(table.Name, ".") {
+		return sqlident.Qualified(targetPlatform, table.Schema, table.Name)
+	}
+	return table.QualifiedName()
 }
 
 func fromTableWithoutForeignKeys(
@@ -1142,10 +1150,7 @@ func FromEnum(enum goschema.Enum) *ast.EnumNode {
 // renderer splits on "." to escape each part, so the qualified form is safe to
 // pass as a CreateTypeNode name.
 func qualifyTypeName(schema, name string) string {
-	if schema != "" {
-		return schema + "." + name
-	}
-	return name
+	return goschema.QualifyTableName(schema, name)
 }
 
 // FromDomain converts a goschema.Domain into a CreateTypeNode wrapping a domain

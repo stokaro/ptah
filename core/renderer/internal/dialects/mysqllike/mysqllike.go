@@ -9,6 +9,7 @@ import (
 	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/core/renderer/internal/dialects/internal/bufwriter"
+	"github.com/stokaro/ptah/internal/tableref"
 )
 
 // Renderer provides MySQL-like-specific SQL rendering
@@ -130,15 +131,18 @@ func isMySQLTemporalDefaultExpression(columnType, value string) bool {
 }
 
 func escapeIdentifier(identifier string) string {
-	unquoted := unquoteIdentifier(identifier)
-	escaped := strings.ReplaceAll(unquoted, "`", "``")
+	return escapeIdentifierValue(unquoteIdentifier(identifier))
+}
+
+func escapeIdentifierValue(identifier string) string {
+	escaped := strings.ReplaceAll(identifier, "`", "``")
 	return "`" + escaped + "`"
 }
 
 func escapeQualifiedIdentifier(identifier string) string {
 	parts := splitQualifiedIdentifier(identifier)
 	for i, part := range parts {
-		parts[i] = escapeIdentifier(part)
+		parts[i] = escapeIdentifierValue(part)
 	}
 	return strings.Join(parts, ".")
 }
@@ -152,27 +156,29 @@ func escapeIdentifierList(identifiers []string) []string {
 }
 
 func unquoteIdentifier(identifier string) string {
-	if len(identifier) >= 2 && identifier[0] == '`' && identifier[len(identifier)-1] == '`' {
+	if len(identifier) < 2 {
+		return identifier
+	}
+	switch {
+	case identifier[0] == '`' && identifier[len(identifier)-1] == '`':
 		return strings.ReplaceAll(identifier[1:len(identifier)-1], "``", "`")
+	case identifier[0] == '"' && identifier[len(identifier)-1] == '"':
+		return strings.ReplaceAll(identifier[1:len(identifier)-1], `""`, `"`)
+	case identifier[0] == '[' && identifier[len(identifier)-1] == ']':
+		return strings.ReplaceAll(identifier[1:len(identifier)-1], "]]", "]")
 	}
 	return identifier
 }
 
 func splitQualifiedIdentifier(identifier string) []string {
-	parts := []string{""}
-	inBackticks := false
-	for i := range len(identifier) {
-		character := identifier[i]
-		if character == '`' {
-			inBackticks = !inBackticks
-		}
-		if character == '.' && !inBackticks {
-			parts = append(parts, "")
-			continue
-		}
-		parts[len(parts)-1] += string(character)
+	ref, ok := tableref.Parse(identifier)
+	if !ok {
+		return []string{identifier}
 	}
-	return parts
+	if !ref.Qualified {
+		return []string{ref.Name}
+	}
+	return []string{ref.Schema, ref.Name}
 }
 
 // dropConstraintSQL renders a single ALTER TABLE constraint drop.

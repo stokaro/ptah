@@ -62,6 +62,69 @@ func TestPlannerCreatesTableWithInlineConstraints(t *testing.T) {
 	c.Assert(sql, qt.Contains, "STRICT")
 }
 
+func TestPlannerCreatesAddedTablesWithQualifiedConstraintDiffs(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Tables: []goschema.Table{
+			{Name: "users", StructName: "users"},
+			{Name: "posts", StructName: "posts"},
+		},
+		Fields: []goschema.Field{
+			{Name: "id", Type: "INTEGER", StructName: "users", Primary: true},
+			{Name: "id", Type: "INTEGER", StructName: "posts", Primary: true},
+			{Name: "user_id", Type: "INTEGER", StructName: "posts", Nullable: false},
+		},
+		Constraints: []goschema.Constraint{{
+			Name:          "fk_posts_user",
+			Type:          "FOREIGN KEY",
+			StructName:    "posts",
+			Table:         "posts",
+			Columns:       []string{"user_id"},
+			ForeignTable:  "users",
+			ForeignColumn: "id",
+			OnDelete:      "CASCADE",
+		}},
+	}
+	diff := &types.SchemaDiff{
+		TablesAdded:      []string{"posts", "users"},
+		ConstraintsAdded: []string{"fk_posts_user"},
+		ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+			Name:          "fk_posts_user",
+			TableName:     "posts",
+			Type:          "FOREIGN KEY",
+			Columns:       []string{"user_id"},
+			ForeignTable:  "users",
+			ForeignColumn: "id",
+		}},
+	}
+
+	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.SQLite)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, `CREATE TABLE "users"`)
+	c.Assert(sql, qt.Contains, `CREATE TABLE "posts"`)
+	c.Assert(sql, qt.Contains, `CONSTRAINT "fk_posts_user" FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE CASCADE`)
+}
+
+func TestPlannerDropsTablesWithQualifiedConstraintDiffs(t *testing.T) {
+	c := qt.New(t)
+	diff := &types.SchemaDiff{
+		TablesRemoved:      []string{"posts"},
+		ConstraintsRemoved: []string{"fk_posts_user"},
+		ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{{
+			Name:      "fk_posts_user",
+			TableName: "posts",
+			Type:      "FOREIGN KEY",
+		}},
+	}
+
+	sql, err := planner.GenerateSchemaDiffSQL(diff, &goschema.Database{}, platform.SQLite)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, `DROP TABLE IF EXISTS "posts";`)
+}
+
 func TestPlannerAddsColumnsAndIndexes(t *testing.T) {
 	c := qt.New(t)
 
@@ -354,6 +417,20 @@ func TestPlannerRejectsRebuildOnlyTableChanges(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, tt.want)
 		})
 	}
+}
+
+func TestPlannerRejectsUnqualifiedExistingTableConstraintChanges(t *testing.T) {
+	c := qt.New(t)
+	diff := &types.SchemaDiff{ConstraintsAdded: []string{"users_name_key"}}
+
+	nodes, err := planner.GenerateSchemaDiffAST(diff, &goschema.Database{}, platform.SQLite)
+
+	c.Assert(nodes, qt.IsNil)
+	var planErr *ptaherr.PlanError
+	c.Assert(err, qt.ErrorAs, &planErr)
+	c.Assert(planErr.Dialect, qt.Equals, platform.SQLite)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, "sqlite: changing constraints on existing tables requires a table rebuild plan")
 }
 
 func TestPlannerRejectsSQLiteExcludeConstraint(t *testing.T) {

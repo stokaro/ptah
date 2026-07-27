@@ -62,6 +62,7 @@ webhooks, lint defaults, and online-DDL policy.
 | Setting area | Example keys |
 | --- | --- |
 | Database target | `url`, `src`, `schema.src`, `dev`, `schemas` |
+| External desired schema | `external_schema.program`, `external_schema.format`, `external_schema.working_dir`, `external_schema.env` |
 | Migration directory and revisions | `migration.dir`, `migration.format`, `migration.revisions_table`, `migration.revision_format` |
 | Safety and operations | `migration.pre_up_hook`, `migration.pg_dump_to`, `migration.webhook`, `migration.exec_order`, `migration.tx_mode` |
 | Lint defaults and policy | `lint.dialect`, `lint.disabled-rules`, `lint.latest`, `lint.git.base`, `lint.destructive.error`, `lint.concurrent_index.error` |
@@ -82,6 +83,37 @@ Atlas project flags such as `--config`, `-c`, `--env`, and repeated
 `--var name=value` belong to this tree only.
 `ptah-compat` is the drop-in replacement binary for scripts that expect
 Atlas-style root commands; it is not a separate configuration surface.
+
+## External desired schema
+
+Use `external_schema` when an ORM, framework, or generator owns the desired
+schema:
+
+```yaml
+external_schema:
+  program: [".venv/bin/atlas-provider-sqlalchemy", "--path", "./models", "--dialect", "postgresql"]
+  format: sql
+  working_dir: ./app
+  env: ["APP_ENV=dev"]
+```
+
+`program` is an explicit argument list and is executed without a shell.
+`format` accepts `sql` (the default), `hcl`, or `yaml`. The block supplies the
+desired schema to native `schema render`, `schema compare`, `schema drift`,
+`migrations plan`, and `migrations generate` commands when `--schema-cmd` is
+not set. An explicit command and its `--schema-format` take precedence;
+`--schema-cmd=` disables the configured source. `--env` selects an
+environment-scoped block. Empty command output is rejected. `PATH` and `PWD`
+cannot be overridden through `external_schema.env`; use an explicit executable
+path and `working_dir`.
+
+Auto-discovered configuration never executes a program implicitly. Pass
+`--allow-external-schema` to use the configured block. An explicit
+`--schema-cmd` is already an opt-in and does not require that additional flag.
+Relative `working_dir` values are constrained to the current working directory
+after symlink resolution. Ptah bounds output, redacts secrets and terminal
+control characters from stderr and parser diagnostics, and cleans up descendant
+processes.
 
 Continue with [Atlas project config](../atlas-project-config/) for the supported
 `atlas.hcl` subset.

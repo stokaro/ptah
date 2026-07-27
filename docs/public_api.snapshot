@@ -289,7 +289,7 @@ type ExternalSchemaConfig struct {
     // Program is the executable and its arguments as an explicit argv list.
     // Program[0] is the command; it is run without a shell.
     Program []string
-    // Format is the stdout format (default "sql").
+    // Format is the stdout format: "sql" (default), "hcl", or "yaml".
     Format string
     // WorkingDir is the directory the program runs in; empty uses the current
     // working directory.
@@ -300,7 +300,7 @@ type ExternalSchemaConfig struct {
     ExternalSchemaConfig configures an external program whose standard output is
     the desired schema. It is Ptah's open equivalent of Atlas's external_schema
     data source: Program is run directly (no shell) and must print the complete
-    desired schema — currently SQL DDL — to stdout.
+    desired schema as SQL, HCL, or YAML to stdout.
 
 
 ### github.com/stokaro/ptah/config/projectconfig.FormatConfig
@@ -4885,6 +4885,39 @@ type RenderVisitor interface {
 func NewRenderer(dialect string) (RenderVisitor, error)
 func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (RenderVisitor, error)
 
+## github.com/stokaro/ptah/core/schemasource
+
+const DefaultTimeout = 60 * time.Second
+func Run(ctx context.Context, cmd Command) (*goschema.Database, error)
+type Command struct{ ... }
+
+### github.com/stokaro/ptah/core/schemasource.Command
+
+package schemasource // import "github.com/stokaro/ptah/core/schemasource"
+
+type Command struct {
+    // Args is the program and its arguments. Args[0] is the executable; it is run
+    // directly with no shell, so no shell quoting or expansion is applied.
+    Args []string
+    // Format is the stdout format: "sql", "hcl", or "yaml". Empty defaults to
+    // "sql"; "yml" is accepted as an alias for "yaml".
+    Format string
+    // Dialect is an optional dialect hint used when parsing SQL output.
+    Dialect string
+    // Dir is the working directory for the program. Empty uses the current
+    // working directory.
+    Dir string
+    // Timeout bounds execution. Zero uses DefaultTimeout; a negative value
+    // disables the timeout.
+    Timeout time.Duration
+    // Env holds extra "KEY=VALUE" entries appended to the current environment.
+    // PATH and PWD cannot be overridden; use an explicit executable path and Dir.
+    Env []string
+}
+    Command describes an external program that writes a desired schema to
+    stdout.
+
+
 ## github.com/stokaro/ptah/core/sqlutil
 
 func IsSQLServerGoBatchSeparatorAt(input string, start, end int) bool
@@ -4894,6 +4927,7 @@ func Rebind(dialect, query string) string
 func SplitSQLStatements(sql string) []string
 func SplitSQLStatementsForDialect(sql string, dialect string) []string
 func StripComments(sql string) string
+func StripCommentsForDialect(sql, dialect string) string
 
 ## github.com/stokaro/ptah/dbschema
 

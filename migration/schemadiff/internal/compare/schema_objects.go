@@ -8,6 +8,7 @@ import (
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/tableref"
 	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
@@ -173,20 +174,19 @@ func findDatabaseViewForGeneratedView(
 	databaseViewsByName map[string][]types.DBView,
 	databaseViewsByQualifiedName map[string]types.DBView,
 ) (types.DBView, bool) {
-	if viewNameHasSchema(generatedView.Name) {
-		view, ok := databaseViewsByQualifiedName[generatedView.Name]
+	ref, ok := tableref.Parse(generatedView.Name)
+	if !ok {
+		return types.DBView{}, false
+	}
+	if ref.Qualified {
+		view, ok := databaseViewsByQualifiedName[tableref.Canonical(ref.Schema, ref.Name)]
 		return view, ok
 	}
-	candidates := databaseViewsByName[generatedView.Name]
+	candidates := databaseViewsByName[ref.Name]
 	if len(candidates) != 1 {
 		return types.DBView{}, false
 	}
 	return candidates[0], true
-}
-
-func viewNameHasSchema(name string) bool {
-	schema, viewName, ok := strings.Cut(name, ".")
-	return ok && strings.TrimSpace(schema) != "" && strings.TrimSpace(viewName) != ""
 }
 
 func viewNameForDiff(view types.DBView) string {

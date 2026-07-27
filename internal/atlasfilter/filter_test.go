@@ -53,6 +53,30 @@ func TestExcludeDatabase_TableSubtypeSelector(t *testing.T) {
 	c.Assert(tableNames(got.Tables), qt.DeepEquals, []string{"public.users"})
 }
 
+func TestExcludeDatabase_PreservesStructuralTableIdentity(t *testing.T) {
+	c := qt.New(t)
+	schema := &dbschematypes.DBSchema{
+		Tables: []dbschematypes.DBTable{
+			{Name: "tenant.data"},
+			{Schema: "tenant", Name: "data"},
+		},
+		Indexes: []dbschematypes.DBIndex{
+			{Name: "literal_lookup", TableName: "tenant.data"},
+			{Name: "qualified_lookup", Schema: "tenant", TableName: "data"},
+		},
+	}
+
+	got, err := atlasfilter.ExcludeDatabase(schema, []string{`"tenant.data"`})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.Tables, qt.HasLen, 1)
+	c.Assert(got.Tables[0].QualifiedName(), qt.Equals, "tenant.data")
+	c.Assert(got.Indexes, qt.HasLen, 1)
+	c.Assert(got.Indexes[0].Name, qt.Equals, "qualified_lookup")
+	c.Assert(got.Indexes[0].Schema, qt.Equals, "tenant")
+	c.Assert(got.Indexes[0].TableName, qt.Equals, "data")
+}
+
 func TestExcludeDatabase_ColumnFilterRemovesDependentObjects(t *testing.T) {
 	c := qt.New(t)
 	schema := filterFixtureSchema()

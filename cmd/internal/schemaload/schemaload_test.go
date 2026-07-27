@@ -10,8 +10,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/cmd/internal/schemaload"
-	"github.com/stokaro/ptah/cmd/internal/schemasource"
 	"github.com/stokaro/ptah/core/renderer"
+	"github.com/stokaro/ptah/core/schemasource"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/schemadiff"
@@ -35,6 +35,19 @@ tables:
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Name, qt.Equals, "users")
+}
+
+func TestOptionsSourcesRedactsExternalCommandArguments(t *testing.T) {
+	c := qt.New(t)
+
+	got := (schemaload.Options{
+		Commands: []schemasource.Command{{
+			Args: []string{"/usr/local/bin/schema-loader", "--token", "secret-value"},
+		}},
+	}).Sources()
+
+	c.Assert(got, qt.Equals, "$(schema-loader + 2 args)")
+	c.Assert(got, qt.Not(qt.Contains), "secret-value")
 }
 
 func TestLoad_AtlasHCLSchemaFile(t *testing.T) {

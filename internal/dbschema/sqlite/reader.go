@@ -24,6 +24,11 @@ type Reader struct {
 	schema string
 }
 
+type tableColumnKey struct {
+	table  string
+	column string
+}
+
 // NewSQLiteReader creates a SQLite schema reader.
 func NewSQLiteReader(db *sql.DB, schema string) *Reader {
 	if schema == "" {
@@ -766,7 +771,7 @@ func first(values []string) string {
 }
 
 func reconcileColumnUniqueness(schema *types.DBSchema) {
-	uniqueColumns := make(map[string]struct{})
+	uniqueColumns := make(map[tableColumnKey]struct{})
 	for _, index := range schema.Indexes {
 		if index.IsPrimary || !index.IsUnique || len(index.Columns) != 1 {
 			continue
@@ -774,13 +779,13 @@ func reconcileColumnUniqueness(schema *types.DBSchema) {
 		if strings.Contains(strings.ToUpper(index.Definition), " WHERE ") {
 			continue
 		}
-		uniqueColumns[index.QualifiedTableName()+"."+index.Columns[0]] = struct{}{}
+		uniqueColumns[tableColumnKey{table: index.QualifiedTableName(), column: index.Columns[0]}] = struct{}{}
 	}
 	for tableIdx := range schema.Tables {
 		table := &schema.Tables[tableIdx]
 		for columnIdx := range table.Columns {
 			column := &table.Columns[columnIdx]
-			_, unique := uniqueColumns[table.QualifiedName()+"."+column.Name]
+			_, unique := uniqueColumns[tableColumnKey{table: table.QualifiedName(), column: column.Name}]
 			column.IsUnique = unique
 		}
 	}

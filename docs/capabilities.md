@@ -46,6 +46,11 @@ Atlas CE cannot run the corresponding migration or schema test commands; Atlas
 keeps that testing framework in its proprietary feature set. See
 [Declarative database testing](testing.md).
 
+Desired-schema source format is independent of dialect capabilities. Go
+annotations, YAML/HCL/SQL files, and external commands that emit SQL, HCL, or
+YAML all resolve into Ptah's schema IR before capability-aware planning and
+rendering begin.
+
 ## The model
 
 Two layers cooperate:

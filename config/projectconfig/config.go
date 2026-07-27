@@ -142,12 +142,12 @@ func (c OnlineDDLConfig) Validate() error {
 // ExternalSchemaConfig configures an external program whose standard output is
 // the desired schema. It is Ptah's open equivalent of Atlas's external_schema
 // data source: Program is run directly (no shell) and must print the complete
-// desired schema — currently SQL DDL — to stdout.
+// desired schema as SQL, HCL, or YAML to stdout.
 type ExternalSchemaConfig struct {
 	// Program is the executable and its arguments as an explicit argv list.
 	// Program[0] is the command; it is run without a shell.
 	Program []string
-	// Format is the stdout format (default "sql").
+	// Format is the stdout format: "sql" (default), "hcl", or "yaml".
 	Format string
 	// WorkingDir is the directory the program runs in; empty uses the current
 	// working directory.

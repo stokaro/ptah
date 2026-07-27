@@ -15,6 +15,7 @@ import (
 	"github.com/stokaro/ptah/internal/convert/toschema"
 	"github.com/stokaro/ptah/internal/parser"
 	"github.com/stokaro/ptah/internal/pathguard"
+	"github.com/stokaro/ptah/internal/tableref"
 	"github.com/stokaro/ptah/internal/yamlschema"
 )
 
@@ -239,7 +240,6 @@ func applyTablePrimaryKeys(schema *dbschematypes.DBSchema, tables []goschema.Tab
 			columns[column] = struct{}{}
 		}
 		primaryByTable[table.QualifiedName()] = columns
-		primaryByTable[table.Name] = columns
 	}
 	for tableIdx, table := range schema.Tables {
 		columns := primaryByTable[table.QualifiedName()]
@@ -293,9 +293,18 @@ func toDBConstraints(
 	}
 
 	out := make([]dbschematypes.DBConstraint, 0, len(constraints)+len(tablesList)+len(fields))
-	seen := make(map[string]struct{})
+	type constraintIdentity struct {
+		schema string
+		table  string
+		name   string
+	}
+	seen := make(map[constraintIdentity]struct{})
 	appendConstraint := func(constraint dbschematypes.DBConstraint) {
-		key := constraint.QualifiedTableName() + "." + constraint.Name
+		key := constraintIdentity{
+			schema: constraint.Schema,
+			table:  constraint.TableName,
+			name:   constraint.Name,
+		}
 		if _, ok := seen[key]; ok {
 			return
 		}
@@ -335,7 +344,9 @@ func toDBConstraints(
 			WhereCondition: optionalStringPtr(constraint.WhereCondition),
 		}
 		if constraint.ForeignTable != "" {
-			dbConstraint.ForeignTable = new(constraint.ForeignTable)
+			foreignTable, foreignSchema := splitTableIdentity(constraint.ForeignTable)
+			dbConstraint.ForeignTable = new(foreignTable)
+			dbConstraint.ForeignSchema = foreignSchema
 			dbConstraint.ForeignColumn = optionalStringPtr(constraint.ForeignColumn)
 			dbConstraint.ForeignColumns = append([]string(nil), constraint.ForeignColumnsOrDefault()...)
 			dbConstraint.DeleteRule = optionalStringPtr(constraint.OnDelete)
@@ -379,6 +390,7 @@ func toDBFieldConstraints(table goschema.Table, field goschema.Field) []dbschema
 		if name == "" {
 			name = fromschema.GenerateForeignKeyName(table.Name, field.Name)
 		}
+		foreignTable, foreignSchema := splitTableIdentity(fkRef.Table)
 		out = append(out, dbschematypes.DBConstraint{
 			Name:           name,
 			TableName:      table.Name,
@@ -386,7 +398,8 @@ func toDBFieldConstraints(table goschema.Table, field goschema.Field) []dbschema
 			Type:           "FOREIGN KEY",
 			ColumnName:     field.Name,
 			ColumnNames:    []string{field.Name},
-			ForeignTable:   new(fkRef.Table),
+			ForeignTable:   new(foreignTable),
+			ForeignSchema:  foreignSchema,
 			ForeignColumn:  optionalStringPtr(fkRef.Column),
 			ForeignColumns: append([]string(nil), fkRef.ReferencedColumns()...),
 			DeleteRule:     optionalStringPtr(field.OnDelete),
@@ -405,13 +418,21 @@ func tablePrimaryKeyName(table goschema.Table) string {
 
 func indexTable(structName, explicitTable string, tables map[string]goschema.Table) (tableName string, schema string) {
 	if explicitTable != "" {
-		return explicitTable, ""
+		return splitTableIdentity(explicitTable)
 	}
 	table, ok := tables[structName]
 	if !ok {
 		return structName, ""
 	}
 	return table.Name, table.Schema
+}
+
+func splitTableIdentity(value string) (name, schema string) {
+	ref, ok := tableref.Parse(value)
+	if !ok {
+		return value, ""
+	}
+	return ref.Name, ref.Schema
 }
 
 func toDBExtensions(extensions []goschema.Extension) []dbschematypes.DBExtension {
@@ -449,12 +470,14 @@ func toDBFunctions(functions []goschema.Function) []dbschematypes.DBFunction {
 func toDBViews(views []goschema.View) []dbschematypes.DBView {
 	out := make([]dbschematypes.DBView, 0, len(views))
 	for _, view := range views {
+		name, schema := splitTableIdentity(view.Name)
 		checkOption := "NONE"
 		if view.WithCheck {
 			checkOption = "LOCAL"
 		}
 		out = append(out, dbschematypes.DBView{
-			Name:        view.Name,
+			Name:        name,
+			Schema:      schema,
 			Body:        view.Body,
 			CheckOption: checkOption,
 			Comment:     view.Comment,
@@ -467,8 +490,10 @@ func toDBMaterializedViews(views []goschema.MaterializedView) []dbschematypes.DB
 	out := make([]dbschematypes.DBMatView, 0, len(views))
 	for _, view := range views {
 		view.Canonicalize()
+		name, schema := splitTableIdentity(view.Name)
 		out = append(out, dbschematypes.DBMatView{
-			Name:            view.Name,
+			Name:            name,
+			Schema:          schema,
 			Body:            view.Body,
 			RefreshStrategy: view.RefreshStrategy,
 			Comment:         view.Comment,
@@ -537,14 +562,18 @@ func toDBGrants(grants []goschema.Grant) []dbschematypes.DBGrant {
 		for _, privilege := range grant.Privileges {
 			objectType := "TABLE"
 			objectName := grant.OnTable
+			objectSchema := ""
 			if grant.OnSchema != "" {
 				objectType = "SCHEMA"
 				objectName = grant.OnSchema
+			} else {
+				objectName, objectSchema = splitTableIdentity(objectName)
 			}
 			out = append(out, dbschematypes.DBGrant{
 				Role:       grant.Role,
 				Privilege:  privilege,
 				ObjectType: objectType,
+				Schema:     objectSchema,
 				ObjectName: objectName,
 				WithOption: grant.WithOption,
 				GrantedBy:  grant.GrantedBy,

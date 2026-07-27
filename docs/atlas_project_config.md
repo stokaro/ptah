@@ -122,6 +122,15 @@ that `atlas.hcl` file, not the process working directory. Explicit CLI `--to`
 and `--from` values keep CLI semantics and resolve relative to the process
 working directory unless they are absolute.
 
+Ptah's `ptah.yaml external_schema` block is a separate native configuration
+surface. It supplies an explicit external-program argument list and SQL, HCL,
+or YAML stdout to `ptah schema render`, `ptah schema compare`,
+`ptah schema drift`, `ptah migrations plan`, and
+`ptah migrations generate`; executing that config-sourced program requires
+`--allow-external-schema`. Atlas HCL `data.external_schema` evaluation remains
+outside the supported `atlas.hcl` subset and must not be inferred from the
+native Ptah feature.
+
 Ptah parses Atlas's `atlas`, `golang-migrate`, `goose`, `flyway`, `liquibase`,
 and `dbmate` migration format values so the project file can be evaluated
 without changing Atlas syntax. `ptah atlas migrate apply` executes all of them.

@@ -1,27 +1,47 @@
 package dbcli
 
 import (
+	"fmt"
+	"slices"
+	"strings"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/stokaro/ptah/cmd/internal/schemasource"
 	"github.com/stokaro/ptah/config/projectconfig"
+	"github.com/stokaro/ptah/core/schemasource"
+	"github.com/stokaro/ptah/internal/pathguard"
 )
 
 const (
 	// EnvFlagName selects an env block from project config.
 	EnvFlagName = "env"
+	// AllowExternalSchemaFlagName explicitly permits executing the
+	// external_schema program loaded from ptah.yaml.
+	AllowExternalSchemaFlagName = "allow-external-schema"
 	// AtlasProjectConfigFlagName passes an Atlas project config path through
 	// internal command adapters without exposing Atlas flags on native commands.
 	AtlasProjectConfigFlagName = "atlas-project-config"
 	// AtlasProjectVarFlagName passes Atlas project variable overrides through
 	// internal command adapters without exposing Atlas flags on native commands.
 	AtlasProjectVarFlagName = "atlas-project-var"
+	schemaCommandFlagName   = "schema-cmd"
 )
 
 // RegisterEnvFlag registers the shared project env selection flag.
 func RegisterEnvFlag(flags *pflag.FlagSet, target *string) {
 	flags.StringVar(target, EnvFlagName, "", "Project env name to read from ptah.yaml or atlas.hcl")
+}
+
+// RegisterExternalSchemaOptInFlag registers the safety gate for executing an
+// external_schema program loaded from ptah.yaml. An explicit --schema-cmd does
+// not require this flag because supplying the command is already an opt-in.
+func RegisterExternalSchemaOptInFlag(flags *pflag.FlagSet) {
+	flags.Bool(
+		AllowExternalSchemaFlagName,
+		false,
+		"Allow executing the external_schema program configured in ptah.yaml",
+	)
 }
 
 // RegisterAtlasProjectInternalFlags registers hidden adapter-only flags used to
@@ -75,20 +95,75 @@ func EffectiveString(cmd *cobra.Command, flagName, flagValue, configValue string
 	return configValue
 }
 
-// ExternalSchemaCommands resolves the external-command schema source for a
-// command, preferring the --schema-cmd flag value and falling back to the
-// ptah.yaml external_schema block when the flag is empty. It returns nil when
-// neither is configured.
-func ExternalSchemaCommands(schemaCmd, schemaFormat string, cfg projectconfig.Config) []schemasource.Command {
-	if commands := schemasource.CommandsFromCLI(schemaCmd, schemaFormat, ""); commands != nil {
-		return commands
+// ResolveExternalSchemaCommands resolves the external-command schema source for
+// a command, preferring an explicit --schema-cmd. A ptah.yaml external_schema
+// block requires --allow-external-schema because the conventional config file
+// is auto-discovered and executing repository-controlled code must be explicit.
+func ResolveExternalSchemaCommands(
+	cmd *cobra.Command,
+	schemaCmd string,
+	schemaFormat string,
+	cfg projectconfig.Config,
+) ([]schemasource.Command, error) {
+	if commands := externalSchemaCommandsFromCLI(schemaCmd, schemaFormat); commands != nil {
+		return commands, nil
 	}
-	return schemasource.CommandsFromConfig(
+	if flagChanged(cmd, schemaCommandFlagName) {
+		return nil, nil
+	}
+	if len(cfg.ExternalSchema.Program) == 0 {
+		return nil, nil
+	}
+	allowed, err := cmd.Flags().GetBool(AllowExternalSchemaFlagName)
+	if err != nil {
+		return nil, err
+	}
+	if !allowed {
+		return nil, fmt.Errorf(
+			"ptah.yaml external_schema is disabled by default; pass --%s to execute it",
+			AllowExternalSchemaFlagName,
+		)
+	}
+	return externalSchemaCommandsFromConfig(
 		cfg.ExternalSchema.Program,
 		cfg.ExternalSchema.Format,
 		cfg.ExternalSchema.WorkingDir,
 		cfg.ExternalSchema.Env,
 	)
+}
+
+func externalSchemaCommandsFromCLI(commandLine, format string) []schemasource.Command {
+	if strings.TrimSpace(commandLine) == "" {
+		return nil
+	}
+	return []schemasource.Command{{
+		Args:   strings.Fields(commandLine),
+		Format: format,
+	}}
+}
+
+func externalSchemaCommandsFromConfig(
+	program []string,
+	format string,
+	dir string,
+	env []string,
+) ([]schemasource.Command, error) {
+	if len(program) == 0 {
+		return nil, nil
+	}
+	if strings.TrimSpace(dir) != "" {
+		resolvedDir, err := pathguard.ResolveCLIPath(dir)
+		if err != nil {
+			return nil, fmt.Errorf("resolve external_schema working_dir: %w", err)
+		}
+		dir = resolvedDir
+	}
+	return []schemasource.Command{{
+		Args:   slices.Clone(program),
+		Format: format,
+		Dir:    dir,
+		Env:    slices.Clone(env),
+	}}, nil
 }
 
 func stringFlag(cmd *cobra.Command, name string) (string, error) {

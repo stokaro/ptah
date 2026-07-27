@@ -55,6 +55,25 @@ func TestViews_MatchesGeneratedQualifiedNameToDatabaseSchema(t *testing.T) {
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))
 }
 
+func TestViews_PreservesLiteralDotAndQualifiedIdentities(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{}
+
+	compare.Views(&goschema.Database{
+		Views: []goschema.View{
+			{Name: `"tenant.data"`, Body: "SELECT 'literal'"},
+			{Name: "tenant.data", Body: "SELECT 'qualified'"},
+		},
+	}, &dbschematypes.DBSchema{
+		Views: []dbschematypes.DBView{
+			{Name: "tenant.data", Body: "SELECT 'literal'"},
+			{Name: "data", Schema: "tenant", Body: "SELECT 'qualified'"},
+		},
+	}, diff)
+
+	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))
+}
+
 func TestViews_DetectsAmbiguousDatabaseSchemasForUnqualifiedGeneratedView(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}

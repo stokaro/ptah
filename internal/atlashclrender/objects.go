@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/internal/tableref"
 )
 
 func (r *renderer) renderExtensions() {
@@ -483,7 +484,14 @@ func objectRef(kind, name string) string {
 	if name == "" {
 		return quote("")
 	}
-	parts := strings.Split(name, ".")
+	ref, ok := tableref.Parse(name)
+	if !ok {
+		return kind + objectRefPart(name)
+	}
+	parts := []string{ref.Name}
+	if ref.Qualified {
+		parts = []string{ref.Schema, ref.Name}
+	}
 	refParts := make([]string, 0, len(parts))
 	for _, part := range parts {
 		refParts = append(refParts, objectRefPart(part))
@@ -511,17 +519,19 @@ func rawIdentifier(value string) string {
 }
 
 func objectNameFromQualified(value string) string {
-	if idx := strings.LastIndex(value, "."); idx >= 0 {
-		return value[idx+1:]
+	ref, ok := tableref.Parse(value)
+	if !ok {
+		return value
 	}
-	return value
+	return ref.Name
 }
 
 func schemaNameFromQualified(value string) string {
-	if idx := strings.LastIndex(value, "."); idx >= 0 {
-		return value[:idx]
+	ref, ok := tableref.Parse(value)
+	if !ok || !ref.Qualified {
+		return ""
 	}
-	return ""
+	return ref.Schema
 }
 
 func (r *renderer) trueAttr(indent int, name string) {

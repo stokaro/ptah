@@ -213,6 +213,31 @@ func TestGenerateMigrationASTChecked_NilSchemaHappyPath(t *testing.T) {
 	c.Assert(nodes, qt.HasLen, 0)
 }
 
+func TestGenerateMigrationAST_TableAdditionPreservesStructuralIdentity(t *testing.T) {
+	c := qt.New(t)
+	generated := &goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "Literal", Name: "tenant.data"},
+			{StructName: "Qualified", Schema: "tenant", Name: "data"},
+		},
+		Fields: []goschema.Field{
+			{StructName: "Literal", Name: "id", Type: "UInt64"},
+			{StructName: "Qualified", Name: "id", Type: "UInt64"},
+		},
+	}
+
+	nodes, err := clickhouse.New().GenerateMigrationASTChecked(
+		&types.SchemaDiff{TablesAdded: []string{"tenant.data"}},
+		generated,
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 1)
+	table, ok := nodes[0].(*ast.CreateTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(table.Name, qt.Equals, "tenant.data")
+}
+
 func TestGenerateMigrationASTChecked_NilDiffFailurePath(t *testing.T) {
 	c := qt.New(t)
 	p := clickhouse.New()

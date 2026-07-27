@@ -20,7 +20,7 @@ root-level command spellings are removed instead of preserved.
 | --- | --- |
 | `ptah introspect` | Generate annotated Go models from a live database. |
 | `ptah oci referrers` | List direct referrer metadata attached to an OCI artifact. |
-| `ptah schema render` | Render desired schema SQL from Go, YAML, or HCL schema inputs. |
+| `ptah schema render` | Render desired schema SQL from Go, YAML, HCL, SQL, or external-command inputs. |
 | `ptah schema compare` | Compare desired schema with a live database. |
 | `ptah schema drift` | Check live database drift against desired schema. |
 | `ptah schema export` | Export a schema to HCL, an OpenAPI 3.0 component schema, or a GraphQL SDL. |
@@ -79,6 +79,14 @@ These commands do not add an Atlas Cloud implementation to `ptah atlas`.
 `ptah atlas migrate push` and `ptah atlas schema push` remain
 community-edition boundary stubs, and Atlas-compatible apply commands do not
 gain native OCI transport flags.
+
+The native desired-schema consumers — `schema render`, `schema compare`,
+`schema drift`, `migrations plan`, and `migrations generate` — accept Go roots,
+YAML/HCL/SQL schema files, and an external command whose stdout is SQL, HCL, or
+YAML. They also read the same `ptah.yaml external_schema` block when
+`--schema-cmd` is not set, but execute a config-sourced program only with
+`--allow-external-schema`. See
+[Schema sources](site/src/content/docs/workflows/schema-files.md).
 
 The schema-diff commands (`ptah schema render`, `ptah migrations generate`,
 `ptah migrate`, `ptah compare`) emit `CREATE`/`ALTER`/`DROP SEQUENCE` for

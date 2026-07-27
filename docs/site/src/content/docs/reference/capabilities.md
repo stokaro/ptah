@@ -7,6 +7,11 @@ Ptah tracks dialect features through capability metadata. Renderers and
 migration planners should check capabilities rather than hard-code optimistic
 behavior.
 
+Desired-schema source format is independent of dialect capabilities. Go
+annotations, YAML/HCL/SQL files, and external commands that emit SQL, HCL, or
+YAML all resolve into the same schema IR before capability-aware planning and
+rendering.
+
 High-level dialect coverage:
 
 | Dialect | Status |

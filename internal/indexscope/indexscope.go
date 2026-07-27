@@ -10,6 +10,7 @@ import (
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/platform/identifier"
 	"github.com/stokaro/ptah/core/ptaherr"
+	"github.com/stokaro/ptah/internal/tableref"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
@@ -221,7 +222,10 @@ func yieldRefs(refs []types.IndexRef, yield func(types.IndexRef) bool) bool {
 func conflictKey(semantics identifier.Semantics, ref types.IndexRef) namespaceKey {
 	namespace := semantics.QualifiedTableConflictKey(ref.TableName)
 	if semantics.IndexNamespace == identifier.IndexNamespaceSchema {
-		namespace, _, _ = strings.Cut(namespace, ".")
+		table, ok := tableref.Parse(namespace)
+		if ok && table.Qualified {
+			namespace = table.Schema
+		}
 	}
 	return namespaceKey{
 		namespace: namespace,

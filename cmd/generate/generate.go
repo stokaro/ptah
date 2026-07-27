@@ -7,8 +7,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
+	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/schemaload"
-	"github.com/stokaro/ptah/cmd/internal/schemasource"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/renderer"
@@ -32,6 +32,8 @@ type options struct {
 	schemaCmd    string
 	schemaFormat string
 	dialect      string
+	configPath   string
+	envName      string
 }
 
 func NewGenerateCommand() *cobra.Command {
@@ -43,7 +45,8 @@ func NewGenerateCommand() *cobra.Command {
 
 By default, this command scans the directory recursively for Go files with migrator directives.
 When --schema-file is set, it reads a language-agnostic YAML schema, HCL
-schema, or SQL schema file instead.`,
+schema, or SQL schema file instead. An external program configured with
+--schema-cmd or ptah.yaml external_schema can provide the desired schema too.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return generateCommand(cmd, &opts)
 		},
@@ -59,17 +62,26 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringArrayVar(&opts.rootDirs, rootDirFlag, nil, "Root directory to scan for Go entities (repeatable; multiple roots merge into one composite schema; defaults to ./)")
 	flags.StringArrayVar(&opts.schemaFiles, schemaFileFlag, nil, "YAML, HCL, or SQL schema file to generate from instead of, or combined with, Go entities (repeatable; multiple sources merge into one composite schema)")
 	flags.StringVar(&opts.schemaCmd, schemaCmdFlag, "", schemaCmdUsage)
-	flags.StringVar(&opts.schemaFormat, schemaFormatFlag, "sql", "Format of the --schema-cmd output: sql")
+	flags.StringVar(&opts.schemaFormat, schemaFormatFlag, "sql", "Format of the --schema-cmd output: sql, hcl, or yaml")
 	flags.StringVar(&opts.dialect, dialectFlag, "", "Database dialect (postgres, mysql, mariadb, sqlite, clickhouse, cockroachdb, yugabytedb, spanner). If empty, generates for all dialects")
+	flags.StringVar(&opts.configPath, dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
+	dbcli.RegisterEnvFlag(flags, &opts.envName)
+	dbcli.RegisterExternalSchemaOptInFlag(flags)
 }
 
 func generateCommand(cmd *cobra.Command, opts *options) error {
-	var commands []schemasource.Command
-	if strings.TrimSpace(opts.schemaCmd) != "" {
-		commands = append(commands, schemasource.Command{
-			Args:   schemasource.ParseCommandLine(opts.schemaCmd),
-			Format: opts.schemaFormat,
-		})
+	projectCfg, err := dbcli.LoadProjectConfig(cmd, opts.configPath)
+	if err != nil {
+		return err
+	}
+	commands, err := dbcli.ResolveExternalSchemaCommands(
+		cmd,
+		opts.schemaCmd,
+		opts.schemaFormat,
+		projectCfg,
+	)
+	if err != nil {
+		return err
 	}
 
 	// The render dialect also hints SQL parsing for both schema files and command
