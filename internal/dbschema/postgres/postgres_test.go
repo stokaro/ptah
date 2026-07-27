@@ -202,8 +202,8 @@ func TestPostgreSQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 		tableName := fmt.Sprintf("table_%02d", i)
 		tableRows = append(tableRows, []driver.Value{"public", tableName, "BASE TABLE", "", int64(0), false})
 		columnRows = append(columnRows,
-			[]driver.Value{tableName, "id", "integer", "int4", "NO", nil, nil, nil, nil, int64(1), "", ""},
-			[]driver.Value{tableName, "name", "character varying", "varchar", "NO", nil, int64(255), nil, nil, int64(2), "", ""},
+			[]driver.Value{tableName, "id", "integer", "int4", "NO", nil, nil, nil, nil, int64(1), "", "", ""},
+			[]driver.Value{tableName, "name", "character varying", "varchar", "NO", nil, int64(255), nil, nil, int64(2), "", "", ""},
 		)
 	}
 
@@ -224,6 +224,7 @@ func TestPostgreSQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 					"ordinal_position",
 					"generated_kind",
 					"generated_expression",
+					"identity_kind",
 				},
 				Rows: columnRows,
 			}, nil

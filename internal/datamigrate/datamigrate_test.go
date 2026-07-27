@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
@@ -421,16 +422,30 @@ type regionData struct{ _ int }
 	c.Assert(regions, qt.DeepEquals, map[string]string{"CA": "US", "ZZ": "XX"})
 }
 
-func TestGenerate_EmptyDesiredWithLiveRowsErrors(t *testing.T) {
+// TestGenerate_EmptyDesiredWithLiveRowsGeneratesFullDelete proves that emptying a
+// populated table's desired set now produces a reversible full-table delete
+// rather than a refusal: up deletes every live row and down re-inserts it with
+// its full non-key columns, not the keys alone. The all-delete change is
+// destructive, so the destructive gate still guards it.
+func TestGenerate_EmptyDesiredWithLiveRowsGeneratesFullDelete(t *testing.T) {
 	c := qt.New(t)
 
 	conn := newRegionsConn(t, [][2]string{{"US", "United States"}})
 	root := t.TempDir()
 	writeRegionsFixture(t, root, "[]\n")
 
+	// Without the flag, the all-delete change is still refused as destructive.
 	_, _, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{RootDir: root})
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(err.Error(), qt.Contains, "empty desired row set")
+	c.Assert(err.Error(), qt.Contains, "destructive")
+
+	// With the flag, the full-fidelity delete is generated: up deletes the row and
+	// down re-inserts it with the full non-key columns (code and name), so the
+	// rollback restores the whole row rather than the key alone.
+	up, down, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{RootDir: root, AllowDestructive: true})
+	c.Assert(err, qt.IsNil)
+	c.Assert(up, qt.Contains, `DELETE FROM "regions" WHERE "code" = 'US';`)
+	c.Assert(down, qt.Contains, `INSERT INTO "regions" ("code", "name") VALUES ('US', 'United States');`)
 }
 
 func TestGenerate_EmptyDesiredEmptyTableIsNoOp(t *testing.T) {
@@ -444,6 +459,265 @@ func TestGenerate_EmptyDesiredEmptyTableIsNoOp(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Equals, "")
 	c.Assert(down, qt.Equals, "")
+}
+
+// TestGenerate_EmptyDesiredFullFidelityDeleteRoundTrip proves the empty-desired
+// full-table delete is reversible even when the table has a column that appears
+// in no desired row and a generated column. down re-inserts the full
+// non-generated column set (id, label, weight) and omits the generated label_len
+// — inserting an explicit value for a generated column would error. Applying up
+// then down restores the original rows, with the generated column recomputed from
+// the re-inserted base columns.
+func TestGenerate_EmptyDesiredFullFidelityDeleteRoundTrip(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite:///:memory:")
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+
+	_, err = conn.ExecContext(ctx, `CREATE TABLE widgets (
+		id TEXT PRIMARY KEY,
+		label TEXT NOT NULL,
+		weight INTEGER NOT NULL,
+		label_len INTEGER GENERATED ALWAYS AS (length(label)) STORED
+	)`)
+	c.Assert(err, qt.IsNil)
+	seed := []struct {
+		id     string
+		label  string
+		weight int
+	}{
+		{"A", "Alpha", 10},
+		{"B", "Beta", 20},
+	}
+	for _, r := range seed {
+		_, execErr := conn.ExecContext(ctx,
+			`INSERT INTO widgets (id, label, weight) VALUES (?, ?, ?)`, r.id, r.label, r.weight)
+		c.Assert(execErr, qt.IsNil)
+	}
+
+	root := t.TempDir()
+	goSrc := `package fixture
+
+//migrator:schema:data table="widgets" key="id" file="widgets.yaml"
+type widgetData struct{ _ int }
+`
+	c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(goSrc), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(root, "widgets.yaml"), []byte("[]\n"), 0o600), qt.IsNil)
+
+	up, down, err := datamigrate.Generate(ctx, conn, datamigrate.Options{RootDir: root, AllowDestructive: true})
+	c.Assert(err, qt.IsNil)
+	// up deletes every live row; down re-inserts the full non-generated columns
+	// and never names the generated column.
+	c.Assert(up, qt.Contains, `DELETE FROM "widgets" WHERE "id" = 'A';`)
+	c.Assert(down, qt.Contains, `INSERT INTO "widgets" ("id", "label", "weight") VALUES ('A', 'Alpha', 10);`)
+	c.Assert(down, qt.Not(qt.Contains), "label_len")
+
+	apply := func(script string) {
+		for _, stmt := range migrator.SplitSQLStatementsForConnection(conn, script) {
+			_, execErr := conn.ExecContext(ctx, stmt)
+			c.Assert(execErr, qt.IsNil, qt.Commentf("stmt: %s", stmt))
+		}
+	}
+	readState := func() map[string][3]any {
+		rows, queryErr := conn.QueryContext(ctx, `SELECT id, label, weight, label_len FROM widgets ORDER BY id`)
+		c.Assert(queryErr, qt.IsNil)
+		defer func() { _ = rows.Close() }()
+		out := map[string][3]any{}
+		for rows.Next() {
+			var id, label string
+			var weight, labelLen int
+			c.Assert(rows.Scan(&id, &label, &weight, &labelLen), qt.IsNil)
+			out[id] = [3]any{label, weight, labelLen}
+		}
+		c.Assert(rows.Err(), qt.IsNil)
+		return out
+	}
+
+	// The generated column is populated from the seed (len("Alpha")=5, len("Beta")=4).
+	original := readState()
+	c.Assert(original, qt.DeepEquals, map[string][3]any{
+		"A": {"Alpha", 10, 5},
+		"B": {"Beta", 20, 4},
+	})
+
+	apply(up)
+	c.Assert(readState(), qt.HasLen, 0)
+
+	apply(down)
+	// The rows are restored and the generated label_len recomputes from the
+	// re-inserted label, so the full original state (generated column included)
+	// comes back.
+	c.Assert(readState(), qt.DeepEquals, original)
+}
+
+// TestGenerate_EmptyDesiredRestoresTimestampColumn proves the widened full read
+// handles a timestamp column: drivers scan it as time.Time, which the renderer
+// now emits as a quoted literal rather than failing with "unsupported value
+// type". up deletes every row and down re-inserts the full row; applying up then
+// down restores the original timestamps.
+func TestGenerate_EmptyDesiredRestoresTimestampColumn(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite:///:memory:")
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+
+	_, err = conn.ExecContext(ctx, `CREATE TABLE events (id TEXT PRIMARY KEY, created_at TIMESTAMP NOT NULL)`)
+	c.Assert(err, qt.IsNil)
+	seed := []struct {
+		id string
+		ts time.Time
+	}{
+		{"A", time.Date(2024, 3, 5, 6, 7, 8, 0, time.UTC)},
+		{"B", time.Date(2023, 12, 31, 23, 59, 59, 0, time.UTC)},
+	}
+	for _, r := range seed {
+		_, execErr := conn.ExecContext(ctx, `INSERT INTO events (id, created_at) VALUES (?, ?)`, r.id, r.ts)
+		c.Assert(execErr, qt.IsNil)
+	}
+
+	root := t.TempDir()
+	goSrc := `package fixture
+
+//migrator:schema:data table="events" key="id" file="events.yaml"
+type eventData struct{ _ int }
+`
+	c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(goSrc), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(root, "events.yaml"), []byte("[]\n"), 0o600), qt.IsNil)
+
+	up, down, err := datamigrate.Generate(ctx, conn, datamigrate.Options{RootDir: root, AllowDestructive: true})
+	c.Assert(err, qt.IsNil)
+	c.Assert(up, qt.Contains, `DELETE FROM "events" WHERE "id" = 'A';`)
+	c.Assert(down, qt.Contains, `INSERT INTO "events" ("created_at", "id") VALUES ('2024-03-05 06:07:08+00:00', 'A');`)
+
+	apply := func(script string) {
+		for _, stmt := range migrator.SplitSQLStatementsForConnection(conn, script) {
+			_, execErr := conn.ExecContext(ctx, stmt)
+			c.Assert(execErr, qt.IsNil, qt.Commentf("stmt: %s", stmt))
+		}
+	}
+	readState := func() map[string]string {
+		rows, queryErr := conn.QueryContext(ctx, `SELECT id, created_at FROM events ORDER BY id`)
+		c.Assert(queryErr, qt.IsNil)
+		defer func() { _ = rows.Close() }()
+		out := map[string]string{}
+		for rows.Next() {
+			var id string
+			var ts time.Time
+			c.Assert(rows.Scan(&id, &ts), qt.IsNil)
+			out[id] = ts.UTC().Format(time.RFC3339Nano)
+		}
+		c.Assert(rows.Err(), qt.IsNil)
+		return out
+	}
+
+	original := readState()
+	c.Assert(original, qt.HasLen, 2)
+
+	apply(up)
+	c.Assert(readState(), qt.HasLen, 0)
+
+	apply(down)
+	c.Assert(readState(), qt.DeepEquals, original)
+}
+
+// TestGenerate_EmptyDesiredPreservesAutoincrementKey proves an auto-increment key
+// that accepts explicit inserts (SQLite AUTOINCREMENT) is re-inserted with its
+// original value, not refused and not regenerated, so the round-trip restores the
+// exact ids.
+func TestGenerate_EmptyDesiredPreservesAutoincrementKey(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite:///:memory:")
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+
+	_, err = conn.ExecContext(ctx, `CREATE TABLE tickets (id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT NOT NULL)`)
+	c.Assert(err, qt.IsNil)
+	for _, label := range []string{"alpha", "beta"} {
+		_, execErr := conn.ExecContext(ctx, `INSERT INTO tickets (label) VALUES (?)`, label)
+		c.Assert(execErr, qt.IsNil)
+	}
+
+	root := t.TempDir()
+	goSrc := `package fixture
+
+//migrator:schema:data table="tickets" key="id" file="tickets.yaml"
+type ticketData struct{ _ int }
+`
+	c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(goSrc), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(root, "tickets.yaml"), []byte("[]\n"), 0o600), qt.IsNil)
+
+	up, down, err := datamigrate.Generate(ctx, conn, datamigrate.Options{RootDir: root, AllowDestructive: true})
+	c.Assert(err, qt.IsNil)
+	// The key is re-inserted with its explicit original value.
+	c.Assert(down, qt.Contains, `INSERT INTO "tickets" ("id", "label") VALUES (1, 'alpha');`)
+
+	apply := func(script string) {
+		for _, stmt := range migrator.SplitSQLStatementsForConnection(conn, script) {
+			_, execErr := conn.ExecContext(ctx, stmt)
+			c.Assert(execErr, qt.IsNil, qt.Commentf("stmt: %s", stmt))
+		}
+	}
+	readState := func() map[int64]string {
+		rows, queryErr := conn.QueryContext(ctx, `SELECT id, label FROM tickets ORDER BY id`)
+		c.Assert(queryErr, qt.IsNil)
+		defer func() { _ = rows.Close() }()
+		out := map[int64]string{}
+		for rows.Next() {
+			var id int64
+			var label string
+			c.Assert(rows.Scan(&id, &label), qt.IsNil)
+			out[id] = label
+		}
+		c.Assert(rows.Err(), qt.IsNil)
+		return out
+	}
+
+	original := readState()
+	c.Assert(original, qt.DeepEquals, map[int64]string{1: "alpha", 2: "beta"})
+
+	apply(up)
+	c.Assert(readState(), qt.HasLen, 0)
+
+	apply(down)
+	c.Assert(readState(), qt.DeepEquals, original)
+}
+
+// TestGenerate_EmptyDesiredExplicitDefaultSchema proves a table declared with the
+// connection's default schema (schema="main" on SQLite) resolves during the
+// empty-desired introspection, which blanks a default-schema table's reported
+// schema — previously a spurious "table not found".
+func TestGenerate_EmptyDesiredExplicitDefaultSchema(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite:///:memory:")
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+
+	_, err = conn.ExecContext(ctx, `CREATE TABLE regions (code TEXT PRIMARY KEY, name TEXT NOT NULL)`)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(ctx, `INSERT INTO regions (code, name) VALUES ('US', 'United States')`)
+	c.Assert(err, qt.IsNil)
+
+	root := t.TempDir()
+	goSrc := `package fixture
+
+//migrator:schema:data table="regions" schema="main" key="code" file="regions.yaml"
+type regionData struct{ _ int }
+`
+	c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(goSrc), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(root, "regions.yaml"), []byte("[]\n"), 0o600), qt.IsNil)
+
+	up, down, err := datamigrate.Generate(ctx, conn, datamigrate.Options{RootDir: root, AllowDestructive: true})
+	c.Assert(err, qt.IsNil)
+	c.Assert(up, qt.Contains, `DELETE FROM "main"."regions" WHERE "code" = 'US';`)
+	c.Assert(down, qt.Contains, `INSERT INTO "main"."regions" ("code", "name") VALUES ('US', 'United States');`)
 }
 
 func TestGenerate_NilConnection(t *testing.T) {
