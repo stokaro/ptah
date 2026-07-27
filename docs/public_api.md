@@ -92,10 +92,14 @@ CI runs three public API checks:
   non-command, non-example, non-fixture package that is importable from outside
   this module but not listed here.
 - `scripts/check-public-api-snapshot.sh` regenerates the `go doc -short`
-  exported-symbol snapshot for every package listed here, expands public
-  interface method sets, and compares it with `docs/public_api.snapshot`.
+  exported-symbol snapshot for every package listed here, then appends the full
+  `go doc` output for every exported named type (struct, interface, alias, map,
+  func type), and compares the result with `docs/public_api.snapshot`. Because
+  the full per-type output is recorded, changes to exported struct fields and to
+  methods on concrete named types are caught, not only interface method sets.
   Any exported surface change must update the snapshot in the same reviewed
-  change.
+  change. The guard is itself covered by a self-test in
+  `internal/apiguard` that fails if this per-type coverage regresses.
 - `scripts/check-public-api-released.sh` compares each stable package against
   the latest `v0.x` release tag with `apidiff -incompatible`. Until the first
   `v0.x` tag exists, the script reports that no released baseline is available
@@ -109,8 +113,9 @@ to the stable embedder API. Intentional approval must be explicit in the same
 reviewed change:
 
 - update this document if packages move between stable and non-public surfaces;
-- update `docs/public_api.snapshot` when exported symbols or public interface
-  method sets change;
+- update `docs/public_api.snapshot` when any exported surface changes —
+  symbols, struct fields, interface method sets, or methods on concrete named
+  types;
 - add one package-level approval line to `docs/public_api_approvals.txt` when
   `scripts/check-public-api-released.sh` reports an incompatibility against the
   latest `v0.x` baseline;
