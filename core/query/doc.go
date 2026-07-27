@@ -7,10 +7,13 @@
 // renderer.RenderSelect turns into a SQL string plus its positional arguments
 // for PostgreSQL, MySQL, MariaDB, and SQLite.
 //
-// # Scope (Phase 1)
+// # Scope
 //
-// This package models exactly SELECT with a single FROM table, a composable
-// WHERE expression tree, ORDER BY, LIMIT, and OFFSET. JOIN, GROUP BY, HAVING,
+// This package models a SELECT with a FROM table, INNER / LEFT / RIGHT / FULL
+// OUTER joins, a composable WHERE expression tree, ORDER BY, LIMIT, and OFFSET.
+// Tables can be aliased (FromAs and the alias argument of the join methods) and
+// columns can be qualified by a table or alias with Col, so a projection, WHERE,
+// join ON, or ORDER BY term can render as "alias"."col". GROUP BY, HAVING,
 // DISTINCT, subqueries, functions, arithmetic, and LIKE are intentionally not
 // implemented yet and are tracked as follow-up phases.
 //
@@ -60,4 +63,41 @@
 // A WHERE expression can be built once and shared between statements (for
 // example, a COUNT(*) and the paged SELECT that share the same filter), because
 // the expression constructors return plain *ast expression nodes.
+//
+// # Joins
+//
+// Alias the source table with FromAs, join with InnerJoin, LeftJoin, RightJoin,
+// or FullJoin, and qualify columns with Col so they render as "alias"."col". A
+// join ON condition is an ordinary expression, so an equi-join is Col(…).EqCol
+// and richer predicates compose with And, Or, and Not:
+//
+//	stmt := query.Select().
+//		Columns(query.Col("u", "id"), query.Col("u", "name"), query.Col("o", "total")).
+//		FromAs("users", "u").
+//		InnerJoin("orders", "o", query.Col("o", "user_id").EqCol(query.Col("u", "id"))).
+//		Where(query.And(
+//			query.Col("o", "status").Eq("paid"),
+//			query.Col("u", "active").Eq(true),
+//		)).
+//		OrderBy(query.Col("u", "name").Asc()).
+//		Limit(20).
+//		Build()
+//
+//	sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+//	// sql:  SELECT "u"."id", "u"."name", "o"."total" FROM "users" "u"
+//	//       INNER JOIN "orders" "o" ON "o"."user_id" = "u"."id"
+//	//       WHERE ("o"."status" = $1 AND "u"."active" = $2)
+//	//       ORDER BY "u"."name" ASC LIMIT $3
+//	// args: []any{"paid", true, int64(20)}
+//
+// A join ON value is bound before any WHERE value, because joins render before
+// WHERE. Aliases and qualifiers are quoted through the same dialect-aware path
+// as every other identifier.
+//
+// Not every dialect can express every join type, and RenderSelect rejects an
+// unsupported one at render time rather than emit SQL the database would reject:
+// SQLite could not express RIGHT or FULL OUTER joins before version 3.39, and
+// MySQL and MariaDB have no FULL OUTER JOIN in any version. In short, FULL OUTER
+// renders only on the PostgreSQL family; RIGHT renders everywhere except SQLite;
+// INNER and LEFT render on every supported dialect.
 package query
