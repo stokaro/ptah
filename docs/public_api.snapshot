@@ -407,6 +407,7 @@ func Deduplicate(r *Database)
 func Finalize(r *Database)
 func GetDependencyInfo(r *Database) string
 func IsValidSequenceType(asType string) bool
+func LoadManagedRows(rootDir string, md ManagedData) ([]map[string]any, error)
 func QualifyTableName(schema, table string) string
 func UniqueStructNames(embeddedFields []EmbeddedField) []string
 type CompositeType struct{ ... }
@@ -430,6 +431,7 @@ type Function struct{ ... }
 type Grant struct{ ... }
 type Index struct{ ... }
 type IndexPart struct{ ... }
+type ManagedData struct{ ... }
 type MaterializedView struct{ ... }
 type PartitionPart struct{ ... }
 type PartitionSpec struct{ ... }

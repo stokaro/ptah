@@ -24,6 +24,7 @@ func newDatabase() *Database {
 		RLSEnabledTables:           []RLSEnabledTable{},
 		Roles:                      []Role{},
 		Grants:                     []Grant{},
+		ManagedData:                []ManagedData{},
 		Dependencies:               make(map[string][]string),
 		FunctionDependencies:       make(map[string][]string),
 		SelfReferencingForeignKeys: make(map[string][]SelfReferencingFK),
@@ -55,6 +56,7 @@ func appendDatabase(dst, src *Database) {
 	dst.RLSEnabledTables = append(dst.RLSEnabledTables, src.RLSEnabledTables...)
 	dst.Roles = append(dst.Roles, src.Roles...)
 	dst.Grants = append(dst.Grants, src.Grants...)
+	dst.ManagedData = append(dst.ManagedData, src.ManagedData...)
 }
 
 // finalizeDatabase runs the shared post-merge pipeline over an accumulator that

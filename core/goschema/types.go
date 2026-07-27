@@ -49,6 +49,7 @@ type Database struct {
 	RLSEnabledTables           []RLSEnabledTable              // Tables with RLS enabled
 	Roles                      []Role                         // PostgreSQL roles
 	Grants                     []Grant                        // PostgreSQL privilege grants
+	ManagedData                []ManagedData                  // Declarative reference/seed row data for tables
 	Dependencies               map[string][]string            // table -> list of tables it depends on
 	FunctionDependencies       map[string][]string            // function -> list of functions it depends on
 	SelfReferencingForeignKeys map[string][]SelfReferencingFK // table -> list of self-referencing foreign keys
@@ -1053,6 +1054,53 @@ func (g *Grant) Canonicalize() {
 	g.OnTable = strings.TrimSpace(g.OnTable)
 	g.OnSchema = strings.TrimSpace(g.OnSchema)
 	g.OnSequence = strings.TrimSpace(g.OnSequence)
+}
+
+// ManagedData declares a set of reference/seed rows that Ptah manages as
+// desired-state data for a target table. It is parsed from
+// //migrator:schema:data annotations.
+//
+// Unlike other schema objects, the row values are not embedded in the Go source:
+// the annotation points to an external YAML row-data file. The Go annotation
+// parser reads comment text and cannot evaluate Go value expressions, and
+// reference data naturally lives in a data file rather than in code, so the file
+// reference is the source of truth for the rows themselves.
+//
+// ManagedData is created by parsing //migrator:schema:data annotations:
+//
+//	//migrator:schema:data table="countries" key="code" file="countries.yaml"
+//	type Country struct {
+//	    //migrator:schema:field name="code" type="VARCHAR(2)" primary="true"
+//	    Code string
+//
+//	    //migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+//	    Name string
+//	}
+//
+// Composite keys are declared as a comma-separated list, e.g. key="tenant_id,code".
+//
+// The referenced file is a top-level YAML list of row maps, resolved relative to
+// the directory of the Go source file that carries the annotation. Use
+// LoadManagedRows to read it:
+//
+//   - code: US
+//     name: United States
+//   - code: CZ
+//     name: Czechia
+//
+// The key column(s) form each row's logical identity and are consumed by the
+// (later) data-diff phase to match a desired row against an existing one.
+type ManagedData struct {
+	StructName string   // Name of the Go struct this data annotation is associated with
+	Table      string   // Target table the rows belong to
+	Keys       []string // Key column(s) forming each row's logical identity (parsed from the comma-separated "key" attribute)
+	File       string   // Path to the YAML row-data file, verbatim, relative to SourceDir
+	// SourceDir is the parse-root-relative directory of the Go source file that
+	// carried the annotation, recorded at parse time. Combined with the parse
+	// root, it lets LoadManagedRows resolve File even after a ParseDir tree walk
+	// spanning subdirectories, where a caller holding the merged Database could
+	// not otherwise know which subdirectory each entry came from.
+	SourceDir string
 }
 
 // SelfReferencingFK represents a self-referencing foreign key that needs to be
