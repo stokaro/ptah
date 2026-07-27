@@ -9,6 +9,7 @@ import (
 	"github.com/stokaro/ptah/cmd/migrate"
 	"github.com/stokaro/ptah/cmd/migratebaseline"
 	"github.com/stokaro/ptah/cmd/migratecheckpoint"
+	"github.com/stokaro/ptah/cmd/migratedata"
 	"github.com/stokaro/ptah/cmd/migratedown"
 	"github.com/stokaro/ptah/cmd/migrateedit"
 	"github.com/stokaro/ptah/cmd/migratehash"
@@ -42,6 +43,13 @@ ptah atlas.`,
 	cmd.AddCommand(migrationCommand(migrate.NewMigrateCommand(), "Plan migration SQL from schema differences", "Plan migration SQL from schema differences without writing migration files."))
 	cmd.AddCommand(migrationCommand(migrate.NewMigrateGenerateCommand(), "Generate migration files from schema differences", "Generate migration files from schema differences and write them to the migrations directory."))
 	cmd.AddCommand(migrationCommand(migrate.NewMigrateCreateCommand(), "Create empty migration files for manual SQL", "Create empty migration files for manual SQL."))
+	cmd.AddCommand(migrationCommand(
+		migratedata.NewMigrateDataCommand(),
+		"Generate a migration from reference/seed data drift",
+		"Generate an ordinary migration from the drift between declarative reference/seed data "+
+			"(//migrator:schema:data) and a live database. It applies no safety/risk gating of its own "+
+			"(a deferred follow-up); review the generated file before applying.",
+	))
 	cmd.AddCommand(migrationCommand(migrationsimport.NewMigrationsImportCommand(), "Import migrations from another tool", "Convert a golang-migrate, Goose, Flyway, or Liquibase migration directory into Ptah's native format."))
 	cmd.AddCommand(migrationCommand(migrateup.NewMigrateUpCommand(), "Run pending migrations", "Run pending migrations against a live database."))
 	cmd.AddCommand(migrationCommand(migratedown.NewMigrateDownCommand(), "Roll back migrations", "Roll back migrations against a live database."))
