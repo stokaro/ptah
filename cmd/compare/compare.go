@@ -126,7 +126,10 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 
 	// 3. Compare schemas (dialect-aware: MySQL/MariaDB RESTRICT == NO ACTION)
 	info := conn.Info()
-	diff := schemadiff.CompareWithDialect(result, dbSchema, info.Dialect)
+	diff, err := schemadiff.CompareWithDatabase(cmd.Context(), conn, result, dbSchema, nil)
+	if err != nil {
+		return fmt.Errorf("error comparing schemas: %w", err)
+	}
 
 	// 4. Display differences
 	output, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(diff, result, info.Dialect, info.Capabilities)

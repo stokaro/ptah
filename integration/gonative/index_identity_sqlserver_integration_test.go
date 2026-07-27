@@ -50,16 +50,21 @@ func TestSQLServerTableQualifiedIndexIdentity_RoundTrip(t *testing.T) {
 	}
 
 	ordersTarget := sqlServerIndexIdentityOrdersTarget()
-	live := readSQLServerIndexIdentitySchema(c, t, dsn)
-	diff := schemadiff.CompareWithDialect(ordersTarget, live, platform.SQLServer)
+	live, diff := compareSQLServerIndexIdentitySchema(c, t, dsn, ordersTarget)
 	c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(diff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: sqlServerIndexIdentityName, TableName: sqlServerIndexIdentitySchema + ".users"},
 	})
 
-	removeDiff := &difftypes.SchemaDiff{}
+	removeDiff := &difftypes.SchemaDiff{
+		IdentifierSemantics: diff.IdentifierSemantics,
+	}
 	removeDiff.SetIndexRemovals(diff.IndexRemovals())
-	planned, err := planner.GenerateSchemaDiffSQLStatements(removeDiff, ordersTarget, platform.SQLServer)
+	planned, err := planner.GenerateSchemaDiffSQLStatements(
+		removeDiff,
+		ordersTarget,
+		platform.SQLServer,
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(planned, qt.DeepEquals, []string{
 		"DROP INDEX [" + sqlServerIndexIdentityName + "] ON [" +
@@ -68,22 +73,27 @@ func TestSQLServerTableQualifiedIndexIdentity_RoundTrip(t *testing.T) {
 	_, err = db.Exec(planned[0])
 	c.Assert(err, qt.IsNil, qt.Commentf("apply SQL Server index removal: %s", planned[0]))
 
-	live = readSQLServerIndexIdentitySchema(c, t, dsn)
-	removedDiff := schemadiff.CompareWithDialect(ordersTarget, live, platform.SQLServer)
+	live, removedDiff := compareSQLServerIndexIdentitySchema(c, t, dsn, ordersTarget)
 	c.Assert(removedDiff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(removedDiff.IndexRemovals(), qt.HasLen, 0)
 	c.Assert(live.Indexes, qt.HasLen, 1)
 
 	bothTarget := sqlServerIndexIdentityBothTarget()
-	addDiff := schemadiff.CompareWithDialect(bothTarget, live, platform.SQLServer)
+	_, addDiff := compareSQLServerIndexIdentitySchema(c, t, dsn, bothTarget)
 	c.Assert(addDiff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: sqlServerIndexIdentityName, TableName: sqlServerIndexIdentitySchema + ".users"},
 	})
 	c.Assert(addDiff.IndexRemovals(), qt.HasLen, 0)
 
-	createDiff := &difftypes.SchemaDiff{}
+	createDiff := &difftypes.SchemaDiff{
+		IdentifierSemantics: addDiff.IdentifierSemantics,
+	}
 	createDiff.SetIndexAdditions(addDiff.IndexAdditions())
-	planned, err = planner.GenerateSchemaDiffSQLStatements(createDiff, bothTarget, platform.SQLServer)
+	planned, err = planner.GenerateSchemaDiffSQLStatements(
+		createDiff,
+		bothTarget,
+		platform.SQLServer,
+	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(planned, qt.HasLen, 1)
 	c.Assert(planned[0], qt.Contains,
@@ -92,8 +102,7 @@ func TestSQLServerTableQualifiedIndexIdentity_RoundTrip(t *testing.T) {
 	_, err = db.Exec(planned[0])
 	c.Assert(err, qt.IsNil, qt.Commentf("apply SQL Server index addition: %s", planned[0]))
 
-	live = readSQLServerIndexIdentitySchema(c, t, dsn)
-	finalDiff := schemadiff.CompareWithDialect(bothTarget, live, platform.SQLServer)
+	live, finalDiff := compareSQLServerIndexIdentitySchema(c, t, dsn, bothTarget)
 	c.Assert(finalDiff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(finalDiff.IndexRemovals(), qt.HasLen, 0)
 	c.Assert(live.Indexes, qt.HasLen, 2)
@@ -109,14 +118,21 @@ func cleanupSQLServerIndexIdentity(db *sql.DB) {
 	)
 }
 
-func readSQLServerIndexIdentitySchema(c *qt.C, t *testing.T, dsn string) *dbschematypes.DBSchema {
+func compareSQLServerIndexIdentitySchema(
+	c *qt.C,
+	t *testing.T,
+	dsn string,
+	target *goschema.Database,
+) (*dbschematypes.DBSchema, *difftypes.SchemaDiff) {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(t.Context(), dsn)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
 	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{sqlServerIndexIdentitySchema})
 	c.Assert(err, qt.IsNil)
-	return live
+	diff, err := schemadiff.CompareWithDatabase(t.Context(), conn, target, live, nil)
+	c.Assert(err, qt.IsNil)
+	return live, diff
 }
 
 func sqlServerIndexIdentityOrdersTarget() *goschema.Database {

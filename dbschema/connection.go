@@ -14,6 +14,7 @@ import (
 
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/platform/capability"
+	"github.com/stokaro/ptah/core/platform/identifier"
 	"github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/dbschema/clickhouse"
 	"github.com/stokaro/ptah/internal/dbschema/mssql"
@@ -171,6 +172,7 @@ func ReadSchemaWithSchemas(conn *DatabaseConnection, schemas []string) (*types.D
 func (dc *DatabaseConnection) Info() types.DBInfo {
 	info := dc.info
 	info.Capabilities = info.Capabilities.Clone()
+	info.IdentifierSemantics = info.IdentifierSemantics.Clone()
 	return info
 }
 
@@ -382,8 +384,9 @@ func isSecretQueryParam(key string) bool {
 // getDatabaseInfo retrieves database metadata
 func getDatabaseInfo(ctx context.Context, db *sql.DB, dialect string, parsedURL *url.URL, originalURL string) (types.DBInfo, error) {
 	info := types.DBInfo{
-		Dialect: dialect,
-		URL:     originalURL,
+		Dialect:             dialect,
+		URL:                 originalURL,
+		IdentifierSemantics: identifier.ForDialect(dialect),
 	}
 
 	switch dialect {
@@ -396,6 +399,7 @@ func getDatabaseInfo(ctx context.Context, db *sql.DB, dialect string, parsedURL 
 		}
 		info.Version = version
 		info.Dialect = detectPostgresWireDialect(dialect, version)
+		info.IdentifierSemantics = identifier.ForDialect(info.Dialect)
 
 		// Get schema name (default to 'public' if not specified in URL)
 		schema := "public"
@@ -451,17 +455,44 @@ func getDatabaseInfo(ctx context.Context, db *sql.DB, dialect string, parsedURL 
 		info.Version = version
 		info.Schema = "main"
 	case platform.SQLServer:
-		var version string
-		if err := db.QueryRowContext(ctx, "SELECT @@VERSION").Scan(&version); err != nil {
-			return info, fmt.Errorf("failed to get SQL Server version: %w", err)
-		}
-		info.Version = version
-		info.Schema = "dbo"
-		if schema := parsedURL.Query().Get("schema"); schema != "" {
-			info.Schema = schema
-		}
+		return getSQLServerDatabaseInfo(ctx, db, parsedURL, info)
 	}
 
+	return info, nil
+}
+
+func getSQLServerDatabaseInfo(
+	ctx context.Context,
+	db *sql.DB,
+	parsedURL *url.URL,
+	info types.DBInfo,
+) (types.DBInfo, error) {
+	var version string
+	if err := db.QueryRowContext(ctx, "SELECT @@VERSION").Scan(&version); err != nil {
+		return info, fmt.Errorf("failed to get SQL Server version: %w", err)
+	}
+	info.Version = version
+	var catalogCollation string
+	// Inspect the collation applied by CATALOG_DEFAULT directly. The
+	// sys.databases catalog_collation columns are Azure SQL Database-only.
+	const catalogSemanticsQuery = `
+SELECT
+    COALESCE(CONVERT(
+        nvarchar(128),
+        SQL_VARIANT_PROPERTY(
+            CONVERT(nvarchar(1), N'x') COLLATE CATALOG_DEFAULT,
+            'Collation'
+        )
+    ), N'')`
+	if err := db.QueryRowContext(ctx, catalogSemanticsQuery).Scan(&catalogCollation); err != nil {
+		return info, fmt.Errorf("failed to get SQL Server catalog identifier semantics: %w", err)
+	}
+	info.Schema = "dbo"
+	if schema := parsedURL.Query().Get("schema"); schema != "" {
+		info.Schema = schema
+	}
+	info.IdentifierSemantics = identifier.ForSQLServerCatalog(catalogCollation)
+	info.IdentifierSemantics.DefaultSchema = info.Schema
 	return info, nil
 }
 

@@ -182,6 +182,7 @@ func convertIndexes(dbSchema *dbschematypes.DBSchema, tableStructNames map[strin
 			Name:          dbIndex.Name,
 			TableName:     dbIndex.QualifiedTableName(),
 			Fields:        dbIndex.Columns,
+			Parts:         convertIndexParts(dbIndex.Parts),
 			Unique:        dbIndex.IsUnique,
 			Condition:     dbIndex.Condition,
 			NullsDistinct: cloneBoolPtr(dbIndex.NullsDistinct),
@@ -191,6 +192,20 @@ func convertIndexes(dbSchema *dbschematypes.DBSchema, tableStructNames map[strin
 		indexes = append(indexes, index)
 	}
 	return indexes
+}
+
+func convertIndexParts(parts []dbschematypes.DBIndexPart) []goschema.IndexPart {
+	if len(parts) == 0 {
+		return nil
+	}
+	converted := make([]goschema.IndexPart, len(parts))
+	for position, part := range parts {
+		converted[position] = goschema.IndexPart{
+			Name: part.Name,
+			Desc: part.Desc,
+		}
+	}
+	return converted
 }
 
 func convertExtensions(database *goschema.Database, dbExtensions []dbschematypes.DBExtension) {

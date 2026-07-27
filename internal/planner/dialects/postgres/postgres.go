@@ -857,7 +857,10 @@ func (p *Planner) addNewIndexes(
 	diff *types.SchemaDiff,
 	indexes *indexscope.Resolver,
 ) ([]ast.Node, error) {
-	indexRemovals := indexscope.NewConflictSet(p.targetDialect(), diff.IndexRemovals())
+	indexRemovals := indexscope.NewConflictSetWithSemantics(
+		diff.EffectiveIdentifierSemantics(p.targetDialect()),
+		diff.IndexRemovals(),
+	)
 	guardedDrops := p.capabilities().Has(capability.DropIndexIfExists)
 
 	for _, ref := range diff.IndexAdditions() {
@@ -899,7 +902,10 @@ func (p *Planner) removeIndexes(
 	// the default preset keeps today's output; a preset without it (or a
 	// composed set) actually changes the plan.
 	guarded := p.capabilities().Has(capability.DropIndexIfExists)
-	indexAdditions := indexscope.NewConflictSet(p.targetDialect(), diff.IndexAdditions())
+	indexAdditions := indexscope.NewConflictSetWithSemantics(
+		diff.EffectiveIdentifierSemantics(p.targetDialect()),
+		diff.IndexAdditions(),
+	)
 	for _, ref := range diff.IndexRemovals() {
 		if indexAdditions.Contains(ref) {
 			continue
@@ -1132,7 +1138,12 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	if generated == nil {
 		generated = &goschema.Database{}
 	}
-	indexes, err := indexscope.NewResolver(p.targetDialect(), diff, generated)
+	indexes, err := indexscope.NewResolverWithSemantics(
+		p.targetDialect(),
+		diff.EffectiveIdentifierSemantics(p.targetDialect()),
+		diff,
+		generated,
+	)
 	if err != nil {
 		return nil, err
 	}

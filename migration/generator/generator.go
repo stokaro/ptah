@@ -18,6 +18,7 @@ import (
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/platform/capability"
+	"github.com/stokaro/ptah/core/platform/identifier"
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
@@ -336,12 +337,19 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 		return nil, fmt.Errorf("error reading database schema: %w", err)
 	}
 
-	// 3. Calculate the diff between desired and current schema.
-	// Thread the connection dialect into the compare options so dialect-specific
-	// normalization (e.g. MySQL/MariaDB RESTRICT == NO ACTION on foreign keys)
-	// is applied; without it MariaDB would loop drop+add on an unchanged FK.
-	compareOpts := withDialect(opts.CompareOptions, conn.Info().Dialect)
-	diff := schemadiff.CompareWithOptions(generated, dbSchema, compareOpts)
+	// 3. Calculate the diff between desired and current schema using live
+	// dialect and catalog identifier metadata.
+	info := conn.Info()
+	diff, err := schemadiff.CompareWithDatabase(
+		ctx,
+		conn,
+		generated,
+		dbSchema,
+		opts.CompareOptions,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error comparing generated and database schemas: %w", err)
+	}
 
 	// Check if there are any changes
 	if !diff.HasChanges() {
@@ -354,7 +362,6 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 	version = nextAvailableMigrationVersion(opts.OutputDir, version, opts.MigrationName)
 	slog.Debug("Generated migration version", "version", version)
 
-	info := conn.Info()
 	specs, assessments, err := planGeneratedMigrationSpecs(diff, generated, dbSchema, info, version, opts.MigrationName, opts.DiffPolicy)
 	if err != nil {
 		return nil, err
@@ -372,10 +379,13 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 			MigrationsDir: opts.OutputDir,
 			Dialect:       info.Dialect,
 			Capabilities:  info.Capabilities,
-			Candidates:    shadowCandidatesFromSpecs(specs),
-			Generated:     generated,
-			CompareOpts:   compareOpts,
-			Schemas:       opts.Schemas,
+			IdentifierSemantics: cloneIdentifierSemanticsValue(
+				diff.IdentifierSemantics,
+			),
+			Candidates:  shadowCandidatesFromSpecs(specs),
+			Generated:   generated,
+			CompareOpts: opts.CompareOptions,
+			Schemas:     opts.Schemas,
 		}); err != nil {
 			return nil, err
 		}
@@ -400,21 +410,6 @@ func normalizeGenerateMigrationOptions(opts GenerateMigrationOptions) (GenerateM
 	}
 	opts.OutputDir = outputDir
 	return opts, nil
-}
-
-// withDialect returns a copy of opts with the Dialect set, allocating a default
-// options value when opts is nil. An explicit Dialect already present on opts is
-// preserved. The comparator consults Dialect only for dialect-specific
-// referential-action normalization (see config.CompareOptions.Dialect).
-func withDialect(opts *config.CompareOptions, dialect string) *config.CompareOptions {
-	if opts == nil {
-		opts = config.DefaultCompareOptions()
-	}
-	clone := *opts
-	if clone.Dialect == "" {
-		clone.Dialect = dialect
-	}
-	return &clone
 }
 
 func checkDestructiveAllowed(opts GenerateMigrationOptions, assessments []safety.StatementAssessment) error {
@@ -740,7 +735,9 @@ func splitConcurrentIndexDiff(
 ) splitSchemaDiffs {
 	concurrent := indexRefSet(concurrentIndexRefs)
 	txDiff := cloneSchemaDiff(diff)
-	noTxDiff := emptySchemaDiff()
+	noTxDiff := &types.SchemaDiff{
+		IdentifierSemantics: cloneIdentifierSemantics(diff.IdentifierSemantics),
+	}
 	var transactionalRefs []types.IndexRef
 	var noTransactionRefs []types.IndexRef
 	for _, resolved := range diff.IndexAdditions() {
@@ -763,12 +760,9 @@ func indexRefSet(values []types.IndexRef) map[types.IndexRef]struct{} {
 	return out
 }
 
-func emptySchemaDiff() *types.SchemaDiff {
-	return &types.SchemaDiff{}
-}
-
 func cloneSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 	clone := *diff
+	clone.IdentifierSemantics = cloneIdentifierSemantics(diff.IdentifierSemantics)
 	clone.TablesAdded = slices.Clone(diff.TablesAdded)
 	clone.TablesRemoved = slices.Clone(diff.TablesRemoved)
 	clone.TablesModified = slices.Clone(diff.TablesModified)
@@ -819,6 +813,25 @@ func cloneSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 	clone.ConstraintsRemoved = slices.Clone(diff.ConstraintsRemoved)
 	clone.ConstraintsRemovedWithTables = slices.Clone(diff.ConstraintsRemovedWithTables)
 	return &clone
+}
+
+func cloneIdentifierSemantics(
+	semantics *identifier.Semantics,
+) *identifier.Semantics {
+	if semantics == nil {
+		return nil
+	}
+	cloned := semantics.Clone()
+	return &cloned
+}
+
+func cloneIdentifierSemanticsValue(
+	semantics *identifier.Semantics,
+) identifier.Semantics {
+	if semantics == nil {
+		return identifier.Semantics{}
+	}
+	return semantics.Clone()
 }
 
 func createSafetyReportFile(upFile, format string, assessments []safety.StatementAssessment) (string, error) {
@@ -1057,6 +1070,8 @@ func reverseSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 // reversed additions then fall back to the name-only path).
 func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Database, dbSchema *dbschematypes.DBSchema) *types.SchemaDiff {
 	reversed := &types.SchemaDiff{
+		IdentifierSemantics: cloneIdentifierSemantics(diff.IdentifierSemantics),
+
 		// Reverse table operations
 		TablesAdded:    diff.TablesRemoved,                                // Tables to remove become tables to add
 		TablesRemoved:  deporder.TableDropOrder(diff.TablesAdded, schema), // Tables to add become tables to remove

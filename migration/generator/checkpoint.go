@@ -12,6 +12,7 @@ import (
 	"github.com/stokaro/ptah/internal/convert/dbschematogo"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/schemadiff"
+	schemadifftypes "github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
 // GenerateCheckpoint renders a full cumulative schema as a checkpoint migration
@@ -24,18 +25,66 @@ import (
 // converting the result with internal/convert/dbschematogo) or from Go
 // entities / schema files. An empty schema yields empty up and down bodies.
 func GenerateCheckpoint(schema *goschema.Database, dialect string) (upSQL, downSQL string, err error) {
+	return GenerateCheckpointWithDatabaseInfo(schema, dbschematypes.DBInfo{
+		Dialect:      dialect,
+		Capabilities: capability.ForDialect(dialect),
+	})
+}
+
+// GenerateCheckpointWithDatabaseInfo renders a full cumulative schema using
+// caller-supplied dialect, capability, and identifier metadata. SQL Server
+// callers should prefer GenerateCheckpointWithDatabase so the complete
+// candidate identifier set is resolved under the live catalog collation.
+func GenerateCheckpointWithDatabaseInfo(
+	schema *goschema.Database,
+	info dbschematypes.DBInfo,
+) (upSQL, downSQL string, err error) {
 	if schema == nil {
 		return "", "", fmt.Errorf("checkpoint schema is required")
 	}
 
 	empty := &dbschematypes.DBSchema{}
-	diff := schemadiff.CompareWithDialect(schema, empty, dialect)
+	diff, err := schemadiff.CompareWithDatabaseInfo(schema, empty, info, nil)
+	if err != nil {
+		return "", "", fmt.Errorf("generate checkpoint: %w", err)
+	}
+	return generateCheckpointFromDiff(schema, empty, info, diff)
+}
+
+// GenerateCheckpointWithDatabase renders a checkpoint after resolving the
+// schema's finite identifier set against the connected catalog.
+func GenerateCheckpointWithDatabase(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	schema *goschema.Database,
+) (upSQL, downSQL string, err error) {
+	if schema == nil {
+		return "", "", fmt.Errorf("checkpoint schema is required")
+	}
+	empty := &dbschematypes.DBSchema{}
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, schema, empty, nil)
+	if err != nil {
+		return "", "", fmt.Errorf("generate checkpoint: %w", err)
+	}
+	return generateCheckpointFromDiff(schema, empty, conn.Info(), diff)
+}
+
+func generateCheckpointFromDiff(
+	schema *goschema.Database,
+	empty *dbschematypes.DBSchema,
+	info dbschematypes.DBInfo,
+	diff *schemadifftypes.SchemaDiff,
+) (upSQL, downSQL string, err error) {
+	capabilities := info.Capabilities
+	if capabilities == nil {
+		capabilities = capability.ForDialect(info.Dialect)
+	}
 	spec, _, err := buildGeneratedMigrationSpec(generatedMigrationSpecOptions{
 		Diff:         diff,
 		Generated:    schema,
 		DBSchema:     empty,
-		Dialect:      dialect,
-		Capabilities: capability.ForDialect(dialect),
+		Dialect:      info.Dialect,
+		Capabilities: capabilities,
 	})
 	if err != nil {
 		return "", "", fmt.Errorf("generate checkpoint: %w", err)
@@ -93,11 +142,12 @@ func GenerateCheckpointFromShadow(ctx context.Context, opts CheckpointFromShadow
 // generation so it can be exercised against any connection, including an
 // in-memory one, without a live server.
 func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.DatabaseConnection, opts CheckpointFromShadowOptions) (upSQL, downSQL string, err error) {
-	dialect := opts.Dialect
-	if dialect == "" {
-		dialect = shadowConn.Info().Dialect
-	} else if !sameDialect(dialect, shadowConn.Info().Dialect) {
-		return "", "", fmt.Errorf("checkpoint generation failed: shadow database dialect %q does not match target dialect %q", shadowConn.Info().Dialect, dialect)
+	if opts.Dialect != "" && !sameDialect(opts.Dialect, shadowConn.Info().Dialect) {
+		return "", "", fmt.Errorf(
+			"checkpoint generation failed: shadow database dialect %q does not match target dialect %q",
+			shadowConn.Info().Dialect,
+			opts.Dialect,
+		)
 	}
 
 	if err := shadowConn.SchemaWriter().DropAllTables(ctx); err != nil {
@@ -130,5 +180,9 @@ func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.Databa
 	if err != nil {
 		return "", "", fmt.Errorf("checkpoint generation failed: read shadow schema: %w", err)
 	}
-	return GenerateCheckpoint(dbschematogo.ConvertDBSchemaToGoSchema(shadowSchema), dialect)
+	return GenerateCheckpointWithDatabase(
+		ctx,
+		shadowConn,
+		dbschematogo.ConvertDBSchemaToGoSchema(shadowSchema),
+	)
 }

@@ -41,7 +41,7 @@ uses them internally.
 | Lint migration SQL | `migration/lint` | Rule-coded findings for migration files in CI. |
 | Assess risk and safety | `migration/risk`, `migration/safety` | Destructive-change classification and rendered-statement safety reports. |
 | Seed data | `migration/seeder` | Environment-scoped seed discovery and execution. |
-| Model dialect and version behavior | `core/platform`, `core/platform/capability` | Dialect constants and capability sets for version-aware rendering and planning. |
+| Model dialect, version, and identifier behavior | `core/platform`, `core/platform/capability`, `core/platform/identifier` | Dialect constants, capability sets, and catalog identifier semantics for comparison and planning. |
 
 `atlascompat` is intentionally narrow. It gives external tools a stable way to
 use Atlas-compatible parsing, SQL parsing, schema conversion, and migration-sum
@@ -238,8 +238,17 @@ if err != nil {
 	return err
 }
 
-diff := schemadiff.CompareWithDialect(desired, live, conn.Info().Dialect)
-sql, err := planner.GenerateSchemaDiffSQL(diff, desired, conn.Info().Dialect)
+diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, live, nil)
+if err != nil {
+	return err
+}
+info := conn.Info()
+sql, err := planner.GenerateSchemaDiffSQLWithCapabilities(
+	diff,
+	desired,
+	info.Dialect,
+	info.Capabilities,
+)
 if err != nil {
 	return err
 }
@@ -260,10 +269,34 @@ When a custom consumer starts from `goschema.Index` values, use
 pass instead of scanning the table list for each index.
 MySQL and SQLite index matching applies ASCII case folding. MariaDB matching
 also applies Unicode lowercase equivalence. All three retain the declared
-spelling in `IndexRef` values and rendered SQL. SQL Server matching remains
-exact when only the dialect is known because identifier case sensitivity
-depends on the database collation. Live SQL Server collation propagation is
-tracked in [issue #777](https://github.com/stokaro/ptah/issues/777).
+spelling in `IndexRef` values and rendered SQL.
+
+For a live SQL Server connection, `CompareWithDatabase` sends the finite set of
+candidate schema, table, column, and index names to SQL Server as one bound JSON
+parameter. SQL Server groups those names with `COLLATE CATALOG_DEFAULT`; Ptah
+stores the returned equivalence classes and catalog collation in the resulting
+`SchemaDiff`. Diff policy, forward and reverse planning, checkpoint generation,
+and shadow verification then use that immutable snapshot. This handles
+case, accent, locale, kana, and width behavior according to the target catalog
+instead of approximating it in Go.
+
+`CompareWithDatabaseInfo` remains useful for deterministic offline comparison
+or for callers that already provide a complete resolved
+`DBInfo.IdentifierSemantics` snapshot. It returns an error when a non-zero
+snapshot is invalid, incomplete for the compared identifier set, or exposes a
+target table, column, or index collision. Omitting the snapshot selects
+conservative dialect rules. SQL Server embedders should normally use
+`CompareWithDatabase`.
+
+`CompareWithOptions` has no error return. When an explicit snapshot is invalid,
+incomplete, or collision-prone, it falls back to conservative dialect rules
+instead of allowing unresolved identifiers to collapse into a false zero diff.
+
+Dialect-only SQL Server comparison cannot know the database collation. It keeps
+exact identity for deterministic offline diffs, but treats distinct unresolved
+names in one catalog namespace as potentially equivalent. Planning rejects
+that ambiguity before SQL generation and requires a live resolved snapshot.
+Ptah does not emulate SQL Server collation rules locally.
 
 When applying a reusable destructive-change policy to a known database target,
 use `diffpolicy.ApplyForDialect`. It preserves the drop/create pair required by
@@ -429,12 +462,25 @@ live, err := conn.Reader().ReadSchema()
 if err != nil {
 	return fmt.Errorf("read live schema: %w", err)
 }
-diff := schemadiff.CompareWithDialect(desired, live, conn.Info().Dialect)
-nodes, err := planner.GenerateSchemaDiffAST(diff, desired, conn.Info().Dialect)
+info := conn.Info()
+diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, live, nil)
+if err != nil {
+	return fmt.Errorf("compare schemas: %w", err)
+}
+nodes, err := planner.GenerateSchemaDiffASTWithCapabilities(
+	diff,
+	desired,
+	info.Dialect,
+	info.Capabilities,
+)
 if err != nil {
 	return fmt.Errorf("plan schema diff: %w", err)
 }
-assessments, err := safety.AssessRendered(nodes, conn.Info().Dialect)
+assessments, err := safety.AssessRenderedWithCapabilities(
+	nodes,
+	info.Dialect,
+	info.Capabilities,
+)
 if err != nil {
 	return fmt.Errorf("assess migration safety: %w", err)
 }
@@ -573,12 +619,21 @@ Use this when a bot should comment planned schema changes on a pull request.
 Packages: `core/goschema`, `dbschema`, `migration/schemadiff`,
 `migration/planner`, `migration/safety`.
 
-Minimal flow (pseudo-code; host code must provide desired and live schemas,
-dialect selection, and review delivery):
+Minimal flow (pseudo-code; host code must provide context, a live database
+connection, desired and live schemas, and review delivery):
 
 ```go
-diff := schemadiff.CompareWithDialect(desired, live, dialect)
-sql, err := planner.GenerateSchemaDiffSQL(diff, desired, dialect)
+diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, live, nil)
+if err != nil {
+	return fmt.Errorf("compare schemas: %w", err)
+}
+info := conn.Info()
+sql, err := planner.GenerateSchemaDiffSQLWithCapabilities(
+	diff,
+	desired,
+	info.Dialect,
+	info.Capabilities,
+)
 if err != nil {
 	return fmt.Errorf("plan schema drift: %w", err)
 }

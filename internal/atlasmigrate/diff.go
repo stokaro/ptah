@@ -56,9 +56,7 @@ func GenerateDiff(ctx context.Context, conn *dbschema.DatabaseConnection, opts D
 	if len(opts.ToURLs) == 0 {
 		return DiffResult{}, errors.New("migrate diff requires desired schema URLs")
 	}
-	if strings.TrimSpace(opts.Name) == "" {
-		opts.Name = "migration"
-	}
+	opts = normalizeDiffOptions(opts)
 	schemas := schemascope.SplitNames(opts.Schemas)
 	format := atlasreport.NormalizeMigrateDiffFormat(opts.Format)
 	if err := atlasreport.ValidateSchemaDiffTemplate(format); err != nil {
@@ -84,25 +82,30 @@ func GenerateDiff(ctx context.Context, conn *dbschema.DatabaseConnection, opts D
 	if err := replayDir(ctx, conn, opts.Dir); err != nil {
 		return DiffResult{}, err
 	}
-	current, err := dbschema.ReadSchemaWithSchemas(conn, schemas)
-	if err != nil {
-		return DiffResult{}, fmt.Errorf("read dev database schema: %w", err)
-	}
 	defaultSchema := conn.Info().Schema
-	current = schemascope.FilterDatabaseWithDefaultSchema(withoutRevisionTable(current), schemas, defaultSchema)
+	current, err := readScopedDevSchema(conn, schemas, defaultSchema)
+	if err != nil {
+		return DiffResult{}, err
+	}
 
-	dialect := conn.Info().Dialect
+	info := conn.Info()
+	dialect := info.Dialect
 	desired, err := schemafile.LoadAll(opts.ToURLs, schemafile.Options{Dialect: dialect})
 	if err != nil {
 		return DiffResult{}, fmt.Errorf("load --to schema: %w", err)
 	}
 	desired = schemascope.FilterGeneratedWithDefaultSchema(desired, schemas, defaultSchema)
-	diff := atlasschema.ApplyDiffPolicy(schemadiff.CompareWithDialect(desired, current, dialect), opts.Policy)
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, current, nil)
+	if err != nil {
+		return DiffResult{}, fmt.Errorf("compare dev database schema: %w", err)
+	}
+	diff = atlasschema.ApplyDiffPolicy(diff, opts.Policy)
 	if !diff.HasChanges() {
 		return DiffResult{Synced: true}, nil
 	}
 
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, desired, dialect, planner.Options{
+		Capabilities:      info.Capabilities,
 		ConcurrentIndexes: opts.Policy.ConcurrentIndexCreate,
 	})
 	if err != nil {
@@ -125,6 +128,29 @@ func GenerateDiff(ctx context.Context, conn *dbschema.DatabaseConnection, opts D
 		return DiffResult{}, fmt.Errorf("write atlas.sum: %w", err)
 	}
 	return DiffResult{MigrationPath: path, SumPath: sumPath}, nil
+}
+
+func normalizeDiffOptions(opts DiffOptions) DiffOptions {
+	if strings.TrimSpace(opts.Name) == "" {
+		opts.Name = "migration"
+	}
+	return opts
+}
+
+func readScopedDevSchema(
+	conn *dbschema.DatabaseConnection,
+	schemas []string,
+	defaultSchema string,
+) (*dbschematypes.DBSchema, error) {
+	current, err := dbschema.ReadSchemaWithSchemas(conn, schemas)
+	if err != nil {
+		return nil, fmt.Errorf("read dev database schema: %w", err)
+	}
+	return schemascope.FilterDatabaseWithDefaultSchema(
+		withoutRevisionTable(current),
+		schemas,
+		defaultSchema,
+	), nil
 }
 
 func renderMigrationDiffSQL(statements []string, format string) (string, error) {

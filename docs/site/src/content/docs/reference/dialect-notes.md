@@ -57,6 +57,13 @@ decide whether a workflow is covered. SQL Server differs from PostgreSQL/MySQL
 in identity syntax, schema ownership, quoting, transactional DDL behavior, and
 object metadata.
 
+Use `schemadiff.CompareWithDatabase` for live comparisons. It asks SQL Server
+to resolve the finite candidate identifier set under `CATALOG_DEFAULT` and
+carries that immutable result through comparison and planning. Offline
+dialect-only comparisons confirm only exact identity. Distinct unresolved
+names in one catalog namespace remain potentially equivalent, so planning
+rejects the ambiguity instead of approximating SQL Server collation behavior.
+
 ## PostgreSQL-Compatible Targets
 
 CockroachDB, YugabyteDB, Spanner PostgreSQL interface, and similar targets can

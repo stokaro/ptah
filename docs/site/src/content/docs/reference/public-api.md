@@ -18,6 +18,7 @@ packages, examples, fixtures, tests, or implementation details.
 | `core/goschema` | Go annotation parser and schema IR. |
 | `core/platform` | Dialect and platform constants. |
 | `core/platform/capability` | Capability flags for dialect/version behavior. |
+| `core/platform/identifier` | Catalog identifier comparison and namespace semantics. |
 | `core/ptaherr` | Typed public errors and sentinel errors. |
 | `core/query` | Fluent builder for parameterized, dialect-aware SELECT statements. |
 | `core/renderer` | Dialect-aware SQL rendering from AST/schema IR. |
@@ -63,6 +64,14 @@ external executor is observed once after that executor reports success.
 
 `migration/schemadiff/types.SchemaDiff` stores index additions and removals as
 canonical `[]IndexRef` fields. Every index reference includes its owning table.
+Live comparisons snapshot catalog identifier semantics into the diff so
+comparison, policy, forward planning, and reverse planning share one source of
+truth.
+Use `migration/generator.GenerateCheckpointWithDatabase` for a SQL Server
+schema whose live catalog semantics must survive checkpoint planning.
+`GenerateCheckpointWithDatabaseInfo` accepts a caller-supplied complete
+identifier snapshot; the dialect-only checkpoint helper uses conservative
+offline rules.
 `migration/planner.Planner` exposes only checked planning; malformed references,
 unresolved additions, and target index-namespace conflicts fail before SQL is
 returned.

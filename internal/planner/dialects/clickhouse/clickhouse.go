@@ -55,7 +55,12 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	if generated == nil {
 		generated = &goschema.Database{}
 	}
-	indexes, err := indexscope.NewResolver(platform.ClickHouse, diff, generated)
+	indexes, err := indexscope.NewResolverWithSemantics(
+		platform.ClickHouse,
+		diff.EffectiveIdentifierSemantics(platform.ClickHouse),
+		diff,
+		generated,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +161,10 @@ func (p *Planner) addNewIndexes(
 	if len(diff.IndexesAdded) == 0 {
 		return result, nil
 	}
-	replacements := indexscope.NewConflictSet(platform.ClickHouse, diff.IndexRemovals())
+	replacements := indexscope.NewConflictSetWithSemantics(
+		diff.EffectiveIdentifierSemantics(platform.ClickHouse),
+		diff.IndexRemovals(),
+	)
 	for _, ref := range diff.IndexAdditions() {
 		index, err := indexes.Resolve(ref)
 		if err != nil {
@@ -183,7 +191,10 @@ func (p *Planner) addNewIndexes(
 }
 
 func (p *Planner) removeIndexes(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
-	replacements := indexscope.NewConflictSet(platform.ClickHouse, diff.IndexAdditions())
+	replacements := indexscope.NewConflictSetWithSemantics(
+		diff.EffectiveIdentifierSemantics(platform.ClickHouse),
+		diff.IndexAdditions(),
+	)
 	for _, ref := range diff.IndexRemovals() {
 		if replacements.Contains(ref) {
 			continue

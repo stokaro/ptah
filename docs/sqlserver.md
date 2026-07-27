@@ -35,7 +35,7 @@ The current SQL Server implementation covers:
 - `IDENTITY(start,increment)` for auto-increment columns.
 - `NVARCHAR`/`NVARCHAR(MAX)` string mapping.
 - Core table DDL, primary keys, unique constraints, foreign keys, CHECK
-  constraints, and basic indexes.
+  constraints, and indexes with ordered ascending or descending key columns.
 - Rendering for views and triggers when definitions are supplied as raw SQL.
 - Live schema introspection from `sys.tables`, `sys.columns`,
   `sys.foreign_keys`, `sys.indexes`, and related catalog views.
@@ -44,6 +44,57 @@ The current SQL Server implementation covers:
 Enums are represented as `NVARCHAR(255)` plus generated CHECK constraints.
 SQL Server does not have a native enum object equivalent to PostgreSQL
 `CREATE TYPE ... AS ENUM`.
+
+## Identifier Collation
+
+SQL Server compares database object identifiers using catalog collation
+semantics. Ptah reads the catalog collation when opening a connection, but does
+not infer behavior from `_CI_`, `_CS_`, or other collation-name substrings.
+
+Use the live-aware comparison API when embedding Ptah:
+
+```go
+diff, err := schemadiff.CompareWithDatabase(
+	ctx,
+	conn,
+	desired,
+	current,
+	compareOptions,
+)
+if err != nil {
+	return err
+}
+```
+
+Ptah sends the finite candidate set of schema, table, column, and index names as
+one bound JSON parameter. SQL Server groups the names with
+`COLLATE CATALOG_DEFAULT`, so the result follows the target catalog's case,
+accent, locale, kana, and width rules. The resulting diff carries the immutable
+equivalence snapshot through destructive-change policy, forward and reverse
+planning, checkpoint generation, and shadow verification. Shadow execution is
+rejected when the shadow catalog produces different equivalence classes.
+
+`CompareWithDatabaseInfo` is safe for offline comparison or when the caller
+already supplies a complete resolved `DBInfo.IdentifierSemantics` snapshot.
+It returns an error when a non-zero snapshot is invalid, does not cover every
+candidate identifier, or reveals a target table, column, or index collision.
+Omitting the snapshot selects conservative dialect-only SQL Server rules.
+
+`CompareWithOptions` has no error return. When its explicit snapshot is
+invalid, incomplete, or collision-prone, Ptah discards that snapshot and
+produces a conservative offline diff instead of treating unresolved names as
+equal.
+
+An offline `CompareWithDialect(..., "sqlserver")` call cannot know the target
+collation. It confirms only exact-spelling identity. Distinct unresolved names
+in the same catalog namespace are treated as potential conflicts because a
+target collation may equate them by case, accent, locale, kana, or width.
+Planning rejects ambiguity before emitting SQL and requires a live resolved
+snapshot. This can make dialect-only SQL Server planning intentionally stricter
+than live planning.
+
+Ptah does not reproduce SQL Server collation rules locally. The live catalog is
+the source of truth.
 
 ## Limitations
 
@@ -62,8 +113,9 @@ The SQL Server support is deliberately conservative:
   [DML Upsert AST](dml_upsert.md).
 - View and trigger introspection records SQL Server's persisted definition text,
   but Ptah does not yet normalize it into body-only drift-safe definitions.
-- Index introspection covers key columns but does not yet preserve included
-  columns or descending key order for drift-safe round trips.
+- Index introspection and planning preserve ordered key columns, their
+  direction, and filtered-index predicates, but do not yet preserve included
+  columns.
 - `DROP INDEX IF EXISTS` and `DROP CONSTRAINT IF EXISTS` are not used in the
   portable preset; Ptah relies on scoped, deterministic object ownership.
 - Schema-scoped `DropAllTables(ctx)` removes tables and foreign keys owned by the
@@ -75,11 +127,11 @@ The SQL Server support is deliberately conservative:
 
 ## Live Tests
 
-The live SQL Server introspection test is opt-in:
+The live SQL Server introspection and identifier-collation tests are opt-in:
 
 ```bash
 PTAH_SQLSERVER_TEST_URL='sqlserver://sa:pass@localhost:1433?database=ptah&encrypt=disable' \
-  go test ./dbschema ./migration/migrator -run 'TestSQLServerLive(ReadSchema|DropAllTablesDropsForeignKeys|ComputedColumnZeroDiff|DropAllTablesRejectsExternalForeignKeys)|TestSQLServerMigratorHonorsURLSchemaForMetadata|TestMigrationAdvisoryLock_SQLServer(DefaultTimeout|Timeout)Integration'
+  go test ./dbschema ./migration/migrator ./migration/generator -run 'TestSQLServerLive(ReadSchema|DropAllTablesDropsForeignKeys|ComputedColumnZeroDiff|DropAllTablesRejectsExternalForeignKeys|IdentifierSemantics_)|TestSQLServerMigratorHonorsURLSchemaForMetadata|TestMigrationAdvisoryLock_SQLServer(DefaultTimeout|Timeout)Integration|TestGenerateMigration_SQLServerIndexDirectionRoundTrip|TestShadowIdentifierSemanticsMatch_SQLServerLive'
 ```
 
 The test creates a temporary schema, tables with `IDENTITY`, a reserved-word
@@ -90,7 +142,14 @@ metadata placement through the URL `schema` parameter. Cleanup fails safely when
 another schema owns a foreign key into the selected schema, and computed column
 and default catalog readback are compared as a zero-diff schema. SQL Server
 advisory-lock coverage verifies both normal migration progress and timeout
-reporting when another session holds `ptah_migrate`.
+reporting when another session holds `ptah_migrate`. Identifier-collation
+coverage creates separate CI and CS databases, verifies discovered semantics,
+executes case-only, changed-column, and ASC-to-DESC replacements safely, proves
+case variants coexist only on the CS database, and covers Turkish dotless-I,
+accent-insensitive Latin, Greek sigma, Japanese kana, and width equivalence.
+The generator contour replays the prior schema on a separate SQL Server shadow
+database, then applies the generated ASC-to-DESC migration up, down, and up
+again while re-introspecting the index direction after every transition.
 
 The integration runner also has an opt-in SQL Server contour:
 

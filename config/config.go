@@ -5,7 +5,11 @@
 // clean Go APIs rather than external configuration file management.
 package config
 
-import "slices"
+import (
+	"slices"
+
+	"github.com/stokaro/ptah/core/platform/identifier"
+)
 
 // CompareOptions contains configuration options for schema comparison operations.
 // These options control how schema differences are calculated and what elements
@@ -32,6 +36,11 @@ type CompareOptions struct {
 	// unchanged foreign key. PostgreSQL distinguishes the two at DDL, so the
 	// fold is deliberately NOT applied there.
 	Dialect string
+
+	// IdentifierSemantics overrides the dialect's offline identifier rules.
+	// Catalog-sensitive callers must provide a complete resolved snapshot;
+	// first-party live operations obtain one through schemadiff.
+	IdentifierSemantics *identifier.Semantics
 }
 
 // DefaultCompareOptions returns the default comparison options with sensible defaults.

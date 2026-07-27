@@ -1,8 +1,8 @@
 package generator
 
 // White-box testing required: table-qualified index identity is transformed by
-// internal split, reverse, clone, and MySQL rollback helpers whose exact
-// intermediate diffs are not observable through the public generator API.
+// internal split, reverse, clone, rollback, and SQL rendering helpers whose
+// exact intermediate results are not observable through the public API.
 
 import (
 	"strings"
@@ -13,6 +13,7 @@ import (
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/platform/capability"
+	"github.com/stokaro/ptah/core/platform/identifier"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/migration/diffpolicy"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
@@ -154,6 +155,103 @@ func TestCloneSchemaDiff_ClonesTableQualifiedIndexRepresentations(t *testing.T) 
 	c.Assert(diff.IndexesAdded, qt.DeepEquals, []types.IndexRef{
 		{Name: "idx_shared", TableName: "users"},
 	})
+}
+
+func TestIndexTransforms_PreserveIdentifierSemantics(t *testing.T) {
+	c := qt.New(t)
+	semantics := identifier.ForSQLServerCatalog("SQL_Latin1_General_CP1_CI_AS").
+		WithResolvedNames([]identifier.ResolvedName{
+			{Name: "dbo", Key: "dbo"},
+			{Name: "users", Key: "users"},
+			{Name: "IDX_Email", Key: "IDX_Email"},
+			{Name: "idx_email", Key: "IDX_Email"},
+		})
+	diff := &types.SchemaDiff{
+		IdentifierSemantics: &semantics,
+		IndexesAdded: []types.IndexRef{
+			{Name: "IDX_Email", TableName: "dbo.users"},
+		},
+		IndexesRemoved: []types.IndexRef{
+			{Name: "idx_email", TableName: "dbo.users"},
+		},
+	}
+
+	cloned := cloneSchemaDiff(diff)
+	reversed := reverseSchemaDiffWithSchema(diff, nil, nil)
+	split := splitConcurrentIndexDiff(diff, diff.IndexAdditions())
+
+	c.Assert(cloned.IdentifierSemantics, qt.DeepEquals, &semantics)
+	c.Assert(reversed.IdentifierSemantics, qt.DeepEquals, &semantics)
+	c.Assert(split.transactional.IdentifierSemantics, qt.DeepEquals, &semantics)
+	c.Assert(split.noTransaction.IdentifierSemantics, qt.DeepEquals, &semantics)
+
+	cloned.IdentifierSemantics.ResolvedNames[0].Key = "cloned"
+	c.Assert(semantics.ResolvedNames[0].Key, qt.Equals, "IDX_Email")
+	c.Assert(reversed.IdentifierSemantics.ResolvedNames[0].Key, qt.Equals, "IDX_Email")
+	c.Assert(split.transactional.IdentifierSemantics.ResolvedNames[0].Key, qt.Equals, "IDX_Email")
+	c.Assert(split.noTransaction.IdentifierSemantics.ResolvedNames[0].Key, qt.Equals, "IDX_Email")
+
+	reversed.IdentifierSemantics.ResolvedNames[0].Key = "reversed"
+	c.Assert(semantics.ResolvedNames[0].Key, qt.Equals, "IDX_Email")
+	c.Assert(split.transactional.IdentifierSemantics.ResolvedNames[0].Key, qt.Equals, "IDX_Email")
+	c.Assert(split.noTransaction.IdentifierSemantics.ResolvedNames[0].Key, qt.Equals, "IDX_Email")
+
+	split.transactional.IdentifierSemantics.ResolvedNames[0].Key = "transactional"
+	c.Assert(semantics.ResolvedNames[0].Key, qt.Equals, "IDX_Email")
+	c.Assert(split.noTransaction.IdentifierSemantics.ResolvedNames[0].Key, qt.Equals, "IDX_Email")
+}
+
+func TestGenerateDownMigrationSQL_SQLServerPreservesFilteredIndexPredicate(t *testing.T) {
+	c := qt.New(t)
+	diff := &types.SchemaDiff{
+		IndexesAdded: []types.IndexRef{
+			{Name: "idx_active_users", TableName: "dbo.users"},
+		},
+		IndexesRemoved: []types.IndexRef{
+			{Name: "idx_active_users", TableName: "dbo.users"},
+		},
+	}
+	generated := &goschema.Database{Indexes: []goschema.Index{
+		{
+			Name:      "idx_active_users",
+			TableName: "dbo.users",
+			Fields:    []string{"status"},
+			Condition: "[status] = 2",
+		},
+	}}
+	database := &dbschematypes.DBSchema{
+		Tables: []dbschematypes.DBTable{
+			{
+				Name:   "users",
+				Schema: "dbo",
+			},
+		},
+		Indexes: []dbschematypes.DBIndex{
+			{
+				Name:      "idx_active_users",
+				TableName: "users",
+				Schema:    "dbo",
+				Columns:   []string{"status"},
+				Condition: "[status] = 1",
+			},
+		},
+	}
+
+	sql, err := generateDownMigrationSQL(
+		diff,
+		generated,
+		database,
+		platform.SQLServer,
+		capability.SQLServer2022(),
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "DROP INDEX [idx_active_users] ON [dbo].[users]")
+	c.Assert(sql, qt.Contains, "WHERE [status] = 1")
+	c.Assert(
+		strings.Index(sql, "DROP INDEX") < strings.Index(sql, "CREATE INDEX"),
+		qt.IsTrue,
+	)
 }
 
 func TestAddMySQLFamilyForeignKeyBackingIndexRemovals_PreservesDuplicateNames(t *testing.T) {

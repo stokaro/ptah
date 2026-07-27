@@ -21,6 +21,10 @@ no-account, embeddable capability.
 **shadow database**, introspects the resulting schema, and writes a checkpoint
 migration whose up body is the full cumulative schema:
 
+The shadow connection's live capabilities and server-resolved identifier
+equivalence snapshot are retained through checkpoint planning, including SQL
+Server locale, accent, case, kana, and width semantics.
+
 ```bash
 ptah migrations checkpoint \
   --migrations-dir ./migrations \
