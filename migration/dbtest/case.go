@@ -61,8 +61,8 @@
 //
 // The supported step kinds are migrate_to (migration tests only), exec, seed,
 // and assert, with the row_count, scalar, and error_contains assertions listed
-// above. Structured (HTML/JSON) reporting is out of scope; reporting is text
-// only via [Report.Text].
+// above. Reports render as text ([Report.Text]), JSON ([Report.JSON]), or HTML
+// ([Report.HTML]); [Report.Render] selects by format name.
 //
 // # Database isolation
 //

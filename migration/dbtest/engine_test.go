@@ -2,6 +2,7 @@ package dbtest_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -233,6 +234,46 @@ func TestRunMigrationTest_SeedRequiresEnv(t *testing.T) {
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(report, qt.IsNil)
 	c.Assert(err.Error(), qt.Contains, "seed requires an env")
+}
+
+func TestReport_RenderFormats(t *testing.T) {
+	c := qt.New(t)
+	cases := []dbtest.Case{{
+		Name: "one exec and assert",
+		Steps: []dbtest.Step{
+			{Name: "create", Exec: "CREATE TABLE t (id INTEGER PRIMARY KEY)"},
+			{Name: "empty", Assert: &dbtest.Assertion{Query: "SELECT id FROM t", RowCount: new(0)}},
+		},
+	}}
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Cases: cases})
+	c.Assert(err, qt.IsNil)
+
+	// JSON carries the kind, summary counts, and cases, and round-trips.
+	jsonOut, err := report.JSON()
+	c.Assert(err, qt.IsNil)
+	var parsed map[string]any
+	c.Assert(json.Unmarshal([]byte(jsonOut), &parsed), qt.IsNil)
+	c.Assert(parsed["kind"], qt.Equals, "MIGRATION")
+	c.Assert(parsed["total"], qt.Equals, float64(1))
+	c.Assert(parsed["passed"], qt.Equals, float64(1))
+	c.Assert(parsed["failed"], qt.Equals, float64(0))
+
+	// HTML is a self-contained document naming the case.
+	htmlOut, err := report.HTML()
+	c.Assert(err, qt.IsNil)
+	c.Assert(htmlOut, qt.Contains, "<!doctype html>")
+	c.Assert(htmlOut, qt.Contains, "one exec and assert")
+
+	// Render dispatches by format name and rejects unknown formats.
+	text, err := report.Render("text")
+	c.Assert(err, qt.IsNil)
+	c.Assert(text, qt.Contains, "=== MIGRATION TEST ===")
+	rjson, err := report.Render("json")
+	c.Assert(err, qt.IsNil)
+	c.Assert(rjson, qt.Equals, jsonOut)
+	_, err = report.Render("xml")
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "unsupported report format")
 }
 
 func TestRunMigrationTest_MigrateToWithoutDir(t *testing.T) {

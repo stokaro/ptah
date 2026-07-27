@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 
 	"github.com/spf13/cobra"
 
@@ -19,6 +20,9 @@ const (
 
 	testReportFormatText = "text"
 )
+
+// testReportFormats are the report formats the command accepts.
+var testReportFormats = []string{"text", "json", "html"}
 
 type testOptions struct {
 	dir     string
@@ -62,15 +66,15 @@ The command exits non-zero if any case fails.`,
 	flags.StringVar(&opts.dir, testDirFlag, "./tests", "Directory containing declarative test-case YAML files")
 	flags.StringVar(&opts.rootDir, testRootDirFlag, "./models", "Root directory to scan for Go schema annotations")
 	flags.StringVar(&opts.dbURL, testDBURLFlag, "", "Throwaway database URL (optional). An ephemeral SQLite database is used when empty.")
-	flags.StringVar(&opts.report, testReportFlag, testReportFormatText, "Report format (only \"text\" is supported)")
+	flags.StringVar(&opts.report, testReportFlag, testReportFormatText, "Report format: text, json, or html")
 
 	cmdutil.ConfigureCommand(cmd)
 	return cmd
 }
 
 func runSchemaTest(ctx context.Context, out io.Writer, opts testOptions) error {
-	if opts.report != "" && opts.report != testReportFormatText {
-		return fmt.Errorf("unsupported report format %q: only %q is supported", opts.report, testReportFormatText)
+	if opts.report != "" && !slices.Contains(testReportFormats, opts.report) {
+		return fmt.Errorf("unsupported report format %q: want text, json, or html", opts.report)
 	}
 
 	cases, err := dbtest.LoadCases(opts.dir)
@@ -90,7 +94,11 @@ func runSchemaTest(ctx context.Context, out io.Writer, opts testOptions) error {
 		return err
 	}
 
-	fmt.Fprint(out, report.Text())
+	rendered, err := report.Render(opts.report)
+	if err != nil {
+		return err
+	}
+	fmt.Fprint(out, rendered)
 	if report.Failed() {
 		return fmt.Errorf("schema tests failed")
 	}
