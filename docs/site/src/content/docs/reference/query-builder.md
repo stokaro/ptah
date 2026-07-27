@@ -28,10 +28,13 @@ Implemented so far:
   [Aggregates, GROUP BY, and HAVING](#aggregates-group-by-and-having));
 - `GROUP BY` (bare or qualified columns) and `HAVING`;
 - `ORDER BY` with per-column `ASC`/`DESC`;
-- `LIMIT` and `OFFSET`.
+- `LIMIT` and `OFFSET`;
+- single-table `INSERT` (one or more `VALUES` rows), `UPDATE`, and `DELETE`,
+  each with an optional `RETURNING` clause (see [Writes](#writes)).
 
 Not yet implemented (follow-up phases): non-aggregate function calls, arithmetic,
-`LIKE`, subqueries, window functions, and the `INSERT`/`UPDATE`/`DELETE` family.
+`LIKE`, subqueries, window functions, `ON CONFLICT` / upsert, `INSERT … SELECT`,
+and common table expressions.
 
 ## Safety model
 
@@ -258,7 +261,125 @@ stmt := query.Select().
 // GROUP BY "u"."name"
 ```
 
+## Writes
+
+`InsertInto`, `Update`, and `DeleteFrom` build the write-side statements. Values
+passed to `Values` and `Set` are bound exactly like `WHERE` values — never
+concatenated into SQL — and table and column names are quoted. Each statement has
+its own renderer entry point, all returning `(sql string, args []any, err error)`:
+
+- `renderer.RenderInsert(stmt, dialect)`
+- `renderer.RenderUpdate(stmt, dialect)`
+- `renderer.RenderDelete(stmt, dialect)`
+
+Validation of degenerate input happens at render time (as with `SELECT`), so a
+builder call never fails and `Build` never returns an error.
+
+### INSERT
+
+Declare the column list with `Columns` and add one row per `Values` call. A
+multi-row insert numbers its values row by row, left to right. Passing `nil` as a
+value binds SQL `NULL`.
+
+```go
+stmt := query.InsertInto("users").
+	Columns("id", "name").
+	Values(int64(1), "alice").
+	Values(int64(2), "bob").
+	Returning("id").
+	Build()
+
+sql, args, err := renderer.RenderInsert(stmt, platform.Postgres)
+```
+
+The PostgreSQL output is:
+
+```sql
+INSERT INTO "users" ("id", "name") VALUES ($1, $2), ($3, $4) RETURNING "id"
+```
+
+with `args` equal to `[]any{int64(1), "alice", int64(2), "bob"}`. `RenderInsert`
+rejects a statement with no columns, no rows, or a row whose length does not match
+the column count — ragged input fails cleanly instead of producing mismatched SQL.
+
+### UPDATE
+
+Add assignments with `Set` (each value bound) and a filter with `Where`. An
+`UPDATE`'s `SET` values are numbered **before** its `WHERE` values, matching
+emission order, so placeholder numbering follows the SQL left to right.
+
+```go
+stmt := query.Update("users").
+	Set("name", "bob").
+	Set("email", "bob@example.com").
+	Where(query.Eq("id", int64(7))).
+	Build()
+
+sql, args, err := renderer.RenderUpdate(stmt, platform.Postgres)
+```
+
+The PostgreSQL output is:
+
+```sql
+UPDATE "users" SET "name" = $1, "email" = $2 WHERE "id" = $3
+```
+
+with `args` equal to `[]any{"bob", "bob@example.com", int64(7)}`. An empty `SET`
+list is rejected.
+
+### DELETE
+
+```go
+stmt := query.DeleteFrom("users").Where(query.Eq("id", int64(7))).Build()
+
+sql, args, err := renderer.RenderDelete(stmt, platform.Postgres)
+// DELETE FROM "users" WHERE "id" = $1   args: []any{int64(7)}
+```
+
+A `WHERE` expression can be built once and shared across statement kinds, exactly
+as with `SELECT` — the expression constructors return plain nodes.
+
+### Whole-table UPDATE / DELETE guard
+
+An `UPDATE` or `DELETE` with no `WHERE` clause mutates every row, which is rarely
+intended. Rather than make that the accidental default, the builder requires an
+explicit opt-in: call `.Unconditional()`. Without it, the renderer rejects a
+`WHERE`-less statement rather than run a whole-table mutation.
+
+```go
+// Rejected: "renderer: delete without a WHERE clause must be marked unconditional"
+query.DeleteFrom("sessions").Build()
+
+// Deliberate whole-table delete — renders as DELETE FROM "sessions"
+query.DeleteFrom("sessions").Unconditional().Build()
+```
+
+### RETURNING support by dialect
+
+`Returning` adds a `RETURNING` projection to any of the three statements.
+`RETURNING` is not portable across every dialect, so `RenderInsert` /
+`RenderUpdate` / `RenderDelete` reject it — returning a clear error — on a dialect
+that cannot execute it, rather than emit SQL that fails at execution time.
+
+| Dialect | `RETURNING` |
+| --- | --- |
+| PostgreSQL family (incl. CockroachDB, YugabyteDB) | yes |
+| SQLite | yes (since 3.35, 2021) |
+| MySQL | no |
+| MariaDB | no (see note) |
+
+- **MySQL** has no `RETURNING` at all.
+- **MariaDB** supports `RETURNING` for `INSERT` and `DELETE` but not `UPDATE`. To
+  keep one rule across all three write statements, Ptah treats MariaDB as
+  unsupported and rejects a non-empty `RETURNING`
+  (`renderer: mariadb does not support RETURNING`).
+- **SQLite** gained `RETURNING` in 3.35 (2021). Ptah emits it; if you must target
+  an older SQLite, avoid `Returning`.
+
 ## Builder reference
+
+`Select` starts a read query; `InsertInto`, `Update`, and `DeleteFrom` start the
+write statements.
 
 | Function | Result |
 | --- | --- |
@@ -276,6 +397,21 @@ stmt := query.Select().
 | `.OrderBy(terms ...)` | Append sort terms across calls. |
 | `.Limit(n)` / `.Offset(n)` | Set bound row limit/offset. |
 | `.Build()` | Produce the `*ast.SelectStatement`. |
+
+Write builders:
+
+| Function | Result |
+| --- | --- |
+| `InsertInto(table)` | Start an `INSERT`. |
+| `.Columns(cols ...string)` | Declare the inserted column list. |
+| `.Values(vals ...any)` | Append one row of bound values; call once per row. |
+| `Update(table)` | Start an `UPDATE`. |
+| `.Set(col, value)` | Append a bound `column = value` assignment. |
+| `DeleteFrom(table)` | Start a `DELETE`. |
+| `.Where(expr)` | Set the filter (shared by `Update` and `DeleteFrom`). |
+| `.Unconditional()` | Opt in to a whole-table `UPDATE`/`DELETE` (required when no `Where`). |
+| `.Returning(cols ...string)` | Add a `RETURNING` projection (PostgreSQL family and SQLite only). |
+| `.Build()` | Produce the `*ast.InsertStatement` / `*ast.UpdateStatement` / `*ast.DeleteStatement`. |
 
 Expression helpers: `Eq`, `Ne`, `Lt`, `Le`, `Gt`, `Ge`, `In`, `IsNull`,
 `IsNotNull`, `And`, `Or`, `Not`. Ordering helpers: `Asc`, `Desc`. Aggregate

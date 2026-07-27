@@ -15,9 +15,16 @@
 // OFFSET. Tables can be aliased (FromAs and the alias argument of the join
 // methods) and columns can be qualified by a table or alias with Col, so a
 // projection, WHERE, join ON, GROUP BY, HAVING, or ORDER BY term can render as
-// "alias"."col". Non-aggregate function calls, arithmetic, LIKE, subqueries,
-// window functions, and the INSERT / UPDATE / DELETE family are intentionally not
-// implemented yet and are tracked as follow-up phases.
+// "alias"."col".
+//
+// The write side of DML is covered too: InsertInto, Update, and DeleteFrom build
+// single-table INSERT / UPDATE / DELETE statements, each rendered by its own
+// renderer entry point (RenderInsert, RenderUpdate, RenderDelete). See the
+// "Writes" section below.
+//
+// Non-aggregate function calls, arithmetic, LIKE, subqueries, window functions,
+// ON CONFLICT / upsert, INSERT … SELECT, and common table expressions are
+// intentionally not implemented yet and are tracked as follow-up phases.
 //
 // # Safety model
 //
@@ -133,4 +140,42 @@
 // follows left-to-right emission order. A function name (COUNT, SUM, …) is a
 // keyword emitted verbatim and never quoted; the renderer rejects a name that is
 // not a simple identifier rather than emit it.
+//
+// # Writes (INSERT, UPDATE, DELETE)
+//
+// InsertInto, Update, and DeleteFrom build the write-side statements. Values
+// passed to Values and Set are bound exactly like WHERE values — the classic
+// "concatenate a value into SQL" injection cannot happen through this API — and
+// column and table names are quoted. Each has its own renderer entry point:
+// RenderInsert, RenderUpdate, RenderDelete, all returning (sql, args, err).
+//
+//	ins := query.InsertInto("users").
+//		Columns("id", "name").
+//		Values(int64(1), "alice").
+//		Values(int64(2), "bob").
+//		Returning("id").
+//		Build()
+//	sql, args, err := renderer.RenderInsert(ins, platform.Postgres)
+//	// sql:  INSERT INTO "users" ("id", "name") VALUES ($1, $2), ($3, $4) RETURNING "id"
+//	// args: []any{int64(1), "alice", int64(2), "bob"}
+//
+//	upd := query.Update("users").
+//		Set("name", "bob").
+//		Where(query.Eq("id", int64(7))).
+//		Build()
+//	sql, args, err = renderer.RenderUpdate(upd, platform.Postgres)
+//	// sql:  UPDATE "users" SET "name" = $1 WHERE "id" = $2
+//	// args: []any{"bob", int64(7)}
+//
+// An UPDATE's SET values are numbered before its WHERE values, matching
+// left-to-right emission order, and an INSERT numbers values row by row, so
+// placeholder order always follows the SQL.
+//
+// Two safety rules apply. First, a whole-table UPDATE or DELETE — one with no
+// WHERE clause — is rejected at render time unless the builder marks it
+// Unconditional, so a missing filter cannot silently rewrite or delete every row.
+// Second, RETURNING renders only on dialects that can execute it: the PostgreSQL
+// family and SQLite (3.35+). MySQL and MariaDB have no portable RETURNING across
+// all three statements, so RenderInsert / RenderUpdate / RenderDelete reject a
+// non-empty RETURNING there rather than emit SQL the engine cannot run.
 package query
