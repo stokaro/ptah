@@ -23,6 +23,7 @@ root-level command spellings are removed instead of preserved.
 | `ptah schema compare` | Compare desired schema with a live database. |
 | `ptah schema drift` | Check live database drift against desired schema. |
 | `ptah schema export` | Export a schema to HCL, an OpenAPI 3.0 component schema, or a GraphQL SDL. |
+| `ptah schema test` | Apply a desired schema to a throwaway database and run declarative test cases against it. |
 | `ptah viz` | Render desired schema diagrams as Mermaid, DOT, or SVG. |
 | `ptah db read` | Read schema from a live database. |
 | `ptah db drop-all` | Drop all schema objects in a live database. |
@@ -42,6 +43,7 @@ root-level command spellings are removed instead of preserved.
 | `ptah migrations rebase` | Move a migration to the end of history by re-timestamping it, and rewrite the integrity file. |
 | `ptah migrations rm` | Delete a migration's up/down pair and rewrite the integrity file. |
 | `ptah migrations lint` | Lint migration files. |
+| `ptah migrations test` | Apply migrations to a throwaway database and run declarative test cases against it. |
 | `ptah sql lint` | Lint standalone SQL files. |
 | `ptah seed` | Apply environment-scoped SQL seed files. |
 | `ptah version` | Print Ptah build information. |
