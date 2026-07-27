@@ -98,6 +98,12 @@ keeps long-dead DDL executable forever. Squash it into a cumulative-schema
 checkpoint that fresh databases bootstrap from while already-migrated databases
 ignore it — see [Checkpoints](../checkpoints/).
 
+## Testing
+
+Assert migration behavior with declarative test cases: `ptah migrations test`
+applies the directory to a throwaway database and checks the result. See
+[Testing](../testing/).
+
 ## Safety gates
 
 Use dry-run and lint before applying to shared environments:
