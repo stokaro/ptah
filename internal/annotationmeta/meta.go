@@ -556,6 +556,7 @@ var directives = []Directive{
 		Scopes:      []Scope{ScopeStruct},
 		Attributes: []Attribute{
 			attr("table", "Target table the rows belong to.", valueString, true, false),
+			attr("schema", "Database schema the table belongs to.", valueString, false, false),
 			attr("key", "Comma-separated key column(s) forming each row's identity.", valueList, true, false),
 			attr("file", "Path to the YAML row-data file, relative to the Go source file.", valueString, true, false),
 		},

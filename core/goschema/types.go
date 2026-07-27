@@ -1093,6 +1093,7 @@ func (g *Grant) Canonicalize() {
 type ManagedData struct {
 	StructName string   // Name of the Go struct this data annotation is associated with
 	Table      string   // Target table the rows belong to
+	Schema     string   // Database schema the table belongs to; empty targets the connection's default schema
 	Keys       []string // Key column(s) forming each row's logical identity (parsed from the comma-separated "key" attribute)
 	File       string   // Path to the YAML row-data file, verbatim, relative to SourceDir
 	// SourceDir is the parse-root-relative directory of the Go source file that

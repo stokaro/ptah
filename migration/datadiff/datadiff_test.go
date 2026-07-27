@@ -183,7 +183,7 @@ func TestCompute(t *testing.T) {
 
 	for _, tt := range tests {
 		c.Run(tt.name, func(c *qt.C) {
-			got, err := datadiff.Compute(tt.table, tt.keys, tt.desired, tt.live)
+			got, err := datadiff.Compute("", tt.table, tt.keys, tt.desired, tt.live)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.DeepEquals, tt.want)
 		})
@@ -221,7 +221,7 @@ func TestComputeErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		c.Run(tt.name, func(c *qt.C) {
-			got, err := datadiff.Compute("regions", tt.keys, tt.desired, tt.live)
+			got, err := datadiff.Compute("", "regions", tt.keys, tt.desired, tt.live)
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(got, qt.IsNil)
 		})

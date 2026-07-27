@@ -164,6 +164,151 @@ func TestGenerate_RoundTripApply(t *testing.T) {
 	})
 }
 
+// TestGenerate_SchemaQualifiedTable proves an annotation's schema="..." flows
+// through the whole pipeline: the live rows are read from the schema-qualified
+// table, the generated DML targets it, and applying up then down round-trips.
+func TestGenerate_SchemaQualifiedTable(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite:///:memory:")
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+
+	// Attach a second in-memory database as the "reference" schema and create a
+	// schema-qualified regions table in it. Ptah caps in-memory SQLite to a
+	// single connection, so the ATTACH persists for every subsequent query.
+	_, err = conn.ExecContext(ctx, `ATTACH DATABASE ':memory:' AS reference`)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(ctx, `CREATE TABLE reference.regions (code TEXT PRIMARY KEY, name TEXT NOT NULL)`)
+	c.Assert(err, qt.IsNil)
+	for _, r := range [][2]string{{"US", "United States"}, {"CZ", "Czech Republic"}, {"XX", "Old Name"}} {
+		_, execErr := conn.ExecContext(ctx, `INSERT INTO reference.regions (code, name) VALUES (?, ?)`, r[0], r[1])
+		c.Assert(execErr, qt.IsNil)
+	}
+
+	root := t.TempDir()
+	goSrc := `package fixture
+
+//migrator:schema:data table="regions" schema="reference" key="code" file="regions.yaml"
+type Region struct {
+	//migrator:schema:field name="code" type="TEXT" primary="true"
+	Code string
+
+	//migrator:schema:field name="name" type="TEXT" not_null="true"
+	Name string
+}
+`
+	c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(goSrc), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(root, "regions.yaml"), []byte(driftDesiredRows), 0o600), qt.IsNil)
+
+	up, down, err := datamigrate.Generate(ctx, conn, datamigrate.Options{RootDir: root, AllowDestructive: true})
+	c.Assert(err, qt.IsNil)
+	// The live rows were read from reference.regions (main has no regions table),
+	// and the generated DML targets the schema-qualified table.
+	c.Assert(up, qt.Contains, `"reference"."regions"`)
+	c.Assert(down, qt.Contains, `"reference"."regions"`)
+
+	apply := func(script string) {
+		for _, stmt := range migrator.SplitSQLStatementsForConnection(conn, script) {
+			_, execErr := conn.ExecContext(ctx, stmt)
+			c.Assert(execErr, qt.IsNil, qt.Commentf("stmt: %s", stmt))
+		}
+	}
+	readState := func() map[string]string {
+		rows, queryErr := conn.QueryContext(ctx, `SELECT code, name FROM reference.regions ORDER BY code`)
+		c.Assert(queryErr, qt.IsNil)
+		defer func() { _ = rows.Close() }()
+		out := map[string]string{}
+		for rows.Next() {
+			var code, name string
+			c.Assert(rows.Scan(&code, &name), qt.IsNil)
+			out[code] = name
+		}
+		c.Assert(rows.Err(), qt.IsNil)
+		return out
+	}
+
+	apply(up)
+	c.Assert(readState(), qt.DeepEquals, map[string]string{
+		"US": "United States", "CZ": "Czechia", "DE": "Germany",
+	})
+
+	apply(down)
+	c.Assert(readState(), qt.DeepEquals, map[string]string{
+		"US": "United States", "CZ": "Czech Republic", "XX": "Old Name",
+	})
+}
+
+// TestGenerate_ProtectedSchemaQualifiedTable proves the protected gate is
+// schema-aware: a schema-qualified managed table is protected by both its
+// qualified "schema.table" name and its bare table name, and the refusal names
+// the qualified table.
+func TestGenerate_ProtectedSchemaQualifiedTable(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+
+	// setup builds a fresh connection with an insert-only drift on
+	// reference.regions, so only the protected gate (not the destructive gate)
+	// can refuse the run.
+	setup := func() (*dbschema.DatabaseConnection, string) {
+		conn, err := dbschema.ConnectToDatabase(ctx, "sqlite:///:memory:")
+		c.Assert(err, qt.IsNil)
+		t.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+		_, err = conn.ExecContext(ctx, `ATTACH DATABASE ':memory:' AS reference`)
+		c.Assert(err, qt.IsNil)
+		_, err = conn.ExecContext(ctx, `CREATE TABLE reference.regions (code TEXT PRIMARY KEY, name TEXT NOT NULL)`)
+		c.Assert(err, qt.IsNil)
+		_, err = conn.ExecContext(ctx, `INSERT INTO reference.regions (code, name) VALUES ('US', 'United States')`)
+		c.Assert(err, qt.IsNil)
+
+		root := t.TempDir()
+		goSrc := `package fixture
+
+//migrator:schema:data table="regions" schema="reference" key="code" file="regions.yaml"
+type Region struct {
+	//migrator:schema:field name="code" type="TEXT" primary="true"
+	Code string
+
+	//migrator:schema:field name="name" type="TEXT" not_null="true"
+	Name string
+}
+`
+		c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(goSrc), 0o600), qt.IsNil)
+		c.Assert(os.WriteFile(filepath.Join(root, "regions.yaml"), []byte(insertOnlyDesiredRows), 0o600), qt.IsNil)
+		return conn, root
+	}
+
+	// A qualified protected entry refuses and reports the qualified name.
+	conn, root := setup()
+	_, _, err := datamigrate.Generate(ctx, conn, datamigrate.Options{
+		RootDir:         root,
+		ProtectedTables: []string{"reference.regions"},
+	})
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "protected table(s) reference.regions")
+
+	// A bare protected entry also protects the table in its schema (safe-side),
+	// preserving the pre-schema behavior.
+	conn, root = setup()
+	_, _, err = datamigrate.Generate(ctx, conn, datamigrate.Options{
+		RootDir:         root,
+		ProtectedTables: []string{"regions"},
+	})
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "protected table(s) reference.regions")
+
+	// --allow-prod clears the gate and the insert-only migration is generated.
+	conn, root = setup()
+	up, _, err := datamigrate.Generate(ctx, conn, datamigrate.Options{
+		RootDir:         root,
+		ProtectedTables: []string{"reference.regions"},
+		AllowProd:       true,
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(up, qt.Contains, `INSERT INTO "reference"."regions"`)
+}
+
 func TestGenerate_EmptyDesiredWithLiveRowsErrors(t *testing.T) {
 	c := qt.New(t)
 
@@ -273,7 +418,9 @@ func TestGenerate_ProtectedTableMatchIsCaseInsensitive(t *testing.T) {
 		ProtectedTables: []string{"REGIONS"},
 	})
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(err.Error(), qt.Contains, "protected table(s) REGIONS")
+	// The match is case-insensitive, and the message names the actual managed
+	// table (as declared), not the operator's protected-entry casing.
+	c.Assert(err.Error(), qt.Contains, "protected table(s) regions")
 }
 
 func TestGenerate_ProtectedTablePrecedesDestructiveGate(t *testing.T) {

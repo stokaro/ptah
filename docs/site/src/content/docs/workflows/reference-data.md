@@ -41,6 +41,11 @@ YAML list of column maps:
 
 Use a comma-separated `key` for composite keys (`key="tenant_id,code"`).
 
+Add an optional `schema="..."` to target a table in a non-default schema; both
+the live-row read and the generated DML are then schema-qualified (for
+PostgreSQL, `"reference"."countries"`). Omit it to use the connection's default
+schema.
+
 ## Generating a data migration
 
 ```bash
@@ -76,7 +81,9 @@ generates them:
   Insert-only migrations are additive and are always allowed.
 - Naming a table with `--protected-table` refuses any change to it — insert,
   update, or delete — unless `--allow-prod` is also set, mirroring the
-  protected-target posture of `ptah seed`.
+  protected-target posture of `ptah seed`. An entry matches a managed table by
+  its bare name (`regions`) or its schema-qualified name (`reference.regions`),
+  so either spelling protects a table declared with `schema="..."`.
 
 Both gates run before any SQL is emitted, so they apply to `--dry-run` too:
 combine `--allow-destructive --dry-run` to preview a destructive change without
@@ -93,10 +100,10 @@ containing quotes, backslashes, or semicolons cannot break out of its literal.
 
 Known limits (tracked follow-ups): only the managed columns are reconciled and
 restored, so emptying a populated table's desired set is refused rather than
-generating a rollback that could not restore the non-key columns; tables are
+generating a rollback that could not restore the non-key columns; and tables are
 ordered alphabetically rather than by foreign-key dependency, so FK-related
 tables may need manual reordering (a violation aborts the transactional migration
-cleanly); and schema-qualified managed tables are not yet supported.
+cleanly).
 
 ## Declarative data versus `ptah seed`
 

@@ -43,11 +43,11 @@ import (
 //
 // # Table name
 //
-// A DataDiff carries no schema, so the table is quoted as a single identifier
-// via sqlident.Qualified(dialect, "", diff.Table). A dotted name such as
-// "app.regions" is therefore quoted whole (for PostgreSQL: "app.regions")
-// rather than as schema.table; schema-qualified managed tables are a known
-// follow-up.
+// The table is quoted via sqlident.Qualified(dialect, diff.Schema, diff.Table).
+// When diff.Schema is set the name is emitted schema-qualified (for PostgreSQL:
+// "app"."regions"); when it is empty only the table is quoted. diff.Table is
+// always treated as a single identifier, so a dotted table name is quoted whole
+// rather than split into schema and table — put the schema in diff.Schema.
 //
 // # Limitations
 //
@@ -71,7 +71,7 @@ func Render(diff *DataDiff, dialect string) (up string, down string, err error) 
 		return "", "", errors.New("datadiff: keys must be non-empty to render a non-empty diff")
 	}
 
-	table := sqlident.Qualified(dialect, "", diff.Table)
+	table := sqlident.Qualified(dialect, diff.Schema, diff.Table)
 
 	upStmts, err := renderUp(dialect, table, diff)
 	if err != nil {

@@ -232,6 +232,10 @@
               "description": "Comma-separated key column(s) forming each row's identity.",
               "type": "string"
             },
+            "schema": {
+              "description": "Database schema the table belongs to.",
+              "type": "string"
+            },
             "table": {
               "description": "Target table the rows belong to.",
               "type": "string"

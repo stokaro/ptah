@@ -1345,6 +1345,7 @@ func (s *schemaParseState) parseManagedDataComment(comment *ast.Comment, structN
 	s.managedData = append(s.managedData, ManagedData{
 		StructName: structName,
 		Table:      kv["table"],
+		Schema:     kv["schema"],
 		Keys:       keys,
 		File:       kv["file"],
 		SourceDir:  filepath.Dir(s.filename),
