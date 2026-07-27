@@ -250,23 +250,41 @@ mirrors Atlas's public apply-template fields: `Pending`, `Applied`, `Current`,
 `Target`, `Start`, `End`, `Driver`, `URL`, and `Dir`; `{{ json . }}` emits the
 same result as JSON with database credentials redacted. With `--env`, Ptah can
 read `env.url`, `migration`, and `format.migrate.apply` from `atlas.hcl`.
-The apply path currently executes only Atlas-format directories. A configured
-`migration.format` or `file://...?format=...` value for `golang-migrate`,
-`goose`, `flyway`, `liquibase`, or `dbmate` fails before Ptah opens the target
-database when it is the effective format. An explicit `?format=` query on the
-effective directory URL, from either `migration.dir` or CLI `--dir`, overrides
-the `migration.format` project default, matching Atlas. An empty query value
-selects the native `atlas` format.
-Import the directory into Atlas single-file layout before applying it:
+The apply path executes every Atlas OSS migration directory format selected by
+`migration.format` or the directory URL `?format=` parameter: `atlas`,
+`golang-migrate`, `goose`, `flyway`, `liquibase`, and `dbmate`. The native
+`atlas` format is read from disk unchanged, preserving `atlas.sum` verification
+and down migrations. Every other format is read and converted in memory to Atlas
+single-file, up-only migrations, so apply executes only the source tool's
+forward (up) SQL and never its down, rollback, undo, or metadata section. This
+reuses the same format-loading layer as `ptah atlas migrate import`, so apply
+and import agree on every format's semantics. An explicit `?format=` query on
+the effective directory URL, from either `migration.dir` or CLI `--dir`,
+overrides the `migration.format` project default, matching Atlas; an empty query
+value selects the native `atlas` format.
 
 ```bash
-ptah atlas migrate import \
-  --from "file://legacy-migrations?format=goose" \
-  --to file://migrations
-ptah atlas migrate apply --url "$DATABASE_URL" --dir file://migrations
+# Apply a Goose directory directly — no separate import step.
+ptah atlas migrate apply --url "$DATABASE_URL" \
+  --dir "file://migrations?format=goose"
 ```
 
-Native apply support for those formats remains tracked in
+Flyway versions are compared component-wise like Flyway itself (`V1.5` sorts
+before `V2`, `V1.10` after `V1.9`) and are encoded to a stable Atlas version that
+depends only on the version — never on the other files in the directory — so
+inserting a mid-sequence migration (a hotfix, an out-of-order merge) never
+renumbers the others and existing revision checksums stay valid. Each version
+maps to a fixed-width `major.minor.patch` int64 (minor and patch `0`–`99`); this
+covers semantic and `yyyyMMddHHmmss` timestamp schemes. A version with more than
+three components, or a minor/patch of `100` or more, cannot be represented in an
+int64 and is rejected before the database is opened.
+
+Several inputs still fail before Ptah opens the target database rather than guess
+at semantics: unknown formats; goose/dbmate files missing their up directive
+(never falling back to executing the whole file); Flyway repeatable (`R__`)
+migrations, which Ptah cannot yet execute as versioned migrations (matching how
+`ptah atlas migrate import` handles them); and two source files that resolve to
+the same version. See
 [`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742).
 Atlas OSS does not register `migrate apply --dir-format`, `--to-version`, or
 `--lock-name`; Ptah follows that surface and rejects those flags on

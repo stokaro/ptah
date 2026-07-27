@@ -44,6 +44,37 @@ func TestPrepareApplyExecute_HappyPathAppliesSelectedAmount(t *testing.T) {
 	c.Assert(sqliteTableExists(c, conn, "apply_amount_three"), qt.IsFalse)
 }
 
+func TestPrepareApplyExecute_AppliesConvertedExternalFormatFS(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyMigrationFile(c, migrationsDir, "1_widgets.sql",
+		"-- +goose Up\nCREATE TABLE goose_up (id INTEGER PRIMARY KEY);\n-- +goose Down\nCREATE TABLE goose_down (id INTEGER PRIMARY KEY);\n")
+	migrationFS, err := atlasmigrate.ResolveApplyDir(migrationsDir, "goose", nil)
+	c.Assert(err, qt.IsNil)
+	conn := connectSQLite(c, filepath.Join(dir, "goose.db"))
+	defer dbschema.CloseAndWarn(conn)
+
+	plan, err := atlasmigrate.PrepareApply(ctx, conn, atlasmigrate.ApplyOptions{
+		Dir:       migrationsDir,
+		FS:        migrationFS,
+		ExecOrder: migrator.ExecOrderLinear,
+		TxMode:    migrator.MigrationTxModeFile,
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.SelectedVersions, qt.DeepEquals, []int64{1})
+
+	result, err := plan.Execute(ctx)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Applied, qt.IsTrue)
+	// Only the converted up section ran; the down section was dropped during
+	// conversion, so its table was never created.
+	c.Assert(sqliteTableExists(c, conn, "goose_up"), qt.IsTrue)
+	c.Assert(sqliteTableExists(c, conn, "goose_down"), qt.IsFalse)
+}
+
 func TestPrepareApplyExecute_BaselineRecordsAtlasRevisions(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()
