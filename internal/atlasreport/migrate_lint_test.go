@@ -191,6 +191,84 @@ func TestNewMigrateLint_PathPrefixCannotCrossAttachFindings(t *testing.T) {
 	c.Assert(report.Files[1].Findings, qt.HasLen, 0)
 }
 
+func TestNewMigrateLint_LoadsSemanticChangeCountForMultiActionAlter(t *testing.T) {
+	c := qt.New(t)
+	analysis, err := migrationlint.AnalyzeFS(fstest.MapFS{
+		"1_alter.sql": {Data: []byte("ALTER TABLE users ADD COLUMN a INTEGER, ADD COLUMN b INTEGER;\n")},
+	}, migrationlint.Options{
+		DirFormat: migrator.MigrationDirFormatAtlas,
+		Dialect:   "sqlite",
+	})
+	c.Assert(err, qt.IsNil)
+
+	report, err := atlasreport.NewMigrateLint(atlasreport.MigrateLintOptions{Analysis: &analysis})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Steps, qt.HasLen, 3)
+	c.Assert(report.Steps[1].Name, qt.Equals, "Replay Migration Files")
+	// One ALTER statement expresses two schema changes: counting the file or
+	// statement would report 1.
+	c.Assert(report.Steps[1].Text, qt.Equals, "Loaded 2 changes on dev database")
+}
+
+func TestNewMigrateLint_LoadsZeroChangesForNonDDLFile(t *testing.T) {
+	c := qt.New(t)
+	analysis, err := migrationlint.AnalyzeFS(fstest.MapFS{
+		"1_seed.sql": {Data: []byte("INSERT INTO users (id) VALUES (1);\n")},
+	}, migrationlint.Options{
+		DirFormat: migrator.MigrationDirFormatAtlas,
+		Dialect:   "sqlite",
+	})
+	c.Assert(err, qt.IsNil)
+
+	report, err := atlasreport.NewMigrateLint(atlasreport.MigrateLintOptions{Analysis: &analysis})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Steps[0].Text, qt.Equals, "Found 1 new migration files (from 1 total)")
+	// The file has a statement but no structural change.
+	c.Assert(report.Steps[1].Text, qt.Equals, "Loaded 0 changes on dev database")
+}
+
+func TestNewMigrateLint_LoadsSemanticChangeCountForMixedFile(t *testing.T) {
+	c := qt.New(t)
+	analysis, err := migrationlint.AnalyzeFS(fstest.MapFS{
+		"1_mixed.sql": {Data: []byte(
+			"CREATE TABLE t (id INTEGER);\n" +
+				"INSERT INTO t (id) VALUES (1);\n" +
+				"ALTER TABLE t ADD COLUMN a INTEGER, ADD COLUMN b INTEGER;\n")},
+	}, migrationlint.Options{
+		DirFormat: migrator.MigrationDirFormatAtlas,
+		Dialect:   "sqlite",
+	})
+	c.Assert(err, qt.IsNil)
+
+	report, err := atlasreport.NewMigrateLint(atlasreport.MigrateLintOptions{Analysis: &analysis})
+
+	c.Assert(err, qt.IsNil)
+	// Three statements, one operational: 1 (CREATE) + 0 (INSERT) + 2 (ALTER).
+	c.Assert(report.Steps[1].Text, qt.Equals, "Loaded 3 changes on dev database")
+}
+
+func TestNewMigrateLint_LoadsOneChangePerSingleStatementFixtureFile(t *testing.T) {
+	c := qt.New(t)
+	analysis, err := migrationlint.AnalyzeFS(fstest.MapFS{
+		"1_create_users.sql":    {Data: []byte("CREATE TABLE users (id INTEGER);\n")},
+		"2_create_accounts.sql": {Data: []byte("CREATE TABLE accounts (id INTEGER);\n")},
+	}, migrationlint.Options{
+		DirFormat: migrator.MigrationDirFormatAtlas,
+		Dialect:   "sqlite",
+	})
+	c.Assert(err, qt.IsNil)
+
+	report, err := atlasreport.NewMigrateLint(atlasreport.MigrateLintOptions{Analysis: &analysis})
+
+	c.Assert(err, qt.IsNil)
+	// Imported one-statement-per-change fixtures keep parity: two files, each a
+	// single CREATE, is two changes.
+	c.Assert(report.Steps[0].Text, qt.Equals, "Found 2 new migration files (from 2 total)")
+	c.Assert(report.Steps[1].Text, qt.Equals, "Loaded 2 changes on dev database")
+}
+
 func TestWriteMigrateLintFormat_RedactsSensitiveURL(t *testing.T) {
 	c := qt.New(t)
 	redactionURL := "postgres://app:" + "secret" + "@db.local/app?token=" + "secret" +

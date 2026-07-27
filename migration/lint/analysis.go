@@ -144,7 +144,14 @@ type File struct {
 	NoTransaction bool
 	// Statements holds the parsed statements of up migrations. Empty for
 	// down migrations (statement rules do not run there).
-	Statements      []Statement
+	Statements []Statement
+	// Changes holds the semantic schema changes this up migration expresses,
+	// recovered from Ptah's dialect-aware SQL parser. Empty for down migrations
+	// and for files whose statements express no structural change. One statement
+	// can contribute zero, one, or several changes, so len(Changes) is not the
+	// statement count. Ordered by statement, then by the order changes appear
+	// within each statement.
+	Changes         []SchemaChange
 	suppressedRules []string
 }
 
@@ -205,6 +212,7 @@ func cloneFiles(files []File) []File {
 
 func cloneFile(file File) File {
 	file.suppressedRules = slices.Clone(file.suppressedRules)
+	file.Changes = slices.Clone(file.Changes)
 	statements := file.Statements
 	file.Statements = make([]Statement, len(statements))
 	for i := range statements {
@@ -290,6 +298,7 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 			versionDirs,
 			opts.PathPrefix,
 			mode,
+			opts.Dialect,
 			opts.AtlasTemplateData,
 			dirFormat,
 			opts.Selection,
@@ -429,6 +438,7 @@ func prepareFile(
 	versionDirs map[int64]map[string]bool,
 	pathPrefix string,
 	mode scanMode,
+	dialect string,
 	atlasTemplateData any,
 	dirFormat migrator.MigrationDirFormat,
 	selection VersionSelection,
@@ -507,6 +517,7 @@ func prepareFile(
 				suppressedRules: rawStmt.suppressedRules,
 			})
 		}
+		file.Changes = extractSchemaChanges(&file, dialect)
 	}
 	return file, nil
 }

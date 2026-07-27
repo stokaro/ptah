@@ -5979,6 +5979,9 @@ type Options struct{ ... }
 type Rule struct{ ... }
     func Rules() []Rule
 type RuleConfig struct{ ... }
+type SchemaChange struct{ ... }
+type SchemaChangeKind string
+    const SchemaChangeAdd SchemaChangeKind = "add" ...
 type Severity = risk.Severity
     const SeverityWarning Severity = risk.Warning ...
 type SourceSpan struct{ ... }
@@ -6097,6 +6100,13 @@ type File struct {
     // Statements holds the parsed statements of up migrations. Empty for
     // down migrations (statement rules do not run there).
     Statements []Statement
+    // Changes holds the semantic schema changes this up migration expresses,
+    // recovered from Ptah's dialect-aware SQL parser. Empty for down migrations
+    // and for files whose statements express no structural change. One statement
+    // can contribute zero, one, or several changes, so len(Changes) is not the
+    // statement count. Ordered by statement, then by the order changes appear
+    // within each statement.
+    Changes []SchemaChange
     // Has unexported fields.
 }
     File is one migration file prepared for linting.
@@ -6211,6 +6221,49 @@ type RuleConfig struct {
 }
     RuleConfig customizes one rule for a lint run.
 
+
+### github.com/stokaro/ptah/migration/lint.SchemaChange
+
+package lint // import "github.com/stokaro/ptah/migration/lint"
+
+type SchemaChange struct {
+    // Version is the migration version that produced the change; zero when the
+    // file name carries no recognizable version.
+    Version int64 `json:"version"`
+    // File is the migration file path exactly as findings report it (reporting
+    // prefix included).
+    File string `json:"file"`
+    // StatementIndex is the zero-based index of the producing statement in the
+    // owning file's Statements slice.
+    StatementIndex int `json:"statement_index"`
+    // Line is the 1-based line number of the producing statement's first token.
+    Line int `json:"line,omitempty"`
+    // Kind classifies the DDL effect.
+    Kind SchemaChangeKind `json:"kind"`
+    // Object is the primary schema object the change affects (the table, index,
+    // type, column, … name). Best-effort: empty when the parser does not expose
+    // a name for the construct.
+    Object string `json:"object,omitempty"`
+}
+    SchemaChange is one semantic schema change an up migration expresses.
+    Changes are recovered from Ptah's dialect-aware SQL parser — the same
+    parser the planner and dev-database replay rely on — rather than by counting
+    statements or files. Parsing one statement can yield zero changes (a
+    comment-only or operational statement such as INSERT/SELECT, or a statement
+    outside Ptah's DDL grammar), exactly one (a single CREATE or DROP), or
+    several (a multi-action ALTER TABLE, or a DROP TABLE naming several tables).
+    A schema change count is therefore not interchangeable with a statement or
+    file count.
+
+
+### github.com/stokaro/ptah/migration/lint.SchemaChangeKind
+
+package lint // import "github.com/stokaro/ptah/migration/lint"
+
+type SchemaChangeKind string
+    SchemaChangeKind classifies the DDL effect of one semantic schema change.
+
+const SchemaChangeAdd SchemaChangeKind = "add" ...
 
 ### github.com/stokaro/ptah/migration/lint.Severity
 
