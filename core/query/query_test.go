@@ -251,3 +251,46 @@ func TestSelectBuilder_SharedWhereFragment(t *testing.T) {
 	c.Assert(totalSQL, qt.Equals, `SELECT "id" FROM "commodities" WHERE ("draft" = $1 AND "tenant_id" = $2)`)
 	c.Assert(totalArgs, qt.DeepEquals, []any{false, "acme"})
 }
+
+func TestSelectBuilder_DegenerateExpressionsErrorCleanly(t *testing.T) {
+	c := qt.New(t)
+
+	// Degenerate constructor inputs must surface a clean RenderSelect error, not
+	// a panic, when the statement is rendered.
+	tests := []struct {
+		name        string
+		expr        ast.Expression
+		wantErrLike string
+	}{
+		{
+			name:        "empty in list",
+			expr:        query.In("status", []string{}),
+			wantErrLike: "renderer: IN requires at least one value",
+		},
+		{
+			name:        "and without operands",
+			expr:        query.And(),
+			wantErrLike: "renderer: logical expression requires at least one operand",
+		},
+		{
+			name:        "or without operands",
+			expr:        query.Or(),
+			wantErrLike: "renderer: logical expression requires at least one operand",
+		},
+		{
+			name:        "not without operand",
+			expr:        query.Not(nil),
+			wantErrLike: "renderer: NOT requires an operand",
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			stmt := query.Select("*").From("t").Where(tt.expr).Build()
+			sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+			c.Assert(err, qt.ErrorMatches, tt.wantErrLike)
+			c.Assert(sql, qt.Equals, "")
+			c.Assert(args, qt.IsNil)
+		})
+	}
+}

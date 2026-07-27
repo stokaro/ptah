@@ -185,6 +185,80 @@ func TestRenderSelect_LimitOffsetPlaceholderOrdering(t *testing.T) {
 	c.Assert(args, qt.DeepEquals, []any{int64(5), int64(10)})
 }
 
+func TestRenderSelect_OffsetWithoutLimit(t *testing.T) {
+	c := qt.New(t)
+
+	// A bare OFFSET is valid on PostgreSQL, but MySQL/MariaDB/SQLite only accept
+	// OFFSET as a suffix of LIMIT, so a "no limit" sentinel is synthesized. The
+	// OFFSET stays bound; the sentinel is a literal and takes no placeholder.
+	tests := []struct {
+		name    string
+		dialect string
+		wantSQL string
+	}{
+		{name: "postgres emits bare offset", dialect: platform.Postgres, wantSQL: `SELECT * FROM "t" OFFSET $1`},
+		{name: "mysql synthesizes max-bigint limit", dialect: platform.MySQL, wantSQL: "SELECT * FROM `t` LIMIT 18446744073709551615 OFFSET ?"},
+		{name: "mariadb synthesizes max-bigint limit", dialect: platform.MariaDB, wantSQL: "SELECT * FROM `t` LIMIT 18446744073709551615 OFFSET ?"},
+		{name: "sqlite synthesizes negative-one limit", dialect: platform.SQLite, wantSQL: `SELECT * FROM "t" LIMIT -1 OFFSET ?`},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			offset := int64(10)
+			stmt := &ast.SelectStatement{From: "t", Offset: &offset}
+			sql, args, err := renderer.RenderSelect(stmt, tt.dialect)
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Equals, tt.wantSQL)
+			c.Assert(args, qt.DeepEquals, []any{int64(10)})
+		})
+	}
+}
+
+func TestRenderSelect_IdentifierQuotingAcrossClauses(t *testing.T) {
+	c := qt.New(t)
+
+	// The projection, WHERE, and ORDER BY identifiers all route through the same
+	// dialect quoting, so a quote-bearing name is escaped in every clause.
+	tests := []struct {
+		name    string
+		stmt    *ast.SelectStatement
+		wantSQL string
+	}{
+		{
+			name: "projection column is escaped",
+			stmt: &ast.SelectStatement{
+				Columns: []ast.ResultColumn{{Name: `weird" col`}},
+				From:    "t",
+			},
+			wantSQL: `SELECT "weird"" col" FROM "t"`,
+		},
+		{
+			name: "order by column is escaped",
+			stmt: &ast.SelectStatement{
+				From:    "t",
+				OrderBy: []ast.OrderByClause{{Column: `weird" col`, Direction: ast.SortDescending}},
+			},
+			wantSQL: `SELECT * FROM "t" ORDER BY "weird"" col" DESC`,
+		},
+		{
+			name: "from table is escaped",
+			stmt: &ast.SelectStatement{
+				From: `weird" table`,
+			},
+			wantSQL: `SELECT * FROM "weird"" table"`,
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			sql, args, err := renderer.RenderSelect(tt.stmt, platform.Postgres)
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Equals, tt.wantSQL)
+			c.Assert(args, qt.HasLen, 0)
+		})
+	}
+}
+
 func TestRenderSelect_NullTests(t *testing.T) {
 	c := qt.New(t)
 
@@ -330,6 +404,26 @@ func TestRenderSelect_Errors(t *testing.T) {
 			}},
 			dialect:     platform.Postgres,
 			wantErrLike: "renderer: unknown sort direction 99",
+		},
+		{
+			name: "typed-nil column reference leaf does not panic",
+			stmt: &ast.SelectStatement{From: "t", Where: &ast.Comparison{
+				Left:     (*ast.ColumnRef)(nil),
+				Operator: ast.OpEqual,
+				Right:    &ast.BoundValue{Value: 1},
+			}},
+			dialect:     platform.Postgres,
+			wantErrLike: "renderer: nil column reference",
+		},
+		{
+			name: "typed-nil bound value leaf does not panic",
+			stmt: &ast.SelectStatement{From: "t", Where: &ast.Comparison{
+				Left:     &ast.ColumnRef{Name: "a"},
+				Operator: ast.OpEqual,
+				Right:    (*ast.BoundValue)(nil),
+			}},
+			dialect:     platform.Postgres,
+			wantErrLike: "renderer: nil bound value",
 		},
 	}
 

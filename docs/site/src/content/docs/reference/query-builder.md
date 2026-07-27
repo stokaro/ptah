@@ -126,3 +126,12 @@ Expression helpers: `Eq`, `Ne`, `Lt`, `Le`, `Gt`, `Ge`, `In`, `IsNull`,
 `renderer.RenderSelect(stmt, dialect)` returns `(sql string, args []any, err error)`.
 It returns an error for an unsupported dialect, a missing `FROM` table, an empty
 `IN` list, or a malformed statement.
+
+### OFFSET without LIMIT
+
+MySQL, MariaDB, and SQLite only accept `OFFSET` as a suffix of `LIMIT`, so
+setting `Offset` without `Limit` renders a dialect-specific "no limit" sentinel
+in front of the bound `OFFSET`: `LIMIT -1` for SQLite and
+`LIMIT 18446744073709551615` for MySQL and MariaDB. PostgreSQL accepts a bare
+`OFFSET` and emits one. The sentinel is a structural constant, not caller data,
+so it is emitted as a literal and the `OFFSET` value stays a bound parameter.

@@ -151,6 +151,9 @@ func (r *selectRenderer) renderExpr(expr ast.Expression) error {
 	case *ast.ColumnRef:
 		return r.renderColumnRef(e)
 	case *ast.BoundValue:
+		if e == nil {
+			return errors.New("renderer: nil bound value")
+		}
 		r.buf.WriteString(r.bind(e.Value))
 		return nil
 	case *ast.Comparison:
@@ -169,6 +172,9 @@ func (r *selectRenderer) renderExpr(expr ast.Expression) error {
 }
 
 func (r *selectRenderer) renderColumnRef(ref *ast.ColumnRef) error {
+	if ref == nil {
+		return errors.New("renderer: nil column reference")
+	}
 	if strings.TrimSpace(ref.Name) == "" {
 		return errors.New("renderer: column reference has an empty name")
 	}
@@ -177,6 +183,9 @@ func (r *selectRenderer) renderColumnRef(ref *ast.ColumnRef) error {
 }
 
 func (r *selectRenderer) renderComparison(cmp *ast.Comparison) error {
+	if cmp == nil {
+		return errors.New("renderer: nil comparison")
+	}
 	symbol := cmp.Operator.String()
 	if symbol == "" {
 		return fmt.Errorf("renderer: unknown comparison operator %d", cmp.Operator)
@@ -191,6 +200,9 @@ func (r *selectRenderer) renderComparison(cmp *ast.Comparison) error {
 }
 
 func (r *selectRenderer) renderIn(in *ast.InExpr) error {
+	if in == nil {
+		return errors.New("renderer: nil IN expression")
+	}
 	if len(in.Values) == 0 {
 		return errors.New("renderer: IN requires at least one value")
 	}
@@ -211,6 +223,9 @@ func (r *selectRenderer) renderIn(in *ast.InExpr) error {
 }
 
 func (r *selectRenderer) renderNullTest(test *ast.NullTest) error {
+	if test == nil {
+		return errors.New("renderer: nil null test")
+	}
 	if err := r.renderExpr(test.Operand); err != nil {
 		return err
 	}
@@ -223,6 +238,9 @@ func (r *selectRenderer) renderNullTest(test *ast.NullTest) error {
 }
 
 func (r *selectRenderer) renderLogical(logical *ast.LogicalExpr) error {
+	if logical == nil {
+		return errors.New("renderer: nil logical expression")
+	}
 	if len(logical.Operands) == 0 {
 		return errors.New("renderer: logical expression requires at least one operand")
 	}
@@ -246,6 +264,9 @@ func (r *selectRenderer) renderLogical(logical *ast.LogicalExpr) error {
 }
 
 func (r *selectRenderer) renderNot(not *ast.NotExpr) error {
+	if not == nil {
+		return errors.New("renderer: nil NOT expression")
+	}
 	if not.Operand == nil {
 		return errors.New("renderer: NOT requires an operand")
 	}
@@ -280,15 +301,50 @@ func (r *selectRenderer) renderOrderBy(terms []ast.OrderByClause) error {
 	return nil
 }
 
+// When a caller sets OFFSET but not LIMIT, MySQL, MariaDB, and SQLite reject a
+// bare OFFSET: it is only valid as a suffix of LIMIT. These sentinels express
+// "no upper bound" so the OFFSET can still be emitted. PostgreSQL accepts a bare
+// OFFSET and needs no sentinel.
+const (
+	// sqliteNoLimit is SQLite's documented "no limit" value.
+	sqliteNoLimit = "-1"
+	// mysqlNoLimit is the maximum BIGINT UNSIGNED, MySQL and MariaDB's documented
+	// idiom for "all rows from the offset onward".
+	mysqlNoLimit = "18446744073709551615"
+)
+
 // renderLimitOffset appends the LIMIT and OFFSET clauses, binding each present
 // bound as a parameter so it is numbered after the WHERE-clause placeholders.
+//
+// When OFFSET is set without LIMIT, a dialect that cannot express a bare OFFSET
+// gets a synthesized "no limit" sentinel in front of it. The sentinel is a
+// structural constant, not caller data, so it is emitted as a literal and does
+// not consume a placeholder; the OFFSET value remains bound.
 func (r *selectRenderer) renderLimitOffset(limit, offset *int64) {
 	if limit != nil {
 		r.buf.WriteString(" LIMIT ")
 		r.buf.WriteString(r.bind(*limit))
+	} else if offset != nil {
+		if sentinel, ok := r.offsetOnlyLimit(); ok {
+			r.buf.WriteString(" LIMIT ")
+			r.buf.WriteString(sentinel)
+		}
 	}
 	if offset != nil {
 		r.buf.WriteString(" OFFSET ")
 		r.buf.WriteString(r.bind(*offset))
+	}
+}
+
+// offsetOnlyLimit returns the sentinel LIMIT literal a dialect requires in front
+// of a bare OFFSET, and whether one is needed. The PostgreSQL family needs none.
+func (r *selectRenderer) offsetOnlyLimit() (string, bool) {
+	switch r.dialect {
+	case platform.SQLite:
+		return sqliteNoLimit, true
+	case platform.MySQL, platform.MariaDB:
+		return mysqlNoLimit, true
+	default:
+		return "", false
 	}
 }

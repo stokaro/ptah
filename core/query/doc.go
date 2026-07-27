@@ -45,7 +45,7 @@
 //			query.In("status", []string{"in_use", "sold"}),
 //			query.Or(
 //				query.IsNotNull("deleted_at"),
-//				query.Not(query.Gt("count", 10)),
+//				query.Not(query.Gt("count", int64(10))),
 //			),
 //		)).
 //		OrderBy(query.Asc("name"), query.Asc("id")).
