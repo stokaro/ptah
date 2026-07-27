@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"maps"
 	"strconv"
 	"strings"
 
@@ -74,6 +75,40 @@ func splitSQLStatementsForDialect(sql, dialect string) []string {
 type StatementInterceptor interface {
 	ValidateDirectives(directives map[string]string) error
 	ExecuteStatement(ctx context.Context, conn *dbschema.DatabaseConnection, stmt string, directives map[string]string) (handled bool, err error)
+}
+
+// StatementEvent describes one successfully executed migration statement.
+// Directives is an event-local copy; observers may modify it without affecting
+// migration execution or later events.
+type StatementEvent struct {
+	SourcePath string
+	Statement  string
+	Index      int
+	Total      int
+	Directives map[string]string
+}
+
+// StatementObserver receives successfully executed migration statements. It is
+// called after either an interceptor or the normal migrator path executes the
+// statement. Returning an error aborts the migration.
+type StatementObserver interface {
+	ObserveStatement(ctx context.Context, event StatementEvent) error
+}
+
+// StatementObserverFunc adapts a function to StatementObserver.
+type StatementObserverFunc func(context.Context, StatementEvent) error
+
+// ObserveStatement calls f with the successfully executed statement.
+func (f StatementObserverFunc) ObserveStatement(
+	ctx context.Context,
+	event StatementEvent,
+) error {
+	return f(ctx, event)
+}
+
+type statementExecutionHooks struct {
+	interceptor StatementInterceptor
+	observer    StatementObserver
 }
 
 type migrationExecutionMode int
@@ -164,7 +199,8 @@ func MigrationFuncFromSQLFilename(filename string, fsys fs.FS) MigrationFunc {
 // behaves exactly like MigrationFuncFromSQLFilename.
 func MigrationFuncFromSQLFilenameWithInterceptor(filename string, fsys fs.FS, interceptor StatementInterceptor) MigrationFunc {
 	return func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-		migrationFile, err := migrationFuncFromSQLFilenameWithMetadata(filename, fsys, interceptor, nil)
+		hooks := statementExecutionHooks{interceptor: interceptor}
+		migrationFile, err := migrationFuncFromSQLFilenameWithMetadata(filename, fsys, hooks, nil)
 		if err != nil {
 			return err
 		}
@@ -186,7 +222,8 @@ func MigrationFuncFromSQLFilenameWithTimeoutsAndInterceptor(
 	fsys fs.FS,
 	interceptor StatementInterceptor,
 ) (MigrationFunc, MigrationTimeouts, error) {
-	migrationFile, err := migrationFuncFromSQLFilenameWithMetadata(filename, fsys, interceptor, nil)
+	hooks := statementExecutionHooks{interceptor: interceptor}
+	migrationFile, err := migrationFuncFromSQLFilenameWithMetadata(filename, fsys, hooks, nil)
 	if err != nil {
 		return nil, MigrationTimeouts{}, err
 	}
@@ -198,7 +235,7 @@ func MigrationFuncFromSQLFilenameWithTimeoutsAndInterceptor(
 func migrationFuncFromSQLFilenameWithMetadata(
 	filename string,
 	fsys fs.FS,
-	interceptor StatementInterceptor,
+	hooks statementExecutionHooks,
 	atlasTemplateData any,
 ) (sqlMigrationFile, error) {
 	sql, err := readSQLMigrationFile(fsys, filename, atlasTemplateData)
@@ -206,7 +243,7 @@ func migrationFuncFromSQLFilenameWithMetadata(
 		return sqlMigrationFile{}, err
 	}
 
-	atlasMigrationFile, ok, err := atlasSQLMigrationFileFromSQL(filename, sql, interceptor)
+	atlasMigrationFile, ok, err := atlasSQLMigrationFileFromSQL(filename, sql, hooks)
 	if err != nil {
 		return sqlMigrationFile{}, err
 	}
@@ -214,13 +251,13 @@ func migrationFuncFromSQLFilenameWithMetadata(
 		return atlasMigrationFile.up, nil
 	}
 
-	return migrationFuncFromSQLStringWithMetadata(filename, sql, interceptor)
+	return migrationFuncFromSQLStringWithMetadata(filename, sql, hooks)
 }
 
 func atlasSQLMigrationFileFromSQLFilenameWithMetadata(
 	filename string,
 	fsys fs.FS,
-	interceptor StatementInterceptor,
+	hooks statementExecutionHooks,
 	atlasTemplateData any,
 ) (atlasSQLMigrationFile, error) {
 	sql, err := readSQLMigrationFile(fsys, filename, atlasTemplateData)
@@ -228,7 +265,7 @@ func atlasSQLMigrationFileFromSQLFilenameWithMetadata(
 		return atlasSQLMigrationFile{}, err
 	}
 
-	atlasMigrationFile, ok, err := atlasSQLMigrationFileFromSQL(filename, sql, interceptor)
+	atlasMigrationFile, ok, err := atlasSQLMigrationFileFromSQL(filename, sql, hooks)
 	if err != nil {
 		return atlasSQLMigrationFile{}, err
 	}
@@ -236,7 +273,7 @@ func atlasSQLMigrationFileFromSQLFilenameWithMetadata(
 		return atlasMigrationFile, nil
 	}
 
-	up, err := migrationFuncFromSQLStringWithMetadata(filename, sql, interceptor)
+	up, err := migrationFuncFromSQLStringWithMetadata(filename, sql, hooks)
 	if err != nil {
 		return atlasSQLMigrationFile{}, err
 	}
@@ -248,19 +285,19 @@ func readSQLMigrationFile(fsys fs.FS, filename string, atlasTemplateData any) (s
 	return sql, err
 }
 
-func atlasSQLMigrationFileFromSQL(filename, sql string, interceptor StatementInterceptor) (atlasSQLMigrationFile, bool, error) {
+func atlasSQLMigrationFileFromSQL(filename, sql string, hooks statementExecutionHooks) (atlasSQLMigrationFile, bool, error) {
 	parsed, ok, err := parseAtlasTxtarSQL(filename, sql)
 	if err != nil || !ok {
 		return atlasSQLMigrationFile{}, ok, err
 	}
 
-	up, err := migrationFuncFromSQLStringWithMetadata(filename+"#"+atlasTxtarMigrationSection, parsed.migrationSQL, interceptor)
+	up, err := migrationFuncFromSQLStringWithMetadata(filename+"#"+atlasTxtarMigrationSection, parsed.migrationSQL, hooks)
 	if err != nil {
 		return atlasSQLMigrationFile{}, true, err
 	}
 	atlasMigrationFile := atlasSQLMigrationFile{up: up}
 	if parsed.hasDown {
-		down, err := migrationFuncFromSQLStringWithMetadata(filename+"#"+atlasTxtarDownSection, parsed.downSQL, interceptor)
+		down, err := migrationFuncFromSQLStringWithMetadata(filename+"#"+atlasTxtarDownSection, parsed.downSQL, hooks)
 		if err != nil {
 			return atlasSQLMigrationFile{}, true, err
 		}
@@ -270,7 +307,7 @@ func atlasSQLMigrationFileFromSQL(filename, sql string, interceptor StatementInt
 	return atlasMigrationFile, true, nil
 }
 
-func migrationFuncFromSQLStringWithMetadata(filename, sql string, interceptor StatementInterceptor) (sqlMigrationFile, error) {
+func migrationFuncFromSQLStringWithMetadata(filename, sql string, hooks statementExecutionHooks) (sqlMigrationFile, error) {
 	timeouts, err := parseMigrationTimeoutDirectives(sql)
 	if err != nil {
 		return sqlMigrationFile{}, err
@@ -282,7 +319,7 @@ func migrationFuncFromSQLStringWithMetadata(filename, sql string, interceptor St
 	}
 	return sqlMigrationFile{
 		fn: func(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrationExecutionMode) error {
-			return executeMigrationFileSQL(ctx, conn, filename, sql, interceptor, mode)
+			return executeMigrationFileSQL(ctx, conn, filename, sql, hooks, mode)
 		},
 		sql:           sql,
 		timeouts:      timeouts,
@@ -489,16 +526,19 @@ func executeMigrationFileSQL(
 	conn *dbschema.DatabaseConnection,
 	filename string,
 	sql string,
-	interceptor StatementInterceptor,
+	hooks statementExecutionHooks,
 	mode migrationExecutionMode,
 ) error {
 	// Directives live in comments, so they must be read from the raw file
 	// before comment stripping, and validated before any statement runs so an
 	// invalid directive leaves nothing half-applied.
-	var directives map[string]string
-	if interceptor != nil {
-		directives = ParseFileDirectives(sql)
-		if err := interceptor.ValidateDirectives(directives); err != nil {
+	var fileDirectives map[string]string
+	if hooks.interceptor != nil || hooks.observer != nil {
+		fileDirectives = ParseFileDirectives(sql)
+	}
+	interceptorDirectives := maps.Clone(fileDirectives)
+	if hooks.interceptor != nil {
+		if err := hooks.interceptor.ValidateDirectives(interceptorDirectives); err != nil {
 			return fmt.Errorf("invalid migration directives in %s: %w", filename, err)
 		}
 	}
@@ -510,8 +550,10 @@ func executeMigrationFileSQL(
 			continue
 		}
 
-		if interceptor != nil {
-			handled, err := interceptor.ExecuteStatement(ctx, conn, stmt, directives)
+		handled := false
+		if hooks.interceptor != nil {
+			var err error
+			handled, err = hooks.interceptor.ExecuteStatement(ctx, conn, stmt, interceptorDirectives)
 			if err != nil {
 				return &MigrationExecutionError{
 					Err:            fmt.Errorf("failed to execute migration SQL: %w", err),
@@ -520,17 +562,31 @@ func executeMigrationFileSQL(
 					Total:          len(statements),
 				}
 			}
-			if handled {
-				continue
-			}
 		}
 
-		if err := executeMigrationStatement(ctx, conn, stmt, mode); err != nil {
-			return &MigrationExecutionError{
-				Err:            fmt.Errorf("failed to execute migration SQL: %w", err),
-				Statement:      stmt,
-				StatementIndex: i + 1,
-				Total:          len(statements),
+		if !handled {
+			if err := executeMigrationStatement(ctx, conn, stmt, mode); err != nil {
+				return &MigrationExecutionError{
+					Err:            fmt.Errorf("failed to execute migration SQL: %w", err),
+					Statement:      stmt,
+					StatementIndex: i + 1,
+					Total:          len(statements),
+				}
+			}
+		}
+		if hooks.observer != nil {
+			event := StatementEvent{
+				SourcePath: filename,
+				Statement:  stmt,
+				Index:      i + 1,
+				Total:      len(statements),
+				Directives: maps.Clone(fileDirectives),
+			}
+			if err := hooks.observer.ObserveStatement(ctx, event); err != nil {
+				return &StatementObservationError{
+					Err:   err,
+					Event: event,
+				}
 			}
 		}
 	}
@@ -551,6 +607,26 @@ func (e *MigrationExecutionError) Error() string {
 }
 
 func (e *MigrationExecutionError) Unwrap() error {
+	return e.Err
+}
+
+// StatementObservationError reports a post-execution observer failure. The
+// statement in Event was applied before the observer returned Err.
+type StatementObservationError struct {
+	Err   error
+	Event StatementEvent
+}
+
+func (e *StatementObservationError) Error() string {
+	return fmt.Sprintf(
+		"failed to observe migration SQL: %v\nSource: %s\nSQL: %s",
+		e.Err,
+		e.Event.SourcePath,
+		e.Event.Statement,
+	)
+}
+
+func (e *StatementObservationError) Unwrap() error {
 	return e.Err
 }
 

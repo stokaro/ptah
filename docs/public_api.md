@@ -56,6 +56,12 @@ files are marked explicitly without changing version selection.
 Compatibility-specific directive behavior must be selected explicitly; native
 Ptah behavior is the zero-value default.
 
+`migration/migrator` exposes `WithStatementObserver` for tools that need to
+audit successful filesystem-migration execution without replacing the
+interceptor, splitter, directive, or transaction path. Observers receive
+structured source and statement metadata after execution but no connection
+handle, so they cannot alter the migrator execution path.
+
 Public failures from these packages should use `core/ptaherr` where the caller
 can reasonably branch on the error. In particular, annotation failures should
 support `errors.As(err, *ptaherr.ParseError)`, and unsupported dialect failures

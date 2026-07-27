@@ -266,6 +266,8 @@ pending and out of order.
 - **`WithExecOrder(policy)`**: Configures out-of-order migration handling
 - **`WithMigrationDirFormat(format)`**: Selects `auto`, `ptah`, or `atlas` filesystem discovery
 - **`WithAtlasTemplateData(data)`**: Supplies data, including `.Env`, for Atlas SQL template migrations
+- **`WithStatementInterceptor(interceptor)`**: Lets an external executor take over selected statements
+- **`WithStatementObserver(observer)`**: Reports each statement after successful execution without replacing the execution path
 - **`WithRevisionTableFormat(format)`**: Selects Ptah's native `schema_migrations` layout or Atlas's `atlas_schema_revisions` layout
 - **`Baseline(ctx, version)` / `BaselineWithOptions(ctx, opts)`**: Records provider migrations as already applied without executing their SQL bodies
 
@@ -357,6 +359,44 @@ sqlMigration := migrator.CreateMigrationFromSQL(
 )
 provider.Register(sqlMigration)
 ```
+
+### Observing Executed Statements
+
+Use a statement observer for auditing, metrics, or consumer-controlled replay
+analysis that must follow the real migration execution path. The callback runs
+after each statement succeeds, including statements handled by a configured
+`StatementInterceptor`.
+
+```go
+observer := migrator.StatementObserverFunc(func(
+    _ context.Context,
+    event migrator.StatementEvent,
+) error {
+    log.Printf(
+        "executed migration statement %d/%d from %s",
+        event.Index,
+        event.Total,
+        event.SourcePath,
+    )
+    return nil
+})
+
+provider, err := migrator.NewFSMigrationProvider(
+    os.DirFS("/path/to/migrations"),
+    migrator.WithStatementObserver(observer),
+)
+if err != nil {
+    panic(err)
+}
+```
+
+`StatementEvent.Directives` is an event-local copy. An observer must not
+modify migration execution. A database-aware observer may capture a connection
+owned by its consumer, but that consumer is responsible for transaction
+visibility. Returning an error stops the migration with a
+`StatementObservationError`; its event preserves the source path, statement
+ordinal, and statement text and records the already-executed statement in
+dirty-migration progress.
 
 ### Migration Status Checking
 

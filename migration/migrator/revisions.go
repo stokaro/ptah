@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
 )
@@ -119,6 +120,18 @@ func (m *Migrator) migrationStatementCount(sqlText string) int {
 }
 
 func migrationExecutionProgress(err error, dialect string, txMode MigrationTxMode) (applied int, total int, stmt string) {
+	var observationErr *StatementObservationError
+	if errors.As(err, &observationErr) {
+		event := observationErr.Event
+		applied = event.Index
+		total = event.Total
+		stmt = event.Statement
+		if migrationProgressRolledBack(dialect, txMode) {
+			applied = 0
+		}
+		return applied, total, stmt
+	}
+
 	var execErr *MigrationExecutionError
 	if !errors.As(err, &execErr) {
 		return 0, 0, ""
@@ -134,6 +147,21 @@ func migrationExecutionProgress(err error, dialect string, txMode MigrationTxMod
 		applied = 0
 	}
 	return applied, total, execErr.Statement
+}
+
+func migrationProgressRolledBack(dialect string, txMode MigrationTxMode) bool {
+	if txMode == MigrationTxModeAll {
+		return true
+	}
+	if txMode != MigrationTxModeFile {
+		return false
+	}
+	switch platform.NormalizeDialect(dialect) {
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.SQLite, platform.SQLServer:
+		return true
+	default:
+		return false
+	}
 }
 
 func (m *Migrator) getDirtyRevisionSQL() string {
