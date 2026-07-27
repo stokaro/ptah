@@ -3,7 +3,6 @@ package atlas
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 
@@ -178,7 +177,9 @@ func runAtlasMigrateLint(cmd *cobra.Command, opts atlasMigrateLintOptions) error
 		}); err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
-	} else if err := migrationlintreport.Write(lintReportWriter(cmd, report), migrationlintreport.FormatText, report); err != nil {
+	} else if err := atlasreport.WriteMigrateLintText(cmd.OutOrStdout(), atlasreport.MigrateLintOptions{
+		Analysis: &report.Analysis,
+	}); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if report.Failed {
@@ -212,13 +213,6 @@ func writeAtlasMigrateLintReplayError(
 		Integrity: integrity,
 		Error:     replayErr.Error(),
 	})
-}
-
-func lintReportWriter(cmd *cobra.Command, report migrationlintreport.Report) io.Writer {
-	if report.Failed {
-		return cmd.ErrOrStderr()
-	}
-	return cmd.OutOrStdout()
 }
 
 func validateAtlasMigrateLintOptions(opts atlasMigrateLintOptions) error {

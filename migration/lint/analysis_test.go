@@ -59,13 +59,47 @@ func TestAnalyzeFS_ExplicitEmptyVersionSelectionSelectsNothing(t *testing.T) {
 	c.Assert(analysis.Findings(), qt.HasLen, 0)
 }
 
-func TestAnalyzeFS_NativeSameFileCreateThenNotNullAlterRetainsDD101(t *testing.T) {
+func TestAnalyzeFS_DataDependentExemptsSameFileCreatedTable(t *testing.T) {
+	tests := []struct {
+		name  string
+		sql   string
+		rules []string
+	}{
+		{
+			// Adding a NOT NULL column to a table created earlier in the same
+			// file targets an empty table, so the add cannot fail on data.
+			name:  "same-file created table is exempt",
+			sql:   "CREATE TABLE users (id INTEGER);\nALTER TABLE users ADD COLUMN tenant_id INTEGER NOT NULL;\n",
+			rules: []string{},
+		},
+		{
+			name:  "pre-existing table still reports",
+			sql:   "ALTER TABLE users ADD COLUMN tenant_id INTEGER NOT NULL;\n",
+			rules: []string{"DD101"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			fsys := fixture(map[string]string{"1_users.sql": tc.sql})
+
+			analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+				DirFormat: migrator.MigrationDirFormatAtlas,
+				Dialect:   "sqlite",
+			})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, tc.rules)
+		})
+	}
+}
+
+func TestAnalyzeFS_DataDependentReportsColumnAddedToLaterCreatedTable(t *testing.T) {
 	c := qt.New(t)
+	// The CREATE follows the ALTER, so the table is not yet known to be empty
+	// when the column is added; the finding must still fire.
 	fsys := fixture(map[string]string{
-		"1_users.sql": `
-CREATE TABLE users (id INTEGER);
-ALTER TABLE users ADD COLUMN tenant_id INTEGER NOT NULL;
-`,
+		"1_users.sql": "ALTER TABLE users ADD COLUMN tenant_id INTEGER NOT NULL;\nCREATE TABLE users (id INTEGER);\n",
 	})
 
 	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
