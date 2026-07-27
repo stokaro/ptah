@@ -550,6 +550,16 @@ var directives = []Directive{
 			attr("comment", "Grant comment.", valueString, false, false),
 		},
 	},
+	{
+		Name:        "migrator:schema:data",
+		Description: "Declares external reference/seed row data for a table.",
+		Scopes:      []Scope{ScopeStruct},
+		Attributes: []Attribute{
+			attr("table", "Target table the rows belong to.", valueString, true, false),
+			attr("key", "Comma-separated key column(s) forming each row's identity.", valueList, true, false),
+			attr("file", "Path to the YAML row-data file, relative to the Go source file.", valueString, true, false),
+		},
+	},
 }
 
 func attr(name, description, value string, required, boolean bool) Attribute {

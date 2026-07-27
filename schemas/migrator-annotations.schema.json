@@ -217,6 +217,43 @@
       ],
       "type": "object"
     },
+    "migrator.schema.data": {
+      "additionalProperties": false,
+      "description": "Declares external reference/seed row data for a table.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "file": {
+              "description": "Path to the YAML row-data file, relative to the Go source file.",
+              "type": "string"
+            },
+            "key": {
+              "description": "Comma-separated key column(s) forming each row's identity.",
+              "type": "string"
+            },
+            "table": {
+              "description": "Target table the rows belong to.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "file",
+            "key",
+            "table"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "migrator:schema:data"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
     "migrator.schema.domain": {
       "additionalProperties": false,
       "description": "Declares a PostgreSQL domain type.",
@@ -1347,6 +1384,9 @@
     },
     {
       "$ref": "#/$defs/migrator.schema.grant"
+    },
+    {
+      "$ref": "#/$defs/migrator.schema.data"
     }
   ],
   "title": "Ptah Go Annotation Directives"
