@@ -15,6 +15,7 @@ import (
 	"cmp"
 	"fmt"
 	"io/fs"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -105,19 +106,72 @@ type flywayVersion struct {
 // String returns the original version text, for diagnostics.
 func (v flywayVersion) String() string { return v.raw }
 
-// key is a canonical equality key: trailing zero components are dropped so that
-// equal Flyway versions (V2 and V2.0) share a key while distinct ones (V2.0 and
-// V20) do not.
-func (v flywayVersion) key() string {
+// canonical drops trailing zero components so that equal Flyway versions (V2 and
+// V2.0) share a representation while distinct ones (V2.0 and V20) do not.
+func (v flywayVersion) canonical() []int {
 	end := len(v.components)
 	for end > 0 && v.components[end-1] == 0 {
 		end--
 	}
-	parts := make([]string, end)
-	for i := range end {
-		parts[i] = strconv.Itoa(v.components[i])
+	return v.components[:end]
+}
+
+// key is a canonical equality key built from the canonical components.
+func (v flywayVersion) key() string {
+	comps := v.canonical()
+	parts := make([]string, len(comps))
+	for i, c := range comps {
+		parts[i] = strconv.Itoa(c)
 	}
 	return strings.Join(parts, ".")
+}
+
+const (
+	// flywayMaxComponents is how many numeric components a Flyway version may have
+	// to be encodable as one int64 Atlas version (major.minor.patch).
+	flywayMaxComponents = 3
+	// flywayComponentBase is the fixed decimal width of each trailing component:
+	// minor and patch each occupy two digits (0-99). Two digits keeps a full
+	// 14-digit yyyyMMddHHmmss timestamp version representable in the leading slot
+	// while the whole value stays within int64.
+	flywayComponentBase = 100
+)
+
+// atlasVersion encodes the Flyway version as a stable, order-preserving int64
+// Atlas version. The encoding is a fixed-width positional number
+// (major*100^2 + minor*100 + patch) over the canonical (trailing-zero-trimmed)
+// components. Because it depends only on this version — never on the other files
+// in the directory — a given source file always maps to the same Atlas version,
+// so inserting a mid-sequence migration never renumbers the others and Atlas
+// revision checksums stay valid. V2 and V2.0 map to the same value. It returns a
+// clear error rather than truncating or colliding when a version cannot be
+// represented within int64.
+func (v flywayVersion) atlasVersion() (int64, error) {
+	comps := v.canonical()
+	if len(comps) == 0 {
+		return 0, fmt.Errorf("Flyway version %s has no numeric components", v)
+	}
+	if len(comps) > flywayMaxComponents {
+		return 0, fmt.Errorf("Flyway version %s has more than %d components and cannot map to an int64 Atlas version", v, flywayMaxComponents)
+	}
+	padded := make([]int, flywayMaxComponents)
+	copy(padded, comps)
+	for i := 1; i < flywayMaxComponents; i++ {
+		if padded[i] >= flywayComponentBase {
+			return 0, fmt.Errorf("Flyway version %s component %d (%d) exceeds the maximum %d for an int64 Atlas version", v, i+1, padded[i], flywayComponentBase-1)
+		}
+	}
+	var value int64
+	for _, c := range padded {
+		if value > (math.MaxInt64-int64(c))/flywayComponentBase {
+			return 0, fmt.Errorf("Flyway version %s is too large to map to an int64 Atlas version", v)
+		}
+		value = value*flywayComponentBase + int64(c)
+	}
+	if value <= 0 {
+		return 0, fmt.Errorf("Flyway version %s does not map to a positive Atlas version", v)
+	}
+	return value, nil
 }
 
 // compareFlywayVersions orders two Flyway versions numerically component by
@@ -464,17 +518,22 @@ func loadFlywayEntries(dir string, files []os.DirEntry) ([]Entry, error) {
 
 	// Atlas migration versions are int64 ordered numerically, so a major.minor
 	// Flyway version (V1.5 sits between V1 and V2) cannot be represented by
-	// echoing the original number. Assign a dense, monotonic sequence in Flyway
-	// version order instead: it preserves execution order and stays deterministic,
-	// so re-import and re-apply are idempotent (checksums derive from the up SQL).
-	// The original description is kept in the file name.
+	// echoing the original number. Encode each version into a stable,
+	// order-preserving int64 instead (see flywayVersion.atlasVersion). The
+	// encoding depends only on the version itself, so inserting a mid-sequence
+	// migration never renumbers the others and Atlas revision checksums stay
+	// valid on re-apply. The original description is kept in the file name.
 	entries := make([]Entry, 0, len(selected))
-	for i, entry := range selected {
+	for _, entry := range selected {
+		version, err := entry.version.atlasVersion()
+		if err != nil {
+			return nil, err
+		}
 		data, err := readImportSQLFile(dir, entry.source)
 		if err != nil {
 			return nil, err
 		}
-		entries = append(entries, Entry{Name: fmt.Sprintf("%d_%s.sql", i+1, entry.name), Data: data})
+		entries = append(entries, Entry{Name: fmt.Sprintf("%d_%s.sql", version, entry.name), Data: data})
 	}
 	return entries, nil
 }

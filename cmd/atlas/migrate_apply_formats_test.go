@@ -326,6 +326,81 @@ func TestMigrateApplyRejectsUnknownURLFormatBeforeOpeningDatabase(t *testing.T) 
 	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
 }
 
+// TestMigrateApplyFlywayMidSequenceInsertionKeepsStableVersions is the
+// regression guard for the position-based numbering bug: inserting a migration
+// that sorts before an already-applied one must not renumber the others (which
+// would make Atlas revision checksums point at different SQL and abort apply).
+func TestMigrateApplyFlywayMidSequenceInsertionKeepsStableVersions(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	writeAtlasApplyProjectMigration(c, migrationsDir, "V1__base.sql", "CREATE TABLE t_v1 (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyProjectMigration(c, migrationsDir, "V1.5__minor.sql", "CREATE TABLE t_v15 (id INTEGER PRIMARY KEY);")
+	writeAtlasApplyProjectMigration(c, migrationsDir, "V2__major.sql", "CREATE TABLE t_v2 (id INTEGER PRIMARY KEY);")
+	dbPath := filepath.Join(dir, "apply.db")
+
+	firstErr := runFlywayApply(migrationsDir, dbPath)
+
+	c.Assert(firstErr, qt.IsNil)
+	c.Assert(sqliteTableCount(c, dbPath, "t_v1"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, dbPath, "t_v15"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, dbPath, "t_v2"), qt.Equals, 1)
+	before := sqliteAtlasRevisionVersions(c, dbPath)
+
+	// Insert a migration that sorts in the middle (V1.6, between V1.5 and V2) and
+	// re-apply.
+	writeAtlasApplyProjectMigration(c, migrationsDir, "V1.6__hotfix.sql", "CREATE TABLE t_v16 (id INTEGER PRIMARY KEY);")
+	secondErr := runFlywayApply(migrationsDir, dbPath)
+
+	// No checksum mismatch: V2's recorded checksum still matches V2's SQL because
+	// its Atlas version is unchanged. Re-running V1/V1.5/V2 would fail on "table
+	// already exists", so a nil error also proves only V1.6 ran.
+	c.Assert(secondErr, qt.IsNil)
+	c.Assert(sqliteTableCount(c, dbPath, "t_v16"), qt.Equals, 1)
+	after := sqliteAtlasRevisionVersions(c, dbPath)
+	c.Assert(after, qt.HasLen, len(before)+1)
+	// Every version recorded by the first apply is still present unchanged, so
+	// the insertion renumbered nothing.
+	for _, version := range before {
+		c.Assert(after, qt.Contains, version,
+			qt.Commentf("version %s was renumbered by the insertion; before=%v after=%v", version, before, after))
+	}
+}
+
+func runFlywayApply(migrationsDir, dbPath string) error {
+	cmd := atlas.NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir + "?format=flyway",
+		// Out-of-order insertion is a normal Flyway workflow; non-linear applies a
+		// pending migration whose version is below the current one.
+		"--exec-order", "non-linear",
+	})
+	return cmd.Execute()
+}
+
+func sqliteAtlasRevisionVersions(c *qt.C, dbPath string) []string {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	rows, err := conn.QueryContext(context.Background(), "SELECT version FROM atlas_schema_revisions ORDER BY version")
+	c.Assert(err, qt.IsNil)
+	defer rows.Close()
+	versions := make([]string, 0)
+	for rows.Next() {
+		var version string
+		c.Assert(rows.Scan(&version), qt.IsNil)
+		versions = append(versions, version)
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return versions
+}
+
 func sqliteRowCount(c *qt.C, dbPath, table string) int {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)

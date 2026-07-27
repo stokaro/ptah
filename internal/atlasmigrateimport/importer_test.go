@@ -29,14 +29,14 @@ func TestImportFlywayBaselineAndUndo(t *testing.T) {
 	})
 
 	c.Assert(err, qt.IsNil)
-	// Selected migrations (baseline B2 and V3, in Flyway order) are assigned a
-	// dense monotonic Atlas sequence.
+	// Selected migrations (baseline B2 and V3) map to stable encoded Atlas
+	// versions: B2 -> 2*100^2 = 20000, V3 -> 30000.
 	c.Assert(baseNames(result.Files), qt.DeepEquals, []string{
-		"1_baseline.sql",
-		"2_third_migration.sql",
+		"20000_baseline.sql",
+		"30000_third_migration.sql",
 	})
-	c.Assert(readFile(c, target, "1_baseline.sql"), qt.Equals, "CREATE TABLE baseline (id int);\n")
-	c.Assert(readFile(c, target, "2_third_migration.sql"), qt.Equals, "ALTER TABLE baseline ADD name text;\n")
+	c.Assert(readFile(c, target, "20000_baseline.sql"), qt.Equals, "CREATE TABLE baseline (id int);\n")
+	c.Assert(readFile(c, target, "30000_third_migration.sql"), qt.Equals, "ALTER TABLE baseline ADD name text;\n")
 	assertAtlasSumOK(c, target, result.SumFile)
 }
 
@@ -73,12 +73,12 @@ func TestImportFlywayOrdersDottedAndUnderscoreVersions(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(baseNames(result.Files), qt.DeepEquals, []string{
-		"1_add_users.sql",
-		"2_add_posts.sql",
+		"10500_add_users.sql",
+		"20000_add_posts.sql",
 	})
-	// V1.5 (add_users) is Atlas version 1, V2 (add_posts) is Atlas version 2.
-	c.Assert(readFile(c, target, "1_add_users.sql"), qt.Equals, "CREATE TABLE users (id int);\n")
-	c.Assert(readFile(c, target, "2_add_posts.sql"), qt.Equals, "CREATE TABLE posts (id int);\n")
+	// V1.5 (add_users) encodes to 1*100^2 + 5*100 = 10500; V2 (add_posts) to 20000.
+	c.Assert(readFile(c, target, "10500_add_users.sql"), qt.Equals, "CREATE TABLE users (id int);\n")
+	c.Assert(readFile(c, target, "20000_add_posts.sql"), qt.Equals, "CREATE TABLE posts (id int);\n")
 	assertAtlasSumOK(c, target, result.SumFile)
 }
 

@@ -105,8 +105,9 @@ func TestResolveApplyDir_ConvertsExternalFormatsToUpOnly(t *testing.T) {
 			configured: "flyway",
 			file:       "V1__init.sql",
 			source:     "CREATE TABLE flyway_up (id int);\n",
-			wantFile:   "1_init.sql",
-			wantSQL:    "CREATE TABLE flyway_up (id int);\n",
+			// V1 encodes to the stable Atlas version 10000.
+			wantFile: "10000_init.sql",
+			wantSQL:  "CREATE TABLE flyway_up (id int);\n",
 		},
 		{
 			name:       "URL format overrides configured atlas default",

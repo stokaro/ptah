@@ -269,10 +269,22 @@ ptah atlas migrate apply --url "$DATABASE_URL" \
   --dir "file://migrations?format=goose"
 ```
 
-Two categories still fail before Ptah opens the target database rather than
-guess at semantics: unknown formats, and Flyway repeatable (`R__`) migrations,
-which Ptah cannot yet execute as versioned migrations (matching how
-`ptah atlas migrate import` handles them). See
+Flyway versions are compared component-wise like Flyway itself (`V1.5` sorts
+before `V2`, `V1.10` after `V1.9`) and are encoded to a stable Atlas version that
+depends only on the version — never on the other files in the directory — so
+inserting a mid-sequence migration (a hotfix, an out-of-order merge) never
+renumbers the others and existing revision checksums stay valid. Each version
+maps to a fixed-width `major.minor.patch` int64 (minor and patch `0`–`99`); this
+covers semantic and `yyyyMMddHHmmss` timestamp schemes. A version with more than
+three components, or a minor/patch of `100` or more, cannot be represented in an
+int64 and is rejected before the database is opened.
+
+Several inputs still fail before Ptah opens the target database rather than guess
+at semantics: unknown formats; goose/dbmate files missing their up directive
+(never falling back to executing the whole file); Flyway repeatable (`R__`)
+migrations, which Ptah cannot yet execute as versioned migrations (matching how
+`ptah atlas migrate import` handles them); and two source files that resolve to
+the same version. See
 [`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742).
 Atlas OSS does not register `migrate apply --dir-format`, `--to-version`, or
 `--lock-name`; Ptah follows that surface and rejects those flags on

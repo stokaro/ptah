@@ -84,10 +84,11 @@ func TestLoadDir_ConvertsEachFormatToUpOnlyEntries(t *testing.T) {
 				"U1__init.sql":      "DROP TABLE fw_t;\n",
 				"V2__add_users.sql": "CREATE TABLE fw_users (id int);\n",
 			},
-			wantNames: []string{"1_init.sql", "2_add_users.sql"},
+			// V1 and V2 encode to the stable Atlas versions 10000 and 20000.
+			wantNames: []string{"10000_init.sql", "20000_add_users.sql"},
 			wantData: map[string]string{
-				"1_init.sql":      "CREATE TABLE fw_t (id int);\n",
-				"2_add_users.sql": "CREATE TABLE fw_users (id int);\n",
+				"10000_init.sql":      "CREATE TABLE fw_t (id int);\n",
+				"20000_add_users.sql": "CREATE TABLE fw_users (id int);\n",
 			},
 		},
 	}
@@ -177,9 +178,10 @@ func TestLoadDir_FlywayOrdersVersionsNumerically(t *testing.T) {
 				"V1.5__minor.sql": "CREATE TABLE minor_step (id int);\n",
 				"V10__later.sql":  "CREATE TABLE later_step (id int);\n",
 			},
-			// Flyway order 1.5 < 2 < 10 maps to a dense monotonic Atlas sequence,
-			// not the digit-concatenated 15, 2, 10 that would invert 1.5 and 2.
-			wantNames: []string{"1_minor.sql", "2_major.sql", "3_later.sql"},
+			// Flyway order 1.5 < 2 < 10 maps to stable encoded Atlas versions
+			// (10500, 20000, 100000), not the digit-concatenated 15, 2, 10 that
+			// would invert 1.5 and 2.
+			wantNames: []string{"10500_minor.sql", "20000_major.sql", "100000_later.sql"},
 		},
 		{
 			name: "dotted differs from concatenated",
@@ -187,9 +189,9 @@ func TestLoadDir_FlywayOrdersVersionsNumerically(t *testing.T) {
 				"V2.0__a.sql": "CREATE TABLE a (id int);\n",
 				"V20__b.sql":  "CREATE TABLE b (id int);\n",
 			},
-			// V2.0 (2.0) and V20 (20) are distinct; 2.0 < 20, so both apply in that
-			// order rather than colliding.
-			wantNames: []string{"1_a.sql", "2_b.sql"},
+			// V2.0 (2.0 -> 20000) and V20 (20 -> 200000) are distinct; 2.0 < 20, so
+			// both apply in that order rather than colliding.
+			wantNames: []string{"20000_a.sql", "200000_b.sql"},
 		},
 	}
 
@@ -204,6 +206,73 @@ func TestLoadDir_FlywayOrdersVersionsNumerically(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(entryNames(loaded), qt.DeepEquals, tt.wantNames)
+		})
+	}
+}
+
+func TestLoadDir_FlywayEncodesStableVersions(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name string
+		file string
+		want string
+	}{
+		{name: "single major", file: "V1__x.sql", want: "10000_x.sql"},
+		{name: "major.minor", file: "V1.5__x.sql", want: "10500_x.sql"},
+		{name: "major.minor.patch", file: "V1.10.3__x.sql", want: "11003_x.sql"},
+		{name: "trailing zero canonicalizes", file: "V2.0__x.sql", want: "20000_x.sql"},
+		// A 14-digit yyyyMMddHHmmss timestamp version stays within int64.
+		{name: "timestamp", file: "V20230101120000__x.sql", want: "202301011200000000_x.sql"},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			dir := c.TempDir()
+			writeLoadFile(c, dir, tt.file, "CREATE TABLE t (id int);\n")
+
+			loaded, err := atlasmigrateimport.LoadDir(dir, atlasmigrateimport.FormatFlyway)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(entryNames(loaded), qt.DeepEquals, []string{tt.want})
+		})
+	}
+}
+
+func TestLoadDir_RejectsUnrepresentableFlywayVersions(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name string
+		file string
+		want string
+	}{
+		{
+			name: "too many components",
+			file: "V1.2.3.4__x.sql",
+			want: `Flyway version 1\.2\.3\.4 has more than 3 components and cannot map to an int64 Atlas version`,
+		},
+		{
+			name: "minor component too large",
+			file: "V1.100__x.sql",
+			want: `Flyway version 1\.100 component 2 \(100\) exceeds the maximum 99 for an int64 Atlas version`,
+		},
+		{
+			name: "leading component too large",
+			file: "V9999999999999999__x.sql",
+			want: `Flyway version 9999999999999999 is too large to map to an int64 Atlas version`,
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			dir := c.TempDir()
+			writeLoadFile(c, dir, tt.file, "CREATE TABLE t (id int);\n")
+
+			loaded, err := atlasmigrateimport.LoadDir(dir, atlasmigrateimport.FormatFlyway)
+
+			c.Assert(err, qt.ErrorMatches, tt.want)
+			c.Assert(loaded, qt.IsNil)
 		})
 	}
 }
