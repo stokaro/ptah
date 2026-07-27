@@ -39,6 +39,16 @@ func ReadTableRows(ctx context.Context, conn *DatabaseConnection, schema, table 
 	if len(columns) == 0 {
 		return nil, errors.New("dbschema: ReadTableRows requires at least one column")
 	}
+	// Duplicate column names would collapse into a single map key while the
+	// column-count guard below still passed, silently dropping a column, so
+	// reject them up front.
+	seen := make(map[string]struct{}, len(columns))
+	for _, col := range columns {
+		if _, dup := seen[col]; dup {
+			return nil, fmt.Errorf("dbschema: ReadTableRows got duplicate column %q", col)
+		}
+		seen[col] = struct{}{}
+	}
 
 	dialect := conn.Info().Dialect
 

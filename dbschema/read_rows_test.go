@@ -110,6 +110,7 @@ func TestReadTableRows_ValidationErrors(t *testing.T) {
 		{name: "nil connection", conn: nil, table: "regions", columns: []string{"code"}},
 		{name: "empty table name", conn: conn, table: "  ", columns: []string{"code"}},
 		{name: "no columns", conn: conn, table: "regions", columns: nil},
+		{name: "duplicate columns", conn: conn, table: "regions", columns: []string{"code", "code"}},
 	}
 
 	for _, tt := range tests {

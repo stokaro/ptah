@@ -142,6 +142,30 @@ func TestCompute(t *testing.T) {
 			want: &datadiff.DataDiff{Table: "regions", Keys: []string{"code"}},
 		},
 		{
+			name:  "live NULL versus desired empty string is an update",
+			table: "regions",
+			keys:  []string{"code"},
+			// A live SQL NULL (nil) must stay distinct from a desired empty
+			// string, so the desired "" is reported as a change to apply.
+			desired: []datadiff.Row{
+				{"code": "US", "note": ""},
+			},
+			live: []datadiff.Row{
+				{"code": "US", "note": nil},
+			},
+			want: &datadiff.DataDiff{
+				Table: "regions",
+				Keys:  []string{"code"},
+				Updates: []datadiff.RowUpdate{
+					{
+						Key:     map[string]any{"code": "US"},
+						Desired: datadiff.Row{"code": "US", "note": ""},
+						Live:    datadiff.Row{"code": "US", "note": nil},
+					},
+				},
+			},
+		},
+		{
 			name:  "normalized values compare equal across numeric types",
 			table: "regions",
 			keys:  []string{"id"},

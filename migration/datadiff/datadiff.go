@@ -11,14 +11,16 @@
 //
 // # Value comparison
 //
-// Compute compares values by a normalized string form (see [Compute]): nil
-// becomes the empty string, []byte becomes string, and every other value is
-// formatted with fmt's default verb. This makes comparison driver-agnostic
-// (for example a desired int 1 and a live int64 1 compare equal) but only
-// approximate across dialects: numeric scale, boolean encoding, and decimal
-// precision differences between PostgreSQL, MySQL, and others are not modeled.
-// Type-exact, dialect-aware value comparison is a known follow-up, matching the
-// issue's "cross-dialect value rendering is substantial" caveat.
+// Compute compares values by a normalized string form (see [Compute]): a
+// one-byte type tag ("N" nil, "S" string, "B" []byte, "V" everything else via
+// fmt's default verb) followed by the value. The tag keeps distinct kinds from
+// colliding — notably a SQL NULL stays distinct from an empty string — while
+// still making the "V" form driver-agnostic (a desired int 1 and a live int64 1
+// compare equal). It remains only approximate across dialects for the "V" form:
+// numeric scale, boolean encoding, and decimal precision differences between
+// PostgreSQL, MySQL, and others are not modeled. Type-exact, dialect-aware value
+// comparison is a known follow-up, matching the issue's "cross-dialect value
+// rendering is substantial" caveat.
 package datadiff
 
 import (
@@ -183,18 +185,22 @@ func sortedKeys[V any](m map[string]V) []string {
 	return out
 }
 
-// normalizeValue reduces a value to a comparable string form: nil to the empty
-// string, []byte to string, and any other value via fmt's default verb. See the
-// package documentation for the cross-dialect limitations of this approach.
+// normalizeValue reduces a value to a comparable string form, prefixed with a
+// one-byte type tag so distinct kinds can never collide: "N" for nil (a SQL
+// NULL), "S" for a string, "B" for []byte, and "V" for any other value via fmt's
+// default verb. The tag keeps a NULL distinct from an empty string, so a live
+// NULL versus a desired "" is correctly reported as a change rather than
+// silently matching. See the package documentation for the remaining
+// cross-dialect limitations (numeric scale, boolean encoding) of the "V" form.
 func normalizeValue(v any) string {
 	switch value := v.(type) {
 	case nil:
-		return ""
+		return "N"
 	case []byte:
-		return string(value)
+		return "B" + string(value)
 	case string:
-		return value
+		return "S" + value
 	default:
-		return fmt.Sprintf("%v", value)
+		return "V" + fmt.Sprintf("%v", value)
 	}
 }
