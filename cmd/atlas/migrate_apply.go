@@ -2,6 +2,7 @@ package atlas
 
 import (
 	"fmt"
+	"io/fs"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -121,13 +122,19 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 	if err != nil {
 		return fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
-	if err := atlasmigrate.ValidateApplyDirFormat(opts.dirFormat, localDir.Query); err != nil {
-		return fmt.Errorf("atlas migrate apply --dir: %w", err)
-	}
 	dir := localDir.Path
 	dir, err = pathguard.ResolveCLIPath(dir)
 	if err != nil {
 		return fmt.Errorf("invalid migration directory: %w", err)
+	}
+	// Resolve the migration directory format and load its filesystem before
+	// opening the database. For the native Atlas format this is the directory on
+	// disk; for every other Atlas OSS format it is an in-memory, up-only
+	// conversion. Unknown formats and malformed layouts fail here, before any
+	// database mutation.
+	migrationFS, err := atlasmigrate.ResolveApplyDir(dir, opts.dirFormat, localDir.Query)
+	if err != nil {
+		return fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
 
 	amount, err := atlasmigrate.ParseApplyAmount(args)
@@ -160,6 +167,7 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 
 	plan, err := atlasmigrate.PrepareApply(cmd.Context(), conn, atlasmigrate.ApplyOptions{
 		Dir:                  dir,
+		FS:                   migrationFS,
 		DryRun:               opts.dryRun,
 		ExecOrder:            execOrder,
 		TxMode:               txMode,
@@ -186,7 +194,7 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 			return err
 		}
 		if formatOutput {
-			return writeAtlasMigrateApplyFormat(cmd, opts, dir, conn, result)
+			return writeAtlasMigrateApplyFormat(cmd, opts, dir, migrationFS, conn, result)
 		}
 		fmt.Fprintln(out, "No migration files to execute.")
 		return nil
@@ -201,7 +209,7 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 	result, err := plan.Execute(cmd.Context())
 	if err != nil {
 		if formatOutput && result.ApplyError != nil {
-			writeErr := writeAtlasMigrateApplyFormat(cmd, opts, dir, conn, result)
+			writeErr := writeAtlasMigrateApplyFormat(cmd, opts, dir, migrationFS, conn, result)
 			if writeErr != nil {
 				return fmt.Errorf("%w; additionally failed to write --format output: %v", err, writeErr)
 			}
@@ -211,13 +219,13 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 
 	if opts.dryRun {
 		if formatOutput {
-			return writeAtlasMigrateApplyFormat(cmd, opts, dir, conn, result)
+			return writeAtlasMigrateApplyFormat(cmd, opts, dir, migrationFS, conn, result)
 		}
 		fmt.Fprintf(out, "Would have applied %d migrations.\n", len(plan.SelectedVersions))
 		return nil
 	}
 	if formatOutput {
-		return writeAtlasMigrateApplyFormat(cmd, opts, dir, conn, result)
+		return writeAtlasMigrateApplyFormat(cmd, opts, dir, migrationFS, conn, result)
 	}
 	fmt.Fprintf(out, "Migration complete. Current version: %d\n", result.FinalStatus.CurrentVersion)
 	return nil
@@ -232,11 +240,13 @@ func writeAtlasMigrateApplyFormat(
 	cmd *cobra.Command,
 	opts atlasMigrateApplyOptions,
 	resolvedDir string,
+	migrationFS fs.FS,
 	conn *dbschema.DatabaseConnection,
 	result atlasmigrate.ApplyResult,
 ) error {
 	return atlasmigratereport.WriteApplyFormat(cmd.OutOrStdout(), opts.format, atlasmigratereport.ApplyFormatOptions{
 		Conn:        conn,
+		FS:          migrationFS,
 		ResolvedDir: resolvedDir,
 		Dir:         opts.dir,
 		URL:         opts.url,
