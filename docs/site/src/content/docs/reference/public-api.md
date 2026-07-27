@@ -39,6 +39,25 @@ Import paths use the module prefix:
 import "github.com/stokaro/ptah/core/renderer"
 ```
 
+## Migration Statement Observation
+
+`migration/migrator.WithStatementObserver` attaches a read-only callback to a
+filesystem migration provider. The observer runs after every successfully
+executed statement and receives its source path, one-based statement ordinal,
+total statement count, SQL text, and an event-local copy of file directives.
+
+Use `migrator.StatementObserverFunc` for a closure or implement
+`migrator.StatementObserver` for a stateful collector. The callback receives
+no database connection and cannot alter the migrator execution path. A
+database-aware collector may capture a consumer-owned connection when that
+consumer controls transaction visibility. Returning an error stops the
+migration and returns a `migrator.StatementObservationError` with source and
+statement context; dirty progress includes the statement that completed before
+the callback failed.
+
+The observer composes with `StatementInterceptor`: a statement handled by an
+external executor is observed once after that executor reports success.
+
 ## Error Contracts
 
 Public failures should use `core/ptaherr` when callers can reasonably branch on
