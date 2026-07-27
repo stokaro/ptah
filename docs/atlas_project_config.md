@@ -100,6 +100,7 @@ The supported attributes map to Ptah settings as follows:
 | `lint.data_depend.error` | `DD` lint rule-family severity |
 | `lint.incompatible.error` | `BC` lint rule-family severity |
 | `lint.nestedtx.error` | `TX201` lint rule severity |
+| `lint.log` | `ptah atlas migrate lint` output template; shares the `format.migrate.lint` default |
 | `format.schema.inspect` | `ptah atlas schema inspect --format` default |
 | `format.schema.apply` | `ptah atlas schema apply --format` default |
 | `format.schema.clean` | `ptah atlas schema clean --format` default |
@@ -190,6 +191,14 @@ Atlas `check` blocks are rejected for now because Atlas check IDs and Ptah rule
 IDs are not a stable one-to-one namespace. Analyzer `force` options, allow-list
 blocks such as `allow_table` / `allow_column`, custom `rule` blocks, and
 policy families without a matching Ptah lint engine fail explicitly.
+
+`lint.log` is an Atlas Go-template string that renders the `ptah atlas migrate
+lint` output. It is parsed into the same format IR as `format.migrate.lint`, so
+the two share one precedence chain: an explicit CLI `--format` overrides the
+project template, and a selected `--env` `lint.log` overrides a global one. When
+neither a CLI `--format` nor a project template is set, `ptah atlas migrate lint`
+prints Atlas's default migration-analysis text report (per-version diagnostics
+and a summary), while the native `ptah migrations lint` output is unchanged.
 
 `migration.tx_mode` accepts `file`, `all`, and `none`, matching
 `ptah atlas migrate apply --tx-mode`. `all` is limited to dialects where Ptah

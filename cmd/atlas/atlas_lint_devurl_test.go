@@ -34,7 +34,10 @@ func TestNewAtlasCommand_MigrateLintDevURLReplaysMigration(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "No lint findings.")
+	// The no-format default now renders Atlas's migration-analysis text report.
+	c.Assert(out.String(), qt.Contains, "Analyzing changes until version 1 (1 migration in total):")
+	c.Assert(out.String(), qt.Contains, "  -- analyzing version 1\n    -- no diagnostics found\n")
+	c.Assert(out.String(), qt.Contains, "  -- 1 version ok\n")
 	assertAtlasLintDevURLSQLiteTableCount(c, devDBPath, "atlas_lint_dev_url", 1)
 }
 

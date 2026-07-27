@@ -312,20 +312,56 @@ func rlsDisabledRule() Rule {
 }
 
 // dataDependentRules covers changes whose safety depends on existing row data.
+const notNullWithoutDefaultMessage = "adding a NOT NULL column without a DEFAULT fails or blocks on populated tables; add it nullable, backfill, then enforce NOT NULL in a later migration"
+
 func dataDependentRules() []Rule {
 	return []Rule{
 		{
 			Code:     "DD101",
 			Title:    "non-nullable column added without a default",
 			Severity: SeverityWarning,
-			CheckStatement: func(stmt *Statement) (bool, string) {
-				if !isAlterTable(stmt.Words) || !scanAddColumnNotNullWithoutDefault(stmt.Words) {
-					return false, ""
-				}
-				return true, "adding a NOT NULL column without a DEFAULT fails or blocks on populated tables; add it nullable, backfill, then enforce NOT NULL in a later migration"
-			},
+			// File-level: adding a NOT NULL column to a table this same migration
+			// created targets an empty table, so the add cannot fail on existing
+			// rows and is exempt — the ADD-side analogue of the create-then-drop
+			// exemption in DS101 (tableDroppedRule).
+			CheckFile: notNullWithoutDefaultFindings,
 		},
 	}
+}
+
+func notNullWithoutDefaultFindings(file *File) []Finding {
+	if !file.IsUp {
+		return nil
+	}
+	var findings []Finding
+	created := map[string]bool{}
+	for i := range file.Statements {
+		stmt := &file.Statements[i]
+		if ref := createdTableRef(stmt.Words); ref != "" {
+			created[ref] = true
+			continue
+		}
+		if !isAlterTable(stmt.Words) {
+			continue
+		}
+		subjects := nonNullableAddedColumnSubjects(stmt.Words, stmt.sourceWords)
+		if len(subjects) == 0 {
+			continue
+		}
+		if refersToCreated(created, alterTableReference(stmt.Words, stmt.sourceWords).normalized) {
+			continue
+		}
+		findings = append(findings, Finding{
+			Rule:     "DD101",
+			Title:    "non-nullable column added without a default",
+			Severity: SeverityWarning,
+			File:     file.Path,
+			Line:     stmt.Line,
+			Message:  notNullWithoutDefaultMessage,
+			Context:  statementFindingContext(i, subjects...),
+		})
+	}
+	return findings
 }
 
 // migrationFormRules covers the MF family: file-level migration hygiene.
@@ -1488,8 +1524,6 @@ func statementSubjects(code string, words, sourceWords []string) []Subject {
 	switch code {
 	case "DS102":
 		return droppedColumnSubjects(words, sourceWords)
-	case "DD101":
-		return nonNullableAddedColumnSubjects(words, sourceWords)
 	default:
 		return nil
 	}

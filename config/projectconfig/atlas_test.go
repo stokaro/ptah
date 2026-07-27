@@ -1089,3 +1089,79 @@ migration:
 	c.Assert(cfg.Migration.Format, qt.Equals, "atlas")
 	c.Assert(cfg.Migration.RevisionFormat, qt.Equals, "atlas")
 }
+
+func TestParseAtlasProjectConfigGlobalLintLogFeedsFormat(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`lint {
+  latest = 1
+  destructive {
+    error = false
+  }
+  log = "{{ range .Files }}{{ println .Name }}{{ end }}"
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "")
+
+	c.Assert(err, qt.IsNil)
+	// lint.log feeds the same format IR as format.migrate.lint.
+	c.Assert(cfg.Format.Migrate.Lint, qt.Equals, "{{ range .Files }}{{ println .Name }}{{ end }}")
+	// The analysis parts of the lint block remain intact alongside log.
+	c.Assert(cfg.Lint.Latest, qt.IsNotNil)
+	c.Assert(*cfg.Lint.Latest, qt.Equals, 1)
+	c.Assert(cfg.Lint.RuleConfigs["DS"].Severity, qt.Equals, "warning")
+}
+
+func TestParseAtlasProjectConfigEnvLintLogOverridesGlobal(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`lint {
+  latest = 1
+  log = "GLOBAL"
+}
+env "ci" {
+  lint {
+    latest = 2
+    log = "{{ len .Files | println }}"
+  }
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "ci")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.Format.Migrate.Lint, qt.Equals, "{{ len .Files | println }}")
+	c.Assert(cfg.Lint.Latest, qt.IsNotNil)
+	c.Assert(*cfg.Lint.Latest, qt.Equals, 2)
+}
+
+func TestParseAtlasProjectConfigEnvInheritsGlobalLintLog(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`lint {
+  log = "GLOBAL"
+}
+env "ci" {
+  lint {
+    latest = 3
+  }
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "ci")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.Format.Migrate.Lint, qt.Equals, "GLOBAL")
+	c.Assert(cfg.Lint.Latest, qt.IsNotNil)
+	c.Assert(*cfg.Lint.Latest, qt.Equals, 3)
+}
+
+func TestParseAtlasProjectConfigLintLogRejectsEmpty(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`lint {
+  log = ""
+}
+`)
+
+	_, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "")
+
+	c.Assert(err, qt.IsNotNil)
+}

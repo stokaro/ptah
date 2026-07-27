@@ -54,7 +54,7 @@ SQL paths; prefer `--to` in new Ptah-authored scripts.
 | `ptah atlas migrate status` | Atlas-format migration status with Atlas revision-table metadata |
 | `ptah atlas migrate hash` | `ptah migrations hash` |
 | `ptah atlas migrate validate` | Silently verifies `atlas.sum` on success; checksum failures use Atlas-compatible stdout/stderr diagnostics, and `--dev-url` cleans and replays migrations on the dev database to validate SQL execution. |
-| `ptah atlas migrate lint` | `ptah migrations lint`; supports Atlas-style `--latest N`, infers lint dialect from `--dev-url`, and cleans and replays migrations on directly connectable dev databases to validate SQL execution. |
+| `ptah atlas migrate lint` | `ptah migrations lint`; supports Atlas-style `--latest N`, infers lint dialect from `--dev-url`, cleans and replays migrations on directly connectable dev databases to validate SQL execution, and by default prints Atlas's migration-analysis text report (`--format`, `format.migrate.lint`, or `lint { log = "…" }` select custom output). |
 | `ptah atlas migrate new` | `ptah migrations create` |
 | `ptah atlas migrate set [version]` | `ptah migrations repair` with Atlas revision metadata |
 | `ptah atlas migrate diff` | Replays local Atlas migrations on `--dev-url`, diffs against local schema files, writes an Atlas single-file migration, and updates `atlas.sum`; `--schema/-s` scopes the diff, and the Atlas-hidden `--dry-run` flag prints the generated SQL instead of writing files. |
@@ -410,6 +410,17 @@ ptah atlas migrate lint \
 tables, replays the migration directory, and then runs static lint
 reporting. Docker `--dev-url` values remain an explicit gap; use a directly
 connectable database URL.
+
+With no `--format` and no project template, `ptah atlas migrate lint` prints
+Atlas's default migration-analysis text report: an `Analyzing changes …` header,
+a per-version block listing each analyzer group's diagnostics (with a suggested
+fix where the analyzer provides one), a `-- ok (…)` line per version, and a
+summary of version statuses, semantic schema changes, and diagnostics. The
+report is written to stdout even when findings fail, and error-severity findings
+still exit with code 1. The native `ptah migrations lint` output is unchanged.
+Custom output is selected by `--format`, by `format.migrate.lint`, or by Atlas's
+`lint { log = "…" }` template; an explicit CLI `--format` wins over a project
+template, and a selected `--env` `lint.log` overrides a global one.
 
 The command captures the migration directory once before checking `atlas.sum`,
 selecting `--latest` versions, replaying migrations, and rendering reports.
