@@ -16,6 +16,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/migratesum"
+	"github.com/stokaro/ptah/internal/migrationsnapshot"
 	"github.com/stokaro/ptah/internal/onlineddl"
 	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/internal/preflight"
@@ -260,11 +261,15 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
+	migrationsFS, err := migrationsnapshot.Capture(os.DirFS(migrationsDir))
+	if err != nil {
+		return fmt.Errorf("capture migrations directory: %w", err)
+	}
 
 	// Integrity gate: refuse to apply if a committed migration was edited
 	// out of band. Runs before connecting so a tampered directory fails fast.
 	if opts.verifySum {
-		result, err := migratesum.VerifyDirWithFormat(migrationsDir, settings.dirFormat)
+		result, err := migratesum.VerifyWithFormat(migrationsFS, settings.dirFormat)
 		if err != nil {
 			return fmt.Errorf("migration sum verification failed: %w", err)
 		}
@@ -308,9 +313,6 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	emit.Printf("Migration directory format: %s\n", settings.dirFormat)
 	emit.Printf("Transaction mode: %s\n", settings.txMode)
 	emit.Println()
-
-	// Create filesystem from migrations directory
-	migrationsFS := os.DirFS(migrationsDir)
 
 	// Online-DDL routing: `-- +ptah online_ddl_tool=...` directives always
 	// work; the ptah.yaml online_ddl section adds automatic routing of
@@ -376,16 +378,6 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		return migrator.NewOutOfOrderError(status.CurrentVersion, status.OutOfOrderMigrations)
 	}
 
-	if !opts.allowDestructive {
-		findings, err := lintPendingDestructive(migrationsFS, pendingMigrationsForRun(status, settings.execOrder), conn.Info().Dialect)
-		if err != nil {
-			return fmt.Errorf("error checking pending migration safety: %w", err)
-		}
-		if len(findings) > 0 {
-			return fmt.Errorf("pending migrations contain destructive statements; rerun with --allow-destructive after review:\n%s", formatDestructiveFindings(findings))
-		}
-	}
-
 	emit.Println()
 	preflightHook := dbcli.LockedMigrationPreflightHook(opts.dryRun, preflight.Options{
 		Direction:          preflight.DirectionUp,
@@ -397,6 +389,12 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		MySQLDumpDir:       mySQLDumpTo,
 		WebhookURL:         webhook,
 	}, emit, cliobs.NewOutputWriter(cmd.OutOrStdout(), runtime, "pre-flight output"))
+	if !opts.allowDestructive {
+		preflightHook = dbcli.CombineMigrationHooks(
+			lockedDestructiveLintHook(migrationsFS, conn.Info().Dialect),
+			preflightHook,
+		)
+	}
 
 	// Run migrations
 	err = mig.MigrateUpWithPreflight(context.Background(), preflightHook)
@@ -434,35 +432,18 @@ func shutdownObservability(runtime *cliobs.Runtime) {
 	}
 }
 
-func pendingMigrationsForRun(status *migrator.MigrationStatus, execOrder migrator.ExecOrder) []int64 {
-	if execOrder != migrator.ExecOrderLinearSkip {
-		return status.PendingMigrations
-	}
-
-	outOfOrder := make(map[int64]struct{}, len(status.OutOfOrderMigrations))
-	for _, version := range status.OutOfOrderMigrations {
-		outOfOrder[version] = struct{}{}
-	}
-
-	pending := make([]int64, 0, len(status.PendingMigrations))
-	for _, version := range status.PendingMigrations {
-		if _, ok := outOfOrder[version]; ok {
-			continue
-		}
-		pending = append(pending, version)
-	}
-	return pending
-}
-
 func lintPendingDestructive(fsys fs.FS, pending []int64, dialect string) ([]lint.Finding, error) {
 	cfg, err := lint.LoadConfigFS(fsys, lint.ConfigFileName)
 	if err != nil {
 		return nil, err
 	}
 	findings, err := lint.LintFS(fsys, lint.Options{
-		Dialect:     dialect,
-		Disabled:    append([]string{"MF", "BC", "PG", "MY"}, cfg.DisabledRules...),
-		Versions:    pending,
+		Dialect:  dialect,
+		Disabled: append([]string{"MF", "BC", "PG", "MY"}, cfg.DisabledRules...),
+		Selection: lint.VersionSelection{
+			Versions:   pending,
+			Restricted: true,
+		},
 		RuleConfigs: cfg.Rules,
 	})
 	if err != nil {
@@ -475,6 +456,22 @@ func lintPendingDestructive(fsys fs.FS, pending []int64, dialect string) ([]lint
 		}
 	}
 	return destructive, nil
+}
+
+func lockedDestructiveLintHook(fsys fs.FS, dialect string) migrator.PreMigrationHook {
+	return func(_ context.Context, plan migrator.MigrationPlan) error {
+		findings, err := lintPendingDestructive(fsys, plan.Versions, dialect)
+		if err != nil {
+			return fmt.Errorf("error checking pending migration safety: %w", err)
+		}
+		if len(findings) > 0 {
+			return fmt.Errorf(
+				"pending migrations contain destructive statements; rerun with --allow-destructive after review:\n%s",
+				formatDestructiveFindings(findings),
+			)
+		}
+		return nil
+	}
 }
 
 func formatDestructiveFindings(findings []lint.Finding) string {

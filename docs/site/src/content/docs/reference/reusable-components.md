@@ -291,6 +291,53 @@ if len(findings) > 0 {
 }
 ```
 
+Use `lint.AnalyzeFS` when more than findings are needed. It captures every SQL
+file plus migration metadata (`atlas.sum`, `ptah.sum`, and
+`.ptah-lint.yaml`) once and excludes unrelated files. The immutable result
+contains prepared files, exact statement spans, finding-to-statement contexts,
+and a read-only filesystem snapshot. Replay, checksum, report, and
+migration-provider code can consume that snapshot without reopening a changing
+migration directory:
+
+```go
+analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+	Dialect: "postgres",
+	Selection: lint.VersionSelection{
+		Versions:   []int64{42, 43},
+		Restricted: true,
+	},
+})
+if err != nil {
+	return err
+}
+
+selected := analysis.SelectedFiles()
+findings := analysis.Findings()
+snapshot := analysis.SnapshotFS()
+fmt.Printf("linted %d of %d files and found %d issues\n",
+	len(selected), len(analysis.Files()), len(findings))
+
+m, err := migrator.NewFSMigrator(conn, snapshot)
+if err != nil {
+	return err
+}
+_ = m
+```
+
+`VersionSelection.Restricted` distinguishes no selector from an explicitly
+empty changeset. Native Ptah callers should keep the zero-value
+`CompatibilityProfileNative`; `CompatibilityProfileAtlas` exists for
+Atlas-compatible command adapters and enables Atlas-specific `nolint` aliases
+and file-header semantics without changing native safety behavior.
+
+Each finding context identifies its zero-based statement index. Structured
+subjects preserve the executable identifier spelling: table subjects use
+`SubjectTable`; column subjects use `SubjectColumn` and can include `Parent`
+and `DataType`. In Atlas compatibility mode, a bare file-header
+`-- atlas:nolint` marks `File.Ignored`; it does not merely clear the file's
+findings. Report adapters should omit ignored files while retaining them in the
+captured snapshot.
+
 ### Use Capabilities
 
 Use capabilities when syntax depends on a dialect version rather than only a

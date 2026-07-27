@@ -83,7 +83,10 @@ func TestLintFS_VersionsRestrictsFindings(t *testing.T) {
 
 	findings, err := lint.LintFS(fsys, lint.Options{
 		Disabled: []string{"MF", "BC", "PG", "MY"},
-		Versions: []int64{2},
+		Selection: lint.VersionSelection{
+			Versions:   []int64{2},
+			Restricted: true,
+		},
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DS102"})
@@ -743,7 +746,7 @@ ALTER TABLE users MODIFY COLUMN email VARCHAR(64);
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"PG101", "DS103", "MY101"})
 }
 
-func TestLintFS_CustomRuleAndPrepareFSUsePublicScanner(t *testing.T) {
+func TestAnalyzeFS_CustomRuleUsesPublicScanner(t *testing.T) {
 	c := qt.New(t)
 
 	fsys := fixture(map[string]string{
@@ -751,33 +754,30 @@ func TestLintFS_CustomRuleAndPrepareFSUsePublicScanner(t *testing.T) {
 		"0000000001_create_users.down.sql": "DROP TABLE users;\n",
 	})
 
-	files, err := lint.PrepareFS(fsys, lint.Options{})
+	analysis, err := lint.AnalyzeFS(fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
+	files := analysis.Files()
 	c.Assert(files, qt.HasLen, 2)
-	var upFile *lint.File
-	for _, file := range files {
-		if file.IsUp {
-			upFile = file
-		}
-	}
-	c.Assert(upFile, qt.IsNotNil)
-	c.Assert(upFile.Statements[0].Words, qt.DeepEquals, []string{"CREATE", "TABLE", "USERS", "(", "ID", "INT", ")"})
+	c.Assert(files[1].Name, qt.Equals, "0000000001_create_users.up.sql")
+	c.Assert(files[1].Statements[0].Words, qt.DeepEquals, []string{"CREATE", "TABLE", "USERS", "(", "ID", "INT", ")"})
 
 	customRule := lint.Rule{
-		Code:     "XX001",
-		Title:    "custom create table analyzer",
-		Severity: lint.SeverityWarning,
-		CheckStatement: func(stmt *lint.Statement) (bool, string) {
-			if len(stmt.Words) >= 3 && stmt.Words[0] == "CREATE" && stmt.Words[1] == "TABLE" {
-				return true, "custom analyzer saw a create table statement through Ptah's scanner"
-			}
-			return false, ""
-		},
+		Code:           "XX001",
+		Title:          "custom create table analyzer",
+		Severity:       lint.SeverityWarning,
+		CheckStatement: checkCustomCreateTable,
 	}
 	findings, err := lint.LintFS(fsys, lint.Options{ExtraRules: []lint.Rule{customRule}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"XX001"})
 	c.Assert(findings[0].Message, qt.Contains, "Ptah's scanner")
+}
+
+func checkCustomCreateTable(stmt *lint.Statement) (bool, string) {
+	if len(stmt.Words) >= 3 && stmt.Words[0] == "CREATE" && stmt.Words[1] == "TABLE" {
+		return true, "custom analyzer saw a create table statement through Ptah's scanner"
+	}
+	return false, ""
 }
 
 func TestLintFS_InvalidCustomRuleFailsFast(t *testing.T) {
@@ -962,7 +962,7 @@ func TestLintFS_NoMigrationFilesIsAnError(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, "no \\*\\.sql migration files found")
 }
 
-func TestLoadConfig(t *testing.T) {
+func TestLoadConfig_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
 	dir := t.TempDir()
@@ -983,21 +983,37 @@ rules:
 	c.Assert(cfg.DisabledRules, qt.DeepEquals, []string{"MF", "BC101"})
 	c.Assert(cfg.Rules["DS103"].Severity, qt.Equals, lint.SeverityWarning)
 	c.Assert(cfg.Rules["DS103"].Exclude, qt.DeepEquals, []string{"legacy/**"})
+}
 
-	// A missing file at the conventional location is not an error.
-	cfg, err = lint.LoadConfig(dir + "/nope.yaml")
-	c.Assert(err, qt.IsNil)
-	c.Assert(cfg.Dialect, qt.Equals, "")
-	c.Assert(cfg.DisabledRules, qt.HasLen, 0)
+func TestLoadConfig_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
 
-	// A malformed file is.
+	c.Run("missing explicit file", func(c *qt.C) {
+		_, err := lint.LoadConfig(dir + "/nope.yaml")
+		c.Assert(err, qt.ErrorMatches, "failed to read lint config .*nope.yaml.*")
+	})
+
 	c.Assert(writeFile(dir+"/broken.yaml", "dialect: [not, a, string"), qt.IsNil)
-	_, err = lint.LoadConfig(dir + "/broken.yaml")
-	c.Assert(err, qt.ErrorMatches, "failed to parse lint config .*")
+	c.Run("malformed YAML", func(c *qt.C) {
+		_, err := lint.LoadConfig(dir + "/broken.yaml")
+		c.Assert(err, qt.ErrorMatches, "failed to parse lint config .*")
+	})
 
 	c.Assert(writeFile(dir+"/bad-severity.yaml", "rules:\n  DS102:\n    severity: fatal\n"), qt.IsNil)
-	_, err = lint.LoadConfig(dir + "/bad-severity.yaml")
-	c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*unsupported severity "fatal".*`)
+	c.Run("invalid rule severity", func(c *qt.C) {
+		_, err := lint.LoadConfig(dir + "/bad-severity.yaml")
+		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*unsupported severity "fatal".*`)
+	})
+}
+
+func TestLoadConfigFS_MissingConventionalFileReturnsEmptyConfig(t *testing.T) {
+	c := qt.New(t)
+
+	cfg, err := lint.LoadConfigFS(fstest.MapFS{}, lint.ConfigFileName)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg, qt.DeepEquals, &lint.Config{})
 }
 
 func TestRules_EveryRuleHasCodeTitleAndOneChecker(t *testing.T) {

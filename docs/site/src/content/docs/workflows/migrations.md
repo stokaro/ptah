@@ -126,6 +126,10 @@ ptah migrations up \
 
 Destructive statements require explicit policy. Use `--allow-destructive` only
 after the plan has been reviewed and the rollback path is understood.
+`ptah migrations up` captures the migration directory before checksum
+verification, provider registration, and destructive linting. The safety gate
+therefore checks the same immutable SQL bytes that the migrator will execute,
+even if files on disk change while the command is running.
 
 ### Pre-migration checks
 

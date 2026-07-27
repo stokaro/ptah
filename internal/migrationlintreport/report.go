@@ -22,6 +22,7 @@ import (
 	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/internal/atlasurl"
 	"github.com/stokaro/ptah/internal/migrationreplay"
+	"github.com/stokaro/ptah/internal/migrationsnapshot"
 	"github.com/stokaro/ptah/migration/lint"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/risk"
@@ -55,12 +56,14 @@ type Report struct {
 	Findings         []lint.Finding `json:"findings"`
 	Error            string         `json:"error,omitempty"`
 	Versions         []int64        `json:"-"`
+	Analysis         lint.Analysis  `json:"-"`
 }
 
 // Options are the migration lint inputs shared by native and Atlas-compatible
 // commands.
 type Options struct {
 	Dir        string
+	FS         fs.FS
 	DirFormat  string
 	Dialect    string
 	ConfigPath string
@@ -73,6 +76,8 @@ type Options struct {
 	Latest     uint
 	Positional []string
 	Changed    ChangedOptions
+	// Compatibility selects native or command-surface-specific lint semantics.
+	Compatibility lint.CompatibilityProfile
 }
 
 // ChangedOptions records which CLI values were explicitly provided. This lets
@@ -170,11 +175,19 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 	if err != nil {
 		return Report{}, err
 	}
-	versions, restrictVersions, err := lintVersions(ctx, opts, projectCfg)
+	sourceFS := opts.FS
+	if sourceFS == nil {
+		sourceFS = os.DirFS(opts.Dir)
+	}
+	snapshot, err := migrationsnapshot.Capture(sourceFS)
 	if err != nil {
 		return Report{}, err
 	}
-	cfg, err := loadEffectiveConfig(opts, projectCfg)
+	versions, restrictVersions, err := lintVersions(ctx, opts, projectCfg, snapshot)
+	if err != nil {
+		return Report{}, err
+	}
+	cfg, err := loadEffectiveConfig(opts, projectCfg, snapshot)
 	if err != nil {
 		return Report{}, err
 	}
@@ -183,23 +196,21 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		return Report{}, err
 	}
 	disabled := append(append([]string{}, cfg.DisabledRules...), opts.Disabled...)
-	findings, err := lintDirectory(ctx, opts, dirFormat, lintSelection{
-		Options: lint.Options{
-			Dialect:           dialect,
-			Disabled:          disabled,
-			PathPrefix:        filepath.ToSlash(opts.Dir),
-			Versions:          versions,
-			DirFormat:         dirFormat,
-			AtlasTemplateData: migrator.AtlasTemplateData{Env: opts.AtlasEnv},
-			RuleConfigs:       cfg.Rules,
+	analysis, err := lintDirectory(ctx, opts, snapshot, dirFormat, lint.Options{
+		Compatibility: opts.Compatibility,
+		Dialect:       dialect,
+		Disabled:      disabled,
+		PathPrefix:    filepath.ToSlash(opts.Dir),
+		Selection: lint.VersionSelection{
+			Versions:   versions,
+			Restricted: restrictVersions,
 		},
-		RestrictVersions: restrictVersions,
+		DirFormat:         dirFormat,
+		AtlasTemplateData: migrator.AtlasTemplateData{Env: opts.AtlasEnv},
+		RuleConfigs:       cfg.Rules,
 	})
-	if err != nil {
-		return Report{}, err
-	}
-
-	return Report{
+	findings := analysis.Findings()
+	report := Report{
 		Failed:           shouldFail(findings, opts.FailOn),
 		FailureThreshold: opts.FailOn,
 		Dialect:          dialect,
@@ -207,7 +218,13 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		DisabledRules:    disabled,
 		Findings:         findings,
 		Versions:         versions,
-	}, nil
+		Analysis:         analysis,
+	}
+	if err != nil {
+		report.Error = err.Error()
+		return report, err
+	}
+	return report, nil
 }
 
 func normalizeOptions(opts Options, projectCfg projectconfig.Config) (Options, error) {
@@ -228,8 +245,10 @@ func normalizeOptions(opts Options, projectCfg projectconfig.Config) (Options, e
 	opts.DirFormat = opts.effectiveDirFormat(projectCfg)
 	opts.AtlasEnv = opts.effectiveAtlasEnv(projectCfg)
 	opts.DevURL = opts.effectiveDevURL(projectCfg)
-	if err := validateDir(opts.Dir); err != nil {
-		return Options{}, err
+	if opts.FS == nil {
+		if err := validateDir(opts.Dir); err != nil {
+			return Options{}, err
+		}
 	}
 	return opts, nil
 }
@@ -262,8 +281,12 @@ func (opts Options) effectiveDevURL(projectCfg projectconfig.Config) string {
 	return opts.DevURL
 }
 
-func loadEffectiveConfig(opts Options, projectCfg projectconfig.Config) (*lint.Config, error) {
-	cfg, err := loadConfig(opts)
+func loadEffectiveConfig(
+	opts Options,
+	projectCfg projectconfig.Config,
+	fsys fs.FS,
+) (*lint.Config, error) {
+	cfg, err := loadConfig(opts, fsys)
 	if err != nil {
 		return nil, err
 	}
@@ -295,35 +318,27 @@ func effectiveDialect(opts Options, configDialect, devDialect string) (string, e
 	return dialect, nil
 }
 
-type lintSelection struct {
-	lint.Options
-	RestrictVersions bool
-}
-
 func lintDirectory(
 	ctx context.Context,
 	opts Options,
+	fsys fs.FS,
 	dirFormat migrator.MigrationDirFormat,
-	selection lintSelection,
-) ([]lint.Finding, error) {
-	if err := migrationreplay.Replay(ctx, migrationreplay.Options{
-		Dir:       opts.Dir,
-		DirFormat: dirFormat,
-		DevURL:    opts.DevURL,
-	}); err != nil {
-		return nil, fmt.Errorf("error validating migration SQL on dev database: %v", err)
-	}
-	if selection.RestrictVersions && len(selection.Versions) == 0 {
-		return []lint.Finding{}, nil
-	}
-	findings, err := lint.LintFS(os.DirFS(opts.Dir), selection.Options)
+	lintOptions lint.Options,
+) (lint.Analysis, error) {
+	analysis, err := lint.AnalyzeFS(fsys, lintOptions)
 	if err != nil {
-		return nil, err
+		return lint.Analysis{}, err
 	}
-	if findings == nil {
-		return []lint.Finding{}, nil
+	if err := migrationreplay.Replay(ctx, migrationreplay.Options{
+		Dir:               opts.Dir,
+		DirFormat:         dirFormat,
+		DevURL:            opts.DevURL,
+		FS:                analysis.SnapshotFS(),
+		AtlasTemplateData: migrator.AtlasTemplateData{Env: opts.AtlasEnv},
+	}); err != nil {
+		return analysis, fmt.Errorf("error validating migration SQL on dev database: %w", err)
 	}
-	return findings, nil
+	return analysis, nil
 }
 
 func validateDevURLDialect(dialect, devDialect string) error {
@@ -338,14 +353,11 @@ func validateDevURLDialect(dialect, devDialect string) error {
 
 // loadConfig reads the explicit --config file, or the conventional
 // .ptah-lint.yaml inside the linted directory when present.
-func loadConfig(opts Options) (*lint.Config, error) {
+func loadConfig(opts Options, fsys fs.FS) (*lint.Config, error) {
 	if opts.ConfigPath != "" {
-		if _, err := os.Stat(opts.ConfigPath); err != nil {
-			return nil, fmt.Errorf("lint config %s: %w", opts.ConfigPath, err)
-		}
 		return lint.LoadConfig(opts.ConfigPath)
 	}
-	return lint.LoadConfig(filepath.Join(opts.Dir, lint.ConfigFileName))
+	return lint.LoadConfigFS(fsys, lint.ConfigFileName)
 }
 
 func effectiveLintRuleConfigs(
@@ -382,7 +394,12 @@ func cloneLintRuleConfigs(values map[string]lint.RuleConfig) map[string]lint.Rul
 	return cloned
 }
 
-func lintVersions(ctx context.Context, opts Options, cfg projectconfig.Config) ([]int64, bool, error) {
+func lintVersions(
+	ctx context.Context,
+	opts Options,
+	cfg projectconfig.Config,
+	fsys fs.FS,
+) ([]int64, bool, error) {
 	latest, latestSet := effectiveLatest(opts, cfg)
 	git, err := effectiveGit(opts, cfg)
 	if err != nil {
@@ -402,7 +419,7 @@ func lintVersions(ctx context.Context, opts Options, cfg projectconfig.Config) (
 		if err != nil {
 			return nil, false, err
 		}
-		versions, err := latestMigrationVersions(os.DirFS(opts.Dir), uint(latest), dirFormat)
+		versions, err := latestMigrationVersions(fsys, uint(latest), dirFormat)
 		return versions, true, err
 	}
 	if git.ok {

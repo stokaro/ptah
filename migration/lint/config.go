@@ -38,14 +38,10 @@ type Config struct {
 	Rules map[string]RuleConfig `yaml:"rules"`
 }
 
-// LoadConfig reads a lint configuration file. A missing file at the
-// conventional location is not an error — callers get an empty config — but
-// an unreadable or malformed file is.
+// LoadConfig reads an explicit lint configuration file. Missing, unreadable,
+// and malformed files are errors.
 func LoadConfig(path string) (*Config, error) {
 	raw, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return &Config{}, nil
-	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to read lint config %s: %w", path, err)
 	}
@@ -56,8 +52,8 @@ func LoadConfig(path string) (*Config, error) {
 	return cfg, nil
 }
 
-// LoadConfigFS reads a lint configuration from fsys. A missing file is not an
-// error, matching LoadConfig's conventional-file behavior.
+// LoadConfigFS reads a conventional lint configuration from fsys. A missing
+// file is not an error.
 func LoadConfigFS(fsys fs.FS, name string) (*Config, error) {
 	raw, err := fs.ReadFile(fsys, name)
 	if errors.Is(err, fs.ErrNotExist) {
