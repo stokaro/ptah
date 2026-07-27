@@ -54,7 +54,8 @@ current schema IR:
 - PostgreSQL `function` blocks with `schema`, `lang`, `arg`, `return`,
   `security`, `volatility`, `as`, and `comment`
 - PostgreSQL `view` blocks with `schema`, `as`, `check_option`, and `comment`
-- PostgreSQL `materialized` blocks with `schema`, `as`, and `comment`
+- PostgreSQL `materialized` blocks with `schema`, `as`, `refresh_strategy`, and
+  `comment`
 - PostgreSQL `trigger` blocks with `on`, one of `before`/`after`/`instead_of`,
   `for` or `foreach`, `as`, and `comment`
 - PostgreSQL `policy` blocks with `on`, `for`, `to`, `using`, `check`, and
@@ -338,8 +339,9 @@ view "active_users" {
 }
 
 materialized "user_stats" {
-  schema = schema.public
-  as     = "SELECT count(*) FROM users"
+  schema           = schema.public
+  as               = "SELECT count(*) FROM users"
+  refresh_strategy = "concurrently"
 }
 
 trigger "users_set_updated_at" {
@@ -395,7 +397,6 @@ Atlas features that Ptah cannot represent without losing semantics, including:
 - role passwords
 - forced row-level security (`row_security.enforced`)
 - grantor metadata
-- materialized-view refresh strategies beyond Ptah's default manual behavior
 - function options outside Ptah's current IR, such as `leakproof`, `parallel`,
   `return_set`, `return_table`, `config_params`, and argument defaults
 - view/materialized-view column metadata

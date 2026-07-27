@@ -202,12 +202,50 @@ func TestRenderReportsLossyObjectDetails(t *testing.T) {
 	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.DeepEquals, []string{
 		"role app_user",
 		"function filter_user",
-		"materialized_views.user_stats",
 		"triggers.bad_event",
 		"grants.app_user",
 	})
 	_, err = atlashcl.Parse(rendered.Data, "schema.hcl")
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", string(rendered.Data)))
+}
+
+func TestRenderMaterializedViewRefreshStrategyRoundTrip(t *testing.T) {
+	c := qt.New(t)
+	db := &goschema.Database{
+		MaterializedViews: []goschema.MaterializedView{{
+			Name:            "user_stats",
+			Body:            "SELECT count(*) FROM users",
+			RefreshStrategy: "CONCURRENTLY",
+		}},
+	}
+
+	rendered, err := atlashclrender.Render(db)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.HasLen, 0)
+	hcl := string(rendered.Data)
+	c.Assert(hcl, qt.Contains, `refresh_strategy = "concurrently"`)
+
+	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", hcl))
+	c.Assert(parsed.MaterializedViews, qt.HasLen, 1)
+	c.Assert(parsed.MaterializedViews[0].RefreshStrategy, qt.Equals, "concurrently")
+}
+
+func TestRenderMaterializedViewManualStrategyOmitsAttribute(t *testing.T) {
+	c := qt.New(t)
+	db := &goschema.Database{
+		MaterializedViews: []goschema.MaterializedView{{
+			Name: "user_stats",
+			Body: "SELECT count(*) FROM users",
+		}},
+	}
+
+	rendered, err := atlashclrender.Render(db)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.HasLen, 0)
+	c.Assert(string(rendered.Data), qt.Not(qt.Contains), "refresh_strategy")
 }
 
 func TestRenderReportsPlatformOverrideDiagnostics(t *testing.T) {
