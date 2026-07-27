@@ -91,7 +91,8 @@ func TestIssue51ExactReproduction(t *testing.T) {
 
 	// Generate migration using PostgreSQL planner
 	planner := &postgres.Planner{}
-	nodes := planner.GenerateMigrationAST(diff, db)
+	nodes, err := planner.GenerateMigrationASTChecked(diff, db)
+	c.Assert(err, qt.IsNil)
 
 	// Render to SQL
 	r, err := renderer.NewRenderer("postgresql")

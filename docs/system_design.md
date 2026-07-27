@@ -124,7 +124,23 @@ For a detailed view of the migration workflow, see the [Migration Architecture D
   - `SchemaDiff`: Comprehensive difference representation
   - `TableDiff`: Table-level changes
   - `ColumnDiff`: Column-level modifications
+  - `IndexRef`: Table-qualified index identity
 - **Functionality**: Identifies additions, removals, and modifications
+
+Indexes are identified by `(qualified table, index name)`, not by name alone.
+MySQL, MariaDB, CockroachDB, SQL Server, and ClickHouse use table-scoped index
+names. PostgreSQL, YugabyteDB, Spanner, and SQLite use schema-scoped index
+names. CockroachDB drops use its `table@index` target form so duplicate index
+names on other tables remain unambiguous. `SchemaDiff.IndexAdditions()` and
+`SchemaDiff.IndexRemovals()` return copies of the canonical `[]IndexRef`
+fields. Every reference carries its owning table; planners reject incomplete
+references and target-schema index collisions before generating SQL.
+For schema-scoped engines, an unqualified owner belongs to the dialect's
+default schema (`public` for the PostgreSQL family and `main` for SQLite); it
+does not conflict with the same index name in other named schemas.
+Diff-policy filtering uses the target dialect's index namespace: replacements
+are matched by schema for PostgreSQL, YugabyteDB, Spanner, and SQLite, and by
+owning table for the table-scoped engines.
 
 #### planner Package
 - **Purpose**: Plans migration operations based on schema differences
@@ -228,13 +244,18 @@ type UpsertNode struct {
 ```go
 // Schema differences for migration planning
 type SchemaDiff struct {
-    TablesAdded    []string
-    TablesRemoved  []string
-    TablesModified []TableDiff
-    EnumsAdded     []string
-    EnumsRemoved   []string
-    IndexesAdded   []string
-    IndexesRemoved []string
+    TablesAdded              []string
+    TablesRemoved            []string
+    TablesModified           []TableDiff
+    EnumsAdded               []string
+    EnumsRemoved             []string
+    IndexesAdded             []IndexRef
+    IndexesRemoved           []IndexRef
+}
+
+type IndexRef struct {
+    Name      string
+    TableName string
 }
 ```
 
@@ -261,6 +282,8 @@ type SchemaDiff struct {
 
 ### Spanner
 - Conservative PostgreSQL-interface routing for planning and rendering
+- Secondary index identity is schema-scoped: Ptah preserves the owning table for
+  comparison but orders same-name replacements within one schema before creation
 - No live CI coverage and not production-supported yet
 
 ## Go Struct Annotations

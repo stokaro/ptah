@@ -101,7 +101,9 @@ func TestGenerateSchemaDiffSQLStatementsWithCapabilities_UsesServerVersionPreset
 func TestGetPlanner_DistributedSQLCapabilityWiring(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{IndexesAdded: []string{"idx_users_email"}}
+	diff := &types.SchemaDiff{IndexesAdded: []types.IndexRef{
+		{Name: "idx_users_email", TableName: "users"},
+	}}
 	generated := &goschema.Database{
 		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
 		Indexes: []goschema.Index{
@@ -118,4 +120,27 @@ func TestGetPlanner_DistributedSQLCapabilityWiring(t *testing.T) {
 		qt.Commentf("got:\n%s", sql))
 	c.Assert(sql, qt.Not(qt.Contains), "CONCURRENTLY",
 		qt.Commentf("CockroachDB must stay on plain CREATE INDEX; got:\n%s", sql))
+}
+
+func TestGetPlanner_CockroachDBTableQualifiedIndexReplacement(t *testing.T) {
+	c := qt.New(t)
+	diff := &types.SchemaDiff{}
+	diff.SetIndexAdditions([]types.IndexRef{
+		{Name: "idx_shared", TableName: "public.users"},
+	})
+	diff.SetIndexRemovals([]types.IndexRef{
+		{Name: "idx_shared", TableName: "public.users"},
+	})
+	generated := &goschema.Database{
+		Indexes: []goschema.Index{
+			{Name: "idx_shared", TableName: "public.users", Fields: []string{"handle"}},
+		},
+	}
+
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, platform.CockroachDB)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.HasLen, 2)
+	c.Assert(statements[0], qt.Equals, `DROP INDEX IF EXISTS "public"."users"@"idx_shared"`)
+	c.Assert(statements[1], qt.Contains, `CREATE INDEX IF NOT EXISTS "idx_shared" ON "public"."users" ("handle")`)
 }

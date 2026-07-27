@@ -66,7 +66,9 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedCheckAndUniqueAdditions(t *t
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			sql, err := renderer.RenderSQL("postgres", postgres.New().GenerateMigrationAST(tt.diff, &goschema.Database{})...)
+			nodes, err := postgres.New().GenerateMigrationASTChecked(tt.diff, &goschema.Database{})
+			c.Assert(err, qt.IsNil)
+			sql, err := renderer.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)
 			sql = legacyRenderedSQL(sql)
 
@@ -109,7 +111,9 @@ func TestPlanner_GenerateMigrationAST_HostlessReAdd_DropsExactlyOnce(t *testing.
 			},
 		}
 
-		sql, err := renderer.RenderSQL("postgres", postgres.New().GenerateMigrationAST(diff, generated)...)
+		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+		c.Assert(err, qt.IsNil)
+		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -149,7 +153,9 @@ func TestPlanner_GenerateMigrationAST_HostlessReAdd_DropsExactlyOnce(t *testing.
 			},
 		}
 
-		sql, err := renderer.RenderSQL("postgres", postgres.New().GenerateMigrationAST(diff, generated)...)
+		nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+		c.Assert(err, qt.IsNil)
+		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
 		sql = legacyRenderedSQL(sql)
 
@@ -195,7 +201,9 @@ func TestPlanner_GenerateMigrationAST_EmptyTableNameAdditionTreatedAsHostless(t 
 		},
 	}
 
-	sql, err := renderer.RenderSQL("postgres", postgres.New().GenerateMigrationAST(diff, generated)...)
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
+	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 
@@ -228,7 +236,9 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedPrimaryKeyAddition(t *testin
 		}},
 	}
 
-	sql, err := renderer.RenderSQL("postgres", postgres.New().GenerateMigrationAST(diff, &goschema.Database{})...)
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, &goschema.Database{})
+	c.Assert(err, qt.IsNil)
+	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
 	c.Assert(sql, qt.Contains, "ALTER TABLE memberships ADD PRIMARY KEY (org_id, user_id);")

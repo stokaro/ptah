@@ -503,7 +503,8 @@ func TestPlanner_ColumnTypeChange_MariaDBGuardsDrop(t *testing.T) {
 		},
 	}
 
-	nodes := mysql.NewWithCapabilities(capability.MariaDB1011()).GenerateMigrationAST(diff, generated)
+	nodes, err := mysql.NewWithCapabilities(capability.MariaDB1011()).GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQLWithCapabilities("mariadb", capability.MariaDB1011(), nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)

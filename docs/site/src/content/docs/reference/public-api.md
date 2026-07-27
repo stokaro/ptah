@@ -59,6 +59,14 @@ the callback failed.
 The observer composes with `StatementInterceptor`: a statement handled by an
 external executor is observed once after that executor reports success.
 
+## Schema Diff And Planning Contracts
+
+`migration/schemadiff/types.SchemaDiff` stores index additions and removals as
+canonical `[]IndexRef` fields. Every index reference includes its owning table.
+`migration/planner.Planner` exposes only checked planning; malformed references,
+unresolved additions, and target index-namespace conflicts fail before SQL is
+returned.
+
 ## Error Contracts
 
 Public failures should use `core/ptaherr` when callers can reasonably branch on
@@ -68,6 +76,8 @@ the error:
   `*ptaherr.ParseError`;
 - unsupported dialect failures should support `errors.Is` with
   `ptaherr.ErrUnsupportedDialect`;
+- invalid schema diffs rejected during planning should support `errors.Is` with
+  `ptaherr.ErrInvalidSchemaDiff`;
 - command wrappers should preserve typed errors instead of replacing them with
   string-only errors.
 

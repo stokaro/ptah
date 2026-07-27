@@ -47,6 +47,15 @@ uses them internally.
 use Atlas-compatible parsing, SQL parsing, schema conversion, and migration-sum
 helpers without promoting the implementation packages behind those features.
 
+Index identity remains table-qualified in schema diffs even when the target
+database uses a broader namespace. Planners apply the target rules when ordering
+replacements: PostgreSQL, YugabyteDB, Spanner, and SQLite use schema-scoped
+index names; CockroachDB, MySQL, MariaDB, SQL Server, and ClickHouse use
+table-scoped index names.
+On schema-scoped engines, an unqualified owner denotes the dialect's default
+schema (`public` for the PostgreSQL family and `main` for SQLite) and remains
+independent from other named schemas.
+
 ## AST Deep Dive
 
 Ptah uses a structured AST so callers can describe schema intent without
@@ -240,6 +249,29 @@ fmt.Println(sql)
 For unit tests or offline planning, you can build a `dbschema/types.DBSchema`
 value directly and pass it to `schemadiff`.
 
+Index names are table-scoped in some dialects. Use
+`diff.IndexAdditions()` and `diff.IndexRemovals()` when consuming index changes
+through a copied slice, or read the canonical `IndexesAdded` and
+`IndexesRemoved` `[]IndexRef` fields directly. Every reference includes its
+owning table. Planning rejects missing owners, unresolved additions, and
+same-name target indexes that conflict in the selected dialect's namespace.
+When a custom consumer starts from `goschema.Index` values, use
+`goschema.ResolveIndexTableNames` to resolve all owning tables in one indexed
+pass instead of scanning the table list for each index.
+MySQL and SQLite index matching applies ASCII case folding. MariaDB matching
+also applies Unicode lowercase equivalence. All three retain the declared
+spelling in `IndexRef` values and rendered SQL. SQL Server matching remains
+exact when only the dialect is known because identifier case sensitivity
+depends on the database collation. Live SQL Server collation propagation is
+tracked in [issue #777](https://github.com/stokaro/ptah/issues/777).
+
+When applying a reusable destructive-change policy to a known database target,
+use `diffpolicy.ApplyForDialect`. It preserves the drop/create pair required by
+schema-scoped engines PostgreSQL, YugabyteDB, Spanner, and SQLite while keeping
+same-named indexes on different CockroachDB, MySQL, MariaDB, SQL Server, and
+ClickHouse tables independent. CockroachDB plans retain the owning table so the
+renderer emits an unambiguous `table@index` drop target.
+
 ### Embed The Migrator
 
 Use this when an application or internal tool wants to run migrations from an
@@ -380,16 +412,33 @@ environment selection, approvals, tickets, or audit logs.
 Packages: `core/goschema`, `dbschema`, `migration/schemadiff`,
 `migration/planner`, `migration/migrator`, `migration/safety`.
 
-Minimal flow (pseudo-code; host code must provide context, connections, inputs,
-and error handling):
+Minimal flow (pseudo-code; host code must provide context, connections, and
+inputs):
 
 ```go
-desired, _ := goschema.ParseDir("./models")
-conn, _ := dbschema.ConnectToDatabase(ctx, url)
-live, _ := conn.Reader().ReadSchema()
+desired, err := goschema.ParseDir("./models")
+if err != nil {
+	return fmt.Errorf("parse desired schema: %w", err)
+}
+conn, err := dbschema.ConnectToDatabase(ctx, url)
+if err != nil {
+	return fmt.Errorf("connect to database: %w", err)
+}
+defer dbschema.CloseAndWarn(conn)
+live, err := conn.Reader().ReadSchema()
+if err != nil {
+	return fmt.Errorf("read live schema: %w", err)
+}
 diff := schemadiff.CompareWithDialect(desired, live, conn.Info().Dialect)
-nodes, _ := planner.GenerateSchemaDiffAST(diff, desired, conn.Info().Dialect)
-assessments, _ := safety.AssessRendered(nodes, conn.Info().Dialect)
+nodes, err := planner.GenerateSchemaDiffAST(diff, desired, conn.Info().Dialect)
+if err != nil {
+	return fmt.Errorf("plan schema diff: %w", err)
+}
+assessments, err := safety.AssessRendered(nodes, conn.Info().Dialect)
+if err != nil {
+	return fmt.Errorf("assess migration safety: %w", err)
+}
+fmt.Println(assessments)
 ```
 
 Caveat: keep approval, locking, and production rollout policy in the host tool;
@@ -403,14 +452,19 @@ lint findings.
 Packages: `atlascompat`, `migration/migrator`, `migration/lint`,
 `migration/safety`, `migration/risk`.
 
-Minimal flow (pseudo-code; host code must provide the filesystem, policy, and
-process exit behavior):
+Minimal flow (pseudo-code; host code must provide the filesystem and policy):
 
 ```go
-result, _ := atlascompat.VerifySum(fsys, migrator.MigrationDirFormatPtah)
-findings, _ := lint.LintFS(fsys, lint.Options{Dialect: "postgres"})
+result, err := atlascompat.VerifySum(fsys, migrator.MigrationDirFormatPtah)
+if err != nil {
+	return fmt.Errorf("verify migration checksum: %w", err)
+}
+findings, err := lint.LintFS(fsys, lint.Options{Dialect: "postgres"})
+if err != nil {
+	return fmt.Errorf("lint migrations: %w", err)
+}
 if !result.OK() || len(findings) > 0 {
-	os.Exit(1)
+	return errors.New("migration integrity or lint gate failed")
 }
 ```
 
@@ -429,7 +483,10 @@ Minimal flow (pseudo-code; host code must provide the schema input and output
 formatting):
 
 ```go
-db, _ := goschema.ParseDir("./models")
+db, err := goschema.ParseDir("./models")
+if err != nil {
+	return fmt.Errorf("parse desired schema: %w", err)
+}
 for _, table := range db.Tables {
 	fmt.Printf("## %s\n", table.Name)
 }
@@ -449,11 +506,15 @@ Minimal flow (pseudo-code; host code must provide the filesystem and migration
 directory format policy):
 
 ```go
-provider, _ := migrator.NewFSMigrationProvider(
+provider, err := migrator.NewFSMigrationProvider(
 	fsys,
 	migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
 )
-_ = provider.Migrations()
+if err != nil {
+	return fmt.Errorf("open migration directory: %w", err)
+}
+migrations := provider.Migrations()
+fmt.Printf("loaded %d migrations\n", len(migrations))
 ```
 
 Caveat: this does not mean full Atlas parity. Use the conformance reports for
@@ -471,9 +532,12 @@ and unsupported-feature handling):
 
 ```go
 caps := capability.ForServerVersion("postgres", "17.0")
-sql, _ := renderer.RenderSQLWithCapabilities("postgres", caps, node)
+sql, err := renderer.RenderSQLWithCapabilities("postgres", caps, node)
+if err != nil {
+	return fmt.Errorf("render SQL: %w", err)
+}
 assessment := safety.AssessSQL(sql)
-_ = assessment
+fmt.Println(assessment)
 ```
 
 Caveat: custom dialect registration is intentionally limited. Create a design
@@ -490,8 +554,13 @@ Minimal flow (pseudo-code; host code must provide the database connection,
 filesystem, startup policy, and error handling):
 
 ```go
-m, _ := migrator.NewFSMigrator(conn, os.DirFS("./migrations"))
-_ = m.Up(ctx)
+m, err := migrator.NewFSMigrator(conn, os.DirFS("./migrations"))
+if err != nil {
+	return fmt.Errorf("create migrator: %w", err)
+}
+if err := m.Up(ctx); err != nil {
+	return fmt.Errorf("apply migrations: %w", err)
+}
 ```
 
 Caveat: avoid uncontrolled production startup migrations unless the host
@@ -509,7 +578,10 @@ dialect selection, and review delivery):
 
 ```go
 diff := schemadiff.CompareWithDialect(desired, live, dialect)
-sql, _ := planner.GenerateSchemaDiffSQL(diff, desired, dialect)
+sql, err := planner.GenerateSchemaDiffSQL(diff, desired, dialect)
+if err != nil {
+	return fmt.Errorf("plan schema drift: %w", err)
+}
 fmt.Println(sql)
 ```
 

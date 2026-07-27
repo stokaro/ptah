@@ -32,7 +32,8 @@ func TestCompare_FieldLevelForeignKeyActionDrift_MySQL(t *testing.T) {
 	c.Assert(diff.ConstraintsRemovedWithTables[0].TableName, qt.Equals, "exports")
 	c.Assert(diff.ConstraintsRemovedWithTables[0].Type, qt.Equals, "FOREIGN KEY")
 
-	nodes := mysql.New().GenerateMigrationAST(diff, gen)
+	nodes, err := mysql.New().GenerateMigrationASTChecked(diff, gen)
+	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)

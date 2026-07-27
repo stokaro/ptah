@@ -23,7 +23,8 @@ func TestPlanner_GenerateMigrationAST_OrdersFKChainTables(t *testing.T) {
 		},
 	}
 
-	nodes := planner.GenerateMigrationAST(diff, generated)
+	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
@@ -46,7 +47,8 @@ func TestPlanner_GenerateMigrationAST_OrdersFKDiamondTables(t *testing.T) {
 		},
 	}
 
-	nodes := planner.GenerateMigrationAST(diff, generated)
+	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
@@ -70,7 +72,8 @@ func TestPlanner_GenerateMigrationAST_DropsFKDiamondTablesInDependencyOrder(t *t
 		},
 	}
 
-	nodes := planner.GenerateMigrationAST(diff, generated)
+	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
@@ -86,11 +89,14 @@ func TestPlanner_GenerateMigrationAST_AddsReferencedUniqueIndexBeforeNewTableFKs
 	planner := postgres.New()
 	generated := referencedUniqueKeySchema()
 	diff := &types.SchemaDiff{
-		TablesAdded:  []string{"ptah_fk_order_children", "ptah_fk_order_parents"},
-		IndexesAdded: []string{"uq_ptah_fk_order_parents_code_idx"},
+		TablesAdded: []string{"ptah_fk_order_children", "ptah_fk_order_parents"},
+		IndexesAdded: []types.IndexRef{
+			{Name: "uq_ptah_fk_order_parents_code_idx", TableName: "ptah_fk_order_parents"},
+		},
 	}
 
-	nodes := planner.GenerateMigrationAST(diff, generated)
+	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
@@ -114,7 +120,8 @@ func TestPlanner_GenerateMigrationAST_AddsReferencedUniqueConstraintBeforeNewTab
 		}},
 	}
 
-	nodes := planner.GenerateMigrationAST(diff, generated)
+	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)

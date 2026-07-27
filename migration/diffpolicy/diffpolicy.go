@@ -1,5 +1,5 @@
-// Package diffpolicy provides a declarative, dialect-agnostic policy that
-// controls which destructive changes a planner emits.
+// Package diffpolicy provides a declarative policy that controls which
+// destructive changes a planner emits.
 //
 // A project can list destructive change kinds to skip (for example
 // drop_table) so the planner omits exactly those statements instead of
@@ -7,7 +7,9 @@
 // diff so skipped change kinds — and, for a skipped table drop, the dependent
 // object removals that a kept table must retain — are dropped from the plan,
 // and reports what was omitted so callers can surface a clearly-marked comment
-// in the generated migration.
+// in the generated migration. Apply uses exact object identity; callers that
+// know the target database should use ApplyForDialect so index replacements
+// follow that dialect's table- or schema-scoped naming rules.
 //
 // The vocabulary here is the single source of truth shared by the project
 // config loader (config/projectconfig), the planner (migration/planner), and
@@ -19,6 +21,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/stokaro/ptah/internal/indexscope"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
@@ -133,6 +136,21 @@ func (k ChangeKind) ddl() string {
 // is not mutated. A nil diff or empty skip set returns the input unchanged with
 // no skipped changes.
 func Apply(diff *types.SchemaDiff, skip SkipSet) (*types.SchemaDiff, []SkippedChange) {
+	return apply(diff, skip, "")
+}
+
+// ApplyForDialect is Apply with index-replacement detection matched to the
+// target dialect's index-name namespace. This preserves required drop/create
+// pairs without treating table-scoped same-name indexes as replacements.
+func ApplyForDialect(diff *types.SchemaDiff, skip SkipSet, dialect string) (*types.SchemaDiff, []SkippedChange) {
+	return apply(diff, skip, dialect)
+}
+
+func apply(
+	diff *types.SchemaDiff,
+	skip SkipSet,
+	dialect string,
+) (*types.SchemaDiff, []SkippedChange) {
 	if diff == nil || skip.Empty() {
 		return diff, nil
 	}
@@ -150,18 +168,18 @@ func Apply(diff *types.SchemaDiff, skip SkipSet) (*types.SchemaDiff, []SkippedCh
 		filtered.TablesModified, skipped = skipColumnRemovals(filtered.TablesModified, skipped)
 	}
 	if skip.Has(DropIndex) {
-		added := sliceSet(filtered.IndexesAdded)
-		var kept []string
-		for _, name := range filtered.IndexesRemoved {
+		additions := indexscope.NewConflictSet(dialect, filtered.IndexAdditions())
+		var kept []types.IndexRef
+		for _, ref := range filtered.IndexRemovals() {
 			// Preserve replacements (dropped then recreated under the same
-			// name); skip only genuine standalone removals.
-			if _, replacing := added[name]; replacing {
-				kept = append(kept, name)
+			// dialect-specific index namespace); skip only standalone removals.
+			if additions.Contains(ref) {
+				kept = append(kept, ref)
 				continue
 			}
-			skipped = append(skipped, SkippedChange{Kind: DropIndex, Object: name})
+			skipped = append(skipped, SkippedChange{Kind: DropIndex, Object: indexRefObject(ref)})
 		}
-		filtered.IndexesRemoved = kept
+		filtered.SetIndexRemovals(kept)
 	}
 	if skip.Has(DropEnum) {
 		skipped = append(skipped, changesForNames(DropEnum, filtered.EnumsRemoved)...)
@@ -174,9 +192,9 @@ func Apply(diff *types.SchemaDiff, skip SkipSet) (*types.SchemaDiff, []SkippedCh
 // dropTableDependents removes the dependent object removals that belong to
 // kept tables, so skipping a table drop does not leave the plan revoking grants
 // or dropping triggers/policies on a table that still exists. The
-// table-qualified removal lists (IndexesRemovedWithTables,
-// ConstraintsRemovedWithTables) carry the name->table correlation the bare name
-// lists lack, so both are consulted before either is filtered.
+// table-qualified removal lists (IndexesRemoved,
+// ConstraintsRemovedWithTables) carry the object-to-table correlation needed
+// to filter dependent changes.
 //
 // Only table-level grants are suppressed here; a revoke on an object owned by a
 // kept table (for example its serial sequence) is left in place, which is
@@ -184,13 +202,10 @@ func Apply(diff *types.SchemaDiff, skip SkipSet) (*types.SchemaDiff, []SkippedCh
 func dropTableDependents(diff types.SchemaDiff, removedTables []string) types.SchemaDiff {
 	tables := sliceSet(removedTables)
 
-	removedIndexNames := namesForRemovedTables(diff.IndexesRemovedWithTables, tables, func(info types.IndexRemovalInfo) (string, string) {
-		return info.Name, info.TableName
+	indexRemovals := slices.DeleteFunc(diff.IndexRemovals(), func(ref types.IndexRef) bool {
+		return hasKey(tables, ref.TableName)
 	})
-	diff.IndexesRemovedWithTables = slices.DeleteFunc(slices.Clone(diff.IndexesRemovedWithTables), func(info types.IndexRemovalInfo) bool {
-		return hasKey(tables, info.TableName)
-	})
-	diff.IndexesRemoved = deleteNames(diff.IndexesRemoved, removedIndexNames)
+	diff.SetIndexRemovals(indexRemovals)
 
 	removedConstraintNames := namesForRemovedTables(diff.ConstraintsRemovedWithTables, tables, func(info types.ConstraintRemovalInfo) (string, string) {
 		return info.Name, info.TableName
@@ -213,6 +228,13 @@ func dropTableDependents(diff types.SchemaDiff, removedTables []string) types.Sc
 		return strings.EqualFold(ref.ObjectType, "TABLE") && hasKey(tables, ref.ObjectName)
 	})
 	return diff
+}
+
+func indexRefObject(ref types.IndexRef) string {
+	if ref.TableName == "" {
+		return ref.Name
+	}
+	return ref.TableName + "." + ref.Name
 }
 
 // namesForRemovedTables collects the object names in withTables whose owning

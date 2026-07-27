@@ -53,7 +53,8 @@ func TestPlanner_CapabilityGatesRLSAndRoleManagement(t *testing.T) {
 		}},
 	}
 
-	nodes := postgres.NewWithCapabilities(capability.CockroachDB23()).GenerateMigrationAST(diff, generated)
+	nodes, err := postgres.NewWithCapabilities(capability.CockroachDB23()).GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQLWithCapabilities("cockroachdb", capability.CockroachDB23(), nodes...)
 
 	c.Assert(err, qt.IsNil)

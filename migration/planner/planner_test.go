@@ -215,14 +215,6 @@ func nextExternalPlannerDialect(prefix string) string {
 	return fmt.Sprintf("%s_%d", prefix, externalPlannerDialectSeq.Add(1))
 }
 
-func (p externalPlanner) GenerateMigrationAST(
-	diff *types.SchemaDiff,
-	generated *goschema.Database,
-) []ast.Node {
-	nodes, _ := p.GenerateMigrationASTChecked(diff, generated)
-	return nodes
-}
-
 func (p externalPlanner) GenerateMigrationASTChecked(
 	_ *types.SchemaDiff,
 	_ *goschema.Database,
@@ -282,13 +274,12 @@ func TestGeneratedRLSPolicyRemovalIsDestructive(t *testing.T) {
 	c.Assert(legacyRenderedSQL(assessments[0].Statement), qt.Contains, "DROP POLICY IF EXISTS tenant_isolation ON accounts")
 }
 
-func TestGenerateMigrationAST(t *testing.T) {
+func TestGenerateMigrationASTChecked(t *testing.T) {
 	tests := []struct {
 		name      string
 		dialect   string
 		diff      *types.SchemaDiff
 		generated *goschema.Database
-		wantErr   bool
 	}{
 		{
 			name:    "postgres migration generation",
@@ -304,7 +295,6 @@ func TestGenerateMigrationAST(t *testing.T) {
 					{Name: "id", Type: "SERIAL", StructName: "User", Primary: true},
 				},
 			},
-			wantErr: false,
 		},
 		{
 			name:    "mysql migration generation",
@@ -320,7 +310,6 @@ func TestGenerateMigrationAST(t *testing.T) {
 					{Name: "id", Type: "INT", StructName: "User", Primary: true, AutoInc: true},
 				},
 			},
-			wantErr: false,
 		},
 	}
 
@@ -329,11 +318,6 @@ func TestGenerateMigrationAST(t *testing.T) {
 			c := qt.New(t)
 
 			nodes, err := planner.GenerateSchemaDiffAST(tt.diff, tt.generated, tt.dialect)
-			if tt.wantErr {
-				c.Assert(nodes, qt.IsNil)
-				c.Assert(err, qt.IsNotNil)
-				return
-			}
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.IsNotNil)
 			c.Assert(nodes, qt.HasLen, 1) // Should have one CREATE TABLE statement

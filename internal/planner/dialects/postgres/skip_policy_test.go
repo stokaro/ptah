@@ -14,9 +14,11 @@ import (
 
 func skipPolicyFixture() (*types.SchemaDiff, *goschema.Database) {
 	diff := &types.SchemaDiff{
-		TablesRemoved:  []string{"legacy"},
-		EnumsRemoved:   []string{"legacy_status"},
-		IndexesRemoved: []string{"idx_legacy"},
+		TablesRemoved: []string{"legacy"},
+		EnumsRemoved:  []string{"legacy_status"},
+		IndexesRemoved: []types.IndexRef{
+			{Name: "idx_legacy", TableName: "users"},
+		},
 		TablesModified: []types.TableDiff{
 			{TableName: "users", ColumnsRemoved: []string{"middle_name"}},
 		},
@@ -28,7 +30,8 @@ func skipPolicyFixture() (*types.SchemaDiff, *goschema.Database) {
 }
 
 func renderPostgresSkip(c *qt.C, planner *postgres.Planner, diff *types.SchemaDiff, generated *goschema.Database) string {
-	nodes := planner.GenerateMigrationAST(diff, generated)
+	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	return sql

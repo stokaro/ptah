@@ -332,7 +332,7 @@ func TestVisitIndex_DefaultsToMinmaxSkippingIndex(t *testing.T) {
 	c := qt.New(t)
 	idx := ast.NewIndex("idx_e_src", "events", "source")
 	out := render(t, idx)
-	c.Assert(out, qt.Contains, "ALTER TABLE events ADD INDEX idx_e_src source TYPE minmax GRANULARITY 8192;")
+	c.Assert(out, qt.Contains, "ALTER TABLE `events` ADD INDEX `idx_e_src` source TYPE minmax GRANULARITY 8192;")
 }
 
 func TestVisitIndex_MultiColumnExpression(t *testing.T) {
@@ -356,7 +356,7 @@ func TestVisitDropIndex_RequiresTable(t *testing.T) {
 func TestVisitDropIndex_OnTable(t *testing.T) {
 	c := qt.New(t)
 	out := render(t, ast.NewDropIndex("idx_e_src").SetTable("events"))
-	c.Assert(out, qt.Contains, "ALTER TABLE events DROP INDEX idx_e_src;")
+	c.Assert(out, qt.Contains, "ALTER TABLE `events` DROP INDEX `idx_e_src`;")
 }
 
 func TestUnsupportedFeaturesEmitCommentAndReturnNil(t *testing.T) {
@@ -581,7 +581,7 @@ func TestVisitIndex_UniqueEmitsDowngradeComment(t *testing.T) {
 	idx.Unique = true
 	out := render(t, idx)
 	c.Assert(out, qt.Contains, "-- CLICKHOUSE: UNIQUE index \"uq_e_src\" downgraded to a minmax skipping index")
-	c.Assert(out, qt.Contains, "ALTER TABLE events ADD INDEX uq_e_src source TYPE minmax GRANULARITY 8192;")
+	c.Assert(out, qt.Contains, "ALTER TABLE `events` ADD INDEX `uq_e_src` source TYPE minmax GRANULARITY 8192;")
 }
 
 func TestAlterTable_RenameColumn(t *testing.T) {
@@ -655,7 +655,7 @@ func TestAlterTable_AddSkippingIndex(t *testing.T) {
 				IndexType:   "bloom_filter(0.01)",
 				Granularity: 64,
 			},
-			want: "ALTER TABLE events ADD INDEX idx_e_src source TYPE bloom_filter(0.01) GRANULARITY 64;",
+			want: "ALTER TABLE `events` ADD INDEX `idx_e_src` source TYPE bloom_filter(0.01) GRANULARITY 64;",
 		},
 		{
 			name: "default granularity falls back to 8192",
@@ -664,7 +664,7 @@ func TestAlterTable_AddSkippingIndex(t *testing.T) {
 				Expression: "source",
 				IndexType:  "minmax",
 			},
-			want: "ALTER TABLE events ADD INDEX idx_e_src source TYPE minmax GRANULARITY 8192;",
+			want: "ALTER TABLE `events` ADD INDEX `idx_e_src` source TYPE minmax GRANULARITY 8192;",
 		},
 		{
 			name: "default type falls back to minmax",
@@ -673,7 +673,7 @@ func TestAlterTable_AddSkippingIndex(t *testing.T) {
 				Expression:  "source",
 				Granularity: 16,
 			},
-			want: "ALTER TABLE events ADD INDEX idx_e_src source TYPE minmax GRANULARITY 16;",
+			want: "ALTER TABLE `events` ADD INDEX `idx_e_src` source TYPE minmax GRANULARITY 16;",
 		},
 	}
 
@@ -742,13 +742,13 @@ func TestVisitIndex_AnnotationDrivenTypeAndGranularity(t *testing.T) {
 			name: "bloom_filter with float parameter and custom granularity",
 			typ:  "bloom_filter(0.01)",
 			gran: 64,
-			want: "ALTER TABLE events ADD INDEX idx_e_payload payload TYPE bloom_filter(0.01) GRANULARITY 64;",
+			want: "ALTER TABLE `events` ADD INDEX `idx_e_payload` payload TYPE bloom_filter(0.01) GRANULARITY 64;",
 		},
 		{
 			name: "set with explicit max size and default granularity",
 			typ:  "set(100)",
 			gran: 0,
-			want: "ALTER TABLE events ADD INDEX idx_e_payload payload TYPE set(100) GRANULARITY 8192;",
+			want: "ALTER TABLE `events` ADD INDEX `idx_e_payload` payload TYPE set(100) GRANULARITY 8192;",
 		},
 	}
 

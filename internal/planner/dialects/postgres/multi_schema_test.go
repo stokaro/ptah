@@ -31,7 +31,8 @@ func TestPlanner_GenerateMigrationAST_MultiSchemaTablesAndFKs(t *testing.T) {
 		TablesAdded: []string{"auth.users", "billing.invoices"},
 	}
 
-	nodes := postgres.New().GenerateMigrationAST(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
@@ -63,7 +64,8 @@ func TestPlanner_GenerateMigrationAST_TrimsSchemaPreconditions(t *testing.T) {
 		TablesAdded: []string{"auth.users", "auth.accounts", "blank"},
 	}
 
-	nodes := postgres.New().GenerateMigrationAST(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
@@ -95,7 +97,8 @@ func TestPlanner_GenerateMigrationAST_DoesNotQualifyAmbiguousLeafFK(t *testing.T
 		TablesAdded: []string{"auth.users", "crm.users", "billing.invoices"},
 	}
 
-	nodes := postgres.New().GenerateMigrationAST(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)

@@ -26,6 +26,10 @@ var (
 
 	// ErrUnsupportedFeature marks dialect or capability feature mismatches.
 	ErrUnsupportedFeature = errors.New("unsupported feature")
+
+	// ErrInvalidSchemaDiff marks malformed or internally conflicting schema
+	// changes that cannot be planned safely.
+	ErrInvalidSchemaDiff = errors.New("invalid schema diff")
 )
 
 // ParseError reports a Go annotation or source parsing failure.

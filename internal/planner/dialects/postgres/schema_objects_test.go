@@ -39,7 +39,8 @@ func TestPlanner_GenerateMigrationAST_SchemaObjectsModified(t *testing.T) {
 		TriggersModified:          []difftypes.TriggerDiff{{TriggerName: "set_updated_at", TableName: "users", Changes: map[string]string{"body": "old -> new"}}},
 	}
 
-	nodes := planner.GenerateMigrationAST(diff, generated)
+	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
@@ -78,7 +79,8 @@ func TestPlanner_GenerateMigrationAST_DuplicateTriggerNamesUseDistinctFunctions(
 		},
 	}
 
-	nodes := planner.GenerateMigrationAST(diff, generated)
+	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
@@ -103,7 +105,8 @@ func TestPlanner_GenerateMigrationAST_MaterializedViewRefreshStrategyDoesNotAuto
 		MaterializedViewsAdded: []string{"user_stats"},
 	}
 
-	nodes := planner.GenerateMigrationAST(diff, generated)
+	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
@@ -140,7 +143,8 @@ func TestPlanner_GenerateMigrationAST_OrdersFunctionsByDependencies(t *testing.T
 		FunctionsAdded: []string{"a_child", "z_parent"},
 	}
 
-	nodes := planner.GenerateMigrationAST(diff, generated)
+	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
@@ -167,7 +171,8 @@ func TestPlanner_GenerateMigrationAST_OrdersViewLikeObjectsByDependencies(t *tes
 		MaterializedViewsAdded: []string{"z_base"},
 	}
 
-	nodes := planner.GenerateMigrationAST(diff, generated)
+	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
@@ -196,7 +201,8 @@ func TestPlanner_GenerateMigrationAST_ModifiesRLSPolicies(t *testing.T) {
 		}},
 	}
 
-	nodes := planner.GenerateMigrationAST(diff, generated)
+	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)

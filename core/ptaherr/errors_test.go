@@ -156,6 +156,7 @@ func TestSentinelErrorsMatchThemselves(t *testing.T) {
 		{name: "missing required attribute", err: ptaherr.ErrMissingRequiredAttribute},
 		{name: "invalid attribute value", err: ptaherr.ErrInvalidAttributeValue},
 		{name: "unsupported feature", err: ptaherr.ErrUnsupportedFeature},
+		{name: "invalid schema diff", err: ptaherr.ErrInvalidSchemaDiff},
 	}
 
 	for _, tt := range tests {
@@ -177,12 +178,17 @@ func TestSentinelErrorsAreDistinct(t *testing.T) {
 		{name: "unsupported dialect vs missing required attribute", left: ptaherr.ErrUnsupportedDialect, right: ptaherr.ErrMissingRequiredAttribute},
 		{name: "unsupported dialect vs invalid attribute value", left: ptaherr.ErrUnsupportedDialect, right: ptaherr.ErrInvalidAttributeValue},
 		{name: "unsupported dialect vs unsupported feature", left: ptaherr.ErrUnsupportedDialect, right: ptaherr.ErrUnsupportedFeature},
+		{name: "unsupported dialect vs invalid schema diff", left: ptaherr.ErrUnsupportedDialect, right: ptaherr.ErrInvalidSchemaDiff},
 		{name: "unknown attribute vs missing required attribute", left: ptaherr.ErrUnknownAttribute, right: ptaherr.ErrMissingRequiredAttribute},
 		{name: "unknown attribute vs invalid attribute value", left: ptaherr.ErrUnknownAttribute, right: ptaherr.ErrInvalidAttributeValue},
 		{name: "unknown attribute vs unsupported feature", left: ptaherr.ErrUnknownAttribute, right: ptaherr.ErrUnsupportedFeature},
+		{name: "unknown attribute vs invalid schema diff", left: ptaherr.ErrUnknownAttribute, right: ptaherr.ErrInvalidSchemaDiff},
 		{name: "missing required attribute vs invalid attribute value", left: ptaherr.ErrMissingRequiredAttribute, right: ptaherr.ErrInvalidAttributeValue},
 		{name: "missing required attribute vs unsupported feature", left: ptaherr.ErrMissingRequiredAttribute, right: ptaherr.ErrUnsupportedFeature},
+		{name: "missing required attribute vs invalid schema diff", left: ptaherr.ErrMissingRequiredAttribute, right: ptaherr.ErrInvalidSchemaDiff},
 		{name: "invalid attribute value vs unsupported feature", left: ptaherr.ErrInvalidAttributeValue, right: ptaherr.ErrUnsupportedFeature},
+		{name: "invalid attribute value vs invalid schema diff", left: ptaherr.ErrInvalidAttributeValue, right: ptaherr.ErrInvalidSchemaDiff},
+		{name: "unsupported feature vs invalid schema diff", left: ptaherr.ErrUnsupportedFeature, right: ptaherr.ErrInvalidSchemaDiff},
 	}
 
 	for _, tt := range tests {
