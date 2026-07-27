@@ -56,9 +56,10 @@ ptah schema test --dir ./tests --root-dir ./models
 ```
 
 Both commands load every `*.yaml`/`*.yml` file under `--dir`, run the cases, print
-a text report, and exit non-zero if any case fails — so they slot straight into a
-CI gate. A `migrate_to` step is rejected in a schema test (there are no
-migrations), and reported as a failed step rather than silently skipped.
+a report, and exit non-zero if any case fails — so they slot straight into a CI
+gate. `--report` selects the output format: `text` (default), `json` (for CI
+tooling), or `html`. A `migrate_to` step is rejected in a schema test (there are
+no migrations), and reported as a failed step rather than silently skipped.
 
 ## Database isolation
 
