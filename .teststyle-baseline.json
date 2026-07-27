@@ -806,12 +806,6 @@
     },
     {
       "path": "migration/lint/lint_test.go",
-      "function": "TestLintFS_CustomRuleAndPrepareFSUsePublicScanner",
-      "kind": "if",
-      "count": 2
-    },
-    {
-      "path": "migration/lint/lint_test.go",
       "function": "TestLintFS_DialectAwareScanning",
       "kind": "if",
       "count": 1

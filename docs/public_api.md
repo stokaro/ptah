@@ -46,6 +46,16 @@ packages importable directly.
 online-DDL policy is parsed, merged, validated, and then passed to migration
 execution without a second configuration-file read.
 
+`migration/lint` provides the compact `LintFS` findings API and the richer
+`AnalyzeFS` API. `AnalyzeFS` captures each migration input once: SQL files,
+integrity metadata, and `.ptah-lint.yaml`. It returns deep-copy views of
+prepared files and findings together with a read-only source snapshot. Finding
+contexts identify the exact statement and affected tables or columns; column
+subjects can also carry the parent table and declared data type. Atlas-ignored
+files are marked explicitly without changing version selection.
+Compatibility-specific directive behavior must be selected explicitly; native
+Ptah behavior is the zero-value default.
+
 Public failures from these packages should use `core/ptaherr` where the caller
 can reasonably branch on the error. In particular, annotation failures should
 support `errors.As(err, *ptaherr.ParseError)`, and unsupported dialect failures

@@ -9,6 +9,7 @@ import (
 
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/migratesum"
+	"github.com/stokaro/ptah/internal/migrationsnapshot"
 	migrationlint "github.com/stokaro/ptah/migration/lint"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -19,29 +20,28 @@ func TestWriteMigrateLintFormat_CustomTemplate(t *testing.T) {
 		"1_create_users.sql": {Data: []byte("CREATE TABLE users (id integer);")},
 		"2_drop_users.sql":   {Data: []byte("DROP TABLE users;")},
 	}
+	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
+		DirFormat: migrator.MigrationDirFormatAtlas,
+		Selection: migrationlint.VersionSelection{
+			Versions:   []int64{2},
+			Restricted: true,
+		},
+	})
+	c.Assert(err, qt.IsNil)
 	redactionURL := "postgres://app:" + "secret" + "@db.local/app?token=" + "secret" + "&sslmode=disable"
 	var out bytes.Buffer
 
-	err := atlasreport.WriteMigrateLintFormat(&out,
-		`{{ .Env.Driver }}|{{ len .Files }}|{{ (index .Files 0).Name }}|{{ len (index .Files 0).Findings }}|{{ len .Steps }}`,
+	err = atlasreport.WriteMigrateLintFormat(&out,
+		`{{ .Env.Driver }}|{{ len .Files }}|{{ (index .Files 0).Name }}|{{ len (index .Files 0).Findings }}|{{ len .Steps }}|{{ (index .Steps 0).Text }}`,
 		atlasreport.MigrateLintOptions{
 			Driver:   "sqlite",
 			URL:      redactionURL,
 			Dir:      "/migrations",
-			FS:       fsys,
-			Versions: []int64{2},
-			Findings: []migrationlint.Finding{
-				{
-					Rule:     "DS101",
-					Severity: migrationlint.SeverityError,
-					File:     "2_drop_users.sql",
-					Message:  "DROP TABLE permanently deletes table data",
-				},
-			},
+			Analysis: &analysis,
 		})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Equals, "sqlite|1|2_drop_users.sql|1|3")
+	c.Assert(out.String(), qt.Equals, "sqlite|1|2_drop_users.sql|1|3|Found 1 new migration files (from 2 total)")
 }
 
 func TestWriteMigrateLintFormat_JSONFiles(t *testing.T) {
@@ -49,15 +49,146 @@ func TestWriteMigrateLintFormat_JSONFiles(t *testing.T) {
 	fsys := fstest.MapFS{
 		"1_create_users.sql": {Data: []byte("CREATE TABLE users (id integer);")},
 	}
+	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
+		DirFormat: migrator.MigrationDirFormatAtlas,
+	})
+	c.Assert(err, qt.IsNil)
 	var out bytes.Buffer
 
-	err := atlasreport.WriteMigrateLintFormat(&out, `{{ json .Files }}`, atlasreport.MigrateLintOptions{
-		FS: fsys,
+	err = atlasreport.WriteMigrateLintFormat(&out, `{{ json .Files }}`, atlasreport.MigrateLintOptions{
+		Analysis: &analysis,
 	})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, `"Name":"1_create_users.sql"`)
 	c.Assert(out.String(), qt.Contains, `"Text":"CREATE TABLE users`)
+}
+
+func TestNewMigrateLint_OmitsAtlasIgnoredFilesAndCounts(t *testing.T) {
+	c := qt.New(t)
+	fsys := fstest.MapFS{
+		"1_ignored.sql": {
+			Data: []byte("-- atlas:nolint\n\nDROP TABLE users;\n"),
+		},
+		"2_selected.sql": {
+			Data: []byte("CREATE TABLE accounts (id integer);\n"),
+		},
+	}
+	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
+		Compatibility: migrationlint.CompatibilityProfileAtlas,
+		DirFormat:     migrator.MigrationDirFormatAtlas,
+	})
+	c.Assert(err, qt.IsNil)
+
+	report, err := atlasreport.NewMigrateLint(atlasreport.MigrateLintOptions{
+		Analysis: &analysis,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Files, qt.HasLen, 1)
+	c.Assert(report.Files[0].Name, qt.Equals, "2_selected.sql")
+	c.Assert(report.Steps, qt.HasLen, 3)
+	c.Assert(report.Steps[0].Text, qt.Equals, "Found 1 new migration files (from 1 total)")
+}
+
+func TestNewMigrateLint_DuplicateBasenamesKeepFindingsScoped(t *testing.T) {
+	c := qt.New(t)
+	fsys := fstest.MapFS{
+		"a/1_change.sql": {Data: []byte("DROP TABLE users;")},
+		"b/1_change.sql": {Data: []byte("SELECT 1;")},
+	}
+	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
+		DirFormat: migrator.MigrationDirFormatAtlas,
+	})
+	c.Assert(err, qt.IsNil)
+
+	report, err := atlasreport.NewMigrateLint(atlasreport.MigrateLintOptions{
+		Analysis: &analysis,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Files, qt.HasLen, 2)
+	c.Assert(report.Files[0].Name, qt.Equals, "a/1_change.sql")
+	c.Assert(report.Files[0].Findings, qt.HasLen, 1)
+	c.Assert(report.Files[1].Name, qt.Equals, "b/1_change.sql")
+	c.Assert(report.Files[1].Findings, qt.HasLen, 0)
+}
+
+func TestNewMigrateLint_MapsAtlasDiagnosticCodes(t *testing.T) {
+	c := qt.New(t)
+	fsys := fstest.MapFS{
+		"1_change.sql": {
+			Data: []byte(`
+DROP TABLE users;
+ALTER TABLE accounts DROP COLUMN legacy;
+ALTER TABLE accounts ADD COLUMN tenant_id INTEGER NOT NULL;
+`),
+		},
+	}
+	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
+		Compatibility: migrationlint.CompatibilityProfileAtlas,
+		DirFormat:     migrator.MigrationDirFormatAtlas,
+		Dialect:       "sqlite",
+	})
+	c.Assert(err, qt.IsNil)
+
+	report, err := atlasreport.NewMigrateLint(atlasreport.MigrateLintOptions{
+		Analysis: &analysis,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Files, qt.HasLen, 1)
+	c.Assert(report.Files[0].Findings, qt.HasLen, 3)
+	c.Assert(report.Files[0].Findings[0].Rule, qt.Equals, "DS102")
+	c.Assert(report.Files[0].Findings[1].Rule, qt.Equals, "DS103")
+	c.Assert(report.Files[0].Findings[2].Rule, qt.Equals, "MF103")
+}
+
+func TestNewMigrateLint_OrdersMigrationsByVersion(t *testing.T) {
+	c := qt.New(t)
+	fsys := fstest.MapFS{
+		"10_later.sql":  {Data: []byte("SELECT 10;")},
+		"2_earlier.sql": {Data: []byte("SELECT 2;")},
+	}
+	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
+		DirFormat: migrator.MigrationDirFormatAtlas,
+	})
+	c.Assert(err, qt.IsNil)
+
+	report, err := atlasreport.NewMigrateLint(atlasreport.MigrateLintOptions{
+		Analysis: &analysis,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Files, qt.HasLen, 2)
+	c.Assert(report.Files[0].Name, qt.Equals, "2_earlier.sql")
+	c.Assert(report.Files[1].Name, qt.Equals, "10_later.sql")
+}
+
+func TestNewMigrateLint_PathPrefixCannotCrossAttachFindings(t *testing.T) {
+	c := qt.New(t)
+	fsys := fstest.MapFS{
+		"1_change.sql":            {Data: []byte("DROP TABLE users;")},
+		"migrations/1_change.sql": {Data: []byte("SELECT 1;")},
+	}
+	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
+		Compatibility: migrationlint.CompatibilityProfileAtlas,
+		DirFormat:     migrator.MigrationDirFormatAtlas,
+		PathPrefix:    "migrations",
+	})
+	c.Assert(err, qt.IsNil)
+
+	report, err := atlasreport.NewMigrateLint(atlasreport.MigrateLintOptions{
+		Analysis: &analysis,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Files, qt.HasLen, 2)
+	c.Assert(report.Files[0].Name, qt.Equals, "1_change.sql")
+	c.Assert(report.Files[0].Findings, qt.HasLen, 1)
+	c.Assert(report.Files[0].Findings[0].Rule, qt.Equals, "DS102")
+	c.Assert(report.Files[1].Name, qt.Equals, "migrations/1_change.sql")
+	c.Assert(report.Files[1].Findings, qt.HasLen, 0)
 }
 
 func TestWriteMigrateLintFormat_RedactsSensitiveURL(t *testing.T) {
@@ -68,11 +199,15 @@ func TestWriteMigrateLintFormat_RedactsSensitiveURL(t *testing.T) {
 		"&api_key=" + "secret" +
 		"&client_secret=" + "secret" +
 		"&sslmode=disable"
+	analysis, err := migrationlint.AnalyzeFS(fstest.MapFS{
+		"1_empty.sql": {Data: []byte("-- no changes\n")},
+	}, migrationlint.Options{DirFormat: migrator.MigrationDirFormatAtlas})
+	c.Assert(err, qt.IsNil)
 	var out bytes.Buffer
 
-	err := atlasreport.WriteMigrateLintFormat(&out, `{{ .Env.URL }}`, atlasreport.MigrateLintOptions{
-		URL: redactionURL,
-		FS:  fstest.MapFS{},
+	err = atlasreport.WriteMigrateLintFormat(&out, `{{ .Env.URL }}`, atlasreport.MigrateLintOptions{
+		URL:      redactionURL,
+		Analysis: &analysis,
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -87,12 +222,20 @@ func TestWriteMigrateLintFormat_ValidAtlasSumAddsIntegrityStep(t *testing.T) {
 	sum, err := migratesum.ComputeWithFormat(fsys, migrator.MigrationDirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	fsys[migratesum.AtlasFileName] = &fstest.MapFile{Data: sum.Bytes()}
-	integrity, err := atlasreport.InspectMigrateLintIntegrity(fsys)
+	snapshot, err := migrationsnapshot.Capture(fsys)
+	c.Assert(err, qt.IsNil)
+	fsys["1_create_users.sql"].Data = []byte("DROP TABLE users;\n")
+
+	integrity, err := atlasreport.InspectMigrateLintIntegrity(snapshot)
+	c.Assert(err, qt.IsNil)
+	analysis, err := migrationlint.AnalyzeFS(snapshot, migrationlint.Options{
+		DirFormat: migrator.MigrationDirFormatAtlas,
+	})
 	c.Assert(err, qt.IsNil)
 	var out bytes.Buffer
 
 	err = atlasreport.WriteMigrateLintFormat(&out, `{{ len .Steps }}|{{ (index .Steps 0).Text }}`, atlasreport.MigrateLintOptions{
-		FS:        fsys,
+		Analysis:  &analysis,
 		Integrity: integrity,
 	})
 
@@ -113,7 +256,6 @@ func TestWriteMigrateLintFormat_InvalidAtlasSumRendersIntegrityFailure(t *testin
 	err = atlasreport.WriteMigrateLintFormat(&out,
 		`{{ len .Steps }}|{{ (index .Steps 0).Text }}|{{ (index .Files 0).Name }}|{{ (index .Files 0).Error }}`,
 		atlasreport.MigrateLintOptions{
-			FS:        fsys,
 			Integrity: integrity,
 		})
 

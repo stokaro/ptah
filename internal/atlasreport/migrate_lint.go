@@ -1,6 +1,7 @@
 package atlasreport
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/stokaro/ptah/internal/atlaslint"
 	"github.com/stokaro/ptah/internal/migratesum"
 	migrationlint "github.com/stokaro/ptah/migration/lint"
 	"github.com/stokaro/ptah/migration/migrator"
@@ -19,9 +21,7 @@ type MigrateLintOptions struct {
 	Driver    string
 	URL       string
 	Dir       string
-	FS        fs.FS
-	Findings  []migrationlint.Finding
-	Versions  []int64
+	Analysis  *migrationlint.Analysis
 	Integrity MigrateLintIntegrity
 	Error     string
 }
@@ -45,10 +45,11 @@ type MigrateLintStep struct {
 }
 
 type MigrateLintFile struct {
-	Name     string                  `json:"Name,omitempty"`
-	Text     string                  `json:"Text,omitempty"`
-	Error    string                  `json:"Error,omitempty"`
-	Findings []migrationlint.Finding `json:"Findings,omitempty"`
+	Name       string                  `json:"Name,omitempty"`
+	Text       string                  `json:"Text,omitempty"`
+	Error      string                  `json:"Error,omitempty"`
+	Findings   []migrationlint.Finding `json:"Findings,omitempty"`
+	sourcePath string
 }
 
 func WriteMigrateLintFormat(w io.Writer, format string, opts MigrateLintOptions) error {
@@ -72,7 +73,7 @@ func NewMigrateLint(opts MigrateLintOptions) (MigrateLint, error) {
 		},
 	}
 	if opts.Integrity.Failed() {
-		result.Steps = migrateLintSteps(nil, opts.Integrity, "")
+		result.Steps = migrateLintSteps(nil, 0, opts.Integrity, "")
 		result.Files = []MigrateLintFile{
 			{
 				Name:  migratesum.AtlasFileName,
@@ -82,13 +83,12 @@ func NewMigrateLint(opts MigrateLintOptions) (MigrateLint, error) {
 		return result, nil
 	}
 
-	files, err := migrateLintFiles(opts.FS)
-	if err != nil {
-		return MigrateLint{}, err
+	if opts.Analysis == nil {
+		return MigrateLint{}, fmt.Errorf("migration lint analysis is required")
 	}
-	files = migrateLintSelectedFiles(files, opts.Versions)
-	files = attachMigrateLintFindings(files, opts.Findings)
-	result.Steps = migrateLintSteps(files, opts.Integrity, opts.Error)
+	files, total := migrateLintFiles(*opts.Analysis)
+	files = attachMigrateLintFindings(files, opts.Analysis.Findings())
+	result.Steps = migrateLintSteps(files, total, opts.Integrity, opts.Error)
 	result.Files = files
 	return result, nil
 }
@@ -115,52 +115,63 @@ func (i MigrateLintIntegrity) Failed() bool {
 	return i.Checked && i.Error != ""
 }
 
-func migrateLintFiles(fsys fs.FS) ([]MigrateLintFile, error) {
-	discovered, err := migrator.DiscoverMigrationFiles(fsys, migrator.MigrationDirFormatAtlas)
-	if err != nil {
-		return nil, fmt.Errorf("discover Atlas migration files: %w", err)
-	}
-	files := make([]MigrateLintFile, 0, len(discovered))
-	for _, file := range discovered {
-		if file.Repeatable || file.Direction == "down" {
+func migrateLintFiles(analysis migrationlint.Analysis) ([]MigrateLintFile, int) {
+	prepared := analysis.Files()
+	slices.SortStableFunc(prepared, func(a, b migrationlint.File) int {
+		return cmp.Or(cmp.Compare(a.Version, b.Version), strings.Compare(a.Name, b.Name))
+	})
+	files := make([]MigrateLintFile, 0, len(prepared))
+	total := 0
+	for _, file := range prepared {
+		if file.Repeatable || file.Direction != "up" || file.Ignored {
 			continue
 		}
-		raw, err := fs.ReadFile(fsys, file.Path)
-		if err != nil {
-			return nil, fmt.Errorf("read migration file %s: %w", file.Path, err)
+		total++
+		if !file.Selected {
+			continue
 		}
 		files = append(files, MigrateLintFile{
-			Name: file.Path,
-			Text: string(raw),
+			Name:       file.Name,
+			Text:       file.Source,
+			sourcePath: file.Path,
 		})
 	}
-	return files, nil
+	return files, total
 }
 
 func attachMigrateLintFindings(
 	files []MigrateLintFile,
 	findings []migrationlint.Finding,
 ) []MigrateLintFile {
-	for i := range files {
-		name := files[i].Name
-		for _, finding := range findings {
-			if sameMigrateLintFile(name, finding.File) {
-				files[i].Findings = append(files[i].Findings, finding)
+	for _, finding := range findings {
+		for i := range files {
+			if sameMigrateLintFile(files[i].sourcePath, finding.File) {
+				files[i].Findings = append(files[i].Findings, atlasMigrateLintFinding(finding))
 			}
 		}
 	}
 	return files
 }
 
-func sameMigrateLintFile(name, findingPath string) bool {
+func sameMigrateLintFile(sourcePath, findingPath string) bool {
 	if findingPath == "" {
 		return false
 	}
-	return path.Base(findingPath) == path.Base(name) ||
-		strings.TrimPrefix(path.Clean(findingPath), "./") == strings.TrimPrefix(path.Clean(name), "./")
+	cleanFinding := strings.TrimPrefix(path.Clean(findingPath), "./")
+	return cleanFinding == strings.TrimPrefix(path.Clean(sourcePath), "./")
 }
 
-func migrateLintSteps(files []MigrateLintFile, integrity MigrateLintIntegrity, errText string) []MigrateLintStep {
+func atlasMigrateLintFinding(finding migrationlint.Finding) migrationlint.Finding {
+	finding.Rule = atlaslint.RuleForNativeCode(finding.Rule).Code
+	return finding
+}
+
+func migrateLintSteps(
+	files []MigrateLintFile,
+	total int,
+	integrity MigrateLintIntegrity,
+	errText string,
+) []MigrateLintStep {
 	steps := make([]MigrateLintStep, 0, len(files)+3)
 	if integrity.Checked {
 		step := MigrateLintStep{
@@ -176,7 +187,7 @@ func migrateLintSteps(files []MigrateLintFile, integrity MigrateLintIntegrity, e
 	}
 	steps = append(steps, MigrateLintStep{
 		Name: "Detect New Migration Files",
-		Text: fmt.Sprintf("Found %d new migration files (from %d total)", len(files), len(files)),
+		Text: fmt.Sprintf("Found %d new migration files (from %d total)", len(files), total),
 	})
 	if errText != "" {
 		return append(steps, MigrateLintStep{
@@ -197,26 +208,4 @@ func migrateLintSteps(files []MigrateLintFile, integrity MigrateLintIntegrity, e
 		})
 	}
 	return steps
-}
-
-func migrateLintSelectedFiles(files []MigrateLintFile, versions []int64) []MigrateLintFile {
-	if len(versions) == 0 {
-		return files
-	}
-	out := make([]MigrateLintFile, 0, len(files))
-	for _, file := range files {
-		version := migrateLintVersion(file.Name)
-		if slices.Contains(versions, version) {
-			out = append(out, file)
-		}
-	}
-	return out
-}
-
-func migrateLintVersion(name string) int64 {
-	parsed, err := migrator.ParseAtlasMigrationFileName(path.Base(name))
-	if err != nil {
-		return 0
-	}
-	return parsed.Version
 }

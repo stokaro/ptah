@@ -24,7 +24,7 @@ packages, examples, fixtures, tests, or implementation details.
 | `dbschema` | Live database schema introspection connection layer. |
 | `dbschema/types` | Shared database schema types. |
 | `migration/generator` | Migration file generation. |
-| `migration/lint` | Migration SQL linting rules and findings. |
+| `migration/lint` | Migration SQL linting rules, immutable analysis snapshots, and findings. |
 | `migration/migrator` | Migration providers, revision metadata, dry-run plans, and execution. |
 | `migration/planner` | Schema change planning. |
 | `migration/risk` | Migration risk classification. |
