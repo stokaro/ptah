@@ -36,8 +36,8 @@ current schema IR:
 - `primary_key` blocks with `columns`; PostgreSQL primary keys also support
   `include`
 - `index` blocks with `columns`, `on { column = ..., prefix = ... }`,
-  `on { expr = "..." }`, `desc`, `unique`, `type`, and `where`; PostgreSQL
-  indexes also support `include`, BRIN `page_per_range`, and
+  `on { expr = "..." }`, `desc`, `unique`, `type`, `where`, and `comment`;
+  PostgreSQL indexes also support `include`, BRIN `page_per_range`, and
   `nulls_distinct`
 - `unique` blocks with `columns`; PostgreSQL unique constraints also support
   `include` and `nulls_distinct`
