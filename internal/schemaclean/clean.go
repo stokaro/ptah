@@ -9,6 +9,7 @@ import (
 
 	"github.com/stokaro/ptah/dbschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/sqlident"
 )
 
 const (
@@ -197,13 +198,13 @@ func sortObjects(objects []Object) {
 }
 
 func dropCommand(dialect string, object Object) string {
-	name := qualifiedName(dialect, object.Schema, object.Name)
+	name := sqlident.Qualified(dialect, object.Schema, object.Name)
 	switch object.Type {
 	case ObjectTypeEnum:
 		return "DROP TYPE IF EXISTS " + name + " CASCADE"
 	case ObjectTypeForeignKey:
-		return "ALTER TABLE " + qualifiedName(dialect, object.Schema, object.Table) +
-			" DROP CONSTRAINT " + quoteIdent(dialect, object.Name)
+		return "ALTER TABLE " + sqlident.Qualified(dialect, object.Schema, object.Table) +
+			" DROP CONSTRAINT " + sqlident.Quote(dialect, object.Name)
 	case ObjectTypeSequence:
 		return "DROP SEQUENCE IF EXISTS " + name + " CASCADE"
 	case ObjectTypeTable:
@@ -261,25 +262,5 @@ func supportsStandaloneSequences(dialect string) bool {
 		return true
 	default:
 		return false
-	}
-}
-
-func qualifiedName(dialect, schema, name string) string {
-	schema = strings.TrimSpace(schema)
-	name = strings.TrimSpace(name)
-	if schema == "" {
-		return quoteIdent(dialect, name)
-	}
-	return quoteIdent(dialect, schema) + "." + quoteIdent(dialect, name)
-}
-
-func quoteIdent(dialect, name string) string {
-	switch strings.ToLower(strings.TrimSpace(dialect)) {
-	case "mysql", "mariadb", "clickhouse":
-		return "`" + strings.ReplaceAll(name, "`", "``") + "`"
-	case "sqlserver", "mssql":
-		return "[" + strings.ReplaceAll(name, "]", "]]") + "]"
-	default:
-		return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 	}
 }

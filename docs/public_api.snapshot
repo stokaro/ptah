@@ -547,6 +547,7 @@ func StripComments(sql string) string
 func CloseAndWarn(conn *DatabaseConnection)
 func FormatDatabaseURL(dbURL string) string
 func ReadSchemaWithSchemas(conn *DatabaseConnection, schemas []string) (*types.DBSchema, error)
+func ReadTableRows(ctx context.Context, conn *DatabaseConnection, schema, table string, ...) ([]map[string]any, error)
 type DatabaseConnection struct{ ... }
     func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, error)
 
@@ -641,6 +642,13 @@ type SchemaWriter interface {
 }
     SchemaWriter writes schemas to databases.
 
+
+## github.com/stokaro/ptah/migration/datadiff
+
+type DataDiff struct{ ... }
+    func Compute(table string, keys []string, desired, live []Row) (*DataDiff, error)
+type Row = map[string]any
+type RowUpdate struct{ ... }
 
 ## github.com/stokaro/ptah/migration/dbtest
 
