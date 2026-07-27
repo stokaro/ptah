@@ -276,6 +276,56 @@ func TestRenderIndexCommentRoundTrip(t *testing.T) {
 	c.Assert(parsed.Indexes[0].Comment, qt.Equals, "lookup by email")
 }
 
+func TestRenderIndexGranularityRoundTrip(t *testing.T) {
+	c := qt.New(t)
+	db := &goschema.Database{
+		Tables: []goschema.Table{{StructName: "Event", Name: "events"}},
+		Fields: []goschema.Field{{StructName: "Event", FieldName: "Payload", Name: "payload", Type: "String"}},
+		Indexes: []goschema.Index{{
+			StructName:  "Event",
+			TableName:   "events",
+			Name:        "idx_events_payload",
+			Fields:      []string{"payload"},
+			Type:        "bloom_filter",
+			Granularity: 64,
+		}},
+	}
+	goschema.Finalize(db)
+
+	rendered, err := atlashclrender.Render(db)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.HasLen, 0)
+	hcl := string(rendered.Data)
+	c.Assert(hcl, qt.Contains, `granularity = 64`)
+
+	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", hcl))
+	c.Assert(parsed.Indexes, qt.HasLen, 1)
+	c.Assert(parsed.Indexes[0].Granularity, qt.Equals, 64)
+}
+
+func TestRenderIndexZeroGranularityOmitsAttribute(t *testing.T) {
+	c := qt.New(t)
+	db := &goschema.Database{
+		Tables: []goschema.Table{{StructName: "Event", Name: "events"}},
+		Fields: []goschema.Field{{StructName: "Event", FieldName: "Payload", Name: "payload", Type: "String"}},
+		Indexes: []goschema.Index{{
+			StructName: "Event",
+			TableName:  "events",
+			Name:       "idx_events_payload",
+			Fields:     []string{"payload"},
+		}},
+	}
+	goschema.Finalize(db)
+
+	rendered, err := atlashclrender.Render(db)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.HasLen, 0)
+	c.Assert(string(rendered.Data), qt.Not(qt.Contains), "granularity")
+}
+
 func TestRenderReportsPlatformOverrideDiagnostics(t *testing.T) {
 	c := qt.New(t)
 	db := &goschema.Database{
