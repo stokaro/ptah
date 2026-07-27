@@ -13,16 +13,18 @@
 //
 // Test cases are authored either in Go using the exported
 // [Case]/[Step]/[Assertion] types, or as YAML loaded with
-// [ParseCases]/[LoadCases].
+// [ParseCases]/[LoadCases]. [FilterCases] selects cases by name using a Go
+// regular expression.
 //
 // # YAML format
 //
 // A test file is a YAML document with a top-level cases: list. Each case has a
 // name and an ordered list of steps. A step performs exactly one action:
 //
-//   - migrate_to: migrate the database to a target version. The value is an
-//     integer version, the string "latest" (migrate up to the newest
+//   - migrate_to: migrate the database to a target version. The value is a
+//     non-negative integer version, the string "latest" (migrate up to the newest
 //     migration), or the string "0" (roll everything back).
+//   - apply_schema: apply the desired schema configured for the run.
 //   - exec: run raw SQL against the database.
 //   - seed: apply environment-scoped SQL seed files from a directory.
 //   - assert: run a query and check exactly one condition (row_count, scalar,
@@ -59,10 +61,11 @@
 //
 // # Scope
 //
-// The supported step kinds are migrate_to (migration tests only), exec, seed,
-// and assert, with the row_count, scalar, and error_contains assertions listed
-// above. Reports render as text ([Report.Text]), JSON ([Report.JSON]), or HTML
-// ([Report.HTML]); [Report.Render] selects by format name.
+// The supported step kinds are migrate_to (migration tests only), apply_schema,
+// exec, seed, and assert, with the row_count, scalar, and error_contains
+// assertions listed above. Reports render as text ([Report.Text]), JSON
+// ([Report.JSON]), or HTML ([Report.HTML]); [Report.Render] selects by format
+// name.
 //
 // # Database isolation
 //
@@ -75,6 +78,7 @@ package dbtest
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -85,14 +89,15 @@ type Case struct {
 	Steps []Step `yaml:"steps"`
 }
 
-// Step performs exactly one action against the test database. Exactly one of
-// MigrateTo, Exec, or Assert must be set.
+// Step performs exactly one action against the test database.
 type Step struct {
 	// Name is a human-readable label used in reporting. It is optional.
 	Name string `yaml:"name"`
 	// MigrateTo migrates the database to a target version. It accepts an integer
-	// version, "latest", or "0".
+	// non-negative version, "latest", or "0".
 	MigrateTo string `yaml:"migrate_to"`
+	// ApplySchema applies the desired schema configured for the test run.
+	ApplySchema bool `yaml:"apply_schema"`
 	// Exec runs raw SQL against the database.
 	Exec string `yaml:"exec"`
 	// Seed applies environment-scoped SQL seed files from a directory.
@@ -101,12 +106,13 @@ type Step struct {
 	Assert *Assertion `yaml:"assert"`
 }
 
-// SeedStep applies SQL seed files from Dir using the seeder's
+// SeedStep applies SQL seed files using the seeder's
 // NNN_description.env.sql convention: files matching Env plus files ending in
 // .all.sql are applied in version order. Because the target is a throwaway test
 // database, protected-environment and protected-table guards do not apply.
 type SeedStep struct {
-	// Dir is the directory of seed files. It is required.
+	// Dir is the directory of seed files. When empty, the run-level seed
+	// directory from [Options.SeedDir] or [SchemaOptions.SeedDir] is used.
 	Dir string `yaml:"dir"`
 	// Env is the seed environment to apply (for example dev or test). It is
 	// required; files matching Env plus files ending in .all.sql are applied.
@@ -121,7 +127,7 @@ type Assertion struct {
 	// with error_contains it is run and expected to fail, so a non-SELECT
 	// statement would execute its side effects.
 	Query string `yaml:"query"`
-	// RowCount asserts that Query returns exactly this many rows.
+	// RowCount asserts that Query returns exactly this non-negative number of rows.
 	RowCount *int `yaml:"row_count"`
 	// Scalar asserts that the first column of the first row of Query, formatted
 	// as a string, equals this value. Values are formatted deterministically:
@@ -140,6 +146,7 @@ type stepKind int
 const (
 	stepKindNone stepKind = iota
 	stepKindMigrateTo
+	stepKindApplySchema
 	stepKindExec
 	stepKindSeed
 	stepKindAssert
@@ -150,6 +157,10 @@ const (
 func (s Step) kind() (kind stepKind, setCount int) {
 	if strings.TrimSpace(s.MigrateTo) != "" {
 		kind = stepKindMigrateTo
+		setCount++
+	}
+	if s.ApplySchema {
+		kind = stepKindApplySchema
 		setCount++
 	}
 	if strings.TrimSpace(s.Exec) != "" {
@@ -177,6 +188,30 @@ func validateCases(cases []Case) error {
 	return nil
 }
 
+// validateCasesForRun validates structural case data and run-level defaults.
+func validateCasesForRun(cases []Case, seedDir string) error {
+	if err := validateCases(cases); err != nil {
+		return err
+	}
+	if strings.TrimSpace(seedDir) != "" {
+		return nil
+	}
+	for caseIndex := range cases {
+		for stepIndex := range cases[caseIndex].Steps {
+			seed := cases[caseIndex].Steps[stepIndex].Seed
+			if seed != nil && strings.TrimSpace(seed.Dir) == "" {
+				return fmt.Errorf(
+					"case %d: test case %q, step %d: seed requires a dir or a run-level seed directory",
+					caseIndex+1,
+					cases[caseIndex].Name,
+					stepIndex+1,
+				)
+			}
+		}
+	}
+	return nil
+}
+
 func (c Case) validate() error {
 	if strings.TrimSpace(c.Name) == "" {
 		return fmt.Errorf("test case has no name")
@@ -193,12 +228,15 @@ func (c Case) validate() error {
 }
 
 func (s Step) validate() error {
-	_, setCount := s.kind()
+	kind, setCount := s.kind()
 	if setCount == 0 {
-		return fmt.Errorf("step must set exactly one of migrate_to, exec, seed, or assert, but none is set")
+		return fmt.Errorf("step must set exactly one of migrate_to, apply_schema, exec, seed, or assert, but none is set")
 	}
 	if setCount > 1 {
-		return fmt.Errorf("step must set exactly one of migrate_to, exec, seed, or assert, but %d are set", setCount)
+		return fmt.Errorf("step must set exactly one of migrate_to, apply_schema, exec, seed, or assert, but %d are set", setCount)
+	}
+	if kind == stepKindMigrateTo {
+		return validateMigrateToTarget(s.MigrateTo)
 	}
 	if s.Seed != nil {
 		return s.Seed.validate()
@@ -209,10 +247,22 @@ func (s Step) validate() error {
 	return nil
 }
 
-func (s *SeedStep) validate() error {
-	if strings.TrimSpace(s.Dir) == "" {
-		return fmt.Errorf("seed requires a dir")
+func validateMigrateToTarget(target string) error {
+	normalized := strings.ToLower(strings.TrimSpace(target))
+	if normalized == "latest" {
+		return nil
 	}
+	version, err := strconv.ParseInt(normalized, 10, 64)
+	if err != nil || version < 0 {
+		return fmt.Errorf(
+			"invalid migrate_to target %q: expected a non-negative integer, \"latest\", or \"0\"",
+			target,
+		)
+	}
+	return nil
+}
+
+func (s *SeedStep) validate() error {
 	if strings.TrimSpace(s.Env) == "" {
 		return fmt.Errorf("seed requires an env")
 	}
@@ -225,6 +275,9 @@ func (a *Assertion) validate() error {
 	}
 	setCount := 0
 	if a.RowCount != nil {
+		if *a.RowCount < 0 {
+			return fmt.Errorf("row_count must be non-negative")
+		}
 		setCount++
 	}
 	if a.Scalar != nil {

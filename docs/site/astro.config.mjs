@@ -69,6 +69,7 @@ export default defineConfig({
             { slug: 'reference/public-api' },
             { slug: 'reference/reusable-components' },
             { slug: 'reference/query-builder' },
+            { slug: 'reference/testing' },
             { slug: 'reference/capabilities' },
             { slug: 'reference/dialect-notes' },
             { slug: 'reference/comparison' },

@@ -3,14 +3,24 @@ package migrationstest_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
+	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/migrationstest"
 )
+
+var errTestWrite = errors.New("test writer failed")
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) {
+	return 0, errTestWrite
+}
 
 func writeMigrationPair(c *qt.C, dir, name, up, down string) {
 	c.Helper()
@@ -53,6 +63,74 @@ func TestMigrationsTestCommand_Passes(t *testing.T) {
 	c.Assert(out, qt.Contains, "1 cases, 1 passed, 0 failed")
 }
 
+func TestMigrationsTestCommand_AppliesDesiredSchema(t *testing.T) {
+	c := qt.New(t)
+	modelsDir := t.TempDir()
+	testsDir := t.TempDir()
+	content := `package models
+
+//migrator:schema:table name="users"
+type User struct {
+	//migrator:schema:field name="id" type="INTEGER" primary="true"
+	ID int64
+}
+`
+	c.Assert(os.WriteFile(filepath.Join(modelsDir, "user.go"), []byte(content), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(testsDir, "schema.yaml"), []byte(
+		"cases:\n"+
+			"  - name: desired schema works\n"+
+			"    steps:\n"+
+			"      - name: apply\n"+
+			"        apply_schema: true\n"+
+			"      - name: table exists\n"+
+			"        assert:\n"+
+			"          query: SELECT id FROM users\n"+
+			"          row_count: 0\n"), 0o600), qt.IsNil)
+
+	out, err := runTestCommand("--dir", testsDir, "--root-dir", modelsDir)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, "PASS  case \"desired schema works\"")
+}
+
+func TestMigrationsTestCommand_DefaultSeedDirectory(t *testing.T) {
+	c := qt.New(t)
+	testsDir := t.TempDir()
+	seedsDir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(seedsDir, "010_users.test.sql"),
+		[]byte("INSERT INTO users (name) VALUES ('ada');"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(testsDir, "seed.yaml"), []byte(
+		"cases:\n"+
+			"  - name: default seed directory works\n"+
+			"    steps:\n"+
+			"      - exec: CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL)\n"+
+			"      - seed:\n"+
+			"          env: test\n"+
+			"      - assert:\n"+
+			"          query: SELECT name FROM users\n"+
+			"          scalar: ada\n"), 0o600), qt.IsNil)
+
+	out, err := runTestCommand("--dir", testsDir, "--seed-dir", seedsDir)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, `PASS  case "default seed directory works"`)
+}
+
+func TestMigrationsTestCommand_ReportWriteFailure(t *testing.T) {
+	c := qt.New(t)
+	testsDir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(testsDir, "pass.yaml"), []byte(
+		"cases:\n"+
+			"  - name: passing case\n"+
+			"    steps:\n"+
+			"      - exec: SELECT 1\n"), 0o600), qt.IsNil)
+	cmd := migrationstest.NewMigrationsTestCommand()
+	cmd.SetOut(failingWriter{})
+	cmd.SetArgs([]string{"--dir", testsDir})
+
+	err := cmd.ExecuteContext(context.Background())
+
+	c.Assert(err, qt.ErrorIs, errTestWrite)
+}
+
 func TestMigrationsTestCommand_FailsWithNonZeroError(t *testing.T) {
 	c := qt.New(t)
 	testsDir := t.TempDir()
@@ -70,6 +148,7 @@ func TestMigrationsTestCommand_FailsWithNonZeroError(t *testing.T) {
 	out, err := runTestCommand("--dir", testsDir)
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "migration tests failed")
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 	c.Assert(out, qt.Contains, "FAIL  case \"bad expectation\"")
 }
 
@@ -85,4 +164,46 @@ func TestMigrationsTestCommand_RejectsUnsupportedReport(t *testing.T) {
 	_, err := runTestCommand("--dir", t.TempDir(), "--report", "xml")
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "unsupported report format")
+}
+
+func TestMigrationsTestCommand_RunPattern(t *testing.T) {
+	c := qt.New(t)
+	testsDir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(testsDir, "cases.yaml"), []byte(
+		"cases:\n"+
+			"  - name: selected case\n"+
+			"    steps:\n"+
+			"      - exec: SELECT 1\n"+
+			"  - name: excluded case\n"+
+			"    steps:\n"+
+			"      - exec: SELECT missing_column\n"), 0o600), qt.IsNil)
+
+	out, err := runTestCommand("--dir", testsDir, "--run", "^selected")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, `PASS  case "selected case"`)
+	c.Assert(out, qt.Not(qt.Contains), "excluded case")
+	c.Assert(out, qt.Contains, "1 cases, 1 passed, 0 failed")
+}
+
+func TestMigrationsTestCommand_RunPatternFailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := runTestCommand("--dir", t.TempDir(), "--run", "[")
+
+	c.Assert(err, qt.ErrorMatches, `compile test case pattern "\[":.*`)
+}
+
+func TestMigrationsTestCommand_RunPatternNoMatches(t *testing.T) {
+	c := qt.New(t)
+	testsDir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(testsDir, "cases.yaml"), []byte(
+		"cases:\n"+
+			"  - name: existing case\n"+
+			"    steps:\n"+
+			"      - exec: SELECT 1\n"), 0o600), qt.IsNil)
+
+	_, err := runTestCommand("--dir", testsDir, "--run", "^missing$")
+
+	c.Assert(err, qt.ErrorMatches, `no test cases match --run "\^missing\$"`)
 }
