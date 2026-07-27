@@ -204,7 +204,10 @@ func applySeed(ctx context.Context, conn *dbschema.DatabaseConnection, fsys fs.F
 	if err != nil {
 		return fmt.Errorf("read seed file %q: %w", seed.Path, err)
 	}
-	statements := migrator.SplitSQLStatements(string(data))
+	// Split with the connection's dialect so a semicolon inside a backslash-
+	// escaped string literal (valid on MySQL/MariaDB/ClickHouse) is not
+	// mis-split into a separately-executed statement.
+	statements := migrator.SplitSQLStatementsForConnection(conn, string(data))
 
 	dialect := platform.NormalizeDialect(conn.Info().Dialect)
 	if dialect == platform.ClickHouse {

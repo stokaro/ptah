@@ -80,7 +80,7 @@ func applyDesiredSchema(ctx context.Context, conn *dbschema.DatabaseConnection, 
 	if err != nil {
 		return fmt.Errorf("render desired schema for dialect %q: %w", dialect, err)
 	}
-	for _, stmt := range migrator.SplitSQLStatements(upSQL) {
+	for _, stmt := range migrator.SplitSQLStatementsForConnection(conn, upSQL) {
 		if strings.TrimSpace(stmt) == "" {
 			continue
 		}
