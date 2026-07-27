@@ -15,23 +15,28 @@ import (
 // dialect, returning the SQL text and its positional arguments.
 //
 // Every value in the statement — comparison operands (including those inside a
-// JOIN ON), IN list elements, and the LIMIT/OFFSET bounds — is emitted as a
-// placeholder and returned in args, never interpolated into the SQL. Placeholder
-// style follows the dialect: $1, $2, … for the PostgreSQL family and ? for
-// MySQL, MariaDB, and SQLite. Placeholders are numbered in a single
-// left-to-right pass over FROM, the joins, WHERE, then LIMIT/OFFSET, so args are
-// ordered to match; a JOIN ON value is numbered before any WHERE value.
+// JOIN ON or a HAVING), IN list elements, function-call value arguments, and the
+// LIMIT/OFFSET bounds — is emitted as a placeholder and returned in args, never
+// interpolated into the SQL. Placeholder style follows the dialect: $1, $2, … for
+// the PostgreSQL family and ? for MySQL, MariaDB, and SQLite. Placeholders are
+// numbered in a single left-to-right pass over the projection, FROM, the joins,
+// WHERE, then HAVING, then LIMIT/OFFSET, so args are ordered to match; a JOIN ON
+// value is numbered before any WHERE value, and a HAVING value after every WHERE
+// value. GROUP BY carries only identifiers and never binds a placeholder.
 //
 // Identifiers (table, alias, and column names) are quoted for the dialect via
 // internal/sqlident, so a value can never be rendered as an identifier and an
 // attacker-shaped identifier or alias cannot break out of its quotes. A
 // qualified column renders as "alias"."col" with each part quoted independently.
+// A function name (COUNT, SUM, …) is a keyword emitted verbatim, never quoted;
+// the renderer rejects a name that is not a simple identifier rather than emit it.
 //
 // Supported dialects are PostgreSQL (including CockroachDB and YugabyteDB),
 // MySQL, MariaDB, and SQLite. Any other dialect returns an error, as does a nil
 // statement, a statement without a FROM table, an empty IN list, a malformed
-// operator, a join without a table or ON condition, or a RIGHT/FULL join on
-// SQLite (which cannot express one before version 3.39).
+// operator, a function call with an invalid name or a bad argument shape, a GROUP
+// BY term with an empty column, a join without a table or ON condition, or a
+// RIGHT/FULL join on SQLite (which cannot express one before version 3.39).
 func RenderSelect(stmt *ast.SelectStatement, dialect string) (string, []any, error) {
 	if stmt == nil {
 		return "", nil, errors.New("renderer: nil select statement")
@@ -130,6 +135,9 @@ func (r *selectRenderer) render(stmt *ast.SelectStatement) error {
 	}
 
 	r.buf.WriteString("SELECT ")
+	if stmt.Distinct {
+		r.buf.WriteString("DISTINCT ")
+	}
 	if err := r.renderColumns(stmt.Columns); err != nil {
 		return err
 	}
@@ -148,6 +156,17 @@ func (r *selectRenderer) render(stmt *ast.SelectStatement) error {
 		}
 	}
 
+	if err := r.renderGroupBy(stmt.GroupBy); err != nil {
+		return err
+	}
+
+	if stmt.Having != nil {
+		r.buf.WriteString(" HAVING ")
+		if err := r.renderExpr(stmt.Having); err != nil {
+			return err
+		}
+	}
+
 	if err := r.renderOrderBy(stmt.OrderBy); err != nil {
 		return err
 	}
@@ -161,18 +180,38 @@ func (r *selectRenderer) renderColumns(columns []ast.ResultColumn) error {
 		r.buf.WriteString("*")
 		return nil
 	}
-	for i, col := range columns {
+	for i := range columns {
 		if i > 0 {
 			r.buf.WriteString(", ")
 		}
-		if col.Star {
-			r.buf.WriteString("*")
-			continue
+		if err := r.renderResultColumn(columns[i]); err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+// renderResultColumn writes one projection entry and its optional alias. An Expr
+// entry renders the expression (for example an aggregate); a Star entry renders
+// "*"; every other entry renders a quoted column. Expr takes precedence over Star
+// and Name, so an expression projection ignores the column fields.
+func (r *selectRenderer) renderResultColumn(col ast.ResultColumn) error {
+	switch {
+	case col.Expr != nil:
+		if err := r.renderExpr(col.Expr); err != nil {
+			return err
+		}
+	case col.Star:
+		r.buf.WriteString("*")
+	default:
 		if strings.TrimSpace(col.Name) == "" {
 			return errors.New("renderer: result column has an empty name")
 		}
 		r.writeResultColumn(col)
+	}
+	if alias := strings.TrimSpace(col.Alias); alias != "" {
+		r.buf.WriteString(" AS ")
+		r.buf.WriteString(r.quote(alias))
 	}
 	return nil
 }
@@ -278,6 +317,8 @@ func (r *selectRenderer) renderExpr(expr ast.Expression) error {
 		return r.renderLogical(e)
 	case *ast.NotExpr:
 		return r.renderNot(e)
+	case *ast.FuncCall:
+		return r.renderFuncCall(e)
 	default:
 		return fmt.Errorf("renderer: unsupported expression type %T", expr)
 	}
@@ -289,6 +330,14 @@ func (r *selectRenderer) renderColumnRef(ref *ast.ColumnRef) error {
 	}
 	if strings.TrimSpace(ref.Name) == "" {
 		return errors.New("renderer: column reference has an empty name")
+	}
+	// A "*" is not a column: quoting it would yield "*" (or "q"."*"), which the
+	// database reads as a column literally named *. The star belongs to the
+	// projection (ResultColumn.Star / a qualified "q".*) and to the star form of
+	// an aggregate (FuncCall.Star, e.g. COUNT(*)), never to a column reference in
+	// an expression, so it is rejected here rather than mis-rendered.
+	if strings.TrimSpace(ref.Name) == "*" {
+		return errors.New(`renderer: "*" is not a valid column reference; use a star aggregate such as COUNT(*)`)
 	}
 	r.writeQualifiedIdent(ref.Qualifier, ref.Name)
 	return nil
@@ -387,6 +436,97 @@ func (r *selectRenderer) renderNot(not *ast.NotExpr) error {
 		return err
 	}
 	r.buf.WriteString(")")
+	return nil
+}
+
+// renderFuncCall writes a function call such as COUNT(*), COUNT("col"),
+// COUNT(DISTINCT "col"), or SUM("u"."total"). The function name is validated and
+// emitted verbatim as a keyword — never quoted and never bound — while each
+// argument routes through renderExpr so a column is quoted and a value is bound.
+func (r *selectRenderer) renderFuncCall(fn *ast.FuncCall) error {
+	if fn == nil {
+		return errors.New("renderer: nil function call")
+	}
+	name := strings.TrimSpace(fn.Name)
+	if name == "" {
+		return errors.New("renderer: function call has an empty name")
+	}
+	if !isSafeFunctionName(name) {
+		return fmt.Errorf("renderer: function name %q is not a valid identifier", fn.Name)
+	}
+	if fn.Star {
+		return r.renderFuncStar(name, fn)
+	}
+	if len(fn.Args) == 0 {
+		return fmt.Errorf("renderer: function %s requires at least one argument", name)
+	}
+	r.buf.WriteString(name)
+	r.buf.WriteString("(")
+	if fn.Distinct {
+		r.buf.WriteString("DISTINCT ")
+	}
+	for i, arg := range fn.Args {
+		if i > 0 {
+			r.buf.WriteString(", ")
+		}
+		if err := r.renderExpr(arg); err != nil {
+			return err
+		}
+	}
+	r.buf.WriteString(")")
+	return nil
+}
+
+// renderFuncStar writes the "*" argument form, as in COUNT(*). The star is
+// mutually exclusive with explicit arguments and with DISTINCT, since neither
+// COUNT(*, x) nor COUNT(DISTINCT *) is valid SQL.
+func (r *selectRenderer) renderFuncStar(name string, fn *ast.FuncCall) error {
+	if len(fn.Args) > 0 {
+		return fmt.Errorf("renderer: function %s with a star takes no arguments", name)
+	}
+	if fn.Distinct {
+		return fmt.Errorf("renderer: function %s cannot combine DISTINCT with a star", name)
+	}
+	r.buf.WriteString(name)
+	r.buf.WriteString("(*)")
+	return nil
+}
+
+// isSafeFunctionName reports whether name is a simple SQL identifier — a letter
+// or underscore followed by letters, digits, or underscores. Because a function
+// name is emitted as a keyword rather than a quoted identifier, restricting it to
+// this shape prevents a hand-built FuncCall from smuggling SQL through the name.
+func isSafeFunctionName(name string) bool {
+	for i, r := range name {
+		switch {
+		case r == '_':
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9' && i > 0:
+		default:
+			return false
+		}
+	}
+	return name != ""
+}
+
+// renderGroupBy appends the GROUP BY clause after WHERE. Each column is rendered
+// as a quoted identifier, qualified when a qualifier is set; GROUP BY carries no
+// values, so it never binds a placeholder. An empty list renders nothing.
+func (r *selectRenderer) renderGroupBy(cols []ast.ColumnRef) error {
+	if len(cols) == 0 {
+		return nil
+	}
+	r.buf.WriteString(" GROUP BY ")
+	for i := range cols {
+		if i > 0 {
+			r.buf.WriteString(", ")
+		}
+		col := cols[i]
+		if strings.TrimSpace(col.Name) == "" {
+			return errors.New("renderer: GROUP BY term has an empty column")
+		}
+		r.writeQualifiedIdent(col.Qualifier, col.Name)
+	}
 	return nil
 }
 
