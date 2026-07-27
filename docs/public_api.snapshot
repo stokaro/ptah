@@ -645,6 +645,7 @@ type SchemaWriter interface {
 
 ## github.com/stokaro/ptah/migration/datadiff
 
+func Render(diff *DataDiff, dialect string) (up string, down string, err error)
 type DataDiff struct{ ... }
     func Compute(table string, keys []string, desired, live []Row) (*DataDiff, error)
 type Row = map[string]any
