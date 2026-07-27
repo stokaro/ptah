@@ -158,13 +158,27 @@ join `ON` is bound **before** any `WHERE` value, because joins render first — 
 placeholder numbering still follows left-to-right emission order across `ON`,
 `WHERE`, and `LIMIT`/`OFFSET`.
 
-### SQLite and RIGHT / FULL joins
+### Join-type support by dialect
 
-SQLite gained `RIGHT` and `FULL OUTER JOIN` only in version 3.39 (2022). Because
-Ptah targets a range of SQLite versions and cannot assume 3.39+, `RenderSelect`
-returns an error for a `RIGHT` or `FULL` join on SQLite rather than emit SQL that
-fails at execution time on an older engine. `INNER` and `LEFT` joins are accepted
-on every dialect. On PostgreSQL, MySQL, and MariaDB all four join types render.
+Not every dialect can express every join type. `RenderSelect` rejects an
+unsupported join at render time — returning a clear error — rather than emit SQL
+that fails at execution time against the database.
+
+| Join type | PostgreSQL family | MySQL / MariaDB | SQLite |
+| --- | --- | --- | --- |
+| `INNER` | yes | yes | yes |
+| `LEFT` | yes | yes | yes |
+| `RIGHT` | yes | yes | no (added in 3.39) |
+| `FULL OUTER` | yes | no (never supported) | no (added in 3.39) |
+
+- **SQLite** gained `RIGHT` and `FULL OUTER JOIN` only in version 3.39 (2022).
+  Because Ptah targets a range of SQLite versions and cannot assume 3.39+, both
+  are rejected (`renderer: SQLite does not support RIGHT JOIN`).
+- **MySQL and MariaDB** have no `FULL [OUTER] JOIN` in any version — it must be
+  emulated with a `UNION` of a `LEFT` and a `RIGHT` join — so `FULL` is rejected
+  (`renderer: mysql does not support FULL OUTER JOIN`). `RIGHT` renders normally.
+- The **PostgreSQL family** (including CockroachDB and YugabyteDB) supports all
+  four.
 
 ## Builder reference
 

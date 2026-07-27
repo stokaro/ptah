@@ -359,6 +359,197 @@ func TestRenderSelect_SQLiteRejectsRightAndFullJoin(t *testing.T) {
 	}
 }
 
+func TestRenderSelect_MySQLLikeRejectsFullJoin(t *testing.T) {
+	c := qt.New(t)
+
+	// MySQL and MariaDB have no FULL [OUTER] JOIN in any version; the renderer
+	// rejects it rather than emit SQL the database would fail on. The error names
+	// the normalized dialect.
+	tests := []struct {
+		name        string
+		dialect     string
+		wantErrLike string
+	}{
+		{name: "mysql", dialect: platform.MySQL, wantErrLike: "renderer: mysql does not support FULL OUTER JOIN"},
+		{name: "mariadb", dialect: platform.MariaDB, wantErrLike: "renderer: mariadb does not support FULL OUTER JOIN"},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			stmt := &ast.SelectStatement{
+				From:  "a",
+				Joins: []ast.JoinClause{{Type: ast.JoinFull, Table: "b", On: eqCols("b", "a_id", "a", "id")}},
+			}
+			sql, args, err := renderer.RenderSelect(stmt, tt.dialect)
+			c.Assert(err, qt.ErrorMatches, tt.wantErrLike)
+			c.Assert(sql, qt.Equals, "")
+			c.Assert(args, qt.IsNil)
+		})
+	}
+}
+
+func TestRenderSelect_MySQLLikeAcceptsRightJoin(t *testing.T) {
+	c := qt.New(t)
+
+	// RIGHT JOIN is valid on MySQL and MariaDB; only FULL is blocked there.
+	tests := []struct {
+		name    string
+		dialect string
+	}{
+		{name: "mysql", dialect: platform.MySQL},
+		{name: "mariadb", dialect: platform.MariaDB},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			stmt := &ast.SelectStatement{
+				From:  "a",
+				Joins: []ast.JoinClause{{Type: ast.JoinRight, Table: "b", On: eqCols("b", "a_id", "a", "id")}},
+			}
+			sql, args, err := renderer.RenderSelect(stmt, tt.dialect)
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Equals, "SELECT * FROM `a` RIGHT JOIN `b` ON `b`.`a_id` = `a`.`id`")
+			c.Assert(args, qt.HasLen, 0)
+		})
+	}
+}
+
+func TestRenderSelect_QualifiedStar(t *testing.T) {
+	c := qt.New(t)
+
+	// A qualified star renders "u".* (not the invalid "u"."*"), and mixes with
+	// ordinary qualified columns.
+	stmt := &ast.SelectStatement{
+		Columns: []ast.ResultColumn{
+			{Qualifier: "u", Name: "*"},
+			{Qualifier: "o", Name: "total"},
+		},
+		From:      "users",
+		FromAlias: "u",
+		Joins: []ast.JoinClause{
+			{Type: ast.JoinInner, Table: "orders", Alias: "o", On: eqCols("o", "user_id", "u", "id")},
+		},
+	}
+
+	tests := []struct {
+		name    string
+		dialect string
+		wantSQL string
+	}{
+		{
+			name:    "postgres",
+			dialect: platform.Postgres,
+			wantSQL: `SELECT "u".*, "o"."total" FROM "users" "u" INNER JOIN "orders" "o" ON "o"."user_id" = "u"."id"`,
+		},
+		{
+			name:    "mysql",
+			dialect: platform.MySQL,
+			wantSQL: "SELECT `u`.*, `o`.`total` FROM `users` `u` INNER JOIN `orders` `o` ON `o`.`user_id` = `u`.`id`",
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			sql, args, err := renderer.RenderSelect(stmt, tt.dialect)
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Equals, tt.wantSQL)
+			c.Assert(args, qt.HasLen, 0)
+		})
+	}
+}
+
+func TestRenderSelect_IdentifiersAreTrimmedBeforeQuoting(t *testing.T) {
+	c := qt.New(t)
+
+	// Surrounding whitespace on a table, alias, or qualifier is trimmed before
+	// quoting, matching sqlident.Qualified, so it never lands inside the quotes.
+	limit := int64(1)
+	stmt := &ast.SelectStatement{
+		Columns: []ast.ResultColumn{{Qualifier: " u ", Name: "id"}},
+		From:    " users ",
+		// FromAlias carries surrounding whitespace too.
+		FromAlias: " u ",
+		Joins: []ast.JoinClause{
+			{Type: ast.JoinInner, Table: " orders ", Alias: " o ", On: eqCols(" o ", "user_id", " u ", "id")},
+		},
+		OrderBy: []ast.OrderByClause{{Qualifier: " u ", Column: "id", Direction: ast.SortAscending}},
+		Limit:   &limit,
+	}
+
+	sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Equals, `SELECT "u"."id" FROM "users" "u" INNER JOIN "orders" "o" ON "o"."user_id" = "u"."id" ORDER BY "u"."id" ASC LIMIT $1`)
+	c.Assert(args, qt.DeepEquals, []any{int64(1)})
+}
+
+func TestRenderSelect_TwoBoundJoinOnsPlaceholderOrdering(t *testing.T) {
+	c := qt.New(t)
+
+	// Two joins, each carrying a bound value in its ON, prove the exact ordering:
+	// join1 ON -> $1, join2 ON -> $2, WHERE -> $3, LIMIT -> $4.
+	limit := int64(10)
+	stmt := &ast.SelectStatement{
+		From:      "a",
+		FromAlias: "a0",
+		Joins: []ast.JoinClause{
+			{
+				Type:  ast.JoinInner,
+				Table: "b",
+				Alias: "b0",
+				On: &ast.LogicalExpr{
+					Operator: ast.LogicalAnd,
+					Operands: []ast.Expression{
+						eqCols("b0", "a_id", "a0", "id"),
+						&ast.Comparison{Left: &ast.ColumnRef{Qualifier: "b0", Name: "status"}, Operator: ast.OpEqual, Right: &ast.BoundValue{Value: "active"}},
+					},
+				},
+			},
+			{
+				Type:  ast.JoinLeft,
+				Table: "c",
+				Alias: "c0",
+				On: &ast.LogicalExpr{
+					Operator: ast.LogicalAnd,
+					Operands: []ast.Expression{
+						eqCols("c0", "b_id", "b0", "id"),
+						&ast.Comparison{Left: &ast.ColumnRef{Qualifier: "c0", Name: "kind"}, Operator: ast.OpEqual, Right: &ast.BoundValue{Value: "primary"}},
+					},
+				},
+			},
+		},
+		Where: &ast.Comparison{Left: &ast.ColumnRef{Qualifier: "a0", Name: "active"}, Operator: ast.OpEqual, Right: &ast.BoundValue{Value: true}},
+		Limit: &limit,
+	}
+
+	wantArgs := []any{"active", "primary", true, int64(10)}
+
+	tests := []struct {
+		name    string
+		dialect string
+		wantSQL string
+	}{
+		{
+			name:    "postgres numbers each on then where then limit",
+			dialect: platform.Postgres,
+			wantSQL: `SELECT * FROM "a" "a0" INNER JOIN "b" "b0" ON ("b0"."a_id" = "a0"."id" AND "b0"."status" = $1) LEFT JOIN "c" "c0" ON ("c0"."b_id" = "b0"."id" AND "c0"."kind" = $2) WHERE "a0"."active" = $3 LIMIT $4`,
+		},
+		{
+			name:    "mysql keeps the order with question placeholders",
+			dialect: platform.MySQL,
+			wantSQL: "SELECT * FROM `a` `a0` INNER JOIN `b` `b0` ON (`b0`.`a_id` = `a0`.`id` AND `b0`.`status` = ?) LEFT JOIN `c` `c0` ON (`c0`.`b_id` = `b0`.`id` AND `c0`.`kind` = ?) WHERE `a0`.`active` = ? LIMIT ?",
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			sql, args, err := renderer.RenderSelect(stmt, tt.dialect)
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Equals, tt.wantSQL)
+			c.Assert(args, qt.DeepEquals, wantArgs)
+		})
+	}
+}
+
 func TestRenderSelect_JoinErrors(t *testing.T) {
 	c := qt.New(t)
 

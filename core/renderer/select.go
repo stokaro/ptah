@@ -101,10 +101,12 @@ func (r *selectRenderer) quote(identifier string) string {
 
 // writeQualifiedIdent writes name quoted for the dialect, prefixed by a quoted
 // qualifier and a dot when qualifier is non-empty, as in "alias"."col". Each
-// part is quoted independently so neither can break out of its quotes.
+// part is quoted independently so neither can break out of its quotes. The
+// qualifier is trimmed before it is quoted, matching sqlident.Qualified, so
+// surrounding whitespace never lands inside the quotes.
 func (r *selectRenderer) writeQualifiedIdent(qualifier, name string) {
-	if strings.TrimSpace(qualifier) != "" {
-		r.buf.WriteString(r.quote(qualifier))
+	if q := strings.TrimSpace(qualifier); q != "" {
+		r.buf.WriteString(r.quote(q))
 		r.buf.WriteString(".")
 	}
 	r.buf.WriteString(r.quote(name))
@@ -112,12 +114,13 @@ func (r *selectRenderer) writeQualifiedIdent(qualifier, name string) {
 
 // writeTableRef writes a quoted table name followed by an optional quoted alias,
 // as in "t" or "t" "a". The bare "table alias" form is used rather than "table
-// AS alias" because every supported dialect accepts it.
+// AS alias" because every supported dialect accepts it. Both the table and the
+// alias are trimmed before quoting, matching sqlident.Qualified.
 func (r *selectRenderer) writeTableRef(table, alias string) {
-	r.buf.WriteString(r.quote(table))
-	if strings.TrimSpace(alias) != "" {
+	r.buf.WriteString(r.quote(strings.TrimSpace(table)))
+	if a := strings.TrimSpace(alias); a != "" {
 		r.buf.WriteString(" ")
-		r.buf.WriteString(r.quote(alias))
+		r.buf.WriteString(r.quote(a))
 	}
 }
 
@@ -169,9 +172,26 @@ func (r *selectRenderer) renderColumns(columns []ast.ResultColumn) error {
 		if strings.TrimSpace(col.Name) == "" {
 			return errors.New("renderer: result column has an empty name")
 		}
-		r.writeQualifiedIdent(col.Qualifier, col.Name)
+		r.writeResultColumn(col)
 	}
 	return nil
+}
+
+// writeResultColumn writes one projection entry. A qualified star ("u".*) is
+// rendered with the qualifier quoted and a bare, unquoted "*" — quoting the star
+// would produce the invalid "u"."*" — so a qualified SELECT u.* renders as
+// standard SQL. Every other column routes through writeQualifiedIdent.
+func (r *selectRenderer) writeResultColumn(col ast.ResultColumn) {
+	if strings.TrimSpace(col.Name) != "*" {
+		r.writeQualifiedIdent(col.Qualifier, col.Name)
+		return
+	}
+	if q := strings.TrimSpace(col.Qualifier); q != "" {
+		r.buf.WriteString(r.quote(q))
+		r.buf.WriteString(".*")
+		return
+	}
+	r.buf.WriteString("*")
 }
 
 // renderJoins appends each join after the FROM clause in declared order. Their
@@ -209,21 +229,31 @@ func (r *selectRenderer) renderJoin(join *ast.JoinClause) error {
 	return r.renderExpr(join.On)
 }
 
-// checkJoinDialect rejects join types a dialect cannot express. SQLite gained
-// RIGHT and FULL [OUTER] JOIN only in version 3.39 (2022); because Ptah targets
-// a range of SQLite versions and cannot assume 3.39+, it rejects those at render
-// time rather than emit SQL that fails at execution time on an older engine.
-// INNER and LEFT joins are accepted by every supported dialect.
+// checkJoinDialect rejects join types a dialect cannot express, so an
+// unsupported join fails at render time rather than at execution time against
+// the database.
+//
+//   - SQLite gained RIGHT and FULL [OUTER] JOIN only in version 3.39 (2022);
+//     because Ptah targets a range of SQLite versions and cannot assume 3.39+,
+//     both are rejected.
+//   - MySQL and MariaDB have no FULL [OUTER] JOIN in any version (it must be
+//     emulated with a UNION of a LEFT and a RIGHT join), so it is rejected.
+//
+// INNER and LEFT joins are accepted by every supported dialect; RIGHT is
+// accepted everywhere except SQLite; FULL OUTER is accepted only by the
+// PostgreSQL family.
 func (r *selectRenderer) checkJoinDialect(t ast.JoinType) error {
-	if r.dialect != platform.SQLite {
-		return nil
+	switch r.dialect {
+	case platform.SQLite:
+		if t == ast.JoinRight || t == ast.JoinFull {
+			return fmt.Errorf("renderer: SQLite does not support %s", t)
+		}
+	case platform.MySQL, platform.MariaDB:
+		if t == ast.JoinFull {
+			return fmt.Errorf("renderer: %s does not support %s", r.dialect, t)
+		}
 	}
-	switch t {
-	case ast.JoinRight, ast.JoinFull:
-		return fmt.Errorf("renderer: SQLite does not support %s", t)
-	default:
-		return nil
-	}
+	return nil
 }
 
 // renderExpr dispatches over the sealed ast.Expression sum type. Each case

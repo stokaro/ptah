@@ -153,6 +153,23 @@ func TestSelectBuilder_Columns(t *testing.T) {
 	}
 }
 
+func TestSelectBuilder_QualifiedStarProjection(t *testing.T) {
+	c := qt.New(t)
+
+	// Col(alias, "*") projects a qualified star, rendering "u".* rather than the
+	// invalid "u"."*".
+	stmt := query.Select().
+		Columns(query.Col("u", "*"), query.Col("o", "total")).
+		FromAs("users", "u").
+		InnerJoin("orders", "o", query.Col("o", "user_id").EqCol(query.Col("u", "id"))).
+		Build()
+
+	sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Equals, `SELECT "u".*, "o"."total" FROM "users" "u" INNER JOIN "orders" "o" ON "o"."user_id" = "u"."id"`)
+	c.Assert(args, qt.HasLen, 0)
+}
+
 func TestSelectBuilder_JoinMethodsSetType(t *testing.T) {
 	c := qt.New(t)
 

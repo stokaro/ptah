@@ -92,7 +92,12 @@
 //
 // A join ON value is bound before any WHERE value, because joins render before
 // WHERE. Aliases and qualifiers are quoted through the same dialect-aware path
-// as every other identifier. Because SQLite could not express a RIGHT or FULL
-// OUTER join before version 3.39, RenderSelect returns an error for those on
-// SQLite rather than emit SQL an older engine would reject.
+// as every other identifier.
+//
+// Not every dialect can express every join type, and RenderSelect rejects an
+// unsupported one at render time rather than emit SQL the database would reject:
+// SQLite could not express RIGHT or FULL OUTER joins before version 3.39, and
+// MySQL and MariaDB have no FULL OUTER JOIN in any version. In short, FULL OUTER
+// renders only on the PostgreSQL family; RIGHT renders everywhere except SQLite;
+// INNER and LEFT render on every supported dialect.
 package query
