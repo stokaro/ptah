@@ -1330,11 +1330,24 @@ func (s *schemaParseState) parseManagedDataComment(comment *ast.Comment, structN
 		return err
 	}
 
+	keys := splitCommaList(kv["key"])
+	if len(keys) == 0 {
+		return &ptaherr.ParseError{
+			File:      ctx.file,
+			Line:      ctx.line,
+			Directive: strings.TrimPrefix(ctx.directive, "//"),
+			Attribute: "key",
+			Err:       ptaherr.ErrInvalidAttributeValue,
+			Message:   fmt.Sprintf("empty key list for \"key\" on %s at %s; expected one or more comma-separated key columns", ctx.directive, ctx.location),
+		}
+	}
+
 	s.managedData = append(s.managedData, ManagedData{
 		StructName: structName,
 		Table:      kv["table"],
-		Keys:       splitCommaList(kv["key"]),
+		Keys:       keys,
 		File:       kv["file"],
+		SourceDir:  filepath.Dir(s.filename),
 	})
 	return nil
 }

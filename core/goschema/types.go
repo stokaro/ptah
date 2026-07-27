@@ -1094,7 +1094,13 @@ type ManagedData struct {
 	StructName string   // Name of the Go struct this data annotation is associated with
 	Table      string   // Target table the rows belong to
 	Keys       []string // Key column(s) forming each row's logical identity (parsed from the comma-separated "key" attribute)
-	File       string   // Path to the YAML row-data file, verbatim, relative to the Go source file's directory
+	File       string   // Path to the YAML row-data file, verbatim, relative to SourceDir
+	// SourceDir is the parse-root-relative directory of the Go source file that
+	// carried the annotation, recorded at parse time. Combined with the parse
+	// root, it lets LoadManagedRows resolve File even after a ParseDir tree walk
+	// spanning subdirectories, where a caller holding the merged Database could
+	// not otherwise know which subdirectory each entry came from.
+	SourceDir string
 }
 
 // SelfReferencingFK represents a self-referencing foreign key that needs to be

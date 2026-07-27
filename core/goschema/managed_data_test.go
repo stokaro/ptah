@@ -91,6 +91,67 @@ type Country struct{}
 	}
 }
 
+func TestParseManagedDataAnnotation_EmptyKeyListRejected(t *testing.T) {
+	tests := []struct {
+		name string
+		key  string
+	}{
+		{name: "single comma", key: ","},
+		{name: "only commas", key: ",,"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := goschema.ParseSource("schema.go", `
+package fixture
+
+//migrator:schema:data table="countries" key="`+tt.key+`" file="countries.yaml"
+type Country struct{}
+`)
+
+			var parseErr *ptaherr.ParseError
+			c.Assert(err, qt.ErrorAs, &parseErr)
+			c.Assert(parseErr.Attribute, qt.Equals, "key")
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidAttributeValue)
+		})
+	}
+}
+
+// TestParseManagedDataAnnotation_LoadRowsAfterParseDir proves the SourceDir
+// recorded at parse time lets rows load from a subdirectory without the caller
+// tracking base directories: ParseDir walks the tree, and LoadManagedRows
+// resolves the row file against the recorded SourceDir alone.
+func TestParseManagedDataAnnotation_LoadRowsAfterParseDir(t *testing.T) {
+	c := qt.New(t)
+
+	root := t.TempDir()
+	sub := filepath.Join(root, "reference")
+	c.Assert(os.MkdirAll(sub, 0o755), qt.IsNil)
+	writeGoFile(c, sub, "countries.go", `
+package reference
+
+//migrator:schema:data table="countries" key="code" file="countries.yaml"
+type Country struct {
+	//migrator:schema:field name="code" type="VARCHAR(2)" primary="true"
+	Code string
+}
+`)
+	c.Assert(os.WriteFile(filepath.Join(sub, "countries.yaml"), []byte("- code: US\n  name: United States\n"), 0o600), qt.IsNil)
+
+	db, err := goschema.ParseDir(root)
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.ManagedData, qt.HasLen, 1)
+	// SourceDir is parse-root-relative; resolved against the parse root it points
+	// at the subdirectory the annotation came from.
+	c.Assert(db.ManagedData[0].SourceDir, qt.Equals, "reference")
+
+	rows, err := goschema.LoadManagedRows(root, db.ManagedData[0])
+	c.Assert(err, qt.IsNil)
+	c.Assert(rows, qt.DeepEquals, []map[string]any{{"code": "US", "name": "United States"}})
+}
+
 func TestParseManagedDataAnnotation_AggregatesAcrossFiles(t *testing.T) {
 	c := qt.New(t)
 

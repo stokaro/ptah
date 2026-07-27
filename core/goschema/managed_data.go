@@ -11,11 +11,15 @@ import (
 // LoadManagedRows reads the YAML row-data file referenced by md and returns its
 // rows as an ordered slice of column maps.
 //
-// The file path is resolved as filepath.Join(baseDir, md.File): md.File is the
-// value written verbatim in the //migrator:schema:data annotation and is
-// interpreted relative to baseDir, which callers set to the directory of the Go
-// source file that carried the annotation. The file must be a top-level YAML
-// list of mappings, one mapping per row:
+// The path is resolved as filepath.Join(rootDir, md.SourceDir, md.File): rootDir
+// is the root the schema was parsed from (the argument passed to ParseDir, or ""
+// for ParseFile), md.SourceDir is the parse-root-relative directory of the Go
+// source file that carried the annotation (recorded at parse time), and md.File
+// is the value written verbatim in the annotation. Because ParseDir abstracts the
+// OS root away via os.DirFS, SourceDir alone cannot be resolved — but a caller
+// only needs the single parse root, and SourceDir disambiguates which
+// subdirectory each entry came from. The file must be a top-level YAML list of
+// mappings, one mapping per row:
 //
 //   - code: US
 //     name: United States
@@ -23,13 +27,14 @@ import (
 //     name: Czechia
 //
 // Each mapping becomes one map[string]any whose keys are the column names. This
-// makes the declarative data model self-contained and testable; the later
-// data-diff phase consumes the returned rows to compute row-level changes.
+// makes the declarative data model testable; the later data-diff phase consumes
+// the returned rows to compute row-level changes.
 //
-// A missing or unreadable file, or malformed YAML, is returned as a wrapped
-// error that names the resolved path and target table.
-func LoadManagedRows(baseDir string, md ManagedData) ([]map[string]any, error) {
-	path := filepath.Join(baseDir, md.File)
+// An empty, null, or whitespace-only file yields no rows and no error. A missing
+// or unreadable file, or malformed YAML, is returned as a wrapped error that
+// names the resolved path and target table.
+func LoadManagedRows(rootDir string, md ManagedData) ([]map[string]any, error) {
+	path := filepath.Join(rootDir, md.SourceDir, md.File)
 
 	content, err := os.ReadFile(path)
 	if err != nil {
