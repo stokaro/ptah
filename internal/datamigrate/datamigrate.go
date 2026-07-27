@@ -223,13 +223,30 @@ func computeTable(ctx context.Context, conn *dbschema.DatabaseConnection, rootDi
 // keep a stable alphabetical order after the known ones, so output stays
 // deterministic.
 func orderByDependency(db *goschema.Database, diffs []*datadiff.DataDiff) {
+	// Index the dependency-sorted tables by their fully-qualified name, and also
+	// by bare name where that name is unambiguous across the schema. The bare
+	// index is a fallback for when a //migrator:schema:data annotation omits the
+	// schema attribute while its //migrator:schema:table definition sets one (or
+	// vice versa); without it the qualified lookup would miss and FK ordering
+	// would silently degrade to alphabetical for that table. A bare name shared
+	// by tables in different schemas is left out of the fallback so it can never
+	// resolve to the wrong table.
 	pos := make(map[string]int, len(db.Tables))
+	barePos := make(map[string]int, len(db.Tables))
+	bareCount := make(map[string]int, len(db.Tables))
 	for i, t := range db.Tables {
 		pos[t.QualifiedName()] = i
+		barePos[t.Name] = i
+		bareCount[t.Name]++
 	}
 	rank := func(d *datadiff.DataDiff) int {
 		if i, ok := pos[qualifiedName(d.Schema, d.Table)]; ok {
 			return i
+		}
+		if bareCount[d.Table] == 1 {
+			if i, ok := barePos[d.Table]; ok {
+				return i
+			}
 		}
 		return math.MaxInt
 	}
