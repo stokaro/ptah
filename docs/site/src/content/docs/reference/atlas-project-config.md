@@ -106,6 +106,7 @@ env "local" {
 | `lint.git.base` | Git base for migration lint selection. |
 | `lint.git.dir` | Git working directory for migration lint selection. |
 | `lint.<analyzer>.error` | Severity mapping for supported Ptah lint rule families. |
+| `lint.log` | Atlas Go-template that renders `migrate lint` output; shares the `format.migrate.lint` IR and precedence. |
 | `format.schema.inspect` | Default `schema inspect --format`. |
 | `format.schema.apply` | Default `schema apply --format`. |
 | `format.schema.diff` | Default `schema diff --format`. |

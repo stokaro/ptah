@@ -441,17 +441,38 @@ func (p atlasParser) parseLint(block *hclsyntax.Block, cfg *Config) error {
 		return unsupportedBlock(block)
 	}
 	for attrName, attr := range block.Body.Attributes {
-		switch attrName {
-		case "latest":
-			value, err := p.intAttr(attrName, attr)
-			if err != nil {
-				return err
-			}
-			cfg.Lint.Latest = &value
-		default:
-			return unsupportedAttr(attrName, attr)
+		if err := p.parseLintAttr(attrName, attr, cfg); err != nil {
+			return err
 		}
 	}
+	return p.parseLintPolicyBlocks(block, cfg)
+}
+
+func (p atlasParser) parseLintAttr(attrName string, attr *hclsyntax.Attribute, cfg *Config) error {
+	switch attrName {
+	case "latest":
+		value, err := p.intAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		cfg.Lint.Latest = &value
+	case "log":
+		// Atlas's lint.log is a Go text/template that renders the migrate lint
+		// output. It shares the format IR with format.migrate.lint, so the CLI
+		// --format flag and env/global merge precedence apply uniformly (env
+		// lint.log overrides the global one; an explicit --format overrides both).
+		value, err := p.nonEmptyStringAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		cfg.Format.Migrate.Lint = value
+	default:
+		return unsupportedAttr(attrName, attr)
+	}
+	return nil
+}
+
+func (p atlasParser) parseLintPolicyBlocks(block *hclsyntax.Block, cfg *Config) error {
 	seen := map[string]struct{}{}
 	for _, nested := range block.Body.Blocks {
 		switch nested.Type {
