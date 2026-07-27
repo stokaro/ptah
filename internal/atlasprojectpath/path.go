@@ -12,14 +12,29 @@ import (
 
 // LocalDir resolves a local Atlas migration directory URL relative to baseDir.
 func LocalDir(rawURL, baseDir string) (string, error) {
-	path, rawQuery, err := localPath(rawURL, "migration directories")
+	path, query, err := LocalDirWithQuery(rawURL, baseDir)
 	if err != nil {
 		return "", err
 	}
-	if rawQuery != "" {
+	if len(query) > 0 {
 		return "", fmt.Errorf("migration directory URL query parameters are not supported yet")
 	}
-	return resolvePath(path, baseDir)
+	return path, nil
+}
+
+// LocalDirWithQuery resolves a local Atlas migration directory URL relative to
+// baseDir and preserves query parameters for command-specific validation.
+// Query semantics apply only to file:// URLs, not plain filesystem paths.
+func LocalDirWithQuery(rawURL, baseDir string) (string, url.Values, error) {
+	path, query, err := localPath(rawURL, "migration directories")
+	if err != nil {
+		return "", nil, err
+	}
+	resolved, err := resolvePath(path, baseDir)
+	if err != nil {
+		return "", nil, err
+	}
+	return resolved, query, nil
 }
 
 // SchemaFileURLs resolves local Atlas schema file URLs relative to baseDir.
@@ -37,11 +52,11 @@ func SchemaFileURLs(rawURLs []string, baseDir string) ([]string, error) {
 
 // SchemaFileURL resolves one local Atlas schema file URL relative to baseDir.
 func SchemaFileURL(rawURL, baseDir string) (string, error) {
-	path, rawQuery, err := localPath(rawURL, "schema files")
+	path, query, err := localPath(rawURL, "schema files")
 	if err != nil {
 		return "", err
 	}
-	if rawQuery != "" {
+	if len(query) > 0 {
 		return "", fmt.Errorf("schema file URL query parameters are not supported yet")
 	}
 	resolved, err := resolvePath(path, baseDir)
@@ -51,18 +66,23 @@ func SchemaFileURL(rawURL, baseDir string) (string, error) {
 	return "file://" + filepath.ToSlash(resolved), nil
 }
 
-func localPath(rawURL, resource string) (path string, rawQuery string, err error) {
-	base, rawQuery, _ := strings.Cut(strings.TrimSpace(rawURL), "?")
-	if base == "" {
-		return "", "", fmt.Errorf("%s URL is required", resource)
+func localPath(rawURL, resource string) (path string, query url.Values, err error) {
+	value := strings.TrimSpace(rawURL)
+	if value == "" {
+		return "", nil, fmt.Errorf("%s URL is required", resource)
 	}
-	if rawQuery != "" {
-		if _, err := url.ParseQuery(rawQuery); err != nil {
-			return "", "", fmt.Errorf("parse %s URL query: %w", resource, err)
+	if !strings.HasPrefix(value, "file://") {
+		if strings.Contains(value, "://") {
+			return "", nil, fmt.Errorf("only local file:// %s are supported", resource)
 		}
+		return filepath.Clean(filepath.FromSlash(value)), nil, nil
 	}
-	if strings.Contains(base, "://") && !strings.HasPrefix(base, "file://") {
-		return "", "", fmt.Errorf("only local file:// %s are supported", resource)
+	base, rawQuery, _ := strings.Cut(value, "?")
+	if rawQuery != "" {
+		query, err = url.ParseQuery(rawQuery)
+		if err != nil {
+			return "", nil, fmt.Errorf("parse %s URL query: %w", resource, err)
+		}
 	}
 	path = strings.TrimPrefix(base, "file://")
 	if path == "" {
@@ -70,9 +90,9 @@ func localPath(rawURL, resource string) (path string, rawQuery string, err error
 	}
 	path, err = url.PathUnescape(path)
 	if err != nil {
-		return "", "", fmt.Errorf("decode %s URL path: %w", resource, err)
+		return "", nil, fmt.Errorf("decode %s URL path: %w", resource, err)
 	}
-	return filepath.Clean(filepath.FromSlash(path)), rawQuery, nil
+	return filepath.Clean(filepath.FromSlash(path)), query, nil
 }
 
 func resolvePath(path, baseDir string) (string, error) {

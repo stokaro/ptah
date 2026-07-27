@@ -250,6 +250,24 @@ mirrors Atlas's public apply-template fields: `Pending`, `Applied`, `Current`,
 `Target`, `Start`, `End`, `Driver`, `URL`, and `Dir`; `{{ json . }}` emits the
 same result as JSON with database credentials redacted. With `--env`, Ptah can
 read `env.url`, `migration`, and `format.migrate.apply` from `atlas.hcl`.
+The apply path currently executes only Atlas-format directories. A configured
+`migration.format` or `file://...?format=...` value for `golang-migrate`,
+`goose`, `flyway`, `liquibase`, or `dbmate` fails before Ptah opens the target
+database when it is the effective format. An explicit `?format=` query on the
+effective directory URL, from either `migration.dir` or CLI `--dir`, overrides
+the `migration.format` project default, matching Atlas. An empty query value
+selects the native `atlas` format.
+Import the directory into Atlas single-file layout before applying it:
+
+```bash
+ptah atlas migrate import \
+  --from "file://legacy-migrations?format=goose" \
+  --to file://migrations
+ptah atlas migrate apply --url "$DATABASE_URL" --dir file://migrations
+```
+
+Native apply support for those formats remains tracked in
+[`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742).
 Atlas OSS does not register `migrate apply --dir-format`, `--to-version`, or
 `--lock-name`; Ptah follows that surface and rejects those flags on
 `migrate apply`.
