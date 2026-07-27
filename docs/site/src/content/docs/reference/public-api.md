@@ -13,7 +13,7 @@ packages, examples, fixtures, tests, or implementation details.
 | --- | --- |
 | `atlascompat` | Stable wrappers for Atlas-compatible schema, SQL, and migration-sum behavior. |
 | `config` | Project-level config loading helpers. |
-| `config/projectconfig` | Ptah project config IR and Atlas project config mapping. |
+| `config/projectconfig` | Typed Ptah/Atlas project config IR, including validated online-DDL policy. |
 | `core/ast` | Typed schema DDL AST nodes. |
 | `core/goschema` | Go annotation parser and schema IR. |
 | `core/platform` | Dialect and platform constants. |

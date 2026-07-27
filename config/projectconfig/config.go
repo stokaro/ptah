@@ -3,6 +3,7 @@
 package projectconfig
 
 import (
+	"fmt"
 	"slices"
 
 	"github.com/stokaro/ptah/migration/diffpolicy"
@@ -13,6 +14,24 @@ const (
 	PtahFileName = "ptah.yaml"
 	// AtlasFileName is the conventional Atlas project config file.
 	AtlasFileName = "atlas.hcl"
+)
+
+// Canonical online-DDL tool names accepted in project configuration.
+const (
+	// OnlineDDLToolGhost routes ALTERs through GitHub's gh-ost.
+	OnlineDDLToolGhost = "ghost"
+	// OnlineDDLToolPTOSC routes ALTERs through Percona's
+	// pt-online-schema-change.
+	OnlineDDLToolPTOSC = "pt-osc"
+)
+
+// Canonical online-DDL fallback policies accepted in project configuration.
+const (
+	// OnlineDDLFallbackError aborts instead of degrading to a plain ALTER
+	// TABLE.
+	OnlineDDLFallbackError = "error"
+	// OnlineDDLFallbackPlain lets the migrator execute the plain ALTER TABLE.
+	OnlineDDLFallbackPlain = "plain"
 )
 
 // Config is Ptah's project-level configuration IR. Loaders translate supported
@@ -35,6 +54,8 @@ type Config struct {
 	Schema SchemaConfig
 	// Migration holds migration-directory and runtime settings.
 	Migration MigrationConfig
+	// OnlineDDL configures automatic online-DDL routing.
+	OnlineDDL OnlineDDLConfig
 	// Lint holds migration-lint settings.
 	Lint LintConfig
 	// Format holds Atlas-compatible output templates.
@@ -49,14 +70,73 @@ type Config struct {
 }
 
 type configPresence struct {
-	databaseURL           bool
-	devURL                bool
-	schemaSources         bool
-	schemas               bool
-	exclude               bool
-	lintDisabledRules     bool
-	externalSchemaProgram bool
-	externalSchemaEnv     bool
+	databaseURL            bool
+	devURL                 bool
+	schemaSources          bool
+	schemas                bool
+	exclude                bool
+	lintDisabledRules      bool
+	externalSchemaProgram  bool
+	externalSchemaEnv      bool
+	onlineDDLTool          bool
+	onlineDDLThresholdRows bool
+	onlineDDLArgs          bool
+	onlineDDLFallback      bool
+}
+
+// OnlineDDLConfig configures automatic online-DDL routing for ALTER TABLE
+// statements.
+type OnlineDDLConfig struct {
+	// Tool selects the online-DDL tool: "ghost" or "pt-osc". Empty disables
+	// automatic routing; per-migration directives keep working.
+	Tool string
+	// ThresholdRows routes ALTER TABLE statements when the target table's
+	// estimated row count is at or above this value. Zero disables automatic
+	// routing.
+	ThresholdRows int64
+	// Args are extra arguments appended to every online-DDL tool invocation.
+	Args []string
+	// Fallback controls what happens when a selected online-DDL path cannot be
+	// used: "error" aborts and "plain" executes the plain ALTER TABLE. Empty
+	// uses the source default.
+	Fallback string
+}
+
+// Enabled reports whether automatic threshold routing is configured.
+// Directive-based routing works regardless.
+func (c OnlineDDLConfig) Enabled() bool {
+	return c.Tool != "" && c.ThresholdRows > 0
+}
+
+// Validate checks the online-DDL configuration values.
+func (c OnlineDDLConfig) Validate() error {
+	switch c.Tool {
+	case "", OnlineDDLToolGhost, OnlineDDLToolPTOSC:
+	default:
+		return fmt.Errorf(
+			"unknown online_ddl tool %q: expected %s or %s",
+			c.Tool,
+			OnlineDDLToolGhost,
+			OnlineDDLToolPTOSC,
+		)
+	}
+	if c.ThresholdRows < 0 {
+		return fmt.Errorf("online_ddl threshold_rows must not be negative, got %d", c.ThresholdRows)
+	}
+	if c.ThresholdRows > 0 && c.Tool == "" {
+		return fmt.Errorf("online_ddl threshold_rows is set but no tool is configured")
+	}
+	switch c.Fallback {
+	case "", OnlineDDLFallbackError, OnlineDDLFallbackPlain:
+		return nil
+	default:
+		return fmt.Errorf(
+			"unknown online_ddl fallback %q: expected %s or %s",
+			c.Fallback,
+			OnlineDDLFallbackError,
+			OnlineDDLFallbackPlain,
+		)
+	}
 }
 
 // ExternalSchemaConfig configures an external program whose standard output is
@@ -257,18 +337,63 @@ func Merge(base, override Config) Config {
 	}
 	result.Schema = mergeSchema(result.Schema, override.Schema)
 	result.Migration = mergeMigration(result.Migration, override.Migration)
+	result.OnlineDDL = mergeOnlineDDL(result.OnlineDDL, override.OnlineDDL, override.presence)
 	result.Lint = mergeLint(result.Lint, override.Lint, override.presence)
 	result.Format = mergeFormat(result.Format, override.Format)
 	result.Diff = mergeDiff(result.Diff, override.Diff)
 	result.ExternalSchema = mergeExternalSchema(result.ExternalSchema, override.ExternalSchema, override.presence)
+	result.presence = mergeConfigPresence(result.presence, override)
+	return result
+}
+
+func mergeConfigPresence(result configPresence, override Config) configPresence {
 	if override.presence.lintDisabledRules || len(override.Lint.DisabledRules) > 0 {
-		result.presence.lintDisabledRules = true
+		result.lintDisabledRules = true
 	}
 	if override.presence.externalSchemaProgram || len(override.ExternalSchema.Program) > 0 {
-		result.presence.externalSchemaProgram = true
+		result.externalSchemaProgram = true
 	}
 	if override.presence.externalSchemaEnv || len(override.ExternalSchema.Env) > 0 {
-		result.presence.externalSchemaEnv = true
+		result.externalSchemaEnv = true
+	}
+	if override.presence.onlineDDLTool || override.OnlineDDL.Tool != "" {
+		result.onlineDDLTool = true
+	}
+	if override.presence.onlineDDLThresholdRows || override.OnlineDDL.ThresholdRows != 0 {
+		result.onlineDDLThresholdRows = true
+	}
+	if override.presence.onlineDDLArgs || len(override.OnlineDDL.Args) > 0 {
+		result.onlineDDLArgs = true
+	}
+	if override.presence.onlineDDLFallback || override.OnlineDDL.Fallback != "" {
+		result.onlineDDLFallback = true
+	}
+	return result
+}
+
+func mergeOnlineDDL(
+	base OnlineDDLConfig,
+	override OnlineDDLConfig,
+	presence configPresence,
+) OnlineDDLConfig {
+	result := base
+	result.Args = slices.Clone(base.Args)
+	toolSet := presence.onlineDDLTool || override.Tool != ""
+	thresholdSet := presence.onlineDDLThresholdRows || override.ThresholdRows != 0
+	if toolSet {
+		result.Tool = override.Tool
+		if override.Tool == "" && !thresholdSet {
+			result.ThresholdRows = 0
+		}
+	}
+	if thresholdSet {
+		result.ThresholdRows = override.ThresholdRows
+	}
+	if presence.onlineDDLArgs || len(override.Args) > 0 {
+		result.Args = slices.Clone(override.Args)
+	}
+	if presence.onlineDDLFallback || override.Fallback != "" {
+		result.Fallback = override.Fallback
 	}
 	return result
 }

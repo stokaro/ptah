@@ -9,7 +9,9 @@ type LoadOptions struct {
 }
 
 // Load reads Ptah and Atlas project config files and merges them with the
-// documented precedence: atlas.hcl beats ptah.yaml.
+// documented precedence: atlas.hcl beats ptah.yaml. An explicit PtahPath is
+// required to exist; an empty PtahPath uses the optional conventional
+// ./ptah.yaml path.
 func Load(opts LoadOptions) (Config, error) {
 	ptahPath := opts.PtahPath
 	if ptahPath == "" {
@@ -20,7 +22,7 @@ func Load(opts LoadOptions) (Config, error) {
 		atlasPath = AtlasFileName
 	}
 
-	ptah, err := LoadPtahFile(ptahPath, opts.EnvName)
+	ptah, err := loadPtahFile(ptahPath, opts.EnvName, opts.PtahPath != "")
 	if err != nil {
 		return Config{}, err
 	}

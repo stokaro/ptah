@@ -42,6 +42,10 @@ conformance tooling. It intentionally wraps parser, HCL schema,
 conversion, and migration sum internals without making those implementation
 packages importable directly.
 
+`config/projectconfig` is the canonical typed project configuration IR. Its
+online-DDL policy is parsed, merged, validated, and then passed to migration
+execution without a second configuration-file read.
+
 Public failures from these packages should use `core/ptaherr` where the caller
 can reasonably branch on the error. In particular, annotation failures should
 support `errors.As(err, *ptaherr.ParseError)`, and unsupported dialect failures

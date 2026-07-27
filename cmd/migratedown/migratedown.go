@@ -249,14 +249,11 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 
 	// Online-DDL routing works for down migrations too: a rollback ALTER on
 	// a large table is just as lock-heavy as the forward one.
-	onlineCfg, err := dbcli.LoadOnlineDDLConfigForEnv(opts.configPath, projectCfg.EnvName)
-	if err != nil {
-		return err
-	}
+	onlineCfg := projectCfg.OnlineDDL
 	if onlineCfg.Enabled() {
 		emit.Printf("Online DDL: tool=%s threshold_rows=%d\n", onlineCfg.Tool, onlineCfg.ThresholdRows)
 	}
-	interceptor := onlineddl.New(*onlineCfg).WithDryRun(opts.dryRun)
+	interceptor := onlineddl.New(onlineCfg).WithDryRun(opts.dryRun)
 
 	// Create migrator to access applied migrations
 	mig, err := migrator.NewFSMigrator(

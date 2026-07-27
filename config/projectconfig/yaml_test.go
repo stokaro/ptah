@@ -139,6 +139,11 @@ env:
 	c.Assert(err, qt.IsNil)
 	c.Assert(cfg.EnvName, qt.Equals, "prod")
 	c.Assert(cfg.DatabaseURL, qt.Equals, "postgres://prod/db")
+	c.Assert(cfg.OnlineDDL, qt.DeepEquals, projectconfig.OnlineDDLConfig{
+		Tool:          projectconfig.OnlineDDLToolGhost,
+		ThresholdRows: 1000000,
+		Fallback:      projectconfig.OnlineDDLFallbackError,
+	})
 }
 
 func TestParsePtahProjectConfigEnvCanClearInheritedLists(t *testing.T) {

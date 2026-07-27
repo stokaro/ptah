@@ -21,6 +21,12 @@ references for local schema-file workflows.
 Supported Atlas env blocks can also set `schema.src`, `schema.mode`, `format`,
 and local `diff` policy defaults for `ptah atlas ...` commands.
 
+Ptah reads each selected project config once per command and converts it to a
+typed configuration value. Migration database settings and online-DDL policy
+therefore cannot come from different generations of a concurrently replaced
+`ptah.yaml`. An explicit `--config` path must exist; the conventional
+`./ptah.yaml` is optional.
+
 For Atlas-compatible commands, plain local schema paths, relative `file://`
 schema URLs, and relative `migration.dir` values declared in `atlas.hcl` resolve
 relative to the directory containing that `atlas.hcl` file. Explicit CLI path
@@ -59,7 +65,7 @@ webhooks, lint defaults, and online-DDL policy.
 | Migration directory and revisions | `migration.dir`, `migration.format`, `migration.revisions_table`, `migration.revision_format` |
 | Safety and operations | `migration.pre_up_hook`, `migration.pg_dump_to`, `migration.webhook`, `migration.exec_order`, `migration.tx_mode` |
 | Lint defaults and policy | `lint.dialect`, `lint.disabled-rules`, `lint.latest`, `lint.git.base`, `lint.destructive.error`, `lint.concurrent_index.error` |
-| Online DDL | `online_ddl.tool`, `online_ddl.threshold_rows` |
+| Online DDL | `online_ddl.tool`, `online_ddl.threshold_rows`, `online_ddl.args`, `online_ddl.fallback` |
 | Diff policy (native `migrations generate`) | `diff.skip: [drop_table, drop_column, drop_index, drop_enum]`, `diff.concurrent_index` |
 | Atlas-compatible output | `format.schema.inspect`, `format.schema.apply`, `format.schema.clean`, `format.schema.diff`, `format.migrate.apply`, `format.migrate.diff`, `format.migrate.lint`, `format.migrate.status` |
 | Atlas-compatible diff policy | `diff.skip.drop_table`, `diff.concurrent_index.create` |

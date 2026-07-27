@@ -78,10 +78,10 @@ type yamlLint struct {
 }
 
 type yamlOnlineDDL struct {
-	Tool          string   `yaml:"tool"`
-	ThresholdRows int64    `yaml:"threshold_rows"`
-	Args          []string `yaml:"args"`
-	Fallback      string   `yaml:"fallback"`
+	Tool          *string   `yaml:"tool"`
+	ThresholdRows *int64    `yaml:"threshold_rows"`
+	Args          *[]string `yaml:"args"`
+	Fallback      *string   `yaml:"fallback"`
 }
 
 type yamlMigrateConfig struct {
@@ -95,9 +95,13 @@ type yamlMigrateGenerateConfig struct {
 // LoadPtahFile loads Ptah's project config file. A missing file returns an
 // empty config.
 func LoadPtahFile(path, envName string) (Config, error) {
+	return loadPtahFile(path, envName, false)
+}
+
+func loadPtahFile(path, envName string, required bool) (Config, error) {
 	raw, err := os.ReadFile(path)
 	switch {
-	case errors.Is(err, fs.ErrNotExist):
+	case errors.Is(err, fs.ErrNotExist) && !required:
 		return Config{}, nil
 	case err != nil:
 		return Config{}, fmt.Errorf("failed to read ptah config %s: %w", path, err)
@@ -117,7 +121,22 @@ func ParsePtah(data []byte, filename, envName string) (Config, error) {
 	if err := decoder.Decode(&doc); err != nil {
 		return Config{}, fmt.Errorf("failed to parse ptah config %s: %w", filename, err)
 	}
-	return selectPtahEnv(doc, envName)
+	cfg, err := selectPtahEnv(doc, envName)
+	if err != nil {
+		return Config{}, err
+	}
+	if err := cfg.OnlineDDL.Validate(); err != nil {
+		if cfg.EnvName != "" {
+			return Config{}, fmt.Errorf(
+				"invalid online_ddl config in %s for env %q: %w",
+				filename,
+				cfg.EnvName,
+				err,
+			)
+		}
+		return Config{}, fmt.Errorf("invalid online_ddl config in %s: %w", filename, err)
+	}
+	return cfg, nil
 }
 
 func selectPtahEnv(doc yamlDocument, envName string) (Config, error) {
@@ -189,6 +208,7 @@ func (c yamlSettings) projectConfig() (Config, error) {
 			WorkingDir: c.ExternalSchema.WorkingDir,
 		},
 	}
+	c.OnlineDDL.applyTo(&cfg)
 	if c.ExternalSchema.Program != nil {
 		cfg.ExternalSchema.Program = slices.Clone(*c.ExternalSchema.Program)
 		cfg.presence.externalSchemaProgram = true
@@ -215,6 +235,25 @@ func (c yamlSettings) projectConfig() (Config, error) {
 	}
 	cfg.Diff = diff
 	return cfg, nil
+}
+
+func (c yamlOnlineDDL) applyTo(cfg *Config) {
+	if c.Tool != nil {
+		cfg.OnlineDDL.Tool = *c.Tool
+		cfg.presence.onlineDDLTool = true
+	}
+	if c.ThresholdRows != nil {
+		cfg.OnlineDDL.ThresholdRows = *c.ThresholdRows
+		cfg.presence.onlineDDLThresholdRows = true
+	}
+	if c.Args != nil {
+		cfg.OnlineDDL.Args = slices.Clone(*c.Args)
+		cfg.presence.onlineDDLArgs = true
+	}
+	if c.Fallback != nil {
+		cfg.OnlineDDL.Fallback = *c.Fallback
+		cfg.presence.onlineDDLFallback = true
+	}
 }
 
 // diffConfig maps the ptah.yaml diff block onto the DiffConfig IR, validating
