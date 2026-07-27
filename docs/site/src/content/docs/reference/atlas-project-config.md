@@ -120,26 +120,25 @@ Explicit CLI flags win over `atlas.hcl`, and `atlas.hcl` wins over built-in
 defaults.
 
 Ptah accepts Atlas's `atlas`, `golang-migrate`, `goose`, `flyway`, `liquibase`,
-and `dbmate` values while evaluating `atlas.hcl`. Command support is narrower
-than config parsing: `ptah atlas migrate apply` currently executes only
-`atlas` directories. It rejects every other value before opening the target
-database instead of risking execution under the wrong file semantics. An
+and `dbmate` values while evaluating `atlas.hcl`, and `ptah atlas migrate apply`
+executes all of them. The native `atlas` format is read from disk unchanged
+(preserving `atlas.sum` verification and down migrations); every other format is
+converted in memory to Atlas single-file, up-only migrations, so apply runs only
+the source tool's forward (up) SQL. Unknown formats and, currently, Flyway
+repeatable migrations still fail before the target database is opened. An
 explicit `?format=` query on the effective directory URL, whether declared by
 `migration.dir` or passed with CLI `--dir`, overrides this project default,
 matching Atlas's URL precedence. An empty query value selects the native
 `atlas` format.
 
-Convert an external directory before applying it:
-
 ```bash
-ptah atlas migrate import \
-  --from "file://legacy-migrations?format=goose" \
-  --to file://migrations
+# Apply a Goose directory directly.
 ptah atlas migrate apply --env local \
-  --dir "file://migrations?format=atlas"
+  --dir "file://migrations?format=goose"
 ```
 
-Native apply support for all Atlas OSS directory formats is tracked in
+Apply and `ptah atlas migrate import` share one format-loading implementation,
+so they agree on every format's up/down semantics. See
 [`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742).
 
 `env.src` and `env.schema.src` accept local schema-file sources for

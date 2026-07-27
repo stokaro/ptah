@@ -2,6 +2,7 @@ package atlasmigratereport
 
 import (
 	"io"
+	"io/fs"
 	"os"
 
 	"github.com/stokaro/ptah/dbschema"
@@ -10,7 +11,11 @@ import (
 )
 
 type ApplyFormatOptions struct {
-	Conn        *dbschema.DatabaseConnection
+	Conn *dbschema.DatabaseConnection
+	// FS is the migration filesystem that was applied. It must be set for
+	// non-Atlas source formats, whose executed migrations live only in memory
+	// after conversion; when nil, the report reads ResolvedDir from disk.
+	FS          fs.FS
 	ResolvedDir string
 	Dir         string
 	URL         string
@@ -21,9 +26,13 @@ type ApplyFormatOptions struct {
 // result produced by internal/atlasmigrate.
 func WriteApplyFormat(w io.Writer, format string, opts ApplyFormatOptions) error {
 	result := opts.Result
+	migrationFS := opts.FS
+	if migrationFS == nil {
+		migrationFS = os.DirFS(opts.ResolvedDir)
+	}
 	return atlasreport.WriteMigrateApplyFormat(w, format, atlasreport.MigrateApplyResultOptions{
 		Conn:             opts.Conn,
-		FS:               os.DirFS(opts.ResolvedDir),
+		FS:               migrationFS,
 		Dir:              opts.Dir,
 		URL:              opts.URL,
 		Status:           result.Status,

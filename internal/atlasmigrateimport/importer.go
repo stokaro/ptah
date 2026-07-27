@@ -1,9 +1,19 @@
 // Package atlasmigrateimport converts migration directories from
-// Atlas-supported tools to Atlas migration directory layout.
+// Atlas-supported tools (golang-migrate, Goose, Flyway, Liquibase, dbmate) to
+// Atlas single-file migration layout.
+//
+// It is the shared format-loading layer for both apply-side and import-side
+// Atlas commands. LoadDir reads and converts a source directory into in-memory
+// Atlas single-file entries without touching disk; Import writes those entries
+// plus atlas.sum. Because Atlas single-file migrations are up-only, conversion
+// keeps each migration's up SQL and drops its down/rollback section, so a
+// converted directory can be executed by the Atlas-format migrator without
+// silently changing the source tool's semantics.
 package atlasmigrateimport
 
 import (
 	"fmt"
+	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -46,9 +56,33 @@ type localDirURL struct {
 	Query url.Values
 }
 
-type importEntry struct {
+// Entry is one migration file converted to Atlas single-file layout. Name is
+// the Atlas file name (for example "1_init.sql") and Data is the normalized,
+// up-only SQL body.
+type Entry struct {
 	Name string
 	Data []byte
+}
+
+// Loaded is a source migration directory read and converted to in-memory Atlas
+// single-file entries. It is produced by LoadDir and shared by the import
+// (write) path and the apply (in-memory execution) path.
+type Loaded struct {
+	// Format is the resolved source format the entries were converted from.
+	Format Format
+	// Dir is the resolved source directory the entries were read from.
+	Dir string
+	// Entries are the converted Atlas single-file migrations, sorted by name.
+	Entries []Entry
+}
+
+// FS returns an in-memory fs.FS containing the converted Atlas single-file
+// migrations. The result is suitable for migrator.NewFSMigrator with
+// migrator.MigrationDirFormatAtlas. It contains no atlas.sum, which is correct:
+// external source formats carry no Atlas integrity file, so the Atlas migrator
+// derives each revision checksum from the converted up SQL instead.
+func (l *Loaded) FS() fs.FS {
+	return newMemFS(l.Entries)
 }
 
 type flywayEntry struct {
@@ -83,13 +117,11 @@ func Import(opts Options) (*Result, error) {
 		return nil, err
 	}
 
-	entries, err := loadEntries(from.Dir, format)
+	loaded, err := LoadDir(from.Dir, format)
 	if err != nil {
 		return nil, err
 	}
-	if len(entries) == 0 {
-		return nil, fmt.Errorf("no importable migration files found in %s for format %q", from.Dir, format)
-	}
+	entries := loaded.Entries
 	if err := os.MkdirAll(to.Dir, 0o755); err != nil {
 		return nil, fmt.Errorf("create target migration directory %s: %w", to.Dir, err)
 	}
@@ -119,7 +151,25 @@ func Import(opts Options) (*Result, error) {
 	return &Result{Files: files, SumFile: sumFile}, nil
 }
 
-func preflightTarget(fromDir, toDir string, format Format, entries []importEntry) error {
+// LoadDir reads the source migration directory at dir and converts it to
+// in-memory Atlas single-file entries for the given (already resolved) format.
+// It never writes to disk and never opens a database connection, so callers can
+// validate a directory before mutating any target. Unknown formats, malformed
+// layouts, and formats that Ptah cannot execute yet (such as Flyway repeatable
+// migrations) return an error. An empty result is treated as an error so a
+// mis-selected format cannot silently apply nothing.
+func LoadDir(dir string, format Format) (*Loaded, error) {
+	entries, err := loadEntries(dir, format)
+	if err != nil {
+		return nil, err
+	}
+	if len(entries) == 0 {
+		return nil, fmt.Errorf("no importable migration files found in %s for format %q", dir, format)
+	}
+	return &Loaded{Format: format, Dir: dir, Entries: entries}, nil
+}
+
+func preflightTarget(fromDir, toDir string, format Format, entries []Entry) error {
 	if sameLocalDir(fromDir, toDir) {
 		return fmt.Errorf("import --to must be different from --from for format %q", format)
 	}
@@ -205,7 +255,7 @@ func sourceFormat(queryFormat, dirFormat string) (Format, error) {
 	}
 }
 
-func loadEntries(dir string, format Format) ([]importEntry, error) {
+func loadEntries(dir string, format Format) ([]Entry, error) {
 	files, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("read source migration directory %s: %w", dir, err)
@@ -228,8 +278,8 @@ func loadEntries(dir string, format Format) ([]importEntry, error) {
 	}
 }
 
-func loadAtlasEntries(dir string, files []os.DirEntry) ([]importEntry, error) {
-	var entries []importEntry
+func loadAtlasEntries(dir string, files []os.DirEntry) ([]Entry, error) {
+	var entries []Entry
 	for _, file := range files {
 		if file.IsDir() || filepath.Ext(file.Name()) != ".sql" {
 			continue
@@ -238,14 +288,14 @@ func loadAtlasEntries(dir string, files []os.DirEntry) ([]importEntry, error) {
 		if err != nil {
 			return nil, err
 		}
-		entries = append(entries, importEntry{Name: file.Name(), Data: data})
+		entries = append(entries, Entry{Name: file.Name(), Data: data})
 	}
 	sortEntries(entries)
 	return entries, nil
 }
 
-func loadGolangMigrateEntries(dir string, files []os.DirEntry) ([]importEntry, error) {
-	var entries []importEntry
+func loadGolangMigrateEntries(dir string, files []os.DirEntry) ([]Entry, error) {
+	var entries []Entry
 	for _, file := range files {
 		match := golangMigrateFileRe.FindStringSubmatch(file.Name())
 		if file.IsDir() {
@@ -264,7 +314,7 @@ func loadGolangMigrateEntries(dir string, files []os.DirEntry) ([]importEntry, e
 		if err != nil {
 			return nil, err
 		}
-		entries = append(entries, importEntry{Name: match[1] + "_" + match[2] + ".sql", Data: data})
+		entries = append(entries, Entry{Name: match[1] + "_" + match[2] + ".sql", Data: data})
 	}
 	sortEntries(entries)
 	return entries, nil
@@ -274,8 +324,8 @@ func loadDirectiveSectionEntries(
 	dir string,
 	files []os.DirEntry,
 	extract func([]byte) []byte,
-) ([]importEntry, error) {
-	var entries []importEntry
+) ([]Entry, error) {
+	var entries []Entry
 	for _, file := range files {
 		if file.IsDir() || !numberedSQLFileRe.MatchString(file.Name()) {
 			continue
@@ -288,13 +338,13 @@ func loadDirectiveSectionEntries(
 		if len(data) == 0 {
 			continue
 		}
-		entries = append(entries, importEntry{Name: file.Name(), Data: data})
+		entries = append(entries, Entry{Name: file.Name(), Data: data})
 	}
 	sortEntries(entries)
 	return entries, nil
 }
 
-func loadFlywayEntries(dir string, files []os.DirEntry) ([]importEntry, error) {
+func loadFlywayEntries(dir string, files []os.DirEntry) ([]Entry, error) {
 	var parsed []flywayEntry
 	baselineVersion := 0
 	for _, file := range files {
@@ -311,7 +361,7 @@ func loadFlywayEntries(dir string, files []os.DirEntry) ([]importEntry, error) {
 		parsed = append(parsed, entry)
 	}
 
-	var entries []importEntry
+	var entries []Entry
 	for _, entry := range parsed {
 		if !entry.baseline && entry.version <= baselineVersion {
 			continue
@@ -320,7 +370,7 @@ func loadFlywayEntries(dir string, files []os.DirEntry) ([]importEntry, error) {
 		if err != nil {
 			return nil, err
 		}
-		entries = append(entries, importEntry{Name: fmt.Sprintf("%d_%s.sql", entry.version, entry.name), Data: data})
+		entries = append(entries, Entry{Name: fmt.Sprintf("%d_%s.sql", entry.version, entry.name), Data: data})
 	}
 	sortEntries(entries)
 	return entries, nil
@@ -536,8 +586,8 @@ func sanitizeName(name string) string {
 	return strings.Trim(name, "_.-")
 }
 
-func sortEntries(entries []importEntry) {
-	slices.SortFunc(entries, func(a, b importEntry) int {
+func sortEntries(entries []Entry) {
+	slices.SortFunc(entries, func(a, b Entry) int {
 		return strings.Compare(a.Name, b.Name)
 	})
 }

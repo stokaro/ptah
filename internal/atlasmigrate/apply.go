@@ -17,7 +17,13 @@ import (
 )
 
 type ApplyOptions struct {
-	Dir                  string
+	// Dir is the resolved migration directory path. It is used for diagnostics
+	// and as the fallback filesystem when FS is nil.
+	Dir string
+	// FS is the migration filesystem to execute. When set (as the CLI does via
+	// ResolveApplyDir) it lets callers apply an in-memory, format-converted
+	// directory. When nil, PrepareApply reads Dir from disk with os.DirFS.
+	FS                   fs.FS
 	DryRun               bool
 	ExecOrder            migrator.ExecOrder
 	TxMode               migrator.MigrationTxMode
@@ -67,7 +73,11 @@ func PrepareApply(ctx context.Context, conn *dbschema.DatabaseConnection, opts A
 	startedAt := time.Now()
 
 	conn.SchemaWriter().SetDryRun(opts.DryRun)
-	mig, err := newApplyMigrator(conn, os.DirFS(opts.Dir), applyMigratorOptions{
+	migrationFS := opts.FS
+	if migrationFS == nil {
+		migrationFS = os.DirFS(opts.Dir)
+	}
+	mig, err := newApplyMigrator(conn, migrationFS, applyMigratorOptions{
 		execOrder:            opts.ExecOrder,
 		txMode:               opts.TxMode,
 		revisionsSchema:      opts.RevisionsSchema,

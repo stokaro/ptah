@@ -37,7 +37,7 @@ func TestMigrateApplyWithAtlasProjectLinearSkipSemantics(t *testing.T) {
 	c.Assert(sqliteTableCount(c, dbPath, "widgets_v3"), qt.Equals, 1)
 }
 
-func TestMigrateApplyRejectsGooseProjectBeforeOpeningDatabase(t *testing.T) {
+func TestMigrateApplyExecutesGooseProjectUpSectionOnly(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
 	t.Chdir(root)
@@ -51,14 +51,10 @@ DROP TABLE widgets;
 
 	output, err := executeAtlasProjectCommand("migrate", "apply", "--env", "local")
 
-	c.Assert(
-		err,
-		qt.ErrorMatches,
-		`atlas migrate apply --dir: migration directory format "goose" is not executable by ptah atlas migrate apply yet; convert it with ptah atlas migrate import`,
-		qt.Commentf("command output:\n%s", output),
-	)
-	_, statErr := os.Stat(dbPath)
-	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
+	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", output))
+	// The Up section executed; the Down section (DROP TABLE widgets) did not,
+	// so the table still exists.
+	c.Assert(sqliteTableCount(c, dbPath, "widgets"), qt.Equals, 1)
 }
 
 func TestMigrateApplyRejectsUnknownProjectFormatBeforeOpeningDatabase(t *testing.T) {
@@ -81,7 +77,7 @@ func TestMigrateApplyRejectsUnknownProjectFormatBeforeOpeningDatabase(t *testing
 	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
 }
 
-func TestMigrateApplyRejectsURLFormatBeforeOpeningDatabase(t *testing.T) {
+func TestMigrateApplyExecutesGooseFormatFromURL(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
 	t.Chdir(root)
@@ -100,14 +96,8 @@ func TestMigrateApplyRejectsURLFormatBeforeOpeningDatabase(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(
-		err,
-		qt.ErrorMatches,
-		`atlas migrate apply --dir: migration directory format "goose" is not executable by ptah atlas migrate apply yet; convert it with ptah atlas migrate import`,
-		qt.Commentf("command output:\n%s", output.String()),
-	)
-	_, statErr := os.Stat(dbPath)
-	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
+	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", output.String()))
+	c.Assert(sqliteTableCount(c, dbPath, "widgets"), qt.Equals, 1)
 }
 
 func TestMigrateApplyURLFormatOverridesProjectDefault(t *testing.T) {
@@ -144,7 +134,7 @@ func TestMigrateApplyProjectDirURLFormatOverridesProjectDefault(t *testing.T) {
 	c.Assert(sqliteTableCount(c, dbPath, "widgets"), qt.Equals, 1)
 }
 
-func TestMigrateApplyRejectsProjectDirURLFormatBeforeOpeningDatabase(t *testing.T) {
+func TestMigrateApplyProjectDirURLFormatSelectsGoose(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
 	t.Chdir(root)
@@ -154,14 +144,8 @@ func TestMigrateApplyRejectsProjectDirURLFormatBeforeOpeningDatabase(t *testing.
 
 	output, err := executeAtlasProjectCommand("migrate", "apply", "--env", "local")
 
-	c.Assert(
-		err,
-		qt.ErrorMatches,
-		`atlas migrate apply --dir: migration directory format "goose" is not executable by ptah atlas migrate apply yet; convert it with ptah atlas migrate import`,
-		qt.Commentf("command output:\n%s", output),
-	)
-	_, statErr := os.Stat(dbPath)
-	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
+	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", output))
+	c.Assert(sqliteTableCount(c, dbPath, "widgets"), qt.Equals, 1)
 }
 
 func writeAtlasApplyProjectConfig(c *qt.C, dbPath, format, execOrder string) {

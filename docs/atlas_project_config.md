@@ -123,25 +123,25 @@ working directory unless they are absolute.
 
 Ptah parses Atlas's `atlas`, `golang-migrate`, `goose`, `flyway`, `liquibase`,
 and `dbmate` migration format values so the project file can be evaluated
-without changing Atlas syntax. Parsing a value does not imply that every
-command can execute it. `ptah atlas migrate apply` currently executes only
-`atlas` directories. It rejects every other format before opening the target
-database, because interpreting an external tool's file as an Atlas migration
-could execute rollback or metadata sections as forward SQL. An explicit
-`?format=` query on the effective directory URL, whether it comes from
-`migration.dir` or CLI `--dir`, takes precedence over the `migration.format`
-default, matching Atlas. An empty query value selects the native `atlas`
-format. Convert external directories first:
+without changing Atlas syntax. `ptah atlas migrate apply` executes all of them.
+The native `atlas` format is read from disk unchanged, preserving `atlas.sum`
+verification and down migrations. Every other format is read and converted in
+memory to Atlas single-file, up-only migrations, so applying it runs only the
+source tool's forward (up) SQL and never its rollback, undo, or metadata
+section. Unknown formats and, currently, Flyway repeatable migrations still fail
+before the target database is opened. An explicit `?format=` query on the
+effective directory URL, whether it comes from `migration.dir` or CLI `--dir`,
+takes precedence over the `migration.format` default, matching Atlas. An empty
+query value selects the native `atlas` format.
 
 ```bash
-ptah atlas migrate import \
-  --from "file://legacy-migrations?format=goose" \
-  --to file://migrations
+# Apply a Goose directory directly, no conversion step required.
 ptah atlas migrate apply --env local \
-  --dir "file://migrations?format=atlas"
+  --dir "file://migrations?format=goose"
 ```
 
-Native apply support for all Atlas OSS directory formats is tracked in
+The reusable format-loading layer is shared with `ptah atlas migrate import`, so
+apply and import agree on every format's up/down semantics. See
 [`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742).
 
 `env.exclude` accepts either one string or a list of strings. `ptah atlas schema
