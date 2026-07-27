@@ -29,12 +29,14 @@ func TestImportFlywayBaselineAndUndo(t *testing.T) {
 	})
 
 	c.Assert(err, qt.IsNil)
+	// Selected migrations (baseline B2 and V3, in Flyway order) are assigned a
+	// dense monotonic Atlas sequence.
 	c.Assert(baseNames(result.Files), qt.DeepEquals, []string{
-		"2_baseline.sql",
-		"3_third_migration.sql",
+		"1_baseline.sql",
+		"2_third_migration.sql",
 	})
-	c.Assert(readFile(c, target, "2_baseline.sql"), qt.Equals, "CREATE TABLE baseline (id int);\n")
-	c.Assert(readFile(c, target, "3_third_migration.sql"), qt.Equals, "ALTER TABLE baseline ADD name text;\n")
+	c.Assert(readFile(c, target, "1_baseline.sql"), qt.Equals, "CREATE TABLE baseline (id int);\n")
+	c.Assert(readFile(c, target, "2_third_migration.sql"), qt.Equals, "ALTER TABLE baseline ADD name text;\n")
 	assertAtlasSumOK(c, target, result.SumFile)
 }
 
@@ -55,12 +57,14 @@ func TestImportFlywayRejectsRepeatableMigrations(t *testing.T) {
 	c.Assert(os.IsNotExist(statErr), qt.Equals, true)
 }
 
-func TestImportFlywayNormalizesDottedAndUnderscoreVersions(t *testing.T) {
+func TestImportFlywayOrdersDottedAndUnderscoreVersions(t *testing.T) {
 	c := qt.New(t)
 	source := t.TempDir()
 	target := t.TempDir()
-	writeFile(c, source, "V1.1__add_users.sql", "CREATE TABLE users (id int);\n")
-	writeFile(c, source, "V1_2__add_posts.sql", "CREATE TABLE posts (id int);\n")
+	// V1.5 must order before V2: component-wise 1.5 < 2. The old digit-stripping
+	// parser produced 15 and 2 and inverted the order.
+	writeFile(c, source, "V2__add_posts.sql", "CREATE TABLE posts (id int);\n")
+	writeFile(c, source, "V1.5__add_users.sql", "CREATE TABLE users (id int);\n")
 
 	result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
 		FromURL: "file://" + source + "?format=flyway",
@@ -69,11 +73,12 @@ func TestImportFlywayNormalizesDottedAndUnderscoreVersions(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(baseNames(result.Files), qt.DeepEquals, []string{
-		"11_add_users.sql",
-		"12_add_posts.sql",
+		"1_add_users.sql",
+		"2_add_posts.sql",
 	})
-	c.Assert(readFile(c, target, "11_add_users.sql"), qt.Equals, "CREATE TABLE users (id int);\n")
-	c.Assert(readFile(c, target, "12_add_posts.sql"), qt.Equals, "CREATE TABLE posts (id int);\n")
+	// V1.5 (add_users) is Atlas version 1, V2 (add_posts) is Atlas version 2.
+	c.Assert(readFile(c, target, "1_add_users.sql"), qt.Equals, "CREATE TABLE users (id int);\n")
+	c.Assert(readFile(c, target, "2_add_posts.sql"), qt.Equals, "CREATE TABLE posts (id int);\n")
 	assertAtlasSumOK(c, target, result.SumFile)
 }
 
@@ -233,10 +238,12 @@ func TestImportRejectsExistingTargetFiles(t *testing.T) {
 	c.Assert(readFile(c, target, "1_initial.sql"), qt.Equals, "SELECT 1;\n")
 }
 
-func TestImportRejectsDuplicateGeneratedNames(t *testing.T) {
+func TestImportRejectsDuplicateFlywayVersions(t *testing.T) {
 	c := qt.New(t)
 	source := t.TempDir()
 	target := t.TempDir()
+	// V1 and V01 are the same Flyway version (1); reject before assigning Atlas
+	// versions rather than silently renumbering them to distinct migrations.
 	writeFile(c, source, "V1__same-name.sql", "CREATE TABLE first (id int);\n")
 	writeFile(c, source, "V01__same-name.sql", "CREATE TABLE second (id int);\n")
 
@@ -245,7 +252,7 @@ func TestImportRejectsDuplicateGeneratedNames(t *testing.T) {
 		ToURL:   "file://" + target,
 	})
 
-	c.Assert(err, qt.ErrorMatches, `import produced duplicate migration file name 1_same-name.sql`)
+	c.Assert(err, qt.ErrorMatches, `Flyway migrations V01__same-name\.sql and V1__same-name\.sql resolve to the same version 1`)
 }
 
 func writeFile(c *qt.C, dir, name, content string) {
