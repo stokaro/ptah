@@ -43,6 +43,7 @@ the exact flag set in an installed binary.
 | `ptah migrations rm` | Delete a migration's up/down pair and rewrite the integrity file, refusing already-applied migrations unless `--force`. |
 | `ptah migrations lint` | Lint migration files and, with `--dev-url`, clean and replay migrations on a directly connectable dev database before static reporting. |
 | `ptah migrations test` | Apply migrations to a throwaway database and run declarative YAML test cases (migrate/seed/exec/assert steps) against it, exiting non-zero on any failure. |
+| `ptah migrations data` | Generate a reversible data migration from declarative reference-data drift against a live database. |
 | `ptah sql lint` | Lint standalone SQL files. |
 | `ptah seed` | Apply environment-scoped SQL seed files. |
 | `ptah version` | Print Ptah build information. |
