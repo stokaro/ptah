@@ -48,6 +48,50 @@ func TestAggregateConstructors(t *testing.T) {
 	}
 }
 
+func TestCountStarArgumentIsCountStar(t *testing.T) {
+	c := qt.New(t)
+
+	// Count("*") is a convenience for COUNT(*): it renders identically to
+	// CountStar and never the invalid COUNT("*") over a column named "*".
+	starSQL, starArgs := renderProjection(c, query.CountStar())
+	countSQL, countArgs := renderProjection(c, query.Count("*"))
+
+	c.Assert(countSQL, qt.Equals, `SELECT COUNT(*) FROM "t"`)
+	c.Assert(countSQL, qt.Equals, starSQL)
+	c.Assert(countArgs, qt.HasLen, 0)
+	c.Assert(starArgs, qt.HasLen, 0)
+}
+
+func TestAggregateStarArgumentRejected(t *testing.T) {
+	c := qt.New(t)
+
+	// Only Count("*") maps to the star form. Every other "*" aggregate argument —
+	// a non-COUNT aggregate, COUNT(DISTINCT *), or a qualified star — has no valid
+	// SQL form, so it is rejected at render time rather than emitting a quoted "*".
+	tests := []struct {
+		name string
+		expr ast.Expression
+	}{
+		{name: "sum star", expr: query.Sum("*")},
+		{name: "avg star", expr: query.Avg("*")},
+		{name: "min star", expr: query.Min("*")},
+		{name: "max star", expr: query.Max("*")},
+		{name: "count distinct star", expr: query.CountDistinct("*")},
+		{name: "qualified count star", expr: query.Col("u", "*").Count()},
+		{name: "qualified sum star", expr: query.Col("o", "*").Sum()},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			stmt := query.Select().Exprs(tt.expr).From("t").Build()
+			sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+			c.Assert(err, qt.ErrorMatches, `.*is not a valid column reference.*`)
+			c.Assert(sql, qt.Equals, "")
+			c.Assert(args, qt.IsNil)
+		})
+	}
+}
+
 func TestColumnAggregateMethods(t *testing.T) {
 	c := qt.New(t)
 

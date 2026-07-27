@@ -244,6 +244,11 @@ func TestRenderSelect_AggregateOverQualifiedColumnInJoin(t *testing.T) {
 			dialect: platform.MySQL,
 			wantSQL: "SELECT `u`.`name`, COUNT(`o`.`id`) AS `orders`, SUM(`o`.`total`) AS `spent` FROM `users` `u` INNER JOIN `orders` `o` ON `o`.`user_id` = `u`.`id` GROUP BY `u`.`name`",
 		},
+		{
+			name:    "sqlite",
+			dialect: platform.SQLite,
+			wantSQL: `SELECT "u"."name", COUNT("o"."id") AS "orders", SUM("o"."total") AS "spent" FROM "users" "u" INNER JOIN "orders" "o" ON "o"."user_id" = "u"."id" GROUP BY "u"."name"`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -381,4 +386,170 @@ func TestRenderSelect_Phase3ZeroValuesAreBackwardCompatible(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Equals, `SELECT "id", "name" FROM "commodities" WHERE "draft" = $1 ORDER BY "name" ASC LIMIT $2 OFFSET $3`)
 	c.Assert(args, qt.DeepEquals, []any{false, int64(24), int64(0)})
+}
+
+// onWhereHavingLimitOffset carries a bound value in the JOIN ON, the WHERE, the
+// HAVING, and both the LIMIT and OFFSET, so a single statement pins the full
+// placeholder order across every binding clause.
+func onWhereHavingLimitOffset() *ast.SelectStatement {
+	limit := int64(10)
+	offset := int64(20)
+	return &ast.SelectStatement{
+		Columns: []ast.ResultColumn{
+			{Qualifier: "o", Name: "status"},
+			{Expr: &ast.FuncCall{Name: "COUNT", Star: true}, Alias: "n"},
+		},
+		From:      "orders",
+		FromAlias: "o",
+		Joins: []ast.JoinClause{
+			{
+				Type:  ast.JoinInner,
+				Table: "users",
+				Alias: "u",
+				On: &ast.LogicalExpr{
+					Operator: ast.LogicalAnd,
+					Operands: []ast.Expression{
+						eqCols("u", "id", "o", "user_id"),
+						&ast.Comparison{Left: &ast.ColumnRef{Qualifier: "u", Name: "status"}, Operator: ast.OpEqual, Right: &ast.BoundValue{Value: "active"}},
+					},
+				},
+			},
+		},
+		Where:   &ast.Comparison{Left: &ast.ColumnRef{Qualifier: "o", Name: "total"}, Operator: ast.OpGreaterThan, Right: &ast.BoundValue{Value: int64(100)}},
+		GroupBy: []ast.ColumnRef{{Qualifier: "o", Name: "status"}},
+		Having: &ast.Comparison{
+			Left:     &ast.FuncCall{Name: "COUNT", Star: true},
+			Operator: ast.OpGreaterThan,
+			Right:    &ast.BoundValue{Value: int64(5)},
+		},
+		Limit:  &limit,
+		Offset: &offset,
+	}
+}
+
+func TestRenderSelect_OnWhereHavingLimitOffsetPlaceholderOrdering(t *testing.T) {
+	c := qt.New(t)
+
+	// The bound values are numbered strictly by render order: JOIN ON first, then
+	// WHERE, then HAVING, then LIMIT, then OFFSET — regardless of placeholder style.
+	wantArgs := []any{"active", int64(100), int64(5), int64(10), int64(20)}
+
+	tests := []struct {
+		name    string
+		dialect string
+		wantSQL string
+	}{
+		{
+			name:    "postgres dollar placeholders",
+			dialect: platform.Postgres,
+			wantSQL: `SELECT "o"."status", COUNT(*) AS "n" FROM "orders" "o" INNER JOIN "users" "u" ON ("u"."id" = "o"."user_id" AND "u"."status" = $1) WHERE "o"."total" > $2 GROUP BY "o"."status" HAVING COUNT(*) > $3 LIMIT $4 OFFSET $5`,
+		},
+		{
+			name:    "mysql question placeholders",
+			dialect: platform.MySQL,
+			wantSQL: "SELECT `o`.`status`, COUNT(*) AS `n` FROM `orders` `o` INNER JOIN `users` `u` ON (`u`.`id` = `o`.`user_id` AND `u`.`status` = ?) WHERE `o`.`total` > ? GROUP BY `o`.`status` HAVING COUNT(*) > ? LIMIT ? OFFSET ?",
+		},
+		{
+			name:    "sqlite question placeholders",
+			dialect: platform.SQLite,
+			wantSQL: `SELECT "o"."status", COUNT(*) AS "n" FROM "orders" "o" INNER JOIN "users" "u" ON ("u"."id" = "o"."user_id" AND "u"."status" = ?) WHERE "o"."total" > ? GROUP BY "o"."status" HAVING COUNT(*) > ? LIMIT ? OFFSET ?`,
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			sql, args, err := renderer.RenderSelect(onWhereHavingLimitOffset(), tt.dialect)
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Equals, tt.wantSQL)
+			c.Assert(args, qt.DeepEquals, wantArgs)
+		})
+	}
+}
+
+func TestRenderSelect_HavingWithoutGroupBy(t *testing.T) {
+	c := qt.New(t)
+
+	// A HAVING is valid without GROUP BY: the aggregate spans the whole table. No
+	// GROUP BY clause is emitted, and the HAVING value takes the first placeholder.
+	stmt := &ast.SelectStatement{
+		Columns: []ast.ResultColumn{{Expr: &ast.FuncCall{Name: "COUNT", Star: true}, Alias: "n"}},
+		From:    "orders",
+		Having: &ast.Comparison{
+			Left:     &ast.FuncCall{Name: "COUNT", Star: true},
+			Operator: ast.OpGreaterThan,
+			Right:    &ast.BoundValue{Value: int64(5)},
+		},
+	}
+
+	tests := []struct {
+		name    string
+		dialect string
+		wantSQL string
+	}{
+		{name: "postgres", dialect: platform.Postgres, wantSQL: `SELECT COUNT(*) AS "n" FROM "orders" HAVING COUNT(*) > $1`},
+		{name: "mysql", dialect: platform.MySQL, wantSQL: "SELECT COUNT(*) AS `n` FROM `orders` HAVING COUNT(*) > ?"},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			sql, args, err := renderer.RenderSelect(stmt, tt.dialect)
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Equals, tt.wantSQL)
+			c.Assert(args, qt.DeepEquals, []any{int64(5)})
+		})
+	}
+}
+
+func TestRenderSelect_HavingWithOffsetOnly(t *testing.T) {
+	c := qt.New(t)
+
+	// A HAVING value binds before the OFFSET value even when there is no LIMIT: the
+	// HAVING takes the first placeholder and the OFFSET the second. On MySQL,
+	// MariaDB, and SQLite the offset-only "no limit" sentinel is a literal between
+	// HAVING and OFFSET, so it consumes no placeholder and does not shift the order.
+	offset := int64(5)
+	stmt := &ast.SelectStatement{
+		Columns: []ast.ResultColumn{{Expr: &ast.FuncCall{Name: "SUM", Args: []ast.Expression{&ast.ColumnRef{Name: "total"}}}, Alias: "s"}},
+		From:    "orders",
+		GroupBy: []ast.ColumnRef{{Name: "status"}},
+		Having: &ast.Comparison{
+			Left:     &ast.FuncCall{Name: "SUM", Args: []ast.Expression{&ast.ColumnRef{Name: "total"}}},
+			Operator: ast.OpGreaterThan,
+			Right:    &ast.BoundValue{Value: int64(1000)},
+		},
+		Offset: &offset,
+	}
+
+	wantArgs := []any{int64(1000), int64(5)}
+
+	tests := []struct {
+		name    string
+		dialect string
+		wantSQL string
+	}{
+		{
+			name:    "postgres emits a bare offset",
+			dialect: platform.Postgres,
+			wantSQL: `SELECT SUM("total") AS "s" FROM "orders" GROUP BY "status" HAVING SUM("total") > $1 OFFSET $2`,
+		},
+		{
+			name:    "mysql synthesizes a max-bigint limit before offset",
+			dialect: platform.MySQL,
+			wantSQL: "SELECT SUM(`total`) AS `s` FROM `orders` GROUP BY `status` HAVING SUM(`total`) > ? LIMIT 18446744073709551615 OFFSET ?",
+		},
+		{
+			name:    "sqlite synthesizes a negative-one limit before offset",
+			dialect: platform.SQLite,
+			wantSQL: `SELECT SUM("total") AS "s" FROM "orders" GROUP BY "status" HAVING SUM("total") > ? LIMIT -1 OFFSET ?`,
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			sql, args, err := renderer.RenderSelect(stmt, tt.dialect)
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Equals, tt.wantSQL)
+			c.Assert(args, qt.DeepEquals, wantArgs)
+		})
+	}
 }

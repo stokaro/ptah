@@ -1,6 +1,8 @@
 package query
 
 import (
+	"strings"
+
 	"github.com/stokaro/ptah/core/ast"
 )
 
@@ -289,8 +291,14 @@ func CountStar() ast.Expression {
 }
 
 // Count builds COUNT("column"), counting the non-null values of a bare column.
-// Use Col(table, name).Count for a qualified column.
+// As a convenience, Count("*") is COUNT(*) — identical to CountStar — rather than
+// the invalid COUNT("*") over a column literally named "*". Use
+// Col(table, name).Count for a qualified column, and CountStar as the primary way
+// to count all rows.
 func Count(column string) ast.Expression {
+	if strings.TrimSpace(column) == "*" {
+		return CountStar()
+	}
 	return aggregate("COUNT", column)
 }
 

@@ -199,6 +199,12 @@ Each returns an expression usable in two places:
   helpers — `Expr(query.CountStar()).Gt(int64(5))` — which compose with `And`,
   `Or`, and `Not` like any other expression.
 
+`CountStar()` is the primary way to count all rows; `Count("*")` is an equivalent
+convenience for `COUNT(*)`. Every other `"*"` aggregate argument — a non-`COUNT`
+aggregate, `COUNT(DISTINCT *)`, or a qualified star such as `Col("u", "*").Count()`
+— has no portable star form and is rejected at render time rather than emitting an
+invalid quoted `"*"`.
+
 A function name (`COUNT`, `SUM`, …) is a keyword emitted verbatim and never
 quoted; its column arguments are quoted, and any value it is compared against is
 bound. The renderer rejects a function name that is not a simple identifier

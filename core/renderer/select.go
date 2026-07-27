@@ -331,6 +331,14 @@ func (r *selectRenderer) renderColumnRef(ref *ast.ColumnRef) error {
 	if strings.TrimSpace(ref.Name) == "" {
 		return errors.New("renderer: column reference has an empty name")
 	}
+	// A "*" is not a column: quoting it would yield "*" (or "q"."*"), which the
+	// database reads as a column literally named *. The star belongs to the
+	// projection (ResultColumn.Star / a qualified "q".*) and to the star form of
+	// an aggregate (FuncCall.Star, e.g. COUNT(*)), never to a column reference in
+	// an expression, so it is rejected here rather than mis-rendered.
+	if strings.TrimSpace(ref.Name) == "*" {
+		return errors.New(`renderer: "*" is not a valid column reference; use a star aggregate such as COUNT(*)`)
+	}
 	r.writeQualifiedIdent(ref.Qualifier, ref.Name)
 	return nil
 }
