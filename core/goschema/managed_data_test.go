@@ -49,6 +49,46 @@ type Country struct {
 	}
 }
 
+func TestParseManagedDataAnnotation_Schema(t *testing.T) {
+	c := qt.New(t)
+
+	db := mustParseSource(c, "schema.go", `
+package fixture
+
+//migrator:schema:data table="countries" schema="reference" key="code" file="countries.yaml"
+type Country struct {
+	//migrator:schema:field name="code" type="VARCHAR(2)" primary="true"
+	Code string
+
+	//migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+	Name string
+}
+`)
+
+	c.Assert(db.ManagedData, qt.HasLen, 1)
+	c.Assert(db.ManagedData[0].Schema, qt.Equals, "reference")
+}
+
+func TestParseManagedDataAnnotation_SchemaDefaultsEmpty(t *testing.T) {
+	c := qt.New(t)
+
+	db := mustParseSource(c, "schema.go", `
+package fixture
+
+//migrator:schema:data table="countries" key="code" file="countries.yaml"
+type Country struct {
+	//migrator:schema:field name="code" type="VARCHAR(2)" primary="true"
+	Code string
+
+	//migrator:schema:field name="name" type="VARCHAR(255)" not_null="true"
+	Name string
+}
+`)
+
+	c.Assert(db.ManagedData, qt.HasLen, 1)
+	c.Assert(db.ManagedData[0].Schema, qt.Equals, "")
+}
+
 func TestParseManagedDataAnnotation_MissingRequiredAttributeRejected(t *testing.T) {
 	tests := []struct {
 		name          string

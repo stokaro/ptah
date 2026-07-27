@@ -88,9 +88,10 @@ type Options struct {
 // entry is refused. See [Options] for why these live here rather than on the
 // apply path.
 //
-// The table is read with an empty schema argument: a datadiff.DataDiff carries
-// no schema, so both the read and the rendered DML target the connection's
-// default schema. Schema-qualified managed tables are a known follow-up.
+// Each table is read and rendered under the schema declared on its
+// //migrator:schema:data annotation (the "schema" attribute, carried on
+// goschema.ManagedData); an empty schema targets the connection's default
+// schema. The schema qualifies both the live-row read and the generated DML.
 func Generate(ctx context.Context, conn *dbschema.DatabaseConnection, opts Options) (upSQL, downSQL string, err error) {
 	if conn == nil {
 		return "", "", errors.New("datamigrate: a database connection is required")
@@ -129,8 +130,8 @@ func Generate(ctx context.Context, conn *dbschema.DatabaseConnection, opts Optio
 			// nothing to reverse for this table.
 			continue
 		}
-		ups = append(ups, tableBlock(md.Table, rendered.up))
-		downs = append(downs, tableBlock(md.Table, rendered.down))
+		ups = append(ups, tableBlock(qualifiedName(md.Schema, md.Table), rendered.up))
+		downs = append(downs, tableBlock(qualifiedName(md.Schema, md.Table), rendered.down))
 		changes = append(changes, tableChange{table: md.Table, updates: len(rendered.diff.Updates), deletes: len(rendered.diff.Deletes)})
 	}
 
@@ -192,7 +193,7 @@ func renderTable(ctx context.Context, conn *dbschema.DatabaseConnection, dialect
 		return tableRender{}, err
 	}
 
-	live, err := dbschema.ReadTableRows(ctx, conn, "", md.Table, managedColumns(desired, md.Keys))
+	live, err := dbschema.ReadTableRows(ctx, conn, md.Schema, md.Table, managedColumns(desired, md.Keys))
 	if err != nil {
 		return tableRender{}, err
 	}
@@ -210,7 +211,7 @@ func renderTable(ctx context.Context, conn *dbschema.DatabaseConnection, dialect
 			md.Table, len(live))
 	}
 
-	diff, err := datadiff.Compute(md.Table, md.Keys, desired, live)
+	diff, err := datadiff.Compute(md.Schema, md.Table, md.Keys, desired, live)
 	if err != nil {
 		return tableRender{}, err
 	}
@@ -336,6 +337,17 @@ func managedColumns(rows []map[string]any, keys []string) []string {
 	}
 	slices.Sort(cols)
 	return cols
+}
+
+// qualifiedName renders a table name for the block comment, prefixing the
+// schema when one is declared (schema.table) and returning just the table
+// otherwise. It is display-only; the actual SQL identifiers are quoted by the
+// renderer.
+func qualifiedName(schema, table string) string {
+	if schema == "" {
+		return table
+	}
+	return schema + "." + table
 }
 
 // tableBlock prefixes a rendered per-table script with a comment naming the

@@ -48,6 +48,45 @@ func TestRender_SplitterRoundTrip(t *testing.T) {
 	}
 }
 
+// TestRender_SchemaQualifiedTableName proves diff.Schema qualifies the rendered
+// table name per dialect, and that an empty schema stays a bare, unqualified
+// identifier (backward compatible).
+func TestRender_SchemaQualifiedTableName(t *testing.T) {
+	c := qt.New(t)
+
+	qualified := &datadiff.DataDiff{
+		Schema:  "app",
+		Table:   "regions",
+		Keys:    []string{"code"},
+		Inserts: []datadiff.Row{{"code": "US", "name": "United States"}},
+		Deletes: []datadiff.Row{{"code": "XX", "name": "Old"}},
+	}
+
+	// PostgreSQL: double-quoted schema.table in both directions.
+	up, down, err := datadiff.Render(qualified, "postgres")
+	c.Assert(err, qt.IsNil)
+	c.Assert(up, qt.Contains, `INSERT INTO "app"."regions" `)
+	c.Assert(up, qt.Contains, `DELETE FROM "app"."regions" `)
+	c.Assert(down, qt.Contains, `INSERT INTO "app"."regions" `)
+
+	// MySQL: backtick-quoted schema.table.
+	upMy, _, err := datadiff.Render(qualified, "mysql")
+	c.Assert(err, qt.IsNil)
+	c.Assert(upMy, qt.Contains, "INSERT INTO `app`.`regions` ")
+
+	// Empty schema renders a bare table name, unchanged from the pre-schema
+	// behavior.
+	unqualified := &datadiff.DataDiff{
+		Table:   "regions",
+		Keys:    []string{"code"},
+		Inserts: []datadiff.Row{{"code": "US", "name": "United States"}},
+	}
+	upBare, _, err := datadiff.Render(unqualified, "postgres")
+	c.Assert(err, qt.IsNil)
+	c.Assert(upBare, qt.Contains, `INSERT INTO "regions" `)
+	c.Assert(upBare, qt.Not(qt.Contains), `"."`)
+}
+
 // TestRenderShapesAndRoundTrip renders a diff carrying every kind of change and
 // asserts the exact up script and its exact inverse. down must undo every
 // statement in fully reversed order: re-insert the deleted rows, restore the

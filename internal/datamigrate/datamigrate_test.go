@@ -164,6 +164,82 @@ func TestGenerate_RoundTripApply(t *testing.T) {
 	})
 }
 
+// TestGenerate_SchemaQualifiedTable proves an annotation's schema="..." flows
+// through the whole pipeline: the live rows are read from the schema-qualified
+// table, the generated DML targets it, and applying up then down round-trips.
+func TestGenerate_SchemaQualifiedTable(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite:///:memory:")
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+
+	// Attach a second in-memory database as the "reference" schema and create a
+	// schema-qualified regions table in it. Ptah caps in-memory SQLite to a
+	// single connection, so the ATTACH persists for every subsequent query.
+	_, err = conn.ExecContext(ctx, `ATTACH DATABASE ':memory:' AS reference`)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(ctx, `CREATE TABLE reference.regions (code TEXT PRIMARY KEY, name TEXT NOT NULL)`)
+	c.Assert(err, qt.IsNil)
+	for _, r := range [][2]string{{"US", "United States"}, {"CZ", "Czech Republic"}, {"XX", "Old Name"}} {
+		_, execErr := conn.ExecContext(ctx, `INSERT INTO reference.regions (code, name) VALUES (?, ?)`, r[0], r[1])
+		c.Assert(execErr, qt.IsNil)
+	}
+
+	root := t.TempDir()
+	goSrc := `package fixture
+
+//migrator:schema:data table="regions" schema="reference" key="code" file="regions.yaml"
+type Region struct {
+	//migrator:schema:field name="code" type="TEXT" primary="true"
+	Code string
+
+	//migrator:schema:field name="name" type="TEXT" not_null="true"
+	Name string
+}
+`
+	c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(goSrc), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(root, "regions.yaml"), []byte(driftDesiredRows), 0o600), qt.IsNil)
+
+	up, down, err := datamigrate.Generate(ctx, conn, datamigrate.Options{RootDir: root, AllowDestructive: true})
+	c.Assert(err, qt.IsNil)
+	// The live rows were read from reference.regions (main has no regions table),
+	// and the generated DML targets the schema-qualified table.
+	c.Assert(up, qt.Contains, `"reference"."regions"`)
+	c.Assert(down, qt.Contains, `"reference"."regions"`)
+
+	apply := func(script string) {
+		for _, stmt := range migrator.SplitSQLStatementsForConnection(conn, script) {
+			_, execErr := conn.ExecContext(ctx, stmt)
+			c.Assert(execErr, qt.IsNil, qt.Commentf("stmt: %s", stmt))
+		}
+	}
+	readState := func() map[string]string {
+		rows, queryErr := conn.QueryContext(ctx, `SELECT code, name FROM reference.regions ORDER BY code`)
+		c.Assert(queryErr, qt.IsNil)
+		defer func() { _ = rows.Close() }()
+		out := map[string]string{}
+		for rows.Next() {
+			var code, name string
+			c.Assert(rows.Scan(&code, &name), qt.IsNil)
+			out[code] = name
+		}
+		c.Assert(rows.Err(), qt.IsNil)
+		return out
+	}
+
+	apply(up)
+	c.Assert(readState(), qt.DeepEquals, map[string]string{
+		"US": "United States", "CZ": "Czechia", "DE": "Germany",
+	})
+
+	apply(down)
+	c.Assert(readState(), qt.DeepEquals, map[string]string{
+		"US": "United States", "CZ": "Czech Republic", "XX": "Old Name",
+	})
+}
+
 func TestGenerate_EmptyDesiredWithLiveRowsErrors(t *testing.T) {
 	c := qt.New(t)
 
