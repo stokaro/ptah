@@ -48,13 +48,35 @@ func SplitSQLStatementsForDialect(sql string, dialect string) []string {
 	return splitSQLStatements(sql, platform.NormalizeDialect(dialect))
 }
 
+// dialectUsesBackslashEscapes reports whether dialect processes C-style
+// backslash escapes inside string literals. MySQL, MariaDB, and ClickHouse do;
+// the PostgreSQL family (standard_conforming_strings), SQLite, SQL Server, and
+// the no-dialect default treat a backslash as an ordinary character. dialect is
+// expected to be normalized via platform.NormalizeDialect (as done by the
+// exported entry points).
+func dialectUsesBackslashEscapes(dialect string) bool {
+	switch dialect {
+	case platform.MySQL, platform.MariaDB, platform.ClickHouse:
+		return true
+	default:
+		return false
+	}
+}
+
 func splitSQLStatements(sql string, dialect string) []string {
 	if strings.TrimSpace(sql) == "" {
 		return []string{}
 	}
 
 	sql = NormalizeClientDelimiters(sql)
-	lexr := lexer.NewLexer(sql)
+	// Use SQL-standard string scanning so a semicolon inside a string literal
+	// cannot leak out and be mis-split into an extra statement. Backslash
+	// escapes are only honored for the dialects that actually process them;
+	// the no-dialect path stays PostgreSQL-safe (backslash is literal).
+	lexr := lexer.NewLexerWithOptions(sql, lexer.Options{
+		StandardStrings:  true,
+		BackslashEscapes: dialectUsesBackslashEscapes(dialect),
+	})
 	var statements []string
 	var currentStatement strings.Builder
 	state := statementSplitState{dialect: dialect}

@@ -19,15 +19,16 @@ const directivePrefix = "+ptah"
 // sign and malformed lines are ignored so directives never make a migration
 // file unreadable.
 //
-// The scan is lexer-driven, the same lexer SplitSQLStatements uses, so a
-// `-- +ptah` sequence inside a string literal or a block comment is never
-// mistaken for a directive; the two views of the file cannot disagree. A
-// directive must additionally be a line comment that begins its physical line
-// (leading whitespace allowed), so an ordinary trailing comment after a
-// statement is not treated as a directive either.
+// The scan is lexer-driven with the same SQL-standard string handling the
+// dialect-blind SplitSQLStatements uses, so a `-- +ptah` sequence inside a
+// string literal or a block comment is never mistaken for a directive; the two
+// views of the file cannot disagree. A directive must additionally be a line
+// comment that begins its physical line (leading whitespace allowed), so an
+// ordinary trailing comment after a statement is not treated as a directive
+// either.
 func ParseFileDirectives(sql string) map[string]string {
 	directives := map[string]string{}
-	lexr := lexer.NewLexer(sql)
+	lexr := lexer.NewLexerWithOptions(sql, lexer.Options{StandardStrings: true})
 	for {
 		tok := lexr.NextToken()
 		if tok.Type == lexer.TokenEOF {

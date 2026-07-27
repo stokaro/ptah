@@ -692,3 +692,97 @@ func BenchmarkLexer_LargeSQL(b *testing.B) {
 		}
 	}
 }
+
+// TestNewLexerWithOptions_DefaultMatchesNewLexer proves the options constructor
+// with a zero Options is byte-for-byte identical to the historical NewLexer, so
+// existing default callers (the DDL parser, linters, migrator) are unaffected.
+func TestNewLexerWithOptions_DefaultMatchesNewLexer(t *testing.T) {
+	inputs := []string{
+		"SELECT 'a''b';",
+		`INSERT INTO t (n) VALUES ('John\'s; data')`,
+		`'escaped \'quote\' and \\backslash'`,
+		`SELECT "col" FROM t;`,
+		"UPDATE t SET n = '\\''; DROP TABLE t; --' WHERE id = 1;",
+	}
+
+	for _, input := range inputs {
+		t.Run(input, func(t *testing.T) {
+			c := qt.New(t)
+			legacy := collectTokens(lexer.NewLexer(input))
+			opted := collectTokens(lexer.NewLexerWithOptions(input, lexer.Options{}))
+			c.Assert(opted, qt.DeepEquals, legacy)
+		})
+	}
+}
+
+// TestScanStringStandard covers SQL-standard string scanning: doubled-quote
+// escaping (dialect-independent) and dialect-gated backslash escaping.
+func TestScanStringStandard(t *testing.T) {
+	tests := []struct {
+		name  string
+		opts  lexer.Options
+		input string
+		want  []string
+	}{
+		{
+			name:  "doubled single quote is one literal",
+			opts:  lexer.Options{StandardStrings: true},
+			input: "SELECT 'O''Brien' FROM t",
+			want:  []string{"'O''Brien'"},
+		},
+		{
+			name:  "doubled double quote is one literal",
+			opts:  lexer.Options{StandardStrings: true},
+			input: `SELECT "a""b" FROM t`,
+			want:  []string{`"a""b"`},
+		},
+		{
+			name:  "backslash is literal without backslash escapes",
+			opts:  lexer.Options{StandardStrings: true},
+			input: `SELECT 'C:\path;x' FROM t`,
+			want:  []string{`'C:\path;x'`},
+		},
+		{
+			name:  "semicolons stay inside the literal",
+			opts:  lexer.Options{StandardStrings: true},
+			input: `SELECT 'a; b; c; d' FROM t`,
+			want:  []string{`'a; b; c; d'`},
+		},
+		{
+			name:  "backslash escapes a quote when enabled",
+			opts:  lexer.Options{StandardStrings: true, BackslashEscapes: true},
+			input: `SELECT 'a\'b' FROM t`,
+			want:  []string{`'a\'b'`},
+		},
+		{
+			name:  "mysql doubled backslash then doubled quote is one literal",
+			opts:  lexer.Options{StandardStrings: true, BackslashEscapes: true},
+			input: `SELECT '\\''' FROM t`,
+			want:  []string{`'\\'''`},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			got := stringTokenValues(lexer.NewLexerWithOptions(tt.input, tt.opts))
+			c.Assert(got, qt.DeepEquals, tt.want)
+		})
+	}
+}
+
+// stringTokenValues drains a lexer to EOF and returns the raw values of every
+// string token, in order.
+func stringTokenValues(l *lexer.Lexer) []string {
+	var values []string
+	for {
+		token := l.NextToken()
+		if token.Type == lexer.TokenEOF {
+			break
+		}
+		if token.Type == lexer.TokenString {
+			values = append(values, token.Value)
+		}
+	}
+	return values
+}
