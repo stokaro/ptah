@@ -264,6 +264,18 @@ func TestReport_RenderFormats(t *testing.T) {
 	c.Assert(htmlOut, qt.Contains, "<!doctype html>")
 	c.Assert(htmlOut, qt.Contains, "one exec and assert")
 
+	// A case name with HTML metacharacters is escaped, never emitted raw, so the
+	// report cannot inject markup regardless of the test-case contents.
+	xssReport, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Cases: []dbtest.Case{{
+		Name:  "<script>alert(1)</script>",
+		Steps: []dbtest.Step{{Name: "noop", Exec: "SELECT 1"}},
+	}}})
+	c.Assert(err, qt.IsNil)
+	xssHTML, err := xssReport.HTML()
+	c.Assert(err, qt.IsNil)
+	c.Assert(xssHTML, qt.Not(qt.Contains), "<script>alert(1)</script>")
+	c.Assert(xssHTML, qt.Contains, "&lt;script&gt;")
+
 	// Render dispatches by format name and rejects unknown formats.
 	text, err := report.Render("text")
 	c.Assert(err, qt.IsNil)

@@ -150,6 +150,13 @@ func (r *Report) counts() (total, passed, failed int) {
 // case and step. It is stable enough to consume from CI tooling.
 func (r *Report) JSON() (string, error) {
 	total, passed, failed := r.counts()
+	// Normalize a nil case slice to an empty one so the JSON is always
+	// "cases": [] rather than "cases": null, even for a zero-value Report built
+	// directly by a library caller.
+	cases := r.Cases
+	if cases == nil {
+		cases = []CaseResult{}
+	}
 	doc := struct {
 		Kind   string       `json:"kind"`
 		Total  int          `json:"total"`
@@ -161,7 +168,7 @@ func (r *Report) JSON() (string, error) {
 		Total:  total,
 		Passed: passed,
 		Failed: failed,
-		Cases:  r.Cases,
+		Cases:  cases,
 	}
 	out, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
