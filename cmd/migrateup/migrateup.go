@@ -315,14 +315,11 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	// Online-DDL routing: `-- +ptah online_ddl_tool=...` directives always
 	// work; the ptah.yaml online_ddl section adds automatic routing of
 	// ALTERs on tables above the configured row threshold.
-	onlineCfg, err := dbcli.LoadOnlineDDLConfigForEnv(opts.configPath, projectCfg.EnvName)
-	if err != nil {
-		return err
-	}
+	onlineCfg := projectCfg.OnlineDDL
 	if onlineCfg.Enabled() {
 		emit.Printf("Online DDL: tool=%s threshold_rows=%d\n", onlineCfg.Tool, onlineCfg.ThresholdRows)
 	}
-	interceptor := onlineddl.New(*onlineCfg).WithDryRun(opts.dryRun)
+	interceptor := onlineddl.New(onlineCfg).WithDryRun(opts.dryRun)
 
 	mig, err := migrator.NewFSMigrator(
 		conn,

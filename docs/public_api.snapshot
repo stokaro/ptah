@@ -29,6 +29,8 @@ type CompareOptions struct{ ... }
 ## github.com/stokaro/ptah/config/projectconfig
 
 const PtahFileName = "ptah.yaml" ...
+const OnlineDDLToolGhost = "ghost" ...
+const OnlineDDLFallbackError = "error" ...
 type AtlasLoadOptions struct{ ... }
 type Config struct{ ... }
     func Load(opts LoadOptions) (Config, error)
@@ -50,6 +52,7 @@ type LintRuleConfig struct{ ... }
 type LoadOptions struct{ ... }
 type MigrateFormatConfig struct{ ... }
 type MigrationConfig struct{ ... }
+type OnlineDDLConfig struct{ ... }
 type SchemaConfig struct{ ... }
 type SchemaFormatConfig struct{ ... }
 type SchemaModeConfig struct{ ... }

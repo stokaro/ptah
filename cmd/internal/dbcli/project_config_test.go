@@ -121,6 +121,11 @@ func TestLoadProjectConfigReadsNamedPtahEnvRuntimeDefaults(t *testing.T) {
       connect_timeout: 10s
       migration_lock_timeout: 15s
       exec_order: non-linear
+    online_ddl:
+      tool: ghost
+      threshold_rows: 500000
+      args: [--allow-on-master]
+      fallback: error
     lint:
       dialect: postgres
       disabled-rules: [MF103]
@@ -153,6 +158,10 @@ func TestLoadProjectConfigReadsNamedPtahEnvRuntimeDefaults(t *testing.T) {
 	c.Assert(cfg.Migration.ConnectTimeout, qt.Equals, "10s")
 	c.Assert(cfg.Migration.MigrationLockTimeout, qt.Equals, "15s")
 	c.Assert(cfg.Migration.ExecOrder, qt.Equals, "non-linear")
+	c.Assert(cfg.OnlineDDL.Tool, qt.Equals, projectconfig.OnlineDDLToolGhost)
+	c.Assert(cfg.OnlineDDL.ThresholdRows, qt.Equals, int64(500000))
+	c.Assert(cfg.OnlineDDL.Args, qt.DeepEquals, []string{"--allow-on-master"})
+	c.Assert(cfg.OnlineDDL.Fallback, qt.Equals, projectconfig.OnlineDDLFallbackError)
 	c.Assert(cfg.Lint.Dialect, qt.Equals, "postgres")
 	c.Assert(cfg.Lint.DisabledRules, qt.DeepEquals, []string{"MF103"})
 }
