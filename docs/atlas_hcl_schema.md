@@ -45,7 +45,8 @@ current schema IR:
   `ref_columns` entry
 - `check` blocks with `expr`
 - `default = sql("...")` as a default expression
-- `row_security` blocks inside `table` with `enabled = true`
+- `row_security` blocks inside `table` with `enabled = true` and an optional
+  `comment`
 - PostgreSQL `extension` blocks with `if_not_exists`, `version`, and `comment`
 - PostgreSQL `role` blocks with `login`, `superuser`, `create_db`,
   `create_role`, `inherit`, `replication`, and `comment`
@@ -320,6 +321,7 @@ table "users" {
 
   row_security {
     enabled = true
+    comment = "tenant isolation"
   }
 }
 

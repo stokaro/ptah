@@ -129,7 +129,7 @@ func TestRenderFixture023SchemaObjectsRoundTrip(t *testing.T) {
 	c.Assert(hcl, qt.Contains, `trigger "users_set_updated_at"`)
 	c.Assert(hcl, qt.Contains, `policy "users_tenant_policy"`)
 	c.Assert(hcl, qt.Contains, `permission {`)
-	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.DeepEquals, []string{"extensions.pg_trgm", "sequences.fixture_order_seq", "domains.fixture_email", "composite_types.fixture_address", "ranges.fixture_floatrange", "rls_enabled_tables.users", "grants.fixture_app_user"})
+	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.DeepEquals, []string{"extensions.pg_trgm", "sequences.fixture_order_seq", "domains.fixture_email", "composite_types.fixture_address", "ranges.fixture_floatrange", "grants.fixture_app_user"})
 
 	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", hcl))
@@ -163,6 +163,7 @@ func TestRenderFixture023SchemaObjectsRoundTrip(t *testing.T) {
 	c.Assert(parsed.RLSPolicies[0].UsingExpression, qt.Equals, "get_fixture_tenant_id() IS NOT NULL")
 	c.Assert(parsed.RLSEnabledTables, qt.HasLen, 1)
 	c.Assert(parsed.RLSEnabledTables[0].Table, qt.Equals, "users")
+	c.Assert(parsed.RLSEnabledTables[0].Comment, qt.Equals, "Enable RLS for fixture users")
 	c.Assert(parsed.Roles, qt.HasLen, 1)
 	c.Assert(parsed.Roles[0].Name, qt.Equals, "fixture_app_user")
 	c.Assert(parsed.Roles[0].Inherit, qt.IsTrue)
