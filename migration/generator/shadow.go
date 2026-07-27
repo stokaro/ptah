@@ -14,6 +14,7 @@ import (
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/platform/capability"
+	"github.com/stokaro/ptah/core/platform/identifier"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/schemadiff"
@@ -79,14 +80,15 @@ func newShadowVerificationError(stage, kind, message string, err error) *ShadowV
 }
 
 type shadowMigrationOptions struct {
-	DatabaseURL   string
-	MigrationsDir string
-	Dialect       string
-	Capabilities  capability.Capabilities
-	Candidates    []shadowCandidate
-	Generated     *goschema.Database
-	CompareOpts   *config.CompareOptions
-	Schemas       []string
+	DatabaseURL         string
+	MigrationsDir       string
+	Dialect             string
+	Capabilities        capability.Capabilities
+	IdentifierSemantics identifier.Semantics
+	Candidates          []shadowCandidate
+	Generated           *goschema.Database
+	CompareOpts         *config.CompareOptions
+	Schemas             []string
 }
 
 type shadowCandidate struct {
@@ -119,6 +121,28 @@ func verifyShadowMigration(ctx context.Context, opts shadowMigrationOptions) err
 			nil,
 		)
 	}
+	identifierSemanticsMatch, err := shadowIdentifierSemanticsMatch(
+		ctx,
+		conn,
+		opts.Dialect,
+		opts.IdentifierSemantics,
+	)
+	if err != nil {
+		return newShadowVerificationError(
+			"identifier-semantics-check",
+			"identifier_semantics_resolution_error",
+			"resolve shadow database identifier semantics",
+			err,
+		)
+	}
+	if !opts.IdentifierSemantics.IsZero() && !identifierSemanticsMatch {
+		return newShadowVerificationError(
+			"identifier-semantics-check",
+			"identifier_semantics_mismatch",
+			fmt.Sprintf("shadow database identifier semantics do not match target %s catalog semantics", opts.Dialect),
+			nil,
+		)
+	}
 
 	if err := conn.SchemaWriter().DropAllTables(ctx); err != nil {
 		return newShadowVerificationError("drop-all", "drop_all_error", "drop all objects", err)
@@ -145,7 +169,7 @@ func verifyShadowMigration(ctx context.Context, opts shadowMigrationOptions) err
 		}
 		return newShadowVerificationError("replay", "replay_error", "replay migrations", err)
 	}
-	if err := assertShadowSchemaMatches(conn, opts); err != nil {
+	if err := assertShadowSchemaMatches(replayCtx, conn, opts); err != nil {
 		return err
 	}
 
@@ -156,7 +180,28 @@ func verifyShadowMigration(ctx context.Context, opts shadowMigrationOptions) err
 	if err := mig.MigrateTo(replayCtx, latestMigrationVersion(migrations)); err != nil {
 		return newShadowVerificationError("round-trip-up", "round_trip_up_error", "round-trip up", err)
 	}
-	return assertShadowSchemaMatches(conn, opts)
+	return assertShadowSchemaMatches(replayCtx, conn, opts)
+}
+
+func shadowIdentifierSemanticsMatch(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	dialect string,
+	target identifier.Semantics,
+) (bool, error) {
+	if target.IsZero() {
+		return true, nil
+	}
+	target = target.Normalize(dialect)
+	names := make([]string, len(target.ResolvedNames))
+	for position, resolved := range target.ResolvedNames {
+		names[position] = resolved.Name
+	}
+	shadow, err := conn.ResolveIdentifierSemantics(ctx, names)
+	if err != nil {
+		return false, err
+	}
+	return target.Equal(shadow.Normalize(dialect)), nil
 }
 
 func describeReplayError(err error) string {
@@ -202,13 +247,31 @@ func latestMigrationVersion(migrations []*migrator.Migration) int64 {
 	return latest
 }
 
-func assertShadowSchemaMatches(conn *dbschema.DatabaseConnection, opts shadowMigrationOptions) error {
+func assertShadowSchemaMatches(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	opts shadowMigrationOptions,
+) error {
 	dbSchema, err := dbschema.ReadSchemaWithSchemas(conn, opts.Schemas)
 	if err != nil {
 		return newShadowVerificationError("re-introspect", "re_introspect_error", "re-introspect shadow database", err)
 	}
 
-	diff := schemadiff.CompareWithOptions(opts.Generated, dbSchema, opts.CompareOpts)
+	diff, err := schemadiff.CompareWithDatabase(
+		ctx,
+		conn,
+		opts.Generated,
+		dbSchema,
+		opts.CompareOpts,
+	)
+	if err != nil {
+		return newShadowVerificationError(
+			"schema-match",
+			"identifier_resolution_error",
+			"resolve shadow database identifier semantics",
+			err,
+		)
+	}
 	if !diff.HasChanges() {
 		return nil
 	}

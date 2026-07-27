@@ -258,7 +258,7 @@ type Index struct {
 	Type string
 	// Parser carries a MySQL FULLTEXT parser name, for example ngram.
 	Parser string
-	// Condition is the WHERE clause for partial indexes (PostgreSQL only).
+	// Condition is the WHERE clause for partial or filtered indexes.
 	Condition string
 	// Operator is the operator class (PostgreSQL only, e.g. "gin_trgm_ops").
 	Operator string

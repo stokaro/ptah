@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/platform/identifier"
 	"github.com/stokaro/ptah/dbschema/types"
 	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
 )
@@ -79,34 +80,58 @@ func TablesAndColumnsWithDialect(
 	diff *difftypes.SchemaDiff,
 	dialect string,
 ) {
+	TablesAndColumnsWithSemantics(
+		generated,
+		database,
+		diff,
+		dialect,
+		identifier.ForDialect(dialect),
+	)
+}
+
+// TablesAndColumnsWithSemantics compares tables and columns using explicit
+// identifier rules while retaining target spelling in the produced diff.
+func TablesAndColumnsWithSemantics(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	dialect string,
+	semantics identifier.Semantics,
+) {
 	// Create maps for quick lookup
 	genTables := make(map[string]goschema.Table)
 	for _, table := range generated.Tables {
-		genTables[table.QualifiedName()] = table
+		genTables[semantics.QualifiedTableIdentityKey(table.QualifiedName())] = table
 	}
 
 	dbTables := make(map[string]types.DBTable)
 	for _, table := range database.Tables {
-		dbTables[table.QualifiedName()] = table
+		dbTables[semantics.QualifiedTableIdentityKey(table.QualifiedName())] = table
 	}
 
 	// Find added and removed tables
-	for tableName := range genTables {
-		if _, exists := dbTables[tableName]; !exists {
-			diff.TablesAdded = append(diff.TablesAdded, tableName)
+	for identity, table := range genTables {
+		if _, exists := dbTables[identity]; !exists {
+			diff.TablesAdded = append(diff.TablesAdded, table.QualifiedName())
 		}
 	}
 
-	for tableName := range dbTables {
-		if _, exists := genTables[tableName]; !exists {
-			diff.TablesRemoved = append(diff.TablesRemoved, tableName)
+	for identity, table := range dbTables {
+		if _, exists := genTables[identity]; !exists {
+			diff.TablesRemoved = append(diff.TablesRemoved, table.QualifiedName())
 		}
 	}
 
 	// Find modified tables (compare columns)
-	for tableName, genTable := range genTables {
-		if dbTable, exists := dbTables[tableName]; exists {
-			tableDiff := TableColumnsWithDialect(genTable, dbTable, generated, dialect)
+	for identity, genTable := range genTables {
+		if dbTable, exists := dbTables[identity]; exists {
+			tableDiff := TableColumnsWithSemantics(
+				genTable,
+				dbTable,
+				generated,
+				dialect,
+				semantics,
+			)
 			if len(tableDiff.ColumnsAdded) > 0 || len(tableDiff.ColumnsRemoved) > 0 || len(tableDiff.ColumnsModified) > 0 {
 				diff.TablesModified = append(diff.TablesModified, tableDiff)
 			}

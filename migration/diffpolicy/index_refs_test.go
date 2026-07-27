@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"github.com/stokaro/ptah/core/platform/identifier"
 	"github.com/stokaro/ptah/migration/diffpolicy"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
@@ -125,7 +126,7 @@ func TestApplyForDialectDropIndex_PreservesCaseInsensitiveReplacement(t *testing
 	}
 }
 
-func TestApplyForDialectDropIndex_DoesNotAssumeSQLServerCollation(t *testing.T) {
+func TestApplyForDialectDropIndex_PreservesPotentialSQLServerReplacement(t *testing.T) {
 	c := qt.New(t)
 	diff := &types.SchemaDiff{
 		IndexesAdded: []types.IndexRef{
@@ -142,9 +143,40 @@ func TestApplyForDialectDropIndex_DoesNotAssumeSQLServerCollation(t *testing.T) 
 		"sqlserver",
 	)
 
+	c.Assert(got.IndexRemovals(), qt.DeepEquals, []types.IndexRef{
+		{Name: "idx_shared", TableName: "users"},
+	})
+	c.Assert(skipped, qt.HasLen, 0)
+}
+
+func TestApplyForDialectDropIndex_SQLServerCaseSensitiveSkipsIndependentRemoval(t *testing.T) {
+	c := qt.New(t)
+	semantics := identifier.ForSQLServerCatalog("SQL_Latin1_General_CP1_CS_AS").
+		WithResolvedNames([]identifier.ResolvedName{
+			{Name: "dbo", Key: "dbo"},
+			{Name: "users", Key: "users"},
+			{Name: "IDX_Shared", Key: "IDX_Shared"},
+			{Name: "idx_shared", Key: "idx_shared"},
+		})
+	diff := &types.SchemaDiff{
+		IdentifierSemantics: &semantics,
+		IndexesAdded: []types.IndexRef{
+			{Name: "IDX_Shared", TableName: "dbo.users"},
+		},
+		IndexesRemoved: []types.IndexRef{
+			{Name: "idx_shared", TableName: "dbo.users"},
+		},
+	}
+
+	got, skipped := diffpolicy.ApplyForDialect(
+		diff,
+		diffpolicy.NewSkipSet(diffpolicy.DropIndex),
+		"sqlserver",
+	)
+
 	c.Assert(got.IndexRemovals(), qt.HasLen, 0)
 	c.Assert(skipped, qt.DeepEquals, []diffpolicy.SkippedChange{
-		{Kind: diffpolicy.DropIndex, Object: "users.idx_shared"},
+		{Kind: diffpolicy.DropIndex, Object: "dbo.users.idx_shared"},
 	})
 }
 

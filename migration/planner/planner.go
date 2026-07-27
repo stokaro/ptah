@@ -87,6 +87,7 @@ import (
 	"github.com/stokaro/ptah/internal/planner/dialects/postgres"
 	"github.com/stokaro/ptah/internal/planner/dialects/sqlite"
 	"github.com/stokaro/ptah/migration/diffpolicy"
+	"github.com/stokaro/ptah/migration/internal/identifiervalidation"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
@@ -465,6 +466,26 @@ func GenerateSchemaDiffASTWithOptions(
 	dialect string,
 	opts Options,
 ) ([]ast.Node, error) {
+	semantics := diff.EffectiveIdentifierSemantics(dialect)
+	if diff != nil &&
+		diff.IdentifierSemantics != nil &&
+		!diff.IdentifierSemantics.IsZero() &&
+		!diff.IdentifierSemantics.Equal(semantics) {
+		return nil, wrapPlanError(
+			dialect,
+			fmt.Errorf(
+				"%w: invalid identifier semantics snapshot",
+				ptaherr.ErrInvalidSchemaDiff,
+			),
+		)
+	}
+	if err := identifiervalidation.ValidateTarget(
+		generated,
+		dialect,
+		semantics,
+	); err != nil {
+		return nil, wrapPlanError(dialect, err)
+	}
 	planner, err := GetPlannerWithOptions(dialect, opts)
 	if err != nil {
 		return nil, wrapPlanError(dialect, err)

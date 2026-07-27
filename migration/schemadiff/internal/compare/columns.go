@@ -8,7 +8,9 @@ import (
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/core/platform/identifier"
 	"github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/migration/internal/generatedschema"
 	"github.com/stokaro/ptah/migration/internal/typechange"
 	"github.com/stokaro/ptah/migration/schemadiff/internal/normalize"
 	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
@@ -94,44 +96,53 @@ func TableColumnsWithDialect(
 	generated *goschema.Database,
 	dialect string,
 ) difftypes.TableDiff {
+	return TableColumnsWithSemantics(
+		genTable,
+		dbTable,
+		generated,
+		dialect,
+		identifier.ForDialect(dialect),
+	)
+}
+
+// TableColumnsWithSemantics compares one table's columns using explicit
+// catalog identifier rules.
+func TableColumnsWithSemantics(
+	genTable goschema.Table,
+	dbTable types.DBTable,
+	generated *goschema.Database,
+	dialect string,
+	semantics identifier.Semantics,
+) difftypes.TableDiff {
 	tableDiff := difftypes.TableDiff{TableName: genTable.QualifiedName()}
-
-	// Process embedded fields to get the complete field list (same as generators do)
-	embeddedGeneratedFields := processEmbeddedFieldsForStruct(generated.EmbeddedFields, generated.Fields, genTable.StructName)
-
-	// Combine original fields with embedded-generated fields
-	allFields := append(([]goschema.Field)(nil), generated.Fields...)
-	allFields = append(allFields, embeddedGeneratedFields...)
 
 	// Create maps for quick lookup
 	genColumns := make(map[string]goschema.Field)
-	for _, field := range allFields {
-		if field.StructName == genTable.StructName {
-			genColumns[field.Name] = field
-		}
+	for _, field := range generatedschema.FieldsForTable(generated, genTable) {
+		genColumns[semantics.ColumnIdentityKey(field.Name)] = field
 	}
 
 	dbColumns := make(map[string]types.DBColumn)
 	for _, col := range dbTable.Columns {
-		dbColumns[col.Name] = col
+		dbColumns[semantics.ColumnIdentityKey(col.Name)] = col
 	}
 
 	// Find added and removed columns
-	for colName := range genColumns {
-		if _, exists := dbColumns[colName]; !exists {
-			tableDiff.ColumnsAdded = append(tableDiff.ColumnsAdded, colName)
+	for identity, column := range genColumns {
+		if _, exists := dbColumns[identity]; !exists {
+			tableDiff.ColumnsAdded = append(tableDiff.ColumnsAdded, column.Name)
 		}
 	}
 
-	for colName := range dbColumns {
-		if _, exists := genColumns[colName]; !exists {
-			tableDiff.ColumnsRemoved = append(tableDiff.ColumnsRemoved, colName)
+	for identity, column := range dbColumns {
+		if _, exists := genColumns[identity]; !exists {
+			tableDiff.ColumnsRemoved = append(tableDiff.ColumnsRemoved, column.Name)
 		}
 	}
 
 	// Find modified columns
-	for colName, genCol := range genColumns {
-		if dbCol, exists := dbColumns[colName]; exists {
+	for identity, genCol := range genColumns {
+		if dbCol, exists := dbColumns[identity]; exists {
 			if columnInTablePrimaryKey(genTable, genCol.Name) {
 				genCol = normalizeTablePrimaryKeyColumn(genCol, dbCol)
 			}

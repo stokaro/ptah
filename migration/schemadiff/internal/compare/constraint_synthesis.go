@@ -4,6 +4,7 @@ import (
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/convert/fromschema"
+	"github.com/stokaro/ptah/migration/internal/generatedschema"
 )
 
 // synthesizeFieldLevelCheckConstraints turns each field-level `check=`
@@ -231,12 +232,10 @@ type resolvedField struct {
 	qualifiedTableName string
 }
 
-// resolveTableFields expands every table's field set the same way the CREATE
-// and column-diff paths do (processEmbeddedFieldsForStruct), tagging each
-// resulting field with its concrete host table name. This is the single source
-// of truth for "which fields end up as columns on which real table", so any
-// field-level synthesis (FK drift, and any future field-level constraint
-// synthesis) targets host tables rather than mixin struct names (issue #197).
+// resolveTableFields uses the shared generated-schema expansion and tags each
+// resulting field with its concrete host table name. This keeps field-level
+// synthesis aligned with CREATE and column-diff paths, so constraints target
+// host tables rather than mixin struct names (issue #197).
 //
 // Only fields whose owning struct is a declared table are returned: a
 // `foreign=` annotation on a mixin that is never embedded, or on a struct that
@@ -249,15 +248,7 @@ func resolveTableFields(generated *goschema.Database) []resolvedField {
 
 	var resolved []resolvedField
 	for _, table := range generated.Tables {
-		// Direct fields declared on the table struct itself.
-		for _, f := range generated.Fields {
-			if f.StructName == table.StructName {
-				resolved = append(resolved, resolvedField{Field: f, tableName: table.Name, qualifiedTableName: table.QualifiedName()})
-			}
-		}
-		// Fields contributed by embedded mixins (inline + inline-relation),
-		// each already rewritten to the host struct name by the expansion.
-		for _, f := range processEmbeddedFieldsForStruct(generated.EmbeddedFields, generated.Fields, table.StructName) {
+		for _, f := range generatedschema.FieldsForTable(generated, table) {
 			resolved = append(resolved, resolvedField{Field: f, tableName: table.Name, qualifiedTableName: table.QualifiedName()})
 		}
 	}

@@ -359,6 +359,36 @@ func TestConvertDBSchemaToGoSchema_DuplicateTableNamesUseSchemaQualifiedStructNa
 	})
 }
 
+func TestConvertDBSchemaToGoSchema_PreservesIndexPartDirection(t *testing.T) {
+	c := qt.New(t)
+	dbSchema := &types.DBSchema{
+		Tables: []types.DBTable{
+			{Schema: "dbo", Name: "users"},
+		},
+		Indexes: []types.DBIndex{
+			{
+				Schema:    "dbo",
+				TableName: "users",
+				Name:      "idx_users_lookup",
+				Columns:   []string{"email", "status"},
+				Parts: []types.DBIndexPart{
+					{Name: "email", Desc: true},
+					{Name: "status"},
+				},
+			},
+		},
+	}
+
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+
+	c.Assert(result.Indexes, qt.HasLen, 1)
+	c.Assert(result.Indexes[0].Fields, qt.DeepEquals, []string{"email", "status"})
+	c.Assert(result.Indexes[0].Parts, qt.DeepEquals, []goschema.IndexPart{
+		{Name: "email", Desc: true},
+		{Name: "status"},
+	})
+}
+
 func TestConvertDBSchemaToGoSchema_DBDefaultExpression(t *testing.T) {
 	c := qt.New(t)
 	statusDefault := "'draft'::enum_product_status"

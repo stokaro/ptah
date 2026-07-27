@@ -8,6 +8,7 @@ import (
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/core/platform/identifier"
 	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
@@ -75,6 +76,15 @@ func TestGenerateSchemaDiffSQL_ForeignKeyColumnTypeChange_SQLServerBrackets(t *t
 	c := qt.New(t)
 
 	diff, generated := fkColumnTypeChangeInputs()
+	semantics := identifier.ForSQLServerCatalog("SQL_Latin1_General_CP1_CI_AS").
+		WithResolvedNames([]identifier.ResolvedName{
+			{Name: "dbo", Key: "dbo"},
+			{Name: "id", Key: "id"},
+			{Name: "posts", Key: "posts"},
+			{Name: "user_id", Key: "user_id"},
+			{Name: "users", Key: "users"},
+		})
+	diff.IdentifierSemantics = &semantics
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, platform.SQLServer)
 	c.Assert(err, qt.IsNil)

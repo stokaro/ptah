@@ -273,11 +273,10 @@ func generateAndApplyRoundTripVersion(
 	}
 
 	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
-		GoEntitiesDir:  vem.GetEntitiesDir(),
-		DBConn:         conn,
-		OutputDir:      migrationsDir,
-		MigrationName:  roundTripMigrationName(fixture.Name, version),
-		CompareOptions: dialectCompareOptions(conn),
+		GoEntitiesDir: vem.GetEntitiesDir(),
+		DBConn:        conn,
+		OutputDir:     migrationsDir,
+		MigrationName: roundTripMigrationName(fixture.Name, version),
 	})
 	if err != nil {
 		return false, fmt.Errorf("%s generate %s: %w", fixture.Name, version, err)

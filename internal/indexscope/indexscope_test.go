@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/platform/identifier"
 	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/internal/indexscope"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
@@ -161,6 +162,40 @@ func TestNewResolver_CaseInsensitiveDiffCollisionRejected(t *testing.T) {
 			c.Assert(resolver, qt.IsNil)
 		})
 	}
+}
+
+func TestNewResolverWithSemantics_IncompleteCatalogSnapshotRejected(t *testing.T) {
+	c := qt.New(t)
+	semantics := identifier.ForSQLServerCatalog("SQL_Latin1_General_CP1_CI_AS").
+		WithResolvedNames([]identifier.ResolvedName{
+			{Name: "dbo", Key: "dbo"},
+			{Name: "users", Key: "users"},
+		})
+	diff := &types.SchemaDiff{
+		IndexesAdded: []types.IndexRef{
+			{Name: "idx_email", TableName: "dbo.users"},
+		},
+	}
+	generated := &goschema.Database{
+		Indexes: []goschema.Index{
+			{Name: "idx_email", TableName: "dbo.users"},
+		},
+	}
+
+	resolver, err := indexscope.NewResolverWithSemantics(
+		"sqlserver",
+		semantics,
+		diff,
+		generated,
+	)
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+	c.Assert(
+		err,
+		qt.ErrorMatches,
+		`.*added index reference dbo\.users\.idx_email at position 0 is not covered by catalog identifier semantics`,
+	)
+	c.Assert(resolver, qt.IsNil)
 }
 
 func TestNewResolver_TargetTableResolution(t *testing.T) {
@@ -526,6 +561,169 @@ func TestConflictSet_DefaultSchemaIsIndependentFromNamedSchemas(t *testing.T) {
 		qt.DeepEquals,
 		refs[:1],
 	)
+}
+
+func TestIdentityKeyWithSemantics_SQLServerCatalogResolution(t *testing.T) {
+	c := qt.New(t)
+	ref := types.IndexRef{Name: "IDX_Email", TableName: "Users"}
+	tests := []struct {
+		name      string
+		semantics identifier.Semantics
+		want      types.IndexRef
+	}{
+		{
+			name: "case insensitive",
+			semantics: resolvedCatalogSemantics(
+				"CI",
+				[]string{"dbo"},
+				[]string{"users", "Users"},
+				[]string{"idx_email", "IDX_Email"},
+			),
+			want: types.IndexRef{Name: "IDX_Email", TableName: "dbo.Users"},
+		},
+		{
+			name: "case sensitive",
+			semantics: resolvedCatalogSemantics(
+				"CS",
+				[]string{"dbo"},
+				[]string{"Users"},
+				[]string{"users"},
+				[]string{"IDX_Email"},
+				[]string{"idx_email"},
+			),
+			want: types.IndexRef{Name: "IDX_Email", TableName: "dbo.Users"},
+		},
+		{
+			name:      "unknown remains exact identity",
+			semantics: identifier.ForDialect("sqlserver"),
+			want:      types.IndexRef{Name: "IDX_Email", TableName: "dbo.Users"},
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			got := indexscope.IdentityKeyWithSemantics(test.semantics, ref)
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+func TestConflictSetWithSemantics_SQLServerCatalogResolution(t *testing.T) {
+	c := qt.New(t)
+	candidate := types.IndexRef{Name: "IDX_Email", TableName: "Users"}
+	lookup := types.IndexRef{Name: "idx_email", TableName: "dbo.users"}
+	tests := []struct {
+		name      string
+		semantics identifier.Semantics
+		want      bool
+	}{
+		{
+			name: "case insensitive conflicts",
+			semantics: resolvedCatalogSemantics(
+				"CI",
+				[]string{"dbo"},
+				[]string{"users", "Users"},
+				[]string{"idx_email", "IDX_Email"},
+			),
+			want: true,
+		},
+		{
+			name: "case sensitive is independent",
+			semantics: resolvedCatalogSemantics(
+				"CS",
+				[]string{"dbo"},
+				[]string{"Users"},
+				[]string{"users"},
+				[]string{"IDX_Email"},
+				[]string{"idx_email"},
+			),
+			want: false,
+		},
+		{
+			name:      "unknown conservatively conflicts",
+			semantics: identifier.ForDialect("sqlserver"),
+			want:      true,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			set := indexscope.NewConflictSetWithSemantics(test.semantics, []types.IndexRef{candidate})
+			c.Assert(set.Contains(lookup), qt.Equals, test.want)
+		})
+	}
+}
+
+func TestNewResolverWithSemantics_SQLServerUnknownRejectsDistinctNames(t *testing.T) {
+	c := qt.New(t)
+	generated := &goschema.Database{Indexes: []goschema.Index{
+		{Name: "resume", TableName: "dbo.users"},
+		{Name: "r\u00e9sum\u00e9", TableName: "dbo.users"},
+	}}
+	diff := &types.SchemaDiff{IndexesAdded: []types.IndexRef{
+		{Name: "resume", TableName: "dbo.users"},
+		{Name: "r\u00e9sum\u00e9", TableName: "dbo.users"},
+	}}
+
+	_, err := indexscope.NewResolverWithSemantics(
+		"sqlserver",
+		identifier.ForDialect("sqlserver"),
+		diff,
+		generated,
+	)
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+	c.Assert(
+		err.Error(),
+		qt.Contains,
+		"added indexes dbo.users.resume and dbo.users.r\u00e9sum\u00e9 conflict",
+	)
+}
+
+func TestNewResolverWithSemantics_SQLServerCaseSensitiveAcceptsVariants(t *testing.T) {
+	c := qt.New(t)
+	semantics := resolvedCatalogSemantics(
+		"CS",
+		[]string{"dbo"},
+		[]string{"users"},
+		[]string{"idx_email"},
+		[]string{"IDX_Email"},
+	)
+	generated := &goschema.Database{Indexes: []goschema.Index{
+		{Name: "idx_email", TableName: "dbo.users"},
+		{Name: "IDX_Email", TableName: "dbo.users"},
+	}}
+	diff := &types.SchemaDiff{IndexesAdded: []types.IndexRef{
+		{Name: "idx_email", TableName: "dbo.users"},
+		{Name: "IDX_Email", TableName: "dbo.users"},
+	}}
+
+	resolver, err := indexscope.NewResolverWithSemantics("sqlserver", semantics, diff, generated)
+
+	c.Assert(err, qt.IsNil)
+	lower, err := resolver.Resolve(types.IndexRef{Name: "idx_email", TableName: "users"})
+	c.Assert(err, qt.IsNil)
+	c.Assert(lower.Name, qt.Equals, "idx_email")
+	upper, err := resolver.Resolve(types.IndexRef{Name: "IDX_Email", TableName: "dbo.users"})
+	c.Assert(err, qt.IsNil)
+	c.Assert(upper.Name, qt.Equals, "IDX_Email")
+}
+
+func resolvedCatalogSemantics(
+	collation string,
+	groups ...[]string,
+) identifier.Semantics {
+	resolved := make([]identifier.ResolvedName, 0)
+	for _, group := range groups {
+		key := slices.Min(group)
+		for _, name := range group {
+			resolved = append(resolved, identifier.ResolvedName{
+				Name: name,
+				Key:  key,
+			})
+		}
+	}
+	return identifier.ForSQLServerCatalog(collation).WithResolvedNames(resolved)
 }
 
 func BenchmarkNewResolver_LargeDuplicateNameSchema(b *testing.B) {

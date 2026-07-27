@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/stokaro/ptah/core/platform/capability"
+	"github.com/stokaro/ptah/core/platform/identifier"
 )
 
 // DBSchema represents the complete schema read from a database
@@ -148,6 +149,12 @@ type DBRange struct {
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.
 func (r DBRange) QualifiedName() string { return QualifyTableName(r.Schema, r.Name) }
 
+// DBIndexPart represents one ordered key column in an introspected index.
+type DBIndexPart struct {
+	Name string `json:"name"`
+	Desc bool   `json:"desc,omitempty"`
+}
+
 // DBIndex represents a database index.
 //
 // Most fields are dialect-neutral. The Type/Expression/Granularity trio is
@@ -156,13 +163,16 @@ func (r DBRange) QualifiedName() string { return QualifyTableName(r.Schema, r.Na
 // emitting spurious type/granularity changes for PostgreSQL or MySQL
 // indexes.
 type DBIndex struct {
-	Name       string   `json:"name"`
-	TableName  string   `json:"table_name"`
-	Schema     string   `json:"schema,omitempty"`
-	Columns    []string `json:"columns"`
-	IsUnique   bool     `json:"is_unique"`
-	IsPrimary  bool     `json:"is_primary"`
-	Definition string   `json:"definition"` // Full index definition
+	Name      string   `json:"name"`
+	TableName string   `json:"table_name"`
+	Schema    string   `json:"schema,omitempty"`
+	Columns   []string `json:"columns"`
+	// Parts preserves key order and direction when the database exposes it.
+	// Empty means the reader supplied only the legacy ascending Columns form.
+	Parts      []DBIndexPart `json:"parts,omitempty"`
+	IsUnique   bool          `json:"is_unique"`
+	IsPrimary  bool          `json:"is_primary"`
+	Definition string        `json:"definition"` // Full index definition
 	// Condition is the WHERE clause for partial indexes when the dialect
 	// exposes one structurally.
 	Condition string `json:"condition,omitempty"`
@@ -293,11 +303,12 @@ func (s DBSequence) QualifiedName() string {
 
 // DBInfo contains connection and metadata information
 type DBInfo struct {
-	Dialect      string                  `json:"dialect"` // postgres, mysql, mariadb
-	Version      string                  `json:"version"`
-	Schema       string                  `json:"schema"`       // public, database name, etc.
-	URL          string                  `json:"url"`          // database connection URL (for reference)
-	Capabilities capability.Capabilities `json:"capabilities"` // resolved from Dialect + Version for live connections
+	Dialect             string                  `json:"dialect"` // postgres, mysql, mariadb
+	Version             string                  `json:"version"`
+	Schema              string                  `json:"schema"`               // public, database name, etc.
+	URL                 string                  `json:"url"`                  // database connection URL (for reference)
+	Capabilities        capability.Capabilities `json:"capabilities"`         // resolved from Dialect + Version for live connections
+	IdentifierSemantics identifier.Semantics    `json:"identifier_semantics"` // catalog identifier metadata and static rules
 }
 
 // SchemaReader interface for reading database schemas

@@ -7,6 +7,7 @@ import (
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/core/platform/identifier"
 	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
@@ -20,6 +21,16 @@ func TestGenerateSchemaDiffSQL_SQLServerCreatesTSQL(t *testing.T) {
 			{Name: "idx_users_email", TableName: "dbo.users"},
 		},
 	}
+	semantics := identifier.ForSQLServerCatalog("SQL_Latin1_General_CP1_CI_AS").
+		WithResolvedNames([]identifier.ResolvedName{
+			{Name: "dbo", Key: "dbo"},
+			{Name: "email", Key: "email"},
+			{Name: "id", Key: "id"},
+			{Name: "idx_users_email", Key: "idx_users_email"},
+			{Name: "status", Key: "status"},
+			{Name: "users", Key: "users"},
+		})
+	diff.IdentifierSemantics = &semantics
 	generated := &goschema.Database{
 		Tables: []goschema.Table{{
 			StructName: "User",

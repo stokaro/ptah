@@ -1,12 +1,17 @@
 package schemadiff
 
 import (
+	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/stokaro/ptah/config"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/core/platform/identifier"
+	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/migration/internal/identifiervalidation"
 	"github.com/stokaro/ptah/migration/schemadiff/internal/compare"
 	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
 )
@@ -27,6 +32,46 @@ func CompareWithDialect(generated *goschema.Database, database *types.DBSchema, 
 	opts := config.DefaultCompareOptions()
 	opts.Dialect = dialect
 	return CompareWithOptions(generated, database, opts)
+}
+
+// CompareWithDatabaseInfo compares using caller-supplied database metadata.
+// SQL Server callers should prefer CompareWithDatabase, which resolves the
+// complete candidate identifier set under the live catalog collation. A
+// non-zero identifier snapshot must be valid, cover every compared identifier,
+// and admit no target identifier collisions.
+func CompareWithDatabaseInfo(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	info types.DBInfo,
+	opts *config.CompareOptions,
+) (*difftypes.SchemaDiff, error) {
+	merged := config.DefaultCompareOptions()
+	if opts != nil {
+		*merged = *opts
+		merged.IgnoredExtensions = slices.Clone(opts.IgnoredExtensions)
+	}
+	merged.Dialect = info.Dialect
+	semantics := info.IdentifierSemantics.Normalize(info.Dialect)
+	if !info.IdentifierSemantics.IsZero() &&
+		!info.IdentifierSemantics.Equal(semantics) {
+		return nil, fmt.Errorf(
+			"%w: invalid identifier semantics snapshot",
+			ptaherr.ErrInvalidSchemaDiff,
+		)
+	}
+	names := collectIdentifierNames(generated, database, semantics.DefaultSchema)
+	if err := identifiervalidation.ValidateCoverage(semantics, names); err != nil {
+		return nil, err
+	}
+	if err := identifiervalidation.ValidateTarget(
+		generated,
+		info.Dialect,
+		semantics,
+	); err != nil {
+		return nil, err
+	}
+	merged.IdentifierSemantics = &semantics
+	return CompareWithOptions(generated, database, merged), nil
 }
 
 // CompareWithOptions performs schema comparison between generated and database schemas
@@ -60,17 +105,41 @@ func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, 
 	}
 
 	diff := &difftypes.SchemaDiff{}
+	identifierSemantics := identifier.ForDialect(opts.Dialect)
+	if opts.IdentifierSemantics != nil {
+		candidate := opts.IdentifierSemantics.Normalize(opts.Dialect)
+		candidateNames := collectIdentifierNames(
+			generated,
+			database,
+			candidate.DefaultSchema,
+		)
+		validSnapshot := opts.IdentifierSemantics.IsZero() ||
+			opts.IdentifierSemantics.Equal(candidate)
+		if validSnapshot &&
+			identifiervalidation.ValidateCoverage(candidate, candidateNames) == nil &&
+			identifiervalidation.ValidateTarget(generated, opts.Dialect, candidate) == nil {
+			identifierSemantics = candidate
+		}
+		storedSemantics := identifierSemantics
+		diff.IdentifierSemantics = &storedSemantics
+	}
 	generated, database = normalizeInlineEnumsForCompare(generated, database, opts)
 	generated = normalizeGeneratedColumnsForCompare(generated, opts)
 
 	// Compare tables and their column structures
-	compare.TablesAndColumnsWithDialect(generated, database, diff, opts.Dialect)
+	compare.TablesAndColumnsWithSemantics(
+		generated,
+		database,
+		diff,
+		opts.Dialect,
+		identifierSemantics,
+	)
 
 	// Compare enum type definitions and values
 	compare.Enums(generated, database, diff)
 
 	// Compare database index definitions
-	compare.IndexesWithDialect(generated, database, diff, opts.Dialect)
+	compare.IndexesWithSemantics(generated, database, diff, opts.Dialect, identifierSemantics)
 
 	// Compare PostgreSQL extensions with configuration options
 	compare.Extensions(generated, database, diff, opts)

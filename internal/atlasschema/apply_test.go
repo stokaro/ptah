@@ -29,7 +29,7 @@ CREATE TABLE users (
 	conn := connectSQLite(c, dbPath)
 	defer dbschema.CloseAndWarn(conn)
 
-	plan, err := atlasschema.PlanApply(conn, atlasschema.ApplyOptions{
+	plan, err := atlasschema.PlanApply(t.Context(), conn, atlasschema.ApplyOptions{
 		ToURLs: []string{"file://" + schemaPath},
 	})
 
@@ -55,7 +55,7 @@ CREATE TABLE apply_skip (
 	conn := connectSQLite(c, dbPath)
 	defer dbschema.CloseAndWarn(conn)
 
-	plan, err := atlasschema.PlanApply(conn, atlasschema.ApplyOptions{
+	plan, err := atlasschema.PlanApply(t.Context(), conn, atlasschema.ApplyOptions{
 		ToURLs:  []string{"file://" + schemaPath},
 		Exclude: []string{"apply_skip"},
 	})
@@ -84,7 +84,7 @@ CREATE TABLE apply_skip (
 `), qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
 
-	plan, err := atlasschema.PlanApply(conn, atlasschema.ApplyOptions{
+	plan, err := atlasschema.PlanApply(t.Context(), conn, atlasschema.ApplyOptions{
 		ToURLs:  []string{"file://" + schemaPath},
 		Exclude: []string{"apply_skip"},
 	})
@@ -110,7 +110,7 @@ CREATE TABLE users (
 	defer dbschema.CloseAndWarn(conn)
 	c.Assert(atlasschema.ApplySQL(context.Background(), conn, migrator.MigrationTxModeAll, schemaSQL), qt.IsNil)
 
-	plan, err := atlasschema.PlanApply(conn, atlasschema.ApplyOptions{
+	plan, err := atlasschema.PlanApply(t.Context(), conn, atlasschema.ApplyOptions{
 		ToURLs: []string{"file://" + schemaPath},
 	})
 
@@ -123,7 +123,7 @@ func TestPlanApply_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
 	c.Run("nil connection", func(c *qt.C) {
-		plan, err := atlasschema.PlanApply(nil, atlasschema.ApplyOptions{
+		plan, err := atlasschema.PlanApply(t.Context(), nil, atlasschema.ApplyOptions{
 			ToURLs: []string{"file:///schema.sql"},
 		})
 		c.Assert(err, qt.ErrorMatches, "schema apply planning requires database connection")
@@ -135,7 +135,7 @@ func TestPlanApply_FailurePath(t *testing.T) {
 		conn := connectSQLite(c, filepath.Join(t.TempDir(), "empty-to.db"))
 		defer dbschema.CloseAndWarn(conn)
 
-		plan, err := atlasschema.PlanApply(conn, atlasschema.ApplyOptions{})
+		plan, err := atlasschema.PlanApply(t.Context(), conn, atlasschema.ApplyOptions{})
 		c.Assert(err, qt.ErrorMatches, "schema apply planning requires desired schema URLs")
 		c.Assert(plan.HasChanges(), qt.IsFalse)
 		c.Assert(plan.SQL(), qt.Equals, "")
@@ -155,7 +155,7 @@ CREATE TABLE runtime_users (
 `), 0o600), qt.IsNil)
 	conn := connectSQLite(c, dbPath)
 
-	plan, err := atlasschema.PrepareApply(conn, atlasschema.ApplyRuntimeOptions{
+	plan, err := atlasschema.PrepareApply(t.Context(), conn, atlasschema.ApplyRuntimeOptions{
 		DevURL: "sqlite://dev.db",
 		ToURLs: []string{"file://" + schemaPath},
 		TxMode: migrator.MigrationTxModeAll,
@@ -183,7 +183,7 @@ CREATE TABLE runtime_dry_run (
 `), 0o600), qt.IsNil)
 	conn := connectSQLite(c, dbPath)
 
-	plan, err := atlasschema.PrepareApply(conn, atlasschema.ApplyRuntimeOptions{
+	plan, err := atlasschema.PrepareApply(t.Context(), conn, atlasschema.ApplyRuntimeOptions{
 		DevURL: "sqlite://dev.db",
 		ToURLs: []string{"file://" + schemaPath},
 		TxMode: migrator.MigrationTxModeAll,
@@ -213,7 +213,7 @@ CREATE TABLE runtime_synced (
 	conn := connectSQLite(c, dbPath)
 	c.Assert(atlasschema.ApplySQL(context.Background(), conn, migrator.MigrationTxModeAll, schemaSQL), qt.IsNil)
 
-	plan, err := atlasschema.PrepareApply(conn, atlasschema.ApplyRuntimeOptions{
+	plan, err := atlasschema.PrepareApply(t.Context(), conn, atlasschema.ApplyRuntimeOptions{
 		DevURL: "sqlite://dev.db",
 		ToURLs: []string{"file://" + schemaPath},
 		TxMode: migrator.MigrationTxModeAll,
@@ -232,7 +232,7 @@ func TestPrepareApply_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
 	c.Run("nil connection", func(c *qt.C) {
-		plan, err := atlasschema.PrepareApply(nil, atlasschema.ApplyRuntimeOptions{
+		plan, err := atlasschema.PrepareApply(t.Context(), nil, atlasschema.ApplyRuntimeOptions{
 			DevURL: "sqlite://dev.db",
 			ToURLs: []string{"file:///schema.sql"},
 			TxMode: migrator.MigrationTxModeAll,
@@ -246,7 +246,7 @@ func TestPrepareApply_FailurePath(t *testing.T) {
 		conn := connectSQLite(c, filepath.Join(t.TempDir(), "runtime-dev-url-mismatch.db"))
 		defer dbschema.CloseAndWarn(conn)
 
-		plan, err := atlasschema.PrepareApply(conn, atlasschema.ApplyRuntimeOptions{
+		plan, err := atlasschema.PrepareApply(t.Context(), conn, atlasschema.ApplyRuntimeOptions{
 			DevURL: "postgres://localhost/dev",
 			ToURLs: []string{"file:///schema.sql"},
 			TxMode: migrator.MigrationTxModeAll,
