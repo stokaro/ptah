@@ -138,10 +138,11 @@ func GetAllScenarios() []TestScenario {
 
 		// Cleanup Support
 		{
-			Name:                "cleanup_support",
-			Description:         "Test drop and re-run from empty state",
-			TestFunc:            testCleanupSupport,
-			SQLServerCompatible: true,
+			Name:                 "cleanup_support",
+			Description:          "Test drop and re-run from empty state",
+			TestFunc:             testCleanupSupport,
+			ClickHouseCompatible: true,
+			SQLServerCompatible:  true,
 		},
 	}
 

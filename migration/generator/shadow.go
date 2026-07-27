@@ -120,7 +120,7 @@ func verifyShadowMigration(ctx context.Context, opts shadowMigrationOptions) err
 		)
 	}
 
-	if err := conn.SchemaWriter().DropAllTables(); err != nil {
+	if err := conn.SchemaWriter().DropAllTables(ctx); err != nil {
 		return newShadowVerificationError("drop-all", "drop_all_error", "drop all objects", err)
 	}
 	replayCtx := context.Background()

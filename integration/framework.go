@@ -312,7 +312,7 @@ func isPostgresDistributedSQL(dialect string) bool {
 
 // cleanDatabase drops all scenario-owned objects and resets the database to a clean state.
 func (tr *TestRunner) cleanDatabase(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-	if err := conn.SchemaWriter().DropAllTables(); err != nil {
+	if err := conn.SchemaWriter().DropAllTables(ctx); err != nil {
 		return err
 	}
 	if platform.NormalizeDialect(conn.Info().Dialect) == platform.Postgres {
@@ -659,6 +659,8 @@ func migrationPathForDialect(dialect, migrationType string) string {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.MySQL, platform.MariaDB:
 		return fmt.Sprintf("migrations/%s_mysql", migrationType)
+	case platform.ClickHouse:
+		return fmt.Sprintf("migrations/%s_clickhouse", migrationType)
 	case platform.SQLServer:
 		return fmt.Sprintf("migrations/%s_sqlserver", migrationType)
 	default:

@@ -3,13 +3,18 @@ package mysql
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/stokaro/ptah/dbschema/types"
 )
+
+const sessionRestoreTimeout = 5 * time.Second
 
 // quoteIdent returns a safely-backtick-quoted MySQL/MariaDB identifier.
 // Embedded backticks are doubled so that values coming from
@@ -134,79 +139,88 @@ func (w *transactionWriter) Rollback() error {
 func (w *transactionWriter) IsDryRun() bool { return w.dryRun }
 
 // DropAllTables drops ALL tables in the database (COMPLETE CLEANUP!)
-func (w *Writer) DropAllTables() error {
-	slog.Info("WARNING: This will drop ALL tables in the database!")
-
-	tx, err := w.BeginTransaction(context.Background())
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
+func (w *Writer) DropAllTables(ctx context.Context) (resultErr error) {
+	if w.dryRun {
+		return nil
+	}
+	if w.db == nil {
+		return fmt.Errorf("no database connection")
 	}
 
-	committed := false
+	conn, err := w.db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("mysql: acquire cleanup connection: %w", err)
+	}
 	defer func() {
-		if !committed {
-			_ = tx.Rollback()
+		closeErr := conn.Close()
+		if closeErr != nil && !errors.Is(closeErr, sql.ErrConnDone) {
+			resultErr = errors.Join(resultErr, fmt.Errorf("mysql: close cleanup connection: %w", closeErr))
 		}
 	}()
 
-	ctx := context.Background()
-
-	// Disable foreign key checks to avoid dependency issues
-	if err := tx.ExecuteSQL(ctx, "SET FOREIGN_KEY_CHECKS = 0"); err != nil {
+	if _, err := conn.ExecContext(ctx, "SET FOREIGN_KEY_CHECKS = 0"); err != nil {
 		return fmt.Errorf("failed to disable foreign key checks: %w", err)
 	}
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), sessionRestoreTimeout)
+		defer cancel()
+		if _, restoreErr := conn.ExecContext(cleanupCtx, "SET FOREIGN_KEY_CHECKS = 1"); restoreErr != nil {
+			discardConn(conn)
+			resultErr = errors.Join(resultErr, fmt.Errorf("mysql: restore foreign key checks: %w", restoreErr))
+		}
+	}()
+
+	tables, err := listTables(ctx, conn)
+	if err != nil {
+		return err
+	}
+
+	// MySQL DDL implicitly commits, so cleanup deliberately avoids a transaction.
+	for _, tableName := range tables {
+		// Identifiers cannot be bound as parameters; quoteIdent escapes every
+		// backtick in the name returned by information_schema.
+		//nolint:gosec // G202: tableName is emitted only through identifier quoting.
+		dropSQL := "DROP TABLE IF EXISTS " + quoteIdent(tableName)
+		if _, err := conn.ExecContext(ctx, dropSQL); err != nil {
+			return fmt.Errorf("failed to drop table %s: SQL execution failed: %w\nSQL: %s", tableName, err, dropSQL)
+		}
+	}
+
+	return nil
+}
+
+func listTables(ctx context.Context, conn *sql.Conn) ([]string, error) {
+	rows, err := conn.QueryContext(ctx, `
+		SELECT table_name
+		FROM information_schema.tables
+		WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE'
+		ORDER BY table_name
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("mysql: query tables: %w", err)
+	}
+	defer rows.Close()
 
 	var tables []string
-
-	if w.dryRun {
-		// In dry run mode, simulate some tables for demonstration
-		tables = []string{"example_table1", "example_table2", "example_table3"}
-	} else {
-		// Get all tables in the current database
-		tablesQuery := `
-			SELECT table_name
-			FROM information_schema.tables
-			WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE'
-			ORDER BY table_name`
-
-		rows, err := w.db.Query(tablesQuery)
-		if err != nil {
-			return fmt.Errorf("failed to query tables: %w", err)
+	for rows.Next() {
+		var tableName string
+		if err := rows.Scan(&tableName); err != nil {
+			return nil, fmt.Errorf("mysql: scan table name: %w", err)
 		}
-		defer rows.Close()
-
-		for rows.Next() {
-			var tableName string
-			if err := rows.Scan(&tableName); err != nil {
-				return fmt.Errorf("failed to scan table name: %w", err)
-			}
-			tables = append(tables, tableName)
-		}
+		tables = append(tables, tableName)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("mysql: iterate tables: %w", err)
 	}
 
-	// Drop all tables. Identifiers cannot be bound as parameters; quoteIdent
-	// doubles any embedded backtick so that a name harvested from
-	// information_schema cannot break out of the quoted identifier.
-	for _, tableName := range tables {
-		dropSQL := "DROP TABLE IF EXISTS " + quoteIdent(tableName)
-		slog.Info("Dropping table", "tableName", tableName)
-		if err := tx.ExecuteSQL(ctx, dropSQL); err != nil {
-			return fmt.Errorf("failed to drop table %s: %w", tableName, err)
-		}
-	}
+	return tables, nil
+}
 
-	// Re-enable foreign key checks
-	if err := tx.ExecuteSQL(ctx, "SET FOREIGN_KEY_CHECKS = 1"); err != nil {
-		return fmt.Errorf("failed to re-enable foreign key checks: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
-	}
-	committed = true
-
-	slog.Info("Successfully dropped tables", "count", len(tables))
-	return nil
+func discardConn(conn *sql.Conn) {
+	// Never return a connection with unknown session state to the pool.
+	_ = conn.Raw(func(any) error {
+		return driver.ErrBadConn
+	})
 }
 
 // isCreateTableStatement checks if a SQL statement is a CREATE TABLE statement

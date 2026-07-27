@@ -3,6 +3,7 @@ package mssql
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -127,15 +128,14 @@ func (w *transactionWriter) Rollback() error {
 
 func (w *transactionWriter) IsDryRun() bool { return w.dryRun }
 
-func (w *Writer) DropAllTables() error {
-	slog.Info("WARNING: This will drop ALL tables in the SQL Server database")
-
+func (w *Writer) DropAllTables(ctx context.Context) (resultErr error) {
 	if w.dryRun {
-		slog.Info("[DRY RUN] Would drop SQL Server user tables", "schema", w.schema)
 		return nil
 	}
+	if w.db == nil {
+		return fmt.Errorf("no database connection")
+	}
 
-	ctx := context.Background()
 	tables, err := w.listTables(ctx)
 	if err != nil {
 		return err
@@ -155,7 +155,10 @@ func (w *Writer) DropAllTables() error {
 	committed := false
 	defer func() {
 		if !committed {
-			_ = tx.Rollback()
+			rollbackErr := tx.Rollback()
+			if rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
+				resultErr = errors.Join(resultErr, fmt.Errorf("sqlserver: roll back drop transaction: %w", rollbackErr))
+			}
 		}
 	}()
 
@@ -168,7 +171,6 @@ func (w *Writer) DropAllTables() error {
 	}
 	for _, table := range tables {
 		qualified := quoteQualified(table.Schema, table.Name)
-		slog.Info("Dropping table", "tableName", qualified)
 		if err := tx.ExecuteSQL(ctx, "DROP TABLE IF EXISTS "+qualified); err != nil {
 			return fmt.Errorf("sqlserver: drop table %s: %w", qualified, err)
 		}

@@ -66,7 +66,7 @@ The SQL Server support is deliberately conservative:
   columns or descending key order for drift-safe round trips.
 - `DROP INDEX IF EXISTS` and `DROP CONSTRAINT IF EXISTS` are not used in the
   portable preset; Ptah relies on scoped, deterministic object ownership.
-- Schema-scoped `DropAllTables` removes tables and foreign keys owned by the
+- Schema-scoped `DropAllTables(ctx)` removes tables and foreign keys owned by the
   selected schema only. If another schema has a foreign key referencing a
   selected table, cleanup fails with a blocking-constraint error instead of
   mutating objects outside the selected schema.

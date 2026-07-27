@@ -143,7 +143,7 @@ func dropAllCommand(cmd *cobra.Command, opts *options) error {
 	} else {
 		fmt.Fprintf(out, "Dropping %d supported schema objects from database...\n", len(plan.Changes))
 	}
-	_, err = schemaclean.Execute(conn, schemaclean.Options{DryRun: opts.dryRun})
+	_, err = schemaclean.Execute(cmd.Context(), conn, schemaclean.Options{DryRun: opts.dryRun})
 	if err != nil {
 		return fmt.Errorf("error dropping all tables: %w", err)
 	}

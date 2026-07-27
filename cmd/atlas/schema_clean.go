@@ -128,7 +128,7 @@ func runAtlasSchemaClean(cmd *cobra.Command, opts atlasSchemaCleanOptions) error
 		return nil
 	}
 
-	if err := schemaclean.Apply(conn); err != nil {
+	if err := schemaclean.Apply(cmd.Context(), conn); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if formatOutput {

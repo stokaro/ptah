@@ -457,12 +457,6 @@
       "count": 3
     },
     {
-      "path": "internal/dbschema/mysql/mysql_test.go",
-      "function": "TestMySQLWriterDropAllTablesRollsBackOnFailure",
-      "kind": "if",
-      "count": 1
-    },
-    {
       "path": "internal/dbschema/postgres/exclude_constraints_test.go",
       "function": "TestParseExcludeConstraintDefinition",
       "kind": "if",
