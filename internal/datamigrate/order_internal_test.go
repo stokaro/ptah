@@ -1,5 +1,10 @@
 package datamigrate
 
+// White-box testing required: exercises orderByDependency, the package-local
+// helper that maps managed-data diffs to the schema's dependency-sorted tables.
+// It has no exported entry point, and the mapping edge cases (bare-name fallback,
+// ambiguity guard) are not observable from the black-box Generate output.
+
 import (
 	"testing"
 
