@@ -393,6 +393,27 @@ tables, replays the migration directory, and then runs static lint
 reporting. Docker `--dev-url` values remain an explicit gap; use a directly
 connectable database URL.
 
+The command captures the migration directory once before checking `atlas.sum`,
+selecting `--latest` versions, replaying migrations, and rendering reports.
+Checksum status, findings, statement metadata, and formatted output therefore
+describe the same immutable inputs.
+
+Ptah also validates and fully loads the migration provider, including Atlas
+templates, before dropping any objects from the dev database. A malformed
+migration directory therefore leaves the existing dev database state intact;
+cleanup starts only after the replay plan is valid.
+
+Atlas-compatible lint directives are enabled only under the
+`ptah atlas migrate lint` compatibility profile. A statement-local
+`-- atlas:nolint <selector>` suppresses the following statement. A first
+nonempty `-- atlas:nolint <selector>` header followed by a blank line applies
+to the whole file. A bare file header ignores the file completely, so it is
+absent from `.Files` and per-file analysis steps. Supported analyzer selectors
+are `destructive`, `data_depend`, `concurrent_index`, `incompatible`, and
+`nestedtx`; supported Atlas diagnostic aliases are `DS102`, `DS103`, and
+`MF103`. Native lint and migrate-up safety keep their native directive
+semantics unless the Atlas compatibility profile is selected explicitly.
+
 Atlas-compatible migration metadata commands default to Atlas directory format.
 `ptah atlas migrate hash`, `lint`, `new`, `set`, `status`, and `validate`
 register `--dir-format` with Atlas's default value `atlas`. The supported value

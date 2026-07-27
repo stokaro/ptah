@@ -5,11 +5,13 @@ package migrationreplay
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"net/url"
 	"os"
 	"strings"
 
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/migrationsnapshot"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
@@ -18,6 +20,9 @@ type Options struct {
 	Dir       string
 	DirFormat migrator.MigrationDirFormat
 	DevURL    string
+	// FS supplies an immutable migration snapshot. When nil, Replay opens Dir.
+	FS                fs.FS
+	AtlasTemplateData any
 }
 
 // Replay connects to the configured dev database and replays the migration
@@ -31,13 +36,21 @@ func Replay(ctx context.Context, opts Options) error {
 		return fmt.Errorf("docker --dev-url values are accepted by Atlas, but Ptah requires a directly connectable dev database URL for migration SQL replay")
 	}
 
+	sourceFS := opts.FS
+	if sourceFS == nil {
+		sourceFS = os.DirFS(opts.Dir)
+	}
+	snapshot, err := migrationsnapshot.Capture(sourceFS)
+	if err != nil {
+		return fmt.Errorf("capture migration directory: %w", err)
+	}
 	conn, err := dbschema.ConnectToDatabase(ctx, devURL)
 	if err != nil {
 		return fmt.Errorf("error connecting to dev database: %w", err)
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	return ReplayOnConnection(ctx, conn, opts.Dir, opts.DirFormat)
+	return replayOnConnection(ctx, conn, snapshot, opts.DirFormat, opts.AtlasTemplateData)
 }
 
 // ReplayOnConnection replays the migration directory on an already-open dev
@@ -48,17 +61,33 @@ func ReplayOnConnection(
 	dir string,
 	dirFormat migrator.MigrationDirFormat,
 ) error {
-	if err := conn.SchemaWriter().DropAllTables(ctx); err != nil {
-		return fmt.Errorf("clean dev database: %w", err)
+	snapshot, err := migrationsnapshot.Capture(os.DirFS(dir))
+	if err != nil {
+		return fmt.Errorf("capture migration directory: %w", err)
 	}
+	return replayOnConnection(ctx, conn, snapshot, dirFormat, nil)
+}
+
+func replayOnConnection(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	fsys fs.FS,
+	dirFormat migrator.MigrationDirFormat,
+	atlasTemplateData any,
+) error {
 	provider, err := migrator.NewFSMigrationProvider(
-		os.DirFS(dir),
+		fsys,
 		migrator.WithMigrationDirFormat(dirFormat),
+		migrator.WithAtlasTemplateData(atlasTemplateData),
 	)
 	if err != nil {
 		return fmt.Errorf("load migration directory: %w", err)
 	}
-	for _, migration := range provider.Migrations() {
+	migrations := provider.Migrations()
+	if err := conn.SchemaWriter().DropAllTables(ctx); err != nil {
+		return fmt.Errorf("clean dev database: %w", err)
+	}
+	for _, migration := range migrations {
 		if err := migration.Up(ctx, conn); err != nil {
 			return fmt.Errorf("replay migration %d on dev database: %w", migration.Version, err)
 		}

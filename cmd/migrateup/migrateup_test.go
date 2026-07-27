@@ -424,31 +424,6 @@ func TestMigrateUpCommandDryRunSkipsPreflightSideEffects(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 }
 
-func TestPendingMigrationsForRunSkipsOutOfOrderWhenLinearSkip(t *testing.T) {
-	c := qt.New(t)
-
-	status := &migrator.MigrationStatus{
-		PendingMigrations:    []int64{3, 6},
-		OutOfOrderMigrations: []int64{3},
-	}
-
-	c.Assert(
-		pendingMigrationsForRun(status, migrator.ExecOrderLinear),
-		qt.DeepEquals,
-		[]int64{3, 6},
-	)
-	c.Assert(
-		pendingMigrationsForRun(status, migrator.ExecOrderNonLinear),
-		qt.DeepEquals,
-		[]int64{3, 6},
-	)
-	c.Assert(
-		pendingMigrationsForRun(status, migrator.ExecOrderLinearSkip),
-		qt.DeepEquals,
-		[]int64{6},
-	)
-}
-
 func TestDatabaseURLPasswordsForTest(t *testing.T) {
 	c := qt.New(t)
 

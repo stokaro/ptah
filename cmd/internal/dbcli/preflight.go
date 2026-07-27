@@ -5,10 +5,30 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 
 	"github.com/stokaro/ptah/internal/preflight"
 	"github.com/stokaro/ptah/migration/migrator"
 )
+
+// CombineMigrationHooks returns one hook that runs each non-nil hook in order
+// and stops at the first error. It returns nil when no hooks are configured.
+func CombineMigrationHooks(hooks ...migrator.PreMigrationHook) migrator.PreMigrationHook {
+	hooks = slices.DeleteFunc(slices.Clone(hooks), func(hook migrator.PreMigrationHook) bool {
+		return hook == nil
+	})
+	if len(hooks) == 0 {
+		return nil
+	}
+	return func(ctx context.Context, plan migrator.MigrationPlan) error {
+		for _, hook := range hooks {
+			if err := hook(ctx, plan); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
 
 // MigrationPreflightReporter writes pre-flight progress messages.
 type MigrationPreflightReporter interface {

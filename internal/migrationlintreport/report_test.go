@@ -3,14 +3,17 @@ package migrationlintreport_test
 import (
 	"bytes"
 	"context"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/config/projectconfig"
 	"github.com/stokaro/ptah/internal/migrationlintreport"
+	"github.com/stokaro/ptah/internal/migrationsnapshot"
 	migrationlint "github.com/stokaro/ptah/migration/lint"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -55,6 +58,81 @@ func TestBuild_UsesProjectConfigWithoutCobra(t *testing.T) {
 	c.Assert(report.Findings, qt.HasLen, 1)
 	c.Assert(report.Findings[0].Rule, qt.Equals, "DS102")
 	c.Assert(report.Findings[0].File, qt.Contains, "0000000002_new.up.sql")
+}
+
+func TestBuild_LatestAndAnalysisShareOneSourceSnapshot(t *testing.T) {
+	c := qt.New(t)
+	source := &countingSnapshotSource{
+		FS: fstest.MapFS{
+			"1_old.sql": {Data: []byte("DROP TABLE old_data;\n")},
+			"2_new.sql": {Data: []byte("DROP TABLE new_data;\n")},
+		},
+		reads: map[string]int{},
+	}
+
+	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
+		Dir:       t.TempDir(),
+		FS:        source,
+		DirFormat: string(migrator.MigrationDirFormatAtlas),
+		FailOn:    migrationlintreport.FailOnNone,
+		Latest:    1,
+		Changed:   migrationlintreport.ChangedOptions{Latest: true},
+	}, projectconfig.Config{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Versions, qt.DeepEquals, []int64{2})
+	c.Assert(report.Findings, qt.HasLen, 1)
+	c.Assert(report.Findings[0].File, qt.Contains, "2_new.sql")
+	c.Assert(source.reads, qt.DeepEquals, map[string]int{
+		"1_old.sql": 1,
+		"2_new.sql": 1,
+	})
+}
+
+func TestBuild_ProvidedSnapshotDoesNotRequireSourceDirectory(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	writeLintTestFile(c, dir, "1_drop.sql", "DROP TABLE users;\n")
+	snapshot, err := migrationsnapshot.Capture(os.DirFS(dir))
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.RemoveAll(dir), qt.IsNil)
+
+	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
+		Dir:       dir,
+		FS:        snapshot,
+		DirFormat: string(migrator.MigrationDirFormatAtlas),
+		FailOn:    migrationlintreport.FailOnNone,
+	}, projectconfig.Config{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Findings, qt.HasLen, 1)
+	c.Assert(report.Findings[0].Rule, qt.Equals, "DS101")
+}
+
+func TestBuild_LoadsConventionalLintConfigFromSnapshot(t *testing.T) {
+	c := qt.New(t)
+	source := &countingSnapshotSource{
+		FS: fstest.MapFS{
+			".ptah-lint.yaml": {Data: []byte("disabled-rules: [DS101]\n")},
+			"1_drop.sql":      {Data: []byte("DROP TABLE users;\n")},
+		},
+		reads: map[string]int{},
+	}
+
+	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
+		Dir:       t.TempDir(),
+		FS:        source,
+		DirFormat: string(migrator.MigrationDirFormatAtlas),
+		FailOn:    migrationlintreport.FailOnNone,
+	}, projectconfig.Config{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.DisabledRules, qt.DeepEquals, []string{"DS101"})
+	c.Assert(report.Findings, qt.HasLen, 0)
+	c.Assert(source.reads, qt.DeepEquals, map[string]int{
+		".ptah-lint.yaml": 1,
+		"1_drop.sql":      1,
+	})
 }
 
 func TestBuild_FailOnErrorDoesNotFailWarnings(t *testing.T) {
@@ -113,6 +191,16 @@ func TestWrite_GitHubActionsEscapesWorkflowCommandCharacters(t *testing.T) {
 	c.Assert(buf.String(), qt.Contains, "::error file=dir/evil%2Cfile%3A%3Aname.sql,line=3::")
 	c.Assert(buf.String(), qt.Contains, "DS101: 50%25 data loss%0D%0Asecond line")
 	c.Assert(buf.String(), qt.Not(qt.Contains), "evil,file::name")
+}
+
+type countingSnapshotSource struct {
+	fs.FS
+	reads map[string]int
+}
+
+func (f *countingSnapshotSource) ReadFile(name string) ([]byte, error) {
+	f.reads[name]++
+	return fs.ReadFile(f.FS, name)
 }
 
 func TestWrite_GitHubActionsEscapesErrorReport(t *testing.T) {

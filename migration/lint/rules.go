@@ -134,8 +134,16 @@ func tableDroppedRule() Rule {
 					created[ref] = true
 					continue
 				}
-				if !hasWordPrefix(stmt.Words, "DROP", "TABLE") || dropsOnlyCreatedTables(stmt.Words, created) {
+				if !hasWordPrefix(stmt.Words, "DROP", "TABLE") {
 					continue
+				}
+				unsafeTables, complete := droppedTablesNotCreated(stmt.Words, stmt.sourceWords, created)
+				if complete && len(unsafeTables) == 0 {
+					continue
+				}
+				subjects := make([]Subject, len(unsafeTables))
+				for j, table := range unsafeTables {
+					subjects[j] = Subject{Kind: SubjectTable, Name: table.name}
 				}
 				findings = append(findings, Finding{
 					Rule:     "DS101",
@@ -144,6 +152,7 @@ func tableDroppedRule() Rule {
 					File:     file.Path,
 					Line:     stmt.Line,
 					Message:  "DROP TABLE permanently deletes the table and every row in it; take a verified backup first and consider a rename-and-retire window instead",
+					Context:  statementFindingContext(i, subjects...),
 				})
 			}
 			return findings
@@ -458,6 +467,7 @@ func postgresCreateIndexRule() Rule {
 					File:     file.Path,
 					Line:     stmt.Line,
 					Message:  "CREATE INDEX without CONCURRENTLY blocks writes to the table for the whole build; on a populated table use CREATE INDEX CONCURRENTLY outside a transaction",
+					Context:  statementFindingContext(i),
 				})
 			}
 			return findings
@@ -497,6 +507,7 @@ func postgresConcurrentIndexRule() Rule {
 					File:     file.Path,
 					Line:     stmt.Line,
 					Message:  "CONCURRENTLY cannot run inside PostgreSQL's normal migration transaction; mark the migration non-transactional before applying",
+					Context:  statementFindingContext(i),
 				})
 			}
 			return findings
@@ -736,6 +747,7 @@ func transactionRules() []Rule {
 					File:     file.Path,
 					Line:     nonTransactional.Line,
 					Message:  "this migration mixes PostgreSQL statements that require autocommit with transactional DDL; split them into separate migrations",
+					Context:  statementFindingContext(nonTransactional.Index),
 				}}
 			},
 		},
@@ -860,11 +872,8 @@ func clauseStarts(w []string) []int {
 		}
 		break
 	}
-	if j < len(w) && identLike(w[j]) {
-		j++
-		for j+1 < len(w) && w[j] == "." && identLike(w[j+1]) {
-			j += 2 // schema-qualified reference: schema.tbl
-		}
+	if ref, next := tableRefAt(w, w, j); ref.normalized != "" {
+		j = next
 		if j < len(w) && w[j] == "*" {
 			j++ // postgres: name * (include descendant tables)
 		}
@@ -893,6 +902,12 @@ func clauseStarts(w []string) []int {
 // clause-head DROP followed by an identifier counts unless the identifier is
 // a known non-column DROP target (DROP CONSTRAINT, DROP PRIMARY KEY, ...).
 func scanDropColumn(w []string) bool {
+	return len(droppedColumnSubjects(w, w)) > 0
+}
+
+func droppedColumnSubjects(w, sourceWords []string) []Subject {
+	table := alterTableReference(w, sourceWords)
+	var subjects []Subject
 	for _, i := range clauseStarts(w) {
 		if i >= len(w) || w[i] != "DROP" {
 			continue
@@ -911,10 +926,14 @@ func scanDropColumn(w []string) bool {
 			continue
 		}
 		if identLike(w[j]) {
-			return true
+			subjects = append(subjects, Subject{
+				Kind:   SubjectColumn,
+				Name:   sourceWordAt(w, sourceWords, j),
+				Parent: table.name,
+			})
 		}
 	}
-	return false
+	return subjects
 }
 
 // scanModifyChange reports whether an ALTER TABLE statement rewrites a column
@@ -1048,6 +1067,12 @@ func scanConvertCharset(w []string) bool {
 }
 
 func scanAddColumnNotNullWithoutDefault(w []string) bool {
+	return len(nonNullableAddedColumnSubjects(w, w)) > 0
+}
+
+func nonNullableAddedColumnSubjects(w, sourceWords []string) []Subject {
+	table := alterTableReference(w, sourceWords)
+	var subjects []Subject
 	for _, i := range clauseStarts(w) {
 		start, end, ok := addColumnClause(w, i)
 		if !ok {
@@ -1055,10 +1080,44 @@ func scanAddColumnNotNullWithoutDefault(w []string) bool {
 		}
 		clause := w[start:end]
 		if hasWordSeq(clause, "NOT", "NULL") && !slices.Contains(clause, "DEFAULT") {
-			return true
+			subjects = append(subjects, Subject{
+				Kind:     SubjectColumn,
+				Name:     sourceWordAt(w, sourceWords, start-1),
+				Parent:   table.name,
+				DataType: columnDataType(clause, sourceWords[start:end]),
+			})
 		}
 	}
-	return false
+	return subjects
+}
+
+func columnDataType(definition, sourceDefinition []string) string {
+	end := len(definition)
+	depth := 0
+	for i, word := range definition {
+		switch word {
+		case "(", "[":
+			depth++
+		case ")", "]":
+			depth = max(0, depth-1)
+		default:
+			if depth == 0 && columnConstraintWord(word) {
+				end = i
+				return strings.Join(sourceDefinition[:end], " ")
+			}
+		}
+	}
+	return strings.Join(sourceDefinition[:end], " ")
+}
+
+func columnConstraintWord(word string) bool {
+	switch word {
+	case "CHECK", "COLLATE", "COMMENT", "CONSTRAINT", "DEFAULT", "GENERATED",
+		"IDENTITY", "NOT", "NULL", "PRIMARY", "REFERENCES", "UNIQUE":
+		return true
+	default:
+		return false
+	}
 }
 
 func scanAddColumnWithVolatileDefault(w []string) bool {
@@ -1345,24 +1404,102 @@ func createdTableRef(w []string) string {
 	if j+2 < len(w) && w[j] == "IF" && w[j+1] == "NOT" && w[j+2] == "EXISTS" {
 		j += 3
 	}
-	ref, _ := tableRefAt(w, j)
-	return ref
+	ref, _ := tableRefAt(w, w, j)
+	return ref.normalized
 }
 
 // tableRefAt reads a possibly schema-qualified table reference at w[j] and
-// returns it normalized plus the index past its end; "" when w[j] does not
-// start a reference.
-func tableRefAt(w []string, j int) (string, int) {
-	if j >= len(w) || !identLike(w[j]) {
-		return "", j
+// returns separate display and comparison forms plus the index past its end.
+func tableRefAt(w, sourceWords []string, j int) (tableReference, int) {
+	identifier, next, ok := identifierAt(w, sourceWords, j)
+	if !ok {
+		return tableReference{}, j
 	}
-	parts := []string{normalizeIdent(w[j])}
-	j++
-	for j+1 < len(w) && w[j] == "." && identLike(w[j+1]) {
-		parts = append(parts, normalizeIdent(w[j+1]))
-		j += 2
+	displayParts := []string{identifier.name}
+	normalizedParts := []string{identifier.normalized}
+	j = next
+	for j < len(w) && w[j] == "." {
+		identifier, next, ok = identifierAt(w, sourceWords, j+1)
+		if !ok {
+			break
+		}
+		displayParts = append(displayParts, identifier.name)
+		normalizedParts = append(normalizedParts, identifier.normalized)
+		j = next
 	}
-	return strings.Join(parts, "."), j
+	return tableReference{
+		name:       strings.Join(displayParts, "."),
+		normalized: strings.Join(normalizedParts, "."),
+	}, j
+}
+
+func identifierAt(w, sourceWords []string, index int) (tableReference, int, bool) {
+	if index >= len(w) {
+		return tableReference{}, index, false
+	}
+	if identLike(w[index]) {
+		return tableReference{
+			name:       sourceWordAt(w, sourceWords, index),
+			normalized: normalizeIdent(w[index]),
+		}, index + 1, true
+	}
+	if w[index] != "[" {
+		return tableReference{}, index, false
+	}
+	end := index + 1
+	for end < len(w) && w[end] != "]" {
+		end++
+	}
+	if end == index+1 || end >= len(w) {
+		return tableReference{}, index, false
+	}
+	return tableReference{
+		name:       "[" + strings.Join(sourceWords[index+1:end], " ") + "]",
+		normalized: strings.ToUpper(strings.Join(w[index+1:end], " ")),
+	}, end + 1, true
+}
+
+type tableReference struct {
+	name       string
+	normalized string
+}
+
+func alterTableReference(w, sourceWords []string) tableReference {
+	if !hasWordPrefix(w, "ALTER", "TABLE") {
+		return tableReference{}
+	}
+	j := 2
+	for j < len(w) {
+		if w[j] == "ONLY" {
+			j++
+			continue
+		}
+		if next := skipIfExists(w, j); next != j {
+			j = next
+			continue
+		}
+		break
+	}
+	ref, _ := tableRefAt(w, sourceWords, j)
+	return ref
+}
+
+func statementSubjects(code string, words, sourceWords []string) []Subject {
+	switch code {
+	case "DS102":
+		return droppedColumnSubjects(words, sourceWords)
+	case "DD101":
+		return nonNullableAddedColumnSubjects(words, sourceWords)
+	default:
+		return nil
+	}
+}
+
+func sourceWordAt(words, sourceWords []string, index int) string {
+	if index < len(sourceWords) {
+		return sourceWords[index]
+	}
+	return words[index]
 }
 
 // normalizeIdent strips identifier quoting and uppercases for comparison.
@@ -1392,20 +1529,35 @@ func refersToCreated(created map[string]bool, ref string) bool {
 	return false
 }
 
-// dropsOnlyCreatedTables reports whether every table named by a DROP TABLE
-// statement was created earlier in the same file.
-func dropsOnlyCreatedTables(w []string, created map[string]bool) bool {
+// droppedTablesNotCreated returns tables that were not created earlier in the
+// same file and whether every target was parsed. An incomplete parse must remain
+// destructive because treating an unknown target as safe would be fail-open.
+func droppedTablesNotCreated(
+	w []string,
+	sourceWords []string,
+	created map[string]bool,
+) ([]tableReference, bool) {
+	var unsafe []tableReference
 	j := skipIfExists(w, 2)
 	for {
-		ref, next := tableRefAt(w, j)
-		if ref == "" || !refersToCreated(created, ref) {
-			return false
+		if j < len(w) && w[j] == "ONLY" {
+			j++
+		}
+		ref, next := tableRefAt(w, sourceWords, j)
+		if ref.normalized == "" {
+			return unsafe, false
+		}
+		if !refersToCreated(created, ref.normalized) {
+			unsafe = append(unsafe, ref)
+		}
+		if next < len(w) && w[next] == "*" {
+			next++
 		}
 		if next < len(w) && w[next] == "," {
 			j = next + 1
 			continue
 		}
-		return true
+		return unsafe, true
 	}
 }
 
@@ -1414,8 +1566,8 @@ func dropsOnlyCreatedTables(w []string, created map[string]bool) bool {
 func indexTargetRef(w []string) string {
 	for k := range w {
 		if w[k] == "ON" {
-			ref, _ := tableRefAt(w, k+1)
-			return ref
+			ref, _ := tableRefAt(w, w, k+1)
+			return ref.normalized
 		}
 	}
 	return ""

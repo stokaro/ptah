@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"strings"
 
@@ -18,7 +17,9 @@ import (
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/atlasurl"
 	"github.com/stokaro/ptah/internal/migrationlintreport"
+	"github.com/stokaro/ptah/internal/migrationsnapshot"
 	"github.com/stokaro/ptah/internal/pathguard"
+	migrationlint "github.com/stokaro/ptah/migration/lint"
 )
 
 const atlasMigrateLintFindingError = "lint findings exceed the failure threshold"
@@ -107,8 +108,11 @@ func runAtlasMigrateLint(cmd *cobra.Command, opts atlasMigrateLintOptions) error
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("resolve migration directory: %w", err))
 	}
-	fsys := os.DirFS(dir)
-	integrity, err := atlasreport.InspectMigrateLintIntegrity(fsys)
+	snapshot, err := migrationsnapshot.Capture(os.DirFS(dir))
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	integrity, err := atlasreport.InspectMigrateLintIntegrity(snapshot)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -122,7 +126,6 @@ func runAtlasMigrateLint(cmd *cobra.Command, opts atlasMigrateLintOptions) error
 				Driver:    driver,
 				URL:       opts.devURL,
 				Dir:       dir,
-				FS:        fsys,
 				Integrity: integrity,
 			}); err != nil {
 				return cmdutil.Fail(cmd, err)
@@ -135,14 +138,16 @@ func runAtlasMigrateLint(cmd *cobra.Command, opts atlasMigrateLintOptions) error
 	}
 
 	report, err := migrationlintreport.Build(cmd.Context(), migrationlintreport.Options{
-		Dir:       dir,
-		DirFormat: dirFormat,
-		AtlasEnv:  opts.atlasEnv,
-		DevURL:    opts.devURL,
-		GitBase:   opts.gitBase,
-		GitDir:    opts.gitDir,
-		FailOn:    migrationlintreport.FailOnError,
-		Latest:    opts.latest,
+		Dir:           dir,
+		FS:            snapshot,
+		DirFormat:     dirFormat,
+		AtlasEnv:      opts.atlasEnv,
+		DevURL:        opts.devURL,
+		GitBase:       opts.gitBase,
+		GitDir:        opts.gitDir,
+		FailOn:        migrationlintreport.FailOnError,
+		Latest:        opts.latest,
+		Compatibility: migrationlint.CompatibilityProfileAtlas,
 		Changed: migrationlintreport.ChangedOptions{
 			Dir:       true,
 			DirFormat: true,
@@ -155,7 +160,7 @@ func runAtlasMigrateLint(cmd *cobra.Command, opts atlasMigrateLintOptions) error
 	}, atlasMigrateLintReportConfig(projectCfg))
 	if err != nil {
 		if formatOutput {
-			if err := writeAtlasMigrateLintReplayError(cmd, opts, dir, fsys, integrity, err); err != nil {
+			if err := writeAtlasMigrateLintReplayError(cmd, opts, dir, report, integrity, err); err != nil {
 				return cmdutil.Fail(cmd, err)
 			}
 			return exitcode.New(1, err)
@@ -167,9 +172,7 @@ func runAtlasMigrateLint(cmd *cobra.Command, opts atlasMigrateLintOptions) error
 			Driver:    report.Dialect,
 			URL:       opts.devURL,
 			Dir:       dir,
-			FS:        fsys,
-			Findings:  report.Findings,
-			Versions:  report.Versions,
+			Analysis:  &report.Analysis,
 			Integrity: integrity,
 			Error:     report.Error,
 		}); err != nil {
@@ -193,7 +196,7 @@ func writeAtlasMigrateLintReplayError(
 	cmd *cobra.Command,
 	opts atlasMigrateLintOptions,
 	dir string,
-	fsys fs.FS,
+	report migrationlintreport.Report,
 	integrity atlasreport.MigrateLintIntegrity,
 	replayErr error,
 ) error {
@@ -205,7 +208,7 @@ func writeAtlasMigrateLintReplayError(
 		Driver:    driver,
 		URL:       opts.devURL,
 		Dir:       dir,
-		FS:        fsys,
+		Analysis:  &report.Analysis,
 		Integrity: integrity,
 		Error:     replayErr.Error(),
 	})

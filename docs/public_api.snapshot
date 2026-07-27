@@ -739,20 +739,29 @@ func Parsers() []Parser
 const ConfigFileName = ".ptah-lint.yaml"
 func Describe(f Finding) string
 func Register(rule Rule) error
+type Analysis struct{ ... }
+    func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error)
+type CompatibilityProfile string
+    const CompatibilityProfileNative CompatibilityProfile = "" ...
 type Config struct{ ... }
     func LoadConfig(path string) (*Config, error)
     func LoadConfigFS(fsys fs.FS, name string) (*Config, error)
 type File struct{ ... }
-    func PrepareFS(fsys fs.FS, opts Options) ([]*File, error)
 type Finding struct{ ... }
     func LintFS(fsys fs.FS, opts Options) ([]Finding, error)
+type FindingContext struct{ ... }
 type Options struct{ ... }
 type Rule struct{ ... }
     func Rules() []Rule
 type RuleConfig struct{ ... }
 type Severity = risk.Severity
     const SeverityWarning Severity = risk.Warning ...
+type SourceSpan struct{ ... }
 type Statement struct{ ... }
+type Subject struct{ ... }
+type SubjectKind string
+    const SubjectTable SubjectKind = "table" ...
+type VersionSelection struct{ ... }
 
 ## github.com/stokaro/ptah/migration/migrator
 
