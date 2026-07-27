@@ -6,8 +6,47 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/migration/datadiff"
 )
+
+// TestRender_SplitterRoundTrip proves the renderer and ptah's own dialect-aware
+// statement splitter agree: a rendered statement whose value embeds quotes,
+// backslashes, and semicolons stays exactly one statement when re-split, so a
+// hostile value cannot leak an extra executed statement into a migration.
+func TestRender_SplitterRoundTrip(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		value   string
+	}{
+		{name: "postgres backslash-quote payload", dialect: "postgres", value: `\'; DROP TABLE regions; --`},
+		{name: "postgres quote payload", dialect: "postgres", value: `'); DROP TABLE regions; --`},
+		{name: "sqlite backslash-quote payload", dialect: "sqlite", value: `\'; DROP TABLE regions; --`},
+		{name: "mysql backslash-quote payload", dialect: "mysql", value: `\'; DROP TABLE regions; --`},
+	}
+
+	c := qt.New(t)
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			diff := &datadiff.DataDiff{
+				Table: "regions",
+				Keys:  []string{"code"},
+				Updates: []datadiff.RowUpdate{{
+					Key:     map[string]any{"code": "US"},
+					Desired: datadiff.Row{"code": "US", "name": tt.value},
+					Live:    datadiff.Row{"code": "US", "name": "United States"},
+				}},
+			}
+			up, down, err := datadiff.Render(diff, tt.dialect)
+			c.Assert(err, qt.IsNil)
+			// Each script is a single UPDATE; re-splitting must not free the
+			// embedded "; DROP TABLE ..." into its own statement.
+			c.Assert(sqlutil.SplitSQLStatementsForDialect(up, tt.dialect), qt.HasLen, 1)
+			c.Assert(sqlutil.SplitSQLStatementsForDialect(down, tt.dialect), qt.HasLen, 1)
+		})
+	}
+}
 
 // TestRenderShapesAndRoundTrip renders a diff carrying every kind of change and
 // asserts the exact up script and its exact inverse. down must undo every
