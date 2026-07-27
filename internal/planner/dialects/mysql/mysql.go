@@ -488,6 +488,336 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *types.SchemaDiff
 	return result, nil
 }
 
+// affectedForeignKey identifies a foreign key that a MySQL/MariaDB column-type
+// change forces the planner to drop before the column modifications and,
+// depending on ownership, recreate afterward (issue #694).
+//
+// MySQL and MariaDB reject ALTER TABLE ... MODIFY on a column that participates
+// in a foreign key — as either the referencing or the referenced column (MySQL
+// errno 3780, MariaDB errno 1832). The recreation is driven from the schema the
+// planner was handed — the target schema on the up path, the introspected
+// pre-change schema on the down path — so referencing and referenced column
+// types stay in lockstep and the recreated constraint cannot fail as
+// incompatible. See planColumnTypeForeignKeyChanges for how the drop and re-add
+// are split with the constraint machinery.
+type affectedForeignKey struct {
+	// table is the referencing (owning) table that carries the constraint and
+	// is therefore where DROP/ADD FOREIGN KEY runs.
+	table string
+	// name is the constraint name.
+	name string
+	// columns are the local (referencing) columns.
+	columns []string
+	// ref describes the referenced table, columns, and referential actions.
+	ref *ast.ForeignKeyRef
+}
+
+// columnTypeForeignKeyPlan holds the foreign-key statements the planner emits
+// around column-type changes on MySQL/MariaDB (issue #694).
+//
+//   - drops are the DROP FOREIGN KEY statements emitted BEFORE the column
+//     modifications, for every affected foreign key that already exists.
+//   - readds are the ADD CONSTRAINT ... FOREIGN KEY statements emitted AFTER the
+//     modifications, only for keys the constraint machinery does not itself
+//     recreate.
+//   - dropped is the set of "table.name" keys already dropped here, so
+//     addNewConstraints and removeConstraints suppress their own now-redundant
+//     drop of the same key. MySQL accepts no IF EXISTS guard on constraint
+//     drops, so a duplicate drop would abort the migration.
+type columnTypeForeignKeyPlan struct {
+	drops   []ast.Node
+	readds  []ast.Node
+	dropped map[string]struct{}
+}
+
+// planColumnTypeForeignKeyChanges determines which foreign keys a column-type
+// change forces the planner to drop before the modifications and recreate
+// afterward (issue #694), and how ownership of the drop and re-add is split with
+// the constraint machinery.
+//
+// A foreign key is affected when one of its referencing or referenced columns is
+// changing type. Only column *type* changes matter; a nullability or default
+// change keeps the referential type match and is left to a bare MODIFY.
+//
+// Ownership is resolved per (table, name) — never the bare name, which a foreign
+// key shared across host tables would conflate (issue #197/#207):
+//
+//   - ADDED-ONLY (the (table, name) is in the diff's FK additions but not its
+//     removals): a brand-new key on an existing column. It does not exist yet,
+//     so it is NOT pre-dropped; addNewConstraints adds it after the
+//     modifications.
+//   - MODIFY (in both additions and removals) or REMOVED-ONLY (in removals): the
+//     key exists, so it is pre-dropped here. addNewConstraints owns the re-add
+//     (with the new definition) for a MODIFY; a REMOVED-ONLY key has no re-add.
+//   - Neither (not in the FK constraint diff at all): a pure column-type change
+//     on an unchanged key. This planner owns both the pre-drop and the
+//     post-MODIFY re-add.
+func (p *Planner) planColumnTypeForeignKeyChanges(diff *types.SchemaDiff, generated *goschema.Database) columnTypeForeignKeyPlan {
+	plan := columnTypeForeignKeyPlan{dropped: make(map[string]struct{})}
+	if diff == nil || generated == nil {
+		return plan
+	}
+	typeChanged := columnTypeChangesByTable(diff)
+	if len(typeChanged) == 0 {
+		return plan
+	}
+
+	addedHosts, removedHosts := foreignKeyConstraintDiffHosts(diff)
+	drops, readds := collectColumnTypeForeignKeyActions(generated, diff, typeChanged, addedHosts, removedHosts)
+
+	for _, fk := range drops {
+		plan.drops = append(plan.drops, p.dropConstraintNode(types.ConstraintRemovalInfo{
+			Name:      fk.name,
+			TableName: fk.table,
+			Type:      "FOREIGN KEY",
+		}))
+		plan.dropped[fk.table+"."+fk.name] = struct{}{}
+	}
+	for _, fk := range readds {
+		plan.readds = append(plan.readds, p.createForeignKeyAlterStatement(fk.table, fk.name, fk.columns, fk.ref))
+	}
+	return plan
+}
+
+// collectColumnTypeForeignKeyActions returns, deduped per (table, name) and
+// sorted deterministically, the foreign keys to pre-drop and the subset this
+// planner also re-adds. See planColumnTypeForeignKeyChanges for the ownership
+// rules.
+func collectColumnTypeForeignKeyActions(
+	generated *goschema.Database,
+	diff *types.SchemaDiff,
+	typeChanged map[string]map[string]struct{},
+	addedHosts, removedHosts map[string]struct{},
+) (drops, readds []affectedForeignKey) {
+	seen := make(map[string]struct{})
+
+	// Existing foreign keys drawn from the schema handed to the planner: the
+	// target schema on the up path, the introspected pre-change schema on the
+	// down path. This covers unchanged and modified keys. Added-only keys are
+	// not in the database yet, so they are not pre-dropped here.
+	for _, fk := range candidateForeignKeys(generated) {
+		if !foreignKeyValid(fk) || !foreignKeyTouchesTypeChange(fk, typeChanged) {
+			continue
+		}
+		hostKey := fk.table + "\x00" + fk.name
+		if _, done := seen[hostKey]; done {
+			continue
+		}
+		_, added := addedHosts[hostKey]
+		_, removed := removedHosts[hostKey]
+		if added && !removed {
+			continue // added-only: nothing to pre-drop
+		}
+		seen[hostKey] = struct{}{}
+		drops = append(drops, fk)
+		if !added && !removed {
+			// Not in the FK constraint diff at all: own the re-add too.
+			readds = append(readds, fk)
+		}
+	}
+
+	// Removed-only foreign keys are not in the schema handed to the planner, so
+	// they are drawn from the removal list. They exist in the database and, when
+	// their table has a column-type change, must be pre-dropped before the bare
+	// MODIFY the server would otherwise reject; they have no re-add.
+	for _, info := range diff.ConstraintsRemovedWithTables {
+		if !strings.EqualFold(info.Type, "FOREIGN KEY") {
+			continue
+		}
+		hostKey := info.TableName + "\x00" + info.Name
+		if _, added := addedHosts[hostKey]; added {
+			continue // MODIFY: handled from the schema above
+		}
+		if _, done := seen[hostKey]; done {
+			continue
+		}
+		if _, changed := typeChanged[info.TableName]; !changed {
+			continue
+		}
+		seen[hostKey] = struct{}{}
+		drops = append(drops, affectedForeignKey{table: info.TableName, name: info.Name})
+	}
+
+	sortAffectedForeignKeys(drops)
+	sortAffectedForeignKeys(readds)
+	return drops, readds
+}
+
+// foreignKeyValid reports whether a candidate foreign key carries the fields
+// needed to both drop and recreate it.
+func foreignKeyValid(fk affectedForeignKey) bool {
+	return fk.table != "" && fk.name != "" && fk.ref != nil && len(fk.columns) > 0
+}
+
+func sortAffectedForeignKeys(fks []affectedForeignKey) {
+	slices.SortFunc(fks, func(a, b affectedForeignKey) int {
+		if c := strings.Compare(a.table, b.table); c != 0 {
+			return c
+		}
+		return strings.Compare(a.name, b.name)
+	})
+}
+
+// foreignKeyConstraintDiffHosts returns the (table, name) hosts — keyed
+// "table\x00name" — of the foreign keys the constraint machinery adds and
+// removes for this diff. Keying on (table, name), never the bare name, is
+// essential: a foreign-key name shared across tables (an embedded
+// inline-relation mixin, issue #197/#207) can be a modification on one host and
+// untouched on another, and only the modified host defers its re-add to the
+// constraint machinery.
+func foreignKeyConstraintDiffHosts(diff *types.SchemaDiff) (added, removed map[string]struct{}) {
+	added = make(map[string]struct{})
+	removed = make(map[string]struct{})
+	for _, info := range diff.ConstraintsAddedWithTables {
+		if strings.EqualFold(info.Type, "FOREIGN KEY") {
+			added[info.TableName+"\x00"+info.Name] = struct{}{}
+		}
+	}
+	for _, info := range diff.ConstraintsRemovedWithTables {
+		if strings.EqualFold(info.Type, "FOREIGN KEY") {
+			removed[info.TableName+"\x00"+info.Name] = struct{}{}
+		}
+	}
+	return added, removed
+}
+
+// candidateForeignKeys enumerates every foreign key in the schema, drawing on
+// all three representations: field-level foreign= references (and the
+// single-column FKs the down path reconstructs from the database),
+// self-referencing foreign keys, and table-level foreign key constraints (and
+// the composite FKs the down path reconstructs).
+func candidateForeignKeys(generated *goschema.Database) []affectedForeignKey {
+	structToTable := make(map[string]goschema.Table, len(generated.Tables))
+	tableByName := make(map[string]goschema.Table, len(generated.Tables))
+	for _, t := range generated.Tables {
+		structToTable[t.StructName] = t
+		tableByName[t.Name] = t
+	}
+
+	var candidates []affectedForeignKey
+	candidates = appendFieldLevelForeignKeys(candidates, generated, structToTable)
+	candidates = appendSelfReferencingForeignKeys(candidates, generated, tableByName)
+	candidates = appendTableLevelForeignKeys(candidates, generated)
+	return candidates
+}
+
+// appendFieldLevelForeignKeys resolves each field-level foreign key to its
+// owning table. The ALTER TABLE target is the qualified table name — matching
+// the MODIFY statement and the constraint comparator — while the conventional
+// constraint name is derived from the bare table name, matching
+// fromschema.GenerateForeignKeyName as used on the FK-creation path and by the
+// comparator's synthesis.
+func appendFieldLevelForeignKeys(candidates []affectedForeignKey, generated *goschema.Database, structToTable map[string]goschema.Table) []affectedForeignKey {
+	for _, field := range generated.Fields {
+		if field.Foreign == "" {
+			continue
+		}
+		ref := fromschema.ParseForeignKeyReference(field.Foreign)
+		if ref == nil {
+			continue
+		}
+		ref.OnDelete = field.OnDelete
+		ref.OnUpdate = field.OnUpdate
+		table, ok := structToTable[field.StructName]
+		qualified := field.StructName
+		bare := field.StructName
+		if ok {
+			qualified = table.QualifiedName()
+			bare = table.Name
+		}
+		candidates = append(candidates, affectedForeignKey{
+			table:   qualified,
+			name:    foreignKeyName(bare, field),
+			columns: []string{field.Name},
+			ref:     ref,
+		})
+	}
+	return candidates
+}
+
+func appendSelfReferencingForeignKeys(candidates []affectedForeignKey, generated *goschema.Database, tableByName map[string]goschema.Table) []affectedForeignKey {
+	for tableName, fks := range generated.SelfReferencingForeignKeys {
+		qualified := tableName
+		if table, ok := tableByName[tableName]; ok {
+			qualified = table.QualifiedName()
+		}
+		for _, fk := range fks {
+			ref := fromschema.ParseForeignKeyReference(fk.Foreign)
+			if ref == nil {
+				continue
+			}
+			ref.OnDelete = fk.OnDelete
+			ref.OnUpdate = fk.OnUpdate
+			candidates = append(candidates, affectedForeignKey{
+				table:   qualified,
+				name:    selfReferencingForeignKeyName(tableName, fk),
+				columns: []string{fk.FieldName},
+				ref:     ref,
+			})
+		}
+	}
+	return candidates
+}
+
+func appendTableLevelForeignKeys(candidates []affectedForeignKey, generated *goschema.Database) []affectedForeignKey {
+	for _, constraint := range generated.Constraints {
+		if !strings.EqualFold(constraint.Type, "FOREIGN KEY") {
+			continue
+		}
+		candidates = append(candidates, affectedForeignKey{
+			table:   constraint.Table,
+			name:    constraint.Name,
+			columns: constraint.Columns,
+			ref: &ast.ForeignKeyRef{
+				Table:    constraint.ForeignTable,
+				Column:   constraint.ForeignColumn,
+				Columns:  constraint.ForeignColumns,
+				OnDelete: constraint.OnDelete,
+				OnUpdate: constraint.OnUpdate,
+			},
+		})
+	}
+	return candidates
+}
+
+// columnTypeChangesByTable returns the columns whose SQL type is changing in
+// this diff, keyed table -> set of column names. Only "type" changes are
+// collected; nullability, default, uniqueness, and similar changes do not
+// disturb a foreign key's referential type match.
+func columnTypeChangesByTable(diff *types.SchemaDiff) map[string]map[string]struct{} {
+	result := make(map[string]map[string]struct{})
+	for _, tableDiff := range diff.TablesModified {
+		for _, colDiff := range tableDiff.ColumnsModified {
+			if strings.TrimSpace(colDiff.Changes["type"]) == "" {
+				continue
+			}
+			columns := result[tableDiff.TableName]
+			if columns == nil {
+				columns = make(map[string]struct{})
+				result[tableDiff.TableName] = columns
+			}
+			columns[colDiff.ColumnName] = struct{}{}
+		}
+	}
+	return result
+}
+
+// foreignKeyTouchesTypeChange reports whether any of the foreign key's local or
+// referenced columns is changing type.
+func foreignKeyTouchesTypeChange(fk affectedForeignKey, typeChanged map[string]map[string]struct{}) bool {
+	for _, column := range fk.columns {
+		if _, ok := typeChanged[fk.table][column]; ok {
+			return true
+		}
+	}
+	for _, column := range fk.ref.ReferencedColumns() {
+		if _, ok := typeChanged[fk.ref.Table][column]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 func (p *Planner) addNewIndexes(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
 	for _, indexName := range diff.IndexesAdded {
 		// Find the index definition
@@ -667,12 +997,28 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// 3. Add new tables
 	result = p.addNewTables(result, diff, generated)
 
-	// 4. Modify existing tables
+	// 4. Modify existing tables. On MySQL/MariaDB a column-type change on a
+	// column that participates in a foreign key — as the referencing OR the
+	// referenced column — is rejected while the constraint exists (MySQL
+	// errno 3780, MariaDB errno 1832). The affected foreign keys are dropped
+	// before any column modification and, where the constraint machinery does
+	// not already own the re-add, recreated after every modification so the
+	// change lands cleanly and both ends of the key stay type-compatible
+	// (issue #694). A foreign key whose definition also changes (an ON DELETE
+	// drift, issue #189) has its pre-MODIFY drop owned here but its re-add left
+	// to addNewConstraints, which runs after the modifications; fkPlan.dropped
+	// tells that machinery — and removeConstraints — to suppress their own now
+	// redundant drop of the same (table, name).
+	fkPlan := p.planColumnTypeForeignKeyChanges(diff, generated)
+	result = append(result, fkPlan.drops...)
+
 	var err error
 	result, err = p.modifyExistingTables(result, diff, generated)
 	if err != nil {
 		return nil, err
 	}
+
+	result = append(result, fkPlan.readds...)
 
 	// 4.5. Add and modify views/triggers after tables exist.
 	result = p.addNewViews(result, diff, generated)
@@ -686,8 +1032,10 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// 5. Add new indexes
 	result = p.addNewIndexes(result, diff, generated)
 
-	// 5.5. Add new constraints (must be done after tables and columns exist)
-	result = p.addNewConstraints(result, diff, generated)
+	// 5.5. Add new constraints (must be done after tables and columns exist).
+	// fkPlan.dropped suppresses the drop half of any FK modification whose
+	// pre-MODIFY drop was already emitted at step 4.
+	result = p.addNewConstraints(result, diff, generated, fkPlan.dropped)
 
 	// 5.6. Add field-level foreign keys for new tables after referenced
 	// unique indexes and constraints have been created.
@@ -695,8 +1043,9 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 
 	// 6. Remove constraints before indexes. MySQL-family servers keep the
 	// backing index after DROP FOREIGN KEY when the index was auto-created, so
-	// rollback plans may need to drop both. The FK must go first.
-	result = p.removeConstraints(result, diff)
+	// rollback plans may need to drop both. The FK must go first. fkPlan.dropped
+	// suppresses any removed-only FK already dropped at step 4.
+	result = p.removeConstraints(result, diff, fkPlan.dropped)
 
 	// 6.6. Remove triggers and view-like objects before dependent tables.
 	result = p.removeTriggers(result, diff)
@@ -880,7 +1229,7 @@ func findTrigger(triggers []goschema.Trigger, tableName, triggerName string) *go
 //	ALTER TABLE users ADD CONSTRAINT uk_users_email_name UNIQUE (email, name);
 //	ALTER TABLE posts DROP FOREIGN KEY fk_posts_user_id;
 //	ALTER TABLE posts ADD CONSTRAINT fk_posts_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
-func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database, bracketDropped map[string]struct{}) []ast.Node {
 	// Resolve struct → table name once for the field-level synthesis fallbacks.
 	structToTable := make(map[string]string, len(generated.Tables))
 	for _, t := range generated.Tables {
@@ -888,6 +1237,14 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 	}
 
 	state := newConstraintPlanState(diff)
+
+	// A foreign key whose column also changes type was already dropped before
+	// the column modifications (issue #694, step 4). Seeding those (table, name)
+	// keys into droppedForModify makes the re-add paths below skip the now
+	// redundant drop while still emitting the ADD with the new definition —
+	// MySQL has no IF EXISTS guard on constraint drops, so a duplicate drop
+	// would abort the migration.
+	maps.Copy(state.droppedForModify, bracketDropped)
 
 	result = p.addPrimaryKeyConstraintsWithTables(result, diff.ConstraintsAddedWithTables, state)
 	result = p.addCheckAndUniqueConstraintsWithTables(result, diff.ConstraintsAddedWithTables, state.removalByTableName, state.handled, state.droppedForModify)
@@ -1404,7 +1761,7 @@ func (p *Planner) fieldLevelForeignKeyConstraintNode(constraintName string, gene
 // FK cycles cannot be solved by table ordering alone. Dropping the FKs first
 // gives both acyclic graphs and cycles a deterministic rollback path. Non-FK
 // constraints on dropped tables stay implicit in the DROP TABLE operation.
-func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff, bracketDropped map[string]struct{}) []ast.Node {
 	// (table, name) pairs being re-added — modifications owned by
 	// addNewConstraints — plus, per name, how many hosts were recorded at all.
 	modifyHosts := make(map[string]struct{}, len(diff.ConstraintsAddedWithTables))
@@ -1440,6 +1797,11 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 		}
 		if _, modified := modifyHosts[info.TableName+"."+info.Name]; modified {
 			// addNewConstraints owns this host's DROP-then-ADD; do not re-drop.
+			continue
+		}
+		if _, preDropped := bracketDropped[info.TableName+"."+info.Name]; preDropped {
+			// A column-type change already dropped this foreign key before the
+			// column modifications (issue #694); do not drop it a second time.
 			continue
 		}
 		if _, added := addedBareNames[info.Name]; added && addedHostCounts[info.Name] == 0 {
