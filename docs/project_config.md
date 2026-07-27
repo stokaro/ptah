@@ -8,6 +8,11 @@ Ptah reads `ptah.yaml` strictly: unknown keys are errors. This prevents a typo
 from being silently ignored while migrations run with different settings than
 the operator expected.
 
+Each command reads `ptah.yaml` once into the typed project configuration IR.
+Database settings, migration settings, and online-DDL execution policy
+therefore come from the same file generation. An explicit `--config` path must
+exist; the conventional `./ptah.yaml` remains optional.
+
 ## Named Environments
 
 Use `env` blocks to name reusable database targets:
@@ -94,7 +99,10 @@ env:
 | `lint.dialect` | Default lint dialect |
 | `lint.disabled-rules` | Default lint disabled rule codes or families |
 | `lint.latest` | Default latest-version changeset for `migrations lint` |
-| `online_ddl` | Automatic online-DDL routing config for MySQL/MariaDB |
+| `online_ddl.tool` | Automatic online-DDL tool for MySQL/MariaDB: `ghost` or `pt-osc` |
+| `online_ddl.threshold_rows` | Estimated row threshold that activates automatic routing |
+| `online_ddl.args` | Extra arguments appended to every online-DDL tool invocation |
+| `online_ddl.fallback` | Routing fallback policy: `error` or `plain` |
 | `diff.skip` | Destructive change kinds the planner omits from generated migrations (`drop_table`, `drop_column`, `drop_index`, `drop_enum`) |
 | `diff.concurrent_index` | Emit `CREATE INDEX CONCURRENTLY` for newly added indexes (PostgreSQL, capability-gated) |
 

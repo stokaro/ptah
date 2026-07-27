@@ -63,6 +63,11 @@ env:
       threshold_rows: 0
 ```
 
+Migration commands consume this policy from the same typed project-config value
+as the database URL and migration settings. Ptah does not reopen `ptah.yaml`
+before execution, so one command cannot combine settings from different
+generations of a concurrently replaced config file.
+
 ## Fallback behavior
 
 Fallback behavior depends on how the tool was selected:
