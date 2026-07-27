@@ -488,6 +488,261 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *types.SchemaDiff
 	return result, nil
 }
 
+// affectedForeignKey identifies a foreign key that a MySQL/MariaDB column-type
+// change forces the planner to drop and recreate (issue #694).
+//
+// MySQL and MariaDB reject ALTER TABLE ... MODIFY on a column that participates
+// in a foreign key — as either the referencing or the referenced column (MySQL
+// errno 3780, MariaDB errno 1832). The planner therefore brackets the column
+// modifications with a DROP FOREIGN KEY beforehand and an
+// ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY afterward. The recreation is
+// driven from the schema the planner was handed — the target schema on the up
+// path, the introspected pre-change schema on the down path — so referencing
+// and referenced column types stay in lockstep and the recreated constraint
+// cannot fail as incompatible.
+type affectedForeignKey struct {
+	// table is the referencing (owning) table that carries the constraint and
+	// is therefore where DROP/ADD FOREIGN KEY runs.
+	table string
+	// name is the constraint name.
+	name string
+	// columns are the local (referencing) columns.
+	columns []string
+	// ref describes the referenced table, columns, and referential actions.
+	ref *ast.ForeignKeyRef
+}
+
+// foreignKeysAffectedByColumnTypeChanges returns, in deterministic (table,name)
+// order, the foreign keys that must be dropped and recreated because one of
+// their referencing or referenced columns is changing type in this diff
+// (issue #694).
+//
+// Only column *type* changes trigger this: a nullability or default change is
+// applied by MODIFY without disturbing the referential type match, so those
+// columns are ignored here.
+//
+// A foreign key whose name already appears in the diff's constraint additions
+// or removals is skipped: the constraint machinery (addNewConstraints /
+// removeConstraints) already drops and recreates it — for example an ON DELETE
+// change, issue #189 — and MySQL accepts no IF EXISTS guard on constraint
+// drops, so bracketing it here as well would emit a second, unguarded drop that
+// aborts the migration.
+func (p *Planner) foreignKeysAffectedByColumnTypeChanges(diff *types.SchemaDiff, generated *goschema.Database) []affectedForeignKey {
+	if diff == nil || generated == nil {
+		return nil
+	}
+
+	typeChanged := columnTypeChangesByTable(diff)
+	if len(typeChanged) == 0 {
+		return nil
+	}
+
+	handledByConstraintDiff := foreignKeyNamesHandledByConstraintDiff(diff)
+
+	var affected []affectedForeignKey
+	seen := make(map[string]struct{})
+	for _, fk := range candidateForeignKeys(generated) {
+		if !foreignKeyEligible(fk, handledByConstraintDiff, typeChanged) {
+			continue
+		}
+		key := fk.table + "\x00" + fk.name
+		if _, done := seen[key]; done {
+			continue
+		}
+		seen[key] = struct{}{}
+		affected = append(affected, fk)
+	}
+
+	slices.SortFunc(affected, func(a, b affectedForeignKey) int {
+		if c := strings.Compare(a.table, b.table); c != 0 {
+			return c
+		}
+		return strings.Compare(a.name, b.name)
+	})
+	return affected
+}
+
+// foreignKeyEligible reports whether a candidate foreign key should be bracketed
+// around the column modifications: it must be well-formed, not already handled
+// by the constraint machinery, and touch a column whose type is changing.
+func foreignKeyEligible(fk affectedForeignKey, handledByConstraintDiff map[string]struct{}, typeChanged map[string]map[string]struct{}) bool {
+	if fk.table == "" || fk.name == "" || fk.ref == nil || len(fk.columns) == 0 {
+		return false
+	}
+	if _, skip := handledByConstraintDiff[fk.name]; skip {
+		return false
+	}
+	return foreignKeyTouchesTypeChange(fk, typeChanged)
+}
+
+// candidateForeignKeys enumerates every foreign key in the schema, drawing on
+// all three representations: field-level foreign= references (and the
+// single-column FKs the down path reconstructs from the database),
+// self-referencing foreign keys, and table-level foreign key constraints (and
+// the composite FKs the down path reconstructs).
+func candidateForeignKeys(generated *goschema.Database) []affectedForeignKey {
+	structToTable := make(map[string]string, len(generated.Tables))
+	for _, t := range generated.Tables {
+		structToTable[t.StructName] = t.Name
+	}
+
+	var candidates []affectedForeignKey
+	candidates = appendFieldLevelForeignKeys(candidates, generated, structToTable)
+	candidates = appendSelfReferencingForeignKeys(candidates, generated)
+	candidates = appendTableLevelForeignKeys(candidates, generated)
+	return candidates
+}
+
+func appendFieldLevelForeignKeys(candidates []affectedForeignKey, generated *goschema.Database, structToTable map[string]string) []affectedForeignKey {
+	for _, field := range generated.Fields {
+		if field.Foreign == "" {
+			continue
+		}
+		ref := fromschema.ParseForeignKeyReference(field.Foreign)
+		if ref == nil {
+			continue
+		}
+		table := structToTable[field.StructName]
+		if table == "" {
+			table = field.StructName
+		}
+		ref.OnDelete = field.OnDelete
+		ref.OnUpdate = field.OnUpdate
+		candidates = append(candidates, affectedForeignKey{
+			table:   table,
+			name:    foreignKeyName(table, field),
+			columns: []string{field.Name},
+			ref:     ref,
+		})
+	}
+	return candidates
+}
+
+func appendSelfReferencingForeignKeys(candidates []affectedForeignKey, generated *goschema.Database) []affectedForeignKey {
+	for tableName, fks := range generated.SelfReferencingForeignKeys {
+		for _, fk := range fks {
+			ref := fromschema.ParseForeignKeyReference(fk.Foreign)
+			if ref == nil {
+				continue
+			}
+			ref.OnDelete = fk.OnDelete
+			ref.OnUpdate = fk.OnUpdate
+			candidates = append(candidates, affectedForeignKey{
+				table:   tableName,
+				name:    selfReferencingForeignKeyName(tableName, fk),
+				columns: []string{fk.FieldName},
+				ref:     ref,
+			})
+		}
+	}
+	return candidates
+}
+
+func appendTableLevelForeignKeys(candidates []affectedForeignKey, generated *goschema.Database) []affectedForeignKey {
+	for _, constraint := range generated.Constraints {
+		if !strings.EqualFold(constraint.Type, "FOREIGN KEY") {
+			continue
+		}
+		candidates = append(candidates, affectedForeignKey{
+			table:   constraint.Table,
+			name:    constraint.Name,
+			columns: constraint.Columns,
+			ref: &ast.ForeignKeyRef{
+				Table:    constraint.ForeignTable,
+				Column:   constraint.ForeignColumn,
+				Columns:  constraint.ForeignColumns,
+				OnDelete: constraint.OnDelete,
+				OnUpdate: constraint.OnUpdate,
+			},
+		})
+	}
+	return candidates
+}
+
+// columnTypeChangesByTable returns the columns whose SQL type is changing in
+// this diff, keyed table -> set of column names. Only "type" changes are
+// collected; nullability, default, uniqueness, and similar changes do not
+// disturb a foreign key's referential type match.
+func columnTypeChangesByTable(diff *types.SchemaDiff) map[string]map[string]struct{} {
+	result := make(map[string]map[string]struct{})
+	for _, tableDiff := range diff.TablesModified {
+		for _, colDiff := range tableDiff.ColumnsModified {
+			if strings.TrimSpace(colDiff.Changes["type"]) == "" {
+				continue
+			}
+			columns := result[tableDiff.TableName]
+			if columns == nil {
+				columns = make(map[string]struct{})
+				result[tableDiff.TableName] = columns
+			}
+			columns[colDiff.ColumnName] = struct{}{}
+		}
+	}
+	return result
+}
+
+// foreignKeyNamesHandledByConstraintDiff collects the names of foreign keys the
+// constraint machinery already drops and/or recreates for this diff, so the
+// column-type bracketing skips them and never emits a duplicate drop.
+func foreignKeyNamesHandledByConstraintDiff(diff *types.SchemaDiff) map[string]struct{} {
+	names := make(map[string]struct{})
+	for _, name := range diff.ConstraintsRemoved {
+		names[name] = struct{}{}
+	}
+	for _, name := range diff.ConstraintsAdded {
+		names[name] = struct{}{}
+	}
+	for _, info := range diff.ConstraintsRemovedWithTables {
+		names[info.Name] = struct{}{}
+	}
+	for _, info := range diff.ConstraintsAddedWithTables {
+		names[info.Name] = struct{}{}
+	}
+	return names
+}
+
+// foreignKeyTouchesTypeChange reports whether any of the foreign key's local or
+// referenced columns is changing type.
+func foreignKeyTouchesTypeChange(fk affectedForeignKey, typeChanged map[string]map[string]struct{}) bool {
+	for _, column := range fk.columns {
+		if _, ok := typeChanged[fk.table][column]; ok {
+			return true
+		}
+	}
+	for _, column := range fk.ref.ReferencedColumns() {
+		if _, ok := typeChanged[fk.ref.Table][column]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// dropForeignKeysForColumnTypeChanges emits a DROP FOREIGN KEY for each affected
+// foreign key ahead of the column modifications (issue #694). The drop reuses
+// dropConstraintNode, so it carries the family-wide DROP FOREIGN KEY spelling
+// and the capability-gated IF EXISTS guard (MariaDB) already used elsewhere in
+// the planner.
+func (p *Planner) dropForeignKeysForColumnTypeChanges(result []ast.Node, fks []affectedForeignKey) []ast.Node {
+	for _, fk := range fks {
+		result = append(result, p.dropConstraintNode(types.ConstraintRemovalInfo{
+			Name:      fk.name,
+			TableName: fk.table,
+			Type:      "FOREIGN KEY",
+		}))
+	}
+	return result
+}
+
+// readdForeignKeysForColumnTypeChanges recreates each affected foreign key after
+// the column modifications, mirroring dropForeignKeysForColumnTypeChanges so the
+// down migration is the exact inverse of the up migration (issue #694).
+func (p *Planner) readdForeignKeysForColumnTypeChanges(result []ast.Node, fks []affectedForeignKey) []ast.Node {
+	for _, fk := range fks {
+		result = append(result, p.createForeignKeyAlterStatement(fk.table, fk.name, fk.columns, fk.ref))
+	}
+	return result
+}
+
 func (p *Planner) addNewIndexes(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
 	for _, indexName := range diff.IndexesAdded {
 		// Find the index definition
@@ -667,12 +922,22 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// 3. Add new tables
 	result = p.addNewTables(result, diff, generated)
 
-	// 4. Modify existing tables
+	// 4. Modify existing tables. On MySQL/MariaDB a column-type change on a
+	// column that participates in a foreign key — as the referencing OR the
+	// referenced column — is rejected while the constraint exists (MySQL
+	// errno 3780, MariaDB errno 1832). Drop the affected foreign keys first,
+	// apply every column modification, then recreate them so the change lands
+	// cleanly and both ends of the key stay type-compatible (issue #694).
+	affectedForeignKeys := p.foreignKeysAffectedByColumnTypeChanges(diff, generated)
+	result = p.dropForeignKeysForColumnTypeChanges(result, affectedForeignKeys)
+
 	var err error
 	result, err = p.modifyExistingTables(result, diff, generated)
 	if err != nil {
 		return nil, err
 	}
+
+	result = p.readdForeignKeysForColumnTypeChanges(result, affectedForeignKeys)
 
 	// 4.5. Add and modify views/triggers after tables exist.
 	result = p.addNewViews(result, diff, generated)
