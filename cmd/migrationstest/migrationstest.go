@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 
 	"github.com/spf13/cobra"
 
@@ -24,6 +25,9 @@ const (
 
 	reportFormatText = "text"
 )
+
+// reportFormats are the report formats the command accepts.
+var reportFormats = []string{"text", "json", "html"}
 
 type options struct {
 	dir           string
@@ -66,15 +70,15 @@ The command exits non-zero if any case fails.`,
 	flags.StringVar(&opts.migrationsDir, migrationsDirFlag, "./migrations", "Directory containing migration files")
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Throwaway database URL (optional). An ephemeral SQLite database is used when empty.")
 	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrator.MigrationDirFormatPtah), "Migration directory format: auto, ptah, or atlas")
-	flags.StringVar(&opts.report, reportFlag, reportFormatText, "Report format (only \"text\" is supported)")
+	flags.StringVar(&opts.report, reportFlag, reportFormatText, "Report format: text, json, or html")
 
 	cmdutil.ConfigureCommand(cmd)
 	return cmd
 }
 
 func run(ctx context.Context, out io.Writer, opts options) error {
-	if opts.report != "" && opts.report != reportFormatText {
-		return fmt.Errorf("unsupported report format %q: only %q is supported", opts.report, reportFormatText)
+	if opts.report != "" && !slices.Contains(reportFormats, opts.report) {
+		return fmt.Errorf("unsupported report format %q: want text, json, or html", opts.report)
 	}
 
 	dirFormat, err := migrator.ParseMigrationDirFormat(opts.dirFormat)
@@ -100,7 +104,11 @@ func run(ctx context.Context, out io.Writer, opts options) error {
 		return err
 	}
 
-	fmt.Fprint(out, report.Text())
+	rendered, err := report.Render(opts.report)
+	if err != nil {
+		return err
+	}
+	fmt.Fprint(out, rendered)
 	if report.Failed() {
 		return fmt.Errorf("migration tests failed")
 	}

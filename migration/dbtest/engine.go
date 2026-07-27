@@ -2,7 +2,9 @@ package dbtest
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"html/template"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -45,17 +47,17 @@ type Report struct {
 // CaseResult is the outcome of a single [Case]. Passed is true only when every
 // executed step passed.
 type CaseResult struct {
-	Name   string
-	Steps  []StepResult
-	Passed bool
+	Name   string       `json:"name"`
+	Steps  []StepResult `json:"steps"`
+	Passed bool         `json:"passed"`
 }
 
 // StepResult is the outcome of a single [Step]. Detail carries a short
 // human-readable explanation of the result, especially on failure.
 type StepResult struct {
-	Name   string
-	Passed bool
-	Detail string
+	Name   string `json:"name"`
+	Passed bool   `json:"passed"`
+	Detail string `json:"detail,omitempty"`
 }
 
 // Failed reports whether any case failed.
@@ -107,6 +109,126 @@ func (r *Report) Text() string {
 	fmt.Fprintf(&b, "\n%d cases, %d passed, %d failed\n", len(r.Cases), passed, len(r.Cases)-passed)
 	return b.String()
 }
+
+// Render renders the report in the named format: "" or "text" for the text
+// summary, "json" for indented JSON, or "html" for a self-contained HTML page.
+// An unknown format is an error.
+func (r *Report) Render(format string) (string, error) {
+	switch format {
+	case "", "text":
+		return r.Text(), nil
+	case "json":
+		return r.JSON()
+	case "html":
+		return r.HTML()
+	default:
+		return "", fmt.Errorf("unsupported report format %q: want text, json, or html", format)
+	}
+}
+
+// reportKind returns the report's kind label, defaulting to "MIGRATION" so a
+// zero-value Report still renders sensibly.
+func (r *Report) reportKind() string {
+	if r.kind == "" {
+		return "MIGRATION"
+	}
+	return r.kind
+}
+
+// counts returns the total, passed, and failed case counts.
+func (r *Report) counts() (total, passed, failed int) {
+	total = len(r.Cases)
+	for i := range r.Cases {
+		if r.Cases[i].Passed {
+			passed++
+		}
+	}
+	return total, passed, total - passed
+}
+
+// JSON renders the report as indented JSON: the kind, summary counts, and every
+// case and step. It is stable enough to consume from CI tooling.
+func (r *Report) JSON() (string, error) {
+	total, passed, failed := r.counts()
+	// Normalize a nil case slice to an empty one so the JSON is always
+	// "cases": [] rather than "cases": null, even for a zero-value Report built
+	// directly by a library caller.
+	cases := r.Cases
+	if cases == nil {
+		cases = []CaseResult{}
+	}
+	doc := struct {
+		Kind   string       `json:"kind"`
+		Total  int          `json:"total"`
+		Passed int          `json:"passed"`
+		Failed int          `json:"failed"`
+		Cases  []CaseResult `json:"cases"`
+	}{
+		Kind:   r.reportKind(),
+		Total:  total,
+		Passed: passed,
+		Failed: failed,
+		Cases:  cases,
+	}
+	out, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("render JSON report: %w", err)
+	}
+	return string(out) + "\n", nil
+}
+
+// HTML renders the report as a self-contained HTML document.
+func (r *Report) HTML() (string, error) {
+	total, passed, failed := r.counts()
+	data := struct {
+		Kind   string
+		Total  int
+		Passed int
+		Failed int
+		Cases  []CaseResult
+	}{r.reportKind(), total, passed, failed, r.Cases}
+
+	var b strings.Builder
+	if err := reportHTMLTemplate.Execute(&b, data); err != nil {
+		return "", fmt.Errorf("render HTML report: %w", err)
+	}
+	return b.String(), nil
+}
+
+var reportHTMLTemplate = template.Must(template.New("dbtest-report").Parse(`<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{.Kind}} test report</title>
+<style>
+body { font-family: system-ui, sans-serif; margin: 2rem; }
+.pass { color: #157f3b; }
+.fail { color: #b3261e; }
+.case { margin: 0.75rem 0; }
+.steps { margin: 0.25rem 0 0 1.5rem; padding: 0; list-style: none; }
+.detail { color: #555; }
+</style>
+</head>
+<body>
+<h1>{{.Kind}} test report</h1>
+<p>{{.Total}} cases, {{.Passed}} passed, {{.Failed}} failed</p>
+{{range .Cases}}
+<div class="case">
+  <strong class="{{if .Passed}}pass{{else}}fail{{end}}">{{if .Passed}}PASS{{else}}FAIL{{end}}</strong>
+  case &ldquo;{{.Name}}&rdquo;
+  <ul class="steps">
+    {{range .Steps}}
+    <li>
+      <span class="{{if .Passed}}pass{{else}}fail{{end}}">{{if .Passed}}PASS{{else}}FAIL{{end}}</span>
+      step &ldquo;{{.Name}}&rdquo;{{if .Detail}} <span class="detail">&mdash; {{.Detail}}</span>{{end}}
+    </li>
+    {{end}}
+  </ul>
+</div>
+{{end}}
+</body>
+</html>
+`))
 
 // RunMigrationTest runs the test cases in opts against a database and returns a
 // report describing every case and step. A returned error indicates the run

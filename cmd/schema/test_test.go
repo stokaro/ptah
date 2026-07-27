@@ -97,7 +97,7 @@ func TestSchemaTestCommand_NoCasesFound(t *testing.T) {
 
 func TestSchemaTestCommand_RejectsUnsupportedReport(t *testing.T) {
 	c := qt.New(t)
-	_, err := runSchemaTestCommand("--dir", t.TempDir(), "--report", "html")
+	_, err := runSchemaTestCommand("--dir", t.TempDir(), "--report", "xml")
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "unsupported report format")
 }
