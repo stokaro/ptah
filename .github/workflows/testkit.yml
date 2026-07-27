@@ -6,6 +6,12 @@ on:
   pull_request:
     paths:
       - "testkit/**"
+      # The testkit module depends on the root module via `replace => ..`, so a
+      # root dependency change (e.g. a Renovate bump of go.mod/go.sum) can leave
+      # testkit/go.mod out of sync. Re-run testkit on those PRs so the module
+      # inconsistency is caught before it reaches master.
+      - "go.mod"
+      - "go.sum"
       - ".github/workflows/testkit.yml"
 
 env:
