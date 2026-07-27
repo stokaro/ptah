@@ -132,7 +132,7 @@ func Generate(ctx context.Context, conn *dbschema.DatabaseConnection, opts Optio
 		}
 		ups = append(ups, tableBlock(qualifiedName(md.Schema, md.Table), rendered.up))
 		downs = append(downs, tableBlock(qualifiedName(md.Schema, md.Table), rendered.down))
-		changes = append(changes, tableChange{table: md.Table, updates: len(rendered.diff.Updates), deletes: len(rendered.diff.Deletes)})
+		changes = append(changes, tableChange{schema: md.Schema, table: md.Table, updates: len(rendered.diff.Updates), deletes: len(rendered.diff.Deletes)})
 	}
 
 	if len(ups) == 0 {
@@ -148,28 +148,38 @@ func Generate(ctx context.Context, conn *dbschema.DatabaseConnection, opts Optio
 }
 
 // tableChange records how many rows a single managed table's diff would update
-// and delete, the two operations the destructive gate cares about. Inserts are
-// additive and are not tracked here.
+// and delete, the two operations the destructive gate cares about, along with
+// the table's schema so the gates identify and report it as schema.table.
+// Inserts are additive and are not tracked here.
 type tableChange struct {
+	schema  string
 	table   string
 	updates int
 	deletes int
 }
 
-// mergeByTable folds multiple change entries for the same table into one,
-// summing their volumes and preserving first-seen order. More than one
+// qualified returns the schema.table display form for the change (just the
+// table when it has no schema), matching how the renderer qualifies the name.
+func (c tableChange) qualified() string {
+	return qualifiedName(c.schema, c.table)
+}
+
+// mergeByTable folds multiple change entries for the same schema-qualified table
+// into one, summing their volumes and preserving first-seen order. More than one
 // //migrator:schema:data annotation can target the same table, which would
-// otherwise make the gates report and count that table twice.
+// otherwise make the gates report and count that table twice. Tables that share
+// a bare name across different schemas stay distinct.
 func mergeByTable(changes []tableChange) []tableChange {
 	merged := make([]tableChange, 0, len(changes))
 	index := make(map[string]int, len(changes))
 	for _, change := range changes {
-		if i, ok := index[change.table]; ok {
+		key := change.qualified()
+		if i, ok := index[key]; ok {
 			merged[i].updates += change.updates
 			merged[i].deletes += change.deletes
 			continue
 		}
-		index[change.table] = len(merged)
+		index[key] = len(merged)
 		merged = append(merged, change)
 	}
 	return merged
@@ -236,23 +246,28 @@ func checkPolicy(changes []tableChange, opts Options) error {
 
 // checkProtected refuses to change any table named in opts.ProtectedTables
 // unless opts.AllowProd is set. Only tables that the migration would actually
-// change are examined, matched case-insensitively.
+// change are examined. A protected entry matches a change case-insensitively by
+// either its bare table name or its schema-qualified "schema.table" form, so a
+// schema-qualified managed table can be protected by either spelling and a bare
+// entry protects the table in whatever schema it lives.
 func checkProtected(changes []tableChange, opts Options) error {
 	if opts.AllowProd || len(opts.ProtectedTables) == 0 {
 		return nil
 	}
 
-	protected := make(map[string]string, len(opts.ProtectedTables))
+	protected := make(map[string]struct{}, len(opts.ProtectedTables))
 	for _, table := range opts.ProtectedTables {
 		if table = strings.TrimSpace(table); table != "" {
-			protected[strings.ToLower(table)] = table
+			protected[strings.ToLower(table)] = struct{}{}
 		}
 	}
 
 	var matched []string
 	for _, change := range changes {
-		if original, ok := protected[strings.ToLower(change.table)]; ok {
-			matched = append(matched, original)
+		_, bareHit := protected[strings.ToLower(change.table)]
+		_, qualifiedHit := protected[strings.ToLower(change.qualified())]
+		if bareHit || qualifiedHit {
+			matched = append(matched, change.qualified())
 		}
 	}
 	slices.Sort(matched)
@@ -280,7 +295,7 @@ func checkDestructive(changes []tableChange, opts Options) error {
 		}
 		updates += change.updates
 		deletes += change.deletes
-		details = append(details, fmt.Sprintf("%q (%d update(s), %d delete(s))", change.table, change.updates, change.deletes))
+		details = append(details, fmt.Sprintf("%q (%d update(s), %d delete(s))", change.qualified(), change.updates, change.deletes))
 	}
 
 	if !safety.HasDestructive(destructiveFindings(updates, deletes)) {
@@ -344,7 +359,9 @@ func managedColumns(rows []map[string]any, keys []string) []string {
 // otherwise. It is display-only; the actual SQL identifiers are quoted by the
 // renderer.
 func qualifiedName(schema, table string) string {
-	if schema == "" {
+	// Trim so the display and gate keys treat a blank schema the same way
+	// sqlident.Qualified does when rendering the actual SQL identifier.
+	if schema = strings.TrimSpace(schema); schema == "" {
 		return table
 	}
 	return schema + "." + table

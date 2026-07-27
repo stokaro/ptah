@@ -85,6 +85,18 @@ func TestRender_SchemaQualifiedTableName(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(upBare, qt.Contains, `INSERT INTO "regions" `)
 	c.Assert(upBare, qt.Not(qt.Contains), `"."`)
+
+	// A schema containing the quote character is escaped by the identifier
+	// quoter (doubled), so it cannot break out of the identifier.
+	weird := &datadiff.DataDiff{
+		Schema:  `a"b`,
+		Table:   "regions",
+		Keys:    []string{"code"},
+		Inserts: []datadiff.Row{{"code": "US", "name": "United States"}},
+	}
+	upWeird, _, err := datadiff.Render(weird, "postgres")
+	c.Assert(err, qt.IsNil)
+	c.Assert(upWeird, qt.Contains, `INSERT INTO "a""b"."regions" `)
 }
 
 // TestRenderShapesAndRoundTrip renders a diff carrying every kind of change and
