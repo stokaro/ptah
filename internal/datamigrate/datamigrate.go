@@ -16,6 +16,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 
@@ -59,21 +60,21 @@ type Options struct {
 // single reversible SQL body pair covering every managed table.
 //
 // It parses the Go annotations under opts.RootDir and, for each declared
-// //migrator:schema:data table (iterated in Table order for deterministic
-// output), loads the desired rows, reads the live rows projected onto the
-// managed column set (the union of the desired rows' columns plus the key
-// columns), computes the row-level diff, and renders it. The per-table up
-// scripts are concatenated in Table order and the down scripts in reverse Table
-// order, so that applying the whole up followed by the whole down restores the
-// original state (a net-state round-trip). Tables whose diff is empty contribute
-// nothing.
+// //migrator:schema:data table, loads the desired rows, reads the live rows
+// projected onto the managed column set (the union of the desired rows' columns
+// plus the key columns), and computes the row-level diff. Tables whose diff is
+// empty contribute nothing.
 //
-// Table order is alphabetical, not foreign-key-topological, so a migration that
-// deletes a parent table's rows before a child's, or inserts a child's before a
-// parent's, can hit a foreign-key violation at apply time. Each migration runs
-// in a transaction, so such a violation aborts cleanly with nothing applied;
-// FK-related managed tables may need manual reordering. Dependency-aware
-// ordering is a tracked follow-up.
+// The generated migration is phase-separated and ordered by the schema's
+// foreign-key dependency graph so that foreign keys hold at apply time: up runs
+// every INSERT first with parent tables before the child tables that reference
+// them, then every UPDATE, then every DELETE with child tables before their
+// parents (the reverse). down is the exact reverse-inverse — it undoes the
+// DELETEs (re-inserting parents first), then the UPDATEs, then the INSERTs — so
+// applying the whole up followed by the whole down restores the original state.
+// The dependency order comes from the parsed schema (goschema orders tables
+// parents-first); managed tables without a schema-object definition, and any
+// left after a circular dependency, fall back to a stable alphabetical order.
 //
 // When no managed table has any changes, both returned strings are empty and
 // the caller writes nothing. A missing row-data file, a row missing a key
@@ -118,24 +119,22 @@ func Generate(ctx context.Context, conn *dbschema.DatabaseConnection, opts Optio
 		return cmp.Compare(a.File, b.File)
 	})
 
-	var ups, downs []string
+	diffs := make([]*datadiff.DataDiff, 0, len(managed))
 	var changes []tableChange
 	for _, md := range managed {
-		rendered, err := renderTable(ctx, conn, dialect, opts.RootDir, md)
+		diff, err := computeTable(ctx, conn, opts.RootDir, md)
 		if err != nil {
 			return "", "", err
 		}
-		if rendered.up == "" {
-			// An empty diff renders as empty up and down together, so there is
-			// nothing to reverse for this table.
+		if len(diff.Inserts) == 0 && len(diff.Updates) == 0 && len(diff.Deletes) == 0 {
+			// No drift for this table; it contributes nothing in either direction.
 			continue
 		}
-		ups = append(ups, tableBlock(qualifiedName(md.Schema, md.Table), rendered.up))
-		downs = append(downs, tableBlock(qualifiedName(md.Schema, md.Table), rendered.down))
-		changes = append(changes, tableChange{schema: md.Schema, table: md.Table, updates: len(rendered.diff.Updates), deletes: len(rendered.diff.Deletes)})
+		diffs = append(diffs, diff)
+		changes = append(changes, tableChange{schema: md.Schema, table: md.Table, updates: len(diff.Updates), deletes: len(diff.Deletes)})
 	}
 
-	if len(ups) == 0 {
+	if len(diffs) == 0 {
 		return "", "", nil
 	}
 
@@ -143,8 +142,8 @@ func Generate(ctx context.Context, conn *dbschema.DatabaseConnection, opts Optio
 		return "", "", err
 	}
 
-	slices.Reverse(downs)
-	return strings.Join(ups, "\n"), strings.Join(downs, "\n"), nil
+	orderByDependency(db, diffs)
+	return composeByPhase(diffs, dialect)
 }
 
 // tableChange records how many rows a single managed table's diff would update
@@ -185,27 +184,19 @@ func mergeByTable(changes []tableChange) []tableChange {
 	return merged
 }
 
-// tableRender is a single managed table's rendered migration together with the
-// diff it came from, so the caller can both concatenate the scripts and assess
-// the change volume. An empty up means the table had no drift.
-type tableRender struct {
-	up   string
-	down string
-	diff *datadiff.DataDiff
-}
-
-// renderTable runs the pipeline for a single managed table: load desired rows,
-// read the live rows for the managed columns, diff, and render. On error it
-// returns the zero tableRender.
-func renderTable(ctx context.Context, conn *dbschema.DatabaseConnection, dialect, rootDir string, md goschema.ManagedData) (tableRender, error) {
+// computeTable runs the read-and-diff half of the pipeline for a single managed
+// table: load desired rows, read the live rows for the managed columns, and
+// compute the row-level diff. Rendering happens later, in composeByPhase, once
+// every table's diff is known and can be ordered by dependency.
+func computeTable(ctx context.Context, conn *dbschema.DatabaseConnection, rootDir string, md goschema.ManagedData) (*datadiff.DataDiff, error) {
 	desired, err := goschema.LoadManagedRows(rootDir, md)
 	if err != nil {
-		return tableRender{}, err
+		return nil, err
 	}
 
 	live, err := dbschema.ReadTableRows(ctx, conn, md.Schema, md.Table, managedColumns(desired, md.Keys))
 	if err != nil {
-		return tableRender{}, err
+		return nil, err
 	}
 
 	// With no desired rows the managed column set is just the keys, so every
@@ -216,20 +207,114 @@ func renderTable(ctx context.Context, conn *dbschema.DatabaseConnection, dialect
 	// rollback needs the table's whole column set and is a tracked follow-up;
 	// an empty desired set against an empty table is still a clean no-op.
 	if len(desired) == 0 && len(live) > 0 {
-		return tableRender{}, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"datamigrate: managed table %q has an empty desired row set but %d live row(s); a reversible full delete cannot be generated from the key columns alone — provide the desired rows or remove the annotation",
 			md.Table, len(live))
 	}
 
-	diff, err := datadiff.Compute(md.Schema, md.Table, md.Keys, desired, live)
-	if err != nil {
-		return tableRender{}, err
+	return datadiff.Compute(md.Schema, md.Table, md.Keys, desired, live)
+}
+
+// orderByDependency reorders diffs in place so a table appears before every
+// table that declares a foreign key to it, matching the schema's dependency
+// graph. db.Tables is already topologically sorted parents-first, so its index
+// gives the insert order (the reverse gives the delete order). Managed tables
+// with no schema-object definition — and any left after a circular dependency —
+// keep a stable alphabetical order after the known ones, so output stays
+// deterministic.
+func orderByDependency(db *goschema.Database, diffs []*datadiff.DataDiff) {
+	pos := make(map[string]int, len(db.Tables))
+	for i, t := range db.Tables {
+		pos[t.QualifiedName()] = i
 	}
-	up, down, err := datadiff.Render(diff, dialect)
-	if err != nil {
-		return tableRender{}, err
+	rank := func(d *datadiff.DataDiff) int {
+		if i, ok := pos[qualifiedName(d.Schema, d.Table)]; ok {
+			return i
+		}
+		return math.MaxInt
 	}
-	return tableRender{up: up, down: down, diff: diff}, nil
+	slices.SortStableFunc(diffs, func(a, b *datadiff.DataDiff) int {
+		if c := cmp.Compare(rank(a), rank(b)); c != 0 {
+			return c
+		}
+		return cmp.Compare(qualifiedName(a.Schema, a.Table), qualifiedName(b.Schema, b.Table))
+	})
+}
+
+// composeByPhase renders the dependency-ordered diffs into one reversible up/down
+// pair, separating the work into phases so foreign keys hold at apply time. up
+// runs all INSERTs parents-first, then all UPDATEs, then all DELETEs
+// children-first; down is the exact reverse-inverse (undo DELETEs parents-first,
+// then UPDATEs and INSERTs children-first). Each phase is rendered from a
+// single-operation sub-diff via datadiff.Render, so the proven per-table
+// inverse contract composes into a global reversible migration.
+func composeByPhase(ordered []*datadiff.DataDiff, dialect string) (upSQL, downSQL string, err error) {
+	type phased struct {
+		insUp, insDown string
+		updUp, updDown string
+		delUp, delDown string
+	}
+	rendered := make([]phased, len(ordered))
+	for i, d := range ordered {
+		var p phased
+		if p.insUp, p.insDown, err = datadiff.Render(subDiff(d, d.Inserts, nil, nil), dialect); err != nil {
+			return "", "", err
+		}
+		if p.updUp, p.updDown, err = datadiff.Render(subDiff(d, nil, d.Updates, nil), dialect); err != nil {
+			return "", "", err
+		}
+		if p.delUp, p.delDown, err = datadiff.Render(subDiff(d, nil, nil, d.Deletes), dialect); err != nil {
+			return "", "", err
+		}
+		rendered[i] = p
+	}
+
+	var up []string
+	for i, d := range ordered { // INSERTs: parents before children.
+		up = appendBlock(up, d, "insert", rendered[i].insUp)
+	}
+	for i, d := range ordered { // UPDATEs.
+		up = appendBlock(up, d, "update", rendered[i].updUp)
+	}
+	for i, d := range slices.Backward(ordered) { // DELETEs: children before parents.
+		up = appendBlock(up, d, "delete", rendered[i].delUp)
+	}
+
+	var down []string
+	for i, d := range ordered { // Undo DELETEs (re-insert): parents before children.
+		down = appendBlock(down, d, "delete", rendered[i].delDown)
+	}
+	for i, d := range slices.Backward(ordered) { // Undo UPDATEs: children before parents.
+		down = appendBlock(down, d, "update", rendered[i].updDown)
+	}
+	for i, d := range slices.Backward(ordered) { // Undo INSERTs (delete): children before parents.
+		down = appendBlock(down, d, "insert", rendered[i].insDown)
+	}
+
+	return strings.Join(up, "\n"), strings.Join(down, "\n"), nil
+}
+
+// subDiff builds a single-operation view of d carrying only the given rows, so
+// each phase can be rendered independently while keeping d's schema, table, and
+// key columns.
+func subDiff(d *datadiff.DataDiff, inserts []datadiff.Row, updates []datadiff.RowUpdate, deletes []datadiff.Row) *datadiff.DataDiff {
+	return &datadiff.DataDiff{
+		Schema:  d.Schema,
+		Table:   d.Table,
+		Keys:    d.Keys,
+		Inserts: inserts,
+		Updates: updates,
+		Deletes: deletes,
+	}
+}
+
+// appendBlock appends a phase's rendered statements for a table, prefixed with a
+// comment naming the phase and table, skipping empty phases.
+func appendBlock(blocks []string, d *datadiff.DataDiff, phase, rendered string) []string {
+	if rendered == "" {
+		return blocks
+	}
+	return append(blocks, tableBlock(phase+" "+qualifiedName(d.Schema, d.Table), rendered))
 }
 
 // checkPolicy enforces the generate-time safety gates over the tables the
@@ -367,9 +452,10 @@ func qualifiedName(schema, table string) string {
 	return schema + "." + table
 }
 
-// tableBlock prefixes a rendered per-table script with a comment naming the
-// table so a reviewer can tell the concatenated blocks apart. The comment is a
-// no-op at apply time and does not affect the round-trip.
-func tableBlock(table, body string) string {
-	return "-- data: " + table + "\n" + body
+// tableBlock prefixes a rendered script with a "-- data: <label>" comment (the
+// label names the phase and table, e.g. "insert public.regions") so a reviewer
+// can tell the concatenated phase blocks apart. The comment is a no-op at apply
+// time and does not affect the round-trip.
+func tableBlock(label, body string) string {
+	return "-- data: " + label + "\n" + body
 }
