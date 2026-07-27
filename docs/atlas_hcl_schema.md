@@ -38,7 +38,7 @@ current schema IR:
 - `index` blocks with `columns`, `on { column = ..., prefix = ... }`,
   `on { expr = "..." }`, `desc`, `unique`, `type`, `where`, and `comment`;
   PostgreSQL indexes also support `include`, BRIN `page_per_range`, and
-  `nulls_distinct`
+  `nulls_distinct`, and ClickHouse data-skipping indexes support `granularity`
 - `unique` blocks with `columns`; PostgreSQL unique constraints also support
   `include` and `nulls_distinct`
 - `foreign_key` blocks with one local `columns` entry and one table-qualified

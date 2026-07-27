@@ -47,8 +47,8 @@ directly from Ptah's IR:
 - enums
 - tables and concrete columns, including columns from embedded Go structs
 - primary keys
-- indexes, including uniqueness, predicates, include columns, comments, and
-  supported index part metadata
+- indexes, including uniqueness, predicates, include columns, comments,
+  ClickHouse data-skipping granularity, and supported index part metadata
 - unique constraints
 - foreign keys from both field annotations and table constraints
 - check constraints from both field annotations and table constraints

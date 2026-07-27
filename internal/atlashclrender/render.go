@@ -361,6 +361,13 @@ func (r *renderer) renderIndex(index goschema.Index) {
 	r.stringAttr(2, "where", index.Condition)
 	r.stringAttr(2, "comment", index.Comment)
 	r.boolPtrAttr(2, "nulls_distinct", index.NullsDistinct)
+	// Granularity is always non-negative (the parser rejects negatives) and 0 is
+	// the implicit dialect default, so emit only a positive value; the parser
+	// defaults an absent attribute back to 0, keeping the render/parse pair
+	// symmetric.
+	if index.Granularity != 0 {
+		r.rawAttr(2, "granularity", strconv.Itoa(index.Granularity))
+	}
 	if len(index.IncludeColumns) > 0 {
 		r.rawAttr(2, "include", columnRefs(index.IncludeColumns))
 	}
@@ -386,9 +393,6 @@ func (r *renderer) renderIndex(index goschema.Index) {
 	}
 	if index.Operator != "" {
 		r.warn("index "+index.Name, "legacy index operator field was not exported; use structured index parts")
-	}
-	if index.Granularity != 0 {
-		r.warn("index "+index.Name, "ClickHouse granularity cannot be represented in the supported HCL subset")
 	}
 	r.line("  }")
 }
