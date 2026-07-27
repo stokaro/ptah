@@ -9,6 +9,7 @@ import (
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/migration/schemadiff"
+	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
 func TestCompare_DefaultBehavior(t *testing.T) {
@@ -987,9 +988,9 @@ func TestCompareWithDialect_NonSQLiteAutoindexNameIsCompared(t *testing.T) {
 
 	diff := schemadiff.CompareWithDialect(generated, database, "postgres")
 
-	c.Assert(diff.IndexesRemoved, qt.DeepEquals, []string{"sqlite_autoindex_projects_1"})
-	c.Assert(diff.IndexesRemovedWithTables, qt.HasLen, 1)
-	c.Assert(diff.IndexesRemovedWithTables[0].TableName, qt.Equals, "projects")
+	c.Assert(diff.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef{
+		{Name: "sqlite_autoindex_projects_1", TableName: "projects"},
+	})
 }
 
 func TestCompareWithDialect_SQLServerInlineEnumsMatchGeneratedEnumFields(t *testing.T) {

@@ -22,6 +22,7 @@ import (
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/internal/convert/fromschema"
+	"github.com/stokaro/ptah/internal/indexscope"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
@@ -31,7 +32,7 @@ type Planner struct{}
 // New returns a ClickHouse planner.
 func New() *Planner { return &Planner{} }
 
-// GenerateMigrationAST produces the AST node sequence that, when rendered
+// GenerateMigrationASTChecked produces the AST node sequence that, when rendered
 // against the ClickHouse renderer, brings the database from its current
 // state (described by diff) to the target schema (described by generated).
 //
@@ -48,16 +49,15 @@ func New() *Planner { return &Planner{} }
 // functions, RLS, roles) are intentionally ignored; the renderer would
 // reduce them to comments anyway, and emitting nothing keeps the output
 // migration small.
-func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	nodes, _ := p.GenerateMigrationASTChecked(diff, generated)
-	return nodes
-}
-
 func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
 	var result []ast.Node
 
-	if diff == nil || generated == nil {
-		return result, nil
+	if generated == nil {
+		generated = &goschema.Database{}
+	}
+	indexes, err := indexscope.NewResolver(platform.ClickHouse, diff, generated)
+	if err != nil {
+		return nil, err
 	}
 
 	if len(diff.EnumsAdded)+len(diff.EnumsRemoved)+len(diff.EnumsModified) > 0 {
@@ -66,7 +66,10 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 
 	result = p.addNewTables(result, diff, generated)
 	result = p.modifyExistingTables(result, diff, generated)
-	result = p.addNewIndexes(result, diff, generated)
+	result, err = p.addNewIndexes(result, diff, indexes)
+	if err != nil {
+		return nil, err
+	}
 	result = p.removeIndexes(result, diff)
 	result = p.removeTables(result, diff)
 
@@ -145,61 +148,47 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *types.SchemaDiff
 	return result
 }
 
-func (p *Planner) addNewIndexes(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+func (p *Planner) addNewIndexes(
+	result []ast.Node,
+	diff *types.SchemaDiff,
+	indexes *indexscope.Resolver,
+) ([]ast.Node, error) {
 	if len(diff.IndexesAdded) == 0 {
-		return result
+		return result, nil
 	}
-	structToTable := make(map[string]string, len(generated.Tables))
-	for _, t := range generated.Tables {
-		structToTable[t.StructName] = t.Name
-	}
-	for _, name := range diff.IndexesAdded {
-		for _, idx := range generated.Indexes {
-			if idx.Name != name {
-				continue
-			}
-			// Prefer the explicit cross-table association if the user set
-			// `table=` on the annotation; otherwise resolve the struct
-			// name to its declared table. If neither resolves, the index
-			// is unattached and we cannot emit a correct ALTER TABLE —
-			// emitting one against the struct name would invariably
-			// reference a non-existent table on ClickHouse, so warn and
-			// skip instead.
-			tableName := idx.TableName
-			if tableName == "" {
-				tableName = structToTable[idx.StructName]
-			}
-			if tableName == "" {
-				result = append(result, ast.NewComment(fmt.Sprintf("WARNING: skipping index %q — could not resolve target table for struct %q", idx.Name, idx.StructName)))
-				break
-			}
-			node := ast.NewIndex(idx.Name, tableName, idx.Fields...)
-			if idx.Unique {
-				node.Unique = true
-			}
-			if idx.Comment != "" {
-				node.Comment = idx.Comment
-			}
-			if idx.Type != "" {
-				node.Type = idx.Type
-			}
-			node.Granularity = idx.Granularity
-			result = append(result, node)
-			break
+	replacements := indexscope.NewConflictSet(platform.ClickHouse, diff.IndexRemovals())
+	for _, ref := range diff.IndexAdditions() {
+		index, err := indexes.Resolve(ref)
+		if err != nil {
+			return nil, err
 		}
+		tableName := ref.TableName
+		if replacements.Contains(ref) {
+			result = append(result, ast.NewDropIndex(ref.Name).SetTable(tableName).SetIfExists())
+		}
+		node := ast.NewIndex(index.Name, tableName, index.Fields...)
+		if index.Unique {
+			node.Unique = true
+		}
+		if index.Comment != "" {
+			node.Comment = index.Comment
+		}
+		if index.Type != "" {
+			node.Type = index.Type
+		}
+		node.Granularity = index.Granularity
+		result = append(result, node)
 	}
-	return result
+	return result, nil
 }
 
 func (p *Planner) removeIndexes(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
-	if len(diff.IndexesRemovedWithTables) > 0 {
-		for _, info := range diff.IndexesRemovedWithTables {
-			result = append(result, ast.NewDropIndex(info.Name).SetTable(info.TableName).SetIfExists())
+	replacements := indexscope.NewConflictSet(platform.ClickHouse, diff.IndexAdditions())
+	for _, ref := range diff.IndexRemovals() {
+		if replacements.Contains(ref) {
+			continue
 		}
-		return result
-	}
-	for _, name := range diff.IndexesRemoved {
-		result = append(result, ast.NewDropIndex(name).SetIfExists())
+		result = append(result, ast.NewDropIndex(ref.Name).SetTable(ref.TableName).SetIfExists())
 	}
 	return result
 }

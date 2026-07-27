@@ -11,6 +11,7 @@ import (
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/internal/convert/fromschema"
+	"github.com/stokaro/ptah/internal/indexscope"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
@@ -22,17 +23,13 @@ func New() *Planner {
 	return &Planner{}
 }
 
-func (p *Planner) GenerateMigrationAST(diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	nodes, _ := p.GenerateMigrationASTChecked(diff, generated)
-	return nodes
-}
-
 func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
-	if diff == nil {
-		return nil, nil
-	}
 	if generated == nil {
 		generated = &goschema.Database{}
+	}
+	indexes, err := indexscope.NewResolver(DialectName, diff, generated)
+	if err != nil {
+		return nil, err
 	}
 	if err := rejectUnsupportedChanges(diff); err != nil {
 		return nil, err
@@ -56,7 +53,11 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	result = append(result, p.modifyViews(diff, generated)...)
 	result = append(result, p.addTriggers(diff, generated)...)
 	result = append(result, p.modifyTriggers(diff, generated)...)
-	result = append(result, p.addIndexes(diff, generated)...)
+	addedIndexes, err := p.addIndexes(diff, indexes)
+	if err != nil {
+		return nil, err
+	}
+	result = append(result, addedIndexes...)
 	result = append(result, p.removeIndexes(diff)...)
 	result = append(result, p.removeTriggers(diff)...)
 	result = append(result, p.removeViews(diff)...)
@@ -339,6 +340,14 @@ func generatedIndexTableName(index goschema.Index, tableMap map[string]string) s
 	return tableMap[index.StructName]
 }
 
+func structToTableMap(tables []goschema.Table) map[string]string {
+	out := make(map[string]string, len(tables))
+	for _, table := range tables {
+		out[table.StructName] = table.QualifiedName()
+	}
+	return out
+}
+
 func hasInboundForeignKey(table goschema.Table, generated *goschema.Database) bool {
 	for _, field := range generated.Fields {
 		fkRef := fromschema.ParseForeignKeyReference(field.Foreign)
@@ -482,38 +491,34 @@ func findColumn(generated *goschema.Database, tableName, columnName string) *ast
 	return nil
 }
 
-func (p *Planner) addIndexes(diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
-	tableMap := structToTableMap(generated.Tables)
+func (p *Planner) addIndexes(
+	diff *types.SchemaDiff,
+	indexes *indexscope.Resolver,
+) ([]ast.Node, error) {
 	var result []ast.Node
-	for _, indexName := range diff.IndexesAdded {
-		for _, index := range generated.Indexes {
-			if index.Name == indexName {
-				result = append(result, fromschema.FromIndexWithTableMapping(index, tableMap))
-				break
-			}
+	indexRemovals := indexscope.NewConflictSet(platform.SQLite, diff.IndexRemovals())
+	for _, ref := range diff.IndexAdditions() {
+		index, err := indexes.Resolve(ref)
+		if err != nil {
+			return nil, err
 		}
+		for removal := range indexRemovals.Matches(ref) {
+			result = append(result, ast.NewDropIndex(removal.Name).SetTable(removal.TableName).SetIfExists())
+		}
+		index.TableName = ref.TableName
+		result = append(result, fromschema.FromIndex(index))
 	}
-	return result
-}
-
-func structToTableMap(tables []goschema.Table) map[string]string {
-	out := make(map[string]string, len(tables))
-	for _, table := range tables {
-		out[table.StructName] = table.Name
-	}
-	return out
+	return result, nil
 }
 
 func (p *Planner) removeIndexes(diff *types.SchemaDiff) []ast.Node {
 	var result []ast.Node
-	for _, info := range diff.IndexesRemovedWithTables {
-		result = append(result, ast.NewDropIndex(info.Name).SetIfExists())
-	}
-	if len(result) > 0 {
-		return result
-	}
-	for _, name := range diff.IndexesRemoved {
-		result = append(result, ast.NewDropIndex(name).SetIfExists())
+	indexAdditions := indexscope.NewConflictSet(platform.SQLite, diff.IndexAdditions())
+	for _, ref := range diff.IndexRemovals() {
+		if indexAdditions.Contains(ref) {
+			continue
+		}
+		result = append(result, ast.NewDropIndex(ref.Name).SetTable(ref.TableName).SetIfExists())
 	}
 	return result
 }

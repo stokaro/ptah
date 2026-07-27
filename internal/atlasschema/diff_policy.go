@@ -27,11 +27,10 @@ func applyDiffPolicy(diff *difftypes.SchemaDiff, policy DiffPolicy) *difftypes.S
 	filtered := *diff
 	removedTables := tableSet(diff.TablesRemoved)
 	filtered.TablesRemoved = nil
-	filtered.IndexesRemovedWithTables, filtered.IndexesRemoved = filterIndexRemovalsByTable(
-		filtered.IndexesRemovedWithTables,
-		filtered.IndexesRemoved,
-		diff.TablesRemoved,
-	)
+	indexRemovals := slices.DeleteFunc(filtered.IndexRemovals(), func(ref difftypes.IndexRef) bool {
+		return hasTable(removedTables, ref.TableName)
+	})
+	filtered.SetIndexRemovals(indexRemovals)
 	filtered.ConstraintsRemovedWithTables, filtered.ConstraintsRemoved = filterConstraintRemovalsByTable(
 		filtered.ConstraintsRemovedWithTables,
 		filtered.ConstraintsRemoved,
@@ -50,22 +49,6 @@ func applyDiffPolicy(diff *difftypes.SchemaDiff, policy DiffPolicy) *difftypes.S
 		return strings.EqualFold(ref.ObjectType, "TABLE") && hasTable(removedTables, ref.ObjectName)
 	})
 	return &filtered
-}
-
-func filterIndexRemovalsByTable(
-	values []difftypes.IndexRemovalInfo,
-	names []string,
-	removedTables []string,
-) ([]difftypes.IndexRemovalInfo, []string) {
-	removedNames := map[string]struct{}{}
-	filtered := slices.DeleteFunc(slices.Clone(values), func(value difftypes.IndexRemovalInfo) bool {
-		matched := slices.Contains(removedTables, value.TableName)
-		if matched {
-			removedNames[value.Name] = struct{}{}
-		}
-		return matched
-	})
-	return filtered, filterRemovedNames(names, removedNames)
 }
 
 func filterConstraintRemovalsByTable(

@@ -128,7 +128,10 @@ func TestPlanGeneratedMigrationSpecs_SplitsTransactionalAndConcurrentIndex(t *te
 func TestPlanGeneratedMigrationSpecs_SplitsPopulatedAndEmptyTableIndexes(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &types.SchemaDiff{IndexesAdded: []string{"idx_users_email", "idx_posts_title"}}
+	diff := &types.SchemaDiff{IndexesAdded: []types.IndexRef{
+		{Name: "idx_users_email", TableName: "users"},
+		{Name: "idx_posts_title", TableName: "posts"},
+	}}
 	generated := &goschema.Database{
 		Tables: []goschema.Table{
 			{StructName: "User", Name: "users"},
@@ -204,7 +207,9 @@ func TestCreateMigrationFilesFromSpecs_WritesAllPairs(t *testing.T) {
 }
 
 func indexOnlyDiff() *types.SchemaDiff {
-	return &types.SchemaDiff{IndexesAdded: []string{"idx_users_email"}}
+	return &types.SchemaDiff{IndexesAdded: []types.IndexRef{
+		{Name: "idx_users_email", TableName: "users"},
+	}}
 }
 
 func indexOnlyGeneratedSchema() *goschema.Database {

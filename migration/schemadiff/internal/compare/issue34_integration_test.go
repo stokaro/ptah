@@ -22,8 +22,8 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 		// Generated schema has the explicitly defined unique indexes
 		generated := &goschema.Database{
 			Indexes: []goschema.Index{
-				{Name: "tenants_slug_idx"},
-				{Name: "users_tenant_email_idx"},
+				{Name: "tenants_slug_idx", TableName: "tenants"},
+				{Name: "users_tenant_email_idx", TableName: "users"},
 			},
 		}
 
@@ -36,8 +36,11 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 		Indexes(generated, database, diff)
 
 		// Both indexes should be added
-		c.Assert(diff.IndexesAdded, qt.DeepEquals, []string{"tenants_slug_idx", "users_tenant_email_idx"})
-		c.Assert(diff.IndexesRemoved, qt.DeepEquals, []string(nil))
+		c.Assert(diff.IndexesAdded, qt.DeepEquals, []difftypes.IndexRef{
+			{Name: "tenants_slug_idx", TableName: "tenants"},
+			{Name: "users_tenant_email_idx", TableName: "users"},
+		})
+		c.Assert(diff.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef(nil))
 	})
 
 	// Test case 2: After applying migration - no additional indexes should be generated
@@ -47,8 +50,8 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 		// Generated schema still has the same explicitly defined unique indexes
 		generated := &goschema.Database{
 			Indexes: []goschema.Index{
-				{Name: "tenants_slug_idx"},
-				{Name: "users_tenant_email_idx"},
+				{Name: "tenants_slug_idx", TableName: "tenants"},
+				{Name: "users_tenant_email_idx", TableName: "users"},
 			},
 		}
 
@@ -64,8 +67,8 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 		Indexes(generated, database, diff)
 
 		// No indexes should be added or removed - they already exist and are detected
-		c.Assert(diff.IndexesAdded, qt.DeepEquals, []string(nil))
-		c.Assert(diff.IndexesRemoved, qt.DeepEquals, []string(nil))
+		c.Assert(diff.IndexesAdded, qt.DeepEquals, []difftypes.IndexRef(nil))
+		c.Assert(diff.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef(nil))
 	})
 
 	// Test case 3: Mixed scenario with constraint-based and explicitly defined indexes
@@ -75,8 +78,8 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 		// Generated schema has explicitly defined unique indexes
 		generated := &goschema.Database{
 			Indexes: []goschema.Index{
-				{Name: "tenants_slug_idx"},
-				{Name: "users_tenant_email_idx"},
+				{Name: "tenants_slug_idx", TableName: "tenants"},
+				{Name: "users_tenant_email_idx", TableName: "users"},
 			},
 		}
 
@@ -97,8 +100,8 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 		Indexes(generated, database, diff)
 
 		// No indexes should be added or removed - explicitly defined ones exist, constraint-based ones are ignored
-		c.Assert(diff.IndexesAdded, qt.DeepEquals, []string(nil))
-		c.Assert(diff.IndexesRemoved, qt.DeepEquals, []string(nil))
+		c.Assert(diff.IndexesAdded, qt.DeepEquals, []difftypes.IndexRef(nil))
+		c.Assert(diff.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef(nil))
 	})
 
 	// Test case 4: One explicitly defined index missing
@@ -108,8 +111,8 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 		// Generated schema has both explicitly defined unique indexes
 		generated := &goschema.Database{
 			Indexes: []goschema.Index{
-				{Name: "tenants_slug_idx"},
-				{Name: "users_tenant_email_idx"},
+				{Name: "tenants_slug_idx", TableName: "tenants"},
+				{Name: "users_tenant_email_idx", TableName: "users"},
 			},
 		}
 
@@ -128,7 +131,9 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 		Indexes(generated, database, diff)
 
 		// Only the missing explicitly defined index should be added
-		c.Assert(diff.IndexesAdded, qt.DeepEquals, []string{"users_tenant_email_idx"})
-		c.Assert(diff.IndexesRemoved, qt.DeepEquals, []string(nil))
+		c.Assert(diff.IndexesAdded, qt.DeepEquals, []difftypes.IndexRef{
+			{Name: "users_tenant_email_idx", TableName: "users"},
+		})
+		c.Assert(diff.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef(nil))
 	})
 }

@@ -142,7 +142,8 @@ func TestCompare_FieldLevelForeignKeyActionMigrationSQL(t *testing.T) {
 	diff := schemadiff.Compare(gen, exportsDBSchema("NO ACTION"))
 	c.Assert(diff.HasChanges(), qt.IsTrue)
 
-	nodes := postgres.New().GenerateMigrationAST(diff, gen)
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, gen)
+	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)
@@ -173,7 +174,8 @@ func TestCompare_FieldLevelForeignKeyActionMigrationSQL(t *testing.T) {
 
 	// Idempotency: once applied, regenerating produces no statements.
 	converged := schemadiff.Compare(exportsSchema("SET NULL"), exportsDBSchema("SET NULL"))
-	noopNodes := postgres.New().GenerateMigrationAST(converged, exportsSchema("SET NULL"))
+	noopNodes, err := postgres.New().GenerateMigrationASTChecked(converged, exportsSchema("SET NULL"))
+	c.Assert(err, qt.IsNil)
 	noopSQL, err := renderer.RenderSQL("postgres", noopNodes...)
 	c.Assert(err, qt.IsNil)
 	noopSQL = legacyRenderedSQL(noopSQL)

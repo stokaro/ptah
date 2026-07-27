@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/core/ast"
+	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/renderer"
 )
 
@@ -106,16 +107,30 @@ func TestPostgreSQLRenderer_EscapesQualifiedDropIndex(t *testing.T) {
 	c := qt.New(t)
 
 	createSQL, err := renderer.RenderSQL("postgres",
-		ast.NewIndex("audit.idx_user_order", "audit.user", "order"),
+		ast.NewIndex("idx_user_order", "audit.user", "order"),
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(createSQL, qt.Contains, `CREATE INDEX "audit"."idx_user_order" ON "audit"."user" ("order");`)
+	c.Assert(createSQL, qt.Contains, `CREATE INDEX "idx_user_order" ON "audit"."user" ("order");`)
 
 	dropSQL, err := renderer.RenderSQL("postgres",
-		ast.NewDropIndex("audit.idx_user_order").SetIfExists(),
+		ast.NewDropIndex("idx_user_order").SetTable("audit.user").SetIfExists(),
 	)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(dropSQL, qt.Contains, `DROP INDEX IF EXISTS "audit"."idx_user_order";`)
+}
+
+func TestCockroachDBRenderer_QualifiesDropIndexWithOwningTable(t *testing.T) {
+	c := qt.New(t)
+
+	sql, err := renderer.RenderSQL(
+		platform.CockroachDB,
+		ast.NewDropIndex("idx_shared").
+			SetTable("public.users").
+			SetIfExists(),
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Equals, "DROP INDEX IF EXISTS \"public\".\"users\"@\"idx_shared\";\n")
 }

@@ -27,7 +27,8 @@ func TestPlanner_SequencesAdded_OrderedBeforeTablesWithOwnershipAfter(t *testing
 		Fields: []goschema.Field{{StructName: "Order", Name: "id", Type: "BIGINT", Primary: true}},
 	}
 
-	nodes := postgres.New().GenerateMigrationAST(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 
@@ -58,7 +59,8 @@ func TestPlanner_SequencesModified_EmitsAlterForChangedOptionsOnly(t *testing.T)
 		},
 	}
 
-	nodes := postgres.New().GenerateMigrationAST(diff, generated)
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	sql = legacyRenderedSQL(sql)

@@ -17,6 +17,7 @@
 //   - Comprehensive schema comparison across all database objects
 //   - Detailed difference analysis with change categorization
 //   - Support for tables, columns, indexes, enums, and constraints
+//   - Table-qualified index identity for dialects with table-scoped names
 //   - Proper handling of schema modifications and additions/removals
 //   - Integration with migration planning for SQL generation
 //
@@ -78,6 +79,13 @@
 //   - TablesModified: Tables that exist in both but have structural differences
 //   - EnumsAdded/EnumsRemoved/EnumsModified: Enum type changes
 //   - IndexesAdded/IndexesRemoved: Index changes
+//
+// Index names are not globally unique in every supported database.
+// SchemaDiff.IndexesAdded and SchemaDiff.IndexesRemoved therefore contain
+// canonical IndexRef values with the raw index name and required owning table.
+// IndexAdditions and IndexRemovals return copies for consumers that must mutate
+// or retain the slices independently. Comparator output and setter input are
+// sorted deterministically.
 //
 // # Table Modifications
 //

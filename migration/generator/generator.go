@@ -451,13 +451,13 @@ func planGeneratedMigrationSpecs(
 	// planner-level skip. The omitted changes are surfaced as leading comments.
 	var skipped []diffpolicy.SkippedChange
 	if skipSet := diffpolicy.NewSkipSet(policy.SkipChangeKinds...); !skipSet.Empty() {
-		diff, skipped = diffpolicy.Apply(diff, skipSet)
+		diff, skipped = diffpolicy.ApplyForDialect(diff, skipSet, info.Dialect)
 	}
 
-	concurrentIndexNames := concurrentIndexNamesForPolicy(diff, generated, dbSchema, info, policy)
+	concurrentIndexRefs := concurrentIndexRefsForPolicy(diff, dbSchema, info, policy)
 	plannerOpts := planner.Options{
-		Capabilities:         info.Capabilities,
-		ConcurrentIndexNames: concurrentIndexNames,
+		Capabilities:        info.Capabilities,
+		ConcurrentIndexRefs: concurrentIndexRefs,
 	}
 	upNodes, err := planner.GenerateSchemaDiffASTWithOptions(diff, generated, info.Dialect, plannerOpts)
 	if err != nil {
@@ -486,15 +486,15 @@ func planGeneratedMigrationSpecs(
 	nodeGroups := splitNoTransactionNodes(info.Dialect, upNodes)
 	if len(nodeGroups.transactional) == 0 {
 		spec, assessments, err := buildGeneratedMigrationSpec(generatedMigrationSpecOptions{
-			Diff:                 diff,
-			Generated:            generated,
-			DBSchema:             dbSchema,
-			Dialect:              info.Dialect,
-			Capabilities:         info.Capabilities,
-			Version:              version,
-			Name:                 migrationName,
-			ConcurrentIndexNames: concurrentIndexNames,
-			NoTransaction:        true,
+			Diff:                diff,
+			Generated:           generated,
+			DBSchema:            dbSchema,
+			Dialect:             info.Dialect,
+			Capabilities:        info.Capabilities,
+			Version:             version,
+			Name:                migrationName,
+			ConcurrentIndexRefs: concurrentIndexRefs,
+			NoTransaction:       true,
 		})
 		if err != nil || spec.UpSQL == "" {
 			return nil, assessments, err
@@ -505,7 +505,7 @@ func planGeneratedMigrationSpecs(
 		return nil, nil, fmt.Errorf("generated migration mixes transactional statements with non-transactional statements that cannot be split automatically")
 	}
 
-	diffGroups := splitConcurrentIndexDiff(diff, concurrentIndexNames)
+	diffGroups := splitConcurrentIndexDiff(diff, concurrentIndexRefs)
 	specs := make([]generatedMigrationSpec, 0, 2)
 	allAssessments := make([]safety.StatementAssessment, 0)
 	if diffGroups.transactional.HasChanges() {
@@ -529,15 +529,15 @@ func planGeneratedMigrationSpecs(
 	}
 	if diffGroups.noTransaction.HasChanges() {
 		spec, assessments, err := buildGeneratedMigrationSpec(generatedMigrationSpecOptions{
-			Diff:                 diffGroups.noTransaction,
-			Generated:            generated,
-			DBSchema:             dbSchema,
-			Dialect:              info.Dialect,
-			Capabilities:         info.Capabilities,
-			Version:              version,
-			Name:                 migrationName + "_concurrent_indexes",
-			ConcurrentIndexNames: concurrentIndexNames,
-			NoTransaction:        true,
+			Diff:                diffGroups.noTransaction,
+			Generated:           generated,
+			DBSchema:            dbSchema,
+			Dialect:             info.Dialect,
+			Capabilities:        info.Capabilities,
+			Version:             version,
+			Name:                migrationName + "_concurrent_indexes",
+			ConcurrentIndexRefs: concurrentIndexRefs,
+			NoTransaction:       true,
 		})
 		if err != nil {
 			return nil, nil, err
@@ -569,21 +569,21 @@ func withSkipComments(specs []generatedMigrationSpec, skipped []diffpolicy.Skipp
 }
 
 type generatedMigrationSpecOptions struct {
-	Diff                 *types.SchemaDiff
-	Generated            *goschema.Database
-	DBSchema             *dbschematypes.DBSchema
-	Dialect              string
-	Capabilities         capability.Capabilities
-	Version              int64
-	Name                 string
-	ConcurrentIndexNames []string
-	NoTransaction        bool
+	Diff                *types.SchemaDiff
+	Generated           *goschema.Database
+	DBSchema            *dbschematypes.DBSchema
+	Dialect             string
+	Capabilities        capability.Capabilities
+	Version             int64
+	Name                string
+	ConcurrentIndexRefs []types.IndexRef
+	NoTransaction       bool
 }
 
 func buildGeneratedMigrationSpec(opts generatedMigrationSpecOptions) (generatedMigrationSpec, []safety.StatementAssessment, error) {
 	plannerOpts := planner.Options{
-		Capabilities:         opts.Capabilities,
-		ConcurrentIndexNames: opts.ConcurrentIndexNames,
+		Capabilities:        opts.Capabilities,
+		ConcurrentIndexRefs: opts.ConcurrentIndexRefs,
 	}
 	upNodes, err := planner.GenerateSchemaDiffASTWithOptions(opts.Diff, opts.Generated, opts.Dialect, plannerOpts)
 	if err != nil {
@@ -675,52 +675,41 @@ func allNoTransactionNodesAreConcurrentIndexes(nodes []ast.Node) bool {
 	return true
 }
 
-// concurrentIndexNamesForPolicy resolves which newly added indexes are built
+// concurrentIndexRefsForPolicy resolves which newly added indexes are built
 // concurrently. When the diff policy requests it, every newly added index is
 // concurrent (still gated on dialect and the CreateIndexConcurrently
 // capability); otherwise the populated-table heuristic applies.
-func concurrentIndexNamesForPolicy(
+func concurrentIndexRefsForPolicy(
 	diff *types.SchemaDiff,
-	generated *goschema.Database,
 	dbSchema *dbschematypes.DBSchema,
 	info dbschematypes.DBInfo,
 	policy DiffPolicy,
-) []string {
+) []types.IndexRef {
 	if !policy.ConcurrentIndex {
-		return concurrentIndexNamesForPopulatedTables(diff, generated, dbSchema, info)
+		return concurrentIndexRefsForPopulatedTables(diff, dbSchema, info)
 	}
 	if !platform.IsPostgresFamily(info.Dialect) || !info.Capabilities.Has(capability.CreateIndexConcurrently) {
 		return nil
 	}
-	names := slices.Clone(diff.IndexesAdded)
-	slices.Sort(names)
-	return names
+	return diff.IndexAdditions()
 }
 
-func concurrentIndexNamesForPopulatedTables(
+func concurrentIndexRefsForPopulatedTables(
 	diff *types.SchemaDiff,
-	generated *goschema.Database,
 	dbSchema *dbschematypes.DBSchema,
 	info dbschematypes.DBInfo,
-) []string {
+) []types.IndexRef {
 	if !platform.IsPostgresFamily(info.Dialect) || !info.Capabilities.Has(capability.CreateIndexConcurrently) {
 		return nil
 	}
-	added := stringSet(diff.IndexesAdded)
 	populatedTables := populatedTableSet(dbSchema)
-	structToTable := generatedStructTableMap(generated)
-	var names []string
-	for _, index := range generated.Indexes {
-		if _, ok := added[index.Name]; !ok {
-			continue
-		}
-		tableName := resolveGeneratedIndexTable(index, structToTable)
-		if _, ok := populatedTables[tableName]; ok {
-			names = append(names, index.Name)
+	var refs []types.IndexRef
+	for _, ref := range diff.IndexAdditions() {
+		if _, ok := populatedTables[ref.TableName]; ok {
+			refs = append(refs, ref)
 		}
 	}
-	slices.Sort(names)
-	return names
+	return refs
 }
 
 func populatedTableSet(dbSchema *dbschematypes.DBSchema) map[string]struct{} {
@@ -740,43 +729,34 @@ func populatedTableSet(dbSchema *dbschematypes.DBSchema) map[string]struct{} {
 	return out
 }
 
-func generatedStructTableMap(generated *goschema.Database) map[string]string {
-	out := make(map[string]string, len(generated.Tables))
-	for _, table := range generated.Tables {
-		out[table.StructName] = table.QualifiedName()
-	}
-	return out
-}
-
-func resolveGeneratedIndexTable(index goschema.Index, structToTable map[string]string) string {
-	if strings.TrimSpace(index.TableName) != "" {
-		return index.TableName
-	}
-	return structToTable[index.StructName]
-}
-
 type splitSchemaDiffs struct {
 	transactional *types.SchemaDiff
 	noTransaction *types.SchemaDiff
 }
 
-func splitConcurrentIndexDiff(diff *types.SchemaDiff, concurrentIndexNames []string) splitSchemaDiffs {
-	concurrent := stringSet(concurrentIndexNames)
+func splitConcurrentIndexDiff(
+	diff *types.SchemaDiff,
+	concurrentIndexRefs []types.IndexRef,
+) splitSchemaDiffs {
+	concurrent := indexRefSet(concurrentIndexRefs)
 	txDiff := cloneSchemaDiff(diff)
 	noTxDiff := emptySchemaDiff()
-	txDiff.IndexesAdded = txDiff.IndexesAdded[:0]
-	for _, indexName := range diff.IndexesAdded {
-		if _, ok := concurrent[indexName]; ok {
-			noTxDiff.IndexesAdded = append(noTxDiff.IndexesAdded, indexName)
+	var transactionalRefs []types.IndexRef
+	var noTransactionRefs []types.IndexRef
+	for _, resolved := range diff.IndexAdditions() {
+		if _, ok := concurrent[resolved]; ok {
+			noTransactionRefs = append(noTransactionRefs, resolved)
 			continue
 		}
-		txDiff.IndexesAdded = append(txDiff.IndexesAdded, indexName)
+		transactionalRefs = append(transactionalRefs, resolved)
 	}
+	txDiff.SetIndexAdditions(transactionalRefs)
+	noTxDiff.SetIndexAdditions(noTransactionRefs)
 	return splitSchemaDiffs{transactional: txDiff, noTransaction: noTxDiff}
 }
 
-func stringSet(values []string) map[string]struct{} {
-	out := make(map[string]struct{}, len(values))
+func indexRefSet(values []types.IndexRef) map[types.IndexRef]struct{} {
+	out := make(map[types.IndexRef]struct{}, len(values))
 	for _, value := range values {
 		out[value] = struct{}{}
 	}
@@ -797,7 +777,6 @@ func cloneSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 	clone.EnumsModified = slices.Clone(diff.EnumsModified)
 	clone.IndexesAdded = slices.Clone(diff.IndexesAdded)
 	clone.IndexesRemoved = slices.Clone(diff.IndexesRemoved)
-	clone.IndexesRemovedWithTables = slices.Clone(diff.IndexesRemovedWithTables)
 	clone.ExtensionsAdded = slices.Clone(diff.ExtensionsAdded)
 	clone.ExtensionsRemoved = slices.Clone(diff.ExtensionsRemoved)
 	clone.FunctionsAdded = slices.Clone(diff.FunctionsAdded)
@@ -1025,64 +1004,41 @@ func addMySQLFamilyForeignKeyBackingIndexRemovals(
 		return
 	}
 
-	priorIndexes := dbIndexByTableName(dbSchema)
-	removedNames := stringSet(reverseDiff.IndexesRemoved)
-	removedWithTables := indexRemovalSet(reverseDiff.IndexesRemovedWithTables)
+	priorIndexes := dbIndexRefs(dbSchema)
+	removals := reverseDiff.IndexRemovals()
+	removed := indexRefSet(removals)
 	for _, add := range upDiff.ConstraintsAddedWithTables {
 		if add.TableName == "" || add.Name == "" || !strings.EqualFold(add.Type, "FOREIGN KEY") {
 			continue
 		}
-		if priorIndexes[indexKey(add.TableName, add.Name)] {
+		ref := types.IndexRef{Name: add.Name, TableName: add.TableName}
+		if _, exists := priorIndexes[ref]; exists {
 			continue
 		}
-		if _, ok := removedNames[add.Name]; !ok {
-			reverseDiff.IndexesRemoved = append(reverseDiff.IndexesRemoved, add.Name)
-			removedNames[add.Name] = struct{}{}
-		}
-		key := indexKey(add.TableName, add.Name)
-		if removedWithTables[key] {
+		if _, exists := removed[ref]; exists {
 			continue
 		}
-		reverseDiff.IndexesRemovedWithTables = append(reverseDiff.IndexesRemovedWithTables, types.IndexRemovalInfo{
-			Name:      add.Name,
-			TableName: add.TableName,
-		})
-		removedWithTables[key] = true
+		removals = append(removals, ref)
+		removed[ref] = struct{}{}
 	}
-
-	slices.Sort(reverseDiff.IndexesRemoved)
-	slices.SortFunc(reverseDiff.IndexesRemovedWithTables, func(a, b types.IndexRemovalInfo) int {
-		if byTable := strings.Compare(a.TableName, b.TableName); byTable != 0 {
-			return byTable
-		}
-		return strings.Compare(a.Name, b.Name)
-	})
+	reverseDiff.SetIndexRemovals(removals)
 }
 
-func dbIndexByTableName(dbSchema *dbschematypes.DBSchema) map[string]bool {
-	out := make(map[string]bool)
+func dbIndexRefs(dbSchema *dbschematypes.DBSchema) map[types.IndexRef]struct{} {
+	out := make(map[types.IndexRef]struct{})
 	if dbSchema == nil {
 		return out
 	}
 	for _, index := range dbSchema.Indexes {
-		out[indexKey(index.TableName, index.Name)] = true
+		out[types.IndexRef{Name: index.Name, TableName: index.TableName}] = struct{}{}
 		if index.Schema != "" {
-			out[indexKey(dbschematypes.QualifyTableName(index.Schema, index.TableName), index.Name)] = true
+			out[types.IndexRef{
+				Name:      index.Name,
+				TableName: dbschematypes.QualifyTableName(index.Schema, index.TableName),
+			}] = struct{}{}
 		}
 	}
 	return out
-}
-
-func indexRemovalSet(indexes []types.IndexRemovalInfo) map[string]bool {
-	out := make(map[string]bool, len(indexes))
-	for _, index := range indexes {
-		out[indexKey(index.TableName, index.Name)] = true
-	}
-	return out
-}
-
-func indexKey(tableName, indexName string) string {
-	return tableName + "." + indexName
 }
 
 // reverseSchemaDiff creates a reverse diff for generating down migrations
@@ -1100,7 +1056,7 @@ func reverseSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 // additions; it may be nil when callers only have the generated schema (the
 // reversed additions then fall back to the name-only path).
 func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Database, dbSchema *dbschematypes.DBSchema) *types.SchemaDiff {
-	return &types.SchemaDiff{
+	reversed := &types.SchemaDiff{
 		// Reverse table operations
 		TablesAdded:    diff.TablesRemoved,                                // Tables to remove become tables to add
 		TablesRemoved:  deporder.TableDropOrder(diff.TablesAdded, schema), // Tables to add become tables to remove
@@ -1110,10 +1066,6 @@ func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Databa
 		EnumsAdded:    diff.EnumsRemoved, // Enums to remove become enums to add
 		EnumsRemoved:  diff.EnumsAdded,   // Enums to add become enums to remove
 		EnumsModified: reverseEnumDiffs(diff.EnumsModified),
-
-		// Reverse index operations
-		IndexesAdded:   diff.IndexesRemoved, // Indexes to remove become indexes to add
-		IndexesRemoved: diff.IndexesAdded,   // Indexes to add become indexes to remove
 
 		// Reverse extension operations
 		ExtensionsAdded:   diff.ExtensionsRemoved, // Extensions to remove become extensions to add
@@ -1177,6 +1129,9 @@ func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Databa
 		ConstraintsRemovedWithTables: reverseConstraintRemovals(diff, schema),
 		ConstraintsAddedWithTables:   reverseConstraintAdditions(diff, dbSchema),
 	}
+	reversed.SetIndexAdditions(diff.IndexRemovals())
+	reversed.SetIndexRemovals(diff.IndexAdditions())
+	return reversed
 }
 
 func generatedTableByStructName(tables []goschema.Table, structName string) *goschema.Table {

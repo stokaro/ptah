@@ -69,7 +69,10 @@
 //	}
 //
 //	// Generate migration AST nodes
-//	nodes := planner.GenerateMigrationAST(diff, generated)
+//	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+//	if err != nil {
+//		return err
+//	}
 //
 //	// Render to SQL using PostgreSQL renderer
 //	renderer := postgresql.NewRenderer()

@@ -36,11 +36,7 @@ func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 		parts = append(parts, "IF EXISTS")
 	}
 
-	parts = append(parts, r.escapeQualifiedIdentifier(node.Name))
-
-	// PostgreSQL doesn't require table name in DROP INDEX
-	// but we can add CASCADE if needed
-	// Note: node.Table is ignored for PostgreSQL
+	parts = append(parts, r.dropIndexTarget(node))
 
 	sql := strings.Join(parts, " ") + ";"
 
@@ -51,6 +47,18 @@ func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 
 	r.w.WriteLine(sql)
 	return nil
+}
+
+func (r *Renderer) dropIndexTarget(node *ast.DropIndexNode) string {
+	if r.dialect == platform.CockroachDB && node.Table != "" {
+		return r.escapeQualifiedIdentifier(node.Table) + "@" + r.escapeIdentifier(node.Name)
+	}
+	tableParts := splitQualifiedIdentifier(node.Table)
+	if len(tableParts) < 2 {
+		return r.escapeIdentifier(node.Name)
+	}
+	schemaParts := tableParts[:len(tableParts)-1]
+	return r.escapeQualifiedIdentifier(strings.Join(schemaParts, ".")) + "." + r.escapeIdentifier(node.Name)
 }
 
 // VisitCreateSchema renders a CREATE SCHEMA statement.
@@ -617,7 +625,7 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 		parts = append(parts, "IF NOT EXISTS")
 	}
 
-	parts = append(parts, r.escapeQualifiedIdentifier(node.Name))
+	parts = append(parts, r.escapeIdentifier(node.Name))
 	parts = append(parts, "ON")
 	parts = append(parts, r.escapeQualifiedIdentifier(node.Table))
 

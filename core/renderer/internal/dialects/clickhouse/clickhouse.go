@@ -706,7 +706,14 @@ func (r *Renderer) renderAddSkippingIndex(tableName string, op *ast.AddSkippingI
 	if granularity == 0 {
 		granularity = 8192
 	}
-	r.w.WriteLinef("ALTER TABLE %s ADD INDEX %s %s TYPE %s GRANULARITY %d;", tableName, op.Name, op.Expression, idxType, granularity)
+	r.w.WriteLinef(
+		"ALTER TABLE %s ADD INDEX %s %s TYPE %s GRANULARITY %d;",
+		escapeQualifiedIdentifier(tableName),
+		escapeIdentifier(op.Name),
+		op.Expression,
+		idxType,
+		granularity,
+	)
 	return nil
 }
 
@@ -748,7 +755,14 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	if len(node.Columns) > 1 {
 		expr = "(" + expr + ")"
 	}
-	r.w.WriteLinef("ALTER TABLE %s ADD INDEX %s %s TYPE %s GRANULARITY %d;", node.Table, node.Name, expr, idxType, granularity)
+	r.w.WriteLinef(
+		"ALTER TABLE %s ADD INDEX %s %s TYPE %s GRANULARITY %d;",
+		escapeQualifiedIdentifier(node.Table),
+		escapeIdentifier(node.Name),
+		expr,
+		idxType,
+		granularity,
+	)
 	return nil
 }
 
@@ -762,8 +776,27 @@ func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
-	r.w.WriteLinef("ALTER TABLE %s DROP INDEX %s;", node.Table, node.Name)
+	r.w.WriteLinef(
+		"ALTER TABLE %s DROP INDEX %s;",
+		escapeQualifiedIdentifier(node.Table),
+		escapeIdentifier(node.Name),
+	)
 	return nil
+}
+
+func escapeIdentifier(identifier string) string {
+	if len(identifier) >= 2 && identifier[0] == '`' && identifier[len(identifier)-1] == '`' {
+		identifier = strings.ReplaceAll(identifier[1:len(identifier)-1], "``", "`")
+	}
+	return "`" + strings.ReplaceAll(identifier, "`", "``") + "`"
+}
+
+func escapeQualifiedIdentifier(identifier string) string {
+	parts := strings.Split(identifier, ".")
+	for index, part := range parts {
+		parts[index] = escapeIdentifier(part)
+	}
+	return strings.Join(parts, ".")
 }
 
 func (r *Renderer) VisitUpsert(_ *ast.UpsertNode) error {
