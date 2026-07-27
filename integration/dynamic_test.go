@@ -1,7 +1,6 @@
 package integration
 
 import (
-	"context"
 	"embed"
 	"os"
 	"testing"
@@ -86,7 +85,7 @@ func TestDynamicScenariosBasic(t *testing.T) {
 	}
 
 	c := qt.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Connect to database
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
@@ -94,14 +93,14 @@ func TestDynamicScenariosBasic(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	// Clean database
-	err = conn.SchemaWriter().DropAllTables()
+	err = conn.SchemaWriter().DropAllTables(ctx)
 	c.Assert(err, qt.IsNil)
 
 	t.Run("DynamicBasicEvolution", func(t *testing.T) {
 		c := qt.New(t)
 
 		// Clean database before test
-		err := conn.SchemaWriter().DropAllTables()
+		err := conn.SchemaWriter().DropAllTables(ctx)
 		c.Assert(err, qt.IsNil)
 
 		// Run the dynamic basic evolution test
@@ -119,7 +118,7 @@ func TestDynamicScenariosBasic(t *testing.T) {
 		c := qt.New(t)
 
 		// Clean database before test
-		err := conn.SchemaWriter().DropAllTables()
+		err := conn.SchemaWriter().DropAllTables(ctx)
 		c.Assert(err, qt.IsNil)
 
 		// Run the dynamic idempotency test

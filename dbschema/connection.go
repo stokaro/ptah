@@ -190,7 +190,8 @@ func (dc *DatabaseConnection) Writer() types.SchemaExecutor {
 }
 
 // SchemaWriter returns the root schema writer for administrative operations
-// such as starting transactions, toggling dry-run mode, or dropping all tables.
+// such as starting transactions, toggling dry-run mode, or dropping all tables
+// with a caller-supplied context.
 func (dc *DatabaseConnection) SchemaWriter() types.SchemaWriter {
 	return dc.writer
 }

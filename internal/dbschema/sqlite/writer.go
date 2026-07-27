@@ -3,13 +3,18 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/stokaro/ptah/dbschema/types"
 )
+
+const sessionRestoreTimeout = 5 * time.Second
 
 func quoteIdent(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
@@ -121,45 +126,60 @@ func (w *transactionWriter) Rollback() error {
 func (w *transactionWriter) IsDryRun() bool { return w.dryRun }
 
 // DropAllTables drops all user tables from the configured SQLite schema.
-func (w *Writer) DropAllTables() error {
-	slog.Info("WARNING: This will drop ALL tables in the SQLite database")
-
+func (w *Writer) DropAllTables(ctx context.Context) (resultErr error) {
 	if w.dryRun {
-		for _, table := range []string{"<dry-run stub>"} {
-			slog.Info("[DRY RUN] Would drop table", "tableName", table)
-		}
 		return nil
 	}
+	if w.db == nil {
+		return fmt.Errorf("no database connection")
+	}
 
-	ctx := context.Background()
-	tables, err := w.listTables(ctx)
+	conn, err := w.db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("sqlite: acquire cleanup connection: %w", err)
+	}
+	defer func() {
+		closeErr := conn.Close()
+		if closeErr != nil && !errors.Is(closeErr, sql.ErrConnDone) {
+			resultErr = errors.Join(resultErr, fmt.Errorf("sqlite: close cleanup connection: %w", closeErr))
+		}
+	}()
+
+	var tx *sql.Tx
+	committed := false
+
+	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys = OFF"); err != nil {
+		return fmt.Errorf("sqlite: disable foreign keys: %w", err)
+	}
+	defer func() {
+		if tx != nil && !committed {
+			rollbackErr := tx.Rollback()
+			if rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
+				resultErr = errors.Join(resultErr, fmt.Errorf("sqlite: roll back drop transaction: %w", rollbackErr))
+			}
+		}
+
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), sessionRestoreTimeout)
+		defer cancel()
+		if _, restoreErr := conn.ExecContext(cleanupCtx, "PRAGMA foreign_keys = ON"); restoreErr != nil {
+			discardConn(conn)
+			resultErr = errors.Join(resultErr, fmt.Errorf("sqlite: restore foreign keys: %w", restoreErr))
+		}
+	}()
+
+	tables, err := w.listTables(ctx, conn)
 	if err != nil {
 		return err
 	}
 
-	if _, err := w.db.ExecContext(ctx, "PRAGMA foreign_keys = OFF"); err != nil {
-		return fmt.Errorf("sqlite: disable foreign keys: %w", err)
-	}
-	defer func() {
-		if _, err := w.db.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
-			slog.Warn("failed to restore SQLite foreign_keys pragma", "error", err)
-		}
-	}()
-
-	tx, err := w.BeginTransaction(ctx)
+	tx, err = conn.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("sqlite: begin drop transaction: %w", err)
 	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback()
-		}
-	}()
+	txWriter := &transactionWriter{tx: tx, schema: w.schema}
 
 	for _, table := range tables {
-		slog.Info("Dropping table", "tableName", table)
-		if err := tx.ExecuteSQL(ctx, "DROP TABLE IF EXISTS "+quoteIdent(table)); err != nil {
+		if err := txWriter.ExecuteSQL(ctx, "DROP TABLE IF EXISTS "+quoteIdent(table)); err != nil {
 			return fmt.Errorf("sqlite: drop table %s: %w", table, err)
 		}
 	}
@@ -168,12 +188,11 @@ func (w *Writer) DropAllTables() error {
 	}
 	committed = true
 
-	slog.Info("Successfully dropped tables", "count", len(tables))
 	return nil
 }
 
-func (w *Writer) listTables(ctx context.Context) ([]string, error) {
-	rows, err := w.db.QueryContext(ctx, `
+func (w *Writer) listTables(ctx context.Context, conn *sql.Conn) ([]string, error) {
+	rows, err := conn.QueryContext(ctx, `
 		SELECT name
 		FROM sqlite_schema
 		WHERE type = 'table'
@@ -198,6 +217,13 @@ func (w *Writer) listTables(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("sqlite: iterate tables: %w", err)
 	}
 	return tables, nil
+}
+
+func discardConn(conn *sql.Conn) {
+	// Never return a connection with unknown session state to the pool.
+	_ = conn.Raw(func(any) error {
+		return driver.ErrBadConn
+	})
 }
 
 // SetDryRun toggles dry-run mode.

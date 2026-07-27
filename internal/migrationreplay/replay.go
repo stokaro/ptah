@@ -48,7 +48,7 @@ func ReplayOnConnection(
 	dir string,
 	dirFormat migrator.MigrationDirFormat,
 ) error {
-	if err := conn.SchemaWriter().DropAllTables(); err != nil {
+	if err := conn.SchemaWriter().DropAllTables(ctx); err != nil {
 		return fmt.Errorf("clean dev database: %w", err)
 	}
 	provider, err := migrator.NewFSMigrationProvider(

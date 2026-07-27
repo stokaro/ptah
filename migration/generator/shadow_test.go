@@ -74,7 +74,7 @@ func TestLoadPriorMigrationsMissingDir(t *testing.T) {
 func TestVerifyShadowMigrationConnectErrorIsStructured(t *testing.T) {
 	c := qt.New(t)
 
-	err := verifyShadowMigration(context.Background(), shadowMigrationOptions{
+	err := verifyShadowMigration(t.Context(), shadowMigrationOptions{
 		DatabaseURL: "not-a-dsn",
 		Dialect:     "postgres",
 	})
@@ -96,7 +96,7 @@ func TestGenerateMigrationShadowVerificationWithRealDB(t *testing.T) {
 	}
 
 	c := qt.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	if err != nil {
@@ -109,7 +109,7 @@ func TestGenerateMigrationShadowVerificationWithRealDB(t *testing.T) {
 	releaseLock := acquireShadowTestLock(c, ctx, conn)
 	defer releaseLock()
 	defer func() {
-		c.Assert(conn.SchemaWriter().DropAllTables(), qt.IsNil)
+		c.Assert(conn.SchemaWriter().DropAllTables(ctx), qt.IsNil)
 	}()
 
 	c.Run("broken prior migration aborts with missing column", func(c *qt.C) {
@@ -176,7 +176,7 @@ func TestGenerateMigrationConcurrentIndexOnPopulatedPostgresTableWithRealDB(t *t
 	}
 
 	c := qt.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	if err != nil {
@@ -189,10 +189,10 @@ func TestGenerateMigrationConcurrentIndexOnPopulatedPostgresTableWithRealDB(t *t
 	releaseLock := acquireShadowTestLock(c, ctx, conn)
 	defer releaseLock()
 	defer func() {
-		c.Assert(conn.SchemaWriter().DropAllTables(), qt.IsNil)
+		c.Assert(conn.SchemaWriter().DropAllTables(ctx), qt.IsNil)
 	}()
 
-	c.Assert(conn.SchemaWriter().DropAllTables(), qt.IsNil)
+	c.Assert(conn.SchemaWriter().DropAllTables(ctx), qt.IsNil)
 	_, err = conn.ExecContext(ctx, `
 		CREATE TABLE users (
 			id SERIAL PRIMARY KEY,
@@ -302,7 +302,7 @@ func writePriorMigration(c *qt.C, dir, upSQL string) {
 }
 
 func prepareShadowTargetDB(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnection) {
-	c.Assert(conn.SchemaWriter().DropAllTables(), qt.IsNil)
+	c.Assert(conn.SchemaWriter().DropAllTables(ctx), qt.IsNil)
 	_, err := conn.ExecContext(ctx, "CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT NOT NULL)")
 	c.Assert(err, qt.IsNil)
 }

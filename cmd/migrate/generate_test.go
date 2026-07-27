@@ -77,14 +77,14 @@ func TestMigratePlanCommandRejectsAtlasApplyAtRoot(t *testing.T) {
 
 func TestMigrateGenerateShadowVerificationWithRealDB(t *testing.T) {
 	c := qt.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	dbURL, conn := requireMigrateGeneratePostgresTestConnection(t, ctx)
 	defer dbschema.CloseAndWarn(conn)
 	releaseLock := acquireMigrateGenerateTestLock(c, ctx, conn)
 	defer releaseLock()
 	defer func() {
-		c.Assert(conn.SchemaWriter().DropAllTables(), qt.IsNil)
+		c.Assert(conn.SchemaWriter().DropAllTables(ctx), qt.IsNil)
 	}()
 
 	c.Run("broken prior migration aborts before writing candidate files", func(c *qt.C) {
@@ -213,7 +213,7 @@ func writeMigrateGeneratePriorMigration(c *qt.C, dir, upSQL string) {
 }
 
 func prepareMigrateGenerateTargetDB(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnection) {
-	c.Assert(conn.SchemaWriter().DropAllTables(), qt.IsNil)
+	c.Assert(conn.SchemaWriter().DropAllTables(ctx), qt.IsNil)
 	_, err := conn.ExecContext(ctx, "CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT NOT NULL)")
 	c.Assert(err, qt.IsNil)
 }

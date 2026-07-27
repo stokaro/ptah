@@ -69,9 +69,9 @@ func TestWriter_DryRun_NoDBRequired(t *testing.T) {
 	c.Assert(tx.Commit(), qt.IsNil)
 	c.Assert(tx.Rollback(), qt.IsNil)
 
-	// DropAllTables dry-run prints a stub table list and emits no DDL,
-	// so it must succeed without a live DB.
-	c.Assert(w.DropAllTables(), qt.IsNil)
+	// DropAllTables dry-run performs no I/O, so it must succeed without a
+	// live DB.
+	c.Assert(w.DropAllTables(t.Context()), qt.IsNil)
 }
 
 func TestClickHouseWriterConcurrentTransactionNoops(t *testing.T) {

@@ -193,7 +193,7 @@ func testCleanupSupport(ctx context.Context, conn *dbschema.DatabaseConnection, 
 	}
 
 	// Drop all tables (cleanup)
-	if err := conn.SchemaWriter().DropAllTables(); err != nil {
+	if err := conn.SchemaWriter().DropAllTables(ctx); err != nil {
 		return fmt.Errorf("failed to drop all tables: %w", err)
 	}
 

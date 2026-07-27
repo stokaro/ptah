@@ -41,7 +41,8 @@ The integration test suite covers all aspects of the migration system as outline
 - Test behavior with limited database privileges
 
 ### 🧹 Cleanup Support
-- Drop all tables and re-run from empty state
+- Drop all tables and re-run from empty state on PostgreSQL, MySQL, MariaDB,
+  ClickHouse, and opt-in SQL Server
 
 ## Architecture
 
@@ -55,11 +56,15 @@ The integration test suite covers all aspects of the migration system as outline
 
 ### Test Fixtures
 
-- **`fixtures/migrations/basic/`** - Standard migration set for testing
+- **`fixtures/migrations/basic/`** - PostgreSQL-family standard migration set
+- **`fixtures/migrations/basic_mysql/`** - MySQL and MariaDB standard migration set
+- **`fixtures/migrations/basic_clickhouse/`** - ClickHouse standard migration set
 - **`fixtures/migrations/basic_sqlserver/`** - SQL Server variant of the standard migration set
 - **`fixtures/migrations/failing/`** - Migrations with intentional failures
+- **`fixtures/migrations/failing_mysql/`** - MySQL and MariaDB intentional failure set
 - **`fixtures/migrations/failing_sqlserver/`** - SQL Server variant of the intentional failure set
 - **`fixtures/migrations/partial_failure/`** - Multi-step migrations with failures
+- **`fixtures/migrations/partial_failure_mysql/`** - MySQL and MariaDB partial failure set
 - **`fixtures/migrations/partial_failure_sqlserver/`** - SQL Server variant of the partial failure set
 - **`fixtures/entities/`** - Go entity definitions for schema generation tests
 

@@ -111,64 +111,54 @@ func (w *transactionWriter) IsDryRun() bool { return w.writer.IsDryRun() }
 // below is defense-in-depth — in a real ClickHouse deployment system.tables
 // will not contain such names, but rejecting them outright keeps parity
 // with the postgres/mysql writers and makes the safety property obvious.
-func (w *Writer) DropAllTables() error {
-	slog.Info("WARNING: This will drop ALL tables in the ClickHouse database")
+func (w *Writer) DropAllTables(ctx context.Context) error {
+	if w.dryRun {
+		return nil
+	}
+	if w.db == nil {
+		return fmt.Errorf("no database connection")
+	}
 
-	// DropAllTables matches the dialect-agnostic SchemaWriter signature
-	// (func() error), so we use a background context for the listing query
-	// and per-table drops — same pattern mysql uses internally.
-	ctx := context.Background()
+	rows, err := w.db.QueryContext(ctx, `
+		SELECT name FROM system.tables
+		WHERE database = currentDatabase()
+		  AND is_temporary = 0
+		  AND (
+		    engine LIKE '%MergeTree'
+		    OR engine = 'Memory'
+		    OR engine = 'Log'
+		    OR engine = 'TinyLog'
+		    OR engine = 'StripeLog'
+		  )
+		  AND engine NOT LIKE '%View'
+		ORDER BY name
+	`)
+	if err != nil {
+		return fmt.Errorf("clickhouse: list tables: %w", err)
+	}
+	defer rows.Close()
 
 	var tables []string
-	if w.dryRun {
-		tables = []string{"<dry-run stub>"}
-		slog.Info("[DRY RUN] DropAllTables using stub table list", "tables", tables)
-	} else {
-		rows, err := w.db.QueryContext(ctx, `
-			SELECT name FROM system.tables
-			WHERE database = currentDatabase()
-			  AND is_temporary = 0
-			  AND (
-			    engine LIKE '%MergeTree'
-			    OR engine = 'Memory'
-			    OR engine = 'Log'
-			    OR engine = 'TinyLog'
-			    OR engine = 'StripeLog'
-			  )
-			  AND engine NOT LIKE '%View'
-			ORDER BY name
-		`)
-		if err != nil {
-			return fmt.Errorf("clickhouse: list tables: %w", err)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return fmt.Errorf("clickhouse: scan table name: %w", err)
 		}
-		defer rows.Close()
-		for rows.Next() {
-			var name string
-			if err := rows.Scan(&name); err != nil {
-				return fmt.Errorf("clickhouse: scan table name: %w", err)
-			}
-			tables = append(tables, name)
-		}
-		if err := rows.Err(); err != nil {
-			return fmt.Errorf("clickhouse: iterate tables: %w", err)
-		}
+		tables = append(tables, name)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("clickhouse: iterate tables: %w", err)
 	}
 
 	for _, name := range tables {
-		if w.dryRun {
-			slog.Info("[DRY RUN] Would drop table", "tableName", name)
-			continue
-		}
 		if strings.Contains(name, "`") {
 			return fmt.Errorf("clickhouse: refusing to drop table %q: name contains a backtick", name)
 		}
-		slog.Info("Dropping table", "tableName", name)
 		if err := w.ExecuteSQL(ctx, "DROP TABLE IF EXISTS "+quoteIdent(name)+" SYNC"); err != nil {
 			return err
 		}
 	}
 
-	slog.Info("Successfully dropped tables", "count", len(tables))
 	return nil
 }
 

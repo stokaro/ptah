@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -181,15 +182,7 @@ func (w *postgresTransactionWriter) Rollback() error {
 // IsDryRun returns whether dry-run mode is enabled.
 func (w *postgresTransactionWriter) IsDryRun() bool { return w.dryRun }
 
-func (w *PostgreSQLWriter) collectAllObjects() (tables []string, enums []string, sequences []string, err error) { //revive:disable-line:function-result-limit // It's acceptable here
-	if w.dryRun {
-		// In dry run mode, simulate some tables/enums/sequences for demonstration
-		tables = []string{"example_table1", "example_table2"}
-		enums = []string{"example_enum1", "example_enum2"}
-		sequences = []string{"example_table1_id_seq", "example_table2_id_seq"}
-		return tables, enums, sequences, nil
-	}
-
+func (w *PostgreSQLWriter) collectAllObjects(ctx context.Context) (tables []string, enums []string, sequences []string, err error) { //revive:disable-line:function-result-limit // It's acceptable here
 	// Get all tables in the schema
 	tablesQuery := `
 			SELECT table_name
@@ -197,7 +190,7 @@ func (w *PostgreSQLWriter) collectAllObjects() (tables []string, enums []string,
 			WHERE table_schema = $1 AND table_type = 'BASE TABLE'
 			ORDER BY table_name`
 
-	rows, err := w.db.Query(tablesQuery, w.schema)
+	rows, err := w.db.QueryContext(ctx, tablesQuery, w.schema)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to query tables: %w", err)
 	}
@@ -210,6 +203,9 @@ func (w *PostgreSQLWriter) collectAllObjects() (tables []string, enums []string,
 		}
 		tables = append(tables, tableName)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to iterate tables: %w", err)
+	}
 
 	// Get all custom types (enums) in the schema
 	enumsQuery := `
@@ -219,7 +215,7 @@ func (w *PostgreSQLWriter) collectAllObjects() (tables []string, enums []string,
 			WHERE n.nspname = $1 AND t.typtype = 'e'
 			ORDER BY typname`
 
-	enumRows, err := w.db.Query(enumsQuery, w.schema)
+	enumRows, err := w.db.QueryContext(ctx, enumsQuery, w.schema)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to query enums: %w", err)
 	}
@@ -232,6 +228,9 @@ func (w *PostgreSQLWriter) collectAllObjects() (tables []string, enums []string,
 		}
 		enums = append(enums, enumName)
 	}
+	if err := enumRows.Err(); err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to iterate enums: %w", err)
+	}
 
 	// Get all sequences in the schema
 	sequencesQuery := `
@@ -240,7 +239,7 @@ func (w *PostgreSQLWriter) collectAllObjects() (tables []string, enums []string,
 			WHERE sequence_schema = $1
 			ORDER BY sequence_name`
 
-	seqRows, err := w.db.Query(sequencesQuery, w.schema)
+	seqRows, err := w.db.QueryContext(ctx, sequencesQuery, w.schema)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to query sequences: %w", err)
 	}
@@ -253,32 +252,40 @@ func (w *PostgreSQLWriter) collectAllObjects() (tables []string, enums []string,
 		}
 		sequences = append(sequences, sequenceName)
 	}
+	if err := seqRows.Err(); err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to iterate sequences: %w", err)
+	}
 
 	return tables, enums, sequences, nil
 }
 
 // DropAllTables drops ALL tables and enums in the database schema (COMPLETE CLEANUP!)
-func (w *PostgreSQLWriter) DropAllTables() error {
-	slog.Warn("WARNING: This will drop ALL tables and enums in the database!")
-
-	tx, err := w.BeginTransaction(context.Background())
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
+func (w *PostgreSQLWriter) DropAllTables(ctx context.Context) (resultErr error) {
+	if w.dryRun {
+		return nil
+	}
+	if w.db == nil {
+		return fmt.Errorf("no database connection")
 	}
 
-	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback()
-		}
-	}()
-
-	tables, enums, sequences, err := w.collectAllObjects()
+	tables, enums, sequences, err := w.collectAllObjects(ctx)
 	if err != nil {
 		return err
 	}
 
-	ctx := context.Background()
+	tx, err := w.BeginTransaction(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			rollbackErr := tx.Rollback()
+			if rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
+				resultErr = errors.Join(resultErr, fmt.Errorf("failed to roll back transaction: %w", rollbackErr))
+			}
+		}
+	}()
 
 	// Drop all tables with CASCADE to handle dependencies. Identifiers cannot
 	// be bound as parameters; quoteIdent doubles any embedded `"` so a hostile
@@ -286,7 +293,6 @@ func (w *PostgreSQLWriter) DropAllTables() error {
 	// identifier.
 	for _, tableName := range tables {
 		dropSQL := "DROP TABLE IF EXISTS " + quoteIdent(tableName) + " CASCADE"
-		slog.Info("Dropping table...", "tableName", tableName)
 		if err := tx.ExecuteSQL(ctx, dropSQL); err != nil {
 			return fmt.Errorf("failed to drop table %s: %w", tableName, err)
 		}
@@ -295,7 +301,6 @@ func (w *PostgreSQLWriter) DropAllTables() error {
 	// Drop all enums
 	for _, enumName := range enums {
 		dropSQL := "DROP TYPE IF EXISTS " + quoteIdent(enumName) + " CASCADE"
-		slog.Info("Dropping enum...", "enumName", enumName)
 		if err := tx.ExecuteSQL(ctx, dropSQL); err != nil {
 			return fmt.Errorf("failed to drop enum %s: %w", enumName, err)
 		}
@@ -304,7 +309,6 @@ func (w *PostgreSQLWriter) DropAllTables() error {
 	// Drop all sequences
 	for _, sequenceName := range sequences {
 		dropSQL := "DROP SEQUENCE IF EXISTS " + quoteIdent(sequenceName) + " CASCADE"
-		slog.Info("Dropping sequence...", "sequenceName", sequenceName)
 		if err := tx.ExecuteSQL(ctx, dropSQL); err != nil {
 			return fmt.Errorf("failed to drop sequence %s: %w", sequenceName, err)
 		}
@@ -315,7 +319,6 @@ func (w *PostgreSQLWriter) DropAllTables() error {
 	}
 	committed = true
 
-	slog.Info("All tables and enums dropped successfully!", "tables", len(tables), "enums", len(enums), "sequences", len(sequences))
 	return nil
 }
 

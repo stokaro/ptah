@@ -463,7 +463,7 @@ func TestPostgreSQLWriterDropAllTablesCommitsOnSuccess(t *testing.T) {
 	db := dbtest.OpenWithExec(t, postgresDropAllQueryHandler, nil)
 	writer := NewPostgreSQLWriter(db.SQL, "public")
 
-	c.Assert(writer.DropAllTables(), qt.IsNil)
+	c.Assert(writer.DropAllTables(t.Context()), qt.IsNil)
 	c.Assert(db.BeginCount(), qt.Equals, 1)
 	c.Assert(db.ExecCount(), qt.Equals, 3)
 	c.Assert(db.CommitCount(), qt.Equals, 1)
@@ -480,7 +480,7 @@ func TestPostgreSQLWriterDropAllTablesRollsBackOnFailure(t *testing.T) {
 	})
 	writer := NewPostgreSQLWriter(db.SQL, "public")
 
-	err := writer.DropAllTables()
+	err := writer.DropAllTables(t.Context())
 	c.Assert(err, qt.ErrorMatches, `failed to drop enum status: SQL execution failed: boom\nSQL: DROP TYPE IF EXISTS "status" CASCADE`)
 	c.Assert(db.BeginCount(), qt.Equals, 1)
 	c.Assert(db.CommitCount(), qt.Equals, 0)
