@@ -359,6 +359,7 @@ func (r *renderer) renderIndex(index goschema.Index) {
 	r.stringAttr(2, "type", index.Type)
 	r.stringAttr(2, "parser", index.Parser)
 	r.stringAttr(2, "where", index.Condition)
+	r.stringAttr(2, "comment", index.Comment)
 	r.boolPtrAttr(2, "nulls_distinct", index.NullsDistinct)
 	if len(index.IncludeColumns) > 0 {
 		r.rawAttr(2, "include", columnRefs(index.IncludeColumns))
@@ -388,9 +389,6 @@ func (r *renderer) renderIndex(index goschema.Index) {
 	}
 	if index.Granularity != 0 {
 		r.warn("index "+index.Name, "ClickHouse granularity cannot be represented in the supported HCL subset")
-	}
-	if index.Comment != "" {
-		r.warn("index "+index.Name, "index comments cannot be represented in HCL schema output")
 	}
 	r.line("  }")
 }

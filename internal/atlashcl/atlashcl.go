@@ -477,6 +477,7 @@ func (p *parser) parseIndex(structName, tableName string, block *hclsyntax.Block
 		Type:           indexType,
 		Parser:         parserName,
 		Condition:      p.optionalString(block.Body.Attributes["where"]),
+		Comment:        p.optionalString(block.Body.Attributes["comment"]),
 		IncludeColumns: include,
 		StorageParams:  storageParams,
 		TableName:      tableName,
@@ -1018,6 +1019,7 @@ func (p *parser) rejectUnsupportedIndexAttrs(block *hclsyntax.Block) error {
 		"unique":          true,
 		"type":            true,
 		"where":           true,
+		"comment":         true,
 	}, "index")
 }
 
