@@ -87,7 +87,7 @@ The supported attributes map to Ptah settings as follows:
 | `env.schema.mode.<object>` | Atlas-style exclusion defaults for supported object kinds |
 | `env.exclude` | `ptah atlas schema inspect --exclude`, `ptah atlas schema apply --exclude`, or `ptah atlas schema diff --exclude` default |
 | `migration.dir` | `--migrations-dir` or `--dir` default |
-| `migration.format` | `--dir-format` default |
+| `migration.format` | `--dir-format` default where the command exposes that flag; safety gate for `ptah atlas migrate apply` |
 | `migration.revisions_schema` | `--migrations-schema` default |
 | `migration.lock_timeout` | `--lock-timeout` default |
 | `migration.exec_order` | `--exec-order` default |
@@ -120,6 +120,29 @@ schema URLs declared in `atlas.hcl` resolve relative to the directory containing
 that `atlas.hcl` file, not the process working directory. Explicit CLI `--to`
 and `--from` values keep CLI semantics and resolve relative to the process
 working directory unless they are absolute.
+
+Ptah parses Atlas's `atlas`, `golang-migrate`, `goose`, `flyway`, `liquibase`,
+and `dbmate` migration format values so the project file can be evaluated
+without changing Atlas syntax. Parsing a value does not imply that every
+command can execute it. `ptah atlas migrate apply` currently executes only
+`atlas` directories. It rejects every other format before opening the target
+database, because interpreting an external tool's file as an Atlas migration
+could execute rollback or metadata sections as forward SQL. An explicit
+`?format=` query on the effective directory URL, whether it comes from
+`migration.dir` or CLI `--dir`, takes precedence over the `migration.format`
+default, matching Atlas. An empty query value selects the native `atlas`
+format. Convert external directories first:
+
+```bash
+ptah atlas migrate import \
+  --from "file://legacy-migrations?format=goose" \
+  --to file://migrations
+ptah atlas migrate apply --env local \
+  --dir "file://migrations?format=atlas"
+```
+
+Native apply support for all Atlas OSS directory formats is tracked in
+[`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742).
 
 `env.exclude` accepts either one string or a list of strings. `ptah atlas schema
 apply --env <name>` uses it as the default resource exclusion filter unless an

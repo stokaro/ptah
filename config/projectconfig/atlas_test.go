@@ -51,6 +51,47 @@ func TestParseAtlasProjectConfig(t *testing.T) {
 	c.Assert(*cfg.Lint.Latest, qt.Equals, 5)
 }
 
+func TestParseAtlasProjectConfigPreservesMigrationDirURLSemantics(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name string
+		dir  string
+		want string
+	}{
+		{
+			name: "file URL query",
+			dir:  "file://migrations?format=atlas",
+			want: "file://migrations?format=atlas",
+		},
+		{
+			name: "encoded file URL path",
+			dir:  "file://migration%20files",
+			want: "file://migration%20files",
+		},
+		{
+			name: "plain query-like path",
+			dir:  "migrations?format=atlas",
+			want: "migrations?format=atlas",
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			raw := fmt.Appendf(nil, `env "local" {
+  migration {
+    dir = %q
+  }
+}
+`, tt.dir)
+
+			cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(cfg.Migration.Dir, qt.Equals, tt.want)
+		})
+	}
+}
+
 func TestParseAtlasProjectConfigMigrationEnumIdentifiers(t *testing.T) {
 	c := qt.New(t)
 	tests := []struct {
@@ -153,6 +194,21 @@ func TestParseAtlasProjectConfigMigrationEnumIdentifiersFailurePath(t *testing.T
 			name:    "enum traversal",
 			attr:    "format = local.format",
 			wantErr: `unsupported atlas\.hcl construct "format" at atlas\.hcl:3`,
+		},
+		{
+			name:    "uppercase format identifier",
+			attr:    "format = ATLAS",
+			wantErr: `unsupported atlas\.hcl construct "format" at atlas\.hcl:3`,
+		},
+		{
+			name:    "lowercase linear identifier",
+			attr:    "exec_order = linear",
+			wantErr: `unsupported atlas\.hcl construct "exec_order" at atlas\.hcl:3`,
+		},
+		{
+			name:    "lowercase linear skip identifier",
+			attr:    "exec_order = linear_skip",
+			wantErr: `unsupported atlas\.hcl construct "exec_order" at atlas\.hcl:3`,
 		},
 	}
 

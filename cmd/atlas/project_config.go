@@ -106,6 +106,14 @@ func atlasProjectConfigLocalDir(cmd *cobra.Command, raw string) (string, error) 
 	return atlasProjectConfigLocalDirFromFlags(flags, raw)
 }
 
+func atlasProjectConfigLocalDirWithQuery(cmd *cobra.Command, raw string) (atlasargs.LocalDir, error) {
+	flags, _, err := atlasProjectFlagsFromCommand(cmd)
+	if err != nil {
+		return atlasargs.LocalDir{}, err
+	}
+	return atlasProjectConfigLocalDirWithQueryFromFlags(flags, raw)
+}
+
 func atlasProjectConfigSchemaURLs(cmd *cobra.Command, raw []string) ([]string, error) {
 	flags, _, err := atlasProjectFlagsFromCommand(cmd)
 	if err != nil {
@@ -115,11 +123,29 @@ func atlasProjectConfigSchemaURLs(cmd *cobra.Command, raw []string) ([]string, e
 }
 
 func atlasProjectConfigLocalDirFromFlags(flags atlasProjectFlagValues, raw string) (string, error) {
-	baseDir, err := atlasProjectConfigBaseDir(flags)
+	dir, err := atlasProjectConfigLocalDirWithQueryFromFlags(flags, raw)
 	if err != nil {
 		return "", err
 	}
-	return atlasprojectpath.LocalDir(raw, baseDir)
+	if len(dir.Query) > 0 {
+		return "", fmt.Errorf("migration directory URL query parameters are not supported yet")
+	}
+	return dir.Path, nil
+}
+
+func atlasProjectConfigLocalDirWithQueryFromFlags(
+	flags atlasProjectFlagValues,
+	raw string,
+) (atlasargs.LocalDir, error) {
+	baseDir, err := atlasProjectConfigBaseDir(flags)
+	if err != nil {
+		return atlasargs.LocalDir{}, err
+	}
+	path, query, err := atlasprojectpath.LocalDirWithQuery(raw, baseDir)
+	if err != nil {
+		return atlasargs.LocalDir{}, err
+	}
+	return atlasargs.LocalDir{Path: path, Query: query}, nil
 }
 
 func atlasProjectConfigSchemaURLsFromFlags(flags atlasProjectFlagValues, raw []string) ([]string, error) {

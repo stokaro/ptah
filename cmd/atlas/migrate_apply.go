@@ -20,6 +20,7 @@ import (
 type atlasMigrateApplyOptions struct {
 	url             string
 	dir             string
+	dirFormat       string
 	dryRun          bool
 	txMode          string
 	execOrder       string
@@ -32,6 +33,7 @@ type atlasMigrateApplyOptions struct {
 
 func newAtlasMigrateApplyCommand() *cobra.Command {
 	opts := atlasMigrateApplyOptions{
+		dirFormat: atlasDirFormatDefault,
 		txMode:    string(migrator.MigrationTxModeFile),
 		execOrder: string(migrator.ExecOrderLinear),
 	}
@@ -85,18 +87,15 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 	if loaded {
 		opts.url = dbcli.EffectiveString(cmd, "url", opts.url, projectCfg.DatabaseURL)
 		opts.dir = dbcli.EffectiveString(cmd, "dir", opts.dir, projectCfg.Migration.Dir)
+		if projectCfg.Migration.Format != "" {
+			opts.dirFormat = projectCfg.Migration.Format
+		}
 		opts.txMode = dbcli.EffectiveString(cmd, "tx-mode", opts.txMode, projectCfg.Migration.TxMode)
 		opts.execOrder = dbcli.EffectiveString(cmd, "exec-order", opts.execOrder, projectCfg.Migration.ExecOrder)
 		opts.revisionsSchema = dbcli.EffectiveString(cmd, "revisions-schema", opts.revisionsSchema, projectCfg.Migration.RevisionsSchema)
 		opts.lockTimeout = dbcli.EffectiveString(cmd, "lock-timeout", opts.lockTimeout, projectCfg.Migration.LockTimeout)
 		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, projectCfg.Format.Migrate.Apply)
 		formatOutput = formatOutput || projectCfg.Format.Migrate.Apply != ""
-	}
-	if loaded && !cmd.Flags().Changed("dir") && projectCfg.Migration.Dir != "" {
-		opts.dir, err = atlasProjectConfigLocalDir(cmd, opts.dir)
-		if err != nil {
-			return fmt.Errorf("atlas migrate apply --dir: %w", err)
-		}
 	}
 	if formatOutput && strings.TrimSpace(opts.format) == "" {
 		return fmt.Errorf("--format must not be empty")
@@ -113,10 +112,19 @@ func runAtlasMigrateApply(cmd *cobra.Command, opts atlasMigrateApplyOptions, arg
 		return fmt.Errorf("migrations directory is required")
 	}
 
-	dir, err := atlasargs.LocalDirValue(opts.dir)
+	var localDir atlasargs.LocalDir
+	if loaded && !cmd.Flags().Changed("dir") && projectCfg.Migration.Dir != "" {
+		localDir, err = atlasProjectConfigLocalDirWithQuery(cmd, opts.dir)
+	} else {
+		localDir, err = atlasargs.ParseLocalDir(opts.dir)
+	}
 	if err != nil {
 		return fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
+	if err := atlasmigrate.ValidateApplyDirFormat(opts.dirFormat, localDir.Query); err != nil {
+		return fmt.Errorf("atlas migrate apply --dir: %w", err)
+	}
+	dir := localDir.Path
 	dir, err = pathguard.ResolveCLIPath(dir)
 	if err != nil {
 		return fmt.Errorf("invalid migration directory: %w", err)
