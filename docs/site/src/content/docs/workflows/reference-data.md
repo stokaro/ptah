@@ -98,12 +98,17 @@ down re-inserts it. Applying up then down restores the original table contents.
 Values are rendered as dialect-correct, safely-escaped SQL literals, so a value
 containing quotes, backslashes, or semicolons cannot break out of its literal.
 
-Known limits (tracked follow-ups): only the managed columns are reconciled and
+Managed tables are ordered by the schema's foreign-key dependency graph:
+`INSERT`s run parents-first and `DELETE`s children-first, so a migration
+spanning FK-related reference tables applies (and rolls back) without violating
+a foreign key. A managed table is matched to its `//migrator:schema:table`
+definition by qualified name, falling back to the bare table name when the
+`schema` attributes are not both set; tables with no matching definition fall
+back to alphabetical order.
+
+Known limit (tracked follow-up): only the managed columns are reconciled and
 restored, so emptying a populated table's desired set is refused rather than
-generating a rollback that could not restore the non-key columns; and tables are
-ordered alphabetically rather than by foreign-key dependency, so FK-related
-tables may need manual reordering (a violation aborts the transactional migration
-cleanly).
+generating a rollback that could not restore the non-key columns.
 
 ## Declarative data versus `ptah seed`
 

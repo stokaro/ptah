@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -307,6 +308,117 @@ type Region struct {
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(up, qt.Contains, `INSERT INTO "reference"."regions"`)
+}
+
+// TestGenerate_ForeignKeyOrdering proves the migration is ordered by the
+// schema's foreign-key dependency graph: INSERTs run parents-first and DELETEs
+// children-first, so applying up and then down never violates a foreign key.
+// The test enforces foreign keys (PRAGMA foreign_keys=ON) so a wrong order would
+// actually fail rather than pass silently.
+func TestGenerate_ForeignKeyOrdering(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite:///:memory:")
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+
+	_, err = conn.ExecContext(ctx, `PRAGMA foreign_keys = ON`)
+	c.Assert(err, qt.IsNil)
+	for _, ddl := range []string{
+		`CREATE TABLE countries (code TEXT PRIMARY KEY, name TEXT NOT NULL)`,
+		`CREATE TABLE regions (code TEXT PRIMARY KEY, country_code TEXT NOT NULL REFERENCES countries(code), name TEXT NOT NULL)`,
+		// Live: US + XX countries; CA(->US) + ZZ(->XX) regions.
+		`INSERT INTO countries (code, name) VALUES ('US', 'United States'), ('XX', 'Old Country')`,
+		`INSERT INTO regions (code, country_code, name) VALUES ('CA', 'US', 'California'), ('ZZ', 'XX', 'Old Region')`,
+	} {
+		_, execErr := conn.ExecContext(ctx, ddl)
+		c.Assert(execErr, qt.IsNil)
+	}
+
+	root := t.TempDir()
+	goSrc := `package fixture
+
+//migrator:schema:table name="countries"
+type Country struct {
+	//migrator:schema:field name="code" type="TEXT" primary="true"
+	Code string
+	//migrator:schema:field name="name" type="TEXT" not_null="true"
+	Name string
+}
+
+//migrator:schema:table name="regions"
+type Region struct {
+	//migrator:schema:field name="code" type="TEXT" primary="true"
+	Code string
+	//migrator:schema:field name="country_code" type="TEXT" not_null="true" foreign="countries(code)"
+	CountryCode string
+	//migrator:schema:field name="name" type="TEXT" not_null="true"
+	Name string
+}
+
+//migrator:schema:data table="countries" key="code" file="countries.yaml"
+type countryData struct{ _ int }
+
+//migrator:schema:data table="regions" key="code" file="regions.yaml"
+type regionData struct{ _ int }
+`
+	c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(goSrc), 0o600), qt.IsNil)
+	// Desired: drop the XX country and ZZ region, add the DE country and the BY
+	// region that references DE.
+	c.Assert(os.WriteFile(filepath.Join(root, "countries.yaml"),
+		[]byte("- code: US\n  name: United States\n- code: DE\n  name: Germany\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(root, "regions.yaml"),
+		[]byte("- code: CA\n  country_code: US\n  name: California\n- code: BY\n  country_code: DE\n  name: Bavaria\n"), 0o600), qt.IsNil)
+
+	up, down, err := datamigrate.Generate(ctx, conn, datamigrate.Options{RootDir: root, AllowDestructive: true})
+	c.Assert(err, qt.IsNil)
+
+	// Parent INSERT before child INSERT; child DELETE before parent DELETE.
+	c.Assert(strings.Index(up, `INSERT INTO "countries"`) < strings.Index(up, `INSERT INTO "regions"`), qt.IsTrue,
+		qt.Commentf("up:\n%s", up))
+	c.Assert(strings.Index(up, `DELETE FROM "regions"`) < strings.Index(up, `DELETE FROM "countries"`), qt.IsTrue,
+		qt.Commentf("up:\n%s", up))
+
+	apply := func(script string) {
+		for _, stmt := range migrator.SplitSQLStatementsForConnection(conn, script) {
+			_, execErr := conn.ExecContext(ctx, stmt)
+			c.Assert(execErr, qt.IsNil, qt.Commentf("stmt: %s", stmt))
+		}
+	}
+	readState := func() (map[string]string, map[string]string) {
+		countries := map[string]string{}
+		rows, qErr := conn.QueryContext(ctx, `SELECT code, name FROM countries ORDER BY code`)
+		c.Assert(qErr, qt.IsNil)
+		for rows.Next() {
+			var k, v string
+			c.Assert(rows.Scan(&k, &v), qt.IsNil)
+			countries[k] = v
+		}
+		c.Assert(rows.Err(), qt.IsNil)
+		_ = rows.Close()
+		regions := map[string]string{}
+		rows2, qErr := conn.QueryContext(ctx, `SELECT code, country_code FROM regions ORDER BY code`)
+		c.Assert(qErr, qt.IsNil)
+		for rows2.Next() {
+			var k, v string
+			c.Assert(rows2.Scan(&k, &v), qt.IsNil)
+			regions[k] = v
+		}
+		c.Assert(rows2.Err(), qt.IsNil)
+		_ = rows2.Close()
+		return countries, regions
+	}
+
+	apply(up)
+	countries, regions := readState()
+	c.Assert(countries, qt.DeepEquals, map[string]string{"US": "United States", "DE": "Germany"})
+	c.Assert(regions, qt.DeepEquals, map[string]string{"CA": "US", "BY": "DE"})
+
+	apply(down)
+	countries, regions = readState()
+	c.Assert(countries, qt.DeepEquals, map[string]string{"US": "United States", "XX": "Old Country"})
+	c.Assert(regions, qt.DeepEquals, map[string]string{"CA": "US", "ZZ": "XX"})
 }
 
 func TestGenerate_EmptyDesiredWithLiveRowsErrors(t *testing.T) {
