@@ -66,6 +66,32 @@ func TestGenerateSchemaDiffSQL_ForeignKeyColumnTypeChange_MySQLFamilyBrackets(t 
 	}
 }
 
+// TestGenerateSchemaDiffSQL_ForeignKeyColumnTypeChange_SQLServerBrackets checks
+// that SQL Server — which shares the MySQL-family planner — also brackets the
+// change, rendered as valid T-SQL: DROP CONSTRAINT, ALTER COLUMN, ADD CONSTRAINT
+// in that order (SQL Server has the same restriction on altering a
+// foreign-key column).
+func TestGenerateSchemaDiffSQL_ForeignKeyColumnTypeChange_SQLServerBrackets(t *testing.T) {
+	c := qt.New(t)
+
+	diff, generated := fkColumnTypeChangeInputs()
+
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, platform.SQLServer)
+	c.Assert(err, qt.IsNil)
+	sql := strings.Join(statements, "\n")
+
+	c.Assert(sql, qt.Contains, "DROP CONSTRAINT", qt.Commentf("SQL:\n%s", sql))
+	c.Assert(sql, qt.Contains, "ALTER COLUMN", qt.Commentf("SQL:\n%s", sql))
+	c.Assert(sql, qt.Contains, "ADD CONSTRAINT", qt.Commentf("SQL:\n%s", sql))
+	c.Assert(sql, qt.Not(qt.Contains), "DROP FOREIGN KEY", qt.Commentf("SQL Server uses DROP CONSTRAINT:\n%s", sql))
+
+	dropIdx := strings.Index(sql, "DROP CONSTRAINT")
+	alterIdx := strings.Index(sql, "ALTER COLUMN")
+	addIdx := strings.Index(sql, "ADD CONSTRAINT")
+	c.Assert(dropIdx < alterIdx, qt.IsTrue, qt.Commentf("drop must precede alter column:\n%s", sql))
+	c.Assert(alterIdx < addIdx, qt.IsTrue, qt.Commentf("alter column must precede re-add:\n%s", sql))
+}
+
 func TestGenerateSchemaDiffSQL_ForeignKeyColumnTypeChange_PostgresUnchanged(t *testing.T) {
 	c := qt.New(t)
 

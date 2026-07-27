@@ -258,13 +258,15 @@ func TestPlanner_ColumnTypeChange_DownInverse(t *testing.T) {
 	}
 }
 
-// TestPlanner_ColumnTypeChange_SkippedWhenConstraintAlsoChanges guards against a
-// duplicate drop when a column type change coincides with a foreign-key
-// definition change (e.g. an ON DELETE change) on the same key. The constraint
-// machinery already drops and recreates the key, so the column-type bracketing
-// must stand down — MySQL accepts no IF EXISTS guard on the drop, so a second
-// drop would abort the migration.
-func TestPlanner_ColumnTypeChange_SkippedWhenConstraintAlsoChanges(t *testing.T) {
+// TestPlanner_ColumnTypeChange_CoincidentFKDefinitionChange covers a column type
+// change that coincides with a foreign-key definition change (an ON DELETE
+// change) on the same existing key. The drop must be emitted ONCE, before the
+// MODIFY (owned by the column-type bracketing at step 4), and the re-add ONCE,
+// after the MODIFY, carrying the new definition (owned by the constraint
+// machinery). A bare MODIFY before the drop would be rejected by the server, and
+// a second, unguarded drop would abort the migration (MySQL has no IF EXISTS on
+// constraint drops). This is the regression guard for blocker 1.
+func TestPlanner_ColumnTypeChange_CoincidentFKDefinitionChange(t *testing.T) {
 	for _, dialect := range mysqlFamilyDialects {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
@@ -292,17 +294,137 @@ func TestPlanner_ColumnTypeChange_SkippedWhenConstraintAlsoChanges(t *testing.T)
 				},
 				Fields: []goschema.Field{
 					{Name: "id", Type: "BIGINT", StructName: "User", Primary: true},
-					{Name: "user_id", Type: "BIGINT", StructName: "Post", Nullable: false, Foreign: "users(id)", OnDelete: "SET NULL"},
+					{Name: "user_id", Type: "BIGINT", StructName: "Post", Nullable: true, Foreign: "users(id)", ForeignKeyName: "fk_posts_user_id", OnDelete: "SET NULL"},
 				},
 			}
 
 			sql := renderMySQLFamily(c, dialect, diff, generated)
 
-			// Exactly one drop and one re-add, owned by the constraint machinery.
+			// Exactly one drop and one re-add.
 			c.Assert(strings.Count(sql, "DROP FOREIGN KEY fk_posts_user_id"), qt.Equals, 1,
-				qt.Commentf("column-type bracketing must not double-drop; got:\n%s", sql))
+				qt.Commentf("must not double-drop; got:\n%s", sql))
 			c.Assert(strings.Count(sql, "ADD CONSTRAINT fk_posts_user_id"), qt.Equals, 1,
-				qt.Commentf("column-type bracketing must not double-add; got:\n%s", sql))
+				qt.Commentf("must not double-add; got:\n%s", sql))
+
+			// The drop precedes the MODIFY, the re-add follows it, and the re-add
+			// carries the new ON DELETE SET NULL definition.
+			assertContainsBefore(c, sql,
+				"ALTER TABLE posts DROP FOREIGN KEY fk_posts_user_id",
+				"ALTER TABLE posts MODIFY COLUMN user_id BIGINT;")
+			assertContainsBefore(c, sql,
+				"ALTER TABLE posts MODIFY COLUMN user_id BIGINT;",
+				"ALTER TABLE posts ADD CONSTRAINT fk_posts_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;")
+		})
+	}
+}
+
+// TestPlanner_ColumnTypeChange_CoHostedSharedFKName covers a foreign-key name
+// shared across two tables where only one host's definition changes: posts is a
+// modification (in the constraint diff) and comments is a pure column widening
+// (not in the constraint diff). Both widen user_id, so BOTH keys must be dropped
+// before the modifications and recreated — comments by the bracketing, posts by
+// the constraint machinery. Keying on the bare name would leave comments' key
+// undropped (its MODIFY would fail) and unrecreated. This is the regression
+// guard for blocker 2.
+func TestPlanner_ColumnTypeChange_CoHostedSharedFKName(t *testing.T) {
+	for _, dialect := range mysqlFamilyDialects {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff := &types.SchemaDiff{
+				TablesModified: []types.TableDiff{
+					{TableName: "posts", ColumnsModified: []types.ColumnDiff{
+						{ColumnName: "user_id", Changes: map[string]string{"type": "INTEGER -> BIGINT"}},
+					}},
+					{TableName: "comments", ColumnsModified: []types.ColumnDiff{
+						{ColumnName: "user_id", Changes: map[string]string{"type": "INTEGER -> BIGINT"}},
+					}},
+				},
+				ConstraintsAdded:   []string{"fk_shared"},
+				ConstraintsRemoved: []string{"fk_shared"},
+				ConstraintsAddedWithTables: []types.ConstraintAdditionInfo{{
+					Name: "fk_shared", TableName: "posts", Type: "FOREIGN KEY",
+					Columns: []string{"user_id"}, ForeignTable: "users", ForeignColumn: "id", OnDelete: "SET NULL",
+				}},
+				ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{{
+					Name: "fk_shared", TableName: "posts", Type: "FOREIGN KEY",
+				}},
+			}
+			generated := &goschema.Database{
+				Tables: []goschema.Table{
+					{Name: "users", StructName: "User"},
+					{Name: "posts", StructName: "Post"},
+					{Name: "comments", StructName: "Comment"},
+				},
+				Fields: []goschema.Field{
+					{Name: "id", Type: "BIGINT", StructName: "User", Primary: true},
+					{Name: "user_id", Type: "BIGINT", StructName: "Post", Nullable: true, Foreign: "users(id)", ForeignKeyName: "fk_shared", OnDelete: "SET NULL"},
+					{Name: "user_id", Type: "BIGINT", StructName: "Comment", Nullable: false, Foreign: "users(id)", ForeignKeyName: "fk_shared"},
+				},
+			}
+
+			sql := renderMySQLFamily(c, dialect, diff, generated)
+
+			// Both hosts dropped and recreated exactly once each.
+			c.Assert(strings.Count(sql, "ALTER TABLE posts DROP FOREIGN KEY fk_shared"), qt.Equals, 1,
+				qt.Commentf("posts key must be dropped once; got:\n%s", sql))
+			c.Assert(strings.Count(sql, "ALTER TABLE comments DROP FOREIGN KEY fk_shared"), qt.Equals, 1,
+				qt.Commentf("comments key must be dropped once (blocker 2); got:\n%s", sql))
+			c.Assert(strings.Count(sql, "ALTER TABLE posts ADD CONSTRAINT fk_shared"), qt.Equals, 1,
+				qt.Commentf("posts key must be recreated once; got:\n%s", sql))
+			c.Assert(strings.Count(sql, "ALTER TABLE comments ADD CONSTRAINT fk_shared"), qt.Equals, 1,
+				qt.Commentf("comments key must be recreated once (blocker 2); got:\n%s", sql))
+
+			// Each host's drop precedes its MODIFY and its re-add follows it.
+			assertContainsBefore(c, sql, "ALTER TABLE comments DROP FOREIGN KEY fk_shared", "ALTER TABLE comments MODIFY COLUMN user_id BIGINT")
+			assertContainsBefore(c, sql, "ALTER TABLE posts DROP FOREIGN KEY fk_shared", "ALTER TABLE posts MODIFY COLUMN user_id BIGINT")
+			assertContainsBefore(c, sql, "ALTER TABLE comments MODIFY COLUMN user_id BIGINT", "ALTER TABLE comments ADD CONSTRAINT fk_shared")
+			assertContainsBefore(c, sql, "ALTER TABLE posts MODIFY COLUMN user_id BIGINT", "ALTER TABLE posts ADD CONSTRAINT fk_shared")
+		})
+	}
+}
+
+// TestPlanner_ColumnTypeChange_RemovedOnlyForeignKey covers a foreign key that
+// is being dropped (removed-only, not in the additions) whose owning table also
+// has a column-type change. The key still exists in the database, so its bare
+// MODIFY would be rejected; it must be pre-dropped before the modification. It
+// has no re-add, and removeConstraints must not emit a second drop.
+func TestPlanner_ColumnTypeChange_RemovedOnlyForeignKey(t *testing.T) {
+	for _, dialect := range mysqlFamilyDialects {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff := &types.SchemaDiff{
+				TablesModified: []types.TableDiff{
+					{TableName: "posts", ColumnsModified: []types.ColumnDiff{
+						{ColumnName: "author_id", Changes: map[string]string{"type": "INTEGER -> BIGINT"}},
+					}},
+				},
+				ConstraintsRemoved: []string{"fk_posts_author"},
+				ConstraintsRemovedWithTables: []types.ConstraintRemovalInfo{
+					{Name: "fk_posts_author", TableName: "posts", Type: "FOREIGN KEY"},
+				},
+			}
+			generated := &goschema.Database{
+				Tables: []goschema.Table{
+					{Name: "users", StructName: "User"},
+					{Name: "posts", StructName: "Post"},
+				},
+				Fields: []goschema.Field{
+					{Name: "id", Type: "BIGINT", StructName: "User", Primary: true},
+					{Name: "author_id", Type: "BIGINT", StructName: "Post", Nullable: true},
+				},
+			}
+
+			sql := renderMySQLFamily(c, dialect, diff, generated)
+
+			// Dropped exactly once, before the MODIFY; never re-added.
+			c.Assert(strings.Count(sql, "DROP FOREIGN KEY fk_posts_author"), qt.Equals, 1,
+				qt.Commentf("removed-only FK must be dropped exactly once; got:\n%s", sql))
+			c.Assert(sql, qt.Not(qt.Contains), "ADD CONSTRAINT fk_posts_author")
+			assertContainsBefore(c, sql,
+				"ALTER TABLE posts DROP FOREIGN KEY fk_posts_author",
+				"ALTER TABLE posts MODIFY COLUMN author_id BIGINT;")
 		})
 	}
 }
