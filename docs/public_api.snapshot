@@ -162,6 +162,9 @@ type InExpr struct{ ... }
 type IndexNode struct{ ... }
     func NewIndex(name, table string, columns ...string) *IndexNode
 type IndexPart struct{ ... }
+type JoinClause struct{ ... }
+type JoinType int
+    const JoinInner JoinType = iota ...
 type LogicalExpr struct{ ... }
 type LogicalOperator int
     const LogicalAnd LogicalOperator = iota ...
@@ -539,6 +542,8 @@ func Lt(column string, value any) ast.Expression
 func Ne(column string, value any) ast.Expression
 func Not(expr ast.Expression) ast.Expression
 func Or(exprs ...ast.Expression) ast.Expression
+type Column struct{ ... }
+    func Col(qualifier, name string) Column
 type SelectBuilder struct{ ... }
     func Select(columns ...string) *SelectBuilder
 

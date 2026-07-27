@@ -8,22 +8,25 @@ statements. It is the DML counterpart to the DDL AST: a builder produces an
 `*ast.SelectStatement`, and `renderer.RenderSelect` turns that into a SQL string
 plus its positional arguments for PostgreSQL, MySQL, MariaDB, and SQLite.
 
-This is the first, bounded slice of the DML work in issue
+This is a bounded slice of the DML work in issue
 [`#98`](https://github.com/stokaro/ptah/issues/98). It exists so callers can stop
 hand-rolling dynamic `WHERE` / `ORDER BY` / `IN (…)` clauses with manual
 placeholder counters.
 
 ## Scope
 
-Implemented in this phase:
+Implemented so far:
 
-- single-table `SELECT` with an explicit column list or `*`;
-- a composable `WHERE` expression tree: `=`, `<>`, `<`, `<=`, `>`, `>=`, `IN`,
-  `IS NULL`, `IS NOT NULL`, and the boolean combinators `AND`, `OR`, `NOT`;
+- `SELECT` with an explicit column list or `*`;
+- `INNER`, `LEFT`, `RIGHT`, and `FULL OUTER` joins, with table aliases and
+  columns qualified by a table or alias (see [Joins](#joins));
+- a composable `WHERE` (and join `ON`) expression tree: `=`, `<>`, `<`, `<=`,
+  `>`, `>=`, `IN`, `IS NULL`, `IS NOT NULL`, and the boolean combinators `AND`,
+  `OR`, `NOT`;
 - `ORDER BY` with per-column `ASC`/`DESC`;
 - `LIMIT` and `OFFSET`.
 
-Not yet implemented (follow-up phases): `JOIN`, `GROUP BY`, `HAVING`, `DISTINCT`,
+Not yet implemented (follow-up phases): `GROUP BY`, `HAVING`, `DISTINCT`,
 subqueries, function calls, arithmetic, `LIKE`, and the `INSERT`/`UPDATE`/
 `DELETE` family.
 
@@ -109,19 +112,92 @@ total := query.Select("id").From("commodities").
 	Where(filter).Build()
 ```
 
+## Joins
+
+Alias the source table with `FromAs`, add joins with `InnerJoin`, `LeftJoin`,
+`RightJoin`, or `FullJoin`, and qualify columns with `Col` so they render as
+`"alias"."col"`. A qualified column works everywhere a column is accepted: the
+projection (via `.Columns`), the join `ON` condition, `WHERE`, and `ORDER BY`.
+
+A join `ON` is an ordinary expression, so an equi-join is
+`Col(left).EqCol(Col(right))` and richer predicates compose with `And`, `Or`, and
+`Not`. `Col(table, name)` also carries the comparison helpers (`Eq`, `Ne`, `Lt`,
+`Le`, `Gt`, `Ge`, `IsNull`, `IsNotNull`) and the ordering helpers (`Asc`, `Desc`)
+for the qualified column.
+
+```go
+stmt := query.Select().
+	Columns(query.Col("u", "id"), query.Col("u", "name"), query.Col("o", "total")).
+	FromAs("users", "u").
+	InnerJoin("orders", "o", query.Col("o", "user_id").EqCol(query.Col("u", "id"))).
+	Where(query.And(
+		query.Col("o", "status").Eq("paid"),
+		query.Col("u", "active").Eq(true),
+	)).
+	OrderBy(query.Col("u", "name").Asc()).
+	Limit(20).
+	Build()
+
+sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+```
+
+The PostgreSQL output is:
+
+```sql
+SELECT "u"."id", "u"."name", "o"."total"
+FROM "users" "u"
+INNER JOIN "orders" "o" ON "o"."user_id" = "u"."id"
+WHERE ("o"."status" = $1 AND "u"."active" = $2)
+ORDER BY "u"."name" ASC
+LIMIT $3
+```
+
+with `args` equal to `[]any{"paid", true, int64(20)}`. Tables render as
+`table alias` (no `AS`), which every supported dialect accepts. A value inside a
+join `ON` is bound **before** any `WHERE` value, because joins render first — so
+placeholder numbering still follows left-to-right emission order across `ON`,
+`WHERE`, and `LIMIT`/`OFFSET`.
+
+### Join-type support by dialect
+
+Not every dialect can express every join type. `RenderSelect` rejects an
+unsupported join at render time — returning a clear error — rather than emit SQL
+that fails at execution time against the database.
+
+| Join type | PostgreSQL family | MySQL / MariaDB | SQLite |
+| --- | --- | --- | --- |
+| `INNER` | yes | yes | yes |
+| `LEFT` | yes | yes | yes |
+| `RIGHT` | yes | yes | no (added in 3.39) |
+| `FULL OUTER` | yes | no (never supported) | no (added in 3.39) |
+
+- **SQLite** gained `RIGHT` and `FULL OUTER JOIN` only in version 3.39 (2022).
+  Because Ptah targets a range of SQLite versions and cannot assume 3.39+, both
+  are rejected (`renderer: SQLite does not support RIGHT JOIN`).
+- **MySQL and MariaDB** have no `FULL [OUTER] JOIN` in any version — it must be
+  emulated with a `UNION` of a `LEFT` and a `RIGHT` join — so `FULL` is rejected
+  (`renderer: mysql does not support FULL OUTER JOIN`). `RIGHT` renders normally.
+- The **PostgreSQL family** (including CockroachDB and YugabyteDB) supports all
+  four.
+
 ## Builder reference
 
 | Function | Result |
 | --- | --- |
 | `Select(cols ...string)` | Start a builder; `"*"` or no columns selects all. |
-| `.From(table)` | Set the single source table (required). |
+| `.Columns(cols ...Column)` | Append qualified columns (from `Col`) to the projection. |
+| `.From(table)` | Set the source table (required); clears any alias. |
+| `.FromAs(table, alias)` | Set the source table with an alias. |
+| `.InnerJoin` / `.LeftJoin` / `.RightJoin` / `.FullJoin` `(table, alias, on)` | Append a join with an `ON` condition. |
 | `.Where(expr)` | Set the filter expression; a later call replaces the earlier one. |
 | `.OrderBy(terms ...)` | Append sort terms across calls. |
 | `.Limit(n)` / `.Offset(n)` | Set bound row limit/offset. |
 | `.Build()` | Produce the `*ast.SelectStatement`. |
 
 Expression helpers: `Eq`, `Ne`, `Lt`, `Le`, `Gt`, `Ge`, `In`, `IsNull`,
-`IsNotNull`, `And`, `Or`, `Not`. Ordering helpers: `Asc`, `Desc`.
+`IsNotNull`, `And`, `Or`, `Not`. Ordering helpers: `Asc`, `Desc`. Qualified
+columns: `Col(table, name)`, with `.Eq`/`.Ne`/`.Lt`/`.Le`/`.Gt`/`.Ge`,
+`.EqCol` (column-to-column, for `ON`), `.IsNull`/`.IsNotNull`, and `.Asc`/`.Desc`.
 
 `renderer.RenderSelect(stmt, dialect)` returns `(sql string, args []any, err error)`.
 It returns an error for an unsupported dialect, a missing `FROM` table, an empty

@@ -70,11 +70,12 @@ triggers, row-level security policies, roles, grants, and routine placeholders
 where supported. It is not a full SQL parser for every dialect-specific
 sub-language.
 
-DML query building has a first, bounded slice: `core/query` builds
-parameterized single-table `SELECT` statements with a composable `WHERE`
-expression tree, `ORDER BY`, and `LIMIT`/`OFFSET`, rendered through
-`renderer.RenderSelect`. `JOIN`, `GROUP BY`, `HAVING`, subqueries, and the
-`INSERT`/`UPDATE`/`DELETE` family are follow-up phases of issue
+DML query building has a bounded slice: `core/query` builds parameterized
+`SELECT` statements with `INNER`/`LEFT`/`RIGHT`/`FULL OUTER` joins, table aliases
+and qualified columns, a composable `WHERE` (and join `ON`) expression tree,
+`ORDER BY`, and `LIMIT`/`OFFSET`, rendered through `renderer.RenderSelect`.
+`GROUP BY`, `HAVING`, subqueries, and the `INSERT`/`UPDATE`/`DELETE` family are
+follow-up phases of issue
 [`#98`](https://github.com/stokaro/ptah/issues/98). See the
 [Query Builder](../query-builder/) reference for the full API.
 
