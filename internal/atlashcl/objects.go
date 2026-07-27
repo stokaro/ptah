@@ -242,6 +242,7 @@ func (p *parser) parseRowSecurity(table *goschema.Table, block *hclsyntax.Block)
 	return goschema.RLSEnabledTable{
 		StructName: table.StructName,
 		Table:      table.QualifiedName(),
+		Comment:    p.optionalString(block.Body.Attributes["comment"]),
 	}, nil
 }
 
@@ -496,6 +497,7 @@ func (p *parser) rejectUnsupportedRowSecurityAttrs(block *hclsyntax.Block) error
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"enabled": true,
+		"comment": true,
 	}, "row_security")
 }
 

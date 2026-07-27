@@ -105,10 +105,8 @@ func (r *renderer) renderRowSecurity(rlsEnabled *goschema.RLSEnabledTable) {
 	}
 	r.line("  row_security {")
 	r.rawAttr(2, "enabled", "true")
+	r.stringAttr(2, "comment", rlsEnabled.Comment)
 	r.line("  }")
-	if rlsEnabled.Comment != "" {
-		r.warn("rls_enabled_tables."+rlsEnabled.Table, "RLS enablement comments cannot be represented in HCL schema row_security")
-	}
 }
 
 func (r *renderer) renderFunctions() {
