@@ -46,9 +46,16 @@ type Options struct {
 // managed column set (the union of the desired rows' columns plus the key
 // columns), computes the row-level diff, and renders it. The per-table up
 // scripts are concatenated in Table order and the down scripts in reverse Table
-// order, so that applying the whole up followed by the whole down is a
-// round-trip even when tables have inter-table foreign keys. Tables whose diff
-// is empty contribute nothing.
+// order, so that applying the whole up followed by the whole down restores the
+// original state (a net-state round-trip). Tables whose diff is empty contribute
+// nothing.
+//
+// Table order is alphabetical, not foreign-key-topological, so a migration that
+// deletes a parent table's rows before a child's, or inserts a child's before a
+// parent's, can hit a foreign-key violation at apply time. Each migration runs
+// in a transaction, so such a violation aborts cleanly with nothing applied;
+// FK-related managed tables may need manual reordering. Dependency-aware
+// ordering is a tracked follow-up.
 //
 // When no managed table has any changes, both returned strings are empty and
 // the caller writes nothing. A missing row-data file, a row missing a key
@@ -118,6 +125,19 @@ func renderTable(ctx context.Context, conn *dbschema.DatabaseConnection, dialect
 	live, err := dbschema.ReadTableRows(ctx, conn, "", md.Table, managedColumns(desired, md.Keys))
 	if err != nil {
 		return "", "", err
+	}
+
+	// With no desired rows the managed column set is just the keys, so every
+	// live row becomes a DELETE whose down re-inserts only the key columns —
+	// a rollback that drops (or, under NOT NULL, cannot restore) every other
+	// column. Rather than emit a knowingly-irreversible migration, refuse the
+	// empty-desired-but-populated-table case. Reconstructing the full row on
+	// rollback needs the table's whole column set and is a tracked follow-up;
+	// an empty desired set against an empty table is still a clean no-op.
+	if len(desired) == 0 && len(live) > 0 {
+		return "", "", fmt.Errorf(
+			"datamigrate: managed table %q has an empty desired row set but %d live row(s); a reversible full delete cannot be generated from the key columns alone — provide the desired rows or remove the annotation",
+			md.Table, len(live))
 	}
 
 	diff, err := datadiff.Compute(md.Table, md.Keys, desired, live)

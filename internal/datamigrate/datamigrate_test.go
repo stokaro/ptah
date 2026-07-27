@@ -10,6 +10,7 @@ import (
 
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/datamigrate"
+	"github.com/stokaro/ptah/migration/migrator"
 )
 
 // newRegionsConn opens an in-memory SQLite database and creates a "regions"
@@ -106,6 +107,81 @@ func TestGenerate_NoDriftYieldsEmpty(t *testing.T) {
 	})
 	root := t.TempDir()
 	writeRegionsFixture(t, root, driftDesiredRows)
+
+	up, down, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{RootDir: root})
+	c.Assert(err, qt.IsNil)
+	c.Assert(up, qt.Equals, "")
+	c.Assert(down, qt.Equals, "")
+}
+
+// TestGenerate_RoundTripApply proves reversibility against a real database:
+// applying up reaches the desired state and applying down restores the original,
+// splitting each script through the same connection-dialect splitter the
+// migrator uses.
+func TestGenerate_RoundTripApply(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+
+	conn := newRegionsConn(t, [][2]string{
+		{"US", "United States"},
+		{"CZ", "Czech Republic"},
+		{"XX", "Old Name"},
+	})
+	root := t.TempDir()
+	writeRegionsFixture(t, root, driftDesiredRows)
+
+	up, down, err := datamigrate.Generate(ctx, conn, datamigrate.Options{RootDir: root})
+	c.Assert(err, qt.IsNil)
+
+	apply := func(script string) {
+		for _, stmt := range migrator.SplitSQLStatementsForConnection(conn, script) {
+			_, execErr := conn.ExecContext(ctx, stmt)
+			c.Assert(execErr, qt.IsNil, qt.Commentf("stmt: %s", stmt))
+		}
+	}
+	readState := func() map[string]string {
+		rows, queryErr := conn.QueryContext(ctx, `SELECT code, name FROM regions ORDER BY code`)
+		c.Assert(queryErr, qt.IsNil)
+		defer func() { _ = rows.Close() }()
+		out := map[string]string{}
+		for rows.Next() {
+			var code, name string
+			c.Assert(rows.Scan(&code, &name), qt.IsNil)
+			out[code] = name
+		}
+		c.Assert(rows.Err(), qt.IsNil)
+		return out
+	}
+
+	apply(up)
+	c.Assert(readState(), qt.DeepEquals, map[string]string{
+		"US": "United States", "CZ": "Czechia", "DE": "Germany",
+	})
+
+	apply(down)
+	c.Assert(readState(), qt.DeepEquals, map[string]string{
+		"US": "United States", "CZ": "Czech Republic", "XX": "Old Name",
+	})
+}
+
+func TestGenerate_EmptyDesiredWithLiveRowsErrors(t *testing.T) {
+	c := qt.New(t)
+
+	conn := newRegionsConn(t, [][2]string{{"US", "United States"}})
+	root := t.TempDir()
+	writeRegionsFixture(t, root, "[]\n")
+
+	_, _, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{RootDir: root})
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "empty desired row set")
+}
+
+func TestGenerate_EmptyDesiredEmptyTableIsNoOp(t *testing.T) {
+	c := qt.New(t)
+
+	conn := newRegionsConn(t, nil)
+	root := t.TempDir()
+	writeRegionsFixture(t, root, "[]\n")
 
 	up, down, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{RootDir: root})
 	c.Assert(err, qt.IsNil)

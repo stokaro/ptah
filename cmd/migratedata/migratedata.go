@@ -35,7 +35,6 @@ type options struct {
 	version        string
 	description    string
 	dryRun         bool
-	schemas        string
 	connectTimeout string
 }
 
@@ -77,7 +76,6 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.version, versionFlag, "", "Migration version; defaults to one above the newest migration")
 	flags.StringVar(&opts.description, descriptionFlag, "data", "Migration description used in the file name")
 	flags.BoolVar(&opts.dryRun, dryRunFlag, false, "Print the migration SQL instead of writing files")
-	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 }
 
@@ -158,6 +156,9 @@ func resolveVersion(explicit, migrationsDir string) (int64, error) {
 	}
 
 	if explicit == "" {
+		if latest >= maxMigrationVersion {
+			return 0, fmt.Errorf("cannot derive a version: the newest migration %d is already at the maximum %d", latest, int64(maxMigrationVersion))
+		}
 		return latest + 1, nil
 	}
 
