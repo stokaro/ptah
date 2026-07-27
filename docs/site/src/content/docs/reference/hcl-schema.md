@@ -57,7 +57,7 @@ table "users" {
 | `table` | Table blocks with columns, primary keys, indexes, uniques, foreign keys, checks, and row security. |
 | `column` | `type`, `null`, `auto_increment`, `unique`, `unique_expr`, `default`, `check`, `check_name`, `identity` (with `options`), and comments. |
 | `primary_key` | `columns`; PostgreSQL also supports `include`. |
-| `index` | `columns`, `on { column = ... }`, `on { expr = ... }`, `desc`, `unique`, `type`, `where`, and PostgreSQL include/storage options. |
+| `index` | `columns`, `on { column = ... }`, `on { expr = ... }`, `desc`, `unique`, `type`, `where`, `comment`, and PostgreSQL include/storage options. |
 | `unique` | `columns`; PostgreSQL also supports `include` and `nulls_distinct`. |
 | `foreign_key` | One local `columns` entry and one table-qualified `ref_columns` entry. |
 | `check` | `expr`. |

@@ -248,6 +248,34 @@ func TestRenderMaterializedViewManualStrategyOmitsAttribute(t *testing.T) {
 	c.Assert(string(rendered.Data), qt.Not(qt.Contains), "refresh_strategy")
 }
 
+func TestRenderIndexCommentRoundTrip(t *testing.T) {
+	c := qt.New(t)
+	db := &goschema.Database{
+		Tables: []goschema.Table{{StructName: "User", Name: "users"}},
+		Fields: []goschema.Field{{StructName: "User", FieldName: "Email", Name: "email", Type: "text"}},
+		Indexes: []goschema.Index{{
+			StructName: "User",
+			TableName:  "users",
+			Name:       "idx_users_email",
+			Fields:     []string{"email"},
+			Comment:    "lookup by email",
+		}},
+	}
+	goschema.Finalize(db)
+
+	rendered, err := atlashclrender.Render(db)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.HasLen, 0)
+	hcl := string(rendered.Data)
+	c.Assert(hcl, qt.Contains, `comment = "lookup by email"`)
+
+	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", hcl))
+	c.Assert(parsed.Indexes, qt.HasLen, 1)
+	c.Assert(parsed.Indexes[0].Comment, qt.Equals, "lookup by email")
+}
+
 func TestRenderReportsPlatformOverrideDiagnostics(t *testing.T) {
 	c := qt.New(t)
 	db := &goschema.Database{
