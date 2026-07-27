@@ -3,7 +3,6 @@
 package gonative_test
 
 import (
-	"context"
 	"database/sql"
 	"testing"
 
@@ -141,17 +140,17 @@ func TestMySQLWriter_Integration(t *testing.T) {
 
 	t.Run("transaction lifecycle", func(t *testing.T) {
 		// Test successful transaction
-		tx, err := writer.BeginTransaction(context.Background())
+		tx, err := writer.BeginTransaction(t.Context())
 		c.Assert(err, qt.IsNil)
 
-		err = tx.ExecuteSQL(context.Background(), "SELECT 1")
+		err = tx.ExecuteSQL(t.Context(), "SELECT 1")
 		c.Assert(err, qt.IsNil)
 
 		err = tx.Commit()
 		c.Assert(err, qt.IsNil)
 
 		// Test rollback transaction
-		tx, err = writer.BeginTransaction(context.Background())
+		tx, err = writer.BeginTransaction(t.Context())
 		c.Assert(err, qt.IsNil)
 
 		err = tx.Rollback()
@@ -163,7 +162,7 @@ func TestMySQLWriter_Integration(t *testing.T) {
 		_, err := db.Exec("CREATE TABLE IF NOT EXISTS temp_test_table (id INT AUTO_INCREMENT PRIMARY KEY)")
 		c.Assert(err, qt.IsNil)
 
-		err = writer.DropAllTables()
+		err = writer.DropAllTables(t.Context())
 		c.Assert(err, qt.IsNil)
 
 		// Verify table was dropped

@@ -124,7 +124,7 @@ func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.Databa
 		return "", "", fmt.Errorf("checkpoint generation failed: shadow database dialect %q does not match target dialect %q", shadowConn.Info().Dialect, dialect)
 	}
 
-	if err := shadowConn.SchemaWriter().DropAllTables(); err != nil {
+	if err := shadowConn.SchemaWriter().DropAllTables(ctx); err != nil {
 		return "", "", fmt.Errorf("checkpoint generation failed: drop all objects: %w", err)
 	}
 	if err := resetBaselineShadowSchemas(ctx, shadowConn, opts.Schemas); err != nil {

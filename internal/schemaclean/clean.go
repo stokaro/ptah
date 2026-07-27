@@ -2,6 +2,7 @@
 package schemaclean
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -56,7 +57,7 @@ func Inspect(conn *dbschema.DatabaseConnection) (Plan, error) {
 	return PlanFromObjects(objects, dialect), nil
 }
 
-func Execute(conn *dbschema.DatabaseConnection, opts Options) (Plan, error) {
+func Execute(ctx context.Context, conn *dbschema.DatabaseConnection, opts Options) (Plan, error) {
 	plan, err := Inspect(conn)
 	if err != nil {
 		return Plan{}, err
@@ -64,15 +65,15 @@ func Execute(conn *dbschema.DatabaseConnection, opts Options) (Plan, error) {
 	if opts.DryRun {
 		return plan, nil
 	}
-	if err := Apply(conn); err != nil {
+	if err := Apply(ctx, conn); err != nil {
 		return Plan{}, err
 	}
 	return plan, nil
 }
 
-func Apply(conn *dbschema.DatabaseConnection) error {
+func Apply(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 	conn.SchemaWriter().SetDryRun(false)
-	if err := conn.SchemaWriter().DropAllTables(); err != nil {
+	if err := conn.SchemaWriter().DropAllTables(ctx); err != nil {
 		return fmt.Errorf("drop schema objects: %w", err)
 	}
 	return nil

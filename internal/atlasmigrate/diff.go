@@ -229,7 +229,7 @@ func verifyDirSum(migrationsDir string) error {
 }
 
 func replayDir(ctx context.Context, conn *dbschema.DatabaseConnection, migrationsDir string) error {
-	if err := conn.SchemaWriter().DropAllTables(); err != nil {
+	if err := conn.SchemaWriter().DropAllTables(ctx); err != nil {
 		return fmt.Errorf("clean dev database: %w", err)
 	}
 	provider, err := migrator.NewFSMigrationProvider(

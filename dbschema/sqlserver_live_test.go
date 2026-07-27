@@ -1,7 +1,6 @@
 package dbschema_test
 
 import (
-	"context"
 	"fmt"
 	"net/url"
 	"os"
@@ -25,7 +24,7 @@ func TestSQLServerLiveReadSchema(t *testing.T) {
 		t.Skip("set PTAH_SQLSERVER_TEST_URL to run SQL Server live schema tests")
 	}
 	c := qt.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
@@ -131,7 +130,7 @@ func TestSQLServerLiveDropAllTablesDropsForeignKeys(t *testing.T) {
 		t.Skip("set PTAH_SQLSERVER_TEST_URL to run SQL Server live schema tests")
 	}
 	c := qt.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	adminConn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
@@ -165,7 +164,7 @@ func TestSQLServerLiveDropAllTablesDropsForeignKeys(t *testing.T) {
 		c.Assert(err, qt.IsNil, qt.Commentf("statement failed:\n%s", stmt))
 	}
 
-	c.Assert(scopedConn.SchemaWriter().DropAllTables(), qt.IsNil)
+	c.Assert(scopedConn.SchemaWriter().DropAllTables(ctx), qt.IsNil)
 
 	schema, err := dbschema.ReadSchemaWithSchemas(scopedConn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
@@ -179,7 +178,7 @@ func TestSQLServerLiveRenderedUpsertMerge(t *testing.T) {
 		t.Skip("set PTAH_SQLSERVER_TEST_URL to run SQL Server live schema tests")
 	}
 	c := qt.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
@@ -229,7 +228,7 @@ func TestSQLServerLiveComputedColumnZeroDiff(t *testing.T) {
 		t.Skip("set PTAH_SQLSERVER_TEST_URL to run SQL Server live schema tests")
 	}
 	c := qt.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
@@ -281,7 +280,7 @@ func TestSQLServerLiveDropAllTablesRejectsExternalForeignKeys(t *testing.T) {
 		t.Skip("set PTAH_SQLSERVER_TEST_URL to run SQL Server live schema tests")
 	}
 	c := qt.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	adminConn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
@@ -318,7 +317,7 @@ func TestSQLServerLiveDropAllTablesRejectsExternalForeignKeys(t *testing.T) {
 		c.Assert(err, qt.IsNil, qt.Commentf("statement failed:\n%s", stmt))
 	}
 
-	err = scopedConn.SchemaWriter().DropAllTables()
+	err = scopedConn.SchemaWriter().DropAllTables(ctx)
 	c.Assert(err, qt.ErrorMatches, `sqlserver: cannot drop schema .* tables because external foreign keys reference them: .*fk_external_child_parent.*`)
 
 	schema, err := dbschema.ReadSchemaWithSchemas(scopedConn, []string{schemaName})
@@ -354,7 +353,7 @@ func sqlServerLiveTableExists(t *testing.T, conn *dbschema.DatabaseConnection, s
 	t.Helper()
 
 	var count int
-	err := conn.QueryRowContext(context.Background(), `
+	err := conn.QueryRowContext(t.Context(), `
 SELECT COUNT(*)
 FROM sys.tables AS t
 JOIN sys.schemas AS s ON s.schema_id = t.schema_id

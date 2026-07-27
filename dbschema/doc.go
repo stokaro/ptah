@@ -103,6 +103,11 @@
 //		log.Fatal(err)
 //	}
 //
+// Destructive administrative operations are context-aware as well. Call
+// writer.DropAllTables(ctx) with a context whose cancellation and deadline
+// should govern object discovery and destructive DDL. A dialect may briefly
+// outlive cancellation to restore connection-local safety settings.
+//
 // # Database Information
 //
 // Connection metadata is available through the Info() method:

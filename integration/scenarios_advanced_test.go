@@ -1,7 +1,6 @@
 package integration
 
 import (
-	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -20,13 +19,13 @@ func TestMigrationGeneratorValidation(t *testing.T) {
 	}
 
 	// Connect to database
-	ctx := context.Background()
+	ctx := t.Context()
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = conn.Close() }()
 
 	// Clean database before test
-	err = conn.SchemaWriter().DropAllTables()
+	err = conn.SchemaWriter().DropAllTables(ctx)
 	c.Assert(err, qt.IsNil)
 
 	// Run the migration generator validation test
@@ -46,13 +45,13 @@ func TestValidateSchemaConsistency(t *testing.T) {
 	}
 
 	// Connect to database
-	ctx := context.Background()
+	ctx := t.Context()
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = conn.Close() }()
 
 	// Clean database before test
-	err = conn.SchemaWriter().DropAllTables()
+	err = conn.SchemaWriter().DropAllTables(ctx)
 	c.Assert(err, qt.IsNil)
 
 	// Create versioned entity manager
@@ -80,13 +79,13 @@ func TestValidateEmptySchema(t *testing.T) {
 	}
 
 	// Connect to database
-	ctx := context.Background()
+	ctx := t.Context()
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = conn.Close() }()
 
 	// Clean database before test
-	err = conn.SchemaWriter().DropAllTables()
+	err = conn.SchemaWriter().DropAllTables(ctx)
 	c.Assert(err, qt.IsNil)
 
 	// Validate empty schema - should pass

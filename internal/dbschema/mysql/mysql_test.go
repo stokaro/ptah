@@ -443,33 +443,29 @@ func TestMySQLWriterConcurrentTransactions(t *testing.T) {
 	c.Assert(db.CommitCount()+db.RollbackCount(), qt.Equals, goroutines)
 }
 
-func TestMySQLWriterDropAllTablesCommitsOnSuccess(t *testing.T) {
+func TestMySQLWriterDropAllTablesSucceeds(t *testing.T) {
 	c := qt.New(t)
 	db := dbtest.OpenWithExec(t, mysqlDropAllQueryHandler, nil)
 	writer := NewMySQLWriter(db.SQL, "test")
 
-	c.Assert(writer.DropAllTables(), qt.IsNil)
-	c.Assert(db.BeginCount(), qt.Equals, 1)
+	c.Assert(writer.DropAllTables(t.Context()), qt.IsNil)
 	c.Assert(db.ExecCount(), qt.Equals, 3)
-	c.Assert(db.CommitCount(), qt.Equals, 1)
-	c.Assert(db.RollbackCount(), qt.Equals, 0)
 }
 
-func TestMySQLWriterDropAllTablesRollsBackOnFailure(t *testing.T) {
+func TestMySQLWriterDropAllTablesReturnsExecutionFailure(t *testing.T) {
 	c := qt.New(t)
-	db := dbtest.OpenWithExec(t, mysqlDropAllQueryHandler, func(query string, _ []driver.NamedValue) (driver.Result, error) {
-		if strings.Contains(query, "DROP TABLE") {
-			return nil, fmt.Errorf("boom")
-		}
-		return driver.RowsAffected(0), nil
-	})
+	db := dbtest.OpenWithExec(t, mysqlDropAllQueryHandler, mysqlDropAllExecutionFailureHandler)
 	writer := NewMySQLWriter(db.SQL, "test")
 
-	err := writer.DropAllTables()
+	err := writer.DropAllTables(t.Context())
 	c.Assert(err, qt.ErrorMatches, "failed to drop table users: SQL execution failed: boom\nSQL: DROP TABLE IF EXISTS `users`")
-	c.Assert(db.BeginCount(), qt.Equals, 1)
-	c.Assert(db.CommitCount(), qt.Equals, 0)
-	c.Assert(db.RollbackCount(), qt.Equals, 1)
+}
+
+func mysqlDropAllExecutionFailureHandler(query string, _ []driver.NamedValue) (driver.Result, error) {
+	if strings.Contains(query, "DROP TABLE") {
+		return nil, fmt.Errorf("boom")
+	}
+	return driver.RowsAffected(0), nil
 }
 
 func mysqlDropAllQueryHandler(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {

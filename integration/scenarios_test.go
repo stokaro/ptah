@@ -239,6 +239,7 @@ func TestMigrationPathForDialect(t *testing.T) {
 		{dialect: "cockroachdb", migrationType: "basic", expected: "migrations/basic"},
 		{dialect: "mysql", migrationType: "basic", expected: "migrations/basic_mysql"},
 		{dialect: "mariadb", migrationType: "failing", expected: "migrations/failing_mysql"},
+		{dialect: "clickhouse", migrationType: "basic", expected: "migrations/basic_clickhouse"},
 		{dialect: "sqlserver", migrationType: "basic", expected: "migrations/basic_sqlserver"},
 		{dialect: "mssql", migrationType: "failing", expected: "migrations/failing_sqlserver"},
 	}

@@ -144,7 +144,7 @@ func TestWriterDropAllTables(t *testing.T) {
 	)`)
 
 	writer := sqlite.NewSQLiteWriter(db, "main")
-	err := writer.DropAllTables()
+	err := writer.DropAllTables(t.Context())
 	c.Assert(err, qt.IsNil)
 
 	schema, err := sqlite.NewSQLiteReader(db, "main").ReadSchema()
