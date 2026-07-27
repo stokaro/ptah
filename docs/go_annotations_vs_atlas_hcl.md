@@ -59,20 +59,20 @@ directly from Ptah's IR:
 - PostgreSQL grants as Atlas `permission` blocks for table and schema targets
 - PostgreSQL functions with body, language, return type, simple argument
   blocks, security, volatility, and comments
-- PostgreSQL views and materialized views with query bodies and comments
+- PostgreSQL views and materialized views with query bodies, comments, and
+  materialized-view refresh strategies (`refresh_strategy`)
 - PostgreSQL triggers with timing/event blocks, `for`, body, and comments
 - PostgreSQL row-level security enablement as `table.row_security`
 - PostgreSQL row-level security policies
 
 Unsupported or lossy details are reported as export diagnostics on stderr.
 Examples include platform-specific overrides, table custom SQL, extension
-`if_not_exists`, role passwords, grantor metadata, non-manual
-materialized-view refresh strategies, RLS enablement comments, standalone
-sequence objects (`//migrator:schema:sequence`) and their grants, user-defined
-types (`//migrator:schema:domain` / `:composite` / `:range`), and function
-parameter strings that cannot be split into Atlas `arg` blocks without losing
-meaning. These warnings are intentional; the exporter must not silently drop
-schema intent.
+`if_not_exists`, role passwords, grantor metadata, RLS enablement comments,
+standalone sequence objects (`//migrator:schema:sequence`) and their grants,
+user-defined types (`//migrator:schema:domain` / `:composite` / `:range`), and
+function parameter strings that cannot be split into Atlas `arg` blocks without
+losing meaning. These warnings are intentional; the exporter must not silently
+drop schema intent.
 
 ## Cleanup Mode
 

@@ -205,10 +205,13 @@ func (r *renderer) renderMaterializedView(view goschema.MaterializedView) {
 		r.rawAttr(1, "schema", "schema."+schema)
 	}
 	r.stringAttr(1, "as", view.Body)
-	r.stringAttr(1, "comment", view.Comment)
+	// Emit refresh_strategy only when it differs from the canonical default so
+	// output stays minimal; the Ptah HCL parser defaults an absent attribute back
+	// to "manual", keeping this render/parse pair symmetric.
 	if view.RefreshStrategy != "" && view.RefreshStrategy != "manual" {
-		r.warn("materialized_views."+view.Name, "materialized view refresh strategy cannot be represented in PostgreSQL HCL schema output")
+		r.stringAttr(1, "refresh_strategy", view.RefreshStrategy)
 	}
+	r.stringAttr(1, "comment", view.Comment)
 	r.line("}")
 	r.line("")
 }
