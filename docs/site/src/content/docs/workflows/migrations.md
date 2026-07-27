@@ -104,6 +104,12 @@ Assert migration behavior with declarative test cases: `ptah migrations test`
 applies the directory to a throwaway database and checks the result. See
 [Testing](../testing/).
 
+## Reference data
+
+Reconcile reference/lookup tables from a declared desired row state rather than
+one-off SQL: `ptah migrations data` diffs declarative rows against the live table
+and writes a reversible data migration. See [Reference data](../reference-data/).
+
 ## Safety gates
 
 Use dry-run and lint before applying to shared environments:
