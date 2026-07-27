@@ -9,11 +9,16 @@ package ast
 // Phase 1 modeled SELECT / WHERE / ORDER BY / LIMIT / OFFSET over a single
 // table. Phase 2 adds JOINs: a table alias on the FROM clause, an optional
 // qualifier on ColumnRef / ResultColumn / OrderByClause so a column can render
-// as "alias"."col", and a JoinClause list on SelectStatement. GROUP BY, HAVING,
-// DISTINCT, subqueries, functions, and arithmetic remain follow-up phases. The
-// types are shaped so those extensions slot in without breaking callers (for
-// example, Comparison takes Expression operands on both sides rather than a bare
-// column string, so a JOIN ON can compare two columns directly).
+// as "alias"."col", and a JoinClause list on SelectStatement. Phase 3 adds
+// DISTINCT, GROUP BY, HAVING, and aggregate functions: a Distinct flag, a
+// GroupBy column list, and a Having expression on SelectStatement; a general
+// FuncCall expression node for COUNT / SUM / AVG / MIN / MAX; and an optional
+// Expr (and Alias) on ResultColumn so a projection entry can be an expression
+// rather than a plain column. Non-aggregate functions, arithmetic, LIKE,
+// subqueries, and window functions remain follow-up phases. The types are shaped
+// so those extensions slot in without breaking callers (for example, Comparison
+// takes Expression operands on both sides rather than a bare column string, so a
+// HAVING can compare an aggregate against a bound value directly).
 
 // Expression is a boolean or scalar expression used in DML statements such as
 // the WHERE clause of a SELECT.
@@ -181,6 +186,37 @@ type NotExpr struct {
 
 func (*NotExpr) expressionNode() {}
 
+// FuncCall is a function-call expression, such as an aggregate: COUNT(*),
+// COUNT("col"), COUNT(DISTINCT "col"), or SUM("col"). It is shaped as a general
+// function call so non-aggregate functions can reuse it in a later phase.
+//
+// The function is usable anywhere an Expression is: in a projection (via
+// ResultColumn.Expr) and in a HAVING comparison (as an operand of Comparison).
+// Name is a bare SQL keyword emitted verbatim, never quoted and never bound — the
+// renderer rejects a Name that is not a simple identifier so a caller cannot
+// smuggle SQL through it. Args are ordinary expressions, so a column argument is
+// quoted through the identifier path and a value argument is bound as a
+// placeholder.
+type FuncCall struct {
+	// Name is the function name, emitted verbatim as a keyword. Required. It must
+	// be a simple identifier — a letter or underscore followed by letters, digits,
+	// or underscores — and the renderer rejects anything else rather than quote a
+	// function name.
+	Name string
+	// Args are the function arguments, each an expression. A column argument is
+	// quoted; a value argument is bound. Ignored when Star is true.
+	Args []Expression
+	// Star renders the argument list as a single "*", as in COUNT(*). When Star is
+	// true, Args must be empty and Distinct must be false; the renderer rejects
+	// either combination rather than emit invalid SQL.
+	Star bool
+	// Distinct emits the DISTINCT keyword before the arguments, as in
+	// COUNT(DISTINCT "col").
+	Distinct bool
+}
+
+func (*FuncCall) expressionNode() {}
+
 // SortDirection is the direction of an ORDER BY term.
 type SortDirection int
 
@@ -218,18 +254,28 @@ type OrderByClause struct {
 
 // ResultColumn is one entry in a SELECT projection.
 //
-// When Star is true the entry renders as "*" (select all columns) and Name and
-// Qualifier are ignored; otherwise Name renders as a dialect-quoted identifier,
-// prefixed by "Qualifier". when Qualifier is set.
+// When Expr is set the entry renders that expression (for example an aggregate)
+// and Qualifier, Name, and Star are ignored. Otherwise, when Star is true the
+// entry renders as "*" (select all columns) and Name and Qualifier are ignored;
+// otherwise Name renders as a dialect-quoted identifier, prefixed by
+// "Qualifier". when Qualifier is set. When Alias is set the entry is followed by
+// AS and the quoted alias. A zero ResultColumn leaves Expr nil and Alias empty,
+// so the Phase 1 and Phase 2 rendering is preserved unchanged.
 type ResultColumn struct {
+	// Expr is an optional projected expression, such as a FuncCall aggregate. When
+	// non-nil it is rendered instead of Qualifier, Name, and Star.
+	Expr Expression
 	// Qualifier is the optional table name or alias qualifying the column,
 	// quoted independently. An empty Qualifier renders a bare column name. It is
-	// ignored when Star is true.
+	// ignored when Star is true or Expr is set.
 	Qualifier string
-	// Name is the column name, used when Star is false.
+	// Name is the column name, used when Star is false and Expr is nil.
 	Name string
-	// Star selects all columns (SELECT *).
+	// Star selects all columns (SELECT *). Ignored when Expr is set.
 	Star bool
+	// Alias is an optional output-column alias, rendered as `AS "alias"` with the
+	// alias quoted independently. An empty Alias renders no alias.
+	Alias string
 }
 
 // JoinType enumerates the join kinds supported in Phase 2.
@@ -285,13 +331,16 @@ type JoinClause struct {
 }
 
 // SelectStatement is a SELECT over a source table and zero or more joins, with
-// an optional WHERE clause, ORDER BY terms, and LIMIT/OFFSET bounds.
+// an optional DISTINCT, WHERE clause, GROUP BY / HAVING, ORDER BY terms, and
+// LIMIT/OFFSET bounds.
 //
-// GROUP BY, HAVING, DISTINCT, subqueries, functions, and arithmetic are not
-// modeled yet. Render it with renderer.RenderSelect, which returns the SQL
-// string and its positional arguments. Build one fluently with the core/query
-// package.
+// Subqueries, non-aggregate functions, arithmetic, and window functions are not
+// modeled yet. Render it with renderer.RenderSelect, which returns the SQL string
+// and its positional arguments. Build one fluently with the core/query package.
 type SelectStatement struct {
+	// Distinct renders SELECT DISTINCT, deduplicating result rows. It defaults to
+	// false, so a zero statement renders a plain SELECT unchanged.
+	Distinct bool
 	// Columns is the projection. An empty slice renders as "*".
 	Columns []ResultColumn
 	// From is the source table, rendered as a quoted identifier. Required.
@@ -304,6 +353,14 @@ type SelectStatement struct {
 	Joins []JoinClause
 	// Where is the optional filter expression tree; nil means no WHERE clause.
 	Where Expression
+	// GroupBy is the optional list of GROUP BY columns, rendered after WHERE. Each
+	// column may be qualified. An empty slice renders no GROUP BY. Columns carry no
+	// bound values, so they do not affect placeholder numbering.
+	GroupBy []ColumnRef
+	// Having is the optional filter over grouped rows, rendered after GROUP BY; nil
+	// means no HAVING. Its bound values are numbered after the WHERE clause and
+	// before LIMIT/OFFSET.
+	Having Expression
 	// OrderBy is the optional list of sort terms, applied in order.
 	OrderBy []OrderByClause
 	// Limit is the optional row limit; nil means no LIMIT. The value is bound.

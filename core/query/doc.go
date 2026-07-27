@@ -10,11 +10,13 @@
 // # Scope
 //
 // This package models a SELECT with a FROM table, INNER / LEFT / RIGHT / FULL
-// OUTER joins, a composable WHERE expression tree, ORDER BY, LIMIT, and OFFSET.
-// Tables can be aliased (FromAs and the alias argument of the join methods) and
-// columns can be qualified by a table or alias with Col, so a projection, WHERE,
-// join ON, or ORDER BY term can render as "alias"."col". GROUP BY, HAVING,
-// DISTINCT, subqueries, functions, arithmetic, and LIKE are intentionally not
+// OUTER joins, a composable WHERE expression tree, DISTINCT, GROUP BY, HAVING,
+// aggregate functions (COUNT / SUM / AVG / MIN / MAX), ORDER BY, LIMIT, and
+// OFFSET. Tables can be aliased (FromAs and the alias argument of the join
+// methods) and columns can be qualified by a table or alias with Col, so a
+// projection, WHERE, join ON, GROUP BY, HAVING, or ORDER BY term can render as
+// "alias"."col". Non-aggregate function calls, arithmetic, LIKE, subqueries,
+// window functions, and the INSERT / UPDATE / DELETE family are intentionally not
 // implemented yet and are tracked as follow-up phases.
 //
 // # Safety model
@@ -100,4 +102,35 @@
 // MySQL and MariaDB have no FULL OUTER JOIN in any version. In short, FULL OUTER
 // renders only on the PostgreSQL family; RIGHT renders everywhere except SQLite;
 // INNER and LEFT render on every supported dialect.
+//
+// # Aggregates, GROUP BY, and HAVING
+//
+// Distinct renders SELECT DISTINCT. GroupBy adds GROUP BY columns (qualified with
+// Col, or bare with Col("", name)). The aggregate constructors — CountStar,
+// Count, CountDistinct, Sum, Avg, Min, and Max, plus the matching methods on Col
+// for qualified columns — return expressions usable in two places: a projection
+// (via Exprs, or ExprAs to attach an AS alias) and a HAVING predicate. Because a
+// HAVING predicate compares an aggregate against a value, wrap the aggregate with
+// Expr to reach the comparison helpers: Expr(CountStar()).Gt(int64(5)).
+//
+//	stmt := query.Select("status").
+//		ExprAs(query.CountStar(), "n").
+//		From("orders").
+//		Where(query.Eq("tenant_id", tenantID)).
+//		GroupBy(query.Col("", "status")).
+//		Having(query.Expr(query.CountStar()).Gt(int64(5))).
+//		OrderBy(query.Asc("status")).
+//		Limit(10).
+//		Build()
+//
+//	sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
+//	// sql:  SELECT "status", COUNT(*) AS "n" FROM "orders" WHERE "tenant_id" = $1
+//	//       GROUP BY "status" HAVING COUNT(*) > $2 ORDER BY "status" ASC LIMIT $3
+//	// args: []any{tenantID, int64(5), int64(10)}
+//
+// GROUP BY carries only identifiers and binds nothing; a HAVING value is bound
+// after every WHERE value and before LIMIT/OFFSET, so placeholder numbering still
+// follows left-to-right emission order. A function name (COUNT, SUM, …) is a
+// keyword emitted verbatim and never quoted; the renderer rejects a name that is
+// not a simple identifier rather than emit it.
 package query
