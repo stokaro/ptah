@@ -1096,11 +1096,10 @@ type ManagedData struct {
 	Schema     string   // Database schema the table belongs to; empty targets the connection's default schema
 	Keys       []string // Key column(s) forming each row's logical identity (parsed from the comma-separated "key" attribute)
 	File       string   // Path to the YAML row-data file, verbatim, relative to SourceDir
-	// SourceDir is the parse-root-relative directory of the Go source file that
-	// carried the annotation, recorded at parse time. Combined with the parse
-	// root, it lets LoadManagedRows resolve File even after a ParseDir tree walk
-	// spanning subdirectories, where a caller holding the merged Database could
-	// not otherwise know which subdirectory each entry came from.
+	// SourceDir identifies the directory of the Go source file that carried the
+	// annotation. ParseDir and ParseDirRaw store an absolute directory so each
+	// entry retains its root after composite merging. ParseFS and ParseSource
+	// retain a filesystem-relative directory because they have no host root.
 	SourceDir string
 }
 

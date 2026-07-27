@@ -73,10 +73,10 @@ func testSchemaDiff(ctx context.Context, conn *dbschema.DatabaseConnection, fixt
 	}
 
 	// Parse entity definitions
-	entitiesDir := path.Join("fixtures", "entities")
+	entitiesDir := path.Join("fixtures", "entities", "000-initial")
 	if _, err := os.Stat(entitiesDir); os.IsNotExist(err) {
 		// Fallback to local development path
-		entitiesDir = "integration/fixtures/entities"
+		entitiesDir = "integration/fixtures/entities/000-initial"
 	}
 	entityResult, err := goschema.ParseDir(entitiesDir)
 	if err != nil {

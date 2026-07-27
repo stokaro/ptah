@@ -143,12 +143,14 @@ func loadContext(ctx context.Context, opts Options) (*goschema.Database, error) 
 		}
 		for _, absPath := range absRoots {
 			opts.logf("Scanning directory: %s", absPath)
+			goDB, err := goschema.ParseDirRaw(absPath)
+			if err != nil {
+				return nil, fmt.Errorf("error parsing packages: %w", err)
+			}
+			// Preserve each root as one source so Merge can distinguish an
+			// internal cross-file duplicate from a cross-source conflict.
+			sources = append(sources, goDB)
 		}
-		goDB, err := goschema.ParseDirRaw(absRoots...)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing packages: %w", err)
-		}
-		sources = append(sources, goDB)
 	}
 	for _, schemaFile := range schemaFiles {
 		fileDB, err := opts.loadSchemaFile(ctx, schemaFile)

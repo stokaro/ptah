@@ -18,9 +18,11 @@ used as a Ptah schema source.
 go run ./cmd schema render --schema-file schema.hcl --dialect postgres
 ```
 
-`--schema-file` accepts `.hcl` files for HCL schema input, plus `.yaml` and
-`.yml` files for YAML input. When it is set, `--root-dir` is ignored. If
-`--dialect` is omitted, Ptah renders every supported dialect.
+`--schema-file` accepts `.hcl`, `.yaml`, `.yml`, and `.sql` inputs and is
+repeatable. It can be combined with repeatable `--root-dir` values; Ptah merges
+all inputs into one desired schema, deduplicates identical named objects, and
+rejects conflicting definitions. If `--dialect` is omitted, Ptah renders every
+supported dialect.
 
 ## Supported Shape
 
