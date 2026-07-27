@@ -200,6 +200,15 @@ func TestSplitSQLStatements(t *testing.T) {
 	}
 }
 
+func TestSplitSQLStatementsForConnection_NilFallback(t *testing.T) {
+	c := qt.New(t)
+
+	// A nil connection falls back to the dialect-blind split, matching
+	// SplitSQLStatements exactly.
+	sql := "CREATE TABLE users (id SERIAL PRIMARY KEY); CREATE INDEX idx ON users(id);"
+	c.Assert(SplitSQLStatementsForConnection(nil, sql), qt.DeepEquals, SplitSQLStatements(sql))
+}
+
 func TestSplitSQLStatements_AtlasDelimiterBeforeCommentStripping(t *testing.T) {
 	c := qt.New(t)
 

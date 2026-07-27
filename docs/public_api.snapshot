@@ -767,6 +767,7 @@ func ParseFileDirectives(sql string) map[string]string
 func ParseMigrationLockTimeout(value string) (time.Duration, error)
 func RenderAtlasTemplateSQL(fsys fs.FS, filename string, data any) (sql string, rendered bool, err error)
 func SplitSQLStatements(sql string) []string
+func SplitSQLStatementsForConnection(conn *dbschema.DatabaseConnection, sql string) []string
 func ValidateMigrationFileName(filename string) bool
 func ValidateMigrationPairs(pairs map[int64]MigrationPair) []int64
 type AtlasDownNotImplementedError struct{ ... }

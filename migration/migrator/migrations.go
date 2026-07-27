@@ -23,6 +23,18 @@ func SplitSQLStatements(sql string) []string {
 	return sqlutil.SplitSQLStatements(sqlutil.StripComments(normalized))
 }
 
+// SplitSQLStatementsForConnection splits sql into individual statements using
+// the connection's dialect, so string-literal boundaries are scanned correctly
+// for that engine (a backslash is a C-style escape only for MySQL/MariaDB/
+// ClickHouse). Callers that execute the resulting statements one by one against
+// a live connection — for example the seeder — should use this rather than the
+// dialect-blind [SplitSQLStatements], so a semicolon inside a backslash-escaped
+// literal cannot leak out into a separately-executed statement. A nil
+// connection falls back to the dialect-blind split.
+func SplitSQLStatementsForConnection(conn *dbschema.DatabaseConnection, sql string) []string {
+	return splitSQLStatementsForConnection(conn, sql)
+}
+
 func splitSQLStatementsForConnection(conn *dbschema.DatabaseConnection, sql string) []string {
 	if conn == nil {
 		return SplitSQLStatements(sql)
@@ -586,7 +598,10 @@ func parseNoTransactionDirectiveFromSQL(sql string) (bool, error) {
 }
 
 func hasAtlasTxModeNoneDirective(sql string) bool {
-	lexr := lexer.NewLexer(sql)
+	// Match the dialect-blind SplitSQLStatements string handling so a
+	// `-- atlas:txmode none` sequence inside a string literal is not mistaken
+	// for the directive.
+	lexr := lexer.NewLexerWithOptions(sql, lexer.Options{StandardStrings: true})
 	for {
 		tok := lexr.NextToken()
 		if tok.Type == lexer.TokenEOF {
