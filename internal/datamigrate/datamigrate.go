@@ -22,6 +22,7 @@ import (
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/migration/datadiff"
+	"github.com/stokaro/ptah/migration/safety"
 )
 
 // Options configures [Generate].
@@ -35,6 +36,23 @@ type Options struct {
 	// empty the dialect reported by the connection is used, matching how the
 	// command infers it from --db-url.
 	Dialect string
+	// AllowDestructive permits generating a migration whose up body updates or
+	// deletes existing rows. When false (the default) any update or delete makes
+	// Generate refuse with a summary of the destructive volume. A data migration
+	// is applied through the ordinary migration path, where neither the lint nor
+	// the safety gate classifies row INSERT/UPDATE/DELETE as destructive, so this
+	// generate-time gate is the only guard standing between a stray diff and a
+	// mass row deletion or overwrite at apply time. Insert-only migrations are
+	// additive and are never gated.
+	AllowDestructive bool
+	// ProtectedTables lists managed tables that require AllowProd before a
+	// generated migration may change them at all (insert, update, or delete),
+	// mirroring the protected-target posture of migration/seeder. Matching is
+	// case-insensitive. Only tables the migration would actually change are
+	// considered, so protecting a table with no drift is a no-op.
+	ProtectedTables []string
+	// AllowProd permits changing a protected table.
+	AllowProd bool
 }
 
 // Generate composes the full data-migration pipeline against conn and returns a
@@ -61,6 +79,14 @@ type Options struct {
 // the caller writes nothing. A missing row-data file, a row missing a key
 // column, or an unrenderable value surfaces as an error naming the offending
 // input.
+//
+// Two generate-time safety gates guard the change set once it is computed but
+// before any SQL is returned, so they apply equally to a dry run and to a
+// written migration. Unless opts.AllowDestructive is set, a change set that
+// updates or deletes any existing row is refused with a per-table summary;
+// unless opts.AllowProd is set, a change set that touches any opts.ProtectedTables
+// entry is refused. See [Options] for why these live here rather than on the
+// apply path.
 //
 // The table is read with an empty schema argument: a datadiff.DataDiff carries
 // no schema, so both the read and the rendered DML target the connection's
@@ -92,39 +118,64 @@ func Generate(ctx context.Context, conn *dbschema.DatabaseConnection, opts Optio
 	})
 
 	var ups, downs []string
+	var changes []tableChange
 	for _, md := range managed {
-		up, down, err := renderTable(ctx, conn, dialect, opts.RootDir, md)
+		rendered, err := renderTable(ctx, conn, dialect, opts.RootDir, md)
 		if err != nil {
 			return "", "", err
 		}
-		if up == "" {
+		if rendered.up == "" {
 			// An empty diff renders as empty up and down together, so there is
 			// nothing to reverse for this table.
 			continue
 		}
-		ups = append(ups, tableBlock(md.Table, up))
-		downs = append(downs, tableBlock(md.Table, down))
+		ups = append(ups, tableBlock(md.Table, rendered.up))
+		downs = append(downs, tableBlock(md.Table, rendered.down))
+		changes = append(changes, tableChange{table: md.Table, updates: len(rendered.diff.Updates), deletes: len(rendered.diff.Deletes)})
 	}
 
 	if len(ups) == 0 {
 		return "", "", nil
 	}
 
+	if err := checkPolicy(changes, opts); err != nil {
+		return "", "", err
+	}
+
 	slices.Reverse(downs)
 	return strings.Join(ups, "\n"), strings.Join(downs, "\n"), nil
 }
 
+// tableChange records how many rows a single managed table's diff would update
+// and delete, the two operations the destructive gate cares about. Inserts are
+// additive and are not tracked here.
+type tableChange struct {
+	table   string
+	updates int
+	deletes int
+}
+
+// tableRender is a single managed table's rendered migration together with the
+// diff it came from, so the caller can both concatenate the scripts and assess
+// the change volume. An empty up means the table had no drift.
+type tableRender struct {
+	up   string
+	down string
+	diff *datadiff.DataDiff
+}
+
 // renderTable runs the pipeline for a single managed table: load desired rows,
-// read the live rows for the managed columns, diff, and render.
-func renderTable(ctx context.Context, conn *dbschema.DatabaseConnection, dialect, rootDir string, md goschema.ManagedData) (up, down string, err error) {
+// read the live rows for the managed columns, diff, and render. On error it
+// returns the zero tableRender.
+func renderTable(ctx context.Context, conn *dbschema.DatabaseConnection, dialect, rootDir string, md goschema.ManagedData) (tableRender, error) {
 	desired, err := goschema.LoadManagedRows(rootDir, md)
 	if err != nil {
-		return "", "", err
+		return tableRender{}, err
 	}
 
 	live, err := dbschema.ReadTableRows(ctx, conn, "", md.Table, managedColumns(desired, md.Keys))
 	if err != nil {
-		return "", "", err
+		return tableRender{}, err
 	}
 
 	// With no desired rows the managed column set is just the keys, so every
@@ -135,16 +186,106 @@ func renderTable(ctx context.Context, conn *dbschema.DatabaseConnection, dialect
 	// rollback needs the table's whole column set and is a tracked follow-up;
 	// an empty desired set against an empty table is still a clean no-op.
 	if len(desired) == 0 && len(live) > 0 {
-		return "", "", fmt.Errorf(
+		return tableRender{}, fmt.Errorf(
 			"datamigrate: managed table %q has an empty desired row set but %d live row(s); a reversible full delete cannot be generated from the key columns alone — provide the desired rows or remove the annotation",
 			md.Table, len(live))
 	}
 
 	diff, err := datadiff.Compute(md.Table, md.Keys, desired, live)
 	if err != nil {
-		return "", "", err
+		return tableRender{}, err
 	}
-	return datadiff.Render(diff, dialect)
+	up, down, err := datadiff.Render(diff, dialect)
+	if err != nil {
+		return tableRender{}, err
+	}
+	return tableRender{up: up, down: down, diff: diff}, nil
+}
+
+// checkPolicy enforces the generate-time safety gates over the tables the
+// migration would change. Protected-table refusal takes precedence over the
+// destructive gate so that a run against a protected target reports the
+// protection first, regardless of whether the change also happens to be
+// destructive.
+func checkPolicy(changes []tableChange, opts Options) error {
+	if err := checkProtected(changes, opts); err != nil {
+		return err
+	}
+	return checkDestructive(changes, opts)
+}
+
+// checkProtected refuses to change any table named in opts.ProtectedTables
+// unless opts.AllowProd is set. Only tables that the migration would actually
+// change are examined, matched case-insensitively.
+func checkProtected(changes []tableChange, opts Options) error {
+	if opts.AllowProd || len(opts.ProtectedTables) == 0 {
+		return nil
+	}
+
+	protected := make(map[string]string, len(opts.ProtectedTables))
+	for _, table := range opts.ProtectedTables {
+		if table = strings.TrimSpace(table); table != "" {
+			protected[strings.ToLower(table)] = table
+		}
+	}
+
+	var matched []string
+	for _, change := range changes {
+		if original, ok := protected[strings.ToLower(change.table)]; ok {
+			matched = append(matched, original)
+		}
+	}
+	slices.Sort(matched)
+	if len(matched) > 0 {
+		return fmt.Errorf("datamigrate: refusing to modify protected table(s) %s; pass --allow-prod to override", strings.Join(matched, ", "))
+	}
+	return nil
+}
+
+// checkDestructive refuses a change set that updates or deletes existing rows
+// unless opts.AllowDestructive is set. The destructive volume is expressed in
+// the shared migration/safety vocabulary so the gate reuses the same
+// destructive-severity definition as the DDL safety report.
+func checkDestructive(changes []tableChange, opts Options) error {
+	if opts.AllowDestructive {
+		return nil
+	}
+
+	var updates, deletes int
+	var details []string
+	for _, change := range changes {
+		if change.updates == 0 && change.deletes == 0 {
+			continue
+		}
+		updates += change.updates
+		deletes += change.deletes
+		details = append(details, fmt.Sprintf("%q (%d update(s), %d delete(s))", change.table, change.updates, change.deletes))
+	}
+
+	if !safety.HasDestructive(destructiveFindings(updates, deletes)) {
+		return nil
+	}
+	return fmt.Errorf(
+		"datamigrate: refusing to generate a destructive data migration that would change existing rows in %s; pass --allow-destructive after reviewing the change",
+		strings.Join(details, ", "))
+}
+
+// destructiveFindings expresses the destructive row-change volume in the shared
+// migration/safety vocabulary, mirroring safety.ClassifySchemaDiff for DDL: an
+// UPDATE overwrites existing row data and a DELETE removes rows, so both are
+// destructive; INSERTs are additive and contribute no finding.
+func destructiveFindings(updates, deletes int) []safety.Finding {
+	var findings []safety.Finding
+	addFinding(&findings, "data_rows_updated", updates)
+	addFinding(&findings, "data_rows_deleted", deletes)
+	return findings
+}
+
+func addFinding(findings *[]safety.Finding, category string, count int) {
+	if count == 0 {
+		return
+	}
+	*findings = append(*findings, safety.Finding{Category: category, Count: count, Severity: safety.Destructive})
 }
 
 // managedColumns returns the distinct, sorted set of columns Ptah manages for a

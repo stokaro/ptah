@@ -79,7 +79,7 @@ func TestGenerate_ComputesReversibleDataMigration(t *testing.T) {
 	root := t.TempDir()
 	writeRegionsFixture(t, root, driftDesiredRows)
 
-	up, down, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{RootDir: root})
+	up, down, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{RootDir: root, AllowDestructive: true})
 	c.Assert(err, qt.IsNil)
 
 	// Up reaches the desired state.
@@ -130,7 +130,7 @@ func TestGenerate_RoundTripApply(t *testing.T) {
 	root := t.TempDir()
 	writeRegionsFixture(t, root, driftDesiredRows)
 
-	up, down, err := datamigrate.Generate(ctx, conn, datamigrate.Options{RootDir: root})
+	up, down, err := datamigrate.Generate(ctx, conn, datamigrate.Options{RootDir: root, AllowDestructive: true})
 	c.Assert(err, qt.IsNil)
 
 	apply := func(script string) {
@@ -194,4 +194,148 @@ func TestGenerate_NilConnection(t *testing.T) {
 
 	_, _, err := datamigrate.Generate(context.Background(), nil, datamigrate.Options{RootDir: t.TempDir()})
 	c.Assert(err, qt.ErrorMatches, `datamigrate: a database connection is required`)
+}
+
+// insertOnlyDesiredRows keeps the live US row unchanged and adds DE, so the
+// diff is a single additive INSERT with no update or delete.
+const insertOnlyDesiredRows = `
+- code: US
+  name: United States
+- code: DE
+  name: Germany
+`
+
+func TestGenerate_DestructiveRefusedByDefault(t *testing.T) {
+	c := qt.New(t)
+
+	// driftDesiredRows updates CZ and deletes XX against this live state.
+	conn := newRegionsConn(t, [][2]string{
+		{"US", "United States"},
+		{"CZ", "Czech Republic"},
+		{"XX", "Old Name"},
+	})
+	root := t.TempDir()
+	writeRegionsFixture(t, root, driftDesiredRows)
+
+	_, _, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{RootDir: root})
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "destructive")
+	c.Assert(err.Error(), qt.Contains, "--allow-destructive")
+	// The summary names the affected table and its update/delete volume.
+	c.Assert(err.Error(), qt.Contains, `"regions" (1 update(s), 1 delete(s))`)
+}
+
+func TestGenerate_InsertOnlyAllowedWithoutFlag(t *testing.T) {
+	c := qt.New(t)
+
+	// Only US exists live; the desired set keeps US and adds DE, so the diff is
+	// insert-only and the destructive gate must not fire.
+	conn := newRegionsConn(t, [][2]string{{"US", "United States"}})
+	root := t.TempDir()
+	writeRegionsFixture(t, root, insertOnlyDesiredRows)
+
+	up, down, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{RootDir: root})
+	c.Assert(err, qt.IsNil)
+	c.Assert(up, qt.Contains, `INSERT INTO "regions" ("code", "name") VALUES ('DE', 'Germany');`)
+	c.Assert(down, qt.Contains, `DELETE FROM "regions" WHERE "code" = 'DE';`)
+	// An insert-only up contains no destructive statement.
+	c.Assert(up, qt.Not(qt.Contains), "DELETE")
+	c.Assert(up, qt.Not(qt.Contains), "UPDATE")
+}
+
+func TestGenerate_ProtectedTableRefused(t *testing.T) {
+	c := qt.New(t)
+
+	// Insert-only drift, so it is the protected-table gate — not the destructive
+	// gate — that refuses the run.
+	conn := newRegionsConn(t, [][2]string{{"US", "United States"}})
+	root := t.TempDir()
+	writeRegionsFixture(t, root, insertOnlyDesiredRows)
+
+	_, _, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{
+		RootDir:         root,
+		ProtectedTables: []string{"regions"},
+	})
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "protected table(s) regions")
+	c.Assert(err.Error(), qt.Contains, "--allow-prod")
+}
+
+func TestGenerate_ProtectedTableMatchIsCaseInsensitive(t *testing.T) {
+	c := qt.New(t)
+
+	conn := newRegionsConn(t, [][2]string{{"US", "United States"}})
+	root := t.TempDir()
+	writeRegionsFixture(t, root, insertOnlyDesiredRows)
+
+	_, _, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{
+		RootDir:         root,
+		ProtectedTables: []string{"REGIONS"},
+	})
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "protected table(s) REGIONS")
+}
+
+func TestGenerate_ProtectedTablePrecedesDestructiveGate(t *testing.T) {
+	c := qt.New(t)
+
+	// The drift is destructive AND touches a protected table; the protected-table
+	// refusal must win so the operator sees the protection first.
+	conn := newRegionsConn(t, [][2]string{
+		{"US", "United States"},
+		{"CZ", "Czech Republic"},
+		{"XX", "Old Name"},
+	})
+	root := t.TempDir()
+	writeRegionsFixture(t, root, driftDesiredRows)
+
+	_, _, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{
+		RootDir:         root,
+		ProtectedTables: []string{"regions"},
+	})
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "protected")
+	c.Assert(err.Error(), qt.Not(qt.Contains), "destructive")
+}
+
+func TestGenerate_ProtectedAndDestructiveAllowed(t *testing.T) {
+	c := qt.New(t)
+
+	conn := newRegionsConn(t, [][2]string{
+		{"US", "United States"},
+		{"CZ", "Czech Republic"},
+		{"XX", "Old Name"},
+	})
+	root := t.TempDir()
+	writeRegionsFixture(t, root, driftDesiredRows)
+
+	up, _, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{
+		RootDir:          root,
+		ProtectedTables:  []string{"regions"},
+		AllowProd:        true,
+		AllowDestructive: true,
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(up, qt.Contains, `DELETE FROM "regions" WHERE "code" = 'XX';`)
+}
+
+func TestGenerate_ProtectedTableWithNoDriftIsNoOp(t *testing.T) {
+	c := qt.New(t)
+
+	// The protected table has no drift, so there is no change to refuse and the
+	// run is a clean no-op even without --allow-prod.
+	conn := newRegionsConn(t, [][2]string{
+		{"US", "United States"},
+		{"DE", "Germany"},
+	})
+	root := t.TempDir()
+	writeRegionsFixture(t, root, insertOnlyDesiredRows)
+
+	up, down, err := datamigrate.Generate(context.Background(), conn, datamigrate.Options{
+		RootDir:         root,
+		ProtectedTables: []string{"regions"},
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(up, qt.Equals, "")
+	c.Assert(down, qt.Equals, "")
 }
