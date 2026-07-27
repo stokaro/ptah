@@ -91,9 +91,14 @@ func TestSplitSQLStatements_StringLiterals(t *testing.T) {
 			},
 		},
 		{
-			name:     "escaped quotes in strings",
-			input:    `INSERT INTO users (name) VALUES ('John\'s; data')`,
-			expected: []string{`INSERT INTO users (name) VALUES ('John\'s; data')`},
+			// The dialect-less splitter is PostgreSQL-safe: a backslash is an
+			// ordinary character (standard_conforming_strings), so a quote is
+			// escaped by doubling it. A doubled quote keeps the embedded
+			// semicolon inside the single statement. The backslash-escaped form
+			// is covered per-dialect in TestSplitSQLStatementsForDialect_StringEscaping.
+			name:     "standard doubled-quote escape keeps semicolon in one statement",
+			input:    `INSERT INTO users (name) VALUES ('John''s; data')`,
+			expected: []string{`INSERT INTO users (name) VALUES ('John''s; data')`},
 		},
 		{
 			name:  "complex example with strings and comments",
@@ -109,6 +114,108 @@ func TestSplitSQLStatements_StringLiterals(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			result := sqlutil.SplitSQLStatements(tt.input)
+			c.Assert(result, qt.DeepEquals, tt.expected)
+		})
+	}
+}
+
+// TestSplitSQLStatements_StringLiteralInjection guards against a semicolon
+// inside a string literal leaking out and being mis-split into an extra
+// statement. The dialect-less splitter is standard-conforming (PostgreSQL-safe:
+// backslash is literal, quotes are escaped by doubling).
+func TestSplitSQLStatements_StringLiteralInjection(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{
+			// Attack shape: a backslash-then-quote followed by a doubled quote
+			// makes '\''; ... --' a single standard-conforming literal, so the
+			// embedded "DROP TABLE regions;" must NOT become its own statement.
+			name:     "postgres backslash-quote injection stays one statement",
+			input:    `UPDATE "regions" SET "name" = '\''; DROP TABLE regions; --' WHERE "code" = 'US';`,
+			expected: []string{`UPDATE "regions" SET "name" = '\''; DROP TABLE regions; --' WHERE "code" = 'US'`},
+		},
+		{
+			name:     "multiple semicolons inside one literal",
+			input:    `SELECT 'a; b; c; d' AS x; SELECT 1;`,
+			expected: []string{`SELECT 'a; b; c; d' AS x`, "SELECT 1"},
+		},
+		{
+			name:     "standard doubled-quote literal then a real terminator",
+			input:    `INSERT INTO t (n) VALUES ('O''Brien'); SELECT 1;`,
+			expected: []string{`INSERT INTO t (n) VALUES ('O''Brien')`, "SELECT 1"},
+		},
+		{
+			name:     "plain multi-statement script is unaffected",
+			input:    "CREATE TABLE a (id INT); CREATE TABLE b (id INT);",
+			expected: []string{"CREATE TABLE a (id INT)", "CREATE TABLE b (id INT)"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := sqlutil.SplitSQLStatements(tt.input)
+			c.Assert(result, qt.DeepEquals, tt.expected)
+		})
+	}
+}
+
+// TestSplitSQLStatementsForDialect_StringEscaping verifies that string-literal
+// escaping is applied per dialect: PostgreSQL treats a backslash literally
+// (standard_conforming_strings) while MySQL processes C-style backslash
+// escapes. The same bytes therefore split differently, which is correct.
+func TestSplitSQLStatementsForDialect_StringEscaping(t *testing.T) {
+	tests := []struct {
+		name     string
+		dialect  string
+		input    string
+		expected []string
+	}{
+		{
+			name:     "postgres backslash-quote injection stays one statement",
+			dialect:  "postgres",
+			input:    `UPDATE "regions" SET "name" = '\''; DROP TABLE regions; --' WHERE "code" = 'US';`,
+			expected: []string{`UPDATE "regions" SET "name" = '\''; DROP TABLE regions; --' WHERE "code" = 'US'`},
+		},
+		{
+			name:     "postgres doubled-quote literal then terminator",
+			dialect:  "postgres",
+			input:    `INSERT INTO t (n) VALUES ('O''Brien'); SELECT 1;`,
+			expected: []string{`INSERT INTO t (n) VALUES ('O''Brien')`, "SELECT 1"},
+		},
+		{
+			// MySQL encoding of the same attack value \'; DROP ... -- is a
+			// doubled backslash then a doubled quote; the embedded semicolons
+			// stay inside the single literal.
+			name:     "mysql escaped injection stays one statement",
+			dialect:  "mysql",
+			input:    `UPDATE t SET n = '\\''; DROP TABLE regions; --' WHERE id = 1;`,
+			expected: []string{`UPDATE t SET n = '\\''; DROP TABLE regions; --' WHERE id = 1`},
+		},
+		{
+			// A hand-written MySQL '\'' is the literal for a single quote, so
+			// the following semicolon is a genuine terminator: it splits sanely
+			// rather than swallowing the rest of the script.
+			name:     "mysql backslash-escaped quote splits sanely",
+			dialect:  "mysql",
+			input:    `SELECT '\''; SELECT 2;`,
+			expected: []string{`SELECT '\''`, "SELECT 2"},
+		},
+		{
+			name:     "mysql plain multi-statement script is unaffected",
+			dialect:  "mysql",
+			input:    "CREATE TABLE a (id INT); CREATE TABLE b (id INT);",
+			expected: []string{"CREATE TABLE a (id INT)", "CREATE TABLE b (id INT)"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := sqlutil.SplitSQLStatementsForDialect(tt.input, tt.dialect)
 			c.Assert(result, qt.DeepEquals, tt.expected)
 		})
 	}

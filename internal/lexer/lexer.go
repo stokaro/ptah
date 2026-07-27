@@ -65,19 +65,53 @@ func (tt *Token) MatchIdentifierValue(value string) bool {
 	return strings.EqualFold(tt.Value, value)
 }
 
+// Options configures optional, dialect-sensitive lexer behavior. The zero
+// value reproduces the historical behavior of NewLexer, so callers that do not
+// opt in are byte-for-byte unaffected.
+type Options struct {
+	// StandardStrings enables SQL-standard string literal scanning. When set, a
+	// doubled quote character ('' inside a '...' literal, or "" inside a "..."
+	// literal) is treated as an escaped quote that stays inside the literal
+	// rather than terminating it. This is dialect-independent. When unset, the
+	// legacy scanning behavior (see scanStringLegacy) is used unchanged.
+	StandardStrings bool
+
+	// BackslashEscapes treats a backslash as a C-style escape inside string
+	// literals: the backslash and the following character are consumed together.
+	// This is correct for MySQL, MariaDB, and ClickHouse, but wrong for the
+	// PostgreSQL family (standard_conforming_strings, on by default) and SQLite,
+	// which treat a backslash as an ordinary character. It is only consulted
+	// when StandardStrings is set; the legacy path always processes backslash
+	// escapes regardless of this field.
+	BackslashEscapes bool
+}
+
 // Lexer tokenizes SQL input
 type Lexer struct {
 	input string
 	pos   int
 	start int
+	opts  Options
 }
 
-// NewLexer creates a new SQL lexer
+// NewLexer creates a new SQL lexer with the historical default behavior.
+//
+// The default scanning rules are intentionally lenient and dialect-blind. For
+// dialect-correct string handling (used by statement splitting, where a stray
+// semicolon leaking out of a mis-lexed literal can inject an extra statement),
+// use NewLexerWithOptions with StandardStrings enabled.
 func NewLexer(input string) *Lexer {
+	return NewLexerWithOptions(input, Options{})
+}
+
+// NewLexerWithOptions creates a new SQL lexer with explicit scanning options.
+// NewLexerWithOptions(input, Options{}) is identical to NewLexer(input).
+func NewLexerWithOptions(input string, opts Options) *Lexer {
 	return &Lexer{
 		input: input,
 		pos:   0,
 		start: 0,
+		opts:  opts,
 	}
 }
 
@@ -202,8 +236,21 @@ func (l *Lexer) scanWhitespace() Token {
 	return l.emit(TokenWhitespace)
 }
 
-// scanString scans a quoted string literal
+// scanString scans a quoted string literal, dispatching to the SQL-standard
+// scanner when opted in and to the legacy scanner otherwise.
 func (l *Lexer) scanString() Token {
+	if l.opts.StandardStrings {
+		return l.scanStringStandard()
+	}
+	return l.scanStringLegacy()
+}
+
+// scanStringLegacy scans a quoted string literal using the historical rules.
+// It always processes backslash escapes and uses the isStringTerminator
+// heuristic; it does NOT recognize SQL-standard doubled-quote escaping. This is
+// the exact behavior relied upon by the DDL parser, linters, and other default
+// NewLexer callers, so it must remain unchanged.
+func (l *Lexer) scanStringLegacy() Token {
 	quote := l.advance() // consume opening quote
 
 	for {
@@ -230,6 +277,50 @@ func (l *Lexer) scanString() Token {
 		} else {
 			l.advance()
 		}
+	}
+
+	return l.emit(TokenString)
+}
+
+// scanStringStandard scans a quoted string literal using SQL-standard rules.
+// A doubled quote character (two single quotes inside a single-quoted literal,
+// or two double quotes inside a double-quoted literal) is an escaped quote that
+// stays inside the literal; this is dialect-independent. A backslash is a
+// C-style escape (consuming the backslash and the following character) only
+// when l.opts.BackslashEscapes is set (MySQL/MariaDB/ClickHouse); otherwise it
+// is an ordinary literal character (PostgreSQL standard_conforming_strings,
+// SQLite). The legacy isStringTerminator heuristic is deliberately not applied
+// here - the doubled-quote rule supersedes it.
+func (l *Lexer) scanStringStandard() Token {
+	quote := l.advance() // consume opening quote
+
+	for {
+		ch := l.peek()
+		if ch == 0 {
+			// Unterminated string - return what we have
+			break
+		}
+
+		if ch == quote {
+			if l.peekNext() == quote {
+				// SQL-standard doubled-quote escape stays inside the literal.
+				l.advance() // consume first quote
+				l.advance() // consume second (escaped) quote
+				continue
+			}
+			l.advance() // consume closing quote
+			break
+		}
+
+		if ch == '\\' && l.opts.BackslashEscapes {
+			l.advance() // consume backslash
+			if l.peek() != 0 {
+				l.advance() // consume escaped character
+			}
+			continue
+		}
+
+		l.advance()
 	}
 
 	return l.emit(TokenString)
