@@ -3,8 +3,6 @@ package generator
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/stokaro/ptah/core/goschema"
@@ -12,7 +10,6 @@ import (
 	"github.com/stokaro/ptah/dbschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/convert/dbschematogo"
-	"github.com/stokaro/ptah/internal/migratesum"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/schemadiff"
 )
@@ -53,28 +50,7 @@ func GenerateCheckpoint(schema *goschema.Database, dialect string) (upSQL, downS
 // the caller resolves a version above the existing history — and returns the
 // two written paths.
 func WriteCheckpointFiles(outputDir string, version int64, description, upSQL, downSQL string) (upPath, downPath string, err error) {
-	if err := ensureMigrationOutputDir(outputDir); err != nil {
-		return "", "", fmt.Errorf("failed to create output directory: %w", err)
-	}
-
-	upPath = filepath.Join(outputDir, migrator.GenerateCheckpointMigrationFileName(version, description, "up"))
-	downPath = filepath.Join(outputDir, migrator.GenerateCheckpointMigrationFileName(version, description, "down"))
-	if fileExists(upPath) || fileExists(downPath) {
-		return "", "", fmt.Errorf("checkpoint files for version %d already exist", version)
-	}
-
-	if err := writeNewMigrationFile(upPath, upSQL); err != nil {
-		return "", "", fmt.Errorf("failed to write checkpoint up file: %w", err)
-	}
-	if err := writeNewMigrationFile(downPath, downSQL); err != nil {
-		_ = os.Remove(upPath)
-		return "", "", fmt.Errorf("failed to write checkpoint down file: %w", err)
-	}
-
-	if _, err := migratesum.WriteWithFormat(outputDir, migrator.MigrationDirFormatPtah); err != nil {
-		return "", "", fmt.Errorf("failed to rewrite ptah.sum: %w", err)
-	}
-	return upPath, downPath, nil
+	return writeMigrationPair(outputDir, version, description, upSQL, downSQL, "checkpoint", migrator.GenerateCheckpointMigrationFileName)
 }
 
 // CheckpointFromShadowOptions configures GenerateCheckpointFromShadow.

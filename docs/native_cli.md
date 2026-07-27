@@ -30,6 +30,7 @@ root-level command spellings are removed instead of preserved.
 | `ptah migrations plan` | Print migration SQL from desired/live schema differences. |
 | `ptah migrations generate` | Generate migration files from desired/live schema differences. |
 | `ptah migrations create` | Create empty migration files for manual SQL. |
+| `ptah migrations data` | Generate a migration from declarative reference/seed data drift against a live database. |
 | `ptah migrations import` | Convert another tool's migration directory to Ptah format. |
 | `ptah migrations up` | Run pending migrations. |
 | `ptah migrations down` | Roll back migrations. |
