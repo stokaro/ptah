@@ -34,7 +34,7 @@ import { LinkCard, CardGrid } from '@astrojs/starlight/components';
   <LinkCard title="Adopt an existing database" href="./start/adopt-an-existing-database/" description="Introspect a live schema, baseline its history, and import migrations from another tool." />
   <LinkCard title="Go annotations" href="./schema/go-annotations/" description="Use annotated Go structs as the application-owned schema source." />
   <LinkCard title="Schema files" href="./schema/yaml/" description="Render and migrate from YAML, HCL, or SQL schema files." />
-  <LinkCard title="Migrations" href="./workflows/migrations/" description="Plan, generate, apply, roll back, hash, validate, and inspect migrations." />
+  <LinkCard title="Versioned migrations" href="./versioned/overview/" description="Plan, generate, apply, roll back, hash, validate, and inspect migrations." />
   <LinkCard title="OCI registry artifacts" href="./workflows/oci-registry/" description="Publish, pin, pull, and consume migrations and desired schemas through your OCI registry." />
   <LinkCard title="Atlas-compatible CLI" href="./workflows/atlas-cli/" description="Use Atlas-style commands through ptah atlas, ptah-compat, or a renamed atlas binary." />
   <LinkCard title="CI" href="./workflows/ci/" description="Run Ptah checks in pull requests and fail safely on destructive changes." />
@@ -51,7 +51,7 @@ import { LinkCard, CardGrid } from '@astrojs/starlight/components';
 | A Go application with schema annotations | [Go annotations](./schema/go-annotations/) |
 | YAML, HCL, or SQL schema files | [YAML schema](./schema/yaml/), [HCL schema](./schema/hcl/), or [SQL schema](./schema/sql/) |
 | An ORM that owns the schema | [ORM and external loaders](./schema/orm-and-external/) |
-| An existing migration directory | [Migrations](./workflows/migrations/) |
+| An existing migration directory | [Versioned migrations](./versioned/overview/) |
 | A live database built outside Ptah | [Adopt an existing database](./start/adopt-an-existing-database/) |
 | No decision yet on versioned versus direct changes | [Choose a workflow](./start/choose-a-workflow/) |
 | An OCI registry for migration or schema distribution | [OCI registry artifacts](./workflows/oci-registry/) |

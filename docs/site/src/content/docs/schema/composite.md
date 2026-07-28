@@ -95,5 +95,5 @@ This is Ptah's open, local, no-account equivalent of Atlas's Pro-only
 ## Next steps
 
 - Feeding an ORM into the merge? [ORM and external loaders](../orm-and-external/).
-- Generating migrations from the merged schema? [Migrations](../../workflows/migrations/).
+- Generating migrations from the merged schema? [Generate migrations](../../versioned/generate/).
 - Reviewing what the merge produced? [Visualize the schema](../visualize/).

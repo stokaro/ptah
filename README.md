@@ -17,7 +17,7 @@ architecture is better.
 | SQL, YAML, HCL, or external desired schema | [YAML](docs/site/src/content/docs/schema/yaml.md), [HCL](docs/site/src/content/docs/schema/hcl.md), and [SQL](docs/site/src/content/docs/schema/sql.md) schema pages |
 | ORM-owned desired schema | [ORM and external loaders](docs/site/src/content/docs/schema/orm-and-external.md) |
 | Compose one schema from several packages or files | [Composite desired schema](docs/site/src/content/docs/schema/composite.md) |
-| Migration operations | [Migrations](docs/site/src/content/docs/workflows/migrations.md) |
+| Migration operations | [Versioned migrations](docs/site/src/content/docs/versioned/overview.md) |
 | Publish or consume migrations and schemas through OCI | [OCI registry artifacts](docs/site/src/content/docs/workflows/oci-registry.md) |
 | Test migrations or a desired schema | [Testing](docs/site/src/content/docs/workflows/testing.md) |
 | Atlas-compatible CLI paths | [Atlas-compatible CLI](docs/site/src/content/docs/workflows/atlas-cli.md) |

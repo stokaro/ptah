@@ -23,6 +23,9 @@ const redirectRoutes = {
   '/examples/yaml-schema/': '/schema/yaml/',
   '/examples/atlas-hcl/': '/schema/hcl/',
   '/examples/schema-viz/': '/schema/visualize/',
+  '/workflows/migrations/': '/versioned/overview/',
+  '/workflows/checkpoints/': '/versioned/checkpoints/',
+  '/workflows/reference-data/': '/versioned/reference-data/',
 };
 
 const redirects = Object.fromEntries(
@@ -76,13 +79,24 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Versioned migrations',
+          items: [
+            { slug: 'versioned/overview' },
+            { slug: 'versioned/generate' },
+            { slug: 'versioned/apply' },
+            { slug: 'versioned/rollback' },
+            { slug: 'versioned/integrity-and-safety' },
+            { slug: 'versioned/maintain-history' },
+            { slug: 'versioned/import' },
+            { slug: 'versioned/checkpoints' },
+            { slug: 'versioned/reference-data' },
+          ],
+        },
+        {
           label: 'Use Ptah',
           items: [
-            { slug: 'workflows/migrations' },
             { slug: 'workflows/oci-registry' },
-            { slug: 'workflows/checkpoints' },
             { slug: 'workflows/testing' },
-            { slug: 'workflows/reference-data' },
             { slug: 'workflows/atlas-cli' },
             { slug: 'workflows/ci' },
           ],

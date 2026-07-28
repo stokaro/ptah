@@ -9,14 +9,14 @@ Use this page when you know what you need to do, but not where the relevant Ptah
 | --- | --- | --- |
 | I need to install Ptah | [Install Ptah](../start/install/) | [Quick start](../start/quick-start/) |
 | I want to try Ptah locally | [Quick start](../start/quick-start/) | [Go annotations](../schema/go-annotations/) |
-| I have not picked between versioned and direct changes | [Choose a workflow](../start/choose-a-workflow/) | [Migrations](../workflows/migrations/) or [Atlas-compatible CLI](../workflows/atlas-cli/) |
-| I have a live database built outside Ptah | [Adopt an existing database](../start/adopt-an-existing-database/) | [Migrations](../workflows/migrations/) |
-| My Go app owns the schema | [Go annotations](../schema/go-annotations/) | [Migrations](../workflows/migrations/) |
+| I have not picked between versioned and direct changes | [Choose a workflow](../start/choose-a-workflow/) | [Versioned migrations](../versioned/overview/) or [Atlas-compatible CLI](../workflows/atlas-cli/) |
+| I have a live database built outside Ptah | [Adopt an existing database](../start/adopt-an-existing-database/) | [Versioned migrations](../versioned/overview/) |
+| My Go app owns the schema | [Go annotations](../schema/go-annotations/) | [Versioned migrations](../versioned/overview/) |
 | My schema lives in YAML | [YAML schema](../schema/yaml/) | [YAML schema reference](../reference/yaml-schema/) |
 | My schema lives in HCL | [HCL schema](../schema/hcl/) | [HCL schema reference](../reference/hcl-schema/) |
 | My schema lives in SQL files | [SQL schema](../schema/sql/) | [Composite desired schema](../schema/composite/) |
 | My ORM owns the schema | [ORM and external loaders](../schema/orm-and-external/) | [Composite desired schema](../schema/composite/) |
-| I want to publish or consume migrations and schemas through OCI | [OCI registry artifacts](../workflows/oci-registry/) | [Migrations](../workflows/migrations/) and [Commands](../reference/commands/) |
+| I want to publish or consume migrations and schemas through OCI | [OCI registry artifacts](../workflows/oci-registry/) | [Apply migrations](../versioned/apply/) and [Commands](../reference/commands/) |
 | I need Atlas-style commands | [Atlas-compatible CLI](../workflows/atlas-cli/) | [Comparison](../reference/comparison/) |
 | I want to embed Ptah in another Go tool | [Reusable components](../reference/reusable-components/) | [Public Go API](../reference/public-api/) |
 | I need to run Ptah in CI | [CI](../workflows/ci/) | [Exit codes](../reference/exit-codes/) |
