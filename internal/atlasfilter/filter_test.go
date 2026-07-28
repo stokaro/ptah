@@ -276,6 +276,45 @@ func TestExcludeDatabase_ExtensionVersionFieldSelector(t *testing.T) {
 	c.Assert(extensionVersions(schema.Extensions), qt.DeepEquals, []string{"pg_trgm:1.6", "citext:1.6"})
 }
 
+func TestExcludeDatabase_SchemaQualifiedExtensionVersionFieldSelector(t *testing.T) {
+	c := qt.New(t)
+	schema := &dbschematypes.DBSchema{
+		Extensions: []dbschematypes.DBExtension{
+			{Name: "pg_trgm", Schema: "public", Version: "1.6"},
+			{Name: "citext", Schema: "audit", Version: "1.6"},
+		},
+	}
+
+	got, err := atlasfilter.ExcludeDatabase(schema, []string{"public.*[type=extension].version"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(extensionVersions(got.Extensions), qt.DeepEquals, []string{"pg_trgm:", "citext:1.6"})
+}
+
+// TestExcludeGenerated_ExtensionVersionFieldSelector pins that the
+// documented extension version field selector behaves identically on the
+// generated-schema side, so apply/diff comparisons stay symmetric with
+// inspection.
+func TestExcludeGenerated_ExtensionVersionFieldSelector(t *testing.T) {
+	c := qt.New(t)
+	schema := &goschema.Database{
+		Extensions: []goschema.Extension{
+			{Name: "pg_trgm", Version: "1.6"},
+			{Name: "citext", Version: "1.6"},
+		},
+	}
+
+	got, err := atlasfilter.ExcludeGenerated(schema, []string{"pg_trgm[type=extension].version"})
+
+	c.Assert(err, qt.IsNil)
+	versions := make([]string, 0, len(got.Extensions))
+	for _, extension := range got.Extensions {
+		versions = append(versions, extension.Name+":"+extension.Version)
+	}
+	// Finalize sorts generated extensions by name.
+	c.Assert(versions, qt.DeepEquals, []string{"citext:1.6", "pg_trgm:"})
+}
+
 func TestExcludeDatabase_UnsupportedFieldSelector(t *testing.T) {
 	c := qt.New(t)
 
@@ -283,6 +322,24 @@ func TestExcludeDatabase_UnsupportedFieldSelector(t *testing.T) {
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, `unsupported Atlas exclude field selector ".version"`)
+	c.Assert(got, qt.IsNil)
+}
+
+// TestExcludeDatabase_NonFinalTypeSelectorRejected pins the fail-closed
+// contract for selector placements Ptah does not evaluate: a type selector on
+// a non-final pattern segment would be swallowed into the glob and silently
+// match nothing, so it must be rejected before any database work.
+func TestExcludeDatabase_NonFinalTypeSelectorRejected(t *testing.T) {
+	c := qt.New(t)
+
+	got, err := atlasfilter.ExcludeDatabase(
+		filterFixtureSchema(),
+		[]string{"public.*[type=table].c*[type=column]"},
+	)
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains,
+		`unsupported Atlas exclude selector "public.*[type=table].c*[type=column]": type selectors are supported on the final pattern segment only`)
 	c.Assert(got, qt.IsNil)
 }
 
