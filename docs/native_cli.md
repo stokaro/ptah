@@ -76,9 +76,9 @@ for an explicitly trusted local registry. It lists metadata and does not pull
 or consume attachment payloads.
 
 These commands do not add an Atlas Cloud implementation to `ptah atlas`.
-`ptah atlas migrate push` and `ptah atlas schema push` remain
-community-edition boundary stubs, and Atlas-compatible apply commands do not
-gain native OCI transport flags.
+`ptah atlas migrate push` and `ptah atlas schema push` stay community-edition
+boundary stubs by decision (see "Atlas Compatibility Waivers"), and
+Atlas-compatible apply commands do not gain native OCI transport flags.
 
 The schema-diff commands (`ptah schema render`, `ptah migrations generate`,
 `ptah migrate`, `ptah compare`) emit `CREATE`/`ALTER`/`DROP SEQUENCE` for
@@ -105,7 +105,11 @@ maps to this verification, and `ptah atlas migrate down --format` (flag or
 `PTAH_FORMAT`) renders an Atlas Go-template report (`.Env`, `.Planned`,
 `.Reverted`, `.Current`, `.Target`, `.Total`, `.Start`, `.End`, `.Error`) over
 the same rollback engine, with the YES confirmation prompt on stderr so the
-report stays alone on stdout.
+report stays alone on stdout. Like `ptah atlas migrate set`, the down forward
+defaults to Atlas revision bookkeeping (`--revision-format atlas`), so a bare
+`atlas migrate down` reverts the revisions `atlas migrate apply` wrote instead
+of silently no-opping against an empty ptah revision table; passing the native
+`--revision-format ptah` through the forward still selects ptah bookkeeping.
 
 `ptah migrations import` converts an existing migration directory from another
 versioned-migration tool into Ptah's native format, preserving version order and
@@ -149,6 +153,60 @@ SQL does not encode, so a typed drop yields exactly one finding (its `CD` code,
 never also `DS105`). Individual codes and whole families are disabled by code or
 prefix (for example `CD`, or a single `CD101`) and re-severitied per code through
 lint configuration, the same as every other family.
+
+### Atlas Pro Analyzer Coverage
+
+Atlas gates whole analyzer families behind Atlas Pro. Ptah's native lint covers
+most of them locally and for free. The table below audits every Pro-marked
+analyzer check code from the Atlas analyzers documentation
+(<https://atlasgo.io/lint/analyzers>, fetched 2026-07-28) against Ptah's native
+rules. Codes the Atlas docs mark as non-Pro (`DS`, `MF`, `BC`, `PG110`,
+`MY101`–`MY123`, `LT`, `NM`, `SA`) are outside this audit; note that Ptah's
+native code namespace intentionally differs from Atlas's where meanings differ
+(for example Ptah `PG102` is enum-value-in-transaction, not Atlas's
+drop-index-concurrently, which Ptah codes as `PG106`).
+
+| Atlas Pro code | Atlas meaning | Ptah native rule(s) | Status |
+| --- | --- | --- | --- |
+| CD101 | Foreign-key constraint dropped | `CD101` | Covered |
+| CD102 | Check constraint dropped | `CD102` | Covered |
+| CD103 | Primary-key constraint dropped | `CD103` | Covered |
+| PG101 | Index created without `CONCURRENTLY` | `PG101` | Covered |
+| PG102 | Index dropped without `CONCURRENTLY` | `PG106` | Covered |
+| PG103 | Missing `atlas:txmode none` header for concurrent operation | `PG103` | Covered — Ptah flags `CONCURRENTLY` inside a transactional migration and honors both the `atlas:txmode none` header and its native no-transaction directive |
+| PG104 | `PRIMARY KEY` creation acquires `ACCESS EXCLUSIVE` lock | `PG104` | Covered |
+| PG105 | `UNIQUE` constraint creation acquires `ACCESS EXCLUSIVE` lock | `PG105` | Covered |
+| PG301 | Column type change requires table and index rewrite | `DS103` | Partial — the type change is flagged as a data-safety risk, without PostgreSQL rewrite/lock analysis |
+| PG302 | Volatile `DEFAULT` on added column rewrites the table | `PG302` | Covered |
+| PG303 | `SET NOT NULL` scans existing rows | `PG303` | Covered |
+| PG304 | `PRIMARY KEY` on nullable columns requires full scan | `PG104` | Partial — every `ADD PRIMARY KEY` is flagged; the nullable-column refinement needs schema knowledge statement-scoped lint does not have |
+| PG305 | `CHECK` constraint requires full table scan | `PG305` | Covered |
+| PG306 | `FOREIGN KEY` requires full scan and blocks writes | `PG306` | Covered |
+| PG307 | Logging mode change rewrites the table | `PG307` | Covered |
+| PG308 | Trigger creation acquires `SHARE ROW EXCLUSIVE` lock | `PG308` | Covered |
+| PG309 | `STORED` generated column rewrites the table | `PG309` | Covered |
+| PG310 | Identity column rewrites the table | `PG310` | Covered |
+| PG311 | Access method change rewrites the table | `PG311` | Covered |
+| MY130 | Column type change requires table copy | `MY101`, `DS103` | Partial — `MODIFY`/`CHANGE` is flagged as lock-heavy DDL and the type change as a data-safety risk, without a dedicated table-copy code |
+| MY131 | Foreign key added blocks DML | `MY131` | Covered |
+| MY132 | Primary key added requires table rebuild | `MY132` | Covered |
+| MY133 | Primary key dropped without replacement requires table copy | `CD103` | Partial — the drop is flagged as an error-severity constraint deletion; the table-copy concern has no dedicated code |
+| MY134 | `FULLTEXT` index added blocks DML | `MY134` | Covered |
+| MY135 | `SPATIAL` index added blocks DML | `MY135` | Covered |
+| MY136 | Character set change requires table rebuild | `MY101` | Partial — `CONVERT TO CHARACTER SET`/`CHARSET` is flagged as lock-heavy DDL; other charset-change spellings are not scanned |
+| TX101 | Statements cannot run in a single transaction | `TX101` | Covered |
+| TX201 | Nested transaction detected | `TX201` | Covered |
+| OW101 | User not authorized to modify resource | — | Waived — ownership policy binds to Atlas Pro schema-ownership annotations and an account/identity model; Ptah reviews destructive changes through its `DS`/`CD` safety gates instead |
+| OW102 | User explicitly denied access to resource | — | Waived — same rationale as OW101 |
+
+Under `ptah atlas migrate lint`, native findings report under the `ptah`
+analyzer with their native codes, except the proven Atlas identities mapped by
+`internal/atlaslint`: native `DS101` reports as Atlas `destructive`/`DS102`,
+native `DS102` as `destructive`/`DS103`, and native `DD101` as
+`data_depend`/`MF103`. Atlas `-- atlas:nolint` analyzer selectors map onto the
+native families (`destructive` → `DS`+`CD`, `concurrent_index` →
+`PG101`/`PG103`, `data_depend` → `DD`, `incompatible` → `BC`, `nestedtx` →
+`TX201`).
 
 ## Local Declarative Plan Files
 
@@ -194,10 +252,21 @@ stored in the Atlas Registry, which the local plan file replaces.
 
 ## Atlas Compatibility Waivers
 
-Some Atlas Pro flags are accepted for help parity but rejected loudly with a
-recorded rationale, because their behavior is bound to Atlas Cloud services
-Ptah intentionally has no counterpart for. These are waivers, not pending work:
+Some Atlas Pro commands and flags are accepted for surface parity but rejected
+loudly with a recorded rationale, because their behavior is bound to Atlas
+Cloud services Ptah intentionally has no counterpart for. These are waivers,
+not pending work:
 
+- `ptah atlas migrate push` / `ptah atlas schema push`: kept as byte-for-byte
+  Atlas CE boundary stubs by decision. Both verbs push to the Atlas Registry, a
+  proprietary, account-bound cloud service whose protocol is not an open
+  target. The open replacement is the native `ptah migrations push` /
+  `ptah schema push` pair, which publishes to any OCI registry you already
+  operate (bring-your-own-registry, no account, digest pinning, referrer
+  attachments). Accepting `oci://` destinations under the atlas verbs was
+  considered and rejected: an Atlas-shaped verb that silently speaks a
+  different protocol to a different registry would not be a drop-in, so the
+  boundary stays loud and identical to Atlas CE.
 - `ptah atlas migrate down --to-tag`: migration tags exist only in Atlas
   Registry (Atlas Cloud); use `--to-version` with a migration version instead.
 - `ptah atlas migrate down --skip-checks`: Atlas down checks are part of the

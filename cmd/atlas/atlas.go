@@ -377,10 +377,17 @@ func atlasUnsupportedCommunityCommand(group, use string) string {
 
 func atlasMigrateDownVerb() atlasVerb {
 	return atlasVerb{
-		use:                 "down",
-		short:               "Roll back migrations",
-		native:              "migrations down",
-		factory:             migratedown.NewMigrateDownCommand,
+		use:     "down",
+		short:   "Roll back migrations",
+		native:  "migrations down",
+		factory: migratedown.NewMigrateDownCommand,
+		// An Atlas-surface verb defaults to Atlas revision bookkeeping, like
+		// `migrate set` above: without this prefix the native --revision-format
+		// default of "ptah" silently no-ops against the atlas_schema_revisions
+		// rows `atlas migrate apply` writes. User args are appended after the
+		// prefix, so an explicit native `--revision-format ptah` pass-through
+		// still overrides it (pflag keeps the last value).
+		prefixArgs:          []string{"--revision-format", "atlas"},
 		nativeProjectConfig: true,
 		flags: []atlasargs.Flag{
 			atlasargs.NativeString("url", "u", "Database URL", "db-url"),

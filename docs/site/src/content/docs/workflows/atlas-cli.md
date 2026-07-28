@@ -50,7 +50,7 @@ SQL paths; prefer `--to` in new Ptah-authored scripts.
 | Atlas-compatible command | Ptah behavior |
 | --- | --- |
 | `ptah atlas migrate apply` | Atlas-format apply path equivalent to `ptah migrations up` |
-| `ptah atlas migrate down` | Forwards to `ptah migrations down` with mapped Atlas flags. `--dev-url` replays and verifies the rollback plan on the dev database before the target is touched (native `--shadow-db`), and `--format` (flag or `PTAH_FORMAT`) renders an Atlas Go-template report over `.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, `.Start`, `.End`, and `.Error`, moving the YES confirmation prompt to stderr (`--dry-run` or the native `--confirm` pass-through skip it). The registry-bound `--to-tag`, `--skip-checks`, and `--plan` flags are recorded waivers that fail loudly with their rationale. |
+| `ptah atlas migrate down` | Forwards to `ptah migrations down` with mapped Atlas flags. `--dev-url` replays and verifies the rollback plan on the dev database before the target is touched (native `--shadow-db`), and `--format` (flag or `PTAH_FORMAT`) renders an Atlas Go-template report over `.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, `.Start`, `.End`, and `.Error`, moving the YES confirmation prompt to stderr (`--dry-run` or the native `--confirm` pass-through skip it). The forward defaults to Atlas revision bookkeeping (`--revision-format atlas`, like `migrate set`), so a bare invocation reverts the revisions `atlas migrate apply` wrote; pass the native `--revision-format ptah` through to select ptah bookkeeping. The registry-bound `--to-tag`, `--skip-checks`, and `--plan` flags are recorded waivers that fail loudly with their rationale. |
 | `ptah atlas migrate status` | Atlas-format migration status with Atlas revision-table metadata |
 | `ptah atlas migrate hash` | `ptah migrations hash` |
 | `ptah atlas migrate validate` | Silently verifies `atlas.sum` on success; checksum failures use Atlas-compatible stdout/stderr diagnostics, and `--dev-url` cleans and replays migrations on the dev database to validate SQL execution. |
@@ -64,7 +64,7 @@ SQL paths; prefer `--to` in new Ptah-authored scripts.
 | `ptah atlas migrate edit {name \| version}` | Forwards to `ptah migrations edit`: the positional maps to the native `--version` (a migration file name contributes its leading version digits), `--dir` to the native migration directory (Atlas-format by default via `--dir-format`), and the editor resolves from `$VISUAL`, then `$EDITOR`. The directory checksum is rewritten afterwards so `ptah migrations validate` keeps passing. Atlas keeps `migrate edit` outside its community build; Ptah provides it free. |
 | `ptah atlas migrate rebase {name \| version}` | Forwards to `ptah migrations rebase`: re-timestamps the selected migration past every existing version and rewrites the directory checksum. Atlas documents a repeatable positional; Ptah forwards one migration per run and rejects multiple values and `a...b` version ranges loudly. Atlas keeps `migrate rebase` outside its community build; Ptah provides it free. |
 | `ptah atlas migrate rm {name \| version}` | Forwards to `ptah migrations rm`: deletes the selected migration's files and rewrites the directory checksum. Atlas keeps `migrate rm` outside its community build; Ptah provides it free. |
-| `ptah atlas migrate push` | Registered Atlas CE boundary stub for a community-version unsupported command. `--help` prints the Atlas CE unsupported notice and exits 0; direct execution prints the Atlas CE abort text and exits 1. This is an explicit compatibility boundary, not an implemented Ptah feature; `ptah migrations push` to any OCI registry is the open replacement. |
+| `ptah atlas migrate push` | Registered Atlas CE boundary stub for a community-version unsupported command, kept by decision: Atlas push targets the proprietary, account-bound Atlas Registry protocol, which is not an open target. `--help` prints the Atlas CE unsupported notice and exits 0; direct execution prints the Atlas CE abort text and exits 1. `ptah migrations push` to any OCI registry is the open replacement. |
 
 ## Utility commands
 
@@ -84,7 +84,7 @@ SQL paths; prefer `--to` in new Ptah-authored scripts.
 | `ptah atlas schema fmt` | Formats local `.hcl` files using HCL canonical layout. |
 | `ptah atlas schema test [paths]` | Forwards to `ptah schema test`: `-u/--url` maps the desired schema URL (a local `file://` directory of Go schema annotations) to the native `--root-dir`, `--dev-url` to the native throwaway database (an ephemeral SQLite database when omitted), `--run` to the native case-name filter, and the optional positional path to the directory of Ptah-native YAML test cases. With `--env`, `schema.src` supplies the desired schema URL and `dev` the dev database. Exit codes match the native runner: 0 when all cases pass, 1 on test failure. Atlas keeps `schema test` in its Pro build; Ptah provides it free. |
 | `ptah atlas schema plan` | Computes the declarative migration from the `--from` target database to local `--to` schema files and saves it as a fingerprinted local plan file (`--save`/`--output`, `--name`, `--dry-run`; JSON, `format_version` 1). `--env` supplies `url` (the plan target), `schema.src`, `dev`, `exclude`, `schema.mode`, and supported diff policy. The registry-bound `--push`, `--pending`, `--repo`, and `--auto-approve` flags are recorded waivers rejected loudly, and the registry sub-verbs (`approve`, `lint`, `list`, `new`, `pull`, `push`, `rm`, `test`, `validate`) stay Atlas CE boundary stubs. Atlas keeps `schema plan` in its Pro registry flow; Ptah provides the local plan-file workflow free. |
-| `ptah atlas schema push` | Registered Atlas CE boundary stub for a community-version unsupported command. `--help` prints the Atlas CE unsupported notice and exits 0; direct execution prints the Atlas CE abort text and exits 1. This is an explicit compatibility boundary, not an implemented Ptah feature; `ptah schema push` to any OCI registry is the open replacement. |
+| `ptah atlas schema push` | Registered Atlas CE boundary stub for a community-version unsupported command, kept by decision: Atlas push targets the proprietary, account-bound Atlas Registry protocol, which is not an open target. `--help` prints the Atlas CE unsupported notice and exits 0; direct execution prints the Atlas CE abort text and exits 1. `ptah schema push` to any OCI registry is the open replacement. |
 
 `ptah atlas schema inspect` accepts a live database `--url` and writes
 machine-oriented schema output without native Ptah status banners. The default
@@ -477,6 +477,10 @@ Ptah also validates and fully loads the migration provider, including Atlas
 templates, before dropping any objects from the dev database. A malformed
 migration directory therefore leaves the existing dev database state intact;
 cleanup starts only after the replay plan is valid.
+
+For a code-by-code audit of the analyzer checks Atlas marks as Pro against
+Ptah's native lint rules, see
+[Comparison: Atlas Pro analyzer coverage](../../reference/comparison/#atlas-pro-analyzer-coverage).
 
 Atlas-compatible lint directives are enabled only under the
 `ptah atlas migrate lint` compatibility profile. A statement-local
