@@ -93,11 +93,29 @@ func migrationChecksum(sqlText string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// migrationRevisionHash returns the canonical identity stored with a revision
+// row: the atlas.sum h1 hash (without its prefix) when the migration directory
+// ships one, and the hex SHA-256 of the up SQL otherwise. Every write path and
+// the verification path must use this same function so applied migrations keep
+// verifying.
 func migrationRevisionHash(migration *Migration) string {
 	if migration.Checksum == "" {
 		return migrationChecksum(migration.UpSQL)
 	}
 	return normalizeAtlasRevisionHash(migration.Checksum)
+}
+
+// revisionChecksumMatches reports whether a stored revision checksum matches
+// the migration. Rows written by ptah versions that predate storing the
+// atlas.sum hash under the ptah revision table format hold the hex SHA-256 of
+// the up SQL instead, so that legacy encoding is accepted too; both encodings
+// are content hashes of the current migration, so tampering still changes
+// every accepted candidate.
+func revisionChecksumMatches(stored string, migration *Migration) bool {
+	if stored == migrationRevisionHash(migration) {
+		return true
+	}
+	return migration.Checksum != "" && stored == migrationChecksum(migration.UpSQL)
 }
 
 func normalizeAtlasRevisionHash(hash string) string {
@@ -604,7 +622,7 @@ func (m *Migrator) beginMigrationRevisionOn(
 		nil,
 		nil,
 		0,
-		migrationChecksum(migration.UpSQL),
+		migrationRevisionHash(migration),
 	)
 }
 
@@ -788,13 +806,12 @@ func (m *Migrator) verifyAppliedMigrationChecksums(ctx context.Context, migratio
 		if revision == nil || revision.State != migrationStateApplied || revision.Checksum == "" {
 			continue
 		}
-		checksum := migrationRevisionHash(migration)
 		stored := normalizeAtlasRevisionHash(revision.Checksum)
-		if stored != checksum {
+		if !revisionChecksumMatches(stored, migration) {
 			return &ChecksumMismatchError{
 				Version:  migration.Version,
 				Stored:   stored,
-				Computed: checksum,
+				Computed: migrationRevisionHash(migration),
 			}
 		}
 	}
