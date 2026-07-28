@@ -21,7 +21,7 @@ ptah schema render --schema-file schema.hcl --dialect postgres
 configuration in `atlas.hcl` is a different file type; see
 [Atlas project config](../../atlas/project-config/).
 
-## Minimal Schema
+## Minimal schema
 
 ```hcl
 schema "main" {}
@@ -49,7 +49,7 @@ table "users" {
 }
 ```
 
-## Supported Object Subset
+## Supported object subset
 
 | Object | Supported shape |
 | --- | --- |
@@ -76,7 +76,7 @@ table "users" {
 Unsupported semantics fail explicitly. Ptah does not silently drop HCL objects
 that it cannot represent in the schema IR.
 
-## PostgreSQL Include Columns
+## PostgreSQL include columns
 
 ```hcl
 table "users" {
@@ -104,14 +104,14 @@ Ptah preserves supported include columns through HCL parsing, SQL rendering,
 SQL parsing, schema diffing, and database introspection paths where the dialect
 supports the feature.
 
-## Function Bodies
+## Function bodies
 
 Function bodies are stored as raw SQL text. Ptah does not parse the dialect
 sub-language inside each function body today. That is intentional: PostgreSQL,
 MySQL, SQL Server, and other dialects have different procedural languages and
 require dialect-specific parsers.
 
-## Unsupported Constructs
+## Unsupported constructs
 
 Unsupported HCL constructs return errors rather than partial output. Treat these
 errors as compatibility gaps. Check [Conformance](../../atlas/conformance/)

@@ -83,12 +83,14 @@ entrypoint and deeper reference/site pages for the same behavior.
 Use these routes to avoid missing a class of docs:
 
 - **Native CLI**: `README.md`, `docs/native_cli.md`,
-  `docs/site/src/content/docs/reference/native-commands.md`,
-  `docs/site/src/content/docs/workflows/*.md`, and `docs/exit_codes.md`.
+  `docs/site/src/content/docs/reference/native-commands.md`, the
+  `docs/site/src/content/docs/versioned/`, `direct/`, `testing/`, and
+  `operate/` workflow pages, and `docs/exit_codes.md`.
 - **Atlas-compatible CLI and parity claims**: `README.md`, `docs/conformance.md`,
   `docs/site/src/content/docs/index.mdx`,
-  `docs/site/src/content/docs/documentation-map.md`,
   `docs/site/src/content/docs/atlas/overview.md`,
+  `docs/site/src/content/docs/atlas/migrate-commands.md`,
+  `docs/site/src/content/docs/atlas/schema-commands.md`,
   `docs/site/src/content/docs/reference/atlas-commands.md`,
   `docs/site/src/content/docs/atlas/comparison.md`,
   `docs/site/src/content/docs/reference/exit-codes.md`, `docs/exit_codes.md`,
@@ -96,28 +98,37 @@ Use these routes to avoid missing a class of docs:
   `docs/site/src/content/docs/atlas/license-boundary.md`.
 - **Config and `atlas.hcl`**: `docs/project_config.md`,
   `docs/atlas_project_config.md`, `docs/atlas_hcl_schema.md`,
-  `docs/site/src/content/docs/reference/configuration.md`, and related CLI
+  `docs/site/src/content/docs/reference/configuration.md`,
+  `docs/site/src/content/docs/atlas/project-config.md`, and related CLI
   workflow pages.
 - **Go annotations, YAML, and Atlas HCL schema sources**:
   `docs/go_annotations_vs_atlas_hcl.md`, `docs/yaml_schema.md`,
-  `docs/site/src/content/docs/schema/go-annotations.md`, and the
+  `docs/site/src/content/docs/schema/go-annotations.md`,
+  `docs/site/src/content/docs/reference/go-annotations.md`, and the
   `docs/site/src/content/docs/schema/` source pages (`yaml.md`, `hcl.md`,
   `sql.md`, `orm-and-external.md`, `composite.md`).
 - **Migrations, sums, directives, revision tables, and safety**:
   `migration/migrator/README.md`, `migration/generator/README.md`, the
   `docs/site/src/content/docs/versioned/` lifecycle pages (`overview.md`,
   `generate.md`, `apply.md`, `rollback.md`, `integrity-and-safety.md`,
-  `maintain-history.md`, `import.md`),
+  `maintain-history.md`, `import.md`, `checkpoints.md`, `reference-data.md`),
+  `docs/site/src/content/docs/concepts/migration-directory.md`,
   `docs/site/src/content/docs/atlas/migrate-commands.md`, and
   `docs/site/src/content/docs/operate/troubleshooting.md`.
+- **OCI artifacts and seeds**: `docs/oci_registry.md`,
+  `docs/site/src/content/docs/operate/oci-registry.md`, and
+  `docs/site/src/content/docs/operate/seed-data.md`.
 - **Parser/renderer or dialect behavior**: `internal/parser/README.md`,
-  dialect docs such as `docs/sqlite.md` and `docs/sqlserver.md`,
-  capability docs, and schema example pages.
+  dialect docs such as `docs/sqlite.md` and `docs/sqlserver.md`, the
+  `docs/site/src/content/docs/databases/` engine pages, capability docs, and
+  schema source pages.
 - **Capabilities**: `docs/capabilities.md`,
-  `docs/site/src/content/docs/reference/capabilities.md`, and any dialect or
+  `docs/site/src/content/docs/reference/capabilities.md`,
+  `docs/site/src/content/docs/concepts/dialects-and-capabilities.md`,
+  `docs/site/src/content/docs/databases/support-matrix.md`, and any dialect or
   conformance pages that mention the changed capability.
 - **Public Go API or testkit**: `docs/public_api.md`,
-  `docs/site/src/content/docs/reference/*.md`, `testkit/README.md`, and package
+  `docs/site/src/content/docs/extend/*.md`, `testkit/README.md`, and package
   comments for exported identifiers.
 - **GitHub Action, CI, or generated reports**: `docs/github_action.md`,
   `docs/site/src/content/docs/testing/ci.md`, `docs/release_process.md`, and

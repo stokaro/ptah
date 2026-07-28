@@ -3,7 +3,8 @@ title: Reference data
 description: Declare reference/seed rows and generate reversible data migrations from the drift against a live database.
 ---
 
-`ptah seed` applies SQL seed files imperatively — "run these INSERTs once." Ptah
+[`ptah seed`](../../operate/seed-data/) applies SQL seed files imperatively —
+"run these INSERTs once." Ptah
 also supports a **declarative** model for reference/lookup tables: declare the
 rows a table should contain, and let Ptah diff them against the live table and
 generate a reversible data migration (`INSERT`/`UPDATE`/`DELETE`) that
@@ -125,7 +126,7 @@ still requires `--allow-destructive`, and `--protected-table` still applies.
 
 `ptah seed` remains the imperative path — it runs environment-scoped SQL seed
 files once and tracks them in `schema_seeds`. Declarative reference data instead
-describes a *desired row state* and computes the migration to reach it, so drift
+describes the *desired rows* and computes the migration to reach them, so drift
 (a changed lookup value, a removed row) is reconciled rather than reapplied. Use
 `seed` for one-off setup data, managed data for tables whose exact contents Ptah
 should own.

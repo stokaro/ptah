@@ -15,6 +15,7 @@ const base = `/ptah/${DOCS_VERSION}/`;
 const redirectRoutes = {
   '/getting-started/': '/start/quick-start/',
   '/install/': '/start/install/',
+  '/documentation-map/': '/',
   '/workflows/go-schema/': '/schema/go-annotations/',
   '/workflows/schema-files/': '/schema/yaml/',
   '/workflows/orm-loaders/': '/schema/orm-and-external/',
@@ -28,6 +29,7 @@ const redirectRoutes = {
   '/workflows/reference-data/': '/versioned/reference-data/',
   '/workflows/testing/': '/testing/migrations-and-schema/',
   '/workflows/ci/': '/testing/ci/',
+  '/workflows/oci-registry/': '/operate/oci-registry/',
   '/workflows/atlas-cli/': '/atlas/overview/',
   '/examples/atlas-migrations/': '/atlas/migrate-commands/',
   '/reference/atlas-project-config/': '/atlas/project-config/',
@@ -79,7 +81,6 @@ export default defineConfig({
             { slug: 'start/adopt-an-existing-database' },
           ],
         },
-        { label: 'Documentation map', slug: 'documentation-map' },
         {
           label: 'Model your schema',
           items: [
@@ -123,9 +124,11 @@ export default defineConfig({
           ],
         },
         {
-          label: 'Use Ptah',
+          label: 'Distribute and operate',
           items: [
-            { slug: 'workflows/oci-registry' },
+            { slug: 'operate/oci-registry' },
+            { slug: 'operate/seed-data' },
+            { slug: 'operate/troubleshooting' },
           ],
         },
         {
@@ -179,12 +182,6 @@ export default defineConfig({
             { slug: 'reference/test-cases' },
             { slug: 'reference/capabilities' },
             { slug: 'reference/exit-codes' },
-          ],
-        },
-        {
-          label: 'Operate',
-          items: [
-            { slug: 'operate/troubleshooting' },
           ],
         },
       ],

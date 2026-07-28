@@ -80,7 +80,7 @@ canonical report with `--attach`. Native `schema compare`, `drift`, and
 `--schema-file`; a plan with exactly one OCI schema source can attach its
 canonical safety report. Use digest pins for reproducible runs and reserve
 `--plain-http` for an explicitly trusted local registry. See [OCI registry
-artifacts](../../workflows/oci-registry/).
+artifacts](../../operate/oci-registry/).
 
 `ptah oci referrers <oci-reference>` lists direct attachment descriptors.
 `--type` accepts `all`, `lint`, `plan`, or `deployment`; `--format` accepts
