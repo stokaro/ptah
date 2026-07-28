@@ -21,7 +21,6 @@ import (
 	"github.com/stokaro/ptah/cmd/migrateedit"
 	"github.com/stokaro/ptah/cmd/migratehash"
 	"github.com/stokaro/ptah/cmd/migraterebase"
-	"github.com/stokaro/ptah/cmd/migraterepair"
 	"github.com/stokaro/ptah/cmd/migraterm"
 	"github.com/stokaro/ptah/cmd/migratevalidate"
 	"github.com/stokaro/ptah/cmd/migrationstest"
@@ -62,6 +61,16 @@ const (
 	atlasDirFormatDefault = "atlas"
 	atlasErrorExitCode    = 1
 )
+
+func failAtlasCommand(cmd *cobra.Command, err error) error {
+	if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "Error: %s\n", err); writeErr != nil {
+		return exitcode.New(
+			atlasErrorExitCode,
+			fmt.Errorf("%w: write Atlas diagnostic: %w", err, writeErr),
+		)
+	}
+	return exitcode.New(atlasErrorExitCode, err)
+}
 
 var unsupportedAtlasDirFormats = []string{
 	"dbmate",
@@ -152,6 +161,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 	cmd.AddCommand(newAtlasMigrateLintCommand())
 	cmd.AddCommand(newAtlasMigrateStatusCommand())
 	cmd.AddCommand(newAtlasMigrateDownCommand())
+	cmd.AddCommand(newAtlasMigrateSetCommand())
 	for _, verb := range []atlasVerb{
 		{
 			use:                "checkpoint",
@@ -204,33 +214,6 @@ func newAtlasMigrateCommand() *cobra.Command {
 		},
 		atlasMigrateRebaseVerb(),
 		atlasMigrateRmVerb(),
-		{
-			use:         "set",
-			displayUse:  "set [flags] [version]",
-			short:       "Set migration revision state",
-			native:      "migrations repair",
-			factory:     migraterepair.NewMigrateRepairCommand,
-			prefixArgs:  []string{"--revision-format", "atlas", "--force"},
-			positionals: []atlasPositionalArg{{name: "version", nativeName: "version"}},
-			nativeOnlyFlags: []string{
-				"atlas-env",
-				"connect-timeout",
-				"db-url",
-				"force",
-				"migrations-dir",
-				"migrations-schema",
-				"migrations-table",
-				"resume-from",
-				"revision-format",
-				"version",
-			},
-			flags: []atlasargs.Flag{
-				atlasargs.NativeString("url", "u", "Database URL", "db-url"),
-				atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
-				atlasMigrateDirFormatFlag("dir-format"),
-				atlasargs.NativeString("revisions-schema", "", "Schema for the revision table", "migrations-schema"),
-			},
-		},
 		atlasMigrateTestVerb(),
 		{
 			use:     "validate",

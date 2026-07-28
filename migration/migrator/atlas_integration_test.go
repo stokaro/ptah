@@ -2,6 +2,9 @@ package migrator_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
 	"os"
 	"strconv"
 	"strings"
@@ -21,20 +24,7 @@ func TestAtlasFormat_PostgresIntegration(t *testing.T) {
 }
 
 func TestAtlasFormat_MySQLIntegration(t *testing.T) {
-	dbURL := os.Getenv("MYSQL_TEST_DSN")
-	if dbURL == "" {
-		dbURL = os.Getenv("MYSQL_TEST_URL")
-	}
-	if dbURL == "" {
-		t.Skip("MYSQL_TEST_DSN or MYSQL_TEST_URL not set")
-	}
-	if strings.Contains(dbURL, "@tcp(") && !strings.HasPrefix(dbURL, "mysql://") {
-		dbURL = "mysql://" + dbURL
-	}
-	if !strings.HasPrefix(dbURL, "mysql://") {
-		t.Skip("MySQL URL required for Atlas migration integration test")
-	}
-	runAtlasFormatIntegration(t, dbURL)
+	runAtlasFormatIntegration(t, mysqlAtlasTestURL(t))
 }
 
 func TestAtlasTxtarDown_PostgresIntegration(t *testing.T) {
@@ -50,20 +40,173 @@ func TestAtlasRevisionTable_PostgresIntegration(t *testing.T) {
 }
 
 func TestAtlasTxtarDown_MySQLIntegration(t *testing.T) {
-	dbURL := os.Getenv("MYSQL_TEST_DSN")
-	if dbURL == "" {
-		dbURL = os.Getenv("MYSQL_TEST_URL")
+	runAtlasTxtarDownIntegration(t, mysqlAtlasTestURL(t))
+}
+
+func TestAtlasRevisionMetadata_PostgresIntegration(t *testing.T) {
+	runAtlasRevisionMetadataIntegration(t, postgresTestURL(t))
+}
+
+func TestAtlasRevisionMetadata_MySQLIntegration(t *testing.T) {
+	runAtlasRevisionMetadataIntegration(t, mysqlAtlasTestURL(t))
+}
+
+func TestAtlasRevisionMetadata_MariaDBIntegration(t *testing.T) {
+	runAtlasRevisionMetadataIntegration(t, mariaDBAtlasTestURL(t))
+}
+
+func TestAtlasRevisionMetadata_SQLServerIntegration(t *testing.T) {
+	runAtlasRevisionMetadataIntegration(t, sqlServerAtlasTestURL(t))
+}
+
+func TestAtlasRevisionMetadata_CockroachDBIntegration(t *testing.T) {
+	runAtlasRevisionMetadataIntegration(t, cockroachDBAtlasTestURL(t))
+}
+
+func TestAtlasRevisionMetadata_YugabyteDBIntegration(t *testing.T) {
+	runAtlasRevisionMetadataIntegration(t, yugabyteDBAtlasTestURL(t))
+}
+
+func TestAtlasSetSerializable_PostgresConcurrentInsertIntegration(t *testing.T) {
+	c := qt.New(t)
+	ctx := t.Context()
+	conn, err := dbschema.ConnectToDatabase(ctx, postgresTestURL(t))
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	cleanupIssue819(t, conn)
+	defer cleanupIssue819(t, conn)
+
+	fsys := fstest.MapFS{
+		"1_create_accounts.sql": &fstest.MapFile{Data: []byte("SELECT 1;\n")},
+		"2_create_users.sql":    &fstest.MapFile{Data: []byte("SELECT 2;\n")},
+		"3_add_audit.sql":       &fstest.MapFile{Data: []byte("SELECT 3;\n")},
 	}
-	if dbURL == "" {
-		t.Skip("MYSQL_TEST_DSN or MYSQL_TEST_URL not set")
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fsys,
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+	_, err = mig.SetAtlasRevision(ctx, 2)
+	c.Assert(err, qt.IsNil)
+
+	_, err = conn.ExecContext(ctx, `CREATE FUNCTION ptah_issue_819_pause_delete()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+	PERFORM pg_advisory_xact_lock(819819);
+	RETURN OLD;
+END
+$$`)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(ctx, `CREATE TRIGGER ptah_issue_819_pause_delete
+BEFORE DELETE ON atlas_schema_revisions
+FOR EACH ROW EXECUTE FUNCTION ptah_issue_819_pause_delete()`)
+	c.Assert(err, qt.IsNil)
+
+	gate, err := conn.Conn(ctx)
+	c.Assert(err, qt.IsNil)
+	defer func() {
+		_, _ = gate.ExecContext(context.Background(), "SELECT pg_advisory_unlock(819819)")
+		c.Check(gate.Close(), qt.IsNil)
+	}()
+	_, err = gate.ExecContext(ctx, "SELECT pg_advisory_lock(819819)")
+	c.Assert(err, qt.IsNil)
+
+	setDone := make(chan issue819SetCall, 1)
+	go func() {
+		result, setErr := mig.SetAtlasRevision(ctx, 1)
+		setDone <- issue819SetCall{Result: result, Err: setErr}
+	}()
+	waitForIssue819AdvisoryWait(c, conn)
+
+	concurrent, err := conn.Conn(ctx)
+	c.Assert(err, qt.IsNil)
+	defer func() {
+		c.Check(concurrent.Close(), qt.IsNil)
+	}()
+	tx, err := concurrent.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	c.Assert(err, qt.IsNil)
+	defer func() {
+		_ = tx.Rollback()
+	}()
+	var description string
+	err = tx.QueryRowContext(
+		ctx,
+		"SELECT description FROM atlas_schema_revisions WHERE version = '2'",
+	).Scan(&description)
+	c.Assert(err, qt.IsNil)
+	c.Assert(description, qt.Equals, "create_users")
+	_, err = tx.ExecContext(ctx, `INSERT INTO atlas_schema_revisions
+(version, description, type, applied, total, executed_at, execution_time, error, error_stmt, hash, partial_hashes, operator_version)
+VALUES ('3', 'external', 2, 1, 1, NOW(), 0, NULL, NULL, 'external', 'null'::jsonb, 'Atlas')`)
+	c.Assert(err, qt.IsNil)
+	c.Assert(tx.Commit(), qt.IsNil)
+
+	_, err = gate.ExecContext(ctx, "SELECT pg_advisory_unlock(819819)")
+	c.Assert(err, qt.IsNil)
+	setCall := <-setDone
+	c.Assert(setCall.Err, qt.IsNil)
+	c.Assert(issue819RevisionVersions(setCall.Result.Removed), qt.DeepEquals, []int64{2, 3})
+	c.Assert(readIssue819Revisions(c, conn), qt.DeepEquals, []issue819Revision{
+		{
+			Version:       "1",
+			Description:   "create_accounts",
+			RevisionType:  4,
+			Hash:          issue819SQLHash("SELECT 1;\n"),
+			PartialHashes: sql.NullString{String: "null", Valid: true},
+		},
+	})
+}
+
+func TestAtlasRevisionMetadata_ClickHouseRejectsSetIntegration(t *testing.T) {
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(t.Context(), clickHouseAtlasTestURL(t))
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			"1_create_accounts.sql": &fstest.MapFile{Data: []byte("SELECT 1;\n")},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+
+	result, err := mig.SetAtlasRevision(t.Context(), 1)
+
+	c.Assert(err, qt.ErrorMatches, "setting an Atlas revision is not supported for ClickHouse because revision history cannot be updated atomically")
+	c.Assert(result, qt.DeepEquals, migrator.AtlasRevisionSetResult{})
+}
+
+type issue819SetCall struct {
+	Result migrator.AtlasRevisionSetResult
+	Err    error
+}
+
+func waitForIssue819AdvisoryWait(c *qt.C, conn *dbschema.DatabaseConnection) {
+	c.Helper()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		var waiting int
+		err := conn.QueryRowContext(
+			context.Background(),
+			`SELECT COUNT(*) FROM pg_locks
+WHERE locktype = 'advisory' AND objid = 819819 AND NOT granted`,
+		).Scan(&waiting)
+		c.Assert(err, qt.IsNil)
+		if waiting > 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	if strings.Contains(dbURL, "@tcp(") && !strings.HasPrefix(dbURL, "mysql://") {
-		dbURL = "mysql://" + dbURL
-	}
-	if !strings.HasPrefix(dbURL, "mysql://") {
-		t.Skip("MySQL URL required for Atlas migration integration test")
-	}
-	runAtlasTxtarDownIntegration(t, dbURL)
+	c.Fatalf("timed out waiting for migrate set delete trigger")
 }
 
 func runAtlasFormatIntegration(t *testing.T, dbURL string) {
@@ -288,6 +431,292 @@ DROP TABLE ptah_issue_275_next;
 	})
 }
 
+func runAtlasRevisionMetadataIntegration(t *testing.T, dbURL string) {
+	t.Helper()
+
+	c := qt.New(t)
+	ctx := context.Background()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = conn.Close() }()
+
+	cleanupIssue819(t, conn)
+	defer cleanupIssue819(t, conn)
+
+	const (
+		firstSQL  = "SELECT 1;\n"
+		secondSQL = "SELECT 2;\n"
+		thirdSQL  = "SELECT 3;\n"
+	)
+	fsys := fstest.MapFS{
+		"1_create_accounts.sql": &fstest.MapFile{Data: []byte(firstSQL)},
+		"2_create_users.sql":    &fstest.MapFile{Data: []byte(secondSQL)},
+		"3_add_audit.sql":       &fstest.MapFile{Data: []byte(thirdSQL)},
+	}
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fsys,
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+
+	err = mig.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{Amount: 1})
+	c.Assert(err, qt.IsNil)
+	c.Assert(readIssue819Revisions(c, conn), qt.DeepEquals, []issue819Revision{
+		{
+			Version:      "1",
+			Description:  "Create Accounts",
+			RevisionType: 2,
+			Applied:      1,
+			Total:        1,
+			Hash:         issue819SQLHash(firstSQL),
+		},
+	})
+
+	result, err := mig.SetAtlasRevision(ctx, 3)
+	c.Assert(err, qt.IsNil)
+	c.Assert(issue819RevisionVersions(result.Set), qt.DeepEquals, []int64{2, 3})
+	c.Assert(result.Removed, qt.HasLen, 0)
+	c.Assert(readIssue819Revisions(c, conn), qt.DeepEquals, []issue819Revision{
+		{
+			Version:      "1",
+			Description:  "Create Accounts",
+			RevisionType: 2,
+			Applied:      1,
+			Total:        1,
+			Hash:         issue819SQLHash(firstSQL),
+		},
+		{
+			Version:       "2",
+			Description:   "create_users",
+			RevisionType:  4,
+			Hash:          issue819SQLHash(secondSQL),
+			PartialHashes: sql.NullString{String: "null", Valid: true},
+		},
+		{
+			Version:       "3",
+			Description:   "add_audit",
+			RevisionType:  4,
+			Hash:          issue819SQLHash(thirdSQL),
+			PartialHashes: sql.NullString{String: "null", Valid: true},
+		},
+	})
+
+	markIssue819RevisionDirty(c, conn, "1")
+	result, err = mig.SetAtlasRevision(ctx, 2)
+	c.Assert(err, qt.IsNil)
+	c.Assert(issue819RevisionVersions(result.Set), qt.DeepEquals, []int64{1})
+	c.Assert(issue819RevisionVersions(result.Removed), qt.DeepEquals, []int64{3})
+	c.Assert(readIssue819Revisions(c, conn), qt.DeepEquals, []issue819Revision{
+		{
+			Version:      "1",
+			Description:  "Create Accounts",
+			RevisionType: 6,
+			Total:        1,
+			Error:        "broken",
+			Hash:         issue819SQLHash(firstSQL),
+		},
+		{
+			Version:       "2",
+			Description:   "create_users",
+			RevisionType:  4,
+			Hash:          issue819SQLHash(secondSQL),
+			PartialHashes: sql.NullString{String: "null", Valid: true},
+		},
+	})
+
+	cleanupIssue819(t, conn)
+	baselineMigrator, err := migrator.NewFSMigrator(
+		conn,
+		fsys,
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	baselineMigrator = baselineMigrator.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+	err = baselineMigrator.Baseline(ctx, 2)
+	c.Assert(err, qt.IsNil)
+	c.Assert(readIssue819Revisions(c, conn), qt.DeepEquals, []issue819Revision{
+		{
+			Version:       "2",
+			Description:   "create_users",
+			RevisionType:  1,
+			PartialHashes: sql.NullString{String: "null", Valid: true},
+		},
+	})
+}
+
+type issue819Revision struct {
+	Version       string
+	Description   string
+	RevisionType  int
+	Applied       int
+	Total         int
+	Error         string
+	Hash          string
+	PartialHashes sql.NullString
+}
+
+func readIssue819Revisions(c *qt.C, conn *dbschema.DatabaseConnection) []issue819Revision {
+	c.Helper()
+
+	rows, err := conn.QueryContext(
+		context.Background(),
+		`SELECT version, description, type, applied, total, COALESCE(error, ''), hash, partial_hashes
+FROM atlas_schema_revisions
+ORDER BY version`,
+	)
+	c.Assert(err, qt.IsNil)
+	defer func() {
+		c.Check(rows.Close(), qt.IsNil)
+	}()
+
+	revisions := make([]issue819Revision, 0)
+	for rows.Next() {
+		var revision issue819Revision
+		err = rows.Scan(
+			&revision.Version,
+			&revision.Description,
+			&revision.RevisionType,
+			&revision.Applied,
+			&revision.Total,
+			&revision.Error,
+			&revision.Hash,
+			&revision.PartialHashes,
+		)
+		c.Assert(err, qt.IsNil)
+		revisions = append(revisions, revision)
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return revisions
+}
+
+func issue819RevisionVersions(revisions []migrator.AtlasRevisionChange) []int64 {
+	versions := make([]int64, 0, len(revisions))
+	for _, revision := range revisions {
+		versions = append(versions, revision.Version)
+	}
+	return versions
+}
+
+func issue819SQLHash(sqlText string) string {
+	sum := sha256.Sum256([]byte(sqlText))
+	return hex.EncodeToString(sum[:])
+}
+
+func markIssue819RevisionDirty(c *qt.C, conn *dbschema.DatabaseConnection, version string) {
+	c.Helper()
+
+	query := sqlutil.Rebind(
+		conn.Info().Dialect,
+		`UPDATE atlas_schema_revisions SET type = 1, applied = 0, total = 1, error = 'broken' WHERE version = ?`,
+	)
+	_, err := conn.ExecContext(context.Background(), query, version)
+	c.Assert(err, qt.IsNil)
+}
+
+func mysqlAtlasTestURL(t *testing.T) string {
+	t.Helper()
+
+	dbURL := os.Getenv("MYSQL_TEST_DSN")
+	if dbURL == "" {
+		dbURL = os.Getenv("MYSQL_TEST_URL")
+	}
+	if dbURL == "" {
+		t.Skip("MYSQL_TEST_DSN or MYSQL_TEST_URL not set")
+	}
+	if strings.Contains(dbURL, "@tcp(") && !strings.HasPrefix(dbURL, "mysql://") {
+		dbURL = "mysql://" + dbURL
+	}
+	if !strings.HasPrefix(dbURL, "mysql://") {
+		t.Skip("MySQL URL required for Atlas migration integration test")
+	}
+	return dbURL
+}
+
+func mariaDBAtlasTestURL(t *testing.T) string {
+	t.Helper()
+
+	dbURL := os.Getenv("MARIADB_TEST_DSN")
+	if dbURL == "" {
+		dbURL = os.Getenv("MARIADB_TEST_URL")
+	}
+	if dbURL == "" {
+		t.Skip("MARIADB_TEST_DSN or MARIADB_TEST_URL not set")
+	}
+	if strings.Contains(dbURL, "@tcp(") && !strings.HasPrefix(dbURL, "mariadb://") {
+		dbURL = "mariadb://" + dbURL
+	}
+	if !strings.HasPrefix(dbURL, "mariadb://") {
+		t.Skip("MariaDB URL required for Atlas migration integration test")
+	}
+	return dbURL
+}
+
+func sqlServerAtlasTestURL(t *testing.T) string {
+	t.Helper()
+
+	dbURL := os.Getenv("PTAH_SQLSERVER_TEST_URL")
+	if dbURL == "" {
+		t.Skip("PTAH_SQLSERVER_TEST_URL not set")
+	}
+	return dbURL
+}
+
+func clickHouseAtlasTestURL(t *testing.T) string {
+	t.Helper()
+
+	dbURL := os.Getenv("CLICKHOUSE_URL")
+	if dbURL == "" {
+		t.Skip("CLICKHOUSE_URL not set")
+	}
+	return dbURL
+}
+
+func cockroachDBAtlasTestURL(t *testing.T) string {
+	t.Helper()
+
+	dbURL := os.Getenv("COCKROACHDB_TEST_DSN")
+	if dbURL == "" {
+		dbURL = os.Getenv("COCKROACHDB_URL")
+	}
+	if dbURL == "" {
+		t.Skip("COCKROACHDB_TEST_DSN or COCKROACHDB_URL not set")
+	}
+	if rest, ok := strings.CutPrefix(dbURL, "postgresql://"); ok {
+		dbURL = "cockroachdb://" + rest
+	}
+	if rest, ok := strings.CutPrefix(dbURL, "postgres://"); ok {
+		dbURL = "cockroachdb://" + rest
+	}
+	if !strings.HasPrefix(dbURL, "cockroachdb://") {
+		t.Skip("CockroachDB URL required for Atlas migration integration test")
+	}
+	return dbURL
+}
+
+func yugabyteDBAtlasTestURL(t *testing.T) string {
+	t.Helper()
+
+	dbURL := os.Getenv("YUGABYTEDB_TEST_DSN")
+	if dbURL == "" {
+		dbURL = os.Getenv("YUGABYTEDB_URL")
+	}
+	if dbURL == "" {
+		t.Skip("YUGABYTEDB_TEST_DSN or YUGABYTEDB_URL not set")
+	}
+	if rest, ok := strings.CutPrefix(dbURL, "postgresql://"); ok {
+		dbURL = "yugabytedb://" + rest
+	}
+	if rest, ok := strings.CutPrefix(dbURL, "postgres://"); ok {
+		dbURL = "yugabytedb://" + rest
+	}
+	if !strings.HasPrefix(dbURL, "yugabytedb://") {
+		t.Skip("YugabyteDB URL required for Atlas migration integration test")
+	}
+	return dbURL
+}
+
 func cleanupIssue273(t *testing.T, conn *dbschema.DatabaseConnection) {
 	t.Helper()
 
@@ -335,6 +764,13 @@ func cleanupIssue290(t *testing.T, conn *dbschema.DatabaseConnection) {
 	} {
 		_, _ = conn.ExecContext(context.Background(), statement)
 	}
+}
+
+func cleanupIssue819(t *testing.T, conn *dbschema.DatabaseConnection) {
+	t.Helper()
+
+	_, _ = conn.ExecContext(context.Background(), "DROP TABLE IF EXISTS atlas_schema_revisions")
+	_, _ = conn.ExecContext(context.Background(), "DROP FUNCTION IF EXISTS ptah_issue_819_pause_delete()")
 }
 
 func createLegacyIssue273MetadataTable(t *testing.T, conn *dbschema.DatabaseConnection) {

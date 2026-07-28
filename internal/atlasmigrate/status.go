@@ -38,16 +38,12 @@ func Status(ctx context.Context, conn *dbschema.DatabaseConnection, opts StatusO
 	}
 	mig = mig.WithMigrationsTable(opts.RevisionsSchema, "").
 		WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
-	status, err := mig.GetMigrationStatus(ctx)
+	snapshot, err := mig.GetMigrationStatusSnapshot(ctx)
 	if err != nil {
 		return StatusResult{}, fmt.Errorf("error getting migration status: %w", err)
 	}
-	appliedRevisions, err := mig.GetAppliedRevisions(ctx)
-	if err != nil {
-		return StatusResult{}, fmt.Errorf("error getting applied migration revisions: %w", err)
-	}
 	return StatusResult{
-		Status:           status,
-		AppliedRevisions: appliedRevisions,
+		Status:           snapshot.Status,
+		AppliedRevisions: snapshot.Revisions,
 	}, nil
 }

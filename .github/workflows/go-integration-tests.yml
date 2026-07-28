@@ -192,7 +192,7 @@ jobs:
           go test -v ./integration -tags=integration -timeout 15m
           go test -v ./integration/gonative -tags=integration -timeout 15m
           go test -v ./dbschema -run 'TestSQLServerLive(ReadSchema|DropAllTablesDropsForeignKeys|ComputedColumnZeroDiff|DropAllTablesRejectsExternalForeignKeys|IdentifierSemantics_)' -timeout 3m
-          go test -v ./migration/migrator -run 'TestSQLServerMigratorHonorsURLSchemaForMetadata|TestMigrationAdvisoryLock_SQLServer(DefaultTimeout|Timeout)Integration' -timeout 3m
+          go test -v ./migration/migrator -run 'TestSQLServerMigratorHonorsURLSchemaForMetadata|TestMigrationAdvisoryLock_SQLServer(DefaultTimeout|Timeout)Integration|TestAtlasRevisionMetadata_SQLServerIntegration' -timeout 3m
           go test -v ./migration/generator -run 'TestGenerateMigration_SQLServerIndexDirectionRoundTrip|TestShadowIdentifierSemanticsMatch_SQLServerLive' -timeout 5m
 
       - name: Build integration test binary
@@ -214,8 +214,11 @@ jobs:
           POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           MYSQL_TEST_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
           MARIADB_TEST_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
+          CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
+          COCKROACHDB_TEST_DSN: "postgresql://root@localhost:26257/defaultdb?sslmode=disable"
+          YUGABYTEDB_TEST_DSN: "postgresql://yugabyte@localhost:5433/yugabyte?sslmode=disable"
         run: |
-          go test -v ./migration/migrator -run 'TestMigrateUp_PostgresLockTimeoutIntegration|TestOutOfOrderMigrationsPostgresIntegration|TestMigrationAdvisoryLock_PostgresConcurrentRunners|TestMigrationAdvisoryLock_PostgresTimeoutIntegration|TestMigrationAdvisoryLock_MySQLDefaultTimeoutIntegration|TestMigrationAdvisoryLock_MariaDBDefaultTimeoutIntegration|TestDirtyMigrationState_PostgresFailureRollsBackAndBlocksRetry|TestDirtyMigrationState_MySQLRepairReachesHead|TestDirtyMigrationState_MariaDBRepairReachesHead|TestMigrationChecksumMismatch_PostgresIntegration|TestBaseline_' -timeout 3m
+          go test -v ./migration/migrator -run 'TestMigrateUp_PostgresLockTimeoutIntegration|TestOutOfOrderMigrationsPostgresIntegration|TestMigrationAdvisoryLock_PostgresConcurrentRunners|TestMigrationAdvisoryLock_PostgresTimeoutIntegration|TestMigrationAdvisoryLock_MySQLDefaultTimeoutIntegration|TestMigrationAdvisoryLock_MariaDBDefaultTimeoutIntegration|TestDirtyMigrationState_PostgresFailureRollsBackAndBlocksRetry|TestDirtyMigrationState_MySQLRepairReachesHead|TestDirtyMigrationState_MariaDBRepairReachesHead|TestMigrationChecksumMismatch_PostgresIntegration|TestBaseline_|TestAtlasRevisionMetadata_(Postgres|MySQL|MariaDB|CockroachDB|YugabyteDB|ClickHouseRejectsSet)Integration|TestAtlasSetSerializable_PostgresConcurrentInsertIntegration' -timeout 3m
 
       - name: Run no-transaction and shadow generator integration tests
         env:

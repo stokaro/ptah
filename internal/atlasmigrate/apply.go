@@ -241,13 +241,17 @@ func newApplyMigrator(
 
 func applyBaselineVersions(mig *migrator.Migrator, baselineVersion int64) ([]int64, error) {
 	versions := make([]int64, 0)
+	found := false
 	for _, migration := range mig.MigrationProvider().Migrations() {
 		if migration.Version <= baselineVersion {
 			versions = append(versions, migration.Version)
 		}
+		if migration.Version == baselineVersion {
+			found = true
+		}
 	}
-	if len(versions) == 0 {
-		return nil, fmt.Errorf("no migrations found at or below baseline version %d", baselineVersion)
+	if !found {
+		return nil, fmt.Errorf("baseline version %q not found", strconv.FormatInt(baselineVersion, 10))
 	}
 	return versions, nil
 }

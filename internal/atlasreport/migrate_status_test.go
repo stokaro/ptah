@@ -37,7 +37,13 @@ func TestWriteMigrateStatusFormat_CustomTemplate(t *testing.T) {
 				HasPendingChanges: true,
 			},
 			AppliedRevisions: []migrator.MigrationRevision{
-				{Version: 1, Description: "Create Users", Applied: 1, Total: 1},
+				{
+					Version:     1,
+					Description: "Create Users",
+					AtlasType:   migrator.AtlasRevisionTypeApplied,
+					Applied:     1,
+					Total:       1,
+				},
 			},
 		})
 
@@ -108,6 +114,7 @@ func TestWriteMigrateStatusFormat_JSONShape(t *testing.T) {
 			{
 				Version:         1,
 				Description:     "Create Users",
+				AtlasType:       migrator.AtlasRevisionTypeApplied,
 				Applied:         1,
 				Total:           1,
 				AppliedAt:       time.Unix(100, 0).UTC(),
