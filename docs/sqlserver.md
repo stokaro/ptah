@@ -36,6 +36,9 @@ The current SQL Server implementation covers:
 - `NVARCHAR`/`NVARCHAR(MAX)` string mapping.
 - Core table DDL, primary keys, unique constraints, foreign keys, CHECK
   constraints, and indexes with ordered ascending or descending key columns.
+- Filtered indexes: the index annotation's `condition` predicate survives
+  introspection, comparison, planning, and rendering as
+  `CREATE INDEX ... WHERE ...`. See [Filtered Indexes](#filtered-indexes).
 - Rendering for views and triggers when definitions are supplied as raw SQL.
 - Live schema introspection from `sys.tables`, `sys.columns`,
   `sys.foreign_keys`, `sys.indexes`, and related catalog views.
@@ -96,6 +99,38 @@ than live planning.
 Ptah does not reproduce SQL Server collation rules locally. The live catalog is
 the source of truth.
 
+## Filtered Indexes
+
+Declare a SQL Server filtered index with the index annotation's `condition`
+(or `where`) attribute:
+
+```go
+//migrator:schema:index name="idx_active_users" fields="status" condition="status = 1"
+```
+
+Ptah renders the predicate verbatim:
+
+```sql
+CREATE INDEX [idx_active_users] ON [dbo].[users] ([status]) WHERE status = 1;
+```
+
+SQL Server cannot alter an index predicate in place, so a changed predicate is
+planned as a replacement: `DROP INDEX ... ON ...` followed by
+`CREATE INDEX ... WHERE ...` carrying the target predicate.
+
+SQL Server persists `sys.indexes.filter_definition` in a canonical spelling —
+identifiers come back bracket-quoted and numeric literals parenthesized, so
+`status = 1` is stored as `([status]=(1))`. Predicate comparison therefore
+normalizes case, whitespace, wrapping parentheses, bracket identifier quoting,
+and parentheses around bare numeric literals before deciding whether an index
+changed. Rewrites SQL Server applies beyond that spelling — for example the
+`N'...'` prefix it adds to Unicode string literals or implicit `CAST`
+insertions — are not reconstructed: such predicates compare as changed and are
+re-planned as a replacement on every run. If a predicate keeps reporting drift
+after it was applied, spell the annotation the way the catalog stores it
+(compare with `ptah db read`); the rendered SQL always preserves the annotation
+text verbatim, so no predicate is ever silently dropped.
+
 ## Limitations
 
 The SQL Server support is deliberately conservative:
@@ -147,6 +182,10 @@ coverage creates separate CI and CS databases, verifies discovered semantics,
 executes case-only, changed-column, and ASC-to-DESC replacements safely, proves
 case variants coexist only on the CS database, and covers Turkish dotless-I,
 accent-insensitive Latin, Greek sigma, Japanese kana, and width equivalence.
+Filtered-index coverage creates a filtered index from a natural-spelling
+`condition` annotation, replaces a changed predicate through
+`DROP INDEX` + `CREATE INDEX ... WHERE`, and re-introspects to a zero diff
+against the canonical `filter_definition` spelling.
 The generator contour replays the prior schema on a separate SQL Server shadow
 database, then applies the generated ASC-to-DESC migration up, down, and up
 again while re-introspecting the index direction after every transition.

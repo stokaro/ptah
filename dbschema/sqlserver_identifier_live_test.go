@@ -346,6 +346,76 @@ CREATE TABLE [dbo].[users] (
 	c.Assert(finalDiff.HasChanges(), qt.IsFalse)
 }
 
+// TestSQLServerLiveIdentifierSemantics_FilteredIndexCreateRoundTrip proves the
+// #781 acceptance criteria for a fresh filtered index authored in natural
+// spelling: comparison plans a single CREATE INDEX ... WHERE, the predicate
+// survives execution, and re-introspection against the canonical
+// sys.indexes.filter_definition spelling reports zero diff.
+func TestSQLServerLiveIdentifierSemantics_FilteredIndexCreateRoundTrip(t *testing.T) {
+	c := qt.New(t)
+	dbURL := provisionSQLServerCollationDatabase(t, sqlServerCICollation)
+	conn := connectSQLServerCollationDatabase(t, dbURL)
+	ctx := t.Context()
+	info := conn.Info()
+
+	_, err := conn.ExecContext(ctx, `
+CREATE TABLE [dbo].[users] (
+    [id] int NOT NULL,
+    [status] int NOT NULL
+)`)
+	c.Assert(err, qt.IsNil)
+
+	target := &goschema.Database{Indexes: []goschema.Index{
+		{
+			Name:      "idx_active_users",
+			TableName: "dbo.users",
+			Fields:    []string{"status"},
+			Condition: "status = 1",
+		},
+	}}
+	current, err := dbschema.ReadSchemaWithSchemas(conn, []string{"dbo"})
+	c.Assert(err, qt.IsNil)
+	c.Assert(current.Indexes, qt.HasLen, 0)
+	createDiff, err := schemadiff.CompareWithDatabase(
+		ctx,
+		conn,
+		target,
+		indexOnlySchema(current),
+		nil,
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(createDiff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
+		{Name: "idx_active_users", TableName: "dbo.users"},
+	})
+	c.Assert(createDiff.IndexRemovals(), qt.HasLen, 0)
+
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
+		createDiff,
+		target,
+		info.Dialect,
+		info.Capabilities,
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.HasLen, 1)
+	c.Assert(statements[0], qt.Contains, "WHERE status = 1")
+	_, err = conn.ExecContext(ctx, statements[0])
+	c.Assert(err, qt.IsNil, qt.Commentf("statement failed:\n%s", statements[0]))
+
+	actual, err := dbschema.ReadSchemaWithSchemas(conn, []string{"dbo"})
+	c.Assert(err, qt.IsNil)
+	c.Assert(actual.Indexes, qt.HasLen, 1)
+	c.Assert(actual.Indexes[0].Condition, qt.Equals, "([status]=(1))")
+	finalDiff, err := schemadiff.CompareWithDatabase(
+		ctx,
+		conn,
+		target,
+		indexOnlySchema(actual),
+		nil,
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(finalDiff.HasChanges(), qt.IsFalse)
+}
+
 func TestSQLServerLiveIdentifierSemantics_CaseSensitiveVariantsCoexist(t *testing.T) {
 	c := qt.New(t)
 	dbURL := provisionSQLServerCollationDatabase(t, sqlServerCSCollation)
