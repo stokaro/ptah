@@ -15,6 +15,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/introspect"
 	"github.com/stokaro/ptah/cmd/migrations"
+	"github.com/stokaro/ptah/cmd/oci"
 	"github.com/stokaro/ptah/cmd/schema"
 	"github.com/stokaro/ptah/cmd/seed"
 	sqlcmd "github.com/stokaro/ptah/cmd/sql"
@@ -41,6 +42,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(schema.NewSchemaCommand())
 	cmd.AddCommand(db.NewDBCommand())
 	cmd.AddCommand(migrations.NewMigrationsCommand())
+	cmd.AddCommand(oci.NewCommand())
 	cmd.AddCommand(seed.NewSeedCommand())
 	cmd.AddCommand(sqlcmd.NewSQLCommand())
 	cmd.AddCommand(viz.NewCommand())

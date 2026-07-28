@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -15,6 +14,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
+	"github.com/stokaro/ptah/cmd/internal/migrationsource"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -27,6 +27,7 @@ const (
 	verboseFlag    = "verbose"
 	jsonFlag       = "json"
 	exitCodeFlag   = "exit-code"
+	plainHTTPFlag  = "plain-http"
 )
 
 type options struct {
@@ -37,6 +38,7 @@ type options struct {
 	verbose             bool
 	jsonOutput          bool
 	exitOnPending       bool
+	plainHTTP           bool
 	connectTimeout      string
 	configPath          string
 	envName             string
@@ -75,12 +77,13 @@ migrations or for debugging migration issues.`,
 func registerFlags(cmd *cobra.Command, opts *options) {
 	flags := cmd.Flags()
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
-	flags.StringVar(&opts.migrationsDir, migrationsFlag, "", "Directory containing migration files (required)")
+	flags.StringVar(&opts.migrationsDir, migrationsFlag, "", "Local directory or oci:// reference containing migration files (required)")
 	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
 	flags.BoolVar(&opts.verbose, verboseFlag, false, "Enable verbose output with detailed migration information")
 	flags.BoolVar(&opts.jsonOutput, jsonFlag, false, "Output status in JSON format")
 	flags.BoolVar(&opts.exitOnPending, exitCodeFlag, false, "Exit with 1 when pending migrations are available")
+	flags.BoolVar(&opts.plainHTTP, plainHTTPFlag, false, "Use plain HTTP for an explicitly trusted local OCI registry")
 	flags.StringVar(&opts.logFormat, cliobs.LogFormatFlagName, "text", "Log format: text or json")
 	flags.StringVar(&opts.logLevel, cliobs.LogLevelFlagName, "info", "Log level: debug, info, warn, or error")
 	flags.StringVar(&opts.metricsAddr, cliobs.MetricsAddrFlagName, "", "Address for the Prometheus /metrics endpoint, such as :9090")
@@ -144,6 +147,15 @@ func migrateStatusCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
+	source, err := migrationsource.Resolve(cmd.Context(), migrationsDir, migrationsource.Options{
+		DirFormat: dirFormat,
+		PlainHTTP: opts.plainHTTP,
+	})
+	if err != nil {
+		return err
+	}
+	migrationsFS := source.FileSystem
+	dirFormat = source.DirFormat
 	revisionFormat, err := migrator.ParseRevisionTableFormat(revisionFormatValue)
 	if err != nil {
 		return err
@@ -161,9 +173,6 @@ func migrateStatusCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("error connecting to database: %w", err)
 	}
 	defer dbschema.CloseAndWarn(conn)
-
-	// Create filesystem from migrations directory
-	migrationsFS := os.DirFS(migrationsDir)
 
 	mig, err := migrator.NewFSMigrator(
 		conn,

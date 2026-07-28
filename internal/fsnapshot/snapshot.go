@@ -20,6 +20,47 @@ type Snapshot struct {
 	files map[string][]byte
 }
 
+// FromFiles returns an immutable snapshot containing files. Every path must be
+// valid for io/fs, and both the map and file contents are cloned.
+func FromFiles(files map[string][]byte) (Snapshot, error) {
+	if err := validateFilePaths(files); err != nil {
+		return Snapshot{}, err
+	}
+	snapshot := Snapshot{files: make(map[string][]byte, len(files))}
+	for name, contents := range files {
+		snapshot.files[name] = slices.Clone(contents)
+	}
+	return snapshot, nil
+}
+
+// TakeFiles returns an immutable snapshot by taking exclusive ownership of
+// files and their byte slices. The caller must not retain or mutate them after
+// this call. Use FromFiles when ownership cannot be transferred.
+func TakeFiles(files map[string][]byte) (Snapshot, error) {
+	if err := validateFilePaths(files); err != nil {
+		return Snapshot{}, err
+	}
+	return Snapshot{files: files}, nil
+}
+
+func validateFilePaths(files map[string][]byte) error {
+	for name := range files {
+		if !fs.ValidPath(name) || name == "." {
+			return fmt.Errorf("invalid snapshot file path %q", name)
+		}
+		for parent := path.Dir(name); parent != "."; parent = path.Dir(parent) {
+			if _, exists := files[parent]; exists {
+				return fmt.Errorf(
+					"invalid snapshot file paths %q and %q: a file cannot contain another file",
+					parent,
+					name,
+				)
+			}
+		}
+	}
+	return nil
+}
+
 // Capture reads every file in fsys exactly once and returns an immutable
 // snapshot. Capturing an existing Snapshot only clones its in-memory contents.
 func Capture(fsys fs.FS) (Snapshot, error) {

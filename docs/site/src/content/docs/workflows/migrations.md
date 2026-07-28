@@ -91,6 +91,30 @@ ptah migrations validate --dir ./migrations
 
 Use `--verify-sum` on `migrations up` to block out-of-band migration edits.
 
+## OCI registry artifacts
+
+Publish a verified migration directory to an OCI registry, or run it directly
+by tag or immutable manifest digest:
+
+```bash
+ptah migrations push \
+  oci://ghcr.io/acme/app-migrations \
+  --migrations-dir ./migrations \
+  --verify-sum
+
+ptah migrations up \
+  --db-url "$DATABASE_URL" \
+  --migrations-dir oci://ghcr.io/acme/app-migrations@sha256:<digest> \
+  --verify-sum
+```
+
+`up`, `status`, `down`, and `lint --dir` accept OCI migration sources. Lint can
+attach its canonical report with `--attach`; `migrations plan` can likewise
+attach a canonical safety report when its desired state is exactly one OCI
+schema artifact. See [OCI registry artifacts](../oci-registry/) for
+authentication, tag and digest semantics, pulling, referrer reports, schema
+artifacts, and CI.
+
 ## Squashing history
 
 As history grows, replaying every migration on each fresh database gets slow and

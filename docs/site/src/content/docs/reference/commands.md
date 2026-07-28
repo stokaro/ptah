@@ -21,11 +21,14 @@ the exact flag set in an installed binary.
 | Command | Purpose |
 | --- | --- |
 | `ptah introspect` | Generate annotated Go models from a live database. |
+| `ptah oci referrers` | List direct referrer metadata attached to an OCI artifact. |
 | `ptah schema render` | Render desired schema SQL from Go, YAML, or HCL schema inputs. |
 | `ptah schema annotations` | Export Ptah Go annotation metadata. |
 | `ptah schema compare` | Compare desired schema with a live database. |
 | `ptah schema drift` | Check live database drift against desired schema. |
 | `ptah schema export` | Export a schema to HCL, an OpenAPI 3.0 component schema, or a GraphQL SDL. |
+| `ptah schema push` | Publish a lossless canonical desired schema to an OCI registry. |
+| `ptah schema pull` | Pull a canonical desired schema from an OCI registry. |
 | `ptah schema test` | Apply a desired schema (from Go annotations) to a throwaway database and run declarative YAML test cases against it. |
 | `ptah viz` | Render desired schema diagrams as Mermaid, DOT, or SVG. |
 | `ptah db read` | Read schema from a live database. |
@@ -33,6 +36,8 @@ the exact flag set in an installed binary.
 | `ptah migrations plan` | Print migration SQL from desired/live schema differences. |
 | `ptah migrations generate` | Generate migration files from desired/live schema differences. |
 | `ptah migrations create` | Create empty migration files for manual SQL. |
+| `ptah migrations push` | Publish a migration directory to an OCI registry. |
+| `ptah migrations pull` | Pull and reconstruct a migration directory from an OCI registry. |
 | `ptah migrations up` | Run pending migrations. |
 | `ptah migrations down` | Roll back migrations. |
 | `ptah migrations status` | Show migration status. |
@@ -47,6 +52,28 @@ the exact flag set in an installed binary.
 | `ptah sql lint` | Lint standalone SQL files. |
 | `ptah seed` | Apply environment-scoped SQL seed files. |
 | `ptah version` | Print Ptah build information. |
+
+Native `migrations up`, `status`, and `down` accept `oci://` through
+`--migrations-dir`. `migrations lint` accepts an OCI `--dir` and can attach its
+canonical report with `--attach`. Native `schema compare`, `drift`, and
+`migrations plan` accept an OCI desired-schema artifact through
+`--schema-file`; a plan with exactly one OCI schema source can attach its
+canonical safety report. Use digest pins for reproducible runs and reserve
+`--plain-http` for an explicitly trusted local registry. See [OCI registry
+artifacts](../../workflows/oci-registry/).
+
+`ptah oci referrers <oci-reference>` lists direct attachment descriptors.
+`--type` accepts `all`, `lint`, `plan`, or `deployment`; `--format` accepts
+`text` or `json`. Unqualified subjects resolve to `:latest`, tags resolve to
+their current manifest, and digest subjects remain immutable. Docker
+credentials and HTTPS are the defaults; `--plain-http` is only for an
+explicitly trusted local registry. The command lists metadata, not attachment
+payload contents.
+
+This does not implement the Atlas Cloud command paths. `ptah atlas migrate
+push` and `ptah atlas schema push` remain Atlas community-edition boundary
+stubs, and Atlas-compatible apply commands do not expose the native OCI
+transport flags.
 
 ## Atlas-compatible commands
 

@@ -12,6 +12,7 @@ Use this page when you know what you need to do, but not where the relevant Ptah
 | My Go app owns the schema | [Go schema workflow](../workflows/go-schema/) | [Migrations](../workflows/migrations/) |
 | My schema lives in YAML | [Schema files](../workflows/schema-files/) | [YAML schema reference](../reference/yaml-schema/) |
 | My schema lives in HCL | [Schema files](../workflows/schema-files/) | [HCL schema reference](../reference/hcl-schema/) |
+| I want to publish or consume migrations and schemas through OCI | [OCI registry artifacts](../workflows/oci-registry/) | [Migrations](../workflows/migrations/) and [Commands](../reference/commands/) |
 | I need Atlas-style commands | [Atlas-compatible CLI](../workflows/atlas-cli/) | [Comparison](../reference/comparison/) |
 | I want to embed Ptah in another Go tool | [Reusable components](../reference/reusable-components/) | [Public Go API](../reference/public-api/) |
 | I need to run Ptah in CI | [CI](../workflows/ci/) | [Exit codes](../reference/exit-codes/) |

@@ -73,6 +73,20 @@ CREATE TABLE users (
 	c.Assert(db.Fields, qt.HasLen, 2)
 }
 
+func TestLoadResult_LocalSchemaHasNoOCIProvenance(t *testing.T) {
+	c := qt.New(t)
+	path := filepath.Join(t.TempDir(), "schema.sql")
+	c.Assert(os.WriteFile(path, []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+
+	result, err := schemaload.LoadResult(context.Background(), schemaload.Options{
+		SchemaFiles: []string{path},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Database.Tables, qt.HasLen, 1)
+	c.Assert(result.OCI, qt.IsNil)
+}
+
 func TestLoad_RejectsUnsupportedExtension(t *testing.T) {
 	c := qt.New(t)
 
@@ -241,4 +255,15 @@ type User struct {
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 2)
+}
+
+func TestLoadContext_OCIReferenceFailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := schemaload.LoadContext(context.Background(), schemaload.Options{
+		SchemaFiles: []string{"oci://registry.invalid"},
+	})
+
+	c.Assert(err, qt.ErrorMatches, "invalid OCI reference: invalid reference: missing registry or repository")
+	c.Assert(db, qt.IsNil)
 }

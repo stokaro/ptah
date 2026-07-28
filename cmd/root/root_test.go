@@ -95,6 +95,7 @@ func TestNewRootCommand_NativeCommandTreeIsRegistered(t *testing.T) {
 		{"migrations", "hash"},
 		{"migrations", "validate"},
 		{"migrations", "lint"},
+		{"oci", "referrers"},
 		{"viz"},
 	} {
 		found, _, err := cmd.Find(path)

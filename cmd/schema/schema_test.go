@@ -201,6 +201,8 @@ func TestSchemaCommand_RegistersNativePaths(t *testing.T) {
 	for _, path := range [][]string{
 		{"annotations"},
 		{"export"},
+		{"push"},
+		{"pull"},
 		{"render"},
 		{"compare"},
 		{"drift"},

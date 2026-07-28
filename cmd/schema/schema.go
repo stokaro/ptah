@@ -13,6 +13,8 @@ import (
 	"github.com/stokaro/ptah/cmd/drift"
 	"github.com/stokaro/ptah/cmd/generate"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
+	"github.com/stokaro/ptah/cmd/schemapull"
+	"github.com/stokaro/ptah/cmd/schemapush"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/internal/annotationschema"
 	hclrender "github.com/stokaro/ptah/internal/atlashclrender"
@@ -57,6 +59,8 @@ under ptah atlas.`,
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	cmd.AddCommand(newSchemaAnnotationsCommand())
 	cmd.AddCommand(newSchemaExportCommand())
+	cmd.AddCommand(schemapush.NewSchemaPushCommand())
+	cmd.AddCommand(schemapull.NewSchemaPullCommand())
 	renderCmd := generate.NewGenerateCommand()
 	renderCmd.Short = "Render desired schema SQL"
 	renderCmd.Long = "Render desired schema SQL from Go annotations, YAML schema files, or HCL schema files."
