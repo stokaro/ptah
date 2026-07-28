@@ -12,7 +12,7 @@ architecture is better.
 
 | Need | Read |
 | --- | --- |
-| First successful local run | [Quick start](docs/site/src/content/docs/getting-started.md) |
+| First successful local run | [Quick start](docs/site/src/content/docs/start/quick-start.md) |
 | Application-owned Go schema | [Go schema workflow](docs/site/src/content/docs/workflows/go-schema.md) |
 | SQL, YAML, HCL, or external desired schema | [Schema sources](docs/site/src/content/docs/workflows/schema-files.md) |
 | ORM-owned desired schema | [ORM loaders](docs/site/src/content/docs/workflows/orm-loaders.md) |
@@ -77,7 +77,7 @@ ptah migrations up --db-url "$DATABASE_URL" --migrations-dir ./migrations --veri
 ```
 
 For a complete copy-pasteable SQLite run, use the
-[quick start](docs/site/src/content/docs/getting-started.md).
+[quick start](docs/site/src/content/docs/start/quick-start.md).
 
 ## Command Surfaces
 
