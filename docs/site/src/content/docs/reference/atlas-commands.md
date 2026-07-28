@@ -112,7 +112,7 @@ desired schema files. `--edit` opens the generated migration in
 `$VISUAL`/`$EDITOR` before `atlas.sum` is finalized. `--lock-timeout` bounds
 waiting for Ptah's local migration-directory lock. Atlas CE `--qualifier` is
 registered for flag-surface parity and fails explicitly until custom qualifier
-metadata is implemented. Database desired-state URLs, `env://`, Docker dev
+metadata is implemented. Database desired-schema URLs, `env://`, Docker dev
 databases, and concurrent index migration-file metadata remain explicit gaps.
 
 ### `ptah atlas migrate import`
@@ -222,9 +222,9 @@ plan's source fingerprint; a drifted target refuses with a stale-plan error,
 registry `atlas://` plan URLs are rejected, and `--plan` cannot be combined
 with `--to`, `--file`, `--dev-url`, `--exclude`, or `--edit`. Atlas's hidden
 `--file/-f` alias is accepted for local HCL or SQL paths; `--schema/-s` is
-parsed for CLI compatibility but limited until database-URL desired states are
+parsed for CLI compatibility but limited until database-URL desired schemas are
 supported. `--lock-timeout` is registered for flag-surface parity and fails
-explicitly until database lock waiting is implemented. Database desired-state
+explicitly until database lock waiting is implemented. Database desired-schema
 URLs, migration directories, `env://` URL sources, include filters, and Atlas
 dev-database simulation remain explicit gaps.
 

@@ -68,8 +68,14 @@ Some Ptah features need extra local tools:
 | Graphviz `dot` | `ptah viz --format svg` |
 | Database client/server | Live `db`, `schema compare`, and `migrations` workflows |
 | Atlas CE binary | Differential checks in the external conformance repository |
+| `ptah-ls` | Annotation hover, completion, and diagnostics in your editor |
 
 Mermaid and DOT visualization output do not require Graphviz.
+
+Install the annotation language server with
+`go install github.com/stokaro/ptah/cmd/ptah-ls@latest` and wire it into your
+editor as described in
+[Editor support](../../reference/go-annotations/#editor-support).
 
 ## Verify command shape
 

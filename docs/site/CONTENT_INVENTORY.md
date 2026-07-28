@@ -44,10 +44,10 @@ Word counts were measured with `wc -w` at the audited commit.
 
 | Page (words) | Audience | Reader question | Type | Source of truth | Overlaps | Disposition |
 | --- | --- | --- | --- | --- | --- | --- |
-| `index.mdx` (531) | everyone | What is Ptah and where do I start? | navigation | this page | `documentation-map` (routing), root `README.md` "Start Here", layers table duplicated on `documentation-map` | rewrite in place: regroup cards and "Choose your path" around the target groups (final PR of the migration) |
+| `index.mdx` (531) | everyone | What is Ptah and where do I start? | navigation | this page | root `README.md` "Start Here" | done: rewritten in place — one card per sidebar group in sidebar order, "Choose your path" kept, layers table moved to `docs/README.md` |
 | `getting-started.md` (788) | new Go user | How do I try Ptah end to end locally? | tutorial | this page (runnable SQLite flow with expected output and cleanup) | root `README.md` minimal example; `install.md` | done: moved → `start/quick-start`, old URL redirects |
 | `install.md` (386) | new user | How do I install, build, and verify the CLI? | howto | this page | root `README.md` "Install Or Build" | done: moved → `start/install`, old URL redirects |
-| `documentation-map.md` (441) | everyone | Where is the documentation for task X? | navigation | none (routing only) | the entire sidebar; layers table duplicated on `index.mdx`; maintenance rule overlaps `AGENTS.md` | retire: redirect → home; layers and maintenance-rule text move to `docs/README.md`; this inventory takes over the meta function |
+| `documentation-map.md` (441) | everyone | Where is the documentation for task X? | navigation | none (routing only) | the entire sidebar; layers table duplicated on `index.mdx`; maintenance rule overlaps `AGENTS.md` | done: retired — old URL redirects to home; layers and maintenance-rule text moved to `docs/README.md`; this inventory carries the meta function |
 
 ### `Start` group (added by the restructuring)
 
@@ -121,7 +121,7 @@ the page the restructuring created.
 | `workflows/orm-loaders.md` (592) | ORM/external-provider user | How do I feed my ORM's schema into Ptah? | howto | this page (GORM path verified per its own claim) | `workflows/schema-files.md` "Load from an external program" | done: moved + rewritten → `schema/orm-and-external` (absorbed the external-program contract), old URL redirects |
 | `workflows/api-schema-export.md` (737) | API developer | How do I export entities to OpenAPI or GraphQL? | howto with an embedded type-mapping reference table | `cmd/schema` `export`; backing depth in `docs/api_schema_export.md` | `docs/api_schema_export.md` | done: moved → `schema/export`, old URL redirects |
 | `workflows/migrations.md` (1,031) | versioned-migration user | How do I run the migration lifecycle? | howto hub: 14 sections; "Squashing history", "Testing", and "Reference data" are two-to-three-sentence link-out stubs, "Operational hooks" is a link-out; "Importing from another tool" and "Safety gates" carry real depth | this page for the loop; `migration/migrator/README.md` and `docs/native_cli.md` carry deeper detail | `workflows/checkpoints`, `workflows/testing`, `workflows/reference-data`, `workflows/oci-registry`, `docs/native_cli.md` | done: split → `versioned/overview` (loop + mental model + directory formats), `versioned/generate` (plan, generate, composite, shadow verification, manual create), `versioned/apply` (up, status, hooks, OCI-sourced runs), `versioned/rollback`, `versioned/integrity-and-safety` (hash/validate, dev-database replay, lint, destructive gate, pre-migration checks), `versioned/import`; stub sections dissolved into links; every example rerun against the built binary; old URL redirects to `versioned/overview` |
-| `workflows/oci-registry.md` (1,865) | operator/platform engineer | How do I publish, pin, and consume artifacts through an OCI registry? | howto | this page; deeper detail in `docs/oci_registry.md` (2,393 words) | `docs/oci_registry.md`, `workflows/migrations.md` OCI section | move + rewrite in place → `operate/oci-registry` |
+| `workflows/oci-registry.md` (1,865) | operator/platform engineer | How do I publish, pin, and consume artifacts through an OCI registry? | howto | this page; deeper detail in `docs/oci_registry.md` (2,393 words) | `docs/oci_registry.md`, `workflows/migrations.md` OCI section | done: moved → `operate/oci-registry` in the `Distribute and operate` group (closing links reshaped into a next-steps section), old URL redirects |
 | `workflows/checkpoints.md` (884) | versioned-migration user | How do I squash migration history? | howto with concept material (file format, rollback boundary) | this page; `cmd/migratecheckpoint` | currently the only site prose describing `ptah migrations baseline` (the "Checkpoint versus baseline" contrast) | done: moved → `versioned/checkpoints`, old URL redirects; baseline how-to content has its own home in `start/adopt-an-existing-database` |
 | `workflows/testing.md` (766) | developer/CI operator | How do I test migrations and schemas declaratively? | howto | this page; `docs/testing.md` | `reference/testing` (intentional howto/reference pair — the model split to generalize), `docs/testing.md` | done: moved → `testing/migrations-and-schema`, old URL redirects |
 | `workflows/reference-data.md` (906) | app developer | How do I manage reference/lookup rows declaratively? | howto | this page; `cmd/migratedata` | contains the only prose comparing declarative data with `ptah seed` | done: moved → `versioned/reference-data`, old URL redirects; the seed contrast feeds `operate/seed-data` |
@@ -162,6 +162,16 @@ the page the restructuring created.
 | Page (words) | Audience | Reader question | Type | Source of truth | Overlaps | Disposition |
 | --- | --- | --- | --- | --- | --- | --- |
 | `reference/go-annotations.md` (2,895) | Go schema author | Which directives and attributes does the annotation parser accept? | reference | `internal/annotationmeta` exported by `ptah schema annotations` (committed copy: `schemas/migrator-annotations.schema.json`); placement, bare-boolean, and unknown-attribute behavior spot-checked against the built binary | `schema/go-annotations` (workflow home), directive fragments in `docs/POSTGRESQL_ROLES.md`, `docs/sequences.md`, `docs/user_defined_types.md` | created (section 9, items 7 and 9, including the `ptah-ls` editor-support section); keep |
+
+### `Distribute and operate` group (added by the restructuring)
+
+`operate/oci-registry` and `operate/troubleshooting` keep their rows in the
+`Use Ptah` and `Operate` tables with `done` dispositions; this table lists the
+page the restructuring created.
+
+| Page (words) | Audience | Reader question | Type | Source of truth | Overlaps | Disposition |
+| --- | --- | --- | --- | --- | --- | --- |
+| `operate/seed-data.md` (506) | app developer/operator | How do I load one-off, environment-scoped setup rows? | howto | this page; `cmd/seed` and `migration/seeder`; every command and output run against the built binary | `versioned/reference-data` (declarative contrast, canonical there), `reference/exit-codes` (`ptah seed` row) | created (section 9, item 6); keep |
 
 ### `Operate` group
 
@@ -274,7 +284,7 @@ Verified with repository-wide searches at the audited commit.
 | native commands | consistent: "native" used for the `ptah <verb>` tree | keep; never described with Atlas spellings; root-level Atlas aliases are documented as intentionally absent |
 | `ptah atlas ...` | consistent prefix across all pages | keep; always spelled with the `ptah atlas` prefix |
 | `ptah-compat` | mentioned in prose on 10 site pages; never a table column | keep: a binary-level drop-in described in prose, never a third command surface |
-| desired schema vs desired state | "desired schema" appears 60 times across 18 pages; "desired state" 3 times (`workflows/migrations.md` twice, `workflows/schema-files.md` once) | standardize on **desired schema**; retire "desired state" outside the composite-source discussion |
+| desired schema vs desired state | "desired schema" appears 60 times across 18 pages; "desired state" 3 times (`workflows/migrations.md` twice, `workflows/schema-files.md` once) | standardize on **desired schema**; retire "desired state" outside the composite-source discussion (done: the final pass also replaced the hyphenated "desired-state" uses in Atlas status prose) |
 | schema source | used informally | canonicalize: Go annotations, YAML, HCL, SQL file, external loader, or live database used as input |
 | dev database / shadow database / throwaway database | all three exist and are real, distinct flags: `--dev-url` (replay validation on `migrations validate`, `migrations lint`, Atlas-compatible verbs), `--shadow-db` (`migrations generate`, `checkpoint`, `baseline` verification replay), throwaway databases in `migrations test` / `schema test` | keep all three as distinct terms; define each once in `concepts/database-urls-and-dev-databases` and link instead of re-defining (done: page exists and first uses link to it) |
 | migration directory / integrity file / revision table | consistent; integrity files are `ptah.sum` (native) and `atlas.sum` (Atlas-format) | keep |
@@ -283,7 +293,7 @@ Verified with repository-wide searches at the audited commit.
 | drift | consistent (`ptah schema drift`) | keep |
 | conformance | consistent; evidence lives in `stokaro/ptah-atlas-conformance` | keep; claims must cite current reports |
 | clean-room / license-clean | consistent | keep; never describe Atlas internals |
-| heading case | mixed: workflow pages use sentence case; several reference pages use Title Case ("Supported Blocks", "MySQL And MariaDB", "Rule Of Thumb") | standardize on sentence case (style guide rule) |
+| heading case | mixed: workflow pages use sentence case; several reference pages use Title Case ("Supported Blocks", "MySQL And MariaDB", "Rule Of Thumb") | standardize on sentence case (style guide rule; done: the final pass corrected the remaining Title Case headings on `reference/yaml-schema`, `reference/hcl-schema`, and `reference/exit-codes`) |
 
 ## 8. Content-quality sample
 
@@ -349,7 +359,9 @@ these are merely misplaced content.
 6. **`ptah seed` page.** The command ships (`cmd/seed`,
    environment-scoped SQL seed files) but has no page; it appears only in the
    `reference-data` contrast, command row, and exit-code rows. New page:
-   `operate/seed-data`.
+   `operate/seed-data`. Done: page created with the naming convention,
+   apply/no-op/protected-environment/`--force --idempotent` flows and outputs
+   run against the built binary.
 7. **Go annotation directive reference.** No page on the site (or in
    `docs/*.md`) enumerates the `//migrator:schema:*` directives; the grammar
    lives in `core/goschema` and `internal/annotationmeta`, with fragments in
@@ -371,8 +383,8 @@ these are merely misplaced content.
    mentions it. Proposed home: an editor-support section in
    `reference/go-annotations`, with an install note in `start/install`.
    (Found by this audit; not in the pre-implementation design.) Done: the
-   editor-support section is on `reference/go-annotations`; the `start/install`
-   note remains for the final pass.
+   editor-support section is on `reference/go-annotations`, and
+   `start/install` lists `ptah-ls` as an optional tool with an install note.
 10. **Maintenance how-to.** `migrations edit`, `rebase`, `rm`, and `repair`
     have command rows (except `repair`, see item 1) and exit-code rows but no
     how-to home. New page: `versioned/maintain-history`. Done: page created

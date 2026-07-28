@@ -93,7 +93,7 @@ Constraints on the block:
 - Relative `working_dir` values must remain inside the process working
   directory after symlink resolution. Use an explicit absolute path for a
   deliberately external loader.
-- The block mirrors the desired-state role of Atlas's
+- The block mirrors the desired-schema role of Atlas's
   `data "external_schema"` but does not evaluate that Atlas HCL data source.
 
 ## GORM (verified)

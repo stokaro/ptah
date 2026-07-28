@@ -176,7 +176,7 @@ ptah migrations up \
   --verify-sum
 ```
 
-See [OCI registry artifacts](../../workflows/oci-registry/) for
+See [OCI registry artifacts](../../operate/oci-registry/) for
 authentication, tag and digest semantics, referrer reports, and CI wiring.
 
 ## Failure modes

@@ -28,20 +28,17 @@ import { LinkCard, CardGrid } from '@astrojs/starlight/components';
 ## What do you need?
 
 <CardGrid>
-  <LinkCard title="Quick start" href="./start/quick-start/" description="Build Ptah, create a tiny schema, run migrations, verify hashes, and clean up." />
-  <LinkCard title="Install Ptah" href="./start/install/" description="Build from source, install with Go, verify the command tree, and add optional tools." />
-  <LinkCard title="Choose a workflow" href="./start/choose-a-workflow/" description="Decide between versioned migrations and direct schema changes before wiring Ptah in." />
-  <LinkCard title="Adopt an existing database" href="./start/adopt-an-existing-database/" description="Introspect a live schema, baseline its history, and import migrations from another tool." />
-  <LinkCard title="Go annotations" href="./schema/go-annotations/" description="Use annotated Go structs as the application-owned schema source." />
-  <LinkCard title="Schema files" href="./schema/yaml/" description="Render and migrate from YAML, HCL, or SQL schema files." />
-  <LinkCard title="Versioned migrations" href="./versioned/overview/" description="Plan, generate, apply, roll back, hash, validate, and inspect migrations." />
-  <LinkCard title="OCI registry artifacts" href="./workflows/oci-registry/" description="Publish, pin, pull, and consume migrations and desired schemas through your OCI registry." />
-  <LinkCard title="Atlas compatibility" href="./atlas/overview/" description="Use Atlas-style commands through ptah atlas, ptah-compat, or a renamed atlas binary." />
-  <LinkCard title="CI" href="./testing/ci/" description="Run Ptah checks in pull requests and fail safely on destructive changes." />
-  <LinkCard title="Visualize the schema" href="./schema/visualize/" description="Render entity-relationship diagrams as Mermaid, DOT, or SVG with ptah viz." />
-  <LinkCard title="Comparison" href="./atlas/comparison/" description="Command parity, feature parity evidence, Pro analyzer coverage, and the tracked gap register." />
-  <LinkCard title="Atlas docs coverage" href="./atlas/docs-coverage/" description="Crosswalk Atlas documentation areas to Ptah docs, implementation status, conformance, and follow-up issues." />
-  <LinkCard title="Troubleshooting" href="./operate/troubleshooting/" description="Fix Graphviz, database URL, hash mismatch, unsupported capability, and conformance issues." />
+  <LinkCard title="Start" href="./start/quick-start/" description="Install Ptah, run a complete SQLite quick start, then choose between versioned migrations and direct changes — or adopt an existing database." />
+  <LinkCard title="Model your schema" href="./schema/go-annotations/" description="Declare the desired schema with Go annotations, YAML, HCL, SQL, or an ORM loader; merge sources, visualize, and export." />
+  <LinkCard title="Direct schema changes" href="./direct/inspect/" description="Inspect a live database, compare it with the desired schema, gate on drift, and apply changes directly." />
+  <LinkCard title="Versioned migrations" href="./versioned/overview/" description="Generate, apply, roll back, verify, import, and maintain a migration directory — with checkpoints and reference data." />
+  <LinkCard title="Test and CI" href="./testing/migrations-and-schema/" description="Run declarative migration and schema tests locally and gate pull requests in CI." />
+  <LinkCard title="Distribute and operate" href="./operate/oci-registry/" description="Publish and consume migrations and schemas through your OCI registry, apply seed data, and diagnose failures." />
+  <LinkCard title="Databases" href="./databases/support-matrix/" description="Check engine support and the PostgreSQL, MySQL/MariaDB, SQLite, and SQL Server differences that matter." />
+  <LinkCard title="Atlas compatibility" href="./atlas/overview/" description="Run Atlas-style commands through ptah atlas or ptah-compat, and read parity, conformance, and license-boundary evidence." />
+  <LinkCard title="Extend Ptah" href="./extend/public-api/" description="Embed the stable Go API, reuse parser and migrator components, and build dialect-aware queries." />
+  <LinkCard title="Concepts" href="./concepts/desired-schema-and-sources/" description="Understand desired schemas, migration directories, database URLs, dialects, and capabilities." />
+  <LinkCard title="Reference" href="./reference/native-commands/" description="Look up commands, annotation directives, configuration, schema formats, test cases, and exit codes." />
 </CardGrid>
 
 ## Choose your path
@@ -54,7 +51,7 @@ import { LinkCard, CardGrid } from '@astrojs/starlight/components';
 | An existing migration directory | [Versioned migrations](./versioned/overview/) |
 | A live database built outside Ptah | [Adopt an existing database](./start/adopt-an-existing-database/) |
 | No decision yet on versioned versus direct changes | [Choose a workflow](./start/choose-a-workflow/) |
-| An OCI registry for migration or schema distribution | [OCI registry artifacts](./workflows/oci-registry/) |
+| An OCI registry for migration or schema distribution | [OCI registry artifacts](./operate/oci-registry/) |
 | Scripts written for Atlas OSS commands | [Atlas compatibility overview](./atlas/overview/) |
 | A pull-request gate to build | [CI](./testing/ci/) |
 | A compatibility question | [Atlas docs coverage](./atlas/docs-coverage/) and [Conformance](./atlas/conformance/) |
@@ -66,16 +63,3 @@ Ptah is working toward Atlas OSS command and behavior parity, but full parity is
 ## License-clean implementation
 
 Ptah does not use Atlas source code. Atlas interface behavior and Apache-2.0 test assets are evaluated in the separate `ptah-atlas-conformance` repository so the Ptah source tree stays MIT and implementation-independent. See [License boundary](./atlas/license-boundary/).
-
-## Documentation layers
-
-The site is the first reader-facing layer. Detailed source references remain in
-the repository for exact schema formats, public API contracts, dialect tables,
-and release operations.
-
-| Layer | Use it for |
-| --- | --- |
-| `docs/site` | Task-oriented workflows and examples. |
-| `docs/*.md` | Exact command, config, dialect, conformance, and design references. |
-| `examples/*` | Runnable inputs and generated artifacts. |
-| `ptah-atlas-conformance` | Atlas compatibility evidence and gap reports. |

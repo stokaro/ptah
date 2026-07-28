@@ -193,7 +193,7 @@ YAML, or HCL — `ptah schema drift` gives the same confirmation with
 ## Limitations
 
 - `--to` accepts local `file://` schema files (HCL, YAML, or SQL); database
-  URLs and migration directories as desired state are explicit gaps, and
+  URLs and migration directories as the desired schema are explicit gaps, and
   registry `atlas://` plan URLs are rejected.
 - The full flag surface, `--env` project-config support, and transaction modes
   are documented in

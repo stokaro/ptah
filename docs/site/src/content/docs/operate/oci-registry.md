@@ -418,6 +418,11 @@ write access in the package settings. GitHub documents the current token and
 package permission model in [Publishing and installing a package with GitHub
 Actions](https://docs.github.com/en/packages/managing-github-packages-using-github-actions-workflows/publishing-and-installing-a-package-with-github-actions).
 
-Continue with [Integrity and safety](../../versioned/integrity-and-safety/) for migration safety and integrity
-workflows, [Native commands](../../reference/native-commands/) for the command inventory, and
-[Capabilities](../../reference/capabilities/) for support boundaries.
+## Next steps
+
+- Verifying and gating what you publish and apply:
+  [Integrity and safety](../../versioned/integrity-and-safety/).
+- The complete verb and flag inventory for the OCI commands:
+  [Native commands](../../reference/native-commands/).
+- Which registry-backed features are supported where:
+  [Capabilities](../../reference/capabilities/).
