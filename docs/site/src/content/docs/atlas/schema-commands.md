@@ -13,14 +13,17 @@ flag translation rules are on the
 
 | Atlas-compatible command | Ptah behavior |
 | --- | --- |
-| `ptah atlas schema inspect` | Inspects a live database and writes Atlas-shaped HCL by default, SQL with `--format sql` / `--format '{{ sql . }}'`, JSON with `--format json` / `--format '{{ json . }}'`, custom Go-template output, or basic `hcl`/`sql` split-write exports. `--schema/-s` narrows inspection, and the OSS `--exclude` flag filters inspected resources. |
-| `ptah atlas schema apply` | Applies local desired schema files to a live database through Ptah schema diff and migration execution; supports `--env` project defaults, Atlas-style `--format` templates over the planned changes, `--schema/-s` parsing, the hidden Atlas `--file/-f` input alias, `--exclude` resource filters, and `--edit` for editing the planned SQL in `$VISUAL`/`$EDITOR` before approval and apply, and `--plan file://<path>` for executing a pre-approved local plan file saved by `schema plan` after verifying the database still matches the plan's source fingerprint (a drifted target refuses with a stale-plan error; registry `atlas://` plan URLs are rejected). |
-| `ptah atlas schema plan` | Computes the declarative migration from the `--from` target database to local `--to` schema files and saves it as a fingerprinted local plan file (`--save`/`--output`, `--name`, `--dry-run`; JSON, `format_version` 1). `--env` supplies `url` (the plan target), `schema.src`, `dev`, `exclude`, `schema.mode`, and supported diff policy. The registry-bound `--push`, `--pending`, `--repo`, and `--auto-approve` flags are recorded waivers rejected loudly, and the registry sub-verbs (`approve`, `lint`, `list`, `new`, `pull`, `push`, `rm`, `test`, `validate`) stay Atlas CE boundary stubs. Atlas keeps `schema plan` in its Pro registry flow; Ptah provides the local plan-file workflow free. |
-| `ptah atlas schema diff` | Local `file://` schema-file diff for `.hcl`, `.yaml`, `.yml`, and `.sql` sources, including `--from/-f`, `--schema/-s` parsing, and `--exclude` resource filters. |
+| `ptah atlas schema inspect` | Inspects a live database and writes Atlas-shaped HCL, SQL, JSON, or custom-template output. |
+| `ptah atlas schema apply` | Diffs local desired schema files against a live database and applies the planned SQL after confirmation. |
+| `ptah atlas schema plan` | Saves the declarative plan as a fingerprinted local plan file for a later `schema apply --plan`. |
+| `ptah atlas schema diff` | Diffs local `file://` schema files and prints migration SQL. |
 | `ptah atlas schema fmt` | Formats local `.hcl` files using HCL canonical layout. |
-| `ptah atlas schema clean` | Cleans user-owned schema objects through Ptah's destructive database-cleanup runtime: `--dry-run` prints the planned cleanup, interactive confirmation is preserved unless `--auto-approve` is explicit, `--format` renders Atlas-style templates over the cleanup plan, and `env.url` plus `format.schema.clean` are read from `atlas.hcl`. Cleanup covers the object types Ptah cleanly models and drops today: user tables across supported dialects, PostgreSQL enum types and sequences, and SQL Server foreign-key constraints that must be dropped before tables. |
-| `ptah atlas schema test [paths]` | Forwards to `ptah schema test`: `-u/--url` maps the desired schema URL (a local `file://` directory of Go schema annotations) to the native `--root-dir`, `--dev-url` to the native throwaway database (an ephemeral SQLite database when omitted), `--run` to the native case-name filter, and the optional positional path to the directory of Ptah-native YAML test cases. With `--env`, `schema.src` supplies the desired schema URL and `dev` the dev database. Exit codes match the native runner: 0 when all cases pass, 1 on test failure. Atlas keeps `schema test` in its Pro build; Ptah provides it free. |
-| `ptah atlas schema push` | Registered Atlas CE boundary stub for a community-version unsupported command, kept by decision: Atlas push targets the proprietary, account-bound Atlas Registry protocol, which is not an open target. `--help` prints the Atlas CE unsupported notice and exits 0; direct execution prints the Atlas CE abort text and exits 1. `ptah schema push` to any OCI registry is the open replacement. |
+| `ptah atlas schema clean` | Plans and applies destructive cleanup of user-owned schema objects. |
+| `ptah atlas schema test [paths]` | Forwards to `ptah schema test` with Ptah-native YAML test cases. |
+| `ptah atlas schema push` | Atlas CE boundary stub; the native `ptah schema push` to any OCI registry is the open replacement. |
+
+Per-verb status detail — Atlas differences, waivers, and the inputs that fail
+explicitly — is on [Atlas-compatible commands](../../reference/atlas-commands/).
 
 ## Inspect a live database
 

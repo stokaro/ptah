@@ -1,5 +1,5 @@
 ---
-title: Query Builder
+title: Query builder
 description: Build parameterized, dialect-aware SELECT statements with the core/query package.
 ---
 

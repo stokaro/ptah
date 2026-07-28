@@ -83,13 +83,13 @@ entrypoint and deeper reference/site pages for the same behavior.
 Use these routes to avoid missing a class of docs:
 
 - **Native CLI**: `README.md`, `docs/native_cli.md`,
-  `docs/site/src/content/docs/reference/commands.md`,
+  `docs/site/src/content/docs/reference/native-commands.md`,
   `docs/site/src/content/docs/workflows/*.md`, and `docs/exit_codes.md`.
 - **Atlas-compatible CLI and parity claims**: `README.md`, `docs/conformance.md`,
   `docs/site/src/content/docs/index.mdx`,
   `docs/site/src/content/docs/documentation-map.md`,
   `docs/site/src/content/docs/atlas/overview.md`,
-  `docs/site/src/content/docs/reference/commands.md`,
+  `docs/site/src/content/docs/reference/atlas-commands.md`,
   `docs/site/src/content/docs/atlas/comparison.md`,
   `docs/site/src/content/docs/reference/exit-codes.md`, `docs/exit_codes.md`,
   `docs/site/src/content/docs/atlas/conformance.md`, and

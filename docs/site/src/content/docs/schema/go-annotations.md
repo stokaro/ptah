@@ -130,6 +130,6 @@ renders valid SQL for the capabilities it supports.
 
 ## Next steps
 
-- Looking up a command or flag? [Commands](../../reference/commands/).
+- Looking up a directive or attribute? [Go annotation reference](../../reference/go-annotations/).
 - Modeling in files instead of Go? [YAML schema](../yaml/), [HCL schema](../hcl/), or [SQL schema](../sql/).
-- Embedding the parser in your own tool? [Public API](../../reference/public-api/).
+- Embedding the parser in your own tool? [Public API](../../extend/public-api/).
