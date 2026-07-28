@@ -23,6 +23,11 @@ import (
 type ApplyOptions struct {
 	ToURLs  []string
 	Exclude []string
+	// Schemas restricts both comparison sides to the named schema scopes.
+	Schemas []string
+	// Include restricts both comparison sides to resources matched by
+	// Atlas-style include selectors.
+	Include []string
 	Policy  DiffPolicy
 	// DevURL is the dev database used to replay migration-directory
 	// desired-state sources.
@@ -44,6 +49,11 @@ type ApplyRuntimeOptions struct {
 	DevURL  string
 	ToURLs  []string
 	Exclude []string
+	// Schemas restricts both comparison sides to the named schema scopes.
+	Schemas []string
+	// Include restricts both comparison sides to resources matched by
+	// Atlas-style include selectors.
+	Include []string
 	Policy  DiffPolicy
 	TxMode  migrator.MigrationTxMode
 	DryRun  bool
@@ -58,9 +68,9 @@ type ApplyRuntimePlan struct {
 	dryRun bool
 	conn   *dbschema.DatabaseConnection
 	txMode migrator.MigrationTxMode
-	// current is the exclude-filtered introspected target state the plan was
-	// computed against; the dev database simulation recreates it before
-	// rehearsing the plan.
+	// current is the filtered (schema/include scope and exclude) introspected
+	// target state the plan was computed against; the dev database simulation
+	// recreates it before rehearsing the plan.
 	current *types.DBSchema
 }
 
@@ -110,21 +120,27 @@ func computeApplyPlan(
 		return applyComputation{}, errors.New("schema apply planning requires desired schema URLs")
 	}
 
-	current, err := dbschema.ReadSchemaWithSchemas(conn, nil)
+	scope := atlasfilter.Scope{
+		Schemas:       opts.Schemas,
+		Include:       opts.Include,
+		Exclude:       opts.Exclude,
+		DefaultSchema: conn.Info().Schema,
+	}
+	current, err := dbschema.ReadSchemaWithSchemas(conn, SplitSchemaNames(opts.Schemas))
 	if err != nil {
 		return applyComputation{}, fmt.Errorf("read database schema: %w", err)
 	}
-	current, err = atlasfilter.ExcludeDatabase(current, opts.Exclude)
+	current, err = scopeDatabaseSide(current, scope, "current schema")
 	if err != nil {
-		return applyComputation{}, fmt.Errorf("apply --exclude to current schema: %w", err)
+		return applyComputation{}, err
 	}
 	desired, err := loadDesiredApplySchema(ctx, conn, opts)
 	if err != nil {
 		return applyComputation{}, fmt.Errorf("load --to schema: %w", err)
 	}
-	desired, err = excludeDesiredSchema(desired, opts.Exclude)
+	desired, err = scopeGeneratedSide(desired, scope, "desired schema")
 	if err != nil {
-		return applyComputation{}, fmt.Errorf("apply --exclude to desired schema: %w", err)
+		return applyComputation{}, err
 	}
 
 	computation := applyComputation{current: current, desired: desired}
@@ -192,6 +208,8 @@ func PrepareApply(
 	computation, err := computeApplyPlan(ctx, conn, ApplyOptions{
 		ToURLs:     opts.ToURLs,
 		Exclude:    opts.Exclude,
+		Schemas:    opts.Schemas,
+		Include:    opts.Include,
 		Policy:     opts.Policy,
 		DevURL:     opts.DevURL,
 		ProjectEnv: opts.ProjectEnv,

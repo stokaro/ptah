@@ -492,42 +492,54 @@ func TestNewAtlasCommand_SchemaApplyFileShorthandConflictsWithTo(t *testing.T) {
 
 func TestNewAtlasCommand_SchemaApplySchemaShorthandParses(t *testing.T) {
 	c := qt.New(t)
+	dir := t.TempDir()
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath, []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 	cmd := NewAtlasCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
 		"schema", "apply",
-		"--url", "sqlite://schema.db",
-		"--to", "file://schema.sql",
+		"--url", "sqlite://" + filepath.Join(dir, "schema.db"),
+		"--to", "file://" + schemaPath,
 		"-s", "public",
 		"--dry-run",
 	})
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `atlas schema apply accepts --schema, but Ptah only supports local schema files for this command yet`)
-	c.Assert(out.String(), qt.Contains, `error: atlas schema apply accepts --schema, but Ptah only supports local schema files for this command yet`)
+	// SQLite owns unqualified objects in "main", so a "public" schema scope
+	// selects nothing and the apply reports a synced schema.
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Schema is synced, no changes to be made.")
 }
 
 func TestNewAtlasCommand_SchemaDiffSchemaShorthandParses(t *testing.T) {
 	c := qt.New(t)
+	dir := t.TempDir()
+	fromPath := filepath.Join(dir, "from.sql")
+	toPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(fromPath, []byte(""), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(toPath, []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 	cmd := NewAtlasCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
 		"schema", "diff",
-		"-f", "file://from.sql",
-		"--to", "file://schema.sql",
-		"--dev-url", "sqlite://dev.db",
+		"-f", "file://" + fromPath,
+		"--to", "file://" + toPath,
+		"--dev-url", "sqlite://" + filepath.Join(dir, "dev.db"),
 		"-s", "public",
 	})
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `atlas schema diff accepts --schema, but Ptah only supports local schema files for this command yet`)
-	c.Assert(out.String(), qt.Contains, `error: atlas schema diff accepts --schema, but Ptah only supports local schema files for this command yet`)
+	// SQLite owns unqualified objects in "main", so a "public" schema scope
+	// selects nothing on either side.
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Schemas are synced, no changes to be made.")
 }
 
 func TestNewAtlasCommand_MigrateDownHelpUsesAtlasFlagKinds(t *testing.T) {

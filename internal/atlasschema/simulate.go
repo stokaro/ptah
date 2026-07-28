@@ -150,7 +150,7 @@ func checkSimulationSchemaScope(devInfo, targetInfo dbschematypes.DBInfo) error 
 }
 
 // recreateCurrentSchema converges the freshly reset dev database to the
-// target's introspected (and exclude-filtered) current schema, so the plan is
+// target's introspected (and scope/exclude-filtered) current schema, so the plan is
 // rehearsed against the same starting state it was computed for.
 func recreateCurrentSchema(
 	ctx context.Context,

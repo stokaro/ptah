@@ -195,6 +195,41 @@ func TestExcludeDatabase_CommaSeparatedPatterns(t *testing.T) {
 	c.Assert(constraintNames(got.Constraints), qt.DeepEquals, []string{})
 }
 
+func TestExcludeDatabase_RetainsUnfilteredObjectKinds(t *testing.T) {
+	c := qt.New(t)
+	schema := filterFixtureSchema()
+	schema.Schemas = []dbschematypes.DBSchemaInfo{{Name: "auth"}}
+	schema.Sequences = []dbschematypes.DBSequence{{Schema: "auth", Name: "users_seq"}}
+	schema.Domains = []dbschematypes.DBDomain{{Schema: "auth", Name: "email"}}
+	schema.Composites = []dbschematypes.DBComposite{{Schema: "auth", Name: "address"}}
+	schema.Ranges = []dbschematypes.DBRange{{Schema: "auth", Name: "floatrange", Subtype: "float8"}}
+
+	got, err := atlasfilter.ExcludeDatabase(schema, []string{"auth.audit_log"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.Schemas, qt.HasLen, 1)
+	c.Assert(got.Sequences, qt.HasLen, 1)
+	c.Assert(got.Domains, qt.HasLen, 1)
+	c.Assert(got.Composites, qt.HasLen, 1)
+	c.Assert(got.Ranges, qt.HasLen, 1)
+}
+
+func TestExcludeGenerated_RemovesEnums(t *testing.T) {
+	c := qt.New(t)
+	schema := &goschema.Database{
+		Enums: []goschema.Enum{
+			{Name: "user_status", Values: []string{"active"}},
+			{Name: "invoice_status", Values: []string{"open"}},
+		},
+	}
+
+	got, err := atlasfilter.ExcludeGenerated(schema, []string{"user_status"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.Enums, qt.HasLen, 1)
+	c.Assert(got.Enums[0].Name, qt.Equals, "invoice_status")
+}
+
 func TestExcludeDatabase_InvalidGlob(t *testing.T) {
 	c := qt.New(t)
 

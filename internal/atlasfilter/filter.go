@@ -60,6 +60,7 @@ func ExcludeGenerated(schema *goschema.Database, patterns []string) (*goschema.D
 	filtered.Indexes = state.filterGeneratedIndexes(tableByStruct, filtered.Indexes)
 	filtered.Constraints = state.filterGeneratedConstraints(tableByStruct, filtered.Constraints)
 	filtered.EmbeddedFields = state.filterGeneratedEmbeddedFields(tableByStruct, filtered.EmbeddedFields)
+	filtered.Enums = state.filterGeneratedEnums(filtered.Enums)
 	filtered.Extensions = state.filterGeneratedExtensions(filtered.Extensions)
 	filtered.Functions = state.filterGeneratedFunctions(filtered.Functions)
 	filtered.Views = state.filterGeneratedViews(filtered.Views)
@@ -88,11 +89,18 @@ type typeSelector struct {
 	field string
 }
 
+// filterKindExclude and filterKindInclude label pattern-parse errors with the
+// flag family the pattern came from.
+const (
+	filterKindExclude = "exclude"
+	filterKindInclude = "include"
+)
+
 func parsePatterns(values []string) ([]resourcePattern, error) {
 	var patterns []resourcePattern
 	for _, value := range values {
 		for part := range strings.SplitSeq(value, ",") {
-			pattern, err := parsePattern(part)
+			pattern, err := parsePattern(part, filterKindExclude)
 			if err != nil {
 				return nil, err
 			}
@@ -104,7 +112,7 @@ func parsePatterns(values []string) ([]resourcePattern, error) {
 	return patterns, nil
 }
 
-func parsePattern(value string) (resourcePattern, error) {
+func parsePattern(value, kind string) (resourcePattern, error) {
 	raw := strings.TrimSpace(value)
 	if raw == "" {
 		return resourcePattern{}, nil
@@ -113,7 +121,7 @@ func parsePattern(value string) (resourcePattern, error) {
 	types := map[string]struct{}{}
 	field := ""
 	if open := strings.LastIndex(raw, "[type="); open >= 0 {
-		selector, err := parseTypeSelector(raw, open)
+		selector, err := parseTypeSelector(raw, open, kind)
 		if err != nil {
 			return resourcePattern{}, err
 		}
@@ -121,18 +129,18 @@ func parsePattern(value string) (resourcePattern, error) {
 		types = selector.types
 		field = selector.field
 	} else if selector, ok := selectorLikeSuffix(raw); ok {
-		return resourcePattern{}, fmt.Errorf("unsupported Atlas exclude selector %q", selector)
+		return resourcePattern{}, fmt.Errorf("unsupported Atlas %s selector %q", kind, selector)
 	}
 	if _, err := path.Match(glob, "ptah_match_probe"); err != nil {
-		return resourcePattern{}, fmt.Errorf("invalid Atlas exclude glob %q: %w", raw, err)
+		return resourcePattern{}, fmt.Errorf("invalid Atlas %s glob %q: %w", kind, raw, err)
 	}
 	return resourcePattern{glob: glob, types: types, field: field}, nil
 }
 
-func parseTypeSelector(raw string, open int) (typeSelector, error) {
+func parseTypeSelector(raw string, open int, kind string) (typeSelector, error) {
 	closeIdx := strings.Index(raw[open:], "]")
 	if closeIdx < 0 {
-		return typeSelector{}, fmt.Errorf("unsupported Atlas exclude selector %q", raw)
+		return typeSelector{}, fmt.Errorf("unsupported Atlas %s selector %q", kind, raw)
 	}
 	closeIdx += open
 	selector := raw[open+1 : closeIdx]
@@ -142,7 +150,7 @@ func parseTypeSelector(raw string, open int) (typeSelector, error) {
 	}
 	selectorName, selectorValue, ok := strings.Cut(selector, "=")
 	if !ok || strings.TrimSpace(selectorName) != "type" {
-		return typeSelector{}, fmt.Errorf("unsupported Atlas exclude selector %q", selector)
+		return typeSelector{}, fmt.Errorf("unsupported Atlas %s selector %q", kind, selector)
 	}
 	types := map[string]struct{}{}
 	for item := range strings.SplitSeq(selectorValue, "|") {
@@ -152,27 +160,27 @@ func parseTypeSelector(raw string, open int) (typeSelector, error) {
 		}
 	}
 	if len(types) == 0 {
-		return typeSelector{}, fmt.Errorf("empty Atlas exclude type selector %q", selector)
+		return typeSelector{}, fmt.Errorf("empty Atlas %s type selector %q", kind, selector)
 	}
-	field, err := parseFieldSelector(raw[closeIdx+1:], types)
+	field, err := parseFieldSelector(raw[closeIdx+1:], types, kind)
 	if err != nil {
 		return typeSelector{}, err
 	}
 	return typeSelector{glob: glob, types: types, field: field}, nil
 }
 
-func parseFieldSelector(suffix string, types map[string]struct{}) (string, error) {
+func parseFieldSelector(suffix string, types map[string]struct{}, kind string) (string, error) {
 	if suffix == "" {
 		return "", nil
 	}
 	field, ok := strings.CutPrefix(suffix, ".")
 	if !ok || field == "" {
-		return "", fmt.Errorf("unsupported Atlas exclude field selector suffix %q", suffix)
+		return "", fmt.Errorf("unsupported Atlas %s field selector suffix %q", kind, suffix)
 	}
-	if field == "version" && hasOnlyType(types, "extension") {
+	if kind == filterKindExclude && field == "version" && hasOnlyType(types, "extension") {
 		return field, nil
 	}
-	return "", fmt.Errorf("unsupported Atlas exclude field selector %q", suffix)
+	return "", fmt.Errorf("unsupported Atlas %s field selector %q", kind, suffix)
 }
 
 func hasOnlyType(types map[string]struct{}, resourceType string) bool {
@@ -476,6 +484,14 @@ func (s *exclusionState) filterGeneratedEmbeddedFields(
 	})
 }
 
+// filterGeneratedEnums mirrors the database-side enum exclusion, so excluding
+// an enum removes it from both sides of a comparison.
+func (s *exclusionState) filterGeneratedEnums(enums []goschema.Enum) []goschema.Enum {
+	return keep(enums, func(enum goschema.Enum) bool {
+		return !s.matches("enum", enum.Name)
+	})
+}
+
 func (s *exclusionState) filterGeneratedExtensions(extensions []goschema.Extension) []goschema.Extension {
 	result := make([]goschema.Extension, 0, len(extensions))
 	for _, extension := range extensions {
@@ -678,12 +694,17 @@ func stripGeneratedFieldForeignKey(field goschema.Field) goschema.Field {
 
 func cloneDatabase(schema *dbschematypes.DBSchema) *dbschematypes.DBSchema {
 	return &dbschematypes.DBSchema{
+		Schemas:     slices.Clone(schema.Schemas),
 		Tables:      slices.Clone(schema.Tables),
 		Enums:       slices.Clone(schema.Enums),
 		Indexes:     slices.Clone(schema.Indexes),
 		Constraints: slices.Clone(schema.Constraints),
 		Extensions:  slices.Clone(schema.Extensions),
 		Functions:   slices.Clone(schema.Functions),
+		Sequences:   slices.Clone(schema.Sequences),
+		Domains:     slices.Clone(schema.Domains),
+		Composites:  slices.Clone(schema.Composites),
+		Ranges:      slices.Clone(schema.Ranges),
 		Views:       slices.Clone(schema.Views),
 		MatViews:    slices.Clone(schema.MatViews),
 		Triggers:    slices.Clone(schema.Triggers),

@@ -19,7 +19,12 @@ type DiffOptions struct {
 	ToURLs   []string
 	DevURL   string
 	Exclude  []string
-	Policy   DiffPolicy
+	// Schemas restricts both comparison sides to the named schema scopes.
+	Schemas []string
+	// Include restricts both comparison sides to resources matched by
+	// Atlas-style include selectors.
+	Include []string
+	Policy  DiffPolicy
 	// ProjectEnv expands env:// desired-state references in FromURLs and
 	// ToURLs.
 	ProjectEnv atlassource.ProjectEnv
@@ -67,17 +72,23 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 		return atlasreport.SchemaDiff{}, fmt.Errorf("load --to schema: %w", err)
 	}
 
-	from, err := excludeDesiredSchema(fromState.Schema, opts.Exclude)
-	if err != nil {
-		return atlasreport.SchemaDiff{}, fmt.Errorf("apply --exclude to --from schema: %w", err)
+	scope := atlasfilter.Scope{
+		Schemas:       opts.Schemas,
+		Include:       opts.Include,
+		Exclude:       opts.Exclude,
+		DefaultSchema: diffDefaultSchema(dialect, fromState, toState),
 	}
-	to, err := excludeDesiredSchema(toState.Schema, opts.Exclude)
+	from, err := scopeGeneratedSide(fromState.Schema, scope, "--from schema")
 	if err != nil {
-		return atlasreport.SchemaDiff{}, fmt.Errorf("apply --exclude to --to schema: %w", err)
+		return atlasreport.SchemaDiff{}, err
 	}
-	fromDB, err := diffFromDBState(fromState, from, opts.Exclude)
+	to, err := scopeGeneratedSide(toState.Schema, scope, "--to schema")
 	if err != nil {
-		return atlasreport.SchemaDiff{}, fmt.Errorf("apply --exclude to --from schema: %w", err)
+		return atlasreport.SchemaDiff{}, err
+	}
+	fromDB, err := diffFromDBState(fromState, from, scope)
+	if err != nil {
+		return atlasreport.SchemaDiff{}, err
 	}
 
 	diff := applyDiffPolicy(schemadiff.CompareWithDialect(to, fromDB, dialect), opts.Policy)
@@ -94,20 +105,29 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 }
 
 // diffFromDBState shapes the --from side for comparison. Database-backed
-// sources keep their introspected state (exclude-filtered); local files
-// convert the already-filtered desired IR, exactly as before URL sources
-// existed.
+// sources keep their introspected state, filtered by the same scope as every
+// other side; local files convert the already-filtered desired IR, exactly as
+// before URL sources existed.
 func diffFromDBState(
 	state atlassource.State,
 	filtered *goschema.Database,
-	exclude []string,
+	scope atlasfilter.Scope,
 ) (*types.DBSchema, error) {
 	if state.DB == nil {
 		return schemafile.ToDBSchema(filtered), nil
 	}
-	return atlasfilter.ExcludeDatabase(state.DB, exclude)
+	return scopeDatabaseSide(state.DB, scope, "--from schema")
 }
 
-func excludeDesiredSchema(db *goschema.Database, patterns []string) (*goschema.Database, error) {
-	return atlasfilter.ExcludeGenerated(db, patterns)
+// diffDefaultSchema resolves the schema that owns unqualified objects for one
+// diff. Both sides must share one default, so a database-backed side pins it
+// (--from first), and local-file-only diffs fall back to the dialect default.
+func diffDefaultSchema(dialect string, fromState, toState atlassource.State) string {
+	if fromState.DefaultSchema != "" {
+		return fromState.DefaultSchema
+	}
+	if toState.DefaultSchema != "" {
+		return toState.DefaultSchema
+	}
+	return dialectDefaultSchema(dialect)
 }

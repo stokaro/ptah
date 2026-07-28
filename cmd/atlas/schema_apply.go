@@ -15,6 +15,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/editor"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/atlasfilter"
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/atlasschema"
 	"github.com/stokaro/ptah/internal/atlassource"
@@ -33,6 +34,7 @@ type atlasSchemaApplyOptions struct {
 	exclude     []string
 	txMode      string
 	schemas     []string
+	include     []string
 	planURL     string
 	lockTimeout string
 	edit        bool
@@ -70,8 +72,13 @@ MariaDB, and SQL Server; --lock-timeout bounds how long acquisition waits
 unlocked with a note. Before the target is touched, --dev-url rehearses the
 exact ordered plan on the dev database: the dev database is reset, the
 target's current schema is recreated on it, and a failed rehearsal refuses
-the apply with the target unchanged. Schema/include filters remain explicit
-follow-up gaps.`,
+the apply with the target unchanged. --schema and --include positively select
+what both comparison sides see: --schema names define the schema universe,
+--include selectors pick top-level resources inside it, and --exclude plus
+env.schema.mode subtract from the result. A selected object that depends on
+an unselected object refuses the plan with an explicit diagnostic instead of
+emitting incomplete SQL, and a selection that matches nothing reports a
+synced schema.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaApply(cmd, opts)
 		},
@@ -87,7 +94,7 @@ follow-up gaps.`,
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from apply")
 	flags.StringVar(&opts.txMode, "tx-mode", "", "Transaction mode: all, file, or none")
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to apply when database URLs are used")
-	flags.StringArray("include", nil, "Schema objects to include in apply")
+	flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in apply")
 	flags.StringVar(&opts.planURL, "plan", "", "URL to a pre-planned migration (e.g., file://<name>"+atlasschema.PlanFileSuffix+")")
 	flags.BoolVar(&opts.edit, "edit", false, "Open the generated SQL in an editor")
 	flags.StringVar(&opts.lockTimeout, "lock-timeout", "", "Timeout for acquiring the database lock")
@@ -187,6 +194,8 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		DevURL:     opts.devURL,
 		ToURLs:     opts.toURLs,
 		Exclude:    opts.exclude,
+		Schemas:    opts.schemas,
+		Include:    opts.include,
 		Policy:     policy,
 		TxMode:     txMode,
 		DryRun:     opts.dryRun,
@@ -493,11 +502,10 @@ func validateAtlasSchemaApplyOptions(
 	if len(opts.toURLs) == 0 {
 		return fmt.Errorf("--to is required")
 	}
-	if len(opts.schemas) > 0 {
-		return fmt.Errorf("atlas schema apply accepts --schema, but Ptah only supports local schema files for this command yet")
-	}
-	if values, err := cmd.Flags().GetStringArray("include"); err == nil && len(values) > 0 {
-		return fmt.Errorf("atlas schema apply accepts --include, but Ptah only supports local schema files for this command yet")
+	// Malformed or unsupported --include selectors fail before the target
+	// database is contacted.
+	if err := atlasfilter.ValidateIncludeSelectors(opts.include); err != nil {
+		return err
 	}
 	// Classification rejects unsupported schemes and source conflicts, and the
 	// dev-database requirement is checked here, before the target database is
