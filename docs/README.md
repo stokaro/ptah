@@ -6,7 +6,7 @@ Start with:
 
 - [Quick start](site/src/content/docs/start/quick-start.md)
 - [Documentation map](site/src/content/docs/documentation-map.md)
-- [Comparison](site/src/content/docs/reference/comparison.md)
+- [Comparison](site/src/content/docs/atlas/comparison.md)
 - [Declarative database testing](testing.md)
 - [Troubleshooting](site/src/content/docs/operate/troubleshooting.md)
 

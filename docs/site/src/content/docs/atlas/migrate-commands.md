@@ -1,0 +1,413 @@
+---
+title: Atlas migrate commands
+description: Run Atlas-style migration workflows with ptah atlas migrate apply, down, status, diff, lint, and the directory-maintenance verbs.
+---
+
+You have an Atlas-format migration directory — or scripts that manage one with
+`atlas migrate ...` — and want to run that workflow through Ptah. This page
+covers the `ptah atlas migrate` verbs: what each one does, a worked example,
+and the behavior details that differ from a first guess. The surfaces and flag
+translation rules are on the
+[Atlas compatibility overview](../overview/).
+
+## Command behavior
+
+| Atlas-compatible command | Ptah behavior |
+| --- | --- |
+| `ptah atlas migrate apply` | Atlas-format apply path equivalent to `ptah migrations up` |
+| `ptah atlas migrate down` | Forwards to `ptah migrations down` with mapped Atlas flags. `--dev-url` replays and verifies the rollback plan on the dev database before the target is touched (native `--shadow-db`), and `--format` (flag or `PTAH_FORMAT`) renders an Atlas Go-template report over `.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, `.Start`, `.End`, and `.Error`, moving the YES confirmation prompt to stderr (`--dry-run` or the native `--confirm` pass-through skip it). The forward defaults to Atlas revision bookkeeping (`--revision-format atlas`, like `migrate set`), so a bare invocation reverts the revisions `atlas migrate apply` wrote; pass the native `--revision-format ptah` through to select ptah bookkeeping. The registry-bound `--to-tag`, `--skip-checks`, and `--plan` flags are recorded waivers that fail loudly with their rationale. |
+| `ptah atlas migrate status` | Atlas-format migration status with Atlas revision-table metadata |
+| `ptah atlas migrate hash` | `ptah migrations hash` |
+| `ptah atlas migrate validate` | Silently verifies `atlas.sum` on success; checksum failures use Atlas-compatible stdout/stderr diagnostics, and `--dev-url` cleans and replays migrations on the dev database to validate SQL execution. |
+| `ptah atlas migrate lint` | `ptah migrations lint`; supports Atlas-style `--latest N`, infers lint dialect from `--dev-url`, cleans and replays migrations on directly connectable dev databases to validate SQL execution, and by default prints Atlas's migration-analysis text report (`--format`, `format.migrate.lint`, or `lint { log = "…" }` select custom output). |
+| `ptah atlas migrate new` | `ptah migrations create`; `--edit` opens the created migration file in `$VISUAL`/`$EDITOR` and refreshes `atlas.sum` afterwards. |
+| `ptah atlas migrate set [version]` | `ptah migrations repair` with Atlas revision metadata |
+| `ptah atlas migrate diff` | Replays local Atlas migrations on `--dev-url`, diffs against local schema files, writes an Atlas single-file migration, and updates `atlas.sum`; `--schema/-s` scopes the diff, `--edit` opens the generated migration in `$VISUAL`/`$EDITOR` before `atlas.sum` is finalized, and the Atlas-hidden `--dry-run` flag prints the generated SQL instead of writing files. |
+| `ptah atlas migrate import` | Imports local `file://` migration directories from Atlas-supported formats into a separate Atlas single-file directory and writes `atlas.sum`. |
+| `ptah atlas migrate checkpoint [name]` | Forwards to `ptah migrations checkpoint`: replays the migration directory on the `--dev-url` dev database and writes a ptah-format cumulative-schema checkpoint pair (`ptah.sum` refreshed). `--dir` maps to the native migrations directory and the optional positional name to the checkpoint description. Checkpoint output is ptah-format only: `--dir-format=ptah` passes through, while `--dir-format=atlas` is a recorded waiver rejected loudly — Ptah marks checkpoints via the ptah file-name convention, and Atlas's `-- atlas:checkpoint` directive has no reader support, so an Atlas-format checkpoint file would replay as an ordinary migration. Atlas keeps `migrate checkpoint` in its Pro build; Ptah provides it free. |
+| `ptah atlas migrate test [paths]` | Forwards to `ptah migrations test`: `--dir` maps to the native migration directory (read as Atlas-format by default via `--dir-format`), `--dev-url` to the native throwaway database (an ephemeral SQLite database when omitted), `--run` to the native case-name filter, and the optional positional path to the directory of Ptah-native YAML test cases (default `./tests`). Exit codes match the native runner: 0 when all cases pass, 1 on test failure. Atlas keeps `migrate test` in its Pro build; Ptah provides it free with Ptah-native test files as the executable payload. |
+| `ptah atlas migrate edit {name \| version}` | Forwards to `ptah migrations edit`: the positional maps to the native `--version` (a migration file name contributes its leading version digits), `--dir` to the native migration directory (Atlas-format by default via `--dir-format`), and the editor resolves from `$VISUAL`, then `$EDITOR`. The directory checksum is rewritten afterwards so `ptah migrations validate` keeps passing. Atlas keeps `migrate edit` outside its community build; Ptah provides it free. |
+| `ptah atlas migrate rebase {name \| version}` | Forwards to `ptah migrations rebase`: re-timestamps the selected migration past every existing version and rewrites the directory checksum. Atlas documents a repeatable positional; Ptah forwards one migration per run and rejects multiple values and `a...b` version ranges loudly. Atlas keeps `migrate rebase` outside its community build; Ptah provides it free. |
+| `ptah atlas migrate rm {name \| version}` | Forwards to `ptah migrations rm`: deletes the selected migration's files and rewrites the directory checksum. Atlas keeps `migrate rm` outside its community build; Ptah provides it free. |
+| `ptah atlas migrate push` | Registered Atlas CE boundary stub for a community-version unsupported command, kept by decision: Atlas push targets the proprietary, account-bound Atlas Registry protocol, which is not an open target. `--help` prints the Atlas CE unsupported notice and exits 0; direct execution prints the Atlas CE abort text and exits 1. `ptah migrations push` to any OCI registry is the open replacement. |
+
+## Worked example: an Atlas-format directory
+
+Atlas-style migration files can include `migration.sql` and `down.sql` sections
+inside txtar archives. Ptah executes those known sections and ignores unrelated
+embedded files.
+
+Create an Atlas-style migration:
+
+```text
+-- atlas:txtar
+
+-- migration.sql --
+CREATE TABLE users (
+  id integer PRIMARY KEY,
+  email text NOT NULL UNIQUE
+);
+
+-- down.sql --
+DROP TABLE users;
+```
+
+Name the file with a migration version, for example:
+
+```text
+migrations/20260721120000_create_users.sql
+```
+
+Hash and validate the directory:
+
+```bash
+ptah atlas migrate hash --dir file://migrations
+ptah atlas migrate validate --dir file://migrations
+```
+
+Expected output includes:
+
+```text
+Wrote migrations/atlas.sum
+1 migration file(s) hashed
+```
+
+A successful `validate` is silent.
+
+Apply it, then check status:
+
+```bash
+ptah atlas migrate apply \
+  --url "$DATABASE_URL" \
+  --dir file://migrations
+
+ptah atlas migrate status \
+  --url "$DATABASE_URL" \
+  --dir file://migrations
+```
+
+Expected output includes:
+
+```text
+Migrating to version 20260721120000 from 1 pending migrations.
+Migration complete. Current version: 20260721120000
+```
+
+```text
+=== MIGRATION STATUS ===
+Current Version: 20260721120000
+Total Migrations: 1
+Applied Migrations: 1
+Pending Migrations: 0
+Status: Database is up to date
+```
+
+Roll back using the `down.sql` section. A bare `ptah atlas migrate down` reads
+the Atlas revision rows `migrate apply` wrote, and asks for a `YES`
+confirmation before touching the database (`--dry-run` skips both):
+
+```bash
+ptah atlas migrate down \
+  --url "$DATABASE_URL" \
+  --dir file://migrations \
+  --to-version 0
+```
+
+Expected output ends with:
+
+```text
+✅ Migration rollback completed successfully!
+Database is now at version: 0
+```
+
+Native `ptah migrations` commands read the same directory when `--dir-format
+atlas` is passed; the native lifecycle is documented under
+[Versioned migrations](../../versioned/overview/). If parsing fails, force
+`--dir-format atlas` and inspect the migration file for section names: Ptah
+recognizes `migration.sql` and `down.sql`, and other section names are not
+executed.
+
+## Apply a migration directory
+
+`ptah atlas migrate apply` reads a local Atlas migration directory and records
+runtime history in Atlas revision-table format by default. The optional
+positional `amount` applies only the first N pending migrations. Use
+`--baseline` to mark earlier migration files as applied without executing their
+SQL bodies before applying the remaining pending migrations.
+
+```bash
+ptah atlas migrate apply 2 \
+  --url "$DATABASE_URL" \
+  --dir file://migrations
+```
+
+Supported Atlas apply flags include `--dry-run`, `--tx-mode`, `--exec-order`,
+`--allow-dirty`, `--baseline`, `--revisions-schema`, `--lock-timeout`, and
+`--format`. `--format` executes a Go template against a Ptah apply result that
+mirrors Atlas's public apply-template fields: `Pending`, `Applied`, `Current`,
+`Target`, `Start`, `End`, `Driver`, `URL`, and `Dir`; `{{ json . }}` emits the
+same result as JSON with database credentials redacted. With `--env`, Ptah can
+read `env.url`, `migration`, and `format.migrate.apply` from `atlas.hcl`.
+
+The apply path executes every Atlas OSS migration directory format selected by
+`migration.format` or the directory URL `?format=` parameter: `atlas`,
+`golang-migrate`, `goose`, `flyway`, `liquibase`, and `dbmate`. The native
+`atlas` format is read from disk unchanged, preserving `atlas.sum` verification
+and down migrations. Every other format is read and converted in memory to Atlas
+single-file, up-only migrations, so apply executes only the source tool's
+forward (up) SQL and never its down, rollback, undo, or metadata section. This
+reuses the same format-loading layer as `ptah atlas migrate import`, so apply
+and import agree on every format's semantics. An explicit `?format=` query on
+the effective directory URL, from either `migration.dir` or CLI `--dir`,
+overrides the `migration.format` project default, matching Atlas; an empty query
+value selects the native `atlas` format.
+
+```bash
+# Apply a Goose directory directly — no separate import step.
+ptah atlas migrate apply --url "$DATABASE_URL" \
+  --dir "file://migrations?format=goose"
+```
+
+Flyway versions are compared component-wise like Flyway itself (`V1.5` sorts
+before `V2`, `V1.10` after `V1.9`) and are encoded to a stable Atlas version that
+depends only on the version — never on the other files in the directory — so
+inserting a mid-sequence migration (a hotfix, an out-of-order merge) never
+renumbers the others and existing revision checksums stay valid. Each version
+maps to a fixed-width `major.minor.patch` int64 (minor and patch `0`–`99`); this
+covers semantic and `yyyyMMddHHmmss` timestamp schemes. A version with more than
+three components, or a minor/patch of `100` or more, cannot be represented in an
+int64 and is rejected before the database is opened.
+
+Several inputs still fail before Ptah opens the target database rather than guess
+at semantics: unknown formats; goose/dbmate files missing their up directive
+(never falling back to executing the whole file); Flyway repeatable (`R__`)
+migrations, which Ptah cannot yet execute as versioned migrations (matching how
+`ptah atlas migrate import` handles them); and two source files that resolve to
+the same version. See
+[`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742).
+Atlas OSS does not register `migrate apply --dir-format`, `--to-version`, or
+`--lock-name`; Ptah follows that surface and rejects those flags on
+`migrate apply`.
+
+## Generate a migration with migrate diff
+
+`ptah atlas migrate diff` accepts a local `--dir` migration directory, one or
+more local `--to` schema files, and a directly connectable `--dev-url`. With
+`--env`, Ptah can read `env.schema.src`, `env.dev`, `migration.dir`,
+`format.migrate.diff`, and supported non-concurrent `diff` policy from
+`atlas.hcl`. Ptah drops all tables in the dev database, replays the migration
+directory into it, compares that state to the desired schema files, and writes
+an Atlas-style single `.sql` migration plus `atlas.sum` when changes exist. Use
+a disposable dev database. If `atlas.sum` already exists, Ptah validates it
+before replaying migrations and fails on checksum drift instead of silently
+rehashing edited files.
+
+```bash
+ptah atlas migrate diff add_users \
+  --dir file://migrations \
+  --to file://schema.sql \
+  --dev-url "sqlite://dev.db"
+```
+
+Expected output includes:
+
+```text
+Created migration file: .../migrations/20260721120001_add_users.sql
+Updated migration checksum: .../migrations/atlas.sum
+```
+
+Atlas OSS registers `migrate diff --dry-run` as a hidden flag. Ptah accepts the
+same hidden flag and prints the generated SQL instead of writing a migration
+file or updating `atlas.sum`:
+
+```bash
+ptah atlas migrate diff add_users \
+  --dir file://migrations \
+  --to file://schema.sql \
+  --dev-url "sqlite://dev.db" \
+  --dry-run
+```
+
+Use `--lock-timeout` to bound waiting for Ptah's local migration-directory lock
+while the command validates checksums and writes the new migration. The default
+migration-file format matches Atlas's two-space SQL indentation template. Use
+`--format` to render the generated migration SQL through Atlas-style Go
+templates with `sql` and `.MarshalSQL`, for example to disable indentation:
+
+```bash
+ptah atlas migrate diff add_users \
+  --dir file://migrations \
+  --to file://schema.sql \
+  --dev-url "sqlite://dev.db" \
+  --format '{{ sql . "" }}'
+```
+
+With `--edit`, the generated migration file opens in `$VISUAL` or `$EDITOR`
+before `atlas.sum` is finalized, so hand-tuned SQL still validates; `--edit`
+cannot be combined with the hidden `--dry-run` flag because dry runs write no
+migration file to edit. Atlas CE also registers `migrate diff --qualifier`;
+Ptah accepts that flag name for surface parity and fails explicitly until
+custom qualifier metadata is implemented.
+
+`--schema` accepts repeated or comma-separated schema names and narrows the
+replayed dev database state plus local desired schema files before the diff is
+planned. `diff.concurrent_index.create` is rejected in this command until Ptah
+can write matching no-transaction metadata into generated migration files.
+Database desired-state URLs, `env://` project attributes, and Docker dev
+databases fail explicitly until their semantics are implemented.
+
+## Validate integrity
+
+`ptah atlas migrate validate` verifies the migration directory against
+`atlas.sum`. When `--dev-url` is set, Ptah first checks integrity
+and then treats the dev database as scratch space: it drops user tables and
+replays the migration directory to validate SQL execution semantics. If
+integrity drift is found, Ptah reports the drift and does not connect to the dev
+database.
+
+A successful validation is silent, including a successful `--dev-url` replay.
+Checksum mismatches exit `1`, print Atlas-compatible recovery guidance to
+stdout, and print `Error: checksum mismatch` to stderr. If `atlas.sum` is
+missing, the command prints the same recovery guidance and writes
+`Error: checksum file not found` to stderr. For added, edited, or removed
+migration files, the stdout guidance includes the first mismatched `atlas.sum`
+line, file name, and reason.
+
+This compatibility behavior is scoped to `ptah atlas` and `ptah-compat`.
+Native `ptah migrations validate` keeps Ptah's success banner and native error
+output; missing or malformed sum files remain exit-`2` usage failures.
+
+```bash
+ptah atlas migrate validate \
+  --dir file://migrations \
+  --dir-format atlas \
+  --dev-url "sqlite://dev.db"
+```
+
+## Lint migrations
+
+```bash
+ptah atlas migrate lint \
+  --dir file://migrations \
+  --dev-url "sqlite://dev.db" \
+  --latest 1
+```
+
+`migrate lint --dev-url` treats the dev database as scratch space: it drops user
+tables, replays the migration directory, and then runs static lint
+reporting. Docker `--dev-url` values remain an explicit gap; use a directly
+connectable database URL.
+
+With no `--format` and no project template, `ptah atlas migrate lint` prints
+Atlas's default migration-analysis text report: an `Analyzing changes …` header,
+a per-version block listing each analyzer group's diagnostics (with a suggested
+fix where the analyzer provides one), a `-- ok (…)` line per version, and a
+summary of version statuses, semantic schema changes, and diagnostics. The
+report is written to stdout even when findings fail, and error-severity findings
+still exit with code 1. The native `ptah migrations lint` output is unchanged.
+Custom output is selected by `--format`, by `format.migrate.lint`, or by Atlas's
+`lint { log = "…" }` template; an explicit CLI `--format` wins over a project
+template, and a selected `--env` `lint.log` overrides a global one.
+
+The command captures the migration directory once before checking `atlas.sum`,
+selecting `--latest` versions, replaying migrations, and rendering reports.
+Checksum status, findings, statement metadata, and formatted output therefore
+describe the same immutable inputs.
+
+The `Replay Migration Files` step reports the number of semantic schema changes
+the selected migrations express, recovered from Ptah's dialect-aware parse of
+their DDL — the same parser the replay and planner use — not a count of
+statements or files. One statement can contribute zero changes (an operational
+`INSERT`/`SELECT` or a construct outside the DDL grammar), exactly one (a single
+`CREATE`), or several (a multi-action `ALTER TABLE`, or a `DROP TABLE` naming
+several tables), so this change count and the new-migration-file count differ in
+general.
+
+Ptah also validates and fully loads the migration provider, including Atlas
+templates, before dropping any objects from the dev database. A malformed
+migration directory therefore leaves the existing dev database state intact;
+cleanup starts only after the replay plan is valid.
+
+For a code-by-code audit of the analyzer checks Atlas marks as Pro against
+Ptah's native lint rules, see
+[Comparison: Atlas Pro analyzer coverage](../comparison/#atlas-pro-analyzer-coverage).
+
+Atlas-compatible lint directives are enabled only under the
+`ptah atlas migrate lint` compatibility profile. A statement-local
+`-- atlas:nolint <selector>` suppresses the following statement. A first
+nonempty `-- atlas:nolint <selector>` header followed by a blank line applies
+to the whole file. A bare file header ignores the file completely, so it is
+absent from `.Files` and per-file analysis steps. Supported analyzer selectors
+are `destructive`, `data_depend`, `concurrent_index`, `incompatible`, and
+`nestedtx`; supported Atlas diagnostic aliases are `DS102`, `DS103`, and
+`MF103`. Native lint and migrate-up safety keep their native directive
+semantics unless the Atlas compatibility profile is selected explicitly.
+
+## Metadata commands and directory formats
+
+Atlas-compatible migration metadata commands default to Atlas directory format.
+`ptah atlas migrate hash`, `lint`, `new`, `set`, `status`, and `validate`
+register `--dir-format` with Atlas's default value `atlas`. The supported value
+is `atlas`; Atlas's external migration-tool formats (`golang-migrate`, `goose`,
+`flyway`, `liquibase`, and `dbmate`) fail explicitly on those commands until
+they are imported with `ptah atlas migrate import` or implemented natively.
+`ptah atlas migrate set [version]` maps the positional version to Ptah's
+native repair version, uses Atlas revision-table metadata, and internally
+rewrites or creates the revision row for that version. With `--env`, it reads
+`env.url`, `migration.dir`, and `migration.revisions_schema` from `atlas.hcl`;
+explicit `--url`, `--dir`, and `--revisions-schema` flags keep CLI precedence.
+`ptah atlas migrate status` also accepts `--revisions-schema` and runs against
+Atlas revision-table metadata.
+
+A pre-apply check sequence for CI looks like:
+
+```bash
+ptah atlas migrate hash --dir file://migrations
+ptah atlas migrate new add_users --dir file://migrations
+ptah atlas migrate validate --dir file://migrations --dev-url "sqlite://dev.db"
+ptah atlas migrate status --url "$DATABASE_URL" --dir file://migrations
+```
+
+## Import from other tools
+
+`ptah atlas migrate import` converts a local `file://` migration directory from
+an Atlas-supported format into a separate Atlas single-file directory and
+writes `atlas.sum`:
+
+```bash
+ptah atlas migrate import \
+  --from "file://flyway?format=flyway" \
+  --to "file://migrations"
+```
+
+The command is intentionally fail-closed: use a destination directory different
+from the source directory, and start with a destination that does not already
+contain `.sql` migration files or `atlas.sum`. Flyway repeatable migrations
+currently fail explicitly because Ptah does not yet execute Atlas R-suffixed
+imported migrations.
+
+The native `ptah migrations import` converts the same source formats into
+Ptah-native migrations instead; see
+[Import from another tool](../../versioned/import/).
+
+## Format template fields
+
+| Command | Format data fields |
+| --- | --- |
+| `ptah atlas migrate apply --format` | `.Driver`, `.URL`, `.Dir`, `.Env`, `.Pending`, `.Applied`, `.Current`, `.Target`, `.Start`, `.End`, `.Error`, and JSON `.Message` for successful or no-op reports. `.Pending` and `.Applied` entries expose `.Name`, `.Version`, `.Description`; applied entries also expose `.Applied`, `.Skipped`, `.Checks`, and statement `.Error`. |
+| `ptah atlas migrate diff --format` | `.Changes`, `.MarshalSQL`, plus the `sql` helper for generated migration SQL. |
+| `ptah atlas migrate lint --format` | `.Env.Driver`, `.Env.URL`, `.Env.Dir`, `.Steps`, and `.Files`. Step entries expose `.Name`, `.Text`, `.Error`, and `.Result`; file entries expose `.Name`, `.Text`, `.Error`, and `.Findings`. |
+| `ptah atlas migrate status --format` | `.Env.Driver`, `.Env.URL`, `.Env.Dir`, `.Available`, `.Applied`, `.Pending`, `.Current`, `.Next`, and `.Status`. Available and pending migration file entries expose `.Name`, `.Version`, and `.Description`. Applied revision entries expose `.Version`, `.Description`, `.Type`, `.Applied`, `.Total`, `.ExecutedAt`, `.ExecutionTime`, `.Error`, `.ErrorStmt`, and `.OperatorVersion`. |
+| `ptah atlas migrate down --format` | `.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, `.Start`, `.End`, and `.Error`. |
+
+The shared report shape and URL redaction rules are described on the
+[Atlas compatibility overview](../overview/#format-reports-and-redaction).
+
+## Next steps
+
+- Inspecting, diffing, or applying schemas instead of migrations:
+  [Atlas schema commands](../schema-commands/).
+- Deciding whether the native lifecycle fits better:
+  [Versioned migrations](../../versioned/overview/).
+- Checking what this surface does and does not prove:
+  [Conformance](../conformance/).

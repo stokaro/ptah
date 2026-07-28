@@ -43,7 +43,7 @@ Every page has exactly one primary type. Choose it before writing a word.
 | How-to | Goal-directed steps for a competent reader; variants and failure modes allowed | `versioned/checkpoints` |
 | Reference | Exhaustive and scannable; no narrative | `reference/exit-codes` |
 | Troubleshooting | Symptom-keyed diagnosis and fixes | `operate/troubleshooting` |
-| Compatibility/status | Evidence-dated claims about parity or coverage | `operate/conformance` |
+| Compatibility/status | Evidence-dated claims about parity or coverage | `atlas/conformance` |
 | Contributor | Repo-layer docs, out of reader navigation | `docs/system_design.md` |
 
 Mixing rule: a how-to may open with at most two short concept paragraphs;

@@ -28,6 +28,13 @@ const redirectRoutes = {
   '/workflows/reference-data/': '/versioned/reference-data/',
   '/workflows/testing/': '/testing/migrations-and-schema/',
   '/workflows/ci/': '/testing/ci/',
+  '/workflows/atlas-cli/': '/atlas/overview/',
+  '/examples/atlas-migrations/': '/atlas/migrate-commands/',
+  '/reference/atlas-project-config/': '/atlas/project-config/',
+  '/reference/comparison/': '/atlas/comparison/',
+  '/reference/atlas-docs-coverage/': '/atlas/docs-coverage/',
+  '/operate/conformance/': '/atlas/conformance/',
+  '/operate/license-boundary/': '/atlas/license-boundary/',
 };
 
 const redirects = Object.fromEntries(
@@ -113,13 +120,19 @@ export default defineConfig({
           label: 'Use Ptah',
           items: [
             { slug: 'workflows/oci-registry' },
-            { slug: 'workflows/atlas-cli' },
           ],
         },
         {
-          label: 'Examples',
+          label: 'Atlas compatibility',
           items: [
-            { slug: 'examples/atlas-migrations' },
+            { slug: 'atlas/overview' },
+            { slug: 'atlas/migrate-commands' },
+            { slug: 'atlas/schema-commands' },
+            { slug: 'atlas/project-config' },
+            { slug: 'atlas/comparison' },
+            { slug: 'atlas/conformance' },
+            { slug: 'atlas/docs-coverage' },
+            { slug: 'atlas/license-boundary' },
           ],
         },
         {
@@ -129,15 +142,12 @@ export default defineConfig({
             { slug: 'reference/configuration' },
             { slug: 'reference/yaml-schema' },
             { slug: 'reference/hcl-schema' },
-            { slug: 'reference/atlas-project-config' },
             { slug: 'reference/public-api' },
             { slug: 'reference/reusable-components' },
             { slug: 'reference/query-builder' },
             { slug: 'reference/testing' },
             { slug: 'reference/capabilities' },
             { slug: 'reference/dialect-notes' },
-            { slug: 'reference/comparison' },
-            { slug: 'reference/atlas-docs-coverage' },
             { slug: 'reference/exit-codes' },
           ],
         },
@@ -145,8 +155,6 @@ export default defineConfig({
           label: 'Operate',
           items: [
             { slug: 'operate/troubleshooting' },
-            { slug: 'operate/conformance' },
-            { slug: 'operate/license-boundary' },
           ],
         },
       ],

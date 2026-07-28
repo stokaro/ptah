@@ -75,4 +75,4 @@ CREATE TABLE "pets" (
 
 - Combining SQL files with Go packages or other sources? [Composite desired schema](../composite/).
 - Planning versioned migrations from this file? [Generate migrations](../../versioned/generate/).
-- Using Atlas-style commands end to end? [Atlas-compatible CLI](../../workflows/atlas-cli/).
+- Using Atlas-style commands end to end? [Atlas compatibility overview](../../atlas/overview/).
