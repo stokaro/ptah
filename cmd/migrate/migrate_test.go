@@ -42,3 +42,27 @@ type User struct {
 	c.Assert(out.String(), qt.Not(qt.Contains), "[0x")
 	c.Assert(out.String(), qt.Not(qt.Contains), "&{")
 }
+
+func TestMigratePlan_OCIFlags(t *testing.T) {
+	c := qt.New(t)
+	cmd := migrate.NewMigrateCommand()
+
+	c.Assert(cmd.Flag("attach"), qt.IsNotNil)
+	c.Assert(cmd.Flag("plain-http"), qt.IsNotNil)
+}
+
+func TestMigratePlan_AttachRejectsLocalSchemaSource(t *testing.T) {
+	c := qt.New(t)
+	schemaFile := filepath.Join(t.TempDir(), "schema.sql")
+	c.Assert(os.WriteFile(schemaFile, []byte("CREATE TABLE users (id INTEGER);\n"), 0o600), qt.IsNil)
+	cmd := migrate.NewMigrateCommand()
+	cmd.SetArgs([]string{
+		"--schema-file", schemaFile,
+		"--db-url", "sqlite:///" + filepath.Join(t.TempDir(), "ptah.db"),
+		"--attach",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, "--attach requires exactly one OCI --schema-file source")
+}

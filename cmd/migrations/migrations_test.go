@@ -17,6 +17,8 @@ func TestNewMigrationsCommand_RegistersNativePaths(t *testing.T) {
 		{"plan"},
 		{"generate"},
 		{"create"},
+		{"push"},
+		{"pull"},
 		{"up"},
 		{"down"},
 		{"status"},

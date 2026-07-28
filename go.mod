@@ -10,6 +10,8 @@ require (
 	github.com/hashicorp/hcl/v2 v2.24.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/microsoft/go-mssqldb v1.10.0
+	github.com/opencontainers/go-digest v1.0.0
+	github.com/opencontainers/image-spec v1.1.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
@@ -21,6 +23,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/text v0.40.0
 	modernc.org/sqlite v1.54.0
+	oras.land/oras-go/v2 v2.6.2
 )
 
 require (

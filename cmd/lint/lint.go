@@ -5,13 +5,18 @@ package lint
 import (
 	"errors"
 	"io"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
+	"github.com/stokaro/ptah/cmd/internal/migrationsource"
+	"github.com/stokaro/ptah/config/projectconfig"
+	"github.com/stokaro/ptah/internal/lintartifact"
 	"github.com/stokaro/ptah/internal/migrationlintreport"
+	"github.com/stokaro/ptah/internal/ociartifact"
 	migrationlint "github.com/stokaro/ptah/migration/lint"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -24,9 +29,11 @@ const (
 
 	failOnError = migrationlintreport.FailOnError
 
-	latestFlag  = "latest"
-	gitBaseFlag = "git-base"
-	gitDirFlag  = "git-dir"
+	latestFlag    = "latest"
+	gitBaseFlag   = "git-base"
+	gitDirFlag    = "git-dir"
+	attachFlag    = "attach"
+	plainHTTPFlag = "plain-http"
 )
 
 var errLintFindings = errors.New("lint findings exceed the failure threshold")
@@ -46,6 +53,8 @@ func NewLintCommand() *cobra.Command {
 	var disabled []string
 	var failOn string
 	var latest uint
+	var attach bool
+	var plainHTTP bool
 
 	cmd := &cobra.Command{
 		Use:   "lint",
@@ -77,12 +86,14 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 				disabled:   disabled,
 				failOn:     failOn,
 				latest:     latest,
+				attach:     attach,
+				plainHTTP:  plainHTTP,
 				positional: args,
 			})
 		},
 	}
 
-	cmd.Flags().StringVar(&dir, "dir", "./migrations", "Directory containing migration files")
+	cmd.Flags().StringVar(&dir, "dir", "./migrations", "Local directory or oci:// reference containing migration files")
 	cmd.Flags().StringVar(&dirFormat, "dir-format", string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	cmd.Flags().StringVar(&dialect, "dialect", "", "Target dialect gating dialect-specific rules: postgres, mysql, mariadb, sqlite, clickhouse, cockroachdb, yugabytedb, or spanner (empty runs every rule)")
 	cmd.Flags().StringVar(&format, "format", formatText, "Output format: text, json, github-actions, sarif")
@@ -96,6 +107,8 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 	cmd.Flags().StringArrayVar(&disabled, "disable", nil, "Disable a rule code or family, for example DS101 or MY (repeatable)")
 	cmd.Flags().StringVar(&failOn, "fail-on", failOnError, "Failure threshold controlling the exit code: error, any or none")
 	cmd.Flags().UintVar(&latest, latestFlag, 0, "Lint only the latest N migration versions")
+	cmd.Flags().BoolVar(&attach, attachFlag, false, "Attach the canonical JSON lint report to an OCI migration artifact")
+	cmd.Flags().BoolVar(&plainHTTP, plainHTTPFlag, false, "Use plain HTTP for an explicitly trusted local registry")
 
 	cmdutil.ConfigureCommand(cmd)
 	return cmd
@@ -114,6 +127,8 @@ type runOptions struct {
 	disabled   []string
 	failOn     string
 	latest     uint
+	attach     bool
+	plainHTTP  bool
 	positional []string
 }
 
@@ -128,9 +143,37 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
 	}
-	report, err := migrationlintreport.Build(cmd.Context(), reportOptions(cmd, opts), projectCfg)
+	reportOpts, provenance, err := prepareReportOptions(
+		cmd,
+		reportOptions(cmd, opts),
+		projectCfg,
+		sourceOptions{
+			attach:    opts.attach,
+			plainHTTP: opts.plainHTTP,
+		},
+	)
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+	}
+	report, err := migrationlintreport.Build(cmd.Context(), reportOpts, projectCfg)
+	if err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+	}
+	if opts.attach {
+		if _, err := lintartifact.Publish(
+			cmd.Context(),
+			provenance.Client,
+			provenance.Reference,
+			provenance.Descriptor,
+			report,
+		); err != nil {
+			return writeError(
+				cmd.ErrOrStderr(),
+				opts.format,
+				opts.failOn,
+				"attach migration lint report: "+err.Error(),
+			)
+		}
 	}
 
 	writer := lintReportWriter(cmd.OutOrStdout(), cmd.ErrOrStderr(), report)
@@ -141,6 +184,57 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 		return exitcode.New(1, errLintFindings)
 	}
 	return nil
+}
+
+type sourceOptions struct {
+	attach    bool
+	plainHTTP bool
+}
+
+func prepareReportOptions(
+	cmd *cobra.Command,
+	opts migrationlintreport.Options,
+	projectCfg projectconfig.Config,
+	sourceOpts sourceOptions,
+) (migrationlintreport.Options, *migrationsource.OCI, error) {
+	effectiveDir := opts.Dir
+	if !opts.Changed.Dir && projectCfg.Migration.Dir != "" {
+		effectiveDir = projectCfg.Migration.Dir
+	}
+	isOCI := strings.HasPrefix(effectiveDir, ociartifact.Scheme)
+	if sourceOpts.attach && !isOCI {
+		return migrationlintreport.Options{}, nil, errors.New("--attach requires an OCI migration source")
+	}
+	if !isOCI {
+		return opts, nil, nil
+	}
+
+	effectiveGitBase := opts.GitBase
+	if !opts.Changed.GitBase {
+		effectiveGitBase = projectCfg.Lint.GitBase
+	}
+	if strings.TrimSpace(effectiveGitBase) != "" {
+		return migrationlintreport.Options{}, nil, errors.New("--git-base is not supported with OCI migration sources")
+	}
+
+	effectiveDirFormat := opts.DirFormat
+	if !opts.Changed.DirFormat && projectCfg.Migration.Format != "" {
+		effectiveDirFormat = projectCfg.Migration.Format
+	}
+	source, err := migrationsource.Resolve(cmd.Context(), effectiveDir, migrationsource.Options{
+		DirFormat: migrator.MigrationDirFormat(effectiveDirFormat),
+		PlainHTTP: sourceOpts.plainHTTP,
+	})
+	if err != nil {
+		return migrationlintreport.Options{}, nil, err
+	}
+
+	opts.Dir = source.Display
+	opts.FS = source.FileSystem
+	opts.DirFormat = string(source.DirFormat)
+	opts.Changed.Dir = true
+	opts.Changed.DirFormat = true
+	return opts, source.OCI, nil
 }
 
 func reportOptions(cmd *cobra.Command, opts runOptions) migrationlintreport.Options {

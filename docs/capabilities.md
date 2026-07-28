@@ -12,6 +12,25 @@ and restrict or enable individual emissions accordingly (issues #225/#226/#171).
 
 Package: `core/platform/capability`.
 
+## Cross-Cutting Artifact Distribution
+
+OCI artifact distribution is a cross-cutting Ptah capability, not a database
+dialect capability key in `core/platform/capability`.
+
+| Capability | Status |
+| --- | --- |
+| Bring-your-own OCI registry | Native migration and desired-schema push/pull against OCI-compliant registries, authenticated through the Docker credential store. |
+| Reference semantics | Unqualified references resolve to `latest`; tags are movable; `@sha256:` digest pins are immutable; pushes to digest references are rejected. |
+| Direct migration consumption | `ptah migrations up`, `status`, and `down` accept `oci://` through `--migrations-dir`; `up --verify-sum` verifies the pulled directory. |
+| Direct schema consumption | `ptah schema compare` and `drift` accept `oci://` through `--schema-file`. |
+| Canonical desired schema | Schema publication emits exactly one lossless canonical `schema.hcl` and fails closed on managed data, lossy diagnostics, or unstable HCL round trips. |
+| Deployment reporting | Successful, non-dry-run OCI-backed `migrations up` runs that add committed revisions attach a best-effort, redacted deployment report unless `--skip-report` is set. No-op runs do not publish a report. |
+| OCI referrers | Deployment, lint, and plan reports attach to exact source digests. Native Referrers API discovery is preferred; Ptah merges the standard tag-schema fallback with per-attachment durable tags for concurrent Ptah writers. `ptah oci referrers` lists direct descriptor metadata with type and output-format filters; payload download and consumption are not implemented. |
+| Atlas boundary | This is a native Ptah capability. It does not implement Atlas Cloud, `atlas://`, or the Atlas-compatible push stubs. |
+
+See [OCI Registry Artifacts](./oci_registry.md) for commands, authentication,
+pinning, integrity, security, GHCR CI, and the Atlas-to-OCI concept mapping.
+
 ## The model
 
 Two layers cooperate:

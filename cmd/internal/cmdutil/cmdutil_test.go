@@ -120,6 +120,53 @@ func TestNormalizeCommandError_RemapExplicitErrorWithoutDuplicateOutput(t *testi
 	c.Assert(stderr.String(), qt.Equals, "error: boom\n")
 }
 
+func TestExactArgs_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	var stderr bytes.Buffer
+	cmd := &cobra.Command{Use: "push"}
+	cmd.SetErr(&stderr)
+
+	err := cmdutil.ExactArgs(1)(cmd, []string{"oci://registry.example/acme/migrations"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(stderr.String(), qt.Equals, "")
+}
+
+func TestExactArgs_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{
+			name:    "missing argument",
+			args:    nil,
+			wantErr: "expected exactly 1 positional argument\\(s\\), got 0",
+		},
+		{
+			name:    "extra argument",
+			args:    []string{"first", "second"},
+			wantErr: "expected exactly 1 positional argument\\(s\\), got 2",
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			var stderr bytes.Buffer
+			cmd := &cobra.Command{Use: "push"}
+			cmd.SetErr(&stderr)
+
+			err := cmdutil.ExactArgs(1)(cmd, tt.args)
+
+			c.Assert(err, qt.ErrorMatches, tt.wantErr)
+			c.Assert(stderr.String(), qt.Matches, "error: "+tt.wantErr+"\n")
+		})
+	}
+}
+
 func commandError(message string) func(*cobra.Command, []string) error {
 	return func(_ *cobra.Command, _ []string) error {
 		return errors.New(message)

@@ -27,6 +27,7 @@ type CompareOptions struct {
 	ConnectTimeout time.Duration
 	IgnoredTables  []string
 	Schemas        []string
+	PlainHTTP      bool
 }
 
 // CompareResult is the output of a live schema comparison.
@@ -51,6 +52,7 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 		RootDirs:    opts.RootDirs,
 		SchemaFiles: opts.SchemaFiles,
 		Commands:    opts.Commands,
+		PlainHTTP:   opts.PlainHTTP,
 	}
 	generated, err := schemaload.LoadContext(ctx, loadOpts)
 	if err != nil {

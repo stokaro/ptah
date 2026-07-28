@@ -135,6 +135,17 @@ func NoPositionalArgs(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// ExactArgs returns a Cobra validator that requires exactly count positional
+// arguments while preserving Ptah's printed exit-2 usage-error contract.
+func ExactArgs(count int) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if len(args) != count {
+			return Fail(cmd, fmt.Errorf("expected exactly %d positional argument(s), got %d", count, len(args)))
+		}
+		return nil
+	}
+}
+
 // StatDir validates that dir exists and is a directory, returning an
 // actionable error (wrapping the underlying os.Stat error, and distinguishing
 // a path that exists but is a file) otherwise.

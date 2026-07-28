@@ -36,3 +36,22 @@ PostgreSQL versus CockroachDB/YugabyteDB/Spanner, and version-specific behavior.
 
 Continue with [Dialect notes](../dialect-notes/) for operational differences
 between supported database targets.
+
+## Cross-cutting OCI capability
+
+OCI registry distribution is not a dialect capability key. It is a native Ptah
+workflow that applies across supported database targets:
+
+| Area | Support |
+| --- | --- |
+| Migration artifacts | Push, pull, and direct `up`/`status`/`down` consumption through `oci://`. |
+| Desired-schema artifacts | Push/pull canonical `schema.hcl`; compare and drift through `--schema-file oci://...`. |
+| Pinning | Unqualified references resolve to `latest`; tags are movable; digest pins are immutable. |
+| Authentication | Docker configuration, `DOCKER_CONFIG`, `credsStore`, and `credHelpers`. |
+| Integrity | Optional sum verification before push and before an OCI-backed migration opens the database. |
+| Deployment reports | Best-effort redacted referrer after an OCI-backed migration run adds committed revisions, with `--skip-report` opt-out. No-op runs do not publish a report. |
+| Referrer publication and listing | Deployment, lint, and plan reports attach to exact source digests. Native Referrers API discovery is preferred; Ptah merges the standard tag-schema fallback with per-attachment durable tags for concurrent Ptah writers. `ptah oci referrers` lists direct descriptor metadata with type and output-format filters; payload download and consumption are not implemented. |
+| Atlas compatibility | Native Ptah only; no Atlas Cloud API, `atlas://`, or implemented Atlas-compatible push command. |
+
+See [OCI registry artifacts](../../workflows/oci-registry/) for the complete
+workflow and security boundaries.
