@@ -1,4 +1,4 @@
-# Go Annotations vs. HCL Schema
+# Go annotations vs. HCL schema
 
 Ptah can use both Go source annotations and HCL schema files as schema sources.
 It can also export Go annotations to HCL schema:
@@ -18,7 +18,7 @@ state for every Go project. If the Go service owns the schema and the annotation
 model remains expressive enough, keeping Go annotations as the source of truth
 is a supported Ptah workflow.
 
-## When to Use Each Format
+## When to use each format
 
 Use Go annotations when the Go model types remain the primary schema source:
 
@@ -46,7 +46,7 @@ Use export as a one-time migration path when a project wants to move from
 app-schema authoring to declarative schema authoring without manually rewriting
 its existing Ptah metadata.
 
-## Exported Schema Shape
+## Exported schema shape
 
 The exporter writes deterministic HCL for the schema subset that maps
 directly from Ptah's IR:
@@ -83,7 +83,7 @@ function parameter strings that cannot be split into Atlas `arg` blocks without
 losing meaning. These warnings are intentional; the exporter must not silently
 drop schema intent.
 
-## Cleanup Mode
+## Cleanup mode
 
 After a successful export, Ptah can remove Go schema annotations:
 
@@ -96,14 +96,27 @@ ptah schema export \
   --cleanup-go-annotations
 ```
 
-Cleanup removes only Ptah schema annotation comments:
+Cleanup is a one-time source migration. Before Ptah writes the HCL file or
+changes Go source, it verifies all of these conditions:
+
+- the cleanup plan contains at least one real Ptah annotation
+- the output path does not alias a Go source file
+- the HCL renderer reports no lossy or unsupported details
+- the rendered HCL parses and remains byte-stable after canonical re-rendering
+
+Cleanup then removes only Ptah schema annotation comments:
 
 - `//migrator:schema:*`
 - `//migrator:embedded ...`
 
 It preserves regular Go comments, leaves unrelated formatting untouched, and
-keeps original file permissions. Cleanup is idempotent: running it again after
-annotations were removed should report no changed files.
+keeps original file permissions. Ptah writes the validated HCL output before it
+applies the prevalidated source cleanup plan. A failed output write therefore
+leaves every Go source unchanged.
+
+Do not repeat the cleanup command after the annotations are gone. Ptah rejects
+that run with `no Ptah Go annotations found to export and clean` before it can
+replace the previous HCL file with an empty schema.
 
 Use dry-run or diff mode before modifying source files:
 
@@ -115,16 +128,20 @@ ptah schema export --root-dir ./models --out schema.hcl \
   --cleanup-go-annotations --cleanup-diff
 ```
 
-Both dry-run and diff mode require `--cleanup-go-annotations`. Cleanup starts
-only after the HCL file has been rendered and written successfully.
+Both dry-run and diff mode require `--cleanup-go-annotations`. They write the
+validated HCL export but do not modify Go source. Any export diagnostic blocks
+all three cleanup modes with
+`refuse to clean Go annotations after a lossy HCL export`; run without cleanup
+to inspect the partial HCL and its diagnostics.
 
-## Current Limits
+## Current limits
 
 The exporter targets the HCL schema subset documented in
 [HCL Schema Input](atlas_hcl_schema.md). Objects that need their own
 structural model, parser, or renderer are not emitted as best-effort SQL blobs.
-They produce diagnostics instead so the caller can decide whether the exported
-HCL is complete enough to replace the original Go annotations.
+They produce diagnostics instead. A non-destructive export writes that partial
+HCL and reports every diagnostic. Destructive cleanup refuses the same export
+because the HCL cannot safely replace the original Go annotations.
 
 Some PostgreSQL object blocks documented by Atlas are gated by Atlas plans at
 runtime. Ptah's guarantee here is IR preservation through Atlas-compatible HCL

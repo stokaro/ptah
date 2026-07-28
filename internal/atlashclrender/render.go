@@ -2,7 +2,9 @@
 package atlashclrender
 
 import (
+	"cmp"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -69,6 +71,7 @@ func (r *renderer) render() {
 	r.renderTriggers()
 	r.renderRLSPolicies()
 	r.renderGrants()
+	r.renderManagedData()
 }
 
 func (r *renderer) renderSchemas() {
@@ -105,8 +108,8 @@ func (r *renderer) renderTables() {
 		return tables[i].QualifiedName() < tables[j].QualifiedName()
 	})
 	fieldsByStruct := groupFieldsByStruct(r.db.Fields)
-	indexesByTable := groupIndexesByTable(r.db.Indexes, tables)
-	constraintsByTable := groupConstraintsByTable(r.db.Constraints, tables)
+	indexesByTable, orphanIndexes := groupIndexesByTable(r.db.Indexes, tables)
+	constraintsByTable, orphanConstraints := groupConstraintsByTable(r.db.Constraints, tables)
 	rlsEnabledByTable, orphanRLSEnabledTables := groupRLSEnabledByTable(r.db.RLSEnabledTables, tables)
 
 	for _, table := range tables {
@@ -117,6 +120,12 @@ func (r *renderer) renderTables() {
 			constraintsByTable[table.QualifiedName()],
 			rlsEnabledByTable[table.QualifiedName()],
 		)
+	}
+	for _, index := range orphanIndexes {
+		r.warn("index "+index.Name, "index cannot be rendered because the target table is absent from the exported schema")
+	}
+	for _, constraint := range orphanConstraints {
+		r.warn("constraint "+constraint.Name, "constraint cannot be rendered because the target table is absent from the exported schema")
 	}
 	for _, rlsEnabled := range orphanRLSEnabledTables {
 		r.warn("rls_enabled_tables."+rlsEnabled.Table, "RLS enablement cannot be rendered because the target table is absent from the exported schema")
@@ -154,6 +163,9 @@ func (r *renderer) renderTable(
 		return fields[i].Name < fields[j].Name
 	})
 	for _, field := range fields {
+		if fieldIsPrimary(table, field) {
+			field.Nullable = false
+		}
 		r.renderColumn(field)
 	}
 	r.renderPrimaryKey(table, fields)
@@ -169,6 +181,9 @@ func (r *renderer) renderTable(
 	}
 	if table.CustomSQL != "" {
 		r.warn("table "+table.QualifiedName(), "custom SQL cannot be represented in HCL schema output")
+	}
+	if len(table.Checks) > 0 {
+		r.warn("table "+table.QualifiedName(), "legacy table checks cannot be represented in HCL schema output")
 	}
 	r.line("}")
 	r.line("")
@@ -216,6 +231,14 @@ func (r *renderer) renderColumn(field goschema.Field) {
 	r.stringAttr(2, "collate", field.Collate)
 	r.stringAttr(2, "comment", field.Comment)
 	r.line("  }")
+}
+
+func fieldIsPrimary(table goschema.Table, field goschema.Field) bool {
+	return field.Primary ||
+		slices.Contains(table.PrimaryKey, field.Name) ||
+		slices.ContainsFunc(table.PrimaryKeyParts, func(part goschema.PrimaryKeyPart) bool {
+			return part.Name == field.Name
+		})
 }
 
 func (r *renderer) renderFieldChecks(table goschema.Table, fields []goschema.Field, constraintNames map[string]struct{}) {
@@ -451,38 +474,60 @@ func groupFieldsByStruct(fields []goschema.Field) map[string][]goschema.Field {
 	return result
 }
 
-func groupIndexesByTable(indexes []goschema.Index, tables []goschema.Table) map[string][]goschema.Index {
-	result := make(map[string][]goschema.Index)
-	for _, index := range indexes {
-		table := resolveTable(tables, index.StructName, index.TableName)
-		if table == nil {
-			continue
-		}
-		result[table.QualifiedName()] = append(result[table.QualifiedName()], index)
-	}
-	for key := range result {
-		sort.Slice(result[key], func(i, j int) bool {
-			return result[key][i].Name < result[key][j].Name
-		})
-	}
-	return result
+func groupIndexesByTable(
+	indexes []goschema.Index,
+	tables []goschema.Table,
+) (map[string][]goschema.Index, []goschema.Index) {
+	return groupTableObjects(
+		indexes,
+		tables,
+		func(index goschema.Index) (string, string) {
+			return index.StructName, index.TableName
+		},
+		func(a, b goschema.Index) int {
+			return cmp.Compare(a.Name, b.Name)
+		},
+	)
 }
 
-func groupConstraintsByTable(constraints []goschema.Constraint, tables []goschema.Table) map[string][]goschema.Constraint {
-	result := make(map[string][]goschema.Constraint)
-	for _, constraint := range constraints {
-		table := resolveTable(tables, constraint.StructName, constraint.Table)
+func groupConstraintsByTable(
+	constraints []goschema.Constraint,
+	tables []goschema.Table,
+) (map[string][]goschema.Constraint, []goschema.Constraint) {
+	return groupTableObjects(
+		constraints,
+		tables,
+		func(constraint goschema.Constraint) (string, string) {
+			return constraint.StructName, constraint.Table
+		},
+		func(a, b goschema.Constraint) int {
+			return cmp.Compare(a.Name, b.Name)
+		},
+	)
+}
+
+func groupTableObjects[T any](
+	objects []T,
+	tables []goschema.Table,
+	tableReference func(T) (string, string),
+	compare func(T, T) int,
+) (map[string][]T, []T) {
+	result := make(map[string][]T)
+	var orphan []T
+	for _, object := range objects {
+		structName, tableName := tableReference(object)
+		table := resolveTable(tables, structName, tableName)
 		if table == nil {
+			orphan = append(orphan, object)
 			continue
 		}
-		result[table.QualifiedName()] = append(result[table.QualifiedName()], constraint)
+		result[table.QualifiedName()] = append(result[table.QualifiedName()], object)
 	}
 	for key := range result {
-		sort.Slice(result[key], func(i, j int) bool {
-			return result[key][i].Name < result[key][j].Name
-		})
+		slices.SortFunc(result[key], compare)
 	}
-	return result
+	slices.SortFunc(orphan, compare)
+	return result, orphan
 }
 
 func constraintNameSet(constraints []goschema.Constraint) map[string]struct{} {

@@ -64,6 +64,16 @@ func (r *renderer) renderUserTypes() {
 	}
 }
 
+func (r *renderer) renderManagedData() {
+	managedData := append([]goschema.ManagedData(nil), r.db.ManagedData...)
+	slices.SortFunc(managedData, func(a, b goschema.ManagedData) int {
+		return cmp.Compare(a.Table, b.Table)
+	})
+	for _, data := range managedData {
+		r.warn("managed_data."+data.Table, "managed data cannot be represented in HCL schema output")
+	}
+}
+
 func (r *renderer) renderRoles() {
 	roles := append([]goschema.Role(nil), r.db.Roles...)
 	slices.SortFunc(roles, func(a, b goschema.Role) int {

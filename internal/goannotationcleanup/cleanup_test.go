@@ -31,13 +31,10 @@ type User struct {
 	c.Assert(os.WriteFile(path, []byte(original), 0o600), qt.IsNil)
 	c.Assert(os.Chmod(path, 0o644), qt.IsNil)
 
-	results, err := goannotationcleanup.CleanDir(goannotationcleanup.Options{
-		RootDir: dir,
-		DryRun:  true,
-		Diff:    true,
-	})
+	plan, err := goannotationcleanup.PlanDir(dir)
 
 	c.Assert(err, qt.IsNil)
+	results := plan.DiffResults()
 	c.Assert(results, qt.HasLen, 1)
 	c.Assert(results[0].RemovedLines, qt.Equals, 3)
 	c.Assert(results[0].Diff, qt.Contains, `-//migrator:schema:table name="users"`)
@@ -45,10 +42,12 @@ type User struct {
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(content), qt.Equals, original)
 
-	results, err = goannotationcleanup.CleanDir(goannotationcleanup.Options{RootDir: dir})
+	plan, err = goannotationcleanup.PlanDir(dir)
 
 	c.Assert(err, qt.IsNil)
+	results = plan.Results()
 	c.Assert(results, qt.HasLen, 1)
+	c.Assert(plan.Apply(), qt.IsNil)
 	content, err = os.ReadFile(path)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(content), qt.Contains, "// User is business documentation.")
@@ -59,9 +58,11 @@ type User struct {
 	c.Assert(err, qt.IsNil)
 	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o644))
 
-	results, err = goannotationcleanup.CleanDir(goannotationcleanup.Options{RootDir: dir})
+	plan, err = goannotationcleanup.PlanDir(dir)
 	c.Assert(err, qt.IsNil)
+	results = plan.Results()
 	c.Assert(results, qt.HasLen, 0)
+	c.Assert(plan.Apply(), qt.IsNil)
 }
 
 func TestCleanDirPreservesUnrelatedFormattingByteForByte(t *testing.T) {
@@ -72,10 +73,12 @@ func TestCleanDirPreservesUnrelatedFormattingByteForByte(t *testing.T) {
 	expected := "package models\n\n// User is business documentation.\ntype User struct{ID int64}\n"
 	c.Assert(os.WriteFile(path, []byte(original), 0o600), qt.IsNil)
 
-	results, err := goannotationcleanup.CleanDir(goannotationcleanup.Options{RootDir: dir})
+	plan, err := goannotationcleanup.PlanDir(dir)
 
 	c.Assert(err, qt.IsNil)
+	results := plan.Results()
 	c.Assert(results, qt.HasLen, 1)
+	c.Assert(plan.Apply(), qt.IsNil)
 	content, err := os.ReadFile(path)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(content), qt.Equals, expected)
@@ -93,13 +96,10 @@ func TestCleanDirDiffReportsDuplicateRemovedLinesByPosition(t *testing.T) {
 		"OtherID int64\n}\n"
 	c.Assert(os.WriteFile(path, []byte(original), 0o600), qt.IsNil)
 
-	results, err := goannotationcleanup.CleanDir(goannotationcleanup.Options{
-		RootDir: dir,
-		DryRun:  true,
-		Diff:    true,
-	})
+	plan, err := goannotationcleanup.PlanDir(dir)
 
 	c.Assert(err, qt.IsNil)
+	results := plan.DiffResults()
 	c.Assert(results, qt.HasLen, 1)
 	c.Assert(results[0].RemovedLines, qt.Equals, 2)
 	c.Assert(strings.Count(results[0].Diff, "-"+annotation), qt.Equals, 2)
@@ -147,14 +147,16 @@ func TestCleanDir_HappyPath_PreservesStringLiteralsAndRemovesStandaloneAnnotatio
 		"}\n"
 	c.Assert(os.WriteFile(path, []byte(original), 0o600), qt.IsNil)
 
-	results, err := goannotationcleanup.CleanDir(goannotationcleanup.Options{RootDir: dir})
+	plan, err := goannotationcleanup.PlanDir(dir)
 
 	c.Assert(err, qt.IsNil)
+	results := plan.Results()
 	c.Assert(results, qt.HasLen, 1)
 	c.Assert(results[0].Path, qt.Equals, path)
 	c.Assert(results[0].Changed, qt.IsTrue)
 	c.Assert(results[0].RemovedLines, qt.Equals, 3)
 	c.Assert(results[0].Diff, qt.Equals, "")
+	c.Assert(plan.Apply(), qt.IsNil)
 	content, err := os.ReadFile(path)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(content), qt.Equals, expected)
@@ -169,7 +171,7 @@ func TestCleanDir_HappyPath_SkipsTestVendorAndHiddenSources(t *testing.T) {
 	vendorPath := filepath.Join(vendorDir, "model.go")
 	hiddenDir := filepath.Join(dir, "models", ".codex", "worktrees")
 	hiddenPath := filepath.Join(hiddenDir, "model.go")
-	original := "package models\n\n//migrator:schema:table name=\"users\"\ntype User struct{}\n"
+	original := "package models\n\n//migrator:schema:table name=\"users\" platform.mysql.engine=\"InnoDB\"\ntype User struct{}\n"
 	expected := "package models\n\ntype User struct{}\n"
 	skippedTest := "package models\n\n//migrator:schema:table name=\"test_only\"\ntype TestOnly struct {\n"
 	skippedVendor := "package example\n\n//migrator:schema:table name=\"vendor_only\"\ntype VendorOnly struct {\n"
@@ -181,11 +183,13 @@ func TestCleanDir_HappyPath_SkipsTestVendorAndHiddenSources(t *testing.T) {
 	c.Assert(os.WriteFile(vendorPath, []byte(skippedVendor), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(hiddenPath, []byte(skippedHidden), 0o600), qt.IsNil)
 
-	results, err := goannotationcleanup.CleanDir(goannotationcleanup.Options{RootDir: dir})
+	plan, err := goannotationcleanup.PlanDir(dir)
 
 	c.Assert(err, qt.IsNil)
+	results := plan.Results()
 	c.Assert(results, qt.HasLen, 1)
 	c.Assert(results[0].Path, qt.Equals, path)
+	c.Assert(plan.Apply(), qt.IsNil)
 	content, err := os.ReadFile(path)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(content), qt.Equals, expected)
@@ -212,11 +216,11 @@ func TestCleanDir_FailurePath_InvalidGoSourceIsNotModified(t *testing.T) {
 	c.Assert(os.Chmod(validPath, 0o640), qt.IsNil)
 	c.Assert(os.Chmod(invalidPath, 0o640), qt.IsNil)
 
-	results, err := goannotationcleanup.CleanDir(goannotationcleanup.Options{RootDir: dir})
+	plan, err := goannotationcleanup.PlanDir(dir)
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "z_invalid.go")
-	c.Assert(results, qt.HasLen, 0)
+	c.Assert(plan, qt.IsNil)
 	validContent, err := os.ReadFile(validPath)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(validContent), qt.Equals, validOriginal)
@@ -229,6 +233,32 @@ func TestCleanDir_FailurePath_InvalidGoSourceIsNotModified(t *testing.T) {
 	invalidInfo, err := os.Stat(invalidPath)
 	c.Assert(err, qt.IsNil)
 	c.Assert(invalidInfo.Mode().Perm(), qt.Equals, os.FileMode(0o640))
+}
+
+func TestPlanApply_FailurePath_PrevalidatesEverySourceBeforeWriting(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	firstPath := filepath.Join(dir, "a_model.go")
+	changedPath := filepath.Join(dir, "z_model.go")
+	firstData := []byte("package models\n\n//migrator:schema:table name=\"first\"\ntype First struct{}\n")
+	changedData := []byte("package models\n\n//migrator:schema:table name=\"changed\"\ntype Changed struct{}\n")
+	replacementData := []byte("package models\n\ntype Changed struct{ ID int64 }\n")
+	c.Assert(os.WriteFile(firstPath, firstData, 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(changedPath, changedData, 0o600), qt.IsNil)
+
+	plan, err := goannotationcleanup.PlanDir(dir)
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.WriteFile(changedPath, replacementData, 0o600), qt.IsNil)
+
+	err = plan.Apply()
+
+	c.Assert(err, qt.ErrorMatches, "go source changed before cleanup: .*z_model.go")
+	firstAfter, err := os.ReadFile(firstPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(firstAfter, qt.DeepEquals, firstData)
+	changedAfter, err := os.ReadFile(changedPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(changedAfter, qt.DeepEquals, replacementData)
 }
 
 func TestCleanDir_HappyPath_DryRunDiffAndWriteAreConsistentAndIdempotent(t *testing.T) {
@@ -250,12 +280,10 @@ func TestCleanDir_HappyPath_DryRunDiffAndWriteAreConsistentAndIdempotent(t *test
 	c.Assert(os.WriteFile(path, []byte(original), 0o600), qt.IsNil)
 	c.Assert(os.Chmod(path, 0o640), qt.IsNil)
 
-	dryRunResults, err := goannotationcleanup.CleanDir(goannotationcleanup.Options{
-		RootDir: dir,
-		DryRun:  true,
-	})
+	dryRunPlan, err := goannotationcleanup.PlanDir(dir)
 
 	c.Assert(err, qt.IsNil)
+	dryRunResults := dryRunPlan.Results()
 	c.Assert(dryRunResults, qt.HasLen, 1)
 	c.Assert(dryRunResults[0].Path, qt.Equals, path)
 	c.Assert(dryRunResults[0].Changed, qt.IsTrue)
@@ -268,12 +296,10 @@ func TestCleanDir_HappyPath_DryRunDiffAndWriteAreConsistentAndIdempotent(t *test
 	c.Assert(err, qt.IsNil)
 	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o640))
 
-	diffResults, err := goannotationcleanup.CleanDir(goannotationcleanup.Options{
-		RootDir: dir,
-		Diff:    true,
-	})
+	diffPlan, err := goannotationcleanup.PlanDir(dir)
 
 	c.Assert(err, qt.IsNil)
+	diffResults := diffPlan.DiffResults()
 	c.Assert(diffResults, qt.HasLen, 1)
 	c.Assert(diffResults[0].Path, qt.Equals, dryRunResults[0].Path)
 	c.Assert(diffResults[0].Changed, qt.Equals, dryRunResults[0].Changed)
@@ -287,14 +313,16 @@ func TestCleanDir_HappyPath_DryRunDiffAndWriteAreConsistentAndIdempotent(t *test
 	c.Assert(err, qt.IsNil)
 	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o640))
 
-	writeResults, err := goannotationcleanup.CleanDir(goannotationcleanup.Options{RootDir: dir})
+	writePlan, err := goannotationcleanup.PlanDir(dir)
 
 	c.Assert(err, qt.IsNil)
+	writeResults := writePlan.Results()
 	c.Assert(writeResults, qt.HasLen, 1)
 	c.Assert(writeResults[0].Path, qt.Equals, dryRunResults[0].Path)
 	c.Assert(writeResults[0].Changed, qt.Equals, dryRunResults[0].Changed)
 	c.Assert(writeResults[0].RemovedLines, qt.Equals, dryRunResults[0].RemovedLines)
 	c.Assert(writeResults[0].Diff, qt.Equals, "")
+	c.Assert(writePlan.Apply(), qt.IsNil)
 	content, err = os.ReadFile(path)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(content), qt.Equals, expected)
@@ -302,17 +330,16 @@ func TestCleanDir_HappyPath_DryRunDiffAndWriteAreConsistentAndIdempotent(t *test
 	c.Assert(err, qt.IsNil)
 	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o640))
 
-	idempotentDryRunResults, err := goannotationcleanup.CleanDir(goannotationcleanup.Options{
-		RootDir: dir,
-		DryRun:  true,
-		Diff:    true,
-	})
+	idempotentDryRunPlan, err := goannotationcleanup.PlanDir(dir)
 	c.Assert(err, qt.IsNil)
+	idempotentDryRunResults := idempotentDryRunPlan.DiffResults()
 	c.Assert(idempotentDryRunResults, qt.HasLen, 0)
 
-	idempotentWriteResults, err := goannotationcleanup.CleanDir(goannotationcleanup.Options{RootDir: dir})
+	idempotentWritePlan, err := goannotationcleanup.PlanDir(dir)
 	c.Assert(err, qt.IsNil)
+	idempotentWriteResults := idempotentWritePlan.Results()
 	c.Assert(idempotentWriteResults, qt.HasLen, 0)
+	c.Assert(idempotentWritePlan.Apply(), qt.IsNil)
 	content, err = os.ReadFile(path)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(content), qt.Equals, expected)
@@ -343,12 +370,10 @@ func TestCleanDir_HappyPath_DiffMarksMissingFinalNewline(t *testing.T) {
 			path := filepath.Join(dir, "model.go")
 			c.Assert(os.WriteFile(path, []byte(tt.original), 0o600), qt.IsNil)
 
-			results, err := goannotationcleanup.CleanDir(goannotationcleanup.Options{
-				RootDir: dir,
-				Diff:    true,
-			})
+			plan, err := goannotationcleanup.PlanDir(dir)
 
 			c.Assert(err, qt.IsNil)
+			results := plan.DiffResults()
 			c.Assert(results, qt.HasLen, 1)
 			c.Assert(results[0].Diff, qt.Contains, tt.wantDiffLine)
 			c.Assert(strings.Count(results[0].Diff, "\\ No newline at end of file\n"), qt.Equals, 1)
@@ -357,4 +382,31 @@ func TestCleanDir_HappyPath_DiffMarksMissingFinalNewline(t *testing.T) {
 			c.Assert(string(content), qt.Equals, tt.original)
 		})
 	}
+}
+
+func TestPlanSourceAlias_HappyPath_ReportsExactSourceAndMissingPath(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "model.go")
+	original := "package models\n\n//migrator:schema:table name=\"users\" platform.mysql.engine=\"InnoDB\"\ntype User struct{}\n"
+	c.Assert(os.WriteFile(path, []byte(original), 0o600), qt.IsNil)
+
+	plan, err := goannotationcleanup.PlanDir(dir)
+	c.Assert(err, qt.IsNil)
+	c.Assert(plan.Annotations(), qt.DeepEquals, []goannotationcleanup.Annotation{
+		{
+			Path:       path,
+			Line:       3,
+			Directive:  "migrator:schema:table",
+			Attributes: []string{"name", "platform.mysql.engine"},
+		},
+	})
+
+	alias, err := plan.SourceAlias(path)
+	c.Assert(err, qt.IsNil)
+	c.Assert(alias, qt.Equals, path)
+
+	alias, err = plan.SourceAlias(filepath.Join(dir, "schema.hcl"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(alias, qt.Equals, "")
 }

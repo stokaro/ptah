@@ -67,6 +67,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS "accounts_email_key" ON "public"."accounts" ("
 `ptah schema render`, `ptah schema compare`, `ptah schema drift`, and the
 migration commands (`ptah migrations plan` / `ptah migrations generate`).
 
+To replace Go annotations with an HCL source, use the lossless one-time export
+workflow in [Go annotations](../go-annotations/#move-the-schema-to-hcl).
+
 ## Plan against a database
 
 ```bash
