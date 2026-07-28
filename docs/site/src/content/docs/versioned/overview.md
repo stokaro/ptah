@@ -48,51 +48,15 @@ covered in depth on its own page:
 | Squash long history into a bootstrap snapshot | [Checkpoints](../checkpoints/) |
 | Reconcile reference/lookup rows declaratively | [Reference data](../reference-data/) |
 
-## What a migration directory contains
+## The migration directory
 
-A Ptah migration directory holds one pair of files per version, plus the
-integrity file:
-
-```text
-1785255952_init.up.sql
-1785255952_init.down.sql
-1785255953_add_posts.up.sql
-1785255953_add_posts.down.sql
-ptah.sum
-```
-
-- **Versions** order execution. Generated and manually created migrations
-  use a timestamp; imported migrations keep their source tool's versions.
-- **Every version has both directions.** Ptah refuses to register a directory
-  with a missing up or down half — rollback support is part of the migration
-  contract, not an optional extra.
-- **`ptah.sum`** is the integrity file: a hash of every migration file,
-  committed alongside them, so out-of-band edits are detected before they are
-  applied. See [Integrity and safety](../integrity-and-safety/).
-
-Applied versions are recorded in a revision table in the target database
-(`schema_migrations` by default). Pending work is the set of directory
-versions not present in that table, so a migration merged below the current
-version is still detected; how it is treated is an execution-order policy on
-[Apply migrations](../apply/). A [checkpoint](../checkpoints/) is a special
-pair carrying a `.checkpoint` marker that fresh databases bootstrap from.
-
-## Directory formats
-
-Ptah reads its native split-file layout and supported Atlas-style migration
-directories. Format detection is automatic; pass `--dir-format atlas` (or
-`ptah`) when auto-detection should not guess:
-
-```bash
-ptah migrations validate --dir ./migrations --dir-format atlas
-ptah migrations up \
-  --db-url "$DATABASE_URL" \
-  --migrations-dir ./migrations \
-  --dir-format atlas
-```
-
-Atlas-format directories use `atlas.sum` as their integrity file and can be
-tracked with Atlas revision-table metadata (`--revision-format atlas`).
+A migration directory holds one `*.up.sql`/`*.down.sql` pair per version plus
+the `ptah.sum` integrity file, and each target database records its applied
+versions in a revision table (`schema_migrations` by default). Pending work
+is the set of directory versions not yet in that table. The full model —
+file layout, version ordering, integrity files, checkpoint markers, and the
+native and Atlas directory formats — is on
+[The migration directory](../../concepts/migration-directory/).
 
 Atlas-compatible command paths for the same lifecycle live under
 `ptah atlas migrate ...`:

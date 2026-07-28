@@ -115,7 +115,7 @@ Rows:
 - version=<timestamp> description="Init"
 ```
 
-Then baseline with a shadow database. Ptah replays the baselined migrations on the disposable shadow database and verifies they reproduce the target schema before writing any rows:
+Then baseline with a disposable [shadow database](../../concepts/database-urls-and-dev-databases/). Ptah replays the baselined migrations on it and verifies they reproduce the target schema before writing any rows:
 
 ```bash
 ptah migrations baseline \
