@@ -189,7 +189,8 @@ per-command table is in [Exit codes](../../reference/exit-codes/).
 
 ## Next steps
 
-- Wiring these gates into pull requests? [CI](../../workflows/ci/).
+- Wiring these gates into pull requests? [CI](../../testing/ci/).
 - A gate fired and the migration needs rework?
   [Maintain migration history](../maintain-history/).
-- Asserting behavior rather than safety? [Testing](../../workflows/testing/).
+- Asserting behavior rather than safety?
+  [Test migrations and schemas](../../testing/migrations-and-schema/).

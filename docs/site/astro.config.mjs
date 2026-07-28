@@ -26,6 +26,8 @@ const redirectRoutes = {
   '/workflows/migrations/': '/versioned/overview/',
   '/workflows/checkpoints/': '/versioned/checkpoints/',
   '/workflows/reference-data/': '/versioned/reference-data/',
+  '/workflows/testing/': '/testing/migrations-and-schema/',
+  '/workflows/ci/': '/testing/ci/',
 };
 
 const redirects = Object.fromEntries(
@@ -79,6 +81,14 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Direct schema changes',
+          items: [
+            { slug: 'direct/inspect' },
+            { slug: 'direct/compare-and-drift' },
+            { slug: 'direct/apply' },
+          ],
+        },
+        {
           label: 'Versioned migrations',
           items: [
             { slug: 'versioned/overview' },
@@ -93,12 +103,17 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Test and CI',
+          items: [
+            { slug: 'testing/migrations-and-schema' },
+            { slug: 'testing/ci' },
+          ],
+        },
+        {
           label: 'Use Ptah',
           items: [
             { slug: 'workflows/oci-registry' },
-            { slug: 'workflows/testing' },
             { slug: 'workflows/atlas-cli' },
-            { slug: 'workflows/ci' },
           ],
         },
         {

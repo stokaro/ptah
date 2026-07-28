@@ -170,5 +170,5 @@ Use `FilterCases` for the same regular-expression selection as `--run`. Call
 Render the returned `Report` and check `Report.Failed`.
 
 See [Public Go API](public_api.md) for the compatibility contract and the
-[testing workflow](site/src/content/docs/workflows/testing.md) for CI-oriented
+[testing workflow](site/src/content/docs/testing/migrations-and-schema.md) for CI-oriented
 guidance.

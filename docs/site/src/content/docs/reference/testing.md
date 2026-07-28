@@ -64,5 +64,6 @@ rejected because their effects can escape the database-local test lifecycle.
 | `1` | The runner completed and at least one case failed. |
 | `2` | Usage, input, connection, interruption, setup, or report failure. |
 
-For examples and CI guidance, see [Testing](../../workflows/testing/). For the
+For examples and CI guidance, see
+[Test migrations and schemas](../../testing/migrations-and-schema/). For the
 embeddable runner contract, see [Public Go API](../public-api/).
