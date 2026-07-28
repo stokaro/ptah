@@ -128,6 +128,44 @@ such as enum storage, serial columns, constraints, or generated columns.
 Dialect differences are expected; the important check is that each target
 renders valid SQL for the capabilities it supports.
 
+## Move the schema to HCL
+
+Start with a non-destructive export:
+
+```bash
+ptah schema export \
+  --from go \
+  --to hcl \
+  --root-dir ./models \
+  --out schema.hcl
+```
+
+Ptah parses the generated HCL and verifies that its canonical re-render is
+stable before it writes `schema.hcl`. Review any diagnostics on stderr. They
+identify schema intent that HCL did not preserve.
+
+Preview annotation removal only after the export has no diagnostics:
+
+```bash
+ptah schema export \
+  --from go \
+  --to hcl \
+  --root-dir ./models \
+  --out schema.hcl \
+  --cleanup-go-annotations \
+  --cleanup-diff
+```
+
+The diff mode writes the validated HCL file but does not modify Go source. Run
+the same command without `--cleanup-diff` to apply the prevalidated cleanup
+plan.
+
+:::caution[Cleanup is a one-time migration]
+Cleanup fails before any write if the export is lossy, the output aliases a Go
+source file, or no removable annotations remain. Do not repeat the cleanup
+command after a successful migration; use `schema.hcl` as the new source.
+:::
+
 ## Next steps
 
 - Looking up a directive or attribute? [Go annotation reference](../../reference/go-annotations/).
