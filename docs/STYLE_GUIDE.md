@@ -38,7 +38,7 @@ Every page has exactly one primary type. Choose it before writing a word.
 
 | Type | Purpose | Canonical example |
 | --- | --- | --- |
-| Tutorial | Learning by doing: one happy path, guaranteed end state, cleanup | `getting-started` (quick start) |
+| Tutorial | Learning by doing: one happy path, guaranteed end state, cleanup | `start/quick-start` |
 | Concept | Why and when: mental model, minimal commands | license boundary page |
 | How-to | Goal-directed steps for a competent reader; variants and failure modes allowed | `workflows/checkpoints` |
 | Reference | Exhaustive and scannable; no narrative | `reference/exit-codes` |
@@ -214,9 +214,9 @@ Complete this for every documentation PR:
 4. Parity and conformance claims checked against current
    `stokaro/ptah-atlas-conformance` reports.
 5. `npm run check:links:selftest && npm run check:links &&
-   npm run check:core-doc-links && npm run check:page-health &&
-   npm run check:exit-codes && npm run versions:selftest && npm run build`
-   all pass in `docs/site`.
+   npm run check:redirects && npm run check:core-doc-links &&
+   npm run check:page-health && npm run check:exit-codes &&
+   npm run versions:selftest && npm run build` all pass in `docs/site`.
 6. `docs/site/CONTENT_INVENTORY.md` updated for any added, moved, merged,
    split, or retired page.
 7. Redirects added for every moved URL; no content links through a redirect.

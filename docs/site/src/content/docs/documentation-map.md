@@ -7,8 +7,10 @@ Use this page when you know what you need to do, but not where the relevant Ptah
 
 | Situation | Read first | Then read |
 | --- | --- | --- |
-| I need to install Ptah | [Install Ptah](../install/) | [Quick start](../getting-started/) |
-| I want to try Ptah locally | [Quick start](../getting-started/) | [Go model example](../examples/go-model/) |
+| I need to install Ptah | [Install Ptah](../start/install/) | [Quick start](../start/quick-start/) |
+| I want to try Ptah locally | [Quick start](../start/quick-start/) | [Go model example](../examples/go-model/) |
+| I have not picked between versioned and direct changes | [Choose a workflow](../start/choose-a-workflow/) | [Migrations](../workflows/migrations/) or [Atlas-compatible CLI](../workflows/atlas-cli/) |
+| I have a live database built outside Ptah | [Adopt an existing database](../start/adopt-an-existing-database/) | [Migrations](../workflows/migrations/) |
 | My Go app owns the schema | [Go schema workflow](../workflows/go-schema/) | [Migrations](../workflows/migrations/) |
 | My schema lives in YAML | [Schema files](../workflows/schema-files/) | [YAML schema reference](../reference/yaml-schema/) |
 | My schema lives in HCL | [Schema files](../workflows/schema-files/) | [HCL schema reference](../reference/hcl-schema/) |

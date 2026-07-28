@@ -4,7 +4,7 @@ The human-facing documentation site source lives in [`site`](site).
 
 Start with:
 
-- [Quick start](site/src/content/docs/getting-started.md)
+- [Quick start](site/src/content/docs/start/quick-start.md)
 - [Documentation map](site/src/content/docs/documentation-map.md)
 - [Comparison](site/src/content/docs/reference/comparison.md)
 - [Declarative database testing](testing.md)

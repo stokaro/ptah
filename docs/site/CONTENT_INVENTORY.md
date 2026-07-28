@@ -45,9 +45,16 @@ Word counts were measured with `wc -w` at the audited commit.
 | Page (words) | Audience | Reader question | Type | Source of truth | Overlaps | Disposition |
 | --- | --- | --- | --- | --- | --- | --- |
 | `index.mdx` (531) | everyone | What is Ptah and where do I start? | navigation | this page | `documentation-map` (routing), root `README.md` "Start Here", layers table duplicated on `documentation-map` | rewrite in place: regroup cards and "Choose your path" around the target groups (final PR of the migration) |
-| `getting-started.md` (788) | new Go user | How do I try Ptah end to end locally? | tutorial | this page (runnable SQLite flow with expected output and cleanup) | root `README.md` minimal example; `install.md` | move → `start/quick-start` |
-| `install.md` (386) | new user | How do I install, build, and verify the CLI? | howto | this page | root `README.md` "Install Or Build" | move → `start/install` |
+| `getting-started.md` (788) | new Go user | How do I try Ptah end to end locally? | tutorial | this page (runnable SQLite flow with expected output and cleanup) | root `README.md` minimal example; `install.md` | done: moved → `start/quick-start`, old URL redirects |
+| `install.md` (386) | new user | How do I install, build, and verify the CLI? | howto | this page | root `README.md` "Install Or Build" | done: moved → `start/install`, old URL redirects |
 | `documentation-map.md` (441) | everyone | Where is the documentation for task X? | navigation | none (routing only) | the entire sidebar; layers table duplicated on `index.mdx`; maintenance rule overlaps `AGENTS.md` | retire: redirect → home; layers and maintenance-rule text move to `docs/README.md`; this inventory takes over the meta function |
+
+### `Start` group (added by the restructuring)
+
+| Page (words) | Audience | Reader question | Type | Source of truth | Overlaps | Disposition |
+| --- | --- | --- | --- | --- | --- | --- |
+| `start/choose-a-workflow.md` (742) | new user deciding integration shape | Should changes reach my databases as versioned migration files or as direct applies? | concept | this page; command shapes verified against the built binary | `workflows/migrations`, `workflows/atlas-cli`, `reference/comparison` | created (section 9, item 4); keep |
+| `start/adopt-an-existing-database.md` (1,000) | brownfield database adopter | How do I put an existing database under Ptah management without recreating it? | howto | this page; `ptah introspect`, `ptah migrations baseline`, `ptah migrations import` runs against the built binary | `workflows/checkpoints` (baseline contrast), `workflows/migrations` import section | created (section 9, item 3); keep |
 
 ### `Use Ptah` group
 
@@ -265,10 +272,12 @@ these are merely misplaced content.
    `ptah migrations baseline` ship today, but no page teaches adopting Ptah on
    an existing database. Baseline's only site presence is a contrast note in
    `workflows/checkpoints.md` and an exit-code row. New page:
-   `start/adopt-an-existing-database`.
+   `start/adopt-an-existing-database`. Done: page created with introspect,
+   drift-check, baseline (dry-run and `--shadow-db`), and import flows run
+   against the built binary.
 4. **Workflow choice.** No page presents the versioned versus direct/declarative
    versus hybrid decision; it is implied by `reference/comparison` tables only.
-   New page: `start/choose-a-workflow`.
+   New page: `start/choose-a-workflow`. Done: page created.
 5. **`ptah viz` workflow page.** Only an example page exists; the workflow
    (formats, Graphviz prerequisite, committed artifacts) is scattered across
    `install.md` and `operate/troubleshooting.md`. New page: `schema/visualize`.
@@ -494,3 +503,9 @@ All enforced by scripts in `docs/site/scripts/` (verified by reading them):
   `edge`); redirects for moved URLs must be verified under that base.
   Historical tag builds rebuild their own snapshots, so renames never break
   released versions.
+- Moved URLs are declared in the `redirectRoutes` map in `astro.config.mjs`.
+  Astro emits redirect destinations verbatim, without the base, so the config
+  prepends `/ptah/<version>/` before handing the map to Astro; the emitted
+  meta-refresh stubs in `dist/` were verified to carry the base.
+  `check-redirects.mjs` (`npm run check:redirects`) enforces that every
+  redirect source is a retired route and every target resolves to a real page.

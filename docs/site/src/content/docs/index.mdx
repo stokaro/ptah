@@ -10,11 +10,11 @@ hero:
     file: ../../assets/logo.svg
   actions:
     - text: Quick start
-      link: ./getting-started/
+      link: ./start/quick-start/
       icon: right-arrow
       variant: primary
     - text: Install
-      link: ./install/
+      link: ./start/install/
       icon: download
       variant: secondary
     - text: View on GitHub
@@ -28,8 +28,10 @@ import { LinkCard, CardGrid } from '@astrojs/starlight/components';
 ## What do you need?
 
 <CardGrid>
-  <LinkCard title="Quick start" href="./getting-started/" description="Build Ptah, create a tiny schema, run migrations, verify hashes, and clean up." />
-  <LinkCard title="Install Ptah" href="./install/" description="Build from source, install with Go, verify the command tree, and add optional tools." />
+  <LinkCard title="Quick start" href="./start/quick-start/" description="Build Ptah, create a tiny schema, run migrations, verify hashes, and clean up." />
+  <LinkCard title="Install Ptah" href="./start/install/" description="Build from source, install with Go, verify the command tree, and add optional tools." />
+  <LinkCard title="Choose a workflow" href="./start/choose-a-workflow/" description="Decide between versioned migrations and direct schema changes before wiring Ptah in." />
+  <LinkCard title="Adopt an existing database" href="./start/adopt-an-existing-database/" description="Introspect a live schema, baseline its history, and import migrations from another tool." />
   <LinkCard title="Go schema workflow" href="./workflows/go-schema/" description="Use annotated Go structs as the application-owned schema source." />
   <LinkCard title="Schema files" href="./workflows/schema-files/" description="Render and migrate from YAML, HCL, or SQL schema files." />
   <LinkCard title="Migrations" href="./workflows/migrations/" description="Plan, generate, apply, roll back, hash, validate, and inspect migrations." />
@@ -49,6 +51,8 @@ import { LinkCard, CardGrid } from '@astrojs/starlight/components';
 | A Go application with schema annotations | [Go schema workflow](./workflows/go-schema/) |
 | YAML, HCL, or SQL schema files | [Schema files](./workflows/schema-files/) |
 | An existing migration directory | [Migrations](./workflows/migrations/) |
+| A live database built outside Ptah | [Adopt an existing database](./start/adopt-an-existing-database/) |
+| No decision yet on versioned versus direct changes | [Choose a workflow](./start/choose-a-workflow/) |
 | An OCI registry for migration or schema distribution | [OCI registry artifacts](./workflows/oci-registry/) |
 | Scripts written for Atlas OSS commands | [Atlas-compatible CLI](./workflows/atlas-cli/) |
 | A pull-request gate to build | [CI](./workflows/ci/) |
