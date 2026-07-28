@@ -9,6 +9,28 @@ Use this skill for Ptah documentation work that must stay aligned with current
 behavior. The goal is not a checklist-shaped pass over nearby files; it is a
 reader-focused audit across every affected documentation surface.
 
+## Load The Style Guide First
+
+Read `docs/STYLE_GUIDE.md` before writing or editing any documentation. It is
+authoritative for page taxonomy, page templates, voice and language, canonical
+Ptah terminology, example conventions, admonition rules, link rules, anti-slop
+rules, and the per-PR review checklist. Do not restate its rules from memory;
+follow the file.
+
+Before writing, classify the page type (tutorial, concept, how-to, reference,
+troubleshooting, compatibility/status, or contributor) and use the matching
+template from the style guide. One primary type per page; if a page needs two
+types, it is two pages.
+
+## Maintain The Content Inventory
+
+`docs/site/CONTENT_INVENTORY.md` is the committed inventory of every
+reader-facing page: audience, reader question, page type, source of truth,
+overlaps, and disposition, plus the reader journeys and target navigation.
+Whenever a reader-facing page is added, moved, merged, split, or retired,
+update the inventory in the same PR. Update disposition rows to record where
+content went instead of deleting them.
+
 ## Start With The Change Class
 
 Classify the change before editing docs:
@@ -50,6 +72,8 @@ Inspect every surface that can be stale for the change class:
   behavior changes.
 - Release, CI, and operational docs when workflows, checks, or deployment
   behavior changes.
+- The content inventory `docs/site/CONTENT_INVENTORY.md` when pages are added,
+  moved, merged, split, or retired.
 
 Do not stop at the first matching file. Ptah often has both a terse root
 entrypoint and deeper reference/site pages for the same behavior.
@@ -120,7 +144,8 @@ rg -n "Exact error text|Exact output label" --glob '*.md' --glob '*.go'
 
 ## Quality Bar
 
-Use Inventario's docs as the quality reference, especially:
+The binding rules are in `docs/STYLE_GUIDE.md`. Use Inventario's docs as an
+additional quality reference for tone and structure, especially:
 
 - `/Users/buster/Work/denis/inventario/docs/site/src/content/docs/index.mdx`
 - `/Users/buster/Work/denis/inventario/docs/site/src/content/docs/getting-started.md`
@@ -197,11 +222,16 @@ practical, live commands:
 
 ## Self-Review
 
-Before opening or updating a PR, perform two passes:
+Before opening or updating a PR, perform three passes:
 
 1. **Coverage pass**: for each change class, list which docs were checked,
-   changed, or intentionally left unchanged.
+   changed, or intentionally left unchanged, and confirm
+   `docs/site/CONTENT_INVENTORY.md` reflects any page additions, moves,
+   merges, splits, or retirements.
 2. **Truth pass**: verify examples, command paths, claims, links, American
    English spelling, and absence of legacy aliases or unsupported parity claims.
+3. **Style pass**: run the review checklist in `docs/STYLE_GUIDE.md` (page
+   type and template, terminology, executed examples, link and build checks,
+   stale-term sweep).
 
 The PR should summarize the documentation impact map and validation commands.
