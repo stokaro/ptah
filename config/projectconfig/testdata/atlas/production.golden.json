@@ -1,0 +1,23 @@
+{
+  "env_name": "production",
+  "database_url": "postgres://app@localhost:5432/production?sslmode=disable",
+  "dev_url": "docker://postgres/16/production",
+  "schema_sources": [
+    "file://production.hcl"
+  ],
+  "exclude": [
+    "audit_*"
+  ],
+  "migration": {
+    "dir": "production-migrations",
+    "format": "atlas",
+    "revision_format": "atlas",
+    "revisions_schema": "migration_meta",
+    "lock_timeout": "10s",
+    "exec_order": "linear-skip",
+    "tx_mode": ""
+  },
+  "lint": {
+    "latest": 8
+  }
+}
