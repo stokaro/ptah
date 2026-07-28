@@ -11,6 +11,14 @@ token. Prefer spellings such as `behavior`, `color`, `canceled`, `initialize`,
 
 ## Documentation Obligations
 
+All documentation work must follow the authoritative style guide at
+[`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md): classify the page type before
+writing, use the matching template, keep the canonical terminology, and run
+the style guide's review checklist. When a reader-facing page is added, moved,
+merged, split, or retired, update the content inventory at
+[`docs/site/CONTENT_INVENTORY.md`](docs/site/CONTENT_INVENTORY.md) in the same
+PR.
+
 Before finishing any change that affects external behavior, inspect and update
 the relevant documentation. Do this as a required verification step, not as an
 opportunistic cleanup. Purely code-internal refactors that do not alter public
