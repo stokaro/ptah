@@ -202,10 +202,17 @@ remain explicit gaps.
 
 ### `ptah atlas schema apply`
 
-Diffs a live database against local `file://` `.hcl`, `.yaml`, `.yml`, or
-`.sql` desired schema files, prints the planned SQL, and applies it after
-interactive confirmation or explicit `--auto-approve`; `--dry-run` prints the
-plan without applying. With `--env`, reads `env.url`, `env.src`,
+Diffs a live database against the `--to` desired state — local `file://`
+`.hcl`, `.yaml`, `.yml`, or `.sql` schema files, one directly connectable
+database URL, one migration directory (a `file://` directory containing
+`atlas.sum`) replayed on the required `--dev-url` dev database, or one
+`env://<attribute>` reference (`src`, `schema.src`, `url`, `dev`,
+`migration.dir`) resolved through the evaluated `atlas.hcl` env — prints the
+planned SQL, and applies it after interactive confirmation or explicit
+`--auto-approve`; `--dry-run` prints the plan without applying. All `--to`
+values must be one source kind, database and migration-directory sources
+accept one URL, and unsupported schemes such as `atlas://` fail before the
+target database is contacted. With `--env`, reads `env.url`, `env.src`,
 `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`,
 `format.schema.apply`, and supported `diff` policy from `atlas.hcl`, including
 local variable defaults, locals, `getenv`, `file`, `fileset`, `format`,
@@ -222,11 +229,10 @@ plan's source fingerprint; a drifted target refuses with a stale-plan error,
 registry `atlas://` plan URLs are rejected, and `--plan` cannot be combined
 with `--to`, `--file`, `--dev-url`, `--exclude`, or `--edit`. Atlas's hidden
 `--file/-f` alias is accepted for local HCL or SQL paths; `--schema/-s` is
-parsed for CLI compatibility but limited until database-URL desired schemas are
-supported. `--lock-timeout` is registered for flag-surface parity and fails
-explicitly until database lock waiting is implemented. Database desired-schema
-URLs, migration directories, `env://` URL sources, include filters, and Atlas
-dev-database simulation remain explicit gaps.
+parsed for CLI compatibility but fails explicitly until schema scoping is
+implemented. `--lock-timeout` is registered for flag-surface parity and fails
+explicitly until database lock waiting is implemented. Include filters and
+Atlas dev-database simulation remain explicit gaps.
 
 ### `ptah atlas schema plan`
 
@@ -249,15 +255,22 @@ capability rather than an Atlas CE stub.
 
 ### `ptah atlas schema diff`
 
-Diffs local `file://` schema files with `.hcl`, `.yaml`, `.yml`, or `.sql`
-extensions, prints migration SQL, supports `--from/-f`, supports Atlas-style
-`--format` templates with `sql` and `.MarshalSQL`, and applies `--exclude`
-plus disabled `schema.mode` resource filters to both local inputs before
-diffing. `--schema/-s` is parsed for CLI compatibility but limited until
-database-URL schema diffs are supported. With `--env`, reads `env.schema.src`,
-`env.dev`, `env.exclude`, `env.schema.mode`, `format.schema.diff`, and
-supported `diff` policy from `atlas.hcl`. Database URLs, migration
-directories, `env://`, and include filters remain explicit gaps.
+Diffs two desired-state sources: each of `--from/-f` and `--to` accepts
+local `file://` schema files with `.hcl`, `.yaml`, `.yml`, or `.sql`
+extensions, one directly connectable database URL whose live schema is
+introspected, one migration directory (a `file://` directory containing
+`atlas.sum`) replayed on the required `--dev-url` dev database, or one
+`env://<attribute>` reference resolved through the evaluated `atlas.hcl` env.
+Prints migration SQL, supports Atlas-style `--format` templates with `sql`
+and `.MarshalSQL`, and applies `--exclude` plus disabled `schema.mode`
+resource filters to both sides before diffing. The SQL dialect is pinned by
+`--dev-url` first, then by `--from` and `--to` database URLs; local schema
+files alone still require `--dev-url`. `--schema/-s` is parsed for CLI
+compatibility but fails explicitly until schema scoping is implemented. With
+`--env`, reads `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`,
+`format.schema.diff`, and supported `diff` policy from `atlas.hcl`.
+Unsupported schemes such as `atlas://` fail during validation; include
+filters remain an explicit gap.
 
 ### `ptah atlas schema fmt`
 

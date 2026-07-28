@@ -259,6 +259,46 @@ file is read. The registry sub-verbs (`schema plan approve/lint/list/new/pull/
 push/rm/test/validate`) remain Atlas CE boundary stubs: they operate on plans
 stored in the Atlas Registry, which the local plan file replaces.
 
+## Atlas Desired-State Source URLs
+
+`ptah atlas schema apply --to` and `ptah atlas schema diff --from/--to` resolve
+desired-state URLs through one typed resolver. Four source kinds are
+supported:
+
+| Source kind | URL shape | Behavior |
+| --- | --- | --- |
+| Local schema files | `file://<path>` or a plain path to `.hcl`, `.yaml`, `.yml`, or `.sql` files | Loaded exactly as before URL sources existed; multiple values merge. |
+| Database URL | `postgres://`, `mysql://`, `mariadb://`, `sqlite://`, `sqlserver://`, `clickhouse://`, and other directly connectable dialects | The live schema is introspected as the desired state. |
+| Migration directory | `file://<dir>` where the directory contains `atlas.sum` | The directory is replayed on the required `--dev-url` dev database (checksum-verified first) and the resulting state is introspected. |
+| Env reference | `env://src`, `env://schema.src`, `env://url`, `env://dev`, `env://migration.dir` | The attribute is read from the evaluated `atlas.hcl` env (selected with `--config`/`--env`), with variables applied and relative paths resolved against the config directory, then re-classified under the same rules. |
+
+Deterministic precedence and conflict rules:
+
+- Explicit `--to`/`--from` values take precedence over `atlas.hcl` env schema
+  sources; `--env` defaults apply only when the flag is not set.
+- All URLs of one flag must classify as the same source kind; mixing kinds is
+  a deterministic error naming both URLs.
+- Database-URL and migration-directory sources accept exactly one URL per
+  flag; an `env://` reference must be the flag's only value. Nested `env://`
+  references are rejected.
+- A `file://` directory without `atlas.sum` keeps the pre-URL behavior (it is
+  rejected as a schema file); `env://migration.dir` marks the env's migration
+  directory as a replay source even without `atlas.sum`, tolerating a missing
+  checksum file like `atlas migrate diff`.
+- Dialect pinning: `schema apply` pins the dialect from `--url`; `schema diff`
+  pins from `--dev-url` first, then `--from`, then `--to` database URLs. Every
+  database source and the dev database must match the pinned dialect, checked
+  from the URL scheme before any connection is opened. Local schema files
+  alone still require `--dev-url` for dialect selection.
+- Unsupported schemes fail during validation, before the target database is
+  contacted: `atlas://` (Ptah has no Atlas Cloud registry), `docker://` as a
+  desired state (it provisions dev databases), and any other scheme. A
+  migration-directory source without `--dev-url` also fails before the target
+  is contacted.
+
+`schema plan` and `migrate diff` intentionally keep local-file `--to` sources
+only; their desired-state URL support is a follow-up.
+
 ## Atlas Compatibility Waivers
 
 Some Atlas Pro commands and flags are accepted for surface parity but rejected
