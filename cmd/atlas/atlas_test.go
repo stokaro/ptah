@@ -2532,16 +2532,46 @@ func TestNewAtlasCommand_SchemaApplyRejectsDevURLDialectMismatch(t *testing.T) {
 func TestNewAtlasCommand_FlagSurfaceRejectsUnsupportedAtlasCEBehavior(t *testing.T) {
 	c := qt.New(t)
 
-	c.Run("migrate_diff_qualifier", func(c *qt.C) {
+	c.Run("migrate_diff_qualifier_invalid_value", func(c *qt.C) {
 		cmd := NewAtlasCommand()
 		var out bytes.Buffer
 		cmd.SetOut(&out)
 		cmd.SetErr(&out)
-		cmd.SetArgs([]string{"migrate", "diff", "--to", "file://schema.sql", "--dev-url", "sqlite://dev.db", "--qualifier", "tenant"})
+		cmd.SetArgs([]string{"migrate", "diff", "--to", "file://schema.sql", "--dev-url", "sqlite://dev.db", "--qualifier", "bad.name"})
 
 		err := cmd.Execute()
 
-		c.Assert(err, qt.ErrorMatches, `atlas migrate diff accepts --qualifier, but Ptah does not implement custom qualifier metadata yet`)
+		// Invalid qualifier values fail before the dev database is contacted
+		// and before any migration file or checksum is written.
+		c.Assert(err, qt.ErrorMatches, `invalid --qualifier "bad\.name": character '\.' is not allowed in a schema qualifier`)
+	})
+
+	c.Run("migrate_diff_qualifier_unsupported_dialect", func(c *qt.C) {
+		dir := c.TempDir()
+		migrationsDir := filepath.Join(dir, "migrations")
+		c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
+		schemaPath := filepath.Join(dir, "schema.sql")
+		c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE users (id INTEGER PRIMARY KEY);
+`), 0o600), qt.IsNil)
+		cmd := NewAtlasCommand()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs([]string{
+			"migrate", "diff",
+			"--to", "file://" + schemaPath,
+			"--dev-url", "sqlite://" + filepath.Join(dir, "dev.db"),
+			"--dir", "file://" + migrationsDir,
+			"--qualifier", "tenant",
+			"qualified",
+		})
+
+		err := cmd.Execute()
+
+		// A valid qualifier on a dialect without schema-qualified DDL support
+		// fails explicitly before any migration file or checksum is written.
+		c.Assert(err, qt.ErrorMatches, `atlas migrate diff --qualifier is not supported for dialect "sqlite"`)
+		c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 0)
 	})
 
 	c.Run("schema_apply_plan_registry_url", func(c *qt.C) {
@@ -3372,7 +3402,7 @@ CREATE TABLE old_users (
 	c.Assert(atlasSQLFiles(c, migrationsDir), qt.DeepEquals, []string{filepath.Join(migrationsDir, "1_init.sql")})
 }
 
-func TestNewAtlasCommand_MigrateDiffRejectsAtlasProjectConcurrentIndexPolicy(t *testing.T) {
+func TestNewAtlasCommand_MigrateDiffAcceptsAtlasProjectConcurrentIndexPolicy(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -3408,9 +3438,16 @@ func TestNewAtlasCommand_MigrateDiffRejectsAtlasProjectConcurrentIndexPolicy(t *
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `atlas\.hcl diff\.concurrent_index\.create is not supported by migrate diff yet`)
-	c.Assert(out.String(), qt.Contains, `error: atlas.hcl diff.concurrent_index.create is not supported by migrate diff yet`)
-	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 0)
+	// The concurrent-index diff policy is accepted; SQLite has no concurrent
+	// index capability, so the plan stays one plain transactional file.
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "Created migration file:")
+	migrationFiles := atlasSQLFiles(c, migrationsDir)
+	c.Assert(migrationFiles, qt.HasLen, 1)
+	migrationSQL, readErr := os.ReadFile(migrationFiles[0])
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(string(migrationSQL), qt.Contains, "CREATE TABLE")
+	c.Assert(string(migrationSQL), qt.Not(qt.Contains), "atlas:txmode")
 }
 
 func TestNewAtlasCommand_MigrateDiffSchemaFilterIgnoresOutOfScopeDesiredSchema(t *testing.T) {
