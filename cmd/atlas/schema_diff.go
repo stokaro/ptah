@@ -7,6 +7,7 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/internal/atlasfilter"
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/atlasschema"
 	"github.com/stokaro/ptah/internal/atlassource"
@@ -18,6 +19,7 @@ type atlasSchemaDiffOptions struct {
 	toURLs   []string
 	devURL   string
 	schemas  []string
+	include  []string
 	exclude  []string
 	format   string
 }
@@ -40,8 +42,13 @@ kind. The SQL dialect is pinned by --dev-url first, then by --from and --to
 database URLs; local schema files alone still require --dev-url. Unsupported
 schemes such as atlas:// fail during validation. When --env is set, the
 selected atlas.hcl env can provide schema.src, dev, exclude, schema.mode,
-format.schema.diff, and supported diff policy values. Include filters and Atlas
-Cloud web output are explicit follow-up gaps.`,
+format.schema.diff, and supported diff policy values. --schema and --include
+positively select what both comparison sides see: --schema names define the
+schema universe, --include selectors pick top-level resources inside it, and
+--exclude plus env.schema.mode subtract from the result. A selected object
+that depends on an unselected object refuses the diff with an explicit
+diagnostic, and a selection that matches nothing reports synced schemas.
+Atlas Cloud web output is an explicit follow-up gap.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaDiff(cmd, opts)
 		},
@@ -53,7 +60,7 @@ Cloud web output are explicit follow-up gaps.`,
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from diffing")
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to diff when a database URL is used")
-	flags.StringArray("include", nil, "Schema objects to include in diffing")
+	flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in diffing")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
@@ -103,6 +110,8 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 		ToURLs:     opts.toURLs,
 		DevURL:     opts.devURL,
 		Exclude:    opts.exclude,
+		Schemas:    opts.schemas,
+		Include:    opts.include,
 		Policy:     policy,
 		ProjectEnv: projectEnv,
 	})
@@ -130,11 +139,10 @@ func validateAtlasSchemaDiffOptions(
 	if len(opts.toURLs) == 0 {
 		return fmt.Errorf("--to is required")
 	}
-	if len(opts.schemas) > 0 {
-		return fmt.Errorf("atlas schema diff accepts --schema, but Ptah only supports local schema files for this command yet")
-	}
-	if values, err := cmd.Flags().GetStringArray("include"); err == nil && len(values) > 0 {
-		return fmt.Errorf("atlas schema diff accepts --include, but Ptah only supports local schema files for this command yet")
+	// Malformed or unsupported --include selectors fail before any database
+	// is contacted.
+	if err := atlasfilter.ValidateIncludeSelectors(opts.include); err != nil {
+		return err
 	}
 	// Classification rejects unsupported schemes and source conflicts, and
 	// migration-directory sources require a dev database, before any database

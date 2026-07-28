@@ -47,6 +47,12 @@ type State struct {
 	// DB is the introspected database state backing Schema for database and
 	// migration-directory sources; nil for local schema files.
 	DB *dbschematypes.DBSchema
+	// DefaultSchema is the schema that owns unqualified objects for database
+	// and migration-directory sources ("public" for PostgreSQL, the database
+	// name for MySQL-family targets, "main" for SQLite); empty for local
+	// schema files. Schema-scope filtering uses it to resolve unqualified
+	// object names.
+	DefaultSchema string
 }
 
 // Resolve materializes the set's desired state. Local schema files load
@@ -92,7 +98,12 @@ func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions) (State, e
 	if err != nil {
 		return State{}, fmt.Errorf("read %s database schema: %w", s.Flag, err)
 	}
-	return State{Kind: s.Kind, Schema: dbschematogo.ConvertDBSchemaToGoSchema(schema), DB: schema}, nil
+	return State{
+		Kind:          s.Kind,
+		Schema:        dbschematogo.ConvertDBSchemaToGoSchema(schema),
+		DB:            schema,
+		DefaultSchema: conn.Info().Schema,
+	}, nil
 }
 
 // ensureDialect rejects database sources whose URL scheme resolves to a
@@ -139,7 +150,12 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (Stat
 		return State{}, fmt.Errorf("read dev database schema: %w", err)
 	}
 	schema = withoutRevisionTable(schema)
-	return State{Kind: s.Kind, Schema: dbschematogo.ConvertDBSchemaToGoSchema(schema), DB: schema}, nil
+	return State{
+		Kind:          s.Kind,
+		Schema:        dbschematogo.ConvertDBSchemaToGoSchema(schema),
+		DB:            schema,
+		DefaultSchema: conn.Info().Schema,
+	}, nil
 }
 
 func (s Set) ensureDevDialect(devURL string, opts ResolveOptions) error {

@@ -120,6 +120,13 @@ env "local" {
 Explicit CLI flags win over `atlas.hcl`, and `atlas.hcl` wins over built-in
 defaults.
 
+`env.exclude` and disabled `env.schema.mode` values compose with the
+`schema apply`/`schema diff` positive selection flags in a fixed order:
+`--schema` names define the schema universe, `--include` selectors pick
+resources inside it, and the configured exclusions subtract from that
+selection last, exactly like CLI `--exclude`. See
+[Scope the comparison with `--schema` and `--include`](../schema-commands/#scope-the-comparison-with---schema-and---include).
+
 Ptah accepts Atlas's `atlas`, `golang-migrate`, `goose`, `flyway`, `liquibase`,
 and `dbmate` values while evaluating `atlas.hcl`, and `ptah atlas migrate apply`
 executes all of them. The native `atlas` format is read from disk unchanged

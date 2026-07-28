@@ -178,6 +178,51 @@ removes table drops from supported local plans. For non-dry-run PostgreSQL
 `diff.concurrent_index.create = true` requires `--tx-mode none`;
 `diff.concurrent_index.drop` and `diff.skip.drop_schema` fail explicitly.
 
+### Scope the comparison with `--schema` and `--include`
+
+`--schema/-s` and `--include` positively select what both comparison sides
+see, on `schema apply` and `schema diff` alike:
+
+- `--schema` names define the schema universe. Repeated and comma-separated
+  values union deterministically. On PostgreSQL-family targets the names are
+  schema namespaces and unqualified objects belong to the connection's default
+  schema (`public`). On MySQL and MariaDB a schema is a database, and because
+  a Ptah connection is bound to one database, only the connected database's
+  name selects anything. SQLite has the single schema `main`.
+- `--include` picks top-level resources inside that universe with Atlas-style
+  glob selectors, optionally constrained with `[type=...]`. Selectable types:
+  `table`, `view`, `materialized_view`, `function`, `enum`, `extension`,
+  `sequence`, `domain`, `composite_type`, `range`, and `role`. Repeated and
+  comma-separated selectors union deterministically. Children of a selected
+  table — columns, indexes, constraints, triggers, policies, grants, and seed
+  data — ride along with it, and support objects the selection depends on
+  (enums and other types used by kept columns, sequences owned by kept
+  tables, roles named by kept grants, owning schemas) are retained.
+  Child-resource selectors such as `[type=column]` or `[type=index]`, field
+  selectors, and unknown resource types are rejected loudly because Ptah
+  cannot project a partial parent faithfully.
+- `--exclude` and disabled `schema.mode` values subtract from the positive
+  selection afterward. The composition order is fixed: schema universe first,
+  include selection inside it, exclusion last.
+
+The same projection is applied to the current database state and the desired
+schema, so out-of-scope objects are invisible to the comparison and are never
+created, modified, or dropped. A selected object that depends on an object the
+selection dropped — a foreign key to an unselected table, a function calling
+an unselected function, a view or trigger body referencing an unselected
+relation, a column using an excluded enum — refuses the plan with an explicit
+cross-scope diagnostic instead of emitting incomplete SQL:
+
+```text
+error: apply --schema/--include to desired schema: the --schema/--include selection drops objects that selected objects depend on:
+  - table "scope_groups" depends on table "scope_users" via a foreign key, but "scope_users" is not selected
+add the missing objects to the selection or exclude the dependent objects
+```
+
+A selection that matches nothing is not an error: the comparison sees two
+empty projections and reports a synced schema. Malformed selectors fail during
+validation, before any database is contacted.
+
 `--format` accepts Atlas-style Go templates over the planned apply changes. The
 supported template surface includes the `sql` helper and `.MarshalSQL`:
 
@@ -275,11 +320,13 @@ ptah atlas schema diff \
 
 Unsupported schemes — `atlas://` registry URLs, `docker://` as a desired
 state, and anything Ptah cannot connect to directly — fail during validation,
-before any database is contacted, and include filters fail explicitly until
-their semantics are implemented. A migration-directory source without
+before any database is contacted. A migration-directory source without
 `--dev-url` fails the same way. Non-Atlas-CE flags such as `--tx-mode` are rejected as unknown. `--exclude` and
 disabled `schema.mode` values filter both local `--from` and `--to` schema files
-before diffing. A diff whose change needs a dialect-specific rebuild plan — for
+before diffing, and `--schema`/`--include` positively scope both sides with the
+same selection semantics, composition order, and cross-scope dependency
+diagnostics as `schema apply` (see
+[Scope the comparison with `--schema` and `--include`](#scope-the-comparison-with---schema-and---include)). A diff whose change needs a dialect-specific rebuild plan — for
 example adding a column to a SQLite table — fails with an explicit error
 instead of emitting SQL the dialect cannot run in place.
 

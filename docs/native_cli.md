@@ -299,6 +299,47 @@ Deterministic precedence and conflict rules:
 `schema plan` and `migrate diff` intentionally keep local-file `--to` sources
 only; their desired-state URL support is a follow-up.
 
+## Atlas Schema and Include Scoping
+
+`ptah atlas schema apply` and `ptah atlas schema diff` support positive
+selection through `--schema/-s` and `--include`, implemented as one reusable
+projection (`internal/atlasfilter.Scope`) applied identically to both
+comparison sides. The composition order is fixed and documented:
+
+1. `--schema` names define the schema universe. Repeated and comma-separated
+   values union deterministically. Unqualified objects belong to the
+   connection's default schema (`public` on PostgreSQL-family targets, the
+   connected database on MySQL/MariaDB — where a schema is a database and a
+   Ptah connection is bound to one — and `main` on SQLite). For diffs without
+   a database-backed side, the dialect default applies.
+2. `--include` selects top-level resources inside the universe with
+   Atlas-style glob selectors and optional `[type=...]` filters. Selectable
+   types: `table`, `view`, `materialized_view`, `function`, `enum`,
+   `extension`, `sequence`, `domain`, `composite_type`, `range`, `role`.
+   Children of a selected table (columns, indexes, constraints, triggers,
+   policies, grants, seed data) ride along; support objects the selection
+   depends on (types used by kept columns, sequences owned by kept tables,
+   roles named by kept grants, owning schemas) are retained. Child-resource
+   selectors (`[type=column]`, `[type=index]`, `[type=constraint]`,
+   `[type=trigger]`, `[type=policy]`, `[type=grant]`), `[type=schema]`, field
+   selectors, unknown resource types, and malformed globs are rejected loudly
+   during validation, before any database is contacted.
+3. `--exclude` and disabled `env.schema.mode` values subtract from the
+   positive selection.
+
+The final projection is validated for dependency correctness: a selected
+object depending on an object the selection dropped — a foreign key to an
+unselected table on either side, a function depending on an unselected
+function, a view, materialized view, or trigger body referencing an
+unselected relation, or a column using a dropped type — refuses the plan with
+a sorted, deduplicated cross-scope diagnostic list instead of emitting
+incomplete SQL. References to objects that were never part of the same state
+behave as they do without a selection. An empty selection is not an error:
+both sides project empty and the command reports a synced schema. Atlas CE
+aborts `--include` as a non-community feature, so this surface is an open
+Ptah extension beyond the pinned CE binary; `schema plan` still rejects both
+flags because a saved plan fixes its objects.
+
 ## Atlas Schema Apply Safety: Locking and Dev Simulation
 
 `ptah atlas schema apply` enforces two safety contracts before it mutates the
