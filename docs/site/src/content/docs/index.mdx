@@ -36,11 +36,11 @@ import { LinkCard, CardGrid } from '@astrojs/starlight/components';
   <LinkCard title="Schema files" href="./schema/yaml/" description="Render and migrate from YAML, HCL, or SQL schema files." />
   <LinkCard title="Versioned migrations" href="./versioned/overview/" description="Plan, generate, apply, roll back, hash, validate, and inspect migrations." />
   <LinkCard title="OCI registry artifacts" href="./workflows/oci-registry/" description="Publish, pin, pull, and consume migrations and desired schemas through your OCI registry." />
-  <LinkCard title="Atlas-compatible CLI" href="./workflows/atlas-cli/" description="Use Atlas-style commands through ptah atlas, ptah-compat, or a renamed atlas binary." />
+  <LinkCard title="Atlas compatibility" href="./atlas/overview/" description="Use Atlas-style commands through ptah atlas, ptah-compat, or a renamed atlas binary." />
   <LinkCard title="CI" href="./testing/ci/" description="Run Ptah checks in pull requests and fail safely on destructive changes." />
   <LinkCard title="Visualize the schema" href="./schema/visualize/" description="Render entity-relationship diagrams as Mermaid, DOT, or SVG with ptah viz." />
-  <LinkCard title="Comparison" href="./reference/comparison/" description="Command parity, feature parity, dialect support, config precedence, and exit behavior." />
-  <LinkCard title="Atlas docs coverage" href="./reference/atlas-docs-coverage/" description="Crosswalk Atlas documentation areas to Ptah docs, implementation status, conformance, and follow-up issues." />
+  <LinkCard title="Comparison" href="./atlas/comparison/" description="Command parity, feature parity evidence, Pro analyzer coverage, and the tracked gap register." />
+  <LinkCard title="Atlas docs coverage" href="./atlas/docs-coverage/" description="Crosswalk Atlas documentation areas to Ptah docs, implementation status, conformance, and follow-up issues." />
   <LinkCard title="Troubleshooting" href="./operate/troubleshooting/" description="Fix Graphviz, database URL, hash mismatch, unsupported capability, and conformance issues." />
 </CardGrid>
 
@@ -55,17 +55,17 @@ import { LinkCard, CardGrid } from '@astrojs/starlight/components';
 | A live database built outside Ptah | [Adopt an existing database](./start/adopt-an-existing-database/) |
 | No decision yet on versioned versus direct changes | [Choose a workflow](./start/choose-a-workflow/) |
 | An OCI registry for migration or schema distribution | [OCI registry artifacts](./workflows/oci-registry/) |
-| Scripts written for Atlas OSS commands | [Atlas-compatible CLI](./workflows/atlas-cli/) |
+| Scripts written for Atlas OSS commands | [Atlas compatibility overview](./atlas/overview/) |
 | A pull-request gate to build | [CI](./testing/ci/) |
-| A compatibility question | [Atlas docs coverage](./reference/atlas-docs-coverage/) and [Conformance](./operate/conformance/) |
+| A compatibility question | [Atlas docs coverage](./atlas/docs-coverage/) and [Conformance](./atlas/conformance/) |
 
 :::caution[Atlas parity status]
-Ptah is working toward Atlas OSS command and behavior parity, but full parity is not claimed here. The current evidence is tracked in the separate conformance repository and summarized in [Conformance](./operate/conformance/).
+Ptah is working toward Atlas OSS command and behavior parity, but full parity is not claimed here. The current evidence is tracked in the separate conformance repository and summarized in [Conformance](./atlas/conformance/).
 :::
 
 ## License-clean implementation
 
-Ptah does not use Atlas source code. Atlas interface behavior and Apache-2.0 test assets are evaluated in the separate `ptah-atlas-conformance` repository so the Ptah source tree stays MIT and implementation-independent. See [License boundary](./operate/license-boundary/).
+Ptah does not use Atlas source code. Atlas interface behavior and Apache-2.0 test assets are evaluated in the separate `ptah-atlas-conformance` repository so the Ptah source tree stays MIT and implementation-independent. See [License boundary](./atlas/license-boundary/).
 
 ## Documentation layers
 

@@ -1,13 +1,13 @@
 ---
-title: Atlas Project Config
+title: Atlas project config
 description: Supported `atlas.hcl` project configuration subset.
 ---
 
 Ptah can read a strict subset of Atlas project configuration from `atlas.hcl`
 and translate it into Ptah's project config IR. This is command configuration,
-not schema HCL input. For schema HCL, see [HCL schema](../hcl-schema/).
+not schema HCL input. For schema HCL, see [HCL schema](../../reference/hcl-schema/).
 
-## Supported Blocks
+## Supported blocks
 
 Ptah accepts these local configuration blocks:
 
@@ -86,7 +86,7 @@ env "local" {
 }
 ```
 
-## Mapping To Ptah Behavior
+## Mapping to Ptah behavior
 
 | Atlas setting | Ptah behavior |
 | --- | --- |
@@ -159,7 +159,7 @@ Non-local URI schemes in `migration.dir` and `schema.src` fail explicitly when a
 command needs that configured value; an explicit CLI path flag still wins before
 URI validation.
 
-## Environment Selection
+## Environment selection
 
 Use Atlas project flags on commands under `ptah atlas schema ...` and
 `ptah atlas migrate ...`:
@@ -180,7 +180,7 @@ If an `atlas.hcl` file has exactly one unnamed `env` block, Ptah can use it as
 the default. Ambiguous or unsupported environment layouts fail instead of
 guessing.
 
-## Unsupported Means Error
+## Unsupported means error
 
 Ptah intentionally rejects unsupported project config constructs. This prevents
 a dangerous half-configured state where a user believes an Atlas setting is in

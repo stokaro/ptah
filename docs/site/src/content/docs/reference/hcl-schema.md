@@ -19,7 +19,7 @@ ptah schema render --schema-file schema.hcl --dialect postgres
 
 `--schema-file` accepts `.hcl` files for HCL schema input. Project
 configuration in `atlas.hcl` is a different file type; see
-[Atlas project config](../atlas-project-config/).
+[Atlas project config](../../atlas/project-config/).
 
 ## Minimal Schema
 
@@ -114,6 +114,6 @@ require dialect-specific parsers.
 ## Unsupported Constructs
 
 Unsupported HCL constructs return errors rather than partial output. Treat these
-errors as compatibility gaps. Check [Conformance](../../operate/conformance/)
-and [Atlas docs coverage](../atlas-docs-coverage/) before deciding whether the
+errors as compatibility gaps. Check [Conformance](../../atlas/conformance/)
+and [Atlas docs coverage](../../atlas/docs-coverage/) before deciding whether the
 gap is already tracked.

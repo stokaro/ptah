@@ -197,7 +197,7 @@ YAML, or HCL — `ptah schema drift` gives the same confirmation with
   registry `atlas://` plan URLs are rejected.
 - The full flag surface, `--env` project-config support, and transaction modes
   are documented in
-  [Atlas-compatible CLI](../../workflows/atlas-cli/#schema-commands).
+  [Atlas schema commands](../../atlas/schema-commands/#apply-a-desired-schema).
 
 ## Next steps
 
@@ -206,4 +206,4 @@ YAML, or HCL — `ptah schema drift` gives the same confirmation with
 - Ship the change to shared environments as a reviewed file:
   [Generate migrations](../../versioned/generate/).
 - See the whole Atlas-compatible surface:
-  [Atlas-compatible CLI](../../workflows/atlas-cli/).
+  [Atlas compatibility overview](../../atlas/overview/).

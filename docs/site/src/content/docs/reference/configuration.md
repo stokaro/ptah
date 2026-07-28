@@ -115,7 +115,7 @@ after symlink resolution. Ptah bounds output, redacts secrets and terminal
 control characters from stderr and parser diagnostics, and cleans up descendant
 processes.
 
-Continue with [Atlas project config](../atlas-project-config/) for the supported
+Continue with [Atlas project config](../../atlas/project-config/) for the supported
 `atlas.hcl` subset.
 
 :::note

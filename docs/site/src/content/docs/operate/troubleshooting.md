@@ -74,7 +74,7 @@ Ptah supports a subset of Atlas project config. Unsupported constructs fail clea
 unsupported atlas.hcl construct ...
 ```
 
-Reference: [Atlas project config subset](../../reference/atlas-project-config/).
+Reference: [Atlas project config subset](../../atlas/project-config/).
 
 ## Atlas-compatible command is registered but not implemented
 
@@ -86,7 +86,7 @@ Runtime behavior is not implemented yet.
 ```
 
 Use the native Ptah command when it has a documented equivalent, or check
-[Conformance](../conformance/) for the current gap.
+[Conformance](../../atlas/conformance/) for the current gap.
 
 ## Conformance reports look red
 
@@ -98,5 +98,5 @@ The conformance repo has two kinds of gates:
 
 This is intentional. A green regression gate does not mean Ptah has complete
 Atlas OSS parity. Even green full-conformance reports only prove the current
-measured corpus; use [Comparison](../../reference/comparison/) for tracked
+measured corpus; use [Comparison](../../atlas/comparison/) for tracked
 product, coverage, and documentation gaps.
