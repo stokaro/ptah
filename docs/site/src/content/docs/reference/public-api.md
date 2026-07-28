@@ -25,6 +25,7 @@ packages, examples, fixtures, tests, or implementation details.
 | `core/sqlutil` | SQL utility helpers used by public paths. |
 | `dbschema` | Live database schema introspection connection layer. |
 | `dbschema/types` | Shared database schema types. |
+| `migration/dbtest` | Declarative migration/schema test cases, runners, and reports. |
 | `migration/generator` | Migration file generation. |
 | `migration/lint` | Migration SQL linting rules, immutable analysis snapshots, and findings. |
 | `migration/migrator` | Migration providers, revision metadata, dry-run plans, and execution. |
@@ -40,6 +41,11 @@ Import paths use the module prefix:
 ```go
 import "github.com/stokaro/ptah/core/renderer"
 ```
+
+The `migration/dbtest` package is the embeddable engine behind the native test
+commands, including regular-expression case selection through `FilterCases`.
+See [Testing](../../workflows/testing/) for its case model and [Database test
+commands](../testing/) for CLI behavior.
 
 ## Migration Statement Observation
 

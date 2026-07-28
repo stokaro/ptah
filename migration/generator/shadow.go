@@ -16,6 +16,7 @@ import (
 	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/core/platform/identifier"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/migration/internal/shadowdb"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/schemadiff"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
@@ -99,11 +100,12 @@ type shadowCandidate struct {
 }
 
 func verifyShadowMigration(ctx context.Context, opts shadowMigrationOptions) error {
-	conn, err := dbschema.ConnectToDatabase(ctx, opts.DatabaseURL)
+	database, err := shadowdb.Open(ctx, opts.DatabaseURL, "")
 	if err != nil {
 		return newShadowVerificationError("connect", "connect_error", "connect to shadow database", err)
 	}
-	defer dbschema.CloseAndWarn(conn)
+	defer database.CloseAndWarn()
+	conn := database.Connection()
 
 	if !sameDialect(opts.Dialect, conn.Info().Dialect) {
 		return newShadowVerificationError(

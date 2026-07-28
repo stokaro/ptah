@@ -31,6 +31,21 @@ dialect capability key in `core/platform/capability`.
 See [OCI Registry Artifacts](./oci_registry.md) for commands, authentication,
 pinning, integrity, security, GHCR CI, and the Atlas-to-OCI concept mapping.
 
+## Workflow capability: declarative database testing
+
+Ptah also provides a product-level testing capability through
+`ptah migrations test`, `ptah schema test`, and the exported
+`migration/dbtest` package. It can migrate to selected versions, apply a desired
+schema, load seed fixtures, execute SQL, and assert row counts, scalar values,
+or expected errors against a disposable database.
+
+This workflow is not a dialect capability key: it composes the existing
+migrator, schema renderer, seeder, database connection, and shadow-database
+lifecycle. It runs locally under the MIT license with no account requirement.
+Atlas CE cannot run the corresponding migration or schema test commands; Atlas
+keeps that testing framework in its proprietary feature set. See
+[Declarative database testing](testing.md).
+
 ## The model
 
 Two layers cooperate:

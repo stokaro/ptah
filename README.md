@@ -18,6 +18,7 @@ architecture is better.
 | Compose one schema from several packages or files | [Go schema workflow](docs/site/src/content/docs/workflows/go-schema.md) |
 | Migration operations | [Migrations](docs/site/src/content/docs/workflows/migrations.md) |
 | Publish or consume migrations and schemas through OCI | [OCI registry artifacts](docs/site/src/content/docs/workflows/oci-registry.md) |
+| Test migrations or a desired schema | [Testing](docs/site/src/content/docs/workflows/testing.md) |
 | Atlas-compatible CLI paths | [Atlas-compatible CLI](docs/site/src/content/docs/workflows/atlas-cli.md) |
 | Reusable Go packages | [Reusable components](docs/site/src/content/docs/reference/reusable-components.md) |
 | CI setup | [CI](docs/site/src/content/docs/workflows/ci.md) |
@@ -142,6 +143,7 @@ the detailed source references:
 - [HCL schema](docs/atlas_hcl_schema.md)
 - [YAML schema](docs/yaml_schema.md)
 - [Capabilities](docs/capabilities.md)
+- [Declarative database testing](docs/testing.md)
 - [Exit codes](docs/exit_codes.md)
 - [GitHub Action](docs/github_action.md)
 - [System design](docs/system_design.md)
