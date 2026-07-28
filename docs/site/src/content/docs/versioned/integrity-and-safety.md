@@ -137,7 +137,7 @@ Useful controls, all designed for CI:
 
 For OCI-distributed directories, `lint --dir oci://...` lints the published
 artifact, and `--attach` stores the canonical report next to it — see
-[OCI registry artifacts](../../workflows/oci-registry/).
+[OCI registry artifacts](../../operate/oci-registry/).
 
 ## The destructive-change gate
 

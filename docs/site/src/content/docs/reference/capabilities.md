@@ -52,5 +52,5 @@ workflow that applies across supported database targets:
 | Referrer publication and listing | Deployment, lint, and plan reports attach to exact source digests. Native Referrers API discovery is preferred; Ptah merges the standard tag-schema fallback with per-attachment durable tags for concurrent Ptah writers. `ptah oci referrers` lists direct descriptor metadata with type and output-format filters; payload download and consumption are not implemented. |
 | Atlas compatibility | Native Ptah only; no Atlas Cloud API, `atlas://`, or implemented Atlas-compatible push command. |
 
-See [OCI registry artifacts](../../workflows/oci-registry/) for the complete
+See [OCI registry artifacts](../../operate/oci-registry/) for the complete
 workflow and security boundaries.

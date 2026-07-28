@@ -256,7 +256,7 @@ custom qualifier metadata is implemented.
 replayed dev database state plus local desired schema files before the diff is
 planned. `diff.concurrent_index.create` is rejected in this command until Ptah
 can write matching no-transaction metadata into generated migration files.
-Database desired-state URLs, `env://` project attributes, and Docker dev
+Database desired-schema URLs, `env://` project attributes, and Docker dev
 databases fail explicitly until their semantics are implemented.
 
 ## Validate integrity

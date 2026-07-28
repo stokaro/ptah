@@ -19,7 +19,7 @@ ptah schema render --schema-file schema.yaml --dialect postgres
 `--schema-file` accepts `.yaml`, `.yml`, `.hcl`, and `.sql` inputs. This page
 documents the YAML shape only.
 
-## Minimal Schema
+## Minimal schema
 
 ```yaml
 tables:
@@ -44,7 +44,7 @@ tables:
         where: deleted_at IS NULL
 ```
 
-## Top-Level Objects
+## Top-level objects
 
 Top-level objects are maps. Their keys are used as default object names when a
 `name` field is not provided.
@@ -122,7 +122,7 @@ author order. Top-level maps render deterministically by sorted key.
 If `enum` is provided and `type` is empty or `ENUM`, Ptah creates a generated
 enum type name and uses that type for the column.
 
-## Platform Overrides
+## Platform overrides
 
 Use `platform` when one dialect needs a different type or option:
 
@@ -141,7 +141,7 @@ tables:
 Prefer overrides for real dialect differences. Do not use them to hide a schema
 shape that the main IR cannot represent.
 
-## Validate The File
+## Validate the file
 
 Render before applying or generating migrations:
 

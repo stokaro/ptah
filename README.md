@@ -18,7 +18,7 @@ architecture is better.
 | ORM-owned desired schema | [ORM and external loaders](docs/site/src/content/docs/schema/orm-and-external.md) |
 | Compose one schema from several packages or files | [Composite desired schema](docs/site/src/content/docs/schema/composite.md) |
 | Migration operations | [Versioned migrations](docs/site/src/content/docs/versioned/overview.md) |
-| Publish or consume migrations and schemas through OCI | [OCI registry artifacts](docs/site/src/content/docs/workflows/oci-registry.md) |
+| Publish or consume migrations and schemas through OCI | [OCI registry artifacts](docs/site/src/content/docs/operate/oci-registry.md) |
 | Test migrations or a desired schema | [Test migrations and schemas](docs/site/src/content/docs/testing/migrations-and-schema.md) |
 | Atlas-compatible CLI paths | [Atlas compatibility overview](docs/site/src/content/docs/atlas/overview.md) |
 | Reusable Go packages | [Reusable components](docs/site/src/content/docs/extend/components.md) |

@@ -96,7 +96,7 @@ and they reject execution loudly with their rationale instead of being silently
 ignored. The largest examples are `migrate push` and `schema push` (the Atlas
 Registry protocol is proprietary and account-bound; the native
 `ptah migrations push` and `ptah schema push` verbs publish to any
-[OCI registry](../../workflows/oci-registry/) instead) and the `schema plan`
+[OCI registry](../../operate/oci-registry/) instead) and the `schema plan`
 registry sub-verbs. The per-command pages name each waiver where it appears.
 
 ## Parity expectations

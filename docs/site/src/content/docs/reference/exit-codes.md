@@ -30,7 +30,7 @@ remediation. A `1` means the command successfully found a condition you asked
 it to check; a `2` means the command itself did not complete correctly.
 Atlas-compatible surfaces use `1` for both classes to match Atlas CE.
 
-## Native Commands
+## Native commands
 
 The grouped command tree is the native Ptah surface. Ptah is pre-GA, so old
 root-level command spellings are removed instead of preserved.
@@ -65,7 +65,7 @@ root-level command spellings are removed instead of preserved.
 | `ptah seed` | Seed files applied or already applied. | Not used. | Usage error, protected environment rejection, connection failure, invalid seed files, or seed execution failure. |
 | `ptah version` | Version information printed. | Not used. | Usage error. |
 
-## Atlas-Compatible Command Surfaces
+## Atlas-compatible command surfaces
 
 Commands under `ptah atlas <command> ...` either translate implemented
 Atlas-compatible flags and delegate to the matching native command, or execute
