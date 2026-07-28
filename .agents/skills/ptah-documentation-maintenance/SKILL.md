@@ -100,9 +100,9 @@ Use these routes to avoid missing a class of docs:
   workflow pages.
 - **Go annotations, YAML, and Atlas HCL schema sources**:
   `docs/go_annotations_vs_atlas_hcl.md`, `docs/yaml_schema.md`,
-  `docs/site/src/content/docs/workflows/go-schema.md`,
-  `docs/site/src/content/docs/workflows/schema-files.md`, and matching example
-  pages.
+  `docs/site/src/content/docs/schema/go-annotations.md`, and the
+  `docs/site/src/content/docs/schema/` source pages (`yaml.md`, `hcl.md`,
+  `sql.md`, `orm-and-external.md`, `composite.md`).
 - **Migrations, sums, directives, revision tables, and safety**:
   `migration/migrator/README.md`, `migration/generator/README.md`,
   `docs/site/src/content/docs/workflows/migrations.md`,

@@ -137,7 +137,7 @@ reports as Atlas `destructive`/`DS102`, native `DS102` as
 | Atlas CE differential checks | Current Atlas CE differential corpus is green: 5 observations, 0 non-OK in the linked report. This is evidence for the covered scenarios, not proof of every Atlas OSS schema object. | [`gaps-diff.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps-diff.md) |
 | HCL schema files | Strict supported subset. Unsupported constructs fail explicitly instead of being ignored. PostgreSQL `include` columns are preserved for indexes, primary keys, and unique constraints across HCL parse/render, SQL parse/render, schema diff, and database introspection paths. | [HCL schema](../hcl-schema/) |
 | Atlas project config | Strict supported subset. Evaluated local `env.src`, `env.schema.src`, `env.exclude`, `env.schema.mode`, `format.schema.inspect/apply/diff`, `format.migrate.apply/diff/lint/status`, supported `diff` policy, and supported lint analyzer severity policy can feed `ptah atlas ... --env` commands, including local variable defaults, repeated string/list `--var name=value` overrides, locals, `getenv`, `file`, `fileset`, `format`, `jsonencode`, and `data.hcl_schema.<name>.url`. Unsupported constructs fail explicitly instead of being ignored. | [Atlas project config](../atlas-project-config/) |
-| Native Go annotations | First-party Ptah workflow. | [Go schema workflow](../../workflows/go-schema/) |
+| Native Go annotations | First-party Ptah workflow. | [Go annotations](../../schema/go-annotations/) |
 
 ## Gap register
 

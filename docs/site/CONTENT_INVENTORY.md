@@ -56,14 +56,24 @@ Word counts were measured with `wc -w` at the audited commit.
 | `start/choose-a-workflow.md` (742) | new user deciding integration shape | Should changes reach my databases as versioned migration files or as direct applies? | concept | this page; command shapes verified against the built binary | `workflows/migrations`, `workflows/atlas-cli`, `reference/comparison` | created (section 9, item 4); keep |
 | `start/adopt-an-existing-database.md` (1,000) | brownfield database adopter | How do I put an existing database under Ptah management without recreating it? | howto | this page; `ptah introspect`, `ptah migrations baseline`, `ptah migrations import` runs against the built binary | `workflows/checkpoints` (baseline contrast), `workflows/migrations` import section | created (section 9, item 3); keep |
 
+### `Model your schema` group (added by the restructuring)
+
+Moved pages keep their rows in the groups below with `done` dispositions; this
+table lists the pages the restructuring created.
+
+| Page (words) | Audience | Reader question | Type | Source of truth | Overlaps | Disposition |
+| --- | --- | --- | --- | --- | --- | --- |
+| `schema/composite.md` (630) | multi-source schema author | How do several schema sources merge into one desired schema? | howto | this page; merge, conflict, and error behavior run against the built binary | per-source `schema/*` pages (each links here instead of restating the rules), `workflows/migrations` compose section | created (canonical multi-source page, deduplicating the compose sections that lived on `workflows/go-schema`, `workflows/schema-files`, and `workflows/migrations`); keep |
+| `schema/visualize.md` (560) | any schema author | How do I render schema diagrams? | howto | this page; `ptah viz` runs against the built binary; `examples/viz/` artifacts | `start/install` (Graphviz optional tool), `operate/troubleshooting` (Graphviz symptom) | created (section 9, item 5, grown from `examples/schema-viz`); keep |
+
 ### `Use Ptah` group
 
 | Page (words) | Audience | Reader question | Type | Source of truth | Overlaps | Disposition |
 | --- | --- | --- | --- | --- | --- | --- |
-| `workflows/go-schema.md` (717) | Go app developer | How do I use annotated Go structs as the desired schema? | howto | this page for the workflow; annotation grammar's real source is `core/goschema` + `internal/annotationmeta` (no directive reference page exists anywhere) | `examples/go-model`, root `README.md` minimal example, `docs/go_annotations_vs_atlas_hcl.md` | move + rewrite → `schema/go-annotations`; absorbs `examples/go-model`; composite section becomes a pointer to `schema/composite` |
-| `workflows/schema-files.md` (1,198) | schema-file user | How do I feed YAML, HCL, or SQL files to Ptah? | howto (four sources plus external programs plus composition on one page) | this page | `reference/yaml-schema`, `reference/hcl-schema`, `examples/yaml-schema`, `examples/atlas-hcl`, `workflows/orm-loaders` (external-program section) | split → `schema/yaml`, `schema/hcl`, `schema/sql`, `schema/composite`; external-program section merges into `schema/orm-and-external`; old URL redirects to `schema/yaml` |
-| `workflows/orm-loaders.md` (592) | ORM/external-provider user | How do I feed my ORM's schema into Ptah? | howto | this page (GORM path verified per its own claim) | `workflows/schema-files.md` "Load from an external program" | move + rewrite → `schema/orm-and-external` (absorbs the external-program contract) |
-| `workflows/api-schema-export.md` (737) | API developer | How do I export entities to OpenAPI or GraphQL? | howto with an embedded type-mapping reference table | `cmd/schema` `export`; backing depth in `docs/api_schema_export.md` | `docs/api_schema_export.md` | move → `schema/export` |
+| `workflows/go-schema.md` (717) | Go app developer | How do I use annotated Go structs as the desired schema? | howto | this page for the workflow; annotation grammar's real source is `core/goschema` + `internal/annotationmeta` (no directive reference page exists anywhere) | `examples/go-model`, root `README.md` minimal example, `docs/go_annotations_vs_atlas_hcl.md` | done: moved + rewritten → `schema/go-annotations` (absorbed `examples/go-model`; composite section now points to `schema/composite`), old URL redirects |
+| `workflows/schema-files.md` (1,198) | schema-file user | How do I feed YAML, HCL, or SQL files to Ptah? | howto (four sources plus external programs plus composition on one page) | this page | `reference/yaml-schema`, `reference/hcl-schema`, `examples/yaml-schema`, `examples/atlas-hcl`, `workflows/orm-loaders` (external-program section) | done: split → `schema/yaml`, `schema/hcl`, `schema/sql`, `schema/composite`; external-program section merged into `schema/orm-and-external`; old URL redirects to `schema/yaml` |
+| `workflows/orm-loaders.md` (592) | ORM/external-provider user | How do I feed my ORM's schema into Ptah? | howto | this page (GORM path verified per its own claim) | `workflows/schema-files.md` "Load from an external program" | done: moved + rewritten → `schema/orm-and-external` (absorbed the external-program contract), old URL redirects |
+| `workflows/api-schema-export.md` (737) | API developer | How do I export entities to OpenAPI or GraphQL? | howto with an embedded type-mapping reference table | `cmd/schema` `export`; backing depth in `docs/api_schema_export.md` | `docs/api_schema_export.md` | done: moved → `schema/export`, old URL redirects |
 | `workflows/migrations.md` (1,031) | versioned-migration user | How do I run the migration lifecycle? | howto hub: 14 sections; "Squashing history", "Testing", and "Reference data" are two-to-three-sentence link-out stubs, "Operational hooks" is a link-out; "Importing from another tool" and "Safety gates" carry real depth | this page for the loop; `migration/migrator/README.md` and `docs/native_cli.md` carry deeper detail | `workflows/checkpoints`, `workflows/testing`, `workflows/reference-data`, `workflows/oci-registry`, `docs/native_cli.md` | split → `versioned/overview` (loop + mental model), `versioned/generate`, `versioned/apply`, `versioned/rollback`, `versioned/integrity-and-safety`, `versioned/import`; stub sections dissolve into links; old URL redirects to `versioned/overview` |
 | `workflows/oci-registry.md` (1,865) | operator/platform engineer | How do I publish, pin, and consume artifacts through an OCI registry? | howto | this page; deeper detail in `docs/oci_registry.md` (2,393 words) | `docs/oci_registry.md`, `workflows/migrations.md` OCI section | move + rewrite in place → `operate/oci-registry` |
 | `workflows/checkpoints.md` (884) | versioned-migration user | How do I squash migration history? | howto with concept material (file format, rollback boundary) | this page; `cmd/migratecheckpoint` | currently the only site prose describing `ptah migrations baseline` (the "Checkpoint versus baseline" contrast) | move → `versioned/checkpoints`; baseline how-to content gets its own home in `start/adopt-an-existing-database` |
@@ -76,11 +86,11 @@ Word counts were measured with `wc -w` at the audited commit.
 
 | Page (words) | Audience | Reader question | Type | Source of truth | Overlaps | Disposition |
 | --- | --- | --- | --- | --- | --- | --- |
-| `examples/go-model.md` (238) | new Go user | What does a minimal annotated model look like? | howto (worked example) | this page | `workflows/go-schema`, root `README.md` | merge → `schema/go-annotations` worked-example section |
-| `examples/yaml-schema.md` (141) | schema-file user | What does a minimal YAML schema look like? | howto (worked example) | this page | `workflows/schema-files`, `reference/yaml-schema` | merge → `schema/yaml` |
-| `examples/atlas-hcl.md` (177) | schema-file user | What does a minimal HCL schema look like? | howto (worked example) | this page | `workflows/schema-files`, `reference/hcl-schema` | merge → `schema/hcl` |
+| `examples/go-model.md` (238) | new Go user | What does a minimal annotated model look like? | howto (worked example) | this page | `workflows/go-schema`, root `README.md` | done: merged → `schema/go-annotations`, old URL redirects |
+| `examples/yaml-schema.md` (141) | schema-file user | What does a minimal YAML schema look like? | howto (worked example) | this page | `workflows/schema-files`, `reference/yaml-schema` | done: merged → `schema/yaml`, old URL redirects |
+| `examples/atlas-hcl.md` (177) | schema-file user | What does a minimal HCL schema look like? | howto (worked example) | this page | `workflows/schema-files`, `reference/hcl-schema` | done: merged → `schema/hcl`, old URL redirects |
 | `examples/atlas-migrations.md` (297) | Atlas migration user | How do I use an Atlas-style migration directory? | howto (worked example) | this page | `workflows/atlas-cli` | merge → `atlas/migrate-commands` worked-example section |
-| `examples/schema-viz.md` (289) | any schema author | How do I render schema diagrams? | howto (worked example); currently the only site coverage of the `ptah viz` workflow | this page; `examples/viz/` artifacts | `install.md` (Graphviz optional tool), `operate/troubleshooting` (Graphviz symptom) | grow → `schema/visualize` (full `ptah viz` workflow: Mermaid/DOT/SVG, Graphviz prerequisite, committed artifacts) |
+| `examples/schema-viz.md` (289) | any schema author | How do I render schema diagrams? | howto (worked example); currently the only site coverage of the `ptah viz` workflow | this page; `examples/viz/` artifacts | `install.md` (Graphviz optional tool), `operate/troubleshooting` (Graphviz symptom) | done: grown → `schema/visualize` (full `ptah viz` workflow: Mermaid/DOT/SVG, Graphviz prerequisite, committed artifacts), old URL redirects |
 
 ### `Reference` group
 
@@ -171,7 +181,7 @@ list in the same PR.
 | Path | Audience | Purpose | Site counterpart | Disposition |
 | --- | --- | --- | --- | --- |
 | `examples/migrator/README.md` (340) + `migrations/` fixtures | Go embedder | Embedded-migrator runnable example | `reference/reusable-components` "Embed The Migrator" | keep; link from `extend/components` |
-| `examples/viz/README.md` (178) + committed `schema.{mmd,dot,sql,svg}` artifacts | schema author | Visualization runnable example with generated artifacts | `examples/schema-viz` | keep; becomes the artifact backing for `schema/visualize` |
+| `examples/viz/README.md` (178) + committed `schema.{mmd,dot,sql,svg}` artifacts | schema author | Visualization runnable example with generated artifacts | `schema/visualize` | keep; the artifact backing for `schema/visualize` |
 | `examples/migrator_parser/` (no README) | contributor | Parser API demo | `internal/parser/README.md` | keep; no reader-facing obligation |
 | `examples/extension_ignore/` (no README) | contributor | Extension-ignore demo | `docs/postgresql_extension_ignore.md` | keep; no reader-facing obligation |
 | `examples/reusable_components/` (test only) | contributor | Executable doc-examples for `reference/reusable-components` | `reference/reusable-components` | keep; keeps site snippets honest |
@@ -281,6 +291,7 @@ these are merely misplaced content.
 5. **`ptah viz` workflow page.** Only an example page exists; the workflow
    (formats, Graphviz prerequisite, committed artifacts) is scattered across
    `install.md` and `operate/troubleshooting.md`. New page: `schema/visualize`.
+   Done: page created with every command run against the built binary.
 6. **`ptah seed` page.** The command ships (`cmd/seed`,
    environment-scoped SQL seed files) but has no page; it appears only in the
    `reference-data` contrast, command row, and exit-code rows. New page:

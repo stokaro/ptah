@@ -39,8 +39,8 @@ already owns the model. Ptah accepts SQL, HCL, or YAML stdout and can use the
 same `ptah.yaml external_schema` block for native render, comparison, drift, and
 migration planning. Config-sourced program execution requires
 `--allow-external-schema`; an explicit `--schema-cmd` is already an opt-in. See
-[Schema sources](site/src/content/docs/workflows/schema-files.md) and
-[ORM loaders](site/src/content/docs/workflows/orm-loaders.md).
+[ORM and external loaders](site/src/content/docs/schema/orm-and-external.md) and
+[Composite desired schema](site/src/content/docs/schema/composite.md).
 
 Use export as a one-time migration path when a project wants to move from
 app-schema authoring to declarative schema authoring without manually rewriting

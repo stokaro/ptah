@@ -173,8 +173,8 @@ the loader intentionally lives elsewhere. Ptah terminates the loader's complete
 process group on Unix and its kill-on-close Job Object on Windows, including
 descendants left behind after a successful parent exit.
 
-See the canonical [schema sources](site/src/content/docs/workflows/schema-files.md)
-and [verified ORM loader recipes](site/src/content/docs/workflows/orm-loaders.md).
+See the canonical [ORM and external loaders](site/src/content/docs/schema/orm-and-external.md)
+page and [composite desired schema](site/src/content/docs/schema/composite.md) rules.
 
 ## Diff Policy
 
