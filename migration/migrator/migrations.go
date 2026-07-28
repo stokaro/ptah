@@ -450,7 +450,9 @@ type Migration struct {
 	IsCheckpoint bool
 }
 
-func (m *Migration) atlasRevisionDescription() string {
+// atlasFilenameDescription preserves Atlas's raw filename description for
+// baseline and set metadata. Normal execution records Description instead.
+func (m *Migration) atlasFilenameDescription() string {
 	if m.hasRevisionDescription {
 		return m.revisionDescription
 	}

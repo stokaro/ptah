@@ -157,7 +157,7 @@ VALUES ('3', 'external', 2, 1, 1, NOW(), 0, NULL, NULL, 'external', 'null'::json
 			Description:   "create_accounts",
 			RevisionType:  4,
 			Hash:          issue819SQLHash("SELECT 1;\n"),
-			PartialHashes: "null",
+			PartialHashes: sql.NullString{String: "null", Valid: true},
 		},
 	})
 }
@@ -465,13 +465,12 @@ func runAtlasRevisionMetadataIntegration(t *testing.T, dbURL string) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(readIssue819Revisions(c, conn), qt.DeepEquals, []issue819Revision{
 		{
-			Version:       "1",
-			Description:   "create_accounts",
-			RevisionType:  2,
-			Applied:       1,
-			Total:         1,
-			Hash:          issue819SQLHash(firstSQL),
-			PartialHashes: "null",
+			Version:      "1",
+			Description:  "Create Accounts",
+			RevisionType: 2,
+			Applied:      1,
+			Total:        1,
+			Hash:         issue819SQLHash(firstSQL),
 		},
 	})
 
@@ -481,27 +480,26 @@ func runAtlasRevisionMetadataIntegration(t *testing.T, dbURL string) {
 	c.Assert(result.Removed, qt.HasLen, 0)
 	c.Assert(readIssue819Revisions(c, conn), qt.DeepEquals, []issue819Revision{
 		{
-			Version:       "1",
-			Description:   "create_accounts",
-			RevisionType:  2,
-			Applied:       1,
-			Total:         1,
-			Hash:          issue819SQLHash(firstSQL),
-			PartialHashes: "null",
+			Version:      "1",
+			Description:  "Create Accounts",
+			RevisionType: 2,
+			Applied:      1,
+			Total:        1,
+			Hash:         issue819SQLHash(firstSQL),
 		},
 		{
 			Version:       "2",
 			Description:   "create_users",
 			RevisionType:  4,
 			Hash:          issue819SQLHash(secondSQL),
-			PartialHashes: "null",
+			PartialHashes: sql.NullString{String: "null", Valid: true},
 		},
 		{
 			Version:       "3",
 			Description:   "add_audit",
 			RevisionType:  4,
 			Hash:          issue819SQLHash(thirdSQL),
-			PartialHashes: "null",
+			PartialHashes: sql.NullString{String: "null", Valid: true},
 		},
 	})
 
@@ -512,20 +510,19 @@ func runAtlasRevisionMetadataIntegration(t *testing.T, dbURL string) {
 	c.Assert(issue819RevisionVersions(result.Removed), qt.DeepEquals, []int64{3})
 	c.Assert(readIssue819Revisions(c, conn), qt.DeepEquals, []issue819Revision{
 		{
-			Version:       "1",
-			Description:   "create_accounts",
-			RevisionType:  6,
-			Total:         1,
-			Error:         "broken",
-			Hash:          issue819SQLHash(firstSQL),
-			PartialHashes: "null",
+			Version:      "1",
+			Description:  "Create Accounts",
+			RevisionType: 6,
+			Total:        1,
+			Error:        "broken",
+			Hash:         issue819SQLHash(firstSQL),
 		},
 		{
 			Version:       "2",
 			Description:   "create_users",
 			RevisionType:  4,
 			Hash:          issue819SQLHash(secondSQL),
-			PartialHashes: "null",
+			PartialHashes: sql.NullString{String: "null", Valid: true},
 		},
 	})
 
@@ -544,7 +541,7 @@ func runAtlasRevisionMetadataIntegration(t *testing.T, dbURL string) {
 			Version:       "2",
 			Description:   "create_users",
 			RevisionType:  1,
-			PartialHashes: "null",
+			PartialHashes: sql.NullString{String: "null", Valid: true},
 		},
 	})
 }
@@ -557,7 +554,7 @@ type issue819Revision struct {
 	Total         int
 	Error         string
 	Hash          string
-	PartialHashes string
+	PartialHashes sql.NullString
 }
 
 func readIssue819Revisions(c *qt.C, conn *dbschema.DatabaseConnection) []issue819Revision {

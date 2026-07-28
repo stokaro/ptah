@@ -689,7 +689,7 @@ func (m *Migrator) beginAtlasMigrationRevisionOn(
 		conn,
 		query,
 		strconv.FormatInt(migration.Version, 10),
-		migration.atlasRevisionDescription(),
+		migration.Description,
 		AtlasRevisionTypeApplied,
 		0,
 		m.migrationStatementCount(migration.UpSQL),
@@ -698,7 +698,7 @@ func (m *Migrator) beginAtlasMigrationRevisionOn(
 		nil,
 		nil,
 		migrationRevisionHash(migration),
-		atlasNullJSON,
+		nil,
 		ptahOperatorVersion,
 	)
 }
@@ -749,7 +749,7 @@ func (m *Migrator) completeAtlasMigrationRevisionOn(
 		total,
 		time.Now(),
 		time.Since(startedAt).Nanoseconds(),
-		atlasNullJSON,
+		nil,
 		ptahOperatorVersion,
 		strconv.FormatInt(migration.Version, 10),
 	)
@@ -785,7 +785,7 @@ func (m *Migrator) beginAtlasRollbackRevision(ctx context.Context, migration *Mi
 		m.migrationStatementCount(migration.DownSQL),
 		time.Now(),
 		int64(0),
-		atlasNullJSON,
+		nil,
 		ptahOperatorVersion,
 		strconv.FormatInt(migration.Version, 10),
 	)
@@ -1037,7 +1037,7 @@ func (m *Migrator) writeAtlasBaselineMigrationRow(
 		ctx,
 		query,
 		strconv.FormatInt(migration.Version, 10),
-		migration.atlasRevisionDescription(),
+		migration.atlasFilenameDescription(),
 		AtlasRevisionTypeBaseline,
 		0,
 		0,
@@ -1187,7 +1187,7 @@ func atlasRevisionSetChanges(
 		}
 		result.Set = append(result.Set, AtlasRevisionChange{
 			Version:     migration.Version,
-			Description: migration.atlasRevisionDescription(),
+			Description: migration.atlasFilenameDescription(),
 		})
 	}
 	return result
@@ -1336,14 +1336,14 @@ func (m *Migrator) forceAppliedAtlasMigration(ctx context.Context, migration *Mi
 		m.conn,
 		query,
 		strconv.FormatInt(migration.Version, 10),
-		migration.atlasRevisionDescription(),
+		migration.Description,
 		AtlasRevisionTypeApplied,
 		total,
 		total,
 		time.Now(),
 		int64(0),
 		migrationRevisionHash(migration),
-		atlasNullJSON,
+		nil,
 		ptahOperatorVersion,
 	)
 }
@@ -1358,7 +1358,7 @@ func (m *Migrator) writeAtlasManuallySetMigrationRow(
 		ctx,
 		query,
 		strconv.FormatInt(migration.Version, 10),
-		migration.atlasRevisionDescription(),
+		migration.atlasFilenameDescription(),
 		AtlasRevisionTypeManuallySet,
 		0,
 		0,
