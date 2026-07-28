@@ -14,9 +14,9 @@ flag translation rules are on the
 | Atlas-compatible command | Ptah behavior |
 | --- | --- |
 | `ptah atlas schema inspect` | Inspects a live database and writes Atlas-shaped HCL, SQL, JSON, or custom-template output. |
-| `ptah atlas schema apply` | Diffs local desired schema files against a live database and applies the planned SQL after confirmation. |
+| `ptah atlas schema apply` | Diffs a desired-state source (schema files, a database URL, a migration directory, or an `env://` reference) against a live database and applies the planned SQL after confirmation. |
 | `ptah atlas schema plan` | Saves the declarative plan as a fingerprinted local plan file for a later `schema apply --plan`. |
-| `ptah atlas schema diff` | Diffs local `file://` schema files and prints migration SQL. |
+| `ptah atlas schema diff` | Diffs two desired-state sources (schema files, database URLs, migration directories, or `env://` references) and prints migration SQL. |
 | `ptah atlas schema fmt` | Formats local `.hcl` files using HCL canonical layout. |
 | `ptah atlas schema clean` | Plans and applies destructive cleanup of user-owned schema objects. |
 | `ptah atlas schema test [paths]` | Forwards to `ptah schema test` with Ptah-native YAML test cases. |
@@ -68,8 +68,15 @@ remain explicit gaps.
 
 ## Apply a desired schema
 
-`ptah atlas schema apply` accepts one or more local `--to` schema file URLs and
-a live database `--url`. With `--env`, Ptah can read `env.url`, `env.src`,
+`ptah atlas schema apply` accepts a live database `--url` and a `--to`
+desired state: one or more local schema file URLs, one directly connectable
+database URL whose live schema becomes the desired state, one migration
+directory (a `file://` directory containing `atlas.sum`) replayed on the
+required `--dev-url` dev database, or one `env://<attribute>` reference
+(`src`, `schema.src`, `url`, `dev`, `migration.dir`) resolved through the
+evaluated `atlas.hcl` env. All `--to` values must be one source kind, and
+unsupported schemes such as `atlas://` fail before the target database is
+contacted. With `--env`, Ptah can read `env.url`, `env.src`,
 `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`,
 `format.schema.apply`, and supported `diff` policy from the selected
 `atlas.hcl` environment, including local variable defaults, locals, `getenv`,
@@ -135,9 +142,10 @@ env "local" {
 ptah atlas schema apply --env local --dry-run
 ```
 
-`--dev-url` is accepted for dialect validation only in this path today. It must
-match the target database dialect; Ptah does not yet execute Atlas's
-dev-database simulation for declarative apply.
+`--dev-url` must match the target database dialect. For migration-directory
+`--to` sources it names the dev database the directory is replayed on and is
+required; for other sources it is used for dialect validation only. Ptah does
+not yet execute Atlas's dev-database simulation for declarative apply.
 
 `--exclude` accepts repeated or comma-separated Atlas-style glob patterns,
 including `[type=...]` selectors. Ptah applies the filter to both the current
@@ -204,12 +212,19 @@ error: pre-planned migration is stale: the target database schema does not match
 
 ## Diff schema files
 
-`ptah atlas schema diff` accepts one or more `--from` and `--to` local schema
-file URLs and requires `--dev-url` so Ptah can choose the SQL dialect. With
-`--env`, Ptah can read `env.schema.src`, `env.dev`, `env.exclude`,
-`env.schema.mode`, `format.schema.diff`, and supported `diff` policy from
-`atlas.hcl`. The current implementation does not execute Atlas's dev-database
-simulation; it uses the dev URL for dialect selection only.
+`ptah atlas schema diff` accepts a desired-state source on each side: one or
+more local `--from`/`--to` schema file URLs, one directly connectable database
+URL whose live schema is introspected, one migration directory (a `file://`
+directory containing `atlas.sum`) replayed on the required `--dev-url` dev
+database, or one `env://<attribute>` reference (`src`, `schema.src`, `url`,
+`dev`, `migration.dir`) resolved through the evaluated `atlas.hcl` env. All
+URLs of one flag must be one source kind. The SQL dialect is pinned by
+`--dev-url` first, then by `--from` and `--to` database URLs; local schema
+files alone still require `--dev-url` for dialect selection. With `--env`,
+Ptah can read `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`,
+`format.schema.diff`, and supported `diff` policy from `atlas.hcl`. The
+current implementation does not execute Atlas's dev-database simulation; the
+dev URL selects the dialect and hosts migration-directory replays.
 
 ```bash
 ptah atlas schema diff \
@@ -239,9 +254,11 @@ ptah atlas schema diff \
   --format '{{ sql . "  " }}'
 ```
 
-Remote database URLs, migration directory URLs, `env://` project attributes,
-and include filters fail explicitly until their semantics are implemented.
-Non-Atlas-CE flags such as `--tx-mode` are rejected as unknown. `--exclude` and
+Unsupported schemes — `atlas://` registry URLs, `docker://` as a desired
+state, and anything Ptah cannot connect to directly — fail during validation,
+before any database is contacted, and include filters fail explicitly until
+their semantics are implemented. A migration-directory source without
+`--dev-url` fails the same way. Non-Atlas-CE flags such as `--tx-mode` are rejected as unknown. `--exclude` and
 disabled `schema.mode` values filter both local `--from` and `--to` schema files
 before diffing. A diff whose change needs a dialect-specific rebuild plan — for
 example adding a column to a SQLite table — fails with an explicit error

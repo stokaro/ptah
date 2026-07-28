@@ -105,6 +105,9 @@ func PreparePlanFile(
 		ToURLs:  opts.ToURLs,
 		Exclude: opts.Exclude,
 		Policy:  opts.Policy,
+		// A saved plan fingerprints local desired-state files; URL sources
+		// stay a `schema plan` follow-up gap.
+		LocalFilesOnly: true,
 	})
 	if err != nil {
 		return PlanFile{}, err

@@ -10,7 +10,7 @@ import (
 	"github.com/stokaro/ptah/internal/atlasschema"
 )
 
-func TestDiffLocalFilesReturnsSchemaDiffReport(t *testing.T) {
+func TestDiff_LocalFilesReturnsSchemaDiffReport(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	from := filepath.Join(dir, "from.hcl")
@@ -34,7 +34,7 @@ table "users" {
 }
 `), 0o600), qt.IsNil)
 
-	report, err := atlasschema.DiffLocalFiles(atlasschema.DiffOptions{
+	report, err := atlasschema.Diff(t.Context(), atlasschema.DiffOptions{
 		FromURLs: []string{"file://" + from},
 		ToURLs:   []string{"file://" + to},
 		DevURL:   "postgres://localhost/dev",
@@ -47,7 +47,7 @@ table "users" {
 	c.Assert(sql, qt.Contains, `ALTER TABLE "users" ADD COLUMN "email" varchar(255) NOT NULL;`)
 }
 
-func TestDiffLocalFiles_ExcludeFilter(t *testing.T) {
+func TestDiff_LocalFiles_ExcludeFilter(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	from := filepath.Join(dir, "from.hcl")
@@ -76,7 +76,7 @@ table "audit_logs" {
 }
 `), 0o600), qt.IsNil)
 
-	report, err := atlasschema.DiffLocalFiles(atlasschema.DiffOptions{
+	report, err := atlasschema.Diff(t.Context(), atlasschema.DiffOptions{
 		FromURLs: []string{"file://" + from},
 		ToURLs:   []string{"file://" + to},
 		DevURL:   "postgres://localhost/dev",
@@ -90,7 +90,7 @@ table "audit_logs" {
 	c.Assert(sql, qt.Not(qt.Contains), "audit_logs")
 }
 
-func TestDiffLocalFiles_ExcludeFilterIgnoresRemovedFromObject(t *testing.T) {
+func TestDiff_LocalFiles_ExcludeFilterIgnoresRemovedFromObject(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	from := filepath.Join(dir, "from.sql")
@@ -102,7 +102,7 @@ CREATE TABLE diff_skip (
 `), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(to, []byte(""), 0o600), qt.IsNil)
 
-	report, err := atlasschema.DiffLocalFiles(atlasschema.DiffOptions{
+	report, err := atlasschema.Diff(t.Context(), atlasschema.DiffOptions{
 		FromURLs: []string{"file://" + from},
 		ToURLs:   []string{"file://" + to},
 		DevURL:   "sqlite://dev.db",
@@ -116,10 +116,10 @@ CREATE TABLE diff_skip (
 	c.Assert(sql, qt.Equals, "")
 }
 
-func TestDiffLocalFilesRequiresDevURL(t *testing.T) {
+func TestDiff_LocalFilesRequiresDevURL(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := atlasschema.DiffLocalFiles(atlasschema.DiffOptions{})
+	_, err := atlasschema.Diff(t.Context(), atlasschema.DiffOptions{})
 
 	c.Assert(err, qt.ErrorMatches, `--dev-url is required for local schema file diffing`)
 }
