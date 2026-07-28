@@ -103,7 +103,9 @@ history. See [Importing migrations](./migrations-import.md).
 `ptah migrations test` and `ptah schema test` use the same Ptah-native YAML
 case format and support text, JSON, and HTML reports. Migration cases can apply
 the desired schema with `apply_schema: true` and `--root-dir`; schema cases
-receive the desired schema before their steps run. See
+receive the desired schema before their steps run. The Atlas-compatible
+`ptah atlas migrate test` and `ptah atlas schema test` verbs forward to these
+commands with Atlas-shaped flags. See
 [Declarative database testing](./testing.md).
 
 `ptah migrations edit`, `rebase`, and `rm` safely maintain an existing migration

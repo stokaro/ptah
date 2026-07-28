@@ -52,7 +52,7 @@ round-trip corpus:
 
 | Workflow | Native Ptah | Atlas-compatible Ptah surface | Atlas CE | Evidence |
 | --- | --- | --- | --- | --- |
-| Declarative migration and schema tests | `ptah migrations test` and `ptah schema test` | Explicit unsupported-boundary stubs at `ptah atlas migrate test` and `ptah atlas schema test` | Cannot run either command; the framework is outside the open-source core | Unit coverage plus integration-tagged live PostgreSQL runner tests; not counted as a schema-object fixture |
+| Declarative migration and schema tests | `ptah migrations test` and `ptah schema test` | `ptah atlas migrate test` and `ptah atlas schema test` forward to the native runners with Atlas-shaped flags and exit codes | Cannot run either command; the framework is outside the open-source core | Unit coverage (including the Atlas-compatible forwards) plus integration-tagged live PostgreSQL runner tests; not counted as a schema-object fixture |
 
 This is a workflow-parity record, not a claim of full Atlas Pro compatibility.
 

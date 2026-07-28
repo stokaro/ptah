@@ -21,6 +21,8 @@ import (
 	"github.com/stokaro/ptah/cmd/migratehash"
 	"github.com/stokaro/ptah/cmd/migraterepair"
 	"github.com/stokaro/ptah/cmd/migratevalidate"
+	"github.com/stokaro/ptah/cmd/migrationstest"
+	"github.com/stokaro/ptah/cmd/schema"
 	"github.com/stokaro/ptah/internal/atlasargs"
 )
 
@@ -36,6 +38,9 @@ type atlasVerb struct {
 	nativeOnlyFlags     []string
 	flags               []atlasargs.Flag
 	nativeProjectConfig bool
+	// projectConfig overrides how loaded atlas.hcl values map onto the verb's
+	// Atlas flags. When nil, the generic applyAtlasProjectConfigToArgs is used.
+	projectConfig atlasProjectArgsApplier
 }
 
 type atlasPositionalArg struct {
@@ -115,10 +120,10 @@ func newAtlasSchemaCommand() *cobra.Command {
 	cmd.AddCommand(newAtlasSchemaApplyCommand())
 	cmd.AddCommand(newAtlasSchemaDiffCommand())
 	cmd.AddCommand(newAtlasSchemaFmtCommand())
+	cmd.AddCommand(newAtlasAdapterCommand("schema", atlasSchemaTestVerb()))
 	addAtlasUnsupportedCommunityCommands(cmd, "schema", []atlasUnsupportedCommunityVerb{
 		{use: "plan", short: "Plan schema changes through Atlas Cloud"},
 		{use: "push", short: "Push schema state to Atlas Cloud"},
-		{use: "test", short: "Test schemas through Atlas Cloud"},
 	})
 	return cmd
 }
@@ -204,6 +209,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 				atlasargs.NativeString("revisions-schema", "", "Schema for the revision table", "migrations-schema"),
 			},
 		},
+		atlasMigrateTestVerb(),
 		{
 			use:     "validate",
 			short:   "Validate migration directory integrity",
@@ -225,7 +231,6 @@ func newAtlasMigrateCommand() *cobra.Command {
 		{use: "push", short: "Push migration directory to Atlas Cloud"},
 		{use: "rebase", short: "Rebase migration files"},
 		{use: "rm", short: "Remove migration files"},
-		{use: "test", short: "Test migration files through Atlas Cloud"},
 	})
 	return cmd
 }
@@ -374,6 +379,66 @@ func atlasMigrateDownVerb() atlasVerb {
 	}
 }
 
+// atlasMigrateTestVerb forwards `atlas migrate test` to the native
+// `ptah migrations test` runner. Atlas's Pro-only migration testing verb maps
+// onto Ptah's open testing engine: --dir is the migration directory
+// (Atlas-format by default, like the other migrate verbs), --dev-url selects
+// the throwaway database the cases run against (an ephemeral SQLite database
+// when omitted), and the optional [paths] positional selects the directory of
+// Ptah-native YAML test cases (native --dir, default ./tests).
+func atlasMigrateTestVerb() atlasVerb {
+	return atlasVerb{
+		use:                "test",
+		displayUse:         "test [flags] [paths]",
+		short:              "Run declarative migration tests against a dev database",
+		native:             "migrations test",
+		factory:            migrationstest.NewMigrationsTestCommand,
+		positionals:        []atlasPositionalArg{{name: "paths", nativeName: "dir"}},
+		positionalOptional: true,
+		flags: []atlasargs.Flag{
+			atlasMigrateTestDirFlag(),
+			atlasMigrateDirFormatFlag("dir-format"),
+			atlasargs.NativeString("dev-url", "", "Dev database URL the test cases run against", "db-url"),
+			atlasargs.String("run", "", "Run only test cases matching a Go regular expression"),
+		},
+	}
+}
+
+func atlasMigrateTestDirFlag() atlasargs.Flag {
+	flag := atlasargs.NativeStringDefault(
+		"dir",
+		"",
+		"Migration directory",
+		"migrations-dir",
+		"file://migrations",
+	)
+	flag.MapValue = atlasargs.LocalDirValue
+	return flag
+}
+
+// atlasSchemaTestVerb forwards `atlas schema test` to the native
+// `ptah schema test` runner. The desired schema URL (-u/--url) maps to the
+// native Go-annotation root directory, --dev-url selects the throwaway
+// database (ephemeral SQLite when omitted), and the optional [paths]
+// positional selects the directory of Ptah-native YAML test cases.
+func atlasSchemaTestVerb() atlasVerb {
+	return atlasVerb{
+		use:                "test",
+		displayUse:         "test [flags] [paths]",
+		short:              "Run declarative schema tests against a dev database",
+		native:             "schema test",
+		factory:            schema.NewSchemaTestCommand,
+		positionals:        []atlasPositionalArg{{name: "paths", nativeName: "dir"}},
+		positionalOptional: true,
+		projectConfig:      applyAtlasSchemaTestProjectConfig,
+		flags: []atlasargs.Flag{
+			atlasargs.NativeLocalDir("url", "u", "Desired schema URL: local file:// directory with Go schema annotations", "root-dir"),
+			atlasargs.NativeString("dev-url", "", "Dev database URL the test cases run against", "db-url"),
+			atlasargs.String("run", "", "Run only test cases matching a Go regular expression"),
+		},
+	}
+}
+
 func atlasMigrateDirFormatFlag(nativeName string) atlasargs.Flag {
 	flag := atlasargs.NativeStringDefault(
 		"dir-format",
@@ -514,7 +579,11 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 			if err != nil {
 				return nil, err
 			}
-			args, err = applyAtlasProjectConfigToArgs(verb.flags, args, cfg, project.flags)
+			applyProjectConfig := verb.projectConfig
+			if applyProjectConfig == nil {
+				applyProjectConfig = applyAtlasProjectConfigToArgs
+			}
+			args, err = applyProjectConfig(verb.flags, args, cfg, project.flags)
 			if err != nil {
 				return nil, err
 			}
@@ -528,11 +597,15 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 		if err := rejectNativeOnlyAtlasFlags(group, verb, args); err != nil {
 			return nil, err
 		}
-		args, err = mapAtlasPositionalArgs(group, verb, args)
+		args, nativeTail, err := mapAtlasPositionalArgs(group, verb, args)
 		if err != nil {
 			return nil, err
 		}
-		return atlasargs.Map(group, verb.use, verb.flags, args)
+		mapped, err := atlasargs.Map(group, verb.use, verb.flags, args)
+		if err != nil {
+			return nil, err
+		}
+		return append(mapped, nativeTail...), nil
 	}
 }
 
@@ -546,25 +619,31 @@ func rejectNativeOnlyAtlasFlags(group string, verb atlasVerb, args []string) err
 	return nil
 }
 
-func mapAtlasPositionalArgs(group string, verb atlasVerb, args []string) ([]string, error) {
+// mapAtlasPositionalArgs splits declared positional values out of the
+// Atlas-form args and returns them separately as native flag pairs. The native
+// pairs are appended after atlasargs.Map has run, so a positional's native
+// flag name is never re-mapped when it collides with an Atlas flag name of the
+// same verb (for example the native test-case --dir versus the Atlas
+// migration-directory --dir).
+func mapAtlasPositionalArgs(group string, verb atlasVerb, args []string) (remaining, nativeTail []string, err error) {
 	if len(verb.positionals) == 0 {
-		return args, nil
+		return args, nil, nil
 	}
 	if len(verb.positionals) != 1 {
-		return nil, fmt.Errorf("atlas %s %s declares unsupported positional mapping", group, verb.use)
+		return nil, nil, fmt.Errorf("atlas %s %s declares unsupported positional mapping", group, verb.use)
 	}
 	withoutPositionals, positionals := splitAtlasPositionals(verb.flags, args)
 	positional := verb.positionals[0]
 	switch len(positionals) {
 	case 0:
 		if verb.positionalOptional {
-			return withoutPositionals, nil
+			return withoutPositionals, nil, nil
 		}
-		return nil, fmt.Errorf("atlas %s %s requires %s argument", group, verb.use, positional.name)
+		return nil, nil, fmt.Errorf("atlas %s %s requires %s argument", group, verb.use, positional.name)
 	case 1:
-		return append(withoutPositionals, "--"+positional.nativeName, positionals[0]), nil
+		return withoutPositionals, []string{"--" + positional.nativeName, positionals[0]}, nil
 	default:
-		return nil, fmt.Errorf("atlas %s %s accepts one %s argument, got %q", group, verb.use, positional.name, positionals)
+		return nil, nil, fmt.Errorf("atlas %s %s accepts one %s argument, got %q", group, verb.use, positional.name, positionals)
 	}
 }
 
