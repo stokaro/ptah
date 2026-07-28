@@ -91,5 +91,5 @@ call commands such as `atlas migrate apply`.
 ## Next steps
 
 - Run the [Quick start](../quick-start/) for a complete SQLite smoke test.
-- Use [Commands](../../reference/commands/) when wiring Ptah into scripts.
+- Use [Native commands](../../reference/native-commands/) when wiring Ptah into scripts.
 - Use [CI](../../testing/ci/) when pinning Ptah in pull-request checks.

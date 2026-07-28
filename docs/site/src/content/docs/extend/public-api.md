@@ -7,7 +7,7 @@ Ptah is pre-GA, but embedders need a documented import surface. The packages on
 this page are the stable embedder API. Packages not listed here are command
 packages, examples, fixtures, tests, or implementation details.
 
-## Stable Packages
+## Stable packages
 
 | Package | Purpose |
 | --- | --- |
@@ -45,9 +45,14 @@ import "github.com/stokaro/ptah/core/renderer"
 The `migration/dbtest` package is the embeddable engine behind the native test
 commands, including regular-expression case selection through `FilterCases`.
 See [Test migrations and schemas](../../testing/migrations-and-schema/) for
-its case model and [Database test commands](../testing/) for CLI behavior.
+its case model and [Database test commands](../../reference/test-cases/) for CLI behavior.
 
-## Migration Statement Observation
+The separate [`testkit`](https://github.com/stokaro/ptah/tree/master/testkit)
+module (`github.com/stokaro/ptah/testkit`) is an opt-in helper for tests that
+need real databases. It keeps `testcontainers-go` out of Ptah's main module
+graph and versions independently.
+
+## Migration statement observation
 
 `migration/migrator.WithStatementObserver` attaches a read-only callback to a
 filesystem migration provider. The observer runs after every successfully
@@ -66,7 +71,7 @@ the callback failed.
 The observer composes with `StatementInterceptor`: a statement handled by an
 external executor is observed once after that executor reports success.
 
-## Schema Diff And Planning Contracts
+## Schema diff and planning contracts
 
 `migration/schemadiff/types.SchemaDiff` stores index additions and removals as
 canonical `[]IndexRef` fields. Every index reference includes its owning table.
@@ -82,7 +87,7 @@ offline rules.
 unresolved additions, and target index-namespace conflicts fail before SQL is
 returned.
 
-## Error Contracts
+## Error contracts
 
 Public failures should use `core/ptaherr` when callers can reasonably branch on
 the error:
@@ -96,7 +101,7 @@ the error:
 - command wrappers should preserve typed errors instead of replacing them with
   string-only errors.
 
-## API Guardrails
+## API guardrails
 
 CI protects the public API in three layers:
 
@@ -110,8 +115,8 @@ Any intentional public API change must update the docs and snapshot in the same
 reviewed PR. Once release baselines exist, incompatible changes also require an
 explicit approval entry.
 
-## Embedding Guidance
+## Embedding guidance
 
-Use [Reusable components](../reusable-components/) for task-oriented examples.
+Use [Reusable components](../components/) for task-oriented examples.
 Use this page to decide whether a package is supported for embedding. Do not
 import `internal/...` packages from another module.

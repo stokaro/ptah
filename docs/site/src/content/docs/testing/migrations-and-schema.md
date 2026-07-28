@@ -92,7 +92,7 @@ created by migrations remain in place, while declared objects are planned with
 the live target's capabilities and identifier semantics. Roles and grants are
 not accepted because their security effects can be cluster-scoped.
 
-See [Database test commands](../../reference/testing/) for the exact flags,
+See [Database test commands](../../reference/test-cases/) for the exact flags,
 step scopes, assertions, reports, and exit contract.
 
 ## Embedding

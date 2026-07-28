@@ -98,7 +98,7 @@ the page the restructuring created.
 | `workflows/checkpoints.md` (884) | versioned-migration user | How do I squash migration history? | howto with concept material (file format, rollback boundary) | this page; `cmd/migratecheckpoint` | currently the only site prose describing `ptah migrations baseline` (the "Checkpoint versus baseline" contrast) | done: moved → `versioned/checkpoints`, old URL redirects; baseline how-to content has its own home in `start/adopt-an-existing-database` |
 | `workflows/testing.md` (766) | developer/CI operator | How do I test migrations and schemas declaratively? | howto | this page; `docs/testing.md` | `reference/testing` (intentional howto/reference pair — the model split to generalize), `docs/testing.md` | done: moved → `testing/migrations-and-schema`, old URL redirects |
 | `workflows/reference-data.md` (906) | app developer | How do I manage reference/lookup rows declaratively? | howto | this page; `cmd/migratedata` | contains the only prose comparing declarative data with `ptah seed` | done: moved → `versioned/reference-data`, old URL redirects; the seed contrast feeds `operate/seed-data` |
-| `workflows/atlas-cli.md` (4,137) | Atlas migration user | How do I use Atlas-style commands with Ptah? | mixed: concept (translation model) + reference (three command tables duplicating `reference/commands.md`) + tutorial (worked example) + status (parity expectations) | `cmd/atlas`; conformance evidence in `stokaro/ptah-atlas-conformance` | `reference/commands.md` Atlas table, `atlas/comparison`, the merged worked example | done: split → `atlas/overview` (concept: surfaces, translation model, waiver boundaries, parity expectations), `atlas/migrate-commands`, `atlas/schema-commands`; verb tables re-verified against the built binary (the schema table gained the missing `schema clean` row); old URL redirects to `atlas/overview`; the remaining dedup with `reference/commands.md` lands with the `reference/atlas-commands` split |
+| `workflows/atlas-cli.md` (4,137) | Atlas migration user | How do I use Atlas-style commands with Ptah? | mixed: concept (translation model) + reference (three command tables duplicating `reference/commands.md`) + tutorial (worked example) + status (parity expectations) | `cmd/atlas`; conformance evidence in `stokaro/ptah-atlas-conformance` | `reference/commands.md` Atlas table, `atlas/comparison`, the merged worked example | done: split → `atlas/overview` (concept: surfaces, translation model, waiver boundaries, parity expectations), `atlas/migrate-commands`, `atlas/schema-commands`; verb tables re-verified against the built binary (the schema table gained the missing `schema clean` row); old URL redirects to `atlas/overview`; the dedup with the command reference landed with the `reference/atlas-commands` split: that page is the per-verb status home and the behavior tables here are one-line maps |
 | `workflows/ci.md` (371) | CI operator | How do I gate pull requests with Ptah? | howto | this page; `docs/github_action.md` | `docs/github_action.md` | done: moved + rewritten → `testing/ci` (absorbed GitHub Action usage — inputs, outputs, permissions, pinning — from `docs/github_action.md`, which stays as the backing reference), old URL redirects |
 
 ### `Examples` group
@@ -115,20 +115,26 @@ the page the restructuring created.
 
 | Page (words) | Audience | Reader question | Type | Source of truth | Overlaps | Disposition |
 | --- | --- | --- | --- | --- | --- | --- |
-| `reference/commands.md` (2,026) | every CLI user | What commands exist and what do they do exactly? | reference; the Atlas table stuffs 150–250-word status prose into cells | `cmd/` command tree and `--help` output | `workflows/atlas-cli` tables, `docs/native_cli.md` (near-duplicate native tree) | split → `reference/native-commands` (complete verb table; add the four missing rows and fix the two stale Atlas-test rows, see section 9) + `reference/atlas-commands` (a section per command replacing giant cells); old URL redirects to `reference/native-commands` |
-| `reference/configuration.md` (523) | every user | What goes in `ptah.yaml` and which setting wins? | reference | this page; deeper `docs/project_config.md` (1,088 words) | `docs/project_config.md`; this page already carries the canonical precedence table, and the duplicate that lived on the comparison page was dropped when it moved to `atlas/comparison` | rewrite in place; stays at its URL |
+| `reference/commands.md` (2,026) | every CLI user | What commands exist and what do they do exactly? | reference; the Atlas table stuffs 150–250-word status prose into cells | `cmd/` command tree and `--help` output | `workflows/atlas-cli` tables, `docs/native_cli.md` (near-duplicate native tree) | done: split → `reference/native-commands` (complete per-namespace verb tables; the four missing `migrations` rows and a `ptah completion` row added, every row verified against the built binary's `--help`) + `reference/atlas-commands` (a section per command replacing the giant cells; the canonical per-verb status home — the behavior tables on `atlas/migrate-commands` and `atlas/schema-commands` slimmed to one-line maps pointing at it); old URL redirects to `reference/native-commands` |
+| `reference/configuration.md` (523) | every user | What goes in `ptah.yaml` and which setting wins? | reference | this page; deeper `docs/project_config.md` (1,088 words) | `docs/project_config.md`; this page already carries the canonical precedence table, and the duplicate that lived on the comparison page was dropped when it moved to `atlas/comparison` | done: stays at its URL and carries the canonical precedence table (verified: no duplicate precedence table remains on any other page) |
 | `reference/yaml-schema.md` (774) | schema-file user | What is the exact YAML schema format? | reference | this page for readers; `docs/yaml_schema.md` (protected by `check-core-doc-links.mjs`) for engineering depth | `docs/yaml_schema.md`, `workflows/schema-files` | keep |
 | `reference/hcl-schema.md` (570) | schema-file user | What HCL subset does Ptah support? | reference | this page for readers; `docs/atlas_hcl_schema.md` (protected) | `docs/atlas_hcl_schema.md`, `workflows/schema-files` | keep |
 | `reference/atlas-project-config.md` (992) | Atlas migration user | What `atlas.hcl` subset does Ptah read? | reference | this page for readers; `docs/atlas_project_config.md` (protected) | `docs/atlas_project_config.md`, `reference/configuration` | done: moved → `atlas/project-config` (headings to sentence case), old URL redirects |
-| `reference/public-api.md` (727) | Go API embedder | Which Go packages are stable to embed? | reference | this page for readers; `docs/public_api.md` (protected) + `docs/public_api.snapshot` + guard scripts | `docs/public_api.md`, `reference/reusable-components` | move → `extend/public-api` |
-| `reference/reusable-components.md` (3,167) | Go API embedder | How do I use Ptah as a library? | mixed howto/reference: component map, seven end-to-end examples, seven use-case narratives, comparisons | this page; package docs under `core/`, `migration/`, `dbschema/` | `reference/public-api`, `reference/query-builder`, `examples/migrator/README.md`; its comparisons section overlaps `reference/comparison` | move + tighten → `extend/components`; use-case narratives compressed; comparisons section merges into `atlas/comparison` |
-| `reference/query-builder.md` (2,390) | Go API embedder | How do I build dialect-aware queries with `core/query`? | reference | `core/query` package | `reference/reusable-components` | move → `extend/query-builder` |
-| `reference/testing.md` (487) | developer/CI operator | What are the exact test-command flags and YAML model? | reference | `cmd/migrationstest`, `cmd/schema` test, `docs/testing.md` | `workflows/testing` (the intentional pair) | move/rename → `reference/test-cases` (clarifies it is not about testing Ptah itself) |
+| `reference/public-api.md` (727) | Go API embedder | Which Go packages are stable to embed? | reference | this page for readers; `docs/public_api.md` (protected) + `docs/public_api.snapshot` + guard scripts | `docs/public_api.md`, `reference/reusable-components` | done: moved → `extend/public-api` (headings to sentence case; `testkit` module linked), old URL redirects |
+| `reference/reusable-components.md` (3,167) | Go API embedder | How do I use Ptah as a library? | mixed howto/reference: component map, seven end-to-end examples, seven use-case narratives, comparisons | this page; package docs under `core/`, `migration/`, `dbschema/` | `reference/public-api`, `reference/query-builder`, `examples/migrator/README.md`; its comparisons section overlaps `reference/comparison` | done: moved + tightened → `extend/components` (headings to sentence case; the seven use-case narratives compressed into a table pointing at the end-to-end examples; the comparisons section merged into `atlas/comparison` "Other tools"), old URL redirects |
+| `reference/query-builder.md` (2,390) | Go API embedder | How do I build dialect-aware queries with `core/query`? | reference | `core/query` package | `reference/reusable-components` | done: moved → `extend/query-builder` (title to sentence case), old URL redirects |
+| `reference/testing.md` (487) | developer/CI operator | What are the exact test-command flags and YAML model? | reference | `cmd/migrationstest`, `cmd/schema` test, `docs/testing.md` | `workflows/testing` (the intentional pair) | done: moved/renamed → `reference/test-cases` (clarifies it is not about testing Ptah itself), old URL redirects |
 | `reference/capabilities.md` (528) | every user | Which features work on which dialect? | reference with concept prose mixed in | `docs/capabilities.md` (protected) and capability code | `docs/capabilities.md`, `reference/dialect-notes` | keep + tighten: concept prose moves to `concepts/dialects-and-capabilities` |
 | `reference/dialect-notes.md` (495) | every user | How does my engine behave differently? | reference (six engines compressed into one short page) | dialect code and `docs/sqlite.md`, `docs/sqlserver.md`, PostgreSQL feature docs | `reference/capabilities`, `docs/sqlite.md`, `docs/sqlserver.md` | dissolve → `databases/support-matrix` (plus per-engine pages as content justifies); old URL redirects to `databases/support-matrix` |
 | `reference/comparison.md` (4,795) | evaluator/Atlas migration user | At least four distinct questions: how Ptah positions against Atlas; command parity; evidence per feature; known gaps; config precedence; safety/exit behavior | mixed status/reference; evidence-table cells run past 400 words | conformance evidence in `stokaro/ptah-atlas-conformance`; command claims from `cmd/` | `atlas/overview`, `reference/commands`, `reference/configuration`, `reference/exit-codes`, `atlas/conformance` | done: moved + slimmed → `atlas/comparison`; the duplicated config-precedence table was dropped (the canonical table already lives on `reference/configuration`) and the safety/exit table became pointers to `versioned/integrity-and-safety` and `reference/exit-codes`; live (10 → 39 observations) and Atlas CE differential (5 → 30 observations) evidence rows refreshed against the current conformance reports; old URL redirects |
 | `reference/atlas-docs-coverage.md` (3,164) | Atlas migration user/maintainer | Which Atlas documentation areas does Ptah cover? | status (crosswalk matrix; "Research date" convention) | this page, refreshed against Atlas docs and conformance runs | `atlas/comparison`, `atlas/conformance` | done: moved → `atlas/docs-coverage` (research date refreshed to July 28, 2026; headings to sentence case), old URL redirects |
 | `reference/exit-codes.md` (1,652) | CI operator | What exit code means what? | reference | `docs/exit_codes.md` is the script-checked source (`check-exit-codes.mjs` hardcodes both paths) | `docs/exit_codes.md` (deliberate, mechanically checked copy) | keep at the same path (script-coupled) |
+
+### `Reference` group pages added by the restructuring
+
+| Page (words) | Audience | Reader question | Type | Source of truth | Overlaps | Disposition |
+| --- | --- | --- | --- | --- | --- | --- |
+| `reference/go-annotations.md` (2,895) | Go schema author | Which directives and attributes does the annotation parser accept? | reference | `internal/annotationmeta` exported by `ptah schema annotations` (committed copy: `schemas/migrator-annotations.schema.json`); placement, bare-boolean, and unknown-attribute behavior spot-checked against the built binary | `schema/go-annotations` (workflow home), directive fragments in `docs/POSTGRESQL_ROLES.md`, `docs/sequences.md`, `docs/user_defined_types.md` | created (section 9, items 7 and 9, including the `ptah-ls` editor-support section); keep |
 
 ### `Operate` group
 
@@ -159,17 +165,17 @@ list in the same PR.
 | `yaml_schema.md` (1,348) | contributor | YAML format engineering depth | `reference/yaml-schema` | keep (protected) |
 | `atlas_hcl_schema.md` (1,415) | contributor | HCL subset engineering depth | `reference/hcl-schema` | keep (protected) |
 | `atlas_project_config.md` (2,143) | contributor | `atlas.hcl` subset engineering depth | `reference/atlas-project-config` | keep (protected) |
-| `public_api.md` (878) | contributor/embedder | API guardrails, snapshot process | `reference/public-api` | keep (protected; pairs with `public_api.snapshot`, `public_api_approvals.txt`) |
+| `public_api.md` (878) | contributor/embedder | API guardrails, snapshot process | `extend/public-api` | keep (protected; pairs with `public_api.snapshot`, `public_api_approvals.txt`) |
 | `capabilities.md` (2,544) | contributor | Full capability matrices | `reference/capabilities` | keep (protected) |
 | `sqlite.md` (532) | contributor | SQLite behavior detail | `reference/dialect-notes` | keep (protected); essentials absorbed by `databases/*` pages |
 | `sqlserver.md` (1,269) | contributor | SQL Server behavior detail | `reference/dialect-notes` | keep (protected); essentials absorbed by `databases/*` pages |
-| `native_cli.md` (1,267) | contributor | Native command tree walkthrough | `reference/commands` | retirement candidate once `reference/native-commands` is complete (near-duplicate today; not protected) |
-| `go_annotations_vs_atlas_hcl.md` (727) | evaluator | Source-format comparison | none (gap) | feeds `start/choose-a-workflow` and `reference/go-annotations`; retirement candidate after absorption |
+| `native_cli.md` (1,267) | contributor | Native command tree walkthrough | `reference/commands` | `reference/native-commands` is complete; retirement candidate for a follow-up PR (near-duplicate; not protected) |
+| `go_annotations_vs_atlas_hcl.md` (727) | evaluator | Source-format comparison | none (gap) | fed `start/choose-a-workflow` and `reference/go-annotations` (both exist now); retirement candidate for a follow-up PR |
 | `migrations-import.md` (720) | contributor | Import converter detail | `workflows/migrations` import section | keep as backing reference for `versioned/import` |
 | `pre-migration-checks.md` (727) | contributor | `-- +ptah check` directive detail | `workflows/migrations` safety section | keep as backing reference for `versioned/integrity-and-safety` |
 | `oci_registry.md` (2,393) | contributor | OCI transport detail | `workflows/oci-registry` | keep as backing reference |
 | `api_schema_export.md` (764) | contributor | Export mapping detail | `workflows/api-schema-export` | keep as backing reference |
-| `testing.md` (1,081) | contributor | Declarative testing detail | `testing/migrations-and-schema` + `reference/testing` | keep as backing reference |
+| `testing.md` (1,081) | contributor | Declarative testing detail | `testing/migrations-and-schema` + `reference/test-cases` | keep as backing reference |
 | `github_action.md` (627) | contributor | GitHub Action detail | `testing/ci` | keep as backing reference for `testing/ci` |
 | `project_config.md` (1,088) | contributor | `ptah.yaml` full reference | `reference/configuration` | keep as backing reference |
 | `conformance.md` (522) | contributor | Conformance process detail | `operate/conformance` | keep as backing reference |
@@ -189,21 +195,21 @@ list in the same PR.
 | --- | --- | --- | --- | --- |
 | `README.md` (643) | everyone landing on GitHub | Project pitch, start-here table, install, surfaces, compatibility status | `index.mdx`, `install.md`, `getting-started.md`, `operate/license-boundary` | keep + rewrite links when site URLs move; must never diverge from the site on parity claims |
 | `docs/site/README.md` (107) | contributor | How to build the site | none | keep |
-| `testkit/README.md` (178) | Go embedder | Test-harness package (separate Go module) | `reference/public-api` | keep; link from `extend/public-api` |
+| `testkit/README.md` (178) | Go embedder | Test-harness package (separate Go module) | `extend/public-api` | keep; linked from `extend/public-api` |
 | `internal/parser/README.md` (1,331) | contributor | SQL parser internals | none | keep (contributor surface) |
-| `migration/generator/README.md` (1,222) | contributor/embedder | Generator package detail | `reference/reusable-components` | keep; canonical for package-level API detail |
-| `migration/migrator/README.md` (2,887) | contributor/embedder | Migrator package detail | `workflows/migrations`, `reference/reusable-components` | keep; canonical for package-level API detail |
+| `migration/generator/README.md` (1,222) | contributor/embedder | Generator package detail | `extend/components` | keep; canonical for package-level API detail |
+| `migration/migrator/README.md` (2,887) | contributor/embedder | Migrator package detail | `workflows/migrations`, `extend/components` | keep; canonical for package-level API detail |
 | `cmd/lint/testdata/sarif/README.md` (46) | contributor | Test-fixture note | none | keep (not reader-facing documentation) |
 
 ## 4. Examples (`examples/**`)
 
 | Path | Audience | Purpose | Site counterpart | Disposition |
 | --- | --- | --- | --- | --- |
-| `examples/migrator/README.md` (340) + `migrations/` fixtures | Go embedder | Embedded-migrator runnable example | `reference/reusable-components` "Embed The Migrator" | keep; link from `extend/components` |
+| `examples/migrator/README.md` (340) + `migrations/` fixtures | Go embedder | Embedded-migrator runnable example | `extend/components` "Embed the migrator" | keep; linked from `extend/components` |
 | `examples/viz/README.md` (178) + committed `schema.{mmd,dot,sql,svg}` artifacts | schema author | Visualization runnable example with generated artifacts | `schema/visualize` | keep; the artifact backing for `schema/visualize` |
 | `examples/migrator_parser/` (no README) | contributor | Parser API demo | `internal/parser/README.md` | keep; no reader-facing obligation |
 | `examples/extension_ignore/` (no README) | contributor | Extension-ignore demo | `docs/postgresql_extension_ignore.md` | keep; no reader-facing obligation |
-| `examples/reusable_components/` (test only) | contributor | Executable doc-examples for `reference/reusable-components` | `reference/reusable-components` | keep; keeps site snippets honest |
+| `examples/reusable_components/` (test only) | contributor | Executable doc-examples for `extend/components` | `extend/components` | keep; keeps site snippets honest |
 
 ## 5. Integration docs (`integration/*.md`)
 
@@ -289,14 +295,16 @@ these are merely misplaced content.
 1. **Four native command rows.** `ptah migrations import`, `baseline`,
    `checkpoint`, and `repair` are registered in `cmd/migrations/migrations.go`
    but absent from the native table in `reference/commands.md`. Fix in
-   `reference/native-commands`.
+   `reference/native-commands`. Done: rows added (plus `ptah completion`),
+   every row verified against the built binary's `--help`.
 2. **Two stale Atlas rows.** `reference/commands.md` still lists
    `ptah atlas migrate test` and `ptah atlas schema test` among "Registered
    Atlas CE boundary stubs"; both were flipped to working forwards of the
    native test runners at the audited commit itself (`f5c59b5`, #805, which
    updated `workflows/atlas-cli.md`, `workflows/testing.md`, exit codes, and
    conformance pages but not `reference/commands.md`). Fix wherever the Atlas
-   command reference lands first.
+   command reference lands first. Done: both verbs are documented as working
+   forwards on `reference/atlas-commands`.
 3. **Brownfield adoption path.** `ptah introspect` and
    `ptah migrations baseline` ship today, but no page teaches adopting Ptah on
    an existing database. Baseline's only site presence is a contrast note in
@@ -319,7 +327,11 @@ these are merely misplaced content.
    `docs/*.md`) enumerates the `//migrator:schema:*` directives; the grammar
    lives in `core/goschema` and `internal/annotationmeta`, with fragments in
    `docs/POSTGRESQL_ROLES.md`, `docs/sequences.md`, and
-   `docs/user_defined_types.md`. New page: `reference/go-annotations`.
+   `docs/user_defined_types.md`. New page: `reference/go-annotations`. Done:
+   page created from the `ptah schema annotations` JSON Schema export (all 21
+   directives with attribute tables, placement rules, and bare-boolean and
+   platform-override syntax), with behavior spot-checked against the built
+   binary.
 8. **Database URL and dev-database reference.** No central page documents
    accepted URL formats (`sqlite://`, `postgres://`, ...) or distinguishes
    `--dev-url`, `--shadow-db`, and throwaway test databases. New page:
@@ -329,7 +341,9 @@ these are merely misplaced content.
    during releases (`docs/release_process.md`), yet no reader-facing page
    mentions it. Proposed home: an editor-support section in
    `reference/go-annotations`, with an install note in `start/install`.
-   (Found by this audit; not in the pre-implementation design.)
+   (Found by this audit; not in the pre-implementation design.) Done: the
+   editor-support section is on `reference/go-annotations`; the `start/install`
+   note remains for the final pass.
 10. **Maintenance how-to.** `migrations edit`, `rebase`, `rm`, and `repair`
     have command rows (except `repair`, see item 1) and exit-code rows but no
     how-to home. New page: `versioned/maintain-history`. Done: page created

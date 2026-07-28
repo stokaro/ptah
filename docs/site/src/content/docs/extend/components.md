@@ -1,5 +1,5 @@
 ---
-title: Reusable Components
+title: Reusable components
 description: Use Ptah as a Go schema engine, not only as a CLI.
 ---
 
@@ -22,12 +22,12 @@ Ptah is pre-GA. The supported embedder surface is the package list in
 Packages under `internal/...` are not supported embedder APIs, even when a CLI
 uses them internally.
 
-## Component Map
+## Component map
 
 | Need | Stable package(s) | What it gives you |
 | --- | --- | --- |
 | Build SQL DDL programmatically | `core/ast`, `core/renderer` | Dialect-aware SQL from structured AST nodes. |
-| Build parameterized SELECT queries | `core/query`, `core/renderer` | Fluent, dialect-aware SELECT/WHERE/ORDER BY/LIMIT with bound parameters. See [Query Builder](../query-builder/). |
+| Build parameterized SELECT queries | `core/query`, `core/renderer` | Fluent, dialect-aware SELECT/WHERE/ORDER BY/LIMIT with bound parameters. See [Query builder](../query-builder/). |
 | Parse Go schema annotations | `core/goschema` | Go source comments to Ptah's schema IR. |
 | Parse Atlas HCL schema files | `atlascompat` | Atlas-style HCL schema files to Ptah's schema IR through a stable compatibility wrapper. |
 | Parse YAML schema files | Native CLI and schema-file workflows | YAML schema parsing is currently an implementation detail, not a stable public package. Use the CLI or create a follow-up API proposal before embedding it. |
@@ -56,7 +56,7 @@ On schema-scoped engines, an unqualified owner denotes the dialect's default
 schema (`public` for the PostgreSQL family and `main` for SQLite) and remains
 independent from other named schemas.
 
-## AST Deep Dive
+## AST deep dive
 
 Ptah uses a structured AST so callers can describe schema intent without
 manually concatenating SQL strings. A table, column, constraint, index, enum, or
@@ -86,7 +86,7 @@ and qualified columns, a composable `WHERE` (and join `ON`) expression tree,
 `GROUP BY`, `HAVING`, subqueries, and the `INSERT`/`UPDATE`/`DELETE` family are
 follow-up phases of issue
 [`#98`](https://github.com/stokaro/ptah/issues/98). See the
-[Query Builder](../query-builder/) reference for the full API.
+[Query builder](../query-builder/) reference for the full API.
 
 This complete example uses only public packages. The same AST/rendering path is
 validated by
@@ -126,7 +126,7 @@ CREATE TABLE "users" (
 );
 ```
 
-## End-To-End Reuse Examples
+## End-to-end reuse examples
 
 The examples below use only stable public packages unless a block is explicitly
 marked as pseudo-code. Complete copy-pasteable versions are kept in
@@ -140,7 +140,7 @@ go test ./examples/reusable_components
 Inline blocks in this section are excerpts from those examples or from the
 minimal host-tool flow described by the heading.
 
-### Render SQL From Go Annotations
+### Render SQL from Go annotations
 
 Use this when a Go package owns the desired schema.
 
@@ -170,7 +170,7 @@ if err != nil {
 fmt.Println(statements[0])
 ```
 
-### Render SQL From Atlas HCL
+### Render SQL from Atlas HCL
 
 Use `atlascompat` when you need Atlas-shaped HCL input through a stable public
 wrapper.
@@ -201,7 +201,7 @@ if err != nil {
 fmt.Println(sql)
 ```
 
-### Render SQL From YAML Schema
+### Render SQL from YAML schema
 
 YAML schema files are supported by Ptah workflows, but the YAML parser is not a
 stable embedder package today. For embedders, prefer Go annotations or HCL
@@ -214,7 +214,7 @@ ptah schema render --schema-file schema.yaml --dialect postgres
 If you need a stable YAML-to-IR Go API, create a design issue before depending
 on the current implementation package.
 
-### Inspect A Live Database And Diff
+### Inspect a live database and diff
 
 Use this when a tool needs to compare a desired schema against a live database.
 The block below is pseudo-code because the URL must point to a database you
@@ -305,7 +305,7 @@ same-named indexes on different CockroachDB, MySQL, MariaDB, SQL Server, and
 ClickHouse tables independent. CockroachDB plans retain the owning table so the
 renderer emits an unambiguous `table@index` drop target.
 
-### Embed The Migrator
+### Embed the migrator
 
 Use this when an application or internal tool wants to run migrations from an
 `fs.FS` without invoking the CLI. The block below is pseudo-code because it
@@ -337,7 +337,10 @@ The migrator owns revision-table metadata. Use dry-run and explicit transaction
 mode options when your host tool needs preview or dialect-specific transaction
 behavior.
 
-### Build A CI Gate
+A runnable embedded-migrator example with migration fixtures lives in
+[`examples/migrator`](https://github.com/stokaro/ptah/tree/master/examples/migrator).
+
+### Build a CI gate
 
 Use this when a repository wants integrity and policy checks before merging
 migration files. The integrity and lint calls are compile-checked in
@@ -411,7 +414,7 @@ and `DataType`. In Atlas compatibility mode, a bare file-header
 findings. Report adapters should omit ignored files while retaining them in the
 captured snapshot.
 
-### Use Capabilities
+### Use capabilities
 
 Use capabilities when syntax depends on a dialect version rather than only a
 dialect family.
@@ -435,215 +438,22 @@ offline generation. Live database connections expose resolved capabilities
 through `conn.Info().Capabilities`; use those when a database server has already
 been inspected.
 
-## Use Cases
+## Use cases
 
-### Internal Platform CLI
+Each row names the stable packages for a common embedding shape, the
+end-to-end example above to start from, and what stays in the host tool.
 
-Use this when a company wants one database workflow command that also handles
-environment selection, approvals, tickets, or audit logs.
+| Use case | Stable packages | Start from | The host tool keeps |
+| --- | --- | --- | --- |
+| Internal platform CLI | `core/goschema`, `dbschema`, `migration/schemadiff`, `migration/planner`, `migration/migrator`, `migration/safety` | [Inspect a live database and diff](#inspect-a-live-database-and-diff) | Approval, locking, and production rollout policy. |
+| Migration CI gate | `atlascompat`, `migration/migrator`, `migration/lint`, `migration/safety`, `migration/risk` | [Build a CI gate](#build-a-ci-gate) | Failure policy; add a dev database replay when live compatibility matters. |
+| Schema documentation generator | `core/goschema`, `atlascompat`, `dbschema/types`, `migration/schemadiff`, `core/platform/capability` | [Render SQL from Go annotations](#render-sql-from-go-annotations) | Output formatting; generate from the stable schema IR, not internal renderers. |
+| Atlas-compatible transition | `atlascompat`, `migration/migrator`, `core/renderer` | [Embed the migrator](#embed-the-migrator) | Parity expectations; use the conformance reports for measured compatibility. |
+| Dialect extension research | `core/platform/capability`, `core/ast`, `core/renderer`, `migration/planner`, `migration/safety` | [Use capabilities](#use-capabilities) | Unsupported-feature handling; create a design issue before relying on out-of-tree extension points. |
+| Application embedded migrations | `migration/migrator`, `dbschema` | [Embed the migrator](#embed-the-migrator) | Startup locking, approvals, observability, and rollback policy; avoid uncontrolled production startup migrations. |
+| Schema drift bot | `core/goschema`, `dbschema`, `migration/schemadiff`, `migration/planner`, `migration/safety` | [Inspect a live database and diff](#inspect-a-live-database-and-diff) | Review delivery; require human review for destructive changes. |
 
-Packages: `core/goschema`, `dbschema`, `migration/schemadiff`,
-`migration/planner`, `migration/migrator`, `migration/safety`.
-
-Minimal flow (pseudo-code; host code must provide context, connections, and
-inputs):
-
-```go
-desired, err := goschema.ParseDir("./models")
-if err != nil {
-	return fmt.Errorf("parse desired schema: %w", err)
-}
-conn, err := dbschema.ConnectToDatabase(ctx, url)
-if err != nil {
-	return fmt.Errorf("connect to database: %w", err)
-}
-defer dbschema.CloseAndWarn(conn)
-live, err := conn.Reader().ReadSchema()
-if err != nil {
-	return fmt.Errorf("read live schema: %w", err)
-}
-info := conn.Info()
-diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, live, nil)
-if err != nil {
-	return fmt.Errorf("compare schemas: %w", err)
-}
-nodes, err := planner.GenerateSchemaDiffASTWithCapabilities(
-	diff,
-	desired,
-	info.Dialect,
-	info.Capabilities,
-)
-if err != nil {
-	return fmt.Errorf("plan schema diff: %w", err)
-}
-assessments, err := safety.AssessRenderedWithCapabilities(
-	nodes,
-	info.Dialect,
-	info.Capabilities,
-)
-if err != nil {
-	return fmt.Errorf("assess migration safety: %w", err)
-}
-fmt.Println(assessments)
-```
-
-Caveat: keep approval, locking, and production rollout policy in the host tool;
-Ptah supplies schema and migration primitives.
-
-### Migration CI Gate
-
-Use this when a pull request should fail on checksum drift, dangerous DDL, or
-lint findings.
-
-Packages: `atlascompat`, `migration/migrator`, `migration/lint`,
-`migration/safety`, `migration/risk`.
-
-Minimal flow (pseudo-code; host code must provide the filesystem and policy):
-
-```go
-result, err := atlascompat.VerifySum(fsys, migrator.MigrationDirFormatPtah)
-if err != nil {
-	return fmt.Errorf("verify migration checksum: %w", err)
-}
-findings, err := lint.LintFS(fsys, lint.Options{Dialect: "postgres"})
-if err != nil {
-	return fmt.Errorf("lint migrations: %w", err)
-}
-if !result.OK() || len(findings) > 0 {
-	return errors.New("migration integrity or lint gate failed")
-}
-```
-
-Caveat: a filesystem lint gate does not prove live database compatibility. Add
-a dev database replay when that matters.
-
-### Schema Documentation Generator
-
-Use this when a tool needs Markdown, diagrams, OpenAPI or GraphQL-oriented
-schema summaries.
-
-Packages: `core/goschema`, `atlascompat`, `dbschema/types`,
-`migration/schemadiff`, `core/platform/capability`.
-
-Minimal flow (pseudo-code; host code must provide the schema input and output
-formatting):
-
-```go
-db, err := goschema.ParseDir("./models")
-if err != nil {
-	return fmt.Errorf("parse desired schema: %w", err)
-}
-for _, table := range db.Tables {
-	fmt.Printf("## %s\n", table.Name)
-}
-```
-
-Caveat: OpenAPI and GraphQL rendering are not listed as stable public packages;
-generate from the stable schema IR instead of importing internal renderers.
-
-### Atlas-Compatible Transition
-
-Use this when a repository wants Atlas-shaped migration directories or HCL
-sources while using Ptah as the implementation engine.
-
-Packages: `atlascompat`, `migration/migrator`, `core/renderer`.
-
-Minimal flow (pseudo-code; host code must provide the filesystem and migration
-directory format policy):
-
-```go
-provider, err := migrator.NewFSMigrationProvider(
-	fsys,
-	migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
-)
-if err != nil {
-	return fmt.Errorf("open migration directory: %w", err)
-}
-migrations := provider.Migrations()
-fmt.Printf("loaded %d migrations\n", len(migrations))
-```
-
-Caveat: this does not mean full Atlas parity. Use the conformance reports for
-measured compatibility.
-
-### Database Dialect Extension Research
-
-Use this when evaluating support for a new dialect or a new server version.
-
-Packages: `core/platform/capability`, `core/ast`, `core/renderer`,
-`migration/planner`, `migration/safety`.
-
-Minimal flow (pseudo-code; host code must provide the AST node, dialect target,
-and unsupported-feature handling):
-
-```go
-caps := capability.ForServerVersion("postgres", "17.0")
-sql, err := renderer.RenderSQLWithCapabilities("postgres", caps, node)
-if err != nil {
-	return fmt.Errorf("render SQL: %w", err)
-}
-assessment := safety.AssessSQL(sql)
-fmt.Println(assessment)
-```
-
-Caveat: custom dialect registration is intentionally limited. Create a design
-issue before relying on out-of-tree planner or renderer extension points.
-
-### Application Embedded Migrations
-
-Use this when tests or controlled startup need migrations without a separate
-binary.
-
-Packages: `migration/migrator`, `dbschema`.
-
-Minimal flow (pseudo-code; host code must provide the database connection,
-filesystem, startup policy, and error handling):
-
-```go
-m, err := migrator.NewFSMigrator(conn, os.DirFS("./migrations"))
-if err != nil {
-	return fmt.Errorf("create migrator: %w", err)
-}
-if err := m.Up(ctx); err != nil {
-	return fmt.Errorf("apply migrations: %w", err)
-}
-```
-
-Caveat: avoid uncontrolled production startup migrations unless the host
-application owns locking, approvals, observability, and rollback policy.
-
-### Schema Drift Bot
-
-Use this when a bot should comment planned schema changes on a pull request.
-
-Packages: `core/goschema`, `dbschema`, `migration/schemadiff`,
-`migration/planner`, `migration/safety`.
-
-Minimal flow (pseudo-code; host code must provide context, a live database
-connection, desired and live schemas, and review delivery):
-
-```go
-diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, live, nil)
-if err != nil {
-	return fmt.Errorf("compare schemas: %w", err)
-}
-info := conn.Info()
-sql, err := planner.GenerateSchemaDiffSQLWithCapabilities(
-	diff,
-	desired,
-	info.Dialect,
-	info.Capabilities,
-)
-if err != nil {
-	return fmt.Errorf("plan schema drift: %w", err)
-}
-fmt.Println(sql)
-```
-
-Caveat: generated SQL is a plan proposal. Require human review for destructive
-changes and capability-sensitive dialect behavior.
-
-## Stability And Boundaries
+## Stability and boundaries
 
 - Stable embedder packages are listed in
   [Public Go API](../public-api/).
@@ -657,27 +467,7 @@ changes and capability-sensitive dialect behavior.
   separate surfaces. Do not treat a CLI flag as proof that a matching Go API is
   stable.
 
-## Comparisons
-
-Atlas has the more mature CLI ecosystem and upstream documentation. Ptah's
-distinct value for embedders is an independent MIT-licensed implementation with
-stable Go packages for the schema engine surface Ptah exposes. Ptah should not
-claim full Atlas parity until the conformance gates prove it.
-
-`golang-migrate` and `goose` are simpler versioned migration runners. Ptah also
-has schema IR, diffing, planning, rendering, linting, safety classification,
-capabilities, and Atlas-compatible flows.
-
-Prisma and Ent tie schema workflows to their ecosystems. Ptah is Go-first but
-is not an ORM.
-
-Skeema is an excellent MySQL/MariaDB declarative schema tool. Ptah is
-multi-source, Go-embeddable, and multi-dialect.
-
-`sqlc` generates typed code from queries. Ptah focuses on schema and migration
-tooling, not query-code generation.
-
-## Follow-Up Gaps
+## Follow-up gaps
 
 This page intentionally avoids documenting unsupported public APIs. Follow-up
 issues should be created before exposing:

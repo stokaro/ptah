@@ -4,7 +4,7 @@ Ptah is pre-GA, but embedders need a documented surface and a typed error
 contract. Packages in this document are the only non-command, non-example,
 non-fixture packages that may remain importable without an explicit review.
 For task-oriented guidance and examples, see the
-[Reusable components](site/src/content/docs/reference/reusable-components.md)
+[Reusable components](site/src/content/docs/extend/components.md)
 guide.
 
 ## Stable Embedder API
