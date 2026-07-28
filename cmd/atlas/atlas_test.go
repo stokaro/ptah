@@ -263,6 +263,11 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 			},
 		},
 		{
+			name:  "migrate_checkpoint",
+			path:  []string{"migrate", "checkpoint"},
+			flags: []string{"--dir", "--dev-url", "--dir-format"},
+		},
+		{
 			name:  "migrate_lint",
 			path:  []string{"migrate", "lint"},
 			flags: []string{"--dev-url", "--dir", "--dir-format", "--env", "--format", "--latest", "--git-base", "--git-dir"},

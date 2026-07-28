@@ -106,6 +106,87 @@ func TestMigrateDownCommandDeclinedConfirmationPrintsCanceled(t *testing.T) {
 	c.Assert(status.CurrentVersion, qt.Equals, int64(1))
 }
 
+func TestMigrateDownCommandShadowDBVerifiesRollbackBeforeApplying(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+
+	tempDir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(tempDir, "000001_create_verified.up.sql"), []byte("CREATE TABLE verified_down (id INTEGER PRIMARY KEY);"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(tempDir, "000001_create_verified.down.sql"), []byte("DROP TABLE verified_down;"), 0o600), qt.IsNil)
+
+	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	mig, err := migrator.NewFSMigrator(conn, os.DirFS(tempDir))
+	c.Assert(err, qt.IsNil)
+	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
+
+	cmd := migratedown.NewMigrateDownCommand()
+	resetMigrateDownCommandForTest(c, cmd)
+	cmd.SetArgs([]string{
+		"--db-url", dbURL,
+		"--migrations-dir", tempDir,
+		"--target", "0",
+		"--shadow-db", (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "shadow.db")}).String(),
+		"--confirm",
+	})
+
+	out, err := captureStdIO(c, "", cmd.Execute)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, "Rollback plan verified on shadow database")
+	resetMigrateDownCommandForTest(c, cmd)
+
+	status, err := mig.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.CurrentVersion, qt.Equals, int64(0))
+}
+
+func TestMigrateDownCommandShadowDBFailureAbortsBeforeTouchingTarget(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+
+	tempDir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(tempDir, "000001_create_guarded.up.sql"), []byte("CREATE TABLE guarded_shadow (id INTEGER PRIMARY KEY);"), 0o600), qt.IsNil)
+	// The down file is broken, so the shadow replay must fail and the target
+	// must keep both its schema and a clean (non-dirty) revision state.
+	c.Assert(os.WriteFile(filepath.Join(tempDir, "000001_create_guarded.down.sql"), []byte("DROP TABLE no_such_table;"), 0o600), qt.IsNil)
+
+	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	mig, err := migrator.NewFSMigrator(conn, os.DirFS(tempDir))
+	c.Assert(err, qt.IsNil)
+	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
+
+	cmd := migratedown.NewMigrateDownCommand()
+	resetMigrateDownCommandForTest(c, cmd)
+	cmd.SetArgs([]string{
+		"--db-url", dbURL,
+		"--migrations-dir", tempDir,
+		"--target", "0",
+		"--shadow-db", (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "shadow.db")}).String(),
+		"--confirm",
+	})
+
+	err = cmd.Execute()
+	c.Assert(err, qt.ErrorMatches, `(?s)rollback verification failed: roll back to version 0 on shadow database: .*no_such_table.*`)
+	resetMigrateDownCommandForTest(c, cmd)
+
+	status, err := mig.GetMigrationStatus(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(status.CurrentVersion, qt.Equals, int64(1))
+	c.Assert(status.DirtyRevision, qt.IsNil)
+
+	var count int
+	err = conn.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'guarded_shadow'").Scan(&count)
+	c.Assert(err, qt.IsNil)
+	c.Assert(count, qt.Equals, 1)
+}
+
 func TestMigrateDownCommandRejectsRelativeTraversalDirectory(t *testing.T) {
 	c := qt.New(t)
 	cmd := migratedown.NewMigrateDownCommand()
@@ -228,6 +309,7 @@ func resetMigrateDownCommandForTest(c *qt.C, cmd interface{ Flag(string) *pflag.
 		"db-url":                 "",
 		"migrations-dir":         "",
 		"target":                 "0",
+		"shadow-db":              "",
 		"dir-format":             "auto",
 		"atlas-env":              "",
 		"dry-run":                "false",

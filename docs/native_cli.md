@@ -95,6 +95,18 @@ migration before applying its statements, aborting (non-zero) if a precondition
 does not hold; `--skip-checks` is an emergency bypass. See
 [Pre-migration checks](./pre-migration-checks.md).
 
+`ptah migrations down --shadow-db <url>` replays the rollback plan on a
+disposable shadow database before touching the target: the shadow database is
+dropped clean, migrated up to the target's current version, and migrated down
+to the requested target. A failing or missing down migration aborts with the
+target untouched and its revision state clean. The shadow database must match
+the target dialect. The Atlas-compatible `ptah atlas migrate down --dev-url`
+maps to this verification, and `ptah atlas migrate down --format` (flag or
+`PTAH_FORMAT`) renders an Atlas Go-template report (`.Env`, `.Planned`,
+`.Reverted`, `.Current`, `.Target`, `.Total`, `.Start`, `.End`, `.Error`) over
+the same rollback engine, with the YES confirmation prompt on stderr so the
+report stays alone on stdout.
+
 `ptah migrations import` converts an existing migration directory from another
 versioned-migration tool into Ptah's native format, preserving version order and
 rewriting `ptah.sum`, so a team can adopt Ptah without hand-rewriting its
@@ -137,6 +149,29 @@ SQL does not encode, so a typed drop yields exactly one finding (its `CD` code,
 never also `DS105`). Individual codes and whole families are disabled by code or
 prefix (for example `CD`, or a single `CD101`) and re-severitied per code through
 lint configuration, the same as every other family.
+
+## Atlas Compatibility Waivers
+
+Some Atlas Pro flags are accepted for help parity but rejected loudly with a
+recorded rationale, because their behavior is bound to Atlas Cloud services
+Ptah intentionally has no counterpart for. These are waivers, not pending work:
+
+- `ptah atlas migrate down --to-tag`: migration tags exist only in Atlas
+  Registry (Atlas Cloud); use `--to-version` with a migration version instead.
+- `ptah atlas migrate down --skip-checks`: Atlas down checks are part of the
+  Atlas Cloud plan-approval flow; Ptah reverts through locally reviewed down
+  migrations and has no generated checks to skip.
+- `ptah atlas migrate down --plan`: dynamic down planning is bound to the Atlas
+  Cloud plan-approval flow; use `--dev-url` to verify the pre-planned rollback
+  on a dev database instead. A local file-based pre-approved plan workflow is a
+  separate tracked `schema plan` item under stokaro/ptah#758.
+- `ptah atlas migrate checkpoint --dir-format=atlas`: Ptah's checkpoint engine
+  marks checkpoints with the ptah two-file convention
+  (`NNNNNNNNNN_name.checkpoint.up.sql`/`.down.sql` plus `ptah.sum`); Atlas
+  marks them with an `-- atlas:checkpoint` file directive that Ptah's
+  Atlas-format reader does not parse, so an Atlas-format checkpoint file would
+  replay as an ordinary migration. Checkpoint output stays ptah-format only
+  (`--dir-format=ptah` passes through; every other value is rejected).
 
 ## Exit Codes
 

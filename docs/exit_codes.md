@@ -63,7 +63,7 @@ shares this exit-code contract.
 | `ptah atlas version` | `ptah version` |
 | `ptah atlas license` | Ptah license notice |
 | `ptah atlas migrate apply` | Atlas-format apply path equivalent to `ptah migrations up` |
-| `ptah atlas migrate down` | `ptah migrations down` |
+| `ptah atlas migrate down` | `ptah migrations down`; with `--format`, an Atlas Go-template down report over the same rollback engine (prompt on stderr, report on stdout, same success/failure codes) |
 | `ptah atlas migrate diff` | Local Atlas-style migration diff, `atlas.sum` update, or dry-run output printed |
 | `ptah atlas migrate import` | Import local migrations into a separate directory and write `atlas.sum` |
 | `ptah atlas migrate status` | Atlas-format migration status with Atlas revision-table metadata |

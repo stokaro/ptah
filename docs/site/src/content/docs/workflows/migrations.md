@@ -104,6 +104,13 @@ ptah migrations down \
   --dry-run
 ```
 
+Add `--shadow-db <url>` to replay and verify the rollback plan on a disposable
+shadow database before the target is touched: the shadow database is dropped
+clean, migrated up to the target's current version, and migrated down to the
+requested target. A failing or missing down migration aborts with the target
+untouched. The shadow database must match the target dialect (an empty scratch
+database of the same engine).
+
 ## Integrity
 
 Commit `ptah.sum` with the migration files:
