@@ -64,6 +64,13 @@ dialect-only comparisons confirm only exact identity. Distinct unresolved
 names in one catalog namespace remain potentially equivalent, so planning
 rejects the ambiguity instead of approximating SQL Server collation behavior.
 
+Filtered indexes are supported: an index annotation `condition` renders as
+`CREATE INDEX ... WHERE ...`, and a changed predicate is planned as
+`DROP INDEX` plus `CREATE INDEX ... WHERE`. Predicate comparison normalizes
+the canonical `sys.indexes.filter_definition` spelling (bracket quoting and
+parenthesized numeric literals); predicates SQL Server rewrites further keep
+comparing as changed, so prefer the catalog's stored spelling for those.
+
 ## PostgreSQL-Compatible Targets
 
 CockroachDB, YugabyteDB, Spanner PostgreSQL interface, and similar targets can
