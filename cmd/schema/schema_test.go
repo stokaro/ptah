@@ -10,6 +10,7 @@ import (
 
 	"github.com/stokaro/ptah/cmd/schema"
 	"github.com/stokaro/ptah/internal/atlashcl"
+	"github.com/stokaro/ptah/internal/goannotationexport"
 )
 
 func TestSchemaExportCommandWritesHCL(t *testing.T) {
@@ -156,7 +157,7 @@ func TestSchemaExportCommandPreservesSchemaObjects(t *testing.T) {
 	err = cmd.Execute()
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr.String()))
-	c.Assert(stdout.String(), qt.Contains, "6 export warning(s) reported")
+	c.Assert(stdout.String(), qt.Contains, "7 export warning(s) reported")
 	c.Assert(stderr.String(), qt.Contains, "domain types are not yet representable")
 	c.Assert(stderr.String(), qt.Contains, "composite types are not yet representable")
 	c.Assert(stderr.String(), qt.Contains, "range types are not yet representable")
@@ -300,6 +301,71 @@ func TestSchemaExportCleanupDryRunAndWrite(t *testing.T) {
 	c.Assert(string(content), qt.Not(qt.Contains), "migrator:schema")
 	c.Assert(string(content), qt.Not(qt.Contains), "migrator:embedded")
 	c.Assert(string(content), qt.Contains, "// User is business documentation.")
+}
+
+func TestSchemaExportCommand_FailurePath_LossyCleanupPreservesSourcesAndOutput(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	modelPath := filepath.Join(dir, "model.go")
+	outPath := filepath.Join(dir, "schema.hcl")
+	modelData := []byte(`package models
+
+//migrator:schema:table name="users" custom="WITHOUT OIDS"
+type User struct{}
+`)
+	outData := []byte("previous schema\n")
+	c.Assert(os.WriteFile(modelPath, modelData, 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(outPath, outData, 0o600), qt.IsNil)
+
+	cmd := schema.NewSchemaCommand()
+	var stderr bytes.Buffer
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{
+		"export",
+		"--root-dir", dir,
+		"--out", outPath,
+		"--cleanup-go-annotations",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorIs, goannotationexport.ErrLossyCleanup)
+	c.Assert(stderr.String(), qt.Contains, "custom SQL")
+	modelAfter, err := os.ReadFile(modelPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(modelAfter, qt.DeepEquals, modelData)
+	outAfter, err := os.ReadFile(outPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(outAfter, qt.DeepEquals, outData)
+}
+
+func TestSchemaExportCommand_FailurePath_RepeatCleanupPreservesExistingOutput(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	modelPath := filepath.Join(dir, "model.go")
+	outPath := filepath.Join(dir, "schema.hcl")
+	modelData := []byte("package models\n\ntype User struct{}\n")
+	outData := []byte("previous useful schema\n")
+	c.Assert(os.WriteFile(modelPath, modelData, 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(outPath, outData, 0o600), qt.IsNil)
+
+	cmd := schema.NewSchemaCommand()
+	cmd.SetArgs([]string{
+		"export",
+		"--root-dir", dir,
+		"--out", outPath,
+		"--cleanup-go-annotations",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorIs, goannotationexport.ErrNoAnnotations)
+	modelAfter, err := os.ReadFile(modelPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(modelAfter, qt.DeepEquals, modelData)
+	outAfter, err := os.ReadFile(outPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(outAfter, qt.DeepEquals, outData)
 }
 
 func writeModel(c *qt.C, dir string) string {

@@ -44,6 +44,32 @@ func TestRenderColumnUniqueExprAndIdentityOptionsRoundTrip(t *testing.T) {
 	c.Assert(fieldByName(parsed.Fields, "email").UniqueExpr, qt.Equals, "lower(email)")
 }
 
+func TestRenderPrimaryKeyColumnIsNotNullable(t *testing.T) {
+	c := qt.New(t)
+	db := &goschema.Database{
+		Tables: []goschema.Table{{
+			StructName: "User",
+			Name:       "users",
+			PrimaryKey: []string{"id"},
+		}},
+		Fields: []goschema.Field{{
+			StructName: "User",
+			Name:       "id",
+			Type:       "BIGINT",
+			Nullable:   true,
+		}},
+	}
+
+	rendered, err := atlashclrender.Render(db)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(rendered.Data), qt.Not(qt.Contains), "null = true")
+	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(parsed.Fields, qt.HasLen, 1)
+	c.Assert(parsed.Fields[0].Nullable, qt.IsFalse)
+}
+
 func TestRenderTablesIndexesConstraintsAndDiagnostics(t *testing.T) {
 	c := qt.New(t)
 	falseValue := false
@@ -236,7 +262,7 @@ func TestRenderFixture023SchemaObjectsRoundTrip(t *testing.T) {
 	c.Assert(hcl, qt.Contains, `trigger "users_set_updated_at"`)
 	c.Assert(hcl, qt.Contains, `policy "users_tenant_policy"`)
 	c.Assert(hcl, qt.Contains, `permission {`)
-	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.DeepEquals, []string{"extensions.pg_trgm", "sequences.fixture_order_seq", "domains.fixture_email", "composite_types.fixture_address", "ranges.fixture_floatrange", "grants.fixture_app_user"})
+	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.DeepEquals, []string{"extensions.pg_trgm", "sequences.fixture_order_seq", "domains.fixture_email", "composite_types.fixture_address", "ranges.fixture_floatrange", "grants.fixture_app_user", "managed_data.users"})
 
 	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", hcl))
@@ -315,6 +341,60 @@ func TestRenderReportsLossyObjectDetails(t *testing.T) {
 	})
 	_, err = atlashcl.Parse(rendered.Data, "schema.hcl")
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", string(rendered.Data)))
+}
+
+func TestRenderReportsLegacyChecksAndManagedData(t *testing.T) {
+	c := qt.New(t)
+	db := &goschema.Database{
+		Tables: []goschema.Table{{
+			StructName: "User",
+			Name:       "users",
+			Checks:     []string{"id > 0"},
+		}},
+		ManagedData: []goschema.ManagedData{{
+			StructName: "User",
+			Table:      "users",
+			Keys:       []string{"id"},
+			File:       "users.yaml",
+		}},
+		Indexes: []goschema.Index{{
+			Name:      "missing_table_idx",
+			TableName: "missing",
+			Fields:    []string{"id"},
+		}},
+		Constraints: []goschema.Constraint{{
+			Name:    "missing_table_check",
+			Table:   "missing",
+			Type:    "CHECK",
+			Columns: []string{"id"},
+		}},
+	}
+
+	rendered, err := atlashclrender.Render(db)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(rendered.Diagnostics, qt.DeepEquals, []atlashclrender.Diagnostic{
+		{
+			Severity: atlashclrender.SeverityWarning,
+			Path:     "table users",
+			Message:  "legacy table checks cannot be represented in HCL schema output",
+		},
+		{
+			Severity: atlashclrender.SeverityWarning,
+			Path:     "index missing_table_idx",
+			Message:  "index cannot be rendered because the target table is absent from the exported schema",
+		},
+		{
+			Severity: atlashclrender.SeverityWarning,
+			Path:     "constraint missing_table_check",
+			Message:  "constraint cannot be rendered because the target table is absent from the exported schema",
+		},
+		{
+			Severity: atlashclrender.SeverityWarning,
+			Path:     "managed_data.users",
+			Message:  "managed data cannot be represented in HCL schema output",
+		},
+	})
 }
 
 func TestRenderMaterializedViewRefreshStrategyRoundTrip(t *testing.T) {

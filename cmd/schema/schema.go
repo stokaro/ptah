@@ -17,8 +17,7 @@ import (
 	"github.com/stokaro/ptah/cmd/schemapush"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/internal/annotationschema"
-	hclrender "github.com/stokaro/ptah/internal/atlashclrender"
-	"github.com/stokaro/ptah/internal/goannotationcleanup"
+	"github.com/stokaro/ptah/internal/goannotationexport"
 	"github.com/stokaro/ptah/internal/graphqlrender"
 	"github.com/stokaro/ptah/internal/openapirender"
 	"github.com/stokaro/ptah/internal/pathguard"
@@ -182,7 +181,7 @@ exported.`,
 	flags.StringSliceVar(&includeTables, exportIncludeTablesFlag, nil, "Only export these tables (comma-separated); applies to openapi-v3/graphql")
 	flags.StringSliceVar(&excludeTables, exportExcludeTablesFlag, nil, "Exclude these tables (comma-separated); applies to openapi-v3/graphql")
 	flags.StringVar(&title, exportTitleFlag, "", "OpenAPI info.title (openapi-v3 only)")
-	flags.BoolVar(&cleanupAnnotations, cleanupGoAnnotationsFlag, false, "Remove Ptah schema annotations from Go source after a successful export")
+	flags.BoolVar(&cleanupAnnotations, cleanupGoAnnotationsFlag, false, "Remove Ptah schema annotations after a lossless HCL export")
 	flags.BoolVar(&cleanupDryRun, cleanupDryRunFlag, false, "Show cleanup summary without modifying Go files")
 	flags.BoolVar(&cleanupDiff, cleanupDiffFlag, false, "Print cleanup diff without modifying Go files")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
@@ -225,16 +224,15 @@ func runExport(cmd *cobra.Command, opts exportOptions) error {
 		return cmdutil.Fail(cmd, err)
 	}
 
+	if opts.to == exportFormatHCL {
+		return runHCLExport(cmd, opts, rootDir)
+	}
+
 	db, err := goschema.ParseDir(rootDir)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("parse Go annotations: %w", err))
 	}
-
 	switch opts.to {
-	case exportFormatHCL:
-		if err := runHCLExport(cmd, opts, db); err != nil {
-			return err
-		}
 	case exportFormatOpenAPI:
 		rendered, err := openapirender.Render(db, openapirender.Options{
 			IncludeTables: opts.includeTables,
@@ -264,54 +262,50 @@ func runExport(cmd *cobra.Command, opts exportOptions) error {
 		return cmdutil.Fail(cmd, fmt.Errorf("unsupported --%s %q", exportToFlag, opts.to))
 	}
 
-	out := cmd.OutOrStdout()
-	if opts.cleanupAnnotations {
-		results, err := goannotationcleanup.CleanDir(goannotationcleanup.Options{
-			RootDir: rootDir,
-			DryRun:  opts.cleanupDryRun,
-			Diff:    opts.cleanupDiff,
-		})
-		if err != nil {
-			return cmdutil.Fail(cmd, err)
-		}
-		for _, result := range results {
-			if opts.cleanupDiff && result.Diff != "" {
-				fmt.Fprint(out, result.Diff)
-			}
-		}
-		action := "Cleaned"
-		if opts.cleanupDryRun || opts.cleanupDiff {
-			action = "Would clean"
-		}
-		fmt.Fprintf(out, "%s %d file(s), removed %d annotation line(s)\n", action, len(results), removedAnnotationLines(results))
-	}
 	return nil
 }
 
-// runHCLExport renders the schema to HCL and writes it to the required --out file.
-func runHCLExport(cmd *cobra.Command, opts exportOptions, db *goschema.Database) error {
-	outPath, err := resolveOutputPath(opts.outPath)
+// runHCLExport adapts the reusable Go-to-HCL workflow to Cobra streams.
+func runHCLExport(cmd *cobra.Command, opts exportOptions, rootDir string) error {
+	result, err := goannotationexport.Export(goannotationexport.Options{
+		RootDir:    rootDir,
+		OutputPath: opts.outPath,
+		Cleanup:    opts.cleanupAnnotations,
+		DryRun:     opts.cleanupDryRun,
+		Diff:       opts.cleanupDiff,
+	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
-	}
-	rendered, err := hclrender.Render(db)
-	if err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
-	if err := os.WriteFile(outPath, rendered.Data, 0o600); err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("write HCL schema: %w", err))
 	}
 
 	errOut := cmd.ErrOrStderr()
-	for _, diagnostic := range rendered.Diagnostics {
+	for _, diagnostic := range result.Diagnostics {
 		fmt.Fprintf(errOut, "%s: %s: %s\n", diagnostic.Severity, diagnostic.Path, diagnostic.Message)
 	}
 
 	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "Exported HCL schema to %s\n", outPath)
-	fmt.Fprintf(out, "Found %d table(s), %d field(s), %d enum(s)\n", len(db.Tables), len(db.Fields), len(db.Enums))
-	if len(rendered.Diagnostics) > 0 {
-		fmt.Fprintf(out, "%d export warning(s) reported\n", len(rendered.Diagnostics))
+	fmt.Fprintf(out, "Exported HCL schema to %s\n", result.OutputPath)
+	fmt.Fprintf(out, "Found %d table(s), %d field(s), %d enum(s)\n", result.Tables, result.Fields, result.Enums)
+	if len(result.Diagnostics) > 0 {
+		fmt.Fprintf(out, "%d export warning(s) reported\n", len(result.Diagnostics))
+	}
+	for _, cleanup := range result.Cleanup {
+		if opts.cleanupDiff && cleanup.Diff != "" {
+			fmt.Fprint(out, cleanup.Diff)
+		}
+	}
+	if opts.cleanupAnnotations {
+		action := "Cleaned"
+		if opts.cleanupDryRun || opts.cleanupDiff {
+			action = "Would clean"
+		}
+		fmt.Fprintf(
+			out,
+			"%s %d file(s), removed %d annotation line(s)\n",
+			action,
+			len(result.Cleanup),
+			result.RemovedLines,
+		)
 	}
 	return nil
 }
@@ -388,12 +382,4 @@ func resolveOutputPath(path string) (string, error) {
 		return "", fmt.Errorf("create output directory: %w", err)
 	}
 	return cleaned, nil
-}
-
-func removedAnnotationLines(results []goannotationcleanup.Result) int {
-	total := 0
-	for _, result := range results {
-		total += result.RemovedLines
-	}
-	return total
 }
