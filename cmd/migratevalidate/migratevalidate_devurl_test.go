@@ -52,6 +52,37 @@ func TestMigrateValidate_DevURLFailureExitsTwo(t *testing.T) {
 	c.Assert(stderr, qt.Contains, "error validating migration SQL on dev database")
 }
 
+func TestMigrateValidate_DevURLReplaysCheckDirectiveMigration(t *testing.T) {
+	c := qt.New(t)
+	migrationsDir := t.TempDir()
+	devDBPath := filepath.Join(t.TempDir(), "dev.db")
+	write := func(name, content string) {
+		c.Assert(os.WriteFile(filepath.Join(migrationsDir, name), []byte(content), 0o600), qt.IsNil)
+	}
+	write("0000000001_init.up.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
+	write("0000000001_init.down.sql", "DROP TABLE users;\n")
+	// The documented pre-migration check syntax (docs/pre-migration-checks.md)
+	// must load and replay from a real file; the directive once failed loading
+	// with `invalid +ptah directive "check"`.
+	write("0000000002_drop_users.up.sql",
+		`-- +ptah check name="users_empty" assert="SELECT count(*) = 0 FROM users" on_fail=abort`+"\nDROP TABLE users;\n")
+	write("0000000002_drop_users.down.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
+	_, err := migratesum.Write(migrationsDir)
+	c.Assert(err, qt.IsNil)
+
+	stdout, stderr, err := executeValidate(
+		"--dir", migrationsDir,
+		"--dev-url", "sqlite://"+devDBPath,
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
+	c.Assert(stdout, qt.Contains, "OK: migrations directory matches ptah.sum")
+	c.Assert(stdout, qt.Contains, "OK: migration SQL validated on dev database")
+	// The replay ran both migrations: users was created empty, migration 2's
+	// check passed, and the guarded DROP TABLE applied.
+	assertSQLiteTableCount(c, devDBPath, "users", 0)
+}
+
 func TestMigrateValidate_DriftSkipsDevURL(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := t.TempDir()

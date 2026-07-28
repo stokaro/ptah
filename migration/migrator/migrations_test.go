@@ -466,6 +466,25 @@ ALTER TABLE users ADD COLUMN email TEXT;`,
 			sql:  "-- +ptah no_transaction\nALTER TABLE users ADD COLUMN email TEXT;",
 		},
 		{
+			name: "check directive is ignored by timeout parser",
+			sql:  `-- +ptah check name="users_empty" assert="SELECT count(*) = 0 FROM users" on_fail=abort` + "\nDROP TABLE users;",
+		},
+		{
+			name: "check directive alongside timeout directives",
+			sql: `-- +ptah check name="users_empty" assert="SELECT count(*) = 0 FROM users" on_fail=abort
+-- +ptah lock_timeout=3s statement_timeout=30s
+DROP TABLE users;`,
+			wantLockTimeout:         3 * time.Second,
+			wantStatementTimeout:    30 * time.Second,
+			wantHasLockTimeout:      true,
+			wantHasStatementTimeout: true,
+		},
+		{
+			name:    "bare unknown directive fails",
+			sql:     "-- +ptah unknown_directive\nALTER TABLE users ADD COLUMN email TEXT;",
+			wantErr: `invalid +ptah directive "unknown_directive"`,
+		},
+		{
 			name:    "invalid duration fails",
 			sql:     "-- +ptah lock_timeout=soon\nALTER TABLE users ADD COLUMN email TEXT;",
 			wantErr: "invalid +ptah lock_timeout value",
