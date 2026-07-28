@@ -107,13 +107,29 @@ ptah schema render \
 
 The same repeatable `--root-dir` works on `ptah schema compare`,
 `ptah migrations plan`, and `ptah migrations generate`. Identical definitions
-across roots are deduplicated; two roots that define the same object differently
-are an error.
+across roots are deduplicated; two roots that define the same named object
+differently are an error for tables, columns, indexes, constraints, enums,
+extensions, functions, sequences, user-defined types, views, triggers, RLS
+objects, and roles. Ptah resolves table-scoped identities before comparing
+definitions, so different Go struct names do not hide a database-object
+conflict.
+
+Conflict checks use the same database-object identities within one Go root and
+across several roots. Separate `--root-dir` values preserve each source
+boundary's Go type ownership while Ptah reconciles those parser names before
+merging. This allows two roots to use the same Go type name for different
+schema-qualified tables without mixing their columns. Source-local embedded
+helper types are scoped the same way, including nested helpers, so two roots may
+each define a `Metadata` type without either table receiving the other root's
+fields.
+Managed-data annotations also retain the absolute directory of their declaring
+Go source, so equal relative `file=` paths in different roots continue to load
+the correct row files after the schema is merged.
 
 This is Ptah's open, local, no-account equivalent of Atlas's Pro-only
-`composite_schema` data source. `ptah schema render` also accepts repeatable
-`--schema-file` and can mix Go roots with YAML, HCL, and SQL schema files in one
-render — see [Schema files](../schema-files/).
+`composite_schema` data source. The render, compare, and migration commands also
+accept repeatable `--schema-file` and can mix Go roots with YAML, HCL, and SQL
+schema files — see [Schema files](../schema-files/).
 
 ## Keep generated schema reviewable
 

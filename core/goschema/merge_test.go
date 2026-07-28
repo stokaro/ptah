@@ -2,6 +2,7 @@ package goschema_test
 
 import (
 	"testing"
+	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
 
@@ -135,4 +136,94 @@ func TestMergeNoSourcesReturnsEmpty(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(merged, qt.IsNotNil)
 	c.Assert(merged.Tables, qt.HasLen, 0)
+}
+
+func TestParseFS_FinalizationMatchesMerge(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"orders.go": {Data: []byte(ordersSource)},
+		"users.go":  {Data: []byte(usersSource)},
+	}
+	parsed, err := goschema.ParseFS(fsys, ".")
+	c.Assert(err, qt.IsNil)
+
+	users := parseRaw(c, "users.go", usersSource)
+	orders := parseRaw(c, "orders.go", ordersSource)
+	merged, err := goschema.Merge(orders, users)
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(parsed, qt.DeepEquals, merged)
+}
+
+func TestMerge_AcceptsFinalizedSchema(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"users.go": {Data: []byte(`package fixtures
+
+type Timestamps struct {
+	//migrator:schema:field name="created_at" type="TIMESTAMP"
+	CreatedAt string
+}
+
+//migrator:schema:table name="users"
+type User struct {
+	//migrator:schema:field name="id" type="BIGINT" primary="true"
+	ID int64
+
+	//migrator:embedded mode="inline"
+	Timestamps
+}
+`)},
+	}
+	finalized, err := goschema.ParseFS(fsys, ".")
+	c.Assert(err, qt.IsNil)
+
+	merged, err := goschema.Merge(finalized)
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(merged, qt.DeepEquals, finalized)
+}
+
+func TestMerge_DoesNotMutateInputs(t *testing.T) {
+	c := qt.New(t)
+
+	source := &goschema.Database{
+		Tables: []goschema.Table{{
+			StructName: "User",
+			Name:       "users",
+			PrimaryKey: []string{"id"},
+		}},
+		Fields: []goschema.Field{
+			{StructName: "User", FieldName: "ID", Name: "id", Type: "BIGINT"},
+			{StructName: "Metadata", FieldName: "Label", Name: "label", Type: "TEXT"},
+		},
+		EmbeddedFields: []goschema.EmbeddedField{{
+			StructName:       "User",
+			EmbeddedTypeName: "Metadata",
+			Mode:             "inline",
+		}},
+	}
+	want := &goschema.Database{
+		Tables: []goschema.Table{{
+			StructName: "User",
+			Name:       "users",
+			PrimaryKey: []string{"id"},
+		}},
+		Fields: []goschema.Field{
+			{StructName: "User", FieldName: "ID", Name: "id", Type: "BIGINT"},
+			{StructName: "Metadata", FieldName: "Label", Name: "label", Type: "TEXT"},
+		},
+		EmbeddedFields: []goschema.EmbeddedField{{
+			StructName:       "User",
+			EmbeddedTypeName: "Metadata",
+			Mode:             "inline",
+		}},
+	}
+
+	_, err := goschema.Merge(source, &goschema.Database{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(source, qt.DeepEquals, want)
 }

@@ -337,10 +337,10 @@ func testCheckCurrentVersion(ctx context.Context, conn *dbschema.DatabaseConnect
 // testGenerateDesiredSchema tests extracting schema from entity definitions
 func testGenerateDesiredSchema(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS) error {
 	// Get the entities directory
-	entitiesDir := "fixtures/entities"
+	entitiesDir := "fixtures/entities/000-initial"
 	if _, err := os.Stat(entitiesDir); err != nil {
 		// Fallback to local development path
-		entitiesDir = "integration/fixtures/entities"
+		entitiesDir = "integration/fixtures/entities/000-initial"
 	}
 
 	// Parse entities

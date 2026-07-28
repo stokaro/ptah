@@ -11,15 +11,11 @@ import (
 // LoadManagedRows reads the YAML row-data file referenced by md and returns its
 // rows as an ordered slice of column maps.
 //
-// The path is resolved as filepath.Join(rootDir, md.SourceDir, md.File): rootDir
-// is the root the schema was parsed from (the argument passed to ParseDir, or ""
-// for ParseFile), md.SourceDir is the parse-root-relative directory of the Go
-// source file that carried the annotation (recorded at parse time), and md.File
-// is the value written verbatim in the annotation. Because ParseDir abstracts the
-// OS root away via os.DirFS, SourceDir alone cannot be resolved — but a caller
-// only needs the single parse root, and SourceDir disambiguates which
-// subdirectory each entry came from. The file must be a top-level YAML list of
-// mappings, one mapping per row:
+// ParseDir and ParseDirRaw record an absolute md.SourceDir, preserving the
+// originating root when several Go roots are merged. ParseFS and ParseSource
+// cannot provide a host-filesystem root, so their relative SourceDir is resolved
+// against rootDir. md.File is always resolved relative to that source directory.
+// The file must be a top-level YAML list of mappings, one mapping per row:
 //
 //   - code: US
 //     name: United States
@@ -34,7 +30,11 @@ import (
 // or unreadable file, or malformed YAML, is returned as a wrapped error that
 // names the resolved path and target table.
 func LoadManagedRows(rootDir string, md ManagedData) ([]map[string]any, error) {
-	path := filepath.Join(rootDir, md.SourceDir, md.File)
+	sourceDir := md.SourceDir
+	if !filepath.IsAbs(sourceDir) {
+		sourceDir = filepath.Join(rootDir, sourceDir)
+	}
+	path := filepath.Join(sourceDir, md.File)
 
 	content, err := os.ReadFile(path)
 	if err != nil {

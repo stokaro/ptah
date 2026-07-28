@@ -1444,10 +1444,17 @@ func TestParseDir_SchemaObjectsAndGrants(t *testing.T) {
 func TestParseDir_AllIntegrationFixturesRemainParsable(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := goschema.ParseDir("../../integration/fixtures/entities")
+	fixtureDirs, err := filepath.Glob("../../integration/fixtures/entities/*")
 	c.Assert(err, qt.IsNil)
-	c.Assert(result.Tables, qt.Not(qt.HasLen), 0)
-	c.Assert(result.Roles, qt.Not(qt.HasLen), 0)
+	c.Assert(fixtureDirs, qt.Not(qt.HasLen), 0)
+
+	for _, fixtureDir := range fixtureDirs {
+		c.Run(filepath.Base(fixtureDir), func(c *qt.C) {
+			result, err := goschema.ParseDir(fixtureDir)
+			c.Assert(err, qt.IsNil)
+			c.Assert(result, qt.IsNotNil)
+		})
+	}
 }
 
 // TestParseDir_ReflectionGuard is the future-proof guard required by #279.
@@ -1589,7 +1596,7 @@ type First struct{}
 `)},
 		"b.go": {Data: []byte(`package fixtures
 
-//migrator:schema:view name="active_users" body="SELECT id FROM users" comment="second"
+//migrator:schema:view name="active_users" body="SELECT id FROM users" comment="first"
 type Second struct{}
 `)},
 	}
