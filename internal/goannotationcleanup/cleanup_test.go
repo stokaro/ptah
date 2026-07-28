@@ -107,3 +107,254 @@ func TestCleanDirDiffReportsDuplicateRemovedLinesByPosition(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(content), qt.Equals, original)
 }
+
+func TestCleanDir_HappyPath_PreservesStringLiteralsAndRemovesStandaloneAnnotations(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "model.go")
+	original := "package models\n\n" +
+		"const raw = `header\n" +
+		"//migrator:schema:table name=\"raw_literal\"\n" +
+		"//migrator:embedded mode=\"raw_literal\"\n" +
+		"footer`\n\n" +
+		"const interpreted = \"//migrator:schema:field name=\\\"interpreted_literal\\\" type=\\\"TEXT\\\"\"\n" +
+		"const multiline = \"header\\n//migrator:embedded mode=\\\"interpreted_literal\\\"\\nfooter\"\n" +
+		"const inline = 1 //migrator:schema:table name=\"inline_comment\"\n\n" +
+		"//migrator:embeddedness is ordinary documentation.\n" +
+		"//migrator:schema:not-a-known-directive is ordinary documentation.\n" +
+		"// User is business documentation.\n" +
+		"//migrator:schema:table name=\"users\"\n" +
+		"type User struct {\n" +
+		"\t//migrator:schema:field name=\"id\" type=\"BIGINT\"\n" +
+		"\tID int64\n" +
+		"\t//migrator:embedded mode=\"inline\"\n" +
+		"\tTimestamps\n" +
+		"}\n"
+	expected := "package models\n\n" +
+		"const raw = `header\n" +
+		"//migrator:schema:table name=\"raw_literal\"\n" +
+		"//migrator:embedded mode=\"raw_literal\"\n" +
+		"footer`\n\n" +
+		"const interpreted = \"//migrator:schema:field name=\\\"interpreted_literal\\\" type=\\\"TEXT\\\"\"\n" +
+		"const multiline = \"header\\n//migrator:embedded mode=\\\"interpreted_literal\\\"\\nfooter\"\n" +
+		"const inline = 1 //migrator:schema:table name=\"inline_comment\"\n\n" +
+		"//migrator:embeddedness is ordinary documentation.\n" +
+		"//migrator:schema:not-a-known-directive is ordinary documentation.\n" +
+		"// User is business documentation.\n" +
+		"type User struct {\n" +
+		"\tID int64\n" +
+		"\tTimestamps\n" +
+		"}\n"
+	c.Assert(os.WriteFile(path, []byte(original), 0o600), qt.IsNil)
+
+	results, err := goannotationcleanup.CleanDir(goannotationcleanup.Options{RootDir: dir})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(results, qt.HasLen, 1)
+	c.Assert(results[0].Path, qt.Equals, path)
+	c.Assert(results[0].Changed, qt.IsTrue)
+	c.Assert(results[0].RemovedLines, qt.Equals, 3)
+	c.Assert(results[0].Diff, qt.Equals, "")
+	content, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(content), qt.Equals, expected)
+}
+
+func TestCleanDir_HappyPath_SkipsTestVendorAndHiddenSources(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "model.go")
+	testPath := filepath.Join(dir, "model_test.go")
+	vendorDir := filepath.Join(dir, "vendor", "example")
+	vendorPath := filepath.Join(vendorDir, "model.go")
+	hiddenDir := filepath.Join(dir, "models", ".codex", "worktrees")
+	hiddenPath := filepath.Join(hiddenDir, "model.go")
+	original := "package models\n\n//migrator:schema:table name=\"users\"\ntype User struct{}\n"
+	expected := "package models\n\ntype User struct{}\n"
+	skippedTest := "package models\n\n//migrator:schema:table name=\"test_only\"\ntype TestOnly struct {\n"
+	skippedVendor := "package example\n\n//migrator:schema:table name=\"vendor_only\"\ntype VendorOnly struct {\n"
+	skippedHidden := "package worktrees\n\n//migrator:schema:table name=\"hidden_only\"\ntype HiddenOnly struct {\n"
+	c.Assert(os.MkdirAll(vendorDir, 0o755), qt.IsNil)
+	c.Assert(os.MkdirAll(hiddenDir, 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(path, []byte(original), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(testPath, []byte(skippedTest), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(vendorPath, []byte(skippedVendor), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(hiddenPath, []byte(skippedHidden), 0o600), qt.IsNil)
+
+	results, err := goannotationcleanup.CleanDir(goannotationcleanup.Options{RootDir: dir})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(results, qt.HasLen, 1)
+	c.Assert(results[0].Path, qt.Equals, path)
+	content, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(content), qt.Equals, expected)
+	testContent, err := os.ReadFile(testPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(testContent), qt.Equals, skippedTest)
+	vendorContent, err := os.ReadFile(vendorPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(vendorContent), qt.Equals, skippedVendor)
+	hiddenContent, err := os.ReadFile(hiddenPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(hiddenContent), qt.Equals, skippedHidden)
+}
+
+func TestCleanDir_FailurePath_InvalidGoSourceIsNotModified(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	validPath := filepath.Join(dir, "a_valid.go")
+	invalidPath := filepath.Join(dir, "z_invalid.go")
+	validOriginal := "package models\n\n//migrator:schema:table name=\"users\"\ntype User struct{}\n"
+	invalidOriginal := "package models\n\n//migrator:schema:table name=\"broken\"\ntype Broken struct {\n"
+	c.Assert(os.WriteFile(validPath, []byte(validOriginal), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(invalidPath, []byte(invalidOriginal), 0o600), qt.IsNil)
+	c.Assert(os.Chmod(validPath, 0o640), qt.IsNil)
+	c.Assert(os.Chmod(invalidPath, 0o640), qt.IsNil)
+
+	results, err := goannotationcleanup.CleanDir(goannotationcleanup.Options{RootDir: dir})
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "z_invalid.go")
+	c.Assert(results, qt.HasLen, 0)
+	validContent, err := os.ReadFile(validPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(validContent), qt.Equals, validOriginal)
+	invalidContent, err := os.ReadFile(invalidPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(invalidContent), qt.Equals, invalidOriginal)
+	validInfo, err := os.Stat(validPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(validInfo.Mode().Perm(), qt.Equals, os.FileMode(0o640))
+	invalidInfo, err := os.Stat(invalidPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(invalidInfo.Mode().Perm(), qt.Equals, os.FileMode(0o640))
+}
+
+func TestCleanDir_HappyPath_DryRunDiffAndWriteAreConsistentAndIdempotent(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "model.go")
+	original := "package models\r\n" +
+		"\r\n" +
+		"// User keeps business documentation.  \r\n" +
+		"//migrator:schema:table name=\"users\"\r\n" +
+		"type User struct{ID int64}\r\n" +
+		"\t//migrator:embedded mode=\"inline\"\r\n" +
+		"type Audit struct{CreatedAt int64}\r\n"
+	expected := "package models\r\n" +
+		"\r\n" +
+		"// User keeps business documentation.  \r\n" +
+		"type User struct{ID int64}\r\n" +
+		"type Audit struct{CreatedAt int64}\r\n"
+	c.Assert(os.WriteFile(path, []byte(original), 0o600), qt.IsNil)
+	c.Assert(os.Chmod(path, 0o640), qt.IsNil)
+
+	dryRunResults, err := goannotationcleanup.CleanDir(goannotationcleanup.Options{
+		RootDir: dir,
+		DryRun:  true,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(dryRunResults, qt.HasLen, 1)
+	c.Assert(dryRunResults[0].Path, qt.Equals, path)
+	c.Assert(dryRunResults[0].Changed, qt.IsTrue)
+	c.Assert(dryRunResults[0].RemovedLines, qt.Equals, 2)
+	c.Assert(dryRunResults[0].Diff, qt.Equals, "")
+	content, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(content), qt.Equals, original)
+	info, err := os.Stat(path)
+	c.Assert(err, qt.IsNil)
+	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o640))
+
+	diffResults, err := goannotationcleanup.CleanDir(goannotationcleanup.Options{
+		RootDir: dir,
+		Diff:    true,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diffResults, qt.HasLen, 1)
+	c.Assert(diffResults[0].Path, qt.Equals, dryRunResults[0].Path)
+	c.Assert(diffResults[0].Changed, qt.Equals, dryRunResults[0].Changed)
+	c.Assert(diffResults[0].RemovedLines, qt.Equals, dryRunResults[0].RemovedLines)
+	c.Assert(diffResults[0].Diff, qt.Contains, "-//migrator:schema:table name=\"users\"\r\n")
+	c.Assert(diffResults[0].Diff, qt.Contains, "-\t//migrator:embedded mode=\"inline\"\r\n")
+	content, err = os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(content), qt.Equals, original)
+	info, err = os.Stat(path)
+	c.Assert(err, qt.IsNil)
+	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o640))
+
+	writeResults, err := goannotationcleanup.CleanDir(goannotationcleanup.Options{RootDir: dir})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(writeResults, qt.HasLen, 1)
+	c.Assert(writeResults[0].Path, qt.Equals, dryRunResults[0].Path)
+	c.Assert(writeResults[0].Changed, qt.Equals, dryRunResults[0].Changed)
+	c.Assert(writeResults[0].RemovedLines, qt.Equals, dryRunResults[0].RemovedLines)
+	c.Assert(writeResults[0].Diff, qt.Equals, "")
+	content, err = os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(content), qt.Equals, expected)
+	info, err = os.Stat(path)
+	c.Assert(err, qt.IsNil)
+	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o640))
+
+	idempotentDryRunResults, err := goannotationcleanup.CleanDir(goannotationcleanup.Options{
+		RootDir: dir,
+		DryRun:  true,
+		Diff:    true,
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(idempotentDryRunResults, qt.HasLen, 0)
+
+	idempotentWriteResults, err := goannotationcleanup.CleanDir(goannotationcleanup.Options{RootDir: dir})
+	c.Assert(err, qt.IsNil)
+	c.Assert(idempotentWriteResults, qt.HasLen, 0)
+	content, err = os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(content), qt.Equals, expected)
+}
+
+func TestCleanDir_HappyPath_DiffMarksMissingFinalNewline(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name         string
+		original     string
+		wantDiffLine string
+	}{
+		{
+			name:         "removed final annotation",
+			original:     "package models\n//migrator:schema:table name=\"users\"",
+			wantDiffLine: "-//migrator:schema:table name=\"users\"\n",
+		},
+		{
+			name:         "final context line",
+			original:     "package models\n//migrator:schema:table name=\"users\"\ntype User struct{}",
+			wantDiffLine: " type User struct{}\n",
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			dir := c.TempDir()
+			path := filepath.Join(dir, "model.go")
+			c.Assert(os.WriteFile(path, []byte(tt.original), 0o600), qt.IsNil)
+
+			results, err := goannotationcleanup.CleanDir(goannotationcleanup.Options{
+				RootDir: dir,
+				Diff:    true,
+			})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(results, qt.HasLen, 1)
+			c.Assert(results[0].Diff, qt.Contains, tt.wantDiffLine)
+			c.Assert(strings.Count(results[0].Diff, "\\ No newline at end of file\n"), qt.Equals, 1)
+			content, err := os.ReadFile(path)
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(content), qt.Equals, tt.original)
+		})
+	}
+}
