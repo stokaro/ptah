@@ -9,6 +9,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/atlasschema"
+	"github.com/stokaro/ptah/internal/atlassource"
 	"github.com/stokaro/ptah/internal/schemafile"
 )
 
@@ -29,12 +30,18 @@ func newAtlasSchemaDiffCommand() *cobra.Command {
 		Long: `Atlas OSS ` + "`atlas schema diff`" + ` command path.
 
 Calculates SQL statements that migrate the --from schema state to the --to
-schema state. This implementation currently supports local file:// schema files
-with .hcl, .yaml, .yml, or .sql extensions. When --env is set, the selected
-atlas.hcl env can provide schema.src, dev, exclude, schema.mode,
-format.schema.diff, and supported diff policy values. Database URLs, migration
-directory URLs, Atlas project env:// URLs, include filters, and Atlas Cloud web
-output are explicit follow-up gaps.`,
+schema state. Each side accepts local file:// schema files with .hcl, .yaml,
+.yml, or .sql extensions, one directly connectable database URL whose live
+schema is introspected, one migration directory (a file:// directory containing
+atlas.sum) replayed on the required --dev-url dev database, or one
+env://<attribute> reference (src, schema.src, url, dev, migration.dir) resolved
+through the evaluated atlas.hcl env. All URLs of one flag must be one source
+kind. The SQL dialect is pinned by --dev-url first, then by --from and --to
+database URLs; local schema files alone still require --dev-url. Unsupported
+schemes such as atlas:// fail during validation. When --env is set, the
+selected atlas.hcl env can provide schema.src, dev, exclude, schema.mode,
+format.schema.diff, and supported diff policy values. Include filters and Atlas
+Cloud web output are explicit follow-up gaps.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaDiff(cmd, opts)
 		},
@@ -80,16 +87,24 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 	if err := atlasreport.ValidateSchemaDiffTemplate(format); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if err := validateAtlasSchemaDiffOptions(cmd, opts); err != nil {
+	projectEnv := atlassource.ProjectEnv{}
+	if loaded {
+		projectEnv, err = atlasSourceProjectEnv(cmd, projectCfg)
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+	}
+	if err := validateAtlasSchemaDiffOptions(cmd, opts, projectEnv); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 
-	report, err := atlasschema.DiffLocalFiles(atlasschema.DiffOptions{
-		FromURLs: opts.fromURLs,
-		ToURLs:   opts.toURLs,
-		DevURL:   opts.devURL,
-		Exclude:  opts.exclude,
-		Policy:   policy,
+	report, err := atlasschema.Diff(cmd.Context(), atlasschema.DiffOptions{
+		FromURLs:   opts.fromURLs,
+		ToURLs:     opts.toURLs,
+		DevURL:     opts.devURL,
+		Exclude:    opts.exclude,
+		Policy:     policy,
+		ProjectEnv: projectEnv,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -104,7 +119,11 @@ func needsAtlasSchemaDiffConfig(cmd *cobra.Command) bool {
 	return !cmd.Flags().Changed("to")
 }
 
-func validateAtlasSchemaDiffOptions(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
+func validateAtlasSchemaDiffOptions(
+	cmd *cobra.Command,
+	opts atlasSchemaDiffOptions,
+	projectEnv atlassource.ProjectEnv,
+) error {
 	if len(opts.fromURLs) == 0 {
 		return fmt.Errorf("--from is required")
 	}
@@ -117,10 +136,21 @@ func validateAtlasSchemaDiffOptions(cmd *cobra.Command, opts atlasSchemaDiffOpti
 	if values, err := cmd.Flags().GetStringArray("include"); err == nil && len(values) > 0 {
 		return fmt.Errorf("atlas schema diff accepts --include, but Ptah only supports local schema files for this command yet")
 	}
-	if err := ensureLocalSchemaURLs("--from", opts.fromURLs); err != nil {
+	// Classification rejects unsupported schemes and source conflicts, and
+	// migration-directory sources require a dev database, before any database
+	// is contacted. --from is validated first, then --to.
+	fromSet, err := atlassource.ClassifySet("--from", opts.fromURLs, projectEnv)
+	if err != nil {
 		return err
 	}
-	return ensureLocalSchemaURLs("--to", opts.toURLs)
+	if err := fromSet.EnsureDevDatabase(opts.devURL); err != nil {
+		return err
+	}
+	toSet, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv)
+	if err != nil {
+		return err
+	}
+	return toSet.EnsureDevDatabase(opts.devURL)
 }
 
 func ensureLocalSchemaURLs(flag string, urls []string) error {

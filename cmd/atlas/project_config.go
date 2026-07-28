@@ -15,6 +15,7 @@ import (
 	"github.com/stokaro/ptah/internal/atlasargs"
 	"github.com/stokaro/ptah/internal/atlasprojectpath"
 	"github.com/stokaro/ptah/internal/atlasschema"
+	"github.com/stokaro/ptah/internal/atlassource"
 )
 
 const (
@@ -458,6 +459,25 @@ func atlasFlagShorthand(flags []atlasargs.Flag, name string) string {
 
 func isAtlasEnvSelectionRequired(err error) bool {
 	return strings.Contains(err.Error(), "contains multiple env blocks; pass --env")
+}
+
+// atlasSourceProjectEnv packages the evaluated atlas.hcl environment for the
+// desired-state URL resolver, so env:// references expand with the selected
+// env's values and relative paths resolve against the config directory.
+// Callers pass the zero ProjectEnv instead when no configuration was loaded.
+func atlasSourceProjectEnv(
+	cmd *cobra.Command,
+	cfg projectconfig.Config,
+) (atlassource.ProjectEnv, error) {
+	flags, _, err := atlasProjectFlagsFromCommand(cmd)
+	if err != nil {
+		return atlassource.ProjectEnv{}, err
+	}
+	baseDir, err := atlasProjectConfigBaseDir(flags)
+	if err != nil {
+		return atlassource.ProjectEnv{}, err
+	}
+	return atlassource.ProjectEnv{Loaded: true, Config: cfg, BaseDir: baseDir}, nil
 }
 
 func effectiveAtlasExclude(cmd *cobra.Command, flagValues []string, cfg projectconfig.Config) []string {

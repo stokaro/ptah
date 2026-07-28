@@ -1974,15 +1974,15 @@ func TestNewAtlasCommand_SchemaDiffRejectsUnsupportedRemoteTarget(t *testing.T) 
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
 		"schema", "diff",
-		"--from", "postgres://localhost/db",
+		"--from", "atlas://remote/schema",
 		"--to", "file://schema.hcl",
 		"--dev-url", "sqlite://dev?mode=memory",
 	})
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `--from "postgres://localhost/db": only local file:// schema files are supported`)
-	c.Assert(out.String(), qt.Contains, `error: --from "postgres://localhost/db": only local file:// schema files are supported`)
+	c.Assert(err, qt.ErrorMatches, `--from "atlas://remote/schema": atlas:// registry URLs are not supported: .*`)
+	c.Assert(out.String(), qt.Contains, `error: --from "atlas://remote/schema": atlas:// registry URLs are not supported`)
 }
 
 func TestNewAtlasCommand_SchemaDiffFormatsCustomSQLTemplate(t *testing.T) {

@@ -12,6 +12,7 @@ import (
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/atlasfilter"
+	"github.com/stokaro/ptah/internal/atlassource"
 	"github.com/stokaro/ptah/internal/atlasurl"
 	"github.com/stokaro/ptah/internal/schemafile"
 	"github.com/stokaro/ptah/migration/migrator"
@@ -23,6 +24,15 @@ type ApplyOptions struct {
 	ToURLs  []string
 	Exclude []string
 	Policy  DiffPolicy
+	// DevURL is the dev database used to replay migration-directory
+	// desired-state sources.
+	DevURL string
+	// ProjectEnv expands env:// desired-state references.
+	ProjectEnv atlassource.ProjectEnv
+	// LocalFilesOnly restricts ToURLs to local schema files, preserving the
+	// pre-resolver loading behavior. `schema plan` sets it because a saved
+	// plan fingerprints local desired-state files only.
+	LocalFilesOnly bool
 }
 
 type ApplyPlan struct {
@@ -37,6 +47,8 @@ type ApplyRuntimeOptions struct {
 	Policy  DiffPolicy
 	TxMode  migrator.MigrationTxMode
 	DryRun  bool
+	// ProjectEnv expands env:// desired-state references in ToURLs.
+	ProjectEnv atlassource.ProjectEnv
 }
 
 // ApplyRuntimePlan is a prepared Atlas schema apply operation for one open
@@ -102,7 +114,7 @@ func computeApplyPlan(
 	if err != nil {
 		return applyComputation{}, fmt.Errorf("apply --exclude to current schema: %w", err)
 	}
-	desired, err := schemafile.LoadAll(opts.ToURLs, schemafile.Options{Dialect: conn.Info().Dialect})
+	desired, err := loadDesiredApplySchema(ctx, conn, opts)
 	if err != nil {
 		return applyComputation{}, fmt.Errorf("load --to schema: %w", err)
 	}
@@ -132,6 +144,33 @@ func computeApplyPlan(
 	return computation, nil
 }
 
+// loadDesiredApplySchema materializes the desired schema for apply planning.
+// The resolver accepts local schema files (unchanged pre-resolver behavior),
+// database URLs, migration directories replayed on the dev database, and
+// env:// references; LocalFilesOnly pins the legacy local-file-only path.
+func loadDesiredApplySchema(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	opts ApplyOptions,
+) (*goschema.Database, error) {
+	if opts.LocalFilesOnly {
+		return schemafile.LoadAll(opts.ToURLs, schemafile.Options{Dialect: conn.Info().Dialect})
+	}
+	set, err := atlassource.ClassifySet("--to", opts.ToURLs, opts.ProjectEnv)
+	if err != nil {
+		return nil, err
+	}
+	state, err := set.Resolve(ctx, atlassource.ResolveOptions{
+		Dialect:     conn.Info().Dialect,
+		DialectFlag: "--url",
+		DevURL:      opts.DevURL,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return state.Schema, nil
+}
+
 // PrepareApply validates Atlas schema apply runtime inputs and builds the
 // executable apply plan for the already-open target database connection.
 func PrepareApply(
@@ -147,9 +186,11 @@ func PrepareApply(
 	}
 
 	plan, err := PlanApply(ctx, conn, ApplyOptions{
-		ToURLs:  opts.ToURLs,
-		Exclude: opts.Exclude,
-		Policy:  opts.Policy,
+		ToURLs:     opts.ToURLs,
+		Exclude:    opts.Exclude,
+		Policy:     opts.Policy,
+		DevURL:     opts.DevURL,
+		ProjectEnv: opts.ProjectEnv,
 	})
 	if err != nil {
 		return ApplyRuntimePlan{}, err

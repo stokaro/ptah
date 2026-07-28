@@ -17,6 +17,7 @@ import (
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/atlasschema"
+	"github.com/stokaro/ptah/internal/atlassource"
 	"github.com/stokaro/ptah/internal/schemafile"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -47,18 +48,23 @@ func newAtlasSchemaApplyCommand() *cobra.Command {
 		Short: "Apply a desired schema to a database",
 		Long: `Atlas OSS ` + "`atlas schema apply`" + ` command path.
 
-Compares a live database from --url with local --to schema files and applies the
-generated schema changes directly to the target database. When --env is set, the
+Compares a live database from --url with the --to desired state and applies the
+generated schema changes directly to the target database. --to accepts local
+file:// schema files with .hcl, .yaml, .yml, or .sql extensions, one directly
+connectable database URL whose live schema becomes the desired state, one
+migration directory (a file:// directory containing atlas.sum) replayed on the
+required --dev-url dev database, or one env://<attribute> reference (src,
+schema.src, url, dev, migration.dir) resolved through the evaluated atlas.hcl
+env. All --to values must be one source kind; unsupported schemes such as
+atlas:// fail before the target database is touched. When --env is set, the
 selected atlas.hcl env can provide url, schema.src, dev, exclude, schema.mode,
-format.schema.apply, and supported diff policy values. This implementation
-currently supports local file:// schema files with .hcl, .yaml, .yml, or .sql
-extensions. With --edit the planned SQL opens in $VISUAL or $EDITOR before the
-plan is shown and approved, and the edited SQL is what gets applied. With
---plan file://<path>, a pre-approved local plan file saved by
-` + "`atlas schema plan`" + ` is executed instead of re-planning, after verifying the
-database still matches the plan's source fingerprint; registry plan URLs are
-not supported. Database desired-state URLs, env:// URLs, schema/include
-filters, and database lock waiting remain explicit follow-up gaps.`,
+format.schema.apply, and supported diff policy values. With --edit the planned
+SQL opens in $VISUAL or $EDITOR before the plan is shown and approved, and the
+edited SQL is what gets applied. With --plan file://<path>, a pre-approved
+local plan file saved by ` + "`atlas schema plan`" + ` is executed instead of
+re-planning, after verifying the database still matches the plan's source
+fingerprint; registry plan URLs are not supported. Schema/include filters and
+database lock waiting remain explicit follow-up gaps.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaApply(cmd, opts)
 		},
@@ -133,7 +139,14 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		}
 	}
 
-	if err := validateAtlasSchemaApplyOptions(cmd, opts); err != nil {
+	projectEnv := atlassource.ProjectEnv{}
+	if loaded {
+		projectEnv, err = atlasSourceProjectEnv(cmd, projectCfg)
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+	}
+	if err := validateAtlasSchemaApplyOptions(cmd, opts, projectEnv); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	txMode, err := migrator.ParseMigrationTxMode(opts.txMode)
@@ -150,12 +163,13 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	defer dbschema.CloseAndWarn(conn)
 
 	plan, err := atlasschema.PrepareApply(cmd.Context(), conn, atlasschema.ApplyRuntimeOptions{
-		DevURL:  opts.devURL,
-		ToURLs:  opts.toURLs,
-		Exclude: opts.exclude,
-		Policy:  policy,
-		TxMode:  txMode,
-		DryRun:  opts.dryRun,
+		DevURL:     opts.devURL,
+		ToURLs:     opts.toURLs,
+		Exclude:    opts.exclude,
+		Policy:     policy,
+		TxMode:     txMode,
+		DryRun:     opts.dryRun,
+		ProjectEnv: projectEnv,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -425,7 +439,11 @@ func effectiveStringArray(cmd *cobra.Command, flagName string, flagValues, confi
 	return slices.Clone(configValues)
 }
 
-func validateAtlasSchemaApplyOptions(cmd *cobra.Command, opts atlasSchemaApplyOptions) error {
+func validateAtlasSchemaApplyOptions(
+	cmd *cobra.Command,
+	opts atlasSchemaApplyOptions,
+	projectEnv atlassource.ProjectEnv,
+) error {
 	if strings.TrimSpace(opts.url) == "" {
 		return fmt.Errorf("--url is required")
 	}
@@ -441,7 +459,14 @@ func validateAtlasSchemaApplyOptions(cmd *cobra.Command, opts atlasSchemaApplyOp
 	if strings.TrimSpace(opts.lockTimeout) != "" {
 		return fmt.Errorf("atlas schema apply accepts --lock-timeout, but Ptah does not implement database lock waiting yet")
 	}
-	return ensureLocalSchemaURLs("--to", opts.toURLs)
+	// Classification rejects unsupported schemes and source conflicts, and the
+	// dev-database requirement is checked here, before the target database is
+	// contacted.
+	set, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv)
+	if err != nil {
+		return err
+	}
+	return set.EnsureDevDatabase(opts.devURL)
 }
 
 func printAtlasSchemaApplyPlan(out io.Writer, sqlText string) {
