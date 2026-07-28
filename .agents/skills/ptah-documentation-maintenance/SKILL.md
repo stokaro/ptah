@@ -120,7 +120,7 @@ Use these routes to avoid missing a class of docs:
   `docs/site/src/content/docs/reference/*.md`, `testkit/README.md`, and package
   comments for exported identifiers.
 - **GitHub Action, CI, or generated reports**: `docs/github_action.md`,
-  `docs/site/src/content/docs/workflows/ci.md`, `docs/release_process.md`, and
+  `docs/site/src/content/docs/testing/ci.md`, `docs/release_process.md`, and
   integration docs.
 
 ## Search Deeply

@@ -62,5 +62,5 @@ A common hybrid uses both: iterate with `ptah atlas schema apply` against a disp
 ## Where each workflow appears
 
 - The versioned lifecycle — plan, generate, apply, roll back, verify — lives in [Versioned migrations](../../versioned/overview/).
-- The Atlas-compatible surface behind direct application is described in [Atlas-compatible CLI](../../workflows/atlas-cli/).
+- The direct workflow — inspect, compare and drift, apply — lives in [Direct schema changes](../../direct/inspect/), with direct application on [Apply directly](../../direct/apply/).
 - Bringing a database that already exists into either workflow is covered in [Adopt an existing database](../adopt-an-existing-database/).
