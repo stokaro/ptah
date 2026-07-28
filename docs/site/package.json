@@ -15,6 +15,8 @@
     "check:page-health": "node scripts/check-page-health.mjs",
     "check:links": "node scripts/check-links.mjs",
     "check:links:selftest": "node scripts/check-links.mjs --selftest",
+    "check:redirects": "node scripts/check-redirects.mjs",
+    "check:redirects:selftest": "node scripts/check-redirects.mjs --selftest",
     "versions:selftest": "node scripts/gen-versions.mjs --selftest"
   },
   "dependencies": {

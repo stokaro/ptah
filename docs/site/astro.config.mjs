@@ -7,9 +7,24 @@ const site = 'https://stokaro.github.io';
 const DOCS_VERSION = process.env.DOCS_VERSION || 'edge';
 const base = `/ptah/${DOCS_VERSION}/`;
 
+// Moved page routes. Keys and values are docs routes with leading and trailing
+// slashes; scripts/check-redirects.mjs verifies that every source is retired
+// and every target resolves to a real page. Astro emits the destination
+// verbatim into the meta-refresh stub, so the `/ptah/<version>/` base is
+// prepended below before the map reaches Astro.
+const redirectRoutes = {
+  '/getting-started/': '/start/quick-start/',
+  '/install/': '/start/install/',
+};
+
+const redirects = Object.fromEntries(
+  Object.entries(redirectRoutes).map(([from, to]) => [from, `${base}${to.slice(1)}`]),
+);
+
 export default defineConfig({
   site,
   base,
+  redirects,
   integrations: [
     starlight({
       title: 'Ptah',
@@ -29,8 +44,15 @@ export default defineConfig({
         },
       ],
       sidebar: [
-        { label: 'Start', slug: 'getting-started' },
-        { label: 'Install Ptah', slug: 'install' },
+        {
+          label: 'Start',
+          items: [
+            { slug: 'start/install' },
+            { slug: 'start/quick-start' },
+            { slug: 'start/choose-a-workflow' },
+            { slug: 'start/adopt-an-existing-database' },
+          ],
+        },
         { label: 'Documentation map', slug: 'documentation-map' },
         {
           label: 'Use Ptah',

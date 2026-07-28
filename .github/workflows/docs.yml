@@ -70,6 +70,8 @@ jobs:
           npm ci
           npm run check:links:selftest
           npm run check:links
+          npm run check:redirects:selftest
+          npm run check:redirects
           npm run check:core-doc-links
           npm run check:page-health
           npm run check:exit-codes
@@ -91,6 +93,10 @@ jobs:
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm ci
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:links:selftest
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:links
+            if [ -f scripts/check-redirects.mjs ]; then
+              DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:redirects:selftest
+              DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:redirects
+            fi
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:core-doc-links
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:page-health
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:exit-codes
@@ -117,6 +123,9 @@ jobs:
                   DOCS_VERSION="$tag" ASTRO_TELEMETRY_DISABLED=1 npm run check:links
                 else
                   echo "::warning::$tag has no docs link checker; skipping link validation"
+                fi
+                if [ -f scripts/check-redirects.mjs ]; then
+                  DOCS_VERSION="$tag" ASTRO_TELEMETRY_DISABLED=1 npm run check:redirects
                 fi
                 if [ -f scripts/check-exit-codes.mjs ]; then
                   DOCS_VERSION="$tag" ASTRO_TELEMETRY_DISABLED=1 npm run check:exit-codes
