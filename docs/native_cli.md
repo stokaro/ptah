@@ -118,7 +118,14 @@ separate `hash` step. All three take `--migrations-dir`, `--version`, and
 that is already applied in the database given by `--db-url` unless `--force` is
 passed; without `--db-url` they warn that applied state could not be verified.
 These are directory-maintenance commands Atlas keeps in its proprietary (Pro)
-build; Ptah provides them natively and for free.
+build; Ptah provides them natively and for free. The Atlas-compatible
+`ptah atlas migrate edit`, `rebase`, and `rm` verbs forward to these commands
+with Atlas-shaped `--dir`/`--dir-format` flags and a `{name | version}`
+positional; the editor for `edit` resolves from `$VISUAL`, then `$EDITOR`.
+`ptah migrations create --edit` opens the just-created migration files in the
+same editor and refreshes `atlas.sum` for Atlas-format directories; the
+Atlas-compatible `migrate new --edit`, `migrate diff --edit`, and
+`schema apply --edit` flags use the same editor path.
 
 `ptah migrations lint` and `ptah sql lint` report findings by rule code, grouped
 into families (`DS` data-safety, `PG`/`MY` dialect-specific, `TX` transaction,

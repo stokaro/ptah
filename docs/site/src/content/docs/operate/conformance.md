@@ -53,6 +53,7 @@ round-trip corpus:
 | Workflow | Native Ptah | Atlas-compatible Ptah surface | Atlas CE | Evidence |
 | --- | --- | --- | --- | --- |
 | Declarative migration and schema tests | `ptah migrations test` and `ptah schema test` | `ptah atlas migrate test` and `ptah atlas schema test` forward to the native runners with Atlas-shaped flags and exit codes | Cannot run either command; the framework is outside the open-source core | Unit coverage (including the Atlas-compatible forwards) plus integration-tagged live PostgreSQL runner tests; not counted as a schema-object fixture |
+| Migration directory maintenance | `ptah migrations edit`, `rebase`, and `rm` | `ptah atlas migrate edit`, `rebase`, and `rm` forward to the native commands with Atlas-shaped flags and `{name \| version}` positionals; the `--edit` flags on `migrate new`, `migrate diff`, and `schema apply` open the operator's editor | Cannot run any of the three verbs; they abort with the community-version boundary | Unit coverage with hermetic editor scripts, including `ptah migrations validate` passing on the mutated directory; not counted as a schema-object fixture |
 
 This is a workflow-parity record, not a claim of full Atlas Pro compatibility.
 

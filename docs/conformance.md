@@ -37,10 +37,11 @@ from the round-trip corpus:
 | Workflow | Native Ptah | Atlas-compatible Ptah surface | Atlas CE | Evidence |
 | --- | --- | --- | --- | --- |
 | Declarative migration and schema tests | `ptah migrations test` and `ptah schema test` run YAML/Go-authored cases locally. | `ptah atlas migrate test` and `ptah atlas schema test` forward to the native runners with Atlas-shaped flags (`--dir`/`-u --url`, `--dev-url`, `--run`, project flags) and the native exit-code contract. | Cannot run either testing command; the framework is outside the open-source core. | Unit tests cover parsing, assertions, reporting, and CLI behavior, including the Atlas-compatible forwards; integration-tagged PostgreSQL tests exercise both live runners. This workflow is not counted as a schema-object round-trip fixture. |
+| Migration directory maintenance | `ptah migrations edit`, `rebase`, and `rm` mutate the directory and atomically rewrite the integrity file. | `ptah atlas migrate edit`, `rebase`, and `rm` forward to the native commands with Atlas-shaped `--dir`/`--dir-format` flags, `{name \| version}` positionals, and project flags; `migrate new --edit`, `migrate diff --edit`, and `schema apply --edit` open the operator's `$VISUAL`/`$EDITOR`. | Cannot run any of the three verbs; they abort with the community-version boundary. | Unit tests cover the forwards with hermetic editor scripts and assert `ptah migrations validate` passes on the mutated directory. Multi-version rebase and version ranges are rejected loudly (single-version forwarding only). |
 
-This row records product workflow parity, not full Atlas Pro compatibility. The
-Atlas-compatible verbs run Ptah-native YAML/Go test cases; Atlas `.test.hcl`
-files are not ingested.
+These rows record product workflow parity, not full Atlas Pro compatibility.
+The Atlas-compatible test verbs run Ptah-native YAML/Go test cases; Atlas
+`.test.hcl` files are not ingested.
 
 ## Reports
 

@@ -103,15 +103,14 @@ type unsupportedCommunityCommandTest struct {
 }
 
 // unsupportedCommunityCommandTests lists the Atlas verbs that remain
-// deliberate Atlas CE unsupported-boundary stubs. `migrate test` and
-// `schema test` are no longer here: they forward to the native Ptah test
-// runners (see migrate_test_forward_test.go and schema_test_forward_test.go).
+// deliberate Atlas CE unsupported-boundary stubs. `migrate test`,
+// `schema test`, `migrate edit`, `migrate rebase`, and `migrate rm` are no
+// longer here: they forward to the native Ptah commands (see
+// migrate_test_forward_test.go, schema_test_forward_test.go, and
+// migrate_maint_forward_test.go).
 func unsupportedCommunityCommandTests() []unsupportedCommunityCommandTest {
 	return []unsupportedCommunityCommandTest{
-		{name: "migrate_edit", path: []string{"migrate", "edit"}},
 		{name: "migrate_push", path: []string{"migrate", "push"}},
-		{name: "migrate_rebase", path: []string{"migrate", "rebase"}},
-		{name: "migrate_rm", path: []string{"migrate", "rm"}},
 		{name: "schema_plan", path: []string{"schema", "plan"}},
 		{name: "schema_push", path: []string{"schema", "push"}},
 	}
