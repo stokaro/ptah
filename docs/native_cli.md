@@ -299,6 +299,53 @@ Deterministic precedence and conflict rules:
 `schema plan` and `migrate diff` intentionally keep local-file `--to` sources
 only; their desired-state URL support is a follow-up.
 
+## Atlas Schema Apply Safety: Locking and Dev Simulation
+
+`ptah atlas schema apply` enforces two safety contracts before it mutates the
+target database:
+
+- **Apply lock (`--lock-timeout`).** A session advisory lock named
+  `ptah_schema_apply` serializes concurrent schema applies against one target.
+  It is acquired right after connecting — before the target inspection and
+  planning that the apply serializes — and held through simulation, the
+  confirmation prompt, and execution, so the reviewed plan cannot go stale
+  between planning and applying. The lock is released on every exit path
+  (success, planning error, simulation error, apply error, and cancellation);
+  release runs on its own bounded background context so a canceled command
+  still unlocks. `--lock-timeout` bounds acquisition: empty waits
+  indefinitely, an elapsed timeout fails with a typed lock-timeout error
+  before the target is inspected (exit `1` on the Atlas-compatible surfaces),
+  and context cancellation always interrupts the wait. Both the normal apply
+  path and the pre-approved `--plan` path take the lock; `--dry-run` takes it
+  too, because planning is part of the serialized section. Per-dialect
+  mechanics: PostgreSQL `pg_advisory_lock` (FNV-32a key of the lock name),
+  MySQL and MariaDB `GET_LOCK`, SQL Server `sys.sp_getapplock`
+  (session-owned, exclusive). SQLite, ClickHouse, CockroachDB, YugabyteDB,
+  and Spanner have no session advisory-lock semantics: the apply proceeds
+  without a database lock, and an explicitly passed `--lock-timeout` prints a
+  note on stderr instead of failing, because refusing would break drop-in
+  scripts on engines (like single-writer SQLite) where the lock adds nothing.
+  This lock is separate from the migrator's `ptah_migrate` lock: declarative
+  applies and versioned migration runs are distinct workflows with distinct
+  lock scopes.
+- **Dev-database plan simulation (`--dev-url`).** Before a non-dry-run apply
+  touches the target, the exact ordered plan is rehearsed on the dev
+  database: the dev database is reset deterministically (the same clean used
+  by migration replays), the target's introspected — and exclude-filtered —
+  current schema is recreated on it, and the planned statements (including
+  SQL edited via `--edit`) execute in order under the same `--tx-mode` as the
+  target apply. Any rehearsal failure refuses the apply with a typed
+  simulation error stating that the target was left unchanged. Guard rails:
+  the dev URL must match the target dialect (checked from the URL scheme
+  before connecting), must not be `docker://`, must not equal the target URL
+  or a database-URL `--to` desired state (the dev database is reset
+  destructively), and must use the same schema
+  scope as the target on scope-parameterized dialects (SQL Server `?schema=`;
+  MySQL/MariaDB/ClickHouse database names may differ, since there the
+  "schema" is the database itself). Introspected PostgreSQL SERIAL columns
+  are recreated in their `SERIAL` spelling so their implicit sequences exist
+  on the dev database. A synced plan with no changes skips the simulation.
+
 ## Atlas Compatibility Waivers
 
 Some Atlas Pro commands and flags are accepted for surface parity but rejected

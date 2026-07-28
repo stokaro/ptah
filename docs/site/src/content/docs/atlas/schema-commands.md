@@ -144,8 +144,27 @@ ptah atlas schema apply --env local --dry-run
 
 `--dev-url` must match the target database dialect. For migration-directory
 `--to` sources it names the dev database the directory is replayed on and is
-required; for other sources it is used for dialect validation only. Ptah does
-not yet execute Atlas's dev-database simulation for declarative apply.
+required. Before a non-dry-run apply touches the target, the generated plan is
+rehearsed on the dev database: Ptah resets the dev database, recreates the
+target's introspected current schema on it, and executes the exact ordered
+plan statements — including SQL edited through `--edit` — under the same
+transaction mode as the target apply. A failed rehearsal refuses the apply and
+leaves the target unchanged. The dev database must not be the target itself
+or a database-URL `--to` desired state (it is reset destructively), must be
+directly connectable (no `docker://`), and must use the same schema scope as
+the target on scope-parameterized dialects such as SQL Server.
+
+`--lock-timeout` bounds how long the apply waits for the session advisory lock
+(`ptah_schema_apply`) that serializes concurrent schema applies against one
+target database. The lock is acquired before target inspection and planning,
+held through simulation, confirmation, and execution, and released on every
+exit path including cancellation. An empty value waits indefinitely; an
+elapsed timeout fails the apply before the target is inspected. PostgreSQL
+(`pg_advisory_lock`), MySQL and MariaDB (`GET_LOCK`), and SQL Server
+(`sp_getapplock`) use real database locks. SQLite, ClickHouse, CockroachDB,
+YugabyteDB, and Spanner have no advisory-lock semantics: the apply proceeds
+without a lock, and an explicitly passed `--lock-timeout` prints a note on
+stderr.
 
 `--exclude` accepts repeated or comma-separated Atlas-style glob patterns,
 including `[type=...]` selectors. Ptah applies the filter to both the current

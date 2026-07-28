@@ -63,8 +63,15 @@ SQL opens in $VISUAL or $EDITOR before the plan is shown and approved, and the
 edited SQL is what gets applied. With --plan file://<path>, a pre-approved
 local plan file saved by ` + "`atlas schema plan`" + ` is executed instead of
 re-planning, after verifying the database still matches the plan's source
-fingerprint; registry plan URLs are not supported. Schema/include filters and
-database lock waiting remain explicit follow-up gaps.`,
+fingerprint; registry plan URLs are not supported. A session advisory lock
+serializes concurrent applies against one target on PostgreSQL, MySQL,
+MariaDB, and SQL Server; --lock-timeout bounds how long acquisition waits
+(empty waits indefinitely), and dialects without advisory locks proceed
+unlocked with a note. Before the target is touched, --dev-url rehearses the
+exact ordered plan on the dev database: the dev database is reset, the
+target's current schema is recreated on it, and a failed rehearsal refuses
+the apply with the target unchanged. Schema/include filters remain explicit
+follow-up gaps.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaApply(cmd, opts)
 		},
@@ -153,6 +160,10 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	lockTimeout, err := atlasschema.ParseApplyLockTimeout(opts.lockTimeout)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
 	defer cancel()
@@ -161,6 +172,16 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		return cmdutil.Fail(cmd, fmt.Errorf("connect to --url: %w", err))
 	}
 	defer dbschema.CloseAndWarn(conn)
+
+	// The apply lock is held across inspection, planning, simulation,
+	// confirmation, and execution, so the plan cannot go stale between
+	// planning and applying. The deferred release covers every exit path.
+	applyLock, err := atlasschema.AcquireApplyLock(cmd.Context(), conn, lockTimeout)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	defer releaseAtlasSchemaApplyLock(cmd, applyLock)
+	noteAtlasSchemaApplyLockUnsupported(cmd, opts.lockTimeout, applyLock, conn.Info().Dialect)
 
 	plan, err := atlasschema.PrepareApply(cmd.Context(), conn, atlasschema.ApplyRuntimeOptions{
 		DevURL:     opts.devURL,
@@ -207,6 +228,17 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		return nil
 	}
 	if err := validateAtlasSchemaApplyDiffPolicy(txMode, conn, statements); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	// The dev database rehearses the exact ordered statements that would be
+	// applied — including edited SQL — and a failed rehearsal refuses the
+	// apply before the target is touched.
+	if err := plan.SimulateOnDev(cmd.Context(), atlasschema.SimulateOptions{
+		DevURL:      opts.devURL,
+		TargetURL:   opts.url,
+		DesiredURLs: opts.toURLs,
+		Statements:  statements,
+	}); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 
@@ -266,6 +298,10 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	lockTimeout, err := atlasschema.ParseApplyLockTimeout(opts.lockTimeout)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	path, err := atlasSchemaApplyPlanFilePath(opts.planURL)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -282,6 +318,16 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 		return cmdutil.Fail(cmd, fmt.Errorf("connect to --url: %w", err))
 	}
 	defer dbschema.CloseAndWarn(conn)
+
+	// The fingerprint verification is the serialized target inspection of the
+	// pre-approved plan path, so the lock is held before it and released on
+	// every exit path.
+	applyLock, err := atlasschema.AcquireApplyLock(cmd.Context(), conn, lockTimeout)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	defer releaseAtlasSchemaApplyLock(cmd, applyLock)
+	noteAtlasSchemaApplyLockUnsupported(cmd, opts.lockTimeout, applyLock, conn.Info().Dialect)
 
 	if err := atlasschema.VerifyPlanTarget(conn, plan); err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -346,9 +392,6 @@ func validateAtlasSchemaApplyPlanOptions(cmd *cobra.Command, opts atlasSchemaApp
 		if cmd.Flags().Changed(conflict.flag) {
 			return fmt.Errorf("atlas schema apply --plan cannot be combined with --%s: %s", conflict.flag, conflict.reason)
 		}
-	}
-	if strings.TrimSpace(opts.lockTimeout) != "" {
-		return fmt.Errorf("atlas schema apply accepts --lock-timeout, but Ptah does not implement database lock waiting yet")
 	}
 	return nil
 }
@@ -456,9 +499,6 @@ func validateAtlasSchemaApplyOptions(
 	if values, err := cmd.Flags().GetStringArray("include"); err == nil && len(values) > 0 {
 		return fmt.Errorf("atlas schema apply accepts --include, but Ptah only supports local schema files for this command yet")
 	}
-	if strings.TrimSpace(opts.lockTimeout) != "" {
-		return fmt.Errorf("atlas schema apply accepts --lock-timeout, but Ptah does not implement database lock waiting yet")
-	}
 	// Classification rejects unsupported schemes and source conflicts, and the
 	// dev-database requirement is checked here, before the target database is
 	// contacted.
@@ -490,6 +530,33 @@ func renderAtlasSchemaApplyFormat(opts atlasSchemaApplyOptions, statements []str
 		return "", err
 	}
 	return out.String(), nil
+}
+
+// releaseAtlasSchemaApplyLock releases the schema apply lock on every exit
+// path. Release runs on its own bounded background context, so it also works
+// when the command context has already been canceled.
+func releaseAtlasSchemaApplyLock(cmd *cobra.Command, lock *atlasschema.ApplyLock) {
+	if err := lock.Release(); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: failed to release schema apply lock: %v\n", err)
+	}
+}
+
+// noteAtlasSchemaApplyLockUnsupported surfaces the capability decision for
+// dialects without advisory-lock semantics: an explicitly requested
+// --lock-timeout is ignored and the apply proceeds without a database lock.
+// The note goes to stderr so --format output on stdout stays machine-clean.
+func noteAtlasSchemaApplyLockUnsupported(
+	cmd *cobra.Command,
+	requestedTimeout string,
+	lock *atlasschema.ApplyLock,
+	dialect string,
+) {
+	if strings.TrimSpace(requestedTimeout) == "" || lock.Supported() {
+		return
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(),
+		"note: schema apply locking is not supported for dialect %q; --lock-timeout is ignored and the apply proceeds without a database lock\n",
+		dialect)
 }
 
 func promptAtlasSchemaApplyConfirmation(prompt io.Writer, input io.Reader) (bool, error) {

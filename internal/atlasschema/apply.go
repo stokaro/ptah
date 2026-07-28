@@ -58,6 +58,10 @@ type ApplyRuntimePlan struct {
 	dryRun bool
 	conn   *dbschema.DatabaseConnection
 	txMode migrator.MigrationTxMode
+	// current is the exclude-filtered introspected target state the plan was
+	// computed against; the dev database simulation recreates it before
+	// rehearsing the plan.
+	current *types.DBSchema
 }
 
 func (p ApplyPlan) HasChanges() bool {
@@ -185,7 +189,7 @@ func PrepareApply(
 		return ApplyRuntimePlan{}, err
 	}
 
-	plan, err := PlanApply(ctx, conn, ApplyOptions{
+	computation, err := computeApplyPlan(ctx, conn, ApplyOptions{
 		ToURLs:     opts.ToURLs,
 		Exclude:    opts.Exclude,
 		Policy:     opts.Policy,
@@ -196,10 +200,11 @@ func PrepareApply(
 		return ApplyRuntimePlan{}, err
 	}
 	return ApplyRuntimePlan{
-		plan:   plan,
-		dryRun: opts.DryRun,
-		conn:   conn,
-		txMode: opts.TxMode,
+		plan:    ApplyPlan{statements: computation.statements},
+		dryRun:  opts.DryRun,
+		conn:    conn,
+		txMode:  opts.TxMode,
+		current: computation.current,
 	}, nil
 }
 
@@ -239,7 +244,18 @@ func ApplySQL(
 		return errors.New("schema apply execution requires database connection")
 	}
 
-	statements := SplitApplyStatements(sqlText, conn.Info().Dialect)
+	return applyStatements(ctx, conn, txMode, SplitApplyStatements(sqlText, conn.Info().Dialect))
+}
+
+// applyStatements executes the ordered statements on conn under txMode. It is
+// shared by the target apply and the dev database simulation, so both run the
+// exact same ordered plan through the same execution path.
+func applyStatements(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	txMode migrator.MigrationTxMode,
+	statements []string,
+) error {
 	switch txMode {
 	case migrator.MigrationTxModeNone:
 		return executeApplyStatements(ctx, conn.Writer(), statements)
