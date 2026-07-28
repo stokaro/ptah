@@ -158,7 +158,7 @@ Status: ✅ Database is up to date
 ✅ Database is already up to date!
 ```
 
-The database is adopted: `up` has nothing to do, and every future change follows the regular versioned loop — edit models, `generate` (which writes only the delta), `hash`, `up` — described in [Migrations](../../workflows/migrations/).
+The database is adopted: `up` has nothing to do, and every future change follows the regular versioned loop — edit models, `generate` (which writes only the delta), `hash`, `up` — described in [Versioned migrations](../../versioned/overview/).
 
 ## Keep history from another tool
 
@@ -206,5 +206,5 @@ For symptoms outside this flow, see [Troubleshooting](../../operate/troubleshoot
 ## Next steps
 
 - Decide how future changes reach this database: [Choose a workflow](../choose-a-workflow/).
-- Run the full versioned lifecycle on the adopted directory: [Migrations](../../workflows/migrations/).
-- Squash a long imported history into one checkpoint later: [Checkpoints](../../workflows/checkpoints/).
+- Run the full versioned lifecycle on the adopted directory: [Versioned migrations](../../versioned/overview/).
+- Squash a long imported history into one checkpoint later: [Checkpoints](../../versioned/checkpoints/).

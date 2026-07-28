@@ -104,8 +104,10 @@ Use these routes to avoid missing a class of docs:
   `docs/site/src/content/docs/schema/` source pages (`yaml.md`, `hcl.md`,
   `sql.md`, `orm-and-external.md`, `composite.md`).
 - **Migrations, sums, directives, revision tables, and safety**:
-  `migration/migrator/README.md`, `migration/generator/README.md`,
-  `docs/site/src/content/docs/workflows/migrations.md`,
+  `migration/migrator/README.md`, `migration/generator/README.md`, the
+  `docs/site/src/content/docs/versioned/` lifecycle pages (`overview.md`,
+  `generate.md`, `apply.md`, `rollback.md`, `integrity-and-safety.md`,
+  `maintain-history.md`, `import.md`),
   `docs/site/src/content/docs/examples/atlas-migrations.md`, and
   `docs/site/src/content/docs/operate/troubleshooting.md`.
 - **Parser/renderer or dialect behavior**: `internal/parser/README.md`,

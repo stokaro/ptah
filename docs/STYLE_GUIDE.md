@@ -40,7 +40,7 @@ Every page has exactly one primary type. Choose it before writing a word.
 | --- | --- | --- |
 | Tutorial | Learning by doing: one happy path, guaranteed end state, cleanup | `start/quick-start` |
 | Concept | Why and when: mental model, minimal commands | license boundary page |
-| How-to | Goal-directed steps for a competent reader; variants and failure modes allowed | `workflows/checkpoints` |
+| How-to | Goal-directed steps for a competent reader; variants and failure modes allowed | `versioned/checkpoints` |
 | Reference | Exhaustive and scannable; no narrative | `reference/exit-codes` |
 | Troubleshooting | Symptom-keyed diagnosis and fixes | `operate/troubleshooting` |
 | Compatibility/status | Evidence-dated claims about parity or coverage | `operate/conformance` |
