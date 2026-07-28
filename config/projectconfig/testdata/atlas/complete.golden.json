@@ -1,0 +1,24 @@
+{
+  "env_name": "local",
+  "database_url": "postgres://app@localhost:5432/app?sslmode=disable",
+  "dev_url": "docker://postgres/16/dev",
+  "schema_sources": [
+    "file://schema.hcl",
+    "schema.sql"
+  ],
+  "exclude": [
+    "tmp_*"
+  ],
+  "migration": {
+    "dir": "migrations",
+    "format": "atlas",
+    "revision_format": "atlas",
+    "revisions_schema": "atlas",
+    "lock_timeout": "3s",
+    "exec_order": "linear",
+    "tx_mode": "none"
+  },
+  "lint": {
+    "latest": 5
+  }
+}
