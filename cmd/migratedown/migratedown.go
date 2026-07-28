@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"strconv"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/onlineddl"
 	"github.com/stokaro/ptah/internal/preflight"
+	"github.com/stokaro/ptah/migration/generator"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
@@ -23,6 +25,7 @@ const (
 	dbURLFlag                = "db-url"
 	migrationsFlag           = "migrations-dir"
 	targetFlag               = "target"
+	shadowDBFlag             = "shadow-db"
 	dirFormatFlag            = "dir-format"
 	atlasEnvFlag             = "atlas-env"
 	dryRunFlag               = "dry-run"
@@ -43,6 +46,7 @@ type options struct {
 	dbURL                string
 	migrationsDir        string
 	target               string
+	shadowDB             string
 	dirFormat            string
 	atlasEnv             string
 	dryRun               bool
@@ -98,6 +102,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	flags.StringVar(&opts.migrationsDir, migrationsFlag, "", "Local directory or oci:// reference containing migration files (required)")
 	flags.StringVar(&opts.target, targetFlag, "0", "Target version to migrate down to (required)")
+	flags.StringVar(&opts.shadowDB, shadowDBFlag, "", "Ephemeral shadow database URL where the rollback plan is replayed and verified before touching the target")
 	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
 	flags.BoolVar(&opts.dryRun, dryRunFlag, false, "Show what migrations would be rolled back without actually running them")
@@ -288,14 +293,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	emit.Printf("Total migrations: %d\n", status.TotalMigrations)
 
 	if status.CurrentVersion <= targetVersion {
-		cliobs.ObserveNoopMigration(context.Background(), runtime.Observer(), "ptah.migrate.down",
-			migrator.ObservationAttribute{Key: "db.system", Value: conn.Info().Dialect},
-			migrator.ObservationAttribute{Key: "migration.direction", Value: "down"},
-			migrator.ObservationAttribute{Key: "migration.current_version", Value: status.CurrentVersion},
-			migrator.ObservationAttribute{Key: "migration.target_version", Value: status.CurrentVersion},
-			migrator.ObservationAttribute{Key: "migration.requested_target_version", Value: targetVersion},
-			migrator.ObservationAttribute{Key: "migration.pending_count", Value: 0},
-		)
+		observeNoopDown(runtime, conn.Info().Dialect, status.CurrentVersion, targetVersion)
 		emit.Printf("✅ Database is already at or below target version %d!\n", targetVersion)
 		return nil
 	}
@@ -307,12 +305,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	}
 
 	// Calculate which migrations will be rolled back
-	var migrationsToRollback []int64
-	for _, version := range appliedMigrations {
-		if version > targetVersion {
-			migrationsToRollback = append(migrationsToRollback, version)
-		}
-	}
+	migrationsToRollback := versionsAboveTarget(appliedMigrations, targetVersion)
 
 	emit.Printf("Migrations to roll back: %d\n", len(migrationsToRollback))
 
@@ -325,12 +318,21 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 
 	emit.Println()
 
-	// Safety confirmation (unless skipped or dry run)
-	promptWriter := cmd.OutOrStdout()
-	if opts.logFormat == "json" {
-		promptWriter = cmd.ErrOrStderr()
+	if err := verifyRollbackOnShadow(shadowVerification{
+		shadowDB:       opts.shadowDB,
+		migrationsFS:   migrationsFS,
+		dialect:        conn.Info().Dialect,
+		currentVersion: status.CurrentVersion,
+		targetVersion:  targetVersion,
+		dirFormat:      dirFormat,
+		atlasEnv:       atlasEnv,
+		connectTimeout: connectTimeout,
+	}, emit); err != nil {
+		return err
 	}
-	confirmed, err := confirmRollback(opts, promptWriter, cmd.InOrStdin(), status.CurrentVersion, targetVersion, migrationsToRollback)
+
+	// Safety confirmation (unless skipped or dry run)
+	confirmed, err := confirmRollbackPrompt(cmd, opts, status.CurrentVersion, targetVersion, migrationsToRollback)
 	if err != nil {
 		return err
 	}
@@ -376,6 +378,66 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	return nil
 }
 
+func versionsAboveTarget(appliedMigrations []int64, targetVersion int64) []int64 {
+	var versions []int64
+	for _, version := range appliedMigrations {
+		if version > targetVersion {
+			versions = append(versions, version)
+		}
+	}
+	return versions
+}
+
+func observeNoopDown(runtime *cliobs.Runtime, dialect string, currentVersion, targetVersion int64) {
+	cliobs.ObserveNoopMigration(context.Background(), runtime.Observer(), "ptah.migrate.down",
+		migrator.ObservationAttribute{Key: "db.system", Value: dialect},
+		migrator.ObservationAttribute{Key: "migration.direction", Value: "down"},
+		migrator.ObservationAttribute{Key: "migration.current_version", Value: currentVersion},
+		migrator.ObservationAttribute{Key: "migration.target_version", Value: currentVersion},
+		migrator.ObservationAttribute{Key: "migration.requested_target_version", Value: targetVersion},
+		migrator.ObservationAttribute{Key: "migration.pending_count", Value: 0},
+	)
+}
+
+type shadowVerification struct {
+	shadowDB       string
+	migrationsFS   fs.FS
+	dialect        string
+	currentVersion int64
+	targetVersion  int64
+	dirFormat      migrator.MigrationDirFormat
+	atlasEnv       string
+	connectTimeout time.Duration
+}
+
+// verifyRollbackOnShadow replays the rollback plan on a disposable shadow
+// database first, so a down file that fails or a missing down migration aborts
+// before the target is touched (and before the operator is asked to confirm).
+// Without --shadow-db it is a no-op, keeping the default output unchanged.
+func verifyRollbackOnShadow(v shadowVerification, emit cliobs.Emitter) error {
+	if v.shadowDB == "" {
+		return nil
+	}
+	err := generator.VerifyRollbackFromShadow(context.Background(), generator.RollbackFromShadowOptions{
+		ShadowDatabaseURL: v.shadowDB,
+		FS:                v.migrationsFS,
+		Dialect:           v.dialect,
+		CurrentVersion:    v.currentVersion,
+		TargetVersion:     v.targetVersion,
+		ProviderOptions: []migrator.FSProviderOption{
+			migrator.WithMigrationDirFormat(v.dirFormat),
+			migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: v.atlasEnv}),
+		},
+		ConnectTimeout: v.connectTimeout,
+	})
+	if err != nil {
+		return err
+	}
+	emit.Println("✅ Rollback plan verified on shadow database")
+	emit.Println()
+	return nil
+}
+
 func startObservability(cmd *cobra.Command, opts *options) (*cliobs.Runtime, error) {
 	logWriter := cmd.ErrOrStderr()
 	if opts.logFormat == "json" {
@@ -388,6 +450,16 @@ func startObservability(cmd *cobra.Command, opts *options) (*cliobs.Runtime, err
 		MetricsAddr: opts.metricsAddr,
 		LogWriter:   logWriter,
 	})
+}
+
+// confirmRollbackPrompt routes the confirmation prompt to stdout, or to stderr
+// under JSON log format where stdout carries structured output.
+func confirmRollbackPrompt(cmd *cobra.Command, opts *options, currentVersion, targetVersion int64, migrationsToRollback []int64) (bool, error) {
+	promptWriter := cmd.OutOrStdout()
+	if opts.logFormat == "json" {
+		promptWriter = cmd.ErrOrStderr()
+	}
+	return confirmRollback(opts, promptWriter, cmd.InOrStdin(), currentVersion, targetVersion, migrationsToRollback)
 }
 
 func confirmRollback(opts *options, prompt io.Writer, input io.Reader, currentVersion, targetVersion int64, migrationsToRollback []int64) (bool, error) {

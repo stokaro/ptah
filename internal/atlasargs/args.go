@@ -37,8 +37,13 @@ type Flag struct {
 	Kind        FlagKind
 	NativeName  string
 	Unsupported bool
-	MapValue    func(string) (string, error)
-	EnvDisabled bool
+	// UnsupportedReason, when set on an Unsupported flag, replaces the generic
+	// "not implemented yet" suffix with an explicit waiver rationale, so
+	// permanently out-of-scope flags (for example registry-bound ones) do not
+	// read as pending work.
+	UnsupportedReason string
+	MapValue          func(string) (string, error)
+	EnvDisabled       bool
 }
 
 type parsedFlag struct {
@@ -127,6 +132,38 @@ func UnsupportedBool(name, shorthand, usage string) Flag {
 	return flag
 }
 
+// UnsupportedStringReason creates an Atlas string flag that Ptah accepts for
+// help parity but rejects at runtime with an explicit waiver rationale.
+func UnsupportedStringReason(name, shorthand, usage, reason string) Flag {
+	flag := UnsupportedString(name, shorthand, usage)
+	flag.UnsupportedReason = reason
+	return flag
+}
+
+// UnsupportedBoolReason creates an Atlas boolean flag that Ptah accepts for
+// help parity but rejects at runtime with an explicit waiver rationale.
+func UnsupportedBoolReason(name, shorthand, usage, reason string) Flag {
+	flag := UnsupportedBool(name, shorthand, usage)
+	flag.UnsupportedReason = reason
+	return flag
+}
+
+// UnsupportedFlagError is the loud rejection returned when an accepted Atlas
+// flag has no implemented behavior. Callers that intercept args before Map
+// runs (for example dedicated format paths) use it so the rejection text stays
+// identical on every path.
+func UnsupportedFlagError(group, use string, flag Flag, displayName string) error {
+	if displayName == "" {
+		displayName = "--" + flag.Name
+	}
+	if flag.UnsupportedReason != "" {
+		return fmt.Errorf("atlas %s %s accepts %s, but Ptah does not implement its behavior: %s",
+			group, use, displayName, flag.UnsupportedReason)
+	}
+	return fmt.Errorf("atlas %s %s accepts %s, but Ptah does not implement its behavior yet",
+		group, use, displayName)
+}
+
 // LocalDirValue converts a local Atlas file:// directory URL to a native local
 // path and rejects remote migration directory URLs.
 func LocalDirValue(value string) (string, error) {
@@ -196,8 +233,7 @@ func Map(group, use string, flags []Flag, args []string) ([]string, error) {
 			displayName = "-" + parsed.name
 		}
 		if flag.Unsupported {
-			return nil, fmt.Errorf("atlas %s %s accepts %s, but Ptah does not implement its behavior yet",
-				group, use, displayName)
+			return nil, UnsupportedFlagError(group, use, flag, displayName)
 		}
 		nativeName := flag.Name
 		if flag.NativeName != "" {

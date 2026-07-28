@@ -310,6 +310,50 @@ func TestMap_FailurePathUnsupportedFlagsFailExplicitly(t *testing.T) {
 	}
 }
 
+func TestMap_FailurePathUnsupportedReasonFlagsCarryRationale(t *testing.T) {
+	c := qt.New(t)
+	flags := []atlasargs.Flag{
+		atlasargs.UnsupportedStringReason("to-tag", "", "Target migration tag",
+			"migration tags exist only in Atlas Registry"),
+		atlasargs.UnsupportedBoolReason("skip-checks", "", "Skip safety checks",
+			"Ptah has no generated checks to skip"),
+	}
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "string_reason",
+			args: []string{"--to-tag", "release-v1"},
+			want: "atlas migrate down accepts --to-tag, but Ptah does not implement its behavior: migration tags exist only in Atlas Registry",
+		},
+		{
+			name: "bool_reason",
+			args: []string{"--skip-checks"},
+			want: "atlas migrate down accepts --skip-checks, but Ptah does not implement its behavior: Ptah has no generated checks to skip",
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			_, err := atlasargs.Map("migrate", "down", flags, tt.args)
+			c.Assert(err, qt.ErrorMatches, tt.want)
+		})
+	}
+}
+
+func TestUnsupportedFlagError_DefaultsDisplayNameToLongFlag(t *testing.T) {
+	c := qt.New(t)
+	flag := atlasargs.UnsupportedBoolReason("plan", "", "Force dynamic planning", "bound to the cloud approval flow")
+
+	err := atlasargs.UnsupportedFlagError("migrate", "down", flag, "")
+
+	c.Assert(err, qt.ErrorMatches,
+		"atlas migrate down accepts --plan, but Ptah does not implement its behavior: bound to the cloud approval flow")
+}
+
 func schemaCleanFlags() []atlasargs.Flag {
 	return []atlasargs.Flag{
 		atlasargs.NativeString("url", "u", "Database URL to clean", "db-url"),

@@ -69,10 +69,14 @@ ptah migrations down \
 The `ptah atlas migrate down` command path exists and forwards to native Ptah
 rollback behavior. It maps compatible Atlas flags such as `--url`, `--dir`,
 `--to-version`, `--dry-run`, `--revisions-schema`, and `--lock-timeout`.
-Atlas dynamic down-planning flags such as `--dev-url`, `--to-tag`,
-`--skip-checks`, and `--plan` fail explicitly until Ptah implements equivalent
-planning behavior. Atlas Go template output formatting via `--format` also fails
-explicitly until Ptah supports that output contract.
+`--dev-url` replays and verifies the rollback plan on the dev database before
+the target is touched (the native `ptah migrations down --shadow-db`
+verification), and `--format` renders an Atlas Go-template report over `.Env`,
+`.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, and `.Error`, with
+the YES confirmation prompt on stderr (`--dry-run` or the native `--confirm`
+pass-through skip it). The registry-bound `--to-tag`, `--skip-checks`, and
+`--plan` flags are recorded waivers that fail loudly with their rationale
+instead of being silently ignored.
 
 ## Troubleshooting
 

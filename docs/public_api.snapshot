@@ -5770,6 +5770,7 @@ func GenerateCheckpointFromShadow(ctx context.Context, opts CheckpointFromShadow
 func GenerateCheckpointWithDatabase(ctx context.Context, conn *dbschema.DatabaseConnection, ...) (upSQL, downSQL string, err error)
 func GenerateCheckpointWithDatabaseInfo(schema *goschema.Database, info dbschematypes.DBInfo) (upSQL, downSQL string, err error)
 func VerifyBaselineShadow(ctx context.Context, opts BaselineShadowVerifyOptions) error
+func VerifyRollbackFromShadow(ctx context.Context, opts RollbackFromShadowOptions) error
 func WriteCheckpointFiles(outputDir string, version int64, description, upSQL, downSQL string) (upPath, downPath string, err error)
 func WriteDataMigrationFiles(outputDir string, version int64, description, upSQL, downSQL string) (upPath, downPath string, err error)
 type BaselineShadowVerifyOptions struct{ ... }
@@ -5781,6 +5782,7 @@ type MigrationFilePair struct{ ... }
 type MigrationFiles struct{ ... }
     func GenerateEmptyMigration(opts EmptyMigrationOptions) (*MigrationFiles, error)
     func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*MigrationFiles, error)
+type RollbackFromShadowOptions struct{ ... }
 type ShadowMismatch struct{ ... }
 type ShadowVerificationError struct{ ... }
 type ShadowVerificationResult struct{ ... }
@@ -5943,6 +5945,32 @@ type MigrationFiles struct {
 
 func GenerateEmptyMigration(opts EmptyMigrationOptions) (*MigrationFiles, error)
 func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*MigrationFiles, error)
+
+### github.com/stokaro/ptah/migration/generator.RollbackFromShadowOptions
+
+package generator // import "github.com/stokaro/ptah/migration/generator"
+
+type RollbackFromShadowOptions struct {
+    // ShadowDatabaseURL is an ephemeral database the verification drops clean
+    // and replays the migration directory into. Its contents are discarded.
+    ShadowDatabaseURL string
+    // FS is the migration filesystem whose rollback plan is verified.
+    FS fs.FS
+    // Dialect, when set, must match the shadow database dialect so the verified
+    // SQL is the SQL the target would execute.
+    Dialect string
+    // CurrentVersion is the target database's current migration version. The
+    // shadow database is migrated up to it before the rollback is replayed.
+    CurrentVersion int64
+    // TargetVersion is the version the rollback plan lands on.
+    TargetVersion int64
+    // ProviderOptions are passed to the migration provider (e.g. dir format).
+    ProviderOptions []migrator.FSProviderOption
+    // ConnectTimeout bounds the shadow database connection attempt.
+    ConnectTimeout time.Duration
+}
+    RollbackFromShadowOptions configures VerifyRollbackFromShadow.
+
 
 ### github.com/stokaro/ptah/migration/generator.ShadowMismatch
 

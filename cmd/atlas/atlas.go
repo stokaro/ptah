@@ -151,8 +151,8 @@ func newAtlasMigrateCommand() *cobra.Command {
 	cmd.AddCommand(newAtlasMigrateApplyCommand())
 	cmd.AddCommand(newAtlasMigrateLintCommand())
 	cmd.AddCommand(newAtlasMigrateStatusCommand())
+	cmd.AddCommand(newAtlasMigrateDownCommand())
 	for _, verb := range []atlasVerb{
-		atlasMigrateDownVerb(),
 		{
 			use:                "checkpoint",
 			displayUse:         "checkpoint [flags] [name]",
@@ -161,13 +161,22 @@ func newAtlasMigrateCommand() *cobra.Command {
 			factory:            migratecheckpoint.NewMigrateCheckpointCommand,
 			positionals:        []atlasPositionalArg{{name: "name", nativeName: "description"}},
 			positionalOptional: true,
-			// No --dir-format flag: checkpoint output is ptah-format only (see the
-			// native command's format guard), so the directory is read and written
-			// with the native ptah default rather than the atlas default the other
-			// migrate verbs use.
 			flags: []atlasargs.Flag{
 				atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
 				atlasargs.NativeString("dev-url", "", "URL of the dev database the directory is replayed into", "shadow-db"),
+				// Checkpoint output is ptah-format only: the checkpoint engine
+				// marks checkpoints with the `.checkpoint.` file-name pair plus
+				// ptah.sum, while Atlas marks them with an `-- atlas:checkpoint`
+				// file directive that Ptah's Atlas-format reader does not parse
+				// (and whose bootstrap semantics the migrator implements only
+				// for the ptah marker). Writing an Atlas-format checkpoint file
+				// would therefore produce a migration the engine replays as an
+				// ordinary migration — silently wrong — so any non-ptah value is
+				// a recorded waiver, rejected loudly (see docs/native_cli.md,
+				// "Atlas compatibility waivers"). No default is registered: the
+				// directory is read and written with the native ptah default
+				// rather than the atlas default the other migrate verbs use.
+				atlasCheckpointDirFormatFlag(),
 			},
 		},
 		atlasMigrateEditVerb(),
@@ -376,15 +385,36 @@ func atlasMigrateDownVerb() atlasVerb {
 		flags: []atlasargs.Flag{
 			atlasargs.NativeString("url", "u", "Database URL", "db-url"),
 			atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
-			atlasargs.UnsupportedString("dev-url", "", "Dev database URL used by Atlas for dynamic down planning"),
+			// Atlas uses --dev-url for dynamic down planning; Ptah replays and
+			// verifies the pre-planned rollback on the same throwaway database
+			// before touching the target (native --shadow-db).
+			atlasargs.NativeString("dev-url", "", "Dev database URL the rollback plan is verified on before applying it", "shadow-db"),
 			atlasargs.NativeString("to-version", "", "Target version to roll back to", "target"),
-			atlasargs.UnsupportedString("to-tag", "", "Target migration tag to roll back to"),
+			// --to-tag targets a registry tag, which only exists in the Atlas
+			// Registry — a cloud service Ptah intentionally has no counterpart
+			// for (see docs/native_cli.md, "Atlas compatibility waivers").
+			atlasargs.UnsupportedStringReason("to-tag", "", "Target migration tag to roll back to",
+				"migration tags exist only in Atlas Registry (Atlas Cloud); use --to-version with a migration version instead"),
 			atlasargs.NativeBool("dry-run", "", "Show rollback plan without applying it", "dry-run"),
+			// --format is implemented by newAtlasMigrateDownCommand, which
+			// intercepts it before the arg mapper runs. The Unsupported marker
+			// here is defense-in-depth: if a --format value ever reaches the
+			// mapper it still fails loudly instead of leaking to the native
+			// command as an unknown flag.
 			atlasargs.UnsupportedString("format", "", "Atlas Go template output format"),
 			atlasargs.NativeString("revisions-schema", "", "Schema for the revision table", "migrations-schema"),
 			atlasargs.NativeString("lock-timeout", "", "Timeout for acquiring migration locks", "migration-lock-timeout"),
-			atlasargs.UnsupportedBool("skip-checks", "", "Skip Atlas down migration safety checks"),
-			atlasargs.UnsupportedBool("plan", "", "Force Atlas dynamic down planning"),
+			// --skip-checks skips the checks of an Atlas Cloud pre-planned down
+			// migration; Ptah reverts through locally reviewed down files and
+			// has no generated checks to skip.
+			atlasargs.UnsupportedBoolReason("skip-checks", "", "Skip Atlas down migration safety checks",
+				"Atlas down checks are part of the Atlas Cloud plan-approval flow; Ptah reverts through locally reviewed down migrations and has no generated checks to skip"),
+			// --plan forces Atlas's registry-bound dynamic down planning. The
+			// local file-based pre-approved plan workflow is a separate #758
+			// item (the `schema plan` local workflow); until it lands, forcing
+			// a plan has no local meaning and is rejected rather than faked.
+			atlasargs.UnsupportedBoolReason("plan", "", "Force Atlas dynamic down planning",
+				"dynamic down planning is bound to the Atlas Cloud plan-approval flow; use --dev-url to verify the pre-planned rollback on a dev database instead"),
 		},
 	}
 }
@@ -561,6 +591,33 @@ func atlasSchemaTestVerb() atlasVerb {
 			atlasargs.NativeString("dev-url", "", "Dev database URL the test cases run against", "db-url"),
 			atlasargs.String("run", "", "Run only test cases matching a Go regular expression"),
 		},
+	}
+}
+
+// atlasCheckpointDirFormatFlag registers checkpoint's --dir-format for Atlas
+// help parity while keeping the ptah two-file checkpoint convention the only
+// writable output format. `ptah` (the native default) passes through; `atlas`
+// is the recorded waiver; every other Atlas directory format keeps the shared
+// "not implemented" rejection.
+func atlasCheckpointDirFormatFlag() atlasargs.Flag {
+	flag := atlasargs.NativeString("dir-format", "", "Migration directory format", "dir-format")
+	flag.MapValue = atlasCheckpointDirFormatValue
+	return flag
+}
+
+func atlasCheckpointDirFormatValue(value string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	switch normalized {
+	case "", "ptah":
+		return "ptah", nil
+	case atlasDirFormatDefault:
+		return "", fmt.Errorf("Atlas accepts --dir-format=atlas, but Ptah writes checkpoint files only in the ptah two-file convention " +
+			"(NNNNNNNNNN_name.checkpoint.up.sql/.down.sql plus ptah.sum); Atlas-format checkpoint output is a recorded waiver, not pending work")
+	default:
+		if slices.Contains(unsupportedAtlasDirFormats, normalized) {
+			return "", fmt.Errorf("Atlas accepts --dir-format=%s, but Ptah does not implement that directory format yet", normalized)
+		}
+		return "", fmt.Errorf("unknown Atlas migration directory format %q: expected atlas, golang-migrate, goose, flyway, liquibase, or dbmate", value)
 	}
 }
 
