@@ -21,7 +21,7 @@ Use this page when you know what you need to do, but not where the relevant Ptah
 | I want to embed Ptah in another Go tool | [Reusable components](../extend/components/) | [Public Go API](../extend/public-api/) |
 | I need to run Ptah in CI | [CI](../testing/ci/) | [Exit codes](../reference/exit-codes/) |
 | I need to test migrations or a desired schema | [Test migrations and schemas](../testing/migrations-and-schema/) | [Database test commands](../reference/test-cases/) |
-| I need dialect behavior | [Capabilities](../reference/capabilities/) | [Dialect notes](../reference/dialect-notes/) |
+| I need engine or dialect behavior | [Database support matrix](../databases/support-matrix/) | [Capabilities](../reference/capabilities/) |
 | I need Atlas docs coverage | [Atlas docs coverage](../atlas/docs-coverage/) | [Comparison](../atlas/comparison/) and [Conformance](../atlas/conformance/) |
 | I need the public Go API | [Public Go API](../extend/public-api/) | Stable packages, snapshots, and public API guard scripts |
 | I need diagrams | [Visualize the schema](../schema/visualize/) | [`examples/viz`](https://github.com/stokaro/ptah/tree/master/examples/viz) |

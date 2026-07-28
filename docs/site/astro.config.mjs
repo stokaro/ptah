@@ -36,6 +36,7 @@ const redirectRoutes = {
   '/operate/conformance/': '/atlas/conformance/',
   '/operate/license-boundary/': '/atlas/license-boundary/',
   '/reference/commands/': '/reference/native-commands/',
+  '/reference/dialect-notes/': '/databases/support-matrix/',
   '/reference/testing/': '/reference/test-cases/',
   '/reference/public-api/': '/extend/public-api/',
   '/reference/reusable-components/': '/extend/components/',
@@ -128,6 +129,15 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Databases',
+          items: [
+            { slug: 'databases/support-matrix' },
+            { slug: 'databases/postgresql' },
+            { slug: 'databases/sqlite' },
+            { slug: 'databases/sqlserver' },
+          ],
+        },
+        {
           label: 'Atlas compatibility',
           items: [
             { slug: 'atlas/overview' },
@@ -149,6 +159,15 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Concepts',
+          items: [
+            { slug: 'concepts/desired-schema-and-sources' },
+            { slug: 'concepts/migration-directory' },
+            { slug: 'concepts/database-urls-and-dev-databases' },
+            { slug: 'concepts/dialects-and-capabilities' },
+          ],
+        },
+        {
           label: 'Reference',
           items: [
             { slug: 'reference/native-commands' },
@@ -159,7 +178,6 @@ export default defineConfig({
             { slug: 'reference/hcl-schema' },
             { slug: 'reference/test-cases' },
             { slug: 'reference/capabilities' },
-            { slug: 'reference/dialect-notes' },
             { slug: 'reference/exit-codes' },
           ],
         },

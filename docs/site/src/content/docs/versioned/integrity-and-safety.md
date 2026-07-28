@@ -72,8 +72,9 @@ caught at review time, not at deploy time.
 ## Replay on a dev database
 
 Hashes prove the files are unchanged, not that the SQL executes. Add
-`--dev-url` to also clean a disposable **dev database** and replay the whole
-directory on it:
+`--dev-url` to also clean a disposable
+**[dev database](../../concepts/database-urls-and-dev-databases/)** and replay
+the whole directory on it:
 
 ```bash
 ptah migrations validate \

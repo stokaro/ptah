@@ -143,7 +143,9 @@ conflict rules.
 ## Verify on a shadow database
 
 Add `--shadow-db` to replay the whole directory — including the new migration
-— on a disposable **shadow database** before any files are kept. The shadow
+— on a disposable
+**[shadow database](../../concepts/database-urls-and-dev-databases/)** before
+any files are kept. The shadow
 database is dropped clean, migrated up, rolled back one step, and migrated up
 again, so both directions of the new migration are proven executable:
 
