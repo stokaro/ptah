@@ -230,9 +230,18 @@ registry `atlas://` plan URLs are rejected, and `--plan` cannot be combined
 with `--to`, `--file`, `--dev-url`, `--exclude`, or `--edit`. Atlas's hidden
 `--file/-f` alias is accepted for local HCL or SQL paths; `--schema/-s` is
 parsed for CLI compatibility but fails explicitly until schema scoping is
-implemented. `--lock-timeout` is registered for flag-surface parity and fails
-explicitly until database lock waiting is implemented. Include filters and
-Atlas dev-database simulation remain explicit gaps.
+implemented. `--lock-timeout` bounds waiting for the session advisory lock
+that serializes concurrent schema applies against one target: the lock is
+acquired before target inspection and planning, held through simulation,
+confirmation, and execution, and released on every exit path; empty waits
+indefinitely, an elapsed timeout fails before the target is inspected, and
+dialects without advisory locks (SQLite, ClickHouse, CockroachDB, YugabyteDB,
+Spanner) proceed unlocked with a stderr note. Before a non-dry-run apply,
+`--dev-url` rehearses the exact ordered plan on the dev database — reset, the
+target's current schema recreated, then the planned (or edited) statements
+executed under the same transaction mode — and a failed rehearsal refuses the
+apply with the target unchanged; the dev database must not be the target and
+must share its schema scope. Include filters remain an explicit gap.
 
 ### `ptah atlas schema plan`
 
