@@ -19,8 +19,8 @@ Use this page when you know what you need to do, but not where the relevant Ptah
 | I want to publish or consume migrations and schemas through OCI | [OCI registry artifacts](../workflows/oci-registry/) | [Apply migrations](../versioned/apply/) and [Commands](../reference/commands/) |
 | I need Atlas-style commands | [Atlas-compatible CLI](../workflows/atlas-cli/) | [Comparison](../reference/comparison/) |
 | I want to embed Ptah in another Go tool | [Reusable components](../reference/reusable-components/) | [Public Go API](../reference/public-api/) |
-| I need to run Ptah in CI | [CI](../workflows/ci/) | [Exit codes](../reference/exit-codes/) |
-| I need to test migrations or a desired schema | [Testing](../workflows/testing/) | [Database test commands](../reference/testing/) |
+| I need to run Ptah in CI | [CI](../testing/ci/) | [Exit codes](../reference/exit-codes/) |
+| I need to test migrations or a desired schema | [Test migrations and schemas](../testing/migrations-and-schema/) | [Database test commands](../reference/testing/) |
 | I need dialect behavior | [Capabilities](../reference/capabilities/) | [Dialect notes](../reference/dialect-notes/) |
 | I need Atlas docs coverage | [Atlas docs coverage](../reference/atlas-docs-coverage/) | [Comparison](../reference/comparison/) and [Conformance](../operate/conformance/) |
 | I need the public Go API | [Public Go API](../reference/public-api/) | Stable packages, snapshots, and public API guard scripts |

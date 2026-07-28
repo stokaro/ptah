@@ -1,5 +1,5 @@
 ---
-title: Testing
+title: Test migrations and schemas
 description: Assert migration and schema behavior with declarative test cases against a throwaway database.
 ---
 
@@ -22,7 +22,7 @@ test` and `ptah atlas schema test` (also via the `ptah-compat` binary) forward
 to the native runners with Atlas-shaped flags (`--dir` / `-u --url`,
 `--dev-url`, `--run`, `--config/--env/--var`) and the native exit codes, with
 Ptah-native YAML test files as the executable payload — see
-[Atlas-compatible CLI](../atlas-cli/).
+[Atlas-compatible CLI](../../workflows/atlas-cli/).
 
 ## Test-case format
 

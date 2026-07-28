@@ -44,8 +44,8 @@ import "github.com/stokaro/ptah/core/renderer"
 
 The `migration/dbtest` package is the embeddable engine behind the native test
 commands, including regular-expression case selection through `FilterCases`.
-See [Testing](../../workflows/testing/) for its case model and [Database test
-commands](../testing/) for CLI behavior.
+See [Test migrations and schemas](../../testing/migrations-and-schema/) for
+its case model and [Database test commands](../testing/) for CLI behavior.
 
 ## Migration Statement Observation
 

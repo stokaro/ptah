@@ -19,10 +19,10 @@ architecture is better.
 | Compose one schema from several packages or files | [Composite desired schema](docs/site/src/content/docs/schema/composite.md) |
 | Migration operations | [Versioned migrations](docs/site/src/content/docs/versioned/overview.md) |
 | Publish or consume migrations and schemas through OCI | [OCI registry artifacts](docs/site/src/content/docs/workflows/oci-registry.md) |
-| Test migrations or a desired schema | [Testing](docs/site/src/content/docs/workflows/testing.md) |
+| Test migrations or a desired schema | [Test migrations and schemas](docs/site/src/content/docs/testing/migrations-and-schema.md) |
 | Atlas-compatible CLI paths | [Atlas-compatible CLI](docs/site/src/content/docs/workflows/atlas-cli.md) |
 | Reusable Go packages | [Reusable components](docs/site/src/content/docs/reference/reusable-components.md) |
-| CI setup | [CI](docs/site/src/content/docs/workflows/ci.md) |
+| CI setup | [CI](docs/site/src/content/docs/testing/ci.md) |
 | Command and feature comparison | [Comparison](docs/site/src/content/docs/reference/comparison.md) |
 | Dialect behavior | [Capabilities](docs/site/src/content/docs/reference/capabilities.md) |
 | Problems during use | [Troubleshooting](docs/site/src/content/docs/operate/troubleshooting.md) |
