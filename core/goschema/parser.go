@@ -277,7 +277,7 @@ func (s *schemaParseState) parseIndexComment(comment *ast.Comment, structName st
 		Unique:        kv["unique"] == "true",
 		Comment:       kv["comment"],
 		Type:          kv["type"],                                  // PG: GIN/GIST/BTREE/HASH; CH: minmax/set(N)/bloom_filter/...
-		Condition:     firstNonEmpty(kv["where"], kv["condition"]), // PG/SQLite: WHERE clause for partial indexes
+		Condition:     firstNonEmpty(kv["where"], kv["condition"]), // PG/SQLite partial and SQL Server filtered indexes: WHERE clause
 		Operator:      kv["ops"],                                   // PG only: operator class (gin_trgm_ops, etc.)
 		NullsDistinct: parseBoolPtr(kv["nulls_distinct"]),
 		TableName:     tableName,   // Target table name

@@ -167,3 +167,85 @@ func TestGenerateSchemaDiffSQL_SQLServerRejectsColumnRemoval(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `.*SQL Server planner does not support automatic DROP COLUMN for users; write an explicit migration that drops dependent constraints and indexes first.*`)
 }
+
+// TestGenerateSchemaDiffSQL_SQLServerFilteredIndexPredicateChange proves that
+// a changed filtered-index predicate plans as DROP INDEX ... ON ... followed
+// by CREATE INDEX ... WHERE ... carrying the target predicate (#781).
+func TestGenerateSchemaDiffSQL_SQLServerFilteredIndexPredicateChange(t *testing.T) {
+	c := qt.New(t)
+
+	diff := &types.SchemaDiff{
+		IndexesAdded: []types.IndexRef{
+			{Name: "idx_active_users", TableName: "dbo.users"},
+		},
+		IndexesRemoved: []types.IndexRef{
+			{Name: "idx_active_users", TableName: "dbo.users"},
+		},
+	}
+	semantics := identifier.ForSQLServerCatalog("SQL_Latin1_General_CP1_CI_AS").
+		WithResolvedNames([]identifier.ResolvedName{
+			{Name: "dbo", Key: "dbo"},
+			{Name: "id", Key: "id"},
+			{Name: "idx_active_users", Key: "idx_active_users"},
+			{Name: "status", Key: "status"},
+			{Name: "users", Key: "users"},
+		})
+	diff.IdentifierSemantics = &semantics
+	generated := &goschema.Database{
+		Tables: []goschema.Table{{StructName: "User", Schema: "dbo", Name: "users"}},
+		Fields: []goschema.Field{
+			{StructName: "User", Name: "id", Type: "INT", Primary: true},
+			{StructName: "User", Name: "status", Type: "INT", Nullable: false},
+		},
+		Indexes: []goschema.Index{{
+			StructName: "User",
+			Name:       "idx_active_users",
+			Fields:     []string{"status"},
+			Condition:  "[status] = (2)",
+		}},
+	}
+
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, platform.SQLServer)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.HasLen, 2)
+	c.Assert(statements[0], qt.Equals, "DROP INDEX [idx_active_users] ON [dbo].[users]")
+	c.Assert(statements[1], qt.Equals, "CREATE INDEX [idx_active_users] ON [dbo].[users] ([status]) WHERE [status] = (2)")
+}
+
+// TestGenerateSchemaDiffSQL_SQLServerUnfilteredIndexStaysWithoutWhere guards
+// that ordinary index additions keep rendering without a WHERE clause.
+func TestGenerateSchemaDiffSQL_SQLServerUnfilteredIndexStaysWithoutWhere(t *testing.T) {
+	c := qt.New(t)
+
+	diff := &types.SchemaDiff{
+		IndexesAdded: []types.IndexRef{
+			{Name: "idx_users_status", TableName: "dbo.users"},
+		},
+	}
+	semantics := identifier.ForSQLServerCatalog("SQL_Latin1_General_CP1_CI_AS").
+		WithResolvedNames([]identifier.ResolvedName{
+			{Name: "dbo", Key: "dbo"},
+			{Name: "idx_users_status", Key: "idx_users_status"},
+			{Name: "status", Key: "status"},
+			{Name: "users", Key: "users"},
+		})
+	diff.IdentifierSemantics = &semantics
+	generated := &goschema.Database{
+		Tables: []goschema.Table{{StructName: "User", Schema: "dbo", Name: "users"}},
+		Fields: []goschema.Field{
+			{StructName: "User", Name: "status", Type: "INT", Nullable: false},
+		},
+		Indexes: []goschema.Index{{
+			StructName: "User",
+			Name:       "idx_users_status",
+			Fields:     []string{"status"},
+		}},
+	}
+
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, platform.SQLServer)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements, qt.HasLen, 1)
+	c.Assert(statements[0], qt.Equals, "CREATE INDEX [idx_users_status] ON [dbo].[users] ([status])")
+}

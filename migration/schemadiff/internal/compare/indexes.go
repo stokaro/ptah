@@ -405,7 +405,7 @@ func indexDefinitionsChanged(
 	semantics identifier.Semantics,
 ) bool {
 	if !boolPtrEqual(generated.NullsDistinct, database.NullsDistinct) ||
-		indexPredicateChanged(generated.Condition, database.Condition) {
+		indexPredicateChanged(generated.Condition, database.Condition, dialect) {
 		return true
 	}
 	if platform.NormalizeDialect(dialect) != platform.SQLServer {
@@ -458,16 +458,24 @@ func effectiveDatabaseIndexParts(index types.DBIndex) []types.DBIndexPart {
 	return parts
 }
 
-func indexPredicateChanged(generated, database string) bool {
+func indexPredicateChanged(generated, database, dialect string) bool {
 	if strings.TrimSpace(generated) == "" || strings.TrimSpace(database) == "" {
 		return strings.TrimSpace(generated) != strings.TrimSpace(database)
 	}
 	if checkExpressionHasUnsupportedRewrite(generated, database) {
 		return false
 	}
-	return normalizePredicate(generated) != normalizePredicate(database)
+	return normalizePredicate(generated, dialect) != normalizePredicate(database, dialect)
 }
 
-func normalizePredicate(value string) string {
+// normalizePredicate reduces an index predicate to a spelling-insensitive
+// comparison key. SQL Server additionally strips the catalog's canonical
+// filter_definition decorations (bracket quoting, parenthesized numeric
+// literals) so user-authored predicates converge with introspected ones
+// instead of planning a replacement on every run.
+func normalizePredicate(value, dialect string) string {
+	if platform.NormalizeDialect(dialect) == platform.SQLServer {
+		value = normalizeSQLServerPredicateSpelling(value)
+	}
 	return normalizeCheckExpression(value)
 }
