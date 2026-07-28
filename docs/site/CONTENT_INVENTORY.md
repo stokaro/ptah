@@ -66,6 +66,17 @@ table lists the pages the restructuring created.
 | `schema/composite.md` (630) | multi-source schema author | How do several schema sources merge into one desired schema? | howto | this page; merge, conflict, and error behavior run against the built binary | per-source `schema/*` pages (each links here instead of restating the rules), `workflows/migrations` compose section | created (canonical multi-source page, deduplicating the compose sections that lived on `workflows/go-schema`, `workflows/schema-files`, and `workflows/migrations`); keep |
 | `schema/visualize.md` (560) | any schema author | How do I render schema diagrams? | howto | this page; `ptah viz` runs against the built binary; `examples/viz/` artifacts | `start/install` (Graphviz optional tool), `operate/troubleshooting` (Graphviz symptom) | created (section 9, item 5, grown from `examples/schema-viz`); keep |
 
+### `Versioned migrations` group (added by the restructuring)
+
+The six lifecycle pages split out of `workflows/migrations.md` are covered by
+its row below; `versioned/checkpoints` and `versioned/reference-data` keep
+their rows in the `Use Ptah` table with `done` dispositions. This table lists
+the page the restructuring created.
+
+| Page (words) | Audience | Reader question | Type | Source of truth | Overlaps | Disposition |
+| --- | --- | --- | --- | --- | --- | --- |
+| `versioned/maintain-history.md` (827) | versioned-migration user | How do I change unapplied migrations and recover a dirty revision state? | howto | this page; `edit`, `rebase`, `rm`, and `repair` (including the dirty-state and `--resume-from` flows) run against the built binary | `versioned/rollback` (failed-down dirty state), `versioned/checkpoints` (squash contrast), Atlas forwards in exit-code and command tables | created (section 9, item 10); keep |
+
 ### `Use Ptah` group
 
 | Page (words) | Audience | Reader question | Type | Source of truth | Overlaps | Disposition |
@@ -74,11 +85,11 @@ table lists the pages the restructuring created.
 | `workflows/schema-files.md` (1,198) | schema-file user | How do I feed YAML, HCL, or SQL files to Ptah? | howto (four sources plus external programs plus composition on one page) | this page | `reference/yaml-schema`, `reference/hcl-schema`, `examples/yaml-schema`, `examples/atlas-hcl`, `workflows/orm-loaders` (external-program section) | done: split → `schema/yaml`, `schema/hcl`, `schema/sql`, `schema/composite`; external-program section merged into `schema/orm-and-external`; old URL redirects to `schema/yaml` |
 | `workflows/orm-loaders.md` (592) | ORM/external-provider user | How do I feed my ORM's schema into Ptah? | howto | this page (GORM path verified per its own claim) | `workflows/schema-files.md` "Load from an external program" | done: moved + rewritten → `schema/orm-and-external` (absorbed the external-program contract), old URL redirects |
 | `workflows/api-schema-export.md` (737) | API developer | How do I export entities to OpenAPI or GraphQL? | howto with an embedded type-mapping reference table | `cmd/schema` `export`; backing depth in `docs/api_schema_export.md` | `docs/api_schema_export.md` | done: moved → `schema/export`, old URL redirects |
-| `workflows/migrations.md` (1,031) | versioned-migration user | How do I run the migration lifecycle? | howto hub: 14 sections; "Squashing history", "Testing", and "Reference data" are two-to-three-sentence link-out stubs, "Operational hooks" is a link-out; "Importing from another tool" and "Safety gates" carry real depth | this page for the loop; `migration/migrator/README.md` and `docs/native_cli.md` carry deeper detail | `workflows/checkpoints`, `workflows/testing`, `workflows/reference-data`, `workflows/oci-registry`, `docs/native_cli.md` | split → `versioned/overview` (loop + mental model), `versioned/generate`, `versioned/apply`, `versioned/rollback`, `versioned/integrity-and-safety`, `versioned/import`; stub sections dissolve into links; old URL redirects to `versioned/overview` |
+| `workflows/migrations.md` (1,031) | versioned-migration user | How do I run the migration lifecycle? | howto hub: 14 sections; "Squashing history", "Testing", and "Reference data" are two-to-three-sentence link-out stubs, "Operational hooks" is a link-out; "Importing from another tool" and "Safety gates" carry real depth | this page for the loop; `migration/migrator/README.md` and `docs/native_cli.md` carry deeper detail | `workflows/checkpoints`, `workflows/testing`, `workflows/reference-data`, `workflows/oci-registry`, `docs/native_cli.md` | done: split → `versioned/overview` (loop + mental model + directory formats), `versioned/generate` (plan, generate, composite, shadow verification, manual create), `versioned/apply` (up, status, hooks, OCI-sourced runs), `versioned/rollback`, `versioned/integrity-and-safety` (hash/validate, dev-database replay, lint, destructive gate, pre-migration checks), `versioned/import`; stub sections dissolved into links; every example rerun against the built binary; old URL redirects to `versioned/overview` |
 | `workflows/oci-registry.md` (1,865) | operator/platform engineer | How do I publish, pin, and consume artifacts through an OCI registry? | howto | this page; deeper detail in `docs/oci_registry.md` (2,393 words) | `docs/oci_registry.md`, `workflows/migrations.md` OCI section | move + rewrite in place → `operate/oci-registry` |
-| `workflows/checkpoints.md` (884) | versioned-migration user | How do I squash migration history? | howto with concept material (file format, rollback boundary) | this page; `cmd/migratecheckpoint` | currently the only site prose describing `ptah migrations baseline` (the "Checkpoint versus baseline" contrast) | move → `versioned/checkpoints`; baseline how-to content gets its own home in `start/adopt-an-existing-database` |
+| `workflows/checkpoints.md` (884) | versioned-migration user | How do I squash migration history? | howto with concept material (file format, rollback boundary) | this page; `cmd/migratecheckpoint` | currently the only site prose describing `ptah migrations baseline` (the "Checkpoint versus baseline" contrast) | done: moved → `versioned/checkpoints`, old URL redirects; baseline how-to content has its own home in `start/adopt-an-existing-database` |
 | `workflows/testing.md` (766) | developer/CI operator | How do I test migrations and schemas declaratively? | howto | this page; `docs/testing.md` | `reference/testing` (intentional howto/reference pair — the model split to generalize), `docs/testing.md` | move → `testing/migrations-and-schema` |
-| `workflows/reference-data.md` (906) | app developer | How do I manage reference/lookup rows declaratively? | howto | this page; `cmd/migratedata` | contains the only prose comparing declarative data with `ptah seed` | move → `versioned/reference-data`; the seed contrast feeds `operate/seed-data` |
+| `workflows/reference-data.md` (906) | app developer | How do I manage reference/lookup rows declaratively? | howto | this page; `cmd/migratedata` | contains the only prose comparing declarative data with `ptah seed` | done: moved → `versioned/reference-data`, old URL redirects; the seed contrast feeds `operate/seed-data` |
 | `workflows/atlas-cli.md` (4,137) | Atlas migration user | How do I use Atlas-style commands with Ptah? | mixed: concept (translation model) + reference (three command tables duplicating `reference/commands.md`) + tutorial (worked example) + status (parity expectations) | `cmd/atlas`; conformance evidence in `stokaro/ptah-atlas-conformance` | `reference/commands.md` Atlas table, `reference/comparison.md`, `examples/atlas-migrations` | split → `atlas/overview` (concept, surfaces, parity expectations), `atlas/migrate-commands`, `atlas/schema-commands`; command-status tables deduplicate into `reference/atlas-commands`; old URL redirects to `atlas/overview` |
 | `workflows/ci.md` (371) | CI operator | How do I gate pull requests with Ptah? | howto | this page; `docs/github_action.md` | `docs/github_action.md` | move + rewrite → `testing/ci` (absorbs GitHub Action usage) |
 
@@ -313,7 +324,9 @@ these are merely misplaced content.
    (Found by this audit; not in the pre-implementation design.)
 10. **Maintenance how-to.** `migrations edit`, `rebase`, `rm`, and `repair`
     have command rows (except `repair`, see item 1) and exit-code rows but no
-    how-to home. New page: `versioned/maintain-history`.
+    how-to home. New page: `versioned/maintain-history`. Done: page created
+    with every verb (including the dirty-state repair and `--resume-from`
+    flows) run against the built binary.
 
 ## 10. Target navigation and page map
 

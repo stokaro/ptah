@@ -74,5 +74,5 @@ CREATE TABLE "pets" (
 ## Next steps
 
 - Combining SQL files with Go packages or other sources? [Composite desired schema](../composite/).
-- Planning versioned migrations from this file? [Migrations](../../workflows/migrations/).
+- Planning versioned migrations from this file? [Generate migrations](../../versioned/generate/).
 - Using Atlas-style commands end to end? [Atlas-compatible CLI](../../workflows/atlas-cli/).

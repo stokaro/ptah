@@ -77,4 +77,4 @@ ptah migrations validate --dir ./migrations
 
 - Need the exact accepted keys and shapes? [YAML schema reference](../../reference/yaml-schema/).
 - Combining YAML with Go packages or other files? [Composite desired schema](../composite/).
-- Ready to run the lifecycle? [Migrations](../../workflows/migrations/).
+- Ready to run the lifecycle? [Versioned migrations](../../versioned/overview/).

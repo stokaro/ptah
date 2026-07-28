@@ -185,5 +185,5 @@ The merge and conflict rules are on [Composite desired schema](../composite/).
 ## Next steps
 
 - Combining the loader with more sources? [Composite desired schema](../composite/).
-- Drift-checking a live database against the ORM? [Migrations](../../workflows/migrations/) covers plan and apply.
+- Drift-checking a live database against the ORM? [Versioned migrations](../../versioned/overview/) covers plan and apply.
 - Declaring the loader per environment? [Configuration](../../reference/configuration/).
