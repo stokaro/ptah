@@ -35,6 +35,11 @@ const redirectRoutes = {
   '/reference/atlas-docs-coverage/': '/atlas/docs-coverage/',
   '/operate/conformance/': '/atlas/conformance/',
   '/operate/license-boundary/': '/atlas/license-boundary/',
+  '/reference/commands/': '/reference/native-commands/',
+  '/reference/testing/': '/reference/test-cases/',
+  '/reference/public-api/': '/extend/public-api/',
+  '/reference/reusable-components/': '/extend/components/',
+  '/reference/query-builder/': '/extend/query-builder/',
 };
 
 const redirects = Object.fromEntries(
@@ -136,16 +141,23 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Extend Ptah',
+          items: [
+            { slug: 'extend/public-api' },
+            { slug: 'extend/components' },
+            { slug: 'extend/query-builder' },
+          ],
+        },
+        {
           label: 'Reference',
           items: [
-            { slug: 'reference/commands' },
+            { slug: 'reference/native-commands' },
+            { slug: 'reference/atlas-commands' },
+            { slug: 'reference/go-annotations' },
             { slug: 'reference/configuration' },
             { slug: 'reference/yaml-schema' },
             { slug: 'reference/hcl-schema' },
-            { slug: 'reference/public-api' },
-            { slug: 'reference/reusable-components' },
-            { slug: 'reference/query-builder' },
-            { slug: 'reference/testing' },
+            { slug: 'reference/test-cases' },
             { slug: 'reference/capabilities' },
             { slug: 'reference/dialect-notes' },
             { slug: 'reference/exit-codes' },

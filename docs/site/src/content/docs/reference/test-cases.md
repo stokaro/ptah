@@ -66,4 +66,4 @@ rejected because their effects can escape the database-local test lifecycle.
 
 For examples and CI guidance, see
 [Test migrations and schemas](../../testing/migrations-and-schema/). For the
-embeddable runner contract, see [Public Go API](../public-api/).
+embeddable runner contract, see [Public Go API](../../extend/public-api/).

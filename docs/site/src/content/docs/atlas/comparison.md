@@ -10,7 +10,7 @@ code; see [License boundary](../license-boundary/) for the repository
 and test-asset boundary.
 
 Ptah is also usable as importable Go packages, not only as a CLI. See
-[Reusable components](../../reference/reusable-components/) for the stable embedder surface.
+[Reusable components](../../extend/components/) for the stable embedder surface.
 
 Atlas has both open and commercial/cloud feature sets. The current Atlas
 [feature availability](https://atlasgo.io/features) page lists database
@@ -76,6 +76,20 @@ For a page-by-page crosswalk against the official Atlas documentation, see
 | Supported databases | Ptah has first-party support for PostgreSQL, SQLite, MySQL/MariaDB, SQL Server subsets, and capability-gated PostgreSQL-compatible or specialty targets. | Atlas docs list PostgreSQL, MySQL, MariaDB, SQLite, TiDB, and LibSQL as Open drivers. | Atlas Pro adds SQL Server, ClickHouse, Redshift, Oracle, Spanner, Snowflake, Databricks, CockroachDB, Azure HorizonDB, YugabyteDB, Aurora DSQL, Azure Fabric, and related drivers. | [Capabilities](../../reference/capabilities/), [Atlas feature availability](https://atlasgo.io/features) |
 | HCL and config | Ptah parses strict HCL schema and Atlas project config subsets. Evaluated local `env.src`, `env.schema.src`, `env.exclude`, `env.schema.mode`, `format.schema.inspect/apply/diff`, `format.migrate.apply/diff/lint/status`, supported `diff` policy, and supported lint analyzer severity policy feed Atlas-compatible commands, including local variable defaults, repeated string/list `--var name=value` overrides, locals, `getenv`, `file`, `fileset`, `format`, `jsonencode`, `data.hcl_schema.<name>.url`, and `lint.latest` / `lint.git` changeset defaults for migration linting. Ptah also composes a desired-state schema from multiple sources — several Go roots, or a mix of Go annotations, YAML, HCL, and SQL — via repeatable `--root-dir` and `--schema-file` flags on `ptah schema render`, `ptah schema compare`, `ptah migrations plan`, and `ptah migrations generate`, an open, local, no-account counterpart to Atlas's Pro `composite_schema` data source. Unsupported constructs fail explicitly rather than being silently ignored. | Atlas OSS supports SQL, HCL schema, external schema, remote/template directories, and related data sources listed as Open. | Pro data sources and policy features include composite schema, blob directory, custom lint rules, and review workflows. | [HCL schema](../../reference/hcl-schema/), [Atlas project config](../project-config/), [Atlas feature availability](https://atlasgo.io/features), [`stokaro/ptah#582`](https://github.com/stokaro/ptah/issues/582), [`stokaro/ptah#511`](https://github.com/stokaro/ptah/issues/511) |
 | Conformance status | Ptah uses the separate `ptah-atlas-conformance` repository as measured evidence against Atlas fixtures and behavior. The regression budget and full-conformance gates are intentionally separate: budget green means no unexpected regression, while full-conformance can remain red for known Atlas OSS gaps such as dynamic down planning. | Atlas fixtures and CLI behavior provide the comparison target for OSS-compatible behavior. | Commercial/cloud-only behavior is separated from the OSS drop-in target and tracked as documentation scope. | [`gaps.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps.md), [`gaps-live.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps-live.md), [`gaps-diff.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps-diff.md), [`stokaro/ptah#510`](https://github.com/stokaro/ptah/issues/510), [`stokaro/ptah-atlas-conformance#167`](https://github.com/stokaro/ptah-atlas-conformance/issues/167) |
+
+## Other tools
+
+For evaluators comparing categories rather than commands:
+
+- `golang-migrate` and `goose` are simpler versioned migration runners. Ptah
+  adds schema IR, diffing, planning, rendering, linting, safety
+  classification, capabilities, and Atlas-compatible flows.
+- Prisma and Ent tie schema workflows to their ecosystems. Ptah is Go-first
+  but is not an ORM.
+- Skeema is a MySQL/MariaDB declarative schema tool. Ptah is multi-source,
+  Go-embeddable, and multi-dialect.
+- `sqlc` generates typed code from queries. Ptah focuses on schema and
+  migration tooling, not query-code generation.
 
 ## Atlas Pro analyzer coverage
 

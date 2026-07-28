@@ -51,7 +51,7 @@ database implementation.
 Atlas CE cannot run the corresponding test commands because the testing
 framework is outside Atlas's open-source core. See
 [Test migrations and schemas](../../testing/migrations-and-schema/) and
-[Database test commands](../testing/).
+[Database test commands](../test-cases/).
 
 Continue with [Dialect notes](../dialect-notes/) for operational differences
 between supported database targets.

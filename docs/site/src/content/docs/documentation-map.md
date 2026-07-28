@@ -16,14 +16,14 @@ Use this page when you know what you need to do, but not where the relevant Ptah
 | My schema lives in HCL | [HCL schema](../schema/hcl/) | [HCL schema reference](../reference/hcl-schema/) |
 | My schema lives in SQL files | [SQL schema](../schema/sql/) | [Composite desired schema](../schema/composite/) |
 | My ORM owns the schema | [ORM and external loaders](../schema/orm-and-external/) | [Composite desired schema](../schema/composite/) |
-| I want to publish or consume migrations and schemas through OCI | [OCI registry artifacts](../workflows/oci-registry/) | [Apply migrations](../versioned/apply/) and [Commands](../reference/commands/) |
+| I want to publish or consume migrations and schemas through OCI | [OCI registry artifacts](../workflows/oci-registry/) | [Apply migrations](../versioned/apply/) and [Native commands](../reference/native-commands/) |
 | I need Atlas-style commands | [Atlas compatibility overview](../atlas/overview/) | [Comparison](../atlas/comparison/) |
-| I want to embed Ptah in another Go tool | [Reusable components](../reference/reusable-components/) | [Public Go API](../reference/public-api/) |
+| I want to embed Ptah in another Go tool | [Reusable components](../extend/components/) | [Public Go API](../extend/public-api/) |
 | I need to run Ptah in CI | [CI](../testing/ci/) | [Exit codes](../reference/exit-codes/) |
-| I need to test migrations or a desired schema | [Test migrations and schemas](../testing/migrations-and-schema/) | [Database test commands](../reference/testing/) |
+| I need to test migrations or a desired schema | [Test migrations and schemas](../testing/migrations-and-schema/) | [Database test commands](../reference/test-cases/) |
 | I need dialect behavior | [Capabilities](../reference/capabilities/) | [Dialect notes](../reference/dialect-notes/) |
 | I need Atlas docs coverage | [Atlas docs coverage](../atlas/docs-coverage/) | [Comparison](../atlas/comparison/) and [Conformance](../atlas/conformance/) |
-| I need the public Go API | [Public Go API](../reference/public-api/) | Stable packages, snapshots, and public API guard scripts |
+| I need the public Go API | [Public Go API](../extend/public-api/) | Stable packages, snapshots, and public API guard scripts |
 | I need diagrams | [Visualize the schema](../schema/visualize/) | [`examples/viz`](https://github.com/stokaro/ptah/tree/master/examples/viz) |
 | A command failed | [Troubleshooting](../operate/troubleshooting/) | The relevant command reference page |
 | I need Atlas parity evidence | [Conformance](../atlas/conformance/) | [`ptah-atlas-conformance`](https://github.com/stokaro/ptah-atlas-conformance) |

@@ -419,5 +419,5 @@ package permission model in [Publishing and installing a package with GitHub
 Actions](https://docs.github.com/en/packages/managing-github-packages-using-github-actions-workflows/publishing-and-installing-a-package-with-github-actions).
 
 Continue with [Integrity and safety](../../versioned/integrity-and-safety/) for migration safety and integrity
-workflows, [Commands](../../reference/commands/) for the command inventory, and
+workflows, [Native commands](../../reference/native-commands/) for the command inventory, and
 [Capabilities](../../reference/capabilities/) for support boundaries.
