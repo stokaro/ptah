@@ -6,10 +6,12 @@ import (
 	"io"
 
 	"github.com/stokaro/ptah/dbschema"
+	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/atlasfilter"
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/atlasurl"
 	"github.com/stokaro/ptah/internal/convert/dbschematogo"
+	"github.com/stokaro/ptah/internal/fileplan"
 	"github.com/stokaro/ptah/internal/schemascope"
 )
 
@@ -35,10 +37,11 @@ func NormalizeInspectFormat(format string) (string, error) {
 	return normalized, nil
 }
 
-// Inspect reads a live schema and renders it with Atlas-compatible formatting.
+// Inspect reads a live schema and renders it with Atlas-compatible
+// formatting, applying any split/write file exports the format template
+// planned.
 func Inspect(conn *dbschema.DatabaseConnection, opts InspectOptions) (string, error) {
-	format, err := NormalizeInspectFormat(opts.Format)
-	if err != nil {
+	if _, err := NormalizeInspectFormat(opts.Format); err != nil {
 		return "", err
 	}
 	if conn == nil {
@@ -52,21 +55,52 @@ func Inspect(conn *dbschema.DatabaseConnection, opts InspectOptions) (string, er
 	if err != nil {
 		return "", fmt.Errorf("read database schema: %w", err)
 	}
+	return renderInspectSchema(schema, conn.Info(), opts)
+}
+
+// renderInspectSchema is the shared inspect tail for every source kind:
+// exclude filtering, report construction, format rendering, and application
+// of the planned split/write file exports.
+func renderInspectSchema(
+	schema *dbschematypes.DBSchema,
+	info dbschematypes.DBInfo,
+	opts InspectOptions,
+) (string, error) {
+	format, err := NormalizeInspectFormat(opts.Format)
+	if err != nil {
+		return "", err
+	}
 	schema, err = atlasfilter.ExcludeDatabase(schema, opts.Exclude)
 	if err != nil {
 		return "", err
 	}
 	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema)
-	rendered, err := atlasreport.RenderSchemaInspectFormat(format, atlasreport.NewSchemaInspectReport(
+	output, err := atlasreport.RenderSchemaInspect(format, atlasreport.NewSchemaInspectReport(
 		dbsch,
 		schema,
-		conn.Info(),
+		info,
 		opts.Diagnostics,
 	))
 	if err != nil {
 		return "", err
 	}
-	return rendered, nil
+	if err := applyInspectFileExports(output.Files); err != nil {
+		return "", err
+	}
+	return output.Text, nil
+}
+
+// applyInspectFileExports hands the rendered output plan to the shared
+// file-plan writer, which enforces path safety before any file is written.
+func applyInspectFileExports(files []atlasreport.SchemaInspectFile) error {
+	if len(files) == 0 {
+		return nil
+	}
+	plan := make([]fileplan.File, 0, len(files))
+	for _, file := range files {
+		plan = append(plan, fileplan.File{Root: file.Dir, Path: file.Path, Data: file.Data})
+	}
+	return fileplan.Apply(plan)
 }
 
 // SplitSchemaNames expands repeated and comma-separated Atlas schema filters.

@@ -132,7 +132,7 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (Stat
 	if err := s.ensureDevDialect(devURL, opts); err != nil {
 		return State{}, err
 	}
-	if err := verifyMigrationDirSum(source.Path); err != nil {
+	if err := VerifyMigrationDir(source.Path); err != nil {
 		return State{}, err
 	}
 
@@ -149,7 +149,7 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (Stat
 	if err != nil {
 		return State{}, fmt.Errorf("read dev database schema: %w", err)
 	}
-	schema = withoutRevisionTable(schema)
+	schema = WithoutRevisionTable(schema)
 	return State{
 		Kind:          s.Kind,
 		Schema:        dbschematogo.ConvertDBSchemaToGoSchema(schema),
@@ -170,9 +170,10 @@ func (s Set) ensureDevDialect(devURL string, opts ResolveOptions) error {
 	return fmt.Errorf("--dev-url dialect %q does not match %s dialect %q", devDialect, opts.DialectFlag, pinned)
 }
 
-// verifyMigrationDirSum mirrors `atlas migrate diff` checksum handling: a
-// missing atlas.sum is tolerated, an invalid one fails before replay.
-func verifyMigrationDirSum(dir string) error {
+// VerifyMigrationDir mirrors `atlas migrate diff` checksum handling for a
+// migration directory used as a desired-state or inspection source: a missing
+// atlas.sum is tolerated, an invalid one fails before replay.
+func VerifyMigrationDir(dir string) error {
 	result, err := migratesum.VerifyDirWithFormat(dir, migrator.MigrationDirFormatAtlas)
 	if errors.Is(err, migratesum.ErrSumFileMissing) {
 		return nil
@@ -186,7 +187,10 @@ func verifyMigrationDirSum(dir string) error {
 	return nil
 }
 
-func withoutRevisionTable(schema *dbschematypes.DBSchema) *dbschematypes.DBSchema {
+// WithoutRevisionTable returns a copy of schema with the Atlas revision table
+// (and its indexes and constraints) removed, so replayed dev-database state
+// only exposes the migrations' own objects.
+func WithoutRevisionTable(schema *dbschematypes.DBSchema) *dbschematypes.DBSchema {
 	if schema == nil {
 		return &dbschematypes.DBSchema{}
 	}

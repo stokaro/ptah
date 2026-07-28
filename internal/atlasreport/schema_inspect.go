@@ -77,12 +77,39 @@ type atlasSchemaInspectJSONForeignKey struct {
 	} `json:"references"`
 }
 
-func RenderSchemaInspectFormat(format string, report *SchemaInspectReport) (string, error) {
-	var out strings.Builder
-	if err := renderAtlasSchemaInspectTemplate(&out, "atlas-schema-inspect-format", format, report); err != nil {
-		return "", err
+// SchemaInspectFile is one output file planned by a split/write --format
+// template. Path is slash-separated and relative to Dir; Dir is the output
+// directory exactly as the template's write call named it.
+type SchemaInspectFile struct {
+	Dir  string
+	Path string
+	Data string
+}
+
+// SchemaInspectOutput is the explicit result of rendering one schema inspect
+// format. Every inspect format — HCL, SQL, JSON, custom templates, Mermaid
+// helpers, and split/write exports — flows through this one model: Text is
+// what the CLI prints, Files are the write calls the template planned.
+// Rendering is pure; the caller decides whether and how to apply Files.
+type SchemaInspectOutput struct {
+	Text  string
+	Files []SchemaInspectFile
+}
+
+// RenderSchemaInspect executes the Atlas schema inspect --format template and
+// returns the rendered text together with the planned file writes. It never
+// touches the filesystem.
+func RenderSchemaInspect(format string, report *SchemaInspectReport) (SchemaInspectOutput, error) {
+	var files []SchemaInspectFile
+	tmpl, err := newAtlasSchemaInspectTemplate("atlas-schema-inspect-format", format, report, &files)
+	if err != nil {
+		return SchemaInspectOutput{}, err
 	}
-	return out.String(), nil
+	var out strings.Builder
+	if err := tmpl.Execute(&out, report); err != nil {
+		return SchemaInspectOutput{}, fmt.Errorf("execute --format template: %w", err)
+	}
+	return SchemaInspectOutput{Text: out.String(), Files: files}, nil
 }
 
 func NewSchemaInspectReport(
@@ -102,7 +129,8 @@ func NewSchemaInspectReport(
 }
 
 func ValidateSchemaInspectTemplate(format string) error {
-	_, err := newAtlasSchemaInspectTemplate("atlas-schema-inspect-format", format)
+	var files []SchemaInspectFile
+	_, err := newAtlasSchemaInspectTemplate("atlas-schema-inspect-format", format, nil, &files)
 	return err
 }
 
@@ -120,36 +148,43 @@ func NormalizeSchemaInspectFormat(format string) (string, error) {
 	return format, nil
 }
 
-func renderAtlasSchemaInspectTemplate(
-	out *strings.Builder,
+// newAtlasSchemaInspectTemplate parses the --format template with split/write
+// bound to this render: split groups against the report's default schema and
+// write appends planned files to files instead of touching the filesystem.
+// report may be nil for parse-only validation.
+func newAtlasSchemaInspectTemplate(
 	name string,
 	format string,
 	report *SchemaInspectReport,
-) error {
-	tmpl, err := newAtlasSchemaInspectTemplate(name, format)
-	if err != nil {
-		return err
-	}
-	if err := tmpl.Execute(out, report); err != nil {
-		return fmt.Errorf("execute --format template: %w", err)
-	}
-	return nil
-}
-
-func newAtlasSchemaInspectTemplate(name, format string) (*template.Template, error) {
+	files *[]SchemaInspectFile,
+) (*template.Template, error) {
 	tmpl, err := template.New(name).Funcs(template.FuncMap{
 		"base64url": atlasSchemaInspectBase64URL,
 		"hcl":       atlasSchemaInspectHCL,
 		"json":      atlasTemplateJSON,
 		"mermaid":   atlasSchemaInspectMermaid,
 		"sql":       atlasSchemaInspectSQL,
-		"split":     atlasSchemaInspectSplit,
-		"write":     atlasSchemaInspectWrite,
+		"split": func(args ...any) (schemaInspectArchive, error) {
+			return atlasSchemaInspectSplit(report.defaultSchemaName(), args...)
+		},
+		"write": func(args ...any) (string, error) {
+			return atlasSchemaInspectWrite(files, args...)
+		},
 	}).Parse(format)
 	if err != nil {
 		return nil, fmt.Errorf("parse --format template: %w", err)
 	}
 	return tmpl, nil
+}
+
+// defaultSchemaName resolves the schema that owns unqualified objects for
+// split grouping. It is nil-safe so template validation can parse formats
+// without a report.
+func (r *SchemaInspectReport) defaultSchemaName() string {
+	if r == nil {
+		return ""
+	}
+	return atlasSchemaInspectSchemaName("", r.info)
 }
 
 func (r *SchemaInspectReport) MarshalHCL() (string, error) {
