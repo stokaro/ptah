@@ -59,24 +59,25 @@ func appendDatabase(dst, src *Database) {
 	dst.ManagedData = append(dst.ManagedData, src.ManagedData...)
 }
 
-// finalizeDatabase runs the shared post-merge pipeline over an accumulator that
-// already holds the concatenated schema slices of one or more sources. It
-// validates that no two sources define the same object differently,
-// deduplicates identical definitions, normalizes table-scoped names, expands
-// embedded fields into concrete fields, and then rebuilds the dependency graph
-// and ordering. It is the single finalize path shared by ParseFS and Merge.
+// finalizeDatabase rebuilds the derived state shared by every parsed or merged
+// database after the caller has applied its collision policy.
 func finalizeDatabase(result *Database) error {
-	if err := validateDuplicateSchemaObjectDefinitions(result); err != nil {
-		return err
-	}
-
-	// deduplicate entities (same table/field defined in multiple files/sources)
-	Deduplicate(result)
-	normalizeTableScopedNames(result)
-
 	// Process embedded fields BEFORE building dependency graph so that foreign
 	// keys contributed by embedded fields are included in dependency analysis.
 	result.Fields = processEmbeddedFields(result.EmbeddedFields, result.Fields)
+	validator := compositeDefinitionValidator{
+		database: result,
+		resolver: newTableScopeResolver(result.Tables),
+	}
+	if err := validator.fields(); err != nil {
+		return err
+	}
+	result.Fields = deduplicateFields(
+		result.Fields,
+		validator.resolver,
+		compositeDeduplicationScope,
+	)
+	removeCompositeHelperDefinitions(result)
 
 	// Build dependency graph for foreign key ordering.
 	buildDependencyGraph(result)
@@ -84,44 +85,102 @@ func finalizeDatabase(result *Database) error {
 	// Sort tables and functions by dependency order.
 	sortTablesByDependencies(result)
 	sortFunctionsByDependencies(result)
-
 	return nil
+}
+
+// removeCompositeHelperDefinitions keeps source provenance inside the merge
+// pipeline. Embedded helper types are expansion inputs, not database columns;
+// once their concrete table fields have been generated they must not reach
+// renderers, planners, exporters, or schema comparison.
+func removeCompositeHelperDefinitions(result *Database) {
+	fields := result.Fields[:0]
+	for _, field := range result.Fields {
+		if isCompositeHelperType(field.StructName) {
+			continue
+		}
+		field.FieldName = unscopedGoTypeIdentity(field.FieldName)
+		fields = append(fields, field)
+	}
+	result.Fields = fields
+
+	embeddedFields := result.EmbeddedFields[:0]
+	for _, field := range result.EmbeddedFields {
+		if isCompositeHelperType(field.StructName) {
+			continue
+		}
+		field.EmbeddedTypeName = unscopedGoTypeIdentity(field.EmbeddedTypeName)
+		embeddedFields = append(embeddedFields, field)
+	}
+	result.EmbeddedFields = embeddedFields
+}
+
+func finalizeAccumulatedDatabase(result *Database) error {
+	normalizeTableScopedNames(result)
+	if err := validateDuplicateSchemaObjectDefinitions(result); err != nil {
+		return err
+	}
+	deduplicateComposite(result)
+	return finalizeDatabase(result)
 }
 
 // Merge combines several parsed source schemas into a single finalized Database.
 //
-// It concatenates every schema slice of the inputs and then runs the same
-// finalize pipeline that ParseFS applies to the per-file schemas of one
-// directory, so it reconciles cross-source objects exactly as ParseFS reconciles
-// cross-file ones. Conflicting definitions of a named schema, view, materialized
-// view, trigger, constraint, or role are rejected with an error. Tables, fields,
-// and the remaining object kinds are deduplicated first-wins: identical
-// definitions across sources collapse to one, and if two sources define the same
-// table or field differently the first is kept (matching ParseFS's cross-file
-// behavior; stricter table/field conflict detection for composite sources is a
-// follow-up). Embedded fields are then expanded and the dependency graph and
-// table/function ordering are rebuilt. The derived maps of the inputs are
-// ignored and recomputed from the merged slices. A nil input is skipped.
+// It reconciles source-local Go struct associations, concatenates every schema
+// slice of the inputs, and then runs the same strict finalization that ParseFS
+// applies to the per-file schemas of one directory. Every named object kind
+// uses its stable database identity, with
+// schema-qualified names where applicable, table-qualified names for fields,
+// indexes, constraints, triggers, and RLS objects, and global names for objects
+// such as extensions, functions, enums, and roles. Identical definitions
+// collapse to one; definitions with the same identity but different desired
+// properties return a descriptive conflict error. Parser-only Go struct and
+// field names do not make otherwise identical definitions conflict.
+//
+// Embedded fields are then expanded and the dependency graph and table/function
+// ordering are rebuilt. The derived maps of the inputs are ignored and
+// recomputed from the merged slices. A nil input is skipped.
 //
 // Merge is the reusable form of the merge ParseFS performs internally, so it can
 // assemble a composite desired-state schema from heterogeneous sources (several
 // Go roots, or a mix of Go, YAML, and HCL) and feed the result to the existing
 // render/compare/migrate paths unchanged.
 //
-// Inputs must be freshly parsed sources whose embedded fields have not yet been
-// expanded into concrete fields (as produced by parsing a single file), not the
-// already-finalized output of ParseDir/ParseFS: processEmbeddedFields is not
-// idempotent, so re-finalizing an already-expanded schema would duplicate the
-// generated fields.
+// Inputs may be raw parser output or already-finalized schemas from ParseDir,
+// ParseFS, or an OCI artifact. Post-expansion conflict validation and
+// deduplication make repeated finalization idempotent.
 func Merge(dbs ...*Database) (*Database, error) {
-	result := newDatabase()
+	sources := make([]*Database, 0, len(dbs))
 	for _, db := range dbs {
 		if db == nil {
 			continue
 		}
-		appendDatabase(result, db)
+		source := newDatabase()
+		appendDatabase(source, db)
+		sources = append(sources, source)
 	}
-	if err := finalizeDatabase(result); err != nil {
+	if err := reconcileTableOwners(sources); err != nil {
+		return nil, err
+	}
+
+	result := newDatabase()
+	for _, source := range sources {
+		appendDatabase(result, source)
+	}
+	return finalizeMergedDatabase(result)
+}
+
+// mergeAccumulatedDatabase reconciles and finalizes a mutable accumulator
+// assembled by ParseFS. Merge copies and reconciles its inputs first so callers'
+// source schemas are never mutated.
+func mergeAccumulatedDatabase(result *Database) (*Database, error) {
+	if err := reconcileTableOwners([]*Database{result}); err != nil {
+		return nil, err
+	}
+	return finalizeMergedDatabase(result)
+}
+
+func finalizeMergedDatabase(result *Database) (*Database, error) {
+	if err := finalizeAccumulatedDatabase(result); err != nil {
 		return nil, err
 	}
 	return result, nil

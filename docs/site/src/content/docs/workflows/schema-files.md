@@ -139,11 +139,33 @@ ptah schema render \
   --dialect postgres
 ```
 
-Sources are merged and finalized together; identical objects are deduplicated and
-conflicting definitions are an error. This is Ptah's open, local, no-account
-equivalent of Atlas's Pro-only `composite_schema` data source. For composing
-multiple Go packages — including on `ptah schema compare` and the migration
-commands — see [Go schema](../go-schema/).
+Sources are merged and finalized together. At source boundaries, Ptah checks
+every named object by its database identity: schema-qualified names where the
+object supports schemas, table-qualified names for columns, indexes,
+constraints, triggers, and RLS policies, and global names for extensions,
+functions, enums, and roles. Identical definitions are deduplicated even when
+their parser-only Go names differ. If the same identity has different desired
+properties, Ptah stops before rendering or connecting to a database with an
+error such as:
+
+```text
+error merging composite schema: conflicting field "id" definitions on table "users"
+```
+
+Treat each repeatable `--root-dir` and `--schema-file` value, plus the selected
+`--schema-cmd` when present, as one ownership boundary. Ptah applies the same
+strict database-identity conflict checks inside a Go root and across source
+boundaries. Separate roots also preserve source-root-local helper type ownership,
+so identical helper names in different roots cannot mix columns between
+schema-qualified tables. The isolation includes direct and nested embedded
+helper types. A single recursively scanned root remains one type namespace.
+Managed-data file references retain their declaring Go root rather than being
+reinterpreted relative to whichever root happened to be loaded first.
+
+This is Ptah's open, local, no-account equivalent of Atlas's Pro-only
+`composite_schema` data source. For composing multiple Go packages — including
+on `ptah schema compare` and the migration commands — see
+[Go schema](../go-schema/).
 
 ## Load from an external program
 

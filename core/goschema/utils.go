@@ -1,7 +1,6 @@
 package goschema
 
 import (
-	"fmt"
 	"log/slog"
 	"maps"
 	"regexp"
@@ -123,12 +122,16 @@ func sortTablesByDependencies(r *Database) {
 	var sorted []Table
 	inDegree := make(map[string]int)
 
-	// Calculate in-degrees (how many dependencies each table has)
-	for tableName := range r.Dependencies {
+	// Calculate in-degrees from dependencies present in this source. A parsed
+	// source may reference a table supplied by another source and finalized only
+	// after composition; that is an unresolved external edge, not a cycle.
+	for tableName := range tableMap {
 		inDegree[tableName] = 0
-	}
-	for tableName, deps := range r.Dependencies {
-		inDegree[tableName] = len(deps)
+		for _, dependency := range r.Dependencies[tableName] {
+			if _, exists := tableMap[dependency]; exists {
+				inDegree[tableName]++
+			}
+		}
 	}
 
 	// Find tables with no dependencies (in-degree 0)
@@ -954,118 +957,139 @@ func isFunctionInSorted(function Function, sorted []Function) bool {
 //   - Roles: Deduplicated by role name
 //   - Schemas: Deduplicated by schema name
 //
-// All 16 Database slice collections are now covered (previously only a subset
-// of appended collections were deduplicated, and the five dropped by ParseFS
-// were never reached). This prevents duplicate emits when objects are declared
-// across files.
+// Composite finalization additionally deduplicates sequences, domains,
+// composite types, ranges, and exact managed-data declarations. Grants retain
+// their full role/privilege/target identity, while distinct managed-data files
+// targeting the same table remain separate. This prevents duplicate emits when
+// objects are declared across files or composite sources.
 //
 // This method modifies the Database in-place, replacing the original
 // slices with deduplicated versions. The order of entities may change during
 // this process, but dependency ordering is handled separately.
 func Deduplicate(r *Database) {
+	deduplicateDatabase(r, structDeduplicationScope, unscopedDeduplication)
+}
+
+func deduplicateComposite(r *Database) {
+	deduplicateDatabase(r, compositeDeduplicationScope, compositeDeduplicationScope)
+	r.Sequences = deduplicateNamedDefinitions(r.Sequences, func(sequence Sequence) string {
+		return sequence.QualifiedName()
+	})
+	r.Domains = deduplicateNamedDefinitions(r.Domains, func(domain Domain) string {
+		return domain.QualifiedName()
+	})
+	r.CompositeTypes = deduplicateNamedDefinitions(r.CompositeTypes, func(composite CompositeType) string {
+		return composite.QualifiedName()
+	})
+	r.Ranges = deduplicateNamedDefinitions(r.Ranges, func(rangeType Range) string {
+		return rangeType.QualifiedName()
+	})
+	r.ManagedData = deduplicateNamedDefinitions(r.ManagedData, managedDataDefinitionIdentity)
+}
+
+type deduplicationScope func(tableScopeResolver, string, string) string
+
+func structDeduplicationScope(_ tableScopeResolver, structName, _ string) string {
+	return structName
+}
+
+func unscopedDeduplication(_ tableScopeResolver, _, _ string) string {
+	return ""
+}
+
+func compositeDeduplicationScope(resolver tableScopeResolver, structName, tableName string) string {
+	return resolver.resolve(structName, tableName)
+}
+
+func deduplicateDatabase(
+	r *Database,
+	resolveScope deduplicationScope,
+	resolvePolicyScope deduplicationScope,
+) {
+	resolver := newTableScopeResolver(r.Tables)
 	r.Schemas = deduplicateSchemas(r.Schemas)
-
-	// Deduplicate tables by schema-qualified name - preserve order
-	tableSeen := make(map[string]bool)
-	var deduplicatedTables []Table
-	for _, table := range r.Tables {
-		if !tableSeen[table.QualifiedName()] {
-			tableSeen[table.QualifiedName()] = true
-			deduplicatedTables = append(deduplicatedTables, table)
-		}
-	}
-	r.Tables = deduplicatedTables
-
-	// Deduplicate fields by struct name and field name - preserve order
-	fieldSeen := make(map[string]bool)
-	var deduplicatedFields []Field
-	for _, field := range r.Fields {
-		key := field.StructName + "." + field.Name
-		if !fieldSeen[key] {
-			fieldSeen[key] = true
-			deduplicatedFields = append(deduplicatedFields, field)
-		}
-	}
-	r.Fields = deduplicatedFields
-
+	r.Tables = deduplicateNamedDefinitions(r.Tables, func(table Table) string {
+		return table.QualifiedName()
+	})
+	r.Fields = deduplicateFields(r.Fields, resolver, resolveScope)
 	r.Indexes = deduplicateIndexes(r.Indexes, r.Tables)
-
-	// Deduplicate enums by name - preserve order
-	enumSeen := make(map[string]bool)
-	var deduplicatedEnums []Enum
-	for _, enum := range r.Enums {
-		if !enumSeen[enum.Name] {
-			enumSeen[enum.Name] = true
-			deduplicatedEnums = append(deduplicatedEnums, enum)
-		}
-	}
-	r.Enums = deduplicatedEnums
-
-	// Deduplicate embedded fields by struct name and embedded type name - preserve order
-	embeddedSeen := make(map[string]bool)
-	var deduplicatedEmbedded []EmbeddedField
-	for _, embedded := range r.EmbeddedFields {
-		key := embedded.StructName + "." + embedded.EmbeddedTypeName
-		if !embeddedSeen[key] {
-			embeddedSeen[key] = true
-			deduplicatedEmbedded = append(deduplicatedEmbedded, embedded)
-		}
-	}
-	r.EmbeddedFields = deduplicatedEmbedded
-
-	// Deduplicate extensions by name
-	extensionMap := make(map[string]Extension)
-	for _, extension := range r.Extensions {
-		extensionMap[extension.Name] = extension
-	}
-	r.Extensions = make([]Extension, 0, len(extensionMap))
-
-	// Sort extension names for consistent ordering
-	extensionNames := make([]string, 0, len(extensionMap))
-	for name := range extensionMap {
-		extensionNames = append(extensionNames, name)
-	}
-	sort.Strings(extensionNames)
-
-	// Add extensions in sorted order
-	for _, name := range extensionNames {
-		r.Extensions = append(r.Extensions, extensionMap[name])
-	}
-
-	// Deduplicate functions by name - preserve order
-	functionSeen := make(map[string]bool)
-	var deduplicatedFunctions []Function
-	for _, function := range r.Functions {
-		if !functionSeen[function.Name] {
-			functionSeen[function.Name] = true
-			deduplicatedFunctions = append(deduplicatedFunctions, function)
-		}
-	}
-	r.Functions = deduplicatedFunctions
+	r.Enums = deduplicateNamedDefinitions(r.Enums, func(enum Enum) string {
+		return enum.Name
+	})
+	r.EmbeddedFields = deduplicateEmbeddedFields(r.EmbeddedFields, resolver, resolveScope)
+	r.Extensions = deduplicateExtensions(r.Extensions)
+	r.Functions = deduplicateNamedDefinitions(r.Functions, func(function Function) string {
+		return function.Name
+	})
 
 	deduplicateSchemaObjects(r)
+	r.RLSPolicies = deduplicateRLSPolicies(r.RLSPolicies, resolver, resolvePolicyScope)
+	r.RLSEnabledTables = deduplicateNamedDefinitions(r.RLSEnabledTables, func(table RLSEnabledTable) string {
+		return table.Table
+	})
+}
 
-	// Deduplicate RLS policies by name - preserve order
-	rlsPolicySeen := make(map[string]bool)
-	var deduplicatedRLSPolicies []RLSPolicy
-	for _, policy := range r.RLSPolicies {
-		if !rlsPolicySeen[policy.Name] {
-			rlsPolicySeen[policy.Name] = true
-			deduplicatedRLSPolicies = append(deduplicatedRLSPolicies, policy)
-		}
-	}
-	r.RLSPolicies = deduplicatedRLSPolicies
+func deduplicateFields(
+	fields []Field,
+	resolver tableScopeResolver,
+	resolveScope deduplicationScope,
+) []Field {
+	return deduplicateNamedDefinitions(fields, func(field Field) string {
+		scope := resolveScope(resolver, field.StructName, "")
+		return scope + "." + field.Name
+	})
+}
 
-	// Deduplicate RLS enabled tables by table name - preserve order
-	rlsEnabledSeen := make(map[string]bool)
-	var deduplicatedRLSEnabled []RLSEnabledTable
-	for _, rlsTable := range r.RLSEnabledTables {
-		if !rlsEnabledSeen[rlsTable.Table] {
-			rlsEnabledSeen[rlsTable.Table] = true
-			deduplicatedRLSEnabled = append(deduplicatedRLSEnabled, rlsTable)
-		}
+func deduplicateEmbeddedFields(
+	fields []EmbeddedField,
+	resolver tableScopeResolver,
+	resolveScope deduplicationScope,
+) []EmbeddedField {
+	return deduplicateNamedDefinitions(fields, func(field EmbeddedField) string {
+		scope := resolveScope(resolver, field.StructName, "")
+		return scope + "." + field.EmbeddedTypeName
+	})
+}
+
+func deduplicateExtensions(extensions []Extension) []Extension {
+	byName := make(map[string]Extension, len(extensions))
+	for _, extension := range extensions {
+		byName[extension.Name] = extension
 	}
-	r.RLSEnabledTables = deduplicatedRLSEnabled
+	names := make([]string, 0, len(byName))
+	for name := range byName {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	deduplicated := make([]Extension, 0, len(names))
+	for _, name := range names {
+		deduplicated = append(deduplicated, byName[name])
+	}
+	return deduplicated
+}
+
+func deduplicateRLSPolicies(
+	policies []RLSPolicy,
+	resolver tableScopeResolver,
+	resolveScope deduplicationScope,
+) []RLSPolicy {
+	return deduplicateNamedDefinitions(policies, func(policy RLSPolicy) string {
+		return resolveScope(resolver, policy.StructName, policy.Table) + "." + policy.Name
+	})
+}
+
+func deduplicateNamedDefinitions[T any](definitions []T, identity func(T) string) []T {
+	seen := make(map[string]struct{}, len(definitions))
+	deduplicated := make([]T, 0, len(definitions))
+	for _, definition := range definitions {
+		key := identity(definition)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		deduplicated = append(deduplicated, definition)
+	}
+	return deduplicated
 }
 
 func deduplicateSchemaObjects(r *Database) {
@@ -1197,131 +1221,6 @@ func deduplicateGrants(grants []Grant) []Grant {
 		}
 	}
 	return deduplicated
-}
-
-func validateDuplicateSchemaObjectDefinitions(r *Database) error {
-	if err := validateDuplicateSchemas(r.Schemas); err != nil {
-		return err
-	}
-	if err := validateDuplicateViews(r.Views); err != nil {
-		return err
-	}
-	if err := validateDuplicateMaterializedViews(r.MaterializedViews); err != nil {
-		return err
-	}
-	if err := validateDuplicateTriggers(r.Triggers); err != nil {
-		return err
-	}
-	if err := validateDuplicateConstraints(r.Constraints); err != nil {
-		return err
-	}
-	if err := validateDuplicateRoles(r.Roles); err != nil {
-		return err
-	}
-	return nil
-}
-
-func validateDuplicateSchemas(schemas []Schema) error {
-	seen := make(map[string]string)
-	for _, schema := range schemas {
-		if previous, ok := seen[schema.Name]; ok && previous != schema.Comment {
-			return fmt.Errorf("conflicting schema %q definitions", schema.Name)
-		}
-		seen[schema.Name] = schema.Comment
-	}
-	return nil
-}
-
-func validateDuplicateViews(views []View) error {
-	seen := make(map[string]string)
-	for _, view := range views {
-		signature := strings.Join([]string{view.Body, strconv.FormatBool(view.WithCheck)}, "\x00")
-		if previous, ok := seen[view.Name]; ok && previous != signature {
-			return fmt.Errorf("conflicting view %q definitions", view.Name)
-		}
-		seen[view.Name] = signature
-	}
-	return nil
-}
-
-func validateDuplicateMaterializedViews(views []MaterializedView) error {
-	seen := make(map[string]string)
-	for _, view := range views {
-		view.Canonicalize()
-		signature := strings.Join([]string{view.Body, view.RefreshStrategy}, "\x00")
-		if previous, ok := seen[view.Name]; ok && previous != signature {
-			return fmt.Errorf("conflicting materialized view %q definitions", view.Name)
-		}
-		seen[view.Name] = signature
-	}
-	return nil
-}
-
-func validateDuplicateTriggers(triggers []Trigger) error {
-	seen := make(map[string]string)
-	for _, trigger := range triggers {
-		trigger.Canonicalize()
-		key := trigger.Table + "." + trigger.Name
-		signature := strings.Join([]string{trigger.Timing, trigger.Event, trigger.ForEach, trigger.Body}, "\x00")
-		if previous, ok := seen[key]; ok && previous != signature {
-			return fmt.Errorf("conflicting trigger %q definitions on table %q", trigger.Name, trigger.Table)
-		}
-		seen[key] = signature
-	}
-	return nil
-}
-
-func validateDuplicateConstraints(constraints []Constraint) error {
-	seen := make(map[string]string)
-	for _, constraint := range constraints {
-		key := constraintDedupKey(constraint)
-		signature := strings.Join([]string{
-			constraint.Type,
-			constraint.Table,
-			constraint.UsingMethod,
-			constraint.ExcludeElements,
-			constraint.WhereCondition,
-			constraint.CheckExpression,
-			strings.Join(constraint.Columns, ","),
-			strings.Join(constraint.IncludeColumns, ","),
-			constraint.ForeignTable,
-			strings.Join(constraint.ForeignColumnsOrDefault(), ","),
-			constraint.OnDelete,
-			constraint.OnUpdate,
-		}, "\x00")
-		if previous, ok := seen[key]; ok && previous != signature {
-			return fmt.Errorf("conflicting constraint %q definitions in scope %q", constraint.Name, constraintDedupScope(constraint))
-		}
-		seen[key] = signature
-	}
-	return nil
-}
-
-func constraintDedupScope(c Constraint) string {
-	if strings.TrimSpace(c.Table) != "" {
-		return strings.TrimSpace(c.Table)
-	}
-	return c.StructName
-}
-
-func validateDuplicateRoles(roles []Role) error {
-	seen := make(map[string]string)
-	for _, role := range roles {
-		signature := strings.Join([]string{
-			strconv.FormatBool(role.Login),
-			role.Password,
-			strconv.FormatBool(role.Superuser),
-			strconv.FormatBool(role.CreateDB),
-			strconv.FormatBool(role.CreateRole),
-			strconv.FormatBool(role.Inherit),
-			strconv.FormatBool(role.Replication),
-		}, "\x00")
-		if previous, ok := seen[role.Name]; ok && previous != signature {
-			return fmt.Errorf("conflicting role %q definitions", role.Name)
-		}
-		seen[role.Name] = signature
-	}
-	return nil
 }
 
 // deduplicateRoles dedups roles by name (roles are global per DB).

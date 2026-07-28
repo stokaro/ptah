@@ -17,14 +17,23 @@ func FieldsForTable(
 			fields = append(fields, field)
 		}
 	}
-	return append(
-		fields,
-		embeddedFieldsForStruct(
-			database.EmbeddedFields,
-			database.Fields,
-			table.StructName,
-		)...,
+	generated := embeddedFieldsForStruct(
+		database.EmbeddedFields,
+		database.Fields,
+		table.StructName,
 	)
+	seen := make(map[string]struct{}, len(fields))
+	for _, field := range fields {
+		seen[field.Name] = struct{}{}
+	}
+	for _, field := range generated {
+		if _, exists := seen[field.Name]; exists {
+			continue
+		}
+		seen[field.Name] = struct{}{}
+		fields = append(fields, field)
+	}
+	return fields
 }
 
 func embeddedFieldsForStruct(

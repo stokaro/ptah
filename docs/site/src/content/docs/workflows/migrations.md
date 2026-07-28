@@ -27,6 +27,30 @@ ptah migrations up \
   --verify-sum
 ```
 
+## Generate from a composite desired schema
+
+Both planning and file generation resolve the same composite desired state as
+`ptah schema render` and `ptah schema compare`. Repeat `--root-dir` and
+`--schema-file` in any combination:
+
+```bash
+ptah migrations generate \
+  --root-dir ./common \
+  --root-dir ./services/orders \
+  --schema-file ./vendor/billing.hcl \
+  --db-url "$DATABASE_URL" \
+  --migrations-dir ./migrations
+```
+
+Ptah merges the sources before reading the live schema. Identical named objects
+are deduplicated; a same-identity object with different desired properties is a
+conflict and no migration files are written. The merged schema feeds the same
+comparison and migration planner as an equivalent hand-merged source.
+
+See [Go schema](../go-schema/#compose-multiple-sources) and
+[Schema files](../schema-files/#compose-multiple-sources) for source identity
+and conflict rules.
+
 ## Manual migration files
 
 Create an empty pair when you want to write SQL by hand:

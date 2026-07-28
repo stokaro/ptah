@@ -159,10 +159,9 @@ type Country struct{}
 	}
 }
 
-// TestParseManagedDataAnnotation_LoadRowsAfterParseDir proves the SourceDir
-// recorded at parse time lets rows load from a subdirectory without the caller
-// tracking base directories: ParseDir walks the tree, and LoadManagedRows
-// resolves the row file against the recorded SourceDir alone.
+// TestParseManagedDataAnnotation_LoadRowsAfterParseDir proves the absolute
+// SourceDir recorded by ParseDir lets rows load without the caller retaining the
+// parse root.
 func TestParseManagedDataAnnotation_LoadRowsAfterParseDir(t *testing.T) {
 	c := qt.New(t)
 
@@ -183,13 +182,54 @@ type Country struct {
 	db, err := goschema.ParseDir(root)
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.ManagedData, qt.HasLen, 1)
-	// SourceDir is parse-root-relative; resolved against the parse root it points
-	// at the subdirectory the annotation came from.
-	c.Assert(db.ManagedData[0].SourceDir, qt.Equals, "reference")
+	c.Assert(db.ManagedData[0].SourceDir, qt.Equals, sub)
 
-	rows, err := goschema.LoadManagedRows(root, db.ManagedData[0])
+	rows, err := goschema.LoadManagedRows("", db.ManagedData[0])
 	c.Assert(err, qt.IsNil)
 	c.Assert(rows, qt.DeepEquals, []map[string]any{{"code": "US", "name": "United States"}})
+}
+
+func TestMerge_PreservesManagedDataSourceRoots(t *testing.T) {
+	c := qt.New(t)
+
+	rootA := t.TempDir()
+	rootB := t.TempDir()
+	referenceA := filepath.Join(rootA, "reference")
+	referenceB := filepath.Join(rootB, "reference")
+	c.Assert(os.MkdirAll(referenceA, 0o755), qt.IsNil)
+	c.Assert(os.MkdirAll(referenceB, 0o755), qt.IsNil)
+
+	source := `
+package reference
+
+//migrator:schema:table name="countries"
+//migrator:schema:data table="countries" key="code" file="countries.yaml"
+type Country struct {
+	//migrator:schema:field name="code" type="VARCHAR(2)" primary="true"
+	Code string
+}
+`
+	writeGoFile(c, referenceA, "countries.go", source)
+	writeGoFile(c, referenceB, "countries.go", source)
+	c.Assert(os.WriteFile(filepath.Join(referenceA, "countries.yaml"), []byte("- code: US\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(referenceB, "countries.yaml"), []byte("- code: CZ\n"), 0o600), qt.IsNil)
+
+	first, err := goschema.ParseDirRaw(rootA)
+	c.Assert(err, qt.IsNil)
+	second, err := goschema.ParseDirRaw(rootB)
+	c.Assert(err, qt.IsNil)
+	merged, err := goschema.Merge(first, second)
+	c.Assert(err, qt.IsNil)
+	c.Assert(merged.ManagedData, qt.HasLen, 2)
+	c.Assert(merged.ManagedData[0].SourceDir, qt.Equals, referenceA)
+	c.Assert(merged.ManagedData[1].SourceDir, qt.Equals, referenceB)
+
+	firstRows, err := goschema.LoadManagedRows("", merged.ManagedData[0])
+	c.Assert(err, qt.IsNil)
+	secondRows, err := goschema.LoadManagedRows("", merged.ManagedData[1])
+	c.Assert(err, qt.IsNil)
+	c.Assert(firstRows, qt.DeepEquals, []map[string]any{{"code": "US"}})
+	c.Assert(secondRows, qt.DeepEquals, []map[string]any{{"code": "CZ"}})
 }
 
 func TestParseManagedDataAnnotation_AggregatesAcrossFiles(t *testing.T) {

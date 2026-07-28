@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -44,7 +45,11 @@ import (
 //		return fmt.Errorf("failed to render schema: %w", err)
 //	}
 func ParseDir(rootDir string) (*Database, error) {
-	return ParseFS(os.DirFS(rootDir), ".")
+	result, err := ParseDirRaw(rootDir)
+	if err != nil {
+		return nil, err
+	}
+	return mergeAccumulatedDatabase(result)
 }
 
 // ParseFS parses all Go files in the given root directory and its subdirectories within the provided filesystem.
@@ -80,10 +85,7 @@ func ParseFS(fsys fs.FS, rootDir string) (*Database, error) {
 	if err := accumulateGoFiles(result, fsys, rootDir); err != nil {
 		return nil, err
 	}
-	if err := finalizeDatabase(result); err != nil {
-		return nil, err
-	}
-	return result, nil
+	return mergeAccumulatedDatabase(result)
 }
 
 // ParseDirs parses several Go entity roots into a single composite schema.
@@ -96,41 +98,58 @@ func ParseFS(fsys fs.FS, rootDir string) (*Database, error) {
 // from several Go packages (for example a shared "common" package plus
 // per-service tables).
 //
-// Identical definitions across roots are deduplicated; conflicting definitions
-// of a named schema, view, materialized view, trigger, constraint, or role are
-// an error, matching ParseDir's cross-file behavior. With a single root it is
-// equivalent to ParseDir.
+// Identical definitions across roots are deduplicated. Every named object kind
+// is checked by its stable database identity, and definitions of the same
+// object that differ return a descriptive conflict error. With a single root,
+// ParseDirs delegates to ParseDir and uses the same strict collision semantics
+// without allocating a second database accumulator.
 func ParseDirs(roots ...string) (*Database, error) {
-	result := newDatabase()
+	if len(roots) == 1 {
+		return ParseDir(roots[0])
+	}
+
+	sources := make([]*Database, 0, len(roots))
 	for _, root := range roots {
-		if err := accumulateGoFiles(result, os.DirFS(root), "."); err != nil {
+		source, err := ParseDirRaw(root)
+		if err != nil {
 			return nil, err
 		}
+		sources = append(sources, source)
 	}
-	if err := finalizeDatabase(result); err != nil {
-		return nil, err
-	}
-	return result, nil
+	return Merge(sources...)
 }
 
-// ParseDirRaw parses one or more Go entity roots into a single un-finalized
-// schema: it accumulates every file's schema objects but does NOT run the
+// ParseDirRaw parses one Go entity root into an un-finalized schema: it
+// accumulates every file's schema objects but does NOT run the
 // finalize pipeline (deduplication, embedded-field expansion, dependency
 // ordering).
 //
 // It exists to feed goschema.Merge when composing a Go schema with schemas from
-// other source kinds (YAML, HCL): Merge runs the finalize pass once over the
-// combined set, and since the embedded-field expansion is not idempotent the Go
-// side must arrive un-finalized. For a directly usable, finalized schema use
+// other source kinds (YAML, HCL): parsing every Go root independently preserves
+// its local type namespace until Merge applies the cross-source collision
+// policy. Merge also accepts finalized schemas, but raw roots avoid unnecessary
+// expansion and deduplication work. For a directly usable, finalized schema use
 // ParseDir or ParseDirs instead.
-func ParseDirRaw(roots ...string) (*Database, error) {
-	result := newDatabase()
-	for _, root := range roots {
-		if err := accumulateGoFiles(result, os.DirFS(root), "."); err != nil {
-			return nil, err
-		}
+func ParseDirRaw(root string) (*Database, error) {
+	absoluteRoot, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
 	}
+	result := newDatabase()
+	if err := accumulateGoFiles(result, os.DirFS(absoluteRoot), "."); err != nil {
+		return nil, err
+	}
+	bindManagedDataSourceRoot(result, absoluteRoot)
 	return result, nil
+}
+
+func bindManagedDataSourceRoot(result *Database, root string) {
+	for index := range result.ManagedData {
+		result.ManagedData[index].SourceDir = filepath.Join(
+			root,
+			result.ManagedData[index].SourceDir,
+		)
+	}
 }
 
 // accumulateGoFiles walks the non-test, non-vendor Go source files under rootDir
