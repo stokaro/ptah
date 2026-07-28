@@ -277,7 +277,7 @@ func atlasMigrateApplySplitStatements(sql, dialect string) []string {
 	statements := sqlutil.SplitSQLStatementsForDialect(sql, dialect)
 	filtered := statements[:0]
 	for _, stmt := range statements {
-		stmt = strings.TrimSpace(sqlutil.StripComments(stmt))
+		stmt = strings.TrimSpace(sqlutil.StripCommentsForDialect(stmt, dialect))
 		if stmt != "" {
 			filtered = append(filtered, stmt)
 		}

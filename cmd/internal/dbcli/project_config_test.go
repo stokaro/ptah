@@ -168,36 +168,111 @@ func TestLoadProjectConfigReadsNamedPtahEnvRuntimeDefaults(t *testing.T) {
 
 func TestExternalSchemaCommandsPrefersFlag(t *testing.T) {
 	c := qt.New(t)
+	cmd := &cobra.Command{Use: "test"}
+	cmd.Flags().String("schema-cmd", "", "")
+	dbcli.RegisterExternalSchemaOptInFlag(cmd.Flags())
+	c.Assert(cmd.Flags().Set("schema-cmd", "go run ./flag-loader"), qt.IsNil)
 
 	cfg := projectconfig.Config{
-		ExternalSchema: projectconfig.ExternalSchemaConfig{Program: []string{"config-loader"}},
+		ExternalSchema: projectconfig.ExternalSchemaConfig{
+			Program: []string{"config-loader"},
+			Format:  "hcl",
+		},
 	}
-	commands := dbcli.ExternalSchemaCommands("go run ./flag-loader", "sql", cfg)
+	commands, err := dbcli.ResolveExternalSchemaCommands(cmd, "go run ./flag-loader", "yaml", cfg)
 
+	c.Assert(err, qt.IsNil)
 	c.Assert(commands, qt.HasLen, 1)
 	c.Assert(commands[0].Args, qt.DeepEquals, []string{"go", "run", "./flag-loader"})
+	c.Assert(commands[0].Format, qt.Equals, "yaml")
+}
+
+func TestExternalSchemaCommandsExplicitEmptyFlagDisablesConfig(t *testing.T) {
+	c := qt.New(t)
+	cmd := &cobra.Command{Use: "test"}
+	cmd.Flags().String("schema-cmd", "", "")
+	dbcli.RegisterExternalSchemaOptInFlag(cmd.Flags())
+	c.Assert(cmd.Flags().Set("schema-cmd", ""), qt.IsNil)
+
+	cfg := projectconfig.Config{
+		ExternalSchema: projectconfig.ExternalSchemaConfig{
+			Program: []string{"config-loader"},
+		},
+	}
+	commands, err := dbcli.ResolveExternalSchemaCommands(cmd, "", "sql", cfg)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(commands, qt.IsNil)
 }
 
 func TestExternalSchemaCommandsFallsBackToConfig(t *testing.T) {
 	c := qt.New(t)
+	cmd := &cobra.Command{Use: "test"}
+	dbcli.RegisterExternalSchemaOptInFlag(cmd.Flags())
+	c.Assert(cmd.Flags().Set(dbcli.AllowExternalSchemaFlagName, "true"), qt.IsNil)
+	workingDir, err := filepath.Abs(".")
+	c.Assert(err, qt.IsNil)
 
 	cfg := projectconfig.Config{
 		ExternalSchema: projectconfig.ExternalSchemaConfig{
 			Program:    []string{"go", "run", "./config-loader"},
-			WorkingDir: "./app",
+			Format:     "hcl",
+			WorkingDir: ".",
 			Env:        []string{"K=V"},
 		},
 	}
-	commands := dbcli.ExternalSchemaCommands("", "sql", cfg)
+	commands, err := dbcli.ResolveExternalSchemaCommands(cmd, "", "sql", cfg)
 
+	c.Assert(err, qt.IsNil)
 	c.Assert(commands, qt.HasLen, 1)
 	c.Assert(commands[0].Args, qt.DeepEquals, []string{"go", "run", "./config-loader"})
-	c.Assert(commands[0].Dir, qt.Equals, "./app")
+	c.Assert(commands[0].Format, qt.Equals, "hcl")
+	c.Assert(commands[0].Dir, qt.Equals, workingDir)
 	c.Assert(commands[0].Env, qt.DeepEquals, []string{"K=V"})
+}
+
+func TestExternalSchemaCommandsRejectsWorkingDirectoryOutsideProject(t *testing.T) {
+	c := qt.New(t)
+	cmd := &cobra.Command{Use: "test"}
+	dbcli.RegisterExternalSchemaOptInFlag(cmd.Flags())
+	c.Assert(cmd.Flags().Set(dbcli.AllowExternalSchemaFlagName, "true"), qt.IsNil)
+	cfg := projectconfig.Config{
+		ExternalSchema: projectconfig.ExternalSchemaConfig{
+			Program:    []string{"config-loader"},
+			WorkingDir: "..",
+		},
+	}
+
+	commands, err := dbcli.ResolveExternalSchemaCommands(cmd, "", "sql", cfg)
+
+	c.Assert(err, qt.ErrorMatches, `resolve external_schema working_dir: ".*" is outside allowed root ".*"`)
+	c.Assert(commands, qt.IsNil)
+}
+
+func TestExternalSchemaCommandsRejectsImplicitConfigExecution(t *testing.T) {
+	c := qt.New(t)
+	cmd := &cobra.Command{Use: "test"}
+	dbcli.RegisterExternalSchemaOptInFlag(cmd.Flags())
+	cfg := projectconfig.Config{
+		ExternalSchema: projectconfig.ExternalSchemaConfig{
+			Program:    []string{"config-loader"},
+			WorkingDir: "..",
+		},
+	}
+
+	commands, err := dbcli.ResolveExternalSchemaCommands(cmd, "", "sql", cfg)
+
+	c.Assert(err, qt.ErrorMatches, "ptah.yaml external_schema is disabled by default; pass --allow-external-schema to execute it")
+	c.Assert(commands, qt.IsNil)
 }
 
 func TestExternalSchemaCommandsNilWhenNeitherSet(t *testing.T) {
 	c := qt.New(t)
+	cmd := &cobra.Command{Use: "test"}
+	dbcli.RegisterExternalSchemaOptInFlag(cmd.Flags())
 
-	c.Assert(dbcli.ExternalSchemaCommands("", "sql", projectconfig.Config{}), qt.IsNil)
+	commands, err := dbcli.ResolveExternalSchemaCommands(cmd, "", "sql", projectconfig.Config{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(commands, qt.IsNil)
 }

@@ -22,7 +22,7 @@ the exact flag set in an installed binary.
 | --- | --- |
 | `ptah introspect` | Generate annotated Go models from a live database. |
 | `ptah oci referrers` | List direct referrer metadata attached to an OCI artifact. |
-| `ptah schema render` | Render desired schema SQL from Go, YAML, or HCL schema inputs. |
+| `ptah schema render` | Render desired schema SQL from Go, YAML, HCL, SQL, or external-command inputs. |
 | `ptah schema annotations` | Export Ptah Go annotation metadata. |
 | `ptah schema compare` | Compare desired schema with a live database. |
 | `ptah schema drift` | Check live database drift against desired schema. |
@@ -74,6 +74,12 @@ This does not implement the Atlas Cloud command paths. `ptah atlas migrate
 push` and `ptah atlas schema push` remain Atlas community-edition boundary
 stubs, and Atlas-compatible apply commands do not expose the native OCI
 transport flags.
+
+The native desired-schema consumers — `schema render`, `schema compare`,
+`schema drift`, `migrations plan`, and `migrations generate` — accept external
+commands that emit SQL, HCL, or YAML. Each command also reads
+`ptah.yaml external_schema` when `--schema-cmd` is not set and
+`--allow-external-schema` explicitly permits config-sourced execution.
 
 ## Atlas-compatible commands
 

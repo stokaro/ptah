@@ -246,6 +246,86 @@ func TestLexer_NextToken_HappyPath(t *testing.T) {
 	}
 }
 
+func TestLexer_NextToken_EscapedQuotedIdentifiers(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name      string
+		input     string
+		tokenType lexer.TokenType
+	}{
+		{name: "double quote", input: `"user""events"`, tokenType: lexer.TokenString},
+		{name: "backtick", input: "`user``events`", tokenType: lexer.TokenIdentifier},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			token := lexer.NewLexer(tt.input).NextToken()
+
+			c.Assert(token, qt.DeepEquals, lexer.Token{
+				Type:  tt.tokenType,
+				Value: tt.input,
+				Start: 0,
+				End:   len(tt.input),
+			})
+		})
+	}
+}
+
+func TestLexer_NextToken_BracketsRemainOperators(t *testing.T) {
+	c := qt.New(t)
+	l := lexer.NewLexer("integer[] ARRAY [1, 2]")
+
+	expected := []lexer.Token{
+		{Type: lexer.TokenIdentifier, Value: "integer", Start: 0, End: 7},
+		{Type: lexer.TokenOperator, Value: "[", Start: 7, End: 8},
+		{Type: lexer.TokenOperator, Value: "]", Start: 8, End: 9},
+		{Type: lexer.TokenWhitespace, Value: " ", Start: 9, End: 10},
+		{Type: lexer.TokenIdentifier, Value: "ARRAY", Start: 10, End: 15},
+		{Type: lexer.TokenWhitespace, Value: " ", Start: 15, End: 16},
+		{Type: lexer.TokenOperator, Value: "[", Start: 16, End: 17},
+		{Type: lexer.TokenIdentifier, Value: "1", Start: 17, End: 18},
+		{Type: lexer.TokenOperator, Value: ",", Start: 18, End: 19},
+		{Type: lexer.TokenWhitespace, Value: " ", Start: 19, End: 20},
+		{Type: lexer.TokenIdentifier, Value: "2", Start: 20, End: 21},
+		{Type: lexer.TokenOperator, Value: "]", Start: 21, End: 22},
+		{Type: lexer.TokenEOF, Value: "", Start: 22, End: 22},
+	}
+	for _, want := range expected {
+		c.Assert(l.NextToken(), qt.DeepEquals, want)
+	}
+}
+
+func TestLexer_NextToken_SQLServerBracketIdentifiersStayAtomic(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{name: "apostrophe", input: "[user's]"},
+		{name: "line comment marker", input: "[event--id]"},
+		{name: "block comment marker", input: "[event/*id]"},
+		{name: "escaped closing bracket", input: "[event]]id]"},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			l := lexer.NewLexerWithOptions(tt.input, lexer.Options{
+				BracketIdentifiers: true,
+			})
+
+			c.Assert(l.NextToken(), qt.DeepEquals, lexer.Token{
+				Type:  lexer.TokenIdentifier,
+				Value: tt.input,
+				Start: 0,
+				End:   len(tt.input),
+			})
+			c.Assert(l.NextToken().Type, qt.Equals, lexer.TokenEOF)
+		})
+	}
+}
+
 func TestLexer_NextToken_EdgeCases(t *testing.T) {
 	tests := []struct {
 		name     string

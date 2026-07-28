@@ -66,10 +66,10 @@ func Constraints(generated *goschema.Database, database *types.DBSchema, diff *d
 	}
 
 	// Create maps for detailed constraint comparison
-	genConstraints := make(map[string]goschema.Constraint)
+	genConstraints := make(map[tableMemberKey]goschema.Constraint)
 	for _, constraint := range generated.Constraints {
-		// Use table.constraint_name as the key for comparison to handle constraints with same names in different tables
-		key := constraint.Table + "." + constraint.Name
+		constraint.Table = generatedConstraintTableName(constraint, generated.Tables)
+		key := tableMemberKey{table: constraint.Table, member: constraint.Name}
 		genConstraints[key] = constraint
 	}
 
@@ -81,7 +81,7 @@ func Constraints(generated *goschema.Database, database *types.DBSchema, diff *d
 	// double-emitting an ALTER TABLE ADD CONSTRAINT would fail because the
 	// constraint is created in the same migration step.
 	for _, synthesized := range synthesizeFieldLevelCheckConstraints(generated, database) {
-		key := synthesized.Table + "." + synthesized.Name
+		key := tableMemberKey{table: synthesized.Table, member: synthesized.Name}
 		// Don't clobber an explicit table-level constraint that happens to
 		// share the same name.
 		if _, exists := genConstraints[key]; !exists {
@@ -90,7 +90,7 @@ func Constraints(generated *goschema.Database, database *types.DBSchema, diff *d
 	}
 
 	for _, synthesized := range synthesizeTablePrimaryKeyConstraints(generated, database, dialect) {
-		key := synthesized.Table + "." + synthesized.Name
+		key := tableMemberKey{table: synthesized.Table, member: synthesized.Name}
 		// Don't clobber an explicit table-level constraint that happens to
 		// share the same name.
 		if _, exists := genConstraints[key]; !exists {
@@ -110,9 +110,9 @@ func Constraints(generated *goschema.Database, database *types.DBSchema, diff *d
 	// field-level FK so isFieldLevelConstraint can let the matching DB-side FK
 	// through to the comparison instead of filtering it out — otherwise
 	// foreignKeyConstraintChanged would never run for field-level FKs.
-	synthesizedFKKeys := make(map[string]struct{})
+	synthesizedFKKeys := make(map[tableMemberKey]struct{})
 	for _, synthesized := range synthesizeFieldLevelForeignKeyConstraints(generated, database) {
-		key := synthesized.Table + "." + synthesized.Name
+		key := tableMemberKey{table: synthesized.Table, member: synthesized.Name}
 		synthesizedFKKeys[key] = struct{}{}
 		// Don't clobber an explicit table-level constraint that happens to
 		// share the same name.
@@ -122,15 +122,14 @@ func Constraints(generated *goschema.Database, database *types.DBSchema, diff *d
 	}
 
 	// Create map of existing database constraints, filtering out field-level constraints
-	dbConstraints := make(map[string]types.DBConstraint)
+	dbConstraints := make(map[tableMemberKey]types.DBConstraint)
 	for _, constraint := range database.Constraints {
 		// Skip field-level constraints that are represented in field definitions
 		if isFieldLevelConstraint(constraint, generated, synthesizedFKKeys) {
 			continue
 		}
 
-		// Use table.constraint_name as the key for comparison
-		key := constraint.QualifiedTableName() + "." + constraint.Name
+		key := tableMemberKey{table: constraint.QualifiedTableName(), member: constraint.Name}
 		dbConstraints[key] = constraint
 	}
 

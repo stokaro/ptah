@@ -12,6 +12,7 @@ import (
 	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/internal/convert/fromschema"
 	"github.com/stokaro/ptah/internal/indexscope"
+	"github.com/stokaro/ptah/internal/tableref"
 	"github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
@@ -95,13 +96,50 @@ func rejectUnsupportedTableChanges(diff *types.SchemaDiff) error {
 			return unsupportedFeaturef("changing constraints on table %s requires a table rebuild plan", table.TableName)
 		}
 	}
-	if len(diff.ConstraintsAdded) > 0 || len(diff.ConstraintsRemoved) > 0 {
+	if hasExistingTableConstraintChanges(diff) {
 		return unsupportedFeaturef("changing constraints on existing tables requires a table rebuild plan")
 	}
 	if len(diff.EnumsModified) > 0 || len(diff.EnumsRemoved) > 0 {
 		return unsupportedFeaturef("changing enum-backed CHECK constraints requires a table rebuild plan")
 	}
 	return nil
+}
+
+func hasExistingTableConstraintChanges(diff *types.SchemaDiff) bool {
+	return !constraintAdditionsBelongToAddedTables(diff) ||
+		!constraintRemovalsBelongToRemovedTables(diff)
+}
+
+func constraintAdditionsBelongToAddedTables(diff *types.SchemaDiff) bool {
+	if len(diff.ConstraintsAdded) == 0 {
+		return true
+	}
+	seen := make(map[string]bool, len(diff.ConstraintsAddedWithTables))
+	for _, constraint := range diff.ConstraintsAddedWithTables {
+		if !slices.Contains(diff.TablesAdded, constraint.TableName) {
+			return false
+		}
+		seen[constraint.Name] = true
+	}
+	return !slices.ContainsFunc(diff.ConstraintsAdded, func(name string) bool {
+		return !seen[name]
+	})
+}
+
+func constraintRemovalsBelongToRemovedTables(diff *types.SchemaDiff) bool {
+	if len(diff.ConstraintsRemoved) == 0 {
+		return true
+	}
+	seen := make(map[string]bool, len(diff.ConstraintsRemovedWithTables))
+	for _, constraint := range diff.ConstraintsRemovedWithTables {
+		if !slices.Contains(diff.TablesRemoved, constraint.TableName) {
+			return false
+		}
+		seen[constraint.Name] = true
+	}
+	return !slices.ContainsFunc(diff.ConstraintsRemoved, func(name string) bool {
+		return !seen[name]
+	})
 }
 
 func rejectUnsupportedSchemaObjects(diff *types.SchemaDiff) error {
@@ -146,7 +184,7 @@ func (p *Planner) addTables(diff *types.SchemaDiff, generated *goschema.Database
 
 	var result []ast.Node
 	for _, table := range generated.Tables {
-		if !added[table.Name] && !added[table.QualifiedName()] {
+		if !added[table.QualifiedName()] {
 			continue
 		}
 		node := fromschema.FromTable(table, generated.Fields, generated.Enums, DialectName)
@@ -184,7 +222,7 @@ func addInlineConstraints(node *ast.CreateTableNode, table goschema.Table, const
 
 func constraintBelongsToTable(constraint goschema.Constraint, table goschema.Table) bool {
 	if constraint.Table != "" {
-		return constraint.Table == table.Name || constraint.Table == table.QualifiedName()
+		return constraint.Table == table.QualifiedName()
 	}
 	return constraint.StructName == table.StructName
 }
@@ -279,7 +317,7 @@ func validateRebuildTablePreconditions(table goschema.Table, diff *types.SchemaD
 
 func findTable(tables []goschema.Table, name string) *goschema.Table {
 	for i := range tables {
-		if tables[i].Name == name || tables[i].QualifiedName() == name {
+		if tables[i].QualifiedName() == name {
 			return &tables[i]
 		}
 	}
@@ -310,10 +348,7 @@ func removedTableNameCollides(removed []string, target goschema.Table, name stri
 }
 
 func qualifyLikeTable(table goschema.Table, name string) string {
-	if strings.TrimSpace(table.Schema) == "" {
-		return name
-	}
-	return table.Schema + "." + name
+	return goschema.QualifyTableName(table.Schema, name)
 }
 
 func rebuildColumnNames(table goschema.Table, fields []goschema.Field) []string {
@@ -331,7 +366,7 @@ func (p *Planner) recreateTableIndexes(table goschema.Table, generated *goschema
 	var nodes []ast.Node
 	for _, index := range generated.Indexes {
 		tableName := generatedIndexTableName(index, tableMap)
-		if tableName == table.Name || tableName == table.QualifiedName() {
+		if tableName == table.QualifiedName() {
 			nodes = append(nodes, fromschema.FromIndexWithTableMapping(index, tableMap))
 		}
 	}
@@ -369,13 +404,13 @@ func hasInboundForeignKey(table goschema.Table, generated *goschema.Database) bo
 }
 
 func tableMatchesName(table goschema.Table, name string) bool {
-	return name == table.Name || name == table.QualifiedName()
+	return name == table.QualifiedName()
 }
 
 func (p *Planner) recreateTableTriggers(table goschema.Table, generated *goschema.Database) ([]ast.Node, error) {
 	var nodes []ast.Node
 	for _, trigger := range generated.Triggers {
-		if trigger.Table == table.Name || trigger.Table == table.QualifiedName() {
+		if trigger.Table == table.QualifiedName() {
 			if triggerBodyContainsCreateTrigger(trigger.Body) {
 				return nil, unsupportedFeaturef(
 					"rebuilding table %s with trigger %s requires a manual rebuild plan",
@@ -402,11 +437,14 @@ func quoteIdentifierList(names []string) string {
 }
 
 func quoteQualifiedIdentifier(name string) string {
-	parts := strings.Split(name, ".")
-	for i, part := range parts {
-		parts[i] = quoteIdentifier(part)
+	ref, ok := tableref.Parse(name)
+	if !ok {
+		return quoteIdentifier(name)
 	}
-	return strings.Join(parts, ".")
+	if !ref.Qualified {
+		return quoteIdentifier(ref.Name)
+	}
+	return quoteIdentifier(ref.Schema) + "." + quoteIdentifier(ref.Name)
 }
 
 func quoteIdentifier(name string) string {

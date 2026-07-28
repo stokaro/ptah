@@ -91,7 +91,7 @@ func convertEnums(database *goschema.Database, dbEnums []dbschematypes.DBEnum) {
 func convertTablesAndFields(
 	database *goschema.Database,
 	dbSchema *dbschematypes.DBSchema,
-	fkByColumn map[string]foreignKeyInfo,
+	fkByColumn map[tableMemberKey]foreignKeyInfo,
 	primaryKeysByTable map[string][]string,
 	compositePKColumns map[string]map[string]bool,
 ) map[string]string {
@@ -137,7 +137,7 @@ func convertTablesAndFields(
 
 			// Carry the field-level foreign key (reference + referential actions)
 			// so down migrations can reconstruct it with the prior action.
-			if fk, ok := fkByColumn[dbTable.QualifiedName()+"."+dbColumn.Name]; ok {
+			if fk, ok := fkByColumn[tableMemberKey{table: dbTable.QualifiedName(), member: dbColumn.Name}]; ok {
 				field.Foreign = fk.foreign
 				field.ForeignKeyName = fk.name
 				field.OnDelete = fk.onDelete
@@ -173,7 +173,7 @@ func convertIndexes(dbSchema *dbschematypes.DBSchema, tableStructNames map[strin
 		if dbIndex.IsPrimary {
 			continue
 		}
-		if _, ok := constraintBackedIndexes[dbIndex.QualifiedTableName()+"."+dbIndex.Name]; ok {
+		if _, ok := constraintBackedIndexes[tableMemberKey{table: dbIndex.QualifiedTableName(), member: dbIndex.Name}]; ok {
 			continue
 		}
 
@@ -473,12 +473,12 @@ func convertConstraint(dbConstraint dbschematypes.DBConstraint, tableStructNames
 	}, true
 }
 
-func constraintBackedIndexesByTable(dbSchema *dbschematypes.DBSchema) map[string]struct{} {
-	result := make(map[string]struct{}, len(dbSchema.Constraints))
+func constraintBackedIndexesByTable(dbSchema *dbschematypes.DBSchema) map[tableMemberKey]struct{} {
+	result := make(map[tableMemberKey]struct{}, len(dbSchema.Constraints))
 	for _, constraint := range dbSchema.Constraints {
 		switch strings.ToUpper(constraint.Type) {
 		case "PRIMARY KEY", "UNIQUE", "EXCLUDE":
-			result[constraint.QualifiedTableName()+"."+constraint.Name] = struct{}{}
+			result[tableMemberKey{table: constraint.QualifiedTableName(), member: constraint.Name}] = struct{}{}
 		}
 	}
 	return result
@@ -603,12 +603,17 @@ type foreignKeyInfo struct {
 	onUpdate string // ON UPDATE action
 }
 
+type tableMemberKey struct {
+	table  string
+	member string
+}
+
 // indexForeignKeysByColumn maps table.column -> reconstructed FK info for every
 // single-column FOREIGN KEY constraint in the database schema. Multi-column FKs
 // are not field-level and are skipped (they are represented as table-level
 // constraints, which this converter does not yet round-trip).
-func indexForeignKeysByColumn(dbSchema *dbschematypes.DBSchema) map[string]foreignKeyInfo {
-	result := make(map[string]foreignKeyInfo)
+func indexForeignKeysByColumn(dbSchema *dbschematypes.DBSchema) map[tableMemberKey]foreignKeyInfo {
+	result := make(map[tableMemberKey]foreignKeyInfo)
 	for _, c := range dbSchema.Constraints {
 		if c.Type != "FOREIGN KEY" || c.ColumnName == "" || c.ForeignTable == nil || len(c.ColumnNamesOrDefault()) != 1 {
 			continue
@@ -622,7 +627,7 @@ func indexForeignKeysByColumn(dbSchema *dbschematypes.DBSchema) map[string]forei
 		if foreignColumn != "" {
 			foreign = foreignTable + "(" + foreignColumn + ")"
 		}
-		result[c.QualifiedTableName()+"."+c.ColumnName] = foreignKeyInfo{
+		result[tableMemberKey{table: c.QualifiedTableName(), member: c.ColumnName}] = foreignKeyInfo{
 			name:     c.Name,
 			foreign:  foreign,
 			onDelete: derefString(c.DeleteRule),

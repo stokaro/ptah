@@ -3,12 +3,12 @@ package schemadiff
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/stokaro/ptah/config"
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/dbschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/tableref"
 	"github.com/stokaro/ptah/migration/internal/generatedschema"
 	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
 )
@@ -97,9 +97,12 @@ func appendDatabaseIdentifierNames(
 }
 
 func appendQualifiedIdentifier(names []string, value string) []string {
-	first, second, qualified := strings.Cut(value, ".")
-	if !qualified {
-		return append(names, first)
+	ref, ok := tableref.Parse(value)
+	if !ok {
+		return append(names, value)
 	}
-	return append(names, first, second)
+	if !ref.Qualified {
+		return append(names, ref.Name)
+	}
+	return append(names, ref.Schema, ref.Name)
 }

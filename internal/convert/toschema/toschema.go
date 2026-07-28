@@ -127,7 +127,7 @@ func ToField(column *ast.ColumnNode, structName, sourcePlatform string) goschema
 	field := goschema.Field{
 		StructName:          structName,
 		FieldName:           "", // This would need to be set separately as it's not in the AST
-		Name:                column.Name,
+		Name:                normalizeSQLIdentifier(column.Name),
 		Type:                column.Type,
 		Nullable:            column.Nullable,
 		Primary:             column.Primary,
@@ -151,7 +151,7 @@ func ToField(column *ast.ColumnNode, structName, sourcePlatform string) goschema
 	// populated AST node would leak back into a generated Go annotation
 	// suggestion as a phantom `check_name=` with no `check=` to back it.
 	if column.Check != "" {
-		field.CheckName = column.CheckName
+		field.CheckName = normalizeSQLIdentifier(column.CheckName)
 	}
 
 	// Extract default values
@@ -166,12 +166,14 @@ func ToField(column *ast.ColumnNode, structName, sourcePlatform string) goschema
 
 	// Extract foreign key reference
 	if column.ForeignKey != nil {
+		foreignTable := normalizeSQLTableReference(column.ForeignKey.Table)
+		foreignColumn := normalizeSQLIdentifier(column.ForeignKey.Column)
 		if column.ForeignKey.Column != "" {
-			field.Foreign = column.ForeignKey.Table + "(" + column.ForeignKey.Column + ")"
+			field.Foreign = foreignTable + "(" + foreignColumn + ")"
 		} else {
-			field.Foreign = column.ForeignKey.Table
+			field.Foreign = foreignTable
 		}
-		field.ForeignKeyName = column.ForeignKey.Name
+		field.ForeignKeyName = normalizeSQLIdentifier(column.ForeignKey.Name)
 		field.OnDelete = column.ForeignKey.OnDelete
 		field.OnUpdate = column.ForeignKey.OnUpdate
 	}
@@ -243,9 +245,11 @@ func ToField(column *ast.ColumnNode, structName, sourcePlatform string) goschema
 // Returns a goschema.Table with all table-level attributes extracted from the AST node.
 // The StructName field is derived from the table name using basic naming conventions.
 func ToTable(table *ast.CreateTableNode, sourcePlatform string) goschema.Table {
+	tableSchemaName, tableName := normalizeSQLTableIdentifier(table.Name)
 	tableSchema := goschema.Table{
-		StructName: generateStructName(table.Name),
-		Name:       table.Name,
+		StructName: tableStructName(table.Name),
+		Name:       tableName,
+		Schema:     tableSchemaName,
 		Comment:    table.Comment,
 		Partition:  toSchemaPartition(table.Partition),
 	}
@@ -264,9 +268,9 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) goschema.Table {
 	// Extract composite primary key from constraints
 	for _, constraint := range table.Constraints {
 		if constraint.Type == ast.PrimaryKeyConstraint {
-			tableSchema.PrimaryKey = constraint.Columns
+			tableSchema.PrimaryKey = normalizeSQLIdentifiers(constraint.Columns)
 			tableSchema.PrimaryKeyParts = toPrimaryKeyParts(constraint)
-			tableSchema.PrimaryKeyInclude = constraint.IncludeColumns
+			tableSchema.PrimaryKeyInclude = normalizeSQLIdentifiers(constraint.IncludeColumns)
 			break // Only one primary key constraint per table
 		}
 	}
@@ -307,7 +311,10 @@ func toSchemaPartition(partition *ast.PartitionSpec) *goschema.PartitionSpec {
 	}
 	parts := make([]goschema.PartitionPart, 0, len(partition.Parts))
 	for _, part := range partition.Parts {
-		parts = append(parts, goschema.PartitionPart{Name: part.Name, Expr: part.Expr})
+		parts = append(parts, goschema.PartitionPart{
+			Name: normalizeSQLIdentifier(part.Name),
+			Expr: part.Expr,
+		})
 	}
 	return &goschema.PartitionSpec{Type: partition.Type, Parts: parts}
 }
@@ -316,14 +323,14 @@ func toPrimaryKeyParts(constraint *ast.ConstraintNode) []goschema.PrimaryKeyPart
 	if len(constraint.ColumnParts) == 0 {
 		parts := make([]goschema.PrimaryKeyPart, 0, len(constraint.Columns))
 		for _, column := range constraint.Columns {
-			parts = append(parts, goschema.PrimaryKeyPart{Name: column})
+			parts = append(parts, goschema.PrimaryKeyPart{Name: normalizeSQLIdentifier(column)})
 		}
 		return parts
 	}
 	parts := make([]goschema.PrimaryKeyPart, 0, len(constraint.ColumnParts))
 	for _, column := range constraint.ColumnParts {
 		parts = append(parts, goschema.PrimaryKeyPart{
-			Name:   column.Name,
+			Name:   normalizeSQLIdentifier(column.Name),
 			Prefix: column.Prefix,
 			Desc:   column.Desc,
 		})
@@ -376,11 +383,12 @@ func toPrimaryKeyParts(constraint *ast.ConstraintNode) []goschema.PrimaryKeyPart
 // Returns a goschema.Index with all index attributes extracted from the AST node.
 // The StructName is set to match the table name for proper association.
 func ToIndex(index *ast.IndexNode) goschema.Index {
+	tableSchema, tableName := normalizeSQLTableIdentifier(index.Table)
 	return goschema.Index{
-		Name:       index.Name,
-		StructName: index.Table, // Use table name as struct name
+		Name:       normalizeSQLIdentifier(index.Name),
+		StructName: tableName,
 		Fields:     indexFieldNames(index),
-		Parts:      toSchemaIndexParts(index.Parts),
+		Parts:      indexParts(index),
 		Unique:     index.Unique,
 		Comment:    index.Comment,
 		// PostgreSQL-specific features
@@ -388,20 +396,46 @@ func ToIndex(index *ast.IndexNode) goschema.Index {
 		Parser:         index.Parser,
 		Condition:      index.Condition,
 		Operator:       index.Operator,
-		IncludeColumns: index.IncludeColumns,
+		IncludeColumns: normalizeSQLIdentifiers(index.IncludeColumns),
 		NullsDistinct:  cloneBoolPtr(index.NullsDistinct),
 		StorageParams:  maps.Clone(index.StorageParams),
-		TableName:      index.Table,
+		TableName:      goschema.QualifyTableName(tableSchema, tableName),
 	}
+}
+
+func indexParts(index *ast.IndexNode) []goschema.IndexPart {
+	if len(index.Parts) > 0 {
+		return toSchemaIndexParts(index.Parts)
+	}
+	parts := make([]goschema.IndexPart, 0, len(index.Columns))
+	hasExpression := false
+	for _, column := range index.Columns {
+		if isSQLIdentifierReference(column) {
+			parts = append(parts, goschema.IndexPart{
+				Name: normalizeSQLIdentifierReference(column),
+			})
+			continue
+		}
+		hasExpression = true
+		parts = append(parts, goschema.IndexPart{Expr: column})
+	}
+	if !hasExpression {
+		return nil
+	}
+	return parts
 }
 
 func indexFieldNames(index *ast.IndexNode) []string {
 	if len(index.Parts) == 0 {
-		return index.Columns
+		return normalizeSQLIdentifierReferences(index.Columns)
 	}
 	fields := make([]string, 0, len(index.Parts))
 	for _, part := range index.Parts {
-		fields = append(fields, part.Reference())
+		if part.Expr != "" {
+			fields = append(fields, part.Expr)
+			continue
+		}
+		fields = append(fields, normalizeSQLIdentifier(part.Name))
 	}
 	return fields
 }
@@ -410,7 +444,7 @@ func toSchemaIndexParts(parts []ast.IndexPart) []goschema.IndexPart {
 	schemaParts := make([]goschema.IndexPart, 0, len(parts))
 	for _, part := range parts {
 		schemaParts = append(schemaParts, goschema.IndexPart{
-			Name:     part.Name,
+			Name:     normalizeSQLIdentifier(part.Name),
 			Expr:     part.Expr,
 			Operator: part.Operator,
 			Prefix:   part.Prefix,
@@ -462,7 +496,7 @@ func toSchemaIndexParts(parts []ast.IndexPart) []goschema.IndexPart {
 // Returns a goschema.Extension with all extension attributes extracted from the AST node.
 func ToExtension(extension *ast.ExtensionNode) goschema.Extension {
 	return goschema.Extension{
-		Name:        extension.Name,
+		Name:        normalizeSQLIdentifier(extension.Name),
 		IfNotExists: extension.IfNotExists,
 		Version:     extension.Version,
 		Comment:     extension.Comment,
@@ -509,7 +543,7 @@ func ToExtension(extension *ast.ExtensionNode) goschema.Extension {
 // Returns a goschema.Enum with the enum name and values extracted from the AST node.
 func ToEnum(enum *ast.EnumNode) goschema.Enum {
 	return goschema.Enum{
-		Name:   enum.Name,
+		Name:   normalizeSQLIdentifier(enum.Name),
 		Values: enum.Values,
 	}
 }
@@ -577,7 +611,7 @@ func ToDatabase(statements *ast.StatementList) goschema.Database {
 		switch node := stmt.(type) {
 		case *ast.CreateSchemaNode:
 			database.Schemas = append(database.Schemas, goschema.Schema{
-				Name:    node.Name,
+				Name:    normalizeSQLIdentifier(node.Name),
 				Comment: node.Comment,
 				Charset: node.Charset,
 				Collate: node.Collate,
@@ -605,7 +639,11 @@ func ToDatabase(statements *ast.StatementList) goschema.Database {
 			// renders as a table constraint.
 			markPrimaryFields(database.Fields[fieldsStart:], tableSchema.PrimaryKey)
 			for _, constraint := range node.Constraints {
-				constraintSchema, ok := ToConstraint(constraint, tableSchema.StructName, tableSchema.Name)
+				constraintSchema, ok := ToConstraint(
+					constraint,
+					tableSchema.StructName,
+					tableSchema.QualifiedName(),
+				)
 				if ok {
 					database.Constraints = append(database.Constraints, constraintSchema)
 				}
@@ -620,13 +658,19 @@ func ToDatabase(statements *ast.StatementList) goschema.Database {
 			// Capture constraints added by ALTER TABLE ... ADD CONSTRAINT, such
 			// as the foreign keys ORM schema exporters emit as separate
 			// statements after the CREATE TABLEs.
-			structName := generateStructName(node.Name)
+			tableSchemaName, tableName := normalizeSQLTableIdentifier(node.Name)
+			qualifiedTableName := goschema.QualifyTableName(tableSchemaName, tableName)
+			structName := tableStructName(node.Name)
 			for _, op := range node.Operations {
 				add, ok := op.(*ast.AddConstraintOperation)
 				if !ok || add.Constraint == nil {
 					continue
 				}
-				constraintSchema, ok := ToConstraint(add.Constraint, structName, node.Name)
+				constraintSchema, ok := ToConstraint(
+					add.Constraint,
+					structName,
+					qualifiedTableName,
+				)
 				if ok {
 					database.Constraints = append(database.Constraints, constraintSchema)
 				}
@@ -658,28 +702,27 @@ func ToConstraint(constraint *ast.ConstraintNode, structName, tableName string) 
 	case ast.UniqueConstraint:
 		return goschema.Constraint{
 			StructName: structName,
-			Name:       constraint.Name,
+			Name:       normalizeSQLIdentifier(constraint.Name),
 			Type:       "UNIQUE",
-			Table:      tableName,
-			Columns:    append([]string(nil), constraint.Columns...),
-			IncludeColumns: append(
-				[]string(nil),
-				constraint.IncludeColumns...,
+			Table:      normalizeSQLTableReference(tableName),
+			Columns:    normalizeSQLIdentifiers(constraint.Columns),
+			IncludeColumns: normalizeSQLIdentifiers(
+				constraint.IncludeColumns,
 			),
 			NullsDistinct: cloneBoolPtr(constraint.NullsDistinct),
 		}, true
 	case ast.ForeignKeyConstraint:
 		fk := goschema.Constraint{
 			StructName: structName,
-			Name:       constraint.Name,
+			Name:       normalizeSQLIdentifier(constraint.Name),
 			Type:       "FOREIGN KEY",
-			Table:      tableName,
-			Columns:    append([]string(nil), constraint.Columns...),
+			Table:      normalizeSQLTableReference(tableName),
+			Columns:    normalizeSQLIdentifiers(constraint.Columns),
 		}
 		if ref := constraint.Reference; ref != nil {
-			fk.ForeignTable = ref.Table
-			fk.ForeignColumn = ref.Column
-			fk.ForeignColumns = append([]string(nil), ref.Columns...)
+			fk.ForeignTable = normalizeSQLTableReference(ref.Table)
+			fk.ForeignColumn = normalizeSQLIdentifier(ref.Column)
+			fk.ForeignColumns = normalizeSQLIdentifiers(ref.Columns)
 			fk.OnDelete = ref.OnDelete
 			fk.OnUpdate = ref.OnUpdate
 		}

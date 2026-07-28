@@ -317,6 +317,18 @@ GO
 	})
 }
 
+func TestSplitApplyStatements_SQLServerPreservesBracketCommentMarkers(t *testing.T) {
+	c := qt.New(t)
+	sqlText := `CREATE TABLE [owner's--/*value]]x] ([id] INT);
+GO`
+
+	statements := atlasschema.SplitApplyStatements(sqlText, "sqlserver")
+
+	c.Assert(statements, qt.DeepEquals, []string{
+		"CREATE TABLE [owner's--/*value]]x] ([id] INT)",
+	})
+}
+
 func TestFormatMigrationSQL_HappyPath(t *testing.T) {
 	c := qt.New(t)
 

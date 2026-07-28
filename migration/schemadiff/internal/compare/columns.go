@@ -114,6 +114,24 @@ func TableColumnsWithSemantics(
 	dialect string,
 	semantics identifier.Semantics,
 ) difftypes.TableDiff {
+	return tableColumnsWithSemantics(
+		genTable,
+		dbTable,
+		generated,
+		dialect,
+		semantics,
+		nil,
+	)
+}
+
+func tableColumnsWithSemantics(
+	genTable goschema.Table,
+	dbTable types.DBTable,
+	generated *goschema.Database,
+	dialect string,
+	semantics identifier.Semantics,
+	objectOwnedUniqueColumns map[columnIdentity]struct{},
+) difftypes.TableDiff {
 	tableDiff := difftypes.TableDiff{TableName: genTable.QualifiedName()}
 
 	// Create maps for quick lookup
@@ -145,6 +163,14 @@ func TableColumnsWithSemantics(
 		if dbCol, exists := dbColumns[identity]; exists {
 			if columnInTablePrimaryKey(genTable, genCol.Name) {
 				genCol = normalizeTablePrimaryKeyColumn(genCol, dbCol)
+			}
+			columnKey := columnIdentity{
+				table:  newTableIdentity(genTable.Schema, genTable.Name, semantics),
+				column: identity,
+			}
+			if _, objectOwned := objectOwnedUniqueColumns[columnKey]; objectOwned {
+				genCol.Unique = false
+				dbCol.IsUnique = false
 			}
 			colDiff := ColumnsWithDialect(genCol, dbCol, dialect)
 			if len(colDiff.Changes) > 0 {

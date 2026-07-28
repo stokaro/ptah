@@ -584,6 +584,74 @@ func TestConvertDBSchemaToGoSchema_SQLiteTableOptions(t *testing.T) {
 	c.Assert(result.Tables[0].WithoutRowID, qt.IsTrue)
 }
 
+func TestConvertDBSchemaToGoSchema_PreservesStructuralMemberIdentity(t *testing.T) {
+	c := qt.New(t)
+	foreignTable := "targets"
+	foreignColumn := "id"
+	dbSchema := &types.DBSchema{
+		Tables: []types.DBTable{
+			{
+				Name: "tenant.data",
+				Columns: []types.DBColumn{{
+					Name:     "payload.id",
+					DataType: "INTEGER",
+				}},
+			},
+			{
+				Schema: "tenant.data",
+				Name:   "payload",
+				Columns: []types.DBColumn{{
+					Name:     "id",
+					DataType: "INTEGER",
+				}},
+			},
+		},
+		Indexes: []types.DBIndex{
+			{Name: "payload.lookup", TableName: "tenant.data", Columns: []string{"payload.id"}},
+			{Name: "lookup", Schema: "tenant.data", TableName: "payload", Columns: []string{"id"}},
+		},
+		Constraints: []types.DBConstraint{
+			{
+				Name:           "fk_literal",
+				TableName:      "tenant.data",
+				Type:           "FOREIGN KEY",
+				ColumnName:     "payload.id",
+				ColumnNames:    []string{"payload.id"},
+				ForeignTable:   &foreignTable,
+				ForeignColumn:  &foreignColumn,
+				ForeignColumns: []string{"id"},
+			},
+			{
+				Name:           "fk_qualified",
+				Schema:         "tenant.data",
+				TableName:      "payload",
+				Type:           "FOREIGN KEY",
+				ColumnName:     "id",
+				ColumnNames:    []string{"id"},
+				ForeignTable:   &foreignTable,
+				ForeignColumn:  &foreignColumn,
+				ForeignColumns: []string{"id"},
+			},
+			{
+				Name:        "payload.lookup",
+				TableName:   "tenant.data",
+				Type:        "UNIQUE",
+				ColumnName:  "payload.id",
+				ColumnNames: []string{"payload.id"},
+			},
+		},
+	}
+
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+
+	c.Assert(result.Fields, qt.HasLen, 2)
+	c.Assert(result.Fields[0].ForeignKeyName, qt.Equals, "fk_literal")
+	c.Assert(result.Fields[1].ForeignKeyName, qt.Equals, "fk_qualified")
+	c.Assert(result.Indexes, qt.HasLen, 1)
+	c.Assert(result.Indexes[0].TableName, qt.Equals, `"tenant.data".payload`)
+	c.Assert(result.Indexes[0].Name, qt.Equals, "lookup")
+}
+
 func TestConvertDBSchemaToGoSchema_ExtensionDefaultValues(t *testing.T) {
 	c := qt.New(t)
 

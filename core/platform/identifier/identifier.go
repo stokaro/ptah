@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/stokaro/ptah/core/platform"
+	"github.com/stokaro/ptah/internal/tableref"
 )
 
 // Comparison describes how a database compares identifiers.
@@ -237,12 +238,15 @@ func (s Semantics) Resolves(value string) bool {
 // ResolvesQualifiedTable reports whether both parts of a table identifier are
 // covered by catalog-resolved semantics. Unqualified names use DefaultSchema.
 func (s Semantics) ResolvesQualifiedTable(value string) bool {
-	schema, table, qualified := strings.Cut(value, ".")
-	if !qualified {
-		schema = s.DefaultSchema
-		table = value
+	ref, ok := tableref.Parse(value)
+	if !ok {
+		return false
 	}
-	return s.Resolves(schema) && s.Resolves(table)
+	schema := ref.Schema
+	if !ref.Qualified {
+		schema = s.DefaultSchema
+	}
+	return s.Resolves(schema) && s.Resolves(ref.Name)
 }
 
 // IdentityKey returns the canonical key used for confirmed identifier equality.
@@ -302,15 +306,18 @@ func (s Semantics) qualifiedTableKey(
 	value string,
 	key func(string) string,
 ) string {
-	schema, table, qualified := strings.Cut(value, ".")
-	if !qualified {
+	ref, ok := tableref.Parse(value)
+	if !ok {
+		return key(value)
+	}
+	schema := ref.Schema
+	if !ref.Qualified {
 		if s.DefaultSchema == "" {
-			return key(value)
+			return tableref.Canonical("", key(ref.Name))
 		}
 		schema = s.DefaultSchema
-		table = value
 	}
-	return key(schema) + "." + key(table)
+	return tableref.Canonical(key(schema), key(ref.Name))
 }
 
 func (s Semantics) valid() bool {

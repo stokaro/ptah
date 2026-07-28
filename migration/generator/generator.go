@@ -28,6 +28,7 @@ import (
 	"github.com/stokaro/ptah/internal/deporder"
 	"github.com/stokaro/ptah/internal/migratesum"
 	"github.com/stokaro/ptah/internal/pathguard"
+	"github.com/stokaro/ptah/internal/tableref"
 	"github.com/stokaro/ptah/migration/diffpolicy"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/planner"
@@ -1160,30 +1161,27 @@ func generatedTableByStructName(tables []goschema.Table, structName string) *gos
 
 func generatedTableReference(tables []goschema.Table, structName, tableName string) *goschema.Table {
 	tableName = strings.TrimSpace(tableName)
-	for i := range tables {
-		table := &tables[i]
-		if tableName == "" && table.StructName == structName {
-			return table
-		}
-		if tableName != "" && table.StructName == structName && (table.Name == tableName || table.QualifiedName() == tableName) {
-			return table
-		}
-	}
 	if tableName == "" {
+		return generatedTableByStructName(tables, structName)
+	}
+	for i := range tables {
+		if tables[i].QualifiedName() == tableName {
+			return &tables[i]
+		}
+	}
+	ref, ok := tableref.Parse(tableName)
+	if !ok || ref.Qualified {
 		return nil
 	}
-	if strings.Contains(tableName, ".") {
-		for i := range tables {
-			if tables[i].QualifiedName() == tableName {
-				return &tables[i]
-			}
+	for i := range tables {
+		if tables[i].StructName == structName && tables[i].Name == ref.Name {
+			return &tables[i]
 		}
-		return nil
 	}
 
 	var match *goschema.Table
 	for i := range tables {
-		if tables[i].Name != tableName {
+		if tables[i].Name != ref.Name {
 			continue
 		}
 		if match != nil {
@@ -1217,12 +1215,12 @@ func reverseConstraintAdditions(diff *types.SchemaDiff, dbSchema *dbschematypes.
 	// addition restores the body from the exact host it was removed from. A
 	// mixin-shared FK name legitimately repeats across host tables, so a
 	// name-only key would collapse them onto one host.
-	dbConstraintByTableName := make(map[string]dbschematypes.DBConstraint)
+	dbConstraintByTableName := make(map[tableMemberKey]dbschematypes.DBConstraint)
 	for _, c := range dbSchema.Constraints {
 		if c.Type != "FOREIGN KEY" && c.Type != "PRIMARY KEY" && c.Type != "CHECK" && c.Type != "UNIQUE" {
 			continue
 		}
-		dbConstraintByTableName[c.QualifiedTableName()+"."+c.Name] = c
+		dbConstraintByTableName[tableMemberKey{table: c.QualifiedTableName(), member: c.Name}] = c
 	}
 
 	var infos []types.ConstraintAdditionInfo
@@ -1230,7 +1228,7 @@ func reverseConstraintAdditions(diff *types.SchemaDiff, dbSchema *dbschematypes.
 		if removed.TableName == "" {
 			continue
 		}
-		dbConstraint, ok := dbConstraintByTableName[removed.TableName+"."+removed.Name]
+		dbConstraint, ok := dbConstraintByTableName[tableMemberKey{table: removed.TableName, member: removed.Name}]
 		if !ok {
 			// No introspected body to restore (e.g. the constraint was a
 			// pure-removal not present pre-change, or a type this helper does not
@@ -1359,7 +1357,7 @@ func reverseConstraintRemovals(diff *types.SchemaDiff, schema *goschema.Database
 	// FK from exactly the table the up side added it to. Names present here are
 	// recorded so the field-scan fallback below does not double-emit them.
 	var infos []types.ConstraintRemovalInfo
-	seen := make(map[string]struct{})
+	seen := make(map[tableMemberKey]struct{})
 	handled := make(map[string]struct{})
 	for _, add := range diff.ConstraintsAddedWithTables {
 		if add.TableName == "" {
@@ -1424,7 +1422,7 @@ func reverseConstraintRemovals(diff *types.SchemaDiff, schema *goschema.Database
 
 func appendAddedTableForeignKeyRemovals(
 	infos []types.ConstraintRemovalInfo,
-	seen map[string]struct{},
+	seen map[tableMemberKey]struct{},
 	tableNames []string,
 	schema *goschema.Database,
 ) []types.ConstraintRemovalInfo {
@@ -1490,18 +1488,23 @@ func generatedTableInSet(table goschema.Table, tableNames map[string]struct{}) b
 
 func appendConstraintRemovalInfo(
 	infos []types.ConstraintRemovalInfo,
-	seen map[string]struct{},
+	seen map[tableMemberKey]struct{},
 	info types.ConstraintRemovalInfo,
 ) []types.ConstraintRemovalInfo {
 	if info.Name == "" || info.TableName == "" {
 		return infos
 	}
-	key := info.TableName + "." + info.Name
+	key := tableMemberKey{table: info.TableName, member: info.Name}
 	if _, ok := seen[key]; ok {
 		return infos
 	}
 	seen[key] = struct{}{}
 	return append(infos, info)
+}
+
+type tableMemberKey struct {
+	table  string
+	member string
 }
 
 func defaultForeignKeyConstraintName(tableName string, columns []string) string {

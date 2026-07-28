@@ -99,15 +99,19 @@ func TablesAndColumnsWithSemantics(
 	semantics identifier.Semantics,
 ) {
 	// Create maps for quick lookup
-	genTables := make(map[string]goschema.Table)
+	genTables := make(map[tableIdentity]goschema.Table)
 	for _, table := range generated.Tables {
-		genTables[semantics.QualifiedTableIdentityKey(table.QualifiedName())] = table
+		genTables[newTableIdentity(table.Schema, table.Name, semantics)] = table
 	}
 
-	dbTables := make(map[string]types.DBTable)
+	dbTables := make(map[tableIdentity]types.DBTable)
 	for _, table := range database.Tables {
-		dbTables[semantics.QualifiedTableIdentityKey(table.QualifiedName())] = table
+		dbTables[newTableIdentity(table.Schema, table.Name, semantics)] = table
 	}
+	objectOwnedUniqueColumns := collectGeneratedObjectOwnedUniqueColumns(
+		generated,
+		semantics,
+	)
 
 	// Find added and removed tables
 	for identity, table := range genTables {
@@ -125,12 +129,13 @@ func TablesAndColumnsWithSemantics(
 	// Find modified tables (compare columns)
 	for identity, genTable := range genTables {
 		if dbTable, exists := dbTables[identity]; exists {
-			tableDiff := TableColumnsWithSemantics(
+			tableDiff := tableColumnsWithSemantics(
 				genTable,
 				dbTable,
 				generated,
 				dialect,
 				semantics,
+				objectOwnedUniqueColumns,
 			)
 			if len(tableDiff.ColumnsAdded) > 0 || len(tableDiff.ColumnsRemoved) > 0 || len(tableDiff.ColumnsModified) > 0 {
 				diff.TablesModified = append(diff.TablesModified, tableDiff)

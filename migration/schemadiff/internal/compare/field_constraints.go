@@ -32,9 +32,13 @@ func buildTablePrimaryKeyColumnSets(generated *goschema.Database) map[string]map
 	return result
 }
 
-func isFieldLevelConstraint(dbConstraint types.DBConstraint, generated *goschema.Database, synthesizedFKKeys map[string]struct{}) bool {
+func isFieldLevelConstraint(
+	dbConstraint types.DBConstraint,
+	generated *goschema.Database,
+	synthesizedFKKeys map[tableMemberKey]struct{},
+) bool {
 	// Create a map of table.column -> field for quick lookup
-	fieldMap := make(map[string]goschema.Field)
+	fieldMap := make(map[tableMemberKey]goschema.Field)
 	// tablePKColumns maps a qualified table name to the set of columns in its
 	// table-level primary key (Table.PrimaryKey), which are synthesized as a
 	// table-level PRIMARY KEY constraint.
@@ -48,7 +52,7 @@ func isFieldLevelConstraint(dbConstraint types.DBConstraint, generated *goschema
 				break
 			}
 		}
-		key := tableName + "." + field.Name
+		key := tableMemberKey{table: tableName, member: field.Name}
 		fieldMap[key] = field
 	}
 
@@ -56,7 +60,7 @@ func isFieldLevelConstraint(dbConstraint types.DBConstraint, generated *goschema
 	switch dbConstraint.Type {
 	case "NOT NULL":
 		// Check if there's a field with not_null=true for this column
-		key := dbConstraint.QualifiedTableName() + "." + getConstraintColumn(dbConstraint)
+		key := tableMemberKey{table: dbConstraint.QualifiedTableName(), member: getConstraintColumn(dbConstraint)}
 		if field, exists := fieldMap[key]; exists && !field.Nullable {
 			return true
 		}
@@ -68,7 +72,7 @@ func isFieldLevelConstraint(dbConstraint types.DBConstraint, generated *goschema
 		// database constraint must stay in the comparison to match/add correctly
 		// (#708).
 		column := getConstraintColumn(dbConstraint)
-		key := dbConstraint.QualifiedTableName() + "." + column
+		key := tableMemberKey{table: dbConstraint.QualifiedTableName(), member: column}
 		if field, exists := fieldMap[key]; exists && field.Primary {
 			if _, synthesized := tablePKColumns[dbConstraint.QualifiedTableName()][column]; !synthesized {
 				return true
@@ -76,7 +80,7 @@ func isFieldLevelConstraint(dbConstraint types.DBConstraint, generated *goschema
 		}
 	case "UNIQUE":
 		// Check if there's a field with unique=true for this column
-		key := dbConstraint.QualifiedTableName() + "." + getConstraintColumn(dbConstraint)
+		key := tableMemberKey{table: dbConstraint.QualifiedTableName(), member: getConstraintColumn(dbConstraint)}
 		if field, exists := fieldMap[key]; exists && field.Unique {
 			return true
 		}
@@ -90,14 +94,15 @@ func isFieldLevelConstraint(dbConstraint types.DBConstraint, generated *goschema
 		// the constraint name rather than the column, because the synthesized
 		// name is keyed on table.constraint_name and getConstraintColumn does
 		// not always resolve the FK column.
-		if _, synthesized := synthesizedFKKeys[dbConstraint.QualifiedTableName()+"."+dbConstraint.Name]; synthesized {
+		key := tableMemberKey{table: dbConstraint.QualifiedTableName(), member: dbConstraint.Name}
+		if _, synthesized := synthesizedFKKeys[key]; synthesized {
 			return false
 		}
 		// Check if there's a field with foreign key reference for this column.
 		// No synthesized counterpart (e.g. the column is not yet in the
 		// database): keep the historical behavior and treat it as field-level
 		// so it is owned by the column/table lifecycle.
-		key := dbConstraint.QualifiedTableName() + "." + getConstraintColumn(dbConstraint)
+		key = tableMemberKey{table: dbConstraint.QualifiedTableName(), member: getConstraintColumn(dbConstraint)}
 		if field, exists := fieldMap[key]; exists && field.Foreign != "" {
 			return true
 		}

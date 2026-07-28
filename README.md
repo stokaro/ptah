@@ -14,7 +14,8 @@ architecture is better.
 | --- | --- |
 | First successful local run | [Quick start](docs/site/src/content/docs/getting-started.md) |
 | Application-owned Go schema | [Go schema workflow](docs/site/src/content/docs/workflows/go-schema.md) |
-| YAML or HCL schema source | [Schema files](docs/site/src/content/docs/workflows/schema-files.md) |
+| SQL, YAML, HCL, or external desired schema | [Schema sources](docs/site/src/content/docs/workflows/schema-files.md) |
+| ORM-owned desired schema | [ORM loaders](docs/site/src/content/docs/workflows/orm-loaders.md) |
 | Compose one schema from several packages or files | [Go schema workflow](docs/site/src/content/docs/workflows/go-schema.md) |
 | Migration operations | [Migrations](docs/site/src/content/docs/workflows/migrations.md) |
 | Publish or consume migrations and schemas through OCI | [OCI registry artifacts](docs/site/src/content/docs/workflows/oci-registry.md) |
@@ -111,6 +112,7 @@ repository. That repo owns the regenerated reports:
 - [`gaps.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps.md)
 - [`gaps-live.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps-live.md)
 - [`gaps-diff.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps-diff.md)
+- [`gaps-orm-providers.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps-orm-providers.md)
 - [`PARITY.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/PARITY.md)
 
 See [Conformance](docs/site/src/content/docs/operate/conformance.md).

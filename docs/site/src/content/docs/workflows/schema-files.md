@@ -187,12 +187,20 @@ can diff, plan, migrate, and drift-check a live database against an ORM's schema
 ptah schema drift --schema-cmd "./scripts/export-schema" --db-url "$DATABASE_URL"
 ```
 
-The command's stdout is parsed as SQL by default; set `--schema-format sql`
-explicitly if you prefer. Execution is bounded by a timeout, and if the program
-exits non-zero its stderr is surfaced in the error. Because the program is run
-with an explicit argument vector split on whitespace, arguments cannot contain
-spaces — wrap a more complex invocation in a small script and point
+The command's stdout is parsed as SQL by default. Set `--schema-format hcl` or
+`--schema-format yaml` when the loader emits another supported source format;
+`yml` is accepted as a YAML alias. Execution is bounded by a timeout, and if the
+program exits non-zero its stderr is surfaced in the error. Because the program
+is run with an explicit argument vector split on whitespace, arguments cannot
+contain spaces — wrap a more complex invocation in a small script and point
 `--schema-cmd` at that.
+
+Ptah owns the loader's process tree: it uses a process group on Unix and a
+kill-on-close Job Object on Windows. Descendants are cleaned up on cancellation,
+timeout, and after a successful parent exit. Stdout is bounded, and failures
+include only bounded, secret-redacted, terminal-safe diagnostics from stderr or
+output parsing. Empty or whitespace-only stdout is rejected so a broken
+provider cannot be interpreted as an intentionally empty desired schema.
 
 An external command composes with the other sources, so you can, for example,
 merge an ORM export with a vendored HCL file:
@@ -206,7 +214,8 @@ ptah schema render \
 
 This is Ptah's open, local, MIT equivalent of Atlas's `data "external_schema"`
 source and its ORM provider loaders. For ready-made loaders — including a
-verified GORM example — see [ORM loaders](../orm-loaders/).
+verified GORM recipe and a separately verified SQLAlchemy recipe — see
+[ORM loaders](../orm-loaders/).
 
 ### Configure it in `ptah.yaml`
 
@@ -222,10 +231,27 @@ external_schema:
   env: ["APP_ENV=dev"] # optional extra KEY=VALUE entries
 ```
 
-`ptah schema compare`, `ptah schema drift`, `ptah migrations plan`, and
-`ptah migrations generate` read this block when `--schema-cmd` is not passed (the
-flag always wins). Those commands also read `url` (the database) and `schemas`
-from `ptah.yaml`, and honor `--env` to select an env block — so a drift check can
-be as short as `ptah schema drift --config ptah.yaml`. This mirrors Atlas's
-`data "external_schema"` block: the program must print the complete desired
-schema — currently SQL DDL — to stdout.
+`external_schema.env` cannot override `PATH` or `PWD`. Put the executable path
+in `program` explicitly and use `working_dir` to select the command directory.
+
+`ptah schema render`, `ptah schema compare`, `ptah schema drift`,
+`ptah migrations plan`, and `ptah migrations generate` read this block when
+`--schema-cmd` is not passed (the flag always wins). Auto-discovered config is
+not permission to execute repository-controlled code, so a config-sourced
+loader also requires `--allow-external-schema`. Those commands read the other
+settings they consume, such as `url` and `schemas`, and honor `--env` to select
+an env block:
+
+```bash
+ptah schema drift \
+  --config ptah.yaml \
+  --allow-external-schema
+```
+
+Set `--schema-cmd=` explicitly to disable the configured source for one
+invocation.
+
+Relative `working_dir` values must remain inside the process working directory
+after symlink resolution. Use an explicit absolute path for a deliberately
+external loader. This native block mirrors the desired-state role of Atlas's
+`data "external_schema"` but does not evaluate that Atlas HCL data source.

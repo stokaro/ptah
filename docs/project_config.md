@@ -1,8 +1,10 @@
 # Ptah Project Config
 
-`ptah.yaml` is Ptah's project-level configuration file. It is command
-configuration, not a schema source. Schema input remains Go annotations, YAML
-schema, HCL schema files, or database introspection depending on the command.
+`ptah.yaml` is Ptah's project-level configuration file. It selects command
+defaults and can select an external desired-schema program; the program's
+stdout is the schema source. Static schema input remains Go annotations, YAML,
+HCL, or SQL files, with database introspection used by commands that compare
+against a live target.
 
 Ptah reads `ptah.yaml` strictly: unknown keys are errors. This prevents a typo
 from being silently ignored while migrations run with different settings than
@@ -80,6 +82,10 @@ env:
 | `dev` | Disposable dev/shadow database URL for `migrations generate` |
 | `schemas` | Default schemas to introspect when the command supports schema scoping |
 | `exclude` | Project-level exclude patterns for config consumers |
+| `external_schema.program` | External schema command as an explicit argument list; the first item is the executable |
+| `external_schema.format` | Command stdout format: `sql` (default), `hcl`, or `yaml` |
+| `external_schema.working_dir` | Working directory for the external schema command |
+| `external_schema.env` | Extra `KEY=VALUE` environment entries appended for the command |
 | `migration.dir` | Default migrations directory |
 | `migration.format` | Migration directory format: `auto`, `ptah`, or `atlas` |
 | `migration.revisions_schema` | Migration metadata schema |
@@ -116,6 +122,59 @@ Custom pre-flight hook commands receive the raw `PTAH_DB_URL`, `PTAH_DIALECT`,
 high-precision UTC timestamp. Webhooks have a 30-second timeout and redirects
 are not followed. Dry-run migration commands do not execute hooks because
 backups and webhooks are side effects.
+
+## External Desired Schema
+
+Use `external_schema` when an ORM, framework, or generator owns the desired
+schema:
+
+```yaml
+external_schema:
+  program:
+    - .venv/bin/atlas-provider-sqlalchemy
+    - --path
+    - ./models
+    - --dialect
+    - postgresql
+  format: sql
+  working_dir: ./app
+  env: ["APP_ENV=dev"]
+```
+
+`program` is an explicit argument list. Ptah executes it directly without a
+shell, bounds it with the external-schema timeout, reads stdout as `sql`, `hcl`,
+or `yaml`, and surfaces bounded, secret-redacted, terminal-safe stderr and
+parser diagnostics when the program fails. Empty or whitespace-only stdout is
+rejected.
+`working_dir` defaults to the process working directory; `env` entries are
+appended to the current environment. `PATH` and `PWD` cannot be overridden:
+use an explicit executable path in `program` and `working_dir` for the command
+directory.
+
+The block applies consistently to `ptah schema render`, `ptah schema compare`,
+`ptah schema drift`, `ptah migrations plan`, and
+`ptah migrations generate`. These commands use it only when `--schema-cmd` is
+not set. When `--schema-cmd` is set, its `--schema-format` keeps CLI precedence
+over the config block. An explicit empty `--schema-cmd=` disables the configured
+external source. All commands honor `--config` and `--env` for this source.
+
+Because `./ptah.yaml` is auto-discovered, merely entering a repository and
+running a schema command must not execute repository-controlled code. Pass
+`--allow-external-schema` to execute a config-sourced program:
+
+```bash
+ptah schema render --allow-external-schema --dialect postgres
+```
+
+Supplying `--schema-cmd` is already an explicit opt-in and does not require the
+additional flag. Relative `working_dir` values must remain inside the current
+working directory after symlink resolution; use an explicit absolute path when
+the loader intentionally lives elsewhere. Ptah terminates the loader's complete
+process group on Unix and its kill-on-close Job Object on Windows, including
+descendants left behind after a successful parent exit.
+
+See the canonical [schema sources](site/src/content/docs/workflows/schema-files.md)
+and [verified ORM loader recipes](site/src/content/docs/workflows/orm-loaders.md).
 
 ## Diff Policy
 

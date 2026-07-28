@@ -19,6 +19,7 @@ The authoritative current numbers live in the conformance repository reports:
 - [`gaps.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps.md)
 - [`gaps-live.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps-live.md)
 - [`gaps-diff.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps-diff.md)
+- [`gaps-orm-providers.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps-orm-providers.md)
 - [`cli-surface.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/cli-surface.md)
 - [`PARITY.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/PARITY.md)
 
@@ -80,8 +81,12 @@ make budget
 make gate
 make probe-live
 make budget-live
+make gate-live
 make probe-diff
 make budget-diff
+make probe-orm-providers
+make budget-orm-providers
+make gate-orm-providers
 make probe-cli-surface
 make budget-cli-surface
 make gate-cli-surface
@@ -96,3 +101,21 @@ schema parsing/rendering, migration directory semantics, live database
 round-trips, or public compatibility APIs. Bump the Ptah module version in the
 conformance repository, run `go mod tidy`, regenerate the relevant reports, and
 let both regression and full-conformance checks show the expected state.
+
+## External schema coverage
+
+The deterministic offline report includes a 20-observation external-schema
+workflow. It measures static SQL; external programs that emit SQL, HCL, and
+YAML; trust denial without side effects for render, compare, drift, plan, and
+generate; configuration and explicit CLI sources; migration generation and
+application to ephemeral SQLite; table, primary-key, unique-index, and
+cascading-foreign-key facts; and converged compare, drift, plan, and generate
+results.
+
+Pinned GORM and SQLAlchemy providers run in a separate tier so network-backed
+dependency installation cannot weaken the deterministic corpus. The tier has
+independent regression-budget and zero-gap full-conformance jobs.
+
+This coverage measures Ptah's native external-program source. Atlas HCL
+`data.external_schema` evaluation is a separate project-language feature and
+is not implied by a green native provider report.

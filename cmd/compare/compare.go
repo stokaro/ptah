@@ -12,6 +12,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 	"github.com/stokaro/ptah/cmd/internal/schemaload"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/atlasurl"
 	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/schemadiff"
 	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
@@ -62,12 +63,13 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringArrayVar(&opts.rootDirs, rootDirFlag, nil, "Root directory to scan for Go entities (repeatable; multiple roots merge into one composite schema; defaults to ./)")
 	flags.StringArrayVar(&opts.schemaFiles, schemaFileFlag, nil, "YAML, HCL, or SQL schema file to compare instead of, or combined with, Go entities (repeatable; multiple sources merge into one composite schema)")
 	flags.StringVar(&opts.schemaCmd, schemaCmdFlag, "", `External program whose stdout is the desired schema; run without a shell, split on whitespace. Example: "go run ./loader"`)
-	flags.StringVar(&opts.schemaFormat, schemaFormatFlag, "sql", "Format of the --schema-cmd output: sql")
+	flags.StringVar(&opts.schemaFormat, schemaFormatFlag, "sql", "Format of the --schema-cmd output: sql, hcl, or yaml")
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	flags.BoolVar(&opts.exitOnDiff, exitCodeFlag, false, "Exit with 1 when the schema diff is non-empty")
 	flags.BoolVar(&opts.plainHTTP, plainHTTPFlag, false, "Use plain HTTP for OCI registry access")
 	flags.String(dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
 	flags.String(dbcli.EnvFlagName, "", "Project env name to read from ptah.yaml or atlas.hcl")
+	dbcli.RegisterExternalSchemaOptInFlag(flags)
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
 }
@@ -83,17 +85,35 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
+	commands, err := dbcli.ResolveExternalSchemaCommands(
+		cmd,
+		opts.schemaCmd,
+		opts.schemaFormat,
+		projectCfg,
+	)
+	if err != nil {
+		return err
+	}
 	dbURL := dbcli.EffectiveString(cmd, dbURLFlag, opts.dbURL, projectCfg.DatabaseURL)
 	schemasValue := dbcli.EffectiveString(cmd, dbcli.SchemasFlagName, opts.schemas, dbcli.JoinSchemas(projectCfg.Schemas))
 
 	if dbURL == "" {
 		return fmt.Errorf("database URL is required")
 	}
+	dialect, err := atlasurl.DialectFromURL(dbURL)
+	if err != nil {
+		return err
+	}
+	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
+	if err != nil {
+		return err
+	}
 
 	loadOpts := schemaload.Options{
 		RootDirs:    opts.rootDirs,
 		SchemaFiles: opts.schemaFiles,
-		Commands:    dbcli.ExternalSchemaCommands(opts.schemaCmd, opts.schemaFormat, projectCfg),
+		Commands:    commands,
+		Dialect:     dialect,
 		PlainHTTP:   opts.plainHTTP,
 	}
 
@@ -109,11 +129,6 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	}
 
 	// 2. Connect to database and read schema
-	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
-	if err != nil {
-		return err
-	}
-
 	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
 	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
 	cancelConnect()

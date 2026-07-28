@@ -530,6 +530,57 @@ INSERT INTO audit_log ([message]) VALUES ('once');`
 	})
 }
 
+func TestSplitSQLStatementsForDialect_SQLServerBracketIdentifierIsAtomic(t *testing.T) {
+	c := qt.New(t)
+
+	input := `CREATE TABLE [semi;GO--/*name] ([id] int);
+GO
+CREATE TABLE [next] ([id] int);`
+
+	result := sqlutil.SplitSQLStatementsForDialect(input, "sqlserver")
+
+	c.Assert(result, qt.DeepEquals, []string{
+		"CREATE TABLE [semi;GO--/*name] ([id] int)",
+		"CREATE TABLE [next] ([id] int)",
+	})
+}
+
+func TestStripCommentsForDialect_SQLServerPreservesBracketIdentifier(t *testing.T) {
+	c := qt.New(t)
+
+	input := "CREATE TABLE [owner's--/*value]]x] ([id] int); -- outside"
+
+	result := sqlutil.StripCommentsForDialect(input, "sqlserver")
+
+	c.Assert(result, qt.Equals, "CREATE TABLE [owner's--/*value]]x] ([id] int); ")
+}
+
+func TestStripCommentsForDialect_SQLServerPreservesTemporaryTable(t *testing.T) {
+	c := qt.New(t)
+
+	input := "CREATE TABLE #stage ([id] int); -- outside"
+
+	result := sqlutil.StripCommentsForDialect(input, "sqlserver")
+
+	c.Assert(result, qt.Equals, "CREATE TABLE #stage ([id] int); ")
+}
+
+func TestSplitSQLStatementsForDialect_SQLServerPreservesTemporaryTables(t *testing.T) {
+	c := qt.New(t)
+
+	input := `CREATE TABLE #stage ([id] int);
+INSERT INTO #stage VALUES (1);
+CREATE TABLE ##shared_stage ([id] int);`
+
+	result := sqlutil.SplitSQLStatementsForDialect(input, "sqlserver")
+
+	c.Assert(result, qt.DeepEquals, []string{
+		"CREATE TABLE #stage ([id] int)",
+		"INSERT INTO #stage VALUES (1)",
+		"CREATE TABLE ##shared_stage ([id] int)",
+	})
+}
+
 func TestSplitSQLStatementsForDialect_SQLServerCreateOrAlterProc(t *testing.T) {
 	c := qt.New(t)
 

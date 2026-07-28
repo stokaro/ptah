@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/stokaro/ptah/core/ast"
+	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/core/ptaherr"
@@ -1366,10 +1367,7 @@ func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
 // sequenceIdentifier returns the escaped, optionally schema-qualified sequence
 // identifier for name and schema.
 func (r *Renderer) sequenceIdentifier(name, schema string) string {
-	if schema != "" {
-		return r.escapeQualifiedIdentifier(schema + "." + name)
-	}
-	return r.escapeQualifiedIdentifier(name)
+	return r.escapeQualifiedIdentifier(goschema.QualifyTableName(schema, name))
 }
 
 // sequenceOwnedByClause renders the OWNED BY target: either NONE or a

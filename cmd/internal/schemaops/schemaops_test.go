@@ -1,14 +1,36 @@
 package schemaops_test
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
 	"github.com/stokaro/ptah/cmd/internal/schemaops"
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/schemasource"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 )
+
+const sqlServerDatabaseURL = "sqlserver://sa:pass@localhost:1433?database=ptah&encrypt=disable"
+
+func TestCompare_UsesDatabaseURLDialectForExternalSQL(t *testing.T) {
+	c := qt.New(t)
+	command := schemasource.Command{
+		Args: []string{"go", "run", "./testdata/sqlserver-schema-command"},
+	}
+
+	_, err := schemasource.Run(context.Background(), command)
+	c.Assert(err, qt.ErrorMatches, `parse schema command "go" output: unsupported CREATE OR ALTER outside SQL Server dialect at position \d+`)
+
+	_, err = schemaops.Compare(t.Context(), schemaops.CompareOptions{
+		Commands:       []schemasource.Command{command},
+		DatabaseURL:    sqlServerDatabaseURL,
+		ConnectTimeout: time.Nanosecond,
+	})
+	c.Assert(err, qt.ErrorMatches, `error connecting to database: .*`)
+}
 
 func TestFilterGeneratedTables_RemovesTableScopedObjects(t *testing.T) {
 	c := qt.New(t)

@@ -12,6 +12,7 @@ import (
 	"github.com/zclconf/go-cty/cty"
 
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/internal/tableref"
 )
 
 // ParseFile parses an HCL schema file into the same Database IR used by
@@ -190,9 +191,9 @@ func hclTableStructName(schema, name string) string {
 	schema = strings.TrimSpace(schema)
 	switch strings.ToLower(schema) {
 	case "", "main", "public":
-		return name
+		return tableref.Canonical("", name)
 	default:
-		return schema + "." + name
+		return tableref.Canonical(schema, name)
 	}
 }
 
@@ -237,12 +238,14 @@ func (p *parser) parseTableBlock(table *goschema.Table, fieldsStart, unlabeledCh
 		if err != nil {
 			return err
 		}
+		index.TableName = table.QualifiedName()
 		p.db.Indexes = append(p.db.Indexes, index)
 	case "unique":
 		constraint, err := p.parseUnique(table.StructName, table.Name, block)
 		if err != nil {
 			return err
 		}
+		constraint.Table = table.QualifiedName()
 		p.db.Constraints = append(p.db.Constraints, constraint)
 	case "foreign_key":
 		spec, err := p.parseForeignKey(block)
@@ -257,6 +260,7 @@ func (p *parser) parseTableBlock(table *goschema.Table, fieldsStart, unlabeledCh
 		if err != nil {
 			return err
 		}
+		constraint.Table = table.QualifiedName()
 		p.db.Constraints = append(p.db.Constraints, constraint)
 	case "partition":
 		partition, err := p.parsePartition(block)
@@ -821,7 +825,7 @@ func (p *parser) applyForeignKey(table goschema.Table, fieldsStart int, block *h
 			StructName:     table.StructName,
 			Name:           spec.name,
 			Type:           "FOREIGN KEY",
-			Table:          table.Name,
+			Table:          table.QualifiedName(),
 			Columns:        spec.columns,
 			ForeignTable:   spec.foreignTable,
 			ForeignColumn:  spec.foreignColumns[0],
@@ -1293,43 +1297,38 @@ func tableColumnFromRef(raw string) (table string, column string) {
 	if unquoted, err := strconv.Unquote(raw); err == nil {
 		return "", unquoted
 	}
-	if strings.Contains(raw, "[") {
-		return bracketRefParts(raw)
-	}
-	parts := strings.Split(raw, ".")
-	if len(parts) == 0 {
+	expr, diags := hclsyntax.ParseExpression([]byte(raw), "column-reference.hcl", hcl.InitialPos)
+	if diags.HasErrors() {
 		return "", ""
 	}
-	column = parts[len(parts)-1]
-	columnMarker := -1
-	for i, part := range parts {
-		if part == "column" {
-			columnMarker = i
+	traversal, diags := hcl.AbsTraversalForExpr(expr)
+	if diags.HasErrors() || len(traversal) < 2 {
+		return "", ""
+	}
+	root, ok := traversal[0].(hcl.TraverseRoot)
+	if !ok {
+		return "", ""
+	}
+	parts := make([]string, 0, len(traversal)-1)
+	for _, step := range traversal[1:] {
+		part, ok := traversalPart(step)
+		if !ok {
+			return "", ""
 		}
+		parts = append(parts, part)
 	}
-	if columnMarker >= 0 && columnMarker+1 < len(parts) {
-		column = parts[columnMarker+1]
+	if root.Name == "column" && len(parts) == 1 {
+		return "", parts[0]
 	}
-	if len(parts) > 0 && parts[0] == "table" && columnMarker > 1 {
-		table = strings.Join(parts[1:columnMarker], ".")
+	if root.Name != "table" || len(parts) < 3 || parts[len(parts)-2] != "column" {
+		return "", ""
 	}
-	return table, column
-}
-
-func bracketRefParts(raw string) (table string, column string) {
-	if start := strings.LastIndex(raw, "["); start >= 0 {
-		if end := strings.LastIndex(raw, "]"); end > start {
-			value := raw[start+1 : end]
-			column, _ = strconv.Unquote(value)
-		}
+	tableParts := parts[:len(parts)-2]
+	if len(tableParts) == 1 {
+		return tableref.Canonical("", tableParts[0]), parts[len(parts)-1]
 	}
-	prefix, _, _ := strings.Cut(raw, ".column[")
-	parts := strings.Split(prefix, ".")
-	for i := 0; i+1 < len(parts); i++ {
-		if parts[i] == "table" {
-			table = parts[i+1]
-			break
-		}
+	if len(tableParts) == 2 {
+		return tableref.Canonical(tableParts[0], tableParts[1]), parts[len(parts)-1]
 	}
-	return table, column
+	return "", ""
 }

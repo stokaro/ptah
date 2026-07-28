@@ -1,9 +1,8 @@
 package goschema
 
-// White-box testing required: equivalentDefinitions is the internal canonical
-// comparator used by every composite-schema conflict validator, and panic safety
-// for future unexported fields cannot be observed through exported schema types
-// until such a field exists.
+// White-box testing required: these package-local resolvers are shared by every
+// composite-schema conflict validator, and their edge cases cannot be isolated
+// through Merge without coupling tests to unrelated reconciliation behavior.
 
 import (
 	"testing"
@@ -33,4 +32,17 @@ func TestEquivalentDefinitions_HandlesUnexportedFields(t *testing.T) {
 		),
 		qt.IsFalse,
 	)
+}
+
+func TestTableScopeResolver_PreservesStructuralIdentity(t *testing.T) {
+	c := qt.New(t)
+	resolver := newTableScopeResolver([]Table{
+		{StructName: "Literal", Name: "tenant.data"},
+		{StructName: "Qualified", Schema: "tenant", Name: "data"},
+	})
+
+	c.Assert(resolver.resolve("Literal", `"tenant.data"`), qt.Equals, `"tenant.data"`)
+	c.Assert(resolver.resolve("Literal", "tenant.data"), qt.Equals, "tenant.data")
+	c.Assert(resolver.resolve("Qualified", `"tenant.data"`), qt.Equals, `"tenant.data"`)
+	c.Assert(resolver.resolve("Qualified", "tenant.data"), qt.Equals, "tenant.data")
 }

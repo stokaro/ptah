@@ -9,6 +9,7 @@ import (
 
 	"github.com/stokaro/ptah/core/goschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/tableref"
 )
 
 // ExcludeDatabase returns a shallow copy of schema with resources matching
@@ -221,15 +222,25 @@ func selectorLikeSuffix(raw string) (selector string, ok bool) {
 
 type exclusionState struct {
 	patterns        []resourcePattern
-	excludedTables  map[string]struct{}
-	excludedColumns map[string]struct{}
+	excludedTables  map[tableIdentity]struct{}
+	excludedColumns map[columnIdentity]struct{}
+}
+
+type tableIdentity struct {
+	schema string
+	table  string
+}
+
+type columnIdentity struct {
+	table  tableIdentity
+	column string
 }
 
 func newExclusionState(patterns []resourcePattern) *exclusionState {
 	return &exclusionState{
 		patterns:        patterns,
-		excludedTables:  map[string]struct{}{},
-		excludedColumns: map[string]struct{}{},
+		excludedTables:  map[tableIdentity]struct{}{},
+		excludedColumns: map[columnIdentity]struct{}{},
 	}
 }
 
@@ -582,32 +593,34 @@ func (s *exclusionState) matchesAny(resourceTypes []string, names ...string) boo
 }
 
 func (s *exclusionState) excludeTable(schema, table string) {
-	for _, key := range tableKeys(schema, table) {
+	if key, ok := tableIdentityKey(schema, table); ok {
 		s.excludedTables[key] = struct{}{}
 	}
 }
 
 func (s *exclusionState) tableExcluded(schema, table string) bool {
-	for _, key := range tableKeys(schema, table) {
-		if _, ok := s.excludedTables[key]; ok {
-			return true
-		}
+	key, ok := tableIdentityKey(schema, table)
+	if !ok {
+		return false
 	}
-	return false
+	_, excluded := s.excludedTables[key]
+	return excluded
 }
 
 func (s *exclusionState) excludeColumn(schema, table, column string) {
-	for _, key := range columnKeys(schema, table, column) {
+	if key, ok := columnIdentityKey(schema, table, column); ok {
 		s.excludedColumns[key] = struct{}{}
 	}
 }
 
 func (s *exclusionState) anyColumnExcluded(schema, table string, columns []string) bool {
 	for _, column := range columns {
-		for _, key := range columnKeys(schema, table, column) {
-			if _, ok := s.excludedColumns[key]; ok {
-				return true
-			}
+		key, ok := columnIdentityKey(schema, table, column)
+		if !ok {
+			continue
+		}
+		if _, excluded := s.excludedColumns[key]; excluded {
+			return true
 		}
 	}
 	return false
@@ -815,7 +828,11 @@ func foreignReferenceColumns(reference string) []string {
 
 func tableMatchesName(table goschema.Table, name string) bool {
 	name = strings.TrimSpace(name)
-	return name == "" || name == table.Name || name == table.QualifiedName()
+	if name == "" || name == table.QualifiedName() {
+		return true
+	}
+	ref, ok := tableref.Parse(name)
+	return ok && !ref.Qualified && ref.Name == table.Name
 }
 
 func generatedTableKeyExcluded(s *exclusionState, table string) bool {
@@ -834,37 +851,32 @@ func generatedGrantTargets(grant goschema.Grant) []string {
 	}
 }
 
-func tableKeys(schema, table string) []string {
+func tableIdentityKey(schema, table string) (tableIdentity, bool) {
 	table = strings.TrimSpace(table)
 	if table == "" {
-		return nil
+		return tableIdentity{}, false
 	}
-	schema = strings.TrimSpace(schema)
-	if schema == "" {
-		return []string{table}
-	}
-	return []string{schema + "." + table}
+	return tableIdentity{
+		schema: strings.TrimSpace(schema),
+		table:  table,
+	}, true
 }
 
-func columnKeys(schema, table, column string) []string {
-	table = strings.TrimSpace(table)
+func columnIdentityKey(schema, table, column string) (columnIdentity, bool) {
+	tableKey, ok := tableIdentityKey(schema, table)
 	column = strings.TrimSpace(column)
-	if table == "" || column == "" {
-		return nil
+	if !ok || column == "" {
+		return columnIdentity{}, false
 	}
-	schema = strings.TrimSpace(schema)
-	if schema == "" {
-		return []string{table + "." + column}
-	}
-	return []string{schema + "." + table + "." + column}
+	return columnIdentity{table: tableKey, column: column}, true
 }
 
 func splitQualified(value string) (schema, name string) {
-	before, after, ok := strings.Cut(value, ".")
-	if !ok {
+	ref, ok := tableref.Parse(value)
+	if !ok || !ref.Qualified {
 		return "", value
 	}
-	return before, after
+	return ref.Schema, ref.Name
 }
 
 func derefString(value *string) string {

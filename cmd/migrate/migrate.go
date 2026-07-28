@@ -14,6 +14,7 @@ import (
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/atlasurl"
 	"github.com/stokaro/ptah/internal/planartifact"
 	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/safety"
@@ -71,7 +72,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringArrayVar(&opts.rootDirs, rootDirFlag, nil, "Root directory to scan for Go entities (repeatable; multiple roots merge into one composite schema; defaults to ./)")
 	flags.StringArrayVar(&opts.schemaFiles, schemaFileFlag, nil, "YAML, HCL, or SQL schema file to migrate toward instead of, or combined with, Go entities (repeatable; multiple sources merge into one composite schema)")
 	flags.StringVar(&opts.schemaCmd, schemaCmdFlag, "", `External program whose stdout is the desired schema; run without a shell, split on whitespace. Example: "go run ./loader"`)
-	flags.StringVar(&opts.schemaFormat, schemaFormatFlag, "sql", "Format of the --schema-cmd output: sql")
+	flags.StringVar(&opts.schemaFormat, schemaFormatFlag, "sql", "Format of the --schema-cmd output: sql, hcl, or yaml")
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	flags.BoolVar(&opts.checkDestructive, checkDestructiveFlag, false, "Fail when generated migration SQL contains destructive statements")
 	flags.BoolVar(&opts.allowDestructive, allowDestructiveFlag, false, "Allow destructive statements when --check-destructive is set")
@@ -80,6 +81,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.BoolVar(&opts.plainHTTP, plainHTTPFlag, false, "Allow an unencrypted HTTP connection to a local OCI registry")
 	flags.String(dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
 	flags.String(dbcli.EnvFlagName, "", "Project env name to read from ptah.yaml or atlas.hcl")
+	dbcli.RegisterExternalSchemaOptInFlag(flags)
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
 }
@@ -96,6 +98,15 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
+	commands, err := dbcli.ResolveExternalSchemaCommands(
+		cmd,
+		opts.schemaCmd,
+		opts.schemaFormat,
+		projectCfg,
+	)
+	if err != nil {
+		return err
+	}
 	dbURL := dbcli.EffectiveString(cmd, dbURLFlag, opts.dbURL, projectCfg.DatabaseURL)
 	schemasValue := dbcli.EffectiveString(cmd, dbcli.SchemasFlagName, opts.schemas, dbcli.JoinSchemas(projectCfg.Schemas))
 
@@ -105,10 +116,19 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	if reportFormat != "text" && reportFormat != "html" && reportFormat != "json" {
 		return fmt.Errorf("unsupported report format %q", reportFormat)
 	}
+	dialect, err := atlasurl.DialectFromURL(dbURL)
+	if err != nil {
+		return err
+	}
+	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
+	if err != nil {
+		return err
+	}
 	loadOpts := schemaload.Options{
 		RootDirs:    opts.rootDirs,
 		SchemaFiles: opts.schemaFiles,
-		Commands:    dbcli.ExternalSchemaCommands(opts.schemaCmd, opts.schemaFormat, projectCfg),
+		Commands:    commands,
+		Dialect:     dialect,
 		PlainHTTP:   opts.plainHTTP,
 	}
 	rootsDisplay := loadOpts.Sources()
@@ -131,11 +151,6 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	result := loadResult.Database
 
 	// 2. Connect to database and read schema
-	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
-	if err != nil {
-		return err
-	}
-
 	connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
 	conn, err := dbschema.ConnectToDatabase(connectCtx, dbURL)
 	cancelConnect()

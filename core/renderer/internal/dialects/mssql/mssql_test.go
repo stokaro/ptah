@@ -57,6 +57,23 @@ func TestRenderer_IndexAndDropIndexUseSQLServerSyntax(t *testing.T) {
 	c.Assert(sql, qt.Equals, "DROP INDEX IF EXISTS [idx_order_status] ON [dbo].[order];\n")
 }
 
+func TestRenderer_PreservesCanonicalLiteralDotReference(t *testing.T) {
+	c := qt.New(t)
+
+	tableSQL, err := New().Render(
+		ast.NewCreateTable(`"tenant.data"`).
+			AddColumn(ast.NewColumn("id", "int")),
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(tableSQL, qt.Contains, "CREATE TABLE [tenant.data] (")
+
+	indexSQL, err := New().Render(
+		ast.NewIndex("idx_tenant_data", `"tenant.data"`, "id"),
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(indexSQL, qt.Equals, "CREATE INDEX [idx_tenant_data] ON [tenant.data] ([id]);\n")
+}
+
 func TestRenderer_AlterTableUsesSQLServerSpelling(t *testing.T) {
 	c := qt.New(t)
 
