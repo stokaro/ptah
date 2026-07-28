@@ -269,7 +269,9 @@ pending and out of order.
 - **`WithStatementInterceptor(interceptor)`**: Lets an external executor take over selected statements
 - **`WithStatementObserver(observer)`**: Reports each statement after successful execution without replacing the execution path
 - **`WithRevisionTableFormat(format)`**: Selects Ptah's native `schema_migrations` layout or Atlas's `atlas_schema_revisions` layout
-- **`Baseline(ctx, version)` / `BaselineWithOptions(ctx, opts)`**: Records provider migrations as already applied without executing their SQL bodies
+- **`Baseline(ctx, version)` / `BaselineWithOptions(ctx, opts)`**: Records provider migrations without executing their SQL bodies; Atlas metadata records only the exact baseline revision
+- **`SetAtlasRevision(ctx, version)`**: Moves Atlas metadata to an exact version and returns version-and-description `AtlasRevisionChange` entries in an `AtlasRevisionSetResult`; it preserves clean rows through the target, adds missing manually-set rows, converts dirty rows to the combined applied and manually-set type without discarding diagnostics, and removes rows above it
+- **`GetMigrationStatusSnapshot(ctx)`**: Returns migration status and the exact revision rows used to derive it from one metadata query
 
 ## Programmatic Usage
 

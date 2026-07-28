@@ -41,6 +41,6 @@ func TestStatus_SQLiteMainRevisionsSchema(t *testing.T) {
 	c.Assert(got.Status.PendingMigrations, qt.HasLen, 0)
 	c.Assert(got.AppliedRevisions, qt.HasLen, 1)
 	c.Assert(got.AppliedRevisions[0].Version, qt.Equals, int64(1))
-	c.Assert(got.AppliedRevisions[0].Description, qt.Equals, "One")
+	c.Assert(got.AppliedRevisions[0].Description, qt.Equals, "one")
 	c.Assert(got.AppliedRevisions[0].OperatorVersion, qt.Equals, "Ptah")
 }

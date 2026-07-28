@@ -57,12 +57,13 @@ func ParseMigrationDirFormat(value string) (MigrationDirFormat, error) {
 
 // MigrationFile represents the parsed components of a migration file name
 type MigrationFile struct {
-	Path      string
-	Version   int64
-	Name      string
-	Direction string
-	Extension string
-	Format    MigrationDirFormat
+	Path                string
+	Version             int64
+	Name                string
+	Direction           string
+	Extension           string
+	Format              MigrationDirFormat
+	revisionDescription string
 	// Repeatable marks Flyway-style repeatable migrations imported by Atlas.
 	// They are visible to discovery and linting, but they are not part of
 	// Ptah's ordered versioned execution model.
@@ -192,11 +193,12 @@ func parseAtlasMigrationFileName(filename string, mode atlasParseMode) (*Migrati
 	name = cases.Title(language.English).String(name)
 
 	return &MigrationFile{
-		Version:   version,
-		Name:      name,
-		Direction: direction,
-		Extension: ".sql",
-		Format:    MigrationDirFormatAtlas,
+		Version:             version,
+		Name:                name,
+		Direction:           direction,
+		Extension:           ".sql",
+		Format:              MigrationDirFormatAtlas,
+		revisionDescription: rawName,
 	}, nil
 }
 

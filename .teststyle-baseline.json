@@ -835,18 +835,6 @@
       "count": 1
     },
     {
-      "path": "migration/migrator/atlas_integration_test.go",
-      "function": "TestAtlasFormat_MySQLIntegration",
-      "kind": "if",
-      "count": 4
-    },
-    {
-      "path": "migration/migrator/atlas_integration_test.go",
-      "function": "TestAtlasTxtarDown_MySQLIntegration",
-      "kind": "if",
-      "count": 4
-    },
-    {
       "path": "migration/migrator/debug_test.go",
       "function": "TestInitializeDebug",
       "kind": "if",
