@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/dbschema/types"
@@ -64,48 +65,71 @@ func PlanApply(
 	conn *dbschema.DatabaseConnection,
 	opts ApplyOptions,
 ) (ApplyPlan, error) {
+	computation, err := computeApplyPlan(ctx, conn, opts)
+	if err != nil {
+		return ApplyPlan{}, err
+	}
+	return ApplyPlan{statements: computation.statements}, nil
+}
+
+// applyComputation carries a computed schema apply plan together with the
+// exclude-filtered current and desired states it was derived from, so plan
+// packaging (fingerprints) reuses the exact planning inputs instead of
+// re-reading the database.
+type applyComputation struct {
+	statements []string
+	current    *types.DBSchema
+	desired    *goschema.Database
+}
+
+func computeApplyPlan(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	opts ApplyOptions,
+) (applyComputation, error) {
 	if conn == nil {
-		return ApplyPlan{}, errors.New("schema apply planning requires database connection")
+		return applyComputation{}, errors.New("schema apply planning requires database connection")
 	}
 	if len(opts.ToURLs) == 0 {
-		return ApplyPlan{}, errors.New("schema apply planning requires desired schema URLs")
+		return applyComputation{}, errors.New("schema apply planning requires desired schema URLs")
 	}
 
 	current, err := dbschema.ReadSchemaWithSchemas(conn, nil)
 	if err != nil {
-		return ApplyPlan{}, fmt.Errorf("read database schema: %w", err)
+		return applyComputation{}, fmt.Errorf("read database schema: %w", err)
 	}
 	current, err = atlasfilter.ExcludeDatabase(current, opts.Exclude)
 	if err != nil {
-		return ApplyPlan{}, fmt.Errorf("apply --exclude to current schema: %w", err)
+		return applyComputation{}, fmt.Errorf("apply --exclude to current schema: %w", err)
 	}
 	desired, err := schemafile.LoadAll(opts.ToURLs, schemafile.Options{Dialect: conn.Info().Dialect})
 	if err != nil {
-		return ApplyPlan{}, fmt.Errorf("load --to schema: %w", err)
+		return applyComputation{}, fmt.Errorf("load --to schema: %w", err)
 	}
 	desired, err = excludeDesiredSchema(desired, opts.Exclude)
 	if err != nil {
-		return ApplyPlan{}, fmt.Errorf("apply --exclude to desired schema: %w", err)
+		return applyComputation{}, fmt.Errorf("apply --exclude to desired schema: %w", err)
 	}
 
+	computation := applyComputation{current: current, desired: desired}
 	info := conn.Info()
 	diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, current, nil)
 	if err != nil {
-		return ApplyPlan{}, fmt.Errorf("compare database schema: %w", err)
+		return applyComputation{}, fmt.Errorf("compare database schema: %w", err)
 	}
 	diff = applyDiffPolicy(diff, opts.Policy)
 	if !diff.HasChanges() {
-		return ApplyPlan{}, nil
+		return computation, nil
 	}
 
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, desired, info.Dialect, planner.Options{
+	computation.statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, desired, info.Dialect, planner.Options{
 		Capabilities:      info.Capabilities,
 		ConcurrentIndexes: opts.Policy.ConcurrentIndexCreate,
 	})
 	if err != nil {
-		return ApplyPlan{}, fmt.Errorf("generate schema apply SQL: %w", err)
+		return applyComputation{}, fmt.Errorf("generate schema apply SQL: %w", err)
 	}
-	return ApplyPlan{statements: statements}, nil
+	return computation, nil
 }
 
 // PrepareApply validates Atlas schema apply runtime inputs and builds the

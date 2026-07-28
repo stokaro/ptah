@@ -150,6 +150,48 @@ never also `DS105`). Individual codes and whole families are disabled by code or
 prefix (for example `CD`, or a single `CD101`) and re-severitied per code through
 lint configuration, the same as every other family.
 
+## Local Declarative Plan Files
+
+Atlas gates `schema plan` behind the Atlas Pro registry approval flow. Ptah
+implements the open local replacement on the Atlas-compatible tree, with no
+registry, account, or cloud round-trip:
+
+- `ptah atlas schema plan --from <db-url> --to file://<schema> --save` computes
+  the declarative migration from the `--from` target database to the local
+  `--to` schema files and saves it as a local plan file (`--output <path>`
+  chooses the location; the default is `<name>.plan.json` with a deterministic
+  fingerprint-derived name, or pass `--name`). `--dry-run` prints the plan
+  document without saving. With `--env`, the selected `atlas.hcl` env supplies
+  `url` (the plan target), `schema.src`, `dev`, `exclude`, `schema.mode`, and
+  supported diff policy values, mirroring `schema apply`.
+- `ptah atlas schema apply --url <db-url> --plan file://<path>` executes the
+  saved plan instead of re-planning. Before executing, the plan's source
+  fingerprint is verified against the live database: if the schema changed
+  since the plan was computed, apply refuses with a stale-plan error — the
+  point of a pre-approved plan is that exactly the reviewed SQL runs against
+  exactly the reviewed state. `--dry-run` prints the plan SQL without
+  executing, and `--auto-approve`/the interactive `YES` confirmation work as
+  in the normal apply path. Registry plan URLs (`atlas://...`) are rejected.
+
+The plan file is JSON (`format_version` 1); Ptah does not parse or emit
+Atlas's `.plan.hcl`. Fields:
+
+| Field | Meaning |
+| --- | --- |
+| `format_version` | Plan-file contract version; this build writes and accepts `1`. |
+| `name` | Plan name (`--name`, or `plan_<hash>` derived from the fingerprints). |
+| `dialect` | Target dialect the plan was computed for; apply requires a matching target. |
+| `from_fingerprint` | SHA-256 digest (`sha256:<hex>`) of the canonical JSON encoding of the exclude-filtered introspected source schema. Verified by `schema apply --plan` before executing. |
+| `to_fingerprint` | Same digest mechanism over the loaded desired schema model. Informational: it lets tooling detect that a plan no longer corresponds to the desired sources. |
+| `exclude` | Exclude patterns the plan was computed with; re-applied when the fingerprint is verified. |
+| `destructive` | True when any statement is classified destructive. |
+| `statements` | Ordered statements, each with `sql`, `severity` (`safe`/`warning`/`destructive`), and `reason` from Ptah's safety classifier. |
+
+Unknown fields, other format versions, and empty plans are rejected when the
+file is read. The registry sub-verbs (`schema plan approve/lint/list/new/pull/
+push/rm/test/validate`) remain Atlas CE boundary stubs: they operate on plans
+stored in the Atlas Registry, which the local plan file replaces.
+
 ## Atlas Compatibility Waivers
 
 Some Atlas Pro flags are accepted for help parity but rejected loudly with a
@@ -163,8 +205,13 @@ Ptah intentionally has no counterpart for. These are waivers, not pending work:
   migrations and has no generated checks to skip.
 - `ptah atlas migrate down --plan`: dynamic down planning is bound to the Atlas
   Cloud plan-approval flow; use `--dev-url` to verify the pre-planned rollback
-  on a dev database instead. A local file-based pre-approved plan workflow is a
-  separate tracked `schema plan` item under stokaro/ptah#758.
+  on a dev database instead. Ptah's local plan files (see "Local Declarative
+  Plan Files") are declarative apply plans, not down plans.
+- `ptah atlas schema plan --push/--pending/--repo/--auto-approve`: plan push,
+  pending state, schema repositories, and plan approval are Atlas Registry
+  (Atlas Cloud) concepts. Ptah's local plan workflow saves plan files with
+  `--save`/`--output`, and a locally saved plan file is approved by operator
+  review, so there is no approval prompt to skip.
 - `ptah atlas migrate checkpoint --dir-format=atlas`: Ptah's checkpoint engine
   marks checkpoints with the ptah two-file convention
   (`NNNNNNNNNN_name.checkpoint.up.sql`/`.down.sql` plus `ptah.sum`); Atlas

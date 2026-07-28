@@ -17,6 +17,7 @@ import (
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/atlasschema"
+	"github.com/stokaro/ptah/internal/schemafile"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
@@ -34,6 +35,9 @@ type atlasSchemaApplyOptions struct {
 	planURL     string
 	lockTimeout string
 	edit        bool
+	// formatOutput is derived at run time: true when --format was passed or
+	// atlas.hcl provides format.schema.apply.
+	formatOutput bool
 }
 
 func newAtlasSchemaApplyCommand() *cobra.Command {
@@ -49,9 +53,12 @@ selected atlas.hcl env can provide url, schema.src, dev, exclude, schema.mode,
 format.schema.apply, and supported diff policy values. This implementation
 currently supports local file:// schema files with .hcl, .yaml, .yml, or .sql
 extensions. With --edit the planned SQL opens in $VISUAL or $EDITOR before the
-plan is shown and approved, and the edited SQL is what gets applied. Database
-desired-state URLs, env:// URLs, schema/include filters, Atlas Cloud planning,
-and database lock waiting remain explicit follow-up gaps.`,
+plan is shown and approved, and the edited SQL is what gets applied. With
+--plan file://<path>, a pre-approved local plan file saved by
+` + "`atlas schema plan`" + ` is executed instead of re-planning, after verifying the
+database still matches the plan's source fingerprint; registry plan URLs are
+not supported. Database desired-state URLs, env:// URLs, schema/include
+filters, and database lock waiting remain explicit follow-up gaps.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaApply(cmd, opts)
 		},
@@ -68,7 +75,7 @@ and database lock waiting remain explicit follow-up gaps.`,
 	flags.StringVar(&opts.txMode, "tx-mode", "", "Transaction mode: all, file, or none")
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to apply when database URLs are used")
 	flags.StringArray("include", nil, "Schema objects to include in apply")
-	flags.StringVar(&opts.planURL, "plan", "", "URL to a pre-planned migration")
+	flags.StringVar(&opts.planURL, "plan", "", "URL to a pre-planned migration (e.g., file://<name>"+atlasschema.PlanFileSuffix+")")
 	flags.BoolVar(&opts.edit, "edit", false, "Open the generated SQL in an editor")
 	flags.StringVar(&opts.lockTimeout, "lock-timeout", "", "Timeout for acquiring the database lock")
 	if err := cmdflags.DisableEnvBinding(flags, "auto-approve"); err != nil {
@@ -103,6 +110,10 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
+	}
+	opts.formatOutput = formatOutput
+	if strings.TrimSpace(opts.planURL) != "" {
+		return runAtlasSchemaApplyPlanFile(cmd, opts)
 	}
 	if loaded && !cmd.Flags().Changed("to") && !cmd.Flags().Changed(atlasFileFlagName) && len(projectCfg.SchemaSources) > 0 {
 		opts.toURLs, err = atlasProjectConfigSchemaURLs(cmd, opts.toURLs)
@@ -185,20 +196,9 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		return cmdutil.Fail(cmd, err)
 	}
 
-	ok := true
-	if opts.autoApprove {
-		if !formatOutput {
-			fmt.Fprintln(cmd.OutOrStdout(), "Auto-approval enabled; applying schema changes.")
-		}
-	} else {
-		if formatOutput && !strings.HasSuffix(formattedPlan, "\n") {
-			fmt.Fprintln(cmd.OutOrStdout())
-		}
-		var err error
-		ok, err = promptAtlasSchemaApplyConfirmation(cmd.OutOrStdout(), cmd.InOrStdin())
-		if err != nil {
-			return cmdutil.Fail(cmd, err)
-		}
+	ok, err := confirmAtlasSchemaApply(cmd, opts, formattedPlan)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
 	if !ok {
 		return nil
@@ -221,8 +221,151 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 }
 
 func needsAtlasSchemaApplyConfig(cmd *cobra.Command) bool {
-	return !cmd.Flags().Changed("url") ||
-		(!cmd.Flags().Changed("to") && !cmd.Flags().Changed(atlasFileFlagName))
+	if !cmd.Flags().Changed("url") {
+		return true
+	}
+	// A pre-approved plan file fixes the desired state, so no schema source is
+	// needed from flags or atlas.hcl.
+	if cmd.Flags().Changed("plan") {
+		return false
+	}
+	return !cmd.Flags().Changed("to") && !cmd.Flags().Changed(atlasFileFlagName)
+}
+
+// runAtlasSchemaApplyPlanFile executes a pre-approved local plan file saved by
+// `atlas schema plan` instead of re-planning. The plan's source fingerprint is
+// verified against the live database first: a drifted target refuses to
+// execute, which is the entire value of a pre-approved plan.
+func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOptions) error {
+	if opts.formatOutput && strings.TrimSpace(opts.format) == "" {
+		return cmdutil.Fail(cmd, fmt.Errorf("--format must not be empty"))
+	}
+	if opts.formatOutput {
+		if err := atlasreport.ValidateSchemaApplyTemplate(opts.format); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+	}
+	if err := validateAtlasSchemaApplyPlanOptions(cmd, opts); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	txMode, err := migrator.ParseMigrationTxMode(opts.txMode)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	path, err := atlasSchemaApplyPlanFilePath(opts.planURL)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	plan, err := atlasschema.ReadPlanFile(path)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+
+	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
+	defer cancel()
+	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.url)
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("connect to --url: %w", err))
+	}
+	defer dbschema.CloseAndWarn(conn)
+
+	if err := atlasschema.VerifyPlanTarget(conn, plan); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+
+	statements := plan.StatementSQL()
+	formattedPlan := ""
+	if opts.formatOutput {
+		formattedPlan, err = renderAtlasSchemaApplyFormat(opts, statements)
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+		fmt.Fprint(cmd.OutOrStdout(), formattedPlan)
+	} else {
+		printAtlasSchemaApplyPlan(cmd.OutOrStdout(), plan.SQL())
+	}
+	if opts.dryRun {
+		return nil
+	}
+	if err := validateAtlasSchemaApplyDiffPolicy(txMode, conn, statements); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	ok, err := confirmAtlasSchemaApply(cmd, opts, formattedPlan)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if !ok {
+		return nil
+	}
+
+	conn.SchemaWriter().SetDryRun(false)
+	if err := atlasschema.ApplySQL(cmd.Context(), conn, txMode, plan.SQL()); err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("apply schema changes: %w", err))
+	}
+	if opts.formatOutput {
+		return nil
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), "Schema apply completed successfully.")
+	return nil
+}
+
+// validateAtlasSchemaApplyPlanOptions rejects flags that would recompute or
+// reshape the pre-approved plan: the plan file already fixes the desired
+// state, the exclude patterns, and the exact SQL that was reviewed.
+func validateAtlasSchemaApplyPlanOptions(cmd *cobra.Command, opts atlasSchemaApplyOptions) error {
+	if strings.TrimSpace(opts.url) == "" {
+		return fmt.Errorf("--url is required")
+	}
+	conflicts := []struct {
+		flag   string
+		reason string
+	}{
+		{"to", "the plan file already fixes the desired state"},
+		{atlasFileFlagName, "the plan file already fixes the desired state"},
+		{"dev-url", "the plan is already computed; there is nothing to re-plan on a dev database"},
+		{"exclude", "the plan file records the exclude patterns it was computed with"},
+		{"edit", "a pre-approved plan must execute exactly as reviewed; recompute the plan with `schema plan` instead"},
+		{atlasSchemaFlagName, "the plan file already fixes the planned schema objects"},
+		{"include", "the plan file already fixes the planned schema objects"},
+	}
+	for _, conflict := range conflicts {
+		if cmd.Flags().Changed(conflict.flag) {
+			return fmt.Errorf("atlas schema apply --plan cannot be combined with --%s: %s", conflict.flag, conflict.reason)
+		}
+	}
+	if strings.TrimSpace(opts.lockTimeout) != "" {
+		return fmt.Errorf("atlas schema apply accepts --lock-timeout, but Ptah does not implement database lock waiting yet")
+	}
+	return nil
+}
+
+// atlasSchemaApplyPlanFilePath resolves a --plan URL to a local plan-file
+// path. Registry URLs (for example atlas://repo/plans/name) are rejected:
+// Ptah has no plan registry, and the open replacement is a local plan file.
+func atlasSchemaApplyPlanFilePath(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if strings.Contains(trimmed, "://") && !strings.HasPrefix(trimmed, "file://") {
+		return "", fmt.Errorf("atlas schema apply accepts registry plan URLs like %q, but Ptah has no plan registry; "+
+			"pass a local plan file saved by `schema plan` as --plan file://<path>", raw)
+	}
+	path, err := schemafile.LocalFilePath(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("--plan %q: %w", raw, err)
+	}
+	return path, nil
+}
+
+func confirmAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions, formattedPlan string) (bool, error) {
+	if opts.autoApprove {
+		if !opts.formatOutput {
+			fmt.Fprintln(cmd.OutOrStdout(), "Auto-approval enabled; applying schema changes.")
+		}
+		return true, nil
+	}
+	if opts.formatOutput && !strings.HasSuffix(formattedPlan, "\n") {
+		fmt.Fprintln(cmd.OutOrStdout())
+	}
+	return promptAtlasSchemaApplyConfirmation(cmd.OutOrStdout(), cmd.InOrStdin())
 }
 
 func validateAtlasSchemaApplyDiffPolicy(
@@ -294,9 +437,6 @@ func validateAtlasSchemaApplyOptions(cmd *cobra.Command, opts atlasSchemaApplyOp
 	}
 	if values, err := cmd.Flags().GetStringArray("include"); err == nil && len(values) > 0 {
 		return fmt.Errorf("atlas schema apply accepts --include, but Ptah only supports local schema files for this command yet")
-	}
-	if strings.TrimSpace(opts.planURL) != "" {
-		return fmt.Errorf("atlas schema apply accepts --plan, but Ptah does not implement Atlas Cloud plan execution yet")
 	}
 	if strings.TrimSpace(opts.lockTimeout) != "" {
 		return fmt.Errorf("atlas schema apply accepts --lock-timeout, but Ptah does not implement database lock waiting yet")
