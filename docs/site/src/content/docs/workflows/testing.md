@@ -23,12 +23,16 @@ no-account, embeddable capabilities.
 A test file is a YAML document with a top-level `cases:` list. Each case is a
 named, ordered list of steps, and each step performs exactly one action:
 
-- `migrate_to` — migrate the database to a target version: an integer, `latest`
-  (migrate up to the newest migration), or `0` (roll everything back). Valid in
-  migration tests only.
+- `migrate_to` — migrate the database to a target version: a non-negative
+  integer, `latest` (migrate up to the newest migration), or `0` (roll
+  everything back). Valid in migration tests only.
+- `apply_schema` — apply the Go-annotation desired schema under `--root-dir`.
+  Write `apply_schema: true`. Schema tests already converge this schema before a
+  case; the step rechecks live state and repairs supported drift.
 - `exec` — run raw SQL against the database.
 - `seed` — apply environment-scoped SQL seed files from a directory (the seeder's
   `NNN_description.env.sql` convention: files matching `env` plus `.all.sql`).
+  Set `dir` on the step, or provide a shared default with `--seed-dir`.
 - `assert` — run a query and check exactly one condition: `row_count`, `scalar`
   (the first column of the first row, compared as text), or `error_contains`
   (the query is expected to fail with a message containing the substring).
@@ -38,6 +42,7 @@ cases:
   - name: users table accepts rows
     steps:
       - migrate_to: latest
+      - apply_schema: true
       - seed: { dir: ./seeds, env: test }
       - exec: INSERT INTO users (name) VALUES ('ada')
       - assert: { query: SELECT id FROM users, row_count: 2 }
@@ -49,17 +54,19 @@ cases:
 
 ```bash
 # Migration tests: apply the migrations directory, then assert.
-ptah migrations test --dir ./tests --migrations-dir ./migrations
+ptah migrations test --dir ./tests --migrations-dir ./migrations --root-dir ./models --seed-dir ./seeds
 
 # Schema tests: apply the desired schema from Go annotations, then assert.
-ptah schema test --dir ./tests --root-dir ./models
+ptah schema test --dir ./tests --root-dir ./models --seed-dir ./seeds
 ```
 
 Both commands load every `*.yaml`/`*.yml` file under `--dir`, run the cases, print
 a report, and exit non-zero if any case fails — so they slot straight into a CI
-gate. `--report` selects the output format: `text` (default), `json` (for CI
-tooling), or `html`. A `migrate_to` step is rejected in a schema test (there are
-no migrations), and reported as a failed step rather than silently skipped.
+gate. `--run` accepts a Go regular expression and selects matching case names.
+`--seed-dir` is the default directory for seed steps that omit their own `dir`.
+`--report` selects the output format: `text` (default), `json` (for CI tooling),
+or `html`. A `migrate_to` step is rejected in a schema test (there are no
+migrations), and reported as a failed step rather than silently skipped.
 
 ## Database isolation
 
@@ -73,6 +80,14 @@ database — it is provisioned once, cases accumulate state, and keeping them
 independent is the caller's responsibility. Never point `--db-url` at a real
 database: tests mutate schema and data, and seed steps bypass the seeder's
 protected-environment guards.
+
+Desired-schema application is additive at object boundaries: unrelated objects
+created by migrations remain in place, while declared objects are planned with
+the live target's capabilities and identifier semantics. Roles and grants are
+not accepted because their security effects can be cluster-scoped.
+
+See [Database test commands](../../reference/testing/) for the exact flags,
+step scopes, assertions, reports, and exit contract.
 
 ## Embedding
 

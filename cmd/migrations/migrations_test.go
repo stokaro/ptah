@@ -101,6 +101,23 @@ func TestNewMigrationsCommand_UpHelpShowsTargetFlags(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, "--migrations-dir")
 }
 
+func TestNewMigrationsCommand_TestHelpShowsStepContract(t *testing.T) {
+	c := qt.New(t)
+
+	cmd := migrations.NewMigrationsCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"test", "--help"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Contains, "apply_schema")
+	c.Assert(out.String(), qt.Contains, "--root-dir")
+	c.Assert(out.String(), qt.Contains, "row_count")
+}
+
 func TestNewMigrationsCommand_ForwardsUpFlagErrors(t *testing.T) {
 	c := qt.New(t)
 

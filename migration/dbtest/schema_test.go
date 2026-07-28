@@ -39,6 +39,7 @@ func TestRunSchemaTest_AppliesDesiredSchema(t *testing.T) {
 	cases := []dbtest.Case{{
 		Name: "users schema applies and accepts rows",
 		Steps: []dbtest.Step{
+			{Name: "schema is provisioned", ApplySchema: true},
 			{Name: "table exists and is empty", Assert: &dbtest.Assertion{Query: "SELECT * FROM users", RowCount: new(0)}},
 			{Name: "insert a user", Exec: "INSERT INTO users (id, name) VALUES (1, 'ada')"},
 			{Name: "user is retrievable", Assert: &dbtest.Assertion{Query: "SELECT name FROM users WHERE id = 1", Scalar: new("ada")}},
@@ -50,9 +51,71 @@ func TestRunSchemaTest_AppliesDesiredSchema(t *testing.T) {
 	c.Assert(report, qt.IsNotNil)
 	c.Assert(report.Failed(), qt.IsFalse, qt.Commentf("%s", report.Text()))
 	c.Assert(report.Cases, qt.HasLen, 1)
-	c.Assert(report.Cases[0].Steps, qt.HasLen, 3)
+	c.Assert(report.Cases[0].Steps, qt.HasLen, 4)
+	c.Assert(report.Cases[0].Steps[0].Detail, qt.Equals, "desired schema already applied")
 	// The report header identifies the schema-test surface, not the migration one.
 	c.Assert(report.Text(), qt.Contains, "=== SCHEMA TEST ===")
+}
+
+func TestRunSchemaTest_ApplySchemaRepairsDrift(t *testing.T) {
+	c := qt.New(t)
+	rootDir := writeUsersEntity(c)
+	cases := []dbtest.Case{{
+		Name: "apply_schema restores a missing desired table",
+		Steps: []dbtest.Step{
+			{Name: "drop desired table", Exec: "DROP TABLE users"},
+			{Name: "restore desired schema", ApplySchema: true},
+			{Name: "restored table is empty", Assert: &dbtest.Assertion{Query: "SELECT id FROM users", RowCount: new(0)}},
+		},
+	}}
+
+	report, err := dbtest.RunSchemaTest(t.Context(), dbtest.SchemaOptions{Cases: cases, RootDir: rootDir})
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Failed(), qt.IsFalse, qt.Commentf("%s", report.Text()))
+	c.Assert(report.Cases[0].Steps[1].Detail, qt.Equals, "desired schema applied")
+}
+
+func TestRunSchemaTest_ExplicitDBURLIsRepeatableForIdempotentCases(t *testing.T) {
+	c := qt.New(t)
+	rootDir := writeUsersEntity(c)
+	databaseURL := "sqlite://" + filepath.Join(c.TempDir(), "repeatable.db")
+	opts := dbtest.SchemaOptions{
+		Cases: []dbtest.Case{{
+			Name:  "desired table exists",
+			Steps: []dbtest.Step{{Name: "users table is empty", Assert: &dbtest.Assertion{Query: "SELECT id FROM users", RowCount: new(0)}}},
+		}},
+		RootDir: rootDir,
+		DBURL:   databaseURL,
+	}
+
+	first, err := dbtest.RunSchemaTest(t.Context(), opts)
+	c.Assert(err, qt.IsNil)
+	c.Assert(first.Failed(), qt.IsFalse, qt.Commentf("%s", first.Text()))
+
+	second, err := dbtest.RunSchemaTest(t.Context(), opts)
+	c.Assert(err, qt.IsNil)
+	c.Assert(second.Failed(), qt.IsFalse, qt.Commentf("%s", second.Text()))
+}
+
+func TestRunSchemaTest_RejectsClusterScopedSecurityObjects(t *testing.T) {
+	c := qt.New(t)
+	rootDir := c.TempDir()
+	content := `package models
+
+//migrator:schema:role name="dbtest_role" login="false"
+type Security struct{}
+`
+	c.Assert(os.WriteFile(filepath.Join(rootDir, "security.go"), []byte(content), 0o600), qt.IsNil)
+
+	report, err := dbtest.RunSchemaTest(t.Context(), dbtest.SchemaOptions{
+		Cases: []dbtest.Case{{
+			Name:  "never executes",
+			Steps: []dbtest.Step{{Name: "no-op query", Exec: "SELECT 1"}},
+		}},
+		RootDir: rootDir,
+	})
+	c.Assert(err, qt.ErrorMatches, "database tests do not support roles or grants.*")
+	c.Assert(report, qt.IsNil)
 }
 
 func TestRunSchemaTest_RejectsMigrateToStep(t *testing.T) {
@@ -105,16 +168,13 @@ func TestRunSchemaTest_EphemeralCasesAreIsolated(t *testing.T) {
 	c.Assert(report.Cases[1].Passed, qt.IsTrue)
 }
 
-func TestRunSchemaTest_SharedDBURLAppliesSchemaOnce(t *testing.T) {
+func TestRunSchemaTest_ExplicitDBURLPreservesStateBetweenCases(t *testing.T) {
 	c := qt.New(t)
 	rootDir := writeUsersEntity(c)
 	shared := "sqlite://" + filepath.Join(c.TempDir(), "shared.db")
 
-	// With an explicit shared database, the desired schema must be applied once
-	// for the connection, not per case; a per-case re-apply would fail the second
-	// case with a "table already exists" error and abort the whole run. On a
-	// shared database cases accumulate state, so the second case sees the first
-	// case's row.
+	// An explicit database is caller-owned and intentionally shared for the run,
+	// so cases accumulate state and the second case sees the first case's row.
 	cases := []dbtest.Case{
 		{
 			Name: "first case inserts a row",

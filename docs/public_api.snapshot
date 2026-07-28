@@ -5518,6 +5518,7 @@ type RowUpdate struct {
 
 type Assertion struct{ ... }
 type Case struct{ ... }
+    func FilterCases(cases []Case, pattern string) ([]Case, error)
     func LoadCases(dir string) ([]Case, error)
     func ParseCases(data []byte) ([]Case, error)
 type CaseResult struct{ ... }
@@ -5540,7 +5541,7 @@ type Assertion struct {
     // with error_contains it is run and expected to fail, so a non-SELECT
     // statement would execute its side effects.
     Query string `yaml:"query"`
-    // RowCount asserts that Query returns exactly this many rows.
+    // RowCount asserts that Query returns exactly this non-negative number of rows.
     RowCount *int `yaml:"row_count"`
     // Scalar asserts that the first column of the first row of Query, formatted
     // as a string, equals this value. Values are formatted deterministically:
@@ -5567,6 +5568,7 @@ type Case struct {
     Case is a single declarative migration test: a named, ordered list of steps
     executed against the test database.
 
+func FilterCases(cases []Case, pattern string) ([]Case, error)
 func LoadCases(dir string) ([]Case, error)
 func ParseCases(data []byte) ([]Case, error)
 
@@ -5593,6 +5595,12 @@ type Options struct {
     // MigrationsDir is the directory containing migration files. It is required
     // only when a case has a migrate_to step.
     MigrationsDir string
+    // RootDir is a directory of Go entity annotations describing the desired
+    // schema. It is required only when a case has an apply_schema step.
+    RootDir string
+    // SeedDir is the default directory of seed files for seed steps that omit
+    // their own [SeedStep.Dir].
+    SeedDir string
     // DBURL is an optional database URL to run the tests against. It must point
     // at a throwaway database, because tests mutate schema and data. When empty,
     // an ephemeral SQLite database is provisioned in a temporary directory and
@@ -5633,11 +5641,13 @@ type SchemaOptions struct {
     // Cases are the test cases to run, in order.
     Cases []Case
     // RootDir is a directory of Go entity annotations describing the desired
-    // schema. It is parsed with goschema.ParseDir, rendered to dependency-ordered
-    // CREATE DDL for the target dialect, and applied once per database before any
-    // case runs against it (once per ephemeral per-case database, or once for a
-    // shared explicit database).
+    // schema. It is parsed with goschema.ParseDir and converged through the live
+    // diff and planner path before any case runs (once per ephemeral per-case
+    // database, or once for a shared explicit database).
     RootDir string
+    // SeedDir is the default directory of seed files for seed steps that omit
+    // their own [SeedStep.Dir].
+    SeedDir string
     // DBURL is an optional database URL to run the tests against. It must point at
     // a throwaway database, because tests mutate schema and data. When empty, an
     // ephemeral SQLite database is provisioned per case in a temporary directory
@@ -5652,17 +5662,17 @@ type SchemaOptions struct {
 package dbtest // import "github.com/stokaro/ptah/migration/dbtest"
 
 type SeedStep struct {
-    // Dir is the directory of seed files. It is required.
+    // Dir is the directory of seed files. When empty, the run-level seed
+    // directory from [Options.SeedDir] or [SchemaOptions.SeedDir] is used.
     Dir string `yaml:"dir"`
     // Env is the seed environment to apply (for example dev or test). It is
     // required; files matching Env plus files ending in .all.sql are applied.
     Env string `yaml:"env"`
 }
-    SeedStep applies SQL seed files from Dir using the seeder's
-    NNN_description.env.sql convention: files matching Env plus files ending in
-    .all.sql are applied in version order. Because the target is a throwaway
-    test database, protected-environment and protected-table guards do not
-    apply.
+    SeedStep applies SQL seed files using the seeder's NNN_description.env.sql
+    convention: files matching Env plus files ending in .all.sql are applied
+    in version order. Because the target is a throwaway test database,
+    protected-environment and protected-table guards do not apply.
 
 
 ### github.com/stokaro/ptah/migration/dbtest.Step
@@ -5673,8 +5683,10 @@ type Step struct {
     // Name is a human-readable label used in reporting. It is optional.
     Name string `yaml:"name"`
     // MigrateTo migrates the database to a target version. It accepts an integer
-    // version, "latest", or "0".
+    // non-negative version, "latest", or "0".
     MigrateTo string `yaml:"migrate_to"`
+    // ApplySchema applies the desired schema configured for the test run.
+    ApplySchema bool `yaml:"apply_schema"`
     // Exec runs raw SQL against the database.
     Exec string `yaml:"exec"`
     // Seed applies environment-scoped SQL seed files from a directory.
@@ -5682,8 +5694,7 @@ type Step struct {
     // Assert runs a query and checks a single condition on the result.
     Assert *Assertion `yaml:"assert"`
 }
-    Step performs exactly one action against the test database. Exactly one of
-    MigrateTo, Exec, or Assert must be set.
+    Step performs exactly one action against the test database.
 
 
 ### github.com/stokaro/ptah/migration/dbtest.StepResult

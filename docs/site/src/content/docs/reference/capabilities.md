@@ -34,6 +34,20 @@ Capabilities answer questions that a dialect name alone cannot answer:
 The same parser or planner family can therefore adapt to MySQL versus MariaDB,
 PostgreSQL versus CockroachDB/YugabyteDB/Spanner, and version-specific behavior.
 
+## Declarative database testing
+
+`ptah migrations test`, `ptah schema test`, and `migration/dbtest` provide a
+workflow capability that composes migration execution, desired-schema
+application, seed fixtures, SQL, and assertions against disposable databases.
+It is local, MIT-licensed, and requires no account. This workflow is not a
+dialect capability flag; supported steps execute through the target's existing
+database implementation.
+
+Atlas CE cannot run the corresponding test commands because the testing
+framework is outside Atlas's open-source core. See
+[Testing](../../workflows/testing/) and
+[Database test commands](../testing/).
+
 Continue with [Dialect notes](../dialect-notes/) for operational differences
 between supported database targets.
 

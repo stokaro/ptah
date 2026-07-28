@@ -26,7 +26,7 @@ root-level command spellings are removed instead of preserved.
 | `ptah schema export` | Export a schema to HCL, an OpenAPI 3.0 component schema, or a GraphQL SDL. |
 | `ptah schema push` | Publish a lossless canonical desired schema to an OCI registry. |
 | `ptah schema pull` | Pull a canonical desired schema from an OCI registry. |
-| `ptah schema test` | Apply a desired schema to a throwaway database and run declarative test cases against it. |
+| `ptah schema test` | Apply a desired schema to a throwaway database and run declarative seed/SQL/assert test cases against it. |
 | `ptah viz` | Render desired schema diagrams as Mermaid, DOT, or SVG. |
 | `ptah db read` | Read schema from a live database. |
 | `ptah db drop-all` | Drop all schema objects in a live database. |
@@ -49,7 +49,7 @@ root-level command spellings are removed instead of preserved.
 | `ptah migrations rebase` | Move a migration to the end of history by re-timestamping it, and rewrite the integrity file. |
 | `ptah migrations rm` | Delete a migration's up/down pair and rewrite the integrity file. |
 | `ptah migrations lint` | Lint migration files. |
-| `ptah migrations test` | Apply migrations to a throwaway database and run declarative test cases against it. |
+| `ptah migrations test` | Run migrate/apply-schema/seed/SQL/assert steps against a throwaway database. |
 | `ptah sql lint` | Lint standalone SQL files. |
 | `ptah seed` | Apply environment-scoped SQL seed files. |
 | `ptah version` | Print Ptah build information. |
@@ -99,6 +99,12 @@ does not hold; `--skip-checks` is an emergency bypass. See
 versioned-migration tool into Ptah's native format, preserving version order and
 rewriting `ptah.sum`, so a team can adopt Ptah without hand-rewriting its
 history. See [Importing migrations](./migrations-import.md).
+
+`ptah migrations test` and `ptah schema test` use the same Ptah-native YAML
+case format and support text, JSON, and HTML reports. Migration cases can apply
+the desired schema with `apply_schema: true` and `--root-dir`; schema cases
+receive the desired schema before their steps run. See
+[Declarative database testing](./testing.md).
 
 `ptah migrations edit`, `rebase`, and `rm` safely maintain an existing migration
 directory: `edit` changes a migration's SQL, `rebase` re-timestamps a migration

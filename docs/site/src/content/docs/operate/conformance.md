@@ -45,6 +45,17 @@ claim is limited to the corpus represented by the generated reports. Expanding
 live and differential coverage is tracked in
 [`stokaro/ptah-atlas-conformance#167`](https://github.com/stokaro/ptah-atlas-conformance/issues/167).
 
+## Workflow parity
+
+Workflow capabilities that do not introduce schema objects sit outside the
+round-trip corpus:
+
+| Workflow | Native Ptah | Atlas-compatible Ptah surface | Atlas CE | Evidence |
+| --- | --- | --- | --- | --- |
+| Declarative migration and schema tests | `ptah migrations test` and `ptah schema test` | Explicit unsupported-boundary stubs at `ptah atlas migrate test` and `ptah atlas schema test` | Cannot run either command; the framework is outside the open-source core | Unit coverage plus integration-tagged live PostgreSQL runner tests; not counted as a schema-object fixture |
+
+This is a workflow-parity record, not a claim of full Atlas Pro compatibility.
+
 ## Local commands
 
 From the Ptah repository:

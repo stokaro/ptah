@@ -67,6 +67,13 @@ interceptor, splitter, directive, or transaction path. Observers receive
 structured source and statement metadata after execution but no connection
 handle, so they cannot alter the migrator execution path.
 
+`migration/dbtest` exposes the declarative testing engine used by
+`ptah migrations test` and `ptah schema test`. Embedders can construct
+`Case`/`Step`/`Assertion` values in Go or load YAML, select cases with
+`FilterCases`, run against an ephemeral or explicit throwaway database, and
+render text, JSON, or HTML reports. See [Declarative database
+testing](testing.md).
+
 `migration/schemadiff/types.SchemaDiff` stores index additions and removals as
 canonical `[]IndexRef` fields. Every index reference includes its owning table.
 Live comparisons also snapshot catalog identifier semantics into the diff so

@@ -3,16 +3,18 @@ package dbtest
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/migration/internal/shadowdb"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/seeder"
 )
@@ -24,6 +26,12 @@ type Options struct {
 	// MigrationsDir is the directory containing migration files. It is required
 	// only when a case has a migrate_to step.
 	MigrationsDir string
+	// RootDir is a directory of Go entity annotations describing the desired
+	// schema. It is required only when a case has an apply_schema step.
+	RootDir string
+	// SeedDir is the default directory of seed files for seed steps that omit
+	// their own [SeedStep.Dir].
+	SeedDir string
 	// DBURL is an optional database URL to run the tests against. It must point
 	// at a throwaway database, because tests mutate schema and data. When empty,
 	// an ephemeral SQLite database is provisioned in a temporary directory and
@@ -233,11 +241,20 @@ body { font-family: system-ui, sans-serif; margin: 2rem; }
 // RunMigrationTest runs the test cases in opts against a database and returns a
 // report describing every case and step. A returned error indicates the run
 // itself could not be set up (for example, the test cases are invalid or the
-// database is unreachable); ordinary assertion failures are captured in the
-// report, not returned as an error, so callers should inspect [Report.Failed].
+// database is unreachable), or the context is interrupted; ordinary assertion
+// failures are captured in the report, not returned as an error, so callers
+// should inspect [Report.Failed].
 func RunMigrationTest(ctx context.Context, opts Options) (*Report, error) {
-	if err := validateCases(opts.Cases); err != nil {
+	if err := validateCasesForRun(opts.Cases, opts.SeedDir); err != nil {
 		return nil, fmt.Errorf("invalid test cases: %w", err)
+	}
+	if casesUseStepKind(opts.Cases, stepKindMigrateTo) && strings.TrimSpace(opts.MigrationsDir) == "" {
+		return nil, fmt.Errorf("migrate_to requires a migrations directory")
+	}
+
+	desiredSchema, err := desiredSchemaForMigrationCases(opts.RootDir, opts.Cases)
+	if err != nil {
+		return nil, err
 	}
 
 	dirFormat := opts.DirFormat
@@ -246,9 +263,16 @@ func RunMigrationTest(ctx context.Context, opts Options) (*Report, error) {
 	}
 
 	run := func(ctx context.Context, conn *dbschema.DatabaseConnection, c Case) (CaseResult, error) {
-		r := &runner{conn: conn, migrationsDir: opts.MigrationsDir, dirFormat: dirFormat}
+		r := &runner{
+			conn:          conn,
+			migrationsDir: opts.MigrationsDir,
+			dirFormat:     dirFormat,
+			desiredSchema: desiredSchema,
+			seedDir:       opts.SeedDir,
+		}
 		r.migrateTo = r.runMigrateTo
-		return r.runCase(ctx, c), nil
+		r.applySchema = r.runApplySchema
+		return r.runCase(ctx, c)
 	}
 	// Migration tests need no per-database provisioning: each case applies its
 	// own migrations via migrate_to.
@@ -280,32 +304,62 @@ type provisionFunc func(ctx context.Context, conn *dbschema.DatabaseConnection) 
 // once per database; migration tests pass nil because each case applies its own
 // migrations.
 func runCases(ctx context.Context, dbURL, kind string, cases []Case, provision provisionFunc, run caseRunner) (*Report, error) {
-	report := &Report{Cases: make([]CaseResult, 0, len(cases)), kind: kind}
-
 	if dbURL != "" {
-		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
-		if err != nil {
-			return nil, fmt.Errorf("connect to test database: %w", err)
-		}
-		defer dbschema.CloseAndWarn(conn)
-
-		if provision != nil {
-			if err := provision(ctx, conn); err != nil {
-				return nil, err
-			}
-		}
-		for i := range cases {
-			result, err := run(ctx, conn, cases[i])
-			if err != nil {
-				return nil, err
-			}
-			report.Cases = append(report.Cases, result)
-		}
-		return report, nil
+		return runExplicitCases(ctx, dbURL, kind, cases, provision, run)
 	}
 
+	report := &Report{Cases: make([]CaseResult, 0, len(cases)), kind: kind}
 	for i := range cases {
 		result, err := runEphemeralCase(ctx, cases[i], provision, run)
+		if err != nil {
+			return nil, err
+		}
+		report.Cases = append(report.Cases, result)
+	}
+	return report, nil
+}
+
+func runExplicitCases(
+	ctx context.Context,
+	dbURL,
+	kind string,
+	cases []Case,
+	provision provisionFunc,
+	run caseRunner,
+) (*Report, error) {
+	database, err := shadowdb.Open(ctx, dbURL, "")
+	if err != nil {
+		return nil, fmt.Errorf("connect to test database: %w", err)
+	}
+
+	report, runErr := runConnectedCases(ctx, database.Connection(), kind, cases, provision, run)
+	closeErr := database.Close()
+	if closeErr != nil {
+		closeErr = fmt.Errorf("close test database: %w", closeErr)
+	}
+	if err := errors.Join(runErr, closeErr); err != nil {
+		return nil, err
+	}
+	return report, nil
+}
+
+func runConnectedCases(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	kind string,
+	cases []Case,
+	provision provisionFunc,
+	run caseRunner,
+) (*Report, error) {
+	if provision != nil {
+		if err := provision(ctx, conn); err != nil {
+			return nil, err
+		}
+	}
+
+	report := &Report{Cases: make([]CaseResult, 0, len(cases)), kind: kind}
+	for i := range cases {
+		result, err := run(ctx, conn, cases[i])
 		if err != nil {
 			return nil, err
 		}
@@ -317,25 +371,25 @@ func runCases(ctx context.Context, dbURL, kind string, cases []Case, provision p
 // runEphemeralCase runs one case against a fresh SQLite database that exists
 // only for that case, so state created by one case is never visible to another.
 func runEphemeralCase(ctx context.Context, c Case, provision provisionFunc, run caseRunner) (CaseResult, error) {
-	tmpDir, err := os.MkdirTemp("", "ptah-dbtest-*")
-	if err != nil {
-		return CaseResult{}, fmt.Errorf("create ephemeral database directory: %w", err)
-	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-
-	dbURL := "sqlite://" + filepath.Join(tmpDir, "dbtest.db")
-	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	database, err := shadowdb.Open(ctx, "", "ptah-dbtest-*")
 	if err != nil {
 		return CaseResult{}, fmt.Errorf("connect to ephemeral test database: %w", err)
 	}
-	defer dbschema.CloseAndWarn(conn)
+	conn := database.Connection()
 
+	var result CaseResult
+	var runErr error
 	if provision != nil {
-		if err := provision(ctx, conn); err != nil {
-			return CaseResult{}, err
-		}
+		runErr = provision(ctx, conn)
 	}
-	return run(ctx, conn, c)
+	if runErr == nil {
+		result, runErr = run(ctx, conn, c)
+	}
+	closeErr := database.Close()
+	if closeErr != nil {
+		closeErr = fmt.Errorf("close ephemeral test database: %w", closeErr)
+	}
+	return result, errors.Join(runErr, closeErr)
 }
 
 // runner executes steps against a single shared database connection.
@@ -343,19 +397,26 @@ type runner struct {
 	conn          *dbschema.DatabaseConnection
 	migrationsDir string
 	dirFormat     migrator.MigrationDirFormat
+	desiredSchema *goschema.Database
+	seedDir       string
 	// migrateTo handles a migrate_to step. Migration tests wire it to
 	// [runner.runMigrateTo]; schema tests wire it to a rejection because a schema
 	// test applies a desired schema directly and has no migrations to move
 	// between. It must be set before [runner.execStep] is called.
 	migrateTo func(ctx context.Context, target string) (passed bool, detail string)
+	// applySchema handles an apply_schema step.
+	applySchema func(ctx context.Context) (passed bool, detail string)
 }
 
-func (r *runner) runCase(ctx context.Context, c Case) CaseResult {
+func (r *runner) runCase(ctx context.Context, c Case) (CaseResult, error) {
 	result := CaseResult{Name: c.Name, Passed: true, Steps: make([]StepResult, 0, len(c.Steps))}
 	for i := range c.Steps {
 		step := c.Steps[i]
 		passed, detail := r.execStep(ctx, step)
 		result.Steps = append(result.Steps, StepResult{Name: step.Name, Passed: passed, Detail: detail})
+		if err := ctx.Err(); err != nil {
+			return result, fmt.Errorf("run test case %q: %w", c.Name, err)
+		}
 		if !passed {
 			// Stop at the first failure: later steps almost always depend on the
 			// state the failed step was supposed to establish, so running them
@@ -364,7 +425,7 @@ func (r *runner) runCase(ctx context.Context, c Case) CaseResult {
 			break
 		}
 	}
-	return result
+	return result, nil
 }
 
 func (r *runner) execStep(ctx context.Context, step Step) (passed bool, detail string) {
@@ -372,6 +433,8 @@ func (r *runner) execStep(ctx context.Context, step Step) (passed bool, detail s
 	switch kind {
 	case stepKindMigrateTo:
 		return r.migrateTo(ctx, step.MigrateTo)
+	case stepKindApplySchema:
+		return r.applySchema(ctx)
 	case stepKindExec:
 		return r.runExec(ctx, step.Exec)
 	case stepKindSeed:
@@ -381,6 +444,20 @@ func (r *runner) execStep(ctx context.Context, step Step) (passed bool, detail s
 	default:
 		return false, "step performs no action"
 	}
+}
+
+func (r *runner) runApplySchema(ctx context.Context) (passed bool, detail string) {
+	if r.desiredSchema == nil {
+		return false, "apply_schema requires a desired schema root directory"
+	}
+	applied, err := applyDesiredSchema(ctx, r.conn, r.desiredSchema)
+	if err != nil {
+		return false, fmt.Sprintf("apply_schema failed: %v", err)
+	}
+	if !applied {
+		return true, "desired schema already applied"
+	}
+	return true, "desired schema applied"
 }
 
 func (r *runner) runMigrateTo(ctx context.Context, target string) (passed bool, detail string) {
@@ -406,8 +483,11 @@ func (r *runner) runMigrateTo(ctx context.Context, target string) (passed bool, 
 		return true, "migrated to 0"
 	default:
 		version, err := strconv.ParseInt(normalized, 10, 64)
-		if err != nil {
-			return false, fmt.Sprintf("invalid migrate_to target %q: expected an integer, \"latest\", or \"0\"", target)
+		if err != nil || version < 0 {
+			return false, fmt.Sprintf(
+				"invalid migrate_to target %q: expected a non-negative integer, \"latest\", or \"0\"",
+				target,
+			)
 		}
 		if err := m.MigrateTo(ctx, version); err != nil {
 			return false, fmt.Sprintf("migrate to %d failed: %v", version, err)
@@ -432,10 +512,14 @@ func (r *runner) runExec(ctx context.Context, sql string) (passed bool, detail s
 }
 
 func (r *runner) runSeed(ctx context.Context, seed *SeedStep) (passed bool, detail string) {
+	dir := seed.Dir
+	if strings.TrimSpace(dir) == "" {
+		dir = r.seedDir
+	}
 	// The test database is a throwaway, so AllowProd bypasses the seeder's
 	// protected-environment and protected-table guards, which exist to stop
 	// accidental seeding of real environments.
-	result, err := seeder.Apply(ctx, r.conn, os.DirFS(seed.Dir), seeder.Options{
+	result, err := seeder.Apply(ctx, r.conn, os.DirFS(dir), seeder.Options{
 		Env:       seed.Env,
 		AllowProd: true,
 	})

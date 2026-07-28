@@ -29,6 +29,18 @@ The offline full-conformance gate is green. The live and differential full gates
 remain intentionally red until the known gaps are closed, while their regression
 budgets stay green when the reports are current and no new gaps appear.
 
+## Workflow Parity
+
+Workflow capabilities that do not add schema objects are recorded separately
+from the round-trip corpus:
+
+| Workflow | Native Ptah | Atlas-compatible Ptah surface | Atlas CE | Evidence |
+| --- | --- | --- | --- | --- |
+| Declarative migration and schema tests | `ptah migrations test` and `ptah schema test` run YAML/Go-authored cases locally. | `ptah atlas migrate test` and `ptah atlas schema test` remain explicit Atlas CE unsupported-boundary stubs. | Cannot run either testing command; the framework is outside the open-source core. | Unit tests cover parsing, assertions, reporting, and CLI behavior; integration-tagged PostgreSQL tests exercise both live runners. This workflow is not counted as a schema-object round-trip fixture. |
+
+This row records product workflow parity, not full Atlas Pro compatibility. Ptah
+does not expose the native runner as a root-level Atlas alias.
+
 ## Reports
 
 - Offline corpus report:

@@ -55,12 +55,14 @@ func TestParseCases_Valid(t *testing.T) {
 			}},
 		},
 		{
-			name: "migrate, assert row_count, scalar and error_contains",
+			name: "migrate, apply schema, assert row_count, scalar and error_contains",
 			yaml: "cases:\n" +
 				"  - name: full flow\n" +
 				"    steps:\n" +
 				"      - name: migrate\n" +
 				"        migrate_to: latest\n" +
+				"      - name: apply desired schema\n" +
+				"        apply_schema: true\n" +
 				"      - name: count\n" +
 				"        assert:\n" +
 				"          query: SELECT id FROM t\n" +
@@ -77,6 +79,7 @@ func TestParseCases_Valid(t *testing.T) {
 				Name: "full flow",
 				Steps: []dbtest.Step{
 					{Name: "migrate", MigrateTo: "latest"},
+					{Name: "apply desired schema", ApplySchema: true},
 					{Name: "count", Assert: &dbtest.Assertion{Query: "SELECT id FROM t", RowCount: new(2)}},
 					{Name: "scalar", Assert: &dbtest.Assertion{Query: "SELECT name FROM t LIMIT 1", Scalar: new("widget")}},
 					{Name: "error", Assert: &dbtest.Assertion{Query: "SELECT * FROM missing", ErrorContains: "missing"}},
@@ -92,6 +95,18 @@ func TestParseCases_Valid(t *testing.T) {
 			want: []dbtest.Case{{
 				Name:  "migrate to version",
 				Steps: []dbtest.Step{{MigrateTo: "5"}},
+			}},
+		},
+		{
+			name: "seed may use the run-level directory",
+			yaml: "cases:\n" +
+				"  - name: seed fixtures\n" +
+				"    steps:\n" +
+				"      - seed:\n" +
+				"          env: test\n",
+			want: []dbtest.Case{{
+				Name:  "seed fixtures",
+				Steps: []dbtest.Step{{Seed: &dbtest.SeedStep{Env: "test"}}},
 			}},
 		},
 	}
@@ -151,6 +166,21 @@ func TestParseCases_Invalid(t *testing.T) {
 			name:        "unknown field",
 			yaml:        "cases:\n  - name: c\n    steps:\n      - exec: SELECT 1\n        bogus: value\n",
 			wantErrText: "field bogus not found",
+		},
+		{
+			name:        "invalid migrate_to target",
+			yaml:        "cases:\n  - name: c\n    steps:\n      - migrate_to: next\n",
+			wantErrText: "invalid migrate_to target",
+		},
+		{
+			name:        "negative migrate_to target",
+			yaml:        "cases:\n  - name: c\n    steps:\n      - migrate_to: -1\n",
+			wantErrText: "expected a non-negative integer",
+		},
+		{
+			name:        "negative row_count",
+			yaml:        "cases:\n  - name: c\n    steps:\n      - assert:\n          query: SELECT 1\n          row_count: -1\n",
+			wantErrText: "row_count must be non-negative",
 		},
 	}
 
