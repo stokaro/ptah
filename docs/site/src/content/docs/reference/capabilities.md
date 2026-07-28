@@ -1,27 +1,13 @@
 ---
 title: Capabilities
-description: Dialect capability summary and links to detailed support tables.
+description: The per-dialect capability gates Ptah tracks, plus cross-cutting testing and OCI capabilities.
 ---
 
-Ptah tracks dialect features through capability metadata. Renderers and
-migration planners should check capabilities rather than hard-code optimistic
-behavior.
-
-Desired-schema source format is independent of dialect capabilities. Go
-annotations, YAML/HCL/SQL files, and external commands that emit SQL, HCL, or
-YAML all resolve into the same schema IR before capability-aware planning and
-rendering.
-
-High-level dialect coverage:
-
-| Dialect | Status |
-| --- | --- |
-| PostgreSQL | Primary first-party target. |
-| SQLite | Supported for local and lightweight workflows. |
-| MySQL / MariaDB | Supported with dialect-specific limitations. |
-| SQL Server | Supported subset with dedicated docs. |
-| CockroachDB / YugabyteDB | PostgreSQL-compatible paths with capability differences. |
-| ClickHouse / Spanner | Explicit capability-limited support. |
+This page tracks the capability gates and cross-cutting capabilities Ptah
+supports. What a capability is and how gating works is explained in
+[Dialects and capabilities](../../concepts/dialects-and-capabilities/);
+per-engine status and operational notes are on the
+[Database support matrix](../../databases/support-matrix/).
 
 ## What capabilities decide
 
@@ -36,9 +22,6 @@ Capabilities answer questions that a dialect name alone cannot answer:
 | Can PostgreSQL-style concurrent indexes be emitted? | `create_index_concurrently` |
 | Does the target support roles, RLS, XML, or advisory locks? | `role_management`, `row_level_security`, `xml_type`, `advisory_locks` |
 
-The same parser or planner family can therefore adapt to MySQL versus MariaDB,
-PostgreSQL versus CockroachDB/YugabyteDB/Spanner, and version-specific behavior.
-
 ## Declarative database testing
 
 `ptah migrations test`, `ptah schema test`, and `migration/dbtest` provide a
@@ -52,9 +35,6 @@ Atlas CE cannot run the corresponding test commands because the testing
 framework is outside Atlas's open-source core. See
 [Test migrations and schemas](../../testing/migrations-and-schema/) and
 [Database test commands](../test-cases/).
-
-Continue with [Dialect notes](../dialect-notes/) for operational differences
-between supported database targets.
 
 ## Cross-cutting OCI capability
 

@@ -66,6 +66,33 @@ table lists the pages the restructuring created.
 | `schema/composite.md` (630) | multi-source schema author | How do several schema sources merge into one desired schema? | howto | this page; merge, conflict, and error behavior run against the built binary | per-source `schema/*` pages (each links here instead of restating the rules), `workflows/migrations` compose section | created (canonical multi-source page, deduplicating the compose sections that lived on `workflows/go-schema`, `workflows/schema-files`, and `workflows/migrations`); keep |
 | `schema/visualize.md` (560) | any schema author | How do I render schema diagrams? | howto | this page; `ptah viz` runs against the built binary; `examples/viz/` artifacts | `start/install` (Graphviz optional tool), `operate/troubleshooting` (Graphviz symptom) | created (section 9, item 5, grown from `examples/schema-viz`); keep |
 
+### `Databases` group (added by the restructuring)
+
+D2 outcome recorded here: `databases/support-matrix` and `databases/postgresql`
+were the committed P1 pages. SQLite and SQL Server launched as compact engine
+pages as well, because their backing engineering docs carry enough
+reader-relevant material (URL forms and rebuild rules for SQLite; connection
+`schema` parameter, collation semantics, and filtered-index drift guidance for
+SQL Server). MySQL/MariaDB has no dedicated backing doc, so it launched as a
+section of the support matrix per the tiering rule and splits out when content
+justifies it.
+
+| Page (words) | Audience | Reader question | Type | Source of truth | Overlaps | Disposition |
+| --- | --- | --- | --- | --- | --- | --- |
+| `databases/support-matrix.md` (831) | every user | Which engines does Ptah support and how does each behave differently? | reference | dialect and capability code (`core/platform`); URL schemes verified against `dbschema` and the built binary | `reference/capabilities` (capability keys), per-engine `databases/*` pages | created (dissolving `reference/dialect-notes`; carries the MySQL/MariaDB, PostgreSQL-compatible, and ClickHouse sections); keep |
+| `databases/postgresql.md` (924) | PostgreSQL user | What does Ptah manage on PostgreSQL beyond portable DDL? | reference-flavored guide | this page; behavior from the PostgreSQL feature docs in `docs/` (roles, sequences, UDTs, extension ignore) and capability presets | `reference/go-annotations` (directive syntax, canonical there), `versioned/apply` (lock flags) | created (P1 engine page); keep |
+| `databases/sqlite.md` (492) | local/example user | How does SQLite behave differently, and which changes need a rebuild? | reference-flavored guide | this page; SQLite behavior detail in `docs/` | `start/quick-start` (SQLite examples), `testing/migrations-and-schema` (default test databases) | created (compact engine page); keep |
+| `databases/sqlserver.md` (714) | SQL Server user | What subset does Ptah support and how do collation and filtered indexes behave? | reference-flavored guide | this page; SQL Server behavior detail in `docs/` | `extend/public-api` (comparison APIs), `reference/go-annotations` (index attributes) | created (compact engine page); keep |
+
+### `Concepts` group (added by the restructuring)
+
+| Page (words) | Audience | Reader question | Type | Source of truth | Overlaps | Disposition |
+| --- | --- | --- | --- | --- | --- | --- |
+| `concepts/desired-schema-and-sources.md` (369) | every user | What is a desired schema and what counts as a schema source? | concept | this page; source-format independence sourced from the prose that lived on `reference/capabilities` | `schema/composite` (merge rules, canonical there), `start/choose-a-workflow` | created; keep |
+| `concepts/migration-directory.md` (465) | versioned-migration user | What exactly is a migration directory and what records what? | concept | this page; sourced from the directory sections that lived on `versioned/overview` (overview now summarizes and links here) | `versioned/overview`, `versioned/integrity-and-safety` | created; keep |
+| `concepts/database-urls-and-dev-databases.md` (520) | every user | Which URL formats are accepted, and what are dev, shadow, and throwaway databases? | concept | this page; schemes verified against `dbschema` URL handling and the built binary; flag surfaces verified against `--help` | `versioned/generate`, `versioned/integrity-and-safety`, `testing/migrations-and-schema` (each links here at first term use) | created (section 9, item 8); keep |
+| `concepts/dialects-and-capabilities.md` (506) | every user | What is the difference between a dialect, an engine, and a capability? | concept | this page; model sourced from capability code and the concept prose that lived on `reference/capabilities` | `databases/support-matrix`, `reference/capabilities` | created; keep |
+
 ### `Direct schema changes` group (added by the restructuring)
 
 | Page (words) | Audience | Reader question | Type | Source of truth | Overlaps | Disposition |
@@ -124,8 +151,8 @@ the page the restructuring created.
 | `reference/reusable-components.md` (3,167) | Go API embedder | How do I use Ptah as a library? | mixed howto/reference: component map, seven end-to-end examples, seven use-case narratives, comparisons | this page; package docs under `core/`, `migration/`, `dbschema/` | `reference/public-api`, `reference/query-builder`, `examples/migrator/README.md`; its comparisons section overlaps `reference/comparison` | done: moved + tightened → `extend/components` (headings to sentence case; the seven use-case narratives compressed into a table pointing at the end-to-end examples; the comparisons section merged into `atlas/comparison` "Other tools"), old URL redirects |
 | `reference/query-builder.md` (2,390) | Go API embedder | How do I build dialect-aware queries with `core/query`? | reference | `core/query` package | `reference/reusable-components` | done: moved → `extend/query-builder` (title to sentence case), old URL redirects |
 | `reference/testing.md` (487) | developer/CI operator | What are the exact test-command flags and YAML model? | reference | `cmd/migrationstest`, `cmd/schema` test, `docs/testing.md` | `workflows/testing` (the intentional pair) | done: moved/renamed → `reference/test-cases` (clarifies it is not about testing Ptah itself), old URL redirects |
-| `reference/capabilities.md` (528) | every user | Which features work on which dialect? | reference with concept prose mixed in | `docs/capabilities.md` (protected) and capability code | `docs/capabilities.md`, `reference/dialect-notes` | keep + tighten: concept prose moves to `concepts/dialects-and-capabilities` |
-| `reference/dialect-notes.md` (495) | every user | How does my engine behave differently? | reference (six engines compressed into one short page) | dialect code and `docs/sqlite.md`, `docs/sqlserver.md`, PostgreSQL feature docs | `reference/capabilities`, `docs/sqlite.md`, `docs/sqlserver.md` | dissolve → `databases/support-matrix` (plus per-engine pages as content justifies); old URL redirects to `databases/support-matrix` |
+| `reference/capabilities.md` (528) | every user | Which features work on which dialect? | reference with concept prose mixed in | `docs/capabilities.md` (protected) and capability code | `docs/capabilities.md`, `reference/dialect-notes` | done: kept + tightened — the capability model moved to `concepts/dialects-and-capabilities`, the dialect-coverage summary to `databases/support-matrix`, and the source-format-independence prose to `concepts/desired-schema-and-sources`; the page now carries the capability-key, testing, and OCI tables only |
+| `reference/dialect-notes.md` (495) | every user | How does my engine behave differently? | reference (six engines compressed into one short page) | dialect code and `docs/sqlite.md`, `docs/sqlserver.md`, PostgreSQL feature docs | `reference/capabilities`, `docs/sqlite.md`, `docs/sqlserver.md` | done: dissolved → `databases/support-matrix` (per-engine sections), with engine depth on `databases/postgresql`, `databases/sqlite`, and `databases/sqlserver`; old URL redirects to `databases/support-matrix` |
 | `reference/comparison.md` (4,795) | evaluator/Atlas migration user | At least four distinct questions: how Ptah positions against Atlas; command parity; evidence per feature; known gaps; config precedence; safety/exit behavior | mixed status/reference; evidence-table cells run past 400 words | conformance evidence in `stokaro/ptah-atlas-conformance`; command claims from `cmd/` | `atlas/overview`, `reference/commands`, `reference/configuration`, `reference/exit-codes`, `atlas/conformance` | done: moved + slimmed → `atlas/comparison`; the duplicated config-precedence table was dropped (the canonical table already lives on `reference/configuration`) and the safety/exit table became pointers to `versioned/integrity-and-safety` and `reference/exit-codes`; live (10 → 39 observations) and Atlas CE differential (5 → 30 observations) evidence rows refreshed against the current conformance reports; old URL redirects |
 | `reference/atlas-docs-coverage.md` (3,164) | Atlas migration user/maintainer | Which Atlas documentation areas does Ptah cover? | status (crosswalk matrix; "Research date" convention) | this page, refreshed against Atlas docs and conformance runs | `atlas/comparison`, `atlas/conformance` | done: moved → `atlas/docs-coverage` (research date refreshed to July 28, 2026; headings to sentence case), old URL redirects |
 | `reference/exit-codes.md` (1,652) | CI operator | What exit code means what? | reference | `docs/exit_codes.md` is the script-checked source (`check-exit-codes.mjs` hardcodes both paths) | `docs/exit_codes.md` (deliberate, mechanically checked copy) | keep at the same path (script-coupled) |
@@ -167,8 +194,8 @@ list in the same PR.
 | `atlas_project_config.md` (2,143) | contributor | `atlas.hcl` subset engineering depth | `reference/atlas-project-config` | keep (protected) |
 | `public_api.md` (878) | contributor/embedder | API guardrails, snapshot process | `extend/public-api` | keep (protected; pairs with `public_api.snapshot`, `public_api_approvals.txt`) |
 | `capabilities.md` (2,544) | contributor | Full capability matrices | `reference/capabilities` | keep (protected) |
-| `sqlite.md` (532) | contributor | SQLite behavior detail | `reference/dialect-notes` | keep (protected); essentials absorbed by `databases/*` pages |
-| `sqlserver.md` (1,269) | contributor | SQL Server behavior detail | `reference/dialect-notes` | keep (protected); essentials absorbed by `databases/*` pages |
+| `sqlite.md` (532) | contributor | SQLite behavior detail | `databases/sqlite` | keep (protected); done: reader essentials absorbed by `databases/sqlite` |
+| `sqlserver.md` (1,269) | contributor | SQL Server behavior detail | `databases/sqlserver` | keep (protected); done: reader essentials absorbed by `databases/sqlserver` |
 | `native_cli.md` (1,267) | contributor | Native command tree walkthrough | `reference/commands` | `reference/native-commands` is complete; retirement candidate for a follow-up PR (near-duplicate; not protected) |
 | `go_annotations_vs_atlas_hcl.md` (727) | evaluator | Source-format comparison | none (gap) | fed `start/choose-a-workflow` and `reference/go-annotations` (both exist now); retirement candidate for a follow-up PR |
 | `migrations-import.md` (720) | contributor | Import converter detail | `workflows/migrations` import section | keep as backing reference for `versioned/import` |
@@ -179,12 +206,12 @@ list in the same PR.
 | `github_action.md` (627) | contributor | GitHub Action detail | `testing/ci` | keep as backing reference for `testing/ci` |
 | `project_config.md` (1,088) | contributor | `ptah.yaml` full reference | `reference/configuration` | keep as backing reference |
 | `conformance.md` (522) | contributor | Conformance process detail | `operate/conformance` | keep as backing reference |
-| `online-ddl.md` (881) | contributor | Online-DDL behavior | none | feeds `databases/postgresql` and `databases/mysql-mariadb`; keep as engineering depth |
-| `postgresql_extension_ignore.md` (687) | contributor | Extension-ignore behavior | none | feeds `databases/postgresql`; keep |
-| `POSTGRESQL_ROLES.md` (1,453) | contributor | Roles/RLS annotations | none | feeds `databases/postgresql` and `reference/go-annotations`; keep |
-| `sequences.md` (674) | contributor | Sequence annotations | none | feeds `databases/postgresql` and `reference/go-annotations`; keep |
-| `user_defined_types.md` (586) | contributor | UDT annotations | none | feeds `databases/postgresql` and `reference/go-annotations`; keep |
-| `dml_upsert.md` (352) | contributor | Upsert rendering | none | feeds `databases/*` pages; keep |
+| `online-ddl.md` (881) | contributor | Online-DDL behavior (gh-ost / pt-osc routing — MySQL/MariaDB material, not PostgreSQL as the design assumed) | `databases/support-matrix` MySQL/MariaDB section | done: reader summary lives on `databases/support-matrix`; keep as engineering depth |
+| `postgresql_extension_ignore.md` (687) | contributor | Extension-ignore behavior | `databases/postgresql` | done: reader summary in the extensions section of `databases/postgresql`; keep |
+| `POSTGRESQL_ROLES.md` (1,453) | contributor | Roles/RLS annotations | `databases/postgresql` | done: reader summary on `databases/postgresql`; directive syntax on `reference/go-annotations`; keep |
+| `sequences.md` (674) | contributor | Sequence annotations | `databases/postgresql` | done: reader summary on `databases/postgresql`; directive syntax on `reference/go-annotations`; keep |
+| `user_defined_types.md` (586) | contributor | UDT annotations | `databases/postgresql` | done: reader summary on `databases/postgresql`; directive syntax on `reference/go-annotations`; keep |
+| `dml_upsert.md` (352) | contributor | Upsert rendering | `databases/sqlserver` | done: one-line surface note on `databases/sqlserver`; keep as engineering depth for embedders |
 | `system_design.md` (1,809) | contributor | Architecture overview | none (intentional) | keep (contributor surface, out of reader navigation) |
 | `release_process.md` (295) | maintainer | Release steps (also the only mention of the `ptah-ls` binary anywhere in the docs) | none | keep (maintainer surface) |
 | `diagrams/*.mmd` (2 files) | contributor | Architecture diagrams | none | keep |
@@ -249,9 +276,9 @@ Verified with repository-wide searches at the audited commit.
 | `ptah-compat` | mentioned in prose on 10 site pages; never a table column | keep: a binary-level drop-in described in prose, never a third command surface |
 | desired schema vs desired state | "desired schema" appears 60 times across 18 pages; "desired state" 3 times (`workflows/migrations.md` twice, `workflows/schema-files.md` once) | standardize on **desired schema**; retire "desired state" outside the composite-source discussion |
 | schema source | used informally | canonicalize: Go annotations, YAML, HCL, SQL file, external loader, or live database used as input |
-| dev database / shadow database / throwaway database | all three exist and are real, distinct flags: `--dev-url` (replay validation on `migrations validate`, `migrations lint`, Atlas-compatible verbs), `--shadow-db` (`migrations generate`, `checkpoint`, `baseline` verification replay), throwaway databases in `migrations test` / `schema test` | keep all three as distinct terms; define each once in `concepts/database-urls-and-dev-databases` and link instead of re-defining |
+| dev database / shadow database / throwaway database | all three exist and are real, distinct flags: `--dev-url` (replay validation on `migrations validate`, `migrations lint`, Atlas-compatible verbs), `--shadow-db` (`migrations generate`, `checkpoint`, `baseline` verification replay), throwaway databases in `migrations test` / `schema test` | keep all three as distinct terms; define each once in `concepts/database-urls-and-dev-databases` and link instead of re-defining (done: page exists and first uses link to it) |
 | migration directory / integrity file / revision table | consistent; integrity files are `ptah.sum` (native) and `atlas.sum` (Atlas-format) | keep |
-| dialect vs database/engine | mostly consistent; `reference/dialect-notes` blurs the two | dialect = SQL rendering flavor; database/engine = the product you connect to |
+| dialect vs database/engine | mostly consistent; `reference/dialect-notes` blurs the two | dialect = SQL rendering flavor; database/engine = the product you connect to (done: `concepts/dialects-and-capabilities` defines both and the `Databases` group replaced `dialect-notes`) |
 | capability | consistent | keep: per-dialect feature gate |
 | drift | consistent (`ptah schema drift`) | keep |
 | conformance | consistent; evidence lives in `stokaro/ptah-atlas-conformance` | keep; claims must cite current reports |
@@ -335,7 +362,9 @@ these are merely misplaced content.
 8. **Database URL and dev-database reference.** No central page documents
    accepted URL formats (`sqlite://`, `postgres://`, ...) or distinguishes
    `--dev-url`, `--shadow-db`, and throwaway test databases. New page:
-   `concepts/database-urls-and-dev-databases`.
+   `concepts/database-urls-and-dev-databases`. Done: page created with schemes
+   verified against the URL-handling code and the built binary, and the pages
+   that use the terms now link to it at first use.
 9. **`ptah-ls` is undocumented.** The repository ships an annotation language
    server binary (`cmd/ptah-ls`, `internal/ptahls`) that is built and verified
    during releases (`docs/release_process.md`), yet no reader-facing page
@@ -395,11 +424,11 @@ Distribute and operate
   operate/seed-data                   howto (new, small: ptah seed vs reference data)
   operate/troubleshooting             troubleshooting (kept; grows symptom-first)
 Databases
-  databases/support-matrix            reference-flavored landing (from dialect-notes)
+  databases/support-matrix            reference-flavored landing (from dialect-notes;
+                                      carries the MySQL/MariaDB section)
   databases/postgresql                guide (P1)
-  databases/mysql-mariadb             guide (P2, may start as a support-matrix section)
-  databases/sqlite                    guide (P2)
-  databases/sqlserver                 guide (P2)
+  databases/sqlite                    guide (compact)
+  databases/sqlserver                 guide (compact)
 Atlas compatibility
   atlas/overview                      concept (surfaces, translation model, ptah-compat)
   atlas/migrate-commands              howto (+ example from examples/atlas-migrations)
@@ -414,10 +443,10 @@ Extend Ptah
   extend/components                   howto/reference (current reference/reusable-components)
   extend/query-builder                reference (current reference/query-builder)
 Concepts
-  concepts/desired-schema-and-sources concept (new)
-  concepts/migration-directory        concept (new)
-  concepts/database-urls-and-dev-databases  concept (new)
-  concepts/dialects-and-capabilities  concept (new)
+  concepts/desired-schema-and-sources concept
+  concepts/migration-directory        concept
+  concepts/database-urls-and-dev-databases  concept
+  concepts/dialects-and-capabilities  concept
 Reference
   reference/native-commands           reference (split from reference/commands)
   reference/atlas-commands            reference (split from reference/commands)
@@ -426,7 +455,7 @@ Reference
   reference/yaml-schema               reference (kept)
   reference/hcl-schema                reference (kept)
   reference/test-cases                reference (current reference/testing)
-  reference/capabilities              reference (kept; matrix only)
+  reference/capabilities              reference (kept; capability tables only)
   reference/exit-codes                reference (kept at same path; script-coupled)
 ```
 
@@ -468,9 +497,10 @@ order):
    Last, because they serve returning readers.
 
 Page count grows from 37 to roughly 59; the growth is splits plus the verified
-missing content in section 9. Tiering keeps scope honest: the per-engine
-database guides other than PostgreSQL may launch as sections of
-`databases/support-matrix` and split out when content justifies it.
+missing content in section 9. Tiering keeps scope honest: SQLite and SQL
+Server launched as compact engine pages because their backing material
+justified it, while MySQL/MariaDB launched as a `databases/support-matrix`
+section and splits out when content justifies it.
 
 ## 11. Atlas patterns adopted and rejected
 

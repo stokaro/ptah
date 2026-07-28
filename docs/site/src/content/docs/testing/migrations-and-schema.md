@@ -80,8 +80,9 @@ By default — no `--db-url` — each case runs against its **own fresh ephemera
 SQLite database**, so state created by one case is never visible to another. For
 schema tests the desired schema is applied to each of those fresh databases.
 
-Pass `--db-url` to run against a specific throwaway database (for example to
-exercise a real PostgreSQL or MySQL dialect). All cases then share that one
+Pass `--db-url` to run against a specific
+[throwaway database](../../concepts/database-urls-and-dev-databases/) (for
+example to exercise a real PostgreSQL or MySQL dialect). All cases then share that one
 database — it is provisioned once, cases accumulate state, and keeping them
 independent is the caller's responsibility. Never point `--db-url` at a real
 database: tests mutate schema and data, and seed steps bypass the seeder's
