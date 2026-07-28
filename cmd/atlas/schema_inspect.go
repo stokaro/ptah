@@ -8,8 +8,8 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
-	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasschema"
+	"github.com/stokaro/ptah/internal/atlassource"
 )
 
 type atlasSchemaInspectOptions struct {
@@ -27,23 +27,31 @@ func newAtlasSchemaInspectCommand() *cobra.Command {
 		Short: "Inspect a database schema",
 		Long: `Atlas OSS ` + "`atlas schema inspect`" + ` command path.
 
-Inspects a live database from --url and writes Atlas-compatible schema output to
-stdout without Ptah status banners. The default output is HCL. SQL output is
-supported with --format sql or --format '{{ sql . }}'. JSON output and custom
-Go templates are supported through the same --format flag, including basic
-` + "`{{ hcl . | split | write \"schema\" }}`" + ` and
-` + "`{{ sql . | split | write \"schema\" }}`" + ` exports. The OSS --exclude
-filter supports resource-level live database inspection filters. Field-level
-exclude selectors beyond the supported extension version selector, file-backed
-inspection, include filtering, and Atlas dev-database inference remain explicit
-follow-up gaps.`,
+Inspects the --url source and writes Atlas-compatible schema output to stdout
+without Ptah status banners. The source is a live database URL, a local schema
+file (.hcl, .yaml, .yml, or .sql), a migration directory, or an env://
+reference into the evaluated atlas.hcl environment. Non-database sources
+require --dev-url: the dev database is reset, the source is materialized on
+it, and the result is introspected, mirroring Atlas dev-database
+normalization.
+
+The default output is HCL. SQL output is supported with --format sql or
+--format '{{ sql . }}', JSON with --format json, and custom Go templates
+through the same --format flag. Split/write exports support the documented
+Atlas split strategies — per object (default), ` + "`split \"schema\"`" + `,
+and ` + "`split \"type\"`" + ` with an optional file extension — through
+` + "`{{ hcl . | split | write \"dir\" }}`" + ` and
+` + "`{{ sql . | split | write \"dir\" }}`" + `. The OSS --exclude filter
+supports resource selectors plus the documented ` + "`[type=extension].version`" + `
+field selector; unsupported selector forms fail before any database is
+contacted.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaInspect(cmd, opts)
 		},
 	}
 	flags := cmd.Flags()
-	flags.StringVarP(&opts.url, "url", "u", "", "Database URL to inspect")
-	flags.StringVar(&opts.devURL, "dev-url", "", "Dev database URL used by Atlas for inference")
+	flags.StringVarP(&opts.url, "url", "u", "", "Database URL, schema file, migration directory, or env:// reference to inspect")
+	flags.StringVar(&opts.devURL, "dev-url", "", "Dev database URL used to evaluate non-database inspection sources")
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schema to inspect")
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from inspection")
 	flags.StringVar(&opts.format, "format", "", "Output format or Go template: hcl, sql, json, or custom template")
@@ -59,34 +67,33 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	projectEnv := atlassource.ProjectEnv{}
 	if loaded {
 		opts.url = dbcli.EffectiveString(cmd, "url", opts.url, projectCfg.DatabaseURL)
 		opts.devURL = dbcli.EffectiveString(cmd, "dev-url", opts.devURL, projectCfg.DevURL)
 		opts.exclude = effectiveAtlasExclude(cmd, opts.exclude, projectCfg)
 		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, projectCfg.Format.Schema.Inspect)
+		projectEnv, err = atlasSourceProjectEnv(cmd, projectCfg)
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
 	}
-	format, err := atlasschema.NormalizeInspectFormat(opts.format)
-	if err != nil {
+	if _, err := atlasschema.NormalizeInspectFormat(opts.format); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if err := validateAtlasSchemaInspectOptions(opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 
-	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
-	defer cancel()
-	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.url)
-	if err != nil {
-		return cmdutil.Fail(cmd, fmt.Errorf("connect to --url: %w", err))
-	}
-	defer dbschema.CloseAndWarn(conn)
-
-	rendered, err := atlasschema.Inspect(conn, atlasschema.InspectOptions{
-		DevURL:      opts.devURL,
-		Schemas:     opts.schemas,
-		Exclude:     opts.exclude,
-		Format:      format,
-		Diagnostics: cmd.ErrOrStderr(),
+	rendered, err := atlasschema.InspectSource(cmd.Context(), atlasschema.InspectSourceOptions{
+		URL:            opts.url,
+		DevURL:         opts.devURL,
+		Schemas:        opts.schemas,
+		Exclude:        opts.exclude,
+		Format:         opts.format,
+		Diagnostics:    cmd.ErrOrStderr(),
+		ProjectEnv:     projectEnv,
+		ConnectTimeout: dbcli.DefaultConnectTimeout,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

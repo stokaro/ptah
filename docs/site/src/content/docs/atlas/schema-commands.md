@@ -13,7 +13,7 @@ flag translation rules are on the
 
 | Atlas-compatible command | Ptah behavior |
 | --- | --- |
-| `ptah atlas schema inspect` | Inspects a live database and writes Atlas-shaped HCL, SQL, JSON, or custom-template output. |
+| `ptah atlas schema inspect` | Inspects a live database, a local schema file, a migration directory, or an `env://` reference (non-database sources evaluated on the `--dev-url` dev database) and writes Atlas-shaped HCL, SQL, JSON, or custom-template output, including split/write file exports. |
 | `ptah atlas schema apply` | Diffs a desired-state source (schema files, a database URL, a migration directory, or an `env://` reference) against a live database and applies the planned SQL after confirmation. |
 | `ptah atlas schema plan` | Saves the declarative plan as a fingerprinted local plan file for a later `schema apply --plan`. |
 | `ptah atlas schema diff` | Diffs two desired-state sources (schema files, database URLs, migration directories, or `env://` references) and prints migration SQL. |
@@ -25,11 +25,14 @@ flag translation rules are on the
 Per-verb status detail — Atlas differences, waivers, and the inputs that fail
 explicitly — is on [Atlas-compatible commands](../../reference/atlas-commands/).
 
-## Inspect a live database
+## Inspect a schema source
 
-`ptah atlas schema inspect` accepts a live database `--url` and writes
+`ptah atlas schema inspect` accepts a `--url` inspection source and writes
 machine-oriented schema output without native Ptah status banners. The default
-format is Atlas-compatible HCL.
+format is Atlas-compatible HCL. The source is a live database URL, a local
+schema file (`.hcl`, `.yaml`, `.yml`, or `.sql`), a migration directory (a
+directory containing `atlas.sum`), or an `env://` reference into the evaluated
+`atlas.hcl` environment.
 
 ```bash
 ptah atlas schema inspect --url "$DATABASE_URL" > schema.hcl
@@ -37,12 +40,27 @@ ptah atlas schema inspect --url "$DATABASE_URL" --format sql > schema.sql
 ptah atlas schema inspect --url "$DATABASE_URL" --format json > schema.json
 ```
 
+Non-database sources require `--dev-url`, mirroring Atlas dev-database
+normalization: the dev database is reset destructively, the source is
+materialized on it (schema files executed, migration directories replayed),
+and the result is introspected. Inspecting a file without `--dev-url` fails
+with Atlas's `--dev-url cannot be empty` message.
+
+```bash
+ptah atlas schema inspect \
+  --url file://schema.sql \
+  --dev-url "$DEV_DATABASE_URL" > schema.hcl
+```
+
 `--schema` / `-s` narrows inspection when the underlying database reader supports
-schema scoping. `--dev-url` validates dialect compatibility only today; Ptah
-does not yet run Atlas dev-database inference for inspection. `--format`
+schema scoping. `--format`
 accepts Atlas-style Go templates with `.MarshalHCL`, `hcl`, `sql`, `json`,
-`base64url`, `mermaid`, `split`, and `write`. Basic split-write exports are
-supported for HCL and SQL output:
+`base64url`, `mermaid`, `split`, and `write`. Split-write exports are
+supported for HCL and SQL output with the documented Atlas split strategies:
+per object (the default: one file per object under per-type directories, with
+a `main.sql` `atlas:import` entry point for SQL), `"schema"` (one file per
+schema), and `"type"` (one file per object type), plus an optional
+file-extension argument:
 
 ```bash
 ptah atlas schema inspect \
@@ -51,20 +69,34 @@ ptah atlas schema inspect \
 
 ptah atlas schema inspect \
   --url "$DATABASE_URL" \
-  --format '{{ sql . | split | write "schema" }}'
+  --format '{{ sql . | split "type" | write "schema" }}'
+
+ptah atlas schema inspect \
+  --url "$DATABASE_URL" \
+  --format '{{ hcl . | split "schema" ".pg.hcl" | write "schema" }}'
 ```
+
+Rendering plans the output files first, and one writer applies the plan:
+duplicate output paths, paths that escape the output directory, collisions
+between a planned file and a planned directory, and destinations that already
+exist as directories fail explicitly before anything is written. Unsupported
+split modes and unsafe extension arguments fail at render time. The pinned
+Atlas CE binary rejects the `split`, `write`, and `hcl` template functions as
+non-community features, so these exports are an open Ptah extension that
+follows the documented Atlas behavior.
 
 `--exclude` accepts repeated or comma-separated
 Atlas-style glob patterns, including `[type=...]` selectors, and removes
 matching resources from HCL, SQL, JSON, and custom-template output. Field-level
 exclude selector support includes the Atlas-documented
-`*[type=extension].version` form. Other field-level selectors fail explicitly
-until Ptah models those fields as independently filterable resources.
+`*[type=extension].version` form, including schema-qualified globs such as
+`public.*[type=extension].version`. Other field-level selectors, and type
+selectors on non-final pattern segments, fail explicitly before any database
+is contacted.
 Schema-qualified function and enum filters remain limited by Ptah's current
 introspection model, which does not retain schema names for those resource types
 yet. `--include` is not part of the pinned Atlas CE inspect flag surface.
-File-backed inspection, exporter blocks, and advanced split/write configuration
-remain explicit gaps.
+Exporter blocks remain an explicit gap.
 
 ## Apply a desired schema
 

@@ -96,6 +96,15 @@ const (
 	filterKindInclude = "include"
 )
 
+// ValidateExcludeSelectors parses Atlas-style --exclude selectors and rejects
+// forms Ptah cannot honor: malformed globs, unsupported selector kinds, field
+// selectors beyond the documented extension version form, and type selectors
+// on non-final pattern segments. Commands run it before any database work.
+func ValidateExcludeSelectors(values []string) error {
+	_, err := parsePatterns(values)
+	return err
+}
+
 func parsePatterns(values []string) ([]resourcePattern, error) {
 	var patterns []resourcePattern
 	for _, value := range values {
@@ -116,6 +125,13 @@ func parsePattern(value, kind string) (resourcePattern, error) {
 	raw := strings.TrimSpace(value)
 	if raw == "" {
 		return resourcePattern{}, nil
+	}
+	// Ptah evaluates one selector per pattern, on the final segment — the
+	// only placement the Atlas docs use. A second selector would otherwise be
+	// swallowed into the glob and silently match nothing, so reject it loudly.
+	if strings.Count(raw, "[type=") > 1 {
+		return resourcePattern{}, fmt.Errorf(
+			"unsupported Atlas %s selector %q: type selectors are supported on the final pattern segment only", kind, raw)
 	}
 	glob := raw
 	types := map[string]struct{}{}

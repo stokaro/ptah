@@ -110,7 +110,7 @@ table "users" {
 narrows inspection to selected database schemas, and `--exclude` filters
 resources with Atlas-style glob patterns. The full template surface — custom Go
 templates, Mermaid output, and split-file exports — is documented in
-[Atlas schema commands](../../atlas/schema-commands/#inspect-a-live-database).
+[Atlas schema commands](../../atlas/schema-commands/#inspect-a-schema-source).
 
 ## Failure modes
 

@@ -186,19 +186,34 @@ replacement is the native `ptah migrations push` to any OCI registry.
 
 ### `ptah atlas schema inspect`
 
-Inspects a live database and writes Atlas-compatible schema output without
-Ptah status banners. The default output is HCL; SQL output is supported with
-`--format sql` or `--format '{{ sql . }}'`; JSON and custom templates are
-supported through `--format json`, `{{ json . }}`, `{{ .MarshalHCL }}`,
-`{{ hcl . }}`, `{{ sql . }}`, and `{{ mermaid . }}`. Basic
+Inspects the `--url` source — a live database URL, a local `.hcl`, `.yaml`,
+`.yml`, or `.sql` schema file, a migration directory (a directory containing
+`atlas.sum`), or an `env://` reference resolved through the evaluated
+`atlas.hcl` env — and writes Atlas-compatible schema output without Ptah
+status banners. Non-database sources require `--dev-url` and are evaluated on
+the dev database: the dev database is reset, the source is materialized on it
+(schema files executed, migration directories replayed), and the result is
+introspected; inspecting a file without `--dev-url` fails with Atlas's
+`--dev-url cannot be empty` message. The default output is HCL; SQL output is
+supported with `--format sql` or `--format '{{ sql . }}'`; JSON and custom
+templates are supported through `--format json`, `{{ json . }}`,
+`{{ .MarshalHCL }}`, `{{ hcl . }}`, `{{ sql . }}`, and `{{ mermaid . }}`.
 `{{ hcl . | split | write "schema" }}` and
-`{{ sql . | split | write "schema" }}` exports are supported. `--schema/-s`
+`{{ sql . | split | write "schema" }}` exports support the documented Atlas
+split strategies — per object (default, with a `main.sql` `atlas:import`
+entry point for SQL), `split "schema"`, and `split "type"`, plus an optional
+file-extension argument — through one rendered output plan applied by a
+single writer: duplicate output paths, traversal or escape from the output
+directory, planned file/directory collisions, and existing-directory
+destinations fail explicitly before anything is written. The pinned Atlas CE
+binary rejects `split`, `write`, and `hcl` as non-community template
+functions, so these exports are an open Ptah extension. `--schema/-s`
 narrows inspection when supported by the database reader. The OSS `--exclude`
 flag filters inspected resources with Atlas-style globs and `[type=...]`
 selectors, including the Atlas-documented `*[type=extension].version` field
-selector. Other field-level exclude selectors, include filtering, file-backed
-inspection, advanced split/write configuration, and dev-database inference
-remain explicit gaps.
+selector with schema-qualified globs. Other field-level exclude selectors and
+type selectors on non-final pattern segments fail explicitly; include
+filtering and exporter blocks remain explicit gaps.
 
 ### `ptah atlas schema apply`
 
