@@ -275,7 +275,7 @@ func ViewLikesForCreate(objects []ViewLike) []ViewLike {
 	for i, object := range objects {
 		id := viewLikeID(object, i)
 		for candidateName, candidateIDs := range idsByName {
-			if candidateName == object.Name || !referencesIdentifier(object.Body, candidateName) {
+			if candidateName == object.Name || !ReferencesIdentifier(object.Body, candidateName) {
 				continue
 			}
 			dependencies[id] = append(dependencies[id], candidateIDs...)
@@ -467,7 +467,10 @@ func viewLikeID(object ViewLike, index int) string {
 	return kind + ":" + object.Name + ":" + strconv.Itoa(index)
 }
 
-func referencesIdentifier(body, name string) bool {
+// ReferencesIdentifier reports whether the SQL body references name as a
+// standalone or qualified identifier. It backs view-like dependency ordering
+// and the schema-scope cross-reference diagnostics.
+func ReferencesIdentifier(body, name string) bool {
 	body = strings.ToLower(body)
 	name = strings.ToLower(strings.TrimSpace(name))
 	if body == "" || name == "" {

@@ -227,10 +227,15 @@ what gets applied. `--plan file://<path>` executes a pre-approved local plan
 file saved by `schema plan` after verifying the database still matches the
 plan's source fingerprint; a drifted target refuses with a stale-plan error,
 registry `atlas://` plan URLs are rejected, and `--plan` cannot be combined
-with `--to`, `--file`, `--dev-url`, `--exclude`, or `--edit`. Atlas's hidden
-`--file/-f` alias is accepted for local HCL or SQL paths; `--schema/-s` is
-parsed for CLI compatibility but fails explicitly until schema scoping is
-implemented. `--lock-timeout` bounds waiting for the session advisory lock
+with `--to`, `--file`, `--dev-url`, `--exclude`, `--schema`, `--include`, or
+`--edit`. Atlas's hidden `--file/-f` alias is accepted for local HCL or SQL
+paths. `--schema/-s` restricts both comparison sides to the named schema
+scopes and `--include` positively selects top-level resources with
+Atlas-style glob selectors and `[type=...]` filters; repeated values union
+deterministically, `--exclude` plus disabled `schema.mode` values subtract
+afterward, cross-scope dependencies refuse the plan with explicit
+diagnostics, and an empty selection reports a synced schema.
+`--lock-timeout` bounds waiting for the session advisory lock
 that serializes concurrent schema applies against one target: the lock is
 acquired before target inspection and planning, held through simulation,
 confirmation, and execution, and released on every exit path; empty waits
@@ -241,7 +246,7 @@ Spanner) proceed unlocked with a stderr note. Before a non-dry-run apply,
 target's current schema recreated, then the planned (or edited) statements
 executed under the same transaction mode — and a failed rehearsal refuses the
 apply with the target unchanged; the dev database must not be the target and
-must share its schema scope. Include filters remain an explicit gap.
+must share its schema scope.
 
 ### `ptah atlas schema plan`
 
@@ -274,12 +279,14 @@ Prints migration SQL, supports Atlas-style `--format` templates with `sql`
 and `.MarshalSQL`, and applies `--exclude` plus disabled `schema.mode`
 resource filters to both sides before diffing. The SQL dialect is pinned by
 `--dev-url` first, then by `--from` and `--to` database URLs; local schema
-files alone still require `--dev-url`. `--schema/-s` is parsed for CLI
-compatibility but fails explicitly until schema scoping is implemented. With
-`--env`, reads `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`,
-`format.schema.diff`, and supported `diff` policy from `atlas.hcl`.
-Unsupported schemes such as `atlas://` fail during validation; include
-filters remain an explicit gap.
+files alone still require `--dev-url`. `--schema/-s` and `--include`
+positively scope both sides with the same selection semantics as
+`schema apply`: schema universe first, include selection inside it,
+exclusion last, cross-scope dependency diagnostics, and synced output for
+empty selections. With `--env`, reads `env.schema.src`, `env.dev`,
+`env.exclude`, `env.schema.mode`, `format.schema.diff`, and supported `diff`
+policy from `atlas.hcl`. Unsupported schemes such as `atlas://` fail during
+validation.
 
 ### `ptah atlas schema fmt`
 
