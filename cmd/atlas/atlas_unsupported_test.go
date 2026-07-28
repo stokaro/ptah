@@ -104,14 +104,24 @@ type unsupportedCommunityCommandTest struct {
 
 // unsupportedCommunityCommandTests lists the Atlas verbs that remain
 // deliberate Atlas CE unsupported-boundary stubs. `migrate test`,
-// `schema test`, `migrate edit`, `migrate rebase`, and `migrate rm` are no
-// longer here: they forward to the native Ptah commands (see
-// migrate_test_forward_test.go, schema_test_forward_test.go, and
-// migrate_maint_forward_test.go).
+// `schema test`, `migrate edit`, `migrate rebase`, `migrate rm`, and
+// `schema plan` are no longer here: they forward to or implement native Ptah
+// behavior (see migrate_test_forward_test.go, schema_test_forward_test.go,
+// migrate_maint_forward_test.go, and schema_plan_test.go). The registry
+// sub-verbs under `schema plan` stay stubs: they operate on plans stored in
+// the Atlas Registry, which Ptah's local plan-file workflow replaces.
 func unsupportedCommunityCommandTests() []unsupportedCommunityCommandTest {
 	return []unsupportedCommunityCommandTest{
 		{name: "migrate_push", path: []string{"migrate", "push"}},
-		{name: "schema_plan", path: []string{"schema", "plan"}},
+		{name: "schema_plan_approve", path: []string{"schema", "plan", "approve"}},
+		{name: "schema_plan_lint", path: []string{"schema", "plan", "lint"}},
+		{name: "schema_plan_list", path: []string{"schema", "plan", "list"}},
+		{name: "schema_plan_new", path: []string{"schema", "plan", "new"}},
+		{name: "schema_plan_pull", path: []string{"schema", "plan", "pull"}},
+		{name: "schema_plan_push", path: []string{"schema", "plan", "push"}},
+		{name: "schema_plan_rm", path: []string{"schema", "plan", "rm"}},
+		{name: "schema_plan_test", path: []string{"schema", "plan", "test"}},
+		{name: "schema_plan_validate", path: []string{"schema", "plan", "validate"}},
 		{name: "schema_push", path: []string{"schema", "push"}},
 	}
 }

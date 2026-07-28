@@ -96,8 +96,9 @@ shares this exit-code contract.
 | `ptah atlas schema diff` | Local Atlas-style schema-file diff |
 | `ptah atlas schema fmt` | Format local `.hcl` files |
 | `ptah atlas schema test` | `ptah schema test` |
+| `ptah atlas schema plan` | Local Atlas-style plan computation saved to a fingerprinted plan file; its registry sub-verbs stay boundary stubs |
 | `ptah atlas migrate push` | Atlas CE community-version unsupported boundary stub |
-| `ptah atlas schema plan`, `push` | Atlas CE community-version unsupported boundary stub |
+| `ptah atlas schema push` | Atlas CE community-version unsupported boundary stub |
 
 Atlas CE community-version unsupported boundary stubs mirror Atlas CE: `--help`
 prints the unsupported notice and exits `0`, while direct execution prints the

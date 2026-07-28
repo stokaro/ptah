@@ -130,9 +130,9 @@ func newAtlasSchemaCommand() *cobra.Command {
 	cmd.AddCommand(newAtlasSchemaApplyCommand())
 	cmd.AddCommand(newAtlasSchemaDiffCommand())
 	cmd.AddCommand(newAtlasSchemaFmtCommand())
+	cmd.AddCommand(newAtlasSchemaPlanCommand())
 	cmd.AddCommand(newAtlasAdapterCommand("schema", atlasSchemaTestVerb()))
 	addAtlasUnsupportedCommunityCommands(cmd, "schema", []atlasUnsupportedCommunityVerb{
-		{use: "plan", short: "Plan schema changes through Atlas Cloud"},
 		{use: "push", short: "Push schema state to Atlas Cloud"},
 	})
 	return cmd
@@ -409,10 +409,10 @@ func atlasMigrateDownVerb() atlasVerb {
 			// has no generated checks to skip.
 			atlasargs.UnsupportedBoolReason("skip-checks", "", "Skip Atlas down migration safety checks",
 				"Atlas down checks are part of the Atlas Cloud plan-approval flow; Ptah reverts through locally reviewed down migrations and has no generated checks to skip"),
-			// --plan forces Atlas's registry-bound dynamic down planning. The
-			// local file-based pre-approved plan workflow is a separate #758
-			// item (the `schema plan` local workflow); until it lands, forcing
-			// a plan has no local meaning and is rejected rather than faked.
+			// --plan forces Atlas's registry-bound dynamic down planning.
+			// Ptah's local plan files (the `schema plan` workflow) are
+			// declarative apply plans, not down plans, so forcing a down plan
+			// has no local meaning and is rejected rather than faked.
 			atlasargs.UnsupportedBoolReason("plan", "", "Force Atlas dynamic down planning",
 				"dynamic down planning is bound to the Atlas Cloud plan-approval flow; use --dev-url to verify the pre-planned rollback on a dev database instead"),
 		},
