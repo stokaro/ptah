@@ -92,6 +92,11 @@ jobs:
         ports:
           - 1433:1433
 
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+
     steps:
       - uses: actions/checkout@v7
       
@@ -160,6 +165,13 @@ jobs:
             sleep 5
           done
           echo "YugabyteDB is ready!"
+
+          echo "Waiting for OCI registry..."
+          until curl --silent --fail http://127.0.0.1:5000/v2/; do
+            echo "OCI registry is unavailable - sleeping"
+            sleep 2
+          done
+          echo "OCI registry is ready!"
       
       - name: Run executor integration tests with live databases
         env:
@@ -175,6 +187,7 @@ jobs:
           POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           MYSQL_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
           MARIADB_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
+          PTAH_OCI_TEST_REGISTRY: "127.0.0.1:5000"
         run: |
           go test -v ./integration -tags=integration -timeout 15m
           go test -v ./integration/gonative -tags=integration -timeout 15m

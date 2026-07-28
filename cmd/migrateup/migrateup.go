@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"strings"
 	"time"
 
@@ -14,11 +13,11 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cliobs"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/cmd/internal/migrationsource"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/deploymentreport"
 	"github.com/stokaro/ptah/internal/migratesum"
-	"github.com/stokaro/ptah/internal/migrationsnapshot"
 	"github.com/stokaro/ptah/internal/onlineddl"
-	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/internal/preflight"
 	"github.com/stokaro/ptah/migration/lint"
 	"github.com/stokaro/ptah/migration/migrator"
@@ -44,6 +43,8 @@ const (
 	pgDumpToFlag             = "pg-dump-to"
 	mySQLDumpToFlag          = "mysqldump-to"
 	webhookFlag              = "webhook"
+	plainHTTPFlag            = "plain-http"
+	skipReportFlag           = "skip-report"
 )
 
 type options struct {
@@ -65,6 +66,8 @@ type options struct {
 	pgDumpTo             string
 	mySQLDumpTo          string
 	webhook              string
+	plainHTTP            bool
+	skipReport           bool
 	connectTimeout       string
 	configPath           string
 	envName              string
@@ -83,6 +86,17 @@ type parsedMigrationSettings struct {
 	txMode               migrator.MigrationTxMode
 	migrationLockTimeout time.Duration
 	connectTimeout       time.Duration
+}
+
+type deploymentReportPublication struct {
+	source     *migrationsource.OCI
+	dialect    string
+	before     *migrator.MigrationStatus
+	after      *migrator.MigrationStatus
+	startedAt  time.Time
+	finishedAt time.Time
+	dryRun     bool
+	skip       bool
 }
 
 func NewMigrateUpCommand() *cobra.Command {
@@ -111,7 +125,7 @@ whole pending up batch in one transaction on supported dialects, or
 func registerFlags(cmd *cobra.Command, opts *options) {
 	flags := cmd.Flags()
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
-	flags.StringVar(&opts.migrationsDir, migrationsFlag, "", "Directory containing migration files (required)")
+	flags.StringVar(&opts.migrationsDir, migrationsFlag, "", "Local directory or oci:// reference containing migration files (required)")
 	flags.BoolVar(&opts.dryRun, dryRunFlag, false, "Show what migrations would be applied without actually running them")
 	flags.BoolVar(&opts.verbose, verboseFlag, false, "Enable verbose output")
 	flags.BoolVar(&opts.verifySum, verifySumFlag, false, "Verify the migrations directory against its committed ptah.sum before applying; abort on drift")
@@ -128,6 +142,8 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.pgDumpTo, pgDumpToFlag, "", "Directory where pg_dump writes a custom-format backup before applying migrations")
 	flags.StringVar(&opts.mySQLDumpTo, mySQLDumpToFlag, "", "Directory where mysqldump writes a SQL backup before applying migrations")
 	flags.StringVar(&opts.webhook, webhookFlag, "", "Webhook URL to POST migration metadata before applying migrations; must return HTTP 200")
+	flags.BoolVar(&opts.plainHTTP, plainHTTPFlag, false, "Use plain HTTP for an explicitly trusted local OCI registry")
+	flags.BoolVar(&opts.skipReport, skipReportFlag, false, "Do not attach a deployment report after applying an OCI migration artifact")
 	flags.StringVar(&opts.logFormat, cliobs.LogFormatFlagName, "text", "Log format: text or json")
 	flags.StringVar(&opts.logLevel, cliobs.LogLevelFlagName, "info", "Log level: debug, info, warn, or error")
 	flags.StringVar(&opts.metricsAddr, cliobs.MetricsAddrFlagName, "", "Address for the Prometheus /metrics endpoint, such as :9090")
@@ -245,11 +261,6 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	if migrationsDir == "" {
 		return fmt.Errorf("migrations directory is required")
 	}
-	migrationsDir, err = pathguard.ResolveCLIPath(migrationsDir)
-	if err != nil {
-		return fmt.Errorf("invalid migrations directory: %w", err)
-	}
-
 	settings, err := parseMigrationSettings(
 		dirFormatValue,
 		revisionFormatValue,
@@ -261,20 +272,21 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
-	migrationsFS, err := migrationsnapshot.Capture(os.DirFS(migrationsDir))
+	source, err := migrationsource.Resolve(cmd.Context(), migrationsDir, migrationsource.Options{
+		DirFormat: settings.dirFormat,
+		PlainHTTP: opts.plainHTTP,
+	})
 	if err != nil {
-		return fmt.Errorf("capture migrations directory: %w", err)
+		return err
 	}
+	migrationsFS := source.FileSystem
+	migrationsDir = source.Display
+	settings.dirFormat = source.DirFormat
 
-	// Integrity gate: refuse to apply if a committed migration was edited
-	// out of band. Runs before connecting so a tampered directory fails fast.
 	if opts.verifySum {
-		result, err := migratesum.VerifyWithFormat(migrationsFS, settings.dirFormat)
+		result, err := verifyMigrationIntegrity(migrationsFS, settings.dirFormat)
 		if err != nil {
-			return fmt.Errorf("migration sum verification failed: %w", err)
-		}
-		if !result.OK() {
-			return fmt.Errorf("migration sum verification failed:\n%s", result.Describe())
+			return err
 		}
 		if opts.verbose {
 			emit.Printf("%s verified: migrations directory is intact\n", result.SumFileName)
@@ -397,6 +409,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	}
 
 	// Run migrations
+	startedAt := time.Now()
 	err = mig.MigrateUpWithPreflight(context.Background(), preflightHook)
 	if err != nil {
 		var checkErr *migrator.CheckFailedError
@@ -411,6 +424,16 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return fmt.Errorf("error getting final migration status: %w", err)
 	}
+	publishDeploymentReportIfNeeded(cmd.Context(), runtime, emit, deploymentReportPublication{
+		source:     source.OCI,
+		dialect:    conn.Info().Dialect,
+		before:     status,
+		after:      finalStatus,
+		startedAt:  startedAt,
+		finishedAt: time.Now(),
+		dryRun:     opts.dryRun,
+		skip:       opts.skipReport,
+	})
 
 	emit.Println()
 	if opts.dryRun {
@@ -422,6 +445,67 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	}
 
 	return nil
+}
+
+func verifyMigrationIntegrity(
+	fsys fs.FS,
+	format migrator.MigrationDirFormat,
+) (*migratesum.Result, error) {
+	result, err := migratesum.VerifyWithFormat(fsys, format)
+	if err != nil {
+		return nil, fmt.Errorf("migration sum verification failed: %w", err)
+	}
+	if !result.OK() {
+		return nil, fmt.Errorf("migration sum verification failed:\n%s", result.Describe())
+	}
+	return result, nil
+}
+
+func publishDeploymentReportIfNeeded(
+	ctx context.Context,
+	runtime *cliobs.Runtime,
+	emit cliobs.Emitter,
+	publication deploymentReportPublication,
+) {
+	if publication.dryRun ||
+		publication.skip ||
+		publication.source == nil ||
+		!deploymentreport.HasAppliedChanges(publication.before, publication.after) {
+		return
+	}
+	publishDeploymentReportBestEffort(
+		ctx,
+		runtime,
+		emit,
+		publication.source,
+		deploymentreport.SuccessfulOptions{
+			Subject:    publication.source.Descriptor,
+			Dialect:    publication.dialect,
+			Before:     publication.before,
+			After:      publication.after,
+			StartedAt:  publication.startedAt,
+			FinishedAt: publication.finishedAt,
+		},
+	)
+}
+
+func publishDeploymentReportBestEffort(
+	ctx context.Context,
+	runtime *cliobs.Runtime,
+	emit cliobs.Emitter,
+	source *migrationsource.OCI,
+	opts deploymentreport.SuccessfulOptions,
+) {
+	_, reportErr := deploymentreport.PublishSuccessful(
+		ctx,
+		source.Client,
+		source.Reference,
+		opts,
+	)
+	if reportErr != nil {
+		runtime.Logger().Warn("failed to attach OCI deployment report", "error", reportErr)
+		emit.Printf("Warning: migrations succeeded, but the OCI deployment report could not be attached: %s\n", reportErr)
+	}
 }
 
 func shutdownObservability(runtime *cliobs.Runtime) {

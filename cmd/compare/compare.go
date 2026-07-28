@@ -24,6 +24,7 @@ const (
 	schemaFormatFlag = "schema-format"
 	dbURLFlag        = "db-url"
 	exitCodeFlag     = "exit-code"
+	plainHTTPFlag    = "plain-http"
 )
 
 type options struct {
@@ -35,6 +36,7 @@ type options struct {
 	exitOnDiff     bool
 	connectTimeout string
 	schemas        string
+	plainHTTP      bool
 }
 
 func NewCompareCommand() *cobra.Command {
@@ -63,6 +65,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.schemaFormat, schemaFormatFlag, "sql", "Format of the --schema-cmd output: sql")
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	flags.BoolVar(&opts.exitOnDiff, exitCodeFlag, false, "Exit with 1 when the schema diff is non-empty")
+	flags.BoolVar(&opts.plainHTTP, plainHTTPFlag, false, "Use plain HTTP for OCI registry access")
 	flags.String(dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
 	flags.String(dbcli.EnvFlagName, "", "Project env name to read from ptah.yaml or atlas.hcl")
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
@@ -91,6 +94,7 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 		RootDirs:    opts.rootDirs,
 		SchemaFiles: opts.schemaFiles,
 		Commands:    dbcli.ExternalSchemaCommands(opts.schemaCmd, opts.schemaFormat, projectCfg),
+		PlainHTTP:   opts.plainHTTP,
 	}
 
 	fmt.Fprintf(out, "Comparing schema from %s with database %s\n", loadOpts.Sources(), dbschema.FormatDatabaseURL(dbURL))

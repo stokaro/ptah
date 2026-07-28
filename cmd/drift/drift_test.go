@@ -35,6 +35,7 @@ func TestNewDriftCommand_ExposesRepeatableSchemaSources(t *testing.T) {
 
 	c.Assert(cmd.Flags().Lookup("schema-cmd"), qt.IsNotNil)
 	c.Assert(cmd.Flags().Lookup("schema-format"), qt.IsNotNil)
+	c.Assert(cmd.Flags().Lookup("plain-http"), qt.IsNotNil)
 }
 
 func TestRunDrift_MissingDatabaseURLReturnsCode2(t *testing.T) {

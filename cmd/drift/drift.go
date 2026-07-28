@@ -43,6 +43,7 @@ func NewDriftCommand() *cobra.Command {
 	var connectTimeoutRaw string
 	var schemasRaw string
 	var configPath string
+	var plainHTTP bool
 
 	cmd := &cobra.Command{
 		Use:           "drift",
@@ -63,6 +64,7 @@ func NewDriftCommand() *cobra.Command {
 				connectTimeoutRaw: connectTimeoutRaw,
 				schemasRaw:        schemasRaw,
 				configPath:        configPath,
+				plainHTTP:         plainHTTP,
 			})
 		},
 	}
@@ -85,6 +87,7 @@ func NewDriftCommand() *cobra.Command {
 	)
 	cmd.Flags().StringVar(&configPath, dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
 	cmd.Flags().String(dbcli.EnvFlagName, "", "Project env name to read from ptah.yaml or atlas.hcl")
+	cmd.Flags().BoolVar(&plainHTTP, "plain-http", false, "Use plain HTTP for OCI registry access")
 
 	cmdutil.ConfigureCommand(cmd)
 	return cmd
@@ -103,6 +106,7 @@ type runOptions struct {
 	connectTimeoutRaw string
 	schemasRaw        string
 	configPath        string
+	plainHTTP         bool
 }
 
 type driftReport struct {
@@ -156,6 +160,7 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 		ConnectTimeout: connectTimeout,
 		IgnoredTables:  ignoredTables,
 		Schemas:        schemas,
+		PlainHTTP:      opts.plainHTTP,
 	})
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())

@@ -40,6 +40,7 @@ export default defineConfig({
             { slug: 'workflows/orm-loaders' },
             { slug: 'workflows/api-schema-export' },
             { slug: 'workflows/migrations' },
+            { slug: 'workflows/oci-registry' },
             { slug: 'workflows/checkpoints' },
             { slug: 'workflows/testing' },
             { slug: 'workflows/reference-data' },

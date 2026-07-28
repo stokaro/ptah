@@ -14,6 +14,7 @@ import (
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/dbschema"
+	"github.com/stokaro/ptah/internal/planartifact"
 	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/safety"
 	"github.com/stokaro/ptah/migration/schemadiff"
@@ -28,6 +29,8 @@ const (
 	checkDestructiveFlag = "check-destructive"
 	allowDestructiveFlag = "allow-destructive"
 	reportFormatFlag     = "report"
+	attachFlag           = "attach"
+	plainHTTPFlag        = "plain-http"
 )
 
 type options struct {
@@ -39,6 +42,8 @@ type options struct {
 	checkDestructive bool
 	allowDestructive bool
 	reportFormat     string
+	attach           bool
+	plainHTTP        bool
 	connectTimeout   string
 	schemas          string
 }
@@ -71,6 +76,8 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.BoolVar(&opts.checkDestructive, checkDestructiveFlag, false, "Fail when generated migration SQL contains destructive statements")
 	flags.BoolVar(&opts.allowDestructive, allowDestructiveFlag, false, "Allow destructive statements when --check-destructive is set")
 	flags.StringVar(&opts.reportFormat, reportFormatFlag, "text", "Safety report format: text, html, or json")
+	flags.BoolVar(&opts.attach, attachFlag, false, "Attach the migration plan to the exact OCI schema artifact digest")
+	flags.BoolVar(&opts.plainHTTP, plainHTTPFlag, false, "Allow an unencrypted HTTP connection to a local OCI registry")
 	flags.String(dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
 	flags.String(dbcli.EnvFlagName, "", "Project env name to read from ptah.yaml or atlas.hcl")
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
@@ -102,6 +109,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 		RootDirs:    opts.rootDirs,
 		SchemaFiles: opts.schemaFiles,
 		Commands:    dbcli.ExternalSchemaCommands(opts.schemaCmd, opts.schemaFormat, projectCfg),
+		PlainHTTP:   opts.plainHTTP,
 	}
 	rootsDisplay := loadOpts.Sources()
 
@@ -113,10 +121,14 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 
 	// 1. Resolve the desired schema from Go entities, schema files, and/or an
 	// external command into one composite schema.
-	result, err := schemaload.LoadContext(cmd.Context(), loadOpts)
+	loadResult, err := schemaload.LoadResult(cmd.Context(), loadOpts)
 	if err != nil {
 		return err
 	}
+	if opts.attach && loadResult.OCI == nil {
+		return fmt.Errorf("--attach requires exactly one OCI --schema-file source")
+	}
+	result := loadResult.Database
 
 	// 2. Connect to database and read schema
 	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
@@ -153,6 +165,28 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	assessments, err := safety.AssessRenderedWithCapabilities(astNodes, info.Dialect, info.Capabilities)
 	if err != nil {
 		return fmt.Errorf("error assessing migration safety: %w", err)
+	}
+	if opts.attach {
+		report, err := planartifact.NewReport(
+			loadResult.OCI.Descriptor,
+			dbSchema,
+			info.Dialect,
+			info.Capabilities,
+			schemas,
+			assessments,
+		)
+		if err != nil {
+			return fmt.Errorf("build OCI migration plan: %w", err)
+		}
+		if _, err := planartifact.Publish(
+			cmd.Context(),
+			loadResult.OCI.Client,
+			loadResult.OCI.Reference,
+			loadResult.OCI.Descriptor,
+			report,
+		); err != nil {
+			return fmt.Errorf("publish OCI migration plan: %w", err)
+		}
 	}
 	if reportFormat == "html" || reportFormat == "json" {
 		if err := renderSafetyReport(out, reportFormat, assessments); err != nil {

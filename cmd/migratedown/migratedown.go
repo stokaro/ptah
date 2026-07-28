@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"time"
 
@@ -13,9 +12,9 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cliobs"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/cmd/internal/migrationsource"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/onlineddl"
-	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/internal/preflight"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -37,6 +36,7 @@ const (
 	pgDumpToFlag             = "pg-dump-to"
 	mySQLDumpToFlag          = "mysqldump-to"
 	webhookFlag              = "webhook"
+	plainHTTPFlag            = "plain-http"
 )
 
 type options struct {
@@ -56,6 +56,7 @@ type options struct {
 	pgDumpTo             string
 	mySQLDumpTo          string
 	webhook              string
+	plainHTTP            bool
 	connectTimeout       string
 	configPath           string
 	envName              string
@@ -95,7 +96,7 @@ before running down migrations in production.`,
 func registerFlags(cmd *cobra.Command, opts *options) {
 	flags := cmd.Flags()
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
-	flags.StringVar(&opts.migrationsDir, migrationsFlag, "", "Directory containing migration files (required)")
+	flags.StringVar(&opts.migrationsDir, migrationsFlag, "", "Local directory or oci:// reference containing migration files (required)")
 	flags.StringVar(&opts.target, targetFlag, "0", "Target version to migrate down to (required)")
 	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
@@ -110,6 +111,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.pgDumpTo, pgDumpToFlag, "", "Directory where pg_dump writes a custom-format backup before rolling back migrations")
 	flags.StringVar(&opts.mySQLDumpTo, mySQLDumpToFlag, "", "Directory where mysqldump writes a SQL backup before rolling back migrations")
 	flags.StringVar(&opts.webhook, webhookFlag, "", "Webhook URL to POST migration metadata before rolling back migrations; must return HTTP 200")
+	flags.BoolVar(&opts.plainHTTP, plainHTTPFlag, false, "Use plain HTTP for an explicitly trusted local OCI registry")
 	flags.StringVar(&opts.logFormat, cliobs.LogFormatFlagName, "text", "Log format: text or json")
 	flags.StringVar(&opts.logLevel, cliobs.LogLevelFlagName, "info", "Log level: debug, info, warn, or error")
 	flags.StringVar(&opts.metricsAddr, cliobs.MetricsAddrFlagName, "", "Address for the Prometheus /metrics endpoint, such as :9090")
@@ -175,11 +177,6 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	if migrationsDir == "" {
 		return fmt.Errorf("migrations directory is required")
 	}
-	migrationsDir, err = pathguard.ResolveCLIPath(migrationsDir)
-	if err != nil {
-		return err
-	}
-
 	targetVersion, err := strconv.ParseInt(targetVersionValue, 10, 64)
 	if err != nil {
 		return fmt.Errorf("invalid target version %q: %w", targetVersionValue, err)
@@ -192,6 +189,16 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
+	source, err := migrationsource.Resolve(cmd.Context(), migrationsDir, migrationsource.Options{
+		DirFormat: dirFormat,
+		PlainHTTP: opts.plainHTTP,
+	})
+	if err != nil {
+		return err
+	}
+	migrationsFS := source.FileSystem
+	migrationsDir = source.Display
+	dirFormat = source.DirFormat
 	revisionFormat, err := migrator.ParseRevisionTableFormat(revisionFormatValue)
 	if err != nil {
 		return err
@@ -243,9 +250,6 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	emit.Printf("Migration directory format: %s\n", dirFormat)
 	emit.Printf("Target version: %d\n", targetVersion)
 	emit.Println()
-
-	// Create filesystem from migrations directory
-	migrationsFS := os.DirFS(migrationsDir)
 
 	// Online-DDL routing works for down migrations too: a rollback ALTER on
 	// a large table is just as lock-heavy as the forward one.

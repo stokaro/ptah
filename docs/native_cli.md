@@ -19,10 +19,13 @@ root-level command spellings are removed instead of preserved.
 | Native command | Purpose |
 | --- | --- |
 | `ptah introspect` | Generate annotated Go models from a live database. |
+| `ptah oci referrers` | List direct referrer metadata attached to an OCI artifact. |
 | `ptah schema render` | Render desired schema SQL from Go, YAML, or HCL schema inputs. |
 | `ptah schema compare` | Compare desired schema with a live database. |
 | `ptah schema drift` | Check live database drift against desired schema. |
 | `ptah schema export` | Export a schema to HCL, an OpenAPI 3.0 component schema, or a GraphQL SDL. |
+| `ptah schema push` | Publish a lossless canonical desired schema to an OCI registry. |
+| `ptah schema pull` | Pull a canonical desired schema from an OCI registry. |
 | `ptah schema test` | Apply a desired schema to a throwaway database and run declarative test cases against it. |
 | `ptah viz` | Render desired schema diagrams as Mermaid, DOT, or SVG. |
 | `ptah db read` | Read schema from a live database. |
@@ -32,6 +35,8 @@ root-level command spellings are removed instead of preserved.
 | `ptah migrations create` | Create empty migration files for manual SQL. |
 | `ptah migrations data` | Generate a migration from declarative reference/seed data drift against a live database. |
 | `ptah migrations import` | Convert another tool's migration directory to Ptah format. |
+| `ptah migrations push` | Publish a migration directory to an OCI registry. |
+| `ptah migrations pull` | Pull and reconstruct a migration directory from an OCI registry. |
 | `ptah migrations up` | Run pending migrations. |
 | `ptah migrations down` | Roll back migrations. |
 | `ptah migrations status` | Show migration status. |
@@ -48,6 +53,32 @@ root-level command spellings are removed instead of preserved.
 | `ptah sql lint` | Lint standalone SQL files. |
 | `ptah seed` | Apply environment-scoped SQL seed files. |
 | `ptah version` | Print Ptah build information. |
+
+The native `ptah migrations up`, `status`, and `down` commands accept an
+`oci://` reference through `--migrations-dir`, including movable tags and
+immutable digest pins. `up --verify-sum` verifies `ptah.sum` or `atlas.sum`
+inside the pulled artifact before connecting to the database. `ptah migrations
+lint` accepts an OCI `--dir` and can attach its canonical report to the exact
+migration digest with `--attach`.
+
+The native `ptah schema compare`, `drift`, and `ptah migrations plan` commands
+accept an OCI desired-schema artifact through `--schema-file`. A plan built
+from exactly one OCI schema source can attach its canonical safety report with
+`--attach`. Pass `--plain-http` only for an explicitly trusted local registry.
+See [OCI Registry Artifacts](./oci_registry.md).
+
+`ptah oci referrers <oci-reference>` lists direct attachment descriptors. Its
+`--type` filter accepts `all`, `lint`, `plan`, or `deployment`, and `--format`
+accepts `text` or `json`. Unqualified subjects resolve to `:latest`, tags
+resolve to their current manifest, and digest subjects remain immutable. The
+command uses Docker credentials and HTTPS by default; `--plain-http` is only
+for an explicitly trusted local registry. It lists metadata and does not pull
+or consume attachment payloads.
+
+These commands do not add an Atlas Cloud implementation to `ptah atlas`.
+`ptah atlas migrate push` and `ptah atlas schema push` remain
+community-edition boundary stubs, and Atlas-compatible apply commands do not
+gain native OCI transport flags.
 
 The schema-diff commands (`ptah schema render`, `ptah migrations generate`,
 `ptah migrate`, `ptah compare`) emit `CREATE`/`ALTER`/`DROP SEQUENCE` for

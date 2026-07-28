@@ -12,8 +12,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+
 	"github.com/stokaro/ptah/cmd/internal/schemasource"
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/internal/ociartifact"
+	"github.com/stokaro/ptah/internal/schemaartifact"
 	"github.com/stokaro/ptah/internal/schemafile"
 )
 
@@ -28,10 +32,27 @@ type Options struct {
 	Commands []schemasource.Command
 	// Dialect is an optional dialect hint used when parsing SQL schema files.
 	Dialect string
+	// PlainHTTP explicitly permits an unencrypted local OCI registry.
+	PlainHTTP bool
 	// Logf, when non-nil, receives human-readable progress messages. Commands
 	// that emit machine-readable output (SQL, safety reports) leave it nil so the
 	// resolver stays quiet.
 	Logf func(format string, args ...any)
+}
+
+// OCI identifies the immutable registry artifact behind a desired schema.
+type OCI struct {
+	Client     *ociartifact.Client
+	Reference  string
+	Descriptor ocispec.Descriptor
+}
+
+// Result is a resolved desired schema with optional immutable OCI provenance.
+// OCI is populated only when the desired state came from exactly one OCI
+// schema artifact, so callers cannot attach metadata to an ambiguous subject.
+type Result struct {
+	Database *goschema.Database
+	OCI      *OCI
 }
 
 func (o Options) logf(format string, args ...any) {
@@ -69,6 +90,27 @@ func Load(opts Options) (*goschema.Database, error) {
 // historical behavior). Multiple sources of any kind are merged into one
 // composite schema. Any external schema commands are run under ctx.
 func LoadContext(ctx context.Context, opts Options) (*goschema.Database, error) {
+	result, err := LoadResult(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return result.Database, nil
+}
+
+// LoadResult resolves the desired schema and preserves immutable OCI
+// provenance when the input is exactly one OCI schema artifact.
+func LoadResult(ctx context.Context, opts Options) (*Result, error) {
+	if raw, ok := singleOCIReference(opts); ok {
+		return opts.loadOCIResult(ctx, raw)
+	}
+	database, err := loadContext(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return &Result{Database: database}, nil
+}
+
+func loadContext(ctx context.Context, opts Options) (*goschema.Database, error) {
 	rootDirs := opts.RootDirs
 	schemaFiles := opts.SchemaFiles
 	commands := opts.Commands
@@ -85,7 +127,7 @@ func LoadContext(ctx context.Context, opts Options) (*goschema.Database, error) 
 		return opts.loadGoRoots(rootDirs)
 	}
 	if len(rootDirs) == 0 && len(commands) == 0 && len(schemaFiles) == 1 {
-		return opts.loadSchemaFile(schemaFiles[0])
+		return opts.loadSchemaFile(ctx, schemaFiles[0])
 	}
 	if len(rootDirs) == 0 && len(schemaFiles) == 0 && len(commands) == 1 {
 		return opts.loadCommand(ctx, commands[0])
@@ -109,7 +151,7 @@ func LoadContext(ctx context.Context, opts Options) (*goschema.Database, error) 
 		sources = append(sources, goDB)
 	}
 	for _, schemaFile := range schemaFiles {
-		fileDB, err := opts.loadSchemaFile(schemaFile)
+		fileDB, err := opts.loadSchemaFile(ctx, schemaFile)
 		if err != nil {
 			return nil, err
 		}
@@ -128,6 +170,14 @@ func LoadContext(ctx context.Context, opts Options) (*goschema.Database, error) 
 		return nil, fmt.Errorf("error merging composite schema: %w", err)
 	}
 	return result, nil
+}
+
+func singleOCIReference(opts Options) (string, bool) {
+	if len(opts.RootDirs) != 0 || len(opts.Commands) != 0 || len(opts.SchemaFiles) != 1 {
+		return "", false
+	}
+	raw := opts.SchemaFiles[0]
+	return raw, strings.HasPrefix(raw, ociartifact.Scheme)
 }
 
 // loadGoRoots parses one or more Go entity roots into a finalized composite
@@ -178,7 +228,10 @@ func resolveRootDirs(rootDirs []string) ([]string, error) {
 
 // loadSchemaFile resolves a single YAML, HCL, or SQL schema file into a
 // finalized schema.
-func (o Options) loadSchemaFile(schemaFile string) (*goschema.Database, error) {
+func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*goschema.Database, error) {
+	if strings.HasPrefix(schemaFile, ociartifact.Scheme) {
+		return o.loadOCI(ctx, schemaFile)
+	}
 	absPath, err := filepath.Abs(schemaFile)
 	if err != nil {
 		return nil, fmt.Errorf("error resolving schema file: %w", err)
@@ -200,4 +253,36 @@ func (o Options) loadSchemaFile(schemaFile string) (*goschema.Database, error) {
 		return nil, fmt.Errorf("error parsing schema file: %w", err)
 	}
 	return result, nil
+}
+
+func (o Options) loadOCI(ctx context.Context, raw string) (*goschema.Database, error) {
+	result, err := o.loadOCIResult(ctx, raw)
+	if err != nil {
+		return nil, err
+	}
+	return result.Database, nil
+}
+
+func (o Options) loadOCIResult(ctx context.Context, raw string) (*Result, error) {
+	ref, err := ociartifact.ParseRef(raw)
+	if err != nil {
+		return nil, err
+	}
+	o.logf("Pulling schema artifact: %s", ref)
+	client, err := ociartifact.NewClient(ociartifact.ClientOptions{PlainHTTP: o.PlainHTTP})
+	if err != nil {
+		return nil, err
+	}
+	artifact, err := schemaartifact.Pull(ctx, client, ref.String())
+	if err != nil {
+		return nil, fmt.Errorf("resolve schema artifact: %w", err)
+	}
+	return &Result{
+		Database: artifact.Database,
+		OCI: &OCI{
+			Client:     client,
+			Reference:  ref.String(),
+			Descriptor: artifact.Descriptor,
+		},
+	}, nil
 }
