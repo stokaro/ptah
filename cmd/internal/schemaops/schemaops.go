@@ -9,11 +9,12 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
 	"github.com/stokaro/ptah/cmd/internal/schemaload"
-	"github.com/stokaro/ptah/cmd/internal/schemasource"
 	"github.com/stokaro/ptah/config"
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/core/schemasource"
 	"github.com/stokaro/ptah/dbschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/atlasurl"
 	"github.com/stokaro/ptah/migration/schemadiff"
 	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
 )
@@ -47,11 +48,16 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 	if opts.DatabaseURL == "" {
 		return nil, fmt.Errorf("database URL is required")
 	}
+	dialect, err := atlasurl.DialectFromURL(opts.DatabaseURL)
+	if err != nil {
+		return nil, err
+	}
 
 	loadOpts := schemaload.Options{
 		RootDirs:    opts.RootDirs,
 		SchemaFiles: opts.SchemaFiles,
 		Commands:    opts.Commands,
+		Dialect:     dialect,
 		PlainHTTP:   opts.PlainHTTP,
 	}
 	generated, err := schemaload.LoadContext(ctx, loadOpts)

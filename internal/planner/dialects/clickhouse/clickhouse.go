@@ -91,7 +91,7 @@ func (p *Planner) addNewTables(result []ast.Node, diff *types.SchemaDiff, genera
 	}
 
 	for _, table := range generated.Tables {
-		if _, ok := added[table.Name]; !ok {
+		if _, ok := added[table.QualifiedName()]; !ok {
 			continue
 		}
 		// FromTable applies platform.clickhouse.* overrides into the AST
@@ -213,7 +213,7 @@ func (p *Planner) removeTables(result []ast.Node, diff *types.SchemaDiff) []ast.
 
 func lookupStructName(generated *goschema.Database, tableName string) string {
 	for _, t := range generated.Tables {
-		if t.Name == tableName {
+		if t.QualifiedName() == tableName {
 			return t.StructName
 		}
 	}

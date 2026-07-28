@@ -133,6 +133,76 @@ func TestToDBSchema_ExplicitConstraintOverridesFieldLevelConstraintWithSameName(
 	c.Assert(*got.Constraints[0].CheckClause, qt.Equals, "status IN ('active', 'disabled')")
 }
 
+func TestToDBSchema_PreservesStructuralObjectIdentities(t *testing.T) {
+	c := qt.New(t)
+	db := &goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "Qualified", Schema: "tenant", Name: "data", PrimaryKey: []string{"qualified_id"}},
+			{StructName: "Literal", Name: "tenant.data", PrimaryKey: []string{"literal_id"}},
+		},
+		Fields: []goschema.Field{
+			{StructName: "Qualified", Name: "qualified_id", Type: "INTEGER"},
+			{StructName: "Qualified", Name: "id", Type: "INTEGER"},
+			{StructName: "Literal", Name: "literal_id", Type: "INTEGER"},
+			{StructName: "Literal", Name: "id", Type: "INTEGER"},
+		},
+		Indexes: []goschema.Index{
+			{StructName: "Literal", Name: "literal_lookup", TableName: `"tenant.data"`, Fields: []string{"id"}},
+			{StructName: "Qualified", Name: "qualified_lookup", TableName: "tenant.data", Fields: []string{"id"}},
+		},
+		Constraints: []goschema.Constraint{{
+			StructName:    "Literal",
+			Name:          "literal_to_qualified_fk",
+			Type:          "FOREIGN KEY",
+			Table:         `"tenant.data"`,
+			Columns:       []string{"id"},
+			ForeignTable:  "tenant.data",
+			ForeignColumn: "id",
+		}},
+		Views: []goschema.View{
+			{Name: `"tenant.data"`, Body: "SELECT 'literal'"},
+			{Name: "tenant.data", Body: "SELECT 'qualified'"},
+		},
+		MaterializedViews: []goschema.MaterializedView{
+			{Name: `"tenant.data"`, Body: "SELECT 'literal'"},
+			{Name: "tenant.data", Body: "SELECT 'qualified'"},
+		},
+		Triggers: []goschema.Trigger{
+			{Name: "literal_trigger", Table: `"tenant.data"`, Timing: "AFTER", Event: "INSERT", Body: "SELECT 1"},
+			{Name: "qualified_trigger", Table: "tenant.data", Timing: "AFTER", Event: "INSERT", Body: "SELECT 1"},
+		},
+		Grants: []goschema.Grant{
+			{Role: "app", Privileges: []string{"SELECT"}, OnTable: `"tenant.data"`},
+			{Role: "app", Privileges: []string{"SELECT"}, OnTable: "tenant.data"},
+		},
+	}
+	goschema.Finalize(db)
+
+	got := schemafile.ToDBSchema(db)
+
+	c.Assert(got.Tables[0].Columns[0].IsPrimaryKey, qt.IsTrue)
+	c.Assert(got.Tables[0].Columns[1].IsPrimaryKey, qt.IsFalse)
+	c.Assert(got.Tables[1].Columns[0].IsPrimaryKey, qt.IsTrue)
+	c.Assert(got.Tables[1].Columns[1].IsPrimaryKey, qt.IsFalse)
+	c.Assert(got.Indexes[0].QualifiedTableName(), qt.Equals, `"tenant.data"`)
+	c.Assert(got.Indexes[1].QualifiedTableName(), qt.Equals, "tenant.data")
+	c.Assert(got.Constraints, qt.HasLen, 3)
+	c.Assert(got.Constraints[2].QualifiedTableName(), qt.Equals, `"tenant.data"`)
+	c.Assert(got.Constraints[2].ForeignSchema, qt.Equals, "tenant")
+	c.Assert(*got.Constraints[2].ForeignTable, qt.Equals, "data")
+	c.Assert(got.Views[0].QualifiedName(), qt.Equals, `"tenant.data"`)
+	c.Assert(got.Views[1].QualifiedName(), qt.Equals, "tenant.data")
+	c.Assert(got.MatViews[0].QualifiedName(), qt.Equals, `"tenant.data"`)
+	c.Assert(got.MatViews[1].QualifiedName(), qt.Equals, "tenant.data")
+	c.Assert(got.Triggers[0].QualifiedTable(), qt.Equals, `"tenant.data"`)
+	c.Assert(got.Triggers[1].QualifiedTable(), qt.Equals, "tenant.data")
+	c.Assert(got.Grants[0].QualifiedTarget(), qt.Equals, `"tenant.data"`)
+	c.Assert(got.Grants[1].QualifiedTarget(), qt.Equals, "tenant.data")
+
+	diff := schemadiff.CompareWithDialect(db, got, platform.Postgres)
+	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %#v", diff))
+}
+
 func TestLocalFilePath_RejectsRemoteURL(t *testing.T) {
 	c := qt.New(t)
 

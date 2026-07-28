@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stokaro/ptah/core/ast"
+	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/core/sqlutil"
 	"github.com/stokaro/ptah/internal/lexer"
@@ -40,9 +41,7 @@ type Parser struct {
 //	parser := NewParser("CREATE TABLE users (id INTEGER PRIMARY KEY);")
 func NewParser(input string, opts ...Option) *Parser {
 	normalized := sqlutil.NormalizeClientDelimiters(input)
-	l := lexer.NewLexer(normalized)
 	p := &Parser{
-		lexer:     l,
 		input:     normalized,
 		startTime: time.Now(),
 		timeout:   30 * time.Second, // 30 second timeout to prevent infinite loops
@@ -50,6 +49,10 @@ func NewParser(input string, opts ...Option) *Parser {
 	for _, opt := range opts {
 		opt(p)
 	}
+	p.lexer = lexer.NewLexerWithOptions(normalized, lexer.Options{
+		BracketIdentifiers:  p.dialect == platform.SQLServer,
+		DisableHashComments: p.dialect == platform.SQLServer,
+	})
 	p.advance() // Load the first token
 	return p
 }
@@ -441,12 +444,38 @@ func (p *Parser) expect(tokenType lexer.TokenType, value string) error {
 
 // expectIdentifier consumes an identifier token and returns its value.
 func (p *Parser) expectIdentifier() (string, error) {
+	if p.current.MatchOperatorValue("[") {
+		return p.expectBracketedIdentifier()
+	}
 	if p.current.Type != lexer.TokenIdentifier && !isDoubleQuotedIdentifierToken(p.current) {
 		return "", fmt.Errorf("expected identifier, got %s at position %d", p.current.Type, p.current.Start)
 	}
 	value := p.current.Value
 	p.advance()
 	return value, nil
+}
+
+func (p *Parser) expectBracketedIdentifier() (string, error) {
+	start := p.current.Start
+	var value strings.Builder
+	value.WriteString(p.current.Value)
+	p.advance()
+	for {
+		if p.current.Type == lexer.TokenEOF {
+			return "", fmt.Errorf("unterminated bracketed identifier at position %d", start)
+		}
+		value.WriteString(p.current.Value)
+		if !p.current.MatchOperatorValue("]") {
+			p.advance()
+			continue
+		}
+		p.advance()
+		if !p.current.MatchOperatorValue("]") {
+			return value.String(), nil
+		}
+		value.WriteString(p.current.Value)
+		p.advance()
+	}
 }
 
 func isDoubleQuotedIdentifierToken(tok lexer.Token) bool {
@@ -678,7 +707,10 @@ func sqlServerRawRoutineNextSignificantValue(input string, pos int) string {
 	if pos >= len(input) {
 		return ""
 	}
-	l := lexer.NewLexer(input[pos:])
+	l := lexer.NewLexerWithOptions(input[pos:], lexer.Options{
+		BracketIdentifiers:  true,
+		DisableHashComments: true,
+	})
 	for {
 		tok := l.NextToken()
 		switch tok.Type {
@@ -2482,6 +2514,9 @@ func (p *Parser) handleFunctionCallOrKeyword() (*ast.DefaultValue, error) {
 		if err != nil {
 			return nil, err
 		}
+		if pArrayLiteral == nil {
+			return nil, fmt.Errorf("expected '[' after ARRAY at position %d", p.current.Start)
+		}
 
 		return &ast.DefaultValue{Expression: *pArrayLiteral}, nil
 	}
@@ -2612,9 +2647,9 @@ func (p *Parser) parseForeignKeyReference() (*ast.ForeignKeyRef, error) {
 	p.skipWhitespace()
 
 	// Get referenced table name
-	tableName, err := p.expectIdentifier()
+	tableName, err := p.parseQualifiedIdentifier("table name in REFERENCES")
 	if err != nil {
-		return nil, fmt.Errorf("expected table name in REFERENCES: %w", err)
+		return nil, err
 	}
 
 	p.skipWhitespace()

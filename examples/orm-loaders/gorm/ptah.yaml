@@ -1,0 +1,3 @@
+external_schema:
+  program: ["./load-schema.sh"]
+  format: sql

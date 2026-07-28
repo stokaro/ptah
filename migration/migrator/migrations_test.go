@@ -252,6 +252,19 @@ GO -- trailing client separator comment
 	})
 }
 
+func TestSplitSQLStatementsForDialect_SQLServerPreservesBracketCommentMarkers(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE TABLE [owner's--/*value]]x] ([id] INT);
+GO`
+
+	result := splitSQLStatementsForDialect(sql, platform.SQLServer)
+
+	c.Assert(result, qt.DeepEquals, []string{
+		"CREATE TABLE [owner's--/*value]]x] ([id] INT)",
+	})
+}
+
 func TestMigrationStatementCountForDialect_SQLServerGoBatchSeparator(t *testing.T) {
 	c := qt.New(t)
 

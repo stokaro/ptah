@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/internal/tableref"
 )
 
 // ViewLike is a PostgreSQL view-like object that can reference other view-like
@@ -354,12 +355,25 @@ func resolveTableKey(tables []goschema.Table, tableName string) string {
 func generatedTableByName(tables []goschema.Table, tableName string) *goschema.Table {
 	tableName = strings.TrimSpace(tableName)
 	for i := range tables {
-		table := &tables[i]
-		if table.Name == tableName || table.QualifiedName() == tableName {
-			return table
+		if tables[i].QualifiedName() == tableName {
+			return &tables[i]
 		}
 	}
-	return nil
+	ref, ok := tableref.Parse(tableName)
+	if !ok || ref.Qualified {
+		return nil
+	}
+	var match *goschema.Table
+	for i := range tables {
+		if tables[i].Name != ref.Name {
+			continue
+		}
+		if match != nil {
+			return nil
+		}
+		match = &tables[i]
+	}
+	return match
 }
 
 func generatedTableByStructName(tables []goschema.Table, structName string) *goschema.Table {
@@ -373,17 +387,22 @@ func generatedTableByStructName(tables []goschema.Table, structName string) *gos
 
 func generatedTableReference(tables []goschema.Table, structName, tableName string) *goschema.Table {
 	tableName = strings.TrimSpace(tableName)
+	if tableName == "" {
+		return generatedTableByStructName(tables, structName)
+	}
 	for i := range tables {
-		table := &tables[i]
-		if tableName == "" && table.StructName == structName {
-			return table
-		}
-		if tableName != "" && table.StructName == structName && (table.Name == tableName || table.QualifiedName() == tableName) {
-			return table
+		if tables[i].QualifiedName() == tableName {
+			return &tables[i]
 		}
 	}
-	if tableName == "" {
+	ref, ok := tableref.Parse(tableName)
+	if !ok || ref.Qualified {
 		return nil
+	}
+	for i := range tables {
+		if tables[i].StructName == structName && tables[i].Name == ref.Name {
+			return &tables[i]
+		}
 	}
 	return generatedTableByName(tables, tableName)
 }
@@ -404,12 +423,16 @@ func addGeneratedTableDependency(
 
 func resolveGeneratedReferenceTableName(tables []goschema.Table, table goschema.Table, refTable string) string {
 	refTable = strings.TrimSpace(refTable)
-	if strings.Contains(refTable, ".") {
+	ref, ok := tableref.Parse(refTable)
+	if !ok {
 		return refTable
+	}
+	if ref.Qualified {
+		return goschema.QualifyTableName(ref.Schema, ref.Name)
 	}
 
 	if table.Schema != "" {
-		schemaQualified := table.Schema + "." + refTable
+		schemaQualified := goschema.QualifyTableName(table.Schema, ref.Name)
 		if ref := generatedTableByName(tables, schemaQualified); ref != nil {
 			return ref.QualifiedName()
 		}
@@ -417,7 +440,7 @@ func resolveGeneratedReferenceTableName(tables []goschema.Table, table goschema.
 
 	var match string
 	for _, candidate := range tables {
-		if candidate.Name != refTable {
+		if candidate.Name != ref.Name {
 			continue
 		}
 		if match != "" {

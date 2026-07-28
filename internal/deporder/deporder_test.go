@@ -109,6 +109,18 @@ func TestTablesForCreate_ResolvesUnqualifiedForeignKeyWithinCurrentSchema(t *tes
 	c.Assert(qualifiedTableNames(tables), qt.DeepEquals, []string{"app.accounts", "app.projects", "audit.accounts"})
 }
 
+func TestTablesForCreate_KeepsLiteralDotAndQualifiedTablesDistinct(t *testing.T) {
+	c := qt.New(t)
+	schema := &goschema.Database{Tables: []goschema.Table{
+		{StructName: "Literal", Name: "tenant.data"},
+		{StructName: "Qualified", Schema: "tenant", Name: "data"},
+	}}
+
+	tables := deporder.TablesForCreate(schema, []string{`"tenant.data"`, "tenant.data"})
+
+	c.Assert(tables, qt.DeepEquals, schema.Tables)
+}
+
 func TestFunctionsForCreate_UsesFunctionDependencyMap(t *testing.T) {
 	c := qt.New(t)
 	schema := &goschema.Database{

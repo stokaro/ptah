@@ -12,13 +12,13 @@ import (
 
 // Triggers compares trigger definitions between generated and database schemas.
 func Triggers(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
-	generatedTriggers := make(map[string]goschema.Trigger)
+	generatedTriggers := make(map[tableMemberKey]goschema.Trigger)
 	for _, trigger := range generated.Triggers {
 		trigger.Canonicalize()
 		generatedTriggers[triggerKey(trigger.Table, trigger.Name)] = trigger
 	}
 
-	databaseTriggers := make(map[string]types.DBTrigger)
+	databaseTriggers := make(map[tableMemberKey]types.DBTrigger)
 	for _, trigger := range database.Triggers {
 		databaseTriggers[triggerKey(trigger.QualifiedTable(), trigger.Name)] = trigger
 	}
@@ -58,8 +58,8 @@ func Triggers(generated *goschema.Database, database *types.DBSchema, diff *diff
 	})
 }
 
-func triggerKey(tableName, triggerName string) string {
-	return tableName + "." + triggerName
+func triggerKey(tableName, triggerName string) tableMemberKey {
+	return tableMemberKey{table: tableName, member: triggerName}
 }
 
 func sortTriggerRefs(refs []difftypes.TriggerRef) {

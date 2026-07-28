@@ -356,6 +356,22 @@ CREATE TABLE t2(id int);`
 	c.Assert(statements.Statements[1].(*ast.CreateTableNode).Name, qt.Equals, "t2")
 }
 
+func TestParser_ParseSQLServerTemporaryTable(t *testing.T) {
+	c := qt.New(t)
+
+	p := parser.NewParser(
+		`CREATE TABLE #stage ([id] int); CREATE TABLE ##shared_stage ([id] int);`,
+		parser.WithDialect("sqlserver"),
+	)
+
+	statements, err := p.Parse()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 2)
+	c.Assert(statements.Statements[0].(*ast.CreateTableNode).Name, qt.Equals, "#stage")
+	c.Assert(statements.Statements[1].(*ast.CreateTableNode).Name, qt.Equals, "##shared_stage")
+}
+
 func TestParser_ParseMySQLClientDelimiters(t *testing.T) {
 	c := qt.New(t)
 
@@ -1431,6 +1447,40 @@ AS RETURN SELECT @a as [a], @b as [b];`
 	c.Assert(sqlServerRoutineStatementKinds(routine.Body.Statements), qt.DeepEquals, []ast.SQLServerRoutineStatementKind{
 		ast.SQLServerRoutineStatementReturn,
 	})
+}
+
+func TestParser_ParseSQLServerDialectBracketIdentifiersWithSQLMarkers(t *testing.T) {
+	c := qt.New(t)
+
+	sql := `CREATE TABLE [audit--old].[owner's]]events] (
+		[payload/*raw*/] int
+	);`
+	statements, err := parser.NewParser(sql, parser.WithDialect(platform.SQLServer)).Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+
+	table, ok := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(table.Name, qt.Equals, `[audit--old].[owner's]]events]`)
+	c.Assert(table.Columns, qt.HasLen, 1)
+	c.Assert(table.Columns[0].Name, qt.Equals, `[payload/*raw*/]`)
+}
+
+func TestParser_ParseSQLServerDialectUnterminatedBracketIdentifier(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []string{
+		"CREATE TABLE [name (id int);",
+		"CREATE TABLE [name]] (id int);",
+	}
+
+	for _, sql := range tests {
+		c.Run(sql, func(c *qt.C) {
+			_, err := parser.NewParser(sql, parser.WithDialect(platform.SQLServer)).Parse()
+
+			c.Assert(err, qt.ErrorMatches, ".*expected identifier.*")
+		})
+	}
 }
 
 func TestParser_ParseSQLServerMultiStatementTableFunctionAsRawSQL(t *testing.T) {
@@ -3552,7 +3602,8 @@ func TestParser_ParsePostgreSQLArrayTypes(t *testing.T) {
 
 	sql := `CREATE TABLE test (
 		tags TEXT[] DEFAULT ARRAY[]::TEXT[],
-		matrix INT[][]
+		matrix INT[][],
+		values INT[] DEFAULT ARRAY [1, 2]
 	);`
 	p := parser.NewParser(sql)
 
@@ -3561,7 +3612,7 @@ func TestParser_ParsePostgreSQLArrayTypes(t *testing.T) {
 	c.Assert(statements.Statements, qt.HasLen, 1)
 
 	createTable := statements.Statements[0].(*ast.CreateTableNode)
-	c.Assert(createTable.Columns, qt.HasLen, 2)
+	c.Assert(createTable.Columns, qt.HasLen, 3)
 
 	// Check TEXT[] column with array default
 	tagsCol := createTable.Columns[0]
@@ -3574,6 +3625,12 @@ func TestParser_ParsePostgreSQLArrayTypes(t *testing.T) {
 	matrixCol := createTable.Columns[1]
 	c.Assert(matrixCol.Name, qt.Equals, "matrix")
 	c.Assert(matrixCol.Type, qt.Equals, "INT[][]")
+
+	valuesCol := createTable.Columns[2]
+	c.Assert(valuesCol.Name, qt.Equals, "values")
+	c.Assert(valuesCol.Type, qt.Equals, "INT[]")
+	c.Assert(valuesCol.Default, qt.IsNotNil)
+	c.Assert(valuesCol.Default.Expression, qt.Equals, "ARRAY[1, 2]")
 }
 
 func TestParser_ParsePostgreSQLUUIDWithFunction(t *testing.T) {

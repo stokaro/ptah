@@ -98,6 +98,67 @@ func TestRenderMermaidAvoidsSanitizedNameCollisions(t *testing.T) {
 	c.Assert(text, qt.Contains, `  auth_users ||--o{ auth_users_2 : "fk_auth_users_user_id"`)
 }
 
+func TestRenderDOTPreservesStructuralTableIdentity(t *testing.T) {
+	c := qt.New(t)
+	db := &goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "Qualified", Schema: "tenant", Name: "data"},
+			{StructName: "Literal", Name: "tenant.data"},
+		},
+		Fields: []goschema.Field{
+			{StructName: "Qualified", Name: "id", Type: "INTEGER"},
+			{StructName: "Literal", Name: "id", Type: "INTEGER"},
+		},
+		Constraints: []goschema.Constraint{
+			{
+				StructName:    "Qualified",
+				Name:          "qualified_to_literal",
+				Type:          "FOREIGN KEY",
+				Table:         "tenant.data",
+				Columns:       []string{"id"},
+				ForeignTable:  `"tenant.data"`,
+				ForeignColumn: "id",
+			},
+			{
+				StructName:    "Literal",
+				Name:          "literal_to_qualified",
+				Type:          "FOREIGN KEY",
+				Table:         `"tenant.data"`,
+				Columns:       []string{"id"},
+				ForeignTable:  "tenant.data",
+				ForeignColumn: "id",
+			},
+		},
+	}
+
+	output, err := schemaviz.Render(db, schemaviz.Options{Format: schemaviz.FormatDOT})
+
+	c.Assert(err, qt.IsNil)
+	text := string(output)
+	c.Assert(text, qt.Contains, `  "tenant.data" -> "\"tenant.data\"" [label="qualified_to_literal"];`)
+	c.Assert(text, qt.Contains, `  "\"tenant.data\"" -> "tenant.data" [label="literal_to_qualified"];`)
+}
+
+func TestRenderDOTUnqualifiedExclusionDoesNotHideLiteralDotTable(t *testing.T) {
+	c := qt.New(t)
+	db := &goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "Qualified", Schema: "tenant", Name: "data"},
+			{StructName: "Literal", Name: "tenant.data"},
+		},
+	}
+
+	output, err := schemaviz.Render(db, schemaviz.Options{
+		Format:        schemaviz.FormatDOT,
+		ExcludeTables: []string{"data"},
+	})
+
+	c.Assert(err, qt.IsNil)
+	text := string(output)
+	c.Assert(text, qt.Contains, `  "\"tenant.data\"" [label=<`)
+	c.Assert(text, qt.Not(qt.Contains), `  "tenant.data" [label=<`)
+}
+
 func TestRenderRejectsBadOptions(t *testing.T) {
 	c := qt.New(t)
 

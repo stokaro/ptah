@@ -28,6 +28,7 @@ import (
 	"github.com/stokaro/ptah/core/ast"
 	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/core/renderer/internal/dialects/internal/bufwriter"
+	"github.com/stokaro/ptah/internal/tableref"
 )
 
 // DialectName is the canonical dialect identifier for ClickHouse.
@@ -788,15 +789,22 @@ func escapeIdentifier(identifier string) string {
 	if len(identifier) >= 2 && identifier[0] == '`' && identifier[len(identifier)-1] == '`' {
 		identifier = strings.ReplaceAll(identifier[1:len(identifier)-1], "``", "`")
 	}
+	return escapeIdentifierValue(identifier)
+}
+
+func escapeIdentifierValue(identifier string) string {
 	return "`" + strings.ReplaceAll(identifier, "`", "``") + "`"
 }
 
 func escapeQualifiedIdentifier(identifier string) string {
-	parts := strings.Split(identifier, ".")
-	for index, part := range parts {
-		parts[index] = escapeIdentifier(part)
+	ref, ok := tableref.Parse(identifier)
+	if !ok {
+		return escapeIdentifier(identifier)
 	}
-	return strings.Join(parts, ".")
+	if !ref.Qualified {
+		return escapeIdentifierValue(ref.Name)
+	}
+	return escapeIdentifierValue(ref.Schema) + "." + escapeIdentifierValue(ref.Name)
 }
 
 func (r *Renderer) VisitUpsert(_ *ast.UpsertNode) error {

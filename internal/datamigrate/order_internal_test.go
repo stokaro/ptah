@@ -73,3 +73,17 @@ func TestOrderByDependency(t *testing.T) {
 		c.Assert(names(diffs), qt.DeepEquals, []string{"t", "z.t"})
 	})
 }
+
+func TestMergeByTable_PreservesStructuralIdentity(t *testing.T) {
+	c := qt.New(t)
+	changes := []tableChange{
+		{table: "tenant.data", updates: 1},
+		{schema: "tenant", table: "data", updates: 2},
+	}
+
+	got := mergeByTable(changes)
+
+	c.Assert(got, qt.HasLen, 2)
+	c.Assert(got[0].qualified(), qt.Equals, `"tenant.data"`)
+	c.Assert(got[1].qualified(), qt.Equals, "tenant.data")
+}

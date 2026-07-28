@@ -14,6 +14,7 @@ import (
 	"github.com/stokaro/ptah/core/goschema/internal/parseutils"
 	"github.com/stokaro/ptah/core/ptaherr"
 	"github.com/stokaro/ptah/internal/annotationmeta"
+	"github.com/stokaro/ptah/internal/tableref"
 )
 
 // validateAttributes rejects any key the directive does not recognize.
@@ -412,10 +413,11 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 	); err != nil {
 		return err
 	}
+	schemaName, tableName := tableDirectiveName(kv["schema"], kv["name"])
 	s.tableDirectives = append(s.tableDirectives, Table{
 		StructName: structName,
-		Name:       kv["name"],
-		Schema:     kv["schema"],
+		Name:       tableName,
+		Schema:     schemaName,
 		Engine:     kv["engine"],
 		Comment:    kv["comment"],
 		PrimaryKey: splitCSVAttribute(kv["primary_key"]),
@@ -424,6 +426,25 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 		Overrides:  parseutils.ParsePlatformSpecific(kv),
 	})
 	return nil
+}
+
+func tableDirectiveName(rawSchema, rawName string) (schemaName, tableName string) {
+	schemaName = strings.TrimSpace(rawSchema)
+	tableName = strings.TrimSpace(rawName)
+	if schemaName != "" {
+		if ref, ok := tableref.Parse(tableName); ok && !ref.Qualified {
+			tableName = ref.Name
+		}
+		return schemaName, tableName
+	}
+	ref, ok := tableref.Parse(tableName)
+	if !ok {
+		return "", tableName
+	}
+	if !ref.Qualified {
+		return "", ref.Name
+	}
+	return ref.Schema, ref.Name
 }
 
 func splitCSVAttribute(value string) []string {

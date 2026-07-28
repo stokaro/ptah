@@ -1,9 +1,14 @@
 package mssql
 
+// White-box testing required: SQL Server catalog normalization and aggregation
+// are package-local correctness primitives with no direct exported API.
+
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"github.com/stokaro/ptah/dbschema/types"
 )
 
 func TestReaderOutputSchema_DefaultSchemaUnscoped(t *testing.T) {
@@ -49,4 +54,25 @@ func TestNormalizeDefault(t *testing.T) {
 			c.Assert(normalizeDefault(tt.input), qt.Equals, tt.expected)
 		})
 	}
+}
+
+func TestReconcileColumnFlags_PreservesStructuralTableIdentity(t *testing.T) {
+	c := qt.New(t)
+	schema := &types.DBSchema{
+		Tables: []types.DBTable{
+			{Name: "tenant.data", Columns: []types.DBColumn{{Name: "id"}}},
+			{Schema: "tenant", Name: "data", Columns: []types.DBColumn{{Name: "id"}}},
+		},
+		Constraints: []types.DBConstraint{
+			{TableName: "tenant.data", Type: "PRIMARY KEY", ColumnNames: []string{"id"}},
+			{Schema: "tenant", TableName: "data", Type: "UNIQUE", ColumnNames: []string{"id"}},
+		},
+	}
+
+	reconcileColumnFlags(schema)
+
+	c.Assert(schema.Tables[0].Columns[0].IsPrimaryKey, qt.IsTrue)
+	c.Assert(schema.Tables[0].Columns[0].IsUnique, qt.IsFalse)
+	c.Assert(schema.Tables[1].Columns[0].IsPrimaryKey, qt.IsFalse)
+	c.Assert(schema.Tables[1].Columns[0].IsUnique, qt.IsTrue)
 }

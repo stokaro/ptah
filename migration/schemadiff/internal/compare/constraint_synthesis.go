@@ -37,10 +37,10 @@ func synthesizeFieldLevelCheckConstraints(generated *goschema.Database, database
 		structToTable[t.StructName] = t
 	}
 
-	dbColumns := make(map[string]struct{}, 16)
+	dbColumns := make(map[tableMemberKey]struct{}, 16)
 	for _, t := range database.Tables {
 		for _, c := range t.Columns {
-			dbColumns[t.QualifiedName()+"."+c.Name] = struct{}{}
+			dbColumns[tableMemberKey{table: t.QualifiedName(), member: c.Name}] = struct{}{}
 		}
 	}
 
@@ -56,7 +56,7 @@ func synthesizeFieldLevelCheckConstraints(generated *goschema.Database, database
 			tableName = f.StructName
 			tableLeafName = f.StructName
 		}
-		if _, exists := dbColumns[tableName+"."+f.Name]; !exists {
+		if _, exists := dbColumns[tableMemberKey{table: tableName, member: f.Name}]; !exists {
 			continue
 		}
 		name := f.CheckName
@@ -150,10 +150,10 @@ func synthesizeFieldLevelForeignKeyConstraints(generated *goschema.Database, dat
 		return nil
 	}
 
-	dbColumns := make(map[string]struct{}, 16)
+	dbColumns := make(map[tableMemberKey]struct{}, 16)
 	for _, t := range database.Tables {
 		for _, c := range t.Columns {
-			dbColumns[t.QualifiedName()+"."+c.Name] = struct{}{}
+			dbColumns[tableMemberKey{table: t.QualifiedName(), member: c.Name}] = struct{}{}
 		}
 	}
 
@@ -171,7 +171,7 @@ func synthesizeFieldLevelForeignKeyConstraints(generated *goschema.Database, dat
 	//
 	// dedupe guards against a host that both declares a field directly and
 	// inherits one of the same (table, constraint name) from a mixin.
-	dedupe := make(map[string]struct{})
+	dedupe := make(map[tableMemberKey]struct{})
 	var synthesized []goschema.Constraint
 	for _, f := range resolveTableFields(generated) {
 		if f.Foreign == "" {
@@ -185,7 +185,7 @@ func synthesizeFieldLevelForeignKeyConstraints(generated *goschema.Database, dat
 		if tableName == "" {
 			continue
 		}
-		if _, exists := dbColumns[tableName+"."+f.Name]; !exists {
+		if _, exists := dbColumns[tableMemberKey{table: tableName, member: f.Name}]; !exists {
 			continue
 		}
 		name := f.ForeignKeyName
@@ -201,7 +201,7 @@ func synthesizeFieldLevelForeignKeyConstraints(generated *goschema.Database, dat
 		if fkRef == nil {
 			continue
 		}
-		dedupeKey := tableName + "." + name
+		dedupeKey := tableMemberKey{table: tableName, member: name}
 		if _, seen := dedupe[dedupeKey]; seen {
 			continue
 		}

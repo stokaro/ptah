@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/stokaro/ptah/core/goschema"
+	"github.com/stokaro/ptah/internal/tableref"
 )
 
 // Severity is the diagnostic severity emitted by the exporter.
@@ -495,16 +496,40 @@ func constraintNameSet(constraints []goschema.Constraint) map[string]struct{} {
 }
 
 func resolveTable(tables []goschema.Table, structName, tableName string) *goschema.Table {
-	for i := range tables {
-		table := &tables[i]
-		if tableName == "" && table.StructName == structName {
-			return table
+	tableName = strings.TrimSpace(tableName)
+	if tableName == "" {
+		for i := range tables {
+			if tables[i].StructName == structName {
+				return &tables[i]
+			}
 		}
-		if tableName != "" && (table.Name == tableName || table.QualifiedName() == tableName) {
-			return table
+		return nil
+	}
+	for i := range tables {
+		if tables[i].QualifiedName() == tableName {
+			return &tables[i]
 		}
 	}
-	return nil
+	ref, ok := tableref.Parse(tableName)
+	if !ok || ref.Qualified {
+		return nil
+	}
+	for i := range tables {
+		if tables[i].StructName == structName && tables[i].Name == ref.Name {
+			return &tables[i]
+		}
+	}
+	var match *goschema.Table
+	for i := range tables {
+		if tables[i].Name != ref.Name {
+			continue
+		}
+		if match != nil {
+			return nil
+		}
+		match = &tables[i]
+	}
+	return match
 }
 
 func simplePrimaryKeyParts(parts []goschema.PrimaryKeyPart) bool {
@@ -604,20 +629,13 @@ func columnRefs(columns []string) string {
 }
 
 func tableColumnRefs(table string, columns []string) string {
-	table = unqualifiedName(table)
+	tableRef := objectRef("table", table)
 	refs := make([]string, 0, len(columns))
 	for _, column := range columns {
 		if table == "" || column == "" {
 			continue
 		}
-		refs = append(refs, "table."+table+".column."+column)
+		refs = append(refs, tableRef+".column"+objectRefPart(column))
 	}
 	return "[" + strings.Join(refs, ", ") + "]"
-}
-
-func unqualifiedName(value string) string {
-	if idx := strings.LastIndex(value, "."); idx >= 0 {
-		return value[idx+1:]
-	}
-	return value
 }

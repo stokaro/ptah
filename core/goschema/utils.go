@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/stokaro/ptah/internal/tableref"
 )
 
 // Global regex cache for function dependency analysis
@@ -264,22 +266,32 @@ func normalizeTableScopedNames(r *Database) {
 
 func resolveTableReference(tables []Table, structName, tableName string) *Table {
 	tableName = strings.TrimSpace(tableName)
-	for i := range tables {
-		table := &tables[i]
-		if tableName == "" && table.StructName == structName {
-			return table
+	if tableName == "" {
+		for i := range tables {
+			if tables[i].StructName == structName {
+				return &tables[i]
+			}
 		}
-		if tableName != "" && table.StructName == structName && (table.Name == tableName || table.QualifiedName() == tableName) {
-			return table
+		return nil
+	}
+	for i := range tables {
+		if tables[i].QualifiedName() == tableName {
+			return &tables[i]
 		}
 	}
-	if tableName == "" || strings.Contains(tableName, ".") {
+	ref, ok := tableref.Parse(tableName)
+	if !ok || ref.Qualified {
 		return nil
+	}
+	for i := range tables {
+		if tables[i].StructName == structName && tables[i].Name == ref.Name {
+			return &tables[i]
+		}
 	}
 	var match *Table
 	for i := range tables {
 		table := &tables[i]
-		if table.Name != tableName {
+		if table.Name != ref.Name {
 			continue
 		}
 		if match != nil {
@@ -319,7 +331,6 @@ func newIndexTableResolver(tables []Table) *indexTableResolver {
 	for _, table := range tables {
 		qualifiedName := table.QualifiedName()
 		addIndexTableMatch(resolver.firstByStruct, table.StructName, qualifiedName)
-		resolver.addStructReference(table.StructName, table.Name, qualifiedName)
 		resolver.addStructReference(table.StructName, qualifiedName, qualifiedName)
 		addIndexTableMatch(resolver.byPlainName, table.Name, qualifiedName)
 		addIndexTableMatch(resolver.byQualifiedName, qualifiedName, qualifiedName)
@@ -370,10 +381,14 @@ func (r *indexTableResolver) resolve(index Index) string {
 	if r.empty {
 		return tableName
 	}
-	match := r.byPlainName[tableName]
-	if strings.Contains(tableName, ".") {
-		match = r.byQualifiedName[tableName]
+	if match, exists := r.byQualifiedName[tableName]; exists {
+		return match.qualifiedName
 	}
+	ref, ok := tableref.Parse(tableName)
+	if !ok || ref.Qualified {
+		return ""
+	}
+	match := r.byPlainName[ref.Name]
 	if match.ambiguous {
 		return ""
 	}
@@ -502,17 +517,21 @@ func processForeignKeyDependency(r *Database, table Table, refTable string, self
 }
 
 func resolveReferenceTableName(tables []Table, current Table, refTable string) string {
-	if strings.Contains(refTable, ".") {
+	ref, ok := tableref.Parse(refTable)
+	if !ok {
 		return refTable
 	}
+	if ref.Qualified {
+		return QualifyTableName(ref.Schema, ref.Name)
+	}
 	for _, table := range tables {
-		if table.Schema == current.Schema && table.Name == refTable {
+		if table.Schema == current.Schema && table.Name == ref.Name {
 			return table.QualifiedName()
 		}
 	}
 	var match string
 	for _, table := range tables {
-		if table.Name != refTable {
+		if table.Name != ref.Name {
 			continue
 		}
 		if match != "" {
@@ -1163,11 +1182,15 @@ func deduplicateMaterializedViews(views []MaterializedView) []MaterializedView {
 }
 
 func deduplicateTriggers(triggers []Trigger) []Trigger {
-	seen := make(map[string]bool)
+	type triggerIdentity struct {
+		table string
+		name  string
+	}
+	seen := make(map[triggerIdentity]bool)
 	deduplicated := make([]Trigger, 0, len(triggers))
 	for _, trigger := range triggers {
 		trigger.Canonicalize()
-		key := trigger.Table + "." + trigger.Name
+		key := triggerIdentity{table: trigger.Table, name: trigger.Name}
 		if !seen[key] {
 			seen[key] = true
 			deduplicated = append(deduplicated, trigger)

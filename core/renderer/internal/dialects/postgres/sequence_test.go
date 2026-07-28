@@ -49,6 +49,19 @@ func TestPostgreSQLRenderer_VisitCreateSequence(t *testing.T) {
 		c.Assert(sql, qt.Contains, `CREATE SEQUENCE IF NOT EXISTS "app"."s";`)
 	})
 
+	t.Run("literal dot and qualified identities", func(t *testing.T) {
+		c := qt.New(t)
+		renderer := postgres.New()
+
+		literalSQL, err := renderer.Render(ast.NewCreateSequence("tenant.data"))
+		c.Assert(err, qt.IsNil)
+		c.Assert(literalSQL, qt.Contains, `CREATE SEQUENCE "tenant.data";`)
+
+		qualifiedSQL, err := renderer.Render(ast.NewCreateSequence("data").SetSchema("tenant"))
+		c.Assert(err, qt.IsNil)
+		c.Assert(qualifiedSQL, qt.Contains, `CREATE SEQUENCE "tenant"."data";`)
+	})
+
 	t.Run("owned by", func(t *testing.T) {
 		c := qt.New(t)
 		renderer := postgres.New()

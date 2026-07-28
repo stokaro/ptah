@@ -10,6 +10,11 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/exitcode"
 )
 
+const (
+	sqlServerSchemaCommand = "go run ../internal/schemaops/testdata/sqlserver-schema-command"
+	sqlServerDatabaseURL   = "sqlserver://sa:pass@localhost:1433?database=ptah&encrypt=disable"
+)
+
 func TestNewDriftCommand_Creation(t *testing.T) {
 	c := qt.New(t)
 
@@ -35,6 +40,7 @@ func TestNewDriftCommand_ExposesRepeatableSchemaSources(t *testing.T) {
 
 	c.Assert(cmd.Flags().Lookup("schema-cmd"), qt.IsNotNil)
 	c.Assert(cmd.Flags().Lookup("schema-format"), qt.IsNotNil)
+	c.Assert(cmd.Flags().Lookup("allow-external-schema"), qt.IsNotNil)
 	c.Assert(cmd.Flags().Lookup("plain-http"), qt.IsNotNil)
 }
 
@@ -52,4 +58,22 @@ func TestRunDrift_MissingDatabaseURLReturnsCode2(t *testing.T) {
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 	c.Assert(stderr.String(), qt.Contains, "database URL is required")
+}
+
+func TestRunDrift_UsesDatabaseDialectForExternalSQL(t *testing.T) {
+	c := qt.New(t)
+
+	cmd := drift.NewDriftCommand()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{
+		"--schema-cmd", sqlServerSchemaCommand,
+		"--db-url", sqlServerDatabaseURL,
+		"--connect-timeout", "1ns",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `error connecting to database: .*`)
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 }

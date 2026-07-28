@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"hash/fnv"
 	"strings"
+
+	"github.com/stokaro/ptah/internal/tableref"
 )
 
 // Database represents the complete database schema derived from Go struct annotations.
@@ -445,15 +447,13 @@ func (t Table) QualifiedName() string {
 	return QualifyTableName(t.Schema, t.Name)
 }
 
-// QualifyTableName joins schema and table without quoting. Renderers remain
-// responsible for dialect-specific identifier escaping.
+// QualifyTableName returns an unambiguous schema-qualified table reference.
+// Components containing identifier delimiters are encoded with SQL-standard
+// double quotes so a literal dot cannot be confused with schema qualification.
+// Renderers remain responsible for converting that canonical reference to the
+// target dialect's quote style.
 func QualifyTableName(schema, table string) string {
-	schema = strings.TrimSpace(schema)
-	table = strings.TrimSpace(table)
-	if schema == "" {
-		return table
-	}
-	return schema + "." + table
+	return tableref.Canonical(schema, table)
 }
 
 // Enum represents a global enumeration type definition that can be shared across
@@ -530,10 +530,7 @@ func (d *Domain) Canonicalize() {
 
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.
 func (d Domain) QualifiedName() string {
-	if strings.TrimSpace(d.Schema) == "" {
-		return strings.TrimSpace(d.Name)
-	}
-	return strings.TrimSpace(d.Schema) + "." + strings.TrimSpace(d.Name)
+	return QualifyTableName(d.Schema, d.Name)
 }
 
 // CompositeTypeField is a single named field of a composite type.
@@ -566,10 +563,7 @@ func (c *CompositeType) Canonicalize() {
 
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.
 func (c CompositeType) QualifiedName() string {
-	if strings.TrimSpace(c.Schema) == "" {
-		return strings.TrimSpace(c.Name)
-	}
-	return strings.TrimSpace(c.Schema) + "." + strings.TrimSpace(c.Name)
+	return QualifyTableName(c.Schema, c.Name)
 }
 
 // Range represents a PostgreSQL range type parsed from Go annotations.
@@ -600,10 +594,7 @@ func (r *Range) Canonicalize() {
 
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.
 func (r Range) QualifiedName() string {
-	if strings.TrimSpace(r.Schema) == "" {
-		return strings.TrimSpace(r.Name)
-	}
-	return strings.TrimSpace(r.Schema) + "." + strings.TrimSpace(r.Name)
+	return QualifyTableName(r.Schema, r.Name)
 }
 
 // Function represents a PostgreSQL custom function definition parsed from Go struct annotations.
@@ -733,10 +724,7 @@ func (s *Sequence) Canonicalize() {
 // is the stable identity used to match a declared sequence against an
 // introspected one.
 func (s Sequence) QualifiedName() string {
-	if strings.TrimSpace(s.Schema) == "" {
-		return strings.TrimSpace(s.Name)
-	}
-	return strings.TrimSpace(s.Schema) + "." + strings.TrimSpace(s.Name)
+	return QualifyTableName(s.Schema, s.Name)
 }
 
 // View represents a database view definition parsed from Go annotations.

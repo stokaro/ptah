@@ -10,6 +10,16 @@ import (
 
 const schemaPredicatePlaceholder = "/* ptah:schema-predicate */"
 
+type catalogTableKey struct {
+	schema string
+	table  string
+}
+
+type catalogObjectKey struct {
+	table catalogTableKey
+	name  string
+}
+
 // Reader reads schema information from Microsoft SQL Server databases.
 type Reader struct {
 	db      *sql.DB
@@ -130,7 +140,7 @@ func (r *Reader) readTables() ([]types.DBTable, error) {
 		scannedSchema := table.Schema
 		table.Schema = r.outputSchema(scannedSchema)
 		table.Type = "TABLE"
-		table.Columns = columns[scannedSchema+"."+table.Name]
+		table.Columns = columns[catalogTableKey{schema: scannedSchema, table: table.Name}]
 		tables = append(tables, table)
 	}
 	if err := rows.Err(); err != nil {
@@ -139,7 +149,7 @@ func (r *Reader) readTables() ([]types.DBTable, error) {
 	return tables, nil
 }
 
-func (r *Reader) readColumnsByTable() (map[string][]types.DBColumn, error) {
+func (r *Reader) readColumnsByTable() (map[catalogTableKey][]types.DBColumn, error) {
 	query := `
 		SELECT
 			s.name,
@@ -178,7 +188,7 @@ func (r *Reader) readColumnsByTable() (map[string][]types.DBColumn, error) {
 	}
 	defer rows.Close()
 
-	columns := make(map[string][]types.DBColumn)
+	columns := make(map[catalogTableKey][]types.DBColumn)
 	for rows.Next() {
 		var (
 			schemaName, tableName string
@@ -247,7 +257,8 @@ func (r *Reader) readColumnsByTable() (map[string][]types.DBColumn, error) {
 			column.NumericPrecision = &p
 			column.NumericScale = &s
 		}
-		columns[schemaName+"."+tableName] = append(columns[schemaName+"."+tableName], column)
+		key := catalogTableKey{schema: schemaName, table: tableName}
+		columns[key] = append(columns[key], column)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -279,8 +290,8 @@ func (r *Reader) readIndexes() ([]types.DBIndex, error) {
 	}
 	defer rows.Close()
 
-	indexByKey := make(map[string]*types.DBIndex)
-	var order []string
+	indexByKey := make(map[catalogObjectKey]*types.DBIndex)
+	var order []catalogObjectKey
 	for rows.Next() {
 		var (
 			schemaName, tableName, indexName, columnName, filter string
@@ -290,7 +301,10 @@ func (r *Reader) readIndexes() ([]types.DBIndex, error) {
 		if err := rows.Scan(&schemaName, &tableName, &indexName, &unique, &primary, &columnName, &ordinal, &desc, &filter); err != nil {
 			return nil, err
 		}
-		key := schemaName + "." + tableName + "." + indexName
+		key := catalogObjectKey{
+			table: catalogTableKey{schema: schemaName, table: tableName},
+			name:  indexName,
+		}
 		index := indexByKey[key]
 		if index == nil {
 			index = &types.DBIndex{
@@ -357,15 +371,18 @@ func (r *Reader) readKeyConstraints() ([]types.DBConstraint, error) {
 	}
 	defer rows.Close()
 
-	byKey := make(map[string]*types.DBConstraint)
-	var order []string
+	byKey := make(map[catalogObjectKey]*types.DBConstraint)
+	var order []catalogObjectKey
 	for rows.Next() {
 		var schemaName, tableName, name, typeDesc, column string
 		var ordinal int
 		if err := rows.Scan(&schemaName, &tableName, &name, &typeDesc, &column, &ordinal); err != nil {
 			return nil, err
 		}
-		key := schemaName + "." + tableName + "." + name
+		key := catalogObjectKey{
+			table: catalogTableKey{schema: schemaName, table: tableName},
+			name:  name,
+		}
 		constraint := byKey[key]
 		if constraint == nil {
 			constraintType := "UNIQUE"
@@ -418,8 +435,8 @@ func (r *Reader) readForeignKeys() ([]types.DBConstraint, error) {
 	}
 	defer rows.Close()
 
-	byKey := make(map[string]*types.DBConstraint)
-	var order []string
+	byKey := make(map[catalogObjectKey]*types.DBConstraint)
+	var order []catalogObjectKey
 	for rows.Next() {
 		var (
 			schemaName, tableName, name, column string
@@ -430,7 +447,10 @@ func (r *Reader) readForeignKeys() ([]types.DBConstraint, error) {
 		if err := rows.Scan(&schemaName, &tableName, &name, &column, &refSchema, &refTable, &refColumn, &deleteRule, &updateRule, &ordinal); err != nil {
 			return nil, err
 		}
-		key := schemaName + "." + tableName + "." + name
+		key := catalogObjectKey{
+			table: catalogTableKey{schema: schemaName, table: tableName},
+			name:  name,
+		}
 		constraint := byKey[key]
 		if constraint == nil {
 			constraint = &types.DBConstraint{
@@ -693,10 +713,10 @@ func normalizeRule(rule string) *string {
 }
 
 func reconcileColumnFlags(schema *types.DBSchema) {
-	primary := map[string]map[string]struct{}{}
-	unique := map[string]map[string]struct{}{}
+	primary := map[catalogTableKey]map[string]struct{}{}
+	unique := map[catalogTableKey]map[string]struct{}{}
 	for _, constraint := range schema.Constraints {
-		key := constraint.Schema + "." + constraint.TableName
+		key := catalogTableKey{schema: constraint.Schema, table: constraint.TableName}
 		switch constraint.Type {
 		case "PRIMARY KEY":
 			addColumns(primary, key, constraint.ColumnNamesOrDefault())
@@ -705,7 +725,7 @@ func reconcileColumnFlags(schema *types.DBSchema) {
 		}
 	}
 	for ti := range schema.Tables {
-		key := schema.Tables[ti].Schema + "." + schema.Tables[ti].Name
+		key := catalogTableKey{schema: schema.Tables[ti].Schema, table: schema.Tables[ti].Name}
 		for ci := range schema.Tables[ti].Columns {
 			column := &schema.Tables[ti].Columns[ci]
 			_, column.IsPrimaryKey = primary[key][column.Name]
@@ -714,7 +734,7 @@ func reconcileColumnFlags(schema *types.DBSchema) {
 	}
 }
 
-func addColumns(set map[string]map[string]struct{}, table string, columns []string) {
+func addColumns(set map[catalogTableKey]map[string]struct{}, table catalogTableKey, columns []string) {
 	if set[table] == nil {
 		set[table] = make(map[string]struct{}, len(columns))
 	}

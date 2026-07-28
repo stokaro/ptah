@@ -9,6 +9,7 @@ import (
 
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/internal/convert/fromschema"
+	"github.com/stokaro/ptah/internal/tableref"
 )
 
 const (
@@ -77,7 +78,7 @@ func buildModel(db *goschema.Database, excludeTables []string) graphModel {
 	tableByStruct := make(map[string]goschema.Table)
 	tableNames := make(map[string]struct{})
 	for _, table := range db.Tables {
-		if isExcludedTable(excluded, table.QualifiedName(), table.Name) {
+		if isExcludedTable(excluded, table.QualifiedName()) {
 			continue
 		}
 		tables = append(tables, table)
@@ -132,7 +133,7 @@ func fieldRelationships(tables []goschema.Table, fieldsByTable map[string][]gosc
 			if strings.TrimSpace(field.Foreign) == "" {
 				continue
 			}
-			refTable := resolveReferenceTable(tableNames, table, field.Foreign)
+			refTable := resolveReferenceTable(tables, tableNames, table, field.Foreign)
 			if refTable == "" {
 				continue
 			}
@@ -152,22 +153,19 @@ func fieldRelationships(tables []goschema.Table, fieldsByTable map[string][]gosc
 
 func constraintRelationships(tables []goschema.Table, constraints []goschema.Constraint, tableNames map[string]struct{}) []relationship {
 	tableByStruct := make(map[string]goschema.Table)
-	tableByName := make(map[string]goschema.Table)
 	for _, table := range tables {
 		tableByStruct[table.StructName] = table
-		tableByName[table.QualifiedName()] = table
-		tableByName[table.Name] = table
 	}
 	relationships := make([]relationship, 0)
 	for _, constraint := range constraints {
 		if !strings.EqualFold(constraint.Type, "FOREIGN KEY") || constraint.ForeignTable == "" {
 			continue
 		}
-		table, ok := tableForConstraint(tableByStruct, tableByName, constraint)
+		table, ok := tableForConstraint(tables, tableByStruct, constraint)
 		if !ok {
 			continue
 		}
-		refTable := resolveReferenceTable(tableNames, table, constraint.ForeignTable)
+		refTable := resolveReferenceTable(tables, tableNames, table, constraint.ForeignTable)
 		if refTable == "" {
 			continue
 		}
@@ -198,20 +196,47 @@ func uniqueRelationships(relationships []relationship) []relationship {
 }
 
 func tableForConstraint(
+	tables []goschema.Table,
 	tableByStruct map[string]goschema.Table,
-	tableByName map[string]goschema.Table,
 	constraint goschema.Constraint,
 ) (goschema.Table, bool) {
 	if constraint.Table != "" {
-		if table, ok := tableByName[constraint.Table]; ok {
+		for _, table := range tables {
+			if table.QualifiedName() == constraint.Table {
+				return table, true
+			}
+		}
+		ref, ok := tableref.Parse(constraint.Table)
+		if !ok || ref.Qualified {
+			return goschema.Table{}, false
+		}
+		if table, ok := tableByStruct[constraint.StructName]; ok && table.Name == ref.Name {
 			return table, true
 		}
+		var match goschema.Table
+		found := false
+		for _, table := range tables {
+			if table.Name != ref.Name {
+				continue
+			}
+			if found {
+				return goschema.Table{}, false
+			}
+			match = table
+			found = true
+		}
+		return match, found
 	}
 	table, ok := tableByStruct[constraint.StructName]
 	return table, ok
 }
 
-func resolveReferenceTable(tableNames map[string]struct{}, current goschema.Table, foreign string) string {
+func resolveReferenceTable(
+	tables []goschema.Table,
+	tableNames map[string]struct{},
+	current goschema.Table,
+	foreign string,
+) string {
 	refTable := strings.TrimSpace(foreign)
 	if table, _, ok := strings.Cut(refTable, "("); ok {
 		refTable = strings.TrimSpace(table)
@@ -219,21 +244,30 @@ func resolveReferenceTable(tableNames map[string]struct{}, current goschema.Tabl
 	if refTable == "" {
 		return ""
 	}
-	if _, ok := tableNames[refTable]; ok {
-		return refTable
+	ref, ok := tableref.Parse(refTable)
+	if !ok {
+		return ""
 	}
-	qualified := goschema.QualifyTableName(current.Schema, refTable)
+	if ref.Qualified {
+		qualified := goschema.QualifyTableName(ref.Schema, ref.Name)
+		if _, exists := tableNames[qualified]; exists {
+			return qualified
+		}
+		return ""
+	}
+	qualified := goschema.QualifyTableName(current.Schema, ref.Name)
 	if _, ok := tableNames[qualified]; ok {
 		return qualified
 	}
 	var match string
-	for tableName := range tableNames {
-		if tableName == refTable || strings.HasSuffix(tableName, "."+refTable) {
-			if match != "" {
-				return ""
-			}
-			match = tableName
+	for _, table := range tables {
+		if table.Name != ref.Name {
+			continue
 		}
+		if match != "" {
+			return ""
+		}
+		match = table.QualifiedName()
 	}
 	return match
 }
@@ -439,10 +473,12 @@ func isExcludedTable(excluded map[string]struct{}, names ...string) bool {
 		if _, ok := excluded[name]; ok {
 			return true
 		}
-		if _, table, ok := strings.Cut(name, "."); ok {
-			if _, ok := excluded[table]; ok {
-				return true
-			}
+		ref, ok := tableref.Parse(name)
+		if !ok || !ref.Qualified {
+			continue
+		}
+		if _, ok := excluded[ref.Name]; ok {
+			return true
 		}
 	}
 	return false

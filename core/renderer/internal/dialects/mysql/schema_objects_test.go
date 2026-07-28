@@ -182,3 +182,27 @@ func TestMySQLRenderer_EscapesEmbeddedBackticks(t *testing.T) {
 	c.Assert(sql, qt.Contains, "CREATE TABLE `tenant``data` (")
 	c.Assert(sql, qt.Contains, "`order``key` int")
 }
+
+func TestMySQLRenderer_PreservesCanonicalLiteralDotReference(t *testing.T) {
+	c := qt.New(t)
+
+	sql := renderMySQL(t,
+		ast.NewCreateTable(`"tenant.data"`).
+			AddColumn(ast.NewColumn("id", "int")),
+		ast.NewIndex("idx_tenant_data", `"tenant.data"`, "id"),
+	)
+
+	c.Assert(sql, qt.Contains, "CREATE TABLE `tenant.data` (")
+	c.Assert(sql, qt.Contains, "CREATE INDEX `idx_tenant_data` ON `tenant.data` (`id`);")
+}
+
+func TestMySQLRenderer_PreservesLiteralDelimiterContent(t *testing.T) {
+	c := qt.New(t)
+
+	sql := renderMySQL(t,
+		ast.NewCreateTable("\"`tenant`\"").
+			AddColumn(ast.NewColumn("id", "int")),
+	)
+
+	c.Assert(sql, qt.Contains, "CREATE TABLE ```tenant``` (")
+}

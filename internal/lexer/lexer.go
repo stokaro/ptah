@@ -66,14 +66,14 @@ func (tt *Token) MatchIdentifierValue(value string) bool {
 }
 
 // Options configures optional, dialect-sensitive lexer behavior. The zero
-// value reproduces the historical behavior of NewLexer, so callers that do not
-// opt in are byte-for-byte unaffected.
+// value selects NewLexer's lenient, dialect-neutral defaults.
 type Options struct {
 	// StandardStrings enables SQL-standard string literal scanning. When set, a
 	// doubled quote character ('' inside a '...' literal, or "" inside a "..."
 	// literal) is treated as an escaped quote that stays inside the literal
 	// rather than terminating it. This is dialect-independent. When unset, the
-	// legacy scanning behavior (see scanStringLegacy) is used unchanged.
+	// legacy scanning behavior (see scanStringLegacy) is used apart from
+	// doubled double quotes, which must stay inside quoted identifiers.
 	StandardStrings bool
 
 	// BackslashEscapes treats a backslash as a C-style escape inside string
@@ -84,6 +84,16 @@ type Options struct {
 	// when StandardStrings is set; the legacy path always processes backslash
 	// escapes regardless of this field.
 	BackslashEscapes bool
+
+	// BracketIdentifiers treats a square-bracket pair as one identifier token.
+	// Enable it only for SQL Server: in dialect-neutral and PostgreSQL-family
+	// input, square brackets can instead delimit array syntax.
+	BracketIdentifiers bool
+
+	// DisableHashComments preserves leading # characters as part of SQL Server
+	// local and global temporary-table identifiers. Hash comments remain enabled
+	// by default for MySQL-compatible and dialect-neutral input.
+	DisableHashComments bool
 }
 
 // Lexer tokenizes SQL input
@@ -94,7 +104,7 @@ type Lexer struct {
 	opts  Options
 }
 
-// NewLexer creates a new SQL lexer with the historical default behavior.
+// NewLexer creates a new SQL lexer with lenient dialect-neutral behavior.
 //
 // The default scanning rules are intentionally lenient and dialect-blind. For
 // dialect-correct string handling (used by statement splitting, where a stray
@@ -192,17 +202,15 @@ func (l *Lexer) NextToken() Token {
 		if ch == 0 {
 			return l.emit(TokenEOF)
 		}
+		if token, ok := l.scanSpecialToken(ch); ok {
+			return token
+		}
 
 		switch {
 		case unicode.IsSpace(ch):
 			return l.scanWhitespace()
-		case ch == ';':
-			l.advance()
-			return l.emit(TokenSemicolon)
 		case ch == '\'' || ch == '"':
 			return l.scanString()
-		case ch == '`':
-			return l.scanBacktickedIdentifier()
 		case ch == '$':
 			// Check for PostgreSQL dollar-quoted strings
 			if l.isDollarQuotedString() {
@@ -214,8 +222,6 @@ func (l *Lexer) NextToken() Token {
 			return l.scanOperator()
 		case ch == '-' && l.peekNext() == '-':
 			return l.scanLineComment()
-		case ch == '#' && !isHashOperatorContinuation(l.peekNext()):
-			return l.scanHashLineComment()
 		case ch == '/' && l.peekNext() == '*':
 			return l.scanBlockComment()
 		case isIdentifierStart(ch):
@@ -224,6 +230,42 @@ func (l *Lexer) NextToken() Token {
 			return l.scanNumber()
 		default:
 			return l.scanOperator()
+		}
+	}
+}
+
+func (l *Lexer) scanSpecialToken(ch rune) (Token, bool) {
+	switch {
+	case ch == ';':
+		l.advance()
+		return l.emit(TokenSemicolon), true
+	case ch == '`':
+		return l.scanBacktickedIdentifier(), true
+	case ch == '[' && l.opts.BracketIdentifiers:
+		return l.scanBracketedIdentifier(), true
+	case ch == '#' && l.opts.DisableHashComments && isTemporaryIdentifierStart(l.peekNext()):
+		return l.scanTemporaryIdentifier(), true
+	case ch == '#' && !l.opts.DisableHashComments && !isHashOperatorContinuation(l.peekNext()):
+		return l.scanHashLineComment(), true
+	default:
+		return Token{}, false
+	}
+}
+
+func (l *Lexer) scanBracketedIdentifier() Token {
+	l.advance()
+	for {
+		switch l.peek() {
+		case 0:
+			return l.emit(TokenUnknown)
+		case ']':
+			l.advance()
+			if l.peek() != ']' {
+				return l.emit(TokenIdentifier)
+			}
+			l.advance()
+		default:
+			l.advance()
 		}
 	}
 }
@@ -247,9 +289,8 @@ func (l *Lexer) scanString() Token {
 
 // scanStringLegacy scans a quoted string literal using the historical rules.
 // It always processes backslash escapes and uses the isStringTerminator
-// heuristic; it does NOT recognize SQL-standard doubled-quote escaping. This is
-// the exact behavior relied upon by the DDL parser, linters, and other default
-// NewLexer callers, so it must remain unchanged.
+// heuristic. Doubled double quotes stay in one token because the DDL parser
+// also consumes double-quoted tokens as SQL identifiers.
 func (l *Lexer) scanStringLegacy() Token {
 	quote := l.advance() // consume opening quote
 
@@ -261,6 +302,11 @@ func (l *Lexer) scanStringLegacy() Token {
 		}
 
 		if ch == quote {
+			if quote == '"' && l.peekNext() == quote {
+				l.advance()
+				l.advance()
+				continue
+			}
 			l.advance() // consume closing quote
 			break
 		}
@@ -406,6 +452,21 @@ func (l *Lexer) scanIdentifier() Token {
 	return l.emit(TokenIdentifier)
 }
 
+func (l *Lexer) scanTemporaryIdentifier() Token {
+	l.advance()
+	if l.peek() == '#' {
+		l.advance()
+	}
+	for isIdentifierPart(l.peek()) {
+		l.advance()
+	}
+	return l.emit(TokenIdentifier)
+}
+
+func isTemporaryIdentifierStart(ch rune) bool {
+	return ch == '#' || isIdentifierStart(ch)
+}
+
 func isIdentifierStart(ch rune) bool {
 	return unicode.IsLetter(ch) || ch == '_' || ch == '$'
 }
@@ -426,6 +487,11 @@ func (l *Lexer) scanBacktickedIdentifier() Token {
 		}
 
 		if ch == '`' {
+			if l.peekNext() == '`' {
+				l.advance()
+				l.advance()
+				continue
+			}
 			l.advance() // consume closing backtick
 			break
 		}

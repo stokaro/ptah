@@ -18,8 +18,18 @@ type Reader struct {
 }
 
 type checkConstraintClauses struct {
-	byTableName map[string]string
+	byTableName map[constraintKey]string
 	byName      map[string]string
+}
+
+type constraintKey struct {
+	table string
+	name  string
+}
+
+type tableColumnKey struct {
+	table  string
+	column string
 }
 
 // NewMySQLReader creates a new MySQL schema reader
@@ -325,19 +335,19 @@ func quoteMySQLDefaultLiteral(value string) string {
 // and other non-unique indexes.
 func reconcileColumnUniqueness(schema *types.DBSchema) {
 	// Set of table.column covered by a single-column unique (non-primary) index.
-	uniqueColumns := make(map[string]struct{})
+	uniqueColumns := make(map[tableColumnKey]struct{})
 	for _, idx := range schema.Indexes {
 		if idx.IsPrimary || !idx.IsUnique || len(idx.Columns) != 1 {
 			continue
 		}
-		uniqueColumns[idx.TableName+"."+idx.Columns[0]] = struct{}{}
+		uniqueColumns[tableColumnKey{table: idx.TableName, column: idx.Columns[0]}] = struct{}{}
 	}
 
 	for ti := range schema.Tables {
 		table := &schema.Tables[ti]
 		for ci := range table.Columns {
 			col := &table.Columns[ci]
-			_, unique := uniqueColumns[table.Name+"."+col.Name]
+			_, unique := uniqueColumns[tableColumnKey{table: table.Name, column: col.Name}]
 			col.IsUnique = unique
 		}
 	}
@@ -560,7 +570,7 @@ func (r *Reader) readConstraints(dbName string) ([]types.DBConstraint, error) {
 	defer rows.Close()
 
 	// Use a map to group constraints by their unique identifier
-	constraintMap := make(map[string]*types.DBConstraint)
+	constraintMap := make(map[constraintKey]*types.DBConstraint)
 
 	for rows.Next() {
 		var constraintName, tableName, constraintType, columnName string
@@ -579,8 +589,7 @@ func (r *Reader) readConstraints(dbName string) ([]types.DBConstraint, error) {
 			return nil, err
 		}
 
-		// Create a unique key for this constraint
-		key := tableName + "." + constraintName
+		key := constraintKey{table: tableName, name: constraintName}
 
 		// Get or create the constraint
 		constraint, exists := constraintMap[key]
@@ -658,7 +667,7 @@ func newConstraint(name, tableName, constraintType string, refs constraintRefs, 
 }
 
 func (c checkConstraintClauses) forConstraint(tableName, constraintName string) string {
-	if checkClause := c.byTableName[tableName+"."+constraintName]; checkClause != "" {
+	if checkClause := c.byTableName[constraintKey{table: tableName, name: constraintName}]; checkClause != "" {
 		return checkClause
 	}
 	return c.byName[constraintName]
@@ -666,7 +675,7 @@ func (c checkConstraintClauses) forConstraint(tableName, constraintName string) 
 
 func (r *Reader) readCheckConstraintClauses(dbName string) (checkConstraintClauses, error) {
 	clauses := checkConstraintClauses{
-		byTableName: make(map[string]string),
+		byTableName: make(map[constraintKey]string),
 		byName:      make(map[string]string),
 	}
 	err := r.readTableAwareCheckConstraintClauses(dbName, clauses.byTableName)
@@ -709,7 +718,7 @@ func isMissingCheckConstraintsTable(err error) bool {
 	return strings.Contains(strings.ToUpper(mysqlErr.Message), "CHECK_CONSTRAINTS")
 }
 
-func (r *Reader) readTableAwareCheckConstraintClauses(dbName string, clauses map[string]string) error {
+func (r *Reader) readTableAwareCheckConstraintClauses(dbName string, clauses map[constraintKey]string) error {
 	rows, err := r.db.Query(`
 		SELECT CONSTRAINT_NAME, TABLE_NAME, CHECK_CLAUSE
 		FROM information_schema.CHECK_CONSTRAINTS
@@ -724,7 +733,7 @@ func (r *Reader) readTableAwareCheckConstraintClauses(dbName string, clauses map
 		if err := rows.Scan(&constraintName, &tableName, &checkClause); err != nil {
 			return err
 		}
-		clauses[tableName+"."+constraintName] = checkClause
+		clauses[constraintKey{table: tableName, name: constraintName}] = checkClause
 	}
 	return rows.Err()
 }

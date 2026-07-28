@@ -132,6 +132,25 @@ func TestFilterGeneratedWithDefaultSchemaKeepsUnqualifiedPublicObjects(t *testin
 	c.Assert(generatedGrantTargets(got.Grants), qt.DeepEquals, []string{"schema:public", "table:users"})
 }
 
+func TestFilterGenerated_PreservesStructuralTableIdentity(t *testing.T) {
+	c := qt.New(t)
+	db := &goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "Literal", Name: "tenant.data"},
+			{StructName: "Qualified", Schema: "tenant", Name: "data"},
+		},
+		Triggers: []goschema.Trigger{
+			{Name: "literal_trigger", Table: `"tenant.data"`},
+			{Name: "qualified_trigger", Table: "tenant.data"},
+		},
+	}
+
+	got := schemascope.FilterGeneratedWithDefaultSchema(db, []string{"public"}, "public")
+
+	c.Assert(generatedTableNames(got.Tables), qt.DeepEquals, []string{`"tenant.data"`})
+	c.Assert(generatedTriggerNames(got.Triggers), qt.DeepEquals, []string{"literal_trigger"})
+}
+
 func TestFilterDatabaseScopesIntrospectedObjects(t *testing.T) {
 	c := qt.New(t)
 	foreignTable := "billing.invoices"
@@ -244,6 +263,25 @@ func TestFilterDatabaseWithDefaultSchemaKeepsUnqualifiedPublicObjects(t *testing
 	c.Assert(databaseViewNames(got.Views), qt.DeepEquals, []string{"active_users"})
 	c.Assert(databaseRLSPolicyNames(got.RLSPolicies), qt.DeepEquals, []string{"users_tenant"})
 	c.Assert(databaseGrantTargets(got.Grants), qt.DeepEquals, []string{"schema:public", "table:users"})
+}
+
+func TestFilterDatabase_PreservesStructuralTableIdentity(t *testing.T) {
+	c := qt.New(t)
+	db := &dbschematypes.DBSchema{
+		Tables: []dbschematypes.DBTable{
+			{Name: "tenant.data"},
+			{Schema: "tenant", Name: "data"},
+		},
+		RLSPolicies: []dbschematypes.DBRLSPolicy{
+			{Name: "literal_policy", Table: `"tenant.data"`},
+			{Name: "qualified_policy", Table: "tenant.data"},
+		},
+	}
+
+	got := schemascope.FilterDatabaseWithDefaultSchema(db, []string{"public"}, "public")
+
+	c.Assert(databaseTableNames(got.Tables), qt.DeepEquals, []string{`"tenant.data"`})
+	c.Assert(databaseRLSPolicyNames(got.RLSPolicies), qt.DeepEquals, []string{"literal_policy"})
 }
 
 func generatedTableNames(tables []goschema.Table) []string {

@@ -35,6 +35,7 @@ func TestMigratePlanCommandExposesSchemaCommandFlags(t *testing.T) {
 
 	c.Assert(cmd.Flags().Lookup("schema-cmd"), qt.IsNotNil)
 	c.Assert(cmd.Flags().Lookup("schema-format"), qt.IsNotNil)
+	c.Assert(cmd.Flags().Lookup("allow-external-schema"), qt.IsNotNil)
 }
 
 func TestMigrateGenerateCommandExposesSchemaCommandFlags(t *testing.T) {
@@ -44,4 +45,5 @@ func TestMigrateGenerateCommandExposesSchemaCommandFlags(t *testing.T) {
 
 	c.Assert(cmd.Flags().Lookup("schema-cmd"), qt.IsNotNil)
 	c.Assert(cmd.Flags().Lookup("schema-format"), qt.IsNotNil)
+	c.Assert(cmd.Flags().Lookup("allow-external-schema"), qt.IsNotNil)
 }

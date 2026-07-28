@@ -105,10 +105,117 @@ func TestRenderTablesIndexesConstraintsAndDiagnostics(t *testing.T) {
 	c.Assert(parsed.Constraints, qt.HasLen, 3)
 	c.Assert(parsed.Functions, qt.HasLen, 1)
 	c.Assert(constraintByName(parsed.Constraints, "users_email_key").IncludeColumns, qt.DeepEquals, []string{"created_at"})
-	c.Assert(fieldByName(parsed.Fields, "account_id").Foreign, qt.Equals, "accounts(id)")
+	c.Assert(fieldByName(parsed.Fields, "account_id").Foreign, qt.Equals, "auth.accounts(id)")
 	c.Assert(fieldByName(parsed.Fields, "account_id").ForeignKeyName, qt.Equals, "users_account_fk")
-	c.Assert(fieldByName(parsed.Fields, "team_id").Foreign, qt.Equals, "teams(id)")
+	c.Assert(fieldByName(parsed.Fields, "team_id").Foreign, qt.Equals, "auth.teams(id)")
 	c.Assert(fieldByName(parsed.Fields, "team_id").OnUpdate, qt.Equals, "CASCADE")
+}
+
+func TestRender_ExplicitTableReferencePreservesStructuralIdentity(t *testing.T) {
+	c := qt.New(t)
+	db := &goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "Literal", Name: "tenant.data"},
+			{StructName: "Qualified", Schema: "tenant", Name: "data"},
+		},
+		Fields: []goschema.Field{
+			{StructName: "Literal", Name: "literal_id", Type: "INTEGER"},
+			{StructName: "Qualified", Name: "qualified_id", Type: "INTEGER"},
+		},
+		Indexes: []goschema.Index{
+			{
+				StructName: "Literal",
+				Name:       "literal_lookup",
+				TableName:  `"tenant.data"`,
+				Fields:     []string{"literal_id"},
+			},
+			{
+				StructName: "Literal",
+				Name:       "qualified_lookup",
+				TableName:  "tenant.data",
+				Fields:     []string{"qualified_id"},
+			},
+		},
+		Constraints: []goschema.Constraint{
+			{
+				StructName:    "Literal",
+				Name:          "literal_self_fk",
+				Type:          "FOREIGN KEY",
+				Table:         `"tenant.data"`,
+				Columns:       []string{"literal_id"},
+				ForeignTable:  `"tenant.data"`,
+				ForeignColumn: "literal_id",
+			},
+			{
+				StructName:    "Qualified",
+				Name:          "qualified_self_fk",
+				Type:          "FOREIGN KEY",
+				Table:         "tenant.data",
+				Columns:       []string{"qualified_id"},
+				ForeignTable:  "tenant.data",
+				ForeignColumn: "qualified_id",
+			},
+		},
+		Triggers: []goschema.Trigger{
+			{
+				Name:    "literal_trigger",
+				Table:   `"tenant.data"`,
+				Timing:  "AFTER",
+				Event:   "INSERT",
+				ForEach: "ROW",
+				Body:    "SELECT 1",
+			},
+			{
+				Name:    "qualified_trigger",
+				Table:   "tenant.data",
+				Timing:  "AFTER",
+				Event:   "INSERT",
+				ForEach: "ROW",
+				Body:    "SELECT 1",
+			},
+		},
+		Functions: []goschema.Function{
+			{Name: `"tenant.data"`, Returns: "integer", Language: "sql", Body: "SELECT 1"},
+			{Name: "tenant.data", Returns: "integer", Language: "sql", Body: "SELECT 1"},
+		},
+		Views: []goschema.View{
+			{Name: `"tenant.data"`, Body: "SELECT 1"},
+			{Name: "tenant.data", Body: "SELECT 1"},
+		},
+		MaterializedViews: []goschema.MaterializedView{
+			{Name: `"tenant.data"`, Body: "SELECT 1"},
+			{Name: "tenant.data", Body: "SELECT 1"},
+		},
+	}
+
+	rendered, err := atlashclrender.Render(db)
+	c.Assert(err, qt.IsNil)
+	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
+	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", string(rendered.Data)))
+
+	c.Assert(parsed.Tables, qt.HasLen, 2)
+	c.Assert(parsed.Tables[0].QualifiedName(), qt.Equals, `"tenant.data"`)
+	c.Assert(parsed.Tables[1].QualifiedName(), qt.Equals, "tenant.data")
+	c.Assert(parsed.Fields, qt.HasLen, 2)
+	c.Assert(parsed.Fields[0].StructName, qt.Equals, `"tenant.data"`)
+	c.Assert(parsed.Fields[1].StructName, qt.Equals, "tenant.data")
+	c.Assert(parsed.Indexes, qt.HasLen, 2)
+	c.Assert(parsed.Indexes[0].TableName, qt.Equals, `"tenant.data"`)
+	c.Assert(parsed.Indexes[1].TableName, qt.Equals, "tenant.data")
+	c.Assert(fieldByName(parsed.Fields, "literal_id").Foreign, qt.Equals, `"tenant.data"(literal_id)`)
+	c.Assert(fieldByName(parsed.Fields, "qualified_id").Foreign, qt.Equals, "tenant.data(qualified_id)")
+	c.Assert(parsed.Triggers, qt.HasLen, 2)
+	c.Assert(parsed.Triggers[0].Table, qt.Equals, `"tenant.data"`)
+	c.Assert(parsed.Triggers[1].Table, qt.Equals, "tenant.data")
+	c.Assert(parsed.Functions, qt.HasLen, 2)
+	c.Assert(parsed.Functions[0].Name, qt.Equals, `"tenant.data"`)
+	c.Assert(parsed.Functions[1].Name, qt.Equals, "tenant.data")
+	c.Assert(parsed.Views, qt.HasLen, 2)
+	c.Assert(parsed.Views[0].Name, qt.Equals, `"tenant.data"`)
+	c.Assert(parsed.Views[1].Name, qt.Equals, "tenant.data")
+	c.Assert(parsed.MaterializedViews, qt.HasLen, 2)
+	c.Assert(parsed.MaterializedViews[0].Name, qt.Equals, `"tenant.data"`)
+	c.Assert(parsed.MaterializedViews[1].Name, qt.Equals, "tenant.data")
 }
 
 func TestRenderFixture023SchemaObjectsRoundTrip(t *testing.T) {

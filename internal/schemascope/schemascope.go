@@ -6,6 +6,7 @@ import (
 
 	"github.com/stokaro/ptah/core/goschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/tableref"
 )
 
 // SplitNames expands repeated and comma-separated schema filter values.
@@ -142,7 +143,6 @@ func FilterDatabaseWithDefaultSchema(
 			return false
 		}
 		keptTables[table.QualifiedName()] = struct{}{}
-		keptTables[table.Name] = struct{}{}
 		return true
 	})
 	filtered.Indexes = keep(db.Indexes, func(index dbschematypes.DBIndex) bool {
@@ -216,10 +216,13 @@ func generatedStructOrTableAllowed(
 	structName string,
 	tableName string,
 ) bool {
+	if strings.TrimSpace(tableName) != "" {
+		return tableReferenceAllowed(keptTables, tableName)
+	}
 	if _, ok := keptStructs[structName]; ok {
 		return true
 	}
-	return tableReferenceAllowed(keptTables, tableName)
+	return false
 }
 
 func generatedNamedObjectAllowed(
@@ -243,8 +246,12 @@ func tableReferenceAllowed(keptTables map[string]goschema.Table, tableName strin
 	if _, ok := keptTables[tableName]; ok {
 		return true
 	}
+	ref, ok := tableref.Parse(tableName)
+	if !ok || ref.Qualified {
+		return false
+	}
 	for _, table := range keptTables {
-		if table.Name == tableName {
+		if table.Name == ref.Name {
 			return true
 		}
 	}
@@ -284,12 +291,11 @@ func foreignReferenceTable(reference string) string {
 }
 
 func schemaFromQualifiedName(name string) string {
-	name = strings.TrimSpace(name)
-	schema, _, ok := strings.Cut(name, ".")
-	if !ok {
+	ref, ok := tableref.Parse(name)
+	if !ok || !ref.Qualified {
 		return ""
 	}
-	return strings.TrimSpace(schema)
+	return ref.Schema
 }
 
 func grantAllowed(
@@ -333,11 +339,17 @@ func dbTableReferenceAllowed(keptTables map[string]struct{}, tableName string) b
 	if tableKeyAllowed(keptTables, tableName) {
 		return true
 	}
-	_, table, ok := strings.Cut(strings.TrimSpace(tableName), ".")
-	if !ok {
+	ref, ok := tableref.Parse(tableName)
+	if !ok || ref.Qualified {
 		return false
 	}
-	return tableKeyAllowed(keptTables, table)
+	for keptTable := range keptTables {
+		keptRef, valid := tableref.Parse(keptTable)
+		if valid && keptRef.Name == ref.Name {
+			return true
+		}
+	}
+	return false
 }
 
 func keepReferencedGeneratedEnums(enums []goschema.Enum, fields []goschema.Field) []goschema.Enum {
