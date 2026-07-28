@@ -68,6 +68,16 @@ interceptor, splitter, directive, or transaction path. Observers receive
 structured source and statement metadata after execution but no connection
 handle, so they cannot alter the migrator execution path.
 
+Atlas revision metadata is represented explicitly by `AtlasRevisionType` on
+`MigrationRevision`. `SetAtlasRevision` implements Atlas's metadata-only
+history transition: it preserves existing clean rows through the target, adds
+missing manually-set rows, converts dirty rows to the combined applied and
+manually-set type without discarding diagnostics, and removes rows above the
+selected version. It returns an `AtlasRevisionSetResult` describing every
+changed migration as a version-and-description `AtlasRevisionChange`.
+`GetMigrationStatusSnapshot` returns status and the exact revision rows used to
+derive it from one metadata query.
+
 `migration/dbtest` exposes the declarative testing engine used by
 `ptah migrations test` and `ptah schema test`. Embedders can construct
 `Case`/`Step`/`Assertion` values in Go or load YAML, select cases with

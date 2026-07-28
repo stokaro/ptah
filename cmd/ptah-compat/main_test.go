@@ -182,6 +182,117 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 		c.Assert(stderr.String(), qt.Equals, "Error: checksum file not found\n")
 	})
 
+	c.Run("migrate set operation error", func(c *qt.C) {
+		dir := cleanAtlasDir(c)
+		run := newCompatProcess(
+			binPath,
+			"migrate", "set", "2",
+			"--url", "sqlite://"+filepath.Join(c.TempDir(), "state.db"),
+			"--dir", "file://"+dir,
+		)
+		var stdout, stderr bytes.Buffer
+		run.Stdout = &stdout
+		run.Stderr = &stderr
+		err := run.Run()
+		var exitErr *exec.ExitError
+
+		c.Assert(err, qt.ErrorAs, &exitErr)
+		c.Assert(exitErr.ExitCode(), qt.Equals, 1)
+		c.Assert(stdout.String(), qt.Equals, "")
+		c.Assert(stderr.String(), qt.Equals, "Error: migration with version \"2\" not found\n")
+	})
+
+	c.Run("migrate set missing environment precedes version", func(c *qt.C) {
+		run := newCompatProcess(binPath, "migrate", "set")
+		var stdout, stderr bytes.Buffer
+		run.Stdout = &stdout
+		run.Stderr = &stderr
+		err := run.Run()
+		var exitErr *exec.ExitError
+
+		c.Assert(err, qt.ErrorAs, &exitErr)
+		c.Assert(exitErr.ExitCode(), qt.Equals, 1)
+		c.Assert(stdout.String(), qt.Equals, "")
+		c.Assert(stderr.String(), qt.Equals, "Error: sql/migrate: stat migrations: no such file or directory\n")
+	})
+
+	c.Run("migrate set missing driver precedes version", func(c *qt.C) {
+		dir := cleanAtlasDir(c)
+		run := newCompatProcess(
+			binPath,
+			"migrate", "set",
+			"--dir", "file://"+dir,
+		)
+		var stdout, stderr bytes.Buffer
+		run.Stdout = &stdout
+		run.Stderr = &stderr
+		err := run.Run()
+		var exitErr *exec.ExitError
+
+		c.Assert(err, qt.ErrorAs, &exitErr)
+		c.Assert(exitErr.ExitCode(), qt.Equals, 1)
+		c.Assert(stdout.String(), qt.Equals, "")
+		c.Assert(stderr.String(), qt.Equals,
+			"Error: sql/sqlclient: missing driver. See: https://atlasgo.io/url\n")
+	})
+
+	c.Run("migrate set missing version after environment", func(c *qt.C) {
+		dir := cleanAtlasDir(c)
+		dbPath := filepath.Join(c.TempDir(), "state.db")
+		run := newCompatProcess(
+			binPath,
+			"migrate", "set",
+			"--url", "sqlite://"+dbPath,
+			"--dir", "file://"+dir,
+		)
+		var stdout, stderr bytes.Buffer
+		run.Stdout = &stdout
+		run.Stderr = &stderr
+		err := run.Run()
+		var exitErr *exec.ExitError
+
+		c.Assert(err, qt.ErrorAs, &exitErr)
+		c.Assert(exitErr.ExitCode(), qt.Equals, 1)
+		c.Assert(stdout.String(), qt.Equals, "")
+		c.Assert(stderr.String(), qt.Equals, "Error: accepts 1 arg(s), received 0\n")
+		_, statErr := os.Stat(dbPath)
+		c.Assert(statErr, qt.IsNil)
+	})
+
+	c.Run("migrate set extra version", func(c *qt.C) {
+		dir := cleanAtlasDir(c)
+		run := newCompatProcess(
+			binPath,
+			"migrate", "set", "1", "2",
+			"--url", "sqlite://"+filepath.Join(c.TempDir(), "state.db"),
+			"--dir", "file://"+dir,
+		)
+		var stdout, stderr bytes.Buffer
+		run.Stdout = &stdout
+		run.Stderr = &stderr
+		err := run.Run()
+		var exitErr *exec.ExitError
+
+		c.Assert(err, qt.ErrorAs, &exitErr)
+		c.Assert(exitErr.ExitCode(), qt.Equals, 1)
+		c.Assert(stdout.String(), qt.Equals, "")
+		c.Assert(stderr.String(), qt.Equals, "Error: accepts 1 arg(s), received 2\n")
+	})
+
+	c.Run("migrate set unknown flag", func(c *qt.C) {
+		run := newCompatProcess(binPath, "migrate", "set", "1", "--unknown")
+		var stdout, stderr bytes.Buffer
+		run.Stdout = &stdout
+		run.Stderr = &stderr
+		err := run.Run()
+		var exitErr *exec.ExitError
+
+		c.Assert(err, qt.ErrorAs, &exitErr)
+		c.Assert(exitErr.ExitCode(), qt.Equals, 1)
+		c.Assert(stdout.String(), qt.Equals, "")
+		c.Assert(stderr.String(), qt.Equals, "Error: unknown flag: --unknown\n")
+	})
+
 	c.Run("unknown root command", func(c *qt.C) {
 		run := newCompatProcess(binPath, "definitely-not-a-command")
 		var stdout, stderr bytes.Buffer

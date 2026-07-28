@@ -28,6 +28,13 @@ type MigrationStatus struct {
 	DirtyRevision        *MigrationRevision `json:"dirty_revision,omitempty"`
 }
 
+// MigrationStatusSnapshot contains a migration status and the revision rows
+// used to derive it.
+type MigrationStatusSnapshot struct {
+	Status    *MigrationStatus
+	Revisions []MigrationRevision
+}
+
 // MigrationDirection identifies the migration direction in a selected plan.
 type MigrationDirection string
 
@@ -341,7 +348,7 @@ END`, sqlStringLiteral(m.sqlServerObjectName()), m.qualifiedMigrationsTable())
 func (m *Migrator) getVersionSQL() string {
 	if m.revisionTableFormat.isAtlas() {
 		return fmt.Sprintf(
-			"SELECT COALESCE(MAX(%s), 0) FROM %s WHERE applied = total AND COALESCE(error, '') = ''",
+			"SELECT COALESCE(MAX(%s), 0) FROM %s",
 			m.atlasVersionNumberExpression(),
 			m.qualifiedMigrationsTable(),
 		)
@@ -684,6 +691,19 @@ func (m *Migrator) GetAppliedRevisions(ctx context.Context) ([]MigrationRevision
 	)
 }
 
+// GetRevisions returns every migration metadata row, including dirty rows.
+func (m *Migrator) GetRevisions(ctx context.Context) ([]MigrationRevision, error) {
+	return queryMigrationRows(
+		ctx,
+		m,
+		m.getRevisionsSQL(),
+		m.scanRevisionRow,
+		"failed to query migration revisions",
+		"failed to scan migration revision",
+		"error iterating migration revisions",
+	)
+}
+
 func queryMigrationRows[T any](
 	ctx context.Context,
 	m *Migrator,
@@ -700,7 +720,23 @@ func queryMigrationRows[T any](
 		return []T{}, nil
 	}
 
-	rows, err := m.conn.QueryContext(ctx, query)
+	return queryMigrationRowsFrom(ctx, m.conn, query, scan, queryErr, scanErr, iterErr)
+}
+
+type migrationRowsQueryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+func queryMigrationRowsFrom[T any](
+	ctx context.Context,
+	queryer migrationRowsQueryer,
+	query string,
+	scan func(rowScanner) (T, error),
+	queryErr string,
+	scanErr string,
+	iterErr string,
+) ([]T, error) {
+	rows, err := queryer.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", queryErr, err)
 	}
@@ -759,12 +795,11 @@ func parseAtlasRevisionVersion(version string) (int64, error) {
 
 // GetPendingMigrations returns a list of pending migration versions
 func (m *Migrator) GetPendingMigrations(ctx context.Context) ([]int64, error) {
-	applied, err := m.GetAppliedMigrations(ctx)
+	snapshot, err := m.GetMigrationStatusSnapshot(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	return pendingMigrationVersions(m.migrationProvider.Migrations(), applied), nil
+	return snapshot.Status.PendingMigrations, nil
 }
 
 // GetPreviousMigrationVersion finds the previous migration version compared to the current one.
@@ -786,27 +821,37 @@ func (m *Migrator) GetPreviousMigrationVersion(ctx context.Context) (int64, erro
 
 // GetMigrationStatus returns information about the current migration status using the provided filesystem
 func (m *Migrator) GetMigrationStatus(ctx context.Context) (status *MigrationStatus, err error) {
+	snapshot, err := m.GetMigrationStatusSnapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return snapshot.Status, nil
+}
+
+// GetMigrationStatusSnapshot returns status and the revision rows used to
+// derive it from one metadata query.
+func (m *Migrator) GetMigrationStatusSnapshot(
+	ctx context.Context,
+) (snapshot MigrationStatusSnapshot, err error) {
 	observer := m.migrationObserver()
 	ctx, span := observer.StartSpan(ctx, "ptah.migrate.status", m.operationAttributes("")...)
 	defer func() { span.End(err) }()
 
-	appliedMigrations, err := m.GetAppliedMigrations(ctx)
+	revisions, err := m.GetRevisions(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get applied migrations: %w", err)
+		return MigrationStatusSnapshot{}, fmt.Errorf("failed to get migration revisions: %w", err)
 	}
+	appliedMigrations := appliedRevisionVersions(revisions)
+	effectiveAppliedMigrations := m.effectiveAppliedVersionsFromRevisions(appliedMigrations, revisions)
 	currentVersion := maxAppliedVersion(appliedMigrations)
-	pendingMigrations := pendingMigrationVersions(m.MigrationProvider().Migrations(), appliedMigrations)
-	outOfOrderMigrations := outOfOrderMigrationVersions(pendingMigrations, currentVersion)
-	var dirtyRevision *MigrationRevision
-	if !m.conn.Writer().IsDryRun() {
-		var err error
-		dirtyRevision, err = m.dirtyRevision(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get dirty migration revision: %w", err)
-		}
+	if m.revisionTableFormat.isAtlas() {
+		currentVersion = maxRevisionVersion(revisions)
 	}
+	pendingMigrations := pendingMigrationVersions(m.MigrationProvider().Migrations(), effectiveAppliedMigrations)
+	outOfOrderMigrations := outOfOrderMigrationVersions(pendingMigrations, currentVersion)
+	dirtyRevision := firstDirtyRevision(revisions)
 
-	status = &MigrationStatus{
+	status := &MigrationStatus{
 		CurrentVersion:       currentVersion,
 		AppliedMigrations:    appliedMigrations,
 		PendingMigrations:    pendingMigrations,
@@ -821,7 +866,37 @@ func (m *Migrator) GetMigrationStatus(ctx context.Context) (status *MigrationSta
 		attr("migration.out_of_order_count", len(status.OutOfOrderMigrations)),
 		attr("migration.total_count", status.TotalMigrations),
 	)
-	return status, nil
+	return MigrationStatusSnapshot{Status: status, Revisions: revisions}, nil
+}
+
+func appliedRevisionVersions(revisions []MigrationRevision) []int64 {
+	versions := make([]int64, 0, len(revisions))
+	for _, revision := range revisions {
+		if revision.State == migrationStateApplied {
+			versions = append(versions, revision.Version)
+		}
+	}
+	return versions
+}
+
+func maxRevisionVersion(revisions []MigrationRevision) int64 {
+	var version int64
+	for _, revision := range revisions {
+		if revision.Version > version {
+			version = revision.Version
+		}
+	}
+	return version
+}
+
+func firstDirtyRevision(revisions []MigrationRevision) *MigrationRevision {
+	for _, revision := range revisions {
+		if revision.State != migrationStateApplied {
+			revision.Dirty = true
+			return &revision
+		}
+	}
+	return nil
 }
 
 // MigrateUp migrates the database up to the latest version
@@ -885,6 +960,10 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 	appliedMigrations, err := m.GetAppliedMigrations(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get applied migrations: %w", err)
+	}
+	appliedMigrations, err = m.effectiveAppliedMigrations(ctx, appliedMigrations)
+	if err != nil {
+		return fmt.Errorf("failed to resolve effective applied migrations: %w", err)
 	}
 	appliedMigrations = mergeAppliedVersions(appliedMigrations, opts.AssumedAppliedVersions)
 	currentVersion := maxAppliedVersion(appliedMigrations)
@@ -964,6 +1043,43 @@ func mergeAppliedVersions(applied []int64, assumed []int64) []int64 {
 	}
 	slices.Sort(merged)
 	return merged
+}
+
+func (m *Migrator) effectiveAppliedMigrations(ctx context.Context, applied []int64) ([]int64, error) {
+	if !m.revisionTableFormat.isAtlas() {
+		return applied, nil
+	}
+
+	revisions, err := m.GetAppliedRevisions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return m.effectiveAppliedVersionsFromRevisions(applied, revisions), nil
+}
+
+func (m *Migrator) effectiveAppliedVersionsFromRevisions(
+	applied []int64,
+	revisions []MigrationRevision,
+) []int64 {
+	boundary := atlasRevisionBoundary(revisions)
+	if boundary == 0 {
+		return applied
+	}
+
+	implicit := migrationVersions(m.migrationsAtOrBelow(boundary))
+	return mergeAppliedVersions(applied, implicit)
+}
+
+func atlasRevisionBoundary(revisions []MigrationRevision) int64 {
+	var boundary int64
+	for _, revision := range revisions {
+		if revision.State == migrationStateApplied &&
+			revision.AtlasType == AtlasRevisionTypeBaseline &&
+			revision.Version > boundary {
+			boundary = revision.Version
+		}
+	}
+	return boundary
 }
 
 // MigrateDown migrates the database down to the previous version
@@ -1130,6 +1246,10 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int64) error {
 	appliedMigrations, err := m.GetAppliedMigrations(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get applied migrations: %w", err)
+	}
+	appliedMigrations, err = m.effectiveAppliedMigrations(ctx, appliedMigrations)
+	if err != nil {
+		return fmt.Errorf("failed to resolve effective applied migrations: %w", err)
 	}
 	currentVersion := maxAppliedVersion(appliedMigrations)
 

@@ -420,16 +420,18 @@ func NoopMigrationFunc(_ctx context.Context, _conn *dbschema.DatabaseConnection)
 
 // Migration represents a database migration
 type Migration struct {
-	Version         int64
-	Description     string
-	Checksum        string
-	Up              MigrationFunc
-	Down            MigrationFunc
-	UpSQL           string
-	DownSQL         string
-	UpTimeouts      MigrationTimeouts
-	DownTimeouts    MigrationTimeouts
-	downUnavailable bool
+	Version                int64
+	Description            string
+	Checksum               string
+	revisionDescription    string
+	hasRevisionDescription bool
+	Up                     MigrationFunc
+	Down                   MigrationFunc
+	UpSQL                  string
+	DownSQL                string
+	UpTimeouts             MigrationTimeouts
+	DownTimeouts           MigrationTimeouts
+	downUnavailable        bool
 	// UpNoTransaction runs the up body and metadata update outside the normal
 	// per-migration transaction. Use this only for statements that cannot run
 	// transactionally.
@@ -446,6 +448,15 @@ type Migration struct {
 	// applied instead of replaying them; an already-migrated database ignores
 	// the checkpoint and applies history normally.
 	IsCheckpoint bool
+}
+
+// atlasFilenameDescription preserves Atlas's raw filename description for
+// baseline and set metadata. Normal execution records Description instead.
+func (m *Migration) atlasFilenameDescription() string {
+	if m.hasRevisionDescription {
+		return m.revisionDescription
+	}
+	return m.Description
 }
 
 func (m *Migration) upExecutionMode() migrationExecutionMode {

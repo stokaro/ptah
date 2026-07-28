@@ -21,7 +21,7 @@ translation rules are on the
 | `ptah atlas migrate validate` | Silently verifies `atlas.sum` on success; `--dev-url` replays migrations to validate SQL execution. |
 | `ptah atlas migrate lint` | Forwards to `ptah migrations lint` with Atlas changeset selectors, dev-database replay, and Atlas report output. |
 | `ptah atlas migrate new` | Creates an Atlas single-file skeleton migration; equivalent to `ptah migrations create`. |
-| `ptah atlas migrate set [version]` | Forwards to `ptah migrations repair` with Atlas revision metadata. |
+| `ptah atlas migrate set [version]` | Moves Atlas revision history to the selected version without executing migration SQL: existing clean rows through the target are preserved, missing rows are recorded as manually set, dirty rows retain diagnostics with the combined applied and manually-set type, and rows above the target are removed. |
 | `ptah atlas migrate diff` | Replays local Atlas migrations on `--dev-url`, diffs against local schema files, writes an Atlas single-file migration, and updates `atlas.sum`. |
 | `ptah atlas migrate import` | Imports local `file://` migration directories from Atlas-supported formats into a separate Atlas single-file directory. |
 | `ptah atlas migrate checkpoint [name]` | Forwards to `ptah migrations checkpoint`; writes a ptah-format cumulative-schema checkpoint pair. |
@@ -354,11 +354,13 @@ register `--dir-format` with Atlas's default value `atlas`. The supported value
 is `atlas`; Atlas's external migration-tool formats (`golang-migrate`, `goose`,
 `flyway`, `liquibase`, and `dbmate`) fail explicitly on those commands until
 they are imported with `ptah atlas migrate import` or implemented natively.
-`ptah atlas migrate set [version]` maps the positional version to Ptah's
-native repair version, uses Atlas revision-table metadata, and internally
-rewrites or creates the revision row for that version. With `--env`, it reads
-`env.url`, `migration.dir`, and `migration.revisions_schema` from `atlas.hcl`;
-explicit `--url`, `--dir`, and `--revisions-schema` flags keep CLI precedence.
+`ptah atlas migrate set [version]` moves Atlas revision history to the selected
+boundary without executing migration SQL. It preserves existing clean rows
+through the target, inserts missing rows as manually set, keeps dirty-row
+diagnostics with the combined applied and manually-set type, and removes rows
+above the target. With `--env`, it reads `env.url`, `migration.dir`, and
+`migration.revisions_schema` from `atlas.hcl`; explicit `--url`, `--dir`, and
+`--revisions-schema` flags keep CLI precedence.
 `ptah atlas migrate status` also accepts `--revisions-schema` and runs against
 Atlas revision-table metadata.
 
