@@ -64,12 +64,17 @@ func TestMigrateRepairCommand_AtlasFormatUsesRepairSemantics(t *testing.T) {
 	c.Cleanup(func() {
 		c.Check(db.Close(), qt.IsNil)
 	})
+	var description, partialHashes string
 	var revisionType, applied, total int
 	err = db.QueryRow(
-		`SELECT type, applied, total FROM atlas_schema_revisions WHERE version = '1'`,
-	).Scan(&revisionType, &applied, &total)
+		`SELECT description, type, applied, total, COALESCE(CAST(partial_hashes AS TEXT), 'sql-null')
+FROM atlas_schema_revisions
+WHERE version = '1'`,
+	).Scan(&description, &revisionType, &applied, &total, &partialHashes)
 	c.Assert(err, qt.IsNil)
+	c.Assert(description, qt.Equals, "Create Users")
 	c.Assert(revisionType, qt.Equals, 2)
 	c.Assert(applied, qt.Equals, 1)
 	c.Assert(total, qt.Equals, 1)
+	c.Assert(partialHashes, qt.Equals, "sql-null")
 }

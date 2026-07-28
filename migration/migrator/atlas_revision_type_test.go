@@ -1,6 +1,7 @@
 package migrator_test
 
 import (
+	"database/sql"
 	"path/filepath"
 	"testing"
 	"testing/fstest"
@@ -119,4 +120,51 @@ WHERE version = '1'`,
 	c.Assert(snapshot.Revisions[0].Dirty, qt.IsTrue)
 	c.Assert(snapshot.Status.DirtyRevision, qt.IsNotNil)
 	c.Assert(snapshot.Status.DirtyRevision.Dirty, qt.IsTrue)
+}
+
+func TestAtlasRollbackFailure_PreservesNormalApplyMetadata(t *testing.T) {
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(
+		t.Context(),
+		"sqlite://"+filepath.Join(t.TempDir(), "atlas-rollback.sqlite"),
+	)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	mig, err := migrator.NewFSMigrator(
+		conn,
+		fstest.MapFS{
+			"1_create_users.sql": &fstest.MapFile{Data: []byte(`-- atlas:txtar
+
+-- migration.sql --
+CREATE TABLE users (id INTEGER PRIMARY KEY);
+
+-- down.sql --
+DROP TABLE missing_users;
+`)},
+		},
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
+	)
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+	err = mig.MigrateUp(t.Context())
+	c.Assert(err, qt.IsNil)
+
+	err = mig.MigrateDown(t.Context())
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "no such table: missing_users")
+
+	var description string
+	var revisionType int
+	var partialHashes sql.NullString
+	err = conn.QueryRowContext(
+		t.Context(),
+		`SELECT description, type, partial_hashes
+FROM atlas_schema_revisions
+WHERE version = '1'`,
+	).Scan(&description, &revisionType, &partialHashes)
+	c.Assert(err, qt.IsNil)
+	c.Assert(description, qt.Equals, "Create Users")
+	c.Assert(revisionType, qt.Equals, int(migrator.AtlasRevisionTypeApplied))
+	c.Assert(partialHashes.Valid, qt.IsFalse)
 }

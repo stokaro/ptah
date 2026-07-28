@@ -30,12 +30,12 @@ func TestMigrateApply_RecordsAppliedAtlasRevisionMetadata(t *testing.T) {
 	got := readAtlasRevision(c, fixture.dbPath, fixture.version)
 	c.Assert(got, qt.DeepEquals, atlasRevisionRow{
 		Version:         fixture.version,
-		Description:     "create_users",
+		Description:     "Create Users",
 		Type:            2,
 		Applied:         1,
 		Total:           1,
 		Hash:            fixture.hash,
-		PartialHashes:   "null",
+		PartialHashes:   "sql-null",
 		OperatorVersion: "Ptah",
 	})
 	c.Assert(readAtlasRevisionVersions(c, fixture.dbPath), qt.DeepEquals, []string{
@@ -96,12 +96,12 @@ func TestMigrateSet_PreservesExistingAtlasRevisions(t *testing.T) {
 	first := readAtlasRevision(c, fixture.dbPath, fixture.previousVersion)
 	c.Assert(first, qt.DeepEquals, atlasRevisionRow{
 		Version:         fixture.previousVersion,
-		Description:     "create_accounts",
+		Description:     "Create Accounts",
 		Type:            2,
 		Applied:         1,
 		Total:           1,
 		Hash:            fixture.previousHash,
-		PartialHashes:   "null",
+		PartialHashes:   "sql-null",
 		OperatorVersion: "Ptah",
 	})
 	second := readAtlasRevision(c, fixture.dbPath, fixture.version)
@@ -229,7 +229,7 @@ func TestMigrateSet_ReportsSetAndRemovedRevisions(t *testing.T) {
 	c.Assert(output, qt.Equals,
 		"Current version is 20260719000000 (1 set, 1 removed):\n\n"+
 			"  + 20260719000000 (create_accounts)\n"+
-			"  - 20260719010000 (create_users)",
+			"  - 20260719010000 (Create Users)",
 	)
 }
 
