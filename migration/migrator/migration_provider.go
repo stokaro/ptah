@@ -248,8 +248,10 @@ func (p *FSMigrationProvider) loadAtlas(files []MigrationFile) error {
 		if parts == nil {
 			parts = &atlasParts{
 				migration: &Migration{
-					Version:     migrationFile.Version,
-					Description: migrationFile.Name,
+					Version:                migrationFile.Version,
+					Description:            migrationFile.Name,
+					revisionDescription:    migrationFile.revisionDescription,
+					hasRevisionDescription: true,
 				},
 			}
 			partsByVersion[migrationFile.Version] = parts

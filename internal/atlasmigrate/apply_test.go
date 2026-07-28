@@ -104,7 +104,7 @@ func TestPrepareApplyExecute_BaselineRecordsAtlasRevisions(t *testing.T) {
 	c.Assert(sqliteTableExists(c, conn, "baseline_one"), qt.IsFalse)
 	c.Assert(sqliteTableExists(c, conn, "baseline_two"), qt.IsFalse)
 	c.Assert(sqliteTableExists(c, conn, "baseline_three"), qt.IsTrue)
-	c.Assert(sqliteAtlasRevisionVersions(c, conn), qt.DeepEquals, []string{"1", "2", "3"})
+	c.Assert(sqliteAtlasRevisionVersions(c, conn), qt.DeepEquals, []string{"2", "3"})
 }
 
 func TestPrepareApplyExecute_SQLiteMainRevisionsSchema(t *testing.T) {
@@ -271,7 +271,7 @@ func TestPrepareApply_FailurePath(t *testing.T) {
 			DryRun:          true,
 			BaselineVersion: 2,
 		})
-		c.Assert(err, qt.ErrorMatches, "no migrations found at or below baseline version 2")
+		c.Assert(err, qt.ErrorMatches, `baseline version "2" not found`)
 		c.Assert(plan.SelectedVersions, qt.HasLen, 0)
 	})
 }

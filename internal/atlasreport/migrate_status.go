@@ -105,7 +105,7 @@ func migrateStatusAppliedRevisions(
 		out = append(out, MigrateStatusRevision{
 			Version:         version,
 			Description:     description,
-			Type:            "applied",
+			Type:            revision.AtlasType.String(),
 			Applied:         revision.Applied,
 			Total:           revision.Total,
 			ExecutedAt:      revision.AppliedAt,
@@ -184,9 +184,6 @@ func migrateStatusNext(pending []int64) string {
 }
 
 func migrateStatusLabel(status *migrator.MigrationStatus) string {
-	if status.DirtyRevision != nil {
-		return "DIRTY"
-	}
 	if status.HasPendingChanges {
 		return "PENDING"
 	}

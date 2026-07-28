@@ -6547,6 +6547,10 @@ func SplitSQLStatementsForConnection(conn *dbschema.DatabaseConnection, sql stri
 func ValidateMigrationFileName(filename string) bool
 func ValidateMigrationPairs(pairs map[int64]MigrationPair) []int64
 type AtlasDownNotImplementedError struct{ ... }
+type AtlasRevisionChange struct{ ... }
+type AtlasRevisionSetResult struct{ ... }
+type AtlasRevisionType uint
+    const AtlasRevisionTypeUnknown AtlasRevisionType = iota ...
 type AtlasTemplateData struct{ ... }
 type BaselineOptions struct{ ... }
 type Check struct{ ... }
@@ -6588,6 +6592,7 @@ type MigrationPlan struct{ ... }
 type MigrationProvider interface{ ... }
 type MigrationRevision struct{ ... }
 type MigrationStatus struct{ ... }
+type MigrationStatusSnapshot struct{ ... }
 type MigrationTimeouts struct{ ... }
     func ParseMigrationTimeouts(lockTimeout, statementTimeout string) (MigrationTimeouts, error)
 type MigrationTxMode string
@@ -6630,6 +6635,41 @@ type AtlasDownNotImplementedError struct {
     plans from the current database state and a dev database.
 
 func (e *AtlasDownNotImplementedError) Error() string
+
+### github.com/stokaro/ptah/migration/migrator.AtlasRevisionChange
+
+package migrator // import "github.com/stokaro/ptah/migration/migrator"
+
+type AtlasRevisionChange struct {
+    Version     int64
+    Description string
+}
+    AtlasRevisionChange identifies a migration added to or removed from Atlas
+    revision history.
+
+
+### github.com/stokaro/ptah/migration/migrator.AtlasRevisionSetResult
+
+package migrator // import "github.com/stokaro/ptah/migration/migrator"
+
+type AtlasRevisionSetResult struct {
+    CurrentVersion int64
+    Set            []AtlasRevisionChange
+    Removed        []AtlasRevisionChange
+}
+    AtlasRevisionSetResult describes the migrations changed by SetAtlasRevision.
+    Set and Removed are ordered by ascending version.
+
+
+### github.com/stokaro/ptah/migration/migrator.AtlasRevisionType
+
+package migrator // import "github.com/stokaro/ptah/migration/migrator"
+
+type AtlasRevisionType uint
+    AtlasRevisionType identifies how an Atlas-format revision row was recorded.
+
+const AtlasRevisionTypeUnknown AtlasRevisionType = iota ...
+func (t AtlasRevisionType) String() string
 
 ### github.com/stokaro/ptah/migration/migrator.AtlasTemplateData
 
@@ -6795,9 +6835,10 @@ type MigrateUpOptions struct {
 package migrator // import "github.com/stokaro/ptah/migration/migrator"
 
 type Migration struct {
-    Version      int64
-    Description  string
-    Checksum     string
+    Version     int64
+    Description string
+    Checksum    string
+
     Up           MigrationFunc
     Down         MigrationFunc
     UpSQL        string
@@ -6873,6 +6914,7 @@ type MigrationFile struct {
     Direction string
     Extension string
     Format    MigrationDirFormat
+
     // Repeatable marks Flyway-style repeatable migrations imported by Atlas.
     // They are visible to discovery and linting, but they are not part of
     // Ptah's ordered versioned execution model.
@@ -6883,6 +6925,7 @@ type MigrationFile struct {
     // already-migrated database ignores it. The marker is spelled
     // NNNNNNNNNN_description.checkpoint.(up|down).sql.
     IsCheckpoint bool
+    // Has unexported fields.
 }
     MigrationFile represents the parsed components of a migration file name
 
@@ -6962,19 +7005,20 @@ type MigrationProvider interface {
 package migrator // import "github.com/stokaro/ptah/migration/migrator"
 
 type MigrationRevision struct {
-    Version         int64         `json:"version"`
-    Description     string        `json:"description"`
-    State           string        `json:"state"`
-    Applied         int           `json:"applied"`
-    Total           int           `json:"total"`
-    Error           string        `json:"error,omitempty"`
-    ErrorStatement  string        `json:"error_stmt,omitempty"`
-    ExecutionTime   time.Duration `json:"execution_time"`
-    Checksum        string        `json:"checksum,omitempty"`
-    AppliedAt       time.Time     `json:"applied_at"`
-    OperatorVersion string        `json:"operator_version,omitempty"`
-    Dirty           bool          `json:"dirty"`
-    ChecksumCurrent string        `json:"checksum_current,omitempty"`
+    Version         int64             `json:"version"`
+    Description     string            `json:"description"`
+    State           string            `json:"state"`
+    AtlasType       AtlasRevisionType `json:"atlas_type,omitempty"`
+    Applied         int               `json:"applied"`
+    Total           int               `json:"total"`
+    Error           string            `json:"error,omitempty"`
+    ErrorStatement  string            `json:"error_stmt,omitempty"`
+    ExecutionTime   time.Duration     `json:"execution_time"`
+    Checksum        string            `json:"checksum,omitempty"`
+    AppliedAt       time.Time         `json:"applied_at"`
+    OperatorVersion string            `json:"operator_version,omitempty"`
+    Dirty           bool              `json:"dirty"`
+    ChecksumCurrent string            `json:"checksum_current,omitempty"`
 }
     MigrationRevision records one row from the migration metadata table.
 
@@ -6993,6 +7037,18 @@ type MigrationStatus struct {
     DirtyRevision        *MigrationRevision `json:"dirty_revision,omitempty"`
 }
     MigrationStatus represents the current state of migrations
+
+
+### github.com/stokaro/ptah/migration/migrator.MigrationStatusSnapshot
+
+package migrator // import "github.com/stokaro/ptah/migration/migrator"
+
+type MigrationStatusSnapshot struct {
+    Status    *MigrationStatus
+    Revisions []MigrationRevision
+}
+    MigrationStatusSnapshot contains a migration status and the revision rows
+    used to derive it.
 
 
 ### github.com/stokaro/ptah/migration/migrator.MigrationTimeouts
@@ -7039,8 +7095,10 @@ func (m *Migrator) GetAppliedMigrations(ctx context.Context) ([]int64, error)
 func (m *Migrator) GetAppliedRevisions(ctx context.Context) ([]MigrationRevision, error)
 func (m *Migrator) GetCurrentVersion(ctx context.Context) (int64, error)
 func (m *Migrator) GetMigrationStatus(ctx context.Context) (status *MigrationStatus, err error)
+func (m *Migrator) GetMigrationStatusSnapshot(ctx context.Context) (snapshot MigrationStatusSnapshot, err error)
 func (m *Migrator) GetPendingMigrations(ctx context.Context) ([]int64, error)
 func (m *Migrator) GetPreviousMigrationVersion(ctx context.Context) (int64, error)
+func (m *Migrator) GetRevisions(ctx context.Context) ([]MigrationRevision, error)
 func (m *Migrator) Initialize(ctx context.Context) error
 func (m *Migrator) MigrateDown(ctx context.Context) (err error)
 func (m *Migrator) MigrateDownTo(ctx context.Context, targetVersion int64) error
@@ -7052,6 +7110,7 @@ func (m *Migrator) MigrateUpWithPreflight(ctx context.Context, hook PreMigration
 func (m *Migrator) MigrationProvider() MigrationProvider
 func (m *Migrator) MigrationsTableIdentifier() string
 func (m *Migrator) RepairMigration(ctx context.Context, opts RepairMigrationOptions) error
+func (m *Migrator) SetAtlasRevision(ctx context.Context, version int64) (AtlasRevisionSetResult, error)
 func (m *Migrator) WithDefaultTimeouts(timeouts MigrationTimeouts) *Migrator
 func (m *Migrator) WithExecOrder(execOrder ExecOrder) *Migrator
 func (m *Migrator) WithLogger(l *slog.Logger) *Migrator
