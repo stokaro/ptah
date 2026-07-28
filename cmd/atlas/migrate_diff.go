@@ -8,11 +8,13 @@ import (
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/cmd/internal/editor"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasargs"
 	"github.com/stokaro/ptah/internal/atlasmigrate"
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/atlasschema"
+	"github.com/stokaro/ptah/internal/migrateops"
 	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/migrator"
 )
@@ -42,10 +44,11 @@ directory on it, compares the resulting state to local --to schema files, and
 writes a new Atlas-style single-file migration plus atlas.sum when changes are
 found. Use a disposable dev database. This implementation currently supports
 local file:// migration directories and local .hcl, .yaml, .yml, or .sql schema
-files. Use --schema to limit the comparison to selected schema names. Database
-URLs, env:// URLs, qualifier metadata, editor integration, concurrent index
-migration-file metadata, and Docker dev databases remain explicit follow-up
-gaps. When --env is set, the selected atlas.hcl env can provide schema.src,
+files. Use --schema to limit the comparison to selected schema names. With
+--edit the generated migration file opens in $VISUAL or $EDITOR before the
+directory checksum is finalized. Database URLs, env:// URLs, qualifier
+metadata, concurrent index migration-file metadata, and Docker dev databases
+remain explicit follow-up gaps. When --env is set, the selected atlas.hcl env can provide schema.src,
 dev, migration.dir, format.migrate.diff, and supported non-concurrent diff
 policy values.`,
 		Args: cobra.MaximumNArgs(1),
@@ -159,6 +162,16 @@ func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name 
 		fmt.Fprint(cmd.OutOrStdout(), diffResult.SQL)
 		return nil
 	}
+	if opts.edit {
+		if err := editor.Open("", diffResult.MigrationPath); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+		// Editing changes the just-hashed migration content, so atlas.sum is
+		// refreshed to keep the directory valid.
+		if _, err := migrateops.Rehash(migrationsDir, migrator.MigrationDirFormatAtlas); err != nil {
+			return cmdutil.Fail(cmd, fmt.Errorf("refresh atlas.sum after editing: %w", err))
+		}
+	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Created migration file: %s\n", diffResult.MigrationPath)
 	fmt.Fprintf(cmd.OutOrStdout(), "Updated migration checksum: %s\n", diffResult.SumPath)
 	return nil
@@ -180,8 +193,8 @@ func validateAtlasMigrateDiffOptions(cmd *cobra.Command, opts atlasMigrateDiffOp
 	if dirFormat != "" && dirFormat != string(migrator.MigrationDirFormatAtlas) {
 		return fmt.Errorf("atlas migrate diff currently writes Atlas-format migration directories only")
 	}
-	if opts.edit {
-		return fmt.Errorf("atlas migrate diff accepts --edit, but Ptah does not implement editor integration yet")
+	if opts.edit && opts.dryRun {
+		return fmt.Errorf("atlas migrate diff --edit cannot be combined with --dry-run: dry runs write no migration file to edit")
 	}
 	if strings.TrimSpace(opts.qualifier) != "" {
 		return fmt.Errorf("atlas migrate diff accepts --qualifier, but Ptah does not implement custom qualifier metadata yet")

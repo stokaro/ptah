@@ -38,10 +38,13 @@ func TestNewAtlasCommand_OSSCommandPathsResolve(t *testing.T) {
 		{"migrate", "apply"},
 		{"migrate", "diff"},
 		{"migrate", "down"},
+		{"migrate", "edit"},
 		{"migrate", "hash"},
 		{"migrate", "import"},
 		{"migrate", "lint"},
 		{"migrate", "new"},
+		{"migrate", "rebase"},
+		{"migrate", "rm"},
 		{"migrate", "set"},
 		{"migrate", "status"},
 		{"migrate", "test"},
@@ -293,6 +296,21 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 			name:  "migrate_new",
 			path:  []string{"migrate", "new"},
 			flags: []string{"--dir", "--dir-format", "--edit"},
+		},
+		{
+			name:  "migrate_edit",
+			path:  []string{"migrate", "edit"},
+			flags: []string{"--dir", "--dir-format"},
+		},
+		{
+			name:  "migrate_rebase",
+			path:  []string{"migrate", "rebase"},
+			flags: []string{"--dir", "--dir-format"},
+		},
+		{
+			name:  "migrate_rm",
+			path:  []string{"migrate", "rm"},
+			flags: []string{"--dir", "--dir-format"},
 		},
 		{
 			name:  "migrate_set",
@@ -548,6 +566,10 @@ func TestNewAtlasCommand_MigrateMetadataDirFormatDefaultsToAtlas(t *testing.T) {
 		path []string
 	}{
 		{
+			name: "edit",
+			path: []string{"migrate", "edit"},
+		},
+		{
 			name: "hash",
 			path: []string{"migrate", "hash"},
 		},
@@ -558,6 +580,14 @@ func TestNewAtlasCommand_MigrateMetadataDirFormatDefaultsToAtlas(t *testing.T) {
 		{
 			name: "new",
 			path: []string{"migrate", "new"},
+		},
+		{
+			name: "rebase",
+			path: []string{"migrate", "rebase"},
+		},
+		{
+			name: "rm",
+			path: []string{"migrate", "rm"},
 		},
 		{
 			name: "set",
@@ -1759,6 +1789,10 @@ func TestNewAtlasCommand_MigrateMetadataRejectsUnsupportedAtlasDirFormat(t *test
 		args []string
 	}{
 		{
+			name: "edit",
+			args: []string{"migrate", "edit", "1", "--dir", t.TempDir(), "--dir-format", "goose"},
+		},
+		{
 			name: "hash",
 			args: []string{"migrate", "hash", "--dir", t.TempDir(), "--dir-format", "goose"},
 		},
@@ -1769,6 +1803,14 @@ func TestNewAtlasCommand_MigrateMetadataRejectsUnsupportedAtlasDirFormat(t *test
 		{
 			name: "new",
 			args: []string{"migrate", "new", "manual_hotfix", "--dir", t.TempDir(), "--dir-format", "golang-migrate"},
+		},
+		{
+			name: "rebase",
+			args: []string{"migrate", "rebase", "1", "--dir", t.TempDir(), "--dir-format", "flyway"},
+		},
+		{
+			name: "rm",
+			args: []string{"migrate", "rm", "1", "--dir", t.TempDir(), "--dir-format", "liquibase"},
 		},
 		{
 			name: "set",
@@ -2463,18 +2505,6 @@ func TestNewAtlasCommand_SchemaApplyRejectsDevURLDialectMismatch(t *testing.T) {
 func TestNewAtlasCommand_FlagSurfaceRejectsUnsupportedAtlasCEBehavior(t *testing.T) {
 	c := qt.New(t)
 
-	c.Run("migrate_diff_edit", func(c *qt.C) {
-		cmd := NewAtlasCommand()
-		var out bytes.Buffer
-		cmd.SetOut(&out)
-		cmd.SetErr(&out)
-		cmd.SetArgs([]string{"migrate", "diff", "--to", "file://schema.sql", "--dev-url", "sqlite://dev.db", "--edit"})
-
-		err := cmd.Execute()
-
-		c.Assert(err, qt.ErrorMatches, `atlas migrate diff accepts --edit, but Ptah does not implement editor integration yet`)
-	})
-
 	c.Run("migrate_diff_qualifier", func(c *qt.C) {
 		cmd := NewAtlasCommand()
 		var out bytes.Buffer
@@ -2487,18 +2517,6 @@ func TestNewAtlasCommand_FlagSurfaceRejectsUnsupportedAtlasCEBehavior(t *testing
 		c.Assert(err, qt.ErrorMatches, `atlas migrate diff accepts --qualifier, but Ptah does not implement custom qualifier metadata yet`)
 	})
 
-	c.Run("migrate_new_edit", func(c *qt.C) {
-		cmd := NewAtlasCommand()
-		var out bytes.Buffer
-		cmd.SetOut(&out)
-		cmd.SetErr(&out)
-		cmd.SetArgs([]string{"migrate", "new", "--edit", "add_users"})
-
-		err := cmd.Execute()
-
-		c.Assert(err, qt.ErrorMatches, `atlas migrate new accepts --edit, but Ptah does not implement its behavior yet`)
-	})
-
 	c.Run("schema_apply_plan", func(c *qt.C) {
 		cmd := NewAtlasCommand()
 		var out bytes.Buffer
@@ -2509,18 +2527,6 @@ func TestNewAtlasCommand_FlagSurfaceRejectsUnsupportedAtlasCEBehavior(t *testing
 		err := cmd.Execute()
 
 		c.Assert(err, qt.ErrorMatches, `atlas schema apply accepts --plan, but Ptah does not implement Atlas Cloud plan execution yet`)
-	})
-
-	c.Run("schema_apply_edit", func(c *qt.C) {
-		cmd := NewAtlasCommand()
-		var out bytes.Buffer
-		cmd.SetOut(&out)
-		cmd.SetErr(&out)
-		cmd.SetArgs([]string{"schema", "apply", "--url", "sqlite://apply.db", "--to", "file://schema.sql", "--edit"})
-
-		err := cmd.Execute()
-
-		c.Assert(err, qt.ErrorMatches, `atlas schema apply accepts --edit, but Ptah does not implement editor integration yet`)
 	})
 
 	c.Run("schema_apply_lock_timeout", func(c *qt.C) {

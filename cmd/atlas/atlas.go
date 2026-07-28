@@ -18,8 +18,11 @@ import (
 	"github.com/stokaro/ptah/cmd/migrate"
 	"github.com/stokaro/ptah/cmd/migratecheckpoint"
 	"github.com/stokaro/ptah/cmd/migratedown"
+	"github.com/stokaro/ptah/cmd/migrateedit"
 	"github.com/stokaro/ptah/cmd/migratehash"
+	"github.com/stokaro/ptah/cmd/migraterebase"
 	"github.com/stokaro/ptah/cmd/migraterepair"
+	"github.com/stokaro/ptah/cmd/migraterm"
 	"github.com/stokaro/ptah/cmd/migratevalidate"
 	"github.com/stokaro/ptah/cmd/migrationstest"
 	"github.com/stokaro/ptah/cmd/schema"
@@ -46,6 +49,13 @@ type atlasVerb struct {
 type atlasPositionalArg struct {
 	name       string
 	nativeName string
+	// mapValue rewrites the positional value before it is appended as the
+	// native flag pair.
+	mapValue func(string) (string, error)
+	// variadic marks a positional Atlas documents as repeatable. Ptah forwards
+	// a single value and rejects multiple values loudly until multi-value
+	// forwarding is implemented.
+	variadic bool
 }
 
 const (
@@ -160,6 +170,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 				atlasargs.NativeString("dev-url", "", "URL of the dev database the directory is replayed into", "shadow-db"),
 			},
 		},
+		atlasMigrateEditVerb(),
 		{
 			use:     "hash",
 			short:   "Write or update the migration directory checksum",
@@ -179,9 +190,11 @@ func newAtlasMigrateCommand() *cobra.Command {
 			flags: []atlasargs.Flag{
 				atlasargs.NativeLocalDir("dir", "", "Migration directory", "migrations-dir"),
 				atlasMigrateDirFormatFlag("dir-format"),
-				atlasargs.UnsupportedBool("edit", "", "Edit the created migration files"),
+				atlasargs.NativeBool("edit", "", "Edit the created migration files", "edit"),
 			},
 		},
+		atlasMigrateRebaseVerb(),
+		atlasMigrateRmVerb(),
 		{
 			use:         "set",
 			displayUse:  "set [flags] [version]",
@@ -227,10 +240,7 @@ func newAtlasMigrateCommand() *cobra.Command {
 	cmd.AddCommand(newAtlasMigrateDiffCommand())
 	cmd.AddCommand(newAtlasMigrateImportCommand())
 	addAtlasUnsupportedCommunityCommands(cmd, "migrate", []atlasUnsupportedCommunityVerb{
-		{use: "edit", short: "Edit migration files"},
 		{use: "push", short: "Push migration directory to Atlas Cloud"},
-		{use: "rebase", short: "Rebase migration files"},
-		{use: "rm", short: "Remove migration files"},
 	})
 	return cmd
 }
@@ -396,7 +406,7 @@ func atlasMigrateTestVerb() atlasVerb {
 		positionals:        []atlasPositionalArg{{name: "paths", nativeName: "dir"}},
 		positionalOptional: true,
 		flags: []atlasargs.Flag{
-			atlasMigrateTestDirFlag(),
+			atlasMigrationsDirFlag(),
 			atlasMigrateDirFormatFlag("dir-format"),
 			atlasargs.NativeString("dev-url", "", "Dev database URL the test cases run against", "db-url"),
 			atlasargs.String("run", "", "Run only test cases matching a Go regular expression"),
@@ -404,7 +414,9 @@ func atlasMigrateTestVerb() atlasVerb {
 	}
 }
 
-func atlasMigrateTestDirFlag() atlasargs.Flag {
+// atlasMigrationsDirFlag maps the Atlas --dir migration-directory URL (default
+// file://migrations) onto the native --migrations-dir local path.
+func atlasMigrationsDirFlag() atlasargs.Flag {
 	flag := atlasargs.NativeStringDefault(
 		"dir",
 		"",
@@ -414,6 +426,119 @@ func atlasMigrateTestDirFlag() atlasargs.Flag {
 	)
 	flag.MapValue = atlasargs.LocalDirValue
 	return flag
+}
+
+// atlasMigrateEditVerb forwards `atlas migrate edit` to the native
+// `ptah migrations edit` command. The {name | version} positional maps to the
+// native --version value (a migration file name contributes its leading version
+// digits), --dir maps to the native migration directory (Atlas-format by
+// default via --dir-format), and the editor resolves from $VISUAL, then
+// $EDITOR, like the native command. After the editor exits, the native command
+// rewrites the directory checksum so validation keeps passing.
+func atlasMigrateEditVerb() atlasVerb {
+	return atlasVerb{
+		use:        "edit",
+		displayUse: "edit [flags] {name | version}",
+		short:      "Edit a migration file and update the directory checksum",
+		native:     "migrations edit",
+		factory:    migrateedit.NewMigrateEditCommand,
+		positionals: []atlasPositionalArg{{
+			name:       "version",
+			nativeName: "version",
+			mapValue:   atlasMigrateVersionValue,
+		}},
+		nativeOnlyFlags: append(atlasMigrateMaintNativeOnlyFlags(), "down-file", "editor", "up-file"),
+		flags:           atlasMigrateMaintFlags(),
+	}
+}
+
+// atlasMigrateRebaseVerb forwards `atlas migrate rebase` to the native
+// `ptah migrations rebase` command, which re-timestamps the selected migration
+// to the end of history and rewrites the directory checksum. Atlas documents a
+// repeatable {name | version} positional; Ptah forwards one migration per run
+// and rejects multiple values and version ranges loudly.
+func atlasMigrateRebaseVerb() atlasVerb {
+	return atlasVerb{
+		use:        "rebase",
+		displayUse: "rebase [flags] {name | version}...",
+		short:      "Move a migration to the end of history and update the directory checksum",
+		native:     "migrations rebase",
+		factory:    migraterebase.NewMigrateRebaseCommand,
+		positionals: []atlasPositionalArg{{
+			name:       "version",
+			nativeName: "version",
+			mapValue:   atlasMigrateVersionValue,
+			variadic:   true,
+		}},
+		nativeOnlyFlags: atlasMigrateMaintNativeOnlyFlags(),
+		flags:           atlasMigrateMaintFlags(),
+	}
+}
+
+// atlasMigrateRmVerb forwards `atlas migrate rm` to the native
+// `ptah migrations rm` command, which deletes the selected migration's files
+// and rewrites the directory checksum.
+func atlasMigrateRmVerb() atlasVerb {
+	return atlasVerb{
+		use:        "rm",
+		displayUse: "rm [flags] {name | version}",
+		short:      "Remove a migration file and update the directory checksum",
+		native:     "migrations rm",
+		factory:    migraterm.NewMigrateRmCommand,
+		positionals: []atlasPositionalArg{{
+			name:       "version",
+			nativeName: "version",
+			mapValue:   atlasMigrateVersionValue,
+		}},
+		nativeOnlyFlags: atlasMigrateMaintNativeOnlyFlags(),
+		flags:           atlasMigrateMaintFlags(),
+	}
+}
+
+func atlasMigrateMaintFlags() []atlasargs.Flag {
+	return []atlasargs.Flag{
+		atlasMigrationsDirFlag(),
+		atlasMigrateDirFormatFlag("dir-format"),
+	}
+}
+
+// atlasMigrateMaintNativeOnlyFlags lists the native maintenance flags the
+// Atlas-shaped edit/rebase/rm verbs do not accept; use the native
+// `ptah migrations edit|rebase|rm` commands for them.
+func atlasMigrateMaintNativeOnlyFlags() []string {
+	return []string{
+		"atlas-env",
+		"connect-timeout",
+		"db-url",
+		"force",
+		"migrations-dir",
+		"migrations-schema",
+		"migrations-table",
+		"revision-table-format",
+		"version",
+	}
+}
+
+// atlasMigrateVersionValue maps an Atlas {name | version} positional onto the
+// native --version value: a bare version passes through, and a migration file
+// name (for example 20060102150405_name.sql) contributes its leading version
+// digits.
+func atlasMigrateVersionValue(value string) (string, error) {
+	version := strings.TrimSpace(value)
+	if strings.Contains(version, "...") {
+		return "", fmt.Errorf("Atlas accepts version ranges, but Ptah does not implement range selection yet")
+	}
+	digits := version
+	if i := strings.IndexFunc(version, func(r rune) bool { return r < '0' || r > '9' }); i >= 0 {
+		if version[i] != '_' {
+			return "", fmt.Errorf("cannot determine a migration version from %q", value)
+		}
+		digits = version[:i]
+	}
+	if digits == "" {
+		return "", fmt.Errorf("cannot determine a migration version from %q", value)
+	}
+	return digits, nil
 }
 
 // atlasSchemaTestVerb forwards `atlas schema test` to the native
@@ -641,10 +766,30 @@ func mapAtlasPositionalArgs(group string, verb atlasVerb, args []string) (remain
 		}
 		return nil, nil, fmt.Errorf("atlas %s %s requires %s argument", group, verb.use, positional.name)
 	case 1:
-		return withoutPositionals, []string{"--" + positional.nativeName, positionals[0]}, nil
+		value, err := mapAtlasPositionalValue(group, verb, positional, positionals[0])
+		if err != nil {
+			return nil, nil, err
+		}
+		return withoutPositionals, []string{"--" + positional.nativeName, value}, nil
 	default:
+		if positional.variadic {
+			return nil, nil, fmt.Errorf(
+				"atlas %s %s accepts multiple %s arguments, but Ptah does not implement processing more than one per run yet",
+				group, verb.use, positional.name)
+		}
 		return nil, nil, fmt.Errorf("atlas %s %s accepts one %s argument, got %q", group, verb.use, positional.name, positionals)
 	}
+}
+
+func mapAtlasPositionalValue(group string, verb atlasVerb, positional atlasPositionalArg, value string) (string, error) {
+	if positional.mapValue == nil {
+		return value, nil
+	}
+	mapped, err := positional.mapValue(value)
+	if err != nil {
+		return "", fmt.Errorf("atlas %s %s %s argument: %w", group, verb.use, positional.name, err)
+	}
+	return mapped, nil
 }
 
 func splitAtlasPositionals(flags []atlasargs.Flag, args []string) (

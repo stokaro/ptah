@@ -5,14 +5,14 @@
 package migrateedit
 
 import (
+	"errors"
 	"fmt"
 	"os"
-	"os/exec"
-	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
+	"github.com/stokaro/ptah/cmd/internal/editor"
 	"github.com/stokaro/ptah/cmd/internal/migratemaint"
 	"github.com/stokaro/ptah/internal/migrateops"
 )
@@ -109,38 +109,10 @@ func replaceFrom(target, src, direction string) error {
 
 // openEditor launches the resolved editor on the pair's existing files, wired to
 // the current terminal for interactive editing.
-func openEditor(editor string, paths ...string) error {
-	if editor == "" {
-		editor = firstNonEmpty(os.Getenv("VISUAL"), os.Getenv("EDITOR"))
+func openEditor(editorCmd string, paths ...string) error {
+	err := editor.Open(editorCmd, paths...)
+	if errors.Is(err, editor.ErrNoEditor) {
+		return fmt.Errorf("%w, or pass --editor, --up-file, or --down-file", err)
 	}
-	if strings.TrimSpace(editor) == "" {
-		return fmt.Errorf("no editor configured: set $EDITOR or $VISUAL, or pass --editor, --up-file, or --down-file")
-	}
-	fields := strings.Fields(editor)
-	args := append(append([]string{}, fields[1:]...), nonEmpty(paths)...)
-	c := exec.Command(fields[0], args...) //nolint:gosec // the editor is operator-provided, like git's core.editor
-	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
-	if err := c.Run(); err != nil {
-		return fmt.Errorf("editor %q failed: %w", editor, err)
-	}
-	return nil
-}
-
-func nonEmpty(values []string) []string {
-	out := make([]string, 0, len(values))
-	for _, v := range values {
-		if v != "" {
-			out = append(out, v)
-		}
-	}
-	return out
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if strings.TrimSpace(v) != "" {
-			return v
-		}
-	}
-	return ""
+	return err
 }
