@@ -18,6 +18,26 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
+const (
+	atlasProjectConfigSeedVersion    = "20260719010000"
+	atlasProjectConfigPendingVersion = "20260719010101"
+	atlasProjectConfigSeedHash       = "BH+RgWEaFyoTPktaYRIv/patf+c8tCfnN+p6QfFNmR0="
+	atlasProjectConfigPendingHash    = "EcuB2Y9oYkkrUBgA88MQGlzZAClvWSpHb1LUBOr+yAw="
+)
+
+type atlasProjectConfigRevision struct {
+	Version         string
+	Description     string
+	Type            int
+	Applied         int
+	Total           int
+	Error           sql.NullString
+	ErrorStatement  sql.NullString
+	Hash            string
+	PartialHashes   sql.NullString
+	OperatorVersion string
+}
+
 func TestAtlasProjectConfigMigrateStatusAndUpE2E(t *testing.T) {
 	dbURL := postgresE2EDatabaseURL(t)
 	if dbURL == "" {
@@ -44,14 +64,20 @@ func TestAtlasProjectConfigMigrateStatusAndUpE2E(t *testing.T) {
 	defer dropE2EDatabase(c, context.Background(), adminDB, testDBName)
 
 	workDir := t.TempDir()
-	writeAtlasProjectConfigFixture(c, workDir, replaceDatabaseName(c, dbURL, testDBName))
+	testDBURL := replaceDatabaseName(c, dbURL, testDBName)
+	t.Setenv("PTAH_ATLAS_PROJECT_CONFIG_E2E_URL", testDBURL)
+	writeAtlasProjectConfigFixture(c, repoRoot, workDir)
+	seedAtlasProjectConfigDatabaseState(c, ctx, testDBURL)
 
 	output, err := runPtahInDir(ctx, workDir, binaryPath, "migrations", "status", "--env", "local", "--json")
 	c.Assert(err, qt.IsNil, qt.Commentf("migrations status output:\n%s", output))
-	c.Assert(readStatusField(c, output, "total_migrations"), qt.Equals, float64(1))
+	c.Assert(readStatusField(c, output, "total_migrations"), qt.Equals, float64(2))
+	c.Assert(readStatusField(c, output, "current_version"), qt.Equals, float64(20260719010000))
+	c.Assert(readStatusField(c, output, "applied_migrations"), qt.DeepEquals, []any{float64(20260719010000)})
+	c.Assert(readStatusField(c, output, "pending_migrations"), qt.DeepEquals, []any{float64(20260719010101)})
 	c.Assert(readStatusField(c, output, "has_pending_changes"), qt.Equals, true)
 
-	output, err = runPtahInDir(ctx, workDir, binaryPath, "migrations", "up", "--env", "local")
+	output, err = runPtahInDir(ctx, workDir, binaryPath, "migrations", "up", "--env", "local", "--verify-sum")
 	c.Assert(err, qt.IsNil, qt.Commentf("migrations up output:\n%s", output))
 	c.Assert(output, qt.Contains, "Migration directory format: atlas")
 	c.Assert(output, qt.Contains, "Database is now at version: 20260719010101")
@@ -59,33 +85,55 @@ func TestAtlasProjectConfigMigrateStatusAndUpE2E(t *testing.T) {
 	output, err = runPtahInDir(ctx, workDir, binaryPath, "migrations", "status", "--env", "local", "--json")
 	c.Assert(err, qt.IsNil, qt.Commentf("final migrations status output:\n%s", output))
 	c.Assert(readStatusField(c, output, "current_version"), qt.Equals, float64(20260719010101))
+	c.Assert(readStatusField(c, output, "applied_migrations"), qt.DeepEquals, []any{
+		float64(20260719010000),
+		float64(20260719010101),
+	})
+	c.Assert(readStatusField(c, output, "pending_migrations"), qt.DeepEquals, []any{})
 	c.Assert(readStatusField(c, output, "has_pending_changes"), qt.Equals, false)
 
-	verifyAtlasProjectConfigDatabaseState(c, ctx, replaceDatabaseName(c, dbURL, testDBName))
+	verifyAtlasProjectConfigDatabaseState(c, ctx, testDBURL)
 }
 
-func writeAtlasProjectConfigFixture(c *qt.C, workDir, dbURL string) {
-	migrationsDir := filepath.Join(workDir, "migrations")
-	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
-	c.Assert(os.WriteFile(filepath.Join(workDir, "atlas.hcl"), []byte(fmt.Sprintf(`env "local" {
-  url = %q
-  migration {
-    dir              = "file://migrations"
-    revisions_schema = "ptah_issue_276"
-    lock_timeout     = "3s"
-    exec_order       = "linear"
-  }
+func writeAtlasProjectConfigFixture(c *qt.C, repoRoot, workDir string) {
+	fixtureRoot := filepath.Join(repoRoot, "integration", "testdata", "atlas-project-config")
+	c.Assert(os.CopyFS(workDir, os.DirFS(fixtureRoot)), qt.IsNil)
 }
-`, dbURL)), 0600), qt.IsNil)
-	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "atlas.sum"), []byte(
-		"h1:directory\n"+
-			"20260719010101_create_project_config_widgets.sql h1:ptahissue276\n",
-	), 0600), qt.IsNil)
-	c.Assert(os.WriteFile(
-		filepath.Join(migrationsDir, "20260719010101_create_project_config_widgets.sql"),
-		[]byte("CREATE TABLE ptah_issue_276_widgets (id INT PRIMARY KEY);\n"),
-		0600,
-	), qt.IsNil)
+
+func seedAtlasProjectConfigDatabaseState(c *qt.C, ctx context.Context, dbURL string) {
+	db, err := sql.Open("pgx", dbURL)
+	c.Assert(err, qt.IsNil)
+	defer db.Close()
+
+	_, err = db.ExecContext(ctx, "CREATE TABLE ptah_issue_276_seed (id INT PRIMARY KEY)")
+	c.Assert(err, qt.IsNil)
+	_, err = db.ExecContext(ctx, "CREATE SCHEMA ptah_issue_276")
+	c.Assert(err, qt.IsNil)
+	_, err = db.ExecContext(ctx, `CREATE TABLE ptah_issue_276.atlas_schema_revisions (
+    version VARCHAR(255) PRIMARY KEY,
+    description TEXT NOT NULL,
+    type BIGINT NOT NULL DEFAULT 2,
+    applied BIGINT NOT NULL DEFAULT 0,
+    total BIGINT NOT NULL DEFAULT 0,
+    executed_at TIMESTAMP NOT NULL,
+    execution_time BIGINT NOT NULL,
+    error TEXT NULL,
+    error_stmt TEXT NULL,
+    hash VARCHAR(255) NOT NULL,
+    partial_hashes JSONB NULL,
+    operator_version VARCHAR(255) NOT NULL
+)`)
+	c.Assert(err, qt.IsNil)
+	_, err = db.ExecContext(ctx, `INSERT INTO ptah_issue_276.atlas_schema_revisions
+(version, description, type, applied, total, executed_at, execution_time, hash, operator_version)
+VALUES ($1, $2, 2, 1, 1, $3, 100, $4, $5)`,
+		atlasProjectConfigSeedVersion,
+		"Seed project config",
+		time.Now(),
+		atlasProjectConfigSeedHash,
+		"Atlas",
+	)
+	c.Assert(err, qt.IsNil)
 }
 
 func runPtahInDir(ctx context.Context, dir, binaryPath string, args ...string) (string, error) {
@@ -113,11 +161,80 @@ WHERE table_schema = 'public' AND table_name = 'ptah_issue_276_widgets'`).Scan(&
 	c.Assert(err, qt.IsNil)
 	c.Assert(tableName, qt.Equals, "ptah_issue_276_widgets")
 
-	var version, hash string
-	err = db.QueryRowContext(ctx, `SELECT version, hash
-FROM ptah_issue_276.atlas_schema_revisions
-WHERE version = '20260719010101'`).Scan(&version, &hash)
+	err = db.QueryRowContext(ctx, `SELECT table_name
+FROM information_schema.tables
+WHERE table_schema = 'public' AND table_name = 'ptah_issue_276_seed'`).Scan(&tableName)
 	c.Assert(err, qt.IsNil)
-	c.Assert(version, qt.Equals, "20260719010101")
-	c.Assert(hash, qt.Equals, "ptahissue276")
+	c.Assert(tableName, qt.Equals, "ptah_issue_276_seed")
+
+	var indexName string
+	err = db.QueryRowContext(ctx, `SELECT indexname
+FROM pg_indexes
+WHERE schemaname = 'public' AND indexname = 'idx_ptah_issue_276_seed_id'`).Scan(&indexName)
+	c.Assert(err, qt.IsNil)
+	c.Assert(indexName, qt.Equals, "idx_ptah_issue_276_seed_id")
+
+	seedRevision := readAtlasProjectConfigRevision(c, ctx, db, atlasProjectConfigSeedVersion)
+	c.Assert(seedRevision, qt.DeepEquals, atlasProjectConfigRevision{
+		Version:         atlasProjectConfigSeedVersion,
+		Description:     "Seed project config",
+		Type:            2,
+		Applied:         1,
+		Total:           1,
+		Hash:            atlasProjectConfigSeedHash,
+		OperatorVersion: "Atlas",
+	})
+
+	pendingRevision := readAtlasProjectConfigRevision(c, ctx, db, atlasProjectConfigPendingVersion)
+	c.Assert(pendingRevision, qt.DeepEquals, atlasProjectConfigRevision{
+		Version:         atlasProjectConfigPendingVersion,
+		Description:     "Create Project Config Widgets",
+		Type:            2,
+		Applied:         2,
+		Total:           2,
+		Hash:            atlasProjectConfigPendingHash,
+		OperatorVersion: "Ptah",
+	})
+
+	var revisionCount int
+	err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM ptah_issue_276.atlas_schema_revisions`).Scan(&revisionCount)
+	c.Assert(err, qt.IsNil)
+	c.Assert(revisionCount, qt.Equals, 2)
+}
+
+func readAtlasProjectConfigRevision(
+	c *qt.C,
+	ctx context.Context,
+	db *sql.DB,
+	version string,
+) atlasProjectConfigRevision {
+	c.Helper()
+
+	var revision atlasProjectConfigRevision
+	err := db.QueryRowContext(ctx, `SELECT
+    version,
+    description,
+    type,
+    applied,
+    total,
+    error,
+    error_stmt,
+    hash,
+    partial_hashes,
+    operator_version
+FROM ptah_issue_276.atlas_schema_revisions
+WHERE version = $1`, version).Scan(
+		&revision.Version,
+		&revision.Description,
+		&revision.Type,
+		&revision.Applied,
+		&revision.Total,
+		&revision.Error,
+		&revision.ErrorStatement,
+		&revision.Hash,
+		&revision.PartialHashes,
+		&revision.OperatorVersion,
+	)
+	c.Assert(err, qt.IsNil)
+	return revision
 }

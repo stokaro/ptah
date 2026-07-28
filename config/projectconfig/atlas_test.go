@@ -1,6 +1,7 @@
 package projectconfig_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,30 @@ import (
 
 	"github.com/stokaro/ptah/config/projectconfig"
 )
+
+type atlasProjectConfigGolden struct {
+	EnvName       string                     `json:"env_name"`
+	DatabaseURL   string                     `json:"database_url"`
+	DevURL        string                     `json:"dev_url"`
+	SchemaSources []string                   `json:"schema_sources"`
+	Exclude       []string                   `json:"exclude"`
+	Migration     atlasMigrationConfigGolden `json:"migration"`
+	Lint          atlasLintConfigGolden      `json:"lint"`
+}
+
+type atlasMigrationConfigGolden struct {
+	Dir             string `json:"dir"`
+	Format          string `json:"format"`
+	RevisionFormat  string `json:"revision_format"`
+	RevisionsSchema string `json:"revisions_schema"`
+	LockTimeout     string `json:"lock_timeout"`
+	ExecOrder       string `json:"exec_order"`
+	TxMode          string `json:"tx_mode"`
+}
+
+type atlasLintConfigGolden struct {
+	Latest *int `json:"latest"`
+}
 
 func TestParseAtlasProjectConfig(t *testing.T) {
 	c := qt.New(t)
@@ -49,6 +74,104 @@ func TestParseAtlasProjectConfig(t *testing.T) {
 	c.Assert(cfg.Migration.TxMode, qt.Equals, "none")
 	c.Assert(cfg.Lint.Latest, qt.IsNotNil)
 	c.Assert(*cfg.Lint.Latest, qt.Equals, 5)
+}
+
+func TestParseAtlasProjectConfigGolden_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name    string
+		input   string
+		golden  string
+		envName string
+	}{
+		{
+			name:    "complete local environment",
+			input:   "complete.hcl",
+			golden:  "complete.golden.json",
+			envName: "",
+		},
+		{
+			name:    "selected production environment",
+			input:   "multiple-envs.hcl",
+			golden:  "production.golden.json",
+			envName: "production",
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			raw := readAtlasProjectConfigFixture(c, tt.input)
+
+			cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", tt.envName)
+			c.Assert(err, qt.IsNil)
+
+			got, err := json.MarshalIndent(newAtlasProjectConfigGolden(cfg), "", "  ")
+			c.Assert(err, qt.IsNil)
+			got = append(got, '\n')
+
+			want := readAtlasProjectConfigFixture(c, tt.golden)
+			c.Assert(string(got), qt.Equals, string(want))
+		})
+	}
+}
+
+func TestParseAtlasProjectConfigGolden_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	tests := []struct {
+		name    string
+		input   string
+		wantErr string
+	}{
+		{
+			name:    "Atlas Cloud block",
+			input:   "unsupported-cloud.hcl",
+			wantErr: `unsupported atlas\.hcl construct "atlas" at atlas\.hcl:1`,
+		},
+		{
+			name:    "unknown environment attribute",
+			input:   "unsupported-attribute.hcl",
+			wantErr: `unsupported atlas\.hcl construct "project" at atlas\.hcl:2`,
+		},
+	}
+
+	for _, tt := range tests {
+		c.Run(tt.name, func(c *qt.C) {
+			raw := readAtlasProjectConfigFixture(c, tt.input)
+
+			_, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "")
+			c.Assert(err, qt.ErrorMatches, tt.wantErr)
+		})
+	}
+}
+
+func readAtlasProjectConfigFixture(c *qt.C, name string) []byte {
+	c.Helper()
+
+	data, err := os.ReadFile(filepath.Join("testdata", "atlas", name))
+	c.Assert(err, qt.IsNil)
+	return data
+}
+
+func newAtlasProjectConfigGolden(cfg projectconfig.Config) atlasProjectConfigGolden {
+	return atlasProjectConfigGolden{
+		EnvName:       cfg.EnvName,
+		DatabaseURL:   cfg.DatabaseURL,
+		DevURL:        cfg.DevURL,
+		SchemaSources: cfg.SchemaSources,
+		Exclude:       cfg.Exclude,
+		Migration: atlasMigrationConfigGolden{
+			Dir:             cfg.Migration.Dir,
+			Format:          cfg.Migration.Format,
+			RevisionFormat:  cfg.Migration.RevisionFormat,
+			RevisionsSchema: cfg.Migration.RevisionsSchema,
+			LockTimeout:     cfg.Migration.LockTimeout,
+			ExecOrder:       cfg.Migration.ExecOrder,
+			TxMode:          cfg.Migration.TxMode,
+		},
+		Lint: atlasLintConfigGolden{
+			Latest: cfg.Lint.Latest,
+		},
+	}
 }
 
 func TestParseAtlasProjectConfigPreservesMigrationDirURLSemantics(t *testing.T) {
