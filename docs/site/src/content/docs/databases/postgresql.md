@@ -129,7 +129,11 @@ destructive by the safety gate. Reconciliation is deliberately conservative:
 transaction block. With `diff.concurrent_index: true` in `ptah.yaml`
 ([Configuration](../../reference/configuration/)), migration generation emits
 `CONCURRENTLY` for new indexes on populated tables and pairs the file with
-`-- +ptah no_transaction` so the migrator runs it outside a transaction.
+`-- +ptah no_transaction` so the migrator runs it outside a transaction. The
+Atlas-compatible `ptah atlas migrate diff` with `diff.concurrent_index.create`
+in `atlas.hcl` tags such files with the Atlas `-- atlas:txmode none` directive
+instead ([Atlas migrate commands](../../atlas/migrate-commands/)); the
+migrator honors both directives.
 
 ## Migration locking
 

@@ -22,7 +22,7 @@ translation rules are on the
 | `ptah atlas migrate lint` | Forwards to `ptah migrations lint` with Atlas changeset selectors, dev-database replay, and Atlas report output. |
 | `ptah atlas migrate new` | Creates an Atlas single-file skeleton migration; equivalent to `ptah migrations create`. |
 | `ptah atlas migrate set [version]` | Moves Atlas revision history to the selected version without executing migration SQL: existing clean rows through the target are preserved, missing rows are recorded as manually set, dirty rows retain diagnostics with the combined applied and manually-set type, and rows above the target are removed. |
-| `ptah atlas migrate diff` | Replays local Atlas migrations on `--dev-url`, diffs against local schema files, writes an Atlas single-file migration, and updates `atlas.sum`. |
+| `ptah atlas migrate diff` | Replays local Atlas migrations on `--dev-url`, diffs against local schema files, writes Atlas-style migration files (split when concurrent index builds require `-- atlas:txmode none`), and updates `atlas.sum` atomically. |
 | `ptah atlas migrate import` | Imports local `file://` migration directories from Atlas-supported formats into a separate Atlas single-file directory. |
 | `ptah atlas migrate checkpoint [name]` | Forwards to `ptah migrations checkpoint`; writes a ptah-format cumulative-schema checkpoint pair. |
 | `ptah atlas migrate test [paths]` | Forwards to `ptah migrations test` with Ptah-native YAML test cases. |
@@ -197,13 +197,15 @@ Atlas OSS does not register `migrate apply --dir-format`, `--to-version`, or
 `ptah atlas migrate diff` accepts a local `--dir` migration directory, one or
 more local `--to` schema files, and a directly connectable `--dev-url`. With
 `--env`, Ptah can read `env.schema.src`, `env.dev`, `migration.dir`,
-`format.migrate.diff`, and supported non-concurrent `diff` policy from
-`atlas.hcl`. Ptah drops all tables in the dev database, replays the migration
-directory into it, compares that state to the desired schema files, and writes
-an Atlas-style single `.sql` migration plus `atlas.sum` when changes exist. Use
-a disposable dev database. If `atlas.sum` already exists, Ptah validates it
-before replaying migrations and fails on checksum drift instead of silently
-rehashing edited files.
+`format.migrate.diff`, and supported `diff` policy from `atlas.hcl`. Ptah
+drops all tables in the dev database, replays the migration directory into it,
+compares that state to the desired schema files, and writes Atlas-style `.sql`
+migration files plus `atlas.sum` when changes exist. Use a disposable dev
+database. If `atlas.sum` already exists, Ptah validates it before replaying
+migrations and fails on checksum drift instead of silently rehashing edited
+files. `atlas.sum` is updated only after every migration file of the run was
+written; a failed write rolls the whole generation back so no partial files or
+checksums remain.
 
 ```bash
 ptah atlas migrate diff add_users \
@@ -245,19 +247,47 @@ ptah atlas migrate diff add_users \
   --format '{{ sql . "" }}'
 ```
 
-With `--edit`, the generated migration file opens in `$VISUAL` or `$EDITOR`
+With `--edit`, the generated migration files open in `$VISUAL` or `$EDITOR`
 before `atlas.sum` is finalized, so hand-tuned SQL still validates; `--edit`
 cannot be combined with the hidden `--dry-run` flag because dry runs write no
-migration file to edit. Atlas CE also registers `migrate diff --qualifier`;
-Ptah accepts that flag name for surface parity and fails explicitly until
-custom qualifier metadata is implemented.
+migration file to edit.
+
+`--qualifier` matches Atlas's single-schema semantics: every object named by
+the generated statements is prefixed with the custom schema qualifier, so the
+file can be applied to a schema other than the one it was planned against:
+
+```bash
+ptah atlas migrate diff add_items \
+  --dir file://migrations \
+  --to file://schema.sql \
+  --dev-url "postgres://user:pass@localhost:5432/dev" \
+  --qualifier tenant
+# generates: CREATE TABLE "tenant"."items" (...)
+```
+
+The qualifier is supported on PostgreSQL, CockroachDB, YugabyteDB, MySQL, and MariaDB dev
+databases and applies to tables, columns' foreign-key references, table-level
+constraints, indexes, and drops. Invalid values (control characters, `.`,
+quotes), unsupported dialects, plans spanning several schemas, and statement
+kinds Ptah cannot re-qualify yet (for example enum types) fail explicitly
+before any migration file or checksum is written. As with Atlas, replaying a
+directory that contains qualified migrations requires the qualifier schema to
+exist on the dev database.
 
 `--schema` accepts repeated or comma-separated schema names and narrows the
 replayed dev database state plus local desired schema files before the diff is
-planned. `diff.concurrent_index.create` is rejected in this command until Ptah
-can write matching no-transaction metadata into generated migration files.
-Database desired-schema URLs, `env://` project attributes, and Docker dev
-databases fail explicitly until their semantics are implemented.
+planned. With `diff.concurrent_index.create = true` in the selected `atlas.hcl`
+env, newly added indexes are planned as PostgreSQL `CREATE INDEX CONCURRENTLY`
+statements. Files carrying such statements start with the Atlas
+`-- atlas:txmode none` file directive, which both Atlas and Ptah honor by
+executing the file outside a transaction. Because those statements must not
+silently strip transaction safety from ordinary DDL, a mixed plan is split the
+same way Ptah's native generator splits it: a `<name>_transactional` file with
+the transactional statements followed by a `<name>_concurrent_indexes` file
+tagged `-- atlas:txmode none`; mixes that cannot be split automatically (for
+example enum value additions alongside table changes) are refused. Database
+desired-schema URLs, `env://` project attributes, and Docker dev databases
+fail explicitly until their semantics are implemented.
 
 ## Validate integrity
 

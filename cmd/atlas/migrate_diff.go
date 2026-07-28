@@ -41,16 +41,22 @@ func newAtlasMigrateDiffCommand() *cobra.Command {
 
 Drops all tables in the --dev-url database, replays the local migration
 directory on it, compares the resulting state to local --to schema files, and
-writes a new Atlas-style single-file migration plus atlas.sum when changes are
-found. Use a disposable dev database. This implementation currently supports
-local file:// migration directories and local .hcl, .yaml, .yml, or .sql schema
-files. Use --schema to limit the comparison to selected schema names. With
---edit the generated migration file opens in $VISUAL or $EDITOR before the
-directory checksum is finalized. Database URLs, env:// URLs, qualifier
-metadata, concurrent index migration-file metadata, and Docker dev databases
-remain explicit follow-up gaps. When --env is set, the selected atlas.hcl env can provide schema.src,
-dev, migration.dir, format.migrate.diff, and supported non-concurrent diff
-policy values.`,
+writes new Atlas-style migration files plus atlas.sum when changes are found.
+Use a disposable dev database. This implementation currently supports local
+file:// migration directories and local .hcl, .yaml, .yml, or .sql schema
+files. Use --schema to limit the comparison to selected schema names.
+--qualifier prefixes every object in the generated statements with a custom
+schema qualifier when working on a single schema. When the atlas.hcl env
+enables diff.concurrent_index.create, new indexes are planned as CREATE INDEX
+CONCURRENTLY; files carrying such statements are tagged with the Atlas
+` + "`-- atlas:txmode none`" + ` directive, and plans mixing them with
+transactional statements are split into a transactional file followed by a
+concurrent-index file. atlas.sum is updated only after every migration file
+was written. With --edit the generated migration files open in $VISUAL or
+$EDITOR before the directory checksum is finalized. Database URLs, env://
+URLs, and Docker dev databases remain explicit follow-up gaps. When --env is
+set, the selected atlas.hcl env can provide schema.src, dev, migration.dir,
+format.migrate.diff, and supported diff policy values.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := "migration"
@@ -96,9 +102,6 @@ func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name 
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
-		if policy.ConcurrentIndexCreate {
-			return cmdutil.Fail(cmd, fmt.Errorf("atlas.hcl diff.concurrent_index.create is not supported by migrate diff yet"))
-		}
 	}
 	if loaded && !cmd.Flags().Changed("dir") && projectCfg.Migration.Dir != "" {
 		opts.dirURL, err = atlasProjectConfigLocalDir(cmd, opts.dirURL)
@@ -113,6 +116,10 @@ func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name 
 		}
 	}
 	if err := validateAtlasMigrateDiffOptions(cmd, opts); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	qualifier, err := atlasmigrate.ParseQualifier(opts.qualifier)
+	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	format := atlasreport.NormalizeMigrateDiffFormat(opts.format)
@@ -149,6 +156,7 @@ func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name 
 		Schemas:     opts.schemas,
 		LockTimeout: lockTimeout,
 		Policy:      policy,
+		Qualifier:   qualifier,
 		DryRun:      opts.dryRun,
 	})
 	if err != nil {
@@ -163,8 +171,10 @@ func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name 
 		return nil
 	}
 	if opts.edit {
-		if err := editor.Open("", diffResult.MigrationPath); err != nil {
-			return cmdutil.Fail(cmd, err)
+		for _, migrationPath := range diffResult.MigrationPaths {
+			if err := editor.Open("", migrationPath); err != nil {
+				return cmdutil.Fail(cmd, err)
+			}
 		}
 		// Editing changes the just-hashed migration content, so atlas.sum is
 		// refreshed to keep the directory valid.
@@ -172,7 +182,9 @@ func runAtlasMigrateDiff(cmd *cobra.Command, opts atlasMigrateDiffOptions, name 
 			return cmdutil.Fail(cmd, fmt.Errorf("refresh atlas.sum after editing: %w", err))
 		}
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Created migration file: %s\n", diffResult.MigrationPath)
+	for _, migrationPath := range diffResult.MigrationPaths {
+		fmt.Fprintf(cmd.OutOrStdout(), "Created migration file: %s\n", migrationPath)
+	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Updated migration checksum: %s\n", diffResult.SumPath)
 	return nil
 }
@@ -195,9 +207,6 @@ func validateAtlasMigrateDiffOptions(cmd *cobra.Command, opts atlasMigrateDiffOp
 	}
 	if opts.edit && opts.dryRun {
 		return fmt.Errorf("atlas migrate diff --edit cannot be combined with --dry-run: dry runs write no migration file to edit")
-	}
-	if strings.TrimSpace(opts.qualifier) != "" {
-		return fmt.Errorf("atlas migrate diff accepts --qualifier, but Ptah does not implement custom qualifier metadata yet")
 	}
 	if strings.HasPrefix(strings.TrimSpace(opts.devURL), "docker://") {
 		return fmt.Errorf("atlas migrate diff accepts docker --dev-url values, but Ptah requires a directly connectable dev database URL")
