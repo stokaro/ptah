@@ -79,11 +79,12 @@ SQL paths; prefer `--to` in new Ptah-authored scripts.
 | Atlas-compatible command | Ptah behavior |
 | --- | --- |
 | `ptah atlas schema inspect` | Inspects a live database and writes Atlas-shaped HCL by default, SQL with `--format sql` / `--format '{{ sql . }}'`, JSON with `--format json` / `--format '{{ json . }}'`, custom Go-template output, or basic `hcl`/`sql` split-write exports. `--schema/-s` narrows inspection, and the OSS `--exclude` flag filters inspected resources. |
-| `ptah atlas schema apply` | Applies local desired schema files to a live database through Ptah schema diff and migration execution; supports `--env` project defaults, Atlas-style `--format` templates over the planned changes, `--schema/-s` parsing, the hidden Atlas `--file/-f` input alias, `--exclude` resource filters, and `--edit` for editing the planned SQL in `$VISUAL`/`$EDITOR` before approval and apply. |
+| `ptah atlas schema apply` | Applies local desired schema files to a live database through Ptah schema diff and migration execution; supports `--env` project defaults, Atlas-style `--format` templates over the planned changes, `--schema/-s` parsing, the hidden Atlas `--file/-f` input alias, `--exclude` resource filters, and `--edit` for editing the planned SQL in `$VISUAL`/`$EDITOR` before approval and apply, and `--plan file://<path>` for executing a pre-approved local plan file saved by `schema plan` after verifying the database still matches the plan's source fingerprint (a drifted target refuses with a stale-plan error; registry `atlas://` plan URLs are rejected). |
 | `ptah atlas schema diff` | Local `file://` schema-file diff for `.hcl`, `.yaml`, `.yml`, and `.sql` sources, including `--from/-f`, `--schema/-s` parsing, and `--exclude` resource filters. |
 | `ptah atlas schema fmt` | Formats local `.hcl` files using HCL canonical layout. |
 | `ptah atlas schema test [paths]` | Forwards to `ptah schema test`: `-u/--url` maps the desired schema URL (a local `file://` directory of Go schema annotations) to the native `--root-dir`, `--dev-url` to the native throwaway database (an ephemeral SQLite database when omitted), `--run` to the native case-name filter, and the optional positional path to the directory of Ptah-native YAML test cases. With `--env`, `schema.src` supplies the desired schema URL and `dev` the dev database. Exit codes match the native runner: 0 when all cases pass, 1 on test failure. Atlas keeps `schema test` in its Pro build; Ptah provides it free. |
-| `ptah atlas schema plan`, `push` | Registered Atlas CE boundary stubs for community-version unsupported commands. `--help` prints the Atlas CE unsupported notice and exits 0; direct execution prints the Atlas CE abort text and exits 1. These are explicit compatibility boundaries, not implemented Ptah features. |
+| `ptah atlas schema plan` | Computes the declarative migration from the `--from` target database to local `--to` schema files and saves it as a fingerprinted local plan file (`--save`/`--output`, `--name`, `--dry-run`; JSON, `format_version` 1). `--env` supplies `url` (the plan target), `schema.src`, `dev`, `exclude`, `schema.mode`, and supported diff policy. The registry-bound `--push`, `--pending`, `--repo`, and `--auto-approve` flags are recorded waivers rejected loudly, and the registry sub-verbs (`approve`, `lint`, `list`, `new`, `pull`, `push`, `rm`, `test`, `validate`) stay Atlas CE boundary stubs. Atlas keeps `schema plan` in its Pro registry flow; Ptah provides the local plan-file workflow free. |
+| `ptah atlas schema push` | Registered Atlas CE boundary stub for a community-version unsupported command. `--help` prints the Atlas CE unsupported notice and exits 0; direct execution prints the Atlas CE abort text and exits 1. This is an explicit compatibility boundary, not an implemented Ptah feature; `ptah schema push` to any OCI registry is the open replacement. |
 
 `ptah atlas schema inspect` accepts a live database `--url` and writes
 machine-oriented schema output without native Ptah status banners. The default
@@ -150,6 +151,32 @@ ptah atlas schema apply \
   --url "$DATABASE_URL" \
   --to file://schema.sql \
   --dry-run
+```
+
+`ptah atlas schema plan` is the open local replacement for Atlas's Pro
+registry-gated plan workflow. It computes the same declarative plan `schema
+apply` would generate — from the `--from` target database to the local `--to`
+schema files — and saves it as a local JSON plan file that records the ordered
+SQL statements with per-statement safety severity, the dialect, and the
+SHA-256 fingerprints of the source and desired schema states (the plan-file
+format is documented in the repository's `docs/native_cli.md`). `schema apply
+--plan file://<path>` then executes exactly the reviewed statements after
+verifying the live database still matches the plan's source fingerprint; a
+drifted database refuses with a stale-plan error instead of running reviewed
+SQL against unreviewed state.
+
+```bash
+# Compute and save the plan for review (or --save for ./<name>.plan.json).
+ptah atlas schema plan \
+  --from "$DATABASE_URL" \
+  --to file://schema.sql \
+  --output add-orders.plan.json
+
+# Later, execute exactly the reviewed plan; drift refuses loudly.
+ptah atlas schema apply \
+  --url "$DATABASE_URL" \
+  --plan file://add-orders.plan.json \
+  --auto-approve
 ```
 
 ```hcl

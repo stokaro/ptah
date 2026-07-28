@@ -2522,16 +2522,18 @@ func TestNewAtlasCommand_FlagSurfaceRejectsUnsupportedAtlasCEBehavior(t *testing
 		c.Assert(err, qt.ErrorMatches, `atlas migrate diff accepts --qualifier, but Ptah does not implement custom qualifier metadata yet`)
 	})
 
-	c.Run("schema_apply_plan", func(c *qt.C) {
+	c.Run("schema_apply_plan_registry_url", func(c *qt.C) {
 		cmd := NewAtlasCommand()
 		var out bytes.Buffer
 		cmd.SetOut(&out)
 		cmd.SetErr(&out)
-		cmd.SetArgs([]string{"schema", "apply", "--url", "sqlite://apply.db", "--to", "file://schema.sql", "--plan", "atlas://repo/plans/apply"})
+		cmd.SetArgs([]string{"schema", "apply", "--url", "sqlite://apply.db", "--plan", "atlas://repo/plans/apply"})
 
 		err := cmd.Execute()
 
-		c.Assert(err, qt.ErrorMatches, `atlas schema apply accepts --plan, but Ptah does not implement Atlas Cloud plan execution yet`)
+		// Local plan files are implemented (see schema_apply_plan_test.go);
+		// registry plan URLs remain a loud rejection.
+		c.Assert(err, qt.ErrorMatches, `atlas schema apply accepts registry plan URLs like "atlas://repo/plans/apply", but Ptah has no plan registry; pass a local plan file saved by .schema plan. as --plan file://<path>`)
 	})
 
 	c.Run("schema_apply_lock_timeout", func(c *qt.C) {
