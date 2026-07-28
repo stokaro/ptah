@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/dbschema"
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/atlasreport"
@@ -21,6 +22,7 @@ import (
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/planner"
 	"github.com/stokaro/ptah/migration/schemadiff"
+	difftypes "github.com/stokaro/ptah/migration/schemadiff/types"
 )
 
 const (
@@ -36,14 +38,18 @@ type DiffOptions struct {
 	Schemas     []string
 	LockTimeout time.Duration
 	Policy      atlasschema.DiffPolicy
+	Qualifier   Qualifier
 	DryRun      bool
 }
 
 type DiffResult struct {
-	Synced        bool
-	SQL           string
-	MigrationPath string
-	SumPath       string
+	Synced bool
+	SQL    string
+	// MigrationPaths lists every migration file written by this diff run, in
+	// apply order. A plan that mixes transactional statements with concurrent
+	// index builds is split into two files (see BuildMigrationFileContents).
+	MigrationPaths []string
+	SumPath        string
 }
 
 func GenerateDiff(ctx context.Context, conn *dbschema.DatabaseConnection, opts DiffOptions) (result DiffResult, err error) {
@@ -60,6 +66,9 @@ func GenerateDiff(ctx context.Context, conn *dbschema.DatabaseConnection, opts D
 	schemas := schemascope.SplitNames(opts.Schemas)
 	format := atlasreport.NormalizeMigrateDiffFormat(opts.Format)
 	if err := atlasreport.ValidateSchemaDiffTemplate(format); err != nil {
+		return DiffResult{}, err
+	}
+	if err := opts.Qualifier.ValidateScope(conn.Info().Dialect, schemas); err != nil {
 		return DiffResult{}, err
 	}
 
@@ -104,30 +113,92 @@ func GenerateDiff(ctx context.Context, conn *dbschema.DatabaseConnection, opts D
 		return DiffResult{Synced: true}, nil
 	}
 
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, desired, dialect, planner.Options{
-		Capabilities:      info.Capabilities,
-		ConcurrentIndexes: opts.Policy.ConcurrentIndexCreate,
-	})
-	if err != nil {
-		return DiffResult{}, fmt.Errorf("generate migration SQL: %w", err)
-	}
-	sqlText, err := renderMigrationDiffSQL(statements, format)
+	contents, err := planDiffFileContents(diff, desired, info, format, opts)
 	if err != nil {
 		return DiffResult{}, err
 	}
 	if opts.DryRun {
-		return DiffResult{SQL: sqlText}, nil
+		return DiffResult{SQL: joinFileContentSQL(contents)}, nil
 	}
-	path, err := writeMigrationFile(opts.Dir, opts.Name, sqlText)
+	return writeDiffArtifacts(opts.Dir, opts.Name, contents)
+}
+
+// planDiffFileContents plans the migration AST, applies the typed qualifier,
+// and renders the Atlas migration file contents for one diff run.
+func planDiffFileContents(
+	diff *difftypes.SchemaDiff,
+	desired *goschema.Database,
+	info dbschematypes.DBInfo,
+	format string,
+	opts DiffOptions,
+) ([]MigrationFileContent, error) {
+	upNodes, err := planner.GenerateSchemaDiffASTWithOptions(diff, desired, info.Dialect, planner.Options{
+		Capabilities:      info.Capabilities,
+		ConcurrentIndexes: opts.Policy.ConcurrentIndexCreate,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("generate migration SQL: %w", err)
+	}
+	if err := opts.Qualifier.ApplyToPlan(info.Dialect, desired, upNodes); err != nil {
+		return nil, err
+	}
+	return BuildMigrationFileContents(info.Dialect, info.Capabilities, format, upNodes)
+}
+
+func joinFileContentSQL(contents []MigrationFileContent) string {
+	sqls := make([]string, 0, len(contents))
+	for _, content := range contents {
+		sqls = append(sqls, content.SQL)
+	}
+	return strings.Join(sqls, "\n")
+}
+
+// writeDiffArtifacts writes every planned migration file and then atlas.sum,
+// all-or-nothing.
+func writeDiffArtifacts(dir, name string, contents []MigrationFileContent) (DiffResult, error) {
+	paths, err := writeMigrationFiles(dir, name, contents)
 	if err != nil {
 		return DiffResult{}, err
 	}
-	sumPath := filepath.Join(opts.Dir, migratesum.AtlasFileName)
-	if _, err := migratesum.WriteWithFormat(opts.Dir, migrator.MigrationDirFormatAtlas); err != nil {
-		_ = os.Remove(path)
-		return DiffResult{}, fmt.Errorf("write atlas.sum: %w", err)
+	sumPath, err := writeDirSum(dir, paths)
+	if err != nil {
+		return DiffResult{}, err
 	}
-	return DiffResult{MigrationPath: path, SumPath: sumPath}, nil
+	return DiffResult{MigrationPaths: paths, SumPath: sumPath}, nil
+}
+
+// writeDirSum refreshes atlas.sum after every migration file was written. A
+// failed checksum update rolls the whole generation back: the new migration
+// files are removed and the previous atlas.sum content is restored, so the
+// directory hash only ever changes after a fully successful generation.
+func writeDirSum(dir string, migrationPaths []string) (string, error) {
+	sumPath := filepath.Join(dir, migratesum.AtlasFileName)
+	previousSum, previousErr := os.ReadFile(sumPath)
+	if _, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas); err != nil {
+		removeFiles(migrationPaths)
+		restoreSumFile(sumPath, previousSum, previousErr)
+		return "", fmt.Errorf("write atlas.sum: %w", err)
+	}
+	return sumPath, nil
+}
+
+func removeFiles(paths []string) {
+	for _, path := range paths {
+		_ = os.Remove(path)
+	}
+}
+
+// restoreSumFile best-effort restores atlas.sum's previous bytes after a
+// failed overwrite, or removes it when it did not exist before. When the
+// previous content could not be read for any other reason, the file is left
+// alone rather than destroyed.
+func restoreSumFile(path string, previous []byte, previousErr error) {
+	switch {
+	case previousErr == nil:
+		_ = os.WriteFile(path, previous, 0644) //nolint:gosec // atlas.sum is a shared checked-in file
+	case errors.Is(previousErr, os.ErrNotExist):
+		_ = os.Remove(path)
+	}
 }
 
 func normalizeDiffOptions(opts DiffOptions) DiffOptions {
@@ -300,26 +371,60 @@ func filterByTable[T any](values []T, keep func(T) bool) []T {
 	return out
 }
 
-func writeMigrationFile(dir, name, sql string) (string, error) {
-	if strings.TrimSpace(sql) == "" {
-		return "", fmt.Errorf("migration SQL is empty")
+// writeMigrationFiles writes every planned migration file with consecutive
+// versions, all-or-nothing: a failed write removes the files already written
+// in this run before returning, so a partial failure leaves no partial state
+// behind. Versions are allocated together so a split plan stays adjacent and
+// ordered in the directory.
+func writeMigrationFiles(dir, name string, contents []MigrationFileContent) ([]string, error) {
+	if len(contents) == 0 {
+		return nil, fmt.Errorf("migration SQL is empty")
+	}
+	for _, content := range contents {
+		if strings.TrimSpace(content.SQL) == "" {
+			return nil, fmt.Errorf("migration SQL is empty")
+		}
 	}
 	version, err := nextMigrationVersion(dir)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	slug := migrationSlug(name)
 	for {
-		path := filepath.Join(dir, fmt.Sprintf("%d_%s.sql", version, slug))
-		err := writeNewMigrationFile(path, sql)
-		if err == nil {
-			return path, nil
+		paths, collidedVersion, err := writeMigrationFilesAt(dir, name, version, contents)
+		if err != nil {
+			return nil, err
 		}
-		if !errors.Is(err, os.ErrExist) {
-			return "", fmt.Errorf("write migration file: %w", err)
+		if collidedVersion == 0 {
+			return paths, nil
 		}
-		version++
+		// Another writer claimed a version despite the directory lock; retry
+		// the whole batch above the collision so the files stay adjacent.
+		version = collidedVersion + 1
 	}
+}
+
+// writeMigrationFilesAt attempts one batch write at base version. On a
+// version collision it removes this attempt's files and reports the colliding
+// version; on any other failure it removes this attempt's files and returns
+// the error.
+func writeMigrationFilesAt(dir, name string, version int64, contents []MigrationFileContent) ([]string, int64, error) {
+	paths := make([]string, 0, len(contents))
+	for i, content := range contents {
+		fileVersion := version + int64(i)
+		slug := migrationSlug(name + content.NameSuffix)
+		path := filepath.Join(dir, fmt.Sprintf("%d_%s.sql", fileVersion, slug))
+		err := writeNewMigrationFile(path, content.SQL)
+		if errors.Is(err, os.ErrExist) {
+			removeFiles(paths)
+			return nil, fileVersion, nil
+		}
+		if err != nil {
+			removeFiles(paths)
+			return nil, 0, fmt.Errorf("write migration file: %w", err)
+		}
+		paths = append(paths, path)
+	}
+	return paths, 0, nil
 }
 
 func writeNewMigrationFile(path, sql string) error {
