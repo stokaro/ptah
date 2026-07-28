@@ -36,10 +36,11 @@ from the round-trip corpus:
 
 | Workflow | Native Ptah | Atlas-compatible Ptah surface | Atlas CE | Evidence |
 | --- | --- | --- | --- | --- |
-| Declarative migration and schema tests | `ptah migrations test` and `ptah schema test` run YAML/Go-authored cases locally. | `ptah atlas migrate test` and `ptah atlas schema test` remain explicit Atlas CE unsupported-boundary stubs. | Cannot run either testing command; the framework is outside the open-source core. | Unit tests cover parsing, assertions, reporting, and CLI behavior; integration-tagged PostgreSQL tests exercise both live runners. This workflow is not counted as a schema-object round-trip fixture. |
+| Declarative migration and schema tests | `ptah migrations test` and `ptah schema test` run YAML/Go-authored cases locally. | `ptah atlas migrate test` and `ptah atlas schema test` forward to the native runners with Atlas-shaped flags (`--dir`/`-u --url`, `--dev-url`, `--run`, project flags) and the native exit-code contract. | Cannot run either testing command; the framework is outside the open-source core. | Unit tests cover parsing, assertions, reporting, and CLI behavior, including the Atlas-compatible forwards; integration-tagged PostgreSQL tests exercise both live runners. This workflow is not counted as a schema-object round-trip fixture. |
 
-This row records product workflow parity, not full Atlas Pro compatibility. Ptah
-does not expose the native runner as a root-level Atlas alias.
+This row records product workflow parity, not full Atlas Pro compatibility. The
+Atlas-compatible verbs run Ptah-native YAML/Go test cases; Atlas `.test.hcl`
+files are not ingested.
 
 ## Reports
 
