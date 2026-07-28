@@ -47,8 +47,7 @@ are deduplicated; a same-identity object with different desired properties is a
 conflict and no migration files are written. The merged schema feeds the same
 comparison and migration planner as an equivalent hand-merged source.
 
-See [Go schema](../go-schema/#compose-multiple-sources) and
-[Schema files](../schema-files/#compose-multiple-sources) for source identity
+See [Composite desired schema](../../schema/composite/) for source identity
 and conflict rules.
 
 ## Manual migration files

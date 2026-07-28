@@ -15,6 +15,14 @@ const base = `/ptah/${DOCS_VERSION}/`;
 const redirectRoutes = {
   '/getting-started/': '/start/quick-start/',
   '/install/': '/start/install/',
+  '/workflows/go-schema/': '/schema/go-annotations/',
+  '/workflows/schema-files/': '/schema/yaml/',
+  '/workflows/orm-loaders/': '/schema/orm-and-external/',
+  '/workflows/api-schema-export/': '/schema/export/',
+  '/examples/go-model/': '/schema/go-annotations/',
+  '/examples/yaml-schema/': '/schema/yaml/',
+  '/examples/atlas-hcl/': '/schema/hcl/',
+  '/examples/schema-viz/': '/schema/visualize/',
 };
 
 const redirects = Object.fromEntries(
@@ -55,12 +63,21 @@ export default defineConfig({
         },
         { label: 'Documentation map', slug: 'documentation-map' },
         {
+          label: 'Model your schema',
+          items: [
+            { slug: 'schema/go-annotations' },
+            { slug: 'schema/yaml' },
+            { slug: 'schema/hcl' },
+            { slug: 'schema/sql' },
+            { slug: 'schema/orm-and-external' },
+            { slug: 'schema/composite' },
+            { slug: 'schema/visualize' },
+            { slug: 'schema/export' },
+          ],
+        },
+        {
           label: 'Use Ptah',
           items: [
-            { slug: 'workflows/go-schema' },
-            { slug: 'workflows/schema-files' },
-            { slug: 'workflows/orm-loaders' },
-            { slug: 'workflows/api-schema-export' },
             { slug: 'workflows/migrations' },
             { slug: 'workflows/oci-registry' },
             { slug: 'workflows/checkpoints' },
@@ -73,11 +90,7 @@ export default defineConfig({
         {
           label: 'Examples',
           items: [
-            { slug: 'examples/go-model' },
-            { slug: 'examples/yaml-schema' },
-            { slug: 'examples/atlas-hcl' },
             { slug: 'examples/atlas-migrations' },
-            { slug: 'examples/schema-viz' },
           ],
         },
         {

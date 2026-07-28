@@ -13,10 +13,10 @@ architecture is better.
 | Need | Read |
 | --- | --- |
 | First successful local run | [Quick start](docs/site/src/content/docs/start/quick-start.md) |
-| Application-owned Go schema | [Go schema workflow](docs/site/src/content/docs/workflows/go-schema.md) |
-| SQL, YAML, HCL, or external desired schema | [Schema sources](docs/site/src/content/docs/workflows/schema-files.md) |
-| ORM-owned desired schema | [ORM loaders](docs/site/src/content/docs/workflows/orm-loaders.md) |
-| Compose one schema from several packages or files | [Go schema workflow](docs/site/src/content/docs/workflows/go-schema.md) |
+| Application-owned Go schema | [Go annotations](docs/site/src/content/docs/schema/go-annotations.md) |
+| SQL, YAML, HCL, or external desired schema | [YAML](docs/site/src/content/docs/schema/yaml.md), [HCL](docs/site/src/content/docs/schema/hcl.md), and [SQL](docs/site/src/content/docs/schema/sql.md) schema pages |
+| ORM-owned desired schema | [ORM and external loaders](docs/site/src/content/docs/schema/orm-and-external.md) |
+| Compose one schema from several packages or files | [Composite desired schema](docs/site/src/content/docs/schema/composite.md) |
 | Migration operations | [Migrations](docs/site/src/content/docs/workflows/migrations.md) |
 | Publish or consume migrations and schemas through OCI | [OCI registry artifacts](docs/site/src/content/docs/workflows/oci-registry.md) |
 | Test migrations or a desired schema | [Testing](docs/site/src/content/docs/workflows/testing.md) |
