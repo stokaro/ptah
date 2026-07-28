@@ -43,7 +43,7 @@ type User struct {
 EOF
 ```
 
-Prefer not to annotate Go structs? Ptah also reads the desired schema from an **Atlas HCL** file (or YAML and plain SQL) — see [Atlas HCL schema](../../workflows/schema-files/#atlas-hcl-schema), where `ptah schema render --schema-file …` takes a file instead of `--root-dir`.
+Prefer not to annotate Go structs? Ptah also reads the desired schema from an **HCL** file (or YAML and plain SQL) — see [HCL schema](../../schema/hcl/), where `ptah schema render --schema-file …` takes a file instead of `--root-dir`.
 
 ## Preview the SQL
 
@@ -218,5 +218,5 @@ rm -f ./bin/ptah
 ## Next steps
 
 - Decide how changes should reach your databases: [Choose a workflow](../choose-a-workflow/).
-- Keep the schema in annotated Go structs: [Go schema workflow](../../workflows/go-schema/).
+- Keep the schema in annotated Go structs: [Go annotations](../../schema/go-annotations/).
 - Start from a database that already exists: [Adopt an existing database](../adopt-an-existing-database/).

@@ -86,7 +86,8 @@ YAML/HCL/SQL schema files, and an external command whose stdout is SQL, HCL, or
 YAML. They also read the same `ptah.yaml external_schema` block when
 `--schema-cmd` is not set, but execute a config-sourced program only with
 `--allow-external-schema`. See
-[Schema sources](site/src/content/docs/workflows/schema-files.md).
+[Composite desired schema](site/src/content/docs/schema/composite.md) and
+[ORM and external loaders](site/src/content/docs/schema/orm-and-external.md).
 
 The schema-diff commands (`ptah schema render`, `ptah migrations generate`,
 `ptah migrate`, `ptah compare`) emit `CREATE`/`ALTER`/`DROP SEQUENCE` for

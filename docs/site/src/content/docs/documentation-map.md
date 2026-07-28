@@ -8,12 +8,14 @@ Use this page when you know what you need to do, but not where the relevant Ptah
 | Situation | Read first | Then read |
 | --- | --- | --- |
 | I need to install Ptah | [Install Ptah](../start/install/) | [Quick start](../start/quick-start/) |
-| I want to try Ptah locally | [Quick start](../start/quick-start/) | [Go model example](../examples/go-model/) |
+| I want to try Ptah locally | [Quick start](../start/quick-start/) | [Go annotations](../schema/go-annotations/) |
 | I have not picked between versioned and direct changes | [Choose a workflow](../start/choose-a-workflow/) | [Migrations](../workflows/migrations/) or [Atlas-compatible CLI](../workflows/atlas-cli/) |
 | I have a live database built outside Ptah | [Adopt an existing database](../start/adopt-an-existing-database/) | [Migrations](../workflows/migrations/) |
-| My Go app owns the schema | [Go schema workflow](../workflows/go-schema/) | [Migrations](../workflows/migrations/) |
-| My schema lives in YAML | [Schema files](../workflows/schema-files/) | [YAML schema reference](../reference/yaml-schema/) |
-| My schema lives in HCL | [Schema files](../workflows/schema-files/) | [HCL schema reference](../reference/hcl-schema/) |
+| My Go app owns the schema | [Go annotations](../schema/go-annotations/) | [Migrations](../workflows/migrations/) |
+| My schema lives in YAML | [YAML schema](../schema/yaml/) | [YAML schema reference](../reference/yaml-schema/) |
+| My schema lives in HCL | [HCL schema](../schema/hcl/) | [HCL schema reference](../reference/hcl-schema/) |
+| My schema lives in SQL files | [SQL schema](../schema/sql/) | [Composite desired schema](../schema/composite/) |
+| My ORM owns the schema | [ORM and external loaders](../schema/orm-and-external/) | [Composite desired schema](../schema/composite/) |
 | I want to publish or consume migrations and schemas through OCI | [OCI registry artifacts](../workflows/oci-registry/) | [Migrations](../workflows/migrations/) and [Commands](../reference/commands/) |
 | I need Atlas-style commands | [Atlas-compatible CLI](../workflows/atlas-cli/) | [Comparison](../reference/comparison/) |
 | I want to embed Ptah in another Go tool | [Reusable components](../reference/reusable-components/) | [Public Go API](../reference/public-api/) |
@@ -22,7 +24,7 @@ Use this page when you know what you need to do, but not where the relevant Ptah
 | I need dialect behavior | [Capabilities](../reference/capabilities/) | [Dialect notes](../reference/dialect-notes/) |
 | I need Atlas docs coverage | [Atlas docs coverage](../reference/atlas-docs-coverage/) | [Comparison](../reference/comparison/) and [Conformance](../operate/conformance/) |
 | I need the public Go API | [Public Go API](../reference/public-api/) | Stable packages, snapshots, and public API guard scripts |
-| I need diagrams | [Schema visualization example](../examples/schema-viz/) | [`examples/viz`](https://github.com/stokaro/ptah/tree/master/examples/viz) |
+| I need diagrams | [Visualize the schema](../schema/visualize/) | [`examples/viz`](https://github.com/stokaro/ptah/tree/master/examples/viz) |
 | A command failed | [Troubleshooting](../operate/troubleshooting/) | The relevant command reference page |
 | I need Atlas parity evidence | [Conformance](../operate/conformance/) | [`ptah-atlas-conformance`](https://github.com/stokaro/ptah-atlas-conformance) |
 | I need license assurance | [License boundary](../operate/license-boundary/) | Conformance repository provenance notes |
