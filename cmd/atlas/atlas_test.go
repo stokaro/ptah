@@ -34,6 +34,7 @@ func TestNewAtlasCommand_OSSCommandPathsResolve(t *testing.T) {
 		{"schema", "diff"},
 		{"schema", "fmt"},
 		{"schema", "clean"},
+		{"schema", "test"},
 		{"migrate", "apply"},
 		{"migrate", "diff"},
 		{"migrate", "down"},
@@ -43,6 +44,7 @@ func TestNewAtlasCommand_OSSCommandPathsResolve(t *testing.T) {
 		{"migrate", "new"},
 		{"migrate", "set"},
 		{"migrate", "status"},
+		{"migrate", "test"},
 		{"migrate", "validate"},
 	}
 
@@ -278,6 +280,16 @@ func TestNewAtlasCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 			flags: []string{"--dev-url", "--dir", "--dir-format"},
 		},
 		{
+			name:  "migrate_test",
+			path:  []string{"migrate", "test"},
+			flags: []string{"--dir", "--dir-format", "--dev-url", "--run"},
+		},
+		{
+			name:  "schema_test",
+			path:  []string{"schema", "test"},
+			flags: []string{"--url", "--dev-url", "--run"},
+		},
+		{
 			name:  "migrate_new",
 			path:  []string{"migrate", "new"},
 			flags: []string{"--dir", "--dir-format", "--edit"},
@@ -371,6 +383,12 @@ func TestNewAtlasCommand_RegistersAtlasShorthandFlags(t *testing.T) {
 			path:      []string{"migrate", "diff"},
 			flag:      "schema",
 			shorthand: "s",
+		},
+		{
+			name:      "schema_test_url",
+			path:      []string{"schema", "test"},
+			flag:      "url",
+			shorthand: "u",
 		},
 	}
 
@@ -548,6 +566,10 @@ func TestNewAtlasCommand_MigrateMetadataDirFormatDefaultsToAtlas(t *testing.T) {
 		{
 			name: "status",
 			path: []string{"migrate", "status"},
+		},
+		{
+			name: "test",
+			path: []string{"migrate", "test"},
 		},
 		{
 			name: "validate",
@@ -1755,6 +1777,10 @@ func TestNewAtlasCommand_MigrateMetadataRejectsUnsupportedAtlasDirFormat(t *test
 		{
 			name: "status",
 			args: []string{"migrate", "status", "--url", "sqlite://state.db", "--dir", t.TempDir(), "--dir-format", "liquibase"},
+		},
+		{
+			name: "test",
+			args: []string{"migrate", "test", "--dir", t.TempDir(), "--dir-format", "goose"},
 		},
 	}
 

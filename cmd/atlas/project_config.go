@@ -333,6 +333,15 @@ func nextAtlasProjectArgValue(args []string, index int, flagName string) (string
 	return args[next], next, nil
 }
 
+// atlasProjectArgsApplier maps loaded atlas.hcl values onto a verb's Atlas
+// flags before atlasargs.Map translates them to native flags.
+type atlasProjectArgsApplier func(
+	flags []atlasargs.Flag,
+	args []string,
+	cfg projectconfig.Config,
+	projectFlags atlasProjectFlagValues,
+) ([]string, error)
+
 func applyAtlasProjectConfigToArgs(
 	flags []atlasargs.Flag,
 	args []string,
@@ -355,6 +364,32 @@ func applyAtlasProjectConfigToArgs(
 	args = appendAtlasProjectStringArg(flags, args, "git-base", cfg.Lint.GitBase)
 	args = appendAtlasProjectStringArg(flags, args, "git-dir", cfg.Lint.GitDir)
 	return args, nil
+}
+
+// applyAtlasSchemaTestProjectConfig maps atlas.hcl values onto the schema test
+// verb. Unlike the generic applier, the verb's --url flag is the desired
+// schema source (env schema.src), not the target database URL (env url), so
+// env url must never be injected into it. A single schema.src entry becomes
+// the desired-schema --url; multiple sources cannot map onto the native
+// single-root scan and are rejected loudly.
+func applyAtlasSchemaTestProjectConfig(
+	flags []atlasargs.Flag,
+	args []string,
+	cfg projectconfig.Config,
+	projectFlags atlasProjectFlagValues,
+) ([]string, error) {
+	args = appendAtlasProjectStringArg(flags, args, "dev-url", cfg.DevURL)
+	if len(cfg.SchemaSources) == 0 || atlasFlagPresent(flags, args, "url") {
+		return args, nil
+	}
+	if len(cfg.SchemaSources) > 1 {
+		return nil, fmt.Errorf("atlas schema test supports one atlas.hcl schema source, got %d", len(cfg.SchemaSources))
+	}
+	urls, err := atlasProjectConfigSchemaURLsFromFlags(projectFlags, cfg.SchemaSources)
+	if err != nil {
+		return nil, fmt.Errorf("atlas.hcl schema.src: %w", err)
+	}
+	return append(args, "--url", urls[0]), nil
 }
 
 func applyAtlasProjectConfigToNativeArgs(args []string, flags atlasProjectFlagValues) ([]string, error) {
