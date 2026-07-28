@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"os"
 	"slices"
 	"strings"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/stokaro/ptah/cmd/internal/cmdflags"
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
 	"github.com/stokaro/ptah/cmd/internal/dbcli"
+	"github.com/stokaro/ptah/cmd/internal/editor"
 	"github.com/stokaro/ptah/dbschema"
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/atlasschema"
@@ -46,9 +48,10 @@ generated schema changes directly to the target database. When --env is set, the
 selected atlas.hcl env can provide url, schema.src, dev, exclude, schema.mode,
 format.schema.apply, and supported diff policy values. This implementation
 currently supports local file:// schema files with .hcl, .yaml, .yml, or .sql
-extensions. Database desired-state URLs, env:// URLs, schema/include filters,
-Atlas Cloud planning, editor integration, and database lock waiting remain
-explicit follow-up gaps.`,
+extensions. With --edit the planned SQL opens in $VISUAL or $EDITOR before the
+plan is shown and approved, and the edited SQL is what gets applied. Database
+desired-state URLs, env:// URLs, schema/include filters, Atlas Cloud planning,
+and database lock waiting remain explicit follow-up gaps.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaApply(cmd, opts)
 		},
@@ -154,11 +157,20 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		return nil
 	}
 
-	formattedPlan := ""
 	sqlText := plan.SQL()
+	statements := plan.Statements()
+	if opts.edit {
+		edited, err := editAtlasSchemaApplySQL(sqlText)
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+		sqlText = edited
+		statements = atlasschema.SplitApplyStatements(sqlText, conn.Info().Dialect)
+	}
+	formattedPlan := ""
 	if formatOutput {
 		var err error
-		formattedPlan, err = renderAtlasSchemaApplyFormat(opts, plan.Statements())
+		formattedPlan, err = renderAtlasSchemaApplyFormat(opts, statements)
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
@@ -169,7 +181,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	if opts.dryRun {
 		return nil
 	}
-	if err := validateAtlasSchemaApplyDiffPolicy(txMode, conn, plan); err != nil {
+	if err := validateAtlasSchemaApplyDiffPolicy(txMode, conn, statements); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 
@@ -192,7 +204,13 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		return nil
 	}
 
-	if err := plan.Execute(cmd.Context()); err != nil {
+	if opts.edit {
+		// The edited SQL replaces the prepared plan as the executable payload.
+		conn.SchemaWriter().SetDryRun(false)
+		if err := atlasschema.ApplySQL(cmd.Context(), conn, txMode, sqlText); err != nil {
+			return cmdutil.Fail(cmd, fmt.Errorf("apply schema changes: %w", err))
+		}
+	} else if err := plan.Execute(cmd.Context()); err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("apply schema changes: %w", err))
 	}
 	if formatOutput {
@@ -210,9 +228,9 @@ func needsAtlasSchemaApplyConfig(cmd *cobra.Command) bool {
 func validateAtlasSchemaApplyDiffPolicy(
 	txMode migrator.MigrationTxMode,
 	conn *dbschema.DatabaseConnection,
-	plan atlasschema.ApplyRuntimePlan,
+	statements []string,
 ) error {
-	if !plan.HasChanges() {
+	if len(statements) == 0 {
 		return nil
 	}
 	if conn.Info().Dialect != "postgres" && conn.Info().Dialect != "postgresql" {
@@ -221,12 +239,40 @@ func validateAtlasSchemaApplyDiffPolicy(
 	if txMode == migrator.MigrationTxModeNone {
 		return nil
 	}
-	for _, statement := range plan.Statements() {
+	for _, statement := range statements {
 		if strings.Contains(strings.ToUpper(statement), "CREATE INDEX CONCURRENTLY") {
 			return fmt.Errorf("atlas.hcl diff.concurrent_index.create requires --tx-mode none for schema apply")
 		}
 	}
 	return nil
+}
+
+// editAtlasSchemaApplySQL round-trips the planned SQL through the operator's
+// editor ($VISUAL, then $EDITOR) via a temporary file and returns the edited
+// text, which replaces the prepared plan for display, policy validation, and
+// execution.
+func editAtlasSchemaApplySQL(sqlText string) (string, error) {
+	file, err := os.CreateTemp("", "ptah-schema-apply-*.sql")
+	if err != nil {
+		return "", fmt.Errorf("create schema apply edit file: %w", err)
+	}
+	path := file.Name()
+	defer os.Remove(path)
+	if _, err := file.WriteString(sqlText); err != nil {
+		_ = file.Close()
+		return "", fmt.Errorf("write schema apply edit file: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return "", fmt.Errorf("close schema apply edit file: %w", err)
+	}
+	if err := editor.Open("", path); err != nil {
+		return "", err
+	}
+	edited, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read edited schema apply SQL: %w", err)
+	}
+	return string(edited), nil
 }
 
 func effectiveStringArray(cmd *cobra.Command, flagName string, flagValues, configValues []string) []string {
@@ -251,9 +297,6 @@ func validateAtlasSchemaApplyOptions(cmd *cobra.Command, opts atlasSchemaApplyOp
 	}
 	if strings.TrimSpace(opts.planURL) != "" {
 		return fmt.Errorf("atlas schema apply accepts --plan, but Ptah does not implement Atlas Cloud plan execution yet")
-	}
-	if opts.edit {
-		return fmt.Errorf("atlas schema apply accepts --edit, but Ptah does not implement editor integration yet")
 	}
 	if strings.TrimSpace(opts.lockTimeout) != "" {
 		return fmt.Errorf("atlas schema apply accepts --lock-timeout, but Ptah does not implement database lock waiting yet")

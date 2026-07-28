@@ -1,12 +1,15 @@
 package migrate
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/stokaro/ptah/cmd/internal/cmdutil"
+	"github.com/stokaro/ptah/cmd/internal/editor"
+	"github.com/stokaro/ptah/internal/migrateops"
 	"github.com/stokaro/ptah/internal/pathguard"
 	"github.com/stokaro/ptah/migration/generator"
 	"github.com/stokaro/ptah/migration/migrator"
@@ -16,6 +19,8 @@ const (
 	newMigrationsDirFlag = "migrations-dir"
 	newDirFormatFlag     = "dir-format"
 	newNameFlag          = "name"
+	newEditFlag          = "edit"
+	newEditorFlag        = "editor"
 )
 
 func NewMigrateCreateCommand() *cobra.Command {
@@ -27,7 +32,9 @@ func NewMigrateCreateCommand() *cobra.Command {
 
 The command writes timestamped .up.sql and .down.sql files by default using
 Ptah's paired migration naming convention. With --dir-format atlas it writes a
-single Atlas-style .sql file and updates atlas.sum.`,
+single Atlas-style .sql file and updates atlas.sum. With --edit it opens the
+created files in $VISUAL, $EDITOR, or --editor before reporting them, and
+refreshes atlas.sum afterwards for Atlas-format directories.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return migrateNewCommand(cmd, args, dirFormat)
@@ -38,6 +45,8 @@ single Atlas-style .sql file and updates atlas.sum.`,
 	flags.String(newMigrationsDirFlag, "", "Directory receiving generated migration files (required)")
 	flags.StringVar(&dirFormat, newDirFormatFlag, string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	flags.String(newNameFlag, "", "Migration name; optional when [name] is provided")
+	flags.Bool(newEditFlag, false, "Open the created migration files in an editor (atlas.sum is refreshed for Atlas-format directories)")
+	flags.String(newEditorFlag, "", "Editor command used with --edit (defaults to $VISUAL, then $EDITOR)")
 
 	cmdutil.ConfigureCommandArgs(cmd, cobra.MaximumNArgs(1))
 	return cmd
@@ -51,6 +60,17 @@ func migrateNewCommand(cmd *cobra.Command, args []string, dirFormatValue string)
 	name, err := cmd.Flags().GetString(newNameFlag)
 	if err != nil {
 		return err
+	}
+	edit, err := cmd.Flags().GetBool(newEditFlag)
+	if err != nil {
+		return err
+	}
+	editorCmd, err := cmd.Flags().GetString(newEditorFlag)
+	if err != nil {
+		return err
+	}
+	if editorCmd != "" && !edit {
+		return fmt.Errorf("--editor requires --edit")
 	}
 	if len(args) > 0 {
 		if strings.TrimSpace(name) != "" {
@@ -82,6 +102,11 @@ func migrateNewCommand(cmd *cobra.Command, args []string, dirFormatValue string)
 	if err != nil {
 		return err
 	}
+	if edit {
+		if err := editCreatedMigration(files, editorCmd, migrationsDir, dirFormat); err != nil {
+			return err
+		}
+	}
 
 	out := cmd.OutOrStdout()
 	if files.DownFile == "" {
@@ -92,5 +117,32 @@ func migrateNewCommand(cmd *cobra.Command, args []string, dirFormatValue string)
 	fmt.Fprintf(out, "Generated empty migration files:\n")
 	fmt.Fprintf(out, "UP:   %s\n", files.UpFile)
 	fmt.Fprintf(out, "DOWN: %s\n", files.DownFile)
+	return nil
+}
+
+// editCreatedMigration opens the just-created files in the resolved editor.
+// Editing changes content the Atlas-format create path has already hashed into
+// atlas.sum, so for Atlas-format directories the checksum is refreshed
+// afterwards; ptah-format create does not maintain a checksum file, so there is
+// nothing to refresh.
+func editCreatedMigration(
+	files *generator.MigrationFiles,
+	editorCmd string,
+	migrationsDir string,
+	dirFormat migrator.MigrationDirFormat,
+) error {
+	err := editor.Open(editorCmd, files.UpFile, files.DownFile)
+	if errors.Is(err, editor.ErrNoEditor) {
+		return fmt.Errorf("%w, or pass --editor", err)
+	}
+	if err != nil {
+		return err
+	}
+	if dirFormat != migrator.MigrationDirFormatAtlas {
+		return nil
+	}
+	if _, err := migrateops.Rehash(migrationsDir, dirFormat); err != nil {
+		return fmt.Errorf("refresh atlas.sum after editing: %w", err)
+	}
 	return nil
 }

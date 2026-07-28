@@ -88,12 +88,15 @@ shares this exit-code contract.
 | `ptah atlas migrate lint` | `ptah migrations lint` |
 | `ptah atlas migrate checkpoint` | `ptah migrations checkpoint` |
 | `ptah atlas migrate test` | `ptah migrations test` |
+| `ptah atlas migrate edit` | `ptah migrations edit` |
+| `ptah atlas migrate rebase` | `ptah migrations rebase` |
+| `ptah atlas migrate rm` | `ptah migrations rm` |
 | `ptah atlas schema inspect` | Atlas-shaped schema inspection |
 | `ptah atlas schema apply` | Local Atlas-style schema apply |
 | `ptah atlas schema diff` | Local Atlas-style schema-file diff |
 | `ptah atlas schema fmt` | Format local `.hcl` files |
 | `ptah atlas schema test` | `ptah schema test` |
-| `ptah atlas migrate edit`, `push`, `rebase`, `rm` | Atlas CE community-version unsupported boundary stub |
+| `ptah atlas migrate push` | Atlas CE community-version unsupported boundary stub |
 | `ptah atlas schema plan`, `push` | Atlas CE community-version unsupported boundary stub |
 
 Atlas CE community-version unsupported boundary stubs mirror Atlas CE: `--help`

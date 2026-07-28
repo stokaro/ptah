@@ -55,13 +55,16 @@ SQL paths; prefer `--to` in new Ptah-authored scripts.
 | `ptah atlas migrate hash` | `ptah migrations hash` |
 | `ptah atlas migrate validate` | Silently verifies `atlas.sum` on success; checksum failures use Atlas-compatible stdout/stderr diagnostics, and `--dev-url` cleans and replays migrations on the dev database to validate SQL execution. |
 | `ptah atlas migrate lint` | `ptah migrations lint`; supports Atlas-style `--latest N`, infers lint dialect from `--dev-url`, cleans and replays migrations on directly connectable dev databases to validate SQL execution, and by default prints Atlas's migration-analysis text report (`--format`, `format.migrate.lint`, or `lint { log = "…" }` select custom output). |
-| `ptah atlas migrate new` | `ptah migrations create` |
+| `ptah atlas migrate new` | `ptah migrations create`; `--edit` opens the created migration file in `$VISUAL`/`$EDITOR` and refreshes `atlas.sum` afterwards. |
 | `ptah atlas migrate set [version]` | `ptah migrations repair` with Atlas revision metadata |
-| `ptah atlas migrate diff` | Replays local Atlas migrations on `--dev-url`, diffs against local schema files, writes an Atlas single-file migration, and updates `atlas.sum`; `--schema/-s` scopes the diff, and the Atlas-hidden `--dry-run` flag prints the generated SQL instead of writing files. |
+| `ptah atlas migrate diff` | Replays local Atlas migrations on `--dev-url`, diffs against local schema files, writes an Atlas single-file migration, and updates `atlas.sum`; `--schema/-s` scopes the diff, `--edit` opens the generated migration in `$VISUAL`/`$EDITOR` before `atlas.sum` is finalized, and the Atlas-hidden `--dry-run` flag prints the generated SQL instead of writing files. |
 | `ptah atlas migrate import` | Imports local `file://` migration directories from Atlas-supported formats into a separate Atlas single-file directory and writes `atlas.sum`. |
 | `ptah atlas migrate checkpoint [name]` | Forwards to `ptah migrations checkpoint`: replays the migration directory on the `--dev-url` dev database and writes a ptah-format cumulative-schema checkpoint pair (`ptah.sum` refreshed). `--dir` maps to the native migrations directory and the optional positional name to the checkpoint description. Checkpoint output is ptah-format only; atlas-format checkpoint output is a tracked follow-up. Atlas keeps `migrate checkpoint` in its Pro build; Ptah provides it free. |
 | `ptah atlas migrate test [paths]` | Forwards to `ptah migrations test`: `--dir` maps to the native migration directory (read as Atlas-format by default via `--dir-format`), `--dev-url` to the native throwaway database (an ephemeral SQLite database when omitted), `--run` to the native case-name filter, and the optional positional path to the directory of Ptah-native YAML test cases (default `./tests`). Exit codes match the native runner: 0 when all cases pass, 1 on test failure. Atlas keeps `migrate test` in its Pro build; Ptah provides it free with Ptah-native test files as the executable payload. |
-| `ptah atlas migrate edit`, `push`, `rebase`, `rm` | Registered Atlas CE boundary stubs for community-version unsupported commands. `--help` prints the Atlas CE unsupported notice and exits 0; direct execution prints the Atlas CE abort text and exits 1. These are explicit compatibility boundaries, not implemented Ptah features. |
+| `ptah atlas migrate edit {name \| version}` | Forwards to `ptah migrations edit`: the positional maps to the native `--version` (a migration file name contributes its leading version digits), `--dir` to the native migration directory (Atlas-format by default via `--dir-format`), and the editor resolves from `$VISUAL`, then `$EDITOR`. The directory checksum is rewritten afterwards so `ptah migrations validate` keeps passing. Atlas keeps `migrate edit` outside its community build; Ptah provides it free. |
+| `ptah atlas migrate rebase {name \| version}` | Forwards to `ptah migrations rebase`: re-timestamps the selected migration past every existing version and rewrites the directory checksum. Atlas documents a repeatable positional; Ptah forwards one migration per run and rejects multiple values and `a...b` version ranges loudly. Atlas keeps `migrate rebase` outside its community build; Ptah provides it free. |
+| `ptah atlas migrate rm {name \| version}` | Forwards to `ptah migrations rm`: deletes the selected migration's files and rewrites the directory checksum. Atlas keeps `migrate rm` outside its community build; Ptah provides it free. |
+| `ptah atlas migrate push` | Registered Atlas CE boundary stub for a community-version unsupported command. `--help` prints the Atlas CE unsupported notice and exits 0; direct execution prints the Atlas CE abort text and exits 1. This is an explicit compatibility boundary, not an implemented Ptah feature; `ptah migrations push` to any OCI registry is the open replacement. |
 
 ## Utility commands
 
@@ -76,7 +79,7 @@ SQL paths; prefer `--to` in new Ptah-authored scripts.
 | Atlas-compatible command | Ptah behavior |
 | --- | --- |
 | `ptah atlas schema inspect` | Inspects a live database and writes Atlas-shaped HCL by default, SQL with `--format sql` / `--format '{{ sql . }}'`, JSON with `--format json` / `--format '{{ json . }}'`, custom Go-template output, or basic `hcl`/`sql` split-write exports. `--schema/-s` narrows inspection, and the OSS `--exclude` flag filters inspected resources. |
-| `ptah atlas schema apply` | Applies local desired schema files to a live database through Ptah schema diff and migration execution; supports `--env` project defaults, Atlas-style `--format` templates over the planned changes, `--schema/-s` parsing, the hidden Atlas `--file/-f` input alias, and `--exclude` resource filters. |
+| `ptah atlas schema apply` | Applies local desired schema files to a live database through Ptah schema diff and migration execution; supports `--env` project defaults, Atlas-style `--format` templates over the planned changes, `--schema/-s` parsing, the hidden Atlas `--file/-f` input alias, `--exclude` resource filters, and `--edit` for editing the planned SQL in `$VISUAL`/`$EDITOR` before approval and apply. |
 | `ptah atlas schema diff` | Local `file://` schema-file diff for `.hcl`, `.yaml`, `.yml`, and `.sql` sources, including `--from/-f`, `--schema/-s` parsing, and `--exclude` resource filters. |
 | `ptah atlas schema fmt` | Formats local `.hcl` files using HCL canonical layout. |
 | `ptah atlas schema test [paths]` | Forwards to `ptah schema test`: `-u/--url` maps the desired schema URL (a local `file://` directory of Go schema annotations) to the native `--root-dir`, `--dev-url` to the native throwaway database (an ephemeral SQLite database when omitted), `--run` to the native case-name filter, and the optional positional path to the directory of Ptah-native YAML test cases. With `--env`, `schema.src` supplies the desired schema URL and `dev` the dev database. Exit codes match the native runner: 0 when all cases pass, 1 on test failure. Atlas keeps `schema test` in its Pro build; Ptah provides it free. |
@@ -133,7 +136,9 @@ planned SQL, and applies it after interactive confirmation. Use `--dry-run` to
 print the plan without applying it, or `--auto-approve` to skip the prompt
 explicitly. Use `--tx-mode=file` or `--tx-mode=all` to execute the generated
 plan in one transaction, or `--tx-mode=none` to execute statements without
-transaction wrapping.
+transaction wrapping. With `--edit`, the planned SQL opens in `$VISUAL` or
+`$EDITOR` before the plan is shown and approved, and the edited SQL is what
+gets applied.
 
 For Atlas script compatibility, `schema apply` also accepts the hidden
 deprecated `--file/-f` alias for local HCL or SQL paths and maps it to the same
@@ -338,9 +343,12 @@ ptah atlas migrate diff add_users \
   --format '{{ sql . "" }}'
 ```
 
-Atlas CE also registers `migrate diff --edit` and `--qualifier`. Ptah accepts
-those flag names for surface parity and fails explicitly until editor
-integration and custom qualifier metadata are implemented.
+With `--edit`, the generated migration file opens in `$VISUAL` or `$EDITOR`
+before `atlas.sum` is finalized, so hand-tuned SQL still validates; `--edit`
+cannot be combined with the hidden `--dry-run` flag because dry runs write no
+migration file to edit. Atlas CE also registers `migrate diff --qualifier`;
+Ptah accepts that flag name for surface parity and fails explicitly until
+custom qualifier metadata is implemented.
 
 `--schema` accepts repeated or comma-separated schema names and narrows the
 replayed dev database state plus local desired schema files before the diff is
