@@ -661,6 +661,83 @@ func TestNewFSMigrationProvider_InvalidFiles(t *testing.T) {
 	c.Assert(migrations[0].Version, qt.Equals, int64(1))
 }
 
+// checkDirectiveLine is the documented pre-migration check syntax from
+// docs/pre-migration-checks.md. A file carrying it must load through the
+// provider; this regressed once when the timeout directive scanner rejected
+// the `check` token.
+const checkDirectiveLine = `-- +ptah check name="users_empty" assert="SELECT count(*) = 0 FROM users" on_fail=abort`
+
+func TestNewFSMigrationProvider_CheckDirectiveMigrationLoads(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"0000000001_drop_users.up.sql": &fstest.MapFile{
+			Data: []byte(checkDirectiveLine + "\nDROP TABLE users;\n"),
+		},
+		"0000000001_drop_users.down.sql": &fstest.MapFile{
+			Data: []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"),
+		},
+	}
+
+	provider, err := migrator.NewFSMigrationProvider(fsys)
+	c.Assert(err, qt.IsNil)
+
+	migrations := provider.Migrations()
+	c.Assert(migrations, qt.HasLen, 1)
+	// The check survives loading verbatim so it executes on apply.
+	c.Assert(migrations[0].UpSQL, qt.Contains, checkDirectiveLine)
+	checks, err := migrator.ParseChecks(migrations[0].UpSQL)
+	c.Assert(err, qt.IsNil)
+	c.Assert(checks, qt.HasLen, 1)
+	c.Assert(checks[0].Name, qt.Equals, "users_empty")
+}
+
+func TestNewFSMigrationProvider_CheckAndTimeoutDirectivesInOneFile(t *testing.T) {
+	c := qt.New(t)
+
+	fsys := fstest.MapFS{
+		"0000000001_drop_users.up.sql": &fstest.MapFile{
+			Data: []byte(checkDirectiveLine + "\n-- +ptah lock_timeout=3s statement_timeout=30s\nDROP TABLE users;\n"),
+		},
+		"0000000001_drop_users.down.sql": &fstest.MapFile{
+			Data: []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"),
+		},
+	}
+
+	provider, err := migrator.NewFSMigrationProvider(fsys)
+	c.Assert(err, qt.IsNil)
+
+	migrations := provider.Migrations()
+	c.Assert(migrations, qt.HasLen, 1)
+	c.Assert(migrations[0].UpTimeouts.HasLockTimeout, qt.IsTrue)
+	c.Assert(migrations[0].UpTimeouts.LockTimeout, qt.Equals, 3*time.Second)
+	c.Assert(migrations[0].UpTimeouts.HasStatementTimeout, qt.IsTrue)
+	c.Assert(migrations[0].UpTimeouts.StatementTimeout, qt.Equals, 30*time.Second)
+	checks, err := migrator.ParseChecks(migrations[0].UpSQL)
+	c.Assert(err, qt.IsNil)
+	c.Assert(checks, qt.HasLen, 1)
+}
+
+func TestNewFSMigrationProvider_BareUnknownDirectiveStillRejected(t *testing.T) {
+	c := qt.New(t)
+
+	// A bare token that no directive family owns (e.g. a typo'd timeout
+	// directive that lost its value) must keep failing the load with the
+	// established error message.
+	fsys := fstest.MapFS{
+		"0000000001_init.up.sql": &fstest.MapFile{
+			Data: []byte("-- +ptah lock_timeuot\nCREATE TABLE users (id INTEGER PRIMARY KEY);\n"),
+		},
+		"0000000001_init.down.sql": &fstest.MapFile{
+			Data: []byte("DROP TABLE users;\n"),
+		},
+	}
+
+	provider, err := migrator.NewFSMigrationProvider(fsys)
+	c.Assert(err, qt.ErrorMatches, `failed to load up migration 0000000001_init\.up\.sql: invalid \+ptah directive "lock_timeuot"`)
+	c.Assert(provider, qt.IsNil)
+}
+
 func TestFSMigrationProvider_FilesystemError(t *testing.T) {
 	c := qt.New(t)
 

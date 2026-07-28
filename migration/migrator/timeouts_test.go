@@ -146,6 +146,75 @@ func TestTimeoutStatements(t *testing.T) {
 	}
 }
 
+// TestParseMigrationTimeoutDirectives_ToleratesEveryDirectiveFamily pins the
+// timeout scanner against the full `-- +ptah` directive vocabulary. The scanner
+// runs on every migration file load, so any directive family owned by another
+// parser must pass through it without error — otherwise files carrying that
+// directive fail to load entirely (this regressed once for `check`). When
+// adding a new directive family, add a row here.
+//
+// This is a white-box test because parseMigrationTimeoutDirectives is the
+// unexported scanner on the file-load path; the cross-check must target it
+// directly to guard the two parsers against drifting.
+func TestParseMigrationTimeoutDirectives_ToleratesEveryDirectiveFamily(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		// recognize proves the directive family is real: its owning parser
+		// accepts the exact line the timeout scanner is asked to tolerate.
+		recognize func(c *qt.C, sql string)
+	}{
+		{
+			name: "no_transaction",
+			line: "-- +ptah " + DirectiveNoTransaction,
+			recognize: func(c *qt.C, sql string) {
+				c.Assert(ParseFileDirectives(sql)[DirectiveNoTransaction], qt.Equals, "true")
+			},
+		},
+		{
+			name: "timeouts",
+			line: "-- +ptah lock_timeout=3s statement_timeout=30s",
+			recognize: func(c *qt.C, sql string) {
+				directives := ParseFileDirectives(sql)
+				c.Assert(directives["lock_timeout"], qt.Equals, "3s")
+				c.Assert(directives["statement_timeout"], qt.Equals, "30s")
+			},
+		},
+		{
+			name: "online DDL routing",
+			line: "-- +ptah online_ddl_tool=ghost online_ddl_fallback=error",
+			recognize: func(c *qt.C, sql string) {
+				directives := ParseFileDirectives(sql)
+				c.Assert(directives["online_ddl_tool"], qt.Equals, "ghost")
+				c.Assert(directives["online_ddl_fallback"], qt.Equals, "error")
+			},
+		},
+		{
+			name: "pre-migration check",
+			line: `-- +ptah check name="users_empty" assert="SELECT count(*) = 0 FROM users" on_fail=abort`,
+			recognize: func(c *qt.C, sql string) {
+				checks, err := ParseChecks(sql)
+				c.Assert(err, qt.IsNil)
+				c.Assert(checks, qt.HasLen, 1)
+				c.Assert(checks[0].Name, qt.Equals, "users_empty")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			sql := tt.line + "\nALTER TABLE users ADD COLUMN email TEXT;"
+			tt.recognize(c, sql)
+
+			_, err := parseMigrationTimeoutDirectives(sql)
+			c.Assert(err, qt.IsNil,
+				qt.Commentf("timeout scanner must tolerate the %s directive family or files carrying it cannot load", tt.name))
+		})
+	}
+}
+
 func TestDurationUnitCeilUsesIntegerMath(t *testing.T) {
 	c := qt.New(t)
 

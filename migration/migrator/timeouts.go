@@ -75,38 +75,53 @@ func parseMigrationTimeoutDirectives(sql string) (MigrationTimeouts, error) {
 		if directive == "" {
 			return MigrationTimeouts{}, fmt.Errorf("empty +ptah directive")
 		}
+		if isCheckDirectiveBody(directive) {
+			// `-- +ptah check ...` is an ordered pre-migration check owned by
+			// ParseChecks. Its quoted assert value may contain spaces and '=',
+			// so it must be skipped as a whole line rather than field-split.
+			continue
+		}
 
-		for field := range strings.FieldsSeq(directive) {
-			key, value, ok := strings.Cut(field, "=")
-			if !ok {
-				if field == DirectiveNoTransaction {
-					continue
-				}
-				return MigrationTimeouts{}, fmt.Errorf("invalid +ptah directive %q", field)
-			}
-
-			switch key {
-			case "lock_timeout", "lock-timeout":
-				duration, err := parsePositiveDuration(value)
-				if err != nil {
-					return MigrationTimeouts{}, fmt.Errorf("invalid +ptah %s value: %w", key, err)
-				}
-				timeouts.LockTimeout = duration
-				timeouts.HasLockTimeout = true
-			case "statement_timeout", "statement-timeout":
-				duration, err := parsePositiveDuration(value)
-				if err != nil {
-					return MigrationTimeouts{}, fmt.Errorf("invalid +ptah %s value: %w", key, err)
-				}
-				timeouts.StatementTimeout = duration
-				timeouts.HasStatementTimeout = true
-			default:
-				continue
-			}
+		if err := parseTimeoutDirectiveFields(directive, &timeouts); err != nil {
+			return MigrationTimeouts{}, err
 		}
 	}
 
 	return timeouts, nil
+}
+
+// parseTimeoutDirectiveFields field-splits a single `-- +ptah` directive body
+// and folds any timeout key=value pairs into timeouts. Unknown key=value fields
+// belong to other directive families and are skipped; a bare field that is not
+// no_transaction is a typo'd directive and rejected.
+func parseTimeoutDirectiveFields(directive string, timeouts *MigrationTimeouts) error {
+	for field := range strings.FieldsSeq(directive) {
+		key, value, ok := strings.Cut(field, "=")
+		if !ok {
+			if field == DirectiveNoTransaction {
+				continue
+			}
+			return fmt.Errorf("invalid +ptah directive %q", field)
+		}
+
+		switch key {
+		case "lock_timeout", "lock-timeout":
+			duration, err := parsePositiveDuration(value)
+			if err != nil {
+				return fmt.Errorf("invalid +ptah %s value: %w", key, err)
+			}
+			timeouts.LockTimeout = duration
+			timeouts.HasLockTimeout = true
+		case "statement_timeout", "statement-timeout":
+			duration, err := parsePositiveDuration(value)
+			if err != nil {
+				return fmt.Errorf("invalid +ptah %s value: %w", key, err)
+			}
+			timeouts.StatementTimeout = duration
+			timeouts.HasStatementTimeout = true
+		}
+	}
+	return nil
 }
 
 func parsePositiveDuration(value string) (time.Duration, error) {
