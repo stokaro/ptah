@@ -81,7 +81,7 @@ Ptah reads schema HCL as desired-schema input. An `atlas.hcl` project
 configuration is a different file type: it provides database URLs, migration
 directories, and environment selection, while a schema HCL file provides
 desired schema objects. See [Configuration](../../reference/configuration/) and
-the [Atlas project config subset](../../reference/atlas-project-config/).
+the [Atlas project config subset](../../atlas/project-config/).
 
 :::caution[Supported subset]
 Ptah's HCL schema format is compatible with the Atlas HCL schema language for
@@ -94,4 +94,4 @@ error; treat that as a compatibility gap and check the conformance reports.
 
 - Need the supported blocks and types? [HCL schema reference](../../reference/hcl-schema/).
 - Combining HCL with Go packages or other files? [Composite desired schema](../composite/).
-- Coming from Atlas commands, not only Atlas files? [Atlas-compatible CLI](../../workflows/atlas-cli/).
+- Coming from Atlas commands, not only Atlas files? [Atlas compatibility overview](../../atlas/overview/).

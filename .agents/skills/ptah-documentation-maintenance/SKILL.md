@@ -88,12 +88,12 @@ Use these routes to avoid missing a class of docs:
 - **Atlas-compatible CLI and parity claims**: `README.md`, `docs/conformance.md`,
   `docs/site/src/content/docs/index.mdx`,
   `docs/site/src/content/docs/documentation-map.md`,
-  `docs/site/src/content/docs/workflows/atlas-cli.md`,
+  `docs/site/src/content/docs/atlas/overview.md`,
   `docs/site/src/content/docs/reference/commands.md`,
-  `docs/site/src/content/docs/reference/comparison.md`,
+  `docs/site/src/content/docs/atlas/comparison.md`,
   `docs/site/src/content/docs/reference/exit-codes.md`, `docs/exit_codes.md`,
-  `docs/site/src/content/docs/operate/conformance.md`, and
-  `docs/site/src/content/docs/operate/license-boundary.md`.
+  `docs/site/src/content/docs/atlas/conformance.md`, and
+  `docs/site/src/content/docs/atlas/license-boundary.md`.
 - **Config and `atlas.hcl`**: `docs/project_config.md`,
   `docs/atlas_project_config.md`, `docs/atlas_hcl_schema.md`,
   `docs/site/src/content/docs/reference/configuration.md`, and related CLI
@@ -108,7 +108,7 @@ Use these routes to avoid missing a class of docs:
   `docs/site/src/content/docs/versioned/` lifecycle pages (`overview.md`,
   `generate.md`, `apply.md`, `rollback.md`, `integrity-and-safety.md`,
   `maintain-history.md`, `import.md`),
-  `docs/site/src/content/docs/examples/atlas-migrations.md`, and
+  `docs/site/src/content/docs/atlas/migrate-commands.md`, and
   `docs/site/src/content/docs/operate/troubleshooting.md`.
 - **Parser/renderer or dialect behavior**: `internal/parser/README.md`,
   dialect docs such as `docs/sqlite.md` and `docs/sqlserver.md`,

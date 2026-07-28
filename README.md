@@ -20,10 +20,10 @@ architecture is better.
 | Migration operations | [Versioned migrations](docs/site/src/content/docs/versioned/overview.md) |
 | Publish or consume migrations and schemas through OCI | [OCI registry artifacts](docs/site/src/content/docs/workflows/oci-registry.md) |
 | Test migrations or a desired schema | [Test migrations and schemas](docs/site/src/content/docs/testing/migrations-and-schema.md) |
-| Atlas-compatible CLI paths | [Atlas-compatible CLI](docs/site/src/content/docs/workflows/atlas-cli.md) |
+| Atlas-compatible CLI paths | [Atlas compatibility overview](docs/site/src/content/docs/atlas/overview.md) |
 | Reusable Go packages | [Reusable components](docs/site/src/content/docs/reference/reusable-components.md) |
 | CI setup | [CI](docs/site/src/content/docs/testing/ci.md) |
-| Command and feature comparison | [Comparison](docs/site/src/content/docs/reference/comparison.md) |
+| Command and feature comparison | [Comparison](docs/site/src/content/docs/atlas/comparison.md) |
 | Dialect behavior | [Capabilities](docs/site/src/content/docs/reference/capabilities.md) |
 | Problems during use | [Troubleshooting](docs/site/src/content/docs/operate/troubleshooting.md) |
 
@@ -98,7 +98,7 @@ Do not use root-level Atlas spellings such as `ptah migrate apply` or
 `ptah` binary.
 
 See [native CLI command tree](docs/native_cli.md) and
-[Atlas-compatible CLI](docs/site/src/content/docs/workflows/atlas-cli.md).
+[Atlas compatibility overview](docs/site/src/content/docs/atlas/overview.md).
 
 ## Atlas Compatibility Status
 
@@ -115,7 +115,7 @@ repository. That repo owns the regenerated reports:
 - [`gaps-orm-providers.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/gaps-orm-providers.md)
 - [`PARITY.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/PARITY.md)
 
-See [Conformance](docs/site/src/content/docs/operate/conformance.md).
+See [Conformance](docs/site/src/content/docs/atlas/conformance.md).
 
 ## License-Clean Boundary
 
@@ -131,7 +131,7 @@ ptah-atlas-conformance -> ptah
 ptah                  !-> ptah-atlas-conformance
 ```
 
-See [License boundary](docs/site/src/content/docs/operate/license-boundary.md).
+See [License boundary](docs/site/src/content/docs/atlas/license-boundary.md).
 
 ## Existing References
 
