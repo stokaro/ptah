@@ -38,12 +38,42 @@ from the round-trip corpus:
 | --- | --- | --- | --- | --- |
 | Declarative migration and schema tests | `ptah migrations test` and `ptah schema test` run YAML/Go-authored cases locally. | `ptah atlas migrate test` and `ptah atlas schema test` forward to the native runners with Atlas-shaped flags (`--dir`/`-u --url`, `--dev-url`, `--run`, project flags) and the native exit-code contract. | Cannot run either testing command; the framework is outside the open-source core. | Unit tests cover parsing, assertions, reporting, and CLI behavior, including the Atlas-compatible forwards; integration-tagged PostgreSQL tests exercise both live runners. This workflow is not counted as a schema-object round-trip fixture. |
 | Migration directory maintenance | `ptah migrations edit`, `rebase`, and `rm` mutate the directory and atomically rewrite the integrity file. | `ptah atlas migrate edit`, `rebase`, and `rm` forward to the native commands with Atlas-shaped `--dir`/`--dir-format` flags, `{name \| version}` positionals, and project flags; `migrate new --edit`, `migrate diff --edit`, and `schema apply --edit` open the operator's `$VISUAL`/`$EDITOR`. | Cannot run any of the three verbs; they abort with the community-version boundary. | Unit tests cover the forwards with hermetic editor scripts and assert `ptah migrations validate` passes on the mutated directory. Multi-version rebase and version ranges are rejected loudly (single-version forwarding only). |
-| Verified and reported rollback | `ptah migrations down --shadow-db` replays the rollback plan on a disposable shadow database before the target is touched. | `ptah atlas migrate down --dev-url` maps to the shadow verification, and `--format` renders an Atlas Go-template down report (`.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, `.Error`); the registry-bound `--to-tag`, `--skip-checks`, and `--plan` flags are recorded waivers that fail loudly with their rationale. | `migrate down` does not exist in the community binary; the CE notice lists down migrations among excluded features. | Unit tests over live SQLite cover verification success and pre-target abort on both paths, report rendering (including partial-failure reports), the waiver rejections, and a byte-identity regression pinning the default forward output to the native command's output. |
+| Verified and reported rollback | `ptah migrations down --shadow-db` replays the rollback plan on a disposable shadow database before the target is touched. | `ptah atlas migrate down --dev-url` maps to the shadow verification, and `--format` renders an Atlas Go-template down report (`.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, `.Error`); the forward defaults to Atlas revision bookkeeping (`--revision-format atlas`, like `migrate set`), with the native `--revision-format ptah` pass-through as the escape hatch; the registry-bound `--to-tag`, `--skip-checks`, and `--plan` flags are recorded waivers that fail loudly with their rationale. | `migrate down` does not exist in the community binary; the CE notice lists down migrations among excluded features. | Unit tests over live SQLite cover verification success and pre-target abort on both paths, report rendering (including partial-failure reports), the waiver rejections, a byte-identity regression pinning the default forward output to the native command's output, and revision-format regressions proving a bare `atlas migrate down` reverts revisions written by `atlas migrate apply` while an explicit ptah override leaves them untouched. |
 | Pre-approved declarative plans | Ptah plans and applies declarative schema changes through the same `internal/atlasschema` engine that powers `schema apply`. | `ptah atlas schema plan` saves the computed plan to a local JSON plan file with ordered statements, per-statement safety severity, and SHA-256 source/desired schema fingerprints; `ptah atlas schema apply --plan file://<path>` executes the saved statements only after the live database matches the plan's source fingerprint, refusing drifted targets. Registry planning flags (`--push`, `--pending`, `--repo`, `--auto-approve`) are recorded waivers and the plan registry sub-verbs stay CE boundary stubs. | `schema plan` aborts with the community-version boundary; the plan/approval flow is bound to the Atlas Pro registry. | Unit tests over live SQLite cover plan computation and save, the saved-file contract, plan execution with schema assertions, stale-plan refusal after target drift, dry-run, declined confirmation, dialect mismatch, malformed documents, waiver rejections, and both entry points. This workflow is not counted as a schema-object round-trip fixture. |
 
 These rows record product workflow parity, not full Atlas Pro compatibility.
 The Atlas-compatible test verbs run Ptah-native YAML/Go test cases; Atlas
 `.test.hcl` files are not ingested.
+
+## Atlas Pro Analyzer Coverage
+
+Of the 30 analyzer check codes the Atlas analyzers documentation
+(<https://atlasgo.io/lint/analyzers>, fetched 2026-07-28) marks as Atlas Pro,
+Ptah's native lint covers 23 (`CD101`–`CD103`, `PG101`–`PG105` under Ptah codes
+`PG101`/`PG106`/`PG103`/`PG104`/`PG105`, `PG302`/`PG303`/`PG305`–`PG311`,
+`MY131`/`MY132`/`MY134`/`MY135`, `TX101`/`TX201`), flags 5 partially through
+adjacent rules (`PG301` and `MY130` via `DS103`/`MY101`, `PG304` via `PG104`,
+`MY133` via `CD103`, `MY136` via `MY101` for the `CONVERT TO CHARACTER SET`
+form), and records 2 as waivers (`OW101`/`OW102` ownership policy, which binds
+to Atlas Pro schema-ownership annotations and an account model). The
+code-by-code table lives in
+[Native CLI: Atlas Pro Analyzer Coverage](./native_cli.md#atlas-pro-analyzer-coverage).
+
+## Upstream Atlas Verbs Beyond the CE Pin
+
+`atlas migrate ls`, `atlas migrate show`, `atlas schema stats`, and
+`atlas schema validate` appear in current Atlas documentation but are entirely
+absent from the pinned conformance Atlas CE v1.2.0 binary (each resolves to
+`unknown command`, not a community-version abort stub), so they are outside the
+CLI-surface parity target today. Triage outcome, to revisit when the
+conformance Atlas pin advances past v1.2.0:
+
+| Atlas verb | Current Atlas docs behavior | Triage |
+| --- | --- | --- |
+| `migrate ls` | List migration files in the directory (`--latest`, `--short`). | Covered by native: `ptah migrations status` lists every migration with version, description, and applied/pending state. A thin drop-in forward is future work once the pin advances. |
+| `migrate show` | Print the contents of one or more migration files. | Future work: no native verb prints a migration's SQL (the files are plain SQL on disk). A thin drop-in forward is a candidate once the pin advances. |
+| `schema stats` | Inspect database schema statistics in OpenMetrics format. | Out of scope: statistics monitoring is a metrics/observability surface, not schema management; Ptah's schema-state surface is `ptah schema compare` and `ptah schema drift`. |
+| `schema validate` | Check that a schema definition parses and loads, optionally against `--dev-url`. | Covered by native: `ptah schema render` parses and loads the desired schema and fails on invalid input; `ptah schema test` and `schema apply --dry-run` exercise it against a throwaway database. |
 
 ## Reports
 

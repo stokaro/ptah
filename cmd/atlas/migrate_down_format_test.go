@@ -235,10 +235,8 @@ func TestNewAtlasCommand_MigrateDownDevURLForwardsToNativeShadowVerification(t *
 		"--dir", "file://" + migrationsDir,
 		"--to-version", "1",
 		"--dev-url", "sqlite://" + filepath.Join(t.TempDir(), "dev.db"),
-		// The forward passes unrecognized flags to the native command; the
-		// native revision-format flag selects the Atlas revision table this
-		// fixture was applied with (the forward's native default stays ptah).
-		"--revision-format", "atlas",
+		// No --revision-format: the forward defaults to Atlas revision
+		// bookkeeping, matching the revision table `atlas migrate apply` wrote.
 	})
 
 	err := cmd.Execute()
@@ -269,7 +267,6 @@ func TestNewAtlasCommand_MigrateDownDevURLForwardFailureAbortsTarget(t *testing.
 		"--dir", "file://" + migrationsDir,
 		"--to-version", "1",
 		"--dev-url", "sqlite://" + filepath.Join(t.TempDir(), "dev.db"),
-		"--revision-format", "atlas",
 	})
 
 	err := cmd.Execute()
@@ -281,7 +278,9 @@ func TestNewAtlasCommand_MigrateDownDevURLForwardFailureAbortsTarget(t *testing.
 // TestNewAtlasCommand_MigrateDownDefaultOutputMatchesNativeCommand pins the
 // byte-identity contract: without --format, the wrapped verb forwards to the
 // native `ptah migrations down` and its stdout is exactly the native
-// command's stdout.
+// command's stdout. The native invocation selects --revision-format atlas
+// explicitly because the forward injects that default itself, so both runs
+// perform the same real rollback against the Atlas revision table.
 func TestNewAtlasCommand_MigrateDownDefaultOutputMatchesNativeCommand(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
@@ -323,12 +322,77 @@ func TestNewAtlasCommand_MigrateDownDefaultOutputMatchesNativeCommand(t *testing
 			"--db-url", "sqlite://" + dbPath,
 			"--migrations-dir", migrationsDir,
 			"--target", "1",
+			"--revision-format", "atlas",
 		})
 		err := cmd.Execute()
 		return strings.ReplaceAll(out.String(), dbPath, "<db>"), err
 	})
 
 	c.Assert(atlasOut, qt.Equals, nativeOut)
+}
+
+// TestNewAtlasCommand_MigrateDownDefaultsToAtlasRevisionFormat pins the
+// revision-format default of the forward: a bare `atlas migrate down` must
+// revert revisions created by `atlas migrate apply` (Atlas revision
+// bookkeeping), not silently no-op against an empty ptah revision table.
+func TestNewAtlasCommand_MigrateDownDefaultsToAtlasRevisionFormat(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	dbPath := filepath.Join(dir, "down-default-revisions.db")
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
+
+	cmd := atlas.NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetIn(strings.NewReader("YES\n"))
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "down",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--to-version", "1",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
+	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
+	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{"1"})
+}
+
+// TestNewAtlasCommand_MigrateDownRevisionFormatPtahOverridesDefault pins the
+// escape hatch: an explicit native `--revision-format ptah` pass-through is
+// appended after the forward's Atlas default and wins, so the run reads ptah
+// revision bookkeeping and leaves the Atlas-applied state untouched.
+func TestNewAtlasCommand_MigrateDownRevisionFormatPtahOverridesDefault(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	dbPath := filepath.Join(dir, "down-ptah-revisions.db")
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
+
+	cmd := atlas.NewAtlasCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "down",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--revision-format", "ptah",
+	})
+
+	err := cmd.Execute()
+
+	// The ptah revision table is empty, so the rollback is a no-op and the
+	// Atlas-applied schema and revisions stay in place.
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
+	c.Assert(out.String(), qt.Contains, "already at or below target version 0")
+	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
+	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{"1", "2"})
 }
 
 func TestNewAtlasCommand_MigrateDownFormatDeclinedConfirmationWritesNoReport(t *testing.T) {
