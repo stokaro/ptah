@@ -6,7 +6,9 @@ package atlasurl
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -69,6 +71,20 @@ func ValidateDialectMatch(rawURL, targetDialect string) error {
 // ignored: using different users, TLS settings, or pool settings does not make
 // a destructive dev operation safe against the same database.
 func SameDatabase(left, right string) (bool, error) {
+	leftURL, leftDialect, err := parseDatabaseURL(left)
+	if err != nil {
+		return false, err
+	}
+	rightURL, rightDialect, err := parseDatabaseURL(right)
+	if err != nil {
+		return false, err
+	}
+	if leftDialect != rightDialect {
+		return false, nil
+	}
+	if leftDialect == platform.SQLite {
+		return sameSQLiteDatabase(leftURL, rightURL)
+	}
 	leftIdentity, err := databaseIdentity(left)
 	if err != nil {
 		return false, err
@@ -89,7 +105,7 @@ func databaseIdentity(rawURL string) (string, error) {
 		return sqliteIdentity(parsed)
 	}
 
-	host := strings.ToLower(parsed.Hostname())
+	host := normalizedDatabaseHost(parsed.Hostname())
 	port := parsed.Port()
 	if port == "" {
 		port = defaultPorts[dialect]
@@ -130,6 +146,46 @@ func normalizeMySQLTCPURL(rawURL string) string {
 }
 
 func sqliteIdentity(parsed *url.URL) (string, error) {
+	path, memory := sqliteDatabasePath(parsed)
+	if memory {
+		return "sqlite\x00:memory:", nil
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", errors.New("resolve SQLite database path")
+	}
+	resolved, err := filepath.EvalSymlinks(absolute)
+	if err == nil {
+		absolute = resolved
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", errors.New("resolve SQLite database path")
+	}
+	return "sqlite\x00" + filepath.Clean(absolute), nil
+}
+
+func sameSQLiteDatabase(left, right *url.URL) (bool, error) {
+	leftPath, leftMemory := sqliteDatabasePath(left)
+	rightPath, rightMemory := sqliteDatabasePath(right)
+	if leftMemory || rightMemory {
+		return leftMemory && rightMemory, nil
+	}
+	leftInfo, leftErr := os.Stat(leftPath)
+	rightInfo, rightErr := os.Stat(rightPath)
+	if leftErr == nil && rightErr == nil {
+		return os.SameFile(leftInfo, rightInfo), nil
+	}
+	leftIdentity, err := sqliteIdentity(left)
+	if err != nil {
+		return false, err
+	}
+	rightIdentity, err := sqliteIdentity(right)
+	if err != nil {
+		return false, err
+	}
+	return leftIdentity == rightIdentity, nil
+}
+
+func sqliteDatabasePath(parsed *url.URL) (string, bool) {
 	path := parsed.Opaque
 	switch {
 	case path != "":
@@ -141,17 +197,27 @@ func sqliteIdentity(parsed *url.URL) (string, error) {
 	default:
 		path = parsed.Path
 	}
-	if path == "" || path == "/:memory:" || path == ":memory:" {
-		return "sqlite\x00:memory:", nil
+	path = strings.TrimPrefix(path, "file:")
+	if path == "" || path == "/:memory:" || path == ":memory:" ||
+		parsed.Query().Get("mode") == "memory" {
+		return "", true
 	}
-	if strings.HasPrefix(path, "file:") {
-		return "sqlite\x00" + path, nil
+	return filepath.Clean(path), false
+}
+
+func normalizedDatabaseHost(host string) string {
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	if host == "localhost" {
+		return "loopback"
 	}
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		return "", errors.New("resolve SQLite database path")
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return host
 	}
-	return "sqlite\x00" + filepath.Clean(absolute), nil
+	if ip.IsLoopback() {
+		return "loopback"
+	}
+	return ip.String()
 }
 
 func dialectFromDockerURL(parsed *url.URL) (string, error) {

@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -42,6 +43,12 @@ func Acquire(
 		return nil, errors.New("dev database locking requires a database connection")
 	}
 	dialect := platform.NormalizeDialect(conn.Info().Dialect)
+	switch dialect {
+	case platform.ClickHouse, platform.CockroachDB:
+		if err := validateLocalFileLockURL(dialect, conn.Info().URL); err != nil {
+			return nil, err
+		}
+	}
 	identity, err := realmIdentity(ctx, conn, dialect)
 	if err != nil {
 		return nil, err
@@ -52,7 +59,11 @@ func Acquire(
 		if err != nil {
 			return nil, fmt.Errorf("acquire dev database realm lock: %w", err)
 		}
-		return &Lock{advisory: advisory}, nil
+		lock, err := finishAcquire(ctx, &Lock{advisory: advisory})
+		if err != nil {
+			return nil, fmt.Errorf("acquire dev database realm lock: %w", err)
+		}
+		return lock, nil
 	}
 	switch dialect {
 	case platform.SQLite, platform.ClickHouse, platform.CockroachDB:
@@ -60,7 +71,11 @@ func Acquire(
 		if err != nil {
 			return nil, fmt.Errorf("acquire %s dev database realm lock: %w", dialect, err)
 		}
-		return &Lock{file: file}, nil
+		lock, err := finishAcquire(ctx, &Lock{file: file})
+		if err != nil {
+			return nil, fmt.Errorf("acquire %s dev database realm lock: %w", dialect, err)
+		}
+		return lock, nil
 	default:
 		return nil, fmt.Errorf(
 			"%s replay cannot safely serialize destructive dev database use",
@@ -88,6 +103,14 @@ func (l *Lock) Release() error {
 	return errors.Join(advisoryErr, fileErr)
 }
 
+func finishAcquire(ctx context.Context, lock *Lock) (*Lock, error) {
+	if err := ctx.Err(); err != nil {
+		releaseErr := lock.Release()
+		return nil, errors.Join(err, releaseErr)
+	}
+	return lock, nil
+}
+
 func realmIdentity(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -113,30 +136,51 @@ func realmIdentity(
 		}
 		return database, nil
 	case platform.SQLite:
-		return sqliteIdentity(conn.Info().URL)
+		return sqliteIdentity(ctx, conn)
 	default:
 		return "", fmt.Errorf("unsupported dev database lock dialect %q", dialect)
 	}
 }
 
-func sqliteIdentity(rawURL string) (string, error) {
+func sqliteIdentity(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+) (string, error) {
+	var path string
+	if err := conn.QueryRowContext(
+		ctx,
+		"SELECT file FROM pragma_database_list WHERE name = 'main'",
+	).Scan(&path); err != nil {
+		return "", fmt.Errorf("resolve sqlite dev database realm: %w", err)
+	}
+	if strings.TrimSpace(path) == "" {
+		return ":memory:", nil
+	}
+	identity, err := filesystemIdentity(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve sqlite dev database file identity: %w", err)
+	}
+	return identity, nil
+}
+
+func validateLocalFileLockURL(dialect, rawURL string) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return "", err
+		return fmt.Errorf("parse %s dev database URL for local locking: %w", dialect, err)
 	}
-	parsed.RawQuery = ""
-	parsed.Fragment = ""
-	path := parsed.Path
-	if parsed.Opaque != "" {
-		path = parsed.Opaque
+	hostname := strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".")
+	if hostname == "" || hostname == "localhost" {
+		return nil
 	}
-	if parsed.Host != "" {
-		path = parsed.Host + path
+	ip := net.ParseIP(hostname)
+	if ip != nil && ip.IsLoopback() {
+		return nil
 	}
-	if strings.Contains(path, ":memory:") || strings.HasPrefix(path, "file:") {
-		return path, nil
-	}
-	return filepath.Abs(filepath.Clean(path))
+	return fmt.Errorf(
+		"%s replay cannot safely serialize non-local dev database host %q with a local file lock",
+		dialect,
+		parsed.Hostname(),
+	)
 }
 
 func localLockPath(identity string) string {

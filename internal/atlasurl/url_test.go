@@ -1,6 +1,7 @@
 package atlasurl_test
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -98,6 +99,9 @@ func TestSameDatabase_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	sqlitePath := filepath.Join(dir, "dev.db")
+	sqliteHardLink := filepath.Join(dir, "dev-hard-link.db")
+	c.Assert(os.WriteFile(sqlitePath, nil, 0o600), qt.IsNil)
+	c.Assert(os.Link(sqlitePath, sqliteHardLink), qt.IsNil)
 
 	tests := []struct {
 		name  string
@@ -121,6 +125,30 @@ func TestSameDatabase_HappyPath(t *testing.T) {
 			name:  "sqlite relative and absolute paths identify the same file",
 			left:  "sqlite://" + sqlitePath,
 			right: "sqlite://" + filepath.Join(dir, ".", "dev.db") + "?mode=rwc",
+			want:  true,
+		},
+		{
+			name:  "sqlite hard links identify the same file",
+			left:  "sqlite://" + sqlitePath,
+			right: "sqlite://" + sqliteHardLink,
+			want:  true,
+		},
+		{
+			name:  "loopback host aliases identify the same server",
+			left:  "postgres://localhost/app",
+			right: "postgres://127.0.0.1:5432/app",
+			want:  true,
+		},
+		{
+			name:  "expanded and compressed ipv6 identify the same server",
+			left:  "postgres://[2001:0db8:0000:0000:0000:ff00:0042:8329]/app",
+			right: "postgres://[2001:db8::ff00:42:8329]:5432/app",
+			want:  true,
+		},
+		{
+			name:  "expanded ipv6 loopback and localhost identify the same server",
+			left:  "postgres://[0:0:0:0:0:0:0:1]/app",
+			right: "postgres://localhost:5432/app",
 			want:  true,
 		},
 		{
