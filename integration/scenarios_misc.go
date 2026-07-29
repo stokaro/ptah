@@ -135,21 +135,15 @@ func testManualPatchDetection(ctx context.Context, conn *dbschema.DatabaseConnec
 
 // testPermissionRestrictions tests behavior with limited database permissions
 func testPermissionRestrictions(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS) error {
-	// This test is challenging to implement without actually creating a restricted user
-	// For now, we'll simulate the scenario by testing error handling
-
-	helper := NewDatabaseHelper(conn)
-
-	// Try to execute a statement that might fail due to permissions
-	// This is a simplified test - in a real scenario, you'd connect with a restricted user
-	restrictedSQL := "CREATE DATABASE test_restricted_db"
-	err := helper.ExecuteSQL(ctx, restrictedSQL)
-
 	dialect := platform.NormalizeDialect(conn.Info().Dialect)
 	if dialect == platform.MySQL || dialect == platform.MariaDB {
+		// CI provisions these scenario connections without access to the
+		// server-wide privilege table, giving this probe a side-effect-free
+		// distinction between scenario and cleanup credentials.
+		var userCount int
+		err := conn.QueryRow("SELECT COUNT(*) FROM mysql.user").Scan(&userCount)
 		if err == nil {
-			_ = helper.ExecuteSQL(ctx, "DROP DATABASE IF EXISTS test_restricted_db")
-			return fmt.Errorf("restricted %s connection unexpectedly created a database", dialect)
+			return fmt.Errorf("restricted %s connection unexpectedly read mysql.user", dialect)
 		}
 		if err.Error() == "" {
 			return fmt.Errorf("restricted %s failure message should not be empty", dialect)
@@ -162,6 +156,12 @@ func testPermissionRestrictions(ctx context.Context, conn *dbschema.DatabaseConn
 		}
 		return nil
 	}
+
+	// Try to execute a statement that might fail due to permissions
+	// This is a simplified test - in a real scenario, you'd connect with a restricted user
+	helper := NewDatabaseHelper(conn)
+	restrictedSQL := "CREATE DATABASE test_restricted_db"
+	err := helper.ExecuteSQL(ctx, restrictedSQL)
 
 	// We expect this might fail, and that's okay for this test
 	// The important thing is that we handle the error gracefully
