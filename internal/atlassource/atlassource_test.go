@@ -376,6 +376,45 @@ func TestSetEnsureDevDatabaseIgnoresOtherKinds(t *testing.T) {
 	c.Assert(set.EnsureDevDatabase(""), qt.IsNil)
 }
 
+func TestSetEnsureDevIsolation_RejectsAliasedDatabase(t *testing.T) {
+	c := qt.New(t)
+	env := atlassource.ProjectEnv{
+		Loaded: true,
+		Config: projectconfig.Config{
+			DevURL: "postgres://dev_user@localhost/app?sslmode=disable",
+		},
+	}
+	set, err := atlassource.ClassifySet("--to", []string{"env://dev"}, env)
+	c.Assert(err, qt.IsNil)
+
+	err = set.EnsureDevIsolation("postgresql://planner@localhost:5432/app?sslmode=require")
+
+	c.Assert(err, qt.ErrorMatches,
+		`--to database must differ from --dev-url because the dev database is reset during planning`)
+}
+
+func TestSetEnsureDevIsolation_AllowsIndependentDatabase(t *testing.T) {
+	c := qt.New(t)
+	set, err := atlassource.ClassifySet("--to", []string{"postgres://localhost/desired"}, atlassource.ProjectEnv{})
+	c.Assert(err, qt.IsNil)
+
+	err = set.EnsureDevIsolation("postgres://localhost/dev")
+
+	c.Assert(err, qt.IsNil)
+}
+
+func TestSetEnsureDevIsolation_IgnoresLocalFiles(t *testing.T) {
+	c := qt.New(t)
+	path := filepath.Join(t.TempDir(), "schema.sql")
+	c.Assert(os.WriteFile(path, []byte("CREATE TABLE users (id integer);"), 0o600), qt.IsNil)
+	set, err := atlassource.ClassifySet("--to", []string{"file://" + path}, atlassource.ProjectEnv{})
+	c.Assert(err, qt.IsNil)
+
+	err = set.EnsureDevIsolation("sqlite://dev.db")
+
+	c.Assert(err, qt.IsNil)
+}
+
 func TestPinDialect_DevURLWins(t *testing.T) {
 	c := qt.New(t)
 	set, err := atlassource.ClassifySet("--from", []string{"sqlite://a.db"}, atlassource.ProjectEnv{})

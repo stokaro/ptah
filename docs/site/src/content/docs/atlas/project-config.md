@@ -149,12 +149,22 @@ Apply and `ptah atlas migrate import` share one format-loading implementation,
 so they agree on every format's up/down semantics. See
 [`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742).
 
-`env.src` and `env.schema.src` accept local schema-file sources for
-`schema apply`, `schema diff`, and `migrate diff`. Plain local schema paths and
+`env.src` and `env.schema.src` provide local schema-file defaults for
+`schema apply` and `schema diff`. `migrate diff` resolves the same defaults
+through its typed desired-state resolver, so they can contain local schema
+files or one directly connectable database URL. Plain local schema paths and
 relative `file://` schema URLs declared in `atlas.hcl` resolve relative to the
 directory containing that `atlas.hcl` file, not the process working directory.
 Explicit CLI `--to` and `--from` values keep CLI semantics and resolve relative
 to the process working directory unless they are absolute.
+
+The Atlas-compatible schema commands and `migrate diff` also accept explicit
+`env://` references. `env://src` and `env://schema.src` expand the selected
+environment's schema sources through the typed desired-schema resolver, so the
+expanded value can be a supported local file or database URL. `env://url` and
+`env://dev` resolve the corresponding database URL; `env://migration.dir`
+resolves the configured local migration directory. Nested `env://` references
+fail explicitly.
 
 When an `atlas.hcl` `migration` block is present, Ptah defaults
 `revision-format` to `atlas`, so migration commands use

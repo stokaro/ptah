@@ -16,8 +16,9 @@ import (
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/atlasreport"
 	"github.com/stokaro/ptah/internal/atlasschema"
+	"github.com/stokaro/ptah/internal/atlassource"
 	"github.com/stokaro/ptah/internal/migratesum"
-	"github.com/stokaro/ptah/internal/schemafile"
+	"github.com/stokaro/ptah/internal/migrationreplay"
 	"github.com/stokaro/ptah/internal/schemascope"
 	"github.com/stokaro/ptah/migration/migrator"
 	"github.com/stokaro/ptah/migration/planner"
@@ -31,15 +32,16 @@ const (
 )
 
 type DiffOptions struct {
-	Dir         string
-	ToURLs      []string
-	Name        string
-	Format      string
-	Schemas     []string
-	LockTimeout time.Duration
-	Policy      atlasschema.DiffPolicy
-	Qualifier   Qualifier
-	DryRun      bool
+	Dir                  string
+	Desired              atlassource.Set
+	SourceConnectTimeout time.Duration
+	Name                 string
+	Format               string
+	Schemas              []string
+	LockTimeout          time.Duration
+	Policy               atlasschema.DiffPolicy
+	Qualifier            Qualifier
+	DryRun               bool
 }
 
 type DiffResult struct {
@@ -59,8 +61,8 @@ func GenerateDiff(ctx context.Context, conn *dbschema.DatabaseConnection, opts D
 	if strings.TrimSpace(opts.Dir) == "" {
 		return DiffResult{}, errors.New("migrate diff requires migration directory")
 	}
-	if len(opts.ToURLs) == 0 {
-		return DiffResult{}, errors.New("migrate diff requires desired schema URLs")
+	if len(opts.Desired.Sources) == 0 {
+		return DiffResult{}, errors.New("migrate diff requires desired state")
 	}
 	opts = normalizeDiffOptions(opts)
 	schemas := schemascope.SplitNames(opts.Schemas)
@@ -72,6 +74,10 @@ func GenerateDiff(ctx context.Context, conn *dbschema.DatabaseConnection, opts D
 		return DiffResult{}, err
 	}
 
+	desiredState, err := resolveDesiredState(ctx, conn, opts)
+	if err != nil {
+		return DiffResult{}, err
+	}
 	if err := os.MkdirAll(opts.Dir, 0755); err != nil {
 		return DiffResult{}, fmt.Errorf("create migration directory: %w", err)
 	}
@@ -88,22 +94,21 @@ func GenerateDiff(ctx context.Context, conn *dbschema.DatabaseConnection, opts D
 		return DiffResult{}, err
 	}
 
-	if err := replayDir(ctx, conn, opts.Dir); err != nil {
+	if err := migrationreplay.ReplayOnConnection(ctx, conn, opts.Dir, migrator.MigrationDirFormatAtlas); err != nil {
 		return DiffResult{}, err
 	}
-	defaultSchema := conn.Info().Schema
-	current, err := readScopedDevSchema(conn, schemas, defaultSchema)
+	devDefaultSchema := conn.Info().Schema
+	current, err := readScopedDevSchema(conn, schemas, devDefaultSchema)
 	if err != nil {
 		return DiffResult{}, err
 	}
 
 	info := conn.Info()
-	dialect := info.Dialect
-	desired, err := schemafile.LoadAll(opts.ToURLs, schemafile.Options{Dialect: dialect})
-	if err != nil {
-		return DiffResult{}, fmt.Errorf("load --to schema: %w", err)
+	desiredDefaultSchema := desiredState.DefaultSchema
+	if desiredDefaultSchema == "" {
+		desiredDefaultSchema = devDefaultSchema
 	}
-	desired = schemascope.FilterGeneratedWithDefaultSchema(desired, schemas, defaultSchema)
+	desired := schemascope.FilterGeneratedWithDefaultSchema(desiredState.Schema, schemas, desiredDefaultSchema)
 	diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, current, nil)
 	if err != nil {
 		return DiffResult{}, fmt.Errorf("compare dev database schema: %w", err)
@@ -121,6 +126,30 @@ func GenerateDiff(ctx context.Context, conn *dbschema.DatabaseConnection, opts D
 		return DiffResult{SQL: joinFileContentSQL(contents)}, nil
 	}
 	return writeDiffArtifacts(opts.Dir, opts.Name, contents)
+}
+
+func resolveDesiredState(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	opts DiffOptions,
+) (atlassource.State, error) {
+	devURL := conn.Info().URL
+	if err := opts.Desired.EnsureDevDatabase(devURL); err != nil {
+		return atlassource.State{}, err
+	}
+	if err := opts.Desired.EnsureDevIsolation(devURL); err != nil {
+		return atlassource.State{}, err
+	}
+	state, err := opts.Desired.Resolve(ctx, atlassource.ResolveOptions{
+		Dialect:        conn.Info().Dialect,
+		DialectFlag:    "--dev-url",
+		DevURL:         devURL,
+		ConnectTimeout: opts.SourceConnectTimeout,
+	})
+	if err != nil {
+		return atlassource.State{}, fmt.Errorf("load --to schema: %w", err)
+	}
+	return state, nil
 }
 
 // planDiffFileContents plans the migration AST, applies the typed qualifier,
@@ -321,25 +350,6 @@ func verifyDirSum(migrationsDir string) error {
 	}
 	if !result.OK() {
 		return fmt.Errorf("migration directory checksum verification failed:\n%s", result.Describe())
-	}
-	return nil
-}
-
-func replayDir(ctx context.Context, conn *dbschema.DatabaseConnection, migrationsDir string) error {
-	if err := conn.SchemaWriter().DropAllTables(ctx); err != nil {
-		return fmt.Errorf("clean dev database: %w", err)
-	}
-	provider, err := migrator.NewFSMigrationProvider(
-		os.DirFS(migrationsDir),
-		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
-	)
-	if err != nil {
-		return fmt.Errorf("load migration directory: %w", err)
-	}
-	for _, migration := range provider.Migrations() {
-		if err := migration.Up(ctx, conn); err != nil {
-			return fmt.Errorf("replay migration %d on --dev-url: %w", migration.Version, err)
-		}
 	}
 	return nil
 }

@@ -1,6 +1,7 @@
 package atlasurl_test
 
 import (
+	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -20,6 +21,9 @@ func TestDialectFromURL_HappyPath(t *testing.T) {
 		{name: "postgres", rawURL: "postgres://localhost/dev", want: "postgres"},
 		{name: "postgresql alias", rawURL: "postgresql://localhost/dev", want: "postgres"},
 		{name: "sqlserver", rawURL: "sqlserver://localhost/dev", want: "sqlserver"},
+		{name: "mysql TCP spelling", rawURL: "mysql://root@tcp(localhost:3306)/dev", want: "mysql"},
+		{name: "mysql TCP spelling with closing parenthesis in password", rawURL: "mysql://root:pa)ss@tcp(localhost:3306)/dev", want: "mysql"},
+		{name: "mariadb TCP spelling", rawURL: "mariadb://root@tcp(localhost:3306)/dev", want: "mariadb"},
 		{name: "docker postgres", rawURL: "docker://postgres/16/dev", want: "postgres"},
 		{name: "docker postgres port", rawURL: "docker://postgres:16/dev", want: "postgres"},
 	}
@@ -87,5 +91,79 @@ func TestValidateDialectMatch_FailurePath(t *testing.T) {
 	c.Run("mismatched dialect", func(c *qt.C) {
 		err := atlasurl.ValidateDialectMatch("mysql://localhost/dev", "postgres")
 		c.Assert(err, qt.ErrorMatches, `--dev-url dialect "mysql" does not match --url dialect "postgres"`)
+	})
+}
+
+func TestSameDatabase_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	sqlitePath := filepath.Join(dir, "dev.db")
+
+	tests := []struct {
+		name  string
+		left  string
+		right string
+		want  bool
+	}{
+		{
+			name:  "postgres credentials and options do not change identity",
+			left:  "postgres://writer@localhost/app?sslmode=disable",
+			right: "postgresql://reader@localhost:5432/app?sslmode=require",
+			want:  true,
+		},
+		{
+			name:  "mysql TCP spelling and options do not change identity",
+			left:  "mysql://root:pa)ss@tcp(localhost:3306)/app?parseTime=true",
+			right: "mysql://reader@localhost/app?tls=false",
+			want:  true,
+		},
+		{
+			name:  "sqlite relative and absolute paths identify the same file",
+			left:  "sqlite://" + sqlitePath,
+			right: "sqlite://" + filepath.Join(dir, ".", "dev.db") + "?mode=rwc",
+			want:  true,
+		},
+		{
+			name:  "different database names",
+			left:  "postgres://localhost/source",
+			right: "postgres://localhost/dev",
+			want:  false,
+		},
+		{
+			name:  "different hosts",
+			left:  "postgres://db-a/app",
+			right: "postgres://db-b/app",
+			want:  false,
+		},
+		{
+			name:  "different sqlite files",
+			left:  "sqlite://" + sqlitePath,
+			right: "sqlite://" + filepath.Join(dir, "other.db"),
+			want:  false,
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			got, err := atlasurl.SameDatabase(test.left, test.right)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+func TestSameDatabase_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	c.Run("unsupported dialect", func(c *qt.C) {
+		got, err := atlasurl.SameDatabase("oracle://localhost/source", "postgres://localhost/dev")
+		c.Assert(err, qt.ErrorMatches, "unsupported database URL dialect")
+		c.Assert(got, qt.IsFalse)
+	})
+
+	c.Run("invalid URL", func(c *qt.C) {
+		got, err := atlasurl.SameDatabase("postgres://%zz", "postgres://localhost/dev")
+		c.Assert(err, qt.ErrorMatches, "invalid database URL")
+		c.Assert(got, qt.IsFalse)
 	})
 }

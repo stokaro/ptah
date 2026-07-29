@@ -100,27 +100,31 @@ selects ptah bookkeeping. The registry-bound `--to-tag`, `--skip-checks`, and
 ### `ptah atlas migrate diff`
 
 Validates an existing `atlas.sum`, replays a local Atlas migration directory
-on `--dev-url`, diffs it against local `.hcl`, `.yaml`, `.yml`, or `.sql`
-`--to` schema files, writes new Atlas-style migration files, and updates
-`atlas.sum` only after every file was written; a failed write rolls the whole
-generation back. The Atlas-hidden `--dry-run` flag prints the generated SQL
-instead of writing files. With `--env`, reads `env.schema.src`, `env.dev`,
-`migration.dir`, `format.migrate.diff`, and supported `diff` policy from
-`atlas.hcl`; with `diff.concurrent_index.create`, new indexes are planned as
+on `--dev-url`, diffs it against `--to`, writes new Atlas-style migration
+files, and updates `atlas.sum` only after every file was written; a failed
+write rolls the whole generation back. `--to` accepts local `.hcl`, `.yaml`,
+`.yml`, or `.sql` files, one directly connectable database URL, one local
+Atlas migration directory, or one `env://` reference into the evaluated
+`atlas.hcl` environment. Source kinds cannot be mixed, the database source
+must use the `--dev-url` dialect, and a desired database must not identify the
+same database as `--dev-url`.
+The Atlas-hidden `--dry-run` flag prints the generated SQL instead of writing
+files. With `--env`, reads `env.schema.src`, `env.dev`, `migration.dir`,
+`format.migrate.diff`, and supported `diff` policy from `atlas.hcl`; with
+`diff.concurrent_index.create`, new indexes are planned as
 `CREATE INDEX CONCURRENTLY` and their files are tagged with the Atlas
 `-- atlas:txmode none` directive, splitting mixed plans into a transactional
 file followed by a concurrent-index file (unsplittable mixes are refused).
 Generated SQL uses Atlas-style two-space indentation by default; `--format`
 renders it with `sql` and `.MarshalSQL` templates. `--schema/-s` narrows both
-the replayed dev database state and the local desired schema files. `--edit`
-opens the generated migrations in `$VISUAL`/`$EDITOR` before `atlas.sum` is
-finalized. `--lock-timeout` bounds waiting for Ptah's local
-migration-directory lock. `--qualifier` prefixes every object in the generated
-statements with a custom schema qualifier on PostgreSQL-family, MySQL, and
-MariaDB dev databases; invalid values, unsupported dialects, multi-schema
-plans, and statement kinds Ptah cannot re-qualify yet (for example enum
-types) fail explicitly before any file or checksum is written. Database
-desired-schema URLs, `env://`, and Docker dev databases remain explicit gaps.
+the replayed dev database state and the desired schema. `--edit` opens the
+generated migrations in `$VISUAL`/`$EDITOR` before `atlas.sum` is finalized.
+`--lock-timeout` bounds waiting for Ptah's local migration-directory lock.
+`--qualifier` prefixes every object in the generated statements with a custom
+schema qualifier on PostgreSQL-family, MySQL, and MariaDB dev databases;
+invalid values, unsupported dialects, multi-schema plans, and statement kinds
+Ptah cannot re-qualify yet (for example enum types) fail explicitly before any
+file or checksum is written. Docker dev databases remain an explicit gap.
 
 ### `ptah atlas migrate import`
 

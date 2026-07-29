@@ -114,13 +114,22 @@ The supported attributes map to Ptah settings as follows:
 
 `env.src` and `env.schema.src` accept either one string or a list of strings.
 The nested `schema.src` form matches Atlas project config syntax. Ptah currently
-uses local schema file sources only, matching the local schema-file boundary of
+uses these values as local schema-file defaults for `schema apply` and
+`schema diff`. `migrate diff` resolves the same defaults through its typed
+desired-state resolver, so they can contain local schema files or one directly
+connectable database URL. Plain local schema paths and relative `file://`
+schema URLs declared in `atlas.hcl` resolve relative to the directory
+containing that `atlas.hcl` file, not the process working directory. Explicit
+CLI `--to` and `--from` values keep CLI semantics and resolve relative to the
+process working directory unless they are absolute.
+
 `ptah atlas schema apply`, `ptah atlas schema diff`, and
-`ptah atlas migrate diff`. Plain local schema paths and relative `file://`
-schema URLs declared in `atlas.hcl` resolve relative to the directory containing
-that `atlas.hcl` file, not the process working directory. Explicit CLI `--to`
-and `--from` values keep CLI semantics and resolve relative to the process
-working directory unless they are absolute.
+`ptah atlas migrate diff` also accept explicit `env://` references.
+`env://src` and `env://schema.src` expand the selected environment's schema
+sources through the typed desired-schema resolver, so the expanded value can be
+a supported local file or database URL. `env://url` and `env://dev` resolve the
+corresponding database URL; `env://migration.dir` resolves the configured
+local migration directory. Nested `env://` references fail explicitly.
 
 Ptah's `ptah.yaml external_schema` block is a separate native configuration
 surface. It supplies an explicit external-program argument list and SQL, HCL,
@@ -180,10 +189,10 @@ currently model schema dropping as an Atlas-compatible policy decision.
 creation in schema diff planning. For non-dry-run PostgreSQL `schema apply`
 plans that actually emit `CREATE INDEX CONCURRENTLY`, Ptah requires
 `--tx-mode none` because PostgreSQL does not allow concurrent index creation
-inside a transaction. `ptah atlas migrate diff` rejects this policy for now
-because generated migration files do not yet carry the required no-transaction
-metadata. `diff.concurrent_index.drop` is rejected until Ptah implements
-matching concurrent drop semantics.
+inside a transaction. `ptah atlas migrate diff` splits mixed plans and tags
+concurrent-index files with `-- atlas:txmode none`, so replay executes those
+files outside a transaction. `diff.concurrent_index.drop` is rejected until
+Ptah implements matching concurrent drop semantics.
 
 `lint.latest` and `lint.git` configure the migration changeset selected by
 `migrations lint` and `ptah atlas migrate lint`. These selectors are mutually

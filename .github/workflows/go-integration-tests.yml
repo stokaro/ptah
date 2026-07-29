@@ -183,10 +183,14 @@ jobs:
           SQLSERVER_TEST_DSN: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
           POSTGRES_TEST_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           MYSQL_TEST_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
+          MYSQL_ADMIN_TEST_DSN: "root:root_password@tcp(127.0.0.1:3306)/mysql"
+          MYSQL_ADMIN_TEST_URL: "mysql://root:root_password@tcp(127.0.0.1:3306)/mysql"
           PTAH_SQLSERVER_TEST_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
           POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           MYSQL_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
           MARIADB_URL: "mariadb://ptah_user:ptah_password@tcp(127.0.0.1:3307)/ptah_test"
+          MARIADB_ADMIN_TEST_DSN: "root:root_password@tcp(127.0.0.1:3307)/mysql"
+          MARIADB_ADMIN_TEST_URL: "mariadb://root:root_password@tcp(127.0.0.1:3307)/mysql"
           PTAH_OCI_TEST_REGISTRY: "127.0.0.1:5000"
         run: |
           go test -v ./integration -tags=integration -timeout 15m
