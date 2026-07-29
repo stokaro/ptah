@@ -90,8 +90,9 @@ The native `ptah` binary has no Atlas command paths: Atlas spellings such as
 its command tree.
 
 Use `ptah-compat <command> ...` when a script needs Atlas-style root commands.
-You can also copy or symlink that executable as `atlas` so existing scripts can
-call commands such as `atlas migrate apply`.
+For existing scripts that call an executable named `atlas`, the drop-in
+install steps are on the
+[Atlas compatibility overview](../../atlas/overview/#installing-under-the-name-atlas).
 
 ## Next steps
 
