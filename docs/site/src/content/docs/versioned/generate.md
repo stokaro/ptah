@@ -213,8 +213,11 @@ exit `2`:
 error: destructive migration statements require AllowDestructive
 ```
 
-Review the plan, then rerun with `--allow-destructive` to accept it. The
-apply-time gate on `ptah migrations up` is separate — see
+Review the plan, then rerun with `--allow-destructive` to accept it. Use
+`--report json` when CI needs the safety classification as structured data
+instead of text — the GitHub Action's destructive-change check run is driven
+by exactly that report ([CI](../../testing/ci/)). The apply-time gate on
+`ptah migrations up` is separate — see
 [Integrity and safety](../integrity-and-safety/).
 
 **Conflicting sources stop generation.** When two schema sources disagree

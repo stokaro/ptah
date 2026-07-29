@@ -106,6 +106,30 @@ ptah schema render --root-dir ./models --dialect postgres >/tmp/ptah-schema.sql
 Use a disposable database for `migrations plan`, `migrations generate`, and
 `migrations up` in pull requests.
 
+## Upload lint findings to code scanning
+
+`ptah migrations lint --format sarif` emits a SARIF 2.1.0 document that
+GitHub code scanning ingests, turning findings into pull-request annotations
+with stable rule identifiers:
+
+```yaml
+      - name: Lint migrations
+        run: >
+          ptah migrations lint --dir ./migrations --dialect postgres
+          --fail-on none --format sarif > ptah-lint.sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ptah-lint.sarif
+          category: ptah-lint
+```
+
+The upload step needs the `security-events: write` permission. Use
+`--fail-on none` when code scanning owns the failure policy — above the
+threshold the report goes to stderr and the command exits `1`, so a plain
+stdout redirect would capture an empty file. Prefer
+`--format github-actions` when inline annotations are wanted without the
+code-scanning permission model.
+
 ## Recommended pull-request contour
 
 | Check | Why it exists |
