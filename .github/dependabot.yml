@@ -6,7 +6,11 @@
 version: 2
 updates:
   - package-ecosystem: "gomod" # See documentation for possible values
-    directory: "/" # Location of package manifests
+    # testkit/ is a separate Go module whose go.sum must move together with
+    # the root module, so both manifests are updated in the same PR.
+    directories:
+      - "/"
+      - "/testkit"
     schedule:
       interval: "weekly"
     allow:
