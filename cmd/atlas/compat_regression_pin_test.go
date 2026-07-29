@@ -18,7 +18,7 @@ import (
 // byte-identical across that refactor.
 
 func runAtlasArgs(args ...string) (string, error) {
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)

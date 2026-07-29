@@ -207,12 +207,12 @@ table, and `--dry-run` validates the inputs without changing anything.
 
 ## Atlas-compatible surface
 
-`ptah atlas migrate edit`, `ptah atlas migrate rebase`, and
-`ptah atlas migrate rm` forward to these native commands for drop-in Atlas
-familiarity, with `--dir` mapping to the migrations directory. `ptah atlas
-migrate set` is the Atlas spelling of `ptah migrations set` with Atlas
-revision bookkeeping preselected. Squashing history is its own verb pair —
-see [Checkpoints](../checkpoints/).
+In the `ptah-compat` drop-in binary, `migrate edit`, `migrate rebase`, and
+`migrate rm` forward to these native commands for drop-in Atlas familiarity,
+with `--dir` mapping to the migrations directory. Its `migrate set` is the
+Atlas spelling of `ptah migrations set` with Atlas revision bookkeeping
+preselected. Squashing history is its own verb pair — see
+[Checkpoints](../checkpoints/).
 
 ## Next steps
 

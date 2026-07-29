@@ -17,8 +17,8 @@ Two commands share one test-case format:
 Atlas keeps `migrate test` and `schema test` in its proprietary Pro build (an
 Atlas account and the closed-source binary). Ptah provides both as MIT, local,
 no-account, embeddable capabilities. Scripts written against the Atlas Pro CLI
-can run them through the Atlas-compatible surface too: `ptah atlas migrate
-test` and `ptah atlas schema test` (also via the `ptah-compat` binary) forward
+can run them through the Atlas-compatible surface too: `migrate test` and
+`schema test` in the `ptah-compat` drop-in binary forward
 to the native runners with Atlas-shaped flags (`--dir` / `-u --url`,
 `--dev-url`, `--run`, `--config/--env/--var`) and the native exit codes, with
 Ptah-native YAML test files as the executable payload — see

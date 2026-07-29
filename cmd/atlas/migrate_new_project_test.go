@@ -43,7 +43,7 @@ func TestMigrateNewWithAtlasProjectEnumIdentifiers(t *testing.T) {
 }
 `), 0o600), qt.IsNil)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var output bytes.Buffer
 	cmd.SetOut(&output)
 	cmd.SetErr(&output)

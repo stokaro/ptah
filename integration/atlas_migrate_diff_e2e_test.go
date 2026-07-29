@@ -16,11 +16,12 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-// TestAtlasMigrateDiffConcurrentIndexAndQualifierE2E runs the real Ptah CLI
-// against a disposable PostgreSQL database and verifies the Atlas-compatible
-// migrate diff behavior added for issue #815: concurrent-index migration-file
-// metadata (`-- atlas:txmode none`), the transactional/concurrent safety
-// split, atomic atlas.sum updates, and --qualifier artifact naming.
+// TestAtlasMigrateDiffConcurrentIndexAndQualifierE2E runs the real ptah-compat
+// binary against a disposable PostgreSQL database and verifies the
+// Atlas-compatible migrate diff behavior added for issue #815:
+// concurrent-index migration-file metadata (`-- atlas:txmode none`), the
+// transactional/concurrent safety split, atomic atlas.sum updates, and
+// --qualifier artifact naming.
 func TestAtlasMigrateDiffConcurrentIndexAndQualifierE2E(t *testing.T) {
 	dbURL := requirePostgresE2EDatabaseURL(t)
 
@@ -29,8 +30,8 @@ func TestAtlasMigrateDiffConcurrentIndexAndQualifierE2E(t *testing.T) {
 	defer cancel()
 
 	repoRoot := e2eRepoRoot(t)
-	binaryPath := filepath.Join(t.TempDir(), "ptah")
-	buildPtah(c, ctx, repoRoot, binaryPath)
+	binaryPath := filepath.Join(t.TempDir(), "atlas")
+	buildPtahCompat(c, ctx, repoRoot, binaryPath)
 
 	adminDB, err := sql.Open("pgx", dbURL)
 	c.Assert(err, qt.IsNil)
@@ -69,7 +70,7 @@ env "dev" {
 `), 0o600), qt.IsNil)
 
 		output, err := runPtah(ctx, dir, binaryPath,
-			"atlas", "migrate", "diff",
+			"migrate", "diff",
 			"--config", "file://"+filepath.Join(dir, "atlas.hcl"),
 			"--env", "dev",
 			"--var", "desired_url="+desiredDBURL,
@@ -118,7 +119,7 @@ CREATE INDEX idx_users_email ON users (email);
 }
 `), 0o600), qt.IsNil)
 
-		output, err := runPtah(ctx, dir, binaryPath, "atlas", "migrate", "diff", "--env", "dev", "add_email_index")
+		output, err := runPtah(ctx, dir, binaryPath, "migrate", "diff", "--env", "dev", "add_email_index")
 
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", output))
 		transactionalSQL := readFirstMatchingFile(c, migrationsDir, "*_add_email_index_transactional.sql")
@@ -139,7 +140,7 @@ CREATE INDEX idx_users_email ON users (email);
 		// CONCURRENTLY, which PostgreSQL rejects inside a transaction block,
 		// so a synced result proves the directive drove non-transactional
 		// execution end to end.
-		output, err = runPtah(ctx, dir, binaryPath, "atlas", "migrate", "diff", "--env", "dev", "noop")
+		output, err = runPtah(ctx, dir, binaryPath, "migrate", "diff", "--env", "dev", "noop")
 
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", output))
 		c.Assert(output, qt.Contains, "The migration directory is synced with the desired state")
@@ -158,7 +159,7 @@ CREATE INDEX idx_users_email ON users (email);
 `), 0o600), qt.IsNil)
 
 		output, err := runPtah(ctx, dir, binaryPath,
-			"atlas", "migrate", "diff",
+			"migrate", "diff",
 			"--to", "file://"+filepath.Join(dir, "schema.sql"),
 			"--dev-url", testDBURL,
 			"--dir", "file://"+migrationsDir,
@@ -194,7 +195,7 @@ CREATE INDEX idx_users_email ON users (email);
 			[]byte("CREATE TABLE items (id SERIAL PRIMARY KEY);\n"), 0o600), qt.IsNil)
 
 		output, err := runPtah(ctx, dir, binaryPath,
-			"atlas", "migrate", "diff",
+			"migrate", "diff",
 			"--to", "file://"+filepath.Join(dir, "schema.sql"),
 			"--dev-url", testDBURL,
 			"--dir", "file://"+migrationsDir,

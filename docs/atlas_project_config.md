@@ -3,7 +3,9 @@
 Ptah can read a limited Atlas project config subset from `atlas.hcl` and
 translate it into Ptah's project config IR. This is project configuration for
 commands, not schema HCL input. Schema HCL input is documented separately in
-[HCL Schema Input](atlas_hcl_schema.md).
+[HCL Schema Input](atlas_hcl_schema.md). `atlas <command> ...` invocations in
+this document run the separate `ptah-compat` drop-in binary installed under
+the name `atlas`.
 
 ## Supported Subset
 
@@ -80,14 +82,14 @@ The supported attributes map to Ptah settings as follows:
 
 | Atlas setting | Ptah setting |
 | --- | --- |
-| `env.url` | `--db-url`, `ptah atlas schema inspect --url`, `ptah atlas schema apply --url`, `ptah atlas migrate apply --url`, or `ptah atlas migrate status --url` default |
-| `env.dev` | `migrations generate --shadow-db`, `ptah atlas schema inspect --dev-url`, `ptah atlas schema apply --dev-url`, `ptah atlas schema diff --dev-url`, `ptah atlas migrate diff --dev-url`, or `ptah atlas migrate lint --dev-url` default |
-| `env.src` | `ptah atlas schema apply --to` default |
-| `env.schema.src` | `ptah atlas schema apply --to`, `ptah atlas schema diff --to`, or `ptah atlas migrate diff --to` default |
+| `env.url` | `--db-url`, `atlas schema inspect --url`, `atlas schema apply --url`, `atlas migrate apply --url`, or `atlas migrate status --url` default |
+| `env.dev` | `migrations generate --shadow-db`, `atlas schema inspect --dev-url`, `atlas schema apply --dev-url`, `atlas schema diff --dev-url`, `atlas migrate diff --dev-url`, or `atlas migrate lint --dev-url` default |
+| `env.src` | `atlas schema apply --to` default |
+| `env.schema.src` | `atlas schema apply --to`, `atlas schema diff --to`, or `atlas migrate diff --to` default |
 | `env.schema.mode.<object>` | Atlas-style exclusion defaults for supported object kinds |
-| `env.exclude` | `ptah atlas schema inspect --exclude`, `ptah atlas schema apply --exclude`, or `ptah atlas schema diff --exclude` default |
+| `env.exclude` | `atlas schema inspect --exclude`, `atlas schema apply --exclude`, or `atlas schema diff --exclude` default |
 | `migration.dir` | `--migrations-dir` or `--dir` default |
-| `migration.format` | `--dir-format` default where the command exposes that flag; safety gate for `ptah atlas migrate apply` |
+| `migration.format` | `--dir-format` default where the command exposes that flag; safety gate for `atlas migrate apply` |
 | `migration.revisions_schema` | `--migrations-schema` default |
 | `migration.lock_timeout` | `--lock-timeout` default |
 | `migration.exec_order` | `--exec-order` default |
@@ -100,15 +102,15 @@ The supported attributes map to Ptah settings as follows:
 | `lint.data_depend.error` | `DD` lint rule-family severity |
 | `lint.incompatible.error` | `BC` lint rule-family severity |
 | `lint.nestedtx.error` | `TX201` lint rule severity |
-| `lint.log` | `ptah atlas migrate lint` output template; shares the `format.migrate.lint` default |
-| `format.schema.inspect` | `ptah atlas schema inspect --format` default |
-| `format.schema.apply` | `ptah atlas schema apply --format` default |
-| `format.schema.clean` | `ptah atlas schema clean --format` default |
-| `format.schema.diff` | `ptah atlas schema diff --format` default |
-| `format.migrate.apply` | `ptah atlas migrate apply --format` default |
-| `format.migrate.diff` | `ptah atlas migrate diff --format` default |
-| `format.migrate.lint` | `ptah atlas migrate lint --format` default |
-| `format.migrate.status` | `ptah atlas migrate status --format` default |
+| `lint.log` | `atlas migrate lint` output template; shares the `format.migrate.lint` default |
+| `format.schema.inspect` | `atlas schema inspect --format` default |
+| `format.schema.apply` | `atlas schema apply --format` default |
+| `format.schema.clean` | `atlas schema clean --format` default |
+| `format.schema.diff` | `atlas schema diff --format` default |
+| `format.migrate.apply` | `atlas migrate apply --format` default |
+| `format.migrate.diff` | `atlas migrate diff --format` default |
+| `format.migrate.lint` | `atlas migrate lint --format` default |
+| `format.migrate.status` | `atlas migrate status --format` default |
 | `diff.skip.drop_table` | Drop-table suppression for local schema diff/apply planning |
 | `diff.concurrent_index.create` | PostgreSQL concurrent index creation where the command can execute without a surrounding transaction |
 
@@ -123,8 +125,8 @@ containing that `atlas.hcl` file, not the process working directory. Explicit
 CLI `--to` and `--from` values keep CLI semantics and resolve relative to the
 process working directory unless they are absolute.
 
-`ptah atlas schema apply`, `ptah atlas schema diff`, and
-`ptah atlas migrate diff` also accept explicit `env://` references.
+`atlas schema apply`, `atlas schema diff`, and
+`atlas migrate diff` also accept explicit `env://` references.
 `env://src` and `env://schema.src` expand the selected environment's schema
 sources through the typed desired-schema resolver, so the expanded value can be
 a supported local file or database URL. `env://url` and `env://dev` resolve the
@@ -142,7 +144,7 @@ native Ptah feature.
 
 Ptah parses Atlas's `atlas`, `golang-migrate`, `goose`, `flyway`, `liquibase`,
 and `dbmate` migration format values so the project file can be evaluated
-without changing Atlas syntax. `ptah atlas migrate apply` executes all of them.
+without changing Atlas syntax. `atlas migrate apply` executes all of them.
 The native `atlas` format is read from disk unchanged, preserving `atlas.sum`
 verification and down migrations. Every other format is read and converted in
 memory to Atlas single-file, up-only migrations, so applying it runs only the
@@ -155,15 +157,15 @@ query value selects the native `atlas` format.
 
 ```bash
 # Apply a Goose directory directly, no conversion step required.
-ptah atlas migrate apply --env local \
+atlas migrate apply --env local \
   --dir "file://migrations?format=goose"
 ```
 
-The reusable format-loading layer is shared with `ptah atlas migrate import`, so
+The reusable format-loading layer is shared with `atlas migrate import`, so
 apply and import agree on every format's up/down semantics. See
 [`stokaro/ptah#742`](https://github.com/stokaro/ptah/issues/742).
 
-`env.exclude` accepts either one string or a list of strings. `ptah atlas schema
+`env.exclude` accepts either one string or a list of strings. `atlas schema
 apply --env <name>` uses it as the default resource exclusion filter unless an
 explicit `--exclude` flag is provided.
 
@@ -189,13 +191,13 @@ currently model schema dropping as an Atlas-compatible policy decision.
 creation in schema diff planning. For non-dry-run PostgreSQL `schema apply`
 plans that actually emit `CREATE INDEX CONCURRENTLY`, Ptah requires
 `--tx-mode none` because PostgreSQL does not allow concurrent index creation
-inside a transaction. `ptah atlas migrate diff` splits mixed plans and tags
+inside a transaction. `atlas migrate diff` splits mixed plans and tags
 concurrent-index files with `-- atlas:txmode none`, so replay executes those
 files outside a transaction. `diff.concurrent_index.drop` is rejected until
 Ptah implements matching concurrent drop semantics.
 
 `lint.latest` and `lint.git` configure the migration changeset selected by
-`migrations lint` and `ptah atlas migrate lint`. These selectors are mutually
+`migrations lint` and `atlas migrate lint`. These selectors are mutually
 exclusive. `lint.git.dir` matches Atlas's working-directory option for Git
 changeset detection and defaults to the current directory when omitted.
 
@@ -210,16 +212,16 @@ IDs are not a stable one-to-one namespace. Analyzer `force` options, allow-list
 blocks such as `allow_table` / `allow_column`, custom `rule` blocks, and
 policy families without a matching Ptah lint engine fail explicitly.
 
-`lint.log` is an Atlas Go-template string that renders the `ptah atlas migrate
+`lint.log` is an Atlas Go-template string that renders the `atlas migrate
 lint` output. It is parsed into the same format IR as `format.migrate.lint`, so
 the two share one precedence chain: an explicit CLI `--format` overrides the
 project template, and a selected `--env` `lint.log` overrides a global one. When
-neither a CLI `--format` nor a project template is set, `ptah atlas migrate lint`
+neither a CLI `--format` nor a project template is set, `atlas migrate lint`
 prints Atlas's default migration-analysis text report (per-version diagnostics
 and a summary), while the native `ptah migrations lint` output is unchanged.
 
 `migration.tx_mode` accepts `file`, `all`, and `none`, matching
-`ptah atlas migrate apply --tx-mode`. `all` is limited to dialects where Ptah
+`atlas migrate apply --tx-mode`. `all` is limited to dialects where Ptah
 can safely wrap DDL in a single transaction and conflicts with file-level
 `no_transaction` directives. `none` intentionally rejects migration timeouts
 because Ptah does not yet apply timeout setup and restore through a dedicated
@@ -272,8 +274,8 @@ and a list of `file://...` URLs when `paths` is used. `fileset` returns stable
 slash-separated relative paths sorted lexicographically and supports recursive
 `**` path segments.
 
-Atlas-compatible commands under `ptah atlas schema ...` and
-`ptah atlas migrate ...` accept Atlas project flags:
+Atlas-compatible commands under `atlas schema ...` and
+`atlas migrate ...` accept Atlas project flags:
 
 - `--config path/to/atlas.hcl` or `-c path/to/atlas.hcl` selects the project
   config file. Ptah also accepts local `file://` config URLs. Other URL schemes
@@ -328,35 +330,35 @@ settings:
 - `migrations status`
 - `migrations lint`
 - `migrations generate`
-- `ptah atlas schema inspect`
-- `ptah atlas schema apply`
-- `ptah atlas schema diff`
-- `ptah atlas migrate apply`
-- `ptah atlas migrate diff`
-- `ptah atlas migrate lint`
+- `atlas schema inspect`
+- `atlas schema apply`
+- `atlas schema diff`
+- `atlas migrate apply`
+- `atlas migrate diff`
+- `atlas migrate lint`
 
-Atlas command paths under `ptah atlas <command> ...` inherit this behavior
+Atlas command paths under `atlas <command> ...` inherit this behavior
 when they forward to one of these native commands. Dedicated Atlas-compatible
 commands document their own project-config support. The separate `ptah-compat`
 binary exposes the same Atlas-compatible command tree at process root for
 drop-in script migration.
 
-`ptah atlas schema inspect` reads `env.url`, `env.dev`, `env.exclude`,
+`atlas schema inspect` reads `env.url`, `env.dev`, `env.exclude`,
 `env.schema.mode`, and `format.schema.inspect`.
 
-`ptah atlas schema apply` reads `env.url`, `env.src`, `env.schema.src`,
+`atlas schema apply` reads `env.url`, `env.src`, `env.schema.src`,
 `env.dev`, `env.exclude`, `env.schema.mode`, `format.schema.apply`, and
 supported `diff` policy.
 
-`ptah atlas schema diff` reads `env.schema.src`, `env.dev`, `env.exclude`,
+`atlas schema diff` reads `env.schema.src`, `env.dev`, `env.exclude`,
 `env.schema.mode`, `format.schema.diff`, and supported `diff` policy.
 
-`ptah atlas schema clean` reads `env.url` and `format.schema.clean`.
+`atlas schema clean` reads `env.url` and `format.schema.clean`.
 
-`ptah atlas migrate apply` reads `env.url`, `migration`, and
+`atlas migrate apply` reads `env.url`, `migration`, and
 `format.migrate.apply`.
 
-`ptah atlas migrate diff` reads `env.schema.src`, `env.dev`, `migration.dir`,
+`atlas migrate diff` reads `env.schema.src`, `env.dev`, `migration.dir`,
 `format.migrate.diff`, and supported `diff` policy.
 
 ## Unsupported Constructs

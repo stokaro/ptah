@@ -160,8 +160,8 @@ should interpret the code according to the selected CLI surface.
 - Pin the Ptah version used by CI.
 - Commit migration files and `ptah.sum` together.
 - Keep database URLs in secrets.
-- Run Atlas-compatible scripts through `ptah atlas ...`, or use `ptah-compat`
-  renamed or symlinked as `atlas` when preserving existing Atlas scripts.
+- Run Atlas-compatible scripts through `ptah-compat`, renamed or symlinked as
+  `atlas` when preserving existing Atlas scripts.
 - Link CI failures to [Troubleshooting](../../operate/troubleshooting/) so users
   have recovery steps.
 

@@ -43,7 +43,7 @@ func writeScopeSchemaFiles(t *testing.T) (fromPath, toPath, devPath string) {
 func TestSchemaDiffIncludeSelectsLocalSchemaFiles(t *testing.T) {
 	c := qt.New(t)
 	fromPath, toPath, devPath := writeScopeSchemaFiles(t)
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.SetOut(&out)
@@ -68,7 +68,7 @@ func TestSchemaDiffIncludeSelectsLocalSchemaFiles(t *testing.T) {
 func TestSchemaDiffIncludeUnionsRepeatedValues(t *testing.T) {
 	c := qt.New(t)
 	fromPath, toPath, devPath := writeScopeSchemaFiles(t)
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -95,7 +95,7 @@ func TestSchemaDiffIncludeUnionsRepeatedValues(t *testing.T) {
 func TestSchemaDiffIncludeEmptyMatchReportsSynced(t *testing.T) {
 	c := qt.New(t)
 	fromPath, toPath, devPath := writeScopeSchemaFiles(t)
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -116,7 +116,7 @@ func TestSchemaDiffIncludeEmptyMatchReportsSynced(t *testing.T) {
 func TestSchemaDiffIncludeCrossScopeDependencyFails(t *testing.T) {
 	c := qt.New(t)
 	fromPath, toPath, devPath := writeScopeSchemaFiles(t)
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -138,7 +138,7 @@ func TestSchemaDiffIncludeCrossScopeDependencyFails(t *testing.T) {
 func TestSchemaDiffIncludeMalformedSelectorFailsBeforeDevDatabase(t *testing.T) {
 	c := qt.New(t)
 	fromPath, toPath, devPath := writeScopeSchemaFiles(t)
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -164,7 +164,7 @@ func TestSchemaDiffSchemaScopeOnSQLite(t *testing.T) {
 
 	c.Run("main selects unqualified objects", func(c *qt.C) {
 		fromPath, toPath, devPath := writeScopeSchemaFiles(t)
-		cmd := atlas.NewAtlasCommand()
+		cmd := atlas.NewCompatCommand("atlas")
 		var out bytes.Buffer
 		cmd.SetOut(&out)
 		cmd.SetErr(&out)
@@ -185,7 +185,7 @@ func TestSchemaDiffSchemaScopeOnSQLite(t *testing.T) {
 
 	c.Run("other schema selects nothing", func(c *qt.C) {
 		fromPath, toPath, devPath := writeScopeSchemaFiles(t)
-		cmd := atlas.NewAtlasCommand()
+		cmd := atlas.NewCompatCommand("atlas")
 		var out bytes.Buffer
 		cmd.SetOut(&out)
 		cmd.SetErr(&out)
@@ -210,7 +210,7 @@ func TestSchemaApplyIncludeComposesWithExclude(t *testing.T) {
 	dbPath := filepath.Join(dir, "apply.db")
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(scopeTestSchemaSQL), 0o600), qt.IsNil)
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.SetOut(&out)
@@ -242,7 +242,7 @@ func TestSchemaApplyIncludeEndToEndOnSQLite(t *testing.T) {
 	dbPath := seedSQLiteDB(t, "CREATE TABLE scope_keepme (id INTEGER PRIMARY KEY)")
 	schemaPath := filepath.Join(t.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(scopeTestSchemaSQL), 0o600), qt.IsNil)
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -268,7 +268,7 @@ func TestSchemaApplyIncludeValidationRunsBeforeConnecting(t *testing.T) {
 	c := qt.New(t)
 	schemaPath := filepath.Join(t.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(scopeTestSchemaSQL), 0o600), qt.IsNil)
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -293,7 +293,7 @@ func TestSchemaApplyCrossScopeDependencyFails(t *testing.T) {
 	dbPath := filepath.Join(dir, "apply.db")
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(scopeTestSchemaSQL), 0o600), qt.IsNil)
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -317,7 +317,7 @@ func TestSchemaApplySchemaScopeEmptyMatchReportsSynced(t *testing.T) {
 	dbPath := filepath.Join(dir, "apply.db")
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(scopeTestSchemaSQL), 0o600), qt.IsNil)
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)

@@ -18,7 +18,7 @@ func TestMigrateDiffDatabaseURLDesiredState(t *testing.T) {
 	desiredPath := seedSQLiteDB(t, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 	migrationsDir := filepath.Join(t.TempDir(), "migrations")
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -57,7 +57,7 @@ CREATE TABLE env_users (
 `), 0o600), qt.IsNil)
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 	migrationsDir := filepath.Join(t.TempDir(), "migrations")
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -102,7 +102,7 @@ env "dev" {
 		0o600,
 	), qt.IsNil)
 	devPath := filepath.Join(t.TempDir(), "dev.db")
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -134,7 +134,7 @@ env "dev" {
 `), 0o600), qt.IsNil)
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 	migrationsDir := filepath.Join(t.TempDir(), "migrations")
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -175,7 +175,7 @@ env "dev" {
   }
 }
 `), 0o600), qt.IsNil)
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -211,7 +211,7 @@ func TestMigrateDiffMigrationDirectoryDesiredState(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 	migrationsDir := filepath.Join(t.TempDir(), "migrations")
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -240,7 +240,7 @@ env "dev" {
   dev = var.database_url
 }
 `), 0o600), qt.IsNil)
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -265,7 +265,7 @@ func TestMigrateDiffSourceFailureDoesNotCreateMigrationDirectory(t *testing.T) {
 	missingSourcePath := filepath.Join(t.TempDir(), "missing", "source.db")
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 	migrationsDir := filepath.Join(t.TempDir(), "migrations")
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -286,7 +286,7 @@ func TestMigrateDiffSourceFailureDoesNotCreateMigrationDirectory(t *testing.T) {
 func TestMigrateDiffDatabaseURLDialectMismatchFailsBeforeDevConnection(t *testing.T) {
 	c := qt.New(t)
 	devPath := filepath.Join(t.TempDir(), "dev.db")
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -307,7 +307,7 @@ func TestMigrateDiffDatabaseURLDialectMismatchFailsBeforeDevConnection(t *testin
 func TestMigrateDiffEnvSourceWithoutConfigFailsBeforeDevConnection(t *testing.T) {
 	c := qt.New(t)
 	devPath := filepath.Join(t.TempDir(), "dev.db")
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)

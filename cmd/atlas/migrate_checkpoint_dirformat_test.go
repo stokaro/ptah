@@ -22,12 +22,12 @@ func writeCheckpointPtahFixture(c *qt.C, migrationsDir string) {
 		[]byte("DROP TABLE ckpt_users;\n"), 0o600), qt.IsNil)
 }
 
-func TestNewAtlasCommand_MigrateCheckpointDirFormatPtahWrites(t *testing.T) {
+func TestCompatCommand_MigrateCheckpointDirFormatPtahWrites(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := filepath.Join(t.TempDir(), "migrations")
 	writeCheckpointPtahFixture(c, migrationsDir)
 
-	cmd := atlas.NewAtlasCommand()
+	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -50,7 +50,7 @@ func TestNewAtlasCommand_MigrateCheckpointDirFormatPtahWrites(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 }
 
-func TestNewAtlasCommand_MigrateCheckpointDirFormatWaiversAndRejections(t *testing.T) {
+func TestCompatCommand_MigrateCheckpointDirFormatWaiversAndRejections(t *testing.T) {
 	tests := []struct {
 		name  string
 		value string
@@ -84,7 +84,7 @@ func TestNewAtlasCommand_MigrateCheckpointDirFormatWaiversAndRejections(t *testi
 			migrationsDir := filepath.Join(t.TempDir(), "migrations")
 			writeCheckpointPtahFixture(c, migrationsDir)
 
-			cmd := atlas.NewAtlasCommand()
+			cmd := atlas.NewCompatCommand("atlas")
 			var out bytes.Buffer
 			cmd.SetOut(&out)
 			cmd.SetErr(&out)

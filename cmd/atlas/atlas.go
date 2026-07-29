@@ -81,17 +81,6 @@ var unsupportedAtlasDirFormats = []string{
 	"liquibase",
 }
 
-// NewAtlasCommand returns the Atlas command namespace.
-func NewAtlasCommand() *cobra.Command {
-	cmd := newAtlasCommand("atlas [command]", "Atlas OSS command namespace", `Atlas OSS command namespace.
-
-These commands reserve the Atlas OSS CLI surface under Ptah. Commands that have
-an existing Ptah equivalent forward to that native command while keeping the
-native Ptah command tree separate for future redesign.`)
-	cmdutil.SetErrorCodePolicy(cmd, atlasErrorExitCode)
-	return cmd
-}
-
 // NewCompatCommand returns an Atlas-compatible root command.
 func NewCompatCommand(use string) *cobra.Command {
 	use = strings.TrimSpace(use)
@@ -101,8 +90,8 @@ func NewCompatCommand(use string) *cobra.Command {
 	cmd := newAtlasCommand(use+" [command]", "Atlas-compatible Ptah command tree", `Atlas-compatible Ptah command tree.
 
 This executable exposes Atlas-style commands at process root for scripts that
-expect commands such as migrate apply or schema inspect. Runtime behavior is the
-same compatibility layer used by ptah atlas <command> ...`)
+expect commands such as migrate apply or schema inspect. Commands that have an
+existing Ptah equivalent forward to that native command.`)
 	cmdflags.InstallEnvBinding("PTAH", cmd)
 	cmdutil.SetErrorCodePolicy(cmd, atlasErrorExitCode)
 	return cmd

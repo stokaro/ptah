@@ -97,9 +97,9 @@ Canonical names. Do not introduce synonyms.
 
 | Term | Meaning and usage rule |
 | --- | --- |
-| native commands | The `ptah <verb>` tree. Never described with Atlas spellings; root-level Atlas aliases (`ptah migrate apply`, `ptah schema inspect`) are documented as intentionally absent. |
-| Atlas-compatible commands | `ptah atlas <command> ...` inside the native binary. Always spelled with the `ptah atlas` prefix. |
-| `ptah-compat` | A binary-level drop-in for scripts expecting an Atlas-style executable. Described in prose; never a third command surface or table column. |
+| native commands | The `ptah <verb>` tree. Never described with Atlas spellings; root-level Atlas aliases (`ptah migrate apply`) are documented as intentionally absent. |
+| Atlas-compatible commands | The command tree of the separate `ptah-compat` binary. Invocations are spelled `atlas <command> ...`, assuming the binary is installed under the name `atlas`; state that assumption once per page. |
+| `ptah-compat` | The binary-level drop-in replacement for scripts expecting an Atlas-style executable. The only Atlas-compatible command surface; the native `ptah` binary has none. |
 | desired schema | What the schema sources declare. Do not write "desired state" except inside the established compound for composite sources. |
 | schema source | A Go-annotation tree, YAML file, HCL file, SQL file, external loader, or live database used as input. |
 | composite desired schema | The merged result of multiple schema sources. |

@@ -19,7 +19,7 @@ local `variable` defaults and Atlas-style `--var name=value` overrides,
 `locals`, `getenv`, `file`, `fileset`, and `data.hcl_schema.<name>.url`
 references for local schema-file workflows.
 Supported Atlas env blocks can also set `schema.src`, `schema.mode`, `format`,
-and local `diff` policy defaults for `ptah atlas ...` commands.
+and local `diff` policy defaults for the `ptah-compat` binary's commands.
 
 Ptah reads each selected project config once per command and converts it to a
 typed configuration value. Migration database settings and online-DDL policy
@@ -78,11 +78,11 @@ lists destructive change kinds (`drop_table`, `drop_column`, `drop_index`,
 indexes (PostgreSQL, capability-gated). A skipped change is never emitted, so it
 never trips the `--check-destructive` gate.
 
-The Atlas-compatible command tree lives under `ptah atlas <command> ...`.
+The Atlas-compatible command tree lives in the separate `ptah-compat` binary,
+the drop-in replacement for scripts that expect Atlas-style root commands.
 Atlas project flags such as `--config`, `-c`, `--env`, and repeated
-`--var name=value` belong to this tree only.
-`ptah-compat` is the drop-in replacement binary for scripts that expect
-Atlas-style root commands; it is not a separate configuration surface.
+`--var name=value` belong to that tree only; it is not a separate
+configuration surface.
 
 ## External desired schema
 
