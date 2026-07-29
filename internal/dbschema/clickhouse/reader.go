@@ -1,11 +1,11 @@
 package clickhouse
 
 import (
-	"database/sql"
 	"fmt"
 	"strings"
 
 	"github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/sqlrunner"
 )
 
 // Engines we consider "real data tables" for schema introspection. The
@@ -24,14 +24,14 @@ import (
 // (ClickHouse's read consistency is per-query against the storage engine,
 // and the system tables are MergeTree-backed views).
 type Reader struct {
-	db     *sql.DB
+	db     sqlrunner.Runner
 	schema string
 }
 
 // NewClickHouseReader creates a reader for the given database/schema.
 // `schema` corresponds to the ClickHouse database name; if empty it
 // defaults to `currentDatabase()` resolved on each query.
-func NewClickHouseReader(db *sql.DB, schema string) *Reader {
+func NewClickHouseReader(db sqlrunner.Runner, schema string) *Reader {
 	return &Reader{db: db, schema: schema}
 }
 

@@ -141,7 +141,7 @@ func TestWriterDropAllTables_CleansOnlyConfiguredAttachedSchema(t *testing.T) {
 	t.Cleanup(func() {
 		c.Check(conn.Close(), qt.IsNil)
 	})
-	auxPath := filepath.Join(t.TempDir(), "aux.sqlite")
+	auxPath := filepath.Join(t.TempDir(), "aux'quoted.sqlite")
 	_, err = conn.ExecContext(t.Context(), `ATTACH DATABASE ? AS aux`, auxPath)
 	c.Assert(err, qt.IsNil)
 	_, err = conn.ExecContext(t.Context(), `CREATE TABLE main.users (id INTEGER PRIMARY KEY)`)
@@ -161,6 +161,152 @@ func TestWriterDropAllTables_CleansOnlyConfiguredAttachedSchema(t *testing.T) {
 	c.Assert(sqliteConnSchemaObjectCount(c, conn, "aux", "users"), qt.Equals, 0)
 	c.Assert(sqliteConnSchemaObjectCount(c, conn, "aux", "search"), qt.Equals, 0)
 	c.Assert(sqliteConnSchemaObjectCount(c, conn, "temp", "users"), qt.Equals, 1)
+}
+
+func TestWriterDropAllTables_PreservesPaddedCatalogIdentifierBytes(t *testing.T) {
+	c := qt.New(t)
+	db := openFileSQLiteDB(t)
+	conn, err := db.Conn(t.Context())
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() {
+		c.Check(conn.Close(), qt.IsNil)
+	})
+	paddedPath := filepath.Join(t.TempDir(), "padded.sqlite")
+	unpaddedPath := filepath.Join(t.TempDir(), "unpadded.sqlite")
+	_, err = conn.ExecContext(t.Context(), `ATTACH DATABASE ? AS " aux "`, paddedPath)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(t.Context(), `ATTACH DATABASE ? AS aux`, unpaddedPath)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(t.Context(), `CREATE TABLE " aux ".users (id INTEGER PRIMARY KEY)`)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(t.Context(), `CREATE TABLE aux.users (id INTEGER PRIMARY KEY)`)
+	c.Assert(err, qt.IsNil)
+
+	writer := sqlite.NewSQLiteWriterForConnection(conn, " aux ")
+	err = writer.DropAllTables(t.Context())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sqliteConnSchemaObjectCount(c, conn, " aux ", "users"), qt.Equals, 0)
+	c.Assert(sqliteConnSchemaObjectCount(c, conn, "aux", "users"), qt.Equals, 1)
+}
+
+func TestWriterDropAllTables_RefusesCleanupWhenTempViewExists(t *testing.T) {
+	c := qt.New(t)
+	trace := new(sqliteCleanupTrace)
+	db := openTrackedSQLiteDB(t, trace)
+	conn, err := db.Conn(t.Context())
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() {
+		c.Check(conn.Close(), qt.IsNil)
+	})
+	_, err = conn.ExecContext(t.Context(), `CREATE TABLE main.users (id INTEGER PRIMARY KEY)`)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(t.Context(), `INSERT INTO main.users (id) VALUES (7)`)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(t.Context(), `CREATE TEMP VIEW temp_users AS SELECT id FROM main.users`)
+	c.Assert(err, qt.IsNil)
+	trace.reset()
+
+	writer := sqlite.NewSQLiteWriterForConnection(conn, "main")
+	err = writer.DropAllTables(t.Context())
+	statements := trace.statements()
+
+	c.Assert(
+		err,
+		qt.ErrorMatches,
+		`sqlite: refusing to clean schema "main": TEMP views exist on the cleanup connection and may depend on it`,
+	)
+	c.Assert(statements, qt.Not(qt.Contains), "PRAGMA foreign_keys = OFF")
+	c.Assert(strings.Join(statements, "\n"), qt.Not(qt.Contains), "DROP ")
+	c.Assert(sqliteConnSchemaObjectCount(c, conn, "main", "users"), qt.Equals, 1)
+	c.Assert(sqliteConnSchemaObjectCount(c, conn, "temp", "temp_users"), qt.Equals, 1)
+
+	var id int
+	err = conn.QueryRowContext(t.Context(), `SELECT id FROM temp_users`).Scan(&id)
+	c.Assert(err, qt.IsNil)
+	c.Assert(id, qt.Equals, 7)
+}
+
+func TestWriterDropDatabaseRealm_CleansRevisionAndUserObjects(t *testing.T) {
+	c := qt.New(t)
+	db := openFileSQLiteDB(t)
+	conn, err := db.Conn(t.Context())
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() {
+		c.Check(conn.Close(), qt.IsNil)
+	})
+	_, err = conn.ExecContext(t.Context(), `CREATE TABLE users (id INTEGER PRIMARY KEY)`)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(t.Context(), `CREATE INDEX users_id_idx ON users (id)`)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(t.Context(), `CREATE VIEW user_ids AS SELECT id FROM users`)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(t.Context(), `CREATE VIRTUAL TABLE search USING fts5(body)`)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(t.Context(), `CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY)`)
+	c.Assert(err, qt.IsNil)
+
+	writer := sqlite.NewSQLiteWriterForConnection(conn, "main")
+	err = writer.DropDatabaseRealm(t.Context())
+
+	c.Assert(err, qt.IsNil)
+	var count int
+	err = conn.QueryRowContext(t.Context(), `
+		SELECT COUNT(*)
+		FROM main.sqlite_schema
+		WHERE name NOT LIKE 'sqlite_%'
+	`).Scan(&count)
+	c.Assert(err, qt.IsNil)
+	c.Assert(count, qt.Equals, 0)
+}
+
+func TestWriterDropDatabaseRealm_RequiresPinnedConnection(t *testing.T) {
+	c := qt.New(t)
+	db := openFileSQLiteDB(t)
+	writer := sqlite.NewSQLiteWriter(db, "main")
+
+	err := writer.DropDatabaseRealm(t.Context())
+
+	c.Assert(err, qt.ErrorMatches, `sqlite: database-realm cleanup requires a pinned connection`)
+}
+
+func TestWriterDropDatabaseRealm_RejectsAttachedDatabase(t *testing.T) {
+	c := qt.New(t)
+	db := openFileSQLiteDB(t)
+	conn, err := db.Conn(t.Context())
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() {
+		c.Check(conn.Close(), qt.IsNil)
+	})
+	auxPath := filepath.Join(t.TempDir(), "aux.sqlite")
+	_, err = conn.ExecContext(t.Context(), `ATTACH DATABASE ? AS aux`, auxPath)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(t.Context(), `CREATE TABLE main.users (id INTEGER PRIMARY KEY)`)
+	c.Assert(err, qt.IsNil)
+
+	writer := sqlite.NewSQLiteWriterForConnection(conn, "main")
+	err = writer.DropDatabaseRealm(t.Context())
+
+	c.Assert(err, qt.ErrorMatches, `sqlite: refusing database-realm cleanup with attached databases: aux`)
+	c.Assert(sqliteConnSchemaObjectCount(c, conn, "main", "users"), qt.Equals, 1)
+}
+
+func TestWriterDropDatabaseRealm_RejectsTempObject(t *testing.T) {
+	c := qt.New(t)
+	db := openFileSQLiteDB(t)
+	conn, err := db.Conn(t.Context())
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() {
+		c.Check(conn.Close(), qt.IsNil)
+	})
+	_, err = conn.ExecContext(t.Context(), `CREATE TEMP TABLE scratch (id INTEGER PRIMARY KEY)`)
+	c.Assert(err, qt.IsNil)
+
+	writer := sqlite.NewSQLiteWriterForConnection(conn, "main")
+	err = writer.DropDatabaseRealm(t.Context())
+
+	c.Assert(err, qt.ErrorMatches, `sqlite: refusing database-realm cleanup with TEMP objects: table:scratch`)
+	c.Assert(sqliteConnSchemaObjectCount(c, conn, "temp", "scratch"), qt.Equals, 1)
 }
 
 func openFileSQLiteDB(t *testing.T) *sql.DB {

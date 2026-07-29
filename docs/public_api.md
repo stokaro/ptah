@@ -68,6 +68,17 @@ interceptor, splitter, directive, or transaction path. Observers receive
 structured source and statement metadata after execution but no connection
 handle, so they cannot alter the migrator execution path.
 
+`dbschema.DatabaseConnection.WithSession` pins one physical database session
+for a callback and rebinds the dialect reader, writer, and SQL runner to it.
+Use it when session-local state must remain consistent across cleanup, replay,
+introspection, and verification. The scoped connection must not escape the
+callback.
+
+`migration/generator.PlanMigration` performs loading, diff planning, safety
+checks, and optional shadow verification without publishing files. Its
+`MigrationPlan.WriteFiles` method publishes the validated artifacts once.
+`GenerateMigration` remains the convenience composition of those two steps.
+
 Atlas revision metadata is represented explicitly by `AtlasRevisionType` on
 `MigrationRevision`. `SetAtlasRevision` implements Atlas's metadata-only
 history transition: it preserves existing clean rows through the target, adds

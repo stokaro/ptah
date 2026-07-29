@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/url"
 	"os"
 	"testing"
 	"time"
@@ -16,6 +17,23 @@ import (
 
 	"github.com/stokaro/ptah/internal/dbschema/postgres"
 )
+
+type postgresWriterFamilyLiveCase struct {
+	name   string
+	urlEnv string
+}
+
+type postgresWriterLiveDatabase struct {
+	db      *sql.DB
+	name    string
+	cleanup func()
+}
+
+type postgresWriterLiveSchemaMetadata struct {
+	Owner      string
+	Comment    sql.NullString
+	Privileges []string
+}
 
 func TestWriterDropAllTables_LiveRejectsExternalPolicyDependency(t *testing.T) {
 	c := qt.New(t)
@@ -113,6 +131,328 @@ func TestWriterDropAllTables_LiveResolvesInternalDependencies(t *testing.T) {
 	c.Assert(postgresWriterLiveRelationCount(c, ctx, db, schema), qt.Equals, 0)
 }
 
+func TestWriterDropAllTables_LivePostgresFamilyResolvesReverseViewChain(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+
+	tests := []postgresWriterFamilyLiveCase{
+		{name: "cockroachdb", urlEnv: "COCKROACHDB_URL"},
+		{name: "yugabytedb", urlEnv: "YUGABYTEDB_URL"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			db, err := sql.Open("pgx", requirePostgresWriterFamilyLiveURL(c, test.urlEnv))
+			c.Assert(err, qt.IsNil)
+			defer db.Close()
+			c.Assert(db.PingContext(ctx), qt.IsNil)
+
+			schema := fmt.Sprintf("ptah_cleanup_chain_%d", time.Now().UnixNano())
+			schemaIdent := pgx.Identifier{schema}.Sanitize()
+			_, err = db.ExecContext(ctx, fmt.Sprintf(`
+				CREATE SCHEMA %[1]s;
+				CREATE TABLE %[1]s.stale_parent (id bigint PRIMARY KEY);
+				CREATE VIEW %[1]s.a_base_view AS
+					SELECT id FROM %[1]s.stale_parent;
+				CREATE VIEW %[1]s.z_dependent_view AS
+					SELECT id FROM %[1]s.a_base_view;
+			`, schemaIdent))
+			c.Assert(err, qt.IsNil)
+			defer func() {
+				_, cleanupErr := db.ExecContext(
+					context.Background(),
+					fmt.Sprintf("DROP SCHEMA %s CASCADE", schemaIdent),
+				)
+				c.Check(cleanupErr, qt.IsNil)
+			}()
+			c.Assert(postgresWriterLiveRelationCount(c, ctx, db, schema), qt.Equals, 3)
+
+			writer := postgres.NewPostgreSQLWriter(db, schema)
+			err = writer.DropAllTables(ctx)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(postgresWriterLiveRelationCount(c, ctx, db, schema), qt.Equals, 0)
+		})
+	}
+}
+
+func TestWriterDropDatabaseRealm_LivePostgresFamilyCleansCrossSchemaGraph(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+
+	tests := []postgresWriterFamilyLiveCase{
+		{name: "postgres", urlEnv: "POSTGRES_URL"},
+		{name: "cockroachdb", urlEnv: "COCKROACHDB_URL"},
+		{name: "yugabytedb", urlEnv: "YUGABYTEDB_URL"},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			liveDatabase := newPostgresWriterLiveDatabase(
+				c,
+				ctx,
+				requirePostgresWriterFamilyLiveURL(c, test.urlEnv),
+			)
+			defer liveDatabase.cleanup()
+			db := liveDatabase.db
+			rootMetadata := loadPostgresWriterLiveSchemaMetadata(c, ctx, db, "public")
+			systemExtensions := postgresWriterLiveExtensionNames(c, ctx, db)
+
+			suffix := time.Now().UnixNano()
+			parentSchema := fmt.Sprintf("ptah_realm_parent_%d", suffix)
+			childSchema := fmt.Sprintf("ptah_realm_child_%d", suffix)
+			ybPrefixedSchema := fmt.Sprintf("yb_ptah_realm_%d", suffix)
+			parentIdent := pgx.Identifier{parentSchema}.Sanitize()
+			childIdent := pgx.Identifier{childSchema}.Sanitize()
+			ybPrefixedIdent := pgx.Identifier{ybPrefixedSchema}.Sanitize()
+			_, err := db.ExecContext(ctx, fmt.Sprintf(`
+				CREATE SCHEMA %[1]s;
+				CREATE SCHEMA %[2]s;
+				CREATE SCHEMA %[3]s;
+				CREATE TYPE public.ptah_root_status AS ENUM ('ready');
+				CREATE SEQUENCE public.ptah_root_sequence;
+				CREATE FUNCTION public.ptah_root_answer()
+					RETURNS integer
+					LANGUAGE sql
+					AS 'SELECT 42';
+				CREATE TABLE public.ptah_root_items (id bigint PRIMARY KEY);
+				CREATE TABLE %[1]s.parents (id bigint PRIMARY KEY);
+				CREATE TABLE %[2]s.children (
+					id bigint PRIMARY KEY,
+					parent_id bigint REFERENCES %[1]s.parents(id)
+				);
+				CREATE VIEW %[2]s.parent_ids AS
+					SELECT id FROM %[1]s.parents;
+				CREATE TABLE %[3]s.prefixed_items (id bigint PRIMARY KEY);
+			`, parentIdent, childIdent, ybPrefixedIdent))
+			c.Assert(err, qt.IsNil)
+
+			writer := postgres.NewPostgreSQLWriter(db, "public")
+			err = writer.DropDatabaseRealm(ctx)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(writer.DropDatabaseRealm(ctx), qt.IsNil)
+			c.Assert(postgresWriterLiveSchemaCount(c, ctx, db, parentSchema), qt.Equals, 0)
+			c.Assert(postgresWriterLiveSchemaCount(c, ctx, db, childSchema), qt.Equals, 0)
+			c.Assert(postgresWriterLiveSchemaCount(c, ctx, db, ybPrefixedSchema), qt.Equals, 0)
+			c.Assert(postgresWriterLiveSchemaCount(c, ctx, db, "public"), qt.Equals, 1)
+			c.Assert(postgresWriterLiveRelationCount(c, ctx, db, "public"), qt.Equals, 0)
+			c.Assert(
+				loadPostgresWriterLiveSchemaMetadata(c, ctx, db, "public"),
+				qt.DeepEquals,
+				rootMetadata,
+			)
+			c.Assert(postgresWriterLiveExtensionNames(c, ctx, db), qt.DeepEquals, systemExtensions)
+			c.Assert(postgresWriterLiveCurrentDatabase(c, ctx, db), qt.Equals, liveDatabase.name)
+		})
+	}
+}
+
+func TestWriterDropDatabaseRealm_LivePostgresRestoresRootMetadata(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+
+	liveDatabase := newPostgresWriterLiveDatabase(
+		c,
+		ctx,
+		requirePostgresWriterFamilyLiveURL(c, "POSTGRES_URL"),
+	)
+	defer liveDatabase.cleanup()
+	db := liveDatabase.db
+
+	_, err := db.ExecContext(ctx, `
+		COMMENT ON SCHEMA public IS 'Ptah cleanup root metadata';
+		REVOKE ALL PRIVILEGES ON SCHEMA public FROM PUBLIC;
+		GRANT USAGE ON SCHEMA public TO PUBLIC;
+		CREATE COLLATION public.ptah_case_sensitive FROM "C";
+		CREATE EXTENSION hstore WITH SCHEMA public;
+		ALTER DEFAULT PRIVILEGES IN SCHEMA public
+			GRANT SELECT ON TABLES TO PUBLIC;
+		CREATE TABLE public.stale_items (id bigint PRIMARY KEY);
+	`)
+	c.Assert(err, qt.IsNil)
+	beforeOID := postgresWriterLiveSchemaOID(c, ctx, db, "public")
+	beforeMetadata := loadPostgresWriterLiveSchemaMetadata(c, ctx, db, "public")
+
+	writer := postgres.NewPostgreSQLWriter(db, "public")
+	err = writer.DropDatabaseRealm(ctx)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(postgresWriterLiveSchemaOID(c, ctx, db, "public"), qt.Not(qt.Equals), beforeOID)
+	c.Assert(loadPostgresWriterLiveSchemaMetadata(c, ctx, db, "public"), qt.DeepEquals, beforeMetadata)
+	c.Assert(postgresWriterLiveCollationCount(c, ctx, db, "public"), qt.Equals, 0)
+	c.Assert(postgresWriterLiveExtensionCount(c, ctx, db, "hstore"), qt.Equals, 0)
+	c.Assert(postgresWriterLiveRelationCount(c, ctx, db, "public"), qt.Equals, 0)
+	c.Assert(postgresWriterLiveCurrentDatabase(c, ctx, db), qt.Equals, liveDatabase.name)
+}
+
+func TestWriterDropDatabaseRealm_LivePostgresCreatesAbsentRoot(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+
+	liveDatabase := newPostgresWriterLiveDatabase(
+		c,
+		ctx,
+		requirePostgresWriterFamilyLiveURL(c, "POSTGRES_URL"),
+	)
+	defer liveDatabase.cleanup()
+
+	writer := postgres.NewPostgreSQLWriter(liveDatabase.db, "shadow")
+	err := writer.DropDatabaseRealm(ctx)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(writer.DropDatabaseRealm(ctx), qt.IsNil)
+	c.Assert(postgresWriterLiveSchemaCount(c, ctx, liveDatabase.db, "public"), qt.Equals, 0)
+	c.Assert(postgresWriterLiveSchemaCount(c, ctx, liveDatabase.db, "shadow"), qt.Equals, 1)
+	c.Assert(
+		postgresWriterLiveCurrentDatabase(c, ctx, liveDatabase.db),
+		qt.Equals,
+		liveDatabase.name,
+	)
+}
+
+func TestWriterDropAllTables_LiveRejectsCrossSchemaPartitionEdges(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+
+	db, err := sql.Open("pgx", requirePostgresWriterLiveURL(t))
+	c.Assert(err, qt.IsNil)
+	defer db.Close()
+	c.Assert(db.PingContext(ctx), qt.IsNil)
+
+	tests := []struct {
+		name                string
+		setup               string
+		managedRelationName string
+		externalRelation    string
+	}{
+		{
+			name: "external child",
+			setup: `
+				CREATE TABLE %[1]s.events (
+					id bigint,
+					occurred_at date
+				) PARTITION BY RANGE (occurred_at);
+				CREATE TABLE %[2]s.events_2025
+					PARTITION OF %[1]s.events
+					FOR VALUES FROM ('2025-01-01') TO ('2026-01-01');
+			`,
+			managedRelationName: "events",
+			externalRelation:    "events_2025",
+		},
+		{
+			name: "external parent",
+			setup: `
+				CREATE TABLE %[2]s.events (
+					id bigint,
+					occurred_at date
+				) PARTITION BY RANGE (occurred_at);
+				CREATE TABLE %[1]s.events_2025
+					PARTITION OF %[2]s.events
+					FOR VALUES FROM ('2025-01-01') TO ('2026-01-01');
+			`,
+			managedRelationName: "events_2025",
+			externalRelation:    "events",
+		},
+	}
+
+	for _, test := range tests {
+		c.Run(test.name, func(c *qt.C) {
+			suffix := time.Now().UnixNano()
+			managedSchema := fmt.Sprintf("ptah_partition_managed_%d", suffix)
+			externalSchema := fmt.Sprintf("ptah_partition_external_%d", suffix)
+			managedIdent := pgx.Identifier{managedSchema}.Sanitize()
+			externalIdent := pgx.Identifier{externalSchema}.Sanitize()
+
+			_, err := db.ExecContext(ctx, fmt.Sprintf(`
+				CREATE SCHEMA %[1]s;
+				CREATE SCHEMA %[2]s;
+				%[3]s
+			`, managedIdent, externalIdent, fmt.Sprintf(test.setup, managedIdent, externalIdent)))
+			c.Assert(err, qt.IsNil)
+			defer func() {
+				_, cleanupErr := db.ExecContext(
+					context.Background(),
+					fmt.Sprintf("DROP SCHEMA %s CASCADE; DROP SCHEMA %s CASCADE", externalIdent, managedIdent),
+				)
+				c.Check(cleanupErr, qt.IsNil)
+			}()
+
+			writer := postgres.NewPostgreSQLWriter(db, managedSchema)
+			err = writer.DropAllTables(ctx)
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Contains, fmt.Sprintf(`refusing to clean schema %q`, managedSchema))
+			c.Assert(err.Error(), qt.Contains, "across the schema boundary")
+			c.Assert(
+				postgresWriterLiveObjectCount(c, ctx, db, managedSchema, test.managedRelationName),
+				qt.Equals,
+				1,
+			)
+			c.Assert(
+				postgresWriterLiveObjectCount(c, ctx, db, externalSchema, test.externalRelation),
+				qt.Equals,
+				1,
+			)
+		})
+	}
+}
+
+func newPostgresWriterLiveDatabase(
+	c *qt.C,
+	ctx context.Context,
+	rawURL string,
+) postgresWriterLiveDatabase {
+	c.Helper()
+	admin, err := sql.Open("pgx", rawURL)
+	c.Assert(err, qt.IsNil)
+	c.Assert(admin.PingContext(ctx), qt.IsNil)
+
+	name := fmt.Sprintf("ptah_writer_%d", time.Now().UnixNano())
+	nameIdent := pgx.Identifier{name}.Sanitize()
+	_, err = admin.ExecContext(ctx, "CREATE DATABASE "+nameIdent)
+	c.Assert(err, qt.IsNil)
+
+	parsed, err := url.Parse(rawURL)
+	c.Assert(err, qt.IsNil)
+	parsed.Path = "/" + name
+	parsed.RawPath = ""
+	db, err := sql.Open("pgx", parsed.String())
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.PingContext(ctx), qt.IsNil)
+
+	return postgresWriterLiveDatabase{
+		db:   db,
+		name: name,
+		cleanup: func() {
+			c.Check(db.Close(), qt.IsNil)
+			_, dropErr := admin.ExecContext(
+				context.Background(),
+				"DROP DATABASE IF EXISTS "+nameIdent,
+			)
+			c.Check(dropErr, qt.IsNil)
+			c.Check(admin.Close(), qt.IsNil)
+		},
+	}
+}
+
+func requirePostgresWriterFamilyLiveURL(c *qt.C, name string) string {
+	c.Helper()
+	rawURL := os.Getenv(name)
+	if rawURL == "" {
+		c.Skipf("%s is not set", name)
+	}
+	parsed, err := url.Parse(rawURL)
+	c.Assert(err, qt.IsNil)
+	parsed.Scheme = "postgres"
+	return parsed.String()
+}
+
 func requirePostgresWriterLiveURL(t *testing.T) string {
 	t.Helper()
 	for _, name := range []string{"POSTGRES_TEST_DSN", "POSTGRES_URL", "TEST_DATABASE_URL"} {
@@ -122,6 +462,135 @@ func requirePostgresWriterLiveURL(t *testing.T) string {
 	}
 	t.Skip("POSTGRES_TEST_DSN, POSTGRES_URL, or TEST_DATABASE_URL is not set")
 	return ""
+}
+
+func postgresWriterLiveCurrentDatabase(c *qt.C, ctx context.Context, db *sql.DB) string {
+	c.Helper()
+	var name string
+	err := db.QueryRowContext(ctx, "SELECT current_database()").Scan(&name)
+	c.Assert(err, qt.IsNil)
+	return name
+}
+
+func postgresWriterLiveSchemaOID(
+	c *qt.C,
+	ctx context.Context,
+	db *sql.DB,
+	schema string,
+) int64 {
+	c.Helper()
+	var oid int64
+	err := db.QueryRowContext(
+		ctx,
+		"SELECT oid FROM pg_namespace WHERE nspname = $1",
+		schema,
+	).Scan(&oid)
+	c.Assert(err, qt.IsNil)
+	return oid
+}
+
+func loadPostgresWriterLiveSchemaMetadata(
+	c *qt.C,
+	ctx context.Context,
+	db *sql.DB,
+	schema string,
+) postgresWriterLiveSchemaMetadata {
+	c.Helper()
+	var metadata postgresWriterLiveSchemaMetadata
+	err := db.QueryRowContext(ctx, `
+		SELECT
+			pg_get_userbyid(n.nspowner),
+			obj_description(n.oid, 'pg_namespace')
+		FROM pg_namespace n
+		WHERE n.nspname = $1
+	`, schema).Scan(&metadata.Owner, &metadata.Comment)
+	c.Assert(err, qt.IsNil)
+
+	rows, err := db.QueryContext(ctx, `
+		SELECT
+			CASE acl.grantee
+				WHEN 0 THEN 'PUBLIC'
+				ELSE pg_get_userbyid(acl.grantee)
+			END,
+			acl.privilege_type,
+			acl.is_grantable
+		FROM pg_namespace n
+		CROSS JOIN LATERAL aclexplode(
+			COALESCE(n.nspacl, acldefault('n', n.nspowner))
+		) acl
+		WHERE n.nspname = $1
+		ORDER BY 1, 2, 3
+	`, schema)
+	c.Assert(err, qt.IsNil)
+	defer rows.Close()
+
+	for rows.Next() {
+		var grantee string
+		var privilege string
+		var grantOption bool
+		c.Assert(rows.Scan(&grantee, &privilege, &grantOption), qt.IsNil)
+		metadata.Privileges = append(
+			metadata.Privileges,
+			fmt.Sprintf("%s:%s:%t", grantee, privilege, grantOption),
+		)
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return metadata
+}
+
+func postgresWriterLiveCollationCount(
+	c *qt.C,
+	ctx context.Context,
+	db *sql.DB,
+	schema string,
+) int {
+	c.Helper()
+	var count int
+	err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM pg_collation c
+		JOIN pg_namespace n ON n.oid = c.collnamespace
+		WHERE n.nspname = $1
+	`, schema).Scan(&count)
+	c.Assert(err, qt.IsNil)
+	return count
+}
+
+func postgresWriterLiveExtensionCount(
+	c *qt.C,
+	ctx context.Context,
+	db *sql.DB,
+	name string,
+) int {
+	c.Helper()
+	var count int
+	err := db.QueryRowContext(
+		ctx,
+		"SELECT COUNT(*) FROM pg_extension WHERE extname = $1",
+		name,
+	).Scan(&count)
+	c.Assert(err, qt.IsNil)
+	return count
+}
+
+func postgresWriterLiveExtensionNames(
+	c *qt.C,
+	ctx context.Context,
+	db *sql.DB,
+) []string {
+	c.Helper()
+	rows, err := db.QueryContext(ctx, "SELECT extname FROM pg_extension ORDER BY extname")
+	c.Assert(err, qt.IsNil)
+	defer rows.Close()
+
+	var names []string
+	for rows.Next() {
+		var name string
+		c.Assert(rows.Scan(&name), qt.IsNil)
+		names = append(names, name)
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return names
 }
 
 func postgresWriterLiveObjectCount(
@@ -180,6 +649,23 @@ func postgresWriterLiveRelationCount(
 		WHERE n.nspname = $1
 		  AND c.relkind IN ('r', 'p', 'v', 'm', 'f', 'S')
 	`, schema).Scan(&count)
+	c.Assert(err, qt.IsNil)
+	return count
+}
+
+func postgresWriterLiveSchemaCount(
+	c *qt.C,
+	ctx context.Context,
+	db *sql.DB,
+	schema string,
+) int {
+	c.Helper()
+	var count int
+	err := db.QueryRowContext(
+		ctx,
+		"SELECT COUNT(*) FROM pg_namespace WHERE nspname = $1",
+		schema,
+	).Scan(&count)
 	c.Assert(err, qt.IsNil)
 	return count
 }

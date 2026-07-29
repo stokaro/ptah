@@ -27,8 +27,6 @@ const (
 	// revisionTableName is the Atlas revision table filtered out of replayed
 	// dev-database state, mirroring `atlas migrate diff` behavior.
 	revisionTableName = "atlas_schema_revisions"
-
-	migrationDirCleanupTimeout = 30 * time.Second
 )
 
 // ResolveOptions configures resolution of one classified desired-state set.
@@ -47,6 +45,9 @@ type ResolveOptions struct {
 	// initial connection metadata. A zero value leaves the caller's context
 	// deadline unchanged.
 	ConnectTimeout time.Duration
+	// DevLockHeld tells migration-directory resolution that the caller already
+	// holds the dev database realm lock across a larger operation.
+	DevLockHeld bool
 }
 
 // State is one resolved desired-state. Resolution closes every connection it
@@ -132,7 +133,7 @@ func (s Set) ensureDialect(opts ResolveOptions) error {
 	return fmt.Errorf("%s database dialect %q does not match %s dialect %q", s.Flag, implied, opts.DialectFlag, pinned)
 }
 
-func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (state State, resultErr error) {
+func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (State, error) {
 	source := s.Sources[0]
 	devURL := strings.TrimSpace(opts.DevURL)
 	if err := s.EnsureDevDatabase(devURL); err != nil {
@@ -158,46 +159,37 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (stat
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	if err := migrationreplay.ReplaySnapshotOnConnection(
+	var state State
+	replay := migrationreplay.WithReplayedSnapshot
+	if opts.DevLockHeld {
+		replay = migrationreplay.WithReplayedSnapshotLocked
+	}
+	if err := replay(
 		ctx,
 		conn,
 		snapshot,
 		migrator.MigrationDirFormatAtlas,
+		func(replayConn *dbschema.DatabaseConnection) error {
+			schema, err := dbschema.ReadSchemaWithSchemas(replayConn, nil)
+			if err != nil {
+				return fmt.Errorf("read dev database schema: %w", err)
+			}
+			schema = WithoutRevisionTable(schema)
+			state = State{
+				Kind:          s.Kind,
+				Schema:        dbschematogo.ConvertDBSchemaToGoSchema(schema),
+				DB:            schema,
+				DefaultSchema: replayConn.Info().Schema,
+			}
+			return nil
+		},
 	); err != nil {
 		return State{}, fmt.Errorf("%s %q: %w", s.Flag, source.Raw, err)
 	}
-	cleanupPending := true
-	defer func() {
-		if cleanupPending {
-			resultErr = errors.Join(resultErr, cleanMigrationDirDevDatabase(ctx, conn))
-		}
-	}()
-	schema, err := dbschema.ReadSchemaWithSchemas(conn, nil)
-	if err != nil {
-		return State{}, fmt.Errorf("read dev database schema: %w", err)
-	}
-	schema = WithoutRevisionTable(schema)
-	state = State{
-		Kind:          s.Kind,
-		Schema:        dbschematogo.ConvertDBSchemaToGoSchema(schema),
-		DB:            schema,
-		DefaultSchema: conn.Info().Schema,
-	}
-	cleanupErr := cleanMigrationDirDevDatabase(ctx, conn)
-	cleanupPending = false
-	if err := errors.Join(ctx.Err(), cleanupErr); err != nil {
+	if err := ctx.Err(); err != nil {
 		return State{}, err
 	}
 	return state, nil
-}
-
-func cleanMigrationDirDevDatabase(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), migrationDirCleanupTimeout)
-	defer cancel()
-	if err := conn.SchemaWriter().DropAllTables(cleanupCtx); err != nil {
-		return fmt.Errorf("clean dev database after resolving migration directory: %w", err)
-	}
-	return nil
 }
 
 func (s Set) ensureDevDialect(devURL string, opts ResolveOptions) error {

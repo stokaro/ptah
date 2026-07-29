@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/sqlrunner"
 )
 
 const schemaPredicatePlaceholder = "/* ptah:schema-predicate */"
@@ -22,13 +23,13 @@ type catalogObjectKey struct {
 
 // Reader reads schema information from Microsoft SQL Server databases.
 type Reader struct {
-	db      *sql.DB
+	db      sqlrunner.Runner
 	schema  string
 	schemas []string
 	scoped  bool
 }
 
-func NewSQLServerReader(db *sql.DB, schema string) *Reader {
+func NewSQLServerReader(db sqlrunner.Runner, schema string) *Reader {
 	if schema == "" {
 		schema = "dbo"
 	}

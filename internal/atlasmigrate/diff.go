@@ -31,7 +31,6 @@ import (
 const (
 	revisionTableName = "atlas_schema_revisions"
 	lockFileName      = ".ptah-migrate-diff.lock"
-	devCleanupTimeout = 30 * time.Second
 )
 
 type DiffOptions struct {
@@ -63,9 +62,17 @@ type devSchemaReader func(
 	defaultSchema string,
 ) (*dbschematypes.DBSchema, error)
 
+type replaySnapshotConsumer func(
+	context.Context,
+	*dbschema.DatabaseConnection,
+	fs.FS,
+	migrator.MigrationDirFormat,
+	func(*dbschema.DatabaseConnection) error,
+) error
+
 type diffRuntime struct {
-	readDevSchema    devSchemaReader
-	cleanDevDatabase func(context.Context, *dbschema.DatabaseConnection) error
+	readDevSchema        devSchemaReader
+	withReplayedSnapshot replaySnapshotConsumer
 }
 
 type preparedDiff struct {
@@ -80,8 +87,8 @@ func GenerateDiff(
 	opts DiffOptions,
 ) (DiffResult, error) {
 	return generateDiff(ctx, conn, opts, diffRuntime{
-		readDevSchema:    readScopedDevSchema,
-		cleanDevDatabase: cleanDevDatabaseAfterDiff,
+		readDevSchema:        readScopedDevSchema,
+		withReplayedSnapshot: migrationreplay.WithReplayedSnapshotLocked,
 	})
 }
 
@@ -109,6 +116,13 @@ func generateDiff(
 	defer func() {
 		err = errors.Join(err, dirLock.release())
 	}()
+	devLock, err := acquireDevDatabaseLock(ctx, conn, opts.LockTimeout)
+	if err != nil {
+		return DiffResult{}, err
+	}
+	defer func() {
+		err = errors.Join(err, devLock.release())
+	}()
 	desiredState, err := resolveDesiredState(ctx, conn, opts)
 	if err != nil {
 		return DiffResult{}, err
@@ -127,39 +141,34 @@ func generateDiff(
 		return DiffResult{}, err
 	}
 
-	if err := migrationreplay.ReplaySnapshotOnConnection(
-		ctx,
-		conn,
-		migrationSnapshot,
-		migrator.MigrationDirFormatAtlas,
-	); err != nil {
-		return DiffResult{}, err
-	}
-	cleanupPending := true
-	defer func() {
-		if cleanupPending {
-			err = errors.Join(err, runtime.cleanDevDatabase(ctx, conn))
-		}
-	}()
-	devDefaultSchema := conn.Info().Schema
-	current, err := runtime.readDevSchema(conn, schemas, devDefaultSchema)
-	if err != nil {
-		return DiffResult{}, err
-	}
-
 	info := conn.Info()
+	devDefaultSchema := info.Schema
 	desiredDefaultSchema := desiredState.DefaultSchema
 	if desiredDefaultSchema == "" {
 		desiredDefaultSchema = devDefaultSchema
 	}
 	desired := schemascope.FilterGeneratedWithDefaultSchema(desiredState.Schema, schemas, desiredDefaultSchema)
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, desired, current, nil)
-	if err != nil {
-		return DiffResult{}, fmt.Errorf("compare dev database schema: %w", err)
+	var diff *difftypes.SchemaDiff
+	if err := runtime.withReplayedSnapshot(
+		ctx,
+		conn,
+		migrationSnapshot,
+		migrator.MigrationDirFormatAtlas,
+		func(replayConn *dbschema.DatabaseConnection) error {
+			current, err := runtime.readDevSchema(replayConn, schemas, devDefaultSchema)
+			if err != nil {
+				return err
+			}
+			diff, err = schemadiff.CompareWithDatabase(ctx, replayConn, desired, current, nil)
+			if err != nil {
+				return fmt.Errorf("compare dev database schema: %w", err)
+			}
+			return nil
+		},
+	); err != nil {
+		return DiffResult{}, err
 	}
-	cleanupErr := runtime.cleanDevDatabase(ctx, conn)
-	cleanupPending = false
-	if err := errors.Join(ctx.Err(), cleanupErr); err != nil {
+	if err := ctx.Err(); err != nil {
 		return DiffResult{}, err
 	}
 	diff = atlasschema.ApplyDiffPolicy(diff, opts.Policy)
@@ -180,7 +189,7 @@ func generateDiff(
 	if opts.DryRun {
 		return DiffResult{SQL: joinFileContentSQL(contents)}, nil
 	}
-	return writeDiffArtifacts(ctx, opts.Dir, opts.Name, contents)
+	return writeDiffArtifacts(ctx, opts.Dir, opts.Name, contents, migrationSnapshot)
 }
 
 func prepareDiff(
@@ -212,15 +221,6 @@ func prepareDiff(
 	return preparedDiff{opts: opts, schemas: schemas, format: format}, nil
 }
 
-func cleanDevDatabaseAfterDiff(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), devCleanupTimeout)
-	defer cancel()
-	if err := conn.SchemaWriter().DropAllTables(cleanupCtx); err != nil {
-		return fmt.Errorf("clean dev database after migrate diff: %w", err)
-	}
-	return nil
-}
-
 func resolveDesiredState(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -238,6 +238,7 @@ func resolveDesiredState(
 		DialectFlag:    "--dev-url",
 		DevURL:         devURL,
 		ConnectTimeout: opts.SourceConnectTimeout,
+		DevLockHeld:    true,
 	})
 	if err != nil {
 		return atlassource.State{}, fmt.Errorf("load --to schema: %w", err)

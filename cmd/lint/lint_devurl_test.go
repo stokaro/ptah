@@ -37,7 +37,7 @@ func TestRunLint_DevURLReplaysMigrationAndInfersDialect(t *testing.T) {
 	}
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	c.Assert(report.Dialect, qt.Equals, "sqlite")
-	assertLintDevURLSQLiteTableCount(c, devDBPath, "lint_dev_url", 1)
+	assertLintDevURLSQLiteTableCount(c, devDBPath, "lint_dev_url", 0)
 }
 
 func TestRunLint_UsesEvaluatedAtlasProjectConfigDevURL(t *testing.T) {
@@ -72,7 +72,7 @@ env "local" {
 	}
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	c.Assert(report.Dialect, qt.Equals, "sqlite")
-	assertLintDevURLSQLiteTableCount(c, filepath.Join(dir, "config-dev.db"), "lint_config_dev_url", 1)
+	assertLintDevURLSQLiteTableCount(c, filepath.Join(dir, "config-dev.db"), "lint_config_dev_url", 0)
 }
 
 func TestRunLint_DevURLFailureExitsTwo(t *testing.T) {

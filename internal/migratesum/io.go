@@ -34,6 +34,48 @@ func WriteWithFormat(dir string, format migrator.MigrationDirFormat) (*SumFile, 
 	return sum, nil
 }
 
+// WritePrecomputedWithFormat writes sum to the integrity file selected by
+// format without reading the live migration directory again.
+func WritePrecomputedWithFormat(
+	dir string,
+	format migrator.MigrationDirFormat,
+	sum *SumFile,
+) error {
+	if sum == nil {
+		return errors.New("migration checksum must not be nil")
+	}
+	name, err := FileNameForFormat(format)
+	if err != nil {
+		return err
+	}
+	if err := writeAtomicSumFile(filepath.Join(dir, name), sum.Bytes()); err != nil {
+		return fmt.Errorf("failed to write %s: %w", name, err)
+	}
+	return nil
+}
+
+// CommitUncertainError reports that the checksum file was atomically replaced
+// but syncing the containing directory failed. The visible checksum may be the
+// old or new commit marker after a crash, so callers must retain recovery state.
+type CommitUncertainError struct {
+	Err error
+}
+
+func (e *CommitUncertainError) Error() string {
+	return e.Err.Error()
+}
+
+func (e *CommitUncertainError) Unwrap() error {
+	return e.Err
+}
+
+// IsCommitUncertain reports whether err means the checksum rename succeeded
+// but its directory durability could not be confirmed.
+func IsCommitUncertain(err error) bool {
+	var target *CommitUncertainError
+	return errors.As(err, &target)
+}
+
 func writeAtomicSumFile(path string, contents []byte) error {
 	file, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
 	if err != nil {
@@ -55,10 +97,13 @@ func writeAtomicSumFile(path string, contents []byte) error {
 	if err := file.Close(); err != nil {
 		return errors.Join(err, removeFile(tempPath))
 	}
-	if err := os.Rename(tempPath, path); err != nil {
+	if err := fsdurable.ReplaceFile(tempPath, path); err != nil {
 		return errors.Join(err, removeFile(tempPath))
 	}
-	return fsdurable.SyncDir(filepath.Dir(path))
+	if err := fsdurable.SyncDir(filepath.Dir(path)); err != nil {
+		return &CommitUncertainError{Err: err}
+	}
+	return nil
 }
 
 func removeFile(path string) error {

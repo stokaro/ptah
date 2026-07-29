@@ -11,12 +11,16 @@ import (
 	"github.com/stokaro/ptah/core/goschema"
 	"github.com/stokaro/ptah/core/renderer"
 	"github.com/stokaro/ptah/dbschema"
+	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/atlasfilter"
 	"github.com/stokaro/ptah/internal/atlassource"
+	"github.com/stokaro/ptah/internal/devclean"
 	"github.com/stokaro/ptah/internal/migrationreplay"
 	"github.com/stokaro/ptah/internal/schemafile"
 	"github.com/stokaro/ptah/migration/migrator"
 )
+
+const inspectDevCleanupTimeout = 30 * time.Second
 
 // InspectSourceOptions configures URL-driven Atlas schema inspection.
 type InspectSourceOptions struct {
@@ -128,37 +132,89 @@ func inspectOnDev(
 
 	switch set.Kind {
 	case atlassource.KindMigrationDir:
-		// ReplayOnConnection resets the dev database before replaying.
-		if err := migrationreplay.ReplayOnConnection(ctx, devConn, set.Sources[0].Path, migrator.MigrationDirFormatAtlas); err != nil {
+		var rendered string
+		err := migrationreplay.WithReplayedDirectory(
+			ctx,
+			devConn,
+			set.Sources[0].Path,
+			migrator.MigrationDirFormatAtlas,
+			func(replayConn *dbschema.DatabaseConnection) error {
+				schema, err := readInspectDevSchema(replayConn, opts.Schemas)
+				if err != nil {
+					return err
+				}
+				rendered, err = renderInspectSchema(
+					atlassource.WithoutRevisionTable(schema),
+					replayConn.Info(),
+					inspectOpts,
+				)
+				return err
+			},
+		)
+		if err != nil {
 			return "", fmt.Errorf("--url %q: %w", set.Sources[0].Raw, err)
 		}
+		return rendered, nil
 	case atlassource.KindLocalFile:
-		if err := materializeOnDev(ctx, devConn, desired); err != nil {
+		var rendered string
+		err := withMaterializedDevSchema(
+			ctx,
+			devConn,
+			desired,
+			func(materializedConn *dbschema.DatabaseConnection) error {
+				schema, err := readInspectDevSchema(materializedConn, opts.Schemas)
+				if err != nil {
+					return err
+				}
+				rendered, err = renderInspectSchema(schema, materializedConn.Info(), inspectOpts)
+				return err
+			},
+		)
+		if err != nil {
 			return "", err
 		}
+		return rendered, nil
 	}
-
-	schema, err := dbschema.ReadSchemaWithSchemas(devConn, SplitSchemaNames(opts.Schemas))
-	if err != nil {
-		return "", fmt.Errorf("read dev database schema: %w", err)
-	}
-	if set.Kind == atlassource.KindMigrationDir {
-		schema = atlassource.WithoutRevisionTable(schema)
-	}
-	return renderInspectSchema(schema, devConn.Info(), inspectOpts)
+	return "", fmt.Errorf("--url: unresolved %s inspection source", set.Kind)
 }
 
-// materializeOnDev resets the dev database and executes the desired schema's
-// ordered CREATE statements on it, so introspection sees the schema as the
-// dev database normalizes it.
+func withMaterializedDevSchema(
+	ctx context.Context,
+	devConn *dbschema.DatabaseConnection,
+	desired *goschema.Database,
+	consume func(*dbschema.DatabaseConnection) error,
+) error {
+	return devConn.WithSession(ctx, func(materializedConn *dbschema.DatabaseConnection) (resultErr error) {
+		defer func() {
+			cleanupCtx, cancel := context.WithTimeout(
+				context.WithoutCancel(ctx),
+				inspectDevCleanupTimeout,
+			)
+			defer cancel()
+			if cleanupErr := devclean.DatabaseRealm(cleanupCtx, materializedConn); cleanupErr != nil {
+				resultErr = errors.Join(
+					resultErr,
+					fmt.Errorf("clean dev database after schema inspection: %w", cleanupErr),
+				)
+			}
+		}()
+		if err := devclean.DatabaseRealm(ctx, materializedConn); err != nil {
+			return fmt.Errorf("reset dev database: %w", err)
+		}
+		if err := materializeOnDev(ctx, materializedConn, desired); err != nil {
+			return err
+		}
+		return consume(materializedConn)
+	})
+}
+
+// materializeOnDev executes the desired schema's ordered CREATE statements on
+// an already-reset dev database.
 func materializeOnDev(
 	ctx context.Context,
 	devConn *dbschema.DatabaseConnection,
 	desired *goschema.Database,
 ) error {
-	if err := devConn.SchemaWriter().DropAllTables(ctx); err != nil {
-		return fmt.Errorf("reset dev database: %w", err)
-	}
 	info := devConn.Info()
 	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(desired, info.Dialect, info.Capabilities)
 	if err != nil {
@@ -168,6 +224,17 @@ func materializeOnDev(
 		return fmt.Errorf("materialize schema on dev database: %w", err)
 	}
 	return nil
+}
+
+func readInspectDevSchema(
+	devConn *dbschema.DatabaseConnection,
+	schemas []string,
+) (*dbschematypes.DBSchema, error) {
+	schema, err := dbschema.ReadSchemaWithSchemas(devConn, SplitSchemaNames(schemas))
+	if err != nil {
+		return nil, fmt.Errorf("read dev database schema: %w", err)
+	}
+	return schema, nil
 }
 
 func sourceRawURLs(set atlassource.Set) []string {

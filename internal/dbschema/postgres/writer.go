@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/sqlident"
+	"github.com/stokaro/ptah/internal/sqlrunner"
 )
 
 func quoteIdent(name string) string {
@@ -21,7 +23,7 @@ func quoteIdent(name string) string {
 
 // PostgreSQLWriter writes schemas to PostgreSQL databases
 type PostgreSQLWriter struct {
-	db     *sql.DB
+	db     sqlrunner.Runner
 	schema string
 	dryRun bool
 }
@@ -35,11 +37,23 @@ type postgresTransactionWriter struct {
 
 // NewPostgreSQLWriter creates a new PostgreSQL schema writer
 func NewPostgreSQLWriter(db *sql.DB, schema string) *PostgreSQLWriter {
+	if db == nil {
+		return NewPostgreSQLWriterForRunner(nil, schema)
+	}
+	return NewPostgreSQLWriterForRunner(db, schema)
+}
+
+// NewPostgreSQLWriterForRunner creates a writer bound to a pool or pinned
+// database session.
+func NewPostgreSQLWriterForRunner(
+	runner sqlrunner.Runner,
+	schema string,
+) *PostgreSQLWriter {
 	if schema == "" {
 		schema = "public"
 	}
 	return &PostgreSQLWriter{
-		db:     db,
+		db:     runner,
 		schema: schema,
 	}
 }
@@ -182,8 +196,72 @@ func (w *postgresTransactionWriter) IsDryRun() bool { return w.dryRun }
 
 type postgresCleanupObject struct {
 	Kind      string
+	Schema    string
 	Name      string
 	Statement string
+}
+
+type postgresCleanupCapabilities struct {
+	retryFailedDDL        bool
+	lockManagedRelations  bool
+	inspectPartitionEdges bool
+	preservePublicSchema  bool
+	systemExtensions      []string
+}
+
+func inspectCleanupCapabilities(
+	ctx context.Context,
+	tx *sql.Tx,
+) (postgresCleanupCapabilities, error) {
+	var version string
+	if err := tx.QueryRowContext(ctx, "SELECT version()").Scan(&version); err != nil {
+		return postgresCleanupCapabilities{}, fmt.Errorf(
+			"failed to inspect PostgreSQL-family cleanup capabilities: %w",
+			err,
+		)
+	}
+
+	version = strings.ToLower(version)
+	switch {
+	case strings.Contains(version, "cockroachdb"):
+		return postgresCleanupCapabilities{
+			preservePublicSchema: true,
+		}, nil
+	case strings.Contains(version, "yugabytedb"),
+		strings.Contains(version, "yugabyte"),
+		strings.Contains(version, "-yb-"):
+		return postgresCleanupCapabilities{
+			retryFailedDDL:        true,
+			inspectPartitionEdges: true,
+			systemExtensions:      []string{"pg_stat_statements", "plpgsql"},
+		}, nil
+	default:
+		return postgresCleanupCapabilities{
+			retryFailedDDL:        true,
+			lockManagedRelations:  strings.Contains(version, "postgresql"),
+			inspectPartitionEdges: true,
+			systemExtensions:      []string{"plpgsql"},
+		}, nil
+	}
+}
+
+type postgresSchemaPrivilege struct {
+	grantee     string
+	privilege   string
+	grantOption bool
+}
+
+type postgresSchemaMetadata struct {
+	exists           bool
+	owner            string
+	aclIsDefault     bool
+	commentStatement string
+	privileges       []postgresSchemaPrivilege
+}
+
+type postgresExtensionCleanup struct {
+	name      string
+	statement string
 }
 
 func (w *PostgreSQLWriter) rejectSchemaScopedExtensions(ctx context.Context, tx *sql.Tx) error {
@@ -215,12 +293,83 @@ func (w *PostgreSQLWriter) rejectSchemaScopedExtensions(ctx context.Context, tx 
 func (w *PostgreSQLWriter) collectAllObjects(
 	ctx context.Context,
 	tx *sql.Tx,
+	schemas []string,
 ) ([]postgresCleanupObject, error) {
-	rows, err := tx.QueryContext(ctx, `
-		WITH cleanup_objects AS (
+	if len(schemas) == 0 {
+		return nil, nil
+	}
+
+	query := strings.ReplaceAll(`
+		WITH RECURSIVE
+		managed_namespaces AS (
+			SELECT n.oid, n.nspname
+			FROM pg_namespace n
+			WHERE n.nspname IN ({{SCHEMA_PLACEHOLDERS}})
+		),
+		managed_views AS (
+			SELECT c.oid
+			FROM pg_class c
+			JOIN managed_namespaces n ON n.oid = c.relnamespace
+			AND c.relkind IN ('v', 'm')
+		),
+		view_dependencies AS (
+			SELECT
+				dependent.oid AS dependent_oid,
+				referenced.oid AS referenced_oid
+			FROM pg_rewrite rewrite
+			JOIN pg_class dependent ON dependent.oid = rewrite.ev_class
+			JOIN managed_namespaces dependent_namespace
+				ON dependent_namespace.oid = dependent.relnamespace
+			JOIN pg_depend dependency
+				ON dependency.classid = 'pg_rewrite'::regclass
+			   AND dependency.objid = rewrite.oid
+			   AND dependency.refclassid = 'pg_class'::regclass
+			JOIN pg_class referenced ON referenced.oid = dependency.refobjid
+			JOIN managed_namespaces referenced_namespace
+				ON referenced_namespace.oid = referenced.relnamespace
+			WHERE dependent.relkind IN ('v', 'm')
+			  AND referenced.relkind IN ('v', 'm')
+			  AND dependent.oid <> referenced.oid
+		),
+		view_depths AS (
+			SELECT view.oid, 0 AS depth
+			FROM managed_views view
+			WHERE NOT EXISTS (
+				SELECT 1
+				FROM view_dependencies dependency
+				WHERE dependency.dependent_oid = view.oid
+			)
+
+			UNION ALL
+
+			SELECT dependency.dependent_oid, depth.depth + 1
+			FROM view_depths depth
+			JOIN view_dependencies dependency
+				ON dependency.referenced_oid = depth.oid
+		),
+		view_order AS (
+			SELECT oid, MAX(depth) AS depth
+			FROM view_depths
+			GROUP BY oid
+		),
+		cleanup_objects AS (
+			SELECT
+				-10 AS priority,
+				0 AS dependency_depth,
+				'extension'::text AS object_kind,
+				n.nspname AS object_schema,
+				e.extname AS object_name,
+				format('DROP EXTENSION IF EXISTS %I RESTRICT', e.extname) AS drop_statement
+			FROM pg_extension e
+			JOIN managed_namespaces n ON n.oid = e.extnamespace
+
+			UNION ALL
+
 			SELECT
 				0 AS priority,
+				0 AS dependency_depth,
 				'constraint'::text AS object_kind,
+				n.nspname AS object_schema,
 				con.conname AS object_name,
 				format(
 					'ALTER TABLE %I.%I DROP CONSTRAINT IF EXISTS %I RESTRICT',
@@ -230,9 +379,8 @@ func (w *PostgreSQLWriter) collectAllObjects(
 				) AS drop_statement
 			FROM pg_constraint con
 			JOIN pg_class c ON c.oid = con.conrelid
-			JOIN pg_namespace n ON n.oid = c.relnamespace
-			WHERE n.nspname = $1
-			  AND con.contype = 'f'
+			JOIN managed_namespaces n ON n.oid = c.relnamespace
+			WHERE con.contype = 'f'
 
 			UNION ALL
 
@@ -243,6 +391,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 					WHEN 'S' THEN 30
 					ELSE 20
 				END,
+				COALESCE(view_order.depth, 0),
 				CASE c.relkind
 					WHEN 'v' THEN 'view'
 					WHEN 'm' THEN 'materialized view'
@@ -250,6 +399,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 					WHEN 'S' THEN 'sequence'
 					ELSE 'table'
 				END,
+				n.nspname,
 				c.relname,
 				format(
 					CASE c.relkind
@@ -263,19 +413,21 @@ func (w *PostgreSQLWriter) collectAllObjects(
 					c.relname
 				)
 			FROM pg_class c
-			JOIN pg_namespace n ON n.oid = c.relnamespace
-			WHERE n.nspname = $1
-			  AND c.relkind IN ('r', 'p', 'v', 'm', 'f', 'S')
+			JOIN managed_namespaces n ON n.oid = c.relnamespace
+			LEFT JOIN view_order ON view_order.oid = c.oid
+			WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f', 'S')
 
 			UNION ALL
 
 			SELECT
 				40,
+				0,
 				CASE p.prokind
 					WHEN 'p' THEN 'procedure'
 					WHEN 'a' THEN 'aggregate'
 					ELSE 'function'
 				END,
+				n.nspname,
 				p.proname,
 				format(
 					'DROP %s IF EXISTS %I.%I(%s) RESTRICT',
@@ -289,9 +441,8 @@ func (w *PostgreSQLWriter) collectAllObjects(
 					pg_get_function_identity_arguments(p.oid)
 				)
 			FROM pg_proc p
-			JOIN pg_namespace n ON n.oid = p.pronamespace
-			WHERE n.nspname = $1
-			  AND p.prokind IN ('f', 'p', 'a', 'w')
+			JOIN managed_namespaces n ON n.oid = p.pronamespace
+			WHERE p.prokind IN ('f', 'p', 'a', 'w')
 			  AND NOT EXISTS (
 				SELECT 1
 				FROM pg_depend d
@@ -304,22 +455,24 @@ func (w *PostgreSQLWriter) collectAllObjects(
 
 			SELECT
 				50,
+				0,
 				'type',
+				n.nspname,
 				t.typname,
 				format('DROP TYPE IF EXISTS %I.%I RESTRICT', n.nspname, t.typname)
 			FROM pg_type t
-			JOIN pg_namespace n ON n.oid = t.typnamespace
+			JOIN managed_namespaces n ON n.oid = t.typnamespace
 			LEFT JOIN pg_class c ON c.oid = t.typrelid
-			WHERE n.nspname = $1
-				  AND (
+			WHERE (
 				t.typtype IN ('e', 'd', 'r')
 				OR (t.typtype = 'c' AND c.relkind = 'c')
 			  )
 		)
-		SELECT object_kind, object_name, drop_statement
+		SELECT object_kind, object_schema, object_name, drop_statement
 		FROM cleanup_objects
-		ORDER BY priority, object_kind, object_name
-	`, w.schema)
+		ORDER BY priority, dependency_depth DESC, object_schema, object_kind, object_name
+	`, "{{SCHEMA_PLACEHOLDERS}}", postgresPlaceholders(len(schemas)))
+	rows, err := tx.QueryContext(ctx, query, stringsToAny(schemas)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query schema objects: %w", err)
 	}
@@ -328,7 +481,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 	var objects []postgresCleanupObject
 	for rows.Next() {
 		var object postgresCleanupObject
-		if err := rows.Scan(&object.Kind, &object.Name, &object.Statement); err != nil {
+		if err := rows.Scan(&object.Kind, &object.Schema, &object.Name, &object.Statement); err != nil {
 			return nil, fmt.Errorf("failed to scan schema object: %w", err)
 		}
 		objects = append(objects, object)
@@ -337,6 +490,90 @@ func (w *PostgreSQLWriter) collectAllObjects(
 		return nil, fmt.Errorf("failed to iterate schema objects: %w", err)
 	}
 	return objects, nil
+}
+
+func postgresPlaceholders(count int) string {
+	placeholders := make([]string, count)
+	for i := range count {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+	}
+	return strings.Join(placeholders, ", ")
+}
+
+func stringsToAny(values []string) []any {
+	args := make([]any, len(values))
+	for i := range values {
+		args[i] = values[i]
+	}
+	return args
+}
+
+func (w *PostgreSQLWriter) lockManagedRelations(
+	ctx context.Context,
+	tx *sql.Tx,
+	objects []postgresCleanupObject,
+) error {
+	relations := make([]string, 0, len(objects))
+	for _, object := range objects {
+		switch object.Kind {
+		case "table", "foreign table":
+			relations = append(relations, quoteIdent(object.Schema)+"."+quoteIdent(object.Name))
+		}
+	}
+	if len(relations) == 0 {
+		return nil
+	}
+
+	// Identifiers come from the catalog snapshot and are quoted individually;
+	// LOCK TABLE does not support identifier bind parameters.
+	//nolint:gosec // LOCK TABLE cannot bind the individually quoted catalog identifiers.
+	statement := "LOCK TABLE " + strings.Join(relations, ", ") + " IN ACCESS EXCLUSIVE MODE"
+	if _, err := tx.ExecContext(ctx, statement); err != nil {
+		return fmt.Errorf("failed to lock managed relations before cleanup: %w", err)
+	}
+	return nil
+}
+
+func (w *PostgreSQLWriter) rejectCrossSchemaPartitionEdges(ctx context.Context, tx *sql.Tx) error {
+	var parentSchema string
+	var parentName string
+	var childSchema string
+	var childName string
+	err := tx.QueryRowContext(ctx, `
+		SELECT
+			parent_namespace.nspname,
+			parent.relname,
+			child_namespace.nspname,
+			child.relname
+		FROM pg_inherits inheritance
+		JOIN pg_class parent ON parent.oid = inheritance.inhparent
+		JOIN pg_namespace parent_namespace ON parent_namespace.oid = parent.relnamespace
+		JOIN pg_class child ON child.oid = inheritance.inhrelid
+		JOIN pg_namespace child_namespace ON child_namespace.oid = child.relnamespace
+		WHERE child.relispartition
+		  AND (
+			(parent_namespace.nspname = $1 AND child_namespace.nspname <> $1)
+			OR (child_namespace.nspname = $1 AND parent_namespace.nspname <> $1)
+		  )
+		ORDER BY parent_namespace.nspname, parent.relname, child_namespace.nspname, child.relname
+		LIMIT 1
+	`, w.schema).Scan(&parentSchema, &parentName, &childSchema, &childName)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to inspect partition relationships: %w", err)
+	}
+
+	return fmt.Errorf(
+		"refusing to clean schema %q: partition %q.%q is attached to "+
+			"partitioned table %q.%q across the schema boundary",
+		w.schema,
+		childSchema,
+		childName,
+		parentSchema,
+		parentName,
+	)
 }
 
 func tryDropCleanupObject(
@@ -365,6 +602,25 @@ func tryDropCleanupObject(
 		return nil, fmt.Errorf("failed to release cleanup savepoint: %w", err)
 	}
 	return nil, nil
+}
+
+func dropCleanupObjectsOnce(
+	ctx context.Context,
+	tx *sql.Tx,
+	objects []postgresCleanupObject,
+) error {
+	for _, object := range objects {
+		if _, err := tx.ExecContext(ctx, object.Statement); err != nil {
+			return fmt.Errorf(
+				"failed to drop %s %s: SQL execution failed: %w\nSQL: %s",
+				object.Kind,
+				object.Name,
+				err,
+				object.Statement,
+			)
+		}
+	}
+	return nil
 }
 
 func dropCleanupObjects(
@@ -411,7 +667,31 @@ func dropCleanupObjects(
 }
 
 // DropAllTables drops all user objects in the configured database schema.
-func (w *PostgreSQLWriter) DropAllTables(ctx context.Context) (resultErr error) {
+func (w *PostgreSQLWriter) DropAllTables(ctx context.Context) error {
+	return w.dropSchemaObjects(ctx)
+}
+
+// DropDatabaseRealm removes every user schema and recreates the configured
+// root schema. CockroachDB's immutable public schema is preserved in place,
+// but its user objects are removed and verified like every other realm object.
+func (w *PostgreSQLWriter) DropDatabaseRealm(ctx context.Context) error {
+	if w.dryRun {
+		return nil
+	}
+	if w.db == nil {
+		return fmt.Errorf("no database connection")
+	}
+	if isPostgresSystemSchema(w.schema) {
+		return fmt.Errorf(
+			"refusing to clean PostgreSQL database realm with system root schema %q",
+			w.schema,
+		)
+	}
+
+	return w.dropDatabaseRealm(ctx)
+}
+
+func (w *PostgreSQLWriter) dropSchemaObjects(ctx context.Context) (resultErr error) {
 	if w.dryRun {
 		return nil
 	}
@@ -433,16 +713,36 @@ func (w *PostgreSQLWriter) DropAllTables(ctx context.Context) (resultErr error) 
 		}
 	}()
 
-	if err := w.rejectSchemaScopedExtensions(ctx, sqlTx); err != nil {
-		return err
-	}
-	objects, err := w.collectAllObjects(ctx, sqlTx)
+	capabilities, err := inspectCleanupCapabilities(ctx, sqlTx)
 	if err != nil {
 		return err
 	}
+	if err := w.rejectSchemaScopedExtensions(ctx, sqlTx); err != nil {
+		return err
+	}
+	objects, err := w.collectAllObjects(ctx, sqlTx, []string{w.schema})
+	if err != nil {
+		return err
+	}
+	if capabilities.lockManagedRelations {
+		if err := w.lockManagedRelations(ctx, sqlTx, objects); err != nil {
+			return err
+		}
+	}
+	if capabilities.inspectPartitionEdges {
+		if err := w.rejectCrossSchemaPartitionEdges(ctx, sqlTx); err != nil {
+			return err
+		}
+	}
 
-	if err := dropCleanupObjects(ctx, sqlTx, objects); err != nil {
-		return fmt.Errorf("refusing to clean schema %q: %w", w.schema, err)
+	var dropErr error
+	if capabilities.retryFailedDDL {
+		dropErr = dropCleanupObjects(ctx, sqlTx, objects)
+	} else {
+		dropErr = dropCleanupObjectsOnce(ctx, sqlTx, objects)
+	}
+	if dropErr != nil {
+		return fmt.Errorf("refusing to clean schema %q: %w", w.schema, dropErr)
 	}
 
 	if err := sqlTx.Commit(); err != nil {
@@ -451,6 +751,562 @@ func (w *PostgreSQLWriter) DropAllTables(ctx context.Context) (resultErr error) 
 	committed = true
 
 	return nil
+}
+
+func (w *PostgreSQLWriter) dropDatabaseRealm(ctx context.Context) (resultErr error) {
+	sqlTx, err := w.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			rollbackErr := sqlTx.Rollback()
+			if rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
+				resultErr = errors.Join(resultErr, fmt.Errorf("failed to roll back transaction: %w", rollbackErr))
+			}
+		}
+	}()
+
+	capabilities, err := inspectCleanupCapabilities(ctx, sqlTx)
+	if err != nil {
+		return err
+	}
+	rootMetadata, err := capturePostgresSchemaMetadata(ctx, sqlTx, w.schema)
+	if err != nil {
+		return err
+	}
+	schemas, err := collectUserSchemas(ctx, sqlTx)
+	if err != nil {
+		return err
+	}
+	extensions, err := collectPostgresUserExtensions(
+		ctx,
+		sqlTx,
+		capabilities.systemExtensions,
+	)
+	if err != nil {
+		return err
+	}
+	if err := dropPostgresUserExtensions(ctx, sqlTx, extensions); err != nil {
+		return err
+	}
+
+	preservedSchemas := []string{w.schema}
+	if capabilities.preservePublicSchema {
+		preservedSchemas = appendUniqueString(preservedSchemas, "public")
+		if err := w.dropCockroachDatabaseRealm(ctx, sqlTx, schemas, rootMetadata); err != nil {
+			return err
+		}
+	} else {
+		if err := dropPostgresUserSchemas(ctx, sqlTx, schemas); err != nil {
+			return err
+		}
+		if err := restorePostgresRootSchema(ctx, sqlTx, w.schema, rootMetadata); err != nil {
+			return err
+		}
+	}
+
+	if err := verifyPostgresDatabaseRealm(
+		ctx,
+		sqlTx,
+		preservedSchemas,
+		capabilities.systemExtensions,
+	); err != nil {
+		return err
+	}
+	if err := sqlTx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+	committed = true
+	return nil
+}
+
+func (w *PostgreSQLWriter) dropCockroachDatabaseRealm(
+	ctx context.Context,
+	tx *sql.Tx,
+	schemas []string,
+	rootMetadata postgresSchemaMetadata,
+) error {
+	droppableSchemas := excludeString(schemas, "public")
+	if err := dropPostgresUserSchemas(ctx, tx, droppableSchemas); err != nil {
+		return err
+	}
+
+	publicObjects, err := w.collectAllObjects(ctx, tx, []string{"public"})
+	if err != nil {
+		return err
+	}
+	if err := dropCleanupObjectsOnce(ctx, tx, publicObjects); err != nil {
+		return fmt.Errorf("refusing to clean PostgreSQL database realm: %w", err)
+	}
+
+	if w.schema != "public" {
+		if err := restorePostgresRootSchema(ctx, tx, w.schema, rootMetadata); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func collectUserSchemas(ctx context.Context, tx *sql.Tx) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT n.nspname
+		FROM pg_namespace n
+		WHERE n.nspname <> 'information_schema'
+		  AND n.nspname <> 'crdb_internal'
+		  AND n.nspname NOT LIKE 'pg\_%' ESCAPE '\'
+		ORDER BY n.nspname
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query PostgreSQL user schemas: %w", err)
+	}
+	defer rows.Close()
+
+	var schemas []string
+	for rows.Next() {
+		var schema string
+		if err := rows.Scan(&schema); err != nil {
+			return nil, fmt.Errorf("failed to scan PostgreSQL user schema: %w", err)
+		}
+		schemas = append(schemas, schema)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate PostgreSQL user schemas: %w", err)
+	}
+	return schemas, nil
+}
+
+func capturePostgresSchemaMetadata(
+	ctx context.Context,
+	tx *sql.Tx,
+	schema string,
+) (postgresSchemaMetadata, error) {
+	var metadata postgresSchemaMetadata
+	err := tx.QueryRowContext(ctx, `
+		SELECT
+			pg_get_userbyid(n.nspowner),
+			n.nspacl IS NULL,
+			format(
+				'COMMENT ON SCHEMA %I IS %L',
+				n.nspname,
+				obj_description(n.oid, 'pg_namespace')
+			)
+		FROM pg_namespace n
+		WHERE n.nspname = $1
+	`, schema).Scan(
+		&metadata.owner,
+		&metadata.aclIsDefault,
+		&metadata.commentStatement,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return postgresSchemaMetadata{}, nil
+	}
+	if err != nil {
+		return postgresSchemaMetadata{}, fmt.Errorf(
+			"failed to capture root schema %q metadata: %w",
+			schema,
+			err,
+		)
+	}
+	metadata.exists = true
+	if metadata.aclIsDefault {
+		return metadata, nil
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT
+			CASE acl.grantee
+				WHEN 0 THEN 'PUBLIC'
+				ELSE pg_get_userbyid(acl.grantee)
+			END,
+			acl.privilege_type,
+			acl.is_grantable
+		FROM pg_namespace n
+		CROSS JOIN LATERAL aclexplode(n.nspacl) acl
+		WHERE n.nspname = $1
+		ORDER BY 1, 2, 3
+	`, schema)
+	if err != nil {
+		return postgresSchemaMetadata{}, fmt.Errorf(
+			"failed to capture root schema %q privileges: %w",
+			schema,
+			err,
+		)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var privilege postgresSchemaPrivilege
+		if err := rows.Scan(&privilege.grantee, &privilege.privilege, &privilege.grantOption); err != nil {
+			return postgresSchemaMetadata{}, fmt.Errorf(
+				"failed to scan root schema %q privilege: %w",
+				schema,
+				err,
+			)
+		}
+		metadata.privileges = append(metadata.privileges, privilege)
+	}
+	if err := rows.Err(); err != nil {
+		return postgresSchemaMetadata{}, fmt.Errorf(
+			"failed to iterate root schema %q privileges: %w",
+			schema,
+			err,
+		)
+	}
+	if err := validatePostgresSchemaPrivileges(metadata.privileges); err != nil {
+		return postgresSchemaMetadata{}, err
+	}
+	return metadata, nil
+}
+
+func dropPostgresUserSchemas(ctx context.Context, tx *sql.Tx, schemas []string) error {
+	for _, schema := range schemas {
+		// Schema names come from pg_namespace and are quoted as identifiers;
+		// PostgreSQL-family DDL does not support identifier bind parameters.
+		//nolint:gosec // The catalog identifier is quoted through sqlident.
+		statement := "DROP SCHEMA IF EXISTS " + quoteIdent(schema) + " CASCADE"
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf(
+				"failed to drop user schema %q from PostgreSQL database realm: %w",
+				schema,
+				err,
+			)
+		}
+	}
+	return nil
+}
+
+func collectPostgresUserExtensions(
+	ctx context.Context,
+	tx *sql.Tx,
+	systemExtensions []string,
+) ([]postgresExtensionCleanup, error) {
+	query := `
+		SELECT
+			e.extname,
+			format('DROP EXTENSION IF EXISTS %I CASCADE', e.extname)
+		FROM pg_extension e
+	`
+	var args []any
+	if len(systemExtensions) > 0 {
+		//nolint:gosec // Only internally generated positional placeholders are interpolated.
+		query += " WHERE e.extname NOT IN (" + postgresPlaceholders(len(systemExtensions)) + ")"
+		args = stringsToAny(systemExtensions)
+	}
+	query += " ORDER BY e.extname"
+
+	rows, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query PostgreSQL user extensions: %w", err)
+	}
+	defer rows.Close()
+
+	var extensions []postgresExtensionCleanup
+	for rows.Next() {
+		var extension postgresExtensionCleanup
+		if err := rows.Scan(&extension.name, &extension.statement); err != nil {
+			return nil, fmt.Errorf("failed to scan PostgreSQL user extension: %w", err)
+		}
+		extensions = append(extensions, extension)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate PostgreSQL user extensions: %w", err)
+	}
+	return extensions, nil
+}
+
+func dropPostgresUserExtensions(
+	ctx context.Context,
+	tx *sql.Tx,
+	extensions []postgresExtensionCleanup,
+) error {
+	for _, extension := range extensions {
+		if _, err := tx.ExecContext(ctx, extension.statement); err != nil {
+			return fmt.Errorf(
+				"failed to drop user extension %q from PostgreSQL database realm: %w",
+				extension.name,
+				err,
+			)
+		}
+	}
+	return nil
+}
+
+func restorePostgresRootSchema(
+	ctx context.Context,
+	tx *sql.Tx,
+	schema string,
+	metadata postgresSchemaMetadata,
+) error {
+	//nolint:gosec // Schema and owner identifiers are quoted through sqlident.
+	statement := "CREATE SCHEMA " + quoteIdent(schema)
+	if metadata.exists {
+		statement += " AUTHORIZATION " + quoteIdent(metadata.owner)
+	}
+	if _, err := tx.ExecContext(ctx, statement); err != nil {
+		return fmt.Errorf("failed to recreate root schema %q: %w", schema, err)
+	}
+	if !metadata.exists {
+		return nil
+	}
+	if !metadata.aclIsDefault {
+		if err := restorePostgresSchemaPrivileges(ctx, tx, schema, metadata); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, metadata.commentStatement); err != nil {
+		return fmt.Errorf("failed to restore root schema %q comment: %w", schema, err)
+	}
+	return nil
+}
+
+func restorePostgresSchemaPrivileges(
+	ctx context.Context,
+	tx *sql.Tx,
+	schema string,
+	metadata postgresSchemaMetadata,
+) error {
+	grantees := []string{"PUBLIC", metadata.owner}
+	for _, privilege := range metadata.privileges {
+		grantees = appendUniqueString(grantees, privilege.grantee)
+	}
+	for _, grantee := range grantees {
+		//nolint:gosec // Schema and role identifiers are quoted through sqlident.
+		statement := "REVOKE ALL PRIVILEGES ON SCHEMA " + quoteIdent(schema) +
+			" FROM " + quotePostgresRole(grantee)
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf(
+				"failed to reset root schema %q privileges for %q: %w",
+				schema,
+				grantee,
+				err,
+			)
+		}
+	}
+	for _, privilege := range metadata.privileges {
+		//nolint:gosec // Privilege is allow-listed; identifiers are quoted through sqlident.
+		statement := "GRANT " + privilege.privilege + " ON SCHEMA " +
+			quoteIdent(schema) + " TO " + quotePostgresRole(privilege.grantee)
+		if privilege.grantOption {
+			statement += " WITH GRANT OPTION"
+		}
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf(
+				"failed to restore root schema %q privilege for %q: %w",
+				schema,
+				privilege.grantee,
+				err,
+			)
+		}
+	}
+	return nil
+}
+
+func validatePostgresSchemaPrivileges(privileges []postgresSchemaPrivilege) error {
+	for _, privilege := range privileges {
+		if privilege.privilege != "CREATE" && privilege.privilege != "USAGE" {
+			return fmt.Errorf(
+				"refusing to restore unsupported PostgreSQL schema privilege %q",
+				privilege.privilege,
+			)
+		}
+	}
+	return nil
+}
+
+func verifyPostgresDatabaseRealm(
+	ctx context.Context,
+	tx *sql.Tx,
+	preservedSchemas []string,
+	systemExtensions []string,
+) error {
+	schemas, err := collectUserSchemas(ctx, tx)
+	if err != nil {
+		return err
+	}
+	expected := make(map[string]struct{}, len(preservedSchemas))
+	for _, schema := range preservedSchemas {
+		expected[schema] = struct{}{}
+	}
+	for _, schema := range schemas {
+		if _, ok := expected[schema]; !ok {
+			return fmt.Errorf(
+				"PostgreSQL database realm cleanup left residual user schema %q",
+				schema,
+			)
+		}
+		delete(expected, schema)
+	}
+	for schema := range expected {
+		return fmt.Errorf(
+			"PostgreSQL database realm cleanup did not recreate root schema %q",
+			schema,
+		)
+	}
+	if err := verifyPostgresUserExtensions(ctx, tx, systemExtensions); err != nil {
+		return err
+	}
+
+	query := strings.ReplaceAll(`
+		WITH managed_namespaces AS (
+			SELECT n.oid, n.nspname
+			FROM pg_namespace n
+			WHERE n.nspname IN ({{SCHEMA_PLACEHOLDERS}})
+		),
+		residual_objects AS (
+			SELECT 'relation'::text AS object_kind, n.nspname, c.relname
+			FROM pg_class c
+			JOIN managed_namespaces n ON n.oid = c.relnamespace
+
+			UNION ALL
+			SELECT 'routine', n.nspname, p.proname
+			FROM pg_proc p
+			JOIN managed_namespaces n ON n.oid = p.pronamespace
+
+			UNION ALL
+			SELECT 'type', n.nspname, t.typname
+			FROM pg_type t
+			JOIN managed_namespaces n ON n.oid = t.typnamespace
+
+			UNION ALL
+			SELECT 'collation', n.nspname, c.collname
+			FROM pg_collation c
+			JOIN managed_namespaces n ON n.oid = c.collnamespace
+
+			UNION ALL
+			SELECT 'conversion', n.nspname, c.conname
+			FROM pg_conversion c
+			JOIN managed_namespaces n ON n.oid = c.connamespace
+
+			UNION ALL
+			SELECT 'operator', n.nspname, o.oprname
+			FROM pg_operator o
+			JOIN managed_namespaces n ON n.oid = o.oprnamespace
+
+			UNION ALL
+			SELECT 'operator class', n.nspname, o.opcname
+			FROM pg_opclass o
+			JOIN managed_namespaces n ON n.oid = o.opcnamespace
+
+			UNION ALL
+			SELECT 'operator family', n.nspname, o.opfname
+			FROM pg_opfamily o
+			JOIN managed_namespaces n ON n.oid = o.opfnamespace
+
+			UNION ALL
+			SELECT 'text search configuration', n.nspname, c.cfgname
+			FROM pg_ts_config c
+			JOIN managed_namespaces n ON n.oid = c.cfgnamespace
+
+			UNION ALL
+			SELECT 'text search dictionary', n.nspname, d.dictname
+			FROM pg_ts_dict d
+			JOIN managed_namespaces n ON n.oid = d.dictnamespace
+
+			UNION ALL
+			SELECT 'text search parser', n.nspname, p.prsname
+			FROM pg_ts_parser p
+			JOIN managed_namespaces n ON n.oid = p.prsnamespace
+
+			UNION ALL
+			SELECT 'text search template', n.nspname, t.tmplname
+			FROM pg_ts_template t
+			JOIN managed_namespaces n ON n.oid = t.tmplnamespace
+
+			UNION ALL
+			SELECT 'extension', n.nspname, e.extname
+			FROM pg_extension e
+			JOIN managed_namespaces n ON n.oid = e.extnamespace
+
+			UNION ALL
+			SELECT 'default privilege', n.nspname, d.oid::text
+			FROM pg_default_acl d
+			JOIN managed_namespaces n ON n.oid = d.defaclnamespace
+		)
+		SELECT object_kind, nspname, relname
+		FROM residual_objects
+		ORDER BY object_kind, nspname, relname
+		LIMIT 1
+	`, "{{SCHEMA_PLACEHOLDERS}}", postgresPlaceholders(len(preservedSchemas)))
+
+	var kind string
+	var schema string
+	var name string
+	err = tx.QueryRowContext(ctx, query, stringsToAny(preservedSchemas)...).Scan(
+		&kind,
+		&schema,
+		&name,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to verify PostgreSQL database realm cleanup: %w", err)
+	}
+	return fmt.Errorf(
+		"PostgreSQL database realm cleanup left residual %s %q.%q",
+		kind,
+		schema,
+		name,
+	)
+}
+
+func verifyPostgresUserExtensions(
+	ctx context.Context,
+	tx *sql.Tx,
+	systemExtensions []string,
+) error {
+	query := "SELECT e.extname FROM pg_extension e"
+	var args []any
+	if len(systemExtensions) > 0 {
+		query += " WHERE e.extname NOT IN (" + postgresPlaceholders(len(systemExtensions)) + ")"
+		args = stringsToAny(systemExtensions)
+	}
+	query += " ORDER BY e.extname LIMIT 1"
+
+	var extension string
+	err := tx.QueryRowContext(ctx, query, args...).Scan(&extension)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to verify PostgreSQL user extension cleanup: %w", err)
+	}
+	return fmt.Errorf(
+		"PostgreSQL database realm cleanup left residual user extension %q",
+		extension,
+	)
+}
+
+func isPostgresSystemSchema(schema string) bool {
+	return schema == "information_schema" ||
+		schema == "crdb_internal" ||
+		strings.HasPrefix(schema, "pg_")
+}
+
+func quotePostgresRole(role string) string {
+	if role == "PUBLIC" {
+		return role
+	}
+	return quoteIdent(role)
+}
+
+func appendUniqueString(values []string, value string) []string {
+	if slices.Contains(values, value) {
+		return values
+	}
+	return append(values, value)
+}
+
+func excludeString(values []string, excluded string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value != excluded {
+			result = append(result, value)
+		}
+	}
+	return result
 }
 
 // SetDryRun enables or disables dry run mode

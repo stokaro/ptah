@@ -247,8 +247,9 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	defer cancelConnect()
 
 	var devConn *dbschema.DatabaseConnection
+	var dirFormat migrator.MigrationDirFormat
 	if replay {
-		dirFormat, err := migrator.ParseMigrationDirFormat(dirFormatValue)
+		dirFormat, err = migrator.ParseMigrationDirFormat(dirFormatValue)
 		if err != nil {
 			return err
 		}
@@ -257,15 +258,11 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("connect to --%s: %w", generateDevURLFlag, err)
 		}
 		defer dbschema.CloseAndWarn(devConn)
-		if err := migrationreplay.ReplayOnConnection(cmd.Context(), devConn, migrationsDir, dirFormat); err != nil {
-			return err
-		}
 	}
 
-	files, err := generator.GenerateMigration(connectCtx, generator.GenerateMigrationOptions{
+	generateOpts := generator.GenerateMigrationOptions{
 		Generated:         generated,
 		DatabaseURL:       targetURL,
-		DBConn:            devConn,
 		MigrationName:     name,
 		OutputDir:         migrationsDir,
 		Schemas:           dbcli.ParseSchemas(schemasValue),
@@ -278,7 +275,28 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 			SkipChangeKinds: projectCfg.Diff.SkipChangeKinds(),
 			ConcurrentIndex: projectCfg.Diff.ConcurrentIndexCreate(),
 		},
-	})
+	}
+	var files *generator.MigrationFiles
+	if replay {
+		var plan *generator.MigrationPlan
+		err = migrationreplay.WithReplayedDirectory(
+			cmd.Context(),
+			devConn,
+			migrationsDir,
+			dirFormat,
+			func(replayConn *dbschema.DatabaseConnection) error {
+				replayOpts := generateOpts
+				replayOpts.DBConn = replayConn
+				plan, err = generator.PlanMigration(connectCtx, replayOpts)
+				return err
+			},
+		)
+		if err == nil && plan != nil {
+			files, err = plan.WriteFiles()
+		}
+	} else {
+		files, err = generator.GenerateMigration(connectCtx, generateOpts)
+	}
 	if err != nil {
 		return err
 	}

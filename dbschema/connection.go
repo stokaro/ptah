@@ -3,6 +3,8 @@ package dbschema
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -21,6 +23,7 @@ import (
 	"github.com/stokaro/ptah/internal/dbschema/mysql"
 	"github.com/stokaro/ptah/internal/dbschema/postgres"
 	"github.com/stokaro/ptah/internal/dbschema/sqlite"
+	"github.com/stokaro/ptah/internal/sqlrunner"
 )
 
 // ConnectToDatabase creates a database connection from a URL.
@@ -94,35 +97,71 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 		)
 	}
 
-	// Create appropriate schema reader and writer
-	var reader types.SchemaReader
-	var writer types.SchemaWriter
+	var newReader schemaReaderFactory
+	var newWriter schemaWriterFactory
 	switch dialectProtocol {
 	case "pgx":
-		reader = postgres.NewPostgreSQLReaderWithCapabilities(db, info.Schema, info.Capabilities)
-		writer = postgres.NewPostgreSQLWriter(db, info.Schema)
+		newReader = func(runner sqlrunner.Runner) types.SchemaReader {
+			return postgres.NewPostgreSQLReaderWithCapabilities(runner, info.Schema, info.Capabilities)
+		}
+		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) types.SchemaWriter {
+			return postgres.NewPostgreSQLWriterForRunner(runner, info.Schema)
+		}
 	case "mysql":
-		reader = mysql.NewMySQLReader(db, info.Schema)
-		writer = mysql.NewMySQLWriter(db, info.Schema, info.Dialect)
+		newReader = func(runner sqlrunner.Runner) types.SchemaReader {
+			return mysql.NewMySQLReader(runner, info.Schema)
+		}
+		newWriter = func(runner sqlrunner.Runner, session *sql.Conn) types.SchemaWriter {
+			if session != nil {
+				return mysql.NewMySQLWriterForPinnedRunner(
+					runner,
+					db,
+					session,
+					info.Schema,
+					info.Dialect,
+					info.Version,
+				)
+			}
+			return mysql.NewMySQLWriterForRunner(runner, db, info.Schema, info.Dialect, info.Version)
+		}
 	case "clickhouse":
-		reader = clickhouse.NewClickHouseReader(db, info.Schema)
-		writer = clickhouse.NewClickHouseWriter(db, info.Schema)
+		newReader = func(runner sqlrunner.Runner) types.SchemaReader {
+			return clickhouse.NewClickHouseReader(runner, info.Schema)
+		}
+		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) types.SchemaWriter {
+			return clickhouse.NewClickHouseWriterForRunner(runner, info.Schema)
+		}
 	case "sqlite":
-		reader = sqlite.NewSQLiteReader(db, info.Schema)
-		writer = sqlite.NewSQLiteWriter(db, info.Schema)
+		newReader = func(runner sqlrunner.Runner) types.SchemaReader {
+			return sqlite.NewSQLiteReader(runner, info.Schema)
+		}
+		newWriter = func(runner sqlrunner.Runner, session *sql.Conn) types.SchemaWriter {
+			if session != nil {
+				return sqlite.NewSQLiteWriterForPinnedRunner(runner, session, info.Schema)
+			}
+			return sqlite.NewSQLiteWriterForRunner(runner, info.Schema)
+		}
 	case "sqlserver":
-		reader = mssql.NewSQLServerReader(db, info.Schema)
-		writer = mssql.NewSQLServerWriter(db, info.Schema)
+		newReader = func(runner sqlrunner.Runner) types.SchemaReader {
+			return mssql.NewSQLServerReader(runner, info.Schema)
+		}
+		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) types.SchemaWriter {
+			return mssql.NewSQLServerWriterForRunner(runner, info.Schema)
+		}
 	default:
 		_ = db.Close()
 		return nil, fmt.Errorf("no schema reader available for dialect: %s", dialect)
 	}
 
+	runner := sqlrunner.Runner(db)
 	return &DatabaseConnection{
-		db:     db,
-		info:   info,
-		reader: reader,
-		writer: writer,
+		db:        db,
+		runner:    runner,
+		info:      info,
+		reader:    newReader(runner),
+		writer:    newWriter(runner, nil),
+		newReader: newReader,
+		newWriter: newWriter,
 	}, nil
 }
 
@@ -145,15 +184,26 @@ func databaseDriverConfig(dialect, dbURL string) (driverName, dataSourceName str
 
 // DatabaseConnection represents a database connection with metadata
 type DatabaseConnection struct {
-	db       *sql.DB
-	info     types.DBInfo
-	reader   types.SchemaReader
-	writer   types.SchemaWriter
-	executor types.SchemaExecutor
+	db        *sql.DB
+	runner    sqlrunner.Runner
+	info      types.DBInfo
+	reader    types.SchemaReader
+	writer    types.SchemaWriter
+	executor  types.SchemaExecutor
+	newReader schemaReaderFactory
+	newWriter schemaWriterFactory
+	pinned    bool
 }
+
+type schemaReaderFactory func(sqlrunner.Runner) types.SchemaReader
+type schemaWriterFactory func(sqlrunner.Runner, *sql.Conn) types.SchemaWriter
 
 type schemaScopedReader interface {
 	SetSchemas([]string)
+}
+
+type contextExecutor interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
 }
 
 // ReadSchemaWithSchemas reads a database schema, applying a schema allow-list
@@ -191,9 +241,9 @@ func (dc *DatabaseConnection) Writer() types.SchemaExecutor {
 	return dc.writer
 }
 
-// SchemaWriter returns the root schema writer for administrative operations
-// such as starting transactions, toggling dry-run mode, or dropping all tables
-// with a caller-supplied context.
+// SchemaWriter returns the schema writer bound to this connection's SQL
+// session. Transaction-scoped executors do not replace the administrative
+// writer.
 func (dc *DatabaseConnection) SchemaWriter() types.SchemaWriter {
 	return dc.writer
 }
@@ -209,48 +259,118 @@ func (dc *DatabaseConnection) WithExecutor(executor types.SchemaExecutor) *Datab
 	return &cloned
 }
 
+// WithSession pins one physical database session for the callback and rebuilds
+// the dialect reader and writer on that same session. The scoped connection
+// does not own the pool and must not escape the callback. The physical
+// connection is discarded afterward so callback-created session state cannot
+// leak to another pool user.
+func (dc *DatabaseConnection) WithSession(
+	ctx context.Context,
+	use func(*DatabaseConnection) error,
+) (resultErr error) {
+	if dc == nil || dc.db == nil {
+		return fmt.Errorf("database session requires an open database connection")
+	}
+	if use == nil {
+		return fmt.Errorf("database session callback is nil")
+	}
+	if dc.pinned {
+		return fmt.Errorf("database connection is already pinned to a session")
+	}
+	if dc.newReader == nil || dc.newWriter == nil {
+		return fmt.Errorf("database connection does not support session rebinding")
+	}
+
+	session, err := dc.db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("pin database session: %w", err)
+	}
+	defer func() {
+		discardErr := session.Raw(func(any) error {
+			return driver.ErrBadConn
+		})
+		if discardErr != nil && !errors.Is(discardErr, driver.ErrBadConn) {
+			resultErr = errors.Join(resultErr, fmt.Errorf("discard pinned database session: %w", discardErr))
+		}
+		if closeErr := session.Close(); closeErr != nil && !errors.Is(closeErr, sql.ErrConnDone) {
+			resultErr = errors.Join(resultErr, fmt.Errorf("close pinned database session: %w", closeErr))
+		}
+	}()
+
+	runner := sqlrunner.NewConn(ctx, session)
+	scoped := *dc
+	scoped.runner = runner
+	scoped.reader = dc.newReader(runner)
+	scoped.writer = dc.newWriter(runner, session)
+	scoped.executor = nil
+	scoped.pinned = true
+	if dc.writer != nil && dc.writer.IsDryRun() {
+		scoped.writer.SetDryRun(true)
+	}
+	return use(&scoped)
+}
+
 // Query executes a query and returns the result rows
 func (dc *DatabaseConnection) Query(query string, args ...any) (*sql.Rows, error) {
-	return dc.db.Query(query, args...)
+	return dc.sqlRunner().Query(query, args...)
 }
 
 // QueryContext executes a query using a context and returns the result rows.
 func (dc *DatabaseConnection) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	return dc.db.QueryContext(ctx, query, args...)
+	return dc.sqlRunner().QueryContext(ctx, query, args...)
 }
 
 // QueryRow executes a query that returns a single row
 func (dc *DatabaseConnection) QueryRow(query string, args ...any) *sql.Row {
-	return dc.db.QueryRow(query, args...)
+	return dc.sqlRunner().QueryRow(query, args...)
 }
 
 // QueryRowContext executes a query that returns a single row using a context
 func (dc *DatabaseConnection) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
-	return dc.db.QueryRowContext(ctx, query, args...)
+	return dc.sqlRunner().QueryRowContext(ctx, query, args...)
 }
 
 // Exec executes a query without returning any rows
 func (dc *DatabaseConnection) Exec(query string, args ...any) (sql.Result, error) {
-	return dc.db.Exec(query, args...)
+	if executor, ok := dc.executor.(contextExecutor); ok {
+		return executor.ExecContext(context.Background(), query, args...)
+	}
+	return dc.sqlRunner().Exec(query, args...)
 }
 
 // ExecContext executes a query without returning any rows using a context
 func (dc *DatabaseConnection) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
-	return dc.db.ExecContext(ctx, query, args...)
+	if executor, ok := dc.executor.(contextExecutor); ok {
+		return executor.ExecContext(ctx, query, args...)
+	}
+	return dc.sqlRunner().ExecContext(ctx, query, args...)
 }
 
 // Conn returns a dedicated database session. Callers that use session-scoped
 // database features must close the returned connection when finished.
 func (dc *DatabaseConnection) Conn(ctx context.Context) (*sql.Conn, error) {
+	if dc.pinned {
+		return nil, fmt.Errorf("database connection is already pinned to a session")
+	}
 	return dc.db.Conn(ctx)
 }
 
 // Close closes the database connection
 func (dc *DatabaseConnection) Close() error {
+	if dc.pinned {
+		return nil
+	}
 	if dc.db != nil {
 		return dc.db.Close()
 	}
 	return nil
+}
+
+func (dc *DatabaseConnection) sqlRunner() sqlrunner.Runner {
+	if dc.runner != nil {
+		return dc.runner
+	}
+	return dc.db
 }
 
 // CloseAndWarn closes the connection and logs a warning at slog.LevelWarn if

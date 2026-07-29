@@ -7,10 +7,12 @@ package atlasmigrate
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
@@ -18,6 +20,8 @@ import (
 	dbschematypes "github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/atlassource"
 	"github.com/stokaro/ptah/internal/migratesum"
+	"github.com/stokaro/ptah/internal/migrationreplay"
+	"github.com/stokaro/ptah/internal/migrationsnapshot"
 	"github.com/stokaro/ptah/migration/migrator"
 )
 
@@ -69,12 +73,15 @@ func TestWriteDiffArtifacts_SumPublishFailureRollsBackMigrations(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
 	c.Assert(os.Mkdir(filepath.Join(dir, "atlas.sum"), 0o700), qt.IsNil)
+	baseSnapshot, err := migrationsnapshot.CaptureStable(os.DirFS(dir))
+	c.Assert(err, qt.IsNil)
 
 	result, err := writeDiffArtifacts(
 		t.Context(),
 		dir,
 		"add_email",
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
+		baseSnapshot,
 	)
 
 	c.Assert(err, qt.ErrorMatches, `write atlas\.sum: .*`)
@@ -100,7 +107,12 @@ func TestRecoverPendingPublication_RollsBackInterruptedBatch(t *testing.T) {
 		[]MigrationFileContent{{SQL: "SELECT 2;"}},
 	)
 	c.Assert(err, qt.IsNil)
-	c.Assert(beginPublication(dir, batch), qt.IsNil)
+	_, _ = beginTestPublication(
+		c,
+		dir,
+		batch,
+		[]MigrationFileContent{{SQL: "SELECT 2;"}},
+	)
 	published, err := publishMigrationBatch(dir, batch)
 	c.Assert(err, qt.IsNil)
 	c.Assert(published, qt.Equals, 1)
@@ -130,12 +142,20 @@ func TestRecoverPendingPublication_FinalizesCommittedBatch(t *testing.T) {
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
 	)
 	c.Assert(err, qt.IsNil)
-	c.Assert(beginPublication(dir, batch), qt.IsNil)
+	journal, sum := beginTestPublication(
+		c,
+		dir,
+		batch,
+		[]MigrationFileContent{{SQL: "SELECT 1;"}},
+	)
 	published, err := publishMigrationBatch(dir, batch)
 	c.Assert(err, qt.IsNil)
 	c.Assert(published, qt.Equals, 1)
-	_, err = writeDirSum(dir)
+	_, err = writeDirSum(dir, sum)
 	c.Assert(err, qt.IsNil)
+	committed, err := publicationCommitted(dir, journal)
+	c.Assert(err, qt.IsNil)
+	c.Assert(committed, qt.IsTrue)
 
 	c.Assert(recoverPendingPublication(dir), qt.IsNil)
 
@@ -163,13 +183,20 @@ func TestRecoverPendingPublication_RejectsForeignCollision(t *testing.T) {
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
 	)
 	c.Assert(err, qt.IsNil)
-	c.Assert(beginPublication(dir, batch), qt.IsNil)
+	_, _ = beginTestPublication(
+		c,
+		dir,
+		batch,
+		[]MigrationFileContent{{SQL: "SELECT 1;"}},
+	)
 	c.Assert(os.WriteFile(batch.paths[0], []byte("foreign"), 0o600), qt.IsNil)
 
 	err = recoverPendingPublication(dir)
 
-	c.Assert(err, qt.ErrorMatches, `cannot safely recover migration publication: .* is not the journaled staging file`)
-	contents, err := os.ReadFile(batch.paths[0])
+	c.Assert(err, qt.ErrorMatches, `cannot safely recover migration publication: .* is not the journaled staging file; preserved at .*`)
+	_, err = os.Stat(batch.paths[0])
+	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
+	contents, err := os.ReadFile(filepath.Join(batch.stagedPaths[0]+".rollback", "published"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(contents), qt.Equals, "foreign")
 	_, err = os.Stat(batch.stagedPaths[0])
@@ -178,6 +205,141 @@ func TestRecoverPendingPublication_RejectsForeignCollision(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	_, err = os.Stat(journalPath)
 	c.Assert(err, qt.IsNil)
+}
+
+func TestAbortPendingPublication_RejectsForeignReplacement(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	batch, err := stageMigrationBatchAt(
+		dir,
+		"collision",
+		1,
+		[]MigrationFileContent{{SQL: "SELECT 1;"}},
+	)
+	c.Assert(err, qt.IsNil)
+	_, _ = beginTestPublication(
+		c,
+		dir,
+		batch,
+		[]MigrationFileContent{{SQL: "SELECT 1;"}},
+	)
+	published, err := publishMigrationBatch(dir, batch)
+	c.Assert(err, qt.IsNil)
+	c.Assert(published, qt.Equals, 1)
+	c.Assert(os.Remove(batch.paths[0]), qt.IsNil)
+	c.Assert(os.WriteFile(batch.paths[0], []byte("foreign"), 0o600), qt.IsNil)
+
+	err = abortPendingPublication(dir, batch, published)
+
+	c.Assert(err, qt.ErrorMatches, `roll back published migration files: cannot safely recover migration publication: .* is not the journaled staging file; preserved at .*`)
+	_, err = os.Stat(batch.paths[0])
+	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
+	contents, err := os.ReadFile(filepath.Join(batch.stagedPaths[0]+".rollback", "published"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(contents), qt.Equals, "foreign")
+	_, err = os.Stat(batch.stagedPaths[0])
+	c.Assert(err, qt.IsNil)
+	journalPath, err := publicationJournalPath(dir)
+	c.Assert(err, qt.IsNil)
+	_, err = os.Stat(journalPath)
+	c.Assert(err, qt.IsNil)
+}
+
+func TestWriteDiffArtifacts_CommitUncertainRetainsRecoverableBatch(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	baseSnapshot, err := migrationsnapshot.CaptureStable(os.DirFS(dir))
+	c.Assert(err, qt.IsNil)
+
+	result, err := writeDiffArtifactsWithSumWriter(
+		t.Context(),
+		dir,
+		"uncertain",
+		[]MigrationFileContent{{SQL: "SELECT 1;"}},
+		baseSnapshot,
+		func(dir string, sum *migratesum.SumFile) (string, error) {
+			path, writeErr := writeDirSum(dir, sum)
+			c.Assert(writeErr, qt.IsNil)
+			return path, &migratesum.CommitUncertainError{
+				Err: errors.New("injected directory sync failure"),
+			}
+		},
+	)
+
+	c.Assert(err, qt.ErrorMatches, `write atlas\.sum; migration publication journal retained for recovery: injected directory sync failure`)
+	c.Assert(result.MigrationPaths, qt.HasLen, 0)
+	sqlFiles, err := filepath.Glob(filepath.Join(dir, "*_uncertain.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(sqlFiles, qt.HasLen, 1)
+	stagedFiles, err := filepath.Glob(filepath.Join(dir, stagedMigrationPattern))
+	c.Assert(err, qt.IsNil)
+	c.Assert(stagedFiles, qt.HasLen, 1)
+	journalPath, err := publicationJournalPath(dir)
+	c.Assert(err, qt.IsNil)
+	_, err = os.Stat(journalPath)
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(recoverPendingPublication(dir), qt.IsNil)
+	sqlFiles, err = filepath.Glob(filepath.Join(dir, "*_uncertain.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(sqlFiles, qt.HasLen, 1)
+	stagedFiles, err = filepath.Glob(filepath.Join(dir, stagedMigrationPattern))
+	c.Assert(err, qt.IsNil)
+	c.Assert(stagedFiles, qt.HasLen, 0)
+	_, err = os.Stat(journalPath)
+	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
+	verifyResult, err := migratesum.VerifyWithFormat(
+		os.DirFS(dir),
+		migrator.MigrationDirFormatAtlas,
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(verifyResult.OK(), qt.IsTrue)
+}
+
+func TestWriteDiffArtifacts_RejectsUnreplayedConcurrentMigration(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	baseSnapshot, err := migrationsnapshot.CaptureStable(os.DirFS(dir))
+	c.Assert(err, qt.IsNil)
+	foreignPath := filepath.Join(dir, "99_foreign.sql")
+	c.Assert(os.WriteFile(foreignPath, []byte("SELECT 99;"), 0o600), qt.IsNil)
+
+	result, err := writeDiffArtifacts(
+		t.Context(),
+		dir,
+		"planned",
+		[]MigrationFileContent{{SQL: "SELECT 1;"}},
+		baseSnapshot,
+	)
+
+	c.Assert(err, qt.ErrorMatches, `migration directory changed during migrate diff planning`)
+	c.Assert(result.MigrationPaths, qt.HasLen, 0)
+	contents, err := os.ReadFile(foreignPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(contents), qt.Equals, "SELECT 99;")
+	plannedFiles, err := filepath.Glob(filepath.Join(dir, "*_planned.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(plannedFiles, qt.HasLen, 0)
+	journalPath, err := publicationJournalPath(dir)
+	c.Assert(err, qt.IsNil)
+	_, err = os.Stat(journalPath)
+	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
+}
+
+func beginTestPublication(
+	c *qt.C,
+	dir string,
+	batch migrationBatch,
+	contents []MigrationFileContent,
+) (publicationJournal, *migratesum.SumFile) {
+	c.Helper()
+	baseSnapshot, err := migrationsnapshot.CaptureStable(os.DirFS(dir))
+	c.Assert(err, qt.IsNil)
+	_, sum, err := preparePublicationSnapshot(baseSnapshot, batch, contents)
+	c.Assert(err, qt.IsNil)
+	journal, err := beginPublication(dir, batch, sum.Bytes())
+	c.Assert(err, qt.IsNil)
+	return journal, sum
 }
 
 func TestRecoverPendingPublication_RemovesOrphanTemps(t *testing.T) {
@@ -226,7 +388,7 @@ func TestGenerateDiff_PostReplayReadFailureCleansAndReleasesLock(t *testing.T) {
 		) (*dbschematypes.DBSchema, error) {
 			return nil, readErr
 		},
-		cleanDevDatabase: cleanDevDatabaseAfterDiff,
+		withReplayedSnapshot: migrationreplay.WithReplayedSnapshotLocked,
 	})
 
 	c.Assert(err, qt.ErrorIs, readErr)
@@ -243,16 +405,25 @@ func TestGenerateDiff_FinalCleanupFailureIsNotRetried(t *testing.T) {
 
 	result, err := generateDiff(t.Context(), conn, opts, diffRuntime{
 		readDevSchema: readScopedDevSchema,
-		cleanDevDatabase: func(context.Context, *dbschema.DatabaseConnection) error {
+		withReplayedSnapshot: func(
+			ctx context.Context,
+			conn *dbschema.DatabaseConnection,
+			snapshot fs.FS,
+			format migrator.MigrationDirFormat,
+			consume func(*dbschema.DatabaseConnection) error,
+		) error {
 			cleanupCalls++
-			return cleanupErr
+			return errors.Join(
+				migrationreplay.WithReplayedSnapshotLocked(ctx, conn, snapshot, format, consume),
+				cleanupErr,
+			)
 		},
 	})
 
 	c.Assert(err, qt.ErrorIs, cleanupErr)
 	c.Assert(result.MigrationPaths, qt.HasLen, 0)
 	c.Assert(cleanupCalls, qt.Equals, 1)
-	assertSQLiteCleanupObjectCount(c, conn, 2)
+	assertSQLiteCleanupObjectCount(c, conn, 0)
 	assertDiffDirectoryReleased(c, opts.Dir)
 }
 
@@ -271,9 +442,18 @@ func TestGenerateDiff_JoinsPostReplayFailureAndCleanupFailure(t *testing.T) {
 		) (*dbschematypes.DBSchema, error) {
 			return nil, readErr
 		},
-		cleanDevDatabase: func(context.Context, *dbschema.DatabaseConnection) error {
+		withReplayedSnapshot: func(
+			ctx context.Context,
+			conn *dbschema.DatabaseConnection,
+			snapshot fs.FS,
+			format migrator.MigrationDirFormat,
+			consume func(*dbschema.DatabaseConnection) error,
+		) error {
 			cleanupCalls++
-			return cleanupErr
+			return errors.Join(
+				migrationreplay.WithReplayedSnapshotLocked(ctx, conn, snapshot, format, consume),
+				cleanupErr,
+			)
 		},
 	})
 
@@ -281,7 +461,7 @@ func TestGenerateDiff_JoinsPostReplayFailureAndCleanupFailure(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, cleanupErr)
 	c.Assert(result.MigrationPaths, qt.HasLen, 0)
 	c.Assert(cleanupCalls, qt.Equals, 1)
-	assertSQLiteCleanupObjectCount(c, conn, 2)
+	assertSQLiteCleanupObjectCount(c, conn, 0)
 	assertDiffDirectoryReleased(c, opts.Dir)
 }
 
@@ -293,11 +473,23 @@ func TestGenerateDiff_CancellationDuringCleanupPreventsArtifacts(t *testing.T) {
 
 	result, err := generateDiff(ctx, conn, opts, diffRuntime{
 		readDevSchema: readScopedDevSchema,
-		cleanDevDatabase: func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+		withReplayedSnapshot: func(
+			replayCtx context.Context,
+			replayConn *dbschema.DatabaseConnection,
+			snapshot fs.FS,
+			format migrator.MigrationDirFormat,
+			consume func(*dbschema.DatabaseConnection) error,
+		) error {
 			cleanupCalls++
-			cleanupErr := cleanDevDatabaseAfterDiff(ctx, conn)
+			replayErr := migrationreplay.WithReplayedSnapshotLocked(
+				replayCtx,
+				replayConn,
+				snapshot,
+				format,
+				consume,
+			)
 			cancel()
-			return cleanupErr
+			return replayErr
 		},
 	})
 
@@ -335,6 +527,28 @@ func TestTryAcquireDirLock_ReclaimsStaleFile(t *testing.T) {
 	c.Assert(lock.release(), qt.IsNil)
 
 	_, err = os.Stat(lockPath)
+	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
+}
+
+func TestGenerateDiff_SerializesSQLiteDevDatabaseAcrossDirectories(t *testing.T) {
+	c := qt.New(t)
+	conn, opts := prepareGenerateDiffFaultTest(c)
+	opts.Dir = filepath.Join(c.TempDir(), "other-migrations")
+	opts.LockTimeout = time.Millisecond
+	devLock, err := acquireDevDatabaseLock(t.Context(), conn, 0)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		c.Check(devLock.release(), qt.IsNil)
+	})
+
+	result, err := generateDiff(t.Context(), conn, opts, diffRuntime{
+		readDevSchema:        readScopedDevSchema,
+		withReplayedSnapshot: migrationreplay.WithReplayedSnapshotLocked,
+	})
+
+	c.Assert(err, qt.ErrorMatches, `acquire migrate diff dev database lock: acquire sqlite dev database realm lock: lock timeout after 1ms`)
+	c.Assert(result.MigrationPaths, qt.HasLen, 0)
+	_, err = os.Stat(opts.Dir)
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 }
 

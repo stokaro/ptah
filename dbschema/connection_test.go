@@ -80,6 +80,34 @@ func TestFormatDatabaseURL(t *testing.T) {
 	}
 }
 
+func TestDatabaseConnectionWithSession_DiscardsSessionState(t *testing.T) {
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(
+		t.Context(),
+		"sqlite://"+filepath.Join(t.TempDir(), "session.db"),
+	)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	err = conn.WithSession(t.Context(), func(scoped *dbschema.DatabaseConnection) error {
+		_, execErr := scoped.ExecContext(
+			t.Context(),
+			"CREATE TEMP TABLE replay_session_state (id INTEGER PRIMARY KEY)",
+		)
+		return execErr
+	})
+	c.Assert(err, qt.IsNil)
+
+	var count int
+	err = conn.QueryRowContext(
+		t.Context(),
+		"SELECT COUNT(*) FROM temp.sqlite_schema WHERE name = ?",
+		"replay_session_state",
+	).Scan(&count)
+	c.Assert(err, qt.IsNil)
+	c.Assert(count, qt.Equals, 0)
+}
+
 func TestConnectToDatabase_InvalidURL(t *testing.T) {
 	tests := []struct {
 		name   string

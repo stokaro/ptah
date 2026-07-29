@@ -41,17 +41,19 @@ func TestInspectSource_LocalSQLFileOnDev(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	schemaPath := filepath.Join(dir, "a.sql")
+	devPath := filepath.Join(dir, "dev.db")
 	c.Assert(os.WriteFile(schemaPath, []byte("CREATE TABLE users (\n  id INTEGER PRIMARY KEY,\n  email TEXT NOT NULL\n);\n"), 0o600), qt.IsNil)
 
 	rendered, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 		URL:    "file://" + schemaPath,
-		DevURL: "sqlite://" + filepath.Join(dir, "dev.db"),
+		DevURL: "sqlite://" + devPath,
 		Format: "hcl",
 	})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered, qt.Contains, `table "users"`)
 	c.Assert(rendered, qt.Contains, `column "email"`)
+	assertInspectSQLiteDevEmpty(c, devPath)
 }
 
 // TestInspectSource_DevDatabaseIsReset proves the dev database is reset
@@ -83,6 +85,7 @@ func TestInspectSource_MigrationDirOnDev(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
+	devPath := filepath.Join(dir, "dev.db")
 	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
 	c.Assert(os.WriteFile(
 		filepath.Join(migrationsDir, "1_init.sql"),
@@ -94,13 +97,28 @@ func TestInspectSource_MigrationDirOnDev(t *testing.T) {
 
 	rendered, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 		URL:    "file://" + migrationsDir,
-		DevURL: "sqlite://" + filepath.Join(dir, "dev.db"),
+		DevURL: "sqlite://" + devPath,
 		Format: "hcl",
 	})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered, qt.Contains, `table "replayed_users"`)
 	c.Assert(rendered, qt.Not(qt.Contains), "atlas_schema_revisions")
+	assertInspectSQLiteDevEmpty(c, devPath)
+}
+
+func assertInspectSQLiteDevEmpty(c *qt.C, path string) {
+	c.Helper()
+	conn := connectSQLite(c, path)
+	defer dbschema.CloseAndWarn(conn)
+	var count int
+	err := conn.QueryRowContext(c.Context(), `
+		SELECT COUNT(*)
+		FROM main.sqlite_schema
+		WHERE name NOT LIKE 'sqlite_%'
+	`).Scan(&count)
+	c.Assert(err, qt.IsNil)
+	c.Assert(count, qt.Equals, 0)
 }
 
 func TestInspectSource_EnvSchemaSource(t *testing.T) {

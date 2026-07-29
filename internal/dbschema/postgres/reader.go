@@ -9,11 +9,12 @@ import (
 
 	"github.com/stokaro/ptah/core/platform/capability"
 	"github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/sqlrunner"
 )
 
 // Reader reads schema from PostgreSQL databases
 type Reader struct {
-	db      *sql.DB
+	db      sqlrunner.Runner
 	schema  string
 	schemas []string
 	scoped  bool
@@ -21,13 +22,17 @@ type Reader struct {
 }
 
 // NewPostgreSQLReader creates a new PostgreSQL schema reader
-func NewPostgreSQLReader(db *sql.DB, schema string) *Reader {
+func NewPostgreSQLReader(db sqlrunner.Runner, schema string) *Reader {
 	return NewPostgreSQLReaderWithCapabilities(db, schema, capability.Postgres16())
 }
 
 // NewPostgreSQLReaderWithCapabilities creates a PostgreSQL-family schema reader
 // whose PostgreSQL-specific catalog reads are gated by target capabilities.
-func NewPostgreSQLReaderWithCapabilities(db *sql.DB, schema string, caps capability.Capabilities) *Reader {
+func NewPostgreSQLReaderWithCapabilities(
+	db sqlrunner.Runner,
+	schema string,
+	caps capability.Capabilities,
+) *Reader {
 	if schema == "" {
 		schema = "public"
 	}

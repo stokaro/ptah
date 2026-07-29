@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/stokaro/ptah/config"
@@ -118,6 +119,16 @@ type MigrationFiles struct {
 	ReportFile string              // Path to the first safety report file, when requested
 	Version    int64               // First migration version (timestamp)
 	Files      []MigrationFilePair // All generated migration file pairs, in apply order
+}
+
+// MigrationPlan is a fully validated migration that has not been written to
+// disk yet. WriteFiles publishes the planned migration once.
+type MigrationPlan struct {
+	mu           sync.Mutex
+	outputDir    string
+	reportFormat string
+	specs        []generatedMigrationSpec
+	written      bool
 }
 
 // EmptyMigrationOptions contains options for skeleton migration creation.
@@ -292,6 +303,18 @@ func emptyMigrationSQL(name, generatedAt, direction string) string {
 // yet propagate the context; future work may thread it through there too.
 // When opts.DBConn is supplied the context is currently unused.
 func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*MigrationFiles, error) {
+	plan, err := PlanMigration(ctx, opts)
+	if err != nil || plan == nil {
+		return nil, err
+	}
+	return plan.WriteFiles()
+}
+
+// PlanMigration performs schema loading, live introspection, diff planning,
+// safety checks, and optional shadow verification without writing migration
+// artifacts. Call WriteFiles only after any surrounding database cleanup or
+// other pre-publication work succeeds.
+func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*MigrationPlan, error) {
 	opts, err := normalizeGenerateMigrationOptions(opts)
 	if err != nil {
 		return nil, err
@@ -408,12 +431,29 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 		}
 	}
 
-	// 7. Create migration files
-	files, err := createMigrationFilesFromSpecs(opts.OutputDir, opts.ReportFormat, specs)
+	return &MigrationPlan{
+		outputDir:    opts.OutputDir,
+		reportFormat: opts.ReportFormat,
+		specs:        specs,
+	}, nil
+}
+
+// WriteFiles publishes the migration artifacts represented by the plan. A plan
+// is single-use after a successful publication.
+func (p *MigrationPlan) WriteFiles() (*MigrationFiles, error) {
+	if p == nil {
+		return nil, fmt.Errorf("migration plan is nil")
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.written {
+		return nil, fmt.Errorf("migration plan has already been written")
+	}
+	files, err := createMigrationFilesFromSpecs(p.outputDir, p.reportFormat, p.specs)
 	if err != nil {
 		return nil, fmt.Errorf("error creating migration files: %w", err)
 	}
-
+	p.written = true
 	return files, nil
 }
 

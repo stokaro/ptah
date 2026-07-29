@@ -38,7 +38,10 @@ whose state matters after the command exits.
 **A dev database** (`--dev-url`) is a disposable replay target used for
 validation: `ptah migrations validate` and `ptah migrations lint` clean it and
 replay the migration directory on it to prove the SQL executes, and
-Atlas-compatible verbs use it for planning and linting the same way.
+Atlas-compatible verbs use it for planning and linting the same way. Ptah
+cleans the replay realm before migration execution, after a failed replay, and
+after a successful replay. Commands that inspect the replayed state do so
+between execution and the final cleanup on the same pinned database session.
 
 **A shadow database** (`--shadow-db`) is a disposable verification target for
 commands that write or record migrations: `ptah migrations generate` replays
@@ -59,21 +62,27 @@ exercise a real server dialect — see
   database workflows clean user objects, and test seed steps bypass the
   seeder's protected-environment guards. Point these flags at scratch databases
   only, never at a real environment.
-- **Cleanup ordering depends on the workflow.** `ptah-compat migrate diff`
-  validates its inputs before cleaning the dev database and cleans again after
-  success or a failure once replay starts. Validation, lint, and shadow
-  workflows reset their disposable database before replay but do not promise
-  that it is empty when the command exits.
-- **Cleanup follows the configured scope.** SQLite cleanup affects the selected
-  attached schema, while MySQL and MariaDB cleanup affects the selected
-  database and refuses to proceed when foreign keys or views from another
-  database reference it. PostgreSQL cleanup refuses to proceed when objects
-  outside the selected schema depend on managed objects. It also refuses a
-  schema-owned PostgreSQL extension: `DROP EXTENSION` is database-scoped and
-  can remove extension members outside the selected schema, so schema cleanup
-  cannot make that operation safe. Use a disposable database, not only a
-  disposable schema, and install required extensions outside the replayed
-  migration history until Ptah has an explicit database-wide cleanup mode.
+- **Comparison scope does not reduce the replay realm.** Repeated
+  `--schema` values select which schemas Ptah compares and emits. They do not
+  limit which schemas a migration may create or which user schemas final
+  cleanup removes.
+- **The replay realm follows the database engine.** PostgreSQL, CockroachDB,
+  and YugabyteDB cleanup treats all user schemas and user-installed extensions
+  in the selected database as one dependency graph. MySQL, MariaDB, and
+  ClickHouse cleanup owns the selected database. SQL Server cleanup owns all
+  supported user schemas in the selected database. SQLite cleanup owns `main`
+  on one pinned session.
+- **Cross-realm operations fail before execution.** Ptah rejects direct
+  statements that switch or mutate another database, protected namespace,
+  server, cluster, temporary namespace, external file, or attached SQLite
+  database. It also rejects statement forms whose nested SQL cannot be
+  confined safely during replay.
+- **Replay cleanup is serialized by realm.** PostgreSQL, YugabyteDB, MySQL,
+  MariaDB, and SQL Server use database advisory locks. SQLite, ClickHouse, and
+  CockroachDB use an operating-system file lock keyed by the normalized
+  database identity, which coordinates Ptah processes on the same host.
+  Cross-host ClickHouse and CockroachDB replay is unsupported because neither
+  engine provides the required effective session advisory lock.
 - **Match the target engine.** Replay verification proves the SQL executes on
   the engine it ran against, so a dev or shadow database should run the same
   engine (and ideally the same version) as the target.

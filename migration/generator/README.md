@@ -59,6 +59,31 @@ func main() {
 }
 ```
 
+### Planning before publication
+
+`GenerateMigration` plans and writes in one call. Use `PlanMigration` when a
+caller must finish database cleanup or another pre-publication step before any
+migration file appears:
+
+```go
+plan, err := generator.PlanMigration(ctx, opts)
+if err != nil {
+    return err
+}
+if plan == nil {
+    return nil
+}
+
+files, err := plan.WriteFiles()
+if err != nil {
+    return err
+}
+fmt.Printf("published %s and %s\n", files.UpFile, files.DownFile)
+```
+
+Planning does not write migration artifacts. A successful `WriteFiles` call
+consumes the plan; call it once after all surrounding work has succeeded.
+
 ### Migration Process
 
 The generator follows this process:

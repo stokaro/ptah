@@ -14,6 +14,7 @@ import (
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/sqlident"
+	"github.com/stokaro/ptah/internal/sqlrunner"
 )
 
 const sessionRestoreTimeout = 5 * time.Second
@@ -24,7 +25,7 @@ func quoteQualifiedIdent(schema, name string) string {
 
 // Writer applies schema changes to a SQLite database.
 type Writer struct {
-	db     *sql.DB
+	db     sqlrunner.Runner
 	conn   *sql.Conn
 	schema string
 	dryRun bool
@@ -39,29 +40,63 @@ type transactionWriter struct {
 
 // NewSQLiteWriter creates a SQLite schema writer.
 func NewSQLiteWriter(db *sql.DB, schema string) *Writer {
-	return &Writer{db: db, schema: normalizeSchema(schema)}
+	if db == nil {
+		return NewSQLiteWriterForRunner(nil, schema)
+	}
+	return NewSQLiteWriterForRunner(db, schema)
+}
+
+// NewSQLiteWriterForRunner creates a writer bound to a pool-backed runner.
+func NewSQLiteWriterForRunner(runner sqlrunner.Runner, schema string) *Writer {
+	return &Writer{db: runner, schema: normalizeSchema(schema)}
 }
 
 // NewSQLiteWriterForConnection creates a writer pinned to an existing SQLite
 // connection. Use it for connection-local state such as attached databases.
 // The caller retains ownership of conn.
 func NewSQLiteWriterForConnection(conn *sql.Conn, schema string) *Writer {
-	return &Writer{conn: conn, schema: normalizeSchema(schema)}
+	return NewSQLiteWriterForPinnedRunner(
+		sqlrunner.NewConn(context.Background(), conn),
+		conn,
+		schema,
+	)
+}
+
+// NewSQLiteWriterForPinnedRunner creates a writer bound to runner while
+// retaining the underlying session for SQLite connection-local cleanup.
+func NewSQLiteWriterForPinnedRunner(
+	runner sqlrunner.Runner,
+	conn *sql.Conn,
+	schema string,
+) *Writer {
+	return &Writer{
+		db:     runner,
+		conn:   conn,
+		schema: normalizeSchema(schema),
+	}
 }
 
 // ExecuteSQL executes a standalone SQL statement.
 func (w *Writer) ExecuteSQL(ctx context.Context, sqlExpr string, args ...any) error {
-	if w.dryRun {
-		slog.Info("[DRY RUN] Would execute SQL", "sql", sqlExpr, "args", args)
-		return nil
-	}
-	if w.db == nil && w.conn == nil {
-		return fmt.Errorf("no database connection")
-	}
-	if _, err := w.execContext(ctx, sqlExpr, args...); err != nil {
+	_, err := w.ExecContext(ctx, sqlExpr, args...)
+	if err != nil {
 		return fmt.Errorf("sqlite: SQL execution failed: %w\nSQL: %s", err, sqlExpr)
 	}
 	return nil
+}
+
+// ExecContext executes a standalone SQL statement and returns its driver
+// result. DatabaseConnection uses this method when a connection-bound writer
+// is installed as its active executor.
+func (w *Writer) ExecContext(ctx context.Context, sqlExpr string, args ...any) (sql.Result, error) {
+	if w.dryRun {
+		slog.Info("[DRY RUN] Would execute SQL", "sql", sqlExpr, "args", args)
+		return nil, nil
+	}
+	if w.db == nil && w.conn == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+	return w.execContext(ctx, sqlExpr, args...)
 }
 
 // BeginTransaction starts a transaction and returns a transaction-scoped writer.
@@ -139,6 +174,33 @@ type cleanupObject struct {
 
 // DropAllTables drops all user tables and views from the configured SQLite schema.
 func (w *Writer) DropAllTables(ctx context.Context) (resultErr error) {
+	return w.dropAllTables(ctx, false)
+}
+
+// DropDatabaseRealm removes every user object from a pinned SQLite main
+// database. Replay callers use this stronger contract so revision state cannot
+// leak between runs.
+func (w *Writer) DropDatabaseRealm(ctx context.Context) error {
+	if w.conn == nil {
+		return fmt.Errorf("sqlite: database-realm cleanup requires a pinned connection")
+	}
+	if !strings.EqualFold(w.cleanupSchema(), "main") {
+		return fmt.Errorf(
+			"sqlite: database-realm cleanup requires schema %q, got %q",
+			"main",
+			w.cleanupSchema(),
+		)
+	}
+	if err := inspectDatabaseRealm(ctx, w.conn); err != nil {
+		return err
+	}
+	if err := w.dropAllTables(ctx, true); err != nil {
+		return err
+	}
+	return verifyDatabaseRealmEmpty(ctx, w.conn)
+}
+
+func (w *Writer) dropAllTables(ctx context.Context, includeRevisionTable bool) (resultErr error) {
 	if w.dryRun {
 		return nil
 	}
@@ -152,6 +214,10 @@ func (w *Writer) DropAllTables(ctx context.Context) (resultErr error) {
 			resultErr = errors.Join(resultErr, fmt.Errorf("sqlite: close cleanup connection: %w", closeErr))
 		}
 	}()
+
+	if err := refuseCleanupWithTempViews(ctx, conn, w.cleanupSchema()); err != nil {
+		return err
+	}
 
 	var tx *sql.Tx
 	committed := false
@@ -187,7 +253,7 @@ func (w *Writer) DropAllTables(ctx context.Context) (resultErr error) {
 	if err != nil {
 		return fmt.Errorf("sqlite: begin drop transaction: %w", err)
 	}
-	objects, err := w.listCleanupObjects(ctx, tx)
+	objects, err := w.listCleanupObjects(ctx, tx, includeRevisionTable)
 	if err != nil {
 		return err
 	}
@@ -206,6 +272,112 @@ func (w *Writer) DropAllTables(ctx context.Context) (resultErr error) {
 	}
 	committed = true
 
+	return nil
+}
+
+func inspectDatabaseRealm(ctx context.Context, conn *sql.Conn) error {
+	attachments, err := listAuxiliaryDatabases(ctx, conn)
+	if err != nil {
+		return err
+	}
+	if len(attachments) > 0 {
+		return fmt.Errorf(
+			"sqlite: refusing database-realm cleanup with attached databases: %s",
+			strings.Join(attachments, ", "),
+		)
+	}
+	tempObjects, err := listSchemaObjects(ctx, conn, "temp")
+	if err != nil {
+		return err
+	}
+	if len(tempObjects) > 0 {
+		return fmt.Errorf(
+			"sqlite: refusing database-realm cleanup with TEMP objects: %s",
+			strings.Join(tempObjects, ", "),
+		)
+	}
+	return nil
+}
+
+func verifyDatabaseRealmEmpty(ctx context.Context, conn *sql.Conn) error {
+	if err := inspectDatabaseRealm(ctx, conn); err != nil {
+		return err
+	}
+	objects, err := listSchemaObjects(ctx, conn, "main")
+	if err != nil {
+		return err
+	}
+	if len(objects) > 0 {
+		return fmt.Errorf(
+			"sqlite: database-realm cleanup left user objects: %s",
+			strings.Join(objects, ", "),
+		)
+	}
+	return nil
+}
+
+func listAuxiliaryDatabases(ctx context.Context, conn *sql.Conn) ([]string, error) {
+	rows, err := conn.QueryContext(ctx, "PRAGMA database_list")
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: inspect attached databases: %w", err)
+	}
+	defer rows.Close()
+
+	var names []string
+	for rows.Next() {
+		var sequence int
+		var name, filename string
+		if err := rows.Scan(&sequence, &name, &filename); err != nil {
+			return nil, fmt.Errorf("sqlite: scan attached database: %w", err)
+		}
+		if !strings.EqualFold(name, "main") && !strings.EqualFold(name, "temp") {
+			names = append(names, name)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sqlite: iterate attached databases: %w", err)
+	}
+	return names, nil
+}
+
+func listSchemaObjects(ctx context.Context, conn *sql.Conn, schema string) ([]string, error) {
+	//nolint:gosec // G202: schema is an identifier quoted by sqlident, not an SQL value.
+	query := "SELECT type || ':' || name FROM " + quoteQualifiedIdent(schema, "sqlite_schema") + `
+		WHERE name NOT LIKE 'sqlite_%'
+		ORDER BY type, name
+	`
+	rows, err := conn.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: inspect %s schema objects: %w", schema, err)
+	}
+	defer rows.Close()
+
+	var objects []string
+	for rows.Next() {
+		var object string
+		if err := rows.Scan(&object); err != nil {
+			return nil, fmt.Errorf("sqlite: scan %s schema object: %w", schema, err)
+		}
+		objects = append(objects, object)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sqlite: iterate %s schema objects: %w", schema, err)
+	}
+	return objects, nil
+}
+
+func refuseCleanupWithTempViews(ctx context.Context, conn *sql.Conn, schema string) error {
+	var exists bool
+	const query = `SELECT EXISTS (SELECT 1 FROM temp.sqlite_schema WHERE type = 'view')`
+	if err := conn.QueryRowContext(ctx, query).Scan(&exists); err != nil {
+		return fmt.Errorf("sqlite: inspect TEMP views: %w", err)
+	}
+	if exists {
+		return fmt.Errorf(
+			"sqlite: refusing to clean schema %q: TEMP views exist on the cleanup connection and may depend on it",
+			schema,
+		)
+	}
 	return nil
 }
 
@@ -245,7 +417,11 @@ func (w *Writer) acquireCleanupConnection(ctx context.Context) (*sql.Conn, func(
 	if w.db == nil {
 		return nil, nil, fmt.Errorf("no database connection")
 	}
-	conn, err := w.db.Conn(ctx)
+	connector, ok := w.db.(sqlrunner.Connector)
+	if !ok {
+		return nil, nil, fmt.Errorf("database runner cannot acquire a cleanup connection")
+	}
+	conn, err := connector.Conn(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -259,17 +435,21 @@ func (w *Writer) cleanupSchema() string {
 	return w.schema
 }
 
-func (w *Writer) listCleanupObjects(ctx context.Context, tx *sql.Tx) ([]cleanupObject, error) {
+func (w *Writer) listCleanupObjects(
+	ctx context.Context,
+	tx *sql.Tx,
+	includeRevisionTable bool,
+) ([]cleanupObject, error) {
 	const query = `
 		SELECT name, CASE type WHEN 'view' THEN 'view' ELSE 'table' END
 		FROM pragma_table_list
 		WHERE schema = ?
 		  AND type IN ('table', 'view', 'virtual')
 		  AND name NOT LIKE 'sqlite_%'
-		  AND name <> 'schema_migrations'
+		  AND (? OR name <> 'schema_migrations')
 		ORDER BY CASE type WHEN 'view' THEN 0 ELSE 1 END, name
 	`
-	rows, err := tx.QueryContext(ctx, query, w.cleanupSchema())
+	rows, err := tx.QueryContext(ctx, query, w.cleanupSchema(), includeRevisionTable)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: list schema objects: %w", err)
 	}

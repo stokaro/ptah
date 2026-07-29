@@ -9,11 +9,12 @@ import (
 	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"github.com/stokaro/ptah/dbschema/types"
+	"github.com/stokaro/ptah/internal/sqlrunner"
 )
 
 // Reader reads schema information from MySQL/MariaDB databases
 type Reader struct {
-	db     *sql.DB
+	db     sqlrunner.Runner
 	schema string
 }
 
@@ -33,7 +34,7 @@ type tableColumnKey struct {
 }
 
 // NewMySQLReader creates a new MySQL schema reader
-func NewMySQLReader(db *sql.DB, schema string) *Reader {
+func NewMySQLReader(db sqlrunner.Runner, schema string) *Reader {
 	if schema == "" {
 		schema = "information_schema"
 	}

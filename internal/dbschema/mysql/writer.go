@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -14,9 +15,13 @@ import (
 	"github.com/stokaro/ptah/core/platform"
 	"github.com/stokaro/ptah/dbschema/types"
 	"github.com/stokaro/ptah/internal/sqlident"
+	"github.com/stokaro/ptah/internal/sqlrunner"
 )
 
-const sessionRestoreTimeout = 5 * time.Second
+const (
+	sessionRestoreTimeout = 5 * time.Second
+	metadataLockPollDelay = 10 * time.Millisecond
+)
 
 func quoteIdent(name string) string {
 	return sqlident.Quote(platform.MySQL, name)
@@ -28,10 +33,13 @@ func quoteQualifiedIdent(schema, name string) string {
 
 // Writer writes schemas to MySQL/MariaDB databases
 type Writer struct {
-	db      *sql.DB
-	schema  string
-	dialect string
-	dryRun  bool
+	db            sqlrunner.Runner
+	connector     sqlrunner.Connector
+	cleanupConn   *sql.Conn
+	schema        string
+	dialect       string
+	serverVersion string
+	dryRun        bool
 }
 
 type transactionWriter struct {
@@ -43,10 +51,59 @@ type transactionWriter struct {
 
 // NewMySQLWriter creates a new MySQL-family schema writer.
 func NewMySQLWriter(db *sql.DB, schema, dialect string) *Writer {
+	return NewMySQLWriterWithServerVersion(db, schema, dialect, "")
+}
+
+// NewMySQLWriterWithServerVersion creates a MySQL-family schema writer using
+// server metadata already resolved by the connection layer.
+func NewMySQLWriterWithServerVersion(db *sql.DB, schema, dialect, serverVersion string) *Writer {
+	if db == nil {
+		return newMySQLWriter(nil, nil, nil, schema, dialect, serverVersion)
+	}
+	return newMySQLWriter(db, db, nil, schema, dialect, serverVersion)
+}
+
+// NewMySQLWriterForRunner creates a writer whose ordinary SQL runs on runner
+// while multi-session cleanup acquires auxiliary connections from connector.
+func NewMySQLWriterForRunner(
+	runner sqlrunner.Runner,
+	connector sqlrunner.Connector,
+	schema,
+	dialect,
+	serverVersion string,
+) *Writer {
+	return newMySQLWriter(runner, connector, nil, schema, dialect, serverVersion)
+}
+
+// NewMySQLWriterForPinnedRunner creates a writer whose ordinary SQL and
+// primary cleanup operations use the pinned session. connector supplies the
+// auxiliary sessions needed for the protected view-drop handoff.
+func NewMySQLWriterForPinnedRunner(
+	runner sqlrunner.Runner,
+	connector sqlrunner.Connector,
+	cleanupConn *sql.Conn,
+	schema,
+	dialect,
+	serverVersion string,
+) *Writer {
+	return newMySQLWriter(runner, connector, cleanupConn, schema, dialect, serverVersion)
+}
+
+func newMySQLWriter(
+	runner sqlrunner.Runner,
+	connector sqlrunner.Connector,
+	cleanupConn *sql.Conn,
+	schema,
+	dialect,
+	serverVersion string,
+) *Writer {
 	return &Writer{
-		db:      db,
-		schema:  schema,
-		dialect: platform.NormalizeDialect(dialect),
+		db:            runner,
+		connector:     connector,
+		cleanupConn:   cleanupConn,
+		schema:        schema,
+		dialect:       platform.NormalizeDialect(dialect),
+		serverVersion: serverVersion,
 	}
 }
 
@@ -153,47 +210,71 @@ type cleanupForeignKey struct {
 }
 
 // DropAllTables drops all user schema objects in the configured database.
-func (w *Writer) DropAllTables(ctx context.Context) (resultErr error) {
+func (w *Writer) DropAllTables(ctx context.Context) error {
+	return w.withCleanupConnection(ctx, "cleanup", func(conn *sql.Conn) error {
+		return w.dropAllTablesOnConnection(ctx, conn)
+	})
+}
+
+func (w *Writer) withCleanupConnection(
+	ctx context.Context,
+	label string,
+	use func(*sql.Conn) error,
+) (resultErr error) {
 	if w.dryRun {
 		return nil
 	}
 	if w.db == nil {
 		return fmt.Errorf("no database connection")
 	}
+	if w.connector == nil {
+		return fmt.Errorf("mysql: cleanup requires a database connection pool")
+	}
 
-	conn, err := w.db.Conn(ctx)
+	conn := w.cleanupConn
+	if conn != nil {
+		return use(conn)
+	}
+
+	conn, err := acquireAuxiliaryConnection(ctx, w.connector, label)
 	if err != nil {
-		return fmt.Errorf("mysql: acquire cleanup connection: %w", err)
+		return err
 	}
 	defer func() {
-		closeErr := conn.Close()
-		if closeErr != nil && !errors.Is(closeErr, sql.ErrConnDone) {
-			resultErr = errors.Join(resultErr, fmt.Errorf("mysql: close cleanup connection: %w", closeErr))
-		}
+		resultErr = errors.Join(resultErr, closeCleanupConnection(conn, label))
 	}()
+	return use(conn)
+}
 
+func (w *Writer) dropAllTablesOnConnection(
+	ctx context.Context,
+	conn *sql.Conn,
+) error {
 	schema, err := w.cleanupSchema(ctx, conn)
 	if err != nil {
 		return err
 	}
-	foreignKeyChecks, err := readForeignKeyChecks(ctx, conn)
+	serverVersion, err := w.cleanupServerVersion(ctx, conn)
 	if err != nil {
 		return err
 	}
-	if !foreignKeyChecks {
-		defer func() {
-			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), sessionRestoreTimeout)
-			defer cancel()
-			if _, restoreErr := conn.ExecContext(cleanupCtx, "SET FOREIGN_KEY_CHECKS = 0"); restoreErr != nil {
-				discardConn(conn)
-				resultErr = errors.Join(resultErr, fmt.Errorf("mysql: restore foreign key checks: %w", restoreErr))
-			}
-		}()
-		if _, err := conn.ExecContext(ctx, "SET FOREIGN_KEY_CHECKS = 1"); err != nil {
-			return fmt.Errorf("mysql: enable foreign key checks for cleanup: %w", err)
-		}
+	if w.dialect == platform.MySQL && !supportsMySQLViewTableUsage(serverVersion) {
+		return fmt.Errorf(
+			"mysql: refusing to clean database %q: server version %q lacks "+
+				"information_schema.VIEW_TABLE_USAGE required for complete external-view dependency checks",
+			schema,
+			serverVersion,
+		)
 	}
+	if err := requireGlobalMetadataVisibility(ctx, conn, schema, w.dialect); err != nil {
+		return err
+	}
+	return withForeignKeyChecksEnabled(ctx, conn, func() error {
+		return w.dropDatabaseObjects(ctx, conn, schema)
+	})
+}
 
+func (w *Writer) dropDatabaseObjects(ctx context.Context, conn *sql.Conn, schema string) error {
 	foreignKeys, err := listInternalForeignKeys(ctx, conn, schema)
 	if err != nil {
 		return err
@@ -202,6 +283,8 @@ func (w *Writer) DropAllTables(ctx context.Context) (resultErr error) {
 	if err != nil {
 		return err
 	}
+	groups := groupCleanupObjects(objects)
+
 	// Run dependency checks immediately before the first destructive statement.
 	// FOREIGN_KEY_CHECKS remains enabled, so a cross-database foreign key
 	// created after this preflight still makes DROP TABLE fail.
@@ -211,7 +294,71 @@ func (w *Writer) DropAllTables(ctx context.Context) (resultErr error) {
 	if err := rejectExternalViews(ctx, conn, schema, w.dialect); err != nil {
 		return err
 	}
+	if err := w.dropProtectedViews(ctx, conn, schema, groups.views, groups.tables); err != nil {
+		return err
+	}
+	if err := dropCleanupForeignKeys(ctx, conn, schema, foreignKeys); err != nil {
+		return err
+	}
+	if err := w.dropProtectedObjects(ctx, conn, schema, groups.tables); err != nil {
+		return err
+	}
+	return dropRemainingCleanupObjects(ctx, conn, schema, groups.remaining)
+}
 
+func withForeignKeyChecksEnabled(
+	ctx context.Context,
+	conn *sql.Conn,
+	use func() error,
+) (resultErr error) {
+	foreignKeyChecks, err := readForeignKeyChecks(ctx, conn)
+	if err != nil {
+		return err
+	}
+	if foreignKeyChecks {
+		return use()
+	}
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), sessionRestoreTimeout)
+		defer cancel()
+		if _, restoreErr := conn.ExecContext(cleanupCtx, "SET FOREIGN_KEY_CHECKS = 0"); restoreErr != nil {
+			discardConn(conn)
+			resultErr = errors.Join(resultErr, fmt.Errorf("mysql: restore foreign key checks: %w", restoreErr))
+		}
+	}()
+	if _, err := conn.ExecContext(ctx, "SET FOREIGN_KEY_CHECKS = 1"); err != nil {
+		return fmt.Errorf("mysql: enable foreign key checks for cleanup: %w", err)
+	}
+	return use()
+}
+
+type cleanupObjectGroups struct {
+	views     []string
+	tables    []string
+	remaining []cleanupObject
+}
+
+func groupCleanupObjects(objects []cleanupObject) cleanupObjectGroups {
+	var groups cleanupObjectGroups
+	for _, object := range objects {
+		switch object.Kind {
+		case "VIEW":
+			groups.views = append(groups.views, object.Name)
+		case "TABLE":
+			groups.tables = append(groups.tables, object.Name)
+		default:
+			groups.remaining = append(groups.remaining, object)
+		}
+	}
+	return groups
+}
+
+func dropCleanupForeignKeys(
+	ctx context.Context,
+	conn *sql.Conn,
+	schema string,
+	foreignKeys []cleanupForeignKey,
+) error {
 	for _, foreignKey := range foreignKeys {
 		//nolint:gosec // G202: schema and catalog identifiers are emitted only through identifier quoting.
 		dropSQL := "ALTER TABLE " + quoteQualifiedIdent(schema, foreignKey.Table) +
@@ -226,11 +373,17 @@ func (w *Writer) DropAllTables(ctx context.Context) (resultErr error) {
 			)
 		}
 	}
+	return nil
+}
 
+func dropRemainingCleanupObjects(
+	ctx context.Context,
+	conn *sql.Conn,
+	schema string,
+	objects []cleanupObject,
+) error {
 	// MySQL DDL implicitly commits, so cleanup deliberately avoids a transaction.
 	for _, object := range objects {
-		// Identifiers cannot be bound as parameters; quoteIdent escapes every
-		// backtick in the schema and name returned by information_schema.
 		//nolint:gosec // G202: schema and object.Name are emitted only through identifier quoting.
 		dropSQL := "DROP " + object.Kind + " IF EXISTS " + quoteQualifiedIdent(schema, object.Name)
 		if _, err := conn.ExecContext(ctx, dropSQL); err != nil {
@@ -238,8 +391,394 @@ func (w *Writer) DropAllTables(ctx context.Context) (resultErr error) {
 				strings.ToLower(object.Kind), object.Name, err, dropSQL)
 		}
 	}
-
 	return nil
+}
+
+// DropDatabaseRealm drops the selected MySQL/MariaDB database realm and
+// verifies that no supported user object remains.
+func (w *Writer) DropDatabaseRealm(ctx context.Context) error {
+	if w.dryRun {
+		return nil
+	}
+	return w.withCleanupConnection(ctx, "realm-cleanup", func(conn *sql.Conn) error {
+		if err := w.dropAllTablesOnConnection(ctx, conn); err != nil {
+			return err
+		}
+		return w.verifyDatabaseRealm(ctx, conn)
+	})
+}
+
+func (w *Writer) verifyDatabaseRealm(ctx context.Context, conn *sql.Conn) error {
+	schema, err := w.cleanupSchema(ctx, conn)
+	if err != nil {
+		return err
+	}
+	objects, err := listCleanupObjects(ctx, conn, schema)
+	if err != nil {
+		return err
+	}
+	if len(objects) > 0 {
+		return fmt.Errorf(
+			"mysql: database-realm cleanup left %d user objects; first residual object is %s %s",
+			len(objects),
+			strings.ToLower(objects[0].Kind),
+			objects[0].Name,
+		)
+	}
+	return nil
+}
+
+func (w *Writer) cleanupServerVersion(ctx context.Context, conn *sql.Conn) (string, error) {
+	if strings.TrimSpace(w.serverVersion) != "" {
+		return w.serverVersion, nil
+	}
+	var version string
+	if err := conn.QueryRowContext(ctx, "SELECT VERSION()").Scan(&version); err != nil {
+		return "", fmt.Errorf("mysql: read server version for cleanup: %w", err)
+	}
+	return version, nil
+}
+
+func requireGlobalMetadataVisibility(
+	ctx context.Context,
+	conn *sql.Conn,
+	schema,
+	dialect string,
+) error {
+	privilegeNames := "SELECT, DROP, ALTER, ALTER ROUTINE, EVENT, LOCK TABLES, and PROCESS"
+	if platform.NormalizeDialect(dialect) == platform.MariaDB {
+		privilegeNames = "SELECT, DROP, ALTER, ALTER ROUTINE, EVENT, LOCK TABLES, PROCESS, and SHOW VIEW"
+	}
+
+	var hasSelect bool
+	var hasDrop bool
+	var hasAlter bool
+	var hasAlterRoutine bool
+	var hasEvent bool
+	var hasLockTables bool
+	var hasProcess bool
+	var hasShowView bool
+	if err := conn.QueryRowContext(ctx, `
+		SELECT
+			COALESCE(MAX(privilege_type = 'SELECT'), 0),
+			COALESCE(MAX(privilege_type = 'DROP'), 0),
+			COALESCE(MAX(privilege_type = 'ALTER'), 0),
+			COALESCE(MAX(privilege_type = 'ALTER ROUTINE'), 0),
+			COALESCE(MAX(privilege_type = 'EVENT'), 0),
+			COALESCE(MAX(privilege_type = 'LOCK TABLES'), 0),
+			COALESCE(MAX(privilege_type = 'PROCESS'), 0),
+			COALESCE(MAX(privilege_type = 'SHOW VIEW'), 0)
+		FROM information_schema.user_privileges
+		WHERE grantee = CONCAT(
+			QUOTE(SUBSTRING_INDEX(CURRENT_USER(), '@', 1)),
+			'@',
+			QUOTE(SUBSTRING_INDEX(CURRENT_USER(), '@', -1))
+		)
+		  AND privilege_type IN (
+		    'SELECT',
+		    'DROP',
+		    'ALTER',
+		    'ALTER ROUTINE',
+		    'EVENT',
+		    'LOCK TABLES',
+		    'PROCESS',
+		    'SHOW VIEW'
+		  )
+	`).Scan(
+		&hasSelect,
+		&hasDrop,
+		&hasAlter,
+		&hasAlterRoutine,
+		&hasEvent,
+		&hasLockTables,
+		&hasProcess,
+		&hasShowView,
+	); err != nil {
+		return fmt.Errorf("mysql: prove global metadata visibility: %w", err)
+	}
+	hasRequiredPrivileges := hasSelect &&
+		hasDrop &&
+		hasAlter &&
+		hasAlterRoutine &&
+		hasEvent &&
+		hasLockTables &&
+		hasProcess
+	if platform.NormalizeDialect(dialect) == platform.MariaDB {
+		hasRequiredPrivileges = hasRequiredPrivileges && hasShowView
+	}
+	if !hasRequiredPrivileges {
+		return fmt.Errorf(
+			"mysql: refusing to clean database %q: global %s privileges are required "+
+				"to prove complete metadata visibility and protect destructive DDL",
+			schema,
+			privilegeNames,
+		)
+	}
+
+	rows, err := conn.QueryContext(ctx, "SHOW GRANTS")
+	if err != nil {
+		return fmt.Errorf("mysql: inspect metadata visibility restrictions: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var grant string
+		if err := rows.Scan(&grant); err != nil {
+			return fmt.Errorf("mysql: scan metadata visibility grant: %w", err)
+		}
+		if strings.HasPrefix(strings.ToUpper(strings.TrimSpace(grant)), "REVOKE ") {
+			return fmt.Errorf(
+				"mysql: refusing to clean database %q: partial privilege revokes "+
+					"prevent proving complete metadata visibility",
+				schema,
+			)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("mysql: iterate metadata visibility grants: %w", err)
+	}
+	return nil
+}
+
+func (w *Writer) dropProtectedViews(
+	ctx context.Context,
+	lockConn *sql.Conn,
+	schema string,
+	views,
+	tables []string,
+) (resultErr error) {
+	if len(views) == 0 {
+		return nil
+	}
+
+	dropConn, err := acquireAuxiliaryConnection(ctx, w.connector, "view-drop")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		resultErr = errors.Join(resultErr, closeCleanupConnection(dropConn, "view-drop"))
+	}()
+	monitorConn, err := acquireAuxiliaryConnection(ctx, w.connector, "metadata-lock monitor")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		resultErr = errors.Join(resultErr, closeCleanupConnection(monitorConn, "metadata-lock monitor"))
+	}()
+
+	lockTargets := make([]string, 0, len(views)+len(tables))
+	lockTargets = append(lockTargets, views...)
+	lockTargets = append(lockTargets, tables...)
+	if _, err := lockConn.ExecContext(ctx, buildLockTablesSQL(schema, lockTargets)); err != nil {
+		return fmt.Errorf("mysql: lock cleanup views and tables: %w", err)
+	}
+	locked := true
+	defer func() {
+		if locked {
+			resultErr = errors.Join(resultErr, releaseTableLocks(ctx, lockConn))
+		}
+	}()
+
+	if err := rejectExternalForeignKeys(ctx, lockConn, schema); err != nil {
+		return err
+	}
+	if err := rejectExternalViews(ctx, lockConn, schema, w.dialect); err != nil {
+		return err
+	}
+
+	var dropConnectionID int64
+	if err := dropConn.QueryRowContext(ctx, "SELECT CONNECTION_ID()").Scan(&dropConnectionID); err != nil {
+		return fmt.Errorf("mysql: read view-drop connection ID: %w", err)
+	}
+	dropSQL := buildDropObjectsSQL(schema, "VIEW", views)
+	dropCtx, cancelDrop := context.WithCancel(ctx)
+	defer cancelDrop()
+	dropDone := make(chan error, 1)
+	go func() {
+		_, dropErr := dropConn.ExecContext(dropCtx, dropSQL)
+		dropDone <- formatDropObjectsError("VIEW", views, dropSQL, dropErr)
+	}()
+
+	dropErr, finished, waitErr := waitForOwnedMetadataLock(
+		ctx,
+		monitorConn,
+		dropConnectionID,
+		dropDone,
+	)
+	if waitErr != nil {
+		cancelDrop()
+		return errors.Join(waitErr, waitForCanceledViewDrop(dropDone))
+	}
+	if finished {
+		unlockErr := releaseTableLocks(ctx, lockConn)
+		locked = false
+		return errors.Join(dropErr, unlockErr)
+	}
+	unlockErr := releaseTableLocks(ctx, lockConn)
+	locked = false
+	if unlockErr != nil {
+		cancelDrop()
+		return errors.Join(unlockErr, waitForCanceledViewDrop(dropDone))
+	}
+	return <-dropDone
+}
+
+func waitForOwnedMetadataLock(
+	ctx context.Context,
+	conn *sql.Conn,
+	dropConnectionID int64,
+	dropDone <-chan error,
+) (dropErr error, finished bool, resultErr error) {
+	ticker := time.NewTicker(metadataLockPollDelay)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case dropErr := <-dropDone:
+			return dropErr, true, nil
+		default:
+		}
+
+		var ownedWaiters int
+		var otherWaiters int
+		if err := conn.QueryRowContext(ctx, `
+			SELECT
+				COALESCE(SUM(id = ?), 0),
+				COALESCE(SUM(id <> ?), 0)
+			FROM information_schema.processlist
+			WHERE LOWER(COALESCE(state, '')) LIKE '%metadata lock%'
+		`, dropConnectionID, dropConnectionID).Scan(&ownedWaiters, &otherWaiters); err != nil {
+			return nil, false, fmt.Errorf("mysql: inspect metadata-lock waiters: %w", err)
+		}
+		if otherWaiters > 0 {
+			return nil, false, fmt.Errorf(
+				"mysql: refusing view cleanup: %d competing metadata-lock waiters appeared before the protected DROP VIEW handoff",
+				otherWaiters,
+			)
+		}
+		if ownedWaiters == 1 {
+			return nil, false, nil
+		}
+
+		select {
+		case dropErr := <-dropDone:
+			return dropErr, true, nil
+		case <-ctx.Done():
+			return nil, false, fmt.Errorf(
+				"mysql: wait for protected DROP VIEW metadata lock: %w",
+				ctx.Err(),
+			)
+		case <-ticker.C:
+		}
+	}
+}
+
+func acquireAuxiliaryConnection(
+	ctx context.Context,
+	connector sqlrunner.Connector,
+	label string,
+) (*sql.Conn, error) {
+	acquireCtx, cancel := context.WithTimeout(ctx, sessionRestoreTimeout)
+	defer cancel()
+	conn, err := connector.Conn(acquireCtx)
+	if err != nil {
+		return nil, fmt.Errorf("mysql: acquire %s connection: %w", label, err)
+	}
+	return conn, nil
+}
+
+func waitForCanceledViewDrop(dropDone <-chan error) error {
+	timer := time.NewTimer(sessionRestoreTimeout)
+	defer timer.Stop()
+	select {
+	case err := <-dropDone:
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
+		return err
+	case <-timer.C:
+		return fmt.Errorf("mysql: canceled DROP VIEW did not stop within %s", sessionRestoreTimeout)
+	}
+}
+
+func closeCleanupConnection(conn *sql.Conn, label string) error {
+	if err := conn.Close(); err != nil && !errors.Is(err, sql.ErrConnDone) {
+		return fmt.Errorf("mysql: close %s connection: %w", label, err)
+	}
+	return nil
+}
+
+func (w *Writer) dropProtectedObjects(
+	ctx context.Context,
+	conn *sql.Conn,
+	schema string,
+	names []string,
+) (resultErr error) {
+	if len(names) == 0 {
+		return nil
+	}
+
+	lockSQL := buildLockTablesSQL(schema, names)
+	if _, err := conn.ExecContext(ctx, lockSQL); err != nil {
+		return fmt.Errorf("mysql: lock cleanup tables: %w", err)
+	}
+	defer func() {
+		resultErr = errors.Join(resultErr, releaseTableLocks(ctx, conn))
+	}()
+
+	if err := rejectExternalForeignKeys(ctx, conn, schema); err != nil {
+		return err
+	}
+	if err := rejectExternalViews(ctx, conn, schema, w.dialect); err != nil {
+		return err
+	}
+
+	dropSQL := buildDropObjectsSQL(schema, "TABLE", names)
+	_, err := conn.ExecContext(ctx, dropSQL)
+	return formatDropObjectsError("TABLE", names, dropSQL, err)
+}
+
+func buildLockTablesSQL(schema string, names []string) string {
+	locks := make([]string, 0, len(names))
+	for _, name := range names {
+		locks = append(locks, quoteQualifiedIdent(schema, name)+" WRITE")
+	}
+	return "LOCK TABLES " + strings.Join(locks, ", ")
+}
+
+func buildDropObjectsSQL(schema, kind string, names []string) string {
+	qualifiedNames := make([]string, 0, len(names))
+	for _, name := range names {
+		qualifiedNames = append(qualifiedNames, quoteQualifiedIdent(schema, name))
+	}
+	return "DROP " + kind + " IF EXISTS " + strings.Join(qualifiedNames, ", ")
+}
+
+func releaseTableLocks(ctx context.Context, conn *sql.Conn) error {
+	unlockCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), sessionRestoreTimeout)
+	defer cancel()
+	if _, err := conn.ExecContext(unlockCtx, "UNLOCK TABLES"); err != nil {
+		discardConn(conn)
+		return fmt.Errorf("mysql: release cleanup table locks: %w", err)
+	}
+	return nil
+}
+
+func formatDropObjectsError(kind string, names []string, dropSQL string, err error) error {
+	if err == nil {
+		return nil
+	}
+	objectLabel := strings.ToLower(kind)
+	if len(names) > 1 {
+		objectLabel += "s"
+	}
+	return fmt.Errorf(
+		"failed to drop %s %s: SQL execution failed: %w\nSQL: %s",
+		objectLabel,
+		strings.Join(names, ", "),
+		err,
+		dropSQL,
+	)
 }
 
 func (w *Writer) cleanupSchema(ctx context.Context, conn *sql.Conn) (string, error) {
@@ -338,6 +877,24 @@ func externalViewCount(ctx context.Context, conn *sql.Conn, schema, dialect stri
 		return mariaDBExternalViewCount(ctx, conn, schema)
 	}
 	return mySQLExternalViewCount(ctx, conn, schema)
+}
+
+func supportsMySQLViewTableUsage(version string) bool {
+	numericVersion, _, _ := strings.Cut(version, "-")
+	parts := strings.Split(numericVersion, ".")
+	if len(parts) < 3 {
+		return false
+	}
+	major, majorErr := strconv.Atoi(parts[0])
+	minor, minorErr := strconv.Atoi(parts[1])
+	patch, patchErr := strconv.Atoi(parts[2])
+	if majorErr != nil || minorErr != nil || patchErr != nil {
+		return false
+	}
+	if major != 8 {
+		return major > 8
+	}
+	return minor > 0 || patch >= 13
 }
 
 func mySQLExternalViewCount(ctx context.Context, conn *sql.Conn, schema string) (int, error) {

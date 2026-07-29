@@ -93,6 +93,14 @@ func WithStatementInterceptor(interceptor StatementInterceptor) FSProviderOption
 	}
 }
 
+// WithStatementValidator makes every loaded migration validate all statements
+// before executing the first one.
+func WithStatementValidator(validator StatementValidator) FSProviderOption {
+	return func(p *FSMigrationProvider) {
+		p.hooks.validator = validator
+	}
+}
+
 // WithStatementObserver makes every loaded migration report successfully
 // executed statements to the given observer (see StatementObserver).
 func WithStatementObserver(observer StatementObserver) FSProviderOption {
